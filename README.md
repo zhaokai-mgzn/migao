@@ -15,7 +15,7 @@
 - **微信小程序** — Taro 跨端框架，SSE 流式对话，原生体验
 - **阿里云全栈部署** — SWAS 轻量应用服务器（CI 构建镜像 + 服务器 pull）+ RDS + Redis(Tair) + OSS，GitHub Actions CI/CD
 
-> ℹ️ **知识库（RAG）说明**：POC 阶段暂不开放（决策记录见 `docs/audit-2026-08/06-open-source-production-gap-analysis.md` 决策 D1），知识问答当前走 LLM 通用知识。
+> ℹ️ **知识库说明**：旧 RAG 知识库（向量检索文档库）已随 LLM WIKI 板块完全移除（issue #3051）。知识问答采用「知识卡片」模型：行业模板一键套用 + 商品/配置自动派生 + 会话/文档 AI 提炼待确认，AI 客服直接读已发布的知识卡片回答，检索用结构化过滤 + 关键词（无向量库）。设计见 `docs/design/knowledge-wiki-design.md`。
 
 ## 🏗️ 系统架构
 

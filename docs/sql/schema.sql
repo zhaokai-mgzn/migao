@@ -292,61 +292,9 @@ CREATE TABLE processing_rules (
 -- 3. 知识库相关表
 -- ================================================
 
--- 知识库文档表：存储 RAG 文档元信息
-CREATE TABLE knowledge_documents (
-    id VARCHAR(64) PRIMARY KEY,
-    tenant_id BIGINT NOT NULL REFERENCES tenants(id),
-    title VARCHAR(255) NOT NULL,
-    doc_type VARCHAR(64),
-    category VARCHAR(128),
-    file_type VARCHAR(32),
-    file_url VARCHAR(512),
-    content TEXT,
-    product_id VARCHAR(64) REFERENCES products(id),
-    embedding_status VARCHAR(32) DEFAULT 'pending',
-    chunk_count INTEGER DEFAULT 0,
-    dashvector_collection VARCHAR(128),
-    is_active BOOLEAN DEFAULT true,
-    created_by VARCHAR(64),
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    deleted INTEGER DEFAULT 0
-);
-
--- 知识库文档分块表：RAG 向量化分块数据
-CREATE TABLE rag_chunks (
-    chunk_id VARCHAR(64) PRIMARY KEY,
-    tenant_id BIGINT NOT NULL REFERENCES tenants(id),
-    document_id VARCHAR(64) NOT NULL REFERENCES knowledge_documents(id),
-    content TEXT NOT NULL,
-    metadata JSONB DEFAULT '{}',
-    chunk_index INTEGER DEFAULT 0,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    deleted INTEGER DEFAULT 0
-);
-
--- 知识库批量同步历史记录表
-CREATE TABLE knowledge_sync_history (
-    id VARCHAR(64) PRIMARY KEY,
-    tenant_id BIGINT NOT NULL REFERENCES tenants(id),
-    sync_type VARCHAR(32) NOT NULL,  -- single / batch / full
-    source_type VARCHAR(32) NOT NULL,  -- product / manual
-    source_ids JSONB DEFAULT '[]',
-    status VARCHAR(32) DEFAULT 'pending',  -- pending / processing / completed / failed
-    total_count INTEGER DEFAULT 0,
-    success_count INTEGER DEFAULT 0,
-    failed_count INTEGER DEFAULT 0,
-    error_message TEXT,
-    started_at TIMESTAMP WITH TIME ZONE,
-    completed_at TIMESTAMP WITH TIME ZONE,
-    created_by VARCHAR(64),
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-
--- 知识词条表（LLM WIKI 板块，issue #3051，V35 迁移）
--- 知识单元从 RAG chunk 升级为结构化词条：AI 客服直接读词条回答，检索用结构化过滤 + 关键词，不引入向量库。
-CREATE TABLE IF NOT EXISTS knowledge_entries (
+-- 知识卡片表（LLM WIKI 板块，issue #3051，V35 建表 + V37 重命名）
+-- 知识单元从 RAG chunk 升级为结构化知识卡片：AI 客服直接读词条回答，检索用结构化过滤 + 关键词，不引入向量库。
+CREATE TABLE IF NOT EXISTS knowledge_cards (
     id VARCHAR(64) PRIMARY KEY,
     tenant_id BIGINT NOT NULL,
     title VARCHAR(255) NOT NULL,
@@ -370,9 +318,9 @@ CREATE TABLE IF NOT EXISTS knowledge_entries (
     deleted INTEGER DEFAULT 0
 );
 
-CREATE INDEX IF NOT EXISTS idx_knowledge_entries_tenant ON knowledge_entries(tenant_id);
-CREATE INDEX IF NOT EXISTS idx_knowledge_entries_status ON knowledge_entries(status);
-CREATE INDEX IF NOT EXISTS idx_knowledge_entries_category ON knowledge_entries(category);
+CREATE INDEX IF NOT EXISTS idx_knowledge_cards_tenant ON knowledge_entries(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_knowledge_cards_status ON knowledge_entries(status);
+CREATE INDEX IF NOT EXISTS idx_knowledge_cards_category ON knowledge_entries(category);
 
 -- 知识提炼候选表（LLM WIKI 板块，issue #3051，V35 迁移）
 -- AI 提炼（会话/文档/商品）→ 商家待采纳队列；AI 只产生候选，发布权在商家。
@@ -939,21 +887,8 @@ CREATE INDEX idx_processing_items_deleted ON processing_items(deleted);
 CREATE INDEX idx_processing_rules_tenant ON processing_rules(tenant_id);
 CREATE INDEX idx_processing_rules_category ON processing_rules(applicable_category_id);
 
--- knowledge_documents 索引
-CREATE INDEX idx_knowledge_documents_tenant ON knowledge_documents(tenant_id);
-CREATE INDEX idx_knowledge_documents_product ON knowledge_documents(product_id);
-CREATE INDEX idx_knowledge_documents_status ON knowledge_documents(embedding_status);
-CREATE INDEX idx_knowledge_documents_active ON knowledge_documents(is_active);
-CREATE INDEX idx_knowledge_documents_deleted ON knowledge_documents(deleted);
 
--- rag_chunks 索引
-CREATE INDEX idx_rag_chunks_tenant ON rag_chunks(tenant_id);
-CREATE INDEX idx_rag_chunks_document ON rag_chunks(document_id);
-CREATE INDEX idx_rag_chunks_deleted ON rag_chunks(deleted);
 
--- knowledge_sync_history 索引
-CREATE INDEX idx_knowledge_sync_history_tenant ON knowledge_sync_history(tenant_id);
-CREATE INDEX idx_knowledge_sync_history_status ON knowledge_sync_history(status);
 
 -- tenant_apps 索引
 CREATE INDEX idx_tenant_apps_tenant ON tenant_apps(tenant_id);
@@ -1140,7 +1075,6 @@ ALTER TABLE processing_rules ENABLE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_processing_rules ON processing_rules
     USING (tenant_id::text = current_setting('app.current_tenant_id'));
 
-ALTER TABLE knowledge_documents ENABLE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_knowledge_documents ON knowledge_documents
     USING (tenant_id::text = current_setting('app.current_tenant_id'));
 

@@ -82,6 +82,10 @@ class SecurityConfigTest {
     @MockBean
     private com.migao.admin.service.CustomerService customerService;
 
+    // LLM WIKI 板块（issue #3051）：知识卡片服务（其依赖 Mapper 已在上方 @MockBean）
+    @MockBean
+    private com.migao.admin.service.KnowledgeCardService knowledgeCardService;
+
     @MockBean
     private com.migao.admin.service.NotificationService notificationService;
 
@@ -100,9 +104,9 @@ class SecurityConfigTest {
     @MockBean
     private com.migao.admin.mapper.UserMemoryMapper userMemoryMapper;
 
-    // LLM WIKI 板块（issue #3051）：knowledge_entries / knowledge_candidates 的 Mapper
+    // LLM WIKI 板块（issue #3051）：knowledge_cards / knowledge_candidates 的 Mapper
     @MockBean
-    private com.migao.admin.mapper.KnowledgeEntryMapper knowledgeEntryMapper;
+    private com.migao.admin.mapper.KnowledgeCardMapper knowledgeCardMapper;
 
     @MockBean
     private com.migao.admin.mapper.KnowledgeCandidateMapper knowledgeCandidateMapper;
@@ -161,12 +165,6 @@ class SecurityConfigTest {
     private com.migao.admin.mapper.CustomerSegmentMemberMapper customerSegmentMemberMapper;
     @MockBean
     private com.migao.admin.mapper.CustomerTagMapper customerTagMapper;
-    @MockBean
-    private com.migao.admin.mapper.KnowledgeChunkMapper knowledgeChunkMapper;
-    @MockBean
-    private com.migao.admin.mapper.KnowledgeDocumentMapper knowledgeDocumentMapper;
-    @MockBean
-    private com.migao.admin.mapper.KnowledgeSyncHistoryMapper knowledgeSyncHistoryMapper;
     @MockBean
     private com.migao.admin.mapper.NotificationMapper notificationMapper;
     @MockBean

@@ -49,7 +49,7 @@ class KnowledgeCandidateMapperTest {
     }
 
     @Test
-    @DisplayName("字段映射 — 候选词条核心字段全部映射到列（契约 API-014）")
+    @DisplayName("字段映射 — 候选知识卡片核心字段全部映射到列（契约 API-014）")
     void fieldColumnMapping() {
         TableInfo info = TableInfoHelper.getTableInfo(KnowledgeCandidate.class);
         assertThat(info).isNotNull();

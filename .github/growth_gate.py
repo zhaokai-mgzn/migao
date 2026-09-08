@@ -475,17 +475,33 @@ def _find_exemptions():
 
 
 def get_changed_files(base="origin/main"):
+    """本 PR 变更文件（rename 感知）：改名文件只按新路径计，避免旧路径被误判为「缺配套测试」。
+
+    旧实现 `git diff --name-only` 在 rename 检测关闭时会把改名文件输出为旧路径（删除）+ 新路径（新增），
+    导致 gate 对已改名的 Mapper/实体按旧名查找配套测试 → 误报 BLOCKED（实测 issue #3051 知识卡片改名）。
+    用 `--name-status -M` 输出 Rxxx old→new，只保留新路径。
+    """
     try:
         result = subprocess.run(
-            ["git", "diff", "--name-only", f"{base}...HEAD"],
+            ["git", "diff", "--name-status", "-M", f"{base}...HEAD"],
             capture_output=True, text=True, timeout=15,
         )
         if result.returncode != 0:
             result = subprocess.run(
-                ["git", "diff", "--name-only", base, "HEAD"],
+                ["git", "diff", "--name-status", "-M", base, "HEAD"],
                 capture_output=True, text=True, timeout=15,
             )
-        return [f.strip() for f in result.stdout.split("\n") if f.strip()]
+        files = []
+        for line in result.stdout.splitlines():
+            parts = line.split("\t")
+            if len(parts) < 2:
+                continue
+            if parts[0].startswith("R") and len(parts) >= 3:
+                # R100  old_path  new_path → 只保留新路径
+                files.append(parts[2])
+            else:
+                files.append(parts[1])
+        return files
     except Exception as e:
         print(f"⚠️ git diff 失败: {e}", file=sys.stderr)
         return []

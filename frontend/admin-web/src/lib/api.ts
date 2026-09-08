@@ -22,9 +22,8 @@ import type {
   ProcessingCategoryFormData,
   ProcessingCalculateParams,
   ProcessingCalculateResult,
-  KnowledgeDocument,
-  KnowledgeDocumentListParams,
-  KnowledgeDocumentUploadForm,
+  KnowledgeCard,
+  KnowledgeCardListParams,
   LoginParams,
   LoginResponse,
   RefreshTokenResponse,
@@ -46,9 +45,6 @@ import type {
   ActiveSession,
   PendingTask,
   ProductRanking,
-  KnowledgeSearchResult,
-  KnowledgeSearchParams,
-  KnowledgeSyncHistory,
   Customer,
   CustomerListParams,
   CustomerDetail,
@@ -216,34 +212,28 @@ export const processingCategoryApi = {
     request.post<ApiResponse<ProcessingCategory>>('/api/admin/processing-categories', data),
 }
 
-// 知识库 API
+// 知识卡片 API（LLM WIKI 板块，issue #3051 — 替代旧文档/同步历史接口）
 export const knowledgeApi = {
-  getDocuments: (params?: KnowledgeDocumentListParams) => 
-    request.get<ApiResponse<PageResponse<KnowledgeDocument>>>('/api/admin/knowledge/documents', { params }),
-  
-  uploadDocument: (data: KnowledgeDocumentUploadForm) => {
-    const formData = new FormData()
-    formData.append('name', data.name)
-    formData.append('type', data.type)
-    if (data.description) formData.append('description', data.description)
-    if (data.file) formData.append('file', data.file)
-    
-    return request.post<ApiResponse<KnowledgeDocument>>('/api/admin/knowledge/documents', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' }
-    })
-  },
-  
-  deleteDocument: (id: string) => 
-    request.delete<ApiResponse<void>>(`/api/admin/knowledge/documents/${id}`),
+  getCards: (params?: KnowledgeCardListParams) =>
+    request.get<ApiResponse<PageResponse<KnowledgeCard>>>('/api/admin/knowledge/cards', { params }),
 
-  resyncDocument: (id: string) =>
-    request.post<ApiResponse<void>>(`/api/admin/knowledge/documents/${id}/embed`),
+  searchCards: (params: { query?: string; productId?: string; category?: string }) =>
+    request.get<ApiResponse<KnowledgeCard[]>>('/api/admin/knowledge/cards/search', { params }),
 
-  getSyncHistory: (params?: { page?: number; size?: number }) =>
-    request.get<ApiResponse<PageResponse<KnowledgeSyncHistory>>>('/api/admin/knowledge/sync-history', { params }),
+  createCard: (data: Partial<KnowledgeCard>) =>
+    request.post<ApiResponse<KnowledgeCard>>('/api/admin/knowledge/cards', data),
 
-  searchKnowledge: (params: KnowledgeSearchParams) =>
-    request.post<ApiResponse<{ results: KnowledgeSearchResult[] }>>('/api/admin/knowledge/test-search', params),
+  updateCard: (id: string, data: Partial<KnowledgeCard>) =>
+    request.put<ApiResponse<KnowledgeCard>>(`/api/admin/knowledge/cards/${id}`, data),
+
+  deleteCard: (id: string) =>
+    request.delete<ApiResponse<void>>(`/api/admin/knowledge/cards/${id}`),
+
+  publishCard: (id: string) =>
+    request.post<ApiResponse<KnowledgeCard>>(`/api/admin/knowledge/cards/${id}/publish`),
+
+  archiveCard: (id: string) =>
+    request.post<ApiResponse<KnowledgeCard>>(`/api/admin/knowledge/cards/${id}/archive`),
 }
 
 // 售后工单 API

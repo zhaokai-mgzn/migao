@@ -334,54 +334,46 @@ export interface ProcessingCalculateResult {
   details?: Record<string, unknown>
 }
 
-// 知识库文档类型
-export type KnowledgeDocType = 'faq' | 'product' | 'guide'
+// ===== LLM WIKI 知识卡片（issue #3051，替代 RAG 文档模型）=====
+// 知识卡片状态（三端一致：Java KnowledgeCard.status = TS KnowledgeCardStatus = Agent 检索过滤条件）
+export type KnowledgeCardStatus = 'draft' | 'pending_review' | 'published' | 'archived'
 
-// 知识库文档状态
-export type KnowledgeDocStatus = 'processed' | 'processing' | 'failed'
+// 知识卡片来源（template/product/config/conversation/document/manual）
+export type KnowledgeCardSource = 'template' | 'product' | 'config' | 'conversation' | 'document' | 'manual'
 
-// 知识库文档类型
-export interface KnowledgeDocument {
+// 知识卡片分类（faq/product/measure/aftersale/config）
+export type KnowledgeCardCategory = 'faq' | 'product' | 'measure' | 'aftersale' | 'config'
+
+// 知识卡片
+export interface KnowledgeCard {
   id: string
-  name: string
-  type: KnowledgeDocType
-  chunkCount: number
-  status: KnowledgeDocStatus
-  description?: string
-  fileUrl?: string
-  fileSize?: number
-  uploadedAt: string
-}
-
-// 知识库文档列表查询参数
-export interface KnowledgeDocumentListParams extends PageParams {
-  keyword?: string
-  type?: KnowledgeDocType
-  status?: KnowledgeDocStatus
-}
-
-// 知识库文档上传表单
-export interface KnowledgeDocumentUploadForm {
-  name: string
-  type: KnowledgeDocType
-  description?: string
-  file?: File
-}
-
-// 知识库同步历史（issue #2971：knowledge_sync_history 闭环，同步历史展示）
-export interface KnowledgeSyncHistory {
-  id: string
-  syncType: 'single' | 'batch' | 'full'
-  sourceType: 'product' | 'manual'
-  sourceIds?: string[] | Record<string, unknown> | null
-  status: 'pending' | 'processing' | 'completed' | 'failed'
-  totalCount?: number
-  successCount?: number
-  failedCount?: number
-  errorMessage?: string
-  startedAt?: string
-  completedAt?: string
+  tenantId?: number
+  title: string
+  category?: KnowledgeCardCategory | string
+  industry?: string
+  sourceType: KnowledgeCardSource
+  sourceRef?: string
+  question?: string
+  answer: string
+  keywords?: string
+  applyProducts?: string | null
+  variables?: string | null
+  status: KnowledgeCardStatus
+  version: number
+  reviewNote?: string
+  createdBy?: string
+  reviewedBy?: string
+  reviewedAt?: string
   createdAt: string
+  updatedAt: string
+}
+
+// 知识卡片列表查询参数
+export interface KnowledgeCardListParams extends PageParams {
+  keyword?: string
+  category?: string
+  sourceType?: string
+  status?: KnowledgeCardStatus | string
 }
 
 // ===== 订单状态枚举 =====
@@ -641,26 +633,6 @@ export interface LogisticsFormData {
 export interface CloseOrderParams {
   reason: string               // 关闭原因
   remark?: string              // 其它原因备注
-}
-
-// ========== 知识库搜索类型 ==========
-
-// 知识库搜索结果
-export interface KnowledgeSearchResult {
-  chunkId: string
-  content: string
-  score: number
-  source: {
-    documentId: string
-    title: string
-    docType: string
-  }
-}
-
-// 知识库搜索参数
-export interface KnowledgeSearchParams {
-  query: string
-  topK?: number
 }
 
 // ========== 客户管理类型 ==========

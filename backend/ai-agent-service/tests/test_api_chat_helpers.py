@@ -250,11 +250,6 @@ class TestInternalModels:
         assert req.tool_name == "product_search"
         assert req.tenant_id == 1
 
-    def test_knowledge_sync_request(self):
-        from app.api.internal import KnowledgeSyncRequest
-        req = KnowledgeSyncRequest(tenant_id=1, type="full_sync")
-        assert req.tenant_id == 1
-        assert req.type == "full_sync"
 
 
 # ═══════════════════════════════════════

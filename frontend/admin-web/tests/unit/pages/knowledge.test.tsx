@@ -1,30 +1,31 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-// case_ids: API-008, UI-027
+// case_ids: API-015, UI-027
 
-// Mock API — 页面改造后走真实后端 CRUD（P0-1 知识库假成功修复回归）
+// Mock API — LLM WIKI 知识卡片页（issue #3051）：数据源必须来自 knowledgeApi.getCards（非硬编码）
 vi.mock('@/lib/api', () => ({
   knowledgeApi: {
-    getDocuments: vi.fn().mockResolvedValue({
+    getCards: vi.fn().mockResolvedValue({
       data: {
         success: true,
-        data: { items: [{ id: 'doc_1', title: '窗帘常见问题 FAQ', docType: 'faq', chunkCount: 24, embeddingStatus: 'processed', category: '客户常见咨询', createdAt: '2026-04-15T10:30:00' }], total: 1, page: 1, size: 20 },
+        data: { items: [{ id: 'entry_1', title: '雪尼尔面料会起球吗', category: 'faq', sourceType: 'manual', status: 'published', version: 2, answer: '雪尼尔织物起球概率较低……', updatedAt: '2026-09-08T10:30:00' }], total: 1, page: 1, size: 20 },
       },
     }),
-    uploadDocument: vi.fn().mockResolvedValue({ data: { success: true, data: { id: 'doc_new' } } }),
-    deleteDocument: vi.fn().mockResolvedValue({ data: { success: true } }),
-    resyncDocument: vi.fn().mockResolvedValue({ data: { success: true } }),
-    getSyncHistory: vi.fn().mockResolvedValue({ data: { success: true, data: { items: [], total: 0 } } }),
-    searchKnowledge: vi.fn().mockResolvedValue({ data: { success: true, data: { results: [] } } }),
+    searchCards: vi.fn().mockResolvedValue({ data: { success: true, data: [] } }),
+    createCard: vi.fn().mockResolvedValue({ data: { success: true, data: { id: 'entry_new', status: 'draft' } } }),
+    updateCard: vi.fn().mockResolvedValue({ data: { success: true, data: { id: 'entry_1', status: 'published' } } }),
+    deleteCard: vi.fn().mockResolvedValue({ data: { success: true } }),
+    publishCard: vi.fn().mockResolvedValue({ data: { success: true, data: { id: 'entry_1', status: 'published' } } }),
+    archiveCard: vi.fn().mockResolvedValue({ data: { success: true, data: { id: 'entry_1', status: 'archived' } } }),
   },
 }))
 
 // Mock dayjs
 vi.mock('dayjs', () => ({
   default: (date?: any) => ({
-    format: () => date || '2026-04-15 10:30',
+    format: () => date || '2026-09-08 10:30',
   }),
 }))
 
@@ -33,13 +34,13 @@ vi.mock('sonner', () => ({
   toast: { success: vi.fn(), error: vi.fn() },
 }))
 
-// Mock UI components
+// Mock UI components（Table 用 data 而非 dataSource）
 vi.mock('@/components/ui', () => ({
-  Table: ({ columns, dataSource, loading, rowKey }: any) => (
+  Table: ({ dataSource, columns, loading }: any) => (
     <div data-testid="table">
       {loading && <div data-testid="table-loading">加载中...</div>}
       {dataSource?.map((record: any) => (
-        <div key={record[rowKey || 'id']} data-testid={`row-${record.id}`}>
+        <div key={record.id} data-testid={`row-${record.id}`}>
           {columns?.map((col: any) => (
             <span key={col.key} data-testid={`cell-${record.id}-${col.key}`}>
               {col.render ? col.render(record) : record[col.key]}
@@ -50,153 +51,94 @@ vi.mock('@/components/ui', () => ({
     </div>
   ),
   Pagination: () => <div data-testid="pagination">Pagination</div>,
-  Modal: ({ open, title, children, footer }: any) =>
+  Modal: ({ open, title, children }: any) =>
     open ? (
       <div data-testid="modal" role="dialog">
         <h2>{title}</h2>
         {children}
-        <div data-testid="modal-footer">{footer}</div>
       </div>
     ) : null,
-  Button: ({ children, onClick, variant, ...props }: any) => (
-    <button onClick={onClick} data-variant={variant} {...props}>{children}</button>
+  Button: ({ children, onClick, ...props }: any) => (
+    <button onClick={onClick} {...props}>{children}</button>
   ),
-  StatusBadge: ({ label, color, dot, className, onClick }: any) => React.createElement('span', { onClick, className, title: label }, dot ? React.createElement('span', { className: 'w-1.5 h-1.5 rounded-full' }) : null, label),
-  Badge: ({ children, variant }: any) => (
-    <span data-testid="badge" data-variant={variant}>{children}</span>
+  Badge: ({ children, color }: any) => (
+    <span data-testid="badge" data-color={color}>{children}</span>
   ),
-  SearchBar: ({ fields, onSearch, onReset, loading }: any) => (
+  SearchBar: ({ fields, onSearch, onReset }: any) => (
     <div data-testid="search-bar">
-      <button onClick={() => onSearch({})} data-testid="search-btn">搜索</button>
+      {fields?.map((f: any) => (
+        <input key={f.key} aria-label={f.placeholder} placeholder={f.placeholder} data-testid={`field-${f.key}`} />
+      ))}
+      <button onClick={() => onSearch({ keyword: '起球' })} data-testid="search-btn">搜索</button>
       <button onClick={onReset} data-testid="reset-btn">重置</button>
     </div>
   ),
 }))
 
+// Mock DateTimeCell
+vi.mock('@/components/common/DateTimeCell', () => ({
+  default: ({ value }: any) => <span data-testid="datetime">{value}</span>,
+}))
+
 import KnowledgePage from '@/app/(dashboard)/knowledge/page'
 
-describe('KnowledgePage', () => {
+describe('KnowledgePage（LLM WIKI 知识卡片管理）', () => {
   beforeEach(() => {
     vi.clearAllMocks()
   })
 
-  it('should render page title', async () => {
+  it('should render page title and description', async () => {
     render(<KnowledgePage />)
     await waitFor(() => {
-      expect(screen.getByText('知识库管理')).toBeInTheDocument()
+      expect(screen.getByText('知识卡片')).toBeInTheDocument()
     })
+    expect(screen.getByText(/LLM WIKI 知识卡片管理/)).toBeInTheDocument()
   })
 
-  it('should render page description', async () => {
+  it('should display entries from API in table (no hardcode)', async () => {
     render(<KnowledgePage />)
     await waitFor(() => {
-      expect(screen.getByText('管理 AI 客服的知识库文档和问答')).toBeInTheDocument()
+      expect(screen.getByText('雪尼尔面料会起球吗')).toBeInTheDocument()
     })
-  })
-
-  it('should render upload document button', async () => {
-    render(<KnowledgePage />)
-    await waitFor(() => {
-      expect(screen.getByText('上传文档')).toBeInTheDocument()
-    })
-  })
-
-  it('should render search test button', async () => {
-    render(<KnowledgePage />)
-    await waitFor(() => {
-      expect(screen.getByText('搜索测试')).toBeInTheDocument()
-    })
-  })
-
-  it('should display real API documents in table (no mock hardcode)', async () => {
-    render(<KnowledgePage />)
-    await waitFor(() => {
-      expect(screen.getByText('窗帘常见问题 FAQ')).toBeInTheDocument()
-    })
-    // 页面不再硬编码假数据：数据源必须来自 knowledgeApi.getDocuments
     const api = (await import('@/lib/api')).knowledgeApi as any
-    expect(api.getDocuments).toHaveBeenCalled()
+    expect(api.getCards).toHaveBeenCalled()
   })
 
-  it('should open upload modal when upload button clicked', async () => {
+  it('should open create modal and save new entry as draft', async () => {
     const user = userEvent.setup()
     render(<KnowledgePage />)
     await waitFor(() => {
-      expect(screen.getByText('上传文档')).toBeInTheDocument()
+      expect(screen.getByText('新建知识卡片')).toBeInTheDocument()
     })
-    // 点击"上传文档"按钮（Modal 标题也是"上传文档"，用 role 区分）
-    const uploadBtn = screen.getByRole('button', { name: /上传文档/ })
-    await user.click(uploadBtn)
-    // Modal 渲染后 modal 标题会再次出现
-    await waitFor(() => {
-      const modals = screen.queryAllByTestId('modal')
-      expect(modals.length).toBeGreaterThanOrEqual(1)
-    })
-  })
 
-  it('should open search test modal when search test button clicked', async () => {
-    const user = userEvent.setup()
-    render(<KnowledgePage />)
+    await user.click(screen.getByText('新建知识卡片'))
     await waitFor(() => {
-      expect(screen.getByText('搜索测试')).toBeInTheDocument()
+      expect(screen.getByRole('dialog')).toBeInTheDocument()
     })
-    await user.click(screen.getByText('搜索测试'))
-    await waitFor(() => {
-      const searchInput = document.querySelector('input[placeholder*="输入搜索内容"]')
-      expect(searchInput).toBeInTheDocument()
-    })
-  })
 
-  it('should render search bar with filters', async () => {
-    render(<KnowledgePage />)
-    await waitFor(() => {
-      expect(screen.getByTestId('search-bar')).toBeInTheDocument()
-    })
-  })
+    await user.type(screen.getByPlaceholderText('如：雪尼尔面料会起球吗'), '窗帘多久洗一次')
+    await user.type(screen.getByPlaceholderText('AI 客服将基于此内容回答'), '建议每 3-6 个月清洗一次。')
+    await user.click(screen.getByText('保存'))
 
-  it('should show sync history records in modal (UI-027)', async () => {
-    const user = userEvent.setup()
     const api = (await import('@/lib/api')).knowledgeApi as any
-    api.getSyncHistory.mockResolvedValue({
-      data: { success: true, data: {
-        items: [{
-          id: 'h1', syncType: 'single', sourceType: 'manual',
-          sourceIds: ['doc_1'], status: 'completed', successCount: 24,
-          createdAt: '2026-04-15T10:30:00',
-        }], total: 1,
-      } },
-    })
-    render(<KnowledgePage />)
     await waitFor(() => {
-      expect(screen.getByText('知识库管理')).toBeInTheDocument()
+      expect(api.createCard).toHaveBeenCalledWith(expect.objectContaining({ title: '窗帘多久洗一次' }))
     })
-    await user.click(screen.getByText('同步历史'))
-    const modal = await screen.findByTestId('modal')
-    await waitFor(() => {
-      // 来源文档（sourceIds → 标题映射；scope 到弹窗避免与文档表格同名文本冲突）
-      expect(within(modal).getByText('窗帘常见问题 FAQ')).toBeInTheDocument()
-      // 类型/状态/结果
-      expect(within(modal).getByText('单文档')).toBeInTheDocument()
-      expect(within(modal).getByText('已完成')).toBeInTheDocument()
-      expect(within(modal).getByText('成功 24')).toBeInTheDocument()
-    })
-    // 数据源必须来自 getSyncHistory
-    expect(api.getSyncHistory).toHaveBeenCalled()
   })
 
-  it('should show empty state for sync history (UI-027)', async () => {
-    const user = userEvent.setup()
-    // 显式置空（clearAllMocks 只清 calls 不清 mockResolvedValue 实现，防止继承上一用例的数据 mock）
+  it('should publish draft entry via publish button', async () => {
     const api = (await import('@/lib/api')).knowledgeApi as any
-    api.getSyncHistory.mockResolvedValue({ data: { success: true, data: { items: [], total: 0 } } })
+    api.getCards.mockResolvedValueOnce({
+      data: { success: true, data: { items: [{ id: 'entry_2', title: '退换货政策', category: 'aftersale', sourceType: 'manual', status: 'draft', version: 1, answer: '……', updatedAt: '2026-09-08T09:00:00' }], total: 1, page: 1, size: 20 } },
+    })
+    const user = userEvent.setup()
     render(<KnowledgePage />)
     await waitFor(() => {
-      expect(screen.getByText('知识库管理')).toBeInTheDocument()
+      expect(screen.getByText('退换货政策')).toBeInTheDocument()
     })
-    await user.click(screen.getByText('同步历史'))
-    const modal = await screen.findByTestId('modal')
+    await user.click(screen.getByText('发布'))
     await waitFor(() => {
-      expect(within(modal).getByText(/暂无同步历史/)).toBeInTheDocument()
+      expect(api.publishCard).toHaveBeenCalledWith('entry_2')
     })
   })
 })

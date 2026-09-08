@@ -1,700 +1,359 @@
 'use client'
 
-import { useEffect, useState, useCallback, useRef } from 'react'
-import { Upload, Trash2, FileText, RefreshCw, Search, Sparkles, History } from 'lucide-react'
+import { useEffect, useState, useCallback } from 'react'
+import { Plus, Pencil, Trash2, Send, Archive } from 'lucide-react'
 import { toast } from 'sonner'
 import { knowledgeApi } from '@/lib/api'
 import { Table, Pagination, Modal, Button, Badge, SearchBar } from '@/components/ui'
 import type { TableColumn } from '@/components/ui'
-import type { KnowledgeDocument, KnowledgeDocumentUploadForm, KnowledgeDocStatus, KnowledgeSearchResult, KnowledgeSyncHistory } from '@/types'
+import type { KnowledgeCard, KnowledgeCardStatus } from '@/types'
 import DateTimeCell from '@/components/common/DateTimeCell'
 
+// 知识卡片状态 → 徽标（三端一致契约：draft/pending_review/published/archived）
+const STATUS_META: Record<KnowledgeCardStatus, { label: string; variant: 'default' | 'warning' | 'success' | 'error' }> = {
+  draft: { label: '草稿', variant: 'default' },
+  pending_review: { label: '待审核', variant: 'warning' },
+  published: { label: '已发布', variant: 'success' },
+  archived: { label: '已归档', variant: 'error' },
+}
+
+// 知识卡片来源 → 徽标（template/product/config/conversation/document/manual）
+const SOURCE_META: Record<string, { label: string; variant: 'default' | 'info' | 'warning' | 'success' }> = {
+  template: { label: '模板', variant: 'info' },
+  product: { label: '商品派生', variant: 'info' },
+  config: { label: '配置', variant: 'info' },
+  conversation: { label: '会话提炼', variant: 'warning' },
+  document: { label: '文档提炼', variant: 'info' },
+  manual: { label: '人工', variant: 'success' },
+}
+
+const CATEGORY_OPTIONS = [
+  { value: 'faq', label: 'FAQ' },
+  { value: 'product', label: '商品' },
+  { value: 'measure', label: '测量' },
+  { value: 'aftersale', label: '售后' },
+  { value: 'config', label: '店铺配置' },
+]
+
 export default function KnowledgePage() {
-  const [documents, setDocuments] = useState<KnowledgeDocument[]>([])
+  const [entries, setEntries] = useState<KnowledgeCard[]>([])
   const [loading, setLoading] = useState(false)
   const [total, setTotal] = useState(0)
   const [current, setCurrent] = useState(1)
   const [pageSize, setPageSize] = useState(20)
-  const [searchParams, setSearchParams] = useState({
-    keyword: '',
-    type: '',
-    status: '',
-  })
+  const [keyword, setKeyword] = useState('')
+  const [category, setCategory] = useState('')
+  const [statusFilter, setStatusFilter] = useState('')
 
-  // 上传模态框状态
-  const [uploadModalOpen, setUploadModalOpen] = useState(false)
-  const [uploadForm, setUploadForm] = useState<KnowledgeDocumentUploadForm>({
-    name: '',
-    type: 'faq',
-    description: '',
-  })
-  const [selectedFile, setSelectedFile] = useState<File | null>(null)
-  const [uploading, setUploading] = useState(false)
-  const [uploadProgress, setUploadProgress] = useState(0)
+  // 编辑模态框
+  const [editorOpen, setEditorOpen] = useState(false)
+  const [editing, setEditing] = useState<KnowledgeCard | null>(null)
+  const [form, setForm] = useState({ title: '', category: 'faq', question: '', answer: '', keywords: '' })
   const [formErrors, setFormErrors] = useState<Record<string, string>>({})
-  const [isDragging, setIsDragging] = useState(false)
+  const [saving, setSaving] = useState(false)
 
-  // 删除确认状态
-  const [deleteModalOpen, setDeleteModalOpen] = useState(false)
-  const [deletingDoc, setDeletingDoc] = useState<KnowledgeDocument | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<KnowledgeCard | null>(null)
 
-  // 搜索测试状态
-  const [searchTestOpen, setSearchTestOpen] = useState(false)
-  const [searchQuery, setSearchQuery] = useState('')
-  const [searchResults, setSearchResults] = useState<KnowledgeSearchResult[]>([])
-  const [searching, setSearching] = useState(false)
-
-  // 同步历史状态（issue #2971：knowledge_sync_history 闭环，读路径 + 展示）
-  const [syncHistoryOpen, setSyncHistoryOpen] = useState(false)
-  const [syncHistory, setSyncHistory] = useState<KnowledgeSyncHistory[]>([])
-  const [syncHistoryLoading, setSyncHistoryLoading] = useState(false)
-
-  // 加载同步历史
-  const loadSyncHistory = useCallback(async () => {
-    setSyncHistoryLoading(true)
-    try {
-      const res = await knowledgeApi.getSyncHistory({ page: 1, size: 50 })
-      const pageData = res.data?.data
-      setSyncHistory(pageData?.items || [])
-    } catch (error) {
-      console.error('加载同步历史失败:', error)
-      toast.error('加载同步历史失败')
-    } finally {
-      setSyncHistoryLoading(false)
-    }
-  }, [])
-
-  // 加载数据
-  const loadData = useCallback(async () => {
+  const loadEntries = useCallback(async () => {
     setLoading(true)
     try {
-      // P0 验证修复：此前整页 mock 4 条假文档（2026-08-27 报告 §2.4 遗留），
-      // 上传/删除全部假成功。现接真实后端 CRUD（文档列表真实落库）。
-      const params: Record<string, unknown> = { page: current, size: pageSize }
-      if (searchParams.keyword) params.keyword = searchParams.keyword
-      if (searchParams.type) params.type = searchParams.type
-      const res = await knowledgeApi.getDocuments(params as never)
-      const pageData = res.data?.data
-      const items = (pageData?.items || []).map((doc: any) => ({
-        id: doc.id,
-        // 后端字段：title/docType/category/embeddingStatus/createdAt
-        name: doc.title || doc.name || '',
-        type: doc.docType || doc.type || 'faq',
-        chunkCount: doc.chunkCount ?? 0,
-        status: (doc.embeddingStatus === 'processed' || doc.embeddingStatus === 'completed'
-          ? 'processed'
-          : doc.embeddingStatus === 'failed' ? 'failed' : 'processing') as KnowledgeDocStatus,
-        description: doc.category || doc.description || '',
-        fileUrl: doc.fileUrl,
-        fileSize: doc.fileSize,
-        uploadedAt: doc.createdAt || doc.uploadedAt || '',
-      }))
-      setDocuments(items)
-      setTotal(pageData?.total ?? items.length)
-    } catch (error) {
-      console.error('加载知识库失败:', error)
-      toast.error('加载知识库失败')
+      const res = await knowledgeApi.getCards({
+        page: current,
+        size: pageSize,
+        keyword: keyword || undefined,
+        category: category || undefined,
+        status: statusFilter || undefined,
+      })
+      setEntries(res.data?.data?.items ?? [])
+      setTotal(res.data?.data?.total ?? 0)
+    } catch {
+      toast.error('加载知识卡片失败')
     } finally {
       setLoading(false)
     }
-  }, [current, pageSize, searchParams])
+  }, [current, pageSize, keyword, category, statusFilter])
 
   useEffect(() => {
-    loadData()
-  }, [loadData])
+    loadEntries()
+  }, [loadEntries])
 
-  // 搜索
-  const handleSearch = (values: Record<string, string>) => {
-    setCurrent(1)
-    setSearchParams({
-      keyword: values.keyword || '',
-      type: values.type || '',
-      status: values.status || '',
-    })
-  }
-
-  const handleReset = () => {
-    setCurrent(1)
-    setSearchParams({ keyword: '', type: '', status: '' })
-  }
-
-  // 打开上传模态框
-  const openUploadModal = () => {
-    setUploadForm({ name: '', type: 'faq', description: '' })
-    setSelectedFile(null)
+  const openCreate = () => {
+    setEditing(null)
+    setForm({ title: '', category: 'faq', question: '', answer: '', keywords: '' })
     setFormErrors({})
-    setUploadProgress(0)
-    setUploadModalOpen(true)
+    setEditorOpen(true)
   }
 
-  // 验证上传表单
-  const validateUploadForm = (): boolean => {
+  const openEdit = (entry: KnowledgeCard) => {
+    setEditing(entry)
+    setForm({
+      title: entry.title,
+      category: entry.category ?? 'faq',
+      question: entry.question ?? '',
+      answer: entry.answer,
+      keywords: entry.keywords ?? '',
+    })
+    setFormErrors({})
+    setEditorOpen(true)
+  }
+
+  const saveEntry = async () => {
     const errors: Record<string, string> = {}
-    if (!uploadForm.name.trim()) errors.name = '请输入文档名称'
-    if (!selectedFile) errors.file = '请选择要上传的文件'
+    if (!form.title.trim()) errors.title = '标题不能为空'
+    if (!form.answer.trim()) errors.answer = '标准回答不能为空'
     setFormErrors(errors)
-    return Object.keys(errors).length === 0
-  }
+    if (Object.keys(errors).length > 0) return
 
-  // 处理文件选择
-  const handleFileSelect = (file: File) => {
-    const allowedTypes = ['.pdf', '.doc', '.docx', '.txt', '.md']
-    const ext = '.' + file.name.split('.').pop()?.toLowerCase()
-    if (!allowedTypes.includes(ext)) {
-      toast.error('不支持的文件类型，请上传 PDF、Word、TXT 或 Markdown 文件')
-      return
-    }
-    setSelectedFile(file)
-    if (!uploadForm.name) {
-      setUploadForm({ ...uploadForm, name: file.name.replace(/\.[^/.]+$/, '') })
-    }
-    setFormErrors((prev) => ({ ...prev, file: '' }))
-  }
-
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (file) handleFileSelect(file)
-  }
-
-  // 拖拽上传
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault()
-    setIsDragging(true)
-  }
-
-  const handleDragLeave = (e: React.DragEvent) => {
-    e.preventDefault()
-    setIsDragging(false)
-  }
-
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault()
-    setIsDragging(false)
-    const file = e.dataTransfer.files?.[0]
-    if (file) handleFileSelect(file)
-  }
-
-  // 处理上传（真实 API 落库；向量化仍在建设中，落库后状态为 processing/pending）
-  const handleUpload = async () => {
-    if (!validateUploadForm()) return
-
-    setUploading(true)
-    setUploadProgress(0)
+    setSaving(true)
     try {
-      // 真实上传：multipart/form-data → 后端落库（embeddingStatus=pending）
-      const data: KnowledgeDocumentUploadForm = {
-        name: uploadForm.name.trim(),
-        type: uploadForm.type,
-        description: uploadForm.description || undefined,
-        file: selectedFile || undefined,
+      const payload = {
+        title: form.title.trim(),
+        category: form.category,
+        question: form.question.trim() || undefined,
+        answer: form.answer,
+        keywords: form.keywords.trim() || undefined,
       }
-      await knowledgeApi.uploadDocument(data)
-      setUploadProgress(100)
-      toast.success('文档上传成功')
-      setUploadModalOpen(false)
-      loadData()
-    } catch (error) {
-      console.error('上传文档失败:', error)
-      toast.error('上传失败')
+      if (editing) {
+        await knowledgeApi.updateCard(editing.id, payload)
+        toast.success('知识卡片已更新')
+      } else {
+        await knowledgeApi.createCard(payload)
+        toast.success('知识卡片已创建（草稿）')
+      }
+      setEditorOpen(false)
+      loadEntries()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : '保存失败')
     } finally {
-      setUploading(false)
+      setSaving(false)
     }
   }
 
-  // 重新同步（触发后端 embed 任务；后端当前为占位实现，如实反馈而非假成功）
-  const handleResync = async (doc: KnowledgeDocument) => {
+  const publishCard = async (entry: KnowledgeCard) => {
     try {
-      await knowledgeApi.resyncDocument(doc.id)
-      toast.success(`已触发文档「${doc.name}」重新同步`)
-      loadData()
-    } catch (error) {
-      console.error('重新同步失败:', error)
-      toast.error('重新同步失败')
+      await knowledgeApi.publishCard(entry.id)
+      toast.success('知识卡片已发布')
+      loadEntries()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : '发布失败')
     }
   }
 
-  // 删除文档
-  const handleDelete = (doc: KnowledgeDocument) => {
-    setDeletingDoc(doc)
-    setDeleteModalOpen(true)
+  const archiveCard = async (entry: KnowledgeCard) => {
+    try {
+      await knowledgeApi.archiveCard(entry.id)
+      toast.success('知识卡片已归档')
+      loadEntries()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : '归档失败')
+    }
   }
 
   const confirmDelete = async () => {
-    if (!deletingDoc) return
+    if (!deleteTarget) return
     try {
-      // 真实删除（此前 setTimeout 假成功）
-      await knowledgeApi.deleteDocument(deletingDoc.id)
-      toast.success('删除成功')
-      loadData()
-    } catch (error) {
-      console.error('删除文档失败:', error)
-      toast.error('删除失败')
-    } finally {
-      setDeleteModalOpen(false)
-      setDeletingDoc(null)
+      await knowledgeApi.deleteCard(deleteTarget.id)
+      toast.success('知识卡片已删除')
+      setDeleteTarget(null)
+      loadEntries()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : '删除失败')
     }
   }
 
-  // 搜索测试
-  const handleSearchTest = async () => {
-    if (!searchQuery.trim()) {
-      toast.error('请输入搜索内容')
-      return
-    }
-    setSearching(true)
-    try {
-      // 接真实后端检索（title/content LIKE，租户内）；向量 RAG 尚未接入（后端 TODO 注明）
-      const res = await knowledgeApi.searchKnowledge({ query: searchQuery.trim(), topK: 10 })
-      const results = res.data?.data?.results || []
-      setSearchResults(
-        results.map((doc: any) => ({
-          chunkId: doc.id || '',
-          content: doc.content || doc.category || '',
-          score: 1,
-          source: {
-            documentId: doc.id,
-            title: doc.title || doc.name || '',
-            docType: doc.docType || 'faq',
-          },
-        })),
-      )
-    } catch (error) {
-      console.error('知识库搜索失败:', error)
-      toast.error('搜索失败')
-    } finally {
-      setSearching(false)
-    }
-  }
-
-  // 格式化文件大小
-  const formatFileSize = (bytes?: number) => {
-    if (!bytes) return '-'
-    if (bytes < 1024) return bytes + ' B'
-    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
-    return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
-  }
-
-  const getTypeLabel = (type: string) => {
-    const labels: Record<string, string> = { faq: 'FAQ', product: '产品说明', guide: '尺寸指南' }
-    return labels[type] || type
-  }
-
-  const getStatusBadge = (status: string) => {
-    const config: Record<string, { variant: 'success' | 'warning' | 'error'; label: string }> = {
-      processed: { variant: 'success', label: '已同步' },
-      processing: { variant: 'warning', label: '同步中' },
-      failed: { variant: 'error', label: '未同步' },
-    }
-    const { variant, label } = config[status] || { variant: 'default' as const, label: status }
-    return <Badge variant={variant}>{label}</Badge>
-  }
-
-  // 同步历史来源展示：sourceIds → 文档标题映射（issue #2971）
-  const getSyncSourceLabel = (record: KnowledgeSyncHistory) => {
-    const ids = Array.isArray(record.sourceIds) ? record.sourceIds : []
-    const titles = ids
-      .map((id) => documents.find((d) => d.id === id)?.name)
-      .filter(Boolean)
-    if (titles.length > 0) return titles.join('、')
-    if (record.syncType === 'full') return '全量同步'
-    return ids.join('、') || '—'
-  }
-
-  const getSyncTypeLabel = (type: string) => {
-    const labels: Record<string, string> = { single: '单文档', batch: '批量', full: '全量' }
-    return labels[type] || type
-  }
-
-  const getSyncStatusBadge = (status: string) => {
-    const config: Record<string, { variant: 'success' | 'warning' | 'error'; label: string }> = {
-      completed: { variant: 'success', label: '已完成' },
-      processing: { variant: 'warning', label: '处理中' },
-      pending: { variant: 'warning', label: '等待中' },
-      failed: { variant: 'error', label: '失败' },
-    }
-    const { variant, label } = config[status] || { variant: 'default' as const, label: status }
-    return <Badge variant={variant}>{label}</Badge>
-  }
-
-  // 表格列
-  const columns: TableColumn<KnowledgeDocument>[] = [
+  const columns: TableColumn<KnowledgeCard>[] = [
     {
-      key: 'name',
-      title: '文档名称',
-      render: (record) => (
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-blue-50 rounded-lg flex items-center justify-center">
-            <FileText className="w-5 h-5 text-primary-600" />
-          </div>
-          <div>
-            <div className="font-medium text-neutral-900">{record.name}</div>
-            {record.description && (
-              <div className="text-xs text-neutral-500">{record.description}</div>
-            )}
-          </div>
+      key: 'title',
+      title: '知识卡片标题',
+      render: (entry) => (
+        <div className="min-w-[220px]">
+          <div className="font-medium">{entry.title}</div>
+          {entry.question && <div className="text-xs text-muted-foreground mt-0.5">常见问法：{entry.question}</div>}
         </div>
       ),
     },
     {
-      key: 'type',
-      title: '类型',
-      width: '120px',
-      render: (record) => <Badge variant="info">{getTypeLabel(record.type)}</Badge>,
+      key: 'category',
+      title: '分类',
+      width: '90px',
+      render: (entry) => CATEGORY_OPTIONS.find((c) => c.value === entry.category)?.label ?? entry.category ?? '-',
     },
     {
-      key: 'fileSize',
-      title: '文件大小',
+      key: 'sourceType',
+      title: '来源',
       width: '100px',
-      render: (record) => <span className="text-neutral-600">{formatFileSize(record.fileSize)}</span>,
-    },
-    {
-      key: 'chunkCount',
-      title: '分块数',
-      width: '80px',
-      align: 'center',
-      render: (record) => <span className="font-medium">{record.chunkCount}</span>,
-    },
-    {
-      key: 'uploadedAt',
-      title: '更新时间',
-      width: '160px',
-      render: (record) => <DateTimeCell value={record.uploadedAt} />,
+      render: (entry) => {
+        const meta = SOURCE_META[entry.sourceType]
+        return meta ? <Badge variant={meta.variant}>{meta.label}</Badge> : <span>-</span>
+      },
     },
     {
       key: 'status',
       title: '状态',
-      width: '100px',
-      render: (record) => getStatusBadge(record.status),
+      width: '90px',
+      render: (entry) => {
+        const meta = STATUS_META[entry.status as KnowledgeCardStatus]
+        return meta ? <Badge variant={meta.variant}>{meta.label}</Badge> : <span>{entry.status}</span>
+      },
     },
     {
-      key: 'action',
+      key: 'version',
+      title: '版本',
+      width: '60px',
+      render: (entry) => `v${entry.version}`,
+    },
+    {
+      key: 'updatedAt',
+      title: '更新时间',
+      width: '150px',
+      render: (entry) => <DateTimeCell value={entry.updatedAt} />,
+    },
+    {
+      key: 'actions',
       title: '操作',
-      width: '140px',
-      align: 'center',
-      render: (record) => (
-        <div className="flex items-center justify-center gap-2">
-          <button
-            onClick={(e) => { e.stopPropagation(); handleResync(record) }}
-            className="p-1.5 text-primary-600 hover:bg-blue-50 rounded transition-colors"
-            title="重新同步"
-          >
-            <RefreshCw className="w-4 h-4" />
-          </button>
-          <button
-            onClick={(e) => { e.stopPropagation(); handleDelete(record) }}
-            className="p-1.5 text-red-600 hover:bg-red-50 rounded transition-colors"
-            title="删除"
-          >
-            <Trash2 className="w-4 h-4" />
-          </button>
+      width: '180px',
+      render: (entry) => (
+        <div className="flex items-center gap-1">
+          <Button size="sm" variant="ghost" onClick={() => openEdit(entry)}>
+            <Pencil className="h-3.5 w-3.5" /> 编辑
+          </Button>
+          {entry.status === 'draft' || entry.status === 'pending_review' ? (
+            <Button size="sm" variant="ghost" onClick={() => publishCard(entry)}>
+              <Send className="h-3.5 w-3.5" /> 发布
+            </Button>
+          ) : entry.status === 'published' ? (
+            <Button size="sm" variant="ghost" onClick={() => archiveCard(entry)}>
+              <Archive className="h-3.5 w-3.5" /> 归档
+            </Button>
+          ) : null}
+          <Button size="sm" variant="ghost" onClick={() => setDeleteTarget(entry)}>
+            <Trash2 className="h-3.5 w-3.5" /> 删除
+          </Button>
         </div>
       ),
     },
   ]
 
-  const searchFields = [
-    { key: 'keyword', label: '关键词', type: 'input' as const, placeholder: '请输入文档名称' },
-    {
-      key: 'type', label: '类型', type: 'select' as const, placeholder: '请选择类型',
-      options: [
-        { value: '', label: '全部' },
-        { value: 'faq', label: 'FAQ' },
-        { value: 'product', label: '产品说明' },
-        { value: 'guide', label: '尺寸指南' },
-      ],
-    },
-    {
-      key: 'status', label: '状态', type: 'select' as const, placeholder: '请选择状态',
-      options: [
-        { value: '', label: '全部' },
-        { value: 'processed', label: '已同步' },
-        { value: 'processing', label: '同步中' },
-        { value: 'failed', label: '未同步' },
-      ],
-    },
-  ]
-
   return (
-    <div className="p-6">
-      {/* 页面标题 */}
-      <div className="flex items-center justify-between mb-6">
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-semibold text-neutral-900">知识库管理</h1>
-          <p className="text-sm text-neutral-500 mt-1">管理 AI 客服的知识库文档和问答</p>
+          <h1 className="text-lg font-semibold">知识卡片</h1>
+          <p className="text-sm text-muted-foreground">LLM WIKI 知识卡片管理 — 发布后的知识卡片将优先用于 AI 客服知识问答</p>
         </div>
-        <div className="flex items-center gap-3">
-          <Button variant="secondary" onClick={() => setSearchTestOpen(true)}>
-            <Sparkles className="w-4 h-4 mr-1.5" />
-            搜索测试
-          </Button>
-          <Button
-            variant="secondary"
-            onClick={() => {
-              setSyncHistoryOpen(true)
-              loadSyncHistory()
-            }}
-          >
-            <History className="w-4 h-4 mr-1.5" />
-            同步历史
-          </Button>
-          <Button onClick={openUploadModal}>
-            <Upload className="w-4 h-4 mr-1.5" />
-            上传文档
-          </Button>
-        </div>
+        <Button onClick={openCreate}>
+          <Plus className="h-4 w-4" /> 新建知识卡片
+        </Button>
       </div>
 
-      {/* 搜索栏 */}
-      <SearchBar fields={searchFields} onSearch={handleSearch} onReset={handleReset} loading={loading} className="mb-4" />
+      <SearchBar
+        fields={[
+          { key: 'keyword', label: '关键词', type: 'input', placeholder: '搜索标题 / 关键词 / 常见问法 / 回答内容' },
+        ]}
+        onSearch={(values) => { setKeyword(values.keyword ?? ''); setCurrent(1); loadEntries() }}
+        onReset={() => { setKeyword(''); setCurrent(1); loadEntries() }}
+      />
 
-      {/* 数据表格 */}
-      <div className="bg-white rounded-lg border border-neutral-200">
-        <Table columns={columns} dataSource={documents} loading={loading} rowKey="id" />
-        <Pagination current={current} pageSize={pageSize} total={total} onChange={setCurrent} onPageSizeChange={setPageSize} />
+      <div className="flex items-center gap-2">
+        <select
+          className="h-9 rounded-md border px-2 text-sm"
+          value={category}
+          onChange={(e) => { setCategory(e.target.value); setCurrent(1) }}
+        >
+          <option value="">全部分类</option>
+          {CATEGORY_OPTIONS.map((c) => (
+            <option key={c.value} value={c.value}>{c.label}</option>
+          ))}
+        </select>
+        <select
+          className="h-9 rounded-md border px-2 text-sm"
+          value={statusFilter}
+          onChange={(e) => { setStatusFilter(e.target.value); setCurrent(1) }}
+        >
+          <option value="">全部状态</option>
+          <option value="draft">草稿</option>
+          <option value="pending_review">待审核</option>
+          <option value="published">已发布</option>
+          <option value="archived">已归档</option>
+        </select>
       </div>
 
-      {/* 上传文档模态框 */}
-      <Modal
-        open={uploadModalOpen}
-        onClose={() => setUploadModalOpen(false)}
-        title="上传文档"
-        footer={
-          <>
-            <Button variant="secondary" onClick={() => setUploadModalOpen(false)}>取消</Button>
-            <Button onClick={handleUpload} loading={uploading}>
-              {uploading ? '上传中…' : '上传'}
-            </Button>
-          </>
-        }
-      >
-        <div className="space-y-4">
+      <Table columns={columns} dataSource={entries} loading={loading} rowKey="id" emptyText="暂无知识卡片，点击「新建知识卡片」或从行业模板一键套用" />
+
+      <Pagination
+        current={current}
+        pageSize={pageSize}
+        total={total}
+        onChange={(page) => { setCurrent(page) }}
+      />
+
+      {/* 新建/编辑模态框 */}
+      <Modal open={editorOpen} onClose={() => setEditorOpen(false)} title={editing ? '编辑知识卡片' : '新建知识卡片'}>
+        <div className="space-y-3">
           <div>
-            <label className="block text-sm font-medium text-neutral-700 mb-1.5">
-              文档名称 <span className="text-red-500">*</span>
-            </label>
+            <label className="text-sm font-medium">标题 <span className="text-red-500">*</span></label>
             <input
-              type="text"
-              className={`w-full h-9 px-3 rounded border text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 ${
-                formErrors.name ? 'border-red-500' : 'border-neutral-300'
-              }`}
-              placeholder="请输入文档名称"
-              value={uploadForm.name}
-              onChange={(e) => setUploadForm({ ...uploadForm, name: e.target.value })}
+              className="mt-1 w-full rounded-md border px-3 py-2 text-sm"
+              value={form.title}
+              onChange={(e) => setForm({ ...form, title: e.target.value })}
+              placeholder="如：雪尼尔面料会起球吗"
             />
-            {formErrors.name && <p className="mt-1 text-sm text-red-600">{formErrors.name}</p>}
+            {formErrors.title && <p className="mt-1 text-xs text-red-500">{formErrors.title}</p>}
           </div>
-
           <div>
-            <label className="block text-sm font-medium text-neutral-700 mb-1.5">
-              文档类型 <span className="text-red-500">*</span>
-            </label>
+            <label className="text-sm font-medium">分类</label>
             <select
-              className="w-full h-9 px-3 rounded border border-neutral-300 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
-              value={uploadForm.type}
-              onChange={(e) => setUploadForm({ ...uploadForm, type: e.target.value as 'faq' | 'product' | 'guide' })}
+              className="mt-1 w-full rounded-md border px-3 py-2 text-sm"
+              value={form.category}
+              onChange={(e) => setForm({ ...form, category: e.target.value })}
             >
-              <option value="faq">FAQ</option>
-              <option value="product">产品说明</option>
-              <option value="guide">尺寸指南</option>
+              {CATEGORY_OPTIONS.map((c) => (
+                <option key={c.value} value={c.value}>{c.label}</option>
+              ))}
             </select>
           </div>
-
           <div>
-            <label className="block text-sm font-medium text-neutral-700 mb-1.5">
-              选择文件 <span className="text-red-500">*</span>
-            </label>
-            <div
-              className={`border-2 border-dashed rounded-lg p-6 text-center transition-colors ${
-                isDragging
-                  ? 'border-primary-500 bg-primary-50'
-                  : formErrors.file
-                  ? 'border-red-300 bg-red-50'
-                  : 'border-neutral-300 hover:border-primary-500'
-              }`}
-              onDragOver={handleDragOver}
-              onDragLeave={handleDragLeave}
-              onDrop={handleDrop}
-            >
-              <input
-                type="file"
-                id="file-upload"
-                className="hidden"
-                accept=".pdf,.doc,.docx,.txt,.md"
-                onChange={handleFileChange}
-              />
-              <label htmlFor="file-upload" className="cursor-pointer flex flex-col items-center">
-                <Upload className="w-8 h-8 text-neutral-400 mb-2" />
-                <span className="text-sm text-neutral-600">
-                  {selectedFile ? selectedFile.name : isDragging ? '释放文件以上传' : '点击选择或拖拽文件到此处'}
-                </span>
-                <span className="text-xs text-neutral-400 mt-1">
-                  支持 PDF、Word、TXT、Markdown 格式
-                </span>
-                {selectedFile && (
-                  <span className="text-xs text-primary-600 mt-1">
-                    {formatFileSize(selectedFile.size)}
-                  </span>
-                )}
-              </label>
-            </div>
-            {formErrors.file && <p className="mt-1 text-sm text-red-600">{formErrors.file}</p>}
-          </div>
-
-          {/* 上传进度条 */}
-          {uploading && (
-            <div className="space-y-1">
-              <div className="flex justify-between text-xs text-neutral-500">
-                <span>上传进度</span>
-                <span>{Math.round(uploadProgress)}%</span>
-              </div>
-              <div className="w-full bg-neutral-200 rounded-full h-2">
-                <div
-                  className="bg-primary-600 h-2 rounded-full transition-all duration-300"
-                  style={{ width: `${uploadProgress}%` }}
-                />
-              </div>
-            </div>
-          )}
-
-          <div>
-            <label className="block text-sm font-medium text-neutral-700 mb-1.5">描述</label>
-            <textarea
-              rows={3}
-              className="w-full px-3 py-2 rounded border border-neutral-300 text-sm placeholder:text-neutral-400 focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 resize-none"
-              placeholder="请输入文档描述（可选）"
-              value={uploadForm.description}
-              onChange={(e) => setUploadForm({ ...uploadForm, description: e.target.value })}
-            />
-          </div>
-        </div>
-      </Modal>
-
-      {/* 删除确认模态框 */}
-      <Modal
-        open={deleteModalOpen}
-        onClose={() => setDeleteModalOpen(false)}
-        title="确认删除"
-        footer={
-          <>
-            <Button variant="secondary" onClick={() => setDeleteModalOpen(false)}>取消</Button>
-            <Button variant="danger" onClick={confirmDelete}>确认删除</Button>
-          </>
-        }
-      >
-        <p className="text-neutral-600">
-          确定要删除文档 <span className="font-medium text-neutral-900">{deletingDoc?.name}</span> 吗？此操作不可恢复。
-        </p>
-      </Modal>
-
-      {/* 搜索测试模态框 */}
-      <Modal
-        open={searchTestOpen}
-        onClose={() => setSearchTestOpen(false)}
-        title="知识库搜索测试"
-        width={700}
-        footer={
-          <Button variant="secondary" onClick={() => setSearchTestOpen(false)}>关闭</Button>
-        }
-      >
-        <div className="space-y-4">
-          <div className="flex gap-3">
+            <label className="text-sm font-medium">常见问法</label>
             <input
-              type="text"
-              className="flex-1 h-9 px-3 rounded border border-neutral-300 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
-              placeholder="输入搜索内容，测试 RAG 检索效果..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleSearchTest()}
+              className="mt-1 w-full rounded-md border px-3 py-2 text-sm"
+              value={form.question}
+              onChange={(e) => setForm({ ...form, question: e.target.value })}
+              placeholder="顾客可能的问法（用于检索命中）"
             />
-            <Button onClick={handleSearchTest} loading={searching}>
-              <Search className="w-4 h-4 mr-1" />
-              搜索
-            </Button>
           </div>
-
-          {searchResults.length > 0 && (
-            <div className="space-y-3 max-h-[400px] overflow-y-auto">
-              {searchResults.map((result, index) => (
-                <div key={result.chunkId} className="border border-neutral-200 rounded-lg p-4">
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-medium text-neutral-500">#{index + 1}</span>
-                      <span className="text-sm font-medium text-neutral-900">{result.source.title}</span>
-                      <Badge variant="info">{result.source.docType}</Badge>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-xs text-neutral-500">相关度</span>
-                      <span className={`text-sm font-bold ${
-                        result.score >= 0.8 ? 'text-green-600' : result.score >= 0.6 ? 'text-amber-600' : 'text-neutral-500'
-                      }`}>
-                        {(result.score * 100).toFixed(0)}%
-                      </span>
-                    </div>
-                  </div>
-                  <p className="text-sm text-neutral-700 leading-relaxed">{result.content}</p>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {searchResults.length === 0 && !searching && searchQuery && (
-            <div className="text-center py-8 text-neutral-500 text-sm">
-              暂无搜索结果，请尝试其他关键词
-            </div>
-          )}
+          <div>
+            <label className="text-sm font-medium">标准回答 <span className="text-red-500">*</span></label>
+            <textarea
+              className="mt-1 w-full rounded-md border px-3 py-2 text-sm min-h-[120px]"
+              value={form.answer}
+              onChange={(e) => setForm({ ...form, answer: e.target.value })}
+              placeholder="AI 客服将基于此内容回答"
+            />
+            {formErrors.answer && <p className="mt-1 text-xs text-red-500">{formErrors.answer}</p>}
+          </div>
+          <div>
+            <label className="text-sm font-medium">关键词（逗号分隔）</label>
+            <input
+              className="mt-1 w-full rounded-md border px-3 py-2 text-sm"
+              value={form.keywords}
+              onChange={(e) => setForm({ ...form, keywords: e.target.value })}
+              placeholder="如：雪尼尔, 起球, 面料"
+            />
+          </div>
+        </div>
+        <div className="mt-4 flex justify-end gap-2">
+          <Button variant="secondary" onClick={() => setEditorOpen(false)}>取消</Button>
+          <Button onClick={saveEntry} disabled={saving}>{saving ? '保存中…' : '保存'}</Button>
         </div>
       </Modal>
 
-      {/* 同步历史模态框（issue #2971：knowledge_sync_history 读路径 + 展示） */}
-      <Modal
-        open={syncHistoryOpen}
-        onClose={() => setSyncHistoryOpen(false)}
-        title="同步历史"
-        width={720}
-        footer={
-          <Button variant="secondary" onClick={() => setSyncHistoryOpen(false)}>关闭</Button>
-        }
-      >
-        {syncHistoryLoading ? (
-          <div className="py-12 text-center text-neutral-500 text-sm">加载中...</div>
-        ) : syncHistory.length === 0 ? (
-          <div className="py-12 text-center text-neutral-400 text-sm">
-            暂无同步历史，对文档执行「重新同步」后这里会展示记录
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-neutral-200 text-left text-neutral-500">
-                  <th className="py-2 pr-4 font-medium">来源文档</th>
-                  <th className="py-2 pr-4 font-medium">类型</th>
-                  <th className="py-2 pr-4 font-medium">状态</th>
-                  <th className="py-2 pr-4 font-medium">结果</th>
-                  <th className="py-2 font-medium">时间</th>
-                </tr>
-              </thead>
-              <tbody>
-                {syncHistory.map((h) => (
-                  <tr key={h.id} className="border-b border-neutral-100 last:border-0">
-                    <td className="py-2.5 pr-4 text-neutral-900">{getSyncSourceLabel(h)}</td>
-                    <td className="py-2.5 pr-4 text-neutral-600">{getSyncTypeLabel(h.syncType)}</td>
-                    <td className="py-2.5 pr-4">{getSyncStatusBadge(h.status)}</td>
-                    <td className="py-2.5 pr-4 text-neutral-600">
-                      {h.status === 'failed'
-                        ? h.errorMessage || '失败'
-                        : h.status === 'completed'
-                        ? `成功 ${h.successCount ?? 0}`
-                        : '—'}
-                    </td>
-                    <td className="py-2.5 text-neutral-500 whitespace-nowrap">
-                      <DateTimeCell value={h.createdAt} />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+      {/* 删除确认 */}
+      <Modal open={!!deleteTarget} onClose={() => setDeleteTarget(null)} title="删除知识卡片">
+        <p className="text-sm">确认删除「{deleteTarget?.title}」？删除后不可恢复。</p>
+        <div className="mt-4 flex justify-end gap-2">
+          <Button variant="secondary" onClick={() => setDeleteTarget(null)}>取消</Button>
+          <Button variant="danger" onClick={confirmDelete}>删除</Button>
+        </div>
       </Modal>
     </div>
   )

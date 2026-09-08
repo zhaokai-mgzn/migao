@@ -10,6 +10,6 @@ class ControllerSmokeTest {
     @Test void quickReplyControllerExists() { assertNotNull(QuickReplyController.class); }
     @Test void agentSessionControllerExists() { assertNotNull(AgentSessionController.class); }
     @Test void uploadControllerExists() { assertNotNull(UploadController.class); }
-    @Test void knowledgeControllerExists() { assertNotNull(KnowledgeController.class); }
+    @Test void knowledgeCardControllerExists() { assertNotNull(KnowledgeCardController.class); }
     @Test void authControllerExists() { assertNotNull(AuthController.class); }
 }

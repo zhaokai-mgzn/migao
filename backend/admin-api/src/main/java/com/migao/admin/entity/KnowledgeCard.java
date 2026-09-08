@@ -10,7 +10,7 @@ import java.time.OffsetDateTime;
 
 /**
  * 知识词条实体类（LLM WIKI 板块，issue #3051）
- * 对应表：knowledge_entries
+ * 对应表：knowledge_cards
  * 说明：知识单元从 RAG chunk 升级为结构化词条；AI 客服直接读词条回答，
  * 检索用结构化过滤 + 关键词匹配，不引入向量库。
  */
@@ -18,8 +18,8 @@ import java.time.OffsetDateTime;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-@TableName("knowledge_entries")
-public class KnowledgeEntry {
+@TableName("knowledge_cards")
+public class KnowledgeCard {
 
     @TableId(type = IdType.ASSIGN_UUID)
     private String id;

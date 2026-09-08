@@ -220,35 +220,6 @@ cases:
         - ai-agent-tests.yml
       verifies: []
 
-  - id: API-008
-    legacy_id: ""
-    title: "internal.trigger_knowledge_sync - 参数校验 + RAG 降级"
-    domains:
-      - api
-    tier: normal
-    tags:
-      - api
-      - internal
-      - knowledge_sync
-    truths_ref:
-      - api.knowledge-sync
-    user_inputs:
-      - "admin-api 触发知识库同步（document_created/updated/deleted/product_updated/full_sync）"
-    expectations:
-      - tool: direct_reply
-    data_checks:
-      - "RAG 未部署(ImportError)→success=false RAG_DISABLED"
-      - "document_created 缺 content 400 MISSING_CONTENT；document_updated/deleted 缺 resource_id 400 MISSING_RESOURCE_ID"
-      - "未知 type 忽略；异常 500 SYNC_ERROR"
-    skip_reason: "知识同步由 pytest 单测验证（tests/test_internal.py），非 LLM 行为，不进入 agent-eval 冒烟"
-    merge_log: "2026-08-25 新增：ai-agent-service api 覆盖率补全（issue #2428）"
-    traces:
-      tests:
-        - "backend/ai-agent-service/tests/test_internal.py"
-      ci:
-        - ai-agent-tests.yml
-      verifies: []
-
   - id: API-009
     legacy_id: ""
     title: "upload.upload_chat_image 校验 + 嗅探 + 代理转发"
@@ -308,39 +279,9 @@ cases:
         - mini-app-tests.yml
       verifies: []
 
-  - id: API-011
-    legacy_id: ""
-    title: "知识库同步历史 - resync 写入记录 + 分页列表接口"
-    domains:
-      - api
-      - knowledge
-    tier: normal
-    tags:
-      - api
-      - knowledge
-      - sync_history
-    truths_ref:
-      - api.knowledge-sync
-    user_inputs:
-      - "管理员触发文档重新同步后应产生同步历史记录，并可分页查询"
-    expectations:
-      - tool: direct_reply
-    data_checks:
-      - "POST /api/admin/knowledge/documents/{id}/embed（resync）同时写入 knowledge_sync_history（syncType=single/sourceType=manual/sourceIds=[docId]/status=processing/totalCount=1）"
-      - "GET /api/admin/knowledge/sync-history 分页返回历史（created_at 倒序，按 tenant 隔离）；空记录返回空列表"
-      - "字段齐全：syncType/sourceType/sourceIds/status/totalCount/successCount/failedCount/startedAt/completedAt"
-    skip_reason: "知识库同步历史闭环由 MockMvc 集成测试验证（KnowledgeControllerTest），非 LLM 行为，不进入 agent-eval 冒烟"
-    merge_log: "2026-09-06 新增（issue #2971 自洽性扫描）：knowledge_sync_history 表/实体/Mapper 就绪但零读写（resync 不记历史、无列表接口），补写读路径形成闭环"
-    traces:
-      tests:
-        - "backend/admin-api/src/test/java/com/migao/admin/controller/KnowledgeControllerTest.java"
-      ci:
-        - pr-check.yml
-      verifies: []
-
   - id: API-013
     legacy_id: ""
-    title: "知识词条数据模型 - knowledge_entries 表/实体/Mapper（LLM WIKI 板块 #3051）"
+    title: "知识知识卡片数据模型 - knowledge_cards 表/实体/Mapper（LLM WIKI 板块 #3051）"
     domains:
       - api
       - knowledge
@@ -352,17 +293,17 @@ cases:
       - data-model
     truths_ref: []
     user_inputs:
-      - "词条（问题+标准回答+分类+关键词+来源+状态）可持久化存储与检索"
+      - "知识卡片（问题+标准回答+分类+关键词+来源+状态）可持久化存储与检索"
     expectations: []
     data_checks:
-      - "V35 迁移创建 knowledge_entries：tenant_id/title/category/industry/source_type/source_ref/question/answer/keywords/apply_products/variables/status(draft|pending_review|published|archived)/version/review_note/created_by/reviewed_by/reviewed_at 全字段"
-      - "KnowledgeEntry 实体字段与列名一一映射（MyBatis-Plus），Mapper 继承 BaseMapper（租户隔离由拦截器注入）"
-      - "docs/sql/schema.sql 全量 schema 同步包含 knowledge_entries（防文档-代码漂移 P0-3）"
-    skip_reason: "数据模型由 Mapper/迁移契约测试验证（KnowledgeEntryMapperTest/KnowledgeWikiMigrationTest），非 LLM 行为，不进入 agent-eval 冒烟"
-    merge_log: "2026-09-08 新增（issue #3051 企业级 LLM WIKI 板块 P1）：RAG 文档模型升级为词条模型，知识单元从 chunk 变为结构化词条"
+      - "V35 迁移创建 knowledge_cards：tenant_id/title/category/industry/source_type/source_ref/question/answer/keywords/apply_products/variables/status(draft|pending_review|published|archived)/version/review_note/created_by/reviewed_by/reviewed_at 全字段"
+      - "KnowledgeCard 实体字段与列名一一映射（MyBatis-Plus），Mapper 继承 BaseMapper（租户隔离由拦截器注入）"
+      - "docs/sql/schema.sql 全量 schema 同步包含 knowledge_cards（防文档-代码漂移 P0-3）"
+    skip_reason: "数据模型由 Mapper/迁移契约测试验证（KnowledgeCardMapperTest/KnowledgeWikiMigrationTest），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-08 新增（issue #3051 企业级 LLM WIKI 板块 P1）：RAG 文档模型升级为知识卡片模型，知识单元从 chunk 变为结构化知识卡片"
     traces:
       tests:
-        - "backend/admin-api/src/test/java/com/migao/admin/mapper/KnowledgeEntryMapperTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/mapper/KnowledgeCardMapperTest.java"
       ci:
         - pr-check.yml
       verifies: []
@@ -381,7 +322,7 @@ cases:
       - data-model
     truths_ref: []
     user_inputs:
-      - "AI 提炼的候选词条（建议标题/答案/置信度/依据/状态）可进入待采纳队列"
+      - "AI 提炼的候选知识卡片（建议标题/答案/置信度/依据/状态）可进入待采纳队列"
     expectations: []
     data_checks:
       - "V35 迁移创建 knowledge_candidates：tenant_id/source_type(conversation|document|product|config)/source_ref/suggested_title/suggested_answer/suggested_category/suggested_keywords/confidence/evidence/status(pending|adopted|edited|rejected)/status_note/reviewed_by/reviewed_at 全字段"
@@ -392,6 +333,68 @@ cases:
     traces:
       tests:
         - "backend/admin-api/src/test/java/com/migao/admin/mapper/KnowledgeCandidateMapperTest.java"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  - id: API-015
+    legacy_id: ""
+    title: "知识知识卡片 CRUD + 状态机 - 创建/编辑/发布/归档/删除（LLM WIKI 板块 #3051）"
+    domains:
+      - api
+      - knowledge
+    tier: normal
+    tags:
+      - api
+      - knowledge
+      - wiki
+      - entries
+    truths_ref: []
+    user_inputs:
+      - "商家创建/编辑知识卡片（问题+标准回答+分类+关键词）并发布/归档"
+    expectations: []
+    data_checks:
+      - "POST /api/admin/knowledge/entries 创建知识卡片：title/answer 必填（缺则 400 中文 detail），sourceType=manual，version=1，status 缺省 draft（可显式 published）"
+      - "PUT /api/admin/knowledge/entries/{id} 编辑：version+1；跨租户 404"
+      - "POST /{id}/publish：draft/pending_review → published（记录 reviewedAt）；archived 拒绝"
+      - "POST /{id}/archive：published → archived；DELETE /{id} 逻辑删除；全部按 tenant 隔离"
+      - "GET /api/admin/knowledge/entries 分页：keyword/category/sourceType/status 筛选，updated_at 倒序"
+    skip_reason: "知识卡片 CRUD/状态机由 MockMvc + Service 单测验证（KnowledgeCardControllerTest/KnowledgeCardServiceTest），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-08 新增（issue #3051 LLM WIKI 板块 P2）：知识卡片模型 CRUD + 状态机闭环（draft→published→archived 每状态有 API 动作）"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/controller/KnowledgeCardControllerTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/KnowledgeCardServiceTest.java"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  - id: API-016
+    legacy_id: ""
+    title: "知识知识卡片检索 - 仅 published + 租户隔离 + 关键词命中（LLM WIKI 板块 #3051）"
+    domains:
+      - api
+      - knowledge
+    tier: normal
+    tags:
+      - api
+      - knowledge
+      - wiki
+      - search
+    truths_ref: []
+    user_inputs:
+      - "AI 客服/商家检索知识卡片：发布知识卡片可查、草稿/归档不可查、跨租户不可见"
+    expectations: []
+    data_checks:
+      - "GET /api/admin/knowledge/entries/search?query=&productId=&category= 仅返回本租户 status=published 知识卡片（draft/pending_review/archived 不返回）"
+      - "关键词命中 title/keywords/question/answer（租户内 LIKE，.or() 必须嵌套在 eq 内防跨租户泄露——审计 07 P1-6）"
+      - "跨租户知识卡片在任何查询下不可见（显式 eq tenant_id，复测 P1-6 回归）"
+    skip_reason: "知识卡片检索由 MockMvc + Service 单测验证（KnowledgeCardControllerTest/KnowledgeCardServiceTest），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-08 新增（issue #3051 LLM WIKI 板块 P2）：检索链路 = 结构化过滤 + 关键词匹配，不引入向量库；含 P1-6 租户隔离回归"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/controller/KnowledgeCardControllerTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/KnowledgeCardServiceTest.java"
       ci:
         - pr-check.yml
       verifies: []
