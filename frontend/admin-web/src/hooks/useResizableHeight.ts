@@ -63,6 +63,19 @@ export function useResizableHeight({
   )
   const [isDragging, setIsDragging] = useState(false)
 
+  // 视口高度（加载 + resize 时刷新）：持久化的 px 高度若大于当前视口（换窗口/浏览器
+  // 缩放/FAB 与 /chat 工作台共用 storageKey 互相污染），面板超出可视区被裁切 → 样式错乱。
+  // 加载/缩放时实时钳制到视口内（不覆盖持久化原文，仅渲染层钳制）。
+  const [viewportHeight, setViewportHeight] = useState<number | null>(() =>
+    typeof window !== 'undefined' ? window.innerHeight : null
+  )
+
+  useEffect(() => {
+    const onResize = () => setViewportHeight(window.innerHeight)
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
+
   const dragRef = useRef<{
     startY: number
     startHeight: number
@@ -138,7 +151,10 @@ export function useResizableHeight({
   }, [minHeight, maxHeightProp])
 
   const containerStyle = {
-    height: storedHeight !== null ? `${storedHeight}px` : defaultHeight,
+    height: storedHeight !== null
+      ? // 钳制：不超过视口；显式 maxHeight（如 UI 上限）比视口更小时取更小值
+        `${Math.min(storedHeight, maxHeightProp ?? Infinity, viewportHeight ?? Infinity)}px`
+      : defaultHeight,
   }
 
   const handleProps = {

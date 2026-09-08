@@ -206,4 +206,50 @@ describe('useResizableWidth', () => {
     act(() => { result.current.setWidth(543.6) })
     expect(result.current.containerStyle.width).toBe('544px')
   })
+
+  // ── 视口钳制（用户报障：多轮对话/换窗口/缩放后面板宽度错乱，右侧会话简报被推出视口）──
+  it('persisted width larger than current viewport → clamped to viewport on load', () => {
+    const orig = window.innerWidth
+    Object.defineProperty(window, 'innerWidth', { value: 800, writable: true, configurable: true })
+    localStorage.setItem(STORAGE_KEY, '1300')
+    const { result } = renderHook(() =>
+      useResizableWidth({ storageKey: STORAGE_KEY, defaultWidth: '100%', minWidth: 480 })
+    )
+    expect(result.current.containerStyle.width).toBe('800px')
+    Object.defineProperty(window, 'innerWidth', { value: orig, writable: true, configurable: true })
+  })
+
+  it('persisted width within viewport → unchanged', () => {
+    localStorage.setItem(STORAGE_KEY, '700')
+    const { result } = renderHook(() =>
+      useResizableWidth({ storageKey: STORAGE_KEY, defaultWidth: '100%', minWidth: 480, maxWidth: 900 })
+    )
+    expect(result.current.containerStyle.width).toBe('700px')
+  })
+
+  it('window resize below persisted width → re-clamped to new viewport', () => {
+    const orig = window.innerWidth
+    Object.defineProperty(window, 'innerWidth', { value: 900, writable: true, configurable: true })
+    localStorage.setItem(STORAGE_KEY, '1200')
+    const { result } = renderHook(() =>
+      useResizableWidth({ storageKey: STORAGE_KEY, defaultWidth: '100%', minWidth: 480 })
+    )
+    expect(result.current.containerStyle.width).toBe('900px')
+
+    Object.defineProperty(window, 'innerWidth', { value: 640, writable: true, configurable: true })
+    act(() => { window.dispatchEvent(new Event('resize')) })
+    expect(result.current.containerStyle.width).toBe('640px')
+    Object.defineProperty(window, 'innerWidth', { value: orig, writable: true, configurable: true })
+  })
+
+  it('explicit maxWidth smaller than viewport wins over viewport clamp', () => {
+    const orig = window.innerWidth
+    Object.defineProperty(window, 'innerWidth', { value: 1000, writable: true, configurable: true })
+    localStorage.setItem(STORAGE_KEY, '1200')
+    const { result } = renderHook(() =>
+      useResizableWidth({ storageKey: STORAGE_KEY, defaultWidth: '100%', minWidth: 480, maxWidth: 850 })
+    )
+    expect(result.current.containerStyle.width).toBe('850px')
+    Object.defineProperty(window, 'innerWidth', { value: orig, writable: true, configurable: true })
+  })
 })

@@ -55,6 +55,19 @@ export function useResizableWidth({
   )
   const [isDragging, setIsDragging] = useState(false)
 
+  // 视口宽度（加载 + resize 时刷新）：持久化的 px 宽度若大于当前视口（换窗口/浏览器
+  // 缩放/FAB 与 /chat 工作台共用 storageKey 互相污染），面板会超出视口、右侧「会话简报」
+  // 被推出屏幕 → 样式错乱。加载/缩放时实时钳制到视口内（不覆盖持久化原文，仅渲染层钳制）。
+  const [viewportWidth, setViewportWidth] = useState<number | null>(() =>
+    typeof window !== 'undefined' ? window.innerWidth : null
+  )
+
+  useEffect(() => {
+    const onResize = () => setViewportWidth(window.innerWidth)
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
+
   const dragRef = useRef<{
     startX: number
     startWidth: number
@@ -127,7 +140,10 @@ export function useResizableWidth({
   }, [minWidth, maxWidthProp])
 
   const containerStyle = {
-    width: storedWidth !== null ? `${storedWidth}px` : defaultWidth,
+    width: storedWidth !== null
+      ? // 钳制：不超过视口；显式 maxWidth（如 UI 上限）比视口更小时取更小值
+        `${Math.min(storedWidth, maxWidthProp ?? Infinity, viewportWidth ?? Infinity)}px`
+      : defaultWidth,
   }
 
   const handleProps = {
