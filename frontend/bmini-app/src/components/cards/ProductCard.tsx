@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { View, Text, Image } from '@tarojs/components'
 import Taro from '@tarojs/taro'
 import './ProductCard.scss'
@@ -52,6 +53,8 @@ function buildSpecLine(data: ProductCardProps['data']): string {
 }
 
 export default function ProductCard({ data, onOrder }: ProductCardProps) {
+  // 下单防连点锁：点击后锁卡（issue #3040 收尾 #3038，防重复下单）
+  const [ordered, setOrdered] = useState(false)
   const imageUrl = data.image || data.main_image || (data.images && data.images[0]) || PLACEHOLDER_IMAGE
   const price = typeof data.price === 'number' ? data.price.toFixed(2) : data.price || '0.00'
   const originalPrice =
@@ -68,6 +71,8 @@ export default function ProductCard({ data, onOrder }: ProductCardProps) {
   }
 
   const handleOrder = () => {
+    if (ordered) return
+    setOrdered(true)
     onOrder?.(data.name || '这个商品')
   }
 
@@ -116,7 +121,7 @@ export default function ProductCard({ data, onOrder }: ProductCardProps) {
         <View className='product-card__btn product-card__btn--outline' onClick={handleViewDetail}>
           <Text className='product-card__btn-text product-card__btn-text--outline'>查看详情</Text>
         </View>
-        <View className='product-card__btn product-card__btn--primary' onClick={handleOrder}>
+        <View className={`product-card__btn product-card__btn--primary${ordered ? ' product-card__btn--locked' : ''}`} onClick={handleOrder}>
           <Text className='product-card__btn-text product-card__btn-text--primary'>去下单</Text>
         </View>
       </View>

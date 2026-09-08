@@ -980,8 +980,8 @@ _CASE_CH_030 = EvalCase(
     difficulty=Difficulty.NORMAL,
     user_inputs=['C 端小布（mini-app/bmini-app）interact 交互组件（confirm/choice/form）点选后无任何提交锁：ConfirmCard/ChoiceCard/FormCard 点几次就触发几次 onAction（可重复下单/重复确认），与 B 端 #3036 同源不固化'],
     expectations=['点在响应中的应用：用户回复后 sendMessage 把最后一条未答 interactive 消息标记 interactiveAnswered（本地即时锁），后端已由 #3037 持久化'],
-    data_checks=['frontend/mini-app 与 frontend/bmini-app 的 ConfirmCard/ChoiceCard/FormCard 点确认/选项/提交后锁卡（submitted 本地锁 + disabled 视觉），第二次点击不再触发 onAction', 'mini-app/bmini-app types Message 含 interactiveAnswered 字段；chatStore sendMessage 发送时把最后一条未答 interactive 消息标记 interactiveAnswered', '历史回放（getSessionMessages 透传 interactive_answered）后已答卡片保持只读不可点', '翻页等同答复：#3037 后端 __PAGE__ 路径已 mark_last_interactive_answered，前端翻页后旧页卡片不再可交互'],
-    skip_reason='纯前端行为由 jest 单测（confirm-card/choice-card/form-card/chatStore）验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    data_checks=['frontend/mini-app 与 frontend/bmini-app 的 ConfirmCard/ChoiceCard/FormCard 点确认/选项/提交后锁卡（submitted 本地锁 + disabled 视觉），第二次点击不再触发 onAction', 'mini-app/bmini-app types Message 含 interactiveAnswered 字段；chatStore sendMessage 发送时把最后一条未答 interactive 消息标记 interactiveAnswered', '历史回放（getSessionMessages 透传 interactive_answered）后已答卡片保持只读不可点', '翻页等同答复：#3037 后端 __PAGE__ 路径已 mark_last_interactive_answered，前端翻页后旧页卡片不再可交互', '下单入口按钮防连点（issue #3040 收尾）：ProductFormList 去下单 / QuotationCard 确认下单 / ProductCard 下单按钮点击后本地锁（第二次点击不触发 onOrder/onConfirm/onInteract），按钮置灰（--locked）'],
+    skip_reason='纯前端行为由 jest 单测（confirm-card/choice-card/form-card/quotation-card/product-card/product-form-list/chatStore）验证，非 LLM 行为，不进入 agent-eval 冒烟',
     tags=['interactive', 'submit-lock', 'customer-end', 'freeze'],
     persona='xiaobu',
 )
