@@ -1,8 +1,10 @@
-// case_ids: UI-006
+// case_ids: UI-006, UI-019
 /**
- * ChatArea 组件测试 — 洞察抽屉开关链路 + 已结束会话续聊 banner
+ * ChatArea 组件测试 — 会话简报抽屉开关链路（UI-019：/chat 工作台 docked 默认展开、
+ * FAB 覆盖式默认收起）+ 已结束会话续聊 banner（UI-006）
  *
- * 覆盖：会话头部栏渲染、抽屉默认收起、点击洞察按钮展开、点击遮罩关闭、
+ * 覆盖：会话头部栏渲染、抽屉默认收起（FAB 行为）、点击洞察按钮展开、点击遮罩关闭、
+ * insightDefaultOpen=true 默认展开（/chat 工作台 docked 模式）、
  * 已结束会话顶部「会话已结束」banner 渲染、点击「继续此会话」调用 reopenSession 并聚焦输入框。
  */
 
@@ -30,10 +32,11 @@ vi.mock('@/components/chat/MessageInput', () => ({
 }))
 vi.mock('@/components/chat/QuickActions', () => ({ default: () => <div data-testid="quick-actions" /> }))
 
-// SessionInsight mock 暴露 isOpen / onClose props，便于断言抽屉开关
+// SessionInsight mock 暴露 isOpen / onClose / variant props，便于断言抽屉开关与布局变体
+// （variant 默认 'overlay'，与真实组件默认值一致）
 vi.mock('@/components/chat/SessionInsight', () => ({
-  default: ({ isOpen, onClose }: { isOpen?: boolean; onClose?: () => void }) => (
-    <div data-testid="session-insight" data-open={String(Boolean(isOpen))} onClick={onClose} />
+  default: ({ isOpen, onClose, variant = 'overlay' }: { isOpen?: boolean; onClose?: () => void; variant?: string }) => (
+    <div data-testid="session-insight" data-open={String(Boolean(isOpen))} data-variant={variant} onClick={onClose} />
   ),
 }))
 
@@ -64,7 +67,7 @@ describe('ChatArea', () => {
     expect(screen.getByText('进行中')).toBeInTheDocument()
   })
 
-  it('默认洞察抽屉收起（isOpen=false）', () => {
+  it('默认洞察抽屉收起（isOpen=false）—— FAB 模态窗行为', () => {
     render(<ChatArea />)
     expect(screen.getByTestId('session-insight')).toHaveAttribute('data-open', 'false')
   })
@@ -82,6 +85,34 @@ describe('ChatArea', () => {
 
     fireEvent.click(screen.getByTestId('session-insight'))
     expect(screen.getByTestId('session-insight')).toHaveAttribute('data-open', 'false')
+  })
+
+  // ── UI-019：/chat 工作台 docked 默认展开 ──
+
+  it('insightDefaultOpen=true → 默认展开（/chat 工作台，不再右侧空白）', () => {
+    render(<ChatArea insightDefaultOpen />)
+    expect(screen.getByTestId('session-insight')).toHaveAttribute('data-open', 'true')
+  })
+
+  it('insightDefaultOpen=true 时点击按钮可收起，再点可重新展开', () => {
+    render(<ChatArea insightDefaultOpen />)
+    expect(screen.getByTestId('session-insight')).toHaveAttribute('data-open', 'true')
+
+    fireEvent.click(screen.getByTestId('insight-toggle-btn'))
+    expect(screen.getByTestId('session-insight')).toHaveAttribute('data-open', 'false')
+
+    fireEvent.click(screen.getByTestId('insight-toggle-btn'))
+    expect(screen.getByTestId('session-insight')).toHaveAttribute('data-open', 'true')
+  })
+
+  it('insightVariant=docked → SessionInsight 收到 docked 变体（右侧常驻列，无遮罩覆盖）', () => {
+    render(<ChatArea insightDefaultOpen insightVariant="docked" />)
+    expect(screen.getByTestId('session-insight')).toHaveAttribute('data-variant', 'docked')
+  })
+
+  it('不传 insightVariant → 默认 overlay 变体（FAB 模态窗保持覆盖式抽屉）', () => {
+    render(<ChatArea />)
+    expect(screen.getByTestId('session-insight')).toHaveAttribute('data-variant', 'overlay')
   })
 
   // ── 已结束会话续聊 banner ──

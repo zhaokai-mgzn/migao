@@ -112,9 +112,19 @@ interface SessionInsightProps {
   isOpen?: boolean
   /** 关闭抽屉回调 */
   onClose?: () => void
+  /**
+   * 布局变体（UI-019，issue #3018）：
+   * - overlay（默认）：FAB 模态窗用 — 覆盖在聊天区上方的抽屉（带遮罩），默认收起
+   * - docked：/chat 工作台用 — 右侧常驻列（无遮罩、默认展开），可向右缩回
+   */
+  variant?: 'overlay' | 'docked'
 }
 
-export default function SessionInsight({ isOpen = false, onClose }: SessionInsightProps = {}) {
+export default function SessionInsight({
+  isOpen = false,
+  onClose,
+  variant = 'overlay',
+}: SessionInsightProps = {}) {
   const [sessionIdCopied, setSessionIdCopied] = useState(false)
   const { currentSessionId, sessions, messages, sendMessage } = useChatStore()
 
@@ -167,10 +177,12 @@ export default function SessionInsight({ isOpen = false, onClose }: SessionInsig
   const hasActions = Boolean(pendingInteraction) || failedActions.length > 0
   const isEmpty = !hasBrief && !hasActions && ledgerRows.length === 0
 
+  const isDocked = variant === 'docked'
+
   return (
     <>
-      {/* 遮罩 — 仅展开时显示，点击关闭 */}
-      {isOpen && (
+      {/* 遮罩 — 仅 overlay 变体展开时显示，点击关闭（docked 右侧常驻列无遮罩） */}
+      {!isDocked && isOpen && (
         <div
           data-testid="session-insight-overlay"
           className="absolute inset-0 bg-black/20"
@@ -178,13 +190,23 @@ export default function SessionInsight({ isOpen = false, onClose }: SessionInsig
         />
       )}
 
-      {/* 抽屉容器 — 从右侧滑入 */}
+      {/* 抽屉容器 — overlay：从右侧滑入覆盖聊天区；docked：右侧常驻列，向右缩回 */}
       <div
         data-testid="session-insight-drawer"
         className={cn(
-          'absolute top-0 right-0 h-full w-[340px] bg-white shadow-2xl border-l border-gray-200 flex flex-col overflow-hidden',
-          'transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]',
-          isOpen ? 'translate-x-0 visible' : 'translate-x-full invisible'
+          isDocked
+            ? // docked：flex 布局常态列，用宽度过渡实现「向右缩回」
+              cn(
+                'h-full bg-white shadow-2xl border-l border-gray-200 flex flex-col overflow-hidden flex-shrink-0',
+                'transition-[width] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]',
+                isOpen ? 'w-[340px] visible' : 'w-0 invisible'
+              )
+            : // overlay：绝对定位 + translate 滑入
+              cn(
+                'absolute top-0 right-0 h-full w-[340px] bg-white shadow-2xl border-l border-gray-200 flex flex-col overflow-hidden',
+                'transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]',
+                isOpen ? 'translate-x-0 visible' : 'translate-x-full invisible'
+              ),
         )}
         aria-hidden={!isOpen}
       >

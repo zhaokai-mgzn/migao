@@ -99,8 +99,50 @@ function ClosedSessionBanner() {
   )
 }
 
-export default function ChatArea() {
-  const [isInsightOpen, setIsInsightOpen] = useState(false)
+interface ChatAreaProps {
+  /**
+   * 会话简报是否默认展开（UI-019，issue #3018）
+   * - /chat 工作台：默认展开（右侧不再空白）
+   * - FAB 模态窗：默认收起（保持现有设计）
+   */
+  insightDefaultOpen?: boolean
+  /**
+   * 会话简报布局变体：
+   * - overlay（默认）：覆盖在聊天区上方的抽屉（带遮罩）— FAB 模态窗用
+   * - docked：右侧常驻列（无遮罩，可向右缩回）— /chat 工作台用
+   */
+  insightVariant?: 'overlay' | 'docked'
+}
+
+export default function ChatArea({
+  insightDefaultOpen = false,
+  insightVariant = 'overlay',
+}: ChatAreaProps = {}) {
+  const [isInsightOpen, setIsInsightOpen] = useState(insightDefaultOpen)
+
+  // docked 变体：聊天区与简报并排（flex row），简报作为右侧常驻列
+  if (insightVariant === 'docked') {
+    return (
+      <div className="flex-1 flex min-w-0 bg-neutral-50/70">
+        <div className="relative flex flex-col flex-1 min-w-0">
+          <ChatHeader
+            insightOpen={isInsightOpen}
+            onInsightToggle={() => setIsInsightOpen(prev => !prev)}
+          />
+          <ClosedSessionBanner />
+          <MessageList />
+          <QuickActions />
+          <MessageInput />
+        </div>
+        {/* 会话简报 — 右侧常驻列，可向右缩回（无遮罩） */}
+        <SessionInsight
+          isOpen={isInsightOpen}
+          onClose={() => setIsInsightOpen(false)}
+          variant="docked"
+        />
+      </div>
+    )
+  }
 
   return (
     <div className="relative flex-1 flex flex-col min-w-0 bg-neutral-50/70">
@@ -112,7 +154,7 @@ export default function ChatArea() {
       <MessageList />
       <QuickActions />
       <MessageInput />
-      {/* 洞察抽屉 — 从右侧滑入覆盖在聊天区上方 */}
+      {/* 洞察抽屉 — 从右侧滑入覆盖在聊天区上方（overlay 变体，FAB 模态窗用） */}
       <SessionInsight
         isOpen={isInsightOpen}
         onClose={() => setIsInsightOpen(false)}

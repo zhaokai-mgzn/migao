@@ -282,30 +282,35 @@ test.describe('聊天 — 会话简报抽屉（UI-019）', () => {
     await expect(chatPage.messageInput).toBeVisible({ timeout: 10_000 })
   })
 
-  test('默认状态下会话简报抽屉收起', async () => {
-    await expect(chatPage.insightDrawer).toBeHidden()
+  test('默认状态下会话简报在右侧展开（/chat 工作台 docked 变体，不再右侧空白）', async () => {
+    // /chat 工作台：简报为右侧常驻列（docked 变体），进入即展开，无遮罩覆盖
+    await expect(chatPage.insightDrawer).toBeVisible()
     await expect(chatPage.insightOverlay).not.toBeVisible()
   })
 
-  test('点击会话简报按钮展开抽屉', async ({ page }) => {
+  test('点击会话简报按钮可收起，再点重新展开', async ({ page }) => {
+    // 默认展开 → 点击按钮向右缩回 → 再点展开
+    await expect(chatPage.insightDrawer).toBeVisible()
+    await chatPage.insightToggleBtn.click()
+    await expect(chatPage.insightDrawer).toBeHidden()
     await chatPage.insightToggleBtn.click()
     await expect(chatPage.insightDrawer).toBeVisible()
-    await expect(page.getByText('会话简报')).toBeVisible()
+    // 抽屉标题可见（headings 优先，避免与顶部按钮文案歧义）
+    await expect(page.getByRole('heading', { name: '会话简报' })).toBeVisible()
   })
 
   test('空会话抽屉展示友好空态（业务语言，无工具时间线）', async ({ page }) => {
-    await chatPage.insightToggleBtn.click()
+    // docked 变体默认展开，无需先点按钮
     await expect(chatPage.insightDrawer).toBeVisible()
     // 空态引导文案（纯业务语言，不出现机器词汇）
     await expect(page.getByText(/本会话还没有记录/)).toBeVisible()
     await expect(page.getByText('处理进度')).toHaveCount(0)
   })
 
-  test('点击遮罩关闭抽屉', async ({ page }) => {
-    await chatPage.insightToggleBtn.click()
+  test('docked 变体收起无遮罩（与 FAB 覆盖式抽屉区分）', async ({ page }) => {
+    // 默认展开 → 点击按钮收起：右侧常驻列缩回，无遮罩残留（遮罩仅 FAB overlay 变体使用）
     await expect(chatPage.insightDrawer).toBeVisible()
-
-    await chatPage.insightOverlay.click({ position: { x: 10, y: 10 } })
+    await chatPage.insightToggleBtn.click()
     await expect(chatPage.insightDrawer).toBeHidden()
     await expect(chatPage.insightOverlay).not.toBeVisible()
   })

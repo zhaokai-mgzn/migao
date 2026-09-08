@@ -155,4 +155,23 @@ describe('SessionInsight 会话简报', () => {
     render(<SessionInsight isOpen={false} onClose={vi.fn()} />)
     expect(screen.getByTestId('session-insight-drawer')).toHaveClass('invisible')
   })
+
+  // ── UI-019：docked 变体（/chat 工作台右侧常驻列，默认展开、可向右缩回）──
+
+  it('variant=docked + isOpen → 渲染简报内容，无遮罩覆盖', () => {
+    render(<SessionInsight isOpen onClose={vi.fn()} variant="docked" />)
+    expect(screen.getByText('会话简报')).toBeInTheDocument()
+    expect(screen.getByText('会话结论')).toBeInTheDocument()
+    expect(screen.queryByTestId('session-insight-overlay')).not.toBeInTheDocument()
+    // docked 不复用 overlay 的 translate 隐藏，而是常驻列（宽度过渡缩回）
+    expect(screen.getByTestId('session-insight-drawer')).not.toHaveClass('translate-x-full')
+  })
+
+  it('variant=docked + isOpen=false → 右侧缩回（宽度为 0，内容不可见）', () => {
+    render(<SessionInsight isOpen={false} onClose={vi.fn()} variant="docked" />)
+    const drawer = screen.getByTestId('session-insight-drawer')
+    expect(screen.queryByTestId('session-insight-overlay')).not.toBeInTheDocument()
+    expect(drawer).toHaveClass('invisible')
+    expect(drawer).not.toHaveClass('translate-x-full')
+  })
 })

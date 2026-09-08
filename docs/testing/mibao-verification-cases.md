@@ -2467,12 +2467,15 @@
 真值: frontend-fix.no-api-change
 溯源: 2026-09-05 新增：订单列表采购明细漏加工项计费修复（issue #2916） ｜ tags: ui, orders, list, processing-fee
 
-### UI-019. 米宝工作台「洞察」重构为「会话简报」 — 工具台账转业务简报（结论/待办/办理结果/建议） 🔵
+### UI-019. 米宝工作台「洞察」重构为「会话简报」 — 工具台账转业务简报（结论/待办/办理结果/建议，/chat 工作台默认右侧展开可缩回） 🔵
 ```
 你: 米宝会话页顶部「洞察」抽屉展示的是工具调用台账（查询订单/参数校验/请求确认），商家用户不理解也不关心 agent 调用了哪些工具
 你: 应改为「会话简报」：业务语言回答三个问题 — ①刚办了什么事（会话结论）②哪些事还需要确认/跟进（需要你处理）③涉及的业务对象什么状态、接下来可以问什么（办理结果 + 建议）
+你: 从侧边栏「米宝 · 在线对话」进入 /chat 工作台页右侧完全空白：会话简报应默认在右侧展开（docked 常驻列、无遮罩），可像抽屉一样向右缩回；右下角 FAB 浮窗入口保持现有设计（overlay 覆盖式抽屉、默认收起、带遮罩）
 期望: direct_reply
-数据: frontend/admin-web/src/components/chat/SessionInsight.tsx 渲染四区块：会话结论 / 需要你处理 / 办理结果 / 接下来可以问，标题与顶部按钮文案为「会话简报」
+数据: frontend/admin-web/src/components/chat/SessionInsight.tsx 渲染四区块：会话结论 / 需要你处理 / 办理结果 / 接下来可以问，标题与顶部按钮文案为「会话简报」；variant prop 支持 overlay（覆盖式+遮罩，FAB 用）与 docked（右侧常驻列、无遮罩）两种布局
+数据: chat/page.tsx 传 <ChatArea insightDefaultOpen insightVariant=\"docked\" />：/chat 工作台进入即右侧展开会话简报（不再右侧空白），点击顶部按钮可向右缩回、再点可再次展开；docked 变体无遮罩
+数据: FloatingAssistant.tsx 不传 insightDefaultOpen/insightVariant：FAB 浮窗保持现有设计 — overlay 覆盖式抽屉默认收起、点击展开、遮罩点击关闭
 数据: 会话结论 = buildSessionBrief 确定性推导：查询类按域聚合（如「查询了 2 笔订单」）、写操作完成（如「已创建售后工单」）、失败（含业务化原因）、待确认，全部业务语言，不含工具原始名/参数校验等机器语言
 数据: 办理结果 = extractLedgerRows：订单行带状态/金额/客户，有 orderId 时点击跳订单详情，其余点击发送追问；跨来源去重
 数据: 接下来可以问 = collectSuggestions 取最近 assistant 消息的 suggestions，点击即发送
@@ -2480,7 +2483,7 @@
 跳过: 纯前端重构由 vitest 单测（session-insight.test.ts + SessionInsight.test.tsx）+ e2e 抽屉链路验证，非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: frontend-fix.no-api-change
-溯源: 2026-09-05 新增：米宝「洞察」重构为「会话简报」— 工具语言转业务信息（issue #2897） ｜ tags: ui, admin-web, chat, insight
+溯源: 2026-09-05 新增：米宝「洞察」重构为「会话简报」— 工具语言转业务信息（issue #2897）；2026-09-xx 更新：/chat 工作台 docked 默认右侧展开可缩回、FAB 保持 overlay 现状（issue #3018） ｜ tags: ui, admin-web, chat, insight
 
 ### UI-021. 米宝展开大面板缩放手柄加大 + 缩放上限放开到视口 100%（拖到最大不留白） 🔵
 ```
