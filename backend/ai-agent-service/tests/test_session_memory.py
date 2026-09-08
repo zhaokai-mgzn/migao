@@ -4,7 +4,7 @@
 测试 SessionMemory 的核心方法：create_session, save_message, get_history, 
 get_session, delete_session 等
 """
-# case_ids: CH-005, CH-006, DA-004, API-001
+# case_ids: CH-005, CH-006, DA-004, API-001, UI-031
 
 import pytest
 import json
@@ -157,6 +157,30 @@ class TestSaveMessage:
             metadata = json.loads(params["metadata"])
             assert "tool_calls" in metadata
 
+    async def test_save_message_with_interactive(self, memory, mock_db):
+        """保存 assistant 消息带 interactive 载荷 → 写入 metadata.interactive（issue #3036）"""
+        interactive_payload = {
+            "component": "choice",
+            "title": "请选择加工项",
+            "options": [{"label": "打孔加工", "value": "pi_hole"}],
+        }
+        message_id = await memory.save_message(
+            session_id="sess_test_001",
+            role="assistant",
+            content="请选择加工项",
+            interactive=interactive_payload,
+        )
+
+        assert message_id.startswith("msg_")
+        call_args = mock_db.execute.call_args_list[0]
+        params = call_args[0][1] if len(call_args[0]) > 1 else call_args.kwargs
+        assert isinstance(params, dict)
+        # metadata 为 sqlalchemy text 参数（CAST(:metadata AS jsonb)），validate 序列化结果
+        metadata_raw = params.get("metadata") or params.get(":metadata")
+        assert metadata_raw is not None
+        metadata = json.loads(metadata_raw)
+        assert metadata.get("interactive") == interactive_payload
+
     async def test_save_message_db_error(self, memory, mock_db):
         """保存消息 - 数据库错误"""
         mock_db.execute.side_effect = Exception("Insert failed")
@@ -168,6 +192,25 @@ class TestSaveMessage:
                 content="测试消息",
             )
 
+        mock_db.rollback.assert_called_once()
+
+    async def test_mark_interactive_answered(self, memory, mock_db):
+        """用户回复后把最近一条 interactive 未答消息标记为已答复（issue #3036）"""
+        await memory.mark_last_interactive_answered(session_id="sess_test_001")
+
+        # execute 被调用且 SQL 包含 interactive_answered 更新
+        call_args = mock_db.execute.call_args_list[0]
+        sql_text = call_args[0][0].text if len(call_args[0]) > 0 else ""
+        assert "interactive_answered" in sql_text
+        assert "role = 'assistant'" in sql_text
+        mock_db.commit.assert_called_once()
+
+    async def test_mark_interactive_answered_db_error(self, memory, mock_db):
+        """标记已答复 - 数据库错误（静默降级，不抛异常）"""
+        mock_db.execute.side_effect = Exception("Update failed")
+
+        # 不应抛出 —— 标记失败降级为静默（历史回放仍按未答复渲染）
+        await memory.mark_last_interactive_answered(session_id="sess_test_001")
         mock_db.rollback.assert_called_once()
 
 
@@ -215,6 +258,28 @@ class TestGetHistory:
 
         assert len(messages) == 1
         assert messages[0]["tool_calls"] == [{"name": "product_search"}]
+
+    async def test_get_history_with_interactive(self, memory, mock_db):
+        """历史消息包含 interactive 载荷（interact 组件持久化，issue #3036）"""
+        interactive_payload = {
+            "component": "confirm",
+            "title": "确认创建订单",
+            "fields": [{"label": "商品", "value": "窗帘-001"}],
+        }
+        mock_rows = [
+            (
+                "msg_004", "sess_001", "assistant", "text", "请确认订单信息",
+                {"interactive": interactive_payload, "interactive_answered": True},
+                datetime(2026, 4, 18, 10, 3),
+            ),
+        ]
+        mock_db.execute.return_value = MockDBResult(rows=mock_rows)
+
+        messages = await memory.get_history(session_id="sess_001")
+
+        assert len(messages) == 1
+        assert messages[0]["interactive"] == interactive_payload
+        assert messages[0]["interactive_answered"] is True
 
     async def test_get_history_db_error(self, memory, mock_db):
         """获取历史 - 数据库错误（返回空列表，不抛异常）"""

@@ -1,6 +1,6 @@
 /**
  * 交互组件契约 — 后端 SSE interactive payload 经前端 store 透传字段不丢
- * case_ids: PP-001, PR-010, OR-001
+ * case_ids: PP-001, PR-010, OR-001, UI-031
  *
  * 背景（sess_fba38395ed094a9d 系列，issue #2892/#2894/#2896）：
  * - 后端 interact 工具 → SSE interactive payload 字段由
@@ -34,6 +34,7 @@ vi.mock('@/lib/api', () => ({
 }))
 
 import { useChatStore } from '@/store/chat'
+import { chatApi } from '@/lib/api'
 
 /** 构造一次 SSE interactive 事件并驱动 store 解析，返回 messages 里最后的 interactive */
 async function parseInteractive(payload: Record<string, unknown>) {
@@ -120,5 +121,79 @@ describe('interactive component contract (后端 SSE payload ↔ 前端 store �
     const interactive = await parseInteractive(payload)
     expect(interactive?.submitLabel).toBe('提交并确认')
     expect(interactive?.formFields?.[0]?.key).toBe('name')
+  })
+})
+
+// ═══════════════════════════════════════════════════
+// selectSession 历史回放透传（issue #3036 / UI-031）
+// ═══════════════════════════════════════════════════
+
+describe('selectSession 历史回放 interactive 透传', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockAuthGetState.mockReturnValue({ accessToken: 'fake-token', user: null })
+    useChatStore.setState({
+      sessions: [],
+      currentSessionId: null,
+      messages: [],
+      isStreaming: false,
+      abortController: null,
+      choiceSelections: {},
+    })
+  })
+
+  async function loadHistoryWith(historyMessages: any[]) {
+    (chatApi.getHistory as ReturnType<typeof vi.fn>).mockResolvedValue({
+      data: { messages: historyMessages },
+    })
+    await act(async () => {
+      await useChatStore.getState().selectSession('sess1')
+    })
+  }
+
+  it('历史消息的 interactive + interactive_answered 原样透传（已答卡片回放后仍只读）', async () => {
+    const interactive = {
+      component: 'confirm',
+      title: '确认创建订单',
+      fields: [{ label: '商品', value: '窗帘-001' }],
+    }
+    await loadHistoryWith([
+      {
+        id: 'm-user', session_id: 'sess1', role: 'user', content: '确认',
+        content_type: 'text', created_at: '2026-06-20T10:00:00Z',
+      },
+      {
+        id: 'm-ai', session_id: 'sess1', role: 'assistant', content: '请确认订单信息',
+        content_type: 'text', created_at: '2026-06-20T10:00:01Z',
+        interactive,
+        interactive_answered: true,
+      },
+    ])
+
+    const msgs = useChatStore.getState().messages
+    const aiMsg = msgs.find(m => m.id === 'm-ai')
+    expect(aiMsg?.interactive).toEqual(interactive)
+    expect(aiMsg?.interactiveAnswered).toBe(true)
+  })
+
+  it('未答交互（interactive_answered=false）历史回放后仍保持可交互状态', async () => {
+    const interactive = {
+      component: 'choice',
+      title: '请选择加工项',
+      options: [{ label: '打孔加工', value: 'pi_hole' }],
+    }
+    await loadHistoryWith([
+      {
+        id: 'm-ai', session_id: 'sess1', role: 'assistant', content: '请选择加工项',
+        content_type: 'text', created_at: '2026-06-20T10:00:00Z',
+        interactive,
+        interactive_answered: false,
+      },
+    ])
+
+    const msgs = useChatStore.getState().messages
+    const aiMsg = msgs.find(m => m.id === 'm-ai')
+    expect(aiMsg?.interactive).toEqual(interactive)
+    expect(aiMsg?.interactiveAnswered).toBe(false)
   })
 })

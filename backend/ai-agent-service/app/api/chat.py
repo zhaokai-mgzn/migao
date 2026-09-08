@@ -10,6 +10,7 @@
 
 import asyncio
 import json
+import re
 import time
 import traceback
 from typing import AsyncGenerator, Optional, List, Dict, Any, Union
@@ -479,6 +480,114 @@ def _card_payload(tool_name: str, result: Dict[str, Any]) -> tuple[Optional[str]
     return card_type, data
 
 
+# ──────────────── LLM 幻觉 <interact> XML 伪代码块剥离/解析（issue #3036 / UI-032） ────────────────
+
+_INTERACT_XML_RE = re.compile(r"<interact>.*?</interact>", re.DOTALL)
+
+
+def _extract_tag_value(xml_text: str, tag: str) -> Optional[str]:
+    """从 XML 片段中提取首个 <tag>…</tag> 的文本（宽松匹配，允许空白与换行）"""
+    m = re.search(rf"<{tag}>(.*?)</{tag}>", xml_text, re.DOTALL)
+    if not m:
+        return None
+    return m.group(1).strip()
+
+
+def _extract_tags(xml_text: str, tag: str) -> List[str]:
+    """提取全部 <tag>…</tag> 片段（用于 options/fields/formFields 列表项）"""
+    return [m.group(1).strip() for m in re.finditer(rf"<{tag}>(.*?)</{tag}>", xml_text, re.DOTALL)]
+
+
+def _parse_interact_xml(block: str) -> Optional[Dict[str, Any]]:
+    """解析 <interact>…</interact> XML 块为 SSE interactive payload。
+
+    支持 LLM 幻觉输出的三种组件（与 interact 工具同协议）：
+    - choice: <options><option><label>..</label><value>..</value><description>..</description></option>…</options>
+    - confirm: <fields><field><label>..</label><value>..</value></field>…</fields> + confirmLabel/cancelLabel/confirmValue/cancelValue
+    - form: <formFields><field><key>..</key><label>..</label><value>..</value>…</field>…</formFields> + submitLabel
+
+    解析失败/字段缺失返回 None（调用方仅剥离 XML 块，不下发残缺 payload）。
+    """
+    component = _extract_tag_value(block, "component")
+    if component not in ("choice", "confirm", "form"):
+        return None
+    title = _extract_tag_value(block, "title") or "请确认"
+    payload: Dict[str, Any] = {"component": component, "title": title}
+
+    if component == "choice":
+        option_blocks = _extract_tags(block, "option")
+        options = []
+        for ob in option_blocks:
+            label = _extract_tag_value(ob, "label")
+            value = _extract_tag_value(ob, "value") or label
+            if not label:
+                continue
+            option: Dict[str, str] = {"label": label, "value": value}
+            desc = _extract_tag_value(ob, "description")
+            if desc:
+                option["description"] = desc
+            options.append(option)
+        if not options:
+            return None
+        payload["options"] = options
+
+    elif component == "confirm":
+        field_blocks = _extract_tags(block, "field")
+        fields = []
+        for fb in field_blocks:
+            label = _extract_tag_value(fb, "label")
+            value = _extract_tag_value(fb, "value")
+            if label is None or value is None:
+                continue
+            fields.append({"label": label, "value": value})
+        if not fields:
+            return None
+        payload["fields"] = fields
+        for key in ("confirmLabel", "cancelLabel", "confirmValue", "cancelValue"):
+            v = _extract_tag_value(block, key)
+            if v:
+                payload[key] = v
+
+    elif component == "form":
+        field_blocks = _extract_tags(block, "field")
+        form_fields = []
+        for fb in field_blocks:
+            key = _extract_tag_value(fb, "key")
+            label = _extract_tag_value(fb, "label")
+            if not key or not label:
+                continue
+            field: Dict[str, Any] = {"key": key, "label": label}
+            for sub in ("value", "placeholder"):
+                v = _extract_tag_value(fb, sub)
+                if v:
+                    field[sub] = v
+            req = _extract_tag_value(fb, "required")
+            if req and req.lower() == "true":
+                field["required"] = True
+            form_fields.append(field)
+        if not form_fields:
+            return None
+        payload["formFields"] = form_fields
+        v = _extract_tag_value(block, "submitLabel")
+        if v:
+            payload["submitLabel"] = v
+
+    return payload
+
+
+def _strip_interact_xml(text: str) -> str:
+    """剥离文本中全部 <interact>…</interact> 块（保留其余文本）"""
+    return _INTERACT_XML_RE.sub("", text)
+
+
+def _extract_interact_probable(text: str) -> Optional[Dict[str, Any]]:
+    """从文本中解析首个 <interact>…</interact> 块为 payload；无块/解析失败返回 None"""
+    m = _INTERACT_XML_RE.search(text)
+    if not m:
+        return None
+    return _parse_interact_xml(m.group(0))
+
+
 def _filter_products_by_reference(content: str, products: Any) -> List[Dict[str, Any]]:
     """引用对齐过滤：只保留回复文本中实际引用的商品（按 name/id 子串匹配）。
 
@@ -537,6 +646,8 @@ async def _agent_stream_to_sse(
     """
     full_response = []
     tool_calls_info = []
+    # LLM hallucinated <interact> XML block payload (issue #3036 / UI-032)
+    last_interactive_payload = None
     _done_sent = False
     # B 端引用对齐（issue #3009 / case PR-018）：mibao 的 product_list 卡片
     # 延迟到文本生成后按引用过滤再发，避免「文本说 5 件、卡片列 20 件」两层皮
@@ -604,6 +715,14 @@ async def _agent_stream_to_sse(
                         if response.content:
                             import re as _re
                             clean = _re.sub(r"<think>[\s\S]*?</think>", "", response.content)
+                            # LLM hallucinated <interact> XML block (issue #3036 / UI-032):
+                            # 1) parse to interactive payload and emit SSE interactive event (same protocol as interact tool)
+                            # 2) strip XML block from text regardless, prevent raw XML leaking to bubble
+                            xml_payload = _extract_interact_probable(clean)
+                            if xml_payload:
+                                last_interactive_payload = xml_payload
+                                yield SSEEvent.interactive(xml_payload.get("component", ""), xml_payload)
+                            clean = _strip_interact_xml(clean)
                             if clean:
                                 full_response.append(clean)
                                 yield SSEEvent.text(clean)
@@ -715,6 +834,7 @@ async def _agent_stream_to_sse(
                     role="assistant",
                     content=assistant_content,
                     tool_calls=tool_calls_info if tool_calls_info else None,
+                    interactive=last_interactive_payload if last_interactive_payload else None,
                     tenant_id=tenant_id,
                 ),
                 timeout=10.0,
@@ -903,6 +1023,13 @@ async def _handle_page_request(
                 session_id=session_id, role="user",
                 content=f"查看第{params.get('page', '?')}页", tenant_id=tenant_id,
             )
+            # paging is also a user reply -> old-page interactive marked answered
+            _marker = getattr(session_memory, "mark_last_interactive_answered", None)
+            if _marker is not None:
+                try:
+                    await _marker(session_id)
+                except Exception as _me:
+                    logger.warning(f"[page] mark_interactive_answered skipped | session={session_id} error={_me}")
 
             yield SSEEvent.loading("正在查询...")
 
@@ -1198,6 +1325,14 @@ async def send_message(
                 content_type=content_type,
                 extra_metadata=extra_metadata,
             )
+            # user replied -> mark last interactive as answered (issue #3036 readonly persistence);
+            # best-effort: in-memory/legacy stores may lack the method, never block the main flow
+            _marker = getattr(session_memory, "mark_last_interactive_answered", None)
+            if _marker is not None:
+                try:
+                    await _marker(session_id)
+                except Exception as _me:
+                    logger.warning(f"[chat/send] mark_interactive_answered skipped | session={session_id} error={_me}")
             
             # 3. 构建多模态消息内容
             if images:
@@ -1553,6 +1688,20 @@ async def get_history(
             except (json.JSONDecodeError, TypeError):
                 pass
         
+        # interactive payload + answered flag passthrough (issue #3036 / UI-031)
+        interactive_data = None
+        interactive_answered = False
+        if isinstance(metadata, dict):
+            interactive_data = metadata.get("interactive")
+            interactive_answered = metadata.get("interactive_answered", False) is True
+        elif isinstance(metadata, str):
+            try:
+                meta_parsed = json.loads(metadata)
+                interactive_data = meta_parsed.get("interactive")
+                interactive_answered = meta_parsed.get("interactive_answered", False) is True
+            except (json.JSONDecodeError, TypeError):
+                pass
+
         formatted_messages.append({
             "id": msg["id"],
             "session_id": msg["session_id"],
@@ -1561,6 +1710,8 @@ async def get_history(
             "content_type": msg.get("content_type", "text"),
             "images": msg_images if msg_images else None,
             "tool_calls": msg.get("tool_calls"),
+            "interactive": interactive_data,
+            "interactive_answered": interactive_answered,
             "created_at": _format_datetime(msg["created_at"]),
         })
     

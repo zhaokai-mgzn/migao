@@ -314,6 +314,10 @@ export const useChatStore = create<ChatState>()((set, get) => ({
         content_type: msg.content_type,
         images: msg.images,
         tool_calls: msg.tool_calls,
+        // 历史回放透传交互组件与已答标记（issue #3036 / UI-031）：
+        // 已答卡片渲染只读变体而非消失；未答卡片仍可交互
+        interactive: msg.interactive,
+        interactiveAnswered: msg.interactive_answered,
         created_at: msg.created_at,
       }))
       // 仅当用户没有切换到其他会话时更新（历史为新会话权威，覆盖缓存快照；
@@ -411,13 +415,23 @@ export const useChatStore = create<ChatState>()((set, get) => ({
       created_at: new Date().toISOString(),
     }
 
-    // 清除上一轮 AI 消息的建议（已被消费）—— 写入归属会话的 messageStore
+    // 清除上一轮 AI 消息的建议（已被消费）—— 写入归属会话的 messageStore；
+    // 同时把最后一条交互组件未答复消息标记为 interactiveAnswered（issue #3036）：
+    // 用户发出新消息（含点击 choice/confirm/form 按钮产生的消息）后，上一条
+    // 交互即视为答复，本地即时锁死卡片 —— 防 FAB 重开/会话切换后「复活」重复提交
     set(state => withView(state, {
       messageStore: {
         ...state.messageStore,
-        [currentSessionId]: (state.messageStore[currentSessionId] ?? []).map(msg =>
-          msg.id === lastAiMsg?.id ? { ...msg, suggestions: undefined } : msg
-        ),
+        [currentSessionId]: (state.messageStore[currentSessionId] ?? []).map(msg => {
+          if (msg.id === lastAiMsg?.id) {
+            return { ...msg, suggestions: undefined }
+          }
+          // 有 interactive 且未答复且非流式 → 标记已答复（用户本轮已回应）
+          if (msg.role === 'assistant' && msg.interactive && !msg.interactiveAnswered && !msg.isStreaming) {
+            return { ...msg, interactiveAnswered: true }
+          }
+          return msg
+        }),
       },
     }))
 

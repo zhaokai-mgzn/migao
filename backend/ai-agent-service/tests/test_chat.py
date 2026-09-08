@@ -5,7 +5,7 @@
 _convert_history_to_agent_format 多模态、suggestion-feedback、quick-actions、
 send_message 会话校验与 __PAGE__ 协议守卫、_agent_stream_to_sse 事件序列。
 """
-# case_ids: API-001, API-002, API-003, API-004, API-005, OR-012
+# case_ids: API-001, API-002, API-003, API-004, API-005, OR-012, UI-031, UI-032
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -470,6 +470,29 @@ class TestGetHistory:
         assert result["success"] is True
         assert result["data"]["messages"][0]["images"] == ["https://a.com/1.jpg"]
 
+    @patch("app.api.chat.SessionMemory")
+    @pytest.mark.asyncio
+    async def test_history_returns_interactive(self, MockSM):
+        """get_history 返回 interactive 载荷与已答标记（issue #3036 历史回放透传）"""
+        interactive_payload = {
+            "component": "confirm",
+            "title": "确认创建订单",
+            "fields": [{"label": "商品", "value": "窗帘-001"}],
+        }
+        msg = {
+            "id": "m2", "session_id": "sess_1", "role": "assistant",
+            "content": "请确认订单信息", "content_type": "text",
+            "created_at": "2026-06-20T10:00:00Z",
+            "metadata": {"interactive": interactive_payload, "interactive_answered": True},
+        }
+        m = _memory(get_session=_session(), get_history=[msg])
+        MockSM.return_value = m
+        result = await get_history("sess_1", current_user=_user())
+        assert result["success"] is True
+        out = result["data"]["messages"][0]
+        assert out["interactive"] == interactive_payload
+        assert out["interactive_answered"] is True
+
 
 # ═══════════════════════════════════════════════
 # 建议反馈 + 快捷操作
@@ -855,6 +878,40 @@ class TestAgentStreamToSSE:
         body = "".join(events)
         assert "event: error" in body
         assert "内部错误" in body
+
+    @pytest.mark.asyncio
+    async def test_interact_xml_stripped_from_text(self):
+        """LLM 幻觉 <interact>…</interact> XML 块从文本剥离并转 SSE interactive 事件（issue #3036 UI-032）"""
+        xml_block = (
+            "<interact> <component>form</component> <title>新建商品 — 常青藤系列窗帘</title> "
+            "<formFields> <field> <key>name</key> <label>商品名称</label> <value>常青藤</value> </field> "
+            "</formFields> </interact>"
+        )
+        with patch("app.api.chat._extract_memories_async", new=AsyncMock()), \
+             patch("app.api.chat._generate_title_async", new=AsyncMock()):
+            sm = _memory()
+            sm.save_message = AsyncMock(return_value="msg_1")
+            events = [e async for e in _agent_stream_to_sse(
+                agent=_agent_with(AgentResponse(
+                    content=f"让我先展示识别结果表单。{xml_block} 请补充缺失字段",
+                    type="text",
+                )),
+                message="识别图片", context=self._ctx(), chat_history=[],
+                tool_registry=MagicMock(), session_memory=sm,
+                session_id="s1", tenant_id=1, user_id="u1",
+            )]
+        body = "".join(events)
+        # XML 块不再出现在文本流
+        assert "<interact>" not in body
+        assert "<formFields>" not in body
+        # 剥离后剩余文本保留
+        assert "让我先展示识别结果表单" in body
+        assert "请补充缺失字段" in body
+        # 生成 SSE interactive 事件
+        assert "event: interactive" in body
+        assert '"component": "form"' in body
+        assert '"title": "新建商品' in body
+        assert "formFields" in body
 
 
 # ═══════════════════════════════════════════════

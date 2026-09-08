@@ -128,13 +128,16 @@ class InMemorySessionStore:
             )
         return result
 
-    async def save_message(self, session_id, role, content, tool_calls=None, tenant_id=None, content_type="text", extra_metadata=None):
+    async def save_message(self, session_id, role, content, tool_calls=None, tenant_id=None, content_type="text", extra_metadata=None, interactive=None):
         self._msg_counter += 1
         mid = f"msg_{self._msg_counter:06d}"
         now = datetime.utcnow()
         meta = {}
         if tool_calls:
             meta["tool_calls"] = tool_calls
+        if interactive:
+            meta["interactive"] = interactive
+            meta["interactive_answered"] = False
         if extra_metadata:
             meta.update(extra_metadata)
         self.messages.append({

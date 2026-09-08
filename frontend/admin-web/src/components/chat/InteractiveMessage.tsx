@@ -196,19 +196,31 @@ function ConfirmCard({ interactive, disabled }: Props) {
         ))}
       </div>
 
-      {/* 操作按钮 */}
+      {/* 操作按钮 — disabled（已答复/外部锁）时置灰不可点（issue #3036 只读变体） */}
       {!submitted && (
         <div className="px-3 py-2 border-t border-neutral-100 flex gap-2 justify-end">
           <button
             onClick={() => handleAction(cancelValue)}
-            className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium bg-neutral-100 text-neutral-600 hover:bg-neutral-200 transition-colors"
+            disabled={disabled}
+            className={cn(
+              'flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors',
+              disabled
+                ? 'bg-neutral-100 text-neutral-400 cursor-not-allowed'
+                : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200'
+            )}
           >
             <X className="w-3 h-3" />
             {cancelLabel}
           </button>
           <button
             onClick={() => handleAction(confirmValue)}
-            className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium bg-amber-500 text-white hover:bg-amber-600 transition-colors"
+            disabled={disabled}
+            className={cn(
+              'flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors',
+              disabled
+                ? 'bg-neutral-200 text-neutral-400 cursor-not-allowed'
+                : 'bg-amber-500 text-white hover:bg-amber-600'
+            )}
           >
             <Check className="w-3 h-3" />
             {confirmLabel}
