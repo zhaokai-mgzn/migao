@@ -158,7 +158,7 @@
 真值: ai-chat.agent-factory
 溯源: 2026-08-25 新增：ai-agent-service agents-customer_service_agent 覆盖率补全（issue #2429） ｜ tags: agents, factory, alias
 
-## api（16 case）
+## api（17 case）
 
 ### API-001. chat 会话生命周期 - 租户隔离 + 用户所有权 + 幂等/重开 🔵
 ```
@@ -328,6 +328,17 @@
 跳过: 派生逻辑由 Service 单测验证（KnowledgeDeriveServiceTest）+ 商品/加工项服务触发断言，非 LLM 行为，不进入 agent-eval 冒烟
 ```
 溯源: 2026-09-08 新增（issue #3051 LLM WIKI 板块 P4）：L2 本店事实层——商品/加工项结构化数据直接生成知识卡片（替代 RAG 检索），商品变更触发自动更新 ｜ tags: api, knowledge, wiki, derive
+
+### API-019. 待确认队列闭环 - 候选读+写路径齐全，采纳转卡片、拒绝记原因（LLM WIKI 板块 #3051 P5） 🔵
+```
+你: AI 提炼的候选知识卡片进入待确认队列，商家采纳（或编辑后采纳）后生效，拒绝则不生效
+数据: GET /api/admin/knowledge/candidates 分页返回候选（缺省 status=pending，created_at 倒序，租户隔离）；GET /candidates/pending-count 返回待确认数
+数据: POST /{id}/adopt 采纳：候选 → 知识卡片（status=published，sourceType/sourceRef 继承候选来源），候选置 adopted；立即可被检索
+数据: POST /{id}/adopt-edited 编辑后采纳：人工修订标题/回答覆盖（标题回答必填），候选置 edited
+数据: POST /{id}/reject 拒绝：候选置 rejected + status_note 记录原因，不产生卡片；跨租户一律 404
+跳过: 队列读写路径由 MockMvc + Service 单测验证（KnowledgeCandidateControllerTest/KnowledgeCandidateServiceTest），非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-09-08 新增（issue #3051 LLM WIKI 板块 P5）：待确认队列闭环——不重复 knowledge_sync_history 零读写事故，读写路径齐全；AI 只产生候选，发布权在商家 ｜ tags: api, knowledge, wiki, candidates
 
 ### API-012. 语音转写接口容错 - 空/极小/静音音频返回友好 4xx/5xx，不裸 500（#2984） 🔵
 ```
@@ -2809,11 +2820,11 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：228（活跃 114，跳过 114）
-- tier 分布：smoke 8 / normal 191 / adversarial 29
+- 用例总数：229（活跃 114，跳过 115）
+- tier 分布：smoke 8 / normal 192 / adversarial 29
 - 售后域：7
 - agents：6
-- api：16
+- api：17
 - bmini：5
 - 分类域：3
 - 对话边界域：32
@@ -2842,6 +2853,7 @@
 - API-016: 知识知识卡片检索 - 仅 published + 租户隔离 + 关键词命中（LLM WIKI 板块 #3051）
 - API-017: 行业模板 - 目录 + 一键套用（去重 + source=template）（LLM WIKI 板块 #3051 P3）
 - API-018: 商品/配置派生知识卡片 - 价格区间自动生成 + 变更自动更新（LLM WIKI 板块 #3051 P4）
+- API-019: 待确认队列闭环 - 候选读+写路径齐全，采纳转卡片、拒绝记原因（LLM WIKI 板块 #3051 P5）
 - API-012: 语音转写接口容错 - 空/极小/静音音频返回友好 4xx/5xx，不裸 500（#2984）
 - CH-027: 流式回复中切换会话再切回 - 等待状态与最终回复保留（issue #2901）
 - CH-028: 多会话并发流 - 会话 A 回复中 B 可发送，增量/停止互不干扰（issue #2906）

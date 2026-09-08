@@ -91,3 +91,5 @@ grep -rn "字段名" backend/admin-api/src frontend/admin-web/src backend/ai-age
 | 提炼触发端点 | `POST /api/admin/knowledge/distill/conversations` | 返回提炼统计（created/skipped/failed） |
 | 模板目录 | `GET /api/admin/knowledge/templates` | 平台预置模板（templateId/industry/name/version/entryCount，布艺 curtain 32 条） |
 | 模板套用 | `POST /api/admin/knowledge/templates/{templateId}/apply` | 复制为租户卡片（sourceType=template/sourceRef=templateId/status=published），按 (tenant_id,title) 去重，返回 {created,skipped} |
+| 候选队列 | `GET /api/admin/knowledge/candidates` + `POST /{id}/adopt` / `adopt-edited` / `reject` | 待确认队列闭环：候选读+写路径齐全；采纳转卡片 published（来源继承），拒绝记 status_note |
+| 待确认计数 | `GET /api/admin/knowledge/candidates/pending-count` | 前端红点 |

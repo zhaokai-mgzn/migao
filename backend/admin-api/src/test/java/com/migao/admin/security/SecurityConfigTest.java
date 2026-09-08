@@ -94,6 +94,10 @@ class SecurityConfigTest {
     @MockBean
     private com.migao.admin.service.KnowledgeDeriveService knowledgeDeriveService;
 
+    // LLM WIKI 板块（issue #3051 P5）：提炼候选队列服务
+    @MockBean
+    private com.migao.admin.service.KnowledgeCandidateService knowledgeCandidateService;
+
     @MockBean
     private com.migao.admin.service.NotificationService notificationService;
 

@@ -464,6 +464,21 @@ _CASE_API_018 = EvalCase(
     persona='',
 )
 
+# ── API-019 [NORMAL] 待确认队列闭环 - 候选读+写路径齐全，采纳转卡片、拒绝记原因（LLM WIKI 板块 #3051 P5）（源: cases/api.yml）──
+_CASE_API_019 = EvalCase(
+    id='API-019',
+    legacy_id='',
+    title='待确认队列闭环 - 候选读+写路径齐全，采纳转卡片、拒绝记原因（LLM WIKI 板块 #3051 P5）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['AI 提炼的候选知识卡片进入待确认队列，商家采纳（或编辑后采纳）后生效，拒绝则不生效'],
+    expectations=[],
+    data_checks=['GET /api/admin/knowledge/candidates 分页返回候选（缺省 status=pending，created_at 倒序，租户隔离）；GET /candidates/pending-count 返回待确认数', 'POST /{id}/adopt 采纳：候选 → 知识卡片（status=published，sourceType/sourceRef 继承候选来源），候选置 adopted；立即可被检索', 'POST /{id}/adopt-edited 编辑后采纳：人工修订标题/回答覆盖（标题回答必填），候选置 edited', 'POST /{id}/reject 拒绝：候选置 rejected + status_note 记录原因，不产生卡片；跨租户一律 404'],
+    skip_reason='队列读写路径由 MockMvc + Service 单测验证（KnowledgeCandidateControllerTest/KnowledgeCandidateServiceTest），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['api', 'knowledge', 'wiki', 'candidates'],
+    persona='',
+)
+
 # ── API-012 [NORMAL] 语音转写接口容错 - 空/极小/静音音频返回友好 4xx/5xx，不裸 500（#2984）（源: cases/api.yml）──
 _CASE_API_012 = EvalCase(
     id='API-012',
@@ -3495,6 +3510,7 @@ ALL_CASES = (
     _CASE_API_016,
     _CASE_API_017,
     _CASE_API_018,
+    _CASE_API_019,
     _CASE_API_012,
     _CASE_BM_001,
     _CASE_BM_002,
