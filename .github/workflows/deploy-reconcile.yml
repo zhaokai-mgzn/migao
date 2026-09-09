@@ -1,23 +1,29 @@
-# 部署补偿对账（issue #3113 v2）：GitHub Actions schedule 触发不可靠 + push 事件
-# 自 2026-09-05 启用 native auto-merge 后对 main 的合并全面失效（9/5 08:01Z 之后
-# 0 个 push 事件 run——9/9 当天 24 次合并 0 次 push run 实证），push+paths 主触发已死。
+# 部署补偿对账（issue #3113 v3）：auto-merge 合并后的部署触发链路排查结论——
+# 自 2026-09-05 启用原生 auto-merge 起（9/5 08:01Z 为最后一条 push 事件 run，
+# verify-trigger closed 验证 08:41Z 后 0 run），push 与 pull_request closed 事件
+# 不再触发任何 Actions workflow；schedule 随机节流（同 '*/20' 配置，close-linked-issues
+# 09:59Z 触发而 deploy-frontend 06:36Z 后零触发）；仅 pull_request opened/synchronize、
+# issues、issue_comment、workflow_dispatch 可靠。
 #
-# 本工作流改用「PR merged」事件做对账触发源（pull_request 事件一直可靠——
-# auto-merge 关闭 PR 时必触发）：
-#   - on: pull_request types:[closed]，if merged && base==main
-#   - 对账基于合并后的 main HEAD：检查 admin-api/ai-agent-service/admin-web 三服务
-#     sha-<head7> 镜像是否在 ACR 存在
-#   - 缺失 → gh workflow run dispatch 对应 deploy-*.yml（workflow_dispatch 100% 触发）
-#   - 已存在 → 跳过（零浪费；中间 commit 漏部署不影响——最终 HEAD 已部署即达成目标）
+# v3 触发源（可靠事件组合，任一路径都会对账）：
+#   1. pull_request opened/reopened（新 PR 打开必触发——PR Check 依赖它，已被证明可靠；
+#      仓库迭代不停，每次新 PR 都会对账一次 main HEAD，接近实时）
+#   2. schedule '*/20'（随机兜底，不可靠但有比没有好）
+#   3. workflow_dispatch（手动）
+# 对账逻辑不变：checkout main（PR 事件时 GITHUB_SHA 是 PR head，必须切到 main 取 HEAD）
+# → 三服务 sha-<main-head7> 镜像缺失 → gh workflow run dispatch 对应 deploy。
 #
 # 与原 deploy 工作流关系：本补偿是兜底；deploy-*.yml 的 push+paths 主触发（已失效）
-# 与 schedule 对账保留不动（schedule 虽不可靠但有比没有好）。
-name: Deploy Reconcile (PR merged 对账补偿)
+# 与 schedule 对账保留不动。
+name: Deploy Reconcile (PR 对账补偿)
 
 on:
   pull_request:
-    types: [closed]
+    types: [opened, reopened]
     branches: [main]
+  schedule:
+    - cron: '*/20 * * * *'
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -26,15 +32,16 @@ permissions:
 jobs:
   reconcile:
     name: Reconcile and dispatch missing deploys
-    if: github.event.pull_request.merged == true
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
       ACR_REGISTRY: crpi-qdcgkzwx9p9zckga.cn-hangzhou.personal.cr.aliyuncs.com
       ACR_NAMESPACE: ai-customer-service
     steps:
-      # merged PR 的 GITHUB_SHA = 合并后 main HEAD，直接用于对账
+      # 对账基于 main HEAD（PR opened/reopened 事件的 GITHUB_SHA 是 PR head，需切 main）
       - uses: actions/checkout@v7
+        with:
+          ref: main
 
       - name: Docker login ACR
         run: echo "${{ secrets.ACR_PASSWORD }}" | docker login ${{ env.ACR_REGISTRY }} -u ${{ secrets.ACR_USERNAME }} --password-stdin
