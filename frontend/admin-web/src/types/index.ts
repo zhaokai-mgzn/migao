@@ -716,6 +716,10 @@ export interface Customer {
   remark?: string
   lastActiveAt?: string
   createdAt?: string
+  // —— 地区（后端 CustomerProfile 省市区；#3102 下单选客户回填地址前缀）——
+  regionProvince?: string
+  regionCity?: string
+  regionDistrict?: string
 }
 
 // 客户列表查询参数

@@ -1,4 +1,4 @@
-// case_ids: OR-009, OR-014
+// case_ids: OR-009, OR-014, UI-038
 // OR-014（issue #3005 回滚 #2986）：下单加工项数量规则——per_meter→面料米数；per_set/fixed/per_area→1，
 // 商品数量变化联动重算；加工项行显示「名称+数量+金额」供对账，无数量输入框（数量由计价方式派生）
 import { describe, it, expect, vi, beforeEach } from 'vitest'
@@ -9,6 +9,7 @@ const mockCreateOrder = vi.fn()
 const mockGetProducts = vi.fn()
 const mockGetProduct = vi.fn()
 const mockGetProductProcessingItems = vi.fn()
+const mockGetCustomers = vi.fn()
 
 vi.mock('@/lib/api', () => ({
   orderApi: {
@@ -18,6 +19,9 @@ vi.mock('@/lib/api', () => ({
     getProducts: (...args: any[]) => mockGetProducts(...args),
     getProduct: (...args: any[]) => mockGetProduct(...args),
     getProductProcessingItems: (...args: any[]) => mockGetProductProcessingItems(...args),
+  },
+  customerApi: {
+    getCustomers: (...args: any[]) => mockGetCustomers(...args),
   },
 }))
 
@@ -382,5 +386,67 @@ describe('NewOrderPage', () => {
     const payload = mockCreateOrder.mock.calls[0][0]
     expect(payload.actualAmount).toBe(165)
     expect(payload.discountAmount).toBe(15)
+  })
+
+  // ── 客户选择（#3102）：选择已有客户自动回填收货信息，保留手动兜底 ──
+
+  describe('客户选择（#3102）', () => {
+    beforeEach(() => {
+      mockGetCustomers.mockResolvedValue({
+        data: {
+          data: {
+            items: [
+              { id: 'c1', wechatNickname: '张老板', phone: '13800138001', sourceChannel: 'wechat_mini', regionProvince: '浙江省', regionCity: '杭州市', regionDistrict: '西湖区', vipLevel: 'vip1' },
+              { id: 'c2', wechatNickname: '李经理', phone: '13900139002', sourceChannel: 'web', regionProvince: '江苏省', regionCity: '苏州市', regionDistrict: '姑苏区' },
+            ],
+            total: 2,
+          },
+        },
+      })
+    })
+
+    it('收货信息区提供「选择客户」入口', async () => {
+      render(<NewOrderPage />)
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /选择客户/ })).toBeInTheDocument()
+      })
+    })
+
+    it('点击「选择客户」打开客户选择弹窗并加载客户列表', async () => {
+      render(<NewOrderPage />)
+      fireEvent.click(await screen.findByRole('button', { name: /选择客户/ }))
+      // 弹窗内搜索框出现
+      await waitFor(() => {
+        expect(screen.getByPlaceholderText(/搜索客户/)).toBeInTheDocument()
+      })
+      // 加载客户列表（getCustomers 被调用，客户行渲染）
+      expect(mockGetCustomers).toHaveBeenCalled()
+      await waitFor(() => {
+        expect(screen.getByText('张老板')).toBeInTheDocument()
+        expect(screen.getByText('13800138001')).toBeInTheDocument()
+      })
+    })
+
+    it('选中客户后自动回填 收货人姓名/手机号/地址（省市区拼接）', async () => {
+      render(<NewOrderPage />)
+      fireEvent.click(await screen.findByRole('button', { name: /选择客户/ }))
+      fireEvent.click(await screen.findByText('张老板'))
+      await waitFor(() => {
+        expect(screen.getByPlaceholderText('请输入收货人姓名')).toHaveValue('张老板')
+        expect(screen.getByPlaceholderText('请输入 11 位手机号')).toHaveValue('13800138001')
+        expect(screen.getByPlaceholderText('请输入详细收货地址')).toHaveValue('浙江省 杭州市 西湖区')
+      })
+    })
+
+    it('搜索关键词触发 getCustomers 携带 keyword', async () => {
+      render(<NewOrderPage />)
+      fireEvent.click(await screen.findByRole('button', { name: /选择客户/ }))
+      const search = await screen.findByPlaceholderText(/搜索客户/)
+      fireEvent.change(search, { target: { value: '张' } })
+      fireEvent.keyDown(search, { key: 'Enter' })
+      await waitFor(() => {
+        expect(mockGetCustomers).toHaveBeenCalledWith(expect.objectContaining({ keyword: '张' }))
+      })
+    })
   })
 })

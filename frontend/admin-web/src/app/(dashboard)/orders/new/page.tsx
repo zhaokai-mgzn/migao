@@ -2,15 +2,15 @@
 
 import { useEffect, useMemo, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, Search, Package, User, Receipt, Settings2, Plus, Trash2 } from 'lucide-react'
+import { ArrowLeft, Search, Package, User, Receipt, Settings2, Plus, Trash2, UserPlus, Phone, MapPin } from 'lucide-react'
 import { toast } from 'sonner'
 import { toastRequestError } from '@/lib/api-error'
-import { orderApi, productApi } from '@/lib/api'
+import { orderApi, productApi, customerApi } from '@/lib/api'
 import type { ProductProcessingItem } from '@/lib/api'
 import { resolveImageUrl } from '@/lib/utils'
 import { useOrderAmounts } from '@/hooks/useOrderAmounts'
 import { Button, Card, Input, Modal } from '@/components/ui'
-import type { Product, OrderItemFormData } from '@/types'
+import type { Product, OrderItemFormData, Customer } from '@/types'
 
 interface OrderProductSku {
   id: string
@@ -105,6 +105,12 @@ export default function NewOrderPage() {
   const [customerAddress, setCustomerAddress] = useState('')
   const [remark, setRemark] = useState('')
 
+  // ===== 客户选择弹窗（#3102：选已有客户快捷回填收货信息，保留手动兜底）=====
+  const [customerModalOpen, setCustomerModalOpen] = useState(false)
+  const [customerKeyword, setCustomerKeyword] = useState('')
+  const [customerResults, setCustomerResults] = useState<Customer[]>([])
+  const [customerSearchLoading, setCustomerSearchLoading] = useState(false)
+
   // 表单错误
   const [errors, setErrors] = useState<Record<string, string>>({})
 
@@ -152,6 +158,42 @@ export default function NewOrderPage() {
   const openProductModalFor = (lineId: string) => {
     setActiveLineId(lineId)
     setProductModalOpen(true)
+  }
+
+  // ===== 客户搜索（#3102）=====
+  const searchCustomers = useCallback(async () => {
+    setCustomerSearchLoading(true)
+    try {
+      const res = await customerApi.getCustomers({
+        keyword: customerKeyword.trim() || undefined,
+        page: 1,
+        size: 30,
+      })
+      setCustomerResults(res.data?.data?.items || [])
+    } catch (e) {
+      toastRequestError(e, '搜索客户失败')
+    } finally {
+      setCustomerSearchLoading(false)
+    }
+  }, [customerKeyword])
+
+  useEffect(() => {
+    if (customerModalOpen) {
+      searchCustomers()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [customerModalOpen])
+
+  // 选中客户 → 自动回填收货信息（姓名=昵称、手机号、地址=省市区前缀，仍可手动修改）
+  const handlePickCustomer = (c: Customer) => {
+    const name = c.wechatNickname || c.name || c.nickname || ''
+    const region = [c.regionProvince, c.regionCity, c.regionDistrict].filter(Boolean).join(' ')
+    if (name) setCustomerName(name)
+    if (c.phone) setCustomerPhone(c.phone)
+    if (region) setCustomerAddress(region)
+    setCustomerModalOpen(false)
+    setCustomerKeyword('')
+    setCustomerResults([])
   }
 
   // ===== 选中商品后加载详情 + 加工项 =====
@@ -509,7 +551,18 @@ export default function NewOrderPage() {
           {/* ============= 收货信息 ============= */}
           <Card>
             <div className="p-6">
-              <SectionTitle icon={<User className="w-4 h-4" />} title="收货信息" />
+              <div className="flex items-center justify-between mb-4">
+                <SectionTitle icon={<User className="w-4 h-4" />} title="收货信息" />
+                {/* #3102: 选择已有客户快捷回填收货信息 */}
+                <button
+                  type="button"
+                  onClick={() => setCustomerModalOpen(true)}
+                  className="inline-flex items-center gap-1.5 text-sm font-medium text-primary-600 hover:text-primary-700 transition-colors"
+                >
+                  <UserPlus className="w-4 h-4" />
+                  选择客户
+                </button>
+              </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <Input
                   label="收货人姓名"
@@ -739,6 +792,84 @@ export default function NewOrderPage() {
                     </div>
                   </button>
                 ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </Modal>
+
+      {/* 客户选择弹窗（#3102）：选已有客户 → 回填收货信息；未命中可关闭后手动输入 */}
+      <Modal
+        open={customerModalOpen}
+        onClose={() => setCustomerModalOpen(false)}
+        title="选择客户"
+        width={560}
+        footer={
+          <Button variant="secondary" onClick={() => setCustomerModalOpen(false)}>
+            关闭
+          </Button>
+        }
+      >
+        <div className="space-y-4">
+          <div className="flex items-center gap-2">
+            <Input
+              placeholder="搜索客户姓名 / 手机号"
+              value={customerKeyword}
+              onChange={(e) => setCustomerKeyword(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && searchCustomers()}
+            />
+            <Button onClick={searchCustomers} loading={customerSearchLoading} className="shrink-0">
+              搜索
+            </Button>
+          </div>
+
+          <div className="max-h-[380px] overflow-y-auto -mx-2 px-2">
+            {customerSearchLoading ? (
+              <p className="text-center text-neutral-400 py-8 text-sm">加载中…</p>
+            ) : customerResults.length === 0 ? (
+              <p className="text-center text-neutral-400 py-8 text-sm">
+                {customerKeyword ? '未找到相关客户，可关闭后手动填写收货信息' : '暂无可选客户'}
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {customerResults.map((c) => {
+                  const name = c.wechatNickname || c.name || c.nickname || '未命名客户'
+                  const region = [c.regionProvince, c.regionCity, c.regionDistrict].filter(Boolean).join(' ')
+                  return (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onClick={() => handlePickCustomer(c)}
+                      className="flex w-full items-center gap-3 p-3 rounded-lg border border-neutral-200 bg-white hover:border-primary-400 hover:bg-primary-50/40 transition-colors text-left"
+                    >
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary-50 text-primary-600">
+                        <User className="h-4 w-4" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-medium text-neutral-900 truncate">{name}</div>
+                        <div className="text-xs text-neutral-400 mt-0.5 flex items-center gap-3">
+                          {c.phone && (
+                            <span className="inline-flex items-center gap-1">
+                              <Phone className="w-3 h-3" />
+                              {c.phone}
+                            </span>
+                          )}
+                          {region && (
+                            <span className="inline-flex items-center gap-1 truncate">
+                              <MapPin className="w-3 h-3 shrink-0" />
+                              {region}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      {c.sourceChannel && (
+                        <span className="shrink-0 rounded bg-neutral-100 px-1.5 py-0.5 text-[11px] text-neutral-500">
+                          {c.sourceChannel === 'wechat_mini' ? '小程序' : c.sourceChannel === 'h5' ? 'H5' : c.sourceChannel}
+                        </span>
+                      )}
+                    </button>
+                  )
+                })}
               </div>
             )}
           </div>

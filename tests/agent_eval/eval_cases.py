@@ -3620,6 +3620,21 @@ _CASE_UI_036 = EvalCase(
     persona='',
 )
 
+# ── UI-038 [NORMAL] 新增订单表单支持选择已有客户 — 自动回填收货信息（姓名/手机号/省市区），保留手动兜底（#3102）（源: cases/ui.yml）──
+_CASE_UI_038 = EvalCase(
+    id='UI-038',
+    legacy_id='',
+    title='新增订单表单支持选择已有客户 — 自动回填收货信息（姓名/手机号/省市区），保留手动兜底（#3102）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['新增订单表单不支持选择客户，收货信息需纯手动输入；增加「选择客户」能力：从客户列表搜索选中后自动回填，提升下单效率与体验'],
+    expectations=['direct_reply'],
+    data_checks=['新增订单页「收货信息」卡提供「选择客户」入口，点击打开客户选择弹窗（标题「选择客户」），加载客户列表（customerApi.getCustomers）', '弹窗支持按 姓名/手机号 关键词搜索（Enter/搜索按钮触发 getCustomers 携带 keyword）；客户行展示 姓名（wechatNickname 优先）+ 手机号 + 省市区 + 来源渠道', '选中客户后自动回填：收货人姓名=客户昵称、手机号=phone、收货地址=省市区拼接（regionProvince regionCity regionDistrict），仍可手动修改', '保留手动兜底：未命中客户/关闭弹窗后可直接手填收货信息提交订单；订单提交契约不变（OrderCreateRequest 无 customerId，不引入跨端契约改动）'],
+    skip_reason='纯前端页面交互由 vitest 单测验证（orders-new.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ui', 'orders', 'customer', 'order-create', 'admin-web'],
+    persona='',
+)
+
 # ── UT-001 [NORMAL] 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值（源: cases/utils.yml）──
 _CASE_UT_001 = EvalCase(
     id='UT-001',
@@ -3889,6 +3904,7 @@ ALL_CASES = (
     _CASE_UI_034,
     _CASE_UI_035,
     _CASE_UI_036,
+    _CASE_UI_038,
     _CASE_UT_001,
     _CASE_UT_002,
 )
