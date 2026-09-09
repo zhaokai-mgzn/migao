@@ -51,13 +51,14 @@ cases:
     user_inputs:
       - "基础加工分类下有哪些"
     expectations:
-      - tool: processing_item_manage
-        args:
-          action: list_categories
+      # 用户问「分类下有哪些」是想看分类下的加工项，正确工具是 processing_item_query
+      # （processing_item_manage 的 description 明确「仅查看加工项列表用 processing_item_query」，
+      # list_categories 是查分类树 CRUD）。原断言误写 processing_item_manage(list_categories)。
+      - tool: processing_item_query
     data_checks:
       - "返回分类列表"
     skip_reason: ""
-    merge_log: "verification 2.14 独有"
+    merge_log: "verification 2.14 独有；2026-09-09 校准：期望工具 processing_item_manage(list_categories) 与工具 description 矛盾（查询加工项应走 processing_item_query），改为 processing_item_query"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_processing_item_manage.py"
