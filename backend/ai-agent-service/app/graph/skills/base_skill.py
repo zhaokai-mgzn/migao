@@ -29,6 +29,7 @@ from loguru import logger
 
 from app.config import settings
 from app.graph.state import AgentState
+from app.graph.pending_validated import extract_pending, is_pending_for, PENDING_KEY
 from app.tools.base import ToolContext
 from app.tools.registry import ToolRegistry, set_tool_context, get_tool_context
 from app.utils.log_sanitizer import LogSanitizer
@@ -909,6 +910,39 @@ async def _inject_user_preferences(system_prompt: str, state: AgentState) -> str
     return system_prompt
 
 
+async def _inject_pending_validated(system_prompt: str, state: AgentState, last_user_msg: str) -> str:
+    """确认-执行链「已校验待执行」注入（issue #3031，仅 mibao/xiaobu 通用）。
+
+    - 读 SessionStateStore 的 pending_validated_input（validate_input 通过后落库）
+    - 仅当当前轮用户消息读起来像确认（_is_explicit_confirmation 或含确认词）时才注入，
+      避免把「待执行」误注入到用户提出新需求/纠偏的轮次
+    - 注入 format_execution_hint 提示，让 LLM 直接调写工具，不再重走 validate+interact
+    - fire-and-forget：任何异常不抛，不破坏主流程
+    """
+    if not state.get("session_id"):
+        return system_prompt
+    # 仅确认轮注入：用户消息不是确认时，pending 不应驱动本轮（可能是纠偏/新意图）
+    if not _is_explicit_confirmation(last_user_msg or ""):
+        return system_prompt
+    try:
+        from app.memory.session_state_store import SessionStateStore
+        from app.graph.pending_validated import format_execution_hint
+        store = SessionStateStore()
+        full = await store.load(state["session_id"]) or {}
+        pending = full.get(PENDING_KEY)
+        if not pending:
+            return system_prompt
+        hint = format_execution_hint(pending)
+        logger.info(
+            f"[pending-validated] Injecting execution hint for {pending.get('target_tool')}."
+            f"{pending.get('target_action')} | session={state['session_id']}"
+        )
+        return hint + "\n\n" + system_prompt
+    except Exception as e:
+        logger.warning(f"[pending-validated] inject failed (non-fatal): {e}")
+        return system_prompt
+
+
 async def execute_skill(
     state: AgentState,
     skill_name: str,
@@ -1033,6 +1067,15 @@ async def execute_skill(
 
     # 4c. 建议个性化偏好注入（issue #2997：flag 门控默认关闭；仅 xiaobu）
     system_prompt = await _inject_user_preferences(system_prompt, state)
+
+    # 4d. 确认-执行链「已校验待执行」注入（issue #3031：确认轮直接执行写工具）
+    # last_user_msg 需在此处可用：从 raw_messages 反向取最后一条 HumanMessage
+    _confirm_msg = ""
+    for _m in reversed(raw_messages):
+        if isinstance(_m, HumanMessage):
+            _confirm_msg = _extract_content(_m)
+            break
+    system_prompt = await _inject_pending_validated(system_prompt, state, _confirm_msg)
 
     if is_multimodal:
         system_prompt = (
@@ -1309,6 +1352,43 @@ async def execute_skill(
                             await mgr.save(session_id)  # Redis 持久化
                         except Exception:
                             pass
+                    # ── 确认-执行链状态（issue #3031）──
+                    # validate_input 通过 → 持久化「已校验待执行」状态，下一轮确认时
+                    # 直接执行写工具，不再从零重走 validate+interact（sess_50ff 三张 confirm 卡根因）。
+                    if session_id and tool_name == "validate_input" and result_dict.get("success"):
+                        try:
+                            pending = extract_pending(tool_call.get("args") or {})
+                            if pending:
+                                from app.memory.session_state_store import SessionStateStore
+                                store = SessionStateStore()
+                                full = await store.load(session_id) or {}
+                                full[PENDING_KEY] = pending
+                                await store.commit(session_id, full)
+                                logger.info(
+                                    f"[{skill_name}] Pending validated persisted: "
+                                    f"{pending['target_tool']}.{pending['target_action']} | session={session_id}"
+                                )
+                        except Exception as e:
+                            logger.warning(f"[{skill_name}] pending_validated persist failed (non-fatal): {e}")
+                    # 写工具执行成功 → 清除对应「已校验待执行」状态（闭环完成，防残留误导下一轮）。
+                    # 注意：不能依赖 result_dict["terminal"] —— after_sales_manage(create) 等
+                    # B 端写工具不返回 terminal=True（仅 order_create/aftersale_create/human_handoff
+                    # 有），依赖 terminal 会导致售后换货的 pending 执行成功后残留。
+                    # 正确判定：pending.target_tool 匹配当前工具 + 执行成功 → 清除。
+                    if session_id and result_dict.get("success") and tool_name != "validate_input":
+                        try:
+                            from app.memory.session_state_store import SessionStateStore
+                            store = SessionStateStore()
+                            full = await store.load(session_id) or {}
+                            pending = full.get(PENDING_KEY)
+                            if is_pending_for(pending, tool_name):
+                                full.pop(PENDING_KEY, None)
+                                await store.commit(session_id, full)
+                                logger.info(
+                                    f"[{skill_name}] Pending validated cleared after {tool_name} | session={session_id}"
+                                )
+                        except Exception as e:
+                            logger.warning(f"[{skill_name}] pending_validated clear failed (non-fatal): {e}")
                     # T2 事务终态：terminal 工具成功后重置当前域上下文（草稿/实体/待确认）
                     if session_id and result_dict.get("success") and result_dict.get("terminal"):
                         try:
