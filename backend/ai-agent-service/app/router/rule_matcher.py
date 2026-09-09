@@ -154,6 +154,18 @@ class RuleMatcher:
                 matched_keywords=["最近N条订单"],
             )
 
+        # --- 优先匹配「退货回补库存」→ product（商品设置 allow_return_restock） ---
+        # PR-017 回归：「把遮光窗帘设置成退货后回补库存」是商品设置（product_update 的
+        # allow_return_restock），但「退货」关键词抢到 after_sales → agent 按售后工具集
+        # 误宣「没有商品设置入口」（能力误宣）。「回补库存/回补」是商品库存语义，前置拦截。
+        if "回补" in msg_lower and "库存" in msg_lower:
+            return IntentResult(
+                intent=IntentType.PRODUCT_INQUIRY,
+                confidence=0.95,
+                source="rule",
+                matched_keywords=["回补库存"],
+            )
+
         # --- 优先匹配「尺寸数字 + 褶皱/算料/报价」→ quote（算料报价） ---
         # 否则"3米窗 2倍褶皱 多少钱"会被"多少钱"(3字) 压过"褶皱"(2字) 误路由到商品咨询。
         # 尺寸 + 褶皱/倍数 是算料意图的强信号，前置拦截。

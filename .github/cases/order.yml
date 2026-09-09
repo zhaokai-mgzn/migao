@@ -386,14 +386,17 @@ cases:
     truths_ref:
       - order.flow
     user_inputs:
-      - "用户算料报价后确认下单，走 SMS 验证（bypass）→ order_create 成功"
+      - "创建订单：张三 13800138000，杭州西湖区，米白色遮光窗帘 2米"
+      - "散剪，2.8米门幅"
+      - "不添加加工项，确认下单"
+      - "确认下单"
     expectations:
       - tool: order_create
     data_checks:
       - "order_create 返回订单号"
       - "订单必须携带有效收件人手机号：agent 路径必填+11位格式校验；表单 API @Pattern 同规则（非法手机号 → 400 拒绝创建）——手机号是客户绑定归属回填与物流查询（顺丰等需尾号）的关键信息，禁止缺失/非法"
     skip_reason: ""
-    merge_log: "POC 下单闭环集成测试新增；2026-09-02 补订单手机号完整性约束"
+    merge_log: "POC 下单闭环集成测试新增；2026-09-02 补订单手机号完整性约束；2026-09-09 校准：原 user_inputs 为描述性文字「用户算料报价后确认下单…」非用户对话，agent 无法触发下单（tools=[]）；改为真实下单对话（选品→规格→跳过加工项→确认）"
     traces:
       tests:
         - "backend/admin-api/src/test/java/com/migao/admin/controller/OrderControllerTest.java"
