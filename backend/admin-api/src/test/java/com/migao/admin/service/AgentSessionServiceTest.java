@@ -55,6 +55,9 @@ class AgentSessionServiceTest {
     @Mock
     private CustomerProfileMapper customerProfileMapper;
 
+    @Mock
+    private org.springframework.context.ApplicationEventPublisher eventPublisher;
+
     @InjectMocks
     private AgentSessionService agentSessionService;
 
@@ -362,6 +365,8 @@ class AgentSessionServiceTest {
         verify(agentSessionMapper).updateById(argThat((AgentSession s) ->
                 "ended".equals(s.getStatus())));
         verify(agentMessageMapper).insert(any(AgentMessage.class));
+        // 会话结束发布事件 → 触发自动提炼（#3090）
+        verify(eventPublisher).publishEvent(any(com.migao.admin.event.SessionEndedEvent.class));
     }
 
     @Test

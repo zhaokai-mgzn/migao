@@ -72,7 +72,8 @@ class KnowledgeDistillServiceTest {
 
     private AgentSession endedSession(String id) {
         return AgentSession.builder()
-                .id(id).tenantId(1L).status("ended").endedAt(OffsetDateTime.now().minusHours(2)).build();
+                .id(id).tenantId(1L).status("ended").endedAt(OffsetDateTime.now().minusHours(2))
+                .employeeId("e1").build();  // 人工会话（转人工后 employeeId 非空，#3090）
     }
 
     private JsonNode candidate(String title, String answer) {
@@ -189,6 +190,72 @@ class KnowledgeDistillServiceTest {
 
             assertThat(result.get("candidates")).isEqualTo(0);
             verify(knowledgeCandidateMapper, never()).insert(any(KnowledgeCandidate.class));
+        }
+
+        @Test
+        @DisplayName("纯 AI 会话（employeeId 为空）不提炼（#3090）")
+        void distill_aiOnlySession_skipped() {
+            AgentSession aiOnly = AgentSession.builder()
+                    .id("ai1").tenantId(1L).status("ended").endedAt(OffsetDateTime.now().minusHours(2))
+                    .build();  // 无 employeeId = 小布/AI 纯自动接待
+            when(agentSessionMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(aiOnly));
+
+            Map<String, Object> result = knowledgeDistillService.distillConversations(1L, 24);
+
+            // 单测 mock 层不模拟 SQL 的 isNotNull(employeeId) 过滤（selectList 返回了 AI 会话），
+            // 断言提炼不产生任何候选 + LLM 不被调用（distillSession 层拒绝 AI 会话）
+            assertThat(result.get("candidates")).isEqualTo(0);
+            assertThat(result.get("created")).isEqualTo(0);
+            verify(distillClient, never()).distill(anyString(), anyInt(), any(), anyString());
+            verify(knowledgeCandidateMapper, never()).insert(any(KnowledgeCandidate.class));
+        }
+
+        @Test
+        @DisplayName("distillSession：单人工会话提炼 → 候选写入（#3090）")
+        void distillSession_singleHumanSession() throws Exception {
+            when(agentSessionMapper.selectById("s1")).thenReturn(endedSession("s1"));
+            when(agentMessageMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(
+                    AgentMessage.builder().tenantId(1L).sessionId("s1").senderType("customer").content("多少钱？").isInternal(false).build(),
+                    AgentMessage.builder().tenantId(1L).sessionId("s1").senderType("agent").content("人工回复价格规则。").isInternal(false).build()));
+            when(distillClient.distill(anyString(), eq(5), eq(1L), anyString())).thenReturn(List.of(
+                    candidate("窗帘多少钱", "按米计价 88 元。")));
+            when(knowledgeCardMapper.selectCount(any(LambdaQueryWrapper.class))).thenReturn(0L);
+            when(knowledgeCandidateMapper.selectCount(any(LambdaQueryWrapper.class))).thenReturn(0L);
+
+            Map<String, Object> result = knowledgeDistillService.distillSession(1L, "s1");
+
+            assertThat(result.get("candidates")).isEqualTo(1);
+            ArgumentCaptor<KnowledgeCandidate> captor = ArgumentCaptor.forClass(KnowledgeCandidate.class);
+            verify(knowledgeCandidateMapper).insert(captor.capture());
+            assertThat(captor.getValue().getSourceRef()).isEqualTo("s1");
+            assertThat(captor.getValue().getSourceType()).isEqualTo("conversation");
+        }
+
+        @Test
+        @DisplayName("distillSession：已提炼会话（已有 conversation 候选）跳过，不重复调 LLM（#3090）")
+        void distillSession_alreadyDistilled_skipped() {
+            when(agentSessionMapper.selectById("s1")).thenReturn(endedSession("s1"));
+            // 该会话已有 conversation 候选 → 已提炼，跳过
+            when(knowledgeCandidateMapper.selectCount(any(LambdaQueryWrapper.class))).thenReturn(1L);
+
+            Map<String, Object> result = knowledgeDistillService.distillSession(1L, "s1");
+
+            assertThat(result.get("candidates")).isEqualTo(0);
+            verify(distillClient, never()).distill(anyString(), anyInt(), any(), anyString());
+            verify(knowledgeCandidateMapper, never()).insert(any(KnowledgeCandidate.class));
+        }
+
+        @Test
+        @DisplayName("distillSession：纯 AI 会话（无 employeeId）跳过（#3090）")
+        void distillSession_aiOnly_skipped() {
+            AgentSession aiOnly = AgentSession.builder()
+                    .id("ai1").tenantId(1L).status("ended").endedAt(OffsetDateTime.now().minusHours(2)).build();
+            when(agentSessionMapper.selectById("ai1")).thenReturn(aiOnly);
+
+            Map<String, Object> result = knowledgeDistillService.distillSession(1L, "ai1");
+
+            assertThat(result.get("candidates")).isEqualTo(0);
+            verify(distillClient, never()).distill(anyString(), anyInt(), any(), anyString());
         }
     }
 }

@@ -39,6 +39,7 @@ public class AgentSessionService extends ServiceImpl<AgentSessionMapper, AgentSe
     private final AgentMessageMapper agentMessageMapper;
     private final AgentEmployeeMapper agentEmployeeMapper;
     private final CustomerProfileMapper customerProfileMapper;
+    private final org.springframework.context.ApplicationEventPublisher eventPublisher;
 
     /**
      * 合法的状态流转定义
@@ -532,6 +533,9 @@ public class AgentSessionService extends ServiceImpl<AgentSessionMapper, AgentSe
                 .isInternal(false)
                 .build();
         agentMessageMapper.insert(systemMsg);
+
+        // 发布会话结束事件 → 事务提交后异步触发知识提炼（#3090，人工会话自动提炼）
+        eventPublisher.publishEvent(new com.migao.admin.event.SessionEndedEvent(session.getTenantId(), sessionId));
 
         log.info("会话结束: sessionId={}", sessionId);
     }

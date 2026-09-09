@@ -256,8 +256,7 @@ export const knowledgeApi = {
     request.post<ApiResponse<{ templateId: string; created: number; skipped: number }>>(`/api/admin/knowledge/templates/${templateId}/apply`),
 
   // ===== 提炼触发（issue #3051 P5b/P6）=====
-  distillConversations: (hours = 24) =>
-    request.post<ApiResponse<{ sessions: number; candidates: number; created: number; skipped: number }>>(`/api/admin/knowledge/distill/conversations?hours=${hours}`),
+  // distillConversations 已移除：人工客服会话结束自动提炼（#3090），前端不再手动触发
   distillDocument: (data: { title?: string; content: string }) =>
     request.post<ApiResponse<{ candidates: number; created: number; skipped: number }>>('/api/admin/knowledge/distill/documents', data),
 }

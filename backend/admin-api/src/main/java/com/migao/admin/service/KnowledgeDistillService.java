@@ -25,7 +25,10 @@ import java.util.Map;
  * 会话知识提炼服务（LLM WIKI 板块 P5b，issue #3051 — L3 会话提炼）
  *
  * 闭环三（检索-会话飞轮）：人工客服会话 → AI 提炼候选 → 待确认队列 → 商家采纳 → 知识卡片 → 检索命中。
- * 提炼源 = 已结束人工会话（agent_sessions ended）的顾客/客服文本消息；
+ * 提炼源 = 已结束**人工**会话（agent_sessions ended 且 employeeId 非空——转人工标记，#3090）的顾客/客服文本消息；
+ * 纯 AI 会话（小布自动接待，employeeId 为空）不提炼——AI 回答是知识卡片的消费输出，提炼=自循环且兜底话术会污染知识库。
+ * 自动触发（#3090）：会话结束（status→ended）事务提交后由 SessionDistillListener 异步调 distillSession；
+ * 已提炼检查：同一会话已有 conversation 候选 → 跳过（防重复 LLM 调用）。
  * 去重：已存在同名知识卡片或待确认候选 → 跳过；AI 只产生候选，发布权在商家。
  */
 @Slf4j
@@ -54,6 +57,7 @@ public class KnowledgeDistillService {
         List<AgentSession> sessions = agentSessionMapper.selectList(new LambdaQueryWrapper<AgentSession>()
                 .eq(AgentSession::getTenantId, tenantId)
                 .eq(AgentSession::getStatus, "ended")
+                .isNotNull(AgentSession::getEmployeeId)  // 只提炼人工会话（转人工标记，#3090）
                 .ge(AgentSession::getEndedAt, since)
                 .orderByDesc(AgentSession::getEndedAt)
                 .last("LIMIT " + MAX_SESSIONS));
@@ -62,41 +66,84 @@ public class KnowledgeDistillService {
         int created = 0;
         int skipped = 0;
         for (AgentSession session : sessions) {
-            String conversationText = buildConversationText(session.getId(), tenantId);
-            if (!StringUtils.hasText(conversationText)) {
-                continue;
-            }
-            List<JsonNode> distilled = distillClient.distill(conversationText, MAX_PER_SESSION, tenantId, "conversation");
-            for (JsonNode c : distilled) {
-                String title = c.path("title").asText("");
-                String answer = c.path("answer").asText("");
-                if (!StringUtils.hasText(title) || !StringUtils.hasText(answer)) {
-                    continue;
-                }
-                candidates++;
-                if (isDuplicate(tenantId, title)) {
-                    skipped++;
-                    continue;
-                }
-                KnowledgeCandidate candidate = KnowledgeCandidate.builder()
-                        .tenantId(tenantId)
-                        .sourceType("conversation")
-                        .sourceRef(session.getId())
-                        .suggestedTitle(title)
-                        .suggestedAnswer(answer)
-                        .suggestedCategory(c.path("category").asText("faq"))
-                        .suggestedKeywords(c.path("keywords").asText(null))
-                        .confidence(parseConfidence(c.path("confidence").asText("0.5")))
-                        .evidence(c.path("evidence").asText(null))
-                        .status("pending")
-                        .build();
-                knowledgeCandidateMapper.insert(candidate);
-                created++;
-            }
+            Map<String, Object> r = distillSessionWith(session);
+            candidates += ((Number) r.get("candidates")).intValue();
+            created += ((Number) r.get("created")).intValue();
+            skipped += ((Number) r.get("skipped")).intValue();
         }
         log.info("会话提炼完成: tenantId={}, sessions={}, candidates={}, created={}, skipped={}",
                 tenantId, sessions.size(), candidates, created, skipped);
         return Map.of("sessions", sessions.size(), "candidates", candidates, "created", created, "skipped", skipped);
+    }
+
+    /**
+     * 单会话提炼（会话结束自动触发 + 手动对账共用，#3090）：
+     * 人工会话（employeeId 非空）且未提炼过（无 conversation 候选）才调 LLM。
+     *
+     * @return {candidates, created, skipped}
+     */
+    public Map<String, Object> distillSession(Long tenantId, String sessionId) {
+        AgentSession session = agentSessionMapper.selectById(sessionId);
+        if (session == null || !tenantId.equals(session.getTenantId())) {
+            return Map.of("candidates", 0, "created", 0, "skipped", 0);
+        }
+        return distillSessionWith(session);
+    }
+
+    /** 单会话提炼核心：employeeId 校验（纯 AI 会话拒绝）+ 已提炼检查 + LLM 提炼 */
+    private Map<String, Object> distillSessionWith(AgentSession session) {
+        Long tenantId = session.getTenantId();
+        String sessionId = session.getId();
+        if (!StringUtils.hasText(session.getEmployeeId())) {
+            // 非人工会话（纯 AI 接待）不提炼
+            return Map.of("candidates", 0, "created", 0, "skipped", 0);
+        }
+        // 已提炼检查：该会话已有 conversation 候选 → 跳过，不重复调 LLM
+        Long distilled = knowledgeCandidateMapper.selectCount(new LambdaQueryWrapper<KnowledgeCandidate>()
+                .eq(KnowledgeCandidate::getTenantId, tenantId)
+                .eq(KnowledgeCandidate::getSourceType, "conversation")
+                .eq(KnowledgeCandidate::getSourceRef, sessionId));
+        if (distilled != null && distilled > 0) {
+            return Map.of("candidates", 0, "created", 0, "skipped", 0);
+        }
+
+        String conversationText = buildConversationText(sessionId, tenantId);
+        if (!StringUtils.hasText(conversationText)) {
+            return Map.of("candidates", 0, "created", 0, "skipped", 0);
+        }
+        List<JsonNode> distilledList = distillClient.distill(conversationText, MAX_PER_SESSION, tenantId, "conversation");
+        int candidates = 0;
+        int created = 0;
+        int skipped = 0;
+        for (JsonNode c : distilledList) {
+            String title = c.path("title").asText("");
+            String answer = c.path("answer").asText("");
+            if (!StringUtils.hasText(title) || !StringUtils.hasText(answer)) {
+                continue;
+            }
+            candidates++;
+            if (isDuplicate(tenantId, title)) {
+                skipped++;
+                continue;
+            }
+            KnowledgeCandidate candidate = KnowledgeCandidate.builder()
+                    .tenantId(tenantId)
+                    .sourceType("conversation")
+                    .sourceRef(sessionId)
+                    .suggestedTitle(title)
+                    .suggestedAnswer(answer)
+                    .suggestedCategory(c.path("category").asText("faq"))
+                    .suggestedKeywords(c.path("keywords").asText(null))
+                    .confidence(parseConfidence(c.path("confidence").asText("0.5")))
+                    .evidence(c.path("evidence").asText(null))
+                    .status("pending")
+                    .build();
+            knowledgeCandidateMapper.insert(candidate);
+            created++;
+        }
+        log.info("单会话提炼完成: tenantId={}, sessionId={}, candidates={}, created={}, skipped={}",
+                tenantId, sessionId, candidates, created, skipped);
+        return Map.of("candidates", candidates, "created", created, "skipped", skipped);
     }
 
     /**
