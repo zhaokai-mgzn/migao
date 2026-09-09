@@ -18,21 +18,19 @@ const STATUS_META: Record<KnowledgeCardStatus, { label: string; variant: 'defaul
   archived: { label: '已归档', variant: 'error' },
 }
 
-// 知识卡片来源 → 徽标（template/product/config/conversation/document/manual）
-// 来源定义遵循「一眼看懂」原则（#3083）：config = 加工项派生（加工项计价卡片）；
-// product/config 均为历史遗留值（商品派生 #3083 / 加工项派生 #3085 能力已移除，
-// 计价/价格问题走 processing_item_query/product_detail 工具实时查询），仅用于渲染存量归档卡徽标。
+// 知识卡片来源 → 徽标（template/conversation/document/manual）
+// 来源定义遵循「一眼看懂」原则：商品派生（#3083）/加工项派生（#3085）能力已移除
+// 且存量数据已清理（#3087），product/config 不再出现在类型与渲染中；
+// 计价/价格问题走 processing_item_query/product_detail 工具实时查询。
 const SOURCE_META: Record<string, { label: string; variant: 'default' | 'info' | 'warning' | 'success' }> = {
   template: { label: '模板', variant: 'info' },
-  product: { label: '商品派生', variant: 'info' },
-  config: { label: '加工项派生', variant: 'info' },
   conversation: { label: '会话提炼', variant: 'warning' },
   document: { label: '文档提炼', variant: 'info' },
   manual: { label: '人工', variant: 'success' },
 }
 
-// 来源筛选选项：排除已移除的 product/config（商品/加工项派生能力下线，不再产生新卡，#3083/#3085）
-const SOURCE_FILTER_OPTIONS = Object.entries(SOURCE_META).filter(([value]) => value !== 'product' && value !== 'config')
+// 来源筛选选项 = 活跃来源（派生能力已移除且数据已清理，#3087）
+const SOURCE_FILTER_OPTIONS = Object.entries(SOURCE_META)
 
 const CATEGORY_OPTIONS = [
   { value: 'faq', label: 'FAQ' },
