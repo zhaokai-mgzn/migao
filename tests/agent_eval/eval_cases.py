@@ -1719,7 +1719,7 @@ _CASE_HR_002 = EvalCase(
     title='创建员工 - 开账号',
     skill=Skill.GENERAL,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['新客服王五 13812345678，开账号', '确认'],
+    user_inputs=['新客服王五 13812345678，密码 Abc123456，开账号', '确认'],
     expectations=['employee_manage(action=create)'],
     data_checks=['收集确认后创建成功'],
     skip_reason='',

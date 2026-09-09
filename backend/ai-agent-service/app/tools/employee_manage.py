@@ -32,7 +32,7 @@ class EmployeeManageTool(BaseTool):
 
     name = "employee_manage"
     description = (
-        "【触发】用户问'员工''客服''账号''同事''有哪些人''创建账号''禁用账号''删除员工''重置密码'时调用。【前置】list/detail 可查询。create 必填 name+phone。delete/reset_password/toggle_status 是破坏性操作。【反例】管理角色权限用 role_manage。查客户用 customer_manage。【标注】WRITE|DESTRUCTIVE — 删除/禁用/重置密码需二次确认"
+        "【触发】用户问'员工''客服''账号''同事''有哪些人''创建账号''禁用账号''删除员工''重置密码'时调用。【前置】list/detail 可查询。create 必填 name+phone+password（密码由用户提供或系统随机生成后告知，禁止不收集密码就创建）。delete/reset_password/toggle_status 是破坏性操作。【反例】管理角色权限用 role_manage。查客户用 customer_manage。【标注】WRITE|DESTRUCTIVE — 删除/禁用/重置密码需二次确认"
     )
     allowed_roles = [
         "admin", "tenant_admin", "operator", "product_manager", "knowledge_editor",
@@ -86,7 +86,7 @@ class EmployeeManageTool(BaseTool):
             },
             "password": {
                 "type": "string",
-                "description": "密码（create/update 时使用）",
+                "description": "密码（create/update 时使用；create 必填——用户未提供时可用随机密码并在回复中告知，但必须传值）",
             },
             "name": {
                 "type": "string",

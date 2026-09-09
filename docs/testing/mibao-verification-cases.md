@@ -1379,13 +1379,13 @@
 
 ### HR-002. 创建员工 - 开账号 🔵
 ```
-你: 新客服王五 13812345678，开账号
+你: 新客服王五 13812345678，密码 Abc123456，开账号
 你: 确认
 期望: employee_manage(action=create)
 数据: 收集确认后创建成功
 ```
 真值: employee-role.write-require-admin
-溯源: verification 5.2 独有；2026-09-09 校准：补「确认」点确认卡轮（agent 第一轮先 role_manage(all) 查角色→validate_input→发确认卡，需用户确认后才 employee_manage(create)，原单轮期望过严） ｜ tags: create
+溯源: verification 5.2 独有；2026-09-09 校准：① 补「确认」点确认卡轮（agent 第一轮先查角色→validate→发确认卡，需确认后才 create）；② R1 补密码（execute._create_user 要求 password 必填，原 user_inputs 无密码，agent 确认后才发现缺密码反复追问——契约已修，case 同步补密码） ｜ tags: create
 
 ### HR-003. 禁用员工账号 🔵
 ```
