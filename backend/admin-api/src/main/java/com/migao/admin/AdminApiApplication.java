@@ -3,6 +3,7 @@ package com.migao.admin;
 import org.mybatis.spring.annotation.MapperScan;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.scheduling.annotation.EnableAsync;
 
 /**
  * AI 智能客服系统 - 管理后台 API 服务
@@ -12,6 +13,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
  */
 @SpringBootApplication
 @MapperScan("com.migao.admin.mapper")
+@EnableAsync
 public class AdminApiApplication {
 
     public static void main(String[] args) {
