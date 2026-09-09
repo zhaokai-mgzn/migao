@@ -1338,12 +1338,13 @@
 
 ### FN-001. 资金流水查询与登记 🔵
 ```
-你: 登记一笔线下收款
+你: 登记一笔线下收款，金额 88 元，微信支付
+你: 确认
 期望: finance_api(action=create_transaction, type=income)
 数据: 流水号 FIN- 前缀，type=income，amount>0，status=success
 ```
 真值: finance.txn-types, finance.auto-record, finance.txn-no
-溯源: 财务对账模块新增 ｜ tags: finance, query
+溯源: 财务对账模块新增；2026-09-09 校准：补金额+支付方式+确认轮——create_transaction 必填 type+amount，原「登记一笔线下收款」缺 amount，agent 正确引导补充（单轮过严） ｜ tags: finance, query
 
 ### FN-002. 收支汇总 🔵
 ```

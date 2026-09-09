@@ -20,7 +20,8 @@ cases:
       - finance.auto-record
       - finance.txn-no
     user_inputs:
-      - "登记一笔线下收款"
+      - "登记一笔线下收款，金额 88 元，微信支付"
+      - "确认"
     expectations:
       - tool: finance_api
         args:
@@ -29,7 +30,7 @@ cases:
     data_checks:
       - "流水号 FIN- 前缀，type=income，amount>0，status=success"
     skip_reason: ""
-    merge_log: "财务对账模块新增"
+    merge_log: "财务对账模块新增；2026-09-09 校准：补金额+支付方式+确认轮——create_transaction 必填 type+amount，原「登记一笔线下收款」缺 amount，agent 正确引导补充（单轮过严）"
     traces:
       tests:
         - "backend/admin-api/src/test/java/com/migao/admin/service/FinanceServiceTest.java"
