@@ -377,7 +377,7 @@ export default function ProductsPage() {
     <div className="p-6 space-y-4">
       {/* 页面标题 */}
       <div>
-        <h1 className="text-xl font-bold text-neutral-900">商品列表</h1>
+        <h1 className="text-xl font-semibold text-neutral-900">商品列表</h1>
       </div>
 
       {/* 搜索区 */}

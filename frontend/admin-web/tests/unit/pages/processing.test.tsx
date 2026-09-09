@@ -88,7 +88,7 @@ describe('ProcessingPage', () => {
   it('should render page title', async () => {
     render(<ProcessingPage />)
     await waitFor(() => {
-      expect(screen.getByText('加工项配置')).toBeInTheDocument()
+      expect(screen.getByText('加工项管理')).toBeInTheDocument()
     })
   })
 
