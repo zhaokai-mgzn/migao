@@ -2910,14 +2910,14 @@
 你: 快捷回复已被知识卡片（知识库）替代，功能全栈下线；AI 客服配置不再单独立菜单，合并进企业基础信息，区块命名「AI 客服设置」并说明作用
 期望: direct_reply
 数据: 侧边栏「智能客服」组不再有「AI 客服配置」菜单项（#3094 起 人工客服/知识库 共 2 项，米宝·在线对话 入口已移除）；/chat/config 页面与 /agent-workspace/quick-replies 占位页删除，Header 面包屑无对应残留
-数据: 「企业基础信息」页（/settings）新增「AI 客服设置」区块：标题下副文案说明作用「配置顾客在对话中看到的 AI 客服助手（小布）的名称与欢迎语」；区块含 AI 客服名称（必填）+ 欢迎语 + 独立保存按钮，保存调用 /api/admin/tenant/ai-config
-数据: 企业基础信息页无 tab 栏，企业信息/AI 客服设置/通知设置三个区块直接呈现，各区块独立保存（保存企业信息/保存 AI 客服设置/保存通知设置）
+数据: 「企业基础信息」页（/settings）新增「AI 客服设置」tab（#3098 恢复 #3006 之前的左侧 tab 导航布局）：tab 栏 = 基本设置（公司名称+Logo）/ AI 客服设置 / 通知设置；AI 客服设置 tab 副文案说明作用「配置顾客在对话中看到的 AI 客服助手（小布）的名称与欢迎语」，含 AI 客服名称（必填）+ 欢迎语 + 保存按钮（保存 AI 客服设置，调用 /api/admin/tenant/ai-config）
+数据: 企业基础信息页 tab 行为：默认激活「基本设置」tab（保存按钮=保存设置）；点击左侧 tab 切换内容区（AI 客服设置/通知设置内容不默认展示）；URL ?tab=ai 直达 AI 客服设置 tab（旧链接兼容，不再重定向 /chat/config）；修改密码/登录日志 tab 保持 #3006 隐藏
 数据: 快捷回复 UI 全部移除：quickReplyApi 与 QuickReply 类型删除，页面不再出现「快捷回复」tab/新建回复/模板列表
 数据: 权限联动（岗位权限页由 menuGroups 单源渲染）：权限分配弹窗与操作权限节均不再出现「AI 客服配置」「快捷回复」；agent:quickreply 权限码从后端权限目录与岗位默认权限移除；后端 /api/admin/quick-replies 接口与 quick_reply_manage 工具随功能下线
 跳过: 纯前端页面/菜单/权限联动由 vitest 单测验证（settings/Sidebar/Header/roles.test），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: frontend-fix.no-api-change, frontend-fix.vitest
-溯源: 2026-09-09 新增（issue #3081）：快捷回复功能全栈下线 + AI 客服配置合并进企业基础信息 ｜ tags: ui, sidebar, settings, admin-web, permission
+溯源: 2026-09-09 新增（issue #3081）：快捷回复功能全栈下线 + AI 客服配置合并进企业基础信息；2026-09-09 #3098：企业基础信息页恢复左侧 tab 导航布局（基本设置/AI 客服设置/通知设置） ｜ tags: ui, sidebar, settings, admin-web, permission
 
 ## utils（2 case）
 
