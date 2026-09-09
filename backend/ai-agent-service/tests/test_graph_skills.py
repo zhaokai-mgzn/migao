@@ -96,7 +96,6 @@ class TestSkillToolSubsets:
             "session_manage",
             "after_sales_manage",
             "notification_manage",
-            "quick_reply_manage",
             "processing_item_manage",
             "category_manage",
             "interact",

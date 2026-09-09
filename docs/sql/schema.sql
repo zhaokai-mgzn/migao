@@ -367,7 +367,7 @@ CREATE TABLE tenant_apps (
     UNIQUE(tenant_id, app_type)
 );
 
--- 租户 AI 配置表：AI 客服行为、推荐策略、快捷回复等
+-- 租户 AI 配置表：AI 客服行为、推荐策略等（#3081 快捷回复已下线）
 CREATE TABLE tenant_ai_configs (
     id VARCHAR(64) PRIMARY KEY,
     tenant_id BIGINT NOT NULL REFERENCES tenants(id) UNIQUE,
@@ -479,21 +479,7 @@ CREATE TABLE agent_messages (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- 快捷回复模板表：客服常用话术模板
-CREATE TABLE quick_reply_templates (
-    id VARCHAR(64) PRIMARY KEY,
-    tenant_id BIGINT NOT NULL REFERENCES tenants(id),
-    category VARCHAR(64) NOT NULL,  -- 分类
-    title VARCHAR(128) NOT NULL,  -- 标题
-    content TEXT NOT NULL,  -- 模板内容
-    shortcut VARCHAR(32),  -- 快捷键
-    usage_count INTEGER DEFAULT 0,  -- 使用次数
-    is_public BOOLEAN DEFAULT true,  -- 是否公开（全员可见）
-    created_by VARCHAR(64),  -- 创建者
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    deleted INTEGER DEFAULT 0
-);
+-- 快捷回复模板表已随 #3081 功能下线移除（被知识卡片替代，见 V38 迁移）
 
 -- ================================================
 -- 7. CRM 客户管理相关表
@@ -929,10 +915,6 @@ CREATE INDEX idx_agent_sessions_ai_session ON agent_sessions(ai_session_id);
 CREATE INDEX idx_agent_messages_session ON agent_messages(session_id, created_at);
 CREATE INDEX idx_agent_messages_tenant ON agent_messages(tenant_id);
 
--- quick_reply_templates 索引
-CREATE INDEX idx_quick_reply_templates_tenant_category ON quick_reply_templates(tenant_id, category);
-CREATE INDEX idx_quick_reply_templates_is_public ON quick_reply_templates(is_public);
-
 -- customer_profiles 索引
 CREATE INDEX idx_customer_profiles_tenant ON customer_profiles(tenant_id);
 CREATE INDEX idx_customer_profiles_phone ON customer_profiles(phone);
@@ -1112,10 +1094,6 @@ CREATE POLICY tenant_isolation_agent_sessions ON agent_sessions
 
 ALTER TABLE agent_messages ENABLE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_agent_messages ON agent_messages
-    USING (tenant_id::text = current_setting('app.current_tenant_id'));
-
-ALTER TABLE quick_reply_templates ENABLE ROW LEVEL SECURITY;
-CREATE POLICY tenant_isolation_quick_reply_templates ON quick_reply_templates
     USING (tenant_id::text = current_setting('app.current_tenant_id'));
 
 ALTER TABLE customer_profiles ENABLE ROW LEVEL SECURITY;

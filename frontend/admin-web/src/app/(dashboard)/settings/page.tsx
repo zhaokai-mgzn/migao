@@ -1,30 +1,20 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { Building2, Save } from 'lucide-react'
+import { Building2, Bot, Save } from 'lucide-react'
 import Image from 'next/image'
-import { useSearchParams, useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui'
 import { settingsApi, uploadApi } from '@/lib/api'
 import { readImageDimensions } from '@/lib/image-dimensions'
-import type { SystemSettings } from '@/types'
+import type { SystemSettings, AiConfig } from '@/types'
 
-// #3006: 登录日志（无记录）+ 修改密码（未来统一短信码登录）已隐藏，
-// 页面仅保留基本设置（品牌 + 通知设置），移除 tab 切换机制
+// #3081: 原「AI 客服配置」独立页面（/chat/config）合并进企业基础信息，
+// 区块命名「AI 客服设置」——配置顾客在对话中看到的 AI 客服助手（小布）的名称与欢迎语。
+// #3006: 登录日志（无记录）+ 修改密码（未来统一短信码登录）已隐藏。
 
 export default function SettingsPage() {
-  const searchParams = useSearchParams()
-  const router = useRouter()
-
-  // 旧链接 /settings?tab=ai → 重定向到 AI 客服配置
-  useEffect(() => {
-    if (searchParams.get('tab') === 'ai') {
-      router.replace('/chat/config')
-    }
-  }, [searchParams, router])
-
-  // ============ 基本设置 ============
+  // ============ 企业信息 ============
   const [settings, setSettings] = useState<SystemSettings>({
     companyName: '',
     logo: '',
@@ -38,7 +28,16 @@ export default function SettingsPage() {
   const [loadingSettings, setLoadingSettings] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  // 加载基本设置
+  // ============ AI 客服设置 ============
+  const defaultAiConfig: AiConfig = {
+    botName: '小布',
+    greetingTemplate: '',
+  }
+  const [aiConfig, setAiConfig] = useState<AiConfig>(defaultAiConfig)
+  const [loadingAiConfig, setLoadingAiConfig] = useState(false)
+  const [savingAiConfig, setSavingAiConfig] = useState(false)
+
+  // 加载企业信息
   const loadSettings = useCallback(async () => {
     setLoadingSettings(true)
     try {
@@ -60,9 +59,25 @@ export default function SettingsPage() {
     }
   }, [])
 
+  // 加载 AI 客服设置
+  const loadAiConfig = useCallback(async () => {
+    setLoadingAiConfig(true)
+    try {
+      const res = await settingsApi.getAiConfig()
+      if (res.data.data) {
+        setAiConfig({ ...defaultAiConfig, ...res.data.data })
+      }
+    } catch (e) {
+      toast.error('加载 AI 客服设置失败')
+    } finally {
+      setLoadingAiConfig(false)
+    }
+  }, [])
+
   useEffect(() => {
     loadSettings()
-  }, [loadSettings])
+    loadAiConfig()
+  }, [loadSettings, loadAiConfig])
 
   const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -91,7 +106,7 @@ export default function SettingsPage() {
       const res = await uploadApi.uploadImage(file)
       setSettings((prev) => ({ ...prev, logo: res.data.data.url }))
       setLogoPreviewError(false)
-      toast.success('Logo 上传成功，记得点击「保存设置」生效')
+      toast.success('Logo 上传成功，记得点击「保存企业信息」生效')
     } catch {
       toast.error('Logo 上传失败')
     } finally {
@@ -108,7 +123,7 @@ export default function SettingsPage() {
     setSavingSettings(true)
     try {
       await settingsApi.updateSettings(settings)
-      toast.success('设置已保存，侧边栏与米宝将同步展示企业信息')
+      toast.success('企业信息已保存，侧边栏将同步展示')
     } catch (error: any) {
       toast.error(error?.response?.data?.error?.message || '保存失败')
     } finally {
@@ -116,15 +131,33 @@ export default function SettingsPage() {
     }
   }
 
+  const handleSaveAiConfig = async () => {
+    if (!aiConfig.botName.trim()) {
+      toast.error('请输入 AI 客服名称')
+      return
+    }
+    setSavingAiConfig(true)
+    try {
+      await settingsApi.updateAiConfig(aiConfig)
+      toast.success('AI 客服设置已保存，顾客侧将按新配置生效')
+    } catch (e) {
+      toast.error('保存失败')
+    } finally {
+      setSavingAiConfig(false)
+    }
+  }
+
   return (
     <div className="p-6">
       <div className="mb-6">
         <h1 className="text-xl font-semibold text-neutral-900">企业基础信息</h1>
-        <p className="text-sm text-neutral-500 mt-1">配置公司基本信息与站内通知</p>
+        <p className="text-sm text-neutral-500 mt-1">配置公司基本信息、AI 客服助手与站内通知</p>
       </div>
 
-      {/* 基本设置 */}
-      <div className="bg-white border border-neutral-200 rounded-lg p-6 max-w-lg">
+      <div className="space-y-6">
+        {/* 企业信息 */}
+        <div className="bg-white border border-neutral-200 rounded-lg p-6 max-w-lg">
+          <h2 className="text-lg font-semibold text-neutral-900 mb-6">企业信息</h2>
           {loadingSettings ? (
             <div className="text-sm text-neutral-500 py-8 text-center">加载中...</div>
           ) : (
@@ -178,58 +211,120 @@ export default function SettingsPage() {
                     </div>
                     <input ref={fileInputRef} type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={handleLogoUpload} />
                     <p className="text-xs text-neutral-400 mt-1.5">
-                      未设置时展示米高默认 Logo；上传/移除后需点击「保存设置」生效，将展示在后台侧边栏企业名旁
+                      未设置时展示米高默认 Logo；上传/移除后需点击「保存企业信息」生效，将展示在后台侧边栏企业名旁
                     </p>
                   </div>
-                </div>
-              </div>
-
-              <div className="border-t border-neutral-200 pt-6">
-                <h3 className="text-sm font-semibold text-neutral-900 mb-4">通知设置</h3>
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <div className="text-sm font-medium text-neutral-700">启用系统通知</div>
-                      <div className="text-xs text-neutral-500">控制订单、客服等重要事件站内通知的发送；关闭后不再产生新的站内通知（历史通知保留）</div>
-                    </div>
-                    <button
-                      className={`relative w-11 h-6 rounded-full transition-colors ${
-                        settings.notificationEnabled ? 'bg-primary-600' : 'bg-neutral-300'
-                      }`}
-                      onClick={() => setSettings({ ...settings, notificationEnabled: !settings.notificationEnabled })}
-                    >
-                      <span
-                        className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform shadow ${
-                          settings.notificationEnabled ? 'translate-x-5' : 'translate-x-0'
-                        }`}
-                      />
-                    </button>
-                  </div>
-
-                  {settings.notificationEnabled && (
-                    <div>
-                      <label className="block text-sm font-medium text-neutral-700 mb-1.5">通知邮箱</label>
-                      <input
-                        type="email"
-                        className="w-full h-9 px-3 rounded border border-neutral-300 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
-                        value={settings.notificationEmail || ''}
-                        onChange={(e) => setSettings({ ...settings, notificationEmail: e.target.value })}
-                        placeholder="接收通知的邮箱地址"
-                      />
-                    </div>
-                  )}
                 </div>
               </div>
 
               <div className="pt-4">
                 <Button onClick={handleSaveSettings} loading={savingSettings}>
                   <Save className="w-4 h-4 mr-1.5" />
-                  保存设置
+                  保存企业信息
                 </Button>
               </div>
             </div>
           )}
         </div>
+
+        {/* AI 客服设置（原 AI 客服配置基础设置，#3081 合并进企业基础信息） */}
+        <div className="bg-white border border-neutral-200 rounded-lg p-6 max-w-lg">
+          <div className="flex items-start gap-3 mb-6">
+            <div className="w-9 h-9 rounded-lg bg-primary-50 flex items-center justify-center flex-shrink-0">
+              <Bot className="w-5 h-5 text-primary-600" />
+            </div>
+            <div>
+              <h2 className="text-lg font-semibold text-neutral-900">AI 客服设置</h2>
+              <p className="text-sm text-neutral-500 mt-0.5">
+                配置顾客在对话中看到的 AI 客服助手（小布）的名称与欢迎语
+              </p>
+            </div>
+          </div>
+          {loadingAiConfig ? (
+            <div className="text-sm text-neutral-500 py-8 text-center">加载中...</div>
+          ) : (
+            <div className="space-y-6">
+              <div>
+                <label className="block text-sm font-medium text-neutral-700 mb-1.5">
+                  AI 客服名称 <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  className="w-full h-9 px-3 rounded border border-neutral-300 text-sm placeholder:text-neutral-400 focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+                  placeholder="小布"
+                  value={aiConfig.botName}
+                  onChange={(e) => setAiConfig({ ...aiConfig, botName: e.target.value })}
+                />
+                <p className="text-xs text-neutral-500 mt-1.5">顾客在对话中看到的 AI 客服助手名称（默认：小布）</p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-neutral-700 mb-1.5">欢迎语</label>
+                <textarea
+                  rows={3}
+                  className="w-full px-3 py-2 rounded border border-neutral-300 text-sm placeholder:text-neutral-400 focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 resize-none"
+                  placeholder="您好，我是小布，有什么可以帮您？"
+                  value={aiConfig.greetingTemplate}
+                  onChange={(e) => setAiConfig({ ...aiConfig, greetingTemplate: e.target.value })}
+                />
+                <p className="text-xs text-neutral-500 mt-1.5">顾客发起对话时看到的第一条消息，支持变量 {'{customer_name}'}</p>
+              </div>
+
+              <div className="pt-4">
+                <Button onClick={handleSaveAiConfig} loading={savingAiConfig}>
+                  <Save className="w-4 h-4 mr-1.5" />
+                  保存 AI 客服设置
+                </Button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* 通知设置 */}
+        <div className="bg-white border border-neutral-200 rounded-lg p-6 max-w-lg">
+          <h2 className="text-lg font-semibold text-neutral-900 mb-6">通知设置</h2>
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-sm font-medium text-neutral-700">启用系统通知</div>
+                <div className="text-xs text-neutral-500">控制订单、客服等重要事件站内通知的发送；关闭后不再产生新的站内通知（历史通知保留）</div>
+              </div>
+              <button
+                className={`relative w-11 h-6 rounded-full transition-colors ${
+                  settings.notificationEnabled ? 'bg-primary-600' : 'bg-neutral-300'
+                }`}
+                onClick={() => setSettings({ ...settings, notificationEnabled: !settings.notificationEnabled })}
+              >
+                <span
+                  className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform shadow ${
+                    settings.notificationEnabled ? 'translate-x-5' : 'translate-x-0'
+                  }`}
+                />
+              </button>
+            </div>
+
+            {settings.notificationEnabled && (
+              <div>
+                <label className="block text-sm font-medium text-neutral-700 mb-1.5">通知邮箱</label>
+                <input
+                  type="email"
+                  className="w-full h-9 px-3 rounded border border-neutral-300 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+                  value={settings.notificationEmail || ''}
+                  onChange={(e) => setSettings({ ...settings, notificationEmail: e.target.value })}
+                  placeholder="接收通知的邮箱地址"
+                />
+              </div>
+            )}
+
+            <div className="pt-4">
+              <Button onClick={handleSaveSettings} loading={savingSettings}>
+                <Save className="w-4 h-4 mr-1.5" />
+                保存通知设置
+              </Button>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   )
 }

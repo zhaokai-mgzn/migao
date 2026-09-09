@@ -35,7 +35,6 @@ INTENT_LABELS: dict[str, str] = {
     "system_settings": "系统设置",
     "ai_config": "AI配置",
     "notification": "通知管理",
-    "quick_reply": "快捷回复",
     "dashboard": "经营看板",
     "statistics": "数据统计",
     "data_report": "数据报表",

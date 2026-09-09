@@ -32,7 +32,6 @@ public class MenuController {
         MenuNode p3 = new MenuNode("product:category", "商品分类管理");
         MenuNode p4 = new MenuNode("processing:manage", "加工项管理");
         MenuNode a1 = new MenuNode("agent:session", "会话监控");
-        MenuNode a2 = new MenuNode("agent:quickreply", "快捷回复");
         MenuNode e1 = new MenuNode("employee:list", "员工列表");
         MenuNode e2 = new MenuNode("employee:create", "新增员工");
         MenuNode s1 = new MenuNode("system:manage", "租户设置");
@@ -43,7 +42,7 @@ public class MenuController {
             new MenuNode("dashboard", "工作台", List.of(d1)),
             new MenuNode("orders", "订单管理", List.of(o1, o2, o3)),
             new MenuNode("products", "商品管理", List.of(p1, p2, p3, p4)),
-            new MenuNode("agent", "客服工作台", List.of(a1, a2)),
+            new MenuNode("agent", "客服工作台", List.of(a1)),
             new MenuNode("employees", "员工管理", List.of(e1, e2)),
             new MenuNode("customers", "客户管理", List.of(c1)),
             new MenuNode("finance", "财务对账", List.of(f1)),

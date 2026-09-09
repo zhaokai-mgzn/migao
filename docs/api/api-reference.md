@@ -1008,32 +1008,6 @@ Content-Type: application/json
 }
 ```
 
-### 6.4 快捷回复模板
-
-#### 获取模板列表
-
-```
-GET /api/agent/quick-replies
-Auth: Required (agent role)
-Cookie: access_token=<JWT>
-Query: category=common  // 可选，按分类过滤
-```
-
-#### 创建个人模板
-
-```
-POST /api/agent/quick-replies
-Auth: Required (agent role)
-Cookie: access_token=<JWT>
-Content-Type: application/json
-
-{
-  "category": "售后",
-  "title": "退换货流程",
-  "content": "您好，退换货流程如下：1. 提交申请 2. 审核 3. 寄回商品 4. 退款到账"
-}
-```
-
 ### 6.5 管理端 API（管理员角色）
 
 #### 获取员工列表
@@ -1154,14 +1128,6 @@ wss://api.migaozn.com/ws/agent?token=<JWT>
   "event": "typing",
   "data": {
     "session_id": "as_xxx"
-  }
-}
-
-// 请求快捷回复模板
-{
-  "event": "request_quickreply",
-  "data": {
-    "category": "售后"
   }
 }
 

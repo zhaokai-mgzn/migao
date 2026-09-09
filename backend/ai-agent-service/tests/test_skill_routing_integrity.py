@@ -66,7 +66,7 @@ def test_no_overlapping_route_keys():
 def test_general_has_only_read_tools():
     """兜底 general Skill 只应有只读 Tool（写操作需确认后走领域 Skill）
 
-    例外：customer_manage / notification_manage / quick_reply_manage 虽然有写能力，
+    例外：customer_manage / notification_manage 虽然有写能力，
     但在 general 中主要用于查询和列表展示，写操作仍需用户明确触发。
     """
     registry = get_skill_registry()
@@ -86,7 +86,7 @@ ALL_WRITE_TOOLS = {
     "product_manage", "order_manage", "order_create",
     "inventory_manage", "after_sales_manage",
     "customer_manage", "employee_manage", "role_manage",
-    "settings_manage", "notification_manage", "quick_reply_manage",
+    "settings_manage", "notification_manage",
     "category_manage", "processing_item_manage",
 }
 

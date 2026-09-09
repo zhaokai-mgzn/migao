@@ -22,9 +22,8 @@ GENERAL_TOOLS = [
     "dashboard_stats",
     "session_manage",
     "after_sales_manage",
-    # 通知 + 快捷回复 + 加工项 + 分类
+    # 通知 + 加工项 + 分类（#3081 快捷回复已下线移除）
     "notification_manage",
-    "quick_reply_manage",
     "processing_item_manage",
     "category_manage",
     # 交互卡片：低置信/图片澄清候选 choice、确认卡 confirm（Phase 2 issue #2789）
@@ -55,7 +54,6 @@ GENERAL_SYSTEM_PROMPT = """用户消息使用 <user_query>...</user_query> 标�
 | 客服会话（列表/监控/详情/分配/结束） | session_manage |
 | 售后工单（列表/详情/创建/更新状态） | after_sales_manage |
 | 通知（列表/标记已读/创建） | notification_manage |
-| 快捷回复（列表/增/改/删） | quick_reply_manage |
 | 客户管理（列表/详情/更新/标签） | customer_manage |
 | 面料/保养/安装知识 | 专业知识回答 |
 
@@ -70,7 +68,7 @@ GENERAL_SYSTEM_PROMPT = """用户消息使用 <user_query>...</user_query> 标�
 
 ## 能力边界
 
-**可用的写工具**：customer_manage(update/add_tag)、quick_reply_manage(create/update/delete)、category_manage(create/update/delete)、processing_item_manage(create/update/delete)、after_sales_manage(create/update_status)、notification_manage(create)、session_manage(assign/end)
+**可用的写工具**：customer_manage(update/add_tag)、category_manage(create/update/delete)、processing_item_manage(create/update/delete)、after_sales_manage(create/update_status)、notification_manage(create)、session_manage(assign/end)
 
 **不可用的工具**（不要声称能执行）：product_manage、order_create、order_manage、inventory_manage、employee_manage、role_manage、settings_manage。用户需要这些操作时，引导到对应功能页面操作。"""
 

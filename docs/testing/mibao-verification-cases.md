@@ -2353,7 +2353,7 @@
 真值: ai-chat.tool-classes, ai-chat.permission-layers
 溯源: 2026-08-25 新增：ai-agent-service tools-mixed-part2 覆盖率补全（issue #2426） ｜ tags: registry, tool_execute, audit
 
-## 设置域（10 case）
+## 设置域（8 case）
 
 ### ST-001. 系统设置 - 读取 🔵
 ```
@@ -2400,24 +2400,6 @@
 ```
 真值: agent-notification.notification-status
 溯源: verification 6.5 独有 ｜ tags: write
-
-### ST-006. 快捷回复列表 🔵
-```
-你: 看看快捷回复模板
-期望: quick_reply_manage(action=list)
-数据: 返回模板列表（按 usageCount 倒序）
-```
-真值: agent-notification.quick-reply-crud
-溯源: verification 6.6 独有 ｜ tags: query
-
-### ST-007. 创建快捷回复 🔵
-```
-你: 新建'欢迎语'快捷回复：您好，欢迎咨询词元通达！
-期望: quick_reply_manage(action=create)
-数据: category/title/content 必填校验通过后创建成功
-```
-真值: agent-notification.quick-reply-validate
-溯源: verification 6.7 独有 ｜ tags: create
 
 ### ST-008. 机器人设置生效 - 自动转人工关键词 + 非营业时间转人工降级 🔵
 ```
@@ -2500,7 +2482,7 @@
 真值: token-refresh.no-loop
 溯源: 2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421） ｜ tags: token_refresh, auth, no_loop
 
-## ui（32 case）
+## ui（33 case）
 
 ### UI-001. 织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理 🔵
 ```
@@ -2553,20 +2535,20 @@
 真值: frontend-fix.dashboard-no-truncate, frontend-fix.axis-sampling, frontend-fix.dashboard-no-overflow
 溯源: 2026-08-25 新增：经营看板织物质感重设计子任务 B（issue #2537）；2026-09-07 补：#3000 环比说明可见化——表头 title 写明具体比较周期（本期近7天 vs 上一统计周期前7天），排行表下方新增可见口径说明，用户无需理解「环比」术语 ｜ tags: ui, dashboard, density, axis-sampling
 
-### UI-005. 侧边栏新增「智能客服」大类——人工客服图标修复 + 机器人设置改名归组 🔵
+### UI-005. 侧边栏「智能客服」大类——人工客服图标修复 + 机器人设置改名归组（#3081 起 AI 客服配置已合并进企业基础信息） 🔵
 ```
-你: 侧边栏新增「智能客服」一级大类：人工客服耳机图标修复 + 机器人设置更名为 AI 客服配置并归组
+你: 侧边栏新增「智能客服」一级大类：人工客服耳机图标修复 + 机器人设置改名归组
 期望: direct_reply
 数据: Sidebar.tsx 渲染一级大类「智能客服」，DOM 顺序位于「工作台」之后、「商品管理」之前；「人工客服」从「工作台」分组移除
-数据: 「智能客服」下子菜单顺序：「AI 客服配置」在前、「人工客服」在后
-数据: 「人工客服」渲染 Headphones 图标（iconMap 已注册，非 BarChart3 回退），与「经营看板」BarChart3 图标明确区分；「AI 客服配置」渲染 Bot 图标；「智能客服」大类渲染 MessageSquare 图标
-数据: 原「机器人设置」更名为「AI 客服配置」：侧边栏菜单名、页面 H1、Header 面包屑同步一致，不再出现「机器人设置」残留
-数据: 链接路径不变：AI 客服配置 href=/chat/config、人工客服 href=/agent-workspace/human-sessions
-数据: 权限过滤不回归：无 agent:session → 隐藏「人工客服」；无 agent:quickreply → 隐藏「AI 客服配置」；两者均无 → 「智能客服」整组隐藏
-跳过: 纯前端侧边栏菜单/图标/文案由 vitest 单测验证（sidebar/chat-config/Header.test），非 LLM 行为，不进入 agent-eval 冒烟
+数据: 「智能客服」下子菜单顺序：米宝·在线对话 在前、人工客服 次之、知识库 末位（#3081 起 AI 客服配置菜单已移除）
+数据: 「人工客服」渲染 Headphones 图标（iconMap 已注册，非 BarChart3 回退），与「经营看板」BarChart3 图标明确区分；「智能客服」大类渲染 MessageSquare 图标
+数据: 原「机器人设置」更名为「AI 客服配置」后（2026-08）又随 #3081 合并进企业基础信息：侧边栏不再出现「AI 客服配置」菜单项，/chat/config 页面删除，机器人名称+欢迎语并入 /settings 页「AI 客服设置」区块；不再出现「机器人设置」残留
+数据: 链接路径：人工客服 href=/agent-workspace/human-sessions（#3081 起无 /chat/config 链接）
+数据: 权限过滤不回归：无 agent:session → 隐藏「米宝·在线对话」+「人工客服」；无 knowledge:manage → 隐藏「知识库」；均无 → 「智能客服」整组隐藏
+跳过: 纯前端侧边栏菜单/图标/文案由 vitest 单测验证（sidebar/settings/Header.test），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: frontend-fix.sidebar-smart-cs-group, frontend-fix.cs-menu-icons, frontend-fix.cs-menu-rename, frontend-fix.cs-menu-permission
-溯源: 2026-08-30 新增：侧边栏智能客服大类分组与菜单图标渲染（issue #2670） ｜ tags: ui, sidebar, menu, icon
+溯源: 2026-08-30 新增：侧边栏智能客服大类分组与菜单图标渲染（issue #2670）；2026-09-09 #3081：AI 客服配置菜单移除、合并进企业基础信息 ｜ tags: ui, sidebar, menu, icon
 
 ### UI-006. 会话管理工作台 - 单列表（无筛选控件）+ 已结束会话续聊 banner 🔵
 ```
@@ -2636,14 +2618,14 @@
 ```
 你: 侧边栏「智能客服」组新增「米宝 · 在线对话」入口，点击进入 /chat
 期望: direct_reply
-数据: Sidebar「智能客服」组子菜单顺序：米宝·在线对话(/chat) 在前、AI 客服配置(/chat/config) 次之、人工客服(/agent-workspace/human-sessions) 在后，共 3 项
+数据: Sidebar「智能客服」组子菜单顺序：米宝·在线对话(/chat) 在前、人工客服(/agent-workspace/human-sessions) 次之、知识库(/knowledge) 末位，共 3 项（#3081 起 AI 客服配置菜单已移除）
 数据: 「米宝 · 在线对话」渲染 MessageCircle 图标（iconMap 已注册 MessageCircle，非 Bot/MessageSquare 重复）
-数据: 权限过滤：agent:session 控制「米宝 · 在线对话」与「人工客服」可见；无 agent:session → 隐藏米宝入口与人工客服，保留 AI 客服配置
-数据: 「智能客服」组三个子菜单均不可见时整组隐藏（不回归 UI-005 行为）
+数据: 权限过滤：agent:session 控制「米宝 · 在线对话」与「人工客服」可见；无 agent:session → 隐藏米宝入口与人工客服，仅保留知识库（knowledge:manage）
+数据: 「智能客服」组子菜单均不可见时整组隐藏（不回归 UI-005 行为）
 跳过: 纯前端侧边栏菜单由 vitest 单测验证（sidebar.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: frontend-fix.sidebar-smart-cs-group, frontend-fix.cs-menu-icons, frontend-fix.cs-menu-permission
-溯源: 2026-09-02 新增：POC 演示入口修复 — 侧边栏智能客服组加米宝在线对话 /chat 菜单项（米宝入口原仅 FAB/直输 /chat，老板演示找不到） ｜ tags: ui, sidebar, mibao, chat-entry
+溯源: 2026-09-02 新增：POC 演示入口修复 — 侧边栏智能客服组加米宝在线对话 /chat 菜单项（米宝入口原仅 FAB/直输 /chat，老板演示找不到）；2026-09-09 #3081：移除 AI 客服配置子菜单 ｜ tags: ui, sidebar, mibao, chat-entry
 
 ### UI-012. 订单列表页「刷新」按钮 — 保持当前筛选条件重新拉取（演示实时可见新订单） 🔵
 ```
@@ -2841,7 +2823,7 @@
 数据: 侧边栏七大组：工作台 / 智能客服(含知识库) / 商品管理 / 订单管理 / 客户管理(客户列表+财务对账) / 组织管理(员工管理+岗位权限+企业基础信息) / 通知中心（独立）；权限过滤不回归（组内无可见子项则整组隐藏）
 数据: 创建/编辑员工：岗位改为下拉选择（岗位=角色体系，来自 /api/admin/roles/all），选岗位自动把该岗位默认权限（role_permissions codes）预填进权限树；仍可手动增删；编辑切岗位则重置为新岗位默认
 数据: 员工权限快照式（#2969）：提交时携带 position+permissions（permissions=最终勾选），不携带 role 字段（#2907 契约），后端按岗位名解析角色
-数据: 岗位权限弹窗「权限分配」按真实侧边栏菜单同构渲染（#3002）：分组名=菜单组（智能客服/商品管理/订单管理/客户管理/组织管理），勾选项=菜单项名（米宝·在线对话/AI 客服配置/人工客服/知识库/商品列表/加工项管理/订单列表/售后工单/客户列表/财务对账/员工管理/岗位权限/企业基础信息），勾选即授予对应权限码（roles 保存权限 ID，前端做码→ID 映射）；非菜单操作权限（仪表板查看/新增商品/商品分类/订单详情/新增员工/商品管理旧码）单独一节「操作权限」；旧口径不再出现（英文 resourceType 组头 / 会话监控 / 快捷回复 / 系统管理等旧名）；保存契约不变（permissionIds = 权限 ID）
+数据: 岗位权限弹窗「权限分配」按真实侧边栏菜单同构渲染（#3002）：分组名=菜单组（智能客服/商品管理/订单管理/客户管理/组织管理），勾选项=菜单项名（米宝·在线对话/人工客服/知识库/商品列表/加工项管理/订单列表/售后工单/客户列表/财务对账/员工管理/岗位权限/企业基础信息），勾选即授予对应权限码（roles 保存权限 ID，前端做码→ID 映射）；非菜单操作权限（仪表板查看/新增商品/商品分类/订单详情/新增员工/商品管理旧码）单独一节「操作权限」；旧口径不再出现（英文 resourceType 组头 / 会话监控 / 快捷回复 / AI 客服配置 / 系统管理等旧名）；保存契约不变（permissionIds = 权限 ID）
 跳过: 岗位权限/菜单重构/选岗位带权限均由 vitest 单测 + E2E 点击链路验证，非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: frontend-fix.position-permission-rename, frontend-fix.sidebar-seven-groups, frontend-fix.employee-position-default-permissions
@@ -2916,6 +2898,20 @@
 真值: frontend-fix.no-api-change, frontend-fix.vitest
 溯源: 2026-09-09 新增（issue #3070）：知识库页 UI 修复 — 面包屑对齐/样式统一/分页遮挡/模板套用与候选采纳结果可见性 ｜ tags: ui, knowledge, breadcrumb, pagination, admin-web
 
+### UI-034. 快捷回复功能下线 + AI 客服配置合并进企业基础信息「AI 客服设置」（#3081） 🔵
+```
+你: 快捷回复已被知识卡片（知识库）替代，功能全栈下线；AI 客服配置不再单独立菜单，合并进企业基础信息，区块命名「AI 客服设置」并说明作用
+期望: direct_reply
+数据: 侧边栏「智能客服」组不再有「AI 客服配置」菜单项（米宝·在线对话/人工客服/知识库 共 3 项）；/chat/config 页面与 /agent-workspace/quick-replies 占位页删除，Header 面包屑无对应残留
+数据: 「企业基础信息」页（/settings）新增「AI 客服设置」区块：标题下副文案说明作用「配置顾客在对话中看到的 AI 客服助手（小布）的名称与欢迎语」；区块含 AI 客服名称（必填）+ 欢迎语 + 独立保存按钮，保存调用 /api/admin/tenant/ai-config
+数据: 企业基础信息页无 tab 栏，企业信息/AI 客服设置/通知设置三个区块直接呈现，各区块独立保存（保存企业信息/保存 AI 客服设置/保存通知设置）
+数据: 快捷回复 UI 全部移除：quickReplyApi 与 QuickReply 类型删除，页面不再出现「快捷回复」tab/新建回复/模板列表
+数据: 权限联动（岗位权限页由 menuGroups 单源渲染）：权限分配弹窗与操作权限节均不再出现「AI 客服配置」「快捷回复」；agent:quickreply 权限码从后端权限目录与岗位默认权限移除；后端 /api/admin/quick-replies 接口与 quick_reply_manage 工具随功能下线
+跳过: 纯前端页面/菜单/权限联动由 vitest 单测验证（settings/Sidebar/Header/roles.test），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: frontend-fix.no-api-change, frontend-fix.vitest
+溯源: 2026-09-09 新增（issue #3081）：快捷回复功能全栈下线 + AI 客服配置合并进企业基础信息 ｜ tags: ui, sidebar, settings, admin-web, permission
+
 ## utils（2 case）
 
 ### UT-001. 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值 🔵
@@ -2945,8 +2941,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：241（活跃 121，跳过 120）
-- tier 分布：smoke 10 / normal 202 / adversarial 29
+- 用例总数：240（活跃 119，跳过 121）
+- tier 分布：smoke 10 / normal 201 / adversarial 29
 - 售后域：7
 - agents：6
 - api：21
@@ -2967,9 +2963,9 @@
 - 加工项域：6
 - 商品域：20
 - registry：1
-- 设置域：10
+- 设置域：8
 - token-refresh：4
-- ui：32
+- ui：33
 - utils：2
 
 ### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）

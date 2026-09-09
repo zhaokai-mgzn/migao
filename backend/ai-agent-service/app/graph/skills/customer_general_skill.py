@@ -76,7 +76,7 @@ CUSTOMER_GENERAL_SKILL_CONFIG = SkillConfig(
     route_keys=["general", "customer", "staff", "settings", "data"],
     intents=["general", "after_sales", "complaint", "customer_manage", "customer_query",
              "employee_manage", "staff_manage", "role_manage", "permission_manage",
-             "system_settings", "ai_config", "notification", "quick_reply",
+             "system_settings", "ai_config", "notification",
              "dashboard", "statistics", "data_report", "session_manage",
              "after_sales_create", "knowledge_manage", "category_manage", "processing_manage"],
     system_prompts={"xiaobu": CUSTOMER_GENERAL_SYSTEM_PROMPT},

@@ -62,7 +62,6 @@ EXPECTED_DEFAULT_TOOL_NAMES = {
     "notification_manage",
     "settings_manage",
     "session_manage",
-    "quick_reply_manage",
     "category_manage",
     "processing_item_manage",
 }
@@ -79,7 +78,6 @@ B_END_ONLY_TOOLS = {
     "notification_manage",
     "settings_manage",
     "session_manage",
-    "quick_reply_manage",
     "category_manage",
     "processing_item_manage",
 }
@@ -387,16 +385,8 @@ class TestToolRegistryCompleteness:
         registered = set(fresh_registry.get_tool_names())
         missing = EXPECTED_DEFAULT_TOOL_NAMES - registered
         assert not missing, f"Tool 缺失：{missing}"
-
-    def test_quick_reply_manage_tool_is_registered(self, fresh_registry):
-        """P0：quick_reply_manage 必须在默认 registry 中（防止历史回归）"""
-        assert "quick_reply_manage" in fresh_registry, (
-            "quick_reply_manage 未注册到默认 ToolRegistry，AI 客服将无法使用快捷回复模板能力"
-        )
-        tool = fresh_registry.get_tool("quick_reply_manage")
-        assert tool is not None
-        assert tool.name == "quick_reply_manage"
-        assert "快捷回复" in tool.description or "模板" in tool.description
+        # #3081: quick_reply_manage 已随快捷回复功能下线移除
+        assert "quick_reply_manage" not in registered
 
     @pytest.mark.parametrize("tool_name", sorted(EXPECTED_DEFAULT_TOOL_NAMES))
     def test_tool_has_non_empty_metadata(self, fresh_registry, tool_name):
@@ -913,8 +903,6 @@ class TestEnumAlignment:
           "calculate_price"}),
         ("processing_item_manage", "status",
          {"active", "inactive"}),
-        ("quick_reply_manage", "action",
-         {"list", "categories", "create", "update", "delete"}),
     ])
     def test_tool_enum_field_alignment(self, fresh_registry, tool_name, field, expected):
         """参数化验证：Tool.parameters.properties[field].enum 与 admin-api 定义严格对齐
@@ -923,7 +911,7 @@ class TestEnumAlignment:
         - notification_manage 的 action / channel / status
         - after_sales_manage 的 action / ticket_type / status
         - processing_item_manage 的 action / status
-        - quick_reply_manage 的 action
+        （#3081 已移除 quick_reply_manage）
         任何 enum 不对齐都会导致 LLM 生成被 admin-api 拒收的参数。
         """
         tool = fresh_registry.get_tool(tool_name)

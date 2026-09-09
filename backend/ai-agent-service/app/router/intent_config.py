@@ -42,7 +42,6 @@ class IntentType(str, Enum):
     SYSTEM_SETTINGS = "system_settings"
     AI_CONFIG = "ai_config"
     NOTIFICATION = "notification"
-    QUICK_REPLY = "quick_reply"
     # ── 数据分析域 (analytics) ──
     DASHBOARD = "dashboard"
     STATISTICS = "statistics"
@@ -66,7 +65,7 @@ INTENT_DOMAINS: dict[str, set[str]] = {
     "product": {"product_inquiry", "quote", "category_manage", "processing_manage"},
     "crm": {"customer_manage", "customer_query"},
     "hr": {"employee_manage", "staff_manage", "role_manage", "permission_manage"},
-    "settings": {"system_settings", "ai_config", "notification", "quick_reply"},
+    "settings": {"system_settings", "ai_config", "notification"},
     "analytics": {"dashboard", "statistics", "data_report", "finance", "session_manage"},
     "knowledge": {"knowledge_faq", "knowledge_manage"},
     # 未来扩展：
@@ -134,7 +133,6 @@ INTENT_TOOL_MAP: dict[IntentType, list[str]] = {
     IntentType.SYSTEM_SETTINGS: ["settings_manage"],
     IntentType.AI_CONFIG: ["settings_manage"],
     IntentType.NOTIFICATION: ["notification_manage"],
-    IntentType.QUICK_REPLY: ["quick_reply_manage"],
     IntentType.DASHBOARD: ["dashboard_stats"],
     IntentType.STATISTICS: ["dashboard_stats"],
     IntentType.DATA_REPORT: ["dashboard_stats"],

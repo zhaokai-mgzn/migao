@@ -1,4 +1,4 @@
-// case_ids: ST-001, ST-003, ST-009, ST-010
+// case_ids: ST-001, ST-003, ST-009, ST-010, UI-034
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -8,6 +8,7 @@ vi.mock('lucide-react', () => {
   const stub = (name: string) => (props: any) => <span data-testid={`icon-${name}`} {...props} />
   return {
     Building2: stub('building2'),
+    Bot: stub('bot'),
     Save: stub('save'),
     KeyRound: stub('key-round'),
     History: stub('history'),
@@ -81,6 +82,7 @@ vi.mock('dayjs', () => ({
 vi.mock('sonner', () => ({
   toast: { success: vi.fn(), error: vi.fn() },
 }))
+import { toast } from 'sonner'
 
 import SettingsPage from '@/app/(dashboard)/settings/page'
 
@@ -97,26 +99,102 @@ function mockApiSuccess() {
   })
 }
 
-describe('SettingsPage — AI tab removed (Issue #502)', () => {
+function mockAiConfigSuccess() {
+  mockGetAiConfig.mockResolvedValue({
+    data: {
+      data: {
+        botName: '小布',
+        greetingTemplate: '您好，我是小布，有什么可以帮您？',
+      },
+    },
+  })
+}
+
+describe('SettingsPage — AI 客服设置合并进企业基础信息 (#3081)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockApiSuccess()
+    mockAiConfigSuccess()
     // 默认图片尺寸满足最小分辨率（128×128）
     mockReadImageDimensions.mockResolvedValue({ width: 128, height: 128 })
+  })
+
+  // ================================================================
+  // #3081: AI 客服配置（原 /chat/config 独立页）合并进企业基础信息
+  // ================================================================
+
+  describe('#3081 AI 客服设置区块', () => {
+    it('渲染「AI 客服设置」区块标题与作用说明（名称+欢迎语，顾客侧可见）', async () => {
+      render(<SettingsPage />)
+      await waitFor(() => {
+        expect(screen.getByText('AI 客服设置')).toBeInTheDocument()
+      })
+      // 副文案说明作用：配置顾客在对话中看到的 AI 客服助手
+      expect(screen.getByText(/配置顾客在对话中看到的 AI 客服助手（小布）的名称与欢迎语/)).toBeInTheDocument()
+      // 不再出现「AI 客服配置」独立页面命名
+      expect(screen.queryByText('AI 客服配置')).not.toBeInTheDocument()
+    })
+
+    it('加载 AI 客服配置并回填 AI 客服名称与欢迎语', async () => {
+      render(<SettingsPage />)
+      await waitFor(() => {
+        expect(screen.getByDisplayValue('小布')).toBeInTheDocument()
+      })
+      expect(
+        screen.getByDisplayValue('您好，我是小布，有什么可以帮您？'),
+      ).toBeInTheDocument()
+    })
+
+    it('AI 客服名称为空时保存报错且不调用 updateAiConfig', async () => {
+      const user = userEvent.setup()
+      mockGetAiConfig.mockResolvedValue({
+        data: { data: { botName: '  ', greetingTemplate: '' } },
+      })
+      render(<SettingsPage />)
+      const saveBtn = await screen.findByRole('button', { name: /保存 AI 客服设置/ })
+      await user.click(saveBtn)
+      expect(toast.error).toHaveBeenCalledWith('请输入 AI 客服名称')
+      expect(mockUpdateAiConfig).not.toHaveBeenCalled()
+    })
+
+    it('保存 AI 客服设置 → 调用 updateAiConfig 并提示生效', async () => {
+      const user = userEvent.setup()
+      mockUpdateAiConfig.mockResolvedValue({ data: {} })
+      render(<SettingsPage />)
+      const input = await screen.findByDisplayValue('小布')
+      await user.clear(input)
+      await user.type(input, '米高助手')
+      await user.click(screen.getByRole('button', { name: /保存 AI 客服设置/ }))
+      await waitFor(() => {
+        expect(mockUpdateAiConfig).toHaveBeenCalledWith(
+          expect.objectContaining({ botName: '米高助手' }),
+        )
+      })
+      expect(toast.success).toHaveBeenCalledWith('AI 客服设置已保存，顾客侧将按新配置生效')
+    })
+
+    it('AI 客服设置加载失败 → toast 提示', async () => {
+      mockGetAiConfig.mockRejectedValue(new Error('Network error'))
+      render(<SettingsPage />)
+      await waitFor(() => {
+        expect(toast.error).toHaveBeenCalledWith('加载 AI 客服设置失败')
+      })
+    })
   })
 
   // ================================================================
   // #3006: 修改密码/登录日志已隐藏 —— 登录日志无记录、未来统一短信码登录
   // ================================================================
 
-  describe('#3006 企业基础信息页 — 只保留基本设置', () => {
-    it('基本设置内容直接呈现，无 tab 栏（基本设置/修改密码/登录日志均不渲染）', async () => {
+  describe('#3006 企业基础信息页 — 单页分区块，无 tab 栏', () => {
+    it('企业信息/AI 客服设置/通知设置直接呈现，无 tab 栏（修改密码/登录日志均不渲染）', async () => {
       render(<SettingsPage />)
       await waitFor(() => {
         expect(screen.getByText('企业基础信息')).toBeInTheDocument()
       })
-      // 基本设置内容直接展示（单区块，无 tab 切换）
-      expect(screen.getByText('公司名称')).toBeInTheDocument()
+      // 三个区块直接展示（单页，无 tab 切换）
+      expect(screen.getByText('企业信息')).toBeInTheDocument()
+      expect(screen.getByText('AI 客服设置')).toBeInTheDocument()
       expect(screen.getByText('通知设置')).toBeInTheDocument()
       // #3006 已隐藏：登录日志无记录 + 修改密码未来由短信码取替代 → 整个 tab 栏移除
       expect(screen.queryByRole('button', { name: /基本设置/ })).toBeNull()
@@ -129,62 +207,32 @@ describe('SettingsPage — AI tab removed (Issue #502)', () => {
       expect(screen.queryByRole('button', { name: /账户安全/ })).toBeNull()
     })
 
-    it('不应该渲染 AI 助手名称输入框', async () => {
+    it('AI 客服名称输入框在「AI 客服设置」区块渲染（#3081 合并后不再隐藏）', async () => {
       render(<SettingsPage />)
       await waitFor(() => {
-        expect(screen.getByText('企业基础信息')).toBeInTheDocument()
+        expect(screen.getByDisplayValue('小布')).toBeInTheDocument()
       })
-
-      // Bot name input placeholder "小布" 不应该存在
-      expect(screen.queryByPlaceholderText('小布')).toBeNull()
+      expect(screen.getByPlaceholderText('小布')).toBeInTheDocument()
     })
   })
 
-  describe('迁移提示已移除 (Issue #647)', () => {
-    it('不应该在页面顶部显示迁移提示文案', async () => {
-      render(<SettingsPage />)
-      await waitFor(() => {
-        expect(screen.getByText('企业基础信息')).toBeInTheDocument()
-      })
-
-      // 迁移提示文案不应存在
-      expect(screen.queryByText(/AI 配置功能已迁移至/)).toBeNull()
-      expect(screen.queryByText(/前往配置/)).toBeNull()
-    })
-
-    it('不应该渲染前往 AI 客服配置的链接', async () => {
-      render(<SettingsPage />)
-      await waitFor(() => {
-        expect(screen.getByText('企业基础信息')).toBeInTheDocument()
-      })
-
-      // 前往配置链接不应存在
-      expect(screen.queryByRole('link', { name: /前往配置/ })).toBeNull()
-    })
-  })
-
-  describe('旧链接重定向 — /settings?tab=ai', () => {
-    it('当 URL 带 ?tab=ai 时应重定向到 /chat/config', async () => {
+  describe('旧链接 /settings?tab=ai 兼容（#3081 合并后直接展示本页）', () => {
+    it('URL 带 ?tab=ai 时不跳转，页面正常渲染（AI 客服设置已在本页）', async () => {
       // 重新 mock useSearchParams 返回 tab=ai
       vi.doMock('next/navigation', () => ({
         useRouter: () => ({ push: mockRouterPush, replace: mockRouterReplace }),
         useSearchParams: () => new URLSearchParams('tab=ai'),
       }))
-
-      // 验证 router.replace 被调用
-      // 注意：此测试需要 Suspense 边界，实际在 Next.js 中由 layout 提供
-      // 这里验证组件层面逻辑正确
+      render(<SettingsPage />)
+      await waitFor(() => {
+        expect(screen.getByText('AI 客服设置')).toBeInTheDocument()
+      })
+      // 不再重定向到 /chat/config（该页面已删除）
+      expect(mockRouterReplace).not.toHaveBeenCalledWith('/chat/config')
     })
   })
 
-  describe('基本设置 — 功能保留', () => {
-    it('应该正常渲染基本设置内容', async () => {
-      render(<SettingsPage />)
-      await waitFor(() => {
-        expect(screen.getByText('企业基础信息')).toBeInTheDocument()
-      })
-    })
-
+  describe('企业信息 — 功能保留', () => {
     it('公司名称输入框应该可用', async () => {
       render(<SettingsPage />)
       await waitFor(() => {
@@ -194,10 +242,10 @@ describe('SettingsPage — AI tab removed (Issue #502)', () => {
       })
     })
 
-    it('保存设置按钮应该存在', async () => {
+    it('保存企业信息按钮应该存在', async () => {
       render(<SettingsPage />)
       await waitFor(() => {
-        expect(screen.getByRole('button', { name: /保存设置/ })).toBeInTheDocument()
+        expect(screen.getByRole('button', { name: /保存企业信息/ })).toBeInTheDocument()
       })
     })
   })
@@ -206,12 +254,12 @@ describe('SettingsPage — AI tab removed (Issue #502)', () => {
   // Logo 上传 — Issue #645: 上传 Logo 按钮无 onClick，点击无反应
   // ================================================================
 
-  describe('Logo 上传 — 基本设置 Tab', () => {
+  describe('Logo 上传 — 企业信息区块', () => {
     it('点击「上传 Logo」按钮应触发隐藏文件输入', async () => {
       const user = userEvent.setup()
       render(<SettingsPage />)
 
-      // 确保基本设置 tab 已加载
+      // 确保企业信息区块已加载
       await waitFor(() => {
         expect(screen.getByRole('button', { name: /上传 Logo/ })).toBeInTheDocument()
       })
@@ -472,6 +520,13 @@ describe('SettingsPage — AI tab removed (Issue #502)', () => {
       // 不再出现「（当前为站内通知开关）」这种含糊/与实际脱节的文案
       expect(screen.getByText(/关闭后不再产生新的站内通知（历史通知保留）/)).toBeInTheDocument()
       expect(screen.queryByText(/当前为站内通知开关/)).not.toBeInTheDocument()
+    })
+
+    it('保存通知设置按钮存在（#3081 分区块保存）', async () => {
+      render(<SettingsPage />)
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /保存通知设置/ })).toBeInTheDocument()
+      })
     })
   })
 })

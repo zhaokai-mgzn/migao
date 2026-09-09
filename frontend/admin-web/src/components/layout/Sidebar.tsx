@@ -105,8 +105,7 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
       return hasPermission(item.permissionCode)
     })
 
-  // 激活判定：前缀匹配（'/chat' 匹配 '/chat/config'）+ 最长前缀互斥单高亮。
-  // 修复：/chat/config 下 '/chat' 与 '/chat/config' 同时 startsWith 命中 → 双高亮。
+  // 激活判定：前缀匹配（'/chat' 命中 '/chat' 自身）+ 最长前缀互斥单高亮。
   // 规则：当前路由在所有可见菜单项中只激活「最长匹配路径」的那一项。
   const matchesRoute = (itemPath: string, current: string) => {
     if (itemPath === '/dashboard') {

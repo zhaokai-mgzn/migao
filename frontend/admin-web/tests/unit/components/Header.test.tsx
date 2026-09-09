@@ -371,15 +371,6 @@ describe('Header', () => {
     expect(screen.getByText('售后工单')).toBeInTheDocument()
   })
 
-  it('/chat/config 路径面包屑', async () => {
-    mockPathname = '/chat/config'
-    await act(async () => {
-      render(<Header />)
-    })
-    expect(screen.getByText('智能客服')).toBeInTheDocument()
-    expect(screen.getByText('AI 客服配置')).toBeInTheDocument()
-  })
-
   it('/chat 路径面包屑（#2969 归入智能客服组）', async () => {
     mockPathname = '/chat'
     await act(async () => {
@@ -387,6 +378,8 @@ describe('Header', () => {
     })
     expect(screen.getByText('智能客服')).toBeInTheDocument()
     expect(screen.getByText('米宝 · 在线对话')).toBeInTheDocument()
+    // #3081: /chat/config 页面已删除（合并进企业基础信息），不再有 AI 客服配置面包屑
+    expect(screen.queryByText('AI 客服配置')).not.toBeInTheDocument()
   })
 
   it('/roles 路径面包屑（#2969 岗位权限归入组织管理组）', async () => {
@@ -425,12 +418,13 @@ describe('Header', () => {
     expect(screen.getByText('企业基础信息')).toBeInTheDocument()
   })
 
-  it('/agent-workspace/quick-replies 路径面包屑', async () => {
-    mockPathname = '/agent-workspace/quick-replies'
+  it('/agent-workspace 未知子路径回退「客服工作台」面包屑（#3081 快捷回复占位页已删除）', async () => {
+    mockPathname = '/agent-workspace/unknown'
     await act(async () => {
       render(<Header />)
     })
     expect(screen.getByText('智能客服')).toBeInTheDocument()
-    expect(screen.getByText('快捷回复')).toBeInTheDocument()
+    expect(screen.getByText('客服工作台')).toBeInTheDocument()
+    expect(screen.queryByText('快捷回复')).not.toBeInTheDocument()
   })
 })

@@ -377,7 +377,6 @@ def create_default_registry() -> ToolRegistry:
     - notification_manage: 通知管理
     - settings_manage: 系统设置
     - session_manage: 客服会话管理
-    - quick_reply_manage: 快捷回复模板
     - category_manage: 商品分类管理
     - processing_item_manage: 加工项管理
     
@@ -410,7 +409,6 @@ def create_default_registry() -> ToolRegistry:
     from app.tools.notification_manage import NotificationManageTool
     from app.tools.settings_manage import SettingsManageTool
     from app.tools.session_manage import SessionManageTool
-    from app.tools.quick_reply_manage import QuickReplyManageTool
     from app.tools.category_manage import CategoryManageTool
     from app.tools.processing_item_manage import ProcessingItemManageTool
     from app.tools.product_processing_item_manage import ProductProcessingItemManageTool
@@ -450,7 +448,6 @@ def create_default_registry() -> ToolRegistry:
     registry.register(NotificationManageTool())
     registry.register(SettingsManageTool())
     registry.register(SessionManageTool())
-    registry.register(QuickReplyManageTool())
     registry.register(CategoryManageTool())
     registry.register(ProcessingItemManageTool())
     registry.register(ProductProcessingItemManageTool())

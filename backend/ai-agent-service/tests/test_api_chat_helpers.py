@@ -369,10 +369,6 @@ class TestInferIntentFromText:
         assert _infer_intent_from_text("知识问答") == "knowledge_faq"
         assert _infer_intent_from_text("FAQ查询") == "knowledge_faq"
 
-    def test_quick_reply_keyword(self):
-        from app.api.chat import _infer_intent_from_text
-        assert _infer_intent_from_text("快捷回复") == "quick_reply"
-
     def test_session_manage_keyword(self):
         from app.api.chat import _infer_intent_from_text
         assert _infer_intent_from_text("会话管理") == "session_manage"

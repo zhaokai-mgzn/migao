@@ -12,7 +12,6 @@ import FloatingAssistant from '@/components/ai-assistant/FloatingAssistant'
 // 后端仍会 403 拒绝无权限请求，此处仅优化体验避免空白/报错页）。
 // 顺序敏感：更具体的子路径放在前面。
 const ROUTE_PERMISSION_MAP: Array<{ prefix: string; code: string }> = [
-  { prefix: '/chat/config', code: 'agent:quickreply' },
   { prefix: '/chat', code: 'agent:session' },
   { prefix: '/after-sales', code: 'order:refund' },
   { prefix: '/orders', code: 'order:list' },
@@ -43,9 +42,8 @@ export default function DashboardLayout({
   const permissionDenied = requiredPermission ? !hasPermission(requiredPermission) : false
 
   // 进入 /chat（会话页面）时自动收拢侧边栏，离开时自动恢复
-  // /chat/config 是设置页面，侧边栏保持展开
   useEffect(() => {
-    const isChatConversation = pathname.startsWith('/chat') && !pathname.startsWith('/chat/config')
+    const isChatConversation = pathname.startsWith('/chat')
     if (isChatConversation) {
       manualToggle.current = false
       setCollapsed(true)

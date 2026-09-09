@@ -296,7 +296,7 @@ public class RoleService {
                     "processing:manage",
                     "customer:view",
                     "finance:view",
-                    "agent:session", "agent:quickreply",
+                    "agent:session",
                     "employee:list"
                     // 注意：不含 system:manage —— 角色管理/企业信息/系统设置归 admin 专属（越权守卫）
             );

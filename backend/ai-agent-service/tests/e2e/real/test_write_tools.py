@@ -240,30 +240,4 @@ class TestCustomerWrite:
                 # 标签应该包含我们加的
                 tag_names = [t.get("name","") for t in (tags or []) if isinstance(t, dict)]; assert any("E2E" in t for t in tag_names), f"标签应含 E2E: {tags}"
 
-
-@pytest.mark.real_e2e
-class TestQuickReplyWrite:
-    """快捷回复操作"""
-
-    @pytest.mark.skip(reason="快捷回复非核心功能,qwen模型对quick_reply_manage工具存在认知偏差,待后续模型升级或专用skill处理")
-    def test_quick_reply_create(self, sess):
-        """创建 → 验证列表中出现"""
-        title = f"E2E测试话术_{TS}"
-
-        sess.send("快捷回复模板有哪些")
-        sess.send(f"新建快捷回复 {title}：您好，欢迎咨询词元通达！")
-        ev = sess.send("确认创建")
-        assert "quick_reply_manage" in sse_tools(ev), f"tools: {sse_tools(ev)}"
-
-        # admin-api 验证
-        time.sleep(1)
-        qr = admin_get("/api/admin/quick-replies", {"page": 1, "size": 50})
-        if qr.get("success"):
-            found = [q for q in qr.get("data", {}).get("items", []) if title in q.get("title", "")]
-            assert len(found) > 0, (
-                f"快捷回复 '{title}' 未创建成功。"
-                f"admin 现有: {[q.get('title','') for q in qr['data']['items'][:5]]}"
-            )
-            assert any(title in q.get("title", "") for q in found), (
-                f"标题不匹配: {[q.get('title') for q in found]}"
-            )
+# 注：#3081 快捷回复功能已全栈下线（被知识卡片替代），TestQuickReplyWrite 类整体移除。

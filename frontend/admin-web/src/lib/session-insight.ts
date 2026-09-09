@@ -77,7 +77,6 @@ const TOOL_META: Record<string, ToolMeta> = {
   // 设置
   settings_manage: { label: '系统设置', domain: 'settings', write: true },
   session_manage: { label: '会话管理', domain: 'settings', write: true },
-  quick_reply_manage: { label: '快捷回复管理', domain: 'settings', write: true },
   notification_manage: { label: '通知管理', domain: 'settings', write: true },
   // 工作流（米宝安全闸：确认 / 校验 / 转人工）
   interact: { label: '请求确认', domain: 'workflow', write: false },
