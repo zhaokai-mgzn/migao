@@ -47,6 +47,7 @@ cases:
       - employee-role.write-require-admin
     user_inputs:
       - "新客服王五 13812345678，开账号"
+      - "确认"
     expectations:
       - tool: employee_manage
         args:
@@ -54,7 +55,7 @@ cases:
     data_checks:
       - "收集确认后创建成功"
     skip_reason: ""
-    merge_log: "verification 5.2 独有"
+    merge_log: "verification 5.2 独有；2026-09-09 校准：补「确认」点确认卡轮（agent 第一轮先 role_manage(all) 查角色→validate_input→发确认卡，需用户确认后才 employee_manage(create)，原单轮期望过严）"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_employee_manage.py"
