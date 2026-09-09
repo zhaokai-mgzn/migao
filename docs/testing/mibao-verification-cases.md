@@ -454,12 +454,13 @@
 
 ### CT-002. 创建分类 🔵
 ```
-你: 在窗帘布艺下新建'轻奢系列'分类
+你: 新建一个'轻奢系列'分类
+你: 确认
 期望: category_manage(action=create)
-数据: name 必填校验通过后创建成功（含 parent 父分类）
+数据: name 必填校验通过后创建成功（扁平分类，无 parent 父分类，对齐 #2905）
 ```
 真值: category-manage.create
-溯源: verification 2.11 独有 ｜ tags: create
+溯源: verification 2.11 独有；2026-09-09 校准：分类已扁平化（#2905 移除父子概念），原「在窗帘布艺下新建子分类」是错误语义（agent 引导选父分类但 admin-api 忽略 parentId，分类创建成顶级后 agent 困惑）——改为扁平创建 + 补确认轮 ｜ tags: create
 
 ### CT-003. 删除分类 - 二次确认 + 风险提示 🔴
 ```

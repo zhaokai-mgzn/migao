@@ -18,23 +18,25 @@ VALID_ACTIONS = {"tree", "create", "update", "delete"}
 class CategoryManageTool(BaseTool):
     """商品分类管理 Tool
 
-    管理商品分类：获取分类树、创建/更新/删除分类。
+    管理商品分类：获取分类列表、创建/更新/删除分类。
 
     使用场景：
-    - 查看商品分类树形结构
-    - 创建新的商品分类（顶级或子分类）
+    - 查看商品分类列表（扁平结构，无父子概念，issue #2905）
+    - 创建新的商品分类（顶级，无子分类）
     - 更新分类名称
     - 删除不需要的分类
     """
 
     name = "category_manage"
     description = (
-        "【触发】查分类树/新建/删除分类。action=tree 返回每个分类的 id（长字符串如 88b6c50fbc...），这个 id 直接用作 product_manage 的 category_id 参数。tree 是只读安全的。【标注】tree=READONLY, create/delete=DESTRUCTIVE"
+        "【触发】查分类/新建/删除分类。action=tree 返回分类列表（扁平结构，无父子概念），"
+        "每个分类的 id（长字符串如 88b6c50fbc...）直接用作 product_manage 的 category_id 参数。"
+        "tree 是只读安全的。create 只需 name，无需指定父分类。【标注】tree=READONLY, create/delete=DESTRUCTIVE"
     )
     allowed_roles = ["admin", "tenant_admin"]
 
     read_only = False
-    destructive = True   # 可删除分类及子分类
+    destructive = True   # 可删除分类
     read_only_actions = {"tree"}  # 只读 action 免确认拦截
     idempotent = False   # 创建/删除非幂等
 
@@ -43,7 +45,7 @@ class CategoryManageTool(BaseTool):
         "properties": {
             "action": {
                 "type": "string",
-                "description": "操作类型：tree（获取分类树）/ create（创建分类）/ update（更新分类）/ delete（删除分类）",
+                "description": "操作类型：tree（获取分类列表）/ create（创建分类）/ update（更新分类）/ delete（删除分类）",
                 "enum": ["tree", "create", "update", "delete"],
             },
             "category_id": {
@@ -53,10 +55,6 @@ class CategoryManageTool(BaseTool):
             "name": {
                 "type": "string",
                 "description": "分类名称（create 时必填，update 时可选）",
-            },
-            "parent_id": {
-                "type": "string",
-                "description": "父分类 ID（create 时可选，不传则为顶级分类）",
             },
         },
         "required": ["action"],
@@ -68,7 +66,6 @@ class CategoryManageTool(BaseTool):
         action: str,
         category_id: Optional[str] = None,
         name: Optional[str] = None,
-        parent_id: Optional[str] = None,
     ) -> ToolResult:
         """执行商品分类管理操作"""
         # 权限检查
@@ -92,7 +89,7 @@ class CategoryManageTool(BaseTool):
             if action == "tree":
                 return await self._get_tree(context)
             elif action == "create":
-                return await self._create_category(context, name, parent_id)
+                return await self._create_category(context, name)
             elif action == "update":
                 return await self._update_category(context, category_id, name)
             elif action == "delete":
@@ -147,9 +144,8 @@ class CategoryManageTool(BaseTool):
         self,
         context: ToolContext,
         name: Optional[str],
-        parent_id: Optional[str],
     ) -> ToolResult:
-        """创建分类"""
+        """创建分类（扁平结构，无父子概念，#2905）"""
         if not name:
             return ToolResult(
                 success=False,
@@ -158,11 +154,9 @@ class CategoryManageTool(BaseTool):
             )
 
         json_data: Dict[str, Any] = {"name": name}
-        if parent_id:
-            json_data["parentId"] = parent_id
 
         logger.info(
-            f"[category-manage] Create: name={name}, parent_id={parent_id} "
+            f"[category-manage] Create: name={name} "
             f"| tenant={context.tenant_id}"
         )
 
