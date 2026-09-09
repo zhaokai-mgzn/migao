@@ -95,16 +95,23 @@ category_manage ×4），消耗轮次、走不到终点。这是 Phase 3 的主�
 ## 三、路线图（按依赖顺序）
 
 ```
-Phase 0  评测基建（runner 健壮性 + want_text）     ← 本轮已完成，待 PR
-Phase 1  确认-执行链持久化（#3031）+ 前端卡片契约（#3032）   ← 提升「下限」
-Phase 2  跨域 planner（多步任务拆解→逐域执行→汇总）        ← 提升「上限」
-Phase 3  思考预算按复杂度放开 + 多轮效率（P2-1/P2-6）       ← 提升「上限」
-Phase 4  能力边界动态化（P2-2）+ 评测资产校准（§14.2 漂移清单）
+Phase 0  评测基建（runner 健壮性 + want_text）                    ← ✅ 已合并 #3121
+Phase 1  确认-执行链持久化（#3031）+ 前端卡片契约（#3032）        ← ✅ 已合并 #3122/#3123
+Phase 1.5 路由修复（DA-003）+ case 校准（PP-002/PR-010/OR-009/PR-008） ← ✅ #3124/#3125/#3126
+Phase 2  跨域 planner（多步任务拆解→逐域执行→汇总）              ← 提升「上限」
+Phase 3  思考预算按复杂度放开 + 多轮效率（P2-1/P2-6）            ← 提升「上限」
+Phase 4  能力边界动态化（P2-2）+ runner 结构断言（items 嵌套字段）
 ```
 
 **每轮验收方式**：跑生产评测基线（local_runner normal --cases .github/cases），
 对比通过率；每个修复必须带可执行 case（order_before/want_text/required_args/db_verify）
 + 旧失败会话重放验证（fail→pass）。
+
+**已发现但未修的 runner 缺口（Phase 4 待办）**：
+- OR-009 的 `order_create(items=[{sellingMethod, doorWidth, colorName}])` 嵌套列表内对象
+  字段断言，runner `_arg_mismatch_reason` 不支持（只做顶层 args / 集合比较），导致该断言
+  永远 unmatched——data_checks 里已写 `items[0].sellingMethod` 但属自然语义不计分。
+  需补「列表内对象字段级断言」能力（§6.1 差距清单的结构断言钩子）。
 
 ## 四、评测资产漂移清单（§14.2，实测校准）
 
