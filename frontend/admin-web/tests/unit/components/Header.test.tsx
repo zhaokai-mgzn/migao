@@ -1,4 +1,4 @@
-// case_ids: UI-005, UI-033
+// case_ids: UI-005, UI-033, UI-037
 /**
  * Header 组件测试
  *
@@ -236,6 +236,8 @@ describe('Header', () => {
     await act(async () => {
       render(<Header />)
     })
+    // #3099: 下拉卡片改为点击展开，先点击用户按钮
+    await user.click(screen.getByRole('button', { name: '用户菜单' }))
     expect(screen.getByText('admin@example.com')).toBeInTheDocument()
   })
 
@@ -282,7 +284,73 @@ describe('Header', () => {
     await act(async () => {
       render(<Header />)
     })
-    expect(screen.getByText('user123')).toBeInTheDocument()
+    // #3099: 下拉卡片点击展开后展示账号（email 缺失回退 username；卡片头部子行与手机号行各出现一次）
+    await user.click(screen.getByRole('button', { name: '用户菜单' }))
+    expect(screen.getAllByText('user123').length).toBeGreaterThanOrEqual(1)
+  })
+
+  // ─── #3099 用户信息卡片（点击展开）───
+
+  it('点击用户按钮展开下拉卡片，展示 姓名/手机号/岗位/所属企业（#3099）', async () => {
+    mockUseAuthStore.mockReturnValue({
+      user: {
+        id: '1',
+        username: '13800138000',
+        nickname: '张老板',
+        position: '运营',
+        tenantName: '米高布艺',
+      },
+      logout: mockLogout,
+    })
+    await act(async () => {
+      render(<Header />)
+    })
+    // 初始收起：卡片内容不可见
+    expect(screen.queryByText('13800138000')).not.toBeInTheDocument()
+    // 点击展开
+    await user.click(screen.getByRole('button', { name: '用户菜单' }))
+    // 姓名（卡片头部 + 按钮各出现一次）
+    expect(screen.getAllByText('张老板').length).toBeGreaterThanOrEqual(1)
+    // 手机号（username=手机号；卡片头部子行与手机号行各出现一次）
+    expect(screen.getAllByText('13800138000').length).toBeGreaterThanOrEqual(1)
+    // 岗位
+    expect(screen.getByText('运营')).toBeInTheDocument()
+    // 所属企业
+    expect(screen.getByText('米高布艺')).toBeInTheDocument()
+  })
+
+  it('再次点击用户按钮收起下拉卡片（#3099）', async () => {
+    await act(async () => {
+      render(<Header />)
+    })
+    const trigger = screen.getByRole('button', { name: '用户菜单' })
+    await user.click(trigger)
+    expect(screen.getByText('退出登录')).toBeInTheDocument()
+    await user.click(trigger)
+    expect(screen.queryByText('退出登录')).not.toBeInTheDocument()
+  })
+
+  it('用户有 avatar 时展示头像图片，无 avatar 时展示姓名首字（#3099）', async () => {
+    mockUseAuthStore.mockReturnValue({
+      user: { id: '1', username: '13800138000', nickname: '张老板', avatar: 'https://oss.example.com/a.png' },
+      logout: mockLogout,
+    })
+    await act(async () => {
+      render(<Header />)
+    })
+    const avatarImg = screen.getByAltText('用户头像')
+    expect(avatarImg).toBeInTheDocument()
+    expect(avatarImg).toHaveAttribute('src', 'https://oss.example.com/a.png')
+
+    // 无 avatar → 姓名首字
+    mockUseAuthStore.mockReturnValue({
+      user: { id: '1', username: '13800138000', nickname: '张老板' },
+      logout: mockLogout,
+    })
+    await act(async () => {
+      render(<Header />)
+    })
+    expect(screen.getByText('张')).toBeInTheDocument()
   })
 
   // ─── 退出登录 ───
@@ -292,6 +360,8 @@ describe('Header', () => {
     await act(async () => {
       render(<Header />)
     })
+    // #3099: 下拉卡片点击展开后再点退出登录
+    await user.click(screen.getByRole('button', { name: '用户菜单' }))
     const logoutBtn = screen.getByText('退出登录')
     await user.click(logoutBtn)
     expect(mockLogout).toHaveBeenCalledTimes(1)

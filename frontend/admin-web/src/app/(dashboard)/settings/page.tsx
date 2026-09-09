@@ -8,6 +8,7 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui'
 import { settingsApi, uploadApi } from '@/lib/api'
 import { readImageDimensions } from '@/lib/image-dimensions'
+import { useAuthStore } from '@/store/auth'
 import type { SystemSettings, AiConfig } from '@/types'
 
 // #3081: 原「AI 客服配置」独立页面（/chat/config）合并进企业基础信息，
@@ -138,6 +139,13 @@ export default function SettingsPage() {
     setSavingSettings(true)
     try {
       await settingsApi.updateSettings(settings)
+      // #3099: 保存后立即刷新用户信息（企业名/Logo 在 /api/auth/me 内层 user.tenantName/tenantLogo），
+      // 否则侧边栏/右上角需刷新页面才同步 —— 此前 toast 宣称「侧边栏将同步展示」但实际不刷新
+      try {
+        await useAuthStore.getState().fetchUserInfo()
+      } catch {
+        // 刷新失败不阻塞保存成功的提示（下次进入应用/刷新页面仍会同步）
+      }
       toast.success('企业信息已保存，侧边栏将同步展示')
     } catch (error: any) {
       toast.error(error?.response?.data?.error?.message || '保存失败')
