@@ -46,6 +46,9 @@ KEYWORD_MAP: dict[IntentType, list[str]] = {
     IntentType.ROLE_MANAGE: ["角色权限", "角色", "权限"],
     # 会话管理（"看看当前有哪些会话" 此前无法触发 session_manage，SE-001 修复）
     IntentType.SESSION_MANAGE: ["客服会话", "在线会话", "排队会话", "历史会话", "会话列表", "会话"],
+    # 通知（ST-005 修复：此前缺 L1 关键词，「把新订单通知标为已读」被「订单」抢到 ORDER_QUERY，
+    # agent 按 order 工具集误宣「无法改通知状态」——notification_manage 实有 mark_read）
+    IntentType.NOTIFICATION: ["通知", "消息", "公告", "未读", "标为已读", "标记已读"],
     IntentType.AFTER_SALES: ["退货", "退款", "换货", "售后", "维修"],
     IntentType.KNOWLEDGE_FAQ: ["怎么清洗", "怎么安装", "怎么保养", "怎么测量", "怎么选", "如何", "什么是", "为什么", "教程",
                          # 售后/规则政策咨询（issue #3064 P1-2：双端「退换货政策/质保」此前被 after_sales 关键词抢占）
