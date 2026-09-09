@@ -338,8 +338,9 @@ export interface ProcessingCalculateResult {
 // 知识卡片状态（三端一致：Java KnowledgeCard.status = TS KnowledgeCardStatus = Agent 检索过滤条件）
 export type KnowledgeCardStatus = 'draft' | 'pending_review' | 'published' | 'archived'
 
-// 知识卡片来源（template/product/config/conversation/document/manual）
-export type KnowledgeCardSource = 'template' | 'product' | 'config' | 'conversation' | 'document' | 'manual'
+// 知识卡片来源（template/conversation/document/manual）
+// 商品派生（product，#3083）/加工项派生（config，#3085）能力已移除且存量数据已清理（#3087），从枚举移除
+export type KnowledgeCardSource = 'template' | 'conversation' | 'document' | 'manual'
 
 // 知识卡片分类（faq/product/measure/aftersale/config）
 export type KnowledgeCardCategory = 'faq' | 'product' | 'measure' | 'aftersale' | 'config'

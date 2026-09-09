@@ -84,7 +84,7 @@ grep -rn "字段名" backend/admin-api/src frontend/admin-web/src backend/ai-age
 |---|---|---|
 | 知识卡片状态 | `draft / pending_review / published / archived` | Java `KnowledgeCard.status` = TS `KnowledgeCardStatus` = Agent 检索过滤条件（仅 published） |
 | 候选状态 | `pending / adopted / edited / rejected` | Java `KnowledgeCandidate.status` = TS 同 |
-| 知识卡片来源 | `template / product / config / conversation / document / manual` | Java `sourceType` = TS `sourceType` = Agent 展示徽标；`product`（商品派生 #3083）/`config`（加工项派生 #3085）均为**历史遗留值**（派生能力已移除，仅存量归档卡使用，不参与来源筛选） |
+| 知识卡片来源 | `template / conversation / document / manual` | Java `sourceType` = TS `sourceType` = Agent 展示徽标；商品派生（product）/加工项派生（config）已移除且存量数据已清理（#3083/#3085/#3087） |
 | 候选来源 | `conversation / document / product / config` | 同上 |
 | 知识卡片分类 | `faq / product / measure / aftersale / config` | 前后端同枚举 |
 | 知识卡片检索端点 | `GET /api/admin/knowledge/cards/search?query=&productId=&category=` | 仅返回本租户 `published` 知识卡片（显式 eq tenant_id + status） |
