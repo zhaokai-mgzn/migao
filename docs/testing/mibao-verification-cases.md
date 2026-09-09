@@ -963,14 +963,14 @@
 真值: customer-list.detail-shape, customer-list.detail-joins
 溯源: verification 4.2 独有 ｜ tags: query, detail
 
-### CU-003. 给客户打标签（TODO 空实现） 🔵
+### CU-003. 给客户打标签 🔵
 ```
 你: 给张三加VIP标签
 期望: customer_manage(action=add_tag)
-数据: 接口恒返回 success 但不落库（TODO 空实现，无副作用）
+数据: add_tag 真实落库（customer_profiles.tags JSONB 写入），重复标签幂等跳过
 ```
 真值: customer-list.tag-todo
-溯源: verification 4.3 独有；断言按 customer-list.tag-todo 真值写「无副作用」，防止验收误判 ｜ tags: tag, write
+溯源: verification 4.3 独有；2026-09-09 校准：truth「tag-todo 空实现」已过时（代码自 #94 起真实落库），更新 title/data_checks 反映真实行为；「先查后写」（list_tags 查标签 ID + list 查客户 UUID 后 add_tag）为合理多轮，待 probe 验证后补轮次 ｜ tags: tag, write
 
 ### CU-004. 更新客户资料（部分更新） 🔵
 ```
