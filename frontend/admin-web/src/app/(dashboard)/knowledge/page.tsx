@@ -359,9 +359,10 @@ export default function KnowledgePage() {
     {
       key: 'actions',
       title: '操作',
-      width: '240px',
+      // 4 按钮（查看/编辑/发布或归档/删除）需要足够宽度；nowrap 防按钮文字被列压缩竖排（#3108 视觉验证发现）
+      width: '300px',
       render: (entry) => (
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1 whitespace-nowrap">
           <Button size="sm" variant="ghost" onClick={() => setViewTarget(entry)}>
             <Eye className="h-3.5 w-3.5" /> 查看
           </Button>
