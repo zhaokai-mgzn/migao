@@ -137,6 +137,18 @@ class RuleMatcher:
                 matched_keywords=["订单统计"],
             )
 
+        # --- 优先匹配「最近订单」→ dashboard（看板 recent_orders） ---
+        # DA-003 回归：「最近5条订单/最近有哪些订单」是看板语义，dashboard_stats 的
+        # description 明确「最近X条订单优先用本工具而非 order_query」；此前「订单」关键词
+        # 把它抢到 order_query，agent 用 order_query(list) 而非 dashboard_stats(recent_orders)。
+        if ("最近" in msg_lower or "最新" in msg_lower) and "订单" in msg_lower:
+            return IntentResult(
+                intent=IntentType.DASHBOARD,
+                confidence=0.95,
+                source="rule",
+                matched_keywords=["最近订单"],
+            )
+
         # --- 优先匹配「尺寸数字 + 褶皱/算料/报价」→ quote（算料报价） ---
         # 否则"3米窗 2倍褶皱 多少钱"会被"多少钱"(3字) 压过"褶皱"(2字) 误路由到商品咨询。
         # 尺寸 + 褶皱/倍数 是算料意图的强信号，前置拦截。

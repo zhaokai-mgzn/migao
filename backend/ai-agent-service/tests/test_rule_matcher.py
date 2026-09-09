@@ -1,4 +1,4 @@
-# case_ids: MC-010, MC-011, AS-003, AS-004, AS-005, HR-002, DA-004, PR-013
+# case_ids: MC-010, MC-011, AS-003, AS-004, AS-005, HR-002, DA-004, PR-013, DA-003, PP-002
 """规则匹配器单元测试（app/router/rule_matcher.py）
 
 覆盖：_extract_text / RuleMatcher.match 关键词优先级 / 正则规则 / 未命中。
@@ -56,6 +56,19 @@ class TestMatch:
         assert result.intent == IntentType.ORDER_QUERY
         assert result.confidence == 0.95
         assert result.matched_keywords == ["订单统计"]
+
+    def test_recent_orders_matches_dashboard(self):
+        # DA-003 回归："最近5条订单"是看板语义（dashboard_stats recent_orders），
+        # 此前「订单」关键词把它抢到 order_query，agent 用 order_query(list) 而非
+        # dashboard_stats(recent_orders)——工具说明明确「最近X条订单优先用本工具」。
+        result = self._match("最近5条订单")
+        assert result is not None
+        assert result.intent == IntentType.DASHBOARD
+
+    def test_recent_orders_with_digits_matches_dashboard(self):
+        result = self._match("看看最近有哪些订单")
+        assert result is not None
+        assert result.intent == IntentType.DASHBOARD
 
     def test_regular_keyword_confidence(self):
         result = self._match("我要投诉")

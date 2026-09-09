@@ -2004,11 +2004,11 @@
 ### PP-002. 加工项分类列表 🔵
 ```
 你: 基础加工分类下有哪些
-期望: processing_item_manage(action=list_categories)
+期望: processing_item_query
 数据: 返回分类列表
 ```
 真值: processing-manage.category-sort, processing-manage.crud
-溯源: verification 2.14 独有 ｜ tags: processing_item, category
+溯源: verification 2.14 独有；2026-09-09 校准：期望工具 processing_item_manage(list_categories) 与工具 description 矛盾（查询加工项应走 processing_item_query），改为 processing_item_query ｜ tags: processing_item, category
 
 ### PP-003. 加工项 - 传名称自动解析 UUID 🔴
 ```
