@@ -4,75 +4,41 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.migao.admin.entity.KnowledgeCard;
 import com.migao.admin.entity.ProcessingItem;
-import com.migao.admin.entity.Product;
-import com.migao.admin.entity.ProductSku;
 import com.migao.admin.mapper.KnowledgeCardMapper;
 import com.migao.admin.mapper.ProcessingItemMapper;
-import com.migao.admin.mapper.ProductMapper;
-import com.migao.admin.mapper.ProductSkuMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
-import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 
 /**
- * 商品/配置派生知识卡片服务（LLM WIKI 板块 P4，issue #3051 — L2 本店事实层）
+ * 加工项派生知识卡片服务（LLM WIKI 板块 P4，issue #3051 / #3083 — L2 本店事实层）
  *
- * 商品/加工项是结构化数据，直接「生成」知识卡片而非检索（替代 RAG 的本店事实层）：
- * - 商品 → 「{商品名}多少钱」卡片（answer 含 SKU 价格区间，随商品变更自动更新，保证与商品页一致）
+ * 商品派生已移除（issue #3083）：价格等本店事实类问题由 ai-agent product_detail 工具
+ * 实时查询（customer_product_skill 编排「必须通过工具查询，不编造价格」），派生卡片
+ * 快照成为冗余第二数据源，故摘除商品 → 「{商品名}多少钱」派生链路。
+ *
+ * 保留加工项派生：
  * - 加工项 → 「{加工项名}怎么计价」卡片（answer 按 pricingMethod 生成）
- * 卡片 sourceType=product/config、status=published；同源（tenant+sourceType+sourceRef）upsert，人工可改（改后重建会覆盖——v1 约定）。
+ * 卡片 sourceType=config、status=published；同源（tenant+sourceType+sourceRef）upsert，人工可改（改后重建会覆盖——v1 约定）。
  */
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class KnowledgeDeriveService {
 
-    private final ProductMapper productMapper;
-    private final ProductSkuMapper productSkuMapper;
     private final ProcessingItemMapper processingItemMapper;
     private final KnowledgeCardMapper knowledgeCardMapper;
     private final ObjectMapper objectMapper;
 
-    /** 对账：全量商品 + 加工项派生（管理端手动触发，补偿漏触发） */
+    /** 对账：全量加工项派生（管理端手动触发，补偿漏触发） */
     public Map<String, Object> deriveAll(Long tenantId) {
-        int products = deriveAllProductCards(tenantId);
         int items = deriveAllProcessingCards(tenantId);
-        log.info("知识卡片对账派生: tenantId={}, products={}, processingItems={}", tenantId, products, items);
-        return Map.of("products", products, "processingItems", items);
-    }
-
-    /** 单商品派生（商品创建/更新/上下架时触发） */
-    public void deriveProductCard(Long tenantId, String productId) {
-        Product product = productMapper.selectById(productId);
-        if (product == null || !product.getTenantId().equals(tenantId)) {
-            return;
-        }
-        List<ProductSku> skus = productSkuMapper.selectList(new LambdaQueryWrapper<ProductSku>()
-                .eq(ProductSku::getTenantId, tenantId)
-                .eq(ProductSku::getProductId, productId));
-        String priceRange = buildPriceRange(skus, product.getUnit());
-        String answer = product.getName() + "：" + priceRange
-                + "。具体规格、颜色、库存请以商品页为准。"
-                + (StringUtils.hasText(product.getDescription())
-                        ? " 简介：" + product.getDescription().replaceAll("\\s+", " ").substring(0, Math.min(80, product.getDescription().length()))
-                        : "");
-        upsert(tenantId, "product", productId, product.getName() + "多少钱", "product", answer,
-                Map.of("productId", productId, "priceRange", priceRange));
-    }
-
-    /** 全量商品派生 */
-    public int deriveAllProductCards(Long tenantId) {
-        List<Product> products = productMapper.selectList(new LambdaQueryWrapper<Product>()
-                .eq(Product::getTenantId, tenantId));
-        for (Product p : products) {
-            deriveProductCard(tenantId, p.getId());
-        }
-        return products.size();
+        log.info("知识卡片对账派生: tenantId={}, processingItems={}", tenantId, items);
+        return Map.of("processingItems", items);
     }
 
     /** 全量加工项派生（加工项变更时触发，数量少可全量） */
@@ -105,27 +71,6 @@ public class KnowledgeDeriveService {
             case "per_area" -> "按面积计价";
             default -> "以本店价格为准";
         };
-    }
-
-    /** SKU 价格区间文案 */
-    private String buildPriceRange(List<ProductSku> skus, String unit) {
-        if (skus == null || skus.isEmpty()) {
-            return "价格以商品页为准";
-        }
-        BigDecimal min = null;
-        BigDecimal max = null;
-        for (ProductSku sku : skus) {
-            if (sku.getPrice() == null) {
-                continue;
-            }
-            min = min == null ? sku.getPrice() : min.min(sku.getPrice());
-            max = max == null ? sku.getPrice() : max.max(sku.getPrice());
-        }
-        if (min == null) {
-            return "价格以商品页为准";
-        }
-        String unitText = StringUtils.hasText(unit) ? " 元/" + unit : " 元";
-        return min.equals(max) ? min.toPlainString() + unitText : min.toPlainString() + "-" + max.toPlainString() + unitText;
     }
 
     /** 按 (tenant_id, source_type, source_ref) upsert：存在则更新（version+1），否则插入 */

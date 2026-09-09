@@ -185,7 +185,7 @@ cases:
           query: 加工
       - "success=true"
     data_checks:
-      - "加工计价规则类问题优先检索本店知识卡片（config/商品派生卡片）；命中基于卡片回答并注明来源"
+      - "加工计价规则类问题优先检索本店知识卡片（加工项派生卡片，sourceType=config）；命中基于卡片回答并注明来源（商品派生已移除，商品价格走 product_detail 工具）"
     skip_reason: ""
     merge_log: "2026-09-08 新增（issue #3059）：米宝知识问答日常回归（加工计价子域，L2 派生卡片）"
     traces:

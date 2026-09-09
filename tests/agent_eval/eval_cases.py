@@ -451,32 +451,32 @@ _CASE_API_017 = EvalCase(
     persona='',
 )
 
-# ── API-023 [NORMAL] 知识派生对账 - 存量商品/加工项全量重建派生卡片（P2-1，issue #3051 收尾）（源: cases/api.yml）──
+# ── API-023 [NORMAL] 知识派生对账 - 存量加工项重建派生卡片（商品派生已移除，issue #3083）（源: cases/api.yml）──
 _CASE_API_023 = EvalCase(
     id='API-023',
     legacy_id='',
-    title='知识派生对账 - 存量商品/加工项全量重建派生卡片（P2-1，issue #3051 收尾）',
+    title='知识派生对账 - 存量加工项重建派生卡片（商品派生已移除，issue #3083）',
     skill=Skill.GENERAL,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['管理端触发存量对账：历史商品/加工项无需逐个编辑即可补生成派生知识卡片'],
+    user_inputs=['管理端触发存量对账：历史加工项无需逐个编辑即可补生成派生知识卡片（商品派生能力已下线，价格走 product_detail 工具实时查询）'],
     expectations=[],
-    data_checks=['POST /api/admin/knowledge/derive/rebuild 全量重建派生卡片：返回 {products, processingItems} 统计', '同源（tenant+sourceType+sourceRef）upsert：已存在卡片更新 version+1，不重复插入', '对账为 P2 收尾：存量商品此前无派生卡片（验收发现 P2-1），商品变更仍实时自动触发（不回归）'],
+    data_checks=['POST /api/admin/knowledge/derive/rebuild 重建派生卡片：返回 {processingItems} 统计（不再包含 products，商品派生已移除）', '同源（tenant+sourceType+sourceRef）upsert：已存在卡片更新 version+1，不重复插入', '商品创建/更新/上下架不再触发任何知识卡片派生（issue #3083）'],
     skip_reason='对账逻辑由 Service 单测（KnowledgeDeriveServiceTest deriveAll）+ Controller MockMvc 测试验证，非 LLM 行为',
     tags=['api', 'knowledge', 'wiki', 'derive'],
     persona='',
 )
 
-# ── API-018 [NORMAL] 商品/配置派生知识卡片 - 价格区间自动生成 + 变更自动更新（LLM WIKI 板块 #3051 P4）（源: cases/api.yml）──
+# ── API-018 [NORMAL] 配置（加工项）派生知识卡片 - pricingMethod 计价文案自动生成 + 变更自动更新（商品派生已移除，issue #3083）（源: cases/api.yml）──
 _CASE_API_018 = EvalCase(
     id='API-018',
     legacy_id='',
-    title='商品/配置派生知识卡片 - 价格区间自动生成 + 变更自动更新（LLM WIKI 板块 #3051 P4）',
+    title='配置（加工项）派生知识卡片 - pricingMethod 计价文案自动生成 + 变更自动更新（商品派生已移除，issue #3083）',
     skill=Skill.GENERAL,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['商品/加工项信息变更后，关联的派生知识卡片自动更新，AI 回答价格/规格问题与商品数据一致'],
+    user_inputs=['加工项信息变更后，关联的派生知识卡片自动更新，AI 回答计价问题与加工项数据一致；商品价格问题由 product_detail 工具实时查询'],
     expectations=[],
-    data_checks=['商品创建/更新/上下架后自动生成/更新「{商品名}多少钱」知识卡片：answer 含 SKU 价格区间（如 88-128 元/米），sourceType=product、sourceRef=商品ID、status=published', '加工项创建/更新后自动生成「{加工项名}怎么计价」卡片：按 pricingMethod 生成文案（per_meter 按米/per_set 按套/fixed 固定价格+单价/per_area 按面积）', '同源（tenant+sourceType+sourceRef）upsert：存在则更新 version+1，不重复插入；跨租户商品不派生', '价格区间实时读取 SKU 价格，商品变更后卡片自动同步（验收真值 #3）'],
-    skip_reason='派生逻辑由 Service 单测验证（KnowledgeDeriveServiceTest）+ 商品/加工项服务触发断言，非 LLM 行为，不进入 agent-eval 冒烟',
+    data_checks=['加工项创建/更新后自动生成「{加工项名}怎么计价」卡片：按 pricingMethod 生成文案（per_meter 按米/per_set 按套/fixed 固定价格+单价/per_area 按面积），sourceType=config、sourceRef=加工项ID、status=published', '同源（tenant+sourceType+sourceRef）upsert：存在则更新 version+1，不重复插入', '商品派生已移除：不再生成 sourceType=product 的「{商品名}多少钱」卡片（价格走 product_detail 工具，杜绝价格双源快照）'],
+    skip_reason='派生逻辑由 Service 单测验证（KnowledgeDeriveServiceTest），非 LLM 行为，不进入 agent-eval 冒烟',
     tags=['api', 'knowledge', 'wiki', 'derive'],
     persona='',
 )
@@ -1915,7 +1915,7 @@ _CASE_KN_004 = EvalCase(
     difficulty=Difficulty.NORMAL,
     user_inputs=['我们店打孔加工怎么计价？'],
     expectations=['knowledge_search(query=加工)', 'success=true'],
-    data_checks=['加工计价规则类问题优先检索本店知识卡片（config/商品派生卡片）；命中基于卡片回答并注明来源'],
+    data_checks=['加工计价规则类问题优先检索本店知识卡片（加工项派生卡片，sourceType=config）；命中基于卡片回答并注明来源（商品派生已移除，商品价格走 product_detail 工具）'],
     skip_reason='',
     tags=['knowledge', 'wiki', 'mibao'],
     persona='mibao',
@@ -3644,9 +3644,24 @@ _CASE_UI_034 = EvalCase(
     difficulty=Difficulty.NORMAL,
     user_inputs=['知识库待确认候选「采纳」后用户不知道卡片去哪了；行业模板「一键套用」后不知道套出的卡片在哪。需要写操作反馈闭环：做了什么 → 去哪了 → 怎么找回来（toast 去向文案 + 落地高亮 + 前置确认弹窗 + 来源筛选自动定位）'],
     expectations=['direct_reply'],
-    data_checks=['待确认候选「采纳」后：toast 文案包含去向（跳转知识卡片列表）；落地「知识卡片」Tab 后新卡行高亮定位（Table 的 highlightRowKey 匹配新卡 id，bg-primary-50），高亮 4s 自动消退', '行业模板「一键套用」：先弹确认弹窗（说明将新增 N 条并立即发布、已存在自动跳过），未确认不得调用 applyTemplate；确认后 toast 文案包含去向与定位方式（筛选「来源=模板」）', '套用确认后：跳转「知识卡片」Tab 并自动按来源=模板筛选（getCards 带 sourceType=template），列表仅显示模板来源卡片（批量成果可核对可编辑）', '「知识卡片」Tab 筛选区常驻「来源」下拉（全部来源/模板/商品派生/配置/会话提炼/文档提炼/人工），用户可随时按来源定位卡片', '待确认/行业模板两处 Tab 副文案补充去向说明，与 toast 口径一致'],
+    data_checks=['待确认候选「采纳」后：toast 文案包含去向（跳转知识卡片列表）；落地「知识卡片」Tab 后新卡行高亮定位（Table 的 highlightRowKey 匹配新卡 id，bg-primary-50），高亮 4s 自动消退', '行业模板「一键套用」：先弹确认弹窗（说明将新增 N 条并立即发布、已存在自动跳过），未确认不得调用 applyTemplate；确认后 toast 文案包含去向与定位方式（筛选「来源=模板」）', '套用确认后：跳转「知识卡片」Tab 并自动按来源=模板筛选（getCards 带 sourceType=template），列表仅显示模板来源卡片（批量成果可核对可编辑）', '「知识卡片」Tab 筛选区常驻「来源」下拉（全部来源/模板/加工项派生/会话提炼/文档提炼/人工——来源定义「一眼看懂」，商品派生能力已移除故无该选项），用户可随时按来源定位卡片', '待确认/行业模板两处 Tab 副文案补充去向说明，与 toast 口径一致'],
     skip_reason='纯前端交互由 vitest 单测验证，非 LLM 行为，不进入 agent-eval 冒烟',
     tags=['ui', 'knowledge', 'feedback-loop', 'locate', 'admin-web'],
+    persona='',
+)
+
+# ── UI-035 [NORMAL] 知识库来源定义「一眼看懂」+ 商品派生能力移除（issue #3083）（源: cases/ui.yml）──
+_CASE_UI_035 = EvalCase(
+    id='UI-035',
+    legacy_id='',
+    title='知识库来源定义「一眼看懂」+ 商品派生能力移除（issue #3083）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['知识库来源定义需用户一眼看懂：「配置」含义模糊（实为加工项计价卡片）应改「加工项派生」；商品派生能力移除后来源筛选不再出现「商品派生」选项'],
+    expectations=['direct_reply'],
+    data_checks=['来源筛选下拉显示「加工项派生」而非「配置」（SOURCE_META.config.label 已改为自解释文案）', '来源筛选下拉不含「商品派生」选项（商品派生能力已移除，SOURCE_FILTER_OPTIONS 排除 product）', '来源徽标（列表列）同样使用自解释文案：config → 加工项派生；product 仅保留以渲染存量归档卡（不参与筛选）'],
+    skip_reason='纯前端文案/交互由 vitest 单测验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ui', 'knowledge', 'source-clarity', 'admin-web'],
     persona='',
 )
 
@@ -3921,6 +3936,7 @@ ALL_CASES = (
     _CASE_UI_032,
     _CASE_UI_033,
     _CASE_UI_034,
+    _CASE_UI_035,
     _CASE_UT_001,
     _CASE_UT_002,
 )
