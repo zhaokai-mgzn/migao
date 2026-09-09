@@ -23,7 +23,7 @@ vi.mock('@/lib/api', () => ({
     getPendingCount: vi.fn().mockResolvedValue({ data: { success: true, data: { pending: 1 } } }),
     adoptCandidate: vi.fn().mockResolvedValue({ data: { success: true, data: { id: 'card-1', status: 'published' } } }),
     rejectCandidate: vi.fn().mockResolvedValue({ data: { success: true } }),
-    getTemplates: vi.fn().mockResolvedValue({ data: { success: true, data: [{ templateId: 'curtain', industry: 'curtain', name: '布艺窗帘行业模板', version: 1, entryCount: 32 }] } }),
+    getTemplates: vi.fn().mockResolvedValue({ data: { success: true, data: [{ templateId: 'curtain', industry: 'curtain', name: '布艺窗帘行业模板', version: 1, entryCount: 26 }] } }),
     applyTemplate: vi.fn().mockResolvedValue({ data: { success: true, data: { templateId: 'curtain', created: 32, skipped: 0 } } }),
     distillDocument: vi.fn().mockResolvedValue({ data: { success: true, data: { candidates: 2, created: 2, skipped: 0 } } }),
   },

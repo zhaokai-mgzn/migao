@@ -36,7 +36,7 @@ migao/
 ├── deploy/terraform/           # 阿里云 IaC
 ├── docs/                       # 文档 + wiki
 ├── tests/                      # E2E (Playwright) + Smoke (pytest)
-└── 行业模板 → backend/admin-api/src/main/resources/knowledge-templates/  # 布艺 32 条预置
+└── 行业模板 → backend/admin-api/src/main/resources/knowledge-templates/  # 布艺 26 条预置（通用知识）
 ```
 
 ## 功能

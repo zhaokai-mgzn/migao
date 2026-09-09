@@ -311,7 +311,7 @@
 ### API-017. 行业模板 - 目录 + 一键套用（去重 + source=template）（LLM WIKI 板块 #3051 P3） 🔵
 ```
 你: 商家一键套用行业模板后自动获得预置知识卡片，无需逐条手写
-数据: GET /api/admin/knowledge/templates 返回平台预置模板目录（templateId/industry/name/version/description/entryCount），布艺模板 entryCount≥30
+数据: GET /api/admin/knowledge/templates 返回平台预置模板目录（templateId/industry/name/version/description/entryCount），布艺模板 entryCount≥25（商品级词条已移除，仅行业通用知识 26 条，#3095）
 数据: POST /api/admin/knowledge/templates/{templateId}/apply 将模板知识卡片复制到本租户：sourceType=template、sourceRef=templateId、status=published
 数据: 按 (tenant_id, title) 去重：重复标题跳过不重复插入，返回 {created, skipped} 统计
 数据: 套用跨租户无影响：仅当前租户可见（租户隔离拦截器）
