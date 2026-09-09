@@ -109,6 +109,21 @@ _VALIDATION_RULES: Dict[str, Dict[str, Any]] = {
             "phone": {"type": str, "min_len": 1, "label": "手机号"},
         },
     },
+    # CU-004 回归防线：validate_input 对 customer_manage(update) 此前无规则 → 返回
+    # 「未知工具/无需校验」，LLM 据此幻觉「手机号修改不支持」——但 admin-api
+    # updateCustomer 明确支持 phone。补规则消除空转信号。
+    "customer_manage": {
+        "update": {
+            "required": ["customer_id", "data"],
+            "customer_id": {"type": str, "min_len": 1, "label": "客户 UUID"},
+            "data": {"type": dict, "label": "更新数据（可含 phone/name 等字段）"},
+        },
+        "add_tag": {
+            "required": ["customer_id", "tag_id"],
+            "customer_id": {"type": str, "min_len": 1, "label": "客户 UUID"},
+            "tag_id": {"type": str, "min_len": 1, "label": "标签 ID"},
+        },
+    },
 }
 
 # 管理类操作的通用必填校验
@@ -248,8 +263,9 @@ class ValidateInputTool(BaseTool):
                     f"取值非法: {label} ({field}) 应为 {enum_vals} 之一，实际为 {val!r}"
                 )
 
-        # 3. update 操作检查 product_id
-        if target_action == "update":
+        # 3. update 操作检查 product_id（仅商品类工具；customer_manage 等用规则表
+        #    声明的 customer_id，不得误套 product_id——CU-004 回归）
+        if target_action == "update" and target_tool in ("product_manage", "product_update"):
             pid = params.get("product_id") or params.get("id")
             if not pid:
                 issues.append("缺少 product_id（更新操作必须指定商品ID）")

@@ -42,6 +42,27 @@ class TestValidateInputSuccess:
         )
         assert result.success is True
 
+    async def test_customer_update_valid(self, tool, admin_tool_context):
+        """CU-004 回归：customer_manage(update) 必须有规则（旧实现返回「未知工具」，
+        LLM 据此幻觉「手机号修改不支持」——实际 admin-api updateCustomer 支持 phone）。"""
+        result = await tool.execute(
+            context=admin_tool_context,
+            target_tool="customer_manage",
+            target_action="update",
+            params={"customer_id": "9a97c0415c204702f3c6efaf3d162509", "data": {"phone": "13900001111"}},
+        )
+        assert result.success is True
+        assert result.data["validated"] is True
+
+    async def test_customer_update_missing_customer_id_fails(self, tool, admin_tool_context):
+        result = await tool.execute(
+            context=admin_tool_context,
+            target_tool="customer_manage",
+            target_action="update",
+            params={"data": {"phone": "13900001111"}},
+        )
+        assert result.success is False
+
     async def test_inventory_adjust_valid(self, tool, admin_tool_context):
         """生产回归：inventory_manage/adjust 必须有校验规则（旧实现返回"未知的工具"，
         且 LLM 绕过校验直接执行写操作）"""
