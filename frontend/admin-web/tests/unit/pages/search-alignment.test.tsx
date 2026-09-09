@@ -253,7 +253,7 @@ describe('搜索区域左对齐 — 无居中 CSS 类', () => {
       const { default: ProcessingPage } = await import('@/app/(dashboard)/processing/page')
       render(<ProcessingPage />)
       await waitFor(() => {
-        expect(screen.getByText('加工项配置')).toBeInTheDocument()
+        expect(screen.getByText('加工项管理')).toBeInTheDocument()
       })
       expect(screen.queryByTestId('search-area')).toBeNull()
     })
