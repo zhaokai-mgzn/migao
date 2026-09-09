@@ -15,6 +15,8 @@ class ProductUpdateTool(BaseTool):
         "【触发】用户说'改价格''改名称''价格改成XX''改名'时**直接调用**，无需 validate_input。"
         "只传要改的字段，其他字段保持不变。product_id 支持名称/序号/UUID。"
         "【注意】改的是商品统一定价，影响所有 SKU。单独调某个 SKU 价格请引导去商品管理页。"
+        "支持设置「退货是否回补库存」（allow_return_restock：true=退货后回补库存/可再售，"
+        "false=定制商品退货不回补）。"
         "【反例】增删加工项用 product_processing_item_manage，单独 SKU 调价本工具不支持。"
         "【标注】WRITE|IDEMPOTENT"
     )
@@ -35,6 +37,10 @@ class ProductUpdateTool(BaseTool):
             "name": {"type": "string", "description": "新名称（可选）"},
             "description": {"type": "string", "description": "新描述（可选）"},
             "status": {"type": "string", "enum": ["on_sale", "off_sale"], "description": "上下架（可选）"},
+            "allow_return_restock": {
+                "type": "boolean",
+                "description": "退货后是否回补库存（可选，issue #2991）：true=退货回补/可再售，false=定制商品退货不回补。null 不修改",
+            },
         },
         "required": ["product_id"],
     }
@@ -47,6 +53,7 @@ class ProductUpdateTool(BaseTool):
         name: Optional[str] = None,
         description: Optional[str] = None,
         status: Optional[str] = None,
+        allow_return_restock: Optional[bool] = None,
     ) -> ToolResult:
         # 权限检查：改价/改名属对商品定价的承诺修改，仅限商户角色（admin/tenant_admin）
         if not self.check_permission(context):
@@ -65,6 +72,9 @@ class ProductUpdateTool(BaseTool):
         if name: json_data["name"] = name
         if description: json_data["description"] = description
         if status: json_data["status"] = status
+        # allow_return_restock 透传（issue #2991）：None 不传（=不修改），true/false 显式传
+        if allow_return_restock is not None:
+            json_data["allowReturnRestock"] = allow_return_restock
 
         if not json_data:
             return ToolResult(success=False, error="没有要修改的字段", message="请提供至少一个要修改的字段")
