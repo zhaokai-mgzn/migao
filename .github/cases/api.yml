@@ -356,11 +356,11 @@ cases:
     data_checks:
       - "POST /api/admin/knowledge/entries 创建知识卡片：title/answer 必填（缺则 400 中文 detail），sourceType=manual，version=1，status 缺省 draft（可显式 published）"
       - "PUT /api/admin/knowledge/entries/{id} 编辑：version+1；跨租户 404"
-      - "POST /{id}/publish：draft/pending_review → published（记录 reviewedAt）；archived 拒绝"
+      - "POST /{id}/publish：draft/pending_review → published（记录 reviewedAt）；archived 可重新发布回 published（归档非终点，#3108）"
       - "POST /{id}/archive：published → archived；DELETE /{id} 逻辑删除；全部按 tenant 隔离"
       - "GET /api/admin/knowledge/entries 分页：keyword/category/sourceType/status 筛选，updated_at 倒序"
     skip_reason: "知识卡片 CRUD/状态机由 MockMvc + Service 单测验证（KnowledgeCardControllerTest/KnowledgeCardServiceTest），非 LLM 行为，不进入 agent-eval 冒烟"
-    merge_log: "2026-09-08 新增（issue #3051 LLM WIKI 板块 P2）：知识卡片模型 CRUD + 状态机闭环（draft→published→archived 每状态有 API 动作）"
+    merge_log: "2026-09-08 新增（issue #3051 LLM WIKI 板块 P2）：知识卡片模型 CRUD + 状态机闭环（draft→published→archived 每状态有 API 动作）；2026-09-09 #3108 修订：archived 可重新发布回 published（归档非终点）"
     traces:
       tests:
         - "backend/admin-api/src/test/java/com/migao/admin/controller/KnowledgeCardControllerTest.java"

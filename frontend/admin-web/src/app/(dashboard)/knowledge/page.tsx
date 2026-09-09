@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
-import { Plus, Pencil, Trash2, Send, Archive } from 'lucide-react'
+import { Plus, Pencil, Trash2, Send, Archive, Eye, RotateCcw } from 'lucide-react'
 import { toast } from 'sonner'
 import { knowledgeApi } from '@/lib/api'
 import { Table, Pagination, Modal, Button, Badge, SearchBar } from '@/components/ui'
@@ -62,6 +62,8 @@ export default function KnowledgePage() {
   const [saving, setSaving] = useState(false)
 
   const [deleteTarget, setDeleteTarget] = useState<KnowledgeCard | null>(null)
+  // 只读查看（#3108）：与「编辑」分离，看内容不动数据
+  const [viewTarget, setViewTarget] = useState<KnowledgeCard | null>(null)
 
   // ===== 待确认队列 / 行业模板 / 提炼（LLM WIKI P3/P5/P6）=====
   const [activeTab, setActiveTab] = useState<'cards' | 'candidates' | 'templates'>('cards')
@@ -164,7 +166,8 @@ export default function KnowledgePage() {
   const publishCard = async (entry: KnowledgeCard) => {
     try {
       await knowledgeApi.publishCard(entry.id)
-      toast.success('知识卡片已发布')
+      // 归档卡重新发布（#3108）：文案区分，避免商家以为只是普通发布
+      toast.success(entry.status === 'archived' ? '知识卡片已重新发布' : '知识卡片已发布')
       loadEntries()
     } catch (e) {
       toast.error(e instanceof Error ? e.message : '发布失败')
@@ -356,21 +359,29 @@ export default function KnowledgePage() {
     {
       key: 'actions',
       title: '操作',
-      width: '180px',
+      width: '240px',
       render: (entry) => (
         <div className="flex items-center gap-1">
+          <Button size="sm" variant="ghost" onClick={() => setViewTarget(entry)}>
+            <Eye className="h-3.5 w-3.5" /> 查看
+          </Button>
           <Button size="sm" variant="ghost" onClick={() => openEdit(entry)}>
             <Pencil className="h-3.5 w-3.5" /> 编辑
           </Button>
-          {entry.status === 'draft' || entry.status === 'pending_review' ? (
+          {entry.status === 'archived' ? (
+            // 归档非终点（#3108）：已归档卡片可一键重新发布，恢复 AI 检索命中
             <Button size="sm" variant="ghost" onClick={() => publishCard(entry)}>
-              <Send className="h-3.5 w-3.5" /> 发布
+              <RotateCcw className="h-3.5 w-3.5" /> 重新发布
             </Button>
           ) : entry.status === 'published' ? (
             <Button size="sm" variant="ghost" onClick={() => archiveCard(entry)}>
               <Archive className="h-3.5 w-3.5" /> 归档
             </Button>
-          ) : null}
+          ) : (
+            <Button size="sm" variant="ghost" onClick={() => publishCard(entry)}>
+              <Send className="h-3.5 w-3.5" /> 发布
+            </Button>
+          )}
           <Button size="sm" variant="ghost" onClick={() => setDeleteTarget(entry)}>
             <Trash2 className="h-3.5 w-3.5" /> 删除
           </Button>
@@ -385,7 +396,7 @@ export default function KnowledgePage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-semibold text-neutral-900">知识库</h1>
-          <p className="text-sm text-neutral-500 mt-1">LLM WIKI 知识卡片管理 — 发布后的知识卡片将优先用于 AI 客服知识问答</p>
+          <p className="text-sm text-neutral-500 mt-1">AI 客服知识库 — 发布后的知识卡片将优先用于 AI 客服回答顾客问题</p>
         </div>
         <div className="flex items-center gap-2">
           <Button variant="secondary" size="sm" onClick={() => setDocModalOpen(true)}>文档提炼</Button>
@@ -596,6 +607,46 @@ export default function KnowledgePage() {
           <Button variant="secondary" onClick={() => setEditorOpen(false)}>取消</Button>
           <Button onClick={saveEntry} disabled={saving}>{saving ? '保存中…' : '保存'}</Button>
         </div>
+      </Modal>
+
+      {/* 只读查看（#3108）：看内容不动数据，与「编辑」分离 */}
+      <Modal open={!!viewTarget} onClose={() => setViewTarget(null)} title="知识卡片详情" footer={null}>
+        {viewTarget && (
+          <div className="space-y-3">
+            <div>
+              <label className="text-sm font-medium">标题</label>
+              <div className="mt-1 rounded border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm">{viewTarget.title}</div>
+            </div>
+            <div>
+              <label className="text-sm font-medium">分类</label>
+              <div className="mt-1 rounded border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm">
+                {CATEGORY_OPTIONS.find((c) => c.value === viewTarget.category)?.label ?? viewTarget.category ?? '-'}
+              </div>
+            </div>
+            {viewTarget.question && (
+              <div>
+                <label className="text-sm font-medium">常见问法</label>
+                <div className="mt-1 rounded border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm">{viewTarget.question}</div>
+              </div>
+            )}
+            <div>
+              <label className="text-sm font-medium">标准回答</label>
+              <div className="mt-1 rounded border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm whitespace-pre-wrap">{viewTarget.answer}</div>
+            </div>
+            {viewTarget.keywords && (
+              <div>
+                <label className="text-sm font-medium">关键词</label>
+                <div className="mt-1 rounded border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm">{viewTarget.keywords}</div>
+              </div>
+            )}
+            <div className="flex items-center gap-3 pt-1 text-xs text-neutral-500">
+              <span>来源：{SOURCE_META[viewTarget.sourceType]?.label ?? viewTarget.sourceType ?? '-'}</span>
+              <span>状态：{STATUS_META[viewTarget.status as KnowledgeCardStatus]?.label ?? viewTarget.status}</span>
+              <span>版本：v{viewTarget.version}</span>
+              <span>更新时间：<DateTimeCell value={viewTarget.updatedAt} /></span>
+            </div>
+          </div>
+        )}
       </Modal>
 
       {/* 删除确认 */}
