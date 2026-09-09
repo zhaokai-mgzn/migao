@@ -307,12 +307,53 @@ def _is_query_action_equal(exp_s: str, act_s: str) -> bool:
     return exp_s in _QUERY_ACTION_SYNONYMS and act_s in _QUERY_ACTION_SYNONYMS
 
 
+def _scalar_value_matches(exp_s: str, act_s: str) -> bool:
+    """标量值匹配：中文语义值仅验存在（key 已验）；bool 宽容；数字 str/int 混比；其余字面相等。"""
+    if _RE_CJK.search(exp_s):
+        # 中文语义描述值：仅 key 存在（旧弱断言兼容）
+        return True
+    if exp_s.lower() in ("true", "false"):
+        truthy = {"true", "1"} if exp_s.lower() == "true" else {"false", "0"}
+        return act_s.lower() in truthy
+    try:
+        return float(exp_s) == float(act_s)
+    except ValueError:
+        return exp_s == act_s
+
+
+def _match_nested_dict(expected_dict: dict, actual_list: list) -> str | None:
+    """列表内 dict 字段级匹配：期望 dict 每个字段须在某个实际 dict 中命中。
+
+    Returns:
+        None 表示命中；否则返回第一个不匹配描述。
+    """
+    for exp_k, exp_v in expected_dict.items():
+        exp_s = str(exp_v).strip()
+        # 期望字段须在至少一个实际 dict 中命中（值校验复用标量规则）
+        matched = False
+        for act_dict in actual_list:
+            if not isinstance(act_dict, dict):
+                continue
+            if exp_k not in act_dict:
+                continue
+            act_s = str(act_dict[exp_k]).strip()
+            if _scalar_value_matches(exp_s, act_s):
+                matched = True
+                break
+        if not matched:
+            return f"items[].{exp_k} expected {exp_s!r} not matched"
+    return None
+
+
 def _arg_mismatch_reason(actual: dict, expected: dict) -> str | None:
     """args 关键字段校验：返回第一个不匹配原因；全部匹配返回 None。
 
     规则（弱断言加固，issue #2854）：
     - key 必须存在于实际 args（关键字段缺失即失败）
-    - 列表期望（item_ids=[打孔]）：实际列表必须包含期望每个元素（str 化比较）
+    - 列表期望：
+      * 元素为 dict → 字段级匹配（order_create items=[{sellingMethod, doorWidth}]
+        每个期望 dict 的字段须在某个实际 dict 命中，值校验复用标量规则）——Phase 4
+      * 元素为标量（item_ids=[打孔]）→ 实际列表必须包含期望每个元素（str 化子集）
     - 纯 ASCII 标量（action/days/price/component）：宽容相等（数字 str/int 混比、bool 大小写）
     - 含中文标量（复用上轮 UUID / 本月1号 / 遮光窗帘）：语义描述，仅校验 key 存在
       （与旧弱断言兼容，防止把语义描述期望误判为字面值）
@@ -324,6 +365,22 @@ def _arg_mismatch_reason(actual: dict, expected: dict) -> str | None:
         if isinstance(exp_val, list):
             if not isinstance(act_val, list):
                 act_val = [act_val]
+            # 列表内元素为 dict → 字段级匹配（Phase 4，order_create items 结构断言）
+            exp_dicts = [x for x in exp_val if isinstance(x, dict)]
+            if exp_dicts:
+                for exp_d in exp_dicts:
+                    reason = _match_nested_dict(exp_d, act_val)
+                    if reason:
+                        return f"arg '{k}' {reason}"
+                # 混有标量元素的，继续走子集语义
+                exp_scalars = [x for x in exp_val if not isinstance(x, dict)]
+                if exp_scalars:
+                    exp_set = {str(x) for x in exp_scalars}
+                    act_set = {str(x) for x in act_val if not isinstance(x, dict)}
+                    if not exp_set.issubset(act_set):
+                        return f"arg '{k}' missing {sorted(exp_set - act_set)}"
+                continue
+            # 纯标量列表 → 旧子集语义
             exp_set = {str(x) for x in exp_val}
             act_set = {str(x) for x in act_val}
             if not exp_set.issubset(act_set):
@@ -331,23 +388,12 @@ def _arg_mismatch_reason(actual: dict, expected: dict) -> str | None:
             continue
         exp_s = str(exp_val).strip()
         act_s = str(act_val).strip()
-        if _RE_CJK.search(exp_s):
-            # 中文语义描述值：仅 key 存在（旧弱断言兼容）
-            continue
-        if exp_s.lower() in ("true", "false"):
-            truthy = {"true", "1"} if exp_s.lower() == "true" else {"false", "0"}
-            if act_s.lower() not in truthy:
-                return f"arg '{k}' expected {exp_s} got {act_s}"
-            continue
         # 只读查询类 action 等价（HR-004：list≈all≈query≈detail，业务等价不误伤）
         if k == "action" and _is_query_action_equal(exp_s.lower(), act_s.lower()):
             continue
-        try:
-            if float(exp_s) != float(act_s):
-                return f"arg '{k}' expected {exp_s} got {act_s}"
-        except ValueError:
-            if exp_s != act_s:
-                return f"arg '{k}' expected {exp_s} got {act_s}"
+        if _scalar_value_matches(exp_s, act_s):
+            continue
+        return f"arg '{k}' expected {exp_s} got {act_s}"
     return None
 
 

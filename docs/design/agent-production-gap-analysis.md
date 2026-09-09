@@ -108,10 +108,24 @@ Phase 4  能力边界动态化（P2-2）+ runner 结构断言（items 嵌套字�
 + 旧失败会话重放验证（fail→pass）。
 
 **已发现但未修的 runner 缺口（Phase 4 待办）**：
-- OR-009 的 `order_create(items=[{sellingMethod, doorWidth, colorName}])` 嵌套列表内对象
-  字段断言，runner `_arg_mismatch_reason` 不支持（只做顶层 args / 集合比较），导致该断言
-  永远 unmatched——data_checks 里已写 `items[0].sellingMethod` 但属自然语义不计分。
-  需补「列表内对象字段级断言」能力（§6.1 差距清单的结构断言钩子）。
+- ~~OR-009 的 `order_create(items=[{sellingMethod, doorWidth, colorName}])` 嵌套列表内对象
+  字段断言~~ **✅ 本轮已修**：`_arg_mismatch_reason` 支持 list-of-dict 字段级匹配
+  （Phase 4 runner 结构断言，测试 `TestNestedListOfDictArgs` 6 例）。
+
+**🔴 本轮新发现：order_create 售卖方式/门幅/颜色字段虚设（真实契约 bug，需立项）**：
+- `order_create.py` description(:51) 让 LLM 传 `items(product_name+quantity+unit_price+sellMethod+doorWidth+colorName)` 平铺字段；
+- 但 items JSON schema(:123-129) 把这些字段声明在 `processing_info` 嵌套对象里（且拼写 `sellingMethod`）；
+- `execute` 透传逻辑(:362-367) 只透传 `processing_info`，平铺的 sellMethod/doorWidth/colorName 被静默丢弃；
+- **`OrderItem` 实体(:30-55) 根本没有 sellingMethod/doorWidth/colorName 列**——只有
+  productId/productName/quantity/unitPrice/width/height/processingInfo/subtotal。
+- 后果：LLM 无论按 description 平铺传还是按 schema 嵌套传，售卖方式/门幅/颜色都存不进
+  订单明细（除了塞进语义是「加工项」的 processingInfo JSON）。probe 实证：agent 传
+  `items[{..., sellMethod:'bulk_cut', doorWidth:'2.8米', colorName:'米白色'}]`，execute 丢弃。
+- 影响：下单数据完整性缺陷（订单缺售卖方式/门幅/颜色），且 OR-009 的 items 断言无法
+  正确校验这些字段（因为数据层根本没存）。
+- 修复方向（需架构决策，不可草率）：① 明确这些字段的存储位置——是 OrderItem 加列，还是
+  规范化为 processingInfo 的一部分；② 对齐 description/schema/execute/admin-api 四处契约；
+  ③ 补契约测试锁字段白名单。
 
 ## 四、评测资产漂移清单（§14.2，实测校准）
 
