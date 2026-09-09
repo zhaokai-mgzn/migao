@@ -2,7 +2,7 @@ import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-// case_ids: API-015, UI-033, UI-034, UI-035
+// case_ids: API-015, UI-033, UI-034, UI-035, UI-039
 
 // Mock API — LLM WIKI 知识卡片页（issue #3051）：数据源必须来自 knowledgeApi.getCards（非硬编码）
 vi.mock('@/lib/api', () => ({
@@ -99,7 +99,7 @@ describe('KnowledgePage（LLM WIKI 知识卡片管理）', () => {
     await waitFor(() => {
       expect(screen.getByRole('heading', { name: '知识库' })).toBeInTheDocument()
     })
-    expect(screen.getByText(/LLM WIKI 知识卡片管理/)).toBeInTheDocument()
+    expect(screen.getByText(/AI 客服知识库/)).toBeInTheDocument()
   })
 
   it('should display entries from API in table (no hardcode)', async () => {
@@ -341,5 +341,49 @@ describe('KnowledgePage（LLM WIKI 知识卡片管理）', () => {
     expect(options).not.toContain('加工项派生')
     expect(options).not.toContain('商品派生')
     expect(options).not.toContain('配置')
+  })
+
+  it('should republish archived card via 重新发布 button, result visible as published (#3108)', async () => {
+    const user = userEvent.setup()
+    const api = (await import('@/lib/api')).knowledgeApi as any
+    // 初始列表：一条已归档卡片
+    api.getCards.mockResolvedValueOnce({
+      data: { success: true, data: { items: [{ id: 'entry_archived', title: '过季窗帘知识', category: 'faq', sourceType: 'manual', status: 'archived', version: 3, answer: '……', updatedAt: '2026-09-08T09:00:00' }], total: 1, page: 1, size: 20 } },
+    })
+    render(<KnowledgePage />)
+    await waitFor(() => {
+      expect(screen.getByText('过季窗帘知识')).toBeInTheDocument()
+    })
+    // 已归档卡片有「重新发布」按钮（归档非终点）
+    expect(screen.getByText('重新发布')).toBeInTheDocument()
+    // 重新发布后列表刷新：返回已发布状态 → 操作区出现「归档」（结果可见）
+    api.getCards.mockResolvedValueOnce({
+      data: { success: true, data: { items: [{ id: 'entry_archived', title: '过季窗帘知识', category: 'faq', sourceType: 'manual', status: 'published', version: 3, answer: '……', updatedAt: '2026-09-08T09:00:00' }], total: 1, page: 1, size: 20 } },
+    })
+    await user.click(screen.getByText('重新发布'))
+    await waitFor(() => {
+      expect(api.publishCard).toHaveBeenCalledWith('entry_archived')
+    })
+    await waitFor(() => {
+      expect(screen.getByText('归档')).toBeInTheDocument()
+    })
+    expect(screen.queryByText('重新发布')).not.toBeInTheDocument()
+  })
+
+  it('should open read-only detail via 查看 button (view without edit, #3108)', async () => {
+    const user = userEvent.setup()
+    render(<KnowledgePage />)
+    await waitFor(() => {
+      expect(screen.getByText('雪尼尔面料会起球吗')).toBeInTheDocument()
+    })
+    await user.click(screen.getByText('查看'))
+    // 只读详情弹窗：完整内容可见（标题 + 标准回答全文）
+    await waitFor(() => {
+      expect(screen.getByRole('dialog')).toBeInTheDocument()
+      expect(screen.getByText('知识卡片详情')).toBeInTheDocument()
+      expect(screen.getByText('雪尼尔织物起球概率较低……')).toBeInTheDocument()
+    })
+    // 只读视图：无「保存」操作（区别于编辑弹窗）
+    expect(screen.queryByText('保存')).not.toBeInTheDocument()
   })
 })
