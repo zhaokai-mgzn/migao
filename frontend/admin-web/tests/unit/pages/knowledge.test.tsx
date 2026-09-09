@@ -25,7 +25,6 @@ vi.mock('@/lib/api', () => ({
     rejectCandidate: vi.fn().mockResolvedValue({ data: { success: true } }),
     getTemplates: vi.fn().mockResolvedValue({ data: { success: true, data: [{ templateId: 'curtain', industry: 'curtain', name: '布艺窗帘行业模板', version: 1, entryCount: 32 }] } }),
     applyTemplate: vi.fn().mockResolvedValue({ data: { success: true, data: { templateId: 'curtain', created: 32, skipped: 0 } } }),
-    distillConversations: vi.fn().mockResolvedValue({ data: { success: true, data: { sessions: 1, candidates: 2, created: 2, skipped: 0 } } }),
     distillDocument: vi.fn().mockResolvedValue({ data: { success: true, data: { candidates: 2, created: 2, skipped: 0 } } }),
   },
 }))

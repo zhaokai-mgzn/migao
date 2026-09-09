@@ -284,19 +284,6 @@ export default function KnowledgePage() {
     }
   }
 
-  const triggerConversationDistill = async () => {
-    setDistilling(true)
-    try {
-      const res = await knowledgeApi.distillConversations(24)
-      toast.success(`会话提炼完成：候选 ${res.data?.data?.candidates ?? 0} 条（新增 ${res.data?.data?.created ?? 0}）`)
-      loadCandidates()
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : '会话提炼失败')
-    } finally {
-      setDistilling(false)
-    }
-  }
-
   const submitDocumentDistill = async () => {
     if (docForm.content.trim().length < 50) {
       toast.error('文档内容过短（至少 50 字）')
@@ -401,9 +388,6 @@ export default function KnowledgePage() {
           <p className="text-sm text-neutral-500 mt-1">LLM WIKI 知识卡片管理 — 发布后的知识卡片将优先用于 AI 客服知识问答</p>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="secondary" size="sm" onClick={triggerConversationDistill} disabled={distilling}>
-            {distilling ? '提炼中…' : '会话提炼'}
-          </Button>
           <Button variant="secondary" size="sm" onClick={() => setDocModalOpen(true)}>文档提炼</Button>
           <Button onClick={openCreate}>
             <Plus className="h-4 w-4" /> 新建知识卡片
@@ -495,15 +479,10 @@ export default function KnowledgePage() {
       {/* ===== 待确认队列（LLM WIKI P5）===== */}
       {activeTab === 'candidates' && (
         <div className="p-5 space-y-3">
-          <div className="flex items-center justify-between">
-            <p className="text-sm text-neutral-500">AI 从客服会话/文档中提炼的候选知识卡片，采纳后立即发布为知识卡片并跳转列表顶部（可直接编辑，AI 只产生候选，发布权在您）</p>
-            <Button size="sm" variant="secondary" onClick={triggerConversationDistill} disabled={distilling}>
-              {distilling ? '提炼中…' : '重新提炼会话'}
-            </Button>
-          </div>
+          <p className="text-sm text-neutral-500">AI 从客服会话/文档中提炼的候选知识卡片，采纳后立即发布为知识卡片并跳转列表顶部（可直接编辑，AI 只产生候选，发布权在您）。人工客服会话结束后自动提炼（纯 AI 接待不提炼）</p>
           <div className="divide-y">
             {candidates.length === 0 && (
-              <p className="py-4 text-sm text-neutral-500">暂无待确认候选。点击「会话提炼」或「文档提炼」让 AI 从客服会话/资料中提炼知识。</p>
+              <p className="py-4 text-sm text-neutral-500">暂无待确认候选。人工客服会话结束后将自动提炼知识；也可通过「文档提炼」从资料中提炼。</p>
             )}
             {candidates.map((c) => (
               <div key={c.id} className="py-3 flex items-start justify-between gap-3">

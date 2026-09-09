@@ -330,16 +330,18 @@
 ```
 溯源: 2026-09-08 新增（issue #3051 LLM WIKI 板块 P5）：待确认队列闭环——不重复 knowledge_sync_history 零读写事故，读写路径齐全；AI 只产生候选，发布权在商家 ｜ tags: api, knowledge, wiki, candidates
 
-### API-020. 会话提炼闭环 - 人工客服会话 → AI 提炼候选 → 待确认队列（LLM WIKI 板块 #3051 P5b） 🔵
+### API-020. 会话提炼闭环 - 人工客服会话结束自动提炼 → 待确认队列（LLM WIKI 板块 #3051 P5b + #3090 自动触发） 🔵
 ```
-你: 客服会话结束后，系统自动提炼候选知识卡片进入待确认队列；商家采纳后生效
-数据: POST /api/admin/knowledge/distill/conversations?hours=24：提炼最近 N 小时已结束人工会话（agent_sessions status=ended）的顾客/客服文本消息，返回 {sessions, candidates, created, skipped}
+你: 人工客服会话结束后系统自动提炼候选知识卡片进入待确认队列（无需手动触发）；纯 AI 接待会话不提炼；商家采纳后生效
+数据: 提炼源 = 已结束**人工**会话（agent_sessions status=ended 且 employeeId 非空，转人工标记）：纯 AI 会话（employeeId 为空）不提炼（AI 回答是知识卡片消费输出，提炼=自循环且兜底话术污染知识库，#3090）
+数据: 自动触发：会话结束（endSession，status→ended）事务提交后发布 SessionEndedEvent，@Async @TransactionalEventListener(AFTER_COMMIT) 异步调 distillSession（不阻塞结束接口）
+数据: 防重复提炼：distillSession 先查该会话是否已有 conversation 候选（sourceRef=会话ID），已有 → 跳过，不重复调 LLM
+数据: POST /api/admin/knowledge/distill/conversations?hours=24 保留（管理端对账入口，语义同自动触发：仅人工会话），返回 {sessions, candidates, created, skipped}
 数据: ai-agent 内部 POST /internal/knowledge/distill（Service Token）：会话文本 → LLM 提炼 JSON 候选数组（title/answer/category/keywords/confidence/evidence），解析失败/异常降级返回空候选（不阻断）
-数据: 候选写入 knowledge_candidates：sourceType=conversation、sourceRef=会话ID、status=pending；同名知识卡片或同名待确认候选已存在 → 跳过（去重）
-数据: 单会话提炼上限 5 条、单条消息 200 字、会话文本超长截断（防 prompt 超限）
-跳过: 提炼逻辑由 ai-agent 单测（test_knowledge_distill.py）+ admin-api Service/MockMvc 测试（KnowledgeDistillServiceTest/KnowledgeDistillControllerTest）验证，LLM 行为 mock，不进入 agent-eval 冒烟
+数据: 候选写入 knowledge_candidates：sourceType=conversation、sourceRef=会话ID、status=pending；同名知识卡片或同名待确认候选已存在 → 跳过（去重）；单会话上限 5 条、单条 200 字截断
+跳过: 提炼逻辑由 ai-agent 单测（test_knowledge_distill.py）+ admin-api Service 测试（KnowledgeDistillServiceTest/KnowledgeDistillControllerTest）验证，LLM 行为 mock，不进入 agent-eval 冒烟
 ```
-溯源: 2026-09-08 新增（issue #3051 LLM WIKI 板块 P5b）：闭环三检索-会话飞轮——人工客服会话是 SME 唯一稳定知识原料，会话→提炼→采纳→检索形成知识增长闭环 ｜ tags: api, knowledge, wiki, distill
+溯源: 2026-09-08 新增（issue #3051 LLM WIKI 板块 P5b）：闭环三检索-会话飞轮——人工客服会话是 SME 唯一稳定知识原料；2026-09-09 更新（issue #3090）：范围收窄为人工会话（employeeId 非空）+ 会话结束自动异步提炼 + 防重复检查，移除手动触发 ｜ tags: api, knowledge, wiki, distill
 
 ### API-021. 文档提炼闭环 - 文档文本 → AI 提炼候选 → 待确认队列（LLM WIKI 板块 #3051 P6） 🔵
 ```
@@ -2984,7 +2986,7 @@
 - API-016: 知识知识卡片检索 - 仅 published + 租户隔离 + 关键词命中（LLM WIKI 板块 #3051）
 - API-017: 行业模板 - 目录 + 一键套用（去重 + source=template）（LLM WIKI 板块 #3051 P3）
 - API-019: 待确认队列闭环 - 候选读+写路径齐全，采纳转卡片、拒绝记原因（LLM WIKI 板块 #3051 P5）
-- API-020: 会话提炼闭环 - 人工客服会话 → AI 提炼候选 → 待确认队列（LLM WIKI 板块 #3051 P5b）
+- API-020: 会话提炼闭环 - 人工客服会话结束自动提炼 → 待确认队列（LLM WIKI 板块 #3051 P5b + #3090 自动触发）
 - API-021: 文档提炼闭环 - 文档文本 → AI 提炼候选 → 待确认队列（LLM WIKI 板块 #3051 P6）
 - API-022: Agent 知识卡片检索 - 词条优先、命中标注来源、未命中通用兜底（LLM WIKI 板块 #3051 P7）
 - API-012: 语音转写接口容错 - 空/极小/静音音频返回友好 4xx/5xx，不裸 500（#2984）
