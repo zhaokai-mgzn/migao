@@ -51,7 +51,7 @@ app/
 | 数据 | dashboard_stats |
 | 会话 | session_manage |
 | 通知 | notification_manage |
-| 人工 | human_handoff, quick_reply_manage |
+| 人工 | human_handoff |
 | 交互 | interact (confirm卡片/form/choice) |
 | 员工 | employee_manage |
 | 角色 | role_manage |

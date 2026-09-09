@@ -62,7 +62,6 @@ _INTENT_DESCRIPTIONS: dict[str, str] = {
     'system_settings': '系统级参数、租户配置、业务开关等设置项查询与修改',
     'ai_config': 'AI 助手相关配置（模型选择、温度、上下文、提示词等）',
     'notification': '站内通知/公告/消息推送的查询、创建、标读、删除等',
-    'quick_reply': '客服快捷回复模板的查询、创建、编辑、删除',
     # 数据分析域
     'dashboard': '查看经营/运营看板、总览页、实时指标',
     'statistics': '查询某个具体统计指标（今日销量、转化率、在线人数等）',
@@ -91,7 +90,6 @@ _INTENT_DISAMBIGUATION: dict[str, str] = {
     "system_settings": "'设置/配置/开关'优先 system_settings",
     "ai_config": "AI 相关配置优先 ai_config",
     "notification": "'通知/公告/消息'优先 notification",
-    "quick_reply": "'快捷回复/模板'优先 quick_reply",
     "dashboard": "'看板/总览'优先 dashboard；'订单趋势/走势/环比/涨跌'归数据域（dashboard_stats）",
     "statistics": "具体指标优先 statistics（经营看板/转化率等，不含订单统计）；'订单趋势/走势/环比/涨跌'归数据域（dashboard_stats）",
     "data_report": "报表/趋势优先 data_report；'订单趋势/走势/环比/涨跌'归数据域（dashboard_stats）",

@@ -38,7 +38,6 @@ export const menuGroups: MenuGroup[] = [
     icon: 'MessageSquare',
     children: [
       { key: 'mibao-chat', name: '米宝 · 在线对话', icon: 'MessageCircle', path: '/chat', permissionCode: 'agent:session' },
-      { key: 'chat-config', name: 'AI 客服配置', icon: 'Bot', path: '/chat/config', permissionCode: 'agent:quickreply' },
       { key: 'human-sessions', name: '人工客服', icon: 'Headphones', path: '/agent-workspace/human-sessions', permissionCode: 'agent:session' },
       { key: 'knowledge', name: '知识库', icon: 'BookOpen', path: '/knowledge', permissionCode: 'knowledge:manage' },
     ],

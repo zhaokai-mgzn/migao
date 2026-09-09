@@ -223,10 +223,12 @@ class TestRegistrySingleton:
         reset_tool_registry()
         reg = get_tool_registry()
         names = reg.get_tool_names()
-        # 全量工具注册（含 part2 分组 8 个 + 其它）
+        # 全量工具注册（含 part2 分组 8 个 + 其它；#3081 quick_reply_manage 已随快捷回复下线移除）
         for expected in (
             "logistics_track", "customer_logistics_track", "settings_manage", "order_manage", "dashboard_stats",
-            "quick_reply_manage", "order_create", "inventory_manage",
+            "order_create", "inventory_manage",
             "product_search", "product_detail", "order_query",
         ):
             assert expected in names, f"{expected} 未注册"
+        # #3081: quick_reply_manage 不得再注册
+        assert "quick_reply_manage" not in names

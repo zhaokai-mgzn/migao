@@ -93,10 +93,6 @@ intent_ownership:
     route_key: settings
     agents: [mibao, xiaobu]
     description: 通知管理
-  quick_reply:
-    route_key: settings
-    agents: [mibao, xiaobu]
-    description: 快捷回复
   # ── 数据域 ──
   dashboard:
     route_key: data

@@ -4,16 +4,14 @@ domain: settings
 display_name: 系统配置
 version: 1.0.0
 description: >
-  系统设置管理：AI 配置、站内通知、快捷回复模板。
+  系统设置管理：AI 配置、站内通知。
   支持租户级配置的查看与修改。
 tools:
   - settings_manage
   - notification_manage
-  - quick_reply_manage
 triggers:
   - 系统设置 / AI 配置
   - 通知模板 / 通知管理
-  - 快捷回复 / 话术模板
   - 租户配置
 constraints:
   - 修改配置前展示变更对比
@@ -23,7 +21,7 @@ constraints:
 
 # Settings Skill
 
-系统配置管理技能，覆盖 AI 配置、通知和快捷回复管理。
+系统配置管理技能，覆盖 AI 配置和通知管理。
 
 ## 执行原则
 

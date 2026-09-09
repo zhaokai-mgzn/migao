@@ -559,7 +559,6 @@ public class RegistrationService {
                 {"客户管理", "customer:view", "customer", "view", "查看客户"},
                 {"财务对账", "finance:view", "finance", "view", "查看财务流水/对账"},
                 {"会话监控", "agent:session", "agent", "session", "米宝对话/会话监控/人工客服"},
-                {"快捷回复", "agent:quickreply", "agent", "quickreply", "机器人设置/快捷回复"},
                 {"员工列表", "employee:list", "employee", "list", "查看员工列表"},
                 {"新增员工", "employee:create", "employee", "create", "新增/编辑/删除员工"},
                 {"系统管理", "system:manage", "system", "manage", "企业信息/岗位权限/系统设置"}
@@ -585,11 +584,11 @@ public class RegistrationService {
         // 销售=看板/商品/订单查看/客户；财务=看板/订单查看/财务。
         attachDefaultPermissions(tenantId, adminRole, permissionByCode.keySet(), permissionByCode);
         attachDefaultPermissions(tenantId, csRole, List.of(
-                "dashboard:view", "order:list", "order:detail", "customer:view", "agent:session", "agent:quickreply"), permissionByCode);
+                "dashboard:view", "order:list", "order:detail", "customer:view", "agent:session"), permissionByCode);
         attachDefaultPermissions(tenantId, operatorRole, List.of(
                 "dashboard:view", "order:list", "order:detail", "order:refund",
                 "product:list", "product:create", "product:category", "processing:manage",
-                "customer:view", "finance:view", "agent:session", "agent:quickreply", "employee:list"), permissionByCode);
+                "customer:view", "finance:view", "agent:session", "employee:list"), permissionByCode);
         attachDefaultPermissions(tenantId, salesRole, List.of(
                 "dashboard:view", "product:list", "order:list", "order:detail", "customer:view"), permissionByCode);
         attachDefaultPermissions(tenantId, financeRole, List.of(

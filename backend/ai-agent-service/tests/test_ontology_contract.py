@@ -41,7 +41,7 @@ REAL_AGENT_INTENT_MAPS = {
         "notification": "settings", "order_create": "order",
         "order_query": "order", "permission_manage": "staff",
         "processing_manage": "product", "product_inquiry": "product",
-        "quick_reply": "settings", "role_manage": "staff",
+        "role_manage": "staff",
         "session_manage": "data", "staff_manage": "staff",
         "statistics": "data", "system_settings": "settings",
     },
@@ -55,7 +55,7 @@ REAL_AGENT_INTENT_MAPS = {
         "logistics_track": "order", "notification": "data",
         "order_create": "order", "order_query": "order",
         "permission_manage": "data", "processing_manage": "data",
-        "product_inquiry": "product", "quick_reply": "data",
+        "product_inquiry": "product",
         "quote": "quote", "role_manage": "data",
         "session_manage": "data", "staff_manage": "data",
         "statistics": "data", "system_settings": "data",
@@ -70,16 +70,16 @@ REAL_AGENT_ROUTE_KEYS = {
 
 
 class TestSchemaIntentOwnership:
-    def test_schema_registers_all_27_business_intents(self, ontology):
-        """schema 必须全量登记 27 个业务 intent（排除 general 兜底）"""
+    def test_schema_registers_all_26_business_intents(self, ontology):
+        """schema 必须全量登记 26 个业务 intent（#3081 移除 quick_reply；排除 general 兜底）"""
         owned = ontology.intent_ownership
         assert set(owned) == {
-            # 双端 23
+            # 双端 22
             "after_sales", "after_sales_create", "ai_config", "category_manage",
             "complaint", "customer_manage", "customer_query", "dashboard",
             "data_report", "employee_manage", "logistics_track", "notification",
             "order_create", "order_query", "permission_manage", "processing_manage",
-            "product_inquiry", "quick_reply", "role_manage", "session_manage",
+            "product_inquiry", "role_manage", "session_manage",
             "staff_manage", "statistics", "system_settings",
             # 仅 mibao
             "finance",

@@ -137,9 +137,6 @@ class SecurityConfigTest {
     private com.migao.admin.service.ProcessingItemService processingItemService;
 
     @MockBean
-    private com.migao.admin.service.QuickReplyTemplateService quickReplyTemplateService;
-
-    @MockBean
     private com.migao.admin.service.RoleService roleService;
 
     @MockBean
@@ -205,8 +202,6 @@ class SecurityConfigTest {
     private com.migao.admin.mapper.ProductAttributeMapper productAttributeMapper;
     @MockBean
     private com.migao.admin.mapper.ProductProcessingItemMapper productProcessingItemMapper;
-    @MockBean
-    private com.migao.admin.mapper.QuickReplyTemplateMapper quickReplyTemplateMapper;
     @MockBean
     private com.migao.admin.mapper.RoleMapper roleMapper;
     @MockBean

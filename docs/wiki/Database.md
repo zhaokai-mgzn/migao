@@ -14,7 +14,7 @@ PostgreSQL 15，39 张业务表，按域分组：
 | **售后** | after_sales_tickets, ticket_notes, ticket_timeline | 售后工单 |
 | **客户** | customers, customer_tags, customer_segments, customer_segment_members | CRM(RFM) |
 | **对话** | chat_sessions, chat_messages, sessions, session_messages | C端对话 |
-| **人工坐席** | agent_employees, agent_sessions, agent_messages, quick_reply_templates | 客服工作台 |
+| **人工坐席** | agent_employees, agent_sessions, agent_messages | 客服工作台 |
 | **知识库** | knowledge_cards, knowledge_candidates | LLM WIKI 知识卡片模型 + AI 提炼待确认队列（RAG 已下线并移除，决策 D1 + issue #3051） |
 | **通知** | notifications, notification_templates, notification_rules | 消息推送 |
 | **系统** | system_configs, login_logs, audit_logs, user_memories, user_suggestion_prefs | 配置/审计/AI偏好 |

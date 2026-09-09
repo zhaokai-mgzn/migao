@@ -447,16 +447,18 @@ class RoleServiceTest {
         // when
         List<String> result = roleService.getUserPermissions("u2");
 
-        // then: 12 个业务权限码（员工管理保留；系统管理归 admin 专属）
+        // then: 11 个业务权限码（员工管理保留；系统管理归 admin 专属；#3081 快捷回复权限已移除）
         assertThat(result).contains(
                 "dashboard:view",
                 "order:list", "order:detail", "order:refund",
                 "product:list", "product:create", "product:category",
                 "processing:manage",
                 "customer:view", "finance:view",
-                "agent:session", "agent:quickreply",
+                "agent:session",
                 "employee:list"
         );
+        // #3081: agent:quickreply 权限已随快捷回复功能下线移除
+        assertThat(result).doesNotContain("agent:quickreply");
         // 越权守卫：operator 不得持有 system:manage（角色管理/系统设置归 admin）
         assertThat(result).doesNotContain("system:manage");
     }

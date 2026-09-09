@@ -38,7 +38,6 @@ FALLBACK_MESSAGES = {
     "settings_manage": "系统设置服务暂时不可用,请稍后再试。",
     "session_manage": "会话管理服务暂时不可用,请稍后再试。",
     "notification_manage": "通知管理服务暂时不可用,请稍后再试。",
-    "quick_reply_manage": "快捷回复服务暂时不可用,请稍后再试。",
 }
 
 # 未在表中找到对应 Tool 时使用的兜底文案

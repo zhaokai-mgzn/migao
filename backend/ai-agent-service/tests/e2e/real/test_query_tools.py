@@ -212,20 +212,6 @@ class TestQueryTools:
                 f"SSE 应含通知总数。admin total={total}, SSE: {text[:200]}"
             )
 
-    def test_quick_reply_list(self, sess):
-        """快捷回复 → 验证实际模板标题出现在 SSE 中"""
-        ev = sess.send("快捷回复模板有哪些")
-        assert "quick_reply_manage" in sse_tools(ev), f"tools: {sse_tools(ev)}"
-        text = sse_text(ev)
-
-        qr = admin_get("/api/admin/quick-replies", {"page": 1, "size": 10})
-        if qr.get("success") and qr.get("data", {}).get("items"):
-            titles = [q.get("title", "") for q in qr["data"]["items"] if q.get("title")]
-            matched = [t for t in titles if t and t in text]
-            assert len(matched) > 0, (
-                f"SSE 应包含真实快捷回复标题。admin: {titles[:5]}, SSE: {text[:200]}"
-            )
-
     def test_settings_get(self, sess):
         ev = sess.send("查看系统设置")
         assert "settings_manage" in sse_tools(ev), f"tools: {sse_tools(ev)}"

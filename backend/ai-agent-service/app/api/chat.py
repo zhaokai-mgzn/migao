@@ -1824,7 +1824,6 @@ _SUGGESTION_INTENT_KEYWORDS: list[tuple[str, str]] = [
     ("消息", "notification"),
     ("知识", "knowledge_faq"),
     ("FAQ", "knowledge_faq"),
-    ("快捷", "quick_reply"),
     ("会话", "session_manage"),
     ("模型", "ai_config"),       # 在模型设置中先于"设置"匹配
     ("AI", "ai_config"),         # 在AI设置中先于"设置"匹配

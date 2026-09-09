@@ -767,52 +767,12 @@ export interface EmployeeStatusInfo {
   maxConcurrentSessions: number
 }
 
-/** 快捷回复模板 */
-export interface QuickReplyTemplate {
-  id: string
-  category: string
-  title: string
-  content: string
-  shortcut?: string
-  usageCount: number
-  isPublic: boolean
-  createdBy?: string
-  createdAt: string
-  updatedAt: string
-}
-
-/** 创建快捷回复请求 */
-export interface QuickReplyCreateParams {
-  category: string
-  title: string
-  content: string
-  shortcut?: string
-  isPublic?: boolean
-}
-
-/** 更新快捷回复请求 */
-export interface QuickReplyUpdateParams {
-  category?: string
-  title?: string
-  content?: string
-  shortcut?: string
-  isPublic?: boolean
-}
-
 /** 会话列表查询参数 */
 export interface AgentSessionListParams {
   page?: number
   size?: number
   status?: string
   employeeId?: string
-  keyword?: string
-}
-
-/** 快捷回复列表查询参数 */
-export interface QuickReplyListParams {
-  page?: number
-  size?: number
-  category?: string
   keyword?: string
 }
 
@@ -841,25 +801,6 @@ export const agentSessionApi = {
   /** 获取监控面板数据 */
   getMonitorStats: () =>
     request.get<ApiResponse<MonitorStats>>('/api/admin/agent-sessions/monitor'),
-}
-
-/** 快捷回复模板管理API */
-export const quickReplyApi = {
-  /** 分页查询模板列表 */
-  getTemplates: (params?: QuickReplyListParams) =>
-    request.get<ApiResponse<PageResponse<QuickReplyTemplate>>>('/api/admin/quick-replies', { params }),
-  /** 创建模板 */
-  createTemplate: (data: QuickReplyCreateParams) =>
-    request.post<ApiResponse<QuickReplyTemplate>>('/api/admin/quick-replies', data),
-  /** 更新模板 */
-  updateTemplate: (id: string, data: QuickReplyUpdateParams) =>
-    request.put<ApiResponse<QuickReplyTemplate>>(`/api/admin/quick-replies/${id}`, data),
-  /** 删除模板 */
-  deleteTemplate: (id: string) =>
-    request.delete<ApiResponse<void>>(`/api/admin/quick-replies/${id}`),
-  /** 获取所有分类列表 */
-  getCategories: () =>
-    request.get<ApiResponse<string[]>>('/api/admin/quick-replies/categories'),
 }
 
 // 财务对账 API
@@ -902,7 +843,6 @@ const api = {
   registration: registrationApi,
   notification: notificationApi,
   agentSession: agentSessionApi,
-  quickReply: quickReplyApi,
   finance: financeApi,
 }
 

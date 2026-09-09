@@ -437,8 +437,8 @@ class TestIntentConfig:
     """意图配置测试"""
 
     def test_intent_type_values(self):
-        """所有意图类型存在（含 order_create / finance / quote 算料）"""
-        assert len(IntentType) == 31  # 含 order_create + finance + quote（算料报价）
+        """所有意图类型存在（含 order_create / finance / quote 算料；#3081 已移除 quick_reply）"""
+        assert len(IntentType) == 30  # 含 order_create + finance + quote（算料报价）
 
     def test_finance_maps_to_finance_api(self):
         """财务意图映射到 finance_api 工具"""

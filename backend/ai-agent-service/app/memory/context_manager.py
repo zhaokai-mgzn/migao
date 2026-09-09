@@ -60,7 +60,7 @@ class AgentContextManager:
         "aftersales": "aftersale_query(查) → aftersale_create(新建工单) → after_sales_manage(处理)",
         "customer": "customer_manage(list查→detail详情→update更新)",
         "staff": "employee_manage(list查→detail详情→create新增)",
-        "settings": "settings_manage(get查→update改) | quick_reply_manage | notification_manage",
+        "settings": "settings_manage(get查→update改) | notification_manage",
         "data": "dashboard_stats(今日概览/趋势/分布)",
         "general": "product_search | order_query | customer_manage | 不明确时先用查询工具摸底",
     }

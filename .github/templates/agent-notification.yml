@@ -1,11 +1,7 @@
 name: agent-notification
-description: 坐席通知域（客服会话 + 快捷回复 + 通知管理）
+description: 坐席通知域（客服会话 + 通知管理；#3081 快捷回复已随功能下线移除）
 red_flags: []
 business_truths:
-  - [agent-notification.quick-reply-crud] 快捷回复（quick_reply_templates）提供 CRUD：GET 分页列表、GET categories、POST 创建、PUT /{id} 更新、DELETE /{id} 删除；删除为逻辑删除（@TableLogic）
-  - [agent-notification.quick-reply-category] 快捷回复支持 category 分组；分类接口按 tenant_id 隔离（DISTINCT category, deleted=0）
-  - [agent-notification.quick-reply-validate] 快捷回复创建校验 category/title/content 必填（@NotBlank），缺失返回 HTTP 422 + error.code=VALIDATION_ERROR；isPublic 默认 true，usageCount 默认 0，列表按 usageCount 倒序
-  - [agent-notification.quick-reply-isolation-gap] 快捷回复租户隔离不完整：列表/分类按 tenant_id 过滤，但 PUT /{id} 与 DELETE /{id} 仅按 id 查询、不校验 tenant_id（存在跨租户改/删）
   - [agent-notification.notification-status] 通知（notifications）状态声明 pending/sent/failed/read，但代码创建时硬编码 status="sent"，实际仅产生 sent/read 两种状态
   - [agent-notification.notification-filter] 通知列表与未读数只按 recipient_id（当前用户）过滤、不按 tenant_id；markAsRead/delete 才校验 tenantId+recipientId（非本人或跨租户返回 403 PERMISSION_DENIED）
   - [agent-notification.notification-no-api] 通知规则/模板无管理 API：NotificationRule/NotificationTemplate 无 Controller，仅 NotificationService 内部 triggerByEvent/createFromTemplate 使用
@@ -18,22 +14,11 @@ business_truths:
   - [settings-notification.master-switch] 企业基础设置「启用系统通知」= tenants.notification_enabled 租户级总开关：false 时 triggerByEvent（order_created/after_sales_created/order_status_changed/after_sales_status_changed）与 triggerForTenantAdmins 跳过，不再产生新的自动站内信（历史通知保留）；null（存量租户）默认视为开启，行为不变（NotificationService#isNotificationEnabled）
 
 primary_specs:
-  - backend/admin-api/src/test/java/com/migao/admin/controller/QuickReplyControllerTest.java
   - backend/admin-api/src/test/java/com/migao/admin/controller/NotificationControllerTest.java
   - backend/admin-api/src/test/java/com/migao/admin/controller/AgentSessionControllerTest.java
   - tests/e2e/specs/settings/notifications.spec.ts
 
 reviewer_asserts:
-  - API: GET /api/admin/quick-replies?page=1&size=20
-    expect: HTTP 200 且 $.success=true 且 $.data.total>=0 且 $.data.items 为数组
-  - API: GET /api/admin/quick-replies/categories
-    expect: HTTP 200 且 $.data 为数组（元素为 category 字符串）
-  - API: POST /api/admin/quick-replies
-    expect: 带 category/title/content 时 HTTP 200 且 $.data.id 非空；空 body 时 HTTP 422 且 $.error.code=VALIDATION_ERROR
-  - API: PUT /api/admin/quick-replies/{id}
-    expect: HTTP 200 且 $.data.id={id}
-  - API: DELETE /api/admin/quick-replies/{id}
-    expect: HTTP 200（逻辑删除：后续列表不再返回该 id）
   - API: GET /api/admin/notifications?page=1&size=20
     expect: HTTP 200 且 $.success=true 且 $.data.total>=0 且 $.data.items 为数组
   - API: GET /api/admin/notifications/unread-count
@@ -58,8 +43,6 @@ reviewer_asserts:
     expect: active/waiting 会话 HTTP 200 且详情 status=ended；ended 会话 HTTP 422
 
 common_pitfalls:
-  - 快捷回复与通知均无 GET /{id} 详情端点，勿断言不存在接口
-  - 快捷回复 PUT/DELETE 无租户校验，跨租户可改/删（真实安全缺口）
   - 通知列表/未读数不按 tenant_id 过滤，租户隔离仅依赖 recipientId 全局唯一
   - 通知规则/模板无 HTTP 管理端点，无法通过 API 创建/编辑规则
   - 通知创建即 sent，无 pending/failed 中间态；POST 的 variables 参数不生效

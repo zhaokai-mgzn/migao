@@ -44,7 +44,7 @@ class TestPresetSuggestions:
             "system_settings", "ai_config",
             "dashboard", "statistics", "data_report",
             "category_manage", "processing_manage",
-            "after_sales_create", "notification", "quick_reply",
+            "after_sales_create", "notification",
             "session_manage", "knowledge_manage",
         ]
         skip_empty = {"farewell"}  # farewell 不需要建议

@@ -89,7 +89,7 @@ public class PermissionService {
                     "processing:manage",
                     "customer:view",
                     "finance:view",
-                    "agent:session", "agent:quickreply",
+                    "agent:session",
                     "employee:list",
                     "system:manage"
             );
@@ -185,7 +185,6 @@ public class PermissionService {
                 {"客户管理", "customer:view", "customer", "view", "查看客户"},
                 {"财务对账", "finance:view", "finance", "view", "查看财务流水/对账"},
                 {"会话监控", "agent:session", "agent", "session", "米宝对话/会话监控/人工客服"},
-                {"快捷回复", "agent:quickreply", "agent", "quickreply", "机器人设置/快捷回复"},
                 {"员工列表", "employee:list", "employee", "list", "查看员工列表"},
                 {"新增员工", "employee:create", "employee", "create", "新增/编辑/删除员工"},
                 {"系统管理", "system:manage", "system", "manage", "企业信息/角色管理/系统设置"}

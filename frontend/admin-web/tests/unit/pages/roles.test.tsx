@@ -81,7 +81,6 @@ const PERMISSION_CATALOG = [
   { id: 'p-customer', name: '客户管理', code: 'customer:view', resource: 'customer', action: 'view', description: '查看客户' },
   { id: 'p-finance', name: '财务对账', code: 'finance:view', resource: 'finance', action: 'view', description: '查看财务流水/对账' },
   { id: 'p-agent-session', name: '会话监控', code: 'agent:session', resource: 'agent', action: 'session', description: '米宝对话/会话监控/人工客服' },
-  { id: 'p-agent-quickreply', name: '快捷回复', code: 'agent:quickreply', resource: 'agent', action: 'quickreply', description: '机器人设置/快捷回复' },
   { id: 'p-employee-list', name: '员工列表', code: 'employee:list', resource: 'employee', action: 'list', description: '查看员工列表' },
   { id: 'p-employee-create', name: '新增员工', code: 'employee:create', resource: 'employee', action: 'create', description: '新增/编辑/删除员工' },
   { id: 'p-system', name: '系统管理', code: 'system:manage', resource: 'system', action: 'manage', description: '企业信息/角色管理/系统设置' },
@@ -158,7 +157,6 @@ describe('RolesPage', () => {
     expect(tree.getByText('组织管理')).toBeInTheDocument()
     // 菜单项 = 侧边栏菜单项名
     expect(tree.getByText('米宝 · 在线对话')).toBeInTheDocument()
-    expect(tree.getByText('AI 客服配置')).toBeInTheDocument()
     expect(tree.getByText('人工客服')).toBeInTheDocument()
     expect(tree.getByText('知识库')).toBeInTheDocument()
     expect(tree.getByText('商品列表')).toBeInTheDocument()
@@ -173,6 +171,7 @@ describe('RolesPage', () => {
     // 旧口径不出现：旧权限名 + 英文 resourceType 组头
     expect(tree.queryByText('会话监控')).not.toBeInTheDocument()
     expect(tree.queryByText('快捷回复')).not.toBeInTheDocument()
+    expect(tree.queryByText('AI 客服配置')).not.toBeInTheDocument()
     expect(tree.queryByText('订单退款')).not.toBeInTheDocument()
     expect(tree.queryByText('系统管理')).not.toBeInTheDocument()
     expect(tree.queryByText('dashboard')).not.toBeInTheDocument()
@@ -235,7 +234,7 @@ describe('RolesPage', () => {
     mockGetRoles.mockResolvedValue({ data: { data: { items: [], total: 0 } } })
     render(<RolesPage />)
     fireEvent.click(await screen.findByText('新增岗位'))
-    // 智能客服组含 agent:session（2 个菜单项）+ agent:quickreply + knowledge:manage
+    // 智能客服组含 agent:session（2 个菜单项）+ knowledge:manage（#3081 已移除 agent:quickreply）
     const groupHeader = (await screen.findByText('智能客服')).closest('div')!
     fireEvent.click(groupHeader.querySelector('input')!)
     const textboxes = screen.getAllByRole('textbox')
@@ -244,8 +243,10 @@ describe('RolesPage', () => {
     fireEvent.click(screen.getByRole('button', { name: '创建' }))
     await waitFor(() => {
       expect(mockCreateRole).toHaveBeenCalledWith(expect.objectContaining({
-        permissionIds: expect.arrayContaining(['p-agent-session', 'p-agent-quickreply', 'p-knowledge']),
+        permissionIds: expect.arrayContaining(['p-agent-session', 'p-knowledge']),
       }))
     })
+    // #3081: agent:quickreply 权限已随快捷回复功能下线，不再授予
+    expect(mockCreateRole.mock.calls[0][0].permissionIds).not.toContain('p-agent-quickreply')
   })
 })

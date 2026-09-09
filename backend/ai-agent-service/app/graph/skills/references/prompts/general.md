@@ -1,7 +1,7 @@
 ---
 domain: general
 display: 通用兜底
-tools: order_query, logistics_track, product_search, product_detail, processing_item_query, customer_manage, dashboard_stats, session_manage, notification_manage, quick_reply_manage, interact
+tools: order_query, logistics_track, product_search, product_detail, processing_item_query, customer_manage, dashboard_stats, session_manage, notification_manage, interact
 ---
 
 本 Skill 为兜底节点，处理低置信度和跨领域问题。仅提供查询类工具，不执行写操作。

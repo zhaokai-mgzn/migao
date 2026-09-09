@@ -137,8 +137,8 @@ class PermissionServiceTest {
 
         int inserted = permissionService.ensureFullPermissionCatalog(1L);
 
-        // 目录 17 码 - 已有 1 码 = 应补 16 码
-        assertThat(inserted).isEqualTo(16);
+        // 目录 16 码 - 已有 1 码 = 应补 15 码（#3081 快捷回复权限 agent:quickreply 已随功能下线移除）
+        assertThat(inserted).isEqualTo(15);
         // 补种的码应含 order:list / employee:create / finance:view（此前角色管理无法授予）
         verify(permissionMapper, atLeastOnce()).insert(argThat((Permission p) ->
                 "order:list".equals(p.getCode()) || "employee:create".equals(p.getCode())
