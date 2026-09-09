@@ -37,7 +37,7 @@ export const menuGroups: MenuGroup[] = [
     name: '智能客服',
     icon: 'MessageSquare',
     children: [
-      { key: 'human-sessions', name: '人工客服', icon: 'Headphones', path: '/agent-workspace/human-sessions', permissionCode: 'agent:session' },
+      { key: 'human-sessions', name: '在线接待', icon: 'Headphones', path: '/agent-workspace/human-sessions', permissionCode: 'agent:session' },
       { key: 'knowledge', name: '知识库', icon: 'BookOpen', path: '/knowledge', permissionCode: 'knowledge:manage' },
     ],
   },
