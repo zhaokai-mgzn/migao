@@ -7,7 +7,7 @@ LangGraph Skill 节点测试
 - ToolContext 从 state 正确构建
 - base_skill 的 execute_skill 逻辑
 """
-# case_ids: AG-004, CH-003, CH-023, MC-008, DF-018
+# case_ids: AG-004, CH-003, CH-023, MC-008, DF-018, HR-005, CU-003
 
 import pytest
 from unittest.mock import patch, AsyncMock, MagicMock
@@ -211,6 +211,74 @@ class TestExecuteSkill:
         assert "messages" in result
         # P3：entities 死字段已移除
         assert "entities" not in result
+
+    @patch("app.memory.session_memory.SessionMemory")
+    @patch("app.graph.skills.base_skill.get_breaker")
+    @patch("app.graph.skills.base_skill.get_skill_llm")
+    @patch("app.graph.skills.base_skill.create_skill_registry")
+    @patch("app.graph.skills.base_skill.set_tool_context")
+    async def test_staff_skill_sets_pending_on_incomplete(
+        self, mock_set_ctx, mock_create_reg, mock_get_llm, mock_get_breaker, mock_mem_cls
+    ):
+        """HR-005 回归：staff 域创建流程未完成时必须锁 pending_skill，
+        否则用户后续轮补信息时重新路由被关键词误判跳域（此前 creation_skills 缺 staff）。"""
+        mock_registry = MagicMock()
+        mock_registry.get_langchain_tools.return_value = []
+        mock_create_reg.return_value = mock_registry
+
+        mock_breaker = MagicMock()
+        async def _passthrough(fn):
+            return await fn()
+        mock_breaker.call = _passthrough
+        mock_get_breaker.return_value = mock_breaker
+
+        mock_response = MagicMock(spec=AIMessage)
+        mock_response.content = "请补充权限信息"  # 未完成（无成功 marker）
+        mock_response.tool_calls = []
+        mock_llm = MagicMock()
+        mock_llm.bind_tools.return_value = mock_llm
+        mock_llm.ainvoke = AsyncMock(return_value=mock_response)
+        mock_get_llm.return_value = mock_llm
+
+        mock_mem_cls.return_value.set_pending_skill = AsyncMock(return_value=True)
+
+        state = _make_state()
+        result = await execute_skill(
+            state=state, skill_name="staff", tool_names=[], system_prompt="你是人事助手",
+        )
+        assert result["pending_interact_skill"] == "staff"
+
+    @patch("app.memory.session_memory.SessionMemory")
+    @patch("app.graph.skills.base_skill.get_breaker")
+    @patch("app.graph.skills.base_skill.get_skill_llm")
+    @patch("app.graph.skills.base_skill.create_skill_registry")
+    @patch("app.graph.skills.base_skill.set_tool_context")
+    async def test_customer_skill_sets_pending_on_incomplete(
+        self, mock_set_ctx, mock_create_reg, mock_get_llm, mock_get_breaker, mock_mem_cls
+    ):
+        """CU-003 回归：customer 域写流程未完成时锁 pending_skill。"""
+        mock_registry = MagicMock()
+        mock_registry.get_langchain_tools.return_value = []
+        mock_create_reg.return_value = mock_registry
+        mock_breaker = MagicMock()
+        async def _passthrough(fn):
+            return await fn()
+        mock_breaker.call = _passthrough
+        mock_get_breaker.return_value = mock_breaker
+        mock_response = MagicMock(spec=AIMessage)
+        mock_response.content = "请确认要操作哪一位客户"  # 未完成
+        mock_response.tool_calls = []
+        mock_llm = MagicMock()
+        mock_llm.bind_tools.return_value = mock_llm
+        mock_llm.ainvoke = AsyncMock(return_value=mock_response)
+        mock_get_llm.return_value = mock_llm
+        mock_mem_cls.return_value.set_pending_skill = AsyncMock(return_value=True)
+
+        state = _make_state()
+        result = await execute_skill(
+            state=state, skill_name="customer", tool_names=[], system_prompt="你是客户助手",
+        )
+        assert result["pending_interact_skill"] == "customer"
 
     @patch("app.graph.skills.base_skill.get_breaker")
     @patch("app.graph.skills.base_skill.get_skill_llm")
