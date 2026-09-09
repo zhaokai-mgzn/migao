@@ -68,6 +68,7 @@
 期望: after_sales_manage(action=update_status, status=resolved)
 数据: refund/return 工单 resolved 时：订单全部商品 allow_return_restock=true 才恢复 SKU 库存；任一商品为 false 则整单不回补（窗帘定制退货不可再售）
 数据: allow_return_restock 默认 false；米宝不得在售后完成后默认引导恢复库存/重新上架
+跳过: 依赖生产不存在的固定测试工单 AS-20260701-0002（评测数据脱节）——回补库存逻辑已由 admin-api 单测覆盖（AfterSalesTicketServiceTest），LLM 行为待重构为自包含（先建工单再完结）
 ```
 真值: aftersales-flow.return-restock-switch
 溯源: issue #2991 新增：售后完结库存联动按商品开关收敛，窗帘行业定制退货不可再售 ｜ tags: update, status, cross_skill
@@ -1856,6 +1857,7 @@
 期望: order_manage(action=update_status, status=completed)
 数据: 状态流转: pending → producing → shipped → completed
 数据: 每步操作前先确认当前状态
+跳过: 依赖生产不存在的固定测试订单 ORD-20260701-0001（API 实测 found: 0），评测数据脱节——待重构为自包含（先 order_create 建测试单再流转），否则持续假失败污染基线
 ```
 真值: order.states, order.flow, order.pay-side-effects, order.cancel-side-effects, order.refund-side-effects
 溯源: eval M006 吸收 verification 1.6（单步 update_status）、1.7 的状态更新段，并吸收 eval O004（标记已发货） ｜ tags: multi_turn, order_lifecycle, status_flow
@@ -2995,7 +2997,7 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：243（活跃 119，跳过 124）
+- 用例总数：243（活跃 117，跳过 126）
 - tier 分布：smoke 10 / normal 204 / adversarial 29
 - 售后域：7
 - agents：6

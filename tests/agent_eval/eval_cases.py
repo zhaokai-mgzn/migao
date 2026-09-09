@@ -131,7 +131,7 @@ _CASE_AS_006 = EvalCase(
     user_inputs=['AS-20260701-0002 退款工单已处理完，完成'],
     expectations=['after_sales_manage(action=update_status, status=resolved)'],
     data_checks=['refund/return 工单 resolved 时：订单全部商品 allow_return_restock=true 才恢复 SKU 库存；任一商品为 false 则整单不回补（窗帘定制退货不可再售）', 'allow_return_restock 默认 false；米宝不得在售后完成后默认引导恢复库存/重新上架'],
-    skip_reason='',
+    skip_reason='依赖生产不存在的固定测试工单 AS-20260701-0002（评测数据脱节）——回补库存逻辑已由 admin-api 单测覆盖（AfterSalesTicketServiceTest），LLM 行为待重构为自包含（先建工单再完结）',
     tags=['update', 'status', 'cross_skill'],
     persona='',
 )
@@ -2352,7 +2352,7 @@ _CASE_OR_006 = EvalCase(
     user_inputs=['查一下 ORD-20260701-0001 的状态', '确认支付，标记为生产中', '发货，物流顺丰 SF1234567890', '客户确认收货了，标记完成'],
     expectations=['order_query(action=detail)', 'order_manage(action=confirm_payment)', 'order_manage(action=update_status, status=producing)', 'order_manage(action=update_logistics, company=顺丰)', 'order_manage(action=update_status, status=completed)'],
     data_checks=['状态流转: pending → producing → shipped → completed', '每步操作前先确认当前状态'],
-    skip_reason='',
+    skip_reason='依赖生产不存在的固定测试订单 ORD-20260701-0001（API 实测 found: 0），评测数据脱节——待重构为自包含（先 order_create 建测试单再流转），否则持续假失败污染基线',
     tags=['multi_turn', 'order_lifecycle', 'status_flow'],
     persona='',
 )
