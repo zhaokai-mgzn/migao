@@ -1914,6 +1914,7 @@
 ```
 你: 创建订单：张三 13812345678，杭州西湖区文三路1号，米白色遮光窗帘 2米
 你: 选散剪售卖，2.8米门幅
+你: 不添加加工项，确认下单
 你: 确认下单
 期望: validate_input
 期望: order_create
@@ -1921,7 +1922,7 @@
 必须: 订单号
 ```
 真值: order.states, order.create-flow
-溯源: verification 1.8 独有（smoke 简化版，与 OR-008/OR-009 的细粒度版互补）；2026-08-14 按 EXAMPLES-order.md 例2 校准为多轮（完整收货信息→选1→确认），单轮直下单与设计澄清流程不符；2026-09-02 补价格铁律；2026-09-04 修复 choice 卡片消费协议不匹配（审计 #2818 Agent Eval 失败根因）：原「选1」为自然语言序号，LLM 无法关联 interact(choice) 选项导致反复 product_detail 追问、永不进入 validate_input/order_create；改为显式售卖方式描述（与 OR-008/009 一致），且「2件」与商品按米计价（¥99/米）矛盾改为「2米」，实测全流程通过 ｜ tags: create, confirm
+溯源: verification 1.8 独有（smoke 简化版，与 OR-008/OR-009 的细粒度版互补）；2026-08-14 按 EXAMPLES-order.md 例2 校准为多轮（完整收货信息→选1→确认），单轮直下单与设计澄清流程不符；2026-09-02 补价格铁律；2026-09-04 修复 choice 卡片消费协议不匹配（审计 #2818 Agent Eval 失败根因）：原「选1」为自然语言序号，LLM 无法关联 interact(choice) 选项导致反复 product_detail 追问、永不进入 validate_input/order_create；改为显式售卖方式描述（与 OR-008/009 一致），且「2件」与商品按米计价（¥99/米）矛盾改为「2米」，实测全流程通过；2026-09-09 校准：R3「确认下单」改「不添加加工项，确认下单」+ 补第4轮「确认下单」——agent 把加工项询问当强制环节，用户说「确认下单」仍发加工项卡（probe 实证），需明确跳过加工项才推进（与 OR-009 校准一致） ｜ tags: create, confirm
 
 ### OR-011. AI 下单闭环 - 算料报价→确认→SMS→订单创建 🔵
 ```
@@ -1974,6 +1975,9 @@
 ### OR-015. order_create 写操作前置校验必须真正执行（validate_input 规则分层修复，issue #3029 复盘） 🔵
 ```
 你: 创建订单，张三 13800138000 遮光窗帘 3 米
+你: 散剪，2.8米门幅
+你: 不添加加工项，确认下单
+你: 确认下单
 期望: validate_input
 期望: order_create
 数据: validate_input(target_tool=order_create, target_action=create) 必须真正执行必填与类型校验：缺少 customer_name/customer_phone/items 任一 → 校验失败并给出缺失字段列表
@@ -1982,7 +1986,7 @@
 数据: 禁止返回「无需校验（该操作无预定义规则）」跳过（平铺结构 vs 分层读取不匹配的回归防线，sess_7f27137647e14b1e A5 轮实证）
 ```
 真值: order.create-flow
-溯源: 2026-09-08 新增（issue #3029 复盘）：_VALIDATION_RULES[order_create] 平铺结构而 execute 按 tool_rules.get(target_action) 分层读取 → 校验永远空转，手机号/必填空转；修复为 {create: {...}} 分层并对齐 product_manage，补 L2 单测 ｜ tags: order_create, validate_input, defense
+溯源: 2026-09-08 新增（issue #3029 复盘）：_VALIDATION_RULES[order_create] 平铺结构而 execute 按 tool_rules.get(target_action) 分层读取 → 校验永远空转，手机号/必填空转；修复为 {create: {...}} 分层并对齐 product_manage，补 L2 单测；2026-09-09 校准：补「散剪规格→跳过加工项→确认」三轮（遮光窗帘有散剪/整卷需澄清售卖方式，单轮到不了 validate_input；probe 实证 4 轮走通） ｜ tags: order_create, validate_input, defense
 
 ### OR-016. 创建订单 confirm 前必须主动询问加工项（商品绑定加工项时） 🔵
 ```
