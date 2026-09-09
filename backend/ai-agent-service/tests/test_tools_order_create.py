@@ -53,6 +53,28 @@ class TestOrderCreateDeclaration:
         # GB/T 47746-2026 承诺边界：下单=交易合同（含 B 端代下单），必须先确认再执行
         assert tool.requires_confirmation is True
 
+    def test_description_points_to_processing_info(self, tool):
+        """description 必须引导 LLM 把 sellingMethod/doorWidth 放进 processing_info，
+        不得误导平铺（平铺字段 execute 不消费，会被静默丢弃——契约 bug 防线）。
+        """
+        desc = tool.description
+        assert "processing_info" in desc
+        assert "sellingMethod" in desc
+        # 禁止再出现「sellMethod」平铺误导（schema/execute/frontend 统一 sellingMethod）
+        assert "sellMethod" not in desc
+
+    def test_schema_declares_selling_method_in_processing_info(self, tool):
+        """items schema 的 sellingMethod/doorWidth/colorName 必须嵌套在 processing_info 里
+        （与 execute 透传、admin-api processingInfo、前端 OrderDetail 读取一致）。"""
+        items_props = tool.parameters["properties"]["items"]["items"]["properties"]
+        pi_props = items_props["processing_info"]["properties"]
+        assert "sellingMethod" in pi_props
+        assert "doorWidth" in pi_props
+        assert "colorName" in pi_props
+        # 顶层 items 不得再声明这些字段（防平铺误导）
+        assert "sellingMethod" not in items_props
+        assert "sellMethod" not in items_props
+
 
 class TestOrderCreateOtpKey:
     """SMS 验证码 Redis key 构造"""
