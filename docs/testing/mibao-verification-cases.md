@@ -1415,12 +1415,13 @@
 
 ### HR-005. 创建角色 - 分配权限 🔵
 ```
-你: 新建'库管'角色，给商品和库存权限
+你: 新建'库管'角色，编码 stock_keeper，描述'负责商品管理'，给商品管理全套权限
+你: 确认创建
 期望: role_manage(action=create)
-数据: 确认后创建成功，permissions 含商品/库存权限码
+数据: 确认后创建成功，permissions 含商品管理权限码
 ```
 真值: employee-role.role-crud, employee-role.permissions
-溯源: verification 5.5 独有 ｜ tags: create, permission
+溯源: verification 5.5 独有；2026-09-10 校准：①「库存权限」生产不存在（库存由商品管理模块承载），改真实权限「商品管理」；② 补「确认创建」轮 + 明确编码/描述（role_manage create 走 validate_input→create 确认链，validate_input 已 #3157 补 role_manage 规则；「确认」一词因 agent 澄清多问编码/描述致 LLM 歧义，改为明确第二输入） ｜ tags: create, permission
 
 ### HR-006. 岗位权限体系 - 注册新租户初始化五岗默认权限 + 员工权限快照式解析（#2969） 🔵
 ```
