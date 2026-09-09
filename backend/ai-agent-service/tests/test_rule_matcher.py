@@ -90,6 +90,14 @@ class TestMatch:
         assert result is not None
         assert result.intent == IntentType.NOTIFICATION
 
+    def test_return_restock_setting_matches_product(self):
+        # PR-017 回归：「把遮光窗帘设置成退货回补库存」是商品设置（product_update 的
+        # allow_return_restock），但「退货」关键词把它抢到 after_sales → agent 按售后
+        # 工具集误宣「没有商品设置入口」（能力误宣，ST-005 同类）。
+        result = self._match("把遮光窗帘设置成退货后可以回补库存")
+        assert result is not None
+        assert result.intent == IntentType.PRODUCT_INQUIRY
+
     def test_regular_keyword_confidence(self):
         result = self._match("我要投诉")
         assert result.intent == IntentType.COMPLAINT
