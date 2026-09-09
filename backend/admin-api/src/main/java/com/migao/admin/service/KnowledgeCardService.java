@@ -18,7 +18,8 @@ import java.util.List;
 /**
  * 知识卡片服务（LLM WIKI 板块，issue #3051）
  *
- * 知识卡片生命周期闭环：draft → pending_review → published → archived（编辑 version 递增），
+ * 知识卡片生命周期闭环：draft → pending_review → published → archived（编辑 version 递增；
+ * archived 可重新发布回 published，无死端 #3108），
  * 每个状态都有明确 API 动作；检索仅返回 published 知识卡片，租户隔离（显式 eq tenant_id，
  * 吸取审计 07 P1-6 `.or()` 跨租户泄露教训——OR 必须嵌套在 eq 内）。
  */
@@ -113,11 +114,14 @@ public class KnowledgeCardService {
     }
 
     /**
-     * 发布知识卡片：draft / pending_review → published（记录审核人/时间）
+     * 发布/重新发布知识卡片：draft / pending_review / archived → published（记录审核人/时间）
+     * archived 放开（#3108）：归档非终点，商家可一键「重新发布」恢复 AI 检索命中。
      */
     public KnowledgeCard publish(String id) {
         KnowledgeCard entry = getOwned(id);
-        if (!STATUS_DRAFT.equals(entry.getStatus()) && !STATUS_PENDING_REVIEW.equals(entry.getStatus())) {
+        if (!STATUS_DRAFT.equals(entry.getStatus())
+                && !STATUS_PENDING_REVIEW.equals(entry.getStatus())
+                && !STATUS_ARCHIVED.equals(entry.getStatus())) {
             throw BusinessException.validationError("当前状态（" + entry.getStatus() + "）不可发布");
         }
         entry.setStatus(STATUS_PUBLISHED);

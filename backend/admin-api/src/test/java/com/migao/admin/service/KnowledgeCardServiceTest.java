@@ -159,15 +159,16 @@ class KnowledgeCardServiceTest {
         }
 
         @Test
-        @DisplayName("publish：archived 拒绝")
-        void publish_fromArchived_rejected() {
+        @DisplayName("publish：archived → published（重新发布，归档非终点 #3108）")
+        void publish_fromArchived_republish() {
             KnowledgeCard existing = sampleEntry();
             existing.setStatus("archived");
             when(knowledgeCardMapper.selectById("entry-1")).thenReturn(existing);
 
-            assertThatThrownBy(() -> knowledgeCardService.publish("entry-1"))
-                    .isInstanceOf(BusinessException.class)
-                    .hasMessageContaining("发布");
+            KnowledgeCard result = knowledgeCardService.publish("entry-1");
+            assertThat(result.getStatus()).isEqualTo("published");
+            assertThat(result.getReviewedAt()).isNotNull();
+            verify(knowledgeCardMapper).updateById(existing);
         }
 
         @Test
