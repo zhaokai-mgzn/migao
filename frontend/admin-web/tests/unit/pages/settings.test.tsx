@@ -9,6 +9,7 @@ vi.mock('lucide-react', () => {
   return {
     Building2: stub('building2'),
     Bot: stub('bot'),
+    Bell: stub('bell'),
     Save: stub('save'),
     KeyRound: stub('key-round'),
     History: stub('history'),
@@ -63,12 +64,13 @@ vi.mock('@/lib/image-dimensions', () => ({
   readImageDimensions: (...args: any[]) => mockReadImageDimensions(...args),
 }))
 
-// Mock next/navigation
+// Mock next/navigation（searchParams 可逐用例控制，供 ?tab=ai 直达测试）
 const mockRouterPush = vi.fn()
 const mockRouterReplace = vi.fn()
+const mockSearchParams = vi.fn()
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: mockRouterPush, replace: mockRouterReplace }),
-  useSearchParams: () => new URLSearchParams(),
+  useSearchParams: () => mockSearchParams(),
 }))
 
 // Mock auth store（#3099：保存企业信息后刷新用户信息，侧边栏/右上角即时同步）
@@ -118,33 +120,67 @@ function mockAiConfigSuccess() {
   })
 }
 
+// #3098: 左侧 tab 导航，切到指定 tab
+async function switchToTab(user: ReturnType<typeof userEvent.setup>, label: string) {
+  const tab = screen.getByRole('button', { name: new RegExp(label) })
+  await user.click(tab)
+}
+
 describe('SettingsPage — AI 客服设置合并进企业基础信息 (#3081)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockApiSuccess()
     mockAiConfigSuccess()
+    // 默认无 URL tab 参数（默认激活「基本设置」tab）
+    mockSearchParams.mockReturnValue(new URLSearchParams())
     // 默认图片尺寸满足最小分辨率（128×128）
     mockReadImageDimensions.mockResolvedValue({ width: 128, height: 128 })
   })
 
   // ================================================================
-  // #3081: AI 客服配置（原 /chat/config 独立页）合并进企业基础信息
+  // #3081/#3098: AI 客服配置（原 /chat/config 独立页）合并进企业基础信息，
+  // 以左侧 tab 并排展示（基本设置 / AI 客服设置 / 通知设置）
   // ================================================================
 
-  describe('#3081 AI 客服设置区块', () => {
-    it('渲染「AI 客服设置」区块标题与作用说明（名称+欢迎语，顾客侧可见）', async () => {
+  describe('#3081/#3098 AI 客服设置 tab', () => {
+    it('tab 导航渲染三个入口：基本设置 / AI 客服设置 / 通知设置（并排展示）', async () => {
       render(<SettingsPage />)
       await waitFor(() => {
-        expect(screen.getByText('AI 客服设置')).toBeInTheDocument()
+        expect(screen.getByRole('button', { name: /基本设置/ })).toBeInTheDocument()
       })
+      expect(screen.getByRole('button', { name: /AI 客服设置/ })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /通知设置/ })).toBeInTheDocument()
+    })
+
+    it('切到「AI 客服设置」tab 渲染区块标题与作用说明（名称+欢迎语，顾客侧可见）', async () => {
+      const user = userEvent.setup()
+      render(<SettingsPage />)
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /AI 客服设置/ })).toBeInTheDocument()
+      })
+      await switchToTab(user, 'AI 客服设置')
       // 副文案说明作用：配置顾客在对话中看到的 AI 客服助手
       expect(screen.getByText(/配置顾客在对话中看到的 AI 客服助手（小布）的名称与欢迎语/)).toBeInTheDocument()
       // 不再出现「AI 客服配置」独立页面命名
       expect(screen.queryByText('AI 客服配置')).not.toBeInTheDocument()
     })
 
-    it('加载 AI 客服配置并回填 AI 客服名称与欢迎语', async () => {
+    it('默认「基本设置」tab 激活，AI 客服设置内容需切换后展示', async () => {
       render(<SettingsPage />)
+      await waitFor(() => {
+        expect(screen.getByText('基本设置', { selector: 'h2' })).toBeInTheDocument()
+      })
+      // AI 客服设置内容（输入框）默认不展示
+      expect(screen.queryByPlaceholderText('小布')).not.toBeInTheDocument()
+    })
+
+    it('加载 AI 客服配置并回填 AI 客服名称与欢迎语', async () => {
+      const user = userEvent.setup()
+      render(<SettingsPage />)
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /AI 客服设置/ })).toBeInTheDocument()
+      })
+      await switchToTab(user, 'AI 客服设置')
       await waitFor(() => {
         expect(screen.getByDisplayValue('小布')).toBeInTheDocument()
       })
@@ -159,6 +195,10 @@ describe('SettingsPage — AI 客服设置合并进企业基础信息 (#3081)', 
         data: { data: { botName: '  ', greetingTemplate: '' } },
       })
       render(<SettingsPage />)
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /AI 客服设置/ })).toBeInTheDocument()
+      })
+      await switchToTab(user, 'AI 客服设置')
       const saveBtn = await screen.findByRole('button', { name: /保存 AI 客服设置/ })
       await user.click(saveBtn)
       expect(toast.error).toHaveBeenCalledWith('请输入 AI 客服名称')
@@ -169,6 +209,10 @@ describe('SettingsPage — AI 客服设置合并进企业基础信息 (#3081)', 
       const user = userEvent.setup()
       mockUpdateAiConfig.mockResolvedValue({ data: {} })
       render(<SettingsPage />)
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /AI 客服设置/ })).toBeInTheDocument()
+      })
+      await switchToTab(user, 'AI 客服设置')
       const input = await screen.findByDisplayValue('小布')
       await user.clear(input)
       await user.type(input, '米高助手')
@@ -194,18 +238,17 @@ describe('SettingsPage — AI 客服设置合并进企业基础信息 (#3081)', 
   // #3006: 修改密码/登录日志已隐藏 —— 登录日志无记录、未来统一短信码登录
   // ================================================================
 
-  describe('#3006 企业基础信息页 — 单页分区块，无 tab 栏', () => {
-    it('企业信息/AI 客服设置/通知设置直接呈现，无 tab 栏（修改密码/登录日志均不渲染）', async () => {
+  describe('#3006/#3098 企业基础信息页 — 左侧 tab 导航布局（修改密码/登录日志不恢复）', () => {
+    it('tab 导航含 基本设置/AI 客服设置/通知设置；修改密码/登录日志不渲染', async () => {
       render(<SettingsPage />)
       await waitFor(() => {
         expect(screen.getByText('企业基础信息')).toBeInTheDocument()
       })
-      // 三个区块直接展示（单页，无 tab 切换）
-      expect(screen.getByText('企业信息')).toBeInTheDocument()
-      expect(screen.getByText('AI 客服设置')).toBeInTheDocument()
-      expect(screen.getByText('通知设置')).toBeInTheDocument()
-      // #3006 已隐藏：登录日志无记录 + 修改密码未来由短信码取替代 → 整个 tab 栏移除
-      expect(screen.queryByRole('button', { name: /基本设置/ })).toBeNull()
+      // #3098 恢复 tab 导航：三个 tab 入口并排展示
+      expect(screen.getByRole('button', { name: /基本设置/ })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /AI 客服设置/ })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /通知设置/ })).toBeInTheDocument()
+      // #3006 已隐藏：登录日志无记录 + 修改密码未来由短信码取替代 → 不再出现这两个 tab
       expect(screen.queryByRole('button', { name: /修改密码/ })).toBeNull()
       expect(screen.queryByRole('button', { name: /登录日志/ })).toBeNull()
       expect(screen.queryByText('暂无登录日志')).toBeNull()
@@ -215,25 +258,24 @@ describe('SettingsPage — AI 客服设置合并进企业基础信息 (#3081)', 
       expect(screen.queryByRole('button', { name: /账户安全/ })).toBeNull()
     })
 
-    it('AI 客服名称输入框在「AI 客服设置」区块渲染（#3081 合并后不再隐藏）', async () => {
+    it('AI 客服名称输入框在「AI 客服设置」tab 内容区渲染（#3081 合并后不再隐藏）', async () => {
+      const user = userEvent.setup()
       render(<SettingsPage />)
       await waitFor(() => {
-        expect(screen.getByDisplayValue('小布')).toBeInTheDocument()
+        expect(screen.getByRole('button', { name: /AI 客服设置/ })).toBeInTheDocument()
       })
+      await switchToTab(user, 'AI 客服设置')
       expect(screen.getByPlaceholderText('小布')).toBeInTheDocument()
     })
   })
 
-  describe('旧链接 /settings?tab=ai 兼容（#3081 合并后直接展示本页）', () => {
-    it('URL 带 ?tab=ai 时不跳转，页面正常渲染（AI 客服设置已在本页）', async () => {
-      // 重新 mock useSearchParams 返回 tab=ai
-      vi.doMock('next/navigation', () => ({
-        useRouter: () => ({ push: mockRouterPush, replace: mockRouterReplace }),
-        useSearchParams: () => new URLSearchParams('tab=ai'),
-      }))
+  describe('旧链接 /settings?tab=ai 兼容（#3098 URL tab=ai → 直接激活 AI 客服设置 tab）', () => {
+    it('URL 带 ?tab=ai 时默认激活「AI 客服设置」tab（不再重定向）', async () => {
+      mockSearchParams.mockReturnValue(new URLSearchParams('tab=ai'))
       render(<SettingsPage />)
+      // AI 客服设置内容直接呈现（tab 激活态）
       await waitFor(() => {
-        expect(screen.getByText('AI 客服设置')).toBeInTheDocument()
+        expect(screen.getByPlaceholderText('小布')).toBeInTheDocument()
       })
       // 不再重定向到 /chat/config（该页面已删除）
       expect(mockRouterReplace).not.toHaveBeenCalledWith('/chat/config')
@@ -250,10 +292,10 @@ describe('SettingsPage — AI 客服设置合并进企业基础信息 (#3081)', 
       })
     })
 
-    it('保存企业信息按钮应该存在', async () => {
+    it('保存设置按钮应该存在（基本设置 tab 默认激活）', async () => {
       render(<SettingsPage />)
       await waitFor(() => {
-        expect(screen.getByRole('button', { name: /保存企业信息/ })).toBeInTheDocument()
+        expect(screen.getByRole('button', { name: /保存设置/ })).toBeInTheDocument()
       })
     })
 
@@ -532,12 +574,17 @@ describe('SettingsPage — AI 客服设置合并进企业基础信息 (#3081)', 
 
   // ── #3003 系统通知开关 —— 描述与实际行为一致（租户级自动站内信总开关）──
 
-  describe('通知设置 — 启用系统通知', () => {
+  describe('通知设置 — 启用系统通知（#3098 通知设置独立 tab）', () => {
     it('渲染开关与口径说明（关闭后不再产生新的站内通知，历史保留）', async () => {
+      const user = userEvent.setup()
       mockGetSettings.mockResolvedValue({
         data: { data: { companyName: '测试企业', logo: '', notificationEnabled: true, notificationEmail: '' } },
       })
       render(<SettingsPage />)
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /通知设置/ })).toBeInTheDocument()
+      })
+      await switchToTab(user, '通知设置')
       await waitFor(() => {
         expect(screen.getByText('启用系统通知')).toBeInTheDocument()
       })
@@ -548,10 +595,13 @@ describe('SettingsPage — AI 客服设置合并进企业基础信息 (#3081)', 
     })
 
     it('保存通知设置按钮存在（#3081 分区块保存）', async () => {
+      const user = userEvent.setup()
       render(<SettingsPage />)
       await waitFor(() => {
-        expect(screen.getByRole('button', { name: /保存通知设置/ })).toBeInTheDocument()
+        expect(screen.getByRole('button', { name: /通知设置/ })).toBeInTheDocument()
       })
+      await switchToTab(user, '通知设置')
+      expect(screen.getByRole('button', { name: /保存通知设置/ })).toBeInTheDocument()
     })
   })
 })
