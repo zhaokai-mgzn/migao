@@ -2500,7 +2500,7 @@
 真值: token-refresh.no-loop
 溯源: 2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421） ｜ tags: token_refresh, auth, no_loop
 
-## ui（32 case）
+## ui（33 case）
 
 ### UI-001. 织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理 🔵
 ```
@@ -2916,6 +2916,20 @@
 真值: frontend-fix.no-api-change, frontend-fix.vitest
 溯源: 2026-09-09 新增（issue #3070）：知识库页 UI 修复 — 面包屑对齐/样式统一/分页遮挡/模板套用与候选采纳结果可见性 ｜ tags: ui, knowledge, breadcrumb, pagination, admin-web
 
+### UI-034. 知识库「采纳/一键套用」成果去向提示与定位 — toast 带去向 + 采纳新卡高亮 + 套用确认弹窗 + 来源筛选定位（#3080） 🔵
+```
+你: 知识库待确认候选「采纳」后用户不知道卡片去哪了；行业模板「一键套用」后不知道套出的卡片在哪。需要写操作反馈闭环：做了什么 → 去哪了 → 怎么找回来（toast 去向文案 + 落地高亮 + 前置确认弹窗 + 来源筛选自动定位）
+期望: direct_reply
+数据: 待确认候选「采纳」后：toast 文案包含去向（跳转知识卡片列表）；落地「知识卡片」Tab 后新卡行高亮定位（Table 的 highlightRowKey 匹配新卡 id，bg-primary-50），高亮 4s 自动消退
+数据: 行业模板「一键套用」：先弹确认弹窗（说明将新增 N 条并立即发布、已存在自动跳过），未确认不得调用 applyTemplate；确认后 toast 文案包含去向与定位方式（筛选「来源=模板」）
+数据: 套用确认后：跳转「知识卡片」Tab 并自动按来源=模板筛选（getCards 带 sourceType=template），列表仅显示模板来源卡片（批量成果可核对可编辑）
+数据: 「知识卡片」Tab 筛选区常驻「来源」下拉（全部来源/模板/商品派生/配置/会话提炼/文档提炼/人工），用户可随时按来源定位卡片
+数据: 待确认/行业模板两处 Tab 副文案补充去向说明，与 toast 口径一致
+跳过: 纯前端交互由 vitest 单测验证，非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: frontend-fix.no-api-change, frontend-fix.vitest
+溯源: 2026-09-09 新增（issue #3080）：知识库采纳/套用成果去向提示 — toast 带去向 + 采纳高亮 + 套用确认弹窗 + 来源筛选定位 ｜ tags: ui, knowledge, feedback-loop, locate, admin-web
+
 ## utils（2 case）
 
 ### UT-001. 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值 🔵
@@ -2945,8 +2959,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：241（活跃 121，跳过 120）
-- tier 分布：smoke 10 / normal 202 / adversarial 29
+- 用例总数：242（活跃 121，跳过 121）
+- tier 分布：smoke 10 / normal 203 / adversarial 29
 - 售后域：7
 - agents：6
 - api：21
@@ -2969,7 +2983,7 @@
 - registry：1
 - 设置域：10
 - token-refresh：4
-- ui：32
+- ui：33
 - utils：2
 
 ### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）
