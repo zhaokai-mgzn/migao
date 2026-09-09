@@ -54,3 +54,45 @@ class TestProductUpdateRequestField:
         result = await tool.execute(ctx, product_id="p1", price=200.0)
         assert result.success is False
         assert "权限" in (result.error or "")
+
+
+class TestAllowReturnRestock:
+    """allow_return_restock 字段透传（PR-017 回归防线，issue #2991）
+
+    背景：admin-api 已支持 allowReturnRestock（AgentProductUpdateRequest），但 ai-agent
+    product_update 工具 schema 未暴露该参数 → 用户「设置退货回补库存」时 agent 无工具可调
+    （PR-017 失败 tools=[] 的根因）。
+    """
+
+    @pytest.mark.asyncio
+    async def test_allow_return_restock_transmitted_as_allowReturnRestock(self, tool):
+        ctx = ToolContext(tenant_id=1, user_id="u1", role="admin")
+        patched = AsyncMock(return_value={"success": True, "data": {}})
+        with patch("app.tools.product_update.get_admin_api_client") as m:
+            m.return_value.patch = patched
+            result = await tool.execute(ctx, product_id="p1", allow_return_restock=True)
+        assert result.success
+        _, kwargs = patched.call_args
+        body = kwargs.get("json_data") or {}
+        assert body.get("allowReturnRestock") is True, f"应透传 allowReturnRestock: {body}"
+
+    @pytest.mark.asyncio
+    async def test_allow_return_restock_false_transmitted(self, tool):
+        """显式关闭（false）也须透传（null=不修改，false=明确关闭）。"""
+        ctx = ToolContext(tenant_id=1, user_id="u1", role="admin")
+        patched = AsyncMock(return_value={"success": True, "data": {}})
+        with patch("app.tools.product_update.get_admin_api_client") as m:
+            m.return_value.patch = patched
+            result = await tool.execute(ctx, product_id="p1", allow_return_restock=False)
+        assert result.success
+        _, kwargs = patched.call_args
+        body = kwargs.get("json_data") or {}
+        assert body.get("allowReturnRestock") is False
+
+    def test_schema_declares_allow_return_restock(self, tool):
+        assert "allow_return_restock" in tool.parameters["properties"]
+        desc = tool.parameters["properties"]["allow_return_restock"]["description"]
+        assert "回补" in desc or "退货" in desc
+
+    def test_description_mentions_return_restock(self, tool):
+        assert "退货" in tool.description or "回补" in tool.description
