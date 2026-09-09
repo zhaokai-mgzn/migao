@@ -30,14 +30,13 @@ export const menuGroups: MenuGroup[] = [
       { key: 'dashboard', name: '经营看板', icon: 'BarChart3', path: '/dashboard' },
     ],
   },
-  // UI-005/UI-011: 智能客服大类（米宝·在线对话 在前；均不可见时整组隐藏）
+  // UI-005/UI-011: 智能客服大类（#3094 米宝·在线对话 菜单入口已移除，智能体对话经右下角 FAB；均不可见时整组隐藏）
   // #2969: 知识库归入智能客服组
   {
     key: 'smart-customer-service',
     name: '智能客服',
     icon: 'MessageSquare',
     children: [
-      { key: 'mibao-chat', name: '米宝 · 在线对话', icon: 'MessageCircle', path: '/chat', permissionCode: 'agent:session' },
       { key: 'human-sessions', name: '人工客服', icon: 'Headphones', path: '/agent-workspace/human-sessions', permissionCode: 'agent:session' },
       { key: 'knowledge', name: '知识库', icon: 'BookOpen', path: '/knowledge', permissionCode: 'knowledge:manage' },
     ],
