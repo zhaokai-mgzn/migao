@@ -1888,16 +1888,17 @@
 你: 要遮光窗帘
 你: 选白色的，散剪，2.8米门幅
 你: 数量 3 件
-你: 确认下单
+你: 不添加加工项，确认下单
+你: 确认创建订单
 期望: product_detail
-期望: interact(component=sku_table)
+期望: interact(component=choice)
 期望: order_create(items=[{'sellingMethod': 'bulk_cut', 'doorWidth': '2.8米', 'colorName': '白色'}])
 数据: order_create items[0].sellingMethod = bulk_cut
 数据: order_create items[0].doorWidth = 2.8米
 数据: order_create items[0].colorName 包含 '白色'
 ```
 真值: order.states, order.create-flow, product-sku-stock.aggregate
-溯源: eval M005 独有（多轮引导细节），与 OR-008 互补不合并 ｜ tags: multi_turn, order_create, sku_select, full_flow
+溯源: eval M005 独有（多轮引导细节），与 OR-008 互补不合并；2026-09-09 校准：① interact 组件期望 sku_table 全库不存在（agent 从始发 choice），改为 choice；② 补「跳过加工项→点确认卡」两轮（真实流程需 7 轮，原 5 轮预设过严，agent 正确要求点卡不默认跳过） ｜ tags: multi_turn, order_create, sku_select, full_flow
 
 ### OR-010. 创建订单 - 汇总确认简化流程 🔵
 ```
@@ -2128,16 +2129,18 @@
 ### PR-008. 创建商品 - 完整流程 🔵
 ```
 你: 创建一个窗帘，名称测试窗帘A，价格168，分类选窗帘
+你: 窗帘布艺
 你: 颜色选白色和灰色
 你: 货号用 TEST-CURTAIN-A
 你: 确认创建
+你: 确认创建测试窗帘A
 期望: product_manage(action=create)
 期望: validate_input
 期望: interact(component=choice)
 数据: data.product_id.length > 0
 ```
 真值: product-sku-stock.create-flow, product-sku-stock.create-confirm
-溯源: eval P003 + verification 2.9（同义，取 eval 版） ｜ tags: create, full_flow
+溯源: eval P003 + verification 2.9（同义，取 eval 版）；2026-09-09 校准：补「窗帘布艺」点分类卡轮 + 末轮回传 confirmValue「确认创建测试窗帘A」（agent 实际生成，含商品名上下文；原脚本末轮『确认创建』被 agent 理解成『发确认卡』而非『点确认卡回传』，product_manage 永不执行） ｜ tags: create, full_flow
 
 ### PR-009. 商品更新 - 名称解析 ID 🔴
 ```

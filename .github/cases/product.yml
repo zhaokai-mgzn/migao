@@ -226,9 +226,11 @@ cases:
       - product-sku-stock.create-confirm
     user_inputs:
       - "创建一个窗帘，名称测试窗帘A，价格168，分类选窗帘"
+      - "窗帘布艺"
       - "颜色选白色和灰色"
       - "货号用 TEST-CURTAIN-A"
       - "确认创建"
+      - "确认创建测试窗帘A"
     expectations:
       - tool: product_manage
         args:
@@ -240,7 +242,7 @@ cases:
     data_checks:
       - "data.product_id.length > 0"
     skip_reason: ""
-    merge_log: "eval P003 + verification 2.9（同义，取 eval 版）"
+    merge_log: "eval P003 + verification 2.9（同义，取 eval 版）；2026-09-09 校准：补「窗帘布艺」点分类卡轮 + 末轮回传 confirmValue「确认创建测试窗帘A」（agent 实际生成，含商品名上下文；原脚本末轮『确认创建』被 agent 理解成『发确认卡』而非『点确认卡回传』，product_manage 永不执行）"
     traces:
       tests:
         - "backend/ai-agent-service/tests/manual/mibao_scenarios.py"

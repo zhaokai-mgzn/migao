@@ -315,12 +315,13 @@ cases:
       - "要遮光窗帘"
       - "选白色的，散剪，2.8米门幅"
       - "数量 3 件"
-      - "确认下单"
+      - "不添加加工项，确认下单"
+      - "确认创建订单"
     expectations:
       - tool: product_detail
       - tool: interact
         args:
-          component: sku_table
+          component: choice
       - tool: order_create
         args:
           items:
@@ -332,7 +333,7 @@ cases:
       - "order_create items[0].doorWidth = 2.8米"
       - "order_create items[0].colorName 包含 '白色'"
     skip_reason: ""
-    merge_log: "eval M005 独有（多轮引导细节），与 OR-008 互补不合并"
+    merge_log: "eval M005 独有（多轮引导细节），与 OR-008 互补不合并；2026-09-09 校准：① interact 组件期望 sku_table 全库不存在（agent 从始发 choice），改为 choice；② 补「跳过加工项→点确认卡」两轮（真实流程需 7 轮，原 5 轮预设过严，agent 正确要求点卡不默认跳过）"
     traces:
       tests:
         - "backend/ai-agent-service/tests/manual/mibao_scenarios.py"
