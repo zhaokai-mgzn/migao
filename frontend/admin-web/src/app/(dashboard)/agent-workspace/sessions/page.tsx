@@ -56,7 +56,7 @@ export default function AgentSessionsPage() {
     <div className="h-[calc(100vh-180px)] flex flex-col">
       {/* 顶部：标题 + 监控统计条 */}
       <div className="flex items-center justify-between flex-shrink-0 px-5 h-14 border-b border-neutral-200/80">
-        <h1 className="text-base font-semibold text-neutral-900">会话管理</h1>
+        <h1 className="text-base font-semibold text-neutral-900">会话监控</h1>
         <div className="flex items-center gap-2" data-testid="session-stats-bar">
           <StatCell
             icon={<MessageSquare className="w-4 h-4 text-primary-500" />}

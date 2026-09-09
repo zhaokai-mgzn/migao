@@ -79,8 +79,8 @@ describe('AgentSessionsPage — 会话管理工作台', () => {
     expect(screen.getByTestId('chat-area')).toBeInTheDocument()
   })
 
-  it('页面标题为「会话管理」', () => {
+  it('页面标题为「会话监控」（与面包屑/菜单命名统一，#3070 同类）', () => {
     render(<AgentSessionsPage />)
-    expect(screen.getByRole('heading', { name: '会话管理' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '会话监控' })).toBeInTheDocument()
   })
 })

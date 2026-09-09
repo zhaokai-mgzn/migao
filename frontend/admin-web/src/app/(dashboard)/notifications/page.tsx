@@ -163,13 +163,16 @@ export default function NotificationsPage() {
             key={tab.key}
             onClick={() => handleTabChange(tab.key as NotificationStatus | '')}
             className={cn(
-              'relative px-4 py-3 text-sm font-medium whitespace-nowrap transition-colors border-b-2',
+              'relative px-4 py-3 text-sm font-medium whitespace-nowrap transition-colors',
               statusFilter === tab.key
-                ? 'text-primary-600 border-primary-600 bg-primary-50/50'
-                : 'text-neutral-500 border-transparent hover:text-neutral-700 hover:bg-neutral-50'
+                ? 'text-primary-600'
+                : 'text-neutral-500 hover:text-neutral-700'
             )}
           >
             {tab.label}
+            {statusFilter === tab.key && (
+              <span className="absolute left-0 right-0 -bottom-px h-0.5 bg-primary-600 rounded-full" />
+            )}
           </button>
         ))}
       </div>
