@@ -171,7 +171,7 @@ def _extract_content(response: AIMessage) -> str:
 # - 需要规划多步骤操作（创建工单、管理人员）
 # - product_inquiry 不需要：商品咨询/价格查询是只读检索，直接调 search/detail 即可，无需深度思考
 # DeepSeek V4 thinking 模式：首轮开启深度思考（规划工具调用 + 图片属性推理）
-# 意图列表：订单/售后两大核心业务域的管理/推理操作
+# 意图列表：订单/售后/人事/客户/分类等管理写操作（多步推理，需深度思考）
 _THINKING_INTENTS = frozenset({
     # ── 订单域 ──
     "order_query",        # 订单查询——多条件筛选+关联上下文（仅首轮思考）
@@ -180,6 +180,12 @@ _THINKING_INTENTS = frozenset({
     "after_sales",        # 售后处理——退款/换货/维修逻辑
     "after_sales_create", # 售后创建——问题归类+解决方案推荐
     "complaint",          # 投诉处理——情绪安抚+升级判断
+    # ── 人事/客户/分类管理写操作（Round 25 补：此前无思考，多步写流程易漏参/误判）──
+    "role_manage",        # 角色创建——查权限→选权限→确认→create（HR-005 无思考致多意图误判）
+    "employee_manage",    # 员工创建——先查重名→校验→确认（HR-002 同类）
+    "customer_manage",    # 客户写操作——重名澄清→选→确认（CU-003/004）
+    "category_manage",    # 分类管理——建品分类选择多步（PR-008/012/016 同类）
+    "processing_manage",  # 加工项管理——创建/调价多步
 })
 
 # 多步串行推理意图（_THINKING_INTENTS 的子集）：

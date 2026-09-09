@@ -447,6 +447,31 @@ class TestGetSkillLlmThinking:
         kwargs = mock_factory.create_skill_llm.call_args.kwargs
         assert kwargs.get("enable_thinking") is True
 
+    @patch("app.graph.skills.base_skill.LLMFactory")
+    def test_role_manage_enables_thinking(self, mock_factory):
+        """role_manage 创建角色是多步写操作（查权限→选权限→确认→create），应开深度思考
+        （HR-005 无思考致多意图路由误判 + 参数漏传）。"""
+        mock_factory.create_skill_llm.return_value = MagicMock()
+        get_skill_llm(intent="role_manage", tool_count=3)
+        kwargs = mock_factory.create_skill_llm.call_args.kwargs
+        assert kwargs.get("enable_thinking") is True
+
+    @patch("app.graph.skills.base_skill.LLMFactory")
+    def test_category_manage_enables_thinking(self, mock_factory):
+        """category_manage 建品分类选择是多步流程，应开深度思考。"""
+        mock_factory.create_skill_llm.return_value = MagicMock()
+        get_skill_llm(intent="category_manage", tool_count=2)
+        kwargs = mock_factory.create_skill_llm.call_args.kwargs
+        assert kwargs.get("enable_thinking") is True
+
+    @patch("app.graph.skills.base_skill.LLMFactory")
+    def test_customer_manage_enables_thinking(self, mock_factory):
+        """customer_manage 客户写操作（重名澄清→选→确认）应开深度思考（CU-003/004）。"""
+        mock_factory.create_skill_llm.return_value = MagicMock()
+        get_skill_llm(intent="customer_manage", tool_count=3)
+        kwargs = mock_factory.create_skill_llm.call_args.kwargs
+        assert kwargs.get("enable_thinking") is True
+
 
 # ========== Skill 节点生成测试 ==========
 
