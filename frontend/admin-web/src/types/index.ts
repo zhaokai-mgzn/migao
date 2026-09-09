@@ -792,11 +792,11 @@ export interface AiConfig {
 }
 
 // 系统设置
+// #3103: notificationEmail 为僵尸字段（站内信无需邮箱，后端无邮件消费逻辑），已从类型移除
 export interface SystemSettings {
   companyName: string
   logo?: string
   notificationEnabled: boolean
-  notificationEmail?: string
 }
 
 // 修改密码参数
