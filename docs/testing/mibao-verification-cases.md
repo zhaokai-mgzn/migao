@@ -2463,7 +2463,7 @@
 真值: token-refresh.no-loop
 溯源: 2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421） ｜ tags: token_refresh, auth, no_loop
 
-## ui（36 case）
+## ui（37 case）
 
 ### UI-001. 织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理 🔵
 ```
@@ -2933,6 +2933,19 @@
 真值: frontend-fix.no-api-change, frontend-fix.vitest
 溯源: 2026-09-09 新增（issue #3099）：右上角用户信息卡片优化 — 点击展开 + 姓名默认展示 + 卡片信息丰富（手机号/岗位/所属企业）+ fetchUserInfo 解包修复 + 保存企业信息后即时刷新 ｜ tags: ui, header, user-card, admin-web, settings
 
+### UI-038. 新增订单表单支持选择已有客户 — 自动回填收货信息（姓名/手机号/省市区），保留手动兜底（#3102） 🔵
+```
+你: 新增订单表单不支持选择客户，收货信息需纯手动输入；增加「选择客户」能力：从客户列表搜索选中后自动回填，提升下单效率与体验
+期望: direct_reply
+数据: 新增订单页「收货信息」卡提供「选择客户」入口，点击打开客户选择弹窗（标题「选择客户」），加载客户列表（customerApi.getCustomers）
+数据: 弹窗支持按 姓名/手机号 关键词搜索（Enter/搜索按钮触发 getCustomers 携带 keyword）；客户行展示 姓名（wechatNickname 优先）+ 手机号 + 省市区 + 来源渠道
+数据: 选中客户后自动回填：收货人姓名=客户昵称、手机号=phone、收货地址=省市区拼接（regionProvince regionCity regionDistrict），仍可手动修改
+数据: 保留手动兜底：未命中客户/关闭弹窗后可直接手填收货信息提交订单；订单提交契约不变（OrderCreateRequest 无 customerId，不引入跨端契约改动）
+跳过: 纯前端页面交互由 vitest 单测验证（orders-new.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: frontend-fix.no-api-change, frontend-fix.vitest
+溯源: 2026-09-09 新增（issue #3102）：新增订单表单选择已有客户自动回填收货信息（前端快捷回填，不动后端契约） ｜ tags: ui, orders, customer, order-create, admin-web
+
 ## utils（2 case）
 
 ### UT-001. 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值 🔵
@@ -2962,8 +2975,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：241（活跃 119，跳过 122）
-- tier 分布：smoke 10 / normal 202 / adversarial 29
+- 用例总数：242（活跃 119，跳过 123）
+- tier 分布：smoke 10 / normal 203 / adversarial 29
 - 售后域：7
 - agents：6
 - api：19
@@ -2986,7 +2999,7 @@
 - registry：1
 - 设置域：8
 - token-refresh：4
-- ui：36
+- ui：37
 - utils：2
 
 ### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）

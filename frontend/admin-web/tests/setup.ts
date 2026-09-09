@@ -148,6 +148,8 @@ vi.mock('lucide-react', () => ({
   Mail: iconStub('mail'),
   MapPin: iconStub('map-pin'),
   Truck: iconStub('truck'),
+  // #3102: 下单选客户（选择客户入口）
+  UserPlus: iconStub('user-plus'),
   Building2: iconStub('building2'),
   // #3099: 右上角用户卡片（岗位）
   Briefcase: iconStub('briefcase'),
