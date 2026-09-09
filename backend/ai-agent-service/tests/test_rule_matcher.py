@@ -78,6 +78,18 @@ class TestMatch:
         assert result is not None
         assert result.intent == IntentType.ORDER_QUERY
 
+    def test_notification_mark_read_matches_notification(self):
+        # ST-005 回归：KEYWORD_MAP 缺 NOTIFICATION 关键词，「把新订单通知标为已读」被
+        # 「订单」抢到 ORDER_QUERY → agent 按 order 工具集误宣「无法改通知状态」（能力误宣）。
+        result = self._match("把新订单通知标为已读")
+        assert result is not None
+        assert result.intent == IntentType.NOTIFICATION
+
+    def test_notification_query_matches_notification(self):
+        result = self._match("有没有未读通知")
+        assert result is not None
+        assert result.intent == IntentType.NOTIFICATION
+
     def test_regular_keyword_confidence(self):
         result = self._match("我要投诉")
         assert result.intent == IntentType.COMPLAINT
