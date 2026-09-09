@@ -2210,6 +2210,7 @@
 ```
 你: 创建商品，名称测试窗帘，价格 100
 你: 分类选窗帘
+你: 窗帘布艺
 你: 等等，价格改成 200
 你: 颜色白色，货号 TEST-001
 你: 不需要加工项
@@ -2221,7 +2222,7 @@
 数据: 无加工项关联
 ```
 真值: product-sku-stock.create-flow, ai-chat.validate-input
-溯源: eval M003 独有（中途纠偏） ｜ tags: multi_turn, correction, mid_flow_change
+溯源: eval M003 独有（中途纠偏）；2026-09-09 校准：补「窗帘布艺」点分类卡轮（「分类选窗帘」后 agent 查分类树发现无「窗帘」精确分类发 choice 卡，原脚本后续轮跳过点卡导致分类卡反复发、6 轮走不到 create——与 PR-008 同类） ｜ tags: multi_turn, correction, mid_flow_change
 
 ### PR-013. 窗帘算料报价 - 褶皱倍数与用布量计算 🟢
 ```
@@ -2308,7 +2309,7 @@
 
 ### PR-019. 建品规格与加工项价格落库 — 推理属性经 specifications 落库、加工项经 processing_item_configs 携带价格 🔵
 ```
-你: 根据这张图片录入商品（色卡图，可识别材质/克重）
+你: 根据这张图片录入商品（色卡图，可识别材质/克重） [📷 附 1 图]
 你: 商品名称: 2699系列雪尼尔窗帘面料\n单价(元/米): 23.8\n颜色…门幅…
 你: 已选加工项：刺绣工艺 ¥30/平方米、波浪定型 ¥8/米
 你: 确认创建
@@ -2321,7 +2322,7 @@
 必填: product_manage(create) 字段 specifications, processing_item_configs.customPrice
 ```
 真值: product-sku-stock.low-stock
-溯源: 2026-09-08 新增（issue #3027）：sess_c1fce183dae24f22 复盘 — AI 预填表单展示了推理属性但 create 未落库（product_attributes 0 行）；加工项只传名称列表 → custom_price 全 NULL → 详情页 ¥0.00/米（单位硬编码）。三端修复：prompt 强制 specifications+processing_item_configs、admin-api finalPrice 回退、admin-web 渲染回退 ｜ tags: product_create, specifications, processing_item, regression
+溯源: 2026-09-08 新增（issue #3027）：sess_c1fce183dae24f22 复盘 — AI 预填表单展示了推理属性但 create 未落库（product_attributes 0 行）；加工项只传名称列表 → custom_price 全 NULL → 详情页 ¥0.00/米（单位硬编码）。三端修复：prompt 强制 specifications+processing_item_configs、admin-api finalPrice 回退、admin-web 渲染回退；2026-09-09 校准：补真实色卡图（原纯文本「根据这张图片」无 images，agent 要图走不下去） ｜ tags: product_create, specifications, processing_item, regression
 
 ### PR-020. 建品加工项价格落库盯防 — 自定义价须等于用户确认价（BFF 合并回归） 🔵
 ```
