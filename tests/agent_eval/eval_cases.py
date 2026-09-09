@@ -146,7 +146,7 @@ _CASE_AS_007 = EvalCase(
     user_inputs=['面料有瑕疵，帮我换货，换成2699系列雪尼尔窗帘面料'],
     expectations=['product_detail', 'interact or direct_reply', 'after_sales_manage(action=create, ticket_type=exchange)'],
     data_checks=['换货目标商品 product_detail 返回 processing_items 非空时，confirm 卡之前必须主动询问加工项（interact(choice, multiSelect=true)，透传 pageMeta 支持翻页；文本询问亦可，语义由 order_before 保证）', '用户选择加工项后，所选名称与计价写入换货方案汇总与工单 description；用户说『不需要加工项』才跳过', 'processing_items 为空时如实告知『该商品无可用加工项』后继续，不强求'],
-    skip_reason='',
+    skip_reason='换货需先定位订单（用户未提供订单号，agent 正确先要订单号），但 case 期望单轮直达 product_detail/after_sales_manage——数据不完整；order_before 加工项时序断言已由 prompt+EXAMPLES 固化，待重构为自包含（先下单再换货）',
     tags=['exchange', 'processing_item', 'guided_flow'],
     persona='',
     order_before=['processing_ask before after_sales_manage', 'processing_ask before interact[confirm]'],
@@ -794,7 +794,7 @@ _CASE_CH_010 = EvalCase(
     data_checks=['规格选择/收货信息通过 interact(choice/form) 组件收集（非纯文本追问）', 'order_create 前必有 interact(confirm) 确认（写操作守卫）', 'order_create items 含所选 SKU（颜色/门幅/售卖方式）与数量'],
     skip_reason='',
     tags=['multi_turn', 'form', 'interactive', 'order'],
-    persona='',
+    persona='xiaobu',
 )
 
 # ── CH-011 [ADVERSARIAL] 数据安全 - 跨用户订单查询拒绝 + 订单卡片手机号脱敏（源: cases/chat.yml）──

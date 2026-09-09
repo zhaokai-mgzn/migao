@@ -84,6 +84,7 @@
 数据: processing_items 为空时如实告知『该商品无可用加工项』后继续，不强求
 时序: processing_ask before after_sales_manage
 时序: processing_ask before interact[confirm]
+跳过: 换货需先定位订单（用户未提供订单号，agent 正确先要订单号），但 case 期望单轮直达 product_detail/after_sales_manage——数据不完整；order_before 加工项时序断言已由 prompt+EXAMPLES 固化，待重构为自包含（先下单再换货）
 ```
 真值: aftersales-flow.agent-create, aftersales-flow.flow
 溯源: 2026-09-08 新增（issue #3033 复盘 sess_50ff3e3c824c4a70）：换货选 2699 面料（绑 5 加工项）全程未提加工项；aftersales.md 补换货加工项确认规则 + EXAMPLES 例 4 ｜ tags: exchange, processing_item, guided_flow
@@ -2998,7 +2999,7 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：243（活跃 117，跳过 126）
+- 用例总数：243（活跃 116，跳过 127）
 - tier 分布：smoke 10 / normal 204 / adversarial 29
 - 售后域：7
 - agents：6

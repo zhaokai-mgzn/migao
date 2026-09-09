@@ -329,6 +329,7 @@ cases:
       - form
       - interactive
       - order
+    persona: xiaobu
     truths_ref:
       - ai-chat.confirm-required
       - order.flow
