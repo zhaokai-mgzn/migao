@@ -84,7 +84,7 @@ grep -rn "字段名" backend/admin-api/src frontend/admin-web/src backend/ai-age
 |---|---|---|
 | 知识卡片状态 | `draft / pending_review / published / archived` | Java `KnowledgeCard.status` = TS `KnowledgeCardStatus` = Agent 检索过滤条件（仅 published） |
 | 候选状态 | `pending / adopted / edited / rejected` | Java `KnowledgeCandidate.status` = TS 同 |
-| 知识卡片来源 | `template / product / config / conversation / document / manual` | Java `sourceType` = TS `sourceType` = Agent 展示徽标 |
+| 知识卡片来源 | `template / conversation / document / manual` | Java `sourceType` = TS `sourceType` = Agent 展示徽标；商品派生（product）/加工项派生（config）已移除且存量数据已清理（#3083/#3085/#3087） |
 | 候选来源 | `conversation / document / product / config` | 同上 |
 | 知识卡片分类 | `faq / product / measure / aftersale / config` | 前后端同枚举 |
 | 知识卡片检索端点 | `GET /api/admin/knowledge/cards/search?query=&productId=&category=` | 仅返回本租户 `published` 知识卡片（显式 eq tenant_id + status） |
@@ -93,4 +93,3 @@ grep -rn "字段名" backend/admin-api/src frontend/admin-web/src backend/ai-age
 | 模板套用 | `POST /api/admin/knowledge/templates/{templateId}/apply` | 复制为租户卡片（sourceType=template/sourceRef=templateId/status=published），按 (tenant_id,title) 去重，返回 {created,skipped} |
 | 候选队列 | `GET /api/admin/knowledge/candidates` + `POST /{id}/adopt` / `adopt-edited` / `reject` | 待确认队列闭环：候选读+写路径齐全；采纳转卡片 published（来源继承），拒绝记 status_note |
 | 待确认计数 | `GET /api/admin/knowledge/candidates/pending-count` | 前端红点 |
-| 派生对账 | `POST /api/admin/knowledge/derive/rebuild` | 存量商品/加工项全量重建派生卡片，返回 {products,processingItems}（P2-1 收尾，issue #3051） |

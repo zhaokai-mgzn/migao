@@ -66,9 +66,6 @@ class ProductServiceTest {
     private ProductProcessingItemMapper productProcessingItemMapper;
 
     @Mock
-    private KnowledgeDeriveService knowledgeDeriveService;
-
-    @Mock
     private ProcessingItemMapper processingItemMapper;
 
     @Mock
@@ -346,8 +343,6 @@ class ProductServiceTest {
         assertThat(result).isNotNull();
         assertThat(result.getName()).isEqualTo("新商品");
         verify(productMapper).insert(any(Product.class));
-        // L2 派生触发（issue #3051 P4）：创建商品后自动生成「{名称}多少钱」知识卡片
-        verify(knowledgeDeriveService).deriveProductCard(eq(1L), eq("prod-new"));
     }
 
     @Test

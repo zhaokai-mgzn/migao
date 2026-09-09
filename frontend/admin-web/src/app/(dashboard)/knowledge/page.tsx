@@ -18,15 +18,19 @@ const STATUS_META: Record<KnowledgeCardStatus, { label: string; variant: 'defaul
   archived: { label: '已归档', variant: 'error' },
 }
 
-// 知识卡片来源 → 徽标（template/product/config/conversation/document/manual）
+// 知识卡片来源 → 徽标（template/conversation/document/manual）
+// 来源定义遵循「一眼看懂」原则：商品派生（#3083）/加工项派生（#3085）能力已移除
+// 且存量数据已清理（#3087），product/config 不再出现在类型与渲染中；
+// 计价/价格问题走 processing_item_query/product_detail 工具实时查询。
 const SOURCE_META: Record<string, { label: string; variant: 'default' | 'info' | 'warning' | 'success' }> = {
   template: { label: '模板', variant: 'info' },
-  product: { label: '商品派生', variant: 'info' },
-  config: { label: '配置', variant: 'info' },
   conversation: { label: '会话提炼', variant: 'warning' },
   document: { label: '文档提炼', variant: 'info' },
   manual: { label: '人工', variant: 'success' },
 }
+
+// 来源筛选选项 = 活跃来源（派生能力已移除且数据已清理，#3087）
+const SOURCE_FILTER_OPTIONS = Object.entries(SOURCE_META)
 
 const CATEGORY_OPTIONS = [
   { value: 'faq', label: 'FAQ' },
@@ -45,6 +49,10 @@ export default function KnowledgePage() {
   const [keyword, setKeyword] = useState('')
   const [category, setCategory] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
+  const [sourceFilter, setSourceFilter] = useState('')
+  // 写操作（采纳/套用）后强制刷新列表的触发器：state 无变化时 effect 不会重跑，
+  // 用 tick 确保「筛选重置 + 重新拉取」只走一次请求路径（#3080 防双请求/闭包旧值）
+  const [refreshTick, setRefreshTick] = useState(0)
 
   // 编辑模态框
   const [editorOpen, setEditorOpen] = useState(false)
@@ -65,6 +73,17 @@ export default function KnowledgePage() {
   const [docModalOpen, setDocModalOpen] = useState(false)
   const [docForm, setDocForm] = useState({ title: '', content: '' })
   const [applying, setApplying] = useState('')
+  // 采纳后新卡高亮定位（#3080）：adopt 接口返回新卡 id，落地「知识卡片」列表后短暂高亮该行
+  const [highlightCardId, setHighlightCardId] = useState<string | null>(null)
+  // 一键套用前置确认弹窗（批量创建并直接发布，防误触，#3080）
+  const [confirmTemplate, setConfirmTemplate] = useState<KnowledgeTemplateInfo | null>(null)
+
+  // 高亮 4s 后自动消退
+  useEffect(() => {
+    if (!highlightCardId) return
+    const t = setTimeout(() => setHighlightCardId(null), 4000)
+    return () => clearTimeout(t)
+  }, [highlightCardId])
 
   const loadEntries = useCallback(async () => {
     setLoading(true)
@@ -75,6 +94,7 @@ export default function KnowledgePage() {
         keyword: keyword || undefined,
         category: category || undefined,
         status: statusFilter || undefined,
+        sourceType: sourceFilter || undefined,
       })
       setEntries(res.data?.data?.items ?? [])
       setTotal(res.data?.data?.total ?? 0)
@@ -83,11 +103,11 @@ export default function KnowledgePage() {
     } finally {
       setLoading(false)
     }
-  }, [current, pageSize, keyword, category, statusFilter])
+  }, [current, pageSize, keyword, category, statusFilter, sourceFilter])
 
   useEffect(() => {
     loadEntries()
-  }, [loadEntries])
+  }, [loadEntries, refreshTick])
 
   const openCreate = () => {
     setEditing(null)
@@ -203,15 +223,20 @@ export default function KnowledgePage() {
 
   const adoptCandidate = async (candidate: KnowledgeCandidate) => {
     try {
-      await knowledgeApi.adoptCandidate(candidate.id)
-      toast.success('已采纳，知识卡片已发布')
+      const res = await knowledgeApi.adoptCandidate(candidate.id)
+      // 去向提示（#3080）：做了什么 + 去哪了 + 怎么找回来
+      toast.success(`已采纳「${candidate.suggestedTitle}」→ 已发布，跳转知识卡片列表顶部（可直接编辑）`)
       // 跳转「知识卡片」Tab 并刷新列表，让采纳结果立即可见可编辑（#3070）
       setActiveTab('cards')
       setKeyword('')
       setCategory('')
       setStatusFilter('')
+      setSourceFilter('')
       setCurrent(1)
-      loadEntries()
+      // 高亮定位新采纳的卡片（adopt 返回新卡 id，#3080）
+      setHighlightCardId(res.data?.data?.id ?? null)
+      // 统一走 effect 刷新（state 批处理 + tick），避免闭包旧筛选值的双请求
+      setRefreshTick((t) => t + 1)
       loadCandidates()
     } catch (e) {
       toast.error(e instanceof Error ? e.message : '采纳失败')
@@ -228,18 +253,29 @@ export default function KnowledgePage() {
     }
   }
 
-  const applyTemplate = async (templateId: string) => {
+  // 一键套用：先弹确认（批量创建并直接发布，防误触，#3080），确认后再调接口
+  const askApplyTemplate = (t: KnowledgeTemplateInfo) => {
+    setConfirmTemplate(t)
+  }
+
+  const confirmApplyTemplate = async (templateId: string) => {
     setApplying(templateId)
     try {
       const res = await knowledgeApi.applyTemplate(templateId)
-      toast.success(`模板已套用：新增 ${res.data?.data?.created ?? 0} 条，跳过 ${res.data?.data?.skipped ?? 0} 条`)
+      // 去向提示（#3080）：做了什么 + 去哪了 + 怎么找回来（批量无逐卡 id，用来源筛选定位）
+      toast.success(`已套用「${confirmTemplate?.name ?? ''}」：新增 ${res.data?.data?.created ?? 0} 条、跳过 ${res.data?.data?.skipped ?? 0} 条 → 已跳转知识卡片列表并筛选「来源=模板」`)
       // 跳转「知识卡片」Tab 并重置筛选刷新列表，套用出的卡片立即可见可编辑（#3070）
       setActiveTab('cards')
       setKeyword('')
       setCategory('')
       setStatusFilter('')
       setCurrent(1)
-      loadEntries()
+      // 自动按「来源=模板」筛选：用户看到的即套用出的批量成果（#3080）
+      setSourceFilter('template')
+      setHighlightCardId(null)
+      setConfirmTemplate(null)
+      // 统一走 effect 刷新（state 批处理 + tick），避免闭包旧筛选值的双请求
+      setRefreshTick((t) => t + 1)
       loadTemplates()
     } catch (e) {
       toast.error(e instanceof Error ? e.message : '套用失败')
@@ -423,6 +459,17 @@ export default function KnowledgePage() {
               </select>
               <select
                 className="h-9 px-3 rounded border border-neutral-300 bg-white text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+                value={sourceFilter}
+                onChange={(e) => { setSourceFilter(e.target.value); setCurrent(1) }}
+                aria-label="来源筛选"
+              >
+                <option value="">全部来源</option>
+                {SOURCE_FILTER_OPTIONS.map(([value, meta]) => (
+                  <option key={value} value={value}>{meta.label}</option>
+                ))}
+              </select>
+              <select
+                className="h-9 px-3 rounded border border-neutral-300 bg-white text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
                 value={statusFilter}
                 onChange={(e) => { setStatusFilter(e.target.value); setCurrent(1) }}
               >
@@ -434,7 +481,7 @@ export default function KnowledgePage() {
               </select>
             </div>
 
-            <Table columns={columns} dataSource={entries} loading={loading} rowKey="id" emptyText="暂无知识卡片，点击「新建知识卡片」或从行业模板一键套用" />
+            <Table columns={columns} dataSource={entries} loading={loading} rowKey="id" emptyText="暂无知识卡片，点击「新建知识卡片」或从行业模板一键套用" highlightRowKey={highlightCardId} />
 
             <Pagination
               current={current}
@@ -449,7 +496,7 @@ export default function KnowledgePage() {
       {activeTab === 'candidates' && (
         <div className="p-5 space-y-3">
           <div className="flex items-center justify-between">
-            <p className="text-sm text-neutral-500">AI 从客服会话/文档中提炼的候选知识卡片，采纳后立即生效（AI 只产生候选，发布权在您）</p>
+            <p className="text-sm text-neutral-500">AI 从客服会话/文档中提炼的候选知识卡片，采纳后立即发布为知识卡片并跳转列表顶部（可直接编辑，AI 只产生候选，发布权在您）</p>
             <Button size="sm" variant="secondary" onClick={triggerConversationDistill} disabled={distilling}>
               {distilling ? '提炼中…' : '重新提炼会话'}
             </Button>
@@ -489,7 +536,7 @@ export default function KnowledgePage() {
       {/* ===== 行业模板（LLM WIKI P3）===== */}
       {activeTab === 'templates' && (
         <div className="p-5 space-y-3">
-          <p className="text-sm text-neutral-500">平台预置行业知识模板，一键套用自动获得该行业的预置知识卡片（可编辑）</p>
+          <p className="text-sm text-neutral-500">平台预置行业知识模板，一键套用自动获得该行业的预置知识卡片（可编辑）；套用后自动跳转「知识卡片」并筛选来源=模板，便于核对</p>
           <div className="divide-y">
             {templates.length === 0 && <p className="py-4 text-sm text-neutral-500">暂无可用模板</p>}
             {templates.map((t) => (
@@ -502,7 +549,7 @@ export default function KnowledgePage() {
                   </div>
                   {t.description && <p className="text-sm text-neutral-500 mt-1">{t.description}</p>}
                 </div>
-                <Button size="sm" onClick={() => applyTemplate(t.templateId)} disabled={applying === t.templateId}>
+                <Button size="sm" onClick={() => askApplyTemplate(t)} disabled={applying === t.templateId} title="将模板知识卡片复制到您的知识库并立即发布（已存在条目自动跳过）">
                   {applying === t.templateId ? '套用中…' : '一键套用'}
                 </Button>
               </div>
@@ -513,7 +560,7 @@ export default function KnowledgePage() {
       </div>
 
       {/* 新建/编辑模态框 */}
-      <Modal open={editorOpen} onClose={() => setEditorOpen(false)} title={editing ? '编辑知识卡片' : '新建知识卡片'}>
+      <Modal open={editorOpen} onClose={() => setEditorOpen(false)} title={editing ? '编辑知识卡片' : '新建知识卡片'} footer={null}>
         <div className="space-y-3">
           <div>
             <label className="text-sm font-medium">标题 <span className="text-red-500">*</span></label>
@@ -573,7 +620,7 @@ export default function KnowledgePage() {
       </Modal>
 
       {/* 删除确认 */}
-      <Modal open={!!deleteTarget} onClose={() => setDeleteTarget(null)} title="删除知识卡片">
+      <Modal open={!!deleteTarget} onClose={() => setDeleteTarget(null)} title="删除知识卡片" footer={null}>
         <p className="text-sm">确认删除「{deleteTarget?.title}」？删除后不可恢复。</p>
         <div className="mt-4 flex justify-end gap-2">
           <Button variant="secondary" onClick={() => setDeleteTarget(null)}>取消</Button>
@@ -581,8 +628,22 @@ export default function KnowledgePage() {
         </div>
       </Modal>
 
+      {/* 一键套用确认（批量创建并立即发布，防误触，#3080） */}
+      <Modal open={!!confirmTemplate} onClose={() => setConfirmTemplate(null)} title="套用行业模板" footer={null}>
+        <p className="text-sm">
+          将把「{confirmTemplate?.name}」的 {confirmTemplate?.entryCount ?? 0} 条预置知识卡片复制到您的知识库并<strong>立即发布</strong>；
+          已存在的条目将自动跳过。套用后自动跳转「知识卡片」列表并筛选来源=模板，可直接核对与编辑。
+        </p>
+        <div className="mt-4 flex justify-end gap-2">
+          <Button variant="secondary" onClick={() => setConfirmTemplate(null)}>取消</Button>
+          <Button onClick={() => confirmTemplate && confirmApplyTemplate(confirmTemplate.templateId)} disabled={applying === confirmTemplate?.templateId}>
+            {applying === confirmTemplate?.templateId ? '套用中…' : '确定套用'}
+          </Button>
+        </div>
+      </Modal>
+
       {/* 文档提炼（LLM WIKI P6） */}
-      <Modal open={docModalOpen} onClose={() => setDocModalOpen(false)} title="文档提炼">
+      <Modal open={docModalOpen} onClose={() => setDocModalOpen(false)} title="文档提炼" footer={null}>
         <div className="space-y-3">
           <div>
             <label className="text-sm font-medium">文档标题</label>

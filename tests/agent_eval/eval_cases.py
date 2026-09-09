@@ -451,36 +451,6 @@ _CASE_API_017 = EvalCase(
     persona='',
 )
 
-# ── API-023 [NORMAL] 知识派生对账 - 存量商品/加工项全量重建派生卡片（P2-1，issue #3051 收尾）（源: cases/api.yml）──
-_CASE_API_023 = EvalCase(
-    id='API-023',
-    legacy_id='',
-    title='知识派生对账 - 存量商品/加工项全量重建派生卡片（P2-1，issue #3051 收尾）',
-    skill=Skill.GENERAL,
-    difficulty=Difficulty.NORMAL,
-    user_inputs=['管理端触发存量对账：历史商品/加工项无需逐个编辑即可补生成派生知识卡片'],
-    expectations=[],
-    data_checks=['POST /api/admin/knowledge/derive/rebuild 全量重建派生卡片：返回 {products, processingItems} 统计', '同源（tenant+sourceType+sourceRef）upsert：已存在卡片更新 version+1，不重复插入', '对账为 P2 收尾：存量商品此前无派生卡片（验收发现 P2-1），商品变更仍实时自动触发（不回归）'],
-    skip_reason='对账逻辑由 Service 单测（KnowledgeDeriveServiceTest deriveAll）+ Controller MockMvc 测试验证，非 LLM 行为',
-    tags=['api', 'knowledge', 'wiki', 'derive'],
-    persona='',
-)
-
-# ── API-018 [NORMAL] 商品/配置派生知识卡片 - 价格区间自动生成 + 变更自动更新（LLM WIKI 板块 #3051 P4）（源: cases/api.yml）──
-_CASE_API_018 = EvalCase(
-    id='API-018',
-    legacy_id='',
-    title='商品/配置派生知识卡片 - 价格区间自动生成 + 变更自动更新（LLM WIKI 板块 #3051 P4）',
-    skill=Skill.GENERAL,
-    difficulty=Difficulty.NORMAL,
-    user_inputs=['商品/加工项信息变更后，关联的派生知识卡片自动更新，AI 回答价格/规格问题与商品数据一致'],
-    expectations=[],
-    data_checks=['商品创建/更新/上下架后自动生成/更新「{商品名}多少钱」知识卡片：answer 含 SKU 价格区间（如 88-128 元/米），sourceType=product、sourceRef=商品ID、status=published', '加工项创建/更新后自动生成「{加工项名}怎么计价」卡片：按 pricingMethod 生成文案（per_meter 按米/per_set 按套/fixed 固定价格+单价/per_area 按面积）', '同源（tenant+sourceType+sourceRef）upsert：存在则更新 version+1，不重复插入；跨租户商品不派生', '价格区间实时读取 SKU 价格，商品变更后卡片自动同步（验收真值 #3）'],
-    skip_reason='派生逻辑由 Service 单测验证（KnowledgeDeriveServiceTest）+ 商品/加工项服务触发断言，非 LLM 行为，不进入 agent-eval 冒烟',
-    tags=['api', 'knowledge', 'wiki', 'derive'],
-    persona='',
-)
-
 # ── API-019 [NORMAL] 待确认队列闭环 - 候选读+写路径齐全，采纳转卡片、拒绝记原因（LLM WIKI 板块 #3051 P5）（源: cases/api.yml）──
 _CASE_API_019 = EvalCase(
     id='API-019',
@@ -1906,16 +1876,16 @@ _CASE_KN_007 = EvalCase(
     persona='',
 )
 
-# ── KN-004 [NORMAL] 米宝知识问答 - 加工计价规则走知识卡片检索（源: cases/knowledge.yml）──
+# ── KN-004 [NORMAL] 米宝知识问答 - 加工计价规则走 processing_item_query 工具（加工项派生卡片已移除）（源: cases/knowledge.yml）──
 _CASE_KN_004 = EvalCase(
     id='KN-004',
     legacy_id='',
-    title='米宝知识问答 - 加工计价规则走知识卡片检索',
+    title='米宝知识问答 - 加工计价规则走 processing_item_query 工具（加工项派生卡片已移除）',
     skill=Skill.GENERAL,
     difficulty=Difficulty.NORMAL,
     user_inputs=['我们店打孔加工怎么计价？'],
-    expectations=['knowledge_search(query=加工)', 'success=true'],
-    data_checks=['加工计价规则类问题优先检索本店知识卡片（config/商品派生卡片）；命中基于卡片回答并注明来源'],
+    expectations=['processing_item_query(keyword=打孔)', 'success=true'],
+    data_checks=['加工计价规则类问题：knowledge_search 未命中（加工项派生卡片已移除，#3085）→ 用 processing_item_query 查店铺加工项目录（返回计价方式/单价/单位），以工具结果回答计价规则'],
     skip_reason='',
     tags=['knowledge', 'wiki', 'mibao'],
     persona='mibao',
@@ -3605,9 +3575,39 @@ _CASE_UI_033 = EvalCase(
     persona='',
 )
 
-# ── UI-034 [NORMAL] 快捷回复功能下线 + AI 客服配置合并进企业基础信息「AI 客服设置」（#3081）（源: cases/ui.yml）──
+# ── UI-034 [NORMAL] 知识库「采纳/一键套用」成果去向提示与定位 — toast 带去向 + 采纳新卡高亮 + 套用确认弹窗 + 来源筛选定位（#3080）（源: cases/ui.yml）──
 _CASE_UI_034 = EvalCase(
     id='UI-034',
+    legacy_id='',
+    title='知识库「采纳/一键套用」成果去向提示与定位 — toast 带去向 + 采纳新卡高亮 + 套用确认弹窗 + 来源筛选定位（#3080）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['知识库待确认候选「采纳」后用户不知道卡片去哪了；行业模板「一键套用」后不知道套出的卡片在哪。需要写操作反馈闭环：做了什么 → 去哪了 → 怎么找回来（toast 去向文案 + 落地高亮 + 前置确认弹窗 + 来源筛选自动定位）'],
+    expectations=['direct_reply'],
+    data_checks=['待确认候选「采纳」后：toast 文案包含去向（跳转知识卡片列表）；落地「知识卡片」Tab 后新卡行高亮定位（Table 的 highlightRowKey 匹配新卡 id，bg-primary-50），高亮 4s 自动消退', '行业模板「一键套用」：先弹确认弹窗（说明将新增 N 条并立即发布、已存在自动跳过），未确认不得调用 applyTemplate；确认后 toast 文案包含去向与定位方式（筛选「来源=模板」）', '套用确认后：跳转「知识卡片」Tab 并自动按来源=模板筛选（getCards 带 sourceType=template），列表仅显示模板来源卡片（批量成果可核对可编辑）', '「知识卡片」Tab 筛选区常驻「来源」下拉（全部来源/模板/会话提炼/文档提炼/人工——商品派生/加工项派生能力已移除且存量数据已清理（#3083/#3085/#3087），来源定义「一眼看懂」），用户可随时按来源定位卡片', '待确认/行业模板两处 Tab 副文案补充去向说明，与 toast 口径一致'],
+    skip_reason='纯前端交互由 vitest 单测验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ui', 'knowledge', 'feedback-loop', 'locate', 'admin-web'],
+    persona='',
+)
+
+# ── UI-035 [NORMAL] 知识库来源定义「一眼看懂」+ 商品/加工项派生能力移除（issue #3083/#3085）（源: cases/ui.yml）──
+_CASE_UI_035 = EvalCase(
+    id='UI-035',
+    legacy_id='',
+    title='知识库来源定义「一眼看懂」+ 商品/加工项派生能力移除（issue #3083/#3085）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['知识库来源定义需用户一眼看懂；商品派生（#3083）与加工项派生（#3085）能力移除后，来源筛选仅剩活跃来源（模板/会话提炼/文档提炼/人工）'],
+    expectations=['direct_reply'],
+    data_checks=['来源筛选下拉选项 = 全部来源/模板/会话提炼/文档提炼/人工（SOURCE_FILTER_OPTIONS 排除 product/config 两个已移除的派生来源）', '来源徽标（列表列）：仅 模板/会话提炼/文档提炼/人工 四种；product/config 已从类型枚举与渲染中移除（存量数据已清理，无归档卡）', '来源定义全部自解释：模板/会话提炼/文档提炼/人工，无模糊词与已移除的派生来源'],
+    skip_reason='纯前端文案/交互由 vitest 单测验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ui', 'knowledge', 'source-clarity', 'admin-web'],
+    persona='',
+)
+
+# ── UI-036 [NORMAL] 快捷回复功能下线 + AI 客服配置合并进企业基础信息「AI 客服设置」（#3081）（源: cases/ui.yml）──
+_CASE_UI_036 = EvalCase(
+    id='UI-036',
     legacy_id='',
     title='快捷回复功能下线 + AI 客服配置合并进企业基础信息「AI 客服设置」（#3081）',
     skill=Skill.GENERAL,
@@ -3678,8 +3678,6 @@ ALL_CASES = (
     _CASE_API_015,
     _CASE_API_016,
     _CASE_API_017,
-    _CASE_API_023,
-    _CASE_API_018,
     _CASE_API_019,
     _CASE_API_020,
     _CASE_API_021,
@@ -3889,6 +3887,8 @@ ALL_CASES = (
     _CASE_UI_032,
     _CASE_UI_033,
     _CASE_UI_034,
+    _CASE_UI_035,
+    _CASE_UI_036,
     _CASE_UT_001,
     _CASE_UT_002,
 )
