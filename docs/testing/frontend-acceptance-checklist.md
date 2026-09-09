@@ -1,10 +1,12 @@
 # 前端修复 AI 抽验剧本（2026-09-08 批次，AI Native 执行版）
 
-> 依据：acceptance-protocol（v1.1 AI Native 去人工化——验收全流程零人工执行步骤）。
+> 依据：acceptance-protocol（v1.2 —— B 端 UI 旅程验收 §2.3，2026-09-09 知识库 UI 复盘固化）。
 > 本清单不是"给人抽验的清单"，而是 **AI 可执行的验收剧本**：AI 起本地/测试环境服务，
 > 用 Playwright 浏览器自动化或 API 采集 DOM 断言 + 截图证据，逐条判定（L1 机器断言优先，
 > 体验类用 UA 用户代理判定：声明 persona + 引用证据 + 可懂度基准）。
 > 人的角色仅剩：① 定义预期（本文件已定义）② 对 AI 判定不一致时裁定（仲裁，非执行）。
+> §7~§9 为 **B 端后台页面通用剧本模板**（研发侧开发时即按 migao-dev-flow §15 执行，
+> 验收时复用证据）。
 
 ## 执行方式（AI 侧）
 
@@ -56,3 +58,45 @@
 
 每项 ✅/❌ + 证据（截图/DOM 断言/transcript 原文）回填至对应 issue 或本文件；
 ❌ 项转新 issue 关联修复，修复后按协议 §1.4 重放同剧本。
+
+### 7. B 端后台 CRUD 页面操作旅程模板（通用）
+
+> 适用：任何 admin-web 列表页（订单/客户/商品/知识库/加工项/岗位/通知…）的新建/编辑/状态流转功能。
+> 剧本模板——AI 填 `<页面>` 后逐项执行：
+
+- 操作：登录 → 打开 `<页面>` → 逐个 Tab/筛选走查 → 每个写操作（新建/套用/采纳/发布/归档/删除）后**看结果**
+- L1 断言（每个写操作后）：
+  - 列表刷新：`<listApi>` 再次被调用 **且新条目渲染在 DOM**（不只断言 API 被调）；
+  - 结果去向：跳转目标 Tab / 弹窗回填 / 成果物出现在列表首屏（失败 = 写操作成果物不可见，P1）；
+  - 空态/反向：无数据时的空态文案；已删除/已归档条目从列表消失；
+- UA：截图确认样式与相邻标准页（orders/customers）一致，无错位/白屏
+- 已执行范例：knowledge.test.tsx「套用后可见可编辑」「采纳后可见可编辑」（#3070）；
+  真实浏览器验证记录见 #3071 PR body（面包屑/样式/分页/套用跳转全部 DOM 实测）
+
+### 8. 布局遮挡探针模板（fixed 浮动元素 vs 底部锚定元素）
+
+> 适用：任何页面有 fixed/absolute 浮动元素（米宝 FAB、悬浮助手、吸顶操作条）且内容区底部
+> 有锚定元素（分页条、底部操作栏）时。**vitest/jsdom 是结构性盲区，必须真实渲染探针。**
+
+- 操作：打开 `<页面>` → 场景 A：筛选到 0~3 条短内容；场景 B：长列表滚动到底（`scrollTo(0, document.body.scrollHeight)`）
+- L1 几何断言（`page.evaluate` 打点，两场景各一次）：
+  - `fab = querySelector('button[title="打开米宝"]').getBoundingClientRect()`
+  - `pag = 分页行（含「共 N 条」的 justify-between 行）.getBoundingClientRect()`
+  - 断言：`max(0, min(fab.right, pag.right) - max(fab.left, pag.left))` 与对应 y 方向重叠
+    在**两场景均为 0**，且末页「下一页」按钮矩形与 FAB 无重叠、可点击；
+- 附：布局层预留空间时注意 **Tailwind `p-*` 简写会覆盖 `pb-*`**（#3070 实测
+  `p-4 sm:p-6 pb-24` 的 paddingBottom=24px 非 96px）——用 `getComputedStyle(main).paddingBottom`
+  验证目标值，用 `px/pt/pb` 显式类替代简写组合
+
+### 9. 新页面样式基准对照模板
+
+> 适用：任何从 0 建设/大改版的 admin-web 页面。对照标准页 = orders / customers。
+
+- 逐项对照（❌ 即 P2，视觉明显不一致即 P1）：
+  - 内容容器：`p-6` 内边距（内容不贴卡片边缘）；
+  - 页面标题：`text-xl font-semibold text-neutral-900` + `text-sm text-neutral-500` 副标题；
+  - Tab：`px-5 pt-3 border-b` + 激活项 `text-primary-600 font-medium` + `bg-primary-600` 下划线
+    （**禁用 border-blue-500/text-blue-600 蓝色系**，全局主色是 primary 靛蓝）；
+  - 表单/筛选控件：`h-9 px-3 rounded border-neutral-300 focus:border-primary-500 focus:ring-2`；
+  - 面包屑与侧边栏菜单命名一致（列表页/详情页的最后一级 crumb = 菜单名，不派生新名）；
+- 已执行范例：#3070 知识库页样式对齐（无 p-6 / 蓝色 Tab / 控件无 focus 态 → 全部修正）

@@ -130,3 +130,23 @@ pytest -q --durations=20   # 找最慢用例
 # 慢用例日志若含 Connect call failed / Connection timeout / redis down / 云库域名 →
 # 未 mock 真实调用泄漏，补 mock（不要在慢用例上堆 sleep/fixture 绕过）
 ```
+
+## 7. 前端交互测试断言规范（2026-09-09 固化，issue #3070 知识库 UI 复盘）
+
+**原则**：交互旅程测试断言「用户可见的结果」，禁止停留在「函数被调用」。
+「按钮点了 API 通了」≠「用户看到成果物」——#3070 的模板套用/候选采纳两个 bug
+正是 API 调用全成功、但列表不刷新/不跳转，用户完全看不到结果。
+
+**强制要求**：
+1. 点击类测试必须断言点击后的**可见结果**（按操作类型选）：
+   - 列表刷新：`<api>` 再次被调用 **且** 新条目渲染在 DOM（`getByText(新条目标题)`）；
+   - Tab 跳转：目标 Tab 内容渲染（断言目标内容元素，而非只断言 setState 调用）；
+   - 弹窗：打开且回填（`getByDisplayValue` 断言表单值）；
+   - 成果物去向：新建/套用/采纳/发布后的条目出现在列表首屏或跳转后的页面；
+2. 禁止只写 `expect(api.xxx).toHaveBeenCalled()` 作为交互用例的终点断言；
+   该断言仅可作为前置条件（确认触发），必须另有「结果可见」断言。
+3. 布局/视觉类断言（fixed 遮挡、CSS 级联覆盖、min-h/padding 计算）**不得用 vitest 硬写**
+   ——jsdom 是结构性盲区（#3070 实测 `p-4 pb-24` 的 paddingBottom 被简写覆盖，jsdom 不可见）。
+   这类验证走真实浏览器几何探针（migao-dev-flow §15.2 / frontend-acceptance-checklist §8）。
+4. 范例（正向参照）：`frontend/admin-web/tests/unit/pages/knowledge.test.tsx`
+   「套用后可见可编辑」「采纳后可见可编辑」——断言跳转 + 列表刷新 + 卡片可见 + 编辑弹窗回填。
