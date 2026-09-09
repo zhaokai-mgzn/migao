@@ -172,3 +172,31 @@ Phase 4  能力边界动态化（P2-2）+ runner 结构断言（items 嵌套字�
 测的是多轮上下文共享（context_manager 已实现），不是单轮多任务拆解；单轮跨 3 域的真实
 用户场景在评测中无覆盖。当前生产达标的主要障碍是：① 批量校准模式 A/B 的 case 轮次
 ② 修模式 C/D 的参数透传与字段契约。跨域 planner 是锦上添花，非当前瓶颈。
+
+## 六、修复全景（20 个 PR，#3121~#3139，2026-09-09）
+
+按根因类型分类的完整证据链：
+
+| 类型 | PR | 修复 | 根因 |
+|---|---|---|---|
+| 评测基建 | #3121 | runner 非 JSON 防御 + want_text 正向断言 | 评测中途崩溃 + 「该说的没说」无法断言 |
+| 确认链 | #3122 | pending_validated_input 持久化（Closes #3031） | 确认后不执行（三张 confirm 卡） |
+| 卡片契约 | #3123 | 多选卡文案后端驱动（Closes #3032） | 前端硬编码「已选加工项」 |
+| 路由 | #3124 | 最近订单→看板 + PP-002 校准 | L1 关键词缺触发词 |
+| case 校准 | #3125/#3126/#3130 | OR-009/PR-008/PR-010/HR-002 轮次/交互卡协议 | 评测脚本与真实交互流脱节 |
+| runner 结构断言 | #3128 | items 嵌套字段断言 | 列表内 dict 永远 unmatched |
+| 契约对齐 | #3129 | order_create sellingMethod→processing_info | description/schema/execute 四处矛盾 |
+| 契约对齐 | #3132 | employee create 密码必填（三处对齐） | description 漏 password |
+| 数据脱节 | #3133 | OR-006/AS-006 skip | 固定测试 ID 生产不存在 |
+| truth 校准 | #3134 | CU-003 add_tag 真实落库 | truth「TODO 空实现」过时 |
+| 契约对齐 | #3135 | product_update allow_return_restock | #2991 漏 ai-agent 工具层 |
+| 代码兜底 | #3136 | 加工项卡 multiSelect 自动补 | LLM 漏传参数 |
+| 契约对齐 | #3137 | product_manage(create) allow_return_restock | #2991 建品场景补全 |
+| 契约对齐 | #3138 | category 扁平化（移除 parent_id） | #2905 漏 ai-agent 工具层 |
+| case 校准 | #3139 | CH-010 persona=xiaobu + AS-007 skip | persona 归属错误 + 换货缺订单号 |
+
+**核心规律**：评测失败里最大的一类不是「LLM 不智能」，而是**跨端契约断裂**——
+admin-api 重构（#2905 分类扁平化、#2991 退货回补库存）后 ai-agent 工具层没同步，
+表现为「agent 引导系统不支持的操作」或「agent 无工具可调」，极易误判为 LLM 能力问题。
+其次是**评测资产脱节**（数据脱节、轮次过严、persona 归属错误）。真正需要「修 LLM 行为」
+的只有模式 C 参数漏传（用代码兜底解决，而非继续堆 prompt）。
