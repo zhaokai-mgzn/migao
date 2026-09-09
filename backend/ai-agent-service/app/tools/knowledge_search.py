@@ -23,6 +23,9 @@ class KnowledgeSearchTool(BaseTool):
         "【触发】顾客问本店知识类问题（面料特性/清洗保养/尺寸测量/价格政策/售后规则/加工计价等）时调用，"
         "检索本店已发布的知识卡片。【前置】query 传顾客问题的关键词。【行为】命中→基于卡片内容回答并注明"
         "「📖 来自本店知识库」；未命中→如实告知知识库暂无收录，可用通用行业知识谨慎回答（注明通用建议）。"
+        "【来源标注边界】📖 标注仅覆盖卡片原文内容；自补的通用常识/经验性建议必须与标注段分离"
+        "（置于标注之前并注明「通用参考」）；禁止把卡片未提及的内容放进来源标注范围，"
+        "禁止用「我们店一般/本店经验」等措辞把通用常识伪称为本店事实。"
         "【反例】实时价格/库存/订单仍用 product_search/order_query 等工具；不得编造卡片之外的本店事实。"
         "【标注】READONLY — 放心调用，无需确认"
     )
@@ -119,7 +122,7 @@ class KnowledgeSearchTool(BaseTool):
             return ToolResult(
                 success=True,
                 data={"cards": brief, "hit": True},
-                message=f"找到 {len(brief)} 条本店知识卡片，基于卡片内容回答并注明「📖 来自本店知识库」",
+                message=f"找到 {len(brief)} 条本店知识卡片，基于卡片内容回答并注明「📖 来自本店知识库」；仅卡片原文可置于 📖 标注内，自补常识须与标注分离并注明通用参考，禁止伪称本店事实",
             )
         except Exception as e:
             logger.warning(f"[knowledge-search] 检索异常: {e}")

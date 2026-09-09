@@ -1457,7 +1457,7 @@
 真值: employee-role.users-endpoint
 溯源: 2026-09-07 新增：员工管理混入 C 端消费者账号治理（issue #3004） ｜ tags: employee, list, scoping
 
-## knowledge（6 case）
+## knowledge（7 case）
 
 ### KN-001. 小布知识问答 - 面料问题先检索本店知识卡片（query 必填） 🟢
 ```
@@ -1498,9 +1498,8 @@
 你: 你们退换货政策是怎样的？
 期望: knowledge_search(query=退换货)
 数据: 售后政策/质保类咨询为知识问题：双端应调 knowledge_search 命中本店退换货卡片并标注来源，而非通用售后流程话术；操作类（我要退货/申请退款）仍走售后工单（不回归）
-跳过: 路由改判由 rule_matcher 单测验证（test_rule_matcher.py 新增 4 例）；LLM 链路待部署后重放。case 有效性验证：旧场景（验收实测无 tool 调用）重放必 fail，修复部署后重放必 pass
 ```
-溯源: 2026-09-08 新增（issue #3064 验收 P1-2）：双端售后政策类问题未走知识卡片——根因 rule_matcher AFTER_SALES 关键词抢占（换货/售后），规则层加政策咨询改判 KNOWLEDGE_FAQ ｜ tags: knowledge, wiki, xiaobu, mibao
+溯源: 2026-09-08 新增（issue #3064 验收 P1-2）：双端售后政策类问题未走知识卡片——根因 rule_matcher AFTER_SALES 关键词抢占（换货/售后），规则层加政策咨询改判 KNOWLEDGE_FAQ；2026-09-09 本地重放通过（KN-003 同域 smoke 100%）后解除 skip（issue #3076 复盘收尾） ｜ tags: knowledge, wiki, xiaobu, mibao
 
 ### KN-004. 米宝知识问答 - 加工计价规则走知识卡片检索 🔵
 ```
@@ -1510,6 +1509,14 @@
 数据: 加工计价规则类问题优先检索本店知识卡片（config/商品派生卡片）；命中基于卡片回答并注明来源
 ```
 溯源: 2026-09-08 新增（issue #3059）：米宝知识问答日常回归（加工计价子域，L2 派生卡片） ｜ tags: knowledge, wiki, mibao
+
+### KN-008. 知识来源标注边界 - 自补常识不得混入「📖 来自本店知识库」标注（P2-4，issue #3076） 🔵
+```
+你: 雪尼尔面料会起球吗
+期望: knowledge_search(query=雪尼尔)
+数据: 命中知识卡片时回复含「📖 来自本店知识库」来源标注（不回归）；标注仅覆盖卡片原文，自补常识与标注分离并注明通用参考
+```
+溯源: 2026-09-09 新增（issue #3076 验收 P2-4）：S3 实测模型自补常识「更容易起球」紧邻来源标注段边界模糊——prompt 三处（tool 描述/hit message/customer_knowledge_skill）加「来源标注边界」规则，单测断言规则存在（删规则即 fail） ｜ tags: knowledge, wiki, source-annotation, xiaobu
 
 ## misc（15 case）
 
@@ -2938,8 +2945,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：240（活跃 119，跳过 121）
-- tier 分布：smoke 10 / normal 201 / adversarial 29
+- 用例总数：241（活跃 121，跳过 120）
+- tier 分布：smoke 10 / normal 202 / adversarial 29
 - 售后域：7
 - agents：6
 - api：21
@@ -2952,7 +2959,7 @@
 - 防御域：18
 - finance：4
 - 人事域：7
-- knowledge：6
+- knowledge：7
 - misc：15
 - onboarding：5
 - ontology：4
@@ -2989,5 +2996,6 @@
 - KN-006: 文档提炼 - 有效售后文本必须产出候选进待确认队列（P1-1 回归，issue #3063）
 - KN-007: 售后政策类问题走知识卡片检索（双端，P1-2 回归，issue #3064）
 - KN-004: 米宝知识问答 - 加工计价规则走知识卡片检索
+- KN-008: 知识来源标注边界 - 自补常识不得混入「📖 来自本店知识库」标注（P2-4，issue #3076）
 - MC-012: CI 失败报告去重 - 同日同标题 open issue 存在时不重复建
 

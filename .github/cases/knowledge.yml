@@ -155,8 +155,8 @@ cases:
           query: 退换货
     data_checks:
       - "售后政策/质保类咨询为知识问题：双端应调 knowledge_search 命中本店退换货卡片并标注来源，而非通用售后流程话术；操作类（我要退货/申请退款）仍走售后工单（不回归）"
-    skip_reason: "路由改判由 rule_matcher 单测验证（test_rule_matcher.py 新增 4 例）；LLM 链路待部署后重放。case 有效性验证：旧场景（验收实测无 tool 调用）重放必 fail，修复部署后重放必 pass"
-    merge_log: "2026-09-08 新增（issue #3064 验收 P1-2）：双端售后政策类问题未走知识卡片——根因 rule_matcher AFTER_SALES 关键词抢占（换货/售后），规则层加政策咨询改判 KNOWLEDGE_FAQ"
+    skip_reason: ""
+    merge_log: "2026-09-08 新增（issue #3064 验收 P1-2）：双端售后政策类问题未走知识卡片——根因 rule_matcher AFTER_SALES 关键词抢占（换货/售后），规则层加政策咨询改判 KNOWLEDGE_FAQ；2026-09-09 本地重放通过（KN-003 同域 smoke 100%）后解除 skip（issue #3076 复盘收尾）"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_rule_matcher.py"
@@ -193,4 +193,35 @@ cases:
         - "backend/ai-agent-service/tests/test_tools_knowledge_search.py"
       ci:
         - agent-eval.yml
+      verifies: []
+
+  - id: KN-008
+    legacy_id: ""
+    title: "知识来源标注边界 - 自补常识不得混入「📖 来自本店知识库」标注（P2-4，issue #3076）"
+    domains:
+      - knowledge
+      - chat
+    tier: normal
+    tags:
+      - knowledge
+      - wiki
+      - source-annotation
+      - xiaobu
+    truths_ref: []
+    persona: xiaobu
+    user_inputs:
+      - "雪尼尔面料会起球吗"
+    expectations:
+      - tool: knowledge_search
+        args:
+          query: 雪尼尔
+    data_checks:
+      - "命中知识卡片时回复含「📖 来自本店知识库」来源标注（不回归）；标注仅覆盖卡片原文，自补常识与标注分离并注明通用参考"
+    skip_reason: ""
+    merge_log: "2026-09-09 新增（issue #3076 验收 P2-4）：S3 实测模型自补常识「更容易起球」紧邻来源标注段边界模糊——prompt 三处（tool 描述/hit message/customer_knowledge_skill）加「来源标注边界」规则，单测断言规则存在（删规则即 fail）"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_tools_knowledge_search.py"
+      ci:
+        - pr-check.yml
       verifies: []
