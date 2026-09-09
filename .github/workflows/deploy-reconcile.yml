@@ -47,7 +47,11 @@ jobs:
         run: echo "${{ secrets.ACR_PASSWORD }}" | docker login ${{ env.ACR_REGISTRY }} -u ${{ secrets.ACR_USERNAME }} --password-stdin
 
       # 三个服务：路径（仅用于日志提示）+ 镜像名
+      # GH_TOKEN 必须显式注入：gh CLI 在 Actions 环境检测到 GITHUB_ACTIONS 时强制要求
+      # 显式 GH_TOKEN（否则报 "To use GitHub CLI in a GitHub Actions workflow..." 并退出）
       - name: Reconcile deploys
+        env:
+          GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
