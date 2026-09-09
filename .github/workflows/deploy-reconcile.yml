@@ -1,0 +1,60 @@
+# 部署补偿对账（issue #3113）：GitHub Actions schedule 触发不可靠 + paths 过滤的
+# push 触发在快速连续合并时被 coalesce 吞掉（issue #2947 实证），导致部署停滞。
+#
+# 本工作流用「无 paths 过滤的 push to main」事件做对账触发源：
+#   - 快速合并时 GitHub 合并 push 事件但至少触发一次（该次 run 的 HEAD 为最终状态）
+#   - 对账基于最新 HEAD：检查三个服务 sha-<head7> 镜像是否已存在
+#   - 缺失 → gh workflow run dispatch 对应 deploy（workflow_dispatch 不经过 paths
+#     过滤，100% 触发，不受「吞 push 触发」影响）
+#   - 已存在 → 跳过（零浪费；中间 commit 漏部署不影响——最终 HEAD 已部署即达成目标）
+#
+# 与原 deploy 工作流关系：本补偿是兜底；deploy-*.yml 的 push+paths 主触发与
+# schedule 对账保留不动（schedule 虽不可靠但有比没有好）。
+name: Deploy Reconcile (push 对账补偿)
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  actions: write  # 需要 GITHUB_TOKEN 触发 workflow_dispatch
+
+jobs:
+  reconcile:
+    name: Reconcile and dispatch missing deploys
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      ACR_REGISTRY: crpi-qdcgkzwx9p9zckga.cn-hangzhou.personal.cr.aliyuncs.com
+      ACR_NAMESPACE: ai-customer-service
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Docker login ACR
+        run: echo "${{ secrets.ACR_PASSWORD }}" | docker login ${{ env.ACR_REGISTRY }} -u ${{ secrets.ACR_USERNAME }} --password-stdin
+
+      # 三个服务：路径（仅用于日志提示）+ 镜像名
+      - name: Reconcile deploys
+        shell: bash
+        run: |
+          set -euo pipefail
+          HEAD7="${GITHUB_SHA::7}"
+          MISSING=0
+          # 镜像名 → deploy workflow 文件名（镜像名与 workflow 名不对应，如 admin-web → deploy-frontend）
+          declare -A SVC_WF=( [admin-api]=deploy-admin-api [ai-agent-service]=deploy-ai-agent-service [admin-web]=deploy-frontend )
+          for svc in admin-api ai-agent-service admin-web; do
+            IMAGE="${{ env.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/${svc}:sha-${HEAD7}"
+            if docker manifest inspect "$IMAGE" >/dev/null 2>&1; then
+              echo "✅ ${svc} 镜像 ${IMAGE} 已存在——HEAD ${HEAD7} 已构建，跳过"
+            else
+              echo "⚠️ ${svc} 镜像 ${IMAGE} 缺失——该 commit 的部署触发被吞（快速合并/schedule 未跑），dispatch 补部署"
+              gh workflow run "deploy-${SVC_WF[$svc]}.yml" --ref main --repo "$GITHUB_REPOSITORY"
+              MISSING=$((MISSING + 1))
+            fi
+          done
+          if [ "$MISSING" -gt 0 ]; then
+            echo "🎯 补部署 dispatch 完成：${MISSING} 个服务（对应 deploy-*.yml 将构建并部署 sha-${HEAD7}）"
+          else
+            echo "✅ 全部服务镜像已存在，无补部署"
+          fi
