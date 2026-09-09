@@ -25,6 +25,8 @@ interface TableProps<T> {
   onSort?: (field: string) => void
   emptyText?: string
   minWidth?: number
+  /** 高亮定位指定行（如写操作后的成果物），匹配行加 primary 底色（#3080） */
+  highlightRowKey?: string | null
 }
 
 function Table<T extends Record<string, any>>({
@@ -38,6 +40,7 @@ function Table<T extends Record<string, any>>({
   onSort,
   emptyText = '暂无数据',
   minWidth,
+  highlightRowKey,
 }: TableProps<T>) {
   const data = dataSource || []
 
@@ -116,7 +119,8 @@ function Table<T extends Record<string, any>>({
                 key={getRowKey(record)}
                 className={cn(
                   'border-b border-neutral-100 transition-colors',
-                  onRowClick && 'cursor-pointer hover:bg-primary-50/60'
+                  onRowClick && 'cursor-pointer hover:bg-primary-50/60',
+                  highlightRowKey === getRowKey(record) && 'bg-primary-50'
                 )}
                 onClick={() => onRowClick?.(record)}
               >

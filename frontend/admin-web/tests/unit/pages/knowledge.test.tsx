@@ -2,7 +2,7 @@ import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-// case_ids: API-015, UI-033
+// case_ids: API-015, UI-033, UI-034
 
 // Mock API — LLM WIKI 知识卡片页（issue #3051）：数据源必须来自 knowledgeApi.getCards（非硬编码）
 vi.mock('@/lib/api', () => ({
@@ -44,11 +44,11 @@ vi.mock('sonner', () => ({
 
 // Mock UI components（Table 用 data 而非 dataSource）
 vi.mock('@/components/ui', () => ({
-  Table: ({ dataSource, columns, loading }: any) => (
+  Table: ({ dataSource, columns, loading, highlightRowKey }: any) => (
     <div data-testid="table">
       {loading && <div data-testid="table-loading">加载中...</div>}
       {dataSource?.map((record: any) => (
-        <div key={record.id} data-testid={`row-${record.id}`}>
+        <div key={record.id} data-testid={`row-${record.id}`} data-highlight={highlightRowKey === record.id ? 'true' : undefined}>
           {columns?.map((col: any) => (
             <span key={col.key} data-testid={`cell-${record.id}-${col.key}`}>
               {col.render ? col.render(record) : record[col.key]}
@@ -172,6 +172,7 @@ describe('KnowledgePage（LLM WIKI 知识卡片管理）', () => {
 
   it('should list industry templates and apply', async () => {
     const user = userEvent.setup()
+    const api = (await import('@/lib/api')).knowledgeApi as any
     render(<KnowledgePage />)
     await waitFor(() => {
       expect(screen.getByText('行业模板')).toBeInTheDocument()
@@ -181,7 +182,12 @@ describe('KnowledgePage（LLM WIKI 知识卡片管理）', () => {
       expect(screen.getByText('布艺窗帘行业模板')).toBeInTheDocument()
     })
     await user.click(screen.getByText('一键套用'))
-    const api = (await import('@/lib/api')).knowledgeApi as any
+    // 确认弹窗先行：未确认不得调用套用接口（#3080）
+    await waitFor(() => {
+      expect(screen.getByText('套用行业模板')).toBeInTheDocument()
+    })
+    expect(api.applyTemplate).not.toHaveBeenCalled()
+    await user.click(screen.getByText('确定套用'))
     await waitFor(() => {
       expect(api.applyTemplate).toHaveBeenCalledWith('curtain')
     })
@@ -203,6 +209,11 @@ describe('KnowledgePage（LLM WIKI 知识卡片管理）', () => {
       expect(screen.getByText('布艺窗帘行业模板')).toBeInTheDocument()
     })
     await user.click(screen.getByText('一键套用'))
+    // 确认弹窗先行（#3080）
+    await waitFor(() => {
+      expect(screen.getByText('确定套用')).toBeInTheDocument()
+    })
+    await user.click(screen.getByText('确定套用'))
     await waitFor(() => {
       expect(api.applyTemplate).toHaveBeenCalledWith('curtain')
     })
@@ -247,6 +258,75 @@ describe('KnowledgePage（LLM WIKI 知识卡片管理）', () => {
     await waitFor(() => {
       expect(screen.getByRole('dialog')).toBeInTheDocument()
       expect(screen.getByDisplayValue('窗帘多久洗一次')).toBeInTheDocument()
+    })
+  })
+
+  it('adopting candidate shows location toast and highlights the new card row (结果可见, #3080)', async () => {
+    const user = userEvent.setup()
+    const api = (await import('@/lib/api')).knowledgeApi as any
+    render(<KnowledgePage />)
+    await waitFor(() => {
+      expect(screen.getByText('雪尼尔面料会起球吗')).toBeInTheDocument()
+    })
+    // 采纳后刷新 getCards：返回采纳接口返回的同一张卡（id=card-1，用于高亮锚定）
+    api.getCards.mockResolvedValueOnce({
+      data: { success: true, data: { items: [{ id: 'card-1', title: '窗帘多久洗一次', category: 'faq', sourceType: 'conversation', status: 'published', version: 1, answer: '建议每 3-6 个月清洗一次。', updatedAt: '2026-09-09T10:00:00' }], total: 1, page: 1, size: 20 } },
+    })
+    await user.click(screen.getByText('待确认'))
+    await waitFor(() => {
+      expect(screen.getByText('采纳')).toBeInTheDocument()
+    })
+    await user.click(screen.getByText('采纳'))
+    // 去向 toast：文案包含跳转去向（做了什么 + 去哪了）
+    const { toast } = await import('sonner')
+    await waitFor(() => {
+      expect(toast.success).toHaveBeenCalledWith(expect.stringContaining('跳转知识卡片列表'))
+    })
+    // 成果物可见：新卡渲染在「知识卡片」列表
+    await waitFor(() => {
+      expect(screen.getByTestId('row-card-1')).toBeInTheDocument()
+    })
+    // 新卡行高亮定位（怎么找回来）
+    expect(screen.getByTestId('row-card-1')).toHaveAttribute('data-highlight', 'true')
+  })
+
+  it('applying template gates behind confirm dialog, then locates via 来源=模板 filter (#3080)', async () => {
+    const user = userEvent.setup()
+    const api = (await import('@/lib/api')).knowledgeApi as any
+    render(<KnowledgePage />)
+    await waitFor(() => {
+      expect(screen.getByText('雪尼尔面料会起球吗')).toBeInTheDocument()
+    })
+    // 套用后刷新：仅返回来源=模板的卡
+    api.getCards.mockResolvedValueOnce({
+      data: { success: true, data: { items: [{ id: 'entry_t1', title: '窗帘尺寸测量标准', category: 'measure', sourceType: 'template', status: 'published', version: 1, answer: '…', updatedAt: '2026-09-09T10:00:00' }], total: 1, page: 1, size: 20 } },
+    })
+    await user.click(screen.getByText('行业模板'))
+    await waitFor(() => {
+      expect(screen.getByText('布艺窗帘行业模板')).toBeInTheDocument()
+    })
+    await user.click(screen.getByText('一键套用'))
+    // 确认弹窗先行，未确认不得调接口
+    await waitFor(() => {
+      expect(screen.getByText('套用行业模板')).toBeInTheDocument()
+    })
+    expect(api.applyTemplate).not.toHaveBeenCalled()
+    await user.click(screen.getByText('确定套用'))
+    await waitFor(() => {
+      expect(api.applyTemplate).toHaveBeenCalledWith('curtain')
+    })
+    // 去向 toast：指明跳转 + 来源筛选
+    const { toast } = await import('sonner')
+    await waitFor(() => {
+      expect(toast.success).toHaveBeenCalledWith(expect.stringContaining('来源=模板'))
+    })
+    // 跳转后按来源=模板定位：getCards 带 sourceType=template
+    await waitFor(() => {
+      expect(api.getCards).toHaveBeenCalledWith(expect.objectContaining({ sourceType: 'template' }))
+    })
+    // 成果物可见：模板卡渲染在列表
+    await waitFor(() => {
+      expect(screen.getByText('窗帘尺寸测量标准')).toBeInTheDocument()
     })
   })
 })
