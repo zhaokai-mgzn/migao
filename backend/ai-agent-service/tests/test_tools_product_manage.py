@@ -98,6 +98,27 @@ class TestProductCreate:
         assert result.suggestion == "换一个名字"
 
     @patch("app.tools.product_manage.get_admin_api_client")
+    async def test_create_allow_return_restock_transmitted(self, mock_get_client, tool, admin_tool_context, mock_client):
+        """create 透传 allowReturnRestock（#2991 建品场景，与 product_update 互补）。"""
+        mock_client.post = AsyncMock(return_value={"success": True, "data": {"id": "p-1"}})
+        mock_get_client.return_value = mock_client
+        result = await tool.execute(
+            context=admin_tool_context, action="create", name="窗帘", allow_return_restock=True
+        )
+        assert result.success is True
+        json_data = mock_client.post.call_args[1]["json_data"]
+        assert json_data["allowReturnRestock"] is True
+
+    @patch("app.tools.product_manage.get_admin_api_client")
+    async def test_create_allow_return_restock_default_omitted(self, mock_get_client, tool, admin_tool_context, mock_client):
+        """不传 allow_return_restock 时请求体不含该字段（缺省 false 由 admin-api 处理）。"""
+        mock_client.post = AsyncMock(return_value={"success": True, "data": {"id": "p-1"}})
+        mock_get_client.return_value = mock_client
+        await tool.execute(context=admin_tool_context, action="create", name="窗帘")
+        json_data = mock_client.post.call_args[1]["json_data"]
+        assert "allowReturnRestock" not in json_data
+
+    @patch("app.tools.product_manage.get_admin_api_client")
     async def test_create_warnings_appended(self, mock_get_client, tool, admin_tool_context, mock_client):
         mock_client.post = AsyncMock(return_value={
             "success": True,
