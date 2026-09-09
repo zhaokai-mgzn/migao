@@ -156,7 +156,8 @@ describe('RolesPage', () => {
     expect(tree.getByText('客户管理')).toBeInTheDocument()
     expect(tree.getByText('组织管理')).toBeInTheDocument()
     // 菜单项 = 侧边栏菜单项名
-    expect(tree.getByText('米宝 · 在线对话')).toBeInTheDocument()
+    // #3094: 米宝 · 在线对话 菜单入口已移除，权限树不再渲染该菜单项
+    expect(tree.queryByText('米宝 · 在线对话')).not.toBeInTheDocument()
     expect(tree.getByText('人工客服')).toBeInTheDocument()
     expect(tree.getByText('知识库')).toBeInTheDocument()
     expect(tree.getByText('商品列表')).toBeInTheDocument()
@@ -192,11 +193,11 @@ describe('RolesPage', () => {
     expect(extras.queryByText('加工项管理')).not.toBeInTheDocument()
   })
 
-  it('勾选菜单项「米宝 · 在线对话」→ 创建岗位时 permissionIds 含 agent:session 权限ID（代码映射）', async () => {
+  it('勾选菜单项「人工客服」→ 创建岗位时 permissionIds 含 agent:session 权限ID（代码映射，#3094 米宝菜单已移除）', async () => {
     mockGetRoles.mockResolvedValue({ data: { data: { items: [], total: 0 } } })
     render(<RolesPage />)
     fireEvent.click(await screen.findByText('新增岗位'))
-    const item = (await screen.findByText('米宝 · 在线对话')).closest('label')!
+    const item = (await screen.findByText('人工客服')).closest('label')!
     fireEvent.click(item.querySelector('input')!)
     const textboxes = screen.getAllByRole('textbox')
     fireEvent.change(textboxes[0], { target: { value: '客服人员' } })

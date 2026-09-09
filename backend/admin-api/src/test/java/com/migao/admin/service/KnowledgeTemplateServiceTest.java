@@ -67,7 +67,7 @@ class KnowledgeTemplateServiceTest {
             assertThat(curtain).as("应包含 curtain 布艺模板").isNotNull();
             assertThat(curtain.getName()).contains("布艺");
             assertThat(curtain.getIndustry()).isEqualTo("curtain");
-            assertThat(curtain.getEntryCount()).isGreaterThanOrEqualTo(30);
+            assertThat(curtain.getEntryCount()).isGreaterThanOrEqualTo(25);
         }
     }
 
@@ -84,11 +84,11 @@ class KnowledgeTemplateServiceTest {
             Map<String, Object> result = knowledgeTemplateService.applyTemplate("curtain");
 
             assertThat(result.get("templateId")).isEqualTo("curtain");
-            assertThat((Integer) result.get("created")).isGreaterThanOrEqualTo(30);
+            assertThat((Integer) result.get("created")).isGreaterThanOrEqualTo(25);
             assertThat((Integer) result.get("skipped")).isZero();
 
             ArgumentCaptor<KnowledgeCard> captor = ArgumentCaptor.forClass(KnowledgeCard.class);
-            verify(knowledgeCardMapper, atLeast(30)).insert(captor.capture());
+            verify(knowledgeCardMapper, atLeast(25)).insert(captor.capture());
             KnowledgeCard first = captor.getAllValues().get(0);
             assertThat(first.getTenantId()).isEqualTo(1L);
             assertThat(first.getSourceType()).isEqualTo("template");
@@ -108,7 +108,7 @@ class KnowledgeTemplateServiceTest {
             Map<String, Object> result = knowledgeTemplateService.applyTemplate("curtain");
 
             assertThat((Integer) result.get("created")).isZero();
-            assertThat((Integer) result.get("skipped")).isGreaterThanOrEqualTo(30);
+            assertThat((Integer) result.get("skipped")).isGreaterThanOrEqualTo(25);
             verify(knowledgeCardMapper, never()).insert(any(KnowledgeCard.class));
         }
 

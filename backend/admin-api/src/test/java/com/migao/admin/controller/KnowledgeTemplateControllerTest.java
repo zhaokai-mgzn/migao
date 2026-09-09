@@ -67,13 +67,13 @@ class KnowledgeTemplateControllerTest {
             when(knowledgeTemplateService.listTemplates()).thenReturn(List.of(
                     KnowledgeTemplateInfo.builder()
                             .templateId("curtain").industry("curtain")
-                            .name("布艺窗帘行业模板").version(1).entryCount(32)
+                            .name("布艺窗帘行业模板").version(1).entryCount(26)
                             .build()));
 
             mockMvc.perform(get("/api/admin/knowledge/templates"))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.data[0].templateId").value("curtain"))
-                    .andExpect(jsonPath("$.data[0].entryCount").value(32));
+                    .andExpect(jsonPath("$.data[0].entryCount").value(26));
         }
     }
 
@@ -85,11 +85,11 @@ class KnowledgeTemplateControllerTest {
         @DisplayName("套用返回统计")
         void apply_success() throws Exception {
             when(knowledgeTemplateService.applyTemplate("curtain"))
-                    .thenReturn(Map.of("templateId", "curtain", "created", 32, "skipped", 0));
+                    .thenReturn(Map.of("templateId", "curtain", "created", 26, "skipped", 0));
 
             mockMvc.perform(post("/api/admin/knowledge/templates/curtain/apply"))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.data.created").value(32));
+                    .andExpect(jsonPath("$.data.created").value(26));
         }
 
         @Test
