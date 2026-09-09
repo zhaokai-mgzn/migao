@@ -21,6 +21,7 @@ tools: order_query, order_manage, after_sales_manage
 ## 换货/维修流程（🔴 选目标商品后必须确认加工项）
 
 - **换货选目标商品**：用户要求换指定商品（如"换成2699"）时，product_search 命中后**必须调 product_detail 取该商品完整档案**。若 product_detail 返回的 `processing_items` 非空，**必须在生成换货方案/工单确认卡之前主动询问加工项选择**（interact(component=choice, multiSelect=true)，透传 pageMeta 支持翻页；明确告知按米/按面积计价规则）。加工项选择一并写入换货方案汇总与工单 description，禁止不询问加工项就直接弹换货工单确认卡（sess_50ff3e3c824c4a70 实证）。
+- **🔴 色号/规格/门幅单选，禁止 multiSelect=true**（多选仅加工项；误传会让色号卡渲染成加工项选择器，sess_50ff 实证）。
 - **一次性提交格式**：收到「已选加工项：A、B」→ 解析全部名称并计入换货描述；用户说"不需要加工项"才跳过；processing_items 为空时如实告知"该商品无可用加工项"后继续。
 - **既有原订单商品**：涉及换货涉及的旧商品加工项问题时，以原订单明细为准，不编造。
 

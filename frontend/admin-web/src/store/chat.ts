@@ -719,6 +719,10 @@ function handleSSEEvent(
               cancelValue: parsedData.cancelValue,
               pageMeta: parsedData.pageMeta,
               multiSelect: parsedData.multiSelect,
+              // #3032：多选提交文案后端驱动（色号/规格卡不再硬编码加工项语义）
+              multiSelectSubmitPrefix: parsedData.multiSelectSubmitPrefix,
+              multiSelectSubmitLabel: parsedData.multiSelectSubmitLabel,
+              multiSelectSkipLabel: parsedData.multiSelectSkipLabel,
             },
           }))))
         }

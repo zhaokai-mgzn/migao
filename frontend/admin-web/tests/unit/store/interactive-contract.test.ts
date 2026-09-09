@@ -86,6 +86,9 @@ describe('interactive component contract (后端 SSE payload ↔ 前端 store �
       ],
       pageMeta: { current: 1, total: 2, totalCount: 16, tool: 'processing_item_query', params: '{"page":1,"size":10}' },
       multiSelect: true,
+      multiSelectSubmitPrefix: '已选加工项：',
+      multiSelectSubmitLabel: '完成选择',
+      multiSelectSkipLabel: '不需要加工项',
     }
     const interactive = await parseInteractive(payload)
     expect(interactive?.component).toBe('choice')
@@ -93,6 +96,10 @@ describe('interactive component contract (后端 SSE payload ↔ 前端 store �
     expect(interactive?.options).toEqual(payload.options)
     expect(interactive?.pageMeta).toEqual(payload.pageMeta)
     expect(interactive?.multiSelect).toBe(true)
+    // #3032：多选提交文案字段透传（色号/规格卡不再硬编码加工项语义）
+    expect(interactive?.multiSelectSubmitPrefix).toBe('已选加工项：')
+    expect(interactive?.multiSelectSubmitLabel).toBe('完成选择')
+    expect(interactive?.multiSelectSkipLabel).toBe('不需要加工项')
   })
 
   it('confirm payload 全字段透传（confirmValue 携带上下文路由）', async () => {

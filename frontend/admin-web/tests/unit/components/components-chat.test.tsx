@@ -688,6 +688,97 @@ describe('InteractiveMessage', () => {
     expect(sendMessage).toHaveBeenCalledTimes(1)
   })
 
+  it('multiSelect: 提交文案由后端字段驱动（#3032 色号卡不再硬编码加工项）', () => {
+    // sess_50ff 复盘：色号卡 multiSelect=true 被前端渲染成加工项选择器，
+    // 提交「已选加工项：2699-02 米灰色」——卡片语义完全错位。
+    // 修复：后端传 multiSelectSubmitPrefix/Label，前端按字段渲染。
+    const sendMessage = vi.fn()
+    const clearChoiceSelections = vi.fn()
+    mockUseChatStore.mockReturnValue(
+      makeDefaultChatState({
+        sendMessage,
+        clearChoiceSelections,
+        choiceSelections: {
+          ':color_select': ['2699-02 米灰色'],
+        },
+      }),
+    )
+
+    const interactive = {
+      component: 'choice' as const,
+      title: '请选择色号',
+      multiSelect: true,
+      options: [
+        { label: '2699-02 米灰色', value: 'color_02' },
+        { label: '2699-03 暖米色', value: 'color_03' },
+      ],
+      pageMeta: {
+        current: 1, total: 1, totalCount: 2,
+        tool: 'color_select', params: '{"page":1,"size":10}',
+      },
+      multiSelectSubmitPrefix: '已选色号：',
+      multiSelectSubmitLabel: '确定',
+      multiSelectSkipLabel: '不选色号',
+    }
+    render(<InteractiveMessage interactive={interactive} />)
+
+    // 完成按钮文案由字段驱动（不再硬编码「完成选择」）
+    fireEvent.click(screen.getByText('确定（1）'))
+    expect(sendMessage).toHaveBeenCalledWith('已选色号：2699-02 米灰色')
+  })
+
+  it('multiSelect: 跳过文案由后端字段驱动（#3032 不再硬编码「不需要加工项」）', () => {
+    const sendMessage = vi.fn()
+    const clearChoiceSelections = vi.fn()
+    mockUseChatStore.mockReturnValue(
+      makeDefaultChatState({ sendMessage, clearChoiceSelections }),
+    )
+
+    const interactive = {
+      component: 'choice' as const,
+      title: '请选择色号',
+      multiSelect: true,
+      options: [
+        { label: '2699-02 米灰色', value: 'color_02' },
+      ],
+      multiSelectSubmitPrefix: '已选色号：',
+      multiSelectSubmitLabel: '确定',
+      multiSelectSkipLabel: '不选色号',
+    }
+    render(<InteractiveMessage interactive={interactive} />)
+
+    fireEvent.click(screen.getByText('不选色号'))
+    expect(sendMessage).toHaveBeenCalledWith('不选色号')
+  })
+
+  it('multiSelect: 未传文案字段时默认加工项语义（向后兼容）', () => {
+    // 默认值保证存量加工项卡（后端未传新字段）行为不变。
+    const sendMessage = vi.fn()
+    const clearChoiceSelections = vi.fn()
+    mockUseChatStore.mockReturnValue(
+      makeDefaultChatState({
+        sendMessage,
+        clearChoiceSelections,
+        choiceSelections: { ':processing_item_query': ['打孔加工'] },
+      }),
+    )
+
+    const interactive = {
+      component: 'choice' as const,
+      title: '请选择加工项',
+      multiSelect: true,
+      options: [{ label: '打孔加工', value: 'pi_hole' }],
+      pageMeta: {
+        current: 1, total: 1, totalCount: 1,
+        tool: 'processing_item_query', params: '{"page":1,"size":10}',
+      },
+    }
+    render(<InteractiveMessage interactive={interactive} />)
+
+    fireEvent.click(screen.getByText('完成选择（1）'))
+    expect(sendMessage).toHaveBeenCalledWith('已选加工项：打孔加工')
+  })
+
   it('keeps pagination visible after selecting when multiSelect (加工项翻页保留)', () => {
     // 回归 #2894/#2896: 分页控件渲染条件曾依赖 !submitted —— 点过一个选项后
     // 翻页按钮消失，无法翻页浏览/选择其余加工项。multiSelect 模式下

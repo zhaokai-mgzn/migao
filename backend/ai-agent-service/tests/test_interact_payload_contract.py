@@ -1,6 +1,6 @@
 """
 interact 交互组件 payload 契约 — 后端字段白名单
-# case_ids: PP-001, PR-010, OR-001
+# case_ids: PP-001, PR-010, OR-001, CH-019
 
 防「后端发了前端不认识 / 前端声明了后端不发」的跨端字段断裂。
 
@@ -13,7 +13,9 @@ interact 交互组件 payload 契约 — 后端字段白名单
 字段白名单（= 前端 InteractiveComponent 可消费的全部字段）：
   component, title, options, fields, formFields, submitLabel,
   confirmLabel, confirmValue, cancelLabel, cancelValue,
-  pageMeta, multiSelect
+  pageMeta, multiSelect,
+  multiSelectSubmitPrefix, multiSelectSubmitLabel, multiSelectSkipLabel
+  （#3032：多选卡提交文案后端驱动，色号/规格卡不再硬编码「已选加工项」）
 """
 import pytest
 
@@ -33,6 +35,9 @@ FRONTEND_INTERACTIVE_FIELDS = {
     "cancelValue",
     "pageMeta",
     "multiSelect",
+    "multiSelectSubmitPrefix",
+    "multiSelectSubmitLabel",
+    "multiSelectSkipLabel",
 }
 
 
@@ -101,12 +106,15 @@ async def test_form_payload_within_contract(tool, sample_tool_context):
 
 async def test_all_contract_fields_emittable(tool, sample_tool_context):
     """白名单字段都应是 interact 可发出的（防前端声明了后端永不发）"""
-    # choice 发: component/title/options/pageMeta/multiSelect
+    # choice 发: component/title/options/pageMeta/multiSelect + 三个多选文案字段（#3032）
     choice = await tool.execute(
         context=sample_tool_context, component="choice", title="t",
         options=[{"label": "a", "value": "b"}],
         pageMeta={"current": 1, "total": 1, "totalCount": 1, "tool": "x", "params": "{}"},
         multiSelect=True,
+        multiSelectSubmitPrefix="已选：",
+        multiSelectSubmitLabel="确定",
+        multiSelectSkipLabel="跳过",
     )
     # confirm 发: fields/confirmLabel/confirmValue/cancelLabel/cancelValue
     confirm = await tool.execute(

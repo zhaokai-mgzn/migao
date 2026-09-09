@@ -162,6 +162,21 @@ class InteractTool(BaseTool):
                 "description": "choice 组件是否允许多选（可选，默认 false）。为 true 时用户可连续点击多个选项（如创建商品选择加工项），前端支持多次选择 + 翻页继续选择。",
                 "default": False,
             },
+            "multiSelectSubmitPrefix": {
+                "type": "string",
+                "description": "choice 多选卡的提交文本前缀（可选，默认『已选加工项：』）。仅 multiSelect=true 时透传。选择加工项场景默认即可；选择色号/规格/换货目标等非加工项场景，必须传对应前缀（如『已选色号：』），否则前端会误提交成加工项语义（#3032）。",
+                "default": "已选加工项：",
+            },
+            "multiSelectSubmitLabel": {
+                "type": "string",
+                "description": "choice 多选卡的完成按钮文字（可选，默认『完成选择』）。非加工项场景可自定义（如『确定』）。",
+                "default": "完成选择",
+            },
+            "multiSelectSkipLabel": {
+                "type": "string",
+                "description": "choice 多选卡的跳过按钮文字 + 跳过提交文本（可选，默认『不需要加工项』）。非加工项场景必须传对应文案（如『不选色号』），否则前端会误提交『不需要加工项』（#3032）。",
+                "default": "不需要加工项",
+            },
         },
         "required": ["component", "title"],
     }
@@ -181,6 +196,9 @@ class InteractTool(BaseTool):
         submitLabel: str = "提交",
         pageMeta: Optional[Dict[str, Any]] = None,
         multiSelect: bool = False,
+        multiSelectSubmitPrefix: str = "已选加工项：",
+        multiSelectSubmitLabel: str = "完成选择",
+        multiSelectSkipLabel: str = "不需要加工项",
     ) -> ToolResult:
         """执行交互组件请求
 
@@ -250,6 +268,11 @@ class InteractTool(BaseTool):
             # 并保留翻页控件（issue #2894，B 端加工项多选/翻页不可用）
             if multiSelect:
                 interactive_data["multiSelect"] = True
+                # 多选提交文案后端驱动（#3032）：色号/规格/换货目标等非加工项场景
+                # 传自定义前缀/标签，前端不再硬编码「已选加工项」「不需要加工项」。
+                interactive_data["multiSelectSubmitPrefix"] = multiSelectSubmitPrefix or "已选加工项："
+                interactive_data["multiSelectSubmitLabel"] = multiSelectSubmitLabel or "完成选择"
+                interactive_data["multiSelectSkipLabel"] = multiSelectSkipLabel or "不需要加工项"
 
         elif component == "confirm":
             # 处理 LLM 可能传入 JSON 字符串而非数组的问题
