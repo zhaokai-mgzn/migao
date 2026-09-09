@@ -66,9 +66,17 @@ class TestMatch:
         assert result.intent == IntentType.DASHBOARD
 
     def test_recent_orders_with_digits_matches_dashboard(self):
-        result = self._match("看看最近有哪些订单")
+        result = self._match("最近3笔订单")
         assert result is not None
         assert result.intent == IntentType.DASHBOARD
+
+    def test_recent_orders_no_digits_stays_order_query(self):
+        # OR-001 回归（#3142 修正）："查看最近的订单"（无数字量词）是查订单列表，
+        # 不是看板 recent_orders——#3124 的「最近+订单→DASHBOARD」规则过宽把它误路由，
+        # smoke 档 OR-001 回归（7/8，唯一失败）。收紧：仅「最近+数字量词+订单」走看板。
+        result = self._match("查看最近的订单")
+        assert result is not None
+        assert result.intent == IntentType.ORDER_QUERY
 
     def test_regular_keyword_confidence(self):
         result = self._match("我要投诉")

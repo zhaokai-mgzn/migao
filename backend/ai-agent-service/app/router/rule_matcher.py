@@ -137,16 +137,18 @@ class RuleMatcher:
                 matched_keywords=["订单统计"],
             )
 
-        # --- 优先匹配「最近订单」→ dashboard（看板 recent_orders） ---
-        # DA-003 回归：「最近5条订单/最近有哪些订单」是看板语义，dashboard_stats 的
-        # description 明确「最近X条订单优先用本工具而非 order_query」；此前「订单」关键词
-        # 把它抢到 order_query，agent 用 order_query(list) 而非 dashboard_stats(recent_orders)。
-        if ("最近" in msg_lower or "最新" in msg_lower) and "订单" in msg_lower:
+        # --- 优先匹配「最近 N 条订单」→ dashboard（看板 recent_orders） ---
+        # DA-003 回归：「最近5条订单/最近3笔订单」是看板语义（dashboard_stats recent_orders）。
+        # 但「查看最近的订单」无数字量词是查订单列表（OR-001），不得误路由到看板——
+        # #3142 修正 #3124 过宽规则（smoke 档 OR-001 回归，唯一失败）。
+        # 判定：最近/最新 + 数字量词 + 订单 → 看板；无数字 → 保持 order_query。
+        _recent_orders_digits = re.search(r"(?:最近|最新).{0,6}?(\d+).{0,3}?(?:条|笔|个|单).{0,4}?(?:订单|单子)", msg_lower)
+        if _recent_orders_digits:
             return IntentResult(
                 intent=IntentType.DASHBOARD,
                 confidence=0.95,
                 source="rule",
-                matched_keywords=["最近订单"],
+                matched_keywords=["最近N条订单"],
             )
 
         # --- 优先匹配「尺寸数字 + 褶皱/算料/报价」→ quote（算料报价） ---
