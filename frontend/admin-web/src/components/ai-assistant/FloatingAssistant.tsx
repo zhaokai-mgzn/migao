@@ -90,8 +90,9 @@ export default function FloatingAssistant() {
     const stored = readStoredPos()
     if (stored) return clampPos(stored, size)
     return {
+      // 默认贴右下角：右侧 16px 边距、底部贴齐视口（#3106 去掉原 -80 底部预留空间）
       x: Math.max(0, window.innerWidth - size.w - 16),
-      y: Math.max(0, window.innerHeight - size.h - 80),
+      y: Math.max(0, window.innerHeight - size.h),
     }
   })
   const [isDraggingFloat, setIsDraggingFloat] = useState(false)
