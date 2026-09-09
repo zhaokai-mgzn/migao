@@ -30,11 +30,11 @@ export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState<SettingsTab>(urlTab === 'ai' ? 'ai' : 'basic')
 
   // ============ 基本设置（企业信息）============
+  // #3103: notificationEmail 为僵尸字段（站内信无需邮箱，后端无邮件消费逻辑），已从 UI/类型移除
   const [settings, setSettings] = useState<SystemSettings>({
     companyName: '',
     logo: '',
     notificationEnabled: false,
-    notificationEmail: '',
   })
   const [savingSettings, setSavingSettings] = useState(false)
   const [uploadingLogo, setUploadingLogo] = useState(false)
@@ -62,7 +62,6 @@ export default function SettingsPage() {
           companyName: res.data.data.companyName || '',
           logo: res.data.data.logo || '',
           notificationEnabled: !!res.data.data.notificationEnabled,
-          notificationEmail: res.data.data.notificationEmail || '',
         })
         // Logo 变化时重置预览失败标记
         setLogoPreviewError(false)
@@ -344,19 +343,6 @@ export default function SettingsPage() {
                     />
                   </button>
                 </div>
-
-                {settings.notificationEnabled && (
-                  <div>
-                    <label className="block text-sm font-medium text-neutral-700 mb-1.5">通知邮箱</label>
-                    <input
-                      type="email"
-                      className="w-full h-9 px-3 rounded border border-neutral-300 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
-                      value={settings.notificationEmail || ''}
-                      onChange={(e) => setSettings({ ...settings, notificationEmail: e.target.value })}
-                      placeholder="接收通知的邮箱地址"
-                    />
-                  </div>
-                )}
 
                 <div className="pt-4">
                   <Button onClick={handleSaveSettings} loading={savingSettings}>

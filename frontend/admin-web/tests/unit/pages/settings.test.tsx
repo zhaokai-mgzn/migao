@@ -95,7 +95,6 @@ function mockApiSuccess() {
         companyName: '测试企业',
         logo: '',
         notificationEnabled: true,
-        notificationEmail: 'test@example.com',
       },
     },
   })
@@ -502,7 +501,7 @@ describe('SettingsPage — AI 客服设置合并进企业基础信息 (#3081)', 
 
     it('未设置 Logo 时展示占位图标（不渲染 img）', async () => {
       mockGetSettings.mockResolvedValue({
-        data: { data: { companyName: '测试企业', logo: '', notificationEnabled: false, notificationEmail: '' } },
+        data: { data: { companyName: '测试企业', logo: '', notificationEnabled: false } },
       })
       render(<SettingsPage />)
       await waitFor(() => {
@@ -514,7 +513,7 @@ describe('SettingsPage — AI 客服设置合并进企业基础信息 (#3081)', 
     it('已设置 Logo 时可点击「移除 Logo」回到未设置状态（保存后落库为 NULL）', async () => {
       const user = userEvent.setup()
       mockGetSettings.mockResolvedValue({
-        data: { data: { companyName: '测试企业', logo: 'https://oss.example.com/logo.png', notificationEnabled: false, notificationEmail: '' } },
+        data: { data: { companyName: '测试企业', logo: 'https://oss.example.com/logo.png', notificationEnabled: false } },
       })
       render(<SettingsPage />)
       await waitFor(() => {
@@ -533,7 +532,7 @@ describe('SettingsPage — AI 客服设置合并进企业基础信息 (#3081)', 
 
     it('Logo 加载失败时预览回退到占位图标', async () => {
       mockGetSettings.mockResolvedValue({
-        data: { data: { companyName: '测试企业', logo: 'https://broken.example.com/expired.png', notificationEnabled: false, notificationEmail: '' } },
+        data: { data: { companyName: '测试企业', logo: 'https://broken.example.com/expired.png', notificationEnabled: false } },
       })
       render(<SettingsPage />)
       await waitFor(() => {
@@ -553,7 +552,7 @@ describe('SettingsPage — AI 客服设置合并进企业基础信息 (#3081)', 
     it('渲染开关与口径说明（关闭后不再产生新的站内通知，历史保留）', async () => {
       const user = userEvent.setup()
       mockGetSettings.mockResolvedValue({
-        data: { data: { companyName: '测试企业', logo: '', notificationEnabled: true, notificationEmail: '' } },
+        data: { data: { companyName: '测试企业', logo: '', notificationEnabled: true } },
       })
       render(<SettingsPage />)
       await waitFor(() => {
@@ -567,6 +566,9 @@ describe('SettingsPage — AI 客服设置合并进企业基础信息 (#3081)', 
       // 不再出现「（当前为站内通知开关）」这种含糊/与实际脱节的文案
       expect(screen.getByText(/关闭后不再产生新的站内通知（历史通知保留）/)).toBeInTheDocument()
       expect(screen.queryByText(/当前为站内通知开关/)).not.toBeInTheDocument()
+      // #3103：通知邮箱为僵尸字段（站内信无需邮箱）——不再渲染邮箱输入框
+      expect(screen.queryByText('通知邮箱')).not.toBeInTheDocument()
+      expect(screen.queryByPlaceholderText(/接收通知的邮箱地址/)).not.toBeInTheDocument()
     })
 
     it('保存通知设置按钮存在（#3081 分区块保存）', async () => {
