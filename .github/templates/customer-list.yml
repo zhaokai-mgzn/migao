@@ -15,7 +15,7 @@ business_truths:
   - [customer-list.phone-unique] 手机号唯一性：createCustomer 按 phone+tenantId 查重，重复抛 422 "该手机号已存在客户档案"
   - [customer-list.tenant-isolation] 租户隔离由 MyBatis-Plus TenantLineInnerInterceptor 在 SQL 层自动注入 tenant_id 列（忽略 tenants/tenant_applications/platform_admins），不同租户看不到彼此客户/标签/订单/会话；tenantId=-1 或 super_admin 跳过过滤
   - [customer-list.tags] 客户标签：GET /api/admin/customer-tags 返回租户下全部标签(createdAt 倒序)；创建标签按 name+tenantId 查重，tagType 默认 manual、hitCount 默认 0
-  - [customer-list.tag-todo] 给客户添加/移除标签接口(POST/DELETE /api/admin/customers/{customerId}/tags/{tagId})为 TODO 空实现：恒返回 success 但不落库、无副作用
+  - [customer-list.tag-todo] 给客户添加/移除标签接口(POST/DELETE /api/admin/customers/{customerId}/tags/{tagId})为真实落库实现：addTagToCustomer 校验客户/标签存在后写入 customer_profiles.tags JSONB，重复标签幂等跳过；removeTagFromCustomer 反向删除（2026-09-09 校准：原 truth 记「TODO 空实现」已过时，代码自 #94 起即有真实实现）
   - [customer-list.api-auth] 接口权限：/api/admin/** 仅 ADMIN/SUPER_ADMIN/SERVICE 角色可访问，未认证 401、权限不足 403
   - [customer-list.ai-masking] AI 工具 customer_manage 的 list 对手机号脱敏(前3位+****+后4位)且 name 恒为 null；admin-api 原始列表接口返回明文手机号
 

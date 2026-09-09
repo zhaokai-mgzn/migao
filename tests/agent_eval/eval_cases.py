@@ -1202,16 +1202,16 @@ _CASE_CU_002 = EvalCase(
     persona='',
 )
 
-# ── CU-003 [NORMAL] 给客户打标签（TODO 空实现）（源: cases/customer.yml）──
+# ── CU-003 [NORMAL] 给客户打标签（源: cases/customer.yml）──
 _CASE_CU_003 = EvalCase(
     id='CU-003',
     legacy_id='4.3',
-    title='给客户打标签（TODO 空实现）',
+    title='给客户打标签',
     skill=Skill.CUSTOMER,
     difficulty=Difficulty.NORMAL,
     user_inputs=['给张三加VIP标签'],
     expectations=['customer_manage(action=add_tag)'],
-    data_checks=['接口恒返回 success 但不落库（TODO 空实现，无副作用）'],
+    data_checks=['add_tag 真实落库（customer_profiles.tags JSONB 写入），重复标签幂等跳过'],
     skip_reason='',
     tags=['tag', 'write'],
     persona='',
