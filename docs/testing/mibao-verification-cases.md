@@ -967,21 +967,25 @@
 
 ### CU-003. 给客户打标签 🔵
 ```
-你: 给张三加VIP标签
+你: 给张三加VIP2活跃标签
+你: 第一个
+你: 确认
 期望: customer_manage(action=add_tag)
 数据: add_tag 真实落库（customer_profiles.tags JSONB 写入），重复标签幂等跳过
 ```
 真值: customer-list.tag-todo
-溯源: verification 4.3 独有；2026-09-09 校准：truth「tag-todo 空实现」已过时（代码自 #94 起真实落库），更新 title/data_checks 反映真实行为；「先查后写」（list_tags 查标签 ID + list 查客户 UUID 后 add_tag）为合理多轮，待 probe 验证后补轮次 ｜ tags: tag, write
+溯源: verification 4.3 独有；2026-09-09 校准：① truth「tag-todo 空实现」已过时（真实落库）；② 标签名「VIP」生产不存在（实际「VIP2活跃」），改真实标签名；③ 补「选第一个」+「确认」轮（重名澄清 + 标签确认，probe 实证需多轮） ｜ tags: tag, write
 
 ### CU-004. 更新客户资料（部分更新） 🔵
 ```
 你: 张三手机号改成 13900001111
+你: 第一个
+你: 确认
 期望: customer_manage(action=update)
 数据: 仅 phone 被更新，未传字段保持原值
 ```
 真值: customer-list.partial-update
-溯源: verification 4.4 独有 ｜ tags: update
+溯源: verification 4.4 独有；2026-09-09 校准：补「选第一个」+「确认」两轮——「张三」生产有 3 位重名，agent 正确发 choice 卡澄清（#3142 修 validate_input 空转后不再幻觉「不支持」），需用户点选+确认后 update；probe 实证完整流程走通（重名澄清→选第一个→确认→update 成功） ｜ tags: update
 
 ### CU-005. 对抗性 - 模糊名称渐进澄清（老王→王建国→订单→发货） 🔴
 ```
