@@ -58,6 +58,11 @@ public class UserInfoResponse {
         private String nickname;
 
         /**
+         * 岗位（员工档案，User 实体 position 字段；#3099 右上角用户卡片展示）
+         */
+        private String position;
+
+        /**
          * 头像URL
          */
         private String avatar;

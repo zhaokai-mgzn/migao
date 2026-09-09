@@ -113,6 +113,7 @@ public class UserController {
                         .id(user.getId())
                         .username(user.getPhone())
                         .nickname(user.getNickname())
+                        .position(user.getPosition())
                         .avatar(user.getAvatar())
                         .tenantId(user.getTenantId())
                         .tenantName(tenantName)

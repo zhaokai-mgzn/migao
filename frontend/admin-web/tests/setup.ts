@@ -149,6 +149,8 @@ vi.mock('lucide-react', () => ({
   MapPin: iconStub('map-pin'),
   Truck: iconStub('truck'),
   Building2: iconStub('building2'),
+  // #3099: 右上角用户卡片（岗位）
+  Briefcase: iconStub('briefcase'),
   Shield: iconStub('shield'),
   ShieldCheck: iconStub('shield-check'),
   LogOut: iconStub('log-out'),

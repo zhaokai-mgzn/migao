@@ -2463,7 +2463,7 @@
 真值: token-refresh.no-loop
 溯源: 2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421） ｜ tags: token_refresh, auth, no_loop
 
-## ui（35 case）
+## ui（36 case）
 
 ### UI-001. 织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理 🔵
 ```
@@ -2920,6 +2920,20 @@
 真值: frontend-fix.no-api-change, frontend-fix.vitest
 溯源: 2026-09-09 新增（issue #3081）：快捷回复功能全栈下线 + AI 客服配置合并进企业基础信息；2026-09-09 #3098：企业基础信息页恢复左侧 tab 导航布局（基本设置/AI 客服设置/通知设置）；2026-09-09 #3103：通知设置移除邮箱输入框（僵尸字段清理） ｜ tags: ui, sidebar, settings, admin-web, permission
 
+### UI-037. 右上角用户信息卡片 — 点击展开 + 默认展示登录用户姓名 + 手机号/岗位/所属企业 + 企业名/Logo 侧边栏即时同步（#3099） 🔵
+```
+你: 点击右上角用户信息，默认展示当前登录用户名称；丰富该区域卡片信息（手机号/岗位/所属企业）；修改企业名称与 Logo 后应在商家后端（侧边栏）即时体现
+期望: direct_reply
+数据: Header 右上角用户按钮默认展示当前登录用户名称（name→nickname→username→管理员 兜底链），点击展开下拉卡片（非 hover 悬停触发），再次点击/点击卡片外收起
+数据: 用户卡片包含：头像（有 avatar 用图片，否则姓名首字）、姓名、账号（email 或 username）、手机号（username=手机号）、岗位（position）、所属企业（tenantName）、退出登录
+数据: fetchUserInfo 解包 /api/auth/me 的 { user, roles, permissions, menus } 包装结构：顶层 nickname/username/position/tenantName/tenantLogo 可读，roles/permissions/menus 保留（侧边栏过滤依赖）——修复右上角恒显「管理员」与侧边栏企业名/Logo 静默失效的根因
+数据: 「企业基础信息」保存成功后立即 fetchUserInfo 刷新，侧边栏企业名/Logo 即时同步（无需刷新页面）；toast「侧边栏将同步展示」与实际行为一致
+数据: 后端 /api/auth/me 与 /api/admin/user/info 的 user 内层返回 position（岗位，User 实体字段）
+跳过: 纯前端交互 + 后端 DTO 由 vitest 单测与 MockMvc 集成测试验证（Header/auth store/settings/AuthIntegrationTest），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: frontend-fix.no-api-change, frontend-fix.vitest
+溯源: 2026-09-09 新增（issue #3099）：右上角用户信息卡片优化 — 点击展开 + 姓名默认展示 + 卡片信息丰富（手机号/岗位/所属企业）+ fetchUserInfo 解包修复 + 保存企业信息后即时刷新 ｜ tags: ui, header, user-card, admin-web, settings
+
 ## utils（2 case）
 
 ### UT-001. 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值 🔵
@@ -2949,8 +2963,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：240（活跃 119，跳过 121）
-- tier 分布：smoke 10 / normal 201 / adversarial 29
+- 用例总数：241（活跃 119，跳过 122）
+- tier 分布：smoke 10 / normal 202 / adversarial 29
 - 售后域：7
 - agents：6
 - api：19
@@ -2973,7 +2987,7 @@
 - registry：1
 - 设置域：8
 - token-refresh：4
-- ui：35
+- ui：36
 - utils：2
 
 ### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）

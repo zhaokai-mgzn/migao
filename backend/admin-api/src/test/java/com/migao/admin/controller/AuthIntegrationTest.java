@@ -203,6 +203,7 @@ class AuthIntegrationTest {
                         .id("user-001")
                         .username("13800138000")
                         .nickname("管理员")
+                        .position("运营")
                         .avatar("https://example.com/avatar.png")
                         .tenantId(1L)
                         .status("active")
@@ -227,6 +228,7 @@ class AuthIntegrationTest {
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data.user.id").value("user-001"))
                 .andExpect(jsonPath("$.data.user.nickname").value("管理员"))
+                .andExpect(jsonPath("$.data.user.position").value("运营"))
                 .andExpect(jsonPath("$.data.roles[0]").value("admin"))
                 .andExpect(jsonPath("$.data.permissions").isArray())
                 .andExpect(jsonPath("$.data.menus[0].key").value("dashboard"));
