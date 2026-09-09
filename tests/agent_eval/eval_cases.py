@@ -1644,7 +1644,7 @@ _CASE_FN_001 = EvalCase(
     title='资金流水查询与登记',
     skill=Skill.GENERAL,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['登记一笔线下收款'],
+    user_inputs=['登记一笔线下收款，金额 88 元，微信支付', '确认'],
     expectations=['finance_api(action=create_transaction, type=income)'],
     data_checks=['流水号 FIN- 前缀，type=income，amount>0，status=success'],
     skip_reason='',
