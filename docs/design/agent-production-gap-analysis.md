@@ -227,3 +227,27 @@ admin-api 重构（#2905 分类扁平化、#2991 退货回补库存）后 ai-age
 「下限」显著提升。未达「全绿」的剩余项是：CU-003/CU-004 重名澄清脚本重构（评测资产）、
 applicable_category_id 漏传（精度问题）、生产评测稳定性（infra）。「上限」（跨域 planner）
 经评估确认非当前瓶颈（评测「跨域」用例是多轮上下文共享，context_manager 已覆盖）。
+
+## 八、剩余待办根因深挖（Round 14）
+
+### 8.1 生产评测稳定性（infra，根因已定位）
+deploy-reconcile.yml 的对账逻辑**只看镜像存在性，不看 paths**：main HEAD 前进（任何 PR
+合并，含纯文档/case）→ 三服务 `sha-<head7>` 镜像缺失 → dispatch 补部署 → 滚动重启 → 502。
+deploy-*.yml 的 push+paths 过滤自 auto-merge（9/5）起已失效（issue #3113），形同虚设。
+修复需改 .github/workflows（需 workflow scope，默认 token 无）且涉及多 workflow 协调，
+是独立 infra 工程，非「提高 agent 能力」核心，记录待办。
+
+### 8.2 CU-004 更新客户 = 重名澄清 + LLM 幻觉（复合问题）
+probe 实证两层：
+1. 重名澄清是正确行为——「张三」有 3 位，agent 正确 list 列出让用户选（case 单轮期望过严）；
+2. **LLM 幻觉**：用户选「第一个」后，agent 拿到 customer_id + validate_input，却报
+   「手机号修改暂不支持通过更新接口」——但 admin-api updateCustomer 明确支持 phone
+   （`if hasText(phone) setPhone`），customer_manage 的 data schema 也写了 phone 示例。
+   根因是 validate_input 对 customer_manage 无规则（返回「未知工具」信号）+ LLM 据此
+   误判「不支持」。修复方向：① validate_input 补 customer_manage(update) 规则（消除
+   空转信号）；② CU-004 case 补重名澄清轮。
+
+### 8.3 模式 C 残余：applicable_category_id 漏传（精度问题，低优先）
+processing_item_query 的 applicable_category_id 漏传导致加工项未按分类过滤（功能可用，
+仅不精确）。代码兜底需跨轮「已选分类」状态（context_manager 无 category 实体追踪），
+改动面大于 multiSelect 兜底（#3136），且是精度问题非功能缺失，低优先。
