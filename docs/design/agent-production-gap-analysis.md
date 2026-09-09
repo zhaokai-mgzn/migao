@@ -394,3 +394,27 @@ product/order/aftersales），并扩 `success_markers`（账号已创建/角色�
 - 剩余 HR-005/CU-003 属 **case 校准**（HR-005 改真实权限名或补澄清轮；CU-003 补数据
   隔离/幂等期望），非 agent 代码缺陷。与 PR-016（applicable_category_id 精度）、
   PR-014/015（LLM 波动）同列「case/模型边界」待办。
+
+## 十四、Round 29-30 HR-005 闭环 + CU-003 评测基础设施缺口归因
+
+### HR-005 已闭环（0% → 100%）
+两层根因先后修复：#3155（creation_skills 缺 staff/customer）+ #3157（validate_input
+缺 role_manage 规则，角色创建退化文本确认）+ #3158（case 校准：真实权限「商品管理」
+替换不存在的「库存权限」，补「确认创建」轮）。评测验证 100% 通过。
+
+### CU-003：agent 能力已验证正确，失败 = 评测基础设施两个缺口
+实拍（Round 30，清理污染后重跑）：
+1. **agent 行为正确**：R1 下发 **choice 交互卡**（结构化选客户，比文本澄清更规范），
+   用卡 value 能稳定推进到 `add_tag` 落库成功（"✅ 已完成！标签已添加 VIP2活跃"）。
+2. **缺口① 评测数据自我污染**：写类 case 每次成功 add_tag 即改变生产数据 → 下一跑
+   「已有标签」→ agent 幂等正确拒绝 → reproducible 失败。已手动清理两次（DELETE
+   `/api/admin/customers/{cid}/tags/{tid}`），但无隔离机制无法根治。
+3. **缺口② 评测 runner 不支持交互卡回放**：`local_runner` 用静态文本回放
+   `user_inputs`，无法"点击"choice 卡；choice 卡内容（label/value/选项）由 LLM 动态
+   生成每次不同，case 无法用固定文本匹配（「第一个」/「客户A」均不稳定，仅卡 value
+   或 customer_id 可推进）。
+
+**结论**：CU-003 的 agent 加标签能力达标（含幂等保护），case 无法稳定跑是评测基础设施
+问题，非 agent 缺陷。修复方向 = ① 写类 case 评测前数据清理（snapshot/restore 泛化到
+customer 标签）；② runner 支持 choice 卡自动回放（检测 interactive choice → 自动回首个
+option）。两项均为评测基建改造，列入待办。
