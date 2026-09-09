@@ -2,7 +2,7 @@ import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-// case_ids: API-015, UI-027
+// case_ids: API-015, UI-027, UI-029
 
 // Mock API — LLM WIKI 知识卡片页（issue #3051）：数据源必须来自 knowledgeApi.getCards（非硬编码）
 vi.mock('@/lib/api', () => ({
@@ -98,7 +98,7 @@ describe('KnowledgePage（LLM WIKI 知识卡片管理）', () => {
   it('should render page title and description', async () => {
     render(<KnowledgePage />)
     await waitFor(() => {
-      expect(screen.getByRole('heading', { name: '知识卡片' })).toBeInTheDocument()
+      expect(screen.getByRole('heading', { name: '知识库' })).toBeInTheDocument()
     })
     expect(screen.getByText(/LLM WIKI 知识卡片管理/)).toBeInTheDocument()
   })
@@ -184,6 +184,69 @@ describe('KnowledgePage（LLM WIKI 知识卡片管理）', () => {
     const api = (await import('@/lib/api')).knowledgeApi as any
     await waitFor(() => {
       expect(api.applyTemplate).toHaveBeenCalledWith('curtain')
+    })
+  })
+
+  it('after applying template, should switch to cards tab, refresh list and allow editing the applied card (#3070)', async () => {
+    const user = userEvent.setup()
+    const api = (await import('@/lib/api')).knowledgeApi as any
+    render(<KnowledgePage />)
+    // 等初始列表加载完成后再队列「套用后刷新」的返回
+    await waitFor(() => {
+      expect(screen.getByText('雪尼尔面料会起球吗')).toBeInTheDocument()
+    })
+    api.getCards.mockResolvedValueOnce({
+      data: { success: true, data: { items: [{ id: 'entry_t1', title: '窗帘尺寸测量标准', category: 'measure', sourceType: 'template', status: 'published', version: 1, answer: '…', updatedAt: '2026-09-09T10:00:00' }], total: 1, page: 1, size: 20 } },
+    })
+    await user.click(screen.getByText('行业模板'))
+    await waitFor(() => {
+      expect(screen.getByText('布艺窗帘行业模板')).toBeInTheDocument()
+    })
+    await user.click(screen.getByText('一键套用'))
+    await waitFor(() => {
+      expect(api.applyTemplate).toHaveBeenCalledWith('curtain')
+    })
+    // 跳转「知识卡片」Tab + 刷新列表：套用出的卡片立即可见
+    await waitFor(() => {
+      expect(screen.getByText('窗帘尺寸测量标准')).toBeInTheDocument()
+    })
+    // 且可直接编辑（打开编辑弹窗并回填标题）
+    await user.click(screen.getByText('编辑'))
+    await waitFor(() => {
+      expect(screen.getByRole('dialog')).toBeInTheDocument()
+      expect(screen.getByText('编辑知识卡片')).toBeInTheDocument()
+      expect(screen.getByDisplayValue('窗帘尺寸测量标准')).toBeInTheDocument()
+    })
+  })
+
+  it('after adopting candidate, should switch to cards tab and show the published card (editable) (#3070)', async () => {
+    const user = userEvent.setup()
+    const api = (await import('@/lib/api')).knowledgeApi as any
+    render(<KnowledgePage />)
+    // 等初始列表加载完成后再队列「采纳后刷新」的返回
+    await waitFor(() => {
+      expect(screen.getByText('雪尼尔面料会起球吗')).toBeInTheDocument()
+    })
+    // 采纳后刷新 getCards：返回已发布的采纳卡片
+    api.getCards.mockResolvedValueOnce({
+      data: { success: true, data: { items: [{ id: 'entry_adopted', title: '窗帘多久洗一次', category: 'faq', sourceType: 'conversation', status: 'published', version: 1, answer: '建议每 3-6 个月清洗一次。', updatedAt: '2026-09-09T10:00:00' }], total: 1, page: 1, size: 20 } },
+    })
+    await user.click(screen.getByText('待确认'))
+    await waitFor(() => {
+      expect(screen.getByText('窗帘多久洗一次')).toBeInTheDocument()
+    })
+    await user.click(screen.getByText('采纳'))
+    await waitFor(() => {
+      expect(api.adoptCandidate).toHaveBeenCalledWith('c1')
+    })
+    // 跳转「知识卡片」Tab：采纳结果立即可见且可编辑
+    await waitFor(() => {
+      expect(screen.getByText('窗帘多久洗一次')).toBeInTheDocument()
+    })
+    await user.click(screen.getByText('编辑'))
+    await waitFor(() => {
+      expect(screen.getByRole('dialog')).toBeInTheDocument()
+      expect(screen.getByDisplayValue('窗帘多久洗一次')).toBeInTheDocument()
     })
   })
 })

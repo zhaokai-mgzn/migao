@@ -3620,6 +3620,21 @@ _CASE_UI_032 = EvalCase(
     persona='',
 )
 
+# ── UI-029 [NORMAL] 知识库页 UI 修复：面包屑对齐菜单名 + 页面样式统一 + 分页不被米宝浮动按钮遮挡 + 模板套用/候选采纳后结果立即可见可编辑（#3070）（源: cases/ui.yml）──
+_CASE_UI_029 = EvalCase(
+    id='UI-029',
+    legacy_id='',
+    title='知识库页 UI 修复：面包屑对齐菜单名 + 页面样式统一 + 分页不被米宝浮动按钮遮挡 + 模板套用/候选采纳后结果立即可见可编辑（#3070）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['知识库页面包屑应与侧边栏菜单一致叫「知识库」（非「知识库管理」）；页面样式与全局产品样式一致；右下角分页不被米宝浮动按钮遮挡；行业模板一键套用后套用出的卡片立即可见可编辑；待确认候选采纳后结果立即可见可编辑'],
+    expectations=['direct_reply'],
+    data_checks=['Header 面包屑 /knowledge → 智能客服 / 知识库（与侧边栏菜单名一致，不再出现「知识库管理」）', '知识库页内容区 p-6 内边距、页面标题 text-xl text-neutral-900 + 副标题、Tab 高亮用 primary-600（非蓝色 border-blue-500）、筛选/表单控件带标准 focus 态（focus:border-primary-500 focus:ring-2）', 'dashboard 布局底部预留米宝浮动按钮（FAB）空间（main pb-24 + 内容卡片 min-h 联动），内容不足一屏时底部锚定元素（分页等）不被右下角浮动按钮遮挡、可正常点击', '行业模板一键套用后：跳转「知识卡片」Tab、重置筛选并刷新列表，套用出的卡片（published）立即可见且可编辑（打开编辑弹窗回填标题）', '待确认候选「采纳」后：跳转「知识卡片」Tab 并刷新列表，已发布卡片立即可见可编辑'],
+    skip_reason='纯前端样式/交互由 vitest 单测验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ui', 'knowledge', 'breadcrumb', 'pagination', 'admin-web'],
+    persona='',
+)
+
 # ── UT-001 [NORMAL] 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值（源: cases/utils.yml）──
 _CASE_UT_001 = EvalCase(
     id='UT-001',
@@ -3889,6 +3904,7 @@ ALL_CASES = (
     _CASE_UI_030,
     _CASE_UI_031,
     _CASE_UI_032,
+    _CASE_UI_029,
     _CASE_UT_001,
     _CASE_UT_002,
 )
