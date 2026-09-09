@@ -77,13 +77,28 @@ import httpx
 _saved_states: dict = {}  # {product_id: {"price": ...}}
 
 
+def _safe_json(resp, default=None):
+    """防御性 JSON 解析：响应非 JSON（限流/瞬断/400 HTML）时返回默认值，不中断评测。
+
+    实测崩溃（2026-09-09）：对生产跑 normal 全量评测，中途 snapshot_product 的
+    GET /api/admin/products 返回 400 HTML → r.json() 抛 JSONDecodeError →
+    整个评测崩溃退出，后续用例全部未跑。评测基础设施的健壮性比单个用例
+    失败更重要：任何辅助请求的非 JSON 响应都应降级（返回 None/[]），
+    由后续断言与重试机制处理，而不是让一次瞬时限流毁掉整轮基线。
+    """
+    try:
+        return json.loads(getattr(resp, "content", b""))
+    except Exception:
+        return default
+
+
 async def snapshot_product(token: str, product_keyword: str) -> str | None:
     """保存商品当前状态，返回 product_id"""
     async with httpx.AsyncClient() as c:
         h = _admin_headers(token)
         r = await c.get(f"{ADMIN_API}/api/admin/products", headers=h,
                         params={"keyword": product_keyword, "page": 1, "size": 1})
-        items = r.json().get("data", {}).get("items", [])
+        items = (_safe_json(r, {}) or {}).get("data", {}).get("items", [])
         if not items:
             return None
         p = items[0]
@@ -118,7 +133,11 @@ async def login() -> str:
     async with httpx.AsyncClient() as c:
         r = await c.post(f"{ADMIN_API}/api/auth/sms/login",
                          json={"phone": PHONE, "code": BYPASS_CODE}, timeout=10)
-        return r.json()["data"]["accessToken"]
+        payload = _safe_json(r, {}) or {}
+        access_token = (payload.get("data") or {}).get("accessToken")
+        if not access_token:
+            raise RuntimeError(f"登录失败: HTTP {getattr(r, 'status_code', '?')} {str(getattr(r, 'content', b''))[:200]}")
+        return access_token
 
 def _chat_headers(token: str) -> dict:
     """ai-agent 请求头：调试身份必须显式声明（P0-3 安全加固）
@@ -141,13 +160,21 @@ async def get_or_create_session(token: str, prefer_new: bool = True) -> str:
         h = _chat_headers(token)
         if prefer_new:
             r = await c.post(f"{AI_API}/api/chat/sessions", headers=h, json={}, timeout=10)
-            return r.json()["data"]["id"]
+            payload = _safe_json(r, {}) or {}
+            sid = (payload.get("data") or {}).get("id")
+            if not sid:
+                raise RuntimeError(f"创建会话失败: HTTP {getattr(r, 'status_code', '?')} {str(getattr(r, 'content', b''))[:200]}")
+            return sid
         r = await c.get(f"{AI_API}/api/chat/sessions", headers=h, timeout=10)
-        sessions = r.json().get("data", {}).get("items", [])
+        sessions = (_safe_json(r, {}) or {}).get("data", {}).get("items", [])
         if sessions:
             return sessions[0]["id"]
         r = await c.post(f"{AI_API}/api/chat/sessions", headers=h, json={}, timeout=10)
-        return r.json()["data"]["id"]
+        payload = _safe_json(r, {}) or {}
+        sid = (payload.get("data") or {}).get("id")
+        if not sid:
+            raise RuntimeError(f"创建会话失败: HTTP {getattr(r, 'status_code', '?')} {str(getattr(r, 'content', b''))[:200]}")
+        return sid
 
 async def send_message(token: str, session_id: str, message: str, images: list = None) -> dict:
     """发送消息并收集 SSE 事件
@@ -628,6 +655,23 @@ def check_forbidden_text(results: list, forbidden_text: list) -> list:
     return issues
 
 
+def check_want_text(results: list, want_text: list) -> list:
+    """final_text 正向关键词断言：任一关键词全程未出现 → 违规。
+
+    验收协议 §3.4：关键轮次断言回复内容 = 正向关键词 + 反模式禁词表 双轨。
+    forbidden_text 只防「说了不该说的」，防不住「该说的没说」——如兜底话术
+    必须含「转人工」出口、写操作完成必须声明成果（订单号/成功），
+    缺失即回复不完整，与反模式同等违规。
+    """
+    issues = []
+    all_text = "\n".join(str(r.get("final_text") or "") for r in results)
+    for w in want_text or []:
+        w = str(w)
+        if w not in all_text:
+            issues.append(f"want_text: 全程回复未出现正向关键词「{w}」")
+    return issues
+
+
 def _last_round_error_verdict(results: list, expectations: list, data_checks: list) -> str | None:
     """真实验收守卫（issue #2887 验收复盘）：最后轮报错 → 用例判失败。
 
@@ -746,12 +790,12 @@ async def _fetch_product_configs(token: str, name: str) -> list:
         h = _admin_headers(token)
         r = await c.get(f"{ADMIN_API}/api/admin/products", headers=h,
                         params={"keyword": name, "page": 1, "size": 1}, timeout=15)
-        items = r.json().get("data", {}).get("items", [])
+        items = (_safe_json(r, {}) or {}).get("data", {}).get("items", [])
         if not items:
             return []
         pid = items[0]["id"]
         rd = await c.get(f"{ADMIN_API}/api/admin/products/{pid}", headers=h, timeout=15)
-        return rd.json().get("data", {}).get("processingItemConfigs") or []
+        return (_safe_json(rd, {}) or {}).get("data", {}).get("processingItemConfigs") or []
 
 
 async def check_db_verify(token: str, db_verify: list) -> list:
@@ -838,6 +882,7 @@ async def run_case(case, token: str, session_id: str) -> dict:
     case_issues = []
     case_issues += check_order_before(results, getattr(case, "order_before", []) or [])
     case_issues += check_forbidden_text(results, getattr(case, "forbidden_text", []) or [])
+    case_issues += check_want_text(results, getattr(case, "want_text", []) or [])
     case_issues += check_required_args(results, getattr(case, "required_args", []) or [])
     case_issues += check_confirm_loop(results)
     case_issues += check_false_success(results)
@@ -1067,6 +1112,7 @@ def load_cases_from_yaml(cases_dir: str) -> list:
             persona=c.get("persona", ""),
             order_before=c.get("order_before") or [],
             forbidden_text=c.get("forbidden_text") or [],
+            want_text=c.get("want_text") or [],
             required_args=c.get("required_args") or [],
             db_verify=c.get("db_verify") or [],
         ))

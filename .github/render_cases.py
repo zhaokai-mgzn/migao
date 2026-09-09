@@ -162,6 +162,7 @@ def to_eval_py(cases):
            '    persona: str = ""   # 归属 agent: mibao / xiaobu / ""(双端)，issue #2855',
            '    order_before: List[str] = field(default_factory=list)   # 时序断言 "A before B"（跨轮，acceptance-protocol §3.1）',
            '    forbidden_text: List[str] = field(default_factory=list) # final_text 反模式词，命中即失败（§3.4 幻觉式撤回/报错文案）',
+            '    want_text: List[str] = field(default_factory=list) # final_text 正向关键词，全缺即失败（§3.4 正反关键词双轨）',
            '    required_args: List[dict] = field(default_factory=list) # 必填参数断言（create 缺 specifications/加工项价格即失败，§3.2）',
             '    db_verify: List[dict] = field(default_factory=list) # 落库层验证（创建后查 admin-api 断言价格=确认价，§3.2/issue #3056）',
            "", ""]
@@ -188,6 +189,8 @@ def to_eval_py(cases):
             out.append(f"    order_before={c.get('order_before')!r},")
         if c.get("forbidden_text"):
             out.append(f"    forbidden_text={c.get('forbidden_text')!r},")
+        if c.get("want_text"):
+            out.append(f"    want_text={c.get('want_text')!r},")
         if c.get("required_args"):
             out.append(f"    required_args={c.get('required_args')!r},")
         if c.get("db_verify"):
@@ -267,6 +270,8 @@ def to_md(cases):
                 lines.append(f"时序: {ob}")
             for ft in (c.get("forbidden_text") or []):
                 lines.append(f"禁词: {ft}")
+            for wt in (c.get("want_text") or []):
+                lines.append(f"必须: {wt}")
             for ra in (c.get("required_args") or []):
                 lines.append(f"必填: {ra.get('tool')}({ra.get('action', '')}) 字段 {', '.join(ra.get('fields') or [])}")
             for dv in (c.get("db_verify") or []):

@@ -41,6 +41,7 @@ class EvalCase:
     persona: str = ""   # 归属 agent: mibao / xiaobu / ""(双端)，issue #2855
     order_before: List[str] = field(default_factory=list)   # 时序断言 "A before B"（跨轮，acceptance-protocol §3.1）
     forbidden_text: List[str] = field(default_factory=list) # final_text 反模式词，命中即失败（§3.4 幻觉式撤回/报错文案）
+    want_text: List[str] = field(default_factory=list) # final_text 正向关键词，全缺即失败（§3.4 正反关键词双轨）
     required_args: List[dict] = field(default_factory=list) # 必填参数断言（create 缺 specifications/加工项价格即失败，§3.2）
     db_verify: List[dict] = field(default_factory=list) # 落库层验证（创建后查 admin-api 断言价格=确认价，§3.2/issue #3056）
 
@@ -2410,10 +2411,11 @@ _CASE_OR_010 = EvalCase(
     difficulty=Difficulty.NORMAL,
     user_inputs=['创建订单：张三 13812345678，杭州西湖区文三路1号，米白色遮光窗帘 2米', '选散剪售卖，2.8米门幅', '确认下单'],
     expectations=['validate_input', 'order_create'],
-    data_checks=['返回订单号', '下单全流程不得向顾客索要单价/金额——价格取自商品数据/算料结果（实测反复要价导致下单卡死 + 本用例评估不稳）'],
+    data_checks=['下单全流程不得向顾客索要单价/金额——价格取自商品数据/算料结果（实测反复要价导致下单卡死 + 本用例评估不稳）'],
     skip_reason='',
     tags=['create', 'confirm'],
     persona='',
+    want_text=['订单号'],
 )
 
 # ── OR-011 [NORMAL] AI 下单闭环 - 算料报价→确认→SMS→订单创建（源: cases/order.yml）──
