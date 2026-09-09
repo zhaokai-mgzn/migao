@@ -360,8 +360,9 @@ cases:
       - tool: validate_input
       - tool: order_create
     data_checks:
-      - "返回订单号"
       - "下单全流程不得向顾客索要单价/金额——价格取自商品数据/算料结果（实测反复要价导致下单卡死 + 本用例评估不稳）"
+    want_text:
+      - "订单号"
     skip_reason: ""
     merge_log: "verification 1.8 独有（smoke 简化版，与 OR-008/OR-009 的细粒度版互补）；2026-08-14 按 EXAMPLES-order.md 例2 校准为多轮（完整收货信息→选1→确认），单轮直下单与设计澄清流程不符；2026-09-02 补价格铁律；2026-09-04 修复 choice 卡片消费协议不匹配（审计 #2818 Agent Eval 失败根因）：原「选1」为自然语言序号，LLM 无法关联 interact(choice) 选项导致反复 product_detail 追问、永不进入 validate_input/order_create；改为显式售卖方式描述（与 OR-008/009 一致），且「2件」与商品按米计价（¥99/米）矛盾改为「2米」，实测全流程通过"
     traces:

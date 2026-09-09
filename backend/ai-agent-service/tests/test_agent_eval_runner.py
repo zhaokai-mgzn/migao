@@ -5,7 +5,7 @@
 发图轮报错时，前面轮次可能已命中 success=true / tool 等 expectation，
 旧逻辑把用例计为通过（假验收 —— 线上 sess_806703a2dcca4059 图片崩溃正是此类）。
 """
-# case_ids: CH-021, CH-026, OR-001, PR-001, DA-002, PP-003, PP-004
+# case_ids: CH-021, CH-026, OR-001, PR-001, DA-002, PP-003, PP-004, AS-001, AS-002
 import importlib.util
 from pathlib import Path
 
@@ -252,3 +252,139 @@ class TestRunCaseDataChecksScoring:
         result = asyncio.run(self._run(case, error="boom: 加工项解析失败"))
         # success=true 未满足 → 计为失败
         assert result["score"] < 1.0
+
+
+class TestWantTextAssertion:
+    """final_text 正向关键词断言（acceptance-protocol §3.4 正反关键词双轨）
+
+    背景（2026-09-09）：forbidden_text 只防「说了不该说的」，防不住「该说的没说」——
+    写操作完成不声明成果、兜底话术缺「转人工」出口等，工具调用全对但回复不完整，
+    旧评测判过。want_text 补正向轨：任一关键词全程未出现 → 违规。
+    """
+
+    def _rounds(self, texts):
+        return [{"__round": i + 1, "final_text": t, "error": None} for i, t in enumerate(texts)]
+
+    def test_keyword_present_passes(self):
+        assert lr.check_want_text(self._rounds(["好的，已为您创建订单，订单号 20260901"]), ["订单号"]) == []
+
+    def test_keyword_missing_fails(self):
+        issues = lr.check_want_text(self._rounds(["好的，已完成"]), ["订单号"])
+        assert issues and "未出现" in issues[0]
+
+    def test_keyword_in_any_round_passes(self):
+        results = self._rounds(["先查一下", "订单已创建成功 ✅"])
+        assert lr.check_want_text(results, ["创建成功"]) == []
+
+    def test_multiple_keywords_any_missing_fails(self):
+        issues = lr.check_want_text(self._rounds(["转人工请点击下方"]), ["转人工", "人工客服"])
+        assert len(issues) == 1
+
+    def test_empty_want_text_passes(self):
+        assert lr.check_want_text(self._rounds(["随便说点"]), []) == []
+
+    def test_want_text_wired_into_run_case(self):
+        """want_text 缺失 → run_case 整体判失败（接入链路验证）。"""
+        import asyncio
+        import unittest.mock as mock
+
+        async def fake_send(token, session_id, message, images=None):
+            return {
+                "user_message": message,
+                "images": images or [],
+                "tool_calls": [],
+                "tool_results": [],
+                "final_text": "好的，处理完了",
+                "error": None,
+                "streamed": False,
+                "done": True,
+            }
+
+        case = lr.EvalCase(
+            id="WT-TEST", legacy_id="", title="test", skill=lr.Skill.ORDER,
+            difficulty=lr.Difficulty.NORMAL,
+            user_inputs=["帮我处理下"],
+            expectations=["direct_reply"],
+            data_checks=[],
+            want_text=["订单号"],
+        )
+        with mock.patch.object(lr, "send_message", new=fake_send):
+            result = asyncio.run(lr.run_case(case, "tok", "sess"))
+        assert result["score"] == 0.0
+        assert any("want_text" in e for e, _ in result["failed"])
+
+
+class TestJsonParseDefense:
+    """评测基础设施健壮性：非 JSON 响应（限流/瞬断/400 HTML）不得中断整个评测。
+
+    背景（2026-09-09 实测）：对生产跑 normal 全量评测时，中途某次
+    snapshot_product 的 GET /api/admin/products 返回非 JSON（瞬时限流/HTML），
+    r.json() 抛 JSONDecodeError → 整个评测崩溃退出，后续用例全部未跑——
+    评测基础设施的不健壮会让"能力基线"拿不到，比单个用例失败更伤。
+    """
+
+    def test_safe_json_valid(self):
+        """合法 JSON → 正常解析。"""
+        class FakeResp:
+            def __init__(self, content):
+                import json as _json
+                self.content = _json.dumps(content).encode()
+        assert lr._safe_json(FakeResp({"success": True}), {}) == {"success": True}
+
+    def test_safe_json_non_json_returns_default(self):
+        """非 JSON 内容（HTML 错误页）→ 返回默认值，不抛异常。"""
+        class FakeResp:
+            content = b"<!doctype html><html>Bad Request</html>"
+        assert lr._safe_json(FakeResp(), {}) == {}
+
+    def test_safe_json_empty_returns_default(self):
+        """空响应体 → 返回默认值。"""
+        class FakeResp:
+            content = b""
+        assert lr._safe_json(FakeResp(), {"data": []}) == {"data": []}
+
+    def test_snapshot_product_non_json_no_crash(self):
+        """snapshot_product 遇到非 JSON 响应 → 返回 None（跳过快照），不崩评测。
+
+        实测崩溃（2026-09-09）：normal 全量跑到中途某用例触发 snapshot_product，
+        响应为 400 HTML → JSONDecodeError 中断整个评测（CR-003 类 infra 干扰放大）。
+        """
+        import unittest.mock as mock
+
+        class FakeResp:
+            status_code = 400
+            content = b"<!doctype html><title>HTTP Status 400</title>"
+
+            def json(self):
+                import json as _json
+                raise _json.JSONDecodeError("Expecting value", "x", 0)
+
+        async def fake_get(url, headers=None, params=None):
+            return FakeResp()
+
+        with mock.patch.object(lr.httpx, "AsyncClient") as m_cls:
+            m_cls.return_value.__aenter__.return_value.get = fake_get
+            import asyncio
+            pid = asyncio.run(lr.snapshot_product("tok", "遮光窗帘"))
+            assert pid is None
+
+    def test_fetch_product_configs_non_json_no_crash(self):
+        """_fetch_product_configs 遇到非 JSON → 返回 []（db_verify 视为无配置），不崩。"""
+        import unittest.mock as mock
+
+        class FakeResp:
+            status_code = 400
+            content = b"<!doctype html><title>HTTP Status 400</title>"
+
+            def json(self):
+                import json as _json
+                raise _json.JSONDecodeError("Expecting value", "x", 0)
+
+        async def fake_get(url, headers=None, params=None, timeout=None):
+            return FakeResp()
+
+        with mock.patch.object(lr.httpx, "AsyncClient") as m_cls:
+            m_cls.return_value.__aenter__.return_value.get = fake_get
+            import asyncio
+            configs = asyncio.run(lr._fetch_product_configs("tok", "遮光窗帘"))
+            assert configs == []
