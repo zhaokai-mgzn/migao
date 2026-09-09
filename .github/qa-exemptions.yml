@@ -109,6 +109,12 @@ exemptions:
   - pattern: "backend/ai-agent-service/app/suggestions/follow_up.py"
     reason: "新增 finance 意图预设建议：已有 tests/test_follow_up_suggestions.py + test_integration_multimodal.py 覆盖（含 finance 预设断言）。gate 模板要求 tests/test_suggestions/follow_up.py 命名不符"
 
+  # ── #3081 快捷回复功能下线：移除 quick_reply 兜底文案/意图标签（gate 模板命名不符，已有测试覆盖）──
+  - pattern: "backend/ai-agent-service/app/core/fallback.py"
+    reason: "移除 quick_reply_manage 兜底文案：已有 tests/unit/test_fallback.py 覆盖 TOOL_FALLBACK_MESSAGES（含各工具文案断言）。gate 模板要求 tests/test_core/fallback.py 命名不符"
+  - pattern: "backend/ai-agent-service/app/suggestions/preference_tracker.py"
+    reason: "移除 quick_reply 意图标签：已有 tests/test_preference_tracker.py + test_preference_injection.py 覆盖 INTENT_LABELS 映射。gate 模板要求 tests/test_suggestions/preference_tracker.py 命名不符"
+
   # ── 历史分支 UI 重设计组件（#2575 随分支部署，非本次自洽性修复改动）──
   - pattern: "frontend/admin-web/src/components/chat/CustomerPanel.tsx"
     reason: "历史分支 UI 重设计组件（chat/dashboard/ui），本次 PR 未改其逻辑，随分支统一部署"
