@@ -1052,6 +1052,11 @@ export interface InteractiveComponent {
   // 是否允许多选（加工项选择等场景）。为 true 时点击选项不锁死卡片，
   // 支持连续点击多个选项分别发送；配合 pageMeta 支持翻页继续选择。
   multiSelect?: boolean
+  // 多选提交文案后端驱动（#3032）：色号/规格/换货目标等非加工项场景传自定义值，
+  // 前端不再硬编码「已选加工项」「不需要加工项」。
+  multiSelectSubmitPrefix?: string  // 提交文本前缀，默认「已选加工项：」
+  multiSelectSubmitLabel?: string   // 完成按钮文字，默认「完成选择」
+  multiSelectSkipLabel?: string     // 跳过按钮文字 + 跳过提交文本，默认「不需要加工项」
   // confirm 组件
   fields?: InteractiveField[]
   confirmLabel?: string

@@ -43,6 +43,11 @@ function ChoiceCard({ interactive, disabled }: Props) {
   const tool = interactive.pageMeta?.tool || 'choice'
   const selectionKey = `${currentSessionId || ''}:${tool}`
   const selectedLabels = isMultiSelect ? (choiceSelections[selectionKey] || []) : []
+  // 多选提交文案后端驱动（#3032）：色号/规格等非加工项场景由后端传自定义文案，
+  // 前端不再硬编码「已选加工项」「不需要加工项」。
+  const submitPrefix = interactive.multiSelectSubmitPrefix || '已选加工项：'
+  const submitLabel = interactive.multiSelectSubmitLabel || '完成选择'
+  const skipLabel = interactive.multiSelectSkipLabel || '不需要加工项'
 
   const clickOption = (opt: InteractiveOption) => {
     if (submitted || disabled) return
@@ -57,9 +62,10 @@ function ChoiceCard({ interactive, disabled }: Props) {
 
   const submitSelections = () => {
     if (submitted || disabled || selectedLabels.length === 0) return
-    // 一次性提交全部已选加工项：格式与 PRODUCT_SYSTEM_PROMPT「需主动询问加工项」
-    // 对齐，agent 收到完整列表后进入汇总确认，不会每次点选都触发回复
-    sendMessage(`已选加工项：${selectedLabels.join('、')}`)
+    // 一次性提交全部已选：前缀由后端驱动（默认「已选加工项：」，与
+    // PRODUCT_SYSTEM_PROMPT「需主动询问加工项」对齐；色号卡传「已选色号：」等）。
+    // agent 收到完整列表后进入汇总确认，不会每次点选都触发回复
+    sendMessage(`${submitPrefix}${selectedLabels.join('、')}`)
     clearChoiceSelections(currentSessionId || '', tool)
     setSubmitted(true)
   }
@@ -110,7 +116,7 @@ function ChoiceCard({ interactive, disabled }: Props) {
         })}
       </div>
 
-      {/* 多选完成/跳过按钮 — 完成：一次性提交已选加工项；跳过：不关联加工项 */}
+      {/* 多选完成/跳过按钮 — 完成：一次性提交已选；跳过：文案后端驱动（#3032） */}
       {isMultiSelect && !submitted && (
         <div className="px-3 py-2 border-t border-neutral-100 flex gap-2">
           {selectedLabels.length > 0 && (
@@ -125,7 +131,7 @@ function ChoiceCard({ interactive, disabled }: Props) {
               )}
             >
               <Check className="w-3.5 h-3.5" />
-              完成选择（{selectedLabels.length}）
+              {submitLabel}（{selectedLabels.length}）
             </button>
           )}
           <button
@@ -133,7 +139,7 @@ function ChoiceCard({ interactive, disabled }: Props) {
               if (submitted || disabled) return
               clearChoiceSelections(currentSessionId || '', tool)
               setSubmitted(true)
-              sendMessage('不需要加工项')
+              sendMessage(skipLabel)
             }}
             disabled={disabled}
             className={cn(
@@ -144,7 +150,7 @@ function ChoiceCard({ interactive, disabled }: Props) {
             )}
           >
             <X className="w-3.5 h-3.5" />
-            不需要加工项
+            {skipLabel}
           </button>
         </div>
       )}
