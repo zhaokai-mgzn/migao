@@ -357,6 +357,40 @@ escape hatch 把会话从 staff 跳到 product → agent 按 product 工具集�
 这是「权限名含业务域词」导致的跨轮语义歧义——escape hatch 只做关键词匹配，无法理解
 「商品列表/库存管理」是权限描述而非商品操作。
 
-**结论**：思考预算扩展是「上限」的正确方向（对路由/工具选择有帮助），但剩余失败的
-最深层是**跨轮语义路由**（escape hatch 关键词误触发）和 **LLM 波动**（CU-003 同脚本
-probe 通过、评测走偏），均需更强的语义理解（模型迭代）或 escape hatch 语义化改造。
+**结论**：思考预算扩展是「上限」的正确方向（对路由/工具选择有帮助）。
+
+> **更正（Round 27-28，#3155 落地后）**：第 12 节把 HR-005 剩余失败归因于「escape
+> hatch 误触发」不准确。真正的根因是 `creation_skills` 缺 `staff`/`customer`（见 §十三）：
+> 写流程未完成时未锁 `pending_skill`，R2 补充信息时重新走完整路由被关键词误判跳域。
+> escape hatch 只是「未锁 pending」后的次生现象——若 R1 就锁了 pending_skill，R2 会先走
+> 会话连续性坚守原域，根本不会进入 escape hatch 分支。
+
+## 十三、Round 27-28 引导流程连续性修复（#3155）与评测验证
+
+### #3155 修复内容
+`base_skill.execute_skill` 的 `creation_skills` 补 `staff`/`customer`（原只有
+product/order/aftersales），并扩 `success_markers`（账号已创建/角色已创建/标签已添加/
+已更新/已添加）。写流程未完成时锁 `pending_interact_skill`，完成/取消时清除。
+
+### 单元测试
+2 个新测试（`test_graph_skills.py`）：mock LLM 返回未完成文本，断言
+`result["pending_interact_skill"] == "staff"/"customer"`。红→绿；53 passed。
+
+### 端到端验证（生产评测 HR-005/CU-003，部署后）
+**跳域问题已修复**——CU-003 三轮全部坚守 customer 域（customer_manage），HR-005 首轮
+正确在 staff 域（role_manage），不再被「商品/库存」关键词跳域。pending_skill 锁定生效。
+
+**但评测仍失败，剩余根因转为 case 层（非 agent 缺陷）**：
+
+1. **HR-005 = case 断言过严 + 数据偏差**：agent 首轮查权限清单发现系统**无独立「库存」
+   权限项**（库存由「商品管理」模块承载），于是合理澄清（方案 A 商品管理 / 方案 B 仅查看），
+   未盲目 create。case 期望 `role_manage(action=create)` 首轮命中，与真实权限数据脱节。
+2. **CU-003 = 数据污染 + 幂等语义**：第一位「张三」（139****1111）已被前序评测跑污染
+   带上了「VIP2活跃」标签，agent 幂等保护正确拒绝重复添加（「已持有该标签，无需重复」）。
+   case 期望 `customer_manage(action=add_tag)` 成功落库，与脏数据冲突。
+
+### 结论与下一步
+- 本次修复达成**下限目标**：staff/customer 引导流程不再跨轮跳域（能力误宣类 bug 收敛）。
+- 剩余 HR-005/CU-003 属 **case 校准**（HR-005 改真实权限名或补澄清轮；CU-003 补数据
+  隔离/幂等期望），非 agent 代码缺陷。与 PR-016（applicable_category_id 精度）、
+  PR-014/015（LLM 波动）同列「case/模型边界」待办。
