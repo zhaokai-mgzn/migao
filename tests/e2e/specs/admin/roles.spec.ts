@@ -112,7 +112,9 @@ test.describe('岗位权限管理页面（#2969 由角色权限改名）', () =>
     await expect(page.permissionTree.getByText('客户管理', { exact: true })).toBeVisible()
     await expect(page.permissionTree.getByText('组织管理', { exact: true })).toBeVisible()
     // 菜单项名 = 侧边栏菜单项
-    await expect(page.permissionTree.getByText('米宝 · 在线对话', { exact: true })).toBeVisible()
+    await expect(page.permissionTree.getByText('人工客服', { exact: true })).toBeVisible()
+    // #3094: 米宝 · 在线对话 菜单入口已移除（智能体对话经右下角 FAB 进入）
+    await expect(page.permissionTree.getByText('米宝 · 在线对话', { exact: true })).toHaveCount(0)
     // #3081: AI 客服配置菜单已移除（合并进企业基础信息）
     await expect(page.permissionTree.getByText('AI 客服配置', { exact: true })).toHaveCount(0)
     await expect(page.permissionTree.getByText('售后工单', { exact: true })).toBeVisible()
@@ -129,9 +131,9 @@ test.describe('岗位权限管理页面（#2969 由角色权限改名）', () =>
   test('权限分配支持菜单组全选/取消全选（#3002）', async () => {
     await page.createBtn.click()
     await page.permissionTree.waitFor({ state: 'visible', timeout: 5_000 })
-    // 智能客服组：米宝 · 在线对话 + 人工客服 + 知识库（#3081 AI 客服配置已移除）
-    const agentItems = page.permissionTree.locator('label').filter({ hasText: /米宝|人工客服|知识库/ }).locator('input[type="checkbox"]')
-    await expect(agentItems).toHaveCount(3)
+    // 智能客服组：人工客服 + 知识库（#3081 AI 客服配置已移除；#3094 米宝 · 在线对话 入口已移除）
+    const agentItems = page.permissionTree.locator('label').filter({ hasText: /人工客服|知识库/ }).locator('input[type="checkbox"]')
+    await expect(agentItems).toHaveCount(2)
     // 点击组头（行）→ 组内全部授予
     await page.permissionTree.getByText('智能客服', { exact: true }).click()
     await expect(agentItems).toBeChecked()
