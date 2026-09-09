@@ -3530,21 +3530,6 @@ _CASE_UI_026 = EvalCase(
     persona='',
 )
 
-# ── UI-027 [NORMAL] 知识库页 - 展示同步历史记录（源: cases/ui.yml）──
-_CASE_UI_027 = EvalCase(
-    id='UI-027',
-    legacy_id='',
-    title='知识库页 - 展示同步历史记录',
-    skill=Skill.GENERAL,
-    difficulty=Difficulty.NORMAL,
-    user_inputs=['知识库页应能查看文档同步历史（时间/状态/结果），resync 后可见新记录'],
-    expectations=['direct_reply'],
-    data_checks=['知识库页新增「同步历史」视图：展示来源文档（sourceIds 映射标题）、同步类型、状态（pending/processing/completed/failed）、时间；无历史时展示空态', '数据来自 GET /api/admin/knowledge/sync-history 已返回字段，无新增后端字段'],
-    skip_reason='纯前端展示由 vitest 单测验证，非 LLM 行为，不进入 agent-eval 冒烟',
-    tags=['ui', 'knowledge', 'sync_history', 'admin-web'],
-    persona='',
-)
-
 # ── UI-028 [NORMAL] 岗位权限页（原角色权限）改名 + 侧边栏菜单七大组重构 + 员工选岗位自动带默认权限（#2969）（源: cases/ui.yml）──
 _CASE_UI_028 = EvalCase(
     id='UI-028',
@@ -3898,7 +3883,6 @@ ALL_CASES = (
     _CASE_UI_024,
     _CASE_UI_025,
     _CASE_UI_026,
-    _CASE_UI_027,
     _CASE_UI_028,
     _CASE_UI_029,
     _CASE_UI_030,
