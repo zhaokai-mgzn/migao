@@ -2,7 +2,7 @@ import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-// case_ids: API-015, UI-027, UI-033
+// case_ids: API-015, UI-033
 
 // Mock API — LLM WIKI 知识卡片页（issue #3051）：数据源必须来自 knowledgeApi.getCards（非硬编码）
 vi.mock('@/lib/api', () => ({

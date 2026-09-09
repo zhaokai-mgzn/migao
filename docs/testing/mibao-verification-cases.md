@@ -2493,7 +2493,7 @@
 真值: token-refresh.no-loop
 溯源: 2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421） ｜ tags: token_refresh, auth, no_loop
 
-## ui（33 case）
+## ui（32 case）
 
 ### UI-001. 织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理 🔵
 ```
@@ -2826,17 +2826,6 @@
 真值: frontend-fix.no-api-change, frontend-fix.vitest
 溯源: 2026-09-06 新增（issue #2964）：加工项「适用商品分类」关联数据此前列表页不可见 ｜ tags: ui, processing, admin-web, list
 
-### UI-027. 知识库页 - 展示同步历史记录 🔵
-```
-你: 知识库页应能查看文档同步历史（时间/状态/结果），resync 后可见新记录
-期望: direct_reply
-数据: 知识库页新增「同步历史」视图：展示来源文档（sourceIds 映射标题）、同步类型、状态（pending/processing/completed/failed）、时间；无历史时展示空态
-数据: 数据来自 GET /api/admin/knowledge/sync-history 已返回字段，无新增后端字段
-跳过: 纯前端展示由 vitest 单测验证，非 LLM 行为，不进入 agent-eval 冒烟
-```
-真值: frontend-fix.no-api-change, frontend-fix.vitest
-溯源: 2026-09-06 新增（issue #2971 自洽性扫描）：knowledge_sync_history 此前无任何读路径，知识库页补同步历史展示，字段全部来自已定契约 ｜ tags: ui, knowledge, sync_history, admin-web
-
 ### UI-028. 岗位权限页（原角色权限）改名 + 侧边栏菜单七大组重构 + 员工选岗位自动带默认权限（#2969） 🔵
 ```
 你: 把「角色权限」改成「岗位权限」：每个岗位默认设置权限；创建员工选岗位自动带出该岗位默认权限，仍可自定义；侧边栏按七大组重构
@@ -2949,8 +2938,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：241（活跃 119，跳过 122）
-- tier 分布：smoke 10 / normal 202 / adversarial 29
+- 用例总数：240（活跃 119，跳过 121）
+- tier 分布：smoke 10 / normal 201 / adversarial 29
 - 售后域：7
 - agents：6
 - api：21
@@ -2973,7 +2962,7 @@
 - registry：1
 - 设置域：10
 - token-refresh：4
-- ui：33
+- ui：32
 - utils：2
 
 ### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）
