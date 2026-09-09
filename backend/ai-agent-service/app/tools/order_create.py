@@ -48,8 +48,10 @@ class OrderCreateTool(BaseTool):
     description = (
         "【触发】创建订单。用户说'创建订单''下单'时调用。"
         "【前置】必须先调 product_detail 查 SKU，多 SKU 必须让用户选规格（颜色/售卖方式/门幅）。单 SKU 直接用。"
-        "必填: customer_name + customer_phone + items(product_name+quantity+unit_price+sellMethod+doorWidth+colorName)。"
-        "【反例】跳过 SKU 选择直接下单。修改订单用 order_manage。WRITE"
+        "必填: customer_name + customer_phone + items(product_name+quantity+unit_price+subtotal)。"
+        "售卖方式/门幅/颜色等规格信息放入 items[i].processing_info（字段：sellingMethod/doorWidth/colorName），"
+        "不要平铺在 items 顶层（平铺会被丢弃）。"
+        "【反例】跳过 SKU 选择直接下单；把 sellingMethod/doorWidth 平铺进 items。修改订单用 order_manage。WRITE"
     )
     allowed_roles = ["admin", "agent", "tenant_admin", "customer"]
 
