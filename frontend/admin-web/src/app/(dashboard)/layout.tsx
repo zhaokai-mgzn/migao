@@ -90,8 +90,9 @@ export default function DashboardLayout({
         <Header />
 
         {/* 页面内容 — pb-24 底部预留空间，卡片 min-h 联动：内容不足一屏时
-            底部锚定内容（如分页）不被右下角米宝浮动按钮（FAB）遮挡（#3070） */}
-        <main className="flex-1 p-4 sm:p-6 pb-24">
+            底部锚定内容（如分页）不被右下角米宝浮动按钮（FAB）遮挡（#3070）。
+            ⚠️ 勿改回 p-4 sm:p-6：Tailwind 中 padding 简写会覆盖 padding-bottom，pb-24 失效 */}
+        <main className="flex-1 px-4 sm:px-6 pt-4 sm:pt-6 pb-24">
           <div className="min-h-[calc(100vh-184px)] rounded-2xl border border-neutral-200/80 bg-white shadow-card">
             {children}
           </div>
