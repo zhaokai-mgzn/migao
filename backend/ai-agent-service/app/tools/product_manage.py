@@ -96,6 +96,10 @@ class ProductManageTool(BaseTool):
                 "type": "object",
                 "description": "规格对象。可含 weight(克重) material(材质) craft(工艺) style(风格) pattern(图案) function(功能)",
             },
+            "allow_return_restock": {
+                "type": "boolean",
+                "description": "退货后是否回补库存（可选，create 时使用，issue #2991）：true=退货回补/可再售，false=定制商品退货不回补。缺省 false",
+            },
             # manage_processing_items 专用参数
             "processing_item_action": {
                 "type": "string", "enum": ["add", "remove"],
@@ -134,6 +138,7 @@ class ProductManageTool(BaseTool):
         processing_item_configs: Optional[list] = None,
         pricing_type: Optional[str] = None,
         processing_item_action: Optional[str] = None,
+        allow_return_restock: Optional[bool] = None,
     ) -> ToolResult:
         if not self.check_permission(context):
             return ToolResult(
@@ -153,7 +158,8 @@ class ProductManageTool(BaseTool):
                 return await self._create_product(context, name, category_id, price,
                     description, stock_quantity, processing_item_ids, brand, images,
                     detail_images, specifications, unit, colors, selling_methods,
-                    door_widths, sku_code, skus, processing_item_configs, pricing_type, status)
+                    door_widths, sku_code, skus, processing_item_configs, pricing_type,
+                    status, allow_return_restock)
             elif action == "update":
                 return await self._update_product(context, product_id, name, category_id,
                     price, description, stock_quantity, brand, images, detail_images,
@@ -179,7 +185,8 @@ class ProductManageTool(BaseTool):
                                stock_quantity, processing_item_ids, brand, images,
                                detail_images, specifications, unit, colors,
                                selling_methods, door_widths, sku_code, skus,
-                               processing_item_configs, pricing_type, status) -> ToolResult:
+                               processing_item_configs, pricing_type, status,
+                               allow_return_restock=None) -> ToolResult:
         if not name:
             return ToolResult(
                 success=False, error="缺少商品名称",
@@ -205,6 +212,9 @@ class ProductManageTool(BaseTool):
         if unit: json_data["unit"] = unit
         if pricing_type: json_data["pricingType"] = pricing_type
         if status: json_data["status"] = status
+        # allow_return_restock 透传（issue #2991，建品时设置退货回补开关）
+        if allow_return_restock is not None:
+            json_data["allowReturnRestock"] = allow_return_restock
 
         logger.info(f"[product_manage] Agent create: name={name}")
         client = get_admin_api_client()
