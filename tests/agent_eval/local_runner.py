@@ -1101,7 +1101,8 @@ async def main():
     # xiaobu 模式：仅跑 C 端可用用例（订单查询/下单/售后/通用），
     # 跳过管理类（order_manage/after_sales_manage/product_manage 等 B 端工具）用例
     if PERSONA == "xiaobu":
-        XIAOBU_ONLY_TAGS = {"order_query", "order_create", "aftersale", "query", "product"}
+        # knowledge/wiki：C 端小布知识问答（KN-008 等 xiaobu persona 知识 case）必须可跑（#3076）
+        XIAOBU_ONLY_TAGS = {"order_query", "order_create", "aftersale", "query", "product", "knowledge", "wiki"}
         def xiaobu_filter(c):
             if c.skip_reason:
                 return False

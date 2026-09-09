@@ -2,7 +2,7 @@
 KnowledgeSearchTool 单元测试（LLM WIKI 板块 P7，issue #3051）
 词条检索工具：命中返回卡片（≤3 条、answer 截断）/ 未命中兜底 / 异常降级 / 权限与参数校验。
 """
-# case_ids: API-022
+# case_ids: API-022, KN-008
 
 import pytest
 from unittest.mock import AsyncMock, patch
@@ -113,3 +113,29 @@ class TestKnowledgeSearchTool:
         assert kwargs["params"]["query"] == "遮光等级"
         assert kwargs["params"]["category"] == "faq"
         assert "/api/admin/knowledge/cards/search" in args[0]
+
+    def test_description_has_source_annotation_boundary(self):
+        """来源标注边界规则（P2-4，#3076）：📖 标注仅覆盖卡片原文，禁止自补内容混入标注/伪称本店事实。
+        防未来 prompt 重构删掉该契约——删规则 = 本测试 fail。"""
+        tool = KnowledgeSearchTool()
+        desc = tool.description
+        assert "来源标注边界" in desc
+        assert "仅覆盖卡片原文" in desc
+        assert "禁止" in desc and "伪称为本店事实" in desc
+
+    @pytest.mark.asyncio
+    async def test_hit_message_carries_annotation_boundary(self, patch_client):
+        client = AsyncMock()
+        client.get.return_value = make_client_response([
+            {"title": "雪尼尔面料会起球吗", "answer": "起球概率较低……", "category": "faq", "sourceType": "manual"},
+        ])
+        patch_client.return_value = client
+
+        tool = KnowledgeSearchTool()
+        result = await tool.execute(make_context(), query="雪尼尔 起球")
+
+        assert result.success is True
+        assert result.data["hit"] is True
+        # hit message 必须携带边界约束（仅卡片原文可入标注、自补分离、禁伪称）
+        assert "仅卡片原文可置于" in (result.message or "")
+        assert "伪称本店事实" in (result.message or "")

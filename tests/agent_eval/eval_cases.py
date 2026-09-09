@@ -1901,7 +1901,7 @@ _CASE_KN_007 = EvalCase(
     user_inputs=['你们退换货政策是怎样的？'],
     expectations=['knowledge_search(query=退换货)'],
     data_checks=['售后政策/质保类咨询为知识问题：双端应调 knowledge_search 命中本店退换货卡片并标注来源，而非通用售后流程话术；操作类（我要退货/申请退款）仍走售后工单（不回归）'],
-    skip_reason='路由改判由 rule_matcher 单测验证（test_rule_matcher.py 新增 4 例）；LLM 链路待部署后重放。case 有效性验证：旧场景（验收实测无 tool 调用）重放必 fail，修复部署后重放必 pass',
+    skip_reason='',
     tags=['knowledge', 'wiki', 'xiaobu', 'mibao'],
     persona='',
 )
@@ -1919,6 +1919,21 @@ _CASE_KN_004 = EvalCase(
     skip_reason='',
     tags=['knowledge', 'wiki', 'mibao'],
     persona='mibao',
+)
+
+# ── KN-008 [NORMAL] 知识来源标注边界 - 自补常识不得混入「📖 来自本店知识库」标注（P2-4，issue #3076）（源: cases/knowledge.yml）──
+_CASE_KN_008 = EvalCase(
+    id='KN-008',
+    legacy_id='',
+    title='知识来源标注边界 - 自补常识不得混入「📖 来自本店知识库」标注（P2-4，issue #3076）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['雪尼尔面料会起球吗'],
+    expectations=['knowledge_search(query=雪尼尔)'],
+    data_checks=['命中知识卡片时回复含「📖 来自本店知识库」来源标注（不回归）；标注仅覆盖卡片原文，自补常识与标注分离并注明通用参考'],
+    skip_reason='',
+    tags=['knowledge', 'wiki', 'source-annotation', 'xiaobu'],
+    persona='xiaobu',
 )
 
 # ── MC-001 [NORMAL] 记忆提取解析 - 纯 JSON/内嵌数组/非法输入（源: cases/misc.yml）──
@@ -3776,6 +3791,7 @@ ALL_CASES = (
     _CASE_KN_006,
     _CASE_KN_007,
     _CASE_KN_004,
+    _CASE_KN_008,
     _CASE_MC_001,
     _CASE_MC_002,
     _CASE_MC_003,
