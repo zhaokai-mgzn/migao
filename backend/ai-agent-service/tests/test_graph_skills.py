@@ -70,10 +70,11 @@ class TestSkillToolSubsets:
         assert "order_query" not in PRODUCT_TOOLS
 
     def test_knowledge_tools(self):
-        """知识 Skill 仅绑定 knowledge_search（issue #3059：knowledge_manage 管理操作走 admin-web，不注册工具）"""
+        """知识 Skill 绑定 knowledge_search + processing_item_query（issue #3085：加工计价走工具实时查询；knowledge_manage 管理操作走 admin-web，不注册工具）"""
         assert "knowledge_search" in KNOWLEDGE_TOOLS
+        assert "processing_item_query" in KNOWLEDGE_TOOLS
         assert "knowledge_manage" not in KNOWLEDGE_TOOLS
-        assert len(KNOWLEDGE_TOOLS) == 1
+        assert len(KNOWLEDGE_TOOLS) == 2
 
     def test_aftersales_tools(self):
         """售后 Skill 包含正确的 Tool（knowledge_search 已禁用）"""

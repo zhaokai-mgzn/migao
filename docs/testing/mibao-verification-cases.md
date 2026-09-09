@@ -159,7 +159,7 @@
 真值: ai-chat.agent-factory
 溯源: 2026-08-25 新增：ai-agent-service agents-customer_service_agent 覆盖率补全（issue #2429） ｜ tags: agents, factory, alias
 
-## api（21 case）
+## api（19 case）
 
 ### API-001. chat 会话生命周期 - 租户隔离 + 用户所有权 + 幂等/重开 🔵
 ```
@@ -318,26 +318,6 @@
 跳过: 模板套用由 MockMvc + Service 单测验证（KnowledgeTemplateControllerTest/KnowledgeTemplateServiceTest），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 溯源: 2026-09-08 新增（issue #3051 LLM WIKI 板块 P3）：行业模板体系——种子 Markdown 结构化迁移为 knowledge-templates/curtain/template.json（32 条），模板=平台资产，一键套用复制为租户词条 ｜ tags: api, knowledge, wiki, template
-
-### API-023. 知识派生对账 - 存量加工项重建派生卡片（商品派生已移除，issue #3083） 🔵
-```
-你: 管理端触发存量对账：历史加工项无需逐个编辑即可补生成派生知识卡片（商品派生能力已下线，价格走 product_detail 工具实时查询）
-数据: POST /api/admin/knowledge/derive/rebuild 重建派生卡片：返回 {processingItems} 统计（不再包含 products，商品派生已移除）
-数据: 同源（tenant+sourceType+sourceRef）upsert：已存在卡片更新 version+1，不重复插入
-数据: 商品创建/更新/上下架不再触发任何知识卡片派生（issue #3083）
-跳过: 对账逻辑由 Service 单测（KnowledgeDeriveServiceTest deriveAll）+ Controller MockMvc 测试验证，非 LLM 行为
-```
-溯源: 2026-09-09 更新（issue #3083）：商品派生能力移除，对账仅剩加工项——商品事实类问题由 product_detail 工具实时查询，派生卡片快照为冗余第二数据源 ｜ tags: api, knowledge, wiki, derive
-
-### API-018. 配置（加工项）派生知识卡片 - pricingMethod 计价文案自动生成 + 变更自动更新（商品派生已移除，issue #3083） 🔵
-```
-你: 加工项信息变更后，关联的派生知识卡片自动更新，AI 回答计价问题与加工项数据一致；商品价格问题由 product_detail 工具实时查询
-数据: 加工项创建/更新后自动生成「{加工项名}怎么计价」卡片：按 pricingMethod 生成文案（per_meter 按米/per_set 按套/fixed 固定价格+单价/per_area 按面积），sourceType=config、sourceRef=加工项ID、status=published
-数据: 同源（tenant+sourceType+sourceRef）upsert：存在则更新 version+1，不重复插入
-数据: 商品派生已移除：不再生成 sourceType=product 的「{商品名}多少钱」卡片（价格走 product_detail 工具，杜绝价格双源快照）
-跳过: 派生逻辑由 Service 单测验证（KnowledgeDeriveServiceTest），非 LLM 行为，不进入 agent-eval 冒烟
-```
-溯源: 2026-09-08 新增（issue #3051 LLM WIKI 板块 P4）：L2 本店事实层——加工项结构化数据直接生成知识卡片（替代 RAG 检索）；2026-09-09 更新（issue #3083）：商品派生移除，仅保留加工项派生 ｜ tags: api, knowledge, wiki, derive
 
 ### API-019. 待确认队列闭环 - 候选读+写路径齐全，采纳转卡片、拒绝记原因（LLM WIKI 板块 #3051 P5） 🔵
 ```
@@ -1500,14 +1480,14 @@
 ```
 溯源: 2026-09-08 新增（issue #3064 验收 P1-2）：双端售后政策类问题未走知识卡片——根因 rule_matcher AFTER_SALES 关键词抢占（换货/售后），规则层加政策咨询改判 KNOWLEDGE_FAQ；2026-09-09 本地重放通过（KN-003 同域 smoke 100%）后解除 skip（issue #3076 复盘收尾） ｜ tags: knowledge, wiki, xiaobu, mibao
 
-### KN-004. 米宝知识问答 - 加工计价规则走知识卡片检索 🔵
+### KN-004. 米宝知识问答 - 加工计价规则走 processing_item_query 工具（加工项派生卡片已移除） 🔵
 ```
 你: 我们店打孔加工怎么计价？
-期望: knowledge_search(query=加工)
+期望: processing_item_query(keyword=打孔)
 期望: success=true
-数据: 加工计价规则类问题优先检索本店知识卡片（加工项派生卡片，sourceType=config）；命中基于卡片回答并注明来源（商品派生已移除，商品价格走 product_detail 工具）
+数据: 加工计价规则类问题：knowledge_search 未命中（加工项派生卡片已移除，#3085）→ 用 processing_item_query 查店铺加工项目录（返回计价方式/单价/单位），以工具结果回答计价规则
 ```
-溯源: 2026-09-08 新增（issue #3059）：米宝知识问答日常回归（加工计价子域，L2 派生卡片） ｜ tags: knowledge, wiki, mibao
+溯源: 2026-09-08 新增（issue #3059）：米宝知识问答日常回归（加工计价子域）；2026-09-09 更新（issue #3085）：加工项派生移除，计价走 processing_item_query 工具实时查询 ｜ tags: knowledge, wiki, mibao
 
 ### KN-008. 知识来源标注边界 - 自补常识不得混入「📖 来自本店知识库」标注（P2-4，issue #3076） 🔵
 ```
@@ -2922,24 +2902,24 @@
 数据: 待确认候选「采纳」后：toast 文案包含去向（跳转知识卡片列表）；落地「知识卡片」Tab 后新卡行高亮定位（Table 的 highlightRowKey 匹配新卡 id，bg-primary-50），高亮 4s 自动消退
 数据: 行业模板「一键套用」：先弹确认弹窗（说明将新增 N 条并立即发布、已存在自动跳过），未确认不得调用 applyTemplate；确认后 toast 文案包含去向与定位方式（筛选「来源=模板」）
 数据: 套用确认后：跳转「知识卡片」Tab 并自动按来源=模板筛选（getCards 带 sourceType=template），列表仅显示模板来源卡片（批量成果可核对可编辑）
-数据: 「知识卡片」Tab 筛选区常驻「来源」下拉（全部来源/模板/加工项派生/会话提炼/文档提炼/人工——来源定义「一眼看懂」，商品派生能力已移除故无该选项），用户可随时按来源定位卡片
+数据: 「知识卡片」Tab 筛选区常驻「来源」下拉（全部来源/模板/会话提炼/文档提炼/人工——商品派生/加工项派生能力均已移除（#3083/#3085），来源定义「一眼看懂」），用户可随时按来源定位卡片
 数据: 待确认/行业模板两处 Tab 副文案补充去向说明，与 toast 口径一致
 跳过: 纯前端交互由 vitest 单测验证，非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: frontend-fix.no-api-change, frontend-fix.vitest
 溯源: 2026-09-09 新增（issue #3080）：知识库采纳/套用成果去向提示 — toast 带去向 + 采纳高亮 + 套用确认弹窗 + 来源筛选定位 ｜ tags: ui, knowledge, feedback-loop, locate, admin-web
 
-### UI-035. 知识库来源定义「一眼看懂」+ 商品派生能力移除（issue #3083） 🔵
+### UI-035. 知识库来源定义「一眼看懂」+ 商品/加工项派生能力移除（issue #3083/#3085） 🔵
 ```
-你: 知识库来源定义需用户一眼看懂：「配置」含义模糊（实为加工项计价卡片）应改「加工项派生」；商品派生能力移除后来源筛选不再出现「商品派生」选项
+你: 知识库来源定义需用户一眼看懂；商品派生（#3083）与加工项派生（#3085）能力移除后，来源筛选仅剩活跃来源（模板/会话提炼/文档提炼/人工）
 期望: direct_reply
-数据: 来源筛选下拉显示「加工项派生」而非「配置」（SOURCE_META.config.label 已改为自解释文案）
-数据: 来源筛选下拉不含「商品派生」选项（商品派生能力已移除，SOURCE_FILTER_OPTIONS 排除 product）
-数据: 来源徽标（列表列）同样使用自解释文案：config → 加工项派生；product 仅保留以渲染存量归档卡（不参与筛选）
+数据: 来源筛选下拉选项 = 全部来源/模板/会话提炼/文档提炼/人工（SOURCE_FILTER_OPTIONS 排除 product/config 两个已移除的派生来源）
+数据: 来源徽标（列表列）：product/config 仅保留以渲染存量归档卡（自解释文案：商品派生/加工项派生），不参与筛选
+数据: 来源定义全部自解释：模板/会话提炼/文档提炼/人工 无模糊词（如「配置」）
 跳过: 纯前端文案/交互由 vitest 单测验证，非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: frontend-fix.no-api-change, frontend-fix.vitest
-溯源: 2026-09-09 新增（issue #3083）：知识库来源定义清晰化 — config→加工项派生、商品派生选项移除 ｜ tags: ui, knowledge, source-clarity, admin-web
+溯源: 2026-09-09 新增（issue #3083）：知识库来源定义清晰化 — config→加工项派生、商品派生选项移除；2026-09-09 更新（issue #3085）：加工项派生移除，筛选仅剩活跃来源 ｜ tags: ui, knowledge, source-clarity, admin-web
 
 ## utils（2 case）
 
@@ -2970,11 +2950,11 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：243（活跃 121，跳过 122）
-- tier 分布：smoke 10 / normal 204 / adversarial 29
+- 用例总数：241（活跃 121，跳过 120）
+- tier 分布：smoke 10 / normal 202 / adversarial 29
 - 售后域：7
 - agents：6
-- api：21
+- api：19
 - bmini：5
 - 分类域：3
 - 对话边界域：32
@@ -3003,8 +2983,6 @@
 - API-015: 知识知识卡片 CRUD + 状态机 - 创建/编辑/发布/归档/删除（LLM WIKI 板块 #3051）
 - API-016: 知识知识卡片检索 - 仅 published + 租户隔离 + 关键词命中（LLM WIKI 板块 #3051）
 - API-017: 行业模板 - 目录 + 一键套用（去重 + source=template）（LLM WIKI 板块 #3051 P3）
-- API-023: 知识派生对账 - 存量加工项重建派生卡片（商品派生已移除，issue #3083）
-- API-018: 配置（加工项）派生知识卡片 - pricingMethod 计价文案自动生成 + 变更自动更新（商品派生已移除，issue #3083）
 - API-019: 待确认队列闭环 - 候选读+写路径齐全，采纳转卡片、拒绝记原因（LLM WIKI 板块 #3051 P5）
 - API-020: 会话提炼闭环 - 人工客服会话 → AI 提炼候选 → 待确认队列（LLM WIKI 板块 #3051 P5b）
 - API-021: 文档提炼闭环 - 文档文本 → AI 提炼候选 → 待确认队列（LLM WIKI 板块 #3051 P6）
@@ -3020,7 +2998,7 @@
 - KN-003: 米宝知识问答 - 本店售后政策先检索知识卡片（B 端接线回归，issue #3059）
 - KN-006: 文档提炼 - 有效售后文本必须产出候选进待确认队列（P1-1 回归，issue #3063）
 - KN-007: 售后政策类问题走知识卡片检索（双端，P1-2 回归，issue #3064）
-- KN-004: 米宝知识问答 - 加工计价规则走知识卡片检索
+- KN-004: 米宝知识问答 - 加工计价规则走 processing_item_query 工具（加工项派生卡片已移除）
 - KN-008: 知识来源标注边界 - 自补常识不得混入「📖 来自本店知识库」标注（P2-4，issue #3076）
 - MC-012: CI 失败报告去重 - 同日同标题 open issue 存在时不重复建
 
