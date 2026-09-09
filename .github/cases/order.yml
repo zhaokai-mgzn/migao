@@ -207,7 +207,7 @@ cases:
     data_checks:
       - "状态流转: pending → producing → shipped → completed"
       - "每步操作前先确认当前状态"
-    skip_reason: ""
+    skip_reason: "依赖生产不存在的固定测试订单 ORD-20260701-0001（API 实测 found: 0），评测数据脱节——待重构为自包含（先 order_create 建测试单再流转），否则持续假失败污染基线"
     merge_log: "eval M006 吸收 verification 1.6（单步 update_status）、1.7 的状态更新段，并吸收 eval O004（标记已发货）"
     traces:
       tests:
