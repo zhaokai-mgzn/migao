@@ -42,7 +42,6 @@ class AgentProductServiceTest {
     @Mock private ProductProcessingItemMapper productProcessingItemMapper;
     @Mock private ProcessingItemMapper processingItemMapper;
     @Mock private ProductAttributeMapper productAttributeMapper;
-    @Mock private KnowledgeDeriveService knowledgeDeriveService;
 
     private Product testProduct;
     private Category testCategory;

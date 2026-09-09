@@ -166,7 +166,7 @@ cases:
 
   - id: KN-004
     legacy_id: ""
-    title: "米宝知识问答 - 加工计价规则走知识卡片检索"
+    title: "米宝知识问答 - 加工计价规则走 processing_item_query 工具（加工项派生卡片已移除）"
     domains:
       - knowledge
       - chat
@@ -180,14 +180,14 @@ cases:
     user_inputs:
       - "我们店打孔加工怎么计价？"
     expectations:
-      - tool: knowledge_search
+      - tool: processing_item_query
         args:
-          query: 加工
+          keyword: 打孔
       - "success=true"
     data_checks:
-      - "加工计价规则类问题优先检索本店知识卡片（加工项派生卡片，sourceType=config）；命中基于卡片回答并注明来源（商品派生已移除，商品价格走 product_detail 工具）"
+      - "加工计价规则类问题：knowledge_search 未命中（加工项派生卡片已移除，#3085）→ 用 processing_item_query 查店铺加工项目录（返回计价方式/单价/单位），以工具结果回答计价规则"
     skip_reason: ""
-    merge_log: "2026-09-08 新增（issue #3059）：米宝知识问答日常回归（加工计价子域，L2 派生卡片）"
+    merge_log: "2026-09-08 新增（issue #3059）：米宝知识问答日常回归（加工计价子域）；2026-09-09 更新（issue #3085）：加工项派生移除，计价走 processing_item_query 工具实时查询"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_knowledge_search.py"

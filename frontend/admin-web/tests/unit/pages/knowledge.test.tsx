@@ -330,17 +330,17 @@ describe('KnowledgePage（LLM WIKI 知识卡片管理）', () => {
     })
   })
 
-  it('source filter uses self-explanatory labels: 加工项派生 shown, 商品派生/配置 hidden (#3083)', async () => {
+  it('source filter only lists active sources: 模板/会话提炼/文档提炼/人工, no 派生/配置 (#3083/#3085)', async () => {
     render(<KnowledgePage />)
     await waitFor(() => {
       expect(screen.getByText('雪尼尔面料会起球吗')).toBeInTheDocument()
     })
     const srcSelect = screen.getByLabelText('来源筛选') as HTMLSelectElement
     const options = Array.from(srcSelect.options).map((o) => o.textContent ?? '')
-    // 「配置」改名为自解释的「加工项派生」（用户一眼看懂）
-    expect(options).toContain('加工项派生')
-    expect(options).not.toContain('配置')
-    // 商品派生能力已移除，来源筛选不再出现该选项
+    // 商品派生（#3083）与加工项派生（#3085）能力均已移除，来源筛选只保留活跃来源
+    expect(options).toEqual(['全部来源', '模板', '会话提炼', '文档提炼', '人工'])
+    expect(options).not.toContain('加工项派生')
     expect(options).not.toContain('商品派生')
+    expect(options).not.toContain('配置')
   })
 })
