@@ -1460,9 +1460,13 @@ async def execute_skill(
     result: dict[str, Any] = {"messages": new_messages, "final_answer": final_content, "skill_used": skill_name}
 
     # ── 10. 跨轮持久化 ──
-    creation_skills = {"product", "order", "aftersales"}
+    # creation_skills 覆盖所有「多轮引导写流程」的域：创建类流程在未完成前必须锁
+    # pending_skill，否则用户后续轮补充信息时重新走完整路由被关键词误判跳域
+    # （HR-005 角色创建、CU-003 客户打标签：staff/customer 此前缺失 → 引导漂移 + 能力误宣）。
+    creation_skills = {"product", "order", "aftersales", "staff", "customer"}
     if skill_name in creation_skills:
-        success_markers = ("创建成功", "已创建", "下单成功", "工单已创建", "售后工单")
+        success_markers = ("创建成功", "已创建", "下单成功", "工单已创建", "售后工单",
+                          "账号已创建", "角色已创建", "标签已添加", "已更新", "已添加")
         cancel_markers = ("已取消", "已取消创建", "好的，已取消", "不创建了", "算了不买了")
         has_succeeded = any(kw in final_content for kw in success_markers)
         has_cancelled = any(kw in final_content for kw in cancel_markers)
