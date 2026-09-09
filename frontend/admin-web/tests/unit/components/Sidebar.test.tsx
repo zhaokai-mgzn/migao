@@ -85,9 +85,9 @@ describe('Sidebar', () => {
     expect(screen.getByText('组织管理')).toBeInTheDocument()  // 组织管理组（员工+岗位权限+企业信息）
     // 子菜单项
     expect(screen.getByText('经营看板')).toBeInTheDocument()
-    // UI-005/UI-011: 智能客服分组下 人工客服 + 知识库（#3094 米宝·在线对话 菜单入口已移除，对话经右下角 FAB）；#2969 知识库并入本组；#3081 AI 客服配置已合并进企业基础信息
+    // UI-005/UI-011: 智能客服分组下 在线接待 + 知识库（#3094 米宝·在线对话 菜单入口已移除，对话经右下角 FAB）；#2969 知识库并入本组；#3081 AI 客服配置已合并进企业基础信息
     expect(screen.queryByText('米宝 · 在线对话')).not.toBeInTheDocument()
-    expect(screen.getByText('人工客服')).toBeInTheDocument()
+    expect(screen.getByText('在线接待')).toBeInTheDocument()
     expect(screen.getByText('知识库')).toBeInTheDocument()
     expect(screen.getByText('商品列表')).toBeInTheDocument()
     // #1403: 商品分类管理已移出侧边栏，入口内嵌到新增商品页
@@ -118,7 +118,7 @@ describe('Sidebar', () => {
     expect(screen.getByText('订单列表').closest('a')).toHaveAttribute('href', '/orders')
     // #3094: 米宝 · 在线对话 菜单入口已移除（侧边栏不再渲染 /chat 链接）
     expect(screen.queryByText('米宝 · 在线对话')).not.toBeInTheDocument()
-    expect(screen.getByText('人工客服').closest('a')).toHaveAttribute('href', '/agent-workspace/human-sessions')
+    expect(screen.getByText('在线接待').closest('a')).toHaveAttribute('href', '/agent-workspace/human-sessions')
     expect(screen.getByText('知识库').closest('a')).toHaveAttribute('href', '/knowledge')
     expect(screen.getByText('通知中心').closest('a')).toHaveAttribute('href', '/notifications')
   })
@@ -189,13 +189,13 @@ describe('Sidebar', () => {
     expect(getActiveClass(link)).toContain('bg-primary-600')
   })
 
-  // ── 前缀嵌套路由互斥单高亮（#3094 米宝菜单已移除：/chat 无侧边栏入口，人工客服不重复高亮）──
+  // ── 前缀嵌套路由互斥单高亮（#3094 米宝菜单已移除：/chat 无侧边栏入口，在线接待不重复高亮）──
 
   it('/chat 时无侧边栏菜单高亮（米宝入口已移除，对话经右下角 FAB）', () => {
     mockUsePathname.mockReturnValue('/chat')
     render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
     expect(screen.queryByText('米宝 · 在线对话')).not.toBeInTheDocument()
-    const humanLink = screen.getByText('人工客服').closest('a')!
+    const humanLink = screen.getByText('在线接待').closest('a')!
     expect(getActiveClass(humanLink)).not.toContain('bg-primary-600')
   })
 
@@ -252,27 +252,27 @@ describe('Sidebar', () => {
     expect(follows(smartCs, productCenter)).toBe(true)
   })
 
-  it('「智能客服」下子菜单顺序：人工客服 在前、知识库次之（#2969/#3081/#3094 米宝·在线对话 入口已移除）', () => {
+  it('「智能客服」下子菜单顺序：在线接待 在前、知识库次之（#2969/#3081/#3094 米宝·在线对话 入口已移除）', () => {
     render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
     const groupContainer = screen.getByText('智能客服').closest('.mb-4') as HTMLElement
     const links = groupContainer.querySelectorAll('a')
     expect(links.length).toBe(2)
-    expect(links[0].textContent).toContain('人工客服')
+    expect(links[0].textContent).toContain('在线接待')
     expect(links[1].textContent).toContain('知识库')
   })
 
-  it('「人工客服」已从「工作台」分组移除（工作台仅剩经营看板）', () => {
+  it('「在线接待」已从「工作台」分组移除（工作台仅剩经营看板）', () => {
     render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
     const workspaceGroup = screen.getByText('工作台').closest('.mb-4') as HTMLElement
     expect(within(workspaceGroup).getByText('经营看板')).toBeInTheDocument()
-    expect(within(workspaceGroup).queryByText('人工客服')).not.toBeInTheDocument()
-    // 人工客服整体仍存在（移入智能客服分组）
-    expect(screen.getByText('人工客服')).toBeInTheDocument()
+    expect(within(workspaceGroup).queryByText('在线接待')).not.toBeInTheDocument()
+    // 在线接待整体仍存在（移入智能客服分组）
+    expect(screen.getByText('在线接待')).toBeInTheDocument()
   })
 
-  it('「人工客服」渲染 Headphones 图标，与「经营看板」BarChart3 图标明确区分', () => {
+  it('「在线接待」渲染 Headphones 图标，与「经营看板」BarChart3 图标明确区分', () => {
     render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
-    const humanLink = screen.getByText('人工客服').closest('a')!
+    const humanLink = screen.getByText('在线接待').closest('a')!
     expect(within(humanLink).getByTestId('icon-headphones')).toBeInTheDocument()
     expect(within(humanLink).queryByTestId('icon-bar-chart3')).not.toBeInTheDocument()
     const dashboardLink = screen.getByText('经营看板').closest('a')!
@@ -316,7 +316,7 @@ describe('Sidebar', () => {
       // UI-005/UI-011: admin 可见智能客服大类及其子菜单（#3094 米宝·在线对话 入口已移除）
       expect(screen.getByText('智能客服')).toBeInTheDocument()
       expect(screen.queryByText('米宝 · 在线对话')).not.toBeInTheDocument()
-      expect(screen.getByText('人工客服')).toBeInTheDocument()
+      expect(screen.getByText('在线接待')).toBeInTheDocument()
     })
 
     it('should filter out items user has no permission for', () => {
@@ -347,7 +347,7 @@ describe('Sidebar', () => {
       // UI-005/UI-011: 无 agent:session / knowledge:manage → 智能客服整组隐藏（#3081 已移除 AI 客服配置菜单）
       expect(screen.queryByText('智能客服')).not.toBeInTheDocument()
       expect(screen.queryByText('米宝 · 在线对话')).not.toBeInTheDocument()
-      expect(screen.queryByText('人工客服')).not.toBeInTheDocument()
+      expect(screen.queryByText('在线接待')).not.toBeInTheDocument()
     })
 
     it('should show only dashboard when user has no permissions', () => {
@@ -370,18 +370,18 @@ describe('Sidebar', () => {
       expect(screen.queryByText('知识库')).not.toBeInTheDocument()
     })
 
-    it('有 agent:session → 保留「人工客服」（#3094 米宝·在线对话 菜单已移除不渲染；#3081 无 AI 客服配置菜单）', () => {
+    it('有 agent:session → 保留「在线接待」（#3094 米宝·在线对话 菜单已移除不渲染；#3081 无 AI 客服配置菜单）', () => {
       mockUseAuthStore.mockReturnValue({
         user: { id: '5', username: 'cs', name: '客服', permissions: ['agent:session'], roles: [] },
       })
       render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
       expect(screen.getByText('智能客服')).toBeInTheDocument()
       expect(screen.queryByText('米宝 · 在线对话')).not.toBeInTheDocument()
-      expect(screen.getByText('人工客服')).toBeInTheDocument()
+      expect(screen.getByText('在线接待')).toBeInTheDocument()
       expect(screen.queryByText('AI 客服配置')).not.toBeInTheDocument()
     })
 
-    it('仅 knowledge:manage → 隐藏「人工客服」，保留「知识库」（#3094 米宝入口已移除）', () => {
+    it('仅 knowledge:manage → 隐藏「在线接待」，保留「知识库」（#3094 米宝入口已移除）', () => {
       mockUseAuthStore.mockReturnValue({
         user: { id: '6', username: 'kb', name: '知识管理员', permissions: ['knowledge:manage'], roles: [] },
       })
@@ -389,7 +389,7 @@ describe('Sidebar', () => {
       expect(screen.getByText('智能客服')).toBeInTheDocument()
       expect(screen.getByText('知识库')).toBeInTheDocument()
       expect(screen.queryByText('米宝 · 在线对话')).not.toBeInTheDocument()
-      expect(screen.queryByText('人工客服')).not.toBeInTheDocument()
+      expect(screen.queryByText('在线接待')).not.toBeInTheDocument()
     })
 
     it('两个子菜单均不可见时「智能客服」大类整组隐藏（#3094）', () => {
@@ -399,7 +399,7 @@ describe('Sidebar', () => {
       render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
       expect(screen.queryByText('智能客服')).not.toBeInTheDocument()
       expect(screen.queryByText('米宝 · 在线对话')).not.toBeInTheDocument()
-      expect(screen.queryByText('人工客服')).not.toBeInTheDocument()
+      expect(screen.queryByText('在线接待')).not.toBeInTheDocument()
       expect(screen.queryByText('知识库')).not.toBeInTheDocument()
     })
 

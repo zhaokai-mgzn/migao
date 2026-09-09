@@ -558,7 +558,7 @@ public class RegistrationService {
                 {"订单退款", "order:refund", "order", "refund", "处理退款/售后工单"},
                 {"客户管理", "customer:view", "customer", "view", "查看客户"},
                 {"财务对账", "finance:view", "finance", "view", "查看财务流水/对账"},
-                {"会话监控", "agent:session", "agent", "session", "米宝对话/会话监控/人工客服"},
+                {"会话监控", "agent:session", "agent", "session", "米宝对话/会话监控/在线接待"},
                 {"员工列表", "employee:list", "employee", "list", "查看员工列表"},
                 {"新增员工", "employee:create", "employee", "create", "新增/编辑/删除员工"},
                 {"系统管理", "system:manage", "system", "manage", "企业信息/岗位权限/系统设置"}

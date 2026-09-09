@@ -1,7 +1,7 @@
 'use client'
 
 /**
- * 人工客服工作台
+ * 在线接待工作台
  *
  * 处理 C 端用户转人工后的会话：
  *   - 左侧：转人工会话列表（waiting/active）
@@ -111,7 +111,7 @@ export default function HumanAgentSessionsPage() {
     <div className="h-[calc(100vh-180px)] flex flex-col">
       {/* 顶部 */}
       <div className="flex items-center justify-between flex-shrink-0 px-5 h-14 border-b border-neutral-200/80">
-        <h1 className="text-base font-semibold text-neutral-900">人工客服工作台</h1>
+        <h1 className="text-base font-semibold text-neutral-900">在线接待工作台</h1>
         <div className="flex items-center gap-4 text-xs text-neutral-500">
           <span>待接待 {sessions.filter(s => s.status === 'waiting').length}</span>
           <span>接待中 {sessions.filter(s => s.status === 'active').length}</span>

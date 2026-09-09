@@ -87,7 +87,7 @@ const detailWithoutAiContext = {
   ],
 }
 
-describe('人工客服工作台 - 转人工前 AI 对话上下文展示（GB/T 47746-2026, issue #2776）', () => {
+describe('在线接待工作台 - 转人工前 AI 对话上下文展示（GB/T 47746-2026, issue #2776）', () => {
   beforeEach(() => {
     getSessionsMock.mockReset()
     getSessionMock.mockReset()

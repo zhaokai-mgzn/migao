@@ -80,7 +80,7 @@ const PERMISSION_CATALOG = [
   { id: 'p-order-refund', name: '订单退款', code: 'order:refund', resource: 'order', action: 'refund', description: '处理退款/售后工单' },
   { id: 'p-customer', name: '客户管理', code: 'customer:view', resource: 'customer', action: 'view', description: '查看客户' },
   { id: 'p-finance', name: '财务对账', code: 'finance:view', resource: 'finance', action: 'view', description: '查看财务流水/对账' },
-  { id: 'p-agent-session', name: '会话监控', code: 'agent:session', resource: 'agent', action: 'session', description: '米宝对话/会话监控/人工客服' },
+  { id: 'p-agent-session', name: '会话监控', code: 'agent:session', resource: 'agent', action: 'session', description: '米宝对话/会话监控/在线接待' },
   { id: 'p-employee-list', name: '员工列表', code: 'employee:list', resource: 'employee', action: 'list', description: '查看员工列表' },
   { id: 'p-employee-create', name: '新增员工', code: 'employee:create', resource: 'employee', action: 'create', description: '新增/编辑/删除员工' },
   { id: 'p-system', name: '系统管理', code: 'system:manage', resource: 'system', action: 'manage', description: '企业信息/角色管理/系统设置' },
@@ -158,7 +158,7 @@ describe('RolesPage', () => {
     // 菜单项 = 侧边栏菜单项名
     // #3094: 米宝 · 在线对话 菜单入口已移除，权限树不再渲染该菜单项
     expect(tree.queryByText('米宝 · 在线对话')).not.toBeInTheDocument()
-    expect(tree.getByText('人工客服')).toBeInTheDocument()
+    expect(tree.getByText('在线接待')).toBeInTheDocument()
     expect(tree.getByText('知识库')).toBeInTheDocument()
     expect(tree.getByText('商品列表')).toBeInTheDocument()
     expect(tree.getByText('加工项管理')).toBeInTheDocument()
@@ -193,11 +193,11 @@ describe('RolesPage', () => {
     expect(extras.queryByText('加工项管理')).not.toBeInTheDocument()
   })
 
-  it('勾选菜单项「人工客服」→ 创建岗位时 permissionIds 含 agent:session 权限ID（代码映射，#3094 米宝菜单已移除）', async () => {
+  it('勾选菜单项「在线接待」→ 创建岗位时 permissionIds 含 agent:session 权限ID（代码映射，#3094 米宝菜单已移除）', async () => {
     mockGetRoles.mockResolvedValue({ data: { data: { items: [], total: 0 } } })
     render(<RolesPage />)
     fireEvent.click(await screen.findByText('新增岗位'))
-    const item = (await screen.findByText('人工客服')).closest('label')!
+    const item = (await screen.findByText('在线接待')).closest('label')!
     fireEvent.click(item.querySelector('input')!)
     const textboxes = screen.getAllByRole('textbox')
     fireEvent.change(textboxes[0], { target: { value: '客服人员' } })

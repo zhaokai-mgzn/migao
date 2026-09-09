@@ -3155,16 +3155,16 @@ _CASE_UI_004 = EvalCase(
     persona='',
 )
 
-# ── UI-005 [NORMAL] 侧边栏「智能客服」大类——人工客服图标修复 + 机器人设置改名归组（#3081 起 AI 客服配置已合并进企业基础信息）（源: cases/ui.yml）──
+# ── UI-005 [NORMAL] 侧边栏「智能客服」大类——在线接待图标修复 + 机器人设置改名归组（#3081 起 AI 客服配置已合并进企业基础信息）（源: cases/ui.yml）──
 _CASE_UI_005 = EvalCase(
     id='UI-005',
     legacy_id='',
-    title='侧边栏「智能客服」大类——人工客服图标修复 + 机器人设置改名归组（#3081 起 AI 客服配置已合并进企业基础信息）',
+    title='侧边栏「智能客服」大类——在线接待图标修复 + 机器人设置改名归组（#3081 起 AI 客服配置已合并进企业基础信息）',
     skill=Skill.GENERAL,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['侧边栏新增「智能客服」一级大类：人工客服耳机图标修复 + 机器人设置改名归组'],
+    user_inputs=['侧边栏新增「智能客服」一级大类：在线接待耳机图标修复 + 机器人设置改名归组'],
     expectations=['direct_reply'],
-    data_checks=['Sidebar.tsx 渲染一级大类「智能客服」，DOM 顺序位于「工作台」之后、「商品管理」之前；「人工客服」从「工作台」分组移除', '「智能客服」下子菜单顺序：人工客服 在前、知识库 次之（#3094 起米宝·在线对话 菜单入口已移除，智能体对话经右下角 FAB 进入；#3081 起 AI 客服配置菜单已移除）', '「人工客服」渲染 Headphones 图标（iconMap 已注册，非 BarChart3 回退），与「经营看板」BarChart3 图标明确区分；「智能客服」大类渲染 MessageSquare 图标', '原「机器人设置」更名为「AI 客服配置」后（2026-08）又随 #3081 合并进企业基础信息：侧边栏不再出现「AI 客服配置」菜单项，/chat/config 页面删除，机器人名称+欢迎语并入 /settings 页「AI 客服设置」区块；不再出现「机器人设置」残留', '链接路径：人工客服 href=/agent-workspace/human-sessions（#3081 起无 /chat/config 链接）', '权限过滤不回归：无 agent:session → 隐藏「人工客服」；无 knowledge:manage → 隐藏「知识库」；均无 → 「智能客服」整组隐藏'],
+    data_checks=['Sidebar.tsx 渲染一级大类「智能客服」，DOM 顺序位于「工作台」之后、「商品管理」之前；「在线接待」从「工作台」分组移除', '「智能客服」下子菜单顺序：在线接待 在前、知识库 次之（#3094 起米宝·在线对话 菜单入口已移除，智能体对话经右下角 FAB 进入；#3081 起 AI 客服配置菜单已移除）', '「在线接待」渲染 Headphones 图标（iconMap 已注册，非 BarChart3 回退），与「经营看板」BarChart3 图标明确区分；「智能客服」大类渲染 MessageSquare 图标', '原「机器人设置」更名为「AI 客服配置」后（2026-08）又随 #3081 合并进企业基础信息：侧边栏不再出现「AI 客服配置」菜单项，/chat/config 页面删除，机器人名称+欢迎语并入 /settings 页「AI 客服设置」区块；不再出现「机器人设置」残留', '链接路径：在线接待 href=/agent-workspace/human-sessions（#3081 起无 /chat/config 链接）', '权限过滤不回归：无 agent:session → 隐藏「在线接待」；无 knowledge:manage → 隐藏「知识库」；均无 → 「智能客服」整组隐藏', '「在线接待」菜单项不再出现旧名「人工客服」（#3109 菜单改名，页面标题/Header 面包屑/权限分配弹窗同步为新名；C 端顾客侧『人工客服』来源标识与转人工文案不变）'],
     skip_reason='纯前端侧边栏菜单/图标/文案由 vitest 单测验证（sidebar/settings/Header.test），非 LLM 行为，不进入 agent-eval 冒烟',
     tags=['ui', 'sidebar', 'menu', 'icon'],
     persona='',
@@ -3254,7 +3254,7 @@ _CASE_UI_011 = EvalCase(
     difficulty=Difficulty.NORMAL,
     user_inputs=['隐藏侧边栏「智能客服」组「米宝 · 在线对话」菜单入口：智能体对话统一经右下角浮动按钮（FAB）进入（issue #3094）'],
     expectations=['direct_reply'],
-    data_checks=['Sidebar「智能客服」组子菜单：人工客服(/agent-workspace/human-sessions) 在前、知识库(/knowledge) 次之，共 2 项（#3094 米宝·在线对话 入口已移除；#3081 起无 AI 客服配置菜单）', '「米宝 · 在线对话」不再作为侧边栏菜单项渲染（mibao-chat 菜单配置与 MessageCircle 图标注册删除）；/chat 页面路由保留（ActiveSessions「查看全部」/深链/Header 面包屑不回归）', '权限过滤：agent:session 控制「人工客服」可见；无 agent:session → 隐藏「人工客服」，仅保留知识库（knowledge:manage）', '「智能客服」组子菜单均不可见时整组隐藏（不回归 UI-005 行为）'],
+    data_checks=['Sidebar「智能客服」组子菜单：在线接待(/agent-workspace/human-sessions) 在前、知识库(/knowledge) 次之，共 2 项（#3094 米宝·在线对话 入口已移除；#3081 起无 AI 客服配置菜单）', '「米宝 · 在线对话」不再作为侧边栏菜单项渲染（mibao-chat 菜单配置与 MessageCircle 图标注册删除）；/chat 页面路由保留（ActiveSessions「查看全部」/深链/Header 面包屑不回归）', '权限过滤：agent:session 控制「在线接待」可见；无 agent:session → 隐藏「在线接待」，仅保留知识库（knowledge:manage）', '「智能客服」组子菜单均不可见时整组隐藏（不回归 UI-005 行为）'],
     skip_reason='纯前端侧边栏菜单由 vitest 单测验证（sidebar.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟',
     tags=['ui', 'sidebar', 'mibao', 'chat-entry'],
     persona='',
@@ -3494,7 +3494,7 @@ _CASE_UI_028 = EvalCase(
     difficulty=Difficulty.NORMAL,
     user_inputs=['把「角色权限」改成「岗位权限」：每个岗位默认设置权限；创建员工选岗位自动带出该岗位默认权限，仍可自定义；侧边栏按七大组重构'],
     expectations=['direct_reply'],
-    data_checks=['「角色权限」页整站改名「岗位权限」（页面标题/新增按钮/编辑弹窗/删除确认/空态，侧边栏入口与 Header 面包屑同步），URL /roles 不变', '侧边栏七大组：工作台 / 智能客服(含知识库) / 商品管理 / 订单管理 / 客户管理(客户列表+财务对账) / 组织管理(员工管理+岗位权限+企业基础信息) / 通知中心（独立）；权限过滤不回归（组内无可见子项则整组隐藏）', '创建/编辑员工：岗位改为下拉选择（岗位=角色体系，来自 /api/admin/roles/all），选岗位自动把该岗位默认权限（role_permissions codes）预填进权限树；仍可手动增删；编辑切岗位则重置为新岗位默认', '员工权限快照式（#2969）：提交时携带 position+permissions（permissions=最终勾选），不携带 role 字段（#2907 契约），后端按岗位名解析角色', '岗位权限弹窗「权限分配」按真实侧边栏菜单同构渲染（#3002）：分组名=菜单组（智能客服/商品管理/订单管理/客户管理/组织管理），勾选项=菜单项名（人工客服/知识库/商品列表/加工项管理/订单列表/售后工单/客户列表/财务对账/员工管理/岗位权限/企业基础信息；#3094 米宝·在线对话 菜单已移除），勾选即授予对应权限码（roles 保存权限 ID，前端做码→ID 映射）；非菜单操作权限（仪表板查看/新增商品/商品分类/订单详情/新增员工/商品管理旧码）单独一节「操作权限」；旧口径不再出现（英文 resourceType 组头 / 会话监控 / 快捷回复 / AI 客服配置 / 系统管理等旧名）；保存契约不变（permissionIds = 权限 ID）'],
+    data_checks=['「角色权限」页整站改名「岗位权限」（页面标题/新增按钮/编辑弹窗/删除确认/空态，侧边栏入口与 Header 面包屑同步），URL /roles 不变', '侧边栏七大组：工作台 / 智能客服(含知识库) / 商品管理 / 订单管理 / 客户管理(客户列表+财务对账) / 组织管理(员工管理+岗位权限+企业基础信息) / 通知中心（独立）；权限过滤不回归（组内无可见子项则整组隐藏）', '创建/编辑员工：岗位改为下拉选择（岗位=角色体系，来自 /api/admin/roles/all），选岗位自动把该岗位默认权限（role_permissions codes）预填进权限树；仍可手动增删；编辑切岗位则重置为新岗位默认', '员工权限快照式（#2969）：提交时携带 position+permissions（permissions=最终勾选），不携带 role 字段（#2907 契约），后端按岗位名解析角色', '岗位权限弹窗「权限分配」按真实侧边栏菜单同构渲染（#3002）：分组名=菜单组（智能客服/商品管理/订单管理/客户管理/组织管理），勾选项=菜单项名（在线接待/知识库/商品列表/加工项管理/订单列表/售后工单/客户列表/财务对账/员工管理/岗位权限/企业基础信息；#3094 米宝·在线对话 菜单已移除；#3109 起菜单名「在线接待」），勾选即授予对应权限码（roles 保存权限 ID，前端做码→ID 映射）；非菜单操作权限（仪表板查看/新增商品/商品分类/订单详情/新增员工/商品管理旧码）单独一节「操作权限」；旧口径不再出现（英文 resourceType 组头 / 会话监控 / 快捷回复 / AI 客服配置 / 系统管理等旧名）；保存契约不变（permissionIds = 权限 ID）'],
     skip_reason='岗位权限/菜单重构/选岗位带权限均由 vitest 单测 + E2E 点击链路验证，非 LLM 行为，不进入 agent-eval 冒烟',
     tags=['ui', 'sidebar', 'menu', 'role', 'position', 'employee'],
     persona='',
@@ -3614,7 +3614,7 @@ _CASE_UI_036 = EvalCase(
     difficulty=Difficulty.NORMAL,
     user_inputs=['快捷回复已被知识卡片（知识库）替代，功能全栈下线；AI 客服配置不再单独立菜单，合并进企业基础信息，区块命名「AI 客服设置」并说明作用'],
     expectations=['direct_reply'],
-    data_checks=['侧边栏「智能客服」组不再有「AI 客服配置」菜单项（#3094 起 人工客服/知识库 共 2 项，米宝·在线对话 入口已移除）；/chat/config 页面与 /agent-workspace/quick-replies 占位页删除，Header 面包屑无对应残留', '「企业基础信息」页（/settings）新增「AI 客服设置」tab（#3098 恢复 #3006 之前的左侧 tab 导航布局）：tab 栏 = 基本设置（公司名称+Logo）/ AI 客服设置 / 通知设置；AI 客服设置 tab 副文案说明作用「配置顾客在对话中看到的 AI 客服助手（小布）的名称与欢迎语」，含 AI 客服名称（必填）+ 欢迎语 + 保存按钮（保存 AI 客服设置，调用 /api/admin/tenant/ai-config）', '企业基础信息页 tab 行为：默认激活「基本设置」tab（保存按钮=保存设置）；点击左侧 tab 切换内容区（AI 客服设置/通知设置内容不默认展示）；URL ?tab=ai 直达 AI 客服设置 tab（旧链接兼容，不再重定向 /chat/config）；修改密码/登录日志 tab 保持 #3006 隐藏', '通知设置 tab（#3103）：仅系统通知总开关（启用系统通知，控制订单/客服等重要事件自动站内信；关闭后不再产生新站内信、历史保留）；已移除通知邮箱输入框——notification_email 为僵尸字段（站内信无需邮箱、后端无邮件消费逻辑），SystemSettings 类型同步移除该字段', '快捷回复 UI 全部移除：quickReplyApi 与 QuickReply 类型删除，页面不再出现「快捷回复」tab/新建回复/模板列表', '权限联动（岗位权限页由 menuGroups 单源渲染）：权限分配弹窗与操作权限节均不再出现「AI 客服配置」「快捷回复」；agent:quickreply 权限码从后端权限目录与岗位默认权限移除；后端 /api/admin/quick-replies 接口与 quick_reply_manage 工具随功能下线'],
+    data_checks=['侧边栏「智能客服」组不再有「AI 客服配置」菜单项（#3094 起 在线接待/知识库 共 2 项，米宝·在线对话 入口已移除）；/chat/config 页面与 /agent-workspace/quick-replies 占位页删除，Header 面包屑无对应残留', '「企业基础信息」页（/settings）新增「AI 客服设置」tab（#3098 恢复 #3006 之前的左侧 tab 导航布局）：tab 栏 = 基本设置（公司名称+Logo）/ AI 客服设置 / 通知设置；AI 客服设置 tab 副文案说明作用「配置顾客在对话中看到的 AI 客服助手（小布）的名称与欢迎语」，含 AI 客服名称（必填）+ 欢迎语 + 保存按钮（保存 AI 客服设置，调用 /api/admin/tenant/ai-config）', '企业基础信息页 tab 行为：默认激活「基本设置」tab（保存按钮=保存设置）；点击左侧 tab 切换内容区（AI 客服设置/通知设置内容不默认展示）；URL ?tab=ai 直达 AI 客服设置 tab（旧链接兼容，不再重定向 /chat/config）；修改密码/登录日志 tab 保持 #3006 隐藏', '通知设置 tab（#3103）：仅系统通知总开关（启用系统通知，控制订单/客服等重要事件自动站内信；关闭后不再产生新站内信、历史保留）；已移除通知邮箱输入框——notification_email 为僵尸字段（站内信无需邮箱、后端无邮件消费逻辑），SystemSettings 类型同步移除该字段', '快捷回复 UI 全部移除：quickReplyApi 与 QuickReply 类型删除，页面不再出现「快捷回复」tab/新建回复/模板列表', '权限联动（岗位权限页由 menuGroups 单源渲染）：权限分配弹窗与操作权限节均不再出现「AI 客服配置」「快捷回复」；agent:quickreply 权限码从后端权限目录与岗位默认权限移除；后端 /api/admin/quick-replies 接口与 quick_reply_manage 工具随功能下线'],
     skip_reason='纯前端页面/菜单/权限联动由 vitest 单测验证（settings/Sidebar/Header/roles.test），非 LLM 行为，不进入 agent-eval 冒烟',
     tags=['ui', 'sidebar', 'settings', 'admin-web', 'permission'],
     persona='',

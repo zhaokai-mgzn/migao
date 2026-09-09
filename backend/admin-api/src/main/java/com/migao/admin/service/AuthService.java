@@ -1083,13 +1083,13 @@ public class AuthService {
         // 工作台（所有人可见）
         menus.add(menuItem("dashboard", "工作台", "LayoutDashboard", "/dashboard"));
 
-        // 智能客服分组（米宝·在线对话 / 人工客服 / 知识库；#3081 AI 客服配置已合并进企业基础信息）
+        // 智能客服分组（米宝·在线对话 / 在线接待 / 知识库；#3081 AI 客服配置已合并进企业基础信息）
         List<UserInfoResponse.MenuItem> csChildren = new java.util.ArrayList<>();
         if (isAll || permissions.contains("agent:session")) {
             csChildren.add(menuItem("chat", "米宝 · 在线对话", "MessageCircle", "/chat"));
         }
         if (isAll || permissions.contains("agent:session")) {
-            csChildren.add(menuItem("human-sessions", "人工客服", "Headphones", "/agent-workspace/human-sessions"));
+            csChildren.add(menuItem("human-sessions", "在线接待", "Headphones", "/agent-workspace/human-sessions"));
         }
         if (isAll || permissions.contains("knowledge:manage")) {
             csChildren.add(menuItem("knowledge", "知识库", "BookOpen", "/knowledge"));

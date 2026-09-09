@@ -30,7 +30,7 @@ const ROUTE_BREADCRUMB_MAP: Array<{
 
   // 智能客服组（与侧边栏"智能客服"分组对齐，#2969 知识库归入本组）
   { match: (p) => p.startsWith('/chat'), crumbs: [{ label: '智能客服' }, { label: '米宝 · 在线对话' }] },
-  { match: (p) => p.startsWith('/agent-workspace/human-sessions'), crumbs: [{ label: '智能客服' }, { label: '人工客服' }] },
+  { match: (p) => p.startsWith('/agent-workspace/human-sessions'), crumbs: [{ label: '智能客服' }, { label: '在线接待' }] },
   { match: (p) => p.startsWith('/agent-workspace/sessions'), crumbs: [{ label: '智能客服' }, { label: '会话监控' }] },
   { match: (p) => p.startsWith('/agent-workspace'), crumbs: [{ label: '智能客服' }, { label: '客服工作台' }] },
   { match: (p) => p.startsWith('/knowledge'), crumbs: [{ label: '智能客服' }, { label: '知识库' }] },
