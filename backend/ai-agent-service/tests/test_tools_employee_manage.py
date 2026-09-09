@@ -27,6 +27,31 @@ def agent_tool_context():
     return ToolContext(tenant_id=1, user_id="agent_001", session_id="sess", role="agent")
 
 
+class TestCreateContract:
+    """create 的 description/schema 与 execute 必填契约一致（HR-002 回归防线）
+
+    背景：execute._create_user 要求 password 必填（缺则报错），但原 description 写
+    「create 必填 name+phone」（漏 password），schema password description 也未标必填，
+    LLM 按 description 不收集密码 → 创建失败或反复追问（HR-002 三测仍挂的根因）。
+    """
+
+    def test_description_mentions_password_required(self, tool):
+        assert "password" in tool.description
+        assert "name+phone+password" in tool.description
+
+    def test_schema_password_marked_required(self, tool):
+        pw = tool.parameters["properties"]["password"]["description"]
+        assert "必填" in pw
+
+    def test_execute_create_requires_password(self, tool, admin_tool_context):
+        import asyncio
+        r = asyncio.run(tool.execute(
+            context=admin_tool_context, action="create", name="王五", phone="13812345678"
+        ))
+        assert r.success is False
+        assert "密码" in (r.message or "")
+
+
 class TestEmployeePermission:
     async def test_customer_denied(self, tool, sample_tool_context):
         result = await tool.execute(context=sample_tool_context, action="list")
