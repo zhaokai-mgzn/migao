@@ -58,7 +58,7 @@ jobs:
           HEAD7="${GITHUB_SHA::7}"
           MISSING=0
           # 镜像名 → deploy workflow 文件名（镜像名与 workflow 名不对应，如 admin-web → deploy-frontend）
-          declare -A SVC_WF=( [admin-api]=deploy-admin-api [ai-agent-service]=deploy-ai-agent-service [admin-web]=deploy-frontend )
+          declare -A SVC_WF=( [admin-api]=admin-api [ai-agent-service]=ai-agent-service [admin-web]=frontend )
           for svc in admin-api ai-agent-service admin-web; do
             IMAGE="${{ env.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/${svc}:sha-${HEAD7}"
             if docker manifest inspect "$IMAGE" >/dev/null 2>&1; then
