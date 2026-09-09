@@ -1,4 +1,4 @@
-// case_ids: ST-001, ST-003, ST-009, ST-010, UI-034
+// case_ids: ST-001, ST-003, ST-009, ST-010, UI-034, UI-037
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -69,6 +69,14 @@ const mockRouterReplace = vi.fn()
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: mockRouterPush, replace: mockRouterReplace }),
   useSearchParams: () => new URLSearchParams(),
+}))
+
+// Mock auth store（#3099：保存企业信息后刷新用户信息，侧边栏/右上角即时同步）
+const mockFetchUserInfo = vi.fn()
+vi.mock('@/store/auth', () => ({
+  useAuthStore: Object.assign(() => ({ user: null }), {
+    getState: () => ({ fetchUserInfo: mockFetchUserInfo }),
+  }),
 }))
 
 // Mock dayjs
@@ -246,6 +254,23 @@ describe('SettingsPage — AI 客服设置合并进企业基础信息 (#3081)', 
       render(<SettingsPage />)
       await waitFor(() => {
         expect(screen.getByRole('button', { name: /保存企业信息/ })).toBeInTheDocument()
+      })
+    })
+
+    it('保存企业信息成功后应刷新用户信息，侧边栏/右上角即时同步（#3099）', async () => {
+      const user = userEvent.setup()
+      mockUpdateSettings.mockResolvedValue({ data: { data: {} } })
+      render(<SettingsPage />)
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /保存企业信息/ })).toBeInTheDocument()
+      })
+      await user.click(screen.getByRole('button', { name: /保存企业信息/ }))
+      await waitFor(() => {
+        expect(mockUpdateSettings).toHaveBeenCalled()
+      })
+      // 保存成功后必须拉取最新用户信息（含企业名/Logo），否则侧边栏不刷新（#3099 修复）
+      await waitFor(() => {
+        expect(mockFetchUserInfo).toHaveBeenCalledTimes(1)
       })
     })
   })

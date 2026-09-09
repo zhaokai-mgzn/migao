@@ -1,10 +1,14 @@
 'use client'
 
+import { useState } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import {
   User,
   LogOut,
   ChevronDown,
+  Phone,
+  Briefcase,
+  Building2,
 } from 'lucide-react'
 import { useAuthStore } from '@/store/auth'
 import { cn } from '@/lib/utils'
@@ -63,8 +67,13 @@ export default function Header({ title, breadcrumbs }: HeaderProps) {
   const router = useRouter()
   const pathname = usePathname()
   const { user, logout } = useAuthStore()
+  // #3099: 用户下拉卡片改为点击展开（原 group-hover 悬停触发）
+  const [userMenuOpen, setUserMenuOpen] = useState(false)
+
+  const displayName = user?.name || user?.nickname || user?.username || '管理员'
 
   const handleLogout = async () => {
+    setUserMenuOpen(false)
     await logout()
     router.push('/login')
   }
@@ -118,43 +127,89 @@ export default function Header({ title, breadcrumbs }: HeaderProps) {
         {/* 通知铃铛 */}
         <NotificationBell />
 
-        {/* 用户下拉菜单 */}
-        <div className="relative group">
-          <button className="flex items-center gap-2 rounded-lg p-1.5 pr-3 transition-colors hover:bg-neutral-100">
-            {/* 头像 — 品牌靛蓝渐变 */}
-            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-primary-400 to-primary-600 shadow-sm">
-              <User className="h-4 w-4 text-white" />
-            </div>
-            {/* 昵称 */}
-            <span className="hidden text-sm text-neutral-700 sm:block">
-              {user?.name || user?.nickname || user?.username || '管理员'}
-            </span>
+        {/* 用户下拉菜单（#3099: 点击展开 + 姓名默认展示 + 卡片信息丰富） */}
+        <div className="relative">
+          <button
+            aria-label="用户菜单"
+            aria-expanded={userMenuOpen}
+            onClick={() => setUserMenuOpen((v) => !v)}
+            className="relative z-50 flex items-center gap-2 rounded-lg p-1.5 pr-3 transition-colors hover:bg-neutral-100"
+          >
+            {/* 头像：有 avatar 用图片，否则姓名首字 */}
+            {user?.avatar ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={user.avatar}
+                alt="用户头像"
+                className="h-8 w-8 rounded-full object-cover shadow-sm"
+              />
+            ) : (
+              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-primary-400 to-primary-600 text-sm font-semibold text-white shadow-sm">
+                {displayName.charAt(0) || <User className="h-4 w-4 text-white" />}
+              </div>
+            )}
+            {/* 默认展示当前登录用户名称（#3099） */}
+            <span className="hidden text-sm text-neutral-700 sm:block">{displayName}</span>
             <ChevronDown className="hidden h-4 w-4 text-neutral-400 sm:block" />
           </button>
 
-          {/* 下拉菜单 */}
-          <div className={cn(
-            'absolute right-0 top-full mt-1 w-48 py-1',
-            'rounded-lg border border-neutral-200 bg-white shadow-card-hover',
-            'opacity-0 invisible group-hover:opacity-100 group-hover:visible',
-            'transition-all duration-200'
-          )}>
-            <div className="border-b border-neutral-100 px-4 py-2">
-              <p className="text-sm font-medium text-neutral-900">
-                {user?.name || user?.nickname || user?.username || '管理员'}
-              </p>
-              <p className="text-xs text-neutral-500">
-                {user?.email || user?.username || ''}
-              </p>
-            </div>
-            <button
-              onClick={handleLogout}
-              className="flex w-full items-center gap-2 px-4 py-2 text-sm text-red-600 transition-colors hover:bg-red-50"
-            >
-              <LogOut className="h-4 w-4" />
-              退出登录
-            </button>
-          </div>
+          {/* 点击展开的下拉卡片（非 hover） */}
+          {userMenuOpen && (
+            <>
+              {/* 点击卡片外任意处关闭 */}
+              <div className="fixed inset-0 z-40" onClick={() => setUserMenuOpen(false)} />
+              <div className="absolute right-0 top-full z-50 mt-1 w-64 rounded-xl border border-neutral-200 bg-white shadow-card-hover">
+                {/* 卡片头部：头像 + 姓名 + 账号/邮箱 */}
+                <div className="flex items-center gap-3 border-b border-neutral-100 px-4 py-3">
+                  {user?.avatar ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={user.avatar}
+                      alt="用户头像"
+                      className="h-10 w-10 rounded-full object-cover shadow-sm"
+                    />
+                  ) : (
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-primary-400 to-primary-600 text-base font-semibold text-white shadow-sm">
+                      {displayName.charAt(0) || <User className="h-5 w-5 text-white" />}
+                    </div>
+                  )}
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium text-neutral-900">{displayName}</p>
+                    <p className="truncate text-xs text-neutral-500">
+                      {user?.email || user?.username || ''}
+                    </p>
+                  </div>
+                </div>
+
+                {/* 丰富信息：#3099 手机号 / 岗位 / 所属企业 */}
+                <div className="space-y-2 px-4 py-3 text-sm">
+                  <div className="flex items-center gap-2 text-neutral-600">
+                    <Phone className="h-3.5 w-3.5 text-neutral-400" />
+                    <span className="w-14 shrink-0 text-neutral-400">手机号</span>
+                    <span className="truncate text-neutral-800">{user?.username || '-'}</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-neutral-600">
+                    <Briefcase className="h-3.5 w-3.5 text-neutral-400" />
+                    <span className="w-14 shrink-0 text-neutral-400">岗位</span>
+                    <span className="truncate text-neutral-800">{user?.position || '-'}</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-neutral-600">
+                    <Building2 className="h-3.5 w-3.5 text-neutral-400" />
+                    <span className="w-14 shrink-0 text-neutral-400">所属企业</span>
+                    <span className="truncate text-neutral-800">{user?.tenantName || '-'}</span>
+                  </div>
+                </div>
+
+                <button
+                  onClick={handleLogout}
+                  className="flex w-full items-center gap-2 border-t border-neutral-100 px-4 py-2.5 text-sm text-red-600 transition-colors hover:bg-red-50"
+                >
+                  <LogOut className="h-4 w-4" />
+                  退出登录
+                </button>
+              </div>
+            </>
+          )}
         </div>
       </div>
     </header>
