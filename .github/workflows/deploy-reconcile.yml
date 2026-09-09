@@ -1,19 +1,22 @@
-# 部署补偿对账（issue #3113）：GitHub Actions schedule 触发不可靠 + paths 过滤的
-# push 触发在快速连续合并时被 coalesce 吞掉（issue #2947 实证），导致部署停滞。
+# 部署补偿对账（issue #3113 v2）：GitHub Actions schedule 触发不可靠 + push 事件
+# 自 2026-09-05 启用 native auto-merge 后对 main 的合并全面失效（9/5 08:01Z 之后
+# 0 个 push 事件 run——9/9 当天 24 次合并 0 次 push run 实证），push+paths 主触发已死。
 #
-# 本工作流用「无 paths 过滤的 push to main」事件做对账触发源：
-#   - 快速合并时 GitHub 合并 push 事件但至少触发一次（该次 run 的 HEAD 为最终状态）
-#   - 对账基于最新 HEAD：检查三个服务 sha-<head7> 镜像是否已存在
-#   - 缺失 → gh workflow run dispatch 对应 deploy（workflow_dispatch 不经过 paths
-#     过滤，100% 触发，不受「吞 push 触发」影响）
+# 本工作流改用「PR merged」事件做对账触发源（pull_request 事件一直可靠——
+# auto-merge 关闭 PR 时必触发）：
+#   - on: pull_request types:[closed]，if merged && base==main
+#   - 对账基于合并后的 main HEAD：检查 admin-api/ai-agent-service/admin-web 三服务
+#     sha-<head7> 镜像是否在 ACR 存在
+#   - 缺失 → gh workflow run dispatch 对应 deploy-*.yml（workflow_dispatch 100% 触发）
 #   - 已存在 → 跳过（零浪费；中间 commit 漏部署不影响——最终 HEAD 已部署即达成目标）
 #
-# 与原 deploy 工作流关系：本补偿是兜底；deploy-*.yml 的 push+paths 主触发与
-# schedule 对账保留不动（schedule 虽不可靠但有比没有好）。
-name: Deploy Reconcile (push 对账补偿)
+# 与原 deploy 工作流关系：本补偿是兜底；deploy-*.yml 的 push+paths 主触发（已失效）
+# 与 schedule 对账保留不动（schedule 虽不可靠但有比没有好）。
+name: Deploy Reconcile (PR merged 对账补偿)
 
 on:
-  push:
+  pull_request:
+    types: [closed]
     branches: [main]
 
 permissions:
@@ -23,12 +26,14 @@ permissions:
 jobs:
   reconcile:
     name: Reconcile and dispatch missing deploys
+    if: github.event.pull_request.merged == true
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
       ACR_REGISTRY: crpi-qdcgkzwx9p9zckga.cn-hangzhou.personal.cr.aliyuncs.com
       ACR_NAMESPACE: ai-customer-service
     steps:
+      # merged PR 的 GITHUB_SHA = 合并后 main HEAD，直接用于对账
       - uses: actions/checkout@v7
 
       - name: Docker login ACR
