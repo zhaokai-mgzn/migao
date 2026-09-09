@@ -291,12 +291,12 @@
 你: 商家创建/编辑知识卡片（问题+标准回答+分类+关键词）并发布/归档
 数据: POST /api/admin/knowledge/entries 创建知识卡片：title/answer 必填（缺则 400 中文 detail），sourceType=manual，version=1，status 缺省 draft（可显式 published）
 数据: PUT /api/admin/knowledge/entries/{id} 编辑：version+1；跨租户 404
-数据: POST /{id}/publish：draft/pending_review → published（记录 reviewedAt）；archived 拒绝
+数据: POST /{id}/publish：draft/pending_review → published（记录 reviewedAt）；archived 可重新发布回 published（归档非终点，#3108）
 数据: POST /{id}/archive：published → archived；DELETE /{id} 逻辑删除；全部按 tenant 隔离
 数据: GET /api/admin/knowledge/entries 分页：keyword/category/sourceType/status 筛选，updated_at 倒序
 跳过: 知识卡片 CRUD/状态机由 MockMvc + Service 单测验证（KnowledgeCardControllerTest/KnowledgeCardServiceTest），非 LLM 行为，不进入 agent-eval 冒烟
 ```
-溯源: 2026-09-08 新增（issue #3051 LLM WIKI 板块 P2）：知识卡片模型 CRUD + 状态机闭环（draft→published→archived 每状态有 API 动作） ｜ tags: api, knowledge, wiki, entries
+溯源: 2026-09-08 新增（issue #3051 LLM WIKI 板块 P2）：知识卡片模型 CRUD + 状态机闭环（draft→published→archived 每状态有 API 动作）；2026-09-09 #3108 修订：archived 可重新发布回 published（归档非终点） ｜ tags: api, knowledge, wiki, entries
 
 ### API-016. 知识知识卡片检索 - 仅 published + 租户隔离 + 关键词命中（LLM WIKI 板块 #3051） 🔵
 ```
@@ -2463,7 +2463,7 @@
 真值: token-refresh.no-loop
 溯源: 2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421） ｜ tags: token_refresh, auth, no_loop
 
-## ui（37 case）
+## ui（38 case）
 
 ### UI-001. 织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理 🔵
 ```
@@ -2947,6 +2947,19 @@
 真值: frontend-fix.no-api-change, frontend-fix.vitest
 溯源: 2026-09-09 新增（issue #3102）：新增订单表单选择已有客户自动回填收货信息（前端快捷回填，不动后端契约） ｜ tags: ui, orders, customer, order-create, admin-web
 
+### UI-039. 知识卡片：已归档卡片可「重新发布」+ 新增只读「查看」+ 副标题文案通俗化（#3108） 🔵
+```
+你: 知识卡片归档后没有恢复入口（归档成终点）；操作列没有不动数据的「查看」；副标题「LLM WIKI 知识卡片管理」对商家太技术化。需要：已归档卡片一键重新发布、只读查看弹窗、通俗副标题
+期望: direct_reply
+数据: 已归档卡片操作列显示「重新发布」（图标 RotateCcw），点击调用 publishCard（POST /{id}/publish，后端已放开 archived → published，#3108），成功后列表刷新为已发布状态（操作区出现「归档」，重新发布按钮消失）
+数据: 「重新发布」成功 toast 文案为「知识卡片已重新发布」（区别于普通发布的「知识卡片已发布」）
+数据: 操作列新增「查看」按钮（所有状态卡片可见）：点击打开只读详情弹窗「知识卡片详情」，展示 标题/分类/常见问法/标准回答/关键词 + 来源/状态/版本/更新时间 元信息；无「保存」按钮、字段不可编辑（与「编辑」弹窗分离，看内容不动数据）
+数据: 知识库页副标题不再出现「LLM WIKI」字样，改为通俗文案（如「AI 客服知识库 — 发布后的知识卡片将优先用于 AI 客服回答顾客问题」）
+跳过: 纯前端交互 + 状态机 UI 由 vitest 单测验证（knowledge.test.tsx），后端状态机放开由 KnowledgeCardServiceTest 验证（API-015），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: frontend-fix.no-api-change, frontend-fix.vitest
+溯源: 2026-09-09 新增（issue #3108）：归档非终点——已归档卡片可一键重新发布恢复 AI 检索；新增只读「查看」弹窗；副标题去 LLM WIKI 通俗化 ｜ tags: ui, knowledge, status-machine, read-only-view, admin-web
+
 ## utils（2 case）
 
 ### UT-001. 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值 🔵
@@ -2976,8 +2989,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：242（活跃 119，跳过 123）
-- tier 分布：smoke 10 / normal 203 / adversarial 29
+- 用例总数：243（活跃 119，跳过 124）
+- tier 分布：smoke 10 / normal 204 / adversarial 29
 - 售后域：7
 - agents：6
 - api：19
@@ -3000,7 +3013,7 @@
 - registry：1
 - 设置域：8
 - token-refresh：4
-- ui：37
+- ui：38
 - utils：2
 
 ### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）

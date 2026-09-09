@@ -415,7 +415,7 @@ _CASE_API_015 = EvalCase(
     difficulty=Difficulty.NORMAL,
     user_inputs=['商家创建/编辑知识卡片（问题+标准回答+分类+关键词）并发布/归档'],
     expectations=[],
-    data_checks=['POST /api/admin/knowledge/entries 创建知识卡片：title/answer 必填（缺则 400 中文 detail），sourceType=manual，version=1，status 缺省 draft（可显式 published）', 'PUT /api/admin/knowledge/entries/{id} 编辑：version+1；跨租户 404', 'POST /{id}/publish：draft/pending_review → published（记录 reviewedAt）；archived 拒绝', 'POST /{id}/archive：published → archived；DELETE /{id} 逻辑删除；全部按 tenant 隔离', 'GET /api/admin/knowledge/entries 分页：keyword/category/sourceType/status 筛选，updated_at 倒序'],
+    data_checks=['POST /api/admin/knowledge/entries 创建知识卡片：title/answer 必填（缺则 400 中文 detail），sourceType=manual，version=1，status 缺省 draft（可显式 published）', 'PUT /api/admin/knowledge/entries/{id} 编辑：version+1；跨租户 404', 'POST /{id}/publish：draft/pending_review → published（记录 reviewedAt）；archived 可重新发布回 published（归档非终点，#3108）', 'POST /{id}/archive：published → archived；DELETE /{id} 逻辑删除；全部按 tenant 隔离', 'GET /api/admin/knowledge/entries 分页：keyword/category/sourceType/status 筛选，updated_at 倒序'],
     skip_reason='知识卡片 CRUD/状态机由 MockMvc + Service 单测验证（KnowledgeCardControllerTest/KnowledgeCardServiceTest），非 LLM 行为，不进入 agent-eval 冒烟',
     tags=['api', 'knowledge', 'wiki', 'entries'],
     persona='',
@@ -3650,6 +3650,21 @@ _CASE_UI_038 = EvalCase(
     persona='',
 )
 
+# ── UI-039 [NORMAL] 知识卡片：已归档卡片可「重新发布」+ 新增只读「查看」+ 副标题文案通俗化（#3108）（源: cases/ui.yml）──
+_CASE_UI_039 = EvalCase(
+    id='UI-039',
+    legacy_id='',
+    title='知识卡片：已归档卡片可「重新发布」+ 新增只读「查看」+ 副标题文案通俗化（#3108）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['知识卡片归档后没有恢复入口（归档成终点）；操作列没有不动数据的「查看」；副标题「LLM WIKI 知识卡片管理」对商家太技术化。需要：已归档卡片一键重新发布、只读查看弹窗、通俗副标题'],
+    expectations=['direct_reply'],
+    data_checks=['已归档卡片操作列显示「重新发布」（图标 RotateCcw），点击调用 publishCard（POST /{id}/publish，后端已放开 archived → published，#3108），成功后列表刷新为已发布状态（操作区出现「归档」，重新发布按钮消失）', '「重新发布」成功 toast 文案为「知识卡片已重新发布」（区别于普通发布的「知识卡片已发布」）', '操作列新增「查看」按钮（所有状态卡片可见）：点击打开只读详情弹窗「知识卡片详情」，展示 标题/分类/常见问法/标准回答/关键词 + 来源/状态/版本/更新时间 元信息；无「保存」按钮、字段不可编辑（与「编辑」弹窗分离，看内容不动数据）', '知识库页副标题不再出现「LLM WIKI」字样，改为通俗文案（如「AI 客服知识库 — 发布后的知识卡片将优先用于 AI 客服回答顾客问题」）'],
+    skip_reason='纯前端交互 + 状态机 UI 由 vitest 单测验证（knowledge.test.tsx），后端状态机放开由 KnowledgeCardServiceTest 验证（API-015），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ui', 'knowledge', 'status-machine', 'read-only-view', 'admin-web'],
+    persona='',
+)
+
 # ── UT-001 [NORMAL] 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值（源: cases/utils.yml）──
 _CASE_UT_001 = EvalCase(
     id='UT-001',
@@ -3921,6 +3936,7 @@ ALL_CASES = (
     _CASE_UI_036,
     _CASE_UI_037,
     _CASE_UI_038,
+    _CASE_UI_039,
     _CASE_UT_001,
     _CASE_UT_002,
 )

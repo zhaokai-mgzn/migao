@@ -1276,3 +1276,39 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+
+  - id: UI-039
+    legacy_id: ""
+    title: "知识卡片：已归档卡片可「重新发布」+ 新增只读「查看」+ 副标题文案通俗化（#3108）"
+    domains:
+      - ui
+      - frontend
+      - knowledge
+    tier: normal
+    tags:
+      - ui
+      - knowledge
+      - status-machine
+      - read-only-view
+      - admin-web
+    truths_ref:
+      - frontend-fix.no-api-change
+      - frontend-fix.vitest
+    user_inputs:
+      - "知识卡片归档后没有恢复入口（归档成终点）；操作列没有不动数据的「查看」；副标题「LLM WIKI 知识卡片管理」对商家太技术化。需要：已归档卡片一键重新发布、只读查看弹窗、通俗副标题"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "已归档卡片操作列显示「重新发布」（图标 RotateCcw），点击调用 publishCard（POST /{id}/publish，后端已放开 archived → published，#3108），成功后列表刷新为已发布状态（操作区出现「归档」，重新发布按钮消失）"
+      - "「重新发布」成功 toast 文案为「知识卡片已重新发布」（区别于普通发布的「知识卡片已发布」）"
+      - "操作列新增「查看」按钮（所有状态卡片可见）：点击打开只读详情弹窗「知识卡片详情」，展示 标题/分类/常见问法/标准回答/关键词 + 来源/状态/版本/更新时间 元信息；无「保存」按钮、字段不可编辑（与「编辑」弹窗分离，看内容不动数据）"
+      - "知识库页副标题不再出现「LLM WIKI」字样，改为通俗文案（如「AI 客服知识库 — 发布后的知识卡片将优先用于 AI 客服回答顾客问题」）"
+    skip_reason: "纯前端交互 + 状态机 UI 由 vitest 单测验证（knowledge.test.tsx），后端状态机放开由 KnowledgeCardServiceTest 验证（API-015），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-09 新增（issue #3108）：归档非终点——已归档卡片可一键重新发布恢复 AI 检索；新增只读「查看」弹窗；副标题去 LLM WIKI 通俗化"
+    traces:
+      tests:
+        - "frontend/admin-web/tests/unit/pages/knowledge.test.tsx"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/KnowledgeCardServiceTest.java"
+      ci:
+        - pr-check.yml
+      verifies: []
