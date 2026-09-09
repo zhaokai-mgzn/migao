@@ -1,5 +1,5 @@
 """ValidateInputTool 单元测试 — 纯本地校验，无 API 调用"""
-# case_ids: PR-005, AS-003, PR-019, OR-015
+# case_ids: PR-005, AS-003, PR-019, OR-015, HR-005
 import pytest
 from app.tools.validate_input import ValidateInputTool
 
@@ -287,3 +287,63 @@ class TestProductCreateDeterministicAttrs:
                     "processing_item_configs": [{"processingItemId": "pi_a", "customPrice": 30.0, "unit": "平方米"}]},
         )
         assert result.success is True
+
+
+class TestValidateInputRoleManage:
+    """HR-005 回归：role_manage 写操作（create/update/delete）必须有校验规则。
+
+    背景（Round 29 实拍）：validate_input 对 role_manage 此前无规则 → 返回
+    「未知的工具或操作」，LLM 据此退化到文本预览确认（不走 interact confirm 卡），
+    角色创建流程不稳定（HR-005 失败根因之一，与 creation_skills 缺 staff 并列）。
+    """
+
+    async def test_role_create_valid(self, tool, admin_tool_context):
+        result = await tool.execute(
+            context=admin_tool_context,
+            target_tool="role_manage",
+            target_action="create",
+            params={"name": "库管", "code": "warehouse_keeper",
+                    "permission_ids": ["perm_product_manage"]},
+        )
+        assert result.success is True
+        assert result.data["validated"] is True
+
+    async def test_role_create_missing_name(self, tool, admin_tool_context):
+        result = await tool.execute(
+            context=admin_tool_context,
+            target_tool="role_manage",
+            target_action="create",
+            params={"code": "warehouse_keeper"},
+        )
+        assert result.success is False
+        assert "角色名称" in result.message
+
+    async def test_role_create_missing_code(self, tool, admin_tool_context):
+        result = await tool.execute(
+            context=admin_tool_context,
+            target_tool="role_manage",
+            target_action="create",
+            params={"name": "库管"},
+        )
+        assert result.success is False
+        assert "角色编码" in result.message
+
+    async def test_role_update_missing_role_id(self, tool, admin_tool_context):
+        result = await tool.execute(
+            context=admin_tool_context,
+            target_tool="role_manage",
+            target_action="update",
+            params={"name": "新名称"},
+        )
+        assert result.success is False
+        assert "role_id" in result.message.lower() or "角色 ID" in result.message
+
+    async def test_role_delete_missing_role_id(self, tool, admin_tool_context):
+        result = await tool.execute(
+            context=admin_tool_context,
+            target_tool="role_manage",
+            target_action="delete",
+            params={"reason": "不再需要"},
+        )
+        assert result.success is False
+        assert "role_id" in result.message.lower() or "角色 ID" in result.message

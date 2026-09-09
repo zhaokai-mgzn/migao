@@ -124,6 +124,26 @@ _VALIDATION_RULES: Dict[str, Dict[str, Any]] = {
             "tag_id": {"type": str, "min_len": 1, "label": "标签 ID"},
         },
     },
+    # HR-005 回归防线：role_manage 写操作此前无规则 → validate_input 返回「未知工具」，
+    # LLM 据此退化到文本预览确认（不走 interact confirm 卡），角色创建流程不稳定。
+    # 补规则让角色创建/更新/删除走标准校验+确认链（对齐 role_manage.py 硬必填）。
+    "role_manage": {
+        "create": {
+            "required": ["name", "code"],
+            "name": {"type": str, "min_len": 1, "label": "角色名称"},
+            "code": {"type": str, "min_len": 1, "label": "角色编码"},
+            "permission_ids": {"type": list, "label": "权限 ID 列表"},
+            "description": {"type": str, "label": "角色描述"},
+        },
+        "update": {
+            "required": ["role_id"],
+            "role_id": {"type": str, "min_len": 1, "label": "角色 ID"},
+        },
+        "delete": {
+            "required": ["role_id"],
+            "role_id": {"type": str, "min_len": 1, "label": "角色 ID"},
+        },
+    },
 }
 
 # 管理类操作的通用必填校验
