@@ -204,6 +204,58 @@ class TestExpectationArgsValidation:
         assert not ok
 
 
+class TestNestedListOfDictArgs:
+    """list-of-dict 嵌套字段断言（OR-009 order_create items 断言缺口，Phase 4）
+
+    背景：order_create 的期望 items=[{sellingMethod, doorWidth, colorName}] 是
+    列表内 dict 对象。旧 _arg_mismatch_reason 对 list 用 str 集合比较，dict 的 str
+    表示键序不定，导致永远 unmatched（OR-009 的 order_create 断言失效）。
+    增强：列表内元素为 dict 时，做字段级匹配（期望每个 dict 的字段须在某个实际
+    dict 命中，值校验沿用标量规则：中文语义值仅验 key、ASCII 宽容相等）。
+    """
+
+    def _args(self, items):
+        return {"customer_name": "张三", "customer_phone": "13800138000", "items": items}
+
+    def test_nested_dict_fields_all_match(self):
+        actual = self._args([{
+            "sellingMethod": "bulk_cut", "doorWidth": "2.8米", "colorName": "米白色",
+            "quantity": 3, "subtotal": 297,
+        }])
+        expected = {"items": [{"sellingMethod": "bulk_cut", "doorWidth": "2.8米", "colorName": "白色"}]}
+        assert lr._arg_mismatch_reason(actual, expected) is None
+
+    def test_nested_dict_field_missing_fails(self):
+        actual = self._args([{"sellingMethod": "full_roll", "doorWidth": "2.8米"}])
+        expected = {"items": [{"sellingMethod": "bulk_cut"}]}
+        reason = lr._arg_mismatch_reason(actual, expected)
+        assert reason and "sellingMethod" in reason
+
+    def test_nested_dict_second_item_matches(self):
+        """期望 dict 只需命中实际列表中的任一元素（多商品单里第2项命中也算）。"""
+        actual = self._args([
+            {"sellingMethod": "full_roll", "doorWidth": "1.5米"},
+            {"sellingMethod": "bulk_cut", "doorWidth": "2.8米", "colorName": "白色"},
+        ])
+        expected = {"items": [{"sellingMethod": "bulk_cut", "doorWidth": "2.8米"}]}
+        assert lr._arg_mismatch_reason(actual, expected) is None
+
+    def test_nested_dict_cjk_value_only_key_present(self):
+        """中文语义值（白色）仅验 key 存在，不字面比较（agent 可能回「米白色」）。"""
+        actual = self._args([{"colorName": "米白色", "sellingMethod": "bulk_cut"}])
+        expected = {"items": [{"colorName": "白色"}]}
+        assert lr._arg_mismatch_reason(actual, expected) is None
+
+    def test_nested_dict_empty_expected_list_passes(self):
+        assert lr._arg_mismatch_reason(self._args([]), {"items": []}) is None
+
+    def test_plain_list_still_uses_subset_semantics(self):
+        """普通标量列表（item_ids=[打孔]）维持旧子集语义，不回归。"""
+        actual = {"action": "add", "item_ids": ["打孔", "挂钩"]}
+        expected = {"item_ids": ["打孔"]}
+        assert lr._arg_mismatch_reason(actual, expected) is None
+
+
 class TestRunCaseDataChecksScoring:
     """data_checks 落入评分（issue #2854 P0-3）：success=true 等机器可判定检查计入得分
 
