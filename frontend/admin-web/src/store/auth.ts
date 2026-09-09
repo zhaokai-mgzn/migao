@@ -136,8 +136,19 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
       const response = await authApi.getUserInfo()
       const { data } = response.data
 
+      // #3099: /api/auth/me 返回 { user:{...}, roles, permissions, menus } 包装结构，
+      // 必须把内层 user 与角色/权限/菜单合并后写入 store —— 否则顶层 nickname/username/
+      // tenantName/tenantLogo 全部 undefined（右上角恒显「管理员」、侧边栏企业名/Logo 静默失效）。
+      // 兼容历史扁平响应（部分测试/旧契约 data 直接是 user 对象）。
+      const payload = data as any
+      const inner = payload?.user && typeof payload.user === 'object' ? payload.user : payload
       set({
-        user: data,
+        user: {
+          ...inner,
+          roles: payload?.roles,
+          permissions: payload?.permissions,
+          menus: payload?.menus,
+        } as User,
         isAuthenticated: true,
       })
     } catch (error: any) {

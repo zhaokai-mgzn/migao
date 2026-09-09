@@ -1,4 +1,4 @@
-// case_ids: API-010
+// case_ids: API-010, UI-037
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { act } from '@testing-library/react'
 
@@ -282,6 +282,45 @@ describe('useAuthStore (Zustand auth store)', () => {
   })
 
   describe('fetchUserInfo', () => {
+    it('应解包 /api/auth/me 的 { user, roles, permissions, menus } 包装结构（#3099）', async () => {
+      mockGetUserInfo.mockResolvedValue({
+        data: {
+          data: {
+            user: {
+              id: 'u1',
+              username: '13800138000',
+              nickname: '张老板',
+              position: '运营',
+              avatar: 'https://oss.example.com/avatar.png',
+              tenantId: 1,
+              tenantName: '米高布艺',
+              tenantLogo: 'https://oss.example.com/logo.png',
+              status: 'active',
+            },
+            roles: ['admin'],
+            permissions: ['*'],
+            menus: [{ key: 'dashboard', name: '经营看板', icon: 'BarChart3', path: '/dashboard' }],
+          },
+        },
+      })
+
+      await act(async () => {
+        await useAuthStore.getState().fetchUserInfo()
+      })
+
+      const user = useAuthStore.getState().user as any
+      // 顶层可读：昵称/用户名(手机号)/岗位/企业名/Logo（解包后，右上角与侧边栏才能正常展示）
+      expect(user.nickname).toBe('张老板')
+      expect(user.username).toBe('13800138000')
+      expect(user.position).toBe('运营')
+      expect(user.tenantName).toBe('米高布艺')
+      expect(user.tenantLogo).toBe('https://oss.example.com/logo.png')
+      // 角色/权限/菜单保留（侧边栏过滤等依赖）
+      expect(user.roles).toEqual(['admin'])
+      expect(user.permissions).toEqual(['*'])
+      expect(user.menus).toEqual([{ key: 'dashboard', name: '经营看板', icon: 'BarChart3', path: '/dashboard' }])
+    })
+
     it('should set user and isAuthenticated on success', async () => {
       mockGetUserInfo.mockResolvedValue({
         data: {

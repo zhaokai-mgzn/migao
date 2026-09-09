@@ -34,6 +34,8 @@ export interface User {
   email?: string
   phone?: string
   avatar?: string
+  /** 岗位（员工档案，User 实体 position 字段；#3099 右上角用户卡片展示） */
+  position?: string
   roles?: string[]
   permissions?: string[]
   menus?: MenuItem[]

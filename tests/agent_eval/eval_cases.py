@@ -3620,6 +3620,21 @@ _CASE_UI_036 = EvalCase(
     persona='',
 )
 
+# ── UI-037 [NORMAL] 右上角用户信息卡片 — 点击展开 + 默认展示登录用户姓名 + 手机号/岗位/所属企业 + 企业名/Logo 侧边栏即时同步（#3099）（源: cases/ui.yml）──
+_CASE_UI_037 = EvalCase(
+    id='UI-037',
+    legacy_id='',
+    title='右上角用户信息卡片 — 点击展开 + 默认展示登录用户姓名 + 手机号/岗位/所属企业 + 企业名/Logo 侧边栏即时同步（#3099）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['点击右上角用户信息，默认展示当前登录用户名称；丰富该区域卡片信息（手机号/岗位/所属企业）；修改企业名称与 Logo 后应在商家后端（侧边栏）即时体现'],
+    expectations=['direct_reply'],
+    data_checks=['Header 右上角用户按钮默认展示当前登录用户名称（name→nickname→username→管理员 兜底链），点击展开下拉卡片（非 hover 悬停触发），再次点击/点击卡片外收起', '用户卡片包含：头像（有 avatar 用图片，否则姓名首字）、姓名、账号（email 或 username）、手机号（username=手机号）、岗位（position）、所属企业（tenantName）、退出登录', 'fetchUserInfo 解包 /api/auth/me 的 { user, roles, permissions, menus } 包装结构：顶层 nickname/username/position/tenantName/tenantLogo 可读，roles/permissions/menus 保留（侧边栏过滤依赖）——修复右上角恒显「管理员」与侧边栏企业名/Logo 静默失效的根因', '「企业基础信息」保存成功后立即 fetchUserInfo 刷新，侧边栏企业名/Logo 即时同步（无需刷新页面）；toast「侧边栏将同步展示」与实际行为一致', '后端 /api/auth/me 与 /api/admin/user/info 的 user 内层返回 position（岗位，User 实体字段）'],
+    skip_reason='纯前端交互 + 后端 DTO 由 vitest 单测与 MockMvc 集成测试验证（Header/auth store/settings/AuthIntegrationTest），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ui', 'header', 'user-card', 'admin-web', 'settings'],
+    persona='',
+)
+
 # ── UI-038 [NORMAL] 新增订单表单支持选择已有客户 — 自动回填收货信息（姓名/手机号/省市区），保留手动兜底（#3102）（源: cases/ui.yml）──
 _CASE_UI_038 = EvalCase(
     id='UI-038',
@@ -3904,6 +3919,7 @@ ALL_CASES = (
     _CASE_UI_034,
     _CASE_UI_035,
     _CASE_UI_036,
+    _CASE_UI_037,
     _CASE_UI_038,
     _CASE_UT_001,
     _CASE_UT_002,
