@@ -650,6 +650,41 @@ def _requires_confirmation(tool, tool_args: dict, last_user_msg: str) -> bool:
     return not _is_explicit_confirmation(last_user_msg)
 
 
+def _is_processing_items_card(args: dict) -> bool:
+    """choice 卡是否加工项选择卡（排除瑕疵商品等选项带 ¥ 的普通卡）。
+
+    判定：title 含「加工项」或任一 option value 以 proc_item 开头。
+    与 tests/agent_eval/local_runner.py 的同名函数保持语义一致（断言侧）。
+    """
+    if not (args or {}).get("options"):
+        return bool((args or {}).get("title") and "加工项" in str(args.get("title", "")))
+    if "加工项" in str(args.get("title", "")):
+        return True
+    return any(str(o.get("value", "")).startswith("proc_item") for o in args.get("options") or [])
+
+
+def _ensure_processing_items_multiselect(tool_name: str, args: dict) -> dict:
+    """加工项 choice 卡漏传 multiSelect 时自动补 true（模式 C 代码兜底，PR-014/015）。
+
+    背景：prompt 已写「加工项选择必须 multiSelect=true」，但 LLM 仍会漏传（🧬不稳定），
+    导致加工项选择器退化成单选——用户只能选一个加工项，多选流程断裂。
+    设计标准 §3「改 3 次 prompt 修不好 → 代码管」：加工项卡语义上必是多选，
+    代码层确定性补齐，不再依赖 LLM 自律。
+    """
+    if tool_name != "interact":
+        return args
+    if (args or {}).get("component") != "choice":
+        return args
+    if (args or {}).get("multiSelect") in (True, "true", "True"):
+        return args
+    if not _is_processing_items_card(args or {}):
+        return args
+    new_args = dict(args)
+    new_args["multiSelect"] = True
+    logger.info("[interact] 自动补齐加工项卡 multiSelect=true（LLM 漏传兜底）")
+    return new_args
+
+
 async def _execute_tool_safe(tool, tool_args: dict, tool_context, state: dict) -> tuple:
     """统一 Tool 执行入口 — normalize + cache + execute + error handling.
 
@@ -1311,6 +1346,10 @@ async def execute_skill(
                     """执行单个 tool，返回 (tool_call, result_str, result_dict)。"""
                     tool_name = tool_call["name"]
                     args = tool_call.get("args", {})
+                    # 模式 C 代码兜底：加工项 choice 卡漏传 multiSelect → 自动补 true（PR-014/015）
+                    args = _ensure_processing_items_multiselect(tool_name, args)
+                    if args is not tool_call.get("args"):
+                        tool_call = {**tool_call, "args": args}
                     tool = skill_registry.get_tool(tool_name)
                     if tool is None:
                         logger.warning(f"[{skill_name}] Tool not found: {tool_name} | session={session_id}")
