@@ -2,7 +2,7 @@ import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-// case_ids: API-015, UI-033, UI-034
+// case_ids: API-015, UI-033, UI-034, UI-035
 
 // Mock API — LLM WIKI 知识卡片页（issue #3051）：数据源必须来自 knowledgeApi.getCards（非硬编码）
 vi.mock('@/lib/api', () => ({
@@ -328,5 +328,19 @@ describe('KnowledgePage（LLM WIKI 知识卡片管理）', () => {
     await waitFor(() => {
       expect(screen.getByText('窗帘尺寸测量标准')).toBeInTheDocument()
     })
+  })
+
+  it('source filter uses self-explanatory labels: 加工项派生 shown, 商品派生/配置 hidden (#3083)', async () => {
+    render(<KnowledgePage />)
+    await waitFor(() => {
+      expect(screen.getByText('雪尼尔面料会起球吗')).toBeInTheDocument()
+    })
+    const srcSelect = screen.getByLabelText('来源筛选') as HTMLSelectElement
+    const options = Array.from(srcSelect.options).map((o) => o.textContent ?? '')
+    // 「配置」改名为自解释的「加工项派生」（用户一眼看懂）
+    expect(options).toContain('加工项派生')
+    expect(options).not.toContain('配置')
+    // 商品派生能力已移除，来源筛选不再出现该选项
+    expect(options).not.toContain('商品派生')
   })
 })

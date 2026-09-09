@@ -1117,10 +1117,42 @@ cases:
       - "待确认候选「采纳」后：toast 文案包含去向（跳转知识卡片列表）；落地「知识卡片」Tab 后新卡行高亮定位（Table 的 highlightRowKey 匹配新卡 id，bg-primary-50），高亮 4s 自动消退"
       - "行业模板「一键套用」：先弹确认弹窗（说明将新增 N 条并立即发布、已存在自动跳过），未确认不得调用 applyTemplate；确认后 toast 文案包含去向与定位方式（筛选「来源=模板」）"
       - "套用确认后：跳转「知识卡片」Tab 并自动按来源=模板筛选（getCards 带 sourceType=template），列表仅显示模板来源卡片（批量成果可核对可编辑）"
-      - "「知识卡片」Tab 筛选区常驻「来源」下拉（全部来源/模板/商品派生/配置/会话提炼/文档提炼/人工），用户可随时按来源定位卡片"
+      - "「知识卡片」Tab 筛选区常驻「来源」下拉（全部来源/模板/加工项派生/会话提炼/文档提炼/人工——来源定义「一眼看懂」，商品派生能力已移除故无该选项），用户可随时按来源定位卡片"
       - "待确认/行业模板两处 Tab 副文案补充去向说明，与 toast 口径一致"
     skip_reason: "纯前端交互由 vitest 单测验证，非 LLM 行为，不进入 agent-eval 冒烟"
     merge_log: "2026-09-09 新增（issue #3080）：知识库采纳/套用成果去向提示 — toast 带去向 + 采纳高亮 + 套用确认弹窗 + 来源筛选定位"
+    traces:
+      tests:
+        - "frontend/admin-web/tests/unit/pages/knowledge.test.tsx"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  - id: UI-035
+    legacy_id: ""
+    title: "知识库来源定义「一眼看懂」+ 商品派生能力移除（issue #3083）"
+    domains:
+      - ui
+      - frontend
+    tier: normal
+    tags:
+      - ui
+      - knowledge
+      - source-clarity
+      - admin-web
+    truths_ref:
+      - frontend-fix.no-api-change
+      - frontend-fix.vitest
+    user_inputs:
+      - "知识库来源定义需用户一眼看懂：「配置」含义模糊（实为加工项计价卡片）应改「加工项派生」；商品派生能力移除后来源筛选不再出现「商品派生」选项"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "来源筛选下拉显示「加工项派生」而非「配置」（SOURCE_META.config.label 已改为自解释文案）"
+      - "来源筛选下拉不含「商品派生」选项（商品派生能力已移除，SOURCE_FILTER_OPTIONS 排除 product）"
+      - "来源徽标（列表列）同样使用自解释文案：config → 加工项派生；product 仅保留以渲染存量归档卡（不参与筛选）"
+    skip_reason: "纯前端文案/交互由 vitest 单测验证，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-09 新增（issue #3083）：知识库来源定义清晰化 — config→加工项派生、商品派生选项移除"
     traces:
       tests:
         - "frontend/admin-web/tests/unit/pages/knowledge.test.tsx"

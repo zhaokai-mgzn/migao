@@ -53,14 +53,14 @@ class KnowledgeDeriveControllerTest {
     }
 
     @Test
-    @DisplayName("POST /derive/rebuild 触发存量对账，返回统计")
+    @DisplayName("POST /derive/rebuild 触发存量对账（商品派生已移除，仅加工项），返回统计")
     void rebuild_success() throws Exception {
         when(knowledgeDeriveService.deriveAll(eq(1L)))
-                .thenReturn(Map.of("products", 8, "processingItems", 6));
+                .thenReturn(Map.of("processingItems", 6));
 
         mockMvc.perform(post("/api/admin/knowledge/derive/rebuild"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.products").value(8))
-                .andExpect(jsonPath("$.data.processingItems").value(6));
+                .andExpect(jsonPath("$.data.processingItems").value(6))
+                .andExpect(jsonPath("$.data.products").doesNotExist());
     }
 }

@@ -432,7 +432,7 @@ cases:
 
   - id: API-023
     legacy_id: ""
-    title: "知识派生对账 - 存量商品/加工项全量重建派生卡片（P2-1，issue #3051 收尾）"
+    title: "知识派生对账 - 存量加工项重建派生卡片（商品派生已移除，issue #3083）"
     domains:
       - api
       - knowledge
@@ -444,14 +444,14 @@ cases:
       - derive
     truths_ref: []
     user_inputs:
-      - "管理端触发存量对账：历史商品/加工项无需逐个编辑即可补生成派生知识卡片"
+      - "管理端触发存量对账：历史加工项无需逐个编辑即可补生成派生知识卡片（商品派生能力已下线，价格走 product_detail 工具实时查询）"
     expectations: []
     data_checks:
-      - "POST /api/admin/knowledge/derive/rebuild 全量重建派生卡片：返回 {products, processingItems} 统计"
+      - "POST /api/admin/knowledge/derive/rebuild 重建派生卡片：返回 {processingItems} 统计（不再包含 products，商品派生已移除）"
       - "同源（tenant+sourceType+sourceRef）upsert：已存在卡片更新 version+1，不重复插入"
-      - "对账为 P2 收尾：存量商品此前无派生卡片（验收发现 P2-1），商品变更仍实时自动触发（不回归）"
+      - "商品创建/更新/上下架不再触发任何知识卡片派生（issue #3083）"
     skip_reason: "对账逻辑由 Service 单测（KnowledgeDeriveServiceTest deriveAll）+ Controller MockMvc 测试验证，非 LLM 行为"
-    merge_log: "2026-09-09 新增（验收 P2-1 收尾）：设计 §七 承诺的存量对账入口补齐——此前仅商品变更触发，存量商品无派生卡片"
+    merge_log: "2026-09-09 更新（issue #3083）：商品派生能力移除，对账仅剩加工项——商品事实类问题由 product_detail 工具实时查询，派生卡片快照为冗余第二数据源"
     traces:
       tests:
         - "backend/admin-api/src/test/java/com/migao/admin/controller/KnowledgeDeriveControllerTest.java"
@@ -462,7 +462,7 @@ cases:
 
   - id: API-018
     legacy_id: ""
-    title: "商品/配置派生知识卡片 - 价格区间自动生成 + 变更自动更新（LLM WIKI 板块 #3051 P4）"
+    title: "配置（加工项）派生知识卡片 - pricingMethod 计价文案自动生成 + 变更自动更新（商品派生已移除，issue #3083）"
     domains:
       - api
       - knowledge
@@ -474,19 +474,17 @@ cases:
       - derive
     truths_ref: []
     user_inputs:
-      - "商品/加工项信息变更后，关联的派生知识卡片自动更新，AI 回答价格/规格问题与商品数据一致"
+      - "加工项信息变更后，关联的派生知识卡片自动更新，AI 回答计价问题与加工项数据一致；商品价格问题由 product_detail 工具实时查询"
     expectations: []
     data_checks:
-      - "商品创建/更新/上下架后自动生成/更新「{商品名}多少钱」知识卡片：answer 含 SKU 价格区间（如 88-128 元/米），sourceType=product、sourceRef=商品ID、status=published"
-      - "加工项创建/更新后自动生成「{加工项名}怎么计价」卡片：按 pricingMethod 生成文案（per_meter 按米/per_set 按套/fixed 固定价格+单价/per_area 按面积）"
-      - "同源（tenant+sourceType+sourceRef）upsert：存在则更新 version+1，不重复插入；跨租户商品不派生"
-      - "价格区间实时读取 SKU 价格，商品变更后卡片自动同步（验收真值 #3）"
-    skip_reason: "派生逻辑由 Service 单测验证（KnowledgeDeriveServiceTest）+ 商品/加工项服务触发断言，非 LLM 行为，不进入 agent-eval 冒烟"
-    merge_log: "2026-09-08 新增（issue #3051 LLM WIKI 板块 P4）：L2 本店事实层——商品/加工项结构化数据直接生成知识卡片（替代 RAG 检索），商品变更触发自动更新"
+      - "加工项创建/更新后自动生成「{加工项名}怎么计价」卡片：按 pricingMethod 生成文案（per_meter 按米/per_set 按套/fixed 固定价格+单价/per_area 按面积），sourceType=config、sourceRef=加工项ID、status=published"
+      - "同源（tenant+sourceType+sourceRef）upsert：存在则更新 version+1，不重复插入"
+      - "商品派生已移除：不再生成 sourceType=product 的「{商品名}多少钱」卡片（价格走 product_detail 工具，杜绝价格双源快照）"
+    skip_reason: "派生逻辑由 Service 单测验证（KnowledgeDeriveServiceTest），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-08 新增（issue #3051 LLM WIKI 板块 P4）：L2 本店事实层——加工项结构化数据直接生成知识卡片（替代 RAG 检索）；2026-09-09 更新（issue #3083）：商品派生移除，仅保留加工项派生"
     traces:
       tests:
         - "backend/admin-api/src/test/java/com/migao/admin/service/KnowledgeDeriveServiceTest.java"
-        - "backend/admin-api/src/test/java/com/migao/admin/service/ProductServiceTest.java"
       ci:
         - pr-check.yml
       verifies: []
