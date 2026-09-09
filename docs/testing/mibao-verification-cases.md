@@ -2753,12 +2753,13 @@
 你: 米宝收起后的最小化小浮窗固定 400×600，高度不够、聊天布局拥挤；且换屏/改窗口后存储的浮窗位置会落到视口外看不见
 期望: direct_reply
 数据: 默认高度按视口自适应：min(760, max(600, innerHeight*0.8))，小屏不超过视口高度（贴边不留白）
+数据: 默认位置贴右下角：右侧 16px 边距、底部贴齐视口（top = innerHeight - 高，无底部预留空间 #3106）
 数据: 底部把手（testid=float-minimized-resize-bottom）拖拽调整高度、右下角把手（float-minimized-resize-corner，nwse-resize）斜向同时调整宽高；尺寸持久化 mibao_minimized_size
 数据: 移动拖拽按当前浮窗尺寸钳制（0 ≤ x ≤ iw-w、0 ≤ y ≤ ih-h）；读取存储位置/尺寸时越界自动钳回视口
 跳过: 纯前端 React 组件/单测验证（floating-assistant.test.tsx），非 LLM 行为
 ```
 真值: frontend-fix.no-api-change
-溯源: 2026-09-05 新增：最小化浮窗高度自适应 + 缩放把手 + 越界钳制（issue #2918） ｜ tags: ui, admin-web, floating-assistant, minimized-window
+溯源: 2026-09-05 新增：最小化浮窗高度自适应 + 缩放把手 + 越界钳制（issue #2918）；2026-09-09 #3106：默认位置贴底（去掉 -80 底部预留空间） ｜ tags: ui, admin-web, floating-assistant, minimized-window
 
 ### UI-024. 请求错误提示去重 — 拦截器已展示后端具体错误，页面不再叠加通用错误 toast 🔵
 ```

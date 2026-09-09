@@ -126,6 +126,15 @@ describe('FloatingAssistant', () => {
     expect(win.style.height).toBe('614px')
   })
 
+  it('最小化浮窗默认位置贴底 —— 无底部预留空间（#3106）', () => {
+    setViewport(1024, 768)
+    const win = openMinimized()
+    // 默认高度 614 → 默认 top = 768 - 614 = 154px（贴底，去掉原 -80px 底部预留）
+    expect(win.style.top).toBe('154px')
+    // 右侧保留 16px 边距（1024 - 400 - 16 = 608）
+    expect(win.style.left).toBe('608px')
+  })
+
   it('底部把手拖拽可调整最小化浮窗高度，松开后持久化尺寸', () => {
     setViewport(1024, 768)
     const win = openMinimized()

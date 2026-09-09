@@ -758,10 +758,11 @@ cases:
       - tool: direct_reply
     data_checks:
       - "默认高度按视口自适应：min(760, max(600, innerHeight*0.8))，小屏不超过视口高度（贴边不留白）"
+      - "默认位置贴右下角：右侧 16px 边距、底部贴齐视口（top = innerHeight - 高，无底部预留空间 #3106）"
       - "底部把手（testid=float-minimized-resize-bottom）拖拽调整高度、右下角把手（float-minimized-resize-corner，nwse-resize）斜向同时调整宽高；尺寸持久化 mibao_minimized_size"
       - "移动拖拽按当前浮窗尺寸钳制（0 ≤ x ≤ iw-w、0 ≤ y ≤ ih-h）；读取存储位置/尺寸时越界自动钳回视口"
     skip_reason: "纯前端 React 组件/单测验证（floating-assistant.test.tsx），非 LLM 行为"
-    merge_log: "2026-09-05 新增：最小化浮窗高度自适应 + 缩放把手 + 越界钳制（issue #2918）"
+    merge_log: "2026-09-05 新增：最小化浮窗高度自适应 + 缩放把手 + 越界钳制（issue #2918）；2026-09-09 #3106：默认位置贴底（去掉 -80 底部预留空间）"
     traces:
       tests:
         - "frontend/admin-web/tests/unit/floating-assistant.test.tsx"
