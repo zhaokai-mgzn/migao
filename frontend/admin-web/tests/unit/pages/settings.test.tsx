@@ -198,13 +198,13 @@ describe('SettingsPage — AI 客服设置合并进企业基础信息 (#3081)', 
         expect(screen.getByRole('button', { name: /AI 客服设置/ })).toBeInTheDocument()
       })
       await switchToTab(user, 'AI 客服设置')
-      const saveBtn = await screen.findByRole('button', { name: /保存 AI 客服设置/ })
+      const saveBtn = await screen.findByRole('button', { name: '保存' })
       await user.click(saveBtn)
       expect(toast.error).toHaveBeenCalledWith('请输入 AI 客服名称')
       expect(mockUpdateAiConfig).not.toHaveBeenCalled()
     })
 
-    it('保存 AI 客服设置 → 调用 updateAiConfig 并提示生效', async () => {
+    it('AI 客服设置 tab 点「保存」→ 调用 updateAiConfig 并提示生效', async () => {
       const user = userEvent.setup()
       mockUpdateAiConfig.mockResolvedValue({ data: {} })
       render(<SettingsPage />)
@@ -215,7 +215,7 @@ describe('SettingsPage — AI 客服设置合并进企业基础信息 (#3081)', 
       const input = await screen.findByDisplayValue('小布')
       await user.clear(input)
       await user.type(input, '米高助手')
-      await user.click(screen.getByRole('button', { name: /保存 AI 客服设置/ }))
+      await user.click(screen.getByRole('button', { name: '保存' }))
       await waitFor(() => {
         expect(mockUpdateAiConfig).toHaveBeenCalledWith(
           expect.objectContaining({ botName: '米高助手' }),
@@ -291,10 +291,10 @@ describe('SettingsPage — AI 客服设置合并进企业基础信息 (#3081)', 
       })
     })
 
-    it('保存设置按钮应该存在（基本设置 tab 默认激活）', async () => {
+    it('保存按钮应该存在（基本设置 tab 默认激活，#3119 统一命名）', async () => {
       render(<SettingsPage />)
       await waitFor(() => {
-        expect(screen.getByRole('button', { name: /保存设置/ })).toBeInTheDocument()
+        expect(screen.getByRole('button', { name: '保存' })).toBeInTheDocument()
       })
     })
 
@@ -303,10 +303,10 @@ describe('SettingsPage — AI 客服设置合并进企业基础信息 (#3081)', 
       mockUpdateSettings.mockResolvedValue({ data: { data: {} } })
       render(<SettingsPage />)
       await waitFor(() => {
-        // #3100 tab 布局：企业信息区块按钮名为「保存设置」（原「保存企业信息」）
-        expect(screen.getByRole('button', { name: /保存设置/ })).toBeInTheDocument()
+        // #3119: 与全站表单惯例一致，保存按钮统一命名「保存」（原「保存设置/保存企业信息」）
+        expect(screen.getByRole('button', { name: '保存' })).toBeInTheDocument()
       })
-      await user.click(screen.getByRole('button', { name: /保存设置/ }))
+      await user.click(screen.getByRole('button', { name: '保存' }))
       await waitFor(() => {
         expect(mockUpdateSettings).toHaveBeenCalled()
       })
@@ -597,14 +597,40 @@ describe('SettingsPage — AI 客服设置合并进企业基础信息 (#3081)', 
       expect(screen.queryByPlaceholderText(/接收通知的邮箱地址/)).not.toBeInTheDocument()
     })
 
-    it('保存通知设置按钮存在（#3081 分区块保存）', async () => {
+    it('开关即时保存（#3119）：点击开关 → 调用 updateSettings 携带 notificationEnabled，无保存按钮', async () => {
       const user = userEvent.setup()
+      mockUpdateSettings.mockResolvedValue({ data: {} })
       render(<SettingsPage />)
       await waitFor(() => {
         expect(screen.getByRole('button', { name: /通知设置/ })).toBeInTheDocument()
       })
       await switchToTab(user, '通知设置')
-      expect(screen.getByRole('button', { name: /保存通知设置/ })).toBeInTheDocument()
+      // #3119：移除独立「保存通知设置」按钮（开关类配置即时生效）
+      expect(screen.queryByRole('button', { name: /保存通知设置/ })).not.toBeInTheDocument()
+      // 点击开关（当前 notificationEnabled=true → 点击关闭）
+      const toggle = screen.getByRole('button', { name: /系统通知开关/ })
+      await user.click(toggle)
+      await waitFor(() => {
+        expect(mockUpdateSettings).toHaveBeenCalledWith(
+          expect.objectContaining({ notificationEnabled: false }),
+        )
+      })
+      expect(toast.success).toHaveBeenCalledWith('已关闭系统通知')
+    })
+
+    it('开关保存失败 → UI 回滚并提示（#3119 乐观更新回滚）', async () => {
+      const user = userEvent.setup()
+      mockUpdateSettings.mockRejectedValue(new Error('save failed'))
+      render(<SettingsPage />)
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /通知设置/ })).toBeInTheDocument()
+      })
+      await switchToTab(user, '通知设置')
+      const toggle = screen.getByRole('button', { name: /系统通知开关/ })
+      await user.click(toggle)
+      await waitFor(() => {
+        expect(toast.error).toHaveBeenCalledWith('保存失败')
+      })
     })
   })
 })

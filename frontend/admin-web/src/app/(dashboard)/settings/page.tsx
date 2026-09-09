@@ -121,7 +121,7 @@ export default function SettingsPage() {
       const res = await uploadApi.uploadImage(file)
       setSettings((prev) => ({ ...prev, logo: res.data.data.url }))
       setLogoPreviewError(false)
-      toast.success('Logo 上传成功，记得点击「保存设置」生效')
+      toast.success('Logo 上传成功，记得点击「保存」生效')
     } catch {
       toast.error('Logo 上传失败')
     } finally {
@@ -150,6 +150,20 @@ export default function SettingsPage() {
       toast.error(error?.response?.data?.error?.message || '保存失败')
     } finally {
       setSavingSettings(false)
+    }
+  }
+
+  // #3119: 通知开关即时保存（开关类配置点击即生效，无需独立保存按钮）
+  const handleToggleNotification = async () => {
+    const next = !settings.notificationEnabled
+    // 乐观更新：先切 UI，失败回滚
+    setSettings((prev) => ({ ...prev, notificationEnabled: next }))
+    try {
+      await settingsApi.updateSettings({ notificationEnabled: next })
+      toast.success(next ? '已开启系统通知' : '已关闭系统通知')
+    } catch (e) {
+      setSettings((prev) => ({ ...prev, notificationEnabled: !next }))
+      toast.error('保存失败')
     }
   }
 
@@ -256,7 +270,7 @@ export default function SettingsPage() {
                         </div>
                         <input ref={fileInputRef} type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={handleLogoUpload} />
                         <p className="text-xs text-neutral-400 mt-1.5">
-                          未设置时展示米高默认 Logo；上传/移除后需点击「保存设置」生效，将展示在后台侧边栏企业名旁
+                          未设置时展示米高默认 Logo；上传/移除后需点击「保存」生效，将展示在后台侧边栏企业名旁
                         </p>
                       </div>
                     </div>
@@ -265,7 +279,7 @@ export default function SettingsPage() {
                   <div className="pt-4">
                     <Button onClick={handleSaveSettings} loading={savingSettings}>
                       <Save className="w-4 h-4 mr-1.5" />
-                      保存设置
+                      保存
                     </Button>
                   </div>
                 </div>
@@ -320,7 +334,7 @@ export default function SettingsPage() {
                   <div className="pt-4">
                     <Button onClick={handleSaveAiConfig} loading={savingAiConfig}>
                       <Save className="w-4 h-4 mr-1.5" />
-                      保存 AI 客服设置
+                      保存
                     </Button>
                   </div>
                 </div>
@@ -328,7 +342,7 @@ export default function SettingsPage() {
             </div>
           )}
 
-          {/* 通知设置 */}
+          {/* 通知设置（#3119：开关即时保存，无独立保存按钮） */}
           {activeTab === 'notification' && (
             <div className="bg-white border border-neutral-200 rounded-lg p-6 max-w-lg">
               <h2 className="text-lg font-semibold text-neutral-900 mb-6">通知设置</h2>
@@ -339,10 +353,11 @@ export default function SettingsPage() {
                     <div className="text-xs text-neutral-500">控制订单、客服等重要事件站内通知的发送；关闭后不再产生新的站内通知（历史通知保留）</div>
                   </div>
                   <button
+                    aria-label="启用系统通知开关"
                     className={`relative w-11 h-6 rounded-full transition-colors ${
                       settings.notificationEnabled ? 'bg-primary-600' : 'bg-neutral-300'
                     }`}
-                    onClick={() => setSettings({ ...settings, notificationEnabled: !settings.notificationEnabled })}
+                    onClick={handleToggleNotification}
                   >
                     <span
                       className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform shadow ${
@@ -350,13 +365,6 @@ export default function SettingsPage() {
                       }`}
                     />
                   </button>
-                </div>
-
-                <div className="pt-4">
-                  <Button onClick={handleSaveSettings} loading={savingSettings}>
-                    <Save className="w-4 h-4 mr-1.5" />
-                    保存通知设置
-                  </Button>
                 </div>
               </div>
             </div>
