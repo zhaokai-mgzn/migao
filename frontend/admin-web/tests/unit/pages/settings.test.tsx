@@ -304,9 +304,10 @@ describe('SettingsPage — AI 客服设置合并进企业基础信息 (#3081)', 
       mockUpdateSettings.mockResolvedValue({ data: { data: {} } })
       render(<SettingsPage />)
       await waitFor(() => {
-        expect(screen.getByRole('button', { name: /保存企业信息/ })).toBeInTheDocument()
+        // #3100 tab 布局：企业信息区块按钮名为「保存设置」（原「保存企业信息」）
+        expect(screen.getByRole('button', { name: /保存设置/ })).toBeInTheDocument()
       })
-      await user.click(screen.getByRole('button', { name: /保存企业信息/ }))
+      await user.click(screen.getByRole('button', { name: /保存设置/ }))
       await waitFor(() => {
         expect(mockUpdateSettings).toHaveBeenCalled()
       })
