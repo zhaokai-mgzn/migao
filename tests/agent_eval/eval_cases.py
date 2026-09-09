@@ -3620,9 +3620,9 @@ _CASE_UI_032 = EvalCase(
     persona='',
 )
 
-# ── UI-029 [NORMAL] 知识库页 UI 修复：面包屑对齐菜单名 + 页面样式统一 + 分页不被米宝浮动按钮遮挡 + 模板套用/候选采纳后结果立即可见可编辑（#3070）（源: cases/ui.yml）──
-_CASE_UI_029 = EvalCase(
-    id='UI-029',
+# ── UI-033 [NORMAL] 知识库页 UI 修复：面包屑对齐菜单名 + 页面样式统一 + 分页不被米宝浮动按钮遮挡 + 模板套用/候选采纳后结果立即可见可编辑（#3070）（源: cases/ui.yml）──
+_CASE_UI_033 = EvalCase(
+    id='UI-033',
     legacy_id='',
     title='知识库页 UI 修复：面包屑对齐菜单名 + 页面样式统一 + 分页不被米宝浮动按钮遮挡 + 模板套用/候选采纳后结果立即可见可编辑（#3070）',
     skill=Skill.GENERAL,
@@ -3904,7 +3904,7 @@ ALL_CASES = (
     _CASE_UI_030,
     _CASE_UI_031,
     _CASE_UI_032,
-    _CASE_UI_029,
+    _CASE_UI_033,
     _CASE_UT_001,
     _CASE_UT_002,
 )
