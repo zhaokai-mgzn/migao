@@ -337,3 +337,26 @@ CU-004 在最终评测通过（重试后），验证了 #3142（validate_input �
 （3 处：ST-005/PR-017 + 9-08 P0-4）、参数兜底（multiSelect）、评测基建（runner 防御/want_text/
 嵌套断言）、case 校准（10+ 条）。剩余失败是**模型能力边界**（多意图理解、参数漏传、波动），
 需靠模型迭代解决，非 agent 代码可解。
+
+## 十二、Round 24-26 思考预算扩展（上限杠杆）与验证
+
+### #3153 扩展深度思考意图
+对照发现：有深度思考的 order_create 下单流程（校准后全通过）vs 无思考的建品/角色/客户
+流程（反复失败）。把 role_manage/employee_manage/customer_manage/category_manage/
+processing_manage 纳入 _THINKING_INTENTS（product_inquiry 保持关思考，混了简单查询）。
+
+### 验证结果（部署后 probe/单条评测）
+- **HR-005 路由改善**：思考扩展后 R1 正确路由到 role_manage（之前误判 product）——说明
+  思考对 L2 分类/工具选择有帮助；
+- **CU-004 通过（100%）**：客户更新流程改善；
+- **CU-003/HR-005 仍失败**：根因更深——
+
+**HR-005 新根因（跨轮路由漂移 / escape hatch 误触发）**：R1 正确在 staff（role_manage），
+但 R2 用户说「商品列表、库存管理」（权限名），含「商品/库存」关键词 → route_by_intent 的
+escape hatch 把会话从 staff 跳到 product → agent 按 product 工具集误宣「当前只能操作商品」。
+这是「权限名含业务域词」导致的跨轮语义歧义——escape hatch 只做关键词匹配，无法理解
+「商品列表/库存管理」是权限描述而非商品操作。
+
+**结论**：思考预算扩展是「上限」的正确方向（对路由/工具选择有帮助），但剩余失败的
+最深层是**跨轮语义路由**（escape hatch 关键词误触发）和 **LLM 波动**（CU-003 同脚本
+probe 通过、评测走偏），均需更强的语义理解（模型迭代）或 escape hatch 语义化改造。
