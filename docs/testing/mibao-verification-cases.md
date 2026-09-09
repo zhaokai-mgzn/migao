@@ -2158,7 +2158,7 @@
 你: 确认
 你: 再看看这个商品的详情确认一下
 期望: product_search
-期望: product_detail(product_id=1)
+期望: product_detail(product_id=复用上轮 UUID)
 期望: product_update(price=198)
 期望: product_processing_item_manage(action=add)
 期望: product_detail
