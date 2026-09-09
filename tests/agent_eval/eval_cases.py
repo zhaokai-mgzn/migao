@@ -2742,7 +2742,7 @@ _CASE_PR_010 = EvalCase(
     skill=Skill.PRODUCT,
     difficulty=Difficulty.NORMAL,
     user_inputs=['搜索窗帘', '看看第一个的详情', '把价格改成 198', '确认', '给它加上S钩安装', '确认', '再看看这个商品的详情确认一下'],
-    expectations=['product_search', 'product_detail(product_id=1)', 'product_update(price=198)', 'product_processing_item_manage(action=add)', 'product_detail'],
+    expectations=['product_search', 'product_detail(product_id=复用上轮 UUID)', 'product_update(price=198)', 'product_processing_item_manage(action=add)', 'product_detail'],
     data_checks=['第3轮 product_id 来自第2轮结果', '第4轮 product_id 来自第2轮结果', '全程未重新 product_search 查同一个商品'],
     skip_reason='',
     tags=['multi_turn', 'single_skill', 'full_lifecycle', 'id_reuse', 'smoke'],

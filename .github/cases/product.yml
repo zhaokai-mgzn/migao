@@ -307,7 +307,7 @@ cases:
       - tool: product_search
       - tool: product_detail
         args:
-          product_id: "1"
+          product_id: 复用上轮 UUID
       - tool: product_update
         args:
           price: "198"
