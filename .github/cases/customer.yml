@@ -77,7 +77,7 @@ cases:
       - customer-list.tag-todo
     user_inputs:
       - "给张三加VIP2活跃标签"
-      - "第一个"
+      - {"auto_select": true}
       - "确认"
     expectations:
       - tool: customer_manage
@@ -86,7 +86,7 @@ cases:
     data_checks:
       - "add_tag 真实落库（customer_profiles.tags JSONB 写入），重复标签幂等跳过"
     skip_reason: ""
-    merge_log: "verification 4.3 独有；2026-09-09 校准：① truth「tag-todo 空实现」已过时（真实落库）；② 标签名「VIP」生产不存在（实际「VIP2活跃」），改真实标签名；③ 补「选第一个」+「确认」轮（重名澄清 + 标签确认，probe 实证需多轮）"
+    merge_log: "verification 4.3 独有；2026-09-09 校准：① truth「tag-todo 空实现」已过时（真实落库）；② 标签名「VIP」生产不存在（实际「VIP2活跃」），改真实标签名；③ 补「选第一个」+「确认」轮（重名澄清 + 标签确认，probe 实证需多轮）。2026-09-10 再校准：agent 重名澄清升级为 choice 交互卡（card 内容 LLM 动态生成），「第一个」文本指代不稳定 → 改 auto_select 自动回第一个选项（runner #3160 支持）"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_base.py"

@@ -860,22 +860,48 @@ async def check_db_verify(token: str, db_verify: list) -> list:
     return issues
 
 
+def _auto_select_first_option(results: list) -> str | None:
+    """从最近一轮的 interactive choice 卡取第一个 option 的 value（自动回放选择）。
+
+    ChoiceCard 点击协议 = onAction(opt.value)；choice 卡内容由 LLM 动态生成，
+    评测用静态 user_inputs 无法预知 → user_inputs 的 {"auto_select": true} 让
+    runner 自动回第一个选项。无 choice 卡返回 None（调用方 fallback 文本指代，
+    兼容 agent 文本澄清路径）。
+    """
+    if not results:
+        return None
+    for iv in (results[-1].get("interactive") or []):
+        comp = str(iv.get("type") or iv.get("component") or "")
+        if comp == "choice" and iv.get("options"):
+            first = iv["options"][0]
+            return str(first.get("value") or first.get("text") or "")
+    return None
+
+
 async def run_case(case, token: str, session_id: str) -> dict:
     """运行单个评测用例（多轮对话）
 
-    user_inputs 每轮可为 str（纯文本）或 dict（带图消息）：
-      {"text": "看看这个", "images": ["https://...jpg"]}
+    user_inputs 每轮可为 str（纯文本）或 dict（带图消息 / 自动回 choice 卡）：
+      {"text": "看看这个", "images": ["https://...jpg"]}      # 带图消息
+      {"auto_select": true}                                    # choice 卡自动回第一个选项
     """
     results = []
     all_tool_names = []
 
     for i, msg in enumerate(case.user_inputs):
-        if isinstance(msg, dict):
+        images = []
+        if isinstance(msg, dict) and msg.get("auto_select"):
+            # choice 卡自动回放（CU-003 回归防线）：上一轮 agent 下发 choice 卡时，
+            # 自动回第一个 option 的 value——ChoiceCard 点击协议 = onAction(opt.value)，
+            # 而 card 内容（label/value）由 LLM 动态生成，评测用静态 user_inputs
+            # 无法预知（「第一个」/「客户A」文本指代均不稳定）。
+            # 无 choice 卡（agent 文本澄清路径）→ fallback「第一个」保持旧语义兼容。
+            text = _auto_select_first_option(results) or "第一个"
+        elif isinstance(msg, dict):
             text = msg.get("text", "")
             images = msg.get("images") or []
         else:
             text = msg
-            images = []
         r = await send_message(token, session_id, text, images=images)
         r["__round"] = i + 1
         r["__all_tool_names"] = [tc["name"] for tc in r["tool_calls"]]

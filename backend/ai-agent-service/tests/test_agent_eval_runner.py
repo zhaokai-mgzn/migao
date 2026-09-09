@@ -5,7 +5,7 @@
 发图轮报错时，前面轮次可能已命中 success=true / tool 等 expectation，
 旧逻辑把用例计为通过（假验收 —— 线上 sess_806703a2dcca4059 图片崩溃正是此类）。
 """
-# case_ids: CH-021, CH-026, OR-001, PR-001, DA-002, PP-003, PP-004, AS-001, AS-002
+# case_ids: CH-021, CH-026, OR-001, PR-001, DA-002, PP-003, PP-004, AS-001, AS-002, CU-003
 import importlib.util
 from pathlib import Path
 
@@ -440,3 +440,43 @@ class TestJsonParseDefense:
             import asyncio
             configs = asyncio.run(lr._fetch_product_configs("tok", "遮光窗帘"))
             assert configs == []
+
+
+class TestAutoSelectFirstOption:
+    """_auto_select_first_option：choice 卡自动回放（CU-003 评测基建缺口）
+
+    ChoiceCard 点击协议 = onAction(opt.value)，而 card 内容 LLM 动态生成，
+    user_inputs 的 {"auto_select": true} 让 runner 自动回第一个选项。
+    """
+
+    def test_choice_card_returns_first_option_value(self):
+        results = [{
+            "interactive": [{
+                "type": "choice",
+                "options": [
+                    {"text": "张三 139****1111", "value": "9a97c041"},
+                    {"text": "张三 138****8000", "value": "218ff9cc"},
+                ],
+            }],
+        }]
+        assert lr._auto_select_first_option(results) == "9a97c041"
+
+    def test_value_empty_falls_back_to_text(self):
+        results = [{
+            "interactive": [{
+                "type": "choice",
+                "options": [{"text": "客户A：139****1111", "value": ""}],
+            }],
+        }]
+        assert lr._auto_select_first_option(results) == "客户A：139****1111"
+
+    def test_no_results_returns_none(self):
+        assert lr._auto_select_first_option([]) is None
+
+    def test_no_choice_card_returns_none(self):
+        results = [{"interactive": [{"type": "confirm", "confirmValue": "确认"}]}]
+        assert lr._auto_select_first_option(results) is None
+
+    def test_choice_card_no_options_returns_none(self):
+        results = [{"interactive": [{"type": "choice", "options": []}]}]
+        assert lr._auto_select_first_option(results) is None

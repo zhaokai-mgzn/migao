@@ -968,13 +968,13 @@
 ### CU-003. 给客户打标签 🔵
 ```
 你: 给张三加VIP2活跃标签
-你: 第一个
+你: [📷 纯图片 x0]
 你: 确认
 期望: customer_manage(action=add_tag)
 数据: add_tag 真实落库（customer_profiles.tags JSONB 写入），重复标签幂等跳过
 ```
 真值: customer-list.tag-todo
-溯源: verification 4.3 独有；2026-09-09 校准：① truth「tag-todo 空实现」已过时（真实落库）；② 标签名「VIP」生产不存在（实际「VIP2活跃」），改真实标签名；③ 补「选第一个」+「确认」轮（重名澄清 + 标签确认，probe 实证需多轮） ｜ tags: tag, write
+溯源: verification 4.3 独有；2026-09-09 校准：① truth「tag-todo 空实现」已过时（真实落库）；② 标签名「VIP」生产不存在（实际「VIP2活跃」），改真实标签名；③ 补「选第一个」+「确认」轮（重名澄清 + 标签确认，probe 实证需多轮）。2026-09-10 再校准：agent 重名澄清升级为 choice 交互卡（card 内容 LLM 动态生成），「第一个」文本指代不稳定 → 改 auto_select 自动回第一个选项（runner #3160 支持） ｜ tags: tag, write
 
 ### CU-004. 更新客户资料（部分更新） 🔵
 ```
