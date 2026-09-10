@@ -2857,7 +2857,7 @@ _CASE_PR_017 = EvalCase(
     title='商品创建/更新/详情透传「退货回补库存」开关（allow_return_restock）',
     skill=Skill.PRODUCT,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['把「遮光窗帘」设置成退货后可以回补库存'],
+    user_inputs=['把「遮光窗帘（100元的那件）」设置成退货后可以回补库存', {'auto_select': True}, '确认'],
     expectations=['product_update or product_manage(allow_return_restock=True)'],
     data_checks=['商品详情/列表返回 allowReturnRestock（默认 false，开启后为 true）', '售后工单 refund/return 完结时按商品开关决定是否回补 SKU 库存'],
     skip_reason='',
