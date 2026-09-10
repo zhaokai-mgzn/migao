@@ -121,6 +121,43 @@ async def restore_product(token: str, product_id: str):
                          headers=h, json={"price": price})
 
 
+async def _run_pre_clean(token: str, spec: dict) -> str:
+    """评测前数据清理（写类 case 自我污染防线，§14.2/CU-003）。
+
+    支持类型：
+    - customer_tag_remove: 移除「customer_keyword 匹配的第 customer_index 位客户」
+      上的 tag_name 标签（case 每次成功 add_tag 即污染生产数据 → 下一跑幂等拒绝，
+      在 run_case 前把目标客户标签清干净，保证写流程从干净状态开始）。
+    """
+    _type = spec.get("type", "")
+    if _type != "customer_tag_remove":
+        return f"未知 pre_clean 类型: {_type}（跳过）"
+    async with httpx.AsyncClient() as c:
+        h = _admin_headers(token)
+        kw = str(spec.get("customer_keyword", ""))
+        idx = int(spec.get("customer_index", 0) or 0)
+        r = await c.get(f"{ADMIN_API}/api/admin/customers", headers=h,
+                        params={"keyword": kw, "page": 1, "size": 10}, timeout=15)
+        items = (_safe_json(r, {}) or {}).get("data", {}).get("items", [])
+        if idx >= len(items):
+            return f"客户「{kw}」索引 {idx} 不存在（共 {len(items)} 位）"
+        customer = items[idx]
+        cid = customer.get("id")
+        r = await c.get(f"{ADMIN_API}/api/admin/customer-tags", headers=h, timeout=15)
+        data = (_safe_json(r, {}) or {}).get("data") or {}
+        tags = data if isinstance(data, list) else (data.get("tags") or data.get("items") or [])
+        tag_id = next((t.get("id") for t in tags
+                       if isinstance(t, dict) and t.get("name") == spec.get("tag_name")), None)
+        if not tag_id:
+            return f"标签「{spec.get('tag_name')}」不存在（跳过清理）"
+        if tag_id in (customer.get("tags") or []):
+            await c.delete(f"{ADMIN_API}/api/admin/customers/{cid}/tags/{tag_id}",
+                           headers=h, timeout=15)
+            who = customer.get("name") or customer.get("phone") or cid
+            return f"已清理 {who} 的「{spec.get('tag_name')}」标签"
+        return f"客户无「{spec.get('tag_name')}」标签，无需清理"
+
+
 # ── Auth ──
 
 async def login() -> str:
@@ -1025,6 +1062,16 @@ async def run_suite(cases, label: str, classify: bool = True):
                 pid = await snapshot_product(token, kw)
                 if pid and pid not in snapshot_pids:
                     snapshot_pids.append(pid)
+
+        # 评测前数据清理（写类 case 自我污染防线，§14.2）：pre_clean 声明的
+        # 目标资源恢复干净态，保证「给 X 加标签」等写流程每次从干净状态开始。
+        for spec in (getattr(case, "pre_clean", None) or []):
+            try:
+                _msg = await _run_pre_clean(token, spec)
+                if _msg:
+                    print(f"     🧹 pre_clean: {_msg}")
+            except Exception as e:
+                print(f"     ⚠️ pre_clean 失败（非致命）: {e}")
 
         try:
             r = await run_case(case, token, session_id)
