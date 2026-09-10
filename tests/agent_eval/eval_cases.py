@@ -2818,7 +2818,7 @@ _CASE_PR_015 = EvalCase(
     title='加工项多选翻页 - 翻页后继续选择并一次性提交',
     skill=Skill.PRODUCT,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['录入这个商品，名称测试窗帘，价格 100', '分类选窗帘', '翻页查看第2页加工项', '已选加工项：高温定型'],
+    user_inputs=['录入这个商品，名称测试窗帘，价格 100', '分类选窗帘', {'auto_select': True}, '翻页查看第2页加工项', '已选加工项：高温定型', '确认'],
     expectations=['interact(component=choice, multiSelect=True)', 'processing_item_query', 'validate_input', 'product_manage(action=create)'],
     data_checks=['翻页（__PAGE__ 协议）后加工项选择仍可继续（multiSelect 不丢）', '翻页后勾选累积一次性提交被正确解析', '最终创建成功'],
     skip_reason='',
@@ -2833,12 +2833,13 @@ _CASE_PR_016 = EvalCase(
     title='建品流程 - 分类确认后按适用商品分类过滤/优先推荐加工项',
     skill=Skill.PRODUCT,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['录入这个商品，名称遮光窗帘，价格 100', '分类选窗帘', '已选加工项：高温定型'],
-    expectations=['category_manage', 'processing_item_query(applicable_category_id=cat_curtain)', 'interact(component=choice, multiSelect=True)', 'validate_input', 'product_manage(action=create)'],
+    user_inputs=['录入这个商品，名称遮光窗帘，价格 100', '分类选窗帘', {'auto_select': True}, '已选加工项：高温定型', '确认'],
+    expectations=['category_manage', 'processing_item_query', 'interact(component=choice, multiSelect=True)', 'validate_input', 'product_manage(action=create)'],
     data_checks=['分类确认后加工项选择器按「适用商品分类」过滤展示（processing_item_query 携带 applicable_category_id，= 已选商品分类 ID）', '适用分类为空（applicable_product_categories 为空）的加工项仍展示（= 适用所有分类），不因过滤而丢失', '当前分类无匹配加工项时以文字提示可跳过，不空转强制选择', '最终创建成功且关联加工项数量正确'],
     skip_reason='',
     tags=['processing_item', 'product_category', 'guided_flow', 'recommendation'],
     persona='',
+    required_args=[{'tool': 'processing_item_query', 'fields': ['applicable_category_id']}],
 )
 
 # ── PR-017 [NORMAL] 商品创建/更新/详情透传「退货回补库存」开关（allow_return_restock）（源: cases/product.yml）──
