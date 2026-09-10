@@ -325,7 +325,6 @@ cases:
       - tool: order_create
     required_args:
       - tool: order_create
-        action: create
         fields:
           - items[].processing_info.sellingMethod
           - items[].processing_info.doorWidth
