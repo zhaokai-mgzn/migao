@@ -418,3 +418,25 @@ product/order/aftersales），并扩 `success_markers`（账号已创建/角色�
 问题，非 agent 缺陷。修复方向 = ① 写类 case 评测前数据清理（snapshot/restore 泛化到
 customer 标签）；② runner 支持 choice 卡自动回放（检测 interactive choice → 自动回首个
 option）。两项均为评测基建改造，列入待办。
+
+## 十五、Round 31 CU-003 评测闭环（0% → 100%）
+
+第十四节列出的两个评测基建缺口已落地，CU-003 从 0% 推进到 **100% 全自动稳定通过**：
+
+1. **数据隔离**（#3161）：`EvalCase.pre_clean` 声明 + runner 评测前执行（支持
+   `customer_tag_remove`）。CU-003 声明清理第一位张三的 VIP2活跃 标签。
+2. **choice 卡回放**（#3160）：`user_inputs` 支持 `{"auto_select": true}` →
+   自动回上一轮 choice 卡第一个 option 的 value（ChoiceCard 协议 `onAction(opt.value)`）。
+3. **choice value 规范化**（#3162/#3163）：interact description 引导 value 必须原样用
+   上游真实主键 ID（customer_id 等 UUID），禁止自造代码/展示文本——迭代修正两次
+   （第一次「稳定唯一标识」被 LLM 理解成自造代码「张三_1391111」，修订为「必须原样
+   使用上游查询返回的真实 ID」才收敛）。
+4. **闭环修复**（#3164）：两个静默失效——yaml_light 不支持花括号 inline dict
+   （`- {"auto_select": true}` 被误拆成 `{'{"auto_select"': 'true}'}` → R2 发空消息）；
+   `load_cases_from_yaml` 漏传 `pre_clean`（只加在生成物路径）。含 2 个防回归测试。
+
+**验证**（评测输出）：`🧹 pre_clean 已清理` → auto_select 回真 customer_id →
+validate_input → confirm 卡 → `add_tag` 落库，score=100%。
+
+**方法论收获**：case schema 新增字段必须**同时**覆盖两条加载路径（render_cases 生成物 +
+load_cases_from_yaml 直读），且 inline dict 语法受 yaml_light 解析器限制（禁花括号）。
