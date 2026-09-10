@@ -2327,7 +2327,9 @@
 
 ### PR-017. 商品创建/更新/详情透传「退货回补库存」开关（allow_return_restock） 🔵
 ```
-你: 把「遮光窗帘」设置成退货后可以回补库存
+你: 把「遮光窗帘（100元的那件）」设置成退货后可以回补库存
+你: [📷 纯图片 x0]
+你: 确认
 期望: product_update or product_manage(allow_return_restock=True)
 数据: 商品详情/列表返回 allowReturnRestock（默认 false，开启后为 true）
 数据: 售后工单 refund/return 完结时按商品开关决定是否回补 SKU 库存

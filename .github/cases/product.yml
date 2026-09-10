@@ -618,7 +618,9 @@ cases:
       - product-sku-stock.realtime
       - aftersales-flow.return-restock-switch
     user_inputs:
-      - "把「遮光窗帘」设置成退货后可以回补库存"
+      - "把「遮光窗帘（100元的那件）」设置成退货后可以回补库存"
+      - auto_select: true
+      - "确认"
     expectations:
       - tool: product_update or product_manage
         args:
