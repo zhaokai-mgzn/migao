@@ -172,6 +172,27 @@ class RoleServiceTest {
                 .hasMessageContaining("角色代码已存在");
     }
 
+
+    @Test
+    @DisplayName("创建角色失败 - 编码被历史（已删除）角色占用（唯一索引无 deleted 条件，逻辑删除后重建同 code 曾 500）")
+    void createRole_CodeOccupiedByDeleted() {
+        // given
+        Role deletedRole = Role.builder()
+                .id("role-del")
+                .code("stock_keeper")
+                .tenantId(1L)
+                .deleted(1)
+                .build();
+        when(roleMapper.selectOne(any(LambdaQueryWrapper.class)))
+                .thenReturn(null)           // 第一次（deleted=0）无活跃记录
+                .thenReturn(deletedRole);   // 第二次（deleted=1）历史占用
+
+        // when & then
+        assertThatThrownBy(() -> roleService.createRole("库管", "stock_keeper", "测试", 1L, null))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("历史角色");
+    }
+
     // ======================== updateRole 测试 ========================
 
     @Test
