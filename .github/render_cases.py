@@ -165,6 +165,7 @@ def to_eval_py(cases):
             '    want_text: List[str] = field(default_factory=list) # final_text 正向关键词，全缺即失败（§3.4 正反关键词双轨）',
            '    required_args: List[dict] = field(default_factory=list) # 必填参数断言（create 缺 specifications/加工项价格即失败，§3.2）',
             '    db_verify: List[dict] = field(default_factory=list) # 落库层验证（创建后查 admin-api 断言价格=确认价，§3.2/issue #3056）',
+            '    pre_clean: List[dict] = field(default_factory=list) # 评测前数据清理（写类 case 自我污染防线）',
            "", ""]
 
     for c in cases:
@@ -195,6 +196,8 @@ def to_eval_py(cases):
             out.append(f"    required_args={c.get('required_args')!r},")
         if c.get("db_verify"):
             out.append(f"    db_verify={c.get('db_verify')!r},")
+        if c.get("pre_clean"):
+            out.append(f"    pre_clean={c.get('pre_clean')!r},")
         out.append(")")
         out.append("")
 

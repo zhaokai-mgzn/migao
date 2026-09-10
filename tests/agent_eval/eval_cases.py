@@ -44,6 +44,7 @@ class EvalCase:
     want_text: List[str] = field(default_factory=list) # final_text 正向关键词，全缺即失败（§3.4 正反关键词双轨）
     required_args: List[dict] = field(default_factory=list) # 必填参数断言（create 缺 specifications/加工项价格即失败，§3.2）
     db_verify: List[dict] = field(default_factory=list) # 落库层验证（创建后查 admin-api 断言价格=确认价，§3.2/issue #3056）
+    pre_clean: List[dict] = field(default_factory=list) # 评测前数据清理（写类 case 自我污染防线）
 
 
 # ── AS-001 [SMOKE] 售后工单列表（源: cases/aftersales.yml）──
@@ -1215,6 +1216,7 @@ _CASE_CU_003 = EvalCase(
     skip_reason='',
     tags=['tag', 'write'],
     persona='',
+    pre_clean=[{'type': 'customer_tag_remove', 'customer_keyword': '张三', 'customer_index': 0, 'tag_name': 'VIP2活跃'}],
 )
 
 # ── CU-004 [NORMAL] 更新客户资料（部分更新）（源: cases/customer.yml）──
