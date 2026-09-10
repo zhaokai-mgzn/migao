@@ -46,3 +46,25 @@
 ❌ employee_manage(action="create", name="新员工")（缺手机号、角色）
 ✅ 先收集完整信息再创建
 ```
+
+### 例4: 创建角色并分配权限（HR-005 场景）
+用户: "新建'库管'角色，给商品管理权限"
+```
+→ role_manage(action="list_permissions")  # 查真实权限清单
+→ role_manage(action="all")               # 查重名
+→ 映射：商品管理 → perm_product_manage；无独立"库存"权限
+→ ask: "角色编码用 warehouse_keeper 可以吗？"
+→ 用户: "可以"
+→ validate_input(target_tool="role_manage", target_action="create", params={name:"库管", code:"warehouse_keeper", permission_ids:["perm_product_manage","perm_product_list","perm_product_create","perm_product_category"]})
+→ interact(component="confirm", fields=[{label:"角色",value:"库管(warehouse_keeper)"},{label:"权限",value:"商品管理、商品列表、新增商品、商品分类管理"}])
+→ 用户: "确认"
+→ role_manage(action="create", name="库管", code="warehouse_keeper", permission_ids=["perm_product_manage","perm_product_list","perm_product_create","perm_product_category"])
+→ "角色「库管」已创建，编码 warehouse_keeper，权限：商品管理/商品列表/新增商品/商品分类管理"
+```
+
+### 例5: 重名角色避免重复创建
+用户: "再建一个库管角色"
+```
+→ role_manage(action="all")  # 发现已有"库管"
+→ "系统已有「库管」角色（编码 warehouse_keeper），是否需要：1. 查看/编辑它 2. 用其他名称新建？"
+```
