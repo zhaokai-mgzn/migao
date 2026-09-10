@@ -134,7 +134,7 @@ cases:
     expectations:
       - tool: notification_manage
         args:
-          action: mark_read
+          action: "mark_read or read_all"
     data_checks:
       - "status 变为 read"
     skip_reason: ""

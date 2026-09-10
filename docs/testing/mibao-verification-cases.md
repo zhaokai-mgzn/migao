@@ -2406,7 +2406,7 @@
 ### ST-005. 通知标记已读 🔵
 ```
 你: 把新订单通知标为已读
-期望: notification_manage(action=mark_read)
+期望: notification_manage(action=mark_read or read_all)
 数据: status 变为 read
 ```
 真值: agent-notification.notification-status
