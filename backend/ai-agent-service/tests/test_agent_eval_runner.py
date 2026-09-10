@@ -630,3 +630,30 @@ class TestPreCleanProductRemove:
                 m_cls.return_value.__aenter__.return_value.get = fake_get
                 return await lr._run_pre_clean("tok", {"type": "product_remove", "product_keyword": "测试窗帘"})
         assert asyncio.run(run()) == "无「测试窗帘」商品需清理"
+
+
+class TestAutoFillForm:
+    """_auto_fill_form：form 卡自动回填（OR-014 基建缺口，FormCard 协议 __FORM__|{json}）"""
+
+    def test_form_card_fills_declared_fields(self):
+        results = [{"interactive": [{
+            "type": "form",
+            "formFields": [
+                {"key": "customer_name", "label": "客户姓名"},
+                {"key": "customer_phone", "label": "手机号"},
+                {"key": "remark", "label": "备注", "required": False},
+            ],
+        }]}]
+        out = lr._auto_fill_form(results, {"customer_name": "张三", "customer_phone": "13800138000"})
+        assert out == "__FORM__|{\"customer_name\": \"张三\", \"customer_phone\": \"13800138000\"}"
+
+    def test_form_card_missing_values_returns_none(self):
+        results = [{"interactive": [{
+            "type": "form",
+            "formFields": [{"key": "customer_phone", "label": "手机号"}],
+        }]}]
+        assert lr._auto_fill_form(results, {"customer_name": "张三"}) is None
+
+    def test_no_form_card_returns_none(self):
+        results = [{"interactive": [{"type": "choice", "options": []}]}]
+        assert lr._auto_fill_form(results, {"customer_name": "张三"}) is None

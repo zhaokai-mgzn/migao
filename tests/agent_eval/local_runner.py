@@ -946,6 +946,31 @@ async def check_db_verify(token: str, db_verify: list) -> list:
     return issues
 
 
+def _auto_fill_form(results: list, values: dict) -> str | None:
+    """form 卡自动回填（OR-014 基建缺口）：检测最近一轮 interactive 的 form 卡，
+    用 case 声明的字段值构造 `__FORM__|{json}` 回传（FormCard 提交协议，line 98）。
+
+    只填 form 卡声明且 case 提供的字段；缺字段返回 None（调用方 fallback 文本）。
+    """
+    if not results:
+        return None
+    for iv in (results[-1].get("interactive") or []):
+        comp = str(iv.get("type") or iv.get("component") or "")
+        if comp != "form":
+            continue
+        fields = iv.get("formFields") or []
+        filled = {}
+        for f in fields:
+            key = str(f.get("key") or "")
+            if key and key in values:
+                filled[key] = values[key]
+        if not filled:
+            return None
+        import json as _json
+        return f"__FORM__|{_json.dumps(filled, ensure_ascii=False)}"
+    return None
+
+
 def _auto_select_first_option(results: list) -> str | None:
     """从最近一轮的 interactive choice 卡取第一个 option 的 value（自动回放选择）。
 
@@ -983,6 +1008,10 @@ async def run_case(case, token: str, session_id: str) -> dict:
             # 无法预知（「第一个」/「客户A」文本指代均不稳定）。
             # 无 choice 卡（agent 文本澄清路径）→ fallback「第一个」保持旧语义兼容。
             text = _auto_select_first_option(results) or "第一个"
+        elif isinstance(msg, dict) and msg.get("auto_fill"):
+            # form 卡自动回填（OR-014 基建缺口）：agent 发 form 卡（如客户信息）
+            # 时用 case 声明的字段值构造 __FORM__|{json} 回传（FormCard 提交协议）。
+            text = _auto_fill_form(results, msg.get("auto_fill") or {}) or "确认"
         elif isinstance(msg, dict):
             text = msg.get("text", "")
             images = msg.get("images") or []
