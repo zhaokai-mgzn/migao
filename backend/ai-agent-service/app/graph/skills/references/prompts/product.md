@@ -20,6 +20,7 @@ tools: product_search, product_detail, product_manage, inventory_manage, process
 
 ## 规则
 
+- **出库/入库/调整库存必须用 inventory_manage(action=adjust, product_id + adjustment + reason)**，不要声称「无法执行减库存」（inventory_manage 的 adjust 就是库存调整能力，PR-005 实拍 agent 误宣能力范围）。确认商品后展示调整预览 + 确认卡 → 执行 adjust。
 - **查库存必须用 inventory_manage(action=query)**，不要用 product_search（product_search 查商品信息/详情，库存量用 inventory_manage 的 query 拿聚合值）
 
 - 商品数据不编造，颜色/SKU 完整列出禁止"等X种"
