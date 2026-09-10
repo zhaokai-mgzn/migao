@@ -553,3 +553,24 @@ PR-014/015/016/PP-003/004 均 100%。剩余以网络波动 + xiaobu 端 case 为
 
 **结论**：确定性失败（case 断言 + 工具选择）可修（#3179 已处理 3 处）；剩余以
 LLM 波动 + 数据状态为主，属模型边界。全量基线建立，后续按批收敛。
+
+## 二十二、Round 38 order_create items 断言修复（OR-008/009 100%）
+
+全量回归（66%）定位的 order_create items 断言失败（OR-008/009、CR-001/003）：
+
+**根因① 断言与真实结构偏差**：order_create 的 sellingMethod/doorWidth/colorName
+在 `items[].processing_info` 嵌套层，case 期望在 `items[0]` 顶层 → 断言恒失败。
+修复（#3182）：`_check_required_field` 递归支持多级深路径
+（`items[].processing_info.sellingMethod`），OR-009 用 required_args 深路径断言。
+
+**根因② action 过滤过严**（#3183）：required_args 的 `action: create` 要求
+args.action=="create"，但 agent 有时不显式传（隐含）→ 去掉过滤。
+
+**根因③ 加工项卡文本无法驱动**（#3184）：OR-008 的「确认下单」文本无法点选
+加工项 choice 卡 → 加「不需要加工项」跳过轮 + 补确认轮。
+
+**验证**：OR-008/OR-009 均 100%（补单→选品→SKU→加工项→validate_input→
+order_create→order_query 验证）。
+
+**方法**：评测断言与真实数据结构对齐（深路径）+ case 适配交互卡（跳过轮），
+是「case 断言过严」类的通用解法。
