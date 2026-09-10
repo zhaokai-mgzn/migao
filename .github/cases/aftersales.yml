@@ -117,8 +117,11 @@ cases:
       - aftersales-flow.flow
       - aftersales-flow.update-guard
     user_inputs:
-      - "AS-20260909-0001 工单已处理完，关闭"
+      - "查看最近的售后工单"
+      - "把第一张未处理的工单关闭"
       - "确认"
+    pre_clean:
+      - type: aftersales_ticket_prepare
     expectations:
       - tool: after_sales_manage
         args:
