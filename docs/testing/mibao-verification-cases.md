@@ -1885,10 +1885,12 @@
 你: 帮我下个订单，客户张三，手机13800138000
 你: 要遮光窗帘，2件
 你: 选白色的，散剪，2.8米门幅
+你: 不需要加工项
 你: 确认下单
 期望: product_detail(product_id=遮光窗帘)
-期望: order_create(items=[{'sellingMethod': 'bulk_cut', 'doorWidth': '2.8米'}])
+期望: order_create
 数据: data.order_id.length > 0
+必填: order_create() 字段 items[].processing_info.sellingMethod, items[].processing_info.doorWidth
 ```
 真值: order.states, order.create-flow, product-sku-stock.aggregate
 溯源: eval O003 独有（SKU 先查流程）；verification 1.8 的简化版见 OR-010 ｜ tags: create, sku_select, full_flow
