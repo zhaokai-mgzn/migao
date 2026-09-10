@@ -2381,12 +2381,13 @@ _CASE_OR_008 = EvalCase(
     title='创建订单 - 先查商品 SKU 再下单',
     skill=Skill.ORDER,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['帮我下个订单，客户张三，手机13800138000', '要遮光窗帘，2件', '选白色的，散剪，2.8米门幅', '确认下单'],
-    expectations=['product_detail(product_id=遮光窗帘)', "order_create(items=[{'sellingMethod': 'bulk_cut', 'doorWidth': '2.8米'}])"],
+    user_inputs=['帮我下个订单，客户张三，手机13800138000', '要遮光窗帘，2件', '选白色的，散剪，2.8米门幅', '不需要加工项', '确认下单'],
+    expectations=['product_detail(product_id=遮光窗帘)', 'order_create'],
     data_checks=['data.order_id.length > 0'],
     skip_reason='',
     tags=['create', 'sku_select', 'full_flow'],
     persona='',
+    required_args=[{'tool': 'order_create', 'fields': ['items[].processing_info.sellingMethod', 'items[].processing_info.doorWidth']}],
 )
 
 # ── OR-009 [NORMAL] 下单全流程 - 选品→选SKU→确认数量→下单（源: cases/order.yml）──
