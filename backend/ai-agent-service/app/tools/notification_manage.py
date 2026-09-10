@@ -54,7 +54,8 @@ class NotificationManageTool(BaseTool):
 
     name = "notification_manage"
     description = (
-        "【触发】用户问'通知''消息''未读''有没有通知''发送通知''标记已读'时调用。【前置】list/unread_count 可查询。mark_read 需要通知ID。create 需要标题+内容+接收人。【反例】系统配置用 settings_manage。【标注】WRITE(create/delete) — 发送/删除通知需确认"
+        "【触发】用户问'通知''消息''未读''有没有通知''发送通知''标记已读'时调用。【前置】list/unread_count 可查询。mark_read 需要通知ID。create 需要标题+内容+接收人。【反例】系统配置用 settings_manage。【标注】WRITE(create/delete) — 发送/删除通知需确认。"
+        "【铁律】用户说标为已读/把XX通知标为已读时：先 list 拿通知 ID，必须立即调 mark_read（单条）或 read_all（全部已读）执行，禁止只展示未读列表就停（ST-005 实拍：只 list 不 mark_read 判失败）。"
     )
     allowed_roles = ["admin", "agent", "tenant_admin", "operator"]
 

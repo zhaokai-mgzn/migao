@@ -2989,7 +2989,7 @@ _CASE_ST_005 = EvalCase(
     skill=Skill.GENERAL,
     difficulty=Difficulty.NORMAL,
     user_inputs=['把新订单通知标为已读'],
-    expectations=['notification_manage(action=mark_read)'],
+    expectations=['notification_manage(action=mark_read or read_all)'],
     data_checks=['status 变为 read'],
     skip_reason='',
     tags=['write'],
