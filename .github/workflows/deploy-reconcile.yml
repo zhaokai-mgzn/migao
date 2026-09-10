@@ -49,7 +49,38 @@ jobs:
       # 三个服务：路径（仅用于日志提示）+ 镜像名
       # GH_TOKEN 必须显式注入：gh CLI 在 Actions 环境检测到 GITHUB_ACTIONS 时强制要求
       # 显式 GH_TOKEN（否则报 "To use GitHub CLI in a GitHub Actions workflow..." 并退出）
+      - name: PR path filter (docs/tests/cases 不触发部署)
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          PR_NUMBER="${{ github.event.pull_request.number }}"
+          FILES=$(gh pr view "$PR_NUMBER" --json files --jq '.files[].path' 2>/dev/null || echo "")
+          echo "📂 PR #$PR_NUMBER 改动文件:"
+          echo "$FILES" | head -30
+          CODE_PATHS=("backend/admin-api" "backend/ai-agent-service" "frontend" "apps" "packages")
+          CODE_CHANGED=0
+          for f in $FILES; do
+            for cp in "${CODE_PATHS[@]}"; do
+              if [[ "$f" == "$cp/"* ]]; then
+                CODE_CHANGED=1
+                break
+              fi
+            done
+          done
+          if [ "$CODE_CHANGED" -eq 0 ]; then
+            echo "✅ 纯文档/测试/case 改动——跳过部署对账（防 502 窗口，Round 60 根治）"
+            # 写 marker 供下一步跳过
+            echo "SKIP_RECONCILE=1" >> "$GITHUB_ENV"
+          else
+            echo "✅ 含代码改动，继续对账"
+            echo "SKIP_RECONCILE=0" >> "$GITHUB_ENV"
+          fi
+
       - name: Reconcile deploys
+        if: env.SKIP_RECONCILE != '1'
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
