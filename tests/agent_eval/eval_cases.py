@@ -2521,7 +2521,7 @@ _CASE_PP_001 = EvalCase(
     title='加工项选择 - 分页翻页',
     skill=Skill.PRODUCT,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['给遮光窗帘添加加工项', '选第1个和第3个'],
+    user_inputs=['给遮光窗帘（100元的那件）添加加工项', '选打孔加工和韩式折边', '确认'],
     expectations=['product_processing_item_manage(action=add)', 'processing_item_query'],
     data_checks=['data.pageMeta != null'],
     skip_reason='',

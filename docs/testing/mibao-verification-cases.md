@@ -2023,8 +2023,9 @@
 
 ### PP-001. 加工项选择 - 分页翻页 🔵
 ```
-你: 给遮光窗帘添加加工项
-你: 选第1个和第3个
+你: 给遮光窗帘（100元的那件）添加加工项
+你: 选打孔加工和韩式折边
+你: 确认
 期望: product_processing_item_manage(action=add)
 期望: processing_item_query
 数据: data.pageMeta != null
