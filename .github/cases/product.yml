@@ -476,6 +476,7 @@ cases:
       - "分类选窗帘"
       - auto_select: true
       - "已选加工项：打孔加工、韩式折边"
+      - "颜色米白色，货号 TEST-001"
       - "确认"
     expectations:
       - tool: interact

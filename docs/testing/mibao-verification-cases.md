@@ -2267,6 +2267,7 @@
 你: 分类选窗帘
 你: [📷 纯图片 x0]
 你: 已选加工项：打孔加工、韩式折边
+你: 颜色米白色，货号 TEST-001
 你: 确认
 期望: interact(component=choice, multiSelect=True)
 期望: processing_item_query
