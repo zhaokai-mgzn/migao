@@ -161,6 +161,23 @@ async def _run_pre_clean(token: str, spec: dict) -> str:
                 await c.delete(f"{ADMIN_API}/api/admin/products/{pid}", headers=h, timeout=15)
                 removed += 1
             return f"已清理 {removed} 个「{kw}」商品" if removed else f"无「{kw}」商品需清理"
+    if _type == "employee_reactivate":
+        # 恢复被评测禁用的测试员工（HR-003 存量状态消耗）：王五被禁用后
+        # agent 合理说「已停用无需操作」→ 评测前恢复 active。
+        name = str(spec.get("employee_name", ""))
+        async with httpx.AsyncClient() as c:
+            h = _admin_headers(token)
+            r = await c.get(f"{ADMIN_API}/api/admin/users", headers=h,
+                            params={"page": 1, "size": 50}, timeout=15)
+            items = (_safe_json(r, {}) or {}).get("data", {}).get("items", [])
+            target = next((u for u in items if u.get("name") == name), None)
+            if not target:
+                return f"员工「{name}」不存在（跳过）"
+            if target.get("status") != "disabled":
+                return f"员工「{name}」状态 {target.get('status')}，无需恢复"
+            await c.put(f"{ADMIN_API}/api/admin/users/{target.get('id')}/status",
+                        headers=h, json={"status": "active"}, timeout=15)
+            return f"已恢复「{name}」为 active（防存量消耗）"
     if _type == "aftersales_ticket_prepare":
         # 确保有 pending 工单供「关闭工单」case 使用：AS-004 关闭后存量被消耗 →
         # 无 pending 时用真实订单创建一张退款工单（数据治理：存量资源准备）。
