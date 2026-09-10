@@ -2803,7 +2803,7 @@ _CASE_PR_014 = EvalCase(
     title='加工项多选一次性提交 - 展示选择器→用户点完成→解析全部名称→汇总确认',
     skill=Skill.PRODUCT,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['录入这个商品，名称测试窗帘，价格 100', '分类选窗帘', '已选加工项：打孔加工、韩式折边'],
+    user_inputs=['录入这个商品，名称测试窗帘，价格 100', '分类选窗帘', {'auto_select': True}, '已选加工项：打孔加工、韩式折边', '确认'],
     expectations=['interact(component=choice, multiSelect=True)', 'processing_item_query', 'validate_input', 'product_manage(action=create)'],
     data_checks=['「已选加工项：打孔加工、韩式折边」被解析为 2 个加工项（不只取第一个）', '未在用户提交完整列表后再次询问加工项', '最终创建成功且关联加工项数量 = 2'],
     skip_reason='',

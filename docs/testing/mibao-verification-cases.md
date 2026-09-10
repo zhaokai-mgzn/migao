@@ -2243,7 +2243,9 @@
 ```
 你: 录入这个商品，名称测试窗帘，价格 100
 你: 分类选窗帘
+你: [📷 纯图片 x0]
 你: 已选加工项：打孔加工、韩式折边
+你: 确认
 期望: interact(component=choice, multiSelect=True)
 期望: processing_item_query
 期望: validate_input
@@ -2253,7 +2255,7 @@
 数据: 最终创建成功且关联加工项数量 = 2
 ```
 真值: product-sku-stock.create-flow, ai-chat.validate-input
-溯源: 2026-09-05 交互验证机制行为层新增（issue #2896 复盘）：前端 choice 多选「完成选择」按钮一次性提交『已选加工项：A、B』格式，需真实 LLM 验证解析全部名称 + 不二次询问 ｜ tags: multi_turn, guided_flow, processing_item, multi_select
+溯源: 2026-09-05 交互验证机制行为层新增（issue #2896 复盘）：前端 choice 多选「完成选择」按钮一次性提交『已选加工项：A、B』格式，需真实 LLM 验证解析全部名称 + 不二次询问。2026-09-10 校准：分类选择升级为 choice 卡（文本无法驱动）→ 加 auto_select 自动点分类卡第一个选项（#3160）+ 补加工项确认轮 ｜ tags: multi_turn, guided_flow, processing_item, multi_select
 
 ### PR-015. 加工项多选翻页 - 翻页后继续选择并一次性提交 🔵
 ```
