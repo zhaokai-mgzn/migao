@@ -440,3 +440,28 @@ validate_input → confirm 卡 → `add_tag` 落库，score=100%。
 
 **方法论收获**：case schema 新增字段必须**同时**覆盖两条加载路径（render_cases 生成物 +
 load_cases_from_yaml 直读），且 inline dict 语法受 yaml_light 解析器限制（禁花括号）。
+
+## 十六、Round 32 prompt 上限优化 + admin-api 契约修复
+
+### Prompt 体系评估（实证）
+基础层（identity + principles + PROMPT-rules）质量高（实战打磨、引用实拍 session）。
+**领域层严重不均衡**：product.md 53 行（建品稳定通过）vs staff.md 20 行 / customer.md
+21 行（HR-005/CU-003 反复失败）。薄领域的 agent 行为靠 LLM 泛化、发散，最终依赖 5 个
+基建 PR 才闭环——领域 prompt 补齐能减少对基建补丁依赖（上限提升）。
+
+### 落地
+1. **#3166 staff.md 补齐**（20→40 行）：创建角色 6 步流程（list_permissions 查权限 →
+   查重名 → 权限映射（无独立「库存」权限）→ 收集 name/code → validate_input → confirm
+   卡 → create）+ EXAMPLES 补角色创建/重名示例。快照上限 4900→8000。
+2. **#3167 admin-api createRole 契约 bug**：探针实拍——角色逻辑删除（deleted=1）后，
+   同 code 重建撞唯一索引（无 deleted 条件）→ DuplicateKeyException → 500 笼统错误。
+   补查 deleted=1 记录抛业务错误「编码被历史角色占用」。
+
+### 验证（探针对比）
+- 优化前：agent 多轮澄清（问编码/描述/范围），行为发散
+- 优化后：R1 list_permissions + 查重名 + 操作预览 → R2 validate_input → create 成功 →
+  detail 验证落库。**一次走对，2 轮完成**
+
+### 待办
+- customer.md 同样薄（21 行），CU-003 场景（打标签/重名澄清流程）值得同款补齐
+- data/settings 域 prompt 同理
