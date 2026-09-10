@@ -2564,11 +2564,12 @@ _CASE_PP_005 = EvalCase(
     skill=Skill.PRODUCT,
     difficulty=Difficulty.NORMAL,
     user_inputs=['给窗帘分类筛选可用的加工项'],
-    expectations=['processing_item_query(applicable_category_id=cat_curtain)'],
+    expectations=['processing_item_query'],
     data_checks=['processing_item_query 携带 applicable_category_id 时，admin-api 请求参数含 applicableProductCategoryId（按适用商品分类过滤加工项）', '响应条目透传 applicable_product_categories（加工项配置的适用商品分类 ID 列表），供 LLM 按分类推荐加工项', 'applicable_product_categories 为空 = 适用所有商品分类（兼容历史数据，不参与过滤变化）'],
     skip_reason='',
     tags=['processing_item', 'category', 'product_category'],
     persona='',
+    required_args=[{'tool': 'processing_item_query', 'fields': ['applicable_category_id']}],
 )
 
 # ── PP-004 [ADVERSARIAL] 加工项 - 传序号自动解析 UUID（源: cases/processing.yml）──

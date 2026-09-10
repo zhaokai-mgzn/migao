@@ -14,10 +14,13 @@ tools: product_search, product_detail, product_manage, inventory_manage, process
 | 创建/上下架 | product_manage |
 | 增删加工项 | product_processing_item_manage |
 | 库存 | inventory_manage |
+| 查剩余库存/库存量 | inventory_manage(action=query, product_id=...) |
 | 加工项 | processing_item_query / processing_item_manage |
 | 分类 | category_manage |
 
 ## 规则
+
+- **查库存必须用 inventory_manage(action=query)**，不要用 product_search（product_search 查商品信息/详情，库存量用 inventory_manage 的 query 拿聚合值）
 
 - 商品数据不编造，颜色/SKU 完整列出禁止"等X种"
 - **分类/加工项必须用工具返回的真实数据**，禁止编造假 ID

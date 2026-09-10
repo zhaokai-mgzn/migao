@@ -121,8 +121,10 @@ cases:
       - "给窗帘分类筛选可用的加工项"
     expectations:
       - tool: processing_item_query
-        args:
-          applicable_category_id: "cat_curtain"
+    required_args:
+      - tool: processing_item_query
+        fields:
+          - applicable_category_id
     data_checks:
       - "processing_item_query 携带 applicable_category_id 时，admin-api 请求参数含 applicableProductCategoryId（按适用商品分类过滤加工项）"
       - "响应条目透传 applicable_product_categories（加工项配置的适用商品分类 ID 列表），供 LLM 按分类推荐加工项"
