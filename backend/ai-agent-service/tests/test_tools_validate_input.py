@@ -347,3 +347,38 @@ class TestValidateInputRoleManage:
         )
         assert result.success is False
         assert "role_id" in result.message.lower() or "角色 ID" in result.message
+
+
+class TestValidateInputCategoryManage:
+    """CT-002 回归：category_manage 写操作必须有校验规则（此前无规则 →
+    validate_input 返回「未知工具」→ agent 按安全规则拒绝创建，CT-002 恒失败）。"""
+
+    async def test_category_create_valid(self, tool, admin_tool_context):
+        result = await tool.execute(
+            context=admin_tool_context,
+            target_tool="category_manage",
+            target_action="create",
+            params={"name": "轻奢系列"},
+        )
+        assert result.success is True
+        assert result.data["validated"] is True
+
+    async def test_category_create_missing_name(self, tool, admin_tool_context):
+        result = await tool.execute(
+            context=admin_tool_context,
+            target_tool="category_manage",
+            target_action="create",
+            params={"parent_id": "cat_1"},
+        )
+        assert result.success is False
+        assert "分类名称" in result.message
+
+    async def test_category_delete_missing_id(self, tool, admin_tool_context):
+        result = await tool.execute(
+            context=admin_tool_context,
+            target_tool="category_manage",
+            target_action="delete",
+            params={"reason": "不再需要"},
+        )
+        assert result.success is False
+        assert "分类 ID" in result.message or "category_id" in result.message.lower()
