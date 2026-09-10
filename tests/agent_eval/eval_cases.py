@@ -2397,11 +2397,12 @@ _CASE_OR_009 = EvalCase(
     skill=Skill.ORDER,
     difficulty=Difficulty.NORMAL,
     user_inputs=['我要给张三下单，手机13800138000', '要遮光窗帘', '选白色的，散剪，2.8米门幅', '数量 3 件', '不添加加工项，确认下单', '确认创建订单'],
-    expectations=['product_detail', 'interact(component=choice)', "order_create(items=[{'sellingMethod': 'bulk_cut', 'doorWidth': '2.8米', 'colorName': '白色'}])"],
+    expectations=['product_detail', 'interact(component=choice)', 'order_create'],
     data_checks=['order_create items[0].sellingMethod = bulk_cut', 'order_create items[0].doorWidth = 2.8米', "order_create items[0].colorName 包含 '白色'"],
     skip_reason='',
     tags=['multi_turn', 'order_create', 'sku_select', 'full_flow'],
     persona='',
+    required_args=[{'tool': 'order_create', 'action': 'create', 'fields': ['items[].processing_info.sellingMethod', 'items[].processing_info.doorWidth', 'items[].processing_info.colorName']}],
 )
 
 # ── OR-010 [NORMAL] 创建订单 - 汇总确认简化流程（源: cases/order.yml）──
