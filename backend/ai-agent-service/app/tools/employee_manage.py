@@ -33,6 +33,7 @@ class EmployeeManageTool(BaseTool):
     name = "employee_manage"
     description = (
         "【触发】用户问'员工''客服''账号''同事''有哪些人''创建账号''禁用账号''删除员工''重置密码'时调用。【前置】list/detail 可查询。create 必填 name+phone+password（密码由用户提供或系统随机生成后告知，禁止不收集密码就创建）。delete/reset_password/toggle_status 是破坏性操作。【反例】管理角色权限用 role_manage。查客户用 customer_manage。【标注】WRITE|DESTRUCTIVE — 删除/禁用/重置密码需二次确认"
+        "【铁律】用户明确要求写操作（禁用/创建/调整/删除/上下架/重置等）时：先查必要信息拿真实 ID → 展示操作预览 + 确认卡 → 用户确认后立即调用写工具执行，禁止只查询/展示列表就停（HR-003/PP-006/PR-005 实拍：agent 只 list/query 不执行写工具判失败）。"
     )
     allowed_roles = [
         "admin", "tenant_admin", "operator", "product_manager", "knowledge_editor",

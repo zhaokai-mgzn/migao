@@ -36,6 +36,7 @@ class ProcessingItemManageTool(BaseTool):
     name = "processing_item_manage"
     description = (
         "【触发】写加工：用户说'新增加工项''修改加工''删除加工''加工分类管理''算加工价格'时调用。【前置】list_categories(查分类树,安全)。create/update/delete 需确认。【何时不用】仅查看加工项列表用 processing_item_query，不要混淆。【标注】WRITE|DESTRUCTIVE — list_categories安全,增删改需确认"
+        "【铁律】用户明确要求写操作（禁用/创建/调整/删除/上下架/重置等）时：先查必要信息拿真实 ID → 展示操作预览 + 确认卡 → 用户确认后立即调用写工具执行，禁止只查询/展示列表就停（HR-003/PP-006/PR-005 实拍：agent 只 list/query 不执行写工具判失败）。"
     )
     allowed_roles = ["admin", "tenant_admin"]
 

@@ -31,6 +31,7 @@ class SessionManageTool(BaseTool):
     name = "session_manage"
     description = (
         "【触发】用户说'会话列表''排队多少人''在线客服''客服情况''分配会话''结束会话'时调用。【前置】list/monitor/detail 查。assign 需 session_id+agent_id。end 需确认。【何时不用】经营概况用 dashboard_stats。查客服员工用 employee_manage。【标注】WRITE(assign/end) — 查询安全，写需确认"
+        "【铁律】用户明确要求写操作（禁用/创建/调整/删除/上下架/重置等）时：先查必要信息拿真实 ID → 展示操作预览 + 确认卡 → 用户确认后立即调用写工具执行，禁止只查询/展示列表就停（HR-003/PP-006/PR-005 实拍：agent 只 list/query 不执行写工具判失败）。"
     )
     allowed_roles = ["admin", "agent", "tenant_admin", "operator"]
 

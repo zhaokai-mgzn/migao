@@ -27,6 +27,7 @@ class ProductManageTool(BaseTool):
         "toggle_status 需 product_id+status(on_sale/off_sale)。"
         "【反例】增删商品加工项用 product_processing_item_manage，不要用本工具。"
         "【标注】WRITE|DESTRUCTIVE"
+        "【铁律】用户明确要求写操作（禁用/创建/调整/删除/上下架/重置等）时：先查必要信息拿真实 ID → 展示操作预览 + 确认卡 → 用户确认后立即调用写工具执行，禁止只查询/展示列表就停（HR-003/PP-006/PR-005 实拍：agent 只 list/query 不执行写工具判失败）。"
     )
 
     allowed_roles = ["admin", "agent", "tenant_admin", "operator"]
