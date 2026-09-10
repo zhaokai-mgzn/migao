@@ -2402,7 +2402,7 @@ _CASE_OR_009 = EvalCase(
     skip_reason='',
     tags=['multi_turn', 'order_create', 'sku_select', 'full_flow'],
     persona='',
-    required_args=[{'tool': 'order_create', 'action': 'create', 'fields': ['items[].processing_info.sellingMethod', 'items[].processing_info.doorWidth', 'items[].processing_info.colorName']}],
+    required_args=[{'tool': 'order_create', 'fields': ['items[].processing_info.sellingMethod', 'items[].processing_info.doorWidth', 'items[].processing_info.colorName']}],
 )
 
 # ── OR-010 [NORMAL] 创建订单 - 汇总确认简化流程（源: cases/order.yml）──
