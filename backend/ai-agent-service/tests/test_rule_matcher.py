@@ -238,3 +238,24 @@ class TestMatch:
             result = self._match(msg)
             assert result is not None, f"{msg} 应命中"
             assert result.intent == IntentType.AFTER_SALES, f"{msg} 应判售后操作而非知识咨询"
+
+
+class TestFinanceRouting:
+    """FN-004 回归：收支/收入退款必须路由 FINANCE（此前「退款」被 AFTER_SALES 抢走）"""
+
+    def _match(self, message):
+        return RuleMatcher().match(message)
+
+    def test_income_refund_routes_finance(self):
+        """「本期收入退款是多少」→ FINANCE（收支汇总），不是 AFTER_SALES。"""
+        result = self._match("本期收入退款是多少")
+        assert result.intent == IntentType.FINANCE
+
+    def test_income_routes_finance(self):
+        result = self._match("这个月收入多少")
+        assert result.intent == IntentType.FINANCE
+
+    def test_refund_alone_stays_aftersales(self):
+        """单纯「退款」仍走售后（不误伤）。"""
+        result = self._match("我要退款")
+        assert result.intent == IntentType.AFTER_SALES
