@@ -1738,7 +1738,7 @@ _CASE_HR_003 = EvalCase(
     title='禁用员工账号',
     skill=Skill.GENERAL,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['王五离职了，停用账号', '确认'],
+    user_inputs=['王五离职了，停用账号', '确认停用'],
     expectations=['employee_manage(action=toggle_status, status=disabled)'],
     data_checks=['二次确认后停用'],
     skip_reason='',
