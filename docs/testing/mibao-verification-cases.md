@@ -1903,10 +1903,11 @@
 你: 确认创建订单
 期望: product_detail
 期望: interact(component=choice)
-期望: order_create(items=[{'sellingMethod': 'bulk_cut', 'doorWidth': '2.8米', 'colorName': '白色'}])
+期望: order_create
 数据: order_create items[0].sellingMethod = bulk_cut
 数据: order_create items[0].doorWidth = 2.8米
 数据: order_create items[0].colorName 包含 '白色'
+必填: order_create(create) 字段 items[].processing_info.sellingMethod, items[].processing_info.doorWidth, items[].processing_info.colorName
 ```
 真值: order.states, order.create-flow, product-sku-stock.aggregate
 溯源: eval M005 独有（多轮引导细节），与 OR-008 互补不合并；2026-09-09 校准：① interact 组件期望 sku_table 全库不存在（agent 从始发 choice），改为 choice；② 补「跳过加工项→点确认卡」两轮（真实流程需 7 轮，原 5 轮预设过严，agent 正确要求点卡不默认跳过） ｜ tags: multi_turn, order_create, sku_select, full_flow

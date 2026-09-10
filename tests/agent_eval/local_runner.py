@@ -670,21 +670,31 @@ def check_false_success(results: list) -> list:
 
 
 def _check_required_field(args: dict, field: str) -> tuple[bool, str]:
-    """必填字段检查：'key' 或 'list[].key'（列表内每一项都要有值）。"""
+    """必填字段检查，支持多级深路径：'key' / 'list[].key' / 'list[].key.sub'。
+
+    OR-009 实拍（Round 38）：order_create 的 sellingMethod/doorWidth/colorName
+    在 items[].processing_info 嵌套层，旧实现只支持 list[].key 一级——递归解析
+    剩余路径，兼容「items[].processing_info.sellingMethod」这类两级以上深路径。
+    """
     if "." not in field:
         v = args.get(field)
         ok = bool(v) and (not isinstance(v, (list, dict)) or len(v) > 0)
         return ok, f"缺失或为空: {field}"
     head, _, rest = field.partition(".")
-    v = args.get(head)
+    key = head[:-2] if head.endswith("[]") else head
+    v = args.get(key)
+    # dict 层（如 items[].processing_info.sellingMethod 的 processing_info）→ 直接递归
+    if isinstance(v, dict):
+        ok, detail = _check_required_field(v, rest)
+        return (True, "") if ok else (False, f"{head}.{detail}")
     if not isinstance(v, list) or not v:
         return False, f"字段 {head} 缺失或为空（应为非空列表）"
     for item in v:
         if not isinstance(item, dict):
             return False, f"{head} 元素非对象"
-        sub = item.get(rest)
-        if not sub:
-            return False, f"{head}[].{rest} 缺失或为空（应逐项携带）"
+        ok, detail = _check_required_field(item, rest)
+        if not ok:
+            return False, f"{head}[].{detail}"
     return True, ""
 
 

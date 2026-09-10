@@ -556,3 +556,53 @@ class TestLoadCasesFromYamlFields:
                 f.write(self._CASE_YAML)
             cases = lr.load_cases_from_yaml(d)
         assert cases[0].user_inputs[1] == {"auto_select": True}
+
+
+class TestRequiredArgsDeepPath:
+    """_check_required_field 多级深路径（OR-009：items[].processing_info.sellingMethod）"""
+
+    def test_deep_path_list_dict(self):
+        results = [{
+            "__round": 1,
+            "tool_calls": [{
+                "name": "order_create",
+                "args": {
+                    "action": "create",
+                    "items": [{
+                        "product_id": "p1",
+                        "processing_info": {
+                            "sellingMethod": "bulk_cut",
+                            "doorWidth": "2.8米",
+                            "colorName": "白色",
+                        },
+                    }],
+                },
+            }],
+        }]
+        issues = lr.check_required_args(results, [{
+            "tool": "order_create",
+            "action": "create",
+            "fields": [
+                "items[].processing_info.sellingMethod",
+                "items[].processing_info.doorWidth",
+                "items[].processing_info.colorName",
+            ],
+        }])
+        assert issues == []
+
+    def test_deep_path_missing_field(self):
+        results = [{
+            "__round": 1,
+            "tool_calls": [{
+                "name": "order_create",
+                "args": {
+                    "items": [{"processing_info": {"sellingMethod": "bulk_cut"}}],
+                },
+            }],
+        }]
+        issues = lr.check_required_args(results, [{
+            "tool": "order_create",
+            "fields": ["items[].processing_info.doorWidth"],
+        }])
+        assert len(issues) == 1
+        assert "doorWidth" in issues[0]
