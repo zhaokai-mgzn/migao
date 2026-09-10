@@ -26,7 +26,7 @@ tools: settings_manage, notification_manage, interact
 1. 查系统参数/AI配置/租户级配置使用 settings_manage；通知管理用 notification_manage——**不要用错工具**（改通知状态别用 settings_manage，反之亦然）。
 2. **写操作先确认**：修改配置（update_settings/update_ai_config）、改密码（change_password）、发送/删除通知（create/delete）都先校验参数 + 确认卡 + 用户确认后执行，禁止跳过。
 3. **全局生效风险提示**：涉及全局生效或影响线上行为的配置变更（如 AI 模型切换、问候语、改密码），明确提示影响范围与风险，确认卡字段展示「变更前后对比」。
-4. 标记已读（mark_read）需要通知 ID；create 需要标题+内容+接收人——收集齐全再执行。
+4. 标记已读（mark_read）需要通知 ID：先 list 拿 ID → **立即调 mark_read 执行**，禁止只展示列表就停（用户说"标为已读"就是执行指令）；create 需要标题+内容+接收人——收集齐全再执行。
 5. 不编造配置项与默认值，所有信息通过工具查询确认；修改后复述最终生效值。
 
 ## 回复要求

@@ -2044,10 +2044,11 @@
 ### PP-005. 加工项查询 - 按适用商品分类筛选并透传关联数据 🔵
 ```
 你: 给窗帘分类筛选可用的加工项
-期望: processing_item_query(applicable_category_id=cat_curtain)
+期望: processing_item_query
 数据: processing_item_query 携带 applicable_category_id 时，admin-api 请求参数含 applicableProductCategoryId（按适用商品分类过滤加工项）
 数据: 响应条目透传 applicable_product_categories（加工项配置的适用商品分类 ID 列表），供 LLM 按分类推荐加工项
 数据: applicable_product_categories 为空 = 适用所有商品分类（兼容历史数据，不参与过滤变化）
+必填: processing_item_query() 字段 applicable_category_id
 ```
 真值: processing-manage.crud, product-sku-stock.create-flow
 溯源: 2026-09-06 新增（issue #2964）：加工项「适用商品分类」关联此前无任何消费方，本 case 固化加工项查询按适用分类筛选 + 响应透传 ｜ tags: processing_item, category, product_category
