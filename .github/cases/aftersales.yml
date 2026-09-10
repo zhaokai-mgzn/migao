@@ -83,8 +83,10 @@ cases:
       - aftersales-flow.dup-guard
       - aftersales-flow.ticket-format
     user_inputs:
-      - "查订单 ORD-20260701-0001"
+      - "查订单 20260910619250007"
       - "这个订单客户要退货，创建售后工单"
+      - "确认创建"
+      - "确认"
     expectations:
       - tool: order_query
       - tool: after_sales_manage or aftersale_create

@@ -26,8 +26,10 @@
 
 ### AS-003. 查订单 → 创建退款工单（跨域复用 order_id） 🔵
 ```
-你: 查订单 ORD-20260701-0001
+你: 查订单 20260910619250007
 你: 这个订单客户要退货，创建售后工单
+你: 确认创建
+你: 确认
 期望: order_query
 期望: after_sales_manage or aftersale_create(order_id=复用上轮 UUID)
 数据: success=true
