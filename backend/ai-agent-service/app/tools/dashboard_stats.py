@@ -180,6 +180,8 @@ class DashboardStatsTool(BaseTool):
             )
 
         data = response.get("data", {})
+        if isinstance(data, list):
+            data = {"list": data}  # 兼容 admin-api 返回 list（order-trend/order-status/recent-orders/product-ranking 实测为 list）
         logger.info(f"[dashboard-stats] Overview fetched | tenant={context.tenant_id}")
 
         # 构建摘要：提取今日订单数和销售额
@@ -216,6 +218,12 @@ class DashboardStatsTool(BaseTool):
             )
 
         data = response.get("data", {})
+        # 兼容 admin-api 返回 data 为 list 的形态（生产 /api/admin/dashboard/order-trend
+        # 返回 data: [...list...]）：包成 dict 满足 ToolResult.data 校验，同时让摘要统计
+        # 与前端消费结构一致（此前 dict API data.get 对 list 崩溃 → order_trend 恒失败，
+        # DA-002 根因）
+        if isinstance(data, list):
+            data = {"list": data}
         logger.info(f"[dashboard-stats] Order trend fetched, days={days} | tenant={context.tenant_id}")
 
         # 构建摘要：统计趋势数据点数量
@@ -248,6 +256,8 @@ class DashboardStatsTool(BaseTool):
             )
 
         data = response.get("data", {})
+        if isinstance(data, list):
+            data = {"list": data}  # 兼容 admin-api 返回 list（order-trend/order-status/recent-orders/product-ranking 实测为 list）
         logger.info(f"[dashboard-stats] Order status distribution fetched | tenant={context.tenant_id}")
 
         # 构建摘要：汇总各状态的数量
@@ -288,6 +298,8 @@ class DashboardStatsTool(BaseTool):
             )
 
         data = response.get("data", {})
+        if isinstance(data, list):
+            data = {"list": data}  # 兼容 admin-api 返回 list（order-trend/order-status/recent-orders/product-ranking 实测为 list）
         logger.info(f"[dashboard-stats] Recent orders fetched, limit={limit} | tenant={context.tenant_id}")
 
         # 构建摘要：统计订单数量
@@ -322,6 +334,8 @@ class DashboardStatsTool(BaseTool):
             )
 
         data = response.get("data", {})
+        if isinstance(data, list):
+            data = {"list": data}  # 兼容 admin-api 返回 list（order-trend/order-status/recent-orders/product-ranking 实测为 list）
         logger.info(f"[dashboard-stats] Active sessions fetched, limit={limit} | tenant={context.tenant_id}")
 
         # 构建摘要：统计会话数量

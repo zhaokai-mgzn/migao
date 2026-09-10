@@ -178,7 +178,41 @@ class TestDashboardOrderTrend:
         assert result.success is False
 
 
-class TestDashboardOrderStatus:
+    @patch("app.tools.dashboard_stats.get_admin_api_client")
+    async def test_order_trend_list_data_success(self, mock_get_client, tool, admin_tool_context):
+        """真实 admin-api 返回 data 为 list（非 dict）——此前 data.get 崩溃（DA-002 根因）"""
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value={
+            "success": True,
+            "data": [{"date": "2026-09-04", "orders": 60}, {"date": "2026-09-05", "orders": 4}],
+        })
+        mock_get_client.return_value = mock_client
+
+        result = await tool.execute(context=admin_tool_context, action="order_trend", days=7)
+
+        assert result.success is True
+        assert "2个数据点" in result.summary
+
+
+class TestDashboardOrderStatusListData:
+    """order_status/recent_orders/active_sessions 返回 list data 时不再崩溃（Round 34）"""
+
+    @patch("app.tools.dashboard_stats.get_admin_api_client")
+    async def test_order_status_list_data_success(self, mock_get_client, tool, admin_tool_context):
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value={
+            "success": True,
+            "data": [{"status": "pending", "count": 5}, {"status": "completed", "count": 10}],
+        })
+        mock_get_client.return_value = mock_client
+
+        result = await tool.execute(context=admin_tool_context, action="order_status")
+
+        assert result.success is True
+        assert "2种状态" in result.summary
+
+
+
     """订单状态分布 order_status"""
 
     @patch("app.tools.dashboard_stats.get_admin_api_client")
