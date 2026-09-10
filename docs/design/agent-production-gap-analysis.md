@@ -743,3 +743,18 @@ validate_input → interact 确认 → toggle(on)。
 
 **方法**：状态依赖型 case（上架/关闭等）用**自包含流转**（先反向操作再目标
 操作），避免依赖存量状态，是「评测数据状态脱节」类的通用解法。
+
+## 三十三、Round 49 PR-011 闭环（建品引导 auto_select + 确认轮）
+
+PR-011（7 轮建品完整引导）实拍：分类 choice 卡文本无法驱动 → agent 连发 3 次
+分类卡，流程卡在分类阶段。
+
+**校准**（#3210）：user_inputs 加 auto_select（点分类卡第一个选项）+ 补「确认」轮
+（validate_input 后点确认卡）。
+
+**验证**：PR-011 100%——分类卡 → 加工项查询 → validate_input → 确认 →
+product_manage(create) → product_search 验证。
+
+**方法**：长引导流程 case（建品/下单）的交互卡点选轮（分类卡/确认卡）必须显式
+覆盖，文本语义轮与卡片点选轮分开（auto_select 处理），是「引导轮次不足」类
+的通用解法（与 CR-003/OR-008/PR-014 同款）。
