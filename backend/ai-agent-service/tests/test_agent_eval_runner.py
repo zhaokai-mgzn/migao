@@ -657,3 +657,17 @@ class TestAutoFillForm:
     def test_no_form_card_returns_none(self):
         results = [{"interactive": [{"type": "choice", "options": []}]}]
         assert lr._auto_fill_form(results, {"customer_name": "张三"}) is None
+
+
+class TestEndSession:
+    """_end_session：评测会话清理（协议 §2.2，防 waiting 残留）"""
+
+    def test_end_session_silent_on_failure(self):
+        import asyncio, unittest.mock as mock
+        async def fake_post(url, headers=None, timeout=None):
+            raise RuntimeError("connection failed")
+        async def run():
+            with mock.patch.object(lr.httpx, "AsyncClient") as m_cls:
+                m_cls.return_value.__aenter__.return_value.post = fake_post
+                await lr._end_session("tok", "sid-1")
+        asyncio.run(run())  # 不应抛异常
