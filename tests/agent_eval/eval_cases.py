@@ -1135,12 +1135,13 @@ _CASE_CR_001 = EvalCase(
     title='查商品 → 下单（跨 Skill 复用 UUID）',
     skill=Skill.CROSS,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['查一下遮光窗帘', '用这个商品给张三下单，2件'],
-    expectations=['product_detail(product_id=遮光窗帘)', 'order_create'],
+    user_inputs=['查一下遮光窗帘', '用遮光窗帘（100元的那件）给张三创建订单，2件', {'auto_select': True}, '不需要加工项', '确认下单'],
+    expectations=['product_detail', 'order_create'],
     data_checks=['order_create items 包含遮光窗帘的 UUID（复用上轮，不重查）', 'Context 注入包含 product_ids'],
     skip_reason='',
     tags=['cross_skill', 'context_share'],
     persona='',
+    required_args=[{'tool': 'order_create', 'fields': ['items[].processing_info.sellingMethod', 'items[].processing_info.doorWidth']}],
 )
 
 # ── CR-002 [ADVERSARIAL] 对抗性 - 3 个 Skill 连续切换（源: cases/cross.yml）──
