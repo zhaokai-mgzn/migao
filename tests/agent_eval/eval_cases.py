@@ -2824,7 +2824,7 @@ _CASE_PR_015 = EvalCase(
     title='加工项多选翻页 - 翻页后继续选择并一次性提交',
     skill=Skill.PRODUCT,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['录入这个商品，名称测试窗帘，价格 100', '分类选窗帘', {'auto_select': True}, '翻页查看第2页加工项', '已选加工项：高温定型', '确认'],
+    user_inputs=['录入这个商品，名称测试窗帘，价格 100', '分类选窗帘', {'auto_select': True}, '翻页查看第2页加工项', '已选加工项：高温定型', '颜色米白色，货号 TEST-002', '确认'],
     expectations=['interact(component=choice, multiSelect=True)', 'processing_item_query', 'validate_input', 'product_manage(action=create)'],
     data_checks=['翻页（__PAGE__ 协议）后加工项选择仍可继续（multiSelect 不丢）', '翻页后勾选累积一次性提交被正确解析', '最终创建成功'],
     skip_reason='',

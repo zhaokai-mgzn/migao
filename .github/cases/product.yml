@@ -524,6 +524,7 @@ cases:
       - auto_select: true
       - "翻页查看第2页加工项"
       - "已选加工项：高温定型"
+      - "颜色米白色，货号 TEST-002"
       - "确认"
     expectations:
       - tool: interact

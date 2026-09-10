@@ -2287,6 +2287,7 @@
 你: [📷 纯图片 x0]
 你: 翻页查看第2页加工项
 你: 已选加工项：高温定型
+你: 颜色米白色，货号 TEST-002
 你: 确认
 期望: interact(component=choice, multiSelect=True)
 期望: processing_item_query
