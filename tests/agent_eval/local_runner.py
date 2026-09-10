@@ -130,6 +130,25 @@ async def _run_pre_clean(token: str, spec: dict) -> str:
       在 run_case 前把目标客户标签清干净，保证写流程从干净状态开始）。
     """
     _type = spec.get("type", "")
+    if _type == "product_remove":
+        # 清理建品测试残留（下架→删除，on_sale 不能直接删）：多次建品「测试窗帘」
+        # 等残留 → 全量评测重名冲突（agent 发现已存在 → 澄清 → create 未达）。
+        kw = str(spec.get("product_keyword", ""))
+        async with httpx.AsyncClient() as c:
+            h = _admin_headers(token)
+            r = await c.get(f"{ADMIN_API}/api/admin/products", headers=h,
+                            params={"keyword": kw, "page": 1, "size": 20}, timeout=15)
+            items = (_safe_json(r, {}) or {}).get("data", {}).get("items", [])
+            removed = 0
+            for p in items:
+                if kw not in str(p.get("name", "")):
+                    continue
+                pid = p.get("id")
+                await c.put(f"{ADMIN_API}/api/admin/products/{pid}/status", headers=h,
+                            json={"status": "off_sale"}, timeout=15)
+                await c.delete(f"{ADMIN_API}/api/admin/products/{pid}", headers=h, timeout=15)
+                removed += 1
+            return f"已清理 {removed} 个「{kw}」商品" if removed else f"无「{kw}」商品需清理"
     if _type != "customer_tag_remove":
         return f"未知 pre_clean 类型: {_type}（跳过）"
     async with httpx.AsyncClient() as c:
