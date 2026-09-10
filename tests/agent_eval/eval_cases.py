@@ -84,7 +84,7 @@ _CASE_AS_003 = EvalCase(
     title='查订单 → 创建退款工单（跨域复用 order_id）',
     skill=Skill.AFTERSALES,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['查订单 ORD-20260701-0001', '这个订单客户要退货，创建售后工单'],
+    user_inputs=['查订单 20260910619250007', '这个订单客户要退货，创建售后工单', '确认创建', '确认'],
     expectations=['order_query', 'after_sales_manage or aftersale_create(order_id=复用上轮 UUID)'],
     data_checks=['success=true', '工单号匹配 ^AS-\\\\d{8}-\\\\d{4}$'],
     skip_reason='',
