@@ -900,11 +900,15 @@
 ### CR-001. 查商品 → 下单（跨 Skill 复用 UUID） 🔵
 ```
 你: 查一下遮光窗帘
-你: 用这个商品给张三下单，2件
-期望: product_detail(product_id=遮光窗帘)
+你: 用遮光窗帘（100元的那件）给张三创建订单，2件
+你: [📷 纯图片 x0]
+你: 不需要加工项
+你: 确认下单
+期望: product_detail
 期望: order_create
 数据: order_create items 包含遮光窗帘的 UUID（复用上轮，不重查）
 数据: Context 注入包含 product_ids
+必填: order_create() 字段 items[].processing_info.sellingMethod, items[].processing_info.doorWidth
 ```
 真值: id-resolve.no-fabricate, ai-chat.context-memory
 溯源: eval C001 独有 ｜ tags: cross_skill, context_share
