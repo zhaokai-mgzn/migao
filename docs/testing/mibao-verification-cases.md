@@ -2261,8 +2261,10 @@
 ```
 你: 录入这个商品，名称测试窗帘，价格 100
 你: 分类选窗帘
+你: [📷 纯图片 x0]
 你: 翻页查看第2页加工项
 你: 已选加工项：高温定型
+你: 确认
 期望: interact(component=choice, multiSelect=True)
 期望: processing_item_query
 期望: validate_input
@@ -2278,9 +2280,11 @@
 ```
 你: 录入这个商品，名称遮光窗帘，价格 100
 你: 分类选窗帘
+你: [📷 纯图片 x0]
 你: 已选加工项：高温定型
+你: 确认
 期望: category_manage
-期望: processing_item_query(applicable_category_id=cat_curtain)
+期望: processing_item_query
 期望: interact(component=choice, multiSelect=True)
 期望: validate_input
 期望: product_manage(action=create)
@@ -2288,6 +2292,7 @@
 数据: 适用分类为空（applicable_product_categories 为空）的加工项仍展示（= 适用所有分类），不因过滤而丢失
 数据: 当前分类无匹配加工项时以文字提示可跳过，不空转强制选择
 数据: 最终创建成功且关联加工项数量正确
+必填: processing_item_query() 字段 applicable_category_id
 ```
 真值: product-sku-stock.create-flow, processing-manage.crud
 溯源: 2026-09-06 新增（issue #2964）：加工项「适用商品分类」配置此前无消费方，建品流程按已选分类过滤/推荐加工项（设计意图见 docs/design/admin-dashboard-design.md §6.1.1 适用商品分类+AI推荐） ｜ tags: processing_item, product_category, guided_flow, recommendation
