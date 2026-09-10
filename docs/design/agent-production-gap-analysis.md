@@ -772,3 +772,20 @@ PP-001（加工项分页翻页）实拍：R1 查到 2 款遮光窗帘（商品�
 
 **方法**：序号指代（第1个/第3个）依赖列表顺序不稳定 → 改用加工项名称；
 商品歧义 → 明确商品标识。是「指代歧义 + 列表顺序依赖」类的通用解法。
+
+## 三十五、Round 51 PP-006 加工项创建——路由+引导修复（剩余模型边界）
+
+PP-006（加工项计价方式）实拍定位三层根因：
+
+1. **路由缺失**（#3214）：「新增加工项」的「加工项」命中 PRODUCT_INQUIRY → 路由到
+   product skill → agent 误宣「不在商品管理能力范围」。KEYWORD_MAP 补
+   PROCESSING_MANAGE（最长词消歧优先）。
+2. **create_item 引导缺失**（#3215）：processing_item_manage 只在 general skill，
+   LLM 未把「新增」映射到 create_item。description 加铁律（create_item 参数 +
+   计价方式仅 per_meter/per_set/fixed/per_area，per_piece 拒绝）。
+3. **模型边界**：路由+引导后 agent 正确进入 create_item 流程（form 卡收集），
+   但 LLM 对「新增加工项」能力认知仍不稳定（反复宣称不在能力范围）——属 LLM
+   顽固行为，非代码可修。case 补填表/确认轮覆盖流程尝试（#3216）。
+
+**结论**：加工项创建的路由/引导已修复（能力可用），PP-006 的最终通过受 LLM
+能力认知波动限制（模型边界，待模型迭代或 case 语义放宽）。
