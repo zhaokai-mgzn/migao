@@ -12,6 +12,7 @@ class ProductUpdateTool(BaseTool):
 
     name = "product_update"
     description = (
+        "【铁律】用户明确要求设置/修改商品（回补库存开关/价格/名称/上下架等）时：先查商品拿真实 product_id → 展示操作预览 + 确认卡 → 用户确认后立即调用本工具执行，禁止只查询/展示就停（PR-017 实拍：设置退货回补库存只 product_search 不 update 判失败）。"
         "【触发】用户说'改价格''改名称''价格改成XX''改名'时**直接调用**，无需 validate_input。"
         "只传要改的字段，其他字段保持不变。product_id 支持名称/序号/UUID。"
         "【注意】改的是商品统一定价，影响所有 SKU。单独调某个 SKU 价格请引导去商品管理页。"
