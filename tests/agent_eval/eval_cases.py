@@ -99,12 +99,13 @@ _CASE_AS_004 = EvalCase(
     title='更新工单状态 - 关闭',
     skill=Skill.AFTERSALES,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['AS-20260909-0001 工单已处理完，关闭', '确认'],
+    user_inputs=['查看最近的售后工单', '把第一张未处理的工单关闭', '确认'],
     expectations=['after_sales_manage(action=update_status, status=closed)'],
     data_checks=['success=true', 'closedAt/closeReason 写入'],
     skip_reason='',
     tags=['update', 'status'],
     persona='',
+    pre_clean=[{'type': 'aftersales_ticket_prepare'}],
 )
 
 # ── AS-005 [NORMAL] 售后处理全流程 - 查单→确认问题→建工单→跟踪（源: cases/aftersales.yml）──

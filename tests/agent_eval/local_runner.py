@@ -149,6 +149,26 @@ async def _run_pre_clean(token: str, spec: dict) -> str:
                 await c.delete(f"{ADMIN_API}/api/admin/products/{pid}", headers=h, timeout=15)
                 removed += 1
             return f"已清理 {removed} 个「{kw}」商品" if removed else f"无「{kw}」商品需清理"
+    if _type == "aftersales_ticket_prepare":
+        # 确保有 pending 工单供「关闭工单」case 使用：AS-004 关闭后存量被消耗 →
+        # 无 pending 时用真实订单创建一张退款工单（数据治理：存量资源准备）。
+        async with httpx.AsyncClient() as c:
+            h = _admin_headers(token)
+            r = await c.get(f"{ADMIN_API}/api/admin/after-sales", headers=h,
+                            params={"page": 1, "size": 5}, timeout=15)
+            items = (_safe_json(r, {}) or {}).get("data", {}).get("items", [])
+            pending = [t for t in items if t.get("status") == "pending"]
+            if pending:
+                return f"已有 {len(pending)} 张 pending 工单"
+            r = await c.get(f"{ADMIN_API}/api/admin/orders", headers=h,
+                            params={"page": 1, "size": 1}, timeout=15)
+            orders = (_safe_json(r, {}) or {}).get("data", {}).get("items", [])
+            if not orders:
+                return "无订单可创建测试工单"
+            await c.post(f"{ADMIN_API}/api/admin/after-sales", headers=h,
+                         json={"orderId": orders[0].get("id"), "ticketType": "refund",
+                               "reason": "评测准备工单"}, timeout=15)
+            return "已创建测试工单（供关闭）"
     if _type != "customer_tag_remove":
         return f"未知 pre_clean 类型: {_type}（跳过）"
     async with httpx.AsyncClient() as c:

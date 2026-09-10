@@ -40,7 +40,8 @@
 
 ### AS-004. 更新工单状态 - 关闭 🔵
 ```
-你: AS-20260909-0001 工单已处理完，关闭
+你: 查看最近的售后工单
+你: 把第一张未处理的工单关闭
 你: 确认
 期望: after_sales_manage(action=update_status, status=closed)
 数据: success=true
