@@ -76,6 +76,7 @@ cases:
       - employee-role.write-require-admin
     user_inputs:
       - "王五离职了，停用账号"
+      - "确认"
     expectations:
       - tool: employee_manage
         args:

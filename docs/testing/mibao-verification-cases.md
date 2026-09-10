@@ -1408,6 +1408,7 @@
 ### HR-003. 禁用员工账号 🔵
 ```
 你: 王五离职了，停用账号
+你: 确认
 期望: employee_manage(action=toggle_status, status=disabled)
 数据: 二次确认后停用
 ```
