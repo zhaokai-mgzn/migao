@@ -681,3 +681,16 @@ category_id）+ 3 单测。
 **系统性结论**：validate_input 规则覆盖度 = agent 写操作可用性边界——已修
 role_manage（#3157）、category_manage（#3199）；建议对全部 WRITE 工具做规则
 覆盖审计（后续待办）。
+
+## 二十九、Round 45 validate_input WRITE 工具覆盖审计
+
+CT-002 闭环揭示系统性缺口后，对全部 WRITE 工具做覆盖审计：**7 个工具缺规则**
+（finance_api/notification_manage/processing_item_manage/product_update/
+session_manage/settings_manage/sku_update），补齐（#3201，必填字段对齐各工具契约）。
+
+**验证**：FN-001（资金流水登记，含 finance_api create_transaction 校验）100% 通过。
+
+**系统性结论**（完整版）：validate_input 规则覆盖度 = agent 写操作可用性边界。
+规则缺失时 agent 按安全规则拒绝执行写操作（HR-005 role_manage / CT-002
+category_manage / 本轮 7 工具，共 9 个缺口已全部补齐）。后续新增 WRITE 工具
+必须同步补 validate_input 规则（写入开发规范建议）。
