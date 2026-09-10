@@ -421,7 +421,8 @@ public class RoleService {
      */
     @Transactional(rollbackFor = Exception.class)
     public Role createRole(String name, String code, String description, Long tenantId, List<String> permissionIds) {
-        // 验证 code 唯一性
+        // 验证 code 唯一性（含逻辑删除记录——唯一索引不带 deleted 条件，逻辑删除后
+        // 重建同 code 会撞唯一索引抛 500；此处先给出业务错误，避免笼统的服务器内部错误）
         LambdaQueryWrapper<Role> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(Role::getCode, code)
                 .eq(Role::getTenantId, tenantId)
@@ -429,6 +430,16 @@ public class RoleService {
         Role existing = roleMapper.selectOne(wrapper);
         if (existing != null) {
             throw BusinessException.validationError("角色代码已存在: " + code);
+        }
+        LambdaQueryWrapper<Role> deletedWrapper = new LambdaQueryWrapper<>();
+        deletedWrapper.eq(Role::getCode, code)
+                .eq(Role::getTenantId, tenantId)
+                .eq(Role::getDeleted, 1);
+        Role deletedRole = roleMapper.selectOne(deletedWrapper);
+        if (deletedRole != null) {
+            throw BusinessException.validationError(
+                    "角色编码已被历史角色占用: " + code + "（该角色此前被删除，编码仍被数据库保留）。"
+                            + "请更换新编码，或联系管理员清理历史数据");
         }
 
         Role role = Role.builder()
