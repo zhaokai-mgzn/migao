@@ -193,6 +193,8 @@ cases:
     user_inputs:
       - "查询打孔加工的计价方式"
       - "新增加工项，计价方式选按个"
+      - "名称叫测试加工，分类选打孔加工"
+      - "确认"
     expectations:
       - tool: processing_item_query
         args:
