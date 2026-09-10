@@ -480,3 +480,79 @@ class TestAutoSelectFirstOption:
     def test_choice_card_no_options_returns_none(self):
         results = [{"interactive": [{"type": "choice", "options": []}]}]
         assert lr._auto_select_first_option(results) is None
+
+class TestLoadCasesFromYamlFields:
+    """--cases（YAML 直读）路径必须无损传递 EvalCase 全部可选字段。
+
+    回归（Round 31 实拍）：pre_clean 只加在 render_cases 生成物路径，
+    load_cases_from_yaml 漏传 → 评测（走 --cases）pre_clean 静默失效，
+    CU-003 数据污染防线形同虚设（0%→100% 的关键修复）。
+    同时防 yaml_light 解析陷阱：inline dict 必须写成无花括号 auto_select: true。
+    """
+
+    _CASE_YAML = """cases:
+  - id: TST-001
+    title: "字段传递测试"
+    domains:
+      - chat
+    tier: normal
+    user_inputs:
+      - "hello"
+      - auto_select: true
+    expectations:
+      - tool: interact
+    data_checks: []
+    skip_reason: ""
+    tags:
+      - t1
+    persona: mibao
+    order_before:
+      - "a before b"
+    forbidden_text:
+      - "不该出现"
+    want_text:
+      - "应该出现"
+    required_args:
+      - tool: product_manage
+    db_verify:
+      - fetch: product_by_name
+    pre_clean:
+      - type: customer_tag_remove
+        customer_keyword: "张三"
+        customer_index: 0
+        tag_name: "VIP2活跃"
+"""
+
+    def test_optional_fields_transferred(self):
+        """全部可选字段经 load_cases_from_yaml 后无损。"""
+        import tempfile, os
+        with tempfile.TemporaryDirectory() as d:
+            with open(os.path.join(d, "chat.yml"), "w", encoding="utf-8") as f:
+                f.write(self._CASE_YAML)
+            cases = lr.load_cases_from_yaml(d)
+        assert len(cases) == 1
+        c = cases[0]
+        assert c.id == "TST-001"
+        assert c.pre_clean == [{
+            "type": "customer_tag_remove",
+            "customer_keyword": "张三",
+            "customer_index": 0,
+            "tag_name": "VIP2活跃",
+        }]
+        assert c.order_before == ["a before b"]
+        assert c.forbidden_text == ["不该出现"]
+        assert c.want_text == ["应该出现"]
+        assert c.required_args == [{"tool": "product_manage"}]
+        assert c.db_verify == [{"fetch": "product_by_name"}]
+        assert c.persona == "mibao"
+        assert c.tags == ["t1"]
+
+    def test_auto_select_dict_preserved(self):
+        """user_inputs 的 auto_select dict 必须原样保留（yaml_light 无花括号写法）；
+        被破坏时 run_case 取不到键 → 发空消息致评测静默失败。"""
+        import tempfile, os
+        with tempfile.TemporaryDirectory() as d:
+            with open(os.path.join(d, "chat.yml"), "w", encoding="utf-8") as f:
+                f.write(self._CASE_YAML)
+            cases = lr.load_cases_from_yaml(d)
+        assert cases[0].user_inputs[1] == {"auto_select": True}

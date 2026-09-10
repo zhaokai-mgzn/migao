@@ -1210,7 +1210,7 @@ _CASE_CU_003 = EvalCase(
     title='给客户打标签',
     skill=Skill.CUSTOMER,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['给张三加VIP2活跃标签', {'{"auto_select"': 'true}'}, '确认'],
+    user_inputs=['给张三加VIP2活跃标签', {'auto_select': True}, '确认'],
     expectations=['customer_manage(action=add_tag)'],
     data_checks=['add_tag 真实落库（customer_profiles.tags JSONB 写入），重复标签幂等跳过'],
     skip_reason='',
