@@ -77,6 +77,9 @@ cases:
     user_inputs:
       - "王五离职了，停用账号"
       - "确认停用"
+    pre_clean:
+      - type: employee_reactivate
+        employee_name: "王五"
     expectations:
       - tool: employee_manage
         args:

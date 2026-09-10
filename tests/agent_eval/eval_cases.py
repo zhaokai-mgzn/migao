@@ -1744,6 +1744,7 @@ _CASE_HR_003 = EvalCase(
     skip_reason='',
     tags=['status', 'destructive'],
     persona='',
+    pre_clean=[{'type': 'employee_reactivate', 'employee_name': '王五'}],
 )
 
 # ── HR-004 [SMOKE] 角色列表（源: cases/hr.yml）──
