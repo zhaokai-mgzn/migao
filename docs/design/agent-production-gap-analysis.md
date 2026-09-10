@@ -482,3 +482,22 @@ staff 补齐（#3166）验证有效后，同款处理 customer：
 
 **方法论**：领域 prompt 补齐 = agent 上限提升的通用杠杆——product（53 行）/staff
 （40 行）/customer（46 行）补齐后，对应域评测稳定通过，减少对基建补丁依赖。
+
+## 十八、Round 34 data/settings 域补齐 + dashboard_stats list-data 契约修复
+
+延续「领域 prompt = 上限杠杆」，补齐最后两块薄 prompt + 探针实拍发现看板契约 bug：
+
+1. **#3171 data/settings prompt 补齐**：data.md（看板 action 映射 + 时间参数规则 +
+   工具分工）、settings.md（配置/通知 action 映射 + 全局生效风险提示）。
+   探针验证：agent 正确调 `order_trend(days=7)`、`notification_manage(list, unread)`。
+2. **#3172 dashboard_stats list-data 修复**：探针实拍 `/api/admin/dashboard/order-trend`
+   等 4 个端点返回 `data: [...list...]`，而 `_order_trend` 用 dict API `data.get(...)`
+   对 list 崩溃 → 看板查询恒失败（DA-002 根因，agent 误报「看板数据服务临时波动」）。
+   统一兼容：list → `{"list": data}`（product_ranking 原生 `{"items": ...}` 保留）。
+   新增 2 单测（order_trend/order_status list）。
+
+**验证**：
+- 探针：order_trend 结构化展示（日期/订单数/金额）；notification 19 条未读
+- 评测：**DA-002 100% 通过**（修复前失败）
+- 部署教训：merge 后部署可能滞后一个 commit（reconcile 时序），验证前须确认
+  headSha 匹配预期 commit（本次手动补触发 #3172 部署）
