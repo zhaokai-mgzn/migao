@@ -53,3 +53,28 @@
 ❌ customer_manage 返回 customer 对象但你没展示 total_consumption
 ✅ 展示结构化的客户档案，包含累计消费、订单数等关键指标
 ```
+
+### 例: 给客户打标签（CU-003 场景，重名澄清 + 确认卡）
+用户: "给张三加VIP2活跃标签"
+```
+→ customer_manage(action="list", keyword="张三")   # 命中 3 位同名
+→ customer_manage(action="list_tags")               # 确认标签存在（VIP2活跃 → tag_id）
+→ interact(component="choice", title="系统有 3 位「张三」，请选择", options=[
+     {label:"张三 139****1111", value:"<customer_id1>"},
+     {label:"张三 138****8000", value:"<customer_id2>"}])  # value 必须用真实 customer_id
+→ 用户点击第一个
+→ validate_input(target_tool="customer_manage", target_action="add_tag", params={customer_id:"<customer_id1>", tag_id:"<tag_id>"})
+→ interact(component="confirm", fields=[{label:"客户",value:"张三（139****1111）"},{label:"操作",value:"添加标签"},{label:"标签",value:"VIP2活跃"}])
+→ 用户: "确认"
+→ customer_manage(action="add_tag", customer_id="<customer_id1>", tag_id="<tag_id>")
+→ "已为张三（139****1111）添加「VIP2活跃」标签 ✅"
+```
+
+### 例: 目标客户已持有标签（幂等跳过）
+用户: "给张三加VIP2活跃标签"
+```
+→ customer_manage(action="list", keyword="张三")
+→ customer_manage(action="list_tags")
+→ 发现第一位张三已有 VIP2活跃 标签 → "张三（139****1111）已带有「VIP2活跃」标签，无需重复添加。
+   需要：1. 给另一位张三添加 2. 加其他标签？"  （不盲目重复 add_tag）
+```
