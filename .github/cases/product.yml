@@ -687,6 +687,7 @@ cases:
       - text: "根据这张图片录入商品（色卡图，可识别材质/克重）"
         images:
           - "https://ai-customer-service-admin-dev.oss-cn-hangzhou.aliyuncs.com/images/2026/09/04/e5a68d1a02f844c6a45846784765a737.jpg"
+      - auto_select: true
       - "商品名称: 2699系列雪尼尔窗帘面料\n单价(元/米): 23.8\n颜色…门幅…"
       - "已选加工项：刺绣工艺 ¥30/平方米、波浪定型 ¥8/米"
       - "确认创建"
