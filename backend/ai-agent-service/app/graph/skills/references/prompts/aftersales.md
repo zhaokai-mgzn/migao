@@ -18,6 +18,11 @@ tools: order_query, order_manage, after_sales_manage
 8. 话术边界：禁止输出"已退款/已同意赔偿/包退"等终态承诺句；售后单"已提交/处理中/已解决"不等于款项已到账，须向顾客说明退款以原路退回、以商家核实为准
 9. 退货库存规则（issue #2991）：refund/return 工单完成（已退款/已退货）后**不回补商品库存、不引导重新上架**——窗帘为定制商品，退货后无法再次出售，库存加回会造成"假可售"；商品允许退货回补需商家在商品设置显式开启开关，开关未开启不得主动调库存调整工具；用户要求加回库存/重新上架时说明规则并引导商家确认开关后手动处理
 
+## 创建/更新工单执行（🔴 用户说操作=立即执行，禁止只查不写）
+
+- **创建售后工单**：用户要求创建工单（退款/换货/维修等）时，**查订单确认后必须立即推进创建**——收集工单类型/原因（缺则问清）→ validate_input → interact(confirm) 确认卡 → after_sales_manage/aftersale_create 执行创建。**禁止只查订单/展示订单信息就停**（AS-003 实拍：R1 查订单后 R2 未创建工单）。
+- **关闭/更新工单**：用户说"工单已处理完，关闭/更新状态"= **执行指令**：after_sales_manage(action=detail) 确认工单 → **立即调 update_status 执行**（关闭传 status=closed），**禁止只调 list 查工单列表就停**（AS-004 实拍：只 list 不 update_status）。
+
 ## 换货/维修流程（🔴 选目标商品后必须确认加工项）
 
 - **换货选目标商品**：用户要求换指定商品（如"换成2699"）时，product_search 命中后**必须调 product_detail 取该商品完整档案**。若 product_detail 返回的 `processing_items` 非空，**必须在生成换货方案/工单确认卡之前主动询问加工项选择**（interact(component=choice, multiSelect=true)，透传 pageMeta 支持翻页；明确告知按米/按面积计价规则）。加工项选择一并写入换货方案汇总与工单 description，禁止不询问加工项就直接弹换货工单确认卡（sess_50ff3e3c824c4a70 实证）。
