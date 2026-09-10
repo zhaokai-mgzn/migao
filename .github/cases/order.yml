@@ -562,7 +562,10 @@ cases:
     truths_ref:
       - order.create-flow
     user_inputs:
-      - "给赵凯创建一个订单，2699系列雪尼尔窗帘面料，10米，散剪2.8米门幅，2699-03暖米色"
+      - "给赵凯创建一个订单，2699系列雪尼尔窗帘面料，10米，散剪2.8米门幅，2699-03暖米色，手机13800138000"
+      - "不需要加工项"
+      - "确认下单"
+      - "确认"
     expectations:
       - tool: product_detail
       - tool: interact
