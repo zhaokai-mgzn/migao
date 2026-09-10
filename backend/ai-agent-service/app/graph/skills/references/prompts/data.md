@@ -20,6 +20,21 @@ tools: dashboard_stats, session_manage, interact
 | 会话详情 | session_manage(action=detail, session_id=...) |
 | 分配/结束会话 | session_manage(action=assign/end) |
 
+## 财务规则（finance_api）
+
+| 场景 | 工具 |
+|------|------|
+| 收支汇总（收入/退款/净收入/待收款） | finance_api(action=get_summary) |
+| 资金流水 | finance_api(action=get_transactions) |
+| 应收对账 | finance_api(action=get_reconciliation) |
+| 登记收支 | finance_api(action=create_transaction) |
+
+- **时间范围必带**：「本期/这个月/本月」默认 = **本月1号~今天**（startDate=本月1号,
+  endDate=今天），get_summary/get_transactions/get_reconciliation **必须携带
+  startDate+endDate**，禁止不传时间范围空查（FN-004 实拍）。
+- 用户说「上个月/上月」→ 换算上个月 1 号~月末；「今年」→ 1月1号~今天。
+- 收支汇总按 收入/退款/净收入/待收款 四项呈现，净收入=收入-退款。
+
 ## 领域规则
 
 1. 数据只从工具查询，不编造统计数据；看板/趋势/分布/排行类问题**优先用 dashboard_stats**，不要用 order_query 硬查（order_query 只查具体订单）。
