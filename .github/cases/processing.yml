@@ -18,8 +18,9 @@ cases:
       - processing-manage.crud
       - processing-manage.category-sort
     user_inputs:
-      - "给遮光窗帘添加加工项"
-      - "选第1个和第3个"
+      - "给遮光窗帘（100元的那件）添加加工项"
+      - "选打孔加工和韩式折边"
+      - "确认"
     expectations:
       - tool: product_processing_item_manage
         args:
