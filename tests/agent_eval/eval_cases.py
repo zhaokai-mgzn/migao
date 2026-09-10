@@ -2702,7 +2702,7 @@ _CASE_PR_007 = EvalCase(
     title='商品上架（状态流转）',
     skill=Skill.PRODUCT,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['把遮光窗帘上架'],
+    user_inputs=['把遮光窗帘（100元的那件）下架', '确认', '再把它上架', '确认'],
     expectations=['product_manage(action=toggle_status, status=on_sale)'],
     data_checks=['success=true'],
     skip_reason='',

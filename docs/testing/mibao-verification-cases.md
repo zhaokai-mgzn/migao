@@ -2151,12 +2151,15 @@
 
 ### PR-007. 商品上架（状态流转） 🔵
 ```
-你: 把遮光窗帘上架
+你: 把遮光窗帘（100元的那件）下架
+你: 确认
+你: 再把它上架
+你: 确认
 期望: product_manage(action=toggle_status, status=on_sale)
 数据: success=true
 ```
 真值: product-sku-stock.status-flow
-溯源: verification 2.7 独有 ｜ tags: status, write
+溯源: verification 2.7 独有；2026-09-10 校准：评测商品均已 on_sale，「上架」无操作对象 → 改自包含状态流转（下架→上架），验证完整流转且每次从 on_sale 起跑 ｜ tags: status, write
 
 ### PR-008. 创建商品 - 完整流程 🔵
 ```
