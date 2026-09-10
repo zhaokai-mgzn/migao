@@ -1234,6 +1234,7 @@ def load_cases_from_yaml(cases_dir: str) -> list:
             want_text=c.get("want_text") or [],
             required_args=c.get("required_args") or [],
             db_verify=c.get("db_verify") or [],
+            pre_clean=c.get("pre_clean") or [],
         ))
     return cases
 

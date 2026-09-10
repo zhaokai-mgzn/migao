@@ -77,7 +77,7 @@ cases:
       - customer-list.tag-todo
     user_inputs:
       - "给张三加VIP2活跃标签"
-      - {"auto_select": true}
+      - auto_select: true
       - "确认"
     expectations:
       - tool: customer_manage
