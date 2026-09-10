@@ -574,3 +574,22 @@ order_create→order_query 验证）。
 
 **方法**：评测断言与真实数据结构对齐（深路径）+ case 适配交互卡（跳过轮），
 是「case 断言过严」类的通用解法。
+
+## 二十三、Round 39 规格 ID 语义 + CR-001 闭环（跨 Skill 复用 UUID）
+
+CR-001（查商品→下单）实拍定位三个根因：
+
+1. **「这个商品」指代歧义**：R1 查「遮光窗帘」命中 2 件 → R2「用这个商品」歧义
+   → 校准 R2 明确「遮光窗帘（100元的那件）...创建订单」触发词。
+2. **规格 ID ≠ 商品 ID**（核心，#3186）：规格卡 option value 是规格/SKU ID，
+   agent 误当商品 ID 调 product_detail → 查不到 → 流程空转。order.md 加铁律
+   「点选规格后用商品 ID + 规格字段填 order_create items，禁止用规格 ID 查商品」。
+   探针实证：agent 正确锁定「米白色·散剪 2.8米」规格。
+3. **手机号必填**（#3187）：order_create 必填 customer_phone，case 未提供 →
+   R2 补手机号。
+
+**验证**：CR-001 100%（product_search→product_detail→规格锁定→加工项跳过→
+validate_input→确认→order_create×3），跨 Skill 复用 UUID 达成。
+
+**方法**：prompt 语义铁律（ID 类型区分）+ case 触发词/必填字段补全，是
+「流程空转」类的通用解法。
