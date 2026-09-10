@@ -54,6 +54,8 @@ class InteractTool(BaseTool):
         "或需要在执行写操作前确认信息时使用。"
         "使用后对话暂停等待用户操作，不要再继续生成文本。"
         "【重要】confirm 组件的 confirmValue 必须包含上下文（如'确认创建商品'而非'确认'），以便系统正确路由后续消息。"
+        "【重要】multiSelect 场景（如建品选加工项、选多个规格/色号）必须传 multiSelect=true，"
+        "禁止省略——漏传会变成单选，用户无法连续选择/翻页（PR-014 漏传实拍）。"
         "【重要】choice 选项的 value 必须直接原样使用上游工具查询返回的记录主键 ID"
         "（customer_id / product_id / tag_id 等 UUID，或 perm_xxx / pi_xxx 前缀 ID），"
         "禁止自造代码（如 '张三_1391111'）、禁止用姓名/手机号/展示文本/序号——"
