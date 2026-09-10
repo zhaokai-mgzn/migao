@@ -54,9 +54,11 @@ class InteractTool(BaseTool):
         "或需要在执行写操作前确认信息时使用。"
         "使用后对话暂停等待用户操作，不要再继续生成文本。"
         "【重要】confirm 组件的 confirmValue 必须包含上下文（如'确认创建商品'而非'确认'），以便系统正确路由后续消息。"
-        "【重要】choice 选项的 value 必须是稳定唯一标识（记录 ID / UUID，如 customer_id / product_id / tag_id），"
-        "禁止用展示文本、姓名、手机号或序号——用户点击后系统用该 value 作为下一轮输入路由，"
-        "文本类 value 会使下一轮无法定位目标导致流程空转。展示内容放 label，不要把 value 当 label 用。"
+        "【重要】choice 选项的 value 必须直接原样使用上游工具查询返回的记录主键 ID"
+        "（customer_id / product_id / tag_id 等 UUID，或 perm_xxx / pi_xxx 前缀 ID），"
+        "禁止自造代码（如 '张三_1391111'）、禁止用姓名/手机号/展示文本/序号——"
+        "用户点击后系统把该 value 作为下一轮输入路由，必须是可被 detail/update/add_tag"
+        "直接解析的真实 ID。展示内容放 label。value 拿不到真实 ID 时不得臆造，应回查上游工具。"
     )
 
     # 所有角色可用
