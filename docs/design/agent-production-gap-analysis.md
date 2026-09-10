@@ -978,3 +978,16 @@ FormCard 提交协议 = `__FORM__|{json}`（前端 line 98）。
 
 **方法**：交互卡回填基建完备（choice auto_select + form auto_fill），
 「引导流程交互卡」类的评测适配全部可解。OR-014 归因闭环。
+
+## 四十八、Round 64 schedule reconcile 补代码改动检查（502 窗口彻底根治）
+
+#3235 只对 PR 事件加 path 过滤；schedule 兜底（每 20 分钟）仍全量对账 →
+main HEAD 镜像缺失就 dispatch 部署（纯文档提交也触发）→ 502 窗口（Round 64
+复测实证：18:01 schedule 触发部署打断评测）。
+
+**修复**（#3241）：schedule/workflow_dispatch 事件时，git log 检查 main HEAD
+最近 10 个提交是否含代码路径改动（backend/admin-api、backend/ai-agent-service、
+frontend、apps、packages）——无则跳过部署对账。
+
+**预期**：纯文档/测试/case 提交（无论 PR 还是 schedule）都不再触发部署 →
+502 窗口彻底消除，全量评测可稳定完整跑完。
