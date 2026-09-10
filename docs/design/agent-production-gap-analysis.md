@@ -962,3 +962,19 @@ auto_select 的缺失，但 form 卡需要按字段回填）。
 **待办**：评测 runner 支持 form 卡自动回填（case 声明 form 字段值，agent 发
 form 卡时自动填表提交）——与 auto_select 同级的评测基建改造。
 >>>>>>> 95c76e6c (docs(design): 差距分析补第四十六节——OR-014 完整归因（form 卡回填缺口）)
+
+## 四十七、Round 63 form 卡自动回填（OR-014 闭环）
+
+OR-014 归因的评测基建缺口落地（#3239）：form 卡（客户信息）文本无法驱动——
+FormCard 提交协议 = `__FORM__|{json}`（前端 line 98）。
+
+- `_auto_fill_form` helper：检测 form 卡，用 case 声明的字段值构造回传
+- `run_case` 支持 `{"auto_fill": {...}}` 标记（类似 auto_select）
+- OR-014 校准：商品用文本「选有打孔的那件」（auto_select 只选第一个会与
+  「要打孔」冲突）+ auto_fill 客户信息 + 确认轮
+
+**验证**：OR-014 100%——查加工项归属 → 选有打孔商品 → 规格 → validate_input
+→ 确认 → order_create（加工项数量规则 per_meter → 数量=米数）。
+
+**方法**：交互卡回填基建完备（choice auto_select + form auto_fill），
+「引导流程交互卡」类的评测适配全部可解。OR-014 归因闭环。
