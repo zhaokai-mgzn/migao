@@ -465,3 +465,20 @@ load_cases_from_yaml 直读），且 inline dict 语法受 yaml_light 解析器�
 ### 待办
 - customer.md 同样薄（21 行），CU-003 场景（打标签/重名澄清流程）值得同款补齐
 - data/settings 域 prompt 同理
+
+## 十七、Round 33 customer 领域 prompt 补齐（CU-003 稳定 100%）
+
+staff 补齐（#3166）验证有效后，同款处理 customer：
+
+- **#3169 customer.md（21→46 行）**：打标签 6 步流程（查客户 → 重名 choice 卡
+  （value 必须真实 customer_id，防自造代码）→ 查标签 → **幂等保护**（已有标签
+  不盲目重复 add_tag）→ validate_input → confirm 卡 → add_tag）+ 更新客户流程
+  + 领域规则（真实 UUID、隐私、写操作确认链）+ EXAMPLES 补打标签/幂等示例。
+
+**验证**（探针 + 评测）：
+- R1 查客户 → choice 卡（value=customer_id 稳定）→ R2 detail+validate_input+confirm
+  卡 → R3 add_tag 落库
+- 评测 100% 通过（此前依赖 choice 卡 + pre_clean + interact 引导多基建兜底）
+
+**方法论**：领域 prompt 补齐 = agent 上限提升的通用杠杆——product（53 行）/staff
+（40 行）/customer（46 行）补齐后，对应域评测稳定通过，减少对基建补丁依赖。
