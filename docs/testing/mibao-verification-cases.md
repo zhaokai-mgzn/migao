@@ -2083,6 +2083,8 @@
 ```
 你: 查询打孔加工的计价方式
 你: 新增加工项，计价方式选按个
+你: 名称叫测试加工，分类选打孔加工
+你: 确认
 期望: processing_item_query(keyword=打孔)
 期望: processing_item_manage(action=create_item)
 数据: processing_item_query 响应条目无 per_meter_quantity（每米数量已回滚移除，issue #3005）
