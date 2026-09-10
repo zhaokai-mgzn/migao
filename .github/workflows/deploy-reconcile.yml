@@ -79,6 +79,23 @@ jobs:
             echo "SKIP_RECONCILE=0" >> "$GITHUB_ENV"
           fi
 
+      - name: Schedule code-change check (schedule/dispatch 兜底也做 path 过滤)
+        if: github.event_name != 'pull_request'
+        shell: bash
+        run: |
+          set -euo pipefail
+          # 检查 main HEAD 最近 10 个提交是否含代码路径改动——纯 docs/tests/cases
+          # 提交不触发部署（防 502 窗口，Round 64 补全 schedule 兜底）
+          CODE_CHANGED=0
+          if git log --oneline -10 --name-only origin/main 2>/dev/null | grep -qE "^(backend/admin-api|backend/ai-agent-service|frontend|apps|packages)/"; then
+            CODE_CHANGED=1
+          fi
+          echo "🔍 schedule 检查：最近提交含代码改动=$CODE_CHANGED"
+          if [ "$CODE_CHANGED" -eq 0 ]; then
+            echo "✅ 最近提交无代码改动——跳过部署对账（防 502 窗口）"
+            echo "SKIP_RECONCILE=1" >> "$GITHUB_ENV"
+          fi
+
       - name: Reconcile deploys
         if: env.SKIP_RECONCILE != '1'
         env:
