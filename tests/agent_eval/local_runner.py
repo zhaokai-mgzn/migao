@@ -121,6 +121,18 @@ async def restore_product(token: str, product_id: str):
                          headers=h, json={"price": price})
 
 
+async def _end_session(token: str, session_id: str) -> None:
+    """评测会话清理（协议 §2.2）：case 结束后 end 会话，防 waiting 残留（
+    实测 8 个评测残留会话未关闭）。失败静默（会话可被人工/超时兜底）。"""
+    try:
+        async with httpx.AsyncClient() as c:
+            h = _admin_headers(token)
+            await c.post(f"{ADMIN_API}/api/admin/agent-sessions/{session_id}/end",
+                         headers=h, timeout=10)
+    except Exception:
+        pass
+
+
 async def _run_pre_clean(token: str, spec: dict) -> str:
     """评测前数据清理（写类 case 自我污染防线，§14.2/CU-003）。
 
@@ -1157,6 +1169,8 @@ async def run_suite(cases, label: str, classify: bool = True):
             # 并按指纹分类（issue #2890）：噪声放行 + 记台账；复现型/不稳定型显式标注，
             # 禁止 rerun 掩盖确定性回归。
             classification = "pass"
+            # 评测会话清理（协议 §2.2）：case 结束后 end 会话，防 waiting 残留
+            await _end_session(token, session_id)
             if r["score"] < 1.0 and classify:
                 retry_sid = await get_or_create_session(token, prefer_new=True)
                 r2 = await run_case(case, token, retry_sid)
