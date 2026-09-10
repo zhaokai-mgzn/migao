@@ -501,3 +501,20 @@ staff 补齐（#3166）验证有效后，同款处理 customer：
 - 评测：**DA-002 100% 通过**（修复前失败）
 - 部署教训：merge 后部署可能滞后一个 commit（reconcile 时序），验证前须确认
   headSha 匹配预期 commit（本次手动补触发 #3172 部署）
+
+## 十九、Round 35 关键 case 快照回归 + PR-014 闭环
+
+对剩余失败 case 做快照回归，定位并闭环 PR-014：
+
+1. **CU-004 ✅ 100%**：更新客户资料，走 validate_input + interact 确认链。
+2. **PR-014 闭环**（两个层面）：
+   - #3174 interact description 加 multiSelect 铁律（建品选加工项必须 multiSelect=true，
+     漏传会变单选）——探针验证加工项卡 multiSelect=True 生效；
+   - #3175 case 校准：分类选择升级 choice 卡后固定文本无法驱动 → user_inputs 加
+     auto_select（点分类卡第一个选项）+ 补加工项确认轮。
+   - 评测 100%（重试后）：category → auto_select 分类 → processing_item_query 多选
+     → validate_input → product_manage(create) → product_search 验证落库。
+3. **PR-015/016 快照受网络波动干扰**（登录 502/连接失败），待稳定后复测。
+
+**结论**：剩余失败从「agent 代码/流程缺口」转向「case 交互卡适配 + 网络波动」，
+agent 能力下限的确定性修复基本收敛。
