@@ -382,3 +382,71 @@ class TestValidateInputCategoryManage:
         )
         assert result.success is False
         assert "分类 ID" in result.message or "category_id" in result.message.lower()
+
+
+class TestValidateInputWriteToolAudit:
+    """Round 45 审计：7 个 WRITE 工具补规则后，写操作可正常校验（此前「未知工具」→ agent 拒绝执行）。"""
+
+    async def test_finance_create_transaction(self, tool, admin_tool_context):
+        result = await tool.execute(
+            context=admin_tool_context, target_tool="finance_api",
+            target_action="create_transaction", params={"type": "income", "amount": 100},
+        )
+        assert result.success is True
+
+    async def test_finance_missing_amount(self, tool, admin_tool_context):
+        result = await tool.execute(
+            context=admin_tool_context, target_tool="finance_api",
+            target_action="create_transaction", params={"type": "income"},
+        )
+        assert result.success is False
+
+    async def test_notification_mark_read(self, tool, admin_tool_context):
+        result = await tool.execute(
+            context=admin_tool_context, target_tool="notification_manage",
+            target_action="mark_read", params={"notification_id": "n1"},
+        )
+        assert result.success is True
+
+    async def test_processing_item_create(self, tool, admin_tool_context):
+        result = await tool.execute(
+            context=admin_tool_context, target_tool="processing_item_manage",
+            target_action="create_item", params={"name": "刺绣", "category_id": "cat_1"},
+        )
+        assert result.success is True
+
+    async def test_session_assign(self, tool, admin_tool_context):
+        result = await tool.execute(
+            context=admin_tool_context, target_tool="session_manage",
+            target_action="assign", params={"session_id": "s1", "employee_id": "e1"},
+        )
+        assert result.success is True
+
+    async def test_session_end_missing_id(self, tool, admin_tool_context):
+        result = await tool.execute(
+            context=admin_tool_context, target_tool="session_manage",
+            target_action="end", params={"reason": "下班"},
+        )
+        assert result.success is False
+
+    async def test_settings_change_password(self, tool, admin_tool_context):
+        result = await tool.execute(
+            context=admin_tool_context, target_tool="settings_manage",
+            target_action="change_password",
+            params={"old_password": "old", "new_password": "new123"},
+        )
+        assert result.success is True
+
+    async def test_product_update_has_id(self, tool, admin_tool_context):
+        result = await tool.execute(
+            context=admin_tool_context, target_tool="product_update",
+            target_action="update", params={"product_id": "p1", "name": "新名"},
+        )
+        assert result.success is True
+
+    async def test_sku_update_has_id(self, tool, admin_tool_context):
+        result = await tool.execute(
+            context=admin_tool_context, target_tool="sku_update",
+            target_action="update", params={"product_id": "p1", "price": 99},
+        )
+        assert result.success is True

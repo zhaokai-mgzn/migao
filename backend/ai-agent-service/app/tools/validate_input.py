@@ -127,6 +127,85 @@ _VALIDATION_RULES: Dict[str, Dict[str, Any]] = {
     # HR-005 回归防线：role_manage 写操作此前无规则 → validate_input 返回「未知工具」，
     # LLM 据此退化到文本预览确认（不走 interact confirm 卡），角色创建流程不稳定。
     # 补规则让角色创建/更新/删除走标准校验+确认链（对齐 role_manage.py 硬必填）。
+    # Round 45 WRITE 工具覆盖审计：finance_api/notification_manage/
+    # processing_item_manage/product_update/session_manage/settings_manage/
+    # sku_update 写操作此前无规则 → validate_input 返回「未知工具」→ agent 按
+    # 安全规则拒绝执行。补规则让所有写工具走标准校验+确认链。
+    "finance_api": {
+        "create_transaction": {
+            "required": ["type", "amount"],
+            "type": {"type": str, "label": "收支类型(income/refund)", "enum": ["income", "refund"]},
+            "amount": {"type": (int, float), "min": 0, "label": "金额"},
+        },
+    },
+    "notification_manage": {
+        "mark_read": {
+            "required": ["notification_id"],
+            "notification_id": {"type": str, "min_len": 1, "label": "通知 ID"},
+        },
+        "delete": {
+            "required": ["notification_id"],
+            "notification_id": {"type": str, "min_len": 1, "label": "通知 ID"},
+        },
+        "create": {
+            "required": ["title", "content"],
+            "title": {"type": str, "min_len": 1, "label": "通知标题"},
+            "content": {"type": str, "min_len": 1, "label": "通知内容"},
+        },
+    },
+    "processing_item_manage": {
+        "create_item": {
+            "required": ["name", "category_id"],
+            "name": {"type": str, "min_len": 1, "label": "加工项名称"},
+            "category_id": {"type": str, "min_len": 1, "label": "分类 ID"},
+        },
+        "update_item": {
+            "required": ["item_id"],
+            "item_id": {"type": str, "min_len": 1, "label": "加工项 ID"},
+        },
+        "delete": {
+            "required": ["item_id"],
+            "item_id": {"type": str, "min_len": 1, "label": "加工项 ID"},
+        },
+    },
+    "product_update": {
+        "update": {
+            "required": ["product_id"],
+            "product_id": {"type": str, "min_len": 1, "label": "商品 ID"},
+        },
+    },
+    "session_manage": {
+        "assign": {
+            "required": ["session_id", "employee_id"],
+            "session_id": {"type": str, "min_len": 1, "label": "会话 ID"},
+            "employee_id": {"type": str, "min_len": 1, "label": "客服 ID"},
+        },
+        "end": {
+            "required": ["session_id"],
+            "session_id": {"type": str, "min_len": 1, "label": "会话 ID"},
+        },
+    },
+    "settings_manage": {
+        "change_password": {
+            "required": ["old_password", "new_password"],
+            "old_password": {"type": str, "min_len": 1, "label": "旧密码"},
+            "new_password": {"type": str, "min_len": 1, "label": "新密码"},
+        },
+        "update_settings": {
+            "required": ["data"],
+            "data": {"type": dict, "label": "配置更新数据"},
+        },
+        "update_ai_config": {
+            "required": ["data"],
+            "data": {"type": dict, "label": "AI 配置更新数据"},
+        },
+    },
+    "sku_update": {
+        "update": {
+            "required": ["product_id"],
+            "product_id": {"type": str, "min_len": 1, "label": "商品 ID"},
+        },
+    },
     # CT-002 回归防线：category_manage 写操作此前无规则 → validate_input 返回
     # 「未知工具」→ agent 按安全规则拒绝创建（PROMPT-rules：校验失败禁止执行写工具）。
     # 补规则让分类创建/更新/删除走标准校验+确认链（对齐 category_manage.py 契约：
