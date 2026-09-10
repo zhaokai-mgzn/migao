@@ -353,10 +353,12 @@ cases:
       - "我要创建一个新商品"
       - "名称叫夏日清风窗帘，价格 168"
       - "分类选窗帘"
+      - auto_select: true
       - "颜色有米白和浅灰"
       - "货号用 SUMMER-BREEZE"
       - "需要打孔和韩式折边这两个加工项"
       - "确认创建，没问题"
+      - "确认"
     expectations:
       - tool: interact
         args:

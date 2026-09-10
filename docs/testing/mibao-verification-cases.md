@@ -2212,10 +2212,12 @@
 你: 我要创建一个新商品
 你: 名称叫夏日清风窗帘，价格 168
 你: 分类选窗帘
+你: [📷 纯图片 x0]
 你: 颜色有米白和浅灰
 你: 货号用 SUMMER-BREEZE
 你: 需要打孔和韩式折边这两个加工项
 你: 确认创建，没问题
+你: 确认
 期望: interact(component=choice)
 期望: processing_item_query
 期望: validate_input
