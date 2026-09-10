@@ -624,3 +624,22 @@ order_query 验证。
 
 **方法**：单轮输入的"完整流程"case 必须补必填字段（电话/地址）与交互卡点选
 轮，是「输入信息不全 + 引导轮次不足」类的通用解法。
+
+## 二十六、Round 42 FN-004 闭环（收支路由 + 参数名对齐）
+
+FN-004 实拍定位三个根因：
+
+1. **路由错误**（#3194）：「本期收入退款」的「退款」命中 AFTER_SALES（FINANCE
+   关键词只有「收入支出」整词）→ agent 用 order_query + after_sales_manage 拆查
+   收支。rule_matcher FINANCE 补「收入/本期收入/收入退款」+ data.md 强化
+   finance_api 优先。
+2. **部署滞后**：merge 后自动部署构建旧 commit（b7226f06 不含 #3194）→ 手动补
+   触发（headSha 确认法）。
+3. **参数名 camelCase vs snake_case**（#3195）：finance_api schema 是
+   start_date/end_date（snake_case），case 期望写成 startDate/endDate →
+   key 不匹配恒失败。改为 snake_case 对齐。
+
+**验证**：FN-004 100%——finance_api(get_summary, start_date, end_date) 命中。
+
+**方法**：case 期望的参数名必须对齐工具 schema（camel/snake_case 一致），
+是「断言与真实 schema 脱节」类的通用解法。
