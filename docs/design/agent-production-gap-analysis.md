@@ -883,3 +883,17 @@ AS-003/004 原用测试号（ORD/AS-20260701-0001，生产不存在）→ agent 
 - 评测 100%：product_search → auto_select → 确认卡 → product_update
 
 剩余：PR-019（图片建品，卡分类阶段）、HR-003（波动）、OR-014/PP-006（模型边界）。
+
+## 四十二、Round 58 PR-019 闭环（图片建品分类卡 auto_select）
+
+PR-019（图片建品规格/加工项价格落库）实拍：agent 在分类阶段反复（分类卡
+文本无法驱动，同 PR-014/016 模式）。
+
+**校准**（#3232）：加 auto_select 点分类卡。
+
+**验证**：PR-019 100%——category_manage → interact 分类卡 → auto_select →
+validate_input → 确认卡 → product_manage(create 带 specifications/
+processing_item_configs 价格) → product_search 验证。
+
+**方法**：图片建品与文本建品共用分类卡交互——auto_select 适配是通用解法。
+至此建品链路（PR-011/014/015/016/017/019）全部 100%。
