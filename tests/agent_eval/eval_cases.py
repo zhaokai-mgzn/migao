@@ -2762,7 +2762,7 @@ _CASE_PR_011 = EvalCase(
     title='创建商品完整引导流程 - AI 主导收集信息',
     skill=Skill.PRODUCT,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['我要创建一个新商品', '名称叫夏日清风窗帘，价格 168', '分类选窗帘', '颜色有米白和浅灰', '货号用 SUMMER-BREEZE', '需要打孔和韩式折边这两个加工项', '确认创建，没问题'],
+    user_inputs=['我要创建一个新商品', '名称叫夏日清风窗帘，价格 168', '分类选窗帘', {'auto_select': True}, '颜色有米白和浅灰', '货号用 SUMMER-BREEZE', '需要打孔和韩式折边这两个加工项', '确认创建，没问题', '确认'],
     expectations=['interact(component=choice)', 'processing_item_query', 'validate_input', 'product_manage(action=create)'],
     data_checks=['最终创建成功，返回 product_id', '创建的加工项数量 = 2', '全程 AI 主动引导，不等待用户逐项输入'],
     skip_reason='',
