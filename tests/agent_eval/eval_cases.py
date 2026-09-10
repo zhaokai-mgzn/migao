@@ -2768,6 +2768,7 @@ _CASE_PR_011 = EvalCase(
     skip_reason='',
     tags=['multi_turn', 'guided_flow', 'full_create', 'processing_item'],
     persona='',
+    pre_clean=[{'type': 'product_remove', 'product_keyword': '测试窗帘'}],
 )
 
 # ── PR-012 [NORMAL] 商品创建中途修改 - 用户纠偏（源: cases/product.yml）──
@@ -2813,6 +2814,7 @@ _CASE_PR_014 = EvalCase(
     skip_reason='',
     tags=['multi_turn', 'guided_flow', 'processing_item', 'multi_select'],
     persona='',
+    pre_clean=[{'type': 'product_remove', 'product_keyword': '测试窗帘'}],
 )
 
 # ── PR-015 [NORMAL] 加工项多选翻页 - 翻页后继续选择并一次性提交（源: cases/product.yml）──
@@ -2828,6 +2830,7 @@ _CASE_PR_015 = EvalCase(
     skip_reason='',
     tags=['multi_turn', 'processing_item', 'pagination', 'multi_select'],
     persona='',
+    pre_clean=[{'type': 'product_remove', 'product_keyword': '测试窗帘'}],
 )
 
 # ── PR-016 [NORMAL] 建品流程 - 分类确认后按适用商品分类过滤/优先推荐加工项（源: cases/product.yml）──

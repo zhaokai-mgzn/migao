@@ -606,3 +606,27 @@ class TestRequiredArgsDeepPath:
         }])
         assert len(issues) == 1
         assert "doorWidth" in issues[0]
+
+
+class TestPreCleanProductRemove:
+    """_run_pre_clean product_remove：建品残留商品清理（下架→删除，防全量重名）"""
+
+    def test_product_remove_unknown_type_skips(self):
+        import asyncio, unittest.mock as mock
+        async def run():
+            return await lr._run_pre_clean("tok", {"type": "bogus"})
+        assert asyncio.run(run()) == "未知 pre_clean 类型: bogus（跳过）"
+
+    def test_product_remove_no_items(self):
+        import asyncio, unittest.mock as mock
+        class FakeResp:
+            status_code = 200
+            content = b'{"success":true,"data":{"items":[]}}'
+            def json(self): return {"success": True, "data": {"items": []}}
+        async def fake_get(url, headers=None, params=None, timeout=None):
+            return FakeResp()
+        async def run():
+            with mock.patch.object(lr.httpx, "AsyncClient") as m_cls:
+                m_cls.return_value.__aenter__.return_value.get = fake_get
+                return await lr._run_pre_clean("tok", {"type": "product_remove", "product_keyword": "测试窗帘"})
+        assert asyncio.run(run()) == "无「测试窗帘」商品需清理"

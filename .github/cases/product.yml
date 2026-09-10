@@ -372,6 +372,9 @@ cases:
       - "最终创建成功，返回 product_id"
       - "创建的加工项数量 = 2"
       - "全程 AI 主动引导，不等待用户逐项输入"
+    pre_clean:
+      - type: product_remove
+        product_keyword: "测试窗帘"
     skip_reason: ""
     merge_log: "eval M002 吸收 verification 8.3（缺信息补全 = validate_input 引导）"
     traces:
@@ -488,6 +491,9 @@ cases:
       - "「已选加工项：打孔加工、韩式折边」被解析为 2 个加工项（不只取第一个）"
       - "未在用户提交完整列表后再次询问加工项"
       - "最终创建成功且关联加工项数量 = 2"
+    pre_clean:
+      - type: product_remove
+        product_keyword: "测试窗帘"
     skip_reason: ""
     merge_log: "2026-09-05 交互验证机制行为层新增（issue #2896 复盘）：前端 choice 多选「完成选择」按钮一次性提交『已选加工项：A、B』格式，需真实 LLM 验证解析全部名称 + 不二次询问。2026-09-10 校准：分类选择升级为 choice 卡（文本无法驱动）→ 加 auto_select 自动点分类卡第一个选项（#3160）+ 补加工项确认轮"
     traces:
@@ -532,6 +538,9 @@ cases:
       - "翻页（__PAGE__ 协议）后加工项选择仍可继续（multiSelect 不丢）"
       - "翻页后勾选累积一次性提交被正确解析"
       - "最终创建成功"
+    pre_clean:
+      - type: product_remove
+        product_keyword: "测试窗帘"
     skip_reason: ""
     merge_log: "2026-09-05 交互验证机制行为层新增（issue #2896 复盘）：翻页后 multiSelect/pagination 契约保持"
     traces:
