@@ -29,6 +29,7 @@ tools: dashboard_stats, session_manage, interact
 | 应收对账 | finance_api(action=get_reconciliation) |
 | 登记收支 | finance_api(action=create_transaction) |
 
+- **收支/收入/退款/对账 汇总必须用 finance_api(get_summary)**，不要拆解成 order_query（查订单）+ after_sales_manage（查售后）——收支汇总是一个聚合接口，四项（收入/退款/净收入/待收款）一次取回（FN-004 实拍：agent 拆查订单+售后导致结果不符）。
 - **时间范围必带**：「本期/这个月/本月」默认 = **本月1号~今天**（startDate=本月1号,
   endDate=今天），get_summary/get_transactions/get_reconciliation **必须携带
   startDate+endDate**，禁止不传时间范围空查（FN-004 实拍）。
