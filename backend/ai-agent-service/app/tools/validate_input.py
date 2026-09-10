@@ -127,6 +127,25 @@ _VALIDATION_RULES: Dict[str, Dict[str, Any]] = {
     # HR-005 回归防线：role_manage 写操作此前无规则 → validate_input 返回「未知工具」，
     # LLM 据此退化到文本预览确认（不走 interact confirm 卡），角色创建流程不稳定。
     # 补规则让角色创建/更新/删除走标准校验+确认链（对齐 role_manage.py 硬必填）。
+    # CT-002 回归防线：category_manage 写操作此前无规则 → validate_input 返回
+    # 「未知工具」→ agent 按安全规则拒绝创建（PROMPT-rules：校验失败禁止执行写工具）。
+    # 补规则让分类创建/更新/删除走标准校验+确认链（对齐 category_manage.py 契约：
+    # create 只需 name，无需父分类；update/delete 需 category_id）。
+    "category_manage": {
+        "create": {
+            "required": ["name"],
+            "name": {"type": str, "min_len": 1, "label": "分类名称"},
+        },
+        "update": {
+            "required": ["category_id", "name"],
+            "category_id": {"type": str, "min_len": 1, "label": "分类 ID"},
+            "name": {"type": str, "min_len": 1, "label": "分类名称"},
+        },
+        "delete": {
+            "required": ["category_id"],
+            "category_id": {"type": str, "min_len": 1, "label": "分类 ID"},
+        },
+    },
     "role_manage": {
         "create": {
             "required": ["name", "code"],
