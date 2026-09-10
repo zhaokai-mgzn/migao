@@ -196,7 +196,10 @@ cases:
     truths_ref:
       - product-sku-stock.status-flow
     user_inputs:
-      - "把遮光窗帘上架"
+      - "把遮光窗帘（100元的那件）下架"
+      - "确认"
+      - "再把它上架"
+      - "确认"
     expectations:
       - tool: product_manage
         args:
@@ -205,7 +208,7 @@ cases:
     data_checks:
       - "success=true"
     skip_reason: ""
-    merge_log: "verification 2.7 独有"
+    merge_log: "verification 2.7 独有；2026-09-10 校准：评测商品均已 on_sale，「上架」无操作对象 → 改自包含状态流转（下架→上架），验证完整流转且每次从 on_sale 起跑"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_product_search.py"
