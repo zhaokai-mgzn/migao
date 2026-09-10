@@ -259,3 +259,20 @@ class TestFinanceRouting:
         """单纯「退款」仍走售后（不误伤）。"""
         result = self._match("我要退款")
         assert result.intent == IntentType.AFTER_SALES
+
+
+class TestProcessingManageRouting:
+    """PP-006 回归：「新增加工项」必须路由 PROCESSING_MANAGE（此前「加工项」
+    被 PRODUCT_INQUIRY 抢 → agent 误宣「不在商品管理能力范围」）"""
+
+    def _match(self, message):
+        return RuleMatcher().match(message)
+
+    def test_create_item_routes_processing(self):
+        result = self._match("新增加工项，计价方式选按个")
+        assert result.intent == IntentType.PROCESSING_MANAGE
+
+    def test_processing_inquiry_stays_product(self):
+        """「查加工项」仍走商品查询（不误伤）。"""
+        result = self._match("查一下这个商品的加工项")
+        assert result.intent == IntentType.PRODUCT_INQUIRY
