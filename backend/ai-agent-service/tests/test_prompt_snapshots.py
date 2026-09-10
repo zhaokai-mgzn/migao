@@ -222,8 +222,8 @@ def test_snapshot_all_skills():
         "aftersales": 6700,  # +700: 禁英文枚举全局规则 + 售后工单枚举中文对照 + 退货库存规则（issue #2991）+ 900: 换货目标商品加工项确认（issue #3033，达 6269）+ 共享规则确认卡片铁律（issue #3045，达 6566）
         "customer": 8500,  # +3500: 领域 prompt 补齐打标签流程（CU-003 场景）+ EXAMPLES 补标签示例（Round 33）
         "staff": 8000,    # +3100: 领域 prompt 补齐创建角色流程（HR-005 场景）+ EXAMPLES 补角色创建示例（Round 32）
-        "settings": 4900, # +400: 禁英文枚举全局规则（共享原则增长）
-        "data": 4800,     # +300: 共享规则确认卡片铁律（issue #3045，达 4673）
+        "settings": 6500, # +1600: 领域 prompt 补齐配置/通知流程（Round 34）
+        "data": 6500,     # +1700: 领域 prompt 补齐看板/会话流程（Round 34）
         "general": 5800,  # +600: Phase 2 (#2789) 澄清卡引导（choice 候选示例）达 5465
     }
     for skill, max_len in expected_max.items():
