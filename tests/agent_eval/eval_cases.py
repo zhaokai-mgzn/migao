@@ -2672,7 +2672,7 @@ _CASE_PR_005 = EvalCase(
     title='调整库存 - 出库',
     skill=Skill.PRODUCT,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['遮光窗帘出库10件，备注样品寄出'],
+    user_inputs=['遮光窗帘（100元的那件）出库10件，备注样品寄出', '确认'],
     expectations=['inventory_manage(action=adjust)'],
     data_checks=['返回新库存数量'],
     skip_reason='',

@@ -139,7 +139,8 @@ cases:
     truths_ref:
       - product-sku-stock.realtime
     user_inputs:
-      - "遮光窗帘出库10件，备注样品寄出"
+      - "遮光窗帘（100元的那件）出库10件，备注样品寄出"
+      - "确认"
     expectations:
       - tool: inventory_manage
         args:
