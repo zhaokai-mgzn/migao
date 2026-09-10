@@ -518,3 +518,20 @@ staff 补齐（#3166）验证有效后，同款处理 customer：
 
 **结论**：剩余失败从「agent 代码/流程缺口」转向「case 交互卡适配 + 网络波动」，
 agent 能力下限的确定性修复基本收敛。
+
+## 二十、Round 36 PR-015/016 闭环 + 剩余 case 快照
+
+建品引导流程三兄弟（PR-014/015/016）全部闭环：
+
+- **#3177 PR-015/016 校准**：分类卡 auto_select（同 PR-014 根因）+ PR-016 用
+  required_args 断言 `processing_item_query` 必须带 `applicable_category_id`
+  （替代 case 假设的固定 ID cat_curtain，真实分类 ID 是 UUID）。
+  评测均 100%（重试后 llm-noise 放行）。
+
+**剩余 case 快照**：
+- PP-003/PP-004 ✅ 100%（加工项名称/序号解析 UUID——此前失败，现通过）
+- OR-015 网络波动（非 case 问题）
+- CH-010/019 为 **xiaobu（C 端）专属** persona，mibao 评测不覆盖
+
+**结论**：mibao（B 端）核心失败 case 基本闭环——HR-005/CU-003/CU-004/DA-002/
+PR-014/015/016/PP-003/004 均 100%。剩余以网络波动 + xiaobu 端 case 为主。
