@@ -914,3 +914,19 @@ OR-014（下单加工项数量规则）实拍：**两件 100 元「遮光窗帘�
 
 **结论**：确定性缺口已全部收敛；剩余为 case 数据脱节 + 模型边界 + LLM 波动。
 >>>>>>> d7e7ea9c (docs(design): 差距分析补第四十三节——OR-014 归因 + 剩余失败全景)
+
+## 四十四、Round 60 评测稳定性根治（deploy-reconcile path 过滤）
+
+全量复测第 3 次被 502 中断（只跑 19 case）——复盘 P2 的部署窗口问题反复打断
+生产评测。**根治**（#3235）：
+
+- deploy-reconcile 对 PR opened/reopened 事件加 path 过滤：仅代码路径
+  （backend/admin-api、backend/ai-agent-service、frontend、apps、packages）
+  触发对应部署对账；纯 docs/tests/.github/cases 跳过
+- schedule/workflow_dispatch 仍全量对账（兜底）
+
+**预期**：文档/评测 case PR 不再触发部署 → 502 窗口显著减少 → 全量评测可完整
+跑完。此改动本身（.github/workflows）不在代码路径 → 自举验证（不触发部署）。
+
+**结论**：评测稳定性（部署窗口）从触发源根治，是「每次 PR 全量部署 → 评测
+中断」系统性问题的最终解法（复盘 P2 落地）。
