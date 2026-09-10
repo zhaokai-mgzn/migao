@@ -99,7 +99,7 @@ _CASE_AS_004 = EvalCase(
     title='更新工单状态 - 关闭',
     skill=Skill.AFTERSALES,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['AS-20260701-0001 工单已处理完，关闭'],
+    user_inputs=['AS-20260909-0001 工单已处理完，关闭', '确认'],
     expectations=['after_sales_manage(action=update_status, status=closed)'],
     data_checks=['success=true', 'closedAt/closeReason 写入'],
     skip_reason='',

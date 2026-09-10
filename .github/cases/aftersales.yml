@@ -115,7 +115,8 @@ cases:
       - aftersales-flow.flow
       - aftersales-flow.update-guard
     user_inputs:
-      - "AS-20260701-0001 工单已处理完，关闭"
+      - "AS-20260909-0001 工单已处理完，关闭"
+      - "确认"
     expectations:
       - tool: after_sales_manage
         args:
