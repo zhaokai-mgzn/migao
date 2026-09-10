@@ -2505,7 +2505,7 @@ _CASE_OR_016 = EvalCase(
     title='创建订单 confirm 前必须主动询问加工项（商品绑定加工项时）',
     skill=Skill.ORDER,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['给赵凯创建一个订单，2699系列雪尼尔窗帘面料，10米，散剪2.8米门幅，2699-03暖米色'],
+    user_inputs=['给赵凯创建一个订单，2699系列雪尼尔窗帘面料，10米，散剪2.8米门幅，2699-03暖米色，手机13800138000', '不需要加工项', '确认下单', '确认'],
     expectations=['product_detail', 'interact(component=choice, multiSelect=True)', 'order_create'],
     data_checks=['product_detail 返回 processing_items 非空时，生成订单确认卡之前必须主动询问加工项（interact(choice, multiSelect=true) 展示，透传 pageMeta 支持翻页；空则如实告知后继续）', '用户选择加工项后，order_create 的 processing_info.processingItems 含 {id, name, unitPrice, quantity, unit, pricingMethod, subtotal}，processingFee 计入 subtotal（金额=面料小计+加工费）', '一次性提交『已选加工项：A、B』→ 解析全部名称，禁止只取第一个；用户说『不需要加工项』才跳过'],
     skip_reason='',
