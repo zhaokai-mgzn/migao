@@ -664,3 +664,20 @@ agent 查不到合理不执行（不能关闭不存在的工单）→ reproducib
 存量数据（查列表→选第一张），需配套「写类 case 评测前数据准备」。
 
 **结论**：售后域 agent 能力达标，剩余是评测数据与存量数据脱节的治理问题。
+
+## 二十八、Round 44 CT-002 闭环（validate_input 补 category_manage 规则）
+
+CT-002（创建分类）实拍：validate_input 对 category_manage 无规则 → 返回
+「未知工具」→ agent 按安全规则（校验失败禁止执行写工具）**拒绝创建** → 恒失败。
+与 HR-005（role_manage）完全同款缺口——证明「validate_input 规则不全 → agent
+拒绝执行」是系统性模式。
+
+**修复**（#3199）：_VALIDATION_RULES 补 category_manage（create 需 name，无需
+父分类 #3138 已移除 parent_id / update 需 category_id+name / delete 需
+category_id）+ 3 单测。
+
+**验证**：CT-002 100%（validate_input → interact 确认卡 → category_manage create）。
+
+**系统性结论**：validate_input 规则覆盖度 = agent 写操作可用性边界——已修
+role_manage（#3157）、category_manage（#3199）；建议对全部 WRITE 工具做规则
+覆盖审计（后续待办）。
