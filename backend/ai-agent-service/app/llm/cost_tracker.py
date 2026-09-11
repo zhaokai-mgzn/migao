@@ -27,11 +27,11 @@ logger = logging.getLogger(__name__)
 # 模型名统一使用 settings 常量，下线模型只需改 config.py
 from app.config import settings
 MODEL_PRICING: dict[str, dict[str, float]] = {
-    settings.LLM_MODEL_FAST:    {"input": 1.00, "output": 4.00},       # deepseek-v4-flash
-    settings.LLM_MODEL_PRIMARY: {"input": 1.00, "output": 4.00},       # deepseek-v4-flash
+    settings.LLM_MODEL_FAST:    {"input": 1.00, "output": 4.00},       # deepseek-flash（V4.1-Flash）
+    settings.LLM_MODEL_PRIMARY: {"input": 1.00, "output": 4.00},       # deepseek-flash（V4.1-Flash）
     # 视觉模型与主模型同价，但**必须显式登记**：缺失时视觉调用会在兜底查找中
     # KeyError，被调用点 try/except 吞掉 → token 静默不计费（issue #3270 成本账缺口）
-    settings.VISION_MODEL:      {"input": 1.00, "output": 4.00},       # deepseek-v4-flash-vision-exp
+    settings.VISION_MODEL:      {"input": 1.00, "output": 4.00},       # deepseek-flash（V4.1-Flash 原生多模态）
 }
 
 # 最终兜底定价：**字面量**，不依赖任何 settings 字段。

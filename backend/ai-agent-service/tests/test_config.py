@@ -39,18 +39,18 @@ class TestDefaults:
 
     def test_llm_defaults(self):
         s = _make_settings()
-        assert s.LLM_MODEL_PRIMARY == "deepseek-v4-flash"
-        assert s.LLM_MODEL_FAST == "deepseek-v4-flash"
-        assert s.INTENT_MODEL == "deepseek-v4-flash"
+        assert s.LLM_MODEL_PRIMARY == "deepseek-flash"
+        assert s.LLM_MODEL_FAST == "deepseek-flash"
+        assert s.INTENT_MODEL == "deepseek-flash"
         assert s.LLM_ENABLE_MODEL_ROUTING is True
         assert s.LLM_COST_TRACKING_ENABLED is True
         assert s.LLM_MONTHLY_BUDGET_CNY == 500.0
         assert s.LLM_RETRY_MAX_ATTEMPTS == 2
         assert s.LLM_RETRY_BASE_DELAY_S == 0.5
     def test_vision_defaults_deepseek(self):
-        """视觉模型为 DeepSeek vision（2026-08 起替换 MiniMax M3，品牌命名已清理）"""
+        """视觉模型为 deepseek-flash（V4.1-Flash 原生多模态，2026-09-10 起统一模型名）"""
         s = _make_settings()
-        assert s.VISION_MODEL == "deepseek-v4-flash-vision-exp"
+        assert s.VISION_MODEL == "deepseek-flash"
         assert s.VISION_BASE_URL == "https://api.deepseek.com/v1"
         assert s.VISION_ENABLED is True
 

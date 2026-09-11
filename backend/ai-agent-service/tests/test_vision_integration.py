@@ -57,7 +57,7 @@ def routing_off(monkeypatch):
 def vision_enabled(monkeypatch):
     """启用视觉路由"""
     monkeypatch.setattr(settings, "VISION_ENABLED", True)
-    monkeypatch.setattr(settings, "VISION_MODEL", "deepseek-v4-flash-vision-exp")
+    monkeypatch.setattr(settings, "VISION_MODEL", "deepseek-flash")
 
 
 @pytest.fixture
@@ -86,9 +86,9 @@ class TestVisionRoutingNoModelNameCheck:
     def test_select_model_returns_non_vl_vision_model(self, routing_on, monkeypatch):
         """VISION_ENABLED=True 时，has_vision=True 可返回非 vl 后缀的视觉模型"""
         monkeypatch.setattr(settings, "VISION_ENABLED", True)
-        monkeypatch.setattr(settings, "VISION_MODEL", "deepseek-v4-flash-vision-exp")
+        monkeypatch.setattr(settings, "VISION_MODEL", "deepseek-flash")
         model = select_model(has_vision=True)
-        assert model == "deepseek-v4-flash-vision-exp"
+        assert model == "deepseek-flash"
 
     def test_base_skill_uses_vision_enabled_not_model_name(self, routing_on, monkeypatch):
         """base_skill 应通过 vision_detected + VISION_ENABLED 路由，
@@ -97,7 +97,7 @@ class TestVisionRoutingNoModelNameCheck:
         from langchain_core.messages import HumanMessage
 
         monkeypatch.setattr(settings, "VISION_ENABLED", True)
-        monkeypatch.setattr(settings, "VISION_MODEL", "deepseek-v4-flash-vision-exp")
+        monkeypatch.setattr(settings, "VISION_MODEL", "deepseek-flash")
 
         # 构造含图片的消息
         msg = HumanMessage(
@@ -115,7 +115,7 @@ class TestVisionRoutingNoModelNameCheck:
             text_length=100,
         )
         # DeepSeek vision 原生多模态，无需显式关 thinking
-        assert llm.model_name == "deepseek-v4-flash-vision-exp"
+        assert llm.model_name == "deepseek-flash"
 
 
 # =============================================================================
@@ -214,11 +214,11 @@ class TestCreateVisionLLM:
 
     def test_create_vision_llm_default(self, monkeypatch):
         """默认视觉模型（VISION_MODEL）"""
-        monkeypatch.setattr(settings, "VISION_MODEL", "deepseek-v4-flash-vision-exp")
+        monkeypatch.setattr(settings, "VISION_MODEL", "deepseek-flash")
         monkeypatch.setattr(settings, "VISION_API_KEY", "test-vision-key")
         monkeypatch.setattr(settings, "VISION_BASE_URL", "https://vision.example.com/v1")
         llm = LLMFactory.create_vision_llm()
-        assert llm.model_name == "deepseek-v4-flash-vision-exp"
+        assert llm.model_name == "deepseek-flash"
         assert llm.temperature == 0.7
         assert llm.streaming is True
         assert llm.max_tokens == 16384
@@ -227,17 +227,17 @@ class TestCreateVisionLLM:
 
     def test_create_vision_llm_override(self, monkeypatch):
         """model_override 显式覆盖默认模型"""
-        monkeypatch.setattr(settings, "VISION_MODEL", "deepseek-v4-flash-vision-exp")
-        llm = LLMFactory.create_vision_llm(model_override="deepseek-v4-flash-vision-exp")
-        assert llm.model_name == "deepseek-v4-flash-vision-exp"
+        monkeypatch.setattr(settings, "VISION_MODEL", "deepseek-flash")
+        llm = LLMFactory.create_vision_llm(model_override="deepseek-flash")
+        assert llm.model_name == "deepseek-flash"
 
     def test_create_vision_llm_no_thinking(self, monkeypatch):
         """视觉 LLM 使用独立 VISION_* 配置（DeepSeek vision 原生多模态）"""
-        monkeypatch.setattr(settings, "VISION_MODEL", "deepseek-v4-flash-vision-exp")
+        monkeypatch.setattr(settings, "VISION_MODEL", "deepseek-flash")
         monkeypatch.setattr(settings, "VISION_API_KEY", "test-key")
         monkeypatch.setattr(settings, "VISION_BASE_URL", "https://vision.example.com/v1")
         llm = LLMFactory.create_vision_llm()
-        assert llm.model_name == "deepseek-v4-flash-vision-exp"
+        assert llm.model_name == "deepseek-flash"
         assert llm.openai_api_base == "https://vision.example.com/v1"
 
 
@@ -249,18 +249,18 @@ class TestSelectModelWithVision:
 
     def test_select_model_with_vision(self, routing_on, vision_enabled, monkeypatch):
         """has_vision=True 且启用视觉，返回 VISION_MODEL"""
-        monkeypatch.setattr(settings, "VISION_MODEL", "deepseek-v4-flash-vision-exp")
-        assert select_model(has_vision=True) == "deepseek-v4-flash-vision-exp"
+        monkeypatch.setattr(settings, "VISION_MODEL", "deepseek-flash")
+        assert select_model(has_vision=True) == "deepseek-flash"
 
         # 视觉模型可被运维替换为其他 DeepSeek 模型（仅验证路由返回配置值）
-        monkeypatch.setattr(settings, "VISION_MODEL", "deepseek-v4-flash")
-        assert select_model(has_vision=True) == "deepseek-v4-flash"
+        monkeypatch.setattr(settings, "VISION_MODEL", "deepseek-flash")
+        assert select_model(has_vision=True) == "deepseek-flash"
 
     def test_select_model_with_vision_overrides_intent(self, routing_on, vision_enabled, monkeypatch):
         """has_vision=True 优先级高于简单意图"""
-        monkeypatch.setattr(settings, "VISION_MODEL", "deepseek-v4-flash-vision-exp")
+        monkeypatch.setattr(settings, "VISION_MODEL", "deepseek-flash")
         # 即便是 greeting 简单意图，含图片也走视觉模型
-        assert select_model(intent="greeting", has_vision=True) == "deepseek-v4-flash-vision-exp"
+        assert select_model(intent="greeting", has_vision=True) == "deepseek-flash"
 
     def test_select_model_vision_disabled(self, routing_on, vision_disabled):
         """VISION_ENABLED=False 时即使 has_vision=True 也走正常路由"""
@@ -278,13 +278,13 @@ class TestSelectModelWithVision:
         无法看图）→ 线上 sess_c40f60ffcae94f2b 图片颜色识别失效。
         视觉路由只由 has_vision/VISION_ENABLED 决定，不受文本路由开关影响。
         """
-        assert select_model(has_vision=True) == "deepseek-v4-flash-vision-exp"
+        assert select_model(has_vision=True) == "deepseek-flash"
         # 无图消息在路由关闭时仍走主模型（不回归）
         assert select_model(has_vision=False) == settings.LLM_MODEL
 
     def test_select_model_vision_default_is_flash(self):
         """视觉模型默认配置与 settings 一致（DeepSeek vision）"""
-        assert settings.VISION_MODEL == "deepseek-v4-flash-vision-exp"
+        assert settings.VISION_MODEL == "deepseek-flash"
         assert settings.VISION_MODEL == settings.VISION_MODEL  # 兼容别名
 
 
@@ -308,7 +308,7 @@ class TestVisionModelPricing:
             assert MODEL_PRICING[m]["input"] > 0
             assert MODEL_PRICING[m]["output"] > 0
 
-        # 主模型已统一为 deepseek-v4-flash，与快模型同价
+        # 主模型已统一为 deepseek-flash，与快模型同价
         fast = MODEL_PRICING[fast_model]
         primary = MODEL_PRICING[primary_model]
         assert fast["input"] == primary["input"]
@@ -383,19 +383,19 @@ class TestVisionLLMConfig:
         """create_vision_llm 使用 VISION_API_KEY/BASE_URL/MODEL，非 PRIMARY 配置"""
         monkeypatch.setattr(settings, "VISION_API_KEY", "sk-vision-key")
         monkeypatch.setattr(settings, "VISION_BASE_URL", "https://vision.example.com/v1")
-        monkeypatch.setattr(settings, "VISION_MODEL", "deepseek-v4-flash-vision-exp")
+        monkeypatch.setattr(settings, "VISION_MODEL", "deepseek-flash")
 
         llm = LLMFactory.create_vision_llm()
-        assert llm.model_name == "deepseek-v4-flash-vision-exp"
+        assert llm.model_name == "deepseek-flash"
         assert llm.openai_api_base == "https://vision.example.com/v1"
 
     def test_create_vision_llm_with_model_override(self, monkeypatch):
         """model_override 时使用独立视觉配置"""
         monkeypatch.setattr(settings, "VISION_API_KEY", "sk-vision-key")
         monkeypatch.setattr(settings, "VISION_BASE_URL", "https://vision.example.com/v1")
-        llm = LLMFactory.create_vision_llm(model_override="deepseek-v4-flash-vision-exp")
+        llm = LLMFactory.create_vision_llm(model_override="deepseek-flash")
 
-        assert llm.model_name == "deepseek-v4-flash-vision-exp"
+        assert llm.model_name == "deepseek-flash"
         assert llm.openai_api_base == "https://vision.example.com/v1"
 
 

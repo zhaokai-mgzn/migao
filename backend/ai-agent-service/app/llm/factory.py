@@ -76,7 +76,7 @@ class LLMFactory:
     def create_vision_llm(model_override: Optional[str] = None) -> ChatOpenAI:
         """创建视觉多模态 LLM 实例（图片识别）
 
-        DeepSeek vision（deepseek-v4-flash-vision-exp）为 OpenAI 兼容接口，
+        DeepSeek-V4.1-Flash（deepseek-flash）为 OpenAI 兼容接口，
         与主模型共用 DeepSeek API key（推理/视觉同 key）。
         """
         model = model_override or settings.VISION_MODEL

@@ -57,7 +57,7 @@ export class BusinessJudge {
     this.config = {
       apiKey: config.apiKey,
       baseUrl: config.baseUrl || 'https://api.deepseek.com',
-      model: config.model || 'deepseek-v4-flash',  // 裁判用 fast 模型就够了
+      model: config.model || 'deepseek-flash',  // 裁判用 fast 模型就够了
     }
   }
 

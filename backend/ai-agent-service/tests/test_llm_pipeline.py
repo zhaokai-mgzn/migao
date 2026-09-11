@@ -70,7 +70,7 @@ def _make_factory(side_effects):
 def routing_on(monkeypatch):
     """开启模型路由（主模型 = env PRIMARY_MODEL，默认 flash 与 LLM_MODEL_PRIMARY 一致）"""
     monkeypatch.setattr(settings, "LLM_ENABLE_MODEL_ROUTING", True)
-    monkeypatch.setattr(settings, "PRIMARY_MODEL", "deepseek-v4-flash")
+    monkeypatch.setattr(settings, "PRIMARY_MODEL", "deepseek-flash")
 
 
 @pytest.fixture
@@ -154,10 +154,10 @@ class TestSelectModel:
 
     def test_routing_complex_uses_env_primary_model(self, routing_on, monkeypatch):
         """复杂任务/默认 → env PRIMARY_MODEL（换主模型只需改 env，无需改代码）"""
-        monkeypatch.setattr(settings, "PRIMARY_MODEL", "deepseek-v4-flash")
-        assert select_model(intent="order_query", tool_count=5) == "deepseek-v4-flash"
-        assert select_model(intent="order_query", tool_count=2, text_length=1000) == "deepseek-v4-flash"
-        assert select_model() == "deepseek-v4-flash"
+        monkeypatch.setattr(settings, "PRIMARY_MODEL", "deepseek-flash")
+        assert select_model(intent="order_query", tool_count=5) == "deepseek-flash"
+        assert select_model(intent="order_query", tool_count=2, text_length=1000) == "deepseek-flash"
+        assert select_model() == "deepseek-flash"
 
     def test_routing_force_model_overrides_auto(self, routing_on):
         """force_model 直接覆盖自动判定"""
@@ -183,32 +183,32 @@ class TestSelectModel:
 
     def test_routing_disabled_still_routes_vision(self, routing_off, monkeypatch):
         """路由关闭 + 含图消息 → 仍路由到 VISION_MODEL（视觉路由只看 has_vision/VISION_ENABLED）"""
-        monkeypatch.setattr(settings, "PRIMARY_MODEL", "deepseek-v4-flash")
-        monkeypatch.setattr(settings, "VISION_MODEL", "deepseek-v4-flash-vision-exp")
+        monkeypatch.setattr(settings, "PRIMARY_MODEL", "deepseek-flash")
+        monkeypatch.setattr(settings, "VISION_MODEL", "deepseek-flash")
         monkeypatch.setattr(settings, "VISION_ENABLED", True)
         # 回归根因：此前 routing 关闭时含图消息也返回 PRIMARY_MODEL（纯文本模型，无法看图）
-        assert select_model(has_vision=True, intent="order_query") == "deepseek-v4-flash-vision-exp"
+        assert select_model(has_vision=True, intent="order_query") == "deepseek-flash"
 
     def test_routing_disabled_non_vision_keeps_default(self, routing_off, monkeypatch):
         """路由关闭 + 无图消息 → 行为不变，仍走默认主模型"""
-        monkeypatch.setattr(settings, "PRIMARY_MODEL", "deepseek-v4-flash")
-        monkeypatch.setattr(settings, "VISION_MODEL", "deepseek-v4-flash-vision-exp")
+        monkeypatch.setattr(settings, "PRIMARY_MODEL", "deepseek-flash")
+        monkeypatch.setattr(settings, "VISION_MODEL", "deepseek-flash")
         monkeypatch.setattr(settings, "VISION_ENABLED", True)
-        assert select_model(has_vision=False) == "deepseek-v4-flash"
+        assert select_model(has_vision=False) == "deepseek-flash"
 
     def test_routing_off_vision_disabled_uses_default(self, routing_off, monkeypatch):
         """路由关闭 + VISION_ENABLED=False → 含图消息仍走默认模型（视觉功能整体关闭）"""
-        monkeypatch.setattr(settings, "PRIMARY_MODEL", "deepseek-v4-flash")
-        monkeypatch.setattr(settings, "VISION_MODEL", "deepseek-v4-flash-vision-exp")
+        monkeypatch.setattr(settings, "PRIMARY_MODEL", "deepseek-flash")
+        monkeypatch.setattr(settings, "VISION_MODEL", "deepseek-flash")
         monkeypatch.setattr(settings, "VISION_ENABLED", False)
-        assert select_model(has_vision=True) == "deepseek-v4-flash"
+        assert select_model(has_vision=True) == "deepseek-flash"
 
     def test_routing_on_vision_still_routes_vision(self, routing_on, monkeypatch):
         """路由开启 + 含图消息 → 仍走 VISION_MODEL（不回归已有语义）"""
-        monkeypatch.setattr(settings, "PRIMARY_MODEL", "deepseek-v4-flash")
-        monkeypatch.setattr(settings, "VISION_MODEL", "deepseek-v4-flash-vision-exp")
+        monkeypatch.setattr(settings, "PRIMARY_MODEL", "deepseek-flash")
+        monkeypatch.setattr(settings, "VISION_MODEL", "deepseek-flash")
         monkeypatch.setattr(settings, "VISION_ENABLED", True)
-        assert select_model(has_vision=True, intent="greeting") == "deepseek-v4-flash-vision-exp"
+        assert select_model(has_vision=True, intent="greeting") == "deepseek-flash"
 
 
 class TestSkillLLMVisionRouting:
@@ -223,8 +223,8 @@ class TestSkillLLMVisionRouting:
         from app.graph.skills.base_skill import get_skill_llm
         from langchain_core.messages import HumanMessage
 
-        monkeypatch.setattr(settings, "PRIMARY_MODEL", "deepseek-v4-flash")
-        monkeypatch.setattr(settings, "VISION_MODEL", "deepseek-v4-flash-vision-exp")
+        monkeypatch.setattr(settings, "PRIMARY_MODEL", "deepseek-flash")
+        monkeypatch.setattr(settings, "VISION_MODEL", "deepseek-flash")
         monkeypatch.setattr(settings, "VISION_ENABLED", True)
         monkeypatch.setattr(settings, "VISION_API_KEY", "ci-dummy")
         msgs = [
@@ -235,20 +235,20 @@ class TestSkillLLMVisionRouting:
         ]
         llm = get_skill_llm(intent="product_inquiry", messages=msgs)
         model = getattr(llm, "model_name", None) or getattr(llm, "model", "")
-        assert model == "deepseek-v4-flash-vision-exp"
+        assert model == "deepseek-flash"
 
     def test_routing_off_text_message_uses_primary_model(self, routing_off, monkeypatch):
         """纯文本消息在路由关闭时仍用主模型（不回归）"""
         from app.graph.skills.base_skill import get_skill_llm
         from langchain_core.messages import HumanMessage
 
-        monkeypatch.setattr(settings, "PRIMARY_MODEL", "deepseek-v4-flash")
-        monkeypatch.setattr(settings, "VISION_MODEL", "deepseek-v4-flash-vision-exp")
+        monkeypatch.setattr(settings, "PRIMARY_MODEL", "deepseek-flash")
+        monkeypatch.setattr(settings, "VISION_MODEL", "deepseek-flash")
         monkeypatch.setattr(settings, "VISION_ENABLED", True)
         monkeypatch.setattr(settings, "VISION_API_KEY", "ci-dummy")
         llm = get_skill_llm(intent="product_inquiry", messages=[HumanMessage(content="查一下价格")])
         model = getattr(llm, "model_name", None) or getattr(llm, "model", "")
-        assert model == "deepseek-v4-flash"
+        assert model == "deepseek-flash"
 
 
 # =============================================================================
@@ -295,7 +295,7 @@ class TestCostTracker:
         )
         assert record is not None
         assert isinstance(record, CostRecord)
-        # 轻量模型 (MODEL_LITE=deepseek-v4-flash) 定价: input=1.00, output=4.00, 1M tokens 各算 1 单位
+        # 轻量模型 (MODEL_LITE=deepseek-flash) 定价: input=1.00, output=4.00, 1M tokens 各算 1 单位
         assert record.cost_cny == pytest.approx(1.00 + 4.00, rel=1e-6)
 
     def test_track_call_disabled_returns_none(self, monkeypatch):
@@ -308,11 +308,11 @@ class TestCostTracker:
 
     def test_calc_cost_cny_for_each_model(self, fresh_tracker):
         """每个模型的定价计算正确（DeepSeek 定价）"""
-        # 轻量模型 deepseek-v4-flash: input=1.00, output=4.00 元/百万
+        # 轻量模型 deepseek-flash: input=1.00, output=4.00 元/百万
         r = fresh_tracker.track_call(model=MODEL_FLASH, input_tokens=2_000_000, output_tokens=1_000_000)
         assert r.cost_cny == pytest.approx(1.00 * 2 + 4.00 * 1, rel=1e-6)
 
-        # 主模型 deepseek-v4-flash: input=1.00, output=4.00
+        # 主模型 deepseek-flash: input=1.00, output=4.00
         r2 = fresh_tracker.track_call(model=MODEL_PLUS, input_tokens=500_000, output_tokens=500_000)
         assert r2.cost_cny == pytest.approx(1.00 * 0.5 + 4.00 * 0.5, rel=1e-6)
 
@@ -330,7 +330,7 @@ class TestCostTracker:
         """多次调用累计 total_cost"""
         fresh_tracker.track_call(model=MODEL_LITE, input_tokens=1_000_000, output_tokens=0)
         fresh_tracker.track_call(model=MODEL_LITE, input_tokens=1_000_000, output_tokens=0)
-        # 轻量模型 (MODEL_LITE=deepseek-v4-flash): 1.00 * 2 = 2.00
+        # 轻量模型 (MODEL_LITE=deepseek-flash): 1.00 * 2 = 2.00
         assert fresh_tracker.total_cost == pytest.approx(2.00, rel=1e-6)
 
     def test_check_budget_triggers_warning(self, fresh_tracker, monkeypatch, caplog):
