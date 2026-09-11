@@ -193,3 +193,104 @@ class TestTrustedActor:
             trusted_actor=False,
         )
         assert any("新增 workflow" in b for b in blockers)
+
+
+class TestSchemaCommentOnlyExemption:
+    """schema 文件**纯注释**改动免迁移；但 diff 拿不到时必须 fail-closed（issue #3270）。
+
+    背景（实证假 blocker）：给 `docs/sql/schema_full.sql` 加废弃标注（纯注释）也被判
+    「改了表结构未加迁移」—— 规则本意是「**结构**变更需迁移」，注释不改变结构。
+    但放宽这条判定极易开出安全口子：只要判定「没看到 DDL」就放行，那么
+    BASE 配错 / 非 git 环境 / diff 读取失败时，**任何**结构改动都会被静默放行。
+    故豁免成立的前提是「diff 确实读到了新增行」。
+    """
+
+    MIG = "backend/admin-api/src/main/resources/db/migration"
+
+    @staticmethod
+    def _fake_git_diff(monkeypatch, diff_text: str, returncode: int = 0):
+        """把 danger_scan 内部的 git diff 调用替换成固定输出"""
+        import danger_scan
+        import subprocess as _sp
+
+        class _R:
+            def __init__(self, out, rc):
+                self.stdout = out
+                self.returncode = rc
+
+        real = _sp.run
+
+        def fake_run(cmd, *a, **kw):
+            if isinstance(cmd, list) and cmd[:2] == ["git", "diff"]:
+                return _R(diff_text, returncode)
+            return real(cmd, *a, **kw)
+
+        monkeypatch.setattr(danger_scan.subprocess, "run", fake_run)
+
+    def _analyze(self, schema_file="docs/sql/schema_full.sql"):
+        from danger_scan import analyze
+        return analyze(
+            workflow_changes=[], wf_new_secrets={}, deleted_files=[], deploy_files=[],
+            migration_changes=[], schema_changes=[("M", schema_file)],
+        )
+
+    def test_comment_only_change_is_exempt(self, monkeypatch):
+        diff = (
+            "diff --git a/docs/sql/schema_full.sql b/docs/sql/schema_full.sql\n"
+            "--- a/docs/sql/schema_full.sql\n"
+            "+++ b/docs/sql/schema_full.sql\n"
+            "@@ -1,3 +1,6 @@\n"
+            "+-- ⚠️ 已废弃（DEPRECATED）—— 请勿用于新建库\n"
+            "+--   本文件缺失 finance_transactions 等 6 张表\n"
+            " -- 原有注释\n"
+        )
+        self._fake_git_diff(monkeypatch, diff)
+        blockers, warnings = self._analyze()
+        assert not blockers, f"纯注释改动不应 block，实得 {blockers}"
+        assert any("注释" in w for w in warnings), "应给出'仅注释改动'的提示"
+
+    def test_comment_mentioning_create_table_still_exempt(self, monkeypatch):
+        """注释里提到 CREATE TABLE 不算 DDL（否则文档写不了「本文件会创建 X 表」）"""
+        diff = (
+            "+++ b/docs/sql/schema_full.sql\n"
+            "+-- 注意：本文件仍会 CREATE TABLE knowledge_documents（已被 V36 DROP）\n"
+        )
+        self._fake_git_diff(monkeypatch, diff)
+        blockers, _ = self._analyze()
+        assert not blockers, f"注释里提到 CREATE TABLE 不应 block，实得 {blockers}"
+
+    def test_real_ddl_still_blocks(self, monkeypatch):
+        """真正的结构改动必须照旧 block（豁免不得开成安全口子）"""
+        diff = (
+            "+++ b/docs/sql/schema.sql\n"
+            "+CREATE TABLE brand_new_table (\n"
+            "+    id VARCHAR(36) PRIMARY KEY\n"
+            "+);\n"
+        )
+        self._fake_git_diff(monkeypatch, diff)
+        blockers, _ = self._analyze(schema_file="docs/sql/schema.sql")
+        assert any("未新增迁移" in b for b in blockers), (
+            "新增建表语句必须仍然 block —— 豁免把结构变更也放过了就是安全口子"
+        )
+
+    def test_added_alter_table_blocks(self, monkeypatch):
+        diff = "+++ b/docs/sql/schema.sql\n+ALTER TABLE orders ADD COLUMN foo TEXT;\n"
+        self._fake_git_diff(monkeypatch, diff)
+        blockers, _ = self._analyze(schema_file="docs/sql/schema.sql")
+        assert any("未新增迁移" in b for b in blockers)
+
+    def test_empty_diff_fails_closed(self, monkeypatch):
+        """diff 读到但没有任何新增行 → 不得据此判「纯注释」。"""
+        self._fake_git_diff(monkeypatch, "")
+        blockers, _ = self._analyze()
+        assert any("未新增迁移" in b for b in blockers), (
+            "空 diff 时不得放行 —— 否则 BASE 配错就能绕过整个 DDL 门禁"
+        )
+
+    def test_git_diff_failure_fails_closed(self, monkeypatch):
+        """git diff 读取失败（returncode != 0）→ 必须 fail-closed"""
+        self._fake_git_diff(monkeypatch, "some output", returncode=128)
+        blockers, _ = self._analyze()
+        assert any("未新增迁移" in b for b in blockers), (
+            "diff 读取失败时不得放行 —— 安全门禁的失效方向必须是报错而非放行"
+        )
