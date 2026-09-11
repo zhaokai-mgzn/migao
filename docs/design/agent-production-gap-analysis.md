@@ -1187,3 +1187,19 @@ PR-012/PR-016）。
 
 **结论**：评测稳定性根治（502 自愈）后，完整基线 93-94% 可复现；失败全为
 LLM 波动（单跑通过、全量偶发）。多会话并发环境的评测不再受部署窗口中断。
+
+## 六十三、Round 78 FN-004 闭环（本期默认兜底 + case 校准）
+
+FN-004（收支汇总本期时间范围）全量失败（缺 start_date，台账 12 条
+reproducible）——agent 偶发不传时间参数。
+
+**修复**：
+- #3288 finance_api 三查询（get_summary/get_transactions/get_reconciliation）
+  缺时间参数自动补本期默认（本月1号~今天）——生产友好（用户问本期收支无需
+  显式传时间）
+- #3289 case expectations 放宽（action=get_summary，data_checks 保留本期
+  语义）——服务端默认保证业务结果，case 不再约束 agent 显式传参的实现细节
+
+**验证**：FN-004 3/3 通过。
+
+**剩余 4 个波动**：OR-014/OR-016（下单）、PR-012/PR-016（建品）——LLM 方差。
