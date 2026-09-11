@@ -84,6 +84,10 @@ class TestSkillToolSubsets:
         """售后 Skill 包含正确的 Tool（knowledge_search 已禁用）"""
         assert "order_query" in AFTERSALES_TOOLS
         assert "order_manage" in AFTERSALES_TOOLS
+        # 审计 A（Round 72）：aftersales skill intents 含 complaint 但缺
+        # human_handoff → 投诉无法转人工（PP-006 同款工具注册缺失，docstring
+        # 声明「投诉处理,转人工」但工具未注册）
+        assert "human_handoff" in AFTERSALES_TOOLS
         # [RAG 禁用] assert "knowledge_search" in AFTERSALES_TOOLS
         assert "after_sales_manage" in AFTERSALES_TOOLS
         assert "product_search" not in AFTERSALES_TOOLS

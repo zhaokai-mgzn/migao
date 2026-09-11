@@ -764,3 +764,32 @@ cases:
       ci:
         - agent-eval.yml
       verifies: []
+
+  - id: PR-020
+    legacy_id: ""
+    title: "单独 SKU 调价 - 修改某规格价格"
+    domains:
+      - product
+    tier: normal
+    tags:
+      - sku
+      - write
+      - pricing
+    truths_ref:
+      - product-sku-stock.realtime
+    user_inputs:
+      - "把遮光窗帘（100元的那件）的米白色散剪规格改成 150 元"
+      - auto_select: true
+      - "确认"
+    expectations:
+      - tool: sku_update
+    data_checks:
+      - "sku_update 成功（价格落库）"
+    skip_reason: ""
+    merge_log: "Round 72 评测覆盖审计：sku_update（SKU 级调价）注册于 product_skill 但无 case 覆盖（盲区）→ 补 SKU 调价场景"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_tools_sku_update.py"
+      ci:
+        - agent-eval.yml
+      verifies: []

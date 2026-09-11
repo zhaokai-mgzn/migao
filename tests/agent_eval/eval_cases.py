@@ -2914,6 +2914,21 @@ _CASE_PR_020 = EvalCase(
     db_verify=[{'fetch': 'product_by_name', 'name': '盯防加工项价格0908', 'checks': ['processingItemConfigs.all.finalPrice>0', 'processingItemConfigs.刺绣工艺.finalPrice==45']}],
 )
 
+# ── PR-020 [NORMAL] 单独 SKU 调价 - 修改某规格价格（源: cases/product.yml）──
+_CASE_PR_020 = EvalCase(
+    id='PR-020',
+    legacy_id='',
+    title='单独 SKU 调价 - 修改某规格价格',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['把遮光窗帘（100元的那件）的米白色散剪规格改成 150 元', {'auto_select': True}, '确认'],
+    expectations=['sku_update'],
+    data_checks=['sku_update 成功（价格落库）'],
+    skip_reason='',
+    tags=['sku', 'write', 'pricing'],
+    persona='',
+)
+
 # ── RG-001 [NORMAL] ToolRegistry 注册/查询/执行审计（源: cases/registry.yml）──
 _CASE_RG_001 = EvalCase(
     id='RG-001',
@@ -3899,6 +3914,7 @@ ALL_CASES = (
     _CASE_PR_017,
     _CASE_PR_018,
     _CASE_PR_019,
+    _CASE_PR_020,
     _CASE_PR_020,
     _CASE_RG_001,
     _CASE_ST_001,
