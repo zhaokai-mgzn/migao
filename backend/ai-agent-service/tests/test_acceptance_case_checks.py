@@ -985,3 +985,70 @@ class TestCaseStartTimestamp:
         assert i_marker < i_session, (
             "时间戳打印晚于会话创建 —— 首轮意图分类会落在用例区间之外"
         )
+
+
+class TestToolHealthSummary:
+    """工具健康度：工具大面积失败时，**均分衡量的是后端可用性，不是 agent 能力**。
+
+    实测代价（issue #3270）：bootstrap schema 缺列 → admin-api 500 → 工具返回
+    「服务暂时不可用」(CIRCUIT_OPEN) → 熔断打开 → 后续工具全失败 → 报告长成
+    「agent 不会下单」。我们据此去改 prompt / 改工具 / 加引导，**在错误的层上
+    忙了整整一轮**，直到加了 `data=` 摘要才看见真因。
+
+    `migao-acceptance` 的五层归因里基础设施层必须排最前：工具本身报错时，
+    数据/断言/引导/模型四层的结论一个都不成立。本类把这个判断自动化。
+    """
+
+    def _results(self, ok_flags):
+        """ok_flags 例：[("customer_order_query", False, "服务暂时不可用"), ...]"""
+        return [{
+            "round_trace": [{
+                "round": 1,
+                "results": [{"tool": t, "ok": ok, "error": None if ok else err}
+                            for t, ok, err in ok_flags],
+            }],
+        }]
+
+    def test_healthy_run_not_flagged(self):
+        h = lr.summarize_tool_health(self._results([("a", True, None), ("b", True, None)]))
+        assert h["total"] == 2 and h["failed"] == 0
+        assert h["infra_suspect"] is False
+
+    def test_high_failure_rate_flags_infra(self):
+        h = lr.summarize_tool_health(self._results(
+            [("customer_order_query", False, "服务暂时不可用")] * 4 + [("a", True, None)]))
+        assert h["failed"] == 4 and h["total"] == 5
+        assert h["infra_suspect"] is True, "80% 失败率必须判为基础设施可疑"
+        assert h["top_failures"][0]["failure"] == "customer_order_query!服务暂时不可用"
+        assert h["top_failures"][0]["count"] == 4
+
+    def test_rate_exactly_at_threshold_flags(self):
+        """边界：恰好等于阈值即判可疑（宁可显性可疑，不可静默当能力分）"""
+        h = lr.summarize_tool_health(self._results(
+            [("x", False, "e")] * 2 + [("y", True, None)] * 8))
+        assert h["rate"] == 0.2 and h["infra_suspect"] is True
+
+    def test_just_below_threshold_not_flagged(self):
+        h = lr.summarize_tool_health(self._results(
+            [("x", False, "e")] * 19 + [("y", True, None)] * 81))
+        assert h["rate"] < 0.2 and h["infra_suspect"] is False
+
+    def test_no_tool_calls_not_flagged(self):
+        """零调用不得判可疑（那是"没跑"，由 _ci_verdict 的零执行守卫负责）"""
+        h = lr.summarize_tool_health([])
+        assert h["total"] == 0 and h["infra_suspect"] is False
+        assert lr.summarize_tool_health([{"round_trace": []}])["infra_suspect"] is False
+
+    def test_format_lists_top_failures(self):
+        h = lr.summarize_tool_health(self._results([
+            ("a", False, "服务暂时不可用"), ("a", False, "服务暂时不可用"),
+            ("b", False, "tool_execution_failed"), ("c", True, None)]))
+        text = lr.format_tool_health(h)
+        assert "工具调用 4 次" in text and "失败 3 次" in text
+        assert "a!服务暂时不可用 × 2" in text and "b!tool_execution_failed × 1" in text
+
+    def test_results_without_trace_are_ignored(self):
+        """兼容：异常/无轨迹的用例不参与统计（不得因此虚高或虚低失败率）"""
+        h = lr.summarize_tool_health([{"case_id": "X"}, {"round_trace": []},
+                                      {"round_trace": [{"results": [{"tool": "a", "ok": True}]}]}])
+        assert h["total"] == 1 and h["failed"] == 0

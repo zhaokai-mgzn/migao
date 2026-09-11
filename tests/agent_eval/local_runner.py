@@ -1635,7 +1635,77 @@ async def run_suite(cases, label: str, classify: bool = True):
     print(f"  {label} 结果: {passed_count}/{n} 通过, 均分 {avg_score:.0%}")
     print(f"{'='*60}")
 
+    # ── 工具健康度（基础设施层优先，issue #3270）──
+    # 工具大面积失败时，上面那个「均分」衡量的是**后端可用性**，不是 agent 能力。
+    # 不显式说出来，读数的人一定会把它当成能力分（本项目实测踩过整整一轮）。
+    health = summarize_tool_health(results)
+    if health["total"]:
+        print(f"\n🔧 工具健康度: {format_tool_health(health)}")
+    if health["infra_suspect"]:
+        print("\n" + "!" * 68)
+        print(f"⚠️  工具失败率 {health['rate']:.0%} ≥ 阈值 "
+              f"{_TOOL_HEALTH_INFRA_THRESHOLD:.0%} —— **本轮结果不可用于能力判断**")
+        print("    这是**基础设施层**问题（后端 5xx / 熔断 / schema 缺列），不是 agent 能力。")
+        print("    先修环境再谈分数：查 admin-api 日志有无 500、schema 是否缺列、熔断是否打开。")
+        print("!" * 68)
+
     return results
+
+
+# 工具失败率达到该比例即判定「本轮结果不可用于能力判断」——错误信息见
+# summarize_tool_health 的 docstring（基础设施层优先原则）。
+_TOOL_HEALTH_INFRA_THRESHOLD = 0.20
+
+
+def summarize_tool_health(results: list) -> dict:
+    """汇总工具调用成败，判定本轮结果**能否用于能力判断**。
+
+    为什么必须有（issue #3270 实测踩坑，代价极大）：
+    C 端验收栈的 bootstrap schema 缺列（`orders.actual_amount` / `product_skus.color_name`
+    …）→ admin-api 查询 500 → 工具返回「服务暂时不可用」(CIRCUIT_OPEN) → **熔断器打开**
+    → 后续同类工具全部失败。报告长成「agent 不会下单/不会建售后单」，
+    于是我们去改 prompt、改工具、加引导 —— 全都在**错误的层**上忙了一天。
+    真因（基础设施层）只有在加了 `data=` 载荷摘要之后才浮出水面。
+
+    `migao-acceptance` 的五层归因（数据/断言/引导/工具/模型）里，**基础设施层必须排在最前**：
+    工具本身在报错时，下面四层的结论一个都不成立。本函数把这个判断**自动化**，
+    避免下次再靠人眼发现。
+
+    Returns:
+        dict: {"total", "failed", "rate", "infra_suspect", "top_failures"}
+              - failed 依据 `round_trace[*].results[*].ok`（缺 success 一律记失败）
+              - infra_suspect=True 表示失败率超阈值 → 结果不可用于能力判断
+    """
+    total = failed = 0
+    counter: dict = {}
+    for r in results or []:
+        for rnd in (r.get("round_trace") or []):
+            for res in (rnd.get("results") or []):
+                total += 1
+                if not res.get("ok"):
+                    failed += 1
+                    key = f"{res.get('tool')}!{res.get('error')}"
+                    counter[key] = counter.get(key, 0) + 1
+    rate = (failed / total) if total else 0.0
+    top = sorted(counter.items(), key=lambda kv: (-kv[1], kv[0]))[:5]
+    return {
+        "total": total,
+        "failed": failed,
+        "rate": round(rate, 4),
+        "infra_suspect": bool(total) and rate >= _TOOL_HEALTH_INFRA_THRESHOLD,
+        "top_failures": [{"failure": k, "count": v} for k, v in top],
+    }
+
+
+def format_tool_health(health: dict) -> str:
+    """把工具健康度压成可读多行文本（CI 日志用）。"""
+    lines = [
+        f"工具调用 {health['total']} 次，失败 {health['failed']} 次"
+        f"（{health['rate']:.0%}）"
+    ]
+    for item in health.get("top_failures") or []:
+        lines.append(f"    · {item['failure']} × {item['count']}")
+    return "\n".join(lines)
 
 
 def _ci_verdict(results: list) -> tuple[bool, str]:
