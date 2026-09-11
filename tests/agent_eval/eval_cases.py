@@ -2882,7 +2882,7 @@ _CASE_PR_016 = EvalCase(
     title='建品流程 - 分类确认后按适用商品分类过滤/优先推荐加工项',
     skill=Skill.PRODUCT,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['录入这个商品，名称遮光窗帘，价格 100', '分类选窗帘', {'auto_select': True}, '已选加工项：高温定型', '颜色米白色，货号 TEST-002', '确认'],
+    user_inputs=['录入这个商品，名称遮光窗帘，价格 100', '分类选窗帘', {'auto_select': True}, {'auto_fill': {'colors': '米白色', 'selling_methods': '散剪', 'sku_code': 'TEST-002'}}, '已选加工项：高温定型', '颜色米白色，货号 TEST-002', '确认'],
     expectations=['category_manage', 'processing_item_query', 'interact(component=choice, multiSelect=True)', 'validate_input', 'product_manage(action=create)'],
     data_checks=['分类确认后加工项选择器按「适用商品分类」过滤展示（processing_item_query 携带 applicable_category_id，= 已选商品分类 ID）', '适用分类为空（applicable_product_categories 为空）的加工项仍展示（= 适用所有分类），不因过滤而丢失', '当前分类无匹配加工项时以文字提示可跳过，不空转强制选择', '最终创建成功且关联加工项数量正确'],
     skip_reason='',
