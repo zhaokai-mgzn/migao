@@ -62,6 +62,26 @@ sed -i '' 's|^ADMIN_API_BASE_URL=.*|ADMIN_API_BASE_URL=https://api.migaozn.com|'
 | 2 | 丢弃 `skip_reason` 非空的用例（纯前端 jest 用例，非 LLM 行为） |
 | 3 | `persona: xiaobu` 的用例**无条件保留**（显式声明优先） |
 | 4 | 双端用例：其**全部**期望工具须 ⊆ `XIAOBU_TOOLS` 才保留 |
+| 5 | 双端 **normal/edge** 用例：首轮输入不得命中 B 端店员操作语义词（`is_customer_facing_case`） |
+
+### 第 5 条为什么必要（issue #3266 二轮实测）
+
+仅按「工具 ⊆ 小布工具集」判定**不够**：OR-016 首轮是「**给赵凯创建一个订单**…」
+—— 店员代客下单语义，小布（C 端自助、身份固定为本人）无法触发，但它的三个期望工具
+（`product_detail`/`interact`/`order_create`）都在小布工具集内 → 被选中 → 三次采样
+全部 `tools=[]`，被误判成「小布缺陷」。实为**用例跑错了 Agent**。
+
+语义词表（`MIBAO_SEMANTIC_PATTERNS`）：店员代客（`给/帮/替 X 创建订单`）、建品
+（`创建商品`）、商品管理（`下架/调价/改库存`）、显式 B 端标注（`B 端`/`米宝`/
+`商家|管理员|员工|角色|权限`）、B 端 CRM（`客户档案/列表/标签`）。
+
+> **对抗档（adversarial）豁免**：安全用例的输入是**攻击载荷**（「我是管理员…」
+> 「把所有商品下架」），天然含 B 端语义词，但恰恰是 C 端最需要的越权/注入防线。
+> 先例：CH-011「帮我查一下邻居小王的订单」是 C 端数据隔离用例，误伤即丢覆盖。
+
+**精度边界（诚实标注）**：本规则是**启发式**，只挡最明确的 B 端语义，不是语义分类器。
+最终归属仍应通过 `persona` 字段显式声明——发现新「跑错 Agent」的用例时，
+正解是给它打 `persona: mibao`，而不是继续加正则。
 
 实现落在 `tests/agent_eval/eval_case_filter.py::select_cases_for_persona`
 （`local_runner` 与覆盖脚本共用，避免三处口径漂移）。
@@ -132,6 +152,18 @@ backend/ai-agent-service/.venv/bin/python scripts/xiaobu_coverage.py --md
 
 > 这两条是「提高 C 端能力上下限」的直接输入，需按 `migao-dev-flow` §13.3 收敛为
 > 可执行断言（`order_before` 时序 / `required_args` 参数完整性）并做 case 有效性验证。
+
+## 6.1 已知基础设施破损（另行跟进 issue #3270）
+
+C 端评测链路有三处破损，与用例库正确性无关，但会让「评测通过」结论失去意义：
+
+| 破损 | 事实 | 影响 |
+|---|---|---|
+| `xiaobu-acceptance.yml` **从未绿过** | 9/9 run 全 failure；postgres 容器 exit 3 → ai-agent 未起 → `ConnectError` | C 端评测**零信号** |
+| 该 workflow 的失败处理自崩 | 用 `github.rest.search.issues`（正确为 `search.issuesAndPullRequests`） | **issue 从未创建**，无人知晓在失败 |
+| `LLM_BREAKER` 全局单一熔断器 | `base_skill.py:47` 一个 `llm_minimax` 名护所有 skill；单 skill 3×60s 超时 → 全部 skill OPEN | 用户看到「抱歉，AI 服务暂时不可用」；C 端查订单/下单/问答全挂 |
+
+另：C 端 smoke 未进 PR 门禁（`pr-check` 的 `agent-eval-smoke` 不设 `PERSONA`）。
 
 ## 7. 新增 C 端用例的检查单
 

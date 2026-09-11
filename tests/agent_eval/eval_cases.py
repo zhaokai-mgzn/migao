@@ -2935,9 +2935,9 @@ _CASE_PR_020 = EvalCase(
     db_verify=[{'fetch': 'product_by_name', 'name': '盯防加工项价格0908', 'checks': ['processingItemConfigs.all.finalPrice>0', 'processingItemConfigs.刺绣工艺.finalPrice==45']}],
 )
 
-# ── PR-020 [NORMAL] 单独 SKU 调价 - 修改某规格价格（源: cases/product.yml）──
-_CASE_PR_020 = EvalCase(
-    id='PR-020',
+# ── PR-021 [NORMAL] 单独 SKU 调价 - 修改某规格价格（源: cases/product.yml）──
+_CASE_PR_021 = EvalCase(
+    id='PR-021',
     legacy_id='',
     title='单独 SKU 调价 - 修改某规格价格',
     skill=Skill.PRODUCT,
@@ -3937,7 +3937,7 @@ ALL_CASES = (
     _CASE_PR_018,
     _CASE_PR_019,
     _CASE_PR_020,
-    _CASE_PR_020,
+    _CASE_PR_021,
     _CASE_RG_001,
     _CASE_ST_001,
     _CASE_ST_002,

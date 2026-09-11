@@ -221,3 +221,38 @@ class TestExpectationToolExtraction:
         from eval_case_filter import case_expectation_tools as _case_expectation_tools
         assert _case_expectation_tools({"expectations": ["direct_reply"]}) == set()
 
+
+
+class TestCustomerFacingSemanticGuard:
+    """双端用例的语义适配收口（issue #3266 二轮：仅按工具集判定不够）"""
+
+    def _sel_ids(self):
+        from eval_case_filter import select_cases_for_persona
+        return {c["id"] for c in select_cases_for_persona(load_case_dicts(str(CASES_DIR)), PERSONA)}
+
+    def test_staff_proxy_order_cases_excluded(self):
+        """店员代客下单/建品语义用例不得进 C 端（C 端顾客只为本人下单）"""
+        sel = self._sel_ids()
+        for cid in ["OR-008", "OR-016", "API-013", "UI-003"]:
+            assert cid not in sel, f"{cid} 是 B 端/基建用例，不应进 C 端用例集"
+
+    def test_adversarial_tier_preserved(self):
+        """对抗档必须全部保留 —— 安全用例输入天然含 B 端语义词，
+        但恰恰是 C 端最需要的越权/注入防线（先例 CH-011 跨用户订单拒绝）"""
+        sel = self._sel_ids()
+        for cid in ["CH-011", "DF-006", "DF-007", "DF-008", "DF-010"]:
+            assert cid in sel, f"对抗用例 {cid} 被语义收口误伤"
+
+    def test_customer_end_llm_cases_preserved(self):
+        """C 端真实 LLM 用例必须保留（含显式 persona 与双端 C 端语义词）"""
+        sel = self._sel_ids()
+        for cid in ["AS-008", "KN-001", "KN-002", "KN-008", "OR-012", "PR-001",
+                    "PR-003", "CH-008", "CH-010", "CH-012", "CH-015"]:
+            assert cid in sel, f"C 端用例 {cid} 漏选"
+
+    def test_filter_is_pure_function_of_case(self):
+        """is_customer_facing_case 对同一用例幂等（无隐藏状态）"""
+        from eval_case_filter import is_customer_facing_case
+        cases = load_case_dicts(str(CASES_DIR))
+        for c in cases[:40]:
+            assert is_customer_facing_case(c) == is_customer_facing_case(c)

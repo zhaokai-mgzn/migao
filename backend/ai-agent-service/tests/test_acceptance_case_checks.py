@@ -207,7 +207,7 @@ class TestRunCaseCaseLevelChecks:
 # AS-007（选品后不问加工项）；瑕疵商品 choice 卡（options 带 ¥）被误判为加工项卡。
 # 新增：组件/语义限定时序 + 必填参数（create 缺 specifications/加工项价格即失败，
 # 2026-09-08 Round2 实拍 S3 验收常青0908 specs={} 假成功）+ 确认死循环 + 假成功。
-# case_ids: OR-016, AS-007, PR-019, PR-020, CH-010, PR-014, PR-020
+# case_ids: OR-016, AS-007, PR-019, PR-020, CH-010, PR-014, PR-021
 # ─────────────────────────────────────────────────────────────────────────────
 
 
