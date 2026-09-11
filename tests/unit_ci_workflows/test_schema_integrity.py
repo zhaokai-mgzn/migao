@@ -997,6 +997,24 @@ class TestSchemaFullDeprecation:
         )
 
 
+def _column_name_of_ddl_line(line: str):
+    """从 `CREATE TABLE` 体内的一行解析列名；非列定义返回 None。
+
+    ⚠️ 不能用"首词是关键字就跳过"的写法：`key` 既是 SQL 关键字又是合法列名
+    （`user_memories.key VARCHAR(128)`）。首版即因此把该列判为"不存在"，
+    产生假缺口。判据改为：**第二个词必须是类型名**，而 `PRIMARY KEY (...)` /
+    `UNIQUE (...)` / `CONSTRAINT ...` 的第二个词是 `KEY`/`(` 这类，自然被排除。
+    """
+    m = re.match(r'\s*"?(\w+)"?\s+(\w+)', line)
+    if not m:
+        return None
+    name, second = m.group(1).lower(), m.group(2).upper()
+    if second in {"KEY", "CONSTRAINT", "INDEX", "CHECK", "UNIQUE", "PRIMARY",
+                  "FOREIGN", "EXCLUDE", "LIKE", "AS"}:
+        return None
+    return name
+
+
 class TestSchemaCoversMigrationChainColumns:
     """`schema.sql` 必须覆盖**迁移链**的全部表与列（issue #3270 实测根因）
 
@@ -1031,10 +1049,9 @@ class TestSchemaCoversMigrationChainColumns:
             name, body = m.group(1).lower(), m.group(2)
             cols = set()
             for line in body.splitlines():
-                # 列定义形如 `name TYPE ...`；约束行以 PRIMARY/UNIQUE/... 开头
-                lm = re.match(r"\s*\"?(\w+)\"?\s+[A-Za-z]", line)
-                if lm and lm.group(1).lower() not in cls._NON_COLUMN:
-                    cols.add(lm.group(1).lower())
+                col = _column_name_of_ddl_line(line)
+                if col:
+                    cols.add(col)
             tables[name] = cols
         for m in re.finditer(
                 r"ALTER\s+TABLE\s+(?:IF\s+EXISTS\s+)?\"?(\w+)\"?[\s\S]*?;", src, re.I):
@@ -1060,9 +1077,9 @@ class TestSchemaCoversMigrationChainColumns:
                     t, body = m.group(1).lower(), m.group(2)
                     need.setdefault(t, set())
                     for line in body.splitlines():
-                        lm = re.match(r"\s*\"?(\w+)\"?\s+[A-Za-z]", line)
-                        if lm and lm.group(1).lower() not in cls._NON_COLUMN:
-                            need[t].add(lm.group(1).lower())
+                        col = _column_name_of_ddl_line(line)
+                        if col:
+                            need[t].add(col)
                 for m in re.finditer(
                         r"ALTER\s+TABLE\s+(?:IF\s+EXISTS\s+)?\"?(\w+)\"?([\s\S]*?);", src, re.I):
                     t = m.group(1).lower()
@@ -1108,4 +1125,85 @@ class TestSchemaCoversMigrationChainColumns:
             + "\n  ".join(missing_cols)
             + "\n修复：在 schema.sql 的「bootstrap 对齐」段补 ALTER TABLE ... ADD COLUMN IF NOT EXISTS，"
               "并同步新增迁移（迁移链是结构变更事实源）。"
+        )
+
+
+class TestSchemaCoversEntityColumns:
+    """`schema.sql` 必须覆盖 **Java 实体声明**的表与列（迁移链守卫的互补项）
+
+    为什么还需要这一层：有些列**两条 SQL 链都没有**，只在 Java 实体里声明 ——
+    生产库里存在（否则线上同类查询也 500），但 bootstrap 建出来的库没有：
+
+        product_skus.color_name   ← ProductSku.colorName（admin-api 拉 SKU 列表 SELECT 它）
+        orders.close_reason       ← Order.closeReason（docs/sql/013 有，迁移链没有）
+        tenant_ai_configs.bot_name← TenantAiConfig.botName（docs/sql/009 有）
+        user_memories（整表）      ← UserMemory 实体
+
+    CI 实证：`column "color_name" does not exist` → 商品详情接口 500 → 工具返回
+    「服务暂时不可用」→ 熔断 → **整轮 C 端评测被污染**。
+    迁移链守卫查不到这类列（它们不在任何迁移里），故必须按实体再查一遍。
+    """
+
+    ENTITY_DIR = (Path(__file__).parent.parent.parent / "backend" / "admin-api"
+                  / "src" / "main" / "java" / "com" / "migao" / "admin" / "entity")
+
+    # 非列字段（MyBatis-Plus 约定 / Java 常量）
+    _SKIP_FIELDS = {"serialVersionUID"}
+
+    @staticmethod
+    def _snake(name: str) -> str:
+        return re.sub(r"(?<!^)(?=[A-Z])", "_", name).lower()
+
+    @classmethod
+    def _entities(cls) -> dict:
+        """{表名: {列名: 'Entity.java#field'}}"""
+        out: dict = {}
+        for f in sorted(cls.ENTITY_DIR.glob("*.java")):
+            src = f.read_text(encoding="utf-8")
+            tm = re.search(r'@TableName\(\s*(?:value\s*=\s*)?"(\w+)"', src)
+            if not tm:
+                continue
+            table = tm.group(1).lower()
+            # 去掉 @TableField(exist = false) 标注的字段（非表列）
+            cleaned = re.sub(
+                r"@TableField\([^)]*exist\s*=\s*false[^)]*\)[\s\S]{0,120}?;", "", src)
+            cols = out.setdefault(table, {})
+            for fm in re.finditer(
+                    r'(?:@TableField\(\s*(?:value\s*=\s*)?"(\w+)"[^)]*\)\s*)?'
+                    r"private\s+[\w<>,\[\]\. ]+\s+(\w+)\s*;", cleaned):
+                explicit, field = fm.group(1), fm.group(2)
+                if field in cls._SKIP_FIELDS:
+                    continue
+                col = explicit.lower() if explicit else cls._snake(field)
+                cols.setdefault(col, f"{f.name}#{field}")
+        return out
+
+    def test_entity_parse_is_non_trivial(self):
+        """自检：确实解析出实体与列（否则本类测试空转 = 假绿）"""
+        ents = self._entities()
+        total = sum(len(v) for v in ents.values())
+        assert len(ents) >= 20 and total >= 200, (
+            f"实体解析结果过少（表 {len(ents)} / 列 {total}）—— 解析疑似失效"
+        )
+
+    def test_schema_covers_entity_columns(self):
+        schema = TestSchemaCoversMigrationChainColumns._schema_columns()
+        missing_tables, missing_cols = [], []
+        for table, cols in self._entities().items():
+            if table not in schema:
+                missing_tables.append(table)
+                continue
+            for c, origin in sorted(cols.items()):
+                if c not in schema[table]:
+                    missing_cols.append(f"{table}.{c}  ({origin})")
+        assert not missing_tables, (
+            "schema.sql 缺少 Java 实体声明的表（建库后相关接口必然 500）：\n  "
+            + "\n  ".join(sorted(missing_tables))
+        )
+        assert not missing_cols, (
+            "schema.sql 缺少 Java 实体声明的列 —— 建库后该接口 500 → ai-agent 工具返回"
+            "「服务暂时不可用」→ 熔断 → 评测被污染：\n  "
+            + "\n  ".join(missing_cols)
+            + "\n修复：在 schema.sql 的「bootstrap 对齐」段补 ALTER TABLE ... ADD COLUMN "
+              "IF NOT EXISTS，**并新增迁移**（迁移链是结构变更事实源）。"
         )
