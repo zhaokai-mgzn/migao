@@ -186,3 +186,102 @@ class TestHandoffJudgeResult:
     def test_none_result_has_empty_signal(self):
         result = judge_handoff("你好", intent="greeting", handoff_state=None)
         assert result.action == "none"
+
+
+class TestS1AfterSalesWithoutActionableRequest:
+    """S1 在 `after_sales` 意图下的**条件**触发（CH-013/CH-014 抖动根因）
+
+    实测背景（CI 两次 run 同一用例结果相反）：
+      run 34612040268 CH-014 ✅（拿到 interact 建议卡）
+      run 34613307565 CH-014 ❌（R1/R2 无任何工具，未弹卡）
+    同一输入、同一代码，差别只在 **LLM 把「你们太坑了，再也不买了」分到
+    general 还是 after_sales** —— 旧规则里 S1 仅对 general 生效，于是用例成败
+    变成分类器抽奖，不可复现（不符合企业级评测要求）。
+
+    设计本意（xiaobu-ai-handoff-guidance.md §3.3 原文）防的是**打断有正事要办的
+    业务流**，例子给的是"质量太差**我要退货**"——关键是「我要退货」这个可执行诉求，
+    不是意图标签本身。故判据改为：**消息里有没有可执行业务诉求**。
+
+    - `after_sales` + 纯发泄（无动作词）→ offer（难过到要转人工，正是该建议的时候）
+    - `after_sales` + 可执行诉求（我要退货）→ 不 offer（继续售后流程，不打断）
+    """
+
+    def test_pure_venting_in_aftersales_offers(self):
+        result = judge_handoff(
+            "你们窗帘质量太差了，气死我了",
+            intent="after_sales",
+            handoff_state=None,
+        )
+        assert result.action == "offer", (
+            "纯发泄无业务诉求时不弹建议卡 → 用例成败取决于意图分类抽奖（见类 docstring）"
+        )
+        assert result.signal == "S1"
+
+    def test_actionable_request_still_suppressed(self):
+        """回归：带明确动作（我要退货）仍不打断售后流程"""
+        result = judge_handoff(
+            "这个窗帘质量真的太差了，我要退货",
+            intent="after_sales",
+            handoff_state=None,
+        )
+        assert result.action == "none", "有可执行诉求时不得弹卡打断售后流程"
+
+    def test_actionable_request_variants_suppressed(self):
+        """动作词表覆盖常见售后/下单诉求（逐个断言，防词表漏项回归）"""
+        for msg in [
+            "质量太差了，我要换货",
+            "太差了，退款给我",
+            "气死了，帮我下单",
+            "很差，查订单到哪了",
+            "太坑了，快递怎么还没到",
+        ]:
+            result = judge_handoff(msg, intent="after_sales", handoff_state=None)
+            assert result.action == "none", f"{msg!r} 含可执行诉求，不应弹卡（实得 {result.action}）"
+
+    def test_general_intent_unchanged(self):
+        """general 意图行为不变（负面即 offer）"""
+        result = judge_handoff(
+            "你们窗帘质量太差了，气死我了", intent="general", handoff_state=None)
+        assert result.action == "offer" and result.signal == "S1"
+
+    def test_non_whitelist_intent_still_blocked(self):
+        """白名单外意图仍一律不 offer（防打断业务流的能力不退化）"""
+        for intent in ["order_create", "order_query", "product_inquiry", "knowledge_faq"]:
+            result = judge_handoff(
+                "你们窗帘质量太差了，气死我了", intent=intent, handoff_state=None)
+            assert result.action == "none", f"意图 {intent} 不该 offer"
+
+    def test_cooldown_still_wins(self):
+        """冷却优先级最高：纯发泄也要被冷却拦住（防骚扰不退化）"""
+        result = judge_handoff(
+            "你们窗帘质量太差了，气死我了",
+            intent="after_sales",
+            handoff_state={"offer_count": 1},
+        )
+        assert result.action == "none"
+
+    def test_whitelist_blocks_s2_for_non_business_flow_intents(self):
+        """白名单的真正作用面在 S2/S3：白名单外意图即使多轮负面也不 offer
+
+        （S1 分支本身只认 general/after_sales，故只测 S1 抓不到"白名单被放宽"这类改动；
+          必须从 S2 多轮路径断言，才能锁住白名单语义。）
+        """
+        # 注意：recent_user_messages 是"本条之前"的消息，且必须落在负面词表内
+        # （"一直没解决"在词表里，"一直没人解决"不在 —— 首版写错导致该测试假失败）
+        # 当前消息必须**中性**：否则 S1（单轮负面）先命中，测不到 S2 路径
+        recent = ["你们太坑了", "一直没解决"]
+        for intent in ["order_create", "order_query", "product_inquiry", "knowledge_faq"]:
+            result = judge_handoff(
+                "那你们怎么处理", intent=intent,
+                recent_user_messages=recent, handoff_state=None)
+            assert result.action == "none", (
+                f"意图 {intent} 不在 offer 白名单，多轮负面也不该弹卡（实得 {result.action}）"
+            )
+
+    def test_whitelist_allows_s2_for_after_sales(self):
+        """白名单内意图的多轮未解决仍可 offer（防改动把 S2 一起关掉）"""
+        result = judge_handoff(
+            "那你们怎么处理", intent="after_sales",
+            recent_user_messages=["你们太坑了", "一直没解决"], handoff_state=None)
+        assert result.action == "offer"
+        assert result.signal == "S2"

@@ -51,6 +51,27 @@ _OUT_OF_SCOPE_WORDS = (
 # 一律不弹建议卡，防止打断正常业务推进。
 _OFFER_ALLOWED_INTENTS = {"general", "after_sales"}
 
+# ────────────────────── 可执行业务诉求（S1 例外判据） ──────────────────────
+# 用途：`after_sales` 意图下判断「这条消息是不是有正事要办」。
+# 设计本意（docs/design/xiaobu-ai-handoff-guidance.md §3.3）防的是**打断有正事
+# 要办的业务流**，原文例子是"质量太差**我要退货**" —— 关键是「我要退货」这个
+# 动作，而不是意图标签本身。故判据落在"消息里有没有可执行诉求"上。
+#
+# 为什么必须改（实测不可复现）：旧规则 S1 仅对 `general` 生效 → 同一用例
+# （CH-013/CH-014）的成败取决于 LLM 把「你们太坑了，再也不买了」分成
+# general 还是 after_sales（run 34612040268 ✅ / run 34613307565 ❌，
+# 同代码同输入）→ 变成分类器抽奖，不符合企业级评测要求。
+_ACTIONABLE_REQUEST_WORDS = (
+    # 售后动作
+    "退货", "退钱", "退款", "换货", "换新", "维修", "补发", "重新发", "返修",
+    # 下单/交易动作
+    "下单", "购买", "我要买", "帮我买", "算料", "报价", "多少钱",
+    # 查单/物流动作
+    "查订单", "我的订单", "订单号", "查物流", "物流", "快递", "发货",
+    # 票据
+    "开发票", "发票",
+)
+
 # 每会话自动建议次数上限（冷却：达上限后不再弹卡）
 DEFAULT_HANDOFF_MAX_OFFERS = 1
 
@@ -87,6 +108,15 @@ def _hit_negative(text: str) -> bool:
 
 def _hit_out_of_scope(text: str) -> bool:
     return any(kw in text for kw in _OUT_OF_SCOPE_WORDS)
+
+
+def _hit_actionable_request(text: str) -> bool:
+    """消息是否含**可执行业务诉求**（有正事要办）。
+
+    用于 S1 在 `after_sales` 意图下的例外判定：有诉求 → 继续走业务流不打断；
+    纯情绪发泄 → 建议转人工（用户此刻最需要的是人，不是流程）。
+    """
+    return any(kw in text for kw in _ACTIONABLE_REQUEST_WORDS)
 
 
 def _cooldown_blocked(handoff_state: Optional[dict]) -> bool:
@@ -149,12 +179,23 @@ def judge_handoff(
             reason="能力外/超范围请求（赔偿/法律等）",
         )
 
-    # 4. S1 单轮负面情绪 → 仅 general 兜底意图 offer
-    #    （after_sales 单轮负面表达如"要退货"该走售后流程，不打断）
-    if intent == "general" and _hit_negative(text):
-        return HandoffJudgeResult(
-            action="offer", signal="S1", reason="单轮负面情绪表达(general)"
-        )
+    # 4. S1 单轮负面情绪
+    #    - general（兜底/未知意图）：负面即 offer。
+    #    - after_sales：仅当消息**没有可执行业务诉求**时 offer。
+    #      设计本意是「不打断有正事要办的售后流程」（如"质量太差我要退货"），
+    #      而不是「售后意图一律不 offer」—— 后者会让纯情绪发泄的处置取决于
+    #      分类器把消息分到 general 还是 after_sales，用例成败成为抽奖
+    #      （CH-013/CH-014 实测两次 run 结果相反，见 _ACTIONABLE_REQUEST_WORDS 注释）。
+    if _hit_negative(text):
+        if intent == "general":
+            return HandoffJudgeResult(
+                action="offer", signal="S1", reason="单轮负面情绪表达(general)"
+            )
+        if intent == "after_sales" and not _hit_actionable_request(text):
+            return HandoffJudgeResult(
+                action="offer", signal="S1",
+                reason="单轮负面情绪表达(after_sales 且无可执行业务诉求，不打断业务流)",
+            )
 
     # 5. S2 多轮未解决：最近窗口内 ≥2 条负面表达（本条中性也可触发）
     if recent_user_messages:
