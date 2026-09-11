@@ -30,7 +30,10 @@ jobs:
           cache-dependency-path: backend/ai-agent-service/requirements.txt
 
       - name: "Start local stack (docker-compose: PG + Redis + admin-api + ai-agent DEBUG)"
+        id: stack
         env:
+          # ⚠️ deploy/docker-compose.yml 里 DEV_SERVICE_TOKEN 是 required 无默认值
+          # （``${DEV_SERVICE_TOKEN:?...}``）——缺它 compose 直接插值失败，栈根本起不来。
           DEV_SERVICE_TOKEN: ${{ secrets.SMOKE_SERVICE_TOKEN || 'ci-service-token-placeholder' }}
           PRIMARY_API_KEY: ${{ secrets.DEEPSEEK_API_KEY || 'ci-dummy' }}
           PRIMARY_MODEL: deepseek-v4-flash
@@ -43,23 +46,41 @@ jobs:
           docker compose -f deploy/docker-compose.yml up -d --build --wait \
             --wait-timeout 300 postgres redis admin-api ai-agent-service 2>&1 | tail -20
 
-      - name: "Diagnose stack startup (issue #3270)"
+      - name: "Diagnose stack startup on failure (issue #3270)"
         # 自 2026-08-31 起本 workflow 9/9 全 failure：postgres 容器 `exited (3)` 后
         # `--wait` 只报 "dependency failed to start"，把真正的启动错误吞掉了，导致
-        # 长期无法定位。此步骤强制 dump 各容器状态与日志，让下一次运行直接暴露根因。
-        if: always()
+        # 长期无法定位。此步骤在失败时 dump 各容器状态与日志，直接暴露根因。
+        #
+        # ⚠️ 必须带 DEV_SERVICE_TOKEN：deploy/docker-compose.yml 把它声明为 required
+        #    （``${DEV_SERVICE_TOKEN:?...}``），缺它连 `docker compose ps/logs` 都会
+        #    插值失败、拿不到任何容器信息（2026-09-11 实测踩到）。
+        if: failure()
+        env:
+          DEV_SERVICE_TOKEN: ${{ secrets.SMOKE_SERVICE_TOKEN || 'ci-service-token-placeholder' }}
         run: |
           echo "── 容器状态 ──"
           docker compose -f deploy/docker-compose.yml ps -a || true
           for c in postgres redis admin-api ai-agent-service; do
             echo ""
             echo "════════ container logs: $c ════════"
-            docker compose -f deploy/docker-compose.yml logs --no-color --tail=80 "$c" || true
+            docker compose -f deploy/docker-compose.yml logs --no-color --tail=100 "$c" || true
           done
           echo ""
-          echo "── postgres 数据卷 / init 脚本可见性 ──"
-          docker run --rm -v migao_postgres_data:/v alpine:3 sh -c 'ls -la /v | head -20' 2>&1 || true
+          echo "── 直接 docker logs（compose logs 为空时兜底）──"
+          for n in aikf-postgres aikf-redis aikf-admin-api aikf-ai-agent; do
+            echo "── $n ──"
+            docker logs --tail=60 "$n" 2>&1 || true
+          done
+          echo ""
+          echo "── postgres 数据卷内容 / init 脚本 ──"
+          for v in migao_postgres_data deploy_postgres_data; do
+            echo "-- volume: $v --"
+            docker run --rm -v "$v":/v alpine:3 sh -c 'ls -la /v | head -20' 2>&1 || true
+          done
           ls -la docs/sql/schema.sql 2>&1 || true
+          echo ""
+          echo "── compose 配置解析（确认变量插值成功）──"
+          docker compose -f deploy/docker-compose.yml config --services 2>&1 | head -10 || true
 
       - name: Install eval runner deps
         run: pip install httpx -q
