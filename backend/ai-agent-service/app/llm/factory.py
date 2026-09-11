@@ -80,10 +80,17 @@ class LLMFactory:
         与主模型共用 DeepSeek API key（推理/视觉同 key）。
         """
         model = model_override or settings.VISION_MODEL
+        # 凭据兜底（issue #3270）：文档契约是「推理/视觉同 key」（见本方法 docstring
+        # 与 app/config.py 注释），且 Settings.LLM_API_KEY 属性正是为此实现
+        # 「PRIMARY 优先，VISION 兜底」。此前直取 VISION_API_KEY 绕过了兜底 →
+        # 只配 PRIMARY_API_KEY 的环境（compose/生产常态）视觉链路报
+        # `OpenAIError: Missing credentials` → 图片能力（拍照找同款/识别面料）不可用。
+        # CI 实证：CH-026「澄清卡后发图」因缺凭据失败。
+        # 语义：显式配置的独立视觉 key 优先；未配置则兜底主模型 key/base_url。
         return ChatOpenAI(
             model=model,
-            api_key=settings.VISION_API_KEY,
-            base_url=settings.VISION_BASE_URL,
+            api_key=settings.VISION_API_KEY or settings.PRIMARY_API_KEY,
+            base_url=settings.VISION_BASE_URL or settings.PRIMARY_BASE_URL,
             temperature=0.7,
             streaming=True,
             max_completion_tokens=16384,

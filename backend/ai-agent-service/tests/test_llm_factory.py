@@ -174,3 +174,51 @@ class TestInvokeTextSafe:
         kwargs = mock_factory.call_args.kwargs
         assert kwargs["enable_thinking"] is True
         assert kwargs["model_override"] == "m"
+
+
+class TestVisionLlmApiKeyFallback:
+    """视觉 LLM 的 API key 兜底（issue #3270）。
+
+    契约（见 create_vision_llm docstring 与 config.py 注释）：
+      「DeepSeek vision … 与主模型共用 DeepSeek API key（推理/视觉同 key）」
+    且 `Settings.LLM_API_KEY` 属性明确实现「PRIMARY 优先，VISION 兜底」。
+    但 `create_vision_llm` 此前**直接取 settings.VISION_API_KEY**，绕过了该兜底 →
+    只配 PRIMARY_API_KEY 的环境（compose/生产常态、CI 实测）视觉链路报
+    `OpenAIError: Missing credentials` → 图片能力（拍照找同款/识别面料）不可用。
+
+    实测（CI normal 档）：CH-026「澄清卡后发图」以
+    `OpenAIError: Missing credentials. Please pass an api_key` 失败。
+    """
+
+    def test_falls_back_to_primary_key_when_vision_key_empty(self):
+        with patch("app.llm.factory.settings") as ms, \
+             patch("app.llm.factory.ChatOpenAI") as mock_co:
+            ms.VISION_MODEL = "vm"
+            ms.VISION_API_KEY = ""            # 未单独配置视觉 key（常态）
+            ms.PRIMARY_API_KEY = "pk"         # 只有主模型 key
+            LLMFactory.create_vision_llm()
+        assert mock_co.call_args.kwargs["api_key"] == "pk", (
+            "VISION_API_KEY 为空时必须兜底用 PRIMARY_API_KEY —— "
+            "否则只配主 key 的环境视觉链路不可用（issue #3270 实测 CH-026）"
+        )
+
+    def test_explicit_vision_key_takes_priority(self):
+        """显式配置了独立视觉 key → 优先用它（不覆盖用户意图）"""
+        with patch("app.llm.factory.settings") as ms, \
+             patch("app.llm.factory.ChatOpenAI") as mock_co:
+            ms.VISION_MODEL = "vm"
+            ms.VISION_API_KEY = "vk"
+            ms.PRIMARY_API_KEY = "pk"
+            LLMFactory.create_vision_llm()
+        assert mock_co.call_args.kwargs["api_key"] == "vk"
+
+    def test_base_url_falls_back_to_primary(self):
+        with patch("app.llm.factory.settings") as ms, \
+             patch("app.llm.factory.ChatOpenAI") as mock_co:
+            ms.VISION_MODEL = "vm"
+            ms.VISION_API_KEY = ""
+            ms.PRIMARY_API_KEY = "pk"
+            ms.VISION_BASE_URL = ""
+            ms.PRIMARY_BASE_URL = "https://api.deepseek.com/v1"
+            LLMFactory.create_vision_llm()
+        assert mock_co.call_args.kwargs["base_url"] == "https://api.deepseek.com/v1"
