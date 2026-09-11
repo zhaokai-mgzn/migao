@@ -2534,6 +2534,23 @@ _CASE_OR_016 = EvalCase(
     order_before=['interact[choice:processing_items] before interact[confirm]', 'interact[choice:processing_items] before order_create'],
 )
 
+# ── OR-017 [NORMAL] C 端自助下单加工项闭环 - 必须查详情→主动询问→加工费落单（不凭列表错报无加工项）（源: cases/order.yml）──
+_CASE_OR_017 = EvalCase(
+    id='OR-017',
+    legacy_id='',
+    title='C 端自助下单加工项闭环 - 必须查详情→主动询问→加工费落单（不凭列表错报无加工项）',
+    skill=Skill.ORDER,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['我想买夏日清风窗帘，米白色，3米，门幅2.8米散剪', '我是张三，手机13800138000，地址杭州市西湖区文三路1号', '确认'],
+    expectations=['product_search', 'product_detail', 'interact(component=choice, multiSelect=True)', 'order_create'],
+    data_checks=['product_search 列表数据不含 processing_items/colorId/skus，必须先调 product_detail 取详情；未调详情即断言「无加工项」属能力误宣', '加工项非空时 confirm 之前必须用 interact(choice, multiSelect=true) 主动询问，列出名称与单价（如「纳米圈打孔 ¥8/米」）', '所选加工项写入 order_create 的 processing_info.processingItems（id/name/unitPrice/quantity/unit/pricingMethod/subtotal），合计写入 processingFee 且计入订单金额；按米计价项加工数量=面料米数', '顾客说「不需要加工项」可跳过；加工项确实为空时才告知无可用加工项'],
+    skip_reason='',
+    tags=['order_create', 'processing_item', 'guided_flow', 'xiaobu'],
+    persona='xiaobu',
+    order_before=['interact[choice:processing_items] before interact[confirm]', 'interact[choice:processing_items] before order_create'],
+    forbidden_text=['暂未查询到可选加工项', '无可用加工项', '该商品无加工项'],
+)
+
 # ── PP-001 [NORMAL] 加工项选择 - 分页翻页（源: cases/processing.yml）──
 _CASE_PP_001 = EvalCase(
     id='PP-001',
@@ -3911,6 +3928,7 @@ ALL_CASES = (
     _CASE_OR_014,
     _CASE_OR_015,
     _CASE_OR_016,
+    _CASE_OR_017,
     _CASE_PP_001,
     _CASE_PP_002,
     _CASE_PP_003,
