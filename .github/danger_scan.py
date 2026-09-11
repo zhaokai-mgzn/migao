@@ -13,6 +13,7 @@
 """
 import json
 import os
+import pathlib
 import re
 import subprocess
 import sys
@@ -99,10 +100,51 @@ def analyze(workflow_changes, wf_new_secrets, deleted_files, deploy_files, migra
             )
 
     # ---- DDL 与迁移同步（R2）：改表结构参考必须伴随迁移 ----
+    # 豁免：schema.sql 只**补齐**迁移链已创建的表（bootstrap 对齐），而非新增/修改
+    # 表结构 —— 此时**不应**新建迁移（迁移链才是 schema 事实源，再建迁移是反向漂移）。
+    # 判定：diff 里新增的 CREATE TABLE 表名全部能在现有迁移文件中找到定义。
+    # 背景（issue #3270 三次踩坑）：schema.sql 与迁移链双源漂移，补表对齐是修复而非变更。
+    bootstrap_alignment = False
     if schema_changes and not new_migrations:
+        added_tables = set()
+        for f in schema_changes:
+            try:
+                diff = subprocess.run(
+                    ["git", "diff", BASE, "--", f],
+                    capture_output=True, text=True, check=False).stdout
+            except Exception:
+                diff = ""
+            for m in re.finditer(
+                    r"^\+CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?([A-Za-z0-9_.]+)",
+                    diff, re.M | re.I):
+                added_tables.add(m.group(1).lower())
+        if added_tables:
+            try:
+                mig_files = subprocess.run(
+                    ["git", "ls-files", MIGRATION_DIR], capture_output=True, text=True,
+                    check=False).stdout
+            except Exception:
+                mig_files = ""
+            all_migration_sql = ""
+            for mf in mig_files.split():
+                try:
+                    all_migration_sql += pathlib.Path(mf).read_text(encoding="utf-8", errors="ignore")
+                except Exception:
+                    pass
+            known = {m.group(1).lower() for m in re.finditer(
+                r"CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?([A-Za-z0-9_.]+)",
+                all_migration_sql, re.I)}
+            if added_tables and added_tables <= known:
+                bootstrap_alignment = True
+
+    if schema_changes and not new_migrations and not bootstrap_alignment:
         blockers.append(
             f"修改了表结构参考 {SCHEMA_FILES[0]}/{SCHEMA_FILES[1]} 但未新增迁移文件 —— "
             f"请新增 {MIGRATION_DIR}/V{{n}}__xxx.sql 并保证幂等（IF NOT EXISTS / ADD COLUMN IF NOT EXISTS）"
+        )
+    elif bootstrap_alignment:
+        warnings.append(
+            f"schema.sql 仅补齐迁移链已存在的表（bootstrap 对齐，非结构变更）—— 无需新迁移"
         )
 
     if len(deleted_files) >= BULK_DELETE_THRESHOLD:
