@@ -164,6 +164,7 @@ def to_eval_py(cases):
            '    forbidden_text: List[str] = field(default_factory=list) # final_text 反模式词，命中即失败（§3.4 幻觉式撤回/报错文案）',
             '    want_text: List[str] = field(default_factory=list) # final_text 正向关键词，全缺即失败（§3.4 正反关键词双轨）',
            '    required_args: List[dict] = field(default_factory=list) # 必填参数断言（create 缺 specifications/加工项价格即失败，§3.2）',
+    '    forbidden_args: List[dict] = field(default_factory=list) # 禁止参数断言（隔离/越权下限：如物流工具不得接受快递单号，issue #3270）',
             '    db_verify: List[dict] = field(default_factory=list) # 落库层验证（创建后查 admin-api 断言价格=确认价，§3.2/issue #3056）',
             '    pre_clean: List[dict] = field(default_factory=list) # 评测前数据清理（写类 case 自我污染防线）',
            "", ""]
@@ -194,6 +195,8 @@ def to_eval_py(cases):
             out.append(f"    want_text={c.get('want_text')!r},")
         if c.get("required_args"):
             out.append(f"    required_args={c.get('required_args')!r},")
+        if c.get("forbidden_args"):
+            out.append(f"    forbidden_args={c.get('forbidden_args')!r},")
         if c.get("db_verify"):
             out.append(f"    db_verify={c.get('db_verify')!r},")
         if c.get("pre_clean"):
@@ -277,6 +280,8 @@ def to_md(cases):
                 lines.append(f"必须: {wt}")
             for ra in (c.get("required_args") or []):
                 lines.append(f"必填: {ra.get('tool')}({ra.get('action', '')}) 字段 {', '.join(ra.get('fields') or [])}")
+            for fa in (c.get("forbidden_args") or []):
+                lines.append(f"禁参: {fa.get('tool')}({fa.get('action', '')}) 不得含 {', '.join(fa.get('fields') or [])}")
             for dv in (c.get("db_verify") or []):
                 lines.append(f"落库: {dv.get('fetch')} {dv.get('name')} → {'; '.join(dv.get('checks') or [])}")
             if c.get("skip_reason"):

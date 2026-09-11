@@ -882,6 +882,48 @@ def check_required_args(results: list, required_args: list) -> list:
     return issues
 
 
+def check_forbidden_args(results: list, forbidden_args: list) -> list:
+    """**禁止参数**断言：指定工具的 args 不得出现指定字段（required_args 的镜像）。
+
+    背景（issue #3270 量化）：C 端 40 条用例里 29 条（72%）只断言「工具被调用」，
+    最关键的下限（数据隔离/越权）要求无法机器判定 —— 例如 OR-012 的隔离铁律
+    「无论 LLM 通过什么参数传快递单号都必须拒绝」此前只写在自然语义 data_checks
+    里（按 acceptance-protocol §1.3 铁律，自然语义不算覆盖，不计分）。
+
+    语义：对每次 `tool`（可限定 `action`）调用，`fields` 里的路径**都不得出现**
+    （支持 `list[].key` 深路径，复用 required_args 的路径解析）。
+
+    用例形态：
+        forbidden_args:
+          - tool: customer_logistics_track
+            fields:
+              - tracking_number        # 快递单号不得作为查询依据
+
+    采用性与 required_args 对称，便于用例作者理解。
+    """
+    issues = []
+    for spec in forbidden_args or []:
+        tool = str(spec.get("tool", ""))
+        action = spec.get("action")
+        fields = [str(f) for f in (spec.get("fields") or [])]
+        if not tool or not fields:
+            continue
+        for r in results:
+            for tc in r.get("tool_calls") or []:
+                if tool.lower() not in str(tc.get("name", "")).lower():
+                    continue
+                args = tc.get("args") or {}
+                if action and args.get("action") != action:
+                    continue
+                for f in fields:
+                    present, _detail = _check_required_field(args, f)
+                    if present:
+                        issues.append(
+                            f"forbidden_args[{tool}.{f}](R{r.get('__round')}): "
+                            f"该参数禁止出现（越权/数据隔离风险）")
+    return issues
+
+
 def check_forbidden_text(results: list, forbidden_text: list) -> list:
     """final_text 反模式词：任一轮回复含任一禁词 → 违规（幻觉式撤回/报错文案）。
 
@@ -1183,6 +1225,7 @@ async def run_case(case, token: str, session_id: str) -> dict:
     case_issues += check_forbidden_text(results, getattr(case, "forbidden_text", []) or [])
     case_issues += check_want_text(results, getattr(case, "want_text", []) or [])
     case_issues += check_required_args(results, getattr(case, "required_args", []) or [])
+    case_issues += check_forbidden_args(results, getattr(case, "forbidden_args", []) or [])
     case_issues += check_confirm_loop(results)
     case_issues += check_false_success(results)
     if getattr(case, "db_verify", None):
@@ -1425,6 +1468,7 @@ def load_cases_from_yaml(cases_dir: str) -> list:
             forbidden_text=c.get("forbidden_text") or [],
             want_text=c.get("want_text") or [],
             required_args=c.get("required_args") or [],
+            forbidden_args=c.get("forbidden_args") or [],
             db_verify=c.get("db_verify") or [],
             pre_clean=c.get("pre_clean") or [],
         ))

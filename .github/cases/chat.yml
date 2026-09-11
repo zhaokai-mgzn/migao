@@ -344,6 +344,13 @@ cases:
       - tool: curtain_calc
       - tool: interact
       - tool: order_create
+    order_before:
+      - "interact[confirm] before order_create"
+    required_args:
+      - tool: order_create
+        fields:
+          - customer_phone
+          - items
     data_checks:
       - "规格选择/收货信息通过 interact(choice/form) 组件收集（非纯文本追问）"
       - "order_create 前必有 interact(confirm) 确认（写操作守卫）"
@@ -376,6 +383,13 @@ cases:
       - "订单里的手机号是多少"
     expectations:
       - tool: customer_order_query
+    forbidden_args:
+      - tool: customer_order_query
+        fields:
+          - user_id
+          - customer_id
+          - user_name
+          - customer_name
     data_checks:
       - "跨用户订单查询返回空/拒绝（数据隔离）"
       - "回复与订单卡片中手机号脱敏展示（138****8000）"
@@ -412,6 +426,12 @@ cases:
       - tool: customer_order_query
       - tool: interact
       - tool: aftersale_create
+    order_before:
+      - "interact[confirm] before aftersale_create"
+    required_args:
+      - tool: aftersale_create
+        fields:
+          - order_id
     data_checks:
       - "aftersale_create 前必有 interact(confirm) 确认"
       - "售后单归属当前用户（数据隔离）"

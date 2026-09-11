@@ -101,6 +101,7 @@
 数据: list 返回当前顾客工单（含 status 标签与 timeline）；无工单时如实告知『暂无售后记录』，不编造工单号/状态
 数据: status 可筛选（pending/processing/resolved/rejected/closed），非法值不静默当成全部
 数据: 与 B 端 after_sales_manage 物理隔离：小布无 after_sales_manage 工具，不得出现管理端动作（改状态/退款/回补库存）
+禁参: aftersale_query() 不得含 user_id, customer_id, customer_phone
 ```
 真值: aftersales-flow.status-enums, aftersales-flow.flow
 溯源: 2026-09-11 新增（issue #3266 C 端评测覆盖体检）：aftersale_query 是唯一无任何 C 端用例覆盖的真实能力缺口——AS-005 的 `after_sales_manage or aftersale_query` 因 after_sales_manage 属 B 端工具被 C 端用例集排除后，C 端售后查询能力归零；本条补 C 端专属进度查询 + 数据隔离断言 ｜ tags: query, aftersale, data_safety, xiaobu
@@ -626,6 +627,8 @@
 数据: 规格选择/收货信息通过 interact(choice/form) 组件收集（非纯文本追问）
 数据: order_create 前必有 interact(confirm) 确认（写操作守卫）
 数据: order_create items 含所选 SKU（颜色/门幅/售卖方式）与数量
+时序: interact[confirm] before order_create
+必填: order_create() 字段 customer_phone, items
 ```
 真值: ai-chat.confirm-required, order.flow
 溯源: C 端表单化交互方案 S1（miniapp-multiturn-form-scenarios.md） ｜ tags: multi_turn, form, interactive, order
@@ -637,6 +640,7 @@
 期望: customer_order_query
 数据: 跨用户订单查询返回空/拒绝（数据隔离）
 数据: 回复与订单卡片中手机号脱敏展示（138****8000）
+禁参: customer_order_query() 不得含 user_id, customer_id, user_name, customer_name
 ```
 真值: id-resolve.name
 溯源: C 端表单化交互方案 S5（miniapp-multiturn-form-scenarios.md） ｜ tags: data_safety, mask, isolation
@@ -652,6 +656,8 @@
 期望: aftersale_create
 数据: aftersale_create 前必有 interact(confirm) 确认
 数据: 售后单归属当前用户（数据隔离）
+时序: interact[confirm] before aftersale_create
+必填: aftersale_create() 字段 order_id
 ```
 真值: aftersales-flow.flow
 溯源: C 端表单化交互方案 S3（miniapp-multiturn-form-scenarios.md） ｜ tags: multi_turn, aftersales, interactive
@@ -1948,6 +1954,7 @@
 期望: order_create
 数据: 下单全流程不得向顾客索要单价/金额——价格取自商品数据/算料结果（实测反复要价导致下单卡死 + 本用例评估不稳）
 必须: 订单号
+必填: order_create() 字段 customer_phone, items
 ```
 真值: order.states, order.create-flow
 溯源: verification 1.8 独有（smoke 简化版，与 OR-008/OR-009 的细粒度版互补）；2026-08-14 按 EXAMPLES-order.md 例2 校准为多轮（完整收货信息→选1→确认），单轮直下单与设计澄清流程不符；2026-09-02 补价格铁律；2026-09-04 修复 choice 卡片消费协议不匹配（审计 #2818 Agent Eval 失败根因）：原「选1」为自然语言序号，LLM 无法关联 interact(choice) 选项导致反复 product_detail 追问、永不进入 validate_input/order_create；改为显式售卖方式描述（与 OR-008/009 一致），且「2件」与商品按米计价（¥99/米）矛盾改为「2米」，实测全流程通过；2026-09-09 校准：R3「确认下单」改「不添加加工项，确认下单」+ 补第4轮「确认下单」——agent 把加工项询问当强制环节，用户说「确认下单」仍发加工项卡（probe 实证），需明确跳过加工项才推进（与 OR-009 校准一致） ｜ tags: create, confirm
@@ -1961,6 +1968,7 @@
 期望: order_create
 数据: order_create 返回订单号
 数据: 订单必须携带有效收件人手机号：agent 路径必填+11位格式校验；表单 API @Pattern 同规则（非法手机号 → 400 拒绝创建）——手机号是客户绑定归属回填与物流查询（顺丰等需尾号）的关键信息，禁止缺失/非法
+必填: order_create() 字段 customer_phone, items
 ```
 真值: order.flow
 溯源: POC 下单闭环集成测试新增；2026-09-02 补订单手机号完整性约束；2026-09-09 校准：原 user_inputs 为描述性文字「用户算料报价后确认下单…」非用户对话，agent 无法触发下单（tools=[]）；改为真实下单对话（选品→规格→跳过加工项→确认） ｜ tags: order_create, smoke
@@ -1974,6 +1982,7 @@
 数据: 只查当前用户已发货(在途)订单的物流：/orders/mine?status=shipped 后端强制按用户过滤，返回每笔订单的运单号/快递公司/轨迹
 数据: 传其他用户/非在途订单号 → 拒绝；无在途订单 → 提示暂无
 数据: customer_logistics_track 命中 logistics 卡片（logistics_list 非空）
+禁参: customer_logistics_track() 不得含 tracking_number
 ```
 真值: order.logistics
 溯源: 2026-09-01 新增：C 端查物流入口（转人工→查物流）后端能力，与 B 端 logistics_track 物理隔离 ｜ tags: query, logistics, data_safety
@@ -2021,6 +2030,8 @@
 数据: customer_phone 非 11 位手机号（或不以 1 开头）→ 校验失败提示「请输入 11 位中国大陆手机号」
 数据: 合法参数（customer_name + 11 位 phone + items 非空列表）→ 校验通过 validated=true
 数据: 禁止返回「无需校验（该操作无预定义规则）」跳过（平铺结构 vs 分层读取不匹配的回归防线，sess_7f27137647e14b1e A5 轮实证）
+时序: validate_input before order_create
+必填: validate_input() 字段 target_tool, target_action
 ```
 真值: order.create-flow
 溯源: 2026-09-08 新增（issue #3029 复盘）：_VALIDATION_RULES[order_create] 平铺结构而 execute 按 tool_rules.get(target_action) 分层读取 → 校验永远空转，手机号/必填空转；修复为 {create: {...}} 分层并对齐 product_manage，补 L2 单测；2026-09-09 校准：补「散剪规格→跳过加工项→确认」三轮（遮光窗帘有散剪/整卷需澄清售卖方式，单轮到不了 validate_input；probe 实证 4 轮走通） ｜ tags: order_create, validate_input, defense
