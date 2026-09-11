@@ -277,7 +277,16 @@ class ValidateInputTool(BaseTool):
     description = (
         "【触发】调用 product_manage、order_create、order_manage 等写操作前，先调用本工具校验参数完整性。【前置】需要 target_tool + target_action + params。校验通过返回 success=true。【反例】不要跳过校验直接调写操作。查询操作不需要校验。【标注】READONLY — 纯本地校验，不调用外部API"
     )
-    allowed_roles = ["admin", "agent", "tenant_admin"]
+    # ⚠️ 必须含 `customer`（C 端小布）：本工具是**纯本地参数校验**（description 自述
+    # READONLY、不调用外部 API），小布的 `customer_aftersales` 绑定它，而 `base_skill`
+    # 的「确认-执行链」依赖它**成功**才持久化「已校验待执行」状态：
+    #     if tool_name == "validate_input" and result_dict.get("success"): → 落 pending
+    # 此前不含 customer → 顾客调用一律 `权限不足` → C 端售后 confirm 永远换不来执行
+    # （CI 实证 run 34620594324：`failed=validate_input!权限不足` → 兜底 human_handoff，
+    #  aftersale_create 整轮 0 次成功）。
+    # 安全性：本工具不读库、不写库、不访问外部服务，只校验调用方自己传来的参数；
+    # 真正的权限门禁在各自写工具的 allowed_roles 上，放开这里不构成越权。
+    allowed_roles = ["admin", "agent", "tenant_admin", "customer"]
 
     parameters = {
         "type": "object",

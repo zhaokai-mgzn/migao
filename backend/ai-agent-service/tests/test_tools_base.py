@@ -68,9 +68,16 @@ class TestCheckPermissionFineGrained:
 
     @pytest.fixture
     def admin_tool(self):
-        """创建一个需要 employee:list 权限的工具"""
-        from app.tools.validate_input import ValidateInputTool
-        tool = ValidateInputTool()
+        """一个需要 employee:list 权限、且**不含 customer 角色**的 B 端工具。
+
+        ⚠️ 曾用 `ValidateInputTool` 当夹具，但该工具现已允许 `customer`
+        （C 端售后的参数校验要用它，见 validate_input.py 的 allowed_roles 注释）——
+        继续用它会让「非允许角色 + * 通配符 → 拒绝」这条用例失去意义
+        （角色检查本就不该拦 customer 了）。改用真正排除 customer 的
+        `EmployeeManageTool`（人事域，allowed_roles 仅 B 端岗位）。
+        """
+        from app.tools.employee_manage import EmployeeManageTool
+        tool = EmployeeManageTool()
         tool.required_permissions = ["employee:list"]
         return tool
 

@@ -1,4 +1,4 @@
-# case_ids: AS-003, CH-012
+# case_ids: AS-003, CH-012, CH-010, OR-014, OR-017
 """
 SkillConfig + SkillRegistry 单元测试
 
@@ -462,3 +462,56 @@ def test_customer_aftersales_exposes_order_lookup_and_interact():
     assert "aftersale_create" in CUSTOMER_AFTERSALES_TOOLS
     assert "aftersale_query" in CUSTOMER_AFTERSALES_TOOLS
     assert "human_handoff" in CUSTOMER_AFTERSALES_TOOLS
+
+
+def test_customer_skills_only_bind_tools_customer_role_can_use():
+    """不变式（C 端）：小布 Skill 绑定的工具，`customer` 角色必须都能用。
+
+    根因（CH-012/OR-014/OR-017/CH-010 实测 2026-09-11，run 34620594324）：
+    `ValidateInputTool.allowed_roles = ["admin","agent","tenant_admin"]` —— **不含 customer**
+    → 小布的 `customer_order` / `customer_aftersales` 都绑了它，但顾客调用一律返回
+    `权限不足`。而 `base_skill` 的「确认-执行链」依赖 `validate_input` **成功**才持久化
+    「已校验待执行」状态：
+
+        if tool_name == "validate_input" and result_dict.get("success"):  → 落 pending
+
+    于是 C 端写流程的 confirm 永远换不来执行 —— `order_create` / `aftersale_create`
+    在整轮评测里**一次都没成功调用过**（CI 轨迹：`failed=validate_input!权限不足`，
+    随后 `human_handoff` 兜底）。
+
+    与本文件上一条 `interact` 不变式同族：**「Skill 绑了，但角色用不了」= 死能力**。
+    绑了却用不了的工具既浪费工具位（挤占 LLM 的注意力），又让流程在关键节点静默失败。
+    本用例把「绑定的工具对本人可用」升级为全 C 端不变式。
+    """
+    from app.graph.skills.skill_registry import get_skill_registry
+    from app.tools.base import ToolContext
+    from app.tools.registry import get_tool_registry
+
+    skill_registry = get_skill_registry()
+    tool_registry = get_tool_registry()
+    customer_ctx = ToolContext(
+        tenant_id=1, user_id="debug_customer_1", session_id="s", role="customer",
+    )
+
+    violations: list = []
+    checked = 0
+    for config in skill_registry.get_all():
+        if "xiaobu" not in (config.system_prompts or {}):
+            continue
+        for name in (config.tool_names or []):
+            tool = tool_registry.get_tool(name)
+            if tool is None:
+                violations.append(f"{config.name} 绑定了未注册工具 {name}")
+                continue
+            checked += 1
+            if not tool.check_permission(customer_ctx):
+                violations.append(
+                    f"{config.name} 绑定 {name}，但 allowed_roles={list(tool.allowed_roles)} "
+                    f"不含 customer → 顾客调用必返回「权限不足」"
+                )
+
+    assert checked >= 10, f"仅检查了 {checked} 个工具绑定 —— 解析疑似失效（测试会空转）"
+    assert not violations, (
+        "以下 C 端 Skill 绑定了顾客**用不了**的工具（死能力，流程会在关键节点静默失败）：\n  "
+        + "\n  ".join(violations)
+    )
