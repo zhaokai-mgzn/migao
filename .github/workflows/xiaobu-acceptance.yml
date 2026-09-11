@@ -5,6 +5,15 @@ permissions:
 
 on:
   workflow_dispatch:
+    inputs:
+      tier:
+        description: '评测档位：smoke（5 条，快）| normal（40 条 C 端全量，约 30-40min）'
+        required: false
+        default: smoke
+        type: choice
+        options:
+          - smoke
+          - normal
   # 2026-09-06 暂停定时调度（issue #2957）：连续 5+ 日 daily failure 且自动开 issue 制造噪音，
   # 待失败根因排查 + 本地验证提速落地后再恢复；期间保留 workflow_dispatch 手动触发。
   # schedule:
@@ -123,7 +132,11 @@ jobs:
           PYTHONIOENCODING: utf-8
         run: |
           # 小布 C 端用例（数据隔离/下单/售后），expectation 自动映射 customer_order_query
-          python tests/agent_eval/local_runner.py smoke --cases .github/cases
+          # tier 由 workflow_dispatch 输入控制：smoke=门禁级 5 条；normal=C 端全量 ~35 条
+          # （用于取「C 端能力缺陷分布」，issue #3270 第 2 步）
+          TIER="${{ github.event.inputs.tier || 'smoke' }}"
+          echo "── 评测档位: $TIER ──"
+          python tests/agent_eval/local_runner.py "$TIER" --cases .github/cases
 
       - name: Run xiaobu real E2E (pytest，含数据隔离断言)
         working-directory: backend/ai-agent-service
