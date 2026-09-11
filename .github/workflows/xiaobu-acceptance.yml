@@ -107,7 +107,11 @@ jobs:
             "SELECT 'products='||count(*) FROM products WHERE tenant_id=1"
 
       - name: Install eval runner deps
-        run: pip install httpx -q
+        # ⚠️ 必须连 pytest 一起装（issue #3270）：后面的 real E2E 步骤用
+        # `python -m pytest ... --timeout=120 --reruns 1`，而此前只装了 httpx →
+        # 步骤报 `No module named pytest` 直接 exit 1（C 端评测步骤其实已绿）。
+        # --timeout / --reruns 分别需要 pytest-timeout / pytest-rerunfailures。
+        run: pip install -q httpx pytest pytest-timeout pytest-rerunfailures
 
       - name: Run xiaobu local_runner (C 端身份，真实 LLM)
         env:
