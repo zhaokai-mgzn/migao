@@ -1,4 +1,4 @@
-# case_ids: AS-003
+# case_ids: AS-003, CH-012
 """
 SkillConfig + SkillRegistry 单元测试
 
@@ -396,3 +396,69 @@ def test_customer_aftersales_prompt_not_handoff_on_aftersale_requests():
     # skill 配置正确挂载（供 registry 注册）
     assert CUSTOMER_AFTERSALES_SKILL_CONFIG.name == "customer_aftersales"
     assert CUSTOMER_AFTERSALES_SKILL_CONFIG.default_persona == "xiaobu"
+
+
+# ────────────── 不变式：确认门禁可达性（CH-012 根因回归） ──────────────
+
+
+def test_confirmed_write_tools_require_interact_in_same_skill():
+    """不变式（C 端）：Skill 绑定了需确认的写工具时，必须同时暴露 `interact`。
+
+    根因（CH-012 退换货实证 2026-09-11）：`base_skill._requires_confirmation` 在拦截
+    未确认写操作时，返回 `confirmation_required` 并**要求 LLM 调用
+    `interact(component=confirm)` 展示确认卡片**。而 `customer_aftersales` 的
+    tool_names 里没有 `interact`（`aftersale_create` 却标了
+    `requires_confirmation=True`）—— 门禁给出的补救路径在该 Skill 内**不可达**：
+        ① 写工具 `aftersale_create` 只能依赖上一轮「口头确认」侥幸放行，弹卡确认路径不存在；
+        ② 轮内 LLM 拿到「请调用 interact」的指引却无此工具 → 反复重试/放弃；
+        ③ 唯一出口退化为 `human_handoff`（实测 CH-012 tools=['customer_order_query',
+           'human_handoff', 'aftersale_query']，0/2 建单）。
+    这是「prompt 写了、工具没给」型缺陷，单看 prompt 断言（本文件上一条用例）测不出来。
+
+    作用域刻意限定为 **C 端（persona=xiaobu）**：C 端设计基线是「低学历点选友好」，
+    写操作必须走卡片而非让顾客打字确认。B 端同类问题（staff/settings/data 共 6 处）
+    另案跟踪，不在此用例内混同，避免把 B 端改动风险夹带进 C 端修复。
+    """
+    from app.graph.skills.skill_registry import get_skill_registry
+    from app.tools.registry import get_tool_registry
+
+    full_registry = get_tool_registry()
+    violations: list[str] = []
+
+    for config in get_skill_registry().get_all():
+        if "xiaobu" not in (config.system_prompts or {}):
+            continue
+        tool_names = list(config.tool_names or [])
+        if not tool_names:
+            continue
+        for name in tool_names:
+            tool = full_registry.get_tool(name)
+            if tool is None:
+                continue
+            needs_confirm = getattr(tool, "destructive", False) or getattr(
+                tool, "requires_confirmation", False
+            )
+            if needs_confirm and "interact" not in tool_names:
+                violations.append(f"{config.name} 绑定需确认写工具 {name} 但未暴露 interact")
+
+    assert not violations, (
+        "以下 C 端 Skill 的弹卡确认路径不可达（写工具只能靠口头确认侥幸放行）：\n  "
+        + "\n  ".join(violations)
+    )
+
+
+def test_customer_aftersales_exposes_order_lookup_and_interact():
+    """customer_aftersales 必须具备「定位订单 + 弹卡确认」的最小闭环工具。
+
+    C 端顾客不会报订单号（说「第一笔订单」），且建单前必须弹 confirm 卡：
+    - `customer_order_query`：把「第一笔订单」解析成 order_id（其 prompt 已假定可查）
+    - `interact`：confirm 卡（门禁要求）+ choice 卡（售后类型/原因）
+    """
+    from app.graph.skills.customer_aftersales_skill import CUSTOMER_AFTERSALES_TOOLS
+
+    assert "customer_order_query" in CUSTOMER_AFTERSALES_TOOLS
+    assert "interact" in CUSTOMER_AFTERSALES_TOOLS
+    # 既有能力不回归
+    assert "aftersale_create" in CUSTOMER_AFTERSALES_TOOLS
+    assert "aftersale_query" in CUSTOMER_AFTERSALES_TOOLS
+    assert "human_handoff" in CUSTOMER_AFTERSALES_TOOLS
