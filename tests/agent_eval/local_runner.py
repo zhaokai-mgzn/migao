@@ -315,20 +315,15 @@ async def login() -> str:
             if not access_token:
                 raise RuntimeError(f"登录失败: HTTP {getattr(r, 'status_code', '?')} {str(getattr(r, 'content', b''))[:200]}")
             return access_token
-    return await _retry_502("登录", _do_login)
     # xiaobu 模式：不登录，走 DEBUG customer 身份（X-Debug-Role header 由 send 注入）
+    # ⚠️ 必须先于 _retry_502：此前 502 重试重构把 return 提到短路之前，导致
+    #    这两个分支变成**死代码** —— xiaobu/CI 模式仍发真实 SMS 登录，本地栈
+    #    无用户时 401「该手机号未注册」，评测全部失败（issue #3270 实证）。
     if PERSONA == "xiaobu":
         return ""
     if SERVICE_TOKEN:
         return ""
-    async with httpx.AsyncClient() as c:
-        r = await c.post(f"{ADMIN_API}/api/auth/sms/login",
-                         json={"phone": PHONE, "code": BYPASS_CODE}, timeout=10)
-        payload = _safe_json(r, {}) or {}
-        access_token = (payload.get("data") or {}).get("accessToken")
-        if not access_token:
-            raise RuntimeError(f"登录失败: HTTP {getattr(r, 'status_code', '?')} {str(getattr(r, 'content', b''))[:200]}")
-        return access_token
+    return await _retry_502("登录", _do_login)
 
 def _chat_headers(token: str) -> dict:
     """ai-agent 请求头：调试身份必须显式声明（P0-3 安全加固）

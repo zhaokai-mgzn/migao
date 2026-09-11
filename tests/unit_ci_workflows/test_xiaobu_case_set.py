@@ -256,3 +256,38 @@ class TestCustomerFacingSemanticGuard:
         cases = load_case_dicts(str(CASES_DIR))
         for c in cases[:40]:
             assert is_customer_facing_case(c) == is_customer_facing_case(c)
+
+
+class TestXiaobuLoginShortCircuit:
+    """PERSONA=xiaobu 时 login() 必须跳过 SMS 登录（issue #3270 死代码回归）。
+
+    背景：502 重试重构把 `return await _retry_502(...)` 提到 xiaobu/SERVICE_TOKEN
+    短路**之前**，使两个分支变成死代码 —— xiaobu 模式仍发真实 SMS 登录，
+    本地/CI 栈无用户时 401「该手机号未注册」→ 评测 100% 失败。
+    """
+
+    def test_login_shortcircuits_before_retry_call(self):
+        src = (REPO_ROOT / "tests" / "agent_eval" / "local_runner.py").read_text(encoding="utf-8")
+        i_xiaobu = src.find('if PERSONA == "xiaobu":')
+        i_retry = src.find('return await _retry_502("登录", _do_login)')
+        assert i_xiaobu != -1 and i_retry != -1
+        assert i_xiaobu < i_retry, (
+            "PERSONA=xiaobu 短路必须在 _retry_502 之前 —— "
+            "否则 xiaobu 模式仍发 SMS 登录（本地栈 401 全失败）"
+        )
+
+    def test_login_returns_empty_before_sms_call(self):
+        """xiaobu 短路必须返回空串，且不得发起 SMS 登录调用（源码级：`return ""` 在
+        sms/login 之前，且 _retry_502 在其后 —— 不 import local_runner，避免
+        Python 3.9 对 `X | None` 语法的兼容问题）"""
+        src = (REPO_ROOT / "tests" / "agent_eval" / "local_runner.py").read_text(encoding="utf-8")
+        i_short = src.find('if PERSONA == "xiaobu":\n        return ""')
+        i_call = src.find('return await _retry_502("登录", _do_login)')
+        assert i_short != -1, "xiaobu 短路 `return ""` 不存在"
+        assert i_call != -1, "_retry_502 调用不存在（结构变更需同步本测试）"
+        # _do_login 里含 sms/login 字符串但那是**定义**；真正发起登录的是
+        # _retry_502 的**调用**。短路必须在该调用之前。
+        assert i_short < i_call, (
+            "xiaobu 短路必须在 _retry_502 调用之前 —— 否则 xiaobu/CI 模式仍发真实"
+            "SMS 登录（本地栈 401「该手机号未注册」评测全失败，issue #3270 实证）"
+        )
