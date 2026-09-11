@@ -120,3 +120,52 @@ class TestFinanceApiActions:
         tool = FinanceApiTool()
         result = await tool.execute(context=admin_tool_context, action="not_a_real_action")
         assert result.success is False
+
+
+class TestFinancePeriodDefaults:
+    """FN-004 参数契约回归：get_summary/get_transactions/get_reconciliation
+    缺时间参数时自动补本期默认（本月1号~今天）——agent 偶发不传时间参数，
+    服务端默认避免「无时间范围查询」与 case 断言冲突。"""
+
+    @patch("app.tools.finance_api.get_admin_api_client")
+    async def test_get_summary_defaults_to_current_period(self, mock_get_client, admin_tool_context):
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value={"success": True, "data": {"netIncome": 1.0}})
+        mock_get_client.return_value = mock_client
+
+        tool = FinanceApiTool()
+        result = await tool.execute(context=admin_tool_context, action="get_summary")
+        assert result.success is True
+        # 校验请求参数含本期默认 startDate/endDate
+        call_kwargs = mock_client.get.call_args.kwargs
+        params = call_kwargs.get("params") or {}
+        assert params.get("startDate") is not None, f"缺默认 startDate: {params}"
+        assert params.get("endDate") is not None, f"缺默认 endDate: {params}"
+        import datetime as dt
+        assert params["endDate"] == dt.date.today().isoformat()
+
+    @patch("app.tools.finance_api.get_admin_api_client")
+    async def test_get_transactions_defaults_to_current_period(self, mock_get_client, admin_tool_context):
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value={"success": True, "data": {"items": []}})
+        mock_get_client.return_value = mock_client
+
+        tool = FinanceApiTool()
+        result = await tool.execute(context=admin_tool_context, action="get_transactions")
+        assert result.success is True
+        params = mock_client.get.call_args.kwargs.get("params") or {}
+        assert params.get("startDate") is not None
+        assert params.get("endDate") is not None
+
+    @patch("app.tools.finance_api.get_admin_api_client")
+    async def test_get_reconciliation_defaults_to_current_period(self, mock_get_client, admin_tool_context):
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value={"success": True, "data": {"items": []}})
+        mock_get_client.return_value = mock_client
+
+        tool = FinanceApiTool()
+        result = await tool.execute(context=admin_tool_context, action="get_reconciliation")
+        assert result.success is True
+        params = mock_client.get.call_args.kwargs.get("params") or {}
+        assert params.get("startDate") is not None
+        assert params.get("endDate") is not None
