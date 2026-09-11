@@ -364,6 +364,11 @@ cases:
     expectations:
       - tool: validate_input
       - tool: order_create
+    required_args:
+      - tool: order_create
+        fields:
+          - customer_phone
+          - items
     data_checks:
       - "下单全流程不得向顾客索要单价/金额——价格取自商品数据/算料结果（实测反复要价导致下单卡死 + 本用例评估不稳）"
     want_text:
@@ -395,6 +400,11 @@ cases:
       - "确认下单"
     expectations:
       - tool: order_create
+    required_args:
+      - tool: order_create
+        fields:
+          - customer_phone
+          - items
     data_checks:
       - "order_create 返回订单号"
       - "订单必须携带有效收件人手机号：agent 路径必填+11位格式校验；表单 API @Pattern 同规则（非法手机号 → 400 拒绝创建）——手机号是客户绑定归属回填与物流查询（顺丰等需尾号）的关键信息，禁止缺失/非法"
@@ -427,6 +437,10 @@ cases:
       - "查一下单号 SF1234567890 的物流"
     expectations:
       - tool: customer_logistics_track
+    forbidden_args:
+      - tool: customer_logistics_track
+        fields:
+          - tracking_number
     data_checks:
       - "customer_logistics_track 无 tracking_number 参数；无论 LLM 通过什么参数传快递单号都必须拒绝（引导提供订单）"
       - "只查当前用户已发货(在途)订单的物流：/orders/mine?status=shipped 后端强制按用户过滤，返回每笔订单的运单号/快递公司/轨迹"
@@ -545,6 +559,13 @@ cases:
     expectations:
       - tool: validate_input
       - tool: order_create
+    order_before:
+      - "validate_input before order_create"
+    required_args:
+      - tool: validate_input
+        fields:
+          - target_tool
+          - target_action
     data_checks:
       - "validate_input(target_tool=order_create, target_action=create) 必须真正执行必填与类型校验：缺少 customer_name/customer_phone/items 任一 → 校验失败并给出缺失字段列表"
       - "customer_phone 非 11 位手机号（或不以 1 开头）→ 校验失败提示「请输入 11 位中国大陆手机号」"

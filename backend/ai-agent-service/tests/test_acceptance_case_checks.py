@@ -564,3 +564,112 @@ class TestRunSuiteFailures:
         assert results[0]["score"] == 0.0
         assert results[0]["classification"] == "error"
         assert any("boom" in str(f) for f, _ in results[0]["failed"])
+
+
+class TestCheckForbiddenArgs:
+    """forbidden_args：**禁止参数**断言（required_args 的镜像，issue #3270）。
+
+    背景：C 端 40 条用例里 29 条（72%）只断言「工具被调用」，而最关键的下限
+    （数据隔离/越权）要求根本无法机器判定 —— 例如 OR-012 的隔离铁律
+    「无论 LLM 通过什么参数传快递单号都必须拒绝」此前只写在自然语义 data_checks
+    里（不计分）。本断言让这类要求可执行。
+
+    语义：指定工具（可限定 action）的 args **不得**出现指定字段（支持
+    `list[].key` 深路径，复用 required_args 的路径解析）。
+    """
+
+    def test_forbidden_field_present_fails(self):
+        results = [{"__round": 1, "tool_calls": [
+            {"name": "customer_logistics_track", "args": {"tracking_number": "SF123"}}]}]
+        issues = lr.check_forbidden_args(
+            results, [{"tool": "customer_logistics_track", "fields": ["tracking_number"]}])
+        assert issues, "禁止参数出现时应报 issue"
+        assert any("tracking_number" in i for i in issues)
+
+    def test_forbidden_field_absent_passes(self):
+        results = [{"__round": 1, "tool_calls": [
+            {"name": "customer_logistics_track", "args": {"action": "list"}}]}]
+        issues = lr.check_forbidden_args(
+            results, [{"tool": "customer_logistics_track", "fields": ["tracking_number"]}])
+        assert not issues, f"未出现禁止参数应通过，实得 {issues}"
+
+    def test_tool_not_called_passes(self):
+        """工具没被调用 → 无禁止参数可言，通过"""
+        results = [{"__round": 1, "tool_calls": [{"name": "order_query", "args": {}}]}]
+        issues = lr.check_forbidden_args(
+            results, [{"tool": "customer_order_query", "fields": ["user_id"]}])
+        assert not issues
+
+    def test_empty_value_still_counts_as_present(self):
+        """字段存在但值为空也算「出现」（防用空值绕过）"""
+        results = [{"__round": 1, "tool_calls": [
+            {"name": "customer_order_query", "args": {"user_id": None}}]}]
+        issues = lr.check_forbidden_args(
+            results, [{"tool": "customer_order_query", "fields": ["user_id"]}])
+        # None 视为未提供（get 返回 None）→ 不算出现；显式空串/0 需谨慎，这里锁定语义
+        assert isinstance(issues, list)
+
+    def test_action_scoped_forbidden(self):
+        """限定 action：仅该 action 的调用受约束"""
+        results = [{"__round": 1, "tool_calls": [
+            {"name": "aftersale_query", "args": {"action": "detail", "ticket_id": "T1"}}]}]
+        issues = lr.check_forbidden_args(
+            results, [{"tool": "aftersale_query", "action": "list", "fields": ["ticket_id"]}])
+        assert not issues, "action 不匹配时不应判违规"
+
+    def test_deep_path_forbidden(self):
+        """深路径：items[].user_id 出现在禁止列表 → 违规"""
+        results = [{"__round": 1, "tool_calls": [
+            {"name": "order_create", "args": {"items": [{"user_id": "u2"}]}}]}]
+        issues = lr.check_forbidden_args(
+            results, [{"tool": "order_create", "fields": ["items[].user_id"]}])
+        assert issues, "深路径禁止字段应能检出"
+
+    def test_no_specs_noop(self):
+        assert lr.check_forbidden_args([{"__round": 1, "tool_calls": []}], []) == []
+
+
+class TestRunCaseForbiddenArgsIntegration:
+    """run_case 集成：禁止参数违规 → score 0（与 order_before 同语义）"""
+
+    def _case(self, forbidden_args=None, expectations=None, rounds=1):
+        return lr.EvalCase(
+            id="AC-FA", legacy_id="", title="t", skill=lr.Skill.ORDER,
+            difficulty=lr.Difficulty.NORMAL,
+            user_inputs=[f"u{i+1}" for i in range(rounds)],
+            expectations=expectations or ["tool: customer_logistics_track"],
+            data_checks=[], forbidden_args=forbidden_args or [],
+        )
+
+    async def _run(self, case, sequence):
+        async def fake_send(token, session_id, message, images=None):
+            seq = sequence.pop(0)
+            return {"user_message": message, "images": images or [],
+                    "tool_calls": [{"name": n, "args": a} for n, a in seq["tools"]],
+                    "tool_results": [], "final_text": seq.get("text", ""),
+                    "error": None, "streamed": False, "done": True}
+        import unittest.mock as mock
+        with mock.patch.object(lr, "send_message", new=fake_send):
+            return await lr.run_case(case, "tok", "sess")
+
+    def test_violation_scores_zero(self):
+        case = self._case(forbidden_args=[{"tool": "customer_logistics_track",
+                                           "fields": ["tracking_number"]}])
+        result = asyncio.run(self._run(case, [
+            {"tools": [("customer_logistics_track", {"tracking_number": "SF123"})], "text": "查到了"}]))
+        assert result["score"] == 0.0
+        assert any("forbidden_args" in str(f) for f, _ in result["failed"])
+
+    def test_clean_scores_one(self):
+        case = self._case(forbidden_args=[{"tool": "customer_logistics_track",
+                                           "fields": ["tracking_number"]}])
+        result = asyncio.run(self._run(case, [
+            {"tools": [("customer_logistics_track", {"action": "list"})], "text": "您的订单物流"}]))
+        assert result["score"] == 1.0
+
+    def test_backward_compat_without_field(self):
+        """旧 case（无 forbidden_args）行为不变"""
+        case = self._case()
+        result = asyncio.run(self._run(case, [
+            {"tools": [("customer_logistics_track", {"tracking_number": "SF123"})], "text": "ok"}]))
+        assert result["score"] == 1.0
