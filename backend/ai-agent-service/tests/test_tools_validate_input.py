@@ -411,7 +411,7 @@ class TestValidateInputWriteToolAudit:
     async def test_processing_item_create(self, tool, admin_tool_context):
         result = await tool.execute(
             context=admin_tool_context, target_tool="processing_item_manage",
-            target_action="create_item", params={"name": "刺绣", "category_id": "cat_1"},
+            target_action="create_processing_item", params={"name": "刺绣", "category_id": "cat_1"},
         )
         assert result.success is True
 

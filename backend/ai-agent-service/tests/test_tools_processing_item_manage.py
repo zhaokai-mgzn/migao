@@ -48,11 +48,11 @@ class TestProcessingItemCreate:
     @patch("app.tools.processing_item_manage.get_admin_api_client")
     async def test_create_missing_fields(self, mock_get_client, tool, admin_tool_context, mock_client):
         mock_get_client.return_value = mock_client
-        r1 = await tool.execute(context=admin_tool_context, action="create_item", category_id="c1", price=5.0)
+        r1 = await tool.execute(context=admin_tool_context, action="create_processing_item", category_id="c1", price=5.0)
         assert r1.success is False and "缺少加工项名称" in r1.error
-        r2 = await tool.execute(context=admin_tool_context, action="create_item", name="打孔", price=5.0)
+        r2 = await tool.execute(context=admin_tool_context, action="create_processing_item", name="打孔", price=5.0)
         assert r2.success is False and "缺少分类 ID" in r2.error
-        r3 = await tool.execute(context=admin_tool_context, action="create_item", name="打孔", category_id="c1")
+        r3 = await tool.execute(context=admin_tool_context, action="create_processing_item", name="打孔", category_id="c1")
         assert r3.success is False and "缺少价格" in r3.error
         mock_client.post.assert_not_called()
 
@@ -62,7 +62,7 @@ class TestProcessingItemCreate:
         mock_get_client.return_value = mock_client
 
         result = await tool.execute(
-            context=admin_tool_context, action="create_item", name="打孔", price=5.0, category_id="c1")
+            context=admin_tool_context, action="create_processing_item", name="打孔", price=5.0, category_id="c1")
         assert result.success is True
         assert result.data["id"] == "pi-new"
         assert mock_client.post.call_args[0][0] == "/api/admin/processing-items"
@@ -77,7 +77,7 @@ class TestProcessingItemCreate:
         mock_get_client.return_value = mock_client
 
         result = await tool.execute(
-            context=admin_tool_context, action="create_item", name="打孔", price=8.0,
+            context=admin_tool_context, action="create_processing_item", name="打孔", price=8.0,
             category_id="c1")
         assert result.success is True
         json_data = mock_client.post.call_args[1]["json_data"]
