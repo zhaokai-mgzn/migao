@@ -585,6 +585,33 @@ def _arg_mismatch_reason(actual: dict, expected: dict) -> str | None:
     return None
 
 
+def _interactive_satisfies(exp_args, result: dict) -> tuple[bool, str]:
+    """`interact` 期望是否可由 **SSE interactive 事件**满足（issue #3270）。
+
+    卡片有三条发射路径，只有第一条产生 `tool_call` 事件：
+      1. `interact` 工具调用 → tool_call + interactive 事件
+      2. `handoff_offer` 节点（AI 主动建议转人工）→ **仅 interactive 事件**
+      3. LLM 幻觉 `<interact>` XML 兜底解析 → **仅 interactive 事件**
+
+    故 `expectations: tool: interact` 若只查 tool_calls，路径 2/3 下永不可能满足
+    → 假失败（CI 实证 CH-013：行为正确却 50 分）。这里把「用户看到一张交互卡」
+    作为真实语义：工具调用与 interactive 事件任一命中即可。
+
+    exp_args 指定 `component` 时须组件类型一致（防松弛过度）。
+    """
+    cards = result.get("interactive") or []
+    if not cards:
+        return False, "无 interactive 事件"
+    want_comp = ""
+    if isinstance(exp_args, dict):
+        want_comp = str(exp_args.get("component") or "").lower()
+    for card in cards:
+        comp = str(card.get("component") or card.get("type") or "").lower()
+        if not want_comp or comp == want_comp:
+            return True, f"interactive 事件命中（component={comp or '?'}）"
+    return False, f"interactive 事件组件不匹配（期望 {want_comp}）"
+
+
 def check_expectation(result: dict, expectation: str) -> tuple[bool, str]:
     """检查一条 expectation 是否满足
 
@@ -632,6 +659,12 @@ def check_expectation(result: dict, expectation: str) -> tuple[bool, str]:
             for tn in result.get("__all_tool_names", []):
                 if tn.lower() in want:
                     return True, f"tool '{tn}' matched"
+            # interact 特例（issue #3270）：卡片可能仅以 interactive 事件下发
+            # （handoff_offer 节点 / <interact> XML 兜底），无 tool_call。
+            if "interact" in want:
+                ok_iv, iv_detail = _interactive_satisfies(None, result)
+                if ok_iv:
+                    return True, iv_detail
             continue
 
         # 带 args 期望：本轮 tool_calls 里找名字匹配 + args 关键字段校验
@@ -639,6 +672,12 @@ def check_expectation(result: dict, expectation: str) -> tuple[bool, str]:
         want = tool_name.lower()
         if PERSONA == "xiaobu" and want == "order_query":
             want = "customer_order_query"
+        # interact 特例（issue #3270）：卡片可能仅以 interactive 事件下发 →
+        # 用事件的 component 校验（等价于 args.component），避免假失败
+        if want == "interact":
+            ok_iv, iv_detail = _interactive_satisfies(exp_args, result)
+            if ok_iv:
+                return True, f"tool 'interact' {iv_detail}"
         if not result.get("tool_calls"):
             continue
         for tc in result["tool_calls"]:
