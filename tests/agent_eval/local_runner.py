@@ -1227,10 +1227,16 @@ def build_round_trace(results: list) -> list:
 
 
 def _tool_result_status(tool_results: list) -> list:
-    """把 SSE tool_result 事件压成 [{tool, ok, error}]（失败必须显性可见）。
+    """把 SSE tool_result 事件压成 [{tool, ok, error, digest}]。
 
     `ok` 判定：结果 dict 的 `success` 为真才算成了 —— 缺失 `success` 视为未知，
     按**不成功**记录（宁可显性可疑，不可静默当成成功）。
+
+    `digest`：结果的**极简载荷摘要**（列表给条数、标量给值），用于回答
+    「工具成功了，但它返回了什么」——这是区分下面两种"卡住"的唯一证据：
+      ① 工具返回空（`items=0` / `has_address=False`）→ 缺数据，改 fixture；
+      ② 工具返回正常数据但 LLM 就是不往下走 → 引导层/模型层，改 prompt 或加代码兜底。
+    实测 CH-012：4 轮只打 `customer_order_query`、不建单，无 digest 时无法判断是哪一种。
     """
     out = []
     for tr in tool_results or []:
@@ -1242,8 +1248,61 @@ def _tool_result_status(tool_results: list) -> list:
             "tool": str(tr.get("tool", "")),
             "ok": ok,
             "error": None if ok else str(res.get("error") or "no_success_flag"),
+            "digest": _result_digest(res),
         })
     return out
+
+
+# 摘要里最多展示多少个字段 / 每个值多少字符（轨迹是日志，不是全量存档）
+_DIGEST_MAX_FIELDS = 6
+_DIGEST_MAX_VALUE = 40
+
+
+def _result_digest(res: dict) -> str:
+    """结果的极简摘要：`items=2` / `has_address=True` / `error=xxx` 之类。
+
+    只摘 `data` 的顶层字段（列表给长度、标量给值、嵌套给类型名），
+    整体截断 —— 目的是让人**一眼判断"有没有数据"**，不是还原载荷。
+    """
+    if not isinstance(res, dict):
+        return ""
+    data = res.get("data")
+    parts: list = []
+    if isinstance(data, dict):
+        for k in list(data.keys())[:_DIGEST_MAX_FIELDS]:
+            v = data[k]
+            if isinstance(v, (list, tuple)):
+                parts.append(f"{k}={len(v)}")
+            elif isinstance(v, dict):
+                parts.append(f"{k}{{}}")
+            elif isinstance(v, (str, int, float, bool)) or v is None:
+                text = str(v)
+                parts.append(f"{k}={text[:_DIGEST_MAX_VALUE]}")
+            else:
+                parts.append(f"{k}=<{type(v).__name__}>")
+        if len(data) > _DIGEST_MAX_FIELDS:
+            parts.append(f"(+{len(data) - _DIGEST_MAX_FIELDS} more)")
+    elif isinstance(data, list):
+        parts.append(f"list={len(data)}")
+    elif data is not None:
+        parts.append(str(data)[:_DIGEST_MAX_VALUE])
+    if not parts:
+        # 没有 data（如纯失败）：至少要能看出失败原因
+        parts.append(str(res.get("error") or res.get("message") or "empty")[:_DIGEST_MAX_VALUE])
+        return " ".join(parts)[:160]
+
+    # 过长时**逐条丢弃字段**而不是整串硬截 —— 硬截会把末尾的 `(+N more)` 省略提示
+    # 一起切掉，读者就分不清「结果只有这几个字段」还是「被截断了」（本函数首版即此 bug）。
+    marker = ""
+    if len(data) > _DIGEST_MAX_FIELDS:
+        marker = f"(+{len(data) - _DIGEST_MAX_FIELDS} more)"
+    fields = list(parts)
+    while fields:
+        candidate = " ".join(fields + ([marker] if marker else []))
+        if len(candidate) <= 160:
+            return candidate
+        fields.pop()
+    return (" ".join(parts[:1]) + (" " + marker if marker else ""))[:160]
 
 
 def format_round_trace(trace: list) -> str:
@@ -1259,6 +1318,17 @@ def format_round_trace(trace: list) -> str:
         failed = [f"{x['tool']}!{x['error']}" for x in (t.get("results") or []) if not x.get("ok")]
         if failed:
             bits.append("failed=" + ",".join(failed))
+        # 成功但"没数据"同样要可见：工具通了却没内容 = 缺数据（改 fixture），
+        # 与"有数据但 LLM 不往下走"（改 prompt/代码）是两种完全不同的处置。
+        # **必须无条件打印**：CH-012 那种"工具全成功但流程不走"的形态没有 failed 标记，
+        # 若只在失败时附带摘要，最能说明问题的那一轮反而看不到证据。
+        digests = [
+            f"{x['tool']}({x.get('digest')})"
+            for x in (t.get("results") or [])
+            if x.get("digest")
+        ][:3]
+        if digests:
+            bits.append("data=" + ";".join(digests))
         if t.get("interactive"):
             bits.append("cards=" + ",".join(t["interactive"]))
         if t.get("error"):

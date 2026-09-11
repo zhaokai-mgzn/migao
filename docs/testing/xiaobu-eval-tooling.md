@@ -234,7 +234,7 @@ C 端评测链路有三处破损，与用例库正确性无关，但会让「评
 `local_runner.py` 现为每条失败用例打印逐轮轨迹：
 
 ```
-trace: [R1 tools=customer_order_query,aftersale_create failed=aftersale_create!confirmation_required cards=choice] [R2 tools=human_handoff] [R3 tools=- ERR]
+trace: [R1 tools=customer_order_query data=customer_order_query(items=2 total=2)] [R2 tools=aftersale_create failed=aftersale_create!confirmation_required cards=confirm] [R3 tools=- ERR]
 ```
 
 字段：每轮 `round / tools / results / cards / interactive / text(截断 60 字) / error`，
@@ -243,8 +243,21 @@ trace: [R1 tools=customer_order_query,aftersale_create failed=aftersale_create!c
 **「调了」≠「成了」**：`tools` 记的是 LLM **发起**的调用。写工具被 confirm 门禁拦截时
 返回 `{"success": false, "error": "confirmation_required"}`，**调用名照样出现在 tools 里**
 —— 报告读起来像「写操作正常执行」，实际一次都没落库（CH-012 的 `aftersale_create`
-就是这种形态）。故每轮另记 `results: {tool, ok, error}`，格式化时以
+就是这种形态）。故每轮另记 `results: {tool, ok, error, digest}`，格式化时以
 `failed=<tool>!<error>` 显性标出；缺 `success` 字段一律按**未成功**记。
+
+**「成了」也分两种**：`data=<tool>(...)` 是结果的极简载荷摘要（列表给长度、标量给值）。
+它回答「工具成功了，但它返回了什么」，用于区分两类**处置完全不同**的"卡住"：
+
+| 形态 | 含义 | 处置 |
+|---|---|---|
+| `data=customer_order_query(items=0)` / `has_address=False` | 工具通了但**没数据** | 改 fixture（数据层） |
+| `data=customer_order_query(items=2)` 但流程不推进 | 有数据但 **LLM 不往下走** | 改 prompt / 加代码兜底（引导层·模型层） |
+
+摘要**无条件打印**（不能只在失败时附带）：CH-012 那种"工具全成功、流程不走"的形态
+没有任何 `failed` 标记，若只在失败时打印，最能说明问题的那一轮反而没有证据
+（实测踩到）。单轮最多展示 3 条摘要，整条摘要 ≤160 字符，超出时逐条丢弃字段
+并保留 `(+N more)` 省略提示。
 
 **用工具反推 Skill**：Skill 的工具集互不重叠，逐轮工具名即可反推该轮 Skill
 （如 `customer_order_query` 只出现在 `customer_order`）。**映射以

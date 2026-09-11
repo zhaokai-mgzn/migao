@@ -846,9 +846,9 @@ class TestRoundTraceToolOutcomes:
             "final_text": "",
         }]
         trace = lr.build_round_trace(results)[0]
-        assert trace["results"] == [
-            {"tool": "customer_order_query", "ok": True, "error": None},
-            {"tool": "aftersale_create", "ok": False, "error": "confirmation_required"},
+        assert [(r["tool"], r["ok"], r["error"]) for r in trace["results"]] == [
+            ("customer_order_query", True, None),
+            ("aftersale_create", False, "confirmation_required"),
         ]
 
     def test_missing_success_flag_treated_as_not_ok(self):
@@ -886,3 +886,65 @@ class TestRoundTraceToolOutcomes:
             "results": [{"tool": "customer_order_query", "ok": True, "error": None}],
         }]
         assert "failed=" not in lr.format_round_trace(trace)
+
+
+class TestRoundTraceResultDigest:
+    """结果的**载荷摘要**：区分「工具通了但没数据」与「有数据但不往下走」
+
+    这两种"卡住"的处置完全相反：
+      ① 返回空（`items=0` / `has_address=False`）→ **缺数据**，改 fixture；
+      ② 返回正常数据但 LLM 就是不推进 → **引导层/模型层**，改 prompt 或加代码兜底。
+    实测 CH-012：4 轮只打 `customer_order_query`、不建单，且**没有任何 failed 标记**
+    —— 没有摘要时根本看不出是哪一种（也正因如此，摘要必须无条件打印，
+    不能只在失败时附带，否则最能说明问题的那一轮恰好没有证据）。
+    """
+
+    def _res(self, tool, result):
+        return {"__round": 1, "tool_calls": [], "final_text": "",
+                "tool_results": [{"tool": tool, "result": result}]}
+
+    def test_list_length_summarized(self):
+        d = lr.build_round_trace([self._res(
+            "customer_order_query",
+            {"success": True, "data": {"items": [{"id": "a"}, {"id": "b"}], "total": 2}})])[0]
+        assert d["results"][0]["digest"] == "items=2 total=2"
+
+    def test_empty_list_visible(self):
+        d = lr.build_round_trace([self._res(
+            "customer_order_query", {"success": True, "data": {"items": [], "total": 0}})])[0]
+        assert d["results"][0]["digest"] == "items=0 total=0", (
+            "空列表必须显性为 items=0 —— 这与『有数据』是两种不同的根因"
+        )
+
+    def test_scalar_values_shown(self):
+        d = lr.build_round_trace([self._res(
+            "customer_address_query",
+            {"success": True, "data": {"has_address": False, "customer_name": None}})])[0]
+        assert "has_address=False" in d["results"][0]["digest"]
+
+    def test_failure_digest_falls_back_to_error(self):
+        d = lr.build_round_trace([self._res(
+            "aftersale_create", {"success": False, "error": "confirmation_required"})])[0]
+        assert d["results"][0]["digest"] == "confirmation_required"
+
+    def test_nested_dict_not_expanded(self):
+        """嵌套结构只给类型标记 —— 摘要不是全量存档"""
+        d = lr.build_round_trace([self._res(
+            "x", {"success": True, "data": {"nested": {"a": 1, "b": 2}}})])[0]
+        assert d["results"][0]["digest"] == "nested{}"
+
+    def test_digest_is_bounded(self):
+        big = {f"k{i}": "v" * 200 for i in range(20)}
+        d = lr.build_round_trace([self._res("x", {"success": True, "data": big})])[0]
+        digest = d["results"][0]["digest"]
+        assert len(digest) <= 160, f"摘要未截断（len={len(digest)}）"
+        assert "+14 more" in digest, "字段过多时应给出省略提示"
+
+    def test_format_always_shows_data_digest(self):
+        """**无条件**打印：成功且无 failed 标记时也要能看到载荷摘要"""
+        trace = lr.build_round_trace([self._res(
+            "customer_order_query", {"success": True, "data": {"items": [1, 2]}})])
+        line = lr.format_round_trace(trace)
+        assert "data=customer_order_query(items=2)" in line, (
+            "成功轮次未打印载荷摘要 —— 『工具通了但没数据』这类根因将无从判断"
+        )
