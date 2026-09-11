@@ -529,3 +529,43 @@ class TestXiaobuEvalFixture:
             "workflow 未引用 fixture 文件路径"
         )
         assert "ON_ERROR_STOP=1" in body, "注入步骤应 fail-fast（ON_ERROR_STOP=1）"
+
+
+class TestEvalRunnerDepsInstalled:
+    """评测 workflow 必须装齐 runner + E2E 依赖（issue #3270）。
+
+    先例：安装步骤只有 `pip install httpx`，而 real E2E 步骤用
+    `python -m pytest ... --timeout=120 --reruns 1` →
+    `No module named pytest` → 步骤 exit 1（此时 C 端评测步骤其实已绿）。
+    """
+
+    REQUIRED = ["httpx", "pytest", "pytest-timeout", "pytest-rerunfailures"]
+
+    def _install_step_run(self):
+        import yaml
+        wf = WORKFLOWS_DIR / "xiaobu-acceptance.yml"
+        d = yaml.safe_load(wf.read_text(encoding="utf-8")) or {}
+        step = next((s_ for s_ in d["jobs"]["xiaobu-acceptance"]["steps"]
+                     if "Install eval runner" in (s_.get("name") or "")), {})
+        return step.get("run") or ""
+
+    def test_all_required_deps_declared(self):
+        run = self._install_step_run()
+        missing = [d for d in self.REQUIRED if d not in run]
+        assert not missing, (
+            f"安装步骤缺依赖 {missing} —— real E2E 步骤会因缺 module 直接失败"
+        )
+
+    def test_pytest_plugins_match_e2e_flags(self):
+        """E2E 步骤用到 --timeout / --reruns，对应插件必须已安装"""
+        import yaml
+        wf = WORKFLOWS_DIR / "xiaobu-acceptance.yml"
+        d = yaml.safe_load(wf.read_text(encoding="utf-8")) or {}
+        e2e = next((s_ for s_ in d["jobs"]["xiaobu-acceptance"]["steps"]
+                    if "real E2E" in (s_.get("name") or "")), {})
+        body = e2e.get("run") or ""
+        install = self._install_step_run()
+        if "--timeout" in body:
+            assert "pytest-timeout" in install, "--timeout 需要 pytest-timeout"
+        if "--reruns" in body:
+            assert "pytest-rerunfailures" in install, "--reruns 需要 pytest-rerunfailures"
