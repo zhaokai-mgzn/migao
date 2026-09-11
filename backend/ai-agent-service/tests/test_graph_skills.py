@@ -67,6 +67,10 @@ class TestSkillToolSubsets:
         assert "product_detail" in PRODUCT_TOOLS
         assert "product_manage" in PRODUCT_TOOLS
         assert "inventory_manage" in PRODUCT_TOOLS
+        # PP-006 回归防线：processing_manage 意图路由到 product_skill（intents 配置），
+        # 但 PRODUCT_TOOLS 曾缺 processing_item_manage → agent 说「只有查询加工项能力」
+        # （工具列表里确实没有创建加工项的工具，能力误宣的架构根因）
+        assert "processing_item_manage" in PRODUCT_TOOLS
         assert "order_query" not in PRODUCT_TOOLS
 
     def test_knowledge_tools(self):
