@@ -161,6 +161,33 @@ async def _run_pre_clean(token: str, spec: dict) -> str:
                 await c.delete(f"{ADMIN_API}/api/admin/products/{pid}", headers=h, timeout=15)
                 removed += 1
             return f"已清理 {removed} 个「{kw}」商品" if removed else f"无「{kw}」商品需清理"
+    if _type == "product_dedupe":
+        # 同名商品去重（Round 72 审计：3 件同名「遮光窗帘」¥100 是 6 个 case
+        # 「确定性根因」的源头——agent 发选择卡 case 无槽位应答 → 目标工具
+        # 从不执行）。按关键词清理重复：同名同价 >1 时保留最早创建（种子，
+        # 加工项最全），删其余（下架→删除）。
+        kw = str(spec.get("product_keyword", ""))
+        price = spec.get("price")  # 可选：限定价格
+        async with httpx.AsyncClient() as c:
+            h = _admin_headers(token)
+            r = await c.get(f"{ADMIN_API}/api/admin/products", headers=h,
+                            params={"keyword": kw, "page": 1, "size": 20}, timeout=15)
+            items = (_safe_json(r, {}) or {}).get("data", {}).get("items", [])
+            matched = [p for p in items if kw in str(p.get("name", ""))
+                       and (price is None or p.get("price") == price)]
+            if len(matched) <= 1:
+                return f"「{kw}」无重复（{len(matched)} 件），无需去重"
+            # 保留最早创建的（createdAt 最小）——种子商品
+            matched.sort(key=lambda p: str(p.get("createdAt") or ""))
+            keeper = matched[0]
+            removed = 0
+            for p in matched[1:]:
+                pid = p.get("id")
+                await c.put(f"{ADMIN_API}/api/admin/products/{pid}/status", headers=h,
+                            json={"status": "off_sale"}, timeout=15)
+                await c.delete(f"{ADMIN_API}/api/admin/products/{pid}", headers=h, timeout=15)
+                removed += 1
+            return f"已去重「{kw}」：删 {removed} 件重复，保留种子 {keeper.get('id','')[:8]}"
     if _type == "employee_reactivate":
         # 恢复被评测禁用的测试员工（HR-003 存量状态消耗）：王五被禁用后
         # agent 合理说「已停用无需操作」→ 评测前恢复 active。

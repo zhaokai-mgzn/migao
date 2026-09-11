@@ -1143,6 +1143,7 @@ _CASE_CR_001 = EvalCase(
     tags=['cross_skill', 'context_share'],
     persona='',
     required_args=[{'tool': 'order_create', 'fields': ['items[].processing_info.sellingMethod', 'items[].processing_info.doorWidth']}],
+    pre_clean=[{'type': 'product_dedupe', 'product_keyword': '遮光窗帘', 'price': 100}],
 )
 
 # ── CR-002 [ADVERSARIAL] 对抗性 - 3 个 Skill 连续切换（源: cases/cross.yml）──
@@ -2483,6 +2484,7 @@ _CASE_OR_014 = EvalCase(
     skip_reason='',
     tags=['order_create', 'processing_item', 'pricing'],
     persona='',
+    pre_clean=[{'type': 'product_dedupe', 'product_keyword': '遮光窗帘', 'price': 100}],
 )
 
 # ── OR-015 [NORMAL] order_create 写操作前置校验必须真正执行（validate_input 规则分层修复，issue #3029 复盘）（源: cases/order.yml）──
@@ -2498,6 +2500,7 @@ _CASE_OR_015 = EvalCase(
     skip_reason='',
     tags=['order_create', 'validate_input', 'defense'],
     persona='',
+    pre_clean=[{'type': 'product_dedupe', 'product_keyword': '遮光窗帘', 'price': 100}],
 )
 
 # ── OR-016 [NORMAL] 创建订单 confirm 前必须主动询问加工项（商品绑定加工项时）（源: cases/order.yml）──
@@ -2529,6 +2532,7 @@ _CASE_PP_001 = EvalCase(
     skip_reason='',
     tags=['processing_item', 'pagination'],
     persona='',
+    pre_clean=[{'type': 'product_dedupe', 'product_keyword': '遮光窗帘', 'price': 100}],
 )
 
 # ── PP-002 [NORMAL] 加工项分类列表（源: cases/processing.yml）──
@@ -2680,6 +2684,7 @@ _CASE_PR_005 = EvalCase(
     skip_reason='',
     tags=['inventory', 'write'],
     persona='',
+    pre_clean=[{'type': 'product_dedupe', 'product_keyword': '遮光窗帘', 'price': 100}],
 )
 
 # ── PR-006 [NORMAL] 低库存预警（源: cases/product.yml）──
@@ -2710,6 +2715,7 @@ _CASE_PR_007 = EvalCase(
     skip_reason='',
     tags=['status', 'write'],
     persona='',
+    pre_clean=[{'type': 'product_dedupe', 'product_keyword': '遮光窗帘', 'price': 100}],
 )
 
 # ── PR-008 [NORMAL] 创建商品 - 完整流程（源: cases/product.yml）──

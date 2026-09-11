@@ -147,6 +147,10 @@ cases:
           action: adjust
     data_checks:
       - "返回新库存数量"
+    pre_clean:
+      - type: product_dedupe
+        product_keyword: "遮光窗帘"
+        price: 100
     skip_reason: ""
     merge_log: "verification 2.5 独有（adjust 详细真值未确认，见映射表 5.1）"
     traces:
@@ -207,6 +211,10 @@ cases:
           status: on_sale
     data_checks:
       - "success=true"
+    pre_clean:
+      - type: product_dedupe
+        product_keyword: "遮光窗帘"
+        price: 100
     skip_reason: ""
     merge_log: "verification 2.7 独有；2026-09-10 校准：评测商品均已 on_sale，「上架」无操作对象 → 改自包含状态流转（下架→上架），验证完整流转且每次从 on_sale 起跑"
     traces:

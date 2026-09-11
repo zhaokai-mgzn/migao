@@ -35,6 +35,10 @@ cases:
     data_checks:
       - "order_create items 包含遮光窗帘的 UUID（复用上轮，不重查）"
       - "Context 注入包含 product_ids"
+    pre_clean:
+      - type: product_dedupe
+        product_keyword: "遮光窗帘"
+        price: 100
     skip_reason: ""
     merge_log: "eval C001 独有"
     traces:
