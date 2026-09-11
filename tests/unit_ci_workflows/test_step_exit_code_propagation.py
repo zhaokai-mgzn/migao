@@ -64,16 +64,16 @@ class TestXiaobuStackExitCodePropagation:
 
     def test_stack_step_exists_and_pipes(self):
         """前提：起栈步骤确实把 compose 输出管给 tail（因此需要 pipefail）"""
-        step = _find_step(self.WORKFLOW, "Start local stack")
-        assert step is not None, "未找到 Start local stack 步骤（测试前提失效）"
+        step = _find_step(self.WORKFLOW, "Start local stack") or {}
         run = step.get("run") or ""
-        assert "docker compose" in run
+        assert "docker compose" in run, "起栈步骤未找到或不再调 docker compose（守卫前提失效）"
         assert "|" in run, "起栈步骤不再有管道 —— 本守卫前提变化，需同步修订"
 
     def test_stack_step_sets_pipefail(self):
         """核心契约：管道存在时必须有 set -o pipefail，否则 compose 失败被吞"""
-        step = _find_step(self.WORKFLOW, "Start local stack")
+        step = _find_step(self.WORKFLOW, "Start local stack") or {}
         run = step.get("run") or ""
+        assert run, "起栈步骤未找到（守卫前提失效）"
         assert _sets_pipefail(run), (
             "起栈步骤有管道但无 pipefail —— compose 失败会变成 step success，"
             "真因被掩盖（issue #3270 实证：postgres exited 3 却报 success）。"
@@ -82,8 +82,7 @@ class TestXiaobuStackExitCodePropagation:
 
     def test_diagnose_step_triggers_on_failure(self):
         """失败诊断步骤必须能在起栈失败时触发"""
-        step = _find_step(self.WORKFLOW, "Diagnose stack startup")
-        assert step is not None, "缺少失败诊断步骤"
+        step = _find_step(self.WORKFLOW, "Diagnose stack startup") or {}
         assert (step.get("if") or "").strip() == "failure()", (
             f"诊断步骤 if 应为 failure()，实为 {step.get('if')!r} —— "
             "否则起栈失败时不会 dump 容器日志（真因无法定位）"
