@@ -740,12 +740,20 @@ CREATE TABLE audit_logs (
 -- 通知模板表
 CREATE TABLE notification_templates (
     id VARCHAR(64) PRIMARY KEY,
-    tenant_id BIGINT NOT NULL REFERENCES tenants(id),
+    -- ⚠️ 不加 FK：迁移链 V27 建的是 `tenant_id BIGINT NOT NULL DEFAULT 0`，**系统内置
+    -- 模板/规则用 tenant_id=0**（"系统内置，只读"），而 tenants 表没有 id=0 的行 →
+    -- 加 FK 会让 V28 种子插不进去（实测：违反外键约束），**迁移链从 V28 起整条中断**。
+    tenant_id BIGINT NOT NULL DEFAULT 0,
     name VARCHAR(128) NOT NULL,
     type VARCHAR(64) NOT NULL,  -- ticket_assigned / ticket_status_changed / refund_success / shipment / etc.
     channel VARCHAR(32) NOT NULL,  -- wechat / sms / email / internal
     template_content TEXT NOT NULL,
-    variables JSONB DEFAULT '[]',  -- 可用变量列表
+    -- ⚠️ TEXT 而非 JSONB：迁移链 V27 建的是 `variables TEXT`，实体 NotificationTemplate
+    -- 也是 `String variables` —— 只有本文件曾写成 JSONB，导致 V28 种子（插入
+    -- 'orderNo,amount' 这种逗号分隔串）在 bootstrap 库上直接
+    -- `invalid input syntax for type json` → **迁移链从 V28 起整条中断**
+    -- （V29–V41、V5–V9 全部未执行，schema 与代码长期脱节；CI 实证 run 34626024229）。
+    variables TEXT,  -- 可用变量列表（逗号分隔）
     status VARCHAR(32) DEFAULT 'active',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
@@ -754,10 +762,14 @@ CREATE TABLE notification_templates (
 -- 通知规则表
 CREATE TABLE notification_rules (
     id VARCHAR(64) PRIMARY KEY,
-    tenant_id BIGINT NOT NULL REFERENCES tenants(id),
+    -- ⚠️ 不加 FK：迁移链 V27 建的是 `tenant_id BIGINT NOT NULL DEFAULT 0`，**系统内置
+    -- 模板/规则用 tenant_id=0**（"系统内置，只读"），而 tenants 表没有 id=0 的行 →
+    -- 加 FK 会让 V28 种子插不进去（实测：违反外键约束），**迁移链从 V28 起整条中断**。
+    tenant_id BIGINT NOT NULL DEFAULT 0,
     event_type VARCHAR(64) NOT NULL,  -- ticket_assigned / ticket_status_changed / refund_success / etc.
     recipient_type VARCHAR(32) NOT NULL,  -- customer / handler / supervisor / manager
-    channels JSONB NOT NULL DEFAULT '[]',  -- ["wechat", "sms"]
+    -- 同上：迁移链 V27 与实体 NotificationRule 都用字符串（VARCHAR(100)），非 JSONB
+    channels VARCHAR(100),  -- 逗号分隔渠道，如 "wechat,sms"
     enabled BOOLEAN DEFAULT true,
     template_id VARCHAR(64) REFERENCES notification_templates(id),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
