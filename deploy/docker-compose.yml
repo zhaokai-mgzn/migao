@@ -74,6 +74,16 @@ services:
       # 审计 07 P0-1: sms.bypass-code 默认已改空（生产 fail-closed）。
       # dev compose 在此显式注入万能码，保持测试环境 123456 登录可用（仅 dev 生效）。
       SMS_BYPASS_CODE: ${SMS_BYPASS_CODE:-123456}
+      # ── RS256 密钥（issue #3270）──
+      # 生产用 JWT_PRIVATE_KEY/JWT_PUBLIC_KEY 指向密钥文件；但本仓库
+      # `.gitignore:79 **/rsa/private.pem` **刻意排除** src/main/resources/rsa/private.pem
+      # （安全设计：私钥不入库）→ CI/全新 clone 的镜像里没有该文件 →
+      # JwtTokenProvider.init() fail-fast 抛「JWT RSA 密钥加载失败」→ admin-api 起不来。
+      # 解法：走 **PEM 内容注入**（优先级高于文件路径，JwtTokenProvider 已支持），
+      # 内容取自仓库中**已入库的测试密钥对** `src/test/resources/rsa/*.pem`
+      # （.gitignore:81 显式白名单）——仅用于本地/CI dev 栈，不涉及生产密钥。
+      JWT_PRIVATE_KEY_PEM: ${JWT_PRIVATE_KEY_PEM:-}
+      JWT_PUBLIC_KEY_PEM: ${JWT_PUBLIC_KEY_PEM:-}
     ports:
       - "8080:8080"
     depends_on:

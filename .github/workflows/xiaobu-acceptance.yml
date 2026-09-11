@@ -29,12 +29,35 @@ jobs:
           cache: pip
           cache-dependency-path: backend/ai-agent-service/requirements.txt
 
+      - name: "Export dev RS256 keys for stack (issue #3270)"
+        # admin-api 镜像内没有 rsa/private.pem（被 .gitignore 刻意排除），
+        # 故用仓库已入库的**测试**密钥对，以 PEM 内容注入（多行值走 GITHUB_ENV 传递）。
+        run: |
+          KEY_DIR=backend/admin-api/src/test/resources/rsa
+          test -f "$KEY_DIR/private.pem" || { echo "::error::缺少测试密钥 $KEY_DIR/private.pem"; exit 1; }
+          test -f "$KEY_DIR/public.pem"  || { echo "::error::缺少测试密钥 $KEY_DIR/public.pem"; exit 1; }
+          {
+            echo "JWT_PRIVATE_KEY_PEM<<__PEM_EOF__"
+            cat "$KEY_DIR/private.pem"
+            echo "__PEM_EOF__"
+            echo "JWT_PUBLIC_KEY_PEM<<__PEM_EOF__"
+            cat "$KEY_DIR/public.pem"
+            echo "__PEM_EOF__"
+          } >> "$GITHUB_ENV"
+          echo "✅ 已导出 dev RS256 密钥（PEM 内容注入）"
+
       - name: "Start local stack (docker-compose: PG + Redis + admin-api + ai-agent DEBUG)"
         id: stack
         env:
           # ⚠️ deploy/docker-compose.yml 里 DEV_SERVICE_TOKEN 是 required 无默认值
           # （``${DEV_SERVICE_TOKEN:?...}``）——缺它 compose 直接插值失败，栈根本起不来。
           DEV_SERVICE_TOKEN: ${{ secrets.SMOKE_SERVICE_TOKEN || 'ci-service-token-placeholder' }}
+          # ── RS256 密钥注入（issue #3270）──
+          # 生产私钥不入库（.gitignore:79 **/rsa/private.pem），CI clone 后镜像内无该文件
+          # → JwtTokenProvider.init() fail-fast → admin-api 起不来。
+          # 用仓库**已入库的测试密钥对**（src/test/resources/rsa/*.pem，.gitignore:81 白名单），
+          # 由下方 step 读入 PEM 内容后注入（JwtTokenProvider 支持 PEM 内容优先于文件路径）。
+          # 不引入新 secret：密钥本就是测试用途、已公开在仓库中，无保密价值。
           PRIMARY_API_KEY: ${{ secrets.DEEPSEEK_API_KEY || 'ci-dummy' }}
           PRIMARY_MODEL: deepseek-v4-flash
           DASHVECTOR_API_KEY: ci-dummy
