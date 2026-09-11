@@ -152,6 +152,7 @@ _CASE_AS_007 = EvalCase(
     tags=['exchange', 'processing_item', 'guided_flow'],
     persona='',
     order_before=['processing_ask before after_sales_manage', 'processing_ask before interact[confirm]'],
+    pre_clean=[{'type': 'product_dedupe', 'product_keyword': '2699系列雪尼尔窗帘面料', 'price': 23.8}],
 )
 
 # ── AS-008 [SMOKE] C 端售后进度查询 - 仅限本人工单 + 拒绝跨用户/快递单号式越权查询（源: cases/aftersales.yml）──
@@ -1710,8 +1711,8 @@ _CASE_FN_004 = EvalCase(
     skill=Skill.GENERAL,
     difficulty=Difficulty.NORMAL,
     user_inputs=['本期收入退款是多少'],
-    expectations=['finance_api(action=get_summary, start_date=本月1号, end_date=今天)'],
-    data_checks=['默认加载时开始/结束日期填充本期（本月1号~今天），getSummary/getTransactions/getReconciliation 均携带该范围'],
+    expectations=['finance_api(action=get_summary)'],
+    data_checks=['默认加载时开始/结束日期填充本期（本月1号~今天），getSummary/getTransactions/getReconciliation 均携带该范围', '本期时间范围由工具层兜底（#3288：缺时间参数自动补本月1号~今天）——agent 不显式传时间时服务端默认保证本期语义'],
     skip_reason='',
     tags=['finance', 'summary'],
     persona='',
@@ -2493,7 +2494,7 @@ _CASE_OR_014 = EvalCase(
     title='下单加工项数量规则 - 按计价方式，无每米数量密度推导',
     skill=Skill.ORDER,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['帮我下单，遮光窗帘 3 米，要打孔加工', '选有打孔的那件', '不需要其他加工项', {'auto_select': True}, {'auto_fill': {'customer_name': '张三', 'customer_phone': '13800138000'}}, '确认下单', '确认'],
+    user_inputs=['帮我下单，遮光窗帘 3 米，要打孔加工', '选有打孔的那件', '不需要其他加工项', {'auto_select': True}, '确认下单', {'auto_fill': {'customer_name': '张三', 'customer_phone': '13800138000'}}, '确认'],
     expectations=['product_detail', 'order_create'],
     data_checks=['加工项数量按计价方式确定：per_meter → 数量=面料米数（如打孔 8 元/米 × 3 米 → quantity=3、subtotal=24）；per_set/fixed → 数量=1；per_area → 宽×高', 'processing_info.processingItems 逐项含 {id, name, unitPrice, quantity, unit, pricingMethod, subtotal}，processingFee = 各项 unitPrice × quantity 之和', '订单确认/回复展示加工项含「名称+数量+金额」（如『打孔（罗马圈）3米 ¥24.00』）——数量可见可对账，禁止虚构每米几个的密度推导', '加工费 = 单价 × 数量（打孔 8 元/米 × 3 米 = 24 元），漏算/错算加工费 = 订单金额错误'],
     skip_reason='',
@@ -2532,6 +2533,7 @@ _CASE_OR_016 = EvalCase(
     tags=['order_create', 'processing_item', 'guided_flow'],
     persona='',
     order_before=['interact[choice:processing_items] before interact[confirm]', 'interact[choice:processing_items] before order_create'],
+    pre_clean=[{'type': 'product_dedupe', 'product_keyword': '2699系列雪尼尔窗帘面料', 'price': 23.8}],
 )
 
 # ── OR-017 [NORMAL] C 端自助下单加工项闭环 - 必须查详情→主动询问→加工费落单（不凭列表错报无加工项）（源: cases/order.yml）──
@@ -2880,7 +2882,7 @@ _CASE_PR_016 = EvalCase(
     title='建品流程 - 分类确认后按适用商品分类过滤/优先推荐加工项',
     skill=Skill.PRODUCT,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['录入这个商品，名称遮光窗帘，价格 100', '分类选窗帘', {'auto_select': True}, '已选加工项：高温定型', '确认'],
+    user_inputs=['录入这个商品，名称遮光窗帘，价格 100', '分类选窗帘', {'auto_select': True}, '已选加工项：高温定型', '颜色米白色，货号 TEST-002', '确认'],
     expectations=['category_manage', 'processing_item_query', 'interact(component=choice, multiSelect=True)', 'validate_input', 'product_manage(action=create)'],
     data_checks=['分类确认后加工项选择器按「适用商品分类」过滤展示（processing_item_query 携带 applicable_category_id，= 已选商品分类 ID）', '适用分类为空（applicable_product_categories 为空）的加工项仍展示（= 适用所有分类），不因过滤而丢失', '当前分类无匹配加工项时以文字提示可跳过，不空转强制选择', '最终创建成功且关联加工项数量正确'],
     skip_reason='',
@@ -2934,6 +2936,7 @@ _CASE_PR_019 = EvalCase(
     persona='',
     forbidden_text=['尚未真正创建', '未创建成功'],
     required_args=[{'tool': 'product_manage', 'action': 'create', 'fields': ['specifications', 'processing_item_configs.customPrice']}],
+    pre_clean=[{'type': 'product_dedupe', 'product_keyword': '2699系列雪尼尔窗帘面料', 'price': 23.8}],
 )
 
 # ── PR-020 [NORMAL] 建品加工项价格落库盯防 — 自定义价须等于用户确认价（BFF 合并回归）（源: cases/product.yml）──

@@ -1389,8 +1389,9 @@
 ### FN-004. 收支汇总默认本期（自然月）时间范围 🔵
 ```
 你: 本期收入退款是多少
-期望: finance_api(action=get_summary, start_date=本月1号, end_date=今天)
+期望: finance_api(action=get_summary)
 数据: 默认加载时开始/结束日期填充本期（本月1号~今天），getSummary/getTransactions/getReconciliation 均携带该范围
+数据: 本期时间范围由工具层兜底（#3288：缺时间参数自动补本月1号~今天）——agent 不显式传时间时服务端默认保证本期语义
 ```
 真值: finance.summary
 溯源: 本期默认时间范围（本月1号~今天） ｜ tags: finance, summary
@@ -1995,8 +1996,8 @@
 你: 选有打孔的那件
 你: 不需要其他加工项
 你: [📷 纯图片 x0]
-你: [📷 纯图片 x0]
 你: 确认下单
+你: [📷 纯图片 x0]
 你: 确认
 期望: product_detail
 期望: order_create
@@ -2352,6 +2353,7 @@
 你: 分类选窗帘
 你: [📷 纯图片 x0]
 你: 已选加工项：高温定型
+你: 颜色米白色，货号 TEST-002
 你: 确认
 期望: category_manage
 期望: processing_item_query

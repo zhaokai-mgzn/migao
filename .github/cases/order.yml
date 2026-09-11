@@ -498,10 +498,10 @@ cases:
       - "选有打孔的那件"
       - "不需要其他加工项"
       - auto_select: true
+      - "确认下单"
       - auto_fill:
           customer_name: "张三"
           customer_phone: "13800138000"
-      - "确认下单"
       - "确认"
     expectations:
       - tool: product_detail
@@ -596,6 +596,10 @@ cases:
     order_before:
       - "interact[choice:processing_items] before interact[confirm]"
       - "interact[choice:processing_items] before order_create"
+    pre_clean:
+      - type: product_dedupe
+        product_keyword: "2699系列雪尼尔窗帘面料"
+        price: 23.8
     skip_reason: ""
     merge_log: "2026-09-08 新增（issue #3033 复盘 sess_7f27137647e14b1e）：A5 confirm 卡在加工项询问前弹出、金额 ¥238 不含加工费，用户质问后才补 A6；order.md 加工项段从被动式改主动式 + EXAMPLES 例 2 补加工项环节"
     traces:
