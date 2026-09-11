@@ -37,7 +37,13 @@ VALUES
    1, 999, '高温定型，褶皱持久', '[]'::jsonb, TRUE, 'active', 0)
 ON CONFLICT (id) DO NOTHING;
 
--- ── 3. 商品：遮光窗帘（PR-003 名称查询 / PR-001 关键词搜索）──
+-- ── 3. 商品（PR-003 名称查询 / PR-001 关键词搜索 / OR-017 指名商品下单）──
+-- ⚠️ 商品名必须覆盖用例**点名**的商品：OR-017 的输入是「我想买夏日清风窗帘…」，
+--    库里没有这个商品 → `product_search` 搜不到 → agent 无从下单 → 该用例恒 0 分。
+--    实测 CI：OR-017 `tools=[customer_address_query ×3]`、0 建单 —— 看着像 agent 不会
+--    下单，实为库里没这个东西。**数据层缺口，不是能力缺陷。**
+-- `recommended`：只让「遮光窗帘」进推荐位，避免 CH-010「推荐几款热销窗帘」的
+--    「第一款」在多个推荐商品间变得不确定；夏日清风靠**名称**命中，不靠推荐位。
 INSERT INTO products
   (id, tenant_id, name, category_id, base_price, description, images, detail_images,
    stock, stock_warning_threshold, status, unit, pricing_type, sku_code,
@@ -50,6 +56,10 @@ VALUES
   ('prod_eval_dark_green', 1, '北欧风窗帘', 'cat_eval_curtain', 128.00,
    '北欧简约风格，棉麻质感，适合客厅与书房',
    '[]'::jsonb, '[]'::jsonb, 800, 10, 'on_sale', '米', 'per_meter', 'EVAL-NRD-28',
+   'on_order', 0, 0, TRUE, FALSE),
+  ('prod_eval_summer', 1, '夏日清风窗帘', 'cat_eval_curtain', 158.00,
+   '轻薄透气夏日清风系列，支持散剪 2.8 米门幅与打孔/折边加工',
+   '[]'::jsonb, '[]'::jsonb, 600, 10, 'on_sale', '米', 'per_meter', 'EVAL-SMB-28',
    'on_order', 0, 0, TRUE, FALSE)
 ON CONFLICT (id) DO NOTHING;
 
@@ -59,7 +69,8 @@ SELECT v.tenant_id, v.product_id, v.color_name, v.hex, v.ord
 FROM (VALUES
   (1, 'prod_eval_blackout', '米白', '#F5F0E6', 1),
   (1, 'prod_eval_blackout', '浅灰', '#C8C8C8', 2),
-  (1, 'prod_eval_dark_green', '雾霾蓝', '#8FA3B0', 1)
+  (1, 'prod_eval_dark_green', '雾霾蓝', '#8FA3B0', 1),
+  (1, 'prod_eval_summer', '米白色', '#F7F3E8', 1)
 ) AS v(tenant_id, product_id, color_name, hex, ord)
 WHERE NOT EXISTS (
   SELECT 1 FROM product_colors pc
@@ -71,7 +82,7 @@ SELECT 1, pc.product_id, pc.id, 'bulk_cut', '2.8', p.base_price, 500,
        p.sku_code || '-' || pc.color_name
 FROM product_colors pc
 JOIN products p ON p.id = pc.product_id
-WHERE pc.product_id IN ('prod_eval_blackout', 'prod_eval_dark_green')
+WHERE pc.product_id IN ('prod_eval_blackout', 'prod_eval_dark_green', 'prod_eval_summer')
   AND NOT EXISTS (
     SELECT 1 FROM product_skus s
     WHERE s.product_id = pc.product_id AND s.color_id = pc.id
@@ -85,7 +96,9 @@ FROM (VALUES
   ('prod_eval_blackout', 'pi_eval_punch', 1),
   ('prod_eval_blackout', 'pi_eval_hem', 2),
   ('prod_eval_blackout', 'pi_eval_iron', 3),
-  ('prod_eval_dark_green', 'pi_eval_punch', 1)
+  ('prod_eval_dark_green', 'pi_eval_punch', 1),
+  ('prod_eval_summer', 'pi_eval_punch', 1),
+  ('prod_eval_summer', 'pi_eval_hem', 2)
 ) AS v(pid, piid, ord)
 WHERE NOT EXISTS (
   SELECT 1 FROM product_processing_items x

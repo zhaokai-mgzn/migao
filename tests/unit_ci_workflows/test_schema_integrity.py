@@ -25,8 +25,9 @@ SQL schema 完整性守卫（issue #3270）。
 
 本测试用静态分析等价覆盖上述 5 类，提交即可拦住，无需起库。
 """
-# case_ids: MC-012, CH-010
+# case_ids: MC-012, CH-010, OR-017
 import re
+import sys
 from pathlib import Path
 
 SCHEMA = Path(__file__).parent.parent.parent / "docs" / "sql" / "schema.sql"
@@ -455,6 +456,17 @@ FIXTURE = (Path(__file__).parent.parent.parent
            / "tests" / "agent_eval" / "fixtures" / "xiaobu_eval_seed.sql")
 
 
+def _strip_sql_comments(sql: str) -> str:
+    """剥掉 SQL 注释，只留可执行代码。
+
+    ⚠️ 为什么必须剥：fixture 的注释里**大量引用商品名/用例输入**（这正是文档价值所在），
+    于是裸 `assert "夏日清风窗帘" in sql` 会被**注释**满足 —— 把商品改名后测试照样通过
+    （变异测试 M2 实测假绿）。与「断言匹配到注释里的 pipefail」是同一类错误。
+    """
+    sql = re.sub(r"/\*[\s\S]*?\*/", "", sql)
+    return "\n".join(re.sub(r"--.*$", "", line) for line in sql.splitlines())
+
+
 class TestXiaobuEvalFixture:
     """C 端评测业务数据 fixture 契约（issue #3270）。
 
@@ -549,7 +561,8 @@ class TestXiaobuFixtureCustomerOrders:
                / "app" / "utils" / "auth.py")
 
     def _sql(self) -> str:
-        return FIXTURE.read_text(encoding="utf-8")
+        """fixture 的**可执行代码**（剥注释）——注释里引用了商品名/用例，裸 in 会被注释满足"""
+        return _strip_sql_comments(FIXTURE.read_text(encoding="utf-8"))
 
     def _auth_customer_user_id(self) -> str:
         """从 auth.py 读出 DEBUG customer 身份注入的 user_id（单一事实源）"""
@@ -800,4 +813,130 @@ class TestRouteTraceDumpStep:
         # 必须给 DEV_SERVICE_TOKEN（否则 compose 插值失败，拿不到任何日志）
         assert (step.get("env") or {}).get("DEV_SERVICE_TOKEN"), (
             "缺 DEV_SERVICE_TOKEN → docker compose logs 插值失败 → dump 为空"
+        )
+
+
+class TestNamedProductsAreSeeded:
+    """用例**点名**的商品必须在 fixture 里（否则该用例恒 0 分，且看着像能力缺陷）。
+
+    先例（OR-017，issue #3316）：输入是「我想买夏日清风窗帘，米白色，3米…」，
+    而 fixture 只有「遮光窗帘/北欧风窗帘」→ `product_search` 搜不到 → agent 无从下单 →
+    CI 报告 `tools=[customer_address_query ×3]`、0 建单。**报告的长相是「agent 不会
+    下单」，真因是「库里没这个东西」** —— 数据层缺口被误读成能力缺陷，
+    正是 `migao-acceptance` 五层归因要防的事。
+
+    本测试把「用例点名商品 → fixture 必须有」变成可执行约束：新增用例若点名了
+    新商品，这里会失败并强迫你二选一 —— 注入 fixture，或声明为泛指（GENERIC）。
+    """
+
+    # 泛指 / 非商品库查询的候选（token → 理由）。不在 fixture 里也无需注入。
+    GENERIC = {
+        "你们窗帘": "口语泛指质量投诉，不指向具体商品（CH-013）",
+        "有什么窗帘": "泛指求推荐，靠 fixture 里的推荐位/列表回答（CH-017）",
+        "推荐几款热销窗帘": "泛指求推荐，靠 recommended=TRUE 商品回答（CH-010）",
+        "雪尼尔面料": "知识问答走 knowledge_search，非商品库查询（KN-001/KN-008）",
+    }
+    # 候选提取：≥2 个中/英/数字字符 + 窗帘/面料/布艺 结尾
+    CANDIDATE_RE = r"[\u4e00-\u9fa5A-Za-z0-9]{2,10}(?:窗帘|面料|布艺)"
+    # 候选里的动词前缀（"搜一下遮光窗帘" → "遮光窗帘"）：否则提取出的是整句而非商品名
+    # ⚠️ 长词必须排在短词前（正则择先匹配）：`搜索` 要在 `搜` 前，`我想买` 要在 `我想` 前
+    VERB_PREFIX_RE = (
+        r"^(?:帮我|给我|我想买|我想|我要|搜索|搜一下|搜下|查一下|查下|搜|查|看看|看|推荐|要|买|选了?)+"
+    )
+
+    def _candidates_by_case(self) -> dict:
+        import glob
+        import yaml
+        root = Path(__file__).parent.parent.parent
+        cases = []
+        for f in glob.glob(str(root / ".github" / "cases" / "*.yml")):
+            d = yaml.safe_load(Path(f).read_text(encoding="utf-8")) or {}
+            cases.extend(d.get("cases") or [])
+
+        # 复用生产过滤逻辑（与评测跑的是同一套选择口径），避免测试自造口径漂移
+        sys.path.insert(0, str(root / ".github"))
+        sys.path.insert(0, str(root / "tests" / "agent_eval"))
+        try:
+            from eval_case_filter import select_cases_for_persona
+        finally:
+            pass
+        selected = select_cases_for_persona(cases, "xiaobu")
+
+        out = {}
+        for c in selected:
+            names = set()
+            for ui in (c.get("user_inputs") or []):
+                text = ui if isinstance(ui, str) else str(ui)
+                for raw in re.findall(self.CANDIDATE_RE, text):
+                    names.add(re.sub(self.VERB_PREFIX_RE, "", raw))
+            names.discard("")
+            if names:
+                out[c["id"]] = sorted(names)
+        return out
+
+    def test_selected_case_set_is_non_trivial(self):
+        """自检：过滤逻辑真的选出了用例（否则本类测试空转 = 假绿）"""
+        cands = self._candidates_by_case()
+        assert len(cands) >= 5, (
+            f"仅解析出 {len(cands)} 条带商品候选的 C 端用例 —— 过滤/解析疑似失效"
+        )
+
+    def _is_generic(self, token: str) -> bool:
+        """token 是否属泛指/非商品库查询。
+
+        用**双向包含**匹配：动词剥离后 token 可能变成 GENERIC 键的子串
+        （"推荐几款热销窗帘" → "几款热销窗帘"），裸相等会漏判而误报。
+        """
+        return any(g in token or token in g for g in self.GENERIC)
+
+    def test_named_products_exist_in_fixture(self):
+        sql = _strip_sql_comments(FIXTURE.read_text(encoding="utf-8"))
+        missing = []
+        for cid, names in self._candidates_by_case().items():
+            for n in names:
+                if self._is_generic(n):
+                    continue
+                if n not in sql:
+                    missing.append(f"{cid} 点名商品 {n!r} 不在 fixture")
+        assert not missing, (
+            "以下用例点名的商品未注入 fixture → 该用例必然 0 分（且会被误读为能力缺陷）：\n  "
+            + "\n  ".join(missing)
+            + "\n修复：在 tests/agent_eval/fixtures/xiaobu_eval_seed.sql 注入该商品"
+              "（含颜色/SKU/加工项关联），或确认属泛指后加入 GENERIC。"
+        )
+
+    def test_OR017_product_is_seeded_with_processing(self):
+        """OR-017 专项：夏日清风窗帘 + 米白色 + 散剪 2.8 + 加工项关联都要有
+
+        （该用例断言 `product_detail` → `interact(choice, multiSelect)` → `order_create`，
+          缺任一环都跑不通。）
+        """
+        sql = _strip_sql_comments(FIXTURE.read_text(encoding="utf-8"))
+        assert "夏日清风窗帘" in sql
+        assert "米白色" in sql
+        assert "prod_eval_summer" in sql
+        # 加工项关联必须带上该商品（否则 product_detail 里没有加工项可问）
+        link = re.search(r"INSERT\s+INTO\s+product_processing_items[\s\S]*?;", sql, re.I)
+        assert link and "prod_eval_summer" in link.group(0), (
+            "product_processing_items 未关联夏日清风窗帘 → 加工项环节无数据"
+        )
+
+    def test_only_one_recommended_product(self):
+        """推荐位只能有一个商品：CH-010「推荐几款热销窗帘」→「第一款」依赖列表顺序，
+        多个推荐商品会让"第一款"不确定 → 用例抖动。
+
+        解析方式：products 的最后一个字段是 `recommended`（紧跟 `has_processing`），
+        故取每条 VALUES 元组末尾的 `, <bool>, <bool>)`，后一个即 recommended。
+        """
+        sql = _strip_sql_comments(FIXTURE.read_text(encoding="utf-8"))
+        block = re.search(r"INSERT\s+INTO\s+products[\s\S]*?;", sql, re.I)
+        assert block, "未找到 products 种子语句"
+        flags = re.findall(r",\s*(TRUE|FALSE)\s*,\s*(TRUE|FALSE)\s*\)", block.group(0))
+        assert len(flags) >= 3, (
+            f"仅解析出 {len(flags)} 条商品元组 —— 解析疑似失效（本测试会空转假绿）"
+        )
+        recommended = [rec for _, rec in flags if rec == "TRUE"]
+        assert len(recommended) == 1, (
+            f"fixture 中 recommended=TRUE 的商品有 {len(recommended)} 个（应恰好 1 个）—— "
+            "多个会让 CH-010 的『第一款』不确定"
         )
