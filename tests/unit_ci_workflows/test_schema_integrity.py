@@ -531,9 +531,144 @@ class TestXiaobuEvalFixture:
         assert "ON_ERROR_STOP=1" in body, "注入步骤应 fail-fast（ON_ERROR_STOP=1）"
 
 
+class TestXiaobuFixtureCustomerOrders:
+    """C 端顾客本人 + 历史订单（issue #3270 数据层，CH-010 / CH-012）。
+
+    为什么必须有（不是"补点数据"）—— 这三个缺口都会让 agent 的**正确行为**也拿 0 分：
+      ① `customer_address_query` 取"最近一笔有地址的订单"，空库永远未命中 →
+         下单表单无法预填 → agent 只能反复追问（实测 `customer_address_query` ×3~4 空转），
+         看着像模型循环，实为环境缺数据；
+      ② `aftersale_create` 的订单归属校验（#518）先拉
+         `GET /api/admin/agent/orders/mine` 再匹配 order_id → 空库必不匹配 →
+         一律返回「该订单不属于您」→ **售后建单在该库里根本不可能成功**（CH-012 4 轮 0 建单）；
+      ③ `customer_order_query` 列表为空 → 顾客说"第一笔订单"无从指代。
+    修测量环境 ≠ 修模型 —— 不补齐就拿不到真实能力分。
+    """
+
+    AUTH_PY = (Path(__file__).parent.parent.parent / "backend" / "ai-agent-service"
+               / "app" / "utils" / "auth.py")
+
+    def _sql(self) -> str:
+        return FIXTURE.read_text(encoding="utf-8")
+
+    def _auth_customer_user_id(self) -> str:
+        """从 auth.py 读出 DEBUG customer 身份注入的 user_id（单一事实源）"""
+        src = self.AUTH_PY.read_text(encoding="utf-8")
+        # debug_role == "customer" 分支内的 user_id="..."
+        m = re.search(
+            r'debug_role\s*==\s*"customer"[\s\S]{0,400}?user_id\s*=\s*"([^"]+)"',
+            src,
+        )
+        assert m, (
+            "未能在 auth.py 中定位 DEBUG customer 的 user_id —— "
+            "注入逻辑已变更，需同步本测试与 fixture"
+        )
+        return m.group(1)
+
+    def test_fixture_customer_id_matches_auth_debug_identity(self):
+        """fixture 的顾客 id 必须与 auth.py 注入的身份**逐字一致**
+
+        这是跨源重复常量（auth.py ↔ fixture）：一旦 drift，订单不属于该顾客 →
+        地址预填与售后建单同时失效，且失败信号是「该订单不属于您」（看起来像
+        权限/能力问题），极难反查到 fixture。故用测试锁死。
+        """
+        expected = self._auth_customer_user_id()
+        assert expected in self._sql(), (
+            f"fixture 未使用 auth.py 的 DEBUG customer id {expected!r} —— "
+            "订单将不属于评测身份的顾客"
+        )
+
+    def _orders_stmt(self) -> str:
+        """取 `INSERT INTO orders ...;` 这一条语句的正文（截到第一个分号）
+
+        ⚠️ 必须**先截语句再断言**：直接用 `INSERT INTO orders[\\s\\S]*?'id'` 会一路
+        匹配到文件末尾的其它语句（如自检 DO 块里的 `user_id = 'debug_customer_1'`），
+        于是删掉种子里的 user_id 测试照样通过 —— 假绿（本测试首版即踩此坑，
+        用变异测试 M2 抓出）。
+        """
+        m = re.search(r"INSERT\s+INTO\s+orders\b[\s\S]*?;", self._sql(), re.I)
+        assert m, "未找到 orders 种子语句"
+        return m.group(0)
+
+    def test_fixture_orders_belong_to_customer(self):
+        """orders.user_id 必须显式赋为该顾客 —— C 端数据隔离的唯一依据"""
+        uid = self._auth_customer_user_id()
+        stmt = self._orders_stmt()
+        assert "user_id" in stmt, "orders 种子 INSERT 未包含 user_id 列"
+        assert f"'{uid}'" in stmt, (
+            f"orders 种子未把 user_id 赋为 {uid!r} —— "
+            "按 user_id 隔离的查询（我的订单/地址预填/售后归属校验）会全部查不到"
+        )
+        # 两笔订单都要归属该顾客（变异测试：只改一笔也必须被发现）
+        assert stmt.count(f"'{uid}'") >= 2, (
+            f"orders 种子中 {uid!r} 出现次数 < 2（两笔订单都应归属该顾客）"
+        )
+
+    def test_orders_self_check_uses_same_customer_id(self):
+        """fixture 自检必须核对同一个顾客 id（否则自检形同虚设）"""
+        uid = self._auth_customer_user_id()
+        m = re.search(r"DO\s+\$\$[\s\S]*?\$\$", self._sql(), re.I)
+        assert m, "fixture 缺少自检 DO 块"
+        assert f"'{uid}'" in m.group(0), (
+            "自检块未核对 auth.py 的 DEBUG customer id —— 注入了别人的订单也不会报错"
+        )
+
+    def test_fixture_orders_have_address_for_prefill(self):
+        """地址预填依赖"最近一笔有地址的订单" —— 种子里必须有非空 customer_address"""
+        stmt = self._orders_stmt()
+        assert "customer_address" in stmt, "orders 种子缺少 customer_address 列"
+        assert "文三路" in stmt, "orders 种子缺少可预填的收货地址"
+
+    def test_fixture_orders_are_aftersale_eligible(self):
+        """售后建单的状态门禁允许 confirmed/producing/shipped/completed"""
+        stmt = self._orders_stmt()
+        for st in ("completed", "shipped"):
+            assert re.search(r"'" + st + r"'", stmt), (
+                f"orders 种子缺少 status={st}（售后/物流用例依赖）"
+            )
+
+    def _order_value_tuples(self) -> list:
+        """把 orders VALUES 列表切成一条订单一个元组（按 `('ord_eval_` 边界切）"""
+        block = self._orders_stmt()
+        values = block.split("VALUES", 1)[-1]
+        parts = re.split(r"(?=\('ord_eval_)", values)
+        return [p for p in parts if p.strip().startswith("('ord_eval_")]
+
+    def test_fixture_orders_have_distinct_created_at(self):
+        """created_at 必须显式给值且**每笔不同**
+
+        `customer_order_query` 按 `ORDER BY created_at DESC` 排序，顾客说"最近那笔"
+        取列表首条；若两笔同刻（`NOW()` 默认值）顺序不确定 → 用例随机命中 → 抖动。
+
+        ⚠️ 断言按**每条订单自己的 created_at** 比对，不是拿全局时间戳列表比相邻两项
+        —— 首版用 `stamps[0] != stamps[1]` 把 created_at 与 updated_at 混在一起比，
+        两笔订单 created_at 改成同刻也能通过（变异测试 M1 抓出）。
+        """
+        tuples = self._order_value_tuples()
+        assert len(tuples) >= 2, f"orders 种子解析出 {len(tuples)} 条订单（应 ≥2）"
+        created = []
+        for t in tuples:
+            stamps = re.findall(r"TIMESTAMPTZ\s+'([^']+)'", t)
+            assert stamps, "订单元组未显式指定时间戳（created_at 走 NOW() → 顺序不确定）"
+            created.append(stamps[0])  # 每元组第一个时间戳 = created_at
+        assert len(set(created)) == len(created), (
+            f"订单 created_at 存在重复 {created} → 『最近一笔』命中不确定 → 用例抖动"
+        )
+
+    def test_fixture_has_logistics_for_shipped_order(self):
+        """已发货订单要有物流轨迹，否则物流查询用例无数据"""
+        assert "order_logistics" in self._sql()
+
+    def test_fixture_self_checks_order_count(self):
+        """fixture 末尾必须自检订单数 —— 防"注入了但没生效"静默通过"""
+        sql = self._sql()
+        assert "RAISE EXCEPTION" in sql, (
+            "fixture 缺少注入自检（RAISE EXCEPTION）——注入静默失败会让整轮评测失真的"
+        )
+
+
 class TestEvalRunnerDepsInstalled:
     """评测 workflow 必须装齐 runner + E2E 依赖（issue #3270）。
-
     先例：安装步骤只有 `pip install httpx`，而 real E2E 步骤用
     `python -m pytest ... --timeout=120 --reruns 1` →
     `No module named pytest` → 步骤 exit 1（此时 C 端评测步骤其实已绿）。
@@ -613,3 +748,56 @@ class TestEvalTierDispatch:
         assert 'local_runner.py "$TIER"' in body, "评测步骤未把 tier 作为档位参数传给 runner"
         # 不得再硬编码 smoke（否则档位切换失效）
         assert "local_runner.py smoke" not in body, "评测步骤仍硬编码 smoke 档"
+
+
+class TestRouteTraceDumpStep:
+    """CI 必须 dump 逐轮**路由/意图**轨迹（issue #3270 归因层）。
+
+    为什么是 CI 的事而不是 runner 的事：runner 只跟 HTTP API 对话，
+    意图分类与路由决策不经过 API 响应，只写在 ai-agent 进程日志里
+    （`intent_router` / `route_by_intent`）。没有这一步，「退货被路由到了 order」
+    与「aftersales 没绑定这个工具」在 CI 报告里永远同形，五层归因做不下去
+    —— CH-012 就是这么卡住的。
+    """
+
+    def _wf(self) -> dict:
+        import yaml
+        wf = WORKFLOWS_DIR / "xiaobu-acceptance.yml"
+        return yaml.safe_load(wf.read_text(encoding="utf-8")) or {}
+
+    def _step(self):
+        steps = self._wf()["jobs"]["xiaobu-acceptance"]["steps"]
+        for s_ in steps:
+            if "路由" in (s_.get("name") or ""):
+                return s_
+        return None
+
+    def test_step_exists(self):
+        assert self._step() is not None, (
+            "workflow 缺少「Dump C 端逐轮路由轨迹」步骤 —— 路由层归因无证据"
+        )
+
+    def test_step_is_always_run(self):
+        step = self._step()
+        assert step.get("if") == "always()", (
+            "路由轨迹步骤必须 if: always() —— 基线/改进的**成功**run 同样需要留痕对比"
+        )
+
+    def test_step_comes_after_eval(self):
+        steps = self._wf()["jobs"]["xiaobu-acceptance"]["steps"]
+        names = [s_.get("name") or "" for s_ in steps]
+        i_dump = next((i for i, n in enumerate(names) if "路由" in n), -1)
+        i_eval = next((i for i, n in enumerate(names) if "local_runner" in n), -1)
+        assert 0 <= i_eval < i_dump, (
+            f"路由 dump 必须在评测之后（i_eval={i_eval}, i_dump={i_dump}）"
+        )
+
+    def test_step_greps_routing_markers(self):
+        step = self._step()
+        body = step.get("run") or ""
+        for kw in ("route_by_intent", "ai-agent-service"):
+            assert kw in body, f"路由 dump 未包含关键标记 {kw!r}"
+        # 必须给 DEV_SERVICE_TOKEN（否则 compose 插值失败，拿不到任何日志）
+        assert (step.get("env") or {}).get("DEV_SERVICE_TOKEN"), (
+            "缺 DEV_SERVICE_TOKEN → docker compose logs 插值失败 → dump 为空"
+        )
