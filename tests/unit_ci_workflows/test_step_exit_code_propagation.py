@@ -82,7 +82,7 @@ class TestXiaobuStackExitCodePropagation:
 
     def test_diagnose_step_triggers_on_failure(self):
         """失败诊断步骤必须能在起栈失败时触发"""
-        step = _find_step(self.WORKFLOW, "Diagnose stack startup") or {}
+        step = _find_step(self.WORKFLOW, "Diagnose on failure") or {}
         assert (step.get("if") or "").strip() == "failure()", (
             f"诊断步骤 if 应为 failure()，实为 {step.get('if')!r} —— "
             "否则起栈失败时不会 dump 容器日志（真因无法定位）"
@@ -90,7 +90,7 @@ class TestXiaobuStackExitCodePropagation:
 
     def test_diagnose_provides_required_compose_env(self):
         """诊断步骤必须给 DEV_SERVICE_TOKEN 值，否则 compose 插值失败拿不到日志"""
-        step = _find_step(self.WORKFLOW, "Diagnose stack startup")
+        step = _find_step(self.WORKFLOW, "Diagnose on failure")
         env = (step.get("env") or {})
         assert "DEV_SERVICE_TOKEN" in env, (
             "诊断步骤缺 DEV_SERVICE_TOKEN —— deploy/docker-compose.yml 将其声明为 "
