@@ -169,8 +169,8 @@ cases:
       - "is_auto_handoff_trigger('我要找老板', config) == true"
       - "is_after_hours(config, 非营业时间) == true"
       - "非营业时间转人工不创建工单，返回 afterHoursMessage"
-    skip_reason: ""
-    merge_log: "POC 机器人设置集成新增"
+    skip_reason: "纯配置函数行为由 pytest 单测（tests/test_tenant_config.py）验证：is_auto_handoff_trigger / is_after_hours 是纯函数，其入参 config（TenantAiConfig）无法经 agent-eval 设置，非 LLM 行为，不进入 C 端评测（issue #3270 断言层归因：原 user_inputs 是断言描述而非顾客对话）"
+    merge_log: "POC 机器人设置集成新增；2026-09-11 标 skip —— 原输入为配置描述、断言为纯函数级，agent-eval 无法设置 config（issue #3270）"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tenant_config.py"

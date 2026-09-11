@@ -143,9 +143,14 @@ class TestXiaobuCaseSelection:
             assert cid not in sel, f"B 端管理用例 {cid} 不应被 C 端用例集选中"
 
     def test_xiaobu_only_cases_all_selected(self):
-        """persona: xiaobu 的用例必须全部被选中（不得漏跑）"""
+        """persona: xiaobu 的用例必须全部被选中（不得漏跑）
+
+        例外：声明了 skip_reason 的（纯前端/纯函数级，非 LLM 行为）不进评测。
+        """
+        skipped = {c["id"] for c in load_case_dicts(str(CASES_DIR)) if c.get("skip_reason")}
+        expected = XIAOBU_ONLY - skipped
         sel = {c["id"] for c in self._selected()}
-        assert XIAOBU_ONLY <= sel, f"C 端专属用例漏选: {sorted(XIAOBU_ONLY - sel)}"
+        assert expected <= sel, f"C 端专属用例漏选: {sorted(expected - sel)}"
 
     def test_skipped_cases_excluded(self):
         """skip_reason 非空的用例不进 C 端评测（纯前端 jest 用例）"""
@@ -341,3 +346,63 @@ class TestStaffProxyOrderSemantics:
                      "帮我下个订单，客户张三，手机13800138000"]:
             case = {"user_inputs": [text], "expectations": []}
             assert not is_customer_facing_case(case), f"「{text}」是代客语义，应被过滤"
+
+
+class TestCaseInputsAreUtterances:
+    """C 端用例的 user_inputs 必须是**顾客会说的话**，不能是断言描述（issue #3270）。
+
+    背景：CH-008 / CH-017 的 user_inputs 原本是**测试描述文字**：
+      - CH-008 R1: "用户触发转人工后应创建 agent_session（waiting）并写入系统消息"
+      - CH-017 R1: "用户与 AI 聊过 3 轮（含查单/商品咨询）后触发转人工，human_handoff 应携带…"
+    agent 收到这种输入无法响应 → 从不调用 `human_handoff` → **必然 0 分**
+    （CI normal 档实测：两条均 ❌）。这是「断言层」缺陷 —— 用例写错了，不是 agent 不行。
+
+    ST-008 同款（输入是配置描述、断言是纯函数级）→ 已标 skip_reason。
+
+    本测试作为**用例质量门禁**：可跑的 C 端用例，首轮输入不得是描述性文字。
+    """
+
+    # 描述性输入信号：以第三方/系统视角起手，或含「应…」断言式描述、API 路径
+    _DESC = re.compile(
+        r"^(用户|顾客|商家|客户|平台|系统|AI|C 端|B 端|米宝)"
+        r"|应(创建|返回|携带|能|有|使用|触发)"
+        r"|→|\bPOST /|\bGET /"
+    )
+    # 正当例外：攻击载荷（注入/越权用例的输入本身就是 payload）
+    _ALLOW = {"DF-010"}
+
+    def _sel(self):
+        from eval_case_filter import select_cases_for_persona
+        return select_cases_for_persona(load_case_dicts(str(CASES_DIR)), PERSONA)
+
+    def test_no_descriptive_inputs_in_runnable_cases(self):
+        bad = []
+        for c in self._sel():
+            if c["id"] in self._ALLOW:
+                continue
+            for u in (c.get("user_inputs") or []):
+                if isinstance(u, str) and self._DESC.search(u):
+                    bad.append((c["id"], u[:56]))
+                    break
+        assert not bad, (
+            "以下可跑用例的首轮输入是**描述性文字**（agent 无法响应 → 必然 0 分）：\n  "
+            + "\n  ".join(f"{cid}: {t}" for cid, t in bad)
+            + "\n应改写为顾客会说的话，或标 skip_reason 并说明由单测覆盖。"
+        )
+
+    def test_ch008_and_ch017_use_real_dialogue(self):
+        by = {c["id"]: c for c in load_case_dicts(str(CASES_DIR))}
+        for cid in ("CH-008", "CH-017"):
+            inputs = by[cid]["user_inputs"]
+            assert all(isinstance(u, str) and not self._DESC.search(u) for u in inputs), (
+                f"{cid} 仍含描述性输入: {inputs}"
+            )
+            # 转人工用例的最后一轮应为显式转人工请求
+            assert any("转人工" in u for u in inputs), f"{cid} 末轮应触发转人工"
+
+    def test_st008_skipped_with_reason(self):
+        by = {c["id"]: c for c in load_case_dicts(str(CASES_DIR))}
+        assert by["ST-008"].get("skip_reason"), (
+            "ST-008 的断言是纯函数级（is_auto_handoff_trigger），agent-eval 无法设置 config —— "
+            "必须标 skip_reason 说明由单测覆盖"
+        )

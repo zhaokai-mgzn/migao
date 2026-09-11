@@ -589,9 +589,8 @@
 
 ### CH-008. 转人工创建人工会话 - 客服工作台可见并可回复 🔵
 ```
-你: 用户触发转人工后应创建 agent_session（waiting）并写入系统消息
-你: 客服可在工作台发消息回复，会话 waiting→active
-你: 用户可按 AI 会话 ID 查询人工会话看到客服回复
+你: 我要转人工
+你: 客服在吗
 期望: human_handoff
 数据: createSessionForHandoff 创建 waiting 会话 + system 消息
 数据: sendMessage(agent) 后会话状态变 active
@@ -601,7 +600,7 @@
 数据: getSessionByAiSessionId(customer) 不含 aiContext 且过滤 isInternal 消息
 ```
 真值: ai-chat.intent-tool-map, settings-manage.ai-config
-溯源: POC 人工客服工作台新增；2026 扩展：AI 上下文同步断言（GB/T 47746-2026） ｜ tags: handoff, agent_session
+溯源: POC 人工客服工作台新增；2026 扩展：AI 上下文同步断言（GB/T 47746-2026）；2026-09-11 修正 user_inputs —— 原为断言描述文字（非顾客对话），agent 无法响应导致必然 0 分（issue #3270 断言层归因） ｜ tags: handoff, agent_session
 
 ### CH-009. interact form 表单提交注入上下文（__FORM__ 协议） 🔵
 ```
@@ -710,9 +709,9 @@
 
 ### CH-017. 转人工携带 AI 对话上下文 - 客服工作台可见转人工前对话（GB/T 47746-2026 对齐） 🔵
 ```
-你: 用户与 AI 聊过 3 轮（含查单/商品咨询）后触发转人工，human_handoff 应携带最近 N 轮 user/assistant 文本快照与可选摘要
-你: 人工客服打开该会话应能看到『AI 对话记录（转人工前）』与『人工接待记录』分区展示
-你: 顾客端按 aiSessionId 查询人工会话不应返回 aiContext（避免轮询载荷放大与重复展示）
+你: 帮我查一下我的订单
+你: 有什么窗帘推荐吗
+你: 我要转人工
 期望: human_handoff
 数据: human_handoff POST 携带 aiContextSummary 与 aiContextMessages（仅 role=user/assistant，剥 think/图片占位，逐条与总量截断）
 数据: createSessionForHandoff 持久化 ai_context_summary/ai_context_messages（JSONB）
@@ -2517,9 +2516,10 @@
 数据: is_auto_handoff_trigger('我要找老板', config) == true
 数据: is_after_hours(config, 非营业时间) == true
 数据: 非营业时间转人工不创建工单，返回 afterHoursMessage
+跳过: 纯配置函数行为由 pytest 单测（tests/test_tenant_config.py）验证：is_auto_handoff_trigger / is_after_hours 是纯函数，其入参 config（TenantAiConfig）无法经 agent-eval 设置，非 LLM 行为，不进入 C 端评测（issue #3270 断言层归因：原 user_inputs 是断言描述而非顾客对话）
 ```
 真值: settings-manage.ai-config, settings-manage.immediate-effect
-溯源: POC 机器人设置集成新增 ｜ tags: ai_config, handoff
+溯源: POC 机器人设置集成新增；2026-09-11 标 skip —— 原输入为配置描述、断言为纯函数级，agent-eval 无法设置 config（issue #3270） ｜ tags: ai_config, handoff
 
 ### ST-009. 系统通知总开关 - 租户关闭后自动站内信停止发送（#3003） 🔵
 ```
@@ -3118,7 +3118,7 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：246（活跃 119，跳过 127）
+- 用例总数：246（活跃 118，跳过 128）
 - tier 分布：smoke 12 / normal 205 / adversarial 29
 - 售后域：8
 - agents：6
