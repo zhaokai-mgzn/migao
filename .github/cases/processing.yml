@@ -28,6 +28,10 @@ cases:
       - tool: processing_item_query
     data_checks:
       - "data.pageMeta != null"
+    pre_clean:
+      - type: product_dedupe
+        product_keyword: "遮光窗帘"
+        price: 100
     skip_reason: ""
     merge_log: "eval P004 + verification 2.13（查询部分同义）+ 2.14 的查询段"
     traces:
