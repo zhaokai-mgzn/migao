@@ -2106,7 +2106,7 @@
 真值: processing-manage.crud, product-sku-stock.create-flow
 溯源: 2026-09-07 改写（issue #3005，回滚 #2986）：行业加工费按米计价、辅料（罗马圈/四爪钩等）含在按米加工费中——per_piece 与「每米数量」密度不符合实际（数量对不上车间工艺、B 端无法对账），已回滚移除；PP-006 由密度配置用例改为计价方式回归断言 ｜ tags: processing_item, pricing
 
-## 商品域（20 case）
+## 商品域（21 case）
 
 ### PR-001. 商品搜索 - 关键词模糊匹配 🟢
 ```
@@ -2387,6 +2387,17 @@
 ```
 真值: product-sku-stock.create-flow, ai-chat.validate-input
 溯源: 2026-09-08 新增（issue #3056 复盘）：建品自定义加工价曾被 BFF create 的 ids 分支静默丢弃（45→30，读回退掩盖后复发）。required_args 只查 create args 层，本 case 用 db_verify 查落库层（finalPrice=确认价），args+落库双保险 ｜ tags: product_create, processing_item, price, regression
+
+### PR-020. 单独 SKU 调价 - 修改某规格价格 🔵
+```
+你: 把遮光窗帘（100元的那件）的米白色散剪规格改成 150 元
+你: [📷 纯图片 x0]
+你: 确认
+期望: sku_update
+数据: sku_update 成功（价格落库）
+```
+真值: product-sku-stock.realtime
+溯源: Round 72 评测覆盖审计：sku_update（SKU 级调价）注册于 product_skill 但无 case 覆盖（盲区）→ 补 SKU 调价场景 ｜ tags: sku, write, pricing
 
 ## registry（1 case）
 
@@ -3059,8 +3070,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：243（活跃 116，跳过 127）
-- tier 分布：smoke 10 / normal 204 / adversarial 29
+- 用例总数：244（活跃 117，跳过 127）
+- tier 分布：smoke 10 / normal 205 / adversarial 29
 - 售后域：7
 - agents：6
 - api：19
@@ -3079,7 +3090,7 @@
 - ontology：4
 - 订单域：16
 - 加工项域：6
-- 商品域：20
+- 商品域：21
 - registry：1
 - 设置域：8
 - token-refresh：4
