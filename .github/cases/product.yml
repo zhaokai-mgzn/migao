@@ -579,6 +579,10 @@ cases:
       - "录入这个商品，名称遮光窗帘，价格 100"
       - "分类选窗帘"
       - auto_select: true
+      - auto_fill:
+          colors: "米白色"
+          selling_methods: "散剪"
+          sku_code: "TEST-002"
       - "已选加工项：高温定型"
       - "颜色米白色，货号 TEST-002"
       - "确认"
