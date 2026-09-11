@@ -21,7 +21,13 @@ CASES_DIR = REPO_ROOT / ".github" / "cases"
 DRIFT_PATHS = ["OR-010", "PR-010"]
 
 # 降级后 smoke 集合（9 → 7）：全部为稳定单轮/双轮查询类用例
-EXPECTED_SMOKE = {"AS-001", "CU-001", "HR-001", "HR-004", "OR-001", "PR-001", "PR-003", "KN-001", "KN-003"}  # KN-001/003：双端知识问答冒烟（issue #3059）
+EXPECTED_SMOKE = {"AS-001", "CU-001", "HR-001", "HR-004", "OR-001", "PR-001", "PR-003", "KN-001", "KN-003", "OR-012", "AS-008"}  # KN-001/003：双端知识问答冒烟（issue #3059）
+# OR-012（C 端物流，issue #3266 升 smoke）：实测本地 DEBUG 栈 100%（customer_logistics_track），
+#   覆盖 C 端数据隔离核心能力（只查本人已发货订单）。
+#   KN-001 虽是 smoke，但 persona: xiaobu → 在 B 端 smoke 档被 persona 过滤排除，
+#   实际生效的 B 端 smoke 集合不含它（见 test_bmiabo_smoke_excludes_xiaobu_only）。
+# AS-008（C 端售后进度查询，issue #3266 新增 + 升 smoke）：补 aftersale_query 唯一 C 端覆盖缺口。
+XIAOBU_ONLY_SMOKE = {"KN-001", "OR-012", "AS-008"}
 
 
 def _active_smoke_ids():
@@ -51,3 +57,12 @@ class TestSmokeTierFreeze:
 
     def test_smoke_set_exact(self):
         assert _active_smoke_ids() == EXPECTED_SMOKE
+    def test_mibao_smoke_excludes_xiaobu_only(self):
+        """B 端 smoke 档不得含 C 端专属用例（issue #2855 persona 过滤）"""
+        from render_cases import filter_by_persona  # noqa: E402
+        mibao_smoke = {
+            c["id"] for c in filter_by_persona(load_case_dicts(str(CASES_DIR)), "mibao")
+            if c.get("tier") == "smoke" and not c.get("skip_reason")
+        }
+        leaked = mibao_smoke & XIAOBU_ONLY_SMOKE
+        assert not leaked, f"B 端 smoke 混入 C 端专属用例: {sorted(leaked)}"

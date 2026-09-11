@@ -39,6 +39,112 @@ SERVICE_TOKEN = os.environ.get("SERVICE_TOKEN", "")
 # 并验证 C 端数据隔离（customer_order_query 而非 order_query）。
 PERSONA = os.environ.get("PERSONA", "mibao").strip().lower()
 
+# ── C 端（小布）工具集真值（issue #3266）──
+# 单一真值来源 = customer_*_skill.py 的 CUSTOMER_*_TOOLS 并集；此处内联是为了让
+# local_runner 独立可跑（不 import 后端 app 包），一致性由契约测试锁定：
+#   tests/unit_ci_workflows/test_xiaobu_case_set.py::TestXiaobuToolsetTruth
+# 背景：此前 xiaobu 用例选择靠宽 tag（query/product…）捞，把 B 端管理用例
+# （经营概览/资金流水/员工列表/分类/客户/售后工单/设置）也捞进来当 C 端跑，
+# 而这些用例断言的工具小布根本没有 → 「C 端评测通过率」不可信（假绿）。
+XIAOBU_TOOLS = frozenset({
+    # customer_order_skill
+    "customer_order_query", "customer_logistics_track", "customer_address_query",
+    "order_create", "interact", "human_handoff",
+    # customer_product_skill
+    "product_search", "product_detail",
+    # customer_quote_skill
+    "curtain_calc",
+    # customer_aftersales_skill
+    "aftersale_query", "aftersale_create", "validate_input",
+    # customer_knowledge_skill
+    "knowledge_search",
+    # customer_general_skill（fallback）：product_search / product_detail /
+    # customer_order_query / customer_logistics_track / human_handoff / interact
+    # —— 均已在上方列出
+})
+
+# 评测 runner 侧的「非真实工具」伪期望（不计入工具集校验）
+_PSEUDO_TOOLS = frozenset({"direct_reply"})
+
+# 工具名形态：ASCII 小写下划线标识符（真工具名都符合；中文/含等号的断言串不符）
+_TOOL_NAME_RE = re.compile(r"^[a-z][a-z0-9_]*$")
+
+
+def _case_persona(c) -> str:
+    """读用例 persona 字段（兼容 dict 与 EvalCase 对象）"""
+    v = c.get("persona") if isinstance(c, dict) else getattr(c, "persona", "")
+    return (v or "").strip().lower()
+
+
+def _case_expectation_tools(c) -> set:
+    """用例 expectations 里引用的真实工具名（兼容 dict 形态与已归一字符串形态）。
+
+    expectations 有两种来源形态：
+      - 原始 YAML（`.github/cases` 加载）→ `[{"tool": "x", "args": {...}}, "断言串"]`
+      - 生成物 / render 归一后 → `["x(args=1)", "success=true", ...]`
+
+    形态：
+      "tool" / "tool(args=1)" / "tool: args=1"     → 工具
+      "A or B"（runner 支持 OR 分支）              → 两个工具都算
+      "success=true" / "data.orders.length >= 0" / 中文断言 → **不是工具**，跳过
+
+    只收 ASCII 小写下划线形态的标识符，避免把机器可判定断言（success=true 等）
+    误当工具名 —— 曾导致 `success=true` 被拆成 "success" 混入工具集判断。
+    """
+    exps = c.get("expectations") if isinstance(c, dict) else getattr(c, "expectations", None)
+    out = set()
+    for exp in (exps or []):
+        if isinstance(exp, dict):
+            # dict 形态的 tool 字段本身也可能是 "A or B"（runner 的 OR 分支语义）
+            branches = (exp.get("tool") or "").split(" or ")
+        elif isinstance(exp, str):
+            branches = exp.split(" or ")
+        else:
+            continue
+        for br in branches:
+            tool = re.split(r"[\(:\s]", br.strip(), 1)[0]
+            if tool and tool not in _PSEUDO_TOOLS and _TOOL_NAME_RE.match(tool):
+                out.add(tool)
+    return out
+
+
+def select_cases_for_persona(cases, persona: str = None) -> list:
+    """按 persona 选取该端可跑的用例集（issue #3266 假绿修复）。
+
+    规则（C 端）：
+      1. 先按 persona 归属过滤（filter_by_persona，双端用例保留）；
+      2. 丢掉 skip_reason 非空的用例（纯前端 jest 用例，非 LLM 行为）；
+      3. **双端用例**须其全部期望工具都在小布工具集内才保留 —— B 端管理用例
+         （断言的工具小布没有）一律排除，防止「跑在错误 Agent 上还计分」。
+
+    取代此前按 XIAOBU_ONLY_TAGS 宽 tag 捞的实现（query/product 这类通用 tag
+    命中 B 端管理用例，实测 33 条里仅 4 条真属 C 端）。
+
+    B 端（mibao）沿用 filter_by_persona 语义，不做工具集过滤。
+    """
+    from render_cases import filter_by_persona
+
+    persona = (persona or PERSONA or "").strip().lower()
+    cases = filter_by_persona(cases, persona)
+    cases = [c for c in cases if not _case_skip_reason(c)]
+    if persona != "xiaobu":
+        return list(cases)
+
+    kept = []
+    for c in cases:
+        if _case_persona(c) == "xiaobu":
+            kept.append(c)          # 显式 C 端专属：无条件保留
+            continue
+        tools = _case_expectation_tools(c)
+        if tools and tools <= XIAOBU_TOOLS:
+            kept.append(c)          # 双端且工具全在 C 端能力内
+    return kept
+
+
+def _case_skip_reason(c) -> str:
+    v = c.get("skip_reason") if isinstance(c, dict) else getattr(c, "skip_reason", "")
+    return (v or "").strip()
+
 
 def _validate_service_token(token: str) -> str | None:
     """校验 SERVICE_TOKEN 是否纯 ASCII（HTTP header 值必须是 ASCII）。
@@ -1392,26 +1498,24 @@ async def main():
         cases = ALL_CASES
         print(f"📚 用例源: eval_cases.py（生成物，{len(cases)} 条）")
 
-    # persona 归属过滤（issue #2855）：mibao 跳过 C 端专属（xiaobu）用例，
-    # xiaobu 跳过 B 端专属（mibao）用例；未标记=双端保留。
-    from render_cases import filter_by_persona
+    # persona 归属 + C 端工具集过滤（issue #2855 / #3266）
+    # mibao：跳过 C 端专属（xiaobu）用例
+    # xiaobu：#2855 persona 过滤 + #3266 工具集过滤（双端用例须其断言工具全在
+    #         小布能力内；B 端管理用例——断言的工具小布没有——一律排除，
+    #         防「跑在错误 Agent 上还计分」的假绿）
     before = len(cases)
-    cases = filter_by_persona(cases, PERSONA)
+    cases = select_cases_for_persona(cases, PERSONA)
     if len(cases) != before:
-        print(f"🧪 Persona={PERSONA}：persona 过滤后 {len(cases)}/{before} 条（排除 {before - len(cases)} 条另一端专属）")
+        print(f"🧪 Persona={PERSONA}：用例集过滤后 {len(cases)}/{before} 条"
+              f"（排除 {before - len(cases)} 条另一端专属/超出本端工具能力）")
 
-    # xiaobu 模式：仅跑 C 端可用用例（订单查询/下单/售后/通用），
-    # 跳过管理类（order_manage/after_sales_manage/product_manage 等 B 端工具）用例
     if PERSONA == "xiaobu":
-        # knowledge/wiki：C 端小布知识问答（KN-008 等 xiaobu persona 知识 case）必须可跑（#3076）
-        XIAOBU_ONLY_TAGS = {"order_query", "order_create", "aftersale", "query", "product", "knowledge", "wiki"}
-        def xiaobu_filter(c):
-            if c.skip_reason:
-                return False
-            tags = set(c.tags or [])
-            return bool(tags & XIAOBU_ONLY_TAGS)
-        cases = [c for c in cases if xiaobu_filter(c)]
-        print(f"🧪 Persona=xiaobu：过滤后 {len(cases)} 条 C 端用例")
+        # 空集 = 评测静默假绿（issue #3062 同源）——显式报错而非退出 0
+        if not cases:
+            print("❌ C 端用例集为空（persona/工具集过滤后无剩余）——"
+                  "禁止假绿，请检查 .github/cases/ 的 persona 声明与 C 端工具集")
+            sys.exit(1)
+        print(f"🧪 Persona=xiaobu：C 端用例 {len(cases)} 条")
 
     def smoke_cases():
         return [c for c in cases if c.difficulty == Difficulty.SMOKE and not c.skip_reason]

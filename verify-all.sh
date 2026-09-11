@@ -21,6 +21,13 @@ PASS=0
 FAIL=0
 declare -a FAILED
 
+# 覆盖体检用解释器：优先项目 venv（local_runner 用了 `X | None`，需 Python ≥3.10；
+# macOS 自带 python3 = 3.9 会 SyntaxError）。venv 缺失时退回 python3 并显式报错。
+PY_BIN="$ROOT/backend/ai-agent-service/.venv/bin/python"
+if [ ! -x "$PY_BIN" ]; then
+  PY_BIN="$(command -v python3 || true)"
+fi
+
 report() {
   local name="$1"; shift
   local log="/tmp/verify-all-$$.log"
@@ -58,6 +65,11 @@ gate_check() {
     echo "  🔍 扫描新增测试文件的弱断言"
     python3 .github/growth_gate.py --check-weak --files $NEW_TESTS || GATE_RC=1
   fi
+  # C 端小布评测覆盖体检（issue #3266）：孤儿用例必须 0、用例集不得为空。
+  # 不加 --max-uncovered：缺口数是随迭代收敛的活指标，硬编码阈值会制造返工式门禁；
+  # 孤儿用例（声明 xiaobu 却断言非小布工具）是**配置错误**，必须拦截。
+  echo "  🔍 C 端小布评测覆盖体检"
+  "$PY_BIN" scripts/xiaobu_coverage.py --check >/dev/null 2>&1 || GATE_RC=1
   [ "$GATE_RC" -eq 0 ] && [ "$BLOCKERS" = "0" ]
 }
 
@@ -71,6 +83,7 @@ case "$MODE" in
     report "admin-web tsc"        bash -c "cd '$ROOT/frontend/admin-web' && npx tsc --noEmit"
     report "QA Growth Gate 预检"  gate_check
     report "UI 回退检测"        bash -c "cd '$ROOT' && ./check-ui-regression.sh"
+    report "C 端评测覆盖体检"    bash -c "cd '$ROOT' && '$PY_BIN' scripts/xiaobu_coverage.py --check"
     ;;
   full)
     echo "========== MIGAO 全量验证 =========="
@@ -80,6 +93,7 @@ case "$MODE" in
     report "admin-web tsc"        bash -c "cd '$ROOT/frontend/admin-web' && npx tsc --noEmit"
     report "QA Growth Gate 预检"  gate_check
     report "UI 回退检测"        bash -c "cd '$ROOT' && ./check-ui-regression.sh"
+    report "C 端评测覆盖体检"    bash -c "cd '$ROOT' && '$PY_BIN' scripts/xiaobu_coverage.py --check"
     ;;
   frontend)
     report "admin-web vitest"     bash -c "cd '$ROOT/frontend/admin-web' && npx vitest run"

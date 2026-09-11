@@ -4,7 +4,7 @@
 > 单一源：`ershen/seed/migao/cases/`（部署副本 `.github/cases/`）。
 > 启动服务后按序执行；每轮 Case 独立。tier：🟢 smoke / 🔵 normal / 🔴 adversarial。
 
-## 售后域（7 case）
+## 售后域（8 case）
 
 ### AS-001. 售后工单列表 🟢
 ```
@@ -92,6 +92,18 @@
 ```
 真值: aftersales-flow.agent-create, aftersales-flow.flow
 溯源: 2026-09-08 新增（issue #3033 复盘 sess_50ff3e3c824c4a70）：换货选 2699 面料（绑 5 加工项）全程未提加工项；aftersales.md 补换货加工项确认规则 + EXAMPLES 例 4 ｜ tags: exchange, processing_item, guided_flow
+
+### AS-008. C 端售后进度查询 - 仅限本人工单 + 拒绝跨用户/快递单号式越权查询 🟢
+```
+你: 我上次申请的售后处理得怎么样了
+期望: aftersale_query
+数据: aftersale_query 无用户/租户参数，后端强制按当前登录顾客过滤（/api/admin/agent/after-sales/mine 同构）——顾客无法通过任何参数读取他人工单
+数据: list 返回当前顾客工单（含 status 标签与 timeline）；无工单时如实告知『暂无售后记录』，不编造工单号/状态
+数据: status 可筛选（pending/processing/resolved/rejected/closed），非法值不静默当成全部
+数据: 与 B 端 after_sales_manage 物理隔离：小布无 after_sales_manage 工具，不得出现管理端动作（改状态/退款/回补库存）
+```
+真值: aftersales-flow.status-enums, aftersales-flow.flow
+溯源: 2026-09-11 新增（issue #3266 C 端评测覆盖体检）：aftersale_query 是唯一无任何 C 端用例覆盖的真实能力缺口——AS-005 的 `after_sales_manage or aftersale_query` 因 after_sales_manage 属 B 端工具被 C 端用例集排除后，C 端售后查询能力归零；本条补 C 端专属进度查询 + 数据隔离断言 ｜ tags: query, aftersale, data_safety, xiaobu
 
 ## agents（6 case）
 
@@ -1952,7 +1964,7 @@
 真值: order.flow
 溯源: POC 下单闭环集成测试新增；2026-09-02 补订单手机号完整性约束；2026-09-09 校准：原 user_inputs 为描述性文字「用户算料报价后确认下单…」非用户对话，agent 无法触发下单（tools=[]）；改为真实下单对话（选品→规格→跳过加工项→确认） ｜ tags: order_create, smoke
 
-### OR-012. C 端物流查询 - 仅限本人已发货订单 + 拒绝快递单号直查 🔵
+### OR-012. C 端物流查询 - 仅限本人已发货订单 + 拒绝快递单号直查 🟢
 ```
 你: 帮我查一下物流
 你: 查一下单号 SF1234567890 的物流
@@ -3070,9 +3082,9 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：244（活跃 117，跳过 127）
-- tier 分布：smoke 10 / normal 205 / adversarial 29
-- 售后域：7
+- 用例总数：245（活跃 118，跳过 127）
+- tier 分布：smoke 12 / normal 204 / adversarial 29
+- 售后域：8
 - agents：6
 - api：19
 - bmini：5
