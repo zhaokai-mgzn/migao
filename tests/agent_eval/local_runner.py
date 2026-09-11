@@ -39,6 +39,19 @@ SERVICE_TOKEN = os.environ.get("SERVICE_TOKEN", "")
 # 并验证 C 端数据隔离（customer_order_query 而非 order_query）。
 PERSONA = os.environ.get("PERSONA", "mibao").strip().lower()
 
+# ── C 端用例集选择（纯逻辑拆到 eval_case_filter，issue #3266）──
+# 拆出去的动机：本文件有模块级 `import httpx`，而 CI 的 ci-workflow-helper 测试 job
+# 只装 pytest+pyyaml → 任何想复用「用例集选择」的测试/脚本一 import 本模块就崩。
+# eval_case_filter 零第三方依赖，runner/测试/覆盖体检三处共用同一实现。
+sys.path.insert(0, os.path.dirname(__file__))
+from eval_case_filter import (  # noqa: E402
+    XIAOBU_TOOLS,
+    case_expectation_tools as _case_expectation_tools,
+    case_persona as _case_persona,
+    case_skip_reason as _case_skip_reason,
+    select_cases_for_persona,
+)
+
 
 def _validate_service_token(token: str) -> str | None:
     """校验 SERVICE_TOKEN 是否纯 ASCII（HTTP header 值必须是 ASCII）。
@@ -1392,26 +1405,24 @@ async def main():
         cases = ALL_CASES
         print(f"📚 用例源: eval_cases.py（生成物，{len(cases)} 条）")
 
-    # persona 归属过滤（issue #2855）：mibao 跳过 C 端专属（xiaobu）用例，
-    # xiaobu 跳过 B 端专属（mibao）用例；未标记=双端保留。
-    from render_cases import filter_by_persona
+    # persona 归属 + C 端工具集过滤（issue #2855 / #3266）
+    # mibao：跳过 C 端专属（xiaobu）用例
+    # xiaobu：#2855 persona 过滤 + #3266 工具集过滤（双端用例须其断言工具全在
+    #         小布能力内；B 端管理用例——断言的工具小布没有——一律排除，
+    #         防「跑在错误 Agent 上还计分」的假绿）
     before = len(cases)
-    cases = filter_by_persona(cases, PERSONA)
+    cases = select_cases_for_persona(cases, PERSONA)
     if len(cases) != before:
-        print(f"🧪 Persona={PERSONA}：persona 过滤后 {len(cases)}/{before} 条（排除 {before - len(cases)} 条另一端专属）")
+        print(f"🧪 Persona={PERSONA}：用例集过滤后 {len(cases)}/{before} 条"
+              f"（排除 {before - len(cases)} 条另一端专属/超出本端工具能力）")
 
-    # xiaobu 模式：仅跑 C 端可用用例（订单查询/下单/售后/通用），
-    # 跳过管理类（order_manage/after_sales_manage/product_manage 等 B 端工具）用例
     if PERSONA == "xiaobu":
-        # knowledge/wiki：C 端小布知识问答（KN-008 等 xiaobu persona 知识 case）必须可跑（#3076）
-        XIAOBU_ONLY_TAGS = {"order_query", "order_create", "aftersale", "query", "product", "knowledge", "wiki"}
-        def xiaobu_filter(c):
-            if c.skip_reason:
-                return False
-            tags = set(c.tags or [])
-            return bool(tags & XIAOBU_ONLY_TAGS)
-        cases = [c for c in cases if xiaobu_filter(c)]
-        print(f"🧪 Persona=xiaobu：过滤后 {len(cases)} 条 C 端用例")
+        # 空集 = 评测静默假绿（issue #3062 同源）——显式报错而非退出 0
+        if not cases:
+            print("❌ C 端用例集为空（persona/工具集过滤后无剩余）——"
+                  "禁止假绿，请检查 .github/cases/ 的 persona 声明与 C 端工具集")
+            sys.exit(1)
+        print(f"🧪 Persona=xiaobu：C 端用例 {len(cases)} 条")
 
     def smoke_cases():
         return [c for c in cases if c.difficulty == Difficulty.SMOKE and not c.skip_reason]

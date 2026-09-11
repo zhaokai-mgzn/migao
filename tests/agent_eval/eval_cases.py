@@ -154,6 +154,21 @@ _CASE_AS_007 = EvalCase(
     order_before=['processing_ask before after_sales_manage', 'processing_ask before interact[confirm]'],
 )
 
+# ── AS-008 [SMOKE] C 端售后进度查询 - 仅限本人工单 + 拒绝跨用户/快递单号式越权查询（源: cases/aftersales.yml）──
+_CASE_AS_008 = EvalCase(
+    id='AS-008',
+    legacy_id='',
+    title='C 端售后进度查询 - 仅限本人工单 + 拒绝跨用户/快递单号式越权查询',
+    skill=Skill.AFTERSALES,
+    difficulty=Difficulty.SMOKE,
+    user_inputs=['我上次申请的售后处理得怎么样了'],
+    expectations=['aftersale_query'],
+    data_checks=['aftersale_query 无用户/租户参数，后端强制按当前登录顾客过滤（/api/admin/agent/after-sales/mine 同构）——顾客无法通过任何参数读取他人工单', 'list 返回当前顾客工单（含 status 标签与 timeline）；无工单时如实告知『暂无售后记录』，不编造工单号/状态', 'status 可筛选（pending/processing/resolved/rejected/closed），非法值不静默当成全部', '与 B 端 after_sales_manage 物理隔离：小布无 after_sales_manage 工具，不得出现管理端动作（改状态/退款/回补库存）'],
+    skip_reason='',
+    tags=['query', 'aftersale', 'data_safety', 'xiaobu'],
+    persona='xiaobu',
+)
+
 # ── AG-001 [NORMAL] AgentResponse/AgentContext 数据结构 + _extract_msg_content think 剥离（源: cases/agents.yml）──
 _CASE_AG_001 = EvalCase(
     id='AG-001',
@@ -2441,13 +2456,13 @@ _CASE_OR_011 = EvalCase(
     persona='',
 )
 
-# ── OR-012 [NORMAL] C 端物流查询 - 仅限本人已发货订单 + 拒绝快递单号直查（源: cases/order.yml）──
+# ── OR-012 [SMOKE] C 端物流查询 - 仅限本人已发货订单 + 拒绝快递单号直查（源: cases/order.yml）──
 _CASE_OR_012 = EvalCase(
     id='OR-012',
     legacy_id='',
     title='C 端物流查询 - 仅限本人已发货订单 + 拒绝快递单号直查',
     skill=Skill.ORDER,
-    difficulty=Difficulty.NORMAL,
+    difficulty=Difficulty.SMOKE,
     user_inputs=['帮我查一下物流', '查一下单号 SF1234567890 的物流'],
     expectations=['customer_logistics_track'],
     data_checks=['customer_logistics_track 无 tracking_number 参数；无论 LLM 通过什么参数传快递单号都必须拒绝（引导提供订单）', '只查当前用户已发货(在途)订单的物流：/orders/mine?status=shipped 后端强制按用户过滤，返回每笔订单的运单号/快递公司/轨迹', '传其他用户/非在途订单号 → 拒绝；无在途订单 → 提示暂无', 'customer_logistics_track 命中 logistics 卡片（logistics_list 非空）'],
@@ -3738,6 +3753,7 @@ ALL_CASES = (
     _CASE_AS_005,
     _CASE_AS_006,
     _CASE_AS_007,
+    _CASE_AS_008,
     _CASE_AG_001,
     _CASE_AG_002,
     _CASE_AG_003,

@@ -414,7 +414,7 @@ cases:
       - order
       - chat
       - defense
-    tier: normal
+    tier: smoke
     persona: xiaobu
     tags:
       - query
