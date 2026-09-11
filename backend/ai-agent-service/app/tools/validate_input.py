@@ -154,7 +154,7 @@ _VALIDATION_RULES: Dict[str, Dict[str, Any]] = {
         },
     },
     "processing_item_manage": {
-        "create_item": {
+        "create_processing_item": {
             "required": ["name", "category_id"],
             "name": {"type": str, "min_len": 1, "label": "加工项名称"},
             "category_id": {"type": str, "min_len": 1, "label": "分类 ID"},

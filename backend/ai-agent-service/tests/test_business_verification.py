@@ -898,7 +898,7 @@ class TestEnumAlignment:
         ("after_sales_manage", "status",
          {"pending", "processing", "resolved", "rejected", "closed"}),
         ("processing_item_manage", "action",
-         {"create_item", "update_item", "delete_item", "toggle_item_status",
+         {"create_processing_item", "update_item", "delete_item", "toggle_item_status",
           "list_categories", "create_category", "update_category", "delete_category",
           "calculate_price"}),
         ("processing_item_manage", "status",

@@ -2097,7 +2097,7 @@
 你: 名称叫测试加工，分类选打孔加工
 你: 确认
 期望: processing_item_query(keyword=打孔)
-期望: processing_item_manage(action=create_item)
+期望: processing_item_manage(action=create_processing_item)
 数据: processing_item_query 响应条目无 per_meter_quantity（每米数量已回滚移除，issue #3005）
 数据: 加工项计价方式仅 per_meter / per_set / fixed / per_area——per_piece 创建被拒绝（行业加工费按米计价、辅料含在加工费中）
 数据: 商品详情 processingItems 无 custom_per_meter_quantity / perMeterQuantity（商品级密度覆盖已回滚）

@@ -201,7 +201,7 @@ cases:
           keyword: "打孔"
       - tool: processing_item_manage
         args:
-          action: create_item
+          action: create_processing_item
     data_checks:
       - "processing_item_query 响应条目无 per_meter_quantity（每米数量已回滚移除，issue #3005）"
       - "加工项计价方式仅 per_meter / per_set / fixed / per_area——per_piece 创建被拒绝（行业加工费按米计价、辅料含在加工费中）"
