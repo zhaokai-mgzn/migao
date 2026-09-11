@@ -673,3 +673,58 @@ class TestRunCaseForbiddenArgsIntegration:
         result = asyncio.run(self._run(case, [
             {"tools": [("customer_logistics_track", {"tracking_number": "SF123"})], "text": "ok"}]))
         assert result["score"] == 1.0
+
+
+class TestInteractSatisfiedByInteractiveEvent:
+    """`interact` 期望须能被 **SSE interactive 事件**满足（issue #3270 假失败修复）。
+
+    背景：卡片有三条发射路径，但只有第一条会产生 `tool_call` 事件：
+      1. `interact` **工具**调用 → `tool_call("interact")` + `interactive` 事件
+      2. `handoff_offer` 节点（AI 主动建议转人工）→ **仅 `interactive` 事件**
+      3. LLM 幻觉 `<interact>` XML 兜底解析 → **仅 `interactive` 事件**
+
+    而 `expectations: tool: interact` 此前只查 `tool_calls` → 路径 2/3 下**永不可能满足**
+    → **假失败**。CI 实证 CH-013「不满情绪 → 建议卡」：
+    `rounds=2 tools=['human_handoff'] score=50%` + `❌ interact` ——
+    实际 agent 行为**正确**（R1 发建议卡、R2 转人工），只是卡片走的是事件而非工具调用。
+
+    修复语义：`interact` 期望 = **用户看到一张交互卡**，故工具调用与 interactive
+    事件二者任一命中即算满足（`args.component` 指定时须组件类型一致）。
+    """
+
+    def _r(self, tools=None, interactive=None):
+        return {"tool_calls": [{"name": n, "args": a} for n, a in (tools or [])],
+                "__all_tool_names": [n for n, _ in (tools or [])],
+                "interactive": interactive or [],
+                "final_text": ""}
+
+    def test_bare_interact_matched_by_event(self):
+        r = self._r(interactive=[{"component": "choice", "options": []}])
+        ok, detail = lr.check_expectation(r, "interact")
+        assert ok, f"interactive 事件应满足 interact 期望，实得 {detail}"
+
+    def test_bare_interact_still_matched_by_tool(self):
+        r = self._r(tools=[("interact", {"component": "confirm"})])
+        ok, _ = lr.check_expectation(r, "interact")
+        assert ok, "回归：工具调用路径仍须满足"
+
+    def test_interact_component_arg_matched_by_event(self):
+        r = self._r(interactive=[{"component": "choice", "multiSelect": True}])
+        ok, detail = lr.check_expectation(r, "interact(component=choice)")
+        assert ok, f"组件类型一致的事件应满足，实得 {detail}"
+
+    def test_component_mismatch_not_matched(self):
+        r = self._r(interactive=[{"component": "form"}])
+        ok, _ = lr.check_expectation(r, "interact(component=choice)")
+        assert not ok, "组件类型不一致不应算满足（防松弛过度）"
+
+    def test_no_interactive_and_no_tool_not_matched(self):
+        r = self._r()
+        ok, _ = lr.check_expectation(r, "interact")
+        assert not ok, "既无工具调用也无卡片 → 不满足"
+
+    def test_other_tools_unaffected(self):
+        """不得把 interact 的特例泄漏到其他工具（如 human_handoff）"""
+        r = self._r(interactive=[{"component": "choice"}])
+        ok, _ = lr.check_expectation(r, "human_handoff")
+        assert not ok, "interactive 事件不应满足非 interact 期望"
