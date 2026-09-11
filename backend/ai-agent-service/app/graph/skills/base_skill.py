@@ -1490,7 +1490,20 @@ async def execute_skill(
     # creation_skills 覆盖所有「多轮引导写流程」的域：创建类流程在未完成前必须锁
     # pending_skill，否则用户后续轮补充信息时重新走完整路由被关键词误判跳域
     # （HR-005 角色创建、CU-003 客户打标签：staff/customer 此前缺失 → 引导漂移 + 能力误宣）。
-    creation_skills = {"product", "order", "aftersales", "staff", "customer"}
+    # ⚠️ 必须同时列出 C 端（小布）Skill 名：小布的 Skill 叫 `customer_*`，
+    # 与 B 端名（product/order/aftersales/...）**名字对不上** —— 只写 B 端名时
+    # C 端多轮流程**从不锁 pending_skill**（CI 实证 run 34613307565 / CH-012）：
+    #     R1 intent=after_sales → aftersales   ← 正确进入
+    #     R2 intent=order_query → order        ← 用户说「第一笔订单」就被重新分类跳走
+    # 于是退货/下单流程每轮从头重来（CH-010 4 轮、OR-014 7 轮反复重来）。
+    # 非流程型 C 端 Skill（customer_general 兜底 / customer_knowledge 问答）**不锁** ——
+    # 锁住会把用户困在兜底里出不来（test_graph_skills.TestCustomerSkillPendingLock 锁定）。
+    creation_skills = {
+        # B 端
+        "product", "order", "aftersales", "staff", "customer",
+        # C 端（小布）
+        "customer_order", "customer_aftersales", "customer_product", "customer_quote",
+    }
     if skill_name in creation_skills:
         success_markers = ("创建成功", "已创建", "下单成功", "工单已创建", "售后工单",
                           "账号已创建", "角色已创建", "标签已添加", "已更新", "已添加")

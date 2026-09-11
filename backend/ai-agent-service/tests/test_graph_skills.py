@@ -7,7 +7,7 @@ LangGraph Skill 节点测试
 - ToolContext 从 state 正确构建
 - base_skill 的 execute_skill 逻辑
 """
-# case_ids: AG-004, CH-003, CH-023, MC-008, DF-018, HR-005, CU-003
+# case_ids: AG-004, CH-003, CH-023, MC-008, DF-018, HR-005, CU-003, CH-010, CH-012
 
 import pytest
 from unittest.mock import patch, AsyncMock, MagicMock
@@ -979,3 +979,81 @@ class TestExtractContentThinkingGuard:
         # 不应该泄漏 thinking 内容
         assert "分析图片内容" not in result
         assert "理解用户意图" not in result
+
+
+class TestCustomerSkillPendingLock:
+    """C 端（小布）多轮流程必须锁 pending_skill —— 否则第二轮就跳出 Skill
+
+    根因（CI 实证 run 34613307565，CH-012）：
+    `creation_skills = {"product","order","aftersales","staff","customer"}` 里**全是 B 端
+    Skill 名**，而小布的 Skill 叫 `customer_order` / `customer_aftersales` /
+    `customer_product` / `customer_quote` —— 名字对不上 → **C 端多轮流程从不锁
+    pending_skill** → 用户第二轮说「第一笔订单」「数量 3 米」「确认下单」这类碎片时被
+    重新意图分类 → 跳出原 Skill：
+
+        路由 dump: R1 intent=after_sales → aftersales   ← 正确进入
+                   R2 intent=order_query → order        ← 第二轮就跳走
+
+    后果：上下文断裂，退货/下单流程反复从头开始（CH-010 4 轮、OR-014 7 轮反复重来）。
+    这是「名字不匹配」型缺陷 —— 类型系统查不出来，只有行为测试能拦住。
+    """
+
+    def _run(self, skill_name: str, content: str = "请补充信息") -> dict:
+        import asyncio
+
+        with patch("app.memory.session_memory.SessionMemory") as mem_cls, \
+             patch("app.graph.skills.base_skill.get_breaker") as get_breaker, \
+             patch("app.graph.skills.base_skill.get_skill_llm") as get_llm, \
+             patch("app.graph.skills.base_skill.create_skill_registry") as create_reg, \
+             patch("app.graph.skills.base_skill.set_tool_context"):
+            registry = MagicMock()
+            registry.get_langchain_tools.return_value = []
+            create_reg.return_value = registry
+
+            breaker = MagicMock()
+
+            async def _passthrough(fn):
+                return await fn()
+
+            breaker.call = _passthrough
+            get_breaker.return_value = breaker
+
+            response = MagicMock(spec=AIMessage)
+            response.content = content  # 无成功 marker → 流程未完成
+            response.tool_calls = []
+            llm = MagicMock()
+            llm.bind_tools.return_value = llm
+            llm.ainvoke = AsyncMock(return_value=response)
+            get_llm.return_value = llm
+            mem_cls.return_value.set_pending_skill = AsyncMock(return_value=True)
+
+            # 用 asyncio.run（新建 loop）而非 get_event_loop().run_until_complete：
+            # 后者在**全量跑**时会被别的用例关掉/取消当前 loop →
+            # RuntimeError: There is no current event loop（单独跑本文件却通过，
+            # 典型的测试隔离缺陷 —— 全量跑才暴露）。
+            return asyncio.run(
+                execute_skill(state=_make_state(), skill_name=skill_name,
+                              tool_names=[], system_prompt="你是小布")
+            )
+
+    @pytest.mark.parametrize("skill_name", [
+        "customer_order", "customer_aftersales", "customer_product", "customer_quote",
+    ])
+    def test_customer_skill_locks_pending_when_incomplete(self, skill_name):
+        result = self._run(skill_name)
+        assert result["pending_interact_skill"] == skill_name, (
+            f"{skill_name} 未锁 pending_skill —— 用户第二轮补充信息会被重新路由跳出该 Skill"
+        )
+
+    @pytest.mark.parametrize("skill_name", ["customer_general", "customer_knowledge"])
+    def test_non_flow_customer_skills_do_not_lock(self, skill_name):
+        """兜底/知识问答不是"多轮写流程"，锁住会把用户困在里头（不得误扩）"""
+        result = self._run(skill_name)
+        assert result.get("pending_interact_skill", "") in ("", None), (
+            f"{skill_name} 不应锁 pending_skill"
+        )
+
+    def test_backend_names_still_lock(self):
+        """B 端行为不回归"""
+        result = self._run("staff")
+        assert result["pending_interact_skill"] == "staff"
