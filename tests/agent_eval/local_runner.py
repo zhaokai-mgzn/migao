@@ -1182,6 +1182,58 @@ def _auto_select_first_option(results: list) -> str | None:
     return None
 
 
+def build_round_trace(results: list) -> list:
+    """构造逐轮轨迹：每轮的用户输入形态 / 工具 / 卡 / 回复摘要。
+
+    为什么需要（issue #3270 归因层）：扁平 `tool_calls` 只说明「整场用过哪些工具」，
+    无法回答**哪一轮走了哪个 Skill**——而「路由错到别的 Skill」与「Skill 没给这个
+    工具」在报告里完全同形。实测 CH-012 报告为
+        tools=['customer_order_query', 'human_handoff', 'aftersale_query']（4 轮）
+    既可能是「R1 被路由到 customer_order（该 Skill 无 aftersale_create）」，
+    也可能是「R1 路由正确但 LLM 没建单」—— 两种结论的修复方向完全相反。
+
+    设计取舍：本函数**只做事实记录，不做 Skill 推断**。Skill 工具集互不重叠，
+    读轨迹者用「工具 → Skill」映射即可反推（该映射见
+    docs/testing/xiaobu-eval-tooling.md，并由
+    tests/unit_ci_workflows/test_skill_tool_map_sync.py 与代码保持同步）。
+    刻意不在此处硬编码 Skill 表：local_runner 是零依赖脚本（CI 只装 httpx），
+    不能 import app.*，硬编码副本必然与 skill 定义漂移。
+
+    Returns:
+        list[dict]: 每轮 {round, tools, cards, interactive, text}（均为纯 JSON 类型）
+    """
+    trace: list[dict] = []
+    for r in results or []:
+        text = r.get("final_text") or ""
+        trace.append({
+            "round": r.get("__round"),
+            "tools": [str(tc.get("name", "")) for tc in (r.get("tool_calls") or [])],
+            "cards": [str(c.get("type") or c.get("card_type") or "") for c in (r.get("cards") or [])],
+            "interactive": [
+                str(iv.get("type") or iv.get("component") or "")
+                for iv in (r.get("interactive") or [])
+            ],
+            # 截断：轨迹用于归因，不是全文存档（全文另见 final_text / 产物）
+            "text": text[:60],
+            "error": str(r.get("error"))[:80] if r.get("error") else None,
+        })
+    return trace
+
+
+def format_round_trace(trace: list) -> str:
+    """把逐轮轨迹压成一行，供 CI 日志按用例打印。"""
+    parts = []
+    for t in trace or []:
+        bits = [f"R{t.get('round')}"]
+        bits.append("tools=" + (",".join(t.get("tools") or []) or "-"))
+        if t.get("interactive"):
+            bits.append("cards=" + ",".join(t["interactive"]))
+        if t.get("error"):
+            bits.append("ERR")
+        parts.append("[{}]".format(" ".join(bits)))
+    return " ".join(parts)
+
+
 async def run_case(case, token: str, session_id: str) -> dict:
     """运行单个评测用例（多轮对话）
 
@@ -1284,6 +1336,14 @@ async def run_case(case, token: str, session_id: str) -> dict:
         "tags": case.tags,
         "rounds": len(results),
         "tool_calls": all_tool_names,
+        # ── 逐轮轨迹（issue #3270 归因层）──
+        # 扁平 `tool_calls` 只说「整场用了哪些工具」，无法回答**哪一轮走了哪个 Skill**，
+        # 于是「路由错」与「工具没给」在报告里长得一模一样（CH-012 实测：
+        # tools=['customer_order_query','human_handoff','aftersale_query'] 4 轮，
+        # 究竟 R1 路由到了 customer_order 还是 customer_aftersales 无从判断）。
+        # Skill 的工具集互不重叠，因此**逐轮工具名可直接反推该轮 Skill** →
+        # 归因从猜升级为证据（路由层 / 工具层可区分）。
+        "round_trace": build_round_trace(results),
         "passed": passed_expectations,
         "total": total_exp,
         "score": score,
@@ -1408,6 +1468,9 @@ async def run_suite(cases, label: str, classify: bool = True):
             }.get(classification, "")
             print(f"  {icon} {status} {case.id}: {case.title[:50]}{retry_note}{cls_note}")
             print(f"     rounds={r['rounds']} tools={r['tool_calls']} score={r['score']:.0%}")
+            # 逐轮轨迹：失败用例必打（归因证据），通过用例仅在详细模式打（避免日志膨胀）
+            if r.get("round_trace") and (r["score"] < 1.0 or os.environ.get("AGENT_EVAL_TRACE_ALL") == "1"):
+                print(f"     trace: {format_round_trace(r['round_trace'])}")
             if r["failed"]:
                 for exp, detail in r["failed"][:2]:
                     print(f"     ❌ {exp[:80]}")
@@ -1418,7 +1481,7 @@ async def run_suite(cases, label: str, classify: bool = True):
             print(f"  {icon} ❌ {case.id}: EXCEPTION: {e}")
             exc_record = {
                 "case_id": case.id, "title": case.title, "difficulty": case.difficulty.value,
-                "tags": case.tags, "rounds": 0, "tool_calls": [],
+                "tags": case.tags, "rounds": 0, "tool_calls": [], "round_trace": [],
                 "passed": 0, "total": 0, "score": 0.0,
                 "failed": [(f"EXCEPTION: {e}", "case crashed")],
                 "last_error": str(e), "final_text": "", "classification": "error",

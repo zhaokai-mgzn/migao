@@ -728,3 +728,98 @@ class TestInteractSatisfiedByInteractiveEvent:
         r = self._r(interactive=[{"component": "choice"}])
         ok, _ = lr.check_expectation(r, "human_handoff")
         assert not ok, "interactive 事件不应满足非 interact 期望"
+
+
+class TestBuildRoundTrace:
+    """逐轮轨迹（issue #3270 归因层）：把「哪一轮走了哪个 Skill」变成证据
+
+    背景：扁平 `tool_calls` 只说明整场用过哪些工具 —— 而「路由错到别的 Skill」
+    与「Skill 没给这个工具」在报告里同形（CH-012 实证无法区分）。本类锁定轨迹的
+    事实完整性：轮次、工具、卡片、文本、错误，一个都不能少。
+    """
+
+    def test_records_rounds_tools_and_cards(self):
+        results = [
+            {"__round": 1, "tool_calls": [{"name": "customer_order_query"}],
+             "final_text": "找到两笔订单", "interactive": [{"type": "choice"}]},
+            {"__round": 2, "tool_calls": [{"name": "human_handoff"}],
+             "final_text": "正在转接人工", "interactive": []},
+        ]
+        trace = lr.build_round_trace(results)
+        assert [t["round"] for t in trace] == [1, 2]
+        assert trace[0]["tools"] == ["customer_order_query"]
+        assert trace[0]["interactive"] == ["choice"]
+        assert trace[1]["tools"] == ["human_handoff"]
+        assert trace[1]["interactive"] == []
+        # 文本必须带出（归因要看 agent 说了什么），但截断防日志膨胀
+        assert trace[0]["text"] == "找到两笔订单"
+
+    def test_text_truncated(self):
+        results = [{"__round": 1, "tool_calls": [], "final_text": "x" * 500}]
+        assert len(lr.build_round_trace(results)[0]["text"]) == 60
+
+    def test_error_recorded_per_round(self):
+        results = [{"__round": 1, "tool_calls": [], "final_text": "", "error": "boom"}]
+        assert lr.build_round_trace(results)[0]["error"] == "boom"
+
+    def test_empty_and_none_are_safe(self):
+        assert lr.build_round_trace([]) == []
+        assert lr.build_round_trace(None) == []
+
+    def test_json_serializable(self):
+        """轨迹会进 CI 产物 / flake 台账，必须可直接 JSON 序列化。"""
+        import json
+        results = [{"__round": 1, "tool_calls": [{"name": "t"}], "final_text": "ok",
+                    "interactive": [{"type": "choice"}], "cards": [{"type": "product_list"}]}]
+        json.dumps(lr.build_round_trace(results))
+
+    def test_format_shows_tools_and_cards_per_round(self):
+        trace = lr.build_round_trace([
+            {"__round": 1, "tool_calls": [{"name": "customer_order_query"}],
+             "final_text": "", "interactive": [{"type": "choice"}]},
+            {"__round": 2, "tool_calls": [], "final_text": "", "error": "x"},
+        ])
+        line = lr.format_round_trace(trace)
+        assert "R1" in line and "customer_order_query" in line and "choice" in line
+        assert "R2" in line and "ERR" in line
+        # 无工具的轮次不得被静默跳过（空轮本身是归因信号）
+        assert line.count("R") >= 2
+
+    def test_format_handles_empty(self):
+        assert lr.format_round_trace([]) == ""
+        assert lr.format_round_trace(None) == ""
+
+    def test_run_case_returns_round_trace(self):
+        """集成：run_case 的返回体必须带 round_trace（而不是只留扁平 tool_calls）。"""
+        import asyncio
+        from types import SimpleNamespace
+
+        sent = []
+
+        async def fake_send_message(token, session_id, message, images=None):
+            sent.append(message)
+            return {
+                "__round": len(sent),
+                "tool_calls": [{"name": "customer_order_query", "args": {}}],
+                "final_text": "ok",
+                "interactive": [],
+            }
+
+        orig = lr.send_message
+        lr.send_message = fake_send_message
+        try:
+            case = SimpleNamespace(
+                id="TRACE-001", title="t", difficulty=SimpleNamespace(value="normal"),
+                tags=[], user_inputs=["我要退货", "第一笔订单"],
+                expectations=["customer_order_query"], data_checks=[],
+                order_before=[], forbidden_text=[], want_text=[],
+                required_args=[], forbidden_args=[], db_verify=None,
+                pre_clean=[], post_clean=[],
+            )
+            out = asyncio.run(lr.run_case(case, "tok", "sess"))
+        finally:
+            lr.send_message = orig
+
+        assert "round_trace" in out, "run_case 返回体缺少 round_trace"
+        assert [t["round"] for t in out["round_trace"]] == [1, 2]
+        assert out["round_trace"][0]["tools"] == ["customer_order_query"]

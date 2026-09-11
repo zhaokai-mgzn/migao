@@ -156,6 +156,24 @@ jobs:
           python -m pytest tests/e2e/real/test_xiaobu_acceptance.py \
             -v --tb=long -q --timeout=120 --no-cov --reruns 1 --reruns-delay 5
 
+      - name: "Dump C 端逐轮路由轨迹（issue #3270 归因层）"
+        # 为什么需要：runner 的 round_trace 能给「每轮调了哪些工具」，但**回答不了
+        # 「为什么走这个 Skill」**——「退货被路由到 order/general」与「Skill 工具没给」
+        # 在报告里同形，修复方向却相反（改路由 vs 加工具）。
+        # 意图分类与路由决策只写在 ai-agent 日志里（intent_router / route_by_intent），
+        # 故此处把路由行 dump 到 CI 日志：与 round_trace 按轮次对齐即可完成五层归因。
+        # `if: always()`：成功也要留痕（基线与改进都要能对比），不只失败时才有。
+        if: always()
+        env:
+          DEV_SERVICE_TOKEN: diagnostics-only-placeholder
+        run: |
+          echo "── ai-agent 意图分类 + 路由决策（按时间序）──"
+          docker compose -f deploy/docker-compose.yml logs --no-color --timestamps \
+            ai-agent-service 2>/dev/null \
+            | grep -E "route_by_intent|Routing to|Session continuity|Escape hatch|intent_router|classified" \
+            | tail -200 \
+            || echo "（无路由日志：容器未起或该步骤前已失败）"
+
       - name: "Diagnose on failure (issue #3270): containers + DB probe"
         # 自 2026-08-31 起本 workflow 9/9 全 failure：postgres 容器 `exited (3)` 后
         # `--wait` 只报 "dependency failed to start"，把真正的启动错误吞掉了，导致
