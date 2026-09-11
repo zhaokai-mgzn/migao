@@ -1828,7 +1828,7 @@
 真值: ai-chat.context-memory
 溯源: 2026-09-04 新增：issue #2821 延续切片 C（vision 分析落槽 + base_skill 接线） ｜ tags: ontology, vision, context_memory, grounding, base_skill
 
-## 订单域（16 case）
+## 订单域（17 case）
 
 ### OR-001. 订单列表查询 🟢
 ```
@@ -2041,6 +2041,28 @@
 ```
 真值: order.create-flow
 溯源: 2026-09-08 新增（issue #3033 复盘 sess_7f27137647e14b1e）：A5 confirm 卡在加工项询问前弹出、金额 ¥238 不含加工费，用户质问后才补 A6；order.md 加工项段从被动式改主动式 + EXAMPLES 例 2 补加工项环节 ｜ tags: order_create, processing_item, guided_flow
+
+### OR-017. C 端自助下单加工项闭环 - 必须查详情→主动询问→加工费落单（不凭列表错报无加工项） 🔵
+```
+你: 我想买夏日清风窗帘，米白色，3米，门幅2.8米散剪
+你: 我是张三，手机13800138000，地址杭州市西湖区文三路1号
+你: 确认
+期望: product_search
+期望: product_detail
+期望: interact(component=choice, multiSelect=True)
+期望: order_create
+数据: product_search 列表数据不含 processing_items/colorId/skus，必须先调 product_detail 取详情；未调详情即断言「无加工项」属能力误宣
+数据: 加工项非空时 confirm 之前必须用 interact(choice, multiSelect=true) 主动询问，列出名称与单价（如「纳米圈打孔 ¥8/米」）
+数据: 所选加工项写入 order_create 的 processing_info.processingItems（id/name/unitPrice/quantity/unit/pricingMethod/subtotal），合计写入 processingFee 且计入订单金额；按米计价项加工数量=面料米数
+数据: 顾客说「不需要加工项」可跳过；加工项确实为空时才告知无可用加工项
+时序: interact[choice:processing_items] before interact[confirm]
+时序: interact[choice:processing_items] before order_create
+禁词: 暂未查询到可选加工项
+禁词: 无可用加工项
+禁词: 该商品无加工项
+```
+真值: order.create-flow
+溯源: 2026-09-11 新增（issue #3270 C 端加工项能力补齐）：实测修复前 agent 只调 product_search 未调 product_detail，向顾客断言「这款商品暂未查询到可选加工项」，而该商品实际有 2 个加工项（纳米圈打孔 ¥8/米、韩式波浪折边 ¥12/米）→ 顾客永远选不到加工项、加工费进不了单。修复后实测同输入已主动列出真实加工项与单价。forbidden_text 锁定「凭列表错报无加工项」这一确定性反模式 ｜ tags: order_create, processing_item, guided_flow, xiaobu
 
 ## 加工项域（6 case）
 
@@ -3082,8 +3104,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：245（活跃 118，跳过 127）
-- tier 分布：smoke 12 / normal 204 / adversarial 29
+- 用例总数：246（活跃 119，跳过 127）
+- tier 分布：smoke 12 / normal 205 / adversarial 29
 - 售后域：8
 - agents：6
 - api：19
@@ -3100,7 +3122,7 @@
 - misc：15
 - onboarding：5
 - ontology：4
-- 订单域：16
+- 订单域：17
 - 加工项域：6
 - 商品域：21
 - registry：1
