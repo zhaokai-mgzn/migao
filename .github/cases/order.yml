@@ -498,10 +498,10 @@ cases:
       - "选有打孔的那件"
       - "不需要其他加工项"
       - auto_select: true
+      - "确认下单"
       - auto_fill:
           customer_name: "张三"
           customer_phone: "13800138000"
-      - "确认下单"
       - "确认"
     expectations:
       - tool: product_detail
