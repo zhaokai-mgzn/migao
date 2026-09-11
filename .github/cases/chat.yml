@@ -263,9 +263,8 @@ cases:
       - ai-chat.intent-tool-map
       - settings-manage.ai-config
     user_inputs:
-      - "用户触发转人工后应创建 agent_session（waiting）并写入系统消息"
-      - "客服可在工作台发消息回复，会话 waiting→active"
-      - "用户可按 AI 会话 ID 查询人工会话看到客服回复"
+      - "我要转人工"
+      - "客服在吗"
     expectations:
       - tool: human_handoff
     data_checks:
@@ -276,7 +275,7 @@ cases:
       - "getSessionDetail(admin) 返回 aiContext；跨租户读取拒绝"
       - "getSessionByAiSessionId(customer) 不含 aiContext 且过滤 isInternal 消息"
     skip_reason: ""
-    merge_log: "POC 人工客服工作台新增；2026 扩展：AI 上下文同步断言（GB/T 47746-2026）"
+    merge_log: "POC 人工客服工作台新增；2026 扩展：AI 上下文同步断言（GB/T 47746-2026）；2026-09-11 修正 user_inputs —— 原为断言描述文字（非顾客对话），agent 无法响应导致必然 0 分（issue #3270 断言层归因）"
     traces:
       tests:
         - "backend/admin-api/src/test/java/com/migao/admin/service/AgentSessionServiceTest.java"
@@ -585,9 +584,9 @@ cases:
       - ai-chat.intent-tool-map
       - ai-chat.handoff-offer
     user_inputs:
-      - "用户与 AI 聊过 3 轮（含查单/商品咨询）后触发转人工，human_handoff 应携带最近 N 轮 user/assistant 文本快照与可选摘要"
-      - "人工客服打开该会话应能看到『AI 对话记录（转人工前）』与『人工接待记录』分区展示"
-      - "顾客端按 aiSessionId 查询人工会话不应返回 aiContext（避免轮询载荷放大与重复展示）"
+      - "帮我查一下我的订单"
+      - "有什么窗帘推荐吗"
+      - "我要转人工"
     expectations:
       - tool: human_handoff
     data_checks:
