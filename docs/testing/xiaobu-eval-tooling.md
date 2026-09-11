@@ -153,6 +153,39 @@ backend/ai-agent-service/.venv/bin/python scripts/xiaobu_coverage.py --md
 > 这两条是「提高 C 端能力上下限」的直接输入，需按 `migao-dev-flow` §13.3 收敛为
 > 可执行断言（`order_before` 时序 / `required_args` 参数完整性）并做 case 有效性验证。
 
+## 5.1 业务数据 fixture（C 端验收栈必需）
+
+B 端评测跑**生产**（有真实数据），C 端跑**全新 bootstrap 空库** —— 这是两者最大的环境差异。
+空库下 agent 搜不到商品 → 反复重试 `product_search` → 从不进入 `product_detail`，
+依赖数据的用例必然失败（实测 CI：PR-003 `tools=[product_search ×3]` 而期望 `product_detail`）。
+**行为本身合理，缺的是数据。**
+
+`tests/agent_eval/fixtures/xiaobu_eval_seed.sql` 提供最小业务数据：
+
+| 实体 | 内容 | 服务的用例 |
+|---|---|---|
+| `categories` | 窗帘布艺 | 商品分类 |
+| `processing_categories` / `processing_items` | 纳米圈打孔 ¥8/米、韩式波浪折边 ¥12/米、高温定型 ¥10/米 | 下单加工项环节 |
+| `products` | **遮光窗帘**（on_sale/per_meter/has_processing）、北欧风窗帘 | PR-001 / PR-003 |
+| `product_colors` / `product_skus` | 米白/浅灰/雾霾蓝 × 散剪 2.8m | 选品规格收集（colorId 等） |
+| `product_processing_items` | 商品↔加工项关联（4 条） | OR-016 / OR-017 |
+
+**幂等**：全部 `ON CONFLICT DO NOTHING` / `WHERE NOT EXISTS`，每次起栈可安全重放。
+**不并入** `docs/sql/schema.sql` —— 生产 bootstrap 不应含演示数据。
+**注入时机**：workflow 在起栈之后、评测之前注入（见 `xiaobu-acceptance.yml` 的
+「Seed C 端评测业务数据」步骤）。
+
+本地手动注入（对着本地 docker 栈）：
+
+```bash
+docker compose -f deploy/docker-compose.yml exec -T postgres \
+  psql -v ON_ERROR_STOP=1 -U app_user -d ai_customer_service \
+  < tests/agent_eval/fixtures/xiaobu_eval_seed.sql
+```
+
+> 注意：商品 `status` 必须是 **`on_sale`** —— admin-api 未显式指定 status 时
+> 只返回 on_sale 商品（`ProductService.java:144`），用 `active` 会搜不到。
+
 ## 6.1 已知基础设施破损（另行跟进 issue #3270）
 
 C 端评测链路有三处破损，与用例库正确性无关，但会让「评测通过」结论失去意义：
