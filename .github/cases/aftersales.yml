@@ -224,6 +224,10 @@ cases:
       - aftersales-flow.flow
     user_inputs:
       - "面料有瑕疵，帮我换货，换成2699系列雪尼尔窗帘面料"
+    pre_clean:
+      - type: product_dedupe
+        product_keyword: "2699系列雪尼尔窗帘面料"
+        price: 23.8
     expectations:
       - tool: product_detail
       - tool: interact or direct_reply

@@ -152,6 +152,7 @@ _CASE_AS_007 = EvalCase(
     tags=['exchange', 'processing_item', 'guided_flow'],
     persona='',
     order_before=['processing_ask before after_sales_manage', 'processing_ask before interact[confirm]'],
+    pre_clean=[{'type': 'product_dedupe', 'product_keyword': '2699系列雪尼尔窗帘面料', 'price': 23.8}],
 )
 
 # ── AS-008 [SMOKE] C 端售后进度查询 - 仅限本人工单 + 拒绝跨用户/快递单号式越权查询（源: cases/aftersales.yml）──
@@ -2532,6 +2533,7 @@ _CASE_OR_016 = EvalCase(
     tags=['order_create', 'processing_item', 'guided_flow'],
     persona='',
     order_before=['interact[choice:processing_items] before interact[confirm]', 'interact[choice:processing_items] before order_create'],
+    pre_clean=[{'type': 'product_dedupe', 'product_keyword': '2699系列雪尼尔窗帘面料', 'price': 23.8}],
 )
 
 # ── OR-017 [NORMAL] C 端自助下单加工项闭环 - 必须查详情→主动询问→加工费落单（不凭列表错报无加工项）（源: cases/order.yml）──
@@ -2934,6 +2936,7 @@ _CASE_PR_019 = EvalCase(
     persona='',
     forbidden_text=['尚未真正创建', '未创建成功'],
     required_args=[{'tool': 'product_manage', 'action': 'create', 'fields': ['specifications', 'processing_item_configs.customPrice']}],
+    pre_clean=[{'type': 'product_dedupe', 'product_keyword': '2699系列雪尼尔窗帘面料', 'price': 23.8}],
 )
 
 # ── PR-020 [NORMAL] 建品加工项价格落库盯防 — 自定义价须等于用户确认价（BFF 合并回归）（源: cases/product.yml）──
