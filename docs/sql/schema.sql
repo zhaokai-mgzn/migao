@@ -225,20 +225,6 @@ ALTER TABLE product_attributes ADD CONSTRAINT uq_product_attributes_key
     UNIQUE (product_id, attr_key);
 COMMENT ON TABLE product_attributes IS '商品属性表';
 
--- 商品-加工项关联表
-CREATE TABLE product_processing_items (
-    id BIGSERIAL PRIMARY KEY,
-    tenant_id BIGINT NOT NULL,
-    product_id VARCHAR(64) NOT NULL REFERENCES products(id) ON DELETE CASCADE,
-    processing_item_id VARCHAR(64) NOT NULL REFERENCES processing_items(id) ON DELETE CASCADE,
-    custom_price DECIMAL(10,2),                           -- 商品专属加工价格（NULL 则用默认价）
-    sort_order INTEGER DEFAULT 0,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-CREATE INDEX idx_product_processing_items_tenant_product ON product_processing_items(tenant_id, product_id);
-ALTER TABLE product_processing_items ADD CONSTRAINT uq_product_processing_items_relation
-    UNIQUE (product_id, processing_item_id);
-COMMENT ON TABLE product_processing_items IS '商品-加工项关联表，支持自定义加工价格（issue #3005 回滚：无每米数量密度覆盖）';
 
 -- 加工分类表：窗帘加工/配件/纱窗/卷帘等
 CREATE TABLE processing_categories (
@@ -273,6 +259,21 @@ CREATE TABLE processing_items (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     deleted INTEGER DEFAULT 0
 );
+
+-- 商品-加工项关联表
+CREATE TABLE product_processing_items (
+    id BIGSERIAL PRIMARY KEY,
+    tenant_id BIGINT NOT NULL,
+    product_id VARCHAR(64) NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+    processing_item_id VARCHAR(64) NOT NULL REFERENCES processing_items(id) ON DELETE CASCADE,
+    custom_price DECIMAL(10,2),                           -- 商品专属加工价格（NULL 则用默认价）
+    sort_order INTEGER DEFAULT 0,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+CREATE INDEX idx_product_processing_items_tenant_product ON product_processing_items(tenant_id, product_id);
+ALTER TABLE product_processing_items ADD CONSTRAINT uq_product_processing_items_relation
+    UNIQUE (product_id, processing_item_id);
+COMMENT ON TABLE product_processing_items IS '商品-加工项关联表，支持自定义加工价格（issue #3005 回滚：无每米数量密度覆盖）';
 
 -- 加工组合规则表：定义加工项之间的互斥、必选等关系
 CREATE TABLE processing_rules (
@@ -318,9 +319,9 @@ CREATE TABLE IF NOT EXISTS knowledge_cards (
     deleted INTEGER DEFAULT 0
 );
 
-CREATE INDEX IF NOT EXISTS idx_knowledge_cards_tenant ON knowledge_entries(tenant_id);
-CREATE INDEX IF NOT EXISTS idx_knowledge_cards_status ON knowledge_entries(status);
-CREATE INDEX IF NOT EXISTS idx_knowledge_cards_category ON knowledge_entries(category);
+CREATE INDEX IF NOT EXISTS idx_knowledge_cards_tenant ON knowledge_cards(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_knowledge_cards_status ON knowledge_cards(status);
+CREATE INDEX IF NOT EXISTS idx_knowledge_cards_category ON knowledge_cards(category);
 
 -- 知识提炼候选表（LLM WIKI 板块，issue #3051，V35 迁移）
 -- AI 提炼（会话/文档/商品）→ 商家待采纳队列；AI 只产生候选，发布权在商家。
@@ -1001,7 +1002,6 @@ CREATE INDEX idx_tenant_applications_status ON tenant_applications(status);
 
 COMMENT ON COLUMN user_roles.updated_at IS '更新时间（大数据分析补充字段）';
 COMMENT ON COLUMN user_identities.updated_at IS '更新时间（大数据分析补充字段）';
-COMMENT ON COLUMN rag_chunks.updated_at IS '更新时间（大数据分析补充字段）';
 COMMENT ON COLUMN session_messages.updated_at IS '更新时间（大数据分析补充字段）';
 COMMENT ON COLUMN ticket_timeline.updated_at IS '更新时间（大数据分析补充字段）';
 COMMENT ON COLUMN ticket_notes.updated_at IS '更新时间（大数据分析补充字段）';
@@ -1055,17 +1055,6 @@ CREATE POLICY tenant_isolation_processing_items ON processing_items
 
 ALTER TABLE processing_rules ENABLE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_processing_rules ON processing_rules
-    USING (tenant_id::text = current_setting('app.current_tenant_id'));
-
-CREATE POLICY tenant_isolation_knowledge_documents ON knowledge_documents
-    USING (tenant_id::text = current_setting('app.current_tenant_id'));
-
-ALTER TABLE rag_chunks ENABLE ROW LEVEL SECURITY;
-CREATE POLICY tenant_isolation_rag_chunks ON rag_chunks
-    USING (tenant_id::text = current_setting('app.current_tenant_id'));
-
-ALTER TABLE knowledge_sync_history ENABLE ROW LEVEL SECURITY;
-CREATE POLICY tenant_isolation_knowledge_sync_history ON knowledge_sync_history
     USING (tenant_id::text = current_setting('app.current_tenant_id'));
 
 ALTER TABLE tenant_apps ENABLE ROW LEVEL SECURITY;
