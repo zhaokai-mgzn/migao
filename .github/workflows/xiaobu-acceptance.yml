@@ -42,6 +42,14 @@ jobs:
           DASHVECTOR_COLLECTION: ci
           DEBUG: 'true'
         run: |
+          # ⚠️ set -o pipefail 是必须的：此前本步骤是
+          #     `docker compose ... up --wait ... 2>&1 | tail -20`
+          #   而 bash 默认返回**管道最后一个命令**（tail）的退出码 —— tail 永远成功 →
+          #   compose 失败（postgres exited 3）被吞成 **step success** →
+          #   ① 后续「Diagnose」步骤的 if: failure() 永不触发，拿不到日志；
+          #   ② workflow 只看得到「评测连不上」的表象，看不到「栈没起来」的真因；
+          #   ③ 失败长期被静默（2026-09-11 实证：step4 success 但 postgres Error）。
+          set -o pipefail
           # 本地栈需 DEBUG=true 供 X-Debug-Role 路由（小布身份注入），fail-closed 保护不受影响
           docker compose -f deploy/docker-compose.yml up -d --build --wait \
             --wait-timeout 300 postgres redis admin-api ai-agent-service 2>&1 | tail -20
