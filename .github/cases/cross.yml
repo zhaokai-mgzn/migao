@@ -11,6 +11,7 @@ cases:
     domains:
       - product
       - order
+    persona: mibao
     tier: normal
     tags:
       - cross_skill
