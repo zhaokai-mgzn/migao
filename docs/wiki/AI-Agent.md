@@ -88,7 +88,7 @@ Tool 铁律：写前校验 → 失败给 suggestion → 写前弹 confirm → �
 
 | 场景 | 模型 | 原因 |
 |------|------|------|
-| 意图分类 | deepseek-v4-flash | 低延迟 |
-| 对话生成 | deepseek-v4-flash | 高质量 |
-| 图片识别 | deepseek-v4-flash-vision-exp | 多模态 |
-| 工具调用 | deepseek-v4-flash | 复杂推理 |
+| 意图分类 | deepseek-flash | 低延迟 |
+| 对话生成 | deepseek-flash | 高质量 |
+| 图片识别 | deepseek-flash | 多模态（V4.1-Flash 原生） |
+| 工具调用 | deepseek-flash | 复杂推理 |

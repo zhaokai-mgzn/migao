@@ -74,7 +74,7 @@ jobs:
           # 由下方 step 读入 PEM 内容后注入（JwtTokenProvider 支持 PEM 内容优先于文件路径）。
           # 不引入新 secret：密钥本就是测试用途、已公开在仓库中，无保密价值。
           PRIMARY_API_KEY: ${{ secrets.DEEPSEEK_API_KEY || 'ci-dummy' }}
-          PRIMARY_MODEL: deepseek-v4-flash
+          PRIMARY_MODEL: deepseek-flash
           DASHVECTOR_API_KEY: ci-dummy
           DASHVECTOR_ENDPOINT: https://ci-dummy.dashvector.cn-hangzhou.aliyuncs.com
           DASHVECTOR_COLLECTION: ci
@@ -151,7 +151,7 @@ jobs:
           ADMIN_API_BASE_URL: http://localhost:8080
           SERVICE_TOKEN: ${{ secrets.SMOKE_SERVICE_TOKEN || 'ci-service-token-placeholder' }}
           PRIMARY_API_KEY: ${{ secrets.DEEPSEEK_API_KEY || 'ci-dummy' }}
-          PRIMARY_MODEL: deepseek-v4-flash
+          PRIMARY_MODEL: deepseek-flash
         run: |
           python -m pytest tests/e2e/real/test_xiaobu_acceptance.py \
             -v --tb=long -q --timeout=120 --no-cov --reruns 1 --reruns-delay 5

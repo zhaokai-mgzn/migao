@@ -6,6 +6,14 @@
 
 ## [Unreleased]
 
+### 米宝主推理模型迁移 DeepSeek-V4.1-Flash（模型名 canonical = `deepseek-flash`）（2026-09-11，#3319）
+
+- `ai-agent-service`：DeepSeek 于 2026-09-10 发布 **DeepSeek-V4.1-Flash**，官方 API 将模型名改为 **`deepseek-flash`**（原生多模态），旧名 `deepseek-v4-flash` / `deepseek-v4-flash-vision-exp` 对应模型已下线、仅作**临时兼容路由**指向 V4.1-Flash。本次把仓库内模型名统一到 canonical 名（`config.py` 的 `LLM_MODEL_PRIMARY`/`LLM_MODEL_FAST`/`INTENT_MODEL`/`VISION_MODEL` 默认值、`.env.example`、4 个 CI workflow、`deploy/docker-compose.yml`、README、wiki 模型表）
+- 视觉链路：V4.1-Flash **原生多模态**，`VISION_MODEL` 从已下线的 `deepseek-v4-flash-vision-exp` 一并切到 `deepseek-flash`（新旧名指向同一模型，纯命名迁移，行为无变化）
+- 实测（本 PR 取证）：`deepseek-v4.1-flash` **不是合法模型名**——API 报 `The supported API model names are deepseek-flash, deepseek-v4-pro`；`deepseek-v4-flash` 与 `deepseek-v4-flash-vision-exp` 响应体 `model` 字段均回落为 `deepseek-flash`，实证兼容路由存在
+- 背景：B 端（米宝）生产就绪性验收遗留 P1×2（LLM 长序列波动、PP-006 模型能力认知）均判为**模型层**，本次换模型后按 `migao-dev-flow` §13 复跑遗留用例（结论与证据见 `docs/design/agent-production-gap-analysis.md` 对应章节）
+- 单测：`tests/test_config.py` 默认值断言 + `test_llm_pipeline.py` / `test_vision_integration.py` 模型名断言同步 canonical 化（case_ids: MC-007、MC-008、CH-021）
+
 ### /chat 工作台会话简报默认右侧展开、可向右缩回；FAB 浮窗保持原样（2026-09-08，#3018）
 
 - `admin-web`：修复从侧边栏「米宝 · 在线对话」进入 /chat 工作台页右侧大片空白——会话简报改为**右侧常驻列（docked 变体，无遮罩）**：进入即默认在右侧展开，点击顶部「会话简报」按钮可像抽屉一样向右缩回、再点重新展开；`ChatArea` 新增 `insightDefaultOpen`/`insightVariant` props（`chat/page.tsx` 传 `insightDefaultOpen insightVariant="docked"`）

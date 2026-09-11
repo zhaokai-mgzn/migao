@@ -98,13 +98,13 @@ jobs:
         env:
           PRIMARY_API_KEY: ${{ secrets.DEEPSEEK_API_KEY || 'ci-dummy' }}
           PRIMARY_BASE_URL: https://api.deepseek.com
-          PRIMARY_MODEL: deepseek-v4-flash
-          PRIMARY_FAST_MODEL: deepseek-v4-flash
+          PRIMARY_MODEL: deepseek-flash
+          PRIMARY_FAST_MODEL: deepseek-flash
           ASR_API_KEY: ${{ secrets.ASR_API_KEY || 'ci-dummy' }}
           ASR_MODEL: paraformer-realtime-8k-v2
           VISION_API_KEY: ${{ secrets.DEEPSEEK_API_KEY || 'ci-dummy' }}
           VISION_BASE_URL: https://api.deepseek.com/v1
-          VISION_MODEL: deepseek-v4-flash-vision-exp
+          VISION_MODEL: deepseek-flash
           DASHVECTOR_API_KEY: ci-dummy
           DASHVECTOR_ENDPOINT: https://ci-dummy.dashvector.cn-hangzhou.aliyuncs.com
           DASHVECTOR_COLLECTION: ci

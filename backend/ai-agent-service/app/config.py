@@ -32,11 +32,13 @@ class Settings(BaseSettings):
     PRIMARY_BASE_URL: str = ""
     PRIMARY_MODEL: str = ""
 
-    # 视觉多模态 LLM（图片识别）—— DeepSeek vision（2026-08 起替换 MiniMax M3）
+    # 视觉多模态 LLM（图片识别）
+    # 2026-09-10 起 DeepSeek-V4.1-Flash 原生多模态，模型名统一为 deepseek-flash
+    # （旧的 deepseek-v4-flash-vision-exp 为临时兼容路由，随时可能下线）。
     # 与主模型共用 DeepSeek API key（推理/视觉同 key）
     VISION_API_KEY: str = ""
     VISION_BASE_URL: str = "https://api.deepseek.com/v1"
-    VISION_MODEL: str = "deepseek-v4-flash-vision-exp"
+    VISION_MODEL: str = "deepseek-flash"
     VISION_ENABLED: bool = True
 
     # 建议个性化偏好注入开关（issue #2997：默认关闭，灰度开启；开启后仅小布注入，
@@ -100,11 +102,14 @@ class Settings(BaseSettings):
     ASR_LANGUAGE_HINTS: str = "zh"                         # 默认语言/方言
 
     DASHSCOPE_EMBEDDING_MODEL: str = "text-embedding-v3"
-    INTENT_MODEL: str = "deepseek-v4-flash"              # 意图分类/摘要（快速模型）
+    INTENT_MODEL: str = "deepseek-flash"                 # 意图分类/摘要（快速模型）
 
     # LLM 模型路由常量 — 所有模型名统一在 config.py 管理
-    LLM_MODEL_PRIMARY: str = "deepseek-v4-flash"         # 复杂推理 / 多工具 / 默认
-    LLM_MODEL_FAST: str = "deepseek-v4-flash"            # 轻量快速（意图路由、分类、摘要）
+    # 2026-09-10 DeepSeek-V4.1-Flash 发布，canonical 模型名 = deepseek-flash
+    # （官方文档：deepseek-v4-flash / deepseek-v4-flash-vision-exp 已下线，
+    #   仅作临时兼容路由指向 V4.1-Flash，禁止再作为新配置值）
+    LLM_MODEL_PRIMARY: str = "deepseek-flash"            # 复杂推理 / 多工具 / 默认
+    LLM_MODEL_FAST: str = "deepseek-flash"               # 轻量快速（意图路由、分类、摘要）
 
     LLM_ENABLE_MODEL_ROUTING: bool = True
     LLM_COST_TRACKING_ENABLED: bool = True

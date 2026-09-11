@@ -114,7 +114,7 @@ services:
       # 本地栈评测必需；生产 compose 不设该变量（保持 fail-closed）。
       DEBUG: ${DEBUG:-false}
       PRIMARY_API_KEY: ${PRIMARY_API_KEY:-}
-      PRIMARY_MODEL: ${PRIMARY_MODEL:-deepseek-v4-flash}
+      PRIMARY_MODEL: ${PRIMARY_MODEL:-deepseek-flash}
       DASHVECTOR_API_KEY: ${DASHVECTOR_API_KEY:-}
       DASHVECTOR_ENDPOINT: ${DASHVECTOR_ENDPOINT:-}
       # ── 以下 6 项在 app/config.py 里是**无默认值的必填字段**（Settings 直接

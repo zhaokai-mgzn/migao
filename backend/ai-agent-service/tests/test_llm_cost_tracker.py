@@ -95,7 +95,7 @@ class TestGetSummary:
         tracker = CostTracker()
         tracker.track_call(settings.LLM_MODEL_FAST, 1000, 500)
         tracker.track_call(settings.LLM_MODEL_FAST, 2000, 1000)
-        # 主模型已统一为 deepseek-v4-flash（与快模型同名），用未知模型名模拟第三组
+        # 主模型已统一为 deepseek-flash（与快模型同名），用未知模型名模拟第三组
         tracker.track_call("qwen3.7-max", 500, 500)
 
         summary = tracker.get_summary()

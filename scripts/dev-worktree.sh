@@ -144,11 +144,15 @@ cmd_add() {
     echo "   远程存在但本地无分支时，脚本会自动创建跟踪分支。"
     exit 1
   fi
-  local branch_arg
+  # v1.7（issue #3319 实战）：此前用字符串 "--track $branch origin/$branch" 再以
+  # 未加引号的 `$branch_arg` 展开 → git 把 `--track` 的**可选参数**吃成 `<branch>`、
+  # 把 `origin/<branch>` 当成多余位置参数 → `git worktree add` 直接打 usage 报错。
+  # 现象：**只存在远程分支、本地无同名分支**时 `add` 必失败（文档承诺的
+  # 「远程存在但本地无分支时脚本会自动创建跟踪分支」实际从未生效）。
+  # 修复：显式 `--track -b <branch> <path> origin/<branch>`。
+  local branch_is_local=0
   if git -C "$REPO_ROOT" show-ref --verify --quiet "refs/heads/$branch"; then
-    branch_arg="$branch"
-  else
-    branch_arg="--track $branch origin/$branch"
+    branch_is_local=1
   fi
 
   if [ -e "$path" ]; then
@@ -156,7 +160,11 @@ cmd_add() {
     exit 1
   fi
   mkdir -p "$(dirname "$path")"
-  git -C "$REPO_ROOT" worktree add "$path" $branch_arg
+  if [ "$branch_is_local" = "1" ]; then
+    git -C "$REPO_ROOT" worktree add "$path" "$branch"
+  else
+    git -C "$REPO_ROOT" worktree add --track -b "$branch" "$path" "origin/$branch"
+  fi
   lock_register "$branch" "$path"
   echo
   echo "✅ 工作区就绪：${path}（分支 ${branch}）"

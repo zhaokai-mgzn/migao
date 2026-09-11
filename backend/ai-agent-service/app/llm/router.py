@@ -15,9 +15,9 @@ from app.config import settings
 
 
 # ---- 模型路由常量已收敛到 settings（app/config.py），禁止在此硬编码 ----
-#     settings.LLM_MODEL_PRIMARY — deepseek-v4-flash 复杂推理 / 多工具协同 / 默认
-#     settings.LLM_MODEL_FAST    — deepseek-v4-flash 轻量快速
-#     settings.VISION_MODEL      — 视觉模型（deepseek-v4-flash-vision-exp）
+#     settings.LLM_MODEL_PRIMARY — deepseek-flash 复杂推理 / 多工具协同 / 默认
+#     settings.LLM_MODEL_FAST    — deepseek-flash 轻量快速
+#     settings.VISION_MODEL      — 视觉模型（deepseek-flash，V4.1-Flash 原生多模态）
 
 # ---- 路由判定阈值 ----
 _SIMPLE_INTENTS = {"greeting", "farewell", "capabilities"}
@@ -93,7 +93,7 @@ def select_model(
     if intent and intent.lower() in _SIMPLE_INTENTS:
         return settings.LLM_MODEL_FAST
 
-    # 5. 复杂任务 → 主模型（env PRIMARY_MODEL，ops 可切换，如 deepseek-v4-flash）
+    # 5. 复杂任务 → 主模型（env PRIMARY_MODEL，ops 可切换，如 deepseek-flash）
     if tool_count >= _TOOL_COUNT_MAX_THRESHOLD or text_length > _TEXT_LENGTH_MAX_THRESHOLD:
         return settings.LLM_MODEL
 
