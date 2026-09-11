@@ -179,6 +179,7 @@ class TestNoStrayStatementsOnDroppedTables:
 
 
 COMPOSE = Path(__file__).parent.parent.parent / "deploy" / "docker-compose.yml"
+WORKFLOWS_DIR = Path(__file__).parent.parent.parent / ".github" / "workflows"
 
 
 class TestPostgresHealthcheckMatchesDatabase:
@@ -271,3 +272,62 @@ class TestAiAgentRequiredSettingsProvided:
             m = re.search(r":-(\d+)\}", raw)
             assert m, f"{k} 未提供数值默认值（实为 {raw!r}）—— int 字段会校验失败"
             assert int(m.group(1)) > 0, f"{k} 默认值必须为正数，实为 {m.group(1)}"
+
+
+class TestDevStackRS256Keys:
+    """dev/CI 栈必须能拿到 RS256 密钥（issue #3270）。
+
+    先例：`JwtTokenProvider.init()` 在密钥缺失时 **fail-fast**
+    （禁止静默回退 HS256，否则 ai-agent 只接受 RS256 会报 TOKEN_INVALID），
+    而生产私钥 `src/main/resources/rsa/private.pem` 被 `.gitignore:79` 刻意排除
+    → CI clone 后镜像内无该文件 → admin-api 起不来。
+
+    解法：用仓库**已入库的测试密钥对**（`src/test/resources/rsa/*.pem`，
+    `.gitignore:81` 白名单）走 PEM 内容注入。本测试锁定该链路完整性。
+    """
+
+    REPO = Path(__file__).parent.parent.parent
+    TEST_KEY_DIR = REPO / "backend" / "admin-api" / "src" / "test" / "resources" / "rsa"
+
+    def test_test_keypair_is_committed(self):
+        """测试密钥对必须在仓库里（gitignore 白名单），否则 CI 无从注入"""
+        for name in ("private.pem", "public.pem"):
+            f = self.TEST_KEY_DIR / name
+            assert f.exists(), (
+                f"缺少 {f} —— CI 无法注入 RS256 密钥；"
+                "注意 .gitignore:79 **/rsa/private.pem 会误伤它，"
+                ".gitignore:81 的 ! 白名单必须保留"
+            )
+            content = f.read_text(encoding="utf-8")
+            assert "-----BEGIN" in content and "KEY-----" in content, (
+                f"{f} 不是合法 PEM 内容"
+            )
+
+    def test_compose_accepts_pem_injection(self):
+        """compose 必须把 PEM 透传给 admin-api（JwtTokenProvider 的 PEM 优先级更高）"""
+        import yaml
+        d = yaml.safe_load(COMPOSE.read_text(encoding="utf-8")) or {}
+        env = d["services"]["admin-api"]["environment"]
+        for k in ("JWT_PRIVATE_KEY_PEM", "JWT_PUBLIC_KEY_PEM"):
+            assert k in env, (
+                f"compose 未透传 {k} —— dev/CI 栈会因缺 RS256 密钥 fail-fast 起不来"
+            )
+
+    def test_workflow_exports_keys_before_stack_start(self):
+        """workflow 必须在起栈**之前**导出 PEM 到 GITHUB_ENV"""
+        import yaml
+        wf = WORKFLOWS_DIR / "xiaobu-acceptance.yml"
+        d = yaml.safe_load(wf.read_text(encoding="utf-8")) or {}
+        steps = d["jobs"]["xiaobu-acceptance"]["steps"]
+        names = [s_.get("name") or "" for s_ in steps]
+        # 用 -1 作「未找到」哨兵：只断言位置关系，避免触发门禁的弱断言模式
+        i_export = next((i for i, n in enumerate(names) if "RS256" in n), -1)
+        i_stack = next((i for i, n in enumerate(names) if "Start local stack" in n), -1)
+        assert 0 <= i_export < i_stack, (
+            f"workflow 步骤顺序有误（i_export={i_export}, i_stack={i_stack}）："
+            "缺少 RS256 密钥导出步骤，或它没排在起栈之前（GITHUB_ENV 只对后续步骤生效）。"
+            f"实际步骤名：{names}"
+        )
+        body = steps[i_export].get("run") or ""
+        assert "GITHUB_ENV" in body, "导出步骤未写入 $GITHUB_ENV"
+        assert "test/resources/rsa" in body, "导出步骤未读取测试密钥对"
