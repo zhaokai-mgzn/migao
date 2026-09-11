@@ -30,7 +30,12 @@ services:
       - postgres_data:/var/lib/postgresql/data
       - ../docs/sql/schema.sql:/docker-entrypoint-initdb.d/001_schema.sql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U app_user"]
+      # 必须显式指定 -d 目标库：`pg_isready -U app_user` 会以「用户名」为库名连接，
+      # 而本实例只有 POSTGRES_DB=ai_customer_service，并无名为 app_user 的库 →
+      # 报 `FATAL: database "app_user" does not exist` → 容器永远 unhealthy
+      # → `docker compose up --wait` 判定 postgres 未就绪 → 整个栈起不来。
+      # （issue #3270 实测：schema 初始化其实已成功，卡点就在这条健康检查。）
+      test: ["CMD-SHELL", "pg_isready -U app_user -d ai_customer_service"]
       interval: 10s
       timeout: 5s
       retries: 5
