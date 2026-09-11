@@ -302,6 +302,7 @@ cases:
     domains:
       - order
       - product
+    persona: mibao
     tier: normal
     tags:
       - multi_turn
@@ -349,6 +350,7 @@ cases:
     title: "创建订单 - 汇总确认简化流程"
     domains:
       - order
+    persona: mibao
     tier: normal
     tags:
       - create
@@ -387,6 +389,7 @@ cases:
     title: "AI 下单闭环 - 算料报价→确认→SMS→订单创建"
     domains:
       - order
+    persona: mibao
     tier: normal
     tags:
       - order_create
@@ -544,6 +547,7 @@ cases:
     domains:
       - order
       - chat
+    persona: mibao
     tier: normal
     tags:
       - order_create

@@ -1164,7 +1164,7 @@ _CASE_CR_001 = EvalCase(
     data_checks=['order_create items 包含遮光窗帘的 UUID（复用上轮，不重查）', 'Context 注入包含 product_ids'],
     skip_reason='',
     tags=['cross_skill', 'context_share'],
-    persona='',
+    persona='mibao',
     required_args=[{'tool': 'order_create', 'fields': ['items[].processing_info.sellingMethod', 'items[].processing_info.doorWidth']}],
     pre_clean=[{'type': 'product_dedupe', 'product_keyword': '遮光窗帘', 'price': 100}],
 )
@@ -2429,7 +2429,7 @@ _CASE_OR_009 = EvalCase(
     data_checks=['order_create items[0].sellingMethod = bulk_cut', 'order_create items[0].doorWidth = 2.8米', "order_create items[0].colorName 包含 '白色'"],
     skip_reason='',
     tags=['multi_turn', 'order_create', 'sku_select', 'full_flow'],
-    persona='',
+    persona='mibao',
     required_args=[{'tool': 'order_create', 'fields': ['items[].processing_info.sellingMethod', 'items[].processing_info.doorWidth', 'items[].processing_info.colorName']}],
 )
 
@@ -2445,7 +2445,7 @@ _CASE_OR_010 = EvalCase(
     data_checks=['下单全流程不得向顾客索要单价/金额——价格取自商品数据/算料结果（实测反复要价导致下单卡死 + 本用例评估不稳）'],
     skip_reason='',
     tags=['create', 'confirm'],
-    persona='',
+    persona='mibao',
     want_text=['订单号'],
     required_args=[{'tool': 'order_create', 'fields': ['customer_phone', 'items']}],
 )
@@ -2462,7 +2462,7 @@ _CASE_OR_011 = EvalCase(
     data_checks=['order_create 返回订单号', '订单必须携带有效收件人手机号：agent 路径必填+11位格式校验；表单 API @Pattern 同规则（非法手机号 → 400 拒绝创建）——手机号是客户绑定归属回填与物流查询（顺丰等需尾号）的关键信息，禁止缺失/非法'],
     skip_reason='',
     tags=['order_create', 'smoke'],
-    persona='',
+    persona='mibao',
     required_args=[{'tool': 'order_create', 'fields': ['customer_phone', 'items']}],
 )
 
@@ -2525,7 +2525,7 @@ _CASE_OR_015 = EvalCase(
     data_checks=['validate_input(target_tool=order_create, target_action=create) 必须真正执行必填与类型校验：缺少 customer_name/customer_phone/items 任一 → 校验失败并给出缺失字段列表', 'customer_phone 非 11 位手机号（或不以 1 开头）→ 校验失败提示「请输入 11 位中国大陆手机号」', '合法参数（customer_name + 11 位 phone + items 非空列表）→ 校验通过 validated=true', '禁止返回「无需校验（该操作无预定义规则）」跳过（平铺结构 vs 分层读取不匹配的回归防线，sess_7f27137647e14b1e A5 轮实证）'],
     skip_reason='',
     tags=['order_create', 'validate_input', 'defense'],
-    persona='',
+    persona='mibao',
     order_before=['validate_input before order_create'],
     required_args=[{'tool': 'validate_input', 'fields': ['target_tool', 'target_action']}],
     pre_clean=[{'type': 'product_dedupe', 'product_keyword': '遮光窗帘', 'price': 100}],

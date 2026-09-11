@@ -291,3 +291,53 @@ class TestXiaobuLoginShortCircuit:
             "xiaobu 短路必须在 _retry_502 调用之前 —— 否则 xiaobu/CI 模式仍发真实"
             "SMS 登录（本地栈 401「该手机号未注册」评测全失败，issue #3270 实证）"
         )
+
+
+class TestStaffProxyOrderSemantics:
+    """B 端「店员代客下单」语义用例不得进 C 端（issue #3270 归因修复）。
+
+    背景：C 端 normal 档首次基线 10/23，11 个失败里 **5 个是归属错误** ——
+    OR-009/010/011/015/CR-001 的首轮都是**店员代客下单**语义
+    （「我要给张三下单」「创建订单：张三 …」），小布（C 端自助、身份固定为本人）
+    无法触发 → `order_create` 从未被调用 → 必然 0 分，污染基线。
+
+    实测（CI，normal 档）：
+      OR-009 `tools=[]`；OR-010/011/015 均无 `order_create`；CR-001 无 `order_create`
+    """
+
+    STAFF_PROXY = ["OR-008", "OR-009", "OR-010", "OR-011", "OR-015", "CR-001"]
+    # 合法 C 端自助下单/选购用例必须在（防语义过滤误伤）
+    LEGIT_CUSTOMER = ["OR-014", "OR-017", "CH-010", "OR-012", "AS-008"]
+
+    def _sel(self):
+        from eval_case_filter import select_cases_for_persona
+        return {c["id"] for c in select_cases_for_persona(load_case_dicts(str(CASES_DIR)), PERSONA)}
+
+    def test_staff_proxy_cases_excluded_from_customer_end(self):
+        sel = self._sel()
+        leaked = [c for c in self.STAFF_PROXY if c in sel]
+        assert not leaked, (
+            f"店员代客下单语义用例仍在 C 端用例集：{leaked} —— "
+            "小布无法触发，必然 0 分污染基线"
+        )
+
+    def test_legit_customer_cases_preserved(self):
+        sel = self._sel()
+        missing = [c for c in self.LEGIT_CUSTOMER if c not in sel]
+        assert not missing, f"合法 C 端用例被语义过滤误伤：{missing}"
+
+    def test_first_person_phrase_not_overfiltered(self):
+        """「帮我下单」是合法 C 端说法，不得因负向前瞻失效而误伤"""
+        from eval_case_filter import is_customer_facing_case
+        for text in ["帮我下单", "我要下单", "给我自己下单", "帮我查一下物流"]:
+            case = {"user_inputs": [text], "expectations": []}
+            assert is_customer_facing_case(case), f"「{text}」是合法 C 端说法，不应被过滤"
+
+    def test_proxy_phrase_detected(self):
+        from eval_case_filter import is_customer_facing_case
+        for text in ["我要给张三下单，手机13800138000",
+                     "创建订单：张三 13812345678",
+                     "用遮光窗帘给张三创建订单，2件",
+                     "帮我下个订单，客户张三，手机13800138000"]:
+            case = {"user_inputs": [text], "expectations": []}
+            assert not is_customer_facing_case(case), f"「{text}」是代客语义，应被过滤"
