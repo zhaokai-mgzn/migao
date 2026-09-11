@@ -540,6 +540,8 @@ class TestEvalRunnerDepsInstalled:
     """
 
     REQUIRED = ["httpx", "pytest", "pytest-timeout", "pytest-rerunfailures"]
+    # real E2E 跑 ai-agent 自己的测试套件（conftest 依赖 jwt/fastapi 等）
+    REQUIREMENTS_REF = "backend/ai-agent-service/requirements.txt"
 
     def _install_step_run(self):
         import yaml
@@ -554,6 +556,14 @@ class TestEvalRunnerDepsInstalled:
         missing = [d for d in self.REQUIRED if d not in run]
         assert not missing, (
             f"安装步骤缺依赖 {missing} —— real E2E 步骤会因缺 module 直接失败"
+        )
+
+    def test_installs_ai_agent_requirements_for_e2e(self):
+        """real E2E 跑 ai-agent 测试套件 → 必须装其 requirements（否则缺 jwt 等）"""
+        run = self._install_step_run()
+        assert self.REQUIREMENTS_REF in run, (
+            "安装步骤未装 ai-agent requirements —— real E2E 的 tests/conftest.py 依赖 "
+            "jwt/fastapi 等，会报 ModuleNotFoundError（实测踩到 jwt）"
         )
 
     def test_pytest_plugins_match_e2e_flags(self):

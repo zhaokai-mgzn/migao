@@ -116,11 +116,15 @@ jobs:
             "SELECT 'products='||count(*) FROM products WHERE tenant_id=1"
 
       - name: Install eval runner deps
-        # ⚠️ 必须连 pytest 一起装（issue #3270）：后面的 real E2E 步骤用
-        # `python -m pytest ... --timeout=120 --reruns 1`，而此前只装了 httpx →
-        # 步骤报 `No module named pytest` 直接 exit 1（C 端评测步骤其实已绿）。
-        # --timeout / --reruns 分别需要 pytest-timeout / pytest-rerunfailures。
-        run: pip install -q httpx pytest pytest-timeout pytest-rerunfailures
+        # ⚠️ 依赖分两类（issue #3270 实测逐层暴露）：
+        # 1) eval runner（local_runner.py）只需 httpx + pytest 系
+        #    （`--timeout`/`--reruns` 分别要 pytest-timeout / pytest-rerunfailures）
+        # 2) real E2E 跑的是 **ai-agent 自己的测试套件**（backend/ai-agent-service/tests），
+        #    其 tests/conftest.py 依赖 jwt(PyJWT)/fastapi 等 → 必须装 ai-agent requirements，
+        #    否则 `ModuleNotFoundError: No module named 'jwt'`（与 ai-agent-tests.yml 同款做法）
+        run: |
+          pip install -q httpx pytest pytest-timeout pytest-rerunfailures
+          pip install -q -r backend/ai-agent-service/requirements.txt
 
       - name: Run xiaobu local_runner (C 端身份，真实 LLM)
         env:
