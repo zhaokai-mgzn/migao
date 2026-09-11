@@ -176,3 +176,98 @@ class TestNoStrayStatementsOnDroppedTables:
             assert m.group(1).lower() == "knowledge_cards", (
                 f"{idx} 建在 {m.group(1)} 上，应为 knowledge_cards"
             )
+
+
+COMPOSE = Path(__file__).parent.parent.parent / "deploy" / "docker-compose.yml"
+
+
+class TestPostgresHealthcheckMatchesDatabase:
+    """postgres 健康检查必须连对库（issue #3270）。
+
+    先例：健康检查写成 `pg_isready -U app_user` —— pg_isready 未给 `-d` 时以
+    **用户名**为库名连接，而实例只有 `POSTGRES_DB=ai_customer_service` →
+    `FATAL: database "app_user" does not exist` → 容器永远 unhealthy →
+    `docker compose up --wait` 判定 postgres 未就绪 → 整个栈起不来。
+
+    隐蔽点：**schema 初始化其实已成功**（日志有 "PostgreSQL init process complete;
+    ready for start up"），失败发生在 init 之后的健康探测 —— 只看容器 exited(3)
+    会误判成 schema 问题。
+    """
+
+    def _postgres(self):
+        import yaml
+        d = yaml.safe_load(COMPOSE.read_text(encoding="utf-8")) or {}
+        return d["services"]["postgres"]
+
+    def test_healthcheck_specifies_target_database(self):
+        pg = self._postgres()
+        test_cmd = " ".join(pg.get("healthcheck", {}).get("test") or [])
+        assert "-d " in test_cmd, (
+            f"postgres healthcheck 未指定 -d 目标库（实为 {test_cmd!r}）—— "
+            "pg_isready 会以用户名当库名，永远 unhealthy"
+        )
+
+    def test_healthcheck_database_matches_postgres_db(self):
+        pg = self._postgres()
+        test_cmd = " ".join(pg.get("healthcheck", {}).get("test") or [])
+        db = pg["environment"]["POSTGRES_DB"]
+        m = re.search(r"-d\s+([A-Za-z0-9_]+)", test_cmd)
+        assert m, f"healthcheck 里解析不到 -d 的库名：{test_cmd!r}"
+        assert m.group(1) == db, (
+            f"healthcheck 连的是 {m.group(1)}，而实例的 POSTGRES_DB 是 {db} —— 必然 FATAL"
+        )
+
+    def test_healthcheck_user_matches_postgres_user(self):
+        pg = self._postgres()
+        test_cmd = " ".join(pg.get("healthcheck", {}).get("test") or [])
+        user = pg["environment"]["POSTGRES_USER"]
+        m = re.search(r"-U\s+([A-Za-z0-9_]+)", test_cmd)
+        assert m, f"healthcheck 里解析不到 -U 用户名：{test_cmd!r}"
+        assert m.group(1) == user, (
+            f"healthcheck 用的用户是 {m.group(1)}，实例的 POSTGRES_USER 是 {user}"
+        )
+
+    def test_compose_mounts_schema_sql_as_init_script(self):
+        """bootstrap 脚本必须仍挂载为 initdb 脚本（本 issue 修复对象的入口）"""
+        pg = self._postgres()
+        mounts = " ".join(pg.get("volumes") or [])
+        assert "schema.sql" in mounts and "docker-entrypoint-initdb.d" in mounts, (
+            f"compose 未把 docs/sql/schema.sql 挂为 initdb 脚本：{mounts!r}"
+        )
+
+
+class TestAiAgentRequiredSettingsProvided:
+    """compose 必须为 ai-agent 的**必填**配置项提供值（issue #3270）。
+
+    先例：`app/config.py` 里以下 6 项声明为无默认值的必填字段
+    （`JWT_PUBLIC_KEY: str` 等），而 compose 未提供 →
+    `pydantic_core.ValidationError: 6 validation errors for Settings`
+    → aikf-ai-agent 起不来 → 整个栈失败。
+
+    实测：本地补齐这 6 项后 `from app.config import settings` 加载成功。
+    """
+
+    REQUIRED = ["JWT_PUBLIC_KEY", "LOGISTICS_API_URL", "LOGISTICS_APPCODE",
+                "SSE_TIMEOUT", "SSE_PING_INTERVAL", "CORS_ALLOWED_ORIGINS"]
+
+    def _ai_agent_env(self):
+        import yaml
+        d = yaml.safe_load(COMPOSE.read_text(encoding="utf-8")) or {}
+        return d["services"]["ai-agent-service"]["environment"]
+
+    def test_all_required_settings_present_in_compose(self):
+        env = self._ai_agent_env()
+        missing = [k for k in self.REQUIRED if k not in env]
+        assert not missing, (
+            f"compose 未为 ai-agent 必填配置提供值：{missing} —— "
+            "app/config.py 中这些字段无默认值，缺任一则服务启动即 ValidationError"
+        )
+
+    def test_numeric_settings_have_usable_defaults(self):
+        """SSE 两项必须给数值默认值（空串会让 int 校验失败）"""
+        env = self._ai_agent_env()
+        for k in ["SSE_TIMEOUT", "SSE_PING_INTERVAL"]:
+            raw = str(env[k])
+            m = re.search(r":-(\d+)\}", raw)
+            assert m, f"{k} 未提供数值默认值（实为 {raw!r}）—— int 字段会校验失败"
+            assert int(m.group(1)) > 0, f"{k} 默认值必须为正数，实为 {m.group(1)}"

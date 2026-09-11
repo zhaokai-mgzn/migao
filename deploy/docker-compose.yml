@@ -30,7 +30,12 @@ services:
       - postgres_data:/var/lib/postgresql/data
       - ../docs/sql/schema.sql:/docker-entrypoint-initdb.d/001_schema.sql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U app_user"]
+      # 必须显式指定 -d 目标库：`pg_isready -U app_user` 会以「用户名」为库名连接，
+      # 而本实例只有 POSTGRES_DB=ai_customer_service，并无名为 app_user 的库 →
+      # 报 `FATAL: database "app_user" does not exist` → 容器永远 unhealthy
+      # → `docker compose up --wait` 判定 postgres 未就绪 → 整个栈起不来。
+      # （issue #3270 实测：schema 初始化其实已成功，卡点就在这条健康检查。）
+      test: ["CMD-SHELL", "pg_isready -U app_user -d ai_customer_service"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -96,6 +101,17 @@ services:
       PRIMARY_MODEL: ${PRIMARY_MODEL:-deepseek-v4-flash}
       DASHVECTOR_API_KEY: ${DASHVECTOR_API_KEY:-}
       DASHVECTOR_ENDPOINT: ${DASHVECTOR_ENDPOINT:-}
+      # ── 以下 6 项在 app/config.py 里是**无默认值的必填字段**（Settings 直接
+      #    声明 `X: str`，缺一个则 pydantic 校验失败、服务起不来）——
+      #    2026-09-11 实测 aikf-ai-agent 报 6 validation errors 即此因（issue #3270）。
+      #    dev 栈给可用默认值；生产由 main.tf locals 注入。
+      # JWT 公钥（用于校验 admin-api 签发的 RS256 token）：dev 用仓库内 public.pem 内容
+      JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY:-}
+      LOGISTICS_API_URL: ${LOGISTICS_API_URL:-}
+      LOGISTICS_APPCODE: ${LOGISTICS_APPCODE:-}
+      SSE_TIMEOUT: ${SSE_TIMEOUT:-300}
+      SSE_PING_INTERVAL: ${SSE_PING_INTERVAL:-15}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:3001,http://localhost:8080}
     ports:
       - "8001:8000"
     depends_on:
