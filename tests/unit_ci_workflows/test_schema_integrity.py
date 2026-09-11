@@ -940,3 +940,58 @@ class TestNamedProductsAreSeeded:
             f"fixture 中 recommended=TRUE 的商品有 {len(recommended)} 个（应恰好 1 个）—— "
             "多个会让 CH-010 的『第一款』不确定"
         )
+
+
+class TestSchemaFullDeprecation:
+    """`docs/sql/schema_full.sql` 必须保持「已废弃」标注，直到它真正与迁移链对齐。
+
+    背景（2026-09-11 实测逐表比对）：该文件是 2026-05-30 的快照，此后未跟进，
+    **两个方向都失真** —— 缺 6 张新表，且仍会创建 4 张已被 V36 等迁移 DROP 的表
+    （`knowledge_documents` / `knowledge_sync_history` / `rag_chunks` /
+    `quick_reply_templates`）。拿它建库不是"旧一点"，是**错的**。
+
+    风险面：外部 runbook / 审计仍可能引用这个路径（故未直接删除），
+    若头部没有显著废弃标注，读者会以为它是权威全量脚本。
+    """
+
+    FULL = Path(__file__).parent.parent.parent / "docs" / "sql" / "schema_full.sql"
+    CANONICAL = Path(__file__).parent.parent.parent / "docs" / "sql" / "schema.sql"
+
+    @staticmethod
+    def _tables(p: Path) -> set:
+        src = _strip_sql_comments(p.read_text(encoding="utf-8"))
+        return {m.lower() for m in
+                re.findall(r"CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?[\"`]?(\w+)", src, re.I)}
+
+    def test_deprecation_banner_present_while_drift_persists(self):
+        """有漂移 → 必须有废弃标注；无漂移 → 标注必须撤掉（防标注本身过期）"""
+        full_sql = self.FULL.read_text(encoding="utf-8")
+        drift = self._tables(self.CANONICAL) ^ self._tables(self.FULL)
+        has_banner = "已废弃" in full_sql and "DEPRECATED" in full_sql
+
+        if drift:
+            assert has_banner, (
+                f"schema_full.sql 与 schema.sql 仍有 {len(drift)} 张表漂移 "
+                f"{sorted(drift)[:6]}，但文件头部没有废弃标注 —— "
+                "读者会把它当成权威全量脚本。"
+            )
+            assert "docs/sql/schema.sql" in full_sql, (
+                "废弃标注必须明确指向正确入口 docs/sql/schema.sql"
+            )
+        else:
+            assert not has_banner, (
+                "schema_full.sql 已与 schema.sql 对齐（无漂移），"
+                "请撤掉废弃标注（否则标注本身变成错误信息）"
+            )
+
+    def test_drift_is_documented_in_banner(self):
+        """标注里点名的缺失表必须与实际漂移一致（防写了但写错）"""
+        full_sql = self.FULL.read_text(encoding="utf-8")
+        missing = self._tables(self.CANONICAL) - self._tables(self.FULL)
+        if not missing:
+            return  # 已对齐情形由上一条用例负责
+        header = full_sql[:2000]
+        undocumented = [t for t in sorted(missing) if t not in header]
+        assert not undocumented, (
+            f"以下缺失表未在废弃标注里列出：{undocumented} —— 标注与事实不符"
+        )
