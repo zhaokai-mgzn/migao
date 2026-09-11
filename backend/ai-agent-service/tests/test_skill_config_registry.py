@@ -515,3 +515,40 @@ def test_customer_skills_only_bind_tools_customer_role_can_use():
         "以下 C 端 Skill 绑定了顾客**用不了**的工具（死能力，流程会在关键节点静默失败）：\n  "
         + "\n  ".join(violations)
     )
+
+
+def test_customer_order_binds_validate_input_for_confirm_execute_chain():
+    """C 端下单必须能走通「校验 → confirm → 执行」链（OR-014/OR-017/CH-010 实证）
+
+    CI 轨迹（run 34622425044，OR-014）：
+        R6 tools=interact data=interact(component=confirm title=请核对订单信息 …)
+        R7 tools=-        ← 顾客已回「确认」，却**没有任何工具调用** → order_create 从未执行
+
+    而 `customer_aftersales` 走通了同一条链（CH-012 本轮转 ✅：R1 卡片 → R3 validate_input
+    → R4 aftersale_create 成功）。差别就在 **aftersales 绑了 `validate_input`、
+    `customer_order` 没绑**：
+
+        base_skill：if tool_name == "validate_input" and result_dict.get("success") → 落
+        「已校验待执行」状态；下一轮顾客确认时直接执行写工具，不再从零重走。
+
+    没有这一步，顾客回「确认」后 LLM 手上没有"待执行的动作与参数"，只能重新追问
+    （实测回复要验证码/再问一遍），写操作永远不发生。
+    """
+    from app.graph.skills.customer_order_skill import CUSTOMER_ORDER_TOOLS
+
+    assert "order_create" in CUSTOMER_ORDER_TOOLS, "回归：下单能力本体"
+    assert "validate_input" in CUSTOMER_ORDER_TOOLS, (
+        "customer_order 未绑定 validate_input —— confirm 后无法落地「已校验待执行」状态，"
+        "顾客回「确认」时没有可执行动作，order_create 不会发生（OR-014 R7 实证）"
+    )
+
+
+def test_customer_order_prompt_requires_validate_before_confirm():
+    """prompt 必须显式要求 confirm 卡片之前先 validate_input（否则 LLM 不会主动调）"""
+    from app.graph.skills.customer_order_skill import CUSTOMER_ORDER_SYSTEM_PROMPT
+
+    assert "validate_input" in CUSTOMER_ORDER_SYSTEM_PROMPT, (
+        "prompt 未提及 validate_input —— 绑了工具但 LLM 不会用（「工具给了、话没说」）"
+    )
+    # 必须绑定到 confirm 之前这个时序语义，不能只是随口提一句
+    assert "confirm" in CUSTOMER_ORDER_SYSTEM_PROMPT

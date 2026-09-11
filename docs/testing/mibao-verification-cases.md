@@ -618,6 +618,7 @@
 你: 第一款，白色，2.8 米门幅，按米卖
 你: 数量 3 米
 你: 确认下单
+你: 123456
 期望: product_search
 期望: product_detail
 期望: curtain_calc
@@ -626,6 +627,7 @@
 数据: 规格选择/收货信息通过 interact(choice/form) 组件收集（非纯文本追问）
 数据: order_create 前必有 interact(confirm) 确认（写操作守卫）
 数据: order_create items 含所选 SKU（颜色/门幅/售卖方式）与数量
+数据: C 端下单是**两步**：确认订单信息后还需手机验证码（order_create 的 sms_code，customer 角色必填）。用例必须提供验证码这一轮，否则 AI 停在第 5 步「请提供验证码」，order_create 永不发生（run 34622425044 实证：R7 顾客回「确认」后无任何工具调用）。dev/CI 栈已设 SMS_BYPASS_CODE=123456，此处用该码走真实校验分支。
 时序: interact[confirm] before order_create
 必填: order_create() 字段 customer_phone, items
 ```
@@ -2007,12 +2009,14 @@
 你: 确认下单
 你: [📷 纯图片 x0]
 你: 确认
+你: 123456
 期望: product_detail
 期望: order_create
 数据: 加工项数量按计价方式确定：per_meter → 数量=面料米数（如打孔 8 元/米 × 3 米 → quantity=3、subtotal=24）；per_set/fixed → 数量=1；per_area → 宽×高
 数据: processing_info.processingItems 逐项含 {id, name, unitPrice, quantity, unit, pricingMethod, subtotal}，processingFee = 各项 unitPrice × quantity 之和
 数据: 订单确认/回复展示加工项含「名称+数量+金额」（如『打孔（罗马圈）3米 ¥24.00』）——数量可见可对账，禁止虚构每米几个的密度推导
 数据: 加工费 = 单价 × 数量（打孔 8 元/米 × 3 米 = 24 元），漏算/错算加工费 = 订单金额错误
+数据: C 端下单是**两步**：确认订单信息后还需手机验证码（order_create 的 sms_code，customer 角色必填）。用例必须提供验证码这一轮，否则 AI 停在第 5 步「请提供验证码」，order_create 永不发生（run 34622425044 实证：R7 顾客回「确认」后无任何工具调用）。dev/CI 栈已设 SMS_BYPASS_CODE=123456，此处用该码走真实校验分支。
 ```
 真值: order.states, order.create-flow, processing-manage.crud
 溯源: 2026-09-07 改写（issue #3005，回滚 #2986）：行业加工费按米计价、辅料（罗马圈/四爪钩等）含在按米加工费中——回滚 per_piece 与「每米数量」密度（数量=ceil(面料米数×密度) 与实际车间工艺不符、数量隐藏导致 B 端无法对账），数量改为按计价方式派生且展示（per_meter=面料米数、per_set/fixed=1） ｜ tags: order_create, processing_item, pricing
@@ -2058,6 +2062,7 @@
 你: 我想买夏日清风窗帘，米白色，3米，门幅2.8米散剪
 你: 我是张三，手机13800138000，地址杭州市西湖区文三路1号
 你: 确认
+你: 123456
 期望: product_search
 期望: product_detail
 期望: interact(component=choice, multiSelect=True)
@@ -2066,6 +2071,7 @@
 数据: 加工项非空时 confirm 之前必须用 interact(choice, multiSelect=true) 主动询问，列出名称与单价（如「纳米圈打孔 ¥8/米」）
 数据: 所选加工项写入 order_create 的 processing_info.processingItems（id/name/unitPrice/quantity/unit/pricingMethod/subtotal），合计写入 processingFee 且计入订单金额；按米计价项加工数量=面料米数
 数据: 顾客说「不需要加工项」可跳过；加工项确实为空时才告知无可用加工项
+数据: C 端下单是**两步**：确认订单信息后还需手机验证码（order_create 的 sms_code，customer 角色必填）。用例必须提供验证码这一轮，否则 AI 停在第 5 步「请提供验证码」，order_create 永不发生（run 34622425044 实证：R7 顾客回「确认」后无任何工具调用）。dev/CI 栈已设 SMS_BYPASS_CODE=123456，此处用该码走真实校验分支。
 时序: interact[choice:processing_items] before interact[confirm]
 时序: interact[choice:processing_items] before order_create
 禁词: 暂未查询到可选加工项
