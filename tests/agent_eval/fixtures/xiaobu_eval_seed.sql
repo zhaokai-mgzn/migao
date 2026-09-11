@@ -70,6 +70,10 @@ FROM (VALUES
   (1, 'prod_eval_blackout', '米白', '#F5F0E6', 1),
   (1, 'prod_eval_blackout', '浅灰', '#C8C8C8', 2),
   (1, 'prod_eval_dark_green', '雾霾蓝', '#8FA3B0', 1),
+  -- 「白色」给到每个商品：CH-010 顾客说「第一款，白色…」，而"第一款"由商品搜索
+  -- 排序决定（可能落在任一商品上）。若某商品没有白色 → 流程卡在颜色上死循环
+  -- （实测 run 34624202564：agent 选中北欧风窗帘，顾客要白色，来回追问）。
+  (1, 'prod_eval_dark_green', '白色', '#FFFFFF', 2),
   (1, 'prod_eval_summer', '米白色', '#F7F3E8', 1)
 ) AS v(tenant_id, product_id, color_name, hex, ord)
 WHERE NOT EXISTS (

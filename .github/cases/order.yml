@@ -519,6 +519,14 @@ cases:
       - auto_fill:
           customer_name: "张三"
           customer_phone: "13800138000"
+          # 表单字段 key 由 LLM 生成，无法预知 → 常见别名一并给上（runner 只填
+          # form 卡声明且此处提供的 key，多余 key 无副作用）。缺字段会让 agent
+          # 反复重发表单（实测 run 34624202564 OR-014 R2–R8 表单循环 7 轮）。
+          customer_address: "浙江省杭州市西湖区文三路1号1幢101室"
+          address: "浙江省杭州市西湖区文三路1号1幢101室"
+          color: "米白"
+          colorName: "米白"
+          color_id: "米白"
       - "确认"
       - "123456"
     expectations:

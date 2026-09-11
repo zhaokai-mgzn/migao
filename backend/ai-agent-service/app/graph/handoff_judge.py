@@ -49,7 +49,15 @@ _OUT_OF_SCOPE_WORDS = (
 
 # 允许 offer 的意图白名单：其余意图（下单/报价/售后创建等明确业务流）
 # 一律不弹建议卡，防止打断正常业务推进。
-_OFFER_ALLOWED_INTENTS = {"general", "after_sales"}
+#
+# `complaint` 于 2026-09-11 纳入（CH-014 抖动治理，CI 实证 run 34622425044）：
+# 旧注释的理由是「投诉/举报/不满/差评已被 L1 rule_matcher 命中 complaint 走既有直转/
+# 投诉流程」—— 那是**B 端**语义（米宝收到投诉直接转人工）。C 端实测（小布）该轮
+# 既没有直转、也没有弹卡，只有一句安抚文本，于是 CH-014 的 `interact` 期望
+# 取决于分类器把「你们太坑了」分到 general / after_sales / complaint 中的哪一个
+# → 同一用例两次 run 结果相反。判据统一为**消息里有没有可执行诉求**（见
+# _ACTIONABLE_REQUEST_WORDS），与 after_sales 完全一致。
+_OFFER_ALLOWED_INTENTS = {"general", "after_sales", "complaint"}
 
 # ────────────────────── 可执行业务诉求（S1 例外判据） ──────────────────────
 # 用途：`after_sales` 意图下判断「这条消息是不是有正事要办」。
@@ -191,10 +199,10 @@ def judge_handoff(
             return HandoffJudgeResult(
                 action="offer", signal="S1", reason="单轮负面情绪表达(general)"
             )
-        if intent == "after_sales" and not _hit_actionable_request(text):
+        if intent in ("after_sales", "complaint") and not _hit_actionable_request(text):
             return HandoffJudgeResult(
                 action="offer", signal="S1",
-                reason="单轮负面情绪表达(after_sales 且无可执行业务诉求，不打断业务流)",
+                reason=f"单轮负面情绪表达({intent} 且无可执行业务诉求，不打断业务流)",
             )
 
     # 5. S2 多轮未解决：最近窗口内 ≥2 条负面表达（本条中性也可触发）

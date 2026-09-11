@@ -251,6 +251,32 @@ class TestS1AfterSalesWithoutActionableRequest:
                 "你们窗帘质量太差了，气死我了", intent=intent, handoff_state=None)
             assert result.action == "none", f"意图 {intent} 不该 offer"
 
+    def test_pure_venting_with_complaint_intent_offers(self):
+        """`complaint` 意图 + 纯发泄（无可执行诉求）→ offer（CH-014 抖动治理）
+
+        CI 实证（run 34622425044，CH-014）：R1 无任何工具、R3 才 human_handoff，
+        `interact` 期望未满足。R1 的「你们太坑了，再也不买了」被分到 `complaint`
+        （而非 general/after_sales）→ 旧白名单把 complaint 排除 → 不弹卡。
+
+        设计原话是「不含投诉/举报/不满/差评 —— 这些已被 L1 rule_matcher 命中 complaint
+        意图走既有直转/投诉流程」。但那是**B 端**语义（米宝收到投诉直接转）；
+        在 **C 端**（小布）实测 R1 既没有直转、也没有弹卡，只有一句安抚文本 ——
+        于是同一用例的成败又变成分类器抽奖（CH-013 已因 after_sales 修好，CH-014 同理）。
+        判据与 after_sales 保持一致：**看消息里有没有可执行诉求**，而不是看意图标签。
+        """
+        result = judge_handoff(
+            "你们太坑了，再也不买了", intent="complaint", handoff_state=None)
+        assert result.action == "offer", (
+            "complaint + 纯发泄不弹卡 → CH-014 成败取决于分类器把消息分到哪个意图"
+        )
+        assert result.signal == "S1"
+
+    def test_complaint_with_actionable_request_suppressed(self):
+        """complaint + 明确诉求（我要退货）→ 不打断业务流（与 after_sales 同判据）"""
+        result = judge_handoff(
+            "你们太差劲了，我要退货", intent="complaint", handoff_state=None)
+        assert result.action == "none"
+
     def test_cooldown_still_wins(self):
         """冷却优先级最高：纯发泄也要被冷却拦住（防骚扰不退化）"""
         result = judge_handoff(
