@@ -1142,6 +1142,83 @@ CREATE POLICY tenant_isolation_notifications ON notifications
     USING (tenant_id::text = current_setting('app.current_tenant_id'));
 
 -- ================================================
+-- 补齐迁移链曾创建但 bootstrap 缺失的表（issue #3270）
+-- 背景：schema.sql 与 db/migration 双源漂移 —— 迁移链含 5 张 schema.sql 没有的表
+-- （platform_admins / session_states / user_suggestion_prefs / finance_transactions /
+--  role_permissions）。docker bootstrap 只跑 schema.sql → 这些表缺失 → 迁移链再跑
+-- 又因「表已存在/顺序依赖」炸掉 → admin-api/ai-agent 运行时缺表 500。
+-- 收敛方向：schema.sql = 完整最终态（含全部表），docker bootstrap 跳过迁移链。
+-- ================================================
+
+-- 平台管理员（超管），平台级账号，无租户归属（V7）
+CREATE TABLE IF NOT EXISTS platform_admins (
+    id VARCHAR(64) PRIMARY KEY,
+    phone VARCHAR(32) UNIQUE NOT NULL,
+    password_hash VARCHAR(255),
+    nickname VARCHAR(128),
+    avatar VARCHAR(512),
+    status VARCHAR(32) DEFAULT 'active',
+    last_login_at TIMESTAMP WITH TIME ZONE,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+);
+
+-- 会话工作状态表（V12，会话管理重构 P1）：跨轮工作状态单一事实源
+CREATE TABLE IF NOT EXISTS session_states (
+    session_id VARCHAR(64) PRIMARY KEY REFERENCES sessions(id),
+    state JSONB NOT NULL DEFAULT '{}',
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 建议偏好表（V9）
+CREATE TABLE IF NOT EXISTS user_suggestion_prefs (
+    id BIGSERIAL PRIMARY KEY,
+    tenant_id BIGINT NOT NULL,
+    user_id BIGINT NOT NULL,
+    intent_type VARCHAR(64) NOT NULL,
+    click_count INTEGER DEFAULT 1,
+    last_clicked_at TIMESTAMPTZ DEFAULT NOW(),
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(tenant_id, user_id, intent_type)
+);
+CREATE INDEX IF NOT EXISTS idx_usp_tenant_user ON user_suggestion_prefs(tenant_id, user_id);
+
+-- 资金流水表（V11）：现金流单一事实来源
+CREATE TABLE IF NOT EXISTS finance_transactions (
+    id VARCHAR(36) PRIMARY KEY,
+    tenant_id BIGINT NOT NULL,
+    transaction_no VARCHAR(64) NOT NULL,
+    order_id VARCHAR(36),
+    order_no VARCHAR(64),
+    type VARCHAR(20) NOT NULL,
+    amount DECIMAL(12,2) NOT NULL DEFAULT 0,
+    payment_method VARCHAR(32),
+    status VARCHAR(20) NOT NULL DEFAULT 'success',
+    operator VARCHAR(64),
+    occurred_at TIMESTAMPTZ,
+    remark VARCHAR(500),
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    deleted INTEGER DEFAULT 0
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_finance_txn_no ON finance_transactions(tenant_id, transaction_no);
+CREATE INDEX IF NOT EXISTS idx_finance_txn_order ON finance_transactions(order_id);
+CREATE INDEX IF NOT EXISTS idx_finance_txn_occurred ON finance_transactions(tenant_id, occurred_at);
+
+-- 角色权限表（V16）
+CREATE TABLE IF NOT EXISTS role_permissions (
+    id VARCHAR(64) PRIMARY KEY,
+    tenant_id BIGINT NOT NULL,
+    role_id VARCHAR(64) NOT NULL,
+    permission_id VARCHAR(64) NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    deleted INTEGER DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_role_permissions_role ON role_permissions(role_id);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_role_permissions ON role_permissions(role_id, permission_id);
+
+-- ================================================
 -- 种子数据（与 schema_full.sql 对齐；bootstrap 必需 —— issue #3270 实测）
 -- ================================================
 -- 背景：ai-agent 的 DEBUG customer 身份固定 tenant_id=1（app/utils/auth.py），
