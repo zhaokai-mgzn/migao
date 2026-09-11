@@ -229,10 +229,11 @@ class FinanceApiTool(BaseTool):
     async def _get_summary(self, context: ToolContext, **kwargs) -> ToolResult:
         """收支汇总（FN-002）"""
         params: Dict[str, Any] = {}
-        if kwargs.get("start_date"):
-            params["startDate"] = kwargs["start_date"]
-        if kwargs.get("end_date"):
-            params["endDate"] = kwargs["end_date"]
+        # FN-004 参数契约：缺时间参数自动补本期默认（本月1号~今天）
+        import datetime as _dt
+        _today = _dt.date.today()
+        params["startDate"] = kwargs.get("start_date") or _today.replace(day=1).isoformat()
+        params["endDate"] = kwargs.get("end_date") or _today.isoformat()
 
         client = get_admin_api_client()
         response = await client.get(
@@ -274,10 +275,11 @@ class FinanceApiTool(BaseTool):
         }
         if kwargs.get("keyword"):
             params["keyword"] = kwargs["keyword"]
-        if kwargs.get("start_date"):
-            params["startDate"] = kwargs["start_date"]
-        if kwargs.get("end_date"):
-            params["endDate"] = kwargs["end_date"]
+        # FN-004 参数契约：缺时间参数自动补本期默认（本月1号~今天）
+        import datetime as _dt
+        _today = _dt.date.today()
+        params["startDate"] = kwargs.get("start_date") or _today.replace(day=1).isoformat()
+        params["endDate"] = kwargs.get("end_date") or _today.isoformat()
 
         client = get_admin_api_client()
         response = await client.get(
@@ -317,10 +319,11 @@ class FinanceApiTool(BaseTool):
         }
         if kwargs.get("keyword"):
             params["keyword"] = kwargs["keyword"]
-        if kwargs.get("start_date"):
-            params["startDate"] = kwargs["start_date"]
-        if kwargs.get("end_date"):
-            params["endDate"] = kwargs["end_date"]
+        # FN-004 参数契约：缺时间参数自动补本期默认（本月1号~今天）
+        import datetime as _dt
+        _today = _dt.date.today()
+        params["startDate"] = kwargs.get("start_date") or _today.replace(day=1).isoformat()
+        params["endDate"] = kwargs.get("end_date") or _today.isoformat()
 
         client = get_admin_api_client()
         response = await client.get(
