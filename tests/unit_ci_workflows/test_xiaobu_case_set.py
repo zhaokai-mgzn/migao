@@ -93,10 +93,10 @@ class TestXiaobuToolsetTruth:
     """C 端工具集真值：runner 内集合必须与 skill 源码一致（防手写漂移）"""
 
     def test_runner_toolset_matches_skill_source(self):
-        from local_runner import XIAOBU_TOOLS
+        from eval_case_filter import XIAOBU_TOOLS
         real = _xiaobu_real_toolset()
         assert set(XIAOBU_TOOLS) == real, (
-            f"local_runner.XIAOBU_TOOLS 与 skill 源码不一致\n"
+            f"eval_case_filter.XIAOBU_TOOLS 与 skill 源码不一致\n"
             f"  源码多出: {sorted(real - set(XIAOBU_TOOLS))}\n"
             f"  runner 多出: {sorted(set(XIAOBU_TOOLS) - real)}"
         )
@@ -120,7 +120,7 @@ class TestXiaobuCaseSelection:
     """PERSONA=xiaobu 选中的用例集归属正确性（假绿防线）"""
 
     def _selected(self):
-        from local_runner import select_cases_for_persona
+        from eval_case_filter import select_cases_for_persona
         return select_cases_for_persona(load_case_dicts(str(CASES_DIR)), PERSONA)
 
     def test_no_bmiabo_only_tool_in_selected_cases(self):
@@ -162,7 +162,7 @@ class TestXiaobuSmokeCoverage:
     """C 端 PR 门禁 smoke 档必须非空（否则 xiaobu-acceptance.yml 静默假绿）"""
 
     def test_smoke_tier_nonempty(self):
-        from local_runner import select_cases_for_persona
+        from eval_case_filter import select_cases_for_persona
         smokes = [c for c in select_cases_for_persona(load_case_dicts(str(CASES_DIR)), PERSONA)
                   if c.get("tier") == "smoke"]
         assert smokes, (
@@ -172,7 +172,7 @@ class TestXiaobuSmokeCoverage:
 
     def test_smoke_covers_core_customer_capability(self):
         """smoke 档应覆盖小布核心能力（身份/权限隔离类），不只知识问答"""
-        from local_runner import select_cases_for_persona
+        from eval_case_filter import select_cases_for_persona
         smokes = {c["id"] for c in select_cases_for_persona(load_case_dicts(str(CASES_DIR)), PERSONA)
                   if c.get("tier") == "smoke"}
         assert len(smokes) >= 3, (
@@ -186,14 +186,14 @@ class TestExpectationToolExtraction:
 
     def test_assertion_strings_not_treated_as_tools(self):
         """`success=true` / `data.orders.length >= 0` / 中文断言 不得被当作工具名"""
-        from local_runner import _case_expectation_tools
+        from eval_case_filter import case_expectation_tools as _case_expectation_tools
         fake = {"expectations": ["success=true", "data.orders.length >= 0",
                                  "未被调用", "product_search"]}
         assert _case_expectation_tools(fake) == {"product_search"}
 
     def test_dict_form_expectations_supported(self):
         """原始 YAML 形态（dict）与归一字符串形态（str）提取结果一致"""
-        from local_runner import _case_expectation_tools
+        from eval_case_filter import case_expectation_tools as _case_expectation_tools
         dict_form = {"expectations": [{"tool": "customer_order_query", "args": {"action": "list"}},
                                       {"tool": "interact"}, "success=true"]}
         str_form = {"expectations": ["customer_order_query(action=list)", "interact", "success=true"]}
@@ -202,7 +202,7 @@ class TestExpectationToolExtraction:
 
     def test_or_branches_all_extracted(self):
         """`A or B` 的 OR 语义：两个分支的工具都要提取（runner 支持任一满足）"""
-        from local_runner import _case_expectation_tools
+        from eval_case_filter import case_expectation_tools as _case_expectation_tools
         got = _case_expectation_tools({"expectations": ["human_handoff or direct_reply"]})
         assert got == {"human_handoff"}, f"direct_reply 是伪期望应剔除，实得 {got}"
         got2 = _case_expectation_tools(
@@ -211,13 +211,13 @@ class TestExpectationToolExtraction:
 
     def test_tool_with_args_forms(self):
         """`tool(args=1)` / `tool: args=1` / 纯 `tool` 三种形态都归一到工具名"""
-        from local_runner import _case_expectation_tools
+        from eval_case_filter import case_expectation_tools as _case_expectation_tools
         for exp in ["customer_order_query(action=list)", "customer_order_query: action=list",
                     "customer_order_query"]:
             assert _case_expectation_tools({"expectations": [exp]}) == {"customer_order_query"}
 
     def test_direct_reply_is_pseudo_tool(self):
         """direct_reply 是 runner 伪期望（无工具+有文本），不算真实工具"""
-        from local_runner import _case_expectation_tools
+        from eval_case_filter import case_expectation_tools as _case_expectation_tools
         assert _case_expectation_tools({"expectations": ["direct_reply"]}) == set()
 

@@ -26,16 +26,8 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / ".github"))
 sys.path.insert(0, str(REPO_ROOT / "tests" / "agent_eval"))
 
-if sys.version_info < (3, 10):
-    sys.exit(
-        "❌ 本脚本需 Python ≥3.10（复用 local_runner，其类型标注用了 `X | None`）。\n"
-        "   请用项目 venv 运行：\n"
-        "     backend/ai-agent-service/.venv/bin/python scripts/xiaobu_coverage.py\n"
-        "   （macOS 自带 python3 为 3.9，在此提前失败而非抛 SyntaxError/TypeError）"
-    )
-
 from render_cases import load_case_dicts  # noqa: E402
-import local_runner as lr  # noqa: E402
+import eval_case_filter as lr  # noqa: E402  （零依赖纯逻辑，无需 httpx）
 
 CASES_DIR = REPO_ROOT / ".github" / "cases"
 
@@ -75,7 +67,7 @@ def build_report():
     # ① 工具 → 覆盖用例
     coverage = {t: [] for t in sorted(lr.XIAOBU_TOOLS)}
     for c in selected:
-        for t in lr._case_expectation_tools(c):
+        for t in lr.case_expectation_tools(c):
             if t in coverage:
                 coverage[t].append(c["id"])
             else:
@@ -93,7 +85,7 @@ def build_report():
             continue
         if (c.get("skip_reason") or "").strip():
             continue          # skip_reason 声明了不跑，不算孤儿
-        extra = lr._case_expectation_tools(c) - lr.XIAOBU_TOOLS
+        extra = lr.case_expectation_tools(c) - lr.XIAOBU_TOOLS
         if extra:
             orphans.append((c["id"], sorted(extra)))
 

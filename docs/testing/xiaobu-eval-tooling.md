@@ -63,8 +63,11 @@ sed -i '' 's|^ADMIN_API_BASE_URL=.*|ADMIN_API_BASE_URL=https://api.migaozn.com|'
 | 3 | `persona: xiaobu` 的用例**无条件保留**（显式声明优先） |
 | 4 | 双端用例：其**全部**期望工具须 ⊆ `XIAOBU_TOOLS` 才保留 |
 
+实现落在 `tests/agent_eval/eval_case_filter.py::select_cases_for_persona`
+（`local_runner` 与覆盖脚本共用，避免三处口径漂移）。
+
 `XIAOBU_TOOLS` = 各 `customer_*_skill.py` 的 `CUSTOMER_*_TOOLS` 并集，共 13 个工具
-（单一真值来源；runner 内联集合与源码一致性由
+（单一真值来源 `tests/agent_eval/eval_case_filter.py`；与源码一致性由
 `tests/unit_ci_workflows/test_xiaobu_case_set.py::TestXiaobuToolsetTruth` 锁定）。
 
 ### 为什么废弃旧实现
@@ -100,8 +103,11 @@ backend/ai-agent-service/.venv/bin/python scripts/xiaobu_coverage.py --md
 另有**显式豁免**区：有用例但声明了 `skip_reason` 的工具（如 `customer_address_query`
 由 CH-025 覆盖但 skip，改由 pytest 验证）——豁免必须显式声明理由，不得靠「看起来有覆盖」。
 
-> 脚本需 Python ≥3.10（复用 `local_runner`），macOS 自带 python3 是 3.9，
-> 一律用 `backend/ai-agent-service/.venv/bin/python`。
+> 脚本零第三方依赖（纯逻辑在 `tests/agent_eval/eval_case_filter.py`），
+> `python3` 直接可跑。**为什么拆模块**：`local_runner` 有模块级 `import httpx`，
+> 而 CI 的 `ci workflow helper unit tests` job 只装 `pytest pyyaml` →
+> 测试一 import runner 就 ImportError（本地必装 httpx 故全绿，CI 红）。
+> 拆出零依赖纯函数后，runner / 契约测试 / 覆盖体检三处共用同一实现且都能跑。
 
 ## 6. 当前基线（2026-09-11，issue #3266）
 
