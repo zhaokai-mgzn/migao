@@ -1142,5 +1142,28 @@ CREATE POLICY tenant_isolation_notifications ON notifications
     USING (tenant_id::text = current_setting('app.current_tenant_id'));
 
 -- ================================================
+-- 种子数据（与 schema_full.sql 对齐；bootstrap 必需 —— issue #3270 实测）
+-- ================================================
+-- 背景：ai-agent 的 DEBUG customer 身份固定 tenant_id=1（app/utils/auth.py），
+-- 而 schema.sql 只建表不插种子 → 全新库上 sessions 插入违反
+-- `sessions_tenant_id_fkey`（tenant 1 不存在）→ 会话创建 HTTP 500 →
+-- 本地/CI docker 栈的 C 端评测全部失败（9/9，2026-08-31 起）。
+-- schema_full.sql 一直有这段种子，schema.sql 却缺失（两份 schema 漂移）。
+
+-- 默认租户（id=1）
+INSERT INTO tenants (id, name, code, industry, status)
+  OVERRIDING SYSTEM VALUE
+  VALUES (1, '米高智能', 'migao', '布艺窗帘', 'active')
+  ON CONFLICT (id) DO NOTHING;
+
+-- 默认角色（五岗：管理员/运营/客服 + 超管；角色码与 HR 用例对齐）
+INSERT INTO roles (id, tenant_id, name, code, description, status) VALUES
+  ('role_admin', 1, '管理员', 'admin', '租户管理权限', 'active'),
+  ('role_operator', 1, '运营', 'operator', '商品与订单运营', 'active'),
+  ('role_customer_service', 1, '客服', 'customer_service', '客服工作台权限', 'active'),
+  ('role_super_admin', 1, '超级管理员', 'super_admin', '平台级超管权限', 'active')
+  ON CONFLICT (id) DO NOTHING;
+
+-- ================================================
 -- END OF SCHEMA
 -- ================================================

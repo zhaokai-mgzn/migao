@@ -348,3 +348,50 @@ class TestDevStackRS256Keys:
             "导出步骤未写入 JWT_PUBLIC_KEY —— ai-agent 会因必填校验失败起不来"
         )
         assert "public.pem" in body, "JWT_PUBLIC_KEY 应取自测试密钥对的公钥文件"
+
+
+class TestBootstrapSeedData:
+    """bootstrap schema 必须包含**关键种子数据**（issue #3270）。
+
+    背景（2026-09-11 本地真库复现）：
+    `schema.sql` 只建表不插种子，而 ai-agent 的 DEBUG customer 身份固定
+    `tenant_id=1`（app/utils/auth.py）→ 全新库上 `INSERT INTO sessions` 违反
+    `sessions_tenant_id_fkey`（tenant 1 不存在）→ 会话创建 HTTP 500 →
+    C 端评测在本地/CI docker 栈**全部失败**（9/9，2026-08-31 起）。
+
+    复现证据（本地 initdb + 起 ai-agent）：
+    ```
+    IntegrityError: insert or update on table "sessions" violates foreign key
+    constraint "sessions_tenant_id_fkey"
+    DETAIL:  Key (tenant_id)=(1) is not present in table "tenants".
+    ```
+    补种子后：`POST /api/chat/sessions` 从 500 → 200，小布知识问答端到端可用。
+
+    `schema_full.sql` 一直有这段种子，`schema.sql` 缺失 —— 两份 schema 漂移
+    （本测试就是防止再次漂移）。
+    """
+
+    def _sql(self):
+        return SCHEMA.read_text(encoding="utf-8")
+
+    def test_seeds_default_tenant_1(self):
+        sql = self._sql()
+        assert re.search(r"INSERT\s+INTO\s+tenants[\s\S]*?VALUES\s*\(1,", sql, re.I), (
+            "bootstrap 必须种默认租户 id=1 —— ai-agent DEBUG customer 身份固定 tenant 1，"
+            "缺它会话创建必 500（sessions_tenant_id_fkey）"
+        )
+        assert "ON CONFLICT" in sql, "种子必须幂等（ON CONFLICT DO NOTHING）"
+
+    def test_seeds_default_roles(self):
+        sql = self._sql()
+        assert re.search(r"INSERT\s+INTO\s+roles[\s\S]*?role_admin", sql, re.I), (
+            "bootstrap 必须种默认角色（含 role_admin）—— 商户员工登录/权限链依赖"
+        )
+
+    def test_seed_block_lives_at_end_of_schema(self):
+        """种子在 END OF SCHEMA 之前（建表完成后才插数据）"""
+        sql = self._sql()
+        i_insert = sql.find("INSERT INTO tenants")
+        i_end = sql.find("END OF SCHEMA")
+        assert i_insert != -1 and i_end != -1
+        assert i_insert < i_end, "种子必须在全部建表语句之后（FK 依赖）"
