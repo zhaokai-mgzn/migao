@@ -22,6 +22,7 @@ from app.llm import (
     MODEL_PRIMARY,
     MODEL_FAST,
     MODEL_PRICING,
+    CostTracker,
     has_images,
     select_model,
 )
@@ -318,6 +319,58 @@ class TestVisionModelPricing:
         for m in ("qwen-vl-plus", "qwen-vl-max", "qwen-vl-ocr",
                   "MiniMax-M2.7-highspeed", "MiniMax-M3"):
             assert m not in MODEL_PRICING, f"{m} should be removed from pricing"
+
+
+class TestVisionModelCostAccounting:
+    """视觉模型的**成本记账完整性**（不只是「表里有模型」，而是「调用真被记上账」）
+
+    背景缺陷（本类回归锁定）：`MODEL_PRICING` 只登记了主/快模型，视觉模型
+    `settings.VISION_MODEL` 缺失 → `track_call(model=VISION_MODEL, ...)` 在
+    `_calc_cost_cny` 内走 fallback `MODEL_PRICING[settings.LLM_MODEL]`；而
+    `settings.LLM_MODEL = PRIMARY_MODEL or VISION_MODEL`，一旦两者都不在表内
+    就 **KeyError**。三处调用点（base_skill / follow_up / intent_classifier）均
+    try/except 吞掉 → 视觉调用的 token **静默不计费**，月度预算形同虚设。
+    """
+
+    def test_vision_model_in_pricing_table(self):
+        """VISION_MODEL 必须在定价表内（否则视觉调用成本静默丢失）"""
+        assert settings.VISION_MODEL in MODEL_PRICING, (
+            f"VISION_MODEL={settings.VISION_MODEL!r} 不在 MODEL_PRICING，"
+            "视觉调用成本会被静默漏算"
+        )
+
+    def test_vision_call_is_actually_accounted(self):
+        """视觉模型调用必须真实入账（有记录、成本>0、累计增长）"""
+        tracker = CostTracker()
+        record = tracker.track_call(
+            model=settings.VISION_MODEL,
+            input_tokens=1_000_000,
+            output_tokens=1_000_000,
+        )
+        assert record is not None, "视觉调用未产生 CostRecord（成本丢失）"
+        assert record.cost_cny > 0, "视觉调用成本为 0"
+        assert tracker.total_cost == pytest.approx(record.cost_cny)
+
+    def test_unknown_model_with_unpriced_default_does_not_raise(self):
+        """兜底路径本身必须兜得住：默认模型也不在表内时不得 KeyError
+
+        缺陷场景：PRIMARY_MODEL/VISION_MODEL 换成新模型名而定价表未跟进 →
+        连「回退到主模型定价」这一步都 KeyError → 全量成本追踪静默失效。
+        """
+        from app.llm.cost_tracker import _calc_cost_cny
+
+        original_primary = settings.PRIMARY_MODEL
+        original_vision = settings.VISION_MODEL
+        try:
+            settings.PRIMARY_MODEL = "brand-new-unpriced-model"
+            settings.VISION_MODEL = "brand-new-unpriced-model"
+            # 不得抛 KeyError
+            cost = _calc_cost_cny("another-unknown-model", 1_000_000, 1_000_000)
+        finally:
+            settings.PRIMARY_MODEL = original_primary
+            settings.VISION_MODEL = original_vision
+
+        assert cost > 0, "兜底定价必须给出正成本，而不是 0 或异常"
 
 
 # =============================================================================
