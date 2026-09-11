@@ -395,3 +395,57 @@ class TestBootstrapSeedData:
         i_end = sql.find("END OF SCHEMA")
         assert i_insert != -1 and i_end != -1
         assert i_insert < i_end, "种子必须在全部建表语句之后（FK 依赖）"
+
+
+class TestDebugPassthroughForEval:
+    """ai-agent 必须能收到 DEBUG=true（issue #3270：C 端评测的鉴权前提）。
+
+    背景：`X-Debug-Role: customer` 调试身份注入只在 `DEBUG=true` 时生效
+    （app/utils/auth.py fail-closed）。docker-compose 此前**未**透传 DEBUG →
+    容器内 `DEBUG=False`、`Environment=production` → 评测请求被
+    `401 AUTH_REQUIRED` 拒绝 → C 端评测 100% 失败。
+
+    实测证据（CI 诊断）：
+        aikf-ai-agent | Logging system initialized (debug=False)
+        aikf-ai-agent | Environment: production
+        ❌ 创建会话失败: HTTP 401 AUTH_REQUIRED
+    """
+
+    def test_compose_passes_debug_to_ai_agent(self):
+        import yaml
+        d = yaml.safe_load(COMPOSE.read_text(encoding="utf-8")) or {}
+        env = d["services"]["ai-agent-service"]["environment"]
+        assert "DEBUG" in env, (
+            "compose 未向 ai-agent 透传 DEBUG —— 本地/CI 栈内 DEBUG=False，"
+            "X-Debug-Role 调试身份被 fail-closed 拒绝（401），评测无法运行"
+        )
+
+    def test_debug_default_is_false(self):
+        """默认必须是 false（生产安全 fail-closed），由工作流显式传 true"""
+        import yaml
+        d = yaml.safe_load(COMPOSE.read_text(encoding="utf-8")) or {}
+        raw = str(d["services"]["ai-agent-service"]["environment"]["DEBUG"])
+        assert ":-false}" in raw or raw in ("false", "${DEBUG}"), (
+            f"DEBUG 默认值应安全（false / 显式外部传入），实为 {raw!r}"
+        )
+
+    def test_workflow_sets_debug_true_for_stack(self):
+        """验收 workflow 必须显式把 DEBUG 传给起栈步骤"""
+        import yaml
+        wf = WORKFLOWS_DIR / "xiaobu-acceptance.yml"
+        d = yaml.safe_load(wf.read_text(encoding="utf-8")) or {}
+        step = next((s_ for s_ in d["jobs"]["xiaobu-acceptance"]["steps"]
+                     if "Start local stack" in (s_.get("name") or "")), {})
+        env = step.get("env") or {}
+        assert str(env.get("DEBUG", "")).lower() == "true", (
+            "起栈步骤未设置 DEBUG=true —— ai-agent 会以 production 模式启动，"
+            "X-Debug-Role 被拒绝导致评测 401"
+        )
+
+    def test_debug_true_actually_enables_debug_role(self):
+        """语义核实：DEBUG=true 时 X-Debug-Role 才被接受（源码级契约）"""
+        repo_root = Path(__file__).parent.parent.parent
+        auth = (repo_root / "backend" / "ai-agent-service" / "app" / "utils" / "auth.py").read_text(encoding="utf-8")
+        assert "settings.DEBUG and debug_role" in auth, (
+            "auth.py 的调试身份注入条件已变更 —— 需同步本测试与 compose 契约"
+        )
