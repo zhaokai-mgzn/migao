@@ -569,3 +569,37 @@ class TestEvalRunnerDepsInstalled:
             assert "pytest-timeout" in install, "--timeout 需要 pytest-timeout"
         if "--reruns" in body:
             assert "pytest-rerunfailures" in install, "--reruns 需要 pytest-rerunfailures"
+
+
+class TestEvalTierDispatch:
+    """C 端评测档位可切换（issue #3270 第 2 步：取缺陷分布）。
+
+    只跑 smoke（5 条）等于体检只量身高。要拿「C 端能力缺陷分布」必须能跑
+    normal 档（C 端全量 ~40 条）。档位由 workflow_dispatch 输入控制，
+    默认 smoke 保持门禁快速。
+    """
+
+    def _wf(self):
+        import yaml
+        return yaml.safe_load((WORKFLOWS_DIR / "xiaobu-acceptance.yml").read_text(encoding="utf-8")) or {}
+
+    def test_dispatch_exposes_tier_choice(self):
+        wf = self._wf()
+        # yaml 会把裸 on: 解析成 True 键
+        triggers = wf.get("on") or wf.get(True) or {}
+        dispatch = triggers.get("workflow_dispatch") or {}
+        inputs = dispatch.get("inputs") or {}
+        assert "tier" in inputs, "workflow_dispatch 必须暴露 tier 输入（否则只能跑 smoke）"
+        opts = inputs["tier"].get("options") or []
+        assert "smoke" in opts and "normal" in opts, f"tier 选项须含 smoke/normal，实为 {opts}"
+        assert inputs["tier"].get("default", "") == "smoke", "默认应为 smoke（门禁保持快速）"
+
+    def test_eval_step_uses_tier_variable(self):
+        wf = self._wf()
+        step = next((s_ for s_ in wf["jobs"]["xiaobu-acceptance"]["steps"]
+                     if "local_runner" in (s_.get("name") or "")), {})
+        body = step.get("run") or ""
+        assert "github.event.inputs.tier" in body, "评测步骤未读取 tier 输入"
+        assert 'local_runner.py "$TIER"' in body, "评测步骤未把 tier 作为档位参数传给 runner"
+        # 不得再硬编码 smoke（否则档位切换失效）
+        assert "local_runner.py smoke" not in body, "评测步骤仍硬编码 smoke 档"
