@@ -1,4 +1,5 @@
 package com.migao.admin.config;
+// case_ids: MC-012, DF-011
 
 import com.aliyun.oss.OSS;
 import org.junit.jupiter.api.DisplayName;
