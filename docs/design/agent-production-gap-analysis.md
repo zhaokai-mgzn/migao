@@ -1083,3 +1083,23 @@ PR-005/007/011/012）：LLM 长序列波动（单跑通过、全量偶发）+ PP
 
 **结论**：85% 为当前最佳完整基线（与 Round 61 持平），交叉验证发现的 HR-003
 已闭环。剩余为模型方差（需模型迭代）+ 模型能力认知（PP-006）。
+
+## 五十五、Round 72 PP-006 架构根因闭环（双模型实测 + 工具注册缺失）
+
+用户要求 PRO 模型实测 PP-006（此前归类 flash 模型认知边界）。实测结论：
+
+1. **PRO 模型同样失败**（同款能力误宣「新增加工项不在商品管理能力范围」）——
+   非 flash 模型特有问题（#3254 临时切 PRO 验证后恢复 flash）。
+2. **命名假设验证**（用户提出 create_item 过于泛化）：改名 create_item →
+   create_processing_item（#3256）后**仍失败** → 命名非根因（单独不足以修复）。
+3. **真根因（路由追踪）**：PROCESSING_MANAGE 意图路由到 product_skill
+   （intents 配置），但 **PRODUCT_TOOLS 缺 processing_item_manage**（创建加工
+   项工具未注册）→ agent 工具列表里没有创建加工项能力，」只有查询加工项能力」
+   是其工具集的合理陈述（能力误宣的架构根因）！
+4. **修复**（#3257）：PRODUCT_TOOLS 补 processing_item_manage + prompt 修正
+   （加工项创建→processing_item_manage，禁止用 product_manage 建加工项）+
+   #3258 case 补计价方式轮 → **PP-006 100%**（query → list_categories →
+   validate_input → 确认卡 → create_processing_item 成功）。
+
+**方法论**：双模型实测 + 工具路由追踪定位「能力误宣」的架构根因（工具未注册），
+命名/引导等表面修复需验证到工具可达链。PP-006 从 Round 51 归因至今闭环。
