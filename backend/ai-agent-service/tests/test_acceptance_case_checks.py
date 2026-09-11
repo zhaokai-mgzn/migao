@@ -823,3 +823,66 @@ class TestBuildRoundTrace:
         assert "round_trace" in out, "run_case 返回体缺少 round_trace"
         assert [t["round"] for t in out["round_trace"]] == [1, 2]
         assert out["round_trace"][0]["tools"] == ["customer_order_query"]
+
+
+class TestRoundTraceToolOutcomes:
+    """轨迹必须区分「**调了**」与「**成了**」（写工具被门禁拦截的关键证据）
+
+    为什么关键：`tool_calls` 记的是 LLM 发起的调用。写工具被 confirm 门禁拦截时
+    返回 `{"success": false, "error": "confirmation_required"}`，**调用名照样出现在
+    tool_calls 里** → 报告读起来像「写操作正常执行」，实际一次都没落库
+    （CH-012 的 aftersale_create 就是这种形态）。故每轮另记 `results:{tool,ok,error}`。
+    """
+
+    def test_success_and_failure_both_recorded(self):
+        results = [{
+            "__round": 1,
+            "tool_calls": [{"name": "customer_order_query"}, {"name": "aftersale_create"}],
+            "tool_results": [
+                {"tool": "customer_order_query", "result": {"success": True}},
+                {"tool": "aftersale_create",
+                 "result": {"success": False, "error": "confirmation_required"}},
+            ],
+            "final_text": "",
+        }]
+        trace = lr.build_round_trace(results)[0]
+        assert trace["results"] == [
+            {"tool": "customer_order_query", "ok": True, "error": None},
+            {"tool": "aftersale_create", "ok": False, "error": "confirmation_required"},
+        ]
+
+    def test_missing_success_flag_treated_as_not_ok(self):
+        """缺 success 字段 → 视为未成功（宁可显性可疑，不可静默当成成功）"""
+        results = [{"__round": 1, "tool_calls": [], "final_text": "",
+                    "tool_results": [{"tool": "x", "result": {}}]}]
+        r = lr.build_round_trace(results)[0]["results"][0]
+        assert r["ok"] is False
+        assert r["error"] == "no_success_flag"
+
+    def test_non_dict_result_is_safe(self):
+        results = [{"__round": 1, "tool_calls": [], "final_text": "",
+                    "tool_results": ["garbage", {"tool": "y", "result": "not-a-dict"}]}]
+        trace = lr.build_round_trace(results)[0]
+        # 非 dict 事件被忽略；result 非 dict 时按未成功记
+        assert [r["tool"] for r in trace["results"]] == ["y"]
+        assert trace["results"][0]["ok"] is False
+
+    def test_format_marks_failed_tools(self):
+        trace = [{
+            "round": 1, "tools": ["aftersale_create"], "cards": [], "interactive": [],
+            "text": "", "error": None,
+            "results": [{"tool": "aftersale_create", "ok": False,
+                         "error": "confirmation_required"}],
+        }]
+        line = lr.format_round_trace(trace)
+        assert "failed=aftersale_create!confirmation_required" in line, (
+            "格式化未显性标出失败工具 —— 日志里「调了」与「成了」又会同形"
+        )
+
+    def test_format_no_failed_marker_when_all_ok(self):
+        trace = [{
+            "round": 1, "tools": ["customer_order_query"], "cards": [], "interactive": [],
+            "text": "", "error": None,
+            "results": [{"tool": "customer_order_query", "ok": True, "error": None}],
+        }]
+        assert "failed=" not in lr.format_round_trace(trace)

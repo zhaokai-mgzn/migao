@@ -234,11 +234,17 @@ C 端评测链路有三处破损，与用例库正确性无关，但会让「评
 `local_runner.py` 现为每条失败用例打印逐轮轨迹：
 
 ```
-trace: [R1 tools=customer_order_query cards=choice] [R2 tools=human_handoff] [R3 tools=- ERR]
+trace: [R1 tools=customer_order_query,aftersale_create failed=aftersale_create!confirmation_required cards=choice] [R2 tools=human_handoff] [R3 tools=- ERR]
 ```
 
-字段：每轮 `round / tools / cards / interactive / text(截断 60 字) / error`，
+字段：每轮 `round / tools / results / cards / interactive / text(截断 60 字) / error`，
 同时进入返回体与 CI 产物（可直接 JSON 序列化），也可用 `round_trace` 写更强的断言。
+
+**「调了」≠「成了」**：`tools` 记的是 LLM **发起**的调用。写工具被 confirm 门禁拦截时
+返回 `{"success": false, "error": "confirmation_required"}`，**调用名照样出现在 tools 里**
+—— 报告读起来像「写操作正常执行」，实际一次都没落库（CH-012 的 `aftersale_create`
+就是这种形态）。故每轮另记 `results: {tool, ok, error}`，格式化时以
+`failed=<tool>!<error>` 显性标出；缺 `success` 字段一律按**未成功**记。
 
 **用工具反推 Skill**：Skill 的工具集互不重叠，逐轮工具名即可反推该轮 Skill
 （如 `customer_order_query` 只出现在 `customer_order`）。**映射以

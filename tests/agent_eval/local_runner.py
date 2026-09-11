@@ -1183,7 +1183,7 @@ def _auto_select_first_option(results: list) -> str | None:
 
 
 def build_round_trace(results: list) -> list:
-    """构造逐轮轨迹：每轮的用户输入形态 / 工具 / 卡 / 回复摘要。
+    """构造逐轮轨迹：每轮的用户输入形态 / 工具 / 卡 / 回复摘要 / **工具成败**。
 
     为什么需要（issue #3270 归因层）：扁平 `tool_calls` 只说明「整场用过哪些工具」，
     无法回答**哪一轮走了哪个 Skill**——而「路由错到别的 Skill」与「Skill 没给这个
@@ -1192,15 +1192,20 @@ def build_round_trace(results: list) -> list:
     既可能是「R1 被路由到 customer_order（该 Skill 无 aftersale_create）」，
     也可能是「R1 路由正确但 LLM 没建单」—— 两种结论的修复方向完全相反。
 
+    另一条同样致命的模糊：`tool_calls` 记录的是 **LLM 发起的调用**，不代表工具真的做成事。
+    写工具被 confirm 门禁拦截时返回 `{"success": false, "error": "confirmation_required"}`，
+    但调用名照样出现在 `tool_calls` 里 —— 「调了」与「成了」必须分开记，
+    否则「写操作其实一次都没落库」会被读成「写操作正常执行」。
+    故每轮另记 `results`：`{tool, ok, error}`（来自 SSE tool_result 事件）。
+
     设计取舍：本函数**只做事实记录，不做 Skill 推断**。Skill 工具集互不重叠，
     读轨迹者用「工具 → Skill」映射即可反推（该映射见
-    docs/testing/xiaobu-eval-tooling.md，并由
-    tests/unit_ci_workflows/test_skill_tool_map_sync.py 与代码保持同步）。
+    docs/testing/xiaobu-eval-tooling.md，并以 app/graph/skills/*.py 为单一事实源）。
     刻意不在此处硬编码 Skill 表：local_runner 是零依赖脚本（CI 只装 httpx），
     不能 import app.*，硬编码副本必然与 skill 定义漂移。
 
     Returns:
-        list[dict]: 每轮 {round, tools, cards, interactive, text}（均为纯 JSON 类型）
+        list[dict]: 每轮 {round, tools, results, cards, interactive, text, error}
     """
     trace: list[dict] = []
     for r in results or []:
@@ -1208,6 +1213,7 @@ def build_round_trace(results: list) -> list:
         trace.append({
             "round": r.get("__round"),
             "tools": [str(tc.get("name", "")) for tc in (r.get("tool_calls") or [])],
+            "results": _tool_result_status(r.get("tool_results") or []),
             "cards": [str(c.get("type") or c.get("card_type") or "") for c in (r.get("cards") or [])],
             "interactive": [
                 str(iv.get("type") or iv.get("component") or "")
@@ -1220,12 +1226,39 @@ def build_round_trace(results: list) -> list:
     return trace
 
 
+def _tool_result_status(tool_results: list) -> list:
+    """把 SSE tool_result 事件压成 [{tool, ok, error}]（失败必须显性可见）。
+
+    `ok` 判定：结果 dict 的 `success` 为真才算成了 —— 缺失 `success` 视为未知，
+    按**不成功**记录（宁可显性可疑，不可静默当成成功）。
+    """
+    out = []
+    for tr in tool_results or []:
+        if not isinstance(tr, dict):
+            continue
+        res = tr.get("result") if isinstance(tr.get("result"), dict) else {}
+        ok = bool(res.get("success"))
+        out.append({
+            "tool": str(tr.get("tool", "")),
+            "ok": ok,
+            "error": None if ok else str(res.get("error") or "no_success_flag"),
+        })
+    return out
+
+
 def format_round_trace(trace: list) -> str:
-    """把逐轮轨迹压成一行，供 CI 日志按用例打印。"""
+    """把逐轮轨迹压成一行，供 CI 日志按用例打印。
+
+    失败的工具带 `!error` 后缀 —— 让「调了但没成」在日志里一眼可见
+    （confirm 门禁拦截的写工具就长这样）。
+    """
     parts = []
     for t in trace or []:
         bits = [f"R{t.get('round')}"]
         bits.append("tools=" + (",".join(t.get("tools") or []) or "-"))
+        failed = [f"{x['tool']}!{x['error']}" for x in (t.get("results") or []) if not x.get("ok")]
+        if failed:
+            bits.append("failed=" + ",".join(failed))
         if t.get("interactive"):
             bits.append("cards=" + ",".join(t["interactive"]))
         if t.get("error"):
