@@ -605,3 +605,52 @@ cases:
       ci:
         - agent-eval.yml
       verifies: []
+
+  - id: OR-017
+    legacy_id: ""
+    title: "C 端自助下单加工项闭环 - 必须查详情→主动询问→加工费落单（不凭列表错报无加工项）"
+    domains:
+      - order
+      - chat
+      - product
+    tier: normal
+    persona: xiaobu
+    tags:
+      - order_create
+      - processing_item
+      - guided_flow
+      - xiaobu
+    truths_ref:
+      - order.create-flow
+    user_inputs:
+      - "我想买夏日清风窗帘，米白色，3米，门幅2.8米散剪"
+      - "我是张三，手机13800138000，地址杭州市西湖区文三路1号"
+      - "确认"
+    expectations:
+      - tool: product_search
+      - tool: product_detail
+      - tool: interact
+        args:
+          component: choice
+          multiSelect: true
+      - tool: order_create
+    data_checks:
+      - "product_search 列表数据不含 processing_items/colorId/skus，必须先调 product_detail 取详情；未调详情即断言「无加工项」属能力误宣"
+      - "加工项非空时 confirm 之前必须用 interact(choice, multiSelect=true) 主动询问，列出名称与单价（如「纳米圈打孔 ¥8/米」）"
+      - "所选加工项写入 order_create 的 processing_info.processingItems（id/name/unitPrice/quantity/unit/pricingMethod/subtotal），合计写入 processingFee 且计入订单金额；按米计价项加工数量=面料米数"
+      - "顾客说「不需要加工项」可跳过；加工项确实为空时才告知无可用加工项"
+    order_before:
+      - "interact[choice:processing_items] before interact[confirm]"
+      - "interact[choice:processing_items] before order_create"
+    forbidden_text:
+      - "暂未查询到可选加工项"
+      - "无可用加工项"
+      - "该商品无加工项"
+    skip_reason: ""
+    merge_log: "2026-09-11 新增（issue #3270 C 端加工项能力补齐）：实测修复前 agent 只调 product_search 未调 product_detail，向顾客断言「这款商品暂未查询到可选加工项」，而该商品实际有 2 个加工项（纳米圈打孔 ¥8/米、韩式波浪折边 ¥12/米）→ 顾客永远选不到加工项、加工费进不了单。修复后实测同输入已主动列出真实加工项与单价。forbidden_text 锁定「凭列表错报无加工项」这一确定性反模式"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_customer_order_processing_item.py"
+      ci:
+        - xiaobu-acceptance.yml
+      verifies: []
