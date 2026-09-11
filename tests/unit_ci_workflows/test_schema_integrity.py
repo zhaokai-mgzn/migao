@@ -234,3 +234,40 @@ class TestPostgresHealthcheckMatchesDatabase:
         assert "schema.sql" in mounts and "docker-entrypoint-initdb.d" in mounts, (
             f"compose 未把 docs/sql/schema.sql 挂为 initdb 脚本：{mounts!r}"
         )
+
+
+class TestAiAgentRequiredSettingsProvided:
+    """compose 必须为 ai-agent 的**必填**配置项提供值（issue #3270）。
+
+    先例：`app/config.py` 里以下 6 项声明为无默认值的必填字段
+    （`JWT_PUBLIC_KEY: str` 等），而 compose 未提供 →
+    `pydantic_core.ValidationError: 6 validation errors for Settings`
+    → aikf-ai-agent 起不来 → 整个栈失败。
+
+    实测：本地补齐这 6 项后 `from app.config import settings` 加载成功。
+    """
+
+    REQUIRED = ["JWT_PUBLIC_KEY", "LOGISTICS_API_URL", "LOGISTICS_APPCODE",
+                "SSE_TIMEOUT", "SSE_PING_INTERVAL", "CORS_ALLOWED_ORIGINS"]
+
+    def _ai_agent_env(self):
+        import yaml
+        d = yaml.safe_load(COMPOSE.read_text(encoding="utf-8")) or {}
+        return d["services"]["ai-agent-service"]["environment"]
+
+    def test_all_required_settings_present_in_compose(self):
+        env = self._ai_agent_env()
+        missing = [k for k in self.REQUIRED if k not in env]
+        assert not missing, (
+            f"compose 未为 ai-agent 必填配置提供值：{missing} —— "
+            "app/config.py 中这些字段无默认值，缺任一则服务启动即 ValidationError"
+        )
+
+    def test_numeric_settings_have_usable_defaults(self):
+        """SSE 两项必须给数值默认值（空串会让 int 校验失败）"""
+        env = self._ai_agent_env()
+        for k in ["SSE_TIMEOUT", "SSE_PING_INTERVAL"]:
+            raw = str(env[k])
+            m = re.search(r":-(\d+)\}", raw)
+            assert m, f"{k} 未提供数值默认值（实为 {raw!r}）—— int 字段会校验失败"
+            assert int(m.group(1)) > 0, f"{k} 默认值必须为正数，实为 {m.group(1)}"
