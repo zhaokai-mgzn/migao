@@ -179,12 +179,16 @@ class OssConfigTest {
     }
 
     @Test
-    @DisplayName("@Bean 方法应有 @ConditionalOnProperty 注解")
+    @DisplayName("@Bean 方法应有条件注解（凭据缺失时不注册）")
     void ossClientMethod_shouldHaveConditionalAnnotation() throws NoSuchMethodException {
         var method = OssConfig.class.getMethod("ossClient");
+        // 注解从 @ConditionalOnProperty 改为 @ConditionalOnExpression（issue #3270）：
+        // 前者按「属性是否存在」判定，而 application.yml 把 endpoint 默认成空串，
+        // 空串也算存在 → 条件恒成立 → 无凭据仍建 client → 抛
+        // InvalidCredentialsException 拖垮应用启动。改为 SpEL 判「非空白」。
         var annotation = method.getAnnotation(
-                org.springframework.boot.autoconfigure.condition.ConditionalOnProperty.class);
+                org.springframework.boot.autoconfigure.condition.ConditionalOnExpression.class);
         assertThat(annotation).isNotNull();
-        assertThat(annotation.name()).contains("aliyun.oss.endpoint");
+        assertThat(annotation.value()).contains("aliyun.oss.endpoint").contains("trim()");
     }
 }

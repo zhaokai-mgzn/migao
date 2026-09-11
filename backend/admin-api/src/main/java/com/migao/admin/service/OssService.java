@@ -7,8 +7,8 @@ import com.aliyun.oss.OSS;
 import com.aliyun.oss.model.CannedAccessControlList;
 import com.aliyun.oss.model.ObjectMetadata;
 import lombok.RequiredArgsConstructor;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -25,13 +25,24 @@ import java.util.UUID;
 
 /**
  * 阿里云 OSS 文件存储服务实现
- * 当 aliyun.oss.endpoint 环境变量存在时使用此实现（优先级高于 LocalFileStorageService）
+ * 仅当 **OSS 客户端 bean 存在**（即 ossClient 凭据齐备、未被跳过）时启用，
+ * 优先级高于 LocalFileStorageService。
+ *
+ * 条件注解的选择（issue #3270 实测踩坑，两个都不能用）：
+ * - `@ConditionalOnProperty(name = "aliyun.oss.endpoint")`：对**空字符串**恒成立
+ *   （application.yml 默认 `endpoint: ${OSS_ENDPOINT:}` 即空串），无凭据时仍注册本类
+ *   → 构造器注入 OSS 失败 → **整个应用启动失败**。
+ * - `@ConditionalOnBean(OSS.class)`：`@Service` 的 bean 定义在 `@Configuration` 之前注册，
+ *   条件求值时 OSS bean 定义尚未出现 → 同样失败。
+ *
+ * 故用 `@ConditionalOnExpression` 直接判「三项凭据是否都非空白」——纯属性求值，
+ * 与 bean 注册顺序无关，且对空串判断正确。
  */
 @Slf4j
 @Service
 @Primary
 @RequiredArgsConstructor
-@ConditionalOnProperty(name = "aliyun.oss.endpoint")
+@ConditionalOnExpression(OssConfig.REQUIRE_OSS_CREDENTIALS)
 public class OssService implements FileStorageService {
 
     private final OSS ossClient;
