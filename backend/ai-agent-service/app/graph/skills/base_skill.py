@@ -43,8 +43,31 @@ from app.core import (
 from app.llm import LLMFactory, select_model, has_images, call_with_retry, cost_tracker
 
 
-# LLM 熔断器名
-LLM_BREAKER = "llm_minimax"
+# ── LLM 熔断器作用域与超时（issue #3270）──
+# 历史坑（2026-09-11 实测）：此前所有 skill 共用**一个全局**熔断器名
+# `LLM_BREAKER = "llm_minimax"`（遗留名，与实际模型无关）→ 任一 skill 的 LLM
+# 连续 3 次超时即把该全局熔断器打成 OPEN → **全部** skill 的 LLM 调用被拒 →
+# 用户侧（含 C 端小布）查订单/下单/问答统一返回兜底文案「抱歉，AI 服务暂时不可用」。
+#
+#     [circuit-breaker:llm_minimax] OPEN → HALF_OPEN | recovery_timeout(30.0s)
+#     [circuit-breaker:llm_minimax] HALF_OPEN → OPEN | probe failed: TimeoutError
+#     [customer_order][SLS] LLM circuit_breaker_open
+#
+# 改为**按 skill 隔离**：单 skill 退化不拖垮其他能力（爆炸半径从「整机」收到「单能力」）。
+LLM_BREAKER_PREFIX = "llm:"
+
+# LLM 单次调用超时（秒）。60s 对 reasoning 模型 + 多工具 prompt 偏紧，实测
+# deepseek-v4-pro 长 prompt 偶发 >60s → 3 次即误熔断。120s 给足余量，同时仍
+# 由熔断器兜住真正卡死的下游。
+LLM_CALL_TIMEOUT_S = 120.0
+
+
+def llm_breaker_name(skill_name: str) -> str:
+    """按 skill 维度生成 LLM 熔断器名（issue #3270 作用域隔离）。
+
+    同一 skill 多次取名字必须稳定（否则每次新建熔断器 → 熔断失效）。
+    """
+    return f"{LLM_BREAKER_PREFIX}{skill_name or 'unknown'}"
 
 
 def _strip_think_tags(text: str) -> str:
@@ -1198,10 +1221,11 @@ async def execute_skill(
         for vision_attempt in range(2):
             try:
                 logger.info(f"[{skill_name}][DIAG] Vision LLM calling | attempt={vision_attempt+1}/2 session={session_id}")
-                llm_breaker = get_breaker(LLM_BREAKER)
+                llm_breaker = get_breaker(llm_breaker_name(skill_name))
 
                 async def _vision_invoke():
-                    return await asyncio.wait_for(llm.ainvoke(full_messages), timeout=60.0)
+                    return await asyncio.wait_for(llm.ainvoke(full_messages),
+                                                  timeout=LLM_CALL_TIMEOUT_S)
 
                 response: AIMessage = await call_with_retry(lambda: llm_breaker.call(_vision_invoke))
                 _track_llm_cost(response, model=llm_model_name, tenant_id=state.get("tenant_id"), session_id=session_id)
@@ -1311,10 +1335,13 @@ async def execute_skill(
                 # ── LLM 调用（超时 + 熔断保护）──
                 try:
                     logger.info(f"[{skill_name}][DIAG] LLM calling | iter={iteration+1} msgs={len(full_messages)+len(new_messages)} session={session_id}")
-                    llm_breaker = get_breaker(LLM_BREAKER)
+                    llm_breaker = get_breaker(llm_breaker_name(skill_name))
 
                     async def _llm_invoke():
-                        return await asyncio.wait_for(current_llm.ainvoke(full_messages + new_messages), timeout=60.0)
+                        return await asyncio.wait_for(
+                            current_llm.ainvoke(full_messages + new_messages),
+                            timeout=LLM_CALL_TIMEOUT_S,
+                        )
 
                     response: AIMessage = await call_with_retry(lambda: llm_breaker.call(_llm_invoke))
                     _track_llm_cost(response, model=llm_model_name, tenant_id=state.get("tenant_id"), session_id=session_id)

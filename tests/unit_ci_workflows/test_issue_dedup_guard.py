@@ -194,3 +194,45 @@ class TestRunCommands:
             for _, step in steps:
                 script = step.get("with", {}).get("script", "")
                 assert "issues.create(" in script, f"{name} 无 issues.create 调用"
+
+
+class TestSearchApiMethodName:
+    """去重搜索必须调用**真实存在**的 octokit 方法（issue #3270）。
+
+    背景：六个 workflow 的守卫都写成了 `github.rest.search.issues({ q })` ——
+    该方法在 octokit 的 REST plugin 里**不存在**（正确名为
+    `search.issuesAndPullRequests`）。运行时抛
+    `TypeError: github.rest.search.issues is not a function`
+    → 整个「失败自动开 issue」步骤崩掉 → **issue 从未被创建**，
+    工作流默默红了没人知道（xiaobu-acceptance 自 2026-08-31 起 9/9 全 failure 无人知）。
+
+    为何原有断言没拦住：`test_create_step_contains_dedup_search` 用的是
+    子串断言 `"search.issues" in script`，而错误写法 `search.issues(` 恰好是它的
+    子串 → 假通过。本类用带左括号的精确形态锁定。
+    """
+
+    @staticmethod
+    def test_no_nonexistent_search_issues_method():
+        """不得出现 `search.issues(` —— octokit 无此方法（精确形态，避免子串误判）。"""
+        offenders = []
+        for f in sorted(WORKFLOWS_DIR.glob("*.yml")):
+            text = f.read_text(encoding="utf-8")
+            if re.search(r"search\.issues\s*\(", text):
+                offenders.append(f.name)
+        assert not offenders, (
+            f"以下 workflow 调用了不存在的 octokit 方法 search.issues(...)：{offenders}\n"
+            "正确方法名：github.rest.search.issuesAndPullRequests({ q })"
+        )
+
+    @staticmethod
+    def test_guarded_workflows_use_correct_search_method():
+        """六个守卫 workflow 必须用正确的 search 方法名。"""
+        for name in GUARDED_WORKFLOWS:
+            wf = load_workflow(name)
+            steps = find_issue_create_steps(wf)
+            assert steps, f"{name} 无 issues.create step（前提失效）"
+            for job_name, step in steps:
+                script = step.get("with", {}).get("script", "")
+                assert re.search(r"search\.issuesAndPullRequests\s*\(", script), (
+                    f"{name} [{job_name}] 去重搜索未用 search.issuesAndPullRequests(...)"
+                )
