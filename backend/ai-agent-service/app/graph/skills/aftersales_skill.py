@@ -14,12 +14,10 @@ from app.graph.skills.skill_config import SkillConfig
 AFTERSALES_TOOLS = ["order_query", "order_manage", "after_sales_manage",
     "validate_input",  # 写操作前置校验
     "interact",        # 交互卡片：写操作 confirm、售后类型/原因 choice
-    "human_handoff",   # 投诉/转人工（审计 A 修复：complaint 意图路由本 skill 但工具缺失 → 投诉无法转人工）
 ]
 
 # 售后 Skill 专用 System Prompt
-AFTERSALES_SYSTEM_PROMPT = """## 投诉/转人工：用户投诉、明确要求转人工、情绪激动、涉赔偿法律时，调 human_handoff 转人工（C 端同款协议），禁止声称无法转人工（审计 A 修复）。
-## 售后工单枚举（英文仅内部传值，回复用户必须用中文）
+AFTERSALES_SYSTEM_PROMPT = """## 售后工单枚举（英文仅内部传值，回复用户必须用中文）
 
 ticket_type: refund=退款/exchange=换货/repair=维修/complaint=投诉/other=其他
 priority: normal=普通/urgent=紧急/critical=严重
