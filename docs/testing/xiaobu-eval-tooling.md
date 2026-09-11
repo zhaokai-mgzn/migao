@@ -169,11 +169,34 @@ B 端评测跑**生产**（有真实数据），C 端跑**全新 bootstrap 空�
 | `products` | **遮光窗帘**（on_sale/per_meter/has_processing）、北欧风窗帘 | PR-001 / PR-003 |
 | `product_colors` / `product_skus` | 米白/浅灰/雾霾蓝 × 散剪 2.8m | 选品规格收集（colorId 等） |
 | `product_processing_items` | 商品↔加工项关联（4 条） | OR-016 / OR-017 |
+| `users` | `debug_customer_1`（与 `auth.py` DEBUG customer 身份同 id） | C 端身份一致性 |
+| `orders` / `order_items` | **EVAL-ORD-0002 已发货**（最新）+ EVAL-ORD-0001 已完成，均带收货人/电话/地址 | CH-010 / CH-012 / OR-009 / OR-014 / OR-017 |
+| `order_logistics` | 顺丰在途轨迹 | OR-012 物流查询 |
+
+**为什么顾客本人 + 历史订单是必需项（不是"补点数据"）** —— 这三个缺口都会让 agent
+的**正确行为**也拿 0 分：
+
+1. `customer_address_query` 取"最近一笔有地址的订单"，空库永远未命中 → 下单表单无法
+   预填 → agent 只能反复追问（实测 CH-010/OR-009/OR-011/OR-014 出现
+   `customer_address_query` ×3~4 次空转），**看着像模型循环，实为环境缺数据**；
+2. `aftersale_create` 的订单归属校验（#518）先拉 `GET /api/admin/agent/orders/mine`
+   再匹配 `order_id` → 空库必不匹配 → 一律返回「该订单不属于您」→
+   **售后建单在该库里根本不可能成功**（CH-012 实测 4 轮 0 建单）；
+3. `customer_order_query` 列表为空 → 顾客说"第一笔订单/最近那笔"无从指代。
+
+> 归因纪律：这三条属于**数据层（环境）缺陷**，不是「模型层能力缺陷」。
+> 修测量环境 ≠ 修模型 —— 不先把环境补齐，得到的「能力分」是假的（详见 §6.2）。
 
 **幂等**：全部 `ON CONFLICT DO NOTHING` / `WHERE NOT EXISTS`，每次起栈可安全重放。
+fixture 末尾带 `DO $$ ... RAISE EXCEPTION $$` 自检：`debug_customer_1` 订单数 < 2 直接
+报错，避免"注入了但没生效"静默通过。
 **不并入** `docs/sql/schema.sql` —— 生产 bootstrap 不应含演示数据。
 **注入时机**：workflow 在起栈之后、评测之前注入（见 `xiaobu-acceptance.yml` 的
 「Seed C 端评测业务数据」步骤）。
+
+> ⚠️ `orders.created_at` **必须显式给值且两笔不同**：`customer_order_query` 按
+> `ORDER BY created_at DESC` 排序，同刻（`NOW()` 默认值）会让"最近那笔"随机命中 →
+> 用例抖动。当前设定：0002 已发货（最新）> 0001 已完成。
 
 本地手动注入（对着本地 docker 栈）：
 
@@ -197,6 +220,33 @@ C 端评测链路有三处破损，与用例库正确性无关，但会让「评
 | `LLM_BREAKER` 全局单一熔断器 | `base_skill.py:47` 一个 `llm_minimax` 名护所有 skill；单 skill 3×60s 超时 → 全部 skill OPEN | 用户看到「抱歉，AI 服务暂时不可用」；C 端查订单/下单/问答全挂 |
 
 另：C 端 smoke 未进 PR 门禁（`pr-check` 的 `agent-eval-smoke` 不设 `PERSONA`）。
+
+## 6.2 失败归因：逐轮轨迹（`round_trace`）
+
+扁平 `tool_calls` 只说明「整场用过哪些工具」，**无法回答哪一轮走了哪个 Skill**——
+于是「**路由层**：被路由到错误的 Skill」与「**工具层**：Skill 没绑定这个工具」
+在报告里完全同形，而两者的修复方向相反（改路由 vs 加工具）。
+
+实测 CH-012 报告：`rounds=4 tools=['customer_order_query','human_handoff','aftersale_query']`。
+- 若 R1 落在 `customer_order`（该 Skill **无** `aftersale_create`）→ 路由缺陷；
+- 若 R1 落在 `customer_aftersales`（当时**无** `interact`，confirm 门禁不可达）→ 工具缺陷。
+
+`local_runner.py` 现为每条失败用例打印逐轮轨迹：
+
+```
+trace: [R1 tools=customer_order_query cards=choice] [R2 tools=human_handoff] [R3 tools=- ERR]
+```
+
+字段：每轮 `round / tools / cards / interactive / text(截断 60 字) / error`，
+同时进入返回体与 CI 产物（可直接 JSON 序列化），也可用 `round_trace` 写更强的断言。
+
+**用工具反推 Skill**：Skill 的工具集互不重叠，逐轮工具名即可反推该轮 Skill
+（如 `customer_order_query` 只出现在 `customer_order`）。**映射以
+`backend/ai-agent-service/app/graph/skills/*.py` 为单一事实源——本文档刻意不复制
+这张表**，避免文档副本与代码漂移（历史上 `schema_full.sql` 就是被复制后漂移的）。
+
+配合 `migao-acceptance` 的五层归因（数据 / 断言 / 引导 / 工具 / 模型）使用：
+先看 `round_trace` 定位**哪一层**，再决定改 case、改工具、改 prompt 还是改路由。
 
 ## 7. 新增 C 端用例的检查单
 

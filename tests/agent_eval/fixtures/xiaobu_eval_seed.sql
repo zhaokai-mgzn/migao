@@ -91,3 +91,86 @@ WHERE NOT EXISTS (
   SELECT 1 FROM product_processing_items x
   WHERE x.product_id = v.pid AND x.processing_item_id = v.piid
 );
+
+-- ============================================================================
+-- 6. C 端顾客本人 + 历史订单（issue #3270 —— 数据层缺口，非能力缺陷）
+-- ============================================================================
+-- 为什么必须有这一段（不是"锦上添花"）：
+--   C 端身份由 auth.py 的 DEBUG 降级固定注入 user_id='debug_customer_1'，
+--   而全新 bootstrap 空库里**没有任何属于该用户的订单**，于是：
+--     ① `customer_address_query` 取"最近一笔有地址的订单" → 永远未命中 →
+--        form 无法预填 → agent 只能反复追问/反复重试
+--        （实测 CH-010/OR-009/OR-011/OR-014 出现 customer_address_query ×3~4 次空转）；
+--     ② `aftersale_create` 的**订单归属校验**（#518）先拉
+--        GET /api/admin/agent/orders/mine 再匹配 order_id → 空库必不匹配 →
+--        一律返回「该订单不属于您」→ **售后建单在该库里根本不可能成功**
+--        （CH-012 实测 4 轮 0 建单）；
+--     ③ `customer_order_query` 列表为空 → 顾客说"第一笔订单"无从指代。
+--   这三条都是**测量环境缺数据**，不是 agent 能力问题。补数据后才能测得真实能力。
+--
+-- 幂等：ON CONFLICT DO NOTHING / WHERE NOT EXISTS，可重复执行。
+-- 仅用于评测栈，不并入 docs/sql/schema.sql（生产 bootstrap 不应含演示数据）。
+-- ============================================================================
+
+-- 6.1 C 端顾客（与 auth.py DEBUG customer 身份 user_id 严格一致）
+INSERT INTO users (id, tenant_id, phone, nickname, role, status, deleted)
+VALUES ('debug_customer_1', 1, '13800138000', '评测顾客', 'customer', 'active', 0)
+ON CONFLICT (id) DO NOTHING;
+
+-- 6.2 历史订单 ×2：一笔已完成（地址预填 + 售后可建单）、一笔已发货（物流查询）
+--     user_id 必须是 debug_customer_1 —— 这是 C 端数据隔离的唯一依据。
+--     ⚠️ created_at **必须显式给值且两笔不同**：`customer_order_query` 按
+--        `ORDER BY created_at DESC` 排序，顾客说「最近那笔/第一笔」时取列表首条。
+--        若两笔同刻（NOW() 默认值），顺序不确定 → 用例随机命中不同订单 → 抖动。
+--     设定：0001 已完成（较早）→ 0002 已发货（最新，作为「最近一笔」命中），
+--     顺带覆盖 skill prompt 里「已发货订单仍可建售后工单」这条历史回归规则。
+INSERT INTO orders
+  (id, tenant_id, order_no, user_id, customer_name, customer_phone, customer_address,
+   total_amount, status, payment_status, stock_deducted, follow_status, remark,
+   created_at, updated_at, deleted)
+VALUES
+  ('ord_eval_0001', 1, 'EVAL-ORD-0001', 'debug_customer_1', '张三', '13800138000',
+   '浙江省杭州市西湖区文三路 1 号 1 幢 101 室', 504.00, 'completed', 'paid', TRUE,
+   'completed', 'C 端评测 fixture：已完成订单（地址预填 / 售后建单用）',
+   TIMESTAMPTZ '2026-08-01 10:00:00+08', TIMESTAMPTZ '2026-08-05 10:00:00+08', 0),
+  ('ord_eval_0002', 1, 'EVAL-ORD-0002', 'debug_customer_1', '张三', '13800138000',
+   '浙江省杭州市西湖区文三路 1 号 1 幢 101 室', 384.00, 'shipped', 'paid', TRUE,
+   'completed', 'C 端评测 fixture：已发货订单（物流查询 / 最近一笔用）',
+   TIMESTAMPTZ '2026-09-01 10:00:00+08', TIMESTAMPTZ '2026-09-09 18:00:00+08', 0)
+ON CONFLICT (id) DO NOTHING;
+
+-- 6.3 订单明细（列表/详情展示、售后关联商品）
+INSERT INTO order_items
+  (id, tenant_id, order_id, product_id, product_name, quantity, unit_price,
+   width, height, subtotal, deleted)
+VALUES
+  ('oit_eval_0001', 1, 'ord_eval_0001', 'prod_eval_blackout', '遮光窗帘', 3, 168.00,
+   3.00, 2.80, 504.00, 0),
+  ('oit_eval_0002', 1, 'ord_eval_0002', 'prod_eval_dark_green', '北欧风窗帘', 3, 128.00,
+   3.00, 2.80, 384.00, 0)
+ON CONFLICT (id) DO NOTHING;
+
+-- 6.4 物流轨迹（已发货订单的物流查询用例数据源）
+INSERT INTO order_logistics
+  (id, tenant_id, order_id, logistics_company, tracking_no, status, tracking_info, shipped_at)
+SELECT 'olg_eval_0002', 1, 'ord_eval_0002', '顺丰速运', 'SF1234567890123', 'in_transit',
+       '[{"time":"2026-09-10 09:00","desc":"快件已从杭州中转场发出"}]'::jsonb,
+       TIMESTAMPTZ '2026-09-09 18:00:00+08'
+WHERE NOT EXISTS (
+  SELECT 1 FROM order_logistics WHERE order_id = 'ord_eval_0002'
+);
+
+-- ── 数据核对（CI 日志可见，避免"注入了但没生效"静默）──
+DO $$
+DECLARE
+  v_orders INTEGER;
+  v_items  INTEGER;
+BEGIN
+  SELECT count(*) INTO v_orders FROM orders
+   WHERE tenant_id = 1 AND user_id = 'debug_customer_1' AND deleted = 0;
+  SELECT count(*) INTO v_items FROM order_items WHERE tenant_id = 1 AND deleted = 0;
+  RAISE NOTICE 'C 端评测 fixture 核对: debug_customer_1 订单=% 明细=%', v_orders, v_items;
+  IF v_orders < 2 THEN
+    RAISE EXCEPTION 'C 端 fixture 注入失败：debug_customer_1 订单数=% (<2)', v_orders;
+  END IF;
+END $$;
