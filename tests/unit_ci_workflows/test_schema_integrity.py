@@ -449,3 +449,83 @@ class TestDebugPassthroughForEval:
         assert "settings.DEBUG and debug_role" in auth, (
             "auth.py 的调试身份注入条件已变更 —— 需同步本测试与 compose 契约"
         )
+
+
+FIXTURE = (Path(__file__).parent.parent.parent
+           / "tests" / "agent_eval" / "fixtures" / "xiaobu_eval_seed.sql")
+
+
+class TestXiaobuEvalFixture:
+    """C 端评测业务数据 fixture 契约（issue #3270）。
+
+    背景：C 端验收栈是全新 bootstrap 空库。空库下 agent 搜不到商品 → 反复重试
+    `product_search` → 从不进入 `product_detail` → PR-003 等依赖数据的用例必然失败
+    （实测 CI：`tools=[product_search ×3]`，期望 `product_detail` → 0 分）。
+    行为本身合理，缺的是**数据**。
+
+    本测试锁定：fixture 存在、幂等、含关键实体、且 workflow 在评测**之前**注入。
+    """
+
+    def test_fixture_exists_with_seed_content(self):
+        sql = FIXTURE.read_text(encoding="utf-8")
+        assert "INSERT INTO products" in sql
+        assert "INSERT INTO processing_items" in sql
+
+    def test_fixture_provides_product_needed_by_pr003(self):
+        """PR-003 断言 `product_detail`，需要「遮光窗帘」可被搜到"""
+        sql = FIXTURE.read_text(encoding="utf-8")
+        assert "遮光窗帘" in sql, "fixture 必须含「遮光窗帘」（PR-003 依赖）"
+
+    def test_fixture_products_are_on_sale(self):
+        """admin-api 未指定 status 时默认只返回 on_sale 商品 —— fixture 必须用 on_sale"""
+        sql = FIXTURE.read_text(encoding="utf-8")
+        assert "on_sale" in sql, "fixture 商品必须 status=on_sale（否则搜索查不到）"
+
+    def test_fixture_is_idempotent(self):
+        """每次 CI 起栈都会重放 —— 所有 INSERT 必须幂等（ON CONFLICT / WHERE NOT EXISTS）"""
+        sql = FIXTURE.read_text(encoding="utf-8")
+        # 按分号切 INSERT 语句，逐条确认带幂等保护
+        inserts = re.findall(r"INSERT\s+INTO[\s\S]*?;", sql, re.I)
+        assert len(inserts) >= 4, f"fixture INSERT 语句过少（{len(inserts)}），疑似解析失效"
+        bad = []
+        for stmt in inserts:
+            if "ON CONFLICT" not in stmt.upper() and "NOT EXISTS" not in stmt.upper():
+                first = " ".join(stmt.split())[:80]
+                bad.append(first)
+        assert not bad, (
+            "以下 INSERT 缺少幂等保护（重复执行会报重复键）：\n  "
+            + "\n  ".join(bad)
+        )
+
+    def test_fixture_links_processing_items(self):
+        """下单加工项用例（OR-016/OR-017）需要商品绑定加工项"""
+        sql = FIXTURE.read_text(encoding="utf-8")
+        assert "product_processing_items" in sql, (
+            "fixture 必须建立商品↔加工项关联 —— 否则加工项环节用例无数据可断言"
+        )
+
+    def test_workflow_seeds_before_eval(self):
+        """workflow 必须在评测步骤**之前**注入 fixture"""
+        import yaml
+        wf = WORKFLOWS_DIR / "xiaobu-acceptance.yml"
+        d = yaml.safe_load(wf.read_text(encoding="utf-8")) or {}
+        steps = d["jobs"]["xiaobu-acceptance"]["steps"]
+        names = [s_.get("name") or "" for s_ in steps]
+        i_seed = next((i for i, n in enumerate(names) if "Seed" in n and "评测业务数据" in n), -1)
+        i_eval = next((i for i, n in enumerate(names) if "local_runner" in n), -1)
+        assert 0 <= i_seed < i_eval, (
+            f"fixture 注入必须早于评测（i_seed={i_seed}, i_eval={i_eval}）—— "
+            "否则空库上依赖数据的用例仍会失败"
+        )
+
+    def test_workflow_references_fixture_path(self):
+        import yaml
+        wf = WORKFLOWS_DIR / "xiaobu-acceptance.yml"
+        d = yaml.safe_load(wf.read_text(encoding="utf-8")) or {}
+        step = next((s_ for s_ in d["jobs"]["xiaobu-acceptance"]["steps"]
+                     if "Seed" in (s_.get("name") or "")), {})
+        body = step.get("run") or ""
+        assert "tests/agent_eval/fixtures/xiaobu_eval_seed.sql" in body, (
+            "workflow 未引用 fixture 文件路径"
+        )
+        assert "ON_ERROR_STOP=1" in body, "注入步骤应 fail-fast（ON_ERROR_STOP=1）"

@@ -91,6 +91,21 @@ jobs:
           docker compose -f deploy/docker-compose.yml up -d --build --wait \
             --wait-timeout 300 postgres redis admin-api ai-agent-service 2>&1 | tail -20
 
+      - name: "Seed C 端评测业务数据（issue #3270）"
+        # 全新 bootstrap 空库下，agent 搜不到商品 → 反复重试 product_search →
+        # 从不进入 product_detail（PR-003 等依赖数据的用例必然失败，且行为本身合理）。
+        # 注入最小业务数据：商品/颜色/SKU/加工项/加工项关联（幂等，可重复执行）。
+        env:
+          DEV_SERVICE_TOKEN: diagnostics-only-placeholder
+        run: |
+          docker compose -f deploy/docker-compose.yml exec -T postgres \
+            psql -v ON_ERROR_STOP=1 -U app_user -d ai_customer_service \
+            < tests/agent_eval/fixtures/xiaobu_eval_seed.sql
+          echo "── 数据核对 ──"
+          docker compose -f deploy/docker-compose.yml exec -T postgres \
+            psql -U app_user -d ai_customer_service -tAc \
+            "SELECT 'products='||count(*) FROM products WHERE tenant_id=1"
+
       - name: Install eval runner deps
         run: pip install httpx -q
 
