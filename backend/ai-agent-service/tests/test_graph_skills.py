@@ -1036,21 +1036,77 @@ class TestCustomerSkillPendingLock:
                               tool_names=[], system_prompt="你是小布")
             )
 
-    @pytest.mark.parametrize("skill_name", [
-        "customer_order", "customer_aftersales", "customer_product", "customer_quote",
-    ])
-    def test_customer_skill_locks_pending_when_incomplete(self, skill_name):
+    @pytest.mark.parametrize("skill_name", ["customer_order", "customer_aftersales"])
+    def test_customer_write_flow_locks_pending_when_incomplete(self, skill_name):
         result = self._run(skill_name)
         assert result["pending_interact_skill"] == skill_name, (
             f"{skill_name} 未锁 pending_skill —— 用户第二轮补充信息会被重新路由跳出该 Skill"
         )
 
-    @pytest.mark.parametrize("skill_name", ["customer_general", "customer_knowledge"])
-    def test_non_flow_customer_skills_do_not_lock(self, skill_name):
-        """兜底/知识问答不是"多轮写流程"，锁住会把用户困在里头（不得误扩）"""
+    @pytest.mark.parametrize("skill_name", [
+        "customer_product", "customer_quote", "customer_general", "customer_knowledge",
+    ])
+    def test_readonly_customer_skills_do_not_lock(self, skill_name):
+        """**只读**查询/选品/算料/问答 Skill 不得锁 —— 锁住会把用户困在里面出不来
+
+        `customer_product` 没有 `order_create`：CH-010 的 R4「确认下单」正是要
+        **切到 customer_order** 才能落单。锁住它 → 用户卡在只读 Skill 里 → 下单永远不发生。
+        （该边界是本次修复的**反向**约束：只锁写流程，不锁只读流程。）
+        """
         result = self._run(skill_name)
         assert result.get("pending_interact_skill", "") in ("", None), (
             f"{skill_name} 不应锁 pending_skill"
+        )
+
+    def test_lock_set_matches_write_flow_skills_systemically(self):
+        """系统性不变式：C 端**含需确认写工具**的 Skill 必须锁，其余必须不锁
+
+        从工具注册表**推导**"该不该锁"，而不是抄一份名单 —— 这样新增 C 端写流程
+        Skill 时（或给只读 Skill 加写工具时）本测试会主动拦住，而不是等 CI 跑出
+        「第二轮跳出 Skill」再回头查（本次缺陷就是这么来的：名单只写了 B 端名，
+        类型系统与静态检查都看不出来）。
+        """
+        from app.agents.agents.xiaobu import XIAOBU_CONFIG
+        from app.graph.skills.base_skill import CREATION_SKILL_NAMES
+        from app.graph.skills.skill_registry import get_skill_registry
+        from app.tools.registry import get_tool_registry
+
+        skill_reg = get_skill_registry()
+        tool_reg = get_tool_registry()
+        should_lock, should_not_lock, missing_tool = [], [], []
+
+        for name in XIAOBU_CONFIG.get_all_skill_names():
+            config = skill_reg.get(name)
+            if config is None:
+                continue
+            binds_write = False
+            for tool_name in (config.tool_names or []):
+                tool = tool_reg.get_tool(tool_name)
+                if tool is None:
+                    missing_tool.append(f"{name}.{tool_name}")
+                    continue
+                # 判据 = **需确认的写工具**（destructive / requires_confirmation）：
+                # 这类工具的 validate→confirm→execute 链条天然跨轮，必须锁。
+                # 刻意不用 `not read_only`：那会把 human_handoff 这类**一次性**写操作
+                # 也算进来（customer_general 就会被误判成写流程 —— 实测踩到），
+                # 进而把用户锁在兜底 Skill 里。
+                if (getattr(tool, "destructive", False)
+                        or getattr(tool, "requires_confirmation", False)):
+                    binds_write = True
+            (should_lock if binds_write else should_not_lock).append(name)
+
+        assert not missing_tool, f"Skill 绑定了未注册工具：{missing_tool}"
+        assert should_lock, "推导出的写流程 Skill 为空 —— 解析疑似失效（测试会空转假绿）"
+
+        unlocked = [n for n in should_lock if n not in CREATION_SKILL_NAMES]
+        over_locked = [n for n in should_not_lock if n in CREATION_SKILL_NAMES]
+        assert not unlocked, (
+            f"以下 C 端 Skill 含写工具但未锁 pending_skill，多轮写流程会在第二轮被"
+            f"重新分类跳走：{unlocked}（加入 CREATION_SKILL_NAMES）"
+        )
+        assert not over_locked, (
+            f"以下 C 端 Skill 是只读的却被锁住，用户会困在里面切不到下单域：{over_locked}"
+            f"（从 CREATION_SKILL_NAMES 移除）"
         )
 
     def test_backend_names_still_lock(self):

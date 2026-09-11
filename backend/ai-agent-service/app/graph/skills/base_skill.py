@@ -300,6 +300,32 @@ def _extract_usage(response: AIMessage) -> Optional[tuple[int, int]]:
     return None
 
 
+# ── 多轮**写流程** Skill：未完成时必须锁 pending_skill ──
+# 为什么要锁：写流程天然多轮（选品→收参→确认→执行），用户的后续轮多是碎片输入
+# （「第一笔订单」「数量 3 米」「确认下单」）——不锁就会被重新意图分类跳出本 Skill，
+# 上下文断裂、流程每轮从头重来。
+#
+# ⚠️ 必须同时列出 C 端（小布）Skill 名：小布的 Skill 叫 `customer_*`，与 B 端名
+# （product/order/aftersales/...）**名字对不上**。只写 B 端名时 C 端写流程**从不锁**
+# （CI 实证 run 34613307565 / CH-012 路由 dump）：
+#     R1 intent=after_sales → aftersales   ← 正确进入
+#     R2 intent=order_query → order        ← 用户只说「第一笔订单」就被重新分类跳走
+#
+# ⚠️ 只锁**含「需确认写工具」**的 Skill（destructive / requires_confirmation ——
+# 其 validate→confirm→execute 链条天然跨轮）：只读的选品/算料/问答 Skill 不能锁 ——
+# 「选品 →（交接）→ 下单」需要能切到 order 域，锁住会把用户困在只读 Skill 里出不来
+# （customer_product 无 order_create；CH-010 的 R4「确认下单」正是要切到 customer_order）。
+# 也不能用"非 read_only"当判据：会把 human_handoff 这类一次性写操作算进来，
+# 于是 customer_general 兜底被误锁，用户困在兜底里（实测踩到）。
+# 该边界由 test_graph_skills.TestCustomerSkillPendingLock 双向锁定。
+CREATION_SKILL_NAMES = frozenset({
+    # B 端
+    "product", "order", "aftersales", "staff", "customer",
+    # C 端（小布）写流程
+    "customer_order", "customer_aftersales",
+})
+
+
 def _track_llm_cost(
     response: AIMessage,
     model: str,
@@ -1490,21 +1516,7 @@ async def execute_skill(
     # creation_skills 覆盖所有「多轮引导写流程」的域：创建类流程在未完成前必须锁
     # pending_skill，否则用户后续轮补充信息时重新走完整路由被关键词误判跳域
     # （HR-005 角色创建、CU-003 客户打标签：staff/customer 此前缺失 → 引导漂移 + 能力误宣）。
-    # ⚠️ 必须同时列出 C 端（小布）Skill 名：小布的 Skill 叫 `customer_*`，
-    # 与 B 端名（product/order/aftersales/...）**名字对不上** —— 只写 B 端名时
-    # C 端多轮流程**从不锁 pending_skill**（CI 实证 run 34613307565 / CH-012）：
-    #     R1 intent=after_sales → aftersales   ← 正确进入
-    #     R2 intent=order_query → order        ← 用户说「第一笔订单」就被重新分类跳走
-    # 于是退货/下单流程每轮从头重来（CH-010 4 轮、OR-014 7 轮反复重来）。
-    # 非流程型 C 端 Skill（customer_general 兜底 / customer_knowledge 问答）**不锁** ——
-    # 锁住会把用户困在兜底里出不来（test_graph_skills.TestCustomerSkillPendingLock 锁定）。
-    creation_skills = {
-        # B 端
-        "product", "order", "aftersales", "staff", "customer",
-        # C 端（小布）
-        "customer_order", "customer_aftersales", "customer_product", "customer_quote",
-    }
-    if skill_name in creation_skills:
+    if skill_name in CREATION_SKILL_NAMES:
         success_markers = ("创建成功", "已创建", "下单成功", "工单已创建", "售后工单",
                           "账号已创建", "角色已创建", "标签已添加", "已更新", "已添加")
         cancel_markers = ("已取消", "已取消创建", "好的，已取消", "不创建了", "算了不买了")
