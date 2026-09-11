@@ -1,0 +1,178 @@
+"""
+SQL schema 完整性守卫（issue #3270）。
+
+背景（2026-09-11 CI 实测根因，串联出同一 commit 的多处遗留）：
+`xiaobu-acceptance` 自 2026-08-31 起 **9/9 全 failure**，真因是
+`docs/sql/schema.sql` 无法初始化 —— `docker-entrypoint-initdb.d` 的 psql 带
+`ON_ERROR_STOP=1`，任何一条语句报错都会中止建库 → postgres 容器 `exited (3)`
+→ admin-api/ai-agent 起不来 → 整个评测栈不可用。
+
+定位到 **5 类**缺陷（建表顺序 + 已删表遗留语句）：
+
+| # | 位置 | 问题 |
+|---|---|---|
+| 1 | `product_processing_items` | 引用尚未创建的 `processing_items`（前向 FK） |
+| 2 | `idx_knowledge_cards_*` 三个索引 | `ON knowledge_entries`（表实为 `knowledge_cards`） |
+| 3 | `COMMENT ON COLUMN rag_chunks.*` | 表已随 LLM WIKI 迁移删除 |
+| 4 | `rag_chunks` / `knowledge_sync_history` RLS + POLICY | 同上 |
+| 5 | `POLICY ... ON knowledge_documents` | 同上 |
+
+来源 commit：`f685b491`（issue #3051「LLM WIKI 完全替代旧知识库」）——
+删了旧表却没清干净引用它的索引/注释/RLS/策略语句。
+
+**验证方式（本地真库实测）**：`initdb` + `psql -v ON_ERROR_STOP=1 -f schema.sql`
+→ 修复前 exit 3，修复后 **exit 0**，39 张表 + FK 全部建成。
+
+本测试用静态分析等价覆盖上述 5 类，提交即可拦住，无需起库。
+"""
+# case_ids: MC-012, CH-010
+import re
+from pathlib import Path
+
+SCHEMA = Path(__file__).parent.parent.parent / "docs" / "sql" / "schema.sql"
+
+# 允许被引用但不由本文件创建的表（运行时扩展/外部扩展；当前为空）
+EXTERNAL_TABLES = set()
+
+# 非表名的 SQL 关键字（正则误伤的常见形态）
+_NON_TABLE = {"select", "where", "set", "values", "only", "if", "exists", "table", "column"}
+
+
+def _strip_comments(sql: str) -> str:
+    return "\n".join(l for l in sql.split("\n") if not l.lstrip().startswith("--"))
+
+
+def _created_tables(body: str):
+    return [
+        m.group(1).lower()
+        for m in re.finditer(
+            r"CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?([A-Za-z0-9_.]+)", body, re.I)
+    ]
+
+
+def _stmt_targets(body: str):
+    """{表名: {语句类型}} —— 所有指向某表的语句（ALTER/COMMENT/INDEX/POLICY/REFERENCES）"""
+    patterns = [
+        (r"ALTER\s+TABLE\s+(?:IF\s+EXISTS\s+)?([A-Za-z0-9_.]+)", "ALTER TABLE"),
+        (r"COMMENT\s+ON\s+(?:TABLE|COLUMN)\s+([A-Za-z0-9_.]+)", "COMMENT ON"),
+        (r"CREATE\s+(?:UNIQUE\s+)?INDEX\s+(?:IF\s+NOT\s+EXISTS\s+)?[A-Za-z0-9_]+\s+ON\s+([A-Za-z0-9_.]+)",
+         "CREATE INDEX"),
+        (r"CREATE\s+POLICY\s+[A-Za-z0-9_]+\s+ON\s+([A-Za-z0-9_.]+)", "CREATE POLICY"),
+        (r"REFERENCES\s+([A-Za-z0-9_.]+)", "REFERENCES"),
+    ]
+    out = {}
+    for pat, label in patterns:
+        for m in re.finditer(pat, body, re.I):
+            t = m.group(1).lower()
+            if t in _NON_TABLE or "." in t:
+                continue
+            out.setdefault(t, set()).add(label)
+    return out
+
+
+def _forward_refs(body: str):
+    """CREATE TABLE 块内的前向 REFERENCES（含列内联与表级约束两种语法）"""
+    created = []
+    seen = set()
+    forward = []
+    starts = [m.start() for m in re.finditer(
+        r"CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?[A-Za-z0-9_.]+\s*\(", body, re.I)]
+    for i, s in enumerate(starts):
+        e = starts[i + 1] if i + 1 < len(starts) else len(body)
+        chunk = body[s:e]
+        m = re.match(r"CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?([A-Za-z0-9_.]+)", chunk, re.I)
+        if not m:
+            continue
+        table = m.group(1).lower()
+        for ref in re.findall(r"REFERENCES\s+([A-Za-z0-9_.]+)", chunk, re.I):
+            ref_l = ref.lower()
+            if ref_l == table or ref_l in EXTERNAL_TABLES or "." in ref_l:
+                continue
+            if ref_l not in seen:
+                forward.append((table, ref_l))
+        created.append(table)
+        seen.add(table)
+    return created, forward
+
+
+class TestSchemaParses:
+    def test_schema_has_expected_tables(self):
+        body = _strip_comments(SCHEMA.read_text(encoding="utf-8"))
+        created = _created_tables(body)
+        assert len(created) >= 30, (
+            f"仅解析出 {len(created)} 张表（预期 ≥30）—— schema 结构或本解析器已变更"
+        )
+
+
+class TestNoForwardReferences:
+    def test_no_forward_foreign_key_references(self):
+        """核心契约 1：REFERENCES 指向的表必须已在前文创建。
+
+        先例：product_processing_items 引用 processing_items，后者定义在更后面
+        → psql 报 relation does not exist → initdb 中止 → docker 栈不可用。
+        """
+        body = _strip_comments(SCHEMA.read_text(encoding="utf-8"))
+        _, forward = _forward_refs(body)
+        assert not forward, (
+            "schema.sql 存在前向外键引用（建表顺序错误 → initdb 中止）：\n"
+            + "\n".join(f"  - 表 {t} 引用了尚未创建的 {r}" for t, r in forward)
+        )
+
+    def test_processing_items_before_product_processing_items(self):
+        """回归锚点：processing_items 必须早于 product_processing_items"""
+        body = _strip_comments(SCHEMA.read_text(encoding="utf-8"))
+        created, _ = _forward_refs(body)
+        if "processing_items" not in created or "product_processing_items" not in created:
+            return
+        assert created.index("processing_items") < created.index("product_processing_items"), (
+            "processing_items 必须早于 product_processing_items（后者 FK 引用前者）"
+        )
+
+
+class TestNoStrayStatementsOnDroppedTables:
+    """核心契约 2：不得对**不存在的表**下 ALTER/COMMENT/INDEX/POLICY 语句。
+
+    先例（同一 commit f685b491 遗留）：仅按「REFERENCES 顺序」检查不够 ——
+    还有 `CREATE INDEX ... ON knowledge_entries`（表实为 knowledge_cards）、
+    `COMMENT ON COLUMN rag_chunks.*`、`POLICY ON knowledge_documents` 等
+    **孤儿语句**，同样会让 ON_ERROR_STOP 中止建库。
+    """
+
+    def test_no_statements_targeting_missing_tables(self):
+        body = _strip_comments(SCHEMA.read_text(encoding="utf-8"))
+        created = set(_created_tables(body))
+        targets = _stmt_targets(body)
+        missing = {t: v for t, v in targets.items()
+                   if t not in created and t not in EXTERNAL_TABLES}
+        assert not missing, (
+            "schema.sql 存在指向**不存在表**的语句（建库会因 ON_ERROR_STOP 中止）：\n"
+            + "\n".join(f"  - {t}  ← {', '.join(sorted(v))}" for t, v in sorted(missing.items()))
+        )
+
+    def test_known_dropped_tables_have_no_references(self):
+        """回归锚点：LLM WIKI 迁移删除的表不得再被引用"""
+        body = _strip_comments(SCHEMA.read_text(encoding="utf-8"))
+        dropped = ["knowledge_entries", "rag_chunks", "knowledge_sync_history",
+                   "knowledge_documents"]
+        found = []
+        for t in dropped:
+            m = re.search(rf"\b{t}\b", body, re.I)
+            if m:
+                found.append(f"  - 第 ~{body[:m.start()].count(chr(10)) + 1} 行仍引用已删表 {t}")
+        assert not found, (
+            "已随 LLM WIKI 迁移（issue #3051）删除的表仍被引用 → 建库中止：\n"
+            + "\n".join(found)
+        )
+
+    def test_knowledge_card_indexes_target_knowledge_cards(self):
+        """回归锚点：idx_knowledge_cards_* 三个索引必须建在 knowledge_cards 上"""
+        body = _strip_comments(SCHEMA.read_text(encoding="utf-8"))
+        for idx in ["idx_knowledge_cards_tenant", "idx_knowledge_cards_status",
+                    "idx_knowledge_cards_category"]:
+            m = re.search(
+                rf"CREATE\s+INDEX\s+(?:IF\s+NOT\s+EXISTS\s+)?{idx}\s+ON\s+([A-Za-z0-9_.]+)",
+                body, re.I)
+            assert m, f"索引 {idx} 不存在（被误删？）"
+            assert m.group(1).lower() == "knowledge_cards", (
+                f"{idx} 建在 {m.group(1)} 上，应为 knowledge_cards"
+            )
