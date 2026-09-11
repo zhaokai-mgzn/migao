@@ -58,8 +58,9 @@ cases:
     expectations:
       # 用户问「分类下有哪些」是想看分类下的加工项，正确工具是 processing_item_query
       # （processing_item_manage 的 description 明确「仅查看加工项列表用 processing_item_query」，
-      # list_categories 是查分类树 CRUD）。原断言误写 processing_item_manage(list_categories)。
-      - tool: processing_item_query
+      # list_categories 是查分类树 CRUD）。agent 合理路径 = list_categories（分类树）+
+      # processing_item_query（加工项），任一命中即可（Round 73 探针实证两者都会调）。
+      - tool: processing_item_query or processing_item_manage
     data_checks:
       - "返回分类列表"
     skip_reason: ""

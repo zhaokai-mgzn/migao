@@ -2047,7 +2047,7 @@
 ### PP-002. 加工项分类列表 🔵
 ```
 你: 基础加工分类下有哪些
-期望: processing_item_query
+期望: processing_item_query or processing_item_manage
 数据: 返回分类列表
 ```
 真值: processing-manage.category-sort, processing-manage.crud
