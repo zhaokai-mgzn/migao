@@ -995,3 +995,117 @@ class TestSchemaFullDeprecation:
         assert not undocumented, (
             f"以下缺失表未在废弃标注里列出：{undocumented} —— 标注与事实不符"
         )
+
+
+class TestSchemaCoversMigrationChainColumns:
+    """`schema.sql` 必须覆盖**迁移链**的全部表与列（issue #3270 实测根因）
+
+    CI 实证（run 34617597854，postgres 日志原文）：C 端验收栈的库由
+    `docs/sql/schema.sql` 经 docker-entrypoint-initdb.d 建立，而 **Flyway 不在该栈运行**
+    → 只存在于迁移链的列**建库后并不存在** →
+
+        column "actual_amount" does not exist      (orders，来自 V5/V14)
+        column "position" does not exist           (users，来自 docs/sql/migrations)
+        ... → admin-api 查询 500 → ai-agent 工具拿到 "服务暂时不可用"(CIRCUIT_OPEN)
+        → 熔断器打开 → 后续同类工具调用**全部失败** → 整轮评测被污染
+
+    现象是「agent 不会下单/不会建售后单」，真因是**后端 500 + 熔断**（基础设施层）。
+    本测试把「bootstrap 必须与迁移链终态一致」变成可执行约束。
+    """
+
+    MIGRATION_DIRS = [
+        Path(__file__).parent.parent.parent / "backend" / "admin-api" / "src" / "main" / "resources" / "db" / "migration",
+        Path(__file__).parent.parent.parent / "docs" / "sql" / "migrations",
+    ]
+
+    # schema.sql 里以 `key` 这类 SQL 关键字命名的列，解析时需特判（否则被当约束跳过）
+    _NON_COLUMN = {"primary", "unique", "constraint", "foreign", "check", "key", "exclude"}
+
+    @classmethod
+    def _schema_columns(cls) -> dict:
+        src = _strip_sql_comments(SCHEMA.read_text(encoding="utf-8"))
+        tables: dict = {}
+        for m in re.finditer(
+                r"CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?\"?(\w+)\"?\s*\(([\s\S]*?)\n\)\s*;",
+                src, re.I):
+            name, body = m.group(1).lower(), m.group(2)
+            cols = set()
+            for line in body.splitlines():
+                # 列定义形如 `name TYPE ...`；约束行以 PRIMARY/UNIQUE/... 开头
+                lm = re.match(r"\s*\"?(\w+)\"?\s+[A-Za-z]", line)
+                if lm and lm.group(1).lower() not in cls._NON_COLUMN:
+                    cols.add(lm.group(1).lower())
+            tables[name] = cols
+        for m in re.finditer(
+                r"ALTER\s+TABLE\s+(?:IF\s+EXISTS\s+)?\"?(\w+)\"?[\s\S]*?;", src, re.I):
+            t = m.group(1).lower()
+            for cm in re.finditer(
+                    r"ADD\s+COLUMN\s+(?:IF\s+NOT\s+EXISTS\s+)?\"?(\w+)\"?", m.group(0), re.I):
+                tables.setdefault(t, set()).add(cm.group(1).lower())
+        return tables
+
+    @classmethod
+    def _migration_requirements(cls) -> tuple:
+        """从两条迁移链提取 (表 -> 列) 要求"""
+        need: dict = {}
+        superseded: set = set()  # 被后续迁移改名/删除的表（非终态要求）
+        for d in cls.MIGRATION_DIRS:
+            if not d.is_dir():
+                continue
+            for f in sorted(d.glob("*.sql")):
+                src = _strip_sql_comments(f.read_text(encoding="utf-8"))
+                for m in re.finditer(
+                        r"CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?\"?(\w+)\"?\s*\(([\s\S]*?)\n\)\s*;",
+                        src, re.I):
+                    t, body = m.group(1).lower(), m.group(2)
+                    need.setdefault(t, set())
+                    for line in body.splitlines():
+                        lm = re.match(r"\s*\"?(\w+)\"?\s+[A-Za-z]", line)
+                        if lm and lm.group(1).lower() not in cls._NON_COLUMN:
+                            need[t].add(lm.group(1).lower())
+                for m in re.finditer(
+                        r"ALTER\s+TABLE\s+(?:IF\s+EXISTS\s+)?\"?(\w+)\"?([\s\S]*?);", src, re.I):
+                    t = m.group(1).lower()
+                    for cm in re.finditer(
+                            r"ADD\s+COLUMN\s+(?:IF\s+NOT\s+EXISTS\s+)?\"?(\w+)\"?", m.group(2), re.I):
+                        need.setdefault(t, set()).add(cm.group(1).lower())
+                    # 重命名（如 V37 把 knowledge_entries 改名为 knowledge_cards）：
+                    # 旧表名不是"终态要求"，必须剔除，否则产生假缺口。
+                    if re.search(r"RENAME\s+TO\s+", m.group(2), re.I):
+                        superseded.add(t)
+                for m in re.finditer(r"DROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?\"?(\w+)\"?", src, re.I):
+                    superseded.add(m.group(1).lower())
+        for t in superseded:
+            need.pop(t, None)
+        return need
+
+    def test_requirements_are_non_trivial(self):
+        """自检：确实解析出要求（否则本类测试空转 = 假绿）"""
+        need = self._migration_requirements()
+        total = sum(len(v) for v in need.values())
+        # 阈值只为"解析没坏"兜底：实测两条链约 23 表 / 130+ 列（已剔除被改名/删除的表）。
+        # 取宽松下界，避免正常增删迁移就误报。
+        assert len(need) >= 15 and total >= 100, (
+            f"迁移链解析结果过少（表 {len(need)} / 列 {total}）—— 解析疑似失效"
+        )
+
+    def test_schema_covers_migration_chain(self):
+        schema = self._schema_columns()
+        missing_tables, missing_cols = [], []
+        for table, cols in self._migration_requirements().items():
+            if table not in schema:
+                missing_tables.append(table)
+                continue
+            for c in sorted(cols - schema[table]):
+                missing_cols.append(f"{table}.{c}")
+        assert not missing_tables, (
+            "schema.sql 缺少迁移链已建的表（bootstrap 不完整 → 建库后 admin-api 查询 500）：\n  "
+            + "\n  ".join(sorted(missing_tables))
+        )
+        assert not missing_cols, (
+            "schema.sql 缺少迁移链已加的列（bootstrap 不完整 → 建库后 admin-api 查询 500 "
+            "→ 工具返回「服务暂时不可用」→ 熔断 → 评测被污染）：\n  "
+            + "\n  ".join(missing_cols)
+            + "\n修复：在 schema.sql 的「bootstrap 对齐」段补 ALTER TABLE ... ADD COLUMN IF NOT EXISTS，"
+              "并同步新增迁移（迁移链是结构变更事实源）。"
+        )

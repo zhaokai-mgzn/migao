@@ -77,8 +77,10 @@ WHERE NOT EXISTS (
   WHERE pc.product_id = v.product_id AND pc.color_name = v.color_name
 );
 
-INSERT INTO product_skus (tenant_id, product_id, color_id, selling_method, door_width, price, stock, sku_code)
-SELECT 1, pc.product_id, pc.id, 'bulk_cut', '2.8', p.base_price, 500,
+-- color_name 必须一并写入：ProductSku 实体声明了该列，admin-api 拉 SKU 列表时 SELECT 它
+-- （schema.sql/V41 已补列；不写则返回 null，前端色号显示为空）。
+INSERT INTO product_skus (tenant_id, product_id, color_id, color_name, selling_method, door_width, price, stock, sku_code)
+SELECT 1, pc.product_id, pc.id, pc.color_name, 'bulk_cut', '2.8', p.base_price, 500,
        p.sku_code || '-' || pc.color_name
 FROM product_colors pc
 JOIN products p ON p.id = pc.product_id
