@@ -204,15 +204,21 @@ async def _run_pre_clean(token: str, spec: dict) -> str:
     if _type == "employee_reactivate":
         # 恢复被评测禁用的测试员工（HR-003 存量状态消耗）：王五被禁用后
         # agent 合理说「已停用无需操作」→ 评测前恢复 active。
+        # Round 75：查不到时重试 2 次（网络波动 _safe_json 降级返回空 →
+        # 误报「不存在」跳过 → 王五未恢复 → agent 见 disabled 合理不操作 → 失败）
         name = str(spec.get("employee_name", ""))
         async with httpx.AsyncClient() as c:
             h = _admin_headers(token)
-            r = await c.get(f"{ADMIN_API}/api/admin/users", headers=h,
-                            params={"page": 1, "size": 50}, timeout=15)
-            items = (_safe_json(r, {}) or {}).get("data", {}).get("items", [])
-            target = next((u for u in items if u.get("name") == name), None)
-            if not target:
-                return f"员工「{name}」不存在（跳过）"
+            target = None
+            for attempt in range(3):
+                r = await c.get(f"{ADMIN_API}/api/admin/users", headers=h,
+                                params={"page": 1, "size": 50}, timeout=15)
+                items = (_safe_json(r, {}) or {}).get("data", {}).get("items", [])
+                target = next((u for u in items if u.get("name") == name), None)
+                if target is not None:
+                    break
+            if target is None:
+                return f"员工「{name}」查询 3 次未命中（跳过）"
             if target.get("status") != "disabled":
                 return f"员工「{name}」状态 {target.get('status')}，无需恢复"
             await c.put(f"{ADMIN_API}/api/admin/users/{target.get('id')}/status",
