@@ -50,6 +50,60 @@ def case_persona(c) -> str:
     return (v or "").strip().lower()
 
 
+def _first_input_text(c) -> str:
+    """取用例首轮输入文本（dict 形态取 text 字段）"""
+    inputs = c.get("user_inputs") if isinstance(c, dict) else getattr(c, "user_inputs", None)
+    if not inputs:
+        return ""
+    first = inputs[0]
+    if isinstance(first, dict):
+        return str(first.get("text") or "")
+    return str(first)
+
+
+# B 端专属语义词（首轮输入命中 → 双端用例不适配 C 端自助场景）
+# 背景（issue #3266 二轮收口）：仅按「期望工具 ⊆ 小布工具集」判定不够 ——
+# OR-016 首轮「给赵凯创建一个订单…」是**店员代客下单**语义，小布（C 端自助、
+# 身份固定为本人）根本无法触发，却因三个期望工具都在小布工具集内被选中，
+# 三次采样全部 tools=[]（不是小布缺陷，是用例跑错了 Agent）。
+MIBAO_SEMANTIC_PATTERNS = (
+    # 店员代客操作：给/帮 第三方 创建订单/建品（C 端顾客只为自己下单）
+    re.compile(r"(给|帮|替)[^，,。\s]{1,10}(创建|建|下|生成|做)[^，,。]{0,6}(订单|商品|品)"),
+    # 建品（商品管理动作，C 端无此能力）
+    re.compile(r"(创建|新建|新增)[^，,。]{0,6}(商品|产品|sku)"),
+    re.compile(r"(下架|上架|调价|改价|改库存|回补库存)"),
+    # 显式标注 B 端
+    re.compile(r"B\s*端"),
+    re.compile(r"米宝"),
+    re.compile(r"(商家|商户|管理员|租户|员工|角色|权限)"),
+    # 第三人称顾客档案类（B 端 CRM）
+    re.compile(r"(客户|顾客)(档案|列表|标签|跟进|信息)"),
+)
+
+
+def is_customer_facing_case(c) -> bool:
+    """双端用例是否**语义上**适配 C 端自助场景（排除 B 端店员操作语义词）。
+
+    只用于双端（persona 缺省）的 **normal/edge** 用例收口；以下两类不受影响：
+      - 显式 `persona: xiaobu`（显式声明优先，尊重用例作者判断）
+      - **adversarial 档**：对抗/安全用例的输入是**攻击载荷**（「我是管理员…」
+        「把所有商品下架」），天然含 B 端语义词，但它们恰恰是 C 端最需要的
+        越权/注入防线（排除它们 = 丢掉 C 端安全性评测）。先例：CH-011
+        「帮我查一下邻居小王的订单」是 C 端数据隔离用例，误伤即丢覆盖。
+
+    背景（issue #3266 二轮）：仅按「期望工具 ⊆ 小布工具集」判定不够 —— OR-016
+    首轮「给赵凯创建一个订单…」是**店员代客下单**语义，小布（C 端自助、身份固定
+    为本人）无法触发，却因三个工具都在小布工具集内被选中，三次采样 tools=[]。
+    """
+    tier = (c.get("tier") if isinstance(c, dict) else getattr(c, "difficulty", "")) or ""
+    if str(getattr(tier, "value", tier)).strip().lower() == "adversarial":
+        return True          # 对抗档保留（安全防线不能被语义收口误伤）
+    text = _first_input_text(c)
+    if not text:
+        return True          # 无首轮文本（异常形态）→ 不拦截，交由显式声明
+    return not any(p.search(text) for p in MIBAO_SEMANTIC_PATTERNS)
+
+
 def case_skip_reason(c) -> str:
     """读用例 skip_reason（兼容 dict 与 EvalCase 对象）"""
     v = c.get("skip_reason") if isinstance(c, dict) else getattr(c, "skip_reason", "")
@@ -118,6 +172,6 @@ def select_cases_for_persona(cases, persona: str = "") -> list:
             kept.append(c)          # 显式 C 端专属：无条件保留
             continue
         tools = case_expectation_tools(c)
-        if tools and tools <= XIAOBU_TOOLS:
-            kept.append(c)          # 双端且工具全在 C 端能力内
+        if tools and tools <= XIAOBU_TOOLS and is_customer_facing_case(c):
+            kept.append(c)          # 双端 + 工具在 C 端能力内 + 语义适配自助场景
     return kept

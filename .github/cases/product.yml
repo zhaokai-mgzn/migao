@@ -773,7 +773,7 @@ cases:
         - agent-eval.yml
       verifies: []
 
-  - id: PR-020
+  - id: PR-021
     legacy_id: ""
     title: "单独 SKU 调价 - 修改某规格价格"
     domains:

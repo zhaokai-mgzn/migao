@@ -2400,7 +2400,7 @@
 真值: product-sku-stock.create-flow, ai-chat.validate-input
 溯源: 2026-09-08 新增（issue #3056 复盘）：建品自定义加工价曾被 BFF create 的 ids 分支静默丢弃（45→30，读回退掩盖后复发）。required_args 只查 create args 层，本 case 用 db_verify 查落库层（finalPrice=确认价），args+落库双保险 ｜ tags: product_create, processing_item, price, regression
 
-### PR-020. 单独 SKU 调价 - 修改某规格价格 🔵
+### PR-021. 单独 SKU 调价 - 修改某规格价格 🔵
 ```
 你: 把遮光窗帘（100元的那件）的米白色散剪规格改成 150 元
 你: [📷 纯图片 x0]
