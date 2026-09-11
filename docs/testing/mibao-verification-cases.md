@@ -2095,6 +2095,7 @@
 你: 查询打孔加工的计价方式
 你: 新增加工项，计价方式选按个
 你: 名称叫测试加工，分类选打孔加工
+你: 计价方式按米，单价 8 元
 你: 确认
 期望: processing_item_query(keyword=打孔)
 期望: processing_item_manage(action=create_processing_item)
