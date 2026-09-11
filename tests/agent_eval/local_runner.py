@@ -274,8 +274,48 @@ async def _run_pre_clean(token: str, spec: dict) -> str:
 
 # ── Auth ──
 
+async def _retry_502(desc: str, fn, *args, max_retries: int = 6, **kwargs):
+    """502/连接失败重试（Round 76：多会话并发部署窗口打断评测——等待部署
+    结束自愈续跑，替代直接失败退出）。纯逻辑错误（400/401/403/404）不重试。"""
+    import asyncio as _asyncio
+    last = None
+    for attempt in range(max_retries):
+        try:
+            return await fn(*args, **kwargs)
+        except (httpx.ConnectError, httpx.RemoteProtocolError, httpx.ReadTimeout,
+                httpx.ReadError, httpx.ConnectTimeout, httpx.ReadTimeout) as e:
+            last = e
+        except httpx.HTTPStatusError as e:
+            if e.response is not None and e.response.status_code in (502, 503, 504):
+                last = e
+            else:
+                raise
+        except RuntimeError as e:
+            # 上层已格式化的 502 错误（"登录失败: HTTP 502 ..." / "创建会话失败: HTTP 502"）
+            if "502" in str(e) or "502" in str(getattr(e, "args", "")):
+                last = e
+            else:
+                raise
+        if attempt == max_retries - 1:
+            raise last
+        wait = 20 * (attempt + 1)
+        print(f"  ⏳ {desc} 遇 502/网络波动（第 {attempt+1} 次）——等待 {wait}s 重试（部署窗口自愈）")
+        await _asyncio.sleep(wait)
+    raise last
+
+
 async def login() -> str:
     """获取测试 token（CI 模式直接返回空字符串，走 SERVICE_TOKEN 无 auth）"""
+    async def _do_login() -> str:
+        async with httpx.AsyncClient() as c:
+            r = await c.post(f"{ADMIN_API}/api/auth/sms/login",
+                             json={"phone": PHONE, "code": BYPASS_CODE}, timeout=10)
+            payload = _safe_json(r, {}) or {}
+            access_token = (payload.get("data") or {}).get("accessToken")
+            if not access_token:
+                raise RuntimeError(f"登录失败: HTTP {getattr(r, 'status_code', '?')} {str(getattr(r, 'content', b''))[:200]}")
+            return access_token
+    return await _retry_502("登录", _do_login)
     # xiaobu 模式：不登录，走 DEBUG customer 身份（X-Debug-Role header 由 send 注入）
     if PERSONA == "xiaobu":
         return ""
@@ -306,26 +346,28 @@ def _chat_headers(token: str) -> dict:
     return {"Authorization": f"Bearer {token}"} if token else {}
 
 async def get_or_create_session(token: str, prefer_new: bool = True) -> str:
-    """获取或创建会话"""
-    async with httpx.AsyncClient() as c:
-        h = _chat_headers(token)
-        if prefer_new:
+    """获取或创建会话（502 重试：部署窗口自愈）"""
+    async def _do() -> str:
+        async with httpx.AsyncClient() as c:
+            h = _chat_headers(token)
+            if prefer_new:
+                r = await c.post(f"{AI_API}/api/chat/sessions", headers=h, json={}, timeout=10)
+                payload = _safe_json(r, {}) or {}
+                sid = (payload.get("data") or {}).get("id")
+                if not sid:
+                    raise RuntimeError(f"创建会话失败: HTTP {getattr(r, 'status_code', '?')} {str(getattr(r, 'content', b''))[:200]}")
+                return sid
+            r = await c.get(f"{AI_API}/api/chat/sessions", headers=h, timeout=10)
+            sessions = (_safe_json(r, {}) or {}).get("data", {}).get("items", [])
+            if sessions:
+                return sessions[0]["id"]
             r = await c.post(f"{AI_API}/api/chat/sessions", headers=h, json={}, timeout=10)
             payload = _safe_json(r, {}) or {}
             sid = (payload.get("data") or {}).get("id")
             if not sid:
                 raise RuntimeError(f"创建会话失败: HTTP {getattr(r, 'status_code', '?')} {str(getattr(r, 'content', b''))[:200]}")
             return sid
-        r = await c.get(f"{AI_API}/api/chat/sessions", headers=h, timeout=10)
-        sessions = (_safe_json(r, {}) or {}).get("data", {}).get("items", [])
-        if sessions:
-            return sessions[0]["id"]
-        r = await c.post(f"{AI_API}/api/chat/sessions", headers=h, json={}, timeout=10)
-        payload = _safe_json(r, {}) or {}
-        sid = (payload.get("data") or {}).get("id")
-        if not sid:
-            raise RuntimeError(f"创建会话失败: HTTP {getattr(r, 'status_code', '?')} {str(getattr(r, 'content', b''))[:200]}")
-        return sid
+    return await _retry_502("创建会话", _do)
 
 async def send_message(token: str, session_id: str, message: str, images: list = None) -> dict:
     """发送消息并收集 SSE 事件
