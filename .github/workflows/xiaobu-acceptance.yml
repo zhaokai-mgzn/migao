@@ -44,7 +44,13 @@ jobs:
             cat "$KEY_DIR/public.pem"
             echo "__PEM_EOF__"
           } >> "$GITHUB_ENV"
-          echo "✅ 已导出 dev RS256 密钥（PEM 内容注入）"
+          # ai-agent 用 JWT_PUBLIC_KEY 校验 admin-api 签发的 RS256 token；
+          # 它在 config.py 里是必填项（非 DEBUG 校验），且 compose 里默认空串 →
+          # 不注入会报「生产环境必须设置以下环境变量：JWT_PUBLIC_KEY」。
+          # 这里给同一测试密钥对的公钥内容（单行 PEM → 用 tr 压成一行写入 env）。
+          PUB_ONELINE=$(tr -d '\n' < "$KEY_DIR/public.pem")
+          echo "JWT_PUBLIC_KEY=$PUB_ONELINE" >> "$GITHUB_ENV"
+          echo "✅ 已导出 dev RS256 密钥（PEM 内容 + 公钥）"
 
       - name: "Start local stack (docker-compose: PG + Redis + admin-api + ai-agent DEBUG)"
         id: stack

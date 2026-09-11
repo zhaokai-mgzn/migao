@@ -331,3 +331,20 @@ class TestDevStackRS256Keys:
         body = steps[i_export].get("run") or ""
         assert "GITHUB_ENV" in body, "导出步骤未写入 $GITHUB_ENV"
         assert "test/resources/rsa" in body, "导出步骤未读取测试密钥对"
+
+    def test_workflow_also_exports_jwt_public_key(self):
+        """ai-agent 需要 JWT_PUBLIC_KEY（config.py 必填）—— 导出步骤必须一并给
+
+        先例：不给则 aikf-ai-agent 报
+        「生产环境必须设置以下环境变量：JWT_PUBLIC_KEY」→ 服务起不来。
+        """
+        import yaml
+        wf = WORKFLOWS_DIR / "xiaobu-acceptance.yml"
+        d = yaml.safe_load(wf.read_text(encoding="utf-8")) or {}
+        steps = d["jobs"]["xiaobu-acceptance"]["steps"]
+        body = next((s_.get("run") or "" for s_ in steps
+                     if "RS256" in (s_.get("name") or "")), "")
+        assert "JWT_PUBLIC_KEY=" in body, (
+            "导出步骤未写入 JWT_PUBLIC_KEY —— ai-agent 会因必填校验失败起不来"
+        )
+        assert "public.pem" in body, "JWT_PUBLIC_KEY 应取自测试密钥对的公钥文件"
