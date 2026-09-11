@@ -2494,7 +2494,7 @@ _CASE_OR_014 = EvalCase(
     title='下单加工项数量规则 - 按计价方式，无每米数量密度推导',
     skill=Skill.ORDER,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['帮我下单，遮光窗帘 3 米，要打孔加工', '选有打孔的那件', '不需要其他加工项', {'auto_select': True}, {'auto_fill': {'customer_name': '张三', 'customer_phone': '13800138000'}}, '确认下单', '确认'],
+    user_inputs=['帮我下单，遮光窗帘 3 米，要打孔加工', '选有打孔的那件', '不需要其他加工项', {'auto_select': True}, '确认下单', {'auto_fill': {'customer_name': '张三', 'customer_phone': '13800138000'}}, '确认'],
     expectations=['product_detail', 'order_create'],
     data_checks=['加工项数量按计价方式确定：per_meter → 数量=面料米数（如打孔 8 元/米 × 3 米 → quantity=3、subtotal=24）；per_set/fixed → 数量=1；per_area → 宽×高', 'processing_info.processingItems 逐项含 {id, name, unitPrice, quantity, unit, pricingMethod, subtotal}，processingFee = 各项 unitPrice × quantity 之和', '订单确认/回复展示加工项含「名称+数量+金额」（如『打孔（罗马圈）3米 ¥24.00』）——数量可见可对账，禁止虚构每米几个的密度推导', '加工费 = 单价 × 数量（打孔 8 元/米 × 3 米 = 24 元），漏算/错算加工费 = 订单金额错误'],
     skip_reason='',
