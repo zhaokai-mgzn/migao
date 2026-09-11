@@ -12,6 +12,7 @@
 # case_ids: OR-016, AS-007, PR-019, CH-010
 import asyncio
 import importlib.util
+import re
 
 import pytest
 from pathlib import Path
@@ -947,4 +948,40 @@ class TestRoundTraceResultDigest:
         line = lr.format_round_trace(trace)
         assert "data=customer_order_query(items=2)" in line, (
             "成功轮次未打印载荷摘要 —— 『工具通了但没数据』这类根因将无从判断"
+        )
+
+
+class TestCaseStartTimestamp:
+    """每个用例必须打印 UTC 起始时间戳 —— 让 CI 的**路由 dump** 能按用例切开。
+
+    路由/意图只写在 ai-agent 日志里（带时间戳），runner 输出原本没有时间锚点，
+    于是日志里连续的 intent/route 行**无法归属到具体用例** —— 实测 CH-013 与
+    CH-014 的轮次交错，眼看无法分辨「某个抱怨被分类成了什么」。
+    """
+
+
+    def _source(self) -> str:
+        return RUNNER_PATH.read_text(encoding="utf-8")
+
+    def test_start_marker_printed_per_case(self):
+        src = self._source()
+        assert re.search(r"⏱ \{case\.id\} start=", src), (
+            "run_suite 未打印按用例的起始时间戳 —— 路由 dump 无法按用例切分"
+        )
+
+    def test_marker_is_utc_iso(self):
+        src = self._source()
+        assert "datetime.now(timezone.utc).isoformat" in src, (
+            "时间戳必须为 UTC ISO（ai-agent 日志是 UTC），否则对不上"
+        )
+        assert "from datetime import datetime, timezone" in src, "缺少 datetime 导入"
+
+    def test_marker_precedes_session_creation(self):
+        """时间戳必须在用例**开始**时打印（早于建会话/发消息），否则会漏掉首轮路由"""
+        src = self._source()
+        i_marker = src.find("⏱ {case.id} start=")
+        i_session = src.find("await get_or_create_session(token, prefer_new=True)", i_marker - 800)
+        assert i_marker != -1 and i_session != -1
+        assert i_marker < i_session, (
+            "时间戳打印晚于会话创建 —— 首轮意图分类会落在用例区间之外"
         )

@@ -231,6 +231,24 @@ C 端评测链路有三处破损，与用例库正确性无关，但会让「评
 - 若 R1 落在 `customer_order`（该 Skill **无** `aftersale_create`）→ 路由缺陷；
 - 若 R1 落在 `customer_aftersales`（当时**无** `interact`，confirm 门禁不可达）→ 工具缺陷。
 
+### 按用例切分路由日志
+
+CI 另有一段「Dump C 端逐轮路由轨迹」步骤，把 ai-agent 的
+`intent_router` / `route_by_intent` 日志（带时间戳）打到构建日志里 ——
+它回答 `round_trace` 回答不了的「**为什么**走这个 Skill」（意图分类结果）。
+
+runner 为每个用例打印 UTC 起始锚点，据此把路由日志按用例切开：
+
+```
+  ⏱ CH-012 start=2026-09-11T15:16:02+00:00
+  ...
+23:16:02 C: intent=after_sales        → R: Routing to 'after_sales'
+23:16:10 C: intent=order_query        → R: Routing to 'order_query'
+```
+
+**没有这个锚点就无法归属**：实测 CH-013 与 CH-014 的轮次在日志里交错，
+仅凭时间顺序分不清哪一行属于谁（踩过）。
+
 `local_runner.py` 现为每条失败用例打印逐轮轨迹：
 
 ```

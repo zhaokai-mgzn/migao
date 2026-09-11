@@ -8,6 +8,7 @@ Mibao Agent 本地评测 — 直接调 localhost chat API，采集 SSE 事件
 """
 
 import sys, os, json, time, asyncio, re
+from datetime import datetime, timezone
 from pathlib import Path
 from pathlib import Path
 
@@ -1481,6 +1482,11 @@ async def run_suite(cases, label: str, classify: bool = True):
     for i, case in enumerate(cases):
         if case.skip_reason:
             continue
+
+        # 用例起始时间戳（UTC）——用于把 CI 的**路由 dump**（ai-agent 日志，带时间戳）
+        # 按用例切开。没有这个锚点，日志里连续的 intent/route 行无法归属到具体用例，
+        # 「某用例被路由到哪个 Skill」就只能靠猜（实测踩到：CH-013/CH-014 交错无法分辨）。
+        print(f"  ⏱ {case.id} start={datetime.now(timezone.utc).isoformat(timespec='seconds')}")
 
         # 每个用例用独立 session，避免前序用例污染上下文
         session_id = await get_or_create_session(token, prefer_new=True)
