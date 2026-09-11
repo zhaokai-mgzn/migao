@@ -107,6 +107,12 @@ services:
       SERVICE_TOKEN: ${DEV_SERVICE_TOKEN:?请先 export DEV_SERVICE_TOKEN（与 admin-api 保持一致）}
       # 审计 07 P0-1: 与 admin-api 对齐，dev 显式注入万能码（order_create 客户下单验证）
       SMS_BYPASS_CODE: ${SMS_BYPASS_CODE:-123456}
+      # ⚠️ DEBUG 必须透传（issue #3270）：ai-agent 的 X-Debug-Role 调试身份注入
+      # 只在 DEBUG=true 时生效（app/utils/auth.py fail-closed）。此前 compose 未传
+      # DEBUG → 容器内 DEBUG=False、Environment=production → 评测带
+      # `X-Debug-Role: customer` 请求被 401 AUTH_REQUIRED 拒绝 → C 端评测 100% 失败。
+      # 本地栈评测必需；生产 compose 不设该变量（保持 fail-closed）。
+      DEBUG: ${DEBUG:-false}
       PRIMARY_API_KEY: ${PRIMARY_API_KEY:-}
       PRIMARY_MODEL: ${PRIMARY_MODEL:-deepseek-v4-flash}
       DASHVECTOR_API_KEY: ${DASHVECTOR_API_KEY:-}
