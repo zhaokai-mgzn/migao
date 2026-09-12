@@ -1417,3 +1417,94 @@ class TestProcessingItemsFallbackWiring:
             "execute_skill 未把 confirm 卡改写为加工项 choice 卡（接线失效）"
         )
         assert '"component": "choice"' in blob, f"confirm 卡未被改写为 choice:\n{blob[:600]}"
+
+
+class TestInflightHandoffGuard:
+    """C 端在办流程中禁止「无信号误转人工」（CH-012 实证，代码兜底）
+
+    CH-012 run 34673167164 轨迹：R1 下发「请选择要申请退货的订单」choice 卡 →
+    R3 用户仅回「质量问题」→ agent 调 `human_handoff`（并创建投诉工单）→ 流程被放弃，
+    随后 R4 才恢复但轮数耗尽 → `aftersale_create` 未发生（用例判 0 分）。
+    用户消息既非显式请求、也无负面情绪、更非能力外诉求 —— 纯属模型放弃在办流程。
+    """
+
+    def _run(self, last_user_msg: str, *, with_card: bool, explicit_human: bool = False):
+        import asyncio
+
+        sent_tools = []
+
+        async def fake_execute(tool, args, ctx, state):
+            sent_tools.append(tool.name)
+            return (json.dumps({"success": True, "data": {}}), {"success": True, "data": {}})
+
+        history = [HumanMessage(content="我要退货")]
+        if with_card:
+            history.append(ToolMessage(
+                content=json.dumps({"success": True,
+                                    "data": {"component": "choice",
+                                             "title": "请选择要申请退货的订单",
+                                             "options": [{"value": "o1"}]}}),
+                tool_call_id="c0", name="interact"))
+        history.append(HumanMessage(content=last_user_msg))
+
+        with patch("app.memory.session_memory.SessionMemory") as mem_cls, \
+             patch("app.graph.skills.base_skill.get_breaker") as get_breaker, \
+             patch("app.graph.skills.base_skill.get_skill_llm") as get_llm, \
+             patch("app.graph.skills.base_skill.create_skill_registry") as create_reg, \
+             patch("app.graph.skills.base_skill.set_tool_context"), \
+             patch("app.graph.skills.base_skill._execute_tool_safe", fake_execute):
+            from app.tools.human_handoff import HumanHandoffTool
+            registry = MagicMock()
+            registry.get_langchain_tools.return_value = []
+            registry.get_tool.side_effect = lambda n: (
+                HumanHandoffTool() if n == "human_handoff" else None)
+            create_reg.return_value = registry
+
+            breaker = MagicMock()
+
+            async def _passthrough(fn):
+                return await fn()
+
+            breaker.call = _passthrough
+            get_breaker.return_value = breaker
+
+            call = MagicMock(spec=AIMessage)
+            call.content = ""
+            call.tool_calls = [{"name": "human_handoff", "args": {}, "id": "h1"}]
+            final = MagicMock(spec=AIMessage)
+            final.content = "好的"
+            final.tool_calls = []
+            llm = MagicMock()
+            llm.bind_tools.return_value = llm
+            llm.ainvoke = AsyncMock(side_effect=[call, final])
+            get_llm.return_value = llm
+            mem_cls.return_value.set_pending_skill = AsyncMock(return_value=True)
+
+            result = asyncio.run(execute_skill(
+                state=_make_state(messages=history),
+                skill_name="customer_aftersales",
+                tool_names=["human_handoff"], system_prompt="你是小布的售后客服",
+            ))
+        return result, sent_tools
+
+    def test_blocks_signal_less_handoff_during_inflight_flow(self):
+        result, sent = self._run("质量问题", with_card=True)
+        assert "handoff_blocked_inflight" in str(result), (
+            "在办流程中无信号转人工未被拦截 —— agent 会放弃在办业务并创建投诉工单（CH-012 实证）"
+        )
+        assert "human_handoff" not in sent, "被拦截时不得真正执行转人工"
+
+    def test_allows_explicit_handoff_request(self):
+        """回归：顾客明确说「转人工」时必须放行（CH-008/013/015 依赖）"""
+        result, sent = self._run("转人工", with_card=True)
+        assert "human_handoff" in sent, "显式转人工请求被误拦"
+
+    def test_allows_emotional_escalation(self):
+        """回归：情绪激动时放行（CH-014 依赖）"""
+        _result, sent = self._run("你们又没解决，气死我了", with_card=True)
+        assert "human_handoff" in sent, "负面情绪转人工被误拦"
+
+    def test_allows_handoff_without_inflight_card(self):
+        """没有在办卡片（未进入多轮流程）时不拦截 —— 保持既有行为"""
+        _result, sent = self._run("质量问题", with_card=False)
+        assert "human_handoff" in sent, "无在办流程时不应拦截转人工"

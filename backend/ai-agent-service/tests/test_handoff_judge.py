@@ -16,6 +16,7 @@ import pytest
 from app.graph.handoff_judge import (
     is_explicit_handoff_request,
     judge_handoff,
+    has_escalation_signal,
     HandoffJudgeResult,
     DEFAULT_HANDOFF_MAX_OFFERS,
 )
@@ -311,3 +312,34 @@ class TestS1AfterSalesWithoutActionableRequest:
             recent_user_messages=["你们太坑了", "一直没解决"], handoff_state=None)
         assert result.action == "offer"
         assert result.signal == "S2"
+
+
+class TestHasEscalationSignal:
+    """公共判定：消息是否带「应当转人工」的信号（代码层兜底复用同一词表）
+
+    背景（CH-012 run 34673167164）：agent 在退货流程**进行中**（R1 已下发选单卡）
+    对用户消息「质量问题」调用了 `human_handoff` —— 既非显式请求、也无负面情绪、
+    更非能力外诉求，纯粹是模型自行放弃了在办流程，还顺带创建了投诉工单；
+    随后 R4 才恢复流程但轮数耗尽 → `aftersale_create` 未发生。
+    代码层要阻止这类误转，就需要一个**与设计同源**的信号判定（本函数），
+    而不是各处自己拼词表。
+    """
+
+    def test_explicit_request_is_signal(self):
+        assert has_escalation_signal("我要转人工") is True
+        assert has_escalation_signal("找人工客服") is True
+
+    def test_negative_emotion_is_signal(self):
+        assert has_escalation_signal("你们太坑了，气死我了") is True
+
+    def test_out_of_scope_is_signal(self):
+        assert has_escalation_signal("我要起诉你们，赔偿损失") is True
+
+    def test_plain_business_message_is_not_signal(self):
+        """业务内容（售后原因/确认/选单）不构成转人工信号"""
+        for msg in ["质量问题", "第一笔订单", "确认申请", "不需要其他加工项", "米白色"]:
+            assert has_escalation_signal(msg) is False, f"{msg!r} 不应被判为转人工信号"
+
+    def test_empty_and_none_are_false(self):
+        assert has_escalation_signal("") is False
+        assert has_escalation_signal(None) is False
