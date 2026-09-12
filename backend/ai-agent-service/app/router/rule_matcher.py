@@ -73,6 +73,15 @@ REGEX_RULES: list[tuple[re.Pattern, IntentType]] = [
     # 创建/新建 + 任意商品描述（排除含"订单/工单/售后/员工/账号/角色/权限/分类/通知/会话"的，
     # 防止"创建员工账号/新建分类/添加通知"等非商品意图被泛化规则劫持 —— HR-002 修复）
     (re.compile(r"(?:创建|新建|添加)(?!.*(?:订单|工单|售后|员工|账号|角色|权限|分类|通知|会话))(?:一个|新的|个)?.{0,10}(?:商品|产品|窗帘|布料|色卡|窗纱|卷帘|百叶)?"), IntentType.PRODUCT_INQUIRY),
+    # C 端口语型商品浏览（issue #3364，E2E `test_topic_switch_does_not_leak_order_context` 实测红）：
+    # 「有什么遮光窗帘推荐」在 L1 关键词表里一个都不命中（表里是"商品/产品/价格/多少钱"等书面说法）
+    # → 落到 L2 分类器 → 常被判 general → 走 customer_general，**一个商品工具都调不出来**
+    # （round2 tools=[]）。此处用**浏览句式**（有什么/有没有/推荐/看看…）+ 商品类名词，
+    # 与"下单指令"天然可分：OR-014/OR-017 的「帮我下单，遮光窗帘 3 米」「我想买夏日清风窗帘」
+    # 不含这些句式 → 仍走 ORDER_CREATE/PRODUCT 之外的既有路径，不受影响。
+    (re.compile(r"(?:有什么|有没有|推荐|看看|看一下).{0,8}(?:窗帘|窗纱|面料|布艺)"
+                r"|(?:窗帘|窗纱|面料|布艺).{0,6}(?:推荐|有哪些|怎么选|哪种好)"),
+     IntentType.PRODUCT_INQUIRY),
     # 算料报价：尺寸数字（如"3米宽/3×2.7"）+ 褶皱/倍数/算料/报价 → 算料意图。
     # 例："3米窗 2倍褶皱 多少钱"、"2.7米高 打孔帘 报价"
     (re.compile(r"\d+(?:\.\d+)?\s*米?.{0,10}(?:褶皱|倍数|算料|报价|用布|打孔|韩式褶|四爪钩)"), IntentType.QUOTE),
@@ -167,6 +176,23 @@ class RuleMatcher:
                 matched_keywords=["回补库存"],
             )
 
+        # ── 显式交易动词优先（issue #3365 实证）──
+        # OR-014 的「帮我下单，遮光窗帘 3 米，要打孔加工」同时命中下方算料模式（3米…打孔）
+        # → 被路由到 **customer_quote**（该 skill 没有 order_create）→ 模型无法下单，
+        # 只能在收货表单/转人工之间空转（同一用例不同跑表现漂移：一会儿 order_create 被
+        # 接地闸门拦、一会儿压根不调）。语义：顾客说了"下单/买/订"，**交易动作**比"算料"权威 ——
+        # 算料只是手段。故在使用任何"尺寸+算料"模式之前先看交易动词。
+        _order_verbs = ("下单", "创建订单", "新建订单", "开个单", "录单", "确认创建订单",
+                        "帮我买", "我要买", "购买")
+        _hit_verbs = [_v for _v in _order_verbs if _v in msg_lower]
+        if _hit_verbs:
+            return IntentResult(
+                intent=IntentType.ORDER_CREATE,
+                confidence=0.98,
+                source="rule",
+                matched_keywords=_hit_verbs,
+            )
+
         # --- 优先匹配「尺寸数字 + 褶皱/算料/报价」→ quote（算料报价） ---
         # 否则"3米窗 2倍褶皱 多少钱"会被"多少钱"(3字) 压过"褶皱"(2字) 误路由到商品咨询。
         # 尺寸 + 褶皱/倍数 是算料意图的强信号，前置拦截。
@@ -219,6 +245,23 @@ class RuleMatcher:
                 confidence=confidence,
                 source="rule",
                 matched_keywords=matched,
+            )
+
+        # 1.5 显式交易动词优先于"尺寸+加工"类算料正则（issue #3365 实证）
+        # 实证：OR-014 的「帮我下单，遮光窗帘 3 米，要打孔加工」同时命中
+        # REGEX_RULES 的算料模式（`\d+米?.{0,10}(打孔…)`）→ 被路由到 **customer_quote**
+        # （该 skill **没有 order_create**）→ 模型无法下单，只能在收货表单/转人工之间空转，
+        # 于是同一用例在不同跑里表现漂移（一会儿 order_create 被接地闸门拦、一会儿压根不调）。
+        # 语义：顾客说了"下单/买/订"时，**交易动作**比"算料/报价"更权威 —— 算料只是手段。
+        _order_verbs = ("下单", "创建订单", "新建订单", "开个单", "录单", "确认创建订单",
+                        "帮我买", "我要买", "购买")
+        _hit_verbs = [_v for _v in _order_verbs if _v in msg_lower]
+        if _hit_verbs:
+            return IntentResult(
+                intent=IntentType.ORDER_CREATE,
+                confidence=0.98,
+                source="rule",
+                matched_keywords=_hit_verbs,
             )
 
         # 2. 正则规则匹配（同样收集，不抢先返回）
