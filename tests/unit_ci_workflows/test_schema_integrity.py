@@ -1360,6 +1360,26 @@ class TestFalseGreenGuardInAudit:
             "未开启全量轨迹 —— 通过的写用例的工具结果（如 order_create 被拒）看不见"
         )
 
+    def test_write_failure_dump_keeps_input_recovery_markers(self):
+        """写工具 dump 必须保留「缺参恢复回路」日志标记（issue #3365）。
+
+        为什么单列一条守卫：2026-09-13 那次 18/18 里 OR-017 的轨迹呈
+        `order_create → interact → order_create`（看着像"守卫救回来了"），但 dump 的
+        grep 没包含这几个标记 → **无法证实**是守卫触发还是模型自己走对。
+        归因能力是靠日志标记撑起来的，丢了标记就只能靠猜。
+        """
+        steps = self._wf()["jobs"]["xiaobu-acceptance"]["steps"]
+        step = next((s_ for s_ in steps if "写工具失败原因" in (s_.get("name") or "")
+                     or "写工具失败原因" in (s_.get("run") or "")), {})
+        body = step.get("run") or ""
+        assert body, "找不到写工具失败原因 dump 步骤"
+        # 只看**可执行的 grep 行**：首版断言扫了整个 run 文本，结果被我自己写的注释救活
+        # （注释里同样写着这几个词 → 删掉 grep 里的标记，测试照样绿 = 假守卫，已实证）。
+        grep_lines = "\n".join(ln for ln in body.splitlines() if "grep -E" in ln)
+        assert grep_lines, "写工具 dump 步骤里找不到 grep -E 命令"
+        for kw in ("拦截缺参等待期", "缺参记账", "缺参已补齐", "write-input-recovery"):
+            assert kw in grep_lines, f"写工具 dump 的 grep 丢了缺参恢复标记 {kw!r} → 归因只能靠猜"
+
 
 class TestFixtureOrderIdsAreUuidShaped:
     """fixture 的订单主键必须是 **UUID 形态**（与生产一致）

@@ -306,10 +306,15 @@ jobs:
           #                       实测 CH-026「澄清卡后发图」崩溃只有用户侧错误文案，
           #                       根因行号必须靠这行日志）
           #   vision → 图片链路的分析/重试/降级轨迹
+          #   拦截缺参等待期 / 缺参记账 / 缺参已补齐 / write-input-recovery → 写工具缺参
+          #     恢复回路（issue #3365）：**这条捷径是判断"是守卫救回来的、还是模型自己
+          #     走对了"的唯一依据** —— 2026-09-13 那次 18/18 就因为没有这几行，
+          #     只能看到 OR-017 轨迹里 order_create→interact→order_create 的收敛形状，
+          #     无法证实守卫真的触发过。
           echo "── 写工具失败原因（工具层归因：异常/门禁/工具缺失）──"
           docker compose -f deploy/docker-compose.yml logs --no-color --timestamps \
             ai-agent-service 2>/dev/null \
-            | grep -E "\[order-create\] Failed|\[tool-registry\] Failed|\[tool-exec\].*(ERROR|TIMEOUT)|\[langchain-adapter\] Failed|Tool not found|拦截未确认的写操作|card-confirm 诊断|拦截在办流程|self-correct|pending-validated|confirmed_write_tool|Agent stream error|AttributeError|vision" \
+            | grep -E "\[order-create\] Failed|\[tool-registry\] Failed|\[tool-exec\].*(ERROR|TIMEOUT)|\[langchain-adapter\] Failed|Tool not found|拦截未确认的写操作|card-confirm 诊断|拦截在办流程|self-correct|pending-validated|confirmed_write_tool|Agent stream error|AttributeError|vision|拦截缺参等待期|缺参记账|缺参已补齐|write-input-recovery" \
             | tail -120 \
             || echo "（无写工具失败日志：本跑无写工具异常）"
           # ── 未预期异常的**完整 traceback**（issue #3361）──
