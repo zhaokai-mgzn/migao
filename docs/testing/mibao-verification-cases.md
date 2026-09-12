@@ -2462,16 +2462,15 @@
 真值: product-sku-stock.create-flow, ai-chat.validate-input
 溯源: eval M003 独有（中途纠偏）；2026-09-09 校准：补「窗帘布艺」点分类卡轮（「分类选窗帘」后 agent 查分类树发现无「窗帘」精确分类发 choice 卡，原脚本后续轮跳过点卡导致分类卡反复发、6 轮走不到 create——与 PR-008 同类） ｜ tags: multi_turn, correction, mid_flow_change
 
-### PR-013. 窗帘算料报价 - 褶皱倍数与用布量计算 🟢
+### PR-013. 窗帘算料报价 - 褶皱倍数与用布量计算 🔵
 ```
 你: 3米宽 2.5米高 2倍褶皱 打孔帘 用98元一米的遮光布 帮我算多少钱
 期望: curtain_calc(window_width=3, window_height=2.5)
 数据: data.fabric_meters > 0
 数据: data.total > 0
-跳过: 算料报价为小布（C 端）专属功能，米宝（B 端）Agent Eval smoke 评测无 curtain_calc 工具；由 test_curtain_calc.py 单测 + POC 集成测试覆盖
 ```
 真值: fabric-calc.fullness-default, fabric-calc.fixed-height, fabric-calc.fixed-width
-溯源: POC 小布增强新增（算料报价 skill） ｜ tags: quote, fabric_calc, smoke
+溯源: POC 小布增强新增（算料报价 skill） ｜ tags: quote, fabric_calc, xiaobu
 
 ### PR-014. 加工项多选一次性提交 - 展示选择器→用户点完成→解析全部名称→汇总确认 🔵
 ```
@@ -3273,8 +3272,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：260（活跃 120，跳过 140）
-- tier 分布：smoke 12 / normal 219 / adversarial 29
+- 用例总数：260（活跃 121，跳过 139）
+- tier 分布：smoke 11 / normal 220 / adversarial 29
 - 售后域：8
 - agents：6
 - api：19

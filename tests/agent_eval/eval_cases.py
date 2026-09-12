@@ -3065,19 +3065,19 @@ _CASE_PR_012 = EvalCase(
     persona='',
 )
 
-# ── PR-013 [SMOKE] 窗帘算料报价 - 褶皱倍数与用布量计算（源: cases/product.yml）──
+# ── PR-013 [NORMAL] 窗帘算料报价 - 褶皱倍数与用布量计算（源: cases/product.yml）──
 _CASE_PR_013 = EvalCase(
     id='PR-013',
     legacy_id='',
     title='窗帘算料报价 - 褶皱倍数与用布量计算',
     skill=Skill.PRODUCT,
-    difficulty=Difficulty.SMOKE,
+    difficulty=Difficulty.NORMAL,
     user_inputs=['3米宽 2.5米高 2倍褶皱 打孔帘 用98元一米的遮光布 帮我算多少钱'],
     expectations=['curtain_calc(window_width=3, window_height=2.5)'],
     data_checks=['data.fabric_meters > 0', 'data.total > 0'],
-    skip_reason='算料报价为小布（C 端）专属功能，米宝（B 端）Agent Eval smoke 评测无 curtain_calc 工具；由 test_curtain_calc.py 单测 + POC 集成测试覆盖',
-    tags=['quote', 'fabric_calc', 'smoke'],
-    persona='',
+    skip_reason='',
+    tags=['quote', 'fabric_calc', 'xiaobu'],
+    persona='xiaobu',
 )
 
 # ── PR-014 [NORMAL] 加工项多选一次性提交 - 展示选择器→用户点完成→解析全部名称→汇总确认（源: cases/product.yml）──
