@@ -61,6 +61,33 @@ _VALIDATION_RULES: Dict[str, Dict[str, Any]] = {
             "order_id": {"type": str, "min_len": 1, "label": "订单ID或订单号"},
         },
     },
+    "processing_order_generate": {
+        "generate": {
+            "required": ["order_ids"],
+            "order_ids": {"type": list, "label": "订单ID/订单号列表（批量，≤100）"},
+        },
+    },
+    "processing_order_update": {
+        "issue": {
+            "required": ["id"],
+            "id": {"type": str, "min_len": 1, "label": "加工单号/订单号/UUID"},
+            "processor": {"type": str, "label": "加工方（可选）"},
+            "expected_delivery_date": {"type": str, "label": "交期 yyyy-MM-dd（可选，手工填写）"},
+        },
+        "start": {
+            "required": ["id"],
+            "id": {"type": str, "min_len": 1, "label": "加工单号/订单号/UUID"},
+        },
+        "complete": {
+            "required": ["id"],
+            "id": {"type": str, "min_len": 1, "label": "加工单号/订单号/UUID"},
+        },
+        "cancel": {
+            "required": ["id", "reason"],
+            "id": {"type": str, "min_len": 1, "label": "加工单号/订单号/UUID"},
+            "reason": {"type": str, "min_len": 1, "label": "取消原因（必填，联动订单回退）"},
+        },
+    },
     "inventory_manage": {
         "adjust": {
             "required": ["product_id", "adjustment", "reason"],

@@ -18,6 +18,8 @@ import com.migao.admin.mapper.OrderLogisticsMapper;
 import com.migao.admin.mapper.OrderMapper;
 import com.migao.admin.mapper.ProductMapper;
 import com.migao.admin.mapper.ProductSkuMapper;
+import com.migao.admin.mapper.ProcessingOrderMapper;
+import com.migao.admin.entity.ProcessingOrder;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
@@ -63,6 +65,7 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
     private final FinanceTransactionMapper financeTransactionMapper;
     private final ObjectMapper objectMapper;
     private final NotificationService notificationService;
+    private final ProcessingOrderMapper processingOrderMapper;
 
     /**
      * 订单号序列号（线程安全）
@@ -517,6 +520,12 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
                     String.format("订单状态不允许从 [%s] 变更为 [%s]", currentLabel, targetLabel));
         }
 
+        // 加工单联动守卫（issue #3340）：含加工项订单必须完成加工单后才能发货，
+        // 防止加工环节被 confirmed→shipped 直跳绕过
+        if ("shipped".equals(status)) {
+            assertProcessingCompletedBeforeShip(order);
+        }
+
         // 统一走带库存/销量副作用的路径，避免与 confirmPayment/cancelOrder 逻辑不一致
         if ("confirmed".equals(status)) {
             confirmPayment(id);
@@ -706,6 +715,32 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         }
 
         return response;
+    }
+
+    /**
+     * 加工单联动守卫（issue #3340）：订单含加工项且无已完成加工单时禁止发货。
+     * 有加工项订单必须走 producing（生成加工单）→ 加工完成 → shipped，防止加工环节被绕过。
+     */
+    private void assertProcessingCompletedBeforeShip(Order order) {
+        List<OrderItem> items = orderItemMapper.selectByOrderId(order.getId(), order.getTenantId());
+        boolean hasProcessing = items.stream()
+                .anyMatch(item -> !extractProcessingItems(item.getProcessingInfo()).isEmpty());
+        if (hasProcessing
+                && processingOrderMapper.countCompletedByOrderId(order.getId(), order.getTenantId()) == 0) {
+            throw BusinessException.validationError(
+                    "订单含加工项，须先完成加工单后再发货（可在订单详情或让米宝生成/更新加工单）");
+        }
+    }
+
+    /**
+     * 加工单取消联动（issue #3340）：订单 producing → confirmed 回退。
+     * 仅状态回退，无库存副作用（confirmed→producing 本身也无库存副作用）。
+     */
+    public void revertProducingToConfirmed(String orderId, String reason) {
+        int rows = transitionStatusAtomic(orderId, "producing", "confirmed", reason);
+        if (rows == 0) {
+            throw new BusinessException("ORDER_STATUS_CONFLICT", "订单状态已并发变更，请刷新后重试", 409);
+        }
     }
 
     /**
@@ -995,6 +1030,25 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         }
         if (closeReason != null && !closeReason.isBlank() && closeReason.length() > 500) {
             throw BusinessException.validationError("关闭原因不能超过 500 个字符");
+        }
+
+        // 加工单联动（issue #3340）：未发加工 → 自动作废加工单；已发加工及以上 → 拦截，须先处理加工单
+        ProcessingOrder activePo = processingOrderMapper.selectActiveByOrderId(order.getId(), order.getTenantId());
+        if (activePo != null) {
+            if ("generated".equals(activePo.getStatus())) {
+                ProcessingOrder poUpd = ProcessingOrder.builder()
+                        .id(activePo.getId())
+                        .status("cancelled")
+                        .cancelledAt(OffsetDateTime.now())
+                        .cancelledReason("订单取消，加工单自动作废")
+                        .build();
+                processingOrderMapper.updateById(poUpd);
+                log.info("订单取消联动作废加工单: po={}, orderId={}", activePo.getProcessingOrderNo(), order.getId());
+            } else {
+                throw BusinessException.validationError(String.format(
+                        "订单已发加工（加工单 %s 状态：%s），请先在订单详情或让米宝处理加工单后再取消订单",
+                        activePo.getProcessingOrderNo(), activePo.getStatus()));
+            }
         }
 
         // 原子状态流转（以读取到的 previousStatus 为条件，防止并发重复恢复库存）

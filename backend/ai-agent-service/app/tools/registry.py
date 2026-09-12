@@ -393,6 +393,9 @@ def create_default_registry() -> ToolRegistry:
     from app.tools.customer_address_query import CustomerAddressQueryTool
     from app.tools.order_manage import OrderManageTool
     from app.tools.order_create import OrderCreateTool
+    from app.tools.processing_order_generate import ProcessingOrderGenerateTool
+    from app.tools.processing_order_query import ProcessingOrderQueryTool
+    from app.tools.processing_order_update import ProcessingOrderUpdateTool
     from app.tools.product_manage import ProductManageTool
     from app.tools.inventory_manage import InventoryManageTool
     from app.tools.processing_item_query import ProcessingItemQueryTool
@@ -431,6 +434,9 @@ def create_default_registry() -> ToolRegistry:
     registry.register(CustomerAddressQueryTool())
     registry.register(OrderManageTool())
     registry.register(OrderCreateTool())
+    registry.register(ProcessingOrderGenerateTool())
+    registry.register(ProcessingOrderQueryTool())
+    registry.register(ProcessingOrderUpdateTool())
     registry.register(ProductManageTool())
     registry.register(InventoryManageTool())
     registry.register(ProcessingItemQueryTool())

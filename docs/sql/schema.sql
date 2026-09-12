@@ -713,6 +713,40 @@ CREATE TABLE order_logistics (
 );
 
 -- ================================================
+-- 9.5 加工单表（issue #3340，V43 迁移；订单 producing 阶段子进度）
+-- ================================================
+CREATE TABLE IF NOT EXISTS processing_orders (
+    id VARCHAR(64) PRIMARY KEY,
+    tenant_id BIGINT NOT NULL REFERENCES tenants(id),
+    order_id VARCHAR(36) NOT NULL REFERENCES orders(id),
+    processing_order_no VARCHAR(32) NOT NULL,
+    processor VARCHAR(128),
+    expected_delivery_date DATE,
+    status VARCHAR(32) NOT NULL DEFAULT 'generated',  -- generated/issued/in_processing/completed/cancelled
+    items_snapshot JSONB NOT NULL DEFAULT '[]',
+    remark TEXT,
+    template_version INT DEFAULT 1,
+    generated_by VARCHAR(64),
+    generated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    issued_at TIMESTAMP WITH TIME ZONE,
+    in_processing_at TIMESTAMP WITH TIME ZONE,
+    completed_at TIMESTAMP WITH TIME ZONE,
+    cancelled_at TIMESTAMP WITH TIME ZONE,
+    cancelled_reason TEXT,
+    print_count INT DEFAULT 0,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    deleted INT DEFAULT 0
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_processing_orders_active
+    ON processing_orders (order_id)
+    WHERE deleted = 0 AND status IN ('generated', 'issued', 'in_processing', 'completed');
+CREATE INDEX IF NOT EXISTS idx_processing_orders_tenant_status
+    ON processing_orders (tenant_id, status);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_processing_orders_no
+    ON processing_orders (processing_order_no);
+
+-- ================================================
 -- 10. 审计日志表
 -- ================================================
 

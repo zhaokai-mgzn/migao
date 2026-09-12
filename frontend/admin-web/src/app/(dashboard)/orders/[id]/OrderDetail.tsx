@@ -9,7 +9,7 @@ import dayjs from 'dayjs'
 import { orderApi } from '@/lib/api'
 import { useRouteId } from '@/lib/use-route-id'
 import { Button, Loading, Modal } from '@/components/ui'
-import { OrderProgressSteps, CloseOrderModal, LogisticsForm, RefundOrderModal } from '@/components/orders'
+import { OrderProgressSteps, CloseOrderModal, LogisticsForm, RefundOrderModal, ProcessingOrderBlock } from '@/components/orders'
 import type { Order, OrderItem, LogisticsFormData } from '@/types'
 import { normalizeOrderStatus } from '@/types'
 import { cn } from '@/lib/utils'
@@ -307,6 +307,13 @@ export default function OrderDetailPage() {
           refundAt={order.refundAt}
         />
       </SectionCard>
+
+      {/* 加工单（issue #3340）：订单 producing 阶段的子进度 */}
+      <ProcessingOrderBlock
+        orderId={order.id}
+        orderStatus={order.status}
+        hasProcessing={(order.processingItems?.length ?? 0) > 0}
+      />
 
       {/* 收货信息 */}
       <SectionCard title="收货信息">

@@ -36,6 +36,9 @@ import type {
   OrderStatusUpdateParams,
   LogisticsFormData,
   CloseOrderParams,
+  ProcessingOrder,
+  ProcessingOrderGenerateResult,
+  ProcessingOrderUpdateParams,
   ProductStatus,
   AfterSalesTicket,
   AfterSalesListParams,
@@ -323,6 +326,25 @@ export const orderApi = {
   // 删除订单
   deleteOrder: (id: string) =>
     request.delete<ApiResponse<void>>(`/api/admin/orders/${id}`),
+}
+
+// 加工单 API（issue #3340）
+export const processingOrderApi = {
+  // 批量生成加工单（仅已确认且含加工项订单；联动订单进入 producing）
+  generate: (orderIds: string[]) =>
+    request.post<ApiResponse<ProcessingOrderGenerateResult[]>>('/api/admin/processing-orders/generate', { orderIds }),
+
+  // 加工单列表（keyword=加工单号/订单号，status 可选）
+  list: (params?: { keyword?: string; status?: string }) =>
+    request.get<ApiResponse<ProcessingOrder[]>>('/api/admin/processing-orders', { params }),
+
+  // 加工单详情（id 可为加工单号/订单号/UUID）
+  detail: (id: string) =>
+    request.get<ApiResponse<ProcessingOrder>>(`/api/admin/processing-orders/${id}`),
+
+  // 状态更新：issue(发加工)/start/complete/cancel
+  update: (id: string, data: ProcessingOrderUpdateParams) =>
+    request.patch<ApiResponse<ProcessingOrder>>(`/api/admin/processing-orders/${id}`, data),
 }
 
 // Dashboard API
@@ -830,6 +852,7 @@ const api = {
   knowledge: knowledgeApi,
   afterSales: afterSalesApi,
   order: orderApi,
+  processingOrder: processingOrderApi,
   dashboard: dashboardApi,
   upload: uploadApi,
   file: fileApi,

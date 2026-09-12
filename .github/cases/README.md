@@ -10,6 +10,7 @@ cases/
 ├── order.yml          # ✅ 订单域（10 条）
 ├── product.yml        # ✅ 商品/库存/创建流程（12 条）
 ├── processing.yml     # ✅ 加工项（4 条）
+├── processing-order.yml # ✅ 加工单（12 条 PG-001~012，issue #3340）
 ├── aftersales.yml     # ✅ 售后（5 条）
 ├── customer.yml       # ✅ 客户（5 条）
 ├── hr.yml             # ✅ 人事/角色（5 条）

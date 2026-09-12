@@ -14,6 +14,7 @@
 | 订单状态（前端展示） | `pending_payment / pending_shipment / shipped / completed / closed / refund` | `types/index.ts` `BackendToFrontendStatus` 映射 |
 | 售后工单状态 | `pending / processing / rejected / resolved / closed` | `AfterSalesTicketService.java` |
 | 商品状态 | `draft / on_sale / off_sale / under_review` | `ProductService.java` |
+| 加工单状态 | `generated / issued / in_processing / completed / cancelled` | `ProcessingOrderService.java` 状态机（issue #3340，1 订单 1 加工单） |
 
 ## 二、关键字段名（前后端 + Agent 三端一致）
 
@@ -24,6 +25,8 @@
 | 物流公司 | `logisticsCompany` | `logisticsCompany` | `logisticsCompany`（读响应） | 勿用 company |
 | 运单号 | `trackingNo` | `trackingNo` | `trackingNumber` | Agent 发 update_logistics 用 trackingNumber |
 | 下单用户ID | `userId`（Order/OrderCreateRequest/AgentOrderCreateRequest，来自 X-User-Id 透传） | — | `context.user_id`（customer_order_query 强制注入） | **C 端数据隔离字段**（V20260901）；B 端查询用 B 端 order_query，C 端用小布专用 customer_order_query |
+| 加工单号 | `processingOrderNo` | `processingOrderNo` | `processingOrderNo`（读响应） | 生成格式 `JG-YYYYMMDD-XXXX`，DB 唯一（issue #3340） |
+| 加工单状态 | `status`（generated/issued/in_processing/completed/cancelled） | `status`（同枚举） | `status`（同枚举） | 中文映射 `PO_STATUS_TEXT`（processing_order_query.py） |
 
 ## 三、端点签名（勿自造）
 
@@ -36,6 +39,10 @@
 | **C 端我的订单** | `GET /api/admin/agent/orders/mine?page&size&status` | **强制按 X-User-Id 过滤 + 手机号兜底**：`user_id=本人 OR (user_id IS NULL AND customer_phone=本人已绑定手机号)`（商户代录/历史订单据此归属；未绑手机号则仅 user_id 直配） |
 | **小程序绑定手机号** | `POST /api/auth/mini/bind-phone` body `{code}`（JWT 认证） | code = `open-type="getPhoneNumber"` 授权动态令牌；后端换号 → 写 `users.phone` → 回填名下 `user_id IS NULL AND customer_phone=该号` 的订单（V23 运行时化） |
 | **B 端员工小程序登录** | `POST /api/auth/bmini/login` body `{code, phoneCode?}`（issue #2977） | code = wx.login() 凭证；phoneCode = `open-type="getPhoneNumber"` 授权动态令牌（**首次必传**）。语义与 C 端相反：openid 无绑定 → 换号跨租户匹配员工（role∉customer/agent）→ 绑定 `user_identities(bmini_app + appId=wechat.bmini.appid)` → 签发含 permissions 的员工 JWT；**匹配不到即拒绝、绝不自动建号**（BM-003） |
+| **加工单生成** | `POST /api/admin/processing-orders/generate` body `{orderIds:[]}`（issue #3340） | 仅已确认且含加工项订单；幂等（已有活跃加工单拒绝）；联动订单 confirmed→producing；权限 `processing:update` |
+| **加工单列表/详情** | `GET /api/admin/processing-orders?keyword&status` / `GET /api/admin/processing-orders/{id}` | id 可为加工单号/订单号/UUID；租户隔离 fail-closed；权限 `processing:view` |
+| **加工单状态更新** | `PATCH /api/admin/processing-orders/{id}` body `{action, processor?, expectedDeliveryDate?, reason?}` | action ∈ {issue, start, complete, cancel}；cancel 必填 reason；issued+ 取消需人工确认；completed 冻结；权限 `processing:update` |
+| **加工单-订单联动守卫** | 订单发货守卫 + 取消联动（`OrderService`） | 含加工项订单须有 completed 加工单才能 shipped；订单取消时加工单 generated→自动作废、issued+→拦截 |
 | **C 端我的售后** | `GET /api/admin/agent/after-sales/mine?page&size` | **强制按 X-User-Id 反查用户订单 → 只返回这些订单上的工单**（数据隔离强制点；勿用 `GET /api/admin/after-sales?customerId=`——该参数不存在且工单 customer_id 存的是客户姓名） |
 | **C 端我的物流** | `GET /api/admin/agent/orders/mine?status=shipped` → 逐单 `GET /api/admin/orders/{id}` 取 `logistics` | 小布专用 `customer_logistics_track`：只查本人**已发货(在途)**订单；**两端一律拒绝用户提供快递单号直查**（运单号仅由系统从订单详情读取） |
 | **转人工建人工会话** | `POST /api/admin/agent-sessions`（ai-agent human_handoff 调用） | 字段 `aiSessionId/customerId/reason` + **GB-01 新增** `aiContextSummary`（≤500 字）+ `aiContextMessages`（≤20 条 `{role: user\|assistant, content, contentType?, createdAt?}`，每条 ≤500 字）；管理端详情 `GET /api/admin/agent-sessions/{id}` 响应含 `aiContextSummary`/`aiContext`；**顾客端** `GET /api/customer/agent-sessions/by-ai/{aiSessionId}` **不含** aiContext 且过滤 isInternal 消息（GB/T 47746-2026 对齐，issue #2776） |

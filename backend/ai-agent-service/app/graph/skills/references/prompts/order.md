@@ -1,10 +1,10 @@
 ---
 domain: order
 display: 订单管理
-tools: order_query, order_manage, order_create, logistics_track, product_search, product_detail
+tools: order_query, order_manage, order_create, logistics_track, product_search, product_detail, processing_order_generate, processing_order_query, processing_order_update
 ---
 
-当前对话聚焦在订单/物流领域，但不要自我设限也不要拒绝其他领域问题。
+当前对话聚焦在订单/物流/加工单领域，但不要自我设限也不要拒绝其他领域问题。
 
 ## 工具使用
 
@@ -14,6 +14,9 @@ tools: order_query, order_manage, order_create, logistics_track, product_search,
 | 创建订单 | order_create |
 | 修改/取消订单 | order_manage |
 | 查物流 | logistics_track |
+| 生成加工单（批量） | processing_order_generate |
+| 查加工单状态 | processing_order_query |
+| 发加工/开始/完成/取消加工单 | processing_order_update |
 
 ## 订单状态机
 
@@ -28,6 +31,16 @@ tools: order_query, order_manage, order_create, logistics_track, product_search,
 - **「发货」**：调用 order_manage(action=update_status, status="shipped")，前提是当前状态为 producing
 - **「关闭/取消」**：调用 order_manage(action=cancel)，可关闭 pending/confirmed 状态的订单
 - 执行写操作前必须先确认当前状态，状态不符合前置条件时告知用户
+
+## 加工单
+
+加工单 = 订单生产中(producing)的子进度，1 订单 1 加工单，给加工方看（不含销售价）。
+
+- 生成：`processing_order_generate(order_ids=[...])`，仅已确认且含加工项订单；生成后订单自动进 producing；批量前先确认
+- 查询：`processing_order_query(keyword=JG-xxx/订单号, status=可选)`
+- 发加工：`processing_order_update(action=issue, processor=加工方, expected_delivery_date=交期)`；开始 `start`；完成 `complete`（提示可发货，不自动发货）；取消 `cancel(reason=必填)`，取消后订单回退已确认
+- 状态机：generated→issued→in_processing→completed｜cancelled；非法流转服务端拒绝；completed 冻结
+- 含加工项订单不能直接发货：须先完成加工单（服务端守卫）
 
 ## 领域规则
 

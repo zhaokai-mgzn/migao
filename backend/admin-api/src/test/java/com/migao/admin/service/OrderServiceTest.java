@@ -1,5 +1,5 @@
 package com.migao.admin.service;
-// case_ids: OR-006, FN-001, OR-001
+// case_ids: OR-006, FN-001, OR-001, PG-003, PG-009, PG-010
 
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.migao.admin.config.TenantContext;
@@ -9,6 +9,7 @@ import com.migao.admin.entity.OrderItem;
 import com.migao.admin.entity.OrderLogistics;
 import com.migao.admin.entity.FinanceTransaction;
 import com.migao.admin.entity.ProductSku;
+import com.migao.admin.entity.ProcessingOrder;
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.mapper.FinanceTransactionMapper;
 import com.migao.admin.mapper.OrderItemMapper;
@@ -16,6 +17,7 @@ import com.migao.admin.mapper.OrderLogisticsMapper;
 import com.migao.admin.mapper.OrderMapper;
 import com.migao.admin.mapper.ProductMapper;
 import com.migao.admin.mapper.ProductSkuMapper;
+import com.migao.admin.mapper.ProcessingOrderMapper;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
@@ -36,7 +38,9 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -76,6 +80,9 @@ class OrderServiceTest {
 
     @Mock
     private NotificationService notificationService;
+
+    @Mock
+    private ProcessingOrderMapper processingOrderMapper;
 
     private Order testOrder;
     private OrderItem testOrderItem;
@@ -1631,5 +1638,114 @@ class OrderServiceTest {
 
         // then
         verify(notificationService).triggerByEvent(eq(1L), eq("order_status_changed"), any());
+    }
+
+    // ================================================================
+    // 加工单联动（issue #3340，case_ids: PG-003/PG-009/PG-010）
+    // ================================================================
+
+    private Map<String, Object> processingInfoMap() {
+        Map<String, Object> info = new LinkedHashMap<>();
+        info.put("processingFee", 6.0);
+        List<Map<String, Object>> procs = new ArrayList<>();
+        Map<String, Object> p = new LinkedHashMap<>();
+        p.put("id", "p1");
+        p.put("name", "打孔");
+        p.put("unitPrice", 3.0);
+        p.put("quantity", 2);
+        procs.add(p);
+        info.put("processingItems", procs);
+        return info;
+    }
+
+    @Test
+    @DisplayName("PG-009 含加工项订单无 completed 加工单 → shipped 被拒（防绕过加工）")
+    void shippedRejectedWithoutCompletedProcessingOrder() {
+        testOrder.setStatus("confirmed");
+        testOrderItem.setProcessingInfo(processingInfoMap());
+        when(orderMapper.selectById("order-001")).thenReturn(testOrder);
+        when(orderItemMapper.selectByOrderId("order-001", 1L)).thenReturn(List.of(testOrderItem));
+        when(processingOrderMapper.countCompletedByOrderId("order-001", 1L)).thenReturn(0L);
+
+        assertThatThrownBy(() -> orderService.updateOrderStatus("order-001", "shipped"))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("须先完成加工单");
+        verify(orderMapper, never()).update(any(), any());
+    }
+
+    @Test
+    @DisplayName("PG-009 含加工项订单有 completed 加工单 → 可 shipped")
+    void shippedAllowedWithCompletedProcessingOrder() {
+        testOrder.setStatus("confirmed");
+        testOrderItem.setProcessingInfo(processingInfoMap());
+        when(orderMapper.selectById("order-001")).thenReturn(testOrder);
+        when(orderItemMapper.selectByOrderId("order-001", 1L)).thenReturn(List.of(testOrderItem));
+        when(processingOrderMapper.countCompletedByOrderId("order-001", 1L)).thenReturn(1L);
+        when(orderMapper.update(any(), any())).thenReturn(1);
+
+        orderService.updateOrderStatus("order-001", "shipped");
+
+        verify(orderMapper).update(any(), any());
+    }
+
+    @Test
+    @DisplayName("PG-003 无加工项订单 confirmed→shipped 直跳仍合法")
+    void shippedAllowedWithoutProcessingItems() {
+        testOrder.setStatus("confirmed");
+        testOrderItem.setProcessingInfo(new LinkedHashMap<>());
+        when(orderMapper.selectById("order-001")).thenReturn(testOrder);
+        when(orderItemMapper.selectByOrderId("order-001", 1L)).thenReturn(List.of(testOrderItem));
+        when(orderMapper.update(any(), any())).thenReturn(1);
+
+        orderService.updateOrderStatus("order-001", "shipped");
+
+        verify(orderMapper).update(any(), any());
+    }
+
+    @Test
+    @DisplayName("PG-010 订单取消：加工单 generated → 自动作废 + 订单正常取消")
+    void cancelOrderAutoCancelsGeneratedProcessingOrder() {
+        testOrder.setStatus("pending");
+        ProcessingOrder po = ProcessingOrder.builder()
+                .id("po-1").tenantId(1L).orderId("order-001")
+                .processingOrderNo("JG-1").status("generated").build();
+        when(orderMapper.selectById("order-001")).thenReturn(testOrder);
+        when(processingOrderMapper.selectActiveByOrderId("order-001", 1L)).thenReturn(po);
+        when(orderMapper.update(any(), any())).thenReturn(1);
+
+        orderService.cancelOrder("order-001", "客户不要了");
+
+        ArgumentCaptor<ProcessingOrder> captor = ArgumentCaptor.forClass(ProcessingOrder.class);
+        verify(processingOrderMapper).updateById(captor.capture());
+        assertThat(captor.getValue().getStatus()).isEqualTo("cancelled");
+        assertThat(captor.getValue().getCancelledReason()).contains("自动作废");
+    }
+
+    @Test
+    @DisplayName("PG-010 订单取消：加工单 issued 及以上 → 拦截")
+    void cancelOrderBlockedWhenProcessingIssued() {
+        testOrder.setStatus("producing");
+        ProcessingOrder po = ProcessingOrder.builder()
+                .id("po-1").tenantId(1L).orderId("order-001")
+                .processingOrderNo("JG-1").status("issued").build();
+        when(orderMapper.selectById("order-001")).thenReturn(testOrder);
+        when(processingOrderMapper.selectActiveByOrderId("order-001", 1L)).thenReturn(po);
+
+        assertThatThrownBy(() -> orderService.cancelOrder("order-001", "客户不要了"))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("已发加工");
+        verify(processingOrderMapper, never()).updateById(any(ProcessingOrder.class));
+    }
+
+    @Test
+    @DisplayName("PG-007 回退方法：producing→confirmed 原子流转（加工单取消联动用）")
+    void revertProducingToConfirmed() {
+        when(orderMapper.update(any(), any())).thenReturn(1);
+        orderService.revertProducingToConfirmed("order-001", "加工单取消回退");
+        verify(orderMapper).update(any(), any());
+
+        when(orderMapper.update(any(), any())).thenReturn(0);
+        assertThatThrownBy(() -> orderService.revertProducingToConfirmed("order-001", "加工单取消回退"))
+                .isInstanceOf(BusinessException.class);
     }
 }

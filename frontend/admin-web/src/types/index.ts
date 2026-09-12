@@ -558,9 +558,67 @@ export interface LogisticsTrack {
   status?: string
 }
 
+// 加工单（issue #3340）
+export interface ProcessingItemSnapshot {
+  id?: string
+  name: string
+  unitPrice?: number
+  quantity?: number
+  unit?: string
+  options?: unknown
+}
+
+export interface ProcessingOrderItem {
+  productName?: string
+  sku?: string
+  colorName?: string
+  sellingMethod?: string
+  doorWidth?: string
+  width?: number
+  height?: number
+  quantity?: number
+  unit?: string
+  processingItems?: ProcessingItemSnapshot[]
+  remark?: string
+}
+
+export interface ProcessingOrder {
+  id: string
+  orderId: string
+  orderNo?: string
+  customerName?: string
+  processingOrderNo: string
+  processor?: string
+  expectedDeliveryDate?: string
+  status: 'generated' | 'issued' | 'in_processing' | 'completed' | 'cancelled'
+  items?: ProcessingOrderItem[]
+  remark?: string
+  templateVersion?: number
+  generatedAt?: string
+  issuedAt?: string
+  inProcessingAt?: string
+  completedAt?: string
+  cancelledAt?: string
+  cancelledReason?: string
+  printCount?: number
+}
+
+export interface ProcessingOrderGenerateResult {
+  orderRef: string
+  success: boolean
+  message?: string
+  processingOrderNo?: string
+}
+
+export interface ProcessingOrderUpdateParams {
+  action: 'issue' | 'start' | 'complete' | 'cancel'
+  processor?: string
+  expectedDeliveryDate?: string
+  reason?: string
+}
+
 // 物流信息
-export interface LogisticsInfo {
-  logisticsCompany?: string
+export interface LogisticsInfo {  logisticsCompany?: string
   trackingNo?: string
   status?: string
   shippingMethod?: 'logistics' | 'none'  // 物流发货 / 无需物流

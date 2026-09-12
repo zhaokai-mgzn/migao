@@ -2565,6 +2565,186 @@ _CASE_OR_017 = EvalCase(
     forbidden_text=['暂未查询到可选加工项', '无可用加工项', '该商品无加工项'],
 )
 
+# ── PG-001 [NORMAL] 生成加工单 - 已确认含加工项订单 → 加工单生成 + 订单进入 producing（源: cases/processing-order.yml）──
+_CASE_PG_001 = EvalCase(
+    id='PG-001',
+    legacy_id='',
+    title='生成加工单 - 已确认含加工项订单 → 加工单生成 + 订单进入 producing',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=[],
+    expectations=[],
+    data_checks=['已确认订单含加工项 → 生成 processing_orders(status=generated)，快照五要素齐全（商品/颜色/门幅/宽×高/数量/加工项）', '快照加工项含 options（生成时从加工项目录补齐，下单时未落库）', '快照不含销售价（决策 2：加工单给加工方只看加工费）', '联动：订单 confirmed → producing（orderService.updateOrderStatus 调用）'],
+    skip_reason='由 ProcessingOrderServiceTest 验证（generate 成功路径 + 快照 options/无价格断言）',
+    tags=['processing-order', 'generate', 'linkage'],
+    persona='',
+)
+
+# ── PG-002 [NORMAL] 生成加工单 - 幂等：同一订单已有活跃加工单 → 拒绝重复生成（源: cases/processing-order.yml）──
+_CASE_PG_002 = EvalCase(
+    id='PG-002',
+    legacy_id='',
+    title='生成加工单 - 幂等：同一订单已有活跃加工单 → 拒绝重复生成',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=[],
+    expectations=[],
+    data_checks=['已有非取消态加工单时重复生成 → 校验错误，拒绝（DB partial unique index 兜底）'],
+    skip_reason='由 ProcessingOrderServiceTest 验证',
+    tags=['processing-order', 'idempotent'],
+    persona='',
+)
+
+# ── PG-003 [NORMAL] 生成加工单 - 无加工项订单不生成（现货成品直跳发货）（源: cases/processing-order.yml）──
+_CASE_PG_003 = EvalCase(
+    id='PG-003',
+    legacy_id='',
+    title='生成加工单 - 无加工项订单不生成（现货成品直跳发货）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=[],
+    expectations=[],
+    data_checks=['订单无加工项（processing_info 空）→ 拒绝生成加工单', '无加工项订单 confirmed→shipped 直跳仍合法（不被守卫拦截）'],
+    skip_reason='由 ProcessingOrderServiceTest + OrderServiceTest 验证',
+    tags=['processing-order', 'conditional'],
+    persona='',
+)
+
+# ── PG-004 [NORMAL] 生成加工单 - 未确认订单拒绝（pending/已取消不允许）（源: cases/processing-order.yml）──
+_CASE_PG_004 = EvalCase(
+    id='PG-004',
+    legacy_id='',
+    title='生成加工单 - 未确认订单拒绝（pending/已取消不允许）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=[],
+    expectations=[],
+    data_checks=['pending（未付款）订单生成加工单 → 校验错误'],
+    skip_reason='由 ProcessingOrderServiceTest 验证',
+    tags=['processing-order', 'guard'],
+    persona='',
+)
+
+# ── PG-005 [NORMAL] 加工单状态机 - generated→issued→in_processing→completed 主链（源: cases/processing-order.yml）──
+_CASE_PG_005 = EvalCase(
+    id='PG-005',
+    legacy_id='',
+    title='加工单状态机 - generated→issued→in_processing→completed 主链',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=[],
+    expectations=[],
+    data_checks=['issue（发加工，可填加工方/交期）→ issued；start → in_processing；complete → completed', 'complete 后订单保持 producing（不自动 shipped，发货需物流单号）'],
+    skip_reason='由 ProcessingOrderServiceTest 验证',
+    tags=['processing-order', 'state-machine'],
+    persona='',
+)
+
+# ── PG-006 [NORMAL] 加工单状态机 - 非法迁移拒绝（如 generated→completed、completed 冻结）（源: cases/processing-order.yml）──
+_CASE_PG_006 = EvalCase(
+    id='PG-006',
+    legacy_id='',
+    title='加工单状态机 - 非法迁移拒绝（如 generated→completed、completed 冻结）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=[],
+    expectations=[],
+    data_checks=['非法流转（generated→completed / completed 上任何变更）→ 校验错误'],
+    skip_reason='由 ProcessingOrderServiceTest 验证',
+    tags=['processing-order', 'state-machine'],
+    persona='',
+)
+
+# ── PG-007 [NORMAL] 加工单取消联动 - generated 取消 → 订单 producing→confirmed 回退（源: cases/processing-order.yml）──
+_CASE_PG_007 = EvalCase(
+    id='PG-007',
+    legacy_id='',
+    title='加工单取消联动 - generated 取消 → 订单 producing→confirmed 回退',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=[],
+    expectations=[],
+    data_checks=['取消加工单（必填原因）→ cancelled + 订单 producing→confirmed 回退（重新可生成）'],
+    skip_reason='由 ProcessingOrderServiceTest 验证',
+    tags=['processing-order', 'linkage', 'cancel'],
+    persona='',
+)
+
+# ── PG-008 [NORMAL] 加工单取消 - issued 及以上必须填原因（人工确认语义）（源: cases/processing-order.yml）──
+_CASE_PG_008 = EvalCase(
+    id='PG-008',
+    legacy_id='',
+    title='加工单取消 - issued 及以上必须填原因（人工确认语义）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=[],
+    expectations=[],
+    data_checks=['cancel 不填原因 → 校验错误'],
+    skip_reason='由 ProcessingOrderServiceTest 验证',
+    tags=['processing-order', 'guard'],
+    persona='',
+)
+
+# ── PG-009 [NORMAL] 订单发货守卫 - 含加工项订单须完成加工单后才能 shipped（源: cases/processing-order.yml）──
+_CASE_PG_009 = EvalCase(
+    id='PG-009',
+    legacy_id='',
+    title='订单发货守卫 - 含加工项订单须完成加工单后才能 shipped',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=[],
+    expectations=[],
+    data_checks=['含加工项订单无 completed 加工单 → updateOrderStatus(shipped) 校验错误', '含加工项订单有 completed 加工单 → 可 shipped'],
+    skip_reason='由 OrderServiceTest 验证',
+    tags=['processing-order', 'guard', 'shipped'],
+    persona='',
+)
+
+# ── PG-010 [NORMAL] 订单取消联动 - 加工单 generated 自动作废；issued+ 拦截（源: cases/processing-order.yml）──
+_CASE_PG_010 = EvalCase(
+    id='PG-010',
+    legacy_id='',
+    title='订单取消联动 - 加工单 generated 自动作废；issued+ 拦截',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=[],
+    expectations=[],
+    data_checks=['取消订单时加工单为 generated → 加工单自动 cancelled（原因：订单取消自动作废）+ 订单正常取消', '取消订单时加工单 issued 及以上 → 校验错误拦截（须先处理加工单）'],
+    skip_reason='由 OrderServiceTest 验证',
+    tags=['processing-order', 'linkage', 'cancel'],
+    persona='',
+)
+
+# ── PG-011 [NORMAL] 租户隔离 - 跨租户加工单不可查询/不可解析（源: cases/processing-order.yml）──
+_CASE_PG_011 = EvalCase(
+    id='PG-011',
+    legacy_id='',
+    title='租户隔离 - 跨租户加工单不可查询/不可解析',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=[],
+    expectations=[],
+    data_checks=['B 租户查询 A 租户加工单 → notFound（resolve 条件含 tenant_id）'],
+    skip_reason='由 ProcessingOrderServiceTest 验证',
+    tags=['processing-order', 'tenant-isolation'],
+    persona='',
+)
+
+# ── PG-012 [NORMAL] 加工单 intent 路由契约 - processing_order_* 路由 order skill（仅米宝可达）（源: cases/processing-order.yml）──
+_CASE_PG_012 = EvalCase(
+    id='PG-012',
+    legacy_id='',
+    title='加工单 intent 路由契约 - processing_order_* 路由 order skill（仅米宝可达）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=[],
+    expectations=[],
+    data_checks=['schema.yaml intent_ownership 登记 processing_order_generate/query/update（route_key=order，agents=[mibao]）', 'check_intent_ownership 双端视图对齐：mibao 映射含三 intent，xiaobu 不含', 'order skill prompt（references/prompts/order.md）含加工单工具使用规则（快照快照校验：快照长度上限）'],
+    skip_reason='由 test_ontology_contract.py + test_prompt_snapshots.py 验证（契约层，非 LLM 行为）',
+    tags=['processing-order', 'intent-routing', 'contract'],
+    persona='',
+)
+
 # ── PP-001 [NORMAL] 加工项选择 - 分页翻页（源: cases/processing.yml）──
 _CASE_PP_001 = EvalCase(
     id='PP-001',
@@ -3944,6 +4124,18 @@ ALL_CASES = (
     _CASE_OR_015,
     _CASE_OR_016,
     _CASE_OR_017,
+    _CASE_PG_001,
+    _CASE_PG_002,
+    _CASE_PG_003,
+    _CASE_PG_004,
+    _CASE_PG_005,
+    _CASE_PG_006,
+    _CASE_PG_007,
+    _CASE_PG_008,
+    _CASE_PG_009,
+    _CASE_PG_010,
+    _CASE_PG_011,
+    _CASE_PG_012,
     _CASE_PP_001,
     _CASE_PP_002,
     _CASE_PP_003,

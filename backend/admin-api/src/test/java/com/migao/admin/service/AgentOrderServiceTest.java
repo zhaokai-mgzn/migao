@@ -43,6 +43,7 @@ class AgentOrderServiceTest {
     @Mock(lenient = true) private com.migao.admin.mapper.ProductSkuMapper productSkuMapper;
     @Mock(lenient = true) private com.fasterxml.jackson.databind.ObjectMapper objectMapper;
     @Mock(lenient = true) private FinanceTransactionMapper financeTransactionMapper;
+    @Mock(lenient = true) private ProcessingOrderMapper processingOrderMapper;
 
     private Order testOrder;
 
@@ -245,6 +246,7 @@ class AgentOrderServiceTest {
             when(orderMapper.selectById("order-uuid-001")).thenReturn(testOrder); // 发货联动 + 详情
             when(orderMapper.update(any(), any())).thenReturn(1); // confirmed → shipped 原子流转
             when(orderItemMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
+            when(orderItemMapper.selectByOrderId(any(), any())).thenReturn(List.of()); // 加工单守卫：无加工项
 
             // when
             OrderDetailResponse result = (OrderDetailResponse)
@@ -272,6 +274,7 @@ class AgentOrderServiceTest {
             when(orderMapper.selectById("order-uuid-001")).thenReturn(testOrder);
             when(orderMapper.update(any(), any())).thenReturn(1);
             when(orderItemMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
+            when(orderItemMapper.selectByOrderId(any(), any())).thenReturn(List.of()); // 加工单守卫：无加工项
 
             // when
             orderService.updateOrderForAgent("order-uuid-001", req, 1L);
@@ -293,6 +296,7 @@ class AgentOrderServiceTest {
             when(orderMapper.selectById("order-uuid-001")).thenReturn(testOrder);
             when(orderMapper.update(any(), any())).thenReturn(1);
             when(orderItemMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
+            when(orderItemMapper.selectByOrderId(any(), any())).thenReturn(List.of()); // 加工单守卫：无加工项
 
             // when
             orderService.updateOrderForAgent("order-uuid-001", req, 1L);
