@@ -9,9 +9,10 @@ LangGraph Skill 节点测试
 """
 # case_ids: AG-004, CH-003, CH-023, MC-008, DF-018, HR-005, CU-003, CH-010, CH-012
 
+import json
 import pytest
 from unittest.mock import patch, AsyncMock, MagicMock
-from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
+from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, ToolMessage
 
 from app.graph.skills.order_skill import ORDER_TOOLS, ORDER_SKILL_CONFIG
 from app.graph.skills.product_skill import PRODUCT_TOOLS, PRODUCT_SKILL_CONFIG
@@ -19,6 +20,7 @@ from app.graph.skills.knowledge_skill import KNOWLEDGE_TOOLS, KNOWLEDGE_SKILL_CO
 from app.graph.skills.aftersales_skill import AFTERSALES_TOOLS, AFTERSALES_SKILL_CONFIG
 from app.graph.skills.general_agent import GENERAL_TOOLS, GENERAL_SKILL_CONFIG
 from app.graph.skills.base_skill import build_tool_context, execute_skill, _extract_content, get_skill_llm
+import app.graph.skills.base_skill as lr2
 from app.graph.skills.skill_registry import SkillRegistry
 from app.tools.base import ToolContext
 
@@ -1006,8 +1008,14 @@ class TestCustomerSkillPendingLock:
              patch("app.graph.skills.base_skill.get_skill_llm") as get_llm, \
              patch("app.graph.skills.base_skill.create_skill_registry") as create_reg, \
              patch("app.graph.skills.base_skill.set_tool_context"):
+            from app.tools.product_detail import ProductDetailTool
+            from app.tools.interact import InteractTool
             registry = MagicMock()
             registry.get_langchain_tools.return_value = []
+            registry.get_tool.side_effect = lambda n: {
+                "product_detail": ProductDetailTool(),
+                "interact": InteractTool(),
+            }.get(n)
             create_reg.return_value = registry
 
             breaker = MagicMock()
@@ -1228,3 +1236,275 @@ class TestConfirmGateGuidance:
             "那是不可执行指令，会让模型反复重试或放弃（issue #3317）"
         )
         assert "完整复述" in blob, "应改为要求用文本完整复述操作并请用户回复确认"
+
+
+class TestProcessingItemsFallback:
+    """加工项漏问代码兜底（OR-017 抖动根因，模式 C 代码管）
+
+    业务铁律「商品有加工项 → confirm 前必须先问」只在 prompt/工具描述里时，
+    约 1/3 轮次 LLM 会漏掉（CI 实证 run 34622425044 ✅ / 34626024229 ❌ /
+    34662285260 ❌，**同代码同用例**）。本兜底把「先问加工项」变成**确定性**：
+    检测到 confirm 卡而加工项未问 → 把该卡改写为加工项 choice 卡。
+    """
+
+    def _result(self, name, data, success=True):
+        return ({"name": name, "args": {}, "id": "x"},
+                json.dumps({"success": success, "data": data}),
+                {"success": success, "data": data})
+
+    def _detail_msg(self, items):
+        payload = {"success": True, "data": {"processing_items": items}}
+        return ToolMessage(content=json.dumps(payload, ensure_ascii=False),
+                           tool_call_id="d1", name="product_detail")
+
+    def _user(self, text):
+        return HumanMessage(content=text)
+
+    def test_rewrites_confirm_to_choice_when_items_unasked(self):
+        items = [{"id": "pi1", "name": "打孔", "unitPrice": 8.0, "unit": "米",
+                  "pricingMethod": "per_meter"}]
+        confirm = self._result("interact", {"component": "confirm", "fields": []})
+        plan = lr2._plan_processing_items_rewrite(
+            [confirm], [self._user("帮我下单"), self._detail_msg(items)])
+        assert plan is not None
+        idx, data = plan
+        assert idx == 0
+        assert data["component"] == "choice"
+        assert data["multiSelect"] is True
+        assert data["options"][0]["value"] == "proc_item_pi1"
+        assert "打孔" in data["options"][0]["label"]
+
+    def test_no_rewrite_when_processing_choice_already_emitted(self):
+        items = [{"id": "pi1", "name": "打孔", "unitPrice": 8.0}]
+        choice = self._result("interact", {"component": "choice", "multiSelect": True,
+                                           "title": "加工项", "options": [{"value": "proc_item_pi1"}]})
+        confirm = self._result("interact", {"component": "confirm", "fields": []})
+        plan = lr2._plan_processing_items_rewrite(
+            [choice, confirm], [self._user("帮我下单"), self._detail_msg(items)])
+        assert plan is None, "已问过加工项 → 不得改写"
+
+    def test_no_rewrite_when_user_declined(self):
+        items = [{"id": "pi1", "name": "打孔", "unitPrice": 8.0}]
+        confirm = self._result("interact", {"component": "confirm", "fields": []})
+        plan = lr2._plan_processing_items_rewrite(
+            [confirm], [self._user("不需要加工项"), self._detail_msg(items)])
+        assert plan is None, "顾客明确拒绝过 → 不得硬弹卡"
+
+    def test_no_rewrite_without_confirm(self):
+        items = [{"id": "pi1", "name": "打孔", "unitPrice": 8.0}]
+        choice = self._result("interact", {"component": "choice", "title": "选颜色",
+                                           "options": [{"value": "white"}]})
+        plan = lr2._plan_processing_items_rewrite(
+            [choice], [self._user("选品"), self._detail_msg(items)])
+        assert plan is None
+
+    def test_no_rewrite_without_product_detail(self):
+        confirm = self._result("interact", {"component": "confirm", "fields": []})
+        plan = lr2._plan_processing_items_rewrite(
+            [confirm], [self._user("确认下单")])
+        assert plan is None, "没有加工项数据不得改写"
+
+    def test_rewrite_works_cross_turn(self):
+        """product_detail 与 confirm 跨轮（OR-017 实测形态：R1 查详情、R2 发卡）"""
+        items = [{"id": "pi1", "name": "打孔", "unitPrice": 8.0},
+                 {"id": "pi2", "name": "折边", "unitPrice": 12.0}]
+        confirm = self._result("interact", {"component": "confirm", "fields": []})
+        plan = lr2._plan_processing_items_rewrite(
+            [confirm], [self._user("确认下单"), self._detail_msg(items)])
+        assert plan is not None
+        assert len(plan[1]["options"]) == 2
+
+    def test_options_capped(self):
+        items = [{"id": f"p{i}", "name": f"n{i}", "unitPrice": i} for i in range(20)]
+        confirm = self._result("interact", {"component": "confirm", "fields": []})
+        plan = lr2._plan_processing_items_rewrite(
+            [confirm], [self._user("下单"), self._detail_msg(items)])
+        assert plan is not None and len(plan[1]["options"]) <= 6
+
+    def test_decline_detection_uses_last_user_message(self):
+        """拒绝判定只看**最近一条**用户消息（更早的"不需要"不算）"""
+        items = [{"id": "pi1", "name": "打孔", "unitPrice": 8.0}]
+        confirm = self._result("interact", {"component": "confirm", "fields": []})
+        plan = lr2._plan_processing_items_rewrite(
+            [confirm],
+            [self._user("不需要加工项"), self._user("那就确认下单吧"), self._detail_msg(items)])
+        assert plan is not None, "最近一条用户消息没有拒绝 → 应改写"
+
+
+class TestProcessingItemsFallbackWiring:
+    """兜底的**接线**必须在 execute_skill 里真正生效（不只纯函数对）"""
+
+    def _run_execute(self):
+        import asyncio
+
+        from langchain_core.messages import AIMessage as _AI
+
+        items = [{"id": "pi1", "name": "打孔", "unitPrice": 8.0, "unit": "米",
+                  "pricingMethod": "per_meter"}]
+
+        async def fake_execute(tool, args, ctx, state):
+            if tool.name == "product_detail":
+                return (json.dumps({"success": True, "data": {"processing_items": items}}),
+                        {"success": True, "data": {"processing_items": items}})
+            if tool.name == "interact":
+                return (json.dumps({"success": True,
+                                    "data": {"component": "confirm", "fields": []}}),
+                        {"success": True, "data": {"component": "confirm", "fields": []}})
+            return (json.dumps({"success": True, "data": {}}), {"success": True, "data": {}})
+
+        with patch("app.memory.session_memory.SessionMemory") as mem_cls, \
+             patch("app.graph.skills.base_skill.get_breaker") as get_breaker, \
+             patch("app.graph.skills.base_skill.get_skill_llm") as get_llm, \
+             patch("app.graph.skills.base_skill.create_skill_registry") as create_reg, \
+             patch("app.graph.skills.base_skill.set_tool_context"), \
+             patch("app.graph.skills.base_skill._execute_tool_safe", fake_execute):
+            from app.tools.product_detail import ProductDetailTool
+            from app.tools.interact import InteractTool
+            registry = MagicMock()
+            registry.get_langchain_tools.return_value = []
+            registry.get_tool.side_effect = lambda n: {
+                "product_detail": ProductDetailTool(),
+                "interact": InteractTool(),
+            }.get(n)
+            create_reg.return_value = registry
+
+            breaker = MagicMock()
+
+            async def _passthrough(fn):
+                return await fn()
+
+            breaker.call = _passthrough
+            get_breaker.return_value = breaker
+
+            # 第 1 次 LLM 调用：product_detail；第 2 次：interact(confirm)；第 3 次：收尾文本
+            def make_call(name, args):
+                m = MagicMock(spec=_AI)
+                m.content = ""
+                m.tool_calls = [{"name": name, "args": args, "id": "t1"}]
+                return m
+
+            final = MagicMock(spec=_AI)
+            final.content = "好的，为您确认订单"
+            final.tool_calls = []
+
+            llm = MagicMock()
+            llm.bind_tools.return_value = llm
+            llm.ainvoke = AsyncMock(side_effect=[
+                make_call("product_detail", {"id": "prod_x"}),
+                make_call("interact", {"component": "confirm", "fields": []}),
+                final,
+            ])
+            get_llm.return_value = llm
+            mem_cls.return_value.set_pending_skill = AsyncMock(return_value=True)
+
+            state = _make_state(messages=[
+                HumanMessage(content="我要买夏日清风窗帘，确认下单"),
+                ToolMessage(content=json.dumps({"success": True,
+                                                "data": {"processing_items": items}}),
+                            tool_call_id="d0", name="product_detail"),
+            ])
+            return asyncio.run(execute_skill(
+                state=state, skill_name="customer_order",
+                tool_names=["product_detail", "interact"],
+                system_prompt="你是小布",
+            ))
+
+    def test_confirm_card_rewritten_to_choice_card(self):
+        result = self._run_execute()
+        blob = str(result)
+        # 改写后的 choice 卡必须进入本轮产物（chat.py 据此发 interactive choice 事件）
+        assert "component" in blob and "proc_item_pi1" in blob, (
+            "execute_skill 未把 confirm 卡改写为加工项 choice 卡（接线失效）"
+        )
+        assert '"component": "choice"' in blob, f"confirm 卡未被改写为 choice:\n{blob[:600]}"
+
+
+class TestInflightHandoffGuard:
+    """C 端在办流程中禁止「无信号误转人工」（CH-012 实证，代码兜底）
+
+    CH-012 run 34673167164 轨迹：R1 下发「请选择要申请退货的订单」choice 卡 →
+    R3 用户仅回「质量问题」→ agent 调 `human_handoff`（并创建投诉工单）→ 流程被放弃，
+    随后 R4 才恢复但轮数耗尽 → `aftersale_create` 未发生（用例判 0 分）。
+    用户消息既非显式请求、也无负面情绪、更非能力外诉求 —— 纯属模型放弃在办流程。
+    """
+
+    def _run(self, last_user_msg: str, *, with_card: bool, explicit_human: bool = False):
+        import asyncio
+
+        sent_tools = []
+
+        async def fake_execute(tool, args, ctx, state):
+            sent_tools.append(tool.name)
+            return (json.dumps({"success": True, "data": {}}), {"success": True, "data": {}})
+
+        history = [HumanMessage(content="我要退货")]
+        if with_card:
+            history.append(ToolMessage(
+                content=json.dumps({"success": True,
+                                    "data": {"component": "choice",
+                                             "title": "请选择要申请退货的订单",
+                                             "options": [{"value": "o1"}]}}),
+                tool_call_id="c0", name="interact"))
+        history.append(HumanMessage(content=last_user_msg))
+
+        with patch("app.memory.session_memory.SessionMemory") as mem_cls, \
+             patch("app.graph.skills.base_skill.get_breaker") as get_breaker, \
+             patch("app.graph.skills.base_skill.get_skill_llm") as get_llm, \
+             patch("app.graph.skills.base_skill.create_skill_registry") as create_reg, \
+             patch("app.graph.skills.base_skill.set_tool_context"), \
+             patch("app.graph.skills.base_skill._execute_tool_safe", fake_execute):
+            from app.tools.human_handoff import HumanHandoffTool
+            registry = MagicMock()
+            registry.get_langchain_tools.return_value = []
+            registry.get_tool.side_effect = lambda n: (
+                HumanHandoffTool() if n == "human_handoff" else None)
+            create_reg.return_value = registry
+
+            breaker = MagicMock()
+
+            async def _passthrough(fn):
+                return await fn()
+
+            breaker.call = _passthrough
+            get_breaker.return_value = breaker
+
+            call = MagicMock(spec=AIMessage)
+            call.content = ""
+            call.tool_calls = [{"name": "human_handoff", "args": {}, "id": "h1"}]
+            final = MagicMock(spec=AIMessage)
+            final.content = "好的"
+            final.tool_calls = []
+            llm = MagicMock()
+            llm.bind_tools.return_value = llm
+            llm.ainvoke = AsyncMock(side_effect=[call, final])
+            get_llm.return_value = llm
+            mem_cls.return_value.set_pending_skill = AsyncMock(return_value=True)
+
+            result = asyncio.run(execute_skill(
+                state=_make_state(messages=history),
+                skill_name="customer_aftersales",
+                tool_names=["human_handoff"], system_prompt="你是小布的售后客服",
+            ))
+        return result, sent_tools
+
+    def test_blocks_signal_less_handoff_during_inflight_flow(self):
+        result, sent = self._run("质量问题", with_card=True)
+        assert "handoff_blocked_inflight" in str(result), (
+            "在办流程中无信号转人工未被拦截 —— agent 会放弃在办业务并创建投诉工单（CH-012 实证）"
+        )
+        assert "human_handoff" not in sent, "被拦截时不得真正执行转人工"
+
+    def test_allows_explicit_handoff_request(self):
+        """回归：顾客明确说「转人工」时必须放行（CH-008/013/015 依赖）"""
+        result, sent = self._run("转人工", with_card=True)
+        assert "human_handoff" in sent, "显式转人工请求被误拦"
+
+    def test_allows_emotional_escalation(self):
+        """回归：情绪激动时放行（CH-014 依赖）"""
+        _result, sent = self._run("你们又没解决，气死我了", with_card=True)
+        assert "human_handoff" in sent, "负面情绪转人工被误拦"
+
+    def test_allows_handoff_without_inflight_card(self):
+        """没有在办卡片（未进入多轮流程）时不拦截 —— 保持既有行为"""
+        _result, sent = self._run("质量问题", with_card=False)
+        assert "human_handoff" in sent, "无在办流程时不应拦截转人工"

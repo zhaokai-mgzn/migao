@@ -708,12 +708,16 @@ def _requires_confirmation(tool, tool_args: dict, last_user_msg: str) -> bool:
 def _is_processing_items_card(args: dict) -> bool:
     """choice 卡是否加工项选择卡（排除瑕疵商品等选项带 ¥ 的普通卡）。
 
-    判定：title 含「加工项」或任一 option value 以 proc_item 开头。
+    判定：title 含「加工项」**或「加工」**（OR-017 run 34670989760 实证：LLM 的合法
+    加工项卡标题是「这款窗帘支持**加工**哦，需要帮您加上吗？」，不含「加工项」三字但
+    语义完全是加工项询问 —— 只认「加工项」会把 agent 的正确行为误判为"没问"），
+    或任一 option value 以 proc_item 开头。
     与 tests/agent_eval/local_runner.py 的同名函数保持语义一致（断言侧）。
     """
+    title = str((args or {}).get("title") or "")
     if not (args or {}).get("options"):
-        return bool((args or {}).get("title") and "加工项" in str(args.get("title", "")))
-    if "加工项" in str(args.get("title", "")):
+        return bool(title and ("加工项" in title or "加工" in title))
+    if "加工项" in title or "加工" in title:
         return True
     return any(str(o.get("value", "")).startswith("proc_item") for o in args.get("options") or [])
 
@@ -738,6 +742,145 @@ def _ensure_processing_items_multiselect(tool_name: str, args: dict) -> dict:
     new_args["multiSelect"] = True
     logger.info("[interact] 自动补齐加工项卡 multiSelect=true（LLM 漏传兜底）")
     return new_args
+
+
+# ── 模式 C 代码兜底：加工项漏问（OR-017 抖动根因）──
+# 业务铁律「商品有加工项 → confirm 前必须先问」目前只写在 prompt/工具描述里，
+# 约 1/3 轮次 LLM 会漏掉（CI 实证 run 34622425044 ✅ / 34626024229 ❌ / 34662285260 ❌，
+# 同代码同用例）。按项目「改 3 次 prompt 修不好 → 代码管」惯例，做确定性兜底：
+# 当 LLM 跳过加工项直接发 confirm 卡时，把该 confirm 卡**改写**为加工项 choice 卡。
+# 这与 _ensure_processing_items_multiselect（漏传 multiSelect 自动补）同族。
+
+# 加工项 choice 卡的 option value 前缀（与 _is_processing_items_card 及
+# tests/agent_eval/local_runner.py 的断言语义一致）
+_PROC_ITEM_VALUE_PREFIX = "proc_item_"
+
+# 用户明确拒绝加工项的短句（命中则跳过兜底 —— 顾客说"不需要"时不得硬弹卡）
+_PROC_DECLINE_MARKERS = (
+    "不需要加工", "不用加工", "不要加工", "不加工", "不加加工",
+    "不需要了", "不用了", "算了", "不加了",
+)
+
+
+def _find_last_product_processing_items(messages) -> List[dict]:
+    """从会话历史里找**最近一次** product_detail 的加工项列表。
+
+    OR-017 实测：product_detail 与 confirm 卡经常**跨轮**（R1 查详情、R2 发卡），
+    本轮 tool_results 里看不到详情，必须回看会话里的 ToolMessage。
+    """
+    if not messages:
+        return []
+    for msg in reversed(messages):
+        if not isinstance(msg, ToolMessage):
+            continue
+        if getattr(msg, "name", None) != "product_detail":
+            continue
+        try:
+            payload = json.loads(msg.content or "{}")
+            data = payload.get("data") if isinstance(payload, dict) else None
+            items = (data or {}).get("processing_items") or []
+            if items:
+                return items
+        except (ValueError, TypeError, AttributeError):
+            continue
+    return []
+
+
+def _last_user_declined_processing(messages) -> bool:
+    """最近一条用户消息是否明确拒绝加工项（拒绝过就不再硬弹卡）"""
+    for msg in reversed(messages):
+        if isinstance(msg, HumanMessage):
+            text = getattr(msg, "content", "") or ""
+            if isinstance(text, list):
+                text = " ".join(str(t.get("text", "")) for t in text if isinstance(t, dict))
+            return any(k in str(text) for k in _PROC_DECLINE_MARKERS)
+    return False
+
+
+def _has_processing_choice_in_turn(tool_results) -> bool:
+    """本轮是否已发过加工项 choice 卡（发过就不再改写）"""
+    for _tc, _rs, rd in tool_results:
+        if not rd or not rd.get("success"):
+            continue
+        data = rd.get("data") or {}
+        if data.get("component") == "choice" and _is_processing_items_card(data):
+            return True
+    return False
+
+
+def _plan_processing_items_rewrite(tool_results, messages) -> Optional[tuple]:
+    """检测「有加工项却漏问、直接发 confirm 卡」并返回改写方案。
+
+    Returns:
+        (确认卡在 tool_results 中的下标, 新的 choice 卡 data) 或 None
+    """
+    confirm_idx = -1
+    for i, (tc, _rs, rd) in enumerate(tool_results):
+        if not rd or not rd.get("success"):
+            continue
+        data = rd.get("data") or {}
+        if tc.get("name") != "interact":
+            continue
+        if data.get("component") == "confirm" and confirm_idx == -1:
+            confirm_idx = i
+        elif data.get("component") == "choice" and _is_processing_items_card(data):
+            return None  # 本轮已经问过加工项
+    if confirm_idx == -1:
+        return None
+    if _last_user_declined_processing(messages):
+        return None  # 顾客明确拒绝过，不硬弹
+    items = _find_last_product_processing_items(messages)
+    if not items:
+        return None  # 没拿到加工项数据，无从改写
+    options = []
+    for it in items[:_MAX_PROC_OPTIONS]:
+        oid = str(it.get("id") or "")
+        if not oid:
+            continue
+        name = str(it.get("name") or "加工项")
+        price = it.get("unitPrice")
+        unit = it.get("unit") or ""
+        options.append({
+            "label": f"{name} ¥{price}/{unit}" if price is not None else name,
+            "value": f"{_PROC_ITEM_VALUE_PREFIX}{oid}",
+            "unitPrice": price,
+            "pricingMethod": it.get("pricingMethod"),
+        })
+    if not options:
+        return None
+    choice_data = {
+        "component": "choice",
+        "multiSelect": True,
+        "title": "这款商品支持以下加工项，需要哪些呢？（可多选）",
+        "options": options,
+    }
+    return confirm_idx, choice_data
+
+
+_MAX_PROC_OPTIONS = 6
+
+
+def _has_inflight_interactive_card(messages) -> bool:
+    """会话里是否已下发过交互卡（= 有**在办**的多轮流程）。
+
+    用于阻止「在办流程中途误转人工」：CH-012 实证（run 34673167164）——R1 已下发
+    「请选择要申请退货的订单」choice 卡，R3 用户仅回「质量问题」，agent 却调用了
+    `human_handoff`（还创建了投诉工单），随后才恢复流程但轮数耗尽、`aftersale_create`
+    未发生。有在办卡片 = 用户正在走流程，此时无信号转人工属于**模型自行放弃**。
+    """
+    for msg in reversed(messages or []):
+        if not isinstance(msg, ToolMessage) or getattr(msg, "name", None) != "interact":
+            continue
+        try:
+            payload = json.loads(msg.content or "{}")
+        except (ValueError, TypeError):
+            continue
+        if not isinstance(payload, dict) or not payload.get("success"):
+            continue
+        data = payload.get("data") or {}
+        if data.get("component") in ("choice", "confirm", "form"):
+            return True
+    return False
 
 
 async def _execute_tool_safe(tool, tool_args: dict, tool_context, state: dict) -> tuple:
@@ -1413,6 +1556,31 @@ async def execute_skill(
                     if tool is None:
                         logger.warning(f"[{skill_name}] Tool not found: {tool_name} | session={session_id}")
                         return tool_call, json.dumps({"success": False, "error": "tool_not_found", "message": f"工具 {tool_name} 不可用"}, ensure_ascii=False), {"success": False}
+                    # ── 兜底：C 端在办流程中禁止「无信号误转人工」（CH-012 实证）──
+                    # R1 已下发选单卡、R3 用户仅回「质量问题」，agent 却 human_handoff
+                    # （还创建了投诉工单）→ 流程被放弃、轮数耗尽、aftersale_create 未发生。
+                    # 判据与 handoff_judge 同源：显式请求 / 负面情绪 / 能力外诉求 三者皆无
+                    # → 不是用户要的转人工，而是模型放弃流程 → 阻止并给出可执行指引。
+                    if (tool_name == "human_handoff"
+                            and skill_name in ("customer_order", "customer_aftersales")):
+                        from app.graph.handoff_judge import has_escalation_signal
+                        if (not has_escalation_signal(last_user_msg)
+                                and _has_inflight_interactive_card(state.get("messages", []))):
+                            logger.warning(
+                                f"[{skill_name}] 拦截在办流程中的无信号转人工 | session={session_id} "
+                                f"last_msg={last_user_msg[:30]!r}"
+                            )
+                            return tool_call, json.dumps({
+                                "success": False,
+                                "error": "handoff_blocked_inflight",
+                                "message": (
+                                    "顾客正在办理的业务尚未完成，且本轮消息没有要求转人工、"
+                                    "没有情绪激动、也不涉及赔偿/法律。请**继续完成当前流程**"
+                                    "（按交互卡与提示继续下一步）。若顾客确实要求人工，"
+                                    "需其明确说出「转人工/找人工/找客服」后再调用本工具。"
+                                ),
+                            }, ensure_ascii=False), {"success": False, "error": "handoff_blocked_inflight"}
+
                     # 写操作（destructive 或 requires_confirmation 高风险写）：必须经用户明确确认
                     # （代码层兜底，防间接提示注入驱动未确认写操作，审计 07 P0-L1）
                     # 豁免：action ∈ tool.read_only_actions 的纯只读调用（list/detail/tree 等）
@@ -1453,6 +1621,27 @@ async def execute_skill(
                     return tool_call, result_str, result_dict
 
                 tool_results = await asyncio.gather(*[_run_one_tool(tc) for tc in response.tool_calls])
+
+                # ── 模式 C 代码兜底：加工项漏问 → confirm 卡改写为加工项 choice 卡（OR-017）──
+                # 仅作用于 C 端下单/售后写流程：这些 Skill 的商品详情含加工项数据、
+                # 且业务铁律要求 confirm 前必须先问。B 端流程不动。
+                if skill_name in ("customer_order", "customer_aftersales"):
+                    try:
+                        plan = _plan_processing_items_rewrite(tool_results, new_messages + state.get("messages", []))
+                        if plan is not None:
+                            idx, choice_data = plan
+                            _tc, _rs, rd = tool_results[idx]
+                            rd = dict(rd)
+                            rd["data"] = choice_data
+                            rd["message"] = f"已展示{choice_data['title']}（代码兜底：LLM 漏问加工项，confirm 卡改写为 choice 卡）"
+                            result_str_new = json.dumps(rd, ensure_ascii=False, default=str)
+                            tool_results[idx] = (_tc, result_str_new, rd)
+                            logger.info(
+                                f"[{skill_name}] 加工项漏问兜底：confirm 卡改写为加工项 choice 卡 "
+                                f"(options={len(choice_data['options'])}) | session={session_id}"
+                            )
+                    except Exception as e:
+                        logger.warning(f"[{skill_name}] processing-items fallback failed (non-fatal): {e}")
 
                 for tool_call, result_str, result_dict in tool_results:
                     tool_name = tool_call["name"]
