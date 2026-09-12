@@ -1266,6 +1266,24 @@ class TestEvalArtifactAuditStep:
         cond = e2e.get("if") or ""
         assert "always()" in cond, f"E2E 步骤缺少 always()（评测失败时会被 skip）: if={cond!r}"
 
+    def test_stack_step_uses_layer_cache_with_fallback(self):
+        """栈步骤必须带镜像层缓存 + 失败回落（issue #3361）。
+
+        实测同一 workflow、同样单 job，栈启动在 3.4min ~ 12.9min 之间剧烈波动 ——
+        Dockerfile 每跑都 `mvn clean package` / `pip install -r`，没有层缓存就每次全量
+        重下依赖与基础镜像，Docker Hub 限流一来就 12min。这是整跑墙钟最大且最不稳的一块。
+        同时必须**失败回落**到 `--build`：缓存/registry 问题不该把评测挡在门外。
+        """
+        import yaml
+        wf = yaml.safe_load((WORKFLOWS_DIR / "xiaobu-acceptance.yml").read_text(encoding="utf-8"))
+        steps = wf["jobs"]["xiaobu-acceptance"]["steps"]
+        names = [s_.get("name") or "" for s_ in steps]
+        assert any("Buildx" in n for n in names), "缺少 Buildx 步骤（GHA 层缓存必需）"
+        body = next((s_.get("run") or "" for s_ in steps if "Start local stack" in (s_.get("name") or "")), "")
+        assert "cache-from" in body and "type=gha" in body, "镜像构建未用 GHA 层缓存"
+        assert "--no-build" not in body or "up -d --wait" in body, "compose 起栈方式异常"
+        assert "回落" in body, "缺少缓存构建失败时的回落路径"
+
     def test_audit_prints_order_amounts(self):
         """审计必须带订单金额（issue #3361）：金额是 C 端最硬的正确性证据。
 

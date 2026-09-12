@@ -83,6 +83,14 @@ jobs:
           cache: pip
           cache-dependency-path: backend/ai-agent-service/requirements.txt
 
+      - name: Set up Buildx（镜像层缓存，issue #3361 提速）
+        # 为什么必需：栈启动实测在 **3.4min ~ 12.9min** 之间剧烈波动（同一 workflow、
+        # 同样单 job！）。Dockerfile 每跑都 `mvn clean package` + `pip install -r`，
+        # **没有任何层缓存** → 每次全量重下 Maven 依赖树/轮子/基础镜像，而 GitHub
+        # runner 是共享出口 IP，Docker Hub 限流一来就 12min。这是整跑墙钟里最大且最不稳
+        # 的一块。buildx + GHA cache（type=gha）把层跨 run 复用。
+        uses: docker/setup-buildx-action@v3
+
       - name: "Export dev RS256 keys for stack (issue #3270)"
         # admin-api 镜像内没有 rsa/private.pem（被 .gitignore 刻意排除），
         # 故用仓库已入库的**测试**密钥对，以 PEM 内容注入（多行值走 GITHUB_ENV 传递）。
@@ -142,8 +150,35 @@ jobs:
           #   ③ 失败长期被静默（2026-09-11 实证：step4 success 但 postgres Error）。
           set -o pipefail
           # 本地栈需 DEBUG=true 供 X-Debug-Role 路由（小布身份注入），fail-closed 保护不受影响
-          docker compose -f deploy/docker-compose.yml up -d --build --wait \
-            --wait-timeout 300 postgres redis admin-api ai-agent-service 2>&1 | tail -20
+          # ── 镜像构建：带 GHA 层缓存（issue #3361）──
+          # 用显式 tag + 覆盖文件把 compose 指向这些镜像，避免依赖 compose 的默认命名规则
+          # （v1 `_`/v2 `-` 差异）。缓存命中时两者合计 ~1min；未命中（首次/被淘汰）退化为
+          # 全量构建 —— 且**失败必须回落**，不能让缓存问题把评测挡在门外。
+          cat > /tmp/compose-images.yml <<'YAML'
+          services:
+            admin-api:
+              image: migao-eval-admin-api
+            ai-agent-service:
+              image: migao-eval-ai-agent-service
+          YAML
+          build_cached() {
+            local name="$1" ctx="$2" df="$3"
+            docker buildx build \
+              --cache-from "type=gha,scope=${name}" \
+              --cache-to "type=gha,scope=${name},mode=max" \
+              --build-arg BUILDKIT_INLINE_CACHE=1 \
+              -t "migao-eval-${name}" -f "$df" "$ctx" --load
+          }
+          if build_cached admin-api backend/admin-api backend/admin-api/Dockerfile \
+             && build_cached ai-agent-service backend/ai-agent-service backend/ai-agent-service/Dockerfile; then
+            echo "✅ 镜像构建完成（buildx + GHA cache）"
+            docker compose -f deploy/docker-compose.yml -f /tmp/compose-images.yml up -d --wait \
+              --wait-timeout 300 postgres redis admin-api ai-agent-service 2>&1 | tail -20
+          else
+            echo "⚠️ buildx 缓存构建失败 → 回落 docker compose up --build（无缓存路径）"
+            docker compose -f deploy/docker-compose.yml up -d --build --wait \
+              --wait-timeout 300 postgres redis admin-api ai-agent-service 2>&1 | tail -20
+          fi
 
       - name: "Seed C 端评测业务数据（issue #3270）"
         # 全新 bootstrap 空库下，agent 搜不到商品 → 反复重试 product_search →
