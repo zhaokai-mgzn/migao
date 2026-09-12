@@ -1165,15 +1165,15 @@ async def _inject_pending_validated(system_prompt: str, state: AgentState, last_
     """确认-执行链「已校验待执行」注入（issue #3031，仅 mibao/xiaobu 通用）。
 
     - 读 SessionStateStore 的 pending_validated_input（validate_input 通过后落库）
-    - 仅当当前轮用户消息读起来像确认（_is_explicit_confirmation 或含确认词）时才注入，
-      避免把「待执行」误注入到用户提出新需求/纠偏的轮次
+    - 仅当当前轮用户消息读起来像确认（_is_explicit_confirmation，或**确认卡 confirmValue
+      精确匹配**）时才注入，避免把「待执行」误注入到用户提出新需求/纠偏的轮次
     - 注入 format_execution_hint 提示，让 LLM 直接调写工具，不再重走 validate+interact
+    - 卡片确认命中时，把确认记录到 pending.target_tool（跨轮放行链：本轮或下一轮
+      实际调用写工具时不再被确认门禁拦 —— CI 实证 run 34682324499：confirmValue 在
+      上一轮匹配、本轮消息是验证码，写工具仍被拦）
     - fire-and-forget：任何异常不抛，不破坏主流程
     """
     if not state.get("session_id"):
-        return system_prompt
-    # 仅确认轮注入：用户消息不是确认时，pending 不应驱动本轮（可能是纠偏/新意图）
-    if not _is_explicit_confirmation(last_user_msg or ""):
         return system_prompt
     try:
         from app.memory.session_state_store import SessionStateStore
@@ -1181,6 +1181,23 @@ async def _inject_pending_validated(system_prompt: str, state: AgentState, last_
         store = SessionStateStore()
         full = await store.load(state["session_id"]) or {}
         pending = full.get(PENDING_KEY)
+
+        # 确认轮判定：口头短确认（24 字内）或确认卡 confirmValue 精确匹配（长值）
+        is_card_confirm = _is_card_confirm_value(
+            last_user_msg or "", full.get("last_confirm_value"))
+        if not _is_explicit_confirmation(last_user_msg or "") and not is_card_confirm:
+            return system_prompt
+
+        # 卡片确认命中且存在「已校验待执行」→ 记录跨轮放行标记（写成功后清除）
+        if is_card_confirm and pending and pending.get("target_tool"):
+            _f = dict(full)
+            _f["confirmed_write_tool"] = pending["target_tool"]
+            await store.commit(state["session_id"], _f)
+            logger.info(
+                f"[pending-validated] 卡片确认已记录 → confirmed_write_tool="
+                f"{pending['target_tool']} | session={state['session_id']}"
+            )
+
         if not pending:
             return system_prompt
         hint = format_execution_hint(pending)
