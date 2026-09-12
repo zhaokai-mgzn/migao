@@ -1728,3 +1728,234 @@ class TestCardConfirmValuePersisted:
             "确认卡发出后未持久化 confirmValue —— 下一轮点击无法精确匹配，"
             "写操作仍会被 24 字上限的门禁拦截（DB 审计实证的假绿根因）"
         )
+
+
+class TestWriteConfirmedAcrossTurns:
+    """确认卡点击后，跨轮补充信息（验证码）的写操作必须放行
+
+    CI 实证（run 34682324499 诊断）：stored=「确认下单：…总额528元…」但 order_create
+    轮的消息是验证码「123456」—— confirmValue 在**上一轮**匹配，本轮是补充信息。
+    旧门禁要求「本轮消息=确认」→ 写操作被拦。修复：卡片匹配时记录
+    `confirmed_write_tool`，写工具成功执行后清除（闭环语义与 pending 一致）。
+    """
+
+    LONG_CONFIRM = "确认下单：遮光窗帘 3米 米白 纳米圈打孔，总额528元，收货人张三 13800138000"
+
+    def test_write_executes_on_code_turn_after_card_confirm(self):
+        """模拟真实两轮：R1 用户点击确认卡（精确匹配）；R2 用户给验证码 → order_create"""
+        import asyncio
+
+        from langchain_core.messages import AIMessage as _AI
+
+        executed = []
+        store_state = {"last_confirm_value": self.LONG_CONFIRM,
+                       "confirmed_write_tool": "order_create"}  # R1 匹配后已记录
+
+        async def fake_execute(tool, args, ctx, state):
+            executed.append(tool.name)
+            return (json.dumps({"success": True, "data": {}}), {"success": True, "data": {}})
+
+        with patch("app.memory.session_memory.SessionMemory") as mem_cls, \
+             patch("app.graph.skills.base_skill.get_breaker") as get_breaker, \
+             patch("app.graph.skills.base_skill.get_skill_llm") as get_llm, \
+             patch("app.graph.skills.base_skill.create_skill_registry") as create_reg, \
+             patch("app.graph.skills.base_skill.set_tool_context"), \
+             patch("app.graph.skills.base_skill._execute_tool_safe", fake_execute), \
+             patch("app.memory.session_state_store.SessionStateStore") as store_cls:
+            from app.tools.order_create import OrderCreateTool
+            registry = MagicMock()
+            registry.get_langchain_tools.return_value = []
+            registry.get_tool.side_effect = lambda n: (
+                OrderCreateTool() if n == "order_create" else None)
+            create_reg.return_value = registry
+
+            breaker = MagicMock()
+
+            async def _passthrough(fn):
+                return await fn()
+
+            breaker.call = _passthrough
+            get_breaker.return_value = breaker
+
+            call = MagicMock(spec=_AI)
+            call.content = ""
+            call.tool_calls = [{"name": "order_create",
+                                "args": {"customer_name": "张三", "customer_phone": "13800138000",
+                                         "sms_code": "123456", "items": []}, "id": "t1"}]
+            final = MagicMock(spec=_AI)
+            final.content = "订单已提交"
+            final.tool_calls = []
+            llm = MagicMock()
+            llm.bind_tools.return_value = llm
+            llm.ainvoke = AsyncMock(side_effect=[call, final])
+            get_llm.return_value = llm
+            mem_cls.return_value.set_pending_skill = AsyncMock(return_value=True)
+
+            inst = MagicMock()
+            inst.load = AsyncMock(side_effect=lambda sid: dict(store_state))
+            inst.commit = AsyncMock(side_effect=lambda sid, full: store_state.update(full))
+            store_cls.return_value = inst
+
+            asyncio.run(execute_skill(
+                state=_make_state(messages=[HumanMessage(content="123456")]),
+                skill_name="customer_order",
+                tool_names=["order_create"], system_prompt="你是小布",
+            ))
+
+        assert "order_create" in executed, (
+            "确认卡在上一轮匹配后，本轮验证码消息仍被门禁拦截（confirmed_write_tool 未生效）"
+        )
+
+    def test_clear_after_success_requires_reconfirm(self):
+        """写成功后确认标记清除：下一次同类写操作无新确认时必须仍被拦"""
+        import asyncio
+
+        from langchain_core.messages import AIMessage as _AI
+
+        executed = []
+        store_state = {}  # 无 confirmed_write_tool（模拟成功后被清除）
+
+        async def fake_execute(tool, args, ctx, state):
+            executed.append(tool.name)
+            return (json.dumps({"success": True, "data": {}}), {"success": True, "data": {}})
+
+        with patch("app.memory.session_memory.SessionMemory") as mem_cls, \
+             patch("app.graph.skills.base_skill.get_breaker") as get_breaker, \
+             patch("app.graph.skills.base_skill.get_skill_llm") as get_llm, \
+             patch("app.graph.skills.base_skill.create_skill_registry") as create_reg, \
+             patch("app.graph.skills.base_skill.set_tool_context"), \
+             patch("app.graph.skills.base_skill._execute_tool_safe", fake_execute), \
+             patch("app.memory.session_state_store.SessionStateStore") as store_cls:
+            from app.tools.order_create import OrderCreateTool
+            registry = MagicMock()
+            registry.get_langchain_tools.return_value = []
+            registry.get_tool.side_effect = lambda n: (
+                OrderCreateTool() if n == "order_create" else None)
+            create_reg.return_value = registry
+
+            breaker = MagicMock()
+
+            async def _passthrough(fn):
+                return await fn()
+
+            breaker.call = _passthrough
+            get_breaker.return_value = breaker
+
+            call = MagicMock(spec=_AI)
+            call.content = ""
+            call.tool_calls = [{"name": "order_create", "args": {}, "id": "t1"}]
+            final = MagicMock(spec=_AI)
+            final.content = "好的"
+            final.tool_calls = []
+            llm = MagicMock()
+            llm.bind_tools.return_value = llm
+            llm.ainvoke = AsyncMock(side_effect=[call, final])
+            get_llm.return_value = llm
+            mem_cls.return_value.set_pending_skill = AsyncMock(return_value=True)
+
+            inst = MagicMock()
+            inst.load = AsyncMock(return_value=dict(store_state))
+            inst.commit = AsyncMock()
+            store_cls.return_value = inst
+
+            asyncio.run(execute_skill(
+                state=_make_state(messages=[HumanMessage(content="随便说点什么")]),
+                skill_name="customer_order",
+                tool_names=["order_create"], system_prompt="你是小布",
+            ))
+
+        assert "order_create" not in executed, (
+            "无新确认的写操作被放行了（confirmed_write_tool 残留/清除逻辑失效）—— 安全漏洞"
+        )
+
+
+class TestWriteConfirmedLifecycle:
+    """记录与清除两个代码路径的直接覆盖（M1/M3 变异缺口）"""
+
+    LONG_CONFIRM = "确认下单：遮光窗帘 3米 米白 纳米圈打孔，总额528元，收货人张三 13800138000"
+
+    def _run(self, store_state, user_msg, tool_calls):
+        import asyncio
+
+        from langchain_core.messages import AIMessage as _AI
+
+        commits = []
+        executed = []
+
+        async def fake_execute(tool, args, ctx, state):
+            executed.append(tool.name)
+            return (json.dumps({"success": True, "data": {}}), {"success": True, "data": {}})
+
+        with patch("app.memory.session_memory.SessionMemory") as mem_cls, \
+             patch("app.graph.skills.base_skill.get_breaker") as get_breaker, \
+             patch("app.graph.skills.base_skill.get_skill_llm") as get_llm, \
+             patch("app.graph.skills.base_skill.create_skill_registry") as create_reg, \
+             patch("app.graph.skills.base_skill.set_tool_context"), \
+             patch("app.graph.skills.base_skill._execute_tool_safe", fake_execute), \
+             patch("app.memory.session_state_store.SessionStateStore") as store_cls:
+            from app.tools.order_create import OrderCreateTool
+            registry = MagicMock()
+            registry.get_langchain_tools.return_value = []
+            registry.get_tool.side_effect = lambda n: (
+                OrderCreateTool() if n == "order_create" else None)
+            create_reg.return_value = registry
+
+            breaker = MagicMock()
+
+            async def _passthrough(fn):
+                return await fn()
+
+            breaker.call = _passthrough
+            get_breaker.return_value = breaker
+
+            def make_call(name, args):
+                m = MagicMock(spec=_AI)
+                m.content = ""
+                m.tool_calls = [{"name": name, "args": args, "id": "t1"}]
+                return m
+
+            final = MagicMock(spec=_AI)
+            final.content = "订单已提交"
+            final.tool_calls = []
+            llm = MagicMock()
+            llm.bind_tools.return_value = llm
+            llm.ainvoke = AsyncMock(side_effect=[make_call(*tc) for tc in tool_calls] + [final])
+            get_llm.return_value = llm
+            mem_cls.return_value.set_pending_skill = AsyncMock(return_value=True)
+
+            inst = MagicMock()
+            inst.load = AsyncMock(side_effect=lambda sid: dict(store_state))
+            inst.commit = AsyncMock(side_effect=lambda sid, full: commits.append(dict(full)))
+            store_cls.return_value = inst
+
+            asyncio.run(execute_skill(
+                state=_make_state(messages=[HumanMessage(content=user_msg)]),
+                skill_name="customer_order",
+                tool_names=["order_create"], system_prompt="你是小布",
+            ))
+        return commits, executed
+
+    def test_card_match_records_confirmed_write_tool(self):
+        """确认卡精确匹配轮 → 记录 confirmed_write_tool（供下一轮补充信息放行）"""
+        commits, executed = self._run(
+            {"last_confirm_value": self.LONG_CONFIRM},
+            self.LONG_CONFIRM,
+            [("order_create", {"customer_name": "张三"})],
+        )
+        assert "order_create" in executed, "确认卡精确匹配轮写操作应放行"
+        assert any(c.get("confirmed_write_tool") == "order_create" for c in commits), (
+            "确认卡匹配后未记录 confirmed_write_tool —— 下一轮补充信息（验证码）会被拦"
+        )
+
+    def test_success_clears_confirmed_write_tool(self):
+        """写成功后清除 confirmed_write_tool —— 下一次同类写操作需重新确认"""
+        commits, executed = self._run(
+            {"confirmed_write_tool": "order_create"},
+            "123456",
+            [("order_create", {"customer_name": "张三"})],
+        )
+        assert "order_create" in executed, "前轮已确认的写操作应放行"
+        assert commits, "写成功后的清除提交不存在（测试会空转假绿）"
+        assert all("confirmed_write_tool" not in c for c in commits), (
+            "写成功后未清除 confirmed_write_tool —— 后续同类写操作会在无新确认时被放行（安全漏洞）"
+        )
