@@ -1227,6 +1227,32 @@ FLAKE_REASONS = {
 }
 
 
+def format_first_attempt_evidence(result: dict) -> str:
+    """把「首跑失败、重试通过」那次的**逐轮证据**压成可打印文本（issue #3367）。
+
+    为什么必须有：此前只留指纹（`_failure_signature`）—— 指纹回答"是什么"
+    （如 `must_succeed: order_create 从未被调用`），但**不回答"停在哪一轮"**。
+    实测 CH-010 首跑失败连续多跑都只有指纹，知道没调写工具却无法定位（#3367 为此单开）。
+    轨迹是唯一能区分「模型收尾了」/「轮数耗尽」/「卡在应答协议轮」的证据。
+
+    通过的尝试返回空串（避免把"通过那次的轨迹"误当成失败证据）。
+    """
+    if not isinstance(result, dict) or not result or result.get("score", 0) >= 1.0:
+        return ""
+    lines = [
+        "首跑失败证据（重试放行前留痕）: "
+        f"rounds={result.get('rounds')} tools={result.get('tool_calls')}"
+    ]
+    for exp, detail in (result.get("failed") or []):
+        lines.append(f"   ❌ {str(exp)[:100]} → {str(detail)[:80]}")
+    trace = result.get("round_trace") or []
+    if trace:
+        lines.append(f"   trace: {format_round_trace(trace)}")
+    if result.get("last_error"):
+        lines.append(f"   last_error: {str(result['last_error'])[:120]}")
+    return "\n".join(lines)
+
+
 def build_flake_entry(case_id: str, title: str, classification: str,
                       first: dict, second: dict, run_id: str, sha: str) -> dict:
     """构造 flake 台账条目（纯函数，便于单测）。
@@ -2225,6 +2251,11 @@ async def run_suite(cases, label: str, classify: bool = True, retry_budget: int 
                     _sig1 = _failure_signature(r)
                     if _sig1:
                         print(f"     ↳ 首跑失败指纹（重试放行前留痕）: {_sig1[:300]}")
+                    _ev1 = format_first_attempt_evidence(r_prev)
+                    if _ev1:
+                        # 逐轮证据（issue #3367）：只有指纹时知道"没调写工具"却不知道停在哪
+                        for _ln in _ev1.split("\n"):
+                            print(f"     ↳ {_ln}")
                     r = r2
                     flake_ledger.append(build_flake_entry(
                         case.id, case.title, "llm-noise", r_prev, r2,
@@ -2245,6 +2276,10 @@ async def run_suite(cases, label: str, classify: bool = True, retry_budget: int 
                 # 与 classify 路径一致：重试会话同样关闭 + 跑 post_session（否则假绿）
                 await _close_and_verify_session(case, token, r2, retry_sid)
                 if r2["score"] >= 1.0 or r2["score"] > r["score"]:
+                    # 同 classify 路径：重试救回来的话，首跑证据必须留痕（issue #3367）
+                    _ev0 = format_first_attempt_evidence(r)
+                    for _ln in (_ev0.split(chr(10)) if _ev0 else []):
+                        print(f"     ↳ {_ln}")
                     r = r2
             r["classification"] = classification
             # 结果不在此处 append（并发顺序不定）——由调用方按原始用例顺序回填
