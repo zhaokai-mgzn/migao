@@ -1583,12 +1583,9 @@ def resolve_auto_respond(results: list, fallback: str, form_values: dict) -> str
 
         choice = by_comp.get("choice")
         if choice is not None:
-            options = choice.get("options") or []
-            if options:
-                first = options[0]
-                value = str(first.get("value") or first.get("text") or "").strip()
-                if value:
-                    return value
+            answer = choice_card_answer(choice)
+            if answer and not _already_sent(answer):
+                return answer
 
         form = by_comp.get("form")
         if form is not None:
@@ -1629,7 +1626,49 @@ def _auto_fill_form(results: list, values: dict) -> str | None:
     return None
 
 
+def choice_card_answer(card: dict) -> str:
+    """按**前端真实点击协议**构造 choice 卡的答复（issue #3365）。
+
+    协议（`frontend/admin-web/src/components/chat/InteractiveMessage.tsx`，单一事实源）：
+      单选：`sendMessage(opt.label || opt.value)`        —— 发**label**（人话），不是内部 id；
+      多选：`sendMessage(`${multiSelectSubmitPrefix || '已选加工项：'}${labels.join('、')}`)`
+            —— 前缀由后端卡片驱动 + **label** 以「、」连接（一次性提交，不是每点一次发一条）。
+
+    为什么必须对齐（CI run 34715428643 实证）：harness 此前一律回 `options[0].value`
+    （内部 id，如 `pi_eval_punch` / `proc_item_pi_eval_punch`）→ 模型看不懂"顾客选了什么"
+    → **反复重发同一张加工项卡**，六轮耗尽也没走到 order_create（用例判红，长相像能力问题）。
+    """
+    options = (card or {}).get("options") or []
+    if not options:
+        return ""
+    first = options[0] if isinstance(options[0], dict) else {}
+    label = str(first.get("label") or first.get("value") or first.get("text") or "").strip()
+    if not label:
+        return ""
+    if (card or {}).get("multiSelect"):
+        prefix = str((card or {}).get("multiSelectSubmitPrefix") or "已选加工项：")
+        return f"{prefix}{label}"
+    return label
+
+
 def _auto_select_first_option(results: list) -> str | None:
+    """从最近一轮 interactive choice 卡取"按前端协议"的答复（自动回放选择）。
+
+    ChoiceCard 点击协议见 `choice_card_answer`（单选发 label、多选发 `前缀+label`）；
+    choice 卡内容由 LLM 动态生成，评测用静态 user_inputs 无法预知 →
+    user_inputs 的 {"auto_select": true} 让 runner 自动作答第一个选项。
+    无 choice 卡返回 None（调用方 fallback 文本指代，兼容 agent 文本澄清路径）。
+    """
+    if not results:
+        return None
+    for iv in (results[-1].get("interactive") or []):
+        comp = str(iv.get("type") or iv.get("component") or "")
+        if comp == "choice" and iv.get("options"):
+            return choice_card_answer(iv) or None
+    return None
+
+
+def _legacy_auto_select_first_option(results: list) -> str | None:
     """从最近一轮的 interactive choice 卡取第一个 option 的 value（自动回放选择）。
 
     ChoiceCard 点击协议 = onAction(opt.value)；choice 卡内容由 LLM 动态生成，

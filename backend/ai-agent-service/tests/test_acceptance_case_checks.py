@@ -2511,6 +2511,28 @@ class TestAutoRespondNoRepeatCardClick:
                                user_message="确认下单：旧单 ¥100", __round=2)]
         assert lr.resolve_auto_respond(second, "123456", {}) == "确认下单：北欧风窗帘 3米 ¥408"
 
-    def test_choice_first_option_still_answered(self):
+    def test_single_select_answers_with_label(self):
+        """单选卡按**前端协议**发 label（人话），不是内部 value（issue #3365 对齐）。"""
         card = self._card("choice", options=[{"value": "opt1", "label": "第一项"}])
-        assert lr.resolve_auto_respond([card], "确认", {}) == "opt1"
+        assert lr.resolve_auto_respond([card], "确认", {}) == "第一项"
+
+    def test_multi_select_answers_with_prefix_and_label(self):
+        """多选卡：`multiSelectSubmitPrefix` + label（前端 submitSelections 协议）。
+
+        实证：harness 此前发内部 id（`proc_item_pi_eval_punch`）→ 模型看不懂选了什么
+        → 反复重发同一张加工项卡（OR-017 六轮耗尽）。
+        """
+        card = self._card("choice", multiSelect=True,
+                          multiSelectSubmitPrefix="已选加工项：",
+                          options=[{"value": "proc_item_x", "label": "纳米圈打孔"}])
+        assert lr.resolve_auto_respond([card], "确认", {}) == "已选加工项：纳米圈打孔"
+
+    def test_multi_select_default_prefix(self):
+        card = self._card("choice", multiSelect=True,
+                          options=[{"value": "proc_item_x", "label": "纳米圈打孔"}])
+        assert lr.resolve_auto_respond([card], "确认", {}) == "已选加工项：纳米圈打孔"
+
+    def test_repeated_same_choice_answer_falls_back(self):
+        card = self._card("choice", options=[{"value": "opt1", "label": "第一项"}])
+        again = [dict(card, user_message="第一项", __round=2)]
+        assert lr.resolve_auto_respond([card] + again, "123456", {}) == "123456"
