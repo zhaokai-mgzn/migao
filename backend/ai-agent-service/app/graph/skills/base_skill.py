@@ -826,6 +826,66 @@ def _has_processing_choice_in_turn(tool_results) -> bool:
     return False
 
 
+# 加工项「已问过」的跨轮记账（issue #3365，OR-017 死循环真因）：
+# `_plan_processing_items_rewrite` 只看**本轮**问没问过 —— R2 已问过并收到答案，R3 起每轮
+# 又把模型的 confirm 卡改写成同一张加工项卡 → confirm 卡永远落不了地 → 顾客反复答同一题。
+# 记账按**商品 id**（换商品必须重新问）；拿不到 id 时记 `*` 作兜底。
+PROC_ITEMS_ASKED_KEY = "processing_items_asked"
+PROC_ITEMS_ASKED_WILDCARD = "*"
+
+
+def _last_product_id(messages) -> str:
+    """最近一次 product_detail 的商品 id（用于按商品记「加工项已问过」）。"""
+    if not messages:
+        return ""
+    for msg in reversed(messages):
+        if not isinstance(msg, ToolMessage):
+            continue
+        if getattr(msg, "name", None) != "product_detail":
+            continue
+        try:
+            payload = json.loads(msg.content or "{}")
+        except (ValueError, TypeError):
+            continue
+        data = payload.get("data") if isinstance(payload, dict) else None
+        if isinstance(data, dict) and data.get("id"):
+            return str(data["id"])
+    return ""
+
+
+async def _processing_items_already_asked(session_id: str, product_id: str) -> bool:
+    """本会话是否已经问过该商品的加工项（含 `*` 兜底记账）。"""
+    if not session_id:
+        return False
+    try:
+        from app.memory.session_state_store import SessionStateStore
+        full = await SessionStateStore().load(session_id) or {}
+        asked = full.get(PROC_ITEMS_ASKED_KEY) or {}
+        if not isinstance(asked, dict):
+            return False
+        return bool(asked.get(PROC_ITEMS_ASKED_WILDCARD)) or bool(asked.get(product_id or ""))
+    except Exception:
+        return False
+
+
+async def _mark_processing_items_asked(session_id: str, product_id: str) -> None:
+    """记下「该商品的加工项已问过」（跨轮）。异常不抛，不破坏主流程。"""
+    if not session_id:
+        return
+    try:
+        from app.memory.session_state_store import SessionStateStore
+        store = SessionStateStore()
+        full = await store.load(session_id) or {}
+        asked = full.get(PROC_ITEMS_ASKED_KEY) or {}
+        if not isinstance(asked, dict):
+            asked = {}
+        asked[product_id or PROC_ITEMS_ASKED_WILDCARD] = True
+        full[PROC_ITEMS_ASKED_KEY] = asked
+        await store.commit(session_id, full)
+    except Exception as e:
+        logger.warning(f"[processing-items] 记账失败（非致命）: {e}")
+
+
 def _plan_processing_items_rewrite(tool_results, messages) -> Optional[tuple]:
     """检测「有加工项却漏问、直接发 confirm 卡」并返回改写方案。
 
@@ -2281,7 +2341,12 @@ async def execute_skill(
                 # 且业务铁律要求 confirm 前必须先问。B 端流程不动。
                 if skill_name in ("customer_order", "customer_aftersales"):
                     try:
-                        plan = _plan_processing_items_rewrite(tool_results, new_messages + state.get("messages", []))
+                        _proc_msgs = new_messages + state.get("messages", [])
+                        _proc_pid = _last_product_id(_proc_msgs)
+                        # 跨轮已问过（同一商品）→ 不再改写：否则模型的 confirm 卡会被无限
+                        # 改写成同一张加工项卡，confirm 永远落不了地（OR-017 实测 4 次）。
+                        _proc_asked = await _processing_items_already_asked(session_id, _proc_pid)
+                        plan = None if _proc_asked else _plan_processing_items_rewrite(tool_results, _proc_msgs)
                         if plan is not None:
                             idx, choice_data = plan
                             _tc, _rs, rd = tool_results[idx]
@@ -2294,6 +2359,14 @@ async def execute_skill(
                                 f"[{skill_name}] 加工项漏问兜底：confirm 卡改写为加工项 choice 卡 "
                                 f"(options={len(choice_data['options'])}) | session={session_id}"
                             )
+                        # 记账：本轮任何一张加工项卡发出去过（改写来的或模型自己发的）→ 记「已问过」
+                        if any(
+                            (rd or {}).get("success")
+                            and str((rd or {}).get("data", {}).get("component") or "") == "choice"
+                            and _is_processing_items_card((rd or {}).get("data") or {})
+                            for _tc, _rs, rd in tool_results
+                        ):
+                            await _mark_processing_items_asked(session_id, _proc_pid)
                     except Exception as e:
                         logger.warning(f"[{skill_name}] processing-items fallback failed (non-fatal): {e}")
 
