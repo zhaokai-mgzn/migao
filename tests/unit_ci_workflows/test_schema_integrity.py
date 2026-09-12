@@ -1281,6 +1281,12 @@ class TestEvalArtifactAuditStep:
         assert any("Buildx" in n for n in names), "缺少 Buildx 步骤（GHA 层缓存必需）"
         body = next((s_.get("run") or "" for s_ in steps if "Start local stack" in (s_.get("name") or "")), "")
         assert "cache-from" in body and "type=gha" in body, "镜像构建未用 GHA 层缓存"
+        # PIP_INDEX_URL：Dockerfile 默认阿里云（国内快），GitHub runner 在境外 ——
+        # 实测镜像内 pip 走阿里云 632s（~160 kB/s），同机默认 PyPI 装同一份仅 23s。
+        # 栈步骤 13.1min 里 10.5min 就是这一项，必须显式改用 PyPI。
+        assert "pypi.org/simple" in body, (
+            "CI 未把 PIP_INDEX_URL 切到 PyPI —— 镜像内 pip 会走阿里云，栈启动多花 ~10min"
+        )
         assert "--no-build" not in body or "up -d --wait" in body, "compose 起栈方式异常"
         assert "回落" in body, "缺少缓存构建失败时的回落路径"
 

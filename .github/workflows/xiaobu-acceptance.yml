@@ -162,15 +162,21 @@ jobs:
               image: migao-eval-ai-agent-service
           YAML
           build_cached() {
-            local name="$1" ctx="$2" df="$3"
+            local name="$1" ctx="$2" df="$3"; shift 3
             docker buildx build \
               --cache-from "type=gha,scope=${name}" \
               --cache-to "type=gha,scope=${name},mode=max" \
               --build-arg BUILDKIT_INLINE_CACHE=1 \
+              "$@" \
               -t "migao-eval-${name}" -f "$df" "$ctx" --load
           }
+          # ⚠️ PIP_INDEX_URL：Dockerfile 默认用阿里云镜像（国内开发快），但 GitHub runner
+          # 在境外 —— 实测镜像内 `pip install -r requirements.txt` 走阿里云 **632s（~160 kB/s）**，
+          # 而这台 runner 自己的 pip（默认 PyPI）装同一份 requirements 只花 **23s**。
+          # 栈步骤总 13.1min 里 10.5min 就是这一项。CI 必须改用 PyPI。
           if build_cached admin-api backend/admin-api backend/admin-api/Dockerfile \
-             && build_cached ai-agent-service backend/ai-agent-service backend/ai-agent-service/Dockerfile; then
+             && build_cached ai-agent-service backend/ai-agent-service backend/ai-agent-service/Dockerfile \
+                  --build-arg PIP_INDEX_URL=https://pypi.org/simple; then
             echo "✅ 镜像构建完成（buildx + GHA cache）"
             docker compose -f deploy/docker-compose.yml -f /tmp/compose-images.yml up -d --wait \
               --wait-timeout 300 postgres redis admin-api ai-agent-service 2>&1 | tail -20
