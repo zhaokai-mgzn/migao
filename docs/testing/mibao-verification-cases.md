@@ -2161,6 +2161,101 @@
 真值: processing-manage.crud, product-sku-stock.create-flow
 溯源: 2026-09-07 改写（issue #3005，回滚 #2986）：行业加工费按米计价、辅料（罗马圈/四爪钩等）含在按米加工费中——per_piece 与「每米数量」密度不符合实际（数量对不上车间工艺、B 端无法对账），已回滚移除；PP-006 由密度配置用例改为计价方式回归断言 ｜ tags: processing_item, pricing
 
+## processing-order（12 case）
+
+### PG-001. 生成加工单 - 已确认含加工项订单 → 加工单生成 + 订单进入 producing 🔵
+```
+数据: 已确认订单含加工项 → 生成 processing_orders(status=generated)，快照五要素齐全（商品/颜色/门幅/宽×高/数量/加工项）
+数据: 快照加工项含 options（生成时从加工项目录补齐，下单时未落库）
+数据: 快照不含销售价（决策 2：加工单给加工方只看加工费）
+数据: 联动：订单 confirmed → producing（orderService.updateOrderStatus 调用）
+跳过: 由 ProcessingOrderServiceTest 验证（generate 成功路径 + 快照 options/无价格断言）
+```
+溯源: 2026-09-12 新增（issue #3340） ｜ tags: processing-order, generate, linkage
+
+### PG-002. 生成加工单 - 幂等：同一订单已有活跃加工单 → 拒绝重复生成 🔵
+```
+数据: 已有非取消态加工单时重复生成 → 校验错误，拒绝（DB partial unique index 兜底）
+跳过: 由 ProcessingOrderServiceTest 验证
+```
+溯源: 2026-09-12 新增（issue #3340） ｜ tags: processing-order, idempotent
+
+### PG-003. 生成加工单 - 无加工项订单不生成（现货成品直跳发货） 🔵
+```
+数据: 订单无加工项（processing_info 空）→ 拒绝生成加工单
+数据: 无加工项订单 confirmed→shipped 直跳仍合法（不被守卫拦截）
+跳过: 由 ProcessingOrderServiceTest + OrderServiceTest 验证
+```
+溯源: 2026-09-12 新增（issue #3340） ｜ tags: processing-order, conditional
+
+### PG-004. 生成加工单 - 未确认订单拒绝（pending/已取消不允许） 🔵
+```
+数据: pending（未付款）订单生成加工单 → 校验错误
+跳过: 由 ProcessingOrderServiceTest 验证
+```
+溯源: 2026-09-12 新增（issue #3340） ｜ tags: processing-order, guard
+
+### PG-005. 加工单状态机 - generated→issued→in_processing→completed 主链 🔵
+```
+数据: issue（发加工，可填加工方/交期）→ issued；start → in_processing；complete → completed
+数据: complete 后订单保持 producing（不自动 shipped，发货需物流单号）
+跳过: 由 ProcessingOrderServiceTest 验证
+```
+溯源: 2026-09-12 新增（issue #3340） ｜ tags: processing-order, state-machine
+
+### PG-006. 加工单状态机 - 非法迁移拒绝（如 generated→completed、completed 冻结） 🔵
+```
+数据: 非法流转（generated→completed / completed 上任何变更）→ 校验错误
+跳过: 由 ProcessingOrderServiceTest 验证
+```
+溯源: 2026-09-12 新增（issue #3340） ｜ tags: processing-order, state-machine
+
+### PG-007. 加工单取消联动 - generated 取消 → 订单 producing→confirmed 回退 🔵
+```
+数据: 取消加工单（必填原因）→ cancelled + 订单 producing→confirmed 回退（重新可生成）
+跳过: 由 ProcessingOrderServiceTest 验证
+```
+溯源: 2026-09-12 新增（issue #3340） ｜ tags: processing-order, linkage, cancel
+
+### PG-008. 加工单取消 - issued 及以上必须填原因（人工确认语义） 🔵
+```
+数据: cancel 不填原因 → 校验错误
+跳过: 由 ProcessingOrderServiceTest 验证
+```
+溯源: 2026-09-12 新增（issue #3340） ｜ tags: processing-order, guard
+
+### PG-009. 订单发货守卫 - 含加工项订单须完成加工单后才能 shipped 🔵
+```
+数据: 含加工项订单无 completed 加工单 → updateOrderStatus(shipped) 校验错误
+数据: 含加工项订单有 completed 加工单 → 可 shipped
+跳过: 由 OrderServiceTest 验证
+```
+溯源: 2026-09-12 新增（issue #3340） ｜ tags: processing-order, guard, shipped
+
+### PG-010. 订单取消联动 - 加工单 generated 自动作废；issued+ 拦截 🔵
+```
+数据: 取消订单时加工单为 generated → 加工单自动 cancelled（原因：订单取消自动作废）+ 订单正常取消
+数据: 取消订单时加工单 issued 及以上 → 校验错误拦截（须先处理加工单）
+跳过: 由 OrderServiceTest 验证
+```
+溯源: 2026-09-12 新增（issue #3340） ｜ tags: processing-order, linkage, cancel
+
+### PG-011. 租户隔离 - 跨租户加工单不可查询/不可解析 🔵
+```
+数据: B 租户查询 A 租户加工单 → notFound（resolve 条件含 tenant_id）
+跳过: 由 ProcessingOrderServiceTest 验证
+```
+溯源: 2026-09-12 新增（issue #3340） ｜ tags: processing-order, tenant-isolation
+
+### PG-012. 加工单 intent 路由契约 - processing_order_* 路由 order skill（仅米宝可达） 🔵
+```
+数据: schema.yaml intent_ownership 登记 processing_order_generate/query/update（route_key=order，agents=[mibao]）
+数据: check_intent_ownership 双端视图对齐：mibao 映射含三 intent，xiaobu 不含
+数据: order skill prompt（references/prompts/order.md）含加工单工具使用规则（快照快照校验：快照长度上限）
+跳过: 由 test_ontology_contract.py + test_prompt_snapshots.py 验证（契约层，非 LLM 行为）
+```
+溯源: 2026-09-12 新增（issue #3340） ｜ tags: processing-order, intent-routing, contract
+
 ## 商品域（21 case）
 
 ### PR-001. 商品搜索 - 关键词模糊匹配 🟢
@@ -3128,8 +3223,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：246（活跃 118，跳过 128）
-- tier 分布：smoke 12 / normal 205 / adversarial 29
+- 用例总数：258（活跃 118，跳过 140）
+- tier 分布：smoke 12 / normal 217 / adversarial 29
 - 售后域：8
 - agents：6
 - api：19
@@ -3148,6 +3243,7 @@
 - ontology：4
 - 订单域：17
 - 加工项域：6
+- processing-order：12
 - 商品域：21
 - registry：1
 - 设置域：8
@@ -3179,4 +3275,16 @@
 - KN-004: 米宝知识问答 - 加工计价规则走 processing_item_query 工具（加工项派生卡片已移除）
 - KN-008: 知识来源标注边界 - 自补常识不得混入「📖 来自本店知识库」标注（P2-4，issue #3076）
 - MC-012: CI 失败报告去重 - 同日同标题 open issue 存在时不重复建
+- PG-001: 生成加工单 - 已确认含加工项订单 → 加工单生成 + 订单进入 producing
+- PG-002: 生成加工单 - 幂等：同一订单已有活跃加工单 → 拒绝重复生成
+- PG-003: 生成加工单 - 无加工项订单不生成（现货成品直跳发货）
+- PG-004: 生成加工单 - 未确认订单拒绝（pending/已取消不允许）
+- PG-005: 加工单状态机 - generated→issued→in_processing→completed 主链
+- PG-006: 加工单状态机 - 非法迁移拒绝（如 generated→completed、completed 冻结）
+- PG-007: 加工单取消联动 - generated 取消 → 订单 producing→confirmed 回退
+- PG-008: 加工单取消 - issued 及以上必须填原因（人工确认语义）
+- PG-009: 订单发货守卫 - 含加工项订单须完成加工单后才能 shipped
+- PG-010: 订单取消联动 - 加工单 generated 自动作废；issued+ 拦截
+- PG-011: 租户隔离 - 跨租户加工单不可查询/不可解析
+- PG-012: 加工单 intent 路由契约 - processing_order_* 路由 order skill（仅米宝可达）
 

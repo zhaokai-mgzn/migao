@@ -1,3 +1,4 @@
+# case_ids: PG-012
 """
 intent 归属契约校验测试（issue #2821 延续切片 A：全量登记 + 按 agent 核对）
 
@@ -13,7 +14,6 @@ intent 归属契约校验测试（issue #2821 延续切片 A：全量登记 + �
 Seam: app.ontology.contract.check_intent_ownership()（纯函数，输入 schema + 双端映射，
 输出违规清单；不触碰 skill_registry 内部实现）。
 """
-# case_ids: ON-003
 
 import pytest
 
@@ -44,6 +44,10 @@ REAL_AGENT_INTENT_MAPS = {
         "role_manage": "staff",
         "session_manage": "data", "staff_manage": "staff",
         "statistics": "data", "system_settings": "settings",
+        # 加工单域（issue #3340，仅 mibao）
+        "processing_order_generate": "order",
+        "processing_order_query": "order",
+        "processing_order_update": "order",
     },
     "xiaobu": {
         "after_sales": "aftersales", "after_sales_create": "aftersales",
@@ -70,8 +74,8 @@ REAL_AGENT_ROUTE_KEYS = {
 
 
 class TestSchemaIntentOwnership:
-    def test_schema_registers_all_26_business_intents(self, ontology):
-        """schema 必须全量登记 26 个业务 intent（#3081 移除 quick_reply；排除 general 兜底）"""
+    def test_schema_registers_all_29_business_intents(self, ontology):
+        """schema 必须全量登记 29 个业务 intent（#3081 移除 quick_reply；#3340 新增加工单域 3 个；排除 general 兜底）"""
         owned = ontology.intent_ownership
         assert set(owned) == {
             # 双端 22
@@ -81,8 +85,8 @@ class TestSchemaIntentOwnership:
             "order_create", "order_query", "permission_manage", "processing_manage",
             "product_inquiry", "role_manage", "session_manage",
             "staff_manage", "statistics", "system_settings",
-            # 仅 mibao
-            "finance",
+            # 仅 mibao（finance + 加工单域 3 个）
+            "finance", "processing_order_generate", "processing_order_query", "processing_order_update",
             # 仅 xiaobu
             "knowledge_faq", "knowledge_manage", "quote",
         }

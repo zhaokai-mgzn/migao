@@ -98,6 +98,10 @@ class SecurityConfigTest {
     @MockBean
     private com.migao.admin.service.KnowledgeDistillService knowledgeDistillService;
 
+    // 加工单服务（issue #3340）
+    @MockBean
+    private com.migao.admin.service.ProcessingOrderService processingOrderService;
+
     @MockBean
     private com.migao.admin.service.NotificationService notificationService;
 
@@ -186,6 +190,8 @@ class SecurityConfigTest {
     private com.migao.admin.mapper.OrderLogisticsMapper orderLogisticsMapper;
     @MockBean
     private com.migao.admin.mapper.OrderMapper orderMapper;
+    @MockBean
+    private com.migao.admin.mapper.ProcessingOrderMapper processingOrderMapper;
     @MockBean
     private com.migao.admin.mapper.PermissionMapper permissionMapper;
     @MockBean

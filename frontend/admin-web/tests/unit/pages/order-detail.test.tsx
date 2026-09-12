@@ -48,6 +48,7 @@ vi.mock('dayjs', () => ({
 // Mock child components
 vi.mock('@/components/orders', () => ({
   OrderProgressSteps: () => <div data-testid="order-progress">OrderProgressSteps</div>,
+  ProcessingOrderBlock: () => <div data-testid="po-block">ProcessingOrderBlock</div>,
   CloseOrderModal: ({ open }: any) => open ? <div data-testid="close-modal">CloseModal</div> : null,
   LogisticsForm: ({ open }: any) => open ? <div data-testid="logistics-form">LogisticsForm</div> : null,
   RefundOrderModal: ({ open, onConfirm }: any) =>

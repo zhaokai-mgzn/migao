@@ -12,6 +12,9 @@ from app.graph.skills.skill_config import SkillConfig
 ORDER_TOOLS = ["order_query", "order_manage", "order_create", "logistics_track", "product_search", "product_detail",
     "validate_input",  # 写操作前置校验
     "interact",        # 交互卡片：多 SKU 规格 choice（prompts/order.md 强制要求）、下单前 confirm、表单 form
+    "processing_order_generate",  # 生成加工单（批量，写操作 confirm）
+    "processing_order_query",     # 加工单查询（只读）
+    "processing_order_update",    # 加工单状态更新（issue/start/complete/cancel，写操作 confirm）
 ]
 
 # 订单 Skill 专用 System Prompt（展示规则，状态机见 references/prompts/order.md）
@@ -25,7 +28,8 @@ ORDER_SKILL_CONFIG = SkillConfig(
     display_name="订单管理",
     tool_names=ORDER_TOOLS,
     route_keys=["order"],
-    intents=["order_query", "order_create", "logistics_track"],
+    intents=["order_query", "order_create", "logistics_track",
+             "processing_order_generate", "processing_order_query", "processing_order_update"],
     system_prompts={"mibao": ORDER_SYSTEM_PROMPT},
     default_persona="mibao",
 )
