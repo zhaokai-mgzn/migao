@@ -894,12 +894,26 @@ def check_false_success(results: list) -> list:
     """假成功：前序轮报错 + 后续文本声称成功 → 违规（sess_e52cff42 类）。
 
     工具调用全对但用户看到的话是错的（"创建失败却答更新成功"）——验收协议 §3.4 反模式。
+
+    2026-09-13 细化（issue #3365，CI run 34710420292 实证）：**报错 ≠ 谎报**。
+    CH-010 该跑 R6 出现一次瞬时错误（R7 起自动恢复），R9 的 `order_create` 真的成功落库
+    （`totalAmount=408.0` = 3×128，接地正确），末轮文本称成功 —— 这是**真话**，却被本守卫
+    判红。原语义「只要前序轮报错就不许说成功」把"瞬时错误后自愈"也一并否掉了。
+    新语义：报错后若**确有写操作成功**（tool_result success=true，与 must_succeed 同源），
+    则声明成功不构成谎报；只有"报错且没有任何写成功"时才算假成功。
     """
     err_rounds = [r.get("__round") for r in results if r.get("error")]
     if not err_rounds:
         return []
+    wrote_ok = any(st.get("ok")
+                   for r in results
+                   for st in _tool_result_status(r.get("tool_results") or []))
     for r in results:
         if "成功" in (r.get("final_text") or "") and any(e < r.get("__round") for e in err_rounds):
+            if wrote_ok:
+                print(f"     ℹ️ 假成功守卫放行(R{r.get('__round')})：前序轮报错但确有写操作成功"
+                      f"（声明与现实一致）")
+                return []
             return [f"假成功(R{r.get('__round')}): 前序轮报错(R{err_rounds[0]})但文本称成功"]
     return []
 
@@ -1666,7 +1680,9 @@ def build_round_trace(results: list) -> list:
             ],
             # 截断：轨迹用于归因，不是全文存档（全文另见 final_text / 产物）
             "text": text[:60],
-            "error": str(r.get("error"))[:80] if r.get("error") else None,
+            # 逐轮错误**原文**（issue #3365）：此前轨迹只打 `ERR` 标记，看不到是什么错 ——
+            # 实测 CH-010 R6 报错、R7 自愈，归因时完全无从下手（容器日志里也没有对应 traceback）。
+            "error": str(r.get("error"))[:120] if r.get("error") else None,
         })
     return trace
 
@@ -1780,7 +1796,7 @@ def format_round_trace(trace: list) -> str:
         if t.get("interactive"):
             bits.append("cards=" + ",".join(t["interactive"]))
         if t.get("error"):
-            bits.append("ERR")
+            bits.append(f"ERR({t['error'][:60]})")
         parts.append("[{}]".format(" ".join(bits)))
     return " ".join(parts)
 

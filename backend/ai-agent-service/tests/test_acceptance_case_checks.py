@@ -2426,3 +2426,55 @@ class TestAmountVerify:
         good = _order_round(7, [{"product_name": "遮光窗帘", "quantity": 3,
                                  "unit_price": 168.0, "subtotal": 504.0}], total=504.0)
         assert self._run([bad, good], self._spec()) == []
+
+
+class TestFalseSuccessRefined:
+    """假成功守卫细化（issue #3365）：报错 ≠ 谎报。
+
+    CI run 34710420292 实证：CH-010 R6 瞬时错误、R7 起自愈，R9 的 order_create 真成功落库
+    （totalAmount=408.0 = 3×128，接地正确），末轮文本称成功 —— 这是**真话**，原守卫却判红。
+    新语义：报错后若确有写操作成功（tool_result success=true），声明成功不算谎报；
+    只有"报错且没有任何写成功"才是假成功（原保护不变）。
+    """
+
+    def _round(self, rnd, error=None, text="", ok=None):
+        tr = [] if ok is None else [{"tool": "order_create",
+                                     "result": {"success": bool(ok), "data": {}}}]
+        return {"__round": rnd, "error": error, "final_text": text, "tool_results": tr}
+
+    def test_error_then_real_success_is_not_false_success(self):
+        results = [
+            self._round(6, error="处理失败: boom"),
+            self._round(9, text="订单已创建成功", ok=True),
+        ]
+        assert lr.check_false_success(results) == [], "写操作真的成功时不得判假成功"
+
+    def test_error_without_any_write_still_fails(self):
+        """原保护不变：报错且没有任何写成功 → 文本称成功 = 谎报。"""
+        results = [
+            self._round(6, error="处理失败: boom"),
+            self._round(9, text="商品创建成功", ok=False),
+        ]
+        issues = lr.check_false_success(results)
+        assert issues and "假成功" in issues[0]
+
+    def test_no_error_no_violation(self):
+        assert lr.check_false_success([self._round(1, text="创建成功", ok=True)]) == []
+
+    def test_error_before_success_claim_without_tool_results(self):
+        """没有任何 tool_result（如纯文本流程）时，维持原语义 —— 报错后称成功即违规。"""
+        results = [self._round(6, error="boom"), self._round(8, text="已成功处理")]
+        assert lr.check_false_success(results), "无写操作证据时不得放行"
+
+
+class TestRoundTraceCarriesErrorText:
+    """逐轮错误**原文**进轨迹（issue #3365）：只打 `ERR` 标记时归因无从下手。"""
+
+    def test_error_text_printed(self):
+        trace = lr.build_round_trace([
+            {"__round": 6, "user_message": "123456", "tool_calls": [], "tool_results": [],
+             "final_text": "", "error": "处理失败: AttributeError: boom"},
+        ])
+        assert trace[0]["error"].startswith("处理失败")
+        assert "ERR(" in lr.format_round_trace(trace)
+        assert "AttributeError" in lr.format_round_trace(trace)
