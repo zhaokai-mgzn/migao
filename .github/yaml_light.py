@@ -6,8 +6,35 @@
 """
 
 
+def _strip_inline_comment(s: str) -> str:
+    """去掉**引号外**且前面有空白的行内注释（`"确认"   # 说明` → `"确认"`）。
+
+    为什么必须有（issue #3365 实证）：本解析器原先不处理行内注释 →
+    `fallback: "确认"  # 点确认卡…` 解析出的值是**带引号带注释的整串**
+    （`'"确认"  # 点确认卡…'`），而评测 harness 会把它当**用户消息**发给 agent →
+    协议轮变成乱码文本、流程判断全错：OR-017 实测连发 6 轮加工项卡、order_create 永不发生。
+    标准 YAML 规则：`#` 前有空白即起注释，**除非在引号内**（引号内的 `issue #3270` 必须保留）。
+    """
+    out = []
+    quote = None
+    for i, ch in enumerate(s):
+        if quote:
+            out.append(ch)
+            if ch == quote:
+                quote = None
+            continue
+        if ch in ('"', "'"):
+            quote = ch
+            out.append(ch)
+            continue
+        if ch == "#" and i > 0 and s[i - 1].isspace():
+            break
+        out.append(ch)
+    return "".join(out).rstrip()
+
+
 def _parse_scalar(s):
-    s = s.strip()
+    s = _strip_inline_comment(s).strip()
     if s in ('', '~', 'null', 'Null', 'NULL'):
         return None
     if s in ('true', 'True', 'TRUE'):
