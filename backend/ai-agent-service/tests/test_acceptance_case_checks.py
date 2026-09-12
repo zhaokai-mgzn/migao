@@ -1888,3 +1888,147 @@ class TestRunSummaryJson:
         """汇总写失败不得让评测崩（非致命）。"""
         lr.write_summary_json(str(tmp_path / "nodir" / "x.json"), "normal", "", [])
         assert "汇总写出失败" in capsys.readouterr().out
+
+
+class TestSuiteConcurrency:
+    """用例级并发（issue #3361 评测提速第二轮）。
+
+    实测（run 34692977836，3 片 × 6 条）：评测本身随并行线性变快（单 job 11.6min/18 条
+    → 各片 5.3/7.2/1.7min/6 条，单条吞吐不变），但**多 job 各自建栈**把栈时间从 3.4min
+    抬到 12min → 分片整体更慢（19.8 vs 15.6min）。结论：要并行就并行**用例**，别并行建栈。
+    本组锁定并发语义：有界、串行道独占、报告顺序稳定、重试预算不被并发突破。
+    """
+
+    def _mkcase(self, cid, tags=None, pre_clean=None, post_session=None):
+        return lr.EvalCase(id=cid, title=cid, skill=lr.Skill.GENERAL,
+                           difficulty=lr.Difficulty.NORMAL, user_inputs=["hi"],
+                           expectations=[], data_checks=[], tags=tags or [],
+                           pre_clean=pre_clean or [], post_session=post_session or [])
+
+    def _run(self, monkeypatch, tmp_path, cases, concurrency, fail_ids=()):
+        import unittest.mock as mock
+        events = []          # (case_id, "start"/"end")
+        active = {"now": 0, "max": 0}
+
+        async def fake_login():
+            return "tok"
+
+        async def fake_sess(token, prefer_new=True):
+            return "sess"
+
+        async def fake_run_case(c, token, sid):
+            active["now"] += 1
+            active["max"] = max(active["max"], active["now"])
+            events.append((c.id, "start"))
+            # 让**完成顺序与声明顺序相反**（C0 最慢）：否则"按完成顺序回填"的 bug
+            # 会因为顺序恰好一致而漏过（变异实测踩到过 —— 测试必须能区分两种顺序）
+            try:
+                delay = 0.02 * (len(c.id) and 10 - int("".join(ch for ch in c.id if ch.isdigit()) or 0))
+            except ValueError:
+                delay = 0.05
+            await asyncio.sleep(max(delay, 0.02))
+            events.append((c.id, "end"))
+            active["now"] -= 1
+            score = 0.0 if c.id in fail_ids else 1.0
+            return {"case_id": c.id, "title": c.title, "difficulty": "normal", "tags": [],
+                    "rounds": 1, "tool_calls": [], "round_trace": [], "passed": int(score),
+                    "total": 1, "score": score, "failed": [], "last_error": None,
+                    "final_text": "", "final_session_id": sid, "session_breaks": 0}
+
+        async def fake_end(token, sid):
+            return None
+
+        async def fake_snapshot(token, kw):
+            return None
+
+        async def fake_post_checks(token, specs):
+            return []
+
+        monkeypatch.setenv("AGENT_EVAL_FLAKE_LOG", str(tmp_path / "f.json"))
+        monkeypatch.setattr(lr, "CASE_SLEEP", 0.0)
+        with mock.patch.object(lr, "login", new=fake_login), \
+             mock.patch.object(lr, "get_or_create_session", new=fake_sess), \
+             mock.patch.object(lr, "run_case", new=fake_run_case), \
+             mock.patch.object(lr, "_end_session", new=fake_end), \
+             mock.patch.object(lr, "snapshot_product", new=fake_snapshot), \
+             mock.patch.object(lr, "check_post_session", new=fake_post_checks):
+            results = asyncio.run(lr.run_suite(cases, "t", classify=False,
+                                              concurrency=concurrency))
+        return results, events, active
+
+    def test_concurrency_bounded(self, monkeypatch, tmp_path):
+        """并发度是上限：3 条用例、并发度 2 → 同时在跑的不超过 2。"""
+        cases = [self._mkcase(f"C{i}") for i in range(3)]
+        _results, _events, active = self._run(monkeypatch, tmp_path, cases, 2)
+        assert active["max"] <= 2, f"并发度未被遵守（峰值 {active['max']}）"
+        assert active["max"] >= 2, "并发未生效（峰值 1 = 退化成串行）"
+
+    def test_serial_lane_not_overlapping(self, monkeypatch, tmp_path):
+        """共享资源用例（tag/pre_clean/post_session）必须独占：与任何用例都不重叠。"""
+        cases = [
+            self._mkcase("P1"), self._mkcase("P2"), self._mkcase("P3"),
+            self._mkcase("S1", tags=["update"]),                 # 商品改价类
+            self._mkcase("S2", post_session=[{"fetch": "user_memories"}]),  # 用户级状态
+        ]
+        _results, events, _active = self._run(monkeypatch, tmp_path, cases, 3)
+        # 串行道用例执行期间不得有其他用例"在跑"
+        intervals = {}
+        for cid, kind in events:
+            intervals.setdefault(cid, {})[kind] = None
+        # 用事件顺序重建区间
+        starts, ends = {}, {}
+        for idx, (cid, kind) in enumerate(events):
+            (starts if kind == "start" else ends)[cid] = idx
+        for serial_id in ("S1", "S2"):
+            for other in ("P1", "P2", "P3", "S1", "S2"):
+                if other == serial_id:
+                    continue
+                overlap = starts[serial_id] < ends[other] and starts[other] < ends[serial_id]
+                assert not overlap, f"串行道 {serial_id} 与 {other} 重叠执行（隔离失效）"
+
+    def test_report_order_is_original_case_order(self, monkeypatch, tmp_path):
+        """报告顺序必须与用例声明顺序一致（并发不改变报告，便于与历史 run 逐条对比）。"""
+        cases = [self._mkcase(f"C{i}") for i in range(6)]
+        results, _events, _active = self._run(monkeypatch, tmp_path, cases, 3)
+        assert [r["case_id"] for r in results] == [f"C{i}" for i in range(6)]
+
+    def test_retry_budget_not_exceeded_under_concurrency(self, monkeypatch, tmp_path):
+        """并发下重试预算不能被突破（判定+占用必须原子）。"""
+        cases = [self._mkcase(f"C{i}") for i in range(4)]
+        import unittest.mock as mock
+        attempts = {"n": 0}
+
+        async def fake_login():
+            return "tok"
+
+        async def fake_sess(token, prefer_new=True):
+            return "sess"
+
+        async def fake_run_case(c, token, sid):
+            attempts["n"] += 1
+            await asyncio.sleep(0.02)
+            return {"case_id": c.id, "title": c.title, "difficulty": "normal", "tags": [],
+                    "rounds": 1, "tool_calls": [], "round_trace": [], "passed": 0, "total": 1,
+                    "score": 0.0, "failed": [("x", "y")], "last_error": None,
+                    "final_text": "", "final_session_id": sid, "session_breaks": 0}
+
+        async def fake_end(token, sid):
+            return None
+
+        monkeypatch.setenv("AGENT_EVAL_FLAKE_LOG", str(tmp_path / "f.json"))
+        monkeypatch.setattr(lr, "CASE_SLEEP", 0.0)
+        with mock.patch.object(lr, "login", new=fake_login), \
+             mock.patch.object(lr, "get_or_create_session", new=fake_sess), \
+             mock.patch.object(lr, "run_case", new=fake_run_case), \
+             mock.patch.object(lr, "_end_session", new=fake_end):
+            results = asyncio.run(lr.run_suite(
+                cases, "t", classify=True, retry_budget=1, concurrency=4))
+        # 4 条首跑 + 预算 1 次重试 = 5 次（并发下若"看了眼再占用"就会 >5）
+        assert attempts["n"] == 5, f"重试预算被并发突破（run_case 调用 {attempts['n']} 次）"
+        assert sum(1 for r in results if r.get("classification") == "no-retry-budget") == 3
+
+    def test_concurrency_one_is_serial(self, monkeypatch, tmp_path):
+        """并发度 1 → 完全串行（默认行为不变，向后兼容）。"""
+        cases = [self._mkcase(f"C{i}") for i in range(3)]
+        _results, _events, active = self._run(monkeypatch, tmp_path, cases, 1)
+        assert active["max"] == 1

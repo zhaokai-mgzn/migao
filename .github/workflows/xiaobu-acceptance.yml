@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       shards:
-        description: '分片数（每片一个 job + 一套 docker 栈）：1=不分片；normal 档建议 3'
+        description: '分片数（每片一个 job + 一套 docker 栈）。⚠️ 实测 3 片≈无收益（并发建栈把栈启动从 3.4min 抬到 12min），提速请用 EVAL_CONCURRENCY；分片仅在用例数很大、需要摊 CI 分钟数时用'
         required: false
         default: '1'
         type: choice
@@ -38,7 +38,10 @@ jobs:
   # docker 栈 → 天然隔离，评测语义不变）。为什么不用进程内并发：用例共享同一 DB
   # （同一批 fixture、同一个 debug 顾客），并发会让"谁先写订单/改商品价"变得不确定，
   # 而评测工具的可信度建立在可复现上。分片只减墙钟，不改语义。
-  # 实测 C 端 normal：18 条 19m39s（单条失败的用例各重跑一次占 87%）→ 3 片约 1/3 墙钟。
+  # ⚠️ 实测订正（run 34692977836）：3 片确实让**评测**快 ~3 倍（11.6min → 5.3/7.2/1.7min），
+  # 但每片各自 `docker compose up --build` 在并发下极慢（栈 3.4min → 12min），
+  # 整跑墙钟 19.8min > 单 job 15.6min。故**默认 1 片**，提速改用 runner 的
+  # EVAL_CONCURRENCY（单 job 内并行用例，栈只起一次）。
   shards:
     runs-on: ubuntu-latest
     outputs:
@@ -184,6 +187,11 @@ jobs:
           # 19m39s 里 ~63s 是纯 sleep、B 端 47 条约 3min；保留少量节流防 API 限流）
           EVAL_ROUND_SLEEP: "0.2"
           EVAL_CASE_SLEEP: "0.3"
+          # 用例级并发（issue #3361 提速第二轮）：**单 job 内**并行跑用例，栈只起一次。
+          # 实测（run 34692977836）3 片各自建栈把栈启动从 3.4min 抬到 12min（并发构建/
+          # 拉镜像被打爆），分片整体反而更慢（19.8min vs 15.6min）；而评测本身随并行线性
+          # 变快（单条吞吐不变）→ 结论：并行用例，别并行建栈。
+          EVAL_CONCURRENCY: "3"
           # 本片运行汇总（机器可读）：分片后审计必须知道"本片是否真的跑了写用例"，
           # 否则没有写用例的片会因 orders<=2 被误报假绿（分片基建，issue #3361）
           AGENT_EVAL_SUMMARY_JSON: /tmp/eval-summary-shard${{ matrix.shard }}.json

@@ -1802,7 +1802,8 @@ async def run_case(case, token: str, session_id: str) -> dict:
         "final_text": results[-1].get("final_text", "")[:200] if results else "",
     }
 
-async def run_suite(cases, label: str, classify: bool = True, retry_budget: int = None):
+async def run_suite(cases, label: str, classify: bool = True, retry_budget: int = None,
+                    concurrency: int = 1):
     """运行一组用例
 
     classify（默认开，issue #2890 波动分类）：失败用例重试 1 次并判定
@@ -1834,9 +1835,31 @@ async def run_suite(cases, label: str, classify: bool = True, retry_budget: int 
     retries_used = 0   # 已消耗的重试次数（受 retry_budget 约束）
     budget_exhausted = False
 
-    for i, case in enumerate(cases):
+    _retry_lock = asyncio.Lock()
+
+    async def _reserve_retry() -> bool:
+        """判定并**占用**一个重试额度（原子）。
+
+        并发下不能先看 `retries_used < budget` 再 `+=`：两个用例可能同时看到"还有额度"
+        → 预算被突破（多跑整条用例 = 多花分钟数）。加锁后语义与串行一致：
+        有额度 → 占用并返回 True；无额度 → 返回 False（不消耗、不重复打印提示）。
+        """
+        nonlocal retries_used, budget_exhausted
+        async with _retry_lock:
+            if retry_budget is not None and retries_used >= retry_budget:
+                if not budget_exhausted:
+                    print(f"     ⏳ 重试预算用尽（{retry_budget} 次）：后续失败用例按首次结果计入"
+                          "（不再重跑，标签标 no-retry-budget）")
+                    budget_exhausted = True
+                return False
+            retries_used += 1
+            return True
+
+    async def _run_one_case(i: int, case):
+        """跑单个用例（会话/清理/重试分类/打印/结果记录）——供并行与串行两阶段复用。"""
+        nonlocal budget_exhausted
         if case.skip_reason:
-            continue
+            return None
 
         # 用例起始时间戳（UTC）——用于把 CI 的**路由 dump**（ai-agent 日志，带时间戳）
         # 按用例切开。没有这个锚点，日志里连续的 intent/route 行无法归属到具体用例，
@@ -1880,16 +1903,12 @@ async def run_suite(cases, label: str, classify: bool = True, retry_budget: int 
             # 断言只能在 _end_session **之后**执行；跨会话用例取 run_case 回报的最后
             # 一个会话 id（首个会话已在换会话时关闭）。
             await _close_and_verify_session(case, token, r, session_id)
-            if (r["score"] < 1.0 and classify
-                    and retry_budget is not None and retries_used >= retry_budget):
+            # 预算判定与占用由 _reserve_retry 原子完成（并发下不会突破预算）；
+            # 短路求值保证「通过用例」不占用额度。
+            if r["score"] < 1.0 and classify and not await _reserve_retry():
                 # 重试预算用尽：不再重跑（标签显式标注，避免"看起来已验证两遍"）
-                if not budget_exhausted:
-                    print(f"     ⏳ 重试预算用尽（{retry_budget} 次）：后续失败用例按首次结果计入"
-                          "（不再重跑，标签标 no-retry-budget）")
-                    budget_exhausted = True
                 classification = "no-retry-budget"
             elif r["score"] < 1.0 and classify:
-                retries_used += 1
                 retry_sid = await get_or_create_session(token, prefer_new=True)
                 r2 = await run_case(case, token, retry_sid)
                 r2["retried"] = True
@@ -1923,9 +1942,8 @@ async def run_suite(cases, label: str, classify: bool = True, retry_budget: int 
                         "run_id": os.environ.get("GITHUB_RUN_ID", "local"),
                         "sha": os.environ.get("GITHUB_SHA", "")[:12],
                     })
-            elif r["score"] < 1.0 and (retry_budget is None or retries_used < retry_budget):
+            elif r["score"] < 1.0 and await _reserve_retry():
                 # --no-classify 兼容模式：旧的无差别单次重试（同样受重试预算约束）
-                retries_used += 1
                 retry_sid = await get_or_create_session(token, prefer_new=True)
                 r2 = await run_case(case, token, retry_sid)
                 r2["retried"] = True
@@ -1934,10 +1952,7 @@ async def run_suite(cases, label: str, classify: bool = True, retry_budget: int 
                 if r2["score"] >= 1.0 or r2["score"] > r["score"]:
                     r = r2
             r["classification"] = classification
-            results.append(r)
-            total_score += r["score"]
-            if r["score"] >= 1.0:
-                passed_count += 1
+            # 结果不在此处 append（并发顺序不定）——由调用方按原始用例顺序回填
 
             status = "✅" if r["score"] >= 1.0 else "⚠️" if r["score"] >= 0.5 else "❌"
             retry_note = "（重试后通过）" if r.get("retried") and r["score"] >= 1.0 else ""
@@ -1967,13 +1982,62 @@ async def run_suite(cases, label: str, classify: bool = True, retry_budget: int 
                 "failed": [(f"EXCEPTION: {e}", "case crashed")],
                 "last_error": str(e), "final_text": "", "classification": "error",
             }
-            results.append(exc_record)
+            r = exc_record   # 崩溃用例同样交给调用方回填（顺序稳定）
         finally:
             for pid in snapshot_pids:
                 await restore_product(token, pid)
 
         if CASE_SLEEP:
             await asyncio.sleep(CASE_SLEEP)  # rate limit（可配：EVAL_CASE_SLEEP）
+        return r
+
+    # ── 并行调度（issue #3361 评测提速第二轮）──
+    # 实测（run 34692977836，3 片 × 6 条）：**评测本身**随并行线性变快
+    # （单 job 11.6min/18 条 → 各片 5.3/7.2/1.7min/6 条，单条吞吐不变），
+    # 但"另起 job"这条路把栈启动从 3.4min 抬到 12min（并发构建/拉镜像被打爆）
+    # → 分片整体反而更慢（19.8min vs 15.6min）。结论：**要并行就并行用例、别并行建栈**。
+    # 故：单 job + 进程内并发（Semaphore），栈只起一次。
+    #
+    # 隔离规则：会写**共享资源**的用例走串行道（独占，不与任何用例重叠）——
+    #   ① 标签含 id_reuse/update/full_lifecycle（商品改价类，跑前后会快照/恢复同一批商品）；
+    #   ② 声明 pre_clean（评测前清理共享数据）；
+    #   ③ 声明 post_session（断言的是**用户级**长期状态，运行中会写 user_memories，
+    #      而所有用例共用同一个评测顾客）。
+    # 其余用例（只读查询 / 各自新建订单工单 / 纯对话）并行安全。
+    def _needs_serial_lane(c) -> bool:
+        tags = set(getattr(c, "tags", None) or [])
+        return bool(tags & {"id_reuse", "update", "full_lifecycle"}) \
+            or bool(getattr(c, "pre_clean", None)) \
+            or bool(getattr(c, "post_session", None))
+
+    indexed = [(i, c) for i, c in enumerate(cases)]
+    parallel = [(i, c) for i, c in indexed if not _needs_serial_lane(c)]
+    serial = [(i, c) for i, c in indexed if _needs_serial_lane(c)]
+    results_by_idx: dict = {}
+
+    if concurrency > 1 and parallel:
+        sem = asyncio.Semaphore(concurrency)
+        print(f"⚡ 并发执行：{len(parallel)} 条并行（并发度 {concurrency}）"
+              f"，{len(serial)} 条走串行道（共享资源/用户级状态）")
+
+        async def _bounded(i, c):
+            async with sem:
+                results_by_idx[i] = await _run_one_case(i, c)
+
+        await asyncio.gather(*[_bounded(i, c) for i, c in parallel])
+    else:
+        for i, c in parallel:
+            results_by_idx[i] = await _run_one_case(i, c)
+
+    # 串行道：逐条执行（独占，保证与并行用例互不重叠）
+    for i, c in serial:
+        results_by_idx[i] = await _run_one_case(i, c)
+
+    # 按**原始用例顺序**回填（并发不改变报告顺序，便于与历史 run 逐条对比）
+    results = [results_by_idx[i] for i in sorted(results_by_idx) if results_by_idx[i] is not None]
+    passed_count = sum(1 for r in results if r["score"] >= 1.0)
+    total_score = sum(r["score"] for r in results)
+
 
     # ── flake 台账（issue #2890）：落盘 + 摘要，驱动断言收敛与高波动用例治理 ──
     if classify and flake_ledger:
@@ -2213,6 +2277,10 @@ async def main():
     parser.add_argument("suite", choices=["smoke", "normal", "full", "adversarial", "case"], nargs="?", default="smoke")
     parser.add_argument("--case-id", help="单条用例 ID（支持新 ID 与 legacy_id，如 OR-002 或 O002）")
     parser.add_argument("--cases", help="用例库目录（cases/*.yml）——提供时直接读 YAML（单一源）")
+    parser.add_argument("--concurrency", type=int,
+                        default=int(os.environ.get("EVAL_CONCURRENCY", "1")),
+                        help="用例级并发度（默认 1=串行）。单 job 内并发：栈只起一次；"
+                             "实测评测吞吐随并发线性提升，而「多 job 分片」会被并发建栈拖慢。")
     parser.add_argument("--max-retries", type=int, default=None,
                         help="整跑重试次数上限（默认不限）；失败多的跑可设 3 省分钟数，"
                              "超限的失败用例标 no-retry-budget 而非静默")
@@ -2288,10 +2356,12 @@ async def main():
             results = await run_suite([case], f"单条 {args.case_id}", classify=not args.no_classify)
         elif args.suite == "smoke":
             results = await run_suite(smoke_cases(), "冒烟", classify=not args.no_classify,
-                                      retry_budget=args.max_retries)
+                                      retry_budget=args.max_retries,
+                                      concurrency=args.concurrency)
         elif args.suite == "normal":
             results = await run_suite(normal_cases(), "每日回归（normal）",
-                                      retry_budget=args.max_retries)
+                                      retry_budget=args.max_retries,
+                                      concurrency=args.concurrency)
         elif args.suite == "adversarial":
             results = await run_suite(adversarial_cases(), "对抗")
         elif args.suite == "full":
