@@ -558,3 +558,24 @@ def test_customer_order_prompt_requires_validate_before_confirm():
     )
     # 必须绑定到 confirm 之前这个时序语义，不能只是随口提一句
     assert "confirm" in CUSTOMER_ORDER_SYSTEM_PROMPT
+
+
+def test_order_create_description_enforces_processing_item_ask():
+    """`order_create` 的工具描述必须含「加工项先询问」铁律（OR-017 抖动治理）
+
+    CI 实证（run 34622425044 ✅ / 34626024229 ❌，同代码同用例）：OR-017 断言
+    `interact(component=choice, multiSelect=true)`，而 agent 时而直接跳到 confirm 卡
+    ——「加工项主动询问」这条能力目前只写在 system prompt 里，**约 1/3 的轮次不生效**。
+
+    工具描述是**每轮都随工具一起送进上下文**的，比长 system prompt 里的某一条更靠前、
+    更稳定（LLM 选工具时必然读到）。故先在工具描述里落成"前置铁律 + 反例"。
+    若仍抖动，下一步是**代码兜底**（选品含加工项却直接发 confirm 卡时，代码先补发
+    choice 卡并抑制该 confirm），不在本提交内做。
+    """
+    from app.tools.order_create import OrderCreateTool
+
+    desc = OrderCreateTool.description
+    assert "多选" in desc or "multiSelect=true" in desc, "未要求用多选 choice 卡询问加工项"
+    assert "加工项" in desc and "interact" in desc, "未把加工项询问写成交互卡动作"
+    assert "漏收加工费" in desc or "金额错误" in desc, "未说明后果（LLM 需要后果才守规矩）"
+    assert "product_search" in desc, "未提醒不得凭列表断言无加工项（历史误宣）"
