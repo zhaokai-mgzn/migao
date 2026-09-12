@@ -7,7 +7,7 @@ customer_order_query / customer_logistics_track 等仅注册于小布 customer_*
 修复：cases/*.yml 支持 persona 字段（mibao/xiaobu/""双端），render 透传 +
 local_runner 按 persona 过滤（mibao 跳过 xiaobu 专属，反之亦然）。
 """
-# case_ids: CH-008, CH-012, CH-013, CH-014, CH-015, CH-017, CH-024, OR-012, ST-008, CH-030, CH-031, CH-032, AS-008, OR-017
+# case_ids: CH-008, CH-012, CH-013, CH-014, CH-015, CH-017, CH-024, OR-012, ST-008, CH-030, CH-031, CH-032, AS-008, OR-017, PR-013
 import sys
 from pathlib import Path
 
@@ -21,7 +21,10 @@ CASES_DIR = REPO_ROOT / ".github" / "cases"
 # 已标记 persona: xiaobu 的 C 端专属用例（issue #2855 修复对象；#3038 新增 3 条交互固化用例）
 # KN-001/002：小布知识问答（issue #3059）；KN-008：知识来源标注边界（issue #3076）
 # CH-010：选购下单表单化（curtain_calc 仅 customer_quote C 端，2026-09-09 校准）
-XIAOBU_ONLY = {"CH-008", "CH-010", "CH-012", "CH-013", "CH-014", "CH-015", "CH-017", "OR-012", "ST-008", "CH-030", "CH-031", "CH-032", "KN-001", "KN-002", "KN-008", "AS-008", "OR-017", "CH-024"}  # CH-024：C 端长期记忆端到端（issue #3357 起不再 skip）
+# PR-013：窗帘算料报价 —— **小布专属能力**（米宝工具集无 curtain_calc），原写成不带 persona
+# 的 B 端档位并 skip_reason 挂起 → C 端该能力在评测里 0 覆盖（issue #3367 覆盖盘点时归位）。
+# 本集合是 C 端**可执行面**的单一事实源：新增/移出必须显式改这里（避免悄悄改变评测面）。
+XIAOBU_ONLY = {"CH-008", "CH-010", "CH-012", "CH-013", "CH-014", "CH-015", "CH-017", "OR-012", "ST-008", "CH-030", "CH-031", "CH-032", "KN-001", "KN-002", "KN-008", "AS-008", "OR-017", "CH-024", "PR-013"}  # CH-024：C 端长期记忆端到端（issue #3357 起不再 skip）
 
 
 def _all_cases():

@@ -437,11 +437,16 @@ cases:
     title: "窗帘算料报价 - 褶皱倍数与用布量计算"
     domains:
       - product
-    tier: smoke
+    tier: normal
+    # 归位（issue #3367 覆盖盘点）：本条断言 `curtain_calc` —— 算料报价是**小布专属**
+    # 能力（米宝工具集里没有该工具），却被写成不带 persona 的 B 端档位并 `skip_reason`
+    # 挂起 → **C 端这个核心能力在评测里 0 覆盖**（只有单测覆盖公式，没有真实 LLM 链路证据）。
+    # 故补 persona: xiaobu 让它进 C 端可执行集，并撤掉 skip_reason。
+    persona: xiaobu
     tags:
       - quote
       - fabric_calc
-      - smoke
+      - xiaobu
     truths_ref:
       - fabric-calc.fullness-default
       - fabric-calc.fixed-height
@@ -456,7 +461,8 @@ cases:
     data_checks:
       - "data.fabric_meters > 0"
       - "data.total > 0"
-    skip_reason: "算料报价为小布（C 端）专属功能，米宝（B 端）Agent Eval smoke 评测无 curtain_calc 工具；由 test_curtain_calc.py 单测 + POC 集成测试覆盖"
+    # 原 skip_reason（"B 端无 curtain_calc 工具"）已失效：本用例改挂 C 端（persona: xiaobu），
+    # C 端 customer_quote skill 正是提供 curtain_calc 的地方。
     merge_log: "POC 小布增强新增（算料报价 skill）"
     traces:
       tests:
