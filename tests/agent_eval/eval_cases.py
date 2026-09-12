@@ -46,6 +46,7 @@ class EvalCase:
     forbidden_args: List[dict] = field(default_factory=list) # 禁止参数断言（隔离/越权下限：如物流工具不得接受快递单号，issue #3270）
     db_verify: List[dict] = field(default_factory=list) # 落库层验证（创建后查 admin-api 断言价格=确认价，§3.2/issue #3056）
     pre_clean: List[dict] = field(default_factory=list) # 评测前数据清理（写类 case 自我污染防线）
+    post_session: List[dict] = field(default_factory=list) # 会话关闭后落库断言（user_memories 只在 close 时 flush，issue #3357）
 
 
 # ── AS-001 [SMOKE] 售后工单列表（源: cases/aftersales.yml）──
@@ -1017,19 +1018,21 @@ _CASE_CH_023 = EvalCase(
     persona='',
 )
 
-# ── CH-024 [NORMAL] C端老客户偏好识别 - 长期记忆注入（小布）（源: cases/chat.yml）──
+# ── CH-024 [NORMAL] C 端长期记忆端到端 — 表达偏好→会话关闭落库→跨会话注入→个性化推荐（小布）（源: cases/chat.yml）──
 _CASE_CH_024 = EvalCase(
     id='CH-024',
     legacy_id='',
-    title='C端老客户偏好识别 - 长期记忆注入（小布）',
+    title='C 端长期记忆端到端 — 表达偏好→会话关闭落库→跨会话注入→个性化推荐（小布）',
     skill=Skill.MULTI_TURN,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['帮我看看有没有奶油风遮光窗帘'],
+    user_inputs=['我家里是奶油风的装修，我个人特别喜欢奶油风，以后都按这个风格来', {'new_session': True, 'text': '上次我说过我喜欢什么风格来着？按那个风格帮我推荐几款窗帘'}],
     expectations=['product_search'],
-    data_checks=['仅 xiaobu 会话注入用户长期记忆（format_for_prompt 输出经消毒后拼入 system prompt）', "注入的记忆来自 user_memories 表且 agent_type='xiaobu'、importance>=0.5、LIMIT 20", 'mibao（B端）会话不注入用户记忆（agent_type 分流）', '注入文本做过 XML 转义/长度截断（防持久化注入，审计 07 P1-L9）'],
-    skip_reason='记忆注入链路由 pytest 单测验证（tests/test_user_memory.py + tests/test_memory_injection.py），agent-eval 无稳定记忆数据',
-    tags=['memory', 'xiaobu', 'long_term', 'personalization'],
-    persona='',
+    data_checks=['第 1 轮用户表达风格偏好 → 每轮 fire-and-forget 抽取候选到 session_states.state.memory_candidates（受控词表 CEND_MEMORY_KEYS + PII 过滤）', '会话关闭（PUT /api/chat/sessions/{id}/close → SessionMemory.close_session）时 flush 候选落库 user_memories（issue #2815 会话末聚合）', "新会话注入：仅 xiaobu 会话注入用户长期记忆（format_for_prompt 输出经 XML 转义/截断消毒后拼入 system prompt）；记忆来自 user_memories 且 agent_type='xiaobu'、importance>=0.5、LIMIT 20", '第 2 轮用户**未再提**风格词，回复出现「奶油」只能来自记忆注入（跨会话回忆可判定；同会话内看不到——候选要等会话关闭才落库）', 'mibao（B端）会话不注入用户记忆（agent_type 分流）', '关闭与抽取的时序：关闭请求紧跟最后一轮时，关闭路径先 drain 在途抽取任务再 flush，否则候选为空、偏好静默丢失（issue #3357）'],
+    skip_reason='',
+    tags=['memory', 'xiaobu', 'long_term', 'personalization', 'cross_session'],
+    persona='xiaobu',
+    want_text=['奶油'],
+    post_session=[{'fetch': 'user_memories', 'agent_type': 'xiaobu', 'checks': ['count>=1', 'value_contains:奶油风']}],
 )
 
 # ── CH-025 [NORMAL] 下单地址自动填充 - 最近订单收货信息预填（可修改）（源: cases/chat.yml）──

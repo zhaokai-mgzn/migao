@@ -9,8 +9,9 @@
   属「工具调用全对、用户看到的话是错的」类缺陷，PR-019 用本断言拦截。
 - interactive 事件采集：send_message 捕获 SSE interactive 事件（卡片证据）。
 """
-# case_ids: OR-016, AS-007, PR-019, CH-010
+# case_ids: OR-016, AS-007, PR-019, CH-010, CH-024
 import asyncio
+from types import SimpleNamespace
 import importlib.util
 import re
 
@@ -1159,3 +1160,377 @@ class TestAutoRespond:
         assert sent[1] == "确认下单", (
             f"auto_respond 轮未按卡片作答，实发: {sent[1]!r}（被当成纯文本发出去了）"
         )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 长期记忆端到端（issue #3357）：会话关闭接口 + 关闭后置落库断言 + 跨会话轮
+# 背景：C 端评测长期 user_memories=0 而报告全绿。两层成因——
+#   ① runner 的「会话清理」打的是 admin-api 人工会话表（agent_sessions），
+#      C 端会话在 ai-agent 的 sessions 表 → 恒 404 被静默吞掉，close 路径从未执行；
+#   ② 记忆候选只在会话关闭时 flush，而 user_memories 落库**没有任何可执行断言**。
+# 修复后本组用例锁定：关闭走对接口、跨会话轮真的换会话、落库断言真能失败（非假绿）。
+# case_ids: CH-024
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class TestEndSessionTargetsAiAgent:
+    """_end_session 必须关闭 **ai-agent 的会话**（记忆 flush 的唯一入口）。"""
+
+    def _capture(self, status=200, raise_exc=None):
+        calls = []
+
+        class _Resp:
+            status_code = status
+            content = b'{"success":false}'
+
+        class _Client:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *a):
+                return False
+
+            async def put(self, url, headers=None, timeout=None):
+                calls.append(("PUT", url))
+                if raise_exc:
+                    raise raise_exc
+                return _Resp()
+
+            async def post(self, url, headers=None, json=None, timeout=None):
+                calls.append(("POST", url))
+                return _Resp()
+
+        import unittest.mock as mock
+        return calls, mock.patch.object(lr.httpx, "AsyncClient", _Client)
+
+    def test_closes_ai_agent_session(self):
+        calls, patched = self._capture()
+        with patched:
+            asyncio.run(lr._end_session("tok", "sess-1"))
+        puts = [u for m, u in calls if m == "PUT"]
+        assert puts == [f"{lr.AI_API}/api/chat/sessions/sess-1/close"], (
+            f"会话关闭必须打 ai-agent 关闭接口，实际: {calls}"
+        )
+
+    def test_admin_api_call_is_only_best_effort_secondary(self):
+        """人工会话残留仍 best-effort 清（但不得成为唯一路径）。"""
+        calls, patched = self._capture()
+        with patched:
+            asyncio.run(lr._end_session("tok", "sess-2"))
+        posts = [u for m, u in calls if m == "POST"]
+        assert posts == [f"{lr.ADMIN_API}/api/admin/agent-sessions/sess-2/end"]
+
+    def test_close_failure_is_visible_not_swallowed(self, capsys):
+        """关闭失败必须打 warning（旧实现静默吞 → 会话永不关闭 + 记忆永不落库）。"""
+        calls, patched = self._capture(status=404)
+        with patched:
+            asyncio.run(lr._end_session("tok", "sess-3"))
+        out = capsys.readouterr().out
+        assert "会话关闭失败" in out and "404" in out
+
+    def test_close_exception_is_visible(self, capsys):
+        calls, patched = self._capture(raise_exc=RuntimeError("conn reset"))
+        with patched:
+            asyncio.run(lr._end_session("tok", "sess-4"))
+        assert "会话关闭异常" in capsys.readouterr().out
+
+
+class TestEvaluateMemoryCheck:
+    """关闭后置断言谓词（user_memories）。"""
+
+    def _mems(self, *pairs):
+        return [{"key": k, "value": v} for k, v in pairs]
+
+    def test_count_ge_passes(self):
+        ok, _ = lr._evaluate_memory_check(self._mems(("curtain_style", "奶油风")), "count>=1")
+        assert ok
+
+    def test_count_ge_fails_with_keys_in_detail(self):
+        ok, detail = lr._evaluate_memory_check([], "count>=1")
+        assert not ok
+        assert "实际 0 条" in detail and "keys=[]" in detail
+
+    def test_count_eq(self):
+        mems = self._mems(("a", "1"), ("b", "2"))
+        assert lr._evaluate_memory_check(mems, "count==2")[0]
+        assert not lr._evaluate_memory_check(mems, "count==1")[0]
+
+    def test_has_key(self):
+        mems = self._mems(("curtain_style", "奶油风"))
+        assert lr._evaluate_memory_check(mems, "has_key:curtain_style")[0]
+        ok, detail = lr._evaluate_memory_check(mems, "has_key:curtain_color")
+        assert not ok and "curtain_color" in detail
+
+    def test_value_contains(self):
+        mems = self._mems(("curtain_style", "喜欢奶油风装修"))
+        assert lr._evaluate_memory_check(mems, "value_contains:奶油风")[0]
+        ok, detail = lr._evaluate_memory_check(mems, "value_contains:北欧")
+        assert not ok and "奶油风" in detail, "失败详情必须带实际 values（可归因）"
+
+    def test_unparsable_check_fails_closed(self):
+        ok, detail = lr._evaluate_memory_check([], "感觉有记忆")
+        assert not ok and "无法解析" in detail
+
+    def test_empty_key_or_substring_fails_closed(self):
+        assert not lr._evaluate_memory_check([], "has_key:")[0]
+        assert not lr._evaluate_memory_check([], "value_contains:")[0]
+
+
+class TestCheckPostSession:
+    """check_post_session：fetch 路由 + 查询异常处理。"""
+
+    def test_unsupported_fetch_reported(self):
+        issues = asyncio.run(lr.check_post_session("tok", [{"fetch": "orders"}]))
+        assert issues and "不支持的 fetch" in issues[0]
+
+    def test_user_memories_issues_surface(self):
+        import unittest.mock as mock
+
+        async def fake_fetch(token, agent_type="xiaobu"):
+            return []
+
+        with mock.patch.object(lr, "_fetch_user_memories", new=fake_fetch):
+            issues = asyncio.run(lr.check_post_session("tok", [
+                {"fetch": "user_memories", "checks": ["count>=1"]}]))
+        assert issues and "count>=1" in issues[0]
+
+    def test_query_failure_reported_not_silent(self):
+        import unittest.mock as mock
+
+        async def boom(token, agent_type="xiaobu"):
+            raise RuntimeError("500")
+
+        with mock.patch.object(lr, "_fetch_user_memories", new=boom):
+            issues = asyncio.run(lr.check_post_session("tok", [
+                {"fetch": "user_memories", "checks": ["count>=1"]}]))
+        assert issues and "查询失败" in issues[0]
+
+    def test_no_specs_no_issues(self):
+        assert asyncio.run(lr.check_post_session("tok", None)) == []
+
+
+class TestCloseAndVerifySession:
+    """_close_and_verify_session：关闭 + 后置断言计入用例结果。"""
+
+    def _patch(self, issues):
+        import unittest.mock as mock
+        closed = []
+
+        async def fake_end(token, sid):
+            closed.append(sid)
+
+        async def fake_check(token, specs):
+            return list(issues)
+
+        return closed, mock.patch.object(lr, "_end_session", new=fake_end), \
+            mock.patch.object(lr, "check_post_session", new=fake_check)
+
+    def test_closes_final_session_id(self):
+        """跨会话用例：关闭必须针对 run_case 回报的**最后一个**会话。"""
+        closed, p1, p2 = self._patch([])
+        case = SimpleNamespace(id="CH-024", post_session=[{"fetch": "user_memories"}])
+        r = {"score": 1.0, "final_session_id": "sess-new"}
+        with p1, p2:
+            asyncio.run(lr._close_and_verify_session(case, "tok", r, "sess-old"))
+        assert closed == ["sess-new"]
+
+    def test_falls_back_to_initial_session(self):
+        closed, p1, p2 = self._patch([])
+        case = SimpleNamespace(id="X", post_session=[])
+        r = {"score": 1.0}
+        with p1, p2:
+            asyncio.run(lr._close_and_verify_session(case, "tok", r, "sess-only"))
+        assert closed == ["sess-only"]
+
+    def test_issues_zero_the_score(self):
+        closed, p1, p2 = self._patch(["未落库记忆 key=curtain_style"])
+        case = SimpleNamespace(id="CH-024", post_session=[{"fetch": "user_memories"}])
+        r = {"score": 1.0, "passed": 3, "total": 3, "failed": [], "final_session_id": "s"}
+        with p1, p2:
+            asyncio.run(lr._close_and_verify_session(case, "tok", r, "s"))
+        assert r["score"] == 0.0 and r["passed"] == 0
+        assert any("post-session" in str(d) for _, d in r["failed"])
+
+    def test_no_post_session_leaves_score(self):
+        closed, p1, p2 = self._patch(["irrelevant"])
+        case = SimpleNamespace(id="X", post_session=None)
+        r = {"score": 1.0, "final_session_id": "s"}
+        with p1, p2:
+            asyncio.run(lr._close_and_verify_session(case, "tok", r, "s"))
+        assert r["score"] == 1.0 and "failed" not in r
+
+
+class TestNewSessionTurn:
+    """跨会话轮（new_session）：先关旧会话再开新会话（长期记忆注入只在新建会话时发生）。"""
+
+    def _case(self, inputs):
+        return lr.EvalCase(
+            id="CH-024", legacy_id="", title="memory", skill=lr.Skill.MULTI_TURN,
+            difficulty=lr.Difficulty.NORMAL, user_inputs=inputs,
+            expectations=[], data_checks=[], persona="xiaobu",
+        )
+
+    async def _run(self, case, sent):
+        async def fake_send(token, session_id, message, images=None):
+            sent.append((session_id, message))
+            return {"user_message": message, "images": [], "tool_calls": [],
+                    "tool_results": [], "final_text": "ok", "error": None,
+                    "streamed": False, "done": True}
+
+        created = []
+        closed = []
+
+        async def fake_create(token, prefer_new=True):
+            sid = f"new-{len(created) + 1}"   # 与初始会话 id 区分开（否则断言自欺）
+            created.append(sid)
+            return sid
+
+        async def fake_end(token, sid):
+            closed.append(sid)
+
+        import unittest.mock as mock
+        with mock.patch.object(lr, "send_message", new=fake_send), \
+             mock.patch.object(lr, "get_or_create_session", new=fake_create), \
+             mock.patch.object(lr, "_end_session", new=fake_end):
+            r = await lr.run_case(case, "tok", "sess-1")
+        return r, created, closed, sent
+
+    def test_switches_session_before_turn(self):
+        case = self._case(["我喜欢奶油风", {"new_session": True, "text": "按我的风格推荐"}])
+        r, created, closed, sent = asyncio.run(self._run(case, []))
+        assert closed == ["sess-1"], "换会话前必须关闭旧会话（否则候选不 flush）"
+        assert len(created) == 1 and r["final_session_id"] == created[0] != "sess-1"
+        assert [sid for sid, _ in sent] == ["sess-1", created[0]]
+        assert r["session_breaks"] == 1
+
+    def test_no_break_by_default(self):
+        case = self._case(["只说一句话"])
+        r, created, closed, sent = asyncio.run(self._run(case, []))
+        assert created == [] and closed == [] and r["session_breaks"] == 0
+        assert r["final_session_id"] == "sess-1"
+
+    def test_empty_text_raises(self):
+        """用例书写错误必须响（不是 LLM 波动）：空文本会发出一条空消息。"""
+        case = self._case([{"new_session": True}])
+        with pytest.raises(ValueError) as ei:
+            asyncio.run(self._run(case, []))
+        assert "new_session" in str(ei.value) and "text" in str(ei.value)
+
+
+class TestRunSuitePostSession:
+    """run_suite 接线：post_session 失败 → 用例判失败；重试路径同样执行（禁止假绿）。"""
+
+    def _case(self, post_session):
+        return lr.EvalCase(
+            id="CH-024", legacy_id="", title="memory", skill=lr.Skill.MULTI_TURN,
+            difficulty=lr.Difficulty.NORMAL, user_inputs=["hi"],
+            expectations=[], data_checks=[], persona="xiaobu",
+            post_session=post_session,
+        )
+
+    def _run(self, case, post_results, monkeypatch, tmp_path):
+        import unittest.mock as mock
+        attempts = []
+
+        async def fake_login():
+            return "tok"
+
+        async def fake_sess(token, prefer_new=True):
+            return "sess"
+
+        async def fake_run_case(c, token, sid):
+            attempts.append(sid)
+            return {"case_id": c.id, "title": c.title, "difficulty": "normal",
+                    "tags": [], "rounds": 1, "tool_calls": [], "round_trace": [],
+                    "passed": 1, "total": 1, "score": 1.0, "failed": [],
+                    "last_error": None, "final_text": "ok",
+                    "final_session_id": sid, "session_breaks": 0}
+
+        calls = {"checks": 0}
+
+        async def fake_check(token, specs):
+            calls["checks"] += 1
+            return list(post_results.pop(0)) if post_results else []
+
+        async def fake_end(token, sid):
+            return None
+
+        monkeypatch.setenv("AGENT_EVAL_FLAKE_LOG", str(tmp_path / "flakes.json"))
+        with mock.patch.object(lr, "login", new=fake_login), \
+             mock.patch.object(lr, "get_or_create_session", new=fake_sess), \
+             mock.patch.object(lr, "run_case", new=fake_run_case), \
+             mock.patch.object(lr, "_end_session", new=fake_end), \
+             mock.patch.object(lr, "check_post_session", new=fake_check):
+            results = asyncio.run(lr.run_suite([case], "t"))
+        return results, attempts, calls
+
+    def test_passing_post_session_keeps_pass(self, monkeypatch, tmp_path):
+        case = self._case([{"fetch": "user_memories", "checks": ["count>=1"]}])
+        results, attempts, calls = self._run(case, [[]], monkeypatch, tmp_path)
+        assert results[0]["score"] == 1.0
+        assert len(attempts) == 1, "通过用例不得重试"
+        assert calls["checks"] == 1
+
+    def test_failing_post_session_fails_case(self, monkeypatch, tmp_path):
+        """核心假绿防线：轮内断言全过、记忆没落库 → 必须判失败。"""
+        case = self._case([{"fetch": "user_memories", "checks": ["count>=1"]}])
+        results, attempts, calls = self._run(
+            case, [["未落库记忆"], ["未落库记忆"]], monkeypatch, tmp_path)
+        assert results[0]["score"] == 0.0
+        assert calls["checks"] == 2, "重试路径也必须执行 post_session（否则重试即假绿）"
+        assert any("post-session" in str(d) for _, d in results[0]["failed"])
+
+    def test_retry_may_recover(self, monkeypatch, tmp_path):
+        """首次落库失败、重试成功 → 按重试结果放行（与普通断言同权）。"""
+        case = self._case([{"fetch": "user_memories", "checks": ["count>=1"]}])
+        results, attempts, calls = self._run(
+            case, [["未落库记忆"], []], monkeypatch, tmp_path)
+        assert results[0]["score"] == 1.0
+        assert results[0]["classification"] == "llm-noise"
+        assert calls["checks"] == 2
+
+
+class TestDeclaredPostSessionChecksParse:
+    """用例库里声明的 post_session 谓词必须真能解析（拼错 = 静默假绿）。
+
+    谓词拼错（如 `count>>=1` / `value_contains` 少写冒号）在 runner 里会走
+    "无法解析" 分支 → 报违规 → 用例失败；但若哪天该分支被改成"跳过未知谓词"，
+    断言就会静默失效。本测试直接对**用例库全量**做解析体检，把拼错挡在源头。
+    """
+
+    def _cases(self):
+        import sys
+        from pathlib import Path
+        repo_root = Path(__file__).resolve().parents[3]
+        sys.path.insert(0, str(repo_root / ".github"))
+        from render_cases import load_case_dicts
+        return load_case_dicts(str(repo_root / ".github" / "cases"))
+
+    def test_all_declared_checks_parse(self):
+        bad = []
+        for c in self._cases():
+            for spec in c.get("post_session") or []:
+                for check in spec.get("checks") or []:
+                    ok, detail = lr._evaluate_memory_check([], str(check))
+                    if "无法解析" in detail:
+                        bad.append(f"{c.get('id')}: {check!r}")
+        assert not bad, f"post_session 谓词无法解析（拼写错误）: {bad}"
+
+    def test_all_declared_fetches_supported(self):
+        """不支持的 fetch 会被 runner 记违规（这里提前暴露，避免 CI 才炸）。"""
+        import unittest.mock as mock
+
+        async def fake_fetch(token, agent_type="xiaobu"):
+            return []
+
+        bad = []
+        with mock.patch.object(lr, "_fetch_user_memories", new=fake_fetch):
+            for c in self._cases():
+                specs = c.get("post_session") or []
+                if not specs:
+                    continue
+                issues = asyncio.run(lr.check_post_session("tok", specs))
+                # 空记忆下 count>=1 必然失败（正常）；只关心"配置不支持"与"无法解析"两类
+                bad += [f"{c.get('id')}: {i}" for i in issues
+                        if "不支持的 fetch" in i or "无法解析" in i]
+        assert not bad, f"post_session 配置问题: {bad}"

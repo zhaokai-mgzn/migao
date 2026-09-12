@@ -167,6 +167,7 @@ def to_eval_py(cases):
     '    forbidden_args: List[dict] = field(default_factory=list) # 禁止参数断言（隔离/越权下限：如物流工具不得接受快递单号，issue #3270）',
             '    db_verify: List[dict] = field(default_factory=list) # 落库层验证（创建后查 admin-api 断言价格=确认价，§3.2/issue #3056）',
             '    pre_clean: List[dict] = field(default_factory=list) # 评测前数据清理（写类 case 自我污染防线）',
+            '    post_session: List[dict] = field(default_factory=list) # 会话关闭后落库断言（user_memories 只在 close 时 flush，issue #3357）',
            "", ""]
 
     for c in cases:
@@ -201,6 +202,8 @@ def to_eval_py(cases):
             out.append(f"    db_verify={c.get('db_verify')!r},")
         if c.get("pre_clean"):
             out.append(f"    pre_clean={c.get('pre_clean')!r},")
+        if c.get("post_session"):
+            out.append(f"    post_session={c.get('post_session')!r},")
         out.append(")")
         out.append("")
 
@@ -262,10 +265,25 @@ def to_md(cases):
             lines.append("```")
             for msg in c.get("user_inputs") or []:
                 if isinstance(msg, dict):
-                    # 带图消息：文本 + 图片数（issue #2794）
                     _t = msg.get("text", "")
                     _imgs = msg.get("images") or []
-                    lines.append(f"你: {_t} [📷 附 {len(_imgs)} 图]" if _t else f"你: [📷 纯图片 x{len(_imgs)}]")
+                    # 语义化标注：这些 dict 轮是"协议轮"（harness 自动作答/换会话），
+                    # 不是用户真说了什么——之前一律渲染成「[📷 纯图片 x0]」，
+                    # 读文档的人会把自动作答误读成用户发了空图。
+                    _tags = []
+                    if msg.get("new_session"):
+                        # 跨会话轮（issue #3357）：先关当前会话再开新会话（触发记忆 flush）
+                        _tags.append("🔁 新会话")
+                    if msg.get("auto_respond"):
+                        _tags.append("🤖 按上一轮卡片作答")
+                    if msg.get("auto_select"):
+                        _tags.append("🤖 选第一个选项")
+                    if msg.get("auto_fill"):
+                        _tags.append("🤖 自动填表")
+                    if _imgs:
+                        _tags.append(f"📷 附 {len(_imgs)} 图")
+                    suffix = (" [" + " ".join(_tags) + "]") if _tags else ""
+                    lines.append(f"你: {_t}{suffix}" if _t else f"你: {suffix.strip() or '(空)'}")
                 else:
                     lines.append(f"你: {msg}")
             for e in (c.get("expectations") or []):
@@ -284,6 +302,8 @@ def to_md(cases):
                 lines.append(f"禁参: {fa.get('tool')}({fa.get('action', '')}) 不得含 {', '.join(fa.get('fields') or [])}")
             for dv in (c.get("db_verify") or []):
                 lines.append(f"落库: {dv.get('fetch')} {dv.get('name')} → {'; '.join(dv.get('checks') or [])}")
+            for ps in (c.get("post_session") or []):
+                lines.append(f"会话后: {ps.get('fetch')}({ps.get('agent_type', 'xiaobu')}) → {'; '.join(ps.get('checks') or [])}")
             if c.get("skip_reason"):
                 lines.append(f"跳过: {c['skip_reason']}")
             lines.append("```")

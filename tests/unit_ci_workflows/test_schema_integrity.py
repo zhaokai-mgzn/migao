@@ -25,7 +25,7 @@ SQL schema 完整性守卫（issue #3270）。
 
 本测试用静态分析等价覆盖上述 5 类，提交即可拦住，无需起库。
 """
-# case_ids: MC-012, CH-010, OR-017
+# case_ids: MC-012, CH-010, OR-017, CH-024
 import re
 import sys
 from pathlib import Path
@@ -836,6 +836,7 @@ class TestNamedProductsAreSeeded:
         "有什么窗帘": "泛指求推荐，靠 fixture 里的推荐位/列表回答（CH-017）",
         "推荐几款热销窗帘": "泛指求推荐，靠 recommended=TRUE 商品回答（CH-010）",
         "雪尼尔面料": "知识问答走 knowledge_search，非商品库查询（KN-001/KN-008）",
+        "几款窗帘": "泛指求推荐（未点名任何商品），靠 fixture 推荐位/列表回答（CH-024）",
     }
     # 候选提取：≥2 个中/英/数字字符 + 窗帘/面料/布艺 结尾
     CANDIDATE_RE = r"[\u4e00-\u9fa5A-Za-z0-9]{2,10}(?:窗帘|面料|布艺)"
@@ -1244,15 +1245,27 @@ class TestEvalArtifactAuditStep:
         body = self._step().get("run") or ""
         for table in ("agent_sessions", "orders", "after_sales_tickets", "user_memories"):
             assert table in body, f"审计未覆盖表 {table}"
+        # C 端评测会话在 ai-agent 的 sessions 表（`agent_sessions` 是人工会话表，
+        # 只有 human_handoff 会写）——旧审计把两张表混为一谈，会话残留看不见（#3357）
+        assert "FROM sessions" in body, "审计未统计 ai-agent 会话表 sessions"
+        assert "status='active'" in body, "审计未统计未关闭残留会话（清理失效无人发现）"
         assert "ticket_type='complaint'" in body, "未单独统计转人工工单（CH-008/013/015 对账）"
         assert (self._step().get("env") or {}).get("DEV_SERVICE_TOKEN"), (
             "缺 DEV_SERVICE_TOKEN → compose 插值失败 → 审计为空"
         )
 
-    def test_eval_creates_sessions_in_db(self):
-        """对照：评测确实每用例建一个会话（否则上面审计的 agent_sessions 恒为 0，没意义）"""
+    def test_eval_creates_and_closes_ai_agent_sessions(self):
+        """对照：评测每用例在 ai-agent 建会话，且收尾必须**关闭它**（issue #3357）。
+
+        旧断言只查 `api/chat/sessions`（创建），于是"关闭打到了另一张表的接口、
+        会话从未关闭、记忆候选从未 flush"这一整条链路断了却无人发现。现在把
+        关闭接口也锁进契约：必须是 ai-agent 的 close（记忆 flush 的唯一入口）。
+        """
         src = (Path(__file__).parent.parent.parent / "tests" / "agent_eval" / "local_runner.py").read_text(encoding="utf-8")
         assert "api/chat/sessions" in src, "runner 未创建会话（审计目标落空）"
+        assert "/api/chat/sessions/{session_id}/close" in src, (
+            "runner 未通过 ai-agent 关闭接口收尾 —— 记忆候选不会 flush，会话残留"
+        )
 
 
 class TestFalseGreenGuardInAudit:
@@ -1277,6 +1290,12 @@ class TestFalseGreenGuardInAudit:
         assert "假绿风险" in body, "审计缺少假绿告警文案"
         assert "orders=" in body and "ORDERS" in body, "未统计订单数并据此告警"
         assert "CH-010" in body, "告警未点名下单写用例"
+
+    def test_audit_warns_when_memories_not_landed(self):
+        """CH-024 通过但 user_memories 为空 = 记忆链断（或断言失效）→ 必须告警。"""
+        body = self._audit_body()
+        assert "memories=" in body and "MEMORIES" in body, "未统计记忆条数并据此告警"
+        assert "CH-024" in body, "记忆告警未点名跨会话记忆用例"
 
     def test_eval_emits_all_traces(self):
         """写用例成败必须可见：通过用例的轨迹也要打（否则写工具结果藏在暗处）"""
