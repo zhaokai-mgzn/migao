@@ -1563,9 +1563,22 @@ def resolve_auto_respond(results: list, fallback: str, form_values: dict) -> str
             comp = str(iv.get("type") or iv.get("component") or "")
             by_comp.setdefault(comp, iv)
 
+        # 同一张卡**不重复点第二次**（发过的答复不再原样重发）：
+        # 模型重发同一张确认卡时，若 harness 逐轮点同一张卡，就会陷入
+        # 「模型重发 → 点卡 → 模型再重发」死循环、流程永不前进（CI run 34714932015 实证：
+        # CH-010 九轮下来 order_create 三次都被"缺少短信验证码"拒 —— 验证码轮全被点卡吃掉）。
+        # 真实顾客点过一次不会再点同一张，而是直接说下一步需要的信息（验证码/补充信息）——
+        # 这正是 fallback 的语义，故已发过的答复一律改用 fallback。
+        _sent = [str(r.get("user_message") or "").strip() for r in rounds]
+
+        def _already_sent(answer: str) -> bool:
+            return bool(answer) and answer.strip() in _sent
+
         confirm = by_comp.get("confirm")
         if confirm is not None:
             value = str(confirm.get("confirmValue") or "").strip()
+            if _already_sent(value):
+                return fallback
             return value or fallback
 
         choice = by_comp.get("choice")

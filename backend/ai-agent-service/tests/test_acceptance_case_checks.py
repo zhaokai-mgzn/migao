@@ -2478,3 +2478,39 @@ class TestRoundTraceCarriesErrorText:
         assert trace[0]["error"].startswith("处理失败")
         assert "ERR(" in lr.format_round_trace(trace)
         assert "AttributeError" in lr.format_round_trace(trace)
+
+
+class TestAutoRespondNoRepeatCardClick:
+    """同卡不重复点（issue #3365，CH-010 实证）。
+
+    CI run 34714932015：CH-010 九轮下来 `order_create ×3` 全被"缺少短信验证码"拒 ——
+    模型每轮重发同一张确认卡，harness 每轮点同一张卡 → 验证码轮全被点卡吃掉、流程永不前进。
+    真实顾客点过一次不会再点同一张卡，而是直接说下一步需要的信息（验证码/补充信息）——
+    即 fallback 的语义。故"已发过的答复"一律改用 fallback。
+    """
+
+    def _card(self, comp="confirm", **kw):
+        base = {"type": comp}
+        base.update(kw)
+        return {"interactive": [base], "__round": 1, "tool_calls": [], "tool_results": [],
+                "final_text": "", "user_message": ""}
+
+    def test_same_confirm_value_answered_once_then_fallback(self):
+        first = [dict(self._card(confirmValue="确认下单：北欧风窗帘 3米 ¥408"),
+                      user_message="数量 3 米")]
+        assert lr.resolve_auto_respond(first, "123456", {}) == "确认下单：北欧风窗帘 3米 ¥408"
+        # 下一轮模型**重发同一张卡** → 不再重复点，改发 fallback（验证码）
+        second = first + [dict(self._card(confirmValue="确认下单：北欧风窗帘 3米 ¥408"),
+                               user_message="确认下单：北欧风窗帘 3米 ¥408", __round=2)]
+        assert lr.resolve_auto_respond(second, "123456", {}) == "123456"
+
+    def test_new_confirm_value_still_clicked(self):
+        """换了内容的确认卡仍要点（那是新的确认请求）。"""
+        first = [dict(self._card(confirmValue="确认下单：旧单 ¥100"), user_message="x")]
+        second = first + [dict(self._card(confirmValue="确认下单：北欧风窗帘 3米 ¥408"),
+                               user_message="确认下单：旧单 ¥100", __round=2)]
+        assert lr.resolve_auto_respond(second, "123456", {}) == "确认下单：北欧风窗帘 3米 ¥408"
+
+    def test_choice_first_option_still_answered(self):
+        card = self._card("choice", options=[{"value": "opt1", "label": "第一项"}])
+        assert lr.resolve_auto_respond([card], "确认", {}) == "opt1"
