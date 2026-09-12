@@ -10,6 +10,8 @@ SkillConfig + SkillRegistry 单元测试
 - AgentRouter 路由逻辑
 """
 
+import re
+
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
@@ -621,3 +623,95 @@ class TestSkillPromptToolsetConsistency:
         assert set(cfg.tool_names or []) == {
             "curtain_calc", "product_detail", "product_search", "interact"
         }
+
+
+class TestPromptToolPromiseInvariant:
+    """提示词承诺的**工具**必须在技能工具集里（issue #3365，两次踩到的同一类缺陷）。
+
+    实证（两次）：
+      ① `customer_quote` 提示词写「顾客确认下单后用 interact(form) 收收货信息…我帮您安排」，
+         但工具集**没有 order_create** → 模型走到调用下单工具 → `Tool not found: order_create`
+         → 反复重试 → 转人工，订单永不创建（已修：提示词改为交回下单流程）。
+      ② `customer_order` 提示词写「商品详情铁律：confirm 之前必须先调 product_detail」，
+         但工具集**没有 product_search/product_detail** → 下单场景既查不了详情、接地自动驾驶
+         也无从代跑 → 接地闸门拦了 17 次 order_create、流程死锁（已修：补工具）。
+
+    判定必须**只看"指令句"**：提示词里提到工具名的场景有三类，只有第一类是"承诺"——
+      1) 指令「必须先调 product_detail」「请调用 interact(...)」 → **承诺**（工具必须存在）；
+      2) 否定「不可用的工具：order_create…不要声称能执行」 → 不是承诺（反而要求模型别用）；
+      3) 描述「金额来自已确认的算料报价（curtain_calc 结果）」 → 不是承诺（是别处产出的结果）。
+    不区分就会误报（首版实测：general 的否定清单、customer_order 的算料描述都被误判）。
+    """
+
+    KNOWN_TOOLS = (
+        "product_search", "product_detail", "order_create", "aftersale_create",
+        "customer_order_query", "customer_logistics_track", "customer_address_query",
+        "aftersale_query", "validate_input", "interact", "human_handoff",
+        "curtain_calc", "knowledge_search", "order_query", "product_manage",
+        "order_manage", "inventory_manage", "employee_manage", "role_manage",
+        "settings_manage",
+    )
+    _NEGATIVE = ("不可用", "不要", "不能", "无法", "禁止", "切勿", "不得")
+    _DESCRIPTIVE = ("结果", "来自", "产出", "由其它技能", "由其他技能")
+    _INSTRUCTION = ("调用", "先调", "再调", "必须", "请用", "使用", "执行", "走")
+
+    @classmethod
+    def promised_tools(cls, prompt: str) -> set:
+        """从提示词里提取"被承诺的工具"（只看指令句）。"""
+        out = set()
+        for raw in re.split(r"[。；\n]", prompt or ""):
+            seg = raw.strip()
+            if not seg:
+                continue
+            if any(neg in seg for neg in cls._NEGATIVE):
+                continue
+            # 词边界匹配：`order_query` 不得因是 `customer_order_query` 的子串而命中
+            # （首版用裸 `in` 实测误报：C 端技能被指"缺 order_query"）
+            named = {t for t in cls.KNOWN_TOOLS
+                     if re.search(rf"(?<![A-Za-z0-9_]){re.escape(t)}(?![A-Za-z0-9_])", seg)}
+            if not named:
+                continue
+            if not any(ins in seg for ins in cls._INSTRUCTION):
+                continue
+            if any(des in seg for des in cls._DESCRIPTIVE) and not any(
+                    ins in seg for ins in ("调用", "先调", "再调", "请用")):
+                continue
+            out |= named
+        return out
+
+    def _skills(self):
+        from app.graph.skills.skill_registry import get_skill_registry
+        return [c for c in get_skill_registry().get_all() if c.tool_names]
+
+    def test_detector_classifies_promise_negative_and_description(self):
+        """检测器自身的三分法（防误报/漏报）：指令=承诺；否定/描述=不算。"""
+        assert self.promised_tools("confirm 之前必须先调 product_detail 取真实价格。") == {"product_detail"}
+        assert self.promised_tools("不可用的工具：product_manage、order_create，不要声称能执行。") == set()
+        assert self.promised_tools("金额来自已确认的算料报价（curtain_calc 结果）。") == set()
+        # 描述性提及但**没有**"结果/来自"这类标记：靠"必须含指令动词"兜住（否则误报）
+        assert self.promised_tools("报价口径：curtain_calc。") == set()
+        assert self.promised_tools("参考字段：order_query。") == set()
+        assert self.promised_tools("请调用 interact(component=confirm) 展示确认卡。") == {"interact"}
+
+    def test_prompts_do_not_promise_missing_tools(self):
+        bad = []
+        for cfg in self._skills():
+            prompt = " ".join((cfg.system_prompts or {}).values())
+            if not prompt:
+                continue
+            tools = set(cfg.tool_names or [])
+            missing = self.promised_tools(prompt) - tools
+            if missing:
+                bad.append(f"{cfg.name}: 提示词点名但工具集缺失 {sorted(missing)}")
+        assert not bad, (
+            "以下技能的提示词**指令**里点名了它没有的工具（模型会撞墙并陷入循环）：\n  "
+            + "\n  ".join(bad)
+        )
+
+    def test_customer_order_has_grounding_tools(self):
+        """具体锁定：C 端下单必须具备商品检索/详情（其提示词的"商品详情铁律"要求）。"""
+        from app.graph.skills.skill_registry import get_skill_registry
+        cfg = get_skill_registry().get_or_raise("customer_order")
+        assert {"product_search", "product_detail"} <= set(cfg.tool_names or []), (
+            "customer_order 缺商品工具 → 下单接地铁律无法执行（OR-014 死锁实证）"
+        )
