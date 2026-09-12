@@ -1574,17 +1574,28 @@ def resolve_auto_respond(results: list, fallback: str, form_values: dict) -> str
         def _already_sent(answer: str) -> bool:
             return bool(answer) and answer.strip() in _sent
 
+        def _repeat_count(answer: str) -> int:
+            return sum(1 for m in _sent if m and m == answer.strip())
+
         confirm = by_comp.get("confirm")
         if confirm is not None:
             value = str(confirm.get("confirmValue") or "").strip()
-            if _already_sent(value):
+            # 同一张确认卡**最多点两次**（issue #3365 实测校准）：
+            # - 点 1 次后模型若重发同一张卡，那是它**再次征询**，真实顾客会再点一下 → 允许多点 1 次；
+            # - 第 3 次起改用 fallback：否则「模型重发 → 反复点卡」会把整场轮数吃光，
+            #   验证码轮永远送不出去（CH-010 曾整场 order_create 全部"缺少短信验证码"）。
+            # 完全禁止重复点击也不行：实测 CH-010 因此陷入「模型重发确认卡 → harness 只回文本
+            # → 模型再重发」的 4 次确认死循环（被 check_confirm_loop 判红）。
+            # 两次之后仍重发，则属**模型层**不收敛，交给 check_confirm_loop 如实判红。
+            if _repeat_count(value) >= 2:
                 return fallback
             return value or fallback
 
         choice = by_comp.get("choice")
         if choice is not None:
             answer = choice_card_answer(choice)
-            if answer and not _already_sent(answer):
+            # 选择卡同理：同一答复最多两次（首答 + 一次重申），之后走 fallback
+            if answer and _repeat_count(answer) < 2:
                 return answer
 
         form = by_comp.get("form")

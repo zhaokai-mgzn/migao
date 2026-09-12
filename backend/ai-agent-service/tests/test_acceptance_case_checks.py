@@ -2495,14 +2495,17 @@ class TestAutoRespondNoRepeatCardClick:
         return {"interactive": [base], "__round": 1, "tool_calls": [], "tool_results": [],
                 "final_text": "", "user_message": ""}
 
-    def test_same_confirm_value_answered_once_then_fallback(self):
-        first = [dict(self._card(confirmValue="确认下单：北欧风窗帘 3米 ¥408"),
-                      user_message="数量 3 米")]
-        assert lr.resolve_auto_respond(first, "123456", {}) == "确认下单：北欧风窗帘 3米 ¥408"
-        # 下一轮模型**重发同一张卡** → 不再重复点，改发 fallback（验证码）
-        second = first + [dict(self._card(confirmValue="确认下单：北欧风窗帘 3米 ¥408"),
-                               user_message="确认下单：北欧风窗帘 3米 ¥408", __round=2)]
-        assert lr.resolve_auto_respond(second, "123456", {}) == "123456"
+    def test_same_confirm_value_answered_twice_then_fallback(self):
+        """同一张确认卡最多点**两次**：首答 + 一次重申；第 3 次起走 fallback（把轮数让给验证码）。"""
+        v = "确认下单：北欧风窗帘 3米 ¥408"
+        first = [dict(self._card(confirmValue=v), user_message="数量 3 米")]
+        assert lr.resolve_auto_respond(first, "123456", {}) == v
+        second = first + [dict(self._card(confirmValue=v), user_message=v, __round=2)]
+        assert lr.resolve_auto_respond(second, "123456", {}) == v, "模型再次征询应再点一次"
+        third = second + [dict(self._card(confirmValue=v), user_message=v, __round=3)]
+        assert lr.resolve_auto_respond(third, "123456", {}) == "123456", (
+            "两次之后仍重发 → 轮数必须让给验证码，否则整场 order_create 都缺 sms_code"
+        )
 
     def test_new_confirm_value_still_clicked(self):
         """换了内容的确认卡仍要点（那是新的确认请求）。"""
@@ -2532,7 +2535,9 @@ class TestAutoRespondNoRepeatCardClick:
                           options=[{"value": "proc_item_x", "label": "纳米圈打孔"}])
         assert lr.resolve_auto_respond([card], "确认", {}) == "已选加工项：纳米圈打孔"
 
-    def test_repeated_same_choice_answer_falls_back(self):
+    def test_repeated_same_choice_answer_falls_back_after_two(self):
         card = self._card("choice", options=[{"value": "opt1", "label": "第一项"}])
-        again = [dict(card, user_message="第一项", __round=2)]
-        assert lr.resolve_auto_respond([card] + again, "123456", {}) == "123456"
+        once = [dict(card, user_message="第一项", __round=1)]
+        assert lr.resolve_auto_respond([card] + once, "123456", {}) == "第一项"
+        twice = once + [dict(card, user_message="第一项", __round=2)]
+        assert lr.resolve_auto_respond([card] + twice, "123456", {}) == "123456"
