@@ -1526,6 +1526,65 @@ class TestInflightHandoffGuard:
         )
         assert "human_handoff" not in sent
 
+    def test_block_message_names_flow_tool(self):
+        """拦截话术必须点名下一步该调的工具（issue #3361，CI run 34703192730）。
+
+        实证：CH-012 R2/R3/R4 连续被拦 3 次，模型只反复重试 human_handoff，
+        始终不调 aftersale_create → 售后单永不创建。
+        原话术只说"请继续完成当前流程"，没说"调用哪个工具"，模型无从下手。
+        """
+        import asyncio, json as _json
+
+        sent_tools = []
+
+        async def fake_execute(tool, args, ctx, state):
+            sent_tools.append(tool.name)
+            return (_json.dumps({"success": True, "data": {}}), {"success": True, "data": {}})
+
+        with patch("app.memory.session_memory.SessionMemory") as mem_cls, \
+             patch("app.graph.skills.base_skill.get_breaker") as get_breaker, \
+             patch("app.graph.skills.base_skill.get_skill_llm") as get_llm, \
+             patch("app.graph.skills.base_skill.create_skill_registry") as create_reg, \
+             patch("app.graph.skills.base_skill.set_tool_context"), \
+             patch("app.graph.skills.base_skill._execute_tool_safe", fake_execute):
+            from app.tools.human_handoff import HumanHandoffTool
+            registry = MagicMock()
+            registry.get_langchain_tools.return_value = []
+            # 技能工具集里**有** aftersale_create（CH-012 的真实情形）
+            registry.get_tool.side_effect = lambda n: (
+                HumanHandoffTool() if n == "human_handoff" else (MagicMock() if n == "aftersale_create" else None))
+            create_reg.return_value = registry
+
+            breaker = MagicMock()
+            async def _pt(fn): return await fn()
+            breaker.call = _pt
+            get_breaker.return_value = breaker
+
+            call = MagicMock(spec=AIMessage)
+            call.content = ""
+            call.tool_calls = [{"name": "human_handoff", "args": {}, "id": "h1"}]
+            final = MagicMock(spec=AIMessage)
+            final.content = "好的"
+            final.tool_calls = []
+            llm = MagicMock(); llm.bind_tools.return_value = llm
+            llm.ainvoke = AsyncMock(side_effect=[call, final])
+            get_llm.return_value = llm
+            mem_cls.return_value.set_pending_skill = AsyncMock(return_value=True)
+
+            result = asyncio.run(execute_skill(
+                state=_make_state(messages=[HumanMessage(content="质量问题")],
+                                  pending_interact_skill="customer_aftersales"),
+                skill_name="customer_aftersales",
+                tool_names=["human_handoff", "aftersale_create"],
+                system_prompt="p",
+            ))
+
+        assert "handoff_blocked_inflight" in str(result)
+        assert "aftersale_create" in str(result), (
+            "拦截话术未点名 aftersale_create —— 模型只会反复重试转人工（CH-012 实证）"
+        )
+        assert "不要再次调用 human_handoff" in str(result), "未显式禁止重复调用转人工"
+
     def test_pending_skill_does_not_block_explicit_request(self):
         """回归：pending 非空但顾客明确要求转人工 → 仍必须放行。"""
         _result, sent = self._run("转人工", with_card=False, pending_skill="customer_aftersales")
@@ -2191,3 +2250,116 @@ class TestInTurnDuplicateWriteCoalescing:
             self._tc({}, "c1"), self._tc({}, "c2"),
         ], read_only=True)
         assert len(executed) == 2
+
+
+class TestHallucinatedToolArgSanitize:
+    """模型幻觉参数净化（issue #3361，CI 实证 run 34703192730）。
+
+    dump 原文：
+        [tool-exec] order_create ERROR: OrderCreateTool.execute() got an unexpected
+        keyword argument 'action'
+    LLM 会把别家工具的字段顺手带过来（`aftersale_create`/`after_sales_manage` 有 `action`，
+    `order_create` 没有）→ TypeError → `tool_execution_failed` → 模型重试两次才成功
+    （CH-010/OR-014 抖动的真因，单条用例白跑 200-400s）。
+
+    修法：执行前按工具 `execute()` 签名丢弃不受支持的 kwarg，并打警告（可见、不静默）。
+    """
+
+    def _tool(self, **kwargs):
+        captured = {}
+
+        async def execute(self, context, name: str, items: list, sms_code=None, **rest):
+            captured.update({"name": name, "items": items, "sms_code": sms_code, "rest": rest})
+            return "ok"
+
+        class T:
+            name = "order_create"
+            read_only = False
+            destructive = False
+            requires_confirmation = False
+
+        T.execute = execute
+        t = T()
+        return t, captured
+
+    @pytest.fixture(autouse=True)
+    def _clear_sig_cache(self):
+        """签名缓存是模块级 dict：测试替身同名会串味，逐测清空。"""
+        from app.graph.skills.base_skill import _accepted_param_names
+        _accepted_param_names._cache = {}
+        yield
+        _accepted_param_names._cache = {}
+
+    def test_unexpected_kwarg_dropped(self, capsys):
+        """多余参数（action）必须被丢弃，调用照常成功。
+
+        替身必须用**显式签名**（真实 order_create 就是这样：无 **kwargs）——
+        带 **kwargs 的工具按设计不做净化（不能吞合法参数），用 **kwargs 替身测不出净化。
+        """
+        import asyncio
+        from app.graph.skills.base_skill import _execute_tool_safe
+
+        seen = {}
+
+        async def fake_execute(context, name: str, items: list, sms_code=None):
+            seen.update({"name": name, "items": items, "sms_code": sms_code})
+            from app.tools.base import ToolResult
+            return ToolResult(success=True, data={"ok": True}, message="ok")
+
+        class T:
+            name = "order_create"
+            read_only = False
+            destructive = False
+            requires_confirmation = False
+
+        T.execute = staticmethod(fake_execute)
+
+        with patch("app.graph.skills.base_skill._auto_resolve_ids",
+                   new=AsyncMock(side_effect=lambda tool, args, state: args)), \
+             patch("app.tools.langchain_adapter.LangChainToolAdapter._normalize_args",
+                   staticmethod(lambda tool, args: args)):
+            _, result_dict = asyncio.run(_execute_tool_safe(
+                T(), {"name": "张三", "items": [], "action": "create"}, MagicMock(), {"session_id": "s"}))
+        assert result_dict.get("success") is True, "净化后调用应成功"
+        assert "action" not in seen, "幻觉参数 action 未被丢弃"
+        assert seen.get("name") == "张三" and seen.get("items") == []
+
+    def test_normal_args_pass_through(self):
+        """正常参数不得被误删（净化只针对签名外的键）。"""
+        import asyncio
+        from app.graph.skills.base_skill import _execute_tool_safe
+
+        seen = {}
+
+        async def fake_execute(context, **kw):
+            seen.update(kw)
+            from app.tools.base import ToolResult
+            return ToolResult(success=True, data={}, message="ok")
+
+        class T:
+            name = "order_create"
+            read_only = False
+            destructive = False
+            requires_confirmation = False
+        T.execute = staticmethod(fake_execute)
+
+        with patch("app.graph.skills.base_skill._auto_resolve_ids",
+                   new=AsyncMock(side_effect=lambda tool, args, state: args)), \
+             patch("app.tools.langchain_adapter.LangChainToolAdapter._normalize_args",
+                   staticmethod(lambda tool, args: args)):
+            asyncio.run(_execute_tool_safe(T(), {"name": "张三", "sms_code": "123456"},
+                                           MagicMock(), {"session_id": "s"}))
+        assert seen.get("name") == "张三" and seen.get("sms_code") == "123456"
+
+    def test_var_keyword_tool_not_sanitized(self):
+        """带 **kwargs 的工具不做净化（不能吞掉合法参数）。"""
+        import asyncio
+        from app.graph.skills.base_skill import _sanitize_tool_args
+
+        class T:
+            name = "flexible"
+            async def execute(self, context, **kwargs):
+                return "ok"
+
+        out = _sanitize_tool_args(T(), {"anything": 1, "name": "x"})
+        assert out == {"anything": 1, "name": "x"}

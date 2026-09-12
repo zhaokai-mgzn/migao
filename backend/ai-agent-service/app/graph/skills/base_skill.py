@@ -901,6 +901,63 @@ def _has_inflight_interactive_card(messages) -> bool:
     return False
 
 
+def _accepted_param_names(tool) -> frozenset | None:
+    """工具 execute() 接受的参数名集合；None = 接受任意参数（**kwargs）或无法反射。
+
+    为什么需要（issue #3361，CI 实证 run 34703192730）：
+        [tool-exec] order_create ERROR: OrderCreateTool.execute() got an unexpected
+        keyword argument 'action'
+    LLM 会把**别家工具的字段**顺手带过来（`aftersale_create` / `after_sales_manage`
+    都有 `action`，而 `order_create` 没有）→ TypeError → tool_execution_failed →
+    模型重试两次才成功（CH-010/OR-014 抖动的真因，单条用例白跑 200-400s）。
+    参数被 schema 挡住却仍被传，属"模型层幻觉参数"，代码层拦掉并留警告是唯一稳的解法。
+    """
+    import inspect as _inspect
+    cached = getattr(_accepted_param_names, "_cache", None)
+    if cached is None:
+        cached = _accepted_param_names._cache = {}
+    # 缓存键用"模块+限定名"：仅用类名时，测试里同名替身/同名内部类会互相串味
+    # （实测：两个测试各自定义的 class T 共享缓存 → 参数被误丢弃）
+    key = f"{type(tool).__module__}.{type(tool).__qualname__}"
+    if key in cached:
+        return cached[key]
+    names = None
+    try:
+        sig = _inspect.signature(tool.execute)
+        accepted = set()
+        for name, param in sig.parameters.items():
+            if name == "self":
+                continue
+            if param.kind is _inspect.Parameter.VAR_KEYWORD:
+                names = None          # 有 **kwargs → 不做净化
+                break
+            if param.kind in (_inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                              _inspect.Parameter.KEYWORD_ONLY):
+                accepted.add(name)
+        else:
+            accepted.discard("context")   # context 由调用方单独传
+            names = frozenset(accepted)
+    except (TypeError, ValueError):
+        names = None
+    cached[key] = names
+    return names
+
+
+def _sanitize_tool_args(tool, tool_args: dict) -> dict:
+    """丢弃工具 execute() 不接受的关键字参数（保留 context/正常参数）。"""
+    accepted = _accepted_param_names(tool)
+    if accepted is None or not isinstance(tool_args, dict):
+        return tool_args
+    unknown = [k for k in tool_args if k not in accepted]
+    if not unknown:
+        return tool_args
+    logger.warning(
+        f"[tool-arg-sanitize] {getattr(tool, 'name', '?')} 丢弃不受支持参数 "
+        f"{unknown}（模型幻觉参数；保留 {sorted(set(tool_args) - set(unknown))}）"
+    )
+    return {k: v for k, v in tool_args.items() if k in accepted}
+
+
 async def _execute_tool_safe(tool, tool_args: dict, tool_context, state: dict) -> tuple:
     """统一 Tool 执行入口 — normalize + cache + execute + error handling.
 
@@ -916,6 +973,8 @@ async def _execute_tool_safe(tool, tool_args: dict, tool_context, state: dict) -
             logger.info(f"[tool-exec] Flattened nested data for {tool.name}: keys={list(nested.keys())[:8]}")
             tool_args = {**nested, **{k: v for k, v in tool_args.items() if k != "data"}}
     tool_args = LangChainToolAdapter._normalize_args(tool, tool_args)
+    # 幻觉参数净化（见 _sanitize_tool_args 注释：order_create 收到 action → TypeError → 抖动）
+    tool_args = _sanitize_tool_args(tool, tool_args)
 
     # 1.5. 自动解析 _ids 参数：LLM 传加工项名称/序号时自动转 UUID
     tool_args = await _auto_resolve_ids(tool, tool_args, state)
@@ -1632,15 +1691,40 @@ async def execute_skill(
                                 f"[{skill_name}] 拦截在办流程中的无信号转人工 | session={session_id} "
                                 f"last_msg={last_user_msg[:30]!r}"
                             )
+                            # 拦截话术必须**可执行**（issue #3361，CI run 34703192730 实证）：
+                            # CH-012 R2/R3/R4 每轮都被拦（handoff_blocked_inflight ×3），
+                            # 但模型只是**反复重试 human_handoff**、始终不调 aftersale_create
+                            # → 流程原地打转、售后单永不创建（复现型红灯）。
+                            # 原话术只说"请继续完成当前流程"，没点出**下一步该调哪个工具** ——
+                            # 模型读到了"不许转人工"，却不知道"那该干什么"。
+                            # 与确认门禁同一手法：把可执行动作（工具名）写进 tool result。
+                            _flow_hint = ""
+                            for _flow_tool, _hint in (
+                                ("aftersale_create",
+                                 "顾客是在办**售后**（退货/换货/退款/维修）：请先与顾客确认订单与原因"
+                                 "（interact 卡），然后调用 aftersale_create 创建工单"
+                                 "（order_id 用已查到的订单号）"),
+                                ("order_create",
+                                 "顾客是在办**下单**：请继续收齐信息并调用 order_create 完成下单"),
+                            ):
+                                try:
+                                    if skill_registry.get_tool(_flow_tool) is not None:
+                                        _flow_hint = _hint
+                                        break
+                                except Exception:
+                                    continue
+                            _msg = (
+                                "顾客正在办理的业务尚未完成，且本轮消息没有要求转人工、"
+                                "没有情绪激动、也不涉及赔偿/法律。**不要再次调用 human_handoff**，"
+                                "继续完成当前流程。"
+                                + (_flow_hint + "。" if _flow_hint else "请按交互卡与提示继续下一步。")
+                                + "若顾客确实要求人工，需其明确说出「转人工/找人工/找客服」"
+                                "后再调用本工具。"
+                            )
                             return tool_call, json.dumps({
                                 "success": False,
                                 "error": "handoff_blocked_inflight",
-                                "message": (
-                                    "顾客正在办理的业务尚未完成，且本轮消息没有要求转人工、"
-                                    "没有情绪激动、也不涉及赔偿/法律。请**继续完成当前流程**"
-                                    "（按交互卡与提示继续下一步）。若顾客确实要求人工，"
-                                    "需其明确说出「转人工/找人工/找客服」后再调用本工具。"
-                                ),
+                                "message": _msg,
                             }, ensure_ascii=False), {"success": False, "error": "handoff_blocked_inflight"}
 
                     # 写操作（destructive 或 requires_confirmation 高风险写）：必须经用户明确确认
