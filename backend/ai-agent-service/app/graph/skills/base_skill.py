@@ -943,6 +943,32 @@ def _accepted_param_names(tool) -> frozenset | None:
     return names
 
 
+_PRODUCT_NOUN_RE = None
+
+
+def extract_product_keyword(text: str) -> str:
+    """从顾客消息里抽取**可用于 product_search 的商品关键词**（issue #3365）。
+
+    规则（保守）：取「2-10 字中文/数字 + 商品类名词（窗帘/窗纱/面料/布艺/遮光帘）」的最长命中；
+    没有类名词时退化为「订单里常见的指代」之外的短名词 —— 抽不到就返回空串（由调用方决定不作为）。
+
+    为什么需要：接地自动驾驶要替模型补上 product_search，关键词必须来自**顾客原话**
+    （不能编），否则会搜错商品、把错误数据当"接地真值"。
+    """
+    import re as _re
+    if not text:
+        return ""
+    m = _re.search(r"[\u4e00-\u9fa5A-Za-z0-9]{1,10}(?:窗帘|窗纱|面料|布艺|遮光帘)", str(text))
+    if not m:
+        return ""
+    kw = m.group(0)
+    # 去掉动词前缀（「我想买夏日清风窗帘」→「夏日清风窗帘」）：否则搜的是整句
+    kw = _re.sub(
+        r"^(?:帮我|给我|我想买|我想|我要|搜索|搜一下|搜下|查一下|查下|搜|查|看看|看|推荐|要|买|来|找)+",
+        "", kw)
+    return kw
+
+
 def _sanitize_tool_args(tool, tool_args: dict) -> dict:
     """丢弃工具 execute() 不接受的关键字参数（保留 context/正常参数）。"""
     accepted = _accepted_param_names(tool)
@@ -1746,6 +1772,62 @@ async def execute_skill(
                                 f"[{skill_name}] 下单接地闸门：本会话未查商品详情，拦截 order_create "
                                 f"| session={session_id}"
                             )
+                            # ── 接地自动驾驶（issue #3365 候选修法 1）──
+                            # 实证：闸门拦下后模型**只是反复重试 order_create**（CI run 34707941520
+                            # 里被拦 6 次仍不搜索），提示词与拦截话术都劝不动 → 属模型层不遵从。
+                            # 代码层直接代跑 product_search → product_detail（**只读**），落接地标记，
+                            # 并把查到的真实单价/商品 id 回给模型，让它基于真值重新下单。
+                            # 只在"能确定唯一商品"时落地（多命中则把候选交回模型，不猜）。
+                            _pilot = None
+                            _kw = extract_product_keyword(last_user_msg)
+                            if _kw:
+                                try:
+                                    _ps = skill_registry.get_tool("product_search")
+                                    _pd = skill_registry.get_tool("product_detail")
+                                except Exception:
+                                    _ps = _pd = None
+                                if _ps is not None and _pd is not None:
+                                    try:
+                                        _rs, _rd = await _execute_tool_safe(
+                                            _ps, {"keyword": _kw}, tool_context, state)
+                                        _prods = ((_rd.get("data") or {}).get("products")
+                                                  if isinstance(_rd.get("data"), dict) else None) or []
+                                        if isinstance(_prods, list) and len(_prods) == 1:
+                                            _pid = _prods[0].get("id") or _prods[0].get("productId")
+                                            if _pid:
+                                                _ds, _dd = await _execute_tool_safe(
+                                                    _pd, {"product_id": _pid}, tool_context, state)
+                                                if _dd.get("success"):
+                                                    _data = _dd.get("data") or {}
+                                                    _pilot = {
+                                                        "product_id": _pid,
+                                                        "name": _data.get("name") or _prods[0].get("name"),
+                                                        "price": _data.get("price"),
+                                                    }
+                                                    from app.memory.session_state_store import (
+                                                        SessionStateStore as _SP)
+                                                    _sp = await _SP().load(session_id) or {}
+                                                    _sp["grounded_product_detail"] = {"product_id": _pid}
+                                                    await _SP().commit(session_id, _sp)
+                                                    logger.warning(
+                                                        f"[{skill_name}] 接地自动驾驶：代跑 "
+                                                        f"product_search('{_kw}')→product_detail 完成，"
+                                                        f"接地标记已落 | session={session_id}"
+                                                    )
+                                    except Exception as _pe:
+                                        logger.debug(f"[{skill_name}] 接地自动驾驶失败（回落到话术）: {_pe}")
+                            if _pilot:
+                                return tool_call, json.dumps({
+                                    "success": False,
+                                    "error": "product_not_grounded",
+                                    "message": (
+                                        f"下单被拦截，但**已代为查询商品**："
+                                        f"{_pilot.get('name')}（product_id={_pilot.get('product_id')}，"
+                                        f"单价 ¥{_pilot.get('price')}）。请基于该真实商品与单价"
+                                        f"重新组织 items 并调用 order_create；"
+                                        f"加工项/规格请用 product_detail 结果中的值，不要凭记忆填。"
+                                    ),
+                                }, ensure_ascii=False), {"success": False, "error": "product_not_grounded"}
                             return tool_call, json.dumps({
                                 "success": False,
                                 "error": "product_not_grounded",

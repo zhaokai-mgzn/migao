@@ -2569,3 +2569,116 @@ class TestOrderGroundingGate:
                 skill_name="customer_order",
                 tool_names=["product_detail"], system_prompt="p"))
         assert store_state.get("grounded_product_detail"), "product_detail 成功后未落地接地标记"
+
+
+class TestGroundingAutopilot:
+    """接地自动驾驶（issue #3365）：闸门拦下后**代码代跑**只读的 search+detail。
+
+    实证（CI run 34707941520，OR-014）：闸门拦住 6 次，模型仍只重试 order_create，
+    提示词与拦截话术都劝不动 → 属模型层不遵从。故代码兜底：代跑
+    product_search(keyword=顾客原话里的商品名) → product_detail → 落接地标记 →
+    把真实单价回给模型，让它基于真值重新下单。
+    只在**唯一命中**时落地（多命中把候选交回模型，不猜商品）。
+    """
+
+    def _run(self, search_products, detail_ok=True, user_msg="帮我下单，遮光窗帘 3 米，要打孔加工"):
+        import asyncio, json as _json
+
+        calls = []
+        store = {}
+
+        class _Store:
+            async def load(self, sid):
+                return dict(store)
+
+            async def commit(self, sid, full):
+                store.update(full)
+
+        async def fake_execute_safe(tool, args, ctx, state):
+            calls.append((tool.name, dict(args)))
+            if tool.name == "product_search":
+                return (_json.dumps({"success": True, "data": {"products": search_products}}),
+                        {"success": True, "data": {"products": search_products}})
+            if tool.name == "product_detail":
+                if not detail_ok:
+                    return (_json.dumps({"success": False, "error": "not_found"}),
+                            {"success": False, "error": "not_found"})
+                return (_json.dumps({"success": True, "data": {"id": args.get("product_id"),
+                                                               "name": "遮光窗帘", "price": 168.0}}),
+                        {"success": True, "data": {"id": args.get("product_id"),
+                                                   "name": "遮光窗帘", "price": 168.0}})
+            return (_json.dumps({"success": True, "data": {"id": "o1"}}),
+                    {"success": True, "data": {"id": "o1"}})
+
+        def _mk(name):
+            m = MagicMock()
+            m.name = name
+            m.read_only = True
+            m.destructive = False
+            m.requires_confirmation = False
+            return m
+
+        with patch("app.memory.session_memory.SessionMemory"), \
+             patch("app.graph.skills.base_skill.get_breaker") as get_breaker, \
+             patch("app.graph.skills.base_skill.get_skill_llm") as get_llm, \
+             patch("app.graph.skills.base_skill.create_skill_registry") as create_reg, \
+             patch("app.graph.skills.base_skill.set_tool_context"), \
+             patch("app.graph.skills.base_skill._execute_tool_safe", fake_execute_safe), \
+             patch("app.memory.session_state_store.SessionStateStore",
+                   side_effect=lambda *a, **k: _Store()):
+            order_tool = _mk("order_create")
+            order_tool.read_only = False
+            registry = MagicMock()
+            registry.get_langchain_tools.return_value = []
+            registry.get_tool.side_effect = lambda n: {
+                "order_create": order_tool, "product_search": _mk("product_search"),
+                "product_detail": _mk("product_detail"),
+            }.get(n)
+            create_reg.return_value = registry
+            breaker = MagicMock()
+
+            async def _pt(fn):
+                return await fn()
+
+            breaker.call = _pt
+            get_breaker.return_value = breaker
+            call = MagicMock(spec=AIMessage)
+            call.content = ""
+            call.tool_calls = [{"name": "order_create", "args": {"items": []}, "id": "c1"}]
+            final = MagicMock(spec=AIMessage)
+            final.content = "好的"
+            final.tool_calls = []
+            llm = MagicMock()
+            llm.bind_tools.return_value = llm
+            llm.ainvoke = AsyncMock(side_effect=[call, final])
+            get_llm.return_value = llm
+            result = asyncio.run(execute_skill(
+                state=_make_state(messages=[HumanMessage(content=user_msg)]),
+                skill_name="customer_order",
+                tool_names=["order_create", "product_search", "product_detail"],
+                system_prompt="p"))
+        return calls, store, result
+
+    def test_single_hit_gives_grounded_facts(self):
+        calls, store, result = self._run([{"id": "p1", "name": "遮光窗帘"}])
+        names = [c[0] for c in calls]
+        assert names[:2] == ["product_search", "product_detail"], f"未代跑 search→detail: {names}"
+        assert store.get("grounded_product_detail", {}).get("product_id") == "p1", "接地标记未落"
+        s = str(result)
+        assert "遮光窗帘" in s and "168" in s, "未把真实商品/单价回给模型"
+
+    def test_multiple_hits_not_guessed(self):
+        """多命中不得猜商品（否则把错误数据当接地真值）。"""
+        calls, store, _ = self._run([{"id": "p1"}, {"id": "p2"}])
+        assert [c[0] for c in calls] == ["product_search"], "多命中还继续 product_detail（等于猜商品）"
+        assert "grounded_product_detail" not in store
+
+    def test_no_keyword_no_autopilot(self):
+        calls, _store, _ = self._run([{"id": "p1"}], user_msg="帮我下单 3 米要打孔加工")
+        assert calls == [], "抽不到商品关键词时代跑不应触发（避免搜错）"
+
+    def test_detail_failure_falls_back(self):
+        calls, store, result = self._run([{"id": "p1"}], detail_ok=False)
+        assert [c[0] for c in calls] == ["product_search", "product_detail"]
+        assert "grounded_product_detail" not in store, "detail 失败不得落接地标记"
+        assert "product_detail" in str(result), "应回落到分步话术"
