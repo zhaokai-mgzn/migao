@@ -397,6 +397,38 @@ class TestRouteByIntent:
             assert result == "customer_order_skill", f"{msg!r} 未切回下单流程（route={result}）"
             assert state["pending_interact_skill"] == "", f"{msg!r} 未释放报价 skill 的会话锁"
 
+    def test_own_domain_keyword_does_not_escape_customer_skill(self):
+        """C 端 skill 名带 `customer_` 前缀，**自己的领域关键词不得触发 escape hatch**。
+
+        回归实证（CI run 34688038261）：在 `customer_order` 里顾客点确认卡回传
+        「确认下单：遮光窗帘3米+打孔加工，合计¥95.4」→ 因消息含「下单」（order 域），
+        而 escape hatch 用 `skill_domain == pending_skill` 比较 `order` vs `customer_order`
+        **永不相等** → 连本领域也被当成"其他领域" → 误判话题切换、清空会话锁 →
+        intent 分类为 quote → 路由到 customer_quote（无 order_create）→
+        `Tool not found: order_create` → 订单永不创建、最终转人工。
+        """
+        from app.graph.nodes import _skill_keyword_domain
+        assert _skill_keyword_domain("customer_order") == "order"
+        assert _skill_keyword_domain("customer_aftersales") == "aftersales"
+        assert _skill_keyword_domain("order") == "order"      # B 端风格名不变
+        assert _skill_keyword_domain("") == ""
+
+        for msg in ("确认下单：遮光窗帘3米+打孔加工，合计¥95.4", "帮我查一下订单"):
+            state = {
+                "pending_interact_skill": "customer_order",
+                "route_decision": {"action": "full_agent"},
+                "intent_result": {"intent": "quote"},
+                "messages": [HumanMessage(content=msg)],
+            }
+            with patch.dict("app.graph.nodes._INTENT_TO_ROUTE",
+                            {"": {"quote": "customer_quote_skill", "general": "general"}}):
+                result = route_by_intent(state)
+            assert result == "customer_order", (
+                f"{msg!r} 在 customer_order 里被误判为话题切换（route={result}）—— "
+                "会话被甩到报价 skill，order_create 将不可用"
+            )
+            assert state["pending_interact_skill"] == "customer_order"
+
     def test_quote_skill_stays_without_order_intent(self):
         """反向：顾客只是在报价流程里闲聊，不得被误切走（escape hatch 不能过宽）。"""
         state = {

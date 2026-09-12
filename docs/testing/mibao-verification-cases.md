@@ -651,7 +651,7 @@
 ### CH-012. 退换货申请（订单定位→原因选择→confirm 确认→售后单） 🔵
 ```
 你: 我要退货
-你: 第一笔订单
+你: 我要退上次买的那单，订单号 EVAL-ORD-0002
 你: 质量问题
 你: 确认申请
 期望: customer_order_query
@@ -664,7 +664,7 @@
 必须成功: aftersale_create
 ```
 真值: aftersales-flow.flow
-溯源: C 端表单化交互方案 S3（miniapp-multiturn-form-scenarios.md） ｜ tags: multi_turn, aftersales, interactive
+溯源: 2026-09-12（issue #3361）顾客改点名订单号 EVAL-ORD-0002（fixture 已发货单）——原「第一笔订单」依赖列表倒序，会被同跑的下单用例新建的「待付款」单顶到首位而按业务规则必被拒。C 端表单化交互方案 S3（miniapp-multiturn-form-scenarios.md） ｜ tags: multi_turn, aftersales, interactive
 
 ### CH-013. AI 检测不满情绪 → 建议转人工卡片 → 用户确认后创建人工会话 🔵
 ```

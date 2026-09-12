@@ -37,6 +37,25 @@ _SKILL_DOMAIN_KEYWORDS = {
 }
 
 
+def _skill_keyword_domain(skill_name: str) -> str:
+    """Skill 名 → 关键词域（C 端 skill 带 `customer_` 前缀：customer_order → order）。
+
+    为什么需要（issue #3361 实证）：`_SKILL_DOMAIN_KEYWORDS` 的键是**领域**
+    （order/aftersales/product/…），而 C 端 skill 名是 `customer_order` / `customer_quote`。
+    escape hatch 里 `if skill_domain == pending_skill` 于是对 C 端**永不成立** ——
+    连当前 skill 自己的领域都被当成"其他领域"，只要用户消息里出现本领域关键词就误判为
+    话题切换、释放会话锁，会话被甩给 intent 路由。
+
+    实测后果（CI run 34688038261）：在 `customer_order` 里顾客点确认卡回传
+    「确认下单：遮光窗帘3米+打孔加工，合计¥95.4」→ 因含「下单」被判"切到 order 域"
+    → pending 清空 → intent 分类为 quote → 路由到 `customer_quote`（该 skill 无
+    order_create）→ `Tool not found: order_create` → 订单永不创建、最终转人工。
+    """
+    name = str(skill_name or "")
+    prefix = "customer_"
+    return name[len(prefix):] if name.startswith(prefix) else name
+
+
 def _msg_has_domain_keyword(text: str) -> bool:
     """消息是否包含任何业务领域关键词（用户给出实质意图方向）。"""
     if not text:
@@ -651,9 +670,10 @@ def route_by_intent(state: AgentState) -> str:
         last_msg = _get_last_human_text(state.get("messages", [])) or ""
         # 使用模块级单一来源关键词表（plan_rewrite 护栏与 escape hatch 共用）
         # 如果用户消息包含非当前 skill 领域的关键词，允许切换
-        current_domain_keywords = _SKILL_DOMAIN_KEYWORDS.get(pending_skill, set())
+        _pending_domain = _skill_keyword_domain(pending_skill)
+        current_domain_keywords = _SKILL_DOMAIN_KEYWORDS.get(_pending_domain, set())
         for skill_domain, keywords in _SKILL_DOMAIN_KEYWORDS.items():
-            if skill_domain == pending_skill:
+            if skill_domain == _pending_domain:
                 continue
             if any(kw in last_msg for kw in keywords):
                 logger.info(

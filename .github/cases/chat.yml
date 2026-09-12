@@ -451,7 +451,13 @@ cases:
       - aftersales-flow.flow
     user_inputs:
       - "我要退货"
-      - "第一笔订单"
+      # ⚠️ 必须点名**可退状态的订单**（issue #3361 实证 run 34688038261）：
+      # 原输入是「第一笔订单」，而列表按创建时间倒序 —— 同一次评测里 CH-010/OR-014
+      # 等下单用例会新建订单，最新那笔状态是「待付款」，按业务规则**不允许**建退款工单
+      # （admin-api 拒绝：仅已确认/生产中/已发货/已完成可创建）→ 用例必挂，
+      # 且失败长相是「售后能力不行」，真因是**用例数据依赖了不确定的列表顺序**。
+      # fixture 订单 EVAL-ORD-0002 状态为「已发货」（可退），点名它即确定性。
+      - "我要退上次买的那单，订单号 EVAL-ORD-0002"
       - "质量问题"
       - "确认申请"
     expectations:
@@ -473,7 +479,7 @@ cases:
       - "aftersale_create 前必有 interact(confirm) 确认"
       - "售后单归属当前用户（数据隔离）"
     skip_reason: ""
-    merge_log: "C 端表单化交互方案 S3（miniapp-multiturn-form-scenarios.md）"
+    merge_log: "2026-09-12（issue #3361）顾客改点名订单号 EVAL-ORD-0002（fixture 已发货单）——原「第一笔订单」依赖列表倒序，会被同跑的下单用例新建的「待付款」单顶到首位而按业务规则必被拒。C 端表单化交互方案 S3（miniapp-multiturn-form-scenarios.md）"
     traces:
       tests:
         - "frontend/mini-app/e2e/scenarios/multiturn-scenario.js"
