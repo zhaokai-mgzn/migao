@@ -1959,3 +1959,61 @@ class TestWriteConfirmedLifecycle:
         assert all("confirmed_write_tool" not in c for c in commits), (
             "写成功后未清除 confirmed_write_tool —— 后续同类写操作会在无新确认时被放行（安全漏洞）"
         )
+
+
+class TestTurnStartCardConfirmRecord:
+    """确认卡点击轮（turn-start）即记录 confirmed_write_tool —— 不依赖本轮调写工具
+
+    CI 实证（run 34683286448）：confirmValue 在上一轮匹配，但 agent 在本轮（验证码轮）
+    才调 order_create；此前记录点只在「写工具被调用且卡片精确匹配」时 —— 本轮消息不是
+    卡片值 → 记录永不发生 → 写操作仍被拦。
+    """
+
+    LONG_CONFIRM = "确认下单：遮光窗帘 3米 米白 纳米圈打孔，总额528元，收货人张三 13800138000"
+
+    def test_record_on_confirm_click_turn(self):
+        import asyncio
+
+        from app.graph.skills.base_skill import _inject_pending_validated
+        from app.graph.pending_validated import PENDING_KEY
+
+        committed = {}
+
+        with patch("app.memory.session_state_store.SessionStateStore") as store_cls:
+            inst = MagicMock()
+            inst.load = AsyncMock(return_value={
+                "last_confirm_value": self.LONG_CONFIRM,
+                PENDING_KEY: {"target_tool": "order_create", "target_action": "create",
+                              "params": {}},
+            })
+            inst.commit = AsyncMock(side_effect=lambda sid, full: committed.update(full))
+            store_cls.return_value = inst
+
+            asyncio.run(_inject_pending_validated(
+                "原提示词",
+                {"session_id": "sess_t1"},
+                self.LONG_CONFIRM,  # 用户点击确认卡回传的精确值
+            ))
+
+        assert committed.get("confirmed_write_tool") == "order_create", (
+            "确认卡点击轮未记录 confirmed_write_tool（turn-start 记录失效）—— "
+            "下一轮补充信息（验证码）写操作仍会被门禁拦"
+        )
+
+    def test_no_record_without_pending(self):
+        """没有已校验待执行状态时，卡片确认不产生放行标记"""
+        import asyncio
+
+        from app.graph.skills.base_skill import _inject_pending_validated
+
+        committed = {}
+
+        with patch("app.memory.session_state_store.SessionStateStore") as store_cls:
+            inst = MagicMock()
+            inst.load = AsyncMock(return_value={"last_confirm_value": self.LONG_CONFIRM})
+            inst.commit = AsyncMock(side_effect=lambda sid, full: committed.update(full))
+            store_cls.return_value = inst
+
+            asyncio.run(_inject_pending_validated(
+                "p", {"session_id": "s2"}, self.LONG_CONFIRM))
+        assert "confirmed_write_tool" not in committed
