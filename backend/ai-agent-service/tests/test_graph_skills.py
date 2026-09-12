@@ -3039,6 +3039,29 @@ class TestWriteInputRecovery:
         seen = self._run("确认", {"items": []})
         assert len(seen["calls"]) == 1, "没有欠参标记时不得拦截（不能误伤正常下单）"
 
+    def test_any_card_blocked_while_waiting_for_input(self):
+        """欠参期间**任何卡片**都不该下发（不只 confirm）。
+
+        实证（run 34721434317，CH-010 首跑）：R6/R7 两张**不同的**卡（choice/confirm）
+        各自把"顾客要发的验证码"这一轮吃掉 → R7 order_create!缺少短信验证码。
+        故欠参等待期一律不发卡，改用文本索要 —— 这样即使用例没声明 prefer_text，
+        验证码也能作为文本落到 agent 手里。
+        """
+        seen = self._run(
+            "已选加工项：纳米圈打孔",
+            {"component": "form", "title": "请确认收货信息", "fields": []},
+            tool_name="interact",
+            store_extra={"last_write_input_error": self._FLAG})
+        assert seen["calls"] == [], "欠参等待期发卡 = 抢走顾客要发的验证码（CH-010 实测形态）"
+
+    def test_card_allowed_once_code_supplied(self):
+        seen = self._run(
+            "123456",
+            {"component": "form", "title": "请确认收货信息", "fields": []},
+            tool_name="interact",
+            store_extra={"last_write_input_error": self._FLAG})
+        assert len(seen["calls"]) == 1, "顾客已给验证码 → 卡照常可用（不能把会话锁死）"
+
     # ── ② 失败即记账 ──
 
     def test_missing_input_failure_recorded(self):

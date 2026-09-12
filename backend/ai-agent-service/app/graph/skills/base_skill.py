@@ -1144,12 +1144,20 @@ async def _write_input_recovery_block(tool_name: str, args: dict, tool_call: dic
     if tool_name == failed_tool:
         reason = (f"顾客**还没有提供**{label}：重复调用 {tool_name} 结果必然相同，"
                   f"本轮**禁止再次调用 {tool_name}**。")
-    elif (tool_name == "interact"
-          and str((args or {}).get("component") or "") == "confirm"
-          and str((args or {}).get("confirmValue") or "") != ""
-          and str((args or {}).get("confirmValue")) == str(full.get("last_confirm_value") or "")):
-        reason = (f"顾客已经确认过这张卡了，而 {failed_tool or '写工具'} 缺的是{label}："
-                  f"重发**同一张确认卡**只会让顾客反复点确认（死循环），本轮禁止重发该卡。")
+    elif tool_name == "interact":
+        _comp = str((args or {}).get("component") or "")
+        if (_comp == "confirm"
+                and str((args or {}).get("confirmValue") or "") != ""
+                and str((args or {}).get("confirmValue")) == str(full.get("last_confirm_value") or "")):
+            reason = (f"顾客已经确认过这张卡了，而 {failed_tool or '写工具'} 缺的是{label}："
+                      f"重发**同一张确认卡**只会让顾客反复点确认（死循环），本轮禁止重发该卡。")
+        else:
+            # 欠参期间**任何卡片**都不发（issue #3367）：实测 CH-010 首跑里两张**不同的**卡
+            # （choice/confirm）各自把"顾客要发的验证码"这一轮吃掉 → order_create 缺码失败。
+            # 卡片会抢走顾客本来要打的那句话；此时唯一有用的动作是**用文本索要**。
+            reason = (f"顾客还没提供{label}（{failed_tool or '写工具'} 因此无法执行）："
+                      f"本轮**不要下发任何卡片**（卡会抢走顾客正要发的内容），"
+                      f"直接用文本索要{label}。")
 
     if not reason:
         return None

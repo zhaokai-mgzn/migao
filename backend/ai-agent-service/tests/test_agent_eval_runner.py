@@ -90,6 +90,44 @@ class TestFailureSignature:
         assert lr._failure_signature(a) != lr._failure_signature(b)
 
 
+class TestFirstAttemptEvidence:
+    """「首跑失败、重试通过」必须留下**逐轮证据**，而不只是指纹（issue #3367）。
+
+    指纹回答"是什么"（如 must_succeed: order_create 从未被调用），轨迹回答"停在哪一轮"。
+    实测 CH-010 首跑失败连续多跑都只有指纹 → 知道没调写工具，却不知道卡在哪一步，
+    无法定位（#3367 就是为此单开的）。
+    """
+
+    def _r(self, score=0.0, **kw):
+        base = {"score": score, "rounds": 8, "tool_calls": ["interact", "product_detail"],
+                "round_trace": [{"round": 1, "user": "推荐几款热销窗帘", "tools": ["product_search"]},
+                                {"round": 2, "user": "确认下单", "tools": ["interact"]}],
+                "failed": [("must_succeed: order_create 从未被调用", "case-level check")],
+                "last_error": None}
+        base.update(kw)
+        return base
+
+    def test_includes_issues_rounds_and_trace(self):
+        text = lr.format_first_attempt_evidence(self._r())
+        assert text, "首跑失败却没有留下任何证据"
+        assert "首跑" in text
+        assert "must_succeed" in text, "缺失败断言 → 只有形状没有原因"
+        assert "R1" in text and "R2" in text, "缺逐轮轨迹 → 无法判断停在哪一轮"
+        assert "确认下单" in text, "轨迹里应带该轮实际发出的用户消息（协议轮答复是关键证据）"
+
+    def test_empty_for_passing_attempt(self):
+        assert lr.format_first_attempt_evidence(self._r(score=1.0)) == "", \
+            "通过的那次不该产出'首跑失败证据'（避免误导）"
+
+    def test_empty_for_missing_result(self):
+        assert lr.format_first_attempt_evidence({}) == ""
+        assert lr.format_first_attempt_evidence(None) == ""
+
+    def test_survives_trace_without_rounds(self):
+        text = lr.format_first_attempt_evidence(self._r(rounds=0, round_trace=[]))
+        assert text, "即使没有轨迹，也应留下断言与轮数（不能让证据函数自己崩掉）"
+
+
 class TestFlakeLedgerEntry:
     """台账条目必须自带**两次尝试**的指纹（issue #3365）。
 
