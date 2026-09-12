@@ -406,3 +406,94 @@ class TestCaseInputsAreUtterances:
             "ST-008 的断言是纯函数级（is_auto_handoff_trigger），agent-eval 无法设置 config —— "
             "必须标 skip_reason 说明由单测覆盖"
         )
+
+
+class TestWriteCaseInputsAreComplete:
+    """断言了「需验证码写工具」的用例，必须给出验证码那一轮（否则流程走不完）
+
+    先例（run 34622425044，OR-014 / OR-017 / CH-010）：三条用例都断言 `order_create`，
+    但 `user_inputs` 只到「确认」为止。而 C 端下单在代码里是**两步**：
+
+        order_create 的 `sms_code` 对 customer 角色**必填**（tools/order_create.py：
+        `_verify_sms_code`，dev/CI 栈由 SMS_BYPASS_CODE 提供万能码）
+        → AI 正确地在确认后引导「请输入收到的短信验证码」
+        → 用例不给码 → 流程**停在第 5 步**，order_create 永不发生
+        → 报告显示「agent 不会下单」（实测 OR-014 R7 `tools=-`）
+
+    这是「用例走不完真实流程」而不是「agent 能力不足」—— 与 fixture 缺数据同族。
+    本测试把「断言了写工具 → 输入必须喂到该工具真的能被调用」变成可执行约束。
+    """
+
+    # 需要用户提供验证码的写工具（参数表里带 sms_code）
+    OTP_TOOLS = {"order_create"}
+    CODE_RE = re.compile(r"^\d{4,6}$")
+
+    def _xiaobu_cases(self) -> list:
+        cases = load_case_dicts(CASES_DIR)
+        # 直接复用生产过滤口径，避免测试自造口径
+        from eval_case_filter import select_cases_for_persona
+        return select_cases_for_persona(cases, PERSONA)
+
+    def test_parse_is_non_trivial(self):
+        cases = self._xiaobu_cases()
+        assert len(cases) >= 20, f"仅解析出 {len(cases)} 条 C 端用例 —— 过滤疑似失效"
+
+    @classmethod
+    def _texts_carried_by(cls, msg) -> list:
+        """一轮输入里**所有可能被当作用户文本发出**的字符串。
+
+        除了纯文本轮，还包括两类结构化轮：
+        - `auto_respond.fallback`（无卡时发出的兜底文本）
+        - `auto_respond.form_values` / `auto_fill` 的值（表单回填内容）
+        只扫纯文本会漏判 —— 把验证码放进 auto_respond 兜底是完全等价的供码方式。
+        """
+        if isinstance(msg, str):
+            return [msg]
+        if not isinstance(msg, dict):
+            return [str(msg)]
+        out = []
+        for key in ("auto_respond", "auto_fill"):
+            block = msg.get(key)
+            if isinstance(block, dict):
+                if block.get("fallback") is not None:
+                    out.append(str(block["fallback"]))
+                for v in (block.get("form_values") or {}).values():
+                    out.append(str(v))
+                if key == "auto_fill":
+                    for v in block.values():
+                        out.append(str(v))
+        for k, v in msg.items():
+            if k not in ("auto_respond", "auto_fill") and isinstance(v, str):
+                out.append(v)
+        return out
+
+    def test_cases_asserting_otp_tools_supply_a_code(self):
+        offenders = []
+        checked = 0
+        for case in self._xiaobu_cases():
+            expectations = case.get("expectations") or []
+            used = {e.get("tool") for e in expectations if isinstance(e, dict)}
+            if not (used & self.OTP_TOOLS):
+                continue
+            checked += 1
+            provided = any(
+                self.CODE_RE.match(t)
+                for u in (case.get("user_inputs") or [])
+                for t in self._texts_carried_by(u)
+            )
+            if not provided:
+                offenders.append(case.get("id"))
+        assert checked >= 3, f"仅 {checked} 条用例断言了需验证码的写工具 —— 解析疑似失效"
+        assert not offenders, (
+            "以下 C 端用例断言了需验证码的写工具（order_create），但 user_inputs 没有"
+            "验证码那一轮 —— AI 会正确停在「请输入验证码」，该断言永远不可能满足：\n  "
+            + "\n  ".join(offenders)
+            + "\n修复：在 user_inputs 末尾补一轮验证码（dev/CI 栈 SMS_BYPASS_CODE=123456）。"
+        )
+
+    def test_sms_bypass_is_wired_in_dev_stack(self):
+        """dev/CI 栈必须注入万能验证码，否则用例喂了码也过不了校验"""
+        compose = (REPO_ROOT / "deploy" / "docker-compose.yml").read_text(encoding="utf-8")
+        assert "SMS_BYPASS_CODE" in compose, (
+            "dev compose 未注入 SMS_BYPASS_CODE —— order_create 的 customer 校验无法通过"
+        )

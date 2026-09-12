@@ -129,3 +129,72 @@ class TestPipefailPatternInventory:
             "新步骤若用管道吞掉了退出码，请显式加 set -o pipefail，"
             f"或在本测试注释中说明该步骤的失败为何可忽略。尾部样本：{recent}"
         )
+
+
+class TestVerifyAllPerCheckLogs:
+    """`verify-all.sh` 的失败日志必须**按检查项唯一**（否则排查被带偏）。
+
+    先例（真实踩到）：日志路径写成固定的 `/tmp/verify-all-$$.log`。
+    `$$` 是 shell PID，在同一进程内**不变** → 每个检查项都覆盖同一个文件 →
+    多项失败时只剩最后一项的日志，而脚本对每个失败项都打印
+    「日志: /tmp/verify-all-$$.log」—— 你照着提示去看，看到的是**别人**的日志。
+
+    与 issue #3270 的 pipefail 假绿同源：**报错指向的证据与实际原因不一致**，
+    比直接报错更难查。
+    """
+
+    SCRIPT = Path(__file__).parent.parent.parent / "verify-all.sh"
+
+    @staticmethod
+    def _code_lines() -> list:
+        """脚本的**有效代码行**（剥掉注释）——注释里会引用旧写法，裸 grep 会假绿。"""
+        out = []
+        for line in TestVerifyAllPerCheckLogs.SCRIPT.read_text(encoding="utf-8").splitlines():
+            stripped = line.split("#", 1)[0]
+            if stripped.strip():
+                out.append(stripped)
+        return out
+
+    def test_log_path_is_not_a_single_shared_file(self):
+        code = "\n".join(self._code_lines())
+        assert "verify-all-$$.log" not in code, (
+            "verify-all.sh 仍使用单一共享日志 /tmp/verify-all-$$.log —— "
+            "多项失败时日志互相覆盖，提示的路径指向别人的日志"
+        )
+
+    def test_log_path_includes_check_identity(self):
+        code = "\n".join(self._code_lines())
+        assert re.search(r"verify-all-\$\$-\$\{?slug", code), (
+            "日志路径未拼接检查项标识（slug）—— 无法做到按检查项唯一"
+        )
+
+    def test_slice_function_produces_unique_paths(self):
+        """行为验证：**两个不同检查项**必须得到**不同**日志路径。
+
+        只静态检查文本是不够的 —— slug 若被写成常量（如 `slug="fixed"`），
+        文本里仍有 `${slug}` 且路径看似"唯一"，但两项检查其实又共用同一个文件
+        （变异测试 M2 实测假绿）。故这里真跑两条**不同名称的失败检查**比对路径。
+        """
+        import subprocess
+        import textwrap
+
+        script = self.SCRIPT.read_text(encoding="utf-8")
+        m = re.search(r"^report\(\) \{[\s\S]*?^\}", script, re.M)
+        assert m, "未能从 verify-all.sh 中抽出 report() 函数"
+        snippet = textwrap.dedent("""
+            set -uo pipefail
+            PASS=0; FAIL=0; declare -a FAILED
+        """) + m.group(0) + textwrap.dedent("""
+            report "检查项 A" false
+            report "检查项 B" false
+            rm -f /tmp/verify-all-$$-*.log
+        """)
+        r = subprocess.run(["bash", "-c", snippet], capture_output=True, text=True)
+        paths = re.findall(r"日志: (\S+)", r.stdout)
+        assert len(paths) == 2, f"预期 2 条失败日志路径，实得 {paths}"
+        assert paths[0] != paths[1], (
+            f"两个不同检查项得到同一日志路径 {paths[0]!r} —— "
+            "后跑的会覆盖先跑的，失败现场被销毁"
+        )
+        for p in paths:
+            assert "verify-all-" in p and p.endswith(".log")

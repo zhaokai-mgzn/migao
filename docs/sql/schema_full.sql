@@ -1,7 +1,28 @@
 -- ================================================================
+-- ⚠️⚠️ 已废弃（DEPRECATED）—— 请勿用于新建库 / 重建环境 ⚠️⚠️
+-- ================================================================
+-- 本文件是 **2026-05-30 的一次性快照**，此后未随迁移链更新，**两个方向都已失真**
+-- （2026-09-11 实测，逐表比对 docs/sql/schema.sql）：
+--
+--   本文件缺失（schema.sql 已有，共 7 张）：
+--     finance_transactions, knowledge_candidates, knowledge_cards,
+--     role_permissions, session_states, user_suggestion_prefs, user_memories
+--   本文件仍会创建，但**早已被迁移 DROP**（共 4 张）：
+--     knowledge_documents, knowledge_sync_history, rag_chunks,   ← V36 迁移 DROP
+--     quick_reply_templates
+--
+-- 即：拿它建库会**同时**缺表和多出已废弃的表 —— 不是"旧一点"，是错的。
+--
+-- ✅ 正确入口（单一事实源）：
+--   - 新建库：`docs/sql/schema.sql`（bootstrap，与迁移链对齐，CI 起栈用的就是它）
+--   - 结构变更：`backend/admin-api/src/main/resources/db/migration/V{n}__*.sql`
+--     并同步 `schema.sql`（跨源漂移守卫见 tests/unit_ci_workflows/test_schema_integrity.py）
+--
+-- 保留本文件仅为历史归档（外部 runbook / 审计可能引用路径，故未直接删除）。
+-- ================================================================
 -- 米高智能商家管理系统 - 全量建表脚本 (PostgreSQL 14+)
 -- ================================================================
--- 生成时间: 2026-05-30
+-- 生成时间: 2026-05-30（快照，已冻结）
 -- 用途: 在全新 PostgreSQL 数据库上一次性执行，创建全部表结构、索引、
 --       RLS 策略及必要种子数据
 -- 执行方式: psql -U <user> -d <database> -f schema_full.sql

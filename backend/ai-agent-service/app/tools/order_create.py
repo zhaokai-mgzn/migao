@@ -51,7 +51,13 @@ class OrderCreateTool(BaseTool):
         "必填: customer_name + customer_phone + items(product_name+quantity+unit_price+subtotal)。"
         "售卖方式/门幅/颜色等规格信息放入 items[i].processing_info（字段：sellingMethod/doorWidth/colorName），"
         "不要平铺在 items 顶层（平铺会被丢弃）。"
-        "【反例】跳过 SKU 选择直接下单；把 sellingMethod/doorWidth 平铺进 items。修改订单用 order_manage。WRITE"
+        "【铁律·加工项】product_detail 返回的加工项（processing_items）非空时，**必须先调用 "
+        "interact(component=choice, multiSelect=true) 主动询问顾客要不要加工项**（列出名称与单价），"
+        "把所选写入 items[i].processing_info.processingItems、合计写入 processingFee 并计入金额；"
+        "顾客说不需要可跳过；加工项为空才可告知无可用加工项。"
+        "**未询问就直接建单 = 漏收加工费 = 订单金额错误**，属禁止行为。"
+        "【反例】跳过 SKU 选择直接下单；把 sellingMethod/doorWidth 平铺进 items；"
+        "凭 product_search 列表断言'该商品无加工项'（列表本就查不到，必须查详情）。修改订单用 order_manage。WRITE"
     )
     allowed_roles = ["admin", "agent", "tenant_admin", "customer"]
 

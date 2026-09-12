@@ -23,7 +23,12 @@ declare -a FAILED
 
 report() {
   local name="$1"; shift
-  local log="/tmp/verify-all-$$.log"
+  # ⚠️ 日志路径必须**按检查项唯一**：此前是固定的 /tmp/verify-all-$$.log（$$ 是 shell PID，
+  #    整个进程内不变）→ 每个检查项都覆盖同一个文件 → 多项失败时只剩最后一项的日志，
+  #    "日志: xxx" 指向的内容与失败项对不上，现场排查当场被带偏。
+  local slug
+  slug="$(printf '%s' "$name" | tr -c '[:alnum:]' '-' | sed 's/-\{2,\}/-/g; s/^-//; s/-$//')"
+  local log="/tmp/verify-all-$$-${slug}.log"
   local rc=0
   "$@" > "$log" 2>&1
   rc=$?

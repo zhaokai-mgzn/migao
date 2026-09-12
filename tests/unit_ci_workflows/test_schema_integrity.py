@@ -25,8 +25,9 @@ SQL schema 完整性守卫（issue #3270）。
 
 本测试用静态分析等价覆盖上述 5 类，提交即可拦住，无需起库。
 """
-# case_ids: MC-012, CH-010
+# case_ids: MC-012, CH-010, OR-017
 import re
+import sys
 from pathlib import Path
 
 SCHEMA = Path(__file__).parent.parent.parent / "docs" / "sql" / "schema.sql"
@@ -455,6 +456,17 @@ FIXTURE = (Path(__file__).parent.parent.parent
            / "tests" / "agent_eval" / "fixtures" / "xiaobu_eval_seed.sql")
 
 
+def _strip_sql_comments(sql: str) -> str:
+    """剥掉 SQL 注释，只留可执行代码。
+
+    ⚠️ 为什么必须剥：fixture 的注释里**大量引用商品名/用例输入**（这正是文档价值所在），
+    于是裸 `assert "夏日清风窗帘" in sql` 会被**注释**满足 —— 把商品改名后测试照样通过
+    （变异测试 M2 实测假绿）。与「断言匹配到注释里的 pipefail」是同一类错误。
+    """
+    sql = re.sub(r"/\*[\s\S]*?\*/", "", sql)
+    return "\n".join(re.sub(r"--.*$", "", line) for line in sql.splitlines())
+
+
 class TestXiaobuEvalFixture:
     """C 端评测业务数据 fixture 契约（issue #3270）。
 
@@ -549,7 +561,8 @@ class TestXiaobuFixtureCustomerOrders:
                / "app" / "utils" / "auth.py")
 
     def _sql(self) -> str:
-        return FIXTURE.read_text(encoding="utf-8")
+        """fixture 的**可执行代码**（剥注释）——注释里引用了商品名/用例，裸 in 会被注释满足"""
+        return _strip_sql_comments(FIXTURE.read_text(encoding="utf-8"))
 
     def _auth_customer_user_id(self) -> str:
         """从 auth.py 读出 DEBUG customer 身份注入的 user_id（单一事实源）"""
@@ -800,4 +813,397 @@ class TestRouteTraceDumpStep:
         # 必须给 DEV_SERVICE_TOKEN（否则 compose 插值失败，拿不到任何日志）
         assert (step.get("env") or {}).get("DEV_SERVICE_TOKEN"), (
             "缺 DEV_SERVICE_TOKEN → docker compose logs 插值失败 → dump 为空"
+        )
+
+
+class TestNamedProductsAreSeeded:
+    """用例**点名**的商品必须在 fixture 里（否则该用例恒 0 分，且看着像能力缺陷）。
+
+    先例（OR-017，issue #3316）：输入是「我想买夏日清风窗帘，米白色，3米…」，
+    而 fixture 只有「遮光窗帘/北欧风窗帘」→ `product_search` 搜不到 → agent 无从下单 →
+    CI 报告 `tools=[customer_address_query ×3]`、0 建单。**报告的长相是「agent 不会
+    下单」，真因是「库里没这个东西」** —— 数据层缺口被误读成能力缺陷，
+    正是 `migao-acceptance` 五层归因要防的事。
+
+    本测试把「用例点名商品 → fixture 必须有」变成可执行约束：新增用例若点名了
+    新商品，这里会失败并强迫你二选一 —— 注入 fixture，或声明为泛指（GENERIC）。
+    """
+
+    # 泛指 / 非商品库查询的候选（token → 理由）。不在 fixture 里也无需注入。
+    GENERIC = {
+        "你们窗帘": "口语泛指质量投诉，不指向具体商品（CH-013）",
+        "有什么窗帘": "泛指求推荐，靠 fixture 里的推荐位/列表回答（CH-017）",
+        "推荐几款热销窗帘": "泛指求推荐，靠 recommended=TRUE 商品回答（CH-010）",
+        "雪尼尔面料": "知识问答走 knowledge_search，非商品库查询（KN-001/KN-008）",
+    }
+    # 候选提取：≥2 个中/英/数字字符 + 窗帘/面料/布艺 结尾
+    CANDIDATE_RE = r"[\u4e00-\u9fa5A-Za-z0-9]{2,10}(?:窗帘|面料|布艺)"
+    # 候选里的动词前缀（"搜一下遮光窗帘" → "遮光窗帘"）：否则提取出的是整句而非商品名
+    # ⚠️ 长词必须排在短词前（正则择先匹配）：`搜索` 要在 `搜` 前，`我想买` 要在 `我想` 前
+    VERB_PREFIX_RE = (
+        r"^(?:帮我|给我|我想买|我想|我要|搜索|搜一下|搜下|查一下|查下|搜|查|看看|看|推荐|要|买|选了?)+"
+    )
+
+    def _candidates_by_case(self) -> dict:
+        import glob
+        import yaml
+        root = Path(__file__).parent.parent.parent
+        cases = []
+        for f in glob.glob(str(root / ".github" / "cases" / "*.yml")):
+            d = yaml.safe_load(Path(f).read_text(encoding="utf-8")) or {}
+            cases.extend(d.get("cases") or [])
+
+        # 复用生产过滤逻辑（与评测跑的是同一套选择口径），避免测试自造口径漂移
+        sys.path.insert(0, str(root / ".github"))
+        sys.path.insert(0, str(root / "tests" / "agent_eval"))
+        try:
+            from eval_case_filter import select_cases_for_persona
+        finally:
+            pass
+        selected = select_cases_for_persona(cases, "xiaobu")
+
+        out = {}
+        for c in selected:
+            names = set()
+            for ui in (c.get("user_inputs") or []):
+                text = ui if isinstance(ui, str) else str(ui)
+                for raw in re.findall(self.CANDIDATE_RE, text):
+                    names.add(re.sub(self.VERB_PREFIX_RE, "", raw))
+            names.discard("")
+            if names:
+                out[c["id"]] = sorted(names)
+        return out
+
+    def test_selected_case_set_is_non_trivial(self):
+        """自检：过滤逻辑真的选出了用例（否则本类测试空转 = 假绿）"""
+        cands = self._candidates_by_case()
+        assert len(cands) >= 5, (
+            f"仅解析出 {len(cands)} 条带商品候选的 C 端用例 —— 过滤/解析疑似失效"
+        )
+
+    def _is_generic(self, token: str) -> bool:
+        """token 是否属泛指/非商品库查询。
+
+        用**双向包含**匹配：动词剥离后 token 可能变成 GENERIC 键的子串
+        （"推荐几款热销窗帘" → "几款热销窗帘"），裸相等会漏判而误报。
+        """
+        return any(g in token or token in g for g in self.GENERIC)
+
+    def test_named_products_exist_in_fixture(self):
+        sql = _strip_sql_comments(FIXTURE.read_text(encoding="utf-8"))
+        missing = []
+        for cid, names in self._candidates_by_case().items():
+            for n in names:
+                if self._is_generic(n):
+                    continue
+                if n not in sql:
+                    missing.append(f"{cid} 点名商品 {n!r} 不在 fixture")
+        assert not missing, (
+            "以下用例点名的商品未注入 fixture → 该用例必然 0 分（且会被误读为能力缺陷）：\n  "
+            + "\n  ".join(missing)
+            + "\n修复：在 tests/agent_eval/fixtures/xiaobu_eval_seed.sql 注入该商品"
+              "（含颜色/SKU/加工项关联），或确认属泛指后加入 GENERIC。"
+        )
+
+    def test_OR017_product_is_seeded_with_processing(self):
+        """OR-017 专项：夏日清风窗帘 + 米白色 + 散剪 2.8 + 加工项关联都要有
+
+        （该用例断言 `product_detail` → `interact(choice, multiSelect)` → `order_create`，
+          缺任一环都跑不通。）
+        """
+        sql = _strip_sql_comments(FIXTURE.read_text(encoding="utf-8"))
+        assert "夏日清风窗帘" in sql
+        assert "米白色" in sql
+        assert "prod_eval_summer" in sql
+        # 加工项关联必须带上该商品（否则 product_detail 里没有加工项可问）
+        link = re.search(r"INSERT\s+INTO\s+product_processing_items[\s\S]*?;", sql, re.I)
+        assert link and "prod_eval_summer" in link.group(0), (
+            "product_processing_items 未关联夏日清风窗帘 → 加工项环节无数据"
+        )
+
+    def test_only_one_recommended_product(self):
+        """推荐位只能有一个商品：CH-010「推荐几款热销窗帘」→「第一款」依赖列表顺序，
+        多个推荐商品会让"第一款"不确定 → 用例抖动。
+
+        解析方式：products 的最后一个字段是 `recommended`（紧跟 `has_processing`），
+        故取每条 VALUES 元组末尾的 `, <bool>, <bool>)`，后一个即 recommended。
+        """
+        sql = _strip_sql_comments(FIXTURE.read_text(encoding="utf-8"))
+        block = re.search(r"INSERT\s+INTO\s+products[\s\S]*?;", sql, re.I)
+        assert block, "未找到 products 种子语句"
+        flags = re.findall(r",\s*(TRUE|FALSE)\s*,\s*(TRUE|FALSE)\s*\)", block.group(0))
+        assert len(flags) >= 3, (
+            f"仅解析出 {len(flags)} 条商品元组 —— 解析疑似失效（本测试会空转假绿）"
+        )
+        recommended = [rec for _, rec in flags if rec == "TRUE"]
+        assert len(recommended) == 1, (
+            f"fixture 中 recommended=TRUE 的商品有 {len(recommended)} 个（应恰好 1 个）—— "
+            "多个会让 CH-010 的『第一款』不确定"
+        )
+
+
+class TestSchemaFullDeprecation:
+    """`docs/sql/schema_full.sql` 必须保持「已废弃」标注，直到它真正与迁移链对齐。
+
+    背景（2026-09-11 实测逐表比对）：该文件是 2026-05-30 的快照，此后未跟进，
+    **两个方向都失真** —— 缺 6 张新表，且仍会创建 4 张已被 V36 等迁移 DROP 的表
+    （`knowledge_documents` / `knowledge_sync_history` / `rag_chunks` /
+    `quick_reply_templates`）。拿它建库不是"旧一点"，是**错的**。
+
+    风险面：外部 runbook / 审计仍可能引用这个路径（故未直接删除），
+    若头部没有显著废弃标注，读者会以为它是权威全量脚本。
+    """
+
+    FULL = Path(__file__).parent.parent.parent / "docs" / "sql" / "schema_full.sql"
+    CANONICAL = Path(__file__).parent.parent.parent / "docs" / "sql" / "schema.sql"
+
+    @staticmethod
+    def _tables(p: Path) -> set:
+        src = _strip_sql_comments(p.read_text(encoding="utf-8"))
+        return {m.lower() for m in
+                re.findall(r"CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?[\"`]?(\w+)", src, re.I)}
+
+    def test_deprecation_banner_present_while_drift_persists(self):
+        """有漂移 → 必须有废弃标注；无漂移 → 标注必须撤掉（防标注本身过期）"""
+        full_sql = self.FULL.read_text(encoding="utf-8")
+        drift = self._tables(self.CANONICAL) ^ self._tables(self.FULL)
+        has_banner = "已废弃" in full_sql and "DEPRECATED" in full_sql
+
+        if drift:
+            assert has_banner, (
+                f"schema_full.sql 与 schema.sql 仍有 {len(drift)} 张表漂移 "
+                f"{sorted(drift)[:6]}，但文件头部没有废弃标注 —— "
+                "读者会把它当成权威全量脚本。"
+            )
+            assert "docs/sql/schema.sql" in full_sql, (
+                "废弃标注必须明确指向正确入口 docs/sql/schema.sql"
+            )
+        else:
+            assert not has_banner, (
+                "schema_full.sql 已与 schema.sql 对齐（无漂移），"
+                "请撤掉废弃标注（否则标注本身变成错误信息）"
+            )
+
+    def test_drift_is_documented_in_banner(self):
+        """标注里点名的缺失表必须与实际漂移一致（防写了但写错）"""
+        full_sql = self.FULL.read_text(encoding="utf-8")
+        missing = self._tables(self.CANONICAL) - self._tables(self.FULL)
+        if not missing:
+            return  # 已对齐情形由上一条用例负责
+        header = full_sql[:2000]
+        undocumented = [t for t in sorted(missing) if t not in header]
+        assert not undocumented, (
+            f"以下缺失表未在废弃标注里列出：{undocumented} —— 标注与事实不符"
+        )
+
+
+def _column_name_of_ddl_line(line: str):
+    """从 `CREATE TABLE` 体内的一行解析列名；非列定义返回 None。
+
+    ⚠️ 不能用"首词是关键字就跳过"的写法：`key` 既是 SQL 关键字又是合法列名
+    （`user_memories.key VARCHAR(128)`）。首版即因此把该列判为"不存在"，
+    产生假缺口。判据改为：**第二个词必须是类型名**，而 `PRIMARY KEY (...)` /
+    `UNIQUE (...)` / `CONSTRAINT ...` 的第二个词是 `KEY`/`(` 这类，自然被排除。
+    """
+    m = re.match(r'\s*"?(\w+)"?\s+(\w+)', line)
+    if not m:
+        return None
+    name, second = m.group(1).lower(), m.group(2).upper()
+    if second in {"KEY", "CONSTRAINT", "INDEX", "CHECK", "UNIQUE", "PRIMARY",
+                  "FOREIGN", "EXCLUDE", "LIKE", "AS"}:
+        return None
+    return name
+
+
+class TestSchemaCoversMigrationChainColumns:
+    """`schema.sql` 必须覆盖**迁移链**的全部表与列（issue #3270 实测根因）
+
+    CI 实证（run 34617597854，postgres 日志原文）：C 端验收栈的库由
+    `docs/sql/schema.sql` 经 docker-entrypoint-initdb.d 建立，而 **Flyway 不在该栈运行**
+    → 只存在于迁移链的列**建库后并不存在** →
+
+        column "actual_amount" does not exist      (orders，来自 V5/V14)
+        column "position" does not exist           (users，来自 docs/sql/migrations)
+        ... → admin-api 查询 500 → ai-agent 工具拿到 "服务暂时不可用"(CIRCUIT_OPEN)
+        → 熔断器打开 → 后续同类工具调用**全部失败** → 整轮评测被污染
+
+    现象是「agent 不会下单/不会建售后单」，真因是**后端 500 + 熔断**（基础设施层）。
+    本测试把「bootstrap 必须与迁移链终态一致」变成可执行约束。
+    """
+
+    MIGRATION_DIRS = [
+        Path(__file__).parent.parent.parent / "backend" / "admin-api" / "src" / "main" / "resources" / "db" / "migration",
+        Path(__file__).parent.parent.parent / "docs" / "sql" / "migrations",
+    ]
+
+    # schema.sql 里以 `key` 这类 SQL 关键字命名的列，解析时需特判（否则被当约束跳过）
+    _NON_COLUMN = {"primary", "unique", "constraint", "foreign", "check", "key", "exclude"}
+
+    @classmethod
+    def _schema_columns(cls) -> dict:
+        src = _strip_sql_comments(SCHEMA.read_text(encoding="utf-8"))
+        tables: dict = {}
+        for m in re.finditer(
+                r"CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?\"?(\w+)\"?\s*\(([\s\S]*?)\n\)\s*;",
+                src, re.I):
+            name, body = m.group(1).lower(), m.group(2)
+            cols = set()
+            for line in body.splitlines():
+                col = _column_name_of_ddl_line(line)
+                if col:
+                    cols.add(col)
+            tables[name] = cols
+        for m in re.finditer(
+                r"ALTER\s+TABLE\s+(?:IF\s+EXISTS\s+)?\"?(\w+)\"?[\s\S]*?;", src, re.I):
+            t = m.group(1).lower()
+            for cm in re.finditer(
+                    r"ADD\s+COLUMN\s+(?:IF\s+NOT\s+EXISTS\s+)?\"?(\w+)\"?", m.group(0), re.I):
+                tables.setdefault(t, set()).add(cm.group(1).lower())
+        return tables
+
+    @classmethod
+    def _migration_requirements(cls) -> tuple:
+        """从两条迁移链提取 (表 -> 列) 要求"""
+        need: dict = {}
+        superseded: set = set()  # 被后续迁移改名/删除的表（非终态要求）
+        for d in cls.MIGRATION_DIRS:
+            if not d.is_dir():
+                continue
+            for f in sorted(d.glob("*.sql")):
+                src = _strip_sql_comments(f.read_text(encoding="utf-8"))
+                for m in re.finditer(
+                        r"CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?\"?(\w+)\"?\s*\(([\s\S]*?)\n\)\s*;",
+                        src, re.I):
+                    t, body = m.group(1).lower(), m.group(2)
+                    need.setdefault(t, set())
+                    for line in body.splitlines():
+                        col = _column_name_of_ddl_line(line)
+                        if col:
+                            need[t].add(col)
+                for m in re.finditer(
+                        r"ALTER\s+TABLE\s+(?:IF\s+EXISTS\s+)?\"?(\w+)\"?([\s\S]*?);", src, re.I):
+                    t = m.group(1).lower()
+                    for cm in re.finditer(
+                            r"ADD\s+COLUMN\s+(?:IF\s+NOT\s+EXISTS\s+)?\"?(\w+)\"?", m.group(2), re.I):
+                        need.setdefault(t, set()).add(cm.group(1).lower())
+                    # 重命名（如 V37 把 knowledge_entries 改名为 knowledge_cards）：
+                    # 旧表名不是"终态要求"，必须剔除，否则产生假缺口。
+                    if re.search(r"RENAME\s+TO\s+", m.group(2), re.I):
+                        superseded.add(t)
+                for m in re.finditer(r"DROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?\"?(\w+)\"?", src, re.I):
+                    superseded.add(m.group(1).lower())
+        for t in superseded:
+            need.pop(t, None)
+        return need
+
+    def test_requirements_are_non_trivial(self):
+        """自检：确实解析出要求（否则本类测试空转 = 假绿）"""
+        need = self._migration_requirements()
+        total = sum(len(v) for v in need.values())
+        # 阈值只为"解析没坏"兜底：实测两条链约 23 表 / 130+ 列（已剔除被改名/删除的表）。
+        # 取宽松下界，避免正常增删迁移就误报。
+        assert len(need) >= 15 and total >= 100, (
+            f"迁移链解析结果过少（表 {len(need)} / 列 {total}）—— 解析疑似失效"
+        )
+
+    def test_schema_covers_migration_chain(self):
+        schema = self._schema_columns()
+        missing_tables, missing_cols = [], []
+        for table, cols in self._migration_requirements().items():
+            if table not in schema:
+                missing_tables.append(table)
+                continue
+            for c in sorted(cols - schema[table]):
+                missing_cols.append(f"{table}.{c}")
+        assert not missing_tables, (
+            "schema.sql 缺少迁移链已建的表（bootstrap 不完整 → 建库后 admin-api 查询 500）：\n  "
+            + "\n  ".join(sorted(missing_tables))
+        )
+        assert not missing_cols, (
+            "schema.sql 缺少迁移链已加的列（bootstrap 不完整 → 建库后 admin-api 查询 500 "
+            "→ 工具返回「服务暂时不可用」→ 熔断 → 评测被污染）：\n  "
+            + "\n  ".join(missing_cols)
+            + "\n修复：在 schema.sql 的「bootstrap 对齐」段补 ALTER TABLE ... ADD COLUMN IF NOT EXISTS，"
+              "并同步新增迁移（迁移链是结构变更事实源）。"
+        )
+
+
+class TestSchemaCoversEntityColumns:
+    """`schema.sql` 必须覆盖 **Java 实体声明**的表与列（迁移链守卫的互补项）
+
+    为什么还需要这一层：有些列**两条 SQL 链都没有**，只在 Java 实体里声明 ——
+    生产库里存在（否则线上同类查询也 500），但 bootstrap 建出来的库没有：
+
+        product_skus.color_name   ← ProductSku.colorName（admin-api 拉 SKU 列表 SELECT 它）
+        orders.close_reason       ← Order.closeReason（docs/sql/013 有，迁移链没有）
+        tenant_ai_configs.bot_name← TenantAiConfig.botName（docs/sql/009 有）
+        user_memories（整表）      ← UserMemory 实体
+
+    CI 实证：`column "color_name" does not exist` → 商品详情接口 500 → 工具返回
+    「服务暂时不可用」→ 熔断 → **整轮 C 端评测被污染**。
+    迁移链守卫查不到这类列（它们不在任何迁移里），故必须按实体再查一遍。
+    """
+
+    ENTITY_DIR = (Path(__file__).parent.parent.parent / "backend" / "admin-api"
+                  / "src" / "main" / "java" / "com" / "migao" / "admin" / "entity")
+
+    # 非列字段（MyBatis-Plus 约定 / Java 常量）
+    _SKIP_FIELDS = {"serialVersionUID"}
+
+    @staticmethod
+    def _snake(name: str) -> str:
+        return re.sub(r"(?<!^)(?=[A-Z])", "_", name).lower()
+
+    @classmethod
+    def _entities(cls) -> dict:
+        """{表名: {列名: 'Entity.java#field'}}"""
+        out: dict = {}
+        for f in sorted(cls.ENTITY_DIR.glob("*.java")):
+            src = f.read_text(encoding="utf-8")
+            tm = re.search(r'@TableName\(\s*(?:value\s*=\s*)?"(\w+)"', src)
+            if not tm:
+                continue
+            table = tm.group(1).lower()
+            # 去掉 @TableField(exist = false) 标注的字段（非表列）
+            cleaned = re.sub(
+                r"@TableField\([^)]*exist\s*=\s*false[^)]*\)[\s\S]{0,120}?;", "", src)
+            cols = out.setdefault(table, {})
+            for fm in re.finditer(
+                    r'(?:@TableField\(\s*(?:value\s*=\s*)?"(\w+)"[^)]*\)\s*)?'
+                    r"private\s+[\w<>,\[\]\. ]+\s+(\w+)\s*;", cleaned):
+                explicit, field = fm.group(1), fm.group(2)
+                if field in cls._SKIP_FIELDS:
+                    continue
+                col = explicit.lower() if explicit else cls._snake(field)
+                cols.setdefault(col, f"{f.name}#{field}")
+        return out
+
+    def test_entity_parse_is_non_trivial(self):
+        """自检：确实解析出实体与列（否则本类测试空转 = 假绿）"""
+        ents = self._entities()
+        total = sum(len(v) for v in ents.values())
+        assert len(ents) >= 20 and total >= 200, (
+            f"实体解析结果过少（表 {len(ents)} / 列 {total}）—— 解析疑似失效"
+        )
+
+    def test_schema_covers_entity_columns(self):
+        schema = TestSchemaCoversMigrationChainColumns._schema_columns()
+        missing_tables, missing_cols = [], []
+        for table, cols in self._entities().items():
+            if table not in schema:
+                missing_tables.append(table)
+                continue
+            for c, origin in sorted(cols.items()):
+                if c not in schema[table]:
+                    missing_cols.append(f"{table}.{c}  ({origin})")
+        assert not missing_tables, (
+            "schema.sql 缺少 Java 实体声明的表（建库后相关接口必然 500）：\n  "
+            + "\n  ".join(sorted(missing_tables))
+        )
+        assert not missing_cols, (
+            "schema.sql 缺少 Java 实体声明的列 —— 建库后该接口 500 → ai-agent 工具返回"
+            "「服务暂时不可用」→ 熔断 → 评测被污染：\n  "
+            + "\n  ".join(missing_cols)
+            + "\n修复：在 schema.sql 的「bootstrap 对齐」段补 ALTER TABLE ... ADD COLUMN "
+              "IF NOT EXISTS，**并新增迁移**（迁移链是结构变更事实源）。"
         )

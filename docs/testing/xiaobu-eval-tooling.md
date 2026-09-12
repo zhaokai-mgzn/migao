@@ -231,14 +231,51 @@ C 端评测链路有三处破损，与用例库正确性无关，但会让「评
 - 若 R1 落在 `customer_order`（该 Skill **无** `aftersale_create`）→ 路由缺陷；
 - 若 R1 落在 `customer_aftersales`（当时**无** `interact`，confirm 门禁不可达）→ 工具缺陷。
 
+### 按用例切分路由日志
+
+CI 另有一段「Dump C 端逐轮路由轨迹」步骤，把 ai-agent 的
+`intent_router` / `route_by_intent` 日志（带时间戳）打到构建日志里 ——
+它回答 `round_trace` 回答不了的「**为什么**走这个 Skill」（意图分类结果）。
+
+runner 为每个用例打印 UTC 起始锚点，据此把路由日志按用例切开：
+
+```
+  ⏱ CH-012 start=2026-09-11T15:16:02+00:00
+  ...
+23:16:02 C: intent=after_sales        → R: Routing to 'after_sales'
+23:16:10 C: intent=order_query        → R: Routing to 'order_query'
+```
+
+**没有这个锚点就无法归属**：实测 CH-013 与 CH-014 的轮次在日志里交错，
+仅凭时间顺序分不清哪一行属于谁（踩过）。
+
 `local_runner.py` 现为每条失败用例打印逐轮轨迹：
 
 ```
-trace: [R1 tools=customer_order_query cards=choice] [R2 tools=human_handoff] [R3 tools=- ERR]
+trace: [R1 tools=customer_order_query data=customer_order_query(items=2 total=2)] [R2 tools=aftersale_create failed=aftersale_create!confirmation_required cards=confirm] [R3 tools=- ERR]
 ```
 
-字段：每轮 `round / tools / cards / interactive / text(截断 60 字) / error`，
+字段：每轮 `round / tools / results / cards / interactive / text(截断 60 字) / error`，
 同时进入返回体与 CI 产物（可直接 JSON 序列化），也可用 `round_trace` 写更强的断言。
+
+**「调了」≠「成了」**：`tools` 记的是 LLM **发起**的调用。写工具被 confirm 门禁拦截时
+返回 `{"success": false, "error": "confirmation_required"}`，**调用名照样出现在 tools 里**
+—— 报告读起来像「写操作正常执行」，实际一次都没落库（CH-012 的 `aftersale_create`
+就是这种形态）。故每轮另记 `results: {tool, ok, error, digest}`，格式化时以
+`failed=<tool>!<error>` 显性标出；缺 `success` 字段一律按**未成功**记。
+
+**「成了」也分两种**：`data=<tool>(...)` 是结果的极简载荷摘要（列表给长度、标量给值）。
+它回答「工具成功了，但它返回了什么」，用于区分两类**处置完全不同**的"卡住"：
+
+| 形态 | 含义 | 处置 |
+|---|---|---|
+| `data=customer_order_query(items=0)` / `has_address=False` | 工具通了但**没数据** | 改 fixture（数据层） |
+| `data=customer_order_query(items=2)` 但流程不推进 | 有数据但 **LLM 不往下走** | 改 prompt / 加代码兜底（引导层·模型层） |
+
+摘要**无条件打印**（不能只在失败时附带）：CH-012 那种"工具全成功、流程不走"的形态
+没有任何 `failed` 标记，若只在失败时打印，最能说明问题的那一轮反而没有证据
+（实测踩到）。单轮最多展示 3 条摘要，整条摘要 ≤160 字符，超出时逐条丢弃字段
+并保留 `(+N more)` 省略提示。
 
 **用工具反推 Skill**：Skill 的工具集互不重叠，逐轮工具名即可反推该轮 Skill
 （如 `customer_order_query` 只出现在 `customer_order`）。**映射以
@@ -247,6 +284,61 @@ trace: [R1 tools=customer_order_query cards=choice] [R2 tools=human_handoff] [R3
 
 配合 `migao-acceptance` 的五层归因（数据 / 断言 / 引导 / 工具 / 模型）使用：
 先看 `round_trace` 定位**哪一层**，再决定改 case、改工具、改 prompt 还是改路由。
+
+### 6.4 合作型用户轮：`auto_respond`
+
+静态脚本写死了"用户按某种顺序说什么"，而 agent 的**提问顺序与卡片类型随模型而变** ——
+对不上就卡死。实测（run 34627856207，OR-014）：第 2 轮 agent 先发「收货信息 & 颜色」
+表单、第 3 轮才发加工项 choice 卡，而脚本第 2 轮说的是「选有打孔的那件」→ 第 4–8 轮
+每轮只重复 `customer_address_query`，**`order_create` 永不发生**（看着像模型不会下单）。
+
+真实顾客不会照着脚本说话，而是**有什么卡就答什么卡**。`user_inputs` 支持这种轮次：
+
+```yaml
+user_inputs:
+  - "帮我下单，遮光窗帘 3 米，要打孔加工"
+  - auto_respond:
+      fallback: "选有打孔的那件"          # 上一轮无卡片时发这句
+  - auto_respond:
+      fallback: "确认下单"
+      form_values:                        # 表单卡按此回填（只填卡片自己声明的 key）
+        customer_name: "张三"
+        customer_phone: "13800138000"
+        color: "米白"
+  - auto_respond:
+      fallback: "123456"                  # C 端下单的验证码轮
+```
+
+优先级（按"最能推进流程"排序）：**confirm → choice → form → fallback**
+（confirm 回 `confirmValue`；choice 回第一个选项的 value；form 拼 `__FORM__|{json}` 走表单协议）。
+case 级 `auto_fill` 轮声明的值会被所有 `auto_respond` 轮复用，避免同一份信息重复声明。
+
+**边界**：`auto_respond` 只解决"卡片驱动的子流程顺序不定"，不替代必要的静态输入
+（选品、数量、验证码这些**用户主动提供**的信息仍要写明）。
+
+### 6.3 工具健康度门槛（基础设施层优先）
+
+跑完会打印一行工具健康度，失败率超阈值时打大横幅：
+
+```
+🔧 工具健康度: 工具调用 46 次，失败 12 次（26%）
+    · customer_order_query!服务暂时不可用 × 9
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+⚠️  工具失败率 26% ≥ 阈值 20% —— **本轮结果不可用于能力判断**
+    这是**基础设施层**问题（后端 5xx / 熔断 / schema 缺列），不是 agent 能力。
+```
+
+**为什么必须有（实测代价极大）**：C 端验收栈的 bootstrap schema 缺列
+（`orders.actual_amount` / `product_skus.color_name` …）→ admin-api 500 →
+工具返回 `服务暂时不可用`（`CIRCUIT_OPEN`）→ **熔断器打开** → 后续同类工具全失败。
+报告长成「agent 不会下单/不会建售后单」，据此去改 prompt / 改工具 / 加引导 ——
+**在错误的层上忙了整整一轮**，直到加了 `data=` 载荷摘要才看见真因。
+
+结论：五层归因里**基础设施层必须排在最前** —— 工具本身在报错时，数据/断言/引导/模型
+四层的结论一个都不成立。失败率超阈值时，正确动作是**修环境**，不是调 agent。
+
+> 阈值 20%：正常波动（偶发超时/LLM 抖动）远低于此；真正的基础设施故障会瞬间打到
+> 50%+（实测 26%~67%）。边界值恰好等于阈值即判可疑 —— 宁可显性可疑，不可静默当能力分。
 
 ## 7. 新增 C 端用例的检查单
 

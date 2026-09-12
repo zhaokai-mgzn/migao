@@ -10,7 +10,23 @@ from app.graph.skills.skill_config import SkillConfig
 # 强制按当前用户过滤；物流用 customer_logistics_track（仅本人已发货订单、拒绝快递单号直查）；
 # customer_address_query 查历史收货信息用于下单预填（issue #2815 CH-025）；
 # 查询 + 创建 + 确认交互 + 转人工）
-CUSTOMER_ORDER_TOOLS = ["customer_order_query", "customer_logistics_track", "customer_address_query", "order_create", "interact", "human_handoff"]
+CUSTOMER_ORDER_TOOLS = [
+    "customer_order_query",
+    "customer_logistics_track",
+    "customer_address_query",
+    # validate_input 是**下单闭环的必需项**（不只是顺手校验）：base_skill 的
+    # 「确认-执行链」依赖它成功才落「已校验待执行」状态，顾客下一轮回「确认」时
+    # 才能直接执行 order_create。
+    # CI 实证（run 34622425044，OR-014）：
+    #     R6 tools=interact(component=confirm, 请核对订单信息…)   ← 确认卡发了
+    #     R7 tools=-                                              ← 顾客回「确认」却无任何工具调用
+    #   即「卡弹得出来、单落不下去」。对照组 CH-012（customer_aftersales **绑了**
+    #   validate_input）本轮同一条链走通并转 ✅。
+    "validate_input",
+    "order_create",
+    "interact",
+    "human_handoff",
+]
 
 # 客服订单 Skill 专用 System Prompt
 CUSTOMER_ORDER_SYSTEM_PROMPT = """你是"小布"，米高窗帘的智能客服。你的职责是帮助顾客查询订单、追踪物流，以及在顾客明确要求时协助下单。
@@ -50,7 +66,12 @@ CUSTOMER_ORDER_SYSTEM_PROMPT = """你是"小布"，米高窗帘的智能客服�
    - 顾客说「不需要加工项」→ 跳过，直接进入确认。
    - 加工项**为空**时：如实告知「这款商品无可用加工项」后继续，**禁止编造加工项或价格**。
    - **禁止仅凭 product_search 列表结果断言「该商品无加工项」**——列表本就查不到，必须查过详情才可下此结论。
-4. **确认**：下单前用 interact(component=confirm) 展示订单明细。confirm 的 fields 要**用顾客能懂的话**，如「商品：遮光窗帘」「总价：¥973.6」「收货信息：张三 138****8000」，**不要**塞技术字段（门幅、褶皱倍数、罗马圈等）。金额必须是已确定的具体数字，绝不出现"待您告知价格"这类中间态；**选了加工项时总价必须含加工费**
+4. **确认**：**先用 validate_input(target_tool="order_create", target_action="create", params=…)
+   校验一次**（缺字段它会直接告诉你，先补齐再发卡），校验通过后再用
+   interact(component=confirm) 展示订单明细。
+   > 为什么必须先校验：代码层依赖「校验成功」来记住**待执行的动作与参数**；顾客下一轮
+   > 回复「确认」时直接执行 order_create。跳过校验会出现「确认卡发了、单落不下去」
+   > （顾客回「确认」后 AI 只能重新追问，写操作永远不发生 —— OR-014/OR-017/CH-010 实证）。confirm 的 fields 要**用顾客能懂的话**，如「商品：遮光窗帘」「总价：¥973.6」「收货信息：张三 138****8000」，**不要**塞技术字段（门幅、褶皱倍数、罗马圈等）。金额必须是已确定的具体数字，绝不出现"待您告知价格"这类中间态；**选了加工项时总价必须含加工费**
 5. **验证码**：顾客确认后，友好引导"为了您的账户安全，需要手机验证一下，请输入收到的短信验证码～"
 6. **创建**：调 order_create（customer 角色需 sms_code；items 的 unit_price 用已确认的商品单价；选了加工项则带 processing_info）
 7. **回执**：创建成功，开心告知"订单已帮您提交好啦！订单号 XXX"，并给下一步（"之后随时可以问我订单进度"）

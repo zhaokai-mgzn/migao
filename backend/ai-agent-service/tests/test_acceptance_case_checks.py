@@ -12,6 +12,7 @@
 # case_ids: OR-016, AS-007, PR-019, CH-010
 import asyncio
 import importlib.util
+import re
 
 import pytest
 from pathlib import Path
@@ -823,3 +824,326 @@ class TestBuildRoundTrace:
         assert "round_trace" in out, "run_case 返回体缺少 round_trace"
         assert [t["round"] for t in out["round_trace"]] == [1, 2]
         assert out["round_trace"][0]["tools"] == ["customer_order_query"]
+
+
+class TestRoundTraceToolOutcomes:
+    """轨迹必须区分「**调了**」与「**成了**」（写工具被门禁拦截的关键证据）
+
+    为什么关键：`tool_calls` 记的是 LLM 发起的调用。写工具被 confirm 门禁拦截时
+    返回 `{"success": false, "error": "confirmation_required"}`，**调用名照样出现在
+    tool_calls 里** → 报告读起来像「写操作正常执行」，实际一次都没落库
+    （CH-012 的 aftersale_create 就是这种形态）。故每轮另记 `results:{tool,ok,error}`。
+    """
+
+    def test_success_and_failure_both_recorded(self):
+        results = [{
+            "__round": 1,
+            "tool_calls": [{"name": "customer_order_query"}, {"name": "aftersale_create"}],
+            "tool_results": [
+                {"tool": "customer_order_query", "result": {"success": True}},
+                {"tool": "aftersale_create",
+                 "result": {"success": False, "error": "confirmation_required"}},
+            ],
+            "final_text": "",
+        }]
+        trace = lr.build_round_trace(results)[0]
+        assert [(r["tool"], r["ok"], r["error"]) for r in trace["results"]] == [
+            ("customer_order_query", True, None),
+            ("aftersale_create", False, "confirmation_required"),
+        ]
+
+    def test_missing_success_flag_treated_as_not_ok(self):
+        """缺 success 字段 → 视为未成功（宁可显性可疑，不可静默当成成功）"""
+        results = [{"__round": 1, "tool_calls": [], "final_text": "",
+                    "tool_results": [{"tool": "x", "result": {}}]}]
+        r = lr.build_round_trace(results)[0]["results"][0]
+        assert r["ok"] is False
+        assert r["error"] == "no_success_flag"
+
+    def test_non_dict_result_is_safe(self):
+        results = [{"__round": 1, "tool_calls": [], "final_text": "",
+                    "tool_results": ["garbage", {"tool": "y", "result": "not-a-dict"}]}]
+        trace = lr.build_round_trace(results)[0]
+        # 非 dict 事件被忽略；result 非 dict 时按未成功记
+        assert [r["tool"] for r in trace["results"]] == ["y"]
+        assert trace["results"][0]["ok"] is False
+
+    def test_format_marks_failed_tools(self):
+        trace = [{
+            "round": 1, "tools": ["aftersale_create"], "cards": [], "interactive": [],
+            "text": "", "error": None,
+            "results": [{"tool": "aftersale_create", "ok": False,
+                         "error": "confirmation_required"}],
+        }]
+        line = lr.format_round_trace(trace)
+        assert "failed=aftersale_create!confirmation_required" in line, (
+            "格式化未显性标出失败工具 —— 日志里「调了」与「成了」又会同形"
+        )
+
+    def test_format_no_failed_marker_when_all_ok(self):
+        trace = [{
+            "round": 1, "tools": ["customer_order_query"], "cards": [], "interactive": [],
+            "text": "", "error": None,
+            "results": [{"tool": "customer_order_query", "ok": True, "error": None}],
+        }]
+        assert "failed=" not in lr.format_round_trace(trace)
+
+
+class TestRoundTraceResultDigest:
+    """结果的**载荷摘要**：区分「工具通了但没数据」与「有数据但不往下走」
+
+    这两种"卡住"的处置完全相反：
+      ① 返回空（`items=0` / `has_address=False`）→ **缺数据**，改 fixture；
+      ② 返回正常数据但 LLM 就是不推进 → **引导层/模型层**，改 prompt 或加代码兜底。
+    实测 CH-012：4 轮只打 `customer_order_query`、不建单，且**没有任何 failed 标记**
+    —— 没有摘要时根本看不出是哪一种（也正因如此，摘要必须无条件打印，
+    不能只在失败时附带，否则最能说明问题的那一轮恰好没有证据）。
+    """
+
+    def _res(self, tool, result):
+        return {"__round": 1, "tool_calls": [], "final_text": "",
+                "tool_results": [{"tool": tool, "result": result}]}
+
+    def test_list_length_summarized(self):
+        d = lr.build_round_trace([self._res(
+            "customer_order_query",
+            {"success": True, "data": {"items": [{"id": "a"}, {"id": "b"}], "total": 2}})])[0]
+        assert d["results"][0]["digest"] == "items=2 total=2"
+
+    def test_empty_list_visible(self):
+        d = lr.build_round_trace([self._res(
+            "customer_order_query", {"success": True, "data": {"items": [], "total": 0}})])[0]
+        assert d["results"][0]["digest"] == "items=0 total=0", (
+            "空列表必须显性为 items=0 —— 这与『有数据』是两种不同的根因"
+        )
+
+    def test_scalar_values_shown(self):
+        d = lr.build_round_trace([self._res(
+            "customer_address_query",
+            {"success": True, "data": {"has_address": False, "customer_name": None}})])[0]
+        assert "has_address=False" in d["results"][0]["digest"]
+
+    def test_failure_digest_falls_back_to_error(self):
+        d = lr.build_round_trace([self._res(
+            "aftersale_create", {"success": False, "error": "confirmation_required"})])[0]
+        assert d["results"][0]["digest"] == "confirmation_required"
+
+    def test_nested_dict_not_expanded(self):
+        """嵌套结构只给类型标记 —— 摘要不是全量存档"""
+        d = lr.build_round_trace([self._res(
+            "x", {"success": True, "data": {"nested": {"a": 1, "b": 2}}})])[0]
+        assert d["results"][0]["digest"] == "nested{}"
+
+    def test_digest_is_bounded(self):
+        big = {f"k{i}": "v" * 200 for i in range(20)}
+        d = lr.build_round_trace([self._res("x", {"success": True, "data": big})])[0]
+        digest = d["results"][0]["digest"]
+        assert len(digest) <= 160, f"摘要未截断（len={len(digest)}）"
+        assert "+14 more" in digest, "字段过多时应给出省略提示"
+
+    def test_format_always_shows_data_digest(self):
+        """**无条件**打印：成功且无 failed 标记时也要能看到载荷摘要"""
+        trace = lr.build_round_trace([self._res(
+            "customer_order_query", {"success": True, "data": {"items": [1, 2]}})])
+        line = lr.format_round_trace(trace)
+        assert "data=customer_order_query(items=2)" in line, (
+            "成功轮次未打印载荷摘要 —— 『工具通了但没数据』这类根因将无从判断"
+        )
+
+
+class TestCaseStartTimestamp:
+    """每个用例必须打印 UTC 起始时间戳 —— 让 CI 的**路由 dump** 能按用例切开。
+
+    路由/意图只写在 ai-agent 日志里（带时间戳），runner 输出原本没有时间锚点，
+    于是日志里连续的 intent/route 行**无法归属到具体用例** —— 实测 CH-013 与
+    CH-014 的轮次交错，眼看无法分辨「某个抱怨被分类成了什么」。
+    """
+
+
+    def _source(self) -> str:
+        return RUNNER_PATH.read_text(encoding="utf-8")
+
+    def test_start_marker_printed_per_case(self):
+        src = self._source()
+        assert re.search(r"⏱ \{case\.id\} start=", src), (
+            "run_suite 未打印按用例的起始时间戳 —— 路由 dump 无法按用例切分"
+        )
+
+    def test_marker_is_utc_iso(self):
+        src = self._source()
+        assert "datetime.now(timezone.utc).isoformat" in src, (
+            "时间戳必须为 UTC ISO（ai-agent 日志是 UTC），否则对不上"
+        )
+        assert "from datetime import datetime, timezone" in src, "缺少 datetime 导入"
+
+    def test_marker_precedes_session_creation(self):
+        """时间戳必须在用例**开始**时打印（早于建会话/发消息），否则会漏掉首轮路由"""
+        src = self._source()
+        i_marker = src.find("⏱ {case.id} start=")
+        i_session = src.find("await get_or_create_session(token, prefer_new=True)", i_marker - 800)
+        assert i_marker != -1 and i_session != -1
+        assert i_marker < i_session, (
+            "时间戳打印晚于会话创建 —— 首轮意图分类会落在用例区间之外"
+        )
+
+
+class TestToolHealthSummary:
+    """工具健康度：工具大面积失败时，**均分衡量的是后端可用性，不是 agent 能力**。
+
+    实测代价（issue #3270）：bootstrap schema 缺列 → admin-api 500 → 工具返回
+    「服务暂时不可用」(CIRCUIT_OPEN) → 熔断打开 → 后续工具全失败 → 报告长成
+    「agent 不会下单」。我们据此去改 prompt / 改工具 / 加引导，**在错误的层上
+    忙了整整一轮**，直到加了 `data=` 摘要才看见真因。
+
+    `migao-acceptance` 的五层归因里基础设施层必须排最前：工具本身报错时，
+    数据/断言/引导/模型四层的结论一个都不成立。本类把这个判断自动化。
+    """
+
+    def _results(self, ok_flags):
+        """ok_flags 例：[("customer_order_query", False, "服务暂时不可用"), ...]"""
+        return [{
+            "round_trace": [{
+                "round": 1,
+                "results": [{"tool": t, "ok": ok, "error": None if ok else err}
+                            for t, ok, err in ok_flags],
+            }],
+        }]
+
+    def test_healthy_run_not_flagged(self):
+        h = lr.summarize_tool_health(self._results([("a", True, None), ("b", True, None)]))
+        assert h["total"] == 2 and h["failed"] == 0
+        assert h["infra_suspect"] is False
+
+    def test_high_failure_rate_flags_infra(self):
+        h = lr.summarize_tool_health(self._results(
+            [("customer_order_query", False, "服务暂时不可用")] * 4 + [("a", True, None)]))
+        assert h["failed"] == 4 and h["total"] == 5
+        assert h["infra_suspect"] is True, "80% 失败率必须判为基础设施可疑"
+        assert h["top_failures"][0]["failure"] == "customer_order_query!服务暂时不可用"
+        assert h["top_failures"][0]["count"] == 4
+
+    def test_rate_exactly_at_threshold_flags(self):
+        """边界：恰好等于阈值即判可疑（宁可显性可疑，不可静默当能力分）"""
+        h = lr.summarize_tool_health(self._results(
+            [("x", False, "e")] * 2 + [("y", True, None)] * 8))
+        assert h["rate"] == 0.2 and h["infra_suspect"] is True
+
+    def test_just_below_threshold_not_flagged(self):
+        h = lr.summarize_tool_health(self._results(
+            [("x", False, "e")] * 19 + [("y", True, None)] * 81))
+        assert h["rate"] < 0.2 and h["infra_suspect"] is False
+
+    def test_no_tool_calls_not_flagged(self):
+        """零调用不得判可疑（那是"没跑"，由 _ci_verdict 的零执行守卫负责）"""
+        h = lr.summarize_tool_health([])
+        assert h["total"] == 0 and h["infra_suspect"] is False
+        assert lr.summarize_tool_health([{"round_trace": []}])["infra_suspect"] is False
+
+    def test_format_lists_top_failures(self):
+        h = lr.summarize_tool_health(self._results([
+            ("a", False, "服务暂时不可用"), ("a", False, "服务暂时不可用"),
+            ("b", False, "tool_execution_failed"), ("c", True, None)]))
+        text = lr.format_tool_health(h)
+        assert "工具调用 4 次" in text and "失败 3 次" in text
+        assert "a!服务暂时不可用 × 2" in text and "b!tool_execution_failed × 1" in text
+
+    def test_results_without_trace_are_ignored(self):
+        """兼容：异常/无轨迹的用例不参与统计（不得因此虚高或虚低失败率）"""
+        h = lr.summarize_tool_health([{"case_id": "X"}, {"round_trace": []},
+                                      {"round_trace": [{"results": [{"tool": "a", "ok": True}]}]}])
+        assert h["total"] == 1 and h["failed"] == 0
+
+
+class TestAutoRespond:
+    """`auto_respond` 轮：由 runner 按**上一轮卡片**自动作答（合作型用户模拟）
+
+    为什么需要（run 34627856207 实证，OR-014 / CH-010）：
+    这两条用例的 `user_inputs` 是按**某一种**流程形状写的（先选品→再加工项→再确认），
+    而 agent 实际的提问顺序与卡片类型会随模型而变（实测 OR-014 第 2 轮先发
+    「收货信息 & 颜色」表单、第 3 轮才发加工项 choice 卡）。静态脚本对不上就卡死：
+    第 4–8 轮每轮只重复 `customer_address_query`，**order_create 永不发生**。
+
+    真实顾客不会"照着脚本说话"，而是**有什么卡就答什么卡**。本机制就是把这个
+    真实行为搬进评测：`{"auto_respond": {...}}` 的轮次优先回答上一轮的待答卡片
+    （confirm→confirmValue；choice→首项；form→按声明值回填），没有卡片时用
+    `fallback` 文本兜底。这样用例不再依赖某种特定提问顺序。
+    """
+
+    def _last(self, interactive):
+        return [{"round_trace": [], "interactive": interactive,
+                 "tool_results": [], "final_text": ""}]
+
+    def test_answers_confirm_card_with_its_confirm_value(self):
+        results = self._last([{"component": "confirm", "confirmValue": "确认下单：遮光窗帘"}])
+        out = lr.resolve_auto_respond(results, fallback="确认", form_values={})
+        assert out == "确认下单：遮光窗帘"
+
+    def test_confirm_without_confirm_value_falls_back_to_text(self):
+        results = self._last([{"component": "confirm", "fields": []}])
+        assert lr.resolve_auto_respond(results, fallback="确认下单", form_values={}) == "确认下单"
+
+    def test_answers_choice_card_with_first_option_value(self):
+        results = self._last([{"component": "choice",
+                               "options": [{"label": "米白", "value": "米白"},
+                                           {"label": "浅灰", "value": "浅灰"}]}])
+        assert lr.resolve_auto_respond(results, fallback="x", form_values={}) == "米白"
+
+    def test_answers_form_card_with_declared_values(self):
+        results = self._last([{"component": "form",
+                               "formFields": [{"key": "customer_name"},
+                                              {"key": "color"}]}])
+        out = lr.resolve_auto_respond(results, fallback="x",
+                                      form_values={"customer_name": "张三", "color": "米白"})
+        assert out is not None and out.startswith("__FORM__|")
+        assert '"customer_name": "张三"' in out and '"color": "米白"' in out
+
+    def test_form_without_matching_values_falls_back(self):
+        results = self._last([{"component": "form", "formFields": [{"key": "unknown_key"}]}])
+        assert lr.resolve_auto_respond(results, fallback="确认下单", form_values={"a": 1}) == "确认下单"
+
+    def test_no_card_uses_fallback(self):
+        assert lr.resolve_auto_respond(self._last([]), fallback="数量 3 米", form_values={}) == "数量 3 米"
+        assert lr.resolve_auto_respond([], fallback="123456", form_values={}) == "123456"
+
+    def test_confirm_takes_priority_over_form(self):
+        """同一轮多张卡时按「推进流程」的优先级：confirm > choice > form"""
+        results = self._last([
+            {"component": "form", "formFields": [{"key": "customer_name"}]},
+            {"component": "confirm", "confirmValue": "确认下单"},
+        ])
+        assert lr.resolve_auto_respond(results, fallback="x",
+                                       form_values={"customer_name": "张三"}) == "确认下单"
+
+    def test_case_scan_uses_auto_respond_entries(self):
+        """run_case 必须识别 `{"auto_respond": …}` 轮（而不是把它当纯文本发出去）"""
+        import asyncio
+        from types import SimpleNamespace
+
+        sent = []
+
+        async def fake_send(token, session_id, message, images=None):
+            sent.append(message)
+            # 第 1 轮发一张 confirm 卡；第 2 轮无卡
+            interactive = ([{"component": "confirm", "confirmValue": "确认下单"}] if len(sent) == 1 else [])
+            return {"__round": len(sent), "tool_calls": [], "final_text": "ok",
+                    "interactive": interactive, "tool_results": []}
+
+        orig = lr.send_message
+        lr.send_message = fake_send
+        try:
+            case = SimpleNamespace(
+                id="AR-001", title="t", difficulty=SimpleNamespace(value="normal"),
+                tags=[], user_inputs=["帮我下单",
+                                      {"auto_respond": {"fallback": "确认下单"}}],
+                expectations=[], data_checks=[], order_before=[], forbidden_text=[],
+                want_text=[], required_args=[], forbidden_args=[], db_verify=None,
+                pre_clean=[], post_clean=[],
+            )
+            asyncio.run(lr.run_case(case, "tok", "sess"))
+        finally:
+            lr.send_message = orig
+
+        assert sent[0] == "帮我下单"
+        assert sent[1] == "确认下单", (
+            f"auto_respond 轮未按卡片作答，实发: {sent[1]!r}（被当成纯文本发出去了）"
+        )

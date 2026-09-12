@@ -7,7 +7,7 @@ LangGraph Skill 节点测试
 - ToolContext 从 state 正确构建
 - base_skill 的 execute_skill 逻辑
 """
-# case_ids: AG-004, CH-003, CH-023, MC-008, DF-018, HR-005, CU-003
+# case_ids: AG-004, CH-003, CH-023, MC-008, DF-018, HR-005, CU-003, CH-010, CH-012
 
 import pytest
 from unittest.mock import patch, AsyncMock, MagicMock
@@ -979,3 +979,252 @@ class TestExtractContentThinkingGuard:
         # 不应该泄漏 thinking 内容
         assert "分析图片内容" not in result
         assert "理解用户意图" not in result
+
+
+class TestCustomerSkillPendingLock:
+    """C 端（小布）多轮流程必须锁 pending_skill —— 否则第二轮就跳出 Skill
+
+    根因（CI 实证 run 34613307565，CH-012）：
+    `creation_skills = {"product","order","aftersales","staff","customer"}` 里**全是 B 端
+    Skill 名**，而小布的 Skill 叫 `customer_order` / `customer_aftersales` /
+    `customer_product` / `customer_quote` —— 名字对不上 → **C 端多轮流程从不锁
+    pending_skill** → 用户第二轮说「第一笔订单」「数量 3 米」「确认下单」这类碎片时被
+    重新意图分类 → 跳出原 Skill：
+
+        路由 dump: R1 intent=after_sales → aftersales   ← 正确进入
+                   R2 intent=order_query → order        ← 第二轮就跳走
+
+    后果：上下文断裂，退货/下单流程反复从头开始（CH-010 4 轮、OR-014 7 轮反复重来）。
+    这是「名字不匹配」型缺陷 —— 类型系统查不出来，只有行为测试能拦住。
+    """
+
+    def _run(self, skill_name: str, content: str = "请补充信息") -> dict:
+        import asyncio
+
+        with patch("app.memory.session_memory.SessionMemory") as mem_cls, \
+             patch("app.graph.skills.base_skill.get_breaker") as get_breaker, \
+             patch("app.graph.skills.base_skill.get_skill_llm") as get_llm, \
+             patch("app.graph.skills.base_skill.create_skill_registry") as create_reg, \
+             patch("app.graph.skills.base_skill.set_tool_context"):
+            registry = MagicMock()
+            registry.get_langchain_tools.return_value = []
+            create_reg.return_value = registry
+
+            breaker = MagicMock()
+
+            async def _passthrough(fn):
+                return await fn()
+
+            breaker.call = _passthrough
+            get_breaker.return_value = breaker
+
+            response = MagicMock(spec=AIMessage)
+            response.content = content  # 无成功 marker → 流程未完成
+            response.tool_calls = []
+            llm = MagicMock()
+            llm.bind_tools.return_value = llm
+            llm.ainvoke = AsyncMock(return_value=response)
+            get_llm.return_value = llm
+            mem_cls.return_value.set_pending_skill = AsyncMock(return_value=True)
+
+            # 用 asyncio.run（新建 loop）而非 get_event_loop().run_until_complete：
+            # 后者在**全量跑**时会被别的用例关掉/取消当前 loop →
+            # RuntimeError: There is no current event loop（单独跑本文件却通过，
+            # 典型的测试隔离缺陷 —— 全量跑才暴露）。
+            return asyncio.run(
+                execute_skill(state=_make_state(), skill_name=skill_name,
+                              tool_names=[], system_prompt="你是小布")
+            )
+
+    @pytest.mark.parametrize("skill_name", ["customer_order", "customer_aftersales"])
+    def test_customer_write_flow_locks_pending_when_incomplete(self, skill_name):
+        result = self._run(skill_name)
+        assert result["pending_interact_skill"] == skill_name, (
+            f"{skill_name} 未锁 pending_skill —— 用户第二轮补充信息会被重新路由跳出该 Skill"
+        )
+
+    @pytest.mark.parametrize("skill_name", [
+        "customer_product", "customer_quote", "customer_general", "customer_knowledge",
+    ])
+    def test_readonly_customer_skills_do_not_lock(self, skill_name):
+        """**只读**查询/选品/算料/问答 Skill 不得锁 —— 锁住会把用户困在里面出不来
+
+        `customer_product` 没有 `order_create`：CH-010 的 R4「确认下单」正是要
+        **切到 customer_order** 才能落单。锁住它 → 用户卡在只读 Skill 里 → 下单永远不发生。
+        （该边界是本次修复的**反向**约束：只锁写流程，不锁只读流程。）
+        """
+        result = self._run(skill_name)
+        assert result.get("pending_interact_skill", "") in ("", None), (
+            f"{skill_name} 不应锁 pending_skill"
+        )
+
+    def test_lock_set_matches_write_flow_skills_systemically(self):
+        """系统性不变式：C 端**含需确认写工具**的 Skill 必须锁，其余必须不锁
+
+        从工具注册表**推导**"该不该锁"，而不是抄一份名单 —— 这样新增 C 端写流程
+        Skill 时（或给只读 Skill 加写工具时）本测试会主动拦住，而不是等 CI 跑出
+        「第二轮跳出 Skill」再回头查（本次缺陷就是这么来的：名单只写了 B 端名，
+        类型系统与静态检查都看不出来）。
+        """
+        from app.agents.agents.xiaobu import XIAOBU_CONFIG
+        from app.graph.skills.base_skill import CREATION_SKILL_NAMES
+        from app.graph.skills.skill_registry import get_skill_registry
+        from app.tools.registry import get_tool_registry
+
+        skill_reg = get_skill_registry()
+        tool_reg = get_tool_registry()
+        should_lock, should_not_lock, missing_tool = [], [], []
+
+        for name in XIAOBU_CONFIG.get_all_skill_names():
+            config = skill_reg.get(name)
+            if config is None:
+                continue
+            binds_write = False
+            for tool_name in (config.tool_names or []):
+                tool = tool_reg.get_tool(tool_name)
+                if tool is None:
+                    missing_tool.append(f"{name}.{tool_name}")
+                    continue
+                # 判据 = **需确认的写工具**（destructive / requires_confirmation）：
+                # 这类工具的 validate→confirm→execute 链条天然跨轮，必须锁。
+                # 刻意不用 `not read_only`：那会把 human_handoff 这类**一次性**写操作
+                # 也算进来（customer_general 就会被误判成写流程 —— 实测踩到），
+                # 进而把用户锁在兜底 Skill 里。
+                if (getattr(tool, "destructive", False)
+                        or getattr(tool, "requires_confirmation", False)):
+                    binds_write = True
+            (should_lock if binds_write else should_not_lock).append(name)
+
+        assert not missing_tool, f"Skill 绑定了未注册工具：{missing_tool}"
+        assert should_lock, "推导出的写流程 Skill 为空 —— 解析疑似失效（测试会空转假绿）"
+
+        unlocked = [n for n in should_lock if n not in CREATION_SKILL_NAMES]
+        over_locked = [n for n in should_not_lock if n in CREATION_SKILL_NAMES]
+        assert not unlocked, (
+            f"以下 C 端 Skill 含写工具但未锁 pending_skill，多轮写流程会在第二轮被"
+            f"重新分类跳走：{unlocked}（加入 CREATION_SKILL_NAMES）"
+        )
+        assert not over_locked, (
+            f"以下 C 端 Skill 是只读的却被锁住，用户会困在里面切不到下单域：{over_locked}"
+            f"（从 CREATION_SKILL_NAMES 移除）"
+        )
+
+    def test_backend_names_still_lock(self):
+        """B 端行为不回归"""
+        result = self._run("staff")
+        assert result["pending_interact_skill"] == "staff"
+
+
+class TestConfirmGateGuidance:
+    """确认门禁的话术必须**可执行**：Skill 没绑 `interact` 时不能说"请调用 interact"
+
+    背景（issue #3317）：`_requires_confirmation` 拦截未确认写操作时固定返回
+    「请调用 interact（component=confirm）展示操作预览」—— 但 B 端 `staff`/`settings`/
+    `data` 三个 Skill **没有绑定 `interact`**，这条指令对 LLM 是**不可执行的**。
+    实测现象：模型拿到"请调用 X"却没有 X，反复重试或直接放弃。
+
+    为什么不给这些 Skill 直接补 `interact`（issue #3317 的另一种解法）：
+    证据不支持 —— 用例库里涉及这 6 个工具的 16 条用例**没有一条**断言 `interact`
+    （含 smoke 的 HR-001/HR-004，它们靠**口头确认**走通并长期通过）。
+    补工具会改变 B 端交互形态（可能开始弹卡），而 B 端 105 条用例只能在
+    手动、面向生产的评测里验证 —— 收益不明而回归面很大。
+    故采取"**让话术与能力匹配**"：有 `interact` → 要求弹卡；没有 → 要求文本复述+口头确认。
+    """
+
+    def _gate_result(self, *, has_interact: bool):
+        """跑一次带写工具的 execute_skill，捕获确认门禁返回的 message"""
+        import asyncio
+        from types import SimpleNamespace
+
+        from app.tools.base import BaseTool, ToolResult
+
+        class _WriteTool(BaseTool):
+            name = "amazing_write"
+            description = "写操作（测试用）"
+            read_only = False
+            requires_confirmation = True
+            parameters = {"type": "object", "properties": {}}
+
+            async def execute(self, context, **kwargs):
+                return ToolResult(success=True, data={}, message="done")
+
+        class _Interact(BaseTool):
+            name = "interact"
+            description = "交互卡片"
+            read_only = True
+            parameters = {"type": "object", "properties": {}}
+
+            async def execute(self, context, **kwargs):
+                return ToolResult(success=True, data={}, message="card")
+
+        captured = {}
+
+        with patch("app.memory.session_memory.SessionMemory") as mem_cls, \
+             patch("app.graph.skills.base_skill.get_breaker") as get_breaker, \
+             patch("app.graph.skills.base_skill.get_skill_llm") as get_llm, \
+             patch("app.graph.skills.base_skill.create_skill_registry") as create_reg, \
+             patch("app.graph.skills.base_skill.set_tool_context"):
+            tools = {"amazing_write": _WriteTool()}
+            if has_interact:
+                tools["interact"] = _Interact()
+
+            registry = MagicMock()
+            registry.get_langchain_tools.return_value = []
+            registry.get_tool.side_effect = lambda n: tools.get(n)
+            create_reg.return_value = registry
+
+            breaker = MagicMock()
+
+            async def _passthrough(fn):
+                return await fn()
+
+            breaker.call = _passthrough
+            get_breaker.return_value = breaker
+
+            # 第一轮返回写工具调用（未确认 → 必被门禁拦），第二轮收尾
+            call_msg = MagicMock(spec=AIMessage)
+            call_msg.content = ""
+            call_msg.tool_calls = [{"name": "amazing_write", "args": {}, "id": "c1"}]
+            end_msg = MagicMock(spec=AIMessage)
+            end_msg.content = "好的"
+            end_msg.tool_calls = []
+            llm = MagicMock()
+            llm.bind_tools.return_value = llm
+            llm.ainvoke = AsyncMock(side_effect=[call_msg, end_msg])
+            get_llm.return_value = llm
+            mem_cls.return_value.set_pending_skill = AsyncMock(return_value=True)
+
+            async def _fake_execute(tool, args, ctx, state):
+                # 模拟门禁：不真正执行，直接把门禁消息回传（真实路径由 _run_one_tool 内部判断）
+                captured["called"] = True
+                return "", {}
+
+            with patch("app.graph.skills.base_skill._execute_tool_safe", _fake_execute):
+                result = asyncio.run(execute_skill(
+                    state=_make_state(messages=[HumanMessage(content="删了这个员工")]),
+                    skill_name="staff", tool_names=list(tools.keys()),
+                    system_prompt="你是人事助手",
+                ))
+        return result, captured
+
+    def test_gate_message_requires_card_when_interact_available(self):
+        """有 interact → 指引弹卡。
+
+        ⚠️ 断言必须落在**门禁消息的特征串**（`component=confirm`）上，不能只查
+        `"interact" in str(result)` —— 结果里包含 system prompt 与历史消息，
+        `interact` 一词可能来自别处，那样「永远走 else 分支」也能通过（首版即此假绿，
+        被变异测试 M2 抓出）。
+        """
+        result, _ = self._gate_result(has_interact=True)
+        blob = str(result)
+        assert "component=confirm" in blob, "有 interact 时应指引弹卡确认"
+        assert "完整复述" not in blob, "有 interact 时不应走文本复述分支"
+
+    def test_gate_message_does_not_demand_unavailable_tool(self):
+        result, _ = self._gate_result(has_interact=False)
+        blob = str(result)
+        assert "component=confirm" not in blob, (
+            "Skill 未绑定 interact 时，门禁不能说「请调用 interact（component=confirm）」——"
+            "那是不可执行指令，会让模型反复重试或放弃（issue #3317）"
+        )
+        assert "完整复述" in blob, "应改为要求用文本完整复述操作并请用户回复确认"

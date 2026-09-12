@@ -740,12 +740,20 @@ CREATE TABLE audit_logs (
 -- 通知模板表
 CREATE TABLE notification_templates (
     id VARCHAR(64) PRIMARY KEY,
-    tenant_id BIGINT NOT NULL REFERENCES tenants(id),
+    -- ⚠️ 不加 FK：迁移链 V27 建的是 `tenant_id BIGINT NOT NULL DEFAULT 0`，**系统内置
+    -- 模板/规则用 tenant_id=0**（"系统内置，只读"），而 tenants 表没有 id=0 的行 →
+    -- 加 FK 会让 V28 种子插不进去（实测：违反外键约束），**迁移链从 V28 起整条中断**。
+    tenant_id BIGINT NOT NULL DEFAULT 0,
     name VARCHAR(128) NOT NULL,
     type VARCHAR(64) NOT NULL,  -- ticket_assigned / ticket_status_changed / refund_success / shipment / etc.
     channel VARCHAR(32) NOT NULL,  -- wechat / sms / email / internal
     template_content TEXT NOT NULL,
-    variables JSONB DEFAULT '[]',  -- 可用变量列表
+    -- ⚠️ TEXT 而非 JSONB：迁移链 V27 建的是 `variables TEXT`，实体 NotificationTemplate
+    -- 也是 `String variables` —— 只有本文件曾写成 JSONB，导致 V28 种子（插入
+    -- 'orderNo,amount' 这种逗号分隔串）在 bootstrap 库上直接
+    -- `invalid input syntax for type json` → **迁移链从 V28 起整条中断**
+    -- （V29–V41、V5–V9 全部未执行，schema 与代码长期脱节；CI 实证 run 34626024229）。
+    variables TEXT,  -- 可用变量列表（逗号分隔）
     status VARCHAR(32) DEFAULT 'active',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
@@ -754,10 +762,14 @@ CREATE TABLE notification_templates (
 -- 通知规则表
 CREATE TABLE notification_rules (
     id VARCHAR(64) PRIMARY KEY,
-    tenant_id BIGINT NOT NULL REFERENCES tenants(id),
+    -- ⚠️ 不加 FK：迁移链 V27 建的是 `tenant_id BIGINT NOT NULL DEFAULT 0`，**系统内置
+    -- 模板/规则用 tenant_id=0**（"系统内置，只读"），而 tenants 表没有 id=0 的行 →
+    -- 加 FK 会让 V28 种子插不进去（实测：违反外键约束），**迁移链从 V28 起整条中断**。
+    tenant_id BIGINT NOT NULL DEFAULT 0,
     event_type VARCHAR(64) NOT NULL,  -- ticket_assigned / ticket_status_changed / refund_success / etc.
     recipient_type VARCHAR(32) NOT NULL,  -- customer / handler / supervisor / manager
-    channels JSONB NOT NULL DEFAULT '[]',  -- ["wechat", "sms"]
+    -- 同上：迁移链 V27 与实体 NotificationRule 都用字符串（VARCHAR(100)），非 JSONB
+    channels VARCHAR(100),  -- 逗号分隔渠道，如 "wechat,sms"
     enabled BOOLEAN DEFAULT true,
     template_id VARCHAR(64) REFERENCES notification_templates(id),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
@@ -1240,6 +1252,89 @@ INSERT INTO roles (id, tenant_id, name, code, description, status) VALUES
   ('role_customer_service', 1, '客服', 'customer_service', '客服工作台权限', 'active'),
   ('role_super_admin', 1, '超级管理员', 'super_admin', '平台级超管权限', 'active')
   ON CONFLICT (id) DO NOTHING;
+
+-- ================================================
+-- 11. bootstrap 对齐：迁移链/java 实体已要求、本文件此前缺失的列与表（issue #3270）
+-- ================================================
+-- 为什么放在最后、且用 ALTER：本文件是**全新库的一次性 bootstrap**（CI/本地 docker 栈
+-- 由 docker-entrypoint-initdb.d 执行），而 **Flyway 不在该栈运行** —— 只存在于迁移链
+-- 的列在建库后并不存在，于是 admin-api 查询 500 → ai-agent 工具返回
+-- "服务暂时不可用"（CIRCUIT_OPEN）→ 熔断打开 → **整轮 C 端评测被污染**。
+-- CI 实证（run 34617597854，postgres 日志原文）：
+--   column "color_name" does not exist    (product_skus) → 商品详情 500
+--   column "actual_amount" does not exist (orders)       → /agent/orders/mine 500
+--   column "position" does not exist      (users)        → 用户查询 500
+--   column "bot_name" does not exist      (tenant_ai_configs) → 租户配置 500
+--   relation "user_memories" does not exist             → 长期记忆查询失败
+-- 报错现象是「agent 不会下单」，真因是**后端 500 + 熔断**（五层归因的基础设施层）。
+--
+-- 幂等：全部 IF NOT EXISTS。与迁移链重复执行无害（迁移链仍是结构变更事实源，
+-- 本段只保证 bootstrap 后状态与迁移链终态一致）。
+-- 守卫：tests/unit_ci_workflows/test_schema_integrity.py 双重断言
+--       （迁移链覆盖 + 代码必需列覆盖），漂移即 CI block。
+
+-- 订单实收/优惠/退款（V5 / V14）
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS actual_amount DECIMAL(12,2) DEFAULT 0;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS discount_amount DECIMAL(12,2) DEFAULT 0;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS refund_amount DECIMAL(12,2) DEFAULT 0;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS refund_at TIMESTAMPTZ;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS close_reason VARCHAR(500);
+
+-- 员工岗位/权限点（docs/sql/migrations/V20260614、V1）
+ALTER TABLE users ADD COLUMN IF NOT EXISTS position VARCHAR(64);
+ALTER TABLE users ADD COLUMN IF NOT EXISTS permissions TEXT;
+
+-- SKU 颜色标识（ProductSku.colorName —— 两条 SQL 链都没有，仅 java 实体声明）
+ALTER TABLE product_skus ADD COLUMN IF NOT EXISTS color_name VARCHAR(64);
+
+-- 租户 AI 配置：机器人名称（docs/sql/009）+ 渠道配置（V10）
+ALTER TABLE tenant_ai_configs ADD COLUMN IF NOT EXISTS bot_name VARCHAR(64) DEFAULT '小布';
+ALTER TABLE tenant_ai_configs ADD COLUMN IF NOT EXISTS channel_configs JSONB;
+
+-- 会话最后活动时间（V13）
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS last_activity_at TIMESTAMPTZ;
+
+-- 加工项每米数量密度（V33）
+ALTER TABLE processing_items ADD COLUMN IF NOT EXISTS per_meter_quantity DECIMAL(6,2);
+ALTER TABLE product_processing_items ADD COLUMN IF NOT EXISTS custom_per_meter_quantity DECIMAL(6,2);
+
+-- 租户品牌/通知设置（V15）
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS logo VARCHAR(512);
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS notification_enabled BOOLEAN DEFAULT FALSE;
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS notification_email VARCHAR(128);
+
+-- 入驻申请 AI 甄别字段（V18）
+ALTER TABLE tenant_applications ADD COLUMN IF NOT EXISTS company_name_norm VARCHAR(255);
+ALTER TABLE tenant_applications ADD COLUMN IF NOT EXISTS review_source VARCHAR(20);
+ALTER TABLE tenant_applications ADD COLUMN IF NOT EXISTS risk_flags TEXT;
+ALTER TABLE tenant_applications ADD COLUMN IF NOT EXISTS review_summary TEXT;
+CREATE INDEX IF NOT EXISTS idx_tenant_applications_company_norm
+    ON tenant_applications(company_name_norm);
+
+-- C 端长期记忆表（docs/sql/migrations/V20260608 + V20260904）
+CREATE TABLE IF NOT EXISTS user_memories (
+    id          VARCHAR(32) PRIMARY KEY,
+    tenant_id   BIGINT NOT NULL REFERENCES tenants(id),
+    user_id     VARCHAR(64) NOT NULL,
+    type        VARCHAR(20) NOT NULL,
+    key         VARCHAR(128) NOT NULL,
+    value       TEXT NOT NULL,
+    importance  FLOAT DEFAULT 0.5,
+    context     TEXT,
+    related_to  TEXT[],
+    agent_type  VARCHAR(20) NOT NULL DEFAULT 'xiaobu',
+    created_at  TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at  TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    UNIQUE(tenant_id, user_id, key)
+);
+ALTER TABLE user_memories
+    ADD COLUMN IF NOT EXISTS agent_type VARCHAR(20) NOT NULL DEFAULT 'xiaobu';
+CREATE INDEX IF NOT EXISTS idx_user_memories_tenant_user
+    ON user_memories(tenant_id, user_id);
+CREATE INDEX IF NOT EXISTS idx_user_memories_importance
+    ON user_memories(tenant_id, user_id, importance DESC);
+CREATE INDEX IF NOT EXISTS idx_user_memories_agent
+    ON user_memories(agent_type, tenant_id, user_id);
 
 -- ================================================
 -- END OF SCHEMA

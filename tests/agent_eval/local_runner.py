@@ -8,6 +8,7 @@ Mibao Agent 本地评测 — 直接调 localhost chat API，采集 SSE 事件
 """
 
 import sys, os, json, time, asyncio, re
+from datetime import datetime, timezone
 from pathlib import Path
 from pathlib import Path
 
@@ -1139,6 +1140,60 @@ async def check_db_verify(token: str, db_verify: list) -> list:
     return issues
 
 
+def resolve_auto_respond(results: list, fallback: str, form_values: dict) -> str:
+    """`auto_respond` 轮：按**上一轮的待答卡片**自动作答，没有卡片则用 fallback。
+
+    为什么要这个机制（CI 实证 run 34627856207，OR-014 / CH-010）：
+    用例的 `user_inputs` 是按**某一种**流程形状写的（先选品→再加工项→再确认），
+    而 agent 实际的提问顺序与卡片类型随模型而变（实测 OR-014 第 2 轮先发
+    「收货信息 & 颜色」表单、第 3 轮才发加工项 choice 卡）。静态脚本对不上就卡死：
+    第 4–8 轮每轮只重复 `customer_address_query`，**order_create 永不发生**。
+
+    真实顾客不会"照着脚本说话"，而是**有什么卡就答什么卡** —— 本函数把这一真实行为
+    搬进评测，使用例不再依赖某种特定提问顺序。
+
+    优先级（按"最能推进流程"排序）：confirm > choice > form > fallback。
+    - confirm → 回 `confirmValue`（前端点击协议就是发这个值），缺失时用 fallback
+    - choice  → 回第一个 option 的 value（等同点击首项）
+    - form    → 按 form 卡自己声明的 field key 匹配 `form_values`，拼 `__FORM__|{json}`
+                （与 `_auto_fill_form` 同一协议）；无匹配字段 → fallback
+    """
+    rounds = results or []
+    if rounds:
+        cards = rounds[-1].get("interactive") or []
+        by_comp = {}
+        for iv in cards:
+            comp = str(iv.get("type") or iv.get("component") or "")
+            by_comp.setdefault(comp, iv)
+
+        confirm = by_comp.get("confirm")
+        if confirm is not None:
+            value = str(confirm.get("confirmValue") or "").strip()
+            return value or fallback
+
+        choice = by_comp.get("choice")
+        if choice is not None:
+            options = choice.get("options") or []
+            if options:
+                first = options[0]
+                value = str(first.get("value") or first.get("text") or "").strip()
+                if value:
+                    return value
+
+        form = by_comp.get("form")
+        if form is not None:
+            filled = {}
+            for f in (form.get("formFields") or []):
+                key = str(f.get("key") or "")
+                if key and key in (form_values or {}):
+                    filled[key] = form_values[key]
+            if filled:
+                import json as _json
+                return f"__FORM__|{_json.dumps(filled, ensure_ascii=False)}"
+
+    return fallback
+
+
 def _auto_fill_form(results: list, values: dict) -> str | None:
     """form 卡自动回填（OR-014 基建缺口）：检测最近一轮 interactive 的 form 卡，
     用 case 声明的字段值构造 `__FORM__|{json}` 回传（FormCard 提交协议，line 98）。
@@ -1183,7 +1238,7 @@ def _auto_select_first_option(results: list) -> str | None:
 
 
 def build_round_trace(results: list) -> list:
-    """构造逐轮轨迹：每轮的用户输入形态 / 工具 / 卡 / 回复摘要。
+    """构造逐轮轨迹：每轮的用户输入形态 / 工具 / 卡 / 回复摘要 / **工具成败**。
 
     为什么需要（issue #3270 归因层）：扁平 `tool_calls` 只说明「整场用过哪些工具」，
     无法回答**哪一轮走了哪个 Skill**——而「路由错到别的 Skill」与「Skill 没给这个
@@ -1192,15 +1247,20 @@ def build_round_trace(results: list) -> list:
     既可能是「R1 被路由到 customer_order（该 Skill 无 aftersale_create）」，
     也可能是「R1 路由正确但 LLM 没建单」—— 两种结论的修复方向完全相反。
 
+    另一条同样致命的模糊：`tool_calls` 记录的是 **LLM 发起的调用**，不代表工具真的做成事。
+    写工具被 confirm 门禁拦截时返回 `{"success": false, "error": "confirmation_required"}`，
+    但调用名照样出现在 `tool_calls` 里 —— 「调了」与「成了」必须分开记，
+    否则「写操作其实一次都没落库」会被读成「写操作正常执行」。
+    故每轮另记 `results`：`{tool, ok, error}`（来自 SSE tool_result 事件）。
+
     设计取舍：本函数**只做事实记录，不做 Skill 推断**。Skill 工具集互不重叠，
     读轨迹者用「工具 → Skill」映射即可反推（该映射见
-    docs/testing/xiaobu-eval-tooling.md，并由
-    tests/unit_ci_workflows/test_skill_tool_map_sync.py 与代码保持同步）。
+    docs/testing/xiaobu-eval-tooling.md，并以 app/graph/skills/*.py 为单一事实源）。
     刻意不在此处硬编码 Skill 表：local_runner 是零依赖脚本（CI 只装 httpx），
     不能 import app.*，硬编码副本必然与 skill 定义漂移。
 
     Returns:
-        list[dict]: 每轮 {round, tools, cards, interactive, text}（均为纯 JSON 类型）
+        list[dict]: 每轮 {round, tools, results, cards, interactive, text, error}
     """
     trace: list[dict] = []
     for r in results or []:
@@ -1208,6 +1268,7 @@ def build_round_trace(results: list) -> list:
         trace.append({
             "round": r.get("__round"),
             "tools": [str(tc.get("name", "")) for tc in (r.get("tool_calls") or [])],
+            "results": _tool_result_status(r.get("tool_results") or []),
             "cards": [str(c.get("type") or c.get("card_type") or "") for c in (r.get("cards") or [])],
             "interactive": [
                 str(iv.get("type") or iv.get("component") or "")
@@ -1220,12 +1281,109 @@ def build_round_trace(results: list) -> list:
     return trace
 
 
+def _tool_result_status(tool_results: list) -> list:
+    """把 SSE tool_result 事件压成 [{tool, ok, error, digest}]。
+
+    `ok` 判定：结果 dict 的 `success` 为真才算成了 —— 缺失 `success` 视为未知，
+    按**不成功**记录（宁可显性可疑，不可静默当成成功）。
+
+    `digest`：结果的**极简载荷摘要**（列表给条数、标量给值），用于回答
+    「工具成功了，但它返回了什么」——这是区分下面两种"卡住"的唯一证据：
+      ① 工具返回空（`items=0` / `has_address=False`）→ 缺数据，改 fixture；
+      ② 工具返回正常数据但 LLM 就是不往下走 → 引导层/模型层，改 prompt 或加代码兜底。
+    实测 CH-012：4 轮只打 `customer_order_query`、不建单，无 digest 时无法判断是哪一种。
+    """
+    out = []
+    for tr in tool_results or []:
+        if not isinstance(tr, dict):
+            continue
+        res = tr.get("result") if isinstance(tr.get("result"), dict) else {}
+        ok = bool(res.get("success"))
+        out.append({
+            "tool": str(tr.get("tool", "")),
+            "ok": ok,
+            "error": None if ok else str(res.get("error") or "no_success_flag"),
+            "digest": _result_digest(res),
+        })
+    return out
+
+
+# 摘要里最多展示多少个字段 / 每个值多少字符（轨迹是日志，不是全量存档）
+_DIGEST_MAX_FIELDS = 6
+_DIGEST_MAX_VALUE = 40
+
+
+def _result_digest(res: dict) -> str:
+    """结果的极简摘要：`items=2` / `has_address=True` / `error=xxx` 之类。
+
+    只摘 `data` 的顶层字段（列表给长度、标量给值、嵌套给类型名），
+    整体截断 —— 目的是让人**一眼判断"有没有数据"**，不是还原载荷。
+    """
+    if not isinstance(res, dict):
+        return ""
+    data = res.get("data")
+    parts: list = []
+    if isinstance(data, dict):
+        for k in list(data.keys())[:_DIGEST_MAX_FIELDS]:
+            v = data[k]
+            if isinstance(v, (list, tuple)):
+                parts.append(f"{k}={len(v)}")
+            elif isinstance(v, dict):
+                parts.append(f"{k}{{}}")
+            elif isinstance(v, (str, int, float, bool)) or v is None:
+                text = str(v)
+                parts.append(f"{k}={text[:_DIGEST_MAX_VALUE]}")
+            else:
+                parts.append(f"{k}=<{type(v).__name__}>")
+        if len(data) > _DIGEST_MAX_FIELDS:
+            parts.append(f"(+{len(data) - _DIGEST_MAX_FIELDS} more)")
+    elif isinstance(data, list):
+        parts.append(f"list={len(data)}")
+    elif data is not None:
+        parts.append(str(data)[:_DIGEST_MAX_VALUE])
+    if not parts:
+        # 没有 data（如纯失败）：至少要能看出失败原因
+        parts.append(str(res.get("error") or res.get("message") or "empty")[:_DIGEST_MAX_VALUE])
+        return " ".join(parts)[:160]
+
+    # 过长时**逐条丢弃字段**而不是整串硬截 —— 硬截会把末尾的 `(+N more)` 省略提示
+    # 一起切掉，读者就分不清「结果只有这几个字段」还是「被截断了」（本函数首版即此 bug）。
+    marker = ""
+    if len(data) > _DIGEST_MAX_FIELDS:
+        marker = f"(+{len(data) - _DIGEST_MAX_FIELDS} more)"
+    fields = list(parts)
+    while fields:
+        candidate = " ".join(fields + ([marker] if marker else []))
+        if len(candidate) <= 160:
+            return candidate
+        fields.pop()
+    return (" ".join(parts[:1]) + (" " + marker if marker else ""))[:160]
+
+
 def format_round_trace(trace: list) -> str:
-    """把逐轮轨迹压成一行，供 CI 日志按用例打印。"""
+    """把逐轮轨迹压成一行，供 CI 日志按用例打印。
+
+    失败的工具带 `!error` 后缀 —— 让「调了但没成」在日志里一眼可见
+    （confirm 门禁拦截的写工具就长这样）。
+    """
     parts = []
     for t in trace or []:
         bits = [f"R{t.get('round')}"]
         bits.append("tools=" + (",".join(t.get("tools") or []) or "-"))
+        failed = [f"{x['tool']}!{x['error']}" for x in (t.get("results") or []) if not x.get("ok")]
+        if failed:
+            bits.append("failed=" + ",".join(failed))
+        # 成功但"没数据"同样要可见：工具通了却没内容 = 缺数据（改 fixture），
+        # 与"有数据但 LLM 不往下走"（改 prompt/代码）是两种完全不同的处置。
+        # **必须无条件打印**：CH-012 那种"工具全成功但流程不走"的形态没有 failed 标记，
+        # 若只在失败时附带摘要，最能说明问题的那一轮反而看不到证据。
+        digests = [
+            f"{x['tool']}({x.get('digest')})"
+            for x in (t.get("results") or [])
+            if x.get("digest")
+        ][:3]
+        if digests:
+            bits.append("data=" + ";".join(digests))
         if t.get("interactive"):
             bits.append("cards=" + ",".join(t["interactive"]))
         if t.get("error"):
@@ -1244,6 +1402,13 @@ async def run_case(case, token: str, session_id: str) -> dict:
     results = []
     all_tool_names = []
 
+    # case 级表单值：所有 `auto_fill` 轮声明的并集 —— auto_respond 轮回答表单时复用，
+    # 避免同一份收货信息在用例里重复声明（少一处漂移）
+    case_form_values: dict = {}
+    for _m in (case.user_inputs or []):
+        if isinstance(_m, dict) and isinstance(_m.get("auto_fill"), dict):
+            case_form_values.update(_m["auto_fill"])
+
     for i, msg in enumerate(case.user_inputs):
         images = []
         if isinstance(msg, dict) and msg.get("auto_select"):
@@ -1253,6 +1418,19 @@ async def run_case(case, token: str, session_id: str) -> dict:
             # 无法预知（「第一个」/「客户A」文本指代均不稳定）。
             # 无 choice 卡（agent 文本澄清路径）→ fallback「第一个」保持旧语义兼容。
             text = _auto_select_first_option(results) or "第一个"
+        elif isinstance(msg, dict) and msg.get("auto_respond"):
+            # 合作型用户：优先回答上一轮的待答卡片，无卡则用 fallback 文本
+            spec = msg.get("auto_respond") or {}
+            if not isinstance(spec, dict):
+                spec = {}
+            # 允许轮级 form_values 覆盖 case 级 auto_fill 声明
+            form_values = dict(case_form_values)
+            form_values.update(spec.get("form_values") or {})
+            text = resolve_auto_respond(
+                results,
+                fallback=str(spec.get("fallback") or "确认"),
+                form_values=form_values,
+            )
         elif isinstance(msg, dict) and msg.get("auto_fill"):
             # form 卡自动回填（OR-014 基建缺口）：agent 发 form 卡（如客户信息）
             # 时用 case 声明的字段值构造 __FORM__|{json} 回传（FormCard 提交协议）。
@@ -1378,6 +1556,11 @@ async def run_suite(cases, label: str, classify: bool = True):
     for i, case in enumerate(cases):
         if case.skip_reason:
             continue
+
+        # 用例起始时间戳（UTC）——用于把 CI 的**路由 dump**（ai-agent 日志，带时间戳）
+        # 按用例切开。没有这个锚点，日志里连续的 intent/route 行无法归属到具体用例，
+        # 「某用例被路由到哪个 Skill」就只能靠猜（实测踩到：CH-013/CH-014 交错无法分辨）。
+        print(f"  ⏱ {case.id} start={datetime.now(timezone.utc).isoformat(timespec='seconds')}")
 
         # 每个用例用独立 session，避免前序用例污染上下文
         session_id = await get_or_create_session(token, prefer_new=True)
@@ -1526,7 +1709,77 @@ async def run_suite(cases, label: str, classify: bool = True):
     print(f"  {label} 结果: {passed_count}/{n} 通过, 均分 {avg_score:.0%}")
     print(f"{'='*60}")
 
+    # ── 工具健康度（基础设施层优先，issue #3270）──
+    # 工具大面积失败时，上面那个「均分」衡量的是**后端可用性**，不是 agent 能力。
+    # 不显式说出来，读数的人一定会把它当成能力分（本项目实测踩过整整一轮）。
+    health = summarize_tool_health(results)
+    if health["total"]:
+        print(f"\n🔧 工具健康度: {format_tool_health(health)}")
+    if health["infra_suspect"]:
+        print("\n" + "!" * 68)
+        print(f"⚠️  工具失败率 {health['rate']:.0%} ≥ 阈值 "
+              f"{_TOOL_HEALTH_INFRA_THRESHOLD:.0%} —— **本轮结果不可用于能力判断**")
+        print("    这是**基础设施层**问题（后端 5xx / 熔断 / schema 缺列），不是 agent 能力。")
+        print("    先修环境再谈分数：查 admin-api 日志有无 500、schema 是否缺列、熔断是否打开。")
+        print("!" * 68)
+
     return results
+
+
+# 工具失败率达到该比例即判定「本轮结果不可用于能力判断」——错误信息见
+# summarize_tool_health 的 docstring（基础设施层优先原则）。
+_TOOL_HEALTH_INFRA_THRESHOLD = 0.20
+
+
+def summarize_tool_health(results: list) -> dict:
+    """汇总工具调用成败，判定本轮结果**能否用于能力判断**。
+
+    为什么必须有（issue #3270 实测踩坑，代价极大）：
+    C 端验收栈的 bootstrap schema 缺列（`orders.actual_amount` / `product_skus.color_name`
+    …）→ admin-api 查询 500 → 工具返回「服务暂时不可用」(CIRCUIT_OPEN) → **熔断器打开**
+    → 后续同类工具全部失败。报告长成「agent 不会下单/不会建售后单」，
+    于是我们去改 prompt、改工具、加引导 —— 全都在**错误的层**上忙了一天。
+    真因（基础设施层）只有在加了 `data=` 载荷摘要之后才浮出水面。
+
+    `migao-acceptance` 的五层归因（数据/断言/引导/工具/模型）里，**基础设施层必须排在最前**：
+    工具本身在报错时，下面四层的结论一个都不成立。本函数把这个判断**自动化**，
+    避免下次再靠人眼发现。
+
+    Returns:
+        dict: {"total", "failed", "rate", "infra_suspect", "top_failures"}
+              - failed 依据 `round_trace[*].results[*].ok`（缺 success 一律记失败）
+              - infra_suspect=True 表示失败率超阈值 → 结果不可用于能力判断
+    """
+    total = failed = 0
+    counter: dict = {}
+    for r in results or []:
+        for rnd in (r.get("round_trace") or []):
+            for res in (rnd.get("results") or []):
+                total += 1
+                if not res.get("ok"):
+                    failed += 1
+                    key = f"{res.get('tool')}!{res.get('error')}"
+                    counter[key] = counter.get(key, 0) + 1
+    rate = (failed / total) if total else 0.0
+    top = sorted(counter.items(), key=lambda kv: (-kv[1], kv[0]))[:5]
+    return {
+        "total": total,
+        "failed": failed,
+        "rate": round(rate, 4),
+        "infra_suspect": bool(total) and rate >= _TOOL_HEALTH_INFRA_THRESHOLD,
+        "top_failures": [{"failure": k, "count": v} for k, v in top],
+    }
+
+
+def format_tool_health(health: dict) -> str:
+    """把工具健康度压成可读多行文本（CI 日志用）。"""
+    lines = [
+        f"工具调用 {health['total']} 次，失败 {health['failed']} 次"
+        f"（{health['rate']:.0%}）"
+    ]
+    for item in health.get("top_failures") or []:
+        lines.append(f"    · {item['failure']} × {item['count']}")
+    return "\n".join(lines)
 
 
 def _ci_verdict(results: list) -> tuple[bool, str]:

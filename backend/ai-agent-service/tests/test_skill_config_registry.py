@@ -1,4 +1,4 @@
-# case_ids: AS-003, CH-012
+# case_ids: AS-003, CH-012, CH-010, OR-014, OR-017
 """
 SkillConfig + SkillRegistry 单元测试
 
@@ -416,8 +416,14 @@ def test_confirmed_write_tools_require_interact_in_same_skill():
     这是「prompt 写了、工具没给」型缺陷，单看 prompt 断言（本文件上一条用例）测不出来。
 
     作用域刻意限定为 **C 端（persona=xiaobu）**：C 端设计基线是「低学历点选友好」，
-    写操作必须走卡片而非让顾客打字确认。B 端同类问题（staff/settings/data 共 6 处）
-    另案跟踪，不在此用例内混同，避免把 B 端改动风险夹带进 C 端修复。
+    写操作必须走卡片而非让顾客打字确认。
+
+    B 端（staff/settings/data 共 6 处）**经证据评估后决定不补 `interact`**（issue #3317）：
+    用例库里涉及这 6 个工具的 16 条用例**没有一条**断言 `interact`（含 smoke 的
+    HR-001/HR-004，它们靠**口头确认**长期通过）→ 补工具等于改变 B 端交互形态，
+    收益不明而回归面覆盖 105 条只能在面向生产的手动评测里验证。
+    改为修真正的缺陷：确认门禁的话术**按本 Skill 是否有 `interact` 分流**
+    （见 test_graph_skills.TestConfirmGateGuidance），不再给出不可执行指令。
     """
     from app.graph.skills.skill_registry import get_skill_registry
     from app.tools.registry import get_tool_registry
@@ -462,3 +468,114 @@ def test_customer_aftersales_exposes_order_lookup_and_interact():
     assert "aftersale_create" in CUSTOMER_AFTERSALES_TOOLS
     assert "aftersale_query" in CUSTOMER_AFTERSALES_TOOLS
     assert "human_handoff" in CUSTOMER_AFTERSALES_TOOLS
+
+
+def test_customer_skills_only_bind_tools_customer_role_can_use():
+    """不变式（C 端）：小布 Skill 绑定的工具，`customer` 角色必须都能用。
+
+    根因（CH-012/OR-014/OR-017/CH-010 实测 2026-09-11，run 34620594324）：
+    `ValidateInputTool.allowed_roles = ["admin","agent","tenant_admin"]` —— **不含 customer**
+    → 小布的 `customer_order` / `customer_aftersales` 都绑了它，但顾客调用一律返回
+    `权限不足`。而 `base_skill` 的「确认-执行链」依赖 `validate_input` **成功**才持久化
+    「已校验待执行」状态：
+
+        if tool_name == "validate_input" and result_dict.get("success"):  → 落 pending
+
+    于是 C 端写流程的 confirm 永远换不来执行 —— `order_create` / `aftersale_create`
+    在整轮评测里**一次都没成功调用过**（CI 轨迹：`failed=validate_input!权限不足`，
+    随后 `human_handoff` 兜底）。
+
+    与本文件上一条 `interact` 不变式同族：**「Skill 绑了，但角色用不了」= 死能力**。
+    绑了却用不了的工具既浪费工具位（挤占 LLM 的注意力），又让流程在关键节点静默失败。
+    本用例把「绑定的工具对本人可用」升级为全 C 端不变式。
+    """
+    from app.graph.skills.skill_registry import get_skill_registry
+    from app.tools.base import ToolContext
+    from app.tools.registry import get_tool_registry
+
+    skill_registry = get_skill_registry()
+    tool_registry = get_tool_registry()
+    customer_ctx = ToolContext(
+        tenant_id=1, user_id="debug_customer_1", session_id="s", role="customer",
+    )
+
+    violations: list = []
+    checked = 0
+    for config in skill_registry.get_all():
+        if "xiaobu" not in (config.system_prompts or {}):
+            continue
+        for name in (config.tool_names or []):
+            tool = tool_registry.get_tool(name)
+            if tool is None:
+                violations.append(f"{config.name} 绑定了未注册工具 {name}")
+                continue
+            checked += 1
+            if not tool.check_permission(customer_ctx):
+                violations.append(
+                    f"{config.name} 绑定 {name}，但 allowed_roles={list(tool.allowed_roles)} "
+                    f"不含 customer → 顾客调用必返回「权限不足」"
+                )
+
+    assert checked >= 10, f"仅检查了 {checked} 个工具绑定 —— 解析疑似失效（测试会空转）"
+    assert not violations, (
+        "以下 C 端 Skill 绑定了顾客**用不了**的工具（死能力，流程会在关键节点静默失败）：\n  "
+        + "\n  ".join(violations)
+    )
+
+
+def test_customer_order_binds_validate_input_for_confirm_execute_chain():
+    """C 端下单必须能走通「校验 → confirm → 执行」链（OR-014/OR-017/CH-010 实证）
+
+    CI 轨迹（run 34622425044，OR-014）：
+        R6 tools=interact data=interact(component=confirm title=请核对订单信息 …)
+        R7 tools=-        ← 顾客已回「确认」，却**没有任何工具调用** → order_create 从未执行
+
+    而 `customer_aftersales` 走通了同一条链（CH-012 本轮转 ✅：R1 卡片 → R3 validate_input
+    → R4 aftersale_create 成功）。差别就在 **aftersales 绑了 `validate_input`、
+    `customer_order` 没绑**：
+
+        base_skill：if tool_name == "validate_input" and result_dict.get("success") → 落
+        「已校验待执行」状态；下一轮顾客确认时直接执行写工具，不再从零重走。
+
+    没有这一步，顾客回「确认」后 LLM 手上没有"待执行的动作与参数"，只能重新追问
+    （实测回复要验证码/再问一遍），写操作永远不发生。
+    """
+    from app.graph.skills.customer_order_skill import CUSTOMER_ORDER_TOOLS
+
+    assert "order_create" in CUSTOMER_ORDER_TOOLS, "回归：下单能力本体"
+    assert "validate_input" in CUSTOMER_ORDER_TOOLS, (
+        "customer_order 未绑定 validate_input —— confirm 后无法落地「已校验待执行」状态，"
+        "顾客回「确认」时没有可执行动作，order_create 不会发生（OR-014 R7 实证）"
+    )
+
+
+def test_customer_order_prompt_requires_validate_before_confirm():
+    """prompt 必须显式要求 confirm 卡片之前先 validate_input（否则 LLM 不会主动调）"""
+    from app.graph.skills.customer_order_skill import CUSTOMER_ORDER_SYSTEM_PROMPT
+
+    assert "validate_input" in CUSTOMER_ORDER_SYSTEM_PROMPT, (
+        "prompt 未提及 validate_input —— 绑了工具但 LLM 不会用（「工具给了、话没说」）"
+    )
+    # 必须绑定到 confirm 之前这个时序语义，不能只是随口提一句
+    assert "confirm" in CUSTOMER_ORDER_SYSTEM_PROMPT
+
+
+def test_order_create_description_enforces_processing_item_ask():
+    """`order_create` 的工具描述必须含「加工项先询问」铁律（OR-017 抖动治理）
+
+    CI 实证（run 34622425044 ✅ / 34626024229 ❌，同代码同用例）：OR-017 断言
+    `interact(component=choice, multiSelect=true)`，而 agent 时而直接跳到 confirm 卡
+    ——「加工项主动询问」这条能力目前只写在 system prompt 里，**约 1/3 的轮次不生效**。
+
+    工具描述是**每轮都随工具一起送进上下文**的，比长 system prompt 里的某一条更靠前、
+    更稳定（LLM 选工具时必然读到）。故先在工具描述里落成"前置铁律 + 反例"。
+    若仍抖动，下一步是**代码兜底**（选品含加工项却直接发 confirm 卡时，代码先补发
+    choice 卡并抑制该 confirm），不在本提交内做。
+    """
+    from app.tools.order_create import OrderCreateTool
+
+    desc = OrderCreateTool.description
+    assert "多选" in desc or "multiSelect=true" in desc, "未要求用多选 choice 卡询问加工项"
+    assert "加工项" in desc and "interact" in desc, "未把加工项询问写成交互卡动作"
+    assert "漏收加工费" in desc or "金额错误" in desc, "未说明后果（LLM 需要后果才守规矩）"
+    assert "product_search" in desc, "未提醒不得凭列表断言无加工项（历史误宣）"
