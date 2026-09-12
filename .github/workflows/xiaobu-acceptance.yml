@@ -242,11 +242,13 @@ jobs:
           # （用于取「C 端能力缺陷分布」，issue #3270 第 2 步）
           TIER="${{ github.event.inputs.tier || 'smoke' }}"
           echo "── 评测档位: $TIER ──"
-          # --shard：本 job 只跑自己那一份用例；--max-retries：失败多的跑不再把分钟数
-          # 全花在重试上（超限的失败仍记为失败，只是标签 no-retry-budget，不掩盖红灯）
+          # --shard：本 job 只跑自己那一份用例（默认 1 份，见 shards 输入说明）。
+          # --max-retries 1：保留"单次重试"这一防抖语义（llm-noise 分类就靠它），
+          # 但不再允许 3 次 —— 实测失败用例整条重跑 200-400s，是整跑尾巴的主要成分；
+          # 超限的失败仍记为失败，只标 no-retry-budget，不掩盖红灯。
           python tests/agent_eval/local_runner.py "$TIER" --cases .github/cases \
             --shard "${{ matrix.shard }}/${{ matrix.total }}" \
-            --max-retries 3
+            --max-retries 1
 
       - name: Run xiaobu real E2E (pytest，含数据隔离断言)
         # 只在 0 号片跑：E2E 与用例分片无关（同一套栈/同一批断言），跑 N 份纯浪费墙钟。

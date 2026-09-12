@@ -1856,8 +1856,12 @@ async def run_suite(cases, label: str, classify: bool = True, retry_budget: int 
             retries_used += 1
             return True
 
-    async def _run_one_case(i: int, case):
-        """跑单个用例（会话/清理/重试分类/打印/结果记录）——供并行与串行两阶段复用。"""
+    async def _run_one_case(i: int, case, gate=None):
+        """跑单个用例（会话/清理/重试分类/打印/结果记录）。
+
+        gate（ConcurrencyGate|None）：并行模式下传入，用于把 pre_clean 这个**短写动作**
+        放进独占窗口（见下方注释）；None = 串行模式，直接执行。
+        """
         nonlocal budget_exhausted
         if case.skip_reason:
             return None
@@ -1885,9 +1889,19 @@ async def run_suite(cases, label: str, classify: bool = True, retry_budget: int 
 
         # 评测前数据清理（写类 case 自我污染防线，§14.2）：pre_clean 声明的
         # 目标资源恢复干净态，保证「给 X 加标签」等写流程每次从干净状态开始。
-        for spec in (getattr(case, "pre_clean", None) or []):
+        #
+        # issue #3361 提速第三轮：这是**写共享数据的短动作**，语义上只需它自身与其它
+        # 用例互斥（避免"清理到一半别人在读"），不需要把随后的用例主体也一起独占 ——
+        # 后者会让慢用例变成整跑尾巴（实测 OR-014 独占 ~5.5min 顶住整段评测）。
+        # 故：用 gate 的独占窗口只包住清理动作；gate 为 None（串行模式）时直接执行。
+        _pre_specs = list(getattr(case, "pre_clean", None) or [])
+        for spec in _pre_specs:
             try:
-                _msg = await _run_pre_clean(token, spec)
+                if gate is not None:
+                    async with gate.writer():
+                        _msg = await _run_pre_clean(token, spec)
+                else:
+                    _msg = await _run_pre_clean(token, spec)
                 if _msg:
                     print(f"     🧹 pre_clean: {_msg}")
             except Exception as e:
@@ -2006,9 +2020,22 @@ async def run_suite(cases, label: str, classify: bool = True, retry_budget: int 
     #      而所有用例共用同一个评测顾客）。
     # 其余用例（只读查询 / 各自新建订单工单 / 纯对话）并行安全。
     def _needs_serial_lane(c) -> bool:
+        """用例**主体**是否必须独占执行。
+
+        判据（issue #3361 提速第三轮）：实测「独占用例」是**加性**的 —— 它不能与任何用例
+        重叠，于是整段评测 = 并行段 + 独占段。C 端 normal 里 OR-014 因 `pre_clean`
+        被判独占，一个人跑 ~5.5min，把 10.2min 的评测直接顶到上限。
+        而 `pre_clean` 只是"评测前把共享数据清干净"的**短写动作**（product_dedupe 等），
+        真正的隔离需求只覆盖这个动作，不覆盖随后的用例主体（主体是下单/查询，各自新建数据）。
+        故：pre_clean 改由**独占窗口只包住清理动作**（见 `_run_one_case` 的 pre_clean 块），
+        用例主体回到并行道；仍整体独占的只剩：
+          - 标签 id_reuse/update/full_lifecycle（商品改价类：跑前快照、跑后恢复同一批商品，
+            整个用例期间都持有共享商品状态）；
+          - 声明 post_session（断言用户级长期状态，运行中写 user_memories，
+            而所有用例共用同一个评测顾客）。
+        """
         tags = set(getattr(c, "tags", None) or [])
         return bool(tags & {"id_reuse", "update", "full_lifecycle"}) \
-            or bool(getattr(c, "pre_clean", None)) \
             or bool(getattr(c, "post_session", None))
 
     indexed = [(i, c) for i, c in enumerate(cases)]
@@ -2016,6 +2043,7 @@ async def run_suite(cases, label: str, classify: bool = True, retry_budget: int 
     serial = [(i, c) for i, c in indexed if _needs_serial_lane(c)]
     results_by_idx: dict = {}
 
+    gate = None
     if concurrency > 1 and parallel and serial:
         # 读写门：并行用例持读位、串行用例持写位 —— 串行用例**不必等整批跑完**
         # （否则慢串行用例变成整跑尾巴，实测白等 ~7min，见 ConcurrencyGate 注释）
@@ -2025,11 +2053,11 @@ async def run_suite(cases, label: str, classify: bool = True, retry_budget: int 
 
         async def _parallel_task(i, c):
             async with gate.reader():
-                results_by_idx[i] = await _run_one_case(i, c)
+                results_by_idx[i] = await _run_one_case(i, c, gate)
 
         async def _serial_task(i, c):
             async with gate.writer():
-                results_by_idx[i] = await _run_one_case(i, c)
+                results_by_idx[i] = await _run_one_case(i, c, gate)
 
         await asyncio.gather(*[_parallel_task(i, c) for i, c in parallel],
                              *[_serial_task(i, c) for i, c in serial])
@@ -2037,9 +2065,11 @@ async def run_suite(cases, label: str, classify: bool = True, retry_budget: int 
         sem = asyncio.Semaphore(concurrency)
         print(f"⚡ 并发执行：{len(parallel)} 条并行（并发度 {concurrency}）")
 
+        gate = ConcurrencyGate(concurrency)   # 只用它的独占窗口包 pre_clean
+
         async def _bounded(i, c):
             async with sem:
-                results_by_idx[i] = await _run_one_case(i, c)
+                results_by_idx[i] = await _run_one_case(i, c, gate)
 
         await asyncio.gather(*[_bounded(i, c) for i, c in parallel])
     else:

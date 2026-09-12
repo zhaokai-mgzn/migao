@@ -1944,6 +1944,9 @@ class TestSuiteConcurrency:
         async def fake_post_checks(token, specs):
             return []
 
+        async def fake_pre_clean(token, spec):
+            return ""
+
         monkeypatch.setenv("AGENT_EVAL_FLAKE_LOG", str(tmp_path / "f.json"))
         monkeypatch.setattr(lr, "CASE_SLEEP", 0.0)
         with mock.patch.object(lr, "login", new=fake_login), \
@@ -1951,6 +1954,7 @@ class TestSuiteConcurrency:
              mock.patch.object(lr, "run_case", new=fake_run_case), \
              mock.patch.object(lr, "_end_session", new=fake_end), \
              mock.patch.object(lr, "snapshot_product", new=fake_snapshot), \
+             mock.patch.object(lr, "_run_pre_clean", new=fake_pre_clean), \
              mock.patch.object(lr, "check_post_session", new=fake_post_checks):
             results = asyncio.run(lr.run_suite(cases, "t", classify=False,
                                               concurrency=concurrency))
@@ -2076,7 +2080,9 @@ class TestConcurrencyGateTail:
             return None
 
         cases = [self._mkcase(f"P{i}") for i in range(6)]
-        cases.append(self._mkcase("SLOW", pre_clean=[{"type": "product_dedupe"}]))
+        # 用真正"整体独占"的形态（商品改价 tag）——pre_clean 现在只让**清理动作**独占，
+        # 用例主体回并行道（见 _needs_serial_lane 注释）
+        cases.append(self._mkcase("SLOW", tags=["update"]))
         monkeypatch.setenv("AGENT_EVAL_FLAKE_LOG", str(tmp_path / "f.json"))
         monkeypatch.setattr(lr, "CASE_SLEEP", 0.0)
         with mock.patch.object(lr, "login", new=fake_login), \
@@ -2125,3 +2131,105 @@ class TestConcurrencyGateTail:
         assert state["max_readers"] <= 2, f"读者上限被突破（峰值 {state['max_readers']}）"
         assert state["max_readers"] == 2, "读者未真正并发（退化为串行）"
         assert not state["writer_violation"], "写者执行期间有读者在跑（独占语义失效）"
+
+
+class TestPreCleanExclusiveWindow:
+    """pre_clean 只让**清理动作**独占，用例主体回并行道（issue #3361 提速第三轮）。
+
+    实测：OR-014 因 `pre_clean: product_dedupe` 被整条判独占 → 一个人跑 ~5.5min，
+    把 C 端正常一整段评测（10.2min）顶到上限。而隔离需求只覆盖"清理共享数据"这个**短写动作**，
+    不覆盖随后的用例主体（下单/查询各自新建数据）。
+    """
+
+    def _mkcase(self, cid, pre_clean=None):
+        return lr.EvalCase(id=cid, title=cid, skill=lr.Skill.GENERAL,
+                           difficulty=lr.Difficulty.NORMAL, user_inputs=["hi"],
+                           expectations=[], data_checks=[], tags=[],
+                           pre_clean=pre_clean or [])
+
+    def test_pre_clean_case_is_not_serially_scheduled(self):
+        """带 pre_clean 的用例不得被判为"整体独占"。"""
+        case = self._mkcase("PC", pre_clean=[{"type": "product_dedupe"}])
+        # 通过 run_suite 的调度日志判断（_needs_serial_lane 是内层函数）
+        import unittest.mock as mock
+
+        async def fake_login():
+            return "tok"
+
+        async def fake_sess(token, prefer_new=True):
+            return "sess"
+
+        async def fake_run_case(c, token, sid):
+            return {"case_id": c.id, "title": c.title, "difficulty": "normal", "tags": [],
+                    "rounds": 1, "tool_calls": [], "round_trace": [], "passed": 1, "total": 1,
+                    "score": 1.0, "failed": [], "last_error": None, "final_text": "",
+                    "final_session_id": sid, "session_breaks": 0}
+
+        async def fake_end(token, sid):
+            return None
+
+        async def fake_pre_clean(token, spec):
+            return "cleaned"
+
+        lines = []
+        with mock.patch.object(lr, "login", new=fake_login), \
+             mock.patch.object(lr, "get_or_create_session", new=fake_sess), \
+             mock.patch.object(lr, "run_case", new=fake_run_case), \
+             mock.patch.object(lr, "_end_session", new=fake_end), \
+             mock.patch.object(lr, "_run_pre_clean", new=fake_pre_clean), \
+             mock.patch.object(lr, "print", side_effect=lambda *a, **k: lines.append(" ".join(str(x) for x in a))):
+            asyncio.run(lr.run_suite([case, self._mkcase("A"), self._mkcase("B")],
+                                     "t", classify=False, concurrency=3))
+        joined = "\n".join(lines)
+        assert "3 条并行" in joined, (
+            f"带 pre_clean 的用例仍被判为独占（应只独占清理动作）：\n{joined[:400]}"
+        )
+        assert "串行" not in joined.split("并发执行")[1][:60], "仍存在串行道（pre_clean 不该整体独占）"
+        assert "🧹 pre_clean: cleaned" in joined, "pre_clean 未执行"
+
+    def test_serial_lane_keeps_mutating_and_user_state_cases(self):
+        """仍整体独占的：商品改价 tag 与 post_session（用户级状态）。"""
+        import unittest.mock as mock
+
+        async def fake_login():
+            return "tok"
+
+        async def fake_sess(token, prefer_new=True):
+            return "sess"
+
+        async def fake_run_case(c, token, sid):
+            return {"case_id": c.id, "title": c.title, "difficulty": "normal", "tags": [],
+                    "rounds": 1, "tool_calls": [], "round_trace": [], "passed": 1, "total": 1,
+                    "score": 1.0, "failed": [], "last_error": None, "final_text": "",
+                    "final_session_id": sid, "session_breaks": 0}
+
+        async def fake_end(token, sid):
+            return None
+
+        async def fake_post_checks(token, specs):
+            return []
+
+        async def fake_snapshot(token, kw):
+            return None
+
+        cases = [self._mkcase("A"), self._mkcase("B"),
+                 lr.EvalCase(id="MUT", title="MUT", skill=lr.Skill.GENERAL,
+                             difficulty=lr.Difficulty.NORMAL, user_inputs=["hi"],
+                             expectations=[], data_checks=[], tags=["update"]),
+                 lr.EvalCase(id="MEM", title="MEM", skill=lr.Skill.GENERAL,
+                             difficulty=lr.Difficulty.NORMAL, user_inputs=["hi"],
+                             expectations=[], data_checks=[],
+                             post_session=[{"fetch": "user_memories", "checks": ["count>=1"]}])]
+        lines = []
+        with mock.patch.object(lr, "login", new=fake_login), \
+             mock.patch.object(lr, "get_or_create_session", new=fake_sess), \
+             mock.patch.object(lr, "run_case", new=fake_run_case), \
+             mock.patch.object(lr, "_end_session", new=fake_end), \
+             mock.patch.object(lr, "check_post_session", new=fake_post_checks), \
+             mock.patch.object(lr, "snapshot_product", new=fake_snapshot), \
+             mock.patch.object(lr, "print", side_effect=lambda *a, **k: lines.append(" ".join(str(x) for x in a))):
+            asyncio.run(lr.run_suite(cases, "t", classify=False, concurrency=3))
+        joined = "\n".join(lines)
+        assert "2 条并行" in joined and "+ 2 条串行" in joined, (
+            f"独占判据异常（应为 2 并行 + 2 串行：tag=update 与 post_session）：\n{joined[:400]}"
+        )
