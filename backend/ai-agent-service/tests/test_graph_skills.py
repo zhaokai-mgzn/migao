@@ -1508,3 +1508,223 @@ class TestInflightHandoffGuard:
         """没有在办卡片（未进入多轮流程）时不拦截 —— 保持既有行为"""
         _result, sent = self._run("质量问题", with_card=False)
         assert "human_handoff" in sent, "无在办流程时不应拦截转人工"
+
+
+class TestCardConfirmValueRecognition:
+    """确认卡 confirmValue 必须被识别为**显式确认**（写操作落库的前置）
+
+    实证（run 34678939564 + DB 审计）：17/17「全绿」，但 orders 表**没有新增订单** ——
+    下单类用例的 `order_create` 被确认门禁**拦截**了（confirmValue 因含上下文而 >24 字，
+    过不了 `_is_explicit_confirmation` 的长度上限），用例却因「工具被调用」而判通过
+    （调了 ≠ 成了）。DB 审计这一新防线当场揭穿了这层假绿。
+
+    根因：interact 工具描述**强制** confirmValue 含上下文（「确认下单：遮光窗帘 米白
+    3米 ¥528…」），而 `_is_explicit_confirmation` 对「确认」前缀的消息限长 24 字符
+    （防"指令措辞绕过"）→ 卡片点击回传的长 confirmValue 被误判为"非确认" →
+    写操作永不落库。**这是生产路径的同类 bug**（mini-app 点确认卡同样被拦）。
+
+    修复：系统把发出的 confirm 卡 confirmValue 记入会话状态；用户消息**精确等于**
+    该值 → 视为显式确认（用户点了按钮，是最强的确认信号；精确匹配系统自产自展示的
+    值，不存在"指令措辞绕过"面）。
+    """
+
+    LONG_CONFIRM = "确认下单：遮光窗帘 米白 散剪 门幅2.8米 3米 ¥474，收货人张三"
+
+    def test_long_confirm_value_fails_old_heuristic(self):
+        """前序事实：长 confirmValue 过不了旧的 24 字上限（本 bug 的触发条件）"""
+        from app.graph.skills.base_skill import _is_explicit_confirmation
+        assert len(self.LONG_CONFIRM) > 24
+        assert _is_explicit_confirmation(self.LONG_CONFIRM) is False
+
+    def test_exact_match_is_confirmation(self):
+        from app.graph.skills.base_skill import _is_card_confirm_value
+        assert _is_card_confirm_value(self.LONG_CONFIRM, self.LONG_CONFIRM) is True
+        # 前缀相同但内容不同（用户自己改写的文本）→ 不是卡片点击
+        assert _is_card_confirm_value("确认下单：我自己写的内容", self.LONG_CONFIRM) is False
+        assert _is_card_confirm_value(None, self.LONG_CONFIRM) is False
+        assert _is_card_confirm_value("", self.LONG_CONFIRM) is False
+        assert _is_card_confirm_value(self.LONG_CONFIRM, None) is False
+
+    def test_short_oral_confirmation_still_works(self):
+        """回归：口头短确认（24 字内）仍按旧路径识别"""
+        from app.graph.skills.base_skill import _is_explicit_confirmation
+        assert _is_explicit_confirmation("确认") is True
+
+
+class TestCardConfirmWriteExecutes:
+    """集成：长 confirmValue 点击后，写操作**真的执行**（不再被门禁拦截）
+
+    run 34678939564 + DB 审计实证：17/17 全绿但 orders 无新增 —— order_create
+    被门禁拦截（confirmValue >24 字）、用例靠"工具被调用"假绿。本测试锁死
+    「点击确认卡 → 写操作放行」这条落库闭环。
+    """
+
+    LONG_CONFIRM = "确认下单：遮光窗帘 米白 散剪 门幅2.8米 3米 ¥474，收货人张三"
+
+    def _run_confirm_then_write(self):
+        import asyncio
+
+        from langchain_core.messages import AIMessage as _AI
+
+        executed = []
+
+        async def fake_execute(tool, args, ctx, state):
+            executed.append(tool.name)
+            if tool.name == "interact":
+                return (json.dumps({"success": True,
+                                    "data": {"component": "confirm",
+                                             "confirmValue": TestCardConfirmWriteExecutes.LONG_CONFIRM}}),
+                        {"success": True,
+                         "data": {"component": "confirm",
+                                  "confirmValue": TestCardConfirmWriteExecutes.LONG_CONFIRM}})
+            return (json.dumps({"success": True, "data": {}}), {"success": True, "data": {}})
+
+        with patch("app.memory.session_memory.SessionMemory") as mem_cls, \
+             patch("app.graph.skills.base_skill.get_breaker") as get_breaker, \
+             patch("app.graph.skills.base_skill.get_skill_llm") as get_llm, \
+             patch("app.graph.skills.base_skill.create_skill_registry") as create_reg, \
+             patch("app.graph.skills.base_skill.set_tool_context"), \
+             patch("app.graph.skills.base_skill._execute_tool_safe", fake_execute):
+            from app.tools.interact import InteractTool
+            from app.tools.order_create import OrderCreateTool
+            registry = MagicMock()
+            registry.get_langchain_tools.return_value = []
+            registry.get_tool.side_effect = lambda n: {
+                "interact": InteractTool(), "order_create": OrderCreateTool(),
+            }.get(n)
+            create_reg.return_value = registry
+
+            breaker = MagicMock()
+
+            async def _passthrough(fn):
+                return await fn()
+
+            breaker.call = _passthrough
+            get_breaker.return_value = breaker
+
+            def make_call(name, args):
+                m = MagicMock(spec=_AI)
+                m.content = ""
+                m.tool_calls = [{"name": name, "args": args, "id": "t1"}]
+                return m
+
+            final = MagicMock(spec=_AI)
+            final.content = "订单已提交"
+            final.tool_calls = []
+
+            # 第 1 轮：发确认卡；第 2 轮（用户点了卡）：写工具；第 3 轮：收尾
+            llm = MagicMock()
+            llm.bind_tools.return_value = llm
+            llm.ainvoke = AsyncMock(side_effect=[
+                make_call("interact", {"component": "confirm",
+                                       "confirmValue": self.LONG_CONFIRM, "fields": []}),
+                make_call("order_create", {"customer_name": "张三", "customer_phone": "13800138000",
+                                           "items": []}),
+                final,
+            ])
+            get_llm.return_value = llm
+            mem_cls.return_value.set_pending_skill = AsyncMock(return_value=True)
+
+            # 会话状态里预置最近确认卡的值（等同上一轮发出后已持久化）
+            store_state = {"last_confirm_value": self.LONG_CONFIRM}
+            store_cls = patch("app.memory.session_state_store.SessionStateStore")
+            with store_cls as _sc:
+                _inst = MagicMock()
+                _inst.load = AsyncMock(return_value=dict(store_state))
+                _inst.commit = AsyncMock(return_value=None)
+                _sc.return_value = _inst
+                result = asyncio.run(execute_skill(
+                    state=_make_state(messages=[HumanMessage(content=self.LONG_CONFIRM)]),
+                    skill_name="customer_order",
+                    tool_names=["interact", "order_create"],
+                    system_prompt="你是小布",
+                ))
+        return result, executed
+
+    def test_long_confirm_click_allows_write(self):
+        result, executed = self._run_confirm_then_write()
+        assert "order_create" in executed, (
+            "点击确认卡后 order_create 未执行（仍被 24 字上限的门禁拦截）——"
+            "写操作永不落库（DB 审计实证的假绿根因）"
+        )
+        assert "confirmation_required" not in str(result)
+
+
+class TestCardConfirmValuePersisted:
+    """确认卡**发出时**必须把 confirmValue 持久化（否则下一轮点击无法精确匹配）"""
+
+    LONG_CONFIRM = TestCardConfirmWriteExecutes.LONG_CONFIRM
+
+    def test_emit_persists_confirm_value(self):
+        import asyncio
+
+        from langchain_core.messages import AIMessage as _AI
+
+        committed = {}
+
+        async def fake_execute(tool, args, ctx, state):
+            if tool.name == "interact":
+                return (json.dumps({"success": True,
+                                    "data": {"component": "confirm",
+                                             "confirmValue": self.LONG_CONFIRM}}),
+                        {"success": True,
+                         "data": {"component": "confirm",
+                                  "confirmValue": self.LONG_CONFIRM}})
+            return (json.dumps({"success": True, "data": {}}), {"success": True, "data": {}})
+
+        with patch("app.memory.session_memory.SessionMemory") as mem_cls, \
+             patch("app.graph.skills.base_skill.get_breaker") as get_breaker, \
+             patch("app.graph.skills.base_skill.get_skill_llm") as get_llm, \
+             patch("app.graph.skills.base_skill.create_skill_registry") as create_reg, \
+             patch("app.graph.skills.base_skill.set_tool_context"), \
+             patch("app.graph.skills.base_skill._execute_tool_safe", fake_execute), \
+             patch("app.memory.session_state_store.SessionStateStore") as store_cls:
+            from app.tools.interact import InteractTool
+            registry = MagicMock()
+            registry.get_langchain_tools.return_value = []
+            registry.get_tool.side_effect = lambda n: (
+                InteractTool() if n == "interact" else None)
+            create_reg.return_value = registry
+
+            breaker = MagicMock()
+
+            async def _passthrough(fn):
+                return await fn()
+
+            breaker.call = _passthrough
+            get_breaker.return_value = breaker
+
+            def make_call(name, args):
+                m = MagicMock(spec=_AI)
+                m.content = ""
+                m.tool_calls = [{"name": name, "args": args, "id": "t1"}]
+                return m
+
+            final = MagicMock(spec=_AI)
+            final.content = "好的"
+            final.tool_calls = []
+            llm = MagicMock()
+            llm.bind_tools.return_value = llm
+            llm.ainvoke = AsyncMock(side_effect=[
+                make_call("interact", {"component": "confirm",
+                                       "confirmValue": self.LONG_CONFIRM, "fields": []}),
+                final,
+            ])
+            get_llm.return_value = llm
+            mem_cls.return_value.set_pending_skill = AsyncMock(return_value=True)
+
+            inst = MagicMock()
+            inst.load = AsyncMock(return_value={})
+            inst.commit = AsyncMock(side_effect=lambda sid, full: committed.update(full))
+            store_cls.return_value = inst
+
+            asyncio.run(execute_skill(
+                state=_make_state(messages=[HumanMessage(content="帮我下单")]),
+                skill_name="customer_order",
+                tool_names=["interact"], system_prompt="你是小布",
+            ))
+
+        assert committed.get("last_confirm_value") == self.LONG_CONFIRM, (
+            "确认卡发出后未持久化 confirmValue —— 下一轮点击无法精确匹配，"
+            "写操作仍会被 24 字上限的门禁拦截（DB 审计实证的假绿根因）"
+        )
