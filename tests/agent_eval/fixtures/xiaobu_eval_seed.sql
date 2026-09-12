@@ -148,11 +148,11 @@ INSERT INTO orders
    total_amount, status, payment_status, stock_deducted, follow_status, remark,
    created_at, updated_at, deleted)
 VALUES
-  ('ord_eval_0001', 1, 'EVAL-ORD-0001', 'debug_customer_1', '张三', '13800138000',
+  ('a1b2c3d4-e5f6-4a7b-8c9d-000000000001', 1, 'EVAL-ORD-0001', 'debug_customer_1', '张三', '13800138000',
    '浙江省杭州市西湖区文三路 1 号 1 幢 101 室', 504.00, 'completed', 'paid', TRUE,
    'completed', 'C 端评测 fixture：已完成订单（地址预填 / 售后建单用）',
    TIMESTAMPTZ '2026-08-01 10:00:00+08', TIMESTAMPTZ '2026-08-05 10:00:00+08', 0),
-  ('ord_eval_0002', 1, 'EVAL-ORD-0002', 'debug_customer_1', '张三', '13800138000',
+  ('a1b2c3d4-e5f6-4a7b-8c9d-000000000002', 1, 'EVAL-ORD-0002', 'debug_customer_1', '张三', '13800138000',
    '浙江省杭州市西湖区文三路 1 号 1 幢 101 室', 384.00, 'shipped', 'paid', TRUE,
    'completed', 'C 端评测 fixture：已发货订单（物流查询 / 最近一笔用）',
    TIMESTAMPTZ '2026-09-01 10:00:00+08', TIMESTAMPTZ '2026-09-09 18:00:00+08', 0)
@@ -163,20 +163,20 @@ INSERT INTO order_items
   (id, tenant_id, order_id, product_id, product_name, quantity, unit_price,
    width, height, subtotal, deleted)
 VALUES
-  ('oit_eval_0001', 1, 'ord_eval_0001', 'prod_eval_blackout', '遮光窗帘', 3, 168.00,
+  ('oit_eval_0001', 1, 'a1b2c3d4-e5f6-4a7b-8c9d-000000000001', 'prod_eval_blackout', '遮光窗帘', 3, 168.00,
    3.00, 2.80, 504.00, 0),
-  ('oit_eval_0002', 1, 'ord_eval_0002', 'prod_eval_dark_green', '北欧风窗帘', 3, 128.00,
+  ('oit_eval_0002', 1, 'a1b2c3d4-e5f6-4a7b-8c9d-000000000002', 'prod_eval_dark_green', '北欧风窗帘', 3, 128.00,
    3.00, 2.80, 384.00, 0)
 ON CONFLICT (id) DO NOTHING;
 
 -- 6.4 物流轨迹（已发货订单的物流查询用例数据源）
 INSERT INTO order_logistics
   (id, tenant_id, order_id, logistics_company, tracking_no, status, tracking_info, shipped_at)
-SELECT 'olg_eval_0002', 1, 'ord_eval_0002', '顺丰速运', 'SF1234567890123', 'in_transit',
+SELECT 'olg_eval_0002', 1, 'a1b2c3d4-e5f6-4a7b-8c9d-000000000002', '顺丰速运', 'SF1234567890123', 'in_transit',
        '[{"time":"2026-09-10 09:00","desc":"快件已从杭州中转场发出"}]'::jsonb,
        TIMESTAMPTZ '2026-09-09 18:00:00+08'
 WHERE NOT EXISTS (
-  SELECT 1 FROM order_logistics WHERE order_id = 'ord_eval_0002'
+  SELECT 1 FROM order_logistics WHERE order_id = 'a1b2c3d4-e5f6-4a7b-8c9d-000000000002'
 );
 
 -- ── 数据核对（CI 日志可见，避免"注入了但没生效"静默）──

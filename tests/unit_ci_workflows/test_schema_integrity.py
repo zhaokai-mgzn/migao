@@ -641,11 +641,12 @@ class TestXiaobuFixtureCustomerOrders:
             )
 
     def _order_value_tuples(self) -> list:
-        """把 orders VALUES 列表切成一条订单一个元组（按 `('ord_eval_` 边界切）"""
+        """把 orders VALUES 列表切成一条订单一个元组（按每条订单元组的起始边界切）"""
         block = self._orders_stmt()
         values = block.split("VALUES", 1)[-1]
-        parts = re.split(r"(?=\('ord_eval_)", values)
-        return [p for p in parts if p.strip().startswith("('ord_eval_")]
+        # 订单主键是 UUID 形态（见 fixture：与生产一致，后端按 ^[0-9a-fA-F-]{20,}$ 判 UUID）
+        parts = re.split(r"(?=\('a1b2c3d4-)", values)
+        return [p for p in parts if p.strip().startswith("('a1b2c3d4-")]
 
     def test_fixture_orders_have_distinct_created_at(self):
         """created_at 必须显式给值且**每笔不同**
@@ -1284,3 +1285,44 @@ class TestFalseGreenGuardInAudit:
         assert (step.get("env") or {}).get("AGENT_EVAL_TRACE_ALL") == "1", (
             "未开启全量轨迹 —— 通过的写用例的工具结果（如 order_create 被拒）看不见"
         )
+
+
+class TestFixtureOrderIdsAreUuidShaped:
+    """fixture 的订单主键必须是 **UUID 形态**（与生产一致）
+
+    实证（run 34684474262，CH-012）：`aftersale_create` 报
+    「无法找到订单：ord_eval_0002。请确认订单号正确后重试。」—— 用例判通过（工具被调用）
+    但工单没落库，DB 审计里 8 张工单全是 complaint、无 refund。
+
+    根因（admin-api `AfterSalesTicketService.createTicketForAgent`）：
+    orderId 的解析是二分启发式 —— 形如 `^[0-9a-fA-F-]{20,}$` 当 **UUID** 直查主键，
+    否则当 **订单号** 查 order_no。fixture 此前用 `ord_eval_0002` 这种短 id：
+    既非 UUID 形态（且含非 hex 字符），于是被当成订单号 → 查不到 → 404。
+    **生产订单主键是 UUID**，故 fixture 必须同形，否则评测链路与生产不一致（假失败）。
+    """
+
+    # 与 admin-api 的判据保持一致（单一事实源：AfterSalesTicketService.createTicketForAgent）
+    UUID_HEURISTIC = re.compile(r"^[0-9a-fA-F-]{20,}$")
+
+    def _order_ids(self) -> list:
+        sql = _strip_sql_comments(FIXTURE.read_text(encoding="utf-8"))
+        stmt = re.search(r"INSERT\s+INTO\s+orders\b[\s\S]*?;", sql, re.I)
+        assert stmt, "未找到 orders 种子语句"
+        return re.findall(r"\(\s*'([0-9a-zA-Z_\-]+)'\s*,\s*1\s*,\s*'EVAL-ORD-", stmt.group(0))
+
+    def test_order_ids_satisfy_backend_uuid_heuristic(self):
+        ids = self._order_ids()
+        assert len(ids) >= 2, f"仅解析出 {len(ids)} 个订单主键 —— 解析疑似失效"
+        bad = [i for i in ids if not self.UUID_HEURISTIC.match(i)]
+        assert not bad, (
+            f"以下订单主键不满足后端 UUID 判据 {self.UUID_HEURISTIC.pattern}：{bad}\n"
+            "后果：agent 传该 id 时被当成订单号去查 order_no → 404「无法找到订单」→ "
+            "售后工单不落库（而用例因『工具被调用』假绿）。"
+        )
+
+    def test_item_and_logistics_reference_the_same_ids(self):
+        """订单明细/物流的 order_id 外键必须指向同一批 UUID 主键"""
+        sql = _strip_sql_comments(FIXTURE.read_text(encoding="utf-8"))
+        ids = set(self._order_ids())
+        referenced = set(re.findall(r"'(a1b2c3d4-[0-9a-f\-]+)'", sql)) - ids
+        assert not referenced, f"明细/物流引用了不属于订单主键集合的 id：{referenced}"
