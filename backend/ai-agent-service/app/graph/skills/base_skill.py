@@ -1614,13 +1614,31 @@ async def execute_skill(
                             _card_confirmed = _is_card_confirm_value(
                                 last_user_msg, _full.get("last_confirm_value"))
                             if _card_confirmed:
+                                # 记录「该写工具已获确认」：确认卡点击后，后续轮补充信息
+                                # （如 customer 下单需 sms_code）不再重复要求确认。
+                                # CI 实证（run 34682324499 诊断）：confirmValue 点击在上一轮，
+                                # 本轮消息是验证码「123456」→ 未记录的话 order_create 被门禁拦。
+                                _full["confirmed_write_tool"] = tool_name
+                                await _store.commit(session_id, _full)
                                 logger.info(
                                     f"[{skill_name}] 确认卡 confirmValue 精确匹配 → 放行写操作 "
                                     f"{tool_name} | session={session_id}"
                                 )
                         except Exception as e:
                             logger.warning(f"[{skill_name}] card-confirm check failed (non-fatal): {e}")
-                    if _requires_confirmation(tool, args, last_user_msg) and not _card_confirmed:
+                    _write_was_confirmed = False
+                    if _card_confirmed is False and _requires_confirmation(tool, args, last_user_msg):
+                        try:
+                            from app.memory.session_state_store import SessionStateStore as _S3
+                            _f3 = await _S3().load(session_id) or {}
+                            _write_was_confirmed = _f3.get("confirmed_write_tool") == tool_name
+                            if _write_was_confirmed:
+                                logger.info(
+                                    f"[{skill_name}] 写工具 {tool_name} 前轮已确认 → 放行 | session={session_id}"
+                                )
+                        except Exception as _e3:
+                            logger.warning(f"[{skill_name}] confirmed_write_tool check failed (non-fatal): {_e3}")
+                    if _requires_confirmation(tool, args, last_user_msg) and not _card_confirmed and not _write_was_confirmed:
                         logger.warning(
                             f"[{skill_name}] 拦截未确认的写操作 {tool_name} | session={session_id} "
                             f"last_msg={last_user_msg[:30]!r}"
@@ -1719,7 +1737,17 @@ async def execute_skill(
                                 )
                         except Exception as e:
                             logger.warning(f"[{skill_name}] pending_validated persist failed (non-fatal): {e}")
-                    # 写工具执行成功 → 清除对应「已校验待执行」状态（闭环完成，防残留误导下一轮）。
+                    # 写工具执行成功 → 清除对应「已校验待执行」状态与「已确认写工具」标记
+                    # （闭环完成；否则后续同类写操作会在无新确认的情况下被放行）。
+                    if session_id and result_dict.get("success") and tool_name != "validate_input":
+                        try:
+                            from app.memory.session_state_store import SessionStateStore as _S4
+                            _f4 = await _S4().load(session_id) or {}
+                            if _f4.get("confirmed_write_tool") == tool_name:
+                                _f4.pop("confirmed_write_tool", None)
+                                await _S4().commit(session_id, _f4)
+                        except Exception as _e4:
+                            logger.warning(f"[{skill_name}] confirmed_write_tool clear failed (non-fatal): {_e4}")
                     # 注意：不能依赖 result_dict["terminal"] —— after_sales_manage(create) 等
                     # B 端写工具不返回 terminal=True（仅 order_create/aftersale_create/human_handoff
                     # 有），依赖 terminal 会导致售后换货的 pending 执行成功后残留。
