@@ -40,6 +40,26 @@ SERVICE_TOKEN = os.environ.get("SERVICE_TOKEN", "")
 # 并验证 C 端数据隔离（customer_order_query 而非 order_query）。
 PERSONA = os.environ.get("PERSONA", "mibao").strip().lower()
 
+# ── 节流 sleep（可配，issue #3361 评测提速）──
+# 为什么可配：评测墙钟时间几乎全花在真实 LLM 往返上，固定 sleep 是纯额外开销 ——
+# 实测 C 端 normal 单跑 19m39s（18 条），其中 ~63s 是 0.5s/轮 + 1s/用例的固定等待，
+# B 端 47 条约 3min。真实 LLM 有并发限流需求，故保留"可调"而不是删除：
+# CI 用 EVAL_ROUND_SLEEP=0.2 / EVAL_CASE_SLEEP=0.3，本地调试可调回 0.5/1。
+def _env_float(name: str, default: float) -> float:
+    raw = os.environ.get(name)
+    if not raw:
+        return default
+    try:
+        v = float(raw)
+    except ValueError:
+        print(f"⚠️ {name}={raw!r} 非法，回落默认 {default}")
+        return default
+    return v if v >= 0 else default
+
+
+ROUND_SLEEP = _env_float("EVAL_ROUND_SLEEP", 0.5)
+CASE_SLEEP = _env_float("EVAL_CASE_SLEEP", 1.0)
+
 # ── C 端用例集选择（纯逻辑拆到 eval_case_filter，issue #3266）──
 # 拆出去的动机：本文件有模块级 `import httpx`，而 CI 的 ci-workflow-helper 测试 job
 # 只装 pytest+pyyaml → 任何想复用「用例集选择」的测试/脚本一 import 本模块就崩。
@@ -1690,8 +1710,9 @@ async def run_case(case, token: str, session_id: str) -> dict:
         all_tool_names.extend(r["__all_tool_names"])
         results.append(r)
 
-        # 简单等待，避免请求过快
-        await asyncio.sleep(0.5)
+        # 简单等待，避免请求过快（可配：EVAL_ROUND_SLEEP，见文件头说明）
+        if ROUND_SLEEP:
+            await asyncio.sleep(ROUND_SLEEP)
 
     # 汇总所有轮的 tool 名称
     for r in results:
@@ -1781,12 +1802,19 @@ async def run_case(case, token: str, session_id: str) -> dict:
         "final_text": results[-1].get("final_text", "")[:200] if results else "",
     }
 
-async def run_suite(cases, label: str, classify: bool = True):
+async def run_suite(cases, label: str, classify: bool = True, retry_budget: int = None):
     """运行一组用例
 
     classify（默认开，issue #2890 波动分类）：失败用例重试 1 次并判定
     llm-noise / reproducible / unstable / infra（见 _classify_attempts），
     noise 自动放行并记 flake 台账；true regressions 显式标注禁止 rerun 掩盖。
+
+    retry_budget（issue #3361 评测提速）：整跑允许的重试次数上限，None/0 表示不限。
+    为什么需要：一次重试 = 整条用例重跑（实测 CH-010/OR-014/OR-017 单条 200-400s，
+    4 条失败用例吃掉 19m39s 里的 87%）。失败多的一跑里"逐条重试"是主要成本，
+    但它换来的只是**分类标签**，CI 判定（_ci_verdict）只看 score —— 故可设上限：
+    前 N 条失败照旧重试/分类，其余直接按首次结果计入（标签标 no-retry-budget），
+    报告照样诚实（没有掩盖失败，只是不再为标签支付分钟数）。
     """
     print(f"\n{'='*60}")
     print(f"  {label}: {len(cases)} 个用例" + ("" if classify else "（--no-classify 兼容模式）"))
@@ -1803,6 +1831,8 @@ async def run_suite(cases, label: str, classify: bool = True):
     passed_count = 0
     total_score = 0.0
     flake_ledger = []  # 台账：一次运行中「首次失败经分类放行/确认」的用例
+    retries_used = 0   # 已消耗的重试次数（受 retry_budget 约束）
+    budget_exhausted = False
 
     for i, case in enumerate(cases):
         if case.skip_reason:
@@ -1850,7 +1880,16 @@ async def run_suite(cases, label: str, classify: bool = True):
             # 断言只能在 _end_session **之后**执行；跨会话用例取 run_case 回报的最后
             # 一个会话 id（首个会话已在换会话时关闭）。
             await _close_and_verify_session(case, token, r, session_id)
-            if r["score"] < 1.0 and classify:
+            if (r["score"] < 1.0 and classify
+                    and retry_budget is not None and retries_used >= retry_budget):
+                # 重试预算用尽：不再重跑（标签显式标注，避免"看起来已验证两遍"）
+                if not budget_exhausted:
+                    print(f"     ⏳ 重试预算用尽（{retry_budget} 次）：后续失败用例按首次结果计入"
+                          "（不再重跑，标签标 no-retry-budget）")
+                    budget_exhausted = True
+                classification = "no-retry-budget"
+            elif r["score"] < 1.0 and classify:
+                retries_used += 1
                 retry_sid = await get_or_create_session(token, prefer_new=True)
                 r2 = await run_case(case, token, retry_sid)
                 r2["retried"] = True
@@ -1884,8 +1923,9 @@ async def run_suite(cases, label: str, classify: bool = True):
                         "run_id": os.environ.get("GITHUB_RUN_ID", "local"),
                         "sha": os.environ.get("GITHUB_SHA", "")[:12],
                     })
-            elif r["score"] < 1.0:
-                # --no-classify 兼容模式：旧的无差别单次重试
+            elif r["score"] < 1.0 and (retry_budget is None or retries_used < retry_budget):
+                # --no-classify 兼容模式：旧的无差别单次重试（同样受重试预算约束）
+                retries_used += 1
                 retry_sid = await get_or_create_session(token, prefer_new=True)
                 r2 = await run_case(case, token, retry_sid)
                 r2["retried"] = True
@@ -1932,7 +1972,8 @@ async def run_suite(cases, label: str, classify: bool = True):
             for pid in snapshot_pids:
                 await restore_product(token, pid)
 
-        await asyncio.sleep(1)  # rate limit
+        if CASE_SLEEP:
+            await asyncio.sleep(CASE_SLEEP)  # rate limit（可配：EVAL_CASE_SLEEP）
 
     # ── flake 台账（issue #2890）：落盘 + 摘要，驱动断言收敛与高波动用例治理 ──
     if classify and flake_ledger:
@@ -2054,6 +2095,82 @@ def _ci_verdict(results: list) -> tuple[bool, str]:
     return True, "全部用例通过"
 
 
+def write_summary_json(path: str, label: str, shard: str, results: list) -> None:
+    """写机器可读的本次运行汇总（issue #3361 分片基建）。
+
+    为什么需要：分片后每个 job 只跑一部分用例，后续步骤（DB 审计、假绿告警）若按
+    "全局应有 N 条订单"判断就会误报 —— 审计必须知道**本片是否真的跑了写用例**。
+    顺带让"本次跑了什么、结果如何"可被脚本消费（报告/看板/回归对比），不必解析日志。
+
+    字段：
+      label/shard/total/passed/failed/avg_score
+      order_write_cases：本片声明 must_succeed: order_create 的用例数（0 → 审计不该告警）
+      write_cases_ok：其中通过的条数（通过却没落库 = 真假绿）
+      cases：[{id, score, classification}]
+    """
+    import json as _json
+    def _declares_order_write(r) -> bool:
+        # build_round_trace/结果里不保留 case 声明，故用"该用例的工具列表含 order_create"近似
+        return "order_create" in (r.get("tool_calls") or [])
+    payload = {
+        "label": label,
+        "shard": shard or "",
+        "total": len(results),
+        "passed": sum(1 for r in results if r.get("score", 0) >= 1.0),
+        "failed": sum(1 for r in results if r.get("score", 0) < 1.0),
+        "avg_score": (sum(r.get("score", 0) for r in results) / len(results)) if results else 0.0,
+        "order_write_cases": sum(1 for r in results if _declares_order_write(r)),
+        "write_cases_ok": sum(1 for r in results
+                              if _declares_order_write(r) and r.get("score", 0) >= 1.0),
+        "cases": [
+            {"id": r.get("case_id"), "score": r.get("score", 0),
+             "classification": r.get("classification", "")}
+            for r in results
+        ],
+    }
+    try:
+        with open(path, "w", encoding="utf-8") as f:
+            _json.dump(payload, f, ensure_ascii=False, indent=2)
+        print(f"📊 运行汇总 → {path}（total={payload['total']} passed={payload['passed']} "
+              f"order_write_cases={payload['order_write_cases']}）")
+    except Exception as e:
+        print(f"⚠️ 汇总写出失败（非致命）: {e}")
+
+
+def shard_cases(cases: list, shard: str) -> list:
+    """按 `--shard I/N` 切分用例（issue #3361 评测提速）。
+
+    为什么按"用例"分片而不是把并发塞进 runner：评测用例共享同一个 DB（同一批 fixture、
+    同一个 debug 顾客），进程内并发会让「谁先写订单/改商品价」变成不确定 ——
+    评测工具的可信度建立在**可复现**上，不能为省时间拿掉它。
+    分片是**语义不变**的加速：每片跑的是同一套 runner、同一套用例，只是各自一套
+    DB/栈（CI 每个 job 自带 docker 栈）→ 天然隔离，墙钟时间近似除以 N。
+
+    切法：`cases[i::N]` 轮转分配（用例耗时未知，轮转比"前 1/N 条"更均衡 ——
+    实测慢用例（403s 的 OR-014）与快用例交错分布，顺序切会把慢用例堆在一片）。
+
+    Args:
+        cases: 已按 persona/tier 过滤后的用例列表
+        shard: "I/N" 形态（I 从 0 开始）；空/None/非法 → 不切片（返回原列表）
+
+    Returns:
+        该分片应跑的用例
+    """
+    if not shard:
+        return list(cases)
+    try:
+        part, total = str(shard).split("/", 1)
+        idx, n = int(part), int(total)
+    except (ValueError, AttributeError):
+        print(f"⚠️ --shard={shard!r} 非法（应为 I/N，如 0/3），忽略分片")
+        return list(cases)
+    if n <= 1:
+        return list(cases)
+    if idx < 0 or idx >= n:
+        raise ValueError(f"--shard 索引越界: {shard}（I 必须在 [0, {n - 1}]）")
+    return list(cases)[idx::n]
+
+
 def load_cases_from_yaml(cases_dir: str) -> list:
     """从 cases/*.yml 加载用例（case-contract 单一源，替代 eval_cases.py 手写清单）。
 
@@ -2096,6 +2213,11 @@ async def main():
     parser.add_argument("suite", choices=["smoke", "normal", "full", "adversarial", "case"], nargs="?", default="smoke")
     parser.add_argument("--case-id", help="单条用例 ID（支持新 ID 与 legacy_id，如 OR-002 或 O002）")
     parser.add_argument("--cases", help="用例库目录（cases/*.yml）——提供时直接读 YAML（单一源）")
+    parser.add_argument("--max-retries", type=int, default=None,
+                        help="整跑重试次数上限（默认不限）；失败多的跑可设 3 省分钟数，"
+                             "超限的失败用例标 no-retry-budget 而非静默")
+    parser.add_argument("--shard", default="",
+                        help="分片运行 I/N（如 0/3）——CI 用多 job 并行切片，语义不变只减墙钟")
     parser.add_argument("--no-classify", action="store_true",
                         help="关闭波动分类（issue #2890 兼容开关：恢复旧的无差别单次重试，调试用）")
     args = parser.parse_args()
@@ -2139,6 +2261,23 @@ async def main():
     def active_cases():
         return [c for c in cases if not c.skip_reason]
 
+    # 分片（issue #3361 评测提速）：在 tier 选择之后切片 —— 保证「每片都只跑自己那份」，
+    # 且空片显式报错（0 用例 = 该片白跑，属配置错误，不做静默假绿，同 _ci_verdict 语义）
+    if args.shard:
+        before_shard = {
+            "smoke": smoke_cases, "normal": normal_cases,
+            "adversarial": adversarial_cases, "full": active_cases,
+        }
+        if args.suite in before_shard:
+            total_before = len(before_shard[args.suite]())
+            sharded = shard_cases(before_shard[args.suite](), args.shard)
+            print(f"🧩 分片 {args.shard}：本片 {len(sharded)}/{total_before} 条")
+            if not sharded:
+                print(f"❌ 分片 {args.shard} 为空（{args.suite} 档共 {total_before} 条）"
+                      "—— 空片会静默假绿，请检查分片数与用例数")
+                sys.exit(1)
+            cases = sharded
+
     try:
         if args.suite == "case":
             case = next((c for c in cases
@@ -2148,9 +2287,11 @@ async def main():
                 sys.exit(1)
             results = await run_suite([case], f"单条 {args.case_id}", classify=not args.no_classify)
         elif args.suite == "smoke":
-            results = await run_suite(smoke_cases(), "冒烟", classify=not args.no_classify)
+            results = await run_suite(smoke_cases(), "冒烟", classify=not args.no_classify,
+                                      retry_budget=args.max_retries)
         elif args.suite == "normal":
-            results = await run_suite(normal_cases(), "每日回归（normal）")
+            results = await run_suite(normal_cases(), "每日回归（normal）",
+                                      retry_budget=args.max_retries)
         elif args.suite == "adversarial":
             results = await run_suite(adversarial_cases(), "对抗")
         elif args.suite == "full":
@@ -2164,6 +2305,12 @@ async def main():
     # CI 判定（issue #3062 假绿修复）：空结果/未通过 → exit 1
     ok, msg = _ci_verdict(results)
     print(f"\n{'✅' if ok else '❌'} {msg}")
+
+    # 机器可读汇总（分片审计/报告消费；env 未设则跳过）
+    _sum_path = os.environ.get("AGENT_EVAL_SUMMARY_JSON")
+    if _sum_path:
+        write_summary_json(_sum_path, args.suite, args.shard, results)
+
     sys.exit(0 if ok else 1)
 
 if __name__ == "__main__":

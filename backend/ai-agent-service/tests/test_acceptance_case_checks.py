@@ -1460,6 +1460,7 @@ class TestRunSuitePostSession:
             return None
 
         monkeypatch.setenv("AGENT_EVAL_FLAKE_LOG", str(tmp_path / "flakes.json"))
+        monkeypatch.setattr(lr, "CASE_SLEEP", 0.0)  # 单测不为节流付费
         with mock.patch.object(lr, "login", new=fake_login), \
              mock.patch.object(lr, "get_or_create_session", new=fake_sess), \
              mock.patch.object(lr, "run_case", new=fake_run_case), \
@@ -1492,6 +1493,68 @@ class TestRunSuitePostSession:
         assert results[0]["score"] == 1.0
         assert results[0]["classification"] == "llm-noise"
         assert calls["checks"] == 2
+
+
+class TestRetryBudget:
+    """重试预算（issue #3361 评测提速）：失败多的跑不把分钟数全花在重试上。
+
+    实测：C 端 normal 19m39s 里，4 条失败用例（各重跑一整条，单条 200-400s）
+    占 87%。重试换来的只是**分类标签**，而 CI 判定只看 score —— 故可设上限。
+    关键：超预算的失败**照样记为失败**（不掩盖），只是标签标 no-retry-budget。
+    """
+
+    def _run(self, monkeypatch, tmp_path, n_cases, retry_budget):
+        import unittest.mock as mock
+
+        async def fake_login():
+            return "tok"
+
+        async def fake_sess(token, prefer_new=True):
+            return "sess"
+
+        attempts = {"run_case": 0}
+
+        async def fake_run_case(c, token, sid):
+            attempts["run_case"] += 1
+            return {"case_id": c.id, "title": c.title, "difficulty": "normal", "tags": [],
+                    "rounds": 1, "tool_calls": [], "round_trace": [], "passed": 0, "total": 1,
+                    "score": 0.0, "failed": [("boom", "x")], "last_error": None,
+                    "final_text": "", "final_session_id": sid, "session_breaks": 0}
+
+        async def fake_end(token, sid):
+            return None
+
+        cases = [lr.EvalCase(id=f"RB-{i}", title="t", skill=lr.Skill.GENERAL,
+                             difficulty=lr.Difficulty.NORMAL, user_inputs=["hi"],
+                             expectations=["x"], data_checks=[])
+                 for i in range(n_cases)]
+        monkeypatch.setenv("AGENT_EVAL_FLAKE_LOG", str(tmp_path / "f.json"))
+        monkeypatch.setattr(lr, "CASE_SLEEP", 0.0)  # 单测不为节流付费
+        with mock.patch.object(lr, "login", new=fake_login), \
+             mock.patch.object(lr, "get_or_create_session", new=fake_sess), \
+             mock.patch.object(lr, "run_case", new=fake_run_case), \
+             mock.patch.object(lr, "_end_session", new=fake_end):
+            results = asyncio.run(lr.run_suite(cases, "t", retry_budget=retry_budget))
+        return results, attempts["run_case"]
+
+    def test_budget_limits_retries(self, monkeypatch, tmp_path):
+        """3 条失败 + 预算 1 → 只重试 1 次（共 4 次 run_case），其余标 no-retry-budget。"""
+        results, calls = self._run(monkeypatch, tmp_path, 3, 1)
+        assert calls == 4, f"重试预算未生效（run_case 调用 {calls} 次，期望 1+1 次重试）"
+        assert results[0]["classification"] != "no-retry-budget"
+        assert results[1]["classification"] == "no-retry-budget"
+        assert results[2]["classification"] == "no-retry-budget"
+
+    def test_budget_does_not_hide_failures(self, monkeypatch, tmp_path):
+        """超预算仍必须判失败（预算只省分钟，不掩盖红灯）。"""
+        results, _ = self._run(monkeypatch, tmp_path, 3, 1)
+        assert all(r["score"] == 0.0 for r in results)
+        ok, msg = lr._ci_verdict(results)
+        assert not ok and "3/3" in msg
+
+    def test_no_budget_retries_every_failure(self, monkeypatch, tmp_path):
+        results, calls = self._run(monkeypatch, tmp_path, 3, None)
+        assert calls == 6, "默认（不限预算）应逐条重试"
 
 
 class TestDeclaredPostSessionChecksParse:
@@ -1720,3 +1783,108 @@ class TestRoundTraceRecordsSentMessage:
         assert trace[0]["user"] == ""
         # 无输入侧证据时不得打印 "you=" 空片段（噪音）
         assert "you=" not in lr.format_round_trace(trace)
+
+
+class TestThrottleSleepsConfigurable:
+    """节流等待可配（issue #3361 评测提速）。
+
+    评测墙钟时间几乎全花在真实 LLM 往返上，固定 sleep 是纯额外开销：
+    实测 C 端 normal 单跑 19m39s（18 条）里 ~63s 是 0.5s/轮 + 1s/用例的固定等待，
+    B 端 47 条约 3min。但真实 LLM 有限流需求，所以做成**可配**而非删除：
+    CI 调到最小（0.2/0.3），本地调试可调回默认。
+    """
+
+    def test_defaults_preserved(self, monkeypatch):
+        """默认值不变（向后兼容）：0.5s/轮、1s/用例。"""
+        monkeypatch.delenv("EVAL_ROUND_SLEEP", raising=False)
+        monkeypatch.delenv("EVAL_CASE_SLEEP", raising=False)
+        assert lr._env_float("EVAL_ROUND_SLEEP", 0.5) == 0.5
+        assert lr._env_float("EVAL_CASE_SLEEP", 1.0) == 1.0
+
+    def test_env_override(self, monkeypatch):
+        monkeypatch.setenv("EVAL_ROUND_SLEEP", "0.2")
+        assert lr._env_float("EVAL_ROUND_SLEEP", 0.5) == 0.2
+
+    def test_illegal_value_falls_back(self, monkeypatch):
+        """非法值回落默认（不得因为写错环境变量把评测卡死或崩掉）。"""
+        monkeypatch.setenv("EVAL_ROUND_SLEEP", "abc")
+        assert lr._env_float("EVAL_ROUND_SLEEP", 0.5) == 0.5
+        monkeypatch.setenv("EVAL_ROUND_SLEEP", "-1")
+        assert lr._env_float("EVAL_ROUND_SLEEP", 0.5) == 0.5
+
+    def test_zero_disables_sleep(self, monkeypatch):
+        monkeypatch.setenv("EVAL_ROUND_SLEEP", "0")
+        assert lr._env_float("EVAL_ROUND_SLEEP", 0.5) == 0.0
+
+
+class TestShardCases:
+    """分片切分（issue #3361 评测提速）：语义不变的 CI 并行加速。"""
+
+    def test_round_robin_partition_is_complete_and_disjoint(self):
+        cases = list(range(18))
+        parts = [lr.shard_cases(cases, f"{i}/3") for i in range(3)]
+        flat = [c for p in parts for c in p]
+        assert sorted(flat) == cases, "分片必须覆盖全部用例（漏跑 = 静默少测）"
+        assert len(flat) == len(set(flat)), "分片不得重叠（重叠 = 同一用例重复付费跑）"
+
+    def test_round_robin_balances_slow_cases(self):
+        """轮转而非顺序切：慢用例（实测 OR-014 403s）与快用例交错，避免堆在一片。"""
+        cases = [f"c{i}" for i in range(6)]
+        assert lr.shard_cases(cases, "0/2") == ["c0", "c2", "c4"]
+        assert lr.shard_cases(cases, "1/2") == ["c1", "c3", "c5"]
+
+    def test_no_shard_returns_all(self):
+        cases = list(range(5))
+        assert lr.shard_cases(cases, "") == cases
+        assert lr.shard_cases(cases, "0/1") == cases
+
+    def test_illegal_shard_ignored(self):
+        cases = list(range(5))
+        assert lr.shard_cases(cases, "abc") == cases
+        assert lr.shard_cases(cases, "0/0") == cases
+
+    def test_out_of_range_raises(self):
+        import pytest as _pytest
+        with _pytest.raises(ValueError):
+            lr.shard_cases(list(range(5)), "3/3")
+
+    def test_empty_shard_is_visible_not_silent(self):
+        """空片必须是显式错误（0 用例执行 = 静默假绿，与 _ci_verdict 同语义）。"""
+        cases = ["only"]
+        empty = lr.shard_cases(cases, "1/2")
+        assert empty == [], "分片可能为空 —— 调用方必须显式报错而非静默放行"
+
+
+class TestRunSummaryJson:
+    """机器可读运行汇总（issue #3361 分片基建）：审计/报告不必解析日志。"""
+
+    def test_writes_expected_fields(self, tmp_path):
+        import json as _json
+        results = [
+            {"case_id": "CH-010", "score": 1.0, "classification": "pass",
+             "tool_calls": ["product_search", "order_create"]},
+            {"case_id": "KN-001", "score": 1.0, "classification": "pass",
+             "tool_calls": ["knowledge_search"]},
+            {"case_id": "OR-017", "score": 0.0, "classification": "reproducible",
+             "tool_calls": ["order_create"]},
+        ]
+        out = tmp_path / "s.json"
+        lr.write_summary_json(str(out), "normal", "1/3", results)
+        data = _json.loads(out.read_text(encoding="utf-8"))
+        assert data["shard"] == "1/3" and data["total"] == 3
+        assert data["passed"] == 2 and data["failed"] == 1
+        assert data["order_write_cases"] == 2, "下单写用例计数错（审计据此决定是否告警）"
+        assert data["write_cases_ok"] == 1
+        assert [c["id"] for c in data["cases"]] == ["CH-010", "KN-001", "OR-017"]
+
+    def test_empty_results(self, tmp_path):
+        import json as _json
+        out = tmp_path / "e.json"
+        lr.write_summary_json(str(out), "normal", "0/1", [])
+        data = _json.loads(out.read_text(encoding="utf-8"))
+        assert data["total"] == 0 and data["avg_score"] == 0.0
+
+    def test_write_failure_is_not_fatal(self, tmp_path, capsys):
+        """汇总写失败不得让评测崩（非致命）。"""
+        lr.write_summary_json(str(tmp_path / "nodir" / "x.json"), "normal", "", [])
+        assert "汇总写出失败" in capsys.readouterr().out

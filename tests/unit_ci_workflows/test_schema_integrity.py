@@ -1299,7 +1299,16 @@ class TestFalseGreenGuardInAudit:
         body = self._audit_body()
         assert "假绿风险" in body, "审计缺少假绿告警文案"
         assert "orders=" in body and "ORDERS" in body, "未统计订单数并据此告警"
-        assert "CH-010" in body, "告警未点名下单写用例"
+        # 分片后"全局应有 N 条订单"不再成立：告警必须**按本片是否真的跑了写用例**判断，
+        # 否则没有写用例的片会因 orders<=2 被误报假绿（issue #3361 分片基建）
+        assert "WRITE_CASES" in body and "order_write_cases" in body, (
+            "审计未读本片运行汇总（order_write_cases）—— 分片下会误报假绿"
+        )
+
+    def test_audit_warning_is_shard_scoped(self):
+        body = self._audit_body()
+        assert "$WRITE_CASES" in body, "告警条件未使用本片写用例数"
+        assert "本片" in body, "告警文案未标明这是本片（分片）结论"
 
     def test_audit_warns_when_memories_not_landed(self):
         """CH-024 通过但 user_memories 为空 = 记忆链断（或断言失效）→ 必须告警。"""
