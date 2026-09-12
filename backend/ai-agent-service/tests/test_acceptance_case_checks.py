@@ -2233,3 +2233,79 @@ class TestPreCleanExclusiveWindow:
         assert "2 条并行" in joined and "+ 2 条串行" in joined, (
             f"独占判据异常（应为 2 并行 + 2 串行：tag=update 与 post_session）：\n{joined[:400]}"
         )
+
+
+class TestNoDeadlockWithPreCleanUnderConcurrency:
+    """并发 + pre_clean 不得死锁（issue #3361 实测踩到并跑挂过一次 CI）。
+
+    根因：并行任务先持 `gate.reader()`（读位）再在 `_run_one_case` 里为 pre_clean 去要
+    `gate.writer()`（写位）—— 写位要求"读者排空"，而**请求者自己就是读者** → 互等 → 挂到
+    超时（run 34698839019 实测：评测步骤 15min+ 不结束，只能人工 cancel）。
+    修法：pre_clean 的独占窗口必须在读位**之外**获取（调度器先清理，再进读位跑主体）。
+
+    本测试用极短超时守护：一旦死锁，用例直接失败而不是把 CI 拖到 60 分钟超时。
+    """
+
+    def _mkcase(self, cid, pre_clean=None, tags=None):
+        return lr.EvalCase(id=cid, title=cid, skill=lr.Skill.GENERAL,
+                           difficulty=lr.Difficulty.NORMAL, user_inputs=["hi"],
+                           expectations=[], data_checks=[], tags=tags or [],
+                           pre_clean=pre_clean or [])
+
+    def _run_with_timeout(self, cases, concurrency, seconds=8.0):
+        import unittest.mock as mock
+
+        async def fake_login():
+            return "tok"
+
+        async def fake_sess(token, prefer_new=True):
+            return "sess"
+
+        async def fake_run_case(c, token, sid):
+            await asyncio.sleep(0.02)
+            return {"case_id": c.id, "title": c.title, "difficulty": "normal", "tags": [],
+                    "rounds": 1, "tool_calls": [], "round_trace": [], "passed": 1, "total": 1,
+                    "score": 1.0, "failed": [], "last_error": None, "final_text": "",
+                    "final_session_id": sid, "session_breaks": 0}
+
+        async def fake_end(token, sid):
+            return None
+
+        async def fake_pre_clean(token, spec):
+            return "ok"
+
+        async def fake_snapshot(token, kw):
+            return None
+
+        async def _go():
+            with mock.patch.object(lr, "login", new=fake_login), \
+                 mock.patch.object(lr, "get_or_create_session", new=fake_sess), \
+                 mock.patch.object(lr, "run_case", new=fake_run_case), \
+                 mock.patch.object(lr, "_end_session", new=fake_end), \
+                 mock.patch.object(lr, "_run_pre_clean", new=fake_pre_clean), \
+                 mock.patch.object(lr, "snapshot_product", new=fake_snapshot), \
+                 mock.patch.object(lr, "CASE_SLEEP", 0.0):
+                return await lr.run_suite(cases, "t", classify=False, concurrency=3)
+
+        async def _guard():
+            return await asyncio.wait_for(_go(), timeout=seconds)
+
+        return asyncio.run(_guard())
+
+    def test_pre_clean_case_parallel_does_not_deadlock(self):
+        cases = [self._mkcase("A"), self._mkcase("B"),
+                 self._mkcase("PC", pre_clean=[{"type": "product_dedupe"}])]
+        results = self._run_with_timeout(cases, 3)
+        assert len(results) == 3
+
+    def test_pre_clean_with_serial_case_does_not_deadlock(self):
+        """有独占用例（tag=update）+ pre_clean 并行用例 —— 本轮踩到的组合。"""
+        cases = [self._mkcase("A"), self._mkcase("PC", pre_clean=[{"type": "product_dedupe"}]),
+                 self._mkcase("MUT", tags=["update"])]
+        results = self._run_with_timeout(cases, 3)
+        assert len(results) == 3
+
+    def test_all_cases_pre_clean_does_not_deadlock(self):
+        cases = [self._mkcase(f"P{i}", pre_clean=[{"type": "product_dedupe"}]) for i in range(4)]
+        results = self._run_with_timeout(cases, 3)
+        assert len(results) == 4

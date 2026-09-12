@@ -1836,6 +1836,21 @@ async def run_suite(cases, label: str, classify: bool = True, retry_budget: int 
     retries_used = 0   # 已消耗的重试次数（受 retry_budget 约束）
     budget_exhausted = False
 
+    async def _pre_clean_for_case(case, gate) -> None:
+        """执行用例声明的 pre_clean（写共享数据的**短动作**）。
+
+        issue #3361 提速第三轮：pre_clean 只需**它自身**与其它用例互斥，不必让随后的
+        用例主体一起独占（后者会让慢用例变成整跑尾巴）。调用点负责提供独占窗口
+        （gate.writer()），且**不能在本任务已持读位时调用** —— 那会死锁。
+        """
+        for spec in (getattr(case, "pre_clean", None) or []):
+            try:
+                _msg = await _run_pre_clean(token, spec)
+                if _msg:
+                    print(f"     🧹 pre_clean: {_msg}")
+            except Exception as e:
+                print(f"     ⚠️ pre_clean 失败（非致命）: {e}")
+
     _retry_lock = asyncio.Lock()
 
     async def _reserve_retry() -> bool:
@@ -1856,11 +1871,10 @@ async def run_suite(cases, label: str, classify: bool = True, retry_budget: int 
             retries_used += 1
             return True
 
-    async def _run_one_case(i: int, case, gate=None):
-        """跑单个用例（会话/清理/重试分类/打印/结果记录）。
+    async def _run_one_case(i: int, case):
+        """跑单个用例（会话/重试分类/打印/结果记录）。
 
-        gate（ConcurrencyGate|None）：并行模式下传入，用于把 pre_clean 这个**短写动作**
-        放进独占窗口（见下方注释）；None = 串行模式，直接执行。
+        前置的 pre_clean 由调度器在**独占窗口**里先跑（见 `_pre_clean_for_case`）。
         """
         nonlocal budget_exhausted
         if case.skip_reason:
@@ -1887,25 +1901,9 @@ async def run_suite(cases, label: str, classify: bool = True, retry_budget: int 
                 if pid and pid not in snapshot_pids:
                     snapshot_pids.append(pid)
 
-        # 评测前数据清理（写类 case 自我污染防线，§14.2）：pre_clean 声明的
-        # 目标资源恢复干净态，保证「给 X 加标签」等写流程每次从干净状态开始。
-        #
-        # issue #3361 提速第三轮：这是**写共享数据的短动作**，语义上只需它自身与其它
-        # 用例互斥（避免"清理到一半别人在读"），不需要把随后的用例主体也一起独占 ——
-        # 后者会让慢用例变成整跑尾巴（实测 OR-014 独占 ~5.5min 顶住整段评测）。
-        # 故：用 gate 的独占窗口只包住清理动作；gate 为 None（串行模式）时直接执行。
-        _pre_specs = list(getattr(case, "pre_clean", None) or [])
-        for spec in _pre_specs:
-            try:
-                if gate is not None:
-                    async with gate.writer():
-                        _msg = await _run_pre_clean(token, spec)
-                else:
-                    _msg = await _run_pre_clean(token, spec)
-                if _msg:
-                    print(f"     🧹 pre_clean: {_msg}")
-            except Exception as e:
-                print(f"     ⚠️ pre_clean 失败（非致命）: {e}")
+        # 注：pre_clean 已移到调度器（`_pre_clean_for_case`），因为它的独占窗口必须在
+        # 用例主体**之外**获取 —— 若在持读位时再去要写位会死锁（本轮实测踩到：
+        # 并行任务持 reader 又请求 writer → 互等 → 跑挂）。
 
         try:
             r = await run_case(case, token, session_id)
@@ -2052,12 +2050,19 @@ async def run_suite(cases, label: str, classify: bool = True, retry_budget: int 
               f" + {len(serial)} 条串行（独占，读者排空即进入，不阻塞整批）")
 
         async def _parallel_task(i, c):
+            # ① pre_clean（若有）在**独占窗口**里跑 —— 必须在读位之外获取，否则自锁
+            if getattr(c, "pre_clean", None):
+                async with gate.writer():
+                    await _pre_clean_for_case(c, gate)
+            # ② 主体并行
             async with gate.reader():
-                results_by_idx[i] = await _run_one_case(i, c, gate)
+                results_by_idx[i] = await _run_one_case(i, c)
 
         async def _serial_task(i, c):
+            # 独占用例：pre_clean 与主体在**同一个**独占窗口内（不再嵌套获取）
             async with gate.writer():
-                results_by_idx[i] = await _run_one_case(i, c, gate)
+                await _pre_clean_for_case(c, gate)
+                results_by_idx[i] = await _run_one_case(i, c)
 
         await asyncio.gather(*[_parallel_task(i, c) for i, c in parallel],
                              *[_serial_task(i, c) for i, c in serial])
@@ -2068,8 +2073,11 @@ async def run_suite(cases, label: str, classify: bool = True, retry_budget: int 
         gate = ConcurrencyGate(concurrency)   # 只用它的独占窗口包 pre_clean
 
         async def _bounded(i, c):
+            if getattr(c, "pre_clean", None):
+                async with gate.writer():          # 清理动作独占（此时本任务未持读位）
+                    await _pre_clean_for_case(c, gate)
             async with sem:
-                results_by_idx[i] = await _run_one_case(i, c, gate)
+                results_by_idx[i] = await _run_one_case(i, c)
 
         await asyncio.gather(*[_bounded(i, c) for i, c in parallel])
     else:
