@@ -1421,11 +1421,26 @@ async def execute_skill(
                             f"[{skill_name}] 拦截未确认的写操作 {tool_name} | session={session_id} "
                             f"last_msg={last_user_msg[:30]!r}"
                         )
-                        msg = (
-                            f"工具 {tool_name} 是写操作（可能不可逆或产生数据变更），必须先向用户展示确认卡片"
-                            f"并取得明确确认。请调用 interact（component=confirm）展示操作预览，"
-                            f"等用户点击确认后再执行。"
-                        )
+                        # 话术必须与**本 Skill 的实际能力**匹配（issue #3317）：
+                        # 未绑定 interact 的 Skill（B 端 staff/settings/data）若被告知
+                        # "请调用 interact（component=confirm）"，那是一条**不可执行指令** ——
+                        # 模型拿到"请调用 X"却没有 X，会反复重试或直接放弃。
+                        # （不给这些 Skill 补 interact 的理由见 issue #3317：
+                        #   用例库里涉及这 6 个工具的 16 条用例无一条断言 interact，
+                        #   含 smoke 的 HR-001/HR-004 靠口头确认长期通过 —— 补工具是
+                        #   改变 B 端交互形态，收益不明而回归面大。）
+                        if skill_registry.get_tool("interact") is not None:
+                            msg = (
+                                f"工具 {tool_name} 是写操作（可能不可逆或产生数据变更），必须先向用户展示"
+                                f"确认卡片并取得明确确认。请调用 interact（component=confirm）展示操作预览，"
+                                f"等用户点击确认后再执行。"
+                            )
+                        else:
+                            msg = (
+                                f"工具 {tool_name} 是写操作（可能不可逆或产生数据变更），必须先取得用户明确"
+                                f"确认。本技能没有确认卡片能力：请用文本**完整复述将要执行的操作与影响**"
+                                f"（对象、字段、后果），并请用户回复确认；用户回复确认后再调用本工具。"
+                            )
                         return tool_call, json.dumps(
                             {"success": False, "error": "confirmation_required", "message": msg},
                             ensure_ascii=False,

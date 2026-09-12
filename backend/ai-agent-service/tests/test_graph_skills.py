@@ -1113,3 +1113,118 @@ class TestCustomerSkillPendingLock:
         """B 端行为不回归"""
         result = self._run("staff")
         assert result["pending_interact_skill"] == "staff"
+
+
+class TestConfirmGateGuidance:
+    """确认门禁的话术必须**可执行**：Skill 没绑 `interact` 时不能说"请调用 interact"
+
+    背景（issue #3317）：`_requires_confirmation` 拦截未确认写操作时固定返回
+    「请调用 interact（component=confirm）展示操作预览」—— 但 B 端 `staff`/`settings`/
+    `data` 三个 Skill **没有绑定 `interact`**，这条指令对 LLM 是**不可执行的**。
+    实测现象：模型拿到"请调用 X"却没有 X，反复重试或直接放弃。
+
+    为什么不给这些 Skill 直接补 `interact`（issue #3317 的另一种解法）：
+    证据不支持 —— 用例库里涉及这 6 个工具的 16 条用例**没有一条**断言 `interact`
+    （含 smoke 的 HR-001/HR-004，它们靠**口头确认**走通并长期通过）。
+    补工具会改变 B 端交互形态（可能开始弹卡），而 B 端 105 条用例只能在
+    手动、面向生产的评测里验证 —— 收益不明而回归面很大。
+    故采取"**让话术与能力匹配**"：有 `interact` → 要求弹卡；没有 → 要求文本复述+口头确认。
+    """
+
+    def _gate_result(self, *, has_interact: bool):
+        """跑一次带写工具的 execute_skill，捕获确认门禁返回的 message"""
+        import asyncio
+        from types import SimpleNamespace
+
+        from app.tools.base import BaseTool, ToolResult
+
+        class _WriteTool(BaseTool):
+            name = "amazing_write"
+            description = "写操作（测试用）"
+            read_only = False
+            requires_confirmation = True
+            parameters = {"type": "object", "properties": {}}
+
+            async def execute(self, context, **kwargs):
+                return ToolResult(success=True, data={}, message="done")
+
+        class _Interact(BaseTool):
+            name = "interact"
+            description = "交互卡片"
+            read_only = True
+            parameters = {"type": "object", "properties": {}}
+
+            async def execute(self, context, **kwargs):
+                return ToolResult(success=True, data={}, message="card")
+
+        captured = {}
+
+        with patch("app.memory.session_memory.SessionMemory") as mem_cls, \
+             patch("app.graph.skills.base_skill.get_breaker") as get_breaker, \
+             patch("app.graph.skills.base_skill.get_skill_llm") as get_llm, \
+             patch("app.graph.skills.base_skill.create_skill_registry") as create_reg, \
+             patch("app.graph.skills.base_skill.set_tool_context"):
+            tools = {"amazing_write": _WriteTool()}
+            if has_interact:
+                tools["interact"] = _Interact()
+
+            registry = MagicMock()
+            registry.get_langchain_tools.return_value = []
+            registry.get_tool.side_effect = lambda n: tools.get(n)
+            create_reg.return_value = registry
+
+            breaker = MagicMock()
+
+            async def _passthrough(fn):
+                return await fn()
+
+            breaker.call = _passthrough
+            get_breaker.return_value = breaker
+
+            # 第一轮返回写工具调用（未确认 → 必被门禁拦），第二轮收尾
+            call_msg = MagicMock(spec=AIMessage)
+            call_msg.content = ""
+            call_msg.tool_calls = [{"name": "amazing_write", "args": {}, "id": "c1"}]
+            end_msg = MagicMock(spec=AIMessage)
+            end_msg.content = "好的"
+            end_msg.tool_calls = []
+            llm = MagicMock()
+            llm.bind_tools.return_value = llm
+            llm.ainvoke = AsyncMock(side_effect=[call_msg, end_msg])
+            get_llm.return_value = llm
+            mem_cls.return_value.set_pending_skill = AsyncMock(return_value=True)
+
+            async def _fake_execute(tool, args, ctx, state):
+                # 模拟门禁：不真正执行，直接把门禁消息回传（真实路径由 _run_one_tool 内部判断）
+                captured["called"] = True
+                return "", {}
+
+            with patch("app.graph.skills.base_skill._execute_tool_safe", _fake_execute):
+                result = asyncio.run(execute_skill(
+                    state=_make_state(messages=[HumanMessage(content="删了这个员工")]),
+                    skill_name="staff", tool_names=list(tools.keys()),
+                    system_prompt="你是人事助手",
+                ))
+        return result, captured
+
+    def test_gate_message_requires_card_when_interact_available(self):
+        """有 interact → 指引弹卡。
+
+        ⚠️ 断言必须落在**门禁消息的特征串**（`component=confirm`）上，不能只查
+        `"interact" in str(result)` —— 结果里包含 system prompt 与历史消息，
+        `interact` 一词可能来自别处，那样「永远走 else 分支」也能通过（首版即此假绿，
+        被变异测试 M2 抓出）。
+        """
+        result, _ = self._gate_result(has_interact=True)
+        blob = str(result)
+        assert "component=confirm" in blob, "有 interact 时应指引弹卡确认"
+        assert "完整复述" not in blob, "有 interact 时不应走文本复述分支"
+
+    def test_gate_message_does_not_demand_unavailable_tool(self):
+        result, _ = self._gate_result(has_interact=False)
+        blob = str(result)
+        assert "component=confirm" not in blob, (
+            "Skill 未绑定 interact 时，门禁不能说「请调用 interact（component=confirm）」——"
+            "那是不可执行指令，会让模型反复重试或放弃（issue #3317）"
+        )
+        assert "完整复述" in blob, "应改为要求用文本完整复述操作并请用户回复确认"

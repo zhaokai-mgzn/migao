@@ -416,8 +416,14 @@ def test_confirmed_write_tools_require_interact_in_same_skill():
     这是「prompt 写了、工具没给」型缺陷，单看 prompt 断言（本文件上一条用例）测不出来。
 
     作用域刻意限定为 **C 端（persona=xiaobu）**：C 端设计基线是「低学历点选友好」，
-    写操作必须走卡片而非让顾客打字确认。B 端同类问题（staff/settings/data 共 6 处）
-    另案跟踪，不在此用例内混同，避免把 B 端改动风险夹带进 C 端修复。
+    写操作必须走卡片而非让顾客打字确认。
+
+    B 端（staff/settings/data 共 6 处）**经证据评估后决定不补 `interact`**（issue #3317）：
+    用例库里涉及这 6 个工具的 16 条用例**没有一条**断言 `interact`（含 smoke 的
+    HR-001/HR-004，它们靠**口头确认**长期通过）→ 补工具等于改变 B 端交互形态，
+    收益不明而回归面覆盖 105 条只能在面向生产的手动评测里验证。
+    改为修真正的缺陷：确认门禁的话术**按本 Skill 是否有 `interact` 分流**
+    （见 test_graph_skills.TestConfirmGateGuidance），不再给出不可执行指令。
     """
     from app.graph.skills.skill_registry import get_skill_registry
     from app.tools.registry import get_tool_registry
