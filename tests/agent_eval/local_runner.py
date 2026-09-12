@@ -8,6 +8,7 @@ Mibao Agent 本地评测 — 直接调 localhost chat API，采集 SSE 事件
 """
 
 import sys, os, json, time, asyncio, re
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from pathlib import Path
@@ -2015,10 +2016,26 @@ async def run_suite(cases, label: str, classify: bool = True, retry_budget: int 
     serial = [(i, c) for i, c in indexed if _needs_serial_lane(c)]
     results_by_idx: dict = {}
 
-    if concurrency > 1 and parallel:
-        sem = asyncio.Semaphore(concurrency)
+    if concurrency > 1 and parallel and serial:
+        # 读写门：并行用例持读位、串行用例持写位 —— 串行用例**不必等整批跑完**
+        # （否则慢串行用例变成整跑尾巴，实测白等 ~7min，见 ConcurrencyGate 注释）
+        gate = ConcurrencyGate(concurrency)
         print(f"⚡ 并发执行：{len(parallel)} 条并行（并发度 {concurrency}）"
-              f"，{len(serial)} 条走串行道（共享资源/用户级状态）")
+              f" + {len(serial)} 条串行（独占，读者排空即进入，不阻塞整批）")
+
+        async def _parallel_task(i, c):
+            async with gate.reader():
+                results_by_idx[i] = await _run_one_case(i, c)
+
+        async def _serial_task(i, c):
+            async with gate.writer():
+                results_by_idx[i] = await _run_one_case(i, c)
+
+        await asyncio.gather(*[_parallel_task(i, c) for i, c in parallel],
+                             *[_serial_task(i, c) for i, c in serial])
+    elif concurrency > 1 and parallel:
+        sem = asyncio.Semaphore(concurrency)
+        print(f"⚡ 并发执行：{len(parallel)} 条并行（并发度 {concurrency}）")
 
         async def _bounded(i, c):
             async with sem:
@@ -2026,12 +2043,8 @@ async def run_suite(cases, label: str, classify: bool = True, retry_budget: int 
 
         await asyncio.gather(*[_bounded(i, c) for i, c in parallel])
     else:
-        for i, c in parallel:
+        for i, c in indexed:
             results_by_idx[i] = await _run_one_case(i, c)
-
-    # 串行道：逐条执行（独占，保证与并行用例互不重叠）
-    for i, c in serial:
-        results_by_idx[i] = await _run_one_case(i, c)
 
     # 按**原始用例顺序**回填（并发不改变报告顺序，便于与历史 run 逐条对比）
     results = [results_by_idx[i] for i in sorted(results_by_idx) if results_by_idx[i] is not None]
@@ -2199,6 +2212,62 @@ def write_summary_json(path: str, label: str, shard: str, results: list) -> None
               f"order_write_cases={payload['order_write_cases']}）")
     except Exception as e:
         print(f"⚠️ 汇总写出失败（非致命）: {e}")
+
+
+class ConcurrencyGate:
+    """用例并发门（读写语义，issue #3361 提速第二轮）。
+
+    为什么需要：串行道（共享资源用例）如果**等整批并行用例跑完**才开始，慢用例就变成
+    整跑的尾巴 —— 实测 C 端 normal：16 条并行（并发度 3）只花 ~3min，而串行道的
+    OR-014（含 pre_clean + 重试）一个人在末尾又跑了 ~7min，整段评测 10.6min 白等。
+
+    语义：
+      - `reader()`：并行用例（只读/各自新建数据）持位，最多 `max_readers` 个同时进行；
+      - `writer()`：串行用例（写共享资源/断言用户级状态）独占 —— **既不与其它用例重叠，
+        也不等整批跑完**（当前读者排空即进入）；
+      - 写者优先（`_waiting_writers`）：串行用例一到，新读者排队，避免慢串行用例被
+        源源不断的并行用例饿死。
+
+    这是"隔离"与"墙钟"同时满足的关键：隔离要求本就是"不与其他用例重叠"，
+    而不是"必须在最后跑"。
+    """
+
+    def __init__(self, max_readers: int):
+        self._max_readers = max(1, int(max_readers))
+        self._cond = asyncio.Condition()
+        self._readers = 0
+        self._writer = False
+        self._waiting_writers = 0
+
+    @asynccontextmanager
+    async def reader(self):
+        async with self._cond:
+            while self._writer or self._waiting_writers or self._readers >= self._max_readers:
+                await self._cond.wait()
+            self._readers += 1
+        try:
+            yield
+        finally:
+            async with self._cond:
+                self._readers -= 1
+                self._cond.notify_all()
+
+    @asynccontextmanager
+    async def writer(self):
+        async with self._cond:
+            self._waiting_writers += 1
+            try:
+                while self._writer or self._readers > 0:
+                    await self._cond.wait()
+                self._writer = True
+            finally:
+                self._waiting_writers -= 1
+        try:
+            yield
+        finally:
+            async with self._cond:
+                self._writer = False
+                self._cond.notify_all()
 
 
 def shard_cases(cases: list, shard: str) -> list:

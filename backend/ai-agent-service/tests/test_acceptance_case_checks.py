@@ -2032,3 +2032,96 @@ class TestSuiteConcurrency:
         cases = [self._mkcase(f"C{i}") for i in range(3)]
         _results, _events, active = self._run(monkeypatch, tmp_path, cases, 1)
         assert active["max"] == 1
+
+
+class TestConcurrencyGateTail:
+    """串行用例不得变成整跑尾巴（issue #3361：读写门语义）。
+
+    实测 C 端 normal：16 条并行（并发度 3）~3min，串行道的 OR-014（pre_clean + 重试）
+    一个人在末尾又跑 ~7min → 整段评测 10.6min。隔离要求本是"不与其他用例重叠"，
+    不是"必须在最后跑"。
+    """
+
+    def _mkcase(self, cid, tags=None, pre_clean=None):
+        return lr.EvalCase(id=cid, title=cid, skill=lr.Skill.GENERAL,
+                           difficulty=lr.Difficulty.NORMAL, user_inputs=["hi"],
+                           expectations=[], data_checks=[], tags=tags or [],
+                           pre_clean=pre_clean or [])
+
+    def test_serial_case_starts_before_all_parallel_finish(self, monkeypatch, tmp_path):
+        """慢串行用例应在**首批并行用例排空后**立刻开工，而不是等全部并行跑完。"""
+        import unittest.mock as mock
+        events = []
+
+        async def fake_login():
+            return "tok"
+
+        async def fake_sess(token, prefer_new=True):
+            return "sess"
+
+        async def fake_run_case(c, token, sid):
+            events.append((c.id, "start"))
+            # 并行用例都很快；串行（慢）用例自身耗时长 —— 关键在于它**何时开始**
+            await asyncio.sleep(0.3 if c.id == "SLOW" else 0.05)
+            events.append((c.id, "end"))
+            return {"case_id": c.id, "title": c.title, "difficulty": "normal", "tags": [],
+                    "rounds": 1, "tool_calls": [], "round_trace": [], "passed": 1, "total": 1,
+                    "score": 1.0, "failed": [], "last_error": None, "final_text": "",
+                    "final_session_id": sid, "session_breaks": 0}
+
+        async def fake_end(token, sid):
+            return None
+
+        async def fake_snapshot(token, kw):
+            return None
+
+        cases = [self._mkcase(f"P{i}") for i in range(6)]
+        cases.append(self._mkcase("SLOW", pre_clean=[{"type": "product_dedupe"}]))
+        monkeypatch.setenv("AGENT_EVAL_FLAKE_LOG", str(tmp_path / "f.json"))
+        monkeypatch.setattr(lr, "CASE_SLEEP", 0.0)
+        with mock.patch.object(lr, "login", new=fake_login), \
+             mock.patch.object(lr, "get_or_create_session", new=fake_sess), \
+             mock.patch.object(lr, "run_case", new=fake_run_case), \
+             mock.patch.object(lr, "_end_session", new=fake_end), \
+             mock.patch.object(lr, "snapshot_product", new=fake_snapshot):
+            asyncio.run(lr.run_suite(cases, "t", classify=False, concurrency=3))
+
+        slow_start = [i for i, (cid, k) in enumerate(events) if cid == "SLOW" and k == "start"][0]
+        parallel_ends = [i for i, (cid, k) in enumerate(events) if cid.startswith("P") and k == "end"]
+        assert slow_start < max(parallel_ends), (
+            "串行用例等到所有并行用例跑完才开始（退化为尾巴）—— 读写门未生效"
+        )
+        # 同时仍必须独占：串行用例执行期间没有任何并行用例在跑
+        slow_end = [i for i, (cid, k) in enumerate(events) if cid == "SLOW" and k == "end"][0]
+        for cid, kind in events[slow_start:slow_end]:
+            assert cid == "SLOW", f"串行用例执行期间 {cid} 也在跑（隔离失效）"
+
+    def test_gate_writer_excludes_readers(self):
+        """门本身语义：读者并发有上限、写者执行期间**零读者**。"""
+        import asyncio as _a
+
+        async def scenario():
+            gate = lr.ConcurrencyGate(2)
+            state = {"readers": 0, "max_readers": 0, "writer_violation": False}
+
+            async def reader():
+                async with gate.reader():
+                    state["readers"] += 1
+                    state["max_readers"] = max(state["max_readers"], state["readers"])
+                    await _a.sleep(0.05)
+                    state["readers"] -= 1
+
+            async def writer():
+                async with gate.writer():
+                    if state["readers"] != 0:
+                        state["writer_violation"] = True
+                    await _a.sleep(0.05)
+
+            # 先起 4 个读者（上限 2）+ 1 个写者：写者须等读者排空，且期间无读者
+            await _a.gather(*[reader() for _ in range(4)], writer(), writer())
+            return state
+
+        state = asyncio.run(scenario())
+        assert state["max_readers"] <= 2, f"读者上限被突破（峰值 {state['max_readers']}）"
+        assert state["max_readers"] == 2, "读者未真正并发（退化为串行）"
+        assert not state["writer_violation"], "写者执行期间有读者在跑（独占语义失效）"
