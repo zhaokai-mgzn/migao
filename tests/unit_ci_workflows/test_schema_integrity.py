@@ -1252,3 +1252,35 @@ class TestEvalArtifactAuditStep:
         """对照：评测确实每用例建一个会话（否则上面审计的 agent_sessions 恒为 0，没意义）"""
         src = (Path(__file__).parent.parent.parent / "tests" / "agent_eval" / "local_runner.py").read_text(encoding="utf-8")
         assert "api/chat/sessions" in src, "runner 未创建会话（审计目标落空）"
+
+
+class TestFalseGreenGuardInAudit:
+    """审计必须把「写用例通过但 DB 无产物」显式标成假绿风险（调了 ≠ 成了）
+
+    run 34678939564 实证：17/17 全绿但 orders 无新增 —— order_create 被确认门禁拦
+    （confirmValue >24 字）或被 API 拒，用例却因「工具被调用」判通过。审计若只
+    dump 数据、不对账，人还是要逐行自己看才能发现 —— 本测试要求审计里带对账告警。
+    """
+
+    def _wf(self) -> dict:
+        import yaml
+        return yaml.safe_load((WORKFLOWS_DIR / "xiaobu-acceptance.yml").read_text(encoding="utf-8")) or {}
+
+    def _audit_body(self) -> str:
+        steps = self._wf()["jobs"]["xiaobu-acceptance"]["steps"]
+        step = next((s_ for s_ in steps if "DB 审计" in (s_.get("name") or "")), {})
+        return step.get("run") or ""
+
+    def test_audit_warns_when_orders_not_landed(self):
+        body = self._audit_body()
+        assert "假绿风险" in body, "审计缺少假绿告警文案"
+        assert "orders=" in body and "ORDERS" in body, "未统计订单数并据此告警"
+        assert "CH-010" in body, "告警未点名下单写用例"
+
+    def test_eval_emits_all_traces(self):
+        """写用例成败必须可见：通过用例的轨迹也要打（否则写工具结果藏在暗处）"""
+        steps = self._wf()["jobs"]["xiaobu-acceptance"]["steps"]
+        step = next((s_ for s_ in steps if "local_runner" in (s_.get("name") or "")), {})
+        assert (step.get("env") or {}).get("AGENT_EVAL_TRACE_ALL") == "1", (
+            "未开启全量轨迹 —— 通过的写用例的工具结果（如 order_create 被拒）看不见"
+        )
