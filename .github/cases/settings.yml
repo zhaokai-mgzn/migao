@@ -165,6 +165,13 @@ cases:
       - "商家配置 afterHoursMode=auto_reply 且非营业时间时，转人工应降级返回 afterHoursMessage"
     expectations:
       - tool: human_handoff
+    # 写操作成功断言（issue #3367 覆盖审计）：`human_handoff` 是**写工具** ——
+    # 「调了」≠「人工会话真的建出来了」。本条用例的业务价值（工作台可见/可回复、
+    # 上下文透传）全部建立在会话真的落库之上；只断言工具名的话，返回
+    # success=false（甚至 tool_not_found）也照样判绿（issue #3361 已在 order_create
+    # 上实证过这种假绿）。实测本用例链路返回 id/ticketNo/status=pending，断言成立。
+    must_succeed:
+      - tool: human_handoff
     data_checks:
       - "is_auto_handoff_trigger('我要找老板', config) == true"
       - "is_after_hours(config, 非营业时间) == true"

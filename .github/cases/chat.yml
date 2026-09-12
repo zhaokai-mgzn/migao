@@ -267,6 +267,13 @@ cases:
       - "客服在吗"
     expectations:
       - tool: human_handoff
+    # 写操作成功断言（issue #3367 覆盖审计）：`human_handoff` 是**写工具** ——
+    # 「调了」≠「人工会话真的建出来了」。本条用例的业务价值（工作台可见/可回复、
+    # 上下文透传）全部建立在会话真的落库之上；只断言工具名的话，返回
+    # success=false（甚至 tool_not_found）也照样判绿（issue #3361 已在 order_create
+    # 上实证过这种假绿）。实测本用例链路返回 id/ticketNo/status=pending，断言成立。
+    must_succeed:
+      - tool: human_handoff
     data_checks:
       - "createSessionForHandoff 创建 waiting 会话 + system 消息"
       - "sendMessage(agent) 后会话状态变 active"
@@ -531,6 +538,13 @@ cases:
     expectations:
       - tool: interact
       - tool: human_handoff
+    # 写操作成功断言（issue #3367 覆盖审计）：`human_handoff` 是**写工具** ——
+    # 「调了」≠「人工会话真的建出来了」。本条用例的业务价值（工作台可见/可回复、
+    # 上下文透传）全部建立在会话真的落库之上；只断言工具名的话，返回
+    # success=false（甚至 tool_not_found）也照样判绿（issue #3361 已在 order_create
+    # 上实证过这种假绿）。实测本用例链路返回 id/ticketNo/status=pending，断言成立。
+    must_succeed:
+      - tool: human_handoff
     data_checks:
       - "不满情绪（general 意图）命中后 AI 先发建议卡片（interact choice），不直接转"
       - "用户点『转人工客服』后命中 D1 显式请求 → human_handoff 创建人工会话"
@@ -596,6 +610,13 @@ cases:
       - "我要转人工"
     expectations:
       - tool: human_handoff
+    # 写操作成功断言（issue #3367 覆盖审计）：`human_handoff` 是**写工具** ——
+    # 「调了」≠「人工会话真的建出来了」。本条用例的业务价值（工作台可见/可回复、
+    # 上下文透传）全部建立在会话真的落库之上；只断言工具名的话，返回
+    # success=false（甚至 tool_not_found）也照样判绿（issue #3361 已在 order_create
+    # 上实证过这种假绿）。实测本用例链路返回 id/ticketNo/status=pending，断言成立。
+    must_succeed:
+      - tool: human_handoff
     data_checks:
       - "显式转人工请求 → intent_router 短路直转 complaint（source=explicit_handoff）"
       - "不先弹建议卡片（无 interact），直接 human_handoff"
@@ -655,6 +676,13 @@ cases:
       - "有什么窗帘推荐吗"
       - "我要转人工"
     expectations:
+      - tool: human_handoff
+    # 写操作成功断言（issue #3367 覆盖审计）：`human_handoff` 是**写工具** ——
+    # 「调了」≠「人工会话真的建出来了」。本条用例的业务价值（工作台可见/可回复、
+    # 上下文透传）全部建立在会话真的落库之上；只断言工具名的话，返回
+    # success=false（甚至 tool_not_found）也照样判绿（issue #3361 已在 order_create
+    # 上实证过这种假绿）。实测本用例链路返回 id/ticketNo/status=pending，断言成立。
+    must_succeed:
       - tool: human_handoff
     data_checks:
       - "human_handoff POST 携带 aiContextSummary 与 aiContextMessages（仅 role=user/assistant，剥 think/图片占位，逐条与总量截断）"
