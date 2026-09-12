@@ -2161,7 +2161,7 @@
 真值: processing-manage.crud, product-sku-stock.create-flow
 溯源: 2026-09-07 改写（issue #3005，回滚 #2986）：行业加工费按米计价、辅料（罗马圈/四爪钩等）含在按米加工费中——per_piece 与「每米数量」密度不符合实际（数量对不上车间工艺、B 端无法对账），已回滚移除；PP-006 由密度配置用例改为计价方式回归断言 ｜ tags: processing_item, pricing
 
-## processing-order（12 case）
+## processing-order（13 case）
 
 ### PG-001. 生成加工单 - 已确认含加工项订单 → 加工单生成 + 订单进入 producing 🔵
 ```
@@ -2256,6 +2256,29 @@
 跳过: 由 test_ontology_contract.py + test_prompt_snapshots.py 验证（契约层，非 LLM 行为）
 ```
 溯源: 2026-09-12 新增（issue #3340） ｜ tags: processing-order, intent-routing, contract
+
+### PG-013. 米宝加工单 LLM 行为：查询含加工项订单 → 生成加工单（真实对话） 🔵
+```
+你: 最近有没有已确认、需要加工的订单？
+你: 帮我把这一个生成加工单
+你: 确认
+期望: order_query
+期望: processing_order_generate
+数据: 前置：目标环境至少存在一个「已确认且含加工项」订单（否则 order_query 为空、无法生成）——CI smoke 档不纳入，normal 档需保证前置数据
+数据: 生成后 processing_orders 落新行（status=generated），订单转 producing（验收以 GET /api/admin/processing-orders?keyword=<订单号> 复核）
+时序: order_query before processing_order_generate
+禁词: 暂不支持
+禁词: 功能不存在
+禁词: 没有这个功能
+禁词: 无加工项
+禁词: 生成未成功
+禁词: 生成失败
+禁词: 无法生成加工单
+禁词: 系统判定为
+必填: processing_order_generate() 字段 order_ids
+```
+真值: ⚠️ 缺口（见对应模板 ⚠️ 注释）
+溯源: 2026-09-12 新增（验收缺口 #3348）：米宝加工单 LLM 行为真实对话用例（替代纯单测覆盖） ｜ tags: processing_order, llm_behavior, tool_call
 
 ## 商品域（21 case）
 
@@ -3224,8 +3247,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：258（活跃 118，跳过 140）
-- tier 分布：smoke 12 / normal 217 / adversarial 29
+- 用例总数：259（活跃 119，跳过 140）
+- tier 分布：smoke 12 / normal 218 / adversarial 29
 - 售后域：8
 - agents：6
 - api：19
@@ -3244,7 +3267,7 @@
 - ontology：4
 - 订单域：17
 - 加工项域：6
-- processing-order：12
+- processing-order：13
 - 商品域：21
 - registry：1
 - 设置域：8
@@ -3288,4 +3311,5 @@
 - PG-010: 订单取消联动 - 加工单 generated 自动作废；issued+ 拦截
 - PG-011: 租户隔离 - 跨租户加工单不可查询/不可解析
 - PG-012: 加工单 intent 路由契约 - processing_order_* 路由 order skill（仅米宝可达）
+- PG-013: 米宝加工单 LLM 行为：查询含加工项订单 → 生成加工单（真实对话）
 

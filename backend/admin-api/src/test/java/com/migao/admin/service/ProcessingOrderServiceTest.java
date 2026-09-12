@@ -167,7 +167,7 @@ class ProcessingOrderServiceTest {
     @DisplayName("PG-001 已确认含加工项订单 → 生成加工单 + 订单联动 producing")
     void generateSuccess() {
         when(orderMapper.selectById("order-001")).thenReturn(confirmedOrder);
-        when(orderItemMapper.selectByOrderId("order-001", TENANT))
+        when(orderItemMapper.selectList(any()))
                 .thenReturn(List.of(orderItemWithProcessing("米白")));
         when(processingOrderMapper.selectActiveByOrderId("order-001", TENANT)).thenReturn(null);
         ProcessingItem pi = ProcessingItem.builder().id("p1").name("打孔").unit("米").options(List.of("四爪钩")).build();
@@ -214,7 +214,7 @@ class ProcessingOrderServiceTest {
     @DisplayName("PG-002 已有活跃加工单 → 重复生成拒绝")
     void generateDuplicateRejected() {
         when(orderMapper.selectById("order-001")).thenReturn(confirmedOrder);
-        when(orderItemMapper.selectByOrderId("order-001", TENANT))
+        when(orderItemMapper.selectList(any()))
                 .thenReturn(List.of(orderItemWithProcessing("米白")));
         when(processingOrderMapper.selectActiveByOrderId("order-001", TENANT))
                 .thenReturn(po("po-1", "generated"));
@@ -233,7 +233,7 @@ class ProcessingOrderServiceTest {
     @DisplayName("PG-003 无加工项订单 → 拒绝生成")
     void generateWithoutProcessingRejected() {
         when(orderMapper.selectById("order-001")).thenReturn(confirmedOrder);
-        when(orderItemMapper.selectByOrderId("order-001", TENANT))
+        when(orderItemMapper.selectList(any()))
                 .thenReturn(List.of(orderItemWithoutProcessing()));
 
         var results = processingOrderService.generate(List.of("order-001"), TENANT, "u1");
@@ -264,7 +264,7 @@ class ProcessingOrderServiceTest {
     void generateResolveByOrderNo() {
         when(orderMapper.selectById("ORD-20260912-0001")).thenReturn(null);
         when(orderMapper.selectOne(any())).thenReturn(confirmedOrder);
-        when(orderItemMapper.selectByOrderId("order-001", TENANT))
+        when(orderItemMapper.selectList(any()))
                 .thenReturn(List.of(orderItemWithProcessing("米白")));
         when(processingOrderMapper.selectActiveByOrderId("order-001", TENANT)).thenReturn(null);
         when(processingOrderMapper.insert(any(ProcessingOrder.class))).thenReturn(1);
@@ -419,10 +419,54 @@ class ProcessingOrderServiceTest {
     // ── 验收复核修复（PR #3345）：生成竞态/并发重复 ──────────────────
 
     @Test
+    @DisplayName("验收实战回归：快照为 JSON 字符串（自定义 @Select 形态）→ 详情仍能解析出条目")
+    void detailWithJsonStringSnapshot() {
+        ProcessingOrder po = po("po-1", "generated");
+        po.setItemsSnapshot("[{\"productName\":\"布艺遮光帘A\",\"colorName\":\"米白\","
+                + "\"processingItems\":[{\"id\":\"p1\",\"name\":\"打孔\"}]}]");
+        when(processingOrderMapper.selectOne(any())).thenReturn(po);
+        when(orderMapper.selectById("order-001")).thenReturn(confirmedOrder);
+
+        ProcessingOrderResponse resp = processingOrderService.getDetail("po-1", TENANT);
+
+        assertThat(resp.getItems()).hasSize(1);
+        assertThat(resp.getItems().get(0).getProductName()).isEqualTo("布艺遮光帘A");
+        assertThat(resp.getItems().get(0).getColorName()).isEqualTo("米白");
+        assertThat(resp.getItems().get(0).getProcessingItems()).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("验收实战回归：processingInfo 为 JSON 字符串（自定义 @Select 形态）→ 仍能生成加工单")
+    void generateWithJsonStringProcessingInfo() {
+        OrderItem item = OrderItem.builder()
+                .id("item-1").tenantId(TENANT).orderId("order-001")
+                .productName("布艺遮光帘A").quantity(2)
+                .width(new BigDecimal("2.5")).height(new BigDecimal("2.8"))
+                .processingInfo("{\"processingFee\":30,\"colorName\":\"米白\","
+                        + "\"processingItems\":[{\"id\":\"p1\",\"name\":\"打孔\",\"unitPrice\":3,\"quantity\":10,\"unit\":\"米\"}]}")
+                .build();
+        when(orderMapper.selectById("order-001")).thenReturn(confirmedOrder);
+        when(orderItemMapper.selectList(any())).thenReturn(List.of(item));
+        when(processingOrderMapper.selectActiveByOrderId("order-001", TENANT)).thenReturn(null);
+        when(processingItemMapper.selectById("p1")).thenReturn(null);
+        when(processingOrderMapper.insert(any(ProcessingOrder.class))).thenReturn(1);
+
+        var results = processingOrderService.generate(List.of("order-001"), TENANT, "u1");
+
+        assertThat(results.get(0).isSuccess()).isTrue();
+        ArgumentCaptor<ProcessingOrder> captor = ArgumentCaptor.forClass(ProcessingOrder.class);
+        verify(processingOrderMapper).insert(captor.capture());
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> snapshot = (List<Map<String, Object>>) captor.getValue().getItemsSnapshot();
+        assertThat(snapshot).hasSize(1);
+        assertThat(snapshot.get(0).get("colorName")).isEqualTo("米白");
+    }
+
+    @Test
     @DisplayName("复核修复 P2①：并发重复生成（DuplicateKeyException）→ 订单状态回退 + 幂等失败结果")
     void generateConcurrentDuplicateRollsBackOrder() {
         when(orderMapper.selectById("order-001")).thenReturn(confirmedOrder);
-        when(orderItemMapper.selectByOrderId("order-001", TENANT))
+        when(orderItemMapper.selectList(any()))
                 .thenReturn(List.of(orderItemWithProcessing("米白")));
         when(processingOrderMapper.selectActiveByOrderId("order-001", TENANT)).thenReturn(null);
         when(processingOrderMapper.insert(any(ProcessingOrder.class)))
@@ -441,7 +485,7 @@ class ProcessingOrderServiceTest {
     @DisplayName("复核修复 P2②：落库失败（非重复）→ 状态回退 + 异常传播（整批回滚）")
     void generateInsertFailureRollsBackAndPropagates() {
         when(orderMapper.selectById("order-001")).thenReturn(confirmedOrder);
-        when(orderItemMapper.selectByOrderId("order-001", TENANT))
+        when(orderItemMapper.selectList(any()))
                 .thenReturn(List.of(orderItemWithProcessing("米白")));
         when(processingOrderMapper.selectActiveByOrderId("order-001", TENANT)).thenReturn(null);
         when(processingOrderMapper.insert(any(ProcessingOrder.class)))

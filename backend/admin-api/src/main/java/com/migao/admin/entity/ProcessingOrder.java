@@ -18,7 +18,7 @@ import java.time.OffsetDateTime;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-@TableName("processing_orders")
+@TableName(value = "processing_orders", autoResultMap = true)
 public class ProcessingOrder {
 
     @TableId(type = IdType.ASSIGN_UUID)

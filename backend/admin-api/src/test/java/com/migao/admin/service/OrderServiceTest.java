@@ -75,8 +75,8 @@ class OrderServiceTest {
     @Mock
     private FinanceTransactionMapper financeTransactionMapper;
 
-    @Mock
-    private ObjectMapper objectMapper;
+    @org.mockito.Spy
+    private ObjectMapper objectMapper = new ObjectMapper();
 
     @Mock
     private NotificationService notificationService;
@@ -1659,12 +1659,26 @@ class OrderServiceTest {
     }
 
     @Test
+    @DisplayName("验收实战回归：processingInfo 为 JSON 字符串时守卫仍生效（不得静默放行）")
+    void shippedRejectedWhenProcessingInfoIsJsonString() {
+        testOrder.setStatus("confirmed");
+        testOrderItem.setProcessingInfo("{\"processingItems\":[{\"id\":\"p1\",\"name\":\"打孔\"}]}");
+        when(orderMapper.selectById("order-001")).thenReturn(testOrder);
+        when(orderItemMapper.selectList(any())).thenReturn(List.of(testOrderItem));
+        when(processingOrderMapper.countCompletedByOrderId("order-001", 1L)).thenReturn(0L);
+
+        assertThatThrownBy(() -> orderService.updateOrderStatus("order-001", "shipped"))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("须先完成加工单");
+    }
+
+    @Test
     @DisplayName("PG-009 含加工项订单无 completed 加工单 → shipped 被拒（防绕过加工）")
     void shippedRejectedWithoutCompletedProcessingOrder() {
         testOrder.setStatus("confirmed");
         testOrderItem.setProcessingInfo(processingInfoMap());
         when(orderMapper.selectById("order-001")).thenReturn(testOrder);
-        when(orderItemMapper.selectByOrderId("order-001", 1L)).thenReturn(List.of(testOrderItem));
+        when(orderItemMapper.selectList(any())).thenReturn(List.of(testOrderItem));
         when(processingOrderMapper.countCompletedByOrderId("order-001", 1L)).thenReturn(0L);
 
         assertThatThrownBy(() -> orderService.updateOrderStatus("order-001", "shipped"))
@@ -1679,7 +1693,7 @@ class OrderServiceTest {
         testOrder.setStatus("confirmed");
         testOrderItem.setProcessingInfo(processingInfoMap());
         when(orderMapper.selectById("order-001")).thenReturn(testOrder);
-        when(orderItemMapper.selectByOrderId("order-001", 1L)).thenReturn(List.of(testOrderItem));
+        when(orderItemMapper.selectList(any())).thenReturn(List.of(testOrderItem));
         when(processingOrderMapper.countCompletedByOrderId("order-001", 1L)).thenReturn(1L);
         when(orderMapper.update(any(), any())).thenReturn(1);
 
@@ -1694,7 +1708,7 @@ class OrderServiceTest {
         testOrder.setStatus("confirmed");
         testOrderItem.setProcessingInfo(new LinkedHashMap<>());
         when(orderMapper.selectById("order-001")).thenReturn(testOrder);
-        when(orderItemMapper.selectByOrderId("order-001", 1L)).thenReturn(List.of(testOrderItem));
+        when(orderItemMapper.selectList(any())).thenReturn(List.of(testOrderItem));
         when(orderMapper.update(any(), any())).thenReturn(1);
 
         orderService.updateOrderStatus("order-001", "shipped");

@@ -2745,6 +2745,24 @@ _CASE_PG_012 = EvalCase(
     persona='',
 )
 
+# ── PG-013 [NORMAL] 米宝加工单 LLM 行为：查询含加工项订单 → 生成加工单（真实对话）（源: cases/processing-order.yml）──
+_CASE_PG_013 = EvalCase(
+    id='PG-013',
+    legacy_id='',
+    title='米宝加工单 LLM 行为：查询含加工项订单 → 生成加工单（真实对话）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['最近有没有已确认、需要加工的订单？', '帮我把这一个生成加工单', '确认'],
+    expectations=['order_query', 'processing_order_generate'],
+    data_checks=['前置：目标环境至少存在一个「已确认且含加工项」订单（否则 order_query 为空、无法生成）——CI smoke 档不纳入，normal 档需保证前置数据', '生成后 processing_orders 落新行（status=generated），订单转 producing（验收以 GET /api/admin/processing-orders?keyword=<订单号> 复核）'],
+    skip_reason='',
+    tags=['processing_order', 'llm_behavior', 'tool_call'],
+    persona='',
+    order_before=['order_query before processing_order_generate'],
+    forbidden_text=['暂不支持', '功能不存在', '没有这个功能', '无加工项', '生成未成功', '生成失败', '无法生成加工单', '系统判定为'],
+    required_args=[{'tool': 'processing_order_generate', 'fields': ['order_ids']}],
+)
+
 # ── PP-001 [NORMAL] 加工项选择 - 分页翻页（源: cases/processing.yml）──
 _CASE_PP_001 = EvalCase(
     id='PP-001',
@@ -4136,6 +4154,7 @@ ALL_CASES = (
     _CASE_PG_010,
     _CASE_PG_011,
     _CASE_PG_012,
+    _CASE_PG_013,
     _CASE_PP_001,
     _CASE_PP_002,
     _CASE_PP_003,

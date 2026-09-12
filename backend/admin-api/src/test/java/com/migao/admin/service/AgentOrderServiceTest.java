@@ -319,7 +319,7 @@ class AgentOrderServiceTest {
                     .id("item-1").orderId("order-uuid-001").productName("布艺遮光帘A")
                     .processingInfo(Map.of("processingItems", List.of(Map.of("id", "p1", "name", "打孔"))))
                     .build();
-            when(orderItemMapper.selectByOrderId(any(), any())).thenReturn(List.of(item));
+            when(orderItemMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(item));
             when(processingOrderMapper.countCompletedByOrderId("order-uuid-001", 1L)).thenReturn(0L);
 
             // when

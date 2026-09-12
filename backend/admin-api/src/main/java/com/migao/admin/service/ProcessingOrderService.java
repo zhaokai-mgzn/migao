@@ -107,7 +107,7 @@ public class ProcessingOrderService {
             throw BusinessException.validationError(
                     String.format("订单 %s 当前状态 [%s] 不允许生成加工单，须为已确认", order.getOrderNo(), order.getStatus()));
         }
-        List<OrderItem> items = orderItemMapper.selectByOrderId(order.getId(), tenantId);
+        List<OrderItem> items = loadOrderItems(order.getId(), tenantId);
         List<Map<String, Object>> snapshot = buildSnapshot(items, tenantId);
         if (snapshot.isEmpty()) {
             throw BusinessException.validationError("订单 " + order.getOrderNo() + " 无加工项，无需生成加工单");
@@ -163,7 +163,8 @@ public class ProcessingOrderService {
     private List<Map<String, Object>> buildSnapshot(List<OrderItem> items, Long tenantId) {
         List<Map<String, Object>> snapshot = new ArrayList<>();
         for (OrderItem item : items) {
-            Object pi = item.getProcessingInfo();
+            // 归一化：processingInfo 可能是 Map（BaseMapper 路径）或 JSON 字符串（自定义 @Select 路径）
+            Map<String, Object> pi = normalizeProcessingInfo(item.getProcessingInfo());
             List<Map<String, Object>> procs = extractProcessingItems(pi);
             if (procs.isEmpty()) {
                 continue;
@@ -174,15 +175,12 @@ public class ProcessingOrderService {
             entry.put("width", item.getWidth());
             entry.put("height", item.getHeight());
             // 销售信息（与加工项同存 processing_info，前端写入）
-            if (pi instanceof Map) {
-                Map<String, Object> info = (Map<String, Object>) pi;
-                copyIfPresent(info, entry, "sku");
-                copyIfPresent(info, entry, "skuCode", "sku");
-                copyIfPresent(info, entry, "colorName");
-                copyIfPresent(info, entry, "sellingMethod");
-                copyIfPresent(info, entry, "doorWidth");
-                copyIfPresent(info, entry, "unit");
-            }
+            copyIfPresent(pi, entry, "sku");
+            copyIfPresent(pi, entry, "skuCode", "sku");
+            copyIfPresent(pi, entry, "colorName");
+            copyIfPresent(pi, entry, "sellingMethod");
+            copyIfPresent(pi, entry, "doorWidth");
+            copyIfPresent(pi, entry, "unit");
             // 加工项明细 + options 补齐
             List<Map<String, Object>> itemsWithOptions = new ArrayList<>();
             for (Map<String, Object> p : procs) {
@@ -209,6 +207,25 @@ public class ProcessingOrderService {
         copyIfPresent(from, to, key, key);
     }
 
+    /**
+     * processing_info 归一化：Map 直接用；JSON 字符串（自定义 @Select 路径，不经过
+     * JacksonTypeHandler）解析为 Map；其它形态返回 null。
+     */
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> normalizeProcessingInfo(Object processingInfo) {
+        if (processingInfo instanceof Map) {
+            return (Map<String, Object>) processingInfo;
+        }
+        if (processingInfo instanceof String s && !s.isBlank()) {
+            try {
+                return objectMapper.readValue(s, Map.class);
+            } catch (Exception e) {
+                log.warn("processingInfo JSON 字符串解析失败: {}", e.getMessage());
+            }
+        }
+        return null;
+    }
+
     private void copyIfPresent(Map<String, Object> from, Map<String, Object> to, String fromKey, String toKey) {
         Object v = from.get(fromKey);
         if (v != null) {
@@ -216,14 +233,28 @@ public class ProcessingOrderService {
         }
     }
 
-    /** 解析 processing_info 的加工项列表（与 OrderService.extractProcessingItems 同语义） */
+    /**
+     * 加载订单明细（走 BaseMapper，确保 processing_info 经 JacksonTypeHandler 反序列化为 Map）。
+     * issue #3340 验收实战：自定义 @Select（selectByOrderId）不应用 typeHandler，
+     * processing_info 以 JSON 字符串返回 → buildSnapshot 恒空 → 误判「无加工项」。
+     */
+    private List<OrderItem> loadOrderItems(String orderId, Long tenantId) {
+        List<OrderItem> items = orderItemMapper.selectList(new LambdaQueryWrapper<OrderItem>()
+                .eq(OrderItem::getOrderId, orderId)
+                .eq(OrderItem::getTenantId, tenantId)
+                .eq(OrderItem::getDeleted, 0));
+        return items != null ? items : java.util.Collections.emptyList();
+    }
+
+    /** 解析 processing_info 的加工项列表（与 OrderService.extractProcessingItems 同语义，兼容 JSON 字符串） */
     @SuppressWarnings("unchecked")
     private List<Map<String, Object>> extractProcessingItems(Object processingInfo) {
-        if (!(processingInfo instanceof Map)) {
+        Map<String, Object> normalized = normalizeProcessingInfo(processingInfo);
+        if (normalized == null) {
             return java.util.Collections.emptyList();
         }
         try {
-            Object raw = ((Map<String, Object>) processingInfo).get("processingItems");
+            Object raw = normalized.get("processingItems");
             if (!(raw instanceof List)) {
                 return java.util.Collections.emptyList();
             }
@@ -400,10 +431,19 @@ public class ProcessingOrderService {
             resp.setCustomerName(order.getCustomerName());
             resp.setCustomerPhone(order.getCustomerPhone());
         }
-        // 快照解析
-        if (po.getItemsSnapshot() != null) {
+        // 快照解析（兼容 JSON 字符串：自定义 @Select 查询路径不经过 typeHandler）
+        Object snapshot = po.getItemsSnapshot();
+        if (snapshot instanceof String s && !s.isBlank()) {
             try {
-                resp.setItems(objectMapper.convertValue(po.getItemsSnapshot(),
+                snapshot = objectMapper.readValue(s, Object.class);
+            } catch (Exception e) {
+                log.warn("加工单快照 JSON 字符串解析失败: po={}, err={}", po.getProcessingOrderNo(), e.getMessage());
+                snapshot = null;
+            }
+        }
+        if (snapshot != null) {
+            try {
+                resp.setItems(objectMapper.convertValue(snapshot,
                         objectMapper.getTypeFactory().constructCollectionType(List.class,
                                 ProcessingOrderResponse.ProcessingOrderItemBrief.class)));
             } catch (Exception e) {

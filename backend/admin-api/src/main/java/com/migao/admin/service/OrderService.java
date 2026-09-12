@@ -722,7 +722,10 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
      * 有加工项订单必须走 producing（生成加工单）→ 加工完成 → shipped，防止加工环节被绕过。
      */
     private void assertProcessingCompletedBeforeShip(Order order) {
-        List<OrderItem> items = orderItemMapper.selectByOrderId(order.getId(), order.getTenantId());
+        // 必须走 BaseMapper 加载（见 loadOrderItems）：自定义 @Select 不经过 JacksonTypeHandler，
+        // processing_info 会以 JSON 字符串返回 → 加工项解析恒为空 → 守卫静默失效
+        // （issue #3340 验收实战：真实对话生成加工单被判「无加工项」）
+        List<OrderItem> items = loadOrderItems(order.getId(), order.getTenantId());
         boolean hasProcessing = items.stream()
                 .anyMatch(item -> !extractProcessingItems(item.getProcessingInfo()).isEmpty());
         if (hasProcessing
@@ -730,6 +733,18 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
             throw BusinessException.validationError(
                     "订单含加工项，须先完成加工单后再发货（可在订单详情或让米宝生成/更新加工单）");
         }
+    }
+
+    /**
+     * 加载订单明细（走 BaseMapper，确保 processing_info 经 JacksonTypeHandler 反序列化为 Map）。
+     * 与 getOrderById 的既有约定一致（见查询明细处的注释）。
+     */
+    private List<OrderItem> loadOrderItems(String orderId, Long tenantId) {
+        List<OrderItem> items = orderItemMapper.selectList(new LambdaQueryWrapper<OrderItem>()
+                .eq(OrderItem::getOrderId, orderId)
+                .eq(OrderItem::getTenantId, tenantId)
+                .eq(OrderItem::getDeleted, 0));
+        return items != null ? items : Collections.emptyList();
     }
 
     /**
@@ -748,12 +763,25 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
      * processingInfo 格式来自前端创建订单时写入：
      * { "processingFee": <number>, "processingItems": [ { id,name,unitPrice,quantity,unit } ] , ... }
      * 解析失败/缺字段时返回空列表，确保不影响订单查询主流程。
+     *
+     * issue #3340 验收实战：processingInfo 可能是 JSON **字符串**（自定义 @Select 查询不经过
+     * JacksonTypeHandler），此处做兼容解析，避免"有加工项却被判无加工项"。
      */
     @SuppressWarnings("unchecked")
     private List<OrderDetailResponse.ProcessingItemBrief> extractProcessingItems(Object processingInfo) {
-        if (!(processingInfo instanceof Map)) {
+        Object normalized = processingInfo;
+        if (normalized instanceof String s && !s.isBlank()) {
+            try {
+                normalized = objectMapper.readValue(s, Map.class);
+            } catch (Exception e) {
+                log.warn("processingInfo JSON 字符串解析失败: {}", e.getMessage());
+                return Collections.emptyList();
+            }
+        }
+        if (!(normalized instanceof Map)) {
             return Collections.emptyList();
         }
+        processingInfo = normalized;
         try {
             Map<String, Object> info = (Map<String, Object>) processingInfo;
             Object raw = info.get("processingItems");
