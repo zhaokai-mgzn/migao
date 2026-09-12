@@ -93,7 +93,7 @@
 真值: aftersales-flow.agent-create, aftersales-flow.flow
 溯源: 2026-09-08 新增（issue #3033 复盘 sess_50ff3e3c824c4a70）：换货选 2699 面料（绑 5 加工项）全程未提加工项；aftersales.md 补换货加工项确认规则 + EXAMPLES 例 4 ｜ tags: exchange, processing_item, guided_flow
 
-### AS-008. C 端售后进度查询 - 仅限本人工单 + 拒绝跨用户/快递单号式越权查询 🟢
+### AS-008. C 端售后进度查询 - 仅限本人工单 + 拒绝跨用户/快递单号式越权查询 🔵
 ```
 你: 我上次申请的售后处理得怎么样了
 期望: aftersale_query
@@ -598,6 +598,7 @@
 数据: createSessionForHandoff 持久化 ai_context_summary/ai_context_messages（快照字段可空）
 数据: getSessionDetail(admin) 返回 aiContext；跨租户读取拒绝
 数据: getSessionByAiSessionId(customer) 不含 aiContext 且过滤 isInternal 消息
+必须成功: human_handoff
 ```
 真值: ai-chat.intent-tool-map, settings-manage.ai-config
 溯源: POC 人工客服工作台新增；2026 扩展：AI 上下文同步断言（GB/T 47746-2026）；2026-09-11 修正 user_inputs —— 原为断言描述文字（非顾客对话），agent 无法响应导致必然 0 分（issue #3270 断言层归因） ｜ tags: handoff, agent_session
@@ -678,6 +679,7 @@
 数据: 不满情绪（general 意图）命中后 AI 先发建议卡片（interact choice），不直接转
 数据: 用户点『转人工客服』后命中 D1 显式请求 → human_handoff 创建人工会话
 数据: interact 卡片选项含『转人工客服』『继续咨询小布』
+必须成功: human_handoff
 ```
 真值: ai-chat.handoff-offer, ai-chat.intent-tool-map
 溯源: xiaobu-ai-handoff-guidance.md D3 AI 主动引导转人工 ｜ tags: multi_turn, handoff, ai_guided
@@ -701,6 +703,7 @@
 期望: human_handoff
 数据: 显式转人工请求 → intent_router 短路直转 complaint（source=explicit_handoff）
 数据: 不先弹建议卡片（无 interact），直接 human_handoff
+必须成功: human_handoff
 ```
 真值: ai-chat.intent-tool-map
 溯源: xiaobu-ai-handoff-guidance.md D1 显式直转（UI-010 能力不退化） ｜ tags: handoff, regression
@@ -726,6 +729,7 @@
 数据: getSessionDetail(admin) 返回 aiContext；跨租户访问拒绝
 数据: getSessionByAiSessionId(customer) 不含 aiContext 且过滤 isInternal 消息
 数据: AI 会话关闭/清理后人工会话快照仍可见（快照语义）
+必须成功: human_handoff
 ```
 真值: ai-chat.intent-tool-map, ai-chat.handoff-offer
 溯源: 2026 新增：GB/T 47746-2026 转人工 AI 上下文同步（issue #2776） ｜ tags: handoff, agent_session, ai_context
@@ -1984,7 +1988,7 @@
 真值: order.flow
 溯源: POC 下单闭环集成测试新增；2026-09-02 补订单手机号完整性约束；2026-09-09 校准：原 user_inputs 为描述性文字「用户算料报价后确认下单…」非用户对话，agent 无法触发下单（tools=[]）；改为真实下单对话（选品→规格→跳过加工项→确认） ｜ tags: order_create, smoke
 
-### OR-012. C 端物流查询 - 仅限本人已发货订单 + 拒绝快递单号直查 🟢
+### OR-012. C 端物流查询 - 仅限本人已发货订单 + 拒绝快递单号直查 🔵
 ```
 你: 帮我查一下物流
 你: 查一下单号 SF1234567890 的物流
@@ -2670,6 +2674,7 @@
 数据: is_auto_handoff_trigger('我要找老板', config) == true
 数据: is_after_hours(config, 非营业时间) == true
 数据: 非营业时间转人工不创建工单，返回 afterHoursMessage
+必须成功: human_handoff
 跳过: 纯配置函数行为由 pytest 单测（tests/test_tenant_config.py）验证：is_auto_handoff_trigger / is_after_hours 是纯函数，其入参 config（TenantAiConfig）无法经 agent-eval 设置，非 LLM 行为，不进入 C 端评测（issue #3270 断言层归因：原 user_inputs 是断言描述而非顾客对话）
 ```
 真值: settings-manage.ai-config, settings-manage.immediate-effect
@@ -3273,7 +3278,7 @@
 ## 覆盖统计（生成）
 
 - 用例总数：260（活跃 121，跳过 139）
-- tier 分布：smoke 11 / normal 220 / adversarial 29
+- tier 分布：smoke 9 / normal 222 / adversarial 29
 - 售后域：8
 - agents：6
 - api：19

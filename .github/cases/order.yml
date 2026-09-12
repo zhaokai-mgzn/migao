@@ -427,7 +427,12 @@ cases:
       - order
       - chat
       - defense
-    tier: smoke
+    tier: normal
+    # tier 由 smoke 提为 normal（issue #3367 覆盖审计）：本条是 **C 端该能力的唯一用例** ——
+    # `物流查询`（物流查询）在 normal 档零覆盖；而 CI 从不跑 C 端 smoke
+    # （xiaobu-acceptance 派发的是 normal），smoke 档 = **谁都不跑** → 该能力连同
+    # "拒绝快递单号直查"这类越权防护在每日回归里完全无观测。用例本身是单轮查询（便宜），
+    # 提档成本极低。
     persona: xiaobu
     tags:
       - query

@@ -159,13 +159,13 @@ _CASE_AS_007 = EvalCase(
     pre_clean=[{'type': 'product_dedupe', 'product_keyword': '2699系列雪尼尔窗帘面料', 'price': 23.8}],
 )
 
-# ── AS-008 [SMOKE] C 端售后进度查询 - 仅限本人工单 + 拒绝跨用户/快递单号式越权查询（源: cases/aftersales.yml）──
+# ── AS-008 [NORMAL] C 端售后进度查询 - 仅限本人工单 + 拒绝跨用户/快递单号式越权查询（源: cases/aftersales.yml）──
 _CASE_AS_008 = EvalCase(
     id='AS-008',
     legacy_id='',
     title='C 端售后进度查询 - 仅限本人工单 + 拒绝跨用户/快递单号式越权查询',
     skill=Skill.AFTERSALES,
-    difficulty=Difficulty.SMOKE,
+    difficulty=Difficulty.NORMAL,
     user_inputs=['我上次申请的售后处理得怎么样了'],
     expectations=['aftersale_query'],
     data_checks=['aftersale_query 无用户/租户参数，后端强制按当前登录顾客过滤（/api/admin/agent/after-sales/mine 同构）——顾客无法通过任何参数读取他人工单', 'list 返回当前顾客工单（含 status 标签与 timeline）；无工单时如实告知『暂无售后记录』，不编造工单号/状态', 'status 可筛选（pending/processing/resolved/rejected/closed），非法值不静默当成全部', '与 B 端 after_sales_manage 物理隔离：小布无 after_sales_manage 工具，不得出现管理端动作（改状态/退款/回补库存）'],
@@ -788,6 +788,7 @@ _CASE_CH_008 = EvalCase(
     skip_reason='',
     tags=['handoff', 'agent_session'],
     persona='xiaobu',
+    must_succeed=[{'tool': 'human_handoff'}],
 )
 
 # ── CH-009 [NORMAL] interact form 表单提交注入上下文（__FORM__ 协议）（源: cases/chat.yml）──
@@ -871,6 +872,7 @@ _CASE_CH_013 = EvalCase(
     skip_reason='',
     tags=['multi_turn', 'handoff', 'ai_guided'],
     persona='xiaobu',
+    must_succeed=[{'tool': 'human_handoff'}],
 )
 
 # ── CH-014 [NORMAL] 用户拒绝建议 → 继续 AI 咨询且本会话不再自动建议（源: cases/chat.yml）──
@@ -901,6 +903,7 @@ _CASE_CH_015 = EvalCase(
     skip_reason='',
     tags=['handoff', 'regression'],
     persona='xiaobu',
+    must_succeed=[{'tool': 'human_handoff'}],
 )
 
 # ── CH-016 [NORMAL] 明确业务意图（下单/查单/报价）不弹转人工建议卡（防打断）（源: cases/chat.yml）──
@@ -931,6 +934,7 @@ _CASE_CH_017 = EvalCase(
     skip_reason='',
     tags=['handoff', 'agent_session', 'ai_context'],
     persona='xiaobu',
+    must_succeed=[{'tool': 'human_handoff'}],
 )
 
 # ── CH-018 [NORMAL] 低学历用户图片意图澄清 - 随手发图不带文字时先给候选意图再动作（issue #2777）（源: cases/chat.yml）──
@@ -2474,13 +2478,13 @@ _CASE_OR_011 = EvalCase(
     required_args=[{'tool': 'order_create', 'fields': ['customer_phone', 'items']}],
 )
 
-# ── OR-012 [SMOKE] C 端物流查询 - 仅限本人已发货订单 + 拒绝快递单号直查（源: cases/order.yml）──
+# ── OR-012 [NORMAL] C 端物流查询 - 仅限本人已发货订单 + 拒绝快递单号直查（源: cases/order.yml）──
 _CASE_OR_012 = EvalCase(
     id='OR-012',
     legacy_id='',
     title='C 端物流查询 - 仅限本人已发货订单 + 拒绝快递单号直查',
     skill=Skill.ORDER,
-    difficulty=Difficulty.SMOKE,
+    difficulty=Difficulty.NORMAL,
     user_inputs=['帮我查一下物流', '查一下单号 SF1234567890 的物流'],
     expectations=['customer_logistics_track'],
     data_checks=['customer_logistics_track 无 tracking_number 参数；无论 LLM 通过什么参数传快递单号都必须拒绝（引导提供订单）', '只查当前用户已发货(在途)订单的物流：/orders/mine?status=shipped 后端强制按用户过滤，返回每笔订单的运单号/快递公司/轨迹', '传其他用户/非在途订单号 → 拒绝；无在途订单 → 提示暂无', 'customer_logistics_track 命中 logistics 卡片（logistics_list 非空）'],
@@ -3310,6 +3314,7 @@ _CASE_ST_008 = EvalCase(
     skip_reason='纯配置函数行为由 pytest 单测（tests/test_tenant_config.py）验证：is_auto_handoff_trigger / is_after_hours 是纯函数，其入参 config（TenantAiConfig）无法经 agent-eval 设置，非 LLM 行为，不进入 C 端评测（issue #3270 断言层归因：原 user_inputs 是断言描述而非顾客对话）',
     tags=['ai_config', 'handoff'],
     persona='xiaobu',
+    must_succeed=[{'tool': 'human_handoff'}],
 )
 
 # ── ST-009 [NORMAL] 系统通知总开关 - 租户关闭后自动站内信停止发送（#3003）（源: cases/settings.yml）──

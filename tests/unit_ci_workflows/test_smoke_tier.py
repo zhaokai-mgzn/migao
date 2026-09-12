@@ -21,13 +21,16 @@ CASES_DIR = REPO_ROOT / ".github" / "cases"
 DRIFT_PATHS = ["OR-010", "PR-010"]
 
 # 降级后 smoke 集合（9 → 7）：全部为稳定单轮/双轮查询类用例
-EXPECTED_SMOKE = {"AS-001", "CU-001", "HR-001", "HR-004", "OR-001", "PR-001", "PR-003", "KN-001", "KN-003", "OR-012", "AS-008"}  # KN-001/003：双端知识问答冒烟（issue #3059）
-# OR-012（C 端物流，issue #3266 升 smoke）：实测本地 DEBUG 栈 100%（customer_logistics_track），
-#   覆盖 C 端数据隔离核心能力（只查本人已发货订单）。
-#   KN-001 虽是 smoke，但 persona: xiaobu → 在 B 端 smoke 档被 persona 过滤排除，
-#   实际生效的 B 端 smoke 集合不含它（见 test_bmiabo_smoke_excludes_xiaobu_only）。
-# AS-008（C 端售后进度查询，issue #3266 新增 + 升 smoke）：补 aftersale_query 唯一 C 端覆盖缺口。
-XIAOBU_ONLY_SMOKE = {"KN-001", "OR-012", "AS-008"}
+EXPECTED_SMOKE = {"AS-001", "CU-001", "HR-001", "HR-004", "OR-001", "PR-001", "PR-003", "KN-001", "KN-003"}  # KN-001/003：双端知识问答冒烟（issue #3059）
+# ── OR-012 / AS-008 于 2026-09-13 由 smoke 提为 normal（issue #3367 覆盖审计）──
+# 原判断（issue #3266）是"升 smoke 以补 C 端覆盖缺口"，但 smoke 档对 C 端**根本没人跑**：
+#   · pr-check 的 agent-eval-smoke 打的是共享 B 端环境、未设 PERSONA（默认米宝）
+#     → persona: xiaobu 的用例被 persona 过滤排除（见下条 test_mibao_smoke_excludes_xiaobu_only）；
+#   · xiaobu-acceptance 由 CI 以 tier=normal 派发。
+# 结果：这两条（物流查询、售后进度查询，且带"仅限本人/拒绝越权直查"数据隔离断言）
+# 成了**谁都不跑**的用例 —— 该能力在每日回归里零观测。提为 normal 后由 C 端每日回归承担。
+# KN-001 仍是 smoke（其能力已被 normal 档的 KN-002/007/008 覆盖，不构成盲区）。
+XIAOBU_ONLY_SMOKE = {"KN-001"}
 
 
 def _active_smoke_ids():
