@@ -792,3 +792,84 @@ cases:
       ci:
         - xiaobu-acceptance.yml
       verifies: []
+  - id: OR-018
+    legacy_id: ""
+    title: "C 端多商品一次下单 - 两个商品两套加工项，明细与金额逐行都对（能力上限）"
+    domains:
+      - order
+      - chat
+      - product
+    tier: normal
+    persona: xiaobu
+    tags:
+      - order_create
+      - multi_item
+      - processing_item
+      - ceiling
+      - xiaobu
+    truths_ref:
+      - order.create-flow
+    # ── 能力上限用例（issue #3367）──
+    # 为什么要它：现有 C 端下单用例都是**单商品**。真实顾客常一次买两款（两个窗户），
+    # 而多商品把三件事同时压上来：① order_create 的 items 必须**多行**且每行自己的
+    # 数量/单价；② 加工费按各自米数分别算；③ 总额 = Σ小计 + Σ加工费。
+    # 单商品用例对这三件事**全无观测**（一行也能过）。判定用三层证据：
+    #   must_succeed（调用真的成了）+ amount_verify（单价接地/小计自洽/总额自洽）
+    #   + db_verify order_items（明细真的按行落库 —— 本次同时补的评测能力）
+    # 期望金额（fixture 真值）：夏日清风 3m×158=474、遮光 2m×168=336、打孔 8/m → 24+16=40
+    #   → 小计 810 + 加工费 40 = **850**
+    user_inputs:
+      - "我要买两款：夏日清风窗帘 米白色 3 米，遮光窗帘 米白 2 米，都要纳米圈打孔加工"
+      - auto_respond:
+          fallback: "我是张三，手机13800138000，地址杭州市西湖区文三路1号"
+      - auto_select: true
+      - auto_respond:
+          fallback: "确认"
+      - auto_respond:
+          fallback: "另一款也要打孔加工"
+      - auto_respond:
+          fallback: "确认下单"
+      - auto_respond:
+          fallback: "123456"        # 手机验证码（dev/CI 栈 SMS_BYPASS_CODE）
+          prefer_text: true
+      - auto_respond:
+          fallback: "123456"
+          prefer_text: true
+      # 轮数余量：多商品流程比单品长（两次选品/两套加工项/一次确认），模型卡序不固定
+      - auto_respond:
+          fallback: "确认"
+      - auto_respond:
+          fallback: "确认"
+    expectations:
+      - tool: product_search
+      - tool: product_detail
+      - tool: interact
+      - tool: order_create
+    must_succeed:
+      - tool: order_create
+    amount_verify:
+      - tool: order_create
+        product_name: "夏日清风窗帘"
+        checks: [unit_price, subtotal, total]
+      - tool: order_create
+        product_name: "遮光窗帘"
+        checks: [unit_price]
+    db_verify:
+      - fetch: order_items
+        source: order_create
+        expect_products: ["夏日清风窗帘", "遮光窗帘"]
+        expect_quantities:
+          夏日清风窗帘: 3
+          遮光窗帘: 2
+    data_checks:
+      - "多商品下单必须一次 order_create 带多行 items（每行自己的数量/单价/加工项），不得只落一款"
+      - "加工费按各自米数分别计算（3 米→24、2 米→16），总额 = Σ小计 810 + Σ加工费 40 = 850"
+      - "两款商品的单价都必须来自商品库（158/168），不得凭记忆报价"
+    skip_reason: ""
+    merge_log: "2026-09-13 新增（issue #3367）：C 端能力上限用例（多商品/多加工项/逐行金额）"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_acceptance_case_checks.py"
+      ci:
+        - xiaobu-acceptance.yml
+      verifies: []

@@ -1364,6 +1364,23 @@ def _first_successful_call(results: list, tool: str) -> tuple:
     return None, None, None
 
 
+def _first_successful_data(results: list, tool: str) -> dict:
+    """首个**成功**调用的 `result.data`（payload：订单号/总额/明细等）。
+
+    与 `_first_successful_call` 同源判成功（tool_result.success），但取的是 payload ——
+    `_first_successful_call` 的第三位一直是 None（它只服务 amount_verify 的 args 校验），
+    订单明细断言需要的是**结果里的订单号**，故单列一个取值口。
+    """
+    for r in results or []:
+        for tr in r.get("tool_results") or []:
+            if not _tool_name_matches(tr.get("tool"), tool):
+                continue
+            res = tr.get("result") if isinstance(tr.get("result"), dict) else {}
+            if res.get("success") and isinstance(res.get("data"), dict):
+                return res["data"]
+    return {}
+
+
 async def _fetch_product_price(token: str, name: str) -> float | None:
     """按商品名查商品库单价（接地真值）。"""
     try:
@@ -1385,6 +1402,30 @@ async def _fetch_product_price(token: str, name: str) -> float | None:
     return None
 
 
+_KNOWN_AMOUNT_CHECKS = ("unit_price", "subtotal", "total")
+
+
+def _normalize_amount_checks(raw) -> list | None:
+    """把 `checks` 归一成列表；读不懂返回 None（调用方失败关闭）。
+
+    为什么要归一（issue #3367 实证）：`yaml_light` 不解析 flow 序列，渲染产物里
+    `checks: [unit_price, subtotal, total]` 变成**字符串**；旧代码
+    `[str(x) for x in "<str>"]` 把它拆成字符列表 → 三项检查全被跳过 → 恒通过。
+    金额断言静默失效比报错更危险（评测给人"钱查过了"的错觉）。
+    """
+    if raw is None:
+        return list(_KNOWN_AMOUNT_CHECKS)
+    if isinstance(raw, (list, tuple, set)):
+        return [str(x) for x in raw]
+    if isinstance(raw, str):
+        # '[unit_price, subtotal, total]' / "unit_price,total" / 'unit_price' 都能救
+        tokens = re.findall(r"[a-z_]+", raw)
+        if tokens:
+            return tokens
+        return None
+    return None
+
+
 async def check_amount_verify(token: str, results: list, amount_verify: list) -> list:
     """执行下单金额断言：单价接地 / 小计自洽 / 总额自洽，返回违规列表。
 
@@ -1402,7 +1443,14 @@ async def check_amount_verify(token: str, results: list, amount_verify: list) ->
             continue
         tool = str(spec.get("tool") or "order_create")
         tol = float(spec.get("tolerance", 0.01))
-        checks = [str(x) for x in (spec.get("checks") or ["unit_price", "subtotal", "total"])]
+        checks = _normalize_amount_checks(spec.get("checks"))
+        if checks is None:
+            # 失败关闭（issue #3367）：读不懂检查项时**绝不静默跳过** ——
+            # 静默跳过 = 金额断言变装饰品（本 bug 就是这么潜伏了多轮的）
+            issues.append(
+                f"amount_verify[{tool}]: 无法识别 checks={spec.get('checks')!r}"
+                f"（应为列表，或形如 '[unit_price, subtotal, total]' 的字符串）")
+            continue
         rnd, args, _ = _first_successful_call(results, tool)
         if args is None:
             issues.append(f"amount_verify: 未找到 {tool} 的成功调用（金额无从核对）")
@@ -1484,11 +1532,96 @@ async def check_amount_verify(token: str, results: list, amount_verify: list) ->
     return issues
 
 
-async def check_db_verify(token: str, db_verify: list) -> list:
-    """执行 db_verify 断言：fetch 指定资源 → 逐条评估谓词，返回违规列表。"""
+_UUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
+
+
+async def _fetch_order_detail(token: str, order_ref: str) -> dict | None:
+    """按订单号（或 id）查 admin-api 订单详情，返回响应体；查不到返回 None。
+
+    为什么走列表接口再查详情：订单号不是主键（`GET /orders/{id}` 只接受 UUID），
+    而 `order_create` 结果里同时有 `id` 与 `orderNo` —— 优先用 id，回退用 keyword 搜订单号。
+    """
+    ref = str(order_ref or "").strip()
+    if not ref:
+        return None
+    try:
+        async with httpx.AsyncClient() as c:
+            h = _admin_headers(token)
+            oid = ref
+            if not _UUID_RE.match(ref):
+                r = await c.get(f"{ADMIN_API}/api/admin/orders", headers=h,
+                                params={"keyword": ref, "page": 1, "size": 1}, timeout=15)
+                items = (_safe_json(r, {}) or {}).get("data", {}).get("items", []) or []
+                if not items:
+                    return None
+                oid = str(items[0].get("id") or "")
+                if not oid:
+                    return None
+            rd = await c.get(f"{ADMIN_API}/api/admin/orders/{oid}", headers=h, timeout=15)
+            body = _safe_json(rd, None)
+            return body if isinstance(body, dict) and body.get("data") else None
+    except Exception:
+        return None
+
+
+async def check_db_verify(token: str, db_verify: list, results: list | None = None) -> list:
+    """执行 db_verify 断言：fetch 指定资源 → 逐条评估谓词，返回违规列表。
+
+    `results`：本用例的逐轮结果。`fetch: order_items` 需要它来取订单号
+    （必须显式传，不用模块级全局 —— 隐藏状态在并发评测下是 bug 温床）。
+    """
     issues = []
     for spec in db_verify or []:
-        if not isinstance(spec, dict) or spec.get("fetch") != "product_by_name":
+        if not isinstance(spec, dict):
+            issues.append(f"db_verify: 配置非字典: {spec!r}")
+            continue
+        fetch = str(spec.get("fetch") or "")
+
+        if fetch == "order_items":
+            # 订单明细落库断言（issue #3367）：must_succeed 只说"调用成功"、
+            # amount_verify 只核对**传参**，都不回答"明细真的按行进库了吗"。
+            src = str(spec.get("source") or "order_create")
+            data = _first_successful_data(results or [], src)
+            if not data:
+                issues.append(
+                    f"db_verify[order_items]: 找不到 {src} 的成功调用（无订单可核对）—— 判失败而非跳过")
+                continue
+            ref = str(data.get("id") or data.get("orderNo") or "")
+            detail = await _fetch_order_detail(token, ref)
+            items = ((detail or {}).get("data") or {}).get("items") or []
+            if not items:
+                issues.append(f"db_verify[order_items]: 订单 {ref} 查不到明细（未落库？）")
+                continue
+            by_name = {}
+            for it in items:
+                nm = str((it or {}).get("productName") or "")
+                if nm:
+                    by_name.setdefault(nm, 0)
+                    try:
+                        by_name[nm] += int((it or {}).get("quantity") or 0)
+                    except (TypeError, ValueError):
+                        pass
+            for want in spec.get("expect_products") or []:
+                w = str(want)
+                if not any(w in nm or nm in w for nm in by_name):
+                    issues.append(
+                        f"db_verify[order_items]: 订单 {ref} 明细里没有「{w}」"
+                        f"（实际明细: {sorted(by_name)}）")
+            for w, q in (spec.get("expect_quantities") or {}).items():
+                w = str(w)
+                hit = next((n for n in by_name if w in n or n in w), None)
+                if hit is None:
+                    continue
+                try:
+                    want_q = int(q)
+                except (TypeError, ValueError):
+                    continue
+                if by_name[hit] != want_q:
+                    issues.append(
+                        f"db_verify[order_items]: 「{hit}」数量 {by_name[hit]} ≠ 期望 {want_q}")
+            continue
+
+        if fetch != "product_by_name":
             issues.append(f"db_verify: 不支持的 fetch 配置: {spec!r}")
             continue
         name = spec.get("name", "")
@@ -2096,7 +2229,7 @@ async def run_case(case, token: str, session_id: str) -> dict:
     case_issues += check_false_success(results)
     if getattr(case, "db_verify", None):
         try:
-            case_issues += await check_db_verify(token, case.db_verify)
+            case_issues += await check_db_verify(token, case.db_verify, results)
         except Exception as e:
             case_issues.append(f"db_verify 执行失败: {e}")
     if case_issues:

@@ -822,7 +822,7 @@ _CASE_CH_010 = EvalCase(
     order_before=['interact[confirm] before order_create'],
     required_args=[{'tool': 'order_create', 'fields': ['customer_phone', 'items']}],
     must_succeed=[{'tool': 'order_create'}],
-    amount_verify=[{'tool': 'order_create', 'product_name': '北欧风窗帘', 'checks': '[unit_price, subtotal, total]'}],
+    amount_verify=[{'tool': 'order_create', 'product_name': '北欧风窗帘', 'checks': ['unit_price', 'subtotal', 'total']}],
 )
 
 # ── CH-011 [ADVERSARIAL] 数据安全 - 跨用户订单查询拒绝 + 订单卡片手机号脱敏（源: cases/chat.yml）──
@@ -2587,7 +2587,7 @@ _CASE_OR_014 = EvalCase(
     tags=['order_create', 'processing_item', 'pricing'],
     persona='',
     must_succeed=[{'tool': 'order_create'}],
-    amount_verify=[{'tool': 'order_create', 'product_name': '遮光窗帘', 'checks': '[unit_price, subtotal, total]'}],
+    amount_verify=[{'tool': 'order_create', 'product_name': '遮光窗帘', 'checks': ['unit_price', 'subtotal', 'total']}],
     pre_clean=[{'type': 'product_dedupe', 'product_keyword': '遮光窗帘', 'price': 100}],
 )
 
@@ -2642,7 +2642,25 @@ _CASE_OR_017 = EvalCase(
     order_before=['interact[choice:processing_items] before interact[confirm]', 'interact[choice:processing_items] before order_create'],
     forbidden_text=['暂未查询到可选加工项', '无可用加工项', '该商品无加工项'],
     must_succeed=[{'tool': 'order_create'}],
-    amount_verify=[{'tool': 'order_create', 'product_name': '夏日清风窗帘', 'checks': '[unit_price, subtotal, total]'}],
+    amount_verify=[{'tool': 'order_create', 'product_name': '夏日清风窗帘', 'checks': ['unit_price', 'subtotal', 'total']}],
+)
+
+# ── OR-018 [NORMAL] C 端多商品一次下单 - 两个商品两套加工项，明细与金额逐行都对（能力上限）（源: cases/order.yml）──
+_CASE_OR_018 = EvalCase(
+    id='OR-018',
+    legacy_id='',
+    title='C 端多商品一次下单 - 两个商品两套加工项，明细与金额逐行都对（能力上限）',
+    skill=Skill.ORDER,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['我要买两款：夏日清风窗帘 米白色 3 米，遮光窗帘 米白 2 米，都要纳米圈打孔加工', {'auto_respond': {'fallback': '我是张三，手机13800138000，地址杭州市西湖区文三路1号'}}, {'auto_select': True}, {'auto_respond': {'fallback': '确认'}}, {'auto_respond': {'fallback': '另一款也要打孔加工'}}, {'auto_respond': {'fallback': '确认下单'}}, {'auto_respond': {'fallback': '123456', 'prefer_text': True}}, {'auto_respond': {'fallback': '123456', 'prefer_text': True}}, {'auto_respond': {'fallback': '确认'}}, {'auto_respond': {'fallback': '确认'}}],
+    expectations=['product_search', 'product_detail', 'interact', 'order_create'],
+    data_checks=['多商品下单必须一次 order_create 带多行 items（每行自己的数量/单价/加工项），不得只落一款', '加工费按各自米数分别计算（3 米→24、2 米→16），总额 = Σ小计 810 + Σ加工费 40 = 850', '两款商品的单价都必须来自商品库（158/168），不得凭记忆报价'],
+    skip_reason='',
+    tags=['order_create', 'multi_item', 'processing_item', 'ceiling', 'xiaobu'],
+    persona='xiaobu',
+    must_succeed=[{'tool': 'order_create'}],
+    amount_verify=[{'tool': 'order_create', 'product_name': '夏日清风窗帘', 'checks': ['unit_price', 'subtotal', 'total']}, {'tool': 'order_create', 'product_name': '遮光窗帘', 'checks': ['unit_price']}],
+    db_verify=[{'fetch': 'order_items', 'source': 'order_create', 'expect_products': ['夏日清风窗帘', '遮光窗帘'], 'expect_quantities': {'夏日清风窗帘': 3, '遮光窗帘': 2}}],
 )
 
 # ── PG-001 [NORMAL] 生成加工单 - 已确认含加工项订单 → 加工单生成 + 订单进入 producing（源: cases/processing-order.yml）──
@@ -4242,6 +4260,7 @@ ALL_CASES = (
     _CASE_OR_015,
     _CASE_OR_016,
     _CASE_OR_017,
+    _CASE_OR_018,
     _CASE_PG_001,
     _CASE_PG_002,
     _CASE_PG_003,
