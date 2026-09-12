@@ -2017,3 +2017,57 @@ class TestTurnStartCardConfirmRecord:
             asyncio.run(_inject_pending_validated(
                 "p", {"session_id": "s2"}, self.LONG_CONFIRM))
         assert "confirmed_write_tool" not in committed
+
+
+class TestTextConfirmationRecordedAcrossTurns:
+    """文本确认（「确认」）也必须在**确认轮**记录 confirmed_write_tool（issue #3361）。
+
+    CI 实证（run 34689293179，OR-017）：
+      R3 顾客回「确认」→ 模型只调 validate_input 并下发确认卡（**没写**）；
+      R4 顾客回手机验证码「123456」→ stored confirmValue（'确认下单'）不匹配、
+      本轮文本也不像确认 → 门禁以「未确认」拦下 order_create → 订单永不落库。
+    旧实现只在「卡片 confirmValue 精确匹配」时记录，文本明确确认（短句「确认」）
+    这条路径漏记 —— 而 `_is_explicit_confirmation` 本来就是门禁认可的确认判据。
+    """
+
+    def _run(self, last_user_msg, pending, stored=None):
+        import asyncio
+
+        from app.graph.skills.base_skill import _inject_pending_validated
+        from app.graph.pending_validated import PENDING_KEY
+
+        committed = {}
+        state = {"last_confirm_value": stored} if stored else {}
+        if pending:
+            state[PENDING_KEY] = pending
+
+        with patch("app.memory.session_state_store.SessionStateStore") as store_cls:
+            inst = MagicMock()
+            inst.load = AsyncMock(return_value=state)
+            inst.commit = AsyncMock(side_effect=lambda sid, full: committed.update(full))
+            store_cls.return_value = inst
+            asyncio.run(_inject_pending_validated("p", {"session_id": "s1"}, last_user_msg))
+        return committed
+
+    def test_short_text_confirmation_records(self):
+        committed = self._run("确认", {"target_tool": "order_create", "target_action": "create"})
+        assert committed.get("confirmed_write_tool") == "order_create", (
+            "文本确认轮未记录放行标记 —— 下一轮补充信息（验证码）写操作会被门禁拦"
+        )
+
+    def test_sms_code_turn_does_not_record(self):
+        """补充信息轮（验证码）本身不构成确认 —— 不得误记录（门禁不能被绕过）。"""
+        committed = self._run("123456", {"target_tool": "order_create", "target_action": "create"})
+        assert "confirmed_write_tool" not in committed
+
+    def test_no_pending_no_record(self):
+        committed = self._run("确认", None)
+        assert "confirmed_write_tool" not in committed
+
+    def test_card_click_still_records(self):
+        """卡片点击路径不得回归（原有行为）。"""
+        long_val = "确认下单：遮光窗帘 3米 米白 打孔，总额528元，收货人张三"
+        committed = self._run(long_val,
+                              {"target_tool": "order_create", "target_action": "create"},
+                              stored=long_val)
+        assert committed.get("confirmed_write_tool") == "order_create"

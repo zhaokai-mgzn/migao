@@ -246,10 +246,11 @@ jobs:
           #   [tool-registry] Failed     → 注册表执行异常
           #   Tool not found             → skill 工具集缺失（tool_not_found）
           #   拦截未确认的写操作 / card-confirm 诊断 → 确认门禁判定链
+          #   pending-validated / confirmed_write_tool → 确认-执行链是否把"用户已确认"记住
           echo "── 写工具失败原因（工具层归因：异常/门禁/工具缺失）──"
           docker compose -f deploy/docker-compose.yml logs --no-color --timestamps \
             ai-agent-service 2>/dev/null \
-            | grep -E "\[order-create\] Failed|\[tool-registry\] Failed|Tool not found|拦截未确认的写操作|card-confirm 诊断|拦截在办流程|self-correct" \
+            | grep -E "\[order-create\] Failed|\[tool-registry\] Failed|Tool not found|拦截未确认的写操作|card-confirm 诊断|拦截在办流程|self-correct|pending-validated|confirmed_write_tool" \
             | tail -120 \
             || echo "（无写工具失败日志：本跑无写工具异常）"
 

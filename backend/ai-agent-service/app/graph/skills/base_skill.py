@@ -1188,14 +1188,27 @@ async def _inject_pending_validated(system_prompt: str, state: AgentState, last_
         if not _is_explicit_confirmation(last_user_msg or "") and not is_card_confirm:
             return system_prompt
 
-        # 卡片确认命中且存在「已校验待执行」→ 记录跨轮放行标记（写成功后清除）
-        if is_card_confirm and pending and pending.get("target_tool"):
+        # 确认记录（跨轮放行链）：用户在**确认轮**明确确认了「已校验待执行」的写操作时，
+        # 就把放行标记落进会话状态 —— **无论本轮模型有没有真的发起写调用**。
+        # 两种确认形态都算：
+        #   ① 点了确认卡（confirmValue 精确匹配，系统自产值逐字回传）
+        #   ② 文本明确确认（_is_explicit_confirmation，与门禁同一判据，如「确认」）
+        # 为什么必须覆盖 ②（CI 实证 run 34689293179，OR-017）：
+        #   R3 顾客回「确认」→ 模型只调 validate_input 并下发确认卡（**没写**）；
+        #   R4 顾客回手机验证码「123456」→ last_confirm_value（'确认下单'）不匹配、
+        #   本轮文本也不像确认 → 门禁以「未确认」拦下 order_create → 订单永不落库，
+        #   而用例因老断言只看工具名而判通过（假绿）。修法不是放宽门禁，而是把
+        #   「用户确认过」在确认轮就记住：安全性质不变（仍需用户明确确认 + 存在已校验的
+        #   待执行目标工具，且写成功后清除）。
+        if pending and pending.get("target_tool") and (
+                is_card_confirm or _is_explicit_confirmation(last_user_msg or "")):
             _f = dict(full)
             _f["confirmed_write_tool"] = pending["target_tool"]
             await store.commit(state["session_id"], _f)
             logger.info(
-                f"[pending-validated] 卡片确认已记录 → confirmed_write_tool="
-                f"{pending['target_tool']} | session={state['session_id']}"
+                f"[pending-validated] 确认已记录 → confirmed_write_tool="
+                f"{pending['target_tool']}（形态={'卡片点击' if is_card_confirm else '文本确认'}）"
+                f" | session={state['session_id']}"
             )
 
         if not pending:
