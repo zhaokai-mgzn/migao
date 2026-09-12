@@ -713,6 +713,13 @@ cases:
           fallback: "123456"        # 手机验证码（dev/CI 栈 SMS_BYPASS_CODE）
       - auto_respond:
           fallback: "123456"
+      # 轮数余量（issue #3365，与 CH-010 同源）：模型卡序不固定（先加工项卡还是先收货
+      # 表单、是否重发确认卡），实测偶发"轮数用尽仍未 order_create"→ 判红但长相像
+      # 能力问题。合作型用户会一直把卡答完，故尾部留 2 轮（答不到卡也无害）。
+      - auto_respond:
+          fallback: "确认"
+      - auto_respond:
+          fallback: "确认"
     expectations:
       - tool: product_search
       - tool: product_detail

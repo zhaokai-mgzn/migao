@@ -2682,3 +2682,92 @@ class TestGroundingAutopilot:
         assert [c[0] for c in calls] == ["product_search", "product_detail"]
         assert "grounded_product_detail" not in store, "detail 失败不得落接地标记"
         assert "product_detail" in str(result), "应回落到分步话术"
+
+
+class TestSmsCodeBackfill:
+    """验证码代码补齐（issue #3365）。
+
+    实证（CI run 34712928371，CH-010）：`order_create!缺少短信验证码 ×3` —— 顾客明明在上一轮
+    给了「123456」，模型调 order_create 时就是不带 sms_code → 订单不落库、用例判红，
+    而失败长相像"能力不行"（真因是模型漏参 + 工具强校验）。
+    代码兜底：顾客上一条消息**整条就是验证码** → 执行前补进 args。
+    """
+
+    def _run(self, user_msg, args):
+        import asyncio, json as _json
+
+        seen = {}
+
+        async def fake_execute(tool, a, ctx, state):
+            seen.update(a)
+            return (_json.dumps({"success": True, "data": {"id": "o1"}}),
+                    {"success": True, "data": {"id": "o1"}})
+
+        class _Store:
+            async def load(self, sid):
+                return {"grounded_product_detail": {"product_id": "p1"}}
+
+            async def commit(self, sid, full):
+                pass
+
+        with patch("app.memory.session_memory.SessionMemory"), \
+             patch("app.graph.skills.base_skill.get_breaker") as get_breaker, \
+             patch("app.graph.skills.base_skill.get_skill_llm") as get_llm, \
+             patch("app.graph.skills.base_skill.create_skill_registry") as create_reg, \
+             patch("app.graph.skills.base_skill.set_tool_context"), \
+             patch("app.graph.skills.base_skill._execute_tool_safe", fake_execute), \
+             patch("app.memory.session_state_store.SessionStateStore",
+                   side_effect=lambda *a, **k: _Store()):
+            tool = MagicMock()
+            tool.name = "order_create"
+            tool.read_only = False
+            tool.destructive = False
+            tool.requires_confirmation = False
+            registry = MagicMock()
+            registry.get_langchain_tools.return_value = []
+            registry.get_tool.side_effect = lambda n: tool if n == "order_create" else None
+            create_reg.return_value = registry
+            breaker = MagicMock()
+
+            async def _pt(fn):
+                return await fn()
+
+            breaker.call = _pt
+            get_breaker.return_value = breaker
+            call = MagicMock(spec=AIMessage)
+            call.content = ""
+            call.tool_calls = [{"name": "order_create", "args": args, "id": "c1"}]
+            final = MagicMock(spec=AIMessage)
+            final.content = "好的"
+            final.tool_calls = []
+            llm = MagicMock()
+            llm.bind_tools.return_value = llm
+            llm.ainvoke = AsyncMock(side_effect=[call, final])
+            get_llm.return_value = llm
+            asyncio.run(execute_skill(
+                state=_make_state(messages=[HumanMessage(content=user_msg)]),
+                skill_name="customer_order",
+                tool_names=["order_create"], system_prompt="p"))
+        return seen
+
+    def test_code_backfilled_when_customer_gave_it(self):
+        seen = self._run("123456", {"items": []})
+        assert seen.get("sms_code") == "123456", "顾客已给验证码但未补齐 → 订单必然被拒"
+
+    def test_no_backfill_when_model_already_passed(self):
+        seen = self._run("123456", {"items": [], "sms_code": "654321"})
+        assert seen.get("sms_code") == "654321", "模型已带验证码时不得覆盖"
+
+    def test_phone_number_not_mistaken_for_code(self):
+        """手机号里含数字片段，绝不能当验证码注入（否则验证必失败且难排查）。"""
+        seen = self._run("我的手机号是 13800138000", {"items": []})
+        assert "sms_code" not in seen
+
+    def test_extract_sms_code_shapes(self):
+        from app.graph.skills.base_skill import extract_sms_code
+        assert extract_sms_code("123456") == "123456"
+        assert extract_sms_code("验证码 1234") == "1234"
+        assert extract_sms_code("短信验证码：123456") == "123456"
+        assert extract_sms_code("13800138000") == ""
+        assert extract_sms_code("123456 顺便问下") == ""
+        assert extract_sms_code("") == ""

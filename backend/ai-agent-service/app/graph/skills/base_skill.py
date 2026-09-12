@@ -946,6 +946,18 @@ def _accepted_param_names(tool) -> frozenset | None:
 _PRODUCT_NOUN_RE = None
 
 
+def extract_sms_code(text: str) -> str:
+    """顾客消息**整条就是验证码**时提取它（issue #3365；否则返回空串）。
+
+    为什么必须"整条就是"：手机号 13800138000 里也含 4-6 位数字，裸 `\d{4,6}` 会把
+    手机号片段当验证码注入 → 验证必然失败且难排查。用例/真实顾客的验证码轮就是「123456」
+    或「验证码 123456」这种形态，故用 `fullmatch`。
+    """
+    import re as _re
+    m = _re.fullmatch(r"\s*(?:短信验证码|验证码)?\s*[:：]?\s*(\d{4,6})\s*", str(text or ""))
+    return m.group(1) if m else ""
+
+
 def extract_product_keyword(text: str) -> str:
     """从顾客消息里抽取**可用于 product_search 的商品关键词**（issue #3365）。
 
@@ -1687,6 +1699,17 @@ async def execute_skill(
                     args = tool_call.get("args", {})
                     # 模式 C 代码兜底：加工项 choice 卡漏传 multiSelect → 自动补 true（PR-014/015）
                     args = _ensure_processing_items_multiselect(tool_name, args)
+                    # 代码兜底：顾客上一条就是验证码，但模型调 order_create 时没带上
+                    # → 自动补齐（issue #3365 实证：CI 里 order_create!缺少短信验证码 ×3，
+                    #   顾客明明给了 123456；模型漏参 → 订单不落库 → 用例红且看着像"能力不行"）
+                    if tool_name == "order_create" and not (args or {}).get("sms_code"):
+                        _code = extract_sms_code(last_user_msg)
+                        if _code:
+                            args = {**args, "sms_code": _code}
+                            logger.info(
+                                f"[{skill_name}] 代码补齐 order_create.sms_code"
+                                f"（顾客上一条消息即验证码）| session={session_id}"
+                            )
                     if args is not tool_call.get("args"):
                         tool_call = {**tool_call, "args": args}
                     tool = skill_registry.get_tool(tool_name)
