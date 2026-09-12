@@ -1601,7 +1601,8 @@ async def _close_and_verify_session(case, token: str, r: dict, session_id: str) 
         ]
 
 
-def resolve_auto_respond(results: list, fallback: str, form_values: dict) -> str:
+def resolve_auto_respond(results: list, fallback: str, form_values: dict,
+                         prefer_text: bool = False) -> str:
     """`auto_respond` 轮：按**上一轮的待答卡片**自动作答，没有卡片则用 fallback。
 
     为什么要这个机制（CI 实证 run 34627856207，OR-014 / CH-010）：
@@ -1618,7 +1619,18 @@ def resolve_auto_respond(results: list, fallback: str, form_values: dict) -> str
     - choice  → 回第一个 option 的 value（等同点击首项）
     - form    → 按 form 卡自己声明的 field key 匹配 `form_values`，拼 `__FORM__|{json}`
                 （与 `_auto_fill_form` 同一协议）；无匹配字段 → fallback
+
+    `prefer_text=True`（用例声明 `auto_respond: {fallback: ..., prefer_text: true}`）：
+    **无视待答卡片，直接发 fallback 文本**。用于"顾客这一刻就是要说这句话"的轮次 ——
+    最典型是**验证码轮**：实测（run 34721434317，CH-010 首跑）第 6/7 轮声明的是「123456」，
+    但两轮各有一张卡在等（choice/confirm），被 harness 吃掉 →
+    顾客从未输入过验证码 → `order_create!缺少短信验证码` → 订单不落库。
+    刻意做成**显式开关**而非"fallback 像验证码就自动发文本"：隐式魔法会让用例作者
+    猜不到何时生效。
     """
+    if prefer_text:
+        # 用例显式声明"这一轮就是这句话"（如验证码轮）→ 不答卡
+        return fallback
     rounds = results or []
     if rounds:
         cards = rounds[-1].get("interactive") or []
@@ -1997,6 +2009,7 @@ async def run_case(case, token: str, session_id: str) -> dict:
                 results,
                 fallback=str(spec.get("fallback") or "确认"),
                 form_values=form_values,
+                prefer_text=bool(spec.get("prefer_text")),
             )
         elif isinstance(msg, dict) and msg.get("auto_fill"):
             # form 卡自动回填（OR-014 基建缺口）：agent 发 form 卡（如客户信息）

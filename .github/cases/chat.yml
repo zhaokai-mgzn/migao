@@ -358,8 +358,18 @@ cases:
             colorName: "白色"
       - auto_respond:
           fallback: "123456"
+          # 验证码轮：顾客这一刻就是"把收到的码发出去"，不是去点卡 ——
+          # 必须显式声明 prefer_text，否则若此时有卡在等（choice/confirm），
+          # harness 会去答题卡、把验证码轮吃掉（issue #3367 实证：CH-010 首跑
+          # R6/R7 两轮验证码都被卡吃掉 → order_create!缺少短信验证码 → 订单不落库）
+          prefer_text: true
       - auto_respond:
           fallback: "123456"
+          # 验证码轮：顾客这一刻就是"把收到的码发出去"，不是去点卡 ——
+          # 必须显式声明 prefer_text，否则若此时有卡在等（choice/confirm），
+          # harness 会去答题卡、把验证码轮吃掉（issue #3367 实证：CH-010 首跑
+          # R6/R7 两轮验证码都被卡吃掉 → order_create!缺少短信验证码 → 订单不落库）
+          prefer_text: true
       # 轮数余量（issue #3361）：模型的卡序**合法但不固定** —— 实测同一用例两次跑，
       # 一次 R4 先发加工项 choice 卡、一次先发收货信息 form 卡，后者比前者多一轮 →
       # 7 轮用尽仍未 order_create（判红，但失败长相像"能力不行"，真因是**用例轮数不够**）。

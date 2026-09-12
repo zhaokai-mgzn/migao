@@ -2480,6 +2480,52 @@ class TestRoundTraceCarriesErrorText:
         assert "AttributeError" in lr.format_round_trace(trace)
 
 
+class TestAutoRespondPreferText:
+    """`prefer_text: true`：这一轮**按用例声明的文本发**，即使有卡在等（issue #3367）。
+
+    实证（run 34721434317，CH-010 首跑）：用例第 6/7 轮声明的是**验证码「123456」**，
+    但那两轮各有一张卡在等（choice 卡 / confirm 卡），harness 的"有什么卡答什么卡"把这
+    两轮吃掉了 → 「顾客从未输入过验证码」→ R7 `order_create!缺少短信验证码` → 订单不落库。
+    逐轮轨迹：
+      R5 you=__FORM__|{...}        （表单被答）
+      R6 you=已选加工项：纳米圈打孔   ← 本该发 123456
+      R7 you=确认下单              ← 本该发 123456
+      R7 order_create!缺少短信验证码
+
+    为什么用**显式开关**而不是"fallback 看起来像验证码就自动发文本"：
+    隐式魔法会让用例作者猜不到何时生效；显式声明 + 本测试锁住语义。
+    """
+
+    _CARD = [{"type": "choice", "title": "选加工项",
+              "options": [{"label": "纳米圈打孔", "value": "pi1"}]}]
+
+    def _results(self, *users, card=True):
+        """构造轨迹：**最后一轮带待答卡片**（否则 auto_respond 本就该走 fallback）。"""
+        out = [{"user_message": u} for u in users]
+        if out and card:
+            out[-1]["interactive"] = list(self._CARD)
+        return out
+
+    def test_prefer_text_overrides_pending_card(self):
+        out = lr.resolve_auto_respond(self._results("你好"), "123456", {},
+                                      prefer_text=True)
+        assert out == "123456", f"声明了 prefer_text 却仍去答题卡: {out!r}"
+
+    def test_default_still_answers_pending_card(self):
+        """不开开关时行为**不变**（继续"有什么卡答什么卡"），避免影响既有用例。"""
+        out = lr.resolve_auto_respond(self._results("你好"), "123456", {})
+        assert out != "123456", "默认路径不应被改：合作型用户仍优先答卡"
+
+    def test_prefer_text_without_card_uses_fallback(self):
+        out = lr.resolve_auto_respond([], "123456", {}, prefer_text=True)
+        assert out == "123456"
+
+    def test_prefer_text_false_is_default(self):
+        a = lr.resolve_auto_respond(self._results("你好"), "确认", {})
+        b = lr.resolve_auto_respond(self._results("你好"), "确认", {}, prefer_text=False)
+        assert a == b
+
+
 class TestAutoRespondNoRepeatCardClick:
     """同卡不重复点（issue #3365，CH-010 实证）。
 

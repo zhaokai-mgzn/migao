@@ -540,16 +540,36 @@ cases:
             colorName: "米白"
       - auto_respond:
           fallback: "123456"
+          # 验证码轮：顾客这一刻就是"把收到的码发出去"，不是去点卡 ——
+          # 必须显式声明 prefer_text，否则若此时有卡在等（choice/confirm），
+          # harness 会去答题卡、把验证码轮吃掉（issue #3367 实证：CH-010 首跑
+          # R6/R7 两轮验证码都被卡吃掉 → order_create!缺少短信验证码 → 订单不落库）
+          prefer_text: true
       - auto_respond:
           fallback: "确认"
       - auto_respond:
           fallback: "确认"
       - auto_respond:
           fallback: "123456"
+          # 验证码轮：顾客这一刻就是"把收到的码发出去"，不是去点卡 ——
+          # 必须显式声明 prefer_text，否则若此时有卡在等（choice/confirm），
+          # harness 会去答题卡、把验证码轮吃掉（issue #3367 实证：CH-010 首跑
+          # R6/R7 两轮验证码都被卡吃掉 → order_create!缺少短信验证码 → 订单不落库）
+          prefer_text: true
       - auto_respond:
           fallback: "123456"
+          # 验证码轮：顾客这一刻就是"把收到的码发出去"，不是去点卡 ——
+          # 必须显式声明 prefer_text，否则若此时有卡在等（choice/confirm），
+          # harness 会去答题卡、把验证码轮吃掉（issue #3367 实证：CH-010 首跑
+          # R6/R7 两轮验证码都被卡吃掉 → order_create!缺少短信验证码 → 订单不落库）
+          prefer_text: true
       - auto_respond:
           fallback: "123456"
+          # 验证码轮：顾客这一刻就是"把收到的码发出去"，不是去点卡 ——
+          # 必须显式声明 prefer_text，否则若此时有卡在等（choice/confirm），
+          # harness 会去答题卡、把验证码轮吃掉（issue #3367 实证：CH-010 首跑
+          # R6/R7 两轮验证码都被卡吃掉 → order_create!缺少短信验证码 → 订单不落库）
+          prefer_text: true
     # 断言**业务结果**而不是模型调了哪个工具（issue #3365）：
     # 本用例的历史失败形态是"没查商品就凭记忆下单（¥95.4 vs 真实 ¥168/米）"，
     # 而"有没有查商品"只是代理指标 —— 现在接地由**代码保证**（下单接地闸门 +
@@ -710,9 +730,17 @@ cases:
       - auto_respond:
           fallback: "确认"          # 点确认卡（confirmValue）／无卡则文本确认
       - auto_respond:
+          # 验证码轮：顾客这一刻就是"把收到的码发出去"，不是去点卡 —— 必须显式声明
+          # prefer_text，否则此时若有卡在等，harness 会去答题卡、把验证码轮吃掉（issue #3367）
           fallback: "123456"        # 手机验证码（dev/CI 栈 SMS_BYPASS_CODE）
+          prefer_text: true
       - auto_respond:
           fallback: "123456"
+          # 验证码轮：顾客这一刻就是"把收到的码发出去"，不是去点卡 ——
+          # 必须显式声明 prefer_text，否则若此时有卡在等（choice/confirm），
+          # harness 会去答题卡、把验证码轮吃掉（issue #3367 实证：CH-010 首跑
+          # R6/R7 两轮验证码都被卡吃掉 → order_create!缺少短信验证码 → 订单不落库）
+          prefer_text: true
       # 轮数余量（issue #3365，与 CH-010 同源）：模型卡序不固定（先加工项卡还是先收货
       # 表单、是否重发确认卡），实测偶发"轮数用尽仍未 order_create"→ 判红但长相像
       # 能力问题。合作型用户会一直把卡答完，故尾部留 2 轮（答不到卡也无害）。
