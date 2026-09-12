@@ -1218,6 +1218,35 @@ def _failure_signature(result: dict) -> str:
     return "||".join(parts)
 
 
+FLAKE_REASONS = {
+    "llm-noise": "首次失败、新 session 重试通过（LLM 波动）",
+    "reproducible": "两次同指纹失败（确定性回归，禁止 rerun 掩盖，按签名排查）",
+    "unstable": "两次失败但指纹不同（LLM 发散，标注待查）",
+    "infra": "传输/超时/5xx（运行级，可整跑重试）",
+    "no-retry-budget": "重试预算用尽，未做第二次尝试（结论未验证）",
+}
+
+
+def build_flake_entry(case_id: str, title: str, classification: str,
+                      first: dict, second: dict, run_id: str, sha: str) -> dict:
+    """构造 flake 台账条目（纯函数，便于单测）。
+
+    台账是「为什么放行这条红灯」的**唯一长期证据**（issue #2890），所以它必须自带
+    两次尝试的指纹：只记第二次（通过那次）的指纹时，`llm-noise` 就等于"无证据的波动"——
+    实测 OR-017 连续 3 跑都是这种形态，每次都因为看不到首跑指纹而无法归因（issue #3365）。
+    """
+    return {
+        "case_id": case_id,
+        "title": title,
+        "classification": classification,
+        "reason": FLAKE_REASONS.get(classification, classification),
+        "signature": _failure_signature(second),
+        "first_attempt_signature": _failure_signature(first),
+        "run_id": run_id,
+        "sha": sha,
+    }
+
+
 def _classify_attempts(first: dict, second: dict) -> str:
     """两次尝试（同用例、新 session）结果的波动分类。"""
     if first.get("score", 0) >= 1.0:
@@ -2182,6 +2211,7 @@ async def run_suite(cases, label: str, classify: bool = True, retry_budget: int 
                 # 重试预算用尽：不再重跑（标签显式标注，避免"看起来已验证两遍"）
                 classification = "no-retry-budget"
             elif r["score"] < 1.0 and classify:
+                r_prev = r          # 首次尝试（下面会把 r 重绑成重试结果）
                 retry_sid = await get_or_create_session(token, prefer_new=True)
                 r2 = await run_case(case, token, retry_sid)
                 r2["retried"] = True
@@ -2189,32 +2219,24 @@ async def run_suite(cases, label: str, classify: bool = True, retry_budget: int 
                 await _close_and_verify_session(case, token, r2, retry_sid)
                 classification = _classify_attempts(r, r2)
                 if classification == "llm-noise":
+                    # 首次尝试的失败证据必须留痕（issue #3365）：`r = r2` 之后只打印通过
+                    # 那次的轨迹，「失败→重试通过」就成了无证据的"波动" —— 实测 OR-017
+                    # 连续 3 跑都是这种形态，每次都因为看不到首跑指纹而无法归因。
+                    _sig1 = _failure_signature(r)
+                    if _sig1:
+                        print(f"     ↳ 首跑失败指纹（重试放行前留痕）: {_sig1[:300]}")
                     r = r2
-                    flake_ledger.append({
-                        "case_id": case.id,
-                        "title": case.title,
-                        "classification": "llm-noise",
-                        "reason": "首次失败、新 session 重试通过（LLM 波动）",
-                        "signature": _failure_signature(r2),
-                        "run_id": os.environ.get("GITHUB_RUN_ID", "local"),
-                        "sha": os.environ.get("GITHUB_SHA", "")[:12],
-                    })
+                    flake_ledger.append(build_flake_entry(
+                        case.id, case.title, "llm-noise", r_prev, r2,
+                        os.environ.get("GITHUB_RUN_ID", "local"),
+                        os.environ.get("GITHUB_SHA", "")[:12]))
                 else:
                     # reproducible / unstable / infra：保留第二次尝试作为失败证据
                     r = r2
-                    flake_ledger.append({
-                        "case_id": case.id,
-                        "title": case.title,
-                        "classification": classification,
-                        "reason": {
-                            "reproducible": "两次同指纹失败（确定性回归，禁止 rerun 掩盖，按签名排查）",
-                            "unstable": "两次失败但指纹不同（LLM 发散，标注待查）",
-                            "infra": "传输/超时/5xx（运行级，可整跑重试）",
-                        }.get(classification, classification),
-                        "signature": _failure_signature(r2),
-                        "run_id": os.environ.get("GITHUB_RUN_ID", "local"),
-                        "sha": os.environ.get("GITHUB_SHA", "")[:12],
-                    })
+                    flake_ledger.append(build_flake_entry(
+                        case.id, case.title, classification, r_prev, r2,
+                        os.environ.get("GITHUB_RUN_ID", "local"),
+                        os.environ.get("GITHUB_SHA", "")[:12]))
             elif r["score"] < 1.0 and await _reserve_retry():
                 # --no-classify 兼容模式：旧的无差别单次重试（同样受重试预算约束）
                 retry_sid = await get_or_create_session(token, prefer_new=True)
