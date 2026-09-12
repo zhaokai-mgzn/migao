@@ -17,18 +17,28 @@ on:
           - '3'
           - '4'
       tier:
-        description: '评测档位：smoke（5 条，快）| normal（40 条 C 端全量，约 30-40min）'
+        description: '评测档位：smoke（门禁级，快）| normal（C 端全量，每日回归）| adversarial（安全/对抗，每周）'
         required: false
         default: smoke
         type: choice
         options:
           - smoke
           - normal
-  # 2026-09-06 暂停定时调度（issue #2957）：连续 5+ 日 daily failure 且自动开 issue 制造噪音，
-  # 待失败根因排查 + 本地验证提速落地后再恢复；期间保留 workflow_dispatch 手动触发。
-  # schedule:
-  #   # 每天 02:00 CST（UTC+8）= UTC 18:00，低峰期跑小布真实 LLM 能力回归
-  #   - cron: '0 18 * * *'
+          # adversarial（issue #3367）：**参考 B 端做法补齐 C 端对抗面**。
+          # B 端有 agent-eval-adversarial.yml（每周六跑、失败开 issue、只追踪不阻塞），
+          # 而 C 端此前**没有任何对抗评测** —— 29 条 adversarial 用例里有 12 条是 C 端可选的
+          # 安全/健壮性断言（跨用户数据隔离、Prompt Injection、角色越权、SQL/JS 注入、
+          # Token 攻击、熔断降级、跨 session 隔离），却从未在 C 端 Agent 上跑过一次。
+          # 企业级标准里这些是硬要求，故补齐：本 workflow 的临时栈天然适合跑对抗
+          # （每次重建、互不污染，比共享环境更安全）。
+          - adversarial
+  # 2026-09-06 暂停**每日**定时调度（issue #2957）：连续 5+ 日 daily failure 且自动开 issue
+  # 制造噪音，待失败根因排查 + 本地验证提速落地后再恢复；期间 normal 档保留手动触发。
+  # 2026-09-13 新增**每周**对抗档（issue #3367）：与 B 端 agent-eval-adversarial.yml 同节拍
+  # （周六 03:00 CST = 周五 19:00 UTC）。只跑 adversarial 档，失败按去重守卫开 issue
+  # （每周至多 1 条），不阻塞任何 PR（本 workflow 不由 PR 触发）。
+  schedule:
+    - cron: '0 19 * * 5'
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
