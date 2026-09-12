@@ -6,6 +6,16 @@ permissions:
 on:
   workflow_dispatch:
     inputs:
+      shards:
+        description: '分片数（每片一个 job + 一套 docker 栈）。⚠️ 实测 3 片≈无收益（并发建栈把栈启动从 3.4min 抬到 12min），提速请用 EVAL_CONCURRENCY；分片仅在用例数很大、需要摊 CI 分钟数时用'
+        required: false
+        default: '1'
+        type: choice
+        options:
+          - '1'
+          - '2'
+          - '3'
+          - '4'
       tier:
         description: '评测档位：smoke（5 条，快）| normal（40 条 C 端全量，约 30-40min）'
         required: false
@@ -24,10 +34,45 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
+  # 分片矩阵（issue #3361 评测提速）：把用例集切成 N 份、每份一个 job（各自一套
+  # docker 栈 → 天然隔离，评测语义不变）。为什么不用进程内并发：用例共享同一 DB
+  # （同一批 fixture、同一个 debug 顾客），并发会让"谁先写订单/改商品价"变得不确定，
+  # 而评测工具的可信度建立在可复现上。分片只减墙钟，不改语义。
+  # ⚠️ 实测订正（run 34692977836）：3 片确实让**评测**快 ~3 倍（11.6min → 5.3/7.2/1.7min），
+  # 但每片各自 `docker compose up --build` 在并发下极慢（栈 3.4min → 12min），
+  # 整跑墙钟 19.8min > 单 job 15.6min。故**默认 1 片**，提速改用 runner 的
+  # EVAL_CONCURRENCY（单 job 内并行用例，栈只起一次）。
+  shards:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.m.outputs.matrix }}
+    steps:
+      - id: m
+        env:
+          SHARDS: ${{ github.event.inputs.shards || '1' }}
+        run: |
+          # 生成 [0, 1, ..., N-1]（按输入 shards 数）；非法值回落 1（不静默多跑）
+          case "$SHARDS" in
+            1|2|3|4|5|6) N="$SHARDS" ;;
+            *) echo "::warning:: shards=$SHARDS 非法，回落 1"; N=1 ;;
+          esac
+          parts=""
+          i=0
+          while [ "$i" -lt "$N" ]; do
+            parts="${parts:+$parts,}$i"
+            i=$((i + 1))
+          done
+          echo "matrix={"shard":[${parts}],"total":[${N}]}" >> "$GITHUB_OUTPUT"
+          echo "分片: ${N} 份"
+
   xiaobu-acceptance:
+    needs: shards
     name: Xiaobu Acceptance (DEBUG 本地栈 + 真实 LLM)
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.shards.outputs.matrix) }}
     steps:
       - uses: actions/checkout@v7
 
@@ -37,6 +82,14 @@ jobs:
           python-version: '3.11'
           cache: pip
           cache-dependency-path: backend/ai-agent-service/requirements.txt
+
+      - name: Set up Buildx（镜像层缓存，issue #3361 提速）
+        # 为什么必需：栈启动实测在 **3.4min ~ 12.9min** 之间剧烈波动（同一 workflow、
+        # 同样单 job！）。Dockerfile 每跑都 `mvn clean package` + `pip install -r`，
+        # **没有任何层缓存** → 每次全量重下 Maven 依赖树/轮子/基础镜像，而 GitHub
+        # runner 是共享出口 IP，Docker Hub 限流一来就 12min。这是整跑墙钟里最大且最不稳
+        # 的一块。buildx + GHA cache（type=gha）把层跨 run 复用。
+        uses: docker/setup-buildx-action@v3
 
       - name: "Export dev RS256 keys for stack (issue #3270)"
         # admin-api 镜像内没有 rsa/private.pem（被 .gitignore 刻意排除），
@@ -97,8 +150,41 @@ jobs:
           #   ③ 失败长期被静默（2026-09-11 实证：step4 success 但 postgres Error）。
           set -o pipefail
           # 本地栈需 DEBUG=true 供 X-Debug-Role 路由（小布身份注入），fail-closed 保护不受影响
-          docker compose -f deploy/docker-compose.yml up -d --build --wait \
-            --wait-timeout 300 postgres redis admin-api ai-agent-service 2>&1 | tail -20
+          # ── 镜像构建：带 GHA 层缓存（issue #3361）──
+          # 用显式 tag + 覆盖文件把 compose 指向这些镜像，避免依赖 compose 的默认命名规则
+          # （v1 `_`/v2 `-` 差异）。缓存命中时两者合计 ~1min；未命中（首次/被淘汰）退化为
+          # 全量构建 —— 且**失败必须回落**，不能让缓存问题把评测挡在门外。
+          cat > /tmp/compose-images.yml <<'YAML'
+          services:
+            admin-api:
+              image: migao-eval-admin-api
+            ai-agent-service:
+              image: migao-eval-ai-agent-service
+          YAML
+          build_cached() {
+            local name="$1" ctx="$2" df="$3"; shift 3
+            docker buildx build \
+              --cache-from "type=gha,scope=${name}" \
+              --cache-to "type=gha,scope=${name},mode=max" \
+              --build-arg BUILDKIT_INLINE_CACHE=1 \
+              "$@" \
+              -t "migao-eval-${name}" -f "$df" "$ctx" --load
+          }
+          # ⚠️ PIP_INDEX_URL：Dockerfile 默认用阿里云镜像（国内开发快），但 GitHub runner
+          # 在境外 —— 实测镜像内 `pip install -r requirements.txt` 走阿里云 **632s（~160 kB/s）**，
+          # 而这台 runner 自己的 pip（默认 PyPI）装同一份 requirements 只花 **23s**。
+          # 栈步骤总 13.1min 里 10.5min 就是这一项。CI 必须改用 PyPI。
+          if build_cached admin-api backend/admin-api backend/admin-api/Dockerfile \
+             && build_cached ai-agent-service backend/ai-agent-service backend/ai-agent-service/Dockerfile \
+                  --build-arg PIP_INDEX_URL=https://pypi.org/simple; then
+            echo "✅ 镜像构建完成（buildx + GHA cache）"
+            docker compose -f deploy/docker-compose.yml -f /tmp/compose-images.yml up -d --wait \
+              --wait-timeout 300 postgres redis admin-api ai-agent-service 2>&1 | tail -20
+          else
+            echo "⚠️ buildx 缓存构建失败 → 回落 docker compose up --build（无缓存路径）"
+            docker compose -f deploy/docker-compose.yml up -d --build --wait \
+              --wait-timeout 300 postgres redis admin-api ai-agent-service 2>&1 | tail -20
+          fi
 
       - name: "Seed C 端评测业务数据（issue #3270）"
         # 全新 bootstrap 空库下，agent 搜不到商品 → 反复重试 product_search →
@@ -138,15 +224,39 @@ jobs:
           # （DB 审计实证：17/17 全绿但 orders 无新增，order_create 被门禁拦/API 拒）。
           # 默认只打失败用例，写用例的成败藏在通过的用例里看不见。
           AGENT_EVAL_TRACE_ALL: "1"
+          # 固定节流等待调到最小（评测墙钟时间几乎全在真实 LLM 往返上：实测 C 端 normal
+          # 19m39s 里 ~63s 是纯 sleep、B 端 47 条约 3min；保留少量节流防 API 限流）
+          EVAL_ROUND_SLEEP: "0.2"
+          EVAL_CASE_SLEEP: "0.3"
+          # 用例级并发（issue #3361 提速第二轮）：**单 job 内**并行跑用例，栈只起一次。
+          # 实测（run 34692977836）3 片各自建栈把栈启动从 3.4min 抬到 12min（并发构建/
+          # 拉镜像被打爆），分片整体反而更慢（19.8min vs 15.6min）；而评测本身随并行线性
+          # 变快（单条吞吐不变）→ 结论：并行用例，别并行建栈。
+          EVAL_CONCURRENCY: "3"
+          # 本片运行汇总（机器可读）：分片后审计必须知道"本片是否真的跑了写用例"，
+          # 否则没有写用例的片会因 orders<=2 被误报假绿（分片基建，issue #3361）
+          AGENT_EVAL_SUMMARY_JSON: /tmp/eval-summary-shard${{ matrix.shard }}.json
         run: |
           # 小布 C 端用例（数据隔离/下单/售后），expectation 自动映射 customer_order_query
           # tier 由 workflow_dispatch 输入控制：smoke=门禁级 5 条；normal=C 端全量 ~35 条
           # （用于取「C 端能力缺陷分布」，issue #3270 第 2 步）
           TIER="${{ github.event.inputs.tier || 'smoke' }}"
           echo "── 评测档位: $TIER ──"
-          python tests/agent_eval/local_runner.py "$TIER" --cases .github/cases
+          # --shard：本 job 只跑自己那一份用例（默认 1 份，见 shards 输入说明）。
+          # --max-retries 3：每条失败用例至多重试 1 次（分类 llm-noise 靠它），
+          # 预算是"整跑最多几条能重试"的上限。实测把它压到 1 会让后几条失败用例拿不到
+          # 那一次防抖重试（13/18 vs 16/18），而并发后重试的墙钟代价已被摊平
+          # （整跑 8.2min，其中评测 3.9min）→ 恢复 3，兼顾"诚实"与"抗噪"。
+          python tests/agent_eval/local_runner.py "$TIER" --cases .github/cases \
+            --shard "${{ matrix.shard }}/${{ matrix.total }}" \
+            --max-retries 3
 
       - name: Run xiaobu real E2E (pytest，含数据隔离断言)
+        # 只在 0 号片跑：E2E 与用例分片无关（同一套栈/同一批断言），跑 N 份纯浪费墙钟。
+        # ⚠️ `always()` 必需（issue #3364）：实测评测步骤失败时本步被 skip →
+        # 而 E2E 自己的红灯比评测更早存在（main run 34684474262 评测 17/17、E2E 已 failure）
+        # —— 只要评测红，E2E 红就永远看不见，两个缺陷互相掩盖。
+        if: always() && matrix.shard == 0
         working-directory: backend/ai-agent-service
         env:
           CI: 'true'
@@ -177,6 +287,45 @@ jobs:
             | grep -E "route_by_intent|Routing to|Session continuity|Escape hatch|intent_router|classified|last_confirm_value|card-confirm 诊断|确认卡 confirmValue" \
             | tail -200 \
             || echo "（无路由日志：容器未起或该步骤前已失败）"
+          # ── 写工具失败原因（issue #3361）──
+          # 为什么必须 dump：round_trace 只说「order_create!tool_execution_failed」，
+          # 而工具对外文案是**故意泛化**的（不泄漏内部细节），真正的异常只在服务端日志里。
+          # 实测 run 34686905546：三个下单用例的 order_create 分别失败于
+          # tool_execution_failed / confirmation_required / tool_not_found，但日志只留
+          # 容器 tail，根因无从查证 → 归因卡在「工具层」下不去。
+          # 这里把写工具异常、门禁拦截、工具缺失三类行 dump 出来：
+          #   [order-create] Failed      → 工具内异常（含异常类型与消息）
+          #   [tool-registry] Failed     → 注册表执行异常
+          #   [tool-exec] <tool> ERROR   → _execute_tool_safe 捕获的异常（**带异常类型**，
+          #                                 实测 CH-010 的 order_create!tool_execution_failed
+          #                                 两次后第三次成功，异常就藏在这行里）
+          #   Tool not found             → skill 工具集缺失（tool_not_found）
+          #   拦截未确认的写操作 / card-confirm 诊断 → 确认门禁判定链
+          #   pending-validated / confirmed_write_tool → 确认-执行链是否把"用户已确认"记住
+          #   Agent stream error → **完整 traceback**（未预期异常的唯一线索；
+          #                       实测 CH-026「澄清卡后发图」崩溃只有用户侧错误文案，
+          #                       根因行号必须靠这行日志）
+          #   vision → 图片链路的分析/重试/降级轨迹
+          #   拦截缺参等待期 / 缺参记账 / 缺参已补齐 / write-input-recovery → 写工具缺参
+          #     恢复回路（issue #3365）：**这条捷径是判断"是守卫救回来的、还是模型自己
+          #     走对了"的唯一依据** —— 2026-09-13 那次 18/18 就因为没有这几行，
+          #     只能看到 OR-017 轨迹里 order_create→interact→order_create 的收敛形状，
+          #     无法证实守卫真的触发过。
+          echo "── 写工具失败原因（工具层归因：异常/门禁/工具缺失）──"
+          docker compose -f deploy/docker-compose.yml logs --no-color --timestamps \
+            ai-agent-service 2>/dev/null \
+            | grep -E "\[order-create\] Failed|\[tool-registry\] Failed|\[tool-exec\].*(ERROR|TIMEOUT)|\[langchain-adapter\] Failed|Tool not found|拦截未确认的写操作|card-confirm 诊断|拦截在办流程|self-correct|pending-validated|confirmed_write_tool|Agent stream error|AttributeError|vision|拦截缺参等待期|缺参记账|缺参已补齐|write-input-recovery" \
+            | tail -120 \
+            || echo "（无写工具失败日志：本跑无写工具异常）"
+          # ── 未预期异常的**完整 traceback**（issue #3361）──
+          # 为什么单列一步：traceback 是多行，只 grep 首行（`Agent stream error`）拿不到
+          # 根因行号。实测 CH-026（澄清卡后发图）用户侧只看到一句
+          # "AttributeError: 'str' object has no attribute 'get'"，根因必须靠这几行 File/line。
+          echo "── 未预期异常 traceback（Agent stream error 后 25 行）──"
+          docker compose -f deploy/docker-compose.yml logs --no-color --timestamps \
+            ai-agent-service 2>/dev/null \
+            | grep -A 25 "Agent stream error" | tail -120 \
+            || echo "（无未预期异常：本跑 agent 流未抛错）"
 
       - name: "Eval 产物 DB 审计（issue #3270 §2.2 自动化）"
         # 为什么必须有：round_trace 证明「工具被调用了」，但不证明「数据真的落库了」。
@@ -199,8 +348,12 @@ jobs:
           echo "· ai-agent 会话（每用例一个，含跨会话用例的多个）: $(PSQL 'SELECT count(*) FROM sessions;')"
           echo "· 其中未关闭残留（应为 0~个位数；大量残留 = 清理失效）: $(PSQL "SELECT count(*) FROM sessions WHERE status='active';")"
           echo "· 人工会话（仅转人工用例产生）: $(PSQL 'SELECT count(*) FROM agent_sessions;')"
-          echo "· 订单（含 fixture 2 笔）:"
-          PSQL "SELECT order_no || ' / ' || status || ' / 用户 ' || coalesce(user_id,'-') FROM orders ORDER BY created_at DESC LIMIT 12;"
+          echo "· 订单（含 fixture 2 笔；**带金额**——金额是 C 端最硬的正确性证据）:"
+          # 为什么要带 total_amount（issue #3361 归因需要）：只有金额才能回答
+          # 「下单真的成了，且钱算对了吗」。实测 OR-014 在**没有查商品详情**的情况下
+          # 发出的确认卡写着「遮光窗帘3米+打孔加工，合计¥95.4」，而该商品真实单价 ¥168/米
+          # —— 无金额审计时这种"钱算错了但工具调用成功"的报告看着一切正常。
+          PSQL "SELECT order_no || ' / ' || status || ' / ¥' || coalesce(total_amount, 0) || ' / 用户 ' || coalesce(user_id,'-') FROM orders ORDER BY created_at DESC LIMIT 12;"
           echo "· 售后工单:"
           PSQL "SELECT ticket_no || ' / ' || ticket_type || ' / ' || status FROM after_sales_tickets ORDER BY created_at DESC LIMIT 12;"
           echo "· 转人工工单（应能对上 CH-008/013/015 的 human_handoff）:"
@@ -213,10 +366,16 @@ jobs:
           ORDERS=$(PSQL "SELECT count(*) FROM orders WHERE deleted=0 AND tenant_id=1;")
           TICKETS=$(PSQL "SELECT count(*) FROM after_sales_tickets WHERE deleted=0;")
           MEMORIES=$(PSQL "SELECT count(*) FROM user_memories WHERE agent_type='xiaobu';")
-          echo "· 落库对账（fixture 订单=2；下单用例 CH-010/OR-014/OR-017 通过时订单应 >2）:"
-          echo "  orders=$ORDERS tickets=$TICKETS memories=$MEMORIES"
-          if [ "$ORDERS" -le 2 ]; then
-            echo "⚠️ 假绿风险：下单类写用例通过（order_create 在工具列表里），但订单未落库（<=2 仅 fixture）—— 调了 ≠ 成了，需查门禁/API"
+          # 本片是否跑了下单写用例：读 runner 汇总（分片后"全局应有"不再成立）
+          SUMMARY="/tmp/eval-summary-shard${{ matrix.shard }}.json"
+          WRITE_CASES=0
+          if [ -f "$SUMMARY" ] && command -v jq >/dev/null 2>&1; then
+            WRITE_CASES=$(jq -r '.order_write_cases // 0' "$SUMMARY" 2>/dev/null || echo 0)
+          fi
+          echo "· 落库对账（本片 shard=${{ matrix.shard }}/${{ matrix.total }}；fixture 订单=2）:"
+          echo "  orders=$ORDERS tickets=$TICKETS memories=$MEMORIES write_cases=$WRITE_CASES"
+          if [ "$ORDERS" -le 2 ] && [ "$WRITE_CASES" -gt 0 ]; then
+            echo "⚠️ 假绿风险：本片有 $WRITE_CASES 条下单写用例，但订单未落库（<=2 仅 fixture）—— 调了 ≠ 成了，需查门禁/API"
           fi
           if [ "$TICKETS" -eq 0 ]; then
             echo "⚠️ 假绿风险：无任何售后工单落库（CH-012/转人工用例的写操作未成功）"
@@ -273,13 +432,15 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v7
         with:
-          name: xiaobu-acceptance-artifacts
+          name: xiaobu-acceptance-artifacts-shard${{ matrix.shard }}
           path: |
             backend/ai-agent-service/.pytest_cache/
             tests/test-results/
 
       - name: Create Issue on failure (dedup guard)
-        if: failure()
+        # 只在 0 号片建 issue：同一次评测失败会同时命中 N 片，去重靠标题但并发下有竞态，
+        # 结果是一次失败开 N 个 issue（噪音）。0 号片的报告已含全局判定。
+        if: failure() && matrix.shard == 0
         uses: actions/github-script@v9
         with:
           script: |

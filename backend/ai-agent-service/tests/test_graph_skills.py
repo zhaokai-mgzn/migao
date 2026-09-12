@@ -7,7 +7,7 @@ LangGraph Skill 节点测试
 - ToolContext 从 state 正确构建
 - base_skill 的 execute_skill 逻辑
 """
-# case_ids: AG-004, CH-003, CH-023, MC-008, DF-018, HR-005, CU-003, CH-010, CH-012
+# case_ids: AG-004, CH-003, CH-023, MC-008, DF-018, HR-005, CU-003, CH-010, CH-012, OR-017
 
 import json
 import pytest
@@ -1428,7 +1428,8 @@ class TestInflightHandoffGuard:
     用户消息既非显式请求、也无负面情绪、更非能力外诉求 —— 纯属模型放弃在办流程。
     """
 
-    def _run(self, last_user_msg: str, *, with_card: bool, explicit_human: bool = False):
+    def _run(self, last_user_msg: str, *, with_card: bool, explicit_human: bool = False,
+             pending_skill: str = ""):
         import asyncio
 
         sent_tools = []
@@ -1481,7 +1482,7 @@ class TestInflightHandoffGuard:
             mem_cls.return_value.set_pending_skill = AsyncMock(return_value=True)
 
             result = asyncio.run(execute_skill(
-                state=_make_state(messages=history),
+                state=_make_state(messages=history, pending_interact_skill=pending_skill),
                 skill_name="customer_aftersales",
                 tool_names=["human_handoff"], system_prompt="你是小布的售后客服",
             ))
@@ -1508,6 +1509,86 @@ class TestInflightHandoffGuard:
         """没有在办卡片（未进入多轮流程）时不拦截 —— 保持既有行为"""
         _result, sent = self._run("质量问题", with_card=False)
         assert "human_handoff" in sent, "无在办流程时不应拦截转人工"
+
+    def test_blocks_when_pending_skill_marks_inflight(self):
+        """历史消息里扫不到卡片、但**跨轮 pending_interact_skill 非空** → 同样必须拦。
+
+        CI 实证（run 34689293179，CH-012）：R1 已下发选单卡、R3 顾客只回退货原因
+        「质量问题」，agent 直接 human_handoff 并建投诉工单 —— 当时"扫消息历史"这条路
+        判为 False（state["messages"] 未带回上一轮的 interact ToolMessage），
+        兜底形同虚设。pending_interact_skill 是「流程锁定中」的持久化权威标记
+        （卡片发出即写、写成功即清），必须并入判据。
+        """
+        result, sent = self._run("质量问题", with_card=False,
+                                 pending_skill="customer_aftersales")
+        assert "handoff_blocked_inflight" in str(result), (
+            "pending_interact_skill 非空（在办流程）时仍放行了无信号转人工"
+        )
+        assert "human_handoff" not in sent
+
+    def test_block_message_names_flow_tool(self):
+        """拦截话术必须点名下一步该调的工具（issue #3361，CI run 34703192730）。
+
+        实证：CH-012 R2/R3/R4 连续被拦 3 次，模型只反复重试 human_handoff，
+        始终不调 aftersale_create → 售后单永不创建。
+        原话术只说"请继续完成当前流程"，没说"调用哪个工具"，模型无从下手。
+        """
+        import asyncio, json as _json
+
+        sent_tools = []
+
+        async def fake_execute(tool, args, ctx, state):
+            sent_tools.append(tool.name)
+            return (_json.dumps({"success": True, "data": {}}), {"success": True, "data": {}})
+
+        with patch("app.memory.session_memory.SessionMemory") as mem_cls, \
+             patch("app.graph.skills.base_skill.get_breaker") as get_breaker, \
+             patch("app.graph.skills.base_skill.get_skill_llm") as get_llm, \
+             patch("app.graph.skills.base_skill.create_skill_registry") as create_reg, \
+             patch("app.graph.skills.base_skill.set_tool_context"), \
+             patch("app.graph.skills.base_skill._execute_tool_safe", fake_execute):
+            from app.tools.human_handoff import HumanHandoffTool
+            registry = MagicMock()
+            registry.get_langchain_tools.return_value = []
+            # 技能工具集里**有** aftersale_create（CH-012 的真实情形）
+            registry.get_tool.side_effect = lambda n: (
+                HumanHandoffTool() if n == "human_handoff" else (MagicMock() if n == "aftersale_create" else None))
+            create_reg.return_value = registry
+
+            breaker = MagicMock()
+            async def _pt(fn): return await fn()
+            breaker.call = _pt
+            get_breaker.return_value = breaker
+
+            call = MagicMock(spec=AIMessage)
+            call.content = ""
+            call.tool_calls = [{"name": "human_handoff", "args": {}, "id": "h1"}]
+            final = MagicMock(spec=AIMessage)
+            final.content = "好的"
+            final.tool_calls = []
+            llm = MagicMock(); llm.bind_tools.return_value = llm
+            llm.ainvoke = AsyncMock(side_effect=[call, final])
+            get_llm.return_value = llm
+            mem_cls.return_value.set_pending_skill = AsyncMock(return_value=True)
+
+            result = asyncio.run(execute_skill(
+                state=_make_state(messages=[HumanMessage(content="质量问题")],
+                                  pending_interact_skill="customer_aftersales"),
+                skill_name="customer_aftersales",
+                tool_names=["human_handoff", "aftersale_create"],
+                system_prompt="p",
+            ))
+
+        assert "handoff_blocked_inflight" in str(result)
+        assert "aftersale_create" in str(result), (
+            "拦截话术未点名 aftersale_create —— 模型只会反复重试转人工（CH-012 实证）"
+        )
+        assert "不要再次调用 human_handoff" in str(result), "未显式禁止重复调用转人工"
+
+    def test_pending_skill_does_not_block_explicit_request(self):
+        """回归：pending 非空但顾客明确要求转人工 → 仍必须放行。"""
+        _result, sent = self._run("转人工", with_card=False, pending_skill="customer_aftersales")
+        assert "human_handoff" in sent, "显式转人工被 pending 判据误拦"
 
 
 class TestCardConfirmValueRecognition:
@@ -1551,6 +1632,33 @@ class TestCardConfirmValueRecognition:
         assert _is_explicit_confirmation("确认") is True
 
 
+class _FakeGroundedStore:
+    """内存会话状态，预置「本会话已查过商品详情」（issue #3361 接地闸门要求）。
+
+    为什么必须显式 fake：这些测试此前隐式依赖"SessionStateStore 连不上 → 各分支降级"，
+    而**本机有 PG 时**它会真的读写 → 行为随环境漂移（接地闸门上线后当场暴露：
+    本机有 PG 的会话状态里没有接地标记 → order_create 被拦 → 7 条测试红）。
+
+    预置接地标记后，测试与 DB 无关：既覆盖确认链/去重逻辑，又不被基础设施可用性左右。
+    """
+
+    _states: dict = {}
+
+    def __init__(self, *a, **k):
+        pass
+
+    async def load(self, session_id: str) -> dict:
+        return dict(_FakeGroundedStore._states.setdefault(
+            session_id, {"grounded_product_detail": {"product_id": "prod_eval_blackout"}}))
+
+    async def commit(self, session_id: str, full: dict) -> None:
+        _FakeGroundedStore._states[session_id] = dict(full)
+
+
+def _patch_grounded_store():
+    return patch("app.memory.session_state_store.SessionStateStore", _FakeGroundedStore)
+
+
 class TestCardConfirmWriteExecutes:
     """集成：长 confirmValue 点击后，写操作**真的执行**（不再被门禁拦截）
 
@@ -1558,6 +1666,13 @@ class TestCardConfirmWriteExecutes:
     被门禁拦截（confirmValue >24 字）、用例靠"工具被调用"假绿。本测试锁死
     「点击确认卡 → 写操作放行」这条落库闭环。
     """
+
+    @pytest.fixture(autouse=True)
+    def _grounded_store(self):
+        _FakeGroundedStore._states = {}
+        with _patch_grounded_store():
+            yield
+
 
     LONG_CONFIRM = "确认下单：遮光窗帘 米白 散剪 门幅2.8米 3米 ¥474，收货人张三"
 
@@ -1626,7 +1741,11 @@ class TestCardConfirmWriteExecutes:
             mem_cls.return_value.set_pending_skill = AsyncMock(return_value=True)
 
             # 会话状态里预置最近确认卡的值（等同上一轮发出后已持久化）
-            store_state = {"last_confirm_value": self.LONG_CONFIRM}
+            store_state = {"grounded_product_detail": {"product_id": "prod_eval_blackout"},
+                       "last_confirm_value": self.LONG_CONFIRM,
+                           # 接地前置（issue #3361）：本类测"确认卡点击→写操作放行"，
+                           # 下单接地闸门要求会话状态里有该标记
+                           "grounded_product_detail": {"product_id": "prod_eval_blackout"}}
             store_cls = patch("app.memory.session_state_store.SessionStateStore")
             with store_cls as _sc:
                 _inst = MagicMock()
@@ -1739,6 +1858,13 @@ class TestWriteConfirmedAcrossTurns:
     `confirmed_write_tool`，写工具成功执行后清除（闭环语义与 pending 一致）。
     """
 
+    @pytest.fixture(autouse=True)
+    def _grounded_store(self):
+        _FakeGroundedStore._states = {}
+        with _patch_grounded_store():
+            yield
+
+
     LONG_CONFIRM = "确认下单：遮光窗帘 3米 米白 纳米圈打孔，总额528元，收货人张三 13800138000"
 
     def test_write_executes_on_code_turn_after_card_confirm(self):
@@ -1749,7 +1875,9 @@ class TestWriteConfirmedAcrossTurns:
 
         executed = []
         store_state = {"last_confirm_value": self.LONG_CONFIRM,
-                       "confirmed_write_tool": "order_create"}  # R1 匹配后已记录
+                       "confirmed_write_tool": "order_create",  # R1 匹配后已记录
+                       # 接地前置（issue #3361）：本用例测"验证码轮放行"，不测接地闸门
+                       "grounded_product_detail": {"product_id": "prod_eval_blackout"}}
 
         async def fake_execute(tool, args, ctx, state):
             executed.append(tool.name)
@@ -1875,6 +2003,8 @@ class TestWriteConfirmedLifecycle:
     LONG_CONFIRM = "确认下单：遮光窗帘 3米 米白 纳米圈打孔，总额528元，收货人张三 13800138000"
 
     def _run(self, store_state, user_msg, tool_calls):
+        # 接地前置（issue #3361）：本类测确认链，不测接地闸门
+        store_state.setdefault("grounded_product_detail", {"product_id": "prod_eval_blackout"})
         import asyncio
 
         from langchain_core.messages import AIMessage as _AI
@@ -1923,6 +2053,9 @@ class TestWriteConfirmedLifecycle:
             get_llm.return_value = llm
             mem_cls.return_value.set_pending_skill = AsyncMock(return_value=True)
 
+            # 接地前置（issue #3361）：本类测的是"确认链/跨轮放行"，下单接地闸门要求
+            # 会话状态里有 grounded_product_detail —— 不显式声明的话会被闸门拦（不是本类要测的）
+            store_state.setdefault("grounded_product_detail", {"product_id": "prod_eval_blackout"})
             inst = MagicMock()
             inst.load = AsyncMock(side_effect=lambda sid: dict(store_state))
             inst.commit = AsyncMock(side_effect=lambda sid, full: commits.append(dict(full)))
@@ -2017,3 +2150,867 @@ class TestTurnStartCardConfirmRecord:
             asyncio.run(_inject_pending_validated(
                 "p", {"session_id": "s2"}, self.LONG_CONFIRM))
         assert "confirmed_write_tool" not in committed
+
+
+class TestTextConfirmationRecordedAcrossTurns:
+    """文本确认（「确认」）也必须在**确认轮**记录 confirmed_write_tool（issue #3361）。
+
+    CI 实证（run 34689293179，OR-017）：
+      R3 顾客回「确认」→ 模型只调 validate_input 并下发确认卡（**没写**）；
+      R4 顾客回手机验证码「123456」→ stored confirmValue（'确认下单'）不匹配、
+      本轮文本也不像确认 → 门禁以「未确认」拦下 order_create → 订单永不落库。
+    旧实现只在「卡片 confirmValue 精确匹配」时记录，文本明确确认（短句「确认」）
+    这条路径漏记 —— 而 `_is_explicit_confirmation` 本来就是门禁认可的确认判据。
+    """
+
+    def _run(self, last_user_msg, pending, stored=None):
+        import asyncio
+
+        from app.graph.skills.base_skill import _inject_pending_validated
+        from app.graph.pending_validated import PENDING_KEY
+
+        committed = {}
+        state = {"last_confirm_value": stored} if stored else {}
+        if pending:
+            state[PENDING_KEY] = pending
+
+        with patch("app.memory.session_state_store.SessionStateStore") as store_cls:
+            inst = MagicMock()
+            inst.load = AsyncMock(return_value=state)
+            inst.commit = AsyncMock(side_effect=lambda sid, full: committed.update(full))
+            store_cls.return_value = inst
+            asyncio.run(_inject_pending_validated("p", {"session_id": "s1"}, last_user_msg))
+        return committed
+
+    def test_short_text_confirmation_records(self):
+        committed = self._run("确认", {"target_tool": "order_create", "target_action": "create"})
+        assert committed.get("confirmed_write_tool") == "order_create", (
+            "文本确认轮未记录放行标记 —— 下一轮补充信息（验证码）写操作会被门禁拦"
+        )
+
+    def test_sms_code_turn_does_not_record(self):
+        """补充信息轮（验证码）本身不构成确认 —— 不得误记录（门禁不能被绕过）。"""
+        committed = self._run("123456", {"target_tool": "order_create", "target_action": "create"})
+        assert "confirmed_write_tool" not in committed
+
+    def test_no_pending_no_record(self):
+        committed = self._run("确认", None)
+        assert "confirmed_write_tool" not in committed
+
+    def test_card_click_still_records(self):
+        """卡片点击路径不得回归（原有行为）。"""
+        long_val = "确认下单：遮光窗帘 3米 米白 打孔，总额528元，收货人张三"
+        committed = self._run(long_val,
+                              {"target_tool": "order_create", "target_action": "create"},
+                              stored=long_val)
+        assert committed.get("confirmed_write_tool") == "order_create"
+
+
+class TestInTurnDuplicateWriteCoalescing:
+    """同轮重复写调用合并（issue #3361）：防止「一次意图 = 两次写」。
+
+    CI 实证（CH-010，run 34691137050）：一轮里 `order_create ×3`（模型把同一次下单
+    意图重复表达了三遍）。写工具刻意不走 60s 读缓存（重复的**非幂等写**不能被静默
+    吞掉），于是三次都真执行 → 2 次 `tool_execution_failed`、1 次成功 —— **幸而**没有
+    变成 2 张订单。合并规则与缓存的关键区别：作用域仅本轮（下一次回复即失效），
+    且**参数不同不合并**（那是两次不同的写需求）。
+    """
+
+    @pytest.fixture(autouse=True)
+    def _grounded_store(self):
+        _FakeGroundedStore._states = {}
+        with _patch_grounded_store():
+            yield
+
+
+    def _run(self, tool_calls, read_only=False):
+        import asyncio
+        from app.graph.skills.base_skill import execute_skill
+
+        executed = []
+
+        async def fake_execute_safe(tool, args, ctx, state):
+            executed.append((tool.name, dict(args)))
+            return (json.dumps({"success": True, "data": {"id": "x"}}),
+                    {"success": True, "data": {"id": "x"}})
+
+        with patch("app.memory.session_memory.SessionMemory") as mem_cls, \
+             patch("app.graph.skills.base_skill.get_breaker") as get_breaker, \
+             patch("app.graph.skills.base_skill.get_skill_llm") as get_llm, \
+             patch("app.graph.skills.base_skill.create_skill_registry") as create_reg, \
+             patch("app.graph.skills.base_skill.set_tool_context"), \
+             patch("app.graph.skills.base_skill._execute_tool_safe", fake_execute_safe):
+            fake_tool = MagicMock()
+            fake_tool.name = "order_create"
+            fake_tool.read_only = read_only
+            fake_tool.destructive = False
+            fake_tool.requires_confirmation = False
+            registry = MagicMock()
+            registry.get_langchain_tools.return_value = []
+            registry.get_tool.side_effect = lambda n: fake_tool if n == "order_create" else None
+            create_reg.return_value = registry
+
+            breaker = MagicMock()
+
+            async def _passthrough(fn):
+                return await fn()
+
+            breaker.call = _passthrough
+            get_breaker.return_value = breaker
+
+            call = MagicMock(spec=AIMessage)
+            call.content = ""
+            call.tool_calls = tool_calls
+            final = MagicMock(spec=AIMessage)
+            final.content = "好的"
+            final.tool_calls = []
+            llm = MagicMock()
+            llm.bind_tools.return_value = llm
+            llm.ainvoke = AsyncMock(side_effect=[call, final])
+            get_llm.return_value = llm
+            mem_cls.return_value.set_pending_skill = AsyncMock(return_value=True)
+
+            result = asyncio.run(execute_skill(
+                state=_make_state(messages=[HumanMessage(content="确认下单")]),
+                skill_name="customer_order",
+                tool_names=["order_create"], system_prompt="p",
+            ))
+        return executed, result
+
+    def _tc(self, args, cid="c1"):
+        return {"name": "order_create", "args": args, "id": cid}
+
+    def test_identical_write_calls_execute_once(self):
+        executed, result = self._run([
+            self._tc({"items": [{"product_id": "p1"}], "sms_code": "123456"}, "c1"),
+            self._tc({"items": [{"product_id": "p1"}], "sms_code": "123456"}, "c2"),
+            self._tc({"items": [{"product_id": "p1"}], "sms_code": "123456"}, "c3"),
+        ])
+        assert len(executed) == 1, (
+            f"同轮同参数的写调用未合并（执行了 {len(executed)} 次）—— "
+            "运气差会变成重复下单"
+        )
+        # 三个 tool_call 都必须拿到结果（不能有调用悬空）
+        msgs = result.get("messages") or []
+        tool_msgs = [m for m in msgs if type(m).__name__ == "ToolMessage"]
+        assert len(tool_msgs) == 3, f"合并后每个 tool_call 仍须有结果消息，实际 {len(tool_msgs)}"
+
+    def test_different_args_not_coalesced(self):
+        """参数不同 = 两次不同的写需求 → 必须执行两次（不能误合并）。"""
+        executed, _ = self._run([
+            self._tc({"items": [{"product_id": "p1"}]}, "c1"),
+            self._tc({"items": [{"product_id": "p2"}]}, "c2"),
+        ])
+        assert len(executed) == 2
+
+    def test_read_only_duplicates_unchanged(self):
+        """只读工具不受此逻辑影响（它走 60s 读缓存，语义不变）。"""
+        executed, _ = self._run([
+            self._tc({}, "c1"), self._tc({}, "c2"),
+        ], read_only=True)
+        assert len(executed) == 2
+
+
+class TestHallucinatedToolArgSanitize:
+    """模型幻觉参数净化（issue #3361，CI 实证 run 34703192730）。
+
+    dump 原文：
+        [tool-exec] order_create ERROR: OrderCreateTool.execute() got an unexpected
+        keyword argument 'action'
+    LLM 会把别家工具的字段顺手带过来（`aftersale_create`/`after_sales_manage` 有 `action`，
+    `order_create` 没有）→ TypeError → `tool_execution_failed` → 模型重试两次才成功
+    （CH-010/OR-014 抖动的真因，单条用例白跑 200-400s）。
+
+    修法：执行前按工具 `execute()` 签名丢弃不受支持的 kwarg，并打警告（可见、不静默）。
+    """
+
+    def _tool(self, **kwargs):
+        captured = {}
+
+        async def execute(self, context, name: str, items: list, sms_code=None, **rest):
+            captured.update({"name": name, "items": items, "sms_code": sms_code, "rest": rest})
+            return "ok"
+
+        class T:
+            name = "order_create"
+            read_only = False
+            destructive = False
+            requires_confirmation = False
+
+        T.execute = execute
+        t = T()
+        return t, captured
+
+    @pytest.fixture(autouse=True)
+    def _clear_sig_cache(self):
+        """签名缓存是模块级 dict：测试替身同名会串味，逐测清空。"""
+        from app.graph.skills.base_skill import _accepted_param_names
+        _accepted_param_names._cache = {}
+        yield
+        _accepted_param_names._cache = {}
+
+    def test_unexpected_kwarg_dropped(self, capsys):
+        """多余参数（action）必须被丢弃，调用照常成功。
+
+        替身必须用**显式签名**（真实 order_create 就是这样：无 **kwargs）——
+        带 **kwargs 的工具按设计不做净化（不能吞合法参数），用 **kwargs 替身测不出净化。
+        """
+        import asyncio
+        from app.graph.skills.base_skill import _execute_tool_safe
+
+        seen = {}
+
+        async def fake_execute(context, name: str, items: list, sms_code=None):
+            seen.update({"name": name, "items": items, "sms_code": sms_code})
+            from app.tools.base import ToolResult
+            return ToolResult(success=True, data={"ok": True}, message="ok")
+
+        class T:
+            name = "order_create"
+            read_only = False
+            destructive = False
+            requires_confirmation = False
+
+        T.execute = staticmethod(fake_execute)
+
+        with patch("app.graph.skills.base_skill._auto_resolve_ids",
+                   new=AsyncMock(side_effect=lambda tool, args, state: args)), \
+             patch("app.tools.langchain_adapter.LangChainToolAdapter._normalize_args",
+                   staticmethod(lambda tool, args: args)):
+            _, result_dict = asyncio.run(_execute_tool_safe(
+                T(), {"name": "张三", "items": [], "action": "create"}, MagicMock(), {"session_id": "s"}))
+        assert result_dict.get("success") is True, "净化后调用应成功"
+        assert "action" not in seen, "幻觉参数 action 未被丢弃"
+        assert seen.get("name") == "张三" and seen.get("items") == []
+
+    def test_normal_args_pass_through(self):
+        """正常参数不得被误删（净化只针对签名外的键）。"""
+        import asyncio
+        from app.graph.skills.base_skill import _execute_tool_safe
+
+        seen = {}
+
+        async def fake_execute(context, **kw):
+            seen.update(kw)
+            from app.tools.base import ToolResult
+            return ToolResult(success=True, data={}, message="ok")
+
+        class T:
+            name = "order_create"
+            read_only = False
+            destructive = False
+            requires_confirmation = False
+        T.execute = staticmethod(fake_execute)
+
+        with patch("app.graph.skills.base_skill._auto_resolve_ids",
+                   new=AsyncMock(side_effect=lambda tool, args, state: args)), \
+             patch("app.tools.langchain_adapter.LangChainToolAdapter._normalize_args",
+                   staticmethod(lambda tool, args: args)):
+            asyncio.run(_execute_tool_safe(T(), {"name": "张三", "sms_code": "123456"},
+                                           MagicMock(), {"session_id": "s"}))
+        assert seen.get("name") == "张三" and seen.get("sms_code") == "123456"
+
+    def test_var_keyword_tool_not_sanitized(self):
+        """带 **kwargs 的工具不做净化（不能吞掉合法参数）。"""
+        import asyncio
+        from app.graph.skills.base_skill import _sanitize_tool_args
+
+        class T:
+            name = "flexible"
+            async def execute(self, context, **kwargs):
+                return "ok"
+
+        out = _sanitize_tool_args(T(), {"anything": 1, "name": "x"})
+        assert out == {"anything": 1, "name": "x"}
+
+
+class TestOrderGroundingGate:
+    """下单接地闸门（issue #3361，OR-014 复现型红灯）。
+
+    实证（CI run 34704789166，OR-014）：顾客说「帮我下单，遮光窗帘 3 米，要打孔加工」，
+    模型 **一次都没查商品**（R1 tools=-），凭记忆发确认卡（金额 ¥95.4，而该商品真实单价
+    ¥168/米）并试图下单 → 单价/加工项/金额全不可信，且用例期望的 product_detail 缺失。
+
+    提示词里的「商品详情铁律（confirm 之前必须先调 product_detail）」模型不守，
+    故加代码闸门：本会话没**成功**查过商品详情 → 不许下单，并把可执行步骤写进 tool result。
+    """
+
+    def _run(self, grounded: bool, tool_calls):
+        import asyncio, json as _json
+
+        sent = []
+
+        async def fake_execute(tool, args, ctx, state):
+            sent.append(tool.name)
+            return (_json.dumps({"success": True, "data": {"id": "o1"}}),
+                    {"success": True, "data": {"id": "o1"}})
+
+        class _Store:
+            def __init__(self, state):
+                self._state = state
+
+            async def load(self, sid):
+                return dict(self._state)
+
+            async def commit(self, sid, full):
+                self._state.update(full)
+
+        store_state = {"grounded_product_detail": {"product_id": "p1"}} if grounded else {}
+
+        with patch("app.memory.session_memory.SessionMemory"), \
+             patch("app.graph.skills.base_skill.get_breaker") as get_breaker, \
+             patch("app.graph.skills.base_skill.get_skill_llm") as get_llm, \
+             patch("app.graph.skills.base_skill.create_skill_registry") as create_reg, \
+             patch("app.graph.skills.base_skill.set_tool_context"), \
+             patch("app.graph.skills.base_skill._execute_tool_safe", fake_execute), \
+             patch("app.memory.session_state_store.SessionStateStore",
+                   side_effect=lambda *a, **k: _Store(store_state)):
+            fake_tool = MagicMock()
+            fake_tool.name = "order_create"
+            fake_tool.read_only = False
+            fake_tool.destructive = False
+            fake_tool.requires_confirmation = False
+            registry = MagicMock()
+            registry.get_langchain_tools.return_value = []
+            registry.get_tool.side_effect = lambda n: fake_tool if n == "order_create" else None
+            create_reg.return_value = registry
+
+            breaker = MagicMock()
+
+            async def _pt(fn):
+                return await fn()
+
+            breaker.call = _pt
+            get_breaker.return_value = breaker
+
+            call = MagicMock(spec=AIMessage)
+            call.content = ""
+            call.tool_calls = tool_calls
+            final = MagicMock(spec=AIMessage)
+            final.content = "好的"
+            final.tool_calls = []
+            llm = MagicMock()
+            llm.bind_tools.return_value = llm
+            llm.ainvoke = AsyncMock(side_effect=[call, final])
+            get_llm.return_value = llm
+            _ = asyncio.run(execute_skill(
+                state=_make_state(messages=[HumanMessage(content="帮我下单")]),
+                skill_name="customer_order",
+                tool_names=["order_create"], system_prompt="p"))
+        return sent, store_state
+
+    def test_blocks_order_without_grounding(self):
+        sent, _ = self._run(False, [{"name": "order_create", "args": {}, "id": "c1"}])
+        assert sent == [], (
+            "本会话没查过商品详情却执行了 order_create —— 价格/加工项不可信（OR-014 实证 ¥95.4）"
+        )
+
+    def test_allows_order_when_grounded(self):
+        sent, _ = self._run(True, [{"name": "order_create", "args": {}, "id": "c1"}])
+        assert sent == ["order_create"], "已查过商品详情时不得误拦下单"
+
+    def test_product_detail_success_records_grounding(self):
+        """成功调用 product_detail 后必须落地接地标记（否则闸门永远拦）。"""
+        import asyncio, json as _json
+        sent = []
+
+        async def fake_execute(tool, args, ctx, state):
+            sent.append(tool.name)
+            return (_json.dumps({"success": True, "data": {"id": "p9"}}),
+                    {"success": True, "data": {"id": "p9"}})
+
+        class _Store:
+            def __init__(self, state):
+                self._state = state
+
+            async def load(self, sid):
+                return dict(self._state)
+
+            async def commit(self, sid, full):
+                self._state.update(full)
+
+        store_state = {}
+        with patch("app.memory.session_memory.SessionMemory"), \
+             patch("app.graph.skills.base_skill.get_breaker") as get_breaker, \
+             patch("app.graph.skills.base_skill.get_skill_llm") as get_llm, \
+             patch("app.graph.skills.base_skill.create_skill_registry") as create_reg, \
+             patch("app.graph.skills.base_skill.set_tool_context"), \
+             patch("app.graph.skills.base_skill._execute_tool_safe", fake_execute), \
+             patch("app.memory.session_state_store.SessionStateStore",
+                   side_effect=lambda *a, **k: _Store(store_state)):
+            fake_tool = MagicMock()
+            fake_tool.name = "product_detail"
+            fake_tool.read_only = True
+            fake_tool.destructive = False
+            fake_tool.requires_confirmation = False
+            registry = MagicMock()
+            registry.get_langchain_tools.return_value = []
+            registry.get_tool.side_effect = lambda n: fake_tool if n == "product_detail" else None
+            create_reg.return_value = registry
+            breaker = MagicMock()
+
+            async def _pt(fn):
+                return await fn()
+
+            breaker.call = _pt
+            get_breaker.return_value = breaker
+            call = MagicMock(spec=AIMessage)
+            call.content = ""
+            call.tool_calls = [{"name": "product_detail", "args": {"product_id": "p9"}, "id": "c1"}]
+            final = MagicMock(spec=AIMessage)
+            final.content = "好的"
+            final.tool_calls = []
+            llm = MagicMock()
+            llm.bind_tools.return_value = llm
+            llm.ainvoke = AsyncMock(side_effect=[call, final])
+            get_llm.return_value = llm
+            asyncio.run(execute_skill(
+                state=_make_state(messages=[HumanMessage(content="看看这个商品")]),
+                skill_name="customer_order",
+                tool_names=["product_detail"], system_prompt="p"))
+        assert store_state.get("grounded_product_detail"), "product_detail 成功后未落地接地标记"
+
+
+class TestGroundingAutopilot:
+    """接地自动驾驶（issue #3365）：闸门拦下后**代码代跑**只读的 search+detail。
+
+    实证（CI run 34707941520，OR-014）：闸门拦住 6 次，模型仍只重试 order_create，
+    提示词与拦截话术都劝不动 → 属模型层不遵从。故代码兜底：代跑
+    product_search(keyword=顾客原话里的商品名) → product_detail → 落接地标记 →
+    把真实单价回给模型，让它基于真值重新下单。
+    只在**唯一命中**时落地（多命中把候选交回模型，不猜商品）。
+    """
+
+    def _run(self, search_products, detail_ok=True, user_msg="帮我下单，遮光窗帘 3 米，要打孔加工"):
+        import asyncio, json as _json
+
+        calls = []
+        store = {}
+
+        class _Store:
+            async def load(self, sid):
+                return dict(store)
+
+            async def commit(self, sid, full):
+                store.update(full)
+
+        async def fake_execute_safe(tool, args, ctx, state):
+            calls.append((tool.name, dict(args)))
+            if tool.name == "product_search":
+                return (_json.dumps({"success": True, "data": {"products": search_products}}),
+                        {"success": True, "data": {"products": search_products}})
+            if tool.name == "product_detail":
+                if not detail_ok:
+                    return (_json.dumps({"success": False, "error": "not_found"}),
+                            {"success": False, "error": "not_found"})
+                return (_json.dumps({"success": True, "data": {"id": args.get("product_id"),
+                                                               "name": "遮光窗帘", "price": 168.0}}),
+                        {"success": True, "data": {"id": args.get("product_id"),
+                                                   "name": "遮光窗帘", "price": 168.0}})
+            return (_json.dumps({"success": True, "data": {"id": "o1"}}),
+                    {"success": True, "data": {"id": "o1"}})
+
+        def _mk(name):
+            m = MagicMock()
+            m.name = name
+            m.read_only = True
+            m.destructive = False
+            m.requires_confirmation = False
+            return m
+
+        with patch("app.memory.session_memory.SessionMemory"), \
+             patch("app.graph.skills.base_skill.get_breaker") as get_breaker, \
+             patch("app.graph.skills.base_skill.get_skill_llm") as get_llm, \
+             patch("app.graph.skills.base_skill.create_skill_registry") as create_reg, \
+             patch("app.graph.skills.base_skill.set_tool_context"), \
+             patch("app.graph.skills.base_skill._execute_tool_safe", fake_execute_safe), \
+             patch("app.memory.session_state_store.SessionStateStore",
+                   side_effect=lambda *a, **k: _Store()):
+            order_tool = _mk("order_create")
+            order_tool.read_only = False
+            registry = MagicMock()
+            registry.get_langchain_tools.return_value = []
+            registry.get_tool.side_effect = lambda n: {
+                "order_create": order_tool, "product_search": _mk("product_search"),
+                "product_detail": _mk("product_detail"),
+            }.get(n)
+            create_reg.return_value = registry
+            breaker = MagicMock()
+
+            async def _pt(fn):
+                return await fn()
+
+            breaker.call = _pt
+            get_breaker.return_value = breaker
+            call = MagicMock(spec=AIMessage)
+            call.content = ""
+            call.tool_calls = [{"name": "order_create", "args": {"items": []}, "id": "c1"}]
+            final = MagicMock(spec=AIMessage)
+            final.content = "好的"
+            final.tool_calls = []
+            llm = MagicMock()
+            llm.bind_tools.return_value = llm
+            llm.ainvoke = AsyncMock(side_effect=[call, final])
+            get_llm.return_value = llm
+            result = asyncio.run(execute_skill(
+                state=_make_state(messages=[HumanMessage(content=user_msg)]),
+                skill_name="customer_order",
+                tool_names=["order_create", "product_search", "product_detail"],
+                system_prompt="p"))
+        return calls, store, result
+
+    def test_single_hit_gives_grounded_facts(self):
+        calls, store, result = self._run([{"id": "p1", "name": "遮光窗帘"}])
+        names = [c[0] for c in calls]
+        assert names[:2] == ["product_search", "product_detail"], f"未代跑 search→detail: {names}"
+        assert store.get("grounded_product_detail", {}).get("product_id") == "p1", "接地标记未落"
+        s = str(result)
+        assert "遮光窗帘" in s and "168" in s, "未把真实商品/单价回给模型"
+
+    def test_multiple_hits_not_guessed(self):
+        """多命中不得猜商品（否则把错误数据当接地真值）。"""
+        calls, store, _ = self._run([{"id": "p1"}, {"id": "p2"}])
+        assert [c[0] for c in calls] == ["product_search"], "多命中还继续 product_detail（等于猜商品）"
+        assert "grounded_product_detail" not in store
+
+    def test_no_keyword_no_autopilot(self):
+        calls, _store, _ = self._run([{"id": "p1"}], user_msg="帮我下单 3 米要打孔加工")
+        assert calls == [], "抽不到商品关键词时代跑不应触发（避免搜错）"
+
+    def test_detail_failure_falls_back(self):
+        calls, store, result = self._run([{"id": "p1"}], detail_ok=False)
+        assert [c[0] for c in calls] == ["product_search", "product_detail"]
+        assert "grounded_product_detail" not in store, "detail 失败不得落接地标记"
+        assert "product_detail" in str(result), "应回落到分步话术"
+
+
+class TestSmsCodeBackfill:
+    """验证码代码补齐（issue #3365）。
+
+    实证（CI run 34712928371，CH-010）：`order_create!缺少短信验证码 ×3` —— 顾客明明在上一轮
+    给了「123456」，模型调 order_create 时就是不带 sms_code → 订单不落库、用例判红，
+    而失败长相像"能力不行"（真因是模型漏参 + 工具强校验）。
+    代码兜底：顾客上一条消息**整条就是验证码** → 执行前补进 args。
+    """
+
+    def _run(self, user_msg, args):
+        import asyncio, json as _json
+
+        seen = {}
+
+        async def fake_execute(tool, a, ctx, state):
+            seen.update(a)
+            return (_json.dumps({"success": True, "data": {"id": "o1"}}),
+                    {"success": True, "data": {"id": "o1"}})
+
+        class _Store:
+            async def load(self, sid):
+                return {"grounded_product_detail": {"product_id": "p1"}}
+
+            async def commit(self, sid, full):
+                pass
+
+        with patch("app.memory.session_memory.SessionMemory"), \
+             patch("app.graph.skills.base_skill.get_breaker") as get_breaker, \
+             patch("app.graph.skills.base_skill.get_skill_llm") as get_llm, \
+             patch("app.graph.skills.base_skill.create_skill_registry") as create_reg, \
+             patch("app.graph.skills.base_skill.set_tool_context"), \
+             patch("app.graph.skills.base_skill._execute_tool_safe", fake_execute), \
+             patch("app.memory.session_state_store.SessionStateStore",
+                   side_effect=lambda *a, **k: _Store()):
+            tool = MagicMock()
+            tool.name = "order_create"
+            tool.read_only = False
+            tool.destructive = False
+            tool.requires_confirmation = False
+            registry = MagicMock()
+            registry.get_langchain_tools.return_value = []
+            registry.get_tool.side_effect = lambda n: tool if n == "order_create" else None
+            create_reg.return_value = registry
+            breaker = MagicMock()
+
+            async def _pt(fn):
+                return await fn()
+
+            breaker.call = _pt
+            get_breaker.return_value = breaker
+            call = MagicMock(spec=AIMessage)
+            call.content = ""
+            call.tool_calls = [{"name": "order_create", "args": args, "id": "c1"}]
+            final = MagicMock(spec=AIMessage)
+            final.content = "好的"
+            final.tool_calls = []
+            llm = MagicMock()
+            llm.bind_tools.return_value = llm
+            llm.ainvoke = AsyncMock(side_effect=[call, final])
+            get_llm.return_value = llm
+            asyncio.run(execute_skill(
+                state=_make_state(messages=[HumanMessage(content=user_msg)]),
+                skill_name="customer_order",
+                tool_names=["order_create"], system_prompt="p"))
+        return seen
+
+    def test_code_backfilled_when_customer_gave_it(self):
+        seen = self._run("123456", {"items": []})
+        assert seen.get("sms_code") == "123456", "顾客已给验证码但未补齐 → 订单必然被拒"
+
+    def test_no_backfill_when_model_already_passed(self):
+        seen = self._run("123456", {"items": [], "sms_code": "654321"})
+        assert seen.get("sms_code") == "654321", "模型已带验证码时不得覆盖"
+
+    def test_phone_number_not_mistaken_for_code(self):
+        """手机号里含数字片段，绝不能当验证码注入（否则验证必失败且难排查）。"""
+        seen = self._run("我的手机号是 13800138000", {"items": []})
+        assert "sms_code" not in seen
+
+    def test_extract_sms_code_shapes(self):
+        from app.graph.skills.base_skill import extract_sms_code
+        assert extract_sms_code("123456") == "123456"
+        assert extract_sms_code("验证码 1234") == "1234"
+        assert extract_sms_code("短信验证码：123456") == "123456"
+        assert extract_sms_code("13800138000") == ""
+        assert extract_sms_code("123456 顺便问下") == ""
+        assert extract_sms_code("") == ""
+
+
+class TestWriteInputRecovery:
+    """写工具缺参失败的「要参数」恢复回路（issue #3365，OR-017 CI 实证）。
+
+    CI run 34716531345（OR-017）轨迹：
+      R6 confirm 卡「请确认订单信息」→ R7 顾客「确认下单」→ `order_create!缺少短信验证码`
+      → R8 顾客「确认」→ **又一张一模一样的 confirm 卡** + `order_create!缺少短信验证码`
+      → R9 顾客「123456」被这张卡吃掉（harness 优先答卡）→ `确认死循环: confirm 卡共出现 3 次`。
+    真因不是「模型不聪明」，而是代码允许它在缺参后**原样重发确认卡并重复调用注定失败的工具**：
+    顾客点多少次确认都得不到「请输入验证码」这句话 —— 生产环境里人也会卡死。
+    修法（与 handoff_blocked_inflight 同族）：缺参失败后
+      ① 跨轮记住「欠哪个参数」，把「向顾客索要该参数」的指令注入下一轮系统提示；
+      ② 该参数仍未到手时，**不再放行同一个写工具**（省掉注定失败的调用）；
+      ③ 同一张确认卡（confirmValue 逐字相同）不得二次下发。
+    """
+
+    _FLAG = {"tool": "order_create", "error": "缺少短信验证码",
+             "message": "为了您的账户安全，创建订单前需要验证手机号。请输入短信验证码",
+             "param": "sms_code"}
+
+    def _run(self, user_msg, args, tool_name="order_create", store_extra=None,
+             force_fail=None):
+        import asyncio, json as _json
+
+        seen = {"calls": [], "commits": []}
+        # 前置闸门必须先在夹具里满足（接地闸门会拦未查详情的 order_create）——
+        # 否则测的不是本类要测的「缺参恢复」，而是接地闸门（首版夹具就被它误伤：
+        # 两个用例都返回 product_not_grounded，断言以"没有调用"通过了，属假绿）。
+        full = {"grounded_product_detail": {"product_id": "p1"}}
+        full.update(store_extra or {})
+
+        async def fake_execute(tool, a, ctx, state):
+            seen["calls"].append((tool, a))
+            if force_fail:
+                return (force_fail, _json.loads(force_fail))
+            return (_json.dumps({"success": True, "data": {"id": "o1"}}),
+                    {"success": True, "data": {"id": "o1"}})
+
+        class _Store:
+            async def load(self, sid):
+                return dict(full)
+
+            async def commit(self, sid, new_full):
+                seen["commits"].append(dict(new_full))
+                full.clear()
+                full.update(new_full)
+
+        with patch("app.memory.session_memory.SessionMemory"), \
+             patch("app.graph.skills.base_skill.get_breaker") as get_breaker, \
+             patch("app.graph.skills.base_skill.get_skill_llm") as get_llm, \
+             patch("app.graph.skills.base_skill.create_skill_registry") as create_reg, \
+             patch("app.graph.skills.base_skill.set_tool_context"), \
+             patch("app.graph.skills.base_skill._execute_tool_safe", fake_execute), \
+             patch("app.memory.session_state_store.SessionStateStore",
+                   side_effect=lambda *a, **k: _Store()):
+            tool = MagicMock()
+            tool.name = tool_name
+            tool.read_only = False
+            tool.destructive = False
+            tool.requires_confirmation = False
+            registry = MagicMock()
+            registry.get_langchain_tools.return_value = []
+            registry.get_tool.side_effect = lambda n: tool if n == tool_name else None
+            create_reg.return_value = registry
+            breaker = MagicMock()
+
+            async def _pt(fn):
+                return await fn()
+
+            breaker.call = _pt
+            get_breaker.return_value = breaker
+            call = MagicMock(spec=AIMessage)
+            call.content = ""
+            call.tool_calls = [{"name": tool_name, "args": args, "id": "c1"}]
+            final = MagicMock(spec=AIMessage)
+            final.content = "好的"
+            final.tool_calls = []
+            llm = MagicMock()
+            llm.bind_tools.return_value = llm
+            llm.ainvoke = AsyncMock(side_effect=[call, final])
+            get_llm.return_value = llm
+            res = asyncio.run(execute_skill(
+                state=_make_state(messages=[HumanMessage(content=user_msg)]),
+                skill_name="customer_order",
+                tool_names=[tool_name], system_prompt="p"))
+        try:
+            from langchain_core.messages import ToolMessage as _TM
+            seen["tool_content"] = "\n".join(
+                str(getattr(m, "content", "")) for m in (res or {}).get("messages", [])
+                if isinstance(m, _TM))
+        except Exception:
+            seen["tool_content"] = ""
+        seen["result"] = res
+        seen["final_store"] = dict(full)
+        # 抓下发往 LLM 的消息：注入是否**真的到达系统提示**（M68 存活实证：只测
+        # 辅助函数会漏掉"接线断了"——改了实现也没人发现）
+        try:
+            _msgs = llm.ainvoke.call_args_list[0][0][0] if llm.ainvoke.call_args_list else []
+            seen["sys_prompt"] = "\n".join(str(getattr(m, "content", "")) for m in _msgs)
+        except Exception:
+            seen["sys_prompt"] = ""
+        return seen
+
+    # ── ① 缺参未补齐 → 不再放行同一个写工具 ──
+
+    def test_repeat_write_blocked_while_waiting_for_input(self):
+        seen = self._run("确认", {"items": []},
+                         store_extra={"last_write_input_error": self._FLAG})
+        assert seen["calls"] == [], \
+            "顾客还没给验证码，重复调用 order_create 只会再失败一次（CI 里正是这条 ×2）"
+
+    def test_blocked_write_reports_actionable_guidance(self):
+        seen = self._run("确认", {"items": []},
+                         store_extra={"last_write_input_error": self._FLAG})
+        # 拦截时给模型的 ToolMessage 必须点名要什么，否则模型只能靠猜
+        assert "验证码" in self._last_tool_content(seen)
+
+    def _last_tool_content(self, seen):
+        return seen.get("tool_content", "")
+
+    def test_write_allowed_once_customer_supplies_code(self):
+        seen = self._run("123456", {"items": []},
+                         store_extra={"last_write_input_error": self._FLAG})
+        assert len(seen["calls"]) == 1, "顾客已给验证码 → 必须放行（否则订单永远落不了库）"
+        assert seen["calls"][0][1].get("sms_code") == "123456"
+
+    def test_no_block_without_pending_input_error(self):
+        seen = self._run("确认", {"items": []})
+        assert len(seen["calls"]) == 1, "没有欠参标记时不得拦截（不能误伤正常下单）"
+
+    # ── ② 失败即记账 ──
+
+    def test_missing_input_failure_recorded(self):
+        seen = self._run("确认", {"items": []},
+                         force_fail='{"success": false, "error": "缺少短信验证码"}')
+        flags = [c.get("last_write_input_error") for c in seen["commits"]
+                 if c.get("last_write_input_error")]
+        assert flags, "缺参失败必须跨轮记账，否则下一轮无从知道该要什么"
+        assert flags[0].get("param") == "sms_code"
+
+    def test_success_clears_flag(self):
+        seen = self._run("123456", {"items": []},
+                         store_extra={"last_write_input_error": self._FLAG})
+        assert not seen["final_store"].get("last_write_input_error"), \
+            "写成功后必须清账，否则后续轮次被永久拦住"
+
+    def test_other_tool_success_does_not_clear_flag(self):
+        """只读工具成功不得清账：否则 product_search 一成功，欠参标记就被顺手抹掉，
+        下一轮又回到「重发确认卡 + 重复调用注定失败的写工具」的老路。"""
+        seen = self._run("确认", {"keyword": "窗帘"}, tool_name="product_search",
+                         store_extra={"last_write_input_error": self._FLAG})
+        assert seen["final_store"].get("last_write_input_error"), \
+            "product_search 成功清掉了 order_create 的欠参标记"
+
+    def test_unrecognizable_missing_param_not_recorded(self):
+        """判不出"已补齐"的参数（商品明细）不得记账：否则该写工具被**永久**拦住，
+        真实顾客说"就是刚才那款"也解不开。"""
+        seen = self._run("确认", {"items": []},
+                         force_fail='{"success": false, "error": "缺少商品明细"}')
+        assert not seen["final_store"].get("last_write_input_error"), \
+            "记账了不可识别的参数 → 该写工具将被永久锁死"
+
+    # ── ③ 同一张确认卡不得二次下发 ──
+
+    def test_same_confirm_card_not_reissued_while_waiting_for_input(self):
+        seen = self._run(
+            "确认",
+            {"component": "confirm", "title": "请确认订单信息",
+             "confirmValue": "确认下单", "fields": []},
+            tool_name="interact",
+            store_extra={"last_write_input_error": self._FLAG,
+                         "last_confirm_value": "确认下单"})
+        assert seen["calls"] == [], \
+            "缺参等待期重发同一张确认卡 = 死循环（顾客点多少次都拿不到验证码提示）"
+
+    def test_confirm_card_allowed_when_nothing_missing(self):
+        seen = self._run(
+            "确认",
+            {"component": "confirm", "title": "请确认订单信息",
+             "confirmValue": "确认下单", "fields": []},
+            tool_name="interact",
+            store_extra={"last_confirm_value": "确认下单"})
+        assert len(seen["calls"]) == 1, "没有欠参标记时必须正常下发确认卡"
+
+    # ── ④ 提示注入 ──
+
+    def test_directive_injected_while_waiting(self):
+        import asyncio as _asyncio
+        from app.graph.skills.base_skill import _inject_write_input_recovery
+
+        _flag = dict(self._FLAG)   # 闭包捕获：嵌套类里的 self 是 store 自己，不是测试实例
+
+        class _Store:
+            async def load(self, sid):
+                return {"last_write_input_error": _flag}
+
+            async def commit(self, sid, full):
+                pass
+
+        with patch("app.memory.session_state_store.SessionStateStore",
+                   side_effect=lambda *a, **k: _Store()):
+            out = _asyncio.run(_inject_write_input_recovery(
+                "BASE", {"session_id": "sess_001"}, "确认"))
+        assert out != "BASE", "缺参等待期必须注入指令，否则模型不知道要主动索要"
+        assert "验证码" in out
+        assert "确认卡" in out, "必须显式禁止重发确认卡（模型层不遵从才是真因）"
+        assert "BASE" in out
+
+    def test_directive_reaches_llm_system_prompt(self):
+        """接线断言：注入必须真的进入本轮系统提示（否则模型永远看不到索要指令）。"""
+        seen = self._run("确认", {"items": []},
+                         store_extra={"last_write_input_error": self._FLAG})
+        assert "上一轮写操作失败" in seen["sys_prompt"], \
+            "索要指令没进系统提示 → 注入形同虚设"
+        assert "禁止" in seen["sys_prompt"]
+
+    def test_no_directive_in_prompt_once_code_supplied(self):
+        seen = self._run("123456", {"items": []},
+                         store_extra={"last_write_input_error": self._FLAG})
+        assert "上一轮写操作失败" not in seen["sys_prompt"], \
+            "顾客已给验证码，还注入索要指令会干扰正常下单"
+
+    def test_directive_absent_when_code_supplied(self):
+        import asyncio as _asyncio
+        from app.graph.skills.base_skill import _inject_write_input_recovery
+
+        committed = {}
+        _flag = dict(self._FLAG)
+
+        class _Store:
+            async def load(self, sid):
+                return {"last_write_input_error": _flag}
+
+            async def commit(self, sid, full):
+                committed.update(full)
+
+        with patch("app.memory.session_state_store.SessionStateStore",
+                   side_effect=lambda *a, **k: _Store()):
+            out = _asyncio.run(_inject_write_input_recovery(
+                "BASE", {"session_id": "sess_001"}, "123456"))
+        assert out == "BASE", "顾客已给验证码 → 不再注入索要指令"
+        assert not committed.get("last_write_input_error"), "且必须顺手清账"

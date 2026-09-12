@@ -300,6 +300,70 @@ class TestExpectationToolExtraction:
 
 
 
+class TestWriteToolSuccessAssertions:
+    """C 端写工具用例必须声明 `must_succeed`（issue #3361：「调了 ≠ 成了」）。
+
+    背景（CI 实证 run 34686905546 / 34685247189）：CH-010/OR-014/OR-017 三个下单用例的
+    `order_create` 分别返回 `tool_execution_failed` / `confirmation_required` /
+    `tool_not_found`，用例**照样判 100%**（老断言只看工具名出现在 tool_calls 里），
+    DB 审计里 orders 一条没新增。报告长相「下单流程正常」，事实「一单没成交」——
+    与 §0 复盘「AI 验收全绿、人工验收全是问题」同源。
+
+    本组把「写工具出现在 expectations → 必须声明 must_succeed」变成机器约束：
+    新增写用例若忘了声明，CI 直接红（而不是等下一次 DB 审计靠人眼看 orders 数）。
+    """
+
+    # C 端真实写工具（会产生业务数据的工具，非只读查询）
+    CUSTOMER_WRITE_TOOLS = {"order_create", "aftersale_create"}
+
+    def _cases(self):
+        return load_case_dicts(str(CASES_DIR))
+
+    def test_write_cases_declare_must_succeed(self):
+        bad = []
+        for c in self._cases():
+            if (c.get("persona") or "") != "xiaobu" or c.get("skip_reason"):
+                continue
+            writes = set()
+            for exp in c.get("expectations") or []:
+                if isinstance(exp, dict) and exp.get("tool") in self.CUSTOMER_WRITE_TOOLS:
+                    writes.add(exp["tool"])
+            if not writes:
+                continue
+            declared = {
+                (m if isinstance(m, str) else (m or {}).get("tool"))
+                for m in (c.get("must_succeed") or [])
+            }
+            missing = writes - declared
+            if missing:
+                bad.append(f"{c['id']} 期望含写工具 {sorted(missing)} 但未声明 must_succeed")
+        assert not bad, (
+            "以下 C 端写用例缺少「写工具成功断言」——出现写工具调用失败时仍会判通过：\n  "
+            + "\n  ".join(bad)
+        )
+
+    def test_three_order_cases_are_covered(self):
+        """具体锁定三个已知假绿用例（回归防线，防被顺手删掉）。"""
+        by_id = {c["id"]: c for c in self._cases()}
+        for cid in ("CH-010", "OR-014", "OR-017"):
+            decl = by_id[cid].get("must_succeed") or []
+            tools = {(m if isinstance(m, str) else (m or {}).get("tool")) for m in decl}
+            assert "order_create" in tools, (
+                f"{cid} 未声明 must_succeed: order_create —— 下单用例会重回路「调了就算成了」"
+            )
+
+    def test_must_succeed_tools_are_customer_capabilities(self):
+        """声明的工具必须真在 C 端工具集内（拼错 = 断言永远失败/永远无意义）。"""
+        from eval_case_filter import XIAOBU_TOOLS
+        bad = []
+        for c in self._cases():
+            for m in c.get("must_succeed") or []:
+                tool = m if isinstance(m, str) else (m or {}).get("tool")
+                if tool and tool not in XIAOBU_TOOLS:
+                    bad.append(f"{c.get('id')}: {tool}")
+        assert not bad, f"must_succeed 声明了非 C 端工具（拼写错误或越界）: {bad}"
+
+
 class TestCustomerFacingSemanticGuard:
     """双端用例的语义适配收口（issue #3266 二轮：仅按工具集判定不够）"""
 

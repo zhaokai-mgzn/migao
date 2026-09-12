@@ -1254,6 +1254,52 @@ class TestEvalArtifactAuditStep:
             "缺 DEV_SERVICE_TOKEN → compose 插值失败 → 审计为空"
         )
 
+    def test_e2e_step_runs_even_when_eval_fails(self):
+        """E2E 步骤必须 `always()`（issue #3364：评测红 → E2E skip → E2E 红无人知）。
+
+        实证：main run 34684474262 评测 17/17 通过而 E2E failure；此后每次评测失败
+        E2E 都被 skip —— 两个红灯互相掩盖，E2E 的缺陷长期不可见。
+        """
+        steps = self._wf()["jobs"]["xiaobu-acceptance"]["steps"]
+        e2e = next((s_ for s_ in steps if "real E2E" in (s_.get("name") or "")), None)
+        assert e2e is not None, "workflow 缺少 real E2E 步骤"
+        cond = e2e.get("if") or ""
+        assert "always()" in cond, f"E2E 步骤缺少 always()（评测失败时会被 skip）: if={cond!r}"
+
+    def test_stack_step_uses_layer_cache_with_fallback(self):
+        """栈步骤必须带镜像层缓存 + 失败回落（issue #3361）。
+
+        实测同一 workflow、同样单 job，栈启动在 3.4min ~ 12.9min 之间剧烈波动 ——
+        Dockerfile 每跑都 `mvn clean package` / `pip install -r`，没有层缓存就每次全量
+        重下依赖与基础镜像，Docker Hub 限流一来就 12min。这是整跑墙钟最大且最不稳的一块。
+        同时必须**失败回落**到 `--build`：缓存/registry 问题不该把评测挡在门外。
+        """
+        import yaml
+        wf = yaml.safe_load((WORKFLOWS_DIR / "xiaobu-acceptance.yml").read_text(encoding="utf-8"))
+        steps = wf["jobs"]["xiaobu-acceptance"]["steps"]
+        names = [s_.get("name") or "" for s_ in steps]
+        assert any("Buildx" in n for n in names), "缺少 Buildx 步骤（GHA 层缓存必需）"
+        body = next((s_.get("run") or "" for s_ in steps if "Start local stack" in (s_.get("name") or "")), "")
+        assert "cache-from" in body and "type=gha" in body, "镜像构建未用 GHA 层缓存"
+        # PIP_INDEX_URL：Dockerfile 默认阿里云（国内快），GitHub runner 在境外 ——
+        # 实测镜像内 pip 走阿里云 632s（~160 kB/s），同机默认 PyPI 装同一份仅 23s。
+        # 栈步骤 13.1min 里 10.5min 就是这一项，必须显式改用 PyPI。
+        assert "pypi.org/simple" in body, (
+            "CI 未把 PIP_INDEX_URL 切到 PyPI —— 镜像内 pip 会走阿里云，栈启动多花 ~10min"
+        )
+        assert "--no-build" not in body or "up -d --wait" in body, "compose 起栈方式异常"
+        assert "回落" in body, "缺少缓存构建失败时的回落路径"
+
+    def test_audit_prints_order_amounts(self):
+        """审计必须带订单金额（issue #3361）：金额是 C 端最硬的正确性证据。
+
+        只有金额能回答「下单成了，且钱算对了吗」。实测 OR-014 在没查商品详情的情况下
+        发出的确认卡写着「遮光窗帘3米+打孔加工，合计¥95.4」（该商品真实单价 ¥168/米），
+        无金额审计时这种「钱算错但工具调用成功」在报告里看着一切正常。
+        """
+        body = self._step().get("run") or ""
+        assert "total_amount" in body, "审计未输出订单金额（金额错误无法发现）"
+
     def test_eval_creates_and_closes_ai_agent_sessions(self):
         """对照：评测每用例在 ai-agent 建会话，且收尾必须**关闭它**（issue #3357）。
 
@@ -1289,7 +1335,16 @@ class TestFalseGreenGuardInAudit:
         body = self._audit_body()
         assert "假绿风险" in body, "审计缺少假绿告警文案"
         assert "orders=" in body and "ORDERS" in body, "未统计订单数并据此告警"
-        assert "CH-010" in body, "告警未点名下单写用例"
+        # 分片后"全局应有 N 条订单"不再成立：告警必须**按本片是否真的跑了写用例**判断，
+        # 否则没有写用例的片会因 orders<=2 被误报假绿（issue #3361 分片基建）
+        assert "WRITE_CASES" in body and "order_write_cases" in body, (
+            "审计未读本片运行汇总（order_write_cases）—— 分片下会误报假绿"
+        )
+
+    def test_audit_warning_is_shard_scoped(self):
+        body = self._audit_body()
+        assert "$WRITE_CASES" in body, "告警条件未使用本片写用例数"
+        assert "本片" in body, "告警文案未标明这是本片（分片）结论"
 
     def test_audit_warns_when_memories_not_landed(self):
         """CH-024 通过但 user_memories 为空 = 记忆链断（或断言失效）→ 必须告警。"""
@@ -1304,6 +1359,26 @@ class TestFalseGreenGuardInAudit:
         assert (step.get("env") or {}).get("AGENT_EVAL_TRACE_ALL") == "1", (
             "未开启全量轨迹 —— 通过的写用例的工具结果（如 order_create 被拒）看不见"
         )
+
+    def test_write_failure_dump_keeps_input_recovery_markers(self):
+        """写工具 dump 必须保留「缺参恢复回路」日志标记（issue #3365）。
+
+        为什么单列一条守卫：2026-09-13 那次 18/18 里 OR-017 的轨迹呈
+        `order_create → interact → order_create`（看着像"守卫救回来了"），但 dump 的
+        grep 没包含这几个标记 → **无法证实**是守卫触发还是模型自己走对。
+        归因能力是靠日志标记撑起来的，丢了标记就只能靠猜。
+        """
+        steps = self._wf()["jobs"]["xiaobu-acceptance"]["steps"]
+        step = next((s_ for s_ in steps if "写工具失败原因" in (s_.get("name") or "")
+                     or "写工具失败原因" in (s_.get("run") or "")), {})
+        body = step.get("run") or ""
+        assert body, "找不到写工具失败原因 dump 步骤"
+        # 只看**可执行的 grep 行**：首版断言扫了整个 run 文本，结果被我自己写的注释救活
+        # （注释里同样写着这几个词 → 删掉 grep 里的标记，测试照样绿 = 假守卫，已实证）。
+        grep_lines = "\n".join(ln for ln in body.splitlines() if "grep -E" in ln)
+        assert grep_lines, "写工具 dump 步骤里找不到 grep -E 命令"
+        for kw in ("拦截缺参等待期", "缺参记账", "缺参已补齐", "write-input-recovery"):
+            assert kw in grep_lines, f"写工具 dump 的 grep 丢了缺参恢复标记 {kw!r} → 归因只能靠猜"
 
 
 class TestFixtureOrderIdsAreUuidShaped:

@@ -8,7 +8,7 @@
 - intent_router_node：plan_rewrite 路径澄清轮护栏（连续模糊意图触发兜底）
 - route_by_intent：direct_reply + 多模态重定向 general、escape hatch 切换、会话连续性
 """
-# case_ids: CH-002, CH-003, CH-018, CH-021, CH-022
+# case_ids: CH-002, CH-003, CH-018, CH-021, CH-022, OR-017
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -372,6 +372,78 @@ class TestRouteByIntent:
             result = route_by_intent(state)
         assert result == "order_skill"
 
+    def test_quote_skill_下单_escapes_to_order_skill(self):
+        """报价 skill 锁住会话时，「确认下单/我要下单」必须能切回下单流程（issue #3361）。
+
+        为什么必须有这条：`customer_quote` 会下发报价卡并锁住 `pending_interact_skill`，
+        但它**没有 order_create 工具**。若「下单」不算 order 域信号，escape hatch 不触发
+        → 会话锁死在报价 skill → 模型照样调 order_create → `tool_not_found` ×2 → 转人工，
+        订单从未创建（CI run 34686905546 实证：OR-017 R7/R8，顾客侧表现为"下单失败"）。
+        """
+        from app.graph.nodes import _SKILL_DOMAIN_KEYWORDS
+        assert "下单" in _SKILL_DOMAIN_KEYWORDS["order"], (
+            "order 领域关键词缺「下单」—— 报价后顾客说『确认下单』将无法切回下单流程"
+        )
+        for msg in ("确认下单", "我要下单", "帮我下单"):
+            state = {
+                "pending_interact_skill": "customer_quote",
+                "route_decision": {"action": "full_agent"},
+                "intent_result": {"intent": "order_create"},
+                "messages": [HumanMessage(content=msg)],
+            }
+            with patch.dict("app.graph.nodes._INTENT_TO_ROUTE",
+                            {"": {"order_create": "customer_order_skill", "general": "general"}}):
+                result = route_by_intent(state)
+            assert result == "customer_order_skill", f"{msg!r} 未切回下单流程（route={result}）"
+            assert state["pending_interact_skill"] == "", f"{msg!r} 未释放报价 skill 的会话锁"
+
+    def test_own_domain_keyword_does_not_escape_customer_skill(self):
+        """C 端 skill 名带 `customer_` 前缀，**自己的领域关键词不得触发 escape hatch**。
+
+        回归实证（CI run 34688038261）：在 `customer_order` 里顾客点确认卡回传
+        「确认下单：遮光窗帘3米+打孔加工，合计¥95.4」→ 因消息含「下单」（order 域），
+        而 escape hatch 用 `skill_domain == pending_skill` 比较 `order` vs `customer_order`
+        **永不相等** → 连本领域也被当成"其他领域" → 误判话题切换、清空会话锁 →
+        intent 分类为 quote → 路由到 customer_quote（无 order_create）→
+        `Tool not found: order_create` → 订单永不创建、最终转人工。
+        """
+        from app.graph.nodes import _skill_keyword_domain
+        assert _skill_keyword_domain("customer_order") == "order"
+        assert _skill_keyword_domain("customer_aftersales") == "aftersales"
+        assert _skill_keyword_domain("order") == "order"      # B 端风格名不变
+        assert _skill_keyword_domain("") == ""
+
+        for msg in ("确认下单：遮光窗帘3米+打孔加工，合计¥95.4", "帮我查一下订单"):
+            state = {
+                "pending_interact_skill": "customer_order",
+                "route_decision": {"action": "full_agent"},
+                "intent_result": {"intent": "quote"},
+                "messages": [HumanMessage(content=msg)],
+            }
+            with patch.dict("app.graph.nodes._INTENT_TO_ROUTE",
+                            {"": {"quote": "customer_quote_skill", "general": "general"}}):
+                result = route_by_intent(state)
+            assert result == "customer_order", (
+                f"{msg!r} 在 customer_order 里被误判为话题切换（route={result}）—— "
+                "会话被甩到报价 skill，order_create 将不可用"
+            )
+            assert state["pending_interact_skill"] == "customer_order"
+
+    def test_quote_skill_stays_without_order_intent(self):
+        """反向：顾客只是在报价流程里闲聊，不得被误切走（escape hatch 不能过宽）。"""
+        state = {
+            "pending_interact_skill": "customer_quote",
+            "route_decision": {"action": "full_agent"},
+            "intent_result": {"intent": "quote"},
+            "messages": [HumanMessage(content="这个报价挺合适，再帮我看看褶皱倍数")],
+        }
+        with patch.dict("app.graph.nodes._INTENT_TO_ROUTE",
+                        {"": {"quote": "customer_quote_skill", "general": "general"}}):
+            result = route_by_intent(state)
+        # 会话连续性返回的是 pending skill 的**节点名**（原样），不走 intent 映射
+        assert result == "customer_quote"
+        assert state["pending_interact_skill"] == "customer_quote"
+
     def test_no_pending_routes_by_intent(self):
         state = {
             "route_decision": {"action": "full_agent"},
@@ -383,3 +455,78 @@ class TestRouteByIntent:
                         {"": {"product_inquiry": "product_skill", "general": "general"}}):
             result = route_by_intent(state)
         assert result == "product_skill"
+
+
+class TestCurrentDomainSignalPriority:
+    """本领域信号优先于话题切换（issue #3361，CH-012 复现型红灯的真因）。
+
+    CH-012 实证（CI run 34703192730 / 34704068475）：
+      R1 在 `customer_aftersales` 下发「请选择要退货的订单」choice 卡；
+      R2 顾客回「我要退上次买的那单，订单号 EVAL-ORD-0002」——同一句里既有
+      **本领域**信号（「退」）又有 **order 域**词（「订单号」）；
+      旧逻辑只问"有没有别的领域词" → 判为话题切换 → 甩到 `customer_order`
+      （**没有 aftersale_create**）→ 模型只能尝试转人工 → 被在办兜底拦住 →
+      三轮原地打转、售后单永不创建。
+
+    语义：顾客在退货流程里提订单号，是**流程内指代**，不是换话题。
+    """
+
+    def _route(self, msg, pending, intent, mapping):
+        from langchain_core.messages import HumanMessage
+        state = {
+            "messages": [HumanMessage(content=msg)],
+            "pending_interact_skill": pending,
+            "route_decision": {"action": "full_agent"},
+            "intent_result": {"intent": intent},
+            "agent_type": "xiaobu",
+            "tenant_id": 1,
+        }
+        with patch.dict("app.graph.nodes._INTENT_TO_ROUTE", {"xiaobu": mapping}):
+            return route_by_intent(state)
+
+    def test_return_flow_message_with_order_no_stays(self):
+        mapping = {"order_query": "customer_order_skill", "after_sales": "customer_aftersales_skill",
+                   "general": "customer_general_skill"}
+        assert self._route("我要退上次买的那单，订单号 EVAL-ORD-0002",
+                           "customer_aftersales", "order_query", mapping) == "customer_aftersales"
+
+    def test_bare_tui_is_aftersales_signal(self):
+        """C 端口语「我要退…」不含「退货」三字，也必须算 aftersales 信号。"""
+        from app.graph.nodes import _SKILL_DOMAIN_KEYWORDS
+        assert "退" in _SKILL_DOMAIN_KEYWORDS["aftersales"]
+
+    def test_genuine_topic_switch_still_works(self):
+        """无反退域信号时，话题切换必须照旧生效（不能把 escape hatch 关死）。"""
+        mapping = {"order_query": "customer_order_skill", "general": "customer_general_skill"}
+        assert self._route("帮我查一下我的订单", "customer_product", "order_query",
+                           mapping) == "customer_order_skill"
+
+    def test_customer_product_inquiry_switches_to_product(self):
+        """C 端口语型商品询问必须能切到商品域（issue #3364，E2E 实测红）。
+
+        `_SKILL_DOMAIN_KEYWORDS["product"]` 是管理端说法（查商品/搜商品/创建商品/商品管理），
+        E2E `test_topic_switch_does_not_leak_order_context` 的顾客说的是
+        「有什么遮光窗帘推荐」——一个都不命中 → 会话被订单卡锁住 → round2 调不出商品工具。
+        修法用**句式**（询问/求推荐）而非裸词，见 `_SKILL_DOMAIN_PATTERNS`。
+        """
+        mapping = {"product_inquiry": "customer_product_skill", "general": "customer_general_skill"}
+        for msg in ("有什么遮光窗帘推荐", "看看这款面料", "有没有雪尼尔面料"):
+            assert self._route(msg, "customer_order", "product_inquiry",
+                               mapping) == "customer_product_skill", f"{msg!r} 未切到商品域"
+
+    def test_order_instruction_with_product_noun_stays_in_order(self):
+        """反向保护：下单指令里提到商品名**不得**被当成切到商品域（否则下单流程被甩走）。
+
+        「遮光窗帘 3 米，要打孔加工」含商品名词但无询问句式 → 必须留在 customer_order
+        （OR-014/OR-017 依赖该行为）。
+        """
+        mapping = {"product_inquiry": "customer_product_skill", "order_create": "customer_order_skill"}
+        # 会话连续性返回的是 pending skill 名本身（不走 intent 映射）
+        assert self._route("遮光窗帘 3 米，要打孔加工", "customer_order", "order_create",
+                           mapping) == "customer_order"
+
+    def test_switch_to_order_from_quote_still_works(self):
+        """报价 skill 无 order 域关键词 → 「我要下单」仍可切回下单流程。"""
+        mapping = {"order_create": "customer_order_skill", "general": "customer_general_skill"}
+        assert self._route("我要下单", "customer_quote", "order_create",
+                           mapping) == "customer_order_skill"

@@ -621,6 +621,8 @@
 你: [🤖 按上一轮卡片作答]
 你: [🤖 按上一轮卡片作答]
 你: [🤖 按上一轮卡片作答]
+你: [🤖 按上一轮卡片作答]
+你: [🤖 按上一轮卡片作答]
 期望: product_search
 期望: product_detail
 期望: interact
@@ -631,6 +633,8 @@
 数据: C 端下单是**两步**：确认订单信息后还需手机验证码（order_create 的 sms_code，customer 角色必填）。用例必须提供验证码这一轮，否则 AI 停在第 5 步「请提供验证码」，order_create 永不发生（run 34622425044 实证：R7 顾客回「确认」后无任何工具调用）。dev/CI 栈已设 SMS_BYPASS_CODE=123456，此处用该码走真实校验分支。
 时序: interact[confirm] before order_create
 必填: order_create() 字段 customer_phone, items
+必须成功: order_create
+金额: order_create 「北欧风窗帘」 → [; u; n; i; t; _; p; r; i; c; e; ,;  ; s; u; b; t; o; t; a; l; ,;  ; t; o; t; a; l; ]
 ```
 真值: ai-chat.confirm-required, order.flow
 溯源: C 端表单化交互方案 S1（miniapp-multiturn-form-scenarios.md） ｜ tags: multi_turn, form, interactive, order
@@ -650,7 +654,7 @@
 ### CH-012. 退换货申请（订单定位→原因选择→confirm 确认→售后单） 🔵
 ```
 你: 我要退货
-你: 第一笔订单
+你: 我要退上次买的那单，订单号 EVAL-ORD-0002
 你: 质量问题
 你: 确认申请
 期望: customer_order_query
@@ -660,9 +664,10 @@
 数据: 售后单归属当前用户（数据隔离）
 时序: interact[confirm] before aftersale_create
 必填: aftersale_create() 字段 order_id
+必须成功: aftersale_create
 ```
 真值: aftersales-flow.flow
-溯源: C 端表单化交互方案 S3（miniapp-multiturn-form-scenarios.md） ｜ tags: multi_turn, aftersales, interactive
+溯源: 2026-09-12（issue #3361）顾客改点名订单号 EVAL-ORD-0002（fixture 已发货单）——原「第一笔订单」依赖列表倒序，会被同跑的下单用例新建的「待付款」单顶到首位而按业务规则必被拒。C 端表单化交互方案 S3（miniapp-multiturn-form-scenarios.md） ｜ tags: multi_turn, aftersales, interactive
 
 ### CH-013. AI 检测不满情绪 → 建议转人工卡片 → 用户确认后创建人工会话 🔵
 ```
@@ -2018,13 +2023,14 @@
 你: [🤖 按上一轮卡片作答]
 你: [🤖 按上一轮卡片作答]
 你: [🤖 按上一轮卡片作答]
-期望: product_detail
 期望: order_create
 数据: 加工项数量按计价方式确定：per_meter → 数量=面料米数（如打孔 8 元/米 × 3 米 → quantity=3、subtotal=24）；per_set/fixed → 数量=1；per_area → 宽×高
 数据: processing_info.processingItems 逐项含 {id, name, unitPrice, quantity, unit, pricingMethod, subtotal}，processingFee = 各项 unitPrice × quantity 之和
 数据: 订单确认/回复展示加工项含「名称+数量+金额」（如『打孔（罗马圈）3米 ¥24.00』）——数量可见可对账，禁止虚构每米几个的密度推导
 数据: 加工费 = 单价 × 数量（打孔 8 元/米 × 3 米 = 24 元），漏算/错算加工费 = 订单金额错误
 数据: C 端下单是**两步**：确认订单信息后还需手机验证码（order_create 的 sms_code，customer 角色必填）。用例必须提供验证码这一轮，否则 AI 停在第 5 步「请提供验证码」，order_create 永不发生（run 34622425044 实证：R7 顾客回「确认」后无任何工具调用）。dev/CI 栈已设 SMS_BYPASS_CODE=123456，此处用该码走真实校验分支。
+必须成功: order_create
+金额: order_create 「遮光窗帘」 → [; u; n; i; t; _; p; r; i; c; e; ,;  ; s; u; b; t; o; t; a; l; ,;  ; t; o; t; a; l; ]
 ```
 真值: order.states, order.create-flow, processing-manage.crud
 溯源: 2026-09-07 改写（issue #3005，回滚 #2986）：行业加工费按米计价、辅料（罗马圈/四爪钩等）含在按米加工费中——回滚 per_piece 与「每米数量」密度（数量=ceil(面料米数×密度) 与实际车间工艺不符、数量隐藏导致 B 端无法对账），数量改为按计价方式派生且展示（per_meter=面料米数、per_set/fixed=1） ｜ tags: order_create, processing_item, pricing
@@ -2068,9 +2074,13 @@
 ### OR-017. C 端自助下单加工项闭环 - 必须查详情→主动询问→加工费落单（不凭列表错报无加工项） 🔵
 ```
 你: 我想买夏日清风窗帘，米白色，3米，门幅2.8米散剪
-你: 我是张三，手机13800138000，地址杭州市西湖区文三路1号
-你: 确认
-你: 123456
+你: [🤖 按上一轮卡片作答]
+你: [🤖 选第一个选项]
+你: [🤖 按上一轮卡片作答]
+你: [🤖 按上一轮卡片作答]
+你: [🤖 按上一轮卡片作答]
+你: [🤖 按上一轮卡片作答]
+你: [🤖 按上一轮卡片作答]
 期望: product_search
 期望: product_detail
 期望: interact(component=choice, multiSelect=True)
@@ -2085,9 +2095,11 @@
 禁词: 暂未查询到可选加工项
 禁词: 无可用加工项
 禁词: 该商品无加工项
+必须成功: order_create
+金额: order_create 「夏日清风窗帘」 → [; u; n; i; t; _; p; r; i; c; e; ,;  ; s; u; b; t; o; t; a; l; ,;  ; t; o; t; a; l; ]
 ```
 真值: order.create-flow
-溯源: 2026-09-11 新增（issue #3270 C 端加工项能力补齐）：实测修复前 agent 只调 product_search 未调 product_detail，向顾客断言「这款商品暂未查询到可选加工项」，而该商品实际有 2 个加工项（纳米圈打孔 ¥8/米、韩式波浪折边 ¥12/米）→ 顾客永远选不到加工项、加工费进不了单。修复后实测同输入已主动列出真实加工项与单价。forbidden_text 锁定「凭列表错报无加工项」这一确定性反模式 ｜ tags: order_create, processing_item, guided_flow, xiaobu
+溯源: 2026-09-12（issue #3361）交互轮改协议轮（auto_select 答加工项多选卡 + auto_respond 答表单/确认/验证码）：原静态「确认」喂不进加工项 choice 卡 → agent 重发同卡、轮数耗尽、order_create 未发生。2026-09-11 新增（issue #3270 C 端加工项能力补齐）：实测修复前 agent 只调 product_search 未调 product_detail，向顾客断言「这款商品暂未查询到可选加工项」，而该商品实际有 2 个加工项（纳米圈打孔 ¥8/米、韩式波浪折边 ¥12/米）→ 顾客永远选不到加工项、加工费进不了单。修复后实测同输入已主动列出真实加工项与单价。forbidden_text 锁定「凭列表错报无加工项」这一确定性反模式 ｜ tags: order_create, processing_item, guided_flow, xiaobu
 
 ## 加工项域（6 case）
 

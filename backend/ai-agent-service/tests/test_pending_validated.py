@@ -128,16 +128,23 @@ class TestInjectPendingValidated:
         from app.graph.skills.base_skill import _inject_pending_validated
         pending = {"target_tool": "after_sales_manage", "target_action": "create",
                    "params": {"order_id": "ORD123", "ticket_type": "exchange"}}
+        committed = {}
         with patch("app.memory.session_state_store.SessionStateStore") as m_store_cls:
             m_store_cls.return_value.load = AsyncMock(
                 return_value={"pending_validated_input": pending}
             )
+            # 确认轮现在会**落放行标记**（issue #3361：文本确认也要记住，否则验证码轮被门禁拦）
+            m_store_cls.return_value.commit = AsyncMock(
+                side_effect=lambda sid, full: committed.update(full))
             result = asyncio.run(_inject_pending_validated(
                 "base prompt", self._state(), "确认创建换货工单"
             ))
         assert "已校验待执行" in result
         assert "after_sales_manage" in result
         assert result.endswith("base prompt")  # hint 前置
+        assert committed.get("confirmed_write_tool") == "after_sales_manage", (
+            "确认轮未记录跨轮放行标记 —— 下一轮补充信息时写操作会被门禁拦"
+        )
 
     def test_no_session_returns_unchanged(self):
         import asyncio

@@ -386,7 +386,13 @@ class TestIntentRouter:
 
     @pytest.mark.asyncio
     async def test_route_falls_to_classifier(self, router):
-        """规则未命中时走分类器"""
+        """规则未命中时走分类器。
+
+        ⚠️ 2026-09-13 用例文本更新（issue #3364）：原文本「最近有什么新款窗帘推荐」在本提交
+        之前**确实**规则未命中，但 C 端口语型商品浏览已补进 L1（否则 E2E「订单→商品话题切换」
+        永远调不出商品工具）→ 该文本现在会走 L1（source="rule"）。本用例要测的是
+        **L1 未命中 → L2 兜底**，故换一条无商品类名词、无交易动词的中性文本。
+        """
         with patch.object(
             router.intent_classifier, "classify",
             new_callable=AsyncMock,
@@ -396,7 +402,7 @@ class TestIntentRouter:
                 source="classifier",
             ),
         ):
-            decision = await router.route("最近有什么新款窗帘推荐")
+            decision = await router.route("帮我看看有没有合适的")
             assert decision.intent_result.source == "classifier"
             assert decision.intent_result.intent == IntentType.PRODUCT_INQUIRY
 

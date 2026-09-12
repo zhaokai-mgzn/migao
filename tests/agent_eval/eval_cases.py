@@ -44,6 +44,8 @@ class EvalCase:
     want_text: List[str] = field(default_factory=list) # final_text 正向关键词，全缺即失败（§3.4 正反关键词双轨）
     required_args: List[dict] = field(default_factory=list) # 必填参数断言（create 缺 specifications/加工项价格即失败，§3.2）
     forbidden_args: List[dict] = field(default_factory=list) # 禁止参数断言（隔离/越权下限：如物流工具不得接受快递单号，issue #3270）
+    must_succeed: List[dict] = field(default_factory=list) # 写工具成功断言（至少成功一次；"调了≠成了"，§3.2/issue #3361）
+    amount_verify: List[dict] = field(default_factory=list) # 金额正确性断言（单价接地/小计/总额，§3.2/issue #3365）
     db_verify: List[dict] = field(default_factory=list) # 落库层验证（创建后查 admin-api 断言价格=确认价，§3.2/issue #3056）
     pre_clean: List[dict] = field(default_factory=list) # 评测前数据清理（写类 case 自我污染防线）
     post_session: List[dict] = field(default_factory=list) # 会话关闭后落库断言（user_memories 只在 close 时 flush，issue #3357）
@@ -810,7 +812,7 @@ _CASE_CH_010 = EvalCase(
     title='选购下单表单化交互（choice 选品→form 收参→confirm 确认→下单）',
     skill=Skill.MULTI_TURN,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['推荐几款热销窗帘', '第一款，白色，2.8 米门幅，按米卖', {'auto_respond': {'fallback': '数量 3 米'}}, {'auto_respond': {'fallback': '确认下单', 'form_values': {'customer_name': '张三', 'customer_phone': '13800138000', 'customer_address': '浙江省杭州市西湖区文三路1号1幢101室', 'color': '白色', 'colorName': '白色'}}}, {'auto_respond': {'fallback': '确认', 'form_values': {'customer_name': '张三', 'customer_phone': '13800138000', 'customer_address': '浙江省杭州市西湖区文三路1号1幢101室', 'color': '白色', 'colorName': '白色'}}}, {'auto_respond': {'fallback': '123456'}}, {'auto_respond': {'fallback': '123456'}}],
+    user_inputs=['推荐几款热销窗帘', '第一款，白色，2.8 米门幅，按米卖', {'auto_respond': {'fallback': '数量 3 米'}}, {'auto_respond': {'fallback': '确认下单', 'form_values': {'customer_name': '张三', 'customer_phone': '13800138000', 'customer_address': '浙江省杭州市西湖区文三路1号1幢101室', 'color': '白色', 'colorName': '白色'}}}, {'auto_respond': {'fallback': '确认', 'form_values': {'customer_name': '张三', 'customer_phone': '13800138000', 'customer_address': '浙江省杭州市西湖区文三路1号1幢101室', 'color': '白色', 'colorName': '白色'}}}, {'auto_respond': {'fallback': '123456'}}, {'auto_respond': {'fallback': '123456'}}, {'auto_respond': {'fallback': '确认'}}, {'auto_respond': {'fallback': '确认'}}],
     expectations=['product_search', 'product_detail', 'interact', 'order_create'],
     data_checks=['规格选择/收货信息通过 interact(choice/form) 组件收集（非纯文本追问）', 'order_create 前必有 interact(confirm) 确认（写操作守卫）', 'order_create items 含所选 SKU（颜色/门幅/售卖方式）与数量', 'C 端下单是**两步**：确认订单信息后还需手机验证码（order_create 的 sms_code，customer 角色必填）。用例必须提供验证码这一轮，否则 AI 停在第 5 步「请提供验证码」，order_create 永不发生（run 34622425044 实证：R7 顾客回「确认」后无任何工具调用）。dev/CI 栈已设 SMS_BYPASS_CODE=123456，此处用该码走真实校验分支。'],
     skip_reason='',
@@ -818,6 +820,8 @@ _CASE_CH_010 = EvalCase(
     persona='xiaobu',
     order_before=['interact[confirm] before order_create'],
     required_args=[{'tool': 'order_create', 'fields': ['customer_phone', 'items']}],
+    must_succeed=[{'tool': 'order_create'}],
+    amount_verify=[{'tool': 'order_create', 'product_name': '北欧风窗帘', 'checks': '[unit_price, subtotal, total]'}],
 )
 
 # ── CH-011 [ADVERSARIAL] 数据安全 - 跨用户订单查询拒绝 + 订单卡片手机号脱敏（源: cases/chat.yml）──
@@ -843,7 +847,7 @@ _CASE_CH_012 = EvalCase(
     title='退换货申请（订单定位→原因选择→confirm 确认→售后单）',
     skill=Skill.MULTI_TURN,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['我要退货', '第一笔订单', '质量问题', '确认申请'],
+    user_inputs=['我要退货', '我要退上次买的那单，订单号 EVAL-ORD-0002', '质量问题', '确认申请'],
     expectations=['customer_order_query', 'interact', 'aftersale_create'],
     data_checks=['aftersale_create 前必有 interact(confirm) 确认', '售后单归属当前用户（数据隔离）'],
     skip_reason='',
@@ -851,6 +855,7 @@ _CASE_CH_012 = EvalCase(
     persona='xiaobu',
     order_before=['interact[confirm] before aftersale_create'],
     required_args=[{'tool': 'aftersale_create', 'fields': ['order_id']}],
+    must_succeed=[{'tool': 'aftersale_create'}],
 )
 
 # ── CH-013 [NORMAL] AI 检测不满情绪 → 建议转人工卡片 → 用户确认后创建人工会话（源: cases/chat.yml）──
@@ -2508,11 +2513,13 @@ _CASE_OR_014 = EvalCase(
     skill=Skill.ORDER,
     difficulty=Difficulty.NORMAL,
     user_inputs=['帮我下单，遮光窗帘 3 米，要打孔加工', {'auto_respond': {'fallback': '选有打孔的那件'}}, {'auto_respond': {'fallback': '不需要其他加工项'}}, {'auto_respond': {'fallback': '确认下单', 'form_values': {'customer_name': '张三', 'customer_phone': '13800138000', 'customer_address': '浙江省杭州市西湖区文三路1号1幢101室', 'color': '米白', 'colorName': '米白'}}}, {'auto_respond': {'fallback': '确认', 'form_values': {'customer_name': '张三', 'customer_phone': '13800138000', 'customer_address': '浙江省杭州市西湖区文三路1号1幢101室', 'color': '米白', 'colorName': '米白'}}}, {'auto_respond': {'fallback': '123456'}}, {'auto_respond': {'fallback': '确认'}}, {'auto_respond': {'fallback': '确认'}}, {'auto_respond': {'fallback': '123456'}}, {'auto_respond': {'fallback': '123456'}}, {'auto_respond': {'fallback': '123456'}}],
-    expectations=['product_detail', 'order_create'],
+    expectations=['order_create'],
     data_checks=['加工项数量按计价方式确定：per_meter → 数量=面料米数（如打孔 8 元/米 × 3 米 → quantity=3、subtotal=24）；per_set/fixed → 数量=1；per_area → 宽×高', 'processing_info.processingItems 逐项含 {id, name, unitPrice, quantity, unit, pricingMethod, subtotal}，processingFee = 各项 unitPrice × quantity 之和', '订单确认/回复展示加工项含「名称+数量+金额」（如『打孔（罗马圈）3米 ¥24.00』）——数量可见可对账，禁止虚构每米几个的密度推导', '加工费 = 单价 × 数量（打孔 8 元/米 × 3 米 = 24 元），漏算/错算加工费 = 订单金额错误', 'C 端下单是**两步**：确认订单信息后还需手机验证码（order_create 的 sms_code，customer 角色必填）。用例必须提供验证码这一轮，否则 AI 停在第 5 步「请提供验证码」，order_create 永不发生（run 34622425044 实证：R7 顾客回「确认」后无任何工具调用）。dev/CI 栈已设 SMS_BYPASS_CODE=123456，此处用该码走真实校验分支。'],
     skip_reason='',
     tags=['order_create', 'processing_item', 'pricing'],
     persona='',
+    must_succeed=[{'tool': 'order_create'}],
+    amount_verify=[{'tool': 'order_create', 'product_name': '遮光窗帘', 'checks': '[unit_price, subtotal, total]'}],
     pre_clean=[{'type': 'product_dedupe', 'product_keyword': '遮光窗帘', 'price': 100}],
 )
 
@@ -2558,7 +2565,7 @@ _CASE_OR_017 = EvalCase(
     title='C 端自助下单加工项闭环 - 必须查详情→主动询问→加工费落单（不凭列表错报无加工项）',
     skill=Skill.ORDER,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['我想买夏日清风窗帘，米白色，3米，门幅2.8米散剪', '我是张三，手机13800138000，地址杭州市西湖区文三路1号', '确认', '123456'],
+    user_inputs=['我想买夏日清风窗帘，米白色，3米，门幅2.8米散剪', {'auto_respond': {'fallback': '我是张三，手机13800138000，地址杭州市西湖区文三路1号'}}, {'auto_select': True}, {'auto_respond': {'fallback': '确认'}}, {'auto_respond': {'fallback': '123456'}}, {'auto_respond': {'fallback': '123456'}}, {'auto_respond': {'fallback': '确认'}}, {'auto_respond': {'fallback': '确认'}}],
     expectations=['product_search', 'product_detail', 'interact(component=choice, multiSelect=True)', 'order_create'],
     data_checks=['product_search 列表数据不含 processing_items/colorId/skus，必须先调 product_detail 取详情；未调详情即断言「无加工项」属能力误宣', '加工项非空时 confirm 之前必须用 interact(choice, multiSelect=true) 主动询问，列出名称与单价（如「纳米圈打孔 ¥8/米」）', '所选加工项写入 order_create 的 processing_info.processingItems（id/name/unitPrice/quantity/unit/pricingMethod/subtotal），合计写入 processingFee 且计入订单金额；按米计价项加工数量=面料米数', '顾客说「不需要加工项」可跳过；加工项确实为空时才告知无可用加工项', 'C 端下单是**两步**：确认订单信息后还需手机验证码（order_create 的 sms_code，customer 角色必填）。用例必须提供验证码这一轮，否则 AI 停在第 5 步「请提供验证码」，order_create 永不发生（run 34622425044 实证：R7 顾客回「确认」后无任何工具调用）。dev/CI 栈已设 SMS_BYPASS_CODE=123456，此处用该码走真实校验分支。'],
     skip_reason='',
@@ -2566,6 +2573,8 @@ _CASE_OR_017 = EvalCase(
     persona='xiaobu',
     order_before=['interact[choice:processing_items] before interact[confirm]', 'interact[choice:processing_items] before order_create'],
     forbidden_text=['暂未查询到可选加工项', '无可用加工项', '该商品无加工项'],
+    must_succeed=[{'tool': 'order_create'}],
+    amount_verify=[{'tool': 'order_create', 'product_name': '夏日清风窗帘', 'checks': '[unit_price, subtotal, total]'}],
 )
 
 # ── PG-001 [NORMAL] 生成加工单 - 已确认含加工项订单 → 加工单生成 + 订单进入 producing（源: cases/processing-order.yml）──

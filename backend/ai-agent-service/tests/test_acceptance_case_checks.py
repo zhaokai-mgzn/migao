@@ -1212,13 +1212,17 @@ class TestEndSessionTargetsAiAgent:
             f"会话关闭必须打 ai-agent 关闭接口，实际: {calls}"
         )
 
-    def test_admin_api_call_is_only_best_effort_secondary(self):
-        """人工会话残留仍 best-effort 清（但不得成为唯一路径）。"""
+    def test_no_admin_api_call(self):
+        """不得再打 admin-api agent_sessions（死代码 + 噪音，issue #3361）。
+
+        该表是**人工会话**表，主键与 ai-agent 会话 id 不互认 → 传 ai 会话 id 永远 404，
+        实测 CI 每次调用都在 admin-api 侧留一条 `[NOT_FOUND] 客服会话不存在` 告警，
+        而人工会话是待人工处理的工单，本就不该由评测 harness 关闭。
+        """
         calls, patched = self._capture()
         with patched:
             asyncio.run(lr._end_session("tok", "sess-2"))
-        posts = [u for m, u in calls if m == "POST"]
-        assert posts == [f"{lr.ADMIN_API}/api/admin/agent-sessions/sess-2/end"]
+        assert [c for c in calls if c[0] == "POST"] == [], f"仍在打 admin-api: {calls}"
 
     def test_close_failure_is_visible_not_swallowed(self, capsys):
         """关闭失败必须打 warning（旧实现静默吞 → 会话永不关闭 + 记忆永不落库）。"""
@@ -1456,6 +1460,7 @@ class TestRunSuitePostSession:
             return None
 
         monkeypatch.setenv("AGENT_EVAL_FLAKE_LOG", str(tmp_path / "flakes.json"))
+        monkeypatch.setattr(lr, "CASE_SLEEP", 0.0)  # 单测不为节流付费
         with mock.patch.object(lr, "login", new=fake_login), \
              mock.patch.object(lr, "get_or_create_session", new=fake_sess), \
              mock.patch.object(lr, "run_case", new=fake_run_case), \
@@ -1488,6 +1493,68 @@ class TestRunSuitePostSession:
         assert results[0]["score"] == 1.0
         assert results[0]["classification"] == "llm-noise"
         assert calls["checks"] == 2
+
+
+class TestRetryBudget:
+    """重试预算（issue #3361 评测提速）：失败多的跑不把分钟数全花在重试上。
+
+    实测：C 端 normal 19m39s 里，4 条失败用例（各重跑一整条，单条 200-400s）
+    占 87%。重试换来的只是**分类标签**，而 CI 判定只看 score —— 故可设上限。
+    关键：超预算的失败**照样记为失败**（不掩盖），只是标签标 no-retry-budget。
+    """
+
+    def _run(self, monkeypatch, tmp_path, n_cases, retry_budget):
+        import unittest.mock as mock
+
+        async def fake_login():
+            return "tok"
+
+        async def fake_sess(token, prefer_new=True):
+            return "sess"
+
+        attempts = {"run_case": 0}
+
+        async def fake_run_case(c, token, sid):
+            attempts["run_case"] += 1
+            return {"case_id": c.id, "title": c.title, "difficulty": "normal", "tags": [],
+                    "rounds": 1, "tool_calls": [], "round_trace": [], "passed": 0, "total": 1,
+                    "score": 0.0, "failed": [("boom", "x")], "last_error": None,
+                    "final_text": "", "final_session_id": sid, "session_breaks": 0}
+
+        async def fake_end(token, sid):
+            return None
+
+        cases = [lr.EvalCase(id=f"RB-{i}", title="t", skill=lr.Skill.GENERAL,
+                             difficulty=lr.Difficulty.NORMAL, user_inputs=["hi"],
+                             expectations=["x"], data_checks=[])
+                 for i in range(n_cases)]
+        monkeypatch.setenv("AGENT_EVAL_FLAKE_LOG", str(tmp_path / "f.json"))
+        monkeypatch.setattr(lr, "CASE_SLEEP", 0.0)  # 单测不为节流付费
+        with mock.patch.object(lr, "login", new=fake_login), \
+             mock.patch.object(lr, "get_or_create_session", new=fake_sess), \
+             mock.patch.object(lr, "run_case", new=fake_run_case), \
+             mock.patch.object(lr, "_end_session", new=fake_end):
+            results = asyncio.run(lr.run_suite(cases, "t", retry_budget=retry_budget))
+        return results, attempts["run_case"]
+
+    def test_budget_limits_retries(self, monkeypatch, tmp_path):
+        """3 条失败 + 预算 1 → 只重试 1 次（共 4 次 run_case），其余标 no-retry-budget。"""
+        results, calls = self._run(monkeypatch, tmp_path, 3, 1)
+        assert calls == 4, f"重试预算未生效（run_case 调用 {calls} 次，期望 1+1 次重试）"
+        assert results[0]["classification"] != "no-retry-budget"
+        assert results[1]["classification"] == "no-retry-budget"
+        assert results[2]["classification"] == "no-retry-budget"
+
+    def test_budget_does_not_hide_failures(self, monkeypatch, tmp_path):
+        """超预算仍必须判失败（预算只省分钟，不掩盖红灯）。"""
+        results, _ = self._run(monkeypatch, tmp_path, 3, 1)
+        assert all(r["score"] == 0.0 for r in results)
+        ok, msg = lr._ci_verdict(results)
+        assert not ok and "3/3" in msg
+
+    def test_no_budget_retries_every_failure(self, monkeypatch, tmp_path):
+        results, calls = self._run(monkeypatch, tmp_path, 3, None)
+        assert calls == 6, "默认（不限预算）应逐条重试"
 
 
 class TestDeclaredPostSessionChecksParse:
@@ -1534,3 +1601,943 @@ class TestDeclaredPostSessionChecksParse:
                 bad += [f"{c.get('id')}: {i}" for i in issues
                         if "不支持的 fetch" in i or "无法解析" in i]
         assert not bad, f"post_session 配置问题: {bad}"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 写工具成功断言 must_succeed（issue #3361：「调了 ≠ 成了」）
+# 背景（CI run 34686905546 / 34685247189）：CH-010/OR-014/OR-017 的 order_create
+# 分别返回 tool_execution_failed / confirmation_required / tool_not_found，用例照样
+# 判 100%，DB 审计里 orders 一条没新增 —— 报告长相「下单正常」，事实「一单没成交」。
+# case_ids: CH-010, CH-012, OR-014, OR-017
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def _round_with_results(rnd, results, calls=None):
+    """构造一轮：results=[(tool, ok, error)]，calls=[(tool, args)]（默认与 results 同工具名）"""
+    tool_results = [
+        {"tool": t, "result": ({"success": ok} if ok else {"success": False, "error": err})}
+        for t, ok, err in results
+    ]
+    if calls is None:
+        calls = [(t, {}) for t, _ok, _err in results]
+    return {
+        "__round": rnd,
+        "tool_calls": [{"name": n, "args": a} for n, a in calls],
+        "tool_results": tool_results,
+        "final_text": "",
+    }
+
+
+class TestToolNameMatches:
+    """工具名匹配：精确或 `前缀.工具名`，**不做子串包含**。"""
+
+    def test_exact(self):
+        assert lr._tool_name_matches("order_create", "order_create")
+
+    def test_namespaced_suffix(self):
+        assert lr._tool_name_matches("customer_order.order_create", "order_create")
+
+    def test_no_substring_false_positive(self):
+        """`order_query` 不得匹配 `customer_order_query`（required_args 旧实现在此会误判）。"""
+        assert not lr._tool_name_matches("customer_order_query", "order_query")
+        assert not lr._tool_name_matches("customer_order_query", "order")
+
+    def test_empty(self):
+        assert not lr._tool_name_matches("", "order_create")
+        assert not lr._tool_name_matches("order_create", "")
+
+
+class TestCheckMustSucceed:
+    """写工具必须**至少真正成功一次**。"""
+
+    def test_success_passes(self):
+        results = [_round_with_results(1, [("order_create", True, None)])]
+        assert lr.check_must_succeed(results, [{"tool": "order_create"}]) == []
+
+    def test_all_failed_reports_each_attempt(self):
+        """全部失败 → 违规，且详情带每轮错误码（工具层可归因）。"""
+        results = [
+            _round_with_results(7, [("order_create", False, "tool_execution_failed"),
+                                    ("order_create", False, "tool_execution_failed")]),
+        ]
+        issues = lr.check_must_succeed(results, [{"tool": "order_create"}])
+        assert issues and "无一成功" in issues[0]
+        assert "R7:tool_execution_failed" in issues[0]
+        assert "调了 ≠ 成了" in issues[0]
+
+    def test_blocked_then_success_passes(self):
+        """被 confirm 门禁拦一次、最终成功 → 通过（安全拦截是期望行为，不算违规）。"""
+        results = [
+            _round_with_results(4, [("order_create", False, "confirmation_required")]),
+            _round_with_results(6, [("order_create", True, None)]),
+        ]
+        assert lr.check_must_succeed(results, [{"tool": "order_create"}]) == []
+
+    def test_never_called_reports_missing(self):
+        results = [_round_with_results(1, [("product_search", True, None)])]
+        issues = lr.check_must_succeed(results, [{"tool": "order_create"}])
+        assert issues and "从未被调用" in issues[0]
+
+    def test_call_without_result_event_is_not_success(self):
+        """发起了调用但没有结果事件（流中断）→ 不得静默当成功。"""
+        results = [{
+            "__round": 3,
+            "tool_calls": [{"name": "order_create", "args": {}}],
+            "tool_results": [],
+            "final_text": "",
+        }]
+        issues = lr.check_must_succeed(results, [{"tool": "order_create"}])
+        assert issues and "无结果事件" in issues[0]
+
+    def test_string_spec_supported(self):
+        results = [_round_with_results(1, [("order_create", True, None)])]
+        assert lr.check_must_succeed(results, ["order_create"]) == []
+
+    def test_action_filter(self):
+        """限定 action：只统计该 action 的调用结果。"""
+        results = [
+            _round_with_results(1, [("aftersale_create", True, None)],
+                                calls=[("aftersale_create", {"action": "create"})]),
+        ]
+        assert lr.check_must_succeed(
+            results, [{"tool": "aftersale_create", "action": "create"}]) == []
+        issues = lr.check_must_succeed(
+            results, [{"tool": "aftersale_create", "action": "cancel"}])
+        assert issues and "从未被调用" in issues[0]
+
+    def test_same_tail_tool_not_confused(self):
+        """同名尾工具不得互相顶替（B 端 order_query 的成功不能算 customer_order_query）。"""
+        results = [_round_with_results(1, [("order_query", True, None)])]
+        issues = lr.check_must_succeed(results, [{"tool": "customer_order_query"}])
+        assert issues and "从未被调用" in issues[0]
+
+    def test_missing_tool_config_fails_closed(self):
+        issues = lr.check_must_succeed([], [{"action": "create"}])
+        assert issues and "缺 tool" in issues[0]
+
+    def test_empty_config_no_issues(self):
+        assert lr.check_must_succeed([], None) == []
+        assert lr.check_must_succeed([], []) == []
+
+
+class TestRunCaseMustSucceedIntegration:
+    """run_case 集成：写工具失败 → 用例级失败（score=0）。"""
+
+    async def _run(self, sequence, must_succeed):
+        async def fake_send(token, session_id, message, images=None):
+            seq = sequence.pop(0)
+            return {
+                "user_message": message, "images": [], "final_text": seq.get("text", ""),
+                "tool_calls": [{"name": n, "args": {}} for n in seq["calls"]],
+                "tool_results": [
+                    {"tool": t, "result": ({"success": ok} if ok else {"success": False, "error": err})}
+                    for t, ok, err in seq["results"]
+                ],
+                "error": None, "streamed": False, "done": True,
+            }
+        import unittest.mock as mock
+        case = lr.EvalCase(
+            id="MS-1", title="t", skill=lr.Skill.ORDER, difficulty=lr.Difficulty.NORMAL,
+            # 轮数与 sequence 严格一致（多一轮会 IndexError，测试自身的假绿/假红要防）
+            user_inputs=["下单"] * len(sequence), expectations=["order_create"],
+            data_checks=[], must_succeed=must_succeed,
+        )
+        with mock.patch.object(lr, "send_message", new=fake_send):
+            return await lr.run_case(case, "tok", "sess")
+
+    def test_failed_write_fails_case(self):
+        """期望命中（工具被调用）但执行失败 → score 0（旧行为是 100% 假绿）。"""
+        result = asyncio.run(self._run([
+            {"calls": ["order_create"], "results": [("order_create", False, "tool_execution_failed")]},
+        ], [{"tool": "order_create"}]))
+        assert result["score"] == 0.0, "写工具失败却判通过 = 「调了≠成了」假绿复现"
+        assert any("must_succeed" in str(f) for f, _ in result["failed"])
+
+    def test_successful_write_passes(self):
+        result = asyncio.run(self._run([
+            {"calls": ["order_create"], "results": [("order_create", True, None)]},
+        ], [{"tool": "order_create"}]))
+        assert result["score"] == 1.0
+
+    def test_no_declaration_behavior_unchanged(self):
+        """未声明 must_succeed 的用例行为不变（向后兼容）。"""
+        result = asyncio.run(self._run([
+            {"calls": ["order_create"], "results": [("order_create", False, "tool_execution_failed")]},
+        ], []))
+        assert result["score"] == 1.0
+
+
+class TestRoundTraceRecordsSentMessage:
+    """轨迹记录**本轮实际发出**的消息（协议轮输入侧证据，issue #3361 归因缺口）。"""
+
+    def test_user_message_recorded(self):
+        trace = lr.build_round_trace([
+            {"__round": 1, "user_message": "确认下单：遮光窗帘 3米 共474元",
+             "tool_calls": [], "tool_results": [], "final_text": ""},
+        ])
+        assert trace[0]["user"].startswith("确认下单")
+        assert "you=确认下单" in lr.format_round_trace(trace)
+
+    def test_missing_user_message_is_empty(self):
+        trace = lr.build_round_trace([{"__round": 1, "tool_calls": [], "tool_results": []}])
+        assert trace[0]["user"] == ""
+        # 无输入侧证据时不得打印 "you=" 空片段（噪音）
+        assert "you=" not in lr.format_round_trace(trace)
+
+
+class TestThrottleSleepsConfigurable:
+    """节流等待可配（issue #3361 评测提速）。
+
+    评测墙钟时间几乎全花在真实 LLM 往返上，固定 sleep 是纯额外开销：
+    实测 C 端 normal 单跑 19m39s（18 条）里 ~63s 是 0.5s/轮 + 1s/用例的固定等待，
+    B 端 47 条约 3min。但真实 LLM 有限流需求，所以做成**可配**而非删除：
+    CI 调到最小（0.2/0.3），本地调试可调回默认。
+    """
+
+    def test_defaults_preserved(self, monkeypatch):
+        """默认值不变（向后兼容）：0.5s/轮、1s/用例。"""
+        monkeypatch.delenv("EVAL_ROUND_SLEEP", raising=False)
+        monkeypatch.delenv("EVAL_CASE_SLEEP", raising=False)
+        assert lr._env_float("EVAL_ROUND_SLEEP", 0.5) == 0.5
+        assert lr._env_float("EVAL_CASE_SLEEP", 1.0) == 1.0
+
+    def test_env_override(self, monkeypatch):
+        monkeypatch.setenv("EVAL_ROUND_SLEEP", "0.2")
+        assert lr._env_float("EVAL_ROUND_SLEEP", 0.5) == 0.2
+
+    def test_illegal_value_falls_back(self, monkeypatch):
+        """非法值回落默认（不得因为写错环境变量把评测卡死或崩掉）。"""
+        monkeypatch.setenv("EVAL_ROUND_SLEEP", "abc")
+        assert lr._env_float("EVAL_ROUND_SLEEP", 0.5) == 0.5
+        monkeypatch.setenv("EVAL_ROUND_SLEEP", "-1")
+        assert lr._env_float("EVAL_ROUND_SLEEP", 0.5) == 0.5
+
+    def test_zero_disables_sleep(self, monkeypatch):
+        monkeypatch.setenv("EVAL_ROUND_SLEEP", "0")
+        assert lr._env_float("EVAL_ROUND_SLEEP", 0.5) == 0.0
+
+
+class TestShardCases:
+    """分片切分（issue #3361 评测提速）：语义不变的 CI 并行加速。"""
+
+    def test_round_robin_partition_is_complete_and_disjoint(self):
+        cases = list(range(18))
+        parts = [lr.shard_cases(cases, f"{i}/3") for i in range(3)]
+        flat = [c for p in parts for c in p]
+        assert sorted(flat) == cases, "分片必须覆盖全部用例（漏跑 = 静默少测）"
+        assert len(flat) == len(set(flat)), "分片不得重叠（重叠 = 同一用例重复付费跑）"
+
+    def test_round_robin_balances_slow_cases(self):
+        """轮转而非顺序切：慢用例（实测 OR-014 403s）与快用例交错，避免堆在一片。"""
+        cases = [f"c{i}" for i in range(6)]
+        assert lr.shard_cases(cases, "0/2") == ["c0", "c2", "c4"]
+        assert lr.shard_cases(cases, "1/2") == ["c1", "c3", "c5"]
+
+    def test_no_shard_returns_all(self):
+        cases = list(range(5))
+        assert lr.shard_cases(cases, "") == cases
+        assert lr.shard_cases(cases, "0/1") == cases
+
+    def test_illegal_shard_ignored(self):
+        cases = list(range(5))
+        assert lr.shard_cases(cases, "abc") == cases
+        assert lr.shard_cases(cases, "0/0") == cases
+
+    def test_out_of_range_raises(self):
+        import pytest as _pytest
+        with _pytest.raises(ValueError):
+            lr.shard_cases(list(range(5)), "3/3")
+
+    def test_empty_shard_is_visible_not_silent(self):
+        """空片必须是显式错误（0 用例执行 = 静默假绿，与 _ci_verdict 同语义）。"""
+        cases = ["only"]
+        empty = lr.shard_cases(cases, "1/2")
+        assert empty == [], "分片可能为空 —— 调用方必须显式报错而非静默放行"
+
+
+class TestRunSummaryJson:
+    """机器可读运行汇总（issue #3361 分片基建）：审计/报告不必解析日志。"""
+
+    def test_writes_expected_fields(self, tmp_path):
+        import json as _json
+        results = [
+            {"case_id": "CH-010", "score": 1.0, "classification": "pass",
+             "tool_calls": ["product_search", "order_create"]},
+            {"case_id": "KN-001", "score": 1.0, "classification": "pass",
+             "tool_calls": ["knowledge_search"]},
+            {"case_id": "OR-017", "score": 0.0, "classification": "reproducible",
+             "tool_calls": ["order_create"]},
+        ]
+        out = tmp_path / "s.json"
+        lr.write_summary_json(str(out), "normal", "1/3", results)
+        data = _json.loads(out.read_text(encoding="utf-8"))
+        assert data["shard"] == "1/3" and data["total"] == 3
+        assert data["passed"] == 2 and data["failed"] == 1
+        assert data["order_write_cases"] == 2, "下单写用例计数错（审计据此决定是否告警）"
+        assert data["write_cases_ok"] == 1
+        assert [c["id"] for c in data["cases"]] == ["CH-010", "KN-001", "OR-017"]
+
+    def test_empty_results(self, tmp_path):
+        import json as _json
+        out = tmp_path / "e.json"
+        lr.write_summary_json(str(out), "normal", "0/1", [])
+        data = _json.loads(out.read_text(encoding="utf-8"))
+        assert data["total"] == 0 and data["avg_score"] == 0.0
+
+    def test_write_failure_is_not_fatal(self, tmp_path, capsys):
+        """汇总写失败不得让评测崩（非致命）。"""
+        lr.write_summary_json(str(tmp_path / "nodir" / "x.json"), "normal", "", [])
+        assert "汇总写出失败" in capsys.readouterr().out
+
+
+class TestSuiteConcurrency:
+    """用例级并发（issue #3361 评测提速第二轮）。
+
+    实测（run 34692977836，3 片 × 6 条）：评测本身随并行线性变快（单 job 11.6min/18 条
+    → 各片 5.3/7.2/1.7min/6 条，单条吞吐不变），但**多 job 各自建栈**把栈时间从 3.4min
+    抬到 12min → 分片整体更慢（19.8 vs 15.6min）。结论：要并行就并行**用例**，别并行建栈。
+    本组锁定并发语义：有界、串行道独占、报告顺序稳定、重试预算不被并发突破。
+    """
+
+    def _mkcase(self, cid, tags=None, pre_clean=None, post_session=None):
+        return lr.EvalCase(id=cid, title=cid, skill=lr.Skill.GENERAL,
+                           difficulty=lr.Difficulty.NORMAL, user_inputs=["hi"],
+                           expectations=[], data_checks=[], tags=tags or [],
+                           pre_clean=pre_clean or [], post_session=post_session or [])
+
+    def _run(self, monkeypatch, tmp_path, cases, concurrency, fail_ids=()):
+        import unittest.mock as mock
+        events = []          # (case_id, "start"/"end")
+        active = {"now": 0, "max": 0}
+
+        async def fake_login():
+            return "tok"
+
+        async def fake_sess(token, prefer_new=True):
+            return "sess"
+
+        async def fake_run_case(c, token, sid):
+            active["now"] += 1
+            active["max"] = max(active["max"], active["now"])
+            events.append((c.id, "start"))
+            # 让**完成顺序与声明顺序相反**（C0 最慢）：否则"按完成顺序回填"的 bug
+            # 会因为顺序恰好一致而漏过（变异实测踩到过 —— 测试必须能区分两种顺序）
+            try:
+                delay = 0.02 * (len(c.id) and 10 - int("".join(ch for ch in c.id if ch.isdigit()) or 0))
+            except ValueError:
+                delay = 0.05
+            await asyncio.sleep(max(delay, 0.02))
+            events.append((c.id, "end"))
+            active["now"] -= 1
+            score = 0.0 if c.id in fail_ids else 1.0
+            return {"case_id": c.id, "title": c.title, "difficulty": "normal", "tags": [],
+                    "rounds": 1, "tool_calls": [], "round_trace": [], "passed": int(score),
+                    "total": 1, "score": score, "failed": [], "last_error": None,
+                    "final_text": "", "final_session_id": sid, "session_breaks": 0}
+
+        async def fake_end(token, sid):
+            return None
+
+        async def fake_snapshot(token, kw):
+            return None
+
+        async def fake_post_checks(token, specs):
+            return []
+
+        async def fake_pre_clean(token, spec):
+            return ""
+
+        monkeypatch.setenv("AGENT_EVAL_FLAKE_LOG", str(tmp_path / "f.json"))
+        monkeypatch.setattr(lr, "CASE_SLEEP", 0.0)
+        with mock.patch.object(lr, "login", new=fake_login), \
+             mock.patch.object(lr, "get_or_create_session", new=fake_sess), \
+             mock.patch.object(lr, "run_case", new=fake_run_case), \
+             mock.patch.object(lr, "_end_session", new=fake_end), \
+             mock.patch.object(lr, "snapshot_product", new=fake_snapshot), \
+             mock.patch.object(lr, "_run_pre_clean", new=fake_pre_clean), \
+             mock.patch.object(lr, "check_post_session", new=fake_post_checks):
+            results = asyncio.run(lr.run_suite(cases, "t", classify=False,
+                                              concurrency=concurrency))
+        return results, events, active
+
+    def test_concurrency_bounded(self, monkeypatch, tmp_path):
+        """并发度是上限：3 条用例、并发度 2 → 同时在跑的不超过 2。"""
+        cases = [self._mkcase(f"C{i}") for i in range(3)]
+        _results, _events, active = self._run(monkeypatch, tmp_path, cases, 2)
+        assert active["max"] <= 2, f"并发度未被遵守（峰值 {active['max']}）"
+        assert active["max"] >= 2, "并发未生效（峰值 1 = 退化成串行）"
+
+    def test_serial_lane_not_overlapping(self, monkeypatch, tmp_path):
+        """共享资源用例（tag/pre_clean/post_session）必须独占：与任何用例都不重叠。"""
+        cases = [
+            self._mkcase("P1"), self._mkcase("P2"), self._mkcase("P3"),
+            self._mkcase("S1", tags=["update"]),                 # 商品改价类
+            self._mkcase("S2", post_session=[{"fetch": "user_memories"}]),  # 用户级状态
+        ]
+        _results, events, _active = self._run(monkeypatch, tmp_path, cases, 3)
+        # 串行道用例执行期间不得有其他用例"在跑"
+        intervals = {}
+        for cid, kind in events:
+            intervals.setdefault(cid, {})[kind] = None
+        # 用事件顺序重建区间
+        starts, ends = {}, {}
+        for idx, (cid, kind) in enumerate(events):
+            (starts if kind == "start" else ends)[cid] = idx
+        for serial_id in ("S1", "S2"):
+            for other in ("P1", "P2", "P3", "S1", "S2"):
+                if other == serial_id:
+                    continue
+                overlap = starts[serial_id] < ends[other] and starts[other] < ends[serial_id]
+                assert not overlap, f"串行道 {serial_id} 与 {other} 重叠执行（隔离失效）"
+
+    def test_report_order_is_original_case_order(self, monkeypatch, tmp_path):
+        """报告顺序必须与用例声明顺序一致（并发不改变报告，便于与历史 run 逐条对比）。"""
+        cases = [self._mkcase(f"C{i}") for i in range(6)]
+        results, _events, _active = self._run(monkeypatch, tmp_path, cases, 3)
+        assert [r["case_id"] for r in results] == [f"C{i}" for i in range(6)]
+
+    def test_retry_budget_not_exceeded_under_concurrency(self, monkeypatch, tmp_path):
+        """并发下重试预算不能被突破（判定+占用必须原子）。"""
+        cases = [self._mkcase(f"C{i}") for i in range(4)]
+        import unittest.mock as mock
+        attempts = {"n": 0}
+
+        async def fake_login():
+            return "tok"
+
+        async def fake_sess(token, prefer_new=True):
+            return "sess"
+
+        async def fake_run_case(c, token, sid):
+            attempts["n"] += 1
+            await asyncio.sleep(0.02)
+            return {"case_id": c.id, "title": c.title, "difficulty": "normal", "tags": [],
+                    "rounds": 1, "tool_calls": [], "round_trace": [], "passed": 0, "total": 1,
+                    "score": 0.0, "failed": [("x", "y")], "last_error": None,
+                    "final_text": "", "final_session_id": sid, "session_breaks": 0}
+
+        async def fake_end(token, sid):
+            return None
+
+        monkeypatch.setenv("AGENT_EVAL_FLAKE_LOG", str(tmp_path / "f.json"))
+        monkeypatch.setattr(lr, "CASE_SLEEP", 0.0)
+        with mock.patch.object(lr, "login", new=fake_login), \
+             mock.patch.object(lr, "get_or_create_session", new=fake_sess), \
+             mock.patch.object(lr, "run_case", new=fake_run_case), \
+             mock.patch.object(lr, "_end_session", new=fake_end):
+            results = asyncio.run(lr.run_suite(
+                cases, "t", classify=True, retry_budget=1, concurrency=4))
+        # 4 条首跑 + 预算 1 次重试 = 5 次（并发下若"看了眼再占用"就会 >5）
+        assert attempts["n"] == 5, f"重试预算被并发突破（run_case 调用 {attempts['n']} 次）"
+        assert sum(1 for r in results if r.get("classification") == "no-retry-budget") == 3
+
+    def test_concurrency_one_is_serial(self, monkeypatch, tmp_path):
+        """并发度 1 → 完全串行（默认行为不变，向后兼容）。"""
+        cases = [self._mkcase(f"C{i}") for i in range(3)]
+        _results, _events, active = self._run(monkeypatch, tmp_path, cases, 1)
+        assert active["max"] == 1
+
+
+class TestConcurrencyGateTail:
+    """串行用例不得变成整跑尾巴（issue #3361：读写门语义）。
+
+    实测 C 端 normal：16 条并行（并发度 3）~3min，串行道的 OR-014（pre_clean + 重试）
+    一个人在末尾又跑 ~7min → 整段评测 10.6min。隔离要求本是"不与其他用例重叠"，
+    不是"必须在最后跑"。
+    """
+
+    def _mkcase(self, cid, tags=None, pre_clean=None):
+        return lr.EvalCase(id=cid, title=cid, skill=lr.Skill.GENERAL,
+                           difficulty=lr.Difficulty.NORMAL, user_inputs=["hi"],
+                           expectations=[], data_checks=[], tags=tags or [],
+                           pre_clean=pre_clean or [])
+
+    def test_serial_case_starts_before_all_parallel_finish(self, monkeypatch, tmp_path):
+        """慢串行用例应在**首批并行用例排空后**立刻开工，而不是等全部并行跑完。"""
+        import unittest.mock as mock
+        events = []
+
+        async def fake_login():
+            return "tok"
+
+        async def fake_sess(token, prefer_new=True):
+            return "sess"
+
+        async def fake_run_case(c, token, sid):
+            events.append((c.id, "start"))
+            # 并行用例都很快；串行（慢）用例自身耗时长 —— 关键在于它**何时开始**
+            await asyncio.sleep(0.3 if c.id == "SLOW" else 0.05)
+            events.append((c.id, "end"))
+            return {"case_id": c.id, "title": c.title, "difficulty": "normal", "tags": [],
+                    "rounds": 1, "tool_calls": [], "round_trace": [], "passed": 1, "total": 1,
+                    "score": 1.0, "failed": [], "last_error": None, "final_text": "",
+                    "final_session_id": sid, "session_breaks": 0}
+
+        async def fake_end(token, sid):
+            return None
+
+        async def fake_snapshot(token, kw):
+            return None
+
+        cases = [self._mkcase(f"P{i}") for i in range(6)]
+        # 用真正"整体独占"的形态（商品改价 tag）——pre_clean 现在只让**清理动作**独占，
+        # 用例主体回并行道（见 _needs_serial_lane 注释）
+        cases.append(self._mkcase("SLOW", tags=["update"]))
+        monkeypatch.setenv("AGENT_EVAL_FLAKE_LOG", str(tmp_path / "f.json"))
+        monkeypatch.setattr(lr, "CASE_SLEEP", 0.0)
+        with mock.patch.object(lr, "login", new=fake_login), \
+             mock.patch.object(lr, "get_or_create_session", new=fake_sess), \
+             mock.patch.object(lr, "run_case", new=fake_run_case), \
+             mock.patch.object(lr, "_end_session", new=fake_end), \
+             mock.patch.object(lr, "snapshot_product", new=fake_snapshot):
+            asyncio.run(lr.run_suite(cases, "t", classify=False, concurrency=3))
+
+        slow_start = [i for i, (cid, k) in enumerate(events) if cid == "SLOW" and k == "start"][0]
+        parallel_ends = [i for i, (cid, k) in enumerate(events) if cid.startswith("P") and k == "end"]
+        assert slow_start < max(parallel_ends), (
+            "串行用例等到所有并行用例跑完才开始（退化为尾巴）—— 读写门未生效"
+        )
+        # 同时仍必须独占：串行用例执行期间没有任何并行用例在跑
+        slow_end = [i for i, (cid, k) in enumerate(events) if cid == "SLOW" and k == "end"][0]
+        for cid, kind in events[slow_start:slow_end]:
+            assert cid == "SLOW", f"串行用例执行期间 {cid} 也在跑（隔离失效）"
+
+    def test_gate_writer_excludes_readers(self):
+        """门本身语义：读者并发有上限、写者执行期间**零读者**。"""
+        import asyncio as _a
+
+        async def scenario():
+            gate = lr.ConcurrencyGate(2)
+            state = {"readers": 0, "max_readers": 0, "writer_violation": False}
+
+            async def reader():
+                async with gate.reader():
+                    state["readers"] += 1
+                    state["max_readers"] = max(state["max_readers"], state["readers"])
+                    await _a.sleep(0.05)
+                    state["readers"] -= 1
+
+            async def writer():
+                async with gate.writer():
+                    if state["readers"] != 0:
+                        state["writer_violation"] = True
+                    await _a.sleep(0.05)
+
+            # 先起 4 个读者（上限 2）+ 1 个写者：写者须等读者排空，且期间无读者
+            await _a.gather(*[reader() for _ in range(4)], writer(), writer())
+            return state
+
+        state = asyncio.run(scenario())
+        assert state["max_readers"] <= 2, f"读者上限被突破（峰值 {state['max_readers']}）"
+        assert state["max_readers"] == 2, "读者未真正并发（退化为串行）"
+        assert not state["writer_violation"], "写者执行期间有读者在跑（独占语义失效）"
+
+
+class TestPreCleanExclusiveWindow:
+    """pre_clean 只让**清理动作**独占，用例主体回并行道（issue #3361 提速第三轮）。
+
+    实测：OR-014 因 `pre_clean: product_dedupe` 被整条判独占 → 一个人跑 ~5.5min，
+    把 C 端正常一整段评测（10.2min）顶到上限。而隔离需求只覆盖"清理共享数据"这个**短写动作**，
+    不覆盖随后的用例主体（下单/查询各自新建数据）。
+    """
+
+    def _mkcase(self, cid, pre_clean=None):
+        return lr.EvalCase(id=cid, title=cid, skill=lr.Skill.GENERAL,
+                           difficulty=lr.Difficulty.NORMAL, user_inputs=["hi"],
+                           expectations=[], data_checks=[], tags=[],
+                           pre_clean=pre_clean or [])
+
+    def test_pre_clean_case_is_not_serially_scheduled(self):
+        """带 pre_clean 的用例不得被判为"整体独占"。"""
+        case = self._mkcase("PC", pre_clean=[{"type": "product_dedupe"}])
+        # 通过 run_suite 的调度日志判断（_needs_serial_lane 是内层函数）
+        import unittest.mock as mock
+
+        async def fake_login():
+            return "tok"
+
+        async def fake_sess(token, prefer_new=True):
+            return "sess"
+
+        async def fake_run_case(c, token, sid):
+            return {"case_id": c.id, "title": c.title, "difficulty": "normal", "tags": [],
+                    "rounds": 1, "tool_calls": [], "round_trace": [], "passed": 1, "total": 1,
+                    "score": 1.0, "failed": [], "last_error": None, "final_text": "",
+                    "final_session_id": sid, "session_breaks": 0}
+
+        async def fake_end(token, sid):
+            return None
+
+        async def fake_pre_clean(token, spec):
+            return "cleaned"
+
+        lines = []
+        with mock.patch.object(lr, "login", new=fake_login), \
+             mock.patch.object(lr, "get_or_create_session", new=fake_sess), \
+             mock.patch.object(lr, "run_case", new=fake_run_case), \
+             mock.patch.object(lr, "_end_session", new=fake_end), \
+             mock.patch.object(lr, "_run_pre_clean", new=fake_pre_clean), \
+             mock.patch.object(lr, "print", side_effect=lambda *a, **k: lines.append(" ".join(str(x) for x in a))):
+            asyncio.run(lr.run_suite([case, self._mkcase("A"), self._mkcase("B")],
+                                     "t", classify=False, concurrency=3))
+        joined = "\n".join(lines)
+        assert "3 条并行" in joined, (
+            f"带 pre_clean 的用例仍被判为独占（应只独占清理动作）：\n{joined[:400]}"
+        )
+        assert "串行" not in joined.split("并发执行")[1][:60], "仍存在串行道（pre_clean 不该整体独占）"
+        assert "🧹 pre_clean: cleaned" in joined, "pre_clean 未执行"
+
+    def test_serial_lane_keeps_mutating_and_user_state_cases(self):
+        """仍整体独占的：商品改价 tag 与 post_session（用户级状态）。"""
+        import unittest.mock as mock
+
+        async def fake_login():
+            return "tok"
+
+        async def fake_sess(token, prefer_new=True):
+            return "sess"
+
+        async def fake_run_case(c, token, sid):
+            return {"case_id": c.id, "title": c.title, "difficulty": "normal", "tags": [],
+                    "rounds": 1, "tool_calls": [], "round_trace": [], "passed": 1, "total": 1,
+                    "score": 1.0, "failed": [], "last_error": None, "final_text": "",
+                    "final_session_id": sid, "session_breaks": 0}
+
+        async def fake_end(token, sid):
+            return None
+
+        async def fake_post_checks(token, specs):
+            return []
+
+        async def fake_snapshot(token, kw):
+            return None
+
+        cases = [self._mkcase("A"), self._mkcase("B"),
+                 lr.EvalCase(id="MUT", title="MUT", skill=lr.Skill.GENERAL,
+                             difficulty=lr.Difficulty.NORMAL, user_inputs=["hi"],
+                             expectations=[], data_checks=[], tags=["update"]),
+                 lr.EvalCase(id="MEM", title="MEM", skill=lr.Skill.GENERAL,
+                             difficulty=lr.Difficulty.NORMAL, user_inputs=["hi"],
+                             expectations=[], data_checks=[],
+                             post_session=[{"fetch": "user_memories", "checks": ["count>=1"]}])]
+        lines = []
+        with mock.patch.object(lr, "login", new=fake_login), \
+             mock.patch.object(lr, "get_or_create_session", new=fake_sess), \
+             mock.patch.object(lr, "run_case", new=fake_run_case), \
+             mock.patch.object(lr, "_end_session", new=fake_end), \
+             mock.patch.object(lr, "check_post_session", new=fake_post_checks), \
+             mock.patch.object(lr, "snapshot_product", new=fake_snapshot), \
+             mock.patch.object(lr, "print", side_effect=lambda *a, **k: lines.append(" ".join(str(x) for x in a))):
+            asyncio.run(lr.run_suite(cases, "t", classify=False, concurrency=3))
+        joined = "\n".join(lines)
+        assert "2 条并行" in joined and "+ 2 条串行" in joined, (
+            f"独占判据异常（应为 2 并行 + 2 串行：tag=update 与 post_session）：\n{joined[:400]}"
+        )
+
+
+class TestNoDeadlockWithPreCleanUnderConcurrency:
+    """并发 + pre_clean 不得死锁（issue #3361 实测踩到并跑挂过一次 CI）。
+
+    根因：并行任务先持 `gate.reader()`（读位）再在 `_run_one_case` 里为 pre_clean 去要
+    `gate.writer()`（写位）—— 写位要求"读者排空"，而**请求者自己就是读者** → 互等 → 挂到
+    超时（run 34698839019 实测：评测步骤 15min+ 不结束，只能人工 cancel）。
+    修法：pre_clean 的独占窗口必须在读位**之外**获取（调度器先清理，再进读位跑主体）。
+
+    本测试用极短超时守护：一旦死锁，用例直接失败而不是把 CI 拖到 60 分钟超时。
+    """
+
+    def _mkcase(self, cid, pre_clean=None, tags=None):
+        return lr.EvalCase(id=cid, title=cid, skill=lr.Skill.GENERAL,
+                           difficulty=lr.Difficulty.NORMAL, user_inputs=["hi"],
+                           expectations=[], data_checks=[], tags=tags or [],
+                           pre_clean=pre_clean or [])
+
+    def _run_with_timeout(self, cases, concurrency, seconds=8.0):
+        import unittest.mock as mock
+
+        async def fake_login():
+            return "tok"
+
+        async def fake_sess(token, prefer_new=True):
+            return "sess"
+
+        async def fake_run_case(c, token, sid):
+            await asyncio.sleep(0.02)
+            return {"case_id": c.id, "title": c.title, "difficulty": "normal", "tags": [],
+                    "rounds": 1, "tool_calls": [], "round_trace": [], "passed": 1, "total": 1,
+                    "score": 1.0, "failed": [], "last_error": None, "final_text": "",
+                    "final_session_id": sid, "session_breaks": 0}
+
+        async def fake_end(token, sid):
+            return None
+
+        async def fake_pre_clean(token, spec):
+            return "ok"
+
+        async def fake_snapshot(token, kw):
+            return None
+
+        async def _go():
+            with mock.patch.object(lr, "login", new=fake_login), \
+                 mock.patch.object(lr, "get_or_create_session", new=fake_sess), \
+                 mock.patch.object(lr, "run_case", new=fake_run_case), \
+                 mock.patch.object(lr, "_end_session", new=fake_end), \
+                 mock.patch.object(lr, "_run_pre_clean", new=fake_pre_clean), \
+                 mock.patch.object(lr, "snapshot_product", new=fake_snapshot), \
+                 mock.patch.object(lr, "CASE_SLEEP", 0.0):
+                return await lr.run_suite(cases, "t", classify=False, concurrency=3)
+
+        async def _guard():
+            return await asyncio.wait_for(_go(), timeout=seconds)
+
+        return asyncio.run(_guard())
+
+    def test_pre_clean_case_parallel_does_not_deadlock(self):
+        cases = [self._mkcase("A"), self._mkcase("B"),
+                 self._mkcase("PC", pre_clean=[{"type": "product_dedupe"}])]
+        results = self._run_with_timeout(cases, 3)
+        assert len(results) == 3
+
+    def test_pre_clean_with_serial_case_does_not_deadlock(self):
+        """有独占用例（tag=update）+ pre_clean 并行用例 —— 本轮踩到的组合。"""
+        cases = [self._mkcase("A"), self._mkcase("PC", pre_clean=[{"type": "product_dedupe"}]),
+                 self._mkcase("MUT", tags=["update"])]
+        results = self._run_with_timeout(cases, 3)
+        assert len(results) == 3
+
+    def test_all_cases_pre_clean_does_not_deadlock(self):
+        cases = [self._mkcase(f"P{i}", pre_clean=[{"type": "product_dedupe"}]) for i in range(4)]
+        results = self._run_with_timeout(cases, 3)
+        assert len(results) == 4
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 金额正确性断言 amount_verify（issue #3365 / acceptance-protocol §3.2）
+# 背景：写工具「成功」只证明订单落库，不证明**钱算对了** —— 实证 OR-014 的 agent
+# 在没查过商品的情况下发卡「遮光窗帘3米+打孔加工，合计¥95.4」（真实 ¥168/米），
+# 此前只能靠 DB 审计人眼看金额。本组把它变成机器判定。
+# case_ids: CH-010, OR-014, OR-017
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def _order_round(rnd, items, ok=True, total=None):
+    """构造一轮：一次 order_create 调用 + 结果（ok/失败），可带总额。"""
+    data = {"id": "ord-1", "orderNo": "20260101000000001"}
+    if total is not None:
+        data["totalAmount"] = total
+    return {
+        "__round": rnd,
+        "tool_calls": [{"name": "order_create", "args": {"items": items}}],
+        "tool_results": [{"tool": "order_create",
+                          "result": ({"success": True, "data": data} if ok
+                                     else {"success": False, "error": "product_not_grounded"})}],
+        "final_text": "",
+    }
+
+
+class TestAmountVerify:
+    """单价接地 / 小计自洽 / 总额自洽。"""
+
+    def _run(self, results, specs, price=168.0):
+        import unittest.mock as mock
+
+        async def fake_price(token, name):
+            return price
+
+        with mock.patch.object(lr, "_fetch_product_price", new=fake_price):
+            return asyncio.run(lr.check_amount_verify("tok", results, specs))
+
+    def _spec(self, **kw):
+        base = {"tool": "order_create", "product_name": "遮光窗帘",
+                "checks": ["unit_price", "subtotal", "total"]}
+        base.update(kw)
+        return [base]
+
+    def test_grounded_amount_passes(self):
+        items = [{"product_name": "遮光窗帘", "quantity": 3, "unit_price": 168.0,
+                  "subtotal": 504.0}]
+        assert self._run([_order_round(7, items, total=504.0)], self._spec()) == []
+
+    def test_hallucinated_price_fails(self):
+        """¥95.4 假单价（未查商品的凭记忆报价）必须判失败。"""
+        items = [{"product_name": "遮光窗帘", "quantity": 3, "unit_price": 31.8,
+                  "subtotal": 95.4}]
+        issues = self._run([_order_round(7, items, total=95.4)], self._spec())
+        assert issues and "单价" in issues[0] and "凭记忆报价" in issues[0]
+
+    def test_subtotal_inconsistent_fails(self):
+        items = [{"product_name": "遮光窗帘", "quantity": 3, "unit_price": 168.0,
+                  "subtotal": 95.4}]   # 小计与数量×单价不符
+        issues = self._run([_order_round(7, items, total=95.4)], self._spec())
+        assert any("小计" in i for i in issues)
+
+    def test_total_inconsistent_fails(self):
+        """总额必须等于 Σ小计 + 加工费（加工费漏计是最常见的金额错）。"""
+        items = [{"product_name": "遮光窗帘", "quantity": 3, "unit_price": 168.0,
+                  "subtotal": 504.0,
+                  "processing_info": {"processingFee": 72.0}}]
+        issues = self._run([_order_round(7, items, total=504.0)], self._spec())
+        assert any("总额" in i for i in issues), "漏计加工费未被发现"
+
+    def test_total_with_processing_passes(self):
+        items = [{"product_name": "遮光窗帘", "quantity": 3, "unit_price": 168.0,
+                  "subtotal": 504.0,
+                  "processing_info": {"processingFee": 72.0}}]
+        assert self._run([_order_round(7, items, total=576.0)], self._spec()) == []
+
+    def test_failed_call_is_not_used(self):
+        """只看**成功**的调用：被门禁拦下的调用不得当成"订单金额"。"""
+        items = [{"product_name": "遮光窗帘", "quantity": 3, "unit_price": 31.8,
+                  "subtotal": 95.4}]
+        issues = self._run([_order_round(5, items, ok=False, total=None)], self._spec())
+        assert issues and "未找到" in issues[0]
+
+    def test_no_successful_call_reported(self):
+        issues = self._run([], self._spec())
+        assert issues and "未找到" in issues[0]
+
+    def test_missing_product_in_catalog_reported(self):
+        import unittest.mock as mock
+
+        async def none_price(token, name):
+            return None
+
+        items = [{"product_name": "遮光窗帘", "quantity": 3, "unit_price": 168.0, "subtotal": 504.0}]
+        with mock.patch.object(lr, "_fetch_product_price", new=none_price):
+            issues = asyncio.run(lr.check_amount_verify("tok", [_order_round(7, items)],
+                                                       self._spec()))
+        assert any("查不到单价" in i for i in issues), "真值缺失必须显式报，不得静默跳过"
+
+    def test_price_check_requires_product_name(self):
+        items = [{"product_name": "遮光窗帘", "quantity": 1, "unit_price": 1.0, "subtotal": 1.0}]
+        issues = self._run([_order_round(1, items)], self._spec(product_name=""))
+        assert any("product_name" in i for i in issues)
+
+    def test_checks_subset_respected(self):
+        """只声明 subtotal 时不查单价（避免用例要商品库真值时反而失败）。"""
+        items = [{"product_name": "遮光窗帘", "quantity": 3, "unit_price": 31.8, "subtotal": 95.4}]
+        issues = self._run([_order_round(7, items)], self._spec(checks=["subtotal"]))
+        assert issues == [], "只查小计时不应因单价不接地而报错"
+
+    def test_prefers_later_round_when_earlier_failed(self):
+        """先失败后被门禁放行成功：必须取成功那次（真实 CI 轨迹形态）。"""
+        bad = _order_round(5, [{"product_name": "遮光窗帘", "quantity": 3,
+                                "unit_price": 999.0, "subtotal": 2997.0}], ok=False)
+        good = _order_round(7, [{"product_name": "遮光窗帘", "quantity": 3,
+                                 "unit_price": 168.0, "subtotal": 504.0}], total=504.0)
+        assert self._run([bad, good], self._spec()) == []
+
+
+class TestFalseSuccessRefined:
+    """假成功守卫细化（issue #3365）：报错 ≠ 谎报。
+
+    CI run 34710420292 实证：CH-010 R6 瞬时错误、R7 起自愈，R9 的 order_create 真成功落库
+    （totalAmount=408.0 = 3×128，接地正确），末轮文本称成功 —— 这是**真话**，原守卫却判红。
+    新语义：报错后若确有写操作成功（tool_result success=true），声明成功不算谎报；
+    只有"报错且没有任何写成功"才是假成功（原保护不变）。
+    """
+
+    def _round(self, rnd, error=None, text="", ok=None):
+        tr = [] if ok is None else [{"tool": "order_create",
+                                     "result": {"success": bool(ok), "data": {}}}]
+        return {"__round": rnd, "error": error, "final_text": text, "tool_results": tr}
+
+    def test_error_then_real_success_is_not_false_success(self):
+        results = [
+            self._round(6, error="处理失败: boom"),
+            self._round(9, text="订单已创建成功", ok=True),
+        ]
+        assert lr.check_false_success(results) == [], "写操作真的成功时不得判假成功"
+
+    def test_error_without_any_write_still_fails(self):
+        """原保护不变：报错且没有任何写成功 → 文本称成功 = 谎报。"""
+        results = [
+            self._round(6, error="处理失败: boom"),
+            self._round(9, text="商品创建成功", ok=False),
+        ]
+        issues = lr.check_false_success(results)
+        assert issues and "假成功" in issues[0]
+
+    def test_no_error_no_violation(self):
+        assert lr.check_false_success([self._round(1, text="创建成功", ok=True)]) == []
+
+    def test_error_before_success_claim_without_tool_results(self):
+        """没有任何 tool_result（如纯文本流程）时，维持原语义 —— 报错后称成功即违规。"""
+        results = [self._round(6, error="boom"), self._round(8, text="已成功处理")]
+        assert lr.check_false_success(results), "无写操作证据时不得放行"
+
+
+class TestRoundTraceCarriesErrorText:
+    """逐轮错误**原文**进轨迹（issue #3365）：只打 `ERR` 标记时归因无从下手。"""
+
+    def test_error_text_printed(self):
+        trace = lr.build_round_trace([
+            {"__round": 6, "user_message": "123456", "tool_calls": [], "tool_results": [],
+             "final_text": "", "error": "处理失败: AttributeError: boom"},
+        ])
+        assert trace[0]["error"].startswith("处理失败")
+        assert "ERR(" in lr.format_round_trace(trace)
+        assert "AttributeError" in lr.format_round_trace(trace)
+
+
+class TestAutoRespondNoRepeatCardClick:
+    """同卡不重复点（issue #3365，CH-010 实证）。
+
+    CI run 34714932015：CH-010 九轮下来 `order_create ×3` 全被"缺少短信验证码"拒 ——
+    模型每轮重发同一张确认卡，harness 每轮点同一张卡 → 验证码轮全被点卡吃掉、流程永不前进。
+    真实顾客点过一次不会再点同一张卡，而是直接说下一步需要的信息（验证码/补充信息）——
+    即 fallback 的语义。故"已发过的答复"一律改用 fallback。
+    """
+
+    def _card(self, comp="confirm", **kw):
+        base = {"type": comp}
+        base.update(kw)
+        return {"interactive": [base], "__round": 1, "tool_calls": [], "tool_results": [],
+                "final_text": "", "user_message": ""}
+
+    def test_same_confirm_value_answered_twice_then_fallback(self):
+        """同一张确认卡最多点**两次**：首答 + 一次重申；第 3 次起走 fallback（把轮数让给验证码）。"""
+        v = "确认下单：北欧风窗帘 3米 ¥408"
+        first = [dict(self._card(confirmValue=v), user_message="数量 3 米")]
+        assert lr.resolve_auto_respond(first, "123456", {}) == v
+        second = first + [dict(self._card(confirmValue=v), user_message=v, __round=2)]
+        assert lr.resolve_auto_respond(second, "123456", {}) == v, "模型再次征询应再点一次"
+        third = second + [dict(self._card(confirmValue=v), user_message=v, __round=3)]
+        assert lr.resolve_auto_respond(third, "123456", {}) == "123456", (
+            "两次之后仍重发 → 轮数必须让给验证码，否则整场 order_create 都缺 sms_code"
+        )
+
+    def test_new_confirm_value_still_clicked(self):
+        """换了内容的确认卡仍要点（那是新的确认请求）。"""
+        first = [dict(self._card(confirmValue="确认下单：旧单 ¥100"), user_message="x")]
+        second = first + [dict(self._card(confirmValue="确认下单：北欧风窗帘 3米 ¥408"),
+                               user_message="确认下单：旧单 ¥100", __round=2)]
+        assert lr.resolve_auto_respond(second, "123456", {}) == "确认下单：北欧风窗帘 3米 ¥408"
+
+    def test_single_select_answers_with_label(self):
+        """单选卡按**前端协议**发 label（人话），不是内部 value（issue #3365 对齐）。"""
+        card = self._card("choice", options=[{"value": "opt1", "label": "第一项"}])
+        assert lr.resolve_auto_respond([card], "确认", {}) == "第一项"
+
+    def test_multi_select_answers_with_prefix_and_label(self):
+        """多选卡：`multiSelectSubmitPrefix` + label（前端 submitSelections 协议）。
+
+        实证：harness 此前发内部 id（`proc_item_pi_eval_punch`）→ 模型看不懂选了什么
+        → 反复重发同一张加工项卡（OR-017 六轮耗尽）。
+        """
+        card = self._card("choice", multiSelect=True,
+                          multiSelectSubmitPrefix="已选加工项：",
+                          options=[{"value": "proc_item_x", "label": "纳米圈打孔"}])
+        assert lr.resolve_auto_respond([card], "确认", {}) == "已选加工项：纳米圈打孔"
+
+    def test_multi_select_default_prefix(self):
+        card = self._card("choice", multiSelect=True,
+                          options=[{"value": "proc_item_x", "label": "纳米圈打孔"}])
+        assert lr.resolve_auto_respond([card], "确认", {}) == "已选加工项：纳米圈打孔"
+
+    def test_repeated_same_choice_answer_falls_back_after_two(self):
+        card = self._card("choice", options=[{"value": "opt1", "label": "第一项"}])
+        once = [dict(card, user_message="第一项", __round=1)]
+        assert lr.resolve_auto_respond([card] + once, "123456", {}) == "第一项"
+        twice = once + [dict(card, user_message="第一项", __round=2)]
+        assert lr.resolve_auto_respond([card] + twice, "123456", {}) == "123456"

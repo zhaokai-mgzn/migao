@@ -22,8 +22,16 @@ from app.graph.state import AgentState
 # 用于 route_by_intent 的 escape hatch（topic switch）与
 # plan_rewrite 路径的澄清轮护栏判定：短消息是否包含实质业务意图。
 _SKILL_DOMAIN_KEYWORDS = {
-    "order": {"查订单", "物流", "发货", "订单"},
-    "aftersales": {"售后", "退货", "退款", "换货", "投诉"},
+    # 「下单」必须在内（issue #3361）：C 端报价 skill（customer_quote）会下发报价卡并
+    # 锁住 pending_interact_skill，而它**没有** order_create 工具。顾客在报价后说
+    # 「确认下单/我要下单」时，若这些词不算 order 域信号，escape hatch 不触发 →
+    # 会话被锁在报价 skill → 模型照样调 order_create → `tool_not_found` ×2 → 转人工，
+    # 订单从未创建（CI run 34686905546 实证：OR-017 R7/R8）。含「下单」即命中
+    # L1 规则 ORDER_CREATE（rule_matcher），路由回 customer_order skill 完成下单。
+    "order": {"查订单", "物流", "发货", "订单", "下单"},
+    # 「退」单独入表（issue #3361）：C 端口语里"我要退上次买的那单"不含"退货"三字，
+    # 但语义百分百是售后 —— 漏掉它导致流程被甩去 order 域（见下方「本领域信号优先」注释）。
+    "aftersales": {"售后", "退货", "退款", "换货", "投诉", "退"},
     "product": {"查商品", "搜商品", "创建商品", "商品管理"},
     "customer": {"客户", "会员"},
     "staff": {"员工", "角色", "权限"},
@@ -31,15 +39,61 @@ _SKILL_DOMAIN_KEYWORDS = {
 }
 
 
+# ── 业务领域**句式**信号（正则，issue #3364）──
+# 为什么需要：`_SKILL_DOMAIN_KEYWORDS` 是**管理端说法**（查商品/搜商品/创建商品/商品管理），
+# C 端口语「有什么遮光窗帘推荐」「看看这款面料」一个都不命中 → escape hatch 不触发 →
+# 会话被上一张卡锁在原技能（E2E `test_topic_switch_does_not_leak_order_context` 实测红：
+# 查完订单接着问商品，round2 一个商品工具都调不出来）。
+# 为什么用**句式**而不是再加"窗帘/面料"裸词：裸词会让下单流程里的「遮光窗帘 3 米，要打孔加工」
+# 被判成"切到商品域"，把下单流程甩走（OR-014/OR-017 依赖留在 customer_order）。
+# 句式（询问/求推荐）与指令（下单/买）在语义上天然可分，故此处只收询问型。
+_SKILL_DOMAIN_PATTERNS = {
+    "product": (
+        r"(?:推荐|看看|看一下|有什么|有没有|想看看).{0,8}(?:窗帘|窗纱|面料|布艺)",
+        r"(?:窗帘|窗纱|面料|布艺).{0,6}(?:推荐|有哪些|有什么|怎么选|哪种好)",
+    ),
+}
+
+
+def _msg_matches_domain_pattern(text: str, domain: str) -> bool:
+    """消息是否命中该领域的**句式**信号（正则表，见上）。"""
+    import re as _re
+    if not text:
+        return False
+    return any(_re.search(pat, str(text)) for pat in _SKILL_DOMAIN_PATTERNS.get(domain, ()))
+
+
+def _skill_keyword_domain(skill_name: str) -> str:
+    """Skill 名 → 关键词域（C 端 skill 带 `customer_` 前缀：customer_order → order）。
+
+    为什么需要（issue #3361 实证）：`_SKILL_DOMAIN_KEYWORDS` 的键是**领域**
+    （order/aftersales/product/…），而 C 端 skill 名是 `customer_order` / `customer_quote`。
+    escape hatch 里 `if skill_domain == pending_skill` 于是对 C 端**永不成立** ——
+    连当前 skill 自己的领域都被当成"其他领域"，只要用户消息里出现本领域关键词就误判为
+    话题切换、释放会话锁，会话被甩给 intent 路由。
+
+    实测后果（CI run 34688038261）：在 `customer_order` 里顾客点确认卡回传
+    「确认下单：遮光窗帘3米+打孔加工，合计¥95.4」→ 因含「下单」被判"切到 order 域"
+    → pending 清空 → intent 分类为 quote → 路由到 `customer_quote`（该 skill 无
+    order_create）→ `Tool not found: order_create` → 订单永不创建、最终转人工。
+    """
+    name = str(skill_name or "")
+    prefix = "customer_"
+    return name[len(prefix):] if name.startswith(prefix) else name
+
+
 def _msg_has_domain_keyword(text: str) -> bool:
     """消息是否包含任何业务领域关键词（用户给出实质意图方向）。"""
     if not text:
         return False
-    return any(
+    if any(
         kw in text
         for kws in _SKILL_DOMAIN_KEYWORDS.values()
         for kw in kws
-    )
+    ):
+        return True
+    # 句式信号同源（issue #3364）：「有什么窗帘推荐」是实质诉求，不该被当澄清轮
+    return any(_msg_matches_domain_pattern(text, d) for d in _SKILL_DOMAIN_PATTERNS)
 
 
 # ────────────────────── 多模态内容处理 ──────────────────────
@@ -645,11 +699,27 @@ def route_by_intent(state: AgentState) -> str:
         last_msg = _get_last_human_text(state.get("messages", [])) or ""
         # 使用模块级单一来源关键词表（plan_rewrite 护栏与 escape hatch 共用）
         # 如果用户消息包含非当前 skill 领域的关键词，允许切换
-        current_domain_keywords = _SKILL_DOMAIN_KEYWORDS.get(pending_skill, set())
+        _pending_domain = _skill_keyword_domain(pending_skill)
+        current_domain_keywords = _SKILL_DOMAIN_KEYWORDS.get(_pending_domain, set())
+        # ── 本领域信号优先：消息里带了**当前技能领域**的关键词 → 不切走（issue #3361 实证）──
+        # CH-012 复现型红灯的真因：R1 在 customer_aftersales 下发「请选择要退货的订单」卡，
+        # R2 顾客回「我要退上次买的那单，订单号 EVAL-ORD-0002」——含「退货」（aftersales 域）
+        # 同时含「订单号」（order 域）→ 旧逻辑只看"有没有别的领域词"→ 判为话题切换 →
+        # 会话被甩到 customer_order（**没有 aftersale_create**）→ 模型只能尝试转人工 →
+        # 被在办兜底拦住 → 三轮原地打转、售后单永不创建。
+        # 语义：顾客在退货流程里提订单号，是**流程内的指代**，不是换话题。
+        if (any(kw in last_msg for kw in current_domain_keywords)
+                or _msg_matches_domain_pattern(last_msg, _pending_domain)):
+            logger.info(
+                f"[route_by_intent] Escape hatch skipped: 当前领域信号命中 "
+                f"(domain={_pending_domain}) | session={session_id}"
+            )
+            return pending_skill
         for skill_domain, keywords in _SKILL_DOMAIN_KEYWORDS.items():
-            if skill_domain == pending_skill:
+            if skill_domain == _pending_domain:
                 continue
-            if any(kw in last_msg for kw in keywords):
+            if (any(kw in last_msg for kw in keywords)
+                    or _msg_matches_domain_pattern(last_msg, skill_domain)):
                 logger.info(
                     f"[route_by_intent] Escape hatch: domain switch detected "
                     f"from '{pending_skill}' to '{skill_domain}' "

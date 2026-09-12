@@ -193,6 +193,23 @@ UA 只扮演了 C 端顾客 persona，B 端商家后台的浏览器操作旅程�
   `quantity 按计价方式（per_meter=米数 / per_set=1 / per_area=宽×高）`；
 - 数据落库断言：create 类 payload 必须断言完整结构（如 `processing_item_configs` 含
   `customPrice=unit_price`、`unit=真实单位`），禁止只断"工具被调用"。
+- **写工具成功断言（`must_succeed`，issue #3361）**：期望里出现写工具（`order_create` /
+  `aftersale_create` …）**只能证明"模型想写"，证明不了"东西真做出来了"**。CI 实证
+  （run 34686905546）：三个下单用例的 `order_create` 分别返回 `tool_execution_failed` /
+  `confirmation_required` / `tool_not_found`，用例照样判 100%，而 DB 审计里 `orders`
+  一条没新增 —— 报告长相「下单流程正常」，事实「一单没成交」。
+
+  ```yaml
+  must_succeed:
+    - tool: order_create            # 至少真正成功一次
+    - tool: aftersale_create
+      action: create                # 可选：按 args.action 过滤
+  ```
+
+  语义：声明的工具**至少有一次** `success=true`（期间被确认门禁拦下属期望内的安全行为，
+  只要最终成功即通过）；一次都没成功（含从未调用）→ 违规，详情带每轮错误码，
+  「工具层失败」与「模型层漏调」在一行里可区分。**C 端写用例必须声明**（由
+  `tests/unit_ci_workflows/test_xiaobu_case_set.py::TestWriteToolSuccessAssertions` 强制）。
 
 ### 3.3 反模式断言（负向）
 

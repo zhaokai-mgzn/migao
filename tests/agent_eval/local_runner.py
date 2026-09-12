@@ -8,6 +8,7 @@ Mibao Agent 本地评测 — 直接调 localhost chat API，采集 SSE 事件
 """
 
 import sys, os, json, time, asyncio, re
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from pathlib import Path
@@ -39,6 +40,26 @@ SERVICE_TOKEN = os.environ.get("SERVICE_TOKEN", "")
 # xiaobu 模式：不带 Bearer token，通过 X-Debug-Role: customer 让 DEBUG 模式路由到小布，
 # 并验证 C 端数据隔离（customer_order_query 而非 order_query）。
 PERSONA = os.environ.get("PERSONA", "mibao").strip().lower()
+
+# ── 节流 sleep（可配，issue #3361 评测提速）──
+# 为什么可配：评测墙钟时间几乎全花在真实 LLM 往返上，固定 sleep 是纯额外开销 ——
+# 实测 C 端 normal 单跑 19m39s（18 条），其中 ~63s 是 0.5s/轮 + 1s/用例的固定等待，
+# B 端 47 条约 3min。真实 LLM 有并发限流需求，故保留"可调"而不是删除：
+# CI 用 EVAL_ROUND_SLEEP=0.2 / EVAL_CASE_SLEEP=0.3，本地调试可调回 0.5/1。
+def _env_float(name: str, default: float) -> float:
+    raw = os.environ.get(name)
+    if not raw:
+        return default
+    try:
+        v = float(raw)
+    except ValueError:
+        print(f"⚠️ {name}={raw!r} 非法，回落默认 {default}")
+        return default
+    return v if v >= 0 else default
+
+
+ROUND_SLEEP = _env_float("EVAL_ROUND_SLEEP", 0.5)
+CASE_SLEEP = _env_float("EVAL_CASE_SLEEP", 1.0)
 
 # ── C 端用例集选择（纯逻辑拆到 eval_case_filter，issue #3266）──
 # 拆出去的动机：本文件有模块级 `import httpx`，而 CI 的 ci-workflow-helper 测试 job
@@ -160,15 +181,10 @@ async def _end_session(token: str, session_id: str) -> None:
                       f"body={str(getattr(r, 'content', b''))[:120]}")
     except Exception as e:
         print(f"     ⚠️ 会话关闭异常: id={session_id} {type(e).__name__}: {e}")
-    # 人工会话残留（human_handoff 在 admin-api agent_sessions 建的行）仍走 admin-api，
-    # best-effort：C 端评测会话在此表不存在，404 属预期，静默。
-    try:
-        async with httpx.AsyncClient() as c:
-            h = _admin_headers(token)
-            await c.post(f"{ADMIN_API}/api/admin/agent-sessions/{session_id}/end",
-                         headers=h, timeout=10)
-    except Exception:
-        pass
+    # 兼容调用已**删除**（issue #3361 顺手清理）：admin-api `agent_sessions` 是人工会话表，
+    # 其主键与 ai-agent 会话 id 不互认，传 ai 会话 id 永远查不到行 —— 实测 CI 里每次调用
+    # 都在 admin-api 侧留一条 `[NOT_FOUND] 客服会话不存在` 告警（死代码 + 噪音）。
+    # 人工会话本身是**待人工处理的工单**，也不该由评测 harness 关闭。
 
 
 async def _run_pre_clean(token: str, spec: dict) -> str:
@@ -878,12 +894,26 @@ def check_false_success(results: list) -> list:
     """假成功：前序轮报错 + 后续文本声称成功 → 违规（sess_e52cff42 类）。
 
     工具调用全对但用户看到的话是错的（"创建失败却答更新成功"）——验收协议 §3.4 反模式。
+
+    2026-09-13 细化（issue #3365，CI run 34710420292 实证）：**报错 ≠ 谎报**。
+    CH-010 该跑 R6 出现一次瞬时错误（R7 起自动恢复），R9 的 `order_create` 真的成功落库
+    （`totalAmount=408.0` = 3×128，接地正确），末轮文本称成功 —— 这是**真话**，却被本守卫
+    判红。原语义「只要前序轮报错就不许说成功」把"瞬时错误后自愈"也一并否掉了。
+    新语义：报错后若**确有写操作成功**（tool_result success=true，与 must_succeed 同源），
+    则声明成功不构成谎报；只有"报错且没有任何写成功"时才算假成功。
     """
     err_rounds = [r.get("__round") for r in results if r.get("error")]
     if not err_rounds:
         return []
+    wrote_ok = any(st.get("ok")
+                   for r in results
+                   for st in _tool_result_status(r.get("tool_results") or []))
     for r in results:
         if "成功" in (r.get("final_text") or "") and any(e < r.get("__round") for e in err_rounds):
+            if wrote_ok:
+                print(f"     ℹ️ 假成功守卫放行(R{r.get('__round')})：前序轮报错但确有写操作成功"
+                      f"（声明与现实一致）")
+                return []
             return [f"假成功(R{r.get('__round')}): 前序轮报错(R{err_rounds[0]})但文本称成功"]
     return []
 
@@ -989,6 +1019,98 @@ def check_forbidden_args(results: list, forbidden_args: list) -> list:
                         issues.append(
                             f"forbidden_args[{tool}.{f}](R{r.get('__round')}): "
                             f"该参数禁止出现（越权/数据隔离风险）")
+    return issues
+
+
+def _tool_name_matches(name: str, tool: str) -> bool:
+    """工具名是否匹配（精确或 `前缀.工具名` 命名空间形态）。
+
+    刻意**不用子串包含**：`"order_query" in "customer_order_query"` 为真，
+    会把 B 端 order_query 的调用算到 customer_order_query 头上（required_args
+    的旧实现在这类同尾工具名上会误判）。这里用精确/后缀匹配，语义明确。
+    """
+    n, t = str(name or "").lower(), str(tool or "").lower()
+    if not n or not t:
+        return False
+    return n == t or n.endswith("." + t)
+
+
+def check_must_succeed(results: list, must_succeed: list) -> list:
+    """写工具**成功**断言：声明的工具必须至少真正成功一次（「调了」≠「成了」）。
+
+    背景（CI 实证 run 34686905546 / 34685247189，issue #3361）：
+    CH-010/OR-014/OR-017 三个下单用例的 `order_create` 分别返回
+    `tool_execution_failed` / `confirmation_required` / `tool_not_found`，
+    用例**照样判 100%**（断言只看望工具名出现在 tool_calls 里），DB 审计里
+    `orders` 一条没新增。报告长相是「下单流程正常」，事实是「一单没成交」——
+    这正是 §0 复盘「AI 验收全绿、人工验收全是问题」的同款假绿。
+
+    语义（刻意不要求"每次调用都成功"）：
+      - 已存在工具结果里**至少一次** `success=true` 即通过 —— 期间被 confirm 门禁
+        拦下（`confirmation_required`）属**期望内的安全行为**，只要最终成功就不算违规；
+      - 一次都没成功（含从未调用）→ 违规，并把每次尝试的轮次+错误码写进详情，
+        工具层失败与模型层漏调在一行里可区分。
+
+    用例形态：
+        must_succeed:
+          - tool: order_create            # 下单用例必须真的建出订单
+          - tool: aftersale_create
+            action: create                # 可选：按 args.action 过滤
+    """
+    issues = []
+    for spec in must_succeed or []:
+        if isinstance(spec, str):
+            spec = {"tool": spec}
+        tool = str(spec.get("tool", ""))
+        action = spec.get("action")
+        if not tool:
+            issues.append(f"must_succeed: 配置缺 tool: {spec!r}")
+            continue
+
+        attempts: list = []   # [(round, ok, error)]
+        for r in results or []:
+            rnd = r.get("__round")
+            # 调用侧：LLM 是否发起了该工具（按 action 过滤）
+            called = False
+            for tc in r.get("tool_calls") or []:
+                if not _tool_name_matches(tc.get("name"), tool):
+                    continue
+                if action and (tc.get("args") or {}).get("action") != action:
+                    continue
+                called = True
+                break
+            # 结果侧：SSE tool_result 里该工具的成败（结果事件不带 args，无法按 action 过滤
+            # —— 所以**指定 action 时只有该轮真的发起了匹配调用，其成功才算数**，
+            # 否则同一工具不同 action 的成败会互相顶替：实测 `action: cancel` 的断言被
+            # 同工具 `action: create` 的成功"顶过"而假绿）
+            matched_results = [
+                st for st in _tool_result_status(r.get("tool_results") or [])
+                if _tool_name_matches(st.get("tool"), tool)
+            ]
+            if action and not called:
+                continue
+            if not called and not matched_results:
+                continue
+            if not matched_results:
+                # 发起了但没有结果事件（流中断/并发丢弃）→ 按未成功记录，不许静默当成功
+                attempts.append((rnd, False, "无结果事件"))
+                continue
+            for st in matched_results:
+                attempts.append((rnd, bool(st.get("ok")), st.get("error")))
+
+        if any(ok for _, ok, _ in attempts):
+            continue
+        if not attempts:
+            issues.append(
+                f"must_succeed: {tool} 从未被调用 → 没有发生任何写操作"
+                "（期望里的工具名出现≠工具真的跑了）")
+        else:
+            detail = ", ".join(
+                f"R{rnd}:{err or 'failed'}" for rnd, _ok, err in attempts
+            )
+            issues.append(
+                f"must_succeed: {tool} 共 {len(attempts)} 次调用**无一成功**（{detail}）"
+                "—— 调了 ≠ 成了")
     return issues
 
 
@@ -1152,6 +1274,152 @@ async def _fetch_product_configs(token: str, name: str) -> list:
         return (_safe_json(rd, {}) or {}).get("data", {}).get("processingItemConfigs") or []
 
 
+# ── amount_verify：下单金额正确性断言（acceptance-protocol §3.2 / issue #3365）──
+# 为什么必须有：写工具「成功」只证明订单落库了，**不证明钱算对了**。
+# 实证：OR-014 的 agent 在没查过商品的情况下发出确认卡写着「遮光窗帘3米+打孔加工，合计¥95.4」，
+# 而该商品真实单价 ¥168/米 —— 这类"钱算错"此前只能靠 DB 审计人眼看（审计只打印金额）。
+# 本断言把三个关系变成机器判定：
+#   ① unit_price == 商品库单价（**接地**：单价必须来自商品数据，不能凭记忆）
+#   ② subtotal   == quantity × unit_price（明细自洽）
+#   ③ total      == Σsubtotal + ΣprocessingFee（总额自洽，若结果里带总额）
+
+def _first_successful_call(results: list, tool: str) -> tuple:
+    """返回该工具**首个成功调用**的 (轮次, args, result_data)；找不到返回 (None, None, None)。
+
+    成功判定用 tool_result 的 success（与 must_succeed 同源），避免把被门禁拦下的调用当成功。
+    """
+    for r in results or []:
+        calls = [tc for tc in (r.get("tool_calls") or []) if _tool_name_matches(tc.get("name"), tool)]
+        if not calls:
+            continue
+        oks = [st for st in _tool_result_status(r.get("tool_results") or [])
+               if _tool_name_matches(st.get("tool"), tool) and st.get("ok")]
+        if not oks:
+            continue
+        return r.get("__round"), (calls[0].get("args") or {}), None
+    return None, None, None
+
+
+async def _fetch_product_price(token: str, name: str) -> float | None:
+    """按商品名查商品库单价（接地真值）。"""
+    try:
+        async with httpx.AsyncClient() as c:
+            h = _admin_headers(token)
+            r = await c.get(f"{ADMIN_API}/api/admin/products", headers=h,
+                            params={"keyword": name, "page": 1, "size": 1}, timeout=15)
+            items = (_safe_json(r, {}) or {}).get("data", {}).get("items", [])
+            if not items:
+                return None
+            pid = items[0]["id"]
+            rd = await c.get(f"{ADMIN_API}/api/admin/products/{pid}", headers=h, timeout=15)
+            data = (_safe_json(rd, {}) or {}).get("data", {}) or {}
+            for key in ("price", "basePrice", "base_price"):
+                if data.get(key) is not None:
+                    return float(data[key])
+    except Exception:
+        return None
+    return None
+
+
+async def check_amount_verify(token: str, results: list, amount_verify: list) -> list:
+    """执行下单金额断言：单价接地 / 小计自洽 / 总额自洽，返回违规列表。
+
+    用例形态：
+        amount_verify:
+          - tool: order_create
+            product_name: "遮光窗帘"        # 用于取商品库单价（接地真值）
+            tolerance: 0.01                # 金额容差（默认 0.01）
+            checks: [unit_price, subtotal, total]
+    """
+    issues = []
+    for spec in amount_verify or []:
+        if not isinstance(spec, dict):
+            issues.append(f"amount_verify: 配置非字典: {spec!r}")
+            continue
+        tool = str(spec.get("tool") or "order_create")
+        tol = float(spec.get("tolerance", 0.01))
+        checks = [str(x) for x in (spec.get("checks") or ["unit_price", "subtotal", "total"])]
+        rnd, args, _ = _first_successful_call(results, tool)
+        if args is None:
+            issues.append(f"amount_verify: 未找到 {tool} 的成功调用（金额无从核对）")
+            continue
+        items = args.get("items") or []
+        if not isinstance(items, list) or not items:
+            issues.append(f"amount_verify[{tool}](R{rnd}): items 为空，金额无从核对")
+            continue
+
+        price = None
+        if "unit_price" in checks:
+            name = str(spec.get("product_name") or "")
+            if not name:
+                issues.append("amount_verify: 声明了 unit_price 检查但未给 product_name（无法取真值）")
+            else:
+                price = await _fetch_product_price(token, name)
+                if price is None:
+                    issues.append(f"amount_verify: 商品「{name}」在商品库查不到单价（fixture 缺数据？）")
+
+        subtotal_sum = 0.0
+        processing_sum = 0.0
+        for i, item in enumerate(items):
+            if not isinstance(item, dict):
+                issues.append(f"amount_verify[{tool}](R{rnd}): items[{i}] 非对象")
+                continue
+            try:
+                qty = float(item.get("quantity") or 0)
+                up = float(item.get("unit_price") or 0)
+                sub = item.get("subtotal")
+                sub_f = float(sub) if sub is not None else qty * up
+            except (TypeError, ValueError):
+                issues.append(f"amount_verify[{tool}](R{rnd}): items[{i}] 数量/单价非数值: {item!r}")
+                continue
+            pname = str(item.get("product_name") or "")
+            pinfo = item.get("processing_info") or {}
+            if isinstance(pinfo, dict):
+                try:
+                    processing_sum += float(pinfo.get("processingFee") or 0)
+                except (TypeError, ValueError):
+                    pass
+            subtotal_sum += sub_f
+            if "unit_price" in checks and price is not None:
+                # 只核对被声明商品的单价（多商品订单里其它行按各自商品库价另配 spec）
+                if not spec.get("product_name") or str(spec["product_name"]) in pname:
+                    if abs(up - price) > tol:
+                        issues.append(
+                            f"amount_verify[{tool}](R{rnd}): 「{pname}」单价 {up} ≠ 商品库 {price}"
+                            f"（凭记忆报价？）")
+            if "subtotal" in checks:
+                if abs(sub_f - qty * up) > tol:
+                    issues.append(
+                        f"amount_verify[{tool}](R{rnd}): 「{pname}」小计 {sub_f} ≠ 数量{qty}×单价{up}")
+
+        if "total" in checks:
+            expected = subtotal_sum + processing_sum
+            total = None
+            for r in results or []:
+                if r.get("__round") != rnd:
+                    continue
+                for tr in r.get("tool_results") or []:
+                    if not _tool_name_matches(tr.get("tool"), tool):
+                        continue
+                    res = tr.get("result") if isinstance(tr.get("result"), dict) else {}
+                    data = res.get("data") if isinstance(res.get("data"), dict) else {}
+                    for key in ("totalAmount", "total_amount", "amount"):
+                        if data.get(key) is not None:
+                            total = float(data[key])
+                            break
+            if total is None:
+                # 结果里没带总额 → 用 args 侧总额兜底；都没有则显式跳过（不静默当通过）
+                total = args.get("total_amount")
+                total = float(total) if total is not None else None
+            if total is None:
+                print(f"     ℹ️ amount_verify: {tool} 结果未带总额，跳过 total 检查（单价/小计已查）")
+            elif abs(total - expected) > max(tol, 0.05):
+                issues.append(
+                    f"amount_verify[{tool}](R{rnd}): 总额 {total} ≠ Σ小计{subtotal_sum}+加工费{processing_sum}"
+                    f"={expected}")
+    return issues
+
+
 async def check_db_verify(token: str, db_verify: list) -> list:
     """执行 db_verify 断言：fetch 指定资源 → 逐条评估谓词，返回违规列表。"""
     issues = []
@@ -1295,19 +1563,40 @@ def resolve_auto_respond(results: list, fallback: str, form_values: dict) -> str
             comp = str(iv.get("type") or iv.get("component") or "")
             by_comp.setdefault(comp, iv)
 
+        # 同一张卡**不重复点第二次**（发过的答复不再原样重发）：
+        # 模型重发同一张确认卡时，若 harness 逐轮点同一张卡，就会陷入
+        # 「模型重发 → 点卡 → 模型再重发」死循环、流程永不前进（CI run 34714932015 实证：
+        # CH-010 九轮下来 order_create 三次都被"缺少短信验证码"拒 —— 验证码轮全被点卡吃掉）。
+        # 真实顾客点过一次不会再点同一张，而是直接说下一步需要的信息（验证码/补充信息）——
+        # 这正是 fallback 的语义，故已发过的答复一律改用 fallback。
+        _sent = [str(r.get("user_message") or "").strip() for r in rounds]
+
+        def _already_sent(answer: str) -> bool:
+            return bool(answer) and answer.strip() in _sent
+
+        def _repeat_count(answer: str) -> int:
+            return sum(1 for m in _sent if m and m == answer.strip())
+
         confirm = by_comp.get("confirm")
         if confirm is not None:
             value = str(confirm.get("confirmValue") or "").strip()
+            # 同一张确认卡**最多点两次**（issue #3365 实测校准）：
+            # - 点 1 次后模型若重发同一张卡，那是它**再次征询**，真实顾客会再点一下 → 允许多点 1 次；
+            # - 第 3 次起改用 fallback：否则「模型重发 → 反复点卡」会把整场轮数吃光，
+            #   验证码轮永远送不出去（CH-010 曾整场 order_create 全部"缺少短信验证码"）。
+            # 完全禁止重复点击也不行：实测 CH-010 因此陷入「模型重发确认卡 → harness 只回文本
+            # → 模型再重发」的 4 次确认死循环（被 check_confirm_loop 判红）。
+            # 两次之后仍重发，则属**模型层**不收敛，交给 check_confirm_loop 如实判红。
+            if _repeat_count(value) >= 2:
+                return fallback
             return value or fallback
 
         choice = by_comp.get("choice")
         if choice is not None:
-            options = choice.get("options") or []
-            if options:
-                first = options[0]
-                value = str(first.get("value") or first.get("text") or "").strip()
-                if value:
-                    return value
+            answer = choice_card_answer(choice)
+            # 选择卡同理：同一答复最多两次（首答 + 一次重申），之后走 fallback
+            if answer and _repeat_count(answer) < 2:
+                return answer
 
         form = by_comp.get("form")
         if form is not None:
@@ -1348,7 +1637,49 @@ def _auto_fill_form(results: list, values: dict) -> str | None:
     return None
 
 
+def choice_card_answer(card: dict) -> str:
+    """按**前端真实点击协议**构造 choice 卡的答复（issue #3365）。
+
+    协议（`frontend/admin-web/src/components/chat/InteractiveMessage.tsx`，单一事实源）：
+      单选：`sendMessage(opt.label || opt.value)`        —— 发**label**（人话），不是内部 id；
+      多选：`sendMessage(`${multiSelectSubmitPrefix || '已选加工项：'}${labels.join('、')}`)`
+            —— 前缀由后端卡片驱动 + **label** 以「、」连接（一次性提交，不是每点一次发一条）。
+
+    为什么必须对齐（CI run 34715428643 实证）：harness 此前一律回 `options[0].value`
+    （内部 id，如 `pi_eval_punch` / `proc_item_pi_eval_punch`）→ 模型看不懂"顾客选了什么"
+    → **反复重发同一张加工项卡**，六轮耗尽也没走到 order_create（用例判红，长相像能力问题）。
+    """
+    options = (card or {}).get("options") or []
+    if not options:
+        return ""
+    first = options[0] if isinstance(options[0], dict) else {}
+    label = str(first.get("label") or first.get("value") or first.get("text") or "").strip()
+    if not label:
+        return ""
+    if (card or {}).get("multiSelect"):
+        prefix = str((card or {}).get("multiSelectSubmitPrefix") or "已选加工项：")
+        return f"{prefix}{label}"
+    return label
+
+
 def _auto_select_first_option(results: list) -> str | None:
+    """从最近一轮 interactive choice 卡取"按前端协议"的答复（自动回放选择）。
+
+    ChoiceCard 点击协议见 `choice_card_answer`（单选发 label、多选发 `前缀+label`）；
+    choice 卡内容由 LLM 动态生成，评测用静态 user_inputs 无法预知 →
+    user_inputs 的 {"auto_select": true} 让 runner 自动作答第一个选项。
+    无 choice 卡返回 None（调用方 fallback 文本指代，兼容 agent 文本澄清路径）。
+    """
+    if not results:
+        return None
+    for iv in (results[-1].get("interactive") or []):
+        comp = str(iv.get("type") or iv.get("component") or "")
+        if comp == "choice" and iv.get("options"):
+            return choice_card_answer(iv) or None
+    return None
+
+
+def _legacy_auto_select_first_option(results: list) -> str | None:
     """从最近一轮的 interactive choice 卡取第一个 option 的 value（自动回放选择）。
 
     ChoiceCard 点击协议 = onAction(opt.value)；choice 卡内容由 LLM 动态生成，
@@ -1396,6 +1727,13 @@ def build_round_trace(results: list) -> list:
         text = r.get("final_text") or ""
         trace.append({
             "round": r.get("__round"),
+            # 本轮**实际发出**的用户消息（截断）。为什么必须记：协议轮（auto_respond /
+            # auto_select / auto_fill）发出的不是用例静态文本，而是 harness 依上一轮卡片
+            # 生成的答复（confirm 卡回 confirmValue、choice 卡回首项、form 回 __FORM__|json）。
+            # 写操作被门禁拦（confirmation_required）时，「模型没拿到确认」与「harness 答错了
+            # 卡」在旧轨迹里同形 —— 实测 OR-014 无法判断 R4 到底发了什么，归因只能靠猜。
+            # 这条字段把「输入侧」也变成证据。
+            "user": str(r.get("user_message") or "")[:60],
             "tools": [str(tc.get("name", "")) for tc in (r.get("tool_calls") or [])],
             "results": _tool_result_status(r.get("tool_results") or []),
             "cards": [str(c.get("type") or c.get("card_type") or "") for c in (r.get("cards") or [])],
@@ -1405,7 +1743,9 @@ def build_round_trace(results: list) -> list:
             ],
             # 截断：轨迹用于归因，不是全文存档（全文另见 final_text / 产物）
             "text": text[:60],
-            "error": str(r.get("error"))[:80] if r.get("error") else None,
+            # 逐轮错误**原文**（issue #3365）：此前轨迹只打 `ERR` 标记，看不到是什么错 ——
+            # 实测 CH-010 R6 报错、R7 自愈，归因时完全无从下手（容器日志里也没有对应 traceback）。
+            "error": str(r.get("error"))[:120] if r.get("error") else None,
         })
     return trace
 
@@ -1498,6 +1838,9 @@ def format_round_trace(trace: list) -> str:
     parts = []
     for t in trace or []:
         bits = [f"R{t.get('round')}"]
+        # 输入侧证据：本轮实际发出的消息（协议轮的答复尤其关键——见 build_round_trace）
+        if t.get("user"):
+            bits.append(f"you={t['user']}")
         bits.append("tools=" + (",".join(t.get("tools") or []) or "-"))
         failed = [f"{x['tool']}!{x['error']}" for x in (t.get("results") or []) if not x.get("ok")]
         if failed:
@@ -1516,7 +1859,7 @@ def format_round_trace(trace: list) -> str:
         if t.get("interactive"):
             bits.append("cards=" + ",".join(t["interactive"]))
         if t.get("error"):
-            bits.append("ERR")
+            bits.append(f"ERR({t['error'][:60]})")
         parts.append("[{}]".format(" ".join(bits)))
     return " ".join(parts)
 
@@ -1593,8 +1936,9 @@ async def run_case(case, token: str, session_id: str) -> dict:
         all_tool_names.extend(r["__all_tool_names"])
         results.append(r)
 
-        # 简单等待，避免请求过快
-        await asyncio.sleep(0.5)
+        # 简单等待，避免请求过快（可配：EVAL_ROUND_SLEEP，见文件头说明）
+        if ROUND_SLEEP:
+            await asyncio.sleep(ROUND_SLEEP)
 
     # 汇总所有轮的 tool 名称
     for r in results:
@@ -1642,6 +1986,15 @@ async def run_case(case, token: str, session_id: str) -> dict:
     case_issues += check_want_text(results, getattr(case, "want_text", []) or [])
     case_issues += check_required_args(results, getattr(case, "required_args", []) or [])
     case_issues += check_forbidden_args(results, getattr(case, "forbidden_args", []) or [])
+    # 写工具成功断言（issue #3361）：期望里有写工具 ≠ 写操作真的发生。
+    # 放在 required_args 之后：先证明「参数给对了」，再证明「东西真做出来了」。
+    case_issues += check_must_succeed(results, getattr(case, "must_succeed", []) or [])
+    # 金额正确性断言（issue #3365）：写成功 ≠ 钱算对（单价接地/小计/总额）
+    if getattr(case, "amount_verify", None):
+        try:
+            case_issues += await check_amount_verify(token, results, case.amount_verify)
+        except Exception as e:
+            case_issues.append(f"amount_verify 执行失败: {type(e).__name__}: {e}")
     case_issues += check_confirm_loop(results)
     case_issues += check_false_success(results)
     if getattr(case, "db_verify", None):
@@ -1681,12 +2034,20 @@ async def run_case(case, token: str, session_id: str) -> dict:
         "final_text": results[-1].get("final_text", "")[:200] if results else "",
     }
 
-async def run_suite(cases, label: str, classify: bool = True):
+async def run_suite(cases, label: str, classify: bool = True, retry_budget: int = None,
+                    concurrency: int = 1):
     """运行一组用例
 
     classify（默认开，issue #2890 波动分类）：失败用例重试 1 次并判定
     llm-noise / reproducible / unstable / infra（见 _classify_attempts），
     noise 自动放行并记 flake 台账；true regressions 显式标注禁止 rerun 掩盖。
+
+    retry_budget（issue #3361 评测提速）：整跑允许的重试次数上限，None/0 表示不限。
+    为什么需要：一次重试 = 整条用例重跑（实测 CH-010/OR-014/OR-017 单条 200-400s，
+    4 条失败用例吃掉 19m39s 里的 87%）。失败多的一跑里"逐条重试"是主要成本，
+    但它换来的只是**分类标签**，CI 判定（_ci_verdict）只看 score —— 故可设上限：
+    前 N 条失败照旧重试/分类，其余直接按首次结果计入（标签标 no-retry-budget），
+    报告照样诚实（没有掩盖失败，只是不再为标签支付分钟数）。
     """
     print(f"\n{'='*60}")
     print(f"  {label}: {len(cases)} 个用例" + ("" if classify else "（--no-classify 兼容模式）"))
@@ -1703,10 +2064,52 @@ async def run_suite(cases, label: str, classify: bool = True):
     passed_count = 0
     total_score = 0.0
     flake_ledger = []  # 台账：一次运行中「首次失败经分类放行/确认」的用例
+    retries_used = 0   # 已消耗的重试次数（受 retry_budget 约束）
+    budget_exhausted = False
 
-    for i, case in enumerate(cases):
+    async def _pre_clean_for_case(case, gate) -> None:
+        """执行用例声明的 pre_clean（写共享数据的**短动作**）。
+
+        issue #3361 提速第三轮：pre_clean 只需**它自身**与其它用例互斥，不必让随后的
+        用例主体一起独占（后者会让慢用例变成整跑尾巴）。调用点负责提供独占窗口
+        （gate.writer()），且**不能在本任务已持读位时调用** —— 那会死锁。
+        """
+        for spec in (getattr(case, "pre_clean", None) or []):
+            try:
+                _msg = await _run_pre_clean(token, spec)
+                if _msg:
+                    print(f"     🧹 pre_clean: {_msg}")
+            except Exception as e:
+                print(f"     ⚠️ pre_clean 失败（非致命）: {e}")
+
+    _retry_lock = asyncio.Lock()
+
+    async def _reserve_retry() -> bool:
+        """判定并**占用**一个重试额度（原子）。
+
+        并发下不能先看 `retries_used < budget` 再 `+=`：两个用例可能同时看到"还有额度"
+        → 预算被突破（多跑整条用例 = 多花分钟数）。加锁后语义与串行一致：
+        有额度 → 占用并返回 True；无额度 → 返回 False（不消耗、不重复打印提示）。
+        """
+        nonlocal retries_used, budget_exhausted
+        async with _retry_lock:
+            if retry_budget is not None and retries_used >= retry_budget:
+                if not budget_exhausted:
+                    print(f"     ⏳ 重试预算用尽（{retry_budget} 次）：后续失败用例按首次结果计入"
+                          "（不再重跑，标签标 no-retry-budget）")
+                    budget_exhausted = True
+                return False
+            retries_used += 1
+            return True
+
+    async def _run_one_case(i: int, case):
+        """跑单个用例（会话/重试分类/打印/结果记录）。
+
+        前置的 pre_clean 由调度器在**独占窗口**里先跑（见 `_pre_clean_for_case`）。
+        """
+        nonlocal budget_exhausted
         if case.skip_reason:
-            continue
+            return None
 
         # 用例起始时间戳（UTC）——用于把 CI 的**路由 dump**（ai-agent 日志，带时间戳）
         # 按用例切开。没有这个锚点，日志里连续的 intent/route 行无法归属到具体用例，
@@ -1729,15 +2132,9 @@ async def run_suite(cases, label: str, classify: bool = True):
                 if pid and pid not in snapshot_pids:
                     snapshot_pids.append(pid)
 
-        # 评测前数据清理（写类 case 自我污染防线，§14.2）：pre_clean 声明的
-        # 目标资源恢复干净态，保证「给 X 加标签」等写流程每次从干净状态开始。
-        for spec in (getattr(case, "pre_clean", None) or []):
-            try:
-                _msg = await _run_pre_clean(token, spec)
-                if _msg:
-                    print(f"     🧹 pre_clean: {_msg}")
-            except Exception as e:
-                print(f"     ⚠️ pre_clean 失败（非致命）: {e}")
+        # 注：pre_clean 已移到调度器（`_pre_clean_for_case`），因为它的独占窗口必须在
+        # 用例主体**之外**获取 —— 若在持读位时再去要写位会死锁（本轮实测踩到：
+        # 并行任务持 reader 又请求 writer → 互等 → 跑挂）。
 
         try:
             r = await run_case(case, token, session_id)
@@ -1750,7 +2147,12 @@ async def run_suite(cases, label: str, classify: bool = True):
             # 断言只能在 _end_session **之后**执行；跨会话用例取 run_case 回报的最后
             # 一个会话 id（首个会话已在换会话时关闭）。
             await _close_and_verify_session(case, token, r, session_id)
-            if r["score"] < 1.0 and classify:
+            # 预算判定与占用由 _reserve_retry 原子完成（并发下不会突破预算）；
+            # 短路求值保证「通过用例」不占用额度。
+            if r["score"] < 1.0 and classify and not await _reserve_retry():
+                # 重试预算用尽：不再重跑（标签显式标注，避免"看起来已验证两遍"）
+                classification = "no-retry-budget"
+            elif r["score"] < 1.0 and classify:
                 retry_sid = await get_or_create_session(token, prefer_new=True)
                 r2 = await run_case(case, token, retry_sid)
                 r2["retried"] = True
@@ -1784,8 +2186,8 @@ async def run_suite(cases, label: str, classify: bool = True):
                         "run_id": os.environ.get("GITHUB_RUN_ID", "local"),
                         "sha": os.environ.get("GITHUB_SHA", "")[:12],
                     })
-            elif r["score"] < 1.0:
-                # --no-classify 兼容模式：旧的无差别单次重试
+            elif r["score"] < 1.0 and await _reserve_retry():
+                # --no-classify 兼容模式：旧的无差别单次重试（同样受重试预算约束）
                 retry_sid = await get_or_create_session(token, prefer_new=True)
                 r2 = await run_case(case, token, retry_sid)
                 r2["retried"] = True
@@ -1794,10 +2196,7 @@ async def run_suite(cases, label: str, classify: bool = True):
                 if r2["score"] >= 1.0 or r2["score"] > r["score"]:
                     r = r2
             r["classification"] = classification
-            results.append(r)
-            total_score += r["score"]
-            if r["score"] >= 1.0:
-                passed_count += 1
+            # 结果不在此处 append（并发顺序不定）——由调用方按原始用例顺序回填
 
             status = "✅" if r["score"] >= 1.0 else "⚠️" if r["score"] >= 0.5 else "❌"
             retry_note = "（重试后通过）" if r.get("retried") and r["score"] >= 1.0 else ""
@@ -1827,12 +2226,100 @@ async def run_suite(cases, label: str, classify: bool = True):
                 "failed": [(f"EXCEPTION: {e}", "case crashed")],
                 "last_error": str(e), "final_text": "", "classification": "error",
             }
-            results.append(exc_record)
+            r = exc_record   # 崩溃用例同样交给调用方回填（顺序稳定）
         finally:
             for pid in snapshot_pids:
                 await restore_product(token, pid)
 
-        await asyncio.sleep(1)  # rate limit
+        if CASE_SLEEP:
+            await asyncio.sleep(CASE_SLEEP)  # rate limit（可配：EVAL_CASE_SLEEP）
+        return r
+
+    # ── 并行调度（issue #3361 评测提速第二轮）──
+    # 实测（run 34692977836，3 片 × 6 条）：**评测本身**随并行线性变快
+    # （单 job 11.6min/18 条 → 各片 5.3/7.2/1.7min/6 条，单条吞吐不变），
+    # 但"另起 job"这条路把栈启动从 3.4min 抬到 12min（并发构建/拉镜像被打爆）
+    # → 分片整体反而更慢（19.8min vs 15.6min）。结论：**要并行就并行用例、别并行建栈**。
+    # 故：单 job + 进程内并发（Semaphore），栈只起一次。
+    #
+    # 隔离规则：会写**共享资源**的用例走串行道（独占，不与任何用例重叠）——
+    #   ① 标签含 id_reuse/update/full_lifecycle（商品改价类，跑前后会快照/恢复同一批商品）；
+    #   ② 声明 pre_clean（评测前清理共享数据）；
+    #   ③ 声明 post_session（断言的是**用户级**长期状态，运行中会写 user_memories，
+    #      而所有用例共用同一个评测顾客）。
+    # 其余用例（只读查询 / 各自新建订单工单 / 纯对话）并行安全。
+    def _needs_serial_lane(c) -> bool:
+        """用例**主体**是否必须独占执行。
+
+        判据（issue #3361 提速第三轮）：实测「独占用例」是**加性**的 —— 它不能与任何用例
+        重叠，于是整段评测 = 并行段 + 独占段。C 端 normal 里 OR-014 因 `pre_clean`
+        被判独占，一个人跑 ~5.5min，把 10.2min 的评测直接顶到上限。
+        而 `pre_clean` 只是"评测前把共享数据清干净"的**短写动作**（product_dedupe 等），
+        真正的隔离需求只覆盖这个动作，不覆盖随后的用例主体（主体是下单/查询，各自新建数据）。
+        故：pre_clean 改由**独占窗口只包住清理动作**（见 `_run_one_case` 的 pre_clean 块），
+        用例主体回到并行道；仍整体独占的只剩：
+          - 标签 id_reuse/update/full_lifecycle（商品改价类：跑前快照、跑后恢复同一批商品，
+            整个用例期间都持有共享商品状态）；
+          - 声明 post_session（断言用户级长期状态，运行中写 user_memories，
+            而所有用例共用同一个评测顾客）。
+        """
+        tags = set(getattr(c, "tags", None) or [])
+        return bool(tags & {"id_reuse", "update", "full_lifecycle"}) \
+            or bool(getattr(c, "post_session", None))
+
+    indexed = [(i, c) for i, c in enumerate(cases)]
+    parallel = [(i, c) for i, c in indexed if not _needs_serial_lane(c)]
+    serial = [(i, c) for i, c in indexed if _needs_serial_lane(c)]
+    results_by_idx: dict = {}
+
+    gate = None
+    if concurrency > 1 and parallel and serial:
+        # 读写门：并行用例持读位、串行用例持写位 —— 串行用例**不必等整批跑完**
+        # （否则慢串行用例变成整跑尾巴，实测白等 ~7min，见 ConcurrencyGate 注释）
+        gate = ConcurrencyGate(concurrency)
+        print(f"⚡ 并发执行：{len(parallel)} 条并行（并发度 {concurrency}）"
+              f" + {len(serial)} 条串行（独占，读者排空即进入，不阻塞整批）")
+
+        async def _parallel_task(i, c):
+            # ① pre_clean（若有）在**独占窗口**里跑 —— 必须在读位之外获取，否则自锁
+            if getattr(c, "pre_clean", None):
+                async with gate.writer():
+                    await _pre_clean_for_case(c, gate)
+            # ② 主体并行
+            async with gate.reader():
+                results_by_idx[i] = await _run_one_case(i, c)
+
+        async def _serial_task(i, c):
+            # 独占用例：pre_clean 与主体在**同一个**独占窗口内（不再嵌套获取）
+            async with gate.writer():
+                await _pre_clean_for_case(c, gate)
+                results_by_idx[i] = await _run_one_case(i, c)
+
+        await asyncio.gather(*[_parallel_task(i, c) for i, c in parallel],
+                             *[_serial_task(i, c) for i, c in serial])
+    elif concurrency > 1 and parallel:
+        sem = asyncio.Semaphore(concurrency)
+        print(f"⚡ 并发执行：{len(parallel)} 条并行（并发度 {concurrency}）")
+
+        gate = ConcurrencyGate(concurrency)   # 只用它的独占窗口包 pre_clean
+
+        async def _bounded(i, c):
+            if getattr(c, "pre_clean", None):
+                async with gate.writer():          # 清理动作独占（此时本任务未持读位）
+                    await _pre_clean_for_case(c, gate)
+            async with sem:
+                results_by_idx[i] = await _run_one_case(i, c)
+
+        await asyncio.gather(*[_bounded(i, c) for i, c in parallel])
+    else:
+        for i, c in indexed:
+            results_by_idx[i] = await _run_one_case(i, c)
+
+    # 按**原始用例顺序**回填（并发不改变报告顺序，便于与历史 run 逐条对比）
+    results = [results_by_idx[i] for i in sorted(results_by_idx) if results_by_idx[i] is not None]
+    passed_count = sum(1 for r in results if r["score"] >= 1.0)
+    total_score = sum(r["score"] for r in results)
+
 
     # ── flake 台账（issue #2890）：落盘 + 摘要，驱动断言收敛与高波动用例治理 ──
     if classify and flake_ledger:
@@ -1954,6 +2441,138 @@ def _ci_verdict(results: list) -> tuple[bool, str]:
     return True, "全部用例通过"
 
 
+def write_summary_json(path: str, label: str, shard: str, results: list) -> None:
+    """写机器可读的本次运行汇总（issue #3361 分片基建）。
+
+    为什么需要：分片后每个 job 只跑一部分用例，后续步骤（DB 审计、假绿告警）若按
+    "全局应有 N 条订单"判断就会误报 —— 审计必须知道**本片是否真的跑了写用例**。
+    顺带让"本次跑了什么、结果如何"可被脚本消费（报告/看板/回归对比），不必解析日志。
+
+    字段：
+      label/shard/total/passed/failed/avg_score
+      order_write_cases：本片声明 must_succeed: order_create 的用例数（0 → 审计不该告警）
+      write_cases_ok：其中通过的条数（通过却没落库 = 真假绿）
+      cases：[{id, score, classification}]
+    """
+    import json as _json
+    def _declares_order_write(r) -> bool:
+        # build_round_trace/结果里不保留 case 声明，故用"该用例的工具列表含 order_create"近似
+        return "order_create" in (r.get("tool_calls") or [])
+    payload = {
+        "label": label,
+        "shard": shard or "",
+        "total": len(results),
+        "passed": sum(1 for r in results if r.get("score", 0) >= 1.0),
+        "failed": sum(1 for r in results if r.get("score", 0) < 1.0),
+        "avg_score": (sum(r.get("score", 0) for r in results) / len(results)) if results else 0.0,
+        "order_write_cases": sum(1 for r in results if _declares_order_write(r)),
+        "write_cases_ok": sum(1 for r in results
+                              if _declares_order_write(r) and r.get("score", 0) >= 1.0),
+        "cases": [
+            {"id": r.get("case_id"), "score": r.get("score", 0),
+             "classification": r.get("classification", "")}
+            for r in results
+        ],
+    }
+    try:
+        with open(path, "w", encoding="utf-8") as f:
+            _json.dump(payload, f, ensure_ascii=False, indent=2)
+        print(f"📊 运行汇总 → {path}（total={payload['total']} passed={payload['passed']} "
+              f"order_write_cases={payload['order_write_cases']}）")
+    except Exception as e:
+        print(f"⚠️ 汇总写出失败（非致命）: {e}")
+
+
+class ConcurrencyGate:
+    """用例并发门（读写语义，issue #3361 提速第二轮）。
+
+    为什么需要：串行道（共享资源用例）如果**等整批并行用例跑完**才开始，慢用例就变成
+    整跑的尾巴 —— 实测 C 端 normal：16 条并行（并发度 3）只花 ~3min，而串行道的
+    OR-014（含 pre_clean + 重试）一个人在末尾又跑了 ~7min，整段评测 10.6min 白等。
+
+    语义：
+      - `reader()`：并行用例（只读/各自新建数据）持位，最多 `max_readers` 个同时进行；
+      - `writer()`：串行用例（写共享资源/断言用户级状态）独占 —— **既不与其它用例重叠，
+        也不等整批跑完**（当前读者排空即进入）；
+      - 写者优先（`_waiting_writers`）：串行用例一到，新读者排队，避免慢串行用例被
+        源源不断的并行用例饿死。
+
+    这是"隔离"与"墙钟"同时满足的关键：隔离要求本就是"不与其他用例重叠"，
+    而不是"必须在最后跑"。
+    """
+
+    def __init__(self, max_readers: int):
+        self._max_readers = max(1, int(max_readers))
+        self._cond = asyncio.Condition()
+        self._readers = 0
+        self._writer = False
+        self._waiting_writers = 0
+
+    @asynccontextmanager
+    async def reader(self):
+        async with self._cond:
+            while self._writer or self._waiting_writers or self._readers >= self._max_readers:
+                await self._cond.wait()
+            self._readers += 1
+        try:
+            yield
+        finally:
+            async with self._cond:
+                self._readers -= 1
+                self._cond.notify_all()
+
+    @asynccontextmanager
+    async def writer(self):
+        async with self._cond:
+            self._waiting_writers += 1
+            try:
+                while self._writer or self._readers > 0:
+                    await self._cond.wait()
+                self._writer = True
+            finally:
+                self._waiting_writers -= 1
+        try:
+            yield
+        finally:
+            async with self._cond:
+                self._writer = False
+                self._cond.notify_all()
+
+
+def shard_cases(cases: list, shard: str) -> list:
+    """按 `--shard I/N` 切分用例（issue #3361 评测提速）。
+
+    为什么按"用例"分片而不是把并发塞进 runner：评测用例共享同一个 DB（同一批 fixture、
+    同一个 debug 顾客），进程内并发会让「谁先写订单/改商品价」变成不确定 ——
+    评测工具的可信度建立在**可复现**上，不能为省时间拿掉它。
+    分片是**语义不变**的加速：每片跑的是同一套 runner、同一套用例，只是各自一套
+    DB/栈（CI 每个 job 自带 docker 栈）→ 天然隔离，墙钟时间近似除以 N。
+
+    切法：`cases[i::N]` 轮转分配（用例耗时未知，轮转比"前 1/N 条"更均衡 ——
+    实测慢用例（403s 的 OR-014）与快用例交错分布，顺序切会把慢用例堆在一片）。
+
+    Args:
+        cases: 已按 persona/tier 过滤后的用例列表
+        shard: "I/N" 形态（I 从 0 开始）；空/None/非法 → 不切片（返回原列表）
+
+    Returns:
+        该分片应跑的用例
+    """
+    if not shard:
+        return list(cases)
+    try:
+        part, total = str(shard).split("/", 1)
+        idx, n = int(part), int(total)
+    except (ValueError, AttributeError):
+        print(f"⚠️ --shard={shard!r} 非法（应为 I/N，如 0/3），忽略分片")
+        return list(cases)
+    if n <= 1:
+        return list(cases)
+    if idx < 0 or idx >= n:
+        raise ValueError(f"--shard 索引越界: {shard}（I 必须在 [0, {n - 1}]）")
+    return list(cases)[idx::n]
+
+
 def load_cases_from_yaml(cases_dir: str) -> list:
     """从 cases/*.yml 加载用例（case-contract 单一源，替代 eval_cases.py 手写清单）。
 
@@ -1982,6 +2601,8 @@ def load_cases_from_yaml(cases_dir: str) -> list:
             want_text=c.get("want_text") or [],
             required_args=c.get("required_args") or [],
             forbidden_args=c.get("forbidden_args") or [],
+            must_succeed=c.get("must_succeed") or [],
+            amount_verify=c.get("amount_verify") or [],
             db_verify=c.get("db_verify") or [],
             pre_clean=c.get("pre_clean") or [],
             post_session=c.get("post_session") or [],
@@ -1995,6 +2616,15 @@ async def main():
     parser.add_argument("suite", choices=["smoke", "normal", "full", "adversarial", "case"], nargs="?", default="smoke")
     parser.add_argument("--case-id", help="单条用例 ID（支持新 ID 与 legacy_id，如 OR-002 或 O002）")
     parser.add_argument("--cases", help="用例库目录（cases/*.yml）——提供时直接读 YAML（单一源）")
+    parser.add_argument("--concurrency", type=int,
+                        default=int(os.environ.get("EVAL_CONCURRENCY", "1")),
+                        help="用例级并发度（默认 1=串行）。单 job 内并发：栈只起一次；"
+                             "实测评测吞吐随并发线性提升，而「多 job 分片」会被并发建栈拖慢。")
+    parser.add_argument("--max-retries", type=int, default=None,
+                        help="整跑重试次数上限（默认不限）；失败多的跑可设 3 省分钟数，"
+                             "超限的失败用例标 no-retry-budget 而非静默")
+    parser.add_argument("--shard", default="",
+                        help="分片运行 I/N（如 0/3）——CI 用多 job 并行切片，语义不变只减墙钟")
     parser.add_argument("--no-classify", action="store_true",
                         help="关闭波动分类（issue #2890 兼容开关：恢复旧的无差别单次重试，调试用）")
     args = parser.parse_args()
@@ -2038,6 +2668,23 @@ async def main():
     def active_cases():
         return [c for c in cases if not c.skip_reason]
 
+    # 分片（issue #3361 评测提速）：在 tier 选择之后切片 —— 保证「每片都只跑自己那份」，
+    # 且空片显式报错（0 用例 = 该片白跑，属配置错误，不做静默假绿，同 _ci_verdict 语义）
+    if args.shard:
+        before_shard = {
+            "smoke": smoke_cases, "normal": normal_cases,
+            "adversarial": adversarial_cases, "full": active_cases,
+        }
+        if args.suite in before_shard:
+            total_before = len(before_shard[args.suite]())
+            sharded = shard_cases(before_shard[args.suite](), args.shard)
+            print(f"🧩 分片 {args.shard}：本片 {len(sharded)}/{total_before} 条")
+            if not sharded:
+                print(f"❌ 分片 {args.shard} 为空（{args.suite} 档共 {total_before} 条）"
+                      "—— 空片会静默假绿，请检查分片数与用例数")
+                sys.exit(1)
+            cases = sharded
+
     try:
         if args.suite == "case":
             case = next((c for c in cases
@@ -2047,9 +2694,13 @@ async def main():
                 sys.exit(1)
             results = await run_suite([case], f"单条 {args.case_id}", classify=not args.no_classify)
         elif args.suite == "smoke":
-            results = await run_suite(smoke_cases(), "冒烟", classify=not args.no_classify)
+            results = await run_suite(smoke_cases(), "冒烟", classify=not args.no_classify,
+                                      retry_budget=args.max_retries,
+                                      concurrency=args.concurrency)
         elif args.suite == "normal":
-            results = await run_suite(normal_cases(), "每日回归（normal）")
+            results = await run_suite(normal_cases(), "每日回归（normal）",
+                                      retry_budget=args.max_retries,
+                                      concurrency=args.concurrency)
         elif args.suite == "adversarial":
             results = await run_suite(adversarial_cases(), "对抗")
         elif args.suite == "full":
@@ -2063,6 +2714,12 @@ async def main():
     # CI 判定（issue #3062 假绿修复）：空结果/未通过 → exit 1
     ok, msg = _ci_verdict(results)
     print(f"\n{'✅' if ok else '❌'} {msg}")
+
+    # 机器可读汇总（分片审计/报告消费；env 未设则跳过）
+    _sum_path = os.environ.get("AGENT_EVAL_SUMMARY_JSON")
+    if _sum_path:
+        write_summary_json(_sum_path, args.suite, args.shard, results)
+
     sys.exit(0 if ok else 1)
 
 if __name__ == "__main__":

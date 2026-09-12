@@ -14,6 +14,16 @@ CUSTOMER_ORDER_TOOLS = [
     "customer_order_query",
     "customer_logistics_track",
     "customer_address_query",
+    # ── 商品检索/详情：**下单流程的必需项**（issue #3365）──
+    # 本 skill 的提示词写着「商品详情铁律：confirm 之前必须先调 product_detail」，
+    # 但工具集里原本**没有**这两个工具 —— 提示词承诺了做不到的事（与 customer_quote
+    # 承诺下单却无 order_create 同一类缺陷）。实证：OR-014「帮我下单，遮光窗帘 3 米，
+    # 要打孔加工」按新路由进入 customer_order 后无商品工具 → 既查不了详情、
+    # 接地自动驾驶也无从代跑 → 接地闸门把 order_create 拦了 **17 次**、流程彻底死锁。
+    # （CH-010/OR-017 之所以能过，是因为它们先被路由到 customer_product 查好了商品，
+    #   会话级接地标记才让 customer_order 侧的 order_create 放行。）
+    "product_search",
+    "product_detail",
     # validate_input 是**下单闭环的必需项**（不只是顺手校验）：base_skill 的
     # 「确认-执行链」依赖它成功才落「已校验待执行」状态，顾客下一轮回「确认」时
     # 才能直接执行 order_create。

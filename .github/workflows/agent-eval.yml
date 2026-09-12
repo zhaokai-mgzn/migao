@@ -26,6 +26,11 @@ jobs:
       - name: Install deps
         run: pip install httpx
 
+      # ⚠️ 不能像 C 端那样分片（issue #3361）：本 workflow 打的是**共享环境**
+      # （ai-api.migaozn.com / api.migaozn.com），而 normal 档含建品/下单/改客户等
+      # 写用例 —— N 片并发 = N 个 job 同时写同一套共享数据，既互相污染（用例假失败）
+      # 又加速污染 dev 库。要分片必须先有**每次跑完即销毁的隔离栈**（C 端那样
+      # docker-compose 起 PG/admin-api/ai-agent），属基建改造，不在本提交内做。
       - name: Run normal eval (真实 LLM 回归，按需)
         env:
           AI_API_URL: https://ai-api.migaozn.com

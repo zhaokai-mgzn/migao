@@ -550,9 +550,22 @@ cases:
           fallback: "123456"
       - auto_respond:
           fallback: "123456"
+    # 断言**业务结果**而不是模型调了哪个工具（issue #3365）：
+    # 本用例的历史失败形态是"没查商品就凭记忆下单（¥95.4 vs 真实 ¥168/米）"，
+    # 而"有没有查商品"只是代理指标 —— 现在接地由**代码保证**（下单接地闸门 +
+    # 接地自动驾驶），真正该判的是"订单金额是否接地/自洽"，即下面的 amount_verify。
     expectations:
-      - tool: product_detail
       - tool: order_create
+    # 写工具成功断言（issue #3361）：本用例 R4 的 order_create 被 confirm 门禁拦
+    # （confirmation_required）后流程结束，订单没建出来 —— 期望含 order_create
+    # 只能证明"模型想下单"，证明不了"订单成交"
+    must_succeed:
+      - tool: order_create
+    # 金额正确性断言（issue #3365）：本用例历史实证"没查商品就报 ¥95.4"（真实 ¥168/米）
+    amount_verify:
+      - tool: order_create
+        product_name: "遮光窗帘"
+        checks: [unit_price, subtotal, total]
     data_checks:
       - "加工项数量按计价方式确定：per_meter → 数量=面料米数（如打孔 8 元/米 × 3 米 → quantity=3、subtotal=24）；per_set/fixed → 数量=1；per_area → 宽×高"
       - "processing_info.processingItems 逐项含 {id, name, unitPrice, quantity, unit, pricingMethod, subtotal}，processingFee = 各项 unitPrice × quantity 之和"
@@ -682,11 +695,31 @@ cases:
       - xiaobu
     truths_ref:
       - order.create-flow
+    # ── 交互轮用协议轮（合作型用户：有什么卡就答什么卡）──
+    # issue #3361 实证（run 34691137050 分片跑，OR-017）：静态脚本在第 3 轮发「确认」，
+    # 而 agent 此时下发的是一张**加工项 choice 卡**（等顾客选加工项）——静态文本答不了卡
+    # → agent 第 3 轮原样重发同一张卡 → 第 4 轮的验证码也答不了 → 轮数耗尽、
+    # order_create 从未发生（用例判 red，但失败长相像"能力不行"，真因是用例喂不进卡）。
+    # auto_select 回第一个选项（= 点首项，与前端点击协议一致）；
+    # auto_respond 优先回答上一轮待答卡片（confirm→confirmValue / choice→首项 / form→按声明回填）。
     user_inputs:
       - "我想买夏日清风窗帘，米白色，3米，门幅2.8米散剪"
-      - "我是张三，手机13800138000，地址杭州市西湖区文三路1号"
-      - "确认"
-      - "123456"
+      - auto_respond:
+          fallback: "我是张三，手机13800138000，地址杭州市西湖区文三路1号"
+      - auto_select: true          # 答「请选择需要添加的加工项」多选卡：点首项（纳米圈打孔）
+      - auto_respond:
+          fallback: "确认"          # 点确认卡（confirmValue）／无卡则文本确认
+      - auto_respond:
+          fallback: "123456"        # 手机验证码（dev/CI 栈 SMS_BYPASS_CODE）
+      - auto_respond:
+          fallback: "123456"
+      # 轮数余量（issue #3365，与 CH-010 同源）：模型卡序不固定（先加工项卡还是先收货
+      # 表单、是否重发确认卡），实测偶发"轮数用尽仍未 order_create"→ 判红但长相像
+      # 能力问题。合作型用户会一直把卡答完，故尾部留 2 轮（答不到卡也无害）。
+      - auto_respond:
+          fallback: "确认"
+      - auto_respond:
+          fallback: "确认"
     expectations:
       - tool: product_search
       - tool: product_detail
@@ -695,6 +728,16 @@ cases:
           component: choice
           multiSelect: true
       - tool: order_create
+    # 写工具成功断言（issue #3361）：CI 实证本用例 R7/R8 的 order_create 返回
+    # tool_not_found（进了报价 skill，该 skill 工具集里没有 order_create）→ R11 转人工，
+    # 订单没建出来而用例判 100%
+    must_succeed:
+      - tool: order_create
+    # 金额正确性断言（issue #3365）：加工项场景总额 = Σ小计 + 加工费，且单价接地
+    amount_verify:
+      - tool: order_create
+        product_name: "夏日清风窗帘"
+        checks: [unit_price, subtotal, total]
     data_checks:
       - "product_search 列表数据不含 processing_items/colorId/skus，必须先调 product_detail 取详情；未调详情即断言「无加工项」属能力误宣"
       - "加工项非空时 confirm 之前必须用 interact(choice, multiSelect=true) 主动询问，列出名称与单价（如「纳米圈打孔 ¥8/米」）"
@@ -709,7 +752,7 @@ cases:
       - "无可用加工项"
       - "该商品无加工项"
     skip_reason: ""
-    merge_log: "2026-09-11 新增（issue #3270 C 端加工项能力补齐）：实测修复前 agent 只调 product_search 未调 product_detail，向顾客断言「这款商品暂未查询到可选加工项」，而该商品实际有 2 个加工项（纳米圈打孔 ¥8/米、韩式波浪折边 ¥12/米）→ 顾客永远选不到加工项、加工费进不了单。修复后实测同输入已主动列出真实加工项与单价。forbidden_text 锁定「凭列表错报无加工项」这一确定性反模式"
+    merge_log: "2026-09-12（issue #3361）交互轮改协议轮（auto_select 答加工项多选卡 + auto_respond 答表单/确认/验证码）：原静态「确认」喂不进加工项 choice 卡 → agent 重发同卡、轮数耗尽、order_create 未发生。2026-09-11 新增（issue #3270 C 端加工项能力补齐）：实测修复前 agent 只调 product_search 未调 product_detail，向顾客断言「这款商品暂未查询到可选加工项」，而该商品实际有 2 个加工项（纳米圈打孔 ¥8/米、韩式波浪折边 ¥12/米）→ 顾客永远选不到加工项、加工费进不了单。修复后实测同输入已主动列出真实加工项与单价。forbidden_text 锁定「凭列表错报无加工项」这一确定性反模式"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_customer_order_processing_item.py"
