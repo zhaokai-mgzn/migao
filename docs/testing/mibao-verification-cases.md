@@ -2165,7 +2165,7 @@
 真值: processing-manage.crud, product-sku-stock.create-flow
 溯源: 2026-09-07 改写（issue #3005，回滚 #2986）：行业加工费按米计价、辅料（罗马圈/四爪钩等）含在按米加工费中——per_piece 与「每米数量」密度不符合实际（数量对不上车间工艺、B 端无法对账），已回滚移除；PP-006 由密度配置用例改为计价方式回归断言 ｜ tags: processing_item, pricing
 
-## processing-order（13 case）
+## processing-order（14 case）
 
 ### PG-001. 生成加工单 - 已确认含加工项订单 → 加工单生成 + 订单进入 producing 🔵
 ```
@@ -2283,6 +2283,16 @@
 ```
 真值: ⚠️ 缺口（见对应模板 ⚠️ 注释）
 溯源: 2026-09-12 新增（验收缺口 #3348）：米宝加工单 LLM 行为真实对话用例（替代纯单测覆盖） ｜ tags: processing_order, llm_behavior, tool_call
+
+### PG-014. 订单加工项不可变（源头约束，决策 C）：创建后无任何修改通道 🔵
+```
+数据: OrderController / AgentOrderController 不暴露 PUT/POST/PATCH/DELETE 且路径含 item 的端点
+数据: AgentOrderUpdateRequest 字段集固定为 {action,status,logisticsCompany,trackingNumber,cancelReason,refundAmount,refundReason}，不含 items 类字段
+数据: 订单明细唯一写入点：创建时 insert；整单删除仅限 pending（此时不可能存在加工单）
+数据: 约束失效即失败：若将来引入明细编辑入口，本用例失败 → 必须同步启用发货守卫覆盖校验（#3352 选项 B）
+跳过: 由 OrderItemImmutabilityTest（反射 tripwire，无 Spring 上下文）验证
+```
+溯源: 2026-09-12 新增（#3352 决策 C）：加工项创建后不可改 → 加工单快照不会与订单漂移 ｜ tags: processing-order, invariant, decision
 
 ## 商品域（21 case）
 
@@ -3251,8 +3261,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：259（活跃 120，跳过 139）
-- tier 分布：smoke 12 / normal 218 / adversarial 29
+- 用例总数：260（活跃 120，跳过 140）
+- tier 分布：smoke 12 / normal 219 / adversarial 29
 - 售后域：8
 - agents：6
 - api：19
@@ -3271,7 +3281,7 @@
 - ontology：4
 - 订单域：17
 - 加工项域：6
-- processing-order：13
+- processing-order：14
 - 商品域：21
 - registry：1
 - 设置域：8
@@ -3316,4 +3326,5 @@
 - PG-011: 租户隔离 - 跨租户加工单不可查询/不可解析
 - PG-012: 加工单 intent 路由契约 - processing_order_* 路由 order skill（仅米宝可达）
 - PG-013: 米宝加工单 LLM 行为：查询含加工项订单 → 生成加工单（真实对话）
+- PG-014: 订单加工项不可变（源头约束，决策 C）：创建后无任何修改通道
 
