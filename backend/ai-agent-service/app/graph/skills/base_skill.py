@@ -678,6 +678,24 @@ def _is_explicit_confirmation(text: str) -> bool:
     return False
 
 
+def _is_card_confirm_value(message, card_confirm_value) -> bool:
+    """用户消息是否**精确等于**最近一次确认卡回传的 confirmValue（= 用户点了确认按钮）。
+
+    为什么必须精确匹配（run 34678939564 + DB 审计实证）：interact 工具描述**强制**
+    confirmValue 含上下文（「确认下单：遮光窗帘 米白 散剪 门幅2.8米 3米 ¥474，收货人张三」），
+    而 `_is_explicit_confirmation` 对「确认」前缀消息限长 24 字符（防"指令措辞绕过"）
+    → 卡片点击回传的长 confirmValue 被误判为"非确认" → 写操作被确认门禁拦截、
+    永不落库。报告却因「工具被调用」而判通过（**调了 ≠ 成了**）。
+
+    精确匹配的语义安全性：该值由系统自己生成并展示给用户，用户消息**逐字符等于**它
+    只能来自点击确认按钮（卡片协议 onAction(confirmValue)）。新指令/纠偏文本不可能
+    恰好等于系统自产的值，故不存在"指令措辞绕过"面（这正是旧启发式的防护目标）。
+    """
+    if not message or not card_confirm_value:
+        return False
+    return str(message).strip() == str(card_confirm_value).strip()
+
+
 def _requires_confirmation(tool, tool_args: dict, last_user_msg: str) -> bool:
     """判断本次 tool 调用是否需要用户明确确认。
 
@@ -1584,7 +1602,25 @@ async def execute_skill(
                     # 写操作（destructive 或 requires_confirmation 高风险写）：必须经用户明确确认
                     # （代码层兜底，防间接提示注入驱动未确认写操作，审计 07 P0-L1）
                     # 豁免：action ∈ tool.read_only_actions 的纯只读调用（list/detail/tree 等）
+                    # 卡片确认优先：用户消息**精确等于**最近确认卡的 confirmValue = 用户点了
+                    # 确认按钮 → 最强确认信号，直接放行（长 confirmValue 过不了 24 字上限，
+                    # 见 _is_card_confirm_value —— 不加这个，mini-app 点确认卡写操作永不落库）。
+                    _card_confirmed = False
                     if _requires_confirmation(tool, args, last_user_msg):
+                        try:
+                            from app.memory.session_state_store import SessionStateStore
+                            _store = SessionStateStore()
+                            _full = await _store.load(session_id) or {}
+                            _card_confirmed = _is_card_confirm_value(
+                                last_user_msg, _full.get("last_confirm_value"))
+                            if _card_confirmed:
+                                logger.info(
+                                    f"[{skill_name}] 确认卡 confirmValue 精确匹配 → 放行写操作 "
+                                    f"{tool_name} | session={session_id}"
+                                )
+                        except Exception as e:
+                            logger.warning(f"[{skill_name}] card-confirm check failed (non-fatal): {e}")
+                    if _requires_confirmation(tool, args, last_user_msg) and not _card_confirmed:
                         logger.warning(
                             f"[{skill_name}] 拦截未确认的写操作 {tool_name} | session={session_id} "
                             f"last_msg={last_user_msg[:30]!r}"
@@ -1709,6 +1745,20 @@ async def execute_skill(
                             await SessionMemory().set_pending_skill(session_id, skill_name)
                         except Exception:
                             pass
+                        # 记录最近一次确认卡的 confirmValue（会话状态）：下一轮用户点击
+                        # 回传的正是这个值 —— 精确匹配它 = 显式确认（见 _is_card_confirm_value）。
+                        # 否则长 confirmValue（工具描述强制含上下文）过不了 24 字上限，
+                        # 写操作永不落库（run 34678939564 + DB 审计实证假绿）。
+                        try:
+                            _data = result_dict.get("data") or {}
+                            if _data.get("component") == "confirm" and _data.get("confirmValue"):
+                                from app.memory.session_state_store import SessionStateStore
+                                _store = SessionStateStore()
+                                _full = await _store.load(session_id) or {}
+                                _full["last_confirm_value"] = str(_data["confirmValue"])
+                                await _store.commit(session_id, _full)
+                        except Exception as e:
+                            logger.warning(f"[{skill_name}] last_confirm_value persist failed (non-fatal): {e}")
             else:
                 # 达到 max_iterations — 不暴露 LLM 的半截思考，用友好兜底
                 final_content = "抱歉，处理步骤较多，请稍后重试或换个简单的方式描述需求。"
