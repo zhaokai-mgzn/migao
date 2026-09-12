@@ -2766,6 +2766,21 @@ _CASE_PG_013 = EvalCase(
     required_args=[{'tool': 'processing_order_generate', 'fields': ['order_ids']}],
 )
 
+# ── PG-014 [NORMAL] 订单加工项不可变（源头约束，决策 C）：创建后无任何修改通道（源: cases/processing-order.yml）──
+_CASE_PG_014 = EvalCase(
+    id='PG-014',
+    legacy_id='',
+    title='订单加工项不可变（源头约束，决策 C）：创建后无任何修改通道',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=[],
+    expectations=[],
+    data_checks=['OrderController / AgentOrderController 不暴露 PUT/POST/PATCH/DELETE 且路径含 item 的端点', 'AgentOrderUpdateRequest 字段集固定为 {action,status,logisticsCompany,trackingNumber,cancelReason,refundAmount,refundReason}，不含 items 类字段', '订单明细唯一写入点：创建时 insert；整单删除仅限 pending（此时不可能存在加工单）', '约束失效即失败：若将来引入明细编辑入口，本用例失败 → 必须同步启用发货守卫覆盖校验（#3352 选项 B）'],
+    skip_reason='由 OrderItemImmutabilityTest（反射 tripwire，无 Spring 上下文）验证',
+    tags=['processing-order', 'invariant', 'decision'],
+    persona='',
+)
+
 # ── PP-001 [NORMAL] 加工项选择 - 分页翻页（源: cases/processing.yml）──
 _CASE_PP_001 = EvalCase(
     id='PP-001',
@@ -4158,6 +4173,7 @@ ALL_CASES = (
     _CASE_PG_011,
     _CASE_PG_012,
     _CASE_PG_013,
+    _CASE_PG_014,
     _CASE_PP_001,
     _CASE_PP_002,
     _CASE_PP_003,
