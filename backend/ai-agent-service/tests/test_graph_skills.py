@@ -1428,7 +1428,8 @@ class TestInflightHandoffGuard:
     用户消息既非显式请求、也无负面情绪、更非能力外诉求 —— 纯属模型放弃在办流程。
     """
 
-    def _run(self, last_user_msg: str, *, with_card: bool, explicit_human: bool = False):
+    def _run(self, last_user_msg: str, *, with_card: bool, explicit_human: bool = False,
+             pending_skill: str = ""):
         import asyncio
 
         sent_tools = []
@@ -1481,7 +1482,7 @@ class TestInflightHandoffGuard:
             mem_cls.return_value.set_pending_skill = AsyncMock(return_value=True)
 
             result = asyncio.run(execute_skill(
-                state=_make_state(messages=history),
+                state=_make_state(messages=history, pending_interact_skill=pending_skill),
                 skill_name="customer_aftersales",
                 tool_names=["human_handoff"], system_prompt="你是小布的售后客服",
             ))
@@ -1508,6 +1509,27 @@ class TestInflightHandoffGuard:
         """没有在办卡片（未进入多轮流程）时不拦截 —— 保持既有行为"""
         _result, sent = self._run("质量问题", with_card=False)
         assert "human_handoff" in sent, "无在办流程时不应拦截转人工"
+
+    def test_blocks_when_pending_skill_marks_inflight(self):
+        """历史消息里扫不到卡片、但**跨轮 pending_interact_skill 非空** → 同样必须拦。
+
+        CI 实证（run 34689293179，CH-012）：R1 已下发选单卡、R3 顾客只回退货原因
+        「质量问题」，agent 直接 human_handoff 并建投诉工单 —— 当时"扫消息历史"这条路
+        判为 False（state["messages"] 未带回上一轮的 interact ToolMessage），
+        兜底形同虚设。pending_interact_skill 是「流程锁定中」的持久化权威标记
+        （卡片发出即写、写成功即清），必须并入判据。
+        """
+        result, sent = self._run("质量问题", with_card=False,
+                                 pending_skill="customer_aftersales")
+        assert "handoff_blocked_inflight" in str(result), (
+            "pending_interact_skill 非空（在办流程）时仍放行了无信号转人工"
+        )
+        assert "human_handoff" not in sent
+
+    def test_pending_skill_does_not_block_explicit_request(self):
+        """回归：pending 非空但顾客明确要求转人工 → 仍必须放行。"""
+        _result, sent = self._run("转人工", with_card=False, pending_skill="customer_aftersales")
+        assert "human_handoff" in sent, "显式转人工被 pending 判据误拦"
 
 
 class TestCardConfirmValueRecognition:

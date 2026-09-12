@@ -1612,8 +1612,18 @@ async def execute_skill(
                     if (tool_name == "human_handoff"
                             and skill_name in ("customer_order", "customer_aftersales")):
                         from app.graph.handoff_judge import has_escalation_signal
-                        if (not has_escalation_signal(last_user_msg)
-                                and _has_inflight_interactive_card(state.get("messages", []))):
+                        # 在办判据两条取并集（issue #3361 实证）：
+                        #   ① 消息历史里能扫到未完结的交互卡（原实现）；
+                        #   ② **跨轮持久化的 pending_interact_skill 非空** —— 这是
+                        #      「流程锁定中」的权威标记（卡片发出即写、写操作成功即清），
+                        #      不依赖 state["messages"] 是否带回上一轮的 ToolMessage。
+                        # 为何 ② 必需（CI run 34689293179，CH-012）：R1 已下发选单卡、
+                        # R2 顾客点明订单、R3 顾客只回退货原因「质量问题」，agent 直接
+                        # human_handoff（并建了投诉工单）→ 流程被放弃、aftersale_create
+                        # 未发生；当时 ① 判为 False（历史里扫不到那张卡）→ 兜底形同虚设。
+                        _inflight = bool(state.get("pending_interact_skill")) or \
+                            _has_inflight_interactive_card(state.get("messages", []))
+                        if not has_escalation_signal(last_user_msg) and _inflight:
                             logger.warning(
                                 f"[{skill_name}] 拦截在办流程中的无信号转人工 | session={session_id} "
                                 f"last_msg={last_user_msg[:30]!r}"

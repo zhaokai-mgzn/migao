@@ -687,11 +687,24 @@ cases:
       - xiaobu
     truths_ref:
       - order.create-flow
+    # ── 交互轮用协议轮（合作型用户：有什么卡就答什么卡）──
+    # issue #3361 实证（run 34691137050 分片跑，OR-017）：静态脚本在第 3 轮发「确认」，
+    # 而 agent 此时下发的是一张**加工项 choice 卡**（等顾客选加工项）——静态文本答不了卡
+    # → agent 第 3 轮原样重发同一张卡 → 第 4 轮的验证码也答不了 → 轮数耗尽、
+    # order_create 从未发生（用例判 red，但失败长相像"能力不行"，真因是用例喂不进卡）。
+    # auto_select 回第一个选项（= 点首项，与前端点击协议一致）；
+    # auto_respond 优先回答上一轮待答卡片（confirm→confirmValue / choice→首项 / form→按声明回填）。
     user_inputs:
       - "我想买夏日清风窗帘，米白色，3米，门幅2.8米散剪"
-      - "我是张三，手机13800138000，地址杭州市西湖区文三路1号"
-      - "确认"
-      - "123456"
+      - auto_respond:
+          fallback: "我是张三，手机13800138000，地址杭州市西湖区文三路1号"
+      - auto_select: true          # 答「请选择需要添加的加工项」多选卡：点首项（纳米圈打孔）
+      - auto_respond:
+          fallback: "确认"          # 点确认卡（confirmValue）／无卡则文本确认
+      - auto_respond:
+          fallback: "123456"        # 手机验证码（dev/CI 栈 SMS_BYPASS_CODE）
+      - auto_respond:
+          fallback: "123456"
     expectations:
       - tool: product_search
       - tool: product_detail
@@ -719,7 +732,7 @@ cases:
       - "无可用加工项"
       - "该商品无加工项"
     skip_reason: ""
-    merge_log: "2026-09-11 新增（issue #3270 C 端加工项能力补齐）：实测修复前 agent 只调 product_search 未调 product_detail，向顾客断言「这款商品暂未查询到可选加工项」，而该商品实际有 2 个加工项（纳米圈打孔 ¥8/米、韩式波浪折边 ¥12/米）→ 顾客永远选不到加工项、加工费进不了单。修复后实测同输入已主动列出真实加工项与单价。forbidden_text 锁定「凭列表错报无加工项」这一确定性反模式"
+    merge_log: "2026-09-12（issue #3361）交互轮改协议轮（auto_select 答加工项多选卡 + auto_respond 答表单/确认/验证码）：原静态「确认」喂不进加工项 choice 卡 → agent 重发同卡、轮数耗尽、order_create 未发生。2026-09-11 新增（issue #3270 C 端加工项能力补齐）：实测修复前 agent 只调 product_search 未调 product_detail，向顾客断言「这款商品暂未查询到可选加工项」，而该商品实际有 2 个加工项（纳米圈打孔 ¥8/米、韩式波浪折边 ¥12/米）→ 顾客永远选不到加工项、加工费进不了单。修复后实测同输入已主动列出真实加工项与单价。forbidden_text 锁定「凭列表错报无加工项」这一确定性反模式"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_customer_order_processing_item.py"

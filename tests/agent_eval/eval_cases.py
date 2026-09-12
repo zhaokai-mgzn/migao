@@ -2562,7 +2562,7 @@ _CASE_OR_017 = EvalCase(
     title='C 端自助下单加工项闭环 - 必须查详情→主动询问→加工费落单（不凭列表错报无加工项）',
     skill=Skill.ORDER,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['我想买夏日清风窗帘，米白色，3米，门幅2.8米散剪', '我是张三，手机13800138000，地址杭州市西湖区文三路1号', '确认', '123456'],
+    user_inputs=['我想买夏日清风窗帘，米白色，3米，门幅2.8米散剪', {'auto_respond': {'fallback': '我是张三，手机13800138000，地址杭州市西湖区文三路1号'}}, {'auto_select': 'true          # 答「请选择需要添加的加工项」多选卡：点首项（纳米圈打孔）'}, {'auto_respond': {'fallback': '"确认"          # 点确认卡（confirmValue）／无卡则文本确认'}}, {'auto_respond': {'fallback': '"123456"        # 手机验证码（dev/CI 栈 SMS_BYPASS_CODE）'}}, {'auto_respond': {'fallback': '123456'}}],
     expectations=['product_search', 'product_detail', 'interact(component=choice, multiSelect=True)', 'order_create'],
     data_checks=['product_search 列表数据不含 processing_items/colorId/skus，必须先调 product_detail 取详情；未调详情即断言「无加工项」属能力误宣', '加工项非空时 confirm 之前必须用 interact(choice, multiSelect=true) 主动询问，列出名称与单价（如「纳米圈打孔 ¥8/米」）', '所选加工项写入 order_create 的 processing_info.processingItems（id/name/unitPrice/quantity/unit/pricingMethod/subtotal），合计写入 processingFee 且计入订单金额；按米计价项加工数量=面料米数', '顾客说「不需要加工项」可跳过；加工项确实为空时才告知无可用加工项', 'C 端下单是**两步**：确认订单信息后还需手机验证码（order_create 的 sms_code，customer 角色必填）。用例必须提供验证码这一轮，否则 AI 停在第 5 步「请提供验证码」，order_create 永不发生（run 34622425044 实证：R7 顾客回「确认」后无任何工具调用）。dev/CI 栈已设 SMS_BYPASS_CODE=123456，此处用该码走真实校验分支。'],
     skip_reason='',

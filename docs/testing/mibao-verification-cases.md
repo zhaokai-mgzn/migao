@@ -2071,9 +2071,11 @@
 ### OR-017. C 端自助下单加工项闭环 - 必须查详情→主动询问→加工费落单（不凭列表错报无加工项） 🔵
 ```
 你: 我想买夏日清风窗帘，米白色，3米，门幅2.8米散剪
-你: 我是张三，手机13800138000，地址杭州市西湖区文三路1号
-你: 确认
-你: 123456
+你: [🤖 按上一轮卡片作答]
+你: [🤖 选第一个选项]
+你: [🤖 按上一轮卡片作答]
+你: [🤖 按上一轮卡片作答]
+你: [🤖 按上一轮卡片作答]
 期望: product_search
 期望: product_detail
 期望: interact(component=choice, multiSelect=True)
@@ -2091,7 +2093,7 @@
 必须成功: order_create
 ```
 真值: order.create-flow
-溯源: 2026-09-11 新增（issue #3270 C 端加工项能力补齐）：实测修复前 agent 只调 product_search 未调 product_detail，向顾客断言「这款商品暂未查询到可选加工项」，而该商品实际有 2 个加工项（纳米圈打孔 ¥8/米、韩式波浪折边 ¥12/米）→ 顾客永远选不到加工项、加工费进不了单。修复后实测同输入已主动列出真实加工项与单价。forbidden_text 锁定「凭列表错报无加工项」这一确定性反模式 ｜ tags: order_create, processing_item, guided_flow, xiaobu
+溯源: 2026-09-12（issue #3361）交互轮改协议轮（auto_select 答加工项多选卡 + auto_respond 答表单/确认/验证码）：原静态「确认」喂不进加工项 choice 卡 → agent 重发同卡、轮数耗尽、order_create 未发生。2026-09-11 新增（issue #3270 C 端加工项能力补齐）：实测修复前 agent 只调 product_search 未调 product_detail，向顾客断言「这款商品暂未查询到可选加工项」，而该商品实际有 2 个加工项（纳米圈打孔 ¥8/米、韩式波浪折边 ¥12/米）→ 顾客永远选不到加工项、加工费进不了单。修复后实测同输入已主动列出真实加工项与单价。forbidden_text 锁定「凭列表错报无加工项」这一确定性反模式 ｜ tags: order_create, processing_item, guided_flow, xiaobu
 
 ## 加工项域（6 case）
 
