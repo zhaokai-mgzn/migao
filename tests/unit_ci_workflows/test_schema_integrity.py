@@ -1254,6 +1254,16 @@ class TestEvalArtifactAuditStep:
             "缺 DEV_SERVICE_TOKEN → compose 插值失败 → 审计为空"
         )
 
+    def test_audit_prints_order_amounts(self):
+        """审计必须带订单金额（issue #3361）：金额是 C 端最硬的正确性证据。
+
+        只有金额能回答「下单成了，且钱算对了吗」。实测 OR-014 在没查商品详情的情况下
+        发出的确认卡写着「遮光窗帘3米+打孔加工，合计¥95.4」（该商品真实单价 ¥168/米），
+        无金额审计时这种「钱算错但工具调用成功」在报告里看着一切正常。
+        """
+        body = self._step().get("run") or ""
+        assert "total_amount" in body, "审计未输出订单金额（金额错误无法发现）"
+
     def test_eval_creates_and_closes_ai_agent_sessions(self):
         """对照：评测每用例在 ai-agent 建会话，且收尾必须**关闭它**（issue #3357）。
 

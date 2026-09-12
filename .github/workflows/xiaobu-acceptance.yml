@@ -216,8 +216,12 @@ jobs:
           echo "· ai-agent 会话（每用例一个，含跨会话用例的多个）: $(PSQL 'SELECT count(*) FROM sessions;')"
           echo "· 其中未关闭残留（应为 0~个位数；大量残留 = 清理失效）: $(PSQL "SELECT count(*) FROM sessions WHERE status='active';")"
           echo "· 人工会话（仅转人工用例产生）: $(PSQL 'SELECT count(*) FROM agent_sessions;')"
-          echo "· 订单（含 fixture 2 笔）:"
-          PSQL "SELECT order_no || ' / ' || status || ' / 用户 ' || coalesce(user_id,'-') FROM orders ORDER BY created_at DESC LIMIT 12;"
+          echo "· 订单（含 fixture 2 笔；**带金额**——金额是 C 端最硬的正确性证据）:"
+          # 为什么要带 total_amount（issue #3361 归因需要）：只有金额才能回答
+          # 「下单真的成了，且钱算对了吗」。实测 OR-014 在**没有查商品详情**的情况下
+          # 发出的确认卡写着「遮光窗帘3米+打孔加工，合计¥95.4」，而该商品真实单价 ¥168/米
+          # —— 无金额审计时这种"钱算错了但工具调用成功"的报告看着一切正常。
+          PSQL "SELECT order_no || ' / ' || status || ' / ¥' || coalesce(total_amount, 0) || ' / 用户 ' || coalesce(user_id,'-') FROM orders ORDER BY created_at DESC LIMIT 12;"
           echo "· 售后工单:"
           PSQL "SELECT ticket_no || ' / ' || ticket_type || ' / ' || status FROM after_sales_tickets ORDER BY created_at DESC LIMIT 12;"
           echo "· 转人工工单（应能对上 CH-008/013/015 的 human_handoff）:"
