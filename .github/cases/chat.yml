@@ -383,6 +383,11 @@ cases:
     # tool_execution_failed，订单一条没落，用例却因「工具名出现在 tool_calls」判 100%
     must_succeed:
       - tool: order_create
+    # 金额正确性断言（issue #3365）：单价必须接地（= 商品库单价）、小计与总额自洽
+    amount_verify:
+      - tool: order_create
+        product_name: "北欧风窗帘"
+        checks: [unit_price, subtotal, total]
     order_before:
       - "interact[confirm] before order_create"
     required_args:

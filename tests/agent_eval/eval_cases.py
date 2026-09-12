@@ -45,6 +45,7 @@ class EvalCase:
     required_args: List[dict] = field(default_factory=list) # 必填参数断言（create 缺 specifications/加工项价格即失败，§3.2）
     forbidden_args: List[dict] = field(default_factory=list) # 禁止参数断言（隔离/越权下限：如物流工具不得接受快递单号，issue #3270）
     must_succeed: List[dict] = field(default_factory=list) # 写工具成功断言（至少成功一次；"调了≠成了"，§3.2/issue #3361）
+    amount_verify: List[dict] = field(default_factory=list) # 金额正确性断言（单价接地/小计/总额，§3.2/issue #3365）
     db_verify: List[dict] = field(default_factory=list) # 落库层验证（创建后查 admin-api 断言价格=确认价，§3.2/issue #3056）
     pre_clean: List[dict] = field(default_factory=list) # 评测前数据清理（写类 case 自我污染防线）
     post_session: List[dict] = field(default_factory=list) # 会话关闭后落库断言（user_memories 只在 close 时 flush，issue #3357）
@@ -820,6 +821,7 @@ _CASE_CH_010 = EvalCase(
     order_before=['interact[confirm] before order_create'],
     required_args=[{'tool': 'order_create', 'fields': ['customer_phone', 'items']}],
     must_succeed=[{'tool': 'order_create'}],
+    amount_verify=[{'tool': 'order_create', 'product_name': '北欧风窗帘', 'checks': '[unit_price, subtotal, total]'}],
 )
 
 # ── CH-011 [ADVERSARIAL] 数据安全 - 跨用户订单查询拒绝 + 订单卡片手机号脱敏（源: cases/chat.yml）──
@@ -2517,6 +2519,7 @@ _CASE_OR_014 = EvalCase(
     tags=['order_create', 'processing_item', 'pricing'],
     persona='',
     must_succeed=[{'tool': 'order_create'}],
+    amount_verify=[{'tool': 'order_create', 'product_name': '遮光窗帘', 'checks': '[unit_price, subtotal, total]'}],
     pre_clean=[{'type': 'product_dedupe', 'product_keyword': '遮光窗帘', 'price': 100}],
 )
 
@@ -2571,6 +2574,7 @@ _CASE_OR_017 = EvalCase(
     order_before=['interact[choice:processing_items] before interact[confirm]', 'interact[choice:processing_items] before order_create'],
     forbidden_text=['暂未查询到可选加工项', '无可用加工项', '该商品无加工项'],
     must_succeed=[{'tool': 'order_create'}],
+    amount_verify=[{'tool': 'order_create', 'product_name': '夏日清风窗帘', 'checks': '[unit_price, subtotal, total]'}],
 )
 
 # ── PG-001 [NORMAL] 生成加工单 - 已确认含加工项订单 → 加工单生成 + 订单进入 producing（源: cases/processing-order.yml）──

@@ -558,6 +558,11 @@ cases:
     # 只能证明"模型想下单"，证明不了"订单成交"
     must_succeed:
       - tool: order_create
+    # 金额正确性断言（issue #3365）：本用例历史实证"没查商品就报 ¥95.4"（真实 ¥168/米）
+    amount_verify:
+      - tool: order_create
+        product_name: "遮光窗帘"
+        checks: [unit_price, subtotal, total]
     data_checks:
       - "加工项数量按计价方式确定：per_meter → 数量=面料米数（如打孔 8 元/米 × 3 米 → quantity=3、subtotal=24）；per_set/fixed → 数量=1；per_area → 宽×高"
       - "processing_info.processingItems 逐项含 {id, name, unitPrice, quantity, unit, pricingMethod, subtotal}，processingFee = 各项 unitPrice × quantity 之和"
@@ -718,6 +723,11 @@ cases:
     # 订单没建出来而用例判 100%
     must_succeed:
       - tool: order_create
+    # 金额正确性断言（issue #3365）：加工项场景总额 = Σ小计 + 加工费，且单价接地
+    amount_verify:
+      - tool: order_create
+        product_name: "夏日清风窗帘"
+        checks: [unit_price, subtotal, total]
     data_checks:
       - "product_search 列表数据不含 processing_items/colorId/skus，必须先调 product_detail 取详情；未调详情即断言「无加工项」属能力误宣"
       - "加工项非空时 confirm 之前必须用 interact(choice, multiSelect=true) 主动询问，列出名称与单价（如「纳米圈打孔 ¥8/米」）"

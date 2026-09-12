@@ -634,6 +634,7 @@
 时序: interact[confirm] before order_create
 必填: order_create() 字段 customer_phone, items
 必须成功: order_create
+金额: order_create 「北欧风窗帘」 → [; u; n; i; t; _; p; r; i; c; e; ,;  ; s; u; b; t; o; t; a; l; ,;  ; t; o; t; a; l; ]
 ```
 真值: ai-chat.confirm-required, order.flow
 溯源: C 端表单化交互方案 S1（miniapp-multiturn-form-scenarios.md） ｜ tags: multi_turn, form, interactive, order
@@ -2030,6 +2031,7 @@
 数据: 加工费 = 单价 × 数量（打孔 8 元/米 × 3 米 = 24 元），漏算/错算加工费 = 订单金额错误
 数据: C 端下单是**两步**：确认订单信息后还需手机验证码（order_create 的 sms_code，customer 角色必填）。用例必须提供验证码这一轮，否则 AI 停在第 5 步「请提供验证码」，order_create 永不发生（run 34622425044 实证：R7 顾客回「确认」后无任何工具调用）。dev/CI 栈已设 SMS_BYPASS_CODE=123456，此处用该码走真实校验分支。
 必须成功: order_create
+金额: order_create 「遮光窗帘」 → [; u; n; i; t; _; p; r; i; c; e; ,;  ; s; u; b; t; o; t; a; l; ,;  ; t; o; t; a; l; ]
 ```
 真值: order.states, order.create-flow, processing-manage.crud
 溯源: 2026-09-07 改写（issue #3005，回滚 #2986）：行业加工费按米计价、辅料（罗马圈/四爪钩等）含在按米加工费中——回滚 per_piece 与「每米数量」密度（数量=ceil(面料米数×密度) 与实际车间工艺不符、数量隐藏导致 B 端无法对账），数量改为按计价方式派生且展示（per_meter=面料米数、per_set/fixed=1） ｜ tags: order_create, processing_item, pricing
@@ -2093,6 +2095,7 @@
 禁词: 无可用加工项
 禁词: 该商品无加工项
 必须成功: order_create
+金额: order_create 「夏日清风窗帘」 → [; u; n; i; t; _; p; r; i; c; e; ,;  ; s; u; b; t; o; t; a; l; ,;  ; t; o; t; a; l; ]
 ```
 真值: order.create-flow
 溯源: 2026-09-12（issue #3361）交互轮改协议轮（auto_select 答加工项多选卡 + auto_respond 答表单/确认/验证码）：原静态「确认」喂不进加工项 choice 卡 → agent 重发同卡、轮数耗尽、order_create 未发生。2026-09-11 新增（issue #3270 C 端加工项能力补齐）：实测修复前 agent 只调 product_search 未调 product_detail，向顾客断言「这款商品暂未查询到可选加工项」，而该商品实际有 2 个加工项（纳米圈打孔 ¥8/米、韩式波浪折边 ¥12/米）→ 顾客永远选不到加工项、加工费进不了单。修复后实测同输入已主动列出真实加工项与单价。forbidden_text 锁定「凭列表错报无加工项」这一确定性反模式 ｜ tags: order_create, processing_item, guided_flow, xiaobu

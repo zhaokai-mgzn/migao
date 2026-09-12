@@ -2309,3 +2309,120 @@ class TestNoDeadlockWithPreCleanUnderConcurrency:
         cases = [self._mkcase(f"P{i}", pre_clean=[{"type": "product_dedupe"}]) for i in range(4)]
         results = self._run_with_timeout(cases, 3)
         assert len(results) == 4
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 金额正确性断言 amount_verify（issue #3365 / acceptance-protocol §3.2）
+# 背景：写工具「成功」只证明订单落库，不证明**钱算对了** —— 实证 OR-014 的 agent
+# 在没查过商品的情况下发卡「遮光窗帘3米+打孔加工，合计¥95.4」（真实 ¥168/米），
+# 此前只能靠 DB 审计人眼看金额。本组把它变成机器判定。
+# case_ids: CH-010, OR-014, OR-017
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def _order_round(rnd, items, ok=True, total=None):
+    """构造一轮：一次 order_create 调用 + 结果（ok/失败），可带总额。"""
+    data = {"id": "ord-1", "orderNo": "20260101000000001"}
+    if total is not None:
+        data["totalAmount"] = total
+    return {
+        "__round": rnd,
+        "tool_calls": [{"name": "order_create", "args": {"items": items}}],
+        "tool_results": [{"tool": "order_create",
+                          "result": ({"success": True, "data": data} if ok
+                                     else {"success": False, "error": "product_not_grounded"})}],
+        "final_text": "",
+    }
+
+
+class TestAmountVerify:
+    """单价接地 / 小计自洽 / 总额自洽。"""
+
+    def _run(self, results, specs, price=168.0):
+        import unittest.mock as mock
+
+        async def fake_price(token, name):
+            return price
+
+        with mock.patch.object(lr, "_fetch_product_price", new=fake_price):
+            return asyncio.run(lr.check_amount_verify("tok", results, specs))
+
+    def _spec(self, **kw):
+        base = {"tool": "order_create", "product_name": "遮光窗帘",
+                "checks": ["unit_price", "subtotal", "total"]}
+        base.update(kw)
+        return [base]
+
+    def test_grounded_amount_passes(self):
+        items = [{"product_name": "遮光窗帘", "quantity": 3, "unit_price": 168.0,
+                  "subtotal": 504.0}]
+        assert self._run([_order_round(7, items, total=504.0)], self._spec()) == []
+
+    def test_hallucinated_price_fails(self):
+        """¥95.4 假单价（未查商品的凭记忆报价）必须判失败。"""
+        items = [{"product_name": "遮光窗帘", "quantity": 3, "unit_price": 31.8,
+                  "subtotal": 95.4}]
+        issues = self._run([_order_round(7, items, total=95.4)], self._spec())
+        assert issues and "单价" in issues[0] and "凭记忆报价" in issues[0]
+
+    def test_subtotal_inconsistent_fails(self):
+        items = [{"product_name": "遮光窗帘", "quantity": 3, "unit_price": 168.0,
+                  "subtotal": 95.4}]   # 小计与数量×单价不符
+        issues = self._run([_order_round(7, items, total=95.4)], self._spec())
+        assert any("小计" in i for i in issues)
+
+    def test_total_inconsistent_fails(self):
+        """总额必须等于 Σ小计 + 加工费（加工费漏计是最常见的金额错）。"""
+        items = [{"product_name": "遮光窗帘", "quantity": 3, "unit_price": 168.0,
+                  "subtotal": 504.0,
+                  "processing_info": {"processingFee": 72.0}}]
+        issues = self._run([_order_round(7, items, total=504.0)], self._spec())
+        assert any("总额" in i for i in issues), "漏计加工费未被发现"
+
+    def test_total_with_processing_passes(self):
+        items = [{"product_name": "遮光窗帘", "quantity": 3, "unit_price": 168.0,
+                  "subtotal": 504.0,
+                  "processing_info": {"processingFee": 72.0}}]
+        assert self._run([_order_round(7, items, total=576.0)], self._spec()) == []
+
+    def test_failed_call_is_not_used(self):
+        """只看**成功**的调用：被门禁拦下的调用不得当成"订单金额"。"""
+        items = [{"product_name": "遮光窗帘", "quantity": 3, "unit_price": 31.8,
+                  "subtotal": 95.4}]
+        issues = self._run([_order_round(5, items, ok=False, total=None)], self._spec())
+        assert issues and "未找到" in issues[0]
+
+    def test_no_successful_call_reported(self):
+        issues = self._run([], self._spec())
+        assert issues and "未找到" in issues[0]
+
+    def test_missing_product_in_catalog_reported(self):
+        import unittest.mock as mock
+
+        async def none_price(token, name):
+            return None
+
+        items = [{"product_name": "遮光窗帘", "quantity": 3, "unit_price": 168.0, "subtotal": 504.0}]
+        with mock.patch.object(lr, "_fetch_product_price", new=none_price):
+            issues = asyncio.run(lr.check_amount_verify("tok", [_order_round(7, items)],
+                                                       self._spec()))
+        assert any("查不到单价" in i for i in issues), "真值缺失必须显式报，不得静默跳过"
+
+    def test_price_check_requires_product_name(self):
+        items = [{"product_name": "遮光窗帘", "quantity": 1, "unit_price": 1.0, "subtotal": 1.0}]
+        issues = self._run([_order_round(1, items)], self._spec(product_name=""))
+        assert any("product_name" in i for i in issues)
+
+    def test_checks_subset_respected(self):
+        """只声明 subtotal 时不查单价（避免用例要商品库真值时反而失败）。"""
+        items = [{"product_name": "遮光窗帘", "quantity": 3, "unit_price": 31.8, "subtotal": 95.4}]
+        issues = self._run([_order_round(7, items)], self._spec(checks=["subtotal"]))
+        assert issues == [], "只查小计时不应因单价不接地而报错"
+
+    def test_prefers_later_round_when_earlier_failed(self):
+        """先失败后被门禁放行成功：必须取成功那次（真实 CI 轨迹形态）。"""
+        bad = _order_round(5, [{"product_name": "遮光窗帘", "quantity": 3,
+                                "unit_price": 999.0, "subtotal": 2997.0}], ok=False)
+        good = _order_round(7, [{"product_name": "遮光窗帘", "quantity": 3,
+                                 "unit_price": 168.0, "subtotal": 504.0}], total=504.0)
+        assert self._run([bad, good], self._spec()) == []

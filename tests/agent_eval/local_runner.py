@@ -1260,6 +1260,152 @@ async def _fetch_product_configs(token: str, name: str) -> list:
         return (_safe_json(rd, {}) or {}).get("data", {}).get("processingItemConfigs") or []
 
 
+# ── amount_verify：下单金额正确性断言（acceptance-protocol §3.2 / issue #3365）──
+# 为什么必须有：写工具「成功」只证明订单落库了，**不证明钱算对了**。
+# 实证：OR-014 的 agent 在没查过商品的情况下发出确认卡写着「遮光窗帘3米+打孔加工，合计¥95.4」，
+# 而该商品真实单价 ¥168/米 —— 这类"钱算错"此前只能靠 DB 审计人眼看（审计只打印金额）。
+# 本断言把三个关系变成机器判定：
+#   ① unit_price == 商品库单价（**接地**：单价必须来自商品数据，不能凭记忆）
+#   ② subtotal   == quantity × unit_price（明细自洽）
+#   ③ total      == Σsubtotal + ΣprocessingFee（总额自洽，若结果里带总额）
+
+def _first_successful_call(results: list, tool: str) -> tuple:
+    """返回该工具**首个成功调用**的 (轮次, args, result_data)；找不到返回 (None, None, None)。
+
+    成功判定用 tool_result 的 success（与 must_succeed 同源），避免把被门禁拦下的调用当成功。
+    """
+    for r in results or []:
+        calls = [tc for tc in (r.get("tool_calls") or []) if _tool_name_matches(tc.get("name"), tool)]
+        if not calls:
+            continue
+        oks = [st for st in _tool_result_status(r.get("tool_results") or [])
+               if _tool_name_matches(st.get("tool"), tool) and st.get("ok")]
+        if not oks:
+            continue
+        return r.get("__round"), (calls[0].get("args") or {}), None
+    return None, None, None
+
+
+async def _fetch_product_price(token: str, name: str) -> float | None:
+    """按商品名查商品库单价（接地真值）。"""
+    try:
+        async with httpx.AsyncClient() as c:
+            h = _admin_headers(token)
+            r = await c.get(f"{ADMIN_API}/api/admin/products", headers=h,
+                            params={"keyword": name, "page": 1, "size": 1}, timeout=15)
+            items = (_safe_json(r, {}) or {}).get("data", {}).get("items", [])
+            if not items:
+                return None
+            pid = items[0]["id"]
+            rd = await c.get(f"{ADMIN_API}/api/admin/products/{pid}", headers=h, timeout=15)
+            data = (_safe_json(rd, {}) or {}).get("data", {}) or {}
+            for key in ("price", "basePrice", "base_price"):
+                if data.get(key) is not None:
+                    return float(data[key])
+    except Exception:
+        return None
+    return None
+
+
+async def check_amount_verify(token: str, results: list, amount_verify: list) -> list:
+    """执行下单金额断言：单价接地 / 小计自洽 / 总额自洽，返回违规列表。
+
+    用例形态：
+        amount_verify:
+          - tool: order_create
+            product_name: "遮光窗帘"        # 用于取商品库单价（接地真值）
+            tolerance: 0.01                # 金额容差（默认 0.01）
+            checks: [unit_price, subtotal, total]
+    """
+    issues = []
+    for spec in amount_verify or []:
+        if not isinstance(spec, dict):
+            issues.append(f"amount_verify: 配置非字典: {spec!r}")
+            continue
+        tool = str(spec.get("tool") or "order_create")
+        tol = float(spec.get("tolerance", 0.01))
+        checks = [str(x) for x in (spec.get("checks") or ["unit_price", "subtotal", "total"])]
+        rnd, args, _ = _first_successful_call(results, tool)
+        if args is None:
+            issues.append(f"amount_verify: 未找到 {tool} 的成功调用（金额无从核对）")
+            continue
+        items = args.get("items") or []
+        if not isinstance(items, list) or not items:
+            issues.append(f"amount_verify[{tool}](R{rnd}): items 为空，金额无从核对")
+            continue
+
+        price = None
+        if "unit_price" in checks:
+            name = str(spec.get("product_name") or "")
+            if not name:
+                issues.append("amount_verify: 声明了 unit_price 检查但未给 product_name（无法取真值）")
+            else:
+                price = await _fetch_product_price(token, name)
+                if price is None:
+                    issues.append(f"amount_verify: 商品「{name}」在商品库查不到单价（fixture 缺数据？）")
+
+        subtotal_sum = 0.0
+        processing_sum = 0.0
+        for i, item in enumerate(items):
+            if not isinstance(item, dict):
+                issues.append(f"amount_verify[{tool}](R{rnd}): items[{i}] 非对象")
+                continue
+            try:
+                qty = float(item.get("quantity") or 0)
+                up = float(item.get("unit_price") or 0)
+                sub = item.get("subtotal")
+                sub_f = float(sub) if sub is not None else qty * up
+            except (TypeError, ValueError):
+                issues.append(f"amount_verify[{tool}](R{rnd}): items[{i}] 数量/单价非数值: {item!r}")
+                continue
+            pname = str(item.get("product_name") or "")
+            pinfo = item.get("processing_info") or {}
+            if isinstance(pinfo, dict):
+                try:
+                    processing_sum += float(pinfo.get("processingFee") or 0)
+                except (TypeError, ValueError):
+                    pass
+            subtotal_sum += sub_f
+            if "unit_price" in checks and price is not None:
+                # 只核对被声明商品的单价（多商品订单里其它行按各自商品库价另配 spec）
+                if not spec.get("product_name") or str(spec["product_name"]) in pname:
+                    if abs(up - price) > tol:
+                        issues.append(
+                            f"amount_verify[{tool}](R{rnd}): 「{pname}」单价 {up} ≠ 商品库 {price}"
+                            f"（凭记忆报价？）")
+            if "subtotal" in checks:
+                if abs(sub_f - qty * up) > tol:
+                    issues.append(
+                        f"amount_verify[{tool}](R{rnd}): 「{pname}」小计 {sub_f} ≠ 数量{qty}×单价{up}")
+
+        if "total" in checks:
+            expected = subtotal_sum + processing_sum
+            total = None
+            for r in results or []:
+                if r.get("__round") != rnd:
+                    continue
+                for tr in r.get("tool_results") or []:
+                    if not _tool_name_matches(tr.get("tool"), tool):
+                        continue
+                    res = tr.get("result") if isinstance(tr.get("result"), dict) else {}
+                    data = res.get("data") if isinstance(res.get("data"), dict) else {}
+                    for key in ("totalAmount", "total_amount", "amount"):
+                        if data.get(key) is not None:
+                            total = float(data[key])
+                            break
+            if total is None:
+                # 结果里没带总额 → 用 args 侧总额兜底；都没有则显式跳过（不静默当通过）
+                total = args.get("total_amount")
+                total = float(total) if total is not None else None
+            if total is None:
+                print(f"     ℹ️ amount_verify: {tool} 结果未带总额，跳过 total 检查（单价/小计已查）")
+            elif abs(total - expected) > max(tol, 0.05):
+                issues.append(
+                    f"amount_verify[{tool}](R{rnd}): 总额 {total} ≠ Σ小计{subtotal_sum}+加工费{processing_sum}"
+                    f"={expected}")
+    return issues
+
+
 async def check_db_verify(token: str, db_verify: list) -> list:
     """执行 db_verify 断言：fetch 指定资源 → 逐条评估谓词，返回违规列表。"""
     issues = []
@@ -1764,6 +1910,12 @@ async def run_case(case, token: str, session_id: str) -> dict:
     # 写工具成功断言（issue #3361）：期望里有写工具 ≠ 写操作真的发生。
     # 放在 required_args 之后：先证明「参数给对了」，再证明「东西真做出来了」。
     case_issues += check_must_succeed(results, getattr(case, "must_succeed", []) or [])
+    # 金额正确性断言（issue #3365）：写成功 ≠ 钱算对（单价接地/小计/总额）
+    if getattr(case, "amount_verify", None):
+        try:
+            case_issues += await check_amount_verify(token, results, case.amount_verify)
+        except Exception as e:
+            case_issues.append(f"amount_verify 执行失败: {type(e).__name__}: {e}")
     case_issues += check_confirm_loop(results)
     case_issues += check_false_success(results)
     if getattr(case, "db_verify", None):
@@ -2371,6 +2523,7 @@ def load_cases_from_yaml(cases_dir: str) -> list:
             required_args=c.get("required_args") or [],
             forbidden_args=c.get("forbidden_args") or [],
             must_succeed=c.get("must_succeed") or [],
+            amount_verify=c.get("amount_verify") or [],
             db_verify=c.get("db_verify") or [],
             pre_clean=c.get("pre_clean") or [],
             post_session=c.get("post_session") or [],

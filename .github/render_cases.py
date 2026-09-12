@@ -166,6 +166,7 @@ def to_eval_py(cases):
            '    required_args: List[dict] = field(default_factory=list) # 必填参数断言（create 缺 specifications/加工项价格即失败，§3.2）',
     '    forbidden_args: List[dict] = field(default_factory=list) # 禁止参数断言（隔离/越权下限：如物流工具不得接受快递单号，issue #3270）',
             '    must_succeed: List[dict] = field(default_factory=list) # 写工具成功断言（至少成功一次；"调了≠成了"，§3.2/issue #3361）',
+            '    amount_verify: List[dict] = field(default_factory=list) # 金额正确性断言（单价接地/小计/总额，§3.2/issue #3365）',
             '    db_verify: List[dict] = field(default_factory=list) # 落库层验证（创建后查 admin-api 断言价格=确认价，§3.2/issue #3056）',
             '    pre_clean: List[dict] = field(default_factory=list) # 评测前数据清理（写类 case 自我污染防线）',
             '    post_session: List[dict] = field(default_factory=list) # 会话关闭后落库断言（user_memories 只在 close 时 flush，issue #3357）',
@@ -201,6 +202,8 @@ def to_eval_py(cases):
             out.append(f"    forbidden_args={c.get('forbidden_args')!r},")
         if c.get("must_succeed"):
             out.append(f"    must_succeed={c.get('must_succeed')!r},")
+        if c.get("amount_verify"):
+            out.append(f"    amount_verify={c.get('amount_verify')!r},")
         if c.get("db_verify"):
             out.append(f"    db_verify={c.get('db_verify')!r},")
         if c.get("pre_clean"):
@@ -307,6 +310,8 @@ def to_md(cases):
                 _ms_tool = ms if isinstance(ms, str) else ms.get("tool")
                 _ms_act = "" if isinstance(ms, str) else (ms.get("action") or "")
                 lines.append(f"必须成功: {_ms_tool}({_ms_act})" if _ms_act else f"必须成功: {_ms_tool}")
+            for av in (c.get("amount_verify") or []):
+                lines.append(f"金额: {av.get('tool', 'order_create')} 「{av.get('product_name', '')}」 → {'; '.join(av.get('checks') or [])}")
             for dv in (c.get("db_verify") or []):
                 lines.append(f"落库: {dv.get('fetch')} {dv.get('name')} → {'; '.join(dv.get('checks') or [])}")
             for ps in (c.get("post_session") or []):
