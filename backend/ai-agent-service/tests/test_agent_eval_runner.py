@@ -90,6 +90,36 @@ class TestFailureSignature:
         assert lr._failure_signature(a) != lr._failure_signature(b)
 
 
+class TestFlakeLedgerEntry:
+    """台账条目必须自带**两次尝试**的指纹（issue #3365）。
+
+    台账是「为什么放行这条红灯」的唯一长期证据。只记第二次（通过那次）的指纹时，
+    `llm-noise` 就等于"无证据的波动" —— 实测 OR-017 连续 3 跑都是「首跑失败、重试通过」，
+    每次都因为没有首跑指纹而无法归因（这一轮的真因就是这么挖出来的）。
+    """
+
+    def _r(self, score, failed=None, last_error=None):
+        return {"score": score, "failed": failed or [], "last_error": last_error}
+
+    def test_llm_noise_entry_keeps_first_attempt_signature(self):
+        first = self._r(0.0, [("确认死循环: confirm 卡出现 4 次", "case-level check")])
+        second = self._r(1.0)
+        e = lr.build_flake_entry("OR-017", "下单加工项闭环", "llm-noise", first, second, "run1", "abc123")
+        assert e["first_attempt_signature"], "llm-noise 台账丢了首跑指纹 → 归因无证据"
+        assert "确认死循环" in e["first_attempt_signature"]
+        assert e["signature"] == "" or "确认死循环" not in e["signature"], "第二项指纹应来自通过那次（为空）"
+
+    def test_reproducible_entry_has_same_signatures(self):
+        f = [("tool: order_create", "unmatched")]
+        e = lr.build_flake_entry("OR-014", "t", "reproducible", self._r(0.5, f), self._r(0.0, f), "r", "s")
+        assert e["signature"] == e["first_attempt_signature"] != ""
+        assert "确定性" in e["reason"]
+
+    def test_every_classification_has_reason(self):
+        for c in ("llm-noise", "reproducible", "unstable", "infra", "no-retry-budget"):
+            assert lr.FLAKE_REASONS.get(c), f"{c} 缺 reason 文案"
+
+
 class TestClassifyAttempts:
     """波动分类（issue #2890）：噪声放行 / 复现型 block / 不稳定标注 / infra 区分"""
 

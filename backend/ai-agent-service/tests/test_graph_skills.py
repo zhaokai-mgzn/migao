@@ -2773,6 +2773,143 @@ class TestSmsCodeBackfill:
         assert extract_sms_code("") == ""
 
 
+class TestProcessingItemsAskedPersistsCrossTurn:
+    """加工项「已问过」必须跨轮记住（OR-017 死循环真因，issue #3365）。
+
+    实证（CI run 34719134577，OR-017）：轨迹新增的 `cardreq=` 显示模型 R3/R4/R5/R6
+    **每轮都在请求 confirm 卡**，但 `cards=` 只有 choice —— 因为 `_plan_processing_items_rewrite`
+    只看**本轮**问没问过加工项：R2 已经问过并收到答案，R3 起每轮又把模型的 confirm 卡改写成
+    同一张加工项卡 → confirm 卡永远落不了地 → 顾客反复答同一题、
+    `check_confirm_loop` 判「confirm 卡出现 4 次（R3/R4/R5/R6）」。
+
+    修法：把「加工项已问过」按**商品 id** 持久化到会话，跨轮生效；换商品（新 id）仍会正常再问。
+    """
+
+    _ITEMS = [{"id": "pi1", "name": "纳米圈打孔", "unitPrice": 8.0, "unit": "米",
+               "pricingMethod": "per_meter"}]
+
+    def _run(self, store_extra=None, product_id="prod_eval_summer"):
+        import asyncio, json as _json
+        seen = {"commits": []}
+        full = dict(store_extra or {})
+
+        async def fake_execute(tool, a, ctx, state):
+            return (_json.dumps({"success": True, "data": {
+                        "component": "confirm", "title": "请确认订单信息",
+                        "confirmValue": "确认下单", "fields": []}}, ensure_ascii=False),
+                    {"success": True, "data": {
+                        "component": "confirm", "title": "请确认订单信息",
+                        "confirmValue": "确认下单", "fields": []}})
+
+        class _Store:
+            async def load(self, sid):
+                return dict(full)
+
+            async def commit(self, sid, new_full):
+                seen["commits"].append(dict(new_full))
+                full.clear(); full.update(new_full)
+
+        detail = ToolMessage(
+            content=_json.dumps({"success": True, "data": {
+                "id": product_id, "name": "夏日清风窗帘",
+                "processing_items": self._ITEMS}}, ensure_ascii=False),
+            tool_call_id="d1", name="product_detail")
+
+        with patch("app.memory.session_memory.SessionMemory"), \
+             patch("app.graph.skills.base_skill.get_breaker") as get_breaker, \
+             patch("app.graph.skills.base_skill.get_skill_llm") as get_llm, \
+             patch("app.graph.skills.base_skill.create_skill_registry") as create_reg, \
+             patch("app.graph.skills.base_skill.set_tool_context"), \
+             patch("app.graph.skills.base_skill._execute_tool_safe", fake_execute), \
+             patch("app.memory.session_state_store.SessionStateStore",
+                   side_effect=lambda *a, **k: _Store()):
+            tool = MagicMock()
+            for attr, val in (("name", "interact"), ("read_only", False),
+                              ("destructive", False), ("requires_confirmation", False)):
+                setattr(tool, attr, val)
+            registry = MagicMock()
+            registry.get_langchain_tools.return_value = []
+            registry.get_tool.side_effect = lambda n: tool if n == "interact" else None
+            create_reg.return_value = registry
+            breaker = MagicMock()
+
+            async def _pt(fn):
+                return await fn()
+
+            breaker.call = _pt
+            get_breaker.return_value = breaker
+            call = MagicMock(spec=AIMessage)
+            call.content = ""
+            call.tool_calls = [{"name": "interact", "args": {
+                "component": "confirm", "title": "请确认订单信息", "fields": []}, "id": "c1"}]
+            final = MagicMock(spec=AIMessage)
+            final.content = "好的"
+            final.tool_calls = []
+            llm = MagicMock()
+            llm.bind_tools.return_value = llm
+            llm.ainvoke = AsyncMock(side_effect=[call, final])
+            get_llm.return_value = llm
+            res = asyncio.run(execute_skill(
+                state=_make_state(messages=[HumanMessage(content="帮我下单"), detail]),
+                skill_name="customer_order",
+                tool_names=["interact"], system_prompt="p"))
+        cards = []
+        for m in (res or {}).get("messages", []):
+            if isinstance(m, ToolMessage) and m.name == "interact":
+                try:
+                    cards.append(json.loads(m.content or "{}").get("data") or {})
+                except Exception:
+                    cards.append({})
+        seen["cards"] = cards
+        seen["final_store"] = full
+        return seen
+
+    def test_rewrite_happens_and_marks_asked(self):
+        seen = self._run()
+        assert seen["cards"] and seen["cards"][0].get("component") == "choice", \
+            "没问过加工项时应改写为 choice 卡（原行为不能坏）"
+        asked = seen["final_store"].get("processing_items_asked") or {}
+        assert asked, "改写发了加工项卡却未记账 → 下一轮还会再改写（死循环）"
+
+    def test_no_rewrite_when_same_product_already_asked(self):
+        seen = self._run(store_extra={"processing_items_asked": {"prod_eval_summer": True}})
+        assert seen["cards"] and seen["cards"][0].get("component") == "confirm", \
+            "同一商品的加工项已经问过并答过 → confirm 卡必须**放行**（这轮死循环的直接原因）"
+
+    def test_rewrite_happens_for_new_product(self):
+        seen = self._run(store_extra={"processing_items_asked": {"prod_other": True}})
+        assert seen["cards"] and seen["cards"][0].get("component") == "choice", \
+            "换了商品（新 product_id）→ 加工项必须重新问，不能被上一个商品的记账误伤"
+
+    def test_mark_is_per_product(self):
+        """记账必须**按商品**：若一律记 `*`，顾客换个商品下单时加工项就再也问不出来了
+        （M77 变异就是靠这条被测出来的 —— 首版没有它，变异存活）。"""
+        import asyncio
+        from app.graph.skills.base_skill import (
+            _mark_processing_items_asked, _processing_items_already_asked)
+        store = {}
+
+        class _Store:
+            async def load(self, sid):
+                return dict(store)
+
+            async def commit(self, sid, f):
+                store.clear(); store.update(f)
+
+        with patch("app.memory.session_state_store.SessionStateStore",
+                   side_effect=lambda *a, **k: _Store()):
+            asyncio.run(_mark_processing_items_asked("s1", "prod_a"))
+            assert asyncio.run(_processing_items_already_asked("s1", "prod_a")), \
+                "同一商品应判定为已问过"
+            assert not asyncio.run(_processing_items_already_asked("s1", "prod_b")), \
+                "换了商品必须判定为未问过（否则新商品的加工项永远问不出来）"
+
+    def test_unknown_product_mark_still_suppresses(self):
+        seen = self._run(store_extra={"processing_items_asked": {"*": True}})
+        assert seen["cards"] and seen["cards"][0].get("component") == "confirm", \
+            "商品 id 拿不到时的兜底记账（*）同样必须生效，否则该路径仍会死循环"
+
+
 class TestWriteInputRecovery:
     """写工具缺参失败的「要参数」恢复回路（issue #3365，OR-017 CI 实证）。
 
@@ -2956,7 +3093,51 @@ class TestWriteInputRecovery:
             store_extra={"last_confirm_value": "确认下单"})
         assert len(seen["calls"]) == 1, "没有欠参标记时必须正常下发确认卡"
 
-    # ── ④ 提示注入 ──
+    # ── ④ 同一张卡反复下发（不限 confirm：choice 卡同样会死循环）──
+
+    def test_same_choice_card_blocked_on_third_emission(self):
+        """实证（CI run 34718498228，OR-017）：同一张「加工项」choice 卡连发 5 次
+        （R2-R6），顾客每次都把同样的答案回给它 —— 真人会以为系统坏了。
+        前两次放行（首次 + 一次合理重问），第三次起拦下并给出可执行指引。"""
+        seen = self._run(
+            "已选加工项：纳米圈打孔",
+            {"component": "choice", "title": "这款商品支持以下加工项，需要哪些呢？（可多选）",
+             "options": [{"label": "纳米圈打孔 ¥8/米"}, {"label": "不需要加工"}]},
+            tool_name="interact",
+            store_extra={"card_emit_counts": {
+                "choice|这款商品支持以下加工项，需要哪些呢？（可多选）|纳米圈打孔 ¥8/米、不需要加工": 2}})
+        assert seen["calls"] == [], "同一张 choice 卡已发 2 次，第 3 次必须拦下（否则就是 5 连发）"
+
+    def test_same_choice_card_allowed_on_second_emission(self):
+        seen = self._run(
+            "已选加工项：纳米圈打孔",
+            {"component": "choice", "title": "这款商品支持以下加工项，需要哪些呢？（可多选）",
+             "options": [{"label": "纳米圈打孔 ¥8/米"}, {"label": "不需要加工"}]},
+            tool_name="interact",
+            store_extra={"card_emit_counts": {
+                "choice|这款商品支持以下加工项，需要哪些呢？（可多选）|纳米圈打孔 ¥8/米、不需要加工": 1}})
+        assert len(seen["calls"]) == 1, "第 2 次属合理重问，不能拦"
+
+    def test_changed_options_is_a_different_card(self):
+        """选项变了就是**另一张卡**（顾客改了商品/规格后重新确认）→ 不得误伤。"""
+        seen = self._run(
+            "已选加工项：纳米圈打孔",
+            {"component": "choice", "title": "这款商品支持以下加工项，需要哪些呢？（可多选）",
+             "options": [{"label": "折边 ¥5/米"}, {"label": "不需要加工"}]},
+            tool_name="interact",
+            store_extra={"card_emit_counts": {
+                "choice|这款商品支持以下加工项，需要哪些呢？（可多选）|纳米圈打孔 ¥8/米、不需要加工": 5}})
+        assert len(seen["calls"]) == 1, "选项变了 = 新卡，不该被旧卡的计数拦住"
+
+    def test_emission_counted_on_success(self):
+        seen = self._run(
+            "已选加工项：纳米圈打孔",
+            {"component": "choice", "title": "选一下加工项"},
+            tool_name="interact")
+        counts = seen["final_store"].get("card_emit_counts") or {}
+        assert counts.get("choice|选一下加工项|") == 1, "卡发出后必须计数，否则永远拦不住第 3 次"
+
+    # ── ⑤ 提示注入 ──
 
     def test_directive_injected_while_waiting(self):
         import asyncio as _asyncio

@@ -826,6 +826,66 @@ def _has_processing_choice_in_turn(tool_results) -> bool:
     return False
 
 
+# 加工项「已问过」的跨轮记账（issue #3365，OR-017 死循环真因）：
+# `_plan_processing_items_rewrite` 只看**本轮**问没问过 —— R2 已问过并收到答案，R3 起每轮
+# 又把模型的 confirm 卡改写成同一张加工项卡 → confirm 卡永远落不了地 → 顾客反复答同一题。
+# 记账按**商品 id**（换商品必须重新问）；拿不到 id 时记 `*` 作兜底。
+PROC_ITEMS_ASKED_KEY = "processing_items_asked"
+PROC_ITEMS_ASKED_WILDCARD = "*"
+
+
+def _last_product_id(messages) -> str:
+    """最近一次 product_detail 的商品 id（用于按商品记「加工项已问过」）。"""
+    if not messages:
+        return ""
+    for msg in reversed(messages):
+        if not isinstance(msg, ToolMessage):
+            continue
+        if getattr(msg, "name", None) != "product_detail":
+            continue
+        try:
+            payload = json.loads(msg.content or "{}")
+        except (ValueError, TypeError):
+            continue
+        data = payload.get("data") if isinstance(payload, dict) else None
+        if isinstance(data, dict) and data.get("id"):
+            return str(data["id"])
+    return ""
+
+
+async def _processing_items_already_asked(session_id: str, product_id: str) -> bool:
+    """本会话是否已经问过该商品的加工项（含 `*` 兜底记账）。"""
+    if not session_id:
+        return False
+    try:
+        from app.memory.session_state_store import SessionStateStore
+        full = await SessionStateStore().load(session_id) or {}
+        asked = full.get(PROC_ITEMS_ASKED_KEY) or {}
+        if not isinstance(asked, dict):
+            return False
+        return bool(asked.get(PROC_ITEMS_ASKED_WILDCARD)) or bool(asked.get(product_id or ""))
+    except Exception:
+        return False
+
+
+async def _mark_processing_items_asked(session_id: str, product_id: str) -> None:
+    """记下「该商品的加工项已问过」（跨轮）。异常不抛，不破坏主流程。"""
+    if not session_id:
+        return
+    try:
+        from app.memory.session_state_store import SessionStateStore
+        store = SessionStateStore()
+        full = await store.load(session_id) or {}
+        asked = full.get(PROC_ITEMS_ASKED_KEY) or {}
+        if not isinstance(asked, dict):
+            asked = {}
+        asked[product_id or PROC_ITEMS_ASKED_WILDCARD] = True
+        full[PROC_ITEMS_ASKED_KEY] = asked
+        await store.commit(session_id, full)
+    except Exception as e:
+        logger.warning(f"[processing-items] 记账失败（非致命）: {e}")
+
+
 def _plan_processing_items_rewrite(tool_results, messages) -> Optional[tuple]:
     """检测「有加工项却漏问、直接发 confirm 卡」并返回改写方案。
 
@@ -1009,6 +1069,37 @@ def user_supplied_param(param: str, user_msg: str) -> bool:
 RECOGNIZABLE_INPUT_PARAMS = frozenset({"sms_code"})
 
 
+# ── 同一张交互卡反复下发（issue #3365，OR-017 CI 实证）──────────────────────
+# 实证（run 34718498228，OR-017）：同一张「这款商品支持以下加工项，需要哪些呢？」choice 卡
+# 连发 **5 次**（R2-R6），顾客每次都把一模一样的答案回给它（「已选加工项：纳米圈打孔」）——
+# 卡没变、答案没变、流程不前进。真人会以为系统坏了；harness 则把它读成"顾客又在答题"。
+# 与确认卡同族：**同一张卡（同组件+同标题+同选项）下发第 3 次起拦下**，逼模型基于已有答案往前走。
+# 为什么允许 2 次：一次正常下发 + 一次合理重问（顾客没答清/改口）是人机对话的正常形态。
+CARD_EMIT_COUNTS_KEY = "card_emit_counts"
+CARD_EMIT_LIMIT = 2
+
+
+def card_fingerprint(args: dict) -> str:
+    """交互卡指纹：组件 + 标题 + **选项标签**。
+
+    为什么必须含选项：选项变了就是另一张卡（顾客换了商品/规格后重新确认），
+    只按标题去重会把这种正常重发误拦（实测 CH-010 的加工项卡标题会变、OR-014 的选项会变）。
+    """
+    if not isinstance(args, dict):
+        return ""
+    comp = str(args.get("component") or "")
+    if not comp:
+        return ""
+    title = str(args.get("title") or "").strip()
+    labels = []
+    for opt in (args.get("options") or [])[:12]:
+        if isinstance(opt, dict):
+            labels.append(str(opt.get("label") or opt.get("value") or ""))
+        else:
+            labels.append(str(opt))
+    return "|".join([comp, title, "、".join(labels)])[:200]
+
+
 def _clear_write_input_error(full: dict) -> dict:
     out = dict(full or {})
     out.pop(WRITE_INPUT_ERROR_KEY, None)
@@ -1072,6 +1163,42 @@ async def _write_input_recovery_block(tool_name: str, args: dict, tool_call: dic
         f"param={param} | session={session_id} last_msg={last_user_msg[:20]!r}"
     )
     code = "write_blocked_waiting_customer_input"
+    return (tool_call, json.dumps({"success": False, "error": code, "message": msg},
+                                  ensure_ascii=False),
+            {"success": False, "error": code})
+
+
+async def _card_loop_block(tool_name: str, args: dict, tool_call: dict,
+                          session_id: str, skill_name: str):
+    """同一张交互卡下发第 3 次起拦下（返回 3 元组），否则放行（None）。"""
+    if tool_name != "interact" or not session_id:
+        return None
+    fp = card_fingerprint(args)
+    if not fp:
+        return None
+    try:
+        from app.memory.session_state_store import SessionStateStore
+        store = SessionStateStore()
+        full = await store.load(session_id) or {}
+    except Exception:
+        return None
+    counts = full.get(CARD_EMIT_COUNTS_KEY) or {}
+    if not isinstance(counts, dict):
+        return None
+    if int(counts.get(fp) or 0) < CARD_EMIT_LIMIT:
+        return None
+    comp = str((args or {}).get("component") or "")
+    title = str((args or {}).get("title") or "")[:40]
+    logger.warning(
+        f"[{skill_name}] 拦截重复下发同一张卡 component={comp} title={title!r} "
+        f"count={counts.get(fp)} | session={session_id}"
+    )
+    msg = (f"这张{comp}卡（「{title}」）此前已经下发给顾客并收到过回答，内容没有任何变化："
+           "重复下发只会让顾客反复答同一题、流程原地打转。"
+           "**本轮不要重发这张卡**：请基于顾客已经给出的信息继续下一步"
+           "（信息齐了就调用对应的写工具；缺信息就用自然语言直接问那一项）。"
+           "若顾客**明确要求**再看一次加工项/选项，用文本把选项列给他，不要再发卡。")
+    code = "card_blocked_repeat_emission"
     return (tool_call, json.dumps({"success": False, "error": code, "message": msg},
                                   ensure_ascii=False),
             {"success": False, "error": code})
@@ -1884,6 +2011,10 @@ async def execute_skill(
                         tool_name, args, tool_call, session_id, skill_name, last_user_msg)
                     if _blocked is not None:
                         return _blocked
+                    _blocked2 = await _card_loop_block(
+                        tool_name, args, tool_call, session_id, skill_name)
+                    if _blocked2 is not None:
+                        return _blocked2
                     tool = skill_registry.get_tool(tool_name)
                     if tool is None:
                         logger.warning(f"[{skill_name}] Tool not found: {tool_name} | session={session_id}")
@@ -2167,6 +2298,29 @@ async def execute_skill(
                             result_str, result_dict = corrected
                     # ── 落地"本会话已查过商品详情"标记（issue #3361 下单接地闸门用）──
                     # 只在成功时写；失败不写（避免"查了但没查到"被当成接地）。
+                    # 同一张交互卡的下发计数（issue #3365）：第 3 次起会被 _card_loop_block 拦下。
+                    # 必须在这里（而不是外层循环）计数 —— 只有这一层拿得到 `args`（外层只有
+                    # result_dict，没有调用参数；首版写在外层，运行时 NameError 被吞成
+                    # "计数失败（非致命）"，计数永远为 0 = 拦不住的假守卫）。
+                    if tool_name == "interact" and result_dict.get("success") and session_id:
+                        _fp_emit = card_fingerprint(args)
+                        if _fp_emit:
+                            try:
+                                from app.memory.session_state_store import SessionStateStore as _S6
+                                _s6 = _S6()
+                                _f6 = await _s6.load(session_id) or {}
+                                _c6 = _f6.get(CARD_EMIT_COUNTS_KEY) or {}
+                                if not isinstance(_c6, dict):
+                                    _c6 = {}
+                                _c6[_fp_emit] = int(_c6.get(_fp_emit) or 0) + 1
+                                _f6[CARD_EMIT_COUNTS_KEY] = _c6
+                                await _s6.commit(session_id, _f6)
+                                logger.info(
+                                    f"[{skill_name}] 卡下发计数 {_c6[_fp_emit]} "
+                                    f"({_fp_emit[:60]}) | session={session_id}"
+                                )
+                            except Exception as _e6:
+                                logger.warning(f"[{skill_name}] 卡下发计数失败（非致命）: {_e6}")
                     if tool_name == "product_detail" and result_dict.get("success") and session_id:
                         try:
                             from app.memory.session_state_store import SessionStateStore
@@ -2187,7 +2341,12 @@ async def execute_skill(
                 # 且业务铁律要求 confirm 前必须先问。B 端流程不动。
                 if skill_name in ("customer_order", "customer_aftersales"):
                     try:
-                        plan = _plan_processing_items_rewrite(tool_results, new_messages + state.get("messages", []))
+                        _proc_msgs = new_messages + state.get("messages", [])
+                        _proc_pid = _last_product_id(_proc_msgs)
+                        # 跨轮已问过（同一商品）→ 不再改写：否则模型的 confirm 卡会被无限
+                        # 改写成同一张加工项卡，confirm 永远落不了地（OR-017 实测 4 次）。
+                        _proc_asked = await _processing_items_already_asked(session_id, _proc_pid)
+                        plan = None if _proc_asked else _plan_processing_items_rewrite(tool_results, _proc_msgs)
                         if plan is not None:
                             idx, choice_data = plan
                             _tc, _rs, rd = tool_results[idx]
@@ -2200,6 +2359,14 @@ async def execute_skill(
                                 f"[{skill_name}] 加工项漏问兜底：confirm 卡改写为加工项 choice 卡 "
                                 f"(options={len(choice_data['options'])}) | session={session_id}"
                             )
+                        # 记账：本轮任何一张加工项卡发出去过（改写来的或模型自己发的）→ 记「已问过」
+                        if any(
+                            (rd or {}).get("success")
+                            and str((rd or {}).get("data", {}).get("component") or "") == "choice"
+                            and _is_processing_items_card((rd or {}).get("data") or {})
+                            for _tc, _rs, rd in tool_results
+                        ):
+                            await _mark_processing_items_asked(session_id, _proc_pid)
                     except Exception as e:
                         logger.warning(f"[{skill_name}] processing-items fallback failed (non-fatal): {e}")
 
