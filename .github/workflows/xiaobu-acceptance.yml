@@ -243,12 +243,13 @@ jobs:
           TIER="${{ github.event.inputs.tier || 'smoke' }}"
           echo "── 评测档位: $TIER ──"
           # --shard：本 job 只跑自己那一份用例（默认 1 份，见 shards 输入说明）。
-          # --max-retries 1：保留"单次重试"这一防抖语义（llm-noise 分类就靠它），
-          # 但不再允许 3 次 —— 实测失败用例整条重跑 200-400s，是整跑尾巴的主要成分；
-          # 超限的失败仍记为失败，只标 no-retry-budget，不掩盖红灯。
+          # --max-retries 3：每条失败用例至多重试 1 次（分类 llm-noise 靠它），
+          # 预算是"整跑最多几条能重试"的上限。实测把它压到 1 会让后几条失败用例拿不到
+          # 那一次防抖重试（13/18 vs 16/18），而并发后重试的墙钟代价已被摊平
+          # （整跑 8.2min，其中评测 3.9min）→ 恢复 3，兼顾"诚实"与"抗噪"。
           python tests/agent_eval/local_runner.py "$TIER" --cases .github/cases \
             --shard "${{ matrix.shard }}/${{ matrix.total }}" \
-            --max-retries 1
+            --max-retries 3
 
       - name: Run xiaobu real E2E (pytest，含数据隔离断言)
         # 只在 0 号片跑：E2E 与用例分片无关（同一套栈/同一批断言），跑 N 份纯浪费墙钟。
