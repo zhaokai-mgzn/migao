@@ -7,7 +7,7 @@ LangGraph Skill 节点测试
 - ToolContext 从 state 正确构建
 - base_skill 的 execute_skill 逻辑
 """
-# case_ids: AG-004, CH-003, CH-023, MC-008, DF-018, HR-005, CU-003, CH-010, CH-012
+# case_ids: AG-004, CH-003, CH-023, MC-008, DF-018, HR-005, CU-003, CH-010, CH-012, OR-017
 
 import json
 import pytest
@@ -2771,3 +2771,246 @@ class TestSmsCodeBackfill:
         assert extract_sms_code("13800138000") == ""
         assert extract_sms_code("123456 顺便问下") == ""
         assert extract_sms_code("") == ""
+
+
+class TestWriteInputRecovery:
+    """写工具缺参失败的「要参数」恢复回路（issue #3365，OR-017 CI 实证）。
+
+    CI run 34716531345（OR-017）轨迹：
+      R6 confirm 卡「请确认订单信息」→ R7 顾客「确认下单」→ `order_create!缺少短信验证码`
+      → R8 顾客「确认」→ **又一张一模一样的 confirm 卡** + `order_create!缺少短信验证码`
+      → R9 顾客「123456」被这张卡吃掉（harness 优先答卡）→ `确认死循环: confirm 卡共出现 3 次`。
+    真因不是「模型不聪明」，而是代码允许它在缺参后**原样重发确认卡并重复调用注定失败的工具**：
+    顾客点多少次确认都得不到「请输入验证码」这句话 —— 生产环境里人也会卡死。
+    修法（与 handoff_blocked_inflight 同族）：缺参失败后
+      ① 跨轮记住「欠哪个参数」，把「向顾客索要该参数」的指令注入下一轮系统提示；
+      ② 该参数仍未到手时，**不再放行同一个写工具**（省掉注定失败的调用）；
+      ③ 同一张确认卡（confirmValue 逐字相同）不得二次下发。
+    """
+
+    _FLAG = {"tool": "order_create", "error": "缺少短信验证码",
+             "message": "为了您的账户安全，创建订单前需要验证手机号。请输入短信验证码",
+             "param": "sms_code"}
+
+    def _run(self, user_msg, args, tool_name="order_create", store_extra=None,
+             force_fail=None):
+        import asyncio, json as _json
+
+        seen = {"calls": [], "commits": []}
+        # 前置闸门必须先在夹具里满足（接地闸门会拦未查详情的 order_create）——
+        # 否则测的不是本类要测的「缺参恢复」，而是接地闸门（首版夹具就被它误伤：
+        # 两个用例都返回 product_not_grounded，断言以"没有调用"通过了，属假绿）。
+        full = {"grounded_product_detail": {"product_id": "p1"}}
+        full.update(store_extra or {})
+
+        async def fake_execute(tool, a, ctx, state):
+            seen["calls"].append((tool, a))
+            if force_fail:
+                return (force_fail, _json.loads(force_fail))
+            return (_json.dumps({"success": True, "data": {"id": "o1"}}),
+                    {"success": True, "data": {"id": "o1"}})
+
+        class _Store:
+            async def load(self, sid):
+                return dict(full)
+
+            async def commit(self, sid, new_full):
+                seen["commits"].append(dict(new_full))
+                full.clear()
+                full.update(new_full)
+
+        with patch("app.memory.session_memory.SessionMemory"), \
+             patch("app.graph.skills.base_skill.get_breaker") as get_breaker, \
+             patch("app.graph.skills.base_skill.get_skill_llm") as get_llm, \
+             patch("app.graph.skills.base_skill.create_skill_registry") as create_reg, \
+             patch("app.graph.skills.base_skill.set_tool_context"), \
+             patch("app.graph.skills.base_skill._execute_tool_safe", fake_execute), \
+             patch("app.memory.session_state_store.SessionStateStore",
+                   side_effect=lambda *a, **k: _Store()):
+            tool = MagicMock()
+            tool.name = tool_name
+            tool.read_only = False
+            tool.destructive = False
+            tool.requires_confirmation = False
+            registry = MagicMock()
+            registry.get_langchain_tools.return_value = []
+            registry.get_tool.side_effect = lambda n: tool if n == tool_name else None
+            create_reg.return_value = registry
+            breaker = MagicMock()
+
+            async def _pt(fn):
+                return await fn()
+
+            breaker.call = _pt
+            get_breaker.return_value = breaker
+            call = MagicMock(spec=AIMessage)
+            call.content = ""
+            call.tool_calls = [{"name": tool_name, "args": args, "id": "c1"}]
+            final = MagicMock(spec=AIMessage)
+            final.content = "好的"
+            final.tool_calls = []
+            llm = MagicMock()
+            llm.bind_tools.return_value = llm
+            llm.ainvoke = AsyncMock(side_effect=[call, final])
+            get_llm.return_value = llm
+            res = asyncio.run(execute_skill(
+                state=_make_state(messages=[HumanMessage(content=user_msg)]),
+                skill_name="customer_order",
+                tool_names=[tool_name], system_prompt="p"))
+        try:
+            from langchain_core.messages import ToolMessage as _TM
+            seen["tool_content"] = "\n".join(
+                str(getattr(m, "content", "")) for m in (res or {}).get("messages", [])
+                if isinstance(m, _TM))
+        except Exception:
+            seen["tool_content"] = ""
+        seen["result"] = res
+        seen["final_store"] = dict(full)
+        # 抓下发往 LLM 的消息：注入是否**真的到达系统提示**（M68 存活实证：只测
+        # 辅助函数会漏掉"接线断了"——改了实现也没人发现）
+        try:
+            _msgs = llm.ainvoke.call_args_list[0][0][0] if llm.ainvoke.call_args_list else []
+            seen["sys_prompt"] = "\n".join(str(getattr(m, "content", "")) for m in _msgs)
+        except Exception:
+            seen["sys_prompt"] = ""
+        return seen
+
+    # ── ① 缺参未补齐 → 不再放行同一个写工具 ──
+
+    def test_repeat_write_blocked_while_waiting_for_input(self):
+        seen = self._run("确认", {"items": []},
+                         store_extra={"last_write_input_error": self._FLAG})
+        assert seen["calls"] == [], \
+            "顾客还没给验证码，重复调用 order_create 只会再失败一次（CI 里正是这条 ×2）"
+
+    def test_blocked_write_reports_actionable_guidance(self):
+        seen = self._run("确认", {"items": []},
+                         store_extra={"last_write_input_error": self._FLAG})
+        # 拦截时给模型的 ToolMessage 必须点名要什么，否则模型只能靠猜
+        assert "验证码" in self._last_tool_content(seen)
+
+    def _last_tool_content(self, seen):
+        return seen.get("tool_content", "")
+
+    def test_write_allowed_once_customer_supplies_code(self):
+        seen = self._run("123456", {"items": []},
+                         store_extra={"last_write_input_error": self._FLAG})
+        assert len(seen["calls"]) == 1, "顾客已给验证码 → 必须放行（否则订单永远落不了库）"
+        assert seen["calls"][0][1].get("sms_code") == "123456"
+
+    def test_no_block_without_pending_input_error(self):
+        seen = self._run("确认", {"items": []})
+        assert len(seen["calls"]) == 1, "没有欠参标记时不得拦截（不能误伤正常下单）"
+
+    # ── ② 失败即记账 ──
+
+    def test_missing_input_failure_recorded(self):
+        seen = self._run("确认", {"items": []},
+                         force_fail='{"success": false, "error": "缺少短信验证码"}')
+        flags = [c.get("last_write_input_error") for c in seen["commits"]
+                 if c.get("last_write_input_error")]
+        assert flags, "缺参失败必须跨轮记账，否则下一轮无从知道该要什么"
+        assert flags[0].get("param") == "sms_code"
+
+    def test_success_clears_flag(self):
+        seen = self._run("123456", {"items": []},
+                         store_extra={"last_write_input_error": self._FLAG})
+        assert not seen["final_store"].get("last_write_input_error"), \
+            "写成功后必须清账，否则后续轮次被永久拦住"
+
+    def test_other_tool_success_does_not_clear_flag(self):
+        """只读工具成功不得清账：否则 product_search 一成功，欠参标记就被顺手抹掉，
+        下一轮又回到「重发确认卡 + 重复调用注定失败的写工具」的老路。"""
+        seen = self._run("确认", {"keyword": "窗帘"}, tool_name="product_search",
+                         store_extra={"last_write_input_error": self._FLAG})
+        assert seen["final_store"].get("last_write_input_error"), \
+            "product_search 成功清掉了 order_create 的欠参标记"
+
+    def test_unrecognizable_missing_param_not_recorded(self):
+        """判不出"已补齐"的参数（商品明细）不得记账：否则该写工具被**永久**拦住，
+        真实顾客说"就是刚才那款"也解不开。"""
+        seen = self._run("确认", {"items": []},
+                         force_fail='{"success": false, "error": "缺少商品明细"}')
+        assert not seen["final_store"].get("last_write_input_error"), \
+            "记账了不可识别的参数 → 该写工具将被永久锁死"
+
+    # ── ③ 同一张确认卡不得二次下发 ──
+
+    def test_same_confirm_card_not_reissued_while_waiting_for_input(self):
+        seen = self._run(
+            "确认",
+            {"component": "confirm", "title": "请确认订单信息",
+             "confirmValue": "确认下单", "fields": []},
+            tool_name="interact",
+            store_extra={"last_write_input_error": self._FLAG,
+                         "last_confirm_value": "确认下单"})
+        assert seen["calls"] == [], \
+            "缺参等待期重发同一张确认卡 = 死循环（顾客点多少次都拿不到验证码提示）"
+
+    def test_confirm_card_allowed_when_nothing_missing(self):
+        seen = self._run(
+            "确认",
+            {"component": "confirm", "title": "请确认订单信息",
+             "confirmValue": "确认下单", "fields": []},
+            tool_name="interact",
+            store_extra={"last_confirm_value": "确认下单"})
+        assert len(seen["calls"]) == 1, "没有欠参标记时必须正常下发确认卡"
+
+    # ── ④ 提示注入 ──
+
+    def test_directive_injected_while_waiting(self):
+        import asyncio as _asyncio
+        from app.graph.skills.base_skill import _inject_write_input_recovery
+
+        _flag = dict(self._FLAG)   # 闭包捕获：嵌套类里的 self 是 store 自己，不是测试实例
+
+        class _Store:
+            async def load(self, sid):
+                return {"last_write_input_error": _flag}
+
+            async def commit(self, sid, full):
+                pass
+
+        with patch("app.memory.session_state_store.SessionStateStore",
+                   side_effect=lambda *a, **k: _Store()):
+            out = _asyncio.run(_inject_write_input_recovery(
+                "BASE", {"session_id": "sess_001"}, "确认"))
+        assert out != "BASE", "缺参等待期必须注入指令，否则模型不知道要主动索要"
+        assert "验证码" in out
+        assert "确认卡" in out, "必须显式禁止重发确认卡（模型层不遵从才是真因）"
+        assert "BASE" in out
+
+    def test_directive_reaches_llm_system_prompt(self):
+        """接线断言：注入必须真的进入本轮系统提示（否则模型永远看不到索要指令）。"""
+        seen = self._run("确认", {"items": []},
+                         store_extra={"last_write_input_error": self._FLAG})
+        assert "上一轮写操作失败" in seen["sys_prompt"], \
+            "索要指令没进系统提示 → 注入形同虚设"
+        assert "禁止" in seen["sys_prompt"]
+
+    def test_no_directive_in_prompt_once_code_supplied(self):
+        seen = self._run("123456", {"items": []},
+                         store_extra={"last_write_input_error": self._FLAG})
+        assert "上一轮写操作失败" not in seen["sys_prompt"], \
+            "顾客已给验证码，还注入索要指令会干扰正常下单"
+
+    def test_directive_absent_when_code_supplied(self):
+        import asyncio as _asyncio
+        from app.graph.skills.base_skill import _inject_write_input_recovery
+
+        committed = {}
+        _flag = dict(self._FLAG)
+
+        class _Store:
+            async def load(self, sid):
+                return {"last_write_input_error": _flag}
+
+            async def commit(self, sid, full):
+                committed.update(full)
+
+        with patch("app.memory.session_state_store.SessionStateStore",
+                   side_effect=lambda *a, **k: _Store()):
+            out = _asyncio.run(_inject_write_input_recovery(
+                "BASE", {"session_id": "sess_001"}, "123456"))
+        assert out == "BASE", "顾客已给验证码 → 不再注入索要指令"
+        assert not committed.get("last_write_input_error"), "且必须顺手清账"

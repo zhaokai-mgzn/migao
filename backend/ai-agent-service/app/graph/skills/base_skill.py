@@ -958,6 +958,168 @@ def extract_sms_code(text: str) -> str:
     return m.group(1) if m else ""
 
 
+# ── 写工具「缺参等待期」恢复回路（issue #3365，OR-017 CI 实证）──────────────
+# 为什么必须有：写工具因**顾客还没给某个参数**而失败后，模型会原样重发确认卡并重复调用
+# 注定失败的工具 —— 顾客点多少次「确认」都拿不到那句"请输入验证码"，生产环境里人也会卡死。
+# CI run 34716531345（OR-017）轨迹即此形：R7「确认下单」→ order_create!缺少短信验证码
+# → R8「确认」又一张一模一样的 confirm 卡 + 同一条错误 → R9「123456」被这张卡吃掉
+# （harness 优先答卡）→ `确认死循环: confirm 卡共出现 3 次未收敛`。
+# 修法与 handoff_blocked_inflight 同族：跨轮记账 + 不放行注定失败的调用 + 禁止重发同一张卡。
+WRITE_INPUT_ERROR_KEY = "last_write_input_error"
+
+# 工具错误原文 → 缺的参数名。只登记**能从顾客单条消息可靠识别**的参数（保守）。
+WRITE_INPUT_ERROR_PARAMS: dict = {
+    "缺少短信验证码": "sms_code",
+    "验证码格式无效": "sms_code",
+    "验证码错误或已过期": "sms_code",
+    "缺少商品明细": "items",
+}
+
+_INPUT_PARAM_LABELS: dict = {
+    "sms_code": "短信验证码（4-6 位数字）",
+    "items": "商品明细（名称、数量、单价）",
+}
+
+
+def missing_input_param(error: str) -> str:
+    """工具错误原文 → 所缺参数名；不是「缺参」类失败时返回空串。"""
+    text = str(error or "")
+    if not text:
+        return ""
+    for key, param in WRITE_INPUT_ERROR_PARAMS.items():
+        if key in text:
+            return param
+    return ""
+
+
+def user_supplied_param(param: str, user_msg: str) -> bool:
+    """顾客这一轮的消息是否**已经补上了**所缺参数。
+
+    只有能可靠判定的参数才返回 True（验证码：整条就是 4-6 位数字）；未知参数一律 False
+    → 宁可少拦（多问一句），也不能误判成"已补齐"而放行注定失败的写调用。
+    """
+    if param == "sms_code":
+        return bool(extract_sms_code(user_msg or ""))
+    return False
+
+
+# 只有**能从顾客单条消息可靠判定"已补齐"**的参数才允许进入等待期拦截。
+# 反例：`缺少商品明细`（items）无法从一句话判断补齐与否 —— 一旦记账就会把该工具的后续
+# 调用永久拦住（顾客说"就是刚才那款窗帘"也判不出来）→ 这类参数宁可不管。
+RECOGNIZABLE_INPUT_PARAMS = frozenset({"sms_code"})
+
+
+def _clear_write_input_error(full: dict) -> dict:
+    out = dict(full or {})
+    out.pop(WRITE_INPUT_ERROR_KEY, None)
+    return out
+
+
+async def _write_input_recovery_block(tool_name: str, args: dict, tool_call: dict,
+                                      session_id: str, skill_name: str,
+                                      last_user_msg: str):
+    """「缺参等待期」拦截：返回 (tool_call, result_str, result_dict) 表示拦下，None 表示放行。
+
+    只在**同一个写工具**或**逐字重发同一张确认卡**时拦 —— 其余工具（查询/交互/换商品）
+    一律放行，绝不因为一次缺参失败就把整个会话锁死。
+    """
+    if not session_id:
+        return None
+    try:
+        from app.memory.session_state_store import SessionStateStore
+        store = SessionStateStore()
+        full = await store.load(session_id) or {}
+    except Exception:
+        return None
+    flag = full.get(WRITE_INPUT_ERROR_KEY)
+    if not isinstance(flag, dict):
+        return None
+    param = flag.get("param") or missing_input_param(flag.get("error", ""))
+    if not param:
+        return None
+    if user_supplied_param(param, last_user_msg):
+        # 顾客已补上 → 清账放行（写工具本体还要走确认门禁）
+        try:
+            await store.commit(session_id, _clear_write_input_error(full))
+            logger.info(f"[{skill_name}] 缺参已补齐 → 清除欠参标记 param={param} | session={session_id}")
+        except Exception as e:
+            logger.warning(f"[{skill_name}] 欠参标记清除失败（非致命）: {e}")
+        return None
+
+    label = _INPUT_PARAM_LABELS.get(param, param)
+    failed_tool = str(flag.get("tool") or "")
+    reason = ""
+
+    if tool_name == failed_tool:
+        reason = (f"顾客**还没有提供**{label}：重复调用 {tool_name} 结果必然相同，"
+                  f"本轮**禁止再次调用 {tool_name}**。")
+    elif (tool_name == "interact"
+          and str((args or {}).get("component") or "") == "confirm"
+          and str((args or {}).get("confirmValue") or "") != ""
+          and str((args or {}).get("confirmValue")) == str(full.get("last_confirm_value") or "")):
+        reason = (f"顾客已经确认过这张卡了，而 {failed_tool or '写工具'} 缺的是{label}："
+                  f"重发**同一张确认卡**只会让顾客反复点确认（死循环），本轮禁止重发该卡。")
+
+    if not reason:
+        return None
+
+    msg = (reason
+           + f" 请**直接用自然语言**向顾客说明卡在哪里，并索要{label}"
+           + (f"（工具原话：{flag.get('message')}）" if flag.get("message") else "。")
+           + " 顾客提供后再继续原流程（不要重新走一遍商品/地址收集）。")
+    logger.warning(
+        f"[{skill_name}] 拦截缺参等待期的重复动作 tool={tool_name} "
+        f"param={param} | session={session_id} last_msg={last_user_msg[:20]!r}"
+    )
+    code = "write_blocked_waiting_customer_input"
+    return (tool_call, json.dumps({"success": False, "error": code, "message": msg},
+                                  ensure_ascii=False),
+            {"success": False, "error": code})
+
+
+async def _inject_write_input_recovery(system_prompt: str, state: dict,
+                                       last_user_msg: str) -> str:
+    """把「顾客欠一个参数」注入下一轮系统提示（issue #3365）。
+
+    只在真正待补时注入；顾客本轮已补上则顺手清账并返回原提示。
+    fire-and-forget：任何异常都不抛，不破坏主流程。
+    """
+    if not state.get("session_id"):
+        return system_prompt
+    try:
+        from app.memory.session_state_store import SessionStateStore
+        store = SessionStateStore()
+        full = await store.load(state["session_id"]) or {}
+        flag = full.get(WRITE_INPUT_ERROR_KEY)
+        if not isinstance(flag, dict):
+            return system_prompt
+        param = flag.get("param") or missing_input_param(flag.get("error", ""))
+        if not param:
+            return system_prompt
+        if user_supplied_param(param, last_user_msg):
+            await store.commit(state["session_id"], _clear_write_input_error(full))
+            return system_prompt
+        label = _INPUT_PARAM_LABELS.get(param, param)
+        failed_tool = str(flag.get("tool") or "写工具")
+        logger.info(
+            f"[write-input-recovery] 注入索要指令 param={param} tool={failed_tool} "
+            f"| session={state['session_id']}"
+        )
+        return (
+            "【上一轮写操作失败：顾客还没提供必要信息】\n"
+            f"- {failed_tool} 因缺少{label}而**没有执行**。\n"
+            f"- 本轮必须用自然语言向顾客说明并**索要{label}**"
+            + (f"（原话：{flag.get('message')}）" if flag.get("message") else "。") + "\n"
+            f"- **禁止**再次调用 {failed_tool}（参数不全会再次失败）；"
+            "- **禁止**重发上一轮的确认卡/选择卡（重发只会让顾客反复点确认，形成死循环）。\n"
+            "- 顾客提供该信息后再继续原流程，不要重新收集已有的商品与地址。\n\n"
+            + system_prompt
+        )
+    except Exception as e:
+        logger.warning(f"[write-input-recovery] 注入失败（非致命）: {e}")
+        return system_prompt
+
+
 def extract_product_keyword(text: str) -> str:
     """从顾客消息里抽取**可用于 product_search 的商品关键词**（issue #3365）。
 
@@ -1454,6 +1616,9 @@ async def execute_skill(
             _confirm_msg = _extract_content(_m)
             break
     system_prompt = await _inject_pending_validated(system_prompt, state, _confirm_msg)
+    # 4e. 写工具缺参等待期注入（issue #3365，OR-017）：顾客欠验证码等参数时，
+    # 明令"索要参数、禁止重复调用、禁止重发同一张确认卡"——模型层不遵从是死循环的真因。
+    system_prompt = await _inject_write_input_recovery(system_prompt, state, _confirm_msg)
 
     if is_multimodal:
         system_prompt = (
@@ -1712,6 +1877,13 @@ async def execute_skill(
                             )
                     if args is not tool_call.get("args"):
                         tool_call = {**tool_call, "args": args}
+                    # ── 缺参等待期拦截（issue #3365，OR-017）──
+                    # 顾客欠参数期间：不放行同一个写工具（注定失败）、不放行逐字重发的同一张
+                    # 确认卡（死循环）。见 _write_input_recovery_block 的实证说明。
+                    _blocked = await _write_input_recovery_block(
+                        tool_name, args, tool_call, session_id, skill_name, last_user_msg)
+                    if _blocked is not None:
+                        return _blocked
                     tool = skill_registry.get_tool(tool_name)
                     if tool is None:
                         logger.warning(f"[{skill_name}] Tool not found: {tool_name} | session={session_id}")
@@ -2060,6 +2232,37 @@ async def execute_skill(
                                 )
                         except Exception as e:
                             logger.warning(f"[{skill_name}] pending_validated persist failed (non-fatal): {e}")
+                    # 缺参失败 → 跨轮记账（下一轮注入索要指令 + 拦截重复动作，issue #3365）
+                    # 清除只认**同一把工具**成功：product_search 之类只读工具成功不能清账，
+                    # 否则欠参标记被顺手抹掉、下一轮又回到"重发卡 + 重复调用"的老路。
+                    if session_id and tool_name != "validate_input":
+                        _param = "" if result_dict.get("success") else missing_input_param(
+                            result_dict.get("error") or "")
+                        try:
+                            from app.memory.session_state_store import SessionStateStore as _S5
+                            _s5 = _S5()
+                            _f5 = await _s5.load(session_id) or {}
+                            _prev5 = _f5.get(WRITE_INPUT_ERROR_KEY) or {}
+                            if _param and _param not in RECOGNIZABLE_INPUT_PARAMS:
+                                _param = ""   # 判不出"已补齐"的参数不记账（否则永久锁死该工具）
+                            if _param:
+                                _f5[WRITE_INPUT_ERROR_KEY] = {
+                                    "tool": tool_name,
+                                    "param": _param,
+                                    "error": str(result_dict.get("error") or ""),
+                                    "message": str(result_dict.get("message") or ""),
+                                }
+                                await _s5.commit(session_id, _f5)
+                                logger.info(
+                                    f"[{skill_name}] 缺参记账 {tool_name}.{_param} | session={session_id}"
+                                )
+                            elif result_dict.get("success") and _prev5.get("tool") == tool_name:
+                                await _s5.commit(session_id, _clear_write_input_error(_f5))
+                                logger.info(
+                                    f"[{skill_name}] {tool_name} 成功 → 清除欠参标记 | session={session_id}"
+                                )
+                        except Exception as _e5:
+                            logger.warning(f"[{skill_name}] 缺参记账失败（非致命）: {_e5}")
                     # 写工具执行成功 → 清除对应「已校验待执行」状态与「已确认写工具」标记
                     # （闭环完成；否则后续同类写操作会在无新确认的情况下被放行）。
                     if session_id and result_dict.get("success") and tool_name != "validate_input":
