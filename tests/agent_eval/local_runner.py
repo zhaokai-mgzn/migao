@@ -136,8 +136,32 @@ async def restore_product(token: str, product_id: str):
 
 
 async def _end_session(token: str, session_id: str) -> None:
-    """评测会话清理（协议 §2.2）：case 结束后 end 会话，防 waiting 残留（
-    实测 8 个评测残留会话未关闭）。失败静默（会话可被人工/超时兜底）。"""
+    """评测会话清理（协议 §2.2）：case 结束后关闭会话，并触发长时记忆 flush。
+
+    **主路径必须是 ai-agent 的关闭接口**（PUT {AI_API}/api/chat/sessions/{id}/close）：
+    该路径 SessionService.close → SessionMemory.close_session → _flush_pending_memories，
+    是记忆候选落库 user_memories 的**唯一入口**（issue #2815 会话末聚合）。
+
+    issue #3357 复盘（清理静默失败的假绿温床）：
+      旧实现打 admin-api `POST /api/admin/agent-sessions/{id}/end`，但该接口操作的是
+      **人工会话表 agent_sessions**，C 端评测会话在 ai-agent 的 **sessions** 表 ——
+      两表 id 不互认 → 恒 404 → 被 `except: pass` 吞掉。后果有两层：
+        1. 评测会话从未真正关闭（残留 active，与"实测 8 个残留会话未关闭"吻合）；
+        2. close 路径从未执行 → 记忆候选从未 flush → user_memories 恒 0 条，
+           而报告一片全绿（"记忆没落库"没有任何断言看得见）。
+      故：主路径换成对的接口，且失败**打 warning**（清理失败必须可见，不再静默）。
+    """
+    try:
+        async with httpx.AsyncClient() as c:
+            r = await c.put(f"{AI_API}/api/chat/sessions/{session_id}/close",
+                            headers=_chat_headers(token), timeout=15)
+            if r.status_code >= 400:
+                print(f"     ⚠️ 会话关闭失败 HTTP {r.status_code}: id={session_id} "
+                      f"body={str(getattr(r, 'content', b''))[:120]}")
+    except Exception as e:
+        print(f"     ⚠️ 会话关闭异常: id={session_id} {type(e).__name__}: {e}")
+    # 人工会话残留（human_handoff 在 admin-api agent_sessions 建的行）仍走 admin-api，
+    # best-effort：C 端评测会话在此表不存在，404 属预期，静默。
     try:
         async with httpx.AsyncClient() as c:
             h = _admin_headers(token)
@@ -1144,6 +1168,107 @@ async def check_db_verify(token: str, db_verify: list) -> list:
     return issues
 
 
+# ── post_session：会话关闭后才可观察的落库断言（issue #3357）──
+# 长时记忆（user_memories）不是每轮落库：每轮只把候选累积到 session_states，
+# **会话关闭时**才 flush 落库（issue #2815 会话末聚合）。因此 run_case 内的
+# db_verify 时点太早——必须在 _end_session 之后查询，否则断言的是"抽取还没跑完"
+# 这个时序假象，而不是记忆能力本身。
+# 查询接口：GET {AI_API}/api/chat/memories（个保法查询权，仅返回当前登录用户自己的记忆）。
+
+def _evaluate_memory_check(memories: list, check: str) -> tuple:
+    """评估记忆落库谓词，返回 (是否通过, 详情)。
+
+    支持：
+      count>=1 / count==2 / count<=3      条数比较
+      has_key:curtain_style               存在该 key 的记忆
+      value_contains:奶油风              存在 value 含该子串的记忆
+    """
+    import re as _re
+    c = check.strip()
+    m = _re.match(r"^count\s*(>=|<=|==|!=|>|<)\s*(\d+)$", c)
+    if m:
+        op, raw = m.groups()
+        n = int(raw)
+        actual = len(memories)
+        ok = {">=": actual >= n, "<=": actual <= n, "==": actual == n,
+              "!=": actual != n, ">": actual > n, "<": actual < n}[op]
+        if not ok:
+            keys = [mem.get("key") for mem in memories]
+            return False, f"{check} 不满足（实际 {actual} 条，keys={keys}）"
+        return True, ""
+    if c.startswith("has_key:"):
+        key = c.split(":", 1)[1].strip()
+        if not key:
+            return False, f"无法解析 db 检查: {check!r}（has_key 后缺 key）"
+        if any((mem.get("key") or "") == key for mem in memories):
+            return True, ""
+        keys = [mem.get("key") for mem in memories]
+        return False, f"未落库记忆 key={key}（实际 keys={keys}）"
+    if c.startswith("value_contains:"):
+        sub = c.split(":", 1)[1].strip()
+        if not sub:
+            return False, f"无法解析 db 检查: {check!r}（value_contains 后缺子串）"
+        if any(sub in str(mem.get("value") or "") for mem in memories):
+            return True, ""
+        vals = [mem.get("value") for mem in memories]
+        return False, f"无记忆 value 含「{sub}」（实际 values={vals}）"
+    return False, f"无法解析 db 检查: {check!r}"
+
+
+async def _fetch_user_memories(token: str, agent_type: str = "xiaobu") -> list:
+    """查当前登录顾客已落库的长期记忆（agent_type 维度，默认 C 端 xiaobu）。"""
+    async with httpx.AsyncClient() as c:
+        r = await c.get(f"{AI_API}/api/chat/memories",
+                        headers=_chat_headers(token),
+                        params={"agent_type": agent_type}, timeout=15)
+        payload = _safe_json(r, {}) or {}
+        return ((payload.get("data") or {}).get("memories")) or []
+
+
+async def check_post_session(token: str, post_session: list) -> list:
+    """执行会话关闭后的落库断言：fetch 指定资源 → 逐条评估谓词，返回违规列表。"""
+    issues = []
+    for spec in post_session or []:
+        if not isinstance(spec, dict) or spec.get("fetch") != "user_memories":
+            issues.append(f"post_session: 不支持的 fetch 配置: {spec!r}")
+            continue
+        agent_type = spec.get("agent_type") or "xiaobu"
+        try:
+            memories = await _fetch_user_memories(token, agent_type)
+        except Exception as e:
+            issues.append(f"post_session[user_memories]: 查询失败 {type(e).__name__}: {e}")
+            continue
+        for check in spec.get("checks") or []:
+            ok, detail = _evaluate_memory_check(memories, str(check))
+            if not ok:
+                issues.append(f"post_session[user_memories/{agent_type}]: {detail}")
+    return issues
+
+
+async def _close_and_verify_session(case, token: str, r: dict, session_id: str) -> None:
+    """关闭用例会话并执行关闭后置断言（失败按用例级失败计入 r）。
+
+    必须在 **run_case 之后、重试分类之前** 调用，使 post_session 断言与普通断言同权：
+    失败 → score=0 → 走同一套重试/指纹分类（噪声放行 / 确定性回归显式标注）。
+    重试路径同样必须调用（否则重试通过时 post_session 从未被执行 → 假绿）。
+    """
+    await _end_session(token, r.get("final_session_id") or session_id)
+    if not getattr(case, "post_session", None):
+        return
+    try:
+        post_issues = await check_post_session(token, case.post_session)
+    except Exception as e:
+        post_issues = [f"post_session 执行失败: {type(e).__name__}: {e}"]
+    if post_issues:
+        print(f"     ❌ post_session 断言未通过: {post_issues}")
+        r["score"] = 0.0
+        r["passed"] = 0
+        r["total"] = max(int(r.get("total") or 0), 1)
+        r["failed"] = (r.get("failed") or []) + [
+            (pi, "post-session check") for pi in post_issues
+        ]
+
+
 def resolve_auto_respond(results: list, fallback: str, form_values: dict) -> str:
     """`auto_respond` 轮：按**上一轮的待答卡片**自动作答，没有卡片则用 fallback。
 
@@ -1399,12 +1524,19 @@ def format_round_trace(trace: list) -> str:
 async def run_case(case, token: str, session_id: str) -> dict:
     """运行单个评测用例（多轮对话）
 
-    user_inputs 每轮可为 str（纯文本）或 dict（带图消息 / 自动回 choice 卡）：
+    user_inputs 每轮可为 str（纯文本）或 dict（带图消息 / 自动回 choice 卡 / 跨会话）：
       {"text": "看看这个", "images": ["https://...jpg"]}      # 带图消息
       {"auto_select": true}                                    # choice 卡自动回第一个选项
+      {"new_session": true, "text": "上次我说过……"}            # 先关闭当前会话再开新会话（跨会话记忆）
+
+    new_session 轮（issue #3357）：发送前先 `_end_session` 关掉当前会话（触发记忆候选
+    flush 落库）并新建会话。长期记忆只在**新会话**建立 prompt 时注入，同会话内看不到
+    （候选要等会话关闭才落库），所以「老客户偏好识别」这类能力必须跨会话才能判定。
+    该轮**必须给 text**（空文本会发出一条空消息，属用例书写错误）。
     """
     results = []
     all_tool_names = []
+    session_breaks = 0
 
     # case 级表单值：所有 `auto_fill` 轮声明的并集 —— auto_respond 轮回答表单时复用，
     # 避免同一份收货信息在用例里重复声明（少一处漂移）
@@ -1415,6 +1547,10 @@ async def run_case(case, token: str, session_id: str) -> dict:
 
     for i, msg in enumerate(case.user_inputs):
         images = []
+        if isinstance(msg, dict) and msg.get("new_session"):
+            await _end_session(token, session_id)
+            session_id = await get_or_create_session(token, prefer_new=True)
+            session_breaks += 1
         if isinstance(msg, dict) and msg.get("auto_select"):
             # choice 卡自动回放（CU-003 回归防线）：上一轮 agent 下发 choice 卡时，
             # 自动回第一个 option 的 value——ChoiceCard 点击协议 = onAction(opt.value)，
@@ -1444,6 +1580,13 @@ async def run_case(case, token: str, session_id: str) -> dict:
             images = msg.get("images") or []
         else:
             text = msg
+        if isinstance(msg, dict) and msg.get("new_session") and not str(text).strip():
+            # 用例书写错误必须响（不是 LLM 波动）：空文本会发出一条空消息，
+            # 断言失败详情会指向模型，实际是 harness 输入错误。
+            raise ValueError(
+                f"用例 {case.id} 第 {i + 1} 轮声明了 new_session 但 text 为空"
+                "——跨会话轮必须给出文本"
+            )
         r = await send_message(token, session_id, text, images=images)
         r["__round"] = i + 1
         r["__all_tool_names"] = [tc["name"] for tc in r["tool_calls"]]
@@ -1530,6 +1673,10 @@ async def run_case(case, token: str, session_id: str) -> dict:
         "total": total_exp,
         "score": score,
         "failed": failed_expectations,
+        "session_breaks": session_breaks,
+        # 跨会话用例（new_session 轮）在 run_case 内换了会话：关闭与后置断言必须针对
+        # **最后一个**会话（否则残留 active + 末轮记忆候选不 flush）。
+        "final_session_id": session_id,
         "last_error": results[-1].get("error") if results else None,
         "final_text": results[-1].get("final_text", "")[:200] if results else "",
     }
@@ -1598,12 +1745,17 @@ async def run_suite(cases, label: str, classify: bool = True):
             # 并按指纹分类（issue #2890）：噪声放行 + 记台账；复现型/不稳定型显式标注，
             # 禁止 rerun 掩盖确定性回归。
             classification = "pass"
-            # 评测会话清理（协议 §2.2）：case 结束后 end 会话，防 waiting 残留
-            await _end_session(token, session_id)
+            # 评测会话清理（协议 §2.2）+ 关闭后置断言（issue #3357）：
+            # 长时记忆候选只在会话关闭时 flush 落库（issue #2815），故 user_memories
+            # 断言只能在 _end_session **之后**执行；跨会话用例取 run_case 回报的最后
+            # 一个会话 id（首个会话已在换会话时关闭）。
+            await _close_and_verify_session(case, token, r, session_id)
             if r["score"] < 1.0 and classify:
                 retry_sid = await get_or_create_session(token, prefer_new=True)
                 r2 = await run_case(case, token, retry_sid)
                 r2["retried"] = True
+                # 重试同样要关闭 + 跑 post_session：否则重试"通过"是假绿
+                await _close_and_verify_session(case, token, r2, retry_sid)
                 classification = _classify_attempts(r, r2)
                 if classification == "llm-noise":
                     r = r2
@@ -1637,6 +1789,8 @@ async def run_suite(cases, label: str, classify: bool = True):
                 retry_sid = await get_or_create_session(token, prefer_new=True)
                 r2 = await run_case(case, token, retry_sid)
                 r2["retried"] = True
+                # 与 classify 路径一致：重试会话同样关闭 + 跑 post_session（否则假绿）
+                await _close_and_verify_session(case, token, r2, retry_sid)
                 if r2["score"] >= 1.0 or r2["score"] > r["score"]:
                     r = r2
             r["classification"] = classification
@@ -1830,6 +1984,7 @@ def load_cases_from_yaml(cases_dir: str) -> list:
             forbidden_args=c.get("forbidden_args") or [],
             db_verify=c.get("db_verify") or [],
             pre_clean=c.get("pre_clean") or [],
+            post_session=c.get("post_session") or [],
         ))
     return cases
 

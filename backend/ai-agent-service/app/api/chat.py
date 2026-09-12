@@ -225,7 +225,13 @@ async def _extract_memories_async(
                 f"agent={agent_type} count={count}"
             )
     except Exception as e:
-        logger.debug(f"[chat/send] Memory accumulation failed (non-fatal): {e}")
+        # warning 而非 debug（issue #3357）：记忆链路断掉时"什么都没发生"，
+        # debug 级日志在默认 INFO 级别下不可见 —— 这正是 user_memories 长期为 0
+        # 却无人发现的原因。失败必须可见。
+        logger.warning(
+            f"[chat/send] Memory accumulation failed (non-fatal) | session={session_id} "
+            f"agent={agent_type} error={type(e).__name__}: {e}"
+        )
 
 def _format_datetime(dt: Any) -> str:
     """格式化日期时间为 ISO 8601 字符串（UTC，以 Z 结尾）"""
@@ -877,7 +883,12 @@ async def _agent_stream_to_sse(
         ) if isinstance(message, list) else ""
         if assistant_content and user_msg_text:
             try:
-                asyncio.create_task(
+                # 登记在途任务：会话关闭 flush 前会 drain 它们（issue #3357——
+                # 关闭紧跟最后一轮时抽取尚未返回 → 候选为空 → 记忆静默丢失）。
+                # 登记先于下方 done 事件发送，故客户端收到 done 时任务必已登记，
+                # 「done 之后到达的关闭请求」一定能 drain 到它。
+                from app.memory.extraction_tasks import register_extraction_task
+                _mem_task = asyncio.create_task(
                     _extract_memories_async(
                         tenant_id=tenant_id,
                         user_id=user_id,
@@ -887,8 +898,9 @@ async def _agent_stream_to_sse(
                         agent_type=getattr(agent, "_agent_type", "xiaobu"),
                     )
                 )
+                register_extraction_task(session_id, _mem_task)
             except Exception as mem_err:
-                logger.debug(f"[chat/send] Memory extraction scheduling skipped: {mem_err}")
+                logger.warning(f"[chat/send] Memory extraction scheduling skipped: {mem_err}")
             # 自动生成会话标题（首条回复后）
             try:
                 asyncio.create_task(

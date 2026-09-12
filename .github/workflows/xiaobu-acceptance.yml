@@ -192,27 +192,37 @@ jobs:
           PSQL() { docker compose -f deploy/docker-compose.yml exec -T postgres \
             psql -U app_user -d ai_customer_service -tAc "$1" 2>/dev/null; }
           echo "── Eval 期间 agent 实际落库的产物（§2.2 审计）──"
-          echo "· 会话数（每用例一个）: $(PSQL 'SELECT count(*) FROM agent_sessions;')"
+          # ⚠️ 会话表别搞混（issue #3357 根因）：C 端评测会话在 ai-agent 的 `sessions`
+          # （每用例一个）；`agent_sessions` 是**人工会话**表，只有 human_handoff 会写。
+          # 旧审计用 agent_sessions 当"每用例一个"是错的 —— 同一个混淆也让 runner 的
+          # 会话清理打到 admin-api 的 agent_sessions（恒 404 静默），评测会话从未关闭。
+          echo "· ai-agent 会话（每用例一个，含跨会话用例的多个）: $(PSQL 'SELECT count(*) FROM sessions;')"
+          echo "· 其中未关闭残留（应为 0~个位数；大量残留 = 清理失效）: $(PSQL "SELECT count(*) FROM sessions WHERE status='active';")"
+          echo "· 人工会话（仅转人工用例产生）: $(PSQL 'SELECT count(*) FROM agent_sessions;')"
           echo "· 订单（含 fixture 2 笔）:"
           PSQL "SELECT order_no || ' / ' || status || ' / 用户 ' || coalesce(user_id,'-') FROM orders ORDER BY created_at DESC LIMIT 12;"
           echo "· 售后工单:"
           PSQL "SELECT ticket_no || ' / ' || ticket_type || ' / ' || status FROM after_sales_tickets ORDER BY created_at DESC LIMIT 12;"
           echo "· 转人工工单（应能对上 CH-008/013/015 的 human_handoff）:"
           PSQL "SELECT count(*) FROM after_sales_tickets WHERE ticket_type='complaint';"
-          echo "· 长期记忆（C 端画像落库验证）:"
-          PSQL "SELECT count(*) FROM user_memories WHERE agent_type='xiaobu';"
+          echo "· 长期记忆（C 端画像落库验证；CH-024 跨会话用例的落库证据）:"
+          PSQL "SELECT key || ' = ' || left(value, 40) || ' (importance ' || importance || ')' FROM user_memories WHERE agent_type='xiaobu' ORDER BY updated_at DESC LIMIT 10;"
           # ── 假绿告警：写用例通过但 DB 无对应产物（调了 ≠ 成了）──
           # run 34678939564 实证：17/17 全绿但 orders 无新增 —— order_create 被拦/被拒，
           # 用例却因「工具被调用」判通过。这里把「通过 vs 落库」对不上显式标出来。
           ORDERS=$(PSQL "SELECT count(*) FROM orders WHERE deleted=0 AND tenant_id=1;")
           TICKETS=$(PSQL "SELECT count(*) FROM after_sales_tickets WHERE deleted=0;")
+          MEMORIES=$(PSQL "SELECT count(*) FROM user_memories WHERE agent_type='xiaobu';")
           echo "· 落库对账（fixture 订单=2；下单用例 CH-010/OR-014/OR-017 通过时订单应 >2）:"
-          echo "  orders=$ORDERS tickets=$TICKETS"
+          echo "  orders=$ORDERS tickets=$TICKETS memories=$MEMORIES"
           if [ "$ORDERS" -le 2 ]; then
             echo "⚠️ 假绿风险：下单类写用例通过（order_create 在工具列表里），但订单未落库（<=2 仅 fixture）—— 调了 ≠ 成了，需查门禁/API"
           fi
           if [ "$TICKETS" -eq 0 ]; then
             echo "⚠️ 假绿风险：无任何售后工单落库（CH-012/转人工用例的写操作未成功）"
+          fi
+          if [ "$MEMORIES" -eq 0 ]; then
+            echo "⚠️ 假绿风险：CH-024（C 端长期记忆）通过但 user_memories 无记录 —— 记忆链断在抽取/关闭 flush，用例的 post_session 断言若也过则是断言失效"
           fi
 
       - name: "Diagnose on failure (issue #3270): containers + DB probe"

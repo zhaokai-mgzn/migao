@@ -680,7 +680,17 @@ class SessionMemory:
 
         仅在关闭/删除会话前调用；候选载荷自带 tenant/user/agent_type，无需额外身份参数。
         任何异常不抛出（fire-and-forget 语义，不破坏关闭主流程）。
+
+        issue #3357：flush 前先 drain 在途抽取任务——每轮抽取是 fire-and-forget 的
+        LLM 调用，关闭若紧跟最后一轮（评测 harness / 用户说完就退出 / 坐席手动结束 /
+        空闲回收）就会在抽取返回前 flush，候选为空 → 偏好静默丢失。drain 有超时上限，
+        超时仅告警不阻塞关闭（在途任务不取消，避免丢候选并掩盖故障）。
         """
+        try:
+            from app.memory.extraction_tasks import drain_inflight_extractions
+            await drain_inflight_extractions(session_id)
+        except Exception as e:
+            logger.warning(f"[session-memory] Drain in-flight memories failed | session={session_id} error={e}")
         try:
             from app.memory.extractor import flush_memories
             await flush_memories(session_id)

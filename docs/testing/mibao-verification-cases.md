@@ -616,11 +616,11 @@
 ```
 你: 推荐几款热销窗帘
 你: 第一款，白色，2.8 米门幅，按米卖
-你: [📷 纯图片 x0]
-你: [📷 纯图片 x0]
-你: [📷 纯图片 x0]
-你: [📷 纯图片 x0]
-你: [📷 纯图片 x0]
+你: [🤖 按上一轮卡片作答]
+你: [🤖 按上一轮卡片作答]
+你: [🤖 按上一轮卡片作答]
+你: [🤖 按上一轮卡片作答]
+你: [🤖 按上一轮卡片作答]
 期望: product_search
 期望: product_detail
 期望: interact
@@ -805,18 +805,22 @@
 真值: ai-chat.route-actions
 溯源: issue #2799：Phase 2c 轻量版 grounded（关键词提取纯函数 + VISION_CLARIFY_GUIDE 检索引导） ｜ tags: clarification, multimodal, image, grounded
 
-### CH-024. C端老客户偏好识别 - 长期记忆注入（小布） 🔵
+### CH-024. C 端长期记忆端到端 — 表达偏好→会话关闭落库→跨会话注入→个性化推荐（小布） 🔵
 ```
-你: 帮我看看有没有奶油风遮光窗帘
+你: 我家里是奶油风的装修，我个人特别喜欢奶油风，以后都按这个风格来
+你: 上次我说过我喜欢什么风格来着？按那个风格帮我推荐几款窗帘 [🔁 新会话]
 期望: product_search
-数据: 仅 xiaobu 会话注入用户长期记忆（format_for_prompt 输出经消毒后拼入 system prompt）
-数据: 注入的记忆来自 user_memories 表且 agent_type='xiaobu'、importance>=0.5、LIMIT 20
+数据: 第 1 轮用户表达风格偏好 → 每轮 fire-and-forget 抽取候选到 session_states.state.memory_candidates（受控词表 CEND_MEMORY_KEYS + PII 过滤）
+数据: 会话关闭（PUT /api/chat/sessions/{id}/close → SessionMemory.close_session）时 flush 候选落库 user_memories（issue #2815 会话末聚合）
+数据: 新会话注入：仅 xiaobu 会话注入用户长期记忆（format_for_prompt 输出经 XML 转义/截断消毒后拼入 system prompt）；记忆来自 user_memories 且 agent_type='xiaobu'、importance>=0.5、LIMIT 20
+数据: 第 2 轮用户**未再提**风格词，回复出现「奶油」只能来自记忆注入（跨会话回忆可判定；同会话内看不到——候选要等会话关闭才落库）
 数据: mibao（B端）会话不注入用户记忆（agent_type 分流）
-数据: 注入文本做过 XML 转义/长度截断（防持久化注入，审计 07 P1-L9）
-跳过: 记忆注入链路由 pytest 单测验证（tests/test_user_memory.py + tests/test_memory_injection.py），agent-eval 无稳定记忆数据
+数据: 关闭与抽取的时序：关闭请求紧跟最后一轮时，关闭路径先 drain 在途抽取任务再 flush，否则候选为空、偏好静默丢失（issue #3357）
+必须: 奶油
+会话后: user_memories(xiaobu) → count>=1; value_contains:奶油风
 ```
 真值: ai-chat.context-memory
-溯源: issue #2815：C 端长期记忆系统 — 注入接线 ｜ tags: memory, xiaobu, long_term, personalization
+溯源: issue #2815：C 端长期记忆系统 — 注入接线；2026-09-12（issue #3357）升级为可执行端到端用例：原 skip_reason『agent-eval 无稳定记忆数据』正是覆盖缺口——新增 new_session 跨会话轮协议 + post_session 落库断言（GET /api/chat/memories），把注入链从「只有单测」变成端到端可判定 ｜ tags: memory, xiaobu, long_term, personalization, cross_session
 
 ### CH-025. 下单地址自动填充 - 最近订单收货信息预填（可修改） 🔵
 ```
@@ -925,7 +929,7 @@
 ```
 你: 查一下遮光窗帘
 你: 用遮光窗帘（100元的那件）给张三创建订单，2件，手机13800138000
-你: [📷 纯图片 x0]
+你: [🤖 选第一个选项]
 你: 不需要加工项
 你: 确认下单
 期望: product_detail
@@ -998,7 +1002,7 @@
 ### CU-003. 给客户打标签 🔵
 ```
 你: 给张三加VIP2活跃标签
-你: [📷 纯图片 x0]
+你: [🤖 选第一个选项]
 你: 确认
 期望: customer_manage(action=add_tag)
 数据: add_tag 真实落库（customer_profiles.tags JSONB 写入），重复标签幂等跳过
@@ -2004,16 +2008,16 @@
 ### OR-014. 下单加工项数量规则 - 按计价方式，无每米数量密度推导 🔵
 ```
 你: 帮我下单，遮光窗帘 3 米，要打孔加工
-你: [📷 纯图片 x0]
-你: [📷 纯图片 x0]
-你: [📷 纯图片 x0]
-你: [📷 纯图片 x0]
-你: [📷 纯图片 x0]
-你: [📷 纯图片 x0]
-你: [📷 纯图片 x0]
-你: [📷 纯图片 x0]
-你: [📷 纯图片 x0]
-你: [📷 纯图片 x0]
+你: [🤖 按上一轮卡片作答]
+你: [🤖 按上一轮卡片作答]
+你: [🤖 按上一轮卡片作答]
+你: [🤖 按上一轮卡片作答]
+你: [🤖 按上一轮卡片作答]
+你: [🤖 按上一轮卡片作答]
+你: [🤖 按上一轮卡片作答]
+你: [🤖 按上一轮卡片作答]
+你: [🤖 按上一轮卡片作答]
+你: [🤖 按上一轮卡片作答]
 期望: product_detail
 期望: order_create
 数据: 加工项数量按计价方式确定：per_meter → 数量=面料米数（如打孔 8 元/米 × 3 米 → quantity=3、subtotal=24）；per_set/fixed → 数量=1；per_area → 宽×高
@@ -2401,7 +2405,7 @@
 你: 我要创建一个新商品
 你: 名称叫夏日清风窗帘，价格 168
 你: 分类选窗帘
-你: [📷 纯图片 x0]
+你: [🤖 选第一个选项]
 你: 颜色有米白和浅灰
 你: 货号用 SUMMER-BREEZE
 你: 需要打孔和韩式折边这两个加工项
@@ -2451,7 +2455,7 @@
 ```
 你: 录入这个商品，名称测试窗帘，价格 100
 你: 分类选窗帘
-你: [📷 纯图片 x0]
+你: [🤖 选第一个选项]
 你: 已选加工项：打孔加工、韩式折边
 你: 颜色米白色，货号 TEST-001
 你: 确认
@@ -2470,7 +2474,7 @@
 ```
 你: 录入这个商品，名称测试窗帘，价格 100
 你: 分类选窗帘
-你: [📷 纯图片 x0]
+你: [🤖 选第一个选项]
 你: 翻页查看第2页加工项
 你: 已选加工项：高温定型
 你: 颜色米白色，货号 TEST-002
@@ -2490,8 +2494,8 @@
 ```
 你: 录入这个商品，名称遮光窗帘，价格 100
 你: 分类选窗帘
-你: [📷 纯图片 x0]
-你: [📷 纯图片 x0]
+你: [🤖 选第一个选项]
+你: [🤖 自动填表]
 你: 已选加工项：高温定型
 你: 颜色米白色，货号 TEST-002
 你: 确认
@@ -2512,7 +2516,7 @@
 ### PR-017. 商品创建/更新/详情透传「退货回补库存」开关（allow_return_restock） 🔵
 ```
 你: 把「遮光窗帘（100元的那件）」设置成退货后可以回补库存
-你: [📷 纯图片 x0]
+你: [🤖 选第一个选项]
 你: 确认
 期望: product_update or product_manage(allow_return_restock=True)
 数据: 商品详情/列表返回 allowReturnRestock（默认 false，开启后为 true）
@@ -2535,7 +2539,7 @@
 ### PR-019. 建品规格与加工项价格落库 — 推理属性经 specifications 落库、加工项经 processing_item_configs 携带价格 🔵
 ```
 你: 根据这张图片录入商品（色卡图，可识别材质/克重） [📷 附 1 图]
-你: [📷 纯图片 x0]
+你: [🤖 选第一个选项]
 你: 商品名称: 2699系列雪尼尔窗帘面料\n单价(元/米): 23.8\n颜色…门幅…
 你: 已选加工项：刺绣工艺 ¥30/平方米、波浪定型 ¥8/米
 你: 确认创建
@@ -2567,7 +2571,7 @@
 ### PR-021. 单独 SKU 调价 - 修改某规格价格 🔵
 ```
 你: 把遮光窗帘（100元的那件）的米白色散剪规格改成 150 元
-你: [📷 纯图片 x0]
+你: [🤖 选第一个选项]
 你: 确认
 期望: sku_update
 数据: sku_update 成功（价格落库）
@@ -3247,7 +3251,7 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：259（活跃 119，跳过 140）
+- 用例总数：259（活跃 120，跳过 139）
 - tier 分布：smoke 12 / normal 218 / adversarial 29
 - 售后域：8
 - agents：6

@@ -19,7 +19,7 @@ HR-001 员工列表 / CT-001 分类树 / CU-001 客户 / AS-001 售后工单 / S
 2. **用例集归属**：PERSONA=xiaobu 选中的用例，其期望工具必须全在 C 端工具集内 ——
    B 端专属工具不得出现在任何 C 端用例断言中。
 """
-# case_ids: CH-008, CH-010, CH-012, CH-013, CH-014, CH-015, CH-017, OR-012, ST-008, KN-001, KN-002, KN-008
+# case_ids: CH-008, CH-010, CH-012, CH-013, CH-014, CH-015, CH-017, CH-024, OR-012, ST-008, KN-001, KN-002, KN-008
 import re
 import sys
 from pathlib import Path
@@ -49,7 +49,7 @@ XIAOBU_FALLBACK_SKILL = "customer_general"
 # 已声明 persona: xiaobu 的 C 端专属用例（R3.1 基线：修复后应全部被选中）
 XIAOBU_ONLY = {
     "CH-008", "CH-010", "CH-012", "CH-013", "CH-014", "CH-015", "CH-017",
-    "OR-012", "ST-008", "KN-001", "KN-002", "KN-008",
+    "CH-024", "OR-012", "ST-008", "KN-001", "KN-002", "KN-008",
 }
 
 # B 端专属工具样本（出现即证明 C 端用例集混入 B 端管理用例）
@@ -161,6 +161,78 @@ class TestXiaobuCaseSelection:
     def test_selection_nonempty(self):
         """C 端用例集不得为空（空集 = 评测静默假绿，issue #3062 同源）"""
         assert len(self._selected()) > 0, "C 端用例集为空 —— 评测将静默假绿"
+
+
+class TestCrossSessionMemoryCaseContract:
+    """跨会话记忆用例契约（issue #3357）——`new_session` 轮 + `post_session` 落库断言。
+
+    背景：C 端长期记忆（user_memories）此前**没有任何可执行断言**，唯一相关用例
+    CH-024 以「agent-eval 无稳定记忆数据」被 skip —— 于是「记忆一条都没落库」
+    与「用户没表达偏好」在报告里长得一模一样，问题潜伏到 CI DB 审计才被发现。
+    本组锁定新协议的数据契约（纯 YAML 校验，不 import local_runner：CI 的
+    ci-workflow-helper job 只有 pytest+pyyaml，import runner 会崩）。
+    """
+
+    SUPPORTED_FETCH = {"user_memories"}
+
+    def _cases(self):
+        return load_case_dicts(str(CASES_DIR))
+
+    def test_memory_case_is_active_and_has_post_session(self):
+        """CH-024 必须真跑（不再 skip）且带可执行落库断言。"""
+        ch = next(c for c in self._cases() if c.get("id") == "CH-024")
+        assert not ch.get("skip_reason"), (
+            "CH-024 又变成 skip 了 —— 长期记忆重新回到『零可执行覆盖』（issue #3357）"
+        )
+        assert ch.get("post_session"), "CH-024 缺 post_session 落库断言（记忆链路不可判定）"
+
+    def test_memory_case_is_selected_for_customer_end(self):
+        from eval_case_filter import select_cases_for_persona
+        sel = {c["id"] for c in select_cases_for_persona(self._cases(), PERSONA)}
+        assert "CH-024" in sel, "CH-024 未被 C 端用例集选中（persona/tier/skip 声明有问题）"
+
+    def test_memory_case_probes_recall_not_restatement(self):
+        """跨会话轮不得重述偏好词：否则断言测的是"复读"而不是"记忆"。
+
+        第 1 轮声明偏好（奶油风），第 2 轮换会话后**不再出现**风格词 ——
+        回复里出现该词只能来自记忆注入。
+        """
+        ch = next(c for c in self._cases() if c.get("id") == "CH-024")
+        turns = ch.get("user_inputs") or []
+        breaks = [i for i, t in enumerate(turns)
+                  if isinstance(t, dict) and t.get("new_session")]
+        assert breaks, "CH-024 缺 new_session 轮 —— 长期记忆只在新建会话时注入，同会话内看不到"
+        recall_turn = turns[breaks[0]]
+        for kw in (ch.get("want_text") or []):
+            assert kw not in recall_turn.get("text", ""), (
+                f"跨会话轮文本里出现了断言关键词「{kw}」—— 断言被自己泄题，测不出记忆注入"
+            )
+
+    def test_new_session_turns_have_text(self):
+        """new_session 轮必须给 text（空文本会发出一条空消息，属用例书写错误）。"""
+        bad = []
+        for c in self._cases():
+            for i, t in enumerate(c.get("user_inputs") or []):
+                if isinstance(t, dict) and t.get("new_session") and not str(t.get("text") or "").strip():
+                    bad.append(f"{c.get('id')} 第 {i + 1} 轮")
+        assert not bad, f"new_session 轮缺 text: {bad}"
+
+    def test_post_session_only_on_customer_end_cases(self):
+        """user_memories 是 C 端专属（mibao 不抽取不落库）→ post_session 只能挂 xiaobu 用例。"""
+        bad = [c.get("id") for c in self._cases()
+               if c.get("post_session") and (c.get("persona") or "") != "xiaobu"]
+        assert not bad, f"非 C 端用例声明了 post_session（B 端不产生记忆，必假失败）: {bad}"
+
+    def test_post_session_fetch_supported(self):
+        """fetch 值必须在 runner 支持集内（拼错 = 静默跳过断言 → 假绿）。"""
+        bad = []
+        for c in self._cases():
+            for spec in c.get("post_session") or []:
+                if not isinstance(spec, dict) or spec.get("fetch") not in self.SUPPORTED_FETCH:
+                    bad.append(f"{c.get('id')}: {spec!r}")
+                elif not (spec.get("checks") or []):
+                    bad.append(f"{c.get('id')}: {spec!r}（checks 为空 = 无断言）")
+        assert not bad, f"post_session 配置不合法（会被 runner 记违规或静默无效）: {bad}"
 
 
 class TestXiaobuSmokeCoverage:

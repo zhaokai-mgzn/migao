@@ -5,7 +5,7 @@
 发图轮报错时，前面轮次可能已命中 success=true / tool 等 expectation，
 旧逻辑把用例计为通过（假验收 —— 线上 sess_806703a2dcca4059 图片崩溃正是此类）。
 """
-# case_ids: CH-021, CH-026, OR-001, PR-001, DA-002, PP-003, PP-004, AS-001, AS-002, CU-003
+# case_ids: CH-021, CH-024, CH-026, OR-001, PR-001, DA-002, PP-003, PP-004, AS-001, AS-002, CU-003
 import importlib.util
 from pathlib import Path
 
@@ -660,14 +660,52 @@ class TestAutoFillForm:
 
 
 class TestEndSession:
-    """_end_session：评测会话清理（协议 §2.2，防 waiting 残留）"""
+    """_end_session：评测会话清理（协议 §2.2，防 waiting 残留）
 
-    def test_end_session_silent_on_failure(self):
+    issue #3357：清理**不抛异常**（关闭主流程优先），但**必须可见**（打 warning）——
+    旧实现打错接口（admin-api agent_sessions，人工会话表）恒 404 且被静默吞掉，
+    结果评测会话从未关闭、记忆从未 flush，而报告全绿。静默 = 假绿温床。
+    """
+
+    def test_end_session_does_not_raise_on_failure(self, capsys):
         import asyncio, unittest.mock as mock
-        async def fake_post(url, headers=None, timeout=None):
+        async def fake_put(url, headers=None, timeout=None):
+            raise RuntimeError("connection failed")
+        async def fake_post(url, headers=None, json=None, timeout=None):
             raise RuntimeError("connection failed")
         async def run():
             with mock.patch.object(lr.httpx, "AsyncClient") as m_cls:
-                m_cls.return_value.__aenter__.return_value.post = fake_post
+                client = m_cls.return_value.__aenter__.return_value
+                client.put = fake_put
+                client.post = fake_post
                 await lr._end_session("tok", "sid-1")
         asyncio.run(run())  # 不应抛异常
+        assert "会话关闭异常" in capsys.readouterr().out, "清理失败必须可见（不许静默）"
+
+    def test_end_session_targets_ai_agent_close(self):
+        """回归防线：必须打 ai-agent 的 close（记忆 flush 唯一入口），不是人工会话表。"""
+        import asyncio, unittest.mock as mock
+        urls = []
+
+        class _Resp:
+            status_code = 200
+            content = b"{}"
+
+        class _Client:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *a):
+                return False
+
+            async def put(self, url, headers=None, timeout=None):
+                urls.append(("PUT", url))
+                return _Resp()
+
+            async def post(self, url, headers=None, json=None, timeout=None):
+                urls.append(("POST", url))
+                return _Resp()
+
+        with mock.patch.object(lr.httpx, "AsyncClient", _Client):
+            asyncio.run(lr._end_session("tok", "sid-9"))
+        assert urls[0] == ("PUT", f"{lr.AI_API}/api/chat/sessions/sid-9/close")
