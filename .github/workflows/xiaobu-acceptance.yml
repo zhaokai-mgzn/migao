@@ -302,10 +302,14 @@ jobs:
           #   Tool not found             → skill 工具集缺失（tool_not_found）
           #   拦截未确认的写操作 / card-confirm 诊断 → 确认门禁判定链
           #   pending-validated / confirmed_write_tool → 确认-执行链是否把"用户已确认"记住
+          #   Agent stream error → **完整 traceback**（未预期异常的唯一线索；
+          #                       实测 CH-026「澄清卡后发图」崩溃只有用户侧错误文案，
+          #                       根因行号必须靠这行日志）
+          #   vision → 图片链路的分析/重试/降级轨迹
           echo "── 写工具失败原因（工具层归因：异常/门禁/工具缺失）──"
           docker compose -f deploy/docker-compose.yml logs --no-color --timestamps \
             ai-agent-service 2>/dev/null \
-            | grep -E "\[order-create\] Failed|\[tool-registry\] Failed|\[tool-exec\].*(ERROR|TIMEOUT)|\[langchain-adapter\] Failed|Tool not found|拦截未确认的写操作|card-confirm 诊断|拦截在办流程|self-correct|pending-validated|confirmed_write_tool" \
+            | grep -E "\[order-create\] Failed|\[tool-registry\] Failed|\[tool-exec\].*(ERROR|TIMEOUT)|\[langchain-adapter\] Failed|Tool not found|拦截未确认的写操作|card-confirm 诊断|拦截在办流程|self-correct|pending-validated|confirmed_write_tool|Agent stream error|AttributeError|vision" \
             | tail -120 \
             || echo "（无写工具失败日志：本跑无写工具异常）"
 
