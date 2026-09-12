@@ -250,7 +250,13 @@ jobs:
           # 小布 C 端用例（数据隔离/下单/售后），expectation 自动映射 customer_order_query
           # tier 由 workflow_dispatch 输入控制：smoke=门禁级 5 条；normal=C 端全量 ~35 条
           # （用于取「C 端能力缺陷分布」，issue #3270 第 2 步）
-          TIER="${{ github.event.inputs.tier || 'smoke' }}"
+          # 档位来源三分支（issue #3367）：
+          #   · workflow_dispatch 显式传 → 用它
+          #   · **schedule（每周对抗）→ adversarial** —— 定时触发没有 inputs，
+          #     若不特判就会落到默认 smoke：每周白跑一遍门禁档、对抗档永远不跑
+          #     （这正是"加了定时任务却什么都没测到"的典型陷阱）
+          #   · 其他（含本地/reusable 调用）→ smoke
+          TIER="${{ github.event.inputs.tier || (github.event_name == 'schedule' && 'adversarial') || 'smoke' }}"
           echo "── 评测档位: $TIER ──"
           # --shard：本 job 只跑自己那一份用例（默认 1 份，见 shards 输入说明）。
           # --max-retries 3：每条失败用例至多重试 1 次（分类 llm-noise 靠它），

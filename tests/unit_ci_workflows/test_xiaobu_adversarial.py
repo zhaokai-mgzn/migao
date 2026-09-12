@@ -1,4 +1,4 @@
-# case_ids: DF-020, DF-021, DF-022, CH-011, DF-002, DF-005, DF-010, DF-011, DF-012, DF-013
+# case_ids: DF-020, DF-021, DF-022, DF-023, CH-011, DF-002, DF-005, DF-011, DF-012, DF-013
 """C 端对抗面守卫（issue #3367，参考 B 端做法）。
 
 背景：B 端有 `agent-eval-adversarial.yml`（每周跑、失败开 issue、只追踪不阻塞），
@@ -19,10 +19,12 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / ".github"))
 sys.path.insert(0, str(REPO_ROOT / "tests" / "agent_eval"))
 
+import yaml  # noqa: E402
 from render_cases import load_case_dicts  # noqa: E402
 from eval_case_filter import select_cases_for_persona  # noqa: E402
 
 CASES_DIR = REPO_ROOT / ".github" / "cases"
+WORKFLOW = REPO_ROOT / ".github" / "workflows" / "xiaobu-acceptance.yml"
 
 # C 端对抗面（现行 10 条）：7 条双端里符合 C 端语义的 + 3 条 C 端原生（DF-020/021/022）
 EXPECTED_CEND_ADVERSARIAL = {
@@ -81,3 +83,36 @@ class TestXiaobuAdversarialSurface:
                 f"{cid} 只有否定断言 → '什么都不做'也能过（空壳用例）"
             )
             assert c.get("forbidden_text"), f"{cid} 缺 forbidden_text（合规话术拦截）"
+
+
+class TestAdversarialScheduleWiring:
+    """每周对抗节拍必须真的跑到对抗档（issue #3367）。
+
+    首版把 schedule 加上了，但 `TIER` 的默认值是 smoke —— 定时触发**没有 inputs**，
+    于是每周白跑一遍门禁档、对抗档永远不跑。这类"加了定时任务却什么都没测到"的坑
+    不会让任何 CI 变红，只能靠守卫。
+    """
+
+    def _wf(self) -> dict:
+        return yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+
+    def _eval_run_body(self) -> str:
+        steps = self._wf()["jobs"]["xiaobu-acceptance"]["steps"]
+        return next((s.get("run") or "" for s in steps if "local_runner" in (s.get("run") or "")), "")
+
+    def test_workflow_has_weekly_schedule(self):
+        on = self._wf().get(True) or self._wf().get("on") or {}
+        assert on.get("schedule"), "缺少每周对抗节拍（B 端有 agent-eval-adversarial.yml，C 端也应有）"
+
+    def test_schedule_event_selects_adversarial_tier(self):
+        body = self._eval_run_body()
+        assert "github.event_name == 'schedule'" in body, \
+            "定时触发未特判档位 → 会落到默认 smoke，每周白跑"
+        assert "'adversarial'" in body, "定时触发的档位不是 adversarial"
+
+    def test_manual_tier_still_wins(self):
+        """手工派发时输入优先（否则没法手动跑 normal/smoke）。"""
+        body = self._eval_run_body()
+        i_inputs = body.find("github.event.inputs.tier")
+        i_sched = body.find("github.event_name == 'schedule'")
+        assert 0 <= i_inputs < i_sched, "手工输入必须排在定时特判之前（inputs 优先）"
