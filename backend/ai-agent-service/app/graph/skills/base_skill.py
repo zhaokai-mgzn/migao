@@ -860,6 +860,29 @@ def _plan_processing_items_rewrite(tool_results, messages) -> Optional[tuple]:
 _MAX_PROC_OPTIONS = 6
 
 
+def _has_inflight_interactive_card(messages) -> bool:
+    """会话里是否已下发过交互卡（= 有**在办**的多轮流程）。
+
+    用于阻止「在办流程中途误转人工」：CH-012 实证（run 34673167164）——R1 已下发
+    「请选择要申请退货的订单」choice 卡，R3 用户仅回「质量问题」，agent 却调用了
+    `human_handoff`（还创建了投诉工单），随后才恢复流程但轮数耗尽、`aftersale_create`
+    未发生。有在办卡片 = 用户正在走流程，此时无信号转人工属于**模型自行放弃**。
+    """
+    for msg in reversed(messages or []):
+        if not isinstance(msg, ToolMessage) or getattr(msg, "name", None) != "interact":
+            continue
+        try:
+            payload = json.loads(msg.content or "{}")
+        except (ValueError, TypeError):
+            continue
+        if not isinstance(payload, dict) or not payload.get("success"):
+            continue
+        data = payload.get("data") or {}
+        if data.get("component") in ("choice", "confirm", "form"):
+            return True
+    return False
+
+
 async def _execute_tool_safe(tool, tool_args: dict, tool_context, state: dict) -> tuple:
     """统一 Tool 执行入口 — normalize + cache + execute + error handling.
 
@@ -1533,6 +1556,31 @@ async def execute_skill(
                     if tool is None:
                         logger.warning(f"[{skill_name}] Tool not found: {tool_name} | session={session_id}")
                         return tool_call, json.dumps({"success": False, "error": "tool_not_found", "message": f"工具 {tool_name} 不可用"}, ensure_ascii=False), {"success": False}
+                    # ── 兜底：C 端在办流程中禁止「无信号误转人工」（CH-012 实证）──
+                    # R1 已下发选单卡、R3 用户仅回「质量问题」，agent 却 human_handoff
+                    # （还创建了投诉工单）→ 流程被放弃、轮数耗尽、aftersale_create 未发生。
+                    # 判据与 handoff_judge 同源：显式请求 / 负面情绪 / 能力外诉求 三者皆无
+                    # → 不是用户要的转人工，而是模型放弃流程 → 阻止并给出可执行指引。
+                    if (tool_name == "human_handoff"
+                            and skill_name in ("customer_order", "customer_aftersales")):
+                        from app.graph.handoff_judge import has_escalation_signal
+                        if (not has_escalation_signal(last_user_msg)
+                                and _has_inflight_interactive_card(state.get("messages", []))):
+                            logger.warning(
+                                f"[{skill_name}] 拦截在办流程中的无信号转人工 | session={session_id} "
+                                f"last_msg={last_user_msg[:30]!r}"
+                            )
+                            return tool_call, json.dumps({
+                                "success": False,
+                                "error": "handoff_blocked_inflight",
+                                "message": (
+                                    "顾客正在办理的业务尚未完成，且本轮消息没有要求转人工、"
+                                    "没有情绪激动、也不涉及赔偿/法律。请**继续完成当前流程**"
+                                    "（按交互卡与提示继续下一步）。若顾客确实要求人工，"
+                                    "需其明确说出「转人工/找人工/找客服」后再调用本工具。"
+                                ),
+                            }, ensure_ascii=False), {"success": False, "error": "handoff_blocked_inflight"}
+
                     # 写操作（destructive 或 requires_confirmation 高风险写）：必须经用户明确确认
                     # （代码层兜底，防间接提示注入驱动未确认写操作，审计 07 P0-L1）
                     # 豁免：action ∈ tool.read_only_actions 的纯只读调用（list/detail/tree 等）

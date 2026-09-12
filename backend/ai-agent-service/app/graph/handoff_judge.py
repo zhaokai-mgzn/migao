@@ -139,6 +139,27 @@ def _cooldown_blocked(handoff_state: Optional[dict]) -> bool:
     return False
 
 
+def has_escalation_signal(message: Optional[str]) -> bool:
+    """消息是否带「应当转人工」的信号（显式请求 / 负面情绪 / 能力外诉求）。
+
+    供**代码层兜底**复用，避免各处重复拼词表判断（本模块是这些词表的单一事实源）：
+    - D1 显式请求：`is_explicit_handoff_request`
+    - S1/S2 负面情绪词表：`_hit_negative`
+    - S3 能力外/超范围：`_hit_out_of_scope`
+
+    用途：C 端在办流程中**误转人工**时，代码需要判断「这次转人工是不是用户真的要的」——
+    三个信号全无 → 是模型自行放弃流程，应当阻止（见 base_skill 的 human_handoff 兜底）。
+    """
+    text = str(message or "").strip()
+    if not text:
+        return False
+    return (
+        is_explicit_handoff_request(text)
+        or _hit_negative(text)
+        or _hit_out_of_scope(text)
+    )
+
+
 def judge_handoff(
     message: str,
     intent: str = "",
