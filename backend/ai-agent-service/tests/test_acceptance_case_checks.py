@@ -286,6 +286,18 @@ class TestQualifiedOrderBefore:
         assert lr._is_processing_items_card({"options": [{"label": "波浪定型 ¥8/米", "value": "proc_item_shape_wave"}]}) is True
         assert lr._is_processing_items_card({"title": "请选择加工项", "options": []}) is True
 
+    def test_processing_card_with_loose_title(self):
+        """OR-017 run 34670989760 实证形态：标题含「加工」但不含「加工项」三字
+        （『这款窗帘支持加工哦，需要帮您加上吗？』）—— 语义完全是加工项询问，
+        只认「加工项」会把 agent 的正确行为误判为"没问"。
+        """
+        card = {"component": "choice", "multiSelect": True,
+                "title": "这款窗帘支持加工哦，需要帮您加上吗？",
+                "options": [{"label": "打孔 ¥8/米", "value": "pi_punch"}]}
+        assert lr._is_processing_items_card(card) is True
+        # 语义反例保持不误判（不含"加工"二字的普通 choice 卡）
+        assert lr._is_processing_items_card({"title": "选一下颜色", "options": [{"value": "white"}]}) is False
+
 
 class TestConfirmLoop:
     """确认死循环（sess_c1fce183dae24f22 #3026 场景）：同标题 confirm 卡 >=3 次未收敛"""

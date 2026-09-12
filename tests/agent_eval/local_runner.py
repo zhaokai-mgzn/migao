@@ -760,11 +760,15 @@ def _parse_qualified_order_before(spec: str) -> tuple:
 def _is_processing_items_card(args: dict) -> bool:
     """choice 卡是否加工项选择卡（排除瑕疵商品等选项带 ¥ 的普通卡）。
 
-    判定：title 含「加工项」或任一 option value 以 proc_item_ 开头。
+    判定：title 含「加工项」**或「加工」**（OR-017 run 34670989760 实证：LLM 的合法
+    加工项卡标题是「这款窗帘支持**加工**哦，需要帮您加上吗？」，不含「加工项」三个字
+    但语义完全是加工项询问 —— 只认「加工项」会把 agent 的正确行为误判为"没问"），
+    或任一 option value 以 proc_item_ 开头。
     """
+    title = str((args or {}).get("title") or "")
     if not (args or {}).get("options"):
-        return bool((args or {}).get("title") and "加工项" in str(args.get("title", "")))
-    if "加工项" in str(args.get("title", "")):
+        return bool(title and ("加工项" in title or "加工" in title))
+    if "加工项" in title or "加工" in title:
         return True
     return any(str(o.get("value", "")).startswith("proc_item") for o in args.get("options") or [])
 
