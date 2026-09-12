@@ -2956,7 +2956,51 @@ class TestWriteInputRecovery:
             store_extra={"last_confirm_value": "确认下单"})
         assert len(seen["calls"]) == 1, "没有欠参标记时必须正常下发确认卡"
 
-    # ── ④ 提示注入 ──
+    # ── ④ 同一张卡反复下发（不限 confirm：choice 卡同样会死循环）──
+
+    def test_same_choice_card_blocked_on_third_emission(self):
+        """实证（CI run 34718498228，OR-017）：同一张「加工项」choice 卡连发 5 次
+        （R2-R6），顾客每次都把同样的答案回给它 —— 真人会以为系统坏了。
+        前两次放行（首次 + 一次合理重问），第三次起拦下并给出可执行指引。"""
+        seen = self._run(
+            "已选加工项：纳米圈打孔",
+            {"component": "choice", "title": "这款商品支持以下加工项，需要哪些呢？（可多选）",
+             "options": [{"label": "纳米圈打孔 ¥8/米"}, {"label": "不需要加工"}]},
+            tool_name="interact",
+            store_extra={"card_emit_counts": {
+                "choice|这款商品支持以下加工项，需要哪些呢？（可多选）|纳米圈打孔 ¥8/米、不需要加工": 2}})
+        assert seen["calls"] == [], "同一张 choice 卡已发 2 次，第 3 次必须拦下（否则就是 5 连发）"
+
+    def test_same_choice_card_allowed_on_second_emission(self):
+        seen = self._run(
+            "已选加工项：纳米圈打孔",
+            {"component": "choice", "title": "这款商品支持以下加工项，需要哪些呢？（可多选）",
+             "options": [{"label": "纳米圈打孔 ¥8/米"}, {"label": "不需要加工"}]},
+            tool_name="interact",
+            store_extra={"card_emit_counts": {
+                "choice|这款商品支持以下加工项，需要哪些呢？（可多选）|纳米圈打孔 ¥8/米、不需要加工": 1}})
+        assert len(seen["calls"]) == 1, "第 2 次属合理重问，不能拦"
+
+    def test_changed_options_is_a_different_card(self):
+        """选项变了就是**另一张卡**（顾客改了商品/规格后重新确认）→ 不得误伤。"""
+        seen = self._run(
+            "已选加工项：纳米圈打孔",
+            {"component": "choice", "title": "这款商品支持以下加工项，需要哪些呢？（可多选）",
+             "options": [{"label": "折边 ¥5/米"}, {"label": "不需要加工"}]},
+            tool_name="interact",
+            store_extra={"card_emit_counts": {
+                "choice|这款商品支持以下加工项，需要哪些呢？（可多选）|纳米圈打孔 ¥8/米、不需要加工": 5}})
+        assert len(seen["calls"]) == 1, "选项变了 = 新卡，不该被旧卡的计数拦住"
+
+    def test_emission_counted_on_success(self):
+        seen = self._run(
+            "已选加工项：纳米圈打孔",
+            {"component": "choice", "title": "选一下加工项"},
+            tool_name="interact")
+        counts = seen["final_store"].get("card_emit_counts") or {}
+        assert counts.get("choice|选一下加工项|") == 1, "卡发出后必须计数，否则永远拦不住第 3 次"
+
+    # ── ⑤ 提示注入 ──
 
     def test_directive_injected_while_waiting(self):
         import asyncio as _asyncio

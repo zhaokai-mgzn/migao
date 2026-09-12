@@ -882,12 +882,21 @@ def check_confirm_loop(results: list, limit: int = 3) -> list:
     """
     from collections import Counter
     cnt: Counter = Counter()
+    rounds: dict = {}
     for r in results:
         for tc in r.get("tool_calls") or []:
             a = tc.get("args") or {}
             if tc.get("name", "").lower() == "interact" and a.get("component") == "confirm":
-                cnt[a.get("title", "(无标题)")] += 1
-    return [f"确认死循环: confirm 卡「{t}」共出现 {c} 次未收敛" for t, c in cnt.items() if c >= limit]
+                t = a.get("title", "(无标题)")
+                cnt[t] += 1
+                rounds.setdefault(t, []).append(r.get("__round"))
+    # 报错必须带**轮次**（issue #3365 诊断补强）：只说"出现 3 次"时，若打印的轨迹里
+    # 一张 confirm 卡都没有（被拦/失败的 interact 不产生卡事件），报错与证据对不上，
+    # 归因只能靠猜——实测 OR-017 卡在这个盲区整整一轮。
+    return [
+        f"确认死循环: confirm 卡「{t}」共出现 {c} 次（R{'/R'.join(str(x) for x in rounds.get(t, []))}）未收敛"
+        for t, c in cnt.items() if c >= limit
+    ]
 
 
 def check_false_success(results: list) -> list:
@@ -1741,6 +1750,20 @@ def build_round_trace(results: list) -> list:
                 str(iv.get("type") or iv.get("component") or "")
                 for iv in (r.get("interactive") or [])
             ],
+            # 调用侧卡参数（issue #3365 诊断补强）：`interactive` 来自 SSE 卡事件，
+            # **被拦/失败的 interact 不产生事件** → 轨迹里完全看不见，而 check_confirm_loop
+            # 数的是「LLM 发起了几次 confirm 卡调用」。实测 OR-017 就卡在这个盲区：
+            # 报告说 confirm 卡出现 3 次，打印的轨迹里却一张 confirm 都没有（全是 choice），
+            # 归因只能靠猜。这里把每次 interact 调用的 component+title 记下来，
+            # 让「想发卡」与「发出卡」都成为证据。
+            "card_calls": [
+                {
+                    "component": str((tc.get("args") or {}).get("component") or ""),
+                    "title": str((tc.get("args") or {}).get("title") or "")[:24],
+                }
+                for tc in (r.get("tool_calls") or [])
+                if str(tc.get("name", "")).lower() == "interact"
+            ],
             # 截断：轨迹用于归因，不是全文存档（全文另见 final_text / 产物）
             "text": text[:60],
             # 逐轮错误**原文**（issue #3365）：此前轨迹只打 `ERR` 标记，看不到是什么错 ——
@@ -1858,6 +1881,12 @@ def format_round_trace(trace: list) -> str:
             bits.append("data=" + ";".join(digests))
         if t.get("interactive"):
             bits.append("cards=" + ",".join(t["interactive"]))
+        # 调用侧的卡（含**被拦/失败**的，那些不会出现在 cards= 里）
+        cc = t.get("card_calls") or []
+        if cc:
+            bits.append("cardreq=" + ",".join(
+                (c.get("component") or "?") + ((":" + c["title"]) if c.get("title") else "")
+                for c in cc))
         if t.get("error"):
             bits.append(f"ERR({t['error'][:60]})")
         parts.append("[{}]".format(" ".join(bits)))
