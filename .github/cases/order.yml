@@ -550,8 +550,11 @@ cases:
           fallback: "123456"
       - auto_respond:
           fallback: "123456"
+    # 断言**业务结果**而不是模型调了哪个工具（issue #3365）：
+    # 本用例的历史失败形态是"没查商品就凭记忆下单（¥95.4 vs 真实 ¥168/米）"，
+    # 而"有没有查商品"只是代理指标 —— 现在接地由**代码保证**（下单接地闸门 +
+    # 接地自动驾驶），真正该判的是"订单金额是否接地/自洽"，即下面的 amount_verify。
     expectations:
-      - tool: product_detail
       - tool: order_create
     # 写工具成功断言（issue #3361）：本用例 R4 的 order_create 被 confirm 门禁拦
     # （confirmation_required）后流程结束，订单没建出来 —— 期望含 order_create

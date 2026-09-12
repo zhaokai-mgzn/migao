@@ -2023,7 +2023,6 @@
 你: [🤖 按上一轮卡片作答]
 你: [🤖 按上一轮卡片作答]
 你: [🤖 按上一轮卡片作答]
-期望: product_detail
 期望: order_create
 数据: 加工项数量按计价方式确定：per_meter → 数量=面料米数（如打孔 8 元/米 × 3 米 → quantity=3、subtotal=24）；per_set/fixed → 数量=1；per_area → 宽×高
 数据: processing_info.processingItems 逐项含 {id, name, unitPrice, quantity, unit, pricingMethod, subtotal}，processingFee = 各项 unitPrice × quantity 之和

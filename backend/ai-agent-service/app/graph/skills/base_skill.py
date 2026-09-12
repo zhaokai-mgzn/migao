@@ -1779,7 +1779,25 @@ async def execute_skill(
                             # 并把查到的真实单价/商品 id 回给模型，让它基于真值重新下单。
                             # 只在"能确定唯一商品"时落地（多命中则把候选交回模型，不猜）。
                             _pilot = None
+                            # 关键词来自**会话里对商品的提及**，而不只是本轮消息：
+                            # 实证（CI run 34709584877）—— 被拦那一轮用户发的是「确认下单」/表单回传，
+                            # 本轮抽不到商品词 → 自动驾驶根本没触发（order_create 仍被拦 5 次）。
+                            # 取**最早**一次商品提及（顾客最初要买什么），比最近一次更稳。
                             _kw = extract_product_keyword(last_user_msg)
+                            if not _kw:
+                                try:
+                                    for _m in (state.get("messages") or []):
+                                        if not isinstance(_m, HumanMessage):
+                                            continue
+                                        _kw = extract_product_keyword(_extract_content(_m) or "")
+                                        if _kw:
+                                            logger.info(
+                                                f"[{skill_name}] 接地自动驾驶：从会话历史取得商品关键词"
+                                                f"'{_kw}' | session={session_id}"
+                                            )
+                                            break
+                                except Exception:
+                                    _kw = ""
                             if _kw:
                                 try:
                                     _ps = skill_registry.get_tool("product_search")
