@@ -501,6 +501,30 @@ class TestCurrentDomainSignalPriority:
         assert self._route("帮我查一下我的订单", "customer_product", "order_query",
                            mapping) == "customer_order_skill"
 
+    def test_customer_product_inquiry_switches_to_product(self):
+        """C 端口语型商品询问必须能切到商品域（issue #3364，E2E 实测红）。
+
+        `_SKILL_DOMAIN_KEYWORDS["product"]` 是管理端说法（查商品/搜商品/创建商品/商品管理），
+        E2E `test_topic_switch_does_not_leak_order_context` 的顾客说的是
+        「有什么遮光窗帘推荐」——一个都不命中 → 会话被订单卡锁住 → round2 调不出商品工具。
+        修法用**句式**（询问/求推荐）而非裸词，见 `_SKILL_DOMAIN_PATTERNS`。
+        """
+        mapping = {"product_inquiry": "customer_product_skill", "general": "customer_general_skill"}
+        for msg in ("有什么遮光窗帘推荐", "看看这款面料", "有没有雪尼尔面料"):
+            assert self._route(msg, "customer_order", "product_inquiry",
+                               mapping) == "customer_product_skill", f"{msg!r} 未切到商品域"
+
+    def test_order_instruction_with_product_noun_stays_in_order(self):
+        """反向保护：下单指令里提到商品名**不得**被当成切到商品域（否则下单流程被甩走）。
+
+        「遮光窗帘 3 米，要打孔加工」含商品名词但无询问句式 → 必须留在 customer_order
+        （OR-014/OR-017 依赖该行为）。
+        """
+        mapping = {"product_inquiry": "customer_product_skill", "order_create": "customer_order_skill"}
+        # 会话连续性返回的是 pending skill 名本身（不走 intent 映射）
+        assert self._route("遮光窗帘 3 米，要打孔加工", "customer_order", "order_create",
+                           mapping) == "customer_order"
+
     def test_switch_to_order_from_quote_still_works(self):
         """报价 skill 无 order 域关键词 → 「我要下单」仍可切回下单流程。"""
         mapping = {"order_create": "customer_order_skill", "general": "customer_general_skill"}
