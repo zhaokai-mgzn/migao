@@ -59,7 +59,7 @@
     "@testing-library/react": "^16.1.0",
     "@types/jest": "^29.5.14",
     "@types/react": "^18.2.0",
-    "@typescript-eslint/eslint-plugin": "^6.21.0",
+    "@typescript-eslint/eslint-plugin": "^8.70.0",
     "@typescript-eslint/parser": "^6.21.0",
     "babel-preset-taro": "4.2.1",
     "eslint": "^8.41.0",
