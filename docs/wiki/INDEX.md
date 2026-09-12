@@ -22,6 +22,7 @@ LLM 开发时按需加载对应页面 (~50 行/页，按场景索引)：
 | **测试工程规范（拆分/ignore/脱敏/分层）** | **[test-engineering-standards](../testing/test-engineering-standards.md)** |
 | **复杂交互验证机制（三层：契约/协议流/行为）** | **[interaction-verification](../testing/interaction-verification.md)** |
 | **AI 可执行验收协议（验收/评测放心交给 AI）** | **[acceptance-protocol](../testing/acceptance-protocol.md)** |
+| **评测流水线性能账（为什么慢/怎么快，实测 + 反模式）** | **[eval-pipeline-performance](../testing/eval-pipeline-performance.md)** |
 | **检查功能自洽性（闭环谓词 P0/P1/P2）** | **[self-consistency-checklist](self-consistency-checklist.md)** |
 | 遇到问题 | [Troubleshooting](Troubleshooting.md) |
 
