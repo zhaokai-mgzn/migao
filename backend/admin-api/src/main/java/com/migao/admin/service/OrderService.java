@@ -1640,6 +1640,9 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         }
         String currentStatus = order.getStatus();
         if ("confirmed".equals(currentStatus) || "producing".equals(currentStatus)) {
+            // P1 修复（验收复核 #3345）：与 updateOrderStatus 路径同一守卫——含加工项订单
+            // 须有 completed 加工单才能发货，防止 agent 发货路径绕过加工环节
+            assertProcessingCompletedBeforeShip(order);
             int rows = transitionStatusAtomic(orderId, currentStatus, "shipped", null);
             if (rows == 0) {
                 throw BusinessException.validationError("订单状态已并发变更，请刷新后重试");

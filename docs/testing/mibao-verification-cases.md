@@ -2227,8 +2227,9 @@
 ### PG-009. 订单发货守卫 - 含加工项订单须完成加工单后才能 shipped 🔵
 ```
 数据: 含加工项订单无 completed 加工单 → updateOrderStatus(shipped) 校验错误
+数据: 含加工项订单经 agent 发货路径（update_logistics→shipOrderIfApplicable）无 completed 加工单 → 同样校验错误（验收复核 P1 修复，2026-09-12）
 数据: 含加工项订单有 completed 加工单 → 可 shipped
-跳过: 由 OrderServiceTest 验证
+跳过: 由 OrderServiceTest + AgentOrderServiceTest 验证
 ```
 溯源: 2026-09-12 新增（issue #3340） ｜ tags: processing-order, guard, shipped
 

@@ -2694,8 +2694,8 @@ _CASE_PG_009 = EvalCase(
     difficulty=Difficulty.NORMAL,
     user_inputs=[],
     expectations=[],
-    data_checks=['含加工项订单无 completed 加工单 → updateOrderStatus(shipped) 校验错误', '含加工项订单有 completed 加工单 → 可 shipped'],
-    skip_reason='由 OrderServiceTest 验证',
+    data_checks=['含加工项订单无 completed 加工单 → updateOrderStatus(shipped) 校验错误', '含加工项订单经 agent 发货路径（update_logistics→shipOrderIfApplicable）无 completed 加工单 → 同样校验错误（验收复核 P1 修复，2026-09-12）', '含加工项订单有 completed 加工单 → 可 shipped'],
+    skip_reason='由 OrderServiceTest + AgentOrderServiceTest 验证',
     tags=['processing-order', 'guard', 'shipped'],
     persona='',
 )

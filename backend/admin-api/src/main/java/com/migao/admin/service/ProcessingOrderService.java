@@ -131,10 +131,25 @@ public class ProcessingOrderService {
                 .printCount(0)
                 .deleted(0)
                 .build();
-        processingOrderMapper.insert(po);
 
-        // 联动：订单 confirmed → producing（幂等，updateOrderStatus 内部校验合法流转）
+        // 联动先行（验收复核 #3345 P2②）：先推进订单 confirmed→producing，再落加工单。
+        // 落库失败时回退订单状态，杜绝「producing 无加工单」孤儿态；
+        // 并发重复生成由 partial unique index 兜底 → 转幂等错误（P2①）。
         orderService.updateOrderStatus(order.getId(), "producing");
+        try {
+            processingOrderMapper.insert(po);
+        } catch (org.springframework.dao.DuplicateKeyException e) {
+            orderService.revertProducingToConfirmed(order.getId(), "加工单并发重复生成，订单状态回退");
+            throw BusinessException.validationError(
+                    "订单 " + order.getOrderNo() + " 加工单已生成（并发操作），请刷新后重试");
+        } catch (Exception e) {
+            try {
+                orderService.revertProducingToConfirmed(order.getId(), "加工单生成失败，订单状态回退");
+            } catch (Exception revertErr) {
+                log.warn("加工单生成失败且状态回退失败: orderId={}, err={}", order.getId(), revertErr.getMessage());
+            }
+            throw e;
+        }
         log.info("生成加工单: no={}, orderId={}, tenantId={}, operator={}",
                 po.getProcessingOrderNo(), order.getId(), tenantId, operator);
         return GenerateResult.ok(rawId, po.getProcessingOrderNo());

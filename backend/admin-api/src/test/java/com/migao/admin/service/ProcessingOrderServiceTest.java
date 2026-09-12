@@ -415,4 +415,40 @@ class ProcessingOrderServiceTest {
         assertThat(resp.getItems().get(0).getColorName()).isEqualTo("米白");
         assertThat(resp.getItems().get(0).getProcessingItems()).hasSize(1);
     }
+
+    // ── 验收复核修复（PR #3345）：生成竞态/并发重复 ──────────────────
+
+    @Test
+    @DisplayName("复核修复 P2①：并发重复生成（DuplicateKeyException）→ 订单状态回退 + 幂等失败结果")
+    void generateConcurrentDuplicateRollsBackOrder() {
+        when(orderMapper.selectById("order-001")).thenReturn(confirmedOrder);
+        when(orderItemMapper.selectByOrderId("order-001", TENANT))
+                .thenReturn(List.of(orderItemWithProcessing("米白")));
+        when(processingOrderMapper.selectActiveByOrderId("order-001", TENANT)).thenReturn(null);
+        when(processingOrderMapper.insert(any(ProcessingOrder.class)))
+                .thenThrow(new org.springframework.dao.DuplicateKeyException("uk_processing_orders_active"));
+
+        var results = processingOrderService.generate(List.of("order-001"), TENANT, "u1");
+
+        assertThat(results.get(0).isSuccess()).isFalse();
+        assertThat(results.get(0).getMessage()).contains("已生成");
+        // 联动先发生、落库失败 → 订单回退 confirmed（无孤儿态）
+        verify(orderService).updateOrderStatus("order-001", "producing");
+        verify(orderService).revertProducingToConfirmed(eq("order-001"), anyString());
+    }
+
+    @Test
+    @DisplayName("复核修复 P2②：落库失败（非重复）→ 状态回退 + 异常传播（整批回滚）")
+    void generateInsertFailureRollsBackAndPropagates() {
+        when(orderMapper.selectById("order-001")).thenReturn(confirmedOrder);
+        when(orderItemMapper.selectByOrderId("order-001", TENANT))
+                .thenReturn(List.of(orderItemWithProcessing("米白")));
+        when(processingOrderMapper.selectActiveByOrderId("order-001", TENANT)).thenReturn(null);
+        when(processingOrderMapper.insert(any(ProcessingOrder.class)))
+                .thenThrow(new RuntimeException("db down"));
+
+        assertThatThrownBy(() -> processingOrderService.generate(List.of("order-001"), TENANT, "u1"))
+                .isInstanceOf(RuntimeException.class);
+        verify(orderService).revertProducingToConfirmed(eq("order-001"), anyString());
+    }
 }

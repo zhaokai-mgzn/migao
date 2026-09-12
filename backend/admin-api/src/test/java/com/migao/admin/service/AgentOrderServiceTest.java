@@ -306,6 +306,32 @@ class AgentOrderServiceTest {
         }
 
         @Test
+        @DisplayName("P1 复核修复（PG-009）：含加工项订单经 agent 发货路径无 completed 加工单 → 拒绝")
+        void shipsRejectedViaAgentPathWithoutCompletedProcessingOrder() {
+            AgentOrderUpdateRequest req = buildRequest("顺丰", "SF001");
+            testOrder.setStatus("producing");
+            when(orderMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(testOrder);
+            when(orderMapper.selectById("order-uuid-001")).thenReturn(testOrder);
+            when(orderLogisticsMapper.selectByOrderId(eq("order-uuid-001"), any())).thenReturn(List.of());
+            when(orderLogisticsMapper.insert(any(OrderLogistics.class))).thenReturn(1);
+            // 含加工项 + 无 completed 加工单
+            com.migao.admin.entity.OrderItem item = com.migao.admin.entity.OrderItem.builder()
+                    .id("item-1").orderId("order-uuid-001").productName("布艺遮光帘A")
+                    .processingInfo(Map.of("processingItems", List.of(Map.of("id", "p1", "name", "打孔"))))
+                    .build();
+            when(orderItemMapper.selectByOrderId(any(), any())).thenReturn(List.of(item));
+            when(processingOrderMapper.countCompletedByOrderId("order-uuid-001", 1L)).thenReturn(0L);
+
+            // when
+            assertThatThrownBy(() -> orderService.updateOrderForAgent("order-uuid-001", req, 1L))
+                    .isInstanceOf(BusinessException.class)
+                    .hasMessageContaining("须先完成加工单");
+
+            // then: 未发生 shipped 流转
+            verify(orderMapper, never()).update(any(), any());
+        }
+
+        @Test
         @DisplayName("缺少快递公司/运单号被拒绝")
         void rejectsMissingFields() {
             when(orderMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(testOrder);
