@@ -455,3 +455,54 @@ class TestRouteByIntent:
                         {"": {"product_inquiry": "product_skill", "general": "general"}}):
             result = route_by_intent(state)
         assert result == "product_skill"
+
+
+class TestCurrentDomainSignalPriority:
+    """本领域信号优先于话题切换（issue #3361，CH-012 复现型红灯的真因）。
+
+    CH-012 实证（CI run 34703192730 / 34704068475）：
+      R1 在 `customer_aftersales` 下发「请选择要退货的订单」choice 卡；
+      R2 顾客回「我要退上次买的那单，订单号 EVAL-ORD-0002」——同一句里既有
+      **本领域**信号（「退」）又有 **order 域**词（「订单号」）；
+      旧逻辑只问"有没有别的领域词" → 判为话题切换 → 甩到 `customer_order`
+      （**没有 aftersale_create**）→ 模型只能尝试转人工 → 被在办兜底拦住 →
+      三轮原地打转、售后单永不创建。
+
+    语义：顾客在退货流程里提订单号，是**流程内指代**，不是换话题。
+    """
+
+    def _route(self, msg, pending, intent, mapping):
+        from langchain_core.messages import HumanMessage
+        state = {
+            "messages": [HumanMessage(content=msg)],
+            "pending_interact_skill": pending,
+            "route_decision": {"action": "full_agent"},
+            "intent_result": {"intent": intent},
+            "agent_type": "xiaobu",
+            "tenant_id": 1,
+        }
+        with patch.dict("app.graph.nodes._INTENT_TO_ROUTE", {"xiaobu": mapping}):
+            return route_by_intent(state)
+
+    def test_return_flow_message_with_order_no_stays(self):
+        mapping = {"order_query": "customer_order_skill", "after_sales": "customer_aftersales_skill",
+                   "general": "customer_general_skill"}
+        assert self._route("我要退上次买的那单，订单号 EVAL-ORD-0002",
+                           "customer_aftersales", "order_query", mapping) == "customer_aftersales"
+
+    def test_bare_tui_is_aftersales_signal(self):
+        """C 端口语「我要退…」不含「退货」三字，也必须算 aftersales 信号。"""
+        from app.graph.nodes import _SKILL_DOMAIN_KEYWORDS
+        assert "退" in _SKILL_DOMAIN_KEYWORDS["aftersales"]
+
+    def test_genuine_topic_switch_still_works(self):
+        """无反退域信号时，话题切换必须照旧生效（不能把 escape hatch 关死）。"""
+        mapping = {"order_query": "customer_order_skill", "general": "customer_general_skill"}
+        assert self._route("帮我查一下我的订单", "customer_product", "order_query",
+                           mapping) == "customer_order_skill"
+
+    def test_switch_to_order_from_quote_still_works(self):
+        """报价 skill 无 order 域关键词 → 「我要下单」仍可切回下单流程。"""
+        mapping = {"order_create": "customer_order_skill", "general": "customer_general_skill"}
+        assert self._route("我要下单", "customer_quote", "order_create",
+                           mapping) == "customer_order_skill"

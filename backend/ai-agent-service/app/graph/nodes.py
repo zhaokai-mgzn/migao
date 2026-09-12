@@ -29,7 +29,9 @@ _SKILL_DOMAIN_KEYWORDS = {
     # 订单从未创建（CI run 34686905546 实证：OR-017 R7/R8）。含「下单」即命中
     # L1 规则 ORDER_CREATE（rule_matcher），路由回 customer_order skill 完成下单。
     "order": {"查订单", "物流", "发货", "订单", "下单"},
-    "aftersales": {"售后", "退货", "退款", "换货", "投诉"},
+    # 「退」单独入表（issue #3361）：C 端口语里"我要退上次买的那单"不含"退货"三字，
+    # 但语义百分百是售后 —— 漏掉它导致流程被甩去 order 域（见下方「本领域信号优先」注释）。
+    "aftersales": {"售后", "退货", "退款", "换货", "投诉", "退"},
     "product": {"查商品", "搜商品", "创建商品", "商品管理"},
     "customer": {"客户", "会员"},
     "staff": {"员工", "角色", "权限"},
@@ -672,6 +674,19 @@ def route_by_intent(state: AgentState) -> str:
         # 如果用户消息包含非当前 skill 领域的关键词，允许切换
         _pending_domain = _skill_keyword_domain(pending_skill)
         current_domain_keywords = _SKILL_DOMAIN_KEYWORDS.get(_pending_domain, set())
+        # ── 本领域信号优先：消息里带了**当前技能领域**的关键词 → 不切走（issue #3361 实证）──
+        # CH-012 复现型红灯的真因：R1 在 customer_aftersales 下发「请选择要退货的订单」卡，
+        # R2 顾客回「我要退上次买的那单，订单号 EVAL-ORD-0002」——含「退货」（aftersales 域）
+        # 同时含「订单号」（order 域）→ 旧逻辑只看"有没有别的领域词"→ 判为话题切换 →
+        # 会话被甩到 customer_order（**没有 aftersale_create**）→ 模型只能尝试转人工 →
+        # 被在办兜底拦住 → 三轮原地打转、售后单永不创建。
+        # 语义：顾客在退货流程里提订单号，是**流程内的指代**，不是换话题。
+        if any(kw in last_msg for kw in current_domain_keywords):
+            logger.info(
+                f"[route_by_intent] Escape hatch skipped: 当前领域信号命中 "
+                f"(domain={_pending_domain}) | session={session_id}"
+            )
+            return pending_skill
         for skill_domain, keywords in _SKILL_DOMAIN_KEYWORDS.items():
             if skill_domain == _pending_domain:
                 continue
