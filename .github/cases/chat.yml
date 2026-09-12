@@ -17,6 +17,10 @@ cases:
       - chat
       - product
     tier: adversarial
+    # persona 标 mibao（issue #3367 C 端对抗面审计）：断言为 B 端机制形状（suggestion 必须含 product_search、期望 product_detail 成功）；C 端原生版本见 DF-022。
+    # 标为 B 端后它不再进入 C 端可选集 —— 不是回避失败，而是断言与 Agent 不匹配：
+    # 同一安全意图已由 C 端原生用例承接（见索引），C 端对抗面不因此缩小。
+    persona: mibao
     tags:
       - error
       - suggestion
