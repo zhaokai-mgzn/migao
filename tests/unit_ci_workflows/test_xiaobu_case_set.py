@@ -378,11 +378,18 @@ class TestCustomerFacingSemanticGuard:
             assert cid not in sel, f"{cid} 是 B 端/基建用例，不应进 C 端用例集"
 
     def test_adversarial_tier_preserved(self):
-        """对抗档必须全部保留 —— 安全用例输入天然含 B 端语义词，
-        但恰恰是 C 端最需要的越权/注入防线（先例 CH-011 跨用户订单拒绝）"""
+        """C 端必须保有**对抗防线**，且必须是 C 端语义的断言（issue #3367 修订）。
+
+        原版要求 DF-006/DF-007/DF-008 也进 C 端，理由是"对抗档都要保留"。首跑基线证明
+        这个理由不成立：那三条断言的是 **B 端机制**（期望 `product_search` 以验证工具层
+        租户过滤、期望 `validate_input` 校验建品入参、期望批量删改前弹 confirm）——
+        C 端 Agent **拒绝且不调工具**才是正确行为，却被判 0 分（run 34724282450：DF-007
+        因"没调 product_search"得 0）。故改为：同安全意图用 C 端原生用例承接
+        （越权→DF-020、注入→DF-021、空结果→DF-022），并保留 CH-011/DF-010。
+        """
         sel = self._sel_ids()
-        for cid in ["CH-011", "DF-006", "DF-007", "DF-008", "DF-010"]:
-            assert cid in sel, f"对抗用例 {cid} 被语义收口误伤"
+        for cid in ["CH-011", "DF-020", "DF-021", "DF-022", "DF-023"]:
+            assert cid in sel, f"C 端对抗用例 {cid} 被语义收口误伤"
 
     def test_customer_end_llm_cases_preserved(self):
         """C 端真实 LLM 用例必须保留（含显式 persona 与双端 C 端语义词）"""
