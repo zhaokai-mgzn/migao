@@ -371,6 +371,10 @@ cases:
       #   属"行为合理但断言过严"。需要覆盖算料请用 customer_quote 的专项用例。
       - tool: interact
       - tool: order_create
+    # 写工具成功断言（issue #3361）：CI 实证本用例 R7 的 order_create 两次都返回
+    # tool_execution_failed，订单一条没落，用例却因「工具名出现在 tool_calls」判 100%
+    must_succeed:
+      - tool: order_create
     order_before:
       - "interact[confirm] before order_create"
     required_args:
@@ -456,6 +460,11 @@ cases:
       - tool: aftersale_create
     order_before:
       - "interact[confirm] before aftersale_create"
+    # 写工具成功断言（issue #3361）：本用例当前失败形态正是「工单没建出来」
+    # （aftersale_create 一次都没被调用）—— 只有期望、没有成功断言时，
+    # 模型调了却失败（或被门禁拦）仍会判通过
+    must_succeed:
+      - tool: aftersale_create
     required_args:
       - tool: aftersale_create
         fields:

@@ -8,7 +8,7 @@
 - intent_router_node：plan_rewrite 路径澄清轮护栏（连续模糊意图触发兜底）
 - route_by_intent：direct_reply + 多模态重定向 general、escape hatch 切换、会话连续性
 """
-# case_ids: CH-002, CH-003, CH-018, CH-021, CH-022
+# case_ids: CH-002, CH-003, CH-018, CH-021, CH-022, OR-017
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -371,6 +371,46 @@ class TestRouteByIntent:
                         {"": {"order_query": "order_skill", "general": "general"}}):
             result = route_by_intent(state)
         assert result == "order_skill"
+
+    def test_quote_skill_下单_escapes_to_order_skill(self):
+        """报价 skill 锁住会话时，「确认下单/我要下单」必须能切回下单流程（issue #3361）。
+
+        为什么必须有这条：`customer_quote` 会下发报价卡并锁住 `pending_interact_skill`，
+        但它**没有 order_create 工具**。若「下单」不算 order 域信号，escape hatch 不触发
+        → 会话锁死在报价 skill → 模型照样调 order_create → `tool_not_found` ×2 → 转人工，
+        订单从未创建（CI run 34686905546 实证：OR-017 R7/R8，顾客侧表现为"下单失败"）。
+        """
+        from app.graph.nodes import _SKILL_DOMAIN_KEYWORDS
+        assert "下单" in _SKILL_DOMAIN_KEYWORDS["order"], (
+            "order 领域关键词缺「下单」—— 报价后顾客说『确认下单』将无法切回下单流程"
+        )
+        for msg in ("确认下单", "我要下单", "帮我下单"):
+            state = {
+                "pending_interact_skill": "customer_quote",
+                "route_decision": {"action": "full_agent"},
+                "intent_result": {"intent": "order_create"},
+                "messages": [HumanMessage(content=msg)],
+            }
+            with patch.dict("app.graph.nodes._INTENT_TO_ROUTE",
+                            {"": {"order_create": "customer_order_skill", "general": "general"}}):
+                result = route_by_intent(state)
+            assert result == "customer_order_skill", f"{msg!r} 未切回下单流程（route={result}）"
+            assert state["pending_interact_skill"] == "", f"{msg!r} 未释放报价 skill 的会话锁"
+
+    def test_quote_skill_stays_without_order_intent(self):
+        """反向：顾客只是在报价流程里闲聊，不得被误切走（escape hatch 不能过宽）。"""
+        state = {
+            "pending_interact_skill": "customer_quote",
+            "route_decision": {"action": "full_agent"},
+            "intent_result": {"intent": "quote"},
+            "messages": [HumanMessage(content="这个报价挺合适，再帮我看看褶皱倍数")],
+        }
+        with patch.dict("app.graph.nodes._INTENT_TO_ROUTE",
+                        {"": {"quote": "customer_quote_skill", "general": "general"}}):
+            result = route_by_intent(state)
+        # 会话连续性返回的是 pending skill 的**节点名**（原样），不走 intent 映射
+        assert result == "customer_quote"
+        assert state["pending_interact_skill"] == "customer_quote"
 
     def test_no_pending_routes_by_intent(self):
         state = {

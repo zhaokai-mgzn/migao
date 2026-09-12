@@ -579,3 +579,45 @@ def test_order_create_description_enforces_processing_item_ask():
     assert "加工项" in desc and "interact" in desc, "未把加工项询问写成交互卡动作"
     assert "漏收加工费" in desc or "金额错误" in desc, "未说明后果（LLM 需要后果才守规矩）"
     assert "product_search" in desc, "未提醒不得凭列表断言无加工项（历史误宣）"
+
+
+class TestSkillPromptToolsetConsistency:
+    """Skill 提示词不得指示**该 Skill 工具集里没有的工具**（issue #3361）。
+
+    实证：`customer_quote` 的提示词写着「顾客确认下单后：用 interact(form) 下发收货信息
+    表单…我帮您安排」，而它的工具集只有 `curtain_calc / product_detail / product_search /
+    interact` —— **没有 order_create**。模型照提示词一路走到调用下单工具 → `tool_not_found`
+    ×2 → 转人工，订单从未创建（CI run 34686905546 的 OR-017 R7/R8，顾客侧表现为"下单失败"）。
+
+    这类缺陷的形态是「提示词承诺了做不到的事」，静态可查、后果严重（流程死路），
+    所以在这里做成契约：提示词里出现的**下单动作**必须有对应工具，否则必须显式写明
+    「本技能不做这件事，交回 X 流程」。
+    """
+
+    def _cfg(self, name):
+        from app.graph.skills.skill_registry import get_skill_registry
+        reg = get_skill_registry()
+        return reg.get_or_raise(name)
+
+    def test_quote_skill_does_not_promise_ordering(self):
+        cfg = self._cfg("customer_quote")
+        prompt = (cfg.system_prompts or {}).get("xiaobu") or ""
+        tools = set(cfg.tool_names or [])
+        assert "order_create" not in tools, "报价 skill 的工具集不含 order_create（前提变了要重写本测试）"
+        # 不得指示"下发收货信息表单/自行安排下单"（做不到的承诺）
+        assert "下发收货信息表单" not in prompt, (
+            "报价 skill 提示词又在指示「下发收货信息表单」—— 本技能没有下单能力，"
+            "模型会走到调用 order_create → tool_not_found → 转人工（订单永不创建）"
+        )
+        # 必须显式交回下单流程，并给出顾客可复制的切换话术
+        assert "我要下单" in prompt and "没有下单能力" in prompt, (
+            "报价 skill 未显式声明「本技能没有下单能力 + 交回下单流程」，"
+            "顾客报价后下单会走进死路"
+        )
+
+    def test_quote_skill_tools_unchanged(self):
+        """工具集是路由/提示词契约的依据，变更须有意识（本测试防顺手扩大）。"""
+        cfg = self._cfg("customer_quote")
+        assert set(cfg.tool_names or []) == {
+            "curtain_calc", "product_detail", "product_search", "interact"
+        }

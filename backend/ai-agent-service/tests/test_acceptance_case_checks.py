@@ -1212,13 +1212,17 @@ class TestEndSessionTargetsAiAgent:
             f"会话关闭必须打 ai-agent 关闭接口，实际: {calls}"
         )
 
-    def test_admin_api_call_is_only_best_effort_secondary(self):
-        """人工会话残留仍 best-effort 清（但不得成为唯一路径）。"""
+    def test_no_admin_api_call(self):
+        """不得再打 admin-api agent_sessions（死代码 + 噪音，issue #3361）。
+
+        该表是**人工会话**表，主键与 ai-agent 会话 id 不互认 → 传 ai 会话 id 永远 404，
+        实测 CI 每次调用都在 admin-api 侧留一条 `[NOT_FOUND] 客服会话不存在` 告警，
+        而人工会话是待人工处理的工单，本就不该由评测 harness 关闭。
+        """
         calls, patched = self._capture()
         with patched:
             asyncio.run(lr._end_session("tok", "sess-2"))
-        posts = [u for m, u in calls if m == "POST"]
-        assert posts == [f"{lr.ADMIN_API}/api/admin/agent-sessions/sess-2/end"]
+        assert [c for c in calls if c[0] == "POST"] == [], f"仍在打 admin-api: {calls}"
 
     def test_close_failure_is_visible_not_swallowed(self, capsys):
         """关闭失败必须打 warning（旧实现静默吞 → 会话永不关闭 + 记忆永不落库）。"""
@@ -1534,3 +1538,185 @@ class TestDeclaredPostSessionChecksParse:
                 bad += [f"{c.get('id')}: {i}" for i in issues
                         if "不支持的 fetch" in i or "无法解析" in i]
         assert not bad, f"post_session 配置问题: {bad}"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 写工具成功断言 must_succeed（issue #3361：「调了 ≠ 成了」）
+# 背景（CI run 34686905546 / 34685247189）：CH-010/OR-014/OR-017 的 order_create
+# 分别返回 tool_execution_failed / confirmation_required / tool_not_found，用例照样
+# 判 100%，DB 审计里 orders 一条没新增 —— 报告长相「下单正常」，事实「一单没成交」。
+# case_ids: CH-010, CH-012, OR-014, OR-017
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def _round_with_results(rnd, results, calls=None):
+    """构造一轮：results=[(tool, ok, error)]，calls=[(tool, args)]（默认与 results 同工具名）"""
+    tool_results = [
+        {"tool": t, "result": ({"success": ok} if ok else {"success": False, "error": err})}
+        for t, ok, err in results
+    ]
+    if calls is None:
+        calls = [(t, {}) for t, _ok, _err in results]
+    return {
+        "__round": rnd,
+        "tool_calls": [{"name": n, "args": a} for n, a in calls],
+        "tool_results": tool_results,
+        "final_text": "",
+    }
+
+
+class TestToolNameMatches:
+    """工具名匹配：精确或 `前缀.工具名`，**不做子串包含**。"""
+
+    def test_exact(self):
+        assert lr._tool_name_matches("order_create", "order_create")
+
+    def test_namespaced_suffix(self):
+        assert lr._tool_name_matches("customer_order.order_create", "order_create")
+
+    def test_no_substring_false_positive(self):
+        """`order_query` 不得匹配 `customer_order_query`（required_args 旧实现在此会误判）。"""
+        assert not lr._tool_name_matches("customer_order_query", "order_query")
+        assert not lr._tool_name_matches("customer_order_query", "order")
+
+    def test_empty(self):
+        assert not lr._tool_name_matches("", "order_create")
+        assert not lr._tool_name_matches("order_create", "")
+
+
+class TestCheckMustSucceed:
+    """写工具必须**至少真正成功一次**。"""
+
+    def test_success_passes(self):
+        results = [_round_with_results(1, [("order_create", True, None)])]
+        assert lr.check_must_succeed(results, [{"tool": "order_create"}]) == []
+
+    def test_all_failed_reports_each_attempt(self):
+        """全部失败 → 违规，且详情带每轮错误码（工具层可归因）。"""
+        results = [
+            _round_with_results(7, [("order_create", False, "tool_execution_failed"),
+                                    ("order_create", False, "tool_execution_failed")]),
+        ]
+        issues = lr.check_must_succeed(results, [{"tool": "order_create"}])
+        assert issues and "无一成功" in issues[0]
+        assert "R7:tool_execution_failed" in issues[0]
+        assert "调了 ≠ 成了" in issues[0]
+
+    def test_blocked_then_success_passes(self):
+        """被 confirm 门禁拦一次、最终成功 → 通过（安全拦截是期望行为，不算违规）。"""
+        results = [
+            _round_with_results(4, [("order_create", False, "confirmation_required")]),
+            _round_with_results(6, [("order_create", True, None)]),
+        ]
+        assert lr.check_must_succeed(results, [{"tool": "order_create"}]) == []
+
+    def test_never_called_reports_missing(self):
+        results = [_round_with_results(1, [("product_search", True, None)])]
+        issues = lr.check_must_succeed(results, [{"tool": "order_create"}])
+        assert issues and "从未被调用" in issues[0]
+
+    def test_call_without_result_event_is_not_success(self):
+        """发起了调用但没有结果事件（流中断）→ 不得静默当成功。"""
+        results = [{
+            "__round": 3,
+            "tool_calls": [{"name": "order_create", "args": {}}],
+            "tool_results": [],
+            "final_text": "",
+        }]
+        issues = lr.check_must_succeed(results, [{"tool": "order_create"}])
+        assert issues and "无结果事件" in issues[0]
+
+    def test_string_spec_supported(self):
+        results = [_round_with_results(1, [("order_create", True, None)])]
+        assert lr.check_must_succeed(results, ["order_create"]) == []
+
+    def test_action_filter(self):
+        """限定 action：只统计该 action 的调用结果。"""
+        results = [
+            _round_with_results(1, [("aftersale_create", True, None)],
+                                calls=[("aftersale_create", {"action": "create"})]),
+        ]
+        assert lr.check_must_succeed(
+            results, [{"tool": "aftersale_create", "action": "create"}]) == []
+        issues = lr.check_must_succeed(
+            results, [{"tool": "aftersale_create", "action": "cancel"}])
+        assert issues and "从未被调用" in issues[0]
+
+    def test_same_tail_tool_not_confused(self):
+        """同名尾工具不得互相顶替（B 端 order_query 的成功不能算 customer_order_query）。"""
+        results = [_round_with_results(1, [("order_query", True, None)])]
+        issues = lr.check_must_succeed(results, [{"tool": "customer_order_query"}])
+        assert issues and "从未被调用" in issues[0]
+
+    def test_missing_tool_config_fails_closed(self):
+        issues = lr.check_must_succeed([], [{"action": "create"}])
+        assert issues and "缺 tool" in issues[0]
+
+    def test_empty_config_no_issues(self):
+        assert lr.check_must_succeed([], None) == []
+        assert lr.check_must_succeed([], []) == []
+
+
+class TestRunCaseMustSucceedIntegration:
+    """run_case 集成：写工具失败 → 用例级失败（score=0）。"""
+
+    async def _run(self, sequence, must_succeed):
+        async def fake_send(token, session_id, message, images=None):
+            seq = sequence.pop(0)
+            return {
+                "user_message": message, "images": [], "final_text": seq.get("text", ""),
+                "tool_calls": [{"name": n, "args": {}} for n in seq["calls"]],
+                "tool_results": [
+                    {"tool": t, "result": ({"success": ok} if ok else {"success": False, "error": err})}
+                    for t, ok, err in seq["results"]
+                ],
+                "error": None, "streamed": False, "done": True,
+            }
+        import unittest.mock as mock
+        case = lr.EvalCase(
+            id="MS-1", title="t", skill=lr.Skill.ORDER, difficulty=lr.Difficulty.NORMAL,
+            # 轮数与 sequence 严格一致（多一轮会 IndexError，测试自身的假绿/假红要防）
+            user_inputs=["下单"] * len(sequence), expectations=["order_create"],
+            data_checks=[], must_succeed=must_succeed,
+        )
+        with mock.patch.object(lr, "send_message", new=fake_send):
+            return await lr.run_case(case, "tok", "sess")
+
+    def test_failed_write_fails_case(self):
+        """期望命中（工具被调用）但执行失败 → score 0（旧行为是 100% 假绿）。"""
+        result = asyncio.run(self._run([
+            {"calls": ["order_create"], "results": [("order_create", False, "tool_execution_failed")]},
+        ], [{"tool": "order_create"}]))
+        assert result["score"] == 0.0, "写工具失败却判通过 = 「调了≠成了」假绿复现"
+        assert any("must_succeed" in str(f) for f, _ in result["failed"])
+
+    def test_successful_write_passes(self):
+        result = asyncio.run(self._run([
+            {"calls": ["order_create"], "results": [("order_create", True, None)]},
+        ], [{"tool": "order_create"}]))
+        assert result["score"] == 1.0
+
+    def test_no_declaration_behavior_unchanged(self):
+        """未声明 must_succeed 的用例行为不变（向后兼容）。"""
+        result = asyncio.run(self._run([
+            {"calls": ["order_create"], "results": [("order_create", False, "tool_execution_failed")]},
+        ], []))
+        assert result["score"] == 1.0
+
+
+class TestRoundTraceRecordsSentMessage:
+    """轨迹记录**本轮实际发出**的消息（协议轮输入侧证据，issue #3361 归因缺口）。"""
+
+    def test_user_message_recorded(self):
+        trace = lr.build_round_trace([
+            {"__round": 1, "user_message": "确认下单：遮光窗帘 3米 共474元",
+             "tool_calls": [], "tool_results": [], "final_text": ""},
+        ])
+        assert trace[0]["user"].startswith("确认下单")
+        assert "you=确认下单" in lr.format_round_trace(trace)
+
+    def test_missing_user_message_is_empty(self):
+        trace = lr.build_round_trace([{"__round": 1, "tool_calls": [], "tool_results": []}])
+        assert trace[0]["user"] == ""
+        # 无输入侧证据时不得打印 "you=" 空片段（噪音）
+        assert "you=" not in lr.format_round_trace(trace)

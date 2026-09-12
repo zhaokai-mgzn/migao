@@ -553,6 +553,11 @@ cases:
     expectations:
       - tool: product_detail
       - tool: order_create
+    # 写工具成功断言（issue #3361）：本用例 R4 的 order_create 被 confirm 门禁拦
+    # （confirmation_required）后流程结束，订单没建出来 —— 期望含 order_create
+    # 只能证明"模型想下单"，证明不了"订单成交"
+    must_succeed:
+      - tool: order_create
     data_checks:
       - "加工项数量按计价方式确定：per_meter → 数量=面料米数（如打孔 8 元/米 × 3 米 → quantity=3、subtotal=24）；per_set/fixed → 数量=1；per_area → 宽×高"
       - "processing_info.processingItems 逐项含 {id, name, unitPrice, quantity, unit, pricingMethod, subtotal}，processingFee = 各项 unitPrice × quantity 之和"
@@ -694,6 +699,11 @@ cases:
         args:
           component: choice
           multiSelect: true
+      - tool: order_create
+    # 写工具成功断言（issue #3361）：CI 实证本用例 R7/R8 的 order_create 返回
+    # tool_not_found（进了报价 skill，该 skill 工具集里没有 order_create）→ R11 转人工，
+    # 订单没建出来而用例判 100%
+    must_succeed:
       - tool: order_create
     data_checks:
       - "product_search 列表数据不含 processing_items/colorId/skus，必须先调 product_detail 取详情；未调详情即断言「无加工项」属能力误宣"

@@ -160,15 +160,10 @@ async def _end_session(token: str, session_id: str) -> None:
                       f"body={str(getattr(r, 'content', b''))[:120]}")
     except Exception as e:
         print(f"     ⚠️ 会话关闭异常: id={session_id} {type(e).__name__}: {e}")
-    # 人工会话残留（human_handoff 在 admin-api agent_sessions 建的行）仍走 admin-api，
-    # best-effort：C 端评测会话在此表不存在，404 属预期，静默。
-    try:
-        async with httpx.AsyncClient() as c:
-            h = _admin_headers(token)
-            await c.post(f"{ADMIN_API}/api/admin/agent-sessions/{session_id}/end",
-                         headers=h, timeout=10)
-    except Exception:
-        pass
+    # 兼容调用已**删除**（issue #3361 顺手清理）：admin-api `agent_sessions` 是人工会话表，
+    # 其主键与 ai-agent 会话 id 不互认，传 ai 会话 id 永远查不到行 —— 实测 CI 里每次调用
+    # 都在 admin-api 侧留一条 `[NOT_FOUND] 客服会话不存在` 告警（死代码 + 噪音）。
+    # 人工会话本身是**待人工处理的工单**，也不该由评测 harness 关闭。
 
 
 async def _run_pre_clean(token: str, spec: dict) -> str:
@@ -992,6 +987,98 @@ def check_forbidden_args(results: list, forbidden_args: list) -> list:
     return issues
 
 
+def _tool_name_matches(name: str, tool: str) -> bool:
+    """工具名是否匹配（精确或 `前缀.工具名` 命名空间形态）。
+
+    刻意**不用子串包含**：`"order_query" in "customer_order_query"` 为真，
+    会把 B 端 order_query 的调用算到 customer_order_query 头上（required_args
+    的旧实现在这类同尾工具名上会误判）。这里用精确/后缀匹配，语义明确。
+    """
+    n, t = str(name or "").lower(), str(tool or "").lower()
+    if not n or not t:
+        return False
+    return n == t or n.endswith("." + t)
+
+
+def check_must_succeed(results: list, must_succeed: list) -> list:
+    """写工具**成功**断言：声明的工具必须至少真正成功一次（「调了」≠「成了」）。
+
+    背景（CI 实证 run 34686905546 / 34685247189，issue #3361）：
+    CH-010/OR-014/OR-017 三个下单用例的 `order_create` 分别返回
+    `tool_execution_failed` / `confirmation_required` / `tool_not_found`，
+    用例**照样判 100%**（断言只看望工具名出现在 tool_calls 里），DB 审计里
+    `orders` 一条没新增。报告长相是「下单流程正常」，事实是「一单没成交」——
+    这正是 §0 复盘「AI 验收全绿、人工验收全是问题」的同款假绿。
+
+    语义（刻意不要求"每次调用都成功"）：
+      - 已存在工具结果里**至少一次** `success=true` 即通过 —— 期间被 confirm 门禁
+        拦下（`confirmation_required`）属**期望内的安全行为**，只要最终成功就不算违规；
+      - 一次都没成功（含从未调用）→ 违规，并把每次尝试的轮次+错误码写进详情，
+        工具层失败与模型层漏调在一行里可区分。
+
+    用例形态：
+        must_succeed:
+          - tool: order_create            # 下单用例必须真的建出订单
+          - tool: aftersale_create
+            action: create                # 可选：按 args.action 过滤
+    """
+    issues = []
+    for spec in must_succeed or []:
+        if isinstance(spec, str):
+            spec = {"tool": spec}
+        tool = str(spec.get("tool", ""))
+        action = spec.get("action")
+        if not tool:
+            issues.append(f"must_succeed: 配置缺 tool: {spec!r}")
+            continue
+
+        attempts: list = []   # [(round, ok, error)]
+        for r in results or []:
+            rnd = r.get("__round")
+            # 调用侧：LLM 是否发起了该工具（按 action 过滤）
+            called = False
+            for tc in r.get("tool_calls") or []:
+                if not _tool_name_matches(tc.get("name"), tool):
+                    continue
+                if action and (tc.get("args") or {}).get("action") != action:
+                    continue
+                called = True
+                break
+            # 结果侧：SSE tool_result 里该工具的成败（结果事件不带 args，无法按 action 过滤
+            # —— 所以**指定 action 时只有该轮真的发起了匹配调用，其成功才算数**，
+            # 否则同一工具不同 action 的成败会互相顶替：实测 `action: cancel` 的断言被
+            # 同工具 `action: create` 的成功"顶过"而假绿）
+            matched_results = [
+                st for st in _tool_result_status(r.get("tool_results") or [])
+                if _tool_name_matches(st.get("tool"), tool)
+            ]
+            if action and not called:
+                continue
+            if not called and not matched_results:
+                continue
+            if not matched_results:
+                # 发起了但没有结果事件（流中断/并发丢弃）→ 按未成功记录，不许静默当成功
+                attempts.append((rnd, False, "无结果事件"))
+                continue
+            for st in matched_results:
+                attempts.append((rnd, bool(st.get("ok")), st.get("error")))
+
+        if any(ok for _, ok, _ in attempts):
+            continue
+        if not attempts:
+            issues.append(
+                f"must_succeed: {tool} 从未被调用 → 没有发生任何写操作"
+                "（期望里的工具名出现≠工具真的跑了）")
+        else:
+            detail = ", ".join(
+                f"R{rnd}:{err or 'failed'}" for rnd, _ok, err in attempts
+            )
+            issues.append(
+                f"must_succeed: {tool} 共 {len(attempts)} 次调用**无一成功**（{detail}）"
+                "—— 调了 ≠ 成了")
+    return issues
+
+
 def check_forbidden_text(results: list, forbidden_text: list) -> list:
     """final_text 反模式词：任一轮回复含任一禁词 → 违规（幻觉式撤回/报错文案）。
 
@@ -1396,6 +1483,13 @@ def build_round_trace(results: list) -> list:
         text = r.get("final_text") or ""
         trace.append({
             "round": r.get("__round"),
+            # 本轮**实际发出**的用户消息（截断）。为什么必须记：协议轮（auto_respond /
+            # auto_select / auto_fill）发出的不是用例静态文本，而是 harness 依上一轮卡片
+            # 生成的答复（confirm 卡回 confirmValue、choice 卡回首项、form 回 __FORM__|json）。
+            # 写操作被门禁拦（confirmation_required）时，「模型没拿到确认」与「harness 答错了
+            # 卡」在旧轨迹里同形 —— 实测 OR-014 无法判断 R4 到底发了什么，归因只能靠猜。
+            # 这条字段把「输入侧」也变成证据。
+            "user": str(r.get("user_message") or "")[:60],
             "tools": [str(tc.get("name", "")) for tc in (r.get("tool_calls") or [])],
             "results": _tool_result_status(r.get("tool_results") or []),
             "cards": [str(c.get("type") or c.get("card_type") or "") for c in (r.get("cards") or [])],
@@ -1498,6 +1592,9 @@ def format_round_trace(trace: list) -> str:
     parts = []
     for t in trace or []:
         bits = [f"R{t.get('round')}"]
+        # 输入侧证据：本轮实际发出的消息（协议轮的答复尤其关键——见 build_round_trace）
+        if t.get("user"):
+            bits.append(f"you={t['user']}")
         bits.append("tools=" + (",".join(t.get("tools") or []) or "-"))
         failed = [f"{x['tool']}!{x['error']}" for x in (t.get("results") or []) if not x.get("ok")]
         if failed:
@@ -1642,6 +1739,9 @@ async def run_case(case, token: str, session_id: str) -> dict:
     case_issues += check_want_text(results, getattr(case, "want_text", []) or [])
     case_issues += check_required_args(results, getattr(case, "required_args", []) or [])
     case_issues += check_forbidden_args(results, getattr(case, "forbidden_args", []) or [])
+    # 写工具成功断言（issue #3361）：期望里有写工具 ≠ 写操作真的发生。
+    # 放在 required_args 之后：先证明「参数给对了」，再证明「东西真做出来了」。
+    case_issues += check_must_succeed(results, getattr(case, "must_succeed", []) or [])
     case_issues += check_confirm_loop(results)
     case_issues += check_false_success(results)
     if getattr(case, "db_verify", None):
@@ -1982,6 +2082,7 @@ def load_cases_from_yaml(cases_dir: str) -> list:
             want_text=c.get("want_text") or [],
             required_args=c.get("required_args") or [],
             forbidden_args=c.get("forbidden_args") or [],
+            must_succeed=c.get("must_succeed") or [],
             db_verify=c.get("db_verify") or [],
             pre_clean=c.get("pre_clean") or [],
             post_session=c.get("post_session") or [],

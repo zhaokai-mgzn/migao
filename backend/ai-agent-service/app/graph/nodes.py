@@ -22,7 +22,13 @@ from app.graph.state import AgentState
 # 用于 route_by_intent 的 escape hatch（topic switch）与
 # plan_rewrite 路径的澄清轮护栏判定：短消息是否包含实质业务意图。
 _SKILL_DOMAIN_KEYWORDS = {
-    "order": {"查订单", "物流", "发货", "订单"},
+    # 「下单」必须在内（issue #3361）：C 端报价 skill（customer_quote）会下发报价卡并
+    # 锁住 pending_interact_skill，而它**没有** order_create 工具。顾客在报价后说
+    # 「确认下单/我要下单」时，若这些词不算 order 域信号，escape hatch 不触发 →
+    # 会话被锁在报价 skill → 模型照样调 order_create → `tool_not_found` ×2 → 转人工，
+    # 订单从未创建（CI run 34686905546 实证：OR-017 R7/R8）。含「下单」即命中
+    # L1 规则 ORDER_CREATE（rule_matcher），路由回 customer_order skill 完成下单。
+    "order": {"查订单", "物流", "发货", "订单", "下单"},
     "aftersales": {"售后", "退货", "退款", "换货", "投诉"},
     "product": {"查商品", "搜商品", "创建商品", "商品管理"},
     "customer": {"客户", "会员"},
