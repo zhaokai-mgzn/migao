@@ -1254,6 +1254,18 @@ class TestEvalArtifactAuditStep:
             "缺 DEV_SERVICE_TOKEN → compose 插值失败 → 审计为空"
         )
 
+    def test_e2e_step_runs_even_when_eval_fails(self):
+        """E2E 步骤必须 `always()`（issue #3364：评测红 → E2E skip → E2E 红无人知）。
+
+        实证：main run 34684474262 评测 17/17 通过而 E2E failure；此后每次评测失败
+        E2E 都被 skip —— 两个红灯互相掩盖，E2E 的缺陷长期不可见。
+        """
+        steps = self._wf()["jobs"]["xiaobu-acceptance"]["steps"]
+        e2e = next((s_ for s_ in steps if "real E2E" in (s_.get("name") or "")), None)
+        assert e2e is not None, "workflow 缺少 real E2E 步骤"
+        cond = e2e.get("if") or ""
+        assert "always()" in cond, f"E2E 步骤缺少 always()（评测失败时会被 skip）: if={cond!r}"
+
     def test_audit_prints_order_amounts(self):
         """审计必须带订单金额（issue #3361）：金额是 C 端最硬的正确性证据。
 

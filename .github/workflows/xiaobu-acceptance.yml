@@ -200,8 +200,11 @@ jobs:
             --max-retries 3
 
       - name: Run xiaobu real E2E (pytest，含数据隔离断言)
-        # 只在 0 号片跑：E2E 与用例分片无关（同一套栈/同一批断言），跑 N 份纯浪费墙钟
-        if: matrix.shard == 0
+        # 只在 0 号片跑：E2E 与用例分片无关（同一套栈/同一批断言），跑 N 份纯浪费墙钟。
+        # ⚠️ `always()` 必需（issue #3364）：实测评测步骤失败时本步被 skip →
+        # 而 E2E 自己的红灯比评测更早存在（main run 34684474262 评测 17/17、E2E 已 failure）
+        # —— 只要评测红，E2E 红就永远看不见，两个缺陷互相掩盖。
+        if: always() && matrix.shard == 0
         working-directory: backend/ai-agent-service
         env:
           CI: 'true'
