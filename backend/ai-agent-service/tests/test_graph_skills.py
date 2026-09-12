@@ -2093,3 +2093,101 @@ class TestTextConfirmationRecordedAcrossTurns:
                               {"target_tool": "order_create", "target_action": "create"},
                               stored=long_val)
         assert committed.get("confirmed_write_tool") == "order_create"
+
+
+class TestInTurnDuplicateWriteCoalescing:
+    """同轮重复写调用合并（issue #3361）：防止「一次意图 = 两次写」。
+
+    CI 实证（CH-010，run 34691137050）：一轮里 `order_create ×3`（模型把同一次下单
+    意图重复表达了三遍）。写工具刻意不走 60s 读缓存（重复的**非幂等写**不能被静默
+    吞掉），于是三次都真执行 → 2 次 `tool_execution_failed`、1 次成功 —— **幸而**没有
+    变成 2 张订单。合并规则与缓存的关键区别：作用域仅本轮（下一次回复即失效），
+    且**参数不同不合并**（那是两次不同的写需求）。
+    """
+
+    def _run(self, tool_calls, read_only=False):
+        import asyncio
+        from app.graph.skills.base_skill import execute_skill
+
+        executed = []
+
+        async def fake_execute_safe(tool, args, ctx, state):
+            executed.append((tool.name, dict(args)))
+            return (json.dumps({"success": True, "data": {"id": "x"}}),
+                    {"success": True, "data": {"id": "x"}})
+
+        with patch("app.memory.session_memory.SessionMemory") as mem_cls, \
+             patch("app.graph.skills.base_skill.get_breaker") as get_breaker, \
+             patch("app.graph.skills.base_skill.get_skill_llm") as get_llm, \
+             patch("app.graph.skills.base_skill.create_skill_registry") as create_reg, \
+             patch("app.graph.skills.base_skill.set_tool_context"), \
+             patch("app.graph.skills.base_skill._execute_tool_safe", fake_execute_safe):
+            fake_tool = MagicMock()
+            fake_tool.name = "order_create"
+            fake_tool.read_only = read_only
+            fake_tool.destructive = False
+            fake_tool.requires_confirmation = False
+            registry = MagicMock()
+            registry.get_langchain_tools.return_value = []
+            registry.get_tool.side_effect = lambda n: fake_tool if n == "order_create" else None
+            create_reg.return_value = registry
+
+            breaker = MagicMock()
+
+            async def _passthrough(fn):
+                return await fn()
+
+            breaker.call = _passthrough
+            get_breaker.return_value = breaker
+
+            call = MagicMock(spec=AIMessage)
+            call.content = ""
+            call.tool_calls = tool_calls
+            final = MagicMock(spec=AIMessage)
+            final.content = "好的"
+            final.tool_calls = []
+            llm = MagicMock()
+            llm.bind_tools.return_value = llm
+            llm.ainvoke = AsyncMock(side_effect=[call, final])
+            get_llm.return_value = llm
+            mem_cls.return_value.set_pending_skill = AsyncMock(return_value=True)
+
+            result = asyncio.run(execute_skill(
+                state=_make_state(messages=[HumanMessage(content="确认下单")]),
+                skill_name="customer_order",
+                tool_names=["order_create"], system_prompt="p",
+            ))
+        return executed, result
+
+    def _tc(self, args, cid="c1"):
+        return {"name": "order_create", "args": args, "id": cid}
+
+    def test_identical_write_calls_execute_once(self):
+        executed, result = self._run([
+            self._tc({"items": [{"product_id": "p1"}], "sms_code": "123456"}, "c1"),
+            self._tc({"items": [{"product_id": "p1"}], "sms_code": "123456"}, "c2"),
+            self._tc({"items": [{"product_id": "p1"}], "sms_code": "123456"}, "c3"),
+        ])
+        assert len(executed) == 1, (
+            f"同轮同参数的写调用未合并（执行了 {len(executed)} 次）—— "
+            "运气差会变成重复下单"
+        )
+        # 三个 tool_call 都必须拿到结果（不能有调用悬空）
+        msgs = result.get("messages") or []
+        tool_msgs = [m for m in msgs if type(m).__name__ == "ToolMessage"]
+        assert len(tool_msgs) == 3, f"合并后每个 tool_call 仍须有结果消息，实际 {len(tool_msgs)}"
+
+    def test_different_args_not_coalesced(self):
+        """参数不同 = 两次不同的写需求 → 必须执行两次（不能误合并）。"""
+        executed, _ = self._run([
+            self._tc({"items": [{"product_id": "p1"}]}, "c1"),
+            self._tc({"items": [{"product_id": "p2"}]}, "c2"),
+        ])
+        assert len(executed) == 2
+
+    def test_read_only_duplicates_unchanged(self):
+        """只读工具不受此逻辑影响（它走 60s 读缓存，语义不变）。"""
+        executed, _ = self._run([
+            self._tc({}, "c1"), self._tc({}, "c2"),
+        ], read_only=True)
+        assert len(executed) == 2

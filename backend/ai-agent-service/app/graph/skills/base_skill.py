@@ -1592,6 +1592,10 @@ async def execute_skill(
                     break
 
                 # ── 执行 Tool 调用（并发）──
+                # 本轮「同轮重复写调用」去重槽（issue #3361）：见下方 _run_one_tool 内的说明。
+                # 每轮重置：去重范围严格限定在**同一次 LLM 回复**内，绝不跨轮/跨时间窗。
+                _turn_write_slots: dict = {}
+
                 async def _run_one_tool(tool_call: dict):
                     """执行单个 tool，返回 (tool_call, result_str, result_dict)。"""
                     tool_name = tool_call["name"]
@@ -1718,7 +1722,32 @@ async def execute_skill(
                             {"success": False, "error": "confirmation_required", "message": msg},
                             ensure_ascii=False,
                         ), {"success": False, "error": "confirmation_required"}
-                    result_str, result_dict = await _execute_tool_safe(tool, args, tool_context, state)
+                    # ── 同轮重复写调用合并（issue #3361）──
+                    # 模型有时在**同一次回复**里对同一个写工具发多次**完全相同**的调用
+                    # （CI 实证 CH-010：一轮里 order_create ×3 → 2 次 tool_execution_failed、
+                    # 1 次成功；幸而没变成 2 张订单，纯属运气）。
+                    # 写工具刻意不走 60s 读缓存（重复的**非幂等写**不能被静默吞掉，见
+                    # _execute_tool_safe 的注释）—— 但"同轮 + 同工具 + 同参数"不是新的写需求，
+                    # 而是同一次意图的重复表达：合并为一次执行，其余复用同一结果。
+                    # 与缓存的关键区别：作用域只有本轮（下一次回复即失效），参数不同不合并。
+                    if not tool.read_only:
+                        _dedupe_key = (tool_name, json.dumps(args, sort_keys=True, default=str))
+                        _slot = _turn_write_slots.get(_dedupe_key)
+                        if _slot is None:
+                            _slot = _turn_write_slots[_dedupe_key] = {
+                                "lock": asyncio.Lock(), "result": None}
+                        async with _slot["lock"]:
+                            if _slot["result"] is not None:
+                                logger.warning(
+                                    f"[{skill_name}] 同轮重复写调用已合并：{tool_name}"
+                                    f"（同参数第 2+ 次，复用首次结果）| session={session_id}"
+                                )
+                                return tool_call, _slot["result"][0], _slot["result"][1]
+                            result_str, result_dict = await _execute_tool_safe(
+                                tool, args, tool_context, state)
+                            _slot["result"] = (result_str, result_dict)
+                    else:
+                        result_str, result_dict = await _execute_tool_safe(tool, args, tool_context, state)
                     if not result_dict.get("success") and result_dict.get("suggestion"):
                         corrected = await _self_correct_retry(tool, args, tool_context, skill_name, result_dict, session_id, tenant_id, state)
                         if corrected:
