@@ -285,6 +285,37 @@ trace: [R1 tools=customer_order_query data=customer_order_query(items=2 total=2)
 配合 `migao-acceptance` 的五层归因（数据 / 断言 / 引导 / 工具 / 模型）使用：
 先看 `round_trace` 定位**哪一层**，再决定改 case、改工具、改 prompt 还是改路由。
 
+### 6.4 合作型用户轮：`auto_respond`
+
+静态脚本写死了"用户按某种顺序说什么"，而 agent 的**提问顺序与卡片类型随模型而变** ——
+对不上就卡死。实测（run 34627856207，OR-014）：第 2 轮 agent 先发「收货信息 & 颜色」
+表单、第 3 轮才发加工项 choice 卡，而脚本第 2 轮说的是「选有打孔的那件」→ 第 4–8 轮
+每轮只重复 `customer_address_query`，**`order_create` 永不发生**（看着像模型不会下单）。
+
+真实顾客不会照着脚本说话，而是**有什么卡就答什么卡**。`user_inputs` 支持这种轮次：
+
+```yaml
+user_inputs:
+  - "帮我下单，遮光窗帘 3 米，要打孔加工"
+  - auto_respond:
+      fallback: "选有打孔的那件"          # 上一轮无卡片时发这句
+  - auto_respond:
+      fallback: "确认下单"
+      form_values:                        # 表单卡按此回填（只填卡片自己声明的 key）
+        customer_name: "张三"
+        customer_phone: "13800138000"
+        color: "米白"
+  - auto_respond:
+      fallback: "123456"                  # C 端下单的验证码轮
+```
+
+优先级（按"最能推进流程"排序）：**confirm → choice → form → fallback**
+（confirm 回 `confirmValue`；choice 回第一个选项的 value；form 拼 `__FORM__|{json}` 走表单协议）。
+case 级 `auto_fill` 轮声明的值会被所有 `auto_respond` 轮复用，避免同一份信息重复声明。
+
+**边界**：`auto_respond` 只解决"卡片驱动的子流程顺序不定"，不替代必要的静态输入
+（选品、数量、验证码这些**用户主动提供**的信息仍要写明）。
+
 ### 6.3 工具健康度门槛（基础设施层优先）
 
 跑完会打印一行工具健康度，失败率超阈值时打大横幅：

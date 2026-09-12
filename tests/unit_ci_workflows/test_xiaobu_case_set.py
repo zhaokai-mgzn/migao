@@ -438,6 +438,35 @@ class TestWriteCaseInputsAreComplete:
         cases = self._xiaobu_cases()
         assert len(cases) >= 20, f"仅解析出 {len(cases)} 条 C 端用例 —— 过滤疑似失效"
 
+    @classmethod
+    def _texts_carried_by(cls, msg) -> list:
+        """一轮输入里**所有可能被当作用户文本发出**的字符串。
+
+        除了纯文本轮，还包括两类结构化轮：
+        - `auto_respond.fallback`（无卡时发出的兜底文本）
+        - `auto_respond.form_values` / `auto_fill` 的值（表单回填内容）
+        只扫纯文本会漏判 —— 把验证码放进 auto_respond 兜底是完全等价的供码方式。
+        """
+        if isinstance(msg, str):
+            return [msg]
+        if not isinstance(msg, dict):
+            return [str(msg)]
+        out = []
+        for key in ("auto_respond", "auto_fill"):
+            block = msg.get(key)
+            if isinstance(block, dict):
+                if block.get("fallback") is not None:
+                    out.append(str(block["fallback"]))
+                for v in (block.get("form_values") or {}).values():
+                    out.append(str(v))
+                if key == "auto_fill":
+                    for v in block.values():
+                        out.append(str(v))
+        for k, v in msg.items():
+            if k not in ("auto_respond", "auto_fill") and isinstance(v, str):
+                out.append(v)
+        return out
+
     def test_cases_asserting_otp_tools_supply_a_code(self):
         offenders = []
         checked = 0
@@ -448,8 +477,9 @@ class TestWriteCaseInputsAreComplete:
                 continue
             checked += 1
             provided = any(
-                self.CODE_RE.match(u if isinstance(u, str) else str(u))
+                self.CODE_RE.match(t)
                 for u in (case.get("user_inputs") or [])
+                for t in self._texts_carried_by(u)
             )
             if not provided:
                 offenders.append(case.get("id"))

@@ -510,25 +510,38 @@ cases:
       - order.states
       - order.create-flow
       - processing-manage.crud
+    # ── 交互轮用 auto_respond（合作型用户：**有什么卡就答什么卡**）──
+    # 为什么不用静态文本：agent 的提问顺序/卡片类型随模型而变（实测第 2 轮先发
+    # 「收货信息 & 颜色」表单、第 3 轮才发加工项 choice 卡）。静态脚本对不上就卡死：
+    # run 34627856207 第 4–8 轮每轮只重复 customer_address_query，order_create 永不发生。
+    # auto_respond 轮优先回答上一轮卡片（confirm→confirmValue / choice→首项 /
+    # form→按声明值回填），无卡时用 fallback 文本兜底 → 用例不再依赖特定提问顺序。
     user_inputs:
       - "帮我下单，遮光窗帘 3 米，要打孔加工"
-      - "选有打孔的那件"
-      - "不需要其他加工项"
-      - auto_select: true
-      - "确认下单"
-      - auto_fill:
-          customer_name: "张三"
-          customer_phone: "13800138000"
-          # 表单字段 key 由 LLM 生成，无法预知 → 常见别名一并给上（runner 只填
-          # form 卡声明且此处提供的 key，多余 key 无副作用）。缺字段会让 agent
-          # 反复重发表单（实测 run 34624202564 OR-014 R2–R8 表单循环 7 轮）。
-          customer_address: "浙江省杭州市西湖区文三路1号1幢101室"
-          address: "浙江省杭州市西湖区文三路1号1幢101室"
-          color: "米白"
-          colorName: "米白"
-          color_id: "米白"
-      - "确认"
-      - "123456"
+      - auto_respond:
+          fallback: "选有打孔的那件"
+      - auto_respond:
+          fallback: "不需要其他加工项"
+      - auto_respond:
+          fallback: "确认下单"
+          form_values:
+            customer_name: "张三"
+            customer_phone: "13800138000"
+            customer_address: "浙江省杭州市西湖区文三路1号1幢101室"
+            color: "米白"
+            colorName: "米白"
+      - auto_respond:
+          fallback: "确认"
+          form_values:
+            customer_name: "张三"
+            customer_phone: "13800138000"
+            customer_address: "浙江省杭州市西湖区文三路1号1幢101室"
+            color: "米白"
+            colorName: "米白"
+      - auto_respond:
+          fallback: "123456"
+      - auto_respond:
+          fallback: "123456"
     expectations:
       - tool: product_detail
       - tool: order_create

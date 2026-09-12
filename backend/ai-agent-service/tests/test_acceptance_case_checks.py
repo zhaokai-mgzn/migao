@@ -1052,3 +1052,98 @@ class TestToolHealthSummary:
         h = lr.summarize_tool_health([{"case_id": "X"}, {"round_trace": []},
                                       {"round_trace": [{"results": [{"tool": "a", "ok": True}]}]}])
         assert h["total"] == 1 and h["failed"] == 0
+
+
+class TestAutoRespond:
+    """`auto_respond` 轮：由 runner 按**上一轮卡片**自动作答（合作型用户模拟）
+
+    为什么需要（run 34627856207 实证，OR-014 / CH-010）：
+    这两条用例的 `user_inputs` 是按**某一种**流程形状写的（先选品→再加工项→再确认），
+    而 agent 实际的提问顺序与卡片类型会随模型而变（实测 OR-014 第 2 轮先发
+    「收货信息 & 颜色」表单、第 3 轮才发加工项 choice 卡）。静态脚本对不上就卡死：
+    第 4–8 轮每轮只重复 `customer_address_query`，**order_create 永不发生**。
+
+    真实顾客不会"照着脚本说话"，而是**有什么卡就答什么卡**。本机制就是把这个
+    真实行为搬进评测：`{"auto_respond": {...}}` 的轮次优先回答上一轮的待答卡片
+    （confirm→confirmValue；choice→首项；form→按声明值回填），没有卡片时用
+    `fallback` 文本兜底。这样用例不再依赖某种特定提问顺序。
+    """
+
+    def _last(self, interactive):
+        return [{"round_trace": [], "interactive": interactive,
+                 "tool_results": [], "final_text": ""}]
+
+    def test_answers_confirm_card_with_its_confirm_value(self):
+        results = self._last([{"component": "confirm", "confirmValue": "确认下单：遮光窗帘"}])
+        out = lr.resolve_auto_respond(results, fallback="确认", form_values={})
+        assert out == "确认下单：遮光窗帘"
+
+    def test_confirm_without_confirm_value_falls_back_to_text(self):
+        results = self._last([{"component": "confirm", "fields": []}])
+        assert lr.resolve_auto_respond(results, fallback="确认下单", form_values={}) == "确认下单"
+
+    def test_answers_choice_card_with_first_option_value(self):
+        results = self._last([{"component": "choice",
+                               "options": [{"label": "米白", "value": "米白"},
+                                           {"label": "浅灰", "value": "浅灰"}]}])
+        assert lr.resolve_auto_respond(results, fallback="x", form_values={}) == "米白"
+
+    def test_answers_form_card_with_declared_values(self):
+        results = self._last([{"component": "form",
+                               "formFields": [{"key": "customer_name"},
+                                              {"key": "color"}]}])
+        out = lr.resolve_auto_respond(results, fallback="x",
+                                      form_values={"customer_name": "张三", "color": "米白"})
+        assert out is not None and out.startswith("__FORM__|")
+        assert '"customer_name": "张三"' in out and '"color": "米白"' in out
+
+    def test_form_without_matching_values_falls_back(self):
+        results = self._last([{"component": "form", "formFields": [{"key": "unknown_key"}]}])
+        assert lr.resolve_auto_respond(results, fallback="确认下单", form_values={"a": 1}) == "确认下单"
+
+    def test_no_card_uses_fallback(self):
+        assert lr.resolve_auto_respond(self._last([]), fallback="数量 3 米", form_values={}) == "数量 3 米"
+        assert lr.resolve_auto_respond([], fallback="123456", form_values={}) == "123456"
+
+    def test_confirm_takes_priority_over_form(self):
+        """同一轮多张卡时按「推进流程」的优先级：confirm > choice > form"""
+        results = self._last([
+            {"component": "form", "formFields": [{"key": "customer_name"}]},
+            {"component": "confirm", "confirmValue": "确认下单"},
+        ])
+        assert lr.resolve_auto_respond(results, fallback="x",
+                                       form_values={"customer_name": "张三"}) == "确认下单"
+
+    def test_case_scan_uses_auto_respond_entries(self):
+        """run_case 必须识别 `{"auto_respond": …}` 轮（而不是把它当纯文本发出去）"""
+        import asyncio
+        from types import SimpleNamespace
+
+        sent = []
+
+        async def fake_send(token, session_id, message, images=None):
+            sent.append(message)
+            # 第 1 轮发一张 confirm 卡；第 2 轮无卡
+            interactive = ([{"component": "confirm", "confirmValue": "确认下单"}] if len(sent) == 1 else [])
+            return {"__round": len(sent), "tool_calls": [], "final_text": "ok",
+                    "interactive": interactive, "tool_results": []}
+
+        orig = lr.send_message
+        lr.send_message = fake_send
+        try:
+            case = SimpleNamespace(
+                id="AR-001", title="t", difficulty=SimpleNamespace(value="normal"),
+                tags=[], user_inputs=["帮我下单",
+                                      {"auto_respond": {"fallback": "确认下单"}}],
+                expectations=[], data_checks=[], order_before=[], forbidden_text=[],
+                want_text=[], required_args=[], forbidden_args=[], db_verify=None,
+                pre_clean=[], post_clean=[],
+            )
+            asyncio.run(lr.run_case(case, "tok", "sess"))
+        finally:
+            lr.send_message = orig
+
+        assert sent[0] == "帮我下单"
+        assert sent[1] == "确认下单", (
+            f"auto_respond 轮未按卡片作答，实发: {sent[1]!r}（被当成纯文本发出去了）"
+        )

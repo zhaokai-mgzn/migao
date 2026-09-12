@@ -1140,6 +1140,60 @@ async def check_db_verify(token: str, db_verify: list) -> list:
     return issues
 
 
+def resolve_auto_respond(results: list, fallback: str, form_values: dict) -> str:
+    """`auto_respond` 轮：按**上一轮的待答卡片**自动作答，没有卡片则用 fallback。
+
+    为什么要这个机制（CI 实证 run 34627856207，OR-014 / CH-010）：
+    用例的 `user_inputs` 是按**某一种**流程形状写的（先选品→再加工项→再确认），
+    而 agent 实际的提问顺序与卡片类型随模型而变（实测 OR-014 第 2 轮先发
+    「收货信息 & 颜色」表单、第 3 轮才发加工项 choice 卡）。静态脚本对不上就卡死：
+    第 4–8 轮每轮只重复 `customer_address_query`，**order_create 永不发生**。
+
+    真实顾客不会"照着脚本说话"，而是**有什么卡就答什么卡** —— 本函数把这一真实行为
+    搬进评测，使用例不再依赖某种特定提问顺序。
+
+    优先级（按"最能推进流程"排序）：confirm > choice > form > fallback。
+    - confirm → 回 `confirmValue`（前端点击协议就是发这个值），缺失时用 fallback
+    - choice  → 回第一个 option 的 value（等同点击首项）
+    - form    → 按 form 卡自己声明的 field key 匹配 `form_values`，拼 `__FORM__|{json}`
+                （与 `_auto_fill_form` 同一协议）；无匹配字段 → fallback
+    """
+    rounds = results or []
+    if rounds:
+        cards = rounds[-1].get("interactive") or []
+        by_comp = {}
+        for iv in cards:
+            comp = str(iv.get("type") or iv.get("component") or "")
+            by_comp.setdefault(comp, iv)
+
+        confirm = by_comp.get("confirm")
+        if confirm is not None:
+            value = str(confirm.get("confirmValue") or "").strip()
+            return value or fallback
+
+        choice = by_comp.get("choice")
+        if choice is not None:
+            options = choice.get("options") or []
+            if options:
+                first = options[0]
+                value = str(first.get("value") or first.get("text") or "").strip()
+                if value:
+                    return value
+
+        form = by_comp.get("form")
+        if form is not None:
+            filled = {}
+            for f in (form.get("formFields") or []):
+                key = str(f.get("key") or "")
+                if key and key in (form_values or {}):
+                    filled[key] = form_values[key]
+            if filled:
+                import json as _json
+                return f"__FORM__|{_json.dumps(filled, ensure_ascii=False)}"
+
+    return fallback
+
+
 def _auto_fill_form(results: list, values: dict) -> str | None:
     """form 卡自动回填（OR-014 基建缺口）：检测最近一轮 interactive 的 form 卡，
     用 case 声明的字段值构造 `__FORM__|{json}` 回传（FormCard 提交协议，line 98）。
@@ -1348,6 +1402,13 @@ async def run_case(case, token: str, session_id: str) -> dict:
     results = []
     all_tool_names = []
 
+    # case 级表单值：所有 `auto_fill` 轮声明的并集 —— auto_respond 轮回答表单时复用，
+    # 避免同一份收货信息在用例里重复声明（少一处漂移）
+    case_form_values: dict = {}
+    for _m in (case.user_inputs or []):
+        if isinstance(_m, dict) and isinstance(_m.get("auto_fill"), dict):
+            case_form_values.update(_m["auto_fill"])
+
     for i, msg in enumerate(case.user_inputs):
         images = []
         if isinstance(msg, dict) and msg.get("auto_select"):
@@ -1357,6 +1418,19 @@ async def run_case(case, token: str, session_id: str) -> dict:
             # 无法预知（「第一个」/「客户A」文本指代均不稳定）。
             # 无 choice 卡（agent 文本澄清路径）→ fallback「第一个」保持旧语义兼容。
             text = _auto_select_first_option(results) or "第一个"
+        elif isinstance(msg, dict) and msg.get("auto_respond"):
+            # 合作型用户：优先回答上一轮的待答卡片，无卡则用 fallback 文本
+            spec = msg.get("auto_respond") or {}
+            if not isinstance(spec, dict):
+                spec = {}
+            # 允许轮级 form_values 覆盖 case 级 auto_fill 声明
+            form_values = dict(case_form_values)
+            form_values.update(spec.get("form_values") or {})
+            text = resolve_auto_respond(
+                results,
+                fallback=str(spec.get("fallback") or "确认"),
+                form_values=form_values,
+            )
         elif isinstance(msg, dict) and msg.get("auto_fill"):
             # form 卡自动回填（OR-014 基建缺口）：agent 发 form 卡（如客户信息）
             # 时用 case 声明的字段值构造 __FORM__|{json} 回传（FormCard 提交协议）。
