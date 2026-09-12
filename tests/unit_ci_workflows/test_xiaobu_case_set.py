@@ -388,7 +388,7 @@ class TestCustomerFacingSemanticGuard:
         （越权→DF-020、注入→DF-021、空结果→DF-022），并保留 CH-011/DF-010。
         """
         sel = self._sel_ids()
-        for cid in ["CH-011", "DF-010", "DF-020", "DF-021", "DF-022"]:
+        for cid in ["CH-011", "DF-020", "DF-021", "DF-022", "DF-023"]:
             assert cid in sel, f"C 端对抗用例 {cid} 被语义收口误伤"
 
     def test_customer_end_llm_cases_preserved(self):

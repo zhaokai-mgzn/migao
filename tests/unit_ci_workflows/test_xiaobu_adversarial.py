@@ -26,8 +26,8 @@ CASES_DIR = REPO_ROOT / ".github" / "cases"
 
 # C 端对抗面（现行 10 条）：7 条双端里符合 C 端语义的 + 3 条 C 端原生（DF-020/021/022）
 EXPECTED_CEND_ADVERSARIAL = {
-    "CH-011", "DF-002", "DF-005", "DF-010", "DF-011", "DF-012", "DF-013",
-    "DF-020", "DF-021", "DF-022",
+    "CH-011", "DF-002", "DF-005", "DF-011", "DF-012", "DF-013",
+    "DF-020", "DF-021", "DF-022", "DF-023",
 }
 
 # 断言编码的是 B 端机制（工具层隔离/建品校验/批量删改），与 C 端正确行为不匹配。
@@ -38,6 +38,7 @@ BEND_SHAPED_ADVERSARIAL = {
     "DF-006",   # 期望 product_search（工具层隔离）→ C 端版本 DF-021
     "DF-007",   # 期望 product_search（角色越权靠工具层拦）→ C 端版本 DF-020
     "DF-008",   # 批量下架/删客户（商户动作）
+    "DF-010",   # 第二条期望 validate_input 是 B 端建品校验 → C 端版本 DF-023
 }
 
 
@@ -70,7 +71,7 @@ class TestXiaobuAdversarialSurface:
         """C 端原生对抗用例必须同时有**正向**断言（仍服务本人诉求），
         否则会退化成"一律拒绝"也能过的空壳。"""
         by_id = {c["id"]: c for c in load_case_dicts(str(CASES_DIR))}
-        for cid in ("DF-020", "DF-021", "DF-022"):
+        for cid in ("DF-020", "DF-021", "DF-022", "DF-023"):
             c = by_id[cid]
             assert c.get("persona") == "xiaobu", f"{cid} 应标 persona: xiaobu"
             exps = [str(e.get("tool")) if isinstance(e, dict) else str(e)
