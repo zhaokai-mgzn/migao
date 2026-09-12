@@ -1750,10 +1750,14 @@ async def execute_skill(
                                 "success": False,
                                 "error": "product_not_grounded",
                                 "message": (
-                                    "本会话还没有查询过商品详情，无法确认价格、规格与加工项。"
-                                    "请先调用 product_search 找到顾客要的商品，再调用 product_detail "
-                                    "取到真实单价/加工项/规格，然后按顾客确认的信息下单。"
-                                    "**不要凭记忆填价格或加工项**。"
+                                    "下单被拦截：本会话还没有**成功查询过商品详情**"
+                                    "（价格/规格/加工项都无从确认）。请**立即**按顺序执行，"
+                                    "**不要重复调用 order_create**（重复无效，这是硬性前置条件）：\n"
+                                    "1) product_search(keyword=顾客提到的商品名) —— 顾客说"
+                                    "「遮光窗帘 3 米」就用 keyword=\"遮光窗帘\"；\n"
+                                    "2) product_detail(product_id=第 1 步选中的商品)；\n"
+                                    "3) 拿到真实单价/加工项/规格后，按顾客确认的信息再下单。\n"
+                                    "禁止凭记忆填价格或加工项。"
                                 ),
                             }, ensure_ascii=False), {"success": False, "error": "product_not_grounded"}
 
