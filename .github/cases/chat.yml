@@ -360,6 +360,14 @@ cases:
           fallback: "123456"
       - auto_respond:
           fallback: "123456"
+      # 轮数余量（issue #3361）：模型的卡序**合法但不固定** —— 实测同一用例两次跑，
+      # 一次 R4 先发加工项 choice 卡、一次先发收货信息 form 卡，后者比前者多一轮 →
+      # 7 轮用尽仍未 order_create（判红，但失败长相像"能力不行"，真因是**用例轮数不够**）。
+      # 合作型用户会一直把卡答完，故尾部留 2 轮余量（fallback「确认」/验证码，答不到卡也无害）。
+      - auto_respond:
+          fallback: "确认"
+      - auto_respond:
+          fallback: "确认"
     expectations:
       - tool: product_search
       - tool: product_detail
