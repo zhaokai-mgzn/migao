@@ -1632,6 +1632,33 @@ class TestCardConfirmValueRecognition:
         assert _is_explicit_confirmation("确认") is True
 
 
+class _FakeGroundedStore:
+    """内存会话状态，预置「本会话已查过商品详情」（issue #3361 接地闸门要求）。
+
+    为什么必须显式 fake：这些测试此前隐式依赖"SessionStateStore 连不上 → 各分支降级"，
+    而**本机有 PG 时**它会真的读写 → 行为随环境漂移（接地闸门上线后当场暴露：
+    本机有 PG 的会话状态里没有接地标记 → order_create 被拦 → 7 条测试红）。
+
+    预置接地标记后，测试与 DB 无关：既覆盖确认链/去重逻辑，又不被基础设施可用性左右。
+    """
+
+    _states: dict = {}
+
+    def __init__(self, *a, **k):
+        pass
+
+    async def load(self, session_id: str) -> dict:
+        return dict(_FakeGroundedStore._states.setdefault(
+            session_id, {"grounded_product_detail": {"product_id": "prod_eval_blackout"}}))
+
+    async def commit(self, session_id: str, full: dict) -> None:
+        _FakeGroundedStore._states[session_id] = dict(full)
+
+
+def _patch_grounded_store():
+    return patch("app.memory.session_state_store.SessionStateStore", _FakeGroundedStore)
+
+
 class TestCardConfirmWriteExecutes:
     """集成：长 confirmValue 点击后，写操作**真的执行**（不再被门禁拦截）
 
@@ -1639,6 +1666,13 @@ class TestCardConfirmWriteExecutes:
     被门禁拦截（confirmValue >24 字）、用例靠"工具被调用"假绿。本测试锁死
     「点击确认卡 → 写操作放行」这条落库闭环。
     """
+
+    @pytest.fixture(autouse=True)
+    def _grounded_store(self):
+        _FakeGroundedStore._states = {}
+        with _patch_grounded_store():
+            yield
+
 
     LONG_CONFIRM = "确认下单：遮光窗帘 米白 散剪 门幅2.8米 3米 ¥474，收货人张三"
 
@@ -1707,7 +1741,11 @@ class TestCardConfirmWriteExecutes:
             mem_cls.return_value.set_pending_skill = AsyncMock(return_value=True)
 
             # 会话状态里预置最近确认卡的值（等同上一轮发出后已持久化）
-            store_state = {"last_confirm_value": self.LONG_CONFIRM}
+            store_state = {"grounded_product_detail": {"product_id": "prod_eval_blackout"},
+                       "last_confirm_value": self.LONG_CONFIRM,
+                           # 接地前置（issue #3361）：本类测"确认卡点击→写操作放行"，
+                           # 下单接地闸门要求会话状态里有该标记
+                           "grounded_product_detail": {"product_id": "prod_eval_blackout"}}
             store_cls = patch("app.memory.session_state_store.SessionStateStore")
             with store_cls as _sc:
                 _inst = MagicMock()
@@ -1820,6 +1858,13 @@ class TestWriteConfirmedAcrossTurns:
     `confirmed_write_tool`，写工具成功执行后清除（闭环语义与 pending 一致）。
     """
 
+    @pytest.fixture(autouse=True)
+    def _grounded_store(self):
+        _FakeGroundedStore._states = {}
+        with _patch_grounded_store():
+            yield
+
+
     LONG_CONFIRM = "确认下单：遮光窗帘 3米 米白 纳米圈打孔，总额528元，收货人张三 13800138000"
 
     def test_write_executes_on_code_turn_after_card_confirm(self):
@@ -1830,7 +1875,9 @@ class TestWriteConfirmedAcrossTurns:
 
         executed = []
         store_state = {"last_confirm_value": self.LONG_CONFIRM,
-                       "confirmed_write_tool": "order_create"}  # R1 匹配后已记录
+                       "confirmed_write_tool": "order_create",  # R1 匹配后已记录
+                       # 接地前置（issue #3361）：本用例测"验证码轮放行"，不测接地闸门
+                       "grounded_product_detail": {"product_id": "prod_eval_blackout"}}
 
         async def fake_execute(tool, args, ctx, state):
             executed.append(tool.name)
@@ -1956,6 +2003,8 @@ class TestWriteConfirmedLifecycle:
     LONG_CONFIRM = "确认下单：遮光窗帘 3米 米白 纳米圈打孔，总额528元，收货人张三 13800138000"
 
     def _run(self, store_state, user_msg, tool_calls):
+        # 接地前置（issue #3361）：本类测确认链，不测接地闸门
+        store_state.setdefault("grounded_product_detail", {"product_id": "prod_eval_blackout"})
         import asyncio
 
         from langchain_core.messages import AIMessage as _AI
@@ -2004,6 +2053,9 @@ class TestWriteConfirmedLifecycle:
             get_llm.return_value = llm
             mem_cls.return_value.set_pending_skill = AsyncMock(return_value=True)
 
+            # 接地前置（issue #3361）：本类测的是"确认链/跨轮放行"，下单接地闸门要求
+            # 会话状态里有 grounded_product_detail —— 不显式声明的话会被闸门拦（不是本类要测的）
+            store_state.setdefault("grounded_product_detail", {"product_id": "prod_eval_blackout"})
             inst = MagicMock()
             inst.load = AsyncMock(side_effect=lambda sid: dict(store_state))
             inst.commit = AsyncMock(side_effect=lambda sid, full: commits.append(dict(full)))
@@ -2163,6 +2215,13 @@ class TestInTurnDuplicateWriteCoalescing:
     变成 2 张订单。合并规则与缓存的关键区别：作用域仅本轮（下一次回复即失效），
     且**参数不同不合并**（那是两次不同的写需求）。
     """
+
+    @pytest.fixture(autouse=True)
+    def _grounded_store(self):
+        _FakeGroundedStore._states = {}
+        with _patch_grounded_store():
+            yield
+
 
     def _run(self, tool_calls, read_only=False):
         import asyncio
@@ -2363,3 +2422,150 @@ class TestHallucinatedToolArgSanitize:
 
         out = _sanitize_tool_args(T(), {"anything": 1, "name": "x"})
         assert out == {"anything": 1, "name": "x"}
+
+
+class TestOrderGroundingGate:
+    """下单接地闸门（issue #3361，OR-014 复现型红灯）。
+
+    实证（CI run 34704789166，OR-014）：顾客说「帮我下单，遮光窗帘 3 米，要打孔加工」，
+    模型 **一次都没查商品**（R1 tools=-），凭记忆发确认卡（金额 ¥95.4，而该商品真实单价
+    ¥168/米）并试图下单 → 单价/加工项/金额全不可信，且用例期望的 product_detail 缺失。
+
+    提示词里的「商品详情铁律（confirm 之前必须先调 product_detail）」模型不守，
+    故加代码闸门：本会话没**成功**查过商品详情 → 不许下单，并把可执行步骤写进 tool result。
+    """
+
+    def _run(self, grounded: bool, tool_calls):
+        import asyncio, json as _json
+
+        sent = []
+
+        async def fake_execute(tool, args, ctx, state):
+            sent.append(tool.name)
+            return (_json.dumps({"success": True, "data": {"id": "o1"}}),
+                    {"success": True, "data": {"id": "o1"}})
+
+        class _Store:
+            def __init__(self, state):
+                self._state = state
+
+            async def load(self, sid):
+                return dict(self._state)
+
+            async def commit(self, sid, full):
+                self._state.update(full)
+
+        store_state = {"grounded_product_detail": {"product_id": "p1"}} if grounded else {}
+
+        with patch("app.memory.session_memory.SessionMemory"), \
+             patch("app.graph.skills.base_skill.get_breaker") as get_breaker, \
+             patch("app.graph.skills.base_skill.get_skill_llm") as get_llm, \
+             patch("app.graph.skills.base_skill.create_skill_registry") as create_reg, \
+             patch("app.graph.skills.base_skill.set_tool_context"), \
+             patch("app.graph.skills.base_skill._execute_tool_safe", fake_execute), \
+             patch("app.memory.session_state_store.SessionStateStore",
+                   side_effect=lambda *a, **k: _Store(store_state)):
+            fake_tool = MagicMock()
+            fake_tool.name = "order_create"
+            fake_tool.read_only = False
+            fake_tool.destructive = False
+            fake_tool.requires_confirmation = False
+            registry = MagicMock()
+            registry.get_langchain_tools.return_value = []
+            registry.get_tool.side_effect = lambda n: fake_tool if n == "order_create" else None
+            create_reg.return_value = registry
+
+            breaker = MagicMock()
+
+            async def _pt(fn):
+                return await fn()
+
+            breaker.call = _pt
+            get_breaker.return_value = breaker
+
+            call = MagicMock(spec=AIMessage)
+            call.content = ""
+            call.tool_calls = tool_calls
+            final = MagicMock(spec=AIMessage)
+            final.content = "好的"
+            final.tool_calls = []
+            llm = MagicMock()
+            llm.bind_tools.return_value = llm
+            llm.ainvoke = AsyncMock(side_effect=[call, final])
+            get_llm.return_value = llm
+            _ = asyncio.run(execute_skill(
+                state=_make_state(messages=[HumanMessage(content="帮我下单")]),
+                skill_name="customer_order",
+                tool_names=["order_create"], system_prompt="p"))
+        return sent, store_state
+
+    def test_blocks_order_without_grounding(self):
+        sent, _ = self._run(False, [{"name": "order_create", "args": {}, "id": "c1"}])
+        assert sent == [], (
+            "本会话没查过商品详情却执行了 order_create —— 价格/加工项不可信（OR-014 实证 ¥95.4）"
+        )
+
+    def test_allows_order_when_grounded(self):
+        sent, _ = self._run(True, [{"name": "order_create", "args": {}, "id": "c1"}])
+        assert sent == ["order_create"], "已查过商品详情时不得误拦下单"
+
+    def test_product_detail_success_records_grounding(self):
+        """成功调用 product_detail 后必须落地接地标记（否则闸门永远拦）。"""
+        import asyncio, json as _json
+        sent = []
+
+        async def fake_execute(tool, args, ctx, state):
+            sent.append(tool.name)
+            return (_json.dumps({"success": True, "data": {"id": "p9"}}),
+                    {"success": True, "data": {"id": "p9"}})
+
+        class _Store:
+            def __init__(self, state):
+                self._state = state
+
+            async def load(self, sid):
+                return dict(self._state)
+
+            async def commit(self, sid, full):
+                self._state.update(full)
+
+        store_state = {}
+        with patch("app.memory.session_memory.SessionMemory"), \
+             patch("app.graph.skills.base_skill.get_breaker") as get_breaker, \
+             patch("app.graph.skills.base_skill.get_skill_llm") as get_llm, \
+             patch("app.graph.skills.base_skill.create_skill_registry") as create_reg, \
+             patch("app.graph.skills.base_skill.set_tool_context"), \
+             patch("app.graph.skills.base_skill._execute_tool_safe", fake_execute), \
+             patch("app.memory.session_state_store.SessionStateStore",
+                   side_effect=lambda *a, **k: _Store(store_state)):
+            fake_tool = MagicMock()
+            fake_tool.name = "product_detail"
+            fake_tool.read_only = True
+            fake_tool.destructive = False
+            fake_tool.requires_confirmation = False
+            registry = MagicMock()
+            registry.get_langchain_tools.return_value = []
+            registry.get_tool.side_effect = lambda n: fake_tool if n == "product_detail" else None
+            create_reg.return_value = registry
+            breaker = MagicMock()
+
+            async def _pt(fn):
+                return await fn()
+
+            breaker.call = _pt
+            get_breaker.return_value = breaker
+            call = MagicMock(spec=AIMessage)
+            call.content = ""
+            call.tool_calls = [{"name": "product_detail", "args": {"product_id": "p9"}, "id": "c1"}]
+            final = MagicMock(spec=AIMessage)
+            final.content = "好的"
+            final.tool_calls = []
+            llm = MagicMock()
+            llm.bind_tools.return_value = llm
+            llm.ainvoke = AsyncMock(side_effect=[call, final])
+            get_llm.return_value = llm
+            asyncio.run(execute_skill(
+                state=_make_state(messages=[HumanMessage(content="看看这个商品")]),
+                skill_name="customer_order",
+                tool_names=["product_detail"], system_prompt="p"))
+        assert store_state.get("grounded_product_detail"), "product_detail 成功后未落地接地标记"

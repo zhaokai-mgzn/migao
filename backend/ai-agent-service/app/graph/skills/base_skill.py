@@ -1727,6 +1727,36 @@ async def execute_skill(
                                 "message": _msg,
                             }, ensure_ascii=False), {"success": False, "error": "handoff_blocked_inflight"}
 
+                    # ── 下单接地闸门（issue #3361，OR-014 复现型红灯）──
+                    # 实证：C 端「帮我下单，遮光窗帘 3 米，要打孔加工」时模型**一次都没查商品**
+                    # （R1 tools=-），凭记忆发确认卡（金额 ¥95.4，而该商品真实单价 ¥168/米）
+                    # 并直接下单 → 单价/加工项/金额全不可信，且用例期望的 product_detail 缺失。
+                    # prompt 里的「商品详情铁律（confirm 前必须先调 product_detail）」模型不守，
+                    # 故加代码闸门：本会话没成功查过商品详情 → 不许下单，并把可执行步骤写进结果。
+                    if tool_name == "order_create" and skill_name == "customer_order" and session_id:
+                        _grounded = True
+                        try:
+                            from app.memory.session_state_store import SessionStateStore as _SG
+                            _sg = await _SG().load(session_id) or {}
+                            _grounded = bool(_sg.get("grounded_product_detail"))
+                        except Exception as _ge:
+                            logger.debug(f"[{skill_name}] ground gate check failed (non-fatal): {_ge}")
+                        if not _grounded:
+                            logger.warning(
+                                f"[{skill_name}] 下单接地闸门：本会话未查商品详情，拦截 order_create "
+                                f"| session={session_id}"
+                            )
+                            return tool_call, json.dumps({
+                                "success": False,
+                                "error": "product_not_grounded",
+                                "message": (
+                                    "本会话还没有查询过商品详情，无法确认价格、规格与加工项。"
+                                    "请先调用 product_search 找到顾客要的商品，再调用 product_detail "
+                                    "取到真实单价/加工项/规格，然后按顾客确认的信息下单。"
+                                    "**不要凭记忆填价格或加工项**。"
+                                ),
+                            }, ensure_ascii=False), {"success": False, "error": "product_not_grounded"}
+
                     # 写操作（destructive 或 requires_confirmation 高风险写）：必须经用户明确确认
                     # （代码层兜底，防间接提示注入驱动未确认写操作，审计 07 P0-L1）
                     # 豁免：action ∈ tool.read_only_actions 的纯只读调用（list/detail/tree 等）
@@ -1836,6 +1866,19 @@ async def execute_skill(
                         corrected = await _self_correct_retry(tool, args, tool_context, skill_name, result_dict, session_id, tenant_id, state)
                         if corrected:
                             result_str, result_dict = corrected
+                    # ── 落地"本会话已查过商品详情"标记（issue #3361 下单接地闸门用）──
+                    # 只在成功时写；失败不写（避免"查了但没查到"被当成接地）。
+                    if tool_name == "product_detail" and result_dict.get("success") and session_id:
+                        try:
+                            from app.memory.session_state_store import SessionStateStore
+                            _gs = SessionStateStore()
+                            _g = await _gs.load(session_id) or {}
+                            _g["grounded_product_detail"] = {
+                                "product_id": str((result_dict.get("data") or {}).get("id") or ""),
+                            }
+                            await _gs.commit(session_id, _g)
+                        except Exception as _e:
+                            logger.debug(f"[{skill_name}] ground flag persist failed (non-fatal): {_e}")
                     return tool_call, result_str, result_dict
 
                 tool_results = await asyncio.gather(*[_run_one_tool(tc) for tc in response.tool_calls])
