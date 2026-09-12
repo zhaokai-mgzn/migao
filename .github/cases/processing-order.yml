@@ -354,3 +354,31 @@ cases:
       ci:
         - agent-eval.yml
       verifies: []
+
+  - id: PG-014
+    legacy_id: ""
+    title: "订单加工项不可变（源头约束，决策 C）：创建后无任何修改通道"
+    domains:
+      - processing-order
+      - order
+    tier: normal
+    tags:
+      - processing-order
+      - invariant
+      - decision
+    truths_ref: []
+    user_inputs: []
+    expectations: []
+    data_checks:
+      - "OrderController / AgentOrderController 不暴露 PUT/POST/PATCH/DELETE 且路径含 item 的端点"
+      - "AgentOrderUpdateRequest 字段集固定为 {action,status,logisticsCompany,trackingNumber,cancelReason,refundAmount,refundReason}，不含 items 类字段"
+      - "订单明细唯一写入点：创建时 insert；整单删除仅限 pending（此时不可能存在加工单）"
+      - "约束失效即失败：若将来引入明细编辑入口，本用例失败 → 必须同步启用发货守卫覆盖校验（#3352 选项 B）"
+    skip_reason: "由 OrderItemImmutabilityTest（反射 tripwire，无 Spring 上下文）验证"
+    merge_log: "2026-09-12 新增（#3352 决策 C）：加工项创建后不可改 → 加工单快照不会与订单漂移"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/controller/OrderItemImmutabilityTest.java"
+      ci:
+        - pr-check.yml
+      verifies: []
