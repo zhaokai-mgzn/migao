@@ -174,7 +174,7 @@ jobs:
           echo "── ai-agent 意图分类 + 路由决策（按时间序）──"
           docker compose -f deploy/docker-compose.yml logs --no-color --timestamps \
             ai-agent-service 2>/dev/null \
-            | grep -E "route_by_intent|Routing to|Session continuity|Escape hatch|intent_router|classified" \
+            | grep -E "route_by_intent|Routing to|Session continuity|Escape hatch|intent_router|classified|last_confirm_value|card-confirm 诊断|确认卡 confirmValue" \
             | tail -200 \
             || echo "（无路由日志：容器未起或该步骤前已失败）"
 

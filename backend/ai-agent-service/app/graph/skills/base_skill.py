@@ -1625,6 +1625,17 @@ async def execute_skill(
                             f"[{skill_name}] 拦截未确认的写操作 {tool_name} | session={session_id} "
                             f"last_msg={last_user_msg[:30]!r}"
                         )
+                        # 诊断：为什么卡片确认没放行（stored 值 vs 本轮消息）
+                        try:
+                            from app.memory.session_state_store import SessionStateStore as _S2
+                            _f2 = await _S2().load(session_id) or {}
+                            logger.warning(
+                                f"[{skill_name}] card-confirm 诊断: stored={str(_f2.get('last_confirm_value'))[:40]!r} "
+                                f"msg={last_user_msg[:40]!r} equal={_is_card_confirm_value(last_user_msg, _f2.get('last_confirm_value'))} "
+                                f"| session={session_id}"
+                            )
+                        except Exception as _e2:
+                            logger.warning(f"[{skill_name}] card-confirm 诊断失败: {_e2}")
                         # 话术必须与**本 Skill 的实际能力**匹配（issue #3317）：
                         # 未绑定 interact 的 Skill（B 端 staff/settings/data）若被告知
                         # "请调用 interact（component=confirm）"，那是一条**不可执行指令** ——
@@ -1757,6 +1768,10 @@ async def execute_skill(
                                 _full = await _store.load(session_id) or {}
                                 _full["last_confirm_value"] = str(_data["confirmValue"])
                                 await _store.commit(session_id, _full)
+                                logger.info(
+                                    f"[{skill_name}] last_confirm_value 持久化: "
+                                    f"{str(_data['confirmValue'])[:40]} | session={session_id}"
+                                )
                         except Exception as e:
                             logger.warning(f"[{skill_name}] last_confirm_value persist failed (non-fatal): {e}")
             else:
