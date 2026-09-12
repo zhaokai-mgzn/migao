@@ -216,6 +216,35 @@ UA 只扮演了 C 端顾客 persona，B 端商家后台的浏览器操作旅程�
 
 - 会话关闭（close_idle 时间点 = 最后一条消息时间）、消息持久化完整性、
   刷新后历史含交互卡与最终回复、转人工快照（aiContext）跨会话可见。
+- **关闭后置断言（`post_session`，issue #3357）**：某些数据只在**会话关闭时**才落库
+  —— C 端长期记忆（`user_memories`）就是典型：每轮只把候选累积在 `session_states`，
+  关闭路径 `SessionMemory.close_session → _flush_pending_memories` 才批量落库
+  （issue #2815 会话末聚合）。这类断言**不能在轮内执行**（那时查到的是"抽取还没跑完"的
+  时序假象），必须挂在 case 的 `post_session` 上，由 runner 在会话关闭**之后**执行：
+
+  ```yaml
+  post_session:
+    - fetch: user_memories          # runner 支持的落库源（GET /api/chat/memories）
+      agent_type: xiaobu            # C 端画像（mibao 不产生记忆）
+      checks:
+        - "count>=1"                # 条数比较：count>=N / ==N / <=N
+        - "value_contains:奶油风"    # 值含子串
+        - "has_key:curtain_style"   # 存在该 key
+  ```
+
+  失败按**用例级失败**计（score=0）并走同一套重试/指纹分类——重试路径同样执行该断言，
+  否则"重试通过"会变成假绿。
+- **跨会话轮（`new_session`，issue #3357）**：长期记忆只在**新建会话**组装 prompt 时注入，
+  同会话内看不到（候选要等关闭才落库）——所以"老客户偏好识别"这类能力必须跨会话才能判定。
+  case 的 `user_inputs` 支持协议轮 `{new_session: true, text: "..."}`：发送前先关闭当前
+  会话（触发 flush）再开新会话。**断言词不得出现在该轮文本里**（第 1 轮声明偏好、第 2 轮
+  不再提词而要求按偏好推荐 → 回复出现该词只能来自记忆注入），否则测的是"复读"不是"记忆"。
+- **清理也属于断言链（#3357 教训）**：会话收尾必须打**对的接口**
+  （ai-agent `PUT /api/chat/sessions/{id}/close`）。此前 runner 打到 admin-api 的
+  `agent_sessions`（人工会话表，只有 human_handoff 会写行）→ 恒 404 被静默吞掉 →
+  会话从未关闭、`close_session` 从未执行、记忆从未 flush，而报告全绿。
+  "清理失败静默"本身就是假绿温床：收尾失败必须可见（warning），审计要能对账
+  （DB 审计报 ai-agent `sessions` 残留 + `memories=` 假绿告警）。
 
 ---
 
@@ -275,6 +304,11 @@ R2 ...
 | final_text 无内容断言 | 只判有无 | 正反关键词断言 |
 | 金额无断言 | — | 结构化 args 数学断言钩子 |
 | 无证据落盘 | 只打印摘要 | 输出 transcript artifact（§4.1）+ 验收报告 JSON/MD |
+| **生命周期/关闭后落库无断言** | `db_verify` 只能在轮内查（product_by_name），而记忆等数据**关闭时才落库** | ✅ 已落地（issue #3357）：`post_session` 关闭后置断言（`user_memories`）+ `new_session` 跨会话轮协议，见 §3.6 |
+
+> 注：表中前几项已在 2026-09 陆续落地（interactive 采集、`order_before` 轮次锚定、
+> `want_text/forbidden_text`、`required_args/forbidden_args`、`db_verify`、轮次轨迹
+> `round_trace`）；保留原表作为"差距→升级"的决策记录。
 
 ### 6.2 `acceptance_runner.py` 差距清单
 
