@@ -1207,3 +1207,48 @@ class TestSchemaCoversEntityColumns:
             + "\n修复：在 schema.sql 的「bootstrap 对齐」段补 ALTER TABLE ... ADD COLUMN "
               "IF NOT EXISTS，**并新增迁移**（迁移链是结构变更事实源）。"
         )
+
+
+class TestEvalArtifactAuditStep:
+    """workflow 必须审计 Eval 期间 agent **实际落库**的产物（acceptance-protocol §2.2）
+
+    为什么：round_trace 证明「工具被调用了」，但不证明「数据真的落库了」。
+    §2.2（2026-09-08 复盘）要求复核 AI 留下的会话/工单/订单 —— 报告说"创建成功"、
+    库里没有（或相反）都是翻车样本。CI 评测的库是**每次销毁的临时库**，所以
+    复核必须在销毁前以 workflow 步骤自动化：dump agent_sessions / orders /
+    after_sales_tickets / user_memories，与报告的 tool_calls 对得上才算闭环。
+    """
+
+    def _wf(self) -> dict:
+        import yaml
+        return yaml.safe_load((WORKFLOWS_DIR / "xiaobu-acceptance.yml").read_text(encoding="utf-8")) or {}
+
+    def _step(self):
+        steps = self._wf()["jobs"]["xiaobu-acceptance"]["steps"]
+        return next((s_ for s_ in steps if "DB 审计" in (s_.get("name") or "")), None)
+
+    def test_step_exists_after_eval_with_always(self):
+        steps = self._wf()["jobs"]["xiaobu-acceptance"]["steps"]
+        names = [s_.get("name") or "" for s_ in steps]
+        i_audit = next((i for i, n in enumerate(names) if "DB 审计" in n), -1)
+        i_eval = next((i for i, n in enumerate(names) if "local_runner" in n), -1)
+        assert 0 <= i_eval < i_audit, (
+            f"审计步骤必须在评测之后（i_eval={i_eval}, i_audit={i_audit}）"
+        )
+        assert self._step().get("if") == "always()", (
+            "审计必须 if: always() —— 失败轮次更要看（失败≠没创建；成功≠真创建）"
+        )
+
+    def test_step_covers_all_write_artifacts(self):
+        body = self._step().get("run") or ""
+        for table in ("agent_sessions", "orders", "after_sales_tickets", "user_memories"):
+            assert table in body, f"审计未覆盖表 {table}"
+        assert "ticket_type='complaint'" in body, "未单独统计转人工工单（CH-008/013/015 对账）"
+        assert (self._step().get("env") or {}).get("DEV_SERVICE_TOKEN"), (
+            "缺 DEV_SERVICE_TOKEN → compose 插值失败 → 审计为空"
+        )
+
+    def test_eval_creates_sessions_in_db(self):
+        """对照：评测确实每用例建一个会话（否则上面审计的 agent_sessions 恒为 0，没意义）"""
+        src = (Path(__file__).parent.parent.parent / "tests" / "agent_eval" / "local_runner.py").read_text(encoding="utf-8")
+        assert "api/chat/sessions" in src, "runner 未创建会话（审计目标落空）"
