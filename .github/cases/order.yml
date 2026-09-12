@@ -541,6 +541,14 @@ cases:
       - auto_respond:
           fallback: "123456"
       - auto_respond:
+          fallback: "确认"
+      - auto_respond:
+          fallback: "确认"
+      - auto_respond:
+          fallback: "123456"
+      - auto_respond:
+          fallback: "123456"
+      - auto_respond:
           fallback: "123456"
     expectations:
       - tool: product_detail
