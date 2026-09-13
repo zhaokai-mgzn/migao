@@ -821,8 +821,8 @@ class TestRepeatUntilCases:
                 except (TypeError, ValueError):
                     bad.append(f"{c['id']}: repeat_until.max={raw!r} 不是整数")
                     continue
-                if not (1 <= n <= 6):
-                    bad.append(f"{c['id']}: repeat_until.max={n} 越界（1..6，"
+                if not (1 <= n <= 8):
+                    bad.append(f"{c['id']}: repeat_until.max={n} 越界（1..8，"
                                f"重复轮是「顾客继续配合」不是无限重试）")
                 if not str(u.get("fallback") or "").strip():
                     bad.append(f"{c['id']}: repeat_until 轮缺 fallback（无卡无码时会发出默认值，"

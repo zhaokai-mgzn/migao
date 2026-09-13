@@ -2054,8 +2054,9 @@ def resolve_repeat_turn(results: list, opts: dict, case_form_values: dict | None
 def expand_repeat_turns(user_inputs: list) -> list:
     """把 `repeat_until` 轮展开成 N 份「运行时决定发什么」的轮次（issue #3430）。
 
-    `max` 上限收紧到 6：重复轮是"顾客继续配合"，不是无限重试 —— 上限过大只会把
-    模型空转的时间烧进评测墙钟（而墙钟由最慢单条决定，见 eval-pipeline-performance.md §2.6）。
+    `max` 上限收紧到 8（run 34769925078 实测：OR-021 的协作流程把 6 轮用光后**还差一步**就
+    能供码成功；跑通的用例会因停条件提前结束，不吃满上限，故放宽一档对墙钟影响很小）。
+    上限仍然存在 —— 重复轮是"顾客继续配合"，不是无限重试。
     """
     out = []
     for msg in user_inputs or []:
@@ -2065,7 +2066,7 @@ def expand_repeat_turns(user_inputs: list) -> list:
                 n = int(spec.get("max") or 3)
             except (TypeError, ValueError):
                 n = 3
-            n = max(1, min(6, n))
+            n = max(1, min(8, n))
             opts = {k: v for k, v in msg.items() if k != "repeat_until"}
             out.extend([{"__repeat__": spec, "opts": opts} for _ in range(n)])
         else:
@@ -2107,13 +2108,8 @@ async def check_debug_user_precondition(token: str, case) -> list:
 _SMS_CODE_RE = re.compile(r"^\s*(?:短信验证码|验证码)?\s*[:：]?\s*(\d{4,6})\s*$")
 
 
-def _customer_codes(case, results: list) -> set:
-    """顾客给过的验证码集合：**用例声明**（含 repeat_until.code / auto_respond.fallback）
-    ∪ **实际发出的用户消息**（issue #3434）。
-
-    两个来源都要：只扫实际消息会在"用例声明了码但那一轮没走到"时漏判；
-    只扫声明则会把历史会话/夹具带来的码当成顾客给的。
-    """
+def _declared_codes(case) -> set:
+    """用例**声明**里可能发出去的验证码（含 `repeat_until.code` / `auto_respond.fallback`）。"""
     out: set = set()
 
     def _scan(v) -> None:
@@ -2129,8 +2125,16 @@ def _customer_codes(case, results: list) -> set:
             _scan(u.get("fallback"))
             _scan(u.get("text"))
             _scan((u.get("auto_respond") or {}).get("fallback"))
+    return out
+
+
+def _sent_codes(results: list) -> set:
+    """**实际发出去过**的验证码（权威口径 —— 只有它才能说"顾客给过码"）。"""
+    out: set = set()
     for r in results or []:
-        _scan((r or {}).get("user_message"))
+        m = _SMS_CODE_RE.match(str((r or {}).get("user_message") or ""))
+        if m:
+            out.add(m.group(1))
     return out
 
 
@@ -2164,9 +2168,8 @@ def check_write_code_provenance(results: list, case) -> list:
     """
     if str(getattr(case, "persona", "") or "") != "xiaobu":
         return []
-    given = _customer_codes(case, results)
-    if not given:
-        return []
+    sent = _sent_codes(results)
+    declared = _declared_codes(case)
     issues = []
     for r in results or []:
         if not _round_had_code_error(r):
@@ -2177,13 +2180,28 @@ def check_write_code_provenance(results: list, case) -> list:
             got = str(((tc or {}).get("args") or {}).get("sms_code") or "").strip()
             rnd = (r or {}).get("__round")
             if not got:
+                if sent:
+                    # 情形①：顾客**真的给过**码，写调用却没带 → agent 侧代码补齐链路的问题
+                    issues.append(
+                        f"R{rnd}: order_create 因缺验证码失败，而此时顾客**已经给过**验证码，"
+                        f"调用参数里却没有 —— agent 侧代码补齐链路（会话记码→写工具回填）没接上"
+                        f"（issue #3434）")
+                elif declared:
+                    # 情形②：用例声明了码但**那一轮没走到** → 是 harness 的供码时机没触发，
+                    # 不是 agent 的锅。**必须分开报**，否则会把评测侧问题写成 agent 缺陷
+                    # （本轮实测：第一版就是这么说错的）。
+                    issues.append(
+                        f"R{rnd}: order_create 因缺验证码失败，而**用例声明的验证码始终没发出去** "
+                        f"—— repeat_until 的供码时机没触发（评测侧问题，issue #3430/#3434）")
+                # 两者都没有 → 这条用例本来就要求 agent 自己问码（不判）
+            elif got not in sent and got not in declared:
                 issues.append(
-                    f"R{rnd}: order_create 因缺验证码失败，且调用参数里**没有验证码** —— "
-                    f"代码补齐链路（会话记码→写工具回填）没接上（issue #3434）")
-            elif got not in given:
+                    f"R{rnd}: order_create 因验证码失败，且参数里的验证码与顾客给过/用例声明的"
+                    f"**都不一致** —— 疑似模型自造验证码（issue #3434）")
+            elif got not in sent and sent:
                 issues.append(
-                    f"R{rnd}: order_create 因验证码失败，且参数里的验证码与顾客给过的**都不一致**"
-                    f"（顾客给过 {len(given)} 个）—— 疑似模型自造验证码（issue #3434）")
+                    f"R{rnd}: order_create 携带的验证码不是顾客**实际给过**的那个"
+                    f"（疑似模型自造或复用了过期码，issue #3434）")
             break
     return issues
 
