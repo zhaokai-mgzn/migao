@@ -631,11 +631,13 @@
 数据: 规格选择/收货信息通过 interact(choice/form) 组件收集（非纯文本追问）
 数据: order_create 前必有 interact(confirm) 确认（写操作守卫）
 数据: order_create items 含所选 SKU（颜色/门幅/售卖方式）与数量
+数据: 会话记忆保原文：手机号不得在图谱层被脱敏后落库（否则模型下一轮把 `****` 填 0 建单 —— issue #3386）
 数据: C 端下单是**两步**：确认订单信息后还需手机验证码（order_create 的 sms_code，customer 角色必填）。用例必须提供验证码这一轮，否则 AI 停在第 5 步「请提供验证码」，order_create 永不发生（run 34622425044 实证：R7 顾客回「确认」后无任何工具调用）。dev/CI 栈已设 SMS_BYPASS_CODE=123456，此处用该码走真实校验分支。
 时序: interact[confirm] before order_create
 必填: order_create() 字段 customer_phone, items
 必须成功: order_create
 金额: order_create 「北欧风窗帘」 → unit_price; subtotal; total
+落库: order_phone None → 
 ```
 真值: ai-chat.confirm-required, order.flow
 溯源: C 端表单化交互方案 S1（miniapp-multiturn-form-scenarios.md） ｜ tags: multi_turn, form, interactive, order

@@ -3,7 +3,7 @@ Tests for app/api/*.py — coverage gap issue #581
 Covers: chat (helpers), sse (SSEEvent/SSEStreamBuilder),
          upload (_sniff_image_type/_validate_image_file), internal (Pydantic models)
 """
-# case_ids: CH-001, API-004, CH-011, CH-012, OR-017
+# case_ids: CH-001, API-004, CH-010, CH-011, CH-012, OR-017
 import json
 import pytest
 from unittest.mock import MagicMock, patch
@@ -705,3 +705,95 @@ class TestHistoryStaysRaw:
         assert "138****8000" in outbound, f"出站应脱敏: {outbound[:120]}"
         history = " ".join(str(v) for kw in saved for v in kw.values())
         assert "13800138000" in history, "落库历史被脱敏了 → 模型下一轮会以为号码不完整"
+
+
+class TestMemoryIntegrityAcrossGraphAndBoundary:
+    """跨层不变量：**真 graph** 产出原文 → 出站脱敏 → 落库保持原文（issue #3386）。
+
+    为什么必须跨层：上面的 `TestHistoryStaysRaw` 用**假 agent**（直接 yield 原文），
+    看不到上游 graph 已经把 `final_answer` 脱敏过 —— 真 bug 就藏在这条缝里：
+    graph 脱敏 `13800138000` → `138****8000` → 落库 → 模型下一轮把 `****` 填成 `0`
+    → `13800008000` 建单成功（CH-010 订单 20260913384380002 落库实证）。
+    本用例把「真 skill 执行」和「SSE 边界」串起来，两侧同时断言，缝再断就会被拦。
+    """
+
+    def _graph_final_answer(self, reply="您的收货信息：张三 · 13800138000"):
+        """用**真 skill 执行**（stub LLM）产出 `final_answer` —— 不假手于假 agent。"""
+        import asyncio
+        from unittest.mock import AsyncMock
+        from langchain_core.messages import AIMessage, HumanMessage
+        from app.graph.skills.base_skill import execute_skill
+        from tests.test_graph_skills import _make_state
+
+        with patch("app.memory.session_memory.SessionMemory"), \
+             patch("app.graph.skills.base_skill.get_breaker") as gb, \
+             patch("app.graph.skills.base_skill.get_skill_llm") as gl, \
+             patch("app.graph.skills.base_skill.create_skill_registry") as cr, \
+             patch("app.graph.skills.base_skill.set_tool_context"):
+            registry = MagicMock()
+            registry.get_langchain_tools.return_value = []
+            registry.get_tool.return_value = None
+            cr.return_value = registry
+            breaker = MagicMock()
+
+            async def _pt(fn):
+                return await fn()
+
+            breaker.call = _pt
+            gb.return_value = breaker
+            final = MagicMock(spec=AIMessage)
+            final.content = reply
+            final.tool_calls = []
+            llm = MagicMock()
+            llm.bind_tools.return_value = llm
+            llm.ainvoke = AsyncMock(side_effect=[final])
+            gl.return_value = llm
+            res = asyncio.run(execute_skill(
+                state=_make_state(messages=[HumanMessage(content="我的收货信息是什么")],
+                                  role="customer"),
+                skill_name="customer_order", tool_names=["product_search"], system_prompt="p"))
+        return res.get("final_answer") or ""
+
+    def test_outbound_masked_while_persisted_stays_raw(self):
+        import asyncio
+        from app.agents.customer_service_agent import AgentContext, AgentResponse
+        from app.api.chat import _agent_stream_to_sse
+
+        graph_answer = self._graph_final_answer()
+        assert "13800138000" in graph_answer, (
+            f"graph 层不得脱敏（记忆要保原文）: {graph_answer!r}")
+
+        saved = []
+
+        class _Agent:
+            async def astream_chat(self, message, context, chat_history):
+                # 真 graph 的输出原样喂进 SSE 边界
+                yield AgentResponse(type="text", content=graph_answer)
+
+        class _Mem:
+            async def add_message(self, **kw):
+                saved.append(kw)
+
+            async def save_message(self, **kw):
+                saved.append(kw)
+
+            async def save(self, *a, **kw):
+                return None
+
+        ctx = AgentContext(tenant_id=1, user_id="u1", session_id="s1", role="customer",
+                           identity_type="customer")
+
+        async def _collect():
+            out = []
+            async for chunk in _agent_stream_to_sse(_Agent(), "你好", ctx, [], MagicMock(),
+                                                    _Mem(), "s1", 1, "u1"):
+                out.append(chunk)
+            return out
+
+        outbound = "".join(asyncio.run(_collect()))
+        assert "138****8000" in outbound, f"出站必须脱敏（顾客看得到）: {outbound[:160]}"
+        history = " ".join(str(v) for kw in saved for v in kw.values())
+        assert "13800138000" in history, (
+            "落库 assistant 消息被脱敏 → 模型下一轮读残缺值填 0 建单（issue #3386）")
+        assert "138****8000" not in history, f"落库必须是原文: {history[:160]!r}"
+

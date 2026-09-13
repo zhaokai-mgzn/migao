@@ -1,4 +1,4 @@
-# case_ids: OR-012, OR-014, OR-017, OR-018, CH-011, DF-020
+# case_ids: OR-012, OR-014, OR-017, OR-018, CH-010, CH-011, DF-020
 """断言配置必须**形状正确**（issue #3367 断言层审计）。
 
 ## 为什么需要守卫
@@ -23,7 +23,7 @@ from render_cases import load_case_dicts  # noqa: E402
 
 CASES_DIR = REPO_ROOT / ".github" / "cases"
 
-SUPPORTED_DB_FETCH = {"product_by_name", "order_items"}
+SUPPORTED_DB_FETCH = {"product_by_name", "order_items", "order_phone"}
 SUPPORTED_POST_SESSION_FETCH = {"user_memories"}
 
 
@@ -80,6 +80,9 @@ class TestAssertionSpecsWellFormed:
                     bad.append(f"{c['id']}.db_verify[{i}]: product_by_name 缺 name")
                 if fetch == "order_items" and not (s.get("expect_products") or s.get("expect_quantities")):
                     bad.append(f"{c['id']}.db_verify[{i}]: order_items 没有任何期望（空断言）")
+                if fetch == "order_phone" and not s.get("expect_phone"):
+                    # 空断言 = 声称核对了落库手机号、其实没核对（issue #3386 同族风险）
+                    bad.append(f"{c['id']}.db_verify[{i}]: order_phone 缺 expect_phone（空断言）")
             for i, s in enumerate(_specs(c, "post_session")):
                 if s.get("fetch") not in SUPPORTED_POST_SESSION_FETCH:
                     bad.append(f"{c['id']}.post_session[{i}]: 不支持的 fetch={s.get('fetch')!r}")
