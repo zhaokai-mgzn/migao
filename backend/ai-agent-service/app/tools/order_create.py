@@ -9,6 +9,7 @@ AI 智能客服系统 - 订单创建 Tool
 """
 from __future__ import annotations
 
+import json
 import os
 import re
 from typing import Any, Dict, List, Optional
@@ -354,6 +355,45 @@ class OrderCreateTool(BaseTool):
                         error=f"商品明细第 {i + 1} 项缺少 {field}",
                         message=f"商品明细第 {i + 1} 项缺少必填字段：{field}",
                     )
+
+        # ── 同一张单里出现**完全相同的商品行** → fail-closed（issue #3392，DB 实证）──
+        # 实证（run 34747025719）：新客用例 OR-022 期望 3 米（168×3 + 打孔 8×3 = ¥528），
+        # 落库却是 ¥1584（9×168 + 9×8）与 ¥1056（6×168 + 6×8）—— 数量按**确认轮次累加**
+        # （3 → 6 → 9，即 3 的倍数），顾客会被多收 2~3 倍的钱，且全链路无告警。
+        # 判据取"**完全相同的行**"（名称/单价/小计/规格字段逐一相等）：正常订单里同商品
+        # 不同规格（颜色/门幅）会有区分字段，完全重复只可能是重复提交/累加。
+        # 为什么在工具层拦：这是**钱的正确性**，不能指望模型自己发现；拦下并明确告诉它
+        # "合并成一行、数量取合计"，模型下一轮即可自愈（比静默多收钱好得多）。
+        _dup_key_seen: Dict[str, int] = {}
+        for _i, _it in enumerate(items):
+            if not isinstance(_it, dict):
+                continue
+            _sig = json.dumps({
+                "name": str(_it.get("product_name") or ""),
+                "unit_price": str(_it.get("unit_price")),
+                "subtotal": str(_it.get("subtotal")),
+                "product_id": str(_it.get("product_id") or ""),
+                "width": str(_it.get("width") or ""),
+                "height": str(_it.get("height") or ""),
+                "processing_info": json.dumps(_it.get("processing_info"), ensure_ascii=False,
+                                              sort_keys=True, default=str),
+            }, ensure_ascii=False, sort_keys=True)
+            if _sig in _dup_key_seen:
+                _first = _dup_key_seen[_sig] + 1
+                return ToolResult(
+                    success=False,
+                    error="商品明细存在重复行",
+                    message=(
+                        f"商品明细第 {_i + 1} 项与第 {_first} 项**完全相同**"
+                        f"（{_it.get('product_name')} ×{_it.get('quantity')}，"
+                        f"单价 {_it.get('unit_price')}）—— 同一张订单里不应出现完全相同的两行，"
+                        f"否则顾客会被**重复计费**。"
+                        f"请把数量合并成**一行**（该行 quantity = 各行数量之和）后重新提交。"
+                    ),
+                    suggestion=("合并重复行：同一商品/规格只保留一行，数量取合计；"
+                                "例如 3 米不要写成三行各 1 米或三行各 3 米"),
+                )
+            _dup_key_seen[_sig] = _i
 
         try:
             # 构建请求体（admin-api 使用 camelCase）

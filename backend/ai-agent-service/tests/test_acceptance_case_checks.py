@@ -13,6 +13,7 @@
 import asyncio
 from types import SimpleNamespace
 import importlib.util
+import json
 import re
 
 import pytest
@@ -902,6 +903,48 @@ class TestRoundTraceToolOutcomes:
         assert "failed=" not in lr.format_round_trace(trace)
 
 
+class TestRoundTraceWriteArgs:
+    """写工具入参必须进轨迹（issue #3394）：数量/金额错的唯一归因证据。
+
+    实证代价：OR-022 落库数量 9（期望 3），旧轨迹只有 `tools=[order_create]` 与结果摘要 →
+    无法区分「模型一次就传 9」与「重复行各 3」，为此多花了一整轮 CI + 一个最终不适用的
+    工具层守卫（DB 明细证明是**单行 ×9**）。
+    """
+
+    def _results(self):
+        return [{
+            "__round": 3,
+            "tool_calls": [
+                {"name": "order_create", "args": {
+                    "customer_name": "张三", "customer_phone": "13800138000", "sms_code": "123456",
+                    "items": [{"product_name": "遮光窗帘", "quantity": 9,
+                               "unit_price": 168.0, "subtotal": 1512.0}]}},
+                {"name": "product_search", "args": {"keyword": "窗帘"}},
+            ],
+            "tool_results": [], "cards": [], "interactive": [], "final_text": "ok",
+        }]
+
+    def test_write_args_recorded_with_quantity(self):
+        trace = lr.build_round_trace(self._results())
+        wa = trace[0]["write_args"]
+        assert len(wa) == 1 and wa[0]["tool"] == "order_create", wa
+        assert wa[0]["args"]["items"][0]["qty"] == 9, "数量必须可查（归因唯一证据）"
+
+    def test_read_tool_not_recorded(self):
+        trace = lr.build_round_trace(self._results())
+        assert all(w["tool"] != "product_search" for w in trace[0]["write_args"])
+
+    def test_phone_masked_and_code_hidden(self):
+        trace = lr.build_round_trace(self._results())
+        a = trace[0]["write_args"][0]["args"]
+        assert a["customer_phone"] == "138****8000", "轨迹进 CI 日志，手机号必须掩码"
+        assert a["sms_code"] == "***"
+
+    def test_formatter_prints_quantity(self):
+        out = lr.format_round_trace(lr.build_round_trace(self._results()))
+        assert "遮光窗帘×9@168" in out, out
+
+
 class TestRoundTraceResultDigest:
     """结果的**载荷摘要**：区分「工具通了但没数据」与「有数据但不往下走」
 
@@ -1324,7 +1367,7 @@ class TestCloseAndVerifySession:
         import unittest.mock as mock
         closed = []
 
-        async def fake_end(token, sid):
+        async def fake_end(token, sid, **kwargs):
             closed.append(sid)
 
         async def fake_check(token, specs):
@@ -1393,7 +1436,7 @@ class TestNewSessionTurn:
             created.append(sid)
             return sid
 
-        async def fake_end(token, sid):
+        async def fake_end(token, sid, **kwargs):
             closed.append(sid)
 
         import unittest.mock as mock
@@ -1460,7 +1503,7 @@ class TestRunSuitePostSession:
             calls["checks"] += 1
             return list(post_results.pop(0)) if post_results else []
 
-        async def fake_end(token, sid):
+        async def fake_end(token, sid, **kwargs):
             return None
 
         monkeypatch.setenv("AGENT_EVAL_FLAKE_LOG", str(tmp_path / "flakes.json"))
@@ -1525,7 +1568,7 @@ class TestRetryBudget:
                     "score": 0.0, "failed": [("boom", "x")], "last_error": None,
                     "final_text": "", "final_session_id": sid, "session_breaks": 0}
 
-        async def fake_end(token, sid):
+        async def fake_end(token, sid, **kwargs):
             return None
 
         cases = [lr.EvalCase(id=f"RB-{i}", title="t", skill=lr.Skill.GENERAL,
@@ -1939,7 +1982,7 @@ class TestSuiteConcurrency:
                     "total": 1, "score": score, "failed": [], "last_error": None,
                     "final_text": "", "final_session_id": sid, "session_breaks": 0}
 
-        async def fake_end(token, sid):
+        async def fake_end(token, sid, **kwargs):
             return None
 
         async def fake_snapshot(token, kw):
@@ -2020,7 +2063,7 @@ class TestSuiteConcurrency:
                     "score": 0.0, "failed": [("x", "y")], "last_error": None,
                     "final_text": "", "final_session_id": sid, "session_breaks": 0}
 
-        async def fake_end(token, sid):
+        async def fake_end(token, sid, **kwargs):
             return None
 
         monkeypatch.setenv("AGENT_EVAL_FLAKE_LOG", str(tmp_path / "f.json"))
@@ -2077,7 +2120,7 @@ class TestConcurrencyGateTail:
                     "score": 1.0, "failed": [], "last_error": None, "final_text": "",
                     "final_session_id": sid, "session_breaks": 0}
 
-        async def fake_end(token, sid):
+        async def fake_end(token, sid, **kwargs):
             return None
 
         async def fake_snapshot(token, kw):
@@ -2169,7 +2212,7 @@ class TestPreCleanExclusiveWindow:
                     "score": 1.0, "failed": [], "last_error": None, "final_text": "",
                     "final_session_id": sid, "session_breaks": 0}
 
-        async def fake_end(token, sid):
+        async def fake_end(token, sid, **kwargs):
             return None
 
         async def fake_pre_clean(token, spec):
@@ -2207,7 +2250,7 @@ class TestPreCleanExclusiveWindow:
                     "score": 1.0, "failed": [], "last_error": None, "final_text": "",
                     "final_session_id": sid, "session_breaks": 0}
 
-        async def fake_end(token, sid):
+        async def fake_end(token, sid, **kwargs):
             return None
 
         async def fake_post_checks(token, specs):
@@ -2272,7 +2315,7 @@ class TestNoDeadlockWithPreCleanUnderConcurrency:
                     "score": 1.0, "failed": [], "last_error": None, "final_text": "",
                     "final_session_id": sid, "session_breaks": 0}
 
-        async def fake_end(token, sid):
+        async def fake_end(token, sid, **kwargs):
             return None
 
         async def fake_pre_clean(token, spec):
@@ -2727,6 +2770,20 @@ class TestDbVerifyOrderItems:
         with mock.patch.object(lr, "_first_successful_data", new=lambda res, tool: {}):
             issues = asyncio.run(lr.check_db_verify("tok", [self._spec()], [self._round()]))
         assert issues and "order_create" in issues[0]
+
+    def test_quantity_mismatch_reports_line_shape(self):
+        """数量不符时必须报**行的形状**（issue #3392）：3 行各 3 ≠ 单行 9，修法不同。"""
+        order = {"data": {"orderNo": "x", "items": [
+            {"productName": "遮光窗帘", "quantity": 3, "unitPrice": 168.0},
+            {"productName": "遮光窗帘", "quantity": 3, "unitPrice": 168.0},
+            {"productName": "遮光窗帘", "quantity": 3, "unitPrice": 168.0}]}}
+        issues = self._run(self._spec(expect_quantities={"遮光窗帘": 3}), order=order)
+        # ⚠️ 取**数量那条**（issues[0] 可能是"缺某商品"那条 —— 首版就是索引取错导致假失败）
+        hit = next((i for i in issues if "数量" in i), "")
+        assert hit, issues
+        assert "数量 9" in hit, hit
+        assert "3 行" in hit, f"必须报行数（区分重复行 vs 数量值算错）: {hit}"
+        assert "遮光窗帘×3@168" in hit, f"必须报逐行明细: {hit}"
 
     def test_unknown_fetch_still_rejected(self):
         issues = self._run({"fetch": "nonsense"})
@@ -3293,3 +3350,107 @@ class TestDebugUserWiring:
             asyncio.run(lr.run_case(self._case("debug_customer_new"), "tok", "sess_y"))
         assert seen.get("debug_user") == "debug_customer_new", (
             "run_case 没把 case.debug_user 传给 send_message → 身份覆盖失效（假绿）")
+
+
+class TestDebugUserPrecondition:
+    """新客用例的前提必须**可判定**（issue #3391：首版假绿实证）。
+
+    实战教训（run 34746134755）：身份字段只在渲染器里映射、CI 真正走的 YAML 装载路径
+    漏映射 → 用例仍以 debug_customer_1（有历史订单）跑 → 走的是"有历史地址"路径，
+    却报 ✅ 100%（DB 审计：11 笔订单全挂 debug_customer_1）。**全绿的假绿最危险**，
+    故把前提做成可执行断言：以该身份查「我的订单」必须为空。
+    """
+
+    def _case(self, debug_user):
+        return lr.EvalCase(
+            id="NEWC-TEST", legacy_id="", title="t", skill=lr.Skill.ORDER,
+            difficulty=lr.Difficulty.NORMAL, user_inputs=["帮我下单"],
+            expectations=[], data_checks=[], persona="xiaobu", debug_user=debug_user,
+        )
+
+    def _run(self, debug_user, items):
+        import unittest.mock as mock
+
+        class _Resp:
+            status_code = 200
+            # ⚠️ `_safe_json` 读的是 `resp.content`（bytes）而非 `.json()`：
+            # 首版夹具只实现 json() → 解析永远失败→ items 恒空 → "无违规" 是夹具喂出来的假绿
+            # （本测试正是靠"身份未生效必须判红"这条反向用例才发现夹具错了）。
+            content = json.dumps({"success": True, "data": {"items": items}}).encode()
+
+        class _Client:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *a):
+                return False
+
+            async def get(self, url, headers=None, params=None, timeout=None):
+                self.headers = headers
+                return _Resp()
+
+        client = _Client()
+        with mock.patch.object(lr.httpx, "AsyncClient", return_value=client):
+            issues = asyncio.run(lr.check_debug_user_precondition("tok", self._case(debug_user)))
+        return issues, client
+
+    def test_no_debug_user_is_noop(self):
+        issues, _ = self._run("", [])
+        assert issues == []
+
+    def test_new_customer_identity_effective_passes(self):
+        """身份生效（该身份无订单）→ 无违规。"""
+        issues, client = self._run("debug_customer_new", [])
+        assert issues == []
+        assert client.headers.get("X-Debug-User") == "debug_customer_new"
+
+    def test_identity_not_effective_fails_loudly(self):
+        """身份没生效（查到 debug_customer_1 的历史订单）→ 判红，且信息可直接定位。"""
+        issues, _ = self._run("debug_customer_new", [{"orderNo": "EVAL-ORD-0002"}])
+        assert issues, "身份未生效必须判红（否则用例静默走错路径 = 假绿）"
+        assert "身份未生效" in issues[0]
+
+    def test_run_case_scores_zero_when_identity_ineffective(self):
+        """前提校验必须**接进 run_case 判定**：身份没生效 → 用例判红（防假绿）。
+
+        为什么这条最关键：前提校验若只是"算出来没人用"（假守卫），用例照样全绿 ——
+        而这正是首版翻车的形态（全绿但订单全挂 debug_customer_1）。
+        """
+        import unittest.mock as mock
+
+        async def fake_send(token, session_id, message, images=None, debug_user=""):
+            return {"user_message": message, "images": images or [],
+                    "tool_calls": [{"name": "product_search", "args": {}}],
+                    "tool_results": [], "interactive": [], "final_text": "好的",
+                    "error": None, "streamed": False, "done": True}
+
+        async def fake_precheck(token, case):
+            return ["新客身份未生效：以 X-Debug-User=debug_customer_new 查「我的订单」返回 2 笔（应为 0）"]
+
+        with mock.patch.object(lr, "send_message", new=fake_send), \
+             mock.patch.object(lr, "check_debug_user_precondition", new=fake_precheck), \
+             mock.patch.object(lr, "PERSONA", "xiaobu"):
+            res = asyncio.run(lr.run_case(self._case("debug_customer_new"), "tok", "sess_z"))
+        assert res["score"] == 0.0, "身份未生效必须判红（否则用例静默走错路径 = 全绿假绿）"
+        assert any("身份未生效" in str(f) for f, _ in res["failed"])
+
+    def test_real_yaml_load_yields_debug_user(self):
+        """**端到端**装载真实用例库：OR-022 的 debug_user 必须落到 EvalCase 上。
+
+        比源码 grep 更强：真的跑一遍 `load_cases_from_yaml('.github/cases')`
+        （CI 用的就是这条路径），字段丢了立刻红。
+        """
+        import pathlib as _pl
+        cases_dir = _pl.Path(lr.__file__).resolve().parents[2] / ".github" / "cases"
+        cases = {c.id: c for c in lr.load_cases_from_yaml(str(cases_dir))}
+        assert cases["OR-022"].debug_user == "debug_customer_new", (
+            f"YAML 装载后 debug_user 丢失: {cases['OR-022'].debug_user!r}")
+        assert cases["OR-021"].debug_user == "", "未声明身份的用例应为空（不得误继承）"
+
+    def test_loader_maps_debug_user_from_yaml(self):
+        """**CI 走的 YAML 装载路径**必须映射 debug_user（首版就是这里漏了）。"""
+        import pathlib as _pl
+        src = _pl.Path(lr.__file__).read_text(encoding="utf-8")
+        assert "debug_user=c.get(\"debug_user\"" in src, (
+            "local_runner 的 YAML→EvalCase 装载器漏了 debug_user —— CI（--cases .github/cases）"
+            "会用空身份跑，新客用例假绿")

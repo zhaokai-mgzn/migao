@@ -156,7 +156,7 @@ async def restore_product(token: str, product_id: str):
                          headers=h, json={"price": price})
 
 
-async def _end_session(token: str, session_id: str) -> None:
+async def _end_session(token: str, session_id: str, debug_user: str = "") -> None:
     """评测会话清理（协议 §2.2）：case 结束后关闭会话，并触发长时记忆 flush。
 
     **主路径必须是 ai-agent 的关闭接口**（PUT {AI_API}/api/chat/sessions/{id}/close）：
@@ -174,8 +174,11 @@ async def _end_session(token: str, session_id: str) -> None:
     """
     try:
         async with httpx.AsyncClient() as c:
+            # 多身份用例（issue #3392）：会话属主是用例声明的身份，
+            # 用默认身份关闭会 403（实测 sess_... HTTP 403）→ close 路径失效 =
+            # 记忆候选不 flush（正是本函数注释里 issue #3357 修过的"静默失效"）。
             r = await c.put(f"{AI_API}/api/chat/sessions/{session_id}/close",
-                            headers=_chat_headers(token), timeout=15)
+                            headers=_chat_headers(token, debug_user), timeout=15)
             if r.status_code >= 400:
                 print(f"     ⚠️ 会话关闭失败 HTTP {r.status_code}: id={session_id} "
                       f"body={str(getattr(r, 'content', b''))[:120]}")
@@ -1761,6 +1764,37 @@ def _seed_phones() -> set:
     return _SEED_PHONES_CACHE
 
 
+async def check_debug_user_precondition(token: str, case) -> list:
+    """多身份用例的**前提校验**：身份覆盖必须真的生效（issue #3391，防假绿）。
+
+    为什么必须有（首版教训，实测 run 34746134755）：身份字段只在渲染器里映射、
+    CI 真正走的 YAML 装载路径漏映射 → 用例仍以 `debug_customer_1`（**有历史订单**）跑 →
+    `customer_address_query` 返回 has_address=true → 用例走的是"有历史地址"路径，
+    却报 ✅ 100%（DB 审计里 11 笔订单全挂 debug_customer_1，无一是新客）。
+    这类假绿的信号极弱（全绿），故把前提**显式断言**：
+    以该身份查「我的订单」必须为空 —— 空 = 覆盖生效（新客无历史），非空 = 覆盖没生效。
+    """
+    du = str(getattr(case, "debug_user", "") or "")
+    if not du:
+        return []
+    h = {"X-Debug-Role": "customer", "X-Debug-User": du}
+    try:
+        async with httpx.AsyncClient() as c:
+            r = await c.get(f"{ADMIN_API}/api/admin/agent/orders/mine",
+                            headers=h, params={"page": 1, "size": 5}, timeout=15)
+            body = _safe_json(r, {}) or {}
+            items = ((body.get("data") or {}).get("items")) or []
+    except Exception as e:
+        return [f"debug_user 前提校验失败（请求异常）: {type(e).__name__}: {e}"]
+    if items:
+        return [
+            f"新客身份未生效：以 X-Debug-User={du} 查「我的订单」返回 {len(items)} 笔"
+            f"（应为 0）—— 身份覆盖没透传/没生效，本用例退化成"
+            f"「有历史收货信息」路径（假绿）。检查：case.debug_user 是否映射到装载链路 + "
+            f"app/utils/auth.py 是否接受该头"]
+    return []
+
+
 async def check_phone_provenance(token: str, case, results: list) -> list:
     """落库手机号必须能追溯到「本用例提供 / 种子夹具」的号码（issue #3386）。
 
@@ -1944,6 +1978,15 @@ async def check_db_verify(token: str, db_verify: list, results: list | None = No
                     issues.append(
                         f"db_verify[order_items]: 订单 {ref} 明细里没有「{w}」"
                         f"（实际明细: {sorted(by_name)}）")
+            # 行级原始明细（issue #3392）：数量不符时**必须能看到行的形状** ——
+            # 实测 OR-022 汇总数量 = 9（期望 3），但"单行 9"与"三行各 3"的修法完全不同：
+            # 前者是数量值算错、后者是重复行累加（工具层已加 fail-closed 守卫）。
+            # 没有这个诊断，失败信息只会说"9 ≠ 3"，排查只能靠猜。
+            _lines = " + ".join(
+                f"{str((it or {}).get('productName') or '?')}×{int((it or {}).get('quantity') or 0)}"
+                f"@{float((it or {}).get('unitPrice') or 0):g}"
+                for it in items)
+            _line_count = len(items)
             for w, q in (spec.get("expect_quantities") or {}).items():
                 w = str(w)
                 hit = next((n for n in by_name if w in n or n in w), None)
@@ -1955,7 +1998,9 @@ async def check_db_verify(token: str, db_verify: list, results: list | None = No
                     continue
                 if by_name[hit] != want_q:
                     issues.append(
-                        f"db_verify[order_items]: 「{hit}」数量 {by_name[hit]} ≠ 期望 {want_q}")
+                        f"db_verify[order_items]: 「{hit}」数量 {by_name[hit]} ≠ 期望 {want_q}"
+                        f"（订单明细共 {_line_count} 行: {_lines}）"
+                        f"—— 行数与逐行数量能区分「数量值算错」与「重复行累加」")
             continue
 
         if fetch != "product_by_name":
@@ -2058,7 +2103,8 @@ async def _close_and_verify_session(case, token: str, r: dict, session_id: str) 
     失败 → score=0 → 走同一套重试/指纹分类（噪声放行 / 确定性回归显式标注）。
     重试路径同样必须调用（否则重试通过时 post_session 从未被执行 → 假绿）。
     """
-    await _end_session(token, r.get("final_session_id") or session_id)
+    await _end_session(token, r.get("final_session_id") or session_id,
+                       debug_user=getattr(case, "debug_user", "") or "")
     if not getattr(case, "post_session", None):
         return
     try:
@@ -2247,6 +2293,41 @@ def _legacy_auto_select_first_option(results: list) -> str | None:
     return None
 
 
+def _compact_write_args(args: dict) -> dict:
+    """写工具入参的**归因摘要**（issue #3394）：保留"钱/量/收件人"证据，裁掉噪音并掩码 PII。
+
+    为什么需要：`order_create` 落库数量 9（期望 3）时，只有**入参**能区分
+    「模型一次就传 9」与「重复行各 3」—— 前者改模型/草稿层，后者改工具层守卫，
+    方向完全相反。实测为区分这一点多花了一整轮 CI。
+    """
+    if not isinstance(args, dict):
+        return {}
+    out: dict = {}
+    for k in ("customer_name", "action", "target_action", "tool_id"):
+        if args.get(k) not in (None, ""):
+            out[k] = str(args[k])[:24]
+    # 手机号掩码（轨迹会进 CI 日志）
+    for k in ("customer_phone", "phone", "receiver_phone"):
+        v = args.get(k)
+        if isinstance(v, str) and len(v) >= 7:
+            out[k] = v[:3] + "****" + v[-4:]
+    # 商品行：名称/数量/单价/小计 —— "数量错"类问题的核心证据
+    items = args.get("items")
+    if isinstance(items, list):
+        out["items"] = [
+            {
+                "name": str((it or {}).get("product_name") or "")[:24],
+                "qty": (it or {}).get("quantity"),
+                "unit_price": (it or {}).get("unit_price"),
+                "subtotal": (it or {}).get("subtotal"),
+            }
+            for it in items[:6] if isinstance(it, dict)
+        ]
+    if args.get("sms_code"):
+        out["sms_code"] = "***"
+    return out
+
+
 def build_round_trace(results: list) -> list:
     """构造逐轮轨迹：每轮的用户输入形态 / 工具 / 卡 / 回复摘要 / **工具成败**。
 
@@ -2304,6 +2385,21 @@ def build_round_trace(results: list) -> list:
                 }
                 for tc in (r.get("tool_calls") or [])
                 if str(tc.get("name", "")).lower() == "interact"
+            ],
+            # 写工具**入参**（issue #3394 诊断补强）：本字段是"钱算错"类问题的唯一证据缺口。
+            # 实测 OR-022/OR-021：DB 落库数量 9 与 6（期望 3），但轨迹只有 `tools=[order_create]`
+            # 与结果摘要 —— 无法判断是"模型一次就传了 9"（模型/草稿层累加）还是
+            # "重复行各 3"（工具层守卫可拦）。本轮为区分这一点，浪费了整整一轮 CI + 一次
+            # 工具层守卫（守卫最终证明不适用：DB 明细是**单行 ×9**）。
+            # 记法：只记**写工具**（数量/金额错的载体），字段按需裁剪；手机号**掩码**
+            # （轨迹进 CI 日志，不该留明文）。
+            "write_args": [
+                {
+                    "tool": str(tc.get("name", "")),
+                    "args": _compact_write_args(tc.get("args") or {}),
+                }
+                for tc in (r.get("tool_calls") or [])
+                if str(tc.get("name", "")).lower() in _WRITE_TOOL_NAMES
             ],
             # 截断：轨迹用于归因，不是全文存档（全文另见 final_text / 产物）
             "text": text[:60],
@@ -2420,6 +2516,18 @@ def format_round_trace(trace: list) -> str:
         ][:3]
         if digests:
             bits.append("data=" + ";".join(digests))
+        # 写工具**入参**（issue #3394）：数量/金额错时必须能看到模型到底传了什么
+        # （实测量 9 vs 期望 3 的归因靠这条，否则只能再花一轮 CI 猜）。
+        wa = t.get("write_args") or []
+        if wa:
+            def _one(w):
+                a = w.get("args") or {}
+                its = a.get("items") or []
+                body = "+".join(
+                    f"{i.get('name')}×{i.get('qty')}@{i.get('unit_price')}" for i in its) or ""
+                extra = ",".join(f"{k}={a[k]}" for k in ("customer_phone", "sms_code") if a.get(k))
+                return f"{w.get('tool')}{{{body}{(';' + extra) if extra else ''}}}"
+            bits.append("args=" + ",".join(_one(w) for w in wa[:3]))
         if t.get("interactive"):
             bits.append("cards=" + ",".join(t["interactive"]))
         # 调用侧的卡（含**被拦/失败**的，那些不会出现在 cards= 里）
@@ -2451,6 +2559,15 @@ async def run_case(case, token: str, session_id: str) -> dict:
     all_tool_names = []
     session_breaks = 0
 
+    # 多身份用例的**前提校验**（issue #3391）：身份没生效 → 用例会静默走错路径（假绿，
+    # 实测 run 34746134755 全绿但订单全挂 debug_customer_1）→ 这里先断言、并把违规
+    # 计入 case_issues（跑轮次前做，1 次 HTTP 且不烧 LLM）。
+    case_issues: list = []
+    try:
+        case_issues += await check_debug_user_precondition(token, case)
+    except Exception as e:
+        case_issues.append(f"debug_user 前提校验执行失败: {type(e).__name__}: {e}")
+
     # case 级表单值：所有 `auto_fill` 轮声明的并集 —— auto_respond 轮回答表单时复用，
     # 避免同一份收货信息在用例里重复声明（少一处漂移）
     case_form_values: dict = {}
@@ -2461,7 +2578,8 @@ async def run_case(case, token: str, session_id: str) -> dict:
     for i, msg in enumerate(case.user_inputs):
         images = []
         if isinstance(msg, dict) and msg.get("new_session"):
-            await _end_session(token, session_id)
+            await _end_session(token, session_id,
+                               debug_user=getattr(case, "debug_user", "") or "")
             session_id = await get_or_create_session(
                 token, prefer_new=True, debug_user=getattr(case, "debug_user", "") or "")
             session_breaks += 1
@@ -2553,7 +2671,7 @@ async def run_case(case, token: str, session_id: str) -> dict:
 
     # 跨轮 case 级断言（acceptance-protocol §3.1/§3.4）：时序 + final_text 反模式词
     # getattr 兜底：兼容未重新渲染的旧生成物（字段缺失按空处理，行为不变）。
-    case_issues = []
+    # ⚠️ 不重置 case_issues：它已承载**跑轮次前**的前提校验结果（多身份，issue #3391）。
     case_issues += check_order_before(results, getattr(case, "order_before", []) or [])
     case_issues += check_forbidden_text(results, getattr(case, "forbidden_text", []) or [])
     case_issues += check_want_text(results, getattr(case, "want_text", []) or [])
@@ -3189,6 +3307,10 @@ def load_cases_from_yaml(cases_dir: str) -> list:
             skip_reason=c.get("skip_reason", ""),
             tags=c.get("tags") or [],
             persona=c.get("persona", ""),
+            # 多身份评测（issue #3391）：**CI 走的是这条 YAML 装载路径**（--cases .github/cases），
+            # 漏映射 = 用例仍以 debug_customer_1 跑 = 新客路径假绿（首版即踩：渲染器映射了、
+            # 装载器漏了，单测只覆盖渲染器 → CI 全绿但订单全挂在 debug_customer_1 名下）。
+            debug_user=c.get("debug_user", ""),
             order_before=c.get("order_before") or [],
             forbidden_text=c.get("forbidden_text") or [],
             want_text=c.get("want_text") or [],
