@@ -1125,3 +1125,109 @@ cases:
       ci:
         - xiaobu-acceptance.yml
       verifies: []
+
+  - id: OR-022
+    legacy_id: ""
+    title: "C 端新客（无历史收货信息）- 必须主动收集后下单，不得拒单"
+    domains:
+      - order
+      - chat
+      - product
+    tier: normal
+    persona: xiaobu
+    # 多身份评测（issue #3391）：以**无任何历史订单**的新客身份跑。
+    # 为什么必须换身份：debug_customer_1 在种子里有历史订单 → customer_address_query 恒
+    # has_address=true →「未命中 → 主动收集收货信息」这条路径**在评测里不可达**，
+    # 而验收 C-A1 暴露的问题（agent 既没查也没问，直接宣布"我下不了单"）正出在这里。
+    # 服务端仅 DEBUG 模式 + customer 角色 + `debug_` 前缀白名单接受该头（app/utils/auth.py）。
+    debug_user: "debug_customer_new"
+    tags:
+      - order_create
+      - new_customer
+      - capability
+      - xiaobu
+    truths_ref:
+      - order.create-flow
+      - ai-chat.confirm-required
+    user_inputs:
+      - "我想买遮光窗帘，米白 3 米，要纳米圈打孔加工"
+      - auto_respond:
+          fallback: "米白"
+      - auto_respond:
+          fallback: "3 米"
+      # 收货信息轮：agent 可能发 form 卡（→ form_values 回填）或**纯文本追问**
+      # （→ fallback 文本即"顾客把姓名/手机号/地址一起发过来"），两条都覆盖。
+      - auto_respond:
+          fallback: "张三 13800138000 浙江省杭州市西湖区文三路1号1幢101室"
+          form_values:
+            customer_name: "张三"
+            customer_phone: "13800138000"
+            customer_address: "浙江省杭州市西湖区文三路1号1幢101室"
+            color: "米白"
+            colorName: "米白"
+      - auto_respond:
+          fallback: "确认下单"
+          form_values:
+            customer_name: "张三"
+            customer_phone: "13800138000"
+            customer_address: "浙江省杭州市西湖区文三路1号1幢101室"
+            color: "米白"
+            colorName: "米白"
+      - auto_respond:
+          fallback: "123456"
+          prefer_text: true
+      - auto_respond:
+          fallback: "123456"
+          prefer_text: true
+      - auto_respond:
+          fallback: "确认"
+      - auto_respond:
+          fallback: "确认"
+      - auto_respond:
+          fallback: "确认"
+    expectations:
+      - tool: product_search
+      - tool: product_detail
+      - tool: order_create
+    must_succeed:
+      - tool: order_create
+    # 能力误宣反模式（issue #3389 同族）：新客路径最容易触发"我做不到"。
+    forbidden_text:
+      - "没法直接帮您提交"
+      - "没法帮您提交订单"
+      - "无法代为提交"
+      - "无法帮您提交订单"
+      - "小程序里点"
+      - "无法代为下单"
+    amount_verify:
+      - tool: order_create
+        product_name: "遮光窗帘"
+        checks: [unit_price, subtotal, total]
+    db_verify:
+      - fetch: order_items
+        source: order_create
+        expect_products: ["遮光窗帘"]
+        expect_quantities:
+          遮光窗帘: 3
+      - fetch: order_phone
+        source: order_create
+        expect_phone: "13800138000"
+    data_checks:
+      - "新客无历史收货信息时：必须主动收集（form 卡或文本问姓名/手机号/地址），不得拒单、不得推去小程序"
+      - "收集到的收货信息必须真的用于落单（订单手机号/明细与顾客所给一致）"
+      - "全程不得出现「我无法提交订单 / 没法帮您下单」这类能力误宣"
+    skip_reason: ""
+    merge_log: "2026-09-13 新增（issue #3391）：新客路径覆盖（多身份评测 + 无历史地址时的收集能力）"
+    traces:
+      tests:
+        # 身份透传接线（run_case → 请求头）+ 用例级断言
+        - "backend/ai-agent-service/tests/test_acceptance_case_checks.py"
+        # DEBUG 身份白名单（X-Debug-User 只认 debug_ 前缀、仅 customer 角色）
+        - "backend/ai-agent-service/tests/test_auth.py"
+        # 渲染链路必须带 debug_user（否则用例身份丢失 = 假绿）
+        - "tests/unit_ci_workflows/test_persona_filter.py"
+        # 新客 fixture 必须无订单（有订单则退化成"有历史地址"路径）
+        - "tests/unit_ci_workflows/test_schema_integrity.py"
+      ci:
+        - xiaobu-acceptance.yml
+      verifies: []

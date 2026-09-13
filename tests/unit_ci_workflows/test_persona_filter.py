@@ -7,7 +7,7 @@ customer_order_query / customer_logistics_track 等仅注册于小布 customer_*
 修复：cases/*.yml 支持 persona 字段（mibao/xiaobu/""双端），render 透传 +
 local_runner 按 persona 过滤（mibao 跳过 xiaobu 专属，反之亦然）。
 """
-# case_ids: CH-008, CH-012, CH-013, CH-014, CH-015, CH-017, CH-024, OR-012, ST-008, CH-030, CH-031, CH-032, AS-008, OR-017, PR-013, OR-018, OR-019, PR-024, CH-033, OR-020, OR-021
+# case_ids: OR-022, CH-008, CH-012, CH-013, CH-014, CH-015, CH-017, CH-024, OR-012, ST-008, CH-030, CH-031, CH-032, AS-008, OR-017, PR-013, OR-018, OR-019, PR-024, CH-033, OR-020, OR-021
 import sys
 from pathlib import Path
 
@@ -27,7 +27,7 @@ CASES_DIR = REPO_ROOT / ".github" / "cases"
 # DF-020/021/022：**C 端原生对抗用例**（issue #3367）—— 越权/注入/空结果不得下单。
 # 为什么另写而不复用 DF-006/007/008：那三条的断言是 B 端机制形状（期望 product_search /
 # validate_input / 批量删改 confirm），C 端"正确拒绝且不调工具"会被它们判红（首跑 6/12 实证）。
-XIAOBU_ONLY = {"CH-008", "CH-010", "CH-012", "CH-013", "CH-014", "CH-015", "CH-017", "OR-012", "ST-008", "CH-030", "CH-031", "CH-032", "KN-001", "KN-002", "KN-008", "AS-008", "OR-017", "CH-024", "PR-013", "DF-020", "DF-021", "DF-022", "DF-023", "OR-018", "OR-019", "PR-024", "CH-033", "OR-020", "OR-021"}  # CH-024：C 端长期记忆端到端（issue #3357 起不再 skip）
+XIAOBU_ONLY = {"CH-008", "CH-010", "CH-012", "CH-013", "CH-014", "CH-015", "CH-017", "OR-012", "ST-008", "CH-030", "CH-031", "CH-032", "KN-001", "KN-002", "KN-008", "AS-008", "OR-017", "CH-024", "PR-013", "DF-020", "DF-021", "DF-022", "DF-023", "OR-018", "OR-019", "PR-024", "CH-033", "OR-020", "OR-021", "OR-022"}  # CH-024：C 端长期记忆端到端（issue #3357 起不再 skip）
 
 
 def _all_cases():
@@ -47,6 +47,41 @@ class TestPersonaFieldInCases:
         by_id = {c["id"]: c for c in _all_cases()}
         # 未标记 persona 的用例（如米宝核心 OR-001）缺省为双端
         assert by_id["OR-001"].get("persona", "") in ("", "mibao", "both")
+
+
+class TestDebugUserField:
+    """多身份评测字段（issue #3391）：case 声明的 debug_user 必须**渲染进 EvalCase**。
+
+    为什么要有这条：字段只写在 YAML 里而渲染链路漏了 → 运行期 `case.debug_user` 为空 →
+    用例仍以 debug_customer_1 跑（有历史订单）→ 「新客」路径**看起来覆盖了、实际没覆盖**
+    （假绿）。渲染链路必须有断言守着。
+    """
+
+    def test_new_customer_case_declares_debug_user(self):
+        by_id = {c["id"]: c for c in _all_cases()}
+        assert by_id["OR-022"].get("debug_user") == "debug_customer_new", (
+            "OR-022 必须声明新客身份（否则跑的还是 debug_customer_1，新客路径不可达）")
+
+    def test_renderer_emits_debug_user(self):
+        """**渲染器**必须把 debug_user 写进 EvalCase 构造参数。
+
+        为什么不能只读生成物（首版就是假守卫，被变异 M152 抓出）：生成物是提交进来的，
+        渲染器坏掉时它**照样在**（只是下次重渲染才消失）；只读生成物的测试对渲染器完全免疫。
+        故这里**真跑一次渲染**断言输出。
+        """
+        from render_cases import to_eval_py
+        out = to_eval_py(_all_cases())
+        idx = out.index("id='OR-022'")
+        block = out[idx:idx + 2500]
+        assert "debug_user='debug_customer_new'" in block, (
+            "渲染器没有输出 debug_user —— 重渲染后身份会丢失，新客用例变假绿")
+
+    def test_committed_eval_cases_match_renderer(self):
+        """提交的生成物必须与渲染器当前输出一致（防"改了渲染器忘了重渲染"）。"""
+        from render_cases import to_eval_py
+        committed = (REPO_ROOT / "tests" / "agent_eval" / "eval_cases.py").read_text(encoding="utf-8")
+        assert to_eval_py(_all_cases()) == committed, (
+            "eval_cases.py 与渲染器输出不一致 —— 请跑 render_cases.py 并提交生成物")
 
 
 class TestFilterByPersona:

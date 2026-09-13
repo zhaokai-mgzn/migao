@@ -366,7 +366,7 @@ async def login() -> str:
         return ""
     return await _retry_502("登录", _do_login)
 
-def _chat_headers(token: str) -> dict:
+def _chat_headers(token: str, debug_user: str = "") -> dict:
     """ai-agent 请求头：调试身份必须显式声明（P0-3 安全加固）
 
     - xiaobu（C 端）：X-Debug-Role: customer（DEBUG 本地栈/CI 显式注入小布身份）
@@ -376,16 +376,24 @@ def _chat_headers(token: str) -> dict:
     - 其它（本地真实登录）：Bearer token
     """
     if PERSONA == "xiaobu":
-        return {"X-Debug-Role": "customer"}
+        h = {"X-Debug-Role": "customer"}
+        # 多身份评测（issue #3391）：以「无历史订单的新客」身份跑，才能覆盖
+        # 「customer_address_query 未命中 → 主动收集收货信息」这条路径
+        # （debug_customer_1 有历史订单，该路径原本不可达）。
+        # 服务端只认 DEBUG + customer 角色 + `debug_` 前缀白名单（app/utils/auth.py）。
+        if debug_user:
+            h["X-Debug-User"] = debug_user
+        return h
     if SERVICE_TOKEN:
         return {"X-Debug-Role": "mibao"}
     return {"Authorization": f"Bearer {token}"} if token else {}
 
-async def get_or_create_session(token: str, prefer_new: bool = True) -> str:
+async def get_or_create_session(token: str, prefer_new: bool = True,
+                                 debug_user: str = "") -> str:
     """获取或创建会话（502 重试：部署窗口自愈）"""
     async def _do() -> str:
         async with httpx.AsyncClient() as c:
-            h = _chat_headers(token)
+            h = _chat_headers(token, debug_user)
             if prefer_new:
                 r = await c.post(f"{AI_API}/api/chat/sessions", headers=h, json={}, timeout=10)
                 payload = _safe_json(r, {}) or {}
@@ -405,7 +413,8 @@ async def get_or_create_session(token: str, prefer_new: bool = True) -> str:
             return sid
     return await _retry_502("创建会话", _do)
 
-async def send_message(token: str, session_id: str, message: str, images: list = None) -> dict:
+async def send_message(token: str, session_id: str, message: str, images: list = None,
+                       debug_user: str = "") -> dict:
     """发送消息并收集 SSE 事件
 
     Args:
@@ -419,7 +428,7 @@ async def send_message(token: str, session_id: str, message: str, images: list =
         body["images"] = images
 
     async with httpx.AsyncClient(timeout=120) as c:
-        h = _chat_headers(token)
+        h = _chat_headers(token, debug_user)
 
         result = {
             "user_message": message,
@@ -2453,7 +2462,8 @@ async def run_case(case, token: str, session_id: str) -> dict:
         images = []
         if isinstance(msg, dict) and msg.get("new_session"):
             await _end_session(token, session_id)
-            session_id = await get_or_create_session(token, prefer_new=True)
+            session_id = await get_or_create_session(
+                token, prefer_new=True, debug_user=getattr(case, "debug_user", "") or "")
             session_breaks += 1
         if isinstance(msg, dict) and msg.get("auto_select"):
             # choice 卡自动回放（CU-003 回归防线）：上一轮 agent 下发 choice 卡时，
@@ -2492,7 +2502,8 @@ async def run_case(case, token: str, session_id: str) -> dict:
                 f"用例 {case.id} 第 {i + 1} 轮声明了 new_session 但 text 为空"
                 "——跨会话轮必须给出文本"
             )
-        r = await send_message(token, session_id, text, images=images)
+        r = await send_message(token, session_id, text, images=images,
+                               debug_user=getattr(case, "debug_user", "") or "")
         r["__round"] = i + 1
         r["__all_tool_names"] = [tc["name"] for tc in r["tool_calls"]]
         all_tool_names.extend(r["__all_tool_names"])
@@ -2694,7 +2705,8 @@ async def run_suite(cases, label: str, classify: bool = True, retry_budget: int 
         print(f"  ⏱ {case.id} start={datetime.now(timezone.utc).isoformat(timespec='seconds')}")
 
         # 每个用例用独立 session，避免前序用例污染上下文
-        session_id = await get_or_create_session(token, prefer_new=True)
+        session_id = await get_or_create_session(
+            token, prefer_new=True, debug_user=getattr(case, "debug_user", "") or "")
 
         icon = {Difficulty.SMOKE: "🟢", Difficulty.NORMAL: "🔵",
                 Difficulty.EDGE: "🟡", Difficulty.ADVERSARIAL: "🔴"}.get(case.difficulty, "⚪")
@@ -2731,7 +2743,8 @@ async def run_suite(cases, label: str, classify: bool = True, retry_budget: int 
                 classification = "no-retry-budget"
             elif r["score"] < 1.0 and classify:
                 r_prev = r          # 首次尝试（下面会把 r 重绑成重试结果）
-                retry_sid = await get_or_create_session(token, prefer_new=True)
+                retry_sid = await get_or_create_session(
+                    token, prefer_new=True, debug_user=getattr(case, "debug_user", "") or "")
                 r2 = await run_case(case, token, retry_sid)
                 r2["retried"] = True
                 # 重试同样要关闭 + 跑 post_session：否则重试"通过"是假绿
@@ -2763,7 +2776,8 @@ async def run_suite(cases, label: str, classify: bool = True, retry_budget: int 
                         os.environ.get("GITHUB_SHA", "")[:12]))
             elif r["score"] < 1.0 and await _reserve_retry():
                 # --no-classify 兼容模式：旧的无差别单次重试（同样受重试预算约束）
-                retry_sid = await get_or_create_session(token, prefer_new=True)
+                retry_sid = await get_or_create_session(
+                    token, prefer_new=True, debug_user=getattr(case, "debug_user", "") or "")
                 r2 = await run_case(case, token, retry_sid)
                 r2["retried"] = True
                 # 与 classify 路径一致：重试会话同样关闭 + 跑 post_session（否则假绿）

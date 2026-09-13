@@ -209,7 +209,7 @@ class TestScenarioFlow:
         async def fake_close(token, sid):
             sent.append(("__close__", sid))
 
-        async def fake_send(sid, token, text, images=None):
+        async def fake_send(sid, token, text, images=None, **kwargs):
             sent.append((sid, text))
             return seq.pop(0) if seq else {"text": "", "tool_calls": [],
                                            "tool_results": [], "interactive": [],
@@ -279,7 +279,7 @@ class TestRepeatUntilRound:
         async def fake_close(token, sid):
             return None
 
-        async def fake_send(sid, token, text, images=None):
+        async def fake_send(sid, token, text, images=None, **kwargs):
             sent.append(text)
             return seq.pop(0) if seq else {"text": "", "tool_calls": [], "tool_results": [],
                                            "interactive": [], "cards": [], "error": None, "done": True}

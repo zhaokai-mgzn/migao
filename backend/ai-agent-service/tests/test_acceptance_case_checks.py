@@ -9,7 +9,7 @@
   属「工具调用全对、用户看到的话是错的」类缺陷，PR-019 用本断言拦截。
 - interactive 事件采集：send_message 捕获 SSE interactive 事件（卡片证据）。
 """
-# case_ids: OR-016, AS-007, PR-019, CH-010, CH-024, OR-021
+# case_ids: OR-016, AS-007, PR-019, CH-010, CH-024, OR-021, OR-022
 import asyncio
 from types import SimpleNamespace
 import importlib.util
@@ -141,7 +141,7 @@ class TestRunCaseCaseLevelChecks:
         )
 
     async def _run(self, case, sequence):
-        async def fake_send(token, session_id, message, images=None):
+        async def fake_send(token, session_id, message, images=None, **kwargs):
             seq = sequence.pop(0)
             return {
                 "user_message": message,
@@ -403,7 +403,7 @@ class TestRunCasePhase15:
     async def _run(self, case, tc_list, texts, errors=None):
         seq = list(zip(tc_list, texts))
         errs = errors or []
-        async def fake_send(token, session_id, message, images=None):
+        async def fake_send(token, session_id, message, images=None, **kwargs):
             tcs, text = seq.pop(0)
             return {"user_message": message, "images": images or [], "tool_calls": tcs,
                     "tool_results": [], "interactive": [], "final_text": text, "error": errs.pop(0) if errs else None,
@@ -496,7 +496,7 @@ class TestRunCaseDbVerify:
         )
 
     async def _run(self, case, configs):
-        async def fake_send(token, session_id, message, images=None):
+        async def fake_send(token, session_id, message, images=None, **kwargs):
             return {"user_message": message, "images": images or [],
                     "tool_calls": [{"name": "product_manage", "args": {"action": "create"}}],
                     "tool_results": [], "interactive": [], "final_text": "创建成功",
@@ -563,9 +563,9 @@ class TestRunSuiteFailures:
         import unittest.mock as mock
         async def fake_login():
             return "tok"
-        async def fake_sess(token, prefer_new=True):
+        async def fake_sess(token, prefer_new=True, **kwargs):
             return "sess"
-        async def fake_send(token, sid, message, images=None):
+        async def fake_send(token, sid, message, images=None, **kwargs):
             raise RuntimeError("boom: tool crashed")
         case = lr.EvalCase(id="FG-1", title="t", skill=lr.Skill.GENERAL,
                            difficulty=lr.Difficulty.NORMAL, user_inputs=["hi"],
@@ -656,7 +656,7 @@ class TestRunCaseForbiddenArgsIntegration:
         )
 
     async def _run(self, case, sequence):
-        async def fake_send(token, session_id, message, images=None):
+        async def fake_send(token, session_id, message, images=None, **kwargs):
             seq = sequence.pop(0)
             return {"user_message": message, "images": images or [],
                     "tool_calls": [{"name": n, "args": a} for n, a in seq["tools"]],
@@ -810,7 +810,7 @@ class TestBuildRoundTrace:
 
         sent = []
 
-        async def fake_send_message(token, session_id, message, images=None):
+        async def fake_send_message(token, session_id, message, images=None, **kwargs):
             sent.append(message)
             return {
                 "__round": len(sent),
@@ -993,7 +993,11 @@ class TestCaseStartTimestamp:
         """时间戳必须在用例**开始**时打印（早于建会话/发消息），否则会漏掉首轮路由"""
         src = self._source()
         i_marker = src.find("⏱ {case.id} start=")
-        i_session = src.find("await get_or_create_session(token, prefer_new=True)", i_marker - 800)
+        # 允许多行调用与新增关键字（issue #3391 加了 debug_user=… 后调用被折行）：
+        # 固定字面量匹配会在合法重构时误报，改用容错正则（语义不变：仍要求"标记在调用之前"）。
+        m = re.search(r"get_or_create_session\(\s*token,\s*prefer_new=True",
+                      src[max(0, i_marker - 800):])
+        i_session = (max(0, i_marker - 800) + m.start()) if m else -1
         assert i_marker != -1 and i_session != -1
         assert i_marker < i_session, (
             "时间戳打印晚于会话创建 —— 首轮意图分类会落在用例区间之外"
@@ -1134,7 +1138,7 @@ class TestAutoRespond:
 
         sent = []
 
-        async def fake_send(token, session_id, message, images=None):
+        async def fake_send(token, session_id, message, images=None, **kwargs):
             sent.append(message)
             # 第 1 轮发一张 confirm 卡；第 2 轮无卡
             interactive = ([{"component": "confirm", "confirmValue": "确认下单"}] if len(sent) == 1 else [])
@@ -1375,7 +1379,7 @@ class TestNewSessionTurn:
         )
 
     async def _run(self, case, sent):
-        async def fake_send(token, session_id, message, images=None):
+        async def fake_send(token, session_id, message, images=None, **kwargs):
             sent.append((session_id, message))
             return {"user_message": message, "images": [], "tool_calls": [],
                     "tool_results": [], "final_text": "ok", "error": None,
@@ -1384,7 +1388,7 @@ class TestNewSessionTurn:
         created = []
         closed = []
 
-        async def fake_create(token, prefer_new=True):
+        async def fake_create(token, prefer_new=True, **kwargs):
             sid = f"new-{len(created) + 1}"   # 与初始会话 id 区分开（否则断言自欺）
             created.append(sid)
             return sid
@@ -1439,7 +1443,7 @@ class TestRunSuitePostSession:
         async def fake_login():
             return "tok"
 
-        async def fake_sess(token, prefer_new=True):
+        async def fake_sess(token, prefer_new=True, **kwargs):
             return "sess"
 
         async def fake_run_case(c, token, sid):
@@ -1509,7 +1513,7 @@ class TestRetryBudget:
         async def fake_login():
             return "tok"
 
-        async def fake_sess(token, prefer_new=True):
+        async def fake_sess(token, prefer_new=True, **kwargs):
             return "sess"
 
         attempts = {"run_case": 0}
@@ -1724,7 +1728,7 @@ class TestRunCaseMustSucceedIntegration:
     """run_case 集成：写工具失败 → 用例级失败（score=0）。"""
 
     async def _run(self, sequence, must_succeed):
-        async def fake_send(token, session_id, message, images=None):
+        async def fake_send(token, session_id, message, images=None, **kwargs):
             seq = sequence.pop(0)
             return {
                 "user_message": message, "images": [], "final_text": seq.get("text", ""),
@@ -1913,7 +1917,7 @@ class TestSuiteConcurrency:
         async def fake_login():
             return "tok"
 
-        async def fake_sess(token, prefer_new=True):
+        async def fake_sess(token, prefer_new=True, **kwargs):
             return "sess"
 
         async def fake_run_case(c, token, sid):
@@ -2005,7 +2009,7 @@ class TestSuiteConcurrency:
         async def fake_login():
             return "tok"
 
-        async def fake_sess(token, prefer_new=True):
+        async def fake_sess(token, prefer_new=True, **kwargs):
             return "sess"
 
         async def fake_run_case(c, token, sid):
@@ -2060,7 +2064,7 @@ class TestConcurrencyGateTail:
         async def fake_login():
             return "tok"
 
-        async def fake_sess(token, prefer_new=True):
+        async def fake_sess(token, prefer_new=True, **kwargs):
             return "sess"
 
         async def fake_run_case(c, token, sid):
@@ -2156,7 +2160,7 @@ class TestPreCleanExclusiveWindow:
         async def fake_login():
             return "tok"
 
-        async def fake_sess(token, prefer_new=True):
+        async def fake_sess(token, prefer_new=True, **kwargs):
             return "sess"
 
         async def fake_run_case(c, token, sid):
@@ -2194,7 +2198,7 @@ class TestPreCleanExclusiveWindow:
         async def fake_login():
             return "tok"
 
-        async def fake_sess(token, prefer_new=True):
+        async def fake_sess(token, prefer_new=True, **kwargs):
             return "sess"
 
         async def fake_run_case(c, token, sid):
@@ -2258,7 +2262,7 @@ class TestNoDeadlockWithPreCleanUnderConcurrency:
         async def fake_login():
             return "tok"
 
-        async def fake_sess(token, prefer_new=True):
+        async def fake_sess(token, prefer_new=True, **kwargs):
             return "sess"
 
         async def fake_run_case(c, token, sid):
@@ -3118,7 +3122,7 @@ class TestRunCasePhoneProvenanceWiring:
     async def _run(self, case, phone):
         import unittest.mock as mock
 
-        async def fake_send(token, session_id, message, images=None):
+        async def fake_send(token, session_id, message, images=None, **kwargs):
             return {"user_message": message, "images": images or [],
                     "tool_calls": [{"name": "order_create", "args": {}}],
                     "tool_results": [{"tool": "order_create",
@@ -3216,7 +3220,7 @@ class TestRunCaseFalseInabilityWiring:
     def _run(self, reply):
         import unittest.mock as mock
 
-        async def fake_send(token, session_id, message, images=None):
+        async def fake_send(token, session_id, message, images=None, **kwargs):
             return {"user_message": message, "images": images or [],
                     "tool_calls": [{"name": "product_search", "args": {}}],
                     "tool_results": [], "interactive": [], "final_text": reply,
@@ -3236,3 +3240,56 @@ class TestRunCaseFalseInabilityWiring:
     def test_normal_reply_keeps_score(self):
         res = self._run("亲，确认无误的话回复「确认下单」就可以啦~")
         assert res["score"] == 1.0, f"正常话术被误判: {res['failed']}"
+
+
+class TestDebugUserWiring:
+    """多身份评测（issue #3391）：用例声明的 debug_user 必须**真的传到请求头**。
+
+    为什么必须查接线（M68/M122 教训）：只测 `_chat_headers()` 无法发现
+    "run_case 忘了把 case.debug_user 传下去" —— 那样用例仍以 debug_customer_1 跑，
+    「新客无历史地址」路径看起来覆盖了、实际没覆盖（假绿）。
+    """
+
+    def _case(self, debug_user):
+        return lr.EvalCase(
+            id="NEWC-TEST", legacy_id="", title="t", skill=lr.Skill.ORDER,
+            difficulty=lr.Difficulty.NORMAL, user_inputs=["帮我下单"],
+            expectations=["tool: product_search"], data_checks=[],
+            persona="xiaobu", debug_user=debug_user,
+        )
+
+    def test_headers_include_debug_user_for_customer(self):
+        import unittest.mock as mock
+        with mock.patch.object(lr, "PERSONA", "xiaobu"):
+            h = lr._chat_headers("", "debug_customer_new")
+        assert h.get("X-Debug-Role") == "customer"
+        assert h.get("X-Debug-User") == "debug_customer_new"
+
+    def test_headers_omit_debug_user_when_unset(self):
+        import unittest.mock as mock
+        with mock.patch.object(lr, "PERSONA", "xiaobu"):
+            h = lr._chat_headers("")
+        assert "X-Debug-User" not in h, "未声明身份的用例不该带覆盖头"
+
+    def test_run_case_passes_debug_user_to_send(self):
+        """run_case 必须把身份透传给每一轮请求（接线证据，而非仅函数级）。"""
+        import unittest.mock as mock
+        seen = {}
+
+        async def fake_send(token, session_id, message, images=None, debug_user=""):
+            seen["debug_user"] = debug_user
+            return {"user_message": message, "images": images or [],
+                    "tool_calls": [{"name": "product_search", "args": {}}],
+                    "tool_results": [], "interactive": [], "final_text": "好的",
+                    "error": None, "streamed": False, "done": True}
+
+        async def fake_session(token, prefer_new=True, debug_user=""):
+            seen["session_debug_user"] = debug_user
+            return "sess_x"
+
+        with mock.patch.object(lr, "send_message", new=fake_send), \
+             mock.patch.object(lr, "get_or_create_session", new=fake_session), \
+             mock.patch.object(lr, "PERSONA", "xiaobu"):
+            asyncio.run(lr.run_case(self._case("debug_customer_new"), "tok", "sess_y"))
+        assert seen.get("debug_user") == "debug_customer_new", (
+            "run_case 没把 case.debug_user 传给 send_message → 身份覆盖失效（假绿）")
