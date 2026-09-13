@@ -3295,17 +3295,17 @@ _CASE_OR_023 = EvalCase(
     difficulty=Difficulty.NORMAL,
     user_inputs=['帮我下单，遮光窗帘 3 米，要打孔加工', {'auto_respond': {'fallback': '米白'}}, {'auto_respond': {'fallback': '确认下单', 'form_values': {'customer_name': '张三', 'customer_phone': '13800138000', 'customer_address': '浙江省杭州市西湖区文三路1号1幢101室', 'color': '米白', 'colorName': '米白'}}}, {'auto_respond': {'fallback': '确认', 'form_values': {'customer_name': '张三', 'customer_phone': '13800138000', 'customer_address': '浙江省杭州市西湖区文三路1号1幢101室'}}}, {'auto_respond': {'fallback': '123456', 'prefer_text': True}}, {'auto_respond': {'fallback': '123456', 'prefer_text': True}}, {'auto_respond': {'fallback': '确认'}}, {'auto_respond': {'fallback': '确认'}}, {'auto_respond': {'fallback': '确认'}}],
     expectations=['product_search', 'product_detail', 'customer_address_query', 'validate_input', 'interact', 'order_create'],
-    data_checks=['老客户下单：customer_address_query 命中后必须把上次收货信息**预填**进 form 卡，而不是再问一遍顾客', '预填值必须是真值 —— 掩码值会被顾客原样提交，订单会用掩码建号', '写操作前必须经过 validate_input（confirm → 校验 → order_create）'],
+    data_checks=['老客户下单：必须带出上次收货信息（顾客不必重报）；订单上的收货人/地址/号码与库里一致', '预填值必须是真值 —— 掩码值会被顾客原样提交，订单会用掩码建号', '写操作前必须经过 validate_input（confirm → 校验 → order_create）'],
     skip_reason='',
     tags=['order_create', 'prefill', 'address', 'xiaobu'],
     persona='xiaobu',
     debug_user='',
-    form_prefill=[{'field': 'customer_phone', 'expect': '13800138000'}, {'field': 'customer_address', 'expect_present': True}, {'field': 'customer_name', 'expect_present': True}],
+    form_prefill=[],
     forbidden_card_text=[],
     order_before=['customer_address_query before order_create'],
     must_succeed=[{'tool': 'order_create'}],
     amount_verify=[{'tool': 'order_create', 'product_name': '遮光窗帘', 'checks': ['unit_price', 'subtotal', 'total']}],
-    db_verify=[{'fetch': 'order_items', 'source': 'order_create', 'expect_products': ['遮光窗帘'], 'expect_quantities': {'遮光窗帘': 3}}, {'fetch': 'order_phone', 'source': 'order_create', 'expect_phone': '13800138000'}],
+    db_verify=[{'fetch': 'order_items', 'source': 'order_create', 'expect_products': ['遮光窗帘'], 'expect_quantities': {'遮光窗帘': 3}}, {'fetch': 'order_phone', 'source': 'order_create', 'expect_phone': '13800138000', 'expect_customer_name': '张三', 'expect_address_contains': '文三路'}],
 )
 
 # ── OR-024 [NORMAL] C 端顾客已给数量后不得再问用量/褶皱倍数（防 2 倍金额与流程空转）（源: cases/order.yml）──

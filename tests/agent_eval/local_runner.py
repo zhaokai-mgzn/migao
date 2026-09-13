@@ -2057,6 +2057,21 @@ async def check_db_verify(token: str, db_verify: list, results: list | None = No
                 issues.append(
                     f"db_verify[order_phone]: 订单 {ref} 落库手机号 {got} ≠ 期望 {want}"
                     f"（掩码填充值会静默写错号码，顾客收不到短信/配送联系）")
+            # 收货人/地址的**产出侧**断言（issue #3404 复盘）：只断言"过程用了 form 卡"
+            # 会把用例绑死在**机制**上（Agent 用 confirm 卡的字段承载同样合法），
+            # 而顾客真正在意的是**订单上的值对不对** → 这里断言落库值。
+            _detail = (detail or {}).get("data") or {}
+            _name = str(_detail.get("customerName") or "").strip()
+            _addr = str(_detail.get("customerAddress") or "").strip()
+            want_name = str(spec.get("expect_customer_name") or "").strip()
+            if want_name and _norm_text(_name) != _norm_text(want_name):
+                issues.append(
+                    f"db_verify[order_phone]: 订单 {ref} 收货人 {_name!r} ≠ 期望 {want_name!r}")
+            want_addr = str(spec.get("expect_address_contains") or "").strip()
+            if want_addr and _norm_text(want_addr) not in _norm_text(_addr):
+                issues.append(
+                    f"db_verify[order_phone]: 订单 {ref} 收货地址 {_addr!r} 不含 {want_addr!r} —— "
+                    f"老客户下单必须沿用库里的收货地址（预填/回显被改写会导致寄错）")
             continue
 
         if fetch == "order_items":

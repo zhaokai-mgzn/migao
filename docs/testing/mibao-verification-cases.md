@@ -2345,7 +2345,7 @@
 期望: validate_input
 期望: interact
 期望: order_create
-数据: 老客户下单：customer_address_query 命中后必须把上次收货信息**预填**进 form 卡，而不是再问一遍顾客
+数据: 老客户下单：必须带出上次收货信息（顾客不必重报）；订单上的收货人/地址/号码与库里一致
 数据: 预填值必须是真值 —— 掩码值会被顾客原样提交，订单会用掩码建号
 数据: 写操作前必须经过 validate_input（confirm → 校验 → order_create）
 时序: customer_address_query before order_create

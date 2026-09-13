@@ -24,6 +24,7 @@ from app.graph.skills.base_skill import (
     _masked_phone_write_block, KNOWN_RAW_PHONES_KEY, _capability_denial_reason,
     _conversation_mentions_dimensions, _form_prefill_fidelity_block,
     _stated_purchase_quantities, _quantity_choice_block,
+    _curtain_calc_dimension_block,
 )
 import app.graph.skills.base_skill as lr2
 from app.graph.skills.skill_registry import SkillRegistry
@@ -3546,7 +3547,8 @@ class TestFormPrefillFidelity:
                    side_effect=lambda *x, **k: _Store()):
             return asyncio.run(_form_prefill_fidelity_block(
                 "interact", a, {"name": "interact", "args": a, "id": "c1"},
-                "sess_1", "customer_order", last_user_msg, {"messages": []}))
+                "sess_1", "customer_order", last_user_msg,
+                {"messages": [], "role": "customer"}))
 
     def _code(self, out):
         import json as _json
@@ -3723,7 +3725,7 @@ class TestQuantityChoiceGuard:
                    side_effect=lambda *a, **k: _Store()):
             return asyncio.run(_quantity_choice_block(
                 "interact", args, {"name": "interact", "args": args, "id": "c1"},
-                "sess_1", "customer_order", {"messages": msgs}))
+                "sess_1", "customer_order", {"messages": msgs, "role": "customer"}))
 
     def _card(self, title, labels):
         return {"component": "choice", "title": title,
@@ -3847,6 +3849,222 @@ class TestQuantityChoiceGuardWiring:
                                       {"label": "浅灰", "value": "浅灰"}]},
                          ["数量 3 米"])
         assert len(seen["calls"]) == 1, "正常选色卡被拦 → 真回归"
+
+
+class TestGuardsPersonaScope:
+    """B / C 两端**共用** base_skill：C 端语义守卫必须只对顾客身份生效。
+
+    背景（人工提醒固化）：`interact` 工具与全部技能守卫都在共享的 `base_skill` 里 ——
+    两端卡片由同一个工具产出。若不显式分端，C 端专属判据会作用到 B 端米宝/客服场景：
+      · "顾客说买 X 米被当窗宽" → B 端店员代客下单给出"用量/褶皱"选项可能是合法业务动作；
+      · "顾客收货信息预填" → B 端客服改客户资料的表格同名 key（customer_phone/address）语义不同。
+    分端原则：
+      · **C 端语义**守卫（数量口径 / 收货预填 / 算料前提）→ 仅 `role == customer`；
+      · **通用数据完整性**守卫（掩码手机号写库）→ 两端都生效（错号码对谁都是错）。
+    """
+
+    def _state(self, role):
+        from langchain_core.messages import HumanMessage
+        return {"role": role, "messages": [HumanMessage(content="数量 3 米")]}
+
+    def _choice_args(self):
+        return {"component": "choice", "title": "请选择窗帘用量",
+                "options": [{"label": "3米（¥528）", "value": "3米"},
+                            {"label": "6米（¥1056，推荐）", "value": "6米"}]}
+
+    def _run_choice(self, role):
+        import asyncio
+        class _Store:
+            async def load(self, sid):
+                return {}
+            async def commit(self, sid, f):
+                return None
+        with patch("app.memory.session_state_store.SessionStateStore",
+                   side_effect=lambda *a, **k: _Store()):
+            return asyncio.run(_quantity_choice_block(
+                "interact", self._choice_args(),
+                {"name": "interact", "args": self._choice_args(), "id": "c1"},
+                "sess_1", "customer_order", self._state(role)))
+
+    def test_quantity_choice_guard_customer_only(self):
+        assert self._run_choice("customer") is not None, "C 端必须拦（2 倍用量 = 多收钱）"
+        for role in ("admin", "agent", "tenant_admin", ""):
+            assert self._run_choice(role) is None, f"role={role!r} 时不该拦（B 端不受影响）"
+
+    def _run_prefill(self, role):
+        import asyncio
+        args = {"component": "form", "title": "客户资料",
+                "formFields": [{"key": "customer_phone", "label": "手机号",
+                                "value": "138****8000"}]}
+        class _Store:
+            async def load(self, sid):
+                return {"known_raw_phones": ["13800138000"]}
+            async def commit(self, sid, f):
+                return None
+        with patch("app.memory.session_state_store.SessionStateStore",
+                   side_effect=lambda *a, **k: _Store()):
+            return asyncio.run(_form_prefill_fidelity_block(
+                "interact", args, {"name": "interact", "args": args, "id": "c1"},
+                "sess_1", "customer_order", "帮我下单", {"role": role, "messages": []}))
+
+    def test_prefill_guard_customer_only(self):
+        assert self._run_prefill("customer") is not None, "C 端掩码预填必须拦"
+        for role in ("admin", "agent", ""):
+            assert self._run_prefill(role) is None, f"role={role!r} 时不该拦（B 端改资料不受影响）"
+
+    def _run_calc(self, role):
+        import asyncio
+        class _Store:
+            async def load(self, sid):
+                return {}
+            async def commit(self, sid, f):
+                return None
+        with patch("app.memory.session_state_store.SessionStateStore",
+                   side_effect=lambda *a, **k: _Store()):
+            return asyncio.run(_curtain_calc_dimension_block(
+                "curtain_calc", {"window_width": 3.0, "window_height": 2.7},
+                {"name": "curtain_calc", "args": {}, "id": "c1"},
+                "sess_1", "customer_order", {"role": role, "messages": []}))
+
+    def test_calc_guard_customer_only(self):
+        assert self._run_calc("customer") is not None, "C 端无尺寸算料必须拦"
+        for role in ("admin", "agent", ""):
+            assert self._run_calc(role) is None, f"role={role!r} 时不该拦（B 端算料链路不受影响）"
+
+    def test_masked_phone_write_guard_applies_to_both(self):
+        """通用数据完整性守卫**两端都要生效**：错号码对 B 端顾客同样是错。"""
+        import asyncio
+        class _Store:
+            async def load(self, sid):
+                return {"known_raw_phones": ["13800138000"]}
+            async def commit(self, sid, f):
+                return None
+        for role in ("customer", "admin", "agent"):
+            with patch("app.memory.session_state_store.SessionStateStore",
+                       side_effect=lambda *a, **k: _Store()):
+                out = asyncio.run(_masked_phone_write_block(
+                    "order_create", {"customer_phone": "138****8000"},
+                    {"name": "order_create", "args": {}, "id": "c1"},
+                    "sess_1", "customer_order", "确认下单",
+                    {"role": role, "messages": []}))
+            assert out is not None, f"role={role!r} 时掩码号码必须拦（通用完整性）"
+
+
+class TestMibaoFlowsUnaffectedByCendGuards:
+    """B 端（米宝）流程不得被 C 端守卫影响 —— 端到端接线级证据（人工提醒固化）。
+
+    为什么必须单独测（而不是靠 CI）：本仓库的 B 端 eval（`agent-eval.yml` / PR gate 的
+    smoke）打的是**生产** `ai-api.migaozn.com`，即它验证的是**已部署**的代码，
+    **永远跑不到分支上的改动**（C 端有本地 docker 栈，B 端没有）。故"我改了共享的
+    base_skill 会不会伤到 B 端"只能靠这里的接线级测试回答。
+
+    覆盖两类：
+      · C 端语义守卫（数量口径/收货预填/算料）→ 用 B 端 skill 跑同样形态的产物，**不得拦**；
+      · 通用完整性守卫（掩码手机号写库）→ B 端**同样要拦**（错号码对 B 端顾客一样是错）。
+    """
+
+    def _run(self, tool_name, args, role="admin", skill="order", msgs=None,
+             store=None, read_data=None):
+        import asyncio, json as _json
+        seen = {"calls": []}
+        full = dict(store or {})
+
+        async def fake_execute(tool, a, ctx, state):
+            seen["calls"].append((tool, a))
+            data = read_data if read_data is not None else {"ok": True}
+            return (_json.dumps({"success": True, "data": data}),
+                    {"success": True, "data": data})
+
+        class _Store:
+            async def load(self, sid):
+                return dict(full)
+
+            async def commit(self, sid, f):
+                full.clear(); full.update(f)
+
+        with patch("app.memory.session_memory.SessionMemory"), \
+             patch("app.graph.skills.base_skill.get_breaker") as get_breaker, \
+             patch("app.graph.skills.base_skill.get_skill_llm") as get_llm, \
+             patch("app.graph.skills.base_skill.create_skill_registry") as create_reg, \
+             patch("app.graph.skills.base_skill.set_tool_context"), \
+             patch("app.graph.skills.base_skill._execute_tool_safe", fake_execute), \
+             patch("app.memory.session_state_store.SessionStateStore",
+                   side_effect=lambda *a, **k: _Store()):
+            tool = MagicMock()
+            tool.name = tool_name
+            tool.read_only = tool_name in ("interact", "product_search", "product_detail")
+            tool.destructive = False
+            tool.requires_confirmation = False
+            registry = MagicMock()
+            registry.get_langchain_tools.return_value = []
+            registry.get_tool.side_effect = lambda n: tool if n == tool_name else None
+            create_reg.return_value = registry
+            breaker = MagicMock()
+
+            async def _pt(fn):
+                return await fn()
+
+            breaker.call = _pt
+            get_breaker.return_value = breaker
+            call = MagicMock(spec=AIMessage)
+            call.content = ""
+            call.tool_calls = [{"name": tool_name, "args": args, "id": "c1"}]
+            final = MagicMock(spec=AIMessage)
+            final.content = "好的"
+            final.tool_calls = []
+            llm = MagicMock()
+            llm.bind_tools.return_value = llm
+            llm.ainvoke = AsyncMock(side_effect=[call, final])
+            get_llm.return_value = llm
+            state = _make_state(messages=msgs or [HumanMessage(content="给张三下个单，3 米")])
+            state["role"] = role
+            res = asyncio.run(execute_skill(
+                state=state, skill_name=skill, tool_names=[tool_name], system_prompt="p"))
+        from langchain_core.messages import ToolMessage as _TM
+        seen["tool_content"] = "\n".join(
+            str(getattr(m, "content", "")) for m in (res or {}).get("messages", [])
+            if isinstance(m, _TM))
+        return seen
+
+    def test_bend_quantity_choice_card_not_blocked(self):
+        """B 端店员代客下单给出"用量/褶皱"选项可能是合法业务动作 → C 端守卫不得拦。"""
+        seen = self._run("interact",
+                         {"component": "choice", "title": "选择用量",
+                          "options": [{"label": "3米", "value": "3米"},
+                                      {"label": "6米", "value": "6米"}]},
+                         role="admin", skill="order",
+                         # ⚠️ 消息里必须**真的带数量意图**（"数量 3 米"）——首版写成
+                         # "给张三下个单，3 米"（"下个单" 不匹配意图词）→ 守卫前置条件根本没满足，
+                         # 去掉分端也不会红（变异 M194 当场判它假守卫）。
+                         msgs=[HumanMessage(content="给张三下个单，数量 3 米，要打孔")])
+        assert len(seen["calls"]) == 1, f"B 端被 C 端数量守卫误拦: {seen['tool_content'][:120]}"
+
+    def test_bend_form_edit_not_blocked(self):
+        """B 端客服改客户资料（同名 key customer_phone）不得被 C 端预填守卫拦。"""
+        seen = self._run("interact",
+                         {"component": "form", "title": "客户资料",
+                          "formFields": [{"key": "customer_phone", "label": "手机号",
+                                          "value": "138****8000"}]},
+                         role="admin", skill="customer",
+                         store={"known_raw_phones": ["13800138000"]})
+        assert len(seen["calls"]) == 1, f"B 端改资料被 C 端预填守卫误拦: {seen['tool_content'][:120]}"
+
+    def test_bend_calc_not_blocked(self):
+        """B 端米宝的算料链路不受 C 端算料守卫影响。"""
+        seen = self._run("curtain_calc",
+                         {"window_width": 3.0, "window_height": 2.7, "fabric_price": 98.0},
+                         role="admin", skill="order")
+        assert len(seen["calls"]) == 1, "B 端算料被 C 端守卫误拦"
+
+    def test_bend_masked_phone_still_blocked(self):
+        """通用完整性守卫对 B 端**仍然生效**（错号码对 B 端顾客一样是错）。"""
+        seen = self._run("order_create",
+                         {"customer_name": "张三", "customer_phone": "138****8000",
+                          "items": [{"product_name": "遮光窗帘", "quantity": 3,
+                                     "unit_price": 168.0, "subtotal": 504.0}]},
+                         role="admin", skill="order")
+        assert seen["calls"] == [], "B 端用掩码号码建单必须同样拦下"
+        assert "138" in seen["tool_content"], "拦截时必须回放真号"
 
 
 class TestFalseCancelGuard:
