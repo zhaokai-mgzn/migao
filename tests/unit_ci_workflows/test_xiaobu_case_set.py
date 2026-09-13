@@ -689,6 +689,25 @@ class TestCh025AddressPrefillIsExecutable:
             "缺『先查历史地址再写单』的时序断言"
         )
 
+    def test_enough_card_answering_turns_before_otp(self):
+        """CH-025 的流程里有**两类卡**（收货信息 form + 加工项多选），故答卡轮要 ≥2。
+
+        实证（issue #3421）：只给 1 轮答卡时，第二类卡会顶到验证码轮上 → "123456" 成了
+        加工项的回答 → 3 轮空转、从未下单，且被重试放行标成 `llm-noise`。
+        """
+        c = self._case()
+        ui = c.get("user_inputs") or []
+        idx_pt = [i for i, u in enumerate(ui)
+                  if isinstance(u, dict) and (u.get("auto_respond") or {}).get("prefer_text")]
+        assert idx_pt, "CH-025 缺验证码轮（prefer_text）"
+        card_idx = [i for i, u in enumerate(ui)
+                    if isinstance(u, dict) and not (u.get("auto_respond") or {}).get("prefer_text")]
+        before = len([i for i in card_idx if i < idx_pt[0]])
+        assert before >= 2, (
+            f"验证码轮之前只有 {before} 轮答卡式答复 —— CH-025 有 form + choice 两类卡，"
+            "至少要 2 轮才能把卡答完（issue #3421 实证：1 轮时顾客答非所问、整场不下单）"
+        )
+
     def test_modification_turn_is_really_a_modification(self):
         """顾客必须**说出来**要改成什么（不能只靠表单兜底值）。
 
@@ -701,4 +720,56 @@ class TestCh025AddressPrefillIsExecutable:
         assert any("2号5幢" in u.replace(" ", "") for u in utterances), (
             f"user_inputs 的**顾客原话**里没有任何一轮要求改地址（实际：{utterances}）—— "
             "『可修改』没有被真正触发"
+        )
+
+
+class TestPreferTextTurnsAreRobust:
+    """`prefer_text` 轮的**位置与冗余度**必须防住"答非所问"（issue #3421 复盘）。
+
+    实证（CH-025 首跑，run 34763744203）：验证码轮声明了 `prefer_text`，但那一刻 agent 刚发的
+    是**加工项多选卡** → harness 把 "123456" 当成了加工项的回答 → 之后 3 轮空转、
+    `order_create` 从未调用。整跑只表现为「首跑失败、重试通过」并被标 `llm-noise` ——
+    **用例配置缺陷伪装成模型波动**（见 runner 新增的 pending_card 告警）。
+
+    两条规则都由**现存 10 条用例实测**支撑，不是凭空定的阈值：
+      ① `prefer_text` 轮之前至少要有一轮「答卡式」`auto_respond`（先答卡、再发文本）；
+      ② `prefer_text` 轮必须**冗余 ≥2 轮**（模型可能把其中一轮的卡换成别的问题；实测全部用例都 ≥2）。
+    """
+
+    def _cases_with_prefer_text(self):
+        out = []
+        for c in load_case_dicts(CASES_DIR):
+            ui = c.get("user_inputs") or []
+            idx_pt = [i for i, u in enumerate(ui)
+                      if isinstance(u, dict) and (u.get("auto_respond") or {}).get("prefer_text")]
+            if idx_pt:
+                out.append((c, ui, idx_pt))
+        return out
+
+    def test_parse_is_non_trivial(self):
+        got = self._cases_with_prefer_text()
+        assert len(got) >= 5, (
+            f"仅解析出 {len(got)} 条带 prefer_text 的用例 —— 解析疑似失效（守卫会变恒真）"
+        )
+
+    def test_card_answering_turn_precedes_prefer_text(self):
+        bad = []
+        for c, ui, idx_pt in self._cases_with_prefer_text():
+            card_idx = [i for i, u in enumerate(ui)
+                        if isinstance(u, dict)
+                        and not (u.get("auto_respond") or {}).get("prefer_text")]
+            if not any(i < idx_pt[0] for i in card_idx):
+                bad.append(f"{c['id']}（prefer_text 首现于第 {idx_pt[0] + 1} 轮，之前没有答卡轮）")
+        assert not bad, (
+            "这些用例把 prefer_text 轮排在了答卡轮之前 —— 卡片一旦先到，顾客就是答非所问、"
+            "流程卡死（issue #3421 实证）：\n  " + "\n  ".join(bad)
+        )
+
+    def test_prefer_text_turns_are_redundant(self):
+        bad = [f"{c['id']}（仅 {len(idx_pt)} 轮）"
+               for c, ui, idx_pt in self._cases_with_prefer_text() if len(idx_pt) < 2]
+        assert not bad, (
+            "这些用例的 prefer_text 轮不足 2 轮 —— 模型把其中一轮换成别的提问时，"
+            "验证码就永远送不出去（order_create 会以「缺少短信验证码」失败）：\n  "
+            + "\n  ".join(bad)
         )

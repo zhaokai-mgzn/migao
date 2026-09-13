@@ -1004,8 +1004,27 @@ cases:
             customer_address: "浙江省杭州市西湖区文三路2号5幢202室"
             color: "米白"
             colorName: "米白"
-      # 验证码那一轮（dev/CI 栈 SMS_BYPASS_CODE=123456）：漏了这一轮，AI 会正确停在
-      # 「请输入验证码」→ order_create 断言永远不可能满足（test_cases_asserting_otp_tools_supply_a_code 拦下）
+      # 再给一轮"答卡式"答复（自动按待答卡作答：confirm 回 confirmValue / choice 点首项 /
+      # form 回 __FORM__|json）—— agent 的提问顺序随模型而变（实测首跑 R2 是收货信息 form 卡、
+      # R3 才是加工项多选卡），只给一轮答不完，后面的验证码轮就会落在卡片上。
+      - auto_respond:
+          fallback: "确认"
+          form_values:
+            customer_name: "张三"
+            customer_phone: "13800138000"
+            customer_address: "浙江省杭州市西湖区文三路2号5幢202室"
+            color: "米白"
+            colorName: "米白"
+      # 验证码轮（dev/CI 栈 SMS_BYPASS_CODE=123456）：漏了这一轮，AI 会正确停在
+      # 「请输入验证码」→ order_create 断言永远不可能满足（test_cases_asserting_otp_tools_supply_a_code 拦下）。
+      # ⚠️ `prefer_text` 会**无视待答卡片**直接发文本（issue #3421）：首跑时这一轮正落在
+      # 「要哪些加工项」多选卡上 → 顾客回了 "123456" → 答非所问、之后 3 轮空转、从未下单，
+      # 且只表现为"首跑失败重试通过"（标 llm-noise）—— **用例配置缺陷伪装成模型波动**。
+      # 故：① 前面给足两轮答卡式答复；② 验证码给**两轮冗余**（OR-021 同款做法）；
+      # ③ runner 在 prefer_text 吃掉待答卡时打印告警（pending_card_summary），让这类错可见。
+      - auto_respond:
+          fallback: "123456"
+          prefer_text: true
       - auto_respond:
           fallback: "123456"
           prefer_text: true
