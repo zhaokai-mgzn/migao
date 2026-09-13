@@ -777,9 +777,13 @@ cases:
       - "所选加工项写入 order_create 的 processing_info.processingItems（id/name/unitPrice/quantity/unit/pricingMethod/subtotal），合计写入 processingFee 且计入订单金额；按米计价项加工数量=面料米数"
       - "顾客说「不需要加工项」可跳过；加工项确实为空时才告知无可用加工项"
       - "C 端下单是**两步**：确认订单信息后还需手机验证码（order_create 的 sms_code，customer 角色必填）。用例必须提供验证码这一轮，否则 AI 停在第 5 步「请提供验证码」，order_create 永不发生（run 34622425044 实证：R7 顾客回「确认」后无任何工具调用）。dev/CI 栈已设 SMS_BYPASS_CODE=123456，此处用该码走真实校验分支。"
+    # 确认卡先行（issue #3414）：C 端下单**必须先发 confirm 卡展示明细**、顾客确认后才写单
+    # （prompt 第 4 步：validate_input → interact(confirm)）。此前只有 CH-010 断言了这条，
+    # 其余下单用例不守 → 评测看不见"文本确认就直接写单"这条路径（验收 C-A1 抓到）。
     order_before:
       - "interact[choice:processing_items] before interact[confirm]"
       - "interact[choice:processing_items] before order_create"
+      - "interact[confirm] before order_create"
     forbidden_text:
       - "暂未查询到可选加工项"
       - "无可用加工项"
@@ -847,6 +851,11 @@ cases:
       - tool: order_create
     must_succeed:
       - tool: order_create
+    # 确认卡先行（issue #3414）：C 端下单**必须先发 confirm 卡展示明细**、顾客确认后才写单
+    # （prompt 第 4 步：validate_input → interact(confirm)）。此前只有 CH-010 断言了这条，
+    # 其余下单用例不守 → 评测看不见"文本确认就直接写单"这条路径（验收 C-A1 抓到）。
+    order_before:
+      - "interact[confirm] before order_create"
     amount_verify:
       - tool: order_create
         product_name: "夏日清风窗帘"
@@ -926,6 +935,11 @@ cases:
       - tool: order_create
     must_succeed:
       - tool: order_create
+    # 确认卡先行（issue #3414）：C 端下单**必须先发 confirm 卡展示明细**、顾客确认后才写单
+    # （prompt 第 4 步：validate_input → interact(confirm)）。此前只有 CH-010 断言了这条，
+    # 其余下单用例不守 → 评测看不见"文本确认就直接写单"这条路径（验收 C-A1 抓到）。
+    order_before:
+      - "interact[confirm] before order_create"
     amount_verify:
       - tool: order_create
         product_name: "遮光窗帘"
@@ -1004,6 +1018,11 @@ cases:
       - tool: order_create
     must_succeed:
       - tool: order_create
+    # 确认卡先行（issue #3414）：C 端下单**必须先发 confirm 卡展示明细**、顾客确认后才写单
+    # （prompt 第 4 步：validate_input → interact(confirm)）。此前只有 CH-010 断言了这条，
+    # 其余下单用例不守 → 评测看不见"文本确认就直接写单"这条路径（验收 C-A1 抓到）。
+    order_before:
+      - "interact[confirm] before order_create"
     amount_verify:
       - tool: order_create
         product_name: "遮光窗帘"
@@ -1090,6 +1109,11 @@ cases:
       - tool: order_create
     must_succeed:
       - tool: order_create
+    # 确认卡先行（issue #3414）：C 端下单**必须先发 confirm 卡展示明细**、顾客确认后才写单
+    # （prompt 第 4 步：validate_input → interact(confirm)）。此前只有 CH-010 断言了这条，
+    # 其余下单用例不守 → 评测看不见"文本确认就直接写单"这条路径（验收 C-A1 抓到）。
+    order_before:
+      - "interact[confirm] before order_create"
     # 能力误宣反模式词（issue #3389）：命中即判失败 —— 这是"能做却说做不了"，
     # 顾客明明要买却被告知系统不行，比答错更伤（C-A1 原文即此形）。
     forbidden_text:
@@ -1193,6 +1217,11 @@ cases:
       - tool: order_create
     must_succeed:
       - tool: order_create
+    # 确认卡先行（issue #3414）：C 端下单**必须先发 confirm 卡展示明细**、顾客确认后才写单
+    # （prompt 第 4 步：validate_input → interact(confirm)）。此前只有 CH-010 断言了这条，
+    # 其余下单用例不守 → 评测看不见"文本确认就直接写单"这条路径（验收 C-A1 抓到）。
+    order_before:
+      - "interact[confirm] before order_create"
     # 能力误宣反模式（issue #3389 同族）：新客路径最容易触发"我做不到"。
     forbidden_text:
       - "没法直接帮您提交"
@@ -1295,8 +1324,12 @@ cases:
       - tool: order_create
     must_succeed:
       - tool: order_create
+    # 确认卡先行（issue #3414）：C 端下单**必须先发 confirm 卡展示明细**、顾客确认后才写单
+    # （prompt 第 4 步：validate_input → interact(confirm)）。此前只有 CH-010 断言了这条，
+    # 其余下单用例不守 → 评测看不见"文本确认就直接写单"这条路径（验收 C-A1 抓到）。
     order_before:
       - "customer_address_query before order_create"
+      - "interact[confirm] before order_create"
     # 老客户"带出上次收货信息"的断言取**产出侧**（issue #3404 复盘）：
     #   · 顾客在意的是**订单上的值对不对**，而"过程必须发 form 卡"把用例绑死在**机制**上
     #     —— Agent 用 confirm 卡的字段承载同样合法（实测 run 34755272379 因此假红：
@@ -1393,6 +1426,11 @@ cases:
       - tool: order_create
     must_succeed:
       - tool: order_create
+    # 确认卡先行（issue #3414）：C 端下单**必须先发 confirm 卡展示明细**、顾客确认后才写单
+    # （prompt 第 4 步：validate_input → interact(confirm)）。此前只有 CH-010 断言了这条，
+    # 其余下单用例不守 → 评测看不见"文本确认就直接写单"这条路径（验收 C-A1 抓到）。
+    order_before:
+      - "interact[confirm] before order_create"
     # 卡片内容反模式（新断言能力，issue #3402）：卡里不得出现"用量/褶皱倍数"框架 ——
     # 顾客已经报了数量，再让他选用量就是把金额翻倍（C-A1 实证 3 米 → 推荐 6 米）
     forbidden_card_text:

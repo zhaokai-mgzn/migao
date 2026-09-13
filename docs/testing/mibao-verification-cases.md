@@ -2183,6 +2183,7 @@
 数据: C 端下单是**两步**：确认订单信息后还需手机验证码（order_create 的 sms_code，customer 角色必填）。用例必须提供验证码这一轮，否则 AI 停在第 5 步「请提供验证码」，order_create 永不发生（run 34622425044 实证：R7 顾客回「确认」后无任何工具调用）。dev/CI 栈已设 SMS_BYPASS_CODE=123456，此处用该码走真实校验分支。
 时序: interact[choice:processing_items] before interact[confirm]
 时序: interact[choice:processing_items] before order_create
+时序: interact[confirm] before order_create
 禁词: 暂未查询到可选加工项
 禁词: 无可用加工项
 禁词: 该商品无加工项
@@ -2211,6 +2212,7 @@
 数据: 多商品下单必须一次 order_create 带多行 items（每行自己的数量/单价/加工项），不得只落一款
 数据: 加工费按各自米数分别计算（3 米→24、2 米→16），总额 = Σ小计 810 + Σ加工费 40 = 850
 数据: 两款商品的单价都必须来自商品库（158/168），不得凭记忆报价
+时序: interact[confirm] before order_create
 必须成功: order_create
 金额: order_create 「夏日清风窗帘」 → unit_price; subtotal; total
 金额: order_create 「遮光窗帘」 → unit_price
@@ -2235,6 +2237,7 @@
 期望: order_create
 数据: 顾客中途改数量后，确认卡与订单明细都必须反映**最新**数量（4 米），不得沿用旧值 3 米
 数据: 金额按最新数量重算：168×4 + 打孔 8×4 = 704
+时序: interact[confirm] before order_create
 必须成功: order_create
 金额: order_create 「遮光窗帘」 → unit_price; subtotal; total
 落库: order_items None → 
@@ -2259,6 +2262,7 @@
 期望: order_create
 数据: 打岔（问发货时效）后必须能回到原下单流程，且**草稿不丢**：数量 3 米、加工项打孔都延续
 数据: 恢复后的订单金额仍为 168×3 + 打孔 8×3 = 528；若加工项丢失会变成 504（金额即证据）
+时序: interact[confirm] before order_create
 必须成功: order_create
 金额: order_create 「遮光窗帘」 → unit_price; subtotal; total
 落库: order_items None → 
@@ -2282,6 +2286,7 @@
 数据: 缺收货信息时先 customer_address_query 查历史地址，没有再发 form 卡/直接问 —— 不得自我否定能力、不得推去小程序
 数据: 任何一轮回复都不得出现「我无法提交订单 / 没法帮您下单」这类能力误宣
 数据: 参数补齐后必须真实落单（order_create 成功 + 明细/数量/手机号正确）
+时序: interact[confirm] before order_create
 禁词: 没法直接帮您提交
 禁词: 没法帮您提交订单
 禁词: 无法代为提交
@@ -2314,6 +2319,7 @@
 数据: 新客无历史收货信息时：必须主动收集（form 卡或文本问姓名/手机号/地址），不得拒单、不得推去小程序
 数据: 收集到的收货信息必须真的用于落单（订单手机号/明细与顾客所给一致）
 数据: 全程不得出现「我无法提交订单 / 没法帮您下单」这类能力误宣
+时序: interact[confirm] before order_create
 禁词: 没法直接帮您提交
 禁词: 没法帮您提交订单
 禁词: 无法代为提交
@@ -2349,6 +2355,7 @@
 数据: 预填值必须是真值 —— 掩码值会被顾客原样提交，订单会用掩码建号
 数据: 写操作前必须经过 validate_input（confirm → 校验 → order_create）
 时序: customer_address_query before order_create
+时序: interact[confirm] before order_create
 必须成功: order_create
 金额: order_create 「遮光窗帘」 → unit_price; subtotal; total
 落库: order_items None → 
@@ -2375,6 +2382,7 @@
 数据: 顾客已给「数量 3 米」后，不得再发「选择用量/褶皱倍数」卡，也不得把 3 米换算成 6 米（2 倍金额）
 数据: 数量就是 3 米：金额 = 单价 × 3，最终必须真实落单（order_create 成功）
 数据: 整场不得出现 human_handoff（主转化路径不得转人工）
+时序: interact[confirm] before order_create
 必须成功: order_create
 金额: order_create 「遮光窗帘」 → unit_price; subtotal; total
 落库: order_items None → 
