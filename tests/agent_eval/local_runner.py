@@ -2101,6 +2101,28 @@ def resolve_repeat_turn(results: list, opts: dict, case_form_values: dict | None
     return fallback
 
 
+def resolve_auto_select_turn(results: list, form_values: dict,
+                            fallback: str = "第一个") -> str:
+    """`auto_select` 轮实际要发的文本（issue #3445 复盘：别发对不上卡片的字面量）。
+
+    语义分三档：
+      ① 待答是 **choice** 卡 → 点首项（回该 option 的 value，= 前端点击协议）；
+      ② 待答是 **confirm/form** 卡 → **答卡**（`resolve_auto_respond`）——
+         实测（run 34789368315 OR-018 首跑）：待答是 form 卡却发字面量「第一个」，
+         agent 只能反问「您说的『第一个』指的是哪一项」→ 流程变噪、
+         顾客还没给码时模型自造验证码 → 首跑失败（新加的 `ai=` 让这条第一次可见）；
+      ③ 无卡片 → 保留 `fallback`（默认「第一个」）：那是**答 agent 的文本提问**
+         （重名澄清等场景，卡片内容由 LLM 动态生成、文本指代不稳定，故用字面量）。
+    """
+    text = _auto_select_first_option(results)
+    if text:
+        return text
+    # 其余情况交给 `resolve_auto_respond`：有 confirm/form 卡 → 答卡；完全没有卡 →
+    # 它自己会回 `fallback`（保持「答 agent 文本提问」的旧语义）。
+    return resolve_auto_respond(results, fallback=fallback,
+                                form_values=form_values, prefer_text=False)
+
+
 def expand_repeat_turns(user_inputs: list) -> list:
     """把 `repeat_until` 轮展开成 N 份「运行时决定发什么」的轮次（issue #3430）。
 
@@ -3180,7 +3202,9 @@ async def run_case(case, token: str, session_id: str) -> dict:
             # 而 card 内容（label/value）由 LLM 动态生成，评测用静态 user_inputs
             # 无法预知（「第一个」/「客户A」文本指代均不稳定）。
             # 无 choice 卡（agent 文本澄清路径）→ fallback「第一个」保持旧语义兼容。
-            text = _auto_select_first_option(results) or "第一个"
+            # ⚠️ 但"待答的是 confirm/form 卡"时不能再发「第一个」（对不上卡片）——
+            # 见 `resolve_auto_select_turn` 的实证说明。
+            text = resolve_auto_select_turn(results, case_form_values)
         elif isinstance(msg, dict) and msg.get("__repeat__"):
             # repeat_until 展开出的轮次：目标工具已成功 → 余下的重复轮直接跳过
             if repeat_stop_met(results, msg.get("__repeat__") or {}):
