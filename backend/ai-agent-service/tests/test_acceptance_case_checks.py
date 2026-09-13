@@ -3738,6 +3738,18 @@ class TestFalseInability:
                   "还差收货信息，方便告诉我姓名、手机号和地址吗？"]:
             assert self._run([t]) == [], f"误报: {t!r}"
 
+    def test_permission_phrasing_flagged(self):
+        """「**没有权限**帮您直接提交订单」也必须抓（issue #3443，run 34773014637 原话）。
+
+        首版词表只有"没法/无法/不能/没办法/做不到"这类**能力**否定，
+        漏了"**没有权限**"这种**权限**否定 → C-A1 的三轮误宣里恰好有一轮是这种措辞，
+        评测层与运行时守卫**同时**漏判（两处 regex 同源，故一起补）。
+        """
+        for t in ["我是咨询客服，没有权限帮您直接提交订单哦，下单还是需要您在小程序里操作完成",
+                  "小布这边无权限帮您下单，请您自己操作",
+                  "我没有权限代为提交订单"]:
+            assert self._run([t]), f"未抓住权限类能力误宣: {t!r}"
+
     def test_handoff_reason_also_scanned(self):
         """转人工理由里写着"无法代为提交订单"同样算能力误宣（C-A1 R9 的实际形态）。"""
         rounds = [{"__round": 9, "tool_calls": [{"name": "human_handoff",

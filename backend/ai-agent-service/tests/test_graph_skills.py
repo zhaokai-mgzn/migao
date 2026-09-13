@@ -22,6 +22,7 @@ from app.graph.skills.general_agent import GENERAL_TOOLS, GENERAL_SKILL_CONFIG
 from app.graph.skills.base_skill import (
     build_tool_context, execute_skill, _extract_content, get_skill_llm,
     _masked_phone_write_block, KNOWN_RAW_PHONES_KEY, _capability_denial_reason,
+    capability_denial_text_hit,
     _conversation_mentions_dimensions, _form_prefill_fidelity_block,
     _stated_purchase_quantities, _quantity_choice_block,
     _curtain_calc_dimension_block, _should_code_close_loop,
@@ -4908,3 +4909,119 @@ class TestCapabilityDenialPermissionPhrasing:
         for why in ["商品缺货不能创建订单", "顾客要求人工核对加工费",
                     "订单信息有误，需要人工核实收货地址", "顾客明确要求转人工"]:
             assert not _capability_denial_reason({"reason": why}), f"误报: {why!r}"
+
+
+class TestCapabilityDenialTextHit:
+    """回复文本里的能力误宣识别（issue #3443，C-A1 transcript 实证）。
+
+    判据与评测侧 `_false_inability_hit` 同源：「agent 主语 + 否定动词」与「下单动作词」
+    必须在**同一句**且距离很近 —— 否则正常开场白（"我是小布，您的专属咨询客服"）会被误判。
+    """
+
+    def test_ca1_phrasings_detected(self):
+        """C-A1 三轮的原话（run 34773014637 transcript）。"""
+        for t in ["亲，小布这边是咨询客服，没办法直接帮您提交订单哦，不过下单很简单，我教您~",
+                  "我是咨询客服，没有权限帮您直接提交订单哦，下单还是需要您在小程序里操作完成",
+                  "小布这边确实没办法直接帮您提交订单，这是为了保护您的订单和支付安全哦。"]:
+            assert capability_denial_text_hit(t), f"未识别: {t!r}"
+
+    def test_self_intro_not_flagged(self):
+        assert capability_denial_text_hit("亲，我是小布，您的专属咨询客服～") == ""
+
+    def test_success_phrasing_not_flagged(self):
+        for t in ["已经帮您提交订单啦，订单号 20260914691810001",
+                  "好的，我这就帮您下单", "订单已创建，请您核对"]:
+            assert capability_denial_text_hit(t) == "", f"误报: {t!r}"
+
+    def test_unrelated_inability_not_flagged(self):
+        """没有下单动作词的否定不算（如"这个我没法确认"）—— 避免把正常求助判红。"""
+        assert capability_denial_text_hit("这个我没法确认，麻烦您再说明一下") == ""
+
+    def test_cross_sentence_not_flagged(self):
+        """跨句不算：否定在上一句、动作词在下一句 → 不判定（窗口限制）。"""
+        t = "小布这边没法查到这个信息。我帮您下单吧"
+        assert capability_denial_text_hit(t) == ""
+
+
+class TestTextDenialCorrectiveRetry:
+    """文本级能力误宣 → 带纠正提示**重答一次**（issue #3443）。
+
+    为什么必须动运行时：`order_create` 就在手上，agent 却说"没有权限帮您提交订单"，
+    还发一张「转人工协助下单」的卡把顾客推向人工（C-A1 run 34773014637 实证：
+    顾客亲手选了人工、整场未下单）。#3421 修的是**工具参数**级、本条是**回复文本**级。
+    """
+
+    def _run(self, replies, *, skill="customer_order", has_order_tool=True):
+        import asyncio
+
+        sent = []
+
+        async def fake_execute(tool, args, ctx, state):
+            sent.append(tool.name)
+            return (json.dumps({"success": True, "data": {}}), {"success": True, "data": {}})
+
+        def _msg(content):
+            m = MagicMock(spec=AIMessage)
+            m.content = content
+            m.tool_calls = []
+            return m
+
+        with patch("app.memory.session_memory.SessionMemory") as mem_cls, \
+             patch("app.graph.skills.base_skill.get_breaker") as get_breaker, \
+             patch("app.graph.skills.base_skill.get_skill_llm") as get_llm, \
+             patch("app.graph.skills.base_skill.create_skill_registry") as create_reg, \
+             patch("app.graph.skills.base_skill.set_tool_context"), \
+             patch("app.graph.skills.base_skill._execute_tool_safe", fake_execute):
+            registry = MagicMock()
+            registry.get_langchain_tools.return_value = []
+            registry.get_tool.side_effect = lambda n: (object() if (n == "order_create" and has_order_tool) else None)
+            create_reg.return_value = registry
+            breaker = MagicMock()
+
+            async def _pt(fn):
+                return await fn()
+
+            breaker.call = _pt
+            get_breaker.return_value = breaker
+            llm = MagicMock()
+            llm.bind_tools.return_value = llm
+            llm.ainvoke = AsyncMock(side_effect=[_msg(c) for c in replies])
+            get_llm.return_value = llm
+            mem_cls.return_value.set_pending_skill = AsyncMock(return_value=True)
+            out = asyncio.run(execute_skill(
+                state=_make_state(messages=[HumanMessage(content="确认下单")]),
+                skill_name=skill, tool_names=["order_create"], system_prompt="你是小布",
+            ))
+        return out, llm, sent
+
+    def test_denial_text_triggers_one_corrective_retry(self):
+        denial = "亲，小布这边是咨询客服，没办法直接帮您提交订单哦~"
+        ok = "好嘞，这就帮您提交订单，请核对下面的订单信息～"
+        out, llm, _ = self._run([denial, ok])
+        assert out["final_answer"] == ok, f"能力误宣文本被原样发出：{out['final_answer']!r}"
+        assert llm.ainvoke.await_count == 2, "没有发生纠正重答"
+        # 纠正提示必须真的注入了（否则模型无从改口）
+        second_call_msgs = llm.ainvoke.await_args_list[1].args[0]
+        blob = " ".join(str(getattr(m, "content", "")) for m in second_call_msgs)
+        assert "你可以真实下单" in blob or "order_create" in blob, "纠正提示未注入"
+
+    def test_only_one_retry_even_if_model_keeps_denying(self):
+        """只纠正一次：模型死不改口时按原样发出（绝不无限重试烧轮次）。"""
+        denial = "小布这边没办法直接帮您提交订单哦"
+        out, llm, _ = self._run([denial, denial, denial])
+        assert llm.ainvoke.await_count == 2, f"重试次数不为 1：{llm.ainvoke.await_count}"
+        assert "没办法直接帮您提交订单" in out["final_answer"]
+
+    def test_other_skill_untouched(self):
+        """非办单 skill 说"下不了单"可能属实 → 不拦、不重答。"""
+        denial = "这边没办法直接帮您提交订单哦"
+        out, llm, _ = self._run([denial], skill="customer_knowledge")
+        assert out["final_answer"] == denial
+        assert llm.ainvoke.await_count == 1
+
+    def test_skipped_when_order_tool_unavailable(self):
+        """没有 order_create 时"我下不了单"是事实，不能拦（避免堵死正确行为）。"""
+        denial = "小布这边没办法直接帮您提交订单哦"
+        out, llm, _ = self._run([denial], has_order_tool=False)
+        assert out["final_answer"] == denial
+        assert llm.ainvoke.await_count == 1
