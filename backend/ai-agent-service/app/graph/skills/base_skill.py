@@ -1923,8 +1923,19 @@ async def execute_skill(
             if isinstance(m, HumanMessage):
                 last_user_msg = _extract_content(m)
                 break
-        if _is_cancel_message(last_user_msg):
-            logger.info(f"[{skill_name}] Cancel detected | session={session_id}")
+        # 只有在**确实有在办流程**时才允许"取消"短路（验收发现，issue #3367）。
+        # 实证（验收剧本 C-A2，transcripts/ci-34730957920）：
+        #   顾客「算了，先看看你们有什么窗帘」→ AI「好的，**已取消**。」且**零工具调用**。
+        # 两处危害：① 假状态变更（什么都没在办却说"已取消"，顾客可能以为订单被撤了）；
+        #           ② 整句吞掉真实诉求（"看看有什么窗帘"没有触发 product_search）。
+        # 判据：pending 流程标记 / pending_interact_skill / 历史里未完结的交互卡 —— 三者皆无
+        # 就说明"没有东西可取消"，此时应正常处理顾客这句话（该搜索就搜索）。
+        _inflight = bool(state.get("pending_interact_skill")) or \
+            bool((state.get("__session_state__") or {}).get("pending_validated")) or \
+            _has_inflight_interactive_card(state.get("messages", []))
+        if _is_cancel_message(last_user_msg) and _inflight:
+            logger.info(f"[{skill_name}] Cancel detected | session={session_id} "
+                        f"msg={last_user_msg[:24]!r}")
             final_content = "好的，已取消。有什么其他需要帮您的吗？"
             new_messages.clear()
             if session_id:
@@ -1933,6 +1944,10 @@ async def execute_skill(
                 except Exception:
                     pass
         else:
+            if _is_cancel_message(last_user_msg) and not _inflight:
+                logger.info(
+                    f"[{skill_name}] 「取消」类措辞但无在办流程 → 不短路，按正常诉求处理 "
+                    f"| session={session_id} msg={last_user_msg[:24]!r}")
             for iteration in range(max_iterations):
                 logger.info(f"[{skill_name}] Iteration {iteration+1}/{max_iterations} | session={session_id}")
 

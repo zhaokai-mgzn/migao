@@ -2773,6 +2773,97 @@ class TestSmsCodeBackfill:
         assert extract_sms_code("") == ""
 
 
+class TestFalseCancelGuard:
+    """「算了」不得在**没有在办流程**时冒充取消（验收发现，issue #3367 / 协议 P1）。
+
+    验收剧本 C-A2 实测（transcripts/ci-34730957920）：
+      R1 用户「帮我查一下我的订单」→ 正常列单
+      R2 用户「算了，先看看你们有什么窗帘」
+         AI：「好的，**已取消**。有什么其他需要帮您的吗？」  ← 无任何工具调用
+    两处危害：
+      ① **假状态变更**：什么都没在办，却告诉顾客"已取消" —— 顾客可能以为订单/流程被取消了；
+      ② **吞掉真实诉求**：「先看看你们有什么窗帘」被整句丢弃（没有 product_search）。
+    根因：`_is_cancel_message` 把「算了」当无条件强取消，而 execute_skill 的短路分支
+    **不检查"是否有在办流程"**。
+    """
+
+    def _run(self, user_msg, store=None, messages=None, pending_skill=""):
+        import asyncio, json as _json
+
+        class _Store:
+            def __init__(self):
+                self.full = dict(store or {})
+
+            async def load(self, sid):
+                return dict(self.full)
+
+            async def commit(self, sid, f):
+                self.full = dict(f)
+
+        with patch("app.memory.session_memory.SessionMemory"), \
+             patch("app.graph.skills.base_skill.get_breaker") as gb, \
+             patch("app.graph.skills.base_skill.get_skill_llm") as gl, \
+             patch("app.graph.skills.base_skill.create_skill_registry") as cr, \
+             patch("app.graph.skills.base_skill.set_tool_context"), \
+             patch("app.memory.session_state_store.SessionStateStore",
+                   side_effect=lambda *a, **k: _Store()):
+            registry = MagicMock()
+            registry.get_langchain_tools.return_value = []
+            registry.get_tool.return_value = None
+            cr.return_value = registry
+            breaker = MagicMock()
+
+            async def _pt(fn):
+                return await fn()
+
+            breaker.call = _pt
+            gb.return_value = breaker
+            call = MagicMock(spec=AIMessage)
+            call.content = ""
+            call.tool_calls = [{"name": "product_search", "args": {"keyword": "窗帘"}, "id": "c1"}]
+            final = MagicMock(spec=AIMessage)
+            final.content = "为您找到几款热销窗帘"
+            final.tool_calls = []
+            llm = MagicMock()
+            llm.bind_tools.return_value = llm
+            llm.ainvoke = AsyncMock(side_effect=[call, final])
+            gl.return_value = llm
+            st = _make_state(messages=messages or [HumanMessage(content=user_msg)])
+            if pending_skill:
+                st["pending_interact_skill"] = pending_skill
+            return asyncio.run(execute_skill(
+                state=st, skill_name="customer_order", tool_names=["product_search"],
+                system_prompt="p")), llm
+
+    def test_no_false_cancel_when_nothing_inflight(self):
+        """没有在办流程时，「算了」不得短路成"已取消"，应正常处理顾客的新诉求。"""
+        res, llm = self._run("算了，先看看你们有什么窗帘")
+        assert "已取消" not in (res.get("final_answer") or ""), \
+            "无在办流程却回「已取消」= 假状态变更（验收 C-A2 实证）"
+        assert llm.ainvoke.call_count >= 1, "本该正常进入 ReAct（去处理『看看有什么窗帘』）"
+
+    def test_cancel_still_short_circuits_when_inflight(self):
+        """**有**在办流程时，取消仍应短路（原有能力不得退化）。"""
+        # 注意：历史里的**最后一条 HumanMessage** 才是本轮消息（取消块反向取的就是它）
+        res, llm = self._run("算了，不弄了", messages=[
+            HumanMessage(content="帮我下单"),
+            ToolMessage(content=json_dumps({"success": True, "data": {"component": "confirm"}}),
+                        tool_call_id="t1", name="interact"),
+            HumanMessage(content="算了，不弄了"),
+        ])
+        assert "已取消" in (res.get("final_answer") or ""), "在办流程中的取消必须照旧短路"
+
+    def test_pending_skill_also_counts_as_inflight(self):
+        """`state["pending_interact_skill"]` 非空 = 流程锁定中（graph 会写入该字段）。"""
+        res, _ = self._run("算了", pending_skill="customer_order")
+        assert "已取消" in (res.get("final_answer") or ""), "pending_interact_skill 非空 = 在办，应短路"
+
+
+def json_dumps(o):
+    import json
+    return json.dumps(o, ensure_ascii=False)
+
+
 class TestProcessingItemsAskedPersistsCrossTurn:
     """加工项「已问过」必须跨轮记住（OR-017 死循环真因，issue #3365）。
 
