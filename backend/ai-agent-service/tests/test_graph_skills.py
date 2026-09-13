@@ -4754,3 +4754,157 @@ class TestWriteInputRecovery:
                 "BASE", {"session_id": "sess_001"}, "123456"))
         assert out == "BASE", "顾客已给验证码 → 不再注入索要指令"
         assert not committed.get("last_write_input_error"), "且必须顺手清账"
+
+
+class TestOrderFlowIntentHandoffGuard:
+    """顾客**明确在下单**且流程已启动时，无信号转人工 = 放弃流程（issue #3421，验收 C-A1 实证）。
+
+    实证（run 34763744203 验收剧本 C-A1）：顾客 9 轮里反复「确认下单」，
+    agent 却以 `human_handoff({"reason": "客户请求协助下单（智能客服无下单权限）"})` 收场，
+    全程未调 `order_create`（L1 违规 3 条）。当时的守卫漏在两处：
+
+      ① `CAPABILITY_DENIAL_PATTERNS` 只有「无法下单/无法代为提交」这类**动宾**措辞，
+         不含「**无下单权限**」这类**权限**措辞（C-A1 的原话正是后者）；
+      ② 兜底要求「有在办卡片（或 pending skill）」才拦，而那一刻卡片已被顾客点掉
+         → 判为"无在办"直接放行 —— 流程被放弃却没人拦。
+
+    补法：顾客这一轮在推进下单（下单/确认/数量/购买…）且流程**已有真实进展**
+    （`grounded_product_detail`，即真的查过商品）时，无信号转人工一律拦。
+    没有进展时不拦（保守）：顾客只是随口说「下单」而 agent 没查过商品，未必是在办流程。
+    """
+
+    def _run(self, last_user_msg: str, *, grounded: bool, with_card: bool = False,
+             skill: str = "customer_order",
+             reason: str = "顾客需协助下单"):
+        import asyncio
+
+        sent_tools = []
+
+        async def fake_execute(tool, args, ctx, state):
+            sent_tools.append(tool.name)
+            return (json.dumps({"success": True, "data": {}}), {"success": True, "data": {}})
+
+        history = [HumanMessage(content="我想买遮光窗帘，米白 3 米")]
+        if with_card:
+            history.append(ToolMessage(
+                content=json.dumps({"success": True,
+                                    "data": {"component": "confirm", "title": "请确认订单信息",
+                                             "confirmValue": "确认：商品=遮光窗帘"}}),
+                tool_call_id="c0", name="interact"))
+        history.append(HumanMessage(content=last_user_msg))
+
+        store = MagicMock()
+        store.load = AsyncMock(return_value=(
+            {"grounded_product_detail": {"product_id": "prod_eval_blackout"}} if grounded else {}))
+
+        with patch("app.memory.session_memory.SessionMemory") as mem_cls, \
+             patch("app.memory.session_state_store.SessionStateStore", return_value=store), \
+             patch("app.graph.skills.base_skill.get_breaker") as get_breaker, \
+             patch("app.graph.skills.base_skill.get_skill_llm") as get_llm, \
+             patch("app.graph.skills.base_skill.create_skill_registry") as create_reg, \
+             patch("app.graph.skills.base_skill.set_tool_context"), \
+             patch("app.graph.skills.base_skill._execute_tool_safe", fake_execute):
+            from app.tools.human_handoff import HumanHandoffTool
+            registry = MagicMock()
+            registry.get_langchain_tools.return_value = []
+            registry.get_tool.side_effect = lambda n: (
+                HumanHandoffTool() if n == "human_handoff" else None)
+            create_reg.return_value = registry
+
+            breaker = MagicMock()
+
+            async def _passthrough(fn):
+                return await fn()
+
+            breaker.call = _passthrough
+            get_breaker.return_value = breaker
+
+            call = MagicMock(spec=AIMessage)
+            call.content = ""
+            call.tool_calls = [{"name": "human_handoff",
+                                "args": {"reason": reason}, "id": "h1"}]
+            final = MagicMock(spec=AIMessage)
+            final.content = "好的"
+            final.tool_calls = []
+            llm = MagicMock()
+            llm.bind_tools.return_value = llm
+            llm.ainvoke = AsyncMock(side_effect=[call, final])
+            get_llm.return_value = llm
+            mem_cls.return_value.set_pending_skill = AsyncMock(return_value=True)
+
+            result = asyncio.run(execute_skill(
+                state=_make_state(messages=history),
+                skill_name=skill,
+                tool_names=["human_handoff"], system_prompt="你是小布",
+            ))
+        return result, sent_tools
+
+    def test_blocks_when_customer_is_ordering_and_product_grounded(self):
+        """C-A1 形态：顾客「确认下单」+ 已查过商品 + 无在办卡 → 必须拦。
+
+        ⚠️ 这里刻意用**中性理由**（"顾客需协助下单"，不含能力否定的措辞）：
+        若用 C-A1 原话（含「无下单权限」），会先被**能力误宣**规则拦下，
+        这条规则（意图 × 流程进展）就永远不被覆盖 —— 测试要打在它自己的判据上。
+        """
+        result, sent = self._run("确认下单", grounded=True)
+        assert "handoff_blocked_inflight" in str(result), (
+            "顾客在下单、商品也查过了，却允许无信号转人工 —— 流程被放弃（C-A1 实证）"
+        )
+        assert "human_handoff" not in sent, "被拦截时不得真正执行转人工"
+
+    def test_ca1_permission_denial_reason_blocked_even_when_not_grounded(self):
+        """C-A1 原话（含「无下单权限」）→ 即使没有流程进展，也按**能力误宣**拦下。
+
+        两条规则互补：措辞类由能力误宣规则兜（不依赖流程状态），
+        中性理由则靠"意图 × 流程进展"兜。缺任何一条 C-A1 都会漏。"""
+        result, sent = self._run("确认下单", grounded=False,
+                                 reason="客户请求协助下单（智能客服无下单权限）")
+        assert "handoff_blocked_capability_denial" in str(result), (
+            "C-A1 原话未被能力误宣规则拦下 —— 「无下单权限」措辞漏了"
+        )
+        assert "human_handoff" not in sent
+
+    def test_blocks_without_pending_card_only_when_grounded(self):
+        """没有在办卡、但顾客在下单且商品已查 → 拦；没查过商品 → 放行（保守，避免误伤）。"""
+        blocked, _ = self._run("确认下单", grounded=True)
+        allowed, _ = self._run("确认下单", grounded=False)
+        assert "handoff_blocked_inflight" in str(blocked)
+        assert "handoff_blocked_inflight" not in str(allowed), (
+            "流程没有真实进展时不应拦（顾客随口一句「下单」不等于在办流程）"
+        )
+
+    def test_explicit_human_request_still_allowed(self):
+        """顾客明确要人工（CH-008/013/015 依赖）→ 必须放行，即使正在下单。
+
+        ⚠️ 消息里**必须同时含下单措辞**（"别下单了"）—— 否则 `_has_ordering_intent` 直接为假，
+        这条测试就绕过了新分支，"有没有检查显式诉求"根本没被覆盖
+        （变异实测 M250：去掉信号检查时该测试仍绿 → 断言是假的）。
+        """
+        result, sent = self._run("别下单了，我要转人工", grounded=True)
+        assert "handoff_blocked_inflight" not in str(result), (
+            "顾客显式要求人工却被拦 —— 真实诉求被堵死"
+        )
+
+    def test_other_skill_not_affected(self):
+        """守卫只作用于 C 端办单/售后 skill：其它 skill 的转人工不受影响。"""
+        result, _ = self._run("确认下单", grounded=True, skill="customer_knowledge")
+        assert "handoff_blocked_inflight" not in str(result), (
+            "非办单 skill 被误拦 —— 守卫作用域过宽"
+        )
+
+
+class TestCapabilityDenialPermissionPhrasing:
+    """「无下单权限」这类**权限**措辞也是能力误宣（issue #3421，C-A1 原话）。"""
+
+    def test_permission_phrasing_detected(self):
+        for why in ["客户请求协助下单（智能客服无下单权限）",
+                    "小布没有下单权限",
+                    "无权限下单，需要人工协助",
+                    "顾客需协助下单（智能客服无法帮您完成订单）"]:
+            assert _capability_denial_reason({"reason": why}), f"未识别权限类误宣: {why!r}"
+
+    def test_legit_reasons_still_not_detected(self):
+        """不能因为加了措辞就把正常业务理由误判（回归 #3389 的边界）。"""
+        for why in ["商品缺货不能创建订单", "顾客要求人工核对加工费",
+                    "订单信息有误，需要人工核实收货地址", "顾客明确要求转人工"]:
+            assert not _capability_denial_reason({"reason": why}), f"误报: {why!r}"

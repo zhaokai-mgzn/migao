@@ -1158,7 +1158,45 @@ CAPABILITY_DENIAL_PATTERNS = (
     "无法代为下单", "没法代为下单", "无法帮您下单", "没法帮您下单", "无法帮您提交",
     "没法帮您提交", "无法下单", "没法下单", "不能下单", "无法创建订单", "没法创建订单",
     "无法建单", "没法建单", "智能客服无法", "小布无法", "小布没法",
+    # **权限类**措辞（issue #3421，C-A1 验收剧本原话）：
+    # 实证 run 34763744203 `human_handoff({"reason": "客户请求协助下单（智能客服无下单权限）"})`
+    # —— 上面那批是"动宾"式（无法下单/无法代为提交），「**无下单权限**」不在其中 →
+    # 明明 `order_create` 就是它自己的写工具，却以"没权限"为由把顾客推给人工。
+    "无下单权限", "没有下单权限", "无权限下单", "无提交订单权限", "无权下单",
+    "无法帮您完成下单", "没法帮您完成下单", "无法帮您完成订单", "不能帮您下单",
+    "人工协助下单", "协助您完成下单",
 )
+
+
+# ── 「顾客正在下单」+「流程已有真实进展」→ 无信号转人工即放弃流程（issue #3421）──
+# 为什么需要（C-A1 run 34763744203）：原兜底只在**有在办卡片/pending skill** 时拦，
+# 而那一刻顾客已把卡点掉 → 判为"无在办"直接放行，9 轮不下单、转人工收场。
+# 顾客的**下单意图本身**就是"在办"信号，但要与"流程真的开始了"（查过商品详情）合取，
+# 否则顾客随口一句「下单」也会把合法转人工堵死。
+_ORDER_INTENT_HINTS = ("下单", "结算", "提交订单", "拍下", "购买", "要买", "帮我买",
+                       "确认订单", "结账", "付款", "就这个", "买它")
+
+
+def _has_ordering_intent(message: str) -> bool:
+    """顾客这一轮是否在**推进下单**（"确认下单"/"数量 3 米"/"就这个"…）。"""
+    text = str(message or "")
+    return any(h in text for h in _ORDER_INTENT_HINTS)
+
+
+async def _order_flow_started(session_id: str | None, state: dict | None = None) -> bool:
+    """下单流程是否已有**真实进展**：本会话成功查过商品详情（`grounded_product_detail`）。
+
+    为什么用这个标记：它是"流程真的开始了"的权威痕迹（查商品是下单链路的必经步骤），
+    且不依赖 `state["messages"]` 是否带回上一轮 ToolMessage（跨轮可靠）。
+    """
+    if not session_id:
+        return False
+    try:
+        from app.memory.session_state_store import SessionStateStore
+        _s = await SessionStateStore().load(session_id) or {}
+        return bool(_s.get("grounded_product_detail"))
+    except Exception:
+        return False
 
 
 def _capability_denial_reason(args: dict) -> str:
@@ -2738,6 +2776,29 @@ async def execute_skill(
                                                 "error": "handoff_blocked_capability_denial",
                                                 "message": _msg}, ensure_ascii=False),
                                     {"success": False, "error": "handoff_blocked_capability_denial"})
+                        # 补一条（issue #3421，C-A1 实证）：顾客**正在下单**且流程**已真实启动**
+                        # （查过商品详情）时，即使没有待答卡片，无信号转人工也是放弃流程。
+                        # 不这么做会漏掉 C-A1 的形态：卡片已被顾客点掉 → `_inflight` 为假 →
+                        # 放行转人工 → 9 轮不下单（L1 违规 3 条）。
+                        if (not has_escalation_signal(last_user_msg)
+                                and not _inflight
+                                and _has_ordering_intent(last_user_msg)
+                                and await _order_flow_started(session_id, state)):
+                            logger.warning(
+                                f"[{skill_name}] 拦截「顾客在下单却无信号转人工」 | "
+                                f"session={session_id} last_msg={last_user_msg[:30]!r}")
+                            _msg2 = (
+                                "顾客正在下单（本轮消息仍在推进下单），且本会话已经查过商品详情 —— "
+                                "**不要转人工**：`order_create` 就是本流程的写工具，参数齐了就能真实落单。"
+                                "缺收货信息就先 `customer_address_query` 查历史地址，没有再发 "
+                                "`interact(component=form)` 或直接问；然后走 confirm 卡 → "
+                                "`validate_input` → `order_create`（含 sms_code）。"
+                                "只有当顾客**显式**要求人工、情绪激烈或诉求超出能力时，才允许转人工。")
+                            return (tool_call,
+                                    json.dumps({"success": False,
+                                                "error": "handoff_blocked_inflight",
+                                                "message": _msg2}, ensure_ascii=False),
+                                    {"success": False, "error": "handoff_blocked_inflight"})
                         if not has_escalation_signal(last_user_msg) and _inflight:
                             logger.warning(
                                 f"[{skill_name}] 拦截在办流程中的无信号转人工 | session={session_id} "
