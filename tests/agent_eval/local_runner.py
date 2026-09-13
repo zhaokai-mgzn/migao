@@ -3048,6 +3048,17 @@ def _result_digest(res: dict) -> str:
     return (" ".join(parts[:1]) + (" " + marker if marker else ""))[:160]
 
 
+def _mask_phones_in_text(text: str) -> str:
+    """把助手回复压成**单行**并掩码手机号（轨迹会进 CI 日志，与写工具入参同纪律）。
+
+    为什么必须压单行（本轮实测，run 34789368315）：助手回复常带换行（列表/多段），
+    直接塞进轨迹会把"一格用例一行轨迹"的约定打断 —— 实测 OR-022 首跑轨迹被换行切成
+    十几条日志行，`R4`/`R5` 与卡片信息交错，肉眼要拼半天（归因价值大打折扣）。
+    """
+    flat = " ".join(str(text or "").split())
+    return _FULL_PHONE_RE.sub(lambda m: m.group()[:3] + "****" + m.group()[-4:], flat)
+
+
 def format_round_trace(trace: list) -> str:
     """把逐轮轨迹压成一行，供 CI 日志按用例打印。
 
@@ -3087,6 +3098,13 @@ def format_round_trace(trace: list) -> str:
                 extra = ",".join(f"{k}={a[k]}" for k in ("customer_phone", "sms_code") if a.get(k))
                 return f"{w.get('tool')}{{{body}{(';' + extra) if extra else ''}}}"
             bits.append("args=" + ",".join(_one(w) for w in wa[:3]))
+        # 助手**回复片段**（issue #3445 复盘）：轨迹此前只说模型"调了什么"，不说它"说了什么"——
+        # 于是"顾客答完卡、模型空转"（`tools=-`）与"模型在问别的/脚本没答它"在日志里同形，
+        # 归因只能靠猜（CH-010 首跑失败即此形，最后只能记 llm-noise 重试放行）。
+        # 数据本来就在 `build_round_trace` 的 `text` 字段里，只是没打印；掩码手机号（进 CI 日志）。
+        _ai_text = _mask_phones_in_text(t.get("text") or "")
+        if _ai_text:
+            bits.append(f"ai={_ai_text}")
         if t.get("interactive"):
             _icards = [str(c) for c in t["interactive"]]
             _idup = sorted({c for c in _icards if _icards.count(c) > 1})

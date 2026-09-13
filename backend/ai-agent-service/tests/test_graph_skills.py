@@ -1332,6 +1332,62 @@ class TestProcessingItemsFallback:
             [confirm], [self._user("下单"), self._detail_msg(items)])
         assert plan is not None and len(plan[1]["options"]) <= 6
 
+    def test_no_rewrite_when_user_answered_by_name_after_detail(self):
+        """顾客**已经在文本里答过**加工项 → 不得再用卡重问一遍（C-A1 重放 9 实证）。
+
+        transcript（run 34788143133，C-A1）：R2 小布在**文本**里问「需要一起加工吗？」→
+        R3 顾客答「纳米圈打孔」→ R5 代码兜底仍把 confirm 卡改写成加工项 choice 卡
+        —— 同一件事问第二遍，顾客不得不再答一次才轮到「确认下单」（UA 判定"有条件通过"那条）。
+        记账 `PROC_ITEMS_ASKED_KEY` 只在**发卡**时落笔，文本问答不在账上，故这里另立判据。
+        """
+        items = [{"id": "pi1", "name": "纳米圈打孔", "unitPrice": 8.0}]
+        confirm = self._result("interact", {"component": "confirm", "fields": []})
+        msgs = [self._user("你好，有什么推荐的吗？"), self._detail_msg(items),
+                self._user("纳米圈打孔"), self._user("确认下单")]
+        plan = lr2._plan_processing_items_rewrite([confirm], msgs)
+        assert plan is None, "顾客已答过加工项，不得再用卡重问（C-A1 实证的重复提问）"
+
+    def test_no_rewrite_when_user_answered_with_partial_name(self):
+        """顾客说的是**加工项名的一部分**（「打孔加工」）同样算答过。
+
+        fixture 里叫「纳米圈打孔」，顾客口语常说「打孔」——只用全名匹配等于不匹配。
+        """
+        items = [{"id": "pi1", "name": "纳米圈打孔", "unitPrice": 8.0}]
+        confirm = self._result("interact", {"component": "confirm", "fields": []})
+        msgs = [self._detail_msg(items), self._user("要打孔加工"), self._user("确认下单")]
+        assert lr2._plan_processing_items_rewrite([confirm], msgs) is None
+
+    def test_no_rewrite_when_user_declined_earlier_then_confirmed(self):
+        """顾客在更早一轮拒绝过（最近一条是「确认下单」）→ 同样不得重问。
+
+        旧判据 `_last_user_declined_processing` 只看**最近一条**用户消息 ——
+        顾客拒绝后又说「确认下单」就漏了，卡照样弹出来。
+        """
+        items = [{"id": "pi1", "name": "纳米圈打孔", "unitPrice": 8.0}]
+        confirm = self._result("interact", {"component": "confirm", "fields": []})
+        msgs = [self._detail_msg(items), self._user("不需要加工项"), self._user("确认下单")]
+        assert lr2._plan_processing_items_rewrite([confirm], msgs) is None
+
+    def test_rewrite_fires_when_items_named_before_detail(self):
+        """R1 就说了「要打孔加工」属**需求前置**，不是"看过商品后已作答" → 仍要摆选项。
+
+        为什么必须保这条（OR-017 依赖）：业务铁律是"confirm 前必须把加工项摆出来"，
+        顾客下单时顺口带上加工项 ≠ 已看过可选项/单价；那时仍应发卡或至少问一次。
+        """
+        items = [{"id": "pi1", "name": "纳米圈打孔", "unitPrice": 8.0}]
+        confirm = self._result("interact", {"component": "confirm", "fields": []})
+        msgs = [self._user("帮我下单，遮光窗帘 3 米，要打孔加工"), self._detail_msg(items),
+                self._user("确认下单")]
+        plan = lr2._plan_processing_items_rewrite([confirm], msgs)
+        assert plan is not None, "需求前置（detail 之前提到）不算已作答 → 仍要摆加工项"
+
+    def test_rewrite_fires_when_user_text_unrelated(self):
+        """detail 之后顾客只说了数量/确认，没提加工项 → 仍要问（不得因新判据漏问）。"""
+        items = [{"id": "pi1", "name": "纳米圈打孔", "unitPrice": 8.0}]
+        confirm = self._result("interact", {"component": "confirm", "fields": []})
+        msgs = [self._detail_msg(items), self._user("数量 3 米"), self._user("确认下单")]
+        assert lr2._plan_processing_items_rewrite([confirm], msgs) is not None
+
     def test_decline_detection_uses_last_user_message(self):
         """拒绝判定只看**最近一条**用户消息（更早的"不需要"不算）"""
         items = [{"id": "pi1", "name": "打孔", "unitPrice": 8.0}]
