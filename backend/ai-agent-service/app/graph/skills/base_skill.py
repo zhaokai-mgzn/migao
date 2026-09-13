@@ -1288,6 +1288,36 @@ def _has_order_write_tool(skill_name: str, registry=None) -> bool:
         return False
 
 
+def _confirm_card_fields_hint(args: dict) -> str:
+    """把**被拦下的写调用参数**整理成确认卡 fields 的就绪骨架（issue #3445）。
+
+    为什么给骨架而不是只说"请发确认卡"：CI 三次实测 `confirmation_required_no_card`
+    —— 模型**从没发过确认卡**就直接写单，被拦回后仍反复重试同一个写调用、烧完轮数。
+    它缺的不是"该不该发卡"，而是"卡片里填什么"。这里把**它自己刚传过的参数**回给它
+    （只回显、不新增事实），它照抄即可发卡。
+    """
+    a = args or {}
+    fields = []
+    items = a.get("items") or []
+    if isinstance(items, list) and items:
+        names = [str((it or {}).get("product_name") or (it or {}).get("name") or "")
+                 for it in items if isinstance(it, dict)]
+        names = [n for n in names if n]
+        if names:
+            fields.append({"label": "商品", "value": "、".join(names[:3])})
+        qtys = [str((it or {}).get("quantity")) for it in items
+                if isinstance(it, dict) and (it or {}).get("quantity") is not None]
+        if qtys:
+            fields.append({"label": "数量", "value": "、".join(qtys[:3])})
+    for key, label in (("customer_name", "收货人"), ("customer_phone", "手机号"),
+                       ("customer_address", "地址")):
+        if a.get(key):
+            fields.append({"label": label, "value": str(a.get(key))})
+    if not fields:
+        return ""
+    return "，建议卡片 fields=" + json.dumps(fields, ensure_ascii=False)
+
+
 def _capability_denial_reason(args: dict) -> str:
     """转人工的 reason/summary 是否是「AI 自己做不到」的能力误宣；返回命中片段或空串。
 
@@ -3112,10 +3142,34 @@ async def execute_skill(
                         #   含 smoke 的 HR-001/HR-004 靠口头确认长期通过 —— 补工具是
                         #   改变 B 端交互形态，收益不明而回归面大。）
                         if skill_registry.get_tool("interact") is not None:
+                            # 可执行下一步（issue #3445）：CI 实测 `confirmation_required_no_card ×3`
+                            # —— 模型**从没发过确认卡**就直接写单，被拦回后仍反复重试同一个写调用、
+                            # 把轮数烧完（R10 时订单仍未落库）。故话术给出**唯一可执行的下一步**：
+                            #   ① 明确"再调写工具没用"（防重试）；② 指明必须调 interact(confirm)；
+                            #   ③ 回填**已校验参数**（pending_validated_input）与
+                            #      **本次被拦调用的字段骨架**（它自己传过的值），让它照抄即可发卡。
+                            _pending_hint = ""
+                            try:
+                                from app.graph.pending_validated import PENDING_KEY as _PK
+                                from app.graph.pending_validated import is_pending_for as _is_pending
+                                from app.memory.session_state_store import SessionStateStore as _S4
+                                _f4 = await _S4().load(session_id) or {}
+                                _pend4 = _f4.get(_PK) or {}
+                                if _is_pending(_pend4, tool_name) and _pend4.get("params"):
+                                    _pending_hint = (
+                                        " 已校验的参数（**原样**用作卡片 fields，不要改写）："
+                                        + json.dumps(_pend4["params"], ensure_ascii=False,
+                                                     default=str)[:400])
+                            except Exception as _e4:
+                                logger.warning(f"[{skill_name}] pending 参数回填失败（非致命）: {_e4}")
                             msg = (
                                 f"工具 {tool_name} 是写操作（可能不可逆或产生数据变更），必须先向用户展示"
-                                f"确认卡片并取得明确确认。请调用 interact（component=confirm）展示操作预览，"
-                                f"等用户点击确认后再执行。"
+                                f"确认卡片并取得明确确认。**不要再次调用 {tool_name}** —— 在顾客点击"
+                                f"确认卡之前它会被同样拦下、白烧一轮。本轮唯一的下一步是：调用 "
+                                f"interact(component=confirm, fields=[…]) "
+                                f"把将要执行的内容展示给顾客，等顾客**点击确认卡**之后再调用 {tool_name}。"
+                                + _confirm_card_fields_hint(args)
+                                + _pending_hint
                             )
                         else:
                             msg = (

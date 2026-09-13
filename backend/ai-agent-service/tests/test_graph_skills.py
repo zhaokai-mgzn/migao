@@ -23,6 +23,7 @@ from app.graph.skills.base_skill import (
     build_tool_context, execute_skill, _extract_content, get_skill_llm,
     _masked_phone_write_block, KNOWN_RAW_PHONES_KEY, _capability_denial_reason,
     capability_denial_text_hit,
+    _confirm_card_fields_hint,
     _confirm_card_seen,
     _conversation_mentions_dimensions, _form_prefill_fidelity_block,
     _stated_purchase_quantities, _quantity_choice_block,
@@ -5078,7 +5079,9 @@ class TestConfirmationGateNoCardRepro:
         实测 CI 里触发 `no_card` 的正是"顾客刚给了验证码 123456 而模型直接去写"这种轮次。
     """
 
-    def _run(self, last_user_msg: str, *, with_confirm_card: bool = False):
+    def _run(self, last_user_msg: str, *, with_confirm_card: bool = False,
+             pending_params: dict | None = None,
+             pending_target: str = "order_create"):
         import asyncio
 
         executed = []
@@ -5089,7 +5092,12 @@ class TestConfirmationGateNoCardRepro:
 
         class _Store:
             async def load(self, sid):
-                return {"grounded_product_detail": {"product_id": "prod_eval_blackout"}}
+                out = {"grounded_product_detail": {"product_id": "prod_eval_blackout"}}
+                if pending_params is not None:
+                    out["pending_validated_input"] = {
+                        "target_tool": pending_target, "target_action": "create",
+                        "params": pending_params}
+                return out
 
             async def commit(self, sid, full):
                 return True
@@ -5131,7 +5139,10 @@ class TestConfirmationGateNoCardRepro:
              patch("app.graph.skills.base_skill._execute_tool_safe", fake_execute):
             registry = MagicMock()
             registry.get_langchain_tools.return_value = []
-            registry.get_tool.side_effect = lambda n: (tool if n == "order_create" else None)
+            # interact 必须可用：否则门禁走"本技能没有确认卡片能力"的 else 分支，
+            # 而 C 端 order 场景一定有 interact（报告里看到的也是那条话术）
+            registry.get_tool.side_effect = lambda n: (
+                tool if n == "order_create" else (object() if n == "interact" else None))
             create_reg.return_value = registry
             breaker = MagicMock()
 
@@ -5165,6 +5176,33 @@ class TestConfirmationGateNoCardRepro:
         blob = str(out)
         assert "confirmation_required_card_not_clicked" in blob, f"细分不对：{blob[:300]}"
         assert "order_create" not in executed
+
+    def test_block_message_gives_actionable_next_step(self):
+        """话术必须给出**唯一可执行的下一步**（再调写工具没用 + 调 interact 发确认卡）。"""
+        out, _ = self._run("123456")
+        msg = str(out)
+        assert "不要再次调用 order_create" in msg, f"未明确「再调没用」：{msg[:200]}"
+        assert "interact(component=confirm" in msg, f"未给出 interact 调用指引：{msg[:200]}"
+
+    def test_card_fields_skeleton_from_blocked_args(self):
+        """把**被拦调用自己传过的值**整理成卡片字段骨架（只回显、不新增事实）。"""
+        out, _ = self._run("123456")
+        msg = str(out)
+        assert "建议卡片 fields=" in msg, f"未给卡片字段骨架：{msg[:300]}"
+        assert "遮光窗帘" in msg, "骨架里没有商品名（模型最缺的就是这个）"
+        assert "13800138000" in msg, "骨架里没有收货人信息"
+
+    def test_pending_validated_params_echoed(self):
+        """已有 validate_input 校验过的参数 → **原样回给模型**。"""
+        out, _ = self._run("123456", pending_params={"note": "已校验参数标记"})
+        assert "已校验的参数" in str(out), "未回填待执行参数"
+
+    def test_other_flow_pending_params_not_echoed(self):
+        """别的流程的待执行参数不得串入（pending 槽位是**全局单槽**）。"""
+        out, _ = self._run("123456", pending_params={"note": "售后退货参数"},
+                           pending_target="after_sales_manage")
+        msg = str(out)
+        assert "已校验的参数" not in msg, f"串了别的流程的参数：{msg[:250]}"
 
     def test_explicit_confirmation_still_passes(self):
         """反向守卫：明确确认（文本）时不该被这条门禁拦（`_requires_confirmation` 的既有语义）。"""
