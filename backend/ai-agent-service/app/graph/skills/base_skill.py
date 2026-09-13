@@ -2562,6 +2562,23 @@ async def execute_skill(
                 # 达到 max_iterations — 不暴露 LLM 的半截思考，用友好兜底
                 final_content = "抱歉，处理步骤较多，请稍后重试或换个简单的方式描述需求。"
 
+    # ── 8.5 C 端回复脱敏（验收发现 P2，issue #3379）──
+    # 证据：验收剧本 C-A2 R3 里 AI 回显收货信息给出**完整手机号** `13800138000`，
+    # 而同一次对话的订单卡片是 `138****8000` —— 同一次对话两种口径；CH-011 只断言了
+    # "订单卡片脱敏"，回显路径没人守。
+    # 取**输出层**收敛（不动工具返回、不动 args）：
+    #   · 否则 order_create 会拿到 `138****8000` 去建单（真号码必须留给写入路径）；
+    #   · B 端（商家/客服）不脱敏 —— 客服要打电话给顾客，脱敏会破坏运营。
+    if str(state.get("role") or "").lower() == "customer" and final_content:
+        try:
+            from app.utils.pii_mask import mask_pii
+            _masked = mask_pii(final_content)
+            if _masked != final_content:
+                logger.info(f"[{skill_name}] C 端回复脱敏（手机号/邮箱）| session={session_id}")
+                final_content = _masked
+        except Exception as e:
+            logger.warning(f"[{skill_name}] 回复脱敏失败（非致命）: {e}")
+
     # ── 9. 返回值 ──
     result: dict[str, Any] = {"messages": new_messages, "final_answer": final_content, "skill_used": skill_name}
 

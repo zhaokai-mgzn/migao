@@ -2773,6 +2773,69 @@ class TestSmsCodeBackfill:
         assert extract_sms_code("") == ""
 
 
+class TestCustomerReplyMasking:
+    """C 端回复必须脱敏手机号（验收发现 P2，issue #3379）。
+
+    证据（验收剧本 C-A2 R3，`acceptance/ci-34730957920/.../C-A2.transcript.md`）：
+      AI「另外，您的收货信息我也帮您调出来了：**张三 · 13800138000 · 杭州市西湖区文三路1号**」
+    同一 transcript 里订单卡片是 `138****8000`（已脱敏）——**同一次对话两种口径**。
+    CH-011 只断言了"订单卡片脱敏"，**回显收货信息这条路径没人守**。
+
+    修法取**输出层**（不改工具返回、不改 args）：
+      · 顾客看得到的话（C 端 role=customer）→ 脱敏（`LogSanitizer.mask_text`）；
+      · 工具参数不动 → `order_create` 拿到的仍是真实号码（否则下单会拿 `138****8000` 去建单）；
+      · B 端（商家/客服）不脱敏 —— 客服要打电话给顾客，脱敏会破坏运营。
+    """
+
+    def _run(self, role="customer", reply="您的收货信息：张三 · 13800138000 · 杭州市西湖区文三路1号"):
+        import asyncio
+
+        with patch("app.memory.session_memory.SessionMemory"), \
+             patch("app.graph.skills.base_skill.get_breaker") as gb, \
+             patch("app.graph.skills.base_skill.get_skill_llm") as gl, \
+             patch("app.graph.skills.base_skill.create_skill_registry") as cr, \
+             patch("app.graph.skills.base_skill.set_tool_context"):
+            registry = MagicMock()
+            registry.get_langchain_tools.return_value = []
+            registry.get_tool.return_value = None
+            cr.return_value = registry
+            breaker = MagicMock()
+
+            async def _pt(fn):
+                return await fn()
+
+            breaker.call = _pt
+            gb.return_value = breaker
+            final = MagicMock(spec=AIMessage)
+            final.content = reply
+            final.tool_calls = []
+            llm = MagicMock()
+            llm.bind_tools.return_value = llm
+            llm.ainvoke = AsyncMock(side_effect=[final])
+            gl.return_value = llm
+            return asyncio.run(execute_skill(
+                state=_make_state(messages=[HumanMessage(content="我的收货信息是什么")], role=role),
+                skill_name="customer_order", tool_names=["product_search"], system_prompt="p"))
+
+    def test_customer_reply_masks_phone(self):
+        res = self._run(role="customer")
+        ans = res.get("final_answer") or ""
+        assert "13800138000" not in ans, f"C 端回复泄露完整手机号: {ans!r}"
+        assert "138****8000" in ans, f"应脱敏为 138****8000，实际: {ans!r}"
+
+    def test_staff_reply_keeps_phone(self):
+        """B 端不脱敏：客服要打电话给顾客，脱敏会破坏运营。"""
+        res = self._run(role="admin")
+        ans = res.get("final_answer") or ""
+        assert "13800138000" in ans, f"B 端不应脱敏，实际: {ans!r}"
+
+    def test_short_or_non_phone_digits_untouched(self):
+        res = self._run(role="customer", reply="订单号 20260913027050006，数量 3 米，验证码 123456")
+        ans = res.get("final_answer") or ""
+        assert "20260913027050006" in ans, "订单号不得被误当手机号脱敏"
+        assert "123456" in ans, "验证码不得被误脱敏"
+
+
 class TestFalseCancelGuard:
     """「算了」不得在**没有在办流程**时冒充取消（验收发现，issue #3367 / 协议 P1）。
 

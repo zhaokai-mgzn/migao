@@ -2335,6 +2335,34 @@ def _order_round(rnd, items, ok=True, total=None):
     }
 
 
+class TestNoFullPhoneInCustomerReplies:
+    """C 端回复不得出现**完整手机号**（issue #3379，验收发现 P2）。
+
+    为什么做成**全局 case 级断言**而不是某条用例的 forbidden_text：
+    · CH-011 只断言了"订单卡片脱敏"，而实测泄露发生在**回显收货信息**这条路径上
+      （验收 C-A2 R3：「您的收货信息我也帮您调出来了：张三 · 13800138000 · 杭州…」）；
+    · 手机号是**跨用例**的隐私面，靠单个用例守不住 —— 每条 C 端用例都该守。
+    """
+
+    def _rounds(self, *texts):
+        return [{"__round": i + 1, "final_text": t} for i, t in enumerate(texts)]
+
+    def test_full_phone_flagged(self):
+        issues = lr.check_no_full_phone(self._rounds(
+            "亲，帮您查到啦", "您的收货信息：张三 · 13800138000 · 杭州市西湖区文三路1号"))
+        assert issues and "13800138000" in issues[0], "完整手机号必须判违规（哪怕已用 · 分隔）"
+
+    def test_masked_phone_passes(self):
+        assert lr.check_no_full_phone(self._rounds("您的手机号 138****8000")) == []
+
+    def test_order_number_not_flagged(self):
+        """订单号里含 11 位数字片段，不得误报（本项目订单号形如 20260913027050006）。"""
+        assert lr.check_no_full_phone(self._rounds("订单号 20260913027050006 已创建")) == []
+
+    def test_verification_code_not_flagged(self):
+        assert lr.check_no_full_phone(self._rounds("验证码 123456 已收到")) == []
+
+
 class TestOutputVerify:
     """`output_verify`：断言**工具计算结果**（payload），不只是"调用过/传参对"（issue #3367）。
 
