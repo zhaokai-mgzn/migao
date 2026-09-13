@@ -1,4 +1,5 @@
-name: Xiaobu Acceptance (小布 C 端验收)
+name: Xiaobu Acceptance
+# SPEED-TEST-PROBE (小布 C 端验收)
 permissions:
   contents: read
   issues: write
