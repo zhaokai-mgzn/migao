@@ -1123,6 +1123,21 @@ def card_fingerprint(args: dict) -> str:
     comp = str(args.get("component") or "")
     if not comp:
         return ""
+    # ── confirm 卡：按**内容**取指纹，不按标题措辞（issue #3397，CI 实证）──
+    # 实测（run 34751749165，OR-023）：同一张确认卡被模型换了措辞重发
+    # （`请确认订单信息` ×7 / `请确认您的订单信息` ×2）→ 按标题做指纹会当成两张不同的卡，
+    # "同一张卡第 3 次起拦下"的守卫漏判 → 顾客被反复要求确认同一件事（确认死循环），
+    # 写操作被拖着不落库。改按 **fields 内容**（商品/总价/收货信息…）取指纹后，
+    # 「内容相同 = 同一张卡」与人的直觉一致；而**内容真变了**（改数量 3→4、总价变）
+    # 就是合法的另一张卡，指纹不同、照常放行。
+    if comp == "confirm":
+        vals = []
+        for f in (args.get("fields") or [])[:12]:
+            if isinstance(f, dict):
+                vals.append(f"{f.get('label')}={f.get('value')}")
+        body = "、".join(vals)[:200]
+        cv = str(args.get("confirmValue") or "")[:60]
+        return f"confirm|{body}|{cv}" if body or cv else "confirm|"
     title = str(args.get("title") or "").strip()
     labels = []
     for opt in (args.get("options") or [])[:12]:

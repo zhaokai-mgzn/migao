@@ -3445,6 +3445,74 @@ class TestCurtainCalcDimensionGuardWiring:
         assert len(seen["calls"]) == 1
 
 
+class TestConfirmCardFingerprintByContent:
+    """confirm 卡的"同一张"判据必须是**内容**，不是标题措辞（issue #3397 实测）。
+
+    实证（run 34751749165，OR-023）：同一张确认卡被模型换了措辞重发 ——
+    日志里 `请确认订单信息` ×7、`请确认您的订单信息` ×2 —— 按标题做指纹会当成两张不同的卡，
+    于是"同一张卡连发 3 次"的守卫漏判，顾客被反复要求确认同一件事（确认死循环），
+    写操作也被拖着不落库。
+    """
+
+    def _fp(self, **kw):
+        base = {"component": "confirm", "title": "请确认订单信息",
+                "fields": [{"label": "商品", "value": "遮光窗帘 米白 3米"},
+                           {"label": "总价", "value": "¥528"}]}
+        base.update(kw)
+        return lr2.card_fingerprint(base)
+
+    def test_title_wording_ignored(self):
+        """只换措辞 → 仍是同一张卡（必须同指纹）。"""
+        assert self._fp() == self._fp(title="请确认您的订单信息"), "换措辞被当成新卡 = 守卫漏判"
+
+    def test_content_change_is_new_card(self):
+        """内容变了（数量 3→4、总价变）→ 是**新卡**（合法重发必须放行）。"""
+        other = self._fp(fields=[{"label": "商品", "value": "遮光窗帘 米白 4米"},
+                                 {"label": "总价", "value": "¥704"}])
+        assert self._fp() != other, "内容变了却同指纹 → 合法重发会被误拦"
+
+    def test_choice_card_still_uses_options(self):
+        a = lr2.card_fingerprint({"component": "choice", "title": "选颜色",
+                                  "options": [{"value": "1", "label": "米白"}]})
+        b = lr2.card_fingerprint({"component": "choice", "title": "选颜色",
+                                  "options": [{"value": "2", "label": "浅灰"}]})
+        assert a != b, "choice 卡换了选项必须是新卡"
+
+
+class TestConfirmCardLoopWiring:
+    """接线：换措辞的重发必须真的被 `_card_loop_block` 拦下（第 3 次起）。"""
+
+    def _run(self, counts_key_value):
+        import asyncio, json as _json
+        full = {"card_emit_counts": counts_key_value}
+
+        class _Store:
+            async def load(self, sid):
+                return dict(full)
+
+            async def commit(self, sid, f):
+                full.clear(); full.update(f)
+
+        args = {"component": "confirm", "title": "请确认您的订单信息",
+                "fields": [{"label": "商品", "value": "遮光窗帘 米白 3米"},
+                           {"label": "总价", "value": "¥528"}]}
+        with patch("app.memory.session_state_store.SessionStateStore",
+                   side_effect=lambda *a, **k: _Store()):
+            return asyncio.run(lr2._card_loop_block(
+                "interact", args, {"name": "interact", "args": args, "id": "c1"},
+                "sess_1", "customer_order"))
+
+    def test_third_wording_variant_blocked(self):
+        """前两次是另一种措辞、这次换了措辞 → 计数命中（内容同）→ 第 3 次拦下。"""
+        fp = lr2.card_fingerprint({"component": "confirm", "title": "请确认订单信息",
+                                   "fields": [{"label": "商品", "value": "遮光窗帘 米白 3米"},
+                                              {"label": "总价", "value": "¥528"}]})
+        out = self._run({fp: 2})
+        assert out is not None, "同一张确认卡（换措辞）第 3 次必须被拦下"
+        import json as _json
+        assert _json.loads(out[1]).get("error") == "card_blocked_repeat_emission"
+
+
 class TestFormPrefillFidelity:
     """收货信息表单的**预填值必须逐字保真**（issue #3397，实测 run 34750771576）。
 
