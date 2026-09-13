@@ -168,6 +168,7 @@ def to_eval_py(cases):
             '    must_succeed: List[dict] = field(default_factory=list) # 写工具成功断言（至少成功一次；"调了≠成了"，§3.2/issue #3361）',
             '    amount_verify: List[dict] = field(default_factory=list) # 金额正确性断言（单价接地/小计/总额，§3.2/issue #3365）',
             '    db_verify: List[dict] = field(default_factory=list) # 落库层验证（创建后查 admin-api 断言价格=确认价，§3.2/issue #3056）',
+            '    output_verify: List[dict] = field(default_factory=list) # 产出侧断言（工具计算结果 payload，如算料用布量/spec公式，issue #3367）',
             '    pre_clean: List[dict] = field(default_factory=list) # 评测前数据清理（写类 case 自我污染防线）',
             '    post_session: List[dict] = field(default_factory=list) # 会话关闭后落库断言（user_memories 只在 close 时 flush，issue #3357）',
            "", ""]
@@ -206,6 +207,8 @@ def to_eval_py(cases):
             out.append(f"    amount_verify={c.get('amount_verify')!r},")
         if c.get("db_verify"):
             out.append(f"    db_verify={c.get('db_verify')!r},")
+        if c.get("output_verify"):
+            out.append(f"    output_verify={c.get('output_verify')!r},")
         if c.get("pre_clean"):
             out.append(f"    pre_clean={c.get('pre_clean')!r},")
         if c.get("post_session"):

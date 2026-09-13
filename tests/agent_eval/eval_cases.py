@@ -47,6 +47,7 @@ class EvalCase:
     must_succeed: List[dict] = field(default_factory=list) # 写工具成功断言（至少成功一次；"调了≠成了"，§3.2/issue #3361）
     amount_verify: List[dict] = field(default_factory=list) # 金额正确性断言（单价接地/小计/总额，§3.2/issue #3365）
     db_verify: List[dict] = field(default_factory=list) # 落库层验证（创建后查 admin-api 断言价格=确认价，§3.2/issue #3056）
+    output_verify: List[dict] = field(default_factory=list) # 产出侧断言（工具计算结果 payload，如算料用布量/spec公式，issue #3367）
     pre_clean: List[dict] = field(default_factory=list) # 评测前数据清理（写类 case 自我污染防线）
     post_session: List[dict] = field(default_factory=list) # 会话关闭后落库断言（user_memories 只在 close 时 flush，issue #3357）
 
@@ -3311,6 +3312,22 @@ _CASE_PR_021 = EvalCase(
     persona='',
 )
 
+# ── PR-024 [NORMAL] 小布算料上限 - 定宽布买高 + 对花损耗（窗高超定高上限，必须走定宽分支并告警）（源: cases/product.yml）──
+_CASE_PR_024 = EvalCase(
+    id='PR-024',
+    legacy_id='',
+    title='小布算料上限 - 定宽布买高 + 对花损耗（窗高超定高上限，必须走定宽分支并告警）',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['帮我算一下：窗宽 3 米、窗高 2.7 米，2 倍褶皱，门幅 2.8 米，需要对花（花距 40 厘米），用 98 元一米的布，要多少布、多少钱？'],
+    expectations=['curtain_calc(window_width=3, window_height=2.7)'],
+    data_checks=['窗高 2.7m + 卷边 0.3m > 门幅 2.8m → 必须走定宽布（买高）分支，不得套定高公式', '对花损耗按每幅 +1 个花距：3 幅 × 0.4m = 1.2m，用布 10.2m（非 9.0m）', '报价总额 = 面料费 + 加工费 + 辅料费 + 安装费（fabric-calc.quote-total），不得凭记忆报价'],
+    skip_reason='',
+    tags=['quote', 'fabric_calc', 'ceiling', 'xiaobu'],
+    persona='xiaobu',
+    output_verify=[{'tool': 'curtain_calc', 'expect': {'fabric_meters': 10.2, 'formula_used': 'fixed_width', 'warning': '__nonempty__', 'fullness': 2}}],
+)
+
 # ── RG-001 [NORMAL] ToolRegistry 注册/查询/执行审计（源: cases/registry.yml）──
 _CASE_RG_001 = EvalCase(
     id='RG-001',
@@ -4321,6 +4338,7 @@ ALL_CASES = (
     _CASE_PR_019,
     _CASE_PR_020,
     _CASE_PR_021,
+    _CASE_PR_024,
     _CASE_RG_001,
     _CASE_ST_001,
     _CASE_ST_002,

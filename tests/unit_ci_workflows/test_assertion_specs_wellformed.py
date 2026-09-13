@@ -83,6 +83,11 @@ class TestAssertionSpecsWellFormed:
             for i, s in enumerate(_specs(c, "post_session")):
                 if s.get("fetch") not in SUPPORTED_POST_SESSION_FETCH:
                     bad.append(f"{c['id']}.post_session[{i}]: 不支持的 fetch={s.get('fetch')!r}")
+            for i, s in enumerate(_specs(c, "output_verify")):
+                if not str(s.get("tool") or ""):
+                    bad.append(f"{c['id']}.output_verify[{i}]: 缺 tool")
+                elif not isinstance(s.get("expect"), dict) or not s.get("expect"):
+                    bad.append(f"{c['id']}.output_verify[{i}]: 缺/空 expect（空断言）")
             for i, s in enumerate(_specs(c, "amount_verify")):
                 checks = s.get("checks")
                 if checks is None:
