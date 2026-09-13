@@ -201,6 +201,7 @@ class TestNoStrayStatementsOnDroppedTables:
 
 COMPOSE = Path(__file__).parent.parent.parent / "deploy" / "docker-compose.yml"
 WORKFLOWS_DIR = Path(__file__).parent.parent.parent / ".github" / "workflows"
+REPO_ROOT = Path(__file__).parent.parent.parent
 
 
 class TestPostgresHealthcheckMatchesDatabase:
@@ -831,6 +832,48 @@ class TestRouteTraceDumpStep:
         assert (step.get("env") or {}).get("DEV_SERVICE_TOKEN"), (
             "缺 DEV_SERVICE_TOKEN → docker compose logs 插值失败 → dump 为空"
         )
+
+
+class TestFallbackCardLogWhitelist:
+    """「代码兜底补发确认卡」的日志行必须在 CI 的 dump 白名单里（issue #3445）。
+
+    为什么：这条日志是**补卡真的发生过**的唯一正面证据（`round_trace` 只看得到
+    "顾客收到几张卡"，看不出是模型发的还是代码补的）。而它在容器日志里，
+    CI 只 dump 白名单里的行 —— 白名单漏了它，就永远只能靠"猜补卡有没有触发"
+    （#3445 的"正面隔离"卡在这里整整两轮）。
+    """
+
+    def _wf(self) -> dict:
+        import yaml
+        wf = WORKFLOWS_DIR / "xiaobu-acceptance.yml"
+        return yaml.safe_load(wf.read_text(encoding="utf-8")) or {}
+
+    def _step(self):
+        """「写工具失败原因」白名单在**路由轨迹 dump**这一步里（同一容器日志、多个 echo 段）。"""
+        steps = self._wf()["jobs"]["xiaobu-acceptance"]["steps"]
+        for s_ in steps:
+            if "逐轮路由轨迹" in (s_.get("name") or ""):
+                return s_
+        return None
+
+    def test_step_exists(self):
+        assert self._step() is not None, "workflow 缺少「Dump C 端逐轮路由轨迹」步骤"
+
+    def test_step_is_always_run(self):
+        assert_always_unless_fast(self._step(), "写工具失败原因 dump 步骤")
+
+    def test_step_greps_fallback_card_marker(self):
+        body = (self._step() or {}).get("run") or ""
+        for kw in ("代码兜底补发确认卡", "卡下发计数"):
+            assert kw in body, (
+                f"dump 白名单缺 {kw!r} → 补卡/发卡次数在 CI 里无正面证据（issue #3445）")
+
+    def test_marker_actually_logged_by_skill(self):
+        """白名单里的标记必须**真的**由代码打出来（防白名单写错字）。"""
+        src = (REPO_ROOT / "backend" / "ai-agent-service" / "app" / "graph" / "skills"
+               / "base_skill.py").read_text(encoding="utf-8")
+        for kw in ("代码兜底补发确认卡", "卡下发计数"):
+            assert kw in src, f"base_skill 里已经没有 {kw!r} 这条日志了"
 
 
 class TestNamedProductsAreSeeded:
