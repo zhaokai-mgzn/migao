@@ -46,6 +46,24 @@ CUSTOMER_SKILL_TOOL_CONSTS = (
 INTERNAL_NO_CASE: dict = {}
 
 
+# ── 共享层守卫的**分端声明**（issue #3404 人工提醒固化）────────────────────────
+# 背景：B 端（米宝/客服）与 C 端（小布）共用同一个 `base_skill.py` —— 两端卡片由同一个
+# `interact` 工具产出。若 C 端语义守卫不声明分端，就会误伤 B 端（实测：数量口径守卫会拦
+# B 端店员代客下单的"用量"选项、预填守卫会拦客服改客户资料的表单）。
+# 规则：`base_skill.py` 里每个 `*_block` 拦截守卫**必须二选一**：
+#   ① 声明分端（函数体内调用 `_is_customer_role`）—— C 端语义守卫；
+#   ② 登记进 `UNIVERSAL_BLOCK_GUARDS` 并写明理由 —— 通用数据/协议完整性守卫（两端都该生效）。
+# 这样"新加守卫忘了分端"会在 PR 阶段变红，而不是等到 B 端出问题才发现。
+UNIVERSAL_BLOCK_GUARDS = {
+    "_write_input_recovery_block":
+        "缺参等待期拦的是'注定失败的重复写'，与端无关：B 端同样不该在欠参时反复重发确认卡",
+    "_card_loop_block":
+        "同一张卡重复下发是两端共有的循环缺陷（内容指纹已按实质内容判定）",
+    "_masked_phone_write_block":
+        "掩码/填充手机号写库是数据完整性缺陷：B 端顾客的号码写错同样是错",
+}
+
+
 # 写工具（有副作用的）：断言它们就必须同时断言成功，否则"调了≠成了"的假绿会重现
 WRITE_TOOLS = frozenset({
     "order_create", "aftersale_create", "human_handoff",
@@ -209,3 +227,70 @@ class TestXiaobuCapabilityCoverage:
         assert "curtain_calc" in self._xiaobu_asserted(), (
             "curtain_calc 又变成零覆盖了（PR-013 的 persona: xiaobu 是否被误删？）"
         )
+
+
+class TestSharedGuardPersonaScope:
+    """共享层守卫必须**显式声明分端**（issue #3404 人工提醒固化）。
+
+    B/C 两端共用 `base_skill.py`：两端卡片由同一个 `interact` 工具产出。C 端语义守卫
+    若不声明分端就会误伤 B 端（实测：数量口径守卫拦 B 端店员代客下单的"用量"选项、
+    预填守卫拦客服改客户资料的表单）。本守卫把"分端"从"记得写"变成"**必须写**"。
+    """
+
+    SKILL_SRC = SKILLS_DIR / "base_skill.py"
+
+    def _block_guards(self):
+        """源码里所有**拦截守卫入口**（函数名以 `_block` 结尾）的函数名 + 函数体。
+
+        ⚠️ 两点口径（都是被自己的守卫抓出来后固化的）：
+          · 签名**可能跨行**（本项目守卫参数较长）——首版正则要求 `):` 同行，
+            导致一个都没解析出来（"未解析到"断言抓到了这个空转风险）；
+          · 只认**以 `_block` 结尾**的入口函数（`_quantity_choice_block` 等）；
+            像 `_masked_phone_block_result` 这类**响应构造函数**不是"决定是否拦"的地方，
+            不纳入分端声明（首版宽匹配把它也抓进来了，属口径不准）。
+        """
+        src = self.SKILL_SRC.read_text(encoding="utf-8")
+        guards = {}
+        for m in re.finditer(r"^(?:async )?def (_\w*_block)\(", src, re.M):
+            name = m.group(1)
+            # 从签名起找到第一个以 ':' 结尾的行（跳过跨行的参数列表）
+            i = src.find("\n", m.end())
+            if i < 0:
+                continue
+            while i >= 0 and not src[m.end():i].rstrip().endswith(":"):
+                i = src.find("\n", i + 1)
+            if i < 0:
+                continue
+            body_start = i + 1
+            nxt = re.search(r"^(?:async )?def |^class ", src[body_start:], re.M)
+            body = src[body_start: body_start + (nxt.start() if nxt else len(src))]
+            guards[name] = body
+        return guards
+
+    def test_every_block_guard_declares_scope(self):
+        guards = self._block_guards()
+        assert guards, "未解析到任何 *_block 守卫 —— 解析口径已漂移，本守卫会空转通过"
+        missing = []
+        for name, body in guards.items():
+            if "_is_customer_role(" in body:
+                continue
+            if name in UNIVERSAL_BLOCK_GUARDS:
+                continue
+            missing.append(name)
+        assert not missing, (
+            "以下拦截守卫既没声明 C 端分端（`_is_customer_role`），也未登记为通用守卫：\n  "
+            + "\n  ".join(missing)
+            + "\n\nB/C 共用 base_skill —— 不分端会误伤对方。请在函数体内加：\n"
+              "    if not _is_customer_role(state):\n        return None\n"
+              "或登记进 UNIVERSAL_BLOCK_GUARDS 并写明理由（通用数据/协议完整性）。")
+
+    def test_universal_allowlist_entries_are_real_and_justified(self):
+        guards = self._block_guards()
+        for name, reason in UNIVERSAL_BLOCK_GUARDS.items():
+            assert name in guards, f"UNIVERSAL_BLOCK_GUARDS 里的 {name} 已不存在（陈旧登记）"
+            assert len(str(reason)) >= 12, f"{name} 的通用理由过于简略，需说明为何两端都该拦"
+        # C 端语义守卫必须真的用了统一助手（防各写一套角色判断）
+        for name in ("_quantity_choice_block", "_form_prefill_fidelity_block",
+                     "_curtain_calc_dimension_block"):
+            assert name in guards, f"{name} 不存在（改名后需同步本守卫）"
+            assert "_is_customer_role(" in guards[name], f"{name} 未声明分端"
