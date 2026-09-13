@@ -1206,6 +1206,9 @@ async def _curtain_calc_dimension_block(tool_name: str, args: dict, tool_call: d
     """无窗户尺寸证据时拦下 `curtain_calc`（返回 3 元组），否则放行（None）。"""
     if tool_name != "curtain_calc":
         return None
+    # C 端专属：`curtain_calc` 是小布（顾客自助）的报价能力；B 端米宝有自己的算料链路。
+    if not _is_customer_role(state):
+        return None
     if _conversation_mentions_dimensions((state or {}).get("messages") or []):
         return None
     w = (args or {}).get("window_width")
@@ -1390,6 +1393,17 @@ async def _remember_raw_phones(session_id: str, phones) -> None:
         logger.warning(f"[phone-guard] 记录真实号码失败（非致命）: {e}")
 
 
+def _is_customer_role(state: dict | None) -> bool:
+    """本轮是否为 **C 端（顾客本人）** 身份。
+
+    为什么必须有（B/C 共用面）：`interact` 工具与全部技能守卫都写在**共享的**
+    `base_skill` 里 —— 两端卡片由同一个工具产出，守卫不分端就会互相影响
+    （B 端店员代客下单、客服改客户资料的表单与 C 端顾客自助场景语义不同）。
+    身份来自 `state["role"]`（= `context.role`：C 端 "customer"，B 端 "admin"/"agent"）。
+    """
+    return str((state or {}).get("role") or "").strip().lower() == "customer"
+
+
 def _norm_ws(v) -> str:
     """比对前去掉所有空白（地址/号码里的空格差异不算改写）。"""
     return "".join(str(v or "").split())
@@ -1461,6 +1475,10 @@ async def _quantity_choice_block(tool_name: str, args: dict, tool_call: dict,
     import re as _re
     if tool_name != "interact":
         return None
+    # C 端专属守卫：判据是「**顾客**说『买 3 米』被当成窗宽」这条顾客语义
+    # （B 端店员代客下单时给出"用量/褶皱"选项可能是合法业务动作）→ 只对 customer 生效。
+    if not _is_customer_role(state):
+        return None
     opts = (args or {}).get("options")
     if not isinstance(opts, list) or not opts:
         return None
@@ -1517,6 +1535,10 @@ async def _form_prefill_fidelity_block(tool_name: str, args: dict, tool_call: di
                                        last_user_msg: str = "", state: dict | None = None):
     """form 预填值与已知真值不一致时拦下（返回 3 元组），否则放行（None）。"""
     if tool_name != "interact":
+        return None
+    # C 端专属：守的是"顾客的收货信息预填"。B 端客服/商家改客户资料的表格
+    # 同名 key（customer_phone/customer_address）语义不同 → 只对 customer 生效。
+    if not _is_customer_role(state):
         return None
     if str((args or {}).get("component") or "") != "form":
         return None
