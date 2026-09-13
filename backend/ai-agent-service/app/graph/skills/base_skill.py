@@ -1409,6 +1409,109 @@ _PREFILL_FIDELITY_FIELDS = {
 }
 
 
+# ── 顾客已报购买数量时，禁止用"用量/褶皱倍数"再问一遍（issue #3402，C-A1 实证）──
+# 实证（run 34753219595，主路径 C-A1）：
+#   R4 用户「数量 3 米」→ Agent 发 `choice: 请选择窗帘用量 → 3米（¥528）| 6米（¥1056，推荐）`
+# —— 顾客说的 3 米就是买 3 米布；Agent 当成窗宽按褶皱倍数算成 6 米，**还标为"推荐"**（2 倍钱）。
+# 这张多余卡还每轮吃掉一次交互 → C-A1 的 repeat_until 用完仍未落单（order_create 未调用）。
+# 同一个认知错误的**第三个出口**（工具层 #3395、入参层 #3394 已修），故在**产出层（卡片）**拦。
+# 判据（保守，只在"确凿的多收钱形态"上触发）：
+#   ① 顾客消息里报过**购买数量**（「数量 3 米」「买 2.5 米布」…，且不是"窗宽/窗高"语义）；
+#   ② 卡片选项里出现该数量的 **≥2 倍**（2×/3×…，容差 1%）；
+#   ③ 卡片标题或选项文字用了「用量 / 褶皱倍数 / 倍数」这类框架。
+# 顾客自己要求加倍（「褶皱饱满一点」「用量加倍」）→ 放行。
+_QUANTITY_FRAME_WORDS = ("用量", "褶皱倍数", "褶皱", "倍数", "用布量")
+_QUANTITY_INTENT = r"(?:数量|买|要|购|来|下单|做)\s*([0-9]+(?:\.[0-9]+)?)\s*米"
+_QUANTITY_PLAIN = r"([0-9]+(?:\.[0-9]+)?)\s*米(?:布)?"
+_DIMENSION_SEMANTIC = ("窗宽", "窗高", "宽", "高", "门幅", "尺寸")
+
+
+def _stated_purchase_quantities(messages) -> set:
+    """顾客消息里明确报过的**购买数量**（米）。带尺寸语义的表述不算。"""
+    import re as _re
+    out: set = set()
+    for m in messages or []:
+        try:
+            role = str(getattr(m, "type", "") or getattr(m, "role", ""))
+            text = str(getattr(m, "content", "") or "")
+        except Exception:
+            continue
+        if role not in ("human", "user") or not text:
+            continue
+        for pat in (_QUANTITY_INTENT,):
+            for g in _re.findall(pat, text):
+                try:
+                    out.add(float(g))
+                except (TypeError, ValueError):
+                    pass
+        # 无意图词但有「米布」：也算购买数量（"3 米布"）
+        if "米布" in text:
+            for g in _re.findall(_QUANTITY_PLAIN, text):
+                try:
+                    out.add(float(g))
+                except (TypeError, ValueError):
+                    pass
+    return out
+
+
+async def _quantity_choice_block(tool_name: str, args: dict, tool_call: dict,
+                                 session_id: str, skill_name: str,
+                                 state: dict | None = None):
+    """用"用量/褶皱倍数"框架给出顾客所报数量的 ≥2 倍选项 → 拦下（3 元组），否则 None。"""
+    import re as _re
+    if tool_name != "interact":
+        return None
+    opts = (args or {}).get("options")
+    if not isinstance(opts, list) or not opts:
+        return None
+    msgs = (state or {}).get("messages") or []
+    stated = _stated_purchase_quantities(msgs)
+    if not stated:
+        return None
+    title = str((args or {}).get("title") or "")
+    texts = [title] + [
+        f"{o.get('label') or ''} {o.get('value') or ''}" if isinstance(o, dict) else str(o)
+        for o in opts
+    ]
+    joined = " ".join(texts)
+    if not any(w in joined for w in _QUANTITY_FRAME_WORDS):
+        return None
+    # 顾客自己要求过加倍/褶皱饱满 → 放行
+    for m in msgs:
+        t = str(getattr(m, "content", "") or "")
+        if any(k in t for k in ("加倍", "褶皱饱满", "要多一点", "用布量多点")):
+            return None
+    for text in texts:
+        for g in _re.findall(r"([0-9]+(?:\.[0-9]+)?)\s*米", text):
+            try:
+                v = float(g)
+            except (TypeError, ValueError):
+                continue
+            for q in stated:
+                if q <= 0:
+                    continue
+                for k in (2, 3, 4):
+                    if abs(v - q * k) <= max(0.05, q * 0.01):
+                        logger.warning(
+                            f"[{skill_name}] 拦截「用量/褶皱」倍数选项 tool=interact "
+                            f"stated={q} option={v} | session={session_id}")
+                        code = "quantity_choice_pleat_multiple"
+                        msg = (
+                            f"顾客已经明确说了购买数量 **{q:g} 米**（这就是订单数量），"
+                            f"你却在卡里给出 `{v:g} 米` 这个 **{k} 倍**选项并要求他选用量 —— "
+                            f"顾客会以为要买 {v:g} 米（金额翻 {k} 倍），"
+                            f"而且反复问已经回答过的事会让流程原地打转"
+                            f"（实测 C-A1 因此耗尽轮数、订单没落成，issue #3402）。"
+                            f"正确做法：**直接用 {q:g} 米继续**（面料单价 × {q:g} 米 = 金额），"
+                            f"进入确认卡（`validate_input` → `interact(confirm)`）与短信验证码，"
+                            f"不要再让他选用量/褶皱倍数。只有**顾客主动要求**加褶皱/加倍用量时才谈倍数。")
+                        return (tool_call,
+                                json.dumps({"success": False, "error": code, "message": msg},
+                                           ensure_ascii=False),
+                                {"success": False, "error": code, "message": msg})
+    return None
+
+
 async def _form_prefill_fidelity_block(tool_name: str, args: dict, tool_call: dict,
                                        session_id: str, skill_name: str,
                                        last_user_msg: str = "", state: dict | None = None):
@@ -2528,6 +2631,11 @@ async def execute_skill(
                     if tool is None:
                         logger.warning(f"[{skill_name}] Tool not found: {tool_name} | session={session_id}")
                         return tool_call, json.dumps({"success": False, "error": "tool_not_found", "message": f"工具 {tool_name} 不可用"}, ensure_ascii=False), {"success": False}
+                    # 数量口径产出层守卫（issue #3402）：顾客已报数量时不得给"用量/褶皱倍数"选项
+                    _blocked_q = await _quantity_choice_block(
+                        tool_name, args, tool_call, session_id, skill_name, state)
+                    if _blocked_q is not None:
+                        return _blocked_q
                     # 收货信息预填保真守卫（issue #3397）：interact 是只读工具，单独接。
                     _blocked_prefill = await _form_prefill_fidelity_block(
                         tool_name, args, tool_call, session_id, skill_name,

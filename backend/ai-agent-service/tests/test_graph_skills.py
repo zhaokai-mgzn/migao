@@ -23,6 +23,7 @@ from app.graph.skills.base_skill import (
     build_tool_context, execute_skill, _extract_content, get_skill_llm,
     _masked_phone_write_block, KNOWN_RAW_PHONES_KEY, _capability_denial_reason,
     _conversation_mentions_dimensions, _form_prefill_fidelity_block,
+    _stated_purchase_quantities, _quantity_choice_block,
 )
 import app.graph.skills.base_skill as lr2
 from app.graph.skills.skill_registry import SkillRegistry
@@ -3683,6 +3684,169 @@ class TestFormPrefillFidelityWiring:
         merged = [a for c in seen.get("commits") or []
                   for a in (c.get("known_customer_address") or [])]
         assert self.KNOWN_ADDR in merged, f"地址没进会话状态: {seen.get('commits')}"
+
+
+class TestQuantityChoiceGuard:
+    """澄清卡不得把顾客给的数量当窗宽、给出 2 倍用量选项（issue #3402，C-A1 实证）。
+
+    实证（run 34753219595 等，C-A1 主路径）：
+      R4 用户「数量 3 米」→ Agent 却发出
+      `choice: 请选择窗帘用量 → 3米（¥528，基本无褶皱） | **6米（约¥1056，褶皱饱满，推荐）**`
+      —— 顾客说的 3 米就是买 3 米布，Agent 当成窗宽按褶皱倍数算成 6 米，**还标为推荐**（2 倍钱）；
+      这张多余卡每轮吃掉一次交互，C-A1 的 repeat_until 用完仍未落单（order_create 未调用）。
+    同一认知错误的**第三个出口**（前两个已修：`curtain_calc` 工具层 #3395、入参层 #3394），
+    故必须在**产出层（卡片）**也拦。
+    """
+
+    def _msgs(self, *texts, role="human"):
+        from langchain_core.messages import HumanMessage, AIMessage
+        cls = HumanMessage if role == "human" else AIMessage
+        return [cls(content=t) for t in texts]
+
+    def test_stated_quantity_extracted(self):
+        qs = _stated_purchase_quantities(self._msgs("数量 3 米", "我要买 2.5 米布"))
+        assert 3.0 in qs and 2.5 in qs, qs
+
+    def test_plain_measure_without_intent_not_quantity(self):
+        """「窗户 3 米宽」不是购买数量（有尺寸语义）→ 不得当数量。"""
+        qs = _stated_purchase_quantities(self._msgs("窗户 3 米宽 2.7 米高"))
+        assert 3.0 not in qs, qs
+
+    def _run(self, args, msgs):
+        import asyncio, json as _json
+        class _Store:
+            async def load(self, sid):
+                return {}
+            async def commit(self, sid, f):
+                return None
+        with patch("app.memory.session_state_store.SessionStateStore",
+                   side_effect=lambda *a, **k: _Store()):
+            return asyncio.run(_quantity_choice_block(
+                "interact", args, {"name": "interact", "args": args, "id": "c1"},
+                "sess_1", "customer_order", {"messages": msgs}))
+
+    def _card(self, title, labels):
+        return {"component": "choice", "title": title,
+                "options": [{"label": l, "value": l} for l in labels]}
+
+    def test_ca1_card_blocked(self):
+        """C-A1 原卡：用量框架 + 6 米（=2×3）→ 必须拦下。"""
+        out = self._run(self._card("请选择窗帘用量（米白·纳米圈打孔）",
+                                   ["3米（¥528，基本无褶皱）", "6米（约¥1056，褶皱饱满，推荐）"]),
+                        self._msgs("你好，我想买窗帘", "第一款吧，白色，2.8 米门幅，按米卖",
+                                   "纳米圈打孔", "数量 3 米"))
+        assert out is not None, "2 倍用量选项必须拦下（会把 528 变成 1056）"
+        import json as _json
+        msg = _json.loads(out[1]).get("message", "")
+        assert "3" in msg and "用量" in msg or "数量" in msg, msg
+
+    def test_no_quantity_stated_passes(self):
+        """顾客没报过数量 → 无从判断，放行（避免误伤正常选品引导）。"""
+        assert self._run(self._card("请选择窗帘用量", ["3米", "6米"]),
+                         self._msgs("你好，我想买窗帘")) is None
+
+    def test_customer_added_pleat_request_passes(self):
+        """顾客**明确要求**加倍用量（褶皱饱满）→ 放行（这是顾客自己要的）。"""
+        out = self._run(self._card("请选择窗帘用量", ["3米", "6米"]),
+                        self._msgs("数量 3 米", "我想要褶皱饱满一点，用量加倍吧"))
+        assert out is None
+
+    def test_non_multiple_option_passes(self):
+        """选项不是倍数（如 2.5/3/3.5 米）→ 不是本缺陷形态，放行。"""
+        assert self._run(self._card("请选择窗帘用量", ["2.5米", "3米", "3.5米"]),
+                         self._msgs("数量 3 米")) is None
+
+    def test_other_components_untouched(self):
+        out = self._run({"component": "confirm", "title": "请确认订单信息",
+                         "fields": [{"label": "总价", "value": "¥528"}]},
+                        self._msgs("数量 3 米"))
+        assert out is None
+
+
+class TestQuantityChoiceGuardWiring:
+    """接线：C-A1 那张「用量」卡必须**真的发不出去**（issue #3402）。
+
+    只测辅助函数会漏"守卫没接在 interact 调用路径上"（本 session 已两次抓出该形态的假守卫）。
+    """
+
+    def _run(self, args, user_msgs):
+        import asyncio, json as _json
+        seen = {"calls": []}
+
+        async def fake_execute(tool, a, ctx, state):
+            seen["calls"].append((tool, a))
+            return (_json.dumps({"success": True, "data": {"ok": True}}),
+                    {"success": True, "data": {"ok": True}})
+
+        class _Store:
+            async def load(self, sid):
+                return {}
+
+            async def commit(self, sid, f):
+                return None
+
+        with patch("app.memory.session_memory.SessionMemory"), \
+             patch("app.graph.skills.base_skill.get_breaker") as get_breaker, \
+             patch("app.graph.skills.base_skill.get_skill_llm") as get_llm, \
+             patch("app.graph.skills.base_skill.create_skill_registry") as create_reg, \
+             patch("app.graph.skills.base_skill.set_tool_context"), \
+             patch("app.graph.skills.base_skill._execute_tool_safe", fake_execute), \
+             patch("app.memory.session_state_store.SessionStateStore",
+                   side_effect=lambda *a, **k: _Store()):
+            tool = MagicMock()
+            tool.name = "interact"
+            tool.read_only = True
+            tool.destructive = False
+            tool.requires_confirmation = False
+            registry = MagicMock()
+            registry.get_langchain_tools.return_value = []
+            registry.get_tool.side_effect = lambda n: tool if n == "interact" else None
+            create_reg.return_value = registry
+            breaker = MagicMock()
+
+            async def _pt(fn):
+                return await fn()
+
+            breaker.call = _pt
+            get_breaker.return_value = breaker
+            call = MagicMock(spec=AIMessage)
+            call.content = ""
+            call.tool_calls = [{"name": "interact", "args": args, "id": "c1"}]
+            final = MagicMock(spec=AIMessage)
+            final.content = "好的"
+            final.tool_calls = []
+            llm = MagicMock()
+            llm.bind_tools.return_value = llm
+            llm.ainvoke = AsyncMock(side_effect=[call, final])
+            get_llm.return_value = llm
+            msgs = [HumanMessage(content=t) for t in user_msgs]
+            res = asyncio.run(execute_skill(
+                state=_make_state(messages=msgs), skill_name="customer_order",
+                tool_names=["interact"], system_prompt="p"))
+        from langchain_core.messages import ToolMessage as _TM
+        seen["tool_content"] = "\n".join(
+            str(getattr(m, "content", "")) for m in (res or {}).get("messages", [])
+            if isinstance(m, _TM))
+        return seen
+
+    def _ca1_card(self):
+        return {"component": "choice", "title": "请选择窗帘用量（米白·纳米圈打孔）",
+                "options": [{"label": "3米（¥528，基本无褶皱）", "value": "数量3米，米白，纳米圈打孔"},
+                            {"label": "6米（约¥1056，褶皱饱满，推荐）", "value": "数量6米，米白，纳米圈打孔"}]}
+
+    def test_ca1_card_never_reaches_customer(self):
+        seen = self._run(self._ca1_card(),
+                         ["你好，我想买窗帘", "第一款吧，白色，2.8 米门幅，按米卖",
+                          "纳米圈打孔", "数量 3 米"])
+        assert seen["calls"] == [], "把顾客的 3 米当窗宽、推荐 6 米的卡不得下发"
+        assert "3" in seen["tool_content"], "拦截时必须说明顾客已给 3 米"
+
+    def test_normal_choice_card_passes(self):
+        seen = self._run({"component": "choice", "title": "请选择窗帘颜色",
+                          "options": [{"label": "米白", "value": "米白"},
+                                      {"label": "浅灰", "value": "浅灰"}]},
+                         ["数量 3 米"])
+        assert len(seen["calls"]) == 1, "正常选色卡被拦 → 真回归"
 
 
 class TestFalseCancelGuard:

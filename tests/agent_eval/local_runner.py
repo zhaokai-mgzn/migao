@@ -1764,6 +1764,51 @@ def _seed_phones() -> set:
     return _SEED_PHONES_CACHE
 
 
+def check_forbidden_card_text(results: list, spec: list) -> list:
+    """卡片内容反模式断言（issue #3402）：卡标题/选项/字段值不得出现指定子串。
+
+    与 `forbidden_text`（针对回复文本）互补：**卡片是另一个产出面**，同一认知错误
+    换个载体（卡 vs 文本）就能绕过只守文本的断言。C-A1 实证的形态是卡里给出
+    「用量 → 6 米（推荐）」= 顾客意图的 2 倍钱，故必须有独立断言。
+
+    spec 支持两种写法：`[{text: "用量"}]` 或 `["用量", "褶皱"]`（后者更简单，不易写错）。
+    """
+    issues = []
+    want = []
+    for item in spec or []:
+        if isinstance(item, dict):
+            t = str(item.get("text") or "")
+        else:
+            t = str(item or "")
+        if t:
+            want.append(t)
+        else:
+            issues.append(f"forbidden_card_text: 空配置（会静默不检查）: {item!r}")
+    if not want:
+        return issues
+    for r in results or []:
+        for iv in (r.get("interactive") or []):
+            if not isinstance(iv, dict):
+                continue
+            parts = [str(iv.get("title") or "")]
+            for o in (iv.get("options") or []):
+                if isinstance(o, dict):
+                    parts += [str(o.get("label") or ""), str(o.get("value") or "")]
+                else:
+                    parts.append(str(o))
+            for f in (iv.get("formFields") or []):
+                if isinstance(f, dict):
+                    parts += [str(f.get("label") or ""), str(f.get("value") or "")]
+            blob = " ".join(parts)
+            for w in want:
+                if w in blob:
+                    issues.append(
+                        f"卡片出现禁用词「{w}」(R{r.get('__round')}, "
+                        f"{iv.get('type') or iv.get('component')}「{iv.get('title')}」) —— "
+                        f"C-A1 实证：卡里给「用量/倍数」选项会把顾客意图的金额翻倍")
+    return issues
+
+
 def _norm_text(v) -> str:
     """比对前归一化空白（地址里空格差异不该判红）。"""
     return re.sub(r"\s+", "", str(v or ""))
@@ -2762,6 +2807,9 @@ async def run_case(case, token: str, session_id: str) -> dict:
     case_issues += check_output_verify(results, getattr(case, "output_verify", []) or [])
     # form 预填断言（issue #3397）：老客户收货信息必须真的带进表单且为真值
     case_issues += check_form_prefill(results, getattr(case, "form_prefill", []) or [])
+    # 卡片内容反模式（issue #3402）：卡里不得出现「用量/倍数」这类把顾客意图翻倍的框架
+    case_issues += check_forbidden_card_text(
+        results, getattr(case, "forbidden_card_text", []) or [])
     if PERSONA == "xiaobu":
         # 隐私面只在 C 端守：B 端客服需要真实号码联系顾客（脱敏会破坏运营）
         case_issues += check_no_full_phone(results)
@@ -3395,6 +3443,7 @@ def load_cases_from_yaml(cases_dir: str) -> list:
             amount_verify=c.get("amount_verify") or [],
             db_verify=c.get("db_verify") or [],
             form_prefill=c.get("form_prefill") or [],
+            forbidden_card_text=c.get("forbidden_card_text") or [],
             pre_clean=c.get("pre_clean") or [],
             post_session=c.get("post_session") or [],
         ))

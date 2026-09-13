@@ -903,6 +903,88 @@ class TestRoundTraceToolOutcomes:
         assert "failed=" not in lr.format_round_trace(trace)
 
 
+class TestForbiddenCardText:
+    """卡片内容反模式断言（issue #3402）：把 C-A1 的"2 倍用量选项"变成可执行回归网。
+
+    为什么需要（C-A1 实证）：Agent 把顾客说的「数量 3 米」当窗宽，发了
+    `choice: 请选择窗帘用量 → 3米（¥528）| **6米（¥1056，褶皱饱满，推荐）**` ——
+    推荐项是顾客意图的 **2 倍钱**。运行时守卫已拦（`_quantity_choice_block`），
+    但**判定层也要能独立看见**：守卫可能被绕过（模型改用文本/别的组件），
+    且"卡里出现了用量/倍数"本身就是可断言的事实。
+    """
+
+    def _round(self, cards):
+        return {"__round": 1, "tool_calls": [], "tool_results": [],
+                "interactive": cards, "final_text": ""}
+
+    def _card(self, title, labels):
+        return {"type": "choice", "title": title,
+                "options": [{"label": l, "value": l} for l in labels]}
+
+    def test_forbidden_title_hit(self):
+        issues = lr.check_forbidden_card_text(
+            [self._round([self._card("请选择窗帘用量", ["3米", "6米"])])],
+            [{"text": "用量"}])
+        assert issues and "用量" in issues[0], issues
+
+    def test_forbidden_option_label_hit(self):
+        issues = lr.check_forbidden_card_text(
+            [self._round([self._card("请选择窗帘颜色", ["米白（推荐）", "浅灰"])])],
+            [{"text": "推荐"}])
+        assert issues, issues
+
+    def test_forbidden_field_value_hit(self):
+        card = {"type": "form", "title": "收货信息",
+                "formFields": [{"key": "customer_address", "label": "地址", "value": "某地址"}]}
+        issues = lr.check_forbidden_card_text([self._round([card])], [{"text": "某地址"}])
+        assert issues, issues
+
+    def test_clean_cards_pass(self):
+        assert lr.check_forbidden_card_text(
+            [self._round([self._card("请选择窗帘颜色", ["米白", "浅灰"])])],
+            [{"text": "用量"}, {"text": "褶皱"}]) == []
+
+    def test_plain_string_spec_supported(self):
+        issues = lr.check_forbidden_card_text(
+            [self._round([self._card("请选择窗帘用量", ["3米"])])], ["用量"])
+        assert issues, "字符串写法也必须生效（配置更简单，不易写错）"
+
+
+class TestForbiddenCardTextWiring:
+    """接线：卡内容反模式必须计入用例判定（score 0）。"""
+
+    def _case(self, spec):
+        return lr.EvalCase(
+            id="CARDTEXT-TEST", legacy_id="", title="t", skill=lr.Skill.ORDER,
+            difficulty=lr.Difficulty.NORMAL, user_inputs=["数量 3 米"],
+            expectations=["tool: interact"], data_checks=[],
+            persona="xiaobu", forbidden_card_text=spec,
+        )
+
+    def _run(self, title, spec):
+        import unittest.mock as mock
+
+        async def fake_send(token, session_id, message, images=None, debug_user=""):
+            return {"user_message": message, "images": images or [],
+                    "tool_calls": [{"name": "interact", "args": {}}],
+                    "tool_results": [],
+                    "interactive": [{"type": "choice", "title": title,
+                                     "options": [{"label": "3米", "value": "3米"}]}],
+                    "final_text": "好的", "error": None, "streamed": False, "done": True}
+
+        with mock.patch.object(lr, "send_message", new=fake_send), \
+             mock.patch.object(lr, "PERSONA", "xiaobu"):
+            return asyncio.run(lr.run_case(self._case(spec), "tok", "sess_c"))
+
+    def test_forbidden_card_scores_zero(self):
+        res = self._run("请选择窗帘用量", [{"text": "用量"}])
+        assert res["score"] == 0.0, "卡里出现「用量」必须判红（C-A1 形态）"
+
+    def test_clean_card_keeps_score(self):
+        res = self._run("请选择窗帘颜色", [{"text": "用量"}])
+        assert res["score"] == 1.0, f"正常卡被误判: {res['failed']}"
+
+
 class TestFormPrefill:
     """form 卡必须**预填真值**（issue #3397：老客户收货信息自动带出）。
 
@@ -1023,6 +1105,34 @@ class TestFormPrefillLoaderPath:
         idx = out.index("id='OR-023'")
         assert "form_prefill=[{'field': 'customer_phone'" in out[idx:idx + 4000], (
             "渲染器没有输出 form_prefill（生成物会丢断言）")
+
+
+class TestForbiddenCardTextLoaderPath:
+    """**CI 走的 YAML 装载路径**必须映射 forbidden_card_text（issue #3402）。
+
+    这是本 session **第三次**踩同一形态（前两次：`debug_user` issue #3392、
+    `form_prefill` issue #3397）：新字段只在渲染器里映射、CI 走 YAML 装载器 →
+    断言永不生效却全绿。故每个新断言字段都必须有**真实装载**测试。
+    """
+
+    def test_real_yaml_load_yields_forbidden_card_text(self):
+        import pathlib as _pl
+        cases_dir = _pl.Path(lr.__file__).resolve().parents[2] / ".github" / "cases"
+        cases = {c.id: c for c in lr.load_cases_from_yaml(str(cases_dir))}
+        spec = cases["OR-024"].forbidden_card_text
+        assert spec, "YAML 装载后 forbidden_card_text 丢失（CI 路径上断言永不生效 = 假绿）"
+        assert "用量" in [str(x) for x in spec], spec
+        assert cases["OR-023"].forbidden_card_text == [], "未声明用例不得误继承"
+
+    def test_renderer_emits_forbidden_card_text(self):
+        import sys as _sys, pathlib as _pl
+        root = _pl.Path(lr.__file__).resolve().parents[2]
+        _sys.path.insert(0, str(root / ".github"))
+        from render_cases import load_case_dicts, to_eval_py
+        out = to_eval_py(load_case_dicts(str(root / ".github" / "cases")))
+        idx = out.index("id='OR-024'")
+        assert "forbidden_card_text=['用量'" in out[idx:idx + 4000], (
+            "渲染器没有输出 forbidden_card_text（生成物会丢断言）")
 
 
 class TestRoundTraceWriteArgs:
