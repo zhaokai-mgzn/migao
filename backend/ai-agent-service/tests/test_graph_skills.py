@@ -2708,7 +2708,7 @@ class TestSmsCodeBackfill:
     代码兜底：顾客上一条消息**整条就是验证码** → 执行前补进 args。
     """
 
-    def _run(self, user_msg, args):
+    def _run(self, user_msg, args, store_extra: dict | None = None):
         import asyncio, json as _json
 
         seen = {}
@@ -2720,7 +2720,8 @@ class TestSmsCodeBackfill:
 
         class _Store:
             async def load(self, sid):
-                return {"grounded_product_detail": {"product_id": "p1"}}
+                return {"grounded_product_detail": {"product_id": "p1"},
+                        **(store_extra or {})}
 
             async def commit(self, sid, full):
                 pass
@@ -2769,9 +2770,39 @@ class TestSmsCodeBackfill:
         seen = self._run("123456", {"items": []})
         assert seen.get("sms_code") == "123456", "顾客已给验证码但未补齐 → 订单必然被拒"
 
-    def test_no_backfill_when_model_already_passed(self):
+    def test_model_invented_code_replaced_by_customer_code(self):
+        """**顾客给过的码是唯一真值**，模型自己写的码必须被纠正（issue #3379/#3434）。
+
+        实证（全量档 run 34786827410，CH-025 与 OR-014 的**首跑失败**指纹）：
+        `order_create 因验证码失败，且参数里的验证码与顾客给过/用例声明的都不一致
+         —— 疑似模型自造验证码`。短信只发到顾客手机上，模型**没有别的渠道**拿到它 ——
+        它"自己写一个"只会让订单必然被拒（顾客点多少次确认都没用）。
+        旧行为（只在"缺码"时补齐、模型带了就不动）正是这个失败模式的敞口。
+        """
         seen = self._run("123456", {"items": [], "sms_code": "654321"})
-        assert seen.get("sms_code") == "654321", "模型已带验证码时不得覆盖"
+        assert seen.get("sms_code") == "123456", (
+            "模型自造的验证码未被顾客给的码纠正 → 订单必然被拒（首跑失败指纹）")
+
+    def test_correct_code_left_as_is(self):
+        """顾客给的码与模型传的一致 → 原样（不得改写/清空）。"""
+        seen = self._run("123456", {"items": [], "sms_code": "123456"})
+        assert seen.get("sms_code") == "123456"
+
+    def test_invented_code_kept_when_no_known_code(self):
+        """**没有任何已知的码**时不得乱动模型的入参（守旧行为的安全边界）。
+
+        顾客从没给过码（如这轮只说了手机号）→ 我们没有真值可比 → 保持模型原样，
+        让工具按自己的校验去拒/提示，而不是凭空写一个。
+        """
+        seen = self._run("我的手机号是 13800138000", {"items": [], "sms_code": "654321"})
+        assert seen.get("sms_code") == "654321", "无真值时不得改写模型的验证码"
+
+    def test_invented_code_replaced_by_stored_code(self):
+        """上一条不是码（顾客点了确认卡）时，用**会话记住的码**纠正模型自造的码。"""
+        seen = self._run("确认下单", {"items": [], "sms_code": "654321"},
+                         store_extra={"last_sms_code": "123456"})
+        assert seen.get("sms_code") == "123456", (
+            "会话里记住的码是唯一真值，模型自造的码必须被纠正")
 
     def test_phone_number_not_mistaken_for_code(self):
         """手机号里含数字片段，绝不能当验证码注入（否则验证必失败且难排查）。"""
@@ -2841,6 +2872,18 @@ class TestSmsCodeBackfill:
                 skill_name="customer_order", tool_names=["order_create"], system_prompt="p"))
         assert seen.get("sms_code") == "123456", \
             "会话里记住的验证码未被回填 → 顾客要再发一次码（空转）"
+
+    def test_resolve_sms_code_truth_table(self):
+        """真值判定表（`resolve_sms_code`）：没有真值不动、漏参补齐、不一致纠正。"""
+        from app.graph.skills.base_skill import resolve_sms_code
+        assert resolve_sms_code("", "") == ("", "")            # 没有真值 → 不动入参
+        assert resolve_sms_code("", "654321") == ("", "")      # 同上（模型传了也不动）
+        assert resolve_sms_code("123456", "") == ("123456", "补齐")
+        assert resolve_sms_code("123456", "654321") == ("123456", "纠正")
+        assert resolve_sms_code("123456", "123456") == ("123456", "")   # 一致 → 不改写
+        # 空白容忍（模型/前端可能带空格）
+        assert resolve_sms_code(" 123456 ", "123456") == ("123456", "")
+        assert resolve_sms_code("123456", " 123456 ") == ("123456", "")
 
     def test_extract_sms_code_shapes(self):
         from app.graph.skills.base_skill import extract_sms_code

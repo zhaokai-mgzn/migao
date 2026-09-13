@@ -1074,6 +1074,28 @@ def extract_sms_code(text: str) -> str:
     return m.group(1) if m else ""
 
 
+def resolve_sms_code(known_code, given_code) -> tuple[str, str]:
+    """决定该用哪个验证码 —— **顾客给过的码是唯一真值**（issue #3365 补齐 / #3434 纠正）。
+
+    背景（run 34786827410 全量档实证）：CH-025 与 OR-014 的**首跑失败**指纹都是
+    「order_create 因验证码失败，且参数里的验证码与顾客给过/用例声明的都不一致
+    —— 疑似模型自造验证码」。短信只发到**顾客手机**上，模型没有别的渠道拿到它：
+    它"自己写一个"只会让订单必然被拒（顾客点多少次确认都没用），重试碰巧写对了才通过。
+
+    返回 `(最终使用的码, 归因标签)`：
+      · 没有已知真值 → `("", "")` —— **不动**模型入参（让工具按自己的校验拒绝/提示）；
+      · 与模型传入的一致 → `(码, "")` —— 不需要改写；
+      · 模型漏参 / 传入不一致 → `(真值码, "补齐"|"纠正")`。
+    """
+    known = str(known_code or "").strip()
+    if not known:
+        return "", ""
+    given = str(given_code or "").strip()
+    if given == known:
+        return known, ""
+    return known, ("补齐" if not given else "纠正")
+
+
 # ── 写工具「缺参等待期」恢复回路（issue #3365，OR-017 CI 实证）──────────────
 # 为什么必须有：写工具因**顾客还没给某个参数**而失败后，模型会原样重发确认卡并重复调用
 # 注定失败的工具 —— 顾客点多少次「确认」都拿不到那句"请输入验证码"，生产环境里人也会卡死。
@@ -2874,17 +2896,23 @@ async def execute_skill(
                     # 代码兜底：顾客上一条就是验证码，但模型调 order_create 时没带上
                     # → 自动补齐（issue #3365 实证：CI 里 order_create!缺少短信验证码 ×3，
                     #   顾客明明给了 123456；模型漏参 → 订单不落库 → 用例红且看着像"能力不行"）
-                    if tool_name == "order_create" and not (args or {}).get("sms_code"):
-                        # 回填链（issue #3379 P2-1）：
-                        #   ① 顾客上一条消息整条就是验证码（原有）；
+                    if tool_name == "order_create":
+                        # 验证码真值链（issue #3365 补齐 / #3379 P2-1 记码 / #3434 纠正）：
+                        #   ① 顾客上一条消息**整条就是验证码**（原有）；
                         #   ② **本会话此前记住的验证码** —— 顾客先给码、再回「确认」时，
                         #      上一轮已经不是码了，若不记就会要求顾客**再发一次**
                         #      （验收 C-A1 实证：验证码轮空转、AI 还说"稍后还需要您手机验证"）。
-                        _code = extract_sms_code(last_user_msg) or await _stored_sms_code(session_id)
-                        if _code:
-                            args = {**args, "sms_code": _code}
+                        # 与旧行为的差别：模型**带了**码但与我们知道的真值不一致时，也要纠正
+                        # （旧行为只管"漏参"，于是模型自造的码一路走到工具校验失败，见
+                        #  `resolve_sms_code` 的实证说明）。没有真值时不动模型入参。
+                        _known_code = (extract_sms_code(last_user_msg)
+                                       or await _stored_sms_code(session_id))
+                        _final_code, _why = resolve_sms_code(
+                            _known_code, (args or {}).get("sms_code"))
+                        if _final_code and _why:
+                            args = {**args, "sms_code": _final_code}
                             logger.info(
-                                f"[{skill_name}] 代码补齐 order_create.sms_code"
+                                f"[{skill_name}] 代码{_why} order_create.sms_code"
                                 f"（{'本轮消息' if extract_sms_code(last_user_msg) else '会话记住的验证码'}）"
                                 f"| session={session_id}"
                             )
@@ -3610,11 +3638,17 @@ async def execute_skill(
                         _props8 = {}
                     if "action" in _props8 and _pending8.get("target_action"):
                         _args8.setdefault("action", str(_pending8["target_action"]))
-                    # 验证码回填链（与门禁同源）：本轮消息里的码 → 会话记住的码
-                    if _target8 in SMS_GATED_WRITE_TOOLS and not _args8.get("sms_code"):
-                        _code8 = extract_sms_code(last_user_msg) or await _stored_sms_code(session_id)
-                        if _code8:
-                            _args8["sms_code"] = _code8
+                    # 验证码真值链（与门禁同源）：本轮消息里的码 → 会话记住的码；
+                    # 模型/校验链留下的不一致值同样纠正（`resolve_sms_code`）。
+                    if _target8 in SMS_GATED_WRITE_TOOLS:
+                        _known8 = (extract_sms_code(last_user_msg)
+                                   or await _stored_sms_code(session_id))
+                        _final8, _why8 = resolve_sms_code(_known8, _args8.get("sms_code"))
+                        if _final8 and _why8:
+                            _args8["sms_code"] = _final8
+                            logger.info(
+                                f"[{skill_name}] 确认收口：代码{_why8} {_target8}.sms_code"
+                                f" | session={session_id}")
                     _ctx8 = build_tool_context(state)
                     _str8, _res8 = await _execute_tool_safe(_tool8, _args8, _ctx8, state)
                     new_messages.append(ToolMessage(
