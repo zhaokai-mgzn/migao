@@ -1598,6 +1598,28 @@ async def _fetch_order_detail(token: str, order_ref: str) -> dict | None:
 OUTPUT_NONEMPTY = "__nonempty__"
 
 
+# 完整手机号（中国大陆）：加数字边界，避免把订单号里的 11 位片段误报
+# （实测订单号 `20260913027050006` 含 `13027050006`，无边界正则必然误伤）
+_FULL_PHONE_RE = re.compile(r"(?<!\d)1[3-9]\d{9}(?!\d)")
+
+
+def check_no_full_phone(results: list) -> list:
+    """C 端回复不得出现**完整手机号**（issue #3379，验收发现的跨用例隐私面）。
+
+    为什么是全局断言而不是某条用例的 forbidden_text：CH-011 只守了"订单卡片脱敏"，
+    而泄露发生在**回显收货信息**这条路径（验收 C-A2 R3 给出 `13800138000`）。
+    隐私面是跨用例的 —— 每条 C 端用例都该守，故做成 case 级检查（C 端运行时自动生效）。
+    掩码形态 `138****8000` 与订单号/验证码都不误报（数字边界 + 只认 `1[3-9]` 开头 11 位）。
+    """
+    issues = []
+    for r in results or []:
+        text = str(r.get("final_text") or "")
+        for m in _FULL_PHONE_RE.finditer(text):
+            issues.append(
+                f"回复出现完整手机号 {m.group()}（R{r.get('__round')}）—— C 端应脱敏为 138****8000")
+    return issues
+
+
 def check_output_verify(results: list, output_verify: list) -> list:
     """断言**工具计算结果的 payload**（issue #3367）。
 
@@ -2339,6 +2361,9 @@ async def run_case(case, token: str, session_id: str) -> dict:
         except Exception as e:
             case_issues.append(f"amount_verify 执行失败: {type(e).__name__}: {e}")
     case_issues += check_output_verify(results, getattr(case, "output_verify", []) or [])
+    if PERSONA == "xiaobu":
+        # 隐私面只在 C 端守：B 端客服需要真实号码联系顾客（脱敏会破坏运营）
+        case_issues += check_no_full_phone(results)
     case_issues += check_confirm_loop(results)
     case_issues += check_false_success(results)
     if getattr(case, "db_verify", None):
