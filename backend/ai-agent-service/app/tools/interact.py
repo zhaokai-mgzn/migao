@@ -35,6 +35,60 @@ def _ensure_list(value: Any, field_name: str) -> Optional[List]:
     return None
 
 
+def _mask_card_pii(data: dict) -> dict:
+    """卡片里**顾客可见的文本**脱敏（issue #3379 P2-2 残留）。
+
+    为什么做在卡片层：验收复跑（run 34734188947）里全局断言仍抓到一次完整手机号进
+    `final_text`，而回复文本层已脱敏 —— 泄露点在**卡片字段值**（confirm 卡的"收货信息"、
+    form 卡预填手机号）。卡片是顾客**直接看到**的东西；CH-011 只守了列表卡（订单卡片），
+    confirm/form 卡的地址块没人守。
+
+    规则：
+      · 顾客可见文本 → 脱敏：`title` / `confirmValue` / `cancelValue` /
+        `fields[].label|value` / `formFields[].label|value` / `options[].label`；
+      · **协议值不动**：`options[].value` 是回传标识（`proc_item_pi1` 之类），
+        脱敏会让后端认不出"顾客选了什么"；
+      · 数字边界由 `pii_mask` 保证：订单号里的 11 位片段不会被误伤。
+    """
+    from app.utils.pii_mask import mask_pii
+
+    out = dict(data or {})
+    for key in ("title", "confirmValue", "cancelValue"):
+        if isinstance(out.get(key), str):
+            out[key] = mask_pii(out[key])
+
+    def _mask_text_items(items):
+        masked = []
+        for it in items or []:
+            if not isinstance(it, dict):
+                masked.append(it)
+                continue
+            node = dict(it)
+            for k in ("label", "value"):
+                if isinstance(node.get(k), str):
+                    node[k] = mask_pii(node[k])
+            masked.append(node)
+        return masked
+
+    for key in ("fields", "formFields"):
+        if isinstance(out.get(key), list):
+            out[key] = _mask_text_items(out[key])
+
+    if isinstance(out.get("options"), list):
+        # options[].value 是协议值 → 只脱敏 label
+        opts = []
+        for it in out["options"]:
+            if isinstance(it, dict):
+                node = dict(it)
+                if isinstance(node.get("label"), str):
+                    node["label"] = mask_pii(node["label"])
+                opts.append(node)
+            else:
+                opts.append(it)
+        out["options"] = opts
+    return out
+
+
 class InteractTool(BaseTool):
     """交互式组件 Tool
 
@@ -341,6 +395,15 @@ class InteractTool(BaseTool):
                 error=f"不支持的组件类型: {component}",
                 message="仅支持 choice、confirm、form 组件",
             )
+
+        # C 端卡片脱敏（issue #3379）：顾客可见文本里的手机号/邮箱必须脱敏；
+        # B 端不脱敏（客服要照实号码联系顾客）。
+        if str(getattr(context, "role", "") or "").lower() == "customer":
+            _before = json.dumps(interactive_data, ensure_ascii=False, default=str)
+            interactive_data = _mask_card_pii(interactive_data)
+            _after = json.dumps(interactive_data, ensure_ascii=False, default=str)
+            if _before != _after:
+                logger.info(f"[interact] 卡片字段脱敏（C 端）| title={title}")
 
         logger.info(
             f"[interact] {component} component | title={title} "

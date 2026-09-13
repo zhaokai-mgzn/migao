@@ -150,3 +150,85 @@ class TestInteractError:
             title="选择",
         )
         assert result.success is False
+
+
+class TestCardPiiMasking:
+    """卡片字段里的 PII 脱敏（issue #3379 P2-2 残留）。
+
+    为什么要做在**卡片层**而不是只做回复文本层：
+    验收复跑（run 34734188947）里新增的全局断言仍抓到一次完整手机号出现在 `final_text`，
+    而回复文本层已经脱敏 —— 泄露点更可能在**卡片字段值**（confirm 卡的"收货信息"、
+    form 卡的预填手机号）。而卡片是顾客**直接看到**的东西，CH-011 只守了列表卡（订单卡片），
+    confirm/form 卡的地址块没人守。
+
+    规则：**顾客可见的文本**脱敏（title / fields.label|value / formFields.label|value /
+    options.label / confirmValue / cancelValue）；**协议值不动**（options[].value 是回传标识，
+    脱敏会让后端认不出选了什么）。
+    """
+
+    async def test_confirm_fields_masked_for_customer(self, tool, sample_tool_context):
+        result = await tool.execute(
+            context=sample_tool_context,
+            component="confirm",
+            title="请确认收货信息",
+            fields=[
+                {"label": "收货人", "value": "张三"},
+                {"label": "手机号", "value": "13800138000"},
+                {"label": "地址", "value": "杭州市西湖区文三路1号"},
+            ],
+            confirmValue="确认提交：张三 13800138000",
+        )
+        data = result.data
+        assert "13800138000" not in json.dumps(data, ensure_ascii=False), \
+            f"卡片字段仍含完整手机号: {json.dumps(data, ensure_ascii=False)[:200]}"
+        assert "138****8000" in json.dumps(data, ensure_ascii=False)
+
+    async def test_form_prefill_masked_for_customer(self, tool, sample_tool_context):
+        result = await tool.execute(
+            context=sample_tool_context,
+            component="form",
+            title="请确认收货信息",
+            formFields=[
+                {"key": "customer_phone", "label": "手机号", "value": "13800138000"},
+                {"key": "customer_address", "label": "地址", "value": "杭州市西湖区文三路1号"},
+            ],
+        )
+        payload = json.dumps(result.data, ensure_ascii=False)
+        assert "13800138000" not in payload
+        assert "138****8000" in payload
+
+    async def test_staff_card_not_masked(self, tool, admin_tool_context):
+        """B 端不脱敏：客服要照着实号码联系顾客。"""
+        result = await tool.execute(
+            context=admin_tool_context,
+            component="confirm",
+            title="请确认客户信息",
+            fields=[{"label": "手机号", "value": "13800138000"}],
+        )
+        assert "13800138000" in json.dumps(result.data, ensure_ascii=False)
+
+    async def test_option_value_ids_untouched(self, tool, sample_tool_context):
+        """`options[].value` 是回传协议值 —— 脱敏会让"选了什么"丢失。"""
+        result = await tool.execute(
+            context=sample_tool_context,
+            component="choice",
+            title="选一下",
+            # ⚠️ value 里**故意放手机号形态**：否则"给协议值也脱敏"这个变异检测不出来
+            # （首版 value 是 `proc_item_pi1`，脱敏对它无影响 → M117 变异存活，属假守卫）
+            options=[{"label": "打孔 13800138000", "value": "opt_13800138000"}],
+        )
+        data = result.data
+        vals = [o.get("value") for o in data.get("options", [])]
+        assert "opt_13800138000" in vals, f"协议值被改动（客户端回传会认不出）: {vals}"
+        labels = json.dumps([o.get("label") for o in data.get("options", [])], ensure_ascii=False)
+        assert "13800138000" not in labels, "选项标签里的手机号应脱敏（顾客看得到）"
+
+    async def test_order_number_in_card_untouched(self, tool, sample_tool_context):
+        result = await tool.execute(
+            context=sample_tool_context,
+            component="confirm",
+            title="请确认订单信息",
+            fields=[{"label": "订单号", "value": "20260913027050006"}],
+        )
+        assert "20260913027050006" in json.dumps(result.data, ensure_ascii=False), \
+            "订单号不得被误当手机号脱敏"
