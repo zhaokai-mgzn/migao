@@ -256,3 +256,78 @@ class TestScenarioFlow:
              "ai_text": "", "tools": [], "interactive": [], "error": None},
         ]})
         assert "换窗口" in out, "transcript 必须标出换窗口（证据要能看出会话边界）"
+
+
+class TestRepeatUntilRound:
+    """`repeat_until`：协作型顾客**一直答卡直到目标达成**（issue #3379 剧本方差）。
+
+    为什么要它：剧本的轮数是**固定**的，而 agent 的卡序与轮数随模型变化 ——
+    实测 C-A1 在 8 轮里有时走不到下单（同代码同剧本交替出现，验收 2 条违规：
+    「confirm 卡未出现」「order_create 未调用」）。这类方差会训练人忽略验收红灯。
+    `repeat_until` 把"轮数"从**剧本假设**变成**产品事实**：目标没达成就继续合作下去，
+    达成就停（并记录实际用了多少轮 —— 那也是有价值的能力证据）。
+    """
+
+    def _run(self, scenario, events):
+        import asyncio
+        seq = list(events)
+        sent = []
+
+        async def fake_new(token):
+            return "s1"
+
+        async def fake_close(token, sid):
+            return None
+
+        async def fake_send(sid, token, text, images=None):
+            sent.append(text)
+            return seq.pop(0) if seq else {"text": "", "tool_calls": [], "tool_results": [],
+                                           "interactive": [], "cards": [], "error": None, "done": True}
+
+        orig = (ar._new_session, ar._close_session, ar.send)
+        ar._new_session, ar._close_session, ar.send = fake_new, fake_close, fake_send
+        try:
+            return asyncio.run(ar.run_scenario(scenario, "tok")), sent
+        finally:
+            ar._new_session, ar._close_session, ar.send = orig
+
+    def _ev(self, tools=(), cards=()):
+        return {"text": "好的", "tool_calls": [{"name": t, "args": {}} for t in tools],
+                "tool_results": [], "interactive": list(cards), "cards": [],
+                "error": None, "done": True}
+
+    def test_stops_when_goal_reached(self):
+        sc = {"id": "C-A1", "title": "t", "rounds": [
+            {"text": "我要买窗帘"},
+            {"repeat_until": {"tool_called": "order_create", "max": 5},
+             "click": "auto", "fallback": "确认"},
+        ]}
+        # 第 3 次重复时下单成功 → 应停止（总轮数 = 1 + 3）
+        events = [self._ev(), self._ev(cards=[{"type": "confirm", "confirmValue": "确认下单"}]),
+                  self._ev(cards=[{"type": "confirm", "confirmValue": "确认下单"}]),
+                  self._ev(tools=["order_create"])]
+        res, sent = self._run(sc, events)
+        assert len(res["rounds"]) == 4, f"应在目标达成后停止，实际跑了 {len(res['rounds'])} 轮"
+        assert res["rounds"][-1]["tools"][0]["name"] == "order_create"
+
+    def test_stops_at_max_when_goal_unreachable(self):
+        """目标始终未达成 → 不得无限循环（走满 max 就停，缺口由断言如实报出）。"""
+        sc = {"id": "C-A1", "title": "t", "rounds": [
+            {"repeat_until": {"tool_called": "order_create", "max": 3}, "click": "auto",
+             "fallback": "确认"},
+        ]}
+        res, sent = self._run(sc, [self._ev()] * 6)
+        assert len(res["rounds"]) == 3, f"max 未被遵守: {len(res['rounds'])}"
+
+    def test_repeat_uses_cooperative_answers(self):
+        """重复轮仍按 `click: auto` 作答（有什么卡答什么卡），不是无脑发同一句话。"""
+        sc = {"id": "C-A1", "title": "t", "rounds": [
+            {"repeat_until": {"tool_called": "order_create", "max": 2}, "click": "auto",
+             "fallback": "确认"},
+        ]}
+        events = [self._ev(cards=[{"type": "choice", "options": [{"label": "纳米圈打孔", "value": "pi1"}]}]),
+                  self._ev(tools=["order_create"])]
+        _res, sent = self._run(sc, events)
+        # 第 1 次重复时还没有卡 → 用 fallback；卡出现后**必须按卡作答**（不是无脑重发同一句）
+        assert sent[0] == "确认", f"无卡时应走 fallback: {sent}"
+        assert sent[1] == "纳米圈打孔", f"重复轮未按卡作答: {sent}"

@@ -21,6 +21,7 @@ import importlib.util
 import json
 import os
 import sys
+import time
 from pathlib import Path
 
 import httpx
@@ -268,6 +269,32 @@ def resolve_action(rd: dict, rounds: list) -> str:
     return str(rd.get("fallback") or rd.get("text") or "")
 
 
+def tool_called_in(rounds: list, tool: str) -> bool:
+    """该工具是否已被成功/已调用过（供 `repeat_until` 的达成判定）。"""
+    if not tool:
+        return False
+    return any(
+        tool in str(t.get("name") or "")
+        for r in (rounds or [])
+        for t in (r.get("tools") or [])
+    )
+
+
+def repeat_wanted(rd: dict, rounds: list) -> tuple:
+    """`repeat_until` 判定 → (是否继续重复, 还要几轮 / max)。
+
+    协议动机（issue #3379 剧本方差）：剧本轮数固定，而 agent 卡序与轮数随模型变化 ——
+    实测 C-A1 有时 8 轮内走不到下单，同代码同剧本交替出现红/绿。
+    把"轮数"从**剧本假设**变成**产品事实**：目标未达成 → 继续合作；达成 → 停。
+    """
+    spec = (rd or {}).get("repeat_until")
+    if not isinstance(spec, dict):
+        return False, 0
+    max_n = int(spec.get("max") or 5)
+    want = str(spec.get("tool_called") or "")
+    return (not tool_called_in(rounds, want)), max_n
+
+
 def wants_new_session(rd: dict) -> bool:
     """`{"session": "new"}` = 顾客换个窗口/新开会话回来（验收剧本必需的真实动作）。"""
     return str((rd or {}).get("session") or "").strip().lower() == "new"
@@ -347,25 +374,52 @@ async def run_scenario(sc: dict, token: str) -> dict:
     sessions = [session_id]
 
     rounds = []
-    for i, rd in enumerate(sc.get("rounds", [])):
+    _spec = list(sc.get("rounds", []))
+    i = 0
+    while i < len(_spec):
+        rd = _spec[i]
         if wants_new_session(rd):
             await _close_session(token, session_id)
             session_id = await _new_session(token)
             sessions.append(session_id)
-        text = resolve_action(rd, rounds)
-        images = rd.get("images") or []
-        res = await send(session_id, token, text, images)
-        rounds.append({
-            "round": i + 1,
-            "session": session_id,
-            "user_text": text,
-            "user_images": len(images),
-            "ai_text": res["text"],
-            "tools": res["tool_calls"],
-            "interactive": res["interactive"],
-            "error": res["error"],
-        })
-        await asyncio.sleep(0.6)
+        # repeat_until（issue #3379）：目标未达成就继续以"协作型顾客"的方式答卡，
+        # 达成立即停；走满 max 也停（缺口交由剧本断言如实报出，绝不无限循环）。
+        keep_going, budget = repeat_wanted(rd, rounds)
+        # 墙钟上限（issue #3379）：`max` 只限**轮数**，但单轮可能极慢（模型长思考/SSE 卡住）
+        # —— 首版实测把验收步骤拖到 13min+ 仍未结束（CI 上被迫取消两次）。
+        # 轮数与时间**双上限**，任一到达即停，缺口交由断言如实报出。
+        _deadline_ts = time.monotonic() + float(os.environ.get("ACCEPTANCE_REPEAT_BUDGET_S", "240"))
+        repeat = 0
+        while True:
+            text = resolve_action(rd, rounds)
+            images = rd.get("images") or []
+            res = await send(session_id, token, text, images)
+            rounds.append({
+                "round": len(rounds) + 1,
+                "session": session_id,
+                "user_text": text,
+                "user_images": len(images),
+                "ai_text": res["text"],
+                "tools": res["tool_calls"],
+                "interactive": res["interactive"],
+                "error": res["error"],
+                "spec_index": i,
+            })
+            await asyncio.sleep(0.6)
+            if not keep_going:
+                break
+            repeat += 1
+            if tool_called_in(rounds, str((rd.get("repeat_until") or {}).get("tool_called") or "")):
+                break
+            if repeat >= budget:
+                print(f"  ⏹ repeat_until 达轮数上限 max={budget}（目标未达成，交断言报出）", flush=True)
+                break
+            if time.monotonic() >= _deadline_ts:
+                print(f"  ⏹ repeat_until 达墙钟上限 "
+                      f"{os.environ.get('ACCEPTANCE_REPEAT_BUDGET_S', '240')}s（目标未达成）",
+                      flush=True)
+                break
+        i += 1
 
     return {"id": sc["id"], "title": sc["title"], "domain": sc.get("domain", ""),
             "scenario": {"checks": sc.get("checks") or []},
@@ -407,10 +461,11 @@ async def main():
     date = os.environ.get("ACCEPTANCE_DATE", "local")
     sha = os.environ.get("GITHUB_SHA", "local")[:8]
     token = await login()
-    print(f"PERSONA={PERSONA} | token={'真实登录' if token else 'X-Debug-Role'}")
+    print(f"PERSONA={PERSONA} | token={'真实登录' if token else 'X-Debug-Role'}", flush=True)
     all_issues = []
     for sc in scenarios:
         print("\n" + "=" * 70)
+        print(f"▶ 开始场景 {sc.get('id')}（{len(sc.get('rounds') or [])} 段）", flush=True)
         result = await run_scenario(sc, token)
         issues = evaluate_checks(sc.get("checks") or [], result["rounds"])
         result["issues"] = issues

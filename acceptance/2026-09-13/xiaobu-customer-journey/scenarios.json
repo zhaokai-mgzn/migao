@@ -18,18 +18,12 @@
         "text": "数量 3 米"
       },
       {
+        "repeat_until": {
+          "tool_called": "order_create",
+          "max": 5
+        },
         "click": "auto",
         "fallback": "确认下单"
-      },
-      {
-        "click": "auto",
-        "fallback": "123456"
-      },
-      {
-        "text": "123456"
-      },
-      {
-        "text": "确认下单"
       }
     ],
     "checks": [
@@ -102,6 +96,12 @@
         "level": "L2",
         "type": "ai_text_not_contains",
         "expect": "13800138000",
+        "ref": "*"
+      },
+      {
+        "level": "L2",
+        "type": "ai_text_contains",
+        "expect": "订单",
         "ref": "*"
       }
     ]
