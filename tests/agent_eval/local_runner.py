@@ -1532,14 +1532,19 @@ async def check_amount_verify(token: str, results: list, amount_verify: list) ->
     return issues
 
 
-_UUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
+# id 形态：UUID（带/不带连字符）或 32 位 hex —— ai-agent 的 order_create 返回的 `id`
+# 实测是 **32 位 hex**（无连字符），而 admin-api `GET /orders/{id}` 的 path 正则接受
+# `[0-9a-fA-F-]+`。首版只认带连字符的 UUID → 32 位 hex 被当成"订单号"去走关键词搜索
+# → 搜不到 → 误报"订单查不到明细"（run 34726267496 实测的假失败）。
+_ID_LIKE_RE = re.compile(r"^[0-9a-fA-F-]{20,}$")
 
 
 async def _fetch_order_detail(token: str, order_ref: str) -> dict | None:
-    """按订单号（或 id）查 admin-api 订单详情，返回响应体；查不到返回 None。
+    """按订单 id（UUID/32 位 hex）或订单号查 admin-api 订单详情；查不到返回 None。
 
-    为什么走列表接口再查详情：订单号不是主键（`GET /orders/{id}` 只接受 UUID），
-    而 `order_create` 结果里同时有 `id` 与 `orderNo` —— 优先用 id，回退用 keyword 搜订单号。
+    两条路径都试：先按 id 直查（`GET /orders/{id}`），不成立再按**关键词搜订单号**
+    （`GET /orders?keyword=` 拿 id 再查详情）—— 单靠任一条都会漏（实测：32 位 hex 走
+    关键词搜不到；而订单号 `2026…` 不是合法 path 参数）。
     """
     ref = str(order_ref or "").strip()
     if not ref:
@@ -1547,16 +1552,19 @@ async def _fetch_order_detail(token: str, order_ref: str) -> dict | None:
     try:
         async with httpx.AsyncClient() as c:
             h = _admin_headers(token)
-            oid = ref
-            if not _UUID_RE.match(ref):
-                r = await c.get(f"{ADMIN_API}/api/admin/orders", headers=h,
-                                params={"keyword": ref, "page": 1, "size": 1}, timeout=15)
-                items = (_safe_json(r, {}) or {}).get("data", {}).get("items", []) or []
-                if not items:
-                    return None
-                oid = str(items[0].get("id") or "")
-                if not oid:
-                    return None
+            if _ID_LIKE_RE.match(ref):
+                rd = await c.get(f"{ADMIN_API}/api/admin/orders/{ref}", headers=h, timeout=15)
+                body = _safe_json(rd, None)
+                if isinstance(body, dict) and body.get("data"):
+                    return body
+            r = await c.get(f"{ADMIN_API}/api/admin/orders", headers=h,
+                            params={"keyword": ref, "page": 1, "size": 1}, timeout=15)
+            items = (_safe_json(r, {}) or {}).get("data", {}).get("items", []) or []
+            if not items:
+                return None
+            oid = str(items[0].get("id") or "")
+            if not oid or oid == ref:
+                return None
             rd = await c.get(f"{ADMIN_API}/api/admin/orders/{oid}", headers=h, timeout=15)
             body = _safe_json(rd, None)
             return body if isinstance(body, dict) and body.get("data") else None
@@ -1586,8 +1594,19 @@ async def check_db_verify(token: str, db_verify: list, results: list | None = No
                 issues.append(
                     f"db_verify[order_items]: 找不到 {src} 的成功调用（无订单可核对）—— 判失败而非跳过")
                 continue
-            ref = str(data.get("id") or data.get("orderNo") or "")
-            detail = await _fetch_order_detail(token, ref)
+            # id 与 orderNo 都当候选（ai-agent 返回 id=32 位 hex、orderNo=2026… 两者都可能是
+            # 能被 admin-api 接受的那个形态），逐个尝试到拿到详情为止
+            cands = [str(data.get("id") or ""), str(data.get("orderNo") or "")]
+            ref, detail = "", None
+            for _c in cands:
+                if not _c:
+                    continue
+                detail = await _fetch_order_detail(token, _c)
+                if detail:
+                    ref = _c
+                    break
+            if not detail:
+                ref = cands[0] or cands[1]
             items = ((detail or {}).get("data") or {}).get("items") or []
             if not items:
                 issues.append(f"db_verify[order_items]: 订单 {ref} 查不到明细（未落库？）")

@@ -2335,6 +2335,69 @@ def _order_round(rnd, items, ok=True, total=None):
     }
 
 
+class TestFetchOrderDetailPaths:
+    """订单详情抓取的**路径选择**（issue #3367 实测假失败）。
+
+    ai-agent 的 `order_create` 返回 `id` 实测是 **32 位 hex（无连字符）**，
+    而首版只认"带连字符的 UUID" → 32 位 hex 被当成订单号去走关键词搜索 → 搜不到
+    → 误报"订单查不到明细（未落库？）"。实测同跑 DB 审计 `orders=7`（订单确实落库了），
+    即**假失败**：这类错误会把评测工具的可信度直接打掉。
+    """
+
+    class _Resp:
+        status_code = 200          # _safe_json 走 resp.content（不是 .json()）——
+                                   # 缺 content 会被 except 吞成 None，测出来是"假失败"
+                                   # （我第一版测试替身就漏了它，白查了一轮）
+
+        def __init__(self, payload):
+            import json as _j
+            self._p = payload
+            self.content = _j.dumps(payload, ensure_ascii=False).encode()
+
+        def json(self):
+            return self._p
+
+    def _patched(self, calls, detail_payload, list_items):
+        import unittest.mock as mock
+
+        class _Client:
+            async def __aenter__(self_inner):
+                return self_inner
+
+            async def __aexit__(self_inner, *a):
+                return False
+
+            async def get(self_inner, url, **kw):
+                calls.append((url, (kw or {}).get("params")))
+                if url.rstrip('/').endswith("/orders") or "/orders?" in url:
+                    return TestFetchOrderDetailPaths._Resp(
+                        {"data": {"items": list_items}})
+                return TestFetchOrderDetailPaths._Resp(detail_payload)
+
+        return mock.patch.object(lr.httpx, "AsyncClient", lambda *a, **k: _Client())
+
+    def test_hex_id_is_fetched_directly(self):
+        calls = []
+        detail = {"data": {"orderNo": "x", "items": [{"productName": "遮光窗帘", "quantity": 2}]}}
+        with self._patched(calls, detail, []):
+            out = asyncio.run(lr._fetch_order_detail("tok", "1c3661962eb3504935cb551d16a9c7f0"))
+        assert out == detail, "32 位 hex id 必须能直查到订单（首版这里是假失败）"
+        assert any(u.endswith("/orders/1c3661962eb3504935cb551d16a9c7f0") for u, _ in calls)
+
+    def test_order_no_falls_back_to_keyword_search(self):
+        calls = []
+        detail = {"data": {"orderNo": "20260101000000001", "items": []}}
+        with self._patched(calls, detail, [{"id": "a1b2c3d4-e5f6-4a7b-8c9d-000000000001"}]):
+            out = asyncio.run(lr._fetch_order_detail("tok", "20260101000000001"))
+        assert out == detail
+        assert any(p and p.get("keyword") == "20260101000000001" for _, p in calls), \
+            "订单号必须先走关键词搜索（它不是合法 path 参数）"
+
+    def test_unknown_ref_returns_none(self):
+        with self._patched([], {"data": {}}, []):
+            assert asyncio.run(lr._fetch_order_detail("tok", "不存在的订单号")) in (None, {"data": {}})
+
+
 class TestAmountVerifyChecksRobustness:
     """`checks` 必须是**列表**语义 —— 字符串形态此前让金额断言静默失效（issue #3367）。
 
