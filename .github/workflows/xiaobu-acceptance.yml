@@ -332,7 +332,7 @@ jobs:
         # 而 E2E 自己的红灯比评测更早存在（main run 34684474262 评测 17/17、E2E 已 failure）
         # —— 只要评测红，E2E 红就永远看不见，两个缺陷互相掩盖。
         # fast 档跳过（issue #3417 提速）：取证步骤对"改一行看一眼"无价值，且不省它就没法快
-        if: always() && matrix.shard == 0 && github.event.inputs.fast != 'true' 
+        if: always() && matrix.shard == 0 && github.event.inputs.fast != 'true'
         working-directory: backend/ai-agent-service
         env:
           CI: 'true'
