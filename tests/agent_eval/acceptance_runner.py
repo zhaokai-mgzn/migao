@@ -220,14 +220,54 @@ def ua_items(checks: list) -> list:
             if isinstance(c, dict) and str(c.get("level") or "").upper() == "UA"]
 
 
-def resolve_action(rd: dict, rounds: list) -> str:
+# 验证码供给（issue #3431）：C-A1 的剧本里**没有验证码轮**，而小布下单要码
+# （「为了您的账户安全，创建订单前需要验证手机号。请输入短信验证码」）——
+# 于是剧本能否走完，取决于"模型这一跑恰好没要求验证码"：实测同一剧本两次结果不同
+# （run 34766277197 L1=0 通过 / run 34767663158 order_create 未调用 → L1=1）。
+# 真实顾客被要求验证码时会**把码发过去**；剧本必须能表达这件事，否则"验收通过"带运气成分。
+_CODE_HINTS = ("验证码", "校验码", "短信码", "动态码")
+DEFAULT_SMS_CODE = os.environ.get("SMS_BYPASS_CODE") or "123456"
+
+
+def needs_code(rounds: list) -> bool:
+    """agent 是否正在索要验证码（文字索要，或上一轮写调用**因缺码失败**）。
+
+    两条判据与评测侧 `needs_verification_code` 同源（issue #3430 实证）：
+    agent 会**重发同一张确认卡**、而写调用在后台因缺码失败 —— 只看文字会漏这种形态。
+    """
+    if not rounds:
+        return False
+    last = rounds[-1] or {}
+    if any(h in str(last.get("ai_text") or "") for h in _CODE_HINTS):
+        return True
+    for tr in (last.get("tool_results") or []):
+        res = (tr or {}).get("result") if isinstance((tr or {}).get("result"), dict) else {}
+        if not res or res.get("success"):
+            continue
+        blob = f"{res.get('error') or ''} {res.get('message') or ''}"
+        if any(h in blob for h in _CODE_HINTS) or "短信" in blob:
+            return True
+    return False
+
+
+def resolve_action(rd: dict, rounds: list, default_code: str = DEFAULT_SMS_CODE) -> str:
     """把剧本动作翻译成本轮实际要发的消息。
 
     支持 `{"click": "first_option"|"confirm"}`（点卡，按前端协议作答），
     取不到卡时用 `fallback` 文本（真实顾客遇到没卡就说话）。
+
+    **验证码优先于答卡**（issue #3431）：agent 索要验证码（或写调用因缺码失败）时，
+    顾客会把码发过去 —— 若仍按"有卡答卡"处理，agent 重发确认卡 + 后台写调用缺码，
+    剧本会一轮轮点卡、**码永远送不出去**、整场卡死（评测侧踩过同一个坑，见 #3430）。
     """
     if "click" not in rd:
-        return str(rd.get("text") or "")
+        explicit = str(rd.get("text") or "")
+        if explicit:
+            return explicit
+        # 无显式文本的轮（如只有 fallback 的收尾轮）：agent 在要码就供码，否则留空
+        if needs_code(rounds):
+            return str(rd.get("code") or default_code)
+        return ""
     last = (rounds or [{}])[-1] if rounds else {}
     cards = last.get("interactive") or []
     by_comp = {}
@@ -235,7 +275,10 @@ def resolve_action(rd: dict, rounds: list) -> str:
         by_comp.setdefault(str(iv.get("type") or iv.get("component") or ""), iv)
     kind = str(rd.get("click") or "")
     if kind == "auto":
-        # 有什么卡答什么卡（优先级与评测 harness 一致：confirm > choice > form）
+        # ① 明确在要码 → 供码（优先于答卡：码不供就只能原地打转，见上面 docstring）
+        if needs_code(rounds):
+            return str(rd.get("code") or default_code)
+        # ② 有什么卡答什么卡（优先级与评测 harness 一致：confirm > choice > form）
         # —— 剧本不能依赖"卡一定按我写的顺序出现"：卡的顺序随模型变化，
         # 固定 click 会把**剧本错位**报成**产品问题**（本 session C-A1 实测）。
         if "confirm" in by_comp:
@@ -375,6 +418,9 @@ async def run_scenario(sc: dict, token: str) -> dict:
 
     rounds = []
     _spec = list(sc.get("rounds", []))
+    # 剧本级验证码（issue #3431）：真实顾客被要求验证码就会发过去；剧本不写则用
+    # 环境变量 SMS_BYPASS_CODE（与 dev/CI 栈同源），默认 123456。
+    _code = str(sc.get("code") or DEFAULT_SMS_CODE)
     i = 0
     while i < len(_spec):
         rd = _spec[i]
@@ -391,7 +437,7 @@ async def run_scenario(sc: dict, token: str) -> dict:
         _deadline_ts = time.monotonic() + float(os.environ.get("ACCEPTANCE_REPEAT_BUDGET_S", "240"))
         repeat = 0
         while True:
-            text = resolve_action(rd, rounds)
+            text = resolve_action(rd, rounds, default_code=_code)
             images = rd.get("images") or []
             res = await send(session_id, token, text, images)
             rounds.append({
@@ -402,6 +448,8 @@ async def run_scenario(sc: dict, token: str) -> dict:
                 "ai_text": res["text"],
                 "tools": res["tool_calls"],
                 "interactive": res["interactive"],
+                # 供 needs_code 判定"写调用因缺码失败"（issue #3431）
+                "tool_results": res.get("tool_results") or [],
                 "error": res["error"],
                 "spec_index": i,
             })

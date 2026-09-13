@@ -1,4 +1,4 @@
-# case_ids: CH-010, OR-017, OR-018
+# case_ids: CH-010, OR-017, OR-018, CH-025
 """验收 runner 的协议合规能力（issue #3367，acceptance-protocol §4/§5/§6.2）。
 
 协议 §6.2 明确列了三处差距：
@@ -331,3 +331,72 @@ class TestRepeatUntilRound:
         # 第 1 次重复时还没有卡 → 用 fallback；卡出现后**必须按卡作答**（不是无脑重发同一句）
         assert sent[0] == "确认", f"无卡时应走 fallback: {sent}"
         assert sent[1] == "纳米圈打孔", f"重复轮未按卡作答: {sent}"
+
+
+class TestScenarioCodeSupply:
+    """验收剧本必须能**供验证码**（issue #3431）。
+
+    实证（同一剧本两次结果不同）：
+      · run 34766277197 → L1 违规 0 条（那一次模型没要码 → 下单成功）
+      · run 34767663158 → R8/R9 两轮都只重复「请输入短信验证码」→ `order_create` 未调用 → L1=1
+    根因：C-A1 的剧本里**没有验证码轮**（`click: auto` 只能点卡，验证码是文本诉求），
+    于是"验收通过"带运气成分 —— 而验收剧本是**独立判定源**，不能靠运气。
+    """
+
+    _CARD_ROUND = {"interactive": [{"type": "confirm", "confirmValue": "确认：商品=遮光窗帘"}],
+                   "ai_text": "", "tool_results": []}
+
+    def test_needs_code_on_text_request(self):
+        rounds = [{"ai_text": "为了您的账户安全，创建订单前需要验证手机号。请输入短信验证码",
+                   "tool_results": []}]
+        assert ar.needs_code(rounds) is True
+
+    def test_needs_code_when_write_failed_for_missing_code(self):
+        """agent 重发确认卡、写调用在后台因缺码失败 —— 只看文字会漏这种形态（#3430 同源）。"""
+        rounds = [{"ai_text": "", "interactive": [],
+                   "tool_results": [{"tool": "order_create",
+                                     "result": {"success": False, "error": "缺少短信验证码"}}]}]
+        assert ar.needs_code(rounds) is True
+
+    def test_no_code_needed_plain_round(self):
+        assert ar.needs_code([{"ai_text": "请问您要做单幅还是双开呢？", "tool_results": []}]) is False
+
+    def test_code_wins_over_card_answering(self):
+        """**关键**：要码时优先供码，而不是继续点卡（否则码永远送不出去，整场卡死）。"""
+        rounds = [{"ai_text": "请输入短信验证码", "interactive": self._CARD_ROUND["interactive"]}]
+        out = ar.resolve_action({"click": "auto", "fallback": "确认下单"}, rounds,
+                                default_code="123456")
+        assert out == "123456", f"要码时却去答卡（会原地打转）：{out!r}"
+
+    def test_card_answered_when_no_code_needed(self):
+        rounds = [dict(self._CARD_ROUND, ai_text="请核对订单信息")]
+        out = ar.resolve_action({"click": "auto", "fallback": "确认下单"}, rounds,
+                                default_code="123456")
+        assert out == "确认：商品=遮光窗帘", out
+
+    def test_fallback_used_when_nothing_pending(self):
+        out = ar.resolve_action({"click": "auto", "fallback": "确认下单"},
+                                [{"ai_text": "嗯嗯", "interactive": []}], default_code="123456")
+        assert out == "确认下单"
+
+    def test_round_level_code_overrides_default(self):
+        rounds = [{"ai_text": "请输入验证码", "interactive": []}]
+        out = ar.resolve_action({"click": "auto", "fallback": "确认", "code": "654321"}, rounds,
+                                default_code="123456")
+        assert out == "654321"
+
+    def test_explicit_text_round_is_respected(self):
+        """显式文本轮不能被供码逻辑改写（剧本意图优先）。"""
+        rounds = [{"ai_text": "请输入验证码", "interactive": []}]
+        assert ar.resolve_action({"text": "数量 3 米"}, rounds) == "数量 3 米"
+
+    def test_ca1_scenario_declares_code(self):
+        """C-A1 必须显式声明验证码（自文档；不依赖 runner 默认值）。"""
+        import json as _json
+        repo = Path(__file__).resolve().parents[3]
+        p = repo / "acceptance" / "2026-09-13" / "xiaobu-customer-journey" / "scenarios.json"
+        data = _json.loads(p.read_text(encoding="utf-8"))
+        items = data if isinstance(data, list) else data.get("scenarios") or []
+        ca1 = next(x for x in items if x.get("id") == "C-A1")
+        assert str(ca1.get("code") or "").strip(), (
+            "C-A1 未声明 code —— 剧本走不走得完就又取决于模型要不要码（issue #3431）")
