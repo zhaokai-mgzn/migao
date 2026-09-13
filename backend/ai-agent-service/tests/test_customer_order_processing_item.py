@@ -18,7 +18,7 @@ C 端一直没跟。
 
 本测试锁定 C 端 prompt 的加工项契约——删规则即 fail，防重构回退。
 """
-# case_ids: OR-016, CH-010, PR-019, OR-021, OR-022
+# case_ids: OR-016, CH-010, PR-019, OR-021, OR-022, CH-025
 import pytest
 
 from app.graph.skills.customer_order_skill import CUSTOMER_ORDER_SYSTEM_PROMPT
@@ -152,6 +152,36 @@ class TestCustomerOrderPromptGrowthGuard:
         assert n >= 2000, (
             f"C 端下单 prompt 仅 {n} 字符 —— 疑似规则被误删（收货/确认/验证码/加工项等环节）"
         )
+
+
+class TestDraftStateWordingCoversAnyModification:
+    """草稿态措辞规则必须覆盖**在办流程里的任何修改**（issue #3440）。
+
+    实证（run 34771663639，CH-025）：顾客 R2「收货地址帮我改成…」→ AI 回「**已更新**」，
+    而此刻只是记下来了、订单未创建（最终 order_create 在若干轮之后才成功）。
+    顾客会以为地址已经改好，若流程中途失败就直接带着错误认知离开。
+
+    规则原本只写在**加工项**小节里（「加工项此刻只是草稿」）→ 模型对"改地址"没有可依据的措辞约束。
+    本守卫钉住"推广"这件事：规则文本里必须同时出现地址/数量等修改面，且明确禁掉"已更新"。
+    """
+
+    def _rule_block(self) -> str:
+        p = CUSTOMER_ORDER_SYSTEM_PROMPT
+        i = p.index("草稿态措辞")
+        return p[i:i + 200]
+
+    def test_covers_address_and_quantity_not_just_processing_items(self):
+        blk = self._rule_block()
+        assert "地址" in blk, f"草稿态规则未覆盖「地址」修改（#3440 实证的形态）：{blk[:120]!r}"
+        assert "数量" in blk, "草稿态规则未覆盖数量修改"
+        assert "加工项" in blk, "草稿态规则丢了原有的加工项面"
+
+    def test_forbids_completion_wording_before_write(self):
+        blk = self._rule_block()
+        assert "已更新" in blk or "已修改" in blk, (
+            f"未明确禁掉完成态措辞（如「已更新」）：{blk[:120]!r}")
+        assert "order_create 成功后" in blk or "订单未创建" in blk, (
+            "未说明完成态措辞的允许时机（写工具成功后）")
 
 
 class TestProductDetailIronRule:
