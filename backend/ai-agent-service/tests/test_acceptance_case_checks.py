@@ -903,6 +903,48 @@ class TestRoundTraceToolOutcomes:
         assert "failed=" not in lr.format_round_trace(trace)
 
 
+class TestRoundTraceWriteArgs:
+    """写工具入参必须进轨迹（issue #3394）：数量/金额错的唯一归因证据。
+
+    实证代价：OR-022 落库数量 9（期望 3），旧轨迹只有 `tools=[order_create]` 与结果摘要 →
+    无法区分「模型一次就传 9」与「重复行各 3」，为此多花了一整轮 CI + 一个最终不适用的
+    工具层守卫（DB 明细证明是**单行 ×9**）。
+    """
+
+    def _results(self):
+        return [{
+            "__round": 3,
+            "tool_calls": [
+                {"name": "order_create", "args": {
+                    "customer_name": "张三", "customer_phone": "13800138000", "sms_code": "123456",
+                    "items": [{"product_name": "遮光窗帘", "quantity": 9,
+                               "unit_price": 168.0, "subtotal": 1512.0}]}},
+                {"name": "product_search", "args": {"keyword": "窗帘"}},
+            ],
+            "tool_results": [], "cards": [], "interactive": [], "final_text": "ok",
+        }]
+
+    def test_write_args_recorded_with_quantity(self):
+        trace = lr.build_round_trace(self._results())
+        wa = trace[0]["write_args"]
+        assert len(wa) == 1 and wa[0]["tool"] == "order_create", wa
+        assert wa[0]["args"]["items"][0]["qty"] == 9, "数量必须可查（归因唯一证据）"
+
+    def test_read_tool_not_recorded(self):
+        trace = lr.build_round_trace(self._results())
+        assert all(w["tool"] != "product_search" for w in trace[0]["write_args"])
+
+    def test_phone_masked_and_code_hidden(self):
+        trace = lr.build_round_trace(self._results())
+        a = trace[0]["write_args"][0]["args"]
+        assert a["customer_phone"] == "138****8000", "轨迹进 CI 日志，手机号必须掩码"
+        assert a["sms_code"] == "***"
+
+    def test_formatter_prints_quantity(self):
+        out = lr.format_round_trace(lr.build_round_trace(self._results()))
+        assert "遮光窗帘×9@168" in out, out
+
+
 class TestRoundTraceResultDigest:
     """结果的**载荷摘要**：区分「工具通了但没数据」与「有数据但不往下走」
 

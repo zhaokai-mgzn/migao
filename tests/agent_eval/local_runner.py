@@ -2293,6 +2293,41 @@ def _legacy_auto_select_first_option(results: list) -> str | None:
     return None
 
 
+def _compact_write_args(args: dict) -> dict:
+    """写工具入参的**归因摘要**（issue #3394）：保留"钱/量/收件人"证据，裁掉噪音并掩码 PII。
+
+    为什么需要：`order_create` 落库数量 9（期望 3）时，只有**入参**能区分
+    「模型一次就传 9」与「重复行各 3」—— 前者改模型/草稿层，后者改工具层守卫，
+    方向完全相反。实测为区分这一点多花了一整轮 CI。
+    """
+    if not isinstance(args, dict):
+        return {}
+    out: dict = {}
+    for k in ("customer_name", "action", "target_action", "tool_id"):
+        if args.get(k) not in (None, ""):
+            out[k] = str(args[k])[:24]
+    # 手机号掩码（轨迹会进 CI 日志）
+    for k in ("customer_phone", "phone", "receiver_phone"):
+        v = args.get(k)
+        if isinstance(v, str) and len(v) >= 7:
+            out[k] = v[:3] + "****" + v[-4:]
+    # 商品行：名称/数量/单价/小计 —— "数量错"类问题的核心证据
+    items = args.get("items")
+    if isinstance(items, list):
+        out["items"] = [
+            {
+                "name": str((it or {}).get("product_name") or "")[:24],
+                "qty": (it or {}).get("quantity"),
+                "unit_price": (it or {}).get("unit_price"),
+                "subtotal": (it or {}).get("subtotal"),
+            }
+            for it in items[:6] if isinstance(it, dict)
+        ]
+    if args.get("sms_code"):
+        out["sms_code"] = "***"
+    return out
+
+
 def build_round_trace(results: list) -> list:
     """构造逐轮轨迹：每轮的用户输入形态 / 工具 / 卡 / 回复摘要 / **工具成败**。
 
@@ -2350,6 +2385,21 @@ def build_round_trace(results: list) -> list:
                 }
                 for tc in (r.get("tool_calls") or [])
                 if str(tc.get("name", "")).lower() == "interact"
+            ],
+            # 写工具**入参**（issue #3394 诊断补强）：本字段是"钱算错"类问题的唯一证据缺口。
+            # 实测 OR-022/OR-021：DB 落库数量 9 与 6（期望 3），但轨迹只有 `tools=[order_create]`
+            # 与结果摘要 —— 无法判断是"模型一次就传了 9"（模型/草稿层累加）还是
+            # "重复行各 3"（工具层守卫可拦）。本轮为区分这一点，浪费了整整一轮 CI + 一次
+            # 工具层守卫（守卫最终证明不适用：DB 明细是**单行 ×9**）。
+            # 记法：只记**写工具**（数量/金额错的载体），字段按需裁剪；手机号**掩码**
+            # （轨迹进 CI 日志，不该留明文）。
+            "write_args": [
+                {
+                    "tool": str(tc.get("name", "")),
+                    "args": _compact_write_args(tc.get("args") or {}),
+                }
+                for tc in (r.get("tool_calls") or [])
+                if str(tc.get("name", "")).lower() in _WRITE_TOOL_NAMES
             ],
             # 截断：轨迹用于归因，不是全文存档（全文另见 final_text / 产物）
             "text": text[:60],
@@ -2466,6 +2516,18 @@ def format_round_trace(trace: list) -> str:
         ][:3]
         if digests:
             bits.append("data=" + ";".join(digests))
+        # 写工具**入参**（issue #3394）：数量/金额错时必须能看到模型到底传了什么
+        # （实测量 9 vs 期望 3 的归因靠这条，否则只能再花一轮 CI 猜）。
+        wa = t.get("write_args") or []
+        if wa:
+            def _one(w):
+                a = w.get("args") or {}
+                its = a.get("items") or []
+                body = "+".join(
+                    f"{i.get('name')}×{i.get('qty')}@{i.get('unit_price')}" for i in its) or ""
+                extra = ",".join(f"{k}={a[k]}" for k in ("customer_phone", "sms_code") if a.get(k))
+                return f"{w.get('tool')}{{{body}{(';' + extra) if extra else ''}}}"
+            bits.append("args=" + ",".join(_one(w) for w in wa[:3]))
         if t.get("interactive"):
             bits.append("cards=" + ",".join(t["interactive"]))
         # 调用侧的卡（含**被拦/失败**的，那些不会出现在 cards= 里）
