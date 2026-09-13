@@ -930,6 +930,24 @@ class TestRoundTraceWriteArgs:
         assert len(wa) == 1 and wa[0]["tool"] == "order_create", wa
         assert wa[0]["args"]["items"][0]["qty"] == 9, "数量必须可查（归因唯一证据）"
 
+    def test_calc_args_recorded(self):
+        """算料入参必须进轨迹（issue #3395）：只看到 `fabric_meters=9.0` 看不出"假设了什么"。
+
+        实测：模型把顾客的购买米数当窗宽 + 窗高默认 2.7 米 → 9 米布。没这条证据时
+        只能从结果摘要反推公式，浪费一轮 CI。
+        """
+        rounds = [{
+            "__round": 1,
+            "tool_calls": [{"name": "curtain_calc", "args": {
+                "window_width": 3.0, "window_height": 2.7, "fullness": 2.0,
+                "fabric_price": 168.0}}],
+            "tool_results": [], "cards": [], "interactive": [], "final_text": "",
+        }]
+        wa = lr.build_round_trace(rounds)[0]["write_args"]
+        assert len(wa) == 1 and wa[0]["tool"] == "curtain_calc", wa
+        assert wa[0]["args"]["window_width"] == 3.0
+        assert wa[0]["args"]["window_height"] == 2.7, "窗高必须可见（模型自造的假设）"
+
     def test_read_tool_not_recorded(self):
         trace = lr.build_round_trace(self._results())
         assert all(w["tool"] != "product_search" for w in trace[0]["write_args"])

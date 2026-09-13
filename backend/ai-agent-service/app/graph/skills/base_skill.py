@@ -1161,6 +1161,58 @@ def _capability_denial_reason(args: dict) -> str:
     return ""
 
 
+# ── 算料必须以"顾客给的窗户尺寸"为前提（issue #3395，DB 实证多收 3 倍钱）──────
+# 实证（run 34748745308，OR-022/OR-021）：顾客「我想买遮光窗帘，米白 **3 米**，要纳米圈打孔加工」
+# —— 说的是**买 3 米布**。模型把它当成「窗宽 3 米」，再把窗高默认成 2.7 米，于是：
+#     P = ceil((3+0.3)×2/2.8) = 3 幅，M = 3×(2.7+0.3) = **9.0 米**
+# → `order_create{遮光窗帘×9@168}`，落库 **¥1584**（顾客要的是 ¥528），另一跑还出现 ×9.3。
+# 顾客视角完全无法察觉"被多算 3 倍"，属金钱正确性缺陷。
+# 判据：会话里**出现过窗户尺寸措辞**才允许算料。为什么这样不卡死：模型缺尺寸时会先问，
+# 问过之后会话里自然出现「窗宽/窗高」→ 下一轮放行（自愈）；而顾客直接报"要 3 米"时，
+# 会话里永远不会有尺寸措辞 → 一直被拦，逼模型走"按米数下单"而不是"按窗宽算料"。
+_DIMENSION_HINTS = ("窗宽", "窗高", "宽度", "高度", "尺寸", "多宽", "多高", "米宽", "米高")
+
+
+def _conversation_mentions_dimensions(messages) -> bool:
+    """会话（用户 + 助手）里是否出现过窗户尺寸措辞。"""
+    for m in messages or []:
+        try:
+            content = str(getattr(m, "content", "") or "")
+        except Exception:
+            continue
+        if any(h in content for h in _DIMENSION_HINTS):
+            return True
+    return False
+
+
+async def _curtain_calc_dimension_block(tool_name: str, args: dict, tool_call: dict,
+                                        session_id: str, skill_name: str,
+                                        state: dict | None = None):
+    """无窗户尺寸证据时拦下 `curtain_calc`（返回 3 元组），否则放行（None）。"""
+    if tool_name != "curtain_calc":
+        return None
+    if _conversation_mentions_dimensions((state or {}).get("messages") or []):
+        return None
+    w = (args or {}).get("window_width")
+    h = (args or {}).get("window_height")
+    logger.warning(
+        f"[{skill_name}] 拦截无依据算料 curtain_calc "
+        f"window_width={w!r} window_height={h!r} | session={session_id}")
+    msg = (
+        f"你调用了算料工具，但**整个会话里顾客从未提供窗户尺寸**"
+        f"（你填的 window_width={w}、window_height={h} 是**你自己假设**的）。"
+        f"算料是按「窗宽 + 窗高 + 褶皱倍数」推导用布量（(窗宽+0.3)×褶皱倍数…），"
+        f"把顾客说的**购买米数**（「要 3 米」= 买 3 米布）当成窗宽会算出 3 倍布量，"
+        f"顾客会被多收 2~3 倍的钱。"
+        f"正确做法：顾客直接说「要 X 米」时，X 米就是**购买数量**，"
+        f"按数量下单即可（面料单价列 × 数量），**不要**再乘褶皱倍数或走算料；"
+        f"只有顾客给了**窗宽/窗高**（或明确说「算料/需要多少布」）时，才先问尺寸再算料。")
+    code = "curtain_calc_without_dimensions"
+    return (tool_call, json.dumps({"success": False, "error": code, "message": msg},
+                                  ensure_ascii=False),
+            {"success": False, "error": code, "message": msg})
+
+
 def _clear_write_input_error(full: dict) -> dict:
     out = dict(full or {})
     out.pop(WRITE_INPUT_ERROR_KEY, None)
@@ -2359,6 +2411,11 @@ async def execute_skill(
                     if tool is None:
                         logger.warning(f"[{skill_name}] Tool not found: {tool_name} | session={session_id}")
                         return tool_call, json.dumps({"success": False, "error": "tool_not_found", "message": f"工具 {tool_name} 不可用"}, ensure_ascii=False), {"success": False}
+                    # 算料前提守卫（issue #3395）：只读工具，故在读写分流之前单独接。
+                    _blocked_calc = await _curtain_calc_dimension_block(
+                        tool_name, args, tool_call, session_id, skill_name, state)
+                    if _blocked_calc is not None:
+                        return _blocked_calc
                     if not getattr(tool, "read_only", False):
                         _blocked3 = await _masked_phone_write_block(
                             tool_name, args, tool_call, session_id, skill_name,
