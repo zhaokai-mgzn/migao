@@ -11,6 +11,7 @@
 import asyncio
 import json
 import re
+from types import SimpleNamespace
 import time
 import traceback
 from typing import AsyncGenerator, Optional, List, Dict, Any, Union
@@ -647,6 +648,66 @@ def _filter_products_by_reference(content: str, products: Any) -> List[Dict[str,
 
 # ============ SSE 流生成器 ============
 
+def _mask_for_customer(text: str, context) -> str:
+    """C 端**出站文本**统一脱敏（issue #3379 P2-2 的真正收敛点）。
+
+    为什么必须在流式桥这一层：C 端回复有**两个生产者** ——
+      · `final_answer`（技能收尾，已在 base_skill 脱敏）；
+      · **`text_before_tools`**（模型调工具前的中间文本，由本文件直接流给顾客）。
+    实测 OR-017 R2（run 34735574206，复现型失败）泄露的正是中间文本那条路径，
+    在收尾处脱敏永远追不上已经流出去的文本。故把脱敏放到**唯一出站口**，
+    覆盖全部文本路径（中间文本 / 收尾文本 / 落库历史）。
+    B 端（商家/客服）不脱敏 —— 客服要照实号码联系顾客。
+    """
+    if str(getattr(context, "role", "") or "").lower() != "customer" or not text:
+        return text
+    try:
+        from app.utils.pii_mask import mask_pii
+        return mask_pii(text)
+    except Exception:
+        return text
+
+
+def _mask_card_for_customer(data: dict, context) -> dict:
+    """**出站**卡片脱敏（issue #3379）：顾客看到的卡片字段脱敏，模型上下文保持原值。
+
+    与工具层脱敏的区别（本轮实测踩到的坑）：
+      · 工具层脱敏 → 污染模型上下文与 `confirmValue`（顾客回传要精确匹配）→ 流程被搞坏；
+      · 出站层脱敏 → 只有顾客看到脱敏值，模型/状态/匹配链全程用真值。
+    只打**可见文本**：title / fields.label|value / formFields.label|value / options.label；
+    `options[].value` 与 `confirmValue` 是协议值，**不动**（回传要靠它们）。
+    """
+    if str(getattr(context, "role", "") or "").lower() != "customer" or not isinstance(data, dict):
+        return data
+    try:
+        from app.utils.pii_mask import mask_pii
+    except Exception:
+        return data
+    out = dict(data)
+    if isinstance(out.get("title"), str):
+        out["title"] = mask_pii(out["title"])
+
+    def _items(items, keys):
+        res = []
+        for it in items or []:
+            if not isinstance(it, dict):
+                res.append(it)
+                continue
+            node = dict(it)
+            for k in keys:
+                if isinstance(node.get(k), str):
+                    node[k] = mask_pii(node[k])
+            res.append(node)
+        return res
+
+    for key in ("fields", "formFields"):
+        if isinstance(out.get(key), list):
+            out[key] = _items(out[key], ("label", "value"))
+    if isinstance(out.get("options"), list):
+        out["options"] = _items(out["options"], ("label",))
+    return out
+
+
 async def _agent_stream_to_sse(
     agent: BaseAgent,
     message: Union[str, List[Dict[str, Any]]],
@@ -746,11 +807,16 @@ async def _agent_stream_to_sse(
                             xml_payload = _extract_interact_probable(clean)
                             if xml_payload:
                                 last_interactive_payload = xml_payload
-                                yield SSEEvent.interactive(xml_payload.get("component", ""), xml_payload)
+                                yield SSEEvent.interactive(
+                                    xml_payload.get("component", ""),
+                                    _mask_card_for_customer(xml_payload, context))
                             clean = _strip_interact_xml(clean)
                             if clean:
+                                # ⚠️ 只脱敏**出站**（SSE），`full_response` 保持原值：
+                                # 它是给**模型**看的上下文（下一轮还要用），脱敏会让模型
+                                # 以为顾客号码不完整（run 34736385849 实证：反过来问顾客要号码）。
                                 full_response.append(clean)
-                                yield SSEEvent.text(clean)
+                                yield SSEEvent.text(_mask_for_customer(clean, context))
 
                     elif response.type == "tool_call":
                         # Tool 调用通知（AgentExecutor 内部已处理执行）
@@ -794,7 +860,9 @@ async def _agent_stream_to_sse(
                                     data = result_dict.get("data", {})
                                     component_type = data.get("component", "")
                                     if component_type in ("choice", "confirm", "form"):
-                                        yield SSEEvent.interactive(component_type, data)
+                                        yield SSEEvent.interactive(
+                                            component_type,
+                                            _mask_card_for_customer(data, context))
 
                     elif response.type == "error":
                         # 错误（携带 traceback 诊断信息）
@@ -827,7 +895,7 @@ async def _agent_stream_to_sse(
                 assistant_content = "我已为您查询了相关信息，请查看上方的结果卡片。如需更多帮助请继续提问。"
             else:
                 assistant_content = "抱歉，我暂时无法生成回复，请稍后重试或联系人工客服。"
-            yield SSEEvent.text(assistant_content)
+            yield SSEEvent.text(_mask_for_customer(assistant_content, context))
 
         # 超时/异常时清除 tool_calls 元数据，避免泄漏到前端
         if timed_out:
@@ -1135,7 +1203,12 @@ async def _handle_page_request(
                     if tool_name == "processing_item_query":
                         interactive_payload["multiSelect"] = True
 
-                    yield SSEEvent.interactive("choice", interactive_payload)
+                    # ⚠️ 本函数没有 `context` 参数（首版照抄别处写成 context → NameError →
+                    # 被兜底成"翻页查询失败"，被 test_chat.py 的翻页用例当场抓住）。
+                    # 角色从 current_user 取，经 `_to_agent_role` 归一（与其它调用点同口径）。
+                    _role_ctx = SimpleNamespace(role=_to_agent_role(getattr(current_user, "role", "")))
+                    yield SSEEvent.interactive(
+                        "choice", _mask_card_for_customer(interactive_payload, _role_ctx))
 
             else:
                 yield SSEEvent.error(result.message or "查询失败")

@@ -150,3 +150,25 @@ class TestInteractError:
             title="选择",
         )
         assert result.success is False
+
+
+class TestCardPiiNotMaskedAtToolLayer:
+    """工具层**不脱敏**（issue #3379 边界修正，实测回归）。
+
+    首版把卡片脱敏做在 `interact` 工具里 → 工具返回值同时进入**模型上下文**与
+    `confirmValue`（顾客回传后要精确匹配）→ 实测把流程搞坏（run 34736385849：
+    卡片显示"待补充完整手机号"，模型反过来问顾客要号码；验收 2 条违规）。
+    脱敏移到**出站序列化**（`chat.py` 的 SSE 层）后，顾客看到的仍是脱敏值。
+    本测试锁住这个边界：工具层必须保持原值。
+    """
+
+    async def test_tool_keeps_raw_values(self, tool, sample_tool_context):
+        result = await tool.execute(
+            context=sample_tool_context,
+            component="confirm",
+            title="请确认收货信息",
+            fields=[{"label": "手机号", "value": "13800138000"}],
+            confirmValue="确认提交：13800138000",
+        )
+        payload = json.dumps(result.data, ensure_ascii=False)
+        assert "13800138000" in payload, "工具层不得脱敏（会污染模型上下文与 confirmValue）"
