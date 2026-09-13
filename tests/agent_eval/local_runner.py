@@ -2295,6 +2295,29 @@ async def _close_and_verify_session(case, token: str, r: dict, session_id: str) 
         ]
 
 
+def pending_card_summary(results: list) -> str:
+    """上一轮**待答卡片**的可读摘要（无卡片返回 ""），用于 `prefer_text` 诊断。
+
+    为什么需要（issue #3421 复盘）：`prefer_text` 会**无视**待答卡片直接发文本 ——
+    这是验证码轮必需的语义，但如果那一轮卡片问的是**别的问题**，顾客就等于答非所问，
+    流程随即卡死（实测 CH-025 首跑：顾客被问「要哪些加工项」却回了「123456」，
+    之后 3 轮空转、`order_create` 从未调用）。这种"用例配置与卡片类型对不上"的错
+    **不会报错**，只会表现为随机失败 → 还被重试放行标成 `llm-noise`，把用例缺陷藏起来。
+    故把待答卡片显式打出来，让"答非所问"一眼可见。
+    """
+    rounds = results or []
+    if not rounds:
+        return ""
+    parts = []
+    for iv in ((rounds[-1] or {}).get("interactive") or []):
+        comp = str((iv or {}).get("type") or (iv or {}).get("component") or "")
+        if not comp:
+            continue
+        title = str((iv or {}).get("title") or "").strip()
+        parts.append(f"{comp}:{title[:24]}" if title else comp)
+    return "、".join(parts)
+
+
 def resolve_auto_respond(results: list, fallback: str, form_values: dict,
                          prefer_text: bool = False) -> str:
     """`auto_respond` 轮：按**上一轮的待答卡片**自动作答，没有卡片则用 fallback。
@@ -2324,6 +2347,12 @@ def resolve_auto_respond(results: list, fallback: str, form_values: dict,
     """
     if prefer_text:
         # 用例显式声明"这一轮就是这句话"（如验证码轮）→ 不答卡
+        _pending = pending_card_summary(results)
+        if _pending:
+            print(f"⚠️ prefer_text 忽略了待答卡片 [{_pending}] → 本轮发文本 {fallback!r}。"
+                  f"若卡片问的不是同一件事，顾客就是**答非所问**、流程会卡死 —— "
+                  f"请复核该用例的轮次配置（prefer_text 只该用于「顾客此刻就是要说这句话」的轮次，"
+                  f"最典型是验证码轮）。issue #3421")
         return fallback
     rounds = results or []
     if rounds:

@@ -3981,3 +3981,51 @@ class TestAssertionVocabularyIsMappedByLoader:
             "以下断言字段在 **CI 的 YAML 装载路径**上丢失/被改写 —— 该断言永不生效（假绿）：\n  "
             + "\n  ".join(problems)
         )
+
+
+class TestPreferTextPendingCardDiagnostic:
+    """`prefer_text` 吃掉待答卡片时必须**出声**（issue #3421 复盘）。
+
+    实证（CH-025 首跑，run 34763744203）：用例第 4 轮声明验证码「123456」+ prefer_text，
+    但那时 agent 刚发的是**加工项多选卡** → harness 把 "123456" 当成了加工项的回答 →
+    之后 3 轮空转、`order_create` 从未调用。整跑只表现为"首跑失败、重试通过"，
+    被标成 `llm-noise` —— **用例配置缺陷伪装成模型波动**，无人发现。
+    """
+
+    _CARD = [{"type": "choice", "title": "要哪些加工项", "options": [{"label": "纳米圈打孔", "value": "pi1"}]}]
+
+    def _results(self, *users, card=True):
+        out = [{"user_message": u} for u in users]
+        if out and card:
+            out[-1]["interactive"] = list(self._CARD)
+        return out
+
+    def test_summary_lists_card_type_and_title(self):
+        got = lr.pending_card_summary(self._results("你好"))
+        assert "choice" in got and "要哪些加工项" in got, got
+
+    def test_summary_empty_without_card(self):
+        assert lr.pending_card_summary(self._results("你好", card=False)) == ""
+        assert lr.pending_card_summary([]) == ""
+
+    def test_summary_handles_multiple_cards_and_missing_title(self):
+        rounds = [{"user_message": "x", "interactive": [
+            {"type": "form", "title": ""}, {"component": "confirm", "title": "确认下单"}]}]
+        got = lr.pending_card_summary(rounds)
+        assert got == "form、confirm:确认下单", got
+
+    def test_prefer_text_with_pending_card_warns(self, capsys):
+        lr.resolve_auto_respond(self._results("你好"), "123456", {}, prefer_text=True)
+        out = capsys.readouterr().out
+        assert "prefer_text 忽略了待答卡片" in out, (
+            f"prefer_text 吃掉待答卡片却没有告警（这正是 CH-025 首跑失败被藏起来的原因）：{out!r}")
+        assert "123456" in out, "告警应带上是哪句文本在答非所问"
+
+    def test_no_warning_when_no_pending_card(self, capsys):
+        lr.resolve_auto_respond([], "123456", {}, prefer_text=True)
+        assert "忽略了待答卡片" not in capsys.readouterr().out
+
+    def test_no_warning_when_prefer_text_off(self, capsys):
+        """默认路径（答卡）不该刷告警 —— 否则日志噪音会掩盖真问题。"""
+        lr.resolve_auto_respond(self._results("你好"), "确认", {})
+        assert "忽略了待答卡片" not in capsys.readouterr().out
