@@ -2909,6 +2909,97 @@ class TestNoFullPhoneInCustomerReplies:
         assert lr.check_no_full_phone(self._rounds("验证码 123456 已收到")) == []
 
 
+class TestDuplicateCards:
+    """同一轮下发**两张同组件交互卡** = 顾客看到重复卡（issue #3445）。
+
+    为什么必须能自动判：CI 轨迹里早就有指纹 `cards=confirm,confirm`（同一轮两个
+    interactive 事件），但它是**中性字段**，谁也不会去数 —— 直到本地把成因复现出来
+    （`interact` 工具路径 + 代码兜底补卡走文本，两个发射点各发一张）才发现是缺陷。
+    本检查把「顾客会看到重复卡」变成评测结论，而不是日志细节。
+    """
+
+    def _round(self, rnd, comps):
+        return {"__round": rnd,
+                "interactive": [{"component": c, "title": f"卡{c}"} for c in comps],
+                "tool_calls": [], "tool_results": [], "final_text": ""}
+
+    def test_single_card_per_round_passes(self):
+        assert lr.check_duplicate_cards([self._round(3, ["confirm"])]) == []
+
+    def test_two_same_component_cards_flagged(self):
+        issues = lr.check_duplicate_cards([self._round(7, ["confirm", "confirm"])])
+        assert issues, "同一轮两张 confirm 卡必须判违规"
+        assert "R7" in issues[0] and "confirm" in issues[0], issues
+
+    def test_different_components_not_flagged(self):
+        """先 form 后 confirm 是两件事（各有答案面）→ 不算重复。"""
+        assert lr.check_duplicate_cards([self._round(4, ["form", "confirm"])]) == []
+
+    def test_cards_across_rounds_not_flagged(self):
+        """不同轮各发一张是同一次流程的正常往返（顾客点了第一张才有第二张）。"""
+        assert lr.check_duplicate_cards(
+            [self._round(3, ["confirm"]), self._round(5, ["confirm"])]) == []
+
+    def test_type_field_also_recognized(self):
+        """`interactive` 事件有的用 `component`、有的用 `type`（见 build_round_trace）→ 都要认。"""
+        rows = [{"__round": 2, "interactive": [{"type": "choice"}, {"type": "choice"}]}]
+        assert lr.check_duplicate_cards(rows), "type 形态必须同样判出重复"
+
+    def test_empty_and_missing_are_safe(self):
+        assert lr.check_duplicate_cards([]) == []
+        assert lr.check_duplicate_cards([{"__round": 1}]) == []
+
+    def test_trace_marks_duplicates(self):
+        """轨迹里的 `cards=` 必须把重复标出来（否则它只是个没人会去数的中性字段）。"""
+        trace = [{"round": 7, "tools": ["order_create"],
+                  "interactive": ["confirm", "confirm"]}]
+        line = lr.format_round_trace(trace)
+        assert "cards=confirm,confirm" in line, line
+        assert "重复" in line, f"重复卡未被标出：{line}"
+        ok_line = lr.format_round_trace(
+            [{"round": 7, "tools": [], "interactive": ["confirm"]}])
+        assert "重复" not in ok_line, f"单张卡不得被标成重复：{ok_line}"
+
+
+class TestDuplicateCardsWiring:
+    """run_case 集成：重复卡必须**真的算进用例判定**（score 0）—— 防"假守卫"。
+
+    只看 `run_case` 源码里有没有那行调用是不够的（接线对、`PERSONA` 分支错也一样不生效），
+    故这里显式打开 C 端档跑一遍。
+    """
+
+    def _case(self):
+        return lr.EvalCase(
+            id="DUP-TEST", legacy_id="", title="t", skill=lr.Skill.ORDER,
+            difficulty=lr.Difficulty.NORMAL, user_inputs=["帮我下单"],
+            expectations=["tool: product_search"], data_checks=[],
+        )
+
+    def _run(self, interactive):
+        import unittest.mock as mock
+
+        async def fake_send(token, session_id, message, images=None, **kwargs):
+            return {"user_message": message, "images": images or [],
+                    "tool_calls": [{"name": "product_search", "args": {}}],
+                    "tool_results": [], "interactive": interactive,
+                    "final_text": "请点击卡片确认", "error": None,
+                    "streamed": False, "done": True}
+
+        with mock.patch.object(lr, "send_message", new=fake_send), \
+             mock.patch.object(lr, "PERSONA", "xiaobu"):
+            return asyncio.run(lr.run_case(self._case(), "tok", "sess"))
+
+    def test_duplicate_card_scores_zero(self):
+        res = self._run([{"component": "confirm", "title": "请确认订单信息"},
+                         {"component": "confirm", "title": "请确认订单信息"}])
+        assert res["score"] == 0.0, f"同轮两张确认卡必须判红：{res['failed']}"
+        assert any("重复交互卡" in str(f) for f, _ in res["failed"]), res["failed"]
+
+    def test_single_card_keeps_score(self):
+        res = self._run([{"component": "confirm", "title": "请确认订单信息"}])
+        assert res["score"] == 1.0, f"单张卡被误判为重复：{res['failed']}"
+
+
 class TestOutputVerify:
     """`output_verify`：断言**工具计算结果**（payload），不只是"调用过/传参对"（issue #3367）。
 

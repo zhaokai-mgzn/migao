@@ -5084,13 +5084,22 @@ class TestConfirmationGateNoCardRepro:
     def _run(self, last_user_msg: str, *, with_confirm_card: bool = False,
              pending_params: dict | None = None,
              pending_target: str = "order_create",
-             store_state: dict | None = None):
+             store_state: dict | None = None,
+             model_calls_card: bool = False):
         import asyncio
 
         executed = []
 
         async def fake_execute(tool, args, ctx, state):
             executed.append(tool.name)
+            if tool.name == "interact":
+                # 与真实 `InteractTool` 同形的返回（confirm 分支见 app/tools/interact.py:434）
+                _fields = args.get("fields") or []
+                _data = {"component": "confirm", "title": args.get("title"),
+                         "fields": _fields,
+                         "confirmValue": confirm_value_for_fields(_fields)}
+                _payload = {"success": True, "data": _data}
+                return json.dumps(_payload, ensure_ascii=False), _payload
             return (json.dumps({"success": True, "data": {}}), {"success": True, "data": {}})
 
         _shared = {} if store_state is None else store_state
@@ -5135,7 +5144,21 @@ class TestConfirmationGateNoCardRepro:
         final.content = "好的"
         final.tool_calls = []
 
+        # 模型被拦之后**自己调 interact(confirm) 发卡**（issue #3445 重复卡形态）：
+        # 这条路径的卡由 chat.py 的 `interact` 工具分支发射（:869），与文本里的
+        # `<interact>` 块（:816）是**两个独立发射点** —— 收尾再补一张就是重复卡。
+        card_call = MagicMock(spec=AIMessage)
+        card_call.content = ""
+        card_call.tool_calls = [{
+            "name": "interact",
+            "args": {"component": "confirm", "title": "请确认订单信息",
+                     "fields": [{"label": "商品", "value": "遮光窗帘"}]},
+            "id": "t2",
+        }]
+        _side = [call, card_call, final] if model_calls_card else [call, final]
+
         from app.tools.order_create import OrderCreateTool
+        from app.tools.interact import InteractTool
         tool = OrderCreateTool()
 
         with patch("app.memory.session_memory.SessionMemory") as mem_cls, \
@@ -5151,7 +5174,7 @@ class TestConfirmationGateNoCardRepro:
             # interact 必须可用：否则门禁走"本技能没有确认卡片能力"的 else 分支，
             # 而 C 端 order 场景一定有 interact（报告里看到的也是那条话术）
             registry.get_tool.side_effect = lambda n: (
-                tool if n == "order_create" else (object() if n == "interact" else None))
+                tool if n == "order_create" else (InteractTool() if n == "interact" else None))
             create_reg.return_value = registry
             breaker = MagicMock()
 
@@ -5162,7 +5185,7 @@ class TestConfirmationGateNoCardRepro:
             get_breaker.return_value = breaker
             llm = MagicMock()
             llm.bind_tools.return_value = llm
-            llm.ainvoke = AsyncMock(side_effect=[call, final])
+            llm.ainvoke = AsyncMock(side_effect=_side)
             get_llm.return_value = llm
             mem_cls.return_value.set_pending_skill = AsyncMock(return_value=True)
             out = asyncio.run(execute_skill(
@@ -5263,6 +5286,25 @@ class TestConfirmationGateNoCardRepro:
         out, _ = self._run("123456", with_confirm_card=True)
         assert "<interact>" not in str(out["final_answer"]), (
             "card_not_clicked 形态下不应由代码补卡")
+
+    def test_no_second_card_when_model_emitted_card_via_tool(self):
+        """模型被拦后**自己调 `interact(confirm)`** 发了卡 → 收尾**不得再补**一张（issue #3445）。
+
+        实证形态：`order_create` 被确认门禁拦下（`_no_card_blocked_args` 记账）→ 模型在后续
+        迭代里调 `interact(confirm)` 发卡（chat.py :869 发射 SSE interactive）→ 收尾时模型
+        文本里**没有** `<interact>` 块，于是补卡逻辑又追加一张 → **同一轮两张一模一样的确认卡**。
+
+        判据用「本轮的 `new_messages` 里是否已有确认卡」（`_confirm_card_seen`）：卡是同一轮
+        由工具路径发的，补卡就该让位。缺这条判据时，顾客看到的第二张卡没有任何新信息，
+        却会让「点哪张 / 点完没反应」的歧义回到线上。
+        """
+        out, executed = self._run("123456", model_calls_card=True)
+        assert "interact" in executed, (
+            f"用例前提不成立：模型没有真的调到 interact 发卡（executed={executed}）")
+        answer = str(out["final_answer"])
+        assert "<interact>" not in answer, (
+            "本轮 `interact` 工具已发过确认卡，收尾又追加了一张 → 顾客看到两张重复卡"
+            f"（issue #3445）：{answer[:300]!r}")
 
     def test_explicit_confirmation_still_passes(self):
         """反向守卫：明确确认（文本）时不该被这条门禁拦（`_requires_confirmation` 的既有语义）。"""

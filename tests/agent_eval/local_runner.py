@@ -1004,6 +1004,28 @@ def check_confirm_loop(results: list, limit: int = 3) -> list:
     ]
 
 
+def check_duplicate_cards(results: list) -> list:
+    """同一轮下发**两张同组件交互卡** → 违规（issue #3445，本地复现的重复卡缺陷）。
+
+    为什么是缺陷：一张卡的组件只有一个"答案面"，同一轮两张同名卡内容通常**完全一致**
+    （代码兜底补卡走回复文本、`interact` 工具路径走工具事件 —— 两个发射点各发一张），
+    顾客看到两张一模一样的卡：点哪张、点完会不会重复提交，全凭运气。
+
+    判据取 **SSE `interactive` 事件**（= 顾客实际收到的东西），与轨迹里的
+    `cards=` 字段同源；**组件不同不算**（如先 form 收资料再 confirm 确认，那是两件事）。
+    """
+    issues = []
+    for r in results or []:
+        comps = [str(iv.get("type") or iv.get("component") or "?")
+                 for iv in (r.get("interactive") or []) if isinstance(iv, dict)]
+        dupes = sorted({c for c in comps if comps.count(c) > 1})
+        if dupes:
+            issues.append(
+                f"重复交互卡(R{r.get('__round')}): 同一轮下发 [{','.join(comps)}] —— "
+                f"组件 {','.join(dupes)} 出现多张，顾客会看到重复卡片（issue #3445）")
+    return issues
+
+
 def check_false_success(results: list) -> list:
     """假成功：前序轮报错 + 后续文本声称成功 → 违规（sess_e52cff42 类）。
 
@@ -3060,7 +3082,11 @@ def format_round_trace(trace: list) -> str:
                 return f"{w.get('tool')}{{{body}{(';' + extra) if extra else ''}}}"
             bits.append("args=" + ",".join(_one(w) for w in wa[:3]))
         if t.get("interactive"):
-            bits.append("cards=" + ",".join(t["interactive"]))
+            _icards = [str(c) for c in t["interactive"]]
+            _idup = sorted({c for c in _icards if _icards.count(c) > 1})
+            # 同轮同组件多张 = 顾客看到重复卡（issue #3445）：`cards=confirm,confirm`
+            # 这个指纹以前是中性字段，没人会去数 —— 标出来才看得见。
+            bits.append("cards=" + ",".join(_icards) + ("(⚠️重复)" if _idup else ""))
         # 调用侧的卡（含**被拦/失败**的，那些不会出现在 cards= 里）
         cc = t.get("card_calls") or []
         if cc:
@@ -3241,6 +3267,8 @@ async def run_case(case, token: str, session_id: str) -> dict:
         case_issues += check_unbacked_state_claim(results)
         # 能力误宣（能做却说做不了，issue #3389）：同样先在 C 端生效
         case_issues += check_false_inability(results)
+        # 重复交互卡（issue #3445）：C 端实测同轮两张 confirm 卡（两个发射点各发一张）
+        case_issues += check_duplicate_cards(results)
     case_issues += check_confirm_loop(results)
     case_issues += check_false_success(results)
     if getattr(case, "db_verify", None):
