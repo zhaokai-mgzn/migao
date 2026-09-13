@@ -1220,6 +1220,107 @@ cases:
     merge_log: "2026-09-13 新增（issue #3391）：新客路径覆盖（多身份评测 + 无历史地址时的收集能力）"
     traces:
       tests:
+        - "backend/ai-agent-service/tests/test_acceptance_case_checks.py"
+      ci:
+        - xiaobu-acceptance.yml
+      verifies: []
+
+  - id: OR-023
+    legacy_id: ""
+    title: "C 端老客户下单 - 自动带出上次收货信息（form 预填真值，不得再问一遍）"
+    domains:
+      - order
+      - chat
+      - product
+    tier: normal
+    persona: xiaobu
+    tags:
+      - order_create
+      - prefill
+      - address
+      - xiaobu
+    truths_ref:
+      - order.create-flow
+      - ai-chat.confirm-required
+    # ── 补齐两个"零断言"的 C 端能力（issue #3397，参考 B 端覆盖体检）──
+    # 覆盖矩阵显示 C 端工具里有 2 个**没有任何用例断言**：
+    #   · `customer_address_query`（老客户收货信息自动带出，issue #2815）
+    #   · `validate_input`（写操作前的校验步骤）
+    # 二者此前被登记为"内部步骤、无独立顾客诉求"而豁免 —— 但**预填体验本身就是顾客诉求**，
+    # 且预填值必须是**真值**：掩码值回流会被顾客原样提交 → 订单用掩码建号（issue #3379 实证）。
+    # 本用例把正反两面都咬住：命中历史信息 → 必须带进 form 且为真值；新客路径由 OR-022 守。
+    user_inputs:
+      - "帮我下单，遮光窗帘 3 米，要打孔加工"
+      - auto_respond:
+          fallback: "米白"
+      # 收货信息轮：老客户应当**预填**，顾客只需确认（harness 按 form_values 回填）
+      - auto_respond:
+          fallback: "确认下单"
+          form_values:
+            customer_name: "张三"
+            customer_phone: "13800138000"
+            customer_address: "浙江省杭州市西湖区文三路1号1幢101室"
+            color: "米白"
+            colorName: "米白"
+      - auto_respond:
+          fallback: "确认"
+          form_values:
+            customer_name: "张三"
+            customer_phone: "13800138000"
+            customer_address: "浙江省杭州市西湖区文三路1号1幢101室"
+      - auto_respond:
+          fallback: "123456"
+          prefer_text: true
+      - auto_respond:
+          fallback: "123456"
+          prefer_text: true
+      - auto_respond:
+          fallback: "确认"
+      - auto_respond:
+          fallback: "确认"
+    expectations:
+      - tool: product_search
+      - tool: product_detail
+      # 老客户自动带出收货信息 = 必须先查历史地址（零断言的工具之一）
+      - tool: customer_address_query
+      # 写前校验步骤（零断言的工具之一）：confirm → validate_input → order_create
+      - tool: validate_input
+      - tool: interact
+      - tool: order_create
+    must_succeed:
+      - tool: order_create
+    order_before:
+      - "customer_address_query before order_create"
+    # form 预填断言（新断言能力，issue #3397）：预填必须是**真值**
+    form_prefill:
+      - field: customer_phone
+        expect: "13800138000"
+      - field: customer_address
+        expect: "浙江省杭州市西湖区文三路1号1幢101室"
+      - field: customer_name
+        expect_present: true
+    amount_verify:
+      - tool: order_create
+        product_name: "遮光窗帘"
+        checks: [unit_price, subtotal, total]
+    db_verify:
+      - fetch: order_items
+        source: order_create
+        expect_products: ["遮光窗帘"]
+        expect_quantities:
+          遮光窗帘: 3
+      - fetch: order_phone
+        source: order_create
+        expect_phone: "13800138000"
+    data_checks:
+      - "老客户下单：customer_address_query 命中后必须把上次收货信息**预填**进 form 卡，而不是再问一遍顾客"
+      - "预填值必须是真值 —— 掩码值会被顾客原样提交，订单会用掩码建号"
+      - "写操作前必须经过 validate_input（confirm → 校验 → order_create）"
+    skip_reason: ""
+    merge_log: "2026-09-13 新增（issue #3397）：补齐零断言能力（地址预填 + 写前校验）"
+
+    traces:
+      tests:
         # 身份透传接线（run_case → 请求头）+ 用例级断言
         - "backend/ai-agent-service/tests/test_acceptance_case_checks.py"
         # DEBUG 身份白名单（X-Debug-User 只认 debug_ 前缀、仅 customer 角色）

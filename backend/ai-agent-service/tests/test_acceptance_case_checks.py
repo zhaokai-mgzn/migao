@@ -903,6 +903,128 @@ class TestRoundTraceToolOutcomes:
         assert "failed=" not in lr.format_round_trace(trace)
 
 
+class TestFormPrefill:
+    """form 卡必须**预填真值**（issue #3397：老客户收货信息自动带出）。
+
+    为什么必须守（此前是"内部步骤、无独立诉求"被豁免的两个工具之一）：
+      ① 老客户下单自动带出上次收货信息是核心便利（issue #2815），此前**零断言**；
+      ② 预填值必须是**原值** —— 掩码值回流会让顾客直接提交 `138****8000`，
+         订单用掩码建单（issue #3379 的真实事故形态）；
+      ③ 新客路径（OR-022）已守"没有历史信息时要问/要收集"，这条守**反面**：
+         `customer_address_query` 命中时必须真的把信息带进表单，而不是再问一遍。
+    """
+
+    def _round(self, form_fields):
+        return {"__round": 1, "tool_calls": [], "tool_results": [],
+                "interactive": [{"type": "form", "title": "请确认收货信息",
+                                 "formFields": form_fields}],
+                "final_text": ""}
+
+    def _run(self, fields, spec):
+        return lr.check_form_prefill([self._round(fields)], spec)
+
+    def test_prefilled_exact_value_passes(self):
+        issues = self._run([{"key": "customer_phone", "label": "手机号", "value": "13800138000"}],
+                           [{"field": "customer_phone", "expect": "13800138000"}])
+        assert issues == []
+
+    def test_whitespace_normalized_match(self):
+        """地址里空格差异不该判红（比对前归一化空白）。"""
+        issues = self._run([{"key": "customer_address", "value": "浙江省杭州市西湖区 文三路1号"}],
+                           [{"field": "customer_address", "expect": "浙江省杭州市西湖区文三路1号"}])
+        assert issues == []
+
+    def test_masked_prefill_fails(self):
+        """掩码值预填 → 顾客会把它提交回写（PII 事故形态）→ 必须判红。"""
+        issues = self._run([{"key": "customer_phone", "value": "138****8000"}],
+                           [{"field": "customer_phone", "expect": "13800138000"}])
+        assert issues and "138****8000" in issues[0], issues
+
+    def test_missing_field_fails_closed(self):
+        """表单里没这个字段 = 没带出历史信息 → 判红（不是跳过）。"""
+        issues = self._run([{"key": "customer_name", "value": "张三"}],
+                           [{"field": "customer_phone", "expect": "13800138000"}])
+        assert issues and "customer_phone" in issues[0], issues
+
+    def test_no_form_card_fails_closed(self):
+        issues = lr.check_form_prefill([{"__round": 1, "tool_calls": [], "tool_results": [],
+                                         "interactive": [], "final_text": "请告诉我您的地址"}],
+                                       [{"field": "customer_phone", "expect": "13800138000"}])
+        assert issues and "form" in issues[0], issues
+
+    def test_expect_present_only(self):
+        """fixture 无关的字段只要求"预填了非空值"。"""
+        assert self._run([{"key": "customer_name", "value": "张三"}],
+                         [{"field": "customer_name", "expect_present": True}]) == []
+        issues = self._run([{"key": "customer_name", "value": ""}],
+                           [{"field": "customer_name", "expect_present": True}])
+        assert issues, "空值不算预填"
+
+
+class TestFormPrefillWiring:
+    """接线：form_prefill 违规必须计入用例判定（score 0），否则是假守卫。"""
+
+    def _case(self, form_prefill):
+        return lr.EvalCase(
+            id="PREFILL-TEST", legacy_id="", title="t", skill=lr.Skill.ORDER,
+            difficulty=lr.Difficulty.NORMAL, user_inputs=["帮我下单"],
+            expectations=["tool: interact"], data_checks=[],
+            persona="xiaobu", form_prefill=form_prefill,
+        )
+
+    def _run(self, reply_form_value, spec):
+        import unittest.mock as mock
+
+        async def fake_send(token, session_id, message, images=None, debug_user=""):
+            return {"user_message": message, "images": images or [],
+                    "tool_calls": [{"name": "interact", "args": {}}],
+                    "tool_results": [],
+                    "interactive": [{"type": "form", "title": "收货信息",
+                                     "formFields": [{"key": "customer_phone",
+                                                     "value": reply_form_value}]}],
+                    "final_text": "请确认", "error": None, "streamed": False, "done": True}
+
+        with mock.patch.object(lr, "send_message", new=fake_send), \
+             mock.patch.object(lr, "PERSONA", "xiaobu"):
+            return asyncio.run(lr.run_case(self._case(spec), "tok", "sess_p"))
+
+    def test_missing_prefill_scores_zero(self):
+        res = self._run("138****8000", [{"field": "customer_phone", "expect": "13800138000"}])
+        assert res["score"] == 0.0, "掩码预填必须判红（会让订单用掩码建单）"
+        assert any("customer_phone" in str(f) for f, _ in res["failed"]), res["failed"]
+
+    def test_correct_prefill_keeps_score(self):
+        res = self._run("13800138000", [{"field": "customer_phone", "expect": "13800138000"}])
+        assert res["score"] == 1.0, f"正确预填被误判: {res['failed']}"
+
+
+class TestFormPrefillLoaderPath:
+    """**CI 走的 YAML 装载路径**必须映射 form_prefill（issue #3397）。
+
+    为什么单列一类（上一轮假绿的直接教训，issue #3392）：新字段只在渲染器里映射、
+    而 CI 跑的是 `local_runner --cases .github/cases` 的 YAML 装载器 —— 漏映射时
+    用例照样"通过"，断言从未生效（全绿假绿）。故新断言字段必须有**真实装载**测试。
+    """
+
+    def test_real_yaml_load_yields_form_prefill(self):
+        import pathlib as _pl
+        cases_dir = _pl.Path(lr.__file__).resolve().parents[2] / ".github" / "cases"
+        cases = {c.id: c for c in lr.load_cases_from_yaml(str(cases_dir))}
+        fp = cases["OR-023"].form_prefill
+        assert fp, "YAML 装载后 form_prefill 丢失（CI 路径上断言永不生效 = 假绿）"
+        assert any(x.get("field") == "customer_phone" for x in fp), fp
+        assert cases["OR-022"].form_prefill == [], "未声明的用例不得误继承"
+
+    def test_renderer_emits_form_prefill(self):
+        import sys as _sys, pathlib as _pl
+        _sys.path.insert(0, str(_pl.Path(lr.__file__).resolve().parents[2] / ".github"))
+        from render_cases import load_case_dicts, to_eval_py
+        out = to_eval_py(load_case_dicts(str(_pl.Path(lr.__file__).resolve().parents[2] / ".github" / "cases")))
+        idx = out.index("id='OR-023'")
+        assert "form_prefill=[{'field': 'customer_phone'" in out[idx:idx + 4000], (
+            "渲染器没有输出 form_prefill（生成物会丢断言）")
+
+
 class TestRoundTraceWriteArgs:
     """写工具入参必须进轨迹（issue #3394）：数量/金额错的唯一归因证据。
 

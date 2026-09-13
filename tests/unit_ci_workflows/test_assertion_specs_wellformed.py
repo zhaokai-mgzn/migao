@@ -1,4 +1,4 @@
-# case_ids: OR-012, OR-014, OR-017, OR-018, CH-010, CH-011, DF-020
+# case_ids: OR-012, OR-014, OR-017, OR-018, CH-010, CH-011, DF-020, OR-023
 """断言配置必须**形状正确**（issue #3367 断言层审计）。
 
 ## 为什么需要守卫
@@ -91,6 +91,13 @@ class TestAssertionSpecsWellFormed:
                     bad.append(f"{c['id']}.output_verify[{i}]: 缺 tool")
                 elif not isinstance(s.get("expect"), dict) or not s.get("expect"):
                     bad.append(f"{c['id']}.output_verify[{i}]: 缺/空 expect（空断言）")
+            for i, s in enumerate(_specs(c, "form_prefill")):
+                if not str(s.get("field") or ""):
+                    bad.append(f"{c['id']}.form_prefill[{i}]: 缺 field（空断言）")
+                elif (s.get("expect") is None and not s.get("expect_present")):
+                    bad.append(
+                        f"{c['id']}.form_prefill[{i}]: 既无 expect 也无 expect_present"
+                        f"（空断言 —— 声称核对了预填值，其实没核对）")
             for i, s in enumerate(_specs(c, "amount_verify")):
                 checks = s.get("checks")
                 if checks is None:

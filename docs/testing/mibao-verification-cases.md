@@ -1937,7 +1937,7 @@
 真值: ai-chat.context-memory
 溯源: 2026-09-04 新增：issue #2821 延续切片 C（vision 分析落槽 + base_skill 接线） ｜ tags: ontology, vision, context_memory, grounding, base_skill
 
-## 订单域（22 case）
+## 订单域（23 case）
 
 ### OR-001. 订单列表查询 🟢
 ```
@@ -2329,6 +2329,34 @@
 ```
 真值: order.create-flow, ai-chat.confirm-required
 溯源: 2026-09-13 新增（issue #3391）：新客路径覆盖（多身份评测 + 无历史地址时的收集能力） ｜ tags: order_create, new_customer, capability, xiaobu
+
+### OR-023. C 端老客户下单 - 自动带出上次收货信息（form 预填真值，不得再问一遍） 🔵
+```
+你: 帮我下单，遮光窗帘 3 米，要打孔加工
+你: [🤖 按上一轮卡片作答]
+你: [🤖 按上一轮卡片作答]
+你: [🤖 按上一轮卡片作答]
+你: [🤖 按上一轮卡片作答]
+你: [🤖 按上一轮卡片作答]
+你: [🤖 按上一轮卡片作答]
+你: [🤖 按上一轮卡片作答]
+期望: product_search
+期望: product_detail
+期望: customer_address_query
+期望: validate_input
+期望: interact
+期望: order_create
+数据: 老客户下单：customer_address_query 命中后必须把上次收货信息**预填**进 form 卡，而不是再问一遍顾客
+数据: 预填值必须是真值 —— 掩码值会被顾客原样提交，订单会用掩码建号
+数据: 写操作前必须经过 validate_input（confirm → 校验 → order_create）
+时序: customer_address_query before order_create
+必须成功: order_create
+金额: order_create 「遮光窗帘」 → unit_price; subtotal; total
+落库: order_items None → 
+落库: order_phone None → 
+```
+真值: order.create-flow, ai-chat.confirm-required
+溯源: 2026-09-13 新增（issue #3397）：补齐零断言能力（地址预填 + 写前校验） ｜ tags: order_create, prefill, address, xiaobu
 
 ## 加工项域（6 case）
 
@@ -3513,8 +3541,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：271（活跃 132，跳过 139）
-- tier 分布：smoke 9 / normal 229 / adversarial 33
+- 用例总数：272（活跃 133，跳过 139）
+- tier 分布：smoke 9 / normal 230 / adversarial 33
 - 售后域：8
 - agents：6
 - api：19
@@ -3531,7 +3559,7 @@
 - misc：15
 - onboarding：5
 - ontology：4
-- 订单域：22
+- 订单域：23
 - 加工项域：6
 - processing-order：14
 - 商品域：22
