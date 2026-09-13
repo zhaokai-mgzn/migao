@@ -2089,7 +2089,11 @@ class TestWriteConfirmedLifecycle:
         )
         assert "order_create" in executed, "前轮已确认的写操作应放行"
         assert commits, "写成功后的清除提交不存在（测试会空转假绿）"
-        assert all("confirmed_write_tool" not in c for c in commits), (
+        # 断言**最终状态**而非"每个提交都不含该键"：写成功后还会有别的记账提交
+        # （如 issue #3379 的 `last_sms_code` 记码），那些提交里会带上当时仍存在的
+        # confirmed_write_tool 快照 —— 但安全性质是"**最终**不带该标记"。
+        last = commits[-1]
+        assert "confirmed_write_tool" not in last, (
             "写成功后未清除 confirmed_write_tool —— 后续同类写操作会在无新确认时被放行（安全漏洞）"
         )
 
@@ -2763,6 +2767,70 @@ class TestSmsCodeBackfill:
         seen = self._run("我的手机号是 13800138000", {"items": []})
         assert "sms_code" not in seen
 
+    def test_backfill_from_stored_code_when_last_message_is_confirm(self):
+        """**上一条不是码**时用会话记住的码回填（issue #3379 P2-1）。
+
+        场景：顾客先发「123456」（码轮被记住）→ 再回「确认」→ 模型调 order_create 时没带码。
+        若回填链只看"本轮消息"，就会要求顾客**再发一次码**（验收 C-A1 R7 的空转）。
+        """
+        import json as _json
+
+        seen = {}
+
+        async def fake_execute(tool, a, ctx, state):
+            seen.update(a)
+            return (_json.dumps({"success": True, "data": {"id": "o1"}}),
+                    {"success": True, "data": {"id": "o1"}})
+
+        class _Store:
+            async def load(self, sid):
+                return {"grounded_product_detail": {"product_id": "p1"},
+                        "last_sms_code": "123456"}
+
+            async def commit(self, sid, full):
+                pass
+
+        with patch("app.memory.session_memory.SessionMemory"), \
+             patch("app.graph.skills.base_skill.get_breaker") as get_breaker, \
+             patch("app.graph.skills.base_skill.get_skill_llm") as get_llm, \
+             patch("app.graph.skills.base_skill.create_skill_registry") as create_reg, \
+             patch("app.graph.skills.base_skill.set_tool_context"), \
+             patch("app.graph.skills.base_skill._execute_tool_safe", fake_execute), \
+             patch("app.memory.session_state_store.SessionStateStore",
+                   side_effect=lambda *a, **k: _Store()):
+            tool = MagicMock()
+            tool.name = "order_create"
+            tool.read_only = False
+            tool.destructive = False
+            tool.requires_confirmation = False
+            registry = MagicMock()
+            registry.get_langchain_tools.return_value = []
+            registry.get_tool.side_effect = lambda n: tool if n == "order_create" else None
+            create_reg.return_value = registry
+            breaker = MagicMock()
+
+            async def _pt(fn):
+                return await fn()
+
+            breaker.call = _pt
+            get_breaker.return_value = breaker
+            call = MagicMock(spec=AIMessage)
+            call.content = ""
+            call.tool_calls = [{"name": "order_create", "args": {"items": []}, "id": "c1"}]
+            final = MagicMock(spec=AIMessage)
+            final.content = "好的"
+            final.tool_calls = []
+            llm = MagicMock()
+            llm.bind_tools.return_value = llm
+            llm.ainvoke = AsyncMock(side_effect=[call, final])
+            get_llm.return_value = llm
+            import asyncio as _aio
+            _aio.run(execute_skill(
+                state=_make_state(messages=[HumanMessage(content="确认下单")]),
+                skill_name="customer_order", tool_names=["order_create"], system_prompt="p"))
+        assert seen.get("sms_code") == "123456", \
+            "会话里记住的验证码未被回填 → 顾客要再发一次码（空转）"
+
     def test_extract_sms_code_shapes(self):
         from app.graph.skills.base_skill import extract_sms_code
         assert extract_sms_code("123456") == "123456"
@@ -2771,6 +2839,109 @@ class TestSmsCodeBackfill:
         assert extract_sms_code("13800138000") == ""
         assert extract_sms_code("123456 顺便问下") == ""
         assert extract_sms_code("") == ""
+
+
+class TestSmsCodeRememberedAcrossTurns:
+    """验证码要被**记住**，而不是把码轮当确认（验收 P2-1，issue #3379）。
+
+    证据（验收剧本 C-A1 R7，`acceptance/ci-34730957920/.../C-A1.transcript.md`）：
+      ```
+      用户: 123456
+      AI:  …**稍后还需要您手机验证一下**，很快就好哦！
+      ```
+      该轮未调 order_create（顾客的码**空转**），订单要等下一轮顾客重复「确认下单」才落地；
+      且话术自相矛盾（码都发了还说"稍后需要验证"）。
+
+    ## 修法取舍（**安全性质优先**）
+    首版把"验证码轮"当确认轮 —— 但那只测就红了：既有的
+    `test_sms_code_turn_does_not_record` 锁着"确认门禁不可被绕过"这条**安全性质**
+    （顾客没确认订单明细就能下单 = 更严重的问题）。
+    故改成：**码轮不确认、但码被记住** → 门禁照旧，顾客的码也不再白给。
+    """
+
+    def _run(self, user_msg, store_extra=None):
+        import asyncio
+
+        committed = {}
+        full = dict(store_extra or {})
+
+        class _Store:
+            async def load(self, sid):
+                return dict(full)
+
+            async def commit(self, sid, new_full):
+                committed.update(new_full)
+                full.clear(); full.update(new_full)
+
+        with patch("app.memory.session_state_store.SessionStateStore",
+                   side_effect=lambda *a, **k: _Store()), \
+             patch("app.graph.skills.base_skill.get_breaker") as gb, \
+             patch("app.graph.skills.base_skill.get_skill_llm") as gl, \
+             patch("app.graph.skills.base_skill.create_skill_registry") as cr, \
+             patch("app.graph.skills.base_skill.set_tool_context"):
+            registry = MagicMock()
+            registry.get_langchain_tools.return_value = []
+            registry.get_tool.return_value = None
+            cr.return_value = registry
+            breaker = MagicMock()
+
+            async def _pt(fn):
+                return await fn()
+
+            breaker.call = _pt
+            gb.return_value = breaker
+            final = MagicMock(spec=AIMessage)
+            final.content = "好的"
+            final.tool_calls = []
+            llm = MagicMock()
+            llm.bind_tools.return_value = llm
+            llm.ainvoke = AsyncMock(side_effect=[final])
+            gl.return_value = llm
+            asyncio.run(execute_skill(
+                state=_make_state(messages=[HumanMessage(content=user_msg)]),
+                skill_name="customer_order", tool_names=["product_search"], system_prompt="p"))
+        return committed
+
+    def test_code_turn_is_remembered(self):
+        committed = self._run("123456")
+        assert committed.get("last_sms_code") == "123456", \
+            "验证码轮未记码 → 顾客先给码再确认时会被要求再发一次（空转）"
+
+    def test_code_turn_still_not_a_confirmation(self):
+        """安全性质：码轮不得被当成确认（门禁不可绕过）。"""
+        committed = self._run("123456")
+        assert "confirmed_write_tool" not in committed
+
+    def test_code_turn_does_not_inject_execute_hint(self):
+        """码轮**不得**注入"直接执行"提示（门禁不可绕过的可观测形态）。
+
+        首版把码轮当确认 → 就等于"顾客没确认订单明细也能下单"；
+        本断言锁住注入层：码轮 + 待执行 order_create → 注入函数必须原样返回。
+        """
+        import asyncio
+        from app.graph.skills.base_skill import _inject_pending_validated
+
+        class _Store:
+            async def load(self, sid):
+                return {"pending_validated_input": {
+                    "target_tool": "order_create", "target_action": "create", "params": {}}}
+
+            async def commit(self, sid, full):
+                pass
+
+        with patch("app.memory.session_state_store.SessionStateStore",
+                   side_effect=lambda *a, **k: _Store()):
+            out = asyncio.run(_inject_pending_validated(
+                "BASE", {"session_id": "sess_001"}, "123456"))
+        assert out == "BASE", "验证码轮被当成确认轮 → 确认门禁被绕过（安全性质）"
+
+    def test_non_code_message_not_remembered(self):
+        committed = self._run("这个窗帘多少钱")
+        assert not committed.get("last_sms_code")
+
+    def test_phone_number_not_remembered_as_code(self):
+        committed = self._run("我的手机号是13800138000")
+        assert not committed.get("last_sms_code"), "手机号不得被当验证码记住（extract_sms_code 用 fullmatch）"
 
 
 class TestCustomerReplyMasking:

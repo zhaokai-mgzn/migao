@@ -1588,6 +1588,42 @@ async def _inject_user_preferences(system_prompt: str, state: AgentState) -> str
     return system_prompt
 
 
+# 需要**短信验证码**才能执行的写工具（C 端）。验证码轮**不构成确认**（确认门禁不可绕过），
+# 但码本身要被**记住** —— 顾客不该因为"先给了码"而白给一轮（验收 C-A1 R7 实证）。
+SMS_GATED_WRITE_TOOLS = frozenset({"order_create"})
+LAST_SMS_CODE_KEY = "last_sms_code"
+
+
+async def _remember_sms_code(session_id: str, user_msg: str) -> str:
+    """验证码轮：把码记进会话状态，供后续写工具回填。异常不抛，不破坏主流程。"""
+    code = extract_sms_code(user_msg or "")
+    if not code or not session_id:
+        return ""
+    try:
+        from app.memory.session_state_store import SessionStateStore
+        store = SessionStateStore()
+        full = await store.load(session_id) or {}
+        if str(full.get(LAST_SMS_CODE_KEY) or "") != code:
+            full[LAST_SMS_CODE_KEY] = code
+            await store.commit(session_id, full)
+            logger.info(f"[sms-code] 记住验证码（供写工具回填）| session={session_id}")
+    except Exception as e:
+        logger.warning(f"[sms-code] 记码失败（非致命）: {e}")
+    return code
+
+
+async def _stored_sms_code(session_id: str) -> str:
+    """读回记住的验证码（无则空串）。"""
+    if not session_id:
+        return ""
+    try:
+        from app.memory.session_state_store import SessionStateStore
+        full = await SessionStateStore().load(session_id) or {}
+        return str(full.get(LAST_SMS_CODE_KEY) or "")
+    except Exception:
+        return ""
+
+
 async def _inject_pending_validated(system_prompt: str, state: AgentState, last_user_msg: str) -> str:
     """确认-执行链「已校验待执行」注入（issue #3031，仅 mibao/xiaobu 通用）。
 
@@ -1612,7 +1648,12 @@ async def _inject_pending_validated(system_prompt: str, state: AgentState, last_
         # 确认轮判定：口头短确认（24 字内）或确认卡 confirmValue 精确匹配（长值）
         is_card_confirm = _is_card_confirm_value(
             last_user_msg or "", full.get("last_confirm_value"))
-        if not _is_explicit_confirmation(last_user_msg or "") and not is_card_confirm:
+        # ⚠️ 验证码轮**不算**确认轮（安全性质：确认门禁不得被绕过 —— 见
+        # TestTextConfirmationRecordedAcrossTurns::test_sms_code_turn_does_not_record）。
+        # 首版曾把验证码轮当确认以"少一轮"，但那等于让顾客**没确认订单明细就能下单**。
+        # 正确修法见下：**记住验证码**（供后续写入回填），门禁照旧。
+        if (not _is_explicit_confirmation(last_user_msg or "")
+                and not is_card_confirm):
             return system_prompt
 
         # 确认记录（跨轮放行链）：用户在**确认轮**明确确认了「已校验待执行」的写操作时，
@@ -1973,6 +2014,11 @@ async def execute_skill(
             except Exception:
                 _pending_validated = False
         _inflight = _pending_card_before_last_user(state.get("messages", [])) or _pending_validated
+        # 验证码轮记账（issue #3379 P2-1）：顾客先给码、下一轮回「确认」是**正常流程**，
+        # 不记就会在写工具那一步要求顾客**再发一次码**（验收 C-A1 R7 空转的根因）。
+        if session_id and extract_sms_code(last_user_msg):
+            await _remember_sms_code(session_id, last_user_msg)
+
         if _is_cancel_message(last_user_msg) and _inflight:
             logger.info(f"[{skill_name}] Cancel detected | session={session_id} "
                         f"msg={last_user_msg[:24]!r}")
@@ -2058,12 +2104,18 @@ async def execute_skill(
                     # → 自动补齐（issue #3365 实证：CI 里 order_create!缺少短信验证码 ×3，
                     #   顾客明明给了 123456；模型漏参 → 订单不落库 → 用例红且看着像"能力不行"）
                     if tool_name == "order_create" and not (args or {}).get("sms_code"):
-                        _code = extract_sms_code(last_user_msg)
+                        # 回填链（issue #3379 P2-1）：
+                        #   ① 顾客上一条消息整条就是验证码（原有）；
+                        #   ② **本会话此前记住的验证码** —— 顾客先给码、再回「确认」时，
+                        #      上一轮已经不是码了，若不记就会要求顾客**再发一次**
+                        #      （验收 C-A1 实证：验证码轮空转、AI 还说"稍后还需要您手机验证"）。
+                        _code = extract_sms_code(last_user_msg) or await _stored_sms_code(session_id)
                         if _code:
                             args = {**args, "sms_code": _code}
                             logger.info(
                                 f"[{skill_name}] 代码补齐 order_create.sms_code"
-                                f"（顾客上一条消息即验证码）| session={session_id}"
+                                f"（{'本轮消息' if extract_sms_code(last_user_msg) else '会话记住的验证码'}）"
+                                f"| session={session_id}"
                             )
                     if args is not tool_call.get("args"):
                         tool_call = {**tool_call, "args": args}
