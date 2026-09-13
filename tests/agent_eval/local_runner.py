@@ -836,25 +836,67 @@ def _processing_ask_in_round(r: dict) -> bool:
     return "加工项" in text and any(k in text for k in ("选择", "需要", "是否", "加"))
 
 
-def _first_qualified_round(results: list, tool: str, comp: str | None, sem: str | None) -> int | None:
-    """带组件/语义限定的首次调用轮次。"""
-    for r in results:
-        if tool == "processing_ask":
-            if _processing_ask_in_round(r):
-                return r.get("__round")
+def _round_call_success(r: dict, tool: str) -> list:
+    """该轮里 `tool` 每次 tool_result 的成功标记（无 tool_result → 空列表 = **状态未知**）。"""
+    out = []
+    for st in _tool_result_status(r.get("tool_results") or []):
+        if tool.lower() in str(st.get("tool") or "").lower():
+            out.append(bool(st.get("ok")))
+    return out
+
+
+def _round_matches_tool(r: dict, tool: str, comp: str | None, sem: str | None) -> bool:
+    """该轮是否调用了限定的 `tool`（组件/语义筛选）。"""
+    if tool == "processing_ask":
+        return bool(_processing_ask_in_round(r))
+    for tc in r.get("tool_calls") or []:
+        name = str(tc.get("name", "")).lower()
+        if tool.lower() not in name:
             continue
-        for tc in r.get("tool_calls") or []:
-            name = str(tc.get("name", "")).lower()
-            if tool.lower() not in name:
+        if tool.lower() == "interact" and comp:
+            args = tc.get("args") or {}
+            if args.get("component") != comp:
                 continue
-            if tool.lower() == "interact" and comp:
-                args = tc.get("args") or {}
-                if args.get("component") != comp:
-                    continue
-                if sem == "processing_items" and not _is_processing_items_card(args):
-                    continue
-            return r.get("__round")
-    return None
+            if sem == "processing_items" and not _is_processing_items_card(args):
+                continue
+        return True
+    return False
+
+
+def _first_qualified_round(results: list, tool: str, comp: str | None, sem: str | None,
+                           require_success: bool = False) -> int | None:
+    """带组件/语义限定的首次调用轮次。
+
+    `require_success=True`（用于时序断言的**后件**，即"真正发生的那一步"）：
+    只认**成功**的那次调用（issue #3421 实证）。CH-025 里 agent 在 R4 先试了一次
+    `order_create`（被「缺少短信验证码」挡回、**没有写任何东西**），R5 才发确认卡，
+    R7 才真正写单 —— 若按"首次出现"判时序，就会把一次**被门禁挡回的尝试**算成"写单先于确认"，
+    造出假红（顾客侧零影响：没有订单被创建）。
+    顾客在意的是"确认卡必须先于**真正写单**"，故后件只看成功调用。
+
+    状态未知时的取舍（保持向后兼容，且不放宽检测）：
+      · 全轨迹都拿不到该工具的 tool_result（如单测构造的极简轨迹）→ 退回"首次出现"，旧语义；
+      · 有状态信息但**从未成功** → 返回 None，即不在这里造时序违规
+        （"没写成"由 `must_succeed` / `db_verify` 判，避免同一件事重复计错）。
+    """
+    first_any = None
+    saw_status = False
+    for r in results or []:
+        if not _round_matches_tool(r, tool, comp, sem):
+            continue
+        rnd = r.get("__round")
+        if first_any is None:
+            first_any = rnd
+        if not require_success:
+            return rnd
+        flags = _round_call_success(r, tool)
+        if flags:
+            saw_status = True
+            if any(flags):
+                return rnd
+    if require_success:
+        return None if saw_status else first_any
+    return first_any
 
 
 def _fmt_qualified(tool: str, comp: str | None, sem: str | None) -> str:
@@ -867,7 +909,10 @@ def check_order_before(results: list, order_before: list) -> list:
     """时序断言（v2）：A 首次调用轮次必须早于 B。
 
     - A 全程未调用 → 违规（"未调用"）；B 未调用 → 不判时序（由 expectations 判工具缺失）；
-    - 反序（B 早于 A）→ 违规，注明两轮次，便于按签名排查。
+    - 反序（B 早于 A）→ 违规，注明两轮次，便于按签名排查；
+    - B 只看**成功**的那次（`require_success=True`）：被门禁挡回的写尝试不算"写了"
+      —— 否则会把"试了一下被挡、随后正常确认再写单"误判成反序（issue #3421 实证）
+      。注意这不放宽 #3414 的保护：**真正写单**仍必须在确认卡之后。
     """
     issues = []
     for spec in order_before or []:
@@ -877,7 +922,7 @@ def check_order_before(results: list, order_before: list) -> list:
             issues.append(f"order_before: 无法解析 {spec!r}")
             continue
         ra = _first_qualified_round(results, a_tool, a_comp, a_sem)
-        rb = _first_qualified_round(results, b_tool, b_comp, b_sem)
+        rb = _first_qualified_round(results, b_tool, b_comp, b_sem, require_success=True)
         a_name = _fmt_qualified(a_tool, a_comp, a_sem)
         b_name = _fmt_qualified(b_tool, b_comp, b_sem)
         if ra is None:
