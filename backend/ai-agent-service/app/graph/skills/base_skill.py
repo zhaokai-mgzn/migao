@@ -2609,6 +2609,7 @@ async def execute_skill(
     new_messages: List[Any] = []
     final_content = ""
     _denial_corrected = False      # 文本级能力误宣只纠正一次（issue #3443）
+    _no_card_blocked_args = None   # 本轮"没发过确认卡就写单"被拦的参数（issue #3445 代码兜底）
     vision_analysis = ""
 
     if is_multimodal:
@@ -2820,6 +2821,10 @@ async def execute_skill(
 
                 async def _run_one_tool(tool_call: dict):
                     """执行单个 tool，返回 (tool_call, result_str, result_dict)。"""
+                    # 需要 nonlocal：门禁在下面给 `_no_card_blocked_args` 赋值，而它是
+                    # `execute_skill` 的局部变量 —— 不加 `nonlocal` 会创建一个**新局部**，
+                    # 收尾的"补发确认卡"永远读不到（首版即此错，被新增用例当场抓住）。
+                    nonlocal _no_card_blocked_args
                     tool_name = tool_call["name"]
                     args = tool_call.get("args", {})
                     # 模式 C 代码兜底：加工项 choice 卡漏传 multiSelect → 自动补 true（PR-014/015）
@@ -3205,6 +3210,12 @@ async def execute_skill(
                         _err3 = ("confirmation_required_card_not_clicked"
                                  if _confirm_card_seen(state.get("messages", []))
                                  else "confirmation_required_no_card")
+                        if _err3 == "confirmation_required_no_card":
+                            # 代码兜底（issue #3445）：本轮模型**从没发过确认卡**就写了单 ——
+                            # 拦截话术已给"可执行下一步"，但实测它仍会跳过发卡（3 次复验 2 次命中）。
+                            # 收尾时由代码把确认卡 XML 追加到回复文本（发射点在 chat.py 解析
+                            # `<interact>` 块），顾客因此始终有点卡的入口。
+                            _no_card_blocked_args = dict(args or {})
                         return tool_call, json.dumps(
                             {"success": False, "error": _err3, "message": msg},
                             ensure_ascii=False,
@@ -3459,6 +3470,37 @@ async def execute_skill(
             else:
                 # 达到 max_iterations — 不暴露 LLM 的半截思考，用友好兜底
                 final_content = "抱歉，处理步骤较多，请稍后重试或换个简单的方式描述需求。"
+
+    # ── 8.3b 代码兜底**补发确认卡**（issue #3445）──
+    # 实测（CI 三次 `confirmation_required_no_card`）：模型**从没发过确认卡**就直接写单，
+    # 被门禁拦回后仍会跳过发卡（话术已给唯一可执行的下一步，3 次复验仍有 2 次命中）。
+    # 卡片的唯一通用发射点是 `chat.py` 解析回复文本里的 `<interact>` 块 ⇒ 这里把卡补进文本：
+    # 顾客因此始终有点卡的入口，而不是"卡在写单被拦、又没有卡可点"。
+    # 硬约束（#3414 教训）：**只补卡、不放行写** —— 写仍必须等顾客点卡后由门禁放行；
+    # 且仅在"本会话从未出现过确认卡"的形态下补（`card_not_clicked` 说明顾客没点，
+    # 那时替他补卡等于替他做决定，不做）。
+    if (_no_card_blocked_args and skill_name == "customer_order"
+            and final_content and "<interact>" not in final_content):
+        _bfields = confirm_card_fields(_no_card_blocked_args)
+        if _bfields:
+            _bvalue = confirm_value_for_fields(_bfields)
+            final_content = final_content + "\n" + build_confirm_interact_xml(
+                "请确认订单信息", _bfields, confirm_value=_bvalue)
+            # ⚠️ **必须同时持久化该卡的 confirmValue**（否则卡是"死的"）：门禁放行写操作靠
+            # `_is_card_confirm_value(last_user_msg, last_confirm_value)`（见本文件 :3119），
+            # 而这个值原本只在 `interact` 工具路径里落库 —— 代码补的卡若不落，
+            # 顾客点了也判"未确认"，最坏是"补卡→点了仍被拦→再补卡"的往返。
+            try:
+                from app.memory.session_state_store import SessionStateStore
+                _bstore = SessionStateStore()
+                _bfull = await _bstore.load(session_id) or {}
+                _bfull["last_confirm_value"] = _bvalue
+                await _bstore.commit(session_id, _bfull)
+            except Exception as _be:
+                logger.warning(f"[{skill_name}] 补发卡的 confirmValue 落库失败（非致命）: {_be}")
+            logger.info(
+                f"[{skill_name}] 代码兜底补发确认卡（模型跳过确认卡）| "
+                f"session={session_id} fields={len(_bfields)}")
 
     # ── 8.4 确认-执行链的**代码侧收口**（issue #3410，C-A1 实证）──
     # 实证（run 34758421478，C-A1 主路径）：顾客点了确认（回传系统自产的确认卡值），

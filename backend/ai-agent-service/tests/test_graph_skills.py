@@ -25,6 +25,7 @@ from app.graph.skills.base_skill import (
     capability_denial_text_hit,
     _confirm_card_fields_hint,
     confirm_card_fields,
+    confirm_value_for_fields,
     _confirm_card_seen,
     _conversation_mentions_dimensions, _form_prefill_fidelity_block,
     _stated_purchase_quantities, _quantity_choice_block,
@@ -5082,7 +5083,8 @@ class TestConfirmationGateNoCardRepro:
 
     def _run(self, last_user_msg: str, *, with_confirm_card: bool = False,
              pending_params: dict | None = None,
-             pending_target: str = "order_create"):
+             pending_target: str = "order_create",
+             store_state: dict | None = None):
         import asyncio
 
         executed = []
@@ -5091,6 +5093,8 @@ class TestConfirmationGateNoCardRepro:
             executed.append(tool.name)
             return (json.dumps({"success": True, "data": {}}), {"success": True, "data": {}})
 
+        _shared = {} if store_state is None else store_state
+
         class _Store:
             async def load(self, sid):
                 out = {"grounded_product_detail": {"product_id": "prod_eval_blackout"}}
@@ -5098,9 +5102,13 @@ class TestConfirmationGateNoCardRepro:
                     out["pending_validated_input"] = {
                         "target_tool": pending_target, "target_action": "create",
                         "params": pending_params}
+                out.update(_shared)          # 跨两次 execute_skill 共享（模拟同一会话）
                 return out
 
             async def commit(self, sid, full):
+                _shared.clear()
+                _shared.update({k: v for k, v in (full or {}).items()
+                                if k not in ("grounded_product_detail",)})
                 return True
 
             async def clear(self, sid):
@@ -5204,6 +5212,57 @@ class TestConfirmationGateNoCardRepro:
                            pending_target="after_sales_manage")
         msg = str(out)
         assert "已校验的参数" not in msg, f"串了别的流程的参数：{msg[:250]}"
+
+    def test_appends_confirm_card_when_model_skipped_card(self):
+        """模型**从没发过确认卡**就写单被拦 → 收尾由代码把确认卡补进回复文本（issue #3445）。
+
+        卡片的唯一通用发射点是解析回复文本里的 `<interact>` 块，故这里断言：
+        ① 文本里出现 confirm 卡 XML；② 它能被**真解析器**解析；③ `confirmValue` 与
+        `interact` 工具**同口径**（否则顾客点了卡也过不了确认门禁）。
+        """
+        from app.api.chat import _parse_interact_xml
+        out, executed = self._run("123456")
+        answer = out["final_answer"]
+        assert "<interact>" in answer, f"没有补发确认卡：{answer[:200]!r}"
+        assert "order_create" not in executed, "补卡不得顺手放行写操作（#3414）"
+        payload = _parse_interact_xml(answer[answer.index("<interact>"):])
+        assert payload and payload.get("component") == "confirm", f"补的卡解析不出来：{payload!r}"
+        fields = payload.get("fields") or []
+        assert [f.get("label") for f in fields][:1] == ["商品"], fields
+        assert payload.get("confirmValue") == confirm_value_for_fields(fields), (
+            "补发卡的 confirmValue 与 interact 工具口径不一致 → 顾客点了卡也过不了门禁")
+
+    def test_click_on_code_appended_card_releases_write(self):
+        """顾客点了**代码补发的那张卡** → 写必须被放行（本轮补上的关键用例，issue #3445）。
+
+        第一轮：模型没发卡就写单 → 被拦 + 代码补卡 + **把该卡 confirmValue 落库**；
+        第二轮：顾客按前端协议回传该 confirmValue → 门禁必须放行、写真的执行。
+
+        为什么必须有这条：没有它，"补了卡"与"卡能用"在测试里长得一模一样 ——
+        上一版正是因为缺这条，才交出了一张**点不动的卡**（已撤回）。
+        """
+        from app.api.chat import _parse_interact_xml
+        shared: dict = {}
+        out1, executed1 = self._run("123456", store_state=shared)
+        answer = str(out1["final_answer"])
+        assert "<interact>" in answer, f"第一轮没有补卡：{answer[:200]!r}"
+        payload = _parse_interact_xml(answer[answer.index("<interact>"):])
+        cv = str(payload.get("confirmValue") or "")
+        assert cv, "补的卡没有 confirmValue"
+        assert shared.get("last_confirm_value") == cv, (
+            "补发的卡没把 confirmValue 落库 —— 顾客点了也过不了门禁（卡是死的）")
+        assert "order_create" not in executed1, "被拦的写不得执行"
+
+        out2, executed2 = self._run(cv, store_state=shared)     # 顾客点卡（回传 confirmValue）
+        assert "confirmation_required" not in str(out2), (
+            "顾客点了代码补发的卡，门禁仍判「未确认」")
+        assert "order_create" in executed2, "点卡之后写操作没有被放行执行"
+
+    def test_no_append_when_card_already_shown(self):
+        """发过卡（只是顾客没点）→ **不补卡**：那是顾客的选择，替他补等于替他做决定。"""
+        out, _ = self._run("123456", with_confirm_card=True)
+        assert "<interact>" not in str(out["final_answer"]), (
+            "card_not_clicked 形态下不应由代码补卡")
 
     def test_explicit_confirmation_still_passes(self):
         """反向守卫：明确确认（文本）时不该被这条门禁拦（`_requires_confirmation` 的既有语义）。"""
