@@ -24,7 +24,7 @@ from app.graph.skills.base_skill import (
     _masked_phone_write_block, KNOWN_RAW_PHONES_KEY, _capability_denial_reason,
     _conversation_mentions_dimensions, _form_prefill_fidelity_block,
     _stated_purchase_quantities, _quantity_choice_block,
-    _curtain_calc_dimension_block,
+    _curtain_calc_dimension_block, _should_code_close_loop,
 )
 import app.graph.skills.base_skill as lr2
 from app.graph.skills.skill_registry import SkillRegistry
@@ -4065,6 +4065,144 @@ class TestMibaoFlowsUnaffectedByCendGuards:
                          role="admin", skill="order")
         assert seen["calls"] == [], "B 端用掩码号码建单必须同样拦下"
         assert "138" in seen["tool_content"], "拦截时必须回放真号"
+
+
+class TestConfirmClosureCodeSide:
+    """顾客确认后，写操作必须**由代码收口**，不能只靠模型自觉（issue #3410）。
+
+    实证（run 34758421478，C-A1 主路径）：R7 顾客发的是确认卡回传值（系统自产的
+    `确认：…` 串），模型回「这就帮您提交~」；R8/R9 顾客两次「确认下单」，模型回
+    「都核对好啦」「还差最后一步」—— **整场没有任何 order_create 调用**，订单永不落库，
+    验收 L1 报「期望调用 order_create，实际未调用」。
+    同一剧本在别的轮次却能通过（模型碰巧调了写工具）→ 间歇性失败。
+
+    既有机制只做到"注入执行提示"（`_inject_pending_validated`），**是否动手仍由模型决定**。
+    本用例把收口前移到代码：顾客已明确确认 + 存在已校验待执行写 + 本轮模型没调那个写工具
+    → **代码直接执行**（同一条执行路径：同样的门禁、同样的验证码回填链），
+    并用工具返回的 message 作为给顾客的回复（真话，不是"这就帮您提交"）。
+    """
+
+    PENDING = {"pending_validated_input": {
+        "target_tool": "order_create", "target_action": "create",
+        "params": {"customer_name": "张三", "customer_phone": "13800138000"}}}
+
+    def _run(self, user_msg, llm_reply, role="customer", store_extra=None,
+             model_calls_write=False, fail_with=None):
+        import asyncio, json as _json
+
+        seen = {"calls": []}
+        full = {"last_confirm_value": "确认：商品=北欧风窗帘；总价=¥408"}
+        full.update(self.PENDING)
+        full.update(store_extra or {})
+
+        async def fake_execute(tool, a, ctx, state):
+            seen["calls"].append((tool, a))
+            if fail_with:
+                return (_json.dumps({"success": False, "error": fail_with,
+                                     "message": "为了您的账户安全，请输入短信验证码"}),
+                        {"success": False, "error": fail_with,
+                         "message": "为了您的账户安全，请输入短信验证码"})
+            return (_json.dumps({"success": True, "data": {"id": "o1", "orderNo": "2026X"},
+                                 "message": "订单已帮您提交好啦！订单号 2026X"}),
+                    {"success": True, "data": {"id": "o1", "orderNo": "2026X"},
+                     "message": "订单已帮您提交好啦！订单号 2026X"})
+
+        class _Store:
+            async def load(self, sid):
+                return dict(full)
+
+            async def commit(self, sid, f):
+                full.clear(); full.update(f)
+
+        with patch("app.memory.session_memory.SessionMemory"), \
+             patch("app.graph.skills.base_skill.get_breaker") as get_breaker, \
+             patch("app.graph.skills.base_skill.get_skill_llm") as get_llm, \
+             patch("app.graph.skills.base_skill.create_skill_registry") as create_reg, \
+             patch("app.graph.skills.base_skill.set_tool_context"), \
+             patch("app.graph.skills.base_skill._execute_tool_safe", fake_execute), \
+             patch("app.memory.session_state_store.SessionStateStore",
+                   side_effect=lambda *a, **k: _Store()):
+            tool = MagicMock()
+            tool.name = "order_create"
+            tool.read_only = False
+            tool.destructive = False
+            tool.requires_confirmation = False
+            registry = MagicMock()
+            registry.get_langchain_tools.return_value = []
+            registry.get_tool.side_effect = lambda n: tool if n == "order_create" else None
+            create_reg.return_value = registry
+            breaker = MagicMock()
+
+            async def _pt(fn):
+                return await fn()
+
+            breaker.call = _pt
+            get_breaker.return_value = breaker
+            msgs = []
+            if model_calls_write:
+                call = MagicMock(spec=AIMessage)
+                call.content = ""
+                call.tool_calls = [{"name": "order_create", "args": {"customer_name": "张三"},
+                                    "id": "c1"}]
+                msgs.append(call)
+            final = MagicMock(spec=AIMessage)
+            final.content = llm_reply
+            final.tool_calls = []
+            msgs.append(final)
+            llm = MagicMock()
+            llm.bind_tools.return_value = llm
+            llm.ainvoke = AsyncMock(side_effect=msgs)
+            get_llm.return_value = llm
+            state = _make_state(messages=[HumanMessage(content=user_msg)])
+            state["role"] = role
+            res = asyncio.run(execute_skill(
+                state=state, skill_name="customer_order",
+                tool_names=["order_create"], system_prompt="p"))
+        return res, seen, full
+
+    def test_close_loop_truth_table(self):
+        """收口条件的真值表（纯函数，逐项钉住；M207 首版就因内联而无法被观察）。"""
+        P = {"target_tool": "order_create"}
+        assert _should_code_close_loop(P, "order_create", True, set()) is True
+        assert _should_code_close_loop(None, "order_create", True, set()) is False, "无待执行写"
+        assert _should_code_close_loop(P, "", True, set()) is False, "无目标工具"
+        assert _should_code_close_loop(P, "order_create", False, set()) is False, "未确认不得代下单"
+        assert _should_code_close_loop(P, "order_create", True, {"order_create"}) is False, \
+            "模型已写过 → 不得重复执行（双单）"
+        assert _should_code_close_loop(P, "order_create", True, {"product_search"}) is True
+
+    def test_card_confirm_without_model_call_still_writes(self):
+        """C-A1 形态：顾客回确认卡的值、模型只回话 → 代码必须把写执行掉。"""
+        res, seen, full = self._run("确认：商品=北欧风窗帘；总价=¥408", "这就帮您提交~ 😊")
+        assert len(seen["calls"]) == 1, "顾客已确认却没执行写 → 订单永不落库（C-A1 实证）"
+        assert "2026X" in (res.get("final_answer") or ""), (
+            f"回复必须基于真实执行结果，而不是'这就帮您提交': {res.get('final_answer')!r}")
+
+    def test_text_confirm_also_closes(self):
+        """口头确认（「确认下单」）同样收口。"""
+        _res, seen, _f = self._run("确认下单", "好的~")
+        assert len(seen["calls"]) == 1
+
+    def test_no_confirmation_no_closure(self):
+        """顾客没说确认（新需求/纠偏）→ 不得替顾客下单。"""
+        _res, seen, _f = self._run("我再想想，先看看别的颜色", "好的~")
+        assert seen["calls"] == [], "未确认就执行写 = 绕过确认门禁（安全性质）"
+
+    def test_model_already_wrote_no_double_execution(self):
+        """模型自己调了写工具 → 代码不得重复执行（防双单）。"""
+        _res, seen, _f = self._run("确认下单", "好的~", model_calls_write=True)
+        assert len(seen["calls"]) == 1, f"重复执行写成双单: {len(seen['calls'])} 次"
+
+    def test_failure_surfaces_tool_message(self):
+        """执行失败（如缺验证码）→ 把工具原话给顾客（要码），而不是空转话术。"""
+        res, seen, _f = self._run("确认下单", "这就帮您提交~", fail_with="缺少短信验证码")
+        assert len(seen["calls"]) == 1
+        assert "验证码" in (res.get("final_answer") or ""), res.get("final_answer")
+
+    def test_bend_role_not_closed_by_code(self):
+        """B 端不受此收口影响（分端纪律：B 端流程各异，先只在 C 端收口）。"""
+        _res, seen, _f = self._run("确认下单", "好的~", role="admin")
+        assert seen["calls"] == [], "B 端被 C 端收口逻辑影响"
 
 
 class TestFalseCancelGuard:
