@@ -103,9 +103,7 @@ jobs:
             - 无效输入返回明确错误
             \`\`\`
 
-            > 🤖 真值齐全后自动评审会自动反推 case 草稿，研发 review 后即可开工。
-
-            Co-Authored-By: Claude <noreply@anthropic.com>`;
+            > 🤖 真值齐全后自动评审会自动反推 case 草稿，研发 review 后即可开工。`;
 
             await github.rest.issues.createComment({
               owner: context.repo.owner,
