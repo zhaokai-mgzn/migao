@@ -1761,6 +1761,37 @@ def _seed_phones() -> set:
     return _SEED_PHONES_CACHE
 
 
+async def check_debug_user_precondition(token: str, case) -> list:
+    """多身份用例的**前提校验**：身份覆盖必须真的生效（issue #3391，防假绿）。
+
+    为什么必须有（首版教训，实测 run 34746134755）：身份字段只在渲染器里映射、
+    CI 真正走的 YAML 装载路径漏映射 → 用例仍以 `debug_customer_1`（**有历史订单**）跑 →
+    `customer_address_query` 返回 has_address=true → 用例走的是"有历史地址"路径，
+    却报 ✅ 100%（DB 审计里 11 笔订单全挂 debug_customer_1，无一是新客）。
+    这类假绿的信号极弱（全绿），故把前提**显式断言**：
+    以该身份查「我的订单」必须为空 —— 空 = 覆盖生效（新客无历史），非空 = 覆盖没生效。
+    """
+    du = str(getattr(case, "debug_user", "") or "")
+    if not du:
+        return []
+    h = {"X-Debug-Role": "customer", "X-Debug-User": du}
+    try:
+        async with httpx.AsyncClient() as c:
+            r = await c.get(f"{ADMIN_API}/api/admin/agent/orders/mine",
+                            headers=h, params={"page": 1, "size": 5}, timeout=15)
+            body = _safe_json(r, {}) or {}
+            items = ((body.get("data") or {}).get("items")) or []
+    except Exception as e:
+        return [f"debug_user 前提校验失败（请求异常）: {type(e).__name__}: {e}"]
+    if items:
+        return [
+            f"新客身份未生效：以 X-Debug-User={du} 查「我的订单」返回 {len(items)} 笔"
+            f"（应为 0）—— 身份覆盖没透传/没生效，本用例退化成"
+            f"「有历史收货信息」路径（假绿）。检查：case.debug_user 是否映射到装载链路 + "
+            f"app/utils/auth.py 是否接受该头"]
+    return []
+
+
 async def check_phone_provenance(token: str, case, results: list) -> list:
     """落库手机号必须能追溯到「本用例提供 / 种子夹具」的号码（issue #3386）。
 
@@ -2451,6 +2482,15 @@ async def run_case(case, token: str, session_id: str) -> dict:
     all_tool_names = []
     session_breaks = 0
 
+    # 多身份用例的**前提校验**（issue #3391）：身份没生效 → 用例会静默走错路径（假绿，
+    # 实测 run 34746134755 全绿但订单全挂 debug_customer_1）→ 这里先断言、并把违规
+    # 计入 case_issues（跑轮次前做，1 次 HTTP 且不烧 LLM）。
+    case_issues: list = []
+    try:
+        case_issues += await check_debug_user_precondition(token, case)
+    except Exception as e:
+        case_issues.append(f"debug_user 前提校验执行失败: {type(e).__name__}: {e}")
+
     # case 级表单值：所有 `auto_fill` 轮声明的并集 —— auto_respond 轮回答表单时复用，
     # 避免同一份收货信息在用例里重复声明（少一处漂移）
     case_form_values: dict = {}
@@ -2553,7 +2593,7 @@ async def run_case(case, token: str, session_id: str) -> dict:
 
     # 跨轮 case 级断言（acceptance-protocol §3.1/§3.4）：时序 + final_text 反模式词
     # getattr 兜底：兼容未重新渲染的旧生成物（字段缺失按空处理，行为不变）。
-    case_issues = []
+    # ⚠️ 不重置 case_issues：它已承载**跑轮次前**的前提校验结果（多身份，issue #3391）。
     case_issues += check_order_before(results, getattr(case, "order_before", []) or [])
     case_issues += check_forbidden_text(results, getattr(case, "forbidden_text", []) or [])
     case_issues += check_want_text(results, getattr(case, "want_text", []) or [])
@@ -3189,6 +3229,10 @@ def load_cases_from_yaml(cases_dir: str) -> list:
             skip_reason=c.get("skip_reason", ""),
             tags=c.get("tags") or [],
             persona=c.get("persona", ""),
+            # 多身份评测（issue #3391）：**CI 走的是这条 YAML 装载路径**（--cases .github/cases），
+            # 漏映射 = 用例仍以 debug_customer_1 跑 = 新客路径假绿（首版即踩：渲染器映射了、
+            # 装载器漏了，单测只覆盖渲染器 → CI 全绿但订单全挂在 debug_customer_1 名下）。
+            debug_user=c.get("debug_user", ""),
             order_before=c.get("order_before") or [],
             forbidden_text=c.get("forbidden_text") or [],
             want_text=c.get("want_text") or [],
