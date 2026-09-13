@@ -19,7 +19,10 @@ from app.graph.skills.product_skill import PRODUCT_TOOLS, PRODUCT_SKILL_CONFIG
 from app.graph.skills.knowledge_skill import KNOWLEDGE_TOOLS, KNOWLEDGE_SKILL_CONFIG
 from app.graph.skills.aftersales_skill import AFTERSALES_TOOLS, AFTERSALES_SKILL_CONFIG
 from app.graph.skills.general_agent import GENERAL_TOOLS, GENERAL_SKILL_CONFIG
-from app.graph.skills.base_skill import build_tool_context, execute_skill, _extract_content, get_skill_llm
+from app.graph.skills.base_skill import (
+    build_tool_context, execute_skill, _extract_content, get_skill_llm,
+    _masked_phone_write_block, KNOWN_RAW_PHONES_KEY,
+)
 import app.graph.skills.base_skill as lr2
 from app.graph.skills.skill_registry import SkillRegistry
 from app.tools.base import ToolContext
@@ -2944,18 +2947,25 @@ class TestSmsCodeRememberedAcrossTurns:
         assert not committed.get("last_sms_code"), "手机号不得被当验证码记住（extract_sms_code 用 fullmatch）"
 
 
-class TestCustomerReplyMasking:
-    """C 端回复必须脱敏手机号（验收发现 P2，issue #3379）。
+class TestGraphReplyMemoryIntegrity:
+    """graph 层**不得**改写 `final_content` —— 会话记忆就是模型上下文，必须保原文。
 
-    证据（验收剧本 C-A2 R3，`acceptance/ci-34730957920/.../C-A2.transcript.md`）：
-      AI「另外，您的收货信息我也帮您调出来了：**张三 · 13800138000 · 杭州市西湖区文三路1号**」
-    同一 transcript 里订单卡片是 `138****8000`（已脱敏）——**同一次对话两种口径**。
-    CH-011 只断言了"订单卡片脱敏"，**回显收货信息这条路径没人守**。
+    本类此前叫 `TestCustomerReplyMasking`，断言"`final_answer` 里是 `138****8000`"，
+    是**假守卫**：`final_answer` 同时是 `_agent_stream_to_sse` 里
+    `full_response.append(clean)` 的来源，也就是 `save_message` 落库的 assistant 消息，
+    即模型**下一轮读到的自己的历史**。于是（issue #3386，DB 实证）：
 
-    修法取**输出层**（不改工具返回、不改 args）：
-      · 顾客看得到的话（C 端 role=customer）→ 脱敏（`LogSanitizer.mask_text`）；
-      · 工具参数不动 → `order_create` 拿到的仍是真实号码（否则下单会拿 `138****8000` 去建单）；
-      · B 端（商家/客服）不脱敏 —— 客服要打电话给顾客，脱敏会破坏运营。
+      R5 graph 把 `13800138000` 脱敏成 `138****8000` → 落库 → R7 模型读到残缺值
+      → 把 `****` 填成 `0` → `13800008000`（11 位纯数字，`order_create._PHONE_PATTERN`
+      完全放行）→ **订单手机号静默写错**：CH-010 订单 `20260913384380002` 落库
+      `customer_phone = 13800008000`，而同用例给模型的号码是 `13800138000`。
+      顾客会**收不到短信与配送联系**，且全链路无任何告警。
+
+    不变量拆成两条，各守一侧、职责不重叠：
+      · **记忆侧（本类）**：graph 返回并落库的文本保持原文 —— 模型要拿它去建单/回显；
+      · **展示侧**（`test_api_chat_helpers.py::TestCustomerStreamMasking`、
+        `test_chat.py::TestGetHistoryMasking`）：顾客看得到的出站（SSE 文本/卡片、
+        C 端 `/history`）脱敏。
     """
 
     def _run(self, role="customer", reply="您的收货信息：张三 · 13800138000 · 杭州市西湖区文三路1号"):
@@ -2988,13 +2998,15 @@ class TestCustomerReplyMasking:
                 state=_make_state(messages=[HumanMessage(content="我的收货信息是什么")], role=role),
                 skill_name="customer_order", tool_names=["product_search"], system_prompt="p"))
 
-    def test_customer_reply_masks_phone(self):
+    def test_customer_answer_keeps_raw_phone(self):
+        """C 端答复里的手机号必须**原样返回**（记忆层不脱敏；脱敏只在出站展示层）。"""
         res = self._run(role="customer")
         ans = res.get("final_answer") or ""
-        assert "13800138000" not in ans, f"C 端回复泄露完整手机号: {ans!r}"
-        assert "138****8000" in ans, f"应脱敏为 138****8000，实际: {ans!r}"
+        assert "13800138000" in ans, (
+            f"记忆被脱敏 → 模型下一轮拿到残缺号码，会把 `****` 填成数字建单（issue #3386）: {ans!r}")
+        assert "138****8000" not in ans, f"graph 层不得脱敏（脱敏属出站展示层）: {ans!r}"
 
-    def test_staff_reply_keeps_phone(self):
+    def test_staff_answer_keeps_raw_phone(self):
         """B 端不脱敏：客服要打电话给顾客，脱敏会破坏运营。"""
         res = self._run(role="admin")
         ans = res.get("final_answer") or ""
@@ -3003,8 +3015,204 @@ class TestCustomerReplyMasking:
     def test_short_or_non_phone_digits_untouched(self):
         res = self._run(role="customer", reply="订单号 20260913027050006，数量 3 米，验证码 123456")
         ans = res.get("final_answer") or ""
-        assert "20260913027050006" in ans, "订单号不得被误当手机号脱敏"
-        assert "123456" in ans, "验证码不得被误脱敏"
+        assert "20260913027050006" in ans, "订单号不得被改写"
+        assert "123456" in ans, "验证码不得被改写"
+
+
+class TestMaskedPhoneWriteGuard:
+    """写工具不得用「掩码形态」的手机号建单（issue #3386，DB 实证静默脏数据）。
+
+    真实事故链：graph 层脱敏 → 落库 assistant 消息 = `138****8000` → 模型下一轮读到
+    自己的历史，把 `****` 填成 `0` 得到 `13800008000` —— 11 位纯数字**形态完全合法**，
+    `order_create._PHONE_PATTERN`（`^1[3-9]\\d{9}$`）放行，订单手机号静默写错。
+
+    故守卫必须比对**本会话已知的真实号码**（`customer_address_query` 的读结果、顾客
+    自己给的号码）：提交值若是已知真号的掩码变体 `138****8000` / `13800008000` /
+    `138xxxx8000`，且**顾客本人没说这个号** → 拦下并回放真实号码。
+    反向约束同样重要：顾客明确给了新号码时必须放行（改号是合法业务）。
+    """
+
+    KNOWN = "13800138000"
+
+    def _run(self, args, last_user_msg="确认下单", known=(KNOWN,), tool_name="order_create"):
+        import asyncio
+
+        class _Store:
+            async def load(self, sid):
+                return {KNOWN_RAW_PHONES_KEY: list(known)}
+
+            async def commit(self, sid, new_full):
+                return None
+
+        with patch("app.memory.session_state_store.SessionStateStore",
+                   side_effect=lambda *a, **k: _Store()):
+            return asyncio.run(_masked_phone_write_block(
+                tool_name, args, {"name": tool_name, "args": args, "id": "c1"},
+                "sess_1", "customer_order", last_user_msg))
+
+    def _blocked_code(self, out):
+        import json as _json
+        assert out is not None, "该号码必须被拦下（否则脏数据落库）"
+        return _json.loads(out[1]).get("error"), _json.loads(out[1]).get("message", "")
+
+    # ── 拦：掩码形态 ──
+
+    def test_star_filled_variant_blocked(self):
+        """`13800008000` = `138****8000` 把 `****` 填成 `0` —— CI 实证的落库形态。"""
+        code, msg = self._blocked_code(self._run({"customer_phone": "13800008000"}))
+        assert code == "write_blocked_masked_phone"
+        assert self.KNOWN in msg, f"拦截时必须回放真实号码供模型复用: {msg!r}"
+
+    def test_star_form_blocked(self):
+        code, msg = self._blocked_code(self._run({"customer_phone": "138****8000"}))
+        assert code == "write_blocked_masked_phone"
+        assert self.KNOWN in msg
+
+    def test_x_filler_variant_blocked(self):
+        code, _ = self._blocked_code(self._run({"customer_phone": "138xxxx8000"}))
+        assert code == "write_blocked_masked_phone"
+
+    def test_nested_receiver_phone_blocked(self):
+        """嵌套载荷里的号码同样拦（`receiver.phone` / `receiver_phone` 都可能出现）。"""
+        code, _ = self._blocked_code(self._run({"receiver": {"phone": "13800008000"}}))
+        assert code == "write_blocked_masked_phone"
+
+    # ── 放：不得误伤合法业务 ──
+
+    def test_customer_explicit_new_number_passes(self):
+        """顾客本轮明确给了这个号 → 放行（顾客是权威来源，不能拦）。"""
+        assert self._run({"customer_phone": "13800008000"},
+                         last_user_msg="用我另一个号 13800008000") is None
+
+    def test_unrelated_new_number_passes(self):
+        """换成完全不同的号码 → 放行（既不是掩码形态，也不是已知号的掩码变体）。"""
+        assert self._run({"customer_phone": "13912345678"}) is None
+
+    def test_unknown_number_without_known_phone_passes(self):
+        """会话里没有已知真号时不得猜：`13800008000` 本身是合法真号，无权判它是脏数据。"""
+        assert self._run({"customer_phone": "13800008000"}, known=()) is None
+
+    def test_write_without_phone_arg_passes(self):
+        assert self._run({"customer_name": "张三"}) is None
+
+    def test_non_phone_value_in_phone_key_passes(self):
+        """字段名以 `phone` 结尾 ≠ 值就是号码：分机备注 `分机#12` 含 `#` 但数字不足 → 不拦。
+
+        （首版这条测试写成 `phone_model` —— 键名不以 phone 结尾，根本没走到本分支，
+        变异测试当场判它"假守卫"；这类"字段选错/没走进代码"的测试必须靠变异才暴露。）
+        """
+        assert self._run({"contact_phone": "分机#12"}) is None
+
+
+class TestMaskedPhoneWriteGuardWiring:
+    """守卫必须**真的接在写路径上**（M68 教训：只测辅助函数 = 假守卫）。
+
+    断言以"工具没被执行"为准 —— 拦下后 `order_create` 不得真的发出去。
+    """
+
+    def _run(self, args, user_msg="确认下单", store_extra=None, tool_name="order_create",
+             read_only=False):
+        import asyncio, json as _json
+
+        seen = {"calls": []}
+        full = {"grounded_product_detail": {"product_id": "p1"}}
+        full.update(store_extra or {})
+
+        async def fake_execute(tool, a, ctx, state):
+            seen["calls"].append((tool, a))
+            data = {"id": "o1"}
+            if read_only:
+                # 只读工具读回来的原文号码（守卫的"已知真号"判据来源）
+                data = {"orderNo": "EVAL-ORD-0002", "customerPhone": "13800138000"}
+            return (_json.dumps({"success": True, "data": data}),
+                    {"success": True, "data": data})
+
+        class _Store:
+            async def load(self, sid):
+                return dict(full)
+
+            async def commit(self, sid, new_full):
+                seen.setdefault("commits", []).append(dict(new_full))
+                full.clear()
+                full.update(new_full)
+
+        with patch("app.memory.session_memory.SessionMemory"), \
+             patch("app.graph.skills.base_skill.get_breaker") as get_breaker, \
+             patch("app.graph.skills.base_skill.get_skill_llm") as get_llm, \
+             patch("app.graph.skills.base_skill.create_skill_registry") as create_reg, \
+             patch("app.graph.skills.base_skill.set_tool_context"), \
+             patch("app.graph.skills.base_skill._execute_tool_safe", fake_execute), \
+             patch("app.memory.session_state_store.SessionStateStore",
+                   side_effect=lambda *a, **k: _Store()):
+            tool = MagicMock()
+            tool.name = tool_name
+            tool.read_only = read_only
+            tool.destructive = False
+            tool.requires_confirmation = False
+            registry = MagicMock()
+            registry.get_langchain_tools.return_value = []
+            registry.get_tool.side_effect = lambda n: tool if n == tool_name else None
+            create_reg.return_value = registry
+            breaker = MagicMock()
+
+            async def _pt(fn):
+                return await fn()
+
+            breaker.call = _pt
+            get_breaker.return_value = breaker
+            call = MagicMock(spec=AIMessage)
+            call.content = ""
+            call.tool_calls = [{"name": tool_name, "args": args, "id": "c1"}]
+            final = MagicMock(spec=AIMessage)
+            final.content = "好的"
+            final.tool_calls = []
+            llm = MagicMock()
+            llm.bind_tools.return_value = llm
+            llm.ainvoke = AsyncMock(side_effect=[call, final])
+            get_llm.return_value = llm
+            res = asyncio.run(execute_skill(
+                state=_make_state(messages=[HumanMessage(content=user_msg)]),
+                skill_name="customer_order",
+                tool_names=[tool_name], system_prompt="p"))
+        from langchain_core.messages import ToolMessage as _TM
+        seen["tool_content"] = "\n".join(
+            str(getattr(m, "content", "")) for m in (res or {}).get("messages", [])
+            if isinstance(m, _TM))
+        return seen
+
+    def test_masked_phone_never_reaches_tool(self):
+        seen = self._run({"customer_name": "张三", "customer_phone": "13800008000"},
+                         user_msg="我的手机号是 13800138000",
+                         store_extra={KNOWN_RAW_PHONES_KEY: ["13800138000"]})
+        assert seen["calls"] == [], "掩码变体号码不得真的调用 order_create（否则脏数据落库）"
+        assert "write_blocked_masked_phone" in seen["tool_content"]
+        assert "13800138000" in seen["tool_content"], "拦截后必须把真实号码回放给模型"
+
+    def test_read_only_tool_not_blocked(self):
+        """只读工具不拦：脏数据风险来自"用掩码值建单"，查询用掩码值只是查不到。
+
+        这条同时是"守卫接线按 read_only 分流"的证据（拦错了会让查询白跑一轮）。
+        """
+        seen = self._run({"customer_phone": "13800008000", "keyword": "张三"},
+                         tool_name="order_query", read_only=True,
+                         store_extra={KNOWN_RAW_PHONES_KEY: ["13800138000"]})
+        assert len(seen["calls"]) == 1, "只读工具被误拦 → 查询能力白丢一轮"
+
+    def test_read_result_phone_is_remembered(self):
+        """只读工具读到的真号必须被记住 —— 否则 C-A2 式流程（号码只来自历史订单）
+
+        下一轮写工具就没有"已知真号"可比对，守卫形同虚设。
+        """
+        seen = self._run({"keyword": "我的订单"}, tool_name="order_query", read_only=True)
+        merged = [p for c in seen.get("commits") or [] for p in (c.get(KNOWN_RAW_PHONES_KEY) or [])]
+        assert "13800138000" in merged, f"读到的真号没进会话状态: {seen.get('commits')}"
+
+    def test_clean_phone_still_reaches_tool(self):
+        """不能拦成"下单永不成功"：正常号码必须照旧执行。"""
+        seen = self._run({"customer_name": "张三", "customer_phone": "13800138000"},
+                         user_msg="我的手机号是 13800138000",
+                         store_extra={KNOWN_RAW_PHONES_KEY: ["13800138000"]})
+        assert len(seen["calls"]) == 1, "正常号码被拦 → 真回归"
 
 
 class TestFalseCancelGuard:

@@ -416,10 +416,22 @@ cases:
         fields:
           - customer_phone
           - items
+    # 落库手机号断言（issue #3386，DB 实证）：
+    #   CI run 34742490138 里本用例订单 `20260913384380002` 落库
+    #   `customer_phone = 13800008000` —— 模型把掩码 `138****8000` 的 `****` 填成了 `0`，
+    #   而本用例给的号码是 `13800138000`（见上面 form_values）。11 位纯数字形态完全合法，
+    #   `must_succeed`/`amount_verify`/`order_items` 全都看不见 → **静默脏数据**：
+    #   顾客收不到短信与配送联系。故必须直接核对落库值。
+    #   （另有全局「号码来源闭合」断言 check_phone_provenance 兜底全部 C 端用例，无需逐条配置。）
+    db_verify:
+      - fetch: order_phone
+        source: order_create
+        expect_phone: "13800138000"
     data_checks:
       - "规格选择/收货信息通过 interact(choice/form) 组件收集（非纯文本追问）"
       - "order_create 前必有 interact(confirm) 确认（写操作守卫）"
       - "order_create items 含所选 SKU（颜色/门幅/售卖方式）与数量"
+      - "会话记忆保原文：手机号不得在图谱层被脱敏后落库（否则模型下一轮把 `****` 填 0 建单 —— issue #3386）"
       - "C 端下单是**两步**：确认订单信息后还需手机验证码（order_create 的 sms_code，customer 角色必填）。用例必须提供验证码这一轮，否则 AI 停在第 5 步「请提供验证码」，order_create 永不发生（run 34622425044 实证：R7 顾客回「确认」后无任何工具调用）。dev/CI 栈已设 SMS_BYPASS_CODE=123456，此处用该码走真实校验分支。"
     skip_reason: ""
     merge_log: "C 端表单化交互方案 S1（miniapp-multiturn-form-scenarios.md）"

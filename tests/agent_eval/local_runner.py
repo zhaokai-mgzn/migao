@@ -1644,9 +1644,84 @@ async def _fetch_order_detail(token: str, order_ref: str) -> dict | None:
 OUTPUT_NONEMPTY = "__nonempty__"
 
 
+async def _resolve_order_detail(token: str, data: dict):
+    """由 `order_create` 的 payload 拿到 (ref, 订单详情)。
+
+    id 与 orderNo 都当候选（ai-agent 返回 id=32 位 hex、orderNo=2026… 两者都可能是
+    能被 admin-api 接受的那个形态），逐个尝试到拿到详情为止 —— 单靠任一条都会漏
+    （实测：32 位 hex 走关键词搜不到；而订单号 `2026…` 不是合法 path 参数）。
+    """
+    cands = [str((data or {}).get("id") or ""), str((data or {}).get("orderNo") or "")]
+    ref, detail = "", None
+    for _c in cands:
+        if not _c:
+            continue
+        detail = await _fetch_order_detail(token, _c)
+        if detail:
+            ref = _c
+            break
+    if not detail:
+        ref = cands[0] or cands[1]
+    return ref, detail
+
+
 # 完整手机号（中国大陆）：加数字边界，避免把订单号里的 11 位片段误报
 # （实测订单号 `20260913027050006` 含 `13027050006`，无边界正则必然误伤）
 _FULL_PHONE_RE = re.compile(r"(?<!\d)1[3-9]\d{9}(?!\d)")
+
+_SEED_PHONES_CACHE = None
+
+
+def _seed_phones() -> set:
+    """种子夹具里的手机号（C 端流程复用种子订单收货信息时，号码来源就是这些）。
+
+    缓存一次：夹具是静态文件，且在用例级并发下重复读盘没有意义。
+    读不到（文件缺失）时返回空集 —— 与"用例没提供号码"叠加会让来源闭合断言判红，
+    这正是想要的**fail-closed** 方向（宁可红，不可假绿）。
+    """
+    global _SEED_PHONES_CACHE
+    if _SEED_PHONES_CACHE is None:
+        phones = set()
+        try:
+            p = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                             "fixtures", "xiaobu_eval_seed.sql")
+            with open(p, encoding="utf-8") as f:
+                phones = set(_FULL_PHONE_RE.findall(f.read()))
+        except Exception:
+            phones = set()
+        _SEED_PHONES_CACHE = phones
+    return _SEED_PHONES_CACHE
+
+
+async def check_phone_provenance(token: str, case, results: list) -> list:
+    """落库手机号必须能追溯到「本用例提供 / 种子夹具」的号码（issue #3386）。
+
+    比逐用例写 `db_verify[order_phone].expect_phone` 更结构性：**新增用例无需配置**
+    就自动受保护。CH-010 的脏号码 `13800008000` 既不是用例给的 `13800138000`、
+    也不是种子号码 → 本断言直接判红，不需要人肉审计 DB。
+    只对 C 端（xiaobu）生效：B 端米宝给顾客建单时可能从客户档案取号（非用例提供），
+    全局套用会误报。
+    """
+    if str(getattr(case, "persona", "") or "") != "xiaobu":
+        return []
+    data = _first_successful_data(results or [], "order_create")
+    if not data:
+        return []          # 没写成功 → 没有落库事实可核（写没写成功由 must_succeed 管）
+    supplied = set(_FULL_PHONE_RE.findall(json.dumps(
+        getattr(case, "user_inputs", None) or [], ensure_ascii=False, default=str)))
+    allowed = supplied | _seed_phones()
+    ref, detail = await _resolve_order_detail(token, data)
+    got = str(((detail or {}).get("data") or {}).get("customerPhone") or "").strip()
+    if not got:
+        # 查不到详情/号码 → 不在这里重复报（db_verify[order_phone] 才是"必须能查到"的断言）
+        return []
+    if got not in allowed:
+        return [
+            f"落库手机号 {got} 无法追溯到本用例提供的号码 "
+            f"{sorted(supplied) or '（无）'} / 种子号码（订单 {ref}）—— "
+            f"疑似掩码填充值被静默写库（如 `138****8000` 的 `****` 被模型填成 `0`），"
+            f"顾客会收不到短信与配送联系（issue #3386）"]
+    return []
 
 
 def check_no_full_phone(results: list) -> list:
@@ -1743,6 +1818,35 @@ async def check_db_verify(token: str, db_verify: list, results: list | None = No
             continue
         fetch = str(spec.get("fetch") or "")
 
+        if fetch == "order_phone":
+            # 落库手机号断言（issue #3386）：`must_succeed` 只看调用成功、
+            # `amount_verify` 只核金额、`db_verify[order_items]` 只核明细与数量 ——
+            # **手机号写错全链路无感**。CI 实证（run 34742490138）：CH-010 订单
+            # `20260913384380002` 落库 `customer_phone = 13800008000`（模型把掩码
+            # `138****8000` 的 `****` 填成了 `0`），而用例给模型的是 `13800138000`；
+            # 11 位纯数字形态完全合法 → 静默建单成功，顾客收不到短信与配送联系。
+            src = str(spec.get("source") or "order_create")
+            want = str(spec.get("expect_phone") or "").strip()
+            if not want:
+                issues.append(
+                    "db_verify[order_phone]: 缺 expect_phone（拿不到期望值 → 检查会空转通过）")
+                continue
+            data = _first_successful_data(results or [], src)
+            if not data:
+                issues.append(
+                    f"db_verify[order_phone]: 找不到 {src} 的成功调用（无订单可核对）—— 判失败而非跳过")
+                continue
+            ref, detail = await _resolve_order_detail(token, data)
+            got = str(((detail or {}).get("data") or {}).get("customerPhone") or "").strip()
+            if not got:
+                issues.append(f"db_verify[order_phone]: 订单 {ref} 查不到手机号（未落库？）")
+                continue
+            if got != want:
+                issues.append(
+                    f"db_verify[order_phone]: 订单 {ref} 落库手机号 {got} ≠ 期望 {want}"
+                    f"（掩码填充值会静默写错号码，顾客收不到短信/配送联系）")
+            continue
+
         if fetch == "order_items":
             # 订单明细落库断言（issue #3367）：must_succeed 只说"调用成功"、
             # amount_verify 只核对**传参**，都不回答"明细真的按行进库了吗"。
@@ -1752,19 +1856,7 @@ async def check_db_verify(token: str, db_verify: list, results: list | None = No
                 issues.append(
                     f"db_verify[order_items]: 找不到 {src} 的成功调用（无订单可核对）—— 判失败而非跳过")
                 continue
-            # id 与 orderNo 都当候选（ai-agent 返回 id=32 位 hex、orderNo=2026… 两者都可能是
-            # 能被 admin-api 接受的那个形态），逐个尝试到拿到详情为止
-            cands = [str(data.get("id") or ""), str(data.get("orderNo") or "")]
-            ref, detail = "", None
-            for _c in cands:
-                if not _c:
-                    continue
-                detail = await _fetch_order_detail(token, _c)
-                if detail:
-                    ref = _c
-                    break
-            if not detail:
-                ref = cands[0] or cands[1]
+            ref, detail = await _resolve_order_detail(token, data)
             items = ((detail or {}).get("data") or {}).get("items") or []
             if not items:
                 issues.append(f"db_verify[order_items]: 订单 {ref} 查不到明细（未落库？）")
@@ -2419,6 +2511,13 @@ async def run_case(case, token: str, session_id: str) -> dict:
             case_issues += await check_db_verify(token, case.db_verify, results)
         except Exception as e:
             case_issues.append(f"db_verify 执行失败: {e}")
+    # 号码来源闭合（issue #3386）：落库手机号必须能追溯到用例给的号码/种子号码。
+    # 不配在任何用例里 —— 结构性护栏，新增用例自动受保护（CH-010 的脏号码
+    # `13800008000` 就是这样被发现的：既不是用例给的、也不是种子号码）。
+    try:
+        case_issues += await check_phone_provenance(token, case, results)
+    except Exception as e:
+        case_issues.append(f"phone_provenance 执行失败: {e}")
     if case_issues:
         for ci in case_issues:
             failed_expectations.append((ci, "case-level check"))

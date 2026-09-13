@@ -2981,3 +2981,167 @@ class TestAutoRespondNoRepeatCardClick:
         assert lr.resolve_auto_respond([card] + once, "123456", {}) == "第一项"
         twice = once + [dict(card, user_message="第一项", __round=2)]
         assert lr.resolve_auto_respond([card] + twice, "123456", {}) == "123456"
+
+
+class TestDbVerifyOrderPhone:
+    """落库手机号断言（issue #3386）。
+
+    为什么必须有：此前 `db_verify` 只核商品/明细/数量，`amount_verify` 只核金额，
+    `must_succeed` 只看调用成功 —— **订单手机号写错全链路无感**。
+    CI 实证（run 34742490138）：CH-010 订单 `20260913384380002` 落库
+    `customer_phone = 13800008000`（模型把掩码 `138****8000` 的 `****` 填成了 `0`），
+    而用例给模型的是 `13800138000`；11 位纯数字完全合法 → 静默建单成功。
+    """
+
+    ORDER = {"data": {"orderNo": "20260913384380002", "customerPhone": "13800008000"}}
+
+    def _run(self, spec, order=None, lookup_ok=True):
+        import unittest.mock as mock
+
+        async def fake_lookup(token, order_ref):
+            return (order if order is not None else self.ORDER) if lookup_ok else None
+
+        with mock.patch.object(lr, "_fetch_order_detail", new=fake_lookup):
+            return asyncio.run(lr.check_db_verify("tok", [spec], [self._round()]))
+
+    def _round(self):
+        return _order_round(7, [{"product_name": "北欧风窗帘", "quantity": 3}], total=408.0)
+
+    def _spec(self, **kw):
+        base = {"fetch": "order_phone", "source": "order_create",
+                "expect_phone": "13800138000"}
+        base.update(kw)
+        return base
+
+    def test_masked_filled_phone_fails(self):
+        """CI 实证形态：落库 13800008000 ≠ 期望 13800138000 → 必须判失败。"""
+        issues = self._run(self._spec())
+        assert issues, "落库手机号与用例给的号码不一致 → 必须红（否则脏数据无人知）"
+        assert "13800008000" in issues[0] and "13800138000" in issues[0], issues[0]
+
+    def test_correct_phone_passes(self):
+        order = {"data": {"orderNo": "x", "customerPhone": "13800138000"}}
+        assert self._run(self._spec(), order=order) == []
+
+    def test_order_not_found_fails_closed(self):
+        issues = self._run(self._spec(), lookup_ok=False)
+        assert issues and "查不到" in issues[0], "查不到订单不得静默当通过"
+
+    def test_missing_expected_phone_fails_closed(self):
+        """配置写错（没给 expect_phone）不得空转通过。"""
+        issues = self._run({"fetch": "order_phone", "source": "order_create"})
+        assert issues and "expect_phone" in issues[0]
+
+    def test_phone_absent_in_order_fails(self):
+        issues = self._run(self._spec(), order={"data": {"orderNo": "x"}})
+        assert issues and "手机号" in issues[0]
+
+
+class TestPhoneProvenance:
+    """落库手机号必须能追溯到「本用例提供的号码 / 种子号码」（issue #3386）。
+
+    比逐用例写 `expect_phone` 更结构性：**新增用例无需配置**就自动受保护。
+    实测价值：CH-010 的脏号码 `13800008000` 既不是用例给的 `13800138000`、
+    也不是种子号码 → 本断言直接判红，不需要人肉审计 DB。
+    """
+
+    def _case(self, inputs, persona="xiaobu"):
+        import unittest.mock as mock
+        c = mock.MagicMock()
+        c.id = "CH-010"
+        c.persona = persona
+        c.user_inputs = inputs
+        return c
+
+    def _results(self):
+        # 注意：results 是**逐轮列表**（_order_round 返回单轮 dict）
+        return [_order_round(7, [{"product_name": "北欧风窗帘", "quantity": 3}], total=408.0)]
+
+    def _run(self, case, phone, lookup_ok=True):
+        import unittest.mock as mock
+
+        async def fake_lookup(token, order_ref):
+            if not lookup_ok:
+                return None
+            return {"data": {"orderNo": "20260913384380002", "customerPhone": phone}}
+
+        with mock.patch.object(lr, "_fetch_order_detail", new=fake_lookup):
+            return asyncio.run(lr.check_phone_provenance("tok", case, self._results()))
+
+    def test_masked_filled_phone_is_flagged(self):
+        case = self._case(['auto_respond:\n  form_values:\n    customer_phone: "13800138000"'])
+        issues = self._run(case, "13800008000")
+        assert issues, "落库号码无法追溯到用例给的号码 → 必须判红"
+        assert "13800008000" in issues[0], issues[0]
+
+    def test_supplied_phone_passes(self):
+        case = self._case(['auto_respond:\n  form_values:\n    customer_phone: "13800138000"'])
+        assert self._run(case, "13800138000") == []
+
+    def test_seed_phone_passes_when_case_supplies_none(self):
+        """用例没给号码、流程复用种子订单的收货信息（has_address=True）→ 种子号码合法。"""
+        case = self._case(["帮我查一下我的订单"])
+        assert self._run(case, "13800138000") == []
+
+    def test_seed_variant_is_flagged(self):
+        case = self._case(["帮我查一下我的订单"])
+        issues = self._run(case, "13800008000")
+        assert issues, "种子号码 13800138000 的掩码填充形态同样必须判红"
+
+    def test_no_created_order_is_noop(self):
+        """没有写成功 → 无落库事实，不该凭空报问题。"""
+        case = self._case(['customer_phone: "13800138000"'])
+        assert asyncio.run(lr.check_phone_provenance("tok", case, [])) == []
+
+    def test_mibao_persona_not_checked(self):
+        """B 端米宝可能给顾客建单时从客户档案取号（非用例提供）→ 不做来源闭合。"""
+        case = self._case(["给张三创建一个订单"], persona="mibao")
+        assert self._run(case, "13912345678") == []
+
+
+class TestRunCasePhoneProvenanceWiring:
+    """run_case 集成：号码来源闭合必须**真的接在用例判定上**（issue #3386）。
+
+    为什么单测函数不够（M68/M122 教训）：函数级断言在"接线断了"时照样全绿 ——
+    真正要证明的是 `run_case` 会把它算进 case-level issues（score 0）。
+    """
+
+    def _case(self, user_inputs=None, persona="xiaobu"):
+        return lr.EvalCase(
+            id="PROV-TEST", legacy_id="", title="t", skill=lr.Skill.ORDER,
+            difficulty=lr.Difficulty.NORMAL,
+            user_inputs=user_inputs if user_inputs is not None
+            else ['auto_respond:\n  form_values:\n    customer_phone: "13800138000"'],
+            expectations=["tool: order_create"], data_checks=[], persona=persona,
+        )
+
+    async def _run(self, case, phone):
+        import unittest.mock as mock
+
+        async def fake_send(token, session_id, message, images=None):
+            return {"user_message": message, "images": images or [],
+                    "tool_calls": [{"name": "order_create", "args": {}}],
+                    "tool_results": [{"tool": "order_create",
+                                      "result": {"success": True,
+                                                 "data": {"id": "o1",
+                                                          "orderNo": "20260913384380002"}}}],
+                    "interactive": [], "final_text": "下单成功",
+                    "error": None, "streamed": False, "done": True}
+
+        async def fake_lookup(token, ref):
+            return {"data": {"orderNo": "20260913384380002", "customerPhone": phone}}
+
+        with mock.patch.object(lr, "send_message", new=fake_send), \
+             mock.patch.object(lr, "_fetch_order_detail", new=fake_lookup):
+            return await lr.run_case(case, "tok", "sess")
+
+    def test_masked_filled_phone_scores_zero(self):
+        import asyncio
+        res = asyncio.run(self._run(self._case(), "13800008000"))
+        assert res["score"] == 0.0, "落库脏号码必须把用例判红（否则 CI 看不见）"
+        assert any("13800008000" in str(f) for f, _ in res["failed"])
+
+    def test_correct_phone_keeps_score(self):
+        import asyncio
+        res = asyncio.run(self._run(self._case(), "13800138000"))
+        assert res["score"] == 1.0, f"正常号码被误判: {res['failed']}"

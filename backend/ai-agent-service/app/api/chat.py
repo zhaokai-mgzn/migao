@@ -1817,11 +1817,15 @@ async def get_history(
             "id": msg["id"],
             "session_id": msg["session_id"],
             "role": msg["role"],
-            "content": msg["content"],
+            # C 端历史是**展示面**：顾客刷新页面走的就是这里回放（issue #3386）。
+            # 出站脱敏此前只做在 SSE 流上 → 同一份对话「流上脱敏、历史里明文」两种口径。
+            # 落库保持原文（模型下一轮/复核对账都要真号），脱敏只在这一层做。
+            "content": _mask_for_customer(msg["content"], current_user),
             "content_type": msg.get("content_type", "text"),
             "images": msg_images if msg_images else None,
             "tool_calls": msg.get("tool_calls"),
-            "interactive": interactive_data,
+            "interactive": _mask_card_for_customer(interactive_data, current_user)
+            if isinstance(interactive_data, dict) else interactive_data,
             "interactive_answered": interactive_answered,
             "created_at": _format_datetime(msg["created_at"]),
         })

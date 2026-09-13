@@ -1139,6 +1139,196 @@ def _clear_write_input_error(full: dict) -> dict:
     return out
 
 
+# ── 写工具不得用「掩码形态」手机号（issue #3386，DB 实证静默脏数据）────────────
+# 实证（run 34742490138）：CH-010 订单 `20260913384380002` 落库
+# `customer_phone = 13800008000`，而用例给模型的是 `13800138000`。
+# `13800008000` = `138` + `0000` + `8000` —— 正是掩码 `138****8000` 的 `****` 被**填成 0**。
+# 成因链：graph 层把回复脱敏后才返回（已在本文件 §8.5 移除）→ 落库的 assistant 消息
+# 就是 `138****8000` → 模型下一轮读到自己的历史，把星号填成数字 → 11 位纯数字
+# **形态完全合法**（`order_create._PHONE_PATTERN = ^1[3-9]\d{9}$` 放行）→ 静默建单成功，
+# 顾客收不到短信与配送联系。`validate_input` 只挡得住带 `*` 的形态，挡不住"填 0"。
+# 守卫判据（不是裸格式校验，而是**与已知真号比对**）：
+#   · 提交值含掩码字符 → 必拦；
+#   · 提交值 == 本会话已知真号的掩码变体（`138****8000` / `13800008000` / `138xxxx8000`）
+#     且顾客本人本轮没给这个号 → 拦下并回放真实号码；
+#   · 会话里没有已知真号 → **不拦**（`13800008000` 本身是合法真号，无权判它是脏数据）。
+# 反向约束：顾客明确给了新号码必须放行（改号是合法业务，不能拦成"下单永不成功"）。
+KNOWN_RAW_PHONES_KEY = "known_raw_phones"
+
+# 掩码**占位字符**：真手机号绝不含这些字符 → 出现即证明是掩码值（可无条件拦）。
+_MASK_PLACEHOLDER_CHARS = "*＊×xX·•#"
+
+# 模型把掩码"填成什么"的可能形态：占位符本身 + **数字 0**（本次事故的真实形态）。
+# ⚠️ 与占位字符必须分开：`0` 是合法号码字符，若混进 `_MASK_PLACEHOLDER_CHARS`，
+# 任何含 0 的真号都会被判成"掩码形态"（过度拦截，下单永不成功）。
+_MASK_FILLER_CHARS = _MASK_PLACEHOLDER_CHARS + "0"
+
+_PHONE_IN_TEXT_RE = None
+
+
+def _phone_in_text_re():
+    """中国大陆手机号（数字边界）—— 惰性编译，避免模块导入期开销。"""
+    global _PHONE_IN_TEXT_RE
+    if _PHONE_IN_TEXT_RE is None:
+        import re as _re
+        _PHONE_IN_TEXT_RE = _re.compile(r"(?<!\d)1[3-9]\d{9}(?!\d)")
+    return _PHONE_IN_TEXT_RE
+
+
+def raw_phones_in(text) -> set:
+    """文本里出现的**完整**手机号（用于收集"本会话已知真号"）。"""
+    if not text:
+        return set()
+    return set(_phone_in_text_re().findall(str(text)))
+
+
+def mask_variants(raw: str) -> set:
+    """某个真号的所有「掩码形态」——占位符既可能保留原样，也可能被模型填成数字/字母。
+
+    `13800138000` → {`138****8000`, `13800008000`, `138xxxx8000`, …}
+    最后一项是本次事故的真实落库值，故必须包含"填 0"这一形态。
+    """
+    raw = str(raw or "")
+    if len(raw) != 11 or not raw.isdigit():
+        return set()
+    return {raw[:3] + (c * 4) + raw[-4:] for c in _MASK_FILLER_CHARS}
+
+
+def _is_mask_shaped(value: str) -> bool:
+    """值里是否含掩码占位字符（含 `*` 的号码绝不可能是真号）。
+
+    ⚠️ 必须同时要求"够像号码"（≥7 位数字）：字段名以 `phone` 结尾不代表值就是号码
+    （`{phone_model: "iPhone X"}` 含 `X`），只看占位字符会把无关字段误判成掩码号码。
+    """
+    text = str(value or "")
+    if sum(c.isdigit() for c in text) < 7:
+        return False
+    return any(c in text for c in _MASK_PLACEHOLDER_CHARS)
+
+
+def _phone_args(args) -> list:
+    """递归收集参数里所有「手机号字段」的 (路径, 值)，深度受限。"""
+    out = []
+
+    def _walk(node, path, depth):
+        if depth > 3 or not isinstance(node, dict):
+            return
+        for k, v in node.items():
+            key = str(k)
+            here = f"{path}.{key}" if path else key
+            if isinstance(v, dict):
+                _walk(v, here, depth + 1)
+            elif isinstance(v, (list, tuple)):
+                for i, item in enumerate(v):
+                    _walk(item, f"{here}[{i}]", depth + 1)
+            elif key.lower().endswith("phone") and isinstance(v, str) and v.strip():
+                out.append((here, v.strip()))
+
+    _walk(args or {}, "", 0)
+    return out
+
+
+async def _known_raw_phones(session_id: str, state: dict | None = None,
+                            last_user_msg: str = "") -> set:
+    """本会话已知的**真实**手机号：跨轮持久化集合 ∪ 会话里顾客自己说过的号码。
+
+    为什么要两路：顾客提供的号码在本轮消息/历史里（无需持久化），而
+    `customer_address_query` 之类读工具返回的号码要靠持久化跨轮带过来。
+    """
+    known = set()
+    try:
+        from app.memory.session_state_store import SessionStateStore
+        full = await SessionStateStore().load(session_id) or {}
+        stored = full.get(KNOWN_RAW_PHONES_KEY) or []
+        if isinstance(stored, (list, tuple, set)):
+            known |= {str(p) for p in stored if str(p)}
+    except Exception:
+        pass
+    known |= raw_phones_in(last_user_msg)
+    for msg in (state or {}).get("messages") or []:
+        try:
+            role = str(getattr(msg, "type", "") or getattr(msg, "role", ""))
+        except Exception:
+            role = ""
+        if role in ("human", "user"):
+            known |= raw_phones_in(getattr(msg, "content", ""))
+    return known
+
+
+async def _remember_raw_phones(session_id: str, phones) -> None:
+    """把读到的真号记进会话状态（只增不减；失败不致命）。"""
+    fresh = {str(p) for p in (phones or set()) if str(p)}
+    if not session_id or not fresh:
+        return
+    try:
+        from app.memory.session_state_store import SessionStateStore
+        store = SessionStateStore()
+        full = await store.load(session_id) or {}
+        cur = full.get(KNOWN_RAW_PHONES_KEY) or []
+        merged = sorted({str(p) for p in cur if str(p)} | fresh)
+        if merged == sorted({str(p) for p in cur if str(p)}):
+            return
+        full[KNOWN_RAW_PHONES_KEY] = merged
+        await store.commit(session_id, full)
+    except Exception as e:
+        logger.warning(f"[phone-guard] 记录真实号码失败（非致命）: {e}")
+
+
+async def _masked_phone_write_block(tool_name: str, args: dict, tool_call: dict,
+                                    session_id: str, skill_name: str,
+                                    last_user_msg: str = "", state: dict | None = None):
+    """写工具参数里是「掩码形态」手机号时拦下（返回 3 元组），否则放行（None）。"""
+    pairs = _phone_args(args or {})
+    if not pairs:
+        return None
+    known = await _known_raw_phones(session_id, state, last_user_msg) if session_id else \
+        raw_phones_in(last_user_msg)
+    # 顾客本人本轮明确给出的号码 = 权威来源（哪怕它长得像掩码变体也不拦）
+    user_said = raw_phones_in(last_user_msg)
+    for path, value in pairs:
+        if _is_mask_shaped(value):
+            raw = ""
+            for k in known:
+                if k[:3] == value[:3] and k[-4:] == value[-4:]:
+                    raw = k
+                    break
+            return _masked_phone_block_result(
+                tool_name, path, value, raw, session_id, skill_name,
+                because="含掩码字符", tool_call=tool_call)
+        if value in user_said:
+            continue
+        for k in known:
+            if value in mask_variants(k):
+                return _masked_phone_block_result(
+                    tool_name, path, value, k, session_id, skill_name,
+                    because=f"是本会话真实号码（{k}）的掩码填充形态",
+                    tool_call=tool_call)
+    return None
+
+
+def _masked_phone_block_result(tool_name: str, path: str, value: str, known_raw: str,
+                               session_id: str, skill_name: str, because: str,
+                               tool_call: dict | None = None):
+    """构造拦截返回值（3 元组：tool_call, result_str, result_dict）。"""
+    import json as _json
+    if known_raw:
+        tail = (f"顾客的真实号码是 **{known_raw}** —— 请直接用这个完整号码重新调用 "
+                f"`{tool_name}`；**不要**把 `****` 填成数字。")
+    else:
+        tail = (f"请先回到会话里取顾客**完整的 11 位**号码（或直接问顾客），"
+                f"再用真实号码调用 `{tool_name}`。")
+    msg = (f"`{tool_name}` 的参数 `{path}` 填的是**掩码形态**的手机号 `{value}`"
+           f"（{because}）：掩码值不能用来建单/建工单 —— 号码错了顾客收不到短信与配送联系，"
+           f"而且 11 位纯数字的掩码填充值**看起来完全合法**，会静默落库成脏数据。{tail}")
+    logger.warning(
+        f"[{skill_name}] 拦截掩码形态手机号 tool={tool_name} arg={path} value={value!r} "
+        f"known={known_raw!r} | session={session_id}")
+    code = "write_blocked_masked_phone"
+    return (tool_call, _json.dumps({"success": False, "error": code, "message": msg},
+                                   ensure_ascii=False),
+            {"success": False, "error": code, "message": msg})
+
+
 async def _write_input_recovery_block(tool_name: str, args: dict, tool_call: dict,
                                       session_id: str, skill_name: str,
                                       last_user_msg: str):
@@ -2130,10 +2320,23 @@ async def execute_skill(
                         tool_name, args, tool_call, session_id, skill_name)
                     if _blocked2 is not None:
                         return _blocked2
+                    # ── 掩码形态手机号拦截（issue #3386，DB 实证静默脏数据）──
+                    # 在写工具真正执行**之前**：`13800008000` 这种"星号填 0"的形态能通过
+                    # 11 位格式校验，一旦放行就是无告警的错号码落库。
+                    # 只拦**写**工具：脏数据风险来自"用掩码值建单"，只读查询用掩码值只是
+                    # 查不到，拦它反而多一轮往返。判据用 `tool.read_only`（`tool` 就在下面
+                    # 解析 —— 放到解析之后，守卫内不再查 registry，避免"注册表拿不到工具
+                    # → 静默放行"的假守卫）。
                     tool = skill_registry.get_tool(tool_name)
                     if tool is None:
                         logger.warning(f"[{skill_name}] Tool not found: {tool_name} | session={session_id}")
                         return tool_call, json.dumps({"success": False, "error": "tool_not_found", "message": f"工具 {tool_name} 不可用"}, ensure_ascii=False), {"success": False}
+                    if not getattr(tool, "read_only", False):
+                        _blocked3 = await _masked_phone_write_block(
+                            tool_name, args, tool_call, session_id, skill_name,
+                            last_user_msg, state)
+                        if _blocked3 is not None:
+                            return _blocked3
                     # ── 兜底：C 端在办流程中禁止「无信号误转人工」（CH-012 实证）──
                     # R1 已下发选单卡、R3 用户仅回「质量问题」，agent 却 human_handoff
                     # （还创建了投诉工单）→ 流程被放弃、轮数耗尽、aftersale_create 未发生。
@@ -2411,6 +2614,18 @@ async def execute_skill(
                         corrected = await _self_correct_retry(tool, args, tool_context, skill_name, result_dict, session_id, tenant_id, state)
                         if corrected:
                             result_str, result_dict = corrected
+                    # ── 记住读到的**真实**手机号（issue #3386 写守卫的判据来源）──
+                    # 只读工具读回来的号码是权威原文（写工具的入参可能是模型填的掩码变体，
+                    # 若从写结果里学号码就等于让脏数据自我合法化，故只看只读工具）。
+                    if (session_id and result_dict.get("success")
+                            and getattr(tool, "read_only", False)):
+                        try:
+                            _found = raw_phones_in(json.dumps(result_dict.get("data"),
+                                                              ensure_ascii=False, default=str))
+                            if _found:
+                                await _remember_raw_phones(session_id, _found)
+                        except Exception as _e7:
+                            logger.warning(f"[{skill_name}] 记录真实号码失败（非致命）: {_e7}")
                     # ── 落地"本会话已查过商品详情"标记（issue #3361 下单接地闸门用）──
                     # 只在成功时写；失败不写（避免"查了但没查到"被当成接地）。
                     # 同一张交互卡的下发计数（issue #3365）：第 3 次起会被 _card_loop_block 拦下。
@@ -2614,22 +2829,18 @@ async def execute_skill(
                 # 达到 max_iterations — 不暴露 LLM 的半截思考，用友好兜底
                 final_content = "抱歉，处理步骤较多，请稍后重试或换个简单的方式描述需求。"
 
-    # ── 8.5 C 端回复脱敏（验收发现 P2，issue #3379）──
-    # 证据：验收剧本 C-A2 R3 里 AI 回显收货信息给出**完整手机号** `13800138000`，
-    # 而同一次对话的订单卡片是 `138****8000` —— 同一次对话两种口径；CH-011 只断言了
-    # "订单卡片脱敏"，回显路径没人守。
-    # 取**输出层**收敛（不动工具返回、不动 args）：
-    #   · 否则 order_create 会拿到 `138****8000` 去建单（真号码必须留给写入路径）；
-    #   · B 端（商家/客服）不脱敏 —— 客服要打电话给顾客，脱敏会破坏运营。
-    if str(state.get("role") or "").lower() == "customer" and final_content:
-        try:
-            from app.utils.pii_mask import mask_pii
-            _masked = mask_pii(final_content)
-            if _masked != final_content:
-                logger.info(f"[{skill_name}] C 端回复脱敏（手机号/邮箱）| session={session_id}")
-                final_content = _masked
-        except Exception as e:
-            logger.warning(f"[{skill_name}] 回复脱敏失败（非致命）: {e}")
+    # ── 8.5 这里**刻意不做** C 端回复脱敏（issue #3386：曾经做过，是错的）──
+    # 首版在此处 `mask_pii(final_content)`，理由是"验收剧本里 AI 回显了完整手机号"。
+    # 但 `final_answer` 同时是 `_agent_stream_to_sse` 里 `full_response.append(clean)`
+    # 的来源 —— 也就是 `save_message` 落库的 assistant 消息、模型**下一轮读到的自己的历史**。
+    # 于是：R5 脱敏 `13800138000` → `138****8000` 落库 → R7 模型读到残缺值，
+    # 把 `****` 填成 `0` 得到 `13800008000`（11 位纯数字，`order_create` 的格式校验放行）
+    # → 订单 `20260913384380002` 落库手机号就是 `13800008000`，**静默脏数据**：
+    # 顾客收不到短信与配送联系（DB 实证见 issue #3386）。
+    # 正确分界：**记忆/落库保原文，脱敏只做在出站展示层** ——
+    # SSE 文本/卡片在 `app/api/chat.py` 的 `_mask_for_customer` / `_mask_card_for_customer`，
+    # C 端 `GET /history` 回放在 `app/api/chat.py::get_history`。
+    # 另有一层兜底：模型若真把掩码值填回写工具，`_masked_phone_write_block` 会拦下并回放真号。
 
     # ── 9. 返回值 ──
     result: dict[str, Any] = {"messages": new_messages, "final_answer": final_content, "skill_used": skill_name}

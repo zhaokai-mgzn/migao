@@ -816,7 +816,7 @@ _CASE_CH_010 = EvalCase(
     difficulty=Difficulty.NORMAL,
     user_inputs=['推荐几款热销窗帘', '第一款，白色，2.8 米门幅，按米卖', {'auto_respond': {'fallback': '数量 3 米'}}, {'auto_respond': {'fallback': '确认下单', 'form_values': {'customer_name': '张三', 'customer_phone': '13800138000', 'customer_address': '浙江省杭州市西湖区文三路1号1幢101室', 'color': '白色', 'colorName': '白色'}}}, {'auto_respond': {'fallback': '确认', 'form_values': {'customer_name': '张三', 'customer_phone': '13800138000', 'customer_address': '浙江省杭州市西湖区文三路1号1幢101室', 'color': '白色', 'colorName': '白色'}}}, {'auto_respond': {'fallback': '123456', 'prefer_text': True}}, {'auto_respond': {'fallback': '123456', 'prefer_text': True}}, {'auto_respond': {'fallback': '确认'}}, {'auto_respond': {'fallback': '确认'}}],
     expectations=['product_search', 'product_detail', 'interact', 'order_create'],
-    data_checks=['规格选择/收货信息通过 interact(choice/form) 组件收集（非纯文本追问）', 'order_create 前必有 interact(confirm) 确认（写操作守卫）', 'order_create items 含所选 SKU（颜色/门幅/售卖方式）与数量', 'C 端下单是**两步**：确认订单信息后还需手机验证码（order_create 的 sms_code，customer 角色必填）。用例必须提供验证码这一轮，否则 AI 停在第 5 步「请提供验证码」，order_create 永不发生（run 34622425044 实证：R7 顾客回「确认」后无任何工具调用）。dev/CI 栈已设 SMS_BYPASS_CODE=123456，此处用该码走真实校验分支。'],
+    data_checks=['规格选择/收货信息通过 interact(choice/form) 组件收集（非纯文本追问）', 'order_create 前必有 interact(confirm) 确认（写操作守卫）', 'order_create items 含所选 SKU（颜色/门幅/售卖方式）与数量', '会话记忆保原文：手机号不得在图谱层被脱敏后落库（否则模型下一轮把 `****` 填 0 建单 —— issue #3386）', 'C 端下单是**两步**：确认订单信息后还需手机验证码（order_create 的 sms_code，customer 角色必填）。用例必须提供验证码这一轮，否则 AI 停在第 5 步「请提供验证码」，order_create 永不发生（run 34622425044 实证：R7 顾客回「确认」后无任何工具调用）。dev/CI 栈已设 SMS_BYPASS_CODE=123456，此处用该码走真实校验分支。'],
     skip_reason='',
     tags=['multi_turn', 'form', 'interactive', 'order'],
     persona='xiaobu',
@@ -824,6 +824,7 @@ _CASE_CH_010 = EvalCase(
     required_args=[{'tool': 'order_create', 'fields': ['customer_phone', 'items']}],
     must_succeed=[{'tool': 'order_create'}],
     amount_verify=[{'tool': 'order_create', 'product_name': '北欧风窗帘', 'checks': ['unit_price', 'subtotal', 'total']}],
+    db_verify=[{'fetch': 'order_phone', 'source': 'order_create', 'expect_phone': '13800138000'}],
 )
 
 # ── CH-011 [ADVERSARIAL] 数据安全 - 跨用户订单查询拒绝 + 订单卡片手机号脱敏（源: cases/chat.yml）──
