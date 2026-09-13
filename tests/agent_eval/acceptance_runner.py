@@ -21,6 +21,7 @@ import importlib.util
 import json
 import os
 import sys
+import time
 from pathlib import Path
 
 import httpx
@@ -384,6 +385,10 @@ async def run_scenario(sc: dict, token: str) -> dict:
         # repeat_until（issue #3379）：目标未达成就继续以"协作型顾客"的方式答卡，
         # 达成立即停；走满 max 也停（缺口交由剧本断言如实报出，绝不无限循环）。
         keep_going, budget = repeat_wanted(rd, rounds)
+        # 墙钟上限（issue #3379）：`max` 只限**轮数**，但单轮可能极慢（模型长思考/SSE 卡住）
+        # —— 首版实测把验收步骤拖到 13min+ 仍未结束（CI 上被迫取消两次）。
+        # 轮数与时间**双上限**，任一到达即停，缺口交由断言如实报出。
+        _deadline_ts = time.monotonic() + float(os.environ.get("ACCEPTANCE_REPEAT_BUDGET_S", "240"))
         repeat = 0
         while True:
             text = resolve_action(rd, rounds)
@@ -407,6 +412,12 @@ async def run_scenario(sc: dict, token: str) -> dict:
             if tool_called_in(rounds, str((rd.get("repeat_until") or {}).get("tool_called") or "")):
                 break
             if repeat >= budget:
+                print(f"  ⏹ repeat_until 达轮数上限 max={budget}（目标未达成，交断言报出）", flush=True)
+                break
+            if time.monotonic() >= _deadline_ts:
+                print(f"  ⏹ repeat_until 达墙钟上限 "
+                      f"{os.environ.get('ACCEPTANCE_REPEAT_BUDGET_S', '240')}s（目标未达成）",
+                      flush=True)
                 break
         i += 1
 
@@ -450,10 +461,11 @@ async def main():
     date = os.environ.get("ACCEPTANCE_DATE", "local")
     sha = os.environ.get("GITHUB_SHA", "local")[:8]
     token = await login()
-    print(f"PERSONA={PERSONA} | token={'真实登录' if token else 'X-Debug-Role'}")
+    print(f"PERSONA={PERSONA} | token={'真实登录' if token else 'X-Debug-Role'}", flush=True)
     all_issues = []
     for sc in scenarios:
         print("\n" + "=" * 70)
+        print(f"▶ 开始场景 {sc.get('id')}（{len(sc.get('rounds') or [])} 段）", flush=True)
         result = await run_scenario(sc, token)
         issues = evaluate_checks(sc.get("checks") or [], result["rounds"])
         result["issues"] = issues
