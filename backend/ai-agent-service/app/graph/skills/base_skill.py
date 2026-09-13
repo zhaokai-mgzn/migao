@@ -3112,10 +3112,33 @@ async def execute_skill(
                         #   含 smoke 的 HR-001/HR-004 靠口头确认长期通过 —— 补工具是
                         #   改变 B 端交互形态，收益不明而回归面大。）
                         if skill_registry.get_tool("interact") is not None:
+                            # 可执行下一步（issue #3445）：CI 实测 `confirmation_required_no_card ×3`
+                            # —— 模型**从没发过确认卡**就直接写单，被拦回后仍反复重试同一个写调用，
+                            # 把轮数烧完（R10 时订单仍未落库）。故把话术改成**唯一可执行的下一步**：
+                            #   ① 明确"再调写工具没用"（防重试）；② 指明必须调 interact(confirm)；
+                            #   ③ 若已有 validate_input 校验过的参数，**原样回给模型**当卡片字段
+                            #      （它最缺的是"卡片里该填什么"，而不是"该不该发卡"）。
+                            _pending_hint = ""
+                            try:
+                                from app.graph.pending_validated import PENDING_KEY as _PK
+                                from app.graph.pending_validated import is_pending_for as _is_pending
+                                from app.memory.session_state_store import SessionStateStore as _S4
+                                _f4 = await _S4().load(session_id) or {}
+                                _pend4 = _f4.get(_PK) or {}
+                                if _is_pending(_pend4, tool_name) and _pend4.get("params"):
+                                    _pending_hint = (
+                                        " 已校验的参数（**原样**用作卡片 fields，不要改写）："
+                                        + json.dumps(_pend4["params"], ensure_ascii=False,
+                                                     default=str)[:400])
+                            except Exception as _e4:
+                                logger.warning(f"[{skill_name}] pending 参数回填失败（非致命）: {_e4}")
                             msg = (
                                 f"工具 {tool_name} 是写操作（可能不可逆或产生数据变更），必须先向用户展示"
-                                f"确认卡片并取得明确确认。请调用 interact（component=confirm）展示操作预览，"
-                                f"等用户点击确认后再执行。"
+                                f"确认卡片并取得明确确认。**不要再次调用 {tool_name}** —— 在顾客点击确认卡"
+                                f"之前它会被同样拦下、白烧一轮。本轮唯一的下一步是：调用 "
+                                f"interact(component=confirm, fields=[…]) "
+                                f"把将要执行的内容展示给顾客，等顾客**点击确认卡**之后再调用 {tool_name}。"
+                                + _pending_hint
                             )
                         else:
                             msg = (
