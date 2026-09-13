@@ -868,11 +868,22 @@ class TestFallbackCardLogWhitelist:
             assert kw in body, (
                 f"dump 白名单缺 {kw!r} → 补卡/发卡次数在 CI 里无正面证据（issue #3445）")
 
+    def test_step_greps_sms_code_marker(self):
+        """验证码真值链的正面证据同样要在白名单里（issue #3434）。
+
+        `代码补齐`/`代码纠正` 是"顾客给过的码被用上了"的唯一正面证据 ——
+        没有它，"模型自造验证码"只能靠失败指纹间接推断（首跑失败即此形）。
+        """
+        body = (self._step() or {}).get("run") or ""
+        for kw in ("代码补齐", "代码纠正"):
+            assert kw in body, (
+                f"dump 白名单缺 {kw!r} → 验证码真值链在 CI 里无正面证据（issue #3434）")
+
     def test_marker_actually_logged_by_skill(self):
         """白名单里的标记必须**真的**由代码打出来（防白名单写错字）。"""
         src = (REPO_ROOT / "backend" / "ai-agent-service" / "app" / "graph" / "skills"
                / "base_skill.py").read_text(encoding="utf-8")
-        for kw in ("代码兜底补发确认卡", "卡下发计数"):
+        for kw in ("代码兜底补发确认卡", "卡下发计数", "代码{_why}", "代码{_why8}"):
             assert kw in src, f"base_skill 里已经没有 {kw!r} 这条日志了"
 
 
