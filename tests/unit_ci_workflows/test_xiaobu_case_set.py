@@ -19,7 +19,8 @@ HR-001 员工列表 / CT-001 分类树 / CU-001 客户 / AS-001 售后工单 / S
 2. **用例集归属**：PERSONA=xiaobu 选中的用例，其期望工具必须全在 C 端工具集内 ——
    B 端专属工具不得出现在任何 C 端用例断言中。
 """
-# case_ids: CH-008, CH-010, CH-012, CH-013, CH-014, CH-015, CH-017, CH-024, OR-012, ST-008, KN-001, KN-002, KN-008
+# case_ids: CH-008, CH-010, CH-012, CH-013, CH-014, CH-015, CH-017, CH-024, CH-025, OR-012, ST-008, KN-001, KN-002, KN-008
+import json
 import re
 import sys
 from pathlib import Path
@@ -639,4 +640,65 @@ class TestWriteCaseInputsAreComplete:
         compose = (REPO_ROOT / "deploy" / "docker-compose.yml").read_text(encoding="utf-8")
         assert "SMS_BYPASS_CODE" in compose, (
             "dev compose 未注入 SMS_BYPASS_CODE —— order_create 的 customer 校验无法通过"
+        )
+
+
+class TestCh025AddressPrefillIsExecutable:
+    """CH-025「下单地址预填（可修改）」必须保持**可执行覆盖**（issue #3360）。
+
+    背景：这条用例长期带 `skip_reason: "agent-eval 无稳定订单数据"`，而 fixture 后来
+    早已注入归属 `debug_customer_1` 的 2 笔历史订单 —— **理由过期后没人回头解 skip**，
+    于是"预填对不对/改了生不生效"在评测里零断言（与 #3357 同源：靠 skip 遮住覆盖缺口）。
+
+    故这里把"解 skip 之后的形态"钉死，防止将来再被 skip 回去或把断言删空：
+      · 不得重新出现 skip_reason（数据早已具备）；
+      · 必须保留产出侧可执行断言（订单落库的手机号/收货人/地址），而不是只断"卡存在"。
+    """
+
+    def _case(self) -> dict:
+        by_id = {c["id"]: c for c in load_case_dicts(CASES_DIR)}
+        return by_id["CH-025"]
+
+    def test_case_is_not_skipped(self):
+        c = self._case()
+        assert not (c.get("skip_reason") or "").strip(), (
+            f"CH-025 又变成 skip 了（{c.get('skip_reason')!r}）—— fixture 已有历史订单数据，"
+            "skip 只会把覆盖缺口藏起来"
+        )
+        assert c.get("persona") == "xiaobu", "CH-025 是 C 端专属用例，必须声明 persona: xiaobu"
+
+    def test_has_outcome_side_prefill_assertions(self):
+        c = self._case()
+        db = c.get("db_verify") or []
+        phone = next((s for s in db if s.get("fetch") == "order_phone"), None)
+        assert phone, "CH-025 缺 order_phone 产出侧断言（只断『发了卡』会绑死机制）"
+        assert phone.get("expect_phone"), "缺 expect_phone → 掩码回流建单会静默通过"
+        assert phone.get("expect_customer_name"), (
+            "缺 expect_customer_name → 收货人被改写（顾客改地址却把收件人改没了）看不出来"
+            "（变异实测 M232：删掉该字段时本断言必须变红）"
+        )
+        # 「可修改」的判别式：改后的门牌必须落到订单；历史地址（1号1幢101室）不含它
+        addr = str(phone.get("expect_address_contains") or "")
+        assert addr, "缺 expect_address_contains → 顾客改的地址被吞掉也看不出来"
+        assert "2号5幢" in addr.replace(" ", ""), (
+            f"地址断言不再指向**修改后**的门牌（{addr!r}）—— 那是在重复 OR-023 的『历史地址带出』，"
+            "「可修改」就没人守了"
+        )
+        order_before = c.get("order_before") or []
+        assert any("customer_address_query before order_create" in str(x) for x in order_before), (
+            "缺『先查历史地址再写单』的时序断言"
+        )
+
+    def test_modification_turn_is_really_a_modification(self):
+        """顾客必须**说出来**要改成什么（不能只靠表单兜底值）。
+
+        只看"某处出现过新地址"是不够的：`auto_respond.form_values` 里也会带新地址，
+        于是删掉那句『收货地址帮我改成…』用例照样绿（**变异实测 M228 存活**）——
+        而真正被测的"顾客口头改地址 → 生效"就没人守了。故只扫**纯文本轮**（顾客原话）。
+        """
+        c = self._case()
+        utterances = [u for u in (c.get("user_inputs") or []) if isinstance(u, str)]
+        assert any("2号5幢" in u.replace(" ", "") for u in utterances), (
+            f"user_inputs 的**顾客原话**里没有任何一轮要求改地址（实际：{utterances}）—— "
+            "『可修改』没有被真正触发"
         )

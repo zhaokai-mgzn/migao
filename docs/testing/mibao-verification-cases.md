@@ -835,19 +835,27 @@
 
 ### CH-025. 下单地址自动填充 - 最近订单收货信息预填（可修改） 🔵
 ```
-你: 我要买那个遮光窗帘，帮我下单
-你: 确认
+你: 我想买遮光窗帘，米白 3 米，要纳米圈打孔加工
+你: 收货地址帮我改成浙江省杭州市西湖区文三路2号5幢202室
+你: [🤖 按上一轮卡片作答]
+你: [🤖 按上一轮卡片作答]
+你: [🤖 按上一轮卡片作答]
 期望: customer_address_query
-期望: interact(component=form)
+期望: interact
 期望: order_create
-数据: 老客户（有历史订单）下单时先调 customer_address_query 取最近订单收货信息
-数据: interact form 预填收货人/手机号/地址（formFields 带 value），用户可修改
-数据: 新客户（无历史订单）customer_address_query 返回空 → 维持原表单询问流程
-数据: customer_address_query 仅查当前用户本人订单（强制 user_id 过滤，只读）
-跳过: 工具与 skill prompt 由 pytest 单测验证（tests/test_customer_address_query.py），agent-eval 无稳定订单数据
+数据: 老客户（有历史订单）下单时先调 customer_address_query 取最近订单收货信息（order_before 已可执行）
+数据: 预填收货信息可被顾客修改，且修改后的地址落到订单（db_verify.expect_address_contains 已可执行）
+数据: 未修改的收货人/手机号沿用历史值（张三 / 13800138000），掩码值不得回流建单（db_verify 已可执行）
+数据: 新客户（无历史订单）customer_address_query 返回空 → 维持原表单询问流程（OR-021/OR-022 覆盖）
+数据: customer_address_query 仅查当前用户本人订单（强制 user_id 过滤，只读）—— 由 pytest test_customer_address_query.py 保证
+时序: customer_address_query before order_create
+时序: interact[confirm] before order_create
+必须成功: order_create
+落库: order_items None → 
+落库: order_phone None → 
 ```
 真值: ai-chat.context-memory
-溯源: issue #2815：C 端长期记忆系统 — 下单自动填充收货信息场景 ｜ tags: memory, xiaobu, address_prefill, order_create
+溯源: issue #2815：C 端长期记忆系统 — 下单自动填充收货信息场景；issue #3360：解 skip + 补可执行断言（原 skip 理由已过期） ｜ tags: memory, xiaobu, address_prefill, order_create
 
 ### CH-029. 建议个性化 - 偏好读取注入（flag 门控，默认关闭） 🔵
 ```
@@ -3574,7 +3582,7 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：273（活跃 134，跳过 139）
+- 用例总数：273（活跃 135，跳过 138）
 - tier 分布：smoke 9 / normal 231 / adversarial 33
 - 售后域：8
 - agents：6

@@ -975,6 +975,7 @@ cases:
       - chat
       - order
     tier: normal
+    persona: xiaobu
     tags:
       - memory
       - xiaobu
@@ -982,22 +983,66 @@ cases:
       - order_create
     truths_ref:
       - ai-chat.context-memory
+    # ── 解 skip（issue #3360）：原 skip_reason 写的是「agent-eval 无稳定订单数据」，
+    # 而 fixture 早已注入归属 debug_customer_1 的 2 笔订单（张三 / 13800138000 /
+    # 文三路1号1幢101室）—— 理由过期后没人回头解 skip，这条能力长期**零可执行覆盖**。
+    #
+    # 与 OR-023 的分工（避免重复覆盖）：OR-023 守「历史地址被带出且落到订单」；
+    # 本用例守**标题里的「可修改」** —— 预填只是手段，顾客改完还能不能生效才是结果：
+    # 若 agent 只回显历史地址、把顾客的修改吞掉，订单会寄到旧地址（顾客收不到货）。
     user_inputs:
-      - "我要买那个遮光窗帘，帮我下单"
-      - "确认"
+      - "我想买遮光窗帘，米白 3 米，要纳米圈打孔加工"
+      # 明确的"修改预填值"动作（本用例的核心断言来源）
+      - "收货地址帮我改成浙江省杭州市西湖区文三路2号5幢202室"
+      # 表单兜底值给**修改后**的地址：agent 若再次下发预填表单，顾客提交的就是新地址
+      # （若 agent 直接出确认卡，下面的 db_verify 仍然只认订单落库值）
+      - auto_respond:
+          fallback: "确认下单"
+          form_values:
+            customer_name: "张三"
+            customer_phone: "13800138000"
+            customer_address: "浙江省杭州市西湖区文三路2号5幢202室"
+            color: "米白"
+            colorName: "米白"
+      # 验证码那一轮（dev/CI 栈 SMS_BYPASS_CODE=123456）：漏了这一轮，AI 会正确停在
+      # 「请输入验证码」→ order_create 断言永远不可能满足（test_cases_asserting_otp_tools_supply_a_code 拦下）
+      - auto_respond:
+          fallback: "123456"
+          prefer_text: true
+      - auto_respond:
+          fallback: "确认"
     expectations:
       - tool: customer_address_query
+      # 不写 `args: component: form`（issue #3404 复盘）：顾客在意的是订单上的值对不对，
+      # 把用例绑死在"必须发 form 卡"这一**机制**上会造出假红（实测 run 34755272379：
+      # agent 用 confirm 卡承载同样的字段，行为合法却被判失败）。
       - tool: interact
-        args:
-          component: form
       - tool: order_create
+    must_succeed:
+      - tool: order_create
+    order_before:
+      - "customer_address_query before order_create"
+      - "interact[confirm] before order_create"
+    db_verify:
+      - fetch: order_items
+        source: order_create
+        expect_products: ["遮光窗帘"]
+      - fetch: order_phone
+        source: order_create
+        # 历史值沿用（未修改的字段不该被改写）
+        expect_phone: "13800138000"
+        expect_customer_name: "张三"
+        # 「可修改」的产出侧断言：改后的门牌必须落到订单。
+        # 注意它同时是**判别式**：历史地址是"文三路1号1幢101室"，若修改被吞，
+        # 地址里不会有"2号5幢" → 判红（不会因"地址非空"而假绿）。
+        expect_address_contains: "2号5幢"
     data_checks:
-      - "老客户（有历史订单）下单时先调 customer_address_query 取最近订单收货信息"
-      - "interact form 预填收货人/手机号/地址（formFields 带 value），用户可修改"
-      - "新客户（无历史订单）customer_address_query 返回空 → 维持原表单询问流程"
-      - "customer_address_query 仅查当前用户本人订单（强制 user_id 过滤，只读）"
-    skip_reason: "工具与 skill prompt 由 pytest 单测验证（tests/test_customer_address_query.py），agent-eval 无稳定订单数据"
-    merge_log: "issue #2815：C 端长期记忆系统 — 下单自动填充收货信息场景"
+      - "老客户（有历史订单）下单时先调 customer_address_query 取最近订单收货信息（order_before 已可执行）"
+      - "预填收货信息可被顾客修改，且修改后的地址落到订单（db_verify.expect_address_contains 已可执行）"
+      - "未修改的收货人/手机号沿用历史值（张三 / 13800138000），掩码值不得回流建单（db_verify 已可执行）"
+      - "新客户（无历史订单）customer_address_query 返回空 → 维持原表单询问流程（OR-021/OR-022 覆盖）"
+      - "customer_address_query 仅查当前用户本人订单（强制 user_id 过滤，只读）—— 由 pytest test_customer_address_query.py 保证"
+    merge_log: "issue #2815：C 端长期记忆系统 — 下单自动填充收货信息场景；issue #3360：解 skip + 补可执行断言（原 skip 理由已过期）"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_customer_address_query.py"

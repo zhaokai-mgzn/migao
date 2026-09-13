@@ -1251,15 +1251,18 @@ _CASE_CH_025 = EvalCase(
     title='下单地址自动填充 - 最近订单收货信息预填（可修改）',
     skill=Skill.MULTI_TURN,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['我要买那个遮光窗帘，帮我下单', '确认'],
-    expectations=['customer_address_query', 'interact(component=form)', 'order_create'],
-    data_checks=['老客户（有历史订单）下单时先调 customer_address_query 取最近订单收货信息', 'interact form 预填收货人/手机号/地址（formFields 带 value），用户可修改', '新客户（无历史订单）customer_address_query 返回空 → 维持原表单询问流程', 'customer_address_query 仅查当前用户本人订单（强制 user_id 过滤，只读）'],
-    skip_reason='工具与 skill prompt 由 pytest 单测验证（tests/test_customer_address_query.py），agent-eval 无稳定订单数据',
+    user_inputs=['我想买遮光窗帘，米白 3 米，要纳米圈打孔加工', '收货地址帮我改成浙江省杭州市西湖区文三路2号5幢202室', {'auto_respond': {'fallback': '确认下单', 'form_values': {'customer_name': '张三', 'customer_phone': '13800138000', 'customer_address': '浙江省杭州市西湖区文三路2号5幢202室', 'color': '米白', 'colorName': '米白'}}}, {'auto_respond': {'fallback': '123456', 'prefer_text': True}}, {'auto_respond': {'fallback': '确认'}}],
+    expectations=['customer_address_query', 'interact', 'order_create'],
+    data_checks=['老客户（有历史订单）下单时先调 customer_address_query 取最近订单收货信息（order_before 已可执行）', '预填收货信息可被顾客修改，且修改后的地址落到订单（db_verify.expect_address_contains 已可执行）', '未修改的收货人/手机号沿用历史值（张三 / 13800138000），掩码值不得回流建单（db_verify 已可执行）', '新客户（无历史订单）customer_address_query 返回空 → 维持原表单询问流程（OR-021/OR-022 覆盖）', 'customer_address_query 仅查当前用户本人订单（强制 user_id 过滤，只读）—— 由 pytest test_customer_address_query.py 保证'],
+    skip_reason='',
     tags=['memory', 'xiaobu', 'address_prefill', 'order_create'],
-    persona='',
+    persona='xiaobu',
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+    order_before=['customer_address_query before order_create', 'interact[confirm] before order_create'],
+    must_succeed=[{'tool': 'order_create'}],
+    db_verify=[{'fetch': 'order_items', 'source': 'order_create', 'expect_products': ['遮光窗帘']}, {'fetch': 'order_phone', 'source': 'order_create', 'expect_phone': '13800138000', 'expect_customer_name': '张三', 'expect_address_contains': '2号5幢'}],
 )
 
 # ── CH-029 [NORMAL] 建议个性化 - 偏好读取注入（flag 门控，默认关闭）（源: cases/chat.yml）──
