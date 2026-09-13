@@ -1288,13 +1288,10 @@ def _has_order_write_tool(skill_name: str, registry=None) -> bool:
         return False
 
 
-def _confirm_card_fields_hint(args: dict) -> str:
-    """把**被拦下的写调用参数**整理成确认卡 fields 的就绪骨架（issue #3445）。
+def confirm_card_fields(args: dict) -> list:
+    """从**写调用参数**整理出确认卡字段（只回显、不新增事实）。
 
-    为什么给骨架而不是只说"请发确认卡"：CI 三次实测 `confirmation_required_no_card`
-    —— 模型**从没发过确认卡**就直接写单，被拦回后仍反复重试同一个写调用、烧完轮数。
-    它缺的不是"该不该发卡"，而是"卡片里填什么"。这里把**它自己刚传过的参数**回给它
-    （只回显、不新增事实），它照抄即可发卡。
+    单一源：既供门禁话术的"字段骨架"提示，也供代码兜底**真正发卡**（issue #3445）。
     """
     a = args or {}
     fields = []
@@ -1313,6 +1310,30 @@ def _confirm_card_fields_hint(args: dict) -> str:
                        ("customer_address", "地址")):
         if a.get(key):
             fields.append({"label": label, "value": str(a.get(key))})
+    return fields
+
+
+def confirm_value_for_fields(fields: list) -> str:
+    """与 `interact` 工具**同口径**派生 confirmValue（issue #3406：字段顺序不影响取值）。
+
+    两处必须一致 —— 门禁比对的就是这个值，口径不一致会让"顾客明明点了卡"仍被判未确认。
+    """
+    facts = []
+    for f in (fields or []):
+        if isinstance(f, dict):
+            facts.append(f"{f.get('label') or ''}={f.get('value') or ''}")
+        else:
+            facts.append(str(f))
+    return ("确认：" + "；".join(sorted(facts))) if facts else ""
+
+
+def _confirm_card_fields_hint(args: dict) -> str:
+    """门禁话术里的"卡片字段骨架"（**只回显模型自己传过的值**）。
+
+    CI 三次实测 `confirmation_required_no_card` —— 模型**从没发过确认卡**就直接写单，
+    被拦回后仍反复重试同一个写调用、烧完轮数。它缺的不是"该不该发卡"，而是"卡片里填什么"。
+    """
+    fields = confirm_card_fields(args)
     if not fields:
         return ""
     return "，建议卡片 fields=" + json.dumps(fields, ensure_ascii=False)
@@ -2588,6 +2609,7 @@ async def execute_skill(
     new_messages: List[Any] = []
     final_content = ""
     _denial_corrected = False      # 文本级能力误宣只纠正一次（issue #3443）
+    _no_card_blocked_args = None   # 本轮"没发过确认卡就写单"被拦的参数（issue #3445 代码兜底）
     vision_analysis = ""
 
     if is_multimodal:
@@ -2799,6 +2821,10 @@ async def execute_skill(
 
                 async def _run_one_tool(tool_call: dict):
                     """执行单个 tool，返回 (tool_call, result_str, result_dict)。"""
+                    # 需要 nonlocal：门禁在下面给 `_no_card_blocked_args` 赋值，而它是
+                    # `execute_skill` 的局部变量 —— 不加 `nonlocal` 会创建一个**新局部**，
+                    # 收尾的"补发确认卡"永远读不到（首版即此错，被新增用例当场抓住）。
+                    nonlocal _no_card_blocked_args
                     tool_name = tool_call["name"]
                     args = tool_call.get("args", {})
                     # 模式 C 代码兜底：加工项 choice 卡漏传 multiSelect → 自动补 true（PR-014/015）
@@ -3184,6 +3210,12 @@ async def execute_skill(
                         _err3 = ("confirmation_required_card_not_clicked"
                                  if _confirm_card_seen(state.get("messages", []))
                                  else "confirmation_required_no_card")
+                        if _err3 == "confirmation_required_no_card":
+                            # 代码兜底（issue #3445）：本轮模型**从没发过确认卡**就写了单 ——
+                            # 拦截话术已给"可执行下一步"，但实测它仍会跳过发卡（3 次复验 2 次命中）。
+                            # 收尾时由代码把确认卡 XML 追加到回复文本（发射点在 chat.py 解析
+                            # `<interact>` 块），顾客因此始终有点卡的入口。
+                            _no_card_blocked_args = dict(args or {})
                         return tool_call, json.dumps(
                             {"success": False, "error": _err3, "message": msg},
                             ensure_ascii=False,
@@ -3438,6 +3470,25 @@ async def execute_skill(
             else:
                 # 达到 max_iterations — 不暴露 LLM 的半截思考，用友好兜底
                 final_content = "抱歉，处理步骤较多，请稍后重试或换个简单的方式描述需求。"
+
+    # ── 8.3b 代码兜底**补发确认卡**（issue #3445）──
+    # 实测（CI 三次 `confirmation_required_no_card`）：模型**从没发过确认卡**就直接写单，
+    # 被门禁拦回后仍会跳过发卡（话术已给唯一可执行的下一步，3 次复验仍有 2 次命中）。
+    # 卡片的唯一通用发射点是 `chat.py` 解析回复文本里的 `<interact>` 块 ⇒ 这里把卡补进文本：
+    # 顾客因此始终有点卡的入口，而不是"卡在写单被拦、又没有卡可点"。
+    # 硬约束（#3414 教训）：**只补卡、不放行写** —— 写仍必须等顾客点卡后由门禁放行；
+    # 且仅在"本会话从未出现过确认卡"的形态下补（`card_not_clicked` 说明顾客没点，
+    # 那时替他补卡等于替他做决定，不做）。
+    if (_no_card_blocked_args and skill_name == "customer_order"
+            and final_content and "<interact>" not in final_content):
+        _bfields = confirm_card_fields(_no_card_blocked_args)
+        if _bfields:
+            final_content = final_content + "\n" + build_confirm_interact_xml(
+                "请确认订单信息", _bfields,
+                confirm_value=confirm_value_for_fields(_bfields))
+            logger.info(
+                f"[{skill_name}] 代码兜底补发确认卡（模型跳过确认卡）| "
+                f"session={session_id} fields={len(_bfields)}")
 
     # ── 8.4 确认-执行链的**代码侧收口**（issue #3410，C-A1 实证）──
     # 实证（run 34758421478，C-A1 主路径）：顾客点了确认（回传系统自产的确认卡值），
