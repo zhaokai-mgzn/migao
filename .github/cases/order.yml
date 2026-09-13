@@ -1086,7 +1086,7 @@ cases:
       # 直到 `order_create` 成功（被门禁挡回不算成功，故不会提前停）。
       - repeat_until:
           tool_called: order_create
-          max: 4
+          max: 6
         code: "123456"
         fallback: "确认下单"
         form_values:

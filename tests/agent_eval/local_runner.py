@@ -1979,6 +1979,28 @@ def _agent_asked_for_code(results: list) -> bool:
     return any(h in text for h in _CODE_REQUEST_HINTS)
 
 
+def needs_verification_code(results: list) -> bool:
+    """顾客这一轮**必须供码**吗：agent 在文字里索要，或上一轮的写调用因缺码被挡（issue #3430）。
+
+    为什么不能只看文字（run 34768306581 实证）：agent 每轮都**重发同一张确认卡**，
+    而写调用在后台因「缺少短信验证码」失败 —— 若按"有卡先答卡"处理，harness 会一轮轮点卡、
+    **验证码永远送不出去**，用例卡死（两轮 trace 的 `you=` 都是确认卡 confirmValue，
+    `failed=order_create!缺少短信验证码`）。所以：**明确的索码/缺码信号优先于答卡**
+    （答卡可以下一轮再做，码不供就只能原地打转）。
+    """
+    if _agent_asked_for_code(results):
+        return True
+    if not results:
+        return False
+    for st in _tool_result_status((results[-1] or {}).get("tool_results") or []):
+        if st.get("ok"):
+            continue
+        blob = f"{st.get('error') or ''} {st.get('digest') or ''}"
+        if any(h in blob for h in _CODE_REQUEST_HINTS) or "短信" in blob or "sms" in blob.lower():
+            return True
+    return False
+
+
 def repeat_stop_met(results: list, spec: dict) -> bool:
     """`repeat_until` 的停条件：目标工具**已经成功**调用过（issue #3430）。
 
@@ -2019,12 +2041,13 @@ def resolve_repeat_turn(results: list, opts: dict, case_form_values: dict | None
     fallback = str(opts.get("fallback") or "确认下单")
     fv = dict(case_form_values or {})
     fv.update(opts.get("form_values") or {})
-    if pending_card_summary(results):
-        # ① 有卡先答卡（confirm→confirmValue / choice→首项 / form→__FORM__|json）
-        return resolve_auto_respond(results, fallback=fallback, form_values=fv, prefer_text=False)
-    if _agent_asked_for_code(results):
-        # ② 被问验证码 → 供码（正是 C-A1/OR-021 卡死的那个点）
+    # ① 明确的索码/缺码信号**优先于答卡**：agent 重发确认卡 + 后台写调用缺码时，
+    #    一轮轮点卡会让码永远送不出去（run 34768306581 实证：R5/R6 都是点卡 → 卡死）。
+    if needs_verification_code(results):
         return code
+    if pending_card_summary(results):
+        # ② 有卡答卡（confirm→confirmValue / choice→首项 / form→__FORM__|json）
+        return resolve_auto_respond(results, fallback=fallback, form_values=fv, prefer_text=False)
     return fallback
 
 

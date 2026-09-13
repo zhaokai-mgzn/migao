@@ -4185,8 +4185,30 @@ class TestRepeatUntilTurn:
     _CONFIRM_CARD = [{"type": "confirm", "title": "请确认订单信息",
                       "confirmValue": "确认：商品=遮光窗帘；数量=3米"}]
 
+    def test_code_supplied_even_when_confirm_card_pending(self):
+        """**码优先于卡**（run 34768306581 实证）：agent 重发确认卡 + 后台写调用缺码时，
+        "有卡先答卡"会让 harness 一轮轮点卡、**验证码永远送不出去** → 用例卡死。"""
+        results = [self._round(1, final_text="为了您的账户安全，请输入短信验证码",
+                               cards=self._CONFIRM_CARD)]
+        got = lr.resolve_repeat_turn(results, {"code": "123456", "fallback": "确认下单"}, {})
+        assert got == "123456", f"索码与待答卡同时存在时没有供码：{got!r}"
+
+    def test_code_supplied_when_write_failed_for_missing_code(self):
+        """文字没提码、但上一轮写调用**因缺码失败** → 也要供码（实测两轮 trace 即此形）。"""
+        r = self._round(5, calls=["order_create"], statuses=[False], cards=self._CONFIRM_CARD)
+        r["tool_results"][0]["result"] = {"success": False, "error": "缺少短信验证码"}
+        got = lr.resolve_repeat_turn([r], {"code": "123456", "fallback": "确认下单"}, {})
+        assert got == "123456", f"写调用因缺码失败却没供码：{got!r}"
+
+    def test_unrelated_write_failure_still_answers_card(self):
+        """写失败与验证码**无关**（如缺收货信息）→ 仍答卡，不要乱发验证码。"""
+        r = self._round(5, calls=["order_create"], statuses=[False], cards=self._CONFIRM_CARD)
+        r["tool_results"][0]["result"] = {"success": False, "error": "缺少收货地址"}
+        got = lr.resolve_repeat_turn([r], {"code": "123456", "fallback": "确认下单"}, {})
+        assert got == "确认：商品=遮光窗帘；数量=3米", f"与验证码无关的失败却发了码：{got!r}"
+
     def test_answers_pending_card_first(self):
-        """有卡先答卡（form 卡 → __FORM__|json 回填），而不是把验证码喂给它。"""
+        """无索码信号时，有卡先答卡（form 卡 → __FORM__|json 回填），而不是发 fallback。"""
         results = [self._round(1, cards=self._FORM_CARD)]
         got = lr.resolve_repeat_turn(results, {"code": "123456", "fallback": "确认下单"},
                                      {"customer_name": "张三", "customer_phone": "13800138000"})
