@@ -426,6 +426,12 @@ R7 you=123456  tools=order_create!confirmation_required_no_card,interact  cards=
 代码兜底补卡时各发一张）才发现是缺陷。**组件不同不算**（先 form 收资料再 confirm 确认
 是两件事，各有答案面）；跨轮重复也不算（顾客点了第一张才会有第二张）。
 
+**正面证据落在哪**：补卡与发卡的日志行（`代码兜底补发确认卡` / `卡下发计数`）由完整档的
+「Dump C 端逐轮路由轨迹」步骤 dump 出来（`if: always() && fast != 'true'`）。
+`round_trace` 只能说"顾客收到几张卡"，**看不出卡是模型发的还是代码补的** ——
+这两行才是唯一能证实"补卡真的触发过"的证据（白名单由 `TestFallbackCardLogWhitelist`
+守卫，被删会被 CI 拦）。
+
 ## 7. 新增 C 端用例的检查单
 
 1. 在对应域 `.github/cases/*.yml` 新增，**必写** `persona: xiaobu`（C 端专属）；
