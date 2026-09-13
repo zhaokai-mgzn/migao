@@ -3,7 +3,7 @@ Tests for app/api/*.py — coverage gap issue #581
 Covers: chat (helpers), sse (SSEEvent/SSEStreamBuilder),
          upload (_sniff_image_type/_validate_image_file), internal (Pydantic models)
 """
-# case_ids: CH-001, API-004
+# case_ids: CH-001, API-004, CH-011, CH-012, OR-017
 import pytest
 from unittest.mock import MagicMock, patch
 from datetime import datetime, timezone
@@ -397,3 +397,92 @@ class TestInferIntentFromText:
         from app.api.chat import _infer_intent_from_text
         # "订单" 在 "数据" 之前 → order_query
         assert _infer_intent_from_text("查看订单数据") == "order_query"
+
+
+class TestCustomerStreamMasking:
+    """SSE 出站文本脱敏（issue #3379 P2-2 真正的收敛点）。
+
+    为什么必须放在**流式桥**上：C 端回复有**两个生产者** ——
+    `final_answer`（技能收尾，已在 base_skill 脱敏）与 **`text_before_tools`**
+    （模型调工具前的中间文本，由 `chat.py` 的 `_agent_stream_to_sse` 直接流给顾客）。
+    实测 OR-017 R2（run 34735574206，复现型失败）泄露的正是**中间文本**那条路径：
+    ```
+    ❌ 回复出现完整手机号 13800138000（R2）—— C 端应脱敏为 138****8000
+    ```
+    在收尾处脱敏永远追不上已经流出去的文本，故收敛到**出站桥**（覆盖全部文本路径）。
+    """
+
+    def _ctx(self, role):
+        from app.agents.customer_service_agent import AgentContext
+        return AgentContext(tenant_id=1, user_id="u1", session_id="s1", role=role,
+                            identity_type="customer")
+
+    def test_customer_text_masked(self):
+        from app.api.chat import _mask_for_customer
+        out = _mask_for_customer("已用您上次的收货信息：张三 13800138000 杭州市西湖区文三路1号",
+                                 self._ctx("customer"))
+        assert "13800138000" not in out and "138****8000" in out
+
+    def test_staff_text_untouched(self):
+        from app.api.chat import _mask_for_customer
+        text = "客户手机号 13800138000"
+        assert _mask_for_customer(text, self._ctx("admin")) == text
+
+    def test_order_number_not_masked(self):
+        from app.api.chat import _mask_for_customer
+        out = _mask_for_customer("订单号 20260913027050006 已创建", self._ctx("customer"))
+        assert "20260913027050006" in out
+
+    def test_empty_and_none(self):
+        from app.api.chat import _mask_for_customer
+        assert _mask_for_customer("", self._ctx("customer")) == ""
+        assert _mask_for_customer(None, self._ctx("customer")) is None
+
+
+class TestStreamBridgeMaskingWiring:
+    """**接线**断言：脱敏必须真的作用在流式桥上（M120 变异存活暴露的缺口）。
+
+    只测 helper 是假守卫 —— 把出站口那行的 `_mask_for_customer(...)` 删掉，
+    helper 单测照样全绿（本轮实测 M120 存活）。故这里直接驱动
+    `_agent_stream_to_sse`：喂一个含手机号的文本响应，收集 SSE 输出。
+    """
+
+    def _run(self, content, role="customer"):
+        import asyncio
+        from app.agents.customer_service_agent import AgentContext, AgentResponse
+        from app.api.chat import _agent_stream_to_sse
+
+        class _Agent:
+            async def astream_chat(self, message, context, chat_history):
+                yield AgentResponse(type="text", content=content)
+
+        class _Mem:
+            async def add_message(self, **kw):
+                return None
+
+            async def save(self, *a, **kw):
+                return None
+
+        ctx = AgentContext(tenant_id=1, user_id="u1", session_id="s1", role=role,
+                           identity_type="customer")
+        gen = _agent_stream_to_sse(_Agent(), "你好", ctx, [], MagicMock(), _Mem(),
+                                   "s1", 1, "u1")
+
+        async def _collect():
+            out = []
+            async for chunk in gen:
+                out.append(chunk)
+            return out
+
+        return asyncio.run(_collect())
+
+    def test_bridge_masks_intermediate_text(self):
+        """中间文本（text_before_tools 路径）出站即脱敏 —— 这是 OR-017 R2 泄露的那条。"""
+        chunks = self._run("已用您上次的收货信息：张三 13800138000 杭州市西湖区文三路1号")
+        joined = "".join(chunks)
+        assert "13800138000" not in joined, f"出站文本未脱敏: {joined[:200]}"
+        assert "138****8000" in joined
+
+    def test_bridge_keeps_staff_text(self):
+        chunks = self._run("客户 13800138000", role="admin")
+        assert "13800138000" in "".join(chunks)

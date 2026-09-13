@@ -647,6 +647,26 @@ def _filter_products_by_reference(content: str, products: Any) -> List[Dict[str,
 
 # ============ SSE 流生成器 ============
 
+def _mask_for_customer(text: str, context) -> str:
+    """C 端**出站文本**统一脱敏（issue #3379 P2-2 的真正收敛点）。
+
+    为什么必须在流式桥这一层：C 端回复有**两个生产者** ——
+      · `final_answer`（技能收尾，已在 base_skill 脱敏）；
+      · **`text_before_tools`**（模型调工具前的中间文本，由本文件直接流给顾客）。
+    实测 OR-017 R2（run 34735574206，复现型失败）泄露的正是中间文本那条路径，
+    在收尾处脱敏永远追不上已经流出去的文本。故把脱敏放到**唯一出站口**，
+    覆盖全部文本路径（中间文本 / 收尾文本 / 落库历史）。
+    B 端（商家/客服）不脱敏 —— 客服要照实号码联系顾客。
+    """
+    if str(getattr(context, "role", "") or "").lower() != "customer" or not text:
+        return text
+    try:
+        from app.utils.pii_mask import mask_pii
+        return mask_pii(text)
+    except Exception:
+        return text
+
+
 async def _agent_stream_to_sse(
     agent: BaseAgent,
     message: Union[str, List[Dict[str, Any]]],
@@ -749,6 +769,8 @@ async def _agent_stream_to_sse(
                                 yield SSEEvent.interactive(xml_payload.get("component", ""), xml_payload)
                             clean = _strip_interact_xml(clean)
                             if clean:
+                                # 脱敏后再落库与出站：历史回放也不能出现完整手机号
+                                clean = _mask_for_customer(clean, context)
                                 full_response.append(clean)
                                 yield SSEEvent.text(clean)
 
@@ -827,7 +849,7 @@ async def _agent_stream_to_sse(
                 assistant_content = "我已为您查询了相关信息，请查看上方的结果卡片。如需更多帮助请继续提问。"
             else:
                 assistant_content = "抱歉，我暂时无法生成回复，请稍后重试或联系人工客服。"
-            yield SSEEvent.text(assistant_content)
+            yield SSEEvent.text(_mask_for_customer(assistant_content, context))
 
         # 超时/异常时清除 tool_calls 元数据，避免泄漏到前端
         if timed_out:
