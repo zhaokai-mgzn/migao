@@ -326,6 +326,68 @@ class TestConfirmLoop:
         ])
         assert lr.check_confirm_loop(results) == []
 
+    def _card(self, qty, title="请确认订单信息"):
+        return ("interact", {"component": "confirm", "title": title,
+                             "fields": [{"label": "商品", "value": "遮光窗帘"},
+                                        {"label": "数量", "value": f"{qty}米"}]})
+
+    def test_change_of_facts_is_not_a_loop(self):
+        """OR-019 实测形态：改数量 → 三张卡但只有两张同事实 → **不是**死循环（假红修复）。"""
+        results = _rounds_with_args([
+            (4, [self._card(3)], "请确认"),
+            (6, [self._card(4)], "请确认"),
+            (7, [self._card(4)], "请确认"),
+        ])
+        assert lr.check_confirm_loop(results) == [], "顾客改了数量后的合法重新确认不得判死循环"
+
+    def test_same_facts_reworded_still_detected(self):
+        """换措辞但事实相同，连发 3 次 → 必须判死循环（旧实现按标题会漏判）。"""
+        results = _rounds_with_args([
+            (1, [self._card(3, title="请确认订单信息")], "x"),
+            (2, [self._card(3, title="请核对订单明细")], "y"),
+            (3, [self._card(3, title="订单确认")], "z"),
+        ])
+        issues = lr.check_confirm_loop(results)
+        assert issues and "死循环" in issues[0], issues
+
+    def _card_cv(self, cv, title):
+        """生产形态：confirm 卡的 confirmValue 已由字段事实确定性派生（issue #3406）。"""
+        return ("interact", {"component": "confirm", "title": title,
+                             "confirmValue": cv,
+                             "fields": [{"label": "商品", "value": "遮光窗帘"}]})
+
+    def test_confirm_value_is_the_primary_key(self):
+        """标题各不相同、但 confirmValue 相同（= 同一批事实）→ 必须判死循环。
+
+        为什么单列（变异 M212 抓出）：把内容键的 confirmValue 分支去掉后，测试**照样全绿** ——
+        因为旧用例的卡都没带 confirmValue，走的是 fields 回退分支；
+        而**生产形态**下 confirmValue 一定存在（issue #3406 之后由字段事实派生），
+        故必须有用例专门钉住这条主路径。
+        """
+        cv = "确认：商品=遮光窗帘；数量=3米"
+        results = _rounds_with_args([
+            (1, [self._card_cv(cv, "请确认订单信息")], "x"),
+            (2, [self._card_cv(cv, "请核对订单明细")], "y"),
+            (3, [self._card_cv(cv, "订单确认")], "z"),
+        ])
+        issues = lr.check_confirm_loop(results)
+        assert issues and "死循环" in issues[0], f"同一 confirmValue 连发 3 次必须判死循环: {issues}"
+
+    def test_different_confirm_values_not_a_loop(self):
+        """事实变了（数量 3→4）→ confirmValue 变 → 不是死循环（OR-019 形态）。"""
+        results = _rounds_with_args([
+            (4, [self._card_cv("确认：商品=遮光窗帘；数量=3米", "请确认订单信息")], "x"),
+            (6, [self._card_cv("确认：商品=遮光窗帘；数量=4米", "请确认订单信息")], "y"),
+            (7, [self._card_cv("确认：商品=遮光窗帘；数量=4米", "请确认订单信息")], "z"),
+        ])
+        assert lr.check_confirm_loop(results) == []
+
+    def test_same_facts_three_times_detected(self):
+        results = _rounds_with_args([
+            (1, [self._card(3)], "x"), (2, [self._card(3)], "y"), (3, [self._card(3)], "z"),
+        ])
+        assert lr.check_confirm_loop(results), "同一批事实连发 3 次必须判死循环"
+
 
 class TestFalseSuccess:
     """假成功：前序轮报错 + 后续文本称成功 → 违规（sess_e52cff42 类）"""
