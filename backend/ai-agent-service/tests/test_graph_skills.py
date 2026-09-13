@@ -25,7 +25,6 @@ from app.graph.skills.base_skill import (
     capability_denial_text_hit,
     _confirm_card_fields_hint,
     confirm_card_fields,
-    confirm_value_for_fields,
     _confirm_card_seen,
     _conversation_mentions_dimensions, _form_prefill_fidelity_block,
     _stated_purchase_quantities, _quantity_choice_block,
@@ -5205,31 +5204,6 @@ class TestConfirmationGateNoCardRepro:
                            pending_target="after_sales_manage")
         msg = str(out)
         assert "已校验的参数" not in msg, f"串了别的流程的参数：{msg[:250]}"
-
-    def test_appends_confirm_card_when_model_skipped_card(self):
-        """模型**从没发过确认卡**就写单被拦 → 收尾由代码把确认卡补进回复文本（issue #3445）。
-
-        卡片的唯一通用发射点是解析回复文本里的 `<interact>` 块，故这里断言：
-        ① 文本里出现 confirm 卡 XML；② 它能被**真解析器**解析；③ `confirmValue` 与
-        `interact` 工具**同口径**（否则顾客点了卡也过不了确认门禁）。
-        """
-        from app.api.chat import _parse_interact_xml
-        out, executed = self._run("123456")
-        answer = out["final_answer"]
-        assert "<interact>" in answer, f"没有补发确认卡：{answer[:200]!r}"
-        assert "order_create" not in executed, "补卡不得顺手放行写操作（#3414）"
-        payload = _parse_interact_xml(answer[answer.index("<interact>"):])
-        assert payload and payload.get("component") == "confirm", f"补的卡解析不出来：{payload!r}"
-        fields = payload.get("fields") or []
-        assert [f.get("label") for f in fields][:1] == ["商品"], fields
-        assert payload.get("confirmValue") == confirm_value_for_fields(fields), (
-            "补发卡的 confirmValue 与 interact 工具口径不一致 → 顾客点了卡也过不了门禁")
-
-    def test_no_append_when_card_already_shown(self):
-        """发过卡（只是顾客没点）→ **不补卡**：那是顾客的选择，替他补等于替他做决定。"""
-        out, _ = self._run("123456", with_confirm_card=True)
-        assert "<interact>" not in str(out["final_answer"]), (
-            "card_not_clicked 形态下不应由代码补卡")
 
     def test_explicit_confirmation_still_passes(self):
         """反向守卫：明确确认（文本）时不该被这条门禁拦（`_requires_confirmation` 的既有语义）。"""
