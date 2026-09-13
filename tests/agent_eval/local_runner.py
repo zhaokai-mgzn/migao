@@ -3049,8 +3049,14 @@ def _result_digest(res: dict) -> str:
 
 
 def _mask_phones_in_text(text: str) -> str:
-    """把文本里的完整手机号掩码（轨迹会进 CI 日志，与写工具入参同纪律）。"""
-    return _FULL_PHONE_RE.sub(lambda m: m.group()[:3] + "****" + m.group()[-4:], str(text or ""))
+    """把助手回复压成**单行**并掩码手机号（轨迹会进 CI 日志，与写工具入参同纪律）。
+
+    为什么必须压单行（本轮实测，run 34789368315）：助手回复常带换行（列表/多段），
+    直接塞进轨迹会把"一格用例一行轨迹"的约定打断 —— 实测 OR-022 首跑轨迹被换行切成
+    十几条日志行，`R4`/`R5` 与卡片信息交错，肉眼要拼半天（归因价值大打折扣）。
+    """
+    flat = " ".join(str(text or "").split())
+    return _FULL_PHONE_RE.sub(lambda m: m.group()[:3] + "****" + m.group()[-4:], flat)
 
 
 def format_round_trace(trace: list) -> str:

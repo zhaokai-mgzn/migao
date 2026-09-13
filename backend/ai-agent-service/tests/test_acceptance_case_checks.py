@@ -3489,6 +3489,13 @@ class TestRoundTraceCarriesAssistantText:
         assert "13800138000" not in line, f"轨迹里出现完整手机号：{line}"
         assert "138****8000" in line, line
 
+    def test_multiline_reply_collapsed_to_one_line(self):
+        """助手回复带换行时必须压成一行 —— 否则"一用例一行轨迹"被切断（run 34789368315 实测：
+        OR-022 首跑轨迹被换行切成十几条日志行，R4/R5 与卡片信息交错，归因要肉眼拼）。"""
+        line = lr.format_round_trace(self._trace("第一行\n\n- 第二行\n  缩进第三行"))
+        assert "\n" not in line, f"轨迹行里出现换行：{line!r}"
+        assert "第二行" in line and "缩进第三行" in line, line
+
     def test_no_text_no_marker(self):
         line = lr.format_round_trace(self._trace(""))
         assert "ai=" not in line, line
