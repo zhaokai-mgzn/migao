@@ -20,6 +20,7 @@ import pytest
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
+
 RUNNER_PATH = REPO_ROOT / "tests" / "agent_eval" / "local_runner.py"
 
 
@@ -3581,6 +3582,12 @@ class TestDbVerifyOrderPhoneCustomerFields:
 
 
 class TestPhoneProvenance:
+
+    @pytest.fixture(autouse=True)
+    def _customer_run(self, monkeypatch):
+        """本类测的是 **C 端专属断言**：把 `PERSONA` 设为 xiaobu（`is_customer_case` 带 run 闸，
+        见 issue #3454）。只作用于本类，避免影响其它用例的运行环境。"""
+        monkeypatch.setattr(lr, "PERSONA", "xiaobu", raising=False)
     """落库手机号必须能追溯到「本用例提供的号码 / 种子号码」（issue #3386）。
 
     比逐用例写 `expect_phone` 更结构性：**新增用例无需配置**就自动受保护。
@@ -3643,6 +3650,12 @@ class TestPhoneProvenance:
 
 
 class TestRunCasePhoneProvenanceWiring:
+
+    @pytest.fixture(autouse=True)
+    def _customer_run(self, monkeypatch):
+        """本类通过 run_case 验证 **C 端专属断言**：把 `PERSONA` 设为 xiaobu
+        （`is_customer_case` 带 run 闸，见 issue #3454）。"""
+        monkeypatch.setattr(lr, "PERSONA", "xiaobu", raising=False)
     """run_case 集成：号码来源闭合必须**真的接在用例判定上**（issue #3386）。
 
     为什么单测函数不够（M68/M122 教训）：函数级断言在"接线断了"时照样全绿 ——
@@ -4287,6 +4300,12 @@ class TestRepeatUntilTurn:
 
 
 class TestWriteCodeProvenance:
+
+    @pytest.fixture(autouse=True)
+    def _customer_run(self, monkeypatch):
+        """本类测的是 **C 端专属断言**：把 `PERSONA` 设为 xiaobu（`is_customer_case` 带 run 闸，
+        见 issue #3454）。只作用于本类，避免影响其它用例的运行环境。"""
+        monkeypatch.setattr(lr, "PERSONA", "xiaobu", raising=False)
     """写调用携带的验证码必须来自**顾客给过的码**（issue #3434）。
 
     为什么补这条：失败只表现为 `must_succeed: order_create 共 1 次调用**无一成功**
@@ -4444,3 +4463,68 @@ class TestUnbackedStateClaimAddressModification:
         """反向守卫：写成功之后说完成态是可以的（别把正常回复判红）。"""
         res = [self._round(3, "订单已创建，订单号 123", ok_write=True)]
         assert lr.check_unbacked_state_claim(res) == []
+
+
+class TestCustomerCaseScopeIsSelectionBased:
+    """C 端专属断言的作用域必须按「**是否选入 C 端集**」判定（issue #3454）
+
+    实证（在 origin/main 上重算）：`select_cases_for_persona(cases, "xiaobu")` 选出 44 条，
+    其中 **15 条并未声明 `persona: xiaobu`**（留空=双端，靠 #3266 工具集过滤入选）：
+
+        CH-003, CH-007, CH-011, CH-026, DF-002, DF-005, DF-011, DF-012, DF-013,
+        KN-007, OR-014, PR-001, PR-002, PR-003, PR-018
+
+    而旧判据是 `persona != "xiaobu" → return []` ⇒ `check_phone_provenance`（#3386）与
+    `check_write_code_provenance`（#3434）**对这 15 条从未生效**——它们照常跑、照常计入通过，
+    但那两项没人查（"声称查过而其实没查"）。
+    """
+
+    def test_selected_but_undeclared_case_is_in_scope(self, monkeypatch):
+        monkeypatch.setattr(lr, "PERSONA", "xiaobu")
+        """被选入 C 端集但 persona 留空的用例（如 OR-014）必须在作用域内。"""
+        by_id = {str(c.id): c for c in lr.ALL_CASES}
+        case = by_id.get("OR-014")
+        assert case is not None, "OR-014 不在用例库里（本测试的前提失效，请同步用例库）"
+        assert str(getattr(case, "persona", "") or "") != "xiaobu", (
+            "OR-014 现在显式声明了 persona —— 本测试的意义是覆盖「留空但入选」这一形态，请换一条")
+        assert lr.is_customer_case(case) is True, (
+            "被选入 C 端集的用例被判为「非 C 端」 → C 端专属断言会静默跳过它（issue #3454）")
+
+    def test_declared_customer_case_is_in_scope(self, monkeypatch):
+        monkeypatch.setattr(lr, "PERSONA", "xiaobu")
+        by_id = {str(c.id): c for c in lr.ALL_CASES}
+        assert lr.is_customer_case(by_id["CH-010"]) is True
+
+    def test_both_persona_is_in_scope_under_customer_run(self, monkeypatch):
+        """双端用例（`persona: both`）在 C 端 run 里**在作用域内**（它确实作为 C 端被执行）。"""
+        monkeypatch.setattr(lr, "PERSONA", "xiaobu")
+        stub = type("C", (), {"id": "XX-999", "persona": "both"})()
+        assert lr.is_customer_case(stub) is True
+
+    def test_scope_is_run_aware(self, monkeypatch):
+        """**只在本轮是 C 端 run 时**才在作用域内 —— 否则会对米宝 run 误报
+        （双端用例也会被米宝 run 选中）。"""
+        stub = type("C", (), {"id": "XX-999", "persona": "both"})()
+        monkeypatch.setattr(lr, "PERSONA", "mibao")
+        assert lr.is_customer_case(stub) is False
+
+    def test_non_customer_case_is_out_of_scope(self, monkeypatch):
+        monkeypatch.setattr(lr, "PERSONA", "xiaobu")
+        """既未声明、也不在 C 端集里的用例（如 OR-016）→ 作用域外（避免对米宝误报）。"""
+        by_id = {str(c.id): c for c in lr.ALL_CASES}
+        assert lr.is_customer_case(by_id["OR-016"]) is False
+
+    def test_wiring_check_runs_for_undeclared_selected_case(self, monkeypatch):
+        monkeypatch.setattr(lr, "PERSONA", "xiaobu")
+        """**接线**：该形态的用例真的会被检查到（旧判据下这里永远返回空 = 假绿）。"""
+        by_id = {str(c.id): c for c in lr.ALL_CASES}
+        case = by_id["OR-014"]
+        rounds = [{"__round": 2, "user_message": "123456", "final_text": "",
+                   "tool_calls": [], "tool_results": [], "interactive": []},
+                  {"__round": 5, "user_message": "确认下单", "final_text": "",
+                   "tool_calls": [{"name": "order_create", "args": {}}],
+                   "tool_results": [{"tool": "order_create",
+                                     "result": {"success": False, "error": "缺少短信验证码"}}],
+                   "interactive": []}]
+        issues = lr.check_write_code_provenance(rounds, case)
+        assert issues, "顾客给过码、写调用没带码 —— 该用例却没被检查（作用域把它们跳过了）"
