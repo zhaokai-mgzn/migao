@@ -18,7 +18,7 @@ C 端一直没跟。
 
 本测试锁定 C 端 prompt 的加工项契约——删规则即 fail，防重构回退。
 """
-# case_ids: OR-016, CH-010, PR-019
+# case_ids: OR-016, CH-010, PR-019, OR-021
 import pytest
 
 from app.graph.skills.customer_order_skill import CUSTOMER_ORDER_SYSTEM_PROMPT
@@ -100,7 +100,14 @@ class TestCustomerOrderPromptGrowthGuard:
     #   实测该规则净增 ~106 字符（先按守卫要求精简过一轮：初版 270 字符被本守卫拦下）。
     #   这是**安全/诚实性**规则（防止顾客以为草稿已落单），非冗余描述，故按守卫允许的
     #   "明确上调上限并说明理由"路径处理；再涨需先删旧内容。
-    MAX_LEN = 3300
+    # 2026-09-13 上调 3300 → 3600（+300，issue #3386/#3389）：两条**能力诚实性**规则 ——
+    #   ① 手机号必须用完整 11 位（禁止自己打码/填 0）—— 掩码值回流写工具会静默写错订单手机号
+    #      （DB 实证：订单 20260913384380002 落库 13800008000）；
+    #   ② 禁止能力自我否定（"小布没法提交订单"）—— 验收 C-A1 实证：顾客「确认下单」×4 轮被拒 + 转人工。
+    #   同步执行了守卫要求的"先删旧内容"：本轮净删 ~130 字符冗余措辞（重复调用告警、
+    #   校验说明、引导话术示例），新规则首版 490 字符压缩到 ~330。
+    #   ⚠️ 下次再涨前必须先删旧内容（prompt 越长越容易稀释关键规则，实测长 prompt 的规则遵守率下降）。
+    MAX_LEN = 3600
 
     def test_prompt_length_within_budget(self):
         n = len(CUSTOMER_ORDER_SYSTEM_PROMPT)
@@ -108,6 +115,20 @@ class TestCustomerOrderPromptGrowthGuard:
             f"C 端下单 prompt 长度 {n} > 上限 {self.MAX_LEN} —— 新内容需精简，"
             f"或明确上调上限并说明理由（当前 {n}/{self.MAX_LEN}）"
         )
+
+    def test_prompt_keeps_capability_honesty_rules(self):
+        """能力诚实性规则必须在 prompt 里**真实存在**（issue #3386 / #3389）。
+
+        长度守卫只保证"没膨胀"，不保证"规则还在"—— 规则被删掉时长度照样合规（还会更短）。
+        故把两条规则的**判据关键词**钉住：
+          · 手机号必须完整 11 位 + 禁止自己打码（掩码值回流写工具 → 静默写错订单手机号）；
+          · 禁止能力自我否定（"没法提交订单"）—— 验收 C-A1 实证的拒单形态。
+        """
+        p = CUSTOMER_ORDER_SYSTEM_PROMPT
+        assert "完整 11 位" in p, "缺少「手机号用完整 11 位」规则（掩码回流会写错号码）"
+        assert "不要自己打码" in p, "缺少「展示脱敏由系统做，不要自己打码」规则"
+        assert "禁止自我否定" in p, "缺少「禁止能力自我否定」规则（C-A1 拒单形态）"
+        assert "13800008000" not in p or "静默写错" in p, "掩码填充值的危害说明缺失"
 
     def test_prompt_not_accidentally_truncated(self):
         n = len(CUSTOMER_ORDER_SYSTEM_PROMPT)

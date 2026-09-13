@@ -9,7 +9,7 @@
   属「工具调用全对、用户看到的话是错的」类缺陷，PR-019 用本断言拦截。
 - interactive 事件采集：send_message 捕获 SSE interactive 事件（卡片证据）。
 """
-# case_ids: OR-016, AS-007, PR-019, CH-010, CH-024
+# case_ids: OR-016, AS-007, PR-019, CH-010, CH-024, OR-021
 import asyncio
 from types import SimpleNamespace
 import importlib.util
@@ -3145,3 +3145,94 @@ class TestRunCasePhoneProvenanceWiring:
         import asyncio
         res = asyncio.run(self._run(self._case(), "13800138000"))
         assert res["score"] == 1.0, f"正常号码被误判: {res['failed']}"
+
+
+class TestFalseInability:
+    """能力误宣：C 端**明明能做**却说"做不了"（issue #3389，验收 C-A1 实证）。
+
+    实证（run 34743802010，`C-A1.transcript.md`）：顾客明确说「确认下单」×4 轮，
+    小布连续回「**下单这个操作小布这边没法直接帮您提交呢**，需要您在小程序里点一下"立即购买"」，
+    最后 `human_handoff(reason="…智能客服无法代为提交订单")` —— 整场 9 轮**从未调用 `order_create`**。
+    而 `order_create` 就是 `customer_order` 这个 skill 自己的写工具（OR-014/017/018/019/020 都真实落单）。
+
+    与 `check_false_success` 配对：那条管"没做却说做了"（假成功），本条管"能做却说做不了"（假无能）。
+    两者都是**能力诚实性**断言 —— 顾客视角比答错更致命：购买意图被无理由丢弃。
+    """
+
+    def _run(self, texts):
+        rounds = [{"__round": i + 1, "tool_calls": [], "tool_results": [],
+                   "final_text": t} for i, t in enumerate(texts)]
+        return lr.check_false_inability(rounds)
+
+    def test_canonical_ca1_refusal_flagged(self):
+        """C-A1 原话必须被抓住。"""
+        issues = self._run(["订单信息我帮您整理好啦~ 不过下单这个操作小布这边没法直接帮您提交呢，"
+                            "需要您在小程序里点一下\"立即购买\"就能完成啦 😊"])
+        assert issues, "「没法直接帮您提交订单」是能力误宣，必须判红"
+
+    def test_variants_flagged(self):
+        for t in ["抱歉，我无法为您提交订单，请联系人工",
+                  "小布暂时不能帮您下单哦",
+                  "创建订单这个我没法操作，您自己在小程序买吧",
+                  "我没办法代为下单"]:
+            assert self._run([t]), f"未抓住能力误宣变体: {t!r}"
+
+    def test_reverse_order_phrase_flagged(self):
+        """语序颠倒（动词在前）也要抓。"""
+        assert self._run(["下单需要您自己去小程序操作，我没法帮您完成"])
+
+    def test_legit_unrelated_inability_not_flagged(self):
+        """与下单无关的能力说明不得误报（例：不能改价、不能查他人订单）。"""
+        for t in ["这个价格我没法直接改，需要商家后台调整哦",
+                  "我不能查看其他人的订单信息",
+                  "退款我这边没法直接操作，需要走售后流程"]:
+            assert self._run([t]) == [], f"误报: {t!r}"
+
+    def test_legit_order_talk_not_flagged(self):
+        """正常引导下单的话术不得误报。"""
+        for t in ["亲，确认无误的话回复「确认下单」就可以啦~",
+                  "好的，订单已提交成功，订单号 20260913384380002",
+                  "还差收货信息，方便告诉我姓名、手机号和地址吗？"]:
+            assert self._run([t]) == [], f"误报: {t!r}"
+
+    def test_handoff_reason_also_scanned(self):
+        """转人工理由里写着"无法代为提交订单"同样算能力误宣（C-A1 R9 的实际形态）。"""
+        rounds = [{"__round": 9, "tool_calls": [{"name": "human_handoff",
+                                                 "args": {"reason": "顾客需协助下单（智能客服无法代为提交订单）"}}],
+                   "tool_results": [], "final_text": "已为您转接人工客服"}]
+        assert lr.check_false_inability(rounds), "转人工理由里的能力误宣必须判红"
+
+
+class TestRunCaseFalseInabilityWiring:
+    """run_case 集成：能力误宣必须**真的算进用例判定**（score 0）。"""
+
+    def _case(self):
+        return lr.EvalCase(
+            id="INAB-TEST", legacy_id="", title="t", skill=lr.Skill.ORDER,
+            difficulty=lr.Difficulty.NORMAL, user_inputs=["帮我下单"],
+            expectations=["tool: product_search"], data_checks=[],
+        )
+
+    def _run(self, reply):
+        import unittest.mock as mock
+
+        async def fake_send(token, session_id, message, images=None):
+            return {"user_message": message, "images": images or [],
+                    "tool_calls": [{"name": "product_search", "args": {}}],
+                    "tool_results": [], "interactive": [], "final_text": reply,
+                    "error": None, "streamed": False, "done": True}
+
+        # PERSONA 是**运行档**级开关（`--persona xiaobu`）：C 端专属断言都挂在这个分支下，
+        # 故接线测试必须显式打开它 —— 否则测的是"没接线也绿"，等于假守卫。
+        with mock.patch.object(lr, "send_message", new=fake_send), \
+             mock.patch.object(lr, "PERSONA", "xiaobu"):
+            return asyncio.run(lr.run_case(self._case(), "tok", "sess"))
+
+    def test_refusal_scores_zero(self):
+        res = self._run("这个我没法帮您提交订单哦")
+        assert res["score"] == 0.0, "能力误宣必须判红（否则 core 转化路径被掐断也无人知）"
+        assert any("能力" in str(f) or "提交订单" in str(f) for f, _ in res["failed"])
+
+    def test_normal_reply_keeps_score(self):
+        res = self._run("亲，确认无误的话回复「确认下单」就可以啦~")
+        assert res["score"] == 1.0, f"正常话术被误判: {res['failed']}"

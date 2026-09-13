@@ -1133,6 +1133,34 @@ def card_fingerprint(args: dict) -> str:
     return "|".join([comp, title, "、".join(labels)])[:200]
 
 
+# ── 以"AI 自己做不到"为理由转人工（issue #3389，验收 C-A1 实证）──────────────
+# 实证（run 34743802010）：C-A1 顾客「确认下单」×4 轮后，agent 调了
+# `human_handoff(reason="顾客需协助下单（智能客服无法代为提交订单）")` —— 而 `order_create`
+# 就是这个 skill 自己的写工具（OR-014/017/018/019/020 都真实落单）。
+# 这类"能力误宣"比答错更伤：顾客明明要买，系统却告诉他"我下不了单"，转化路径被自己掐断。
+CAPABILITY_DENIAL_PATTERNS = (
+    "无法代为提交", "没法代为提交", "无法提交订单", "没法提交订单", "不能提交订单",
+    "无法代为下单", "没法代为下单", "无法帮您下单", "没法帮您下单", "无法帮您提交",
+    "没法帮您提交", "无法下单", "没法下单", "不能下单", "无法创建订单", "没法创建订单",
+    "无法建单", "没法建单", "智能客服无法", "小布无法", "小布没法",
+)
+
+
+def _capability_denial_reason(args: dict) -> str:
+    """转人工的 reason/summary 是否是「AI 自己做不到」的能力误宣；返回命中片段或空串。
+
+    只认明确的**自我能力否定**措辞（顾客显式诉求/情绪/正常业务理由都不在此列），
+    避免把"顾客要求人工核价"这类正确转人工拦成故障。
+    """
+    text = f"{str((args or {}).get('reason') or '')} {str((args or {}).get('summary') or '')}"
+    if not text.strip():
+        return ""
+    for pat in CAPABILITY_DENIAL_PATTERNS:
+        if pat in text:
+            return text.strip()[:60]
+    return ""
+
+
 def _clear_write_input_error(full: dict) -> dict:
     out = dict(full or {})
     out.pop(WRITE_INPUT_ERROR_KEY, None)
@@ -2356,6 +2384,27 @@ async def execute_skill(
                         # 未发生；当时 ① 判为 False（历史里扫不到那张卡）→ 兜底形同虚设。
                         _inflight = bool(state.get("pending_interact_skill")) or \
                             _has_inflight_interactive_card(state.get("messages", []))
+                        # 能力误宣（issue #3389）：以"我下不了单/无法代为提交订单"为理由转人工，
+                        # 无论有没有在办卡都拦 —— 这是**能力否定**，不是顾客诉求。
+                        _denial = _capability_denial_reason(args)
+                        if _denial and not has_escalation_signal(last_user_msg):
+                            logger.warning(
+                                f"[{skill_name}] 拦截能力误宣式转人工 | session={session_id} "
+                                f"reason={_denial!r}")
+                            _msg = (
+                                f"你的转人工理由写的是「{_denial}」—— 但**你能下单**："
+                                f"`order_create` 就是本流程的写工具（参数齐了就能真实落单）。"
+                                f"「无法代为提交订单」属**能力误宣**：顾客明明要买，"
+                                f"却被告知系统做不到，转化路径被自己掐断。"
+                                f"正确做法：缺收货信息就先 `customer_address_query` 查历史地址，"
+                                f"没有再发 `interact(component=form)` 或用自然语言问姓名/手机号/地址；"
+                                f"参数齐了走 confirm 卡 → `validate_input` → `order_create`（含 sms_code）。"
+                                f"只有当顾客**显式**要求人工、情绪激烈或诉求超出能力时，才允许转人工。")
+                            return (tool_call,
+                                    json.dumps({"success": False,
+                                                "error": "handoff_blocked_capability_denial",
+                                                "message": _msg}, ensure_ascii=False),
+                                    {"success": False, "error": "handoff_blocked_capability_denial"})
                         if not has_escalation_signal(last_user_msg) and _inflight:
                             logger.warning(
                                 f"[{skill_name}] 拦截在办流程中的无信号转人工 | session={session_id} "

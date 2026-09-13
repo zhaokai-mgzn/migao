@@ -1937,7 +1937,7 @@
 真值: ai-chat.context-memory
 溯源: 2026-09-04 新增：issue #2821 延续切片 C（vision 分析落槽 + base_skill 接线） ｜ tags: ontology, vision, context_memory, grounding, base_skill
 
-## 订单域（20 case）
+## 订单域（21 case）
 
 ### OR-001. 订单列表查询 🟢
 ```
@@ -2265,6 +2265,38 @@
 ```
 真值: order.create-flow
 溯源: 2026-09-13 新增（issue #3379）：能力上限用例（打岔后草稿保持 + 流程恢复） ｜ tags: order_create, interruption, context_retention, ceiling, xiaobu
+
+### OR-021. C 端缺收货信息时不得自我否定能力 - 必须查/问后继续下单（能力下限） 🔵
+```
+你: 我想买遮光窗帘，米白 3 米，要纳米圈打孔加工
+你: [🤖 按上一轮卡片作答]
+你: [🤖 按上一轮卡片作答]
+你: [🤖 按上一轮卡片作答]
+你: [🤖 按上一轮卡片作答]
+你: [🤖 按上一轮卡片作答]
+你: [🤖 按上一轮卡片作答]
+你: [🤖 按上一轮卡片作答]
+你: [🤖 按上一轮卡片作答]
+期望: product_search
+期望: product_detail
+期望: order_create
+数据: 缺收货信息时先 customer_address_query 查历史地址，没有再发 form 卡/直接问 —— 不得自我否定能力、不得推去小程序
+数据: 任何一轮回复都不得出现「我无法提交订单 / 没法帮您下单」这类能力误宣
+数据: 参数补齐后必须真实落单（order_create 成功 + 明细/数量/手机号正确）
+禁词: 没法直接帮您提交
+禁词: 没法帮您提交订单
+禁词: 无法代为提交
+禁词: 无法帮您提交订单
+禁词: 小程序里点
+禁词: 小布没法提交
+禁词: 无法代为下单
+必须成功: order_create
+金额: order_create 「遮光窗帘」 → unit_price; subtotal; total
+落库: order_items None → 
+落库: order_phone None → 
+```
+真值: order.create-flow, ai-chat.confirm-required
+溯源: 2026-09-13 新增（issue #3389）：能力下限用例（缺信息时收集而非拒单 + 能力误宣反模式） ｜ tags: order_create, honesty, capability, xiaobu
 
 ## 加工项域（6 case）
 
@@ -3449,8 +3481,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：269（活跃 130，跳过 139）
-- tier 分布：smoke 9 / normal 227 / adversarial 33
+- 用例总数：270（活跃 131，跳过 139）
+- tier 分布：smoke 9 / normal 228 / adversarial 33
 - 售后域：8
 - agents：6
 - api：19
@@ -3467,7 +3499,7 @@
 - misc：15
 - onboarding：5
 - ontology：4
-- 订单域：20
+- 订单域：21
 - 加工项域：6
 - processing-order：14
 - 商品域：22

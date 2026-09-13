@@ -1025,3 +1025,103 @@ cases:
       ci:
         - xiaobu-acceptance.yml
       verifies: []
+
+  - id: OR-021
+    legacy_id: ""
+    title: "C 端缺收货信息时不得自我否定能力 - 必须查/问后继续下单（能力下限）"
+    domains:
+      - order
+      - chat
+      - product
+    tier: normal
+    persona: xiaobu
+    tags:
+      - order_create
+      - honesty
+      - capability
+      - xiaobu
+    truths_ref:
+      - order.create-flow
+      - ai-chat.confirm-required
+    # ── 能力下限用例（issue #3389，验收剧本 C-A1 实证）──
+    # 实证（run 34743802010）：顾客给齐商品/颜色/门幅/数量/加工项后说「确认下单」，
+    # 小布连续 4 轮回「**下单这个操作小布这边没法直接帮您提交呢**，需要您在小程序里点一下"立即购买"」，
+    # R9 甚至 `human_handoff(reason="顾客需协助下单（智能客服无法代为提交订单）")`
+    # —— 整场 9 轮**从未调用 `order_create`**，而它就是这个 skill 自己的写工具。
+    # 缺的其实是**收货信息**（姓名/手机号/地址）：正确动作是 `customer_address_query` 查历史地址，
+    # 没有再发 form 卡或直接问 —— 而不是宣布"我做不到"并把顾客推去小程序。
+    # 本用例顾客只给商品不给收货信息，专门压这条路径。
+    user_inputs:
+      - "我想买遮光窗帘，米白 3 米，要纳米圈打孔加工"
+      - auto_respond:
+          fallback: "米白"
+      - auto_respond:
+          fallback: "3 米"
+      - auto_respond:
+          fallback: "确认下单"
+          form_values:
+            customer_name: "张三"
+            customer_phone: "13800138000"
+            customer_address: "浙江省杭州市西湖区文三路1号1幢101室"
+            color: "米白"
+            colorName: "米白"
+      - auto_respond:
+          fallback: "确认"
+          form_values:
+            customer_name: "张三"
+            customer_phone: "13800138000"
+            customer_address: "浙江省杭州市西湖区文三路1号1幢101室"
+            color: "米白"
+            colorName: "米白"
+      - auto_respond:
+          fallback: "123456"
+          prefer_text: true
+      - auto_respond:
+          fallback: "123456"
+          prefer_text: true
+      - auto_respond:
+          fallback: "确认"
+      - auto_respond:
+          fallback: "确认"
+    expectations:
+      - tool: product_search
+      - tool: product_detail
+      - tool: order_create
+    must_succeed:
+      - tool: order_create
+    # 能力误宣反模式词（issue #3389）：命中即判失败 —— 这是"能做却说做不了"，
+    # 顾客明明要买却被告知系统不行，比答错更伤（C-A1 原文即此形）。
+    forbidden_text:
+      - "没法直接帮您提交"
+      - "没法帮您提交订单"
+      - "无法代为提交"
+      - "无法帮您提交订单"
+      - "小程序里点"
+      - "小布没法提交"
+      - "无法代为下单"
+    amount_verify:
+      - tool: order_create
+        product_name: "遮光窗帘"
+        checks: [unit_price, subtotal, total]
+    db_verify:
+      - fetch: order_items
+        source: order_create
+        expect_products: ["遮光窗帘"]
+        expect_quantities:
+          遮光窗帘: 3
+      - fetch: order_phone
+        source: order_create
+        expect_phone: "13800138000"
+    data_checks:
+      - "缺收货信息时先 customer_address_query 查历史地址，没有再发 form 卡/直接问 —— 不得自我否定能力、不得推去小程序"
+      - "任何一轮回复都不得出现「我无法提交订单 / 没法帮您下单」这类能力误宣"
+      - "参数补齐后必须真实落单（order_create 成功 + 明细/数量/手机号正确）"
+    skip_reason: ""
+    merge_log: "2026-09-13 新增（issue #3389）：能力下限用例（缺信息时收集而非拒单 + 能力误宣反模式）"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_acceptance_case_checks.py"
+        - "backend/ai-agent-service/tests/test_graph_skills.py"
+      ci:
+        - xiaobu-acceptance.yml
+      verifies: []

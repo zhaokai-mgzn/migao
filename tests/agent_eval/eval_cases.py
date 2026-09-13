@@ -2717,6 +2717,25 @@ _CASE_OR_020 = EvalCase(
     db_verify=[{'fetch': 'order_items', 'source': 'order_create', 'expect_products': ['遮光窗帘'], 'expect_quantities': {'遮光窗帘': 3}}],
 )
 
+# ── OR-021 [NORMAL] C 端缺收货信息时不得自我否定能力 - 必须查/问后继续下单（能力下限）（源: cases/order.yml）──
+_CASE_OR_021 = EvalCase(
+    id='OR-021',
+    legacy_id='',
+    title='C 端缺收货信息时不得自我否定能力 - 必须查/问后继续下单（能力下限）',
+    skill=Skill.ORDER,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['我想买遮光窗帘，米白 3 米，要纳米圈打孔加工', {'auto_respond': {'fallback': '米白'}}, {'auto_respond': {'fallback': '3 米'}}, {'auto_respond': {'fallback': '确认下单', 'form_values': {'customer_name': '张三', 'customer_phone': '13800138000', 'customer_address': '浙江省杭州市西湖区文三路1号1幢101室', 'color': '米白', 'colorName': '米白'}}}, {'auto_respond': {'fallback': '确认', 'form_values': {'customer_name': '张三', 'customer_phone': '13800138000', 'customer_address': '浙江省杭州市西湖区文三路1号1幢101室', 'color': '米白', 'colorName': '米白'}}}, {'auto_respond': {'fallback': '123456', 'prefer_text': True}}, {'auto_respond': {'fallback': '123456', 'prefer_text': True}}, {'auto_respond': {'fallback': '确认'}}, {'auto_respond': {'fallback': '确认'}}],
+    expectations=['product_search', 'product_detail', 'order_create'],
+    data_checks=['缺收货信息时先 customer_address_query 查历史地址，没有再发 form 卡/直接问 —— 不得自我否定能力、不得推去小程序', '任何一轮回复都不得出现「我无法提交订单 / 没法帮您下单」这类能力误宣', '参数补齐后必须真实落单（order_create 成功 + 明细/数量/手机号正确）'],
+    skip_reason='',
+    tags=['order_create', 'honesty', 'capability', 'xiaobu'],
+    persona='xiaobu',
+    forbidden_text=['没法直接帮您提交', '没法帮您提交订单', '无法代为提交', '无法帮您提交订单', '小程序里点', '小布没法提交', '无法代为下单'],
+    must_succeed=[{'tool': 'order_create'}],
+    amount_verify=[{'tool': 'order_create', 'product_name': '遮光窗帘', 'checks': ['unit_price', 'subtotal', 'total']}],
+    db_verify=[{'fetch': 'order_items', 'source': 'order_create', 'expect_products': ['遮光窗帘'], 'expect_quantities': {'遮光窗帘': 3}}, {'fetch': 'order_phone', 'source': 'order_create', 'expect_phone': '13800138000'}],
+)
+
 # ── PG-001 [NORMAL] 生成加工单 - 已确认含加工项订单 → 加工单生成 + 订单进入 producing（源: cases/processing-order.yml）──
 _CASE_PG_001 = EvalCase(
     id='PG-001',
@@ -4334,6 +4353,7 @@ ALL_CASES = (
     _CASE_OR_018,
     _CASE_OR_019,
     _CASE_OR_020,
+    _CASE_OR_021,
     _CASE_PG_001,
     _CASE_PG_002,
     _CASE_PG_003,
