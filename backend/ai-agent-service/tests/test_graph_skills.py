@@ -22,7 +22,7 @@ from app.graph.skills.general_agent import GENERAL_TOOLS, GENERAL_SKILL_CONFIG
 from app.graph.skills.base_skill import (
     build_tool_context, execute_skill, _extract_content, get_skill_llm,
     _masked_phone_write_block, KNOWN_RAW_PHONES_KEY, _capability_denial_reason,
-    _conversation_mentions_dimensions,
+    _conversation_mentions_dimensions, _form_prefill_fidelity_block,
 )
 import app.graph.skills.base_skill as lr2
 from app.graph.skills.skill_registry import SkillRegistry
@@ -3443,6 +3443,178 @@ class TestCurtainCalcDimensionGuardWiring:
     def test_other_tools_unaffected(self):
         seen = self._run({"keyword": "窗帘"}, tool_name="product_search")
         assert len(seen["calls"]) == 1
+
+
+class TestFormPrefillFidelity:
+    """收货信息表单的**预填值必须逐字保真**（issue #3397，实测 run 34750771576）。
+
+    实证：OR-023 老客户下单，库里地址是 `浙江省杭州市西湖区文三路 1 号 1 幢 101 室`，
+    模型预填成 `浙江省杭州市西湖区文三路 100 号`（**库里/会话里都没有这个地址**）——
+    顾客若不逐字核对就直接提交，订单会寄到错地址；号码同理（掩码值回流更危险）。
+    修法：预填值必须来自工具返回值**逐字复制**；模型改写时拦下并回放真值。
+    """
+
+    KNOWN_ADDR = "浙江省杭州市西湖区文三路 1 号 1 幢 101 室"
+    KNOWN_PHONE = "13800138000"
+
+    def _run(self, form_fields, args=None, last_user_msg="帮我下单，遮光窗帘 3 米",
+             known=None):
+        import asyncio, json as _json
+        store = {"known_raw_phones": [self.KNOWN_PHONE],
+                 "known_customer_address": [self.KNOWN_ADDR]}
+        store.update(known or {})
+
+        class _Store:
+            async def load(self, sid):
+                return dict(store)
+
+            async def commit(self, sid, f):
+                store.clear(); store.update(f)
+
+        a = args or {"component": "form", "title": "请确认收货信息",
+                     "formFields": form_fields}
+        with patch("app.memory.session_state_store.SessionStateStore",
+                   side_effect=lambda *x, **k: _Store()):
+            return asyncio.run(_form_prefill_fidelity_block(
+                "interact", a, {"name": "interact", "args": a, "id": "c1"},
+                "sess_1", "customer_order", last_user_msg, {"messages": []}))
+
+    def _code(self, out):
+        import json as _json
+        assert out is not None, "该预填值必须被拦下（改写会造成错寄/掩码建号）"
+        return _json.loads(out[1]).get("error"), _json.loads(out[1]).get("message", "")
+
+    def test_mangled_address_blocked(self):
+        code, msg = self._code(self._run([
+            {"key": "customer_address", "label": "收货地址",
+             "value": "浙江省杭州市西湖区文三路 100 号"}]))
+        assert code == "form_prefill_altered"
+        assert self.KNOWN_ADDR.replace(" ", "") in msg.replace(" ", ""), f"必须回放真值: {msg!r}"
+
+    def test_masked_phone_blocked(self):
+        code, _ = self._code(self._run([
+            {"key": "customer_phone", "label": "手机号", "value": "138****8000"}]))
+        assert code == "form_prefill_altered"
+
+    def test_verbatim_address_passes(self):
+        assert self._run([{"key": "customer_address", "value": self.KNOWN_ADDR}]) is None
+
+    def test_whitespace_variant_passes(self):
+        """空格差异不算改写（顾客看到的仍是同一地址）。"""
+        assert self._run([{"key": "customer_address",
+                           "value": "浙江省杭州市西湖区文三路1号1幢101室"}]) is None
+
+    def test_customer_supplied_new_address_passes(self):
+        """顾客本条消息**自己给了新地址** → 预填它是对的，不得拦。"""
+        out = self._run([{"key": "customer_address", "value": "上海市浦东新区世纪大道 1 号"}],
+                        last_user_msg="改成上海市浦东新区世纪大道 1 号")
+        assert out is None
+
+    def test_no_known_value_passes(self):
+        """会话里没有历史收货信息（新客）→ 无从比对，不拦（OR-022 路径）。"""
+        out = self._run([{"key": "customer_address", "value": "随便写的地址"}],
+                        known={"known_customer_address": []})
+        assert out is None
+
+    def test_non_form_interact_untouched(self):
+        out = self._run([], args={"component": "confirm", "title": "确认订单",
+                                  "fields": [{"label": "地址", "value": "x"}]})
+        assert out is None
+
+
+class TestFormPrefillFidelityWiring:
+    """守卫与**数据来源**都必须接线（M177/M178 抓出的假守卫）。
+
+    只测辅助函数会漏两件事：① 守卫没接在 `interact` 调用路径上（拦不住）；
+    ② 读工具返回的地址没被记住（守卫没有真值可比 → 恒放行）。两条都必须有集成证据。
+    """
+
+    KNOWN_ADDR = "浙江省杭州市西湖区文三路 1 号 1 幢 101 室"
+
+    def _run(self, args, tool_name="interact", store_extra=None, read_data=None):
+        import asyncio, json as _json
+
+        seen = {"calls": [], "commits": []}
+        full = {"known_customer_address": [self.KNOWN_ADDR]}
+        full.update(store_extra or {})
+
+        async def fake_execute(tool, a, ctx, state):
+            seen["calls"].append((tool, a))
+            data = read_data if read_data is not None else {"ok": True}
+            return (_json.dumps({"success": True, "data": data}),
+                    {"success": True, "data": data})
+
+        class _Store:
+            async def load(self, sid):
+                return dict(full)
+
+            async def commit(self, sid, new_full):
+                seen["commits"].append(dict(new_full))
+                full.clear(); full.update(new_full)
+
+        with patch("app.memory.session_memory.SessionMemory"), \
+             patch("app.graph.skills.base_skill.get_breaker") as get_breaker, \
+             patch("app.graph.skills.base_skill.get_skill_llm") as get_llm, \
+             patch("app.graph.skills.base_skill.create_skill_registry") as create_reg, \
+             patch("app.graph.skills.base_skill.set_tool_context"), \
+             patch("app.graph.skills.base_skill._execute_tool_safe", fake_execute), \
+             patch("app.memory.session_state_store.SessionStateStore",
+                   side_effect=lambda *a, **k: _Store()):
+            tool = MagicMock()
+            tool.name = tool_name
+            tool.read_only = tool_name != "interact"
+            tool.destructive = False
+            tool.requires_confirmation = False
+            registry = MagicMock()
+            registry.get_langchain_tools.return_value = []
+            registry.get_tool.side_effect = lambda n: tool if n == tool_name else None
+            create_reg.return_value = registry
+            breaker = MagicMock()
+
+            async def _pt(fn):
+                return await fn()
+
+            breaker.call = _pt
+            get_breaker.return_value = breaker
+            call = MagicMock(spec=AIMessage)
+            call.content = ""
+            call.tool_calls = [{"name": tool_name, "args": args, "id": "c1"}]
+            final = MagicMock(spec=AIMessage)
+            final.content = "好的"
+            final.tool_calls = []
+            llm = MagicMock()
+            llm.bind_tools.return_value = llm
+            llm.ainvoke = AsyncMock(side_effect=[call, final])
+            get_llm.return_value = llm
+            res = asyncio.run(execute_skill(
+                state=_make_state(messages=[HumanMessage(content="帮我下单，遮光窗帘 3 米")]),
+                skill_name="customer_order", tool_names=[tool_name], system_prompt="p"))
+        from langchain_core.messages import ToolMessage as _TM
+        seen["tool_content"] = "\n".join(
+            str(getattr(m, "content", "")) for m in (res or {}).get("messages", [])
+            if isinstance(m, _TM))
+        return seen
+
+    def test_altered_prefill_never_reaches_customer(self):
+        seen = self._run({"component": "form", "title": "请确认收货信息",
+                          "formFields": [{"key": "customer_address", "label": "收货地址",
+                                          "value": "浙江省杭州市西湖区文三路 100 号"}]})
+        assert seen["calls"] == [], "被改写的预填值不得下发（顾客会寄错地址）"
+        assert "文三路" in seen["tool_content"], "拦截时必须回放真值"
+
+    def test_verbatim_prefill_passes(self):
+        seen = self._run({"component": "form", "title": "请确认收货信息",
+                          "formFields": [{"key": "customer_address", "value": self.KNOWN_ADDR}]})
+        assert len(seen["calls"]) == 1, "逐字保真的预填被拦 → 真回归"
+
+    def test_read_tool_address_is_remembered(self):
+        """读工具返回的地址必须被记住 —— 否则守卫没有真值可比（M178 的形态）。"""
+        seen = self._run({"keyword": "x"}, tool_name="customer_address_query",
+                         store_extra={"known_customer_address": []},
+                         read_data={"has_address": True, "customer_address": self.KNOWN_ADDR})
+        merged = [a for c in seen.get("commits") or []
+                  for a in (c.get("known_customer_address") or [])]
+        assert self.KNOWN_ADDR in merged, f"地址没进会话状态: {seen.get('commits')}"
 
 
 class TestFalseCancelGuard:

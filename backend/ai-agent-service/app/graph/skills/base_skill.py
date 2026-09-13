@@ -1234,6 +1234,8 @@ def _clear_write_input_error(full: dict) -> dict:
 #   · 会话里没有已知真号 → **不拦**（`13800008000` 本身是合法真号，无权判它是脏数据）。
 # 反向约束：顾客明确给了新号码必须放行（改号是合法业务，不能拦成"下单永不成功"）。
 KNOWN_RAW_PHONES_KEY = "known_raw_phones"
+# 已知收货地址（issue #3397）：预填值必须逐字保真 —— 模型改写会导致**寄错地址**。
+KNOWN_ADDRESS_KEY = "known_customer_address"
 
 # 掩码**占位字符**：真手机号绝不含这些字符 → 出现即证明是掩码值（可无条件拦）。
 _MASK_PLACEHOLDER_CHARS = "*＊×xX·•#"
@@ -1308,6 +1310,25 @@ def _phone_args(args) -> list:
     return out
 
 
+async def _remember_known_value(session_id: str, key: str, value: str) -> None:
+    """把一个**已知真值**（地址等）记进会话状态（只增不减；失败不致命）。"""
+    value = str(value or "").strip()
+    if not session_id or not value:
+        return
+    try:
+        from app.memory.session_state_store import SessionStateStore
+        store = SessionStateStore()
+        full = await store.load(session_id) or {}
+        cur = full.get(key) or []
+        cur_list = [str(v) for v in cur] if isinstance(cur, (list, tuple, set)) else []
+        if value in cur_list:
+            return
+        full[key] = cur_list + [value]
+        await store.commit(session_id, full)
+    except Exception as e:
+        logger.warning(f"[known-value] 记录 {key} 失败（非致命）: {e}")
+
+
 async def _known_raw_phones(session_id: str, state: dict | None = None,
                             last_user_msg: str = "") -> set:
     """本会话已知的**真实**手机号：跨轮持久化集合 ∪ 会话里顾客自己说过的号码。
@@ -1352,6 +1373,87 @@ async def _remember_raw_phones(session_id: str, phones) -> None:
         await store.commit(session_id, full)
     except Exception as e:
         logger.warning(f"[phone-guard] 记录真实号码失败（非致命）: {e}")
+
+
+def _norm_ws(v) -> str:
+    """比对前去掉所有空白（地址/号码里的空格差异不算改写）。"""
+    return "".join(str(v or "").split())
+
+
+# ── 收货信息表单预填必须**逐字保真**（issue #3397，实测 run 34750771576）──────────
+# 实证：OR-023 老客户下单，库里地址 `浙江省杭州市西湖区文三路 1 号 1 幢 101 室`，
+# 模型预填成 `浙江省杭州市西湖区文三路 100 号`（库里/会话里都没有这个地址）——
+# 顾客若不逐字核对就提交，订单会寄到错地址；号码被改写（尤其掩码值回流）更严重
+# （掩码号会静默写库，issue #3379/#3386 同族）。
+# 判据：表单预填的收货字段，若会话里已有**已知真值**且与预填值不一致（忽略空白），
+# 且该值**不是顾客本条消息自己给的** → 拦下并回放真值，逼模型逐字复制。
+_PREFILL_FIDELITY_FIELDS = {
+    "customer_address": (KNOWN_ADDRESS_KEY, "收货地址"),
+    "customer_phone": (KNOWN_RAW_PHONES_KEY, "手机号"),
+    "receiver_phone": (KNOWN_RAW_PHONES_KEY, "手机号"),
+}
+
+
+async def _form_prefill_fidelity_block(tool_name: str, args: dict, tool_call: dict,
+                                       session_id: str, skill_name: str,
+                                       last_user_msg: str = "", state: dict | None = None):
+    """form 预填值与已知真值不一致时拦下（返回 3 元组），否则放行（None）。"""
+    if tool_name != "interact":
+        return None
+    if str((args or {}).get("component") or "") != "form":
+        return None
+    fields = (args or {}).get("formFields") or []
+    if not isinstance(fields, list) or not fields:
+        return None
+    known: dict = {}
+    if session_id:
+        try:
+            from app.memory.session_state_store import SessionStateStore
+            full = await SessionStateStore().load(session_id) or {}
+            for key, (store_key, _label) in _PREFILL_FIDELITY_FIELDS.items():
+                vals = full.get(store_key) or []
+                if isinstance(vals, (list, tuple, set)):
+                    known[key] = [str(v) for v in vals if str(v)]
+        except Exception:
+            pass
+    if not known:
+        return None
+    from app.utils.pii_mask import mask_pii as _mask
+    last_user_norm = _norm_ws(last_user_msg)
+    for f in fields:
+        if not isinstance(f, dict):
+            continue
+        key = str(f.get("key") or "")
+        if key not in _PREFILL_FIDELITY_FIELDS:
+            continue
+        val = str(f.get("value") or "")
+        if not val.strip():
+            continue
+        truth_list = [v for v in (known.get(key) or []) if v]
+        if not truth_list:
+            continue
+        got_norm = _norm_ws(val)
+        if any(got_norm == _norm_ws(t) for t in truth_list):
+            continue
+        # 顾客本条消息自己给了这个值（合法新地址/新号码）→ 放行
+        if got_norm and got_norm in last_user_norm:
+            continue
+        truth = truth_list[0]
+        label = _PREFILL_FIDELITY_FIELDS[key][1]
+        logger.warning(
+            f"[{skill_name}] 拦截收货信息预填被改写 field={key} got={val[:24]!r} "
+            f"truth={truth[:24]!r} | session={session_id}")
+        msg = (
+            f"`interact(form)` 里 `{label}` 的预填值 `{val}` 与会话中**已知的真实值**"
+            f"`{truth}` 不一致 —— 预填值必须**逐字复制工具返回值**，不能自己改写"
+            f"（地址被改写顾客会寄错地方；号码被改写/掩码化会静默写错订单）。"
+            f"请用真值 `{label}={truth}` 重新下发这张表单；"
+            f"若顾客刚刚给了新的{label}（本条消息里提到），则用顾客给的那个值。")
+        code = "form_prefill_altered"
+        return (tool_call, json.dumps({"success": False, "error": code, "message": msg},
+                                      ensure_ascii=False),
+                {"success": False, "error": code, "message": msg})
+    return None
 
 
 async def _masked_phone_write_block(tool_name: str, args: dict, tool_call: dict,
@@ -2411,6 +2513,12 @@ async def execute_skill(
                     if tool is None:
                         logger.warning(f"[{skill_name}] Tool not found: {tool_name} | session={session_id}")
                         return tool_call, json.dumps({"success": False, "error": "tool_not_found", "message": f"工具 {tool_name} 不可用"}, ensure_ascii=False), {"success": False}
+                    # 收货信息预填保真守卫（issue #3397）：interact 是只读工具，单独接。
+                    _blocked_prefill = await _form_prefill_fidelity_block(
+                        tool_name, args, tool_call, session_id, skill_name,
+                        last_user_msg, state)
+                    if _blocked_prefill is not None:
+                        return _blocked_prefill
                     # 算料前提守卫（issue #3395）：只读工具，故在读写分流之前单独接。
                     _blocked_calc = await _curtain_calc_dimension_block(
                         tool_name, args, tool_call, session_id, skill_name, state)
@@ -2726,10 +2834,15 @@ async def execute_skill(
                     if (session_id and result_dict.get("success")
                             and getattr(tool, "read_only", False)):
                         try:
-                            _found = raw_phones_in(json.dumps(result_dict.get("data"),
-                                                              ensure_ascii=False, default=str))
+                            _payload = json.dumps(result_dict.get("data"),
+                                                  ensure_ascii=False, default=str)
+                            _found = raw_phones_in(_payload)
                             if _found:
                                 await _remember_raw_phones(session_id, _found)
+                            _addr = (result_dict.get("data") or {}).get("customer_address")
+                            if _addr:
+                                await _remember_known_value(
+                                    session_id, KNOWN_ADDRESS_KEY, str(_addr))
                         except Exception as _e7:
                             logger.warning(f"[{skill_name}] 记录真实号码失败（非致命）: {_e7}")
                     # ── 落地"本会话已查过商品详情"标记（issue #3361 下单接地闸门用）──
