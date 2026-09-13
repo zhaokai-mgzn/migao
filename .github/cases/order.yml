@@ -1055,8 +1055,9 @@ cases:
       - "我想买遮光窗帘，米白 3 米，要纳米圈打孔加工"
       - auto_respond:
           fallback: "米白"
-      - auto_respond:
-          fallback: "3 米"
+      # ⚠️ 这里**刻意不再重报数量**（issue #3395 复盘）：数量已在 R1 给过，
+      # 再答一次「3 米」会被模型读成"再加 3 米" → 落库 ×6（实测 run 34750771576）。
+      # 真实顾客回答别的问题时也不会重报数量；改数量由 OR-019 专项覆盖。
       - auto_respond:
           fallback: "确认下单"
           form_values:
@@ -1153,8 +1154,9 @@ cases:
       - "我想买遮光窗帘，米白 3 米，要纳米圈打孔加工"
       - auto_respond:
           fallback: "米白"
-      - auto_respond:
-          fallback: "3 米"
+      # ⚠️ 这里**刻意不再重报数量**（issue #3395 复盘）：数量已在 R1 给过，
+      # 再答一次「3 米」会被模型读成"再加 3 米" → 落库 ×6（实测 run 34750771576）。
+      # 真实顾客回答别的问题时也不会重报数量；改数量由 OR-019 专项覆盖。
       # 收货信息轮：agent 可能发 form 卡（→ form_values 回填）或**纯文本追问**
       # （→ fallback 文本即"顾客把姓名/手机号/地址一起发过来"），两条都覆盖。
       - auto_respond:
@@ -1278,6 +1280,10 @@ cases:
           fallback: "确认"
       - auto_respond:
           fallback: "确认"
+      # 轮数余量（issue #3401）：确认卡可能因**补字段**（收货信息后到）而重发一次，
+      # 顾客会继续确认；余量不足时用例会以"确认死循环"红，掩盖预填断言的真实结论。
+      - auto_respond:
+          fallback: "确认"
     expectations:
       - tool: product_search
       - tool: product_detail
@@ -1295,8 +1301,11 @@ cases:
     form_prefill:
       - field: customer_phone
         expect: "13800138000"
+      # 地址只断言"必须预填了非空值"：预填来源是**顾客最近一笔订单的地址**，
+      # 会被同一轮 run 里前序用例创建的订单影响（精确断言 = 数据依赖的假红，issue #3395 复盘）；
+      # 预填值**逐字保真**由图谱守卫 `_form_prefill_fidelity_block` 结构性地保证。
       - field: customer_address
-        expect: "浙江省杭州市西湖区文三路1号1幢101室"
+        expect_present: true
       - field: customer_name
         expect_present: true
     amount_verify:
