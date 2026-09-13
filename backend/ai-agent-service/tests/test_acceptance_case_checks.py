@@ -4272,3 +4272,106 @@ class TestRepeatUntilTurn:
         out = lr.expand_repeat_turns(ui)
         assert out[0] == "你好" and out[1] == ui[1]
         assert len(out) == 4 and all("__repeat__" in m for m in out[2:])
+
+
+class TestWriteCodeProvenance:
+    """写调用携带的验证码必须来自**顾客给过的码**（issue #3434）。
+
+    为什么补这条：失败只表现为 `must_succeed: order_create 共 1 次调用**无一成功**
+    （缺少短信验证码）` —— 既不说明"带没带码"，也不说明"带的是不是顾客那个"，
+    而 trace 里的码还被脱敏成 `***`，每次都得人肉翻日志还翻不出来。
+    本断言把两种情形分别点名，且**不打印码本身**（只报轮次与事实）。
+    """
+
+    @staticmethod
+    def _case(persona="xiaobu", inputs=None):
+        return lr.EvalCase(
+            id="AC-CODE", legacy_id="", title="t", skill=lr.Skill.ORDER,
+            difficulty=lr.Difficulty.NORMAL, persona=persona,
+            user_inputs=inputs if inputs is not None else ["我要下单", "123456", "确认"],
+            expectations=["tool: order_create"], data_checks=[])
+
+    @staticmethod
+    def _round(rnd, user, calls, *, code_error=False, ok=False):
+        """`code_error=True` 模拟"该轮 order_create 因验证码失败"（判定与失败耦合的前提）。"""
+        res = []
+        if calls:
+            res = [{"tool": c.get("name"), "result": (
+                {"success": True} if ok else {"success": False, "error": "缺少短信验证码"})}
+                for c in calls]
+        return {"__round": rnd, "user_message": user, "final_text": "",
+                "tool_calls": calls, "tool_results": res if (code_error or ok) else [],
+                "interactive": []}
+
+    def test_not_applicable_when_customer_never_gave_a_code(self):
+        case = self._case(inputs=["我要下单", "确认"])
+        res = [self._round(1, "确认", [{"name": "order_create", "args": {}}])]
+        assert lr.check_write_code_provenance(res, case) == [], (
+            "顾客没给过码时不该报 —— 那属于「该不该要码」的另一个问题")
+
+    def test_flags_missing_code(self):
+        case = self._case()
+        res = [self._round(3, "确认", [{"name": "order_create", "args": {"items": []}}],
+                           code_error=True)]
+        issues = lr.check_write_code_provenance(res, case)
+        assert issues and "没有验证码" in issues[0], issues
+
+    def test_flags_foreign_code(self):
+        """模型自造验证码（带了码但不是顾客那个）→ 点名，这是本轮真正要区分的情形。"""
+        case = self._case()
+        res = [self._round(3, "确认", [{"name": "order_create", "args": {"sms_code": "999999"}}],
+                           code_error=True)]
+        issues = lr.check_write_code_provenance(res, case)
+        assert issues and "不一致" in issues[0], issues
+
+    def test_correct_code_passes(self):
+        case = self._case()
+        res = [self._round(3, "确认", [{"name": "order_create", "args": {"sms_code": "123456"}}],
+                           ok=True)]
+        assert lr.check_write_code_provenance(res, case) == []
+
+    def test_no_code_error_means_no_red(self):
+        """**关键防假红**：写调用成功（说明 agent 侧代码补齐链路补上了码），
+        即使 SSE 上报的"模型原始参数"里没带码，也不该判红。"""
+        case = self._case()
+        res = [self._round(3, "确认", [{"name": "order_create", "args": {}}], ok=True)]
+        assert lr.check_write_code_provenance(res, case) == [], (
+            "按模型原始参数判红会冤枉「已由代码补齐链路救回」的路径（假红）")
+
+    def test_code_recognised_in_various_phrasings(self):
+        """「验证码 123456」「123456」都算顾客给过码；手机号不算。"""
+        case = self._case(inputs=["验证码 123456"])
+        res = [self._round(1, "123456", [{"name": "order_create", "args": {"sms_code": "123456"}}],
+                           ok=True)]
+        assert lr.check_write_code_provenance(res, case) == []
+
+    def test_backend_persona_exempt(self):
+        """B 端米宝下单链路不同，套用会误报 → 直接豁免。"""
+        case = self._case(persona="mibao")
+        res = [self._round(3, "确认", [{"name": "order_create", "args": {}}], code_error=True)]
+        assert lr.check_write_code_provenance(res, case) == []
+
+    def test_run_case_wires_it_behaviorally(self):
+        """**行为级**接线：跑一个"顾客给了码但写调用没带码"的用例 → 失败明细必须点名。
+
+        文本级 grep 不够（M260 教训：只改调用点保留函数体也能骗过 grep）。
+        """
+        case = self._case(inputs=["我要下单", "123456"])
+        case.persona = "xiaobu"
+        sent = []
+
+        async def fake_send(token, session_id, message, images=None, **kwargs):
+            sent.append(message)
+            tools = ["order_create"] if len(sent) == 2 else []
+            return {"user_message": message, "images": [], "interactive": [],
+                    "tool_calls": [{"name": n, "args": {}} for n in tools],
+                    "tool_results": [{"tool": n, "result": {"success": False,
+                                                            "error": "缺少短信验证码"}} for n in tools],
+                    "final_text": "", "error": None, "streamed": False, "done": True}
+
+        import unittest.mock as mock
+        with mock.patch.object(lr, "send_message", new=fake_send):
+            result = asyncio.run(lr.run_case(case, "tok", "sess"))
+        blob = str(result["failed"])
+        assert "没有验证码" in blob, (
+            f"run_case 没有把「顾客给了码但写调用没带码」点名（case-level 检查没接线）：{blob[:300]}")
