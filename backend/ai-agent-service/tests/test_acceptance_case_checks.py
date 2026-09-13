@@ -4246,9 +4246,9 @@ class TestRepeatUntilTurn:
     def test_expand_respects_max_and_clamps(self):
         ui = [{"repeat_until": {"tool_called": "order_create", "max": 4}, "fallback": "确认"}]
         assert len(lr.expand_repeat_turns(ui)) == 4
-        # 上限收紧到 6（重复轮是"顾客继续配合"，不是无限重试）
+        # 上限收紧到 8（run 34769925078 实测：6 轮用光后还差一步就能供码成功）
         big = [{"repeat_until": {"tool_called": "order_create", "max": 99}}]
-        assert len(lr.expand_repeat_turns(big)) == 6
+        assert len(lr.expand_repeat_turns(big)) == 8
         # 非法/缺失 max → 默认 3，不炸
         assert len(lr.expand_repeat_turns([{"repeat_until": {"tool_called": "x"}}])) == 3
         assert len(lr.expand_repeat_turns([{"repeat_until": {"tool_called": "x", "max": "abc"}}])) == 3
@@ -4309,20 +4309,32 @@ class TestWriteCodeProvenance:
         assert lr.check_write_code_provenance(res, case) == [], (
             "顾客没给过码时不该报 —— 那属于「该不该要码」的另一个问题")
 
-    def test_flags_missing_code(self):
+    def test_flags_missing_code_when_customer_really_gave_it(self):
+        """顾客**真的发过**码（results 里有那一轮）→ 归因到 agent 侧补齐链路。"""
         case = self._case()
-        res = [self._round(3, "确认", [{"name": "order_create", "args": {"items": []}}],
+        res = [self._round(2, "123456", []),
+               self._round(3, "确认", [{"name": "order_create", "args": {"items": []}}],
                            code_error=True)]
         issues = lr.check_write_code_provenance(res, case)
-        assert issues and "没有验证码" in issues[0], issues
+        assert issues and "已经给过" in issues[0], issues
+
+    def test_declared_but_never_sent_is_an_eval_side_problem(self):
+        """**关键区分**（run 34769925078 实测）：用例声明了码、但那一轮根本没发出去 →
+        这是 harness 供码时机的问题，**不能写成 agent 缺陷**（第一版就是这么写错的）。"""
+        case = self._case()
+        res = [self._round(3, "确认", [{"name": "order_create", "args": {}}], code_error=True)]
+        issues = lr.check_write_code_provenance(res, case)
+        assert issues and "始终没发出去" in issues[0], issues
+        assert "评测侧问题" in issues[0], "没有把归因指向评测侧"
 
     def test_flags_foreign_code(self):
         """模型自造验证码（带了码但不是顾客那个）→ 点名，这是本轮真正要区分的情形。"""
         case = self._case()
-        res = [self._round(3, "确认", [{"name": "order_create", "args": {"sms_code": "999999"}}],
+        res = [self._round(2, "123456", []),
+               self._round(3, "确认", [{"name": "order_create", "args": {"sms_code": "999999"}}],
                            code_error=True)]
         issues = lr.check_write_code_provenance(res, case)
-        assert issues and "不一致" in issues[0], issues
+        assert issues and ("不一致" in issues[0] or "不是顾客" in issues[0]), issues
 
     def test_correct_code_passes(self):
         case = self._case()
@@ -4362,7 +4374,7 @@ class TestWriteCodeProvenance:
 
         async def fake_send(token, session_id, message, images=None, **kwargs):
             sent.append(message)
-            tools = ["order_create"] if len(sent) == 2 else []
+            tools = ["order_create"] if len(sent) >= 2 else []
             return {"user_message": message, "images": [], "interactive": [],
                     "tool_calls": [{"name": n, "args": {}} for n in tools],
                     "tool_results": [{"tool": n, "result": {"success": False,
@@ -4373,5 +4385,5 @@ class TestWriteCodeProvenance:
         with mock.patch.object(lr, "send_message", new=fake_send):
             result = asyncio.run(lr.run_case(case, "tok", "sess"))
         blob = str(result["failed"])
-        assert "没有验证码" in blob, (
+        assert ("已经给过" in blob or "始终没发出去" in blob), (
             f"run_case 没有把「顾客给了码但写调用没带码」点名（case-level 检查没接线）：{blob[:300]}")
