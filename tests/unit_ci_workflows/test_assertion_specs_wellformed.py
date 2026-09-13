@@ -1,4 +1,4 @@
-# case_ids: OR-012, OR-014, OR-017, OR-018, CH-010, CH-011, DF-020, OR-023
+# case_ids: OR-012, OR-014, OR-017, OR-018, CH-010, CH-011, DF-020, OR-023, OR-024
 """断言配置必须**形状正确**（issue #3367 断言层审计）。
 
 ## 为什么需要守卫
@@ -98,6 +98,12 @@ class TestAssertionSpecsWellFormed:
                     bad.append(
                         f"{c['id']}.form_prefill[{i}]: 既无 expect 也无 expect_present"
                         f"（空断言 —— 声称核对了预填值，其实没核对）")
+            for i, s in enumerate(_specs(c, "forbidden_card_text")):
+                # 两种写法都支持：`{text: "用量"}` 与裸字符串 `"用量"`
+                # （`_specs` 会把裸字符串包成 `{"tool": ...}`，故这里也认 tool 键）
+                t = str(s.get("text") or s.get("tool") or "") if isinstance(s, dict) else str(s or "")
+                if not t:
+                    bad.append(f"{c['id']}.forbidden_card_text[{i}]: 空配置（会静默不检查）")
             for i, s in enumerate(_specs(c, "amount_verify")):
                 checks = s.get("checks")
                 if checks is None:

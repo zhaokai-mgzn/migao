@@ -1937,7 +1937,7 @@
 真值: ai-chat.context-memory
 溯源: 2026-09-04 新增：issue #2821 延续切片 C（vision 分析落槽 + base_skill 接线） ｜ tags: ontology, vision, context_memory, grounding, base_skill
 
-## 订单域（23 case）
+## 订单域（24 case）
 
 ### OR-001. 订单列表查询 🟢
 ```
@@ -2356,6 +2356,33 @@
 ```
 真值: order.create-flow, ai-chat.confirm-required
 溯源: 2026-09-13 新增（issue #3397）：补齐零断言能力（地址预填 + 写前校验） ｜ tags: order_create, prefill, address, xiaobu
+
+### OR-024. C 端顾客已给数量后不得再问用量/褶皱倍数（防 2 倍金额与流程空转） 🔵
+```
+你: 你好，我想买窗帘，有什么推荐的吗？
+你: 第一款吧，白色，2.8 米门幅，按米卖
+你: [🤖 按上一轮卡片作答]
+你: 数量 3 米
+你: [🤖 按上一轮卡片作答]
+你: [🤖 按上一轮卡片作答]
+你: [🤖 按上一轮卡片作答]
+你: [🤖 按上一轮卡片作答]
+你: [🤖 按上一轮卡片作答]
+你: [🤖 按上一轮卡片作答]
+期望: product_search
+期望: product_detail
+期望: interact
+期望: order_create
+数据: 顾客已给「数量 3 米」后，不得再发「选择用量/褶皱倍数」卡，也不得把 3 米换算成 6 米（2 倍金额）
+数据: 数量就是 3 米：金额 = 单价 × 3，最终必须真实落单（order_create 成功）
+数据: 整场不得出现 human_handoff（主转化路径不得转人工）
+必须成功: order_create
+金额: order_create 「遮光窗帘」 → unit_price; subtotal; total
+落库: order_items None → 
+落库: order_phone None → 
+```
+真值: order.create-flow, ai-chat.confirm-required
+溯源: 2026-09-13 新增（issue #3402）：沉淀 C-A1 主路径真因（数量口径 → 产出层反模式断言） ｜ tags: order_create, quantity, ceiling, xiaobu
 
 ## 加工项域（6 case）
 
@@ -3540,8 +3567,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：272（活跃 133，跳过 139）
-- tier 分布：smoke 9 / normal 230 / adversarial 33
+- 用例总数：273（活跃 134，跳过 139）
+- tier 分布：smoke 9 / normal 231 / adversarial 33
 - 售后域：8
 - agents：6
 - api：19
@@ -3558,7 +3585,7 @@
 - misc：15
 - onboarding：5
 - ontology：4
-- 订单域：23
+- 订单域：24
 - 加工项域：6
 - processing-order：14
 - 商品域：22

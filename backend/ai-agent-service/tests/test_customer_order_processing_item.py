@@ -140,6 +140,9 @@ class TestCustomerOrderPromptGrowthGuard:
         assert "数量口径铁律" in p, "缺少「顾客说米数＝购买数量」规则（多收 3 倍钱的根因）"
         assert "禁止**当窗宽" in p or "禁止" in p and "窗宽" in p, "规则未禁止把米数当窗宽"
         assert "curtain_calc" in p, "未说明何时才允许算料"
+        assert "再让他选用量" in p, (
+            "缺少「顾客已给数量时不得再让他选用量/褶皱倍数」规则"
+            "（实测 C-A1：Agent 发『请选择窗帘用量』卡并推荐 6 米＝2 倍钱，还耗尽轮数，issue #3402）")
         assert "重述" in p and "相加" in p, (
             "缺少「顾客重复同一数量＝重述，禁止相加」规则"
             "（实测重报一次 3 米 → 落库 ×6，run 34750771576）")
