@@ -1143,6 +1143,34 @@ class TestFormPrefillLoaderPath:
         assert "forbidden_card_text=['用量']" in out, out[:400]
 
 
+class TestForbiddenCardTextLoaderPath:
+    """**CI 走的 YAML 装载路径**必须映射 forbidden_card_text（issue #3402）。
+
+    这是本 session **第三次**踩同一形态（前两次：`debug_user` issue #3392、
+    `form_prefill` issue #3397）：新字段只在渲染器里映射、CI 走 YAML 装载器 →
+    断言永不生效却全绿。故每个新断言字段都必须有**真实装载**测试。
+    """
+
+    def test_real_yaml_load_yields_forbidden_card_text(self):
+        import pathlib as _pl
+        cases_dir = _pl.Path(lr.__file__).resolve().parents[2] / ".github" / "cases"
+        cases = {c.id: c for c in lr.load_cases_from_yaml(str(cases_dir))}
+        spec = cases["OR-024"].forbidden_card_text
+        assert spec, "YAML 装载后 forbidden_card_text 丢失（CI 路径上断言永不生效 = 假绿）"
+        assert "用量" in [str(x) for x in spec], spec
+        assert cases["OR-023"].forbidden_card_text == [], "未声明用例不得误继承"
+
+    def test_renderer_emits_forbidden_card_text(self):
+        import sys as _sys, pathlib as _pl
+        root = _pl.Path(lr.__file__).resolve().parents[2]
+        _sys.path.insert(0, str(root / ".github"))
+        from render_cases import load_case_dicts, to_eval_py
+        out = to_eval_py(load_case_dicts(str(root / ".github" / "cases")))
+        idx = out.index("id='OR-024'")
+        assert "forbidden_card_text=['用量'" in out[idx:idx + 4000], (
+            "渲染器没有输出 forbidden_card_text（生成物会丢断言）")
+
+
 class TestRoundTraceWriteArgs:
     """写工具入参必须进轨迹（issue #3394）：数量/金额错的唯一归因证据。
 
