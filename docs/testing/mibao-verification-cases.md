@@ -1937,7 +1937,7 @@
 真值: ai-chat.context-memory
 溯源: 2026-09-04 新增：issue #2821 延续切片 C（vision 分析落槽 + base_skill 接线） ｜ tags: ontology, vision, context_memory, grounding, base_skill
 
-## 订单域（19 case）
+## 订单域（20 case）
 
 ### OR-001. 订单列表查询 🟢
 ```
@@ -2241,6 +2241,30 @@
 ```
 真值: order.create-flow, ai-chat.confirm-required
 溯源: 2026-09-13 新增（issue #3367）：C 端能力上限用例（多轮纠错/状态更新） ｜ tags: order_create, correction, multi_turn, ceiling, xiaobu
+
+### OR-020. C 端下单中途打岔后回到原流程 - 草稿不丢（数量/加工项必须延续） 🔵
+```
+你: 帮我下单，遮光窗帘 3 米，要打孔加工
+你: [🤖 按上一轮卡片作答]
+你: [🤖 按上一轮卡片作答]
+你: [🤖 按上一轮卡片作答]
+你: [🤖 按上一轮卡片作答]
+你: [🤖 按上一轮卡片作答]
+你: [🤖 按上一轮卡片作答]
+你: [🤖 按上一轮卡片作答]
+你: [🤖 按上一轮卡片作答]
+你: [🤖 按上一轮卡片作答]
+期望: product_search
+期望: product_detail
+期望: order_create
+数据: 打岔（问发货时效）后必须能回到原下单流程，且**草稿不丢**：数量 3 米、加工项打孔都延续
+数据: 恢复后的订单金额仍为 168×3 + 打孔 8×3 = 528；若加工项丢失会变成 504（金额即证据）
+必须成功: order_create
+金额: order_create 「遮光窗帘」 → unit_price; subtotal; total
+落库: order_items None → 
+```
+真值: order.create-flow
+溯源: 2026-09-13 新增（issue #3379）：能力上限用例（打岔后草稿保持 + 流程恢复） ｜ tags: order_create, interruption, context_retention, ceiling, xiaobu
 
 ## 加工项域（6 case）
 
@@ -3425,8 +3449,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：268（活跃 129，跳过 139）
-- tier 分布：smoke 9 / normal 226 / adversarial 33
+- 用例总数：269（活跃 130，跳过 139）
+- tier 分布：smoke 9 / normal 227 / adversarial 33
 - 售后域：8
 - agents：6
 - api：19
@@ -3443,7 +3467,7 @@
 - misc：15
 - onboarding：5
 - ontology：4
-- 订单域：19
+- 订单域：20
 - 加工项域：6
 - processing-order：14
 - 商品域：22

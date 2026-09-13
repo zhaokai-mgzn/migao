@@ -2699,6 +2699,24 @@ _CASE_OR_019 = EvalCase(
     db_verify=[{'fetch': 'order_items', 'source': 'order_create', 'expect_products': ['遮光窗帘'], 'expect_quantities': {'遮光窗帘': 4}}],
 )
 
+# ── OR-020 [NORMAL] C 端下单中途打岔后回到原流程 - 草稿不丢（数量/加工项必须延续）（源: cases/order.yml）──
+_CASE_OR_020 = EvalCase(
+    id='OR-020',
+    legacy_id='',
+    title='C 端下单中途打岔后回到原流程 - 草稿不丢（数量/加工项必须延续）',
+    skill=Skill.ORDER,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['帮我下单，遮光窗帘 3 米，要打孔加工', {'auto_respond': {'fallback': '米白'}}, {'auto_respond': {'fallback': '纳米圈打孔'}}, {'auto_respond': {'fallback': '对了，你们一般多久能发货呀？', 'prefer_text': True}}, {'auto_respond': {'fallback': '好的，那我们继续把刚才那单下了吧'}}, {'auto_respond': {'fallback': '确认下单'}}, {'auto_respond': {'fallback': '123456', 'prefer_text': True}}, {'auto_respond': {'fallback': '123456', 'prefer_text': True}}, {'auto_respond': {'fallback': '确认'}}, {'auto_respond': {'fallback': '确认'}}],
+    expectations=['product_search', 'product_detail', 'order_create'],
+    data_checks=['打岔（问发货时效）后必须能回到原下单流程，且**草稿不丢**：数量 3 米、加工项打孔都延续', '恢复后的订单金额仍为 168×3 + 打孔 8×3 = 528；若加工项丢失会变成 504（金额即证据）'],
+    skip_reason='',
+    tags=['order_create', 'interruption', 'context_retention', 'ceiling', 'xiaobu'],
+    persona='xiaobu',
+    must_succeed=[{'tool': 'order_create'}],
+    amount_verify=[{'tool': 'order_create', 'product_name': '遮光窗帘', 'checks': ['unit_price', 'subtotal', 'total']}],
+    db_verify=[{'fetch': 'order_items', 'source': 'order_create', 'expect_products': ['遮光窗帘'], 'expect_quantities': {'遮光窗帘': 3}}],
+)
+
 # ── PG-001 [NORMAL] 生成加工单 - 已确认含加工项订单 → 加工单生成 + 订单进入 producing（源: cases/processing-order.yml）──
 _CASE_PG_001 = EvalCase(
     id='PG-001',
@@ -4315,6 +4333,7 @@ ALL_CASES = (
     _CASE_OR_017,
     _CASE_OR_018,
     _CASE_OR_019,
+    _CASE_OR_020,
     _CASE_PG_001,
     _CASE_PG_002,
     _CASE_PG_003,
