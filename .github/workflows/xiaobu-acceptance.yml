@@ -21,7 +21,7 @@ on:
         required: false
         default: ''
       concurrency:
-        description: '【提速】用例级并发（同 job 内，栈只起一次）。实测 3 时评测档 663s；调大即近似线性降墙钟（6→约 6 分钟）。默认 6'
+        description: '【提速】用例级并发（同 job 内，栈只起一次）。⚠️ 实测（run 34762648990）：评测墙钟由**最慢单条用例 + 重试尾巴**决定，不是吞吐瓶颈 —— 并发 3→6 只省 ~6%（663s→621s）。默认 6（无害，但别指望它翻倍）；迭代提速请用 case_ids + fast'
         required: false
         default: '6'
         type: choice
