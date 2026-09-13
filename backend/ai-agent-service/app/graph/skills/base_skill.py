@@ -815,6 +815,64 @@ def _last_user_declined_processing(messages) -> bool:
     return False
 
 
+def _proc_answer_tokens(items: List[dict]) -> set:
+    """加工项名 → 顾客可能的说法（全名 + 2 字以上的连续子串）。
+
+    为什么要子串：fixture 里叫「纳米圈打孔」，顾客口语常说「打孔加工」「纳米圈」——
+    只用全名匹配等于不匹配（C-A1 重放 9 里"已答却被当成漏问"的一半原因）。
+    """
+    toks: set = set()
+    for it in items or []:
+        name = str((it or {}).get("name") or "").strip()
+        if not name:
+            continue
+        toks.add(name)
+        for i in range(len(name)):
+            for j in range(i + 2, len(name) + 1):
+                toks.add(name[i:j])
+    return toks
+
+
+def _user_already_answered_processing(messages) -> bool:
+    """顾客**是否已经就加工项作答**（文本形态：说了加工项名 / 明确不要）。
+
+    实证（C-A1 重放 9，run 34788143133 的 transcript）：
+      R2 小布**在文本里**问「需要一起加工吗？」→ R3 顾客答「纳米圈打孔」→
+      R5 代码兜底仍把 confirm 卡改写成加工项 choice 卡 → **同一件事问第二遍**，
+      顾客不得不再答一次才轮到「确认下单」（UA 判定因此记"有条件通过"）。
+    账上为什么没痕迹：`PROC_ITEMS_ASKED_KEY` 只在**发出加工项卡**时记账 ——
+    文本问答形态（问在文字里、答在文字里）不在账上，兜底于是把"已答"误判成"漏问"。
+
+    判据（只看**最近一次 product_detail 之后**的用户消息）：
+      · 出现加工项词（全名或其 2 字以上子串）→ 已答；
+      · 出现拒绝词（不需要加工/算了…）→ 已答（比 `_last_user_declined_processing`
+        只看最近一条更强：顾客拒绝后又说「确认下单」也算答过）。
+    为什么限定"detail 之后"：R1 就说了「要打孔加工」属**需求前置** ——
+    那时还没看过可选项与单价，confirm 前仍应摆出来（OR-017 依赖这条）。
+    """
+    if not messages:
+        return False
+    last_detail = -1
+    for i, msg in enumerate(messages):
+        if isinstance(msg, ToolMessage) and getattr(msg, "name", None) == "product_detail":
+            last_detail = i
+    if last_detail < 0:
+        return False
+    tokens = _proc_answer_tokens(_find_last_product_processing_items(messages))
+    for msg in list(messages)[last_detail + 1:]:
+        if not isinstance(msg, HumanMessage):
+            continue
+        content = getattr(msg, "content", "") or ""
+        if isinstance(content, list):   # 多模态轮：拼出文本部分
+            content = " ".join(str(t.get("text", "")) for t in content if isinstance(t, dict))
+        text = str(content)
+        if any(k in text for k in _PROC_DECLINE_MARKERS):
+            return True
+        if tokens and any(tok in text for tok in tokens):
+            return True
+    return False
+
+
 def _has_processing_choice_in_turn(tool_results) -> bool:
     """本轮是否已发过加工项 choice 卡（发过就不再改写）"""
     for _tc, _rs, rd in tool_results:
@@ -907,6 +965,10 @@ def _plan_processing_items_rewrite(tool_results, messages) -> Optional[tuple]:
         return None
     if _last_user_declined_processing(messages):
         return None  # 顾客明确拒绝过，不硬弹
+    if _user_already_answered_processing(messages):
+        # 顾客已经答过（文本形态：点名加工项 / 更早一轮拒绝过）→ 不得用卡重问一遍
+        # （C-A1 重放 9 实证：同一件事问第二遍，顾客要多答一次才轮到确认下单）。
+        return None
     items = _find_last_product_processing_items(messages)
     if not items:
         return None  # 没拿到加工项数据，无从改写

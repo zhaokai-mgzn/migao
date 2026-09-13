@@ -3462,6 +3462,38 @@ class TestRoundTraceCarriesErrorText:
         assert "AttributeError" in lr.format_round_trace(trace)
 
 
+class TestRoundTraceCarriesAssistantText:
+    """轨迹必须带上**本轮助手回复片段**（issue #3445 复盘：首跑失败只看到 `tools=-`）。
+
+    实证：CH-010 的**首跑失败**（run 34788143133）里 R4~R8 全是 `tools=-`，
+    而「顾客答完卡、模型真的空转」与「模型在问别的（脚本没答它）」是**两种完全不同的处置**
+    （改 agent vs 改用例轮次）—— 轨迹里没有回复文本，归因只能靠猜（那次失败至今没定性，
+    只能记为 llm-noise 重试放行）。数据本来就在 `build_round_trace` 里（`text` 字段），
+    只是 `format_round_trace` 没打印。
+    """
+
+    def _trace(self, text):
+        return lr.build_round_trace([
+            {"__round": 4, "user_message": "已选加工项：纳米圈打孔（¥8/米，共 ¥24）",
+             "tool_calls": [], "tool_results": [], "interactive": [],
+             "final_text": text, "error": None},
+        ])
+
+    def test_prints_assistant_text(self):
+        line = lr.format_round_trace(self._trace("好的亲，这就帮您准备下单~"))
+        assert "ai=好的亲" in line, line
+
+    def test_masks_phone_in_assistant_text(self):
+        """轨迹进 CI 日志 → 回复里的手机号必须掩码（与写工具入参同纪律）。"""
+        line = lr.format_round_trace(self._trace("您的收货信息：张三 13800138000 杭州市"))
+        assert "13800138000" not in line, f"轨迹里出现完整手机号：{line}"
+        assert "138****8000" in line, line
+
+    def test_no_text_no_marker(self):
+        line = lr.format_round_trace(self._trace(""))
+        assert "ai=" not in line, line
+
+
 class TestAutoRespondPreferText:
     """`prefer_text: true`：这一轮**按用例声明的文本发**，即使有卡在等（issue #3367）。
 
