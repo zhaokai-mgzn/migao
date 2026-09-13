@@ -1641,3 +1641,57 @@ class TestEvalSpeedKnobs:
             except AssertionError:
                 continue
             raise AssertionError(f"helper 未拦住非法条件 {bad!r} —— 断言形同虚设")
+
+
+class TestAcceptanceEvidenceUpload:
+    """验收证据必须**成功轮次也上传**（协议 §4.1；issue #3421 复盘中实证）
+
+    实证（run 34766277197，绿 run）：`gh run download` 报 "no valid artifacts found" ——
+    因为唯一的 artifact 上传步骤是 `if: failure()`。后果有两层：
+
+      ① 协议 §4.1 明确要求 transcript 可下载留档、"不能只留在日志里"，绿 run 却什么都没留；
+      ② UA（体验类）条目按协议由 **AI 用户代理**判定，而判定必须引证据 ——
+         证据拿不到，体验层判定就只能靠日志文本硬凑，等于被架空。
+    """
+
+    def _wf(self) -> dict:
+        import yaml
+        return yaml.safe_load(
+            (WORKFLOWS_DIR / "xiaobu-acceptance.yml").read_text(encoding="utf-8")) or {}
+
+    def _steps(self):
+        return self._wf()["jobs"]["xiaobu-acceptance"]["steps"]
+
+    def _evidence_uploads(self):
+        return [s_ for s_ in self._steps()
+                if (s_.get("uses") or "").startswith("actions/upload-artifact")
+                and "acceptance/ci-" in str((s_.get("with") or {}).get("path") or "")]
+
+    def test_ac_evidence_upload_exists(self):
+        ups = self._evidence_uploads()
+        assert ups, "找不到上传验收证据（acceptance/ci-<run_id>/）的步骤"
+
+    def test_ac_evidence_uploaded_even_when_green(self):
+        ups = self._evidence_uploads()
+        always = [s_ for s_ in ups if "always()" in (s_.get("if") or "")]
+        assert always, (
+            "验收证据只在 `if: failure()` 时上传 —— 绿 run 拿不到 transcript，"
+            "UA（体验类）判定没有证据可引（run 34766277197 实测 no valid artifacts）"
+        )
+
+    def test_ac_evidence_step_is_shard0_only(self):
+        """验收剧本只在 0 号片跑，上传也跟着限 0 号片（否则 1..N 片上传空目录刷告警）"""
+        for s_ in self._evidence_uploads():
+            cond = s_.get("if") or ""
+            if "always()" in cond:
+                assert "matrix.shard == 0" in cond, (
+                    f"证据上传未限定 0 号片：{cond!r}"
+                )
+
+    def test_ac_evidence_upload_does_not_gate_on_fast(self):
+        """`fast` 只能跳过**取证步骤**，但验收证据上传不算判定 —— 且它不该被 fast 影响，
+        否则迭代档与完整档的证据可得性不一致（而 fast 档同样产出 acceptance 目录）。"""
+        for s_ in self._evidence_uploads():
+            assert "fast" not in (s_.get("if") or ""), (
+                "验收证据上传不应被 fast 跳过"
+            )

@@ -504,6 +504,21 @@ jobs:
           docker compose -f deploy/docker-compose.yml exec -T postgres \
             psql -U app_user -d ai_customer_service -c "SELECT version FROM schema_migrations ORDER BY version DESC LIMIT 8;" 2>&1 || true
 
+      - name: Upload 验收证据（协议 §4.1：成功也要留档）
+        # 为什么单列一步且 `always()`：原来的上传步骤是 `if: failure()`，而**绿 run 同样需要**
+        # 这份证据（CI 实测 run 34766277197：绿 run `gh run download` 报 "no valid artifacts"）：
+        #   ① 协议 §4.1 要求 transcript 可下载留档 —— "不能只留在日志里"（日志会被截断/轮转）；
+        #   ② UA（体验类）条目按协议由 **AI 用户代理**判定，而判定必须引证据；
+        #      没有 artifact 就只能拿日志文本凑，等于把体验层判定架空。
+        # 只 0 号片跑验收剧本（与 E2E 同理），故这里也限 0 号片。
+        if: always() && matrix.shard == 0
+        uses: actions/upload-artifact@v7
+        with:
+          name: xiaobu-acceptance-evidence-shard${{ matrix.shard }}
+          path: acceptance/ci-${{ github.run_id }}/
+          # 验收步骤被取消/跳过时不该让 job 变红（那时的"没证据"由上面的步骤状态表达）
+          if-no-files-found: warn
+
       - name: Upload artifacts (failure)
         if: failure()
         uses: actions/upload-artifact@v7
