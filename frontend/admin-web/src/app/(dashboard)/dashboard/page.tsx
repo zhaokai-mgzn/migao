@@ -9,6 +9,7 @@ import type { DashboardStats, OrderTrendPoint, Order, ProductRanking } from '@/t
 import TodayOverviewBar from '@/components/dashboard/TodayOverviewBar'
 import TrendChart from '@/components/dashboard/TrendChart'
 import RecentOrders from '@/components/dashboard/RecentOrders'
+import BriefingCard from '@/components/dashboard/BriefingCard'
 
 // ═══════════════════════════════════════════════════════
 // 格式化
@@ -197,6 +198,8 @@ export default function DashboardPage() {
   const [lowStockCount, setLowStockCount] = useState(0)
   const [trendDays, setTrendDays] = useState(7)
   const [updateTime, setUpdateTime] = useState('--')
+  // 智能每日经营简报：企业开关状态（默认关，关闭不渲染简报卡，红线 3）
+  const [briefingEnabled, setBriefingEnabled] = useState(false)
 
   const fetchData = useCallback(async () => {
     setLoading(true)
@@ -244,6 +247,15 @@ export default function DashboardPage() {
     }
   }, [trendDays])
 
+  // 拉取简报企业开关（开关关闭时不渲染简报卡；失败默认关闭，不影响看板主体）
+  useEffect(() => {
+    import('@/lib/api').then(({ briefingApi }) =>
+      briefingApi.getConfig()
+        .then((res) => setBriefingEnabled(!!res.data.data?.enabled))
+        .catch(() => setBriefingEnabled(false))
+    )
+  }, [])
+
   useEffect(() => { fetchData() }, [fetchData])
 
   // 从 trend 数据提取迷你图
@@ -287,6 +299,9 @@ export default function DashboardPage() {
         pendingCount={pendingShipment}
         lowStockCount={lowStockCount}
       />
+
+      {/* 智能每日经营简报（企业开关开启才渲染，红线 3） */}
+      <BriefingCard enabled={briefingEnabled} />
 
       {/* ① 待处理任务 */}
       <div className="mb-6">

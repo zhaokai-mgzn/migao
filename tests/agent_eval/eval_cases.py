@@ -1701,6 +1701,60 @@ _CASE_DA_007 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── DA-008 [NORMAL] 智能每日经营简报：企业开关熔断（关闭=不生成+菜单隐藏，issue #3468）（源: cases/data.yml）──
+_CASE_DA_008 = EvalCase(
+    id='DA-008',
+    legacy_id='',
+    title='智能每日经营简报：企业开关熔断（关闭=不生成+菜单隐藏，issue #3468）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['智能每日经营简报企业开关行为自检'],
+    expectations=[],
+    data_checks=['tenants.briefing_enabled 默认 false；开关关闭时 generateForTenant 直接返回 null 且 LLM 调用数为 0（熔断）', '更新配置开启瞬间立即生成当日简报；关闭后调度跳过该租户（generateDueTenants 内部拦截），已生成历史保留但入口隐藏', '仅 admin（system:manage）可改开关；变更写操作日志'],
+    skip_reason='开关熔断由 admin-api 单测验证（DailyBriefingServiceTest$SwitchBreaker + BriefingControllerTest），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['briefing', 'toggle', 'security'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── DA-009 [NORMAL] 智能每日经营简报：数字回填校验（LLM 编造即丢弃，issue #3468）（源: cases/data.yml）──
+_CASE_DA_009 = EvalCase(
+    id='DA-009',
+    legacy_id='',
+    title='智能每日经营简报：数字回填校验（LLM 编造即丢弃，issue #3468）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['智能每日经营简报数字校验行为自检'],
+    expectations=[],
+    data_checks=['LLM 输出每条目必须带 metrics 引用（key+value），key 不在聚合快照或 value 与快照不一致 → 条目丢弃（不展示编造数字）', '全部条目被丢弃 → verify_status=failed，前端展示安全提示而非假数据；部分丢弃 → partial', 'LLM 失败/超时 → 落 failed 记录，不 fallback 昨日数据冒充今日'],
+    skip_reason='数字回填校验由 admin-api 单测验证（DailyBriefingServiceTest$VerifyAndFilter）+ ai-agent 单测（test_briefing_generator.py），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['briefing', 'llm-verify', 'security'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── DA-010 [NORMAL] 智能每日经营简报：PII 不进 prompt + RLS 隔离（issue #3468）（源: cases/data.yml）──
+_CASE_DA_010 = EvalCase(
+    id='DA-010',
+    legacy_id='',
+    title='智能每日经营简报：PII 不进 prompt + RLS 隔离（issue #3468）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['智能每日经营简报数据安全自检'],
+    expectations=[],
+    data_checks=['聚合快照只含数字指标 + 脱敏事实（订单数/工单数），不含客户手机号/姓名/地址/会话原文（快照 JSON 断言无 PII 字段）', 'daily_briefings 表含 tenant_id + RLS 策略 tenant_isolation_daily_briefings（跨租户查询返回空）', '简报展示层脱敏别名「客户A/B」，点击查看真名复用客户详情 RBAC（customers:view），无权限角色点击不可见真名'],
+    skip_reason='PII 隔离由 admin-api 单测（DailyBriefingServiceTest$Aggregation）+ migration 契约验证；RLS 由 V44 迁移/SchemaMigrationTest 验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['briefing', 'privacy', 'security'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── DF-001 [ADVERSARIAL] Token攻击 - 要求生成超长回复（源: cases/defense.yml）──
 _CASE_DF_001 = EvalCase(
     id='DF-001',
@@ -5156,6 +5210,9 @@ ALL_CASES = (
     _CASE_DA_005,
     _CASE_DA_006,
     _CASE_DA_007,
+    _CASE_DA_008,
+    _CASE_DA_009,
+    _CASE_DA_010,
     _CASE_DF_001,
     _CASE_DF_002,
     _CASE_DF_003,
