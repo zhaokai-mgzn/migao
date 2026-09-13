@@ -1695,3 +1695,98 @@ class TestAcceptanceEvidenceUpload:
             assert "fast" not in (s_.get("if") or ""), (
                 "验收证据上传不应被 fast 跳过"
             )
+
+
+class TestBuildxCacheIsWired:
+    """buildx 的 GHA 缓存必须**真的能写入**且失败**可见**（issue #3426）
+
+    实证（本轮）：
+      · 仓库 172 条 Actions 缓存里**全是** setup-node/python/java 的，**没有一条 buildx/gha**；
+      · 栈步骤里 CACHED 层数 **0**、重建 **43** 层，pip 每次全量装（requirements.txt 未变）；
+      → `--cache-to type=gha` 从未生效，而 workflow 的回落路径把失败**静默**吞掉了，
+        于是"每次全量重建"长期无人察觉（镜像构建 128–172s）。
+    """
+
+    def _wf(self) -> str:
+        return (WORKFLOWS_DIR / "xiaobu-acceptance.yml").read_text(encoding="utf-8")
+
+    def test_cache_write_permission_declared(self):
+        """GHA 缓存写入需要 `actions: write` —— 缺了它导出失败（且会被回落掩盖）。"""
+        import yaml
+        wf = yaml.safe_load(self._wf())
+        perms = wf.get("permissions") or {}
+        assert perms.get("actions") == "write", (
+            f"workflow permissions 缺 actions: write（当前 {perms}）—— "
+            "buildx `--cache-to type=gha` 会导出失败，导致每次 CI 全量重建（issue #3426）")
+
+    def test_buildx_output_is_captured(self):
+        """buildx 输出必须留档：否则"为什么没缓存"只能靠反推。"""
+        src = self._wf()
+        assert "> /tmp/buildx-admin.log 2>&1" in src and "> /tmp/buildx-agent.log 2>&1" in src, (
+            "buildx 构建输出未被留档 —— 回落时无从归因（issue #3426）")
+
+    def test_fallback_surfaces_buildx_error(self):
+        """回落分支必须打印 buildx 输出尾部（失败出声，不静默）。"""
+        src = self._wf()
+        i = src.index("回落 docker compose up --build")
+        tail = src[i:i + 600]
+        assert "buildx-admin.log" in tail and "tail" in tail, (
+            "回落分支没有打印 buildx 错误尾部 —— 失败仍被静默吞掉（issue #3426）")
+
+    def test_success_branch_reports_cache_activity(self):
+        """成功分支要打印缓存活动（有没有 cache manifest 行 = 缓存到底有没有生效）。"""
+        src = self._wf()
+        i = src.index("镜像构建完成（buildx + GHA cache）")
+        assert "cache manifest" in src[i:i + 700], (
+            "成功分支未报告 cache manifest —— \"缓存生效了吗\"无法从日志判断")
+
+
+class TestBuildxCacheIsWired:
+    """buildx 的 GHA 缓存必须**真的能写入**且失败**可见**（issue #3426）
+
+    实证：
+      · 仓库 173 条 Actions 缓存里**全是** setup-node/python/java 的，**没有一条 buildx/gha**；
+      · 栈步骤里 CACHED 层数 **0**、重建 **43** 层，pip 每次全量装（requirements.txt 未变）；
+      · 加 `actions: write` 后**仍然** 0 条，且 buildx 输出里**连缓存 manifest 行都没有**
+        （"后端没参与构建"，不是"导出失败"）—— 归因靠的就是下面这些输出。
+      → `--cache-to type=gha` 从未生效，而 workflow 的回落路径把失败**静默**吞掉了，
+        于是"每次全量重建"长期无人察觉（镜像构建 128–172s）。
+    """
+
+    def _wf(self) -> str:
+        return (WORKFLOWS_DIR / "xiaobu-acceptance.yml").read_text(encoding="utf-8")
+
+    def test_cache_write_permission_declared(self):
+        """GHA 缓存写入需要 `actions: write` —— 缺了它导出失败（且会被回落掩盖）。"""
+        import yaml
+        wf = yaml.safe_load(self._wf())
+        perms = wf.get("permissions") or {}
+        assert perms.get("actions") == "write", (
+            f"workflow permissions 缺 actions: write（当前 {perms}）—— "
+            "buildx `--cache-to type=gha` 会导出失败，导致每次 CI 全量重建（issue #3426）")
+
+    def test_buildx_output_is_captured(self):
+        """buildx 输出必须留档：否则"为什么没缓存"只能靠反推。"""
+        src = self._wf()
+        assert "> /tmp/buildx-admin.log 2>&1" in src and "> /tmp/buildx-agent.log 2>&1" in src, (
+            "buildx 构建输出未被留档 —— 回落时无从归因（issue #3426）")
+
+    def test_fallback_surfaces_buildx_error(self):
+        """回落分支必须打印 buildx 输出尾部（失败出声，不静默）。"""
+        src = self._wf()
+        i = src.index("回落 docker compose up --build")
+        tail = src[i:i + 600]
+        assert "buildx-admin.log" in tail and "tail" in tail, (
+            "回落分支没有打印 buildx 错误尾部 —— 失败仍被静默吞掉（issue #3426）")
+
+    def test_success_branch_reports_cache_activity(self):
+        """成功分支要打印缓存活动与 buildx 警告（有没有 cache manifest 行 = 缓存是否生效；
+        导出失败常以 warning 出现且不影响退出码 —— 两者都必须可见）。"""
+        src = self._wf()
+        i = src.index("镜像构建完成（buildx + GHA cache）")
+        # 窗口取到"回落分支"为止（成功分支的完整内容），而不是固定字符数 ——
+        # 首版用 1200 字符，没覆盖到警告打印那段，报了假红。
+        j = src.index("回落 docker compose up --build", i)
+        window = src[i:j]
+        assert "cache manifest" in window, "成功分支未报告 cache manifest"
+        assert "warn|error" in window, "成功分支未打印 buildx 警告/错误（归因必需）"
