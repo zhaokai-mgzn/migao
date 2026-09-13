@@ -1838,6 +1838,9 @@ class TestBuildxCacheIsWired:
         导出失败常以 warning 出现且不影响退出码 —— 两者都必须可见）。"""
         src = self._wf()
         i = src.index("镜像构建完成（buildx + GHA cache）")
-        window = src[i:i + 1200]
+        # 窗口取到"回落分支"为止（成功分支的完整内容），而不是固定字符数 ——
+        # 首版用 1200 字符，没覆盖到警告打印那段，报了假红。
+        j = src.index("回落 docker compose up --build", i)
+        window = src[i:j]
         assert "cache manifest" in window, "成功分支未报告 cache manifest"
         assert "warn|error" in window, "成功分支未打印 buildx 警告/错误（归因必需）"

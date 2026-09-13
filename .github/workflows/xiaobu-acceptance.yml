@@ -222,6 +222,15 @@ jobs:
             grep -ihE "importing cache manifest|exporting cache|cache manifest" \
               /tmp/buildx-admin.log /tmp/buildx-agent.log | head -6 || \
               echo "（无 cache manifest 行 —— 缓存未生效）"
+            # 缓存**为什么**没生效：导出失败常以 warning 形式出现且不影响退出码（issue #3426：
+            # 实测加了 actions: write 后仍 0 条 buildx 缓存 → 必须看 buildx 自己的输出）
+            echo "── buildx 输出里的警告/错误（归因用）──"
+            grep -ihE "warn|error|forbidden|denied|timeout|failed" \
+              /tmp/buildx-admin.log /tmp/buildx-agent.log | head -10 || \
+              echo "（buildx 输出里无警告/错误 —— 需另找原因）"
+            echo "── buildx 输出尾部（各 8 行）──"
+            tail -8 /tmp/buildx-admin.log 2>/dev/null || true
+            tail -8 /tmp/buildx-agent.log 2>/dev/null || true
             docker compose -f deploy/docker-compose.yml -f /tmp/compose-images.yml up -d --wait \
               --wait-timeout 300 postgres redis admin-api ai-agent-service 2>&1 | tail -20
           else
