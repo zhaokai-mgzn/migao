@@ -526,3 +526,35 @@ EVAL_CONCURRENCY=6 python tests/agent_eval/local_runner.py normal --cases .githu
 那张 issue 是每日全量结论，不能被分支迭代/局部失败污染（完整档照旧建 issue）。
 
 性能账与实测数据见 [`eval-pipeline-performance.md`](eval-pipeline-performance.md) §2.6。
+
+## 9. 顾客可见产物 × 断言矩阵（还有哪些面**没有**断言）
+
+> 为什么单列一节（issue #3445 复盘）：`cards=confirm,confirm` 这个重复卡指纹**在 CI 日志里躺了很久**，
+> 却没人发现 —— 因为评测只断言"结果型"事实（工具调没调、订单落没落库、金额对不对），
+> **"顾客实际看到什么"这一整类没有断言面**。凡是没有断言的面，跑一万次也不会报。
+> 本节把"顾客可见产物"逐项列出并标注断言状态；**标注"缺"的就是后续要补的**。
+
+| 顾客可见产物 | 已有断言（可执行） | 状态 |
+|---|---|---|
+| **卡片是否出现** | `expectations: interact`（工具调用或 SSE interactive 事件任一命中，见 §6.2 三发射路径） | ✅ |
+| **卡片数量/同轮重复** | `check_duplicate_cards`（同轮同组件 ≥2 张判红）+ 轨迹 `cards=X,X(⚠️重复)` | ✅（#3445 新增） |
+| **卡片内容不编造** | `check_forbidden_card_text`（卡片文案禁词）；`check_form_prefill`（form 预填值必须来自真实来源） | ✅ |
+| **卡片提问不重复问** | 加工项「已答不再问」（`_user_already_answered_processing`，C-A1 实证）+ `check_confirm_loop`（同事实 confirm 卡 ≥3 次） | ✅（本轮新增者只覆盖加工项；**其它问题类型的"重复问"仍缺**） |
+| **写用例必须"能答卡"** | `TestWriteCasesCanAnswerCards`（用例契约层） | ✅ |
+| **文案反模式（禁词）** | `forbidden_text` / `want_text` | ✅ |
+| **状态宣告必须有工具落地** | `check_unbacked_state_claim` | ✅ |
+| **能力误宣（能做说做不了）** | `check_false_inability`（含转人工理由文本） | ✅ |
+| **假成功（报错却说成功）** | `check_false_success`（细化：报错后有写成功则不算谎报） | ✅ |
+| **隐私（完整手机号回显）** | `check_no_full_phone`（C 端全局） | ✅ |
+| **金额/数量正确性** | `amount_verify`（与商品库真值比）、`output_verify`（工具 payload 真值）、`db_verify`（落库明细/号码） | ✅ |
+| **号码/验证码来源可追溯** | `check_phone_provenance`、`check_write_code_provenance`（三态） | ✅ |
+| **耗轮数（对话效率）** | —— | **缺**：一个"5 轮能办完拖到 9 轮"的退化不会被判红；但直接加上限断言风险高（`repeat_until` 展开、模型方差），需先用多跑数据定基线 |
+| **同一问题被问两遍（文本维度）** | —— | **缺**：目前只有加工项与 confirm 两处；"重复问地址/数量/颜色"没有判据 |
+| **工具返回值载荷进 transcript** | —— | **缺**（复核 AI 在重放 2 已指出）：`evidence.json` 有 `tools`，但 `render` 不打印结果载荷 → "订单号/金额"类结论只能靠回复原文 + 用例断言互证 |
+| **验收体验层（可懂度/诚实性）** | UA 判定（AI 用户代理：persona + 原文引用 + 基准对照，见 §acceptance-protocol） | ✅（人工零执行；每轮需按模板逐条判，模板见 `acceptance/*/REPORT.md`） |
+
+### 用法
+
+1. **新增/修改 C 端用例前**先看这张表：如果该用例验证的行为落在"缺"的行里，先补断言面（或在用例里显式声明为什么不需要）；
+2. **复盘线上问题**时对照本表：多数"顾客抱怨但评测全绿"的问题，都能对应到某一行"缺"；
+3. 每补一行，回到本表更新状态（本表是**活资产**，与 §14 的用例喂养同纪律）。
