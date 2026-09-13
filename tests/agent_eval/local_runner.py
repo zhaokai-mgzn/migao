@@ -887,27 +887,53 @@ def check_order_before(results: list, order_before: list) -> list:
     return issues
 
 
-def check_confirm_loop(results: list, limit: int = 3) -> list:
-    """确认死循环：同一标题 confirm 卡累计出现 >= limit 次 → 违规（sess_c1fce183dae24f22）。
+def confirm_card_content_key(args: dict) -> str:
+    """confirm 卡的**内容键**（判"同一张卡"用事实，不用措辞）。
 
-    正常流程 confirm 卡只出现 1 次；2 次以内容忍（用户取消后重新确认）；>=3 次 = 死循环。
+    与运行时守卫同源语义（`interact` 的 confirmValue 已由字段事实确定性派生，issue #3406）：
+    同样的事实 ⇒ 同一个键 —— 换措辞/换标题不算新卡；事实变了（改数量 3→4）⇒ 新键。
+    为什么判定层也要这样（issue #3412 实证）：旧实现按 **title** 计数，
+      · OR-019「中途改数量」在 R4(3米) / R6(4米) / R7(4米) 三张卡 → 标题相同被当成"死循环"**假红**，
+        而其中两张是同一批事实的确认、另一张是顾客**改了数量**后的合法重新确认；
+      · 反过来，换个措辞重发的同一批事实又会**漏判**。
+    """
+    if not isinstance(args, dict):
+        return ""
+    cv = str(args.get("confirmValue") or "").strip()
+    if cv:
+        return cv
+    facts = []
+    for f in args.get("fields") or []:
+        if isinstance(f, dict):
+            facts.append(f"{f.get('label') or ''}={f.get('value') or ''}")
+    return "；".join(sorted(facts))
+
+
+def check_confirm_loop(results: list, limit: int = 3) -> list:
+    """确认死循环：**同一批事实**的 confirm 卡累计出现 >= limit 次 → 违规（sess_c1fce183dae24f22）。
+
+    正常流程同一批事实的 confirm 卡只出现 1 次；2 次以内容忍（顾客取消后重新确认）；
+    >=3 次 = 死循环。**按内容而非标题**计数（issue #3412，见 `confirm_card_content_key`）。
     """
     from collections import Counter
     cnt: Counter = Counter()
     rounds: dict = {}
+    titles: dict = {}
     for r in results:
         for tc in r.get("tool_calls") or []:
             a = tc.get("args") or {}
             if tc.get("name", "").lower() == "interact" and a.get("component") == "confirm":
-                t = a.get("title", "(无标题)")
-                cnt[t] += 1
-                rounds.setdefault(t, []).append(r.get("__round"))
+                k = confirm_card_content_key(a) or a.get("title", "(无标题)")
+                cnt[k] += 1
+                rounds.setdefault(k, []).append(r.get("__round"))
+                titles.setdefault(k, a.get("title", "(无标题)"))
     # 报错必须带**轮次**（issue #3365 诊断补强）：只说"出现 3 次"时，若打印的轨迹里
     # 一张 confirm 卡都没有（被拦/失败的 interact 不产生卡事件），报错与证据对不上，
     # 归因只能靠猜——实测 OR-017 卡在这个盲区整整一轮。
     return [
-        f"确认死循环: confirm 卡「{t}」共出现 {c} 次（R{'/R'.join(str(x) for x in rounds.get(t, []))}）未收敛"
-        for t, c in cnt.items() if c >= limit
+        f"确认死循环: confirm 卡「{titles.get(k, k)}」**同样的事实**共出现 {c} 次"
+        f"（R{'/R'.join(str(x) for x in rounds.get(k, []))}）未收敛"
+        for k, c in cnt.items() if c >= limit
     ]
 
 
