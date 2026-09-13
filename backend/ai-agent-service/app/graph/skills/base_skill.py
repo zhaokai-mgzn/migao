@@ -1393,6 +1393,27 @@ async def _remember_raw_phones(session_id: str, phones) -> None:
         logger.warning(f"[phone-guard] 记录真实号码失败（非致命）: {e}")
 
 
+def _should_code_close_loop(pending: dict | None, target_tool: str,
+                            confirmed: bool, executed_tools) -> bool:
+    """确认-执行链是否需要**代码侧收口**（issue #3410）。
+
+    为什么抽成纯函数：条件写在 `execute_skill` 内联时**无法被单测观察到**
+    （实证：变异 M207"去掉防双单判定"存活 —— 因为成功写会顺手清 pending，
+    那条分支走不到）。抽出来后真值表可逐项钉住。
+
+    条件（全部满足才收口）：
+      · 存在已校验待执行写（`validate_input` 通过后落库）；
+      · 目标工具名非空；
+      · 顾客**已明确确认**（确认卡值精确匹配 或 文本明确确认）—— 安全性质：不得绕过确认；
+      · 本轮模型**没有执行过**这个工具 —— 防双单（成功写会清 pending，失败写允许代码重试）。
+    """
+    if not pending or not target_tool or not confirmed:
+        return False
+    if target_tool in (executed_tools or set()):
+        return False
+    return True
+
+
 def _is_customer_role(state: dict | None) -> bool:
     """本轮是否为 **C 端（顾客本人）** 身份。
 
@@ -2546,6 +2567,8 @@ async def execute_skill(
                 logger.info(
                     f"[{skill_name}] 「取消」类措辞但无在办流程 → 不短路，按正常诉求处理 "
                     f"| session={session_id} msg={last_user_msg[:24]!r}")
+            # 本轮**模型自己执行过**的工具名（供 8.4 收口判重：防双单）
+            _executed_tools: set = set()
             for iteration in range(max_iterations):
                 logger.info(f"[{skill_name}] Iteration {iteration+1}/{max_iterations} | session={session_id}")
 
@@ -2969,6 +2992,7 @@ async def execute_skill(
                             _slot["result"] = (result_str, result_dict)
                     else:
                         result_str, result_dict = await _execute_tool_safe(tool, args, tool_context, state)
+                    _executed_tools.add(tool_name)
                     if not result_dict.get("success") and result_dict.get("suggestion"):
                         corrected = await _self_correct_retry(tool, args, tool_context, skill_name, result_dict, session_id, tenant_id, state)
                         if corrected:
@@ -3192,6 +3216,58 @@ async def execute_skill(
             else:
                 # 达到 max_iterations — 不暴露 LLM 的半截思考，用友好兜底
                 final_content = "抱歉，处理步骤较多，请稍后重试或换个简单的方式描述需求。"
+
+    # ── 8.4 确认-执行链的**代码侧收口**（issue #3410，C-A1 实证）──
+    # 实证（run 34758421478，C-A1 主路径）：顾客点了确认（回传系统自产的确认卡值），
+    # 模型回「这就帮您提交~」，随后两轮顾客又说「确认下单」，模型答「都核对好啦」「还差最后一步」
+    # —— **整场没有 order_create 调用**，订单永不落库、验收 L1 报「order_create 未调用」；
+    # 同一剧本别的轮次却通过（模型碰巧动手）→ 间歇性失败。
+    # 既有机制（`_inject_pending_validated`）只做到"注入执行提示"，**动不动手仍由模型决定**。
+    # 这里把收口前移到代码：顾客已明确确认 + 存在已校验待执行写 + 本轮模型没调那个工具
+    # → **代码直接执行**（同一条执行路径：同样的确认门禁状态、同样的验证码回填链），
+    # 并用工具返回的 message 作为给顾客的回复（说真话，而不是"这就帮您提交"）。
+    # 只对 C 端生效（分端纪律）：B 端写流程各异，待 B 端有分支级回归证据后再评估。
+    if session_id and _is_customer_role(state):
+        try:
+            from app.memory.session_state_store import SessionStateStore as _S8
+            _f8 = await _S8().load(session_id) or {}
+            _pending8 = _f8.get(PENDING_KEY)
+            _cv8 = _f8.get("last_confirm_value")
+            _confirmed8 = (_is_explicit_confirmation(last_user_msg or "")
+                           or _is_card_confirm_value(last_user_msg or "", _cv8))
+            _target8 = str((_pending8 or {}).get("target_tool") or "")
+            if _should_code_close_loop(_pending8, _target8, _confirmed8, _executed_tools):
+                _tool8 = skill_registry.get_tool(_target8)
+                if _tool8 is not None:
+                    _args8 = dict((_pending8.get("params") or {}))
+                    # 只在该工具**确实声明了 action** 时才带 action（C 端 order_create 没有）
+                    try:
+                        _props8 = ((getattr(_tool8, "parameters", None) or {}).get("properties") or {})
+                    except Exception:
+                        _props8 = {}
+                    if "action" in _props8 and _pending8.get("target_action"):
+                        _args8.setdefault("action", str(_pending8["target_action"]))
+                    # 验证码回填链（与门禁同源）：本轮消息里的码 → 会话记住的码
+                    if _target8 in SMS_GATED_WRITE_TOOLS and not _args8.get("sms_code"):
+                        _code8 = extract_sms_code(last_user_msg) or await _stored_sms_code(session_id)
+                        if _code8:
+                            _args8["sms_code"] = _code8
+                    _ctx8 = build_tool_context(state)
+                    _str8, _res8 = await _execute_tool_safe(_tool8, _args8, _ctx8, state)
+                    new_messages.append(ToolMessage(
+                        content=_str8, tool_call_id=f"closure_{_target8}", name=_target8))
+                    _executed_tools.add(_target8)
+                    logger.info(
+                        f"[{skill_name}] 确认收口：模型未发起写，代码执行 {_target8} "
+                        f"success={bool((_res8 or {}).get('success'))} | session={session_id}")
+                    _msg8 = str((_res8 or {}).get("message") or "").strip()
+                    if _msg8:
+                        final_content = _msg8
+                    if (_res8 or {}).get("success") and is_pending_for(_pending8, _target8):
+                        _f8.pop(PENDING_KEY, None)
+                        await _S8().commit(session_id, _f8)
+        except Exception as _e8:
+            logger.warning(f"[{skill_name}] 确认收口失败（非致命，交回模型）: {_e8}")
 
     # ── 8.5 这里**刻意不做** C 端回复脱敏（issue #3386：曾经做过，是错的）──
     # 首版在此处 `mask_pii(final_content)`，理由是"验收剧本里 AI 回显了完整手机号"。
