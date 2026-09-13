@@ -2104,6 +2104,90 @@ async def check_debug_user_precondition(token: str, case) -> list:
     return []
 
 
+_SMS_CODE_RE = re.compile(r"^\s*(?:短信验证码|验证码)?\s*[:：]?\s*(\d{4,6})\s*$")
+
+
+def _customer_codes(case, results: list) -> set:
+    """顾客给过的验证码集合：**用例声明**（含 repeat_until.code / auto_respond.fallback）
+    ∪ **实际发出的用户消息**（issue #3434）。
+
+    两个来源都要：只扫实际消息会在"用例声明了码但那一轮没走到"时漏判；
+    只扫声明则会把历史会话/夹具带来的码当成顾客给的。
+    """
+    out: set = set()
+
+    def _scan(v) -> None:
+        m = _SMS_CODE_RE.match(str(v or ""))
+        if m:
+            out.add(m.group(1))
+
+    for u in getattr(case, "user_inputs", None) or []:
+        if isinstance(u, str):
+            _scan(u)
+        elif isinstance(u, dict):
+            _scan(u.get("code"))
+            _scan(u.get("fallback"))
+            _scan(u.get("text"))
+            _scan((u.get("auto_respond") or {}).get("fallback"))
+    for r in results or []:
+        _scan((r or {}).get("user_message"))
+    return out
+
+
+def _round_had_code_error(r: dict) -> bool:
+    """该轮的 `order_create` 是否**因验证码**失败（缺码/码无效）。"""
+    for st in _tool_result_status((r or {}).get("tool_results") or []):
+        if st.get("ok"):
+            continue
+        if "order_create" not in str(st.get("tool") or "").lower():
+            continue
+        blob = f"{st.get('error') or ''} {st.get('digest') or ''}"
+        if any(h in blob for h in _CODE_REQUEST_HINTS) or "短信" in blob:
+            return True
+    return False
+
+
+def check_write_code_provenance(results: list, case) -> list:
+    """写调用携带的验证码必须来自**顾客给过的码**（issue #3434）。
+
+    为什么需要：失败只表现为 `must_succeed: order_create 共 1 次调用**无一成功**
+    （缺少短信验证码）` —— 既不说明"带没带码"，也不说明"带的是不是顾客那个"，
+    而 trace 里的码还被脱敏成 `***`，每次都得人肉翻日志还翻不出来。
+
+    判定与**失败耦合**（关键，避免假红）：只有当该轮的 `order_create` **因验证码失败**时
+    才检查它的参数 —— 因为 SSE 上报的是**模型原始参数**，而 agent 侧有代码补齐链路
+    （`_remember_sms_code` / `_stored_sms_code`）：补上码并成功落单时，若按"原始参数里没码"
+    判红，就会把**已经修好的路径**冤枉掉。于是只在"因码失败"时点名两种情形：
+      ① 参数里没码 → 代码补齐链路没接上；
+      ② 参数里有码但与顾客给过的都不一致 → 疑似模型自造验证码。
+    只报轮次与事实，**不打印码本身**；只对 C 端（xiaobu）生效。
+    """
+    if str(getattr(case, "persona", "") or "") != "xiaobu":
+        return []
+    given = _customer_codes(case, results)
+    if not given:
+        return []
+    issues = []
+    for r in results or []:
+        if not _round_had_code_error(r):
+            continue
+        for tc in (r or {}).get("tool_calls") or []:
+            if "order_create" not in str((tc or {}).get("name") or "").lower():
+                continue
+            got = str(((tc or {}).get("args") or {}).get("sms_code") or "").strip()
+            rnd = (r or {}).get("__round")
+            if not got:
+                issues.append(
+                    f"R{rnd}: order_create 因缺验证码失败，且调用参数里**没有验证码** —— "
+                    f"代码补齐链路（会话记码→写工具回填）没接上（issue #3434）")
+            elif got not in given:
+                issues.append(
+                    f"R{rnd}: order_create 因验证码失败，且参数里的验证码与顾客给过的**都不一致**"
+                    f"（顾客给过 {len(given)} 个）—— 疑似模型自造验证码（issue #3434）")
+            break
+    return issues
+
+
 async def check_phone_provenance(token: str, case, results: list) -> list:
     """落库手机号必须能追溯到「本用例提供 / 种子夹具」的号码（issue #3386）。
 
@@ -3083,6 +3167,9 @@ async def run_case(case, token: str, session_id: str) -> dict:
     # `13800008000` 就是这样被发现的：既不是用例给的、也不是种子号码）。
     try:
         case_issues += await check_phone_provenance(token, case, results)
+        # 验证码来源（issue #3434）：把"写调用没带码/带了别的码"点名，别只留一句
+        # 「缺少短信验证码」让人肉翻日志（trace 里码还是脱敏的）
+        case_issues += check_write_code_provenance(results, case)
     except Exception as e:
         case_issues.append(f"phone_provenance 执行失败: {e}")
     if case_issues:
