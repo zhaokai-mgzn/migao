@@ -1922,7 +1922,7 @@
 真值: ai-chat.context-memory
 溯源: 2026-09-04 新增：issue #2821 延续切片 C（vision 分析落槽 + base_skill 接线） ｜ tags: ontology, vision, context_memory, grounding, base_skill
 
-## 订单域（18 case）
+## 订单域（19 case）
 
 ### OR-001. 订单列表查询 🟢
 ```
@@ -2203,6 +2203,29 @@
 ```
 真值: order.create-flow
 溯源: 2026-09-13 新增（issue #3367）：C 端能力上限用例（多商品/多加工项/逐行金额） ｜ tags: order_create, multi_item, processing_item, ceiling, xiaobu
+
+### OR-019. C 端下单中途改数量 - 以最新数量为准，落库数量与金额都得跟着改（能力上限） 🔵
+```
+你: 帮我下单，遮光窗帘 3 米，要打孔加工
+你: [🤖 按上一轮卡片作答]
+你: [🤖 按上一轮卡片作答]
+你: [🤖 按上一轮卡片作答]
+你: [🤖 按上一轮卡片作答]
+你: [🤖 按上一轮卡片作答]
+你: [🤖 按上一轮卡片作答]
+你: [🤖 按上一轮卡片作答]
+你: [🤖 按上一轮卡片作答]
+期望: product_search
+期望: product_detail
+期望: order_create
+数据: 顾客中途改数量后，确认卡与订单明细都必须反映**最新**数量（4 米），不得沿用旧值 3 米
+数据: 金额按最新数量重算：168×4 + 打孔 8×4 = 704
+必须成功: order_create
+金额: order_create 「遮光窗帘」 → unit_price; subtotal; total
+落库: order_items None → 
+```
+真值: order.create-flow, ai-chat.confirm-required
+溯源: 2026-09-13 新增（issue #3367）：C 端能力上限用例（多轮纠错/状态更新） ｜ tags: order_create, correction, multi_turn, ceiling, xiaobu
 
 ## 加工项域（6 case）
 
@@ -3376,8 +3399,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：265（活跃 126，跳过 139）
-- tier 分布：smoke 9 / normal 223 / adversarial 33
+- 用例总数：266（活跃 127，跳过 139）
+- tier 分布：smoke 9 / normal 224 / adversarial 33
 - 售后域：8
 - agents：6
 - api：19
@@ -3394,7 +3417,7 @@
 - misc：15
 - onboarding：5
 - ontology：4
-- 订单域：18
+- 订单域：19
 - 加工项域：6
 - processing-order：14
 - 商品域：21
