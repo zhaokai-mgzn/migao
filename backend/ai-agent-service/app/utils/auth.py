@@ -6,6 +6,7 @@ AI 智能客服系统 - 认证中间件模块
 2. JWT 用户身份验证：用于 C 端用户调用聊天 API
 """
 
+import re
 import secrets
 from typing import Optional, Dict, Any
 from enum import Enum
@@ -17,6 +18,16 @@ from pydantic import BaseModel
 from loguru import logger
 
 from app.config import settings
+
+
+# DEBUG C 端默认身份 id —— 单一事实源（评测种子夹具的顾客 id 必须与本值一致，
+# 由 tests/unit_ci_workflows/test_schema_integrity.py 从本文件**源码解析**锁死；
+# 那个 CI job 只装 pytest+pyyaml，无法 import 本模块，故必须保持字面量形态）。
+DEBUG_CUSTOMER_USER_ID = "debug_customer_1"
+
+# 多身份评测（issue #3391）：只认测试夹具常用的 `debug_` 前缀 id。
+# 白名单而非"任意字符串"：DEBUG 误配时不得变成任意用户伪装后门。
+_DEBUG_USER_ID_RE = re.compile(r"debug_[a-z0-9_]{1,32}")
 
 
 class UserRole(str, Enum):
@@ -284,9 +295,28 @@ async def get_current_user(
         debug_role = request.headers.get("X-Debug-Role", "").strip().lower()
         if settings.DEBUG and debug_role:
             if debug_role == "customer":
-                logger.warning("No auth token in DEBUG mode, using CUSTOMER identity (xiaobu)")
+                _uid = DEBUG_CUSTOMER_USER_ID
+                # ── 多身份评测（issue #3391）──
+                # 为什么需要：debug_customer_1 在评测种子里有历史订单 →
+                # `customer_address_query` 恒返回 has_address=true →「新客没有历史收货信息
+                # → 主动收集」这条路径**在评测里不可达**，而那正是验收 C-A1 暴露问题的路径。
+                # 安全约束（与 P0-3 同源：DEBUG 误配不得变成数据泄露后门）：
+                #   · 仅 DEBUG=true + role=customer 时生效（生产 DEBUG=false 永不进本分支）；
+                #   · 仅接受 `debug_` 前缀的**测试夹具** id（白名单正则，挡住 dev_user/
+                #     管理员/注入式 id 的伪装）；B 端身份不接受覆盖。
+                _req_user = request.headers.get("X-Debug-User", "").strip()
+                if _req_user and _DEBUG_USER_ID_RE.fullmatch(_req_user):
+                    _uid = _req_user
+                    logger.warning(
+                        f"DEBUG C 端身份覆盖（多身份评测）：user_id={_uid} "
+                        f"—— 仅 DEBUG 模式且 debug_ 前缀白名单内可用，生产不可达")
+                else:
+                    if _req_user:
+                        logger.warning(
+                            f"忽略非法 X-Debug-User={_req_user!r}（仅接受 debug_ 前缀白名单）")
+                    logger.warning("No auth token in DEBUG mode, using CUSTOMER identity (xiaobu)")
                 default_user = UserIdentity(
-                    user_id="debug_customer_1",
+                    user_id=_uid,
                     tenant_id=1,
                     identity_type="account",
                     role=UserRole.CUSTOMER,

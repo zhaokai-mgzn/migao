@@ -3,7 +3,7 @@ AI 智能客服系统 - JWT 认证模块测试
 
 测试 auth.py 中的 JWT Token 解析和用户身份提取逻辑
 """
-# case_ids: DF-014
+# case_ids: DF-014, OR-022
 
 import time
 import jwt
@@ -228,6 +228,65 @@ class TestGetCurrentUser:
         user = await get_current_user(request, authorization=None)
         assert user.user_id == "dev_user"
         assert user.tenant_id == 1
+
+    @patch("app.utils.auth.settings")
+    @pytest.mark.asyncio
+    async def test_debug_user_header_selects_customer_identity(self, mock_settings):
+        """多身份评测（issue #3391）：DEBUG + customer + 白名单内 X-Debug-User → 用该用户。
+
+        为什么需要：`debug_customer_1` 在种子里有历史订单，`customer_address_query` 恒
+        `has_address=true` → 「新客没有历史收货信息 → 主动收集」这条路径**在评测里不可达**，
+        而那正是验收 C-A1 暴露问题的路径（无历史地址时 agent 该查/该问，不是拒单）。
+        """
+        mock_settings.DEBUG = True
+        mock_settings.JWT_PUBLIC_KEY = ""
+
+        from app.utils.auth import get_current_user
+
+        request = MagicMock()
+        request.cookies = {}
+        request.state = MagicMock()
+        request.headers = {"X-Debug-Role": "customer", "X-Debug-User": "debug_customer_new"}
+
+        user = await get_current_user(request, authorization=None)
+        assert user.user_id == "debug_customer_new"
+        assert user.role == "customer"
+        assert user.tenant_id == 1
+
+    @patch("app.utils.auth.settings")
+    @pytest.mark.asyncio
+    async def test_debug_user_header_rejects_non_allowlisted_id(self, mock_settings):
+        """白名单外一律忽略（防"DEBUG 误配 = 任意用户伪装"；P0-3 同类教训）。"""
+        mock_settings.DEBUG = True
+        mock_settings.JWT_PUBLIC_KEY = ""
+
+        from app.utils.auth import get_current_user
+
+        for bad in ["dev_user", "admin", "user_1", "debug_customer_1; DROP TABLE orders",
+                    "debug_", "DEBUG_customer_new", "../debug_customer_new"]:
+            request = MagicMock()
+            request.cookies = {}
+            request.state = MagicMock()
+            request.headers = {"X-Debug-Role": "customer", "X-Debug-User": bad}
+            user = await get_current_user(request, authorization=None)
+            assert user.user_id == "debug_customer_1", f"非白名单 id 被采纳: {bad!r}"
+
+    @patch("app.utils.auth.settings")
+    @pytest.mark.asyncio
+    async def test_debug_user_header_customer_only(self, mock_settings):
+        """B 端（mibao）不受该头影响 —— 覆盖面越小越安全。"""
+        mock_settings.DEBUG = True
+        mock_settings.JWT_PUBLIC_KEY = ""
+
+        from app.utils.auth import get_current_user
+
+        request = MagicMock()
+        request.cookies = {}
+        request.state = MagicMock()
+        request.headers = {"X-Debug-Role": "mibao", "X-Debug-User": "debug_customer_new"}
+
+        user = await get_current_user(request, authorization=None)
+        assert user.user_id == "dev_user", "B 端身份不该被 X-Debug-User 改写"
 
     @patch("app.utils.auth.settings")
     @pytest.mark.asyncio

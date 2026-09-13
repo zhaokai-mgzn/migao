@@ -567,13 +567,12 @@ class TestXiaobuFixtureCustomerOrders:
     def _auth_customer_user_id(self) -> str:
         """从 auth.py 读出 DEBUG customer 身份注入的 user_id（单一事实源）"""
         src = self.AUTH_PY.read_text(encoding="utf-8")
-        # debug_role == "customer" 分支内的 user_id="..."
-        m = re.search(
-            r'debug_role\s*==\s*"customer"[\s\S]{0,400}?user_id\s*=\s*"([^"]+)"',
-            src,
-        )
+        # issue #3391：默认身份提为具名常量 `DEBUG_CUSTOMER_USER_ID`（多身份覆盖后，
+        # 分支内不再是内联字面量）。本 job 只装 pytest+pyyaml，不能 import 该模块，
+        # 故仍按源码解析 —— 常量名即契约，改名字会在此处报错并强制同步。
+        m = re.search(r'^DEBUG_CUSTOMER_USER_ID\s*=\s*"([^"]+)"', src, re.M)
         assert m, (
-            "未能在 auth.py 中定位 DEBUG customer 的 user_id —— "
+            "未能在 auth.py 中定位 DEBUG customer 的 user_id 常量 —— "
             "注入逻辑已变更，需同步本测试与 fixture"
         )
         return m.group(1)

@@ -136,6 +136,15 @@ INSERT INTO users (id, tenant_id, phone, nickname, role, status, deleted)
 VALUES ('debug_customer_1', 1, '13800138000', '评测顾客', 'customer', 'active', 0)
 ON CONFLICT (id) DO NOTHING;
 
+-- 6.1b 新客（**无任何历史订单**，issue #3391）：C 端「无历史收货信息 → 主动收集」路径。
+--      debug_customer_1 有历史订单 → customer_address_query 恒 has_address=true，
+--      该路径在评测里原本**不可达**（而验收 C-A1 暴露的问题正出在这里）。
+--      评测通过请求头 X-Debug-User: debug_customer_new 切到本身份
+--      （app/utils/auth.py 的 DEBUG-only + debug_ 前缀白名单）。
+INSERT INTO users (id, tenant_id, phone, nickname, role, status, deleted)
+VALUES ('debug_customer_new', 1, '13900139000', '评测新客', 'customer', 'active', 0)
+ON CONFLICT (id) DO NOTHING;
+
 -- 6.2 历史订单 ×2：一笔已完成（地址预填 + 售后可建单）、一笔已发货（物流查询）
 --     user_id 必须是 debug_customer_1 —— 这是 C 端数据隔离的唯一依据。
 --     ⚠️ created_at **必须显式给值且两笔不同**：`customer_order_query` 按
@@ -184,12 +193,22 @@ DO $$
 DECLARE
   v_orders INTEGER;
   v_items  INTEGER;
+  v_new_orders INTEGER;
 BEGIN
   SELECT count(*) INTO v_orders FROM orders
    WHERE tenant_id = 1 AND user_id = 'debug_customer_1' AND deleted = 0;
   SELECT count(*) INTO v_items FROM order_items WHERE tenant_id = 1 AND deleted = 0;
-  RAISE NOTICE 'C 端评测 fixture 核对: debug_customer_1 订单=% 明细=%', v_orders, v_items;
+  -- 新客（OR-022 多身份用例）必须**没有**任何订单：有订单就会走 has_address=true 分支，
+  -- 用例"看起来覆盖了新客路径、其实没覆盖"（假绿）。故这里是**断言**，不只是打印。
+  SELECT count(*) INTO v_new_orders FROM orders
+   WHERE tenant_id = 1 AND user_id = 'debug_customer_new' AND deleted = 0;
+  RAISE NOTICE 'C 端评测 fixture 核对: debug_customer_1 订单=% 明细=% 新客订单=%',
+    v_orders, v_items, v_new_orders;
   IF v_orders < 2 THEN
     RAISE EXCEPTION 'C 端 fixture 注入失败：debug_customer_1 订单数=% (<2)', v_orders;
+  END IF;
+  IF v_new_orders > 0 THEN
+    RAISE EXCEPTION '新客 fixture 被污染：debug_customer_new 订单数=%（必须为 0，否则 OR-022 假绿）',
+      v_new_orders;
   END IF;
 END $$;

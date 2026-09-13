@@ -344,7 +344,7 @@ class TestRunCaseDataChecksScoring:
         )
 
     async def _run(self, case, error=None):
-        async def fake_send(token, session_id, message, images=None):
+        async def fake_send(token, session_id, message, images=None, **kwargs):
             return {
                 "user_message": message,
                 "images": images or [],
@@ -408,7 +408,7 @@ class TestWantTextAssertion:
         import asyncio
         import unittest.mock as mock
 
-        async def fake_send(token, session_id, message, images=None):
+        async def fake_send(token, session_id, message, images=None, **kwargs):
             return {
                 "user_message": message,
                 "images": images or [],
