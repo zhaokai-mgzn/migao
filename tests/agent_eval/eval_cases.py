@@ -2663,6 +2663,24 @@ _CASE_OR_018 = EvalCase(
     db_verify=[{'fetch': 'order_items', 'source': 'order_create', 'expect_products': ['夏日清风窗帘', '遮光窗帘'], 'expect_quantities': {'夏日清风窗帘': 3, '遮光窗帘': 2}}],
 )
 
+# ── OR-019 [NORMAL] C 端下单中途改数量 - 以最新数量为准，落库数量与金额都得跟着改（能力上限）（源: cases/order.yml）──
+_CASE_OR_019 = EvalCase(
+    id='OR-019',
+    legacy_id='',
+    title='C 端下单中途改数量 - 以最新数量为准，落库数量与金额都得跟着改（能力上限）',
+    skill=Skill.ORDER,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['帮我下单，遮光窗帘 3 米，要打孔加工', {'auto_respond': {'fallback': '米白'}}, {'auto_respond': {'fallback': '等等，数量改成 4 米', 'prefer_text': True}}, {'auto_respond': {'fallback': '确认下单'}}, {'auto_respond': {'fallback': '确认'}}, {'auto_respond': {'fallback': '123456', 'prefer_text': True}}, {'auto_respond': {'fallback': '123456', 'prefer_text': True}}, {'auto_respond': {'fallback': '确认'}}, {'auto_respond': {'fallback': '确认'}}],
+    expectations=['product_search', 'product_detail', 'order_create'],
+    data_checks=['顾客中途改数量后，确认卡与订单明细都必须反映**最新**数量（4 米），不得沿用旧值 3 米', '金额按最新数量重算：168×4 + 打孔 8×4 = 704'],
+    skip_reason='',
+    tags=['order_create', 'correction', 'multi_turn', 'ceiling', 'xiaobu'],
+    persona='xiaobu',
+    must_succeed=[{'tool': 'order_create'}],
+    amount_verify=[{'tool': 'order_create', 'product_name': '遮光窗帘', 'checks': ['unit_price', 'subtotal', 'total']}],
+    db_verify=[{'fetch': 'order_items', 'source': 'order_create', 'expect_products': ['遮光窗帘'], 'expect_quantities': {'遮光窗帘': 4}}],
+)
+
 # ── PG-001 [NORMAL] 生成加工单 - 已确认含加工项订单 → 加工单生成 + 订单进入 producing（源: cases/processing-order.yml）──
 _CASE_PG_001 = EvalCase(
     id='PG-001',
@@ -4261,6 +4279,7 @@ ALL_CASES = (
     _CASE_OR_016,
     _CASE_OR_017,
     _CASE_OR_018,
+    _CASE_OR_019,
     _CASE_PG_001,
     _CASE_PG_002,
     _CASE_PG_003,
