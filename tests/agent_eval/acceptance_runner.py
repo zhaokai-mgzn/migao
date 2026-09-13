@@ -233,6 +233,29 @@ def resolve_action(rd: dict, rounds: list) -> str:
     for iv in cards:
         by_comp.setdefault(str(iv.get("type") or iv.get("component") or ""), iv)
     kind = str(rd.get("click") or "")
+    if kind == "auto":
+        # 有什么卡答什么卡（优先级与评测 harness 一致：confirm > choice > form）
+        # —— 剧本不能依赖"卡一定按我写的顺序出现"：卡的顺序随模型变化，
+        # 固定 click 会把**剧本错位**报成**产品问题**（本 session C-A1 实测）。
+        if "confirm" in by_comp:
+            val = str(by_comp["confirm"].get("confirmValue") or "").strip()
+            if val:
+                return val
+        if "choice" in by_comp:
+            answer = _LR.choice_card_answer(by_comp["choice"])
+            if answer:
+                return answer
+        if "form" in by_comp:
+            values = {}
+            for f in (by_comp["form"].get("formFields") or []):
+                key = str((f or {}).get("key") or "")
+                if not key:
+                    continue
+                val = (f or {}).get("value")
+                values[key] = "" if val is None else val
+            if values:
+                return "__FORM__|" + json.dumps(values, ensure_ascii=False)
+        return str(rd.get("fallback") or rd.get("text") or "")
     if kind == "confirm" and "confirm" in by_comp:
         val = str(by_comp["confirm"].get("confirmValue") or "").strip()
         if val:

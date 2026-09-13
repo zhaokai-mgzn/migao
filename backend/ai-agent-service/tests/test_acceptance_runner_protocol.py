@@ -152,6 +152,41 @@ class TestScenarioActions:
     def test_no_card_click_falls_back_to_text(self):
         assert ar.resolve_action({"click": "confirm", "fallback": "确认"}, [_round(1)]) == "确认"
 
+    def test_auto_click_answers_whatever_card_is_pending(self):
+        """`click: "auto"`：**有什么卡答什么卡**（真实顾客行为）。
+
+        为什么必须有：剧本用固定 `click` 时，卡的**顺序**随模型变化（本 session 实测
+        C-A1：R5 期待 confirm 卡、实际是 form 卡 → 脚本答不上 → 后续轮次全错位，
+        评测面变成"脚本对齐度"而不是"产品行为"）。
+        评测 harness 早就用 `auto_respond` 协议解决了这个问题；验收剧本必须同样处理，
+        否则剧本红灯会把**剧本问题**报成**产品问题**（归因方向错）。
+        """
+        # confirm 卡在 → 回 confirmValue
+        prev = [_round(1, interactive=[{"type": "confirm", "confirmValue": "确认下单"}])]
+        assert ar.resolve_action({"click": "auto", "fallback": "确认"}, prev) == "确认下单"
+        # form 卡在 → 回 __FORM__|{json}（前端表单提交协议），字段取卡上自带值
+        prev = [_round(1, interactive=[{"type": "form", "title": "请确认收货信息",
+                                        "formFields": [{"key": "customer_name", "value": "张三", "label": "收货人"},
+                                                       {"key": "customer_phone", "value": "13800138000"}]}])]
+        out = ar.resolve_action({"click": "auto", "fallback": "确认"}, prev)
+        assert out.startswith("__FORM__|"), f"form 卡必须按 __FORM__ 协议提交，实际 {out!r}"
+        assert "张三" in out
+        # choice 卡在 → 回首个选项标签
+        prev = [_round(1, interactive=[{"type": "choice", "title": "选颜色",
+                                        "options": [{"label": "白色", "value": "c1"}]}])]
+        assert ar.resolve_action({"click": "auto", "fallback": "确认"}, prev) == "白色"
+        # 无卡 → fallback 文本
+        assert ar.resolve_action({"click": "auto", "fallback": "数量 3 米"}, [_round(1)]) == "数量 3 米"
+
+    def test_auto_click_prefers_confirm_over_form(self):
+        """一张轮里有多种卡时，优先答**最推进流程**的那张（confirm > choice > form）——
+        与评测 harness 的优先级一致，避免两套优先级漂移。"""
+        prev = [_round(1, interactive=[
+            {"type": "form", "formFields": [{"key": "a", "value": "1"}]},
+            {"type": "confirm", "confirmValue": "确认下单"},
+        ])]
+        assert ar.resolve_action({"click": "auto", "fallback": "x"}, prev) == "确认下单"
+
     def test_new_session_round_is_declared(self):
         assert ar.wants_new_session({"text": "我又来了", "session": "new"}) is True
         assert ar.wants_new_session({"text": "继续"}) is False
