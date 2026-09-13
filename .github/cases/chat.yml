@@ -994,42 +994,22 @@ cases:
       - "我想买遮光窗帘，米白 3 米，要纳米圈打孔加工"
       # 明确的"修改预填值"动作（本用例的核心断言来源）
       - "收货地址帮我改成浙江省杭州市西湖区文三路2号5幢202室"
-      # 表单兜底值给**修改后**的地址：agent 若再次下发预填表单，顾客提交的就是新地址
-      # （若 agent 直接出确认卡，下面的 db_verify 仍然只认订单落库值）
-      - auto_respond:
-          fallback: "确认下单"
-          form_values:
-            customer_name: "张三"
-            customer_phone: "13800138000"
-            customer_address: "浙江省杭州市西湖区文三路2号5幢202室"
-            color: "米白"
-            colorName: "米白"
-      # 再给一轮"答卡式"答复（自动按待答卡作答：confirm 回 confirmValue / choice 点首项 /
-      # form 回 __FORM__|json）—— agent 的提问顺序随模型而变（实测首跑 R2 是收货信息 form 卡、
-      # R3 才是加工项多选卡），只给一轮答不完，后面的验证码轮就会落在卡片上。
-      - auto_respond:
-          fallback: "确认"
-          form_values:
-            customer_name: "张三"
-            customer_phone: "13800138000"
-            customer_address: "浙江省杭州市西湖区文三路2号5幢202室"
-            color: "米白"
-            colorName: "米白"
-      # 验证码轮（dev/CI 栈 SMS_BYPASS_CODE=123456）：漏了这一轮，AI 会正确停在
-      # 「请输入验证码」→ order_create 断言永远不可能满足（test_cases_asserting_otp_tools_supply_a_code 拦下）。
-      # ⚠️ `prefer_text` 会**无视待答卡片**直接发文本（issue #3421）：首跑时这一轮正落在
-      # 「要哪些加工项」多选卡上 → 顾客回了 "123456" → 答非所问、之后 3 轮空转、从未下单，
-      # 且只表现为"首跑失败重试通过"（标 llm-noise）—— **用例配置缺陷伪装成模型波动**。
-      # 故：① 前面给足两轮答卡式答复；② 验证码给**两轮冗余**（OR-021 同款做法）；
-      # ③ runner 在 prefer_text 吃掉待答卡时打印告警（pending_card_summary），让这类错可见。
-      - auto_respond:
-          fallback: "123456"
-          prefer_text: true
-      - auto_respond:
-          fallback: "123456"
-          prefer_text: true
-      - auto_respond:
-          fallback: "确认"
+      # ── 协作型顾客的"统一一轮"（issue #3430）──
+      # 旧写法把「答卡 ×2 + 验证码 ×2 + 确认」写成固定轮次表，但实际卡片序列随模型而变
+      # （实测首跑是 `form(R2) → choice(R3)`），错位时验证码就落到了加工项卡上。
+      # 改成：有卡答卡（form 回填**修改后**的地址）→ 被问验证码供码 → 否则说确认，
+      # 直到 `order_create` 成功。
+      - repeat_until:
+          tool_called: order_create
+          max: 4
+        code: "123456"
+        fallback: "确认下单"
+        form_values:
+          customer_name: "张三"
+          customer_phone: "13800138000"
+          customer_address: "浙江省杭州市西湖区文三路2号5幢202室"
+          color: "米白"
+          colorName: "米白"
     expectations:
       - tool: customer_address_query
       # 不写 `args: component: form`（issue #3404 复盘）：顾客在意的是订单上的值对不对，
