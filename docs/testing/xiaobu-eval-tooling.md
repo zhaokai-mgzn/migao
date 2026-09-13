@@ -421,7 +421,13 @@ user_inputs:
 5. 跑 `python3 .github/render_cases.py --cases .github/cases --out-eval tests/agent_eval/eval_cases.py --out-md docs/testing/mibao-verification-cases.md` 提交生成物；
 6. 跑覆盖体检 `--check` 确认无孤儿用例；
 7. 用本地 DEBUG 栈实测该用例 ≥1 次（真实 LLM），确认断言与行为一致（先例：行为合理但
-   断言过严的，按 §14.2 校准而非删用例）。
+   断言过严的，按 §14.2 校准而非删用例）；
+8. **断言写工具（`order_create`/`aftersales_create`）的 C 端用例必须"能答卡"**
+   （§6.4.1 的 `repeat_until`，或非 `prefer_text` 的 `auto_respond`）——
+   固定文本轮在 agent 先发卡时会答非所问 → 空转不下单（OR-021 定向复跑 0/1 的根因）。
+   由 `TestWriteCasesCanAnswerCards` 守卫（CI 会拦）；**注意作用域**：只认
+   `persona: xiaobu`，`persona` 留空是**未声明/双端**（实测那批是米宝流程用例，
+   套 C 端判据会误伤 —— 我为此连错两次，见 issue #3430）。
 
 ## 8. 跑评测的三档与提速旋钮（issue #3417）
 
