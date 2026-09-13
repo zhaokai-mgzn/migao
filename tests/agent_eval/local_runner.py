@@ -156,7 +156,7 @@ async def restore_product(token: str, product_id: str):
                          headers=h, json={"price": price})
 
 
-async def _end_session(token: str, session_id: str) -> None:
+async def _end_session(token: str, session_id: str, debug_user: str = "") -> None:
     """评测会话清理（协议 §2.2）：case 结束后关闭会话，并触发长时记忆 flush。
 
     **主路径必须是 ai-agent 的关闭接口**（PUT {AI_API}/api/chat/sessions/{id}/close）：
@@ -174,8 +174,11 @@ async def _end_session(token: str, session_id: str) -> None:
     """
     try:
         async with httpx.AsyncClient() as c:
+            # 多身份用例（issue #3392）：会话属主是用例声明的身份，
+            # 用默认身份关闭会 403（实测 sess_... HTTP 403）→ close 路径失效 =
+            # 记忆候选不 flush（正是本函数注释里 issue #3357 修过的"静默失效"）。
             r = await c.put(f"{AI_API}/api/chat/sessions/{session_id}/close",
-                            headers=_chat_headers(token), timeout=15)
+                            headers=_chat_headers(token, debug_user), timeout=15)
             if r.status_code >= 400:
                 print(f"     ⚠️ 会话关闭失败 HTTP {r.status_code}: id={session_id} "
                       f"body={str(getattr(r, 'content', b''))[:120]}")
@@ -1975,6 +1978,15 @@ async def check_db_verify(token: str, db_verify: list, results: list | None = No
                     issues.append(
                         f"db_verify[order_items]: 订单 {ref} 明细里没有「{w}」"
                         f"（实际明细: {sorted(by_name)}）")
+            # 行级原始明细（issue #3392）：数量不符时**必须能看到行的形状** ——
+            # 实测 OR-022 汇总数量 = 9（期望 3），但"单行 9"与"三行各 3"的修法完全不同：
+            # 前者是数量值算错、后者是重复行累加（工具层已加 fail-closed 守卫）。
+            # 没有这个诊断，失败信息只会说"9 ≠ 3"，排查只能靠猜。
+            _lines = " + ".join(
+                f"{str((it or {}).get('productName') or '?')}×{int((it or {}).get('quantity') or 0)}"
+                f"@{float((it or {}).get('unitPrice') or 0):g}"
+                for it in items)
+            _line_count = len(items)
             for w, q in (spec.get("expect_quantities") or {}).items():
                 w = str(w)
                 hit = next((n for n in by_name if w in n or n in w), None)
@@ -1986,7 +1998,9 @@ async def check_db_verify(token: str, db_verify: list, results: list | None = No
                     continue
                 if by_name[hit] != want_q:
                     issues.append(
-                        f"db_verify[order_items]: 「{hit}」数量 {by_name[hit]} ≠ 期望 {want_q}")
+                        f"db_verify[order_items]: 「{hit}」数量 {by_name[hit]} ≠ 期望 {want_q}"
+                        f"（订单明细共 {_line_count} 行: {_lines}）"
+                        f"—— 行数与逐行数量能区分「数量值算错」与「重复行累加」")
             continue
 
         if fetch != "product_by_name":
@@ -2089,7 +2103,8 @@ async def _close_and_verify_session(case, token: str, r: dict, session_id: str) 
     失败 → score=0 → 走同一套重试/指纹分类（噪声放行 / 确定性回归显式标注）。
     重试路径同样必须调用（否则重试通过时 post_session 从未被执行 → 假绿）。
     """
-    await _end_session(token, r.get("final_session_id") or session_id)
+    await _end_session(token, r.get("final_session_id") or session_id,
+                       debug_user=getattr(case, "debug_user", "") or "")
     if not getattr(case, "post_session", None):
         return
     try:
@@ -2501,7 +2516,8 @@ async def run_case(case, token: str, session_id: str) -> dict:
     for i, msg in enumerate(case.user_inputs):
         images = []
         if isinstance(msg, dict) and msg.get("new_session"):
-            await _end_session(token, session_id)
+            await _end_session(token, session_id,
+                               debug_user=getattr(case, "debug_user", "") or "")
             session_id = await get_or_create_session(
                 token, prefer_new=True, debug_user=getattr(case, "debug_user", "") or "")
             session_breaks += 1

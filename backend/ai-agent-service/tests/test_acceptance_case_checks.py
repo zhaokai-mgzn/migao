@@ -1325,7 +1325,7 @@ class TestCloseAndVerifySession:
         import unittest.mock as mock
         closed = []
 
-        async def fake_end(token, sid):
+        async def fake_end(token, sid, **kwargs):
             closed.append(sid)
 
         async def fake_check(token, specs):
@@ -1394,7 +1394,7 @@ class TestNewSessionTurn:
             created.append(sid)
             return sid
 
-        async def fake_end(token, sid):
+        async def fake_end(token, sid, **kwargs):
             closed.append(sid)
 
         import unittest.mock as mock
@@ -1461,7 +1461,7 @@ class TestRunSuitePostSession:
             calls["checks"] += 1
             return list(post_results.pop(0)) if post_results else []
 
-        async def fake_end(token, sid):
+        async def fake_end(token, sid, **kwargs):
             return None
 
         monkeypatch.setenv("AGENT_EVAL_FLAKE_LOG", str(tmp_path / "flakes.json"))
@@ -1526,7 +1526,7 @@ class TestRetryBudget:
                     "score": 0.0, "failed": [("boom", "x")], "last_error": None,
                     "final_text": "", "final_session_id": sid, "session_breaks": 0}
 
-        async def fake_end(token, sid):
+        async def fake_end(token, sid, **kwargs):
             return None
 
         cases = [lr.EvalCase(id=f"RB-{i}", title="t", skill=lr.Skill.GENERAL,
@@ -1940,7 +1940,7 @@ class TestSuiteConcurrency:
                     "total": 1, "score": score, "failed": [], "last_error": None,
                     "final_text": "", "final_session_id": sid, "session_breaks": 0}
 
-        async def fake_end(token, sid):
+        async def fake_end(token, sid, **kwargs):
             return None
 
         async def fake_snapshot(token, kw):
@@ -2021,7 +2021,7 @@ class TestSuiteConcurrency:
                     "score": 0.0, "failed": [("x", "y")], "last_error": None,
                     "final_text": "", "final_session_id": sid, "session_breaks": 0}
 
-        async def fake_end(token, sid):
+        async def fake_end(token, sid, **kwargs):
             return None
 
         monkeypatch.setenv("AGENT_EVAL_FLAKE_LOG", str(tmp_path / "f.json"))
@@ -2078,7 +2078,7 @@ class TestConcurrencyGateTail:
                     "score": 1.0, "failed": [], "last_error": None, "final_text": "",
                     "final_session_id": sid, "session_breaks": 0}
 
-        async def fake_end(token, sid):
+        async def fake_end(token, sid, **kwargs):
             return None
 
         async def fake_snapshot(token, kw):
@@ -2170,7 +2170,7 @@ class TestPreCleanExclusiveWindow:
                     "score": 1.0, "failed": [], "last_error": None, "final_text": "",
                     "final_session_id": sid, "session_breaks": 0}
 
-        async def fake_end(token, sid):
+        async def fake_end(token, sid, **kwargs):
             return None
 
         async def fake_pre_clean(token, spec):
@@ -2208,7 +2208,7 @@ class TestPreCleanExclusiveWindow:
                     "score": 1.0, "failed": [], "last_error": None, "final_text": "",
                     "final_session_id": sid, "session_breaks": 0}
 
-        async def fake_end(token, sid):
+        async def fake_end(token, sid, **kwargs):
             return None
 
         async def fake_post_checks(token, specs):
@@ -2273,7 +2273,7 @@ class TestNoDeadlockWithPreCleanUnderConcurrency:
                     "score": 1.0, "failed": [], "last_error": None, "final_text": "",
                     "final_session_id": sid, "session_breaks": 0}
 
-        async def fake_end(token, sid):
+        async def fake_end(token, sid, **kwargs):
             return None
 
         async def fake_pre_clean(token, spec):
@@ -2728,6 +2728,20 @@ class TestDbVerifyOrderItems:
         with mock.patch.object(lr, "_first_successful_data", new=lambda res, tool: {}):
             issues = asyncio.run(lr.check_db_verify("tok", [self._spec()], [self._round()]))
         assert issues and "order_create" in issues[0]
+
+    def test_quantity_mismatch_reports_line_shape(self):
+        """数量不符时必须报**行的形状**（issue #3392）：3 行各 3 ≠ 单行 9，修法不同。"""
+        order = {"data": {"orderNo": "x", "items": [
+            {"productName": "遮光窗帘", "quantity": 3, "unitPrice": 168.0},
+            {"productName": "遮光窗帘", "quantity": 3, "unitPrice": 168.0},
+            {"productName": "遮光窗帘", "quantity": 3, "unitPrice": 168.0}]}}
+        issues = self._run(self._spec(expect_quantities={"遮光窗帘": 3}), order=order)
+        # ⚠️ 取**数量那条**（issues[0] 可能是"缺某商品"那条 —— 首版就是索引取错导致假失败）
+        hit = next((i for i in issues if "数量" in i), "")
+        assert hit, issues
+        assert "数量 9" in hit, hit
+        assert "3 行" in hit, f"必须报行数（区分重复行 vs 数量值算错）: {hit}"
+        assert "遮光窗帘×3@168" in hit, f"必须报逐行明细: {hit}"
 
     def test_unknown_fetch_still_rejected(self):
         issues = self._run({"fetch": "nonsense"})
