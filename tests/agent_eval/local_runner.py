@@ -1594,6 +1594,74 @@ async def _fetch_order_detail(token: str, order_ref: str) -> dict | None:
         return None
 
 
+# `output_verify.expect` 里的特殊哨兵：断言该字段**非空**（用于 warning 这类"有意为之"的文本）
+OUTPUT_NONEMPTY = "__nonempty__"
+
+
+def check_output_verify(results: list, output_verify: list) -> list:
+    """断言**工具计算结果的 payload**（issue #3367）。
+
+    与既有断言的分工：
+      · `expectations: tool(args=…)` → 输入侧（用哪些参数调的）
+      · `must_succeed`              → 有没有真的做成功
+      · `output_verify`             → **产出侧**（算出来的数对不对）
+    为什么必须补：算料报价（curtain_calc）的价值全在算出来的数上，而此前
+    "用布量算错/公式选错分支"在评测里完全不可见 —— 只能断言"调了 curtain_calc"。
+    数值按容差比较（默认 0.01）；字符串按相等；`__nonempty__` 断言非空。
+    失败关闭：找不到成功调用 / 缺 tool / 缺 expect / payload 缺字段 → 一律报错，不静默跳过。
+    """
+    issues = []
+    for spec in output_verify or []:
+        if not isinstance(spec, dict):
+            issues.append(f"output_verify: 配置非字典: {spec!r}")
+            continue
+        tool = str(spec.get("tool") or "")
+        expect = spec.get("expect")
+        if not tool:
+            issues.append(f"output_verify: 配置缺 tool（该断言会被静默跳过）: {spec!r}")
+            continue
+        if not isinstance(expect, dict) or not expect:
+            issues.append(f"output_verify[{tool}]: 缺 expect（空断言）: {spec!r}")
+            continue
+        tol = float(spec.get("tolerance", 0.01))
+        _rnd, _args, data = _first_successful_call(results, tool)
+        payload = {}
+        for r in results or []:
+            for tr in r.get("tool_results") or []:
+                if not _tool_name_matches(tr.get("tool"), tool):
+                    continue
+                res = tr.get("result") if isinstance(tr.get("result"), dict) else {}
+                if res.get("success") and isinstance(res.get("data"), dict):
+                    payload = res["data"]
+                    break
+            if payload:
+                break
+        if not payload:
+            issues.append(f"output_verify[{tool}]: 找不到成功调用的结果（无从核对产出）")
+            continue
+        for key, want in expect.items():
+            if key not in payload:
+                issues.append(
+                    f"output_verify[{tool}]: 结果里没有字段 {key!r}（实际字段: {sorted(payload)}）")
+                continue
+            got = payload[key]
+            if want == OUTPUT_NONEMPTY:
+                if not str(got or "").strip():
+                    issues.append(f"output_verify[{tool}]: {key} 期望非空，实际 {got!r}")
+                continue
+            if isinstance(want, (int, float)) and not isinstance(want, bool):
+                try:
+                    if abs(float(got) - float(want)) > tol:
+                        issues.append(
+                            f"output_verify[{tool}]: {key} 期望 {want}，实际 {got}（差 {float(got) - float(want):+.4f}）")
+                except (TypeError, ValueError):
+                    issues.append(f"output_verify[{tool}]: {key} 期望数值 {want}，实际 {got!r} 非数值")
+                continue
+            if str(got) != str(want):
+                issues.append(f"output_verify[{tool}]: {key} 期望 {want!r}，实际 {got!r}")
+    return issues
+
+
 async def check_db_verify(token: str, db_verify: list, results: list | None = None) -> list:
     """执行 db_verify 断言：fetch 指定资源 → 逐条评估谓词，返回违规列表。
 
@@ -2270,6 +2338,7 @@ async def run_case(case, token: str, session_id: str) -> dict:
             case_issues += await check_amount_verify(token, results, case.amount_verify)
         except Exception as e:
             case_issues.append(f"amount_verify 执行失败: {type(e).__name__}: {e}")
+    case_issues += check_output_verify(results, getattr(case, "output_verify", []) or [])
     case_issues += check_confirm_loop(results)
     case_issues += check_false_success(results)
     if getattr(case, "db_verify", None):

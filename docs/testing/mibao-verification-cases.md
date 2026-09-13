@@ -2432,7 +2432,7 @@
 ```
 溯源: 2026-09-12 新增（#3352 决策 C）：加工项创建后不可改 → 加工单快照不会与订单漂移 ｜ tags: processing-order, invariant, decision
 
-## 商品域（21 case）
+## 商品域（22 case）
 
 ### PR-001. 商品搜索 - 关键词模糊匹配 🟢
 ```
@@ -2725,6 +2725,17 @@
 ```
 真值: product-sku-stock.realtime
 溯源: Round 72 评测覆盖审计：sku_update（SKU 级调价）注册于 product_skill 但无 case 覆盖（盲区）→ 补 SKU 调价场景 ｜ tags: sku, write, pricing
+
+### PR-024. 小布算料上限 - 定宽布买高 + 对花损耗（窗高超定高上限，必须走定宽分支并告警） 🔵
+```
+你: 帮我算一下：窗宽 3 米、窗高 2.7 米，2 倍褶皱，门幅 2.8 米，需要对花（花距 40 厘米），用 98 元一米的布，要多少布、多少钱？
+期望: curtain_calc(window_width=3, window_height=2.7)
+数据: 窗高 2.7m + 卷边 0.3m > 门幅 2.8m → 必须走定宽布（买高）分支，不得套定高公式
+数据: 对花损耗按每幅 +1 个花距：3 幅 × 0.4m = 1.2m，用布 10.2m（非 9.0m）
+数据: 报价总额 = 面料费 + 加工费 + 辅料费 + 安装费（fabric-calc.quote-total），不得凭记忆报价
+```
+真值: fabric-calc.fixed-width, fabric-calc.pattern-loss, fabric-calc.quote-total
+溯源: 2026-09-13 新增（issue #3367）：算料报价能力上限（定宽分支 + 对花损耗 + 产出侧断言） ｜ tags: quote, fabric_calc, ceiling, xiaobu
 
 ## registry（1 case）
 
@@ -3399,8 +3410,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：266（活跃 127，跳过 139）
-- tier 分布：smoke 9 / normal 224 / adversarial 33
+- 用例总数：267（活跃 128，跳过 139）
+- tier 分布：smoke 9 / normal 225 / adversarial 33
 - 售后域：8
 - agents：6
 - api：19
@@ -3420,7 +3431,7 @@
 - 订单域：19
 - 加工项域：6
 - processing-order：14
-- 商品域：21
+- 商品域：22
 - registry：1
 - 设置域：8
 - token-refresh：4

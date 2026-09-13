@@ -2335,6 +2335,62 @@ def _order_round(rnd, items, ok=True, total=None):
     }
 
 
+class TestOutputVerify:
+    """`output_verify`：断言**工具计算结果**（payload），不只是"调用过/传参对"（issue #3367）。
+
+    为什么需要：算料报价（curtain_calc）的价值全在**算出来的数**上 ——
+    `expectations: curtain_calc(...)` 只证明"用这些参数调了"，`data_checks` 是自然语义、
+    不计分。于是"用布量算错"在评测里**完全不可见**（PR-013 只能断言调用与参数）。
+    本断言把业务真值（如定宽布 3m×2.7m×2倍×2.8m门幅 → 9.0m）变成机器判定。
+    """
+
+    def _round(self, data, ok=True, tool="curtain_calc"):
+        return [{"__round": 1,
+                 "tool_calls": [{"name": tool, "args": {}}],
+                 "tool_results": [{"tool": tool,
+                                   "result": ({"success": True, "data": data} if ok
+                                              else {"success": False, "error": "boom"})}],
+                 "final_text": ""}]
+
+    def _run(self, expect, data, ok=True):
+        return lr.check_output_verify(self._round(data, ok), [{"tool": "curtain_calc", "expect": expect}])
+
+    def test_matching_numbers_pass(self):
+        assert self._run({"fabric_meters": 9.0, "total": 973.6},
+                         {"fabric_meters": 9.0, "total": 973.6}) == []
+
+    def test_within_tolerance_passes(self):
+        assert self._run({"fabric_meters": 9.0}, {"fabric_meters": 9.004}) == []
+
+    def test_wrong_number_fails_with_actual(self):
+        issues = self._run({"fabric_meters": 9.0}, {"fabric_meters": 6.6})
+        assert issues and "fabric_meters" in issues[0] and "6.6" in issues[0], \
+            "算错的用布量必须判失败，并带上实际值（便于归因）"
+
+    def test_string_field_equality(self):
+        assert self._run({"formula_used": "fixed_width"}, {"formula_used": "fixed_width"}) == []
+        bad = self._run({"formula_used": "fixed_width"}, {"formula_used": "fixed_height"})
+        assert bad and "formula_used" in bad[0], "公式选错（定宽/定高）是算料的核心分支，必须判失败"
+
+    def test_missing_field_fails_closed(self):
+        issues = self._run({"fabric_meters": 9.0}, {"total": 1.0})
+        assert issues and "fabric_meters" in issues[0], "payload 缺字段必须判失败，不能静默通过"
+
+    def test_no_successful_call_fails_closed(self):
+        issues = lr.check_output_verify(self._round({}, ok=False),
+                                        [{"tool": "curtain_calc", "expect": {"fabric_meters": 1.0}}])
+        assert issues and "curtain_calc" in issues[0]
+
+    def test_malformed_spec_fails_closed(self):
+        assert lr.check_output_verify(self._round({}), [{"tool": "curtain_calc"}]), "缺 expect 必须报错"
+        assert lr.check_output_verify(self._round({}), [{"expect": {"a": 1}}]), "缺 tool 必须报错"
+
+    def test_warning_presence_can_be_asserted(self):
+        """定宽布必然带 warning（窗高超定高上限）——支持断言"非空"。"""
+        assert self._run({"warning": "__nonempty__"}, {"warning": "超定高上限"}) == []
+        assert self._run({"warning": "__nonempty__"}, {"warning": ""}), "warning 为空必须判失败"
+
+
 class TestAssertionsFailClosed:
     """断言**配置写错时必须报错**，不得静默跳过（issue #3367 断言层审计）。
 
