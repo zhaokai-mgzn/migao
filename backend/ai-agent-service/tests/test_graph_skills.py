@@ -5063,18 +5063,110 @@ class TestConfirmCardSeenSubReason:
         assert _confirm_card_seen([ToolMessage(content="not json", tool_call_id="y", name="interact")]) is False
 
 
-class TestConfirmationGateSubReasonHarnessGap:
-    """**已知测试基建缺口**：确认门禁没有被端到端驱动（issue #3445 复盘）。
+class TestConfirmationGateNoCardRepro:
+    """**本地驱动确认门禁**（issue #3445 的测试基建缺口）+ `no_card` 复现。
 
-    做本轮细分码时想在本地驱动门禁，发现既有用例只测到 `_requires_confirmation`
-    （工具层判据），**没有任何用例**让写调用真的走到门禁并断言其 error 码 ——
-    于是"细分码接线"无法在本地验证，只能靠 CI 指纹（下一次失败时报告里会显示
-    `confirmation_required_no_card` / `confirmation_required_card_not_clicked`）。
+    上一轮补细分码时发现：既有用例只测到工具层 `_requires_confirmation`，
+    **没有任何用例**让写调用真的走到门禁 —— 于是接线只能靠 CI 指纹验证。
+    本类把这个 harness 补上（也是 #3445 验收标准第 2 条）。
 
-    这里**显式记录缺口**而不是留一个假装覆盖的断言：补齐 harness 需要同时满足
-    下单接地门禁 + 确认门禁（`grounded_product_detail` + 非卡值用户消息），
-    属于下一轮的工作（见 #3445 的验收标准）。
+    配方（踩过才知道）：
+      · skill 用 `customer_order`、工具给 `order_create`；
+      · 会话状态里要有 `grounded_product_detail`（否则先被**接地门禁**拦成 product_not_grounded）；
+      · `last_user_msg` **不能是明确确认**（如「确认」）—— `_requires_confirmation` 对
+        明确确认直接返回 False（= 文本确认放行），那就永远走不到确认门禁；
+        实测 CI 里触发 `no_card` 的正是"顾客刚给了验证码 123456 而模型直接去写"这种轮次。
     """
 
-    def test_gap_is_acknowledged(self):
-        assert True, "占位：缺口见类 docstring 与 #3445"
+    def _run(self, last_user_msg: str, *, with_confirm_card: bool = False):
+        import asyncio
+
+        executed = []
+
+        async def fake_execute(tool, args, ctx, state):
+            executed.append(tool.name)
+            return (json.dumps({"success": True, "data": {}}), {"success": True, "data": {}})
+
+        class _Store:
+            async def load(self, sid):
+                return {"grounded_product_detail": {"product_id": "prod_eval_blackout"}}
+
+            async def commit(self, sid, full):
+                return True
+
+            async def clear(self, sid):
+                return True
+
+        history = [HumanMessage(content="我想买遮光窗帘，米白 3 米，要纳米圈打孔加工")]
+        if with_confirm_card:
+            history.append(ToolMessage(
+                content=json.dumps({"success": True,
+                                    "data": {"component": "confirm", "title": "请确认订单信息"}},
+                                   ensure_ascii=False),
+                tool_call_id="c0", name="interact"))
+        history.append(HumanMessage(content=last_user_msg))
+
+        call = MagicMock(spec=AIMessage)
+        call.content = ""
+        call.tool_calls = [{"name": "order_create",
+                            "args": {"items": [{"product_name": "遮光窗帘", "quantity": 3,
+                                                "unit_price": 168}],
+                                     "customer_name": "张三", "customer_phone": "13800138000",
+                                     "customer_address": "浙江省杭州市西湖区文三路1号1幢101室"},
+                            "id": "t1"}]
+        final = MagicMock(spec=AIMessage)
+        final.content = "好的"
+        final.tool_calls = []
+
+        from app.tools.order_create import OrderCreateTool
+        tool = OrderCreateTool()
+
+        with patch("app.memory.session_memory.SessionMemory") as mem_cls, \
+             patch("app.memory.session_state_store.SessionStateStore",
+                   side_effect=lambda *a, **k: _Store()), \
+             patch("app.graph.skills.base_skill.get_breaker") as get_breaker, \
+             patch("app.graph.skills.base_skill.get_skill_llm") as get_llm, \
+             patch("app.graph.skills.base_skill.create_skill_registry") as create_reg, \
+             patch("app.graph.skills.base_skill.set_tool_context"), \
+             patch("app.graph.skills.base_skill._execute_tool_safe", fake_execute):
+            registry = MagicMock()
+            registry.get_langchain_tools.return_value = []
+            registry.get_tool.side_effect = lambda n: (tool if n == "order_create" else None)
+            create_reg.return_value = registry
+            breaker = MagicMock()
+
+            async def _pt(fn):
+                return await fn()
+
+            breaker.call = _pt
+            get_breaker.return_value = breaker
+            llm = MagicMock()
+            llm.bind_tools.return_value = llm
+            llm.ainvoke = AsyncMock(side_effect=[call, final])
+            get_llm.return_value = llm
+            mem_cls.return_value.set_pending_skill = AsyncMock(return_value=True)
+            out = asyncio.run(execute_skill(
+                state=_make_state(messages=history),
+                skill_name="customer_order",
+                tool_names=["order_create"], system_prompt="你是小布",
+            ))
+        return out, executed
+
+    def test_no_card_blocked_when_last_msg_is_not_confirmation(self):
+        """顾客刚给完验证码、模型直接写单且**从没发过确认卡** → 门禁拦下并给出 no_card 细分。"""
+        out, executed = self._run("123456")
+        blob = str(out)
+        assert "confirmation_required_no_card" in blob, f"门禁未按预期拦下：{blob[:300]}"
+        assert "order_create" not in executed, "被拦下的写调用不得真的执行"
+
+    def test_card_shown_yields_card_not_clicked(self):
+        """发过确认卡、但这一轮消息不是卡值 → 细分应为 card_not_clicked。"""
+        out, executed = self._run("123456", with_confirm_card=True)
+        blob = str(out)
+        assert "confirmation_required_card_not_clicked" in blob, f"细分不对：{blob[:300]}"
+        assert "order_create" not in executed
+
+    def test_explicit_confirmation_still_passes(self):
+        """反向守卫：明确确认（文本）时不该被这条门禁拦（`_requires_confirmation` 的既有语义）。"""
+        out, executed = self._run("确认")
+        assert "confirmation_required" not in str(out), "明确确认被误拦"
