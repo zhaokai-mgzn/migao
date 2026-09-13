@@ -10,6 +10,55 @@ def tool():
     return InteractTool()
 
 
+class TestConfirmValueDeterministic:
+    """confirm 卡的 `confirmValue` 必须由**实质内容**决定（issue #3401 根因）。
+
+    实证（run 34756290189 工具健康度）：`order_create!confirmation_required × 4` ——
+    确认门禁要求"用户消息**精确等于**最近一次确认卡的 confirmValue"，而该值由**模型**书写
+    （工具描述还要求它"包含上下文"）→ 模型每次重发确认卡换一种措辞，值就变了 →
+    顾客点的是上一张卡的值 → 门禁判"没确认" → 模型再发卡 → **确认死循环、订单落不了库**
+    （OR-019/OR-023/OR-024 三条用例的失败形态）。
+
+    修法：值只由**字段（顾客要确认的事实）**决定 —— 同样的事实 ⇒ 同样的值（点击必中）；
+    事实变了（数量 3→4、总价变）⇒ 值变（顾客必须重新确认，语义不被削弱）。
+    """
+
+    def _value(self, tool, fields, model_value, ctx):
+        import asyncio
+        res = asyncio.run(tool.execute(
+            context=ctx, component="confirm", title="请确认订单信息",
+            fields=fields, confirmValue=model_value))
+        assert res.success, res.error
+        return res.data["confirmValue"]
+
+    def _fields(self, qty=3, total="528"):
+        return [{"label": "商品", "value": f"遮光窗帘 米白 {qty}米"},
+                {"label": "总价", "value": f"¥{total}"}]
+
+    def test_same_facts_same_value_regardless_of_wording(self, tool, sample_tool_context):
+        a = self._value(tool, self._fields(), "确认下单：遮光窗帘 米白 3米 合计528元", sample_tool_context)
+        b = self._value(tool, self._fields(), "请核对后确认创建订单（遮光窗帘 3 米）", sample_tool_context)
+        assert a == b, (
+            f"同一张卡的两种措辞必须得到同一个 confirmValue（否则顾客点击不中）: {a!r} vs {b!r}")
+
+    def test_changed_facts_change_value(self, tool, sample_tool_context):
+        a = self._value(tool, self._fields(qty=3, total="528"), "确认下单", sample_tool_context)
+        b = self._value(tool, self._fields(qty=4, total="704"), "确认下单", sample_tool_context)
+        assert a != b, "数量/金额变了必须换值（顾客要重新确认新明细）"
+
+    def test_field_order_does_not_matter(self, tool, sample_tool_context):
+        """同一批事实换个**字段顺序**（模型自由发挥）也必须同值。"""
+        a = self._value(tool, self._fields(), "确认", sample_tool_context)
+        rev = list(reversed(self._fields()))
+        b = self._value(tool, rev, "确认", sample_tool_context)
+        assert a == b, f"字段顺序变了值就变 → 点击仍可能不中: {a!r} vs {b!r}"
+
+    def test_value_still_reads_as_confirmation(self, tool, sample_tool_context):
+        """值仍需以确认词开头（门禁的 `_is_explicit_confirmation` 短词判定依赖它）。"""
+        v = self._value(tool, self._fields(), "确认下单", sample_tool_context)
+        assert v.startswith("确认"), v
+
+
 class TestInteractChoice:
     async def test_choice_component(self, tool, sample_tool_context):
         result = await tool.execute(
