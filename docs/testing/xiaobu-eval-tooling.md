@@ -378,3 +378,40 @@ case 级 `auto_fill` 轮声明的值会被所有 `auto_respond` 轮复用，避�
 6. 跑覆盖体检 `--check` 确认无孤儿用例；
 7. 用本地 DEBUG 栈实测该用例 ≥1 次（真实 LLM），确认断言与行为一致（先例：行为合理但
    断言过严的，按 §14.2 校准而非删用例）。
+
+## 8. 跑评测的三档与提速旋钮（issue #3417）
+
+CI（`xiaobu-acceptance.yml`，dispatch-only）与 `local_runner` 都支持同样的三个旋钮：
+
+```bash
+# 完整档（下结论用）：语义不变，只是并发调高
+gh workflow run xiaobu-acceptance.yml -R <repo> --ref <branch> \
+  -f tier=normal -f shards=1 -f concurrency=6
+
+# 收窄档（迭代复验 1~3 条）：只跑指定用例，与 tier/shard 正交
+gh workflow run xiaobu-acceptance.yml -R <repo> --ref <branch> \
+  -f tier=normal -f concurrency=6 -f case_ids=OR-019,OR-024
+
+# 快速档（迭代）：不重试 + 跳过取证步骤（real E2E / 路由 dump / DB 审计）
+gh workflow run xiaobu-acceptance.yml -R <repo> --ref <branch> \
+  -f tier=normal -f concurrency=6 -f fast=true -f case_ids=OR-019,OR-024
+```
+
+本地等价（runner 侧）：
+
+```bash
+EVAL_CONCURRENCY=6 python tests/agent_eval/local_runner.py normal --cases .github/cases \
+  --case-ids OR-019,OR-024 --max-retries 0
+```
+
+| 旋钮 | 什么时候用 | 不许用的时候 |
+|---|---|---|
+| `concurrency` | 任何时候（含下结论） | —— 语义不变，只影响墙钟 |
+| `case_ids` | 只改了几条用例 / 复验已知缺陷 | 下结论（会漏掉回归面） |
+| `fast` | "改一行看一眼" | **下结论前必须跑完整档** |
+
+**红线**：`fast` 只跳过**取证**（E2E / 路由 dump / DB 审计），绝不跳过**判定**。
+验收剧本（acceptance-protocol §2/§4）是独立判定源，永远保留 `always()`。
+`--case-ids` 解析不到的 ID 会**报错退出**，不会静默少跑（少跑 ≠ 通过）。
+
+性能账与实测数据见 [`eval-pipeline-performance.md`](eval-pipeline-performance.md) §2.6。
