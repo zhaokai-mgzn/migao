@@ -5310,3 +5310,140 @@ class TestConfirmationGateNoCardRepro:
         """反向守卫：明确确认（文本）时不该被这条门禁拦（`_requires_confirmation` 的既有语义）。"""
         out, executed = self._run("确认")
         assert "confirmation_required" not in str(out), "明确确认被误拦"
+
+
+class TestOneInteractiveCardPerTurn:
+    """C 端每轮**只下发一张**交互卡（issue #3445 的第二个重复卡形态）。
+
+    实证（run 34785793796，OR-023 首跑 R1）：`tools=…,interact,interact`
+    → `cards=choice,choice(⚠️重复)` —— 一张问「遮光窗帘有两个颜色可选，您要哪一款呀？」、
+    一张「颜色选好啦～」。为什么这是缺陷（不只是"看着怪"）：会话侧保存的是**最后一张**
+    待答卡（`chat.py` 的 `last_interactive_payload` 是单槽），顾客点了第一张，
+    回来的答案与"当前待答卡"对不上 → 点卡链路错位。
+    卡片协议本身就是"一次一张"（`interact` 工具描述：使用后暂停等待用户操作）。
+    """
+
+    _CARD_A = {"component": "choice", "title": "遮光窗帘有两个颜色可选，您要哪一款呀？",
+               "options": [{"label": "米白", "value": "米白"}, {"label": "雾灰", "value": "雾灰"}]}
+    _CARD_B = {"component": "choice", "title": "颜色选好啦～",
+               "options": [{"label": "米白", "value": "米白"}]}
+
+    def _run(self, replies, *, role: str = "customer"):
+        """replies: 每次 LLM 回复的 tool_calls（`[[("interact", args), ...], ...]`）。"""
+        import asyncio
+
+        executed = []
+
+        async def fake_execute(tool, args, ctx, state):
+            # ⚠️ 必须**让出事件循环**（真实工具会 await I/O）：并发 gather 下，
+            # 不让出的话第一个协程会先跑完，把"跨迭代标志"的竞态掩盖掉 ——
+            # 实测（变体 B）去掉位置名额后用例照样全绿，就是因为这个假工具太快。
+            await asyncio.sleep(0)
+            executed.append(tool.name)
+            data = {"component": args.get("component"), "title": args.get("title"),
+                    "options": args.get("options") or [], "fields": args.get("fields") or []}
+            payload = {"success": True, "data": data}
+            return json.dumps(payload, ensure_ascii=False), payload
+
+        class _Store:
+            async def load(self, sid):
+                return {}
+
+            async def commit(self, sid, full):
+                return True
+
+            async def clear(self, sid):
+                return True
+
+        msgs = []
+        for i, calls in enumerate(replies):
+            m = MagicMock(spec=AIMessage)
+            m.content = ""
+            m.tool_calls = [{"name": n, "args": dict(a), "id": f"t{i}_{j}"}
+                            for j, (n, a) in enumerate(calls)]
+            msgs.append(m)
+        final = MagicMock(spec=AIMessage)
+        final.content = "好的"
+        final.tool_calls = []
+        msgs.append(final)
+
+        from app.tools.interact import InteractTool
+
+        with patch("app.memory.session_memory.SessionMemory") as mem_cls, \
+             patch("app.memory.session_state_store.SessionStateStore",
+                   side_effect=lambda *a, **k: _Store()), \
+             patch("app.graph.skills.base_skill.get_breaker") as get_breaker, \
+             patch("app.graph.skills.base_skill.get_skill_llm") as get_llm, \
+             patch("app.graph.skills.base_skill.create_skill_registry") as create_reg, \
+             patch("app.graph.skills.base_skill.set_tool_context"), \
+             patch("app.graph.skills.base_skill._execute_tool_safe", fake_execute):
+            registry = MagicMock()
+            registry.get_langchain_tools.return_value = []
+            registry.get_tool.side_effect = lambda n: InteractTool() if n == "interact" else None
+            create_reg.return_value = registry
+            breaker = MagicMock()
+
+            async def _pt(fn):
+                return await fn()
+
+            breaker.call = _pt
+            get_breaker.return_value = breaker
+            llm = MagicMock()
+            llm.bind_tools.return_value = llm
+            llm.ainvoke = AsyncMock(side_effect=msgs)
+            get_llm.return_value = llm
+            mem_cls.return_value.set_pending_skill = AsyncMock(return_value=True)
+            out = asyncio.run(execute_skill(
+                state=_make_state(messages=[HumanMessage(content="我想买遮光窗帘")], role=role),
+                skill_name="customer_order",
+                tool_names=["interact"], system_prompt="你是小布",
+            ))
+        return out, executed
+
+    def test_two_cards_in_one_reply_only_first_is_sent(self):
+        """同一条回复里两次 `interact` → 只下发第一张（OR-023 实证形态）。"""
+        out, executed = self._run([[("interact", self._CARD_A), ("interact", self._CARD_B)]])
+        assert executed.count("interact") == 1, (
+            f"同一轮下发了两张卡（OR-023 实证形态）：executed={executed}")
+        blob = str(out)
+        assert "card_already_emitted_this_turn" in blob, (
+            "被拦的第二次 interact 必须回一条可执行的错误码（而不是静默丢弃）")
+
+    def test_two_cards_in_successive_iterations_only_first_is_sent(self):
+        """分两次迭代发卡同样只算一张（模型"想再补一张"也不行）。"""
+        out, executed = self._run([[("interact", self._CARD_A)], [("interact", self._CARD_B)]])
+        assert executed.count("interact") == 1, (
+            f"跨迭代重复发卡未被拦：executed={executed}")
+        assert "card_already_emitted_this_turn" in str(out)
+
+    def test_single_card_unaffected(self):
+        """回归守卫：只发一张卡的正常流程不受影响。"""
+        out, executed = self._run([[("interact", self._CARD_A)]])
+        assert executed == ["interact"], executed
+        assert "card_already_emitted_this_turn" not in str(out)
+
+    def test_different_components_still_allowed(self):
+        """**不同组件**不受限：OR-021 R3 实测 `choice(加工项)+form(收货信息)` 是合法形态
+        （一条消息问两件事，两个组件各有答案面、前端逐张渲染）。
+
+        为什么单列这条（变体验证）：把守卫写成"整轮只准一张"时，这个正常流程会被一起拦掉 ——
+        而它是 C 端下单主路径上的高频形态。
+        """
+        form = {"component": "form", "title": "请确认收货信息",
+                "formFields": [{"key": "name", "label": "收货人"}]}
+        out, executed = self._run([[("interact", self._CARD_A), ("interact", form)]])
+        assert executed.count("interact") == 2, (
+            f"不同组件被误拦（OR-021 合法形态）：executed={executed}")
+        assert "card_already_emitted_this_turn" not in str(out)
+
+    def test_b_side_untouched(self):
+        """分端纪律：B 端（米宝）不受这条 C 端守卫影响。"""
+        out, executed = self._run(
+            [[("interact", self._CARD_A), ("interact", self._CARD_B)]], role="admin")
+        assert executed.count("interact") == 2, (
+            f"B 端被 C 端守卫误伤：executed={executed}")
+
+    def test_non_interact_tools_unaffected(self):
+        """只拦 interact：同轮的其它工具照常执行。"""
+        out, executed = self._run([[("interact", self._CARD_A)]])
+        assert "card_already_emitted_this_turn" not in str(out)

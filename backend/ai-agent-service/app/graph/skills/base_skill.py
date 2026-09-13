@@ -2749,6 +2749,14 @@ async def execute_skill(
                     f"| session={session_id} msg={last_user_msg[:24]!r}")
             # 本轮**模型自己执行过**的工具名（供 8.4 收口判重：防双单）
             _executed_tools: set = set()
+            # 本次 execute_skill 调用（= 顾客的一个回合）**已下发过的卡片组件**：
+            # 同一组件每轮只允许一张（issue #3445）。**整轮**生效，跨 LLM 迭代也要认
+            # （模型可能在后续迭代"再补一张"）—— 故在循环**外**初始化（放循环里会被每轮重置，
+            # 跨迭代的重复卡就漏了，实测如此）。
+            # 只按**组件**判重、不按"整轮一张"：OR-021 R3 实测 `choice(加工项)+form(收货信息)`
+            # 是**合法**的一条消息两个问题（两个组件各有答案面，前端逐张渲染）——
+            # 一刀切"只准一张"会把这个正常流程也拦掉。
+            _turn_card_components: set = set()
             for iteration in range(max_iterations):
                 logger.info(f"[{skill_name}] Iteration {iteration+1}/{max_iterations} | session={session_id}")
 
@@ -2819,14 +2827,48 @@ async def execute_skill(
                 # 每轮重置：去重范围严格限定在**同一次 LLM 回复**内，绝不跨轮/跨时间窗。
                 _turn_write_slots: dict = {}
 
-                async def _run_one_tool(tool_call: dict):
-                    """执行单个 tool，返回 (tool_call, result_str, result_dict)。"""
+                async def _run_one_tool(tool_call: dict, allow_card: bool = True):
+                    """执行单个 tool，返回 (tool_call, result_str, result_dict)。
+
+                    `allow_card`：该组件在本轮的**第一张**卡才为 True（调用侧按回复里
+                    `interact` 出现的位置 + `_turn_card_components` 预计算 ——
+                    并发 gather 下"先检查后置位"的标志有竞态，见调用侧注释）。
+                    """
                     # 需要 nonlocal：门禁在下面给 `_no_card_blocked_args` 赋值，而它是
                     # `execute_skill` 的局部变量 —— 不加 `nonlocal` 会创建一个**新局部**，
                     # 收尾的"补发确认卡"永远读不到（首版即此错，被新增用例当场抓住）。
                     nonlocal _no_card_blocked_args
                     tool_name = tool_call["name"]
                     args = tool_call.get("args", {})
+                    # ── C 端同一组件每轮只允许**一张**卡（issue #3445，OR-023 实证）──
+                    # 实测 run 34785793796：OR-023 首跑 R1 `tools=…,interact,interact`
+                    # → `cards=choice,choice` —— 一张问「有两个颜色可选，您要哪一款呀？」、
+                    # 一张「颜色选好啦～」。会话侧只保存**最后一张**待答卡
+                    # （`chat.py` 的 `last_interactive_payload` 单槽）⇒ 顾客点第一张，
+                    # 回传的值与"当前待答卡"对不上，点卡链路错位。
+                    # 同一组件的一次消息两张卡没有第二种解释（同一答案面），
+                    # 故本轮同组件第二张起直接拦下并回一条可执行的提示（不静默丢弃）。
+                    # **不同组件不受限**（OR-021 R3 的 choice+form 是合法形态）。
+                    # **只对 C 端生效**（分端纪律）：B 端表单/卡片流程尚未按此校准。
+                    # 判重**只在调用侧**做一次（`allow_card`）：并发 gather 下"先检查后置位"
+                    # 必然有竞态（真实工具会 await I/O），故这里只消费已经算好的结论。
+                    if tool_name == "interact" and _is_customer_role(state) and not allow_card:
+                        logger.warning(
+                            f"[{skill_name}] 本轮已下发过同组件卡片 → 拦下重复的 interact 调用"
+                            f"| session={session_id}"
+                            f" component={(args or {}).get('component')}"
+                            f" title={str((args or {}).get('title') or '')[:30]}")
+                        return (tool_call,
+                                json.dumps({
+                                    "success": False,
+                                    "error": "card_already_emitted_this_turn",
+                                    "message": ("本轮已经给顾客下发过同类型的卡片了 —— "
+                                                "同一种卡片一轮只该有一张，重复发卡会让顾客点错、"
+                                                "答案与当前卡对不上。请**等顾客操作**后再继续；"
+                                                "若第一张卡的内容有误，用文本更正即可，不要重发卡。"),
+                                }, ensure_ascii=False),
+                                {"success": False,
+                                 "error": "card_already_emitted_this_turn"})
                     # 模式 C 代码兜底：加工项 choice 卡漏传 multiSelect → 自动补 true（PR-014/015）
                     args = _ensure_processing_items_multiselect(tool_name, args)
                     # 代码兜底：顾客上一条就是验证码，但模型调 order_create 时没带上
@@ -3274,6 +3316,12 @@ async def execute_skill(
                     # 必须在这里（而不是外层循环）计数 —— 只有这一层拿得到 `args`（外层只有
                     # result_dict，没有调用参数；首版写在外层，运行时 NameError 被吞成
                     # "计数失败（非致命）"，计数永远为 0 = 拦不住的假守卫）。
+                    # 登记本轮已下发的**组件**（C 端同组件一张，issue #3445）：**成功才登记** ——
+                    # 被校验拦下的 interact（如 fields 为空）不该消耗"这个组件的名额"，
+                    # 否则模型第二次（这次是对的）调用会被误拦、顾客一张卡都收不到。
+                    # 与 session_id 无关（会话缺失也不能让该守卫失效）。
+                    if tool_name == "interact" and result_dict.get("success"):
+                        _turn_card_components.add(str((args or {}).get("component") or ""))
                     if tool_name == "interact" and result_dict.get("success") and session_id:
                         _fp_emit = card_fingerprint(args)
                         if _fp_emit:
@@ -3306,7 +3354,26 @@ async def execute_skill(
                             logger.debug(f"[{skill_name}] ground flag persist failed (non-fatal): {_e}")
                     return tool_call, result_str, result_dict
 
-                tool_results = await asyncio.gather(*[_run_one_tool(tc) for tc in response.tool_calls])
+                # 同一条回复里每个**组件**的第一张卡才有名额：按位置预计算（并发 gather 下
+                # 不能用"先检查后置位"的标志 —— 真实工具会 await I/O，两个协程会同时通过
+                # 检查，实测变体即漏，issue #3445）。
+                # 非 C 端不预计算（B 端不受这条守卫约束）。
+                _card_allow: list[bool] = []
+                if _is_customer_role(state):
+                    _seen_in_reply: set = set()
+                    for _ctc in (response.tool_calls or []):
+                        if str(_ctc.get("name") or "") == "interact":
+                            _cc = str((_ctc.get("args") or {}).get("component") or "")
+                            _card_allow.append(
+                                _cc not in _seen_in_reply and _cc not in _turn_card_components)
+                            _seen_in_reply.add(_cc)
+                        else:
+                            _card_allow.append(True)
+                else:
+                    _card_allow = [True] * len(response.tool_calls or [])
+                tool_results = await asyncio.gather(*[
+                    _run_one_tool(tc, allow_card=_card_allow[_i])
+                    for _i, tc in enumerate(response.tool_calls)])
 
                 # ── 模式 C 代码兜底：加工项漏问 → confirm 卡改写为加工项 choice 卡（OR-017）──
                 # 仅作用于 C 端下单/售后写流程：这些 Skill 的商品详情含加工项数据、
