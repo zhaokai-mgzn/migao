@@ -16,6 +16,25 @@ on:
           - '2'
           - '3'
           - '4'
+      case_ids:
+        description: '【迭代提速】只跑这些用例（逗号分隔，如 OR-019,OR-024）——留空=按 tier 全量。改动只需复验几条时用它，30 条≈11 分钟 → 1~2 分钟'
+        required: false
+        default: ''
+      concurrency:
+        description: '【提速】用例级并发（同 job 内，栈只起一次）。实测 3 时评测档 663s；调大即近似线性降墙钟（6→约 6 分钟）。默认 6'
+        required: false
+        default: '6'
+        type: choice
+        options:
+          - '3'
+          - '6'
+          - '8'
+          - '12'
+      fast:
+        description: '【提速】快速档：不重试失败用例 + 跳过取证步骤（E2E/DB 审计/日志 dump）。⚠️ 只用于迭代复验，**下结论前必须跑完整档**'
+        required: false
+        default: false
+        type: boolean
       tier:
         description: '评测档位：smoke（门禁级，快）| normal（C 端全量，每日回归）| adversarial（安全/对抗，每周）'
         required: false
@@ -242,7 +261,10 @@ jobs:
           # 实测（run 34692977836）3 片各自建栈把栈启动从 3.4min 抬到 12min（并发构建/
           # 拉镜像被打爆），分片整体反而更慢（19.8min vs 15.6min）；而评测本身随并行线性
           # 变快（单条吞吐不变）→ 结论：并行用例，别并行建栈。
-          EVAL_CONCURRENCY: "3"
+          EVAL_CONCURRENCY: ${{ github.event.inputs.concurrency || '6' }}
+          # 计时与提示用（issue #3417）：让"评测档到底多久"在日志里可见，便于持续提速
+          FAST: ${{ github.event.inputs.fast || 'false' }}
+          CASE_IDS: ${{ github.event.inputs.case_ids }}
           # 本片运行汇总（机器可读）：分片后审计必须知道"本片是否真的跑了写用例"，
           # 否则没有写用例的片会因 orders<=2 被误报假绿（分片基建，issue #3361）
           AGENT_EVAL_SUMMARY_JSON: /tmp/eval-summary-shard${{ matrix.shard }}.json
@@ -265,7 +287,9 @@ jobs:
           # （整跑 8.2min，其中评测 3.9min）→ 恢复 3，兼顾"诚实"与"抗噪"。
           python tests/agent_eval/local_runner.py "$TIER" --cases .github/cases \
             --shard "${{ matrix.shard }}/${{ matrix.total }}" \
-            --max-retries 3
+            --max-retries ${{ github.event.inputs.fast == 'true' && '0' || '3' }} \
+            ${{ github.event.inputs.case_ids != '' && format('--case-ids "{0}"', github.event.inputs.case_ids) || '' }}
+          echo "⏱ 评测档耗时 ${SECONDS}s（并发=$EVAL_CONCURRENCY，用例=${CASE_IDS:-全部}，重试=$([ "$FAST" = "true" ] && echo 关 || echo 3)）"
 
       - name: Run xiaobu 验收剧本（acceptance-protocol §2/§4：真实动作 + 证据落盘）
         # 为什么单列一步（issue #3367）：协议要求"验收剧本 ≠ 评测用例" ——
@@ -307,7 +331,8 @@ jobs:
         # ⚠️ `always()` 必需（issue #3364）：实测评测步骤失败时本步被 skip →
         # 而 E2E 自己的红灯比评测更早存在（main run 34684474262 评测 17/17、E2E 已 failure）
         # —— 只要评测红，E2E 红就永远看不见，两个缺陷互相掩盖。
-        if: always() && matrix.shard == 0
+        # fast 档跳过（issue #3417 提速）：取证步骤对"改一行看一眼"无价值，且不省它就没法快
+        if: always() && matrix.shard == 0 && github.event.inputs.fast != 'true' 
         working-directory: backend/ai-agent-service
         env:
           CI: 'true'
@@ -328,7 +353,7 @@ jobs:
         # 意图分类与路由决策只写在 ai-agent 日志里（intent_router / route_by_intent），
         # 故此处把路由行 dump 到 CI 日志：与 round_trace 按轮次对齐即可完成五层归因。
         # `if: always()`：成功也要留痕（基线与改进都要能对比），不只失败时才有。
-        if: always()
+        if: always() && github.event.inputs.fast != 'true'
         env:
           DEV_SERVICE_TOKEN: diagnostics-only-placeholder
         run: |
@@ -385,7 +410,7 @@ jobs:
         # 这里把评测期间 agent 在 DB 里**实际创建**的会话/订单/售后工单 dump 出来，
         # 与报告的 tool_calls 对得上才算闭环 —— 证据链从「工具调用」延伸到「落库事实」。
         # `if: always()`：失败轮次更要看（失败 ≠ 没创建；成功 ≠ 真创建）。
-        if: always()
+        if: always() && github.event.inputs.fast != 'true'
         env:
           DEV_SERVICE_TOKEN: diagnostics-only-placeholder
         run: |

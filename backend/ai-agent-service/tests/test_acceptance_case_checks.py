@@ -1233,6 +1233,41 @@ class TestForbiddenCardTextLoaderPath:
             "渲染器没有输出 forbidden_card_text（生成物会丢断言）")
 
 
+class TestCaseIdsFilter:
+    """`--case-ids` 收窄（迭代提速，issue #3417）：语义必须 fail-closed 且可单测。
+
+    动机：全档 30 条 ≈ 11 分钟真实 LLM；"改一行看一眼"只需复验 1~3 条。
+    但**少跑必须显式**：拼错 ID 时若静默变成"跑了 0 条/少几条"，看起来会像全量通过。
+    """
+
+    def _cases(self):
+        return lr.load_cases_from_yaml(str(lr.Path(lr.__file__).resolve().parents[2]
+                                          / ".github" / "cases"))
+
+    def test_empty_filter_keeps_all(self):
+        cs = self._cases()
+        picked, missing = lr.filter_cases_by_ids(cs, "")
+        assert len(picked) == len(cs) and missing == []
+
+    def test_pick_by_id_preserves_requested_subset(self):
+        picked, missing = lr.filter_cases_by_ids(self._cases(), "OR-019, OR-024")
+        assert missing == []
+        assert sorted(c.id for c in picked) == ["OR-019", "OR-024"]
+
+    def test_unknown_id_is_reported(self):
+        picked, missing = lr.filter_cases_by_ids(self._cases(), "OR-019,NOPE-999")
+        assert [c.id for c in picked] == ["OR-019"] and missing == ["NOPE-999"]
+
+    def test_legacy_id_supported(self):
+        """与 `--case-id` 同口径：legacy_id 也能选中（老脚本/文档里的 ID 仍可用）。"""
+        cs = self._cases()
+        legacy = next((c for c in cs if getattr(c, "legacy_id", "")), None)
+        if legacy is None:
+            return
+        picked, missing = lr.filter_cases_by_ids(cs, legacy.legacy_id)
+        assert missing == [] and [c.id for c in picked] == [legacy.id]
+
+
 class TestRoundTraceWriteArgs:
     """写工具入参必须进轨迹（issue #3394）：数量/金额错的唯一归因证据。
 
