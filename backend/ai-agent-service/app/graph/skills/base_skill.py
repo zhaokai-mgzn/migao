@@ -1199,6 +1199,72 @@ async def _order_flow_started(session_id: str | None, state: dict | None = None)
         return False
 
 
+# ── 回复**文本**里的能力自我否定（issue #3443，C-A1 transcript 实证）──────────
+# 实证（run 34773014637 的 C-A1）：
+#   R6「小布这边是**咨询客服**，没办法直接帮您提交订单哦，不过下单很简单，我教您~」
+#   R7「我是咨询客服，**没有权限帮您直接提交订单**哦，下单还是需要您在小程序里操作完成」
+#   R9「小布这边确实**没办法直接帮您提交订单**，这是为了保护您的订单和支付安全哦」
+#   → 还下发了一张「转人工客服，协助我下单」的卡，顾客亲手选了人工，全程未调 order_create。
+# 已有的两道守卫都挡不住它：#3421 管的是**工具参数**（handoff reason），
+# `_write_input_recovery_block` 之类管的是**工具调用**；而本条是**最终回复文本**。
+#
+# 判据与评测侧 `_false_inability_hit`（tests/agent_eval/local_runner.py）**同源**：
+# 「agent 主语 + 否定动词」与「下单动作词」必须在**同一句**且距离很近 ——
+# 否则「我是小布，您的专属咨询客服」这类正常开场白会被误判。
+_AGENT_INABILITY_RE = re.compile(
+    r"(?:我|我们|小布|智能客服|客服|这边)[^。！？\n]{0,8}(?:没法|无法|不能|没办法|做不到|没有权限|无权限|没权限)")
+_TEXT_ORDER_ACTION_WORDS = ("提交订单", "下单", "创建订单", "建单", "代为提交", "代为下单",
+                            "帮您提交", "帮您下单")
+_INABILITY_WINDOW = 24
+
+
+def capability_denial_text_hit(text: str) -> str:
+    """回复文本里是否存在"AI 自己做不到 × 下单动作"的能力误宣；返回命中片段或空串。"""
+    if not text:
+        return ""
+    for seg in re.split(r"[。！？\n]", str(text)):
+        neg = _AGENT_INABILITY_RE.search(seg)
+        if not neg:
+            continue
+        for verb in _TEXT_ORDER_ACTION_WORDS:
+            pos = seg.find(verb)
+            if pos < 0:
+                continue
+            # 动词必须紧邻否定短语（24 字窗口），避免跨半句误判
+            if abs(pos - neg.start()) <= _INABILITY_WINDOW or abs(pos - neg.end()) <= _INABILITY_WINDOW:
+                return seg.strip()[:60]
+    return ""
+
+
+_TEXT_DENIAL_CORRECTIVE = (
+    "你刚才的回复以「自己做不了」为由把顾客推给小程序/人工，但事实相反："
+    "`order_create` 就是本流程的写工具，**你可以真实下单**。"
+    "请**重新给出回复**：不要再出现「没办法直接帮您提交订单 / 没有权限帮您提交 / "
+    "去小程序操作 / 我是咨询客服」这类话术；缺信息就先 `customer_address_query` 查历史地址、"
+    "再发 `interact(component=form)` 或用自然语言问；参数齐了走 confirm 卡 → `validate_input` → "
+    "`order_create`（含 sms_code）。只有顾客**显式**要求人工、情绪激动或诉求超出能力时才允许引导人工。"
+)
+
+
+def _has_order_write_tool(skill_name: str, registry=None) -> bool:
+    """本 skill 当前是否有可用的下单写工具（决定"能力误宣"是否成立）。
+
+    为什么按 skill 判定而不是按 persona：`order_create` 是**小布 customer_order** 的写工具；
+    其它 skill（知识/商品/售后）说"我下不了单"可能属实，拦下来反而堵死正确行为。
+
+    ⚠️ `registry` 必须**显式传入**：`skill_registry` 是 `execute_skill` 的**局部变量**，
+    模块级函数看不见它 —— 首版写成全局引用会被下面的 `except` 静默吞掉，
+    守卫变成永远不触发的 no-op（本仓库反复出现的"假守卫"形态）。故这里不做静默兜底：
+    registry 为 None 时显式返回 False，并由调用方传真实 registry。
+    """
+    if skill_name != "customer_order" or registry is None:
+        return False
+    try:
+        return registry.get_tool("order_create") is not None
+    except Exception:
+        return False
+
+
 def _capability_denial_reason(args: dict) -> str:
     """转人工的 reason/summary 是否是「AI 自己做不到」的能力误宣；返回命中片段或空串。
 
@@ -2468,6 +2534,7 @@ async def execute_skill(
     # ── 6. Vision 分支 ──
     new_messages: List[Any] = []
     final_content = ""
+    _denial_corrected = False      # 文本级能力误宣只纠正一次（issue #3443）
     vision_analysis = ""
 
     if is_multimodal:
@@ -2656,6 +2723,16 @@ async def execute_skill(
                 # ── 无 tool_calls → LLM 已完成回复 ──
                 if not response.tool_calls:
                     new_text = _extract_content(response)
+                    # 能力误宣（issue #3443）：文本里"我做不了下单"→ 带纠正提示**重答一次**
+                    # （只一次，防死循环）。重答走完整循环，故模型可以继续调工具把单下掉。
+                    _denial_hit = capability_denial_text_hit(new_text)
+                    if _denial_hit and not _denial_corrected and _has_order_write_tool(skill_name, skill_registry):
+                        _denial_corrected = True
+                        logger.warning(
+                            f"[{skill_name}] 拦截文本级能力误宣并重答 | session={session_id} "
+                            f"hit={_denial_hit!r}")
+                        new_messages.append(SystemMessage(content=_TEXT_DENIAL_CORRECTIVE))
+                        continue
                     if new_text:
                         final_content = new_text
                     elif not final_content:
