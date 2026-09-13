@@ -971,6 +971,29 @@ def _pending_card_before_last_user(messages) -> bool:
     return False
 
 
+def _confirm_card_seen(messages) -> bool:
+    """会话历史里是否**出现过确认卡**（用于把 `confirmation_required` 细分成两种形态）。
+
+    为什么需要（issue #3445）：同样是写单被确认门禁挡回，两种成因的修法完全不同 ——
+      · **从没发过确认卡** → 模型跳过确认直接写（该做的是把确认卡补上）；
+      · **发过卡但这次回复不是卡值**（顾客回了文本 / harness 没点卡）→ 该修的是点卡链路。
+    而 CI 指纹原本只有一句 `confirmation_required`，两种形态长得一模一样，只能人肉翻容器日志
+    （fast 档还看不到）。故把细分写进 error 码，让报告自己说话。
+    """
+    for msg in messages or []:
+        if not isinstance(msg, ToolMessage) or getattr(msg, "name", None) != "interact":
+            continue
+        try:
+            payload = json.loads(msg.content or "{}")
+        except (ValueError, TypeError):
+            continue
+        if not isinstance(payload, dict) or not payload.get("success"):
+            continue
+        if (payload.get("data") or {}).get("component") == "confirm":
+            return True
+    return False
+
+
 def _has_inflight_interactive_card(messages) -> bool:
     """会话里是否已下发过交互卡（= 有**在办**的多轮流程）。
 
@@ -3100,10 +3123,17 @@ async def execute_skill(
                                 f"确认。本技能没有确认卡片能力：请用文本**完整复述将要执行的操作与影响**"
                                 f"（对象、字段、后果），并请用户回复确认；用户回复确认后再调用本工具。"
                             )
+                        # 归因细分（issue #3445）：保留 `confirmation_required` 前缀
+                        # （既有断言按子串匹配），后缀说明**是哪一种**：
+                        #   · _no_card          → 本会话从没发过确认卡（模型跳过确认直接写）
+                        #   · _card_not_clicked → 发过卡，但这次回复不是卡值（顾客回文本/未点卡）
+                        _err3 = ("confirmation_required_card_not_clicked"
+                                 if _confirm_card_seen(state.get("messages", []))
+                                 else "confirmation_required_no_card")
                         return tool_call, json.dumps(
-                            {"success": False, "error": "confirmation_required", "message": msg},
+                            {"success": False, "error": _err3, "message": msg},
                             ensure_ascii=False,
-                        ), {"success": False, "error": "confirmation_required"}
+                        ), {"success": False, "error": _err3}
                     # ── 同轮重复写调用合并（issue #3361）──
                     # 模型有时在**同一次回复**里对同一个写工具发多次**完全相同**的调用
                     # （CI 实证 CH-010：一轮里 order_create ×3 → 2 次 tool_execution_failed、
