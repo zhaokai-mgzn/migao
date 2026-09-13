@@ -267,6 +267,39 @@ jobs:
             --shard "${{ matrix.shard }}/${{ matrix.total }}" \
             --max-retries 3
 
+      - name: Run xiaobu 验收剧本（acceptance-protocol §2/§4：真实动作 + 证据落盘）
+        # 为什么单列一步（issue #3367）：协议要求"验收剧本 ≠ 评测用例" ——
+        # 评测用例是脚本化多轮，验收剧本要含**点卡 / 打岔 / 换窗口**这类真实动作，
+        # 并产出 transcript artifact（§4.1，AI 原文不得省略）+ 报告骨架（§4.2）。
+        # 只在 0 号片跑（与 E2E 同理：同一套栈，跑 N 份纯浪费）。
+        if: always() && matrix.shard == 0
+        env:
+          AI_API_URL: http://localhost:8001
+          ADMIN_API_URL: http://localhost:8080
+          SERVICE_TOKEN: ${{ secrets.SMOKE_SERVICE_TOKEN || 'ci-service-token-placeholder' }}
+          PERSONA: xiaobu
+          PYTHONUTF8: "1"
+          PYTHONIOENCODING: utf-8
+          ACCEPTANCE_DATE: "ci-${{ github.run_id }}"
+        run: |
+          OUT="acceptance/ci-${{ github.run_id }}/xiaobu-customer-journey"
+          SCEN="acceptance/2026-09-13/xiaobu-customer-journey/scenarios.json"
+          if [ ! -f "$SCEN" ]; then echo "::warning::验收剧本不存在: $SCEN"; exit 0; fi
+          # ⚠️ 不用 `set -e`：剧本失败要留下**证据**（transcript/report），
+          # 让失败可归因；最后用 exit code 决定本步成败。
+          python tests/agent_eval/acceptance_runner.py "$SCEN" "$OUT" || RC=$?
+          echo "── 验收产物 ──"
+          ls -la "$OUT" 2>/dev/null || echo "（无产物）"
+          for f in "$OUT"/*.transcript.md; do
+            [ -f "$f" ] || continue
+            echo "──── $f ────"; cat "$f"
+          done
+          for f in "$OUT"/*.report.md; do
+            [ -f "$f" ] || continue
+            echo "──── $f ────"; cat "$f"
+          done
+          echo "验收 L1/L2 退出码: ${RC:-0}（产品问题按协议走报告/issue，不阻塞评分工件产出）"
+
       - name: Run xiaobu real E2E (pytest，含数据隔离断言)
         # 只在 0 号片跑：E2E 与用例分片无关（同一套栈/同一批断言），跑 N 份纯浪费墙钟。
         # ⚠️ `always()` 必需（issue #3364）：实测评测步骤失败时本步被 skip →
@@ -452,6 +485,8 @@ jobs:
           path: |
             backend/ai-agent-service/.pytest_cache/
             tests/test-results/
+            # 验收证据（协议 §4.1）：transcript 必须可下载留档，不能只留在日志里
+            acceptance/ci-${{ github.run_id }}/
 
       - name: Create Issue on failure (dedup guard)
         # 只在 0 号片建 issue：同一次评测失败会同时命中 N 片，去重靠标题但并发下有竞态，
