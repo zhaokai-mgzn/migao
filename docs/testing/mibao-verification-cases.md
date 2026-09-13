@@ -490,7 +490,7 @@
 真值: category-manage.delete, category-manage.delete-destructive, ai-chat.confirm-required
 溯源: verification 2.12 独有（二次确认行为在测试中未确认，见 category-manage.yml 缺口注释） ｜ tags: delete, destructive, confirm
 
-## 对话边界域（32 case）
+## 对话边界域（33 case）
 
 ### CH-001. 空结果 + suggestion 引导修复 🔴
 ```
@@ -931,6 +931,19 @@
 跳过: 纯前端渲染由 jest 单测（message-bubble）验证，非 LLM 行为，不进入 agent-eval 冒烟
 ```
 溯源: 2026-09-08 新增：C 端交互组件流式门控 + XML 兜底剥离（issue #3038） ｜ tags: interactive, streaming, sanitize, customer-end, freeze
+
+### CH-033. 「算了」在无在办流程时不得冒充取消（假状态变更 + 吞掉新诉求） 🔵
+```
+你: 帮我查一下我的订单
+你: 算了，先看看你们有什么窗帘
+期望: customer_order_query
+期望: product_search
+数据: 无在办流程时，「算了」只是顾客改主意，不得回复『已取消』（假状态变更）
+数据: 同一句里的新诉求（看看有什么窗帘）必须被正常处理，不得整句丢弃
+禁词: 已取消
+```
+真值: ai-chat.confirm-required
+溯源: 2026-09-13 新增（issue #3367）：验收剧本 C-A2 沉淀（假取消 + 吞诉求） ｜ tags: regression, cancel, false_state, xiaobu
 
 ## 跨域（3 case）
 
@@ -3410,14 +3423,14 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：267（活跃 128，跳过 139）
-- tier 分布：smoke 9 / normal 225 / adversarial 33
+- 用例总数：268（活跃 129，跳过 139）
+- tier 分布：smoke 9 / normal 226 / adversarial 33
 - 售后域：8
 - agents：6
 - api：19
 - bmini：5
 - 分类域：3
-- 对话边界域：32
+- 对话边界域：33
 - 跨域：3
 - 客户域：6
 - 数据域：7

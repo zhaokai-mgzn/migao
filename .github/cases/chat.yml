@@ -1213,3 +1213,52 @@ cases:
         - "frontend/mini-app/tests/message-bubble.test.tsx"
       ci: []
       verifies: []
+  - id: CH-033
+    legacy_id: ""
+    title: "「算了」在无在办流程时不得冒充取消（假状态变更 + 吞掉新诉求）"
+    domains:
+      - chat
+      - order
+      - product
+    tier: normal
+    persona: xiaobu
+    tags:
+      - regression
+      - cancel
+      - false_state
+      - xiaobu
+    truths_ref:
+      - ai-chat.confirm-required
+    # ── 验收发现沉淀（issue #3367 / acceptance-protocol §5）──
+    # 验收剧本 C-A2 实测（acceptance/ci-34730957920/.../C-A2.transcript.md）：
+    #   R1 用户「帮我查一下我的订单」→ 正常列单（customer_order_query）
+    #   R2 用户「算了，先看看你们有什么窗帘」
+    #      AI：「好的，**已取消**。有什么其他需要帮您的吗？」且**零工具调用**
+    # 两处危害：
+    #   ① 假状态变更：什么都没在办却告诉顾客"已取消"（顾客可能以为订单/流程被撤了）；
+    #   ② 吞掉真实诉求：「看看有什么窗帘」被整句丢弃（没有 product_search）。
+    # 根因：`_is_cancel_message` 把「算了」当无条件强取消，短路分支不检查"是否有在办流程"。
+    # 修复：只在 pending 流程 / 未完结交互卡存在时才短路（见 base_skill 的 _inflight 判据）。
+    #
+    # 有效性验证（协议 §5-3）：
+    #   · 旧失败会话（上面的 transcript）重放本 case → 必 fail（R2 无 product_search + 出现「已取消」）；
+    #   · 修复后重放 → 必 pass（CI 实跑记录见 PR）。
+    user_inputs:
+      - "帮我查一下我的订单"
+      - "算了，先看看你们有什么窗帘"
+    expectations:
+      - tool: customer_order_query
+      - tool: product_search
+    forbidden_text:
+      - "已取消"
+    data_checks:
+      - "无在办流程时，「算了」只是顾客改主意，不得回复『已取消』（假状态变更）"
+      - "同一句里的新诉求（看看有什么窗帘）必须被正常处理，不得整句丢弃"
+    skip_reason: ""
+    merge_log: "2026-09-13 新增（issue #3367）：验收剧本 C-A2 沉淀（假取消 + 吞诉求）"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_graph_skills.py"
+      ci:
+        - xiaobu-acceptance.yml
+      verifies: []

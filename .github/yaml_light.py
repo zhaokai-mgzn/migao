@@ -43,7 +43,12 @@ def _parse_scalar(s):
         return False
     if s in ('[]', '{}'):
         return [] if s == '[]' else {}
-    if s.startswith('[') and s.endswith(']'):
+    # ⚠️ 保守判据（issue #3367 回归修复）：真值文件用 `- [misc.x] 说明… → 返回 []`，
+    # 这种行**以 [ 开头、以 ] 结尾**，但内部还含 `[`/`]` —— 它不是 flow 序列，是散文。
+    # 首版只管首尾括号，把这类真值行吞成序列 → 真值 ID 丢失 → Case Contract 门禁在 main 上
+    # fail-closed 报红。故：**内部再出现括号就不当序列解析**。
+    _inner = s[1:-1]
+    if s.startswith('[') and s.endswith(']') and not any(c in _inner for c in '[]'):
         # flow 序列（issue #3367）：`[unit_price, subtotal, total]` 此前被原样当字符串，
         # 直接坑到金额断言 —— `checks` 收字符串后被按字符迭代 → 检查项全部静默跳过。
         # 只解析**标量**元素（用例里的形态就这些）；解析不出来时保留原字符串（向后兼容，
@@ -69,7 +74,8 @@ def _parse_scalar(s):
             buf += ch
         parts.append(buf)
         return [_parse_scalar(p) for p in parts if p.strip() != '']
-    if s.startswith('{') and s.endswith('}'):
+    _inner_map = s[1:-1]
+    if s.startswith('{') and s.endswith('}') and not any(c in _inner_map for c in '{}'):
         # flow 映射：`{夏日清风窗帘: 3}` → dict（expect_quantities 这类配置会用到）
         inner = s[1:-1].strip()
         if not inner:

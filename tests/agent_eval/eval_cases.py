@@ -1165,6 +1165,22 @@ _CASE_CH_032 = EvalCase(
     persona='xiaobu',
 )
 
+# ── CH-033 [NORMAL] 「算了」在无在办流程时不得冒充取消（假状态变更 + 吞掉新诉求）（源: cases/chat.yml）──
+_CASE_CH_033 = EvalCase(
+    id='CH-033',
+    legacy_id='',
+    title='「算了」在无在办流程时不得冒充取消（假状态变更 + 吞掉新诉求）',
+    skill=Skill.MULTI_TURN,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['帮我查一下我的订单', '算了，先看看你们有什么窗帘'],
+    expectations=['customer_order_query', 'product_search'],
+    data_checks=['无在办流程时，「算了」只是顾客改主意，不得回复『已取消』（假状态变更）', '同一句里的新诉求（看看有什么窗帘）必须被正常处理，不得整句丢弃'],
+    skip_reason='',
+    tags=['regression', 'cancel', 'false_state', 'xiaobu'],
+    persona='xiaobu',
+    forbidden_text=['已取消'],
+)
+
 # ── CR-001 [NORMAL] 查商品 → 下单（跨 Skill 复用 UUID）（源: cases/cross.yml）──
 _CASE_CR_001 = EvalCase(
     id='CR-001',
@@ -4198,6 +4214,7 @@ ALL_CASES = (
     _CASE_CH_030,
     _CASE_CH_031,
     _CASE_CH_032,
+    _CASE_CH_033,
     _CASE_CR_001,
     _CASE_CR_002,
     _CASE_CR_003,
