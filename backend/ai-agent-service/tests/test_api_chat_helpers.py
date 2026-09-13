@@ -562,3 +562,146 @@ class TestCardMaskingAtSseBoundary:
                 "fields": [{"label": "订单号", "value": "20260913027050006"}]}
         out = _mask_card_for_customer(card, self._ctx("customer"))
         assert "20260913027050006" in json.dumps(out, ensure_ascii=False)
+
+
+class TestMaskingStructuralGuards:
+    """出站脱敏的**结构级**守卫（issue #3379）。
+
+    上一轮是靠 CI 日志**人工发现**"form 预填值被脱敏 → 掩码号码被提交回来下单"。
+    这一个反复出现的教训说明：只补"某个字段"的测试不够，必须把**边界本身**锁死。
+
+    两条不变量：
+      A. 出站脱敏只许改写**展示文本**（白名单），**任何其它键必须逐字节不变** ——
+         卡载荷里混着展示与协议（`value`/`key`/`component`/自定义回声字段），
+         脱敏一旦越界就会污染回传数据；
+      B. 脱敏只作用于**出站**，落库历史（喂给模型的上下文）必须保持原值。
+    """
+
+    def _ctx(self, role="customer"):
+        from app.agents.customer_service_agent import AgentContext
+        return AgentContext(tenant_id=1, user_id="u1", session_id="s1", role=role,
+                            identity_type="customer")
+
+    # 允许被改写的键（白名单）；其它一律不许动
+    ALLOWED = {
+        ("title",),
+        ("fields", "label"), ("fields", "value"),
+        ("options", "label"),
+        ("formFields", "label"),
+    }
+
+    def _card(self):
+        """尽量把协议键、回声键、展示键混在一起（含未来可能新增的键）。"""
+        return {
+            "component": "form",
+            "title": "请确认收货信息 13800138000",
+            "submitLabel": "提交 13800138000",
+            "pageMeta": {"page": 1, "size": 10, "cursor": "13800138000"},
+            "echo": "13800138000",                     # 若真被回传，脱敏即为越界
+            "formFields": [
+                {"key": "customer_phone", "label": "手机号 13800138000",
+                 "value": "13800138000", "required": True, "placeholder": "13800138000"},
+            ],
+            "fields": [{"label": "手机号 13800138000", "value": "13800138000", "extra": "13800138000"}],
+            "options": [{"label": "选项 13800138000", "value": "opt_13800138000", "meta": "13800138000"}],
+            "confirmValue": "确认 13800138000",
+            "cancelValue": "取消 13800138000",
+        }
+
+    def _walk_and_check(self, before, after, path=()):
+        """递归比对：白名单路径**允许**变化；其它路径必须相等。"""
+        bad = []
+        if isinstance(before, dict) and isinstance(after, dict):
+            for k in set(before) | set(after):
+                bad += self._walk_and_check(before.get(k), after.get(k), path + (k,))
+            return bad
+        if isinstance(before, list) and isinstance(after, list):
+            for i, (b, a) in enumerate(zip(before, after)):
+                bad += self._walk_and_check(b, a, path + (str(i),))
+            return bad
+        if before != after:
+            # 归一化路径（去掉列表的下标，只看字段名序列）
+            norm = tuple(x for x in path if not x.isdigit())
+            if norm not in self.ALLOWED:
+                bad.append((path, before, after))
+        return bad
+
+    def test_only_display_fields_may_change(self):
+        from app.api.chat import _mask_card_for_customer
+        card = self._card()
+        out = _mask_card_for_customer(card, self._ctx())
+        bad = self._walk_and_check(card, out)
+        assert not bad, (
+            "出站脱敏越界改写了非展示字段（会被回传 → 污染下单数据）：\n  "
+            + "\n  ".join(f"{p}: {b!r} → {a!r}" for p, b, a in bad))
+
+    def test_display_fields_actually_masked(self):
+        """白名单不只是"允许变"，还**必须真的变**（否则守卫变成空转）。"""
+        from app.api.chat import _mask_card_for_customer
+        out = _mask_card_for_customer(self._card(), self._ctx())
+        assert "138****8000" in out["title"]
+        assert "138****8000" in out["fields"][0]["value"]
+        assert "138****8000" in out["formFields"][0]["label"]
+        assert "138****8000" in out["options"][0]["label"]
+
+    def test_hidden_protocol_fields_survive(self):
+        from app.api.chat import _mask_card_for_customer
+        out = _mask_card_for_customer(self._card(), self._ctx())
+        assert out["confirmValue"] == "确认 13800138000"
+        assert out["cancelValue"] == "取消 13800138000"
+        assert out["formFields"][0]["value"] == "13800138000"   # 回传数据
+        assert out["options"][0]["value"] == "opt_13800138000"  # 回传标识
+        assert out["pageMeta"]["cursor"] == "13800138000"
+
+    def test_staff_payload_is_byte_identical(self):
+        """B 端：整份载荷逐字节不变（不做任何脱敏）。"""
+        from app.api.chat import _mask_card_for_customer
+        card = self._card()
+        assert _mask_card_for_customer(card, self._ctx("admin")) == card
+
+
+class TestHistoryStaysRaw:
+    """不变量 B：脱敏只作用出站，**落库历史保持原值**（issue #3379）。
+
+    首版把 `full_response.append(clean)` 也脱敏了 → 模型下一轮读到 `138****8000`，
+    以为顾客号码不完整、反过来问顾客要号码（验收 0 → 2 违规）。
+    """
+
+    def test_saved_assistant_message_not_masked(self):
+        import asyncio
+        from app.agents.customer_service_agent import AgentContext, AgentResponse
+        from app.api.chat import _agent_stream_to_sse
+
+        saved = []
+
+        class _Agent:
+            async def astream_chat(self, message, context, chat_history):
+                yield AgentResponse(type="text", content="您的收货信息：张三 13800138000")
+
+        class _Mem:
+            async def add_message(self, **kw):
+                saved.append(kw)
+                return None
+
+            async def save_message(self, **kw):
+                saved.append(kw)
+                return None
+
+            async def save(self, *a, **kw):
+                return None
+
+        ctx = AgentContext(tenant_id=1, user_id="u1", session_id="s1", role="customer",
+                           identity_type="customer")
+
+        async def _collect():
+            out = []
+            async for chunk in _agent_stream_to_sse(_Agent(), "你好", ctx, [], MagicMock(),
+                                                    _Mem(), "s1", 1, "u1"):
+                out.append(chunk)
+            return out
+
+        chunks = asyncio.run(_collect())
+        outbound = "".join(chunks)
+        assert "138****8000" in outbound, f"出站应脱敏: {outbound[:120]}"
+        history = " ".join(str(v) for kw in saved for v in kw.values())
+        assert "13800138000" in history, "落库历史被脱敏了 → 模型下一轮会以为号码不完整"
