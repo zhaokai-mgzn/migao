@@ -4528,3 +4528,62 @@ class TestCustomerCaseScopeIsSelectionBased:
                    "interactive": []}]
         issues = lr.check_write_code_provenance(rounds, case)
         assert issues, "顾客给过码、写调用没带码 —— 该用例却没被检查（作用域把它们跳过了）"
+
+
+class TestOrderBeforeAcceptsCardEvidence:
+    """`order_before[interact[confirm] …]` 必须接受**卡片事件证据**（issue #3445 实证）
+
+    实证（补卡版 run 34783977632）：顾客点了**代码补发**的确认卡（卡由回复文本里的
+    `<interact>` XML 经 `chat.py` 解析成 SSE interactive 事件；`confirmValue` 已落库，
+    门禁放行 → 订单写成），但**模型从未调用 `interact` 工具** →
+    旧判据按"工具调用"判"确认卡先行"，把**产出正确**的流程判红。
+
+    这正是 #3404 复盘的"机制耦合断言"：产品意图是"顾客先看到确认卡再写单"（产出），
+    而不是"必须走 interact 工具"（机制）。
+    """
+
+    @staticmethod
+    def _round(rnd, *, calls=None, cards=None, statuses=None):
+        r = {"__round": rnd, "user_message": "确认", "final_text": "",
+             "tool_calls": [{"name": c} for c in (calls or [])],
+             "tool_results": [], "interactive": list(cards or [])}
+        if statuses is not None:
+            r["tool_results"] = [{"tool": c, "result": {"success": ok}}
+                                 for c, ok in zip(calls or [], statuses)]
+        return r
+
+    _CONFIRM_CARD = [{"type": "confirm", "title": "请确认订单信息",
+                      "confirmValue": "确认：商品=遮光窗帘"}]
+
+    def test_code_appended_card_counts_as_confirm_before_write(self):
+        """卡是事件发出来的（无 interact 工具调用）→ 时序断言必须通过。"""
+        results = [self._round(3, cards=self._CONFIRM_CARD),
+                   self._round(5, calls=["order_create"], statuses=[True])]
+        assert lr.check_order_before(
+            results, ["interact[confirm] before order_create"]) == [], (
+            "顾客点了事件发出的确认卡并成功写单，却因『没调 interact 工具』被判反序（机制耦合假红）")
+
+    def test_tool_call_based_confirm_still_works(self):
+        """回归：真调用 `interact(component=confirm)` 的老路径不受影响。"""
+        results = [self._round(3, calls=["interact"]),
+                   self._round(5, calls=["order_create"], statuses=[True])]
+        results[0]["tool_calls"][0]["args"] = {"component": "confirm"}
+        assert lr.check_order_before(
+            results, ["interact[confirm] before order_create"]) == []
+
+    def test_write_before_any_card_still_flagged(self):
+        """反向守卫：**卡出现在写之后**（或压根没有卡）仍必须判红。"""
+        late = [self._round(3, calls=["order_create"], statuses=[True]),
+                self._round(5, cards=self._CONFIRM_CARD)]
+        assert lr.check_order_before(late, ["interact[confirm] before order_create"]), (
+            "写单发生在确认卡之前，必须判反序")
+        none = [self._round(3, calls=["order_create"], statuses=[True])]
+        assert lr.check_order_before(none, ["interact[confirm] before order_create"]), (
+            "全程没有确认卡，必须判『未调用』")
+
+    def test_other_card_types_do_not_count(self):
+        """choice/form 事件不算确认卡（否则"发过卡"就被泛化掉了）。"""
+        results = [self._round(3, cards=[{"type": "choice", "title": "选加工项"}]),
+                   self._round(5, calls=["order_create"], statuses=[True])]
+        assert lr.check_order_before(
+            results, ["interact[confirm] before order_create"]), "choice 卡不该被当成确认卡"

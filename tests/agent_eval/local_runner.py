@@ -845,10 +845,32 @@ def _round_call_success(r: dict, tool: str) -> list:
     return out
 
 
+def _round_has_interactive_card(r: dict, comp: str) -> bool:
+    """该轮是否**发出过**指定组件的交互卡（看 SSE `interactive` 事件，不看工具调用）。
+
+    为什么要这条（issue #3445 实证）：卡片不一定由 `interact` **工具调用**产生 ——
+    代码兜底补卡走的是"回复文本里的 `<interact>` XML"，由 `chat.py` 解析成 interactive 事件；
+    顾客照样看得见、点得动（`confirmValue` 已落库、门禁放行）。
+    只按工具调用判"确认卡先行"会把这种**产出正确**的流程判红（#3404 同族的机制耦合假红）。
+    """
+    for iv in ((r or {}).get("interactive") or []):
+        got = str((iv or {}).get("type") or (iv or {}).get("component") or "")
+        if got == comp:
+            return True
+    return False
+
+
 def _round_matches_tool(r: dict, tool: str, comp: str | None, sem: str | None) -> bool:
-    """该轮是否调用了限定的 `tool`（组件/语义筛选）。"""
+    """该轮是否调用了限定的 `tool`（组件/语义筛选）。
+
+    `interact[confirm]` 额外接受**卡片事件证据**（见 `_round_has_interactive_card`）：
+    确认卡可能来自代码兜底（文本 XML → SSE 事件）而非工具调用。
+    """
     if tool == "processing_ask":
         return bool(_processing_ask_in_round(r))
+    if tool.lower() == "interact" and comp == "confirm" \
+            and _round_has_interactive_card(r, "confirm"):
+        return True
     for tc in r.get("tool_calls") or []:
         name = str(tc.get("name", "")).lower()
         if tool.lower() not in name:
