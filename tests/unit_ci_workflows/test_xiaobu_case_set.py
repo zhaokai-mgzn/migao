@@ -851,3 +851,74 @@ class TestRepeatUntilCases:
         bad = [f"{c['id']}" for c in self._cases() for u in self._repeat_turns(c)
                if "auto_respond" in u]
         assert not bad, f"这些用例的 repeat_until 轮同时写了 auto_respond：{bad}"
+
+
+# 本守卫**只作用于 C 端用例**（`persona: xiaobu`）。
+# 为什么不用"persona 为空"当 C 端：空 = **未声明/双端**，实测那批是米宝流程用例
+# （`cross_skill` / `compression` / `sku_select` / `create` 等标签，如 CR-002/CR-003/
+# DF-015/OR-008/OR-016）—— 它们的卡序列由 B 端自己的流程决定，套 C 端判据会误伤
+# （首版就是这么错的：5 条 B 端用例被当成"脆弱 C 端写用例"列进待迁移清单）。
+# 真·C 端写用例（CH-010 9 轮含 7 个 auto_respond、OR-021 已迁 repeat_until）都**能答卡**。
+CARD_FRAGILE_WRITE_CASES: dict = {}      # 当前为空：C 端写用例**全部**具备答卡能力
+
+_WRITE_TOOLS_NEEDING_FLOW = {"order_create", "aftersales_create"}
+
+
+class TestWriteCasesCanAnswerCards:
+    """**C 端**（persona: xiaobu）写用例必须**有能答卡的轮次**（issue #3430）
+
+    实证：写用例的轮次表若全是固定文本，而 agent 的提问顺序随模型变化
+    （OR-021 实测 `form(R3) → choice(R4) → confirm(R7)`），文本轮就会答非所问 →
+    卡没人答、流程不前进 → 轮数耗尽时确认卡刚发出来就没人答它
+    （OR-021 定向复跑 0/1、CH-025 首跑同形，且都被重试机制标成 `llm-noise`，
+    把**用例缺陷伪装成模型波动**）。修法是 `repeat_until`（OR-021/CH-025 已迁）。
+
+    作用域刻意收窄为 `persona == "xiaobu"`：空 persona 是**未声明/双端**，
+    实测那批是米宝流程用例，套 C 端判据会误伤（首版即此错）。
+    """
+
+    def _cases(self):
+        return load_case_dicts(CASES_DIR)
+
+    def _can_answer_cards(self, case) -> bool:
+        for u in case.get("user_inputs") or []:
+            if not isinstance(u, dict):
+                continue
+            if isinstance(u.get("repeat_until"), dict):
+                return True
+            if u.get("auto_respond") and not (u.get("auto_respond") or {}).get("prefer_text"):
+                return True
+            if u.get("auto_fill") or u.get("auto_select"):
+                return True
+        return False
+
+    def _write_cases(self):
+        out = []
+        for c in self._cases():
+            if str(c.get("persona") or "") != "xiaobu":      # ← 只认显式 C 端
+                continue
+            used = {e.get("tool") for e in (c.get("expectations") or []) if isinstance(e, dict)}
+            if used & _WRITE_TOOLS_NEEDING_FLOW:
+                out.append(c)
+        return out
+
+    def test_parse_is_non_trivial(self) -> None:
+        got = self._write_cases()
+        assert len(got) >= 5, (
+            f"只解析出 {len(got)} 条 C 端写用例 —— 解析疑似失效（守卫会变恒真）。"
+            f"若用例的 persona 约定变了，请同步本守卫的作用域")
+
+    def test_write_cases_have_card_answering_turns(self) -> None:
+        bad = [c["id"] for c in self._write_cases()
+               if not self._can_answer_cards(c) and c["id"] not in CARD_FRAGILE_WRITE_CASES]
+        assert not bad, (
+            "以下 C 端写用例**没有任何能答卡的轮次** —— agent 一旦先发卡就会空转不下单"
+            "（issue #3430 实证）。请用 repeat_until 让它「有卡答卡」：\n  " + "\n  ".join(bad))
+
+    def test_allowlist_is_still_accurate(self) -> None:
+        """待迁移清单必须真实：用例仍存在、且**仍确实不会答卡**（迁完就该删）。"""
+        by_id = {c["id"]: c for c in self._cases()}
+        for cid, why in CARD_FRAGILE_WRITE_CASES.items():
+            assert cid in by_id, f"待迁移清单里的 {cid} 已不存在（请删掉该条）"
+            assert not self._can_answer_cards(by_id[cid]), (
+                f"{cid} 已经能答卡 —— 请从 CARD_FRAGILE_WRITE_CASES 移除（原因：{why}）")
