@@ -3532,3 +3532,53 @@ async def execute_skill(
                 logger.warning(f"[{skill_name}] Failed to persist pending_skill | session={session_id} error={e}")
 
     return result
+
+
+# ── 确认卡 XML 生成器（issue #3445：代码兜底发卡）──────────────────────────────
+# 背景：写调用因 `confirmation_required_no_card` 被门禁拦回时，模型**从没发过确认卡**，
+# 被拦回后仍反复重试同一个写调用、烧完轮数（CI 三次实测；话术已改为"唯一可执行的下一步"
+# 后**流程能收敛**，但"跳过确认卡"这一行为仍在）。
+# 代码兜底要发卡，而卡片的**唯一通用发射点**是 `app/api/chat.py` 里解析**回复文本中的
+# `<interact>…</interact>` XML 块**（工具路径最终汇聚到同一协议）。故这里生成该 XML：
+# 形状与 `_parse_interact_xml` 的文档字符串一一对应（fields/confirmLabel/cancelLabel/
+# confirmValue/cancelValue），由测试对着**真解析器**钉住，避免"生成了但解析不出来"。
+def build_confirm_interact_xml(title: str, fields: list, *,
+                               confirm_label: str = "确认下单",
+                               cancel_label: str = "再改改",
+                               confirm_value: str = "",
+                               cancel_value: str = "取消") -> str:
+    """生成 confirm 卡的 `<interact>` XML 块（只回显传入事实，不新增内容）。
+
+    两条**实测得到的约束**（对着真解析器 `_parse_interact_xml` 测出来的，不是推测）：
+
+    1. **`fields` 为空时直接返回 ""** —— 解析器对"字段缺失"的块返回 None（调用方只会剥离
+       XML、不下发残缺 payload）⇒ 空卡片发不出去。返回空串让调用方**显式跳过**追加，
+       而不是生成一段注定被丢弃的垃圾。
+    2. **不做 XML 实体转义，改用全角替换**（`<`→`＜`、`>`→`＞`、`&`→`＆`）——
+       解析器是**正则提取、不做 unescape**，若转成 `&lt;` 就会把 `&lt;` 原样显示给顾客。
+       全角替换既保住结构（值里出现 `</value>` 也不会截断），显示也可读。
+
+    `confirmValue` 必须与门禁的卡值口径一致（`interact` 的 confirmValue 已确定性派生，
+    见 issue #3406）—— 否则顾客点了卡也过不了确认门禁。
+    """
+    def _safe(v: object) -> str:
+        return (str(v or "").replace("<", "＜").replace(">", "＞").replace("&", "＆"))
+
+    clean_fields = [f for f in (fields or []) if isinstance(f, dict) and f.get("label")]
+    if not clean_fields:
+        return ""
+    flds = "".join(
+        f"<field><label>{_safe(f.get('label'))}</label>"
+        f"<value>{_safe(f.get('value'))}</value></field>"
+        for f in clean_fields)
+    return (
+        "<interact>"
+        "<component>confirm</component>"
+        f"<title>{_safe(title)}</title>"
+        f"<fields>{flds}</fields>"
+        f"<confirmLabel>{_safe(confirm_label)}</confirmLabel>"
+        f"<cancelLabel>{_safe(cancel_label)}</cancelLabel>"
+        f"<confirmValue>{_safe(confirm_value)}</confirmValue>"
+        f"<cancelValue>{_safe(cancel_value)}</cancelValue>"
+        "</interact>"
+    )
