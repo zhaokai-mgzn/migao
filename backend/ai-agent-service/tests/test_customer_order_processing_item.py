@@ -95,7 +95,12 @@ class TestCustomerOrderPromptGrowthGuard:
     """C 端下单 prompt 长度快照（防无限制膨胀；B 端已有同类守卫）"""
 
     # 本次加工项规则落地后 2382；给 +30% 余量（B 端 order prompt 上限 10000）
-    MAX_LEN = 3200
+    # 2026-09-13 上调 3250 → 3300（+50，issue #3379 P2-3）：新增**草稿态措辞**规则
+    #   「加工项此刻只是草稿 → 用『记下了，下单时一并提交』，禁止『已为您加上』」
+    #   实测该规则净增 ~106 字符（先按守卫要求精简过一轮：初版 270 字符被本守卫拦下）。
+    #   这是**安全/诚实性**规则（防止顾客以为草稿已落单），非冗余描述，故按守卫允许的
+    #   "明确上调上限并说明理由"路径处理；再涨需先删旧内容。
+    MAX_LEN = 3300
 
     def test_prompt_length_within_budget(self):
         n = len(CUSTOMER_ORDER_SYSTEM_PROMPT)

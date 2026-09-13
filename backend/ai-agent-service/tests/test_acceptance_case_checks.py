@@ -2335,6 +2335,69 @@ def _order_round(rnd, items, ok=True, total=None):
     }
 
 
+class TestUnbackedStateClaim:
+    """状态宣告必须有工具落地（issue #3379 P2-3）。
+
+    证据（验收剧本 C-A1 R3）：
+      ```
+      用户: 纳米圈打孔
+      AI:  好嘞，**纳米圈打孔** 已为您加上 ✅
+      ```
+      该轮 `tools=[]`（零工具调用）—— 加工项此刻只是**对话草稿**，却用了完成态措辞。
+      一旦流程中断（C-A1 首跑就是这样），顾客会以为加工项已经写到订单上。
+
+    与既有 `check_false_success` 的分工：那条管"前序轮**报错**却称成功"；
+    本条管"**全程没有任何写操作成功**却宣称写成了" —— 两者互补。
+    """
+
+    def _rounds(self, *specs):
+        """specs: (final_text, [tool_names_ok]) —— tool_names_ok 为成功的写工具名。"""
+        out = []
+        for i, (text, tools) in enumerate(specs, 1):
+            out.append({
+                "__round": i,
+                "tool_calls": [{"name": t, "args": {}} for t in tools],
+                "tool_results": [{"tool": t, "result": {"success": True, "data": {}}} for t in tools],
+                "final_text": text,
+            })
+        return out
+
+    def test_claim_without_any_write_flagged(self):
+        issues = lr.check_unbacked_state_claim(
+            self._rounds(("亲，帮您查到啦", []), ("已为您下单成功 🎉", [])))
+        assert issues and "R2" in issues[0], "零写操作却宣称下单成功必须判违规"
+
+    def test_claim_with_write_same_round_passes(self):
+        assert lr.check_unbacked_state_claim(
+            self._rounds(("订单已提交成功，订单号 20260913027050006", ["order_create"]))) == []
+
+    def test_recap_after_earlier_write_passes(self):
+        """写发生在前面轮次、本轮只是复述 —— 不得误报。"""
+        assert lr.check_unbacked_state_claim(
+            self._rounds(("已为您下单成功", ["order_create"]),
+                         ("订单已创建，随时可以问我进度哦", []))) == []
+
+    def test_read_side_claims_not_flagged(self):
+        """只读动作的措辞（查到/整理/列出）不属于写宣告。"""
+        assert lr.check_unbacked_state_claim(
+            self._rounds(("已为您查到 8 笔订单", []), ("已为您整理如下", []))) == []
+
+    def test_abandon_flow_reply_exempt(self):
+        """放弃流程的"已取消"是代码层状态清理（无写工具），不得误报。"""
+        assert lr.check_unbacked_state_claim(
+            self._rounds(("好的，已取消。有什么其他需要帮您的吗？", []))) == []
+
+    def test_failed_write_then_claim_flagged(self):
+        """写工具**调用失败**后仍称成功 → 违规（与 must_succeed 同源判成功）。"""
+        rounds = [{"__round": 1,
+                   "tool_calls": [{"name": "order_create", "args": {}}],
+                   "tool_results": [{"tool": "order_create",
+                                     "result": {"success": False, "error": "缺少短信验证码"}}],
+                   "final_text": "订单已创建成功 🎉"}]
+        issues = lr.check_unbacked_state_claim(rounds)
+        assert issues, "写失败却称成功必须判违规"
+
+
 class TestNoFullPhoneInCustomerReplies:
     """C 端回复不得出现**完整手机号**（issue #3379，验收发现 P2）。
 

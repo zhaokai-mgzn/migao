@@ -927,6 +927,52 @@ def check_false_success(results: list) -> list:
     return []
 
 
+# 写工具（有副作用的）：判定"状态宣告是否有落地"时只认这些
+_WRITE_TOOL_NAMES = frozenset({
+    "order_create", "aftersale_create", "human_handoff",
+    "product_update", "order_update", "customer_update",
+    "after_sales_manage", "product_manage", "order_manage",
+    "customer_manage", "settings_manage", "staff_manage",
+})
+
+# 「完成态」写宣告措辞（**刻意保守**）：只收**明确表示写操作已发生**的说法。
+# 为什么不收"已加上/已添加"：加工项/颜色这类**草稿选择**在对话里本来就用这个措辞
+# （订单要等 confirm 才写），收进来会把正常话术判红 —— 与"宁可漏报不可误报"一致；
+# 那类草稿态措辞改用 prompt 约束（见 order skill 的草稿/完成态措辞约定）。
+_WRITE_CLAIM_MARKERS = (
+    "订单已创建", "已为您下单", "下单成功", "订单已提交", "已提交订单",
+    "工单已创建", "售后单已创建", "已为您提交", "已成功提交",
+    "已更新", "已修改", "已删除", "已创建",
+)
+
+
+def check_unbacked_state_claim(results: list) -> list:
+    """状态宣告必须有**工具落地**（issue #3379 P2-3）。
+
+    与 `check_false_success` 的分工：那条管"前序轮**报错**却称成功"；
+    本条管"**截至本轮没有任何写操作成功**却宣称写成了" —— 两者互补。
+
+    判据（保守，避免误报）：
+      · 只认**完成态写宣告**措辞（`_WRITE_CLAIM_MARKERS`）；
+      · 命中措辞的轮次，**截至该轮**（含本轮）没有任何写工具**成功** → 违规；
+      · 写发生在更早轮次、本轮只是复述 → 放行；
+      · 只读措辞（查到/整理/列出）与"已取消"（放弃流程，代码层清理）不在标记内。
+    """
+    issues = []
+    wrote_ok = False
+    for r in sorted(results or [], key=lambda x: x.get("__round") or 0):
+        for st in _tool_result_status(r.get("tool_results") or []):
+            if st.get("ok") and str(st.get("tool") or "") in _WRITE_TOOL_NAMES:
+                wrote_ok = True
+        text = str(r.get("final_text") or "")
+        hit = next((m for m in _WRITE_CLAIM_MARKERS if m in text), None)
+        if hit and not wrote_ok:
+            issues.append(
+                f"状态宣告无工具落地(R{r.get('__round')}): 回复称「{hit}」，"
+                f"但截至本轮没有任何写工具成功（草稿态不得用完成态措辞）")
+    return issues
+
+
 def _check_required_field(args: dict, field: str) -> tuple[bool, str]:
     """必填字段检查，支持多级深路径：'key' / 'list[].key' / 'list[].key.sub'。
 
@@ -2364,6 +2410,8 @@ async def run_case(case, token: str, session_id: str) -> dict:
     if PERSONA == "xiaobu":
         # 隐私面只在 C 端守：B 端客服需要真实号码联系顾客（脱敏会破坏运营）
         case_issues += check_no_full_phone(results)
+        # 状态宣告落地：先在 C 端生效（B 端历史用例尚未校准，贸然全局会引入误报）
+        case_issues += check_unbacked_state_claim(results)
     case_issues += check_confirm_loop(results)
     case_issues += check_false_success(results)
     if getattr(case, "db_verify", None):
