@@ -7,7 +7,7 @@ LangGraph Skill 节点测试
 - ToolContext 从 state 正确构建
 - base_skill 的 execute_skill 逻辑
 """
-# case_ids: AG-004, CH-003, CH-023, MC-008, DF-018, HR-005, CU-003, CH-010, CH-012, OR-017
+# case_ids: AG-004, CH-003, CH-023, MC-008, DF-018, HR-005, CU-003, CH-010, CH-012, OR-017, OR-021
 
 import json
 import pytest
@@ -21,7 +21,7 @@ from app.graph.skills.aftersales_skill import AFTERSALES_TOOLS, AFTERSALES_SKILL
 from app.graph.skills.general_agent import GENERAL_TOOLS, GENERAL_SKILL_CONFIG
 from app.graph.skills.base_skill import (
     build_tool_context, execute_skill, _extract_content, get_skill_llm,
-    _masked_phone_write_block, KNOWN_RAW_PHONES_KEY,
+    _masked_phone_write_block, KNOWN_RAW_PHONES_KEY, _capability_denial_reason,
 )
 import app.graph.skills.base_skill as lr2
 from app.graph.skills.skill_registry import SkillRegistry
@@ -3213,6 +3213,125 @@ class TestMaskedPhoneWriteGuardWiring:
                          user_msg="我的手机号是 13800138000",
                          store_extra={KNOWN_RAW_PHONES_KEY: ["13800138000"]})
         assert len(seen["calls"]) == 1, "正常号码被拦 → 真回归"
+
+
+class TestCapabilityDenialInHandoffReason:
+    """以「AI 自己做不到」为理由转人工 → 拦下（issue #3389，验收 C-A1 实证）。
+
+    实证：C-A1 R9 `human_handoff(reason="顾客需协助下单（智能客服无法代为提交订单）")` ——
+    而 order_create 就是 customer_order skill 自己的写工具（OR-014/017/018/019/020 都真实落单）。
+    这类"能力误宣"比答错更伤：顾客明明要买，系统告诉他"我下不了单"，转化路径被自己掐断。
+
+    判据只认**明确的自我能力否定**（无法代为提交/没法提交订单/无法帮您下单…），
+    顾客显式诉求（"我要转人工"）、情绪诉求、以及正常业务理由（"顾客要求人工核价"）都不拦。
+    """
+
+    def test_ca1_reason_detected(self):
+        assert _capability_denial_reason({"reason": "顾客需协助下单（智能客服无法代为提交订单）"})
+
+    def test_variants_detected(self):
+        """C-A1 原话的等价变体（**施动者是 AI 自己**的否定）。"""
+        for why in ["我无法帮您提交订单", "小布没法提交订单", "智能客服无法代为下单",
+                    "我没法帮您提交订单", "小布无法下单"]:
+            assert _capability_denial_reason({"reason": why}), f"未识别: {why!r}"
+
+    def test_third_party_subject_not_in_scope(self):
+        """施动者不是 AI 自己的否定**刻意不认**（歧义大、易误伤）：
+
+        「商品缺货不能创建订单」是**客观业务原因**，拦掉它等于把合法转人工堵死。
+        顾客可见话术里的能力误宣由 `check_false_inability`（评测层）兜底。
+        """
+        assert _capability_denial_reason({"reason": "商品缺货不能创建订单"}) == ""
+
+    def test_summary_field_scanned(self):
+        assert _capability_denial_reason({"reason": "顾客需协助", "summary": "无法代为提交订单"})
+
+    def test_legit_reasons_not_detected(self):
+        for why in ["顾客明确要求转人工", "顾客情绪激动，需要人工安抚",
+                    "顾客要求人工核对加工费", "订单信息有误，需要人工核实收货地址"]:
+            assert not _capability_denial_reason({"reason": why}), f"误报: {why!r}"
+
+
+class TestCapabilityDenialHandoffWiring:
+    """守卫必须接在**转人工调用**上：能力误宣理由的 handoff 不得真的执行（issue #3389）。"""
+
+    def _run(self, args, user_msg="确认下单", tool_name="human_handoff",
+             pending="customer_order"):
+        import asyncio, json as _json
+
+        seen = {"calls": []}
+        full = {"pending_interact_skill": pending} if pending else {}
+
+        async def fake_execute(tool, a, ctx, state):
+            seen["calls"].append((tool, a))
+            return (_json.dumps({"success": True, "data": {"id": "h1"}}),
+                    {"success": True, "data": {"id": "h1"}})
+
+        class _Store:
+            async def load(self, sid):
+                return dict(full)
+
+            async def commit(self, sid, new_full):
+                full.clear()
+                full.update(new_full)
+
+        with patch("app.memory.session_memory.SessionMemory"), \
+             patch("app.graph.skills.base_skill.get_breaker") as get_breaker, \
+             patch("app.graph.skills.base_skill.get_skill_llm") as get_llm, \
+             patch("app.graph.skills.base_skill.create_skill_registry") as create_reg, \
+             patch("app.graph.skills.base_skill.set_tool_context"), \
+             patch("app.graph.skills.base_skill._execute_tool_safe", fake_execute), \
+             patch("app.memory.session_state_store.SessionStateStore",
+                   side_effect=lambda *a, **k: _Store()):
+            tool = MagicMock()
+            tool.name = tool_name
+            tool.read_only = False
+            tool.destructive = False
+            tool.requires_confirmation = False
+            registry = MagicMock()
+            registry.get_langchain_tools.return_value = []
+            registry.get_tool.side_effect = lambda n: tool if n == tool_name else None
+            create_reg.return_value = registry
+            breaker = MagicMock()
+
+            async def _pt(fn):
+                return await fn()
+
+            breaker.call = _pt
+            get_breaker.return_value = breaker
+            call = MagicMock(spec=AIMessage)
+            call.content = ""
+            call.tool_calls = [{"name": tool_name, "args": args, "id": "c1"}]
+            final = MagicMock(spec=AIMessage)
+            final.content = "好的"
+            final.tool_calls = []
+            llm = MagicMock()
+            llm.bind_tools.return_value = llm
+            llm.ainvoke = AsyncMock(side_effect=[call, final])
+            get_llm.return_value = llm
+            res = asyncio.run(execute_skill(
+                state=_make_state(messages=[HumanMessage(content=user_msg)]),
+                skill_name="customer_order",
+                tool_names=[tool_name], system_prompt="p"))
+        from langchain_core.messages import ToolMessage as _TM
+        seen["tool_content"] = "\n".join(
+            str(getattr(m, "content", "")) for m in (res or {}).get("messages", [])
+            if isinstance(m, _TM))
+        return seen
+
+    def test_capability_denial_handoff_blocked(self):
+        seen = self._run({"reason": "顾客需协助下单（智能客服无法代为提交订单）"})
+        assert seen["calls"] == [], "以能力误宣为理由的转人工不得执行（顾客会以为系统坏了）"
+        assert "order_create" in seen["tool_content"], "拦截时必须告诉模型它本来就能下单"
+
+    def test_explicit_user_request_still_hands_off(self):
+        """顾客显式要转人工 → 必须放行（不能把正确行为拦成故障）。"""
+        seen = self._run({"reason": "顾客明确要求转人工"}, user_msg="我要转人工")
+        assert len(seen["calls"]) == 1, "顾客显式要求转人工被拦 → 真回归"
+
+    def test_normal_business_reason_still_hands_off(self):
+        seen = self._run({"reason": "顾客要求人工核对加工费"}, user_msg="我要找人工核对加工费")
+        assert len(seen["calls"]) == 1, "正常业务理由的转人工被拦 → 真回归"
 
 
 class TestFalseCancelGuard:

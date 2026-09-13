@@ -946,6 +946,65 @@ _WRITE_CLAIM_MARKERS = (
 )
 
 
+# ── 能力误宣（"能做却说做不了"，issue #3389 / 验收 C-A1 实证）──────────────
+# 实证（run 34743802010，C-A1）：顾客「确认下单」×4 轮 → 小布「**下单这个操作小布这边没法
+# 直接帮您提交呢**，需要您在小程序里点一下"立即购买"」→ R9 `human_handoff(reason=
+# "顾客需协助下单（智能客服无法代为提交订单）")`，整场 9 轮从未调用 `order_create`。
+# 而 order_create 就是 customer_order skill 自己的写工具（OR-014/017/018/019/020 都真实落单）。
+#
+# 与 `check_false_success` 配对：那条管"没做却说做了"（假成功），本条管"能做却说做不了"（假无能）。
+# 判据（保守，避免误报）：
+#   · **必须是"施动者是 AI 自己"的否定**（我/我们/小布/智能客服/这边 + 没法/无法/不能/…）；
+#     商家侧/商品侧的客观说明（"这款不支持散剪""价格不能直接改"）不在此列；
+#   · 同一句内 24 字符内与**下单动作**词共现（下单/提交订单/创建订单/建单/代为下单…），顺序不限；
+#   · 转人工 `reason`/`summary` 同样扫描（C-A1 R9 的实际形态）。
+_AGENT_INABILITY_RE_SRC = r"(?:我|我们|小布|智能客服|客服|这边)[^。！？\n]{0,8}(?:没法|无法|不能|没办法|做不到)"
+_ORDER_ACTION_WORDS = ("提交订单", "下单", "创建订单", "建单", "代为提交", "代为下单", "帮您提交", "帮您下单")
+_INABILITY_WINDOW = 24
+
+
+def _false_inability_hit(text: str) -> str:
+    """文本里是否存在"AI 自己做不到 × 下单动作"的能力误宣；返回命中片段或空串。"""
+    import re as _re
+    if not text:
+        return ""
+    agent_re = _re.compile(_AGENT_INABILITY_RE_SRC)
+    for seg in _re.split(r"[。！？\n]", str(text)):
+        neg = agent_re.search(seg)
+        if not neg:
+            continue
+        for verb in _ORDER_ACTION_WORDS:
+            pos = seg.find(verb)
+            if pos < 0:
+                continue
+            if abs(pos - neg.start()) <= _INABILITY_WINDOW:
+                return seg.strip()[:80]
+    return ""
+
+
+def check_false_inability(results: list) -> list:
+    """C 端回复不得出现"我无法提交订单"这类**能力误宣**（issue #3389）。"""
+    issues = []
+    for r in results or []:
+        text = str(r.get("final_text") or "")
+        hit = _false_inability_hit(text)
+        if hit:
+            issues.append(
+                f"能力误宣(R{r.get('__round')}): 回复称自己做不到下单/提交订单「{hit}」—— "
+                f"order_create 是本 skill 的写工具，缺参数应去查/问，不得把顾客推去小程序或转人工")
+        for tc in r.get("tool_calls") or []:
+            if str((tc or {}).get("name") or "") != "human_handoff":
+                continue
+            args = (tc or {}).get("args") or {}
+            why = f"{args.get('reason') or ''} {args.get('summary') or ''}"
+            hit2 = _false_inability_hit(why)
+            if hit2:
+                issues.append(
+                    f"能力误宣(转人工理由, R{r.get('__round')}): 「{hit2}」—— "
+                    f"以「自己做不到」为理由转人工属能力误宣（顾客会以为系统坏了）")
+    return issues
+
+
 def check_unbacked_state_claim(results: list) -> list:
     """状态宣告必须有**工具落地**（issue #3379 P2-3）。
 
@@ -2504,6 +2563,8 @@ async def run_case(case, token: str, session_id: str) -> dict:
         case_issues += check_no_full_phone(results)
         # 状态宣告落地：先在 C 端生效（B 端历史用例尚未校准，贸然全局会引入误报）
         case_issues += check_unbacked_state_claim(results)
+        # 能力误宣（能做却说做不了，issue #3389）：同样先在 C 端生效
+        case_issues += check_false_inability(results)
     case_issues += check_confirm_loop(results)
     case_issues += check_false_success(results)
     if getattr(case, "db_verify", None):
