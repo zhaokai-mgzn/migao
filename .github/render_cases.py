@@ -172,6 +172,7 @@ def to_eval_py(cases):
             '    pre_clean: List[dict] = field(default_factory=list) # 评测前数据清理（写类 case 自我污染防线）',
             '    post_session: List[dict] = field(default_factory=list) # 会话关闭后落库断言（user_memories 只在 close 时 flush，issue #3357）',
            '    debug_user: str = ""   # 多身份评测：以哪个 DEBUG 顾客身份跑（如 debug_customer_new，issue #3391）',
+           '    form_prefill: List[dict] = field(default_factory=list) # form 卡预填断言（老客户收货信息自动带出，issue #3397）',
            "", ""]
 
     for c in cases:
@@ -194,6 +195,7 @@ def to_eval_py(cases):
         out.append(f"    persona={_py_repr(c.get('persona', ''))},")
         # 多身份评测（issue #3391）：C 端 case 可声明以哪个 debug 用户身份跑
         out.append(f"    debug_user={_py_repr(c.get('debug_user', ''))},")
+        out.append(f"    form_prefill={_py_repr(c.get('form_prefill') or [])},")
         if c.get("order_before"):
             out.append(f"    order_before={c.get('order_before')!r},")
         if c.get("forbidden_text"):

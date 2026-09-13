@@ -1764,6 +1764,71 @@ def _seed_phones() -> set:
     return _SEED_PHONES_CACHE
 
 
+def _norm_text(v) -> str:
+    """比对前归一化空白（地址里空格差异不该判红）。"""
+    return re.sub(r"\s+", "", str(v or ""))
+
+
+def check_form_prefill(results: list, spec: list) -> list:
+    """form 卡必须**预填**指定字段的真值（issue #3397：老客户收货信息自动带出）。
+
+    为什么补这条断言（此前 `customer_address_query` / `validate_input` 被登记为
+    "内部步骤、无独立诉求"而豁免）：
+      ① 老客户下单自动带出上次收货信息是核心便利（issue #2815），此前**零断言**；
+      ② 预填值必须是**原值** —— 掩码值回流会被顾客原样提交，订单用掩码建号
+         （issue #3379 的真实事故形态：`validate_input({"customer_phone": "138****8000"})`）；
+      ③ 新客路径（OR-022）守的是"没有历史信息要问/要收集"，这条守**反面**：
+         命中历史信息时必须真的带进表单，而不是再问一遍顾客。
+
+    spec 形如 `[{field, expect}]` / `[{field, expect_present: true}]`；失败关闭：
+    找不到 form 卡、缺字段、值不符都判红（不跳过）。
+    """
+    issues = []
+    forms = []
+    for r in results or []:
+        for iv in (r.get("interactive") or []):
+            comp = str((iv or {}).get("type") or (iv or {}).get("component") or "")
+            if comp == "form":
+                forms.append((r.get("__round"), iv))
+    for item in spec or []:
+        if not isinstance(item, dict):
+            issues.append(f"form_prefill: 配置非字典: {item!r}")
+            continue
+        field = str(item.get("field") or "")
+        if not field:
+            issues.append(f"form_prefill: 缺 field（空断言）: {item!r}")
+            continue
+        want = item.get("expect")
+        want_present = bool(item.get("expect_present"))
+        found_any = False
+        hit = None
+        for rnd, iv in forms:
+            for f in (iv.get("formFields") or []):
+                if str((f or {}).get("key") or "") == field:
+                    found_any = True
+                    hit = (rnd, str((f or {}).get("value") or ""))
+        if not forms:
+            issues.append(
+                f"form_prefill[{field}]: 会话里没有出现任何 form 卡 —— 老客户收货信息没有被带进表单"
+                f"（预期：customer_address_query 命中后下发预填 form）")
+            continue
+        if not found_any:
+            issues.append(
+                f"form_prefill[{field}]: form 卡里没有字段 `{field}` —— 该字段没有被预填"
+                f"（预期带出历史值，实际只问了其它字段）")
+            continue
+        rnd, got = hit
+        if want_present:
+            if not got.strip():
+                issues.append(f"form_prefill[{field}](R{rnd}): 字段存在但**值为空** —— 等于没预填")
+            continue
+        if want is not None and _norm_text(got) != _norm_text(want):
+            issues.append(
+                f"form_prefill[{field}](R{rnd}): 预填值 {got!r} ≠ 期望 {want!r} —— "
+                f"预填必须是**真值**（掩码值会被顾客原样提交，导致订单用掩码建号）")
+    return issues
+
+
 async def check_debug_user_precondition(token: str, case) -> list:
     """多身份用例的**前提校验**：身份覆盖必须真的生效（issue #3391，防假绿）。
 
@@ -2695,6 +2760,8 @@ async def run_case(case, token: str, session_id: str) -> dict:
         except Exception as e:
             case_issues.append(f"amount_verify 执行失败: {type(e).__name__}: {e}")
     case_issues += check_output_verify(results, getattr(case, "output_verify", []) or [])
+    # form 预填断言（issue #3397）：老客户收货信息必须真的带进表单且为真值
+    case_issues += check_form_prefill(results, getattr(case, "form_prefill", []) or [])
     if PERSONA == "xiaobu":
         # 隐私面只在 C 端守：B 端客服需要真实号码联系顾客（脱敏会破坏运营）
         case_issues += check_no_full_phone(results)
@@ -3327,6 +3394,7 @@ def load_cases_from_yaml(cases_dir: str) -> list:
             must_succeed=c.get("must_succeed") or [],
             amount_verify=c.get("amount_verify") or [],
             db_verify=c.get("db_verify") or [],
+            form_prefill=c.get("form_prefill") or [],
             pre_clean=c.get("pre_clean") or [],
             post_session=c.get("post_session") or [],
         ))
