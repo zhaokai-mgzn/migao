@@ -1297,17 +1297,12 @@ cases:
       - tool: order_create
     order_before:
       - "customer_address_query before order_create"
-    # form 预填断言（新断言能力，issue #3397）：预填必须是**真值**
-    form_prefill:
-      - field: customer_phone
-        expect: "13800138000"
-      # 地址只断言"必须预填了非空值"：预填来源是**顾客最近一笔订单的地址**，
-      # 会被同一轮 run 里前序用例创建的订单影响（精确断言 = 数据依赖的假红，issue #3395 复盘）；
-      # 预填值**逐字保真**由图谱守卫 `_form_prefill_fidelity_block` 结构性地保证。
-      - field: customer_address
-        expect_present: true
-      - field: customer_name
-        expect_present: true
+    # 老客户"带出上次收货信息"的断言取**产出侧**（issue #3404 复盘）：
+    #   · 顾客在意的是**订单上的值对不对**，而"过程必须发 form 卡"把用例绑死在**机制**上
+    #     —— Agent 用 confirm 卡的字段承载同样合法（实测 run 34755272379 因此假红：
+    #     `form_prefill: 会话里没有出现任何 form 卡`）；
+    #   · 预填**逐字保真**（不被改写/掩码）由图谱守卫 `_form_prefill_fidelity_block` 结构性保证；
+    #     `form_prefill` 断言留给"明确要求发 form 卡"的用例。
     amount_verify:
       - tool: order_create
         product_name: "遮光窗帘"
@@ -1321,8 +1316,10 @@ cases:
       - fetch: order_phone
         source: order_create
         expect_phone: "13800138000"
+        expect_customer_name: "张三"
+        expect_address_contains: "文三路"
     data_checks:
-      - "老客户下单：customer_address_query 命中后必须把上次收货信息**预填**进 form 卡，而不是再问一遍顾客"
+      - "老客户下单：必须带出上次收货信息（顾客不必重报）；订单上的收货人/地址/号码与库里一致"
       - "预填值必须是真值 —— 掩码值会被顾客原样提交，订单会用掩码建号"
       - "写操作前必须经过 validate_input（confirm → 校验 → order_create）"
     skip_reason: ""

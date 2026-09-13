@@ -1081,58 +1081,66 @@ class TestFormPrefillWiring:
 
 
 class TestFormPrefillLoaderPath:
-    """**CI 走的 YAML 装载路径**必须映射 form_prefill（issue #3397）。
+    """新断言字段的**装载链路**必须通（issue #3392/#3397/#3402 三次同族假绿的根治写法）。
 
-    为什么单列一类（上一轮假绿的直接教训，issue #3392）：新字段只在渲染器里映射、
-    而 CI 跑的是 `local_runner --cases .github/cases` 的 YAML 装载器 —— 漏映射时
-    用例照样"通过"，断言从未生效（全绿假绿）。故新断言字段必须有**真实装载**测试。
+    为什么用**临时 YAML 夹具**而不是某个真实用例：首版把断言挂在 OR-023 的
+    `form_prefill` 上，后来该用例改成**产出侧**断言（不再要求 form 机制，issue #3404 复盘）→
+    测试立刻失配。装载链路测试不该依赖"某个用例恰好声明了某字段"，故自造最小 YAML。
     """
 
-    def test_real_yaml_load_yields_form_prefill(self):
-        import pathlib as _pl
-        cases_dir = _pl.Path(lr.__file__).resolve().parents[2] / ".github" / "cases"
-        cases = {c.id: c for c in lr.load_cases_from_yaml(str(cases_dir))}
-        fp = cases["OR-023"].form_prefill
-        assert fp, "YAML 装载后 form_prefill 丢失（CI 路径上断言永不生效 = 假绿）"
-        assert any(x.get("field") == "customer_phone" for x in fp), fp
-        assert cases["OR-022"].form_prefill == [], "未声明的用例不得误继承"
+    def _write_case(self, tmp_path, field_yaml):
+        (tmp_path / "x.yml").write_text(
+            "cases:\n"
+            "  - id: TMP-1\n"
+            "    title: t\n"
+            "    tier: normal\n"
+            "    persona: xiaobu\n"
+            "    user_inputs:\n"
+            "      - \"你好\"\n"
+            + field_yaml, encoding="utf-8")
+        return str(tmp_path)
 
-    def test_renderer_emits_form_prefill(self):
-        import sys as _sys, pathlib as _pl
-        _sys.path.insert(0, str(_pl.Path(lr.__file__).resolve().parents[2] / ".github"))
-        from render_cases import load_case_dicts, to_eval_py
-        out = to_eval_py(load_case_dicts(str(_pl.Path(lr.__file__).resolve().parents[2] / ".github" / "cases")))
-        idx = out.index("id='OR-023'")
-        assert "form_prefill=[{'field': 'customer_phone'" in out[idx:idx + 4000], (
-            "渲染器没有输出 form_prefill（生成物会丢断言）")
+    def test_yaml_loader_maps_form_prefill(self, tmp_path):
+        d = self._write_case(tmp_path,
+                             "    form_prefill:\n"
+                             "      - field: customer_phone\n"
+                             "        expect: \"13800138000\"\n")
+        cases = {c.id: c for c in lr.load_cases_from_yaml(d)}
+        fp = cases["TMP-1"].form_prefill
+        assert fp and fp[0]["field"] == "customer_phone", (
+            "YAML 装载漏映射 form_prefill → CI 路径上断言永不生效（假绿）")
 
+    def test_yaml_loader_maps_forbidden_card_text(self, tmp_path):
+        d = self._write_case(tmp_path, "    forbidden_card_text:\n      - \"用量\"\n")
+        cases = {c.id: c for c in lr.load_cases_from_yaml(d)}
+        assert [str(x) for x in cases["TMP-1"].forbidden_card_text] == ["用量"], (
+            "YAML 装载漏映射 forbidden_card_text → CI 路径上断言永不生效（假绿）")
 
-class TestForbiddenCardTextLoaderPath:
-    """**CI 走的 YAML 装载路径**必须映射 forbidden_card_text（issue #3402）。
-
-    这是本 session **第三次**踩同一形态（前两次：`debug_user` issue #3392、
-    `form_prefill` issue #3397）：新字段只在渲染器里映射、CI 走 YAML 装载器 →
-    断言永不生效却全绿。故每个新断言字段都必须有**真实装载**测试。
-    """
-
-    def test_real_yaml_load_yields_forbidden_card_text(self):
-        import pathlib as _pl
-        cases_dir = _pl.Path(lr.__file__).resolve().parents[2] / ".github" / "cases"
-        cases = {c.id: c for c in lr.load_cases_from_yaml(str(cases_dir))}
-        spec = cases["OR-024"].forbidden_card_text
-        assert spec, "YAML 装载后 forbidden_card_text 丢失（CI 路径上断言永不生效 = 假绿）"
-        assert "用量" in [str(x) for x in spec], spec
-        assert cases["OR-023"].forbidden_card_text == [], "未声明用例不得误继承"
-
-    def test_renderer_emits_forbidden_card_text(self):
+    def test_renderer_emits_new_assertion_fields(self, tmp_path):
+        """渲染器必须把两个新断言字段写进 EvalCase 构造参数。"""
         import sys as _sys, pathlib as _pl
         root = _pl.Path(lr.__file__).resolve().parents[2]
         _sys.path.insert(0, str(root / ".github"))
-        from render_cases import load_case_dicts, to_eval_py
-        out = to_eval_py(load_case_dicts(str(root / ".github" / "cases")))
-        idx = out.index("id='OR-024'")
-        assert "forbidden_card_text=['用量'" in out[idx:idx + 4000], (
-            "渲染器没有输出 forbidden_card_text（生成物会丢断言）")
+        from render_cases import to_eval_py
+        tmp = _pl.Path(tmp_path)
+        (tmp / "x.yml").write_text(
+            "cases:\n"
+            "  - id: TMP-1\n"
+            "    title: t\n"
+            "    tier: normal\n"
+            "    form_prefill:\n"
+            "      - field: customer_phone\n"
+            "        expect: \"13800138000\"\n"
+            "    forbidden_card_text:\n"
+            "      - \"用量\"\n", encoding="utf-8")
+        import render_cases as _rc
+        import yaml_light as _yl
+        cases = _yl.load_file(str(tmp / "x.yml"))["cases"]
+        for c in cases:
+            c.setdefault("_domain", "x")
+        out = _rc.to_eval_py(cases)
+        assert "form_prefill=[{'field': 'customer_phone'" in out, out[:400]
+        assert "forbidden_card_text=['用量']" in out, out[:400]
 
 
 class TestRoundTraceWriteArgs:
@@ -3346,6 +3354,53 @@ class TestDbVerifyOrderPhone:
     def test_phone_absent_in_order_fails(self):
         issues = self._run(self._spec(), order={"data": {"orderNo": "x"}})
         assert issues and "手机号" in issues[0]
+
+
+class TestDbVerifyOrderPhoneCustomerFields:
+    """`db_verify[order_phone]` 的**产出侧**收货人/地址断言（issue #3404 复盘）。
+
+    为什么断言"订单上的值"而不是"过程发了 form 卡"：顾客在意的是订单对不对，
+    而机制（form 卡 vs confirm 卡字段）是模型的合法选择 —— 绑机制会造成假红
+    （实测 run 34755272379：`form_prefill: 会话里没有出现任何 form 卡`）。
+    """
+
+    def _run(self, spec, order):
+        import unittest.mock as mock
+
+        async def fake_lookup(token, order_ref):
+            return order
+
+        with mock.patch.object(lr, "_fetch_order_detail", new=fake_lookup):
+            return asyncio.run(lr.check_db_verify("tok", [spec], [_order_round(7, [
+                {"product_name": "遮光窗帘", "quantity": 3}], total=528.0)]))
+
+    def test_order_customer_name_and_address_checks(self):
+        """收货人/地址的**产出侧**断言（issue #3404）：预填机制可以变，订单上的值必须对。"""
+        order = {"data": {"orderNo": "x", "customerPhone": "13800138000",
+                          "customerName": "张三",
+                          "customerAddress": "浙江省杭州市西湖区文三路1号1幢101室"}}
+        spec = {"fetch": "order_phone", "source": "order_create",
+                "expect_phone": "13800138000", "expect_customer_name": "张三",
+                "expect_address_contains": "文三路"}
+        assert self._run(spec, order=order) == []
+
+    def test_address_mismatch_fails(self):
+        """地址被改写（含空格归一化后仍不同）→ 判红（老客户应沿用库里的地址）。"""
+        order = {"data": {"orderNo": "x", "customerPhone": "13800138000",
+                          "customerName": "张三",
+                          "customerAddress": "浙江省杭州市西湖区文三路100号"}}
+        spec = {"fetch": "order_phone", "source": "order_create",
+                "expect_phone": "13800138000", "expect_address_contains": "文三路1号"}
+        issues = self._run(spec, order=order)
+        assert issues and "收货地址" in issues[0], issues
+
+    def test_customer_name_mismatch_fails(self):
+        order = {"data": {"orderNo": "x", "customerPhone": "13800138000",
+                          "customerName": "李四", "customerAddress": "文三路1号"}}
+        spec = {"fetch": "order_phone", "source": "order_create",
+                "expect_phone": "13800138000", "expect_customer_name": "张三"}
+        issues = self._run(spec, order=order)
+        assert issues and "收货人" in issues[0], issues
 
 
 class TestPhoneProvenance:
