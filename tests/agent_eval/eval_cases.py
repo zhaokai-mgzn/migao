@@ -3315,7 +3315,7 @@ _CASE_OR_024 = EvalCase(
     title='C 端顾客已给数量后不得再问用量/褶皱倍数（防 2 倍金额与流程空转）',
     skill=Skill.ORDER,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['你好，我想买窗帘，有什么推荐的吗？', '第一款吧，白色，2.8 米门幅，按米卖', {'auto_respond': {'fallback': '纳米圈打孔'}}, '数量 3 米', {'auto_respond': {'fallback': '确认下单', 'form_values': {'customer_name': '张三', 'customer_phone': '13800138000', 'customer_address': '浙江省杭州市西湖区文三路1号1幢101室'}}}, {'auto_respond': {'fallback': '确认', 'form_values': {'customer_name': '张三', 'customer_phone': '13800138000', 'customer_address': '浙江省杭州市西湖区文三路1号1幢101室'}}}, {'auto_respond': {'fallback': '123456', 'prefer_text': True}}, {'auto_respond': {'fallback': '123456', 'prefer_text': True}}, {'auto_respond': {'fallback': '确认'}}, {'auto_respond': {'fallback': '确认'}}],
+    user_inputs=['我想买遮光窗帘，米白 3 米，要打孔加工', {'auto_respond': {'fallback': '纳米圈打孔'}}, '数量 3 米', {'auto_respond': {'fallback': '确认下单', 'form_values': {'customer_name': '张三', 'customer_phone': '13800138000', 'customer_address': '浙江省杭州市西湖区文三路1号1幢101室'}}}, {'auto_respond': {'fallback': '确认', 'form_values': {'customer_name': '张三', 'customer_phone': '13800138000', 'customer_address': '浙江省杭州市西湖区文三路1号1幢101室'}}}, {'auto_respond': {'fallback': '123456', 'prefer_text': True}}, {'auto_respond': {'fallback': '123456', 'prefer_text': True}}, {'auto_respond': {'fallback': '确认'}}, {'auto_respond': {'fallback': '确认'}}],
     expectations=['product_search', 'product_detail', 'interact', 'order_create'],
     data_checks=['顾客已给「数量 3 米」后，不得再发「选择用量/褶皱倍数」卡，也不得把 3 米换算成 6 米（2 倍金额）', '数量就是 3 米：金额 = 单价 × 3，最终必须真实落单（order_create 成功）', '整场不得出现 human_handoff（主转化路径不得转人工）'],
     skip_reason='',
