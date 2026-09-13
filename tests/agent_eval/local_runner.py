@@ -3506,6 +3506,12 @@ def load_cases_from_yaml(cases_dir: str) -> list:
             must_succeed=c.get("must_succeed") or [],
             amount_verify=c.get("amount_verify") or [],
             db_verify=c.get("db_verify") or [],
+            # 产出侧断言（issue #3367）。**这里曾经漏映射**（issue #3417 复盘）：
+            # check_output_verify 有调用点、生成物 EvalCase 有字段、单测也覆盖了生成物，
+            # 但 CI 走的是本函数 → PR-024「算料产出对不对」在 CI 上**从未执行过**
+            # （生成物路径有效，所以本地/审查都看不出来）→ 又一例"声称查过而其实没查"。
+            # 现由 test_loader_maps_every_assertion_field 按**词汇表**逐字段守住。
+            output_verify=c.get("output_verify") or [],
             form_prefill=c.get("form_prefill") or [],
             forbidden_card_text=c.get("forbidden_card_text") or [],
             pre_clean=c.get("pre_clean") or [],

@@ -9,7 +9,7 @@
   属「工具调用全对、用户看到的话是错的」类缺陷，PR-019 用本断言拦截。
 - interactive 事件采集：send_message 捕获 SSE interactive 事件（卡片证据）。
 """
-# case_ids: OR-016, AS-007, PR-019, CH-010, CH-024, OR-021, OR-022
+# case_ids: OR-016, AS-007, PR-019, CH-010, CH-024, OR-021, OR-022, PR-024, CH-025
 import asyncio
 from types import SimpleNamespace
 import importlib.util
@@ -3884,3 +3884,100 @@ class TestDebugUserPrecondition:
         assert "debug_user=c.get(\"debug_user\"" in src, (
             "local_runner 的 YAML→EvalCase 装载器漏了 debug_user —— CI（--cases .github/cases）"
             "会用空身份跑，新客用例假绿")
+
+
+class TestAssertionVocabularyIsMappedByLoader:
+    """**每一个**断言字段都必须能被 CI 的 YAML 装载路径映射（issue #3417 复盘）。
+
+    同一类假绿在本仓库已反复出现 3 次（`debug_user` / `form_prefill` /
+    `forbidden_card_text`）：字段在 `render_cases.py` 里映射了、在
+    `local_runner.load_cases_from_yaml` 里**漏了** → 生成物看着正常，
+    而 CI 走的正是 YAML 路径 → **断言永不生效**，用例照样绿。
+
+    逐字段补测治不了这个类（下一个新字段照样漏）。这里改成**词汇表驱动**：
+    词汇表 = 生成物 `EvalCase` 的字段（单一源，`tests/agent_eval/eval_cases.py`）。
+      ① 新增断言字段若没在这里配 probe → 直接红（强制作者想清楚装载路径）；
+      ② 配了 probe 但装载器没映射 → 红。
+    """
+
+    # 元数据字段：不是断言，天然不需要 probe
+    META = {
+        "id", "title", "skill", "difficulty", "user_inputs", "expectations",
+        "data_checks", "skip_reason", "legacy_id", "tags", "persona",
+    }
+
+    # 断言字段 → (YAML 片段, 期望值)。**必须覆盖词汇表全部断言字段**（见 test_probes_cover_vocabulary）
+    PROBES = {
+        "order_before": ('    order_before:\n      - "a before b"\n', ["a before b"]),
+        "forbidden_text": ('    forbidden_text:\n      - "没法帮您提交"\n', ["没法帮您提交"]),
+        "want_text": ('    want_text:\n      - "已经帮您下单"\n', ["已经帮您下单"]),
+        "required_args": ('    required_args:\n      - tool: t\n        fields: [x]\n', None),
+        "forbidden_args": ('    forbidden_args:\n      - tool: t\n        fields: [x]\n', None),
+        "must_succeed": ('    must_succeed:\n      - tool: t\n', None),
+        "amount_verify": ('    amount_verify:\n      - tool: t\n        checks: [total]\n', None),
+        "db_verify": ('    db_verify:\n      - fetch: order_items\n        source: order_create\n', None),
+        "output_verify": ('    output_verify:\n      - tool: t\n        field: payload\n', None),
+        "pre_clean": ('    pre_clean:\n      - action: reset\n', None),
+        "post_session": ('    post_session:\n      - fetch: user_memories\n', None),
+        "debug_user": ('    debug_user: "debug_customer_new"\n', "debug_customer_new"),
+        "form_prefill": ('    form_prefill:\n      - field: customer_phone\n        expect: "13800138000"\n', None),
+        "forbidden_card_text": ('    forbidden_card_text:\n      - "用量"\n', ["用量"]),
+    }
+
+    def _vocabulary(self):
+        """从生成物 dataclass 解析字段（单一源；渲染器与装载器都以它为准）"""
+        import ast
+        src = (REPO_ROOT / "tests" / "agent_eval" / "eval_cases.py").read_text(encoding="utf-8")
+        for node in ast.parse(src).body:
+            if isinstance(node, ast.ClassDef) and node.name == "EvalCase":
+                return [s.target.id for s in node.body
+                        if isinstance(s, ast.AnnAssign) and isinstance(s.target, ast.Name)]
+        raise AssertionError("eval_cases.py 里找不到 EvalCase dataclass —— 解析失效")
+
+    def _assertion_fields(self):
+        return [f for f in self._vocabulary() if f not in self.META]
+
+    def test_probes_cover_vocabulary(self):
+        missing = [f for f in self._assertion_fields() if f not in self.PROBES]
+        assert not missing, (
+            f"新增了断言字段但没有装载 probe：{missing}\n"
+            "请在 PROBES 里补 YAML 片段（并确认 load_cases_from_yaml 与 render_cases 都映射了）"
+        )
+        stale = [f for f in self.PROBES if f not in self._assertion_fields()]
+        assert not stale, f"PROBES 里有已不存在/已改名/已变元数据的字段：{stale}"
+
+    def test_loader_maps_every_assertion_field(self, tmp_path):
+        """逐字段：写成 YAML → 经 CI 装载路径 → 必须非空（漏映射即红）。"""
+        (tmp_path / "x.yml").write_text(
+            "cases:\n"
+            "  - id: TMP-1\n"
+            "    title: t\n"
+            "    tier: normal\n"
+            "    persona: xiaobu\n"
+            "    user_inputs:\n"
+            "      - \"你好\"\n",
+            encoding="utf-8")
+        problems = []
+        for field in self._assertion_fields():
+            snippet, want = self.PROBES[field]
+            d = tmp_path / field
+            d.mkdir()
+            (d / "x.yml").write_text(
+                "cases:\n"
+                "  - id: TMP-1\n"
+                "    title: t\n"
+                "    tier: normal\n"
+                "    persona: xiaobu\n"
+                "    user_inputs:\n"
+                "      - \"你好\"\n" + snippet,
+                encoding="utf-8")
+            cases = {c.id: c for c in lr.load_cases_from_yaml(str(d))}
+            got = getattr(cases["TMP-1"], field, None)
+            if not got:
+                problems.append(f"{field}: 装载后为空（load_cases_from_yaml 漏映射）")
+            elif want is not None and got != want:
+                problems.append(f"{field}: 装载后被改写 {got!r} ≠ {want!r}")
+        assert not problems, (
+            "以下断言字段在 **CI 的 YAML 装载路径**上丢失/被改写 —— 该断言永不生效（假绿）：\n  "
+            + "\n  ".join(problems)
+        )
