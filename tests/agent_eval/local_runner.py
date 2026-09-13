@@ -2128,10 +2128,19 @@ def _declared_codes(case) -> set:
     return out
 
 
-def _sent_codes(results: list) -> set:
-    """**实际发出去过**的验证码（权威口径 —— 只有它才能说"顾客给过码"）。"""
+def _sent_codes(results: list, before_round: int | None = None) -> set:
+    """**实际发出去过**的验证码（权威口径 —— 只有它才能说"顾客给过码"）。
+
+    `before_round` 是**必需的**时序约束（issue #3434 复盘，修正自己第一版的错）：
+    失败那一刻之后才发出的码**不能**算作"顾客已经给过" ——
+    否则会把"先失败 → harness 随后供码"这条**正常时序**误报成
+    "顾客早给了码、agent 没带上"（第一版就是这么误判的，差一点写成 agent 缺陷）。
+    """
     out: set = set()
     for r in results or []:
+        rnd = (r or {}).get("__round")
+        if before_round is not None and isinstance(rnd, int) and rnd >= before_round:
+            continue
         m = _SMS_CODE_RE.match(str((r or {}).get("user_message") or ""))
         if m:
             out.add(m.group(1))
@@ -2168,40 +2177,31 @@ def check_write_code_provenance(results: list, case) -> list:
     """
     if str(getattr(case, "persona", "") or "") != "xiaobu":
         return []
-    sent = _sent_codes(results)
     declared = _declared_codes(case)
     issues = []
     for r in results or []:
         if not _round_had_code_error(r):
             continue
+        rnd = (r or {}).get("__round")
+        # 只认**这一轮之前**已经发出的码（时序约束见 `_sent_codes`）
+        sent_before = _sent_codes(results, before_round=rnd if isinstance(rnd, int) else None)
+        allowed = sent_before | declared
         for tc in (r or {}).get("tool_calls") or []:
             if "order_create" not in str((tc or {}).get("name") or "").lower():
                 continue
             got = str(((tc or {}).get("args") or {}).get("sms_code") or "").strip()
-            rnd = (r or {}).get("__round")
             if not got:
-                if sent:
-                    # 情形①：顾客**真的给过**码，写调用却没带 → agent 侧代码补齐链路的问题
+                if sent_before:
                     issues.append(
-                        f"R{rnd}: order_create 因缺验证码失败，而此时顾客**已经给过**验证码，"
-                        f"调用参数里却没有 —— agent 侧代码补齐链路（会话记码→写工具回填）没接上"
-                        f"（issue #3434）")
-                elif declared:
-                    # 情形②：用例声明了码但**那一轮没走到** → 是 harness 的供码时机没触发，
-                    # 不是 agent 的锅。**必须分开报**，否则会把评测侧问题写成 agent 缺陷
-                    # （本轮实测：第一版就是这么说错的）。
-                    issues.append(
-                        f"R{rnd}: order_create 因缺验证码失败，而**用例声明的验证码始终没发出去** "
-                        f"—— repeat_until 的供码时机没触发（评测侧问题，issue #3430/#3434）")
-                # 两者都没有 → 这条用例本来就要求 agent 自己问码（不判）
-            elif got not in sent and got not in declared:
+                        f"R{rnd}: order_create 因缺验证码失败，而此时顾客**已经给过**验证码"
+                        f"（{len(sent_before)} 个），调用参数里却没有 —— agent 侧代码补齐链路"
+                        f"（会话记码→写工具回填）没接上（issue #3434）")
+                # 顾客此刻还没给码 → 属于"先失败、随后供码"的正常时序，不在此判
+                # （若之后仍无成功调用，由 must_succeed / db_verify 判）
+            elif got not in allowed:
                 issues.append(
                     f"R{rnd}: order_create 因验证码失败，且参数里的验证码与顾客给过/用例声明的"
                     f"**都不一致** —— 疑似模型自造验证码（issue #3434）")
-            elif got not in sent and sent:
-                issues.append(
-                    f"R{rnd}: order_create 携带的验证码不是顾客**实际给过**的那个"
-                    f"（疑似模型自造或复用了过期码，issue #3434）")
             break
     return issues
 

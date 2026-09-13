@@ -4318,14 +4318,25 @@ class TestWriteCodeProvenance:
         issues = lr.check_write_code_provenance(res, case)
         assert issues and "已经给过" in issues[0], issues
 
-    def test_declared_but_never_sent_is_an_eval_side_problem(self):
-        """**关键区分**（run 34769925078 实测）：用例声明了码、但那一轮根本没发出去 →
-        这是 harness 供码时机的问题，**不能写成 agent 缺陷**（第一版就是这么写错的）。"""
+    def test_code_sent_after_the_failure_is_not_already_given(self):
+        """**时序**是硬约束（issue #3434 复盘，修正自己第一版的错）：
+
+        失败那一刻之后才发出的码，**不能**算作"顾客已经给过" —— 否则会把
+        "先失败 → harness 随后供码"这条**正常时序**误报成"顾客早给了码、agent 没带上"。
+        """
         case = self._case()
-        res = [self._round(3, "确认", [{"name": "order_create", "args": {}}], code_error=True)]
+        res = [self._round(5, "确认", [{"name": "order_create", "args": {}}], code_error=True),
+               self._round(6, "123456", [])]          # 码在失败**之后**才发出
+        assert lr.check_write_code_provenance(res, case) == [], (
+            "把失败之后才发出的码当成了「已经给过」—— 这正是第一版误判成 agent 缺陷的原因")
+
+    def test_code_sent_before_the_failure_counts(self):
+        """码在失败**之前**发出 → 才是真的"顾客已给过、agent 没带上"。"""
+        case = self._case()
+        res = [self._round(2, "123456", []),
+               self._round(5, "确认", [{"name": "order_create", "args": {}}], code_error=True)]
         issues = lr.check_write_code_provenance(res, case)
-        assert issues and "始终没发出去" in issues[0], issues
-        assert "评测侧问题" in issues[0], "没有把归因指向评测侧"
+        assert issues and "已经给过" in issues[0], issues
 
     def test_flags_foreign_code(self):
         """模型自造验证码（带了码但不是顾客那个）→ 点名，这是本轮真正要区分的情形。"""
@@ -4368,7 +4379,8 @@ class TestWriteCodeProvenance:
 
         文本级 grep 不够（M260 教训：只改调用点保留函数体也能骗过 grep）。
         """
-        case = self._case(inputs=["我要下单", "123456"])
+        # 轮次顺序要满足新加的时间约束：**先给码、后失败**（反过来属于正常时序，不判）
+        case = self._case(inputs=["123456", "确认下单"])
         case.persona = "xiaobu"
         sent = []
 
