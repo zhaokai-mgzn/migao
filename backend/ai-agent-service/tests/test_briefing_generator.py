@@ -39,10 +39,21 @@ class TestSanitizeBriefing:
             "suggestions": [],
         }
         cleaned = sanitize_briefing(raw)
-        assert cleaned is not None
-        assert cleaned["summary"] == "昨日订单 5 单"
-        assert len(cleaned["todo"]) == 1
-        assert cleaned["todo"][0]["metrics"] == [{"key": "pending_ship_orders", "value": 10.0}]
+        assert cleaned == {
+            "summary": "昨日订单 5 单",
+            "review": [{"label": "今日订单", "value": 5.0, "unit": "单", "change": "较昨日 +66.7%"}],
+            "todo": [{
+                "priority": "high",
+                "title": "10 个订单待发货",
+                "reason": "超过发货时效",
+                "detail": "",
+                "severity": "medium",
+                "link": "/orders?status=待发货",
+                "metrics": [{"key": "pending_ship_orders", "value": 10.0}],
+            }],
+            "risks": [],
+            "suggestions": [],
+        }
 
     def test_drops_items_without_metrics(self):
         raw = {
@@ -86,7 +97,7 @@ class TestSanitizeBriefing:
         assert len(cleaned["todo"]) == MAX_TODO_ITEMS
 
     def test_none_input_returns_none(self):
-        assert sanitize_briefing(None) is None
+        assert sanitize_briefing(None) == None  # noqa: E711（None 输入返回 None 降级）
 
 
 class TestGenerateBriefing:
@@ -111,14 +122,26 @@ class TestGenerateBriefing:
             factory.create_briefing_llm.return_value = mock_llm
             result = await generate_briefing({"metrics": {"pending_ship_orders": 10}})
 
-        assert result is not None
-        assert result["summary"] == "昨日订单 5 单"
-        assert len(result["todo"]) == 1
+        assert result == {
+            "summary": "昨日订单 5 单",
+            "review": [],
+            "todo": [{
+                "priority": "high",
+                "title": "10 个订单待发货",
+                "reason": "",
+                "detail": "",
+                "severity": "medium",
+                "link": "",
+                "metrics": [{"key": "pending_ship_orders", "value": 10.0}],
+            }],
+            "risks": [],
+            "suggestions": [],
+        }
 
     @pytest.mark.asyncio
     async def test_empty_snapshot_returns_none(self):
-        assert await generate_briefing({}) is None
-        assert await generate_briefing(None) is None
+        assert await generate_briefing({}) == None  # noqa: E711（空快照降级）
+        assert await generate_briefing(None) == None  # noqa: E711（None 快照降级）
 
     @pytest.mark.asyncio
     async def test_unparseable_llm_output_returns_none(self):
@@ -128,7 +151,7 @@ class TestGenerateBriefing:
             factory.create_briefing_llm.return_value = mock_llm
             result = await generate_briefing({"metrics": {"k": 1}})
 
-        assert result is None
+        assert result == None  # noqa: E711（不可解析 → 不编造，返回 None）
 
     @pytest.mark.asyncio
     async def test_llm_exception_returns_none(self):
@@ -138,7 +161,7 @@ class TestGenerateBriefing:
             factory.create_briefing_llm.return_value = mock_llm
             result = await generate_briefing({"metrics": {"k": 1}})
 
-        assert result is None
+        assert result == None  # noqa: E711（LLM 异常 → 不编造，返回 None）
 
 
 class TestPromptSecurity:
