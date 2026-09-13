@@ -1695,3 +1695,57 @@ class TestAcceptanceEvidenceUpload:
             assert "fast" not in (s_.get("if") or ""), (
                 "验收证据上传不应被 fast 跳过"
             )
+
+
+class TestAdminApiDependencyLayerCached:
+    """admin-api 镜像必须**依赖层与源码层分离**（issue #3426，评测栈提速）
+
+    实证（run 34762648990）：栈步骤 196s，其中镜像构建 128s、Maven 段 50s ——
+    而 Maven 日志里是 **1847 行 `Downloading from …`**，即依赖**每次 CI 都重新下载**。
+    根因是原 Dockerfile 把 `COPY pom.xml` 与 `COPY src ./src` 写在一起、后接单个
+    `RUN mvn clean package`：源码一改，该层整体失效，依赖下载随之重来。
+
+    修法：`COPY pom.xml` → `RUN mvn dependency:go-offline` → `COPY src` → `RUN mvn package`。
+    本守卫锁住这个顺序 —— 否则将来有人"顺手合并两行"就会把 50s 悄悄加回每次 CI。
+
+    ⚠️ 判据只看**指令行**（`strip()` 后以关键字开头），不切片原文 ——
+    首版用 `find("COPY pom.xml")` 切片时命中了**注释里**引用的旧写法，
+    守卫因此报假红（"pom 与 src 之间没有 mvn"）。
+    """
+
+    def _lines(self) -> list:
+        df = (Path(__file__).parent.parent.parent / "backend" / "admin-api" / "Dockerfile")
+        return [l.strip() for l in df.read_text(encoding="utf-8").split("\n")]
+
+    @staticmethod
+    def _first(lines: list, prefix: str) -> int:
+        for i, l in enumerate(lines):
+            if l.startswith(prefix):
+                return i
+        return -1
+
+    def test_pom_copied_before_src(self):
+        lines = self._lines()
+        i_pom = self._first(lines, "COPY pom.xml")
+        i_src = self._first(lines, "COPY src")
+        assert i_pom != -1 and i_src != -1, "Dockerfile 缺少 COPY pom.xml / COPY src"
+        assert i_pom < i_src, (
+            "`COPY pom.xml` 必须在 `COPY src` 之前 —— 否则源码改动会让依赖层失效、"
+            "每次 CI 重新下载全部 Maven 依赖（约 50s，issue #3426）")
+
+    def test_dependency_warmup_between_pom_and_src(self):
+        """pom 与 src 之间必须有一层**只依赖 pom** 的 mvn（否则分层没有意义）。"""
+        lines = self._lines()
+        i_pom = self._first(lines, "COPY pom.xml")
+        i_src = self._first(lines, "COPY src")
+        assert any(l.startswith("RUN mvn") for l in lines[i_pom:i_src]), (
+            "pom 与 src 之间没有 mvn（依赖预热层缺失）—— 拆了 COPY 但没拆 RUN，"
+            "依赖仍会随源码改动重下")
+
+    def test_package_build_after_src(self):
+        """编译层必须在 src 之后（否则编的是空源码）。"""
+        lines = self._lines()
+        i_src = self._first(lines, "COPY src")
+        i_pkg = self._first(lines, "RUN mvn clean package")
+        assert i_pkg != -1 and i_src < i_pkg, (
+            "`mvn clean package` 不在 `COPY src` 之后 —— 编译层拿不到源码")
