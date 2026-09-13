@@ -4029,3 +4029,81 @@ class TestPreferTextPendingCardDiagnostic:
         """默认路径（答卡）不该刷告警 —— 否则日志噪音会掩盖真问题。"""
         lr.resolve_auto_respond(self._results("你好"), "确认", {})
         assert "忽略了待答卡片" not in capsys.readouterr().out
+
+
+class TestOrderBeforeCountsOnlySuccessfulWrite:
+    """时序断言的**后件只看成功调用**（issue #3421 实证，CH-025 首跑失败模式）。
+
+    实证（run 34764866953，fast 档关重试 → 抖动即红）：
+
+        R4 you=确认       tools=validate_input,order_create  failed=order_create!缺少短信验证码
+        R5 you=123456     tools=…,interact  cards=choice/confirm  ← 确认卡在这里才出现
+        R7 you=确认：…    tools=order_create  → 真正写单成功
+        ❌ order_before[interact[confirm] before order_create]: interact[confirm](R5) 晚于 order_create(R4)
+
+    顾客侧零影响（R4 那次**没写任何东西**），却被判成"写单先于确认" → 假红。
+    规则应为：**确认卡必须先于「真正写单」**；被门禁挡回的尝试不算写。
+    """
+
+    @staticmethod
+    def _round(rnd, calls, statuses=None):
+        r = {"__round": rnd, "tool_calls": [{"name": c} for c in calls],
+             "interactive": [], "final_text": ""}
+        if statuses is not None:
+            r["tool_results"] = [{"tool": c, "result": {"success": s}}
+                                 for c, s in zip(calls, statuses)]
+        return r
+
+    def _confirm_round(self, rnd):
+        return {"__round": rnd, "tool_calls": [{"name": "interact",
+                                                "args": {"component": "confirm"}}],
+                "interactive": [], "final_text": ""}
+
+    def test_rejected_write_then_confirm_then_real_write_passes(self):
+        """R2 写尝试被挡 → R4 确认卡 → R5 真正写单：**不算反序**（本次真 bug 的形态）。"""
+        results = [
+            self._round(2, ["order_create"], [False]),
+            self._confirm_round(4),
+            self._round(5, ["order_create"], [True]),
+        ]
+        assert lr.check_order_before(results, ["interact[confirm] before order_create"]) == [], (
+            "被门禁挡回的写尝试被当成了『写单先于确认』—— 假红（issue #3421）")
+
+    def test_real_write_before_confirm_still_flagged(self):
+        """#3414 的保护不能丢：**真正写单**发生在确认卡之前 → 必须判违规。"""
+        results = [
+            self._round(2, ["order_create"], [True]),
+            self._confirm_round(4),
+        ]
+        issues = lr.check_order_before(results, ["interact[confirm] before order_create"])
+        assert issues and "晚于" in issues[0], f"真正的反序被放过了：{issues}"
+
+    def test_never_successful_write_defers_to_must_succeed(self):
+        """全程没写成功（有状态信息）→ 不在时序里计错，交给 must_succeed/db_verify。"""
+        results = [
+            self._round(2, ["order_create"], [False]),
+            self._confirm_round(4),
+            self._round(5, ["order_create"], [False]),
+        ]
+        assert lr.check_order_before(results, ["interact[confirm] before order_create"]) == []
+
+    def test_unknown_status_keeps_legacy_semantics(self):
+        """拿不到 tool_result 的轨迹（单测极简构造）→ 退回"首次出现"，**不放宽**检测。"""
+        results = [
+            self._round(1, ["order_create"]),
+            self._confirm_round(2),
+        ]
+        issues = lr.check_order_before(results, ["interact[confirm] before order_create"])
+        assert issues and "晚于" in issues[0], (
+            f"状态未知时不该放宽（否则老用例的检测力被静默削弱）：{issues}")
+
+    def test_same_round_is_not_a_violation(self):
+        results = [self._round(3, ["interact", "order_create"], [True, True])]
+        # interact 无 component → 用不带限定的 spec
+        assert lr.check_order_before(results, ["interact before order_create"]) == []
+
+    def test_first_side_still_requires_occurrence(self):
+        """前件（确认卡）未出现 → 仍判"未调用"，与成功语义无关。"""
+        results = [self._round(2, ["order_create"], [True])]
+        issues = lr.check_order_before(results, ["interact[confirm] before order_create"])
+        assert issues and "未调用" in issues[0], issues
