@@ -964,8 +964,21 @@ def check_required_args(results: list, required_args: list) -> list:
     """
     issues = []
     for req in required_args or []:
+        if not isinstance(req, dict):
+            issues.append(f"required_args: 配置非字典: {req!r}")
+            continue
         tool = str(req.get("tool", ""))
         action = req.get("action")
+        if not tool:
+            issues.append(f"required_args: 配置缺 tool（该断言会被静默跳过）: {req!r}")
+            continue
+        if not (req.get("fields") or []):
+            # 只有 tool 没有 fields = 退化成"调用过就算过"，比作者本意弱得多 →
+            # 显式报错，逼作者写清要校验哪些字段（失败关闭，issue #3367）
+            issues.append(
+                f"required_args[{tool}]: 缺/空 fields —— 该断言会退化为「调用过即通过」，"
+                f"请写明要校验的必填字段: {req!r}")
+            continue
         found = None
         for r in results:
             for tc in r.get("tool_calls") or []:
@@ -1010,10 +1023,19 @@ def check_forbidden_args(results: list, forbidden_args: list) -> list:
     """
     issues = []
     for spec in forbidden_args or []:
+        if not isinstance(spec, dict):
+            issues.append(f"forbidden_args: 配置非字典: {spec!r}")
+            continue
         tool = str(spec.get("tool", ""))
         action = spec.get("action")
         fields = [str(f) for f in (spec.get("fields") or [])]
-        if not tool or not fields:
+        # 失败关闭（issue #3367 断言层审计）：配置写错就报错，不许静默跳过 ——
+        # 静默跳过会让"数据隔离/越权下限"断言变成 no-op，用例照样绿而红线没人守。
+        if not tool:
+            issues.append(f"forbidden_args: 配置缺 tool（该断言会被静默跳过）: {spec!r}")
+            continue
+        if not fields:
+            issues.append(f"forbidden_args[{tool}]: 缺/空 fields（该断言会退化为 no-op）: {spec!r}")
             continue
         for r in results:
             for tc in r.get("tool_calls") or []:
@@ -1643,7 +1665,11 @@ async def check_db_verify(token: str, db_verify: list, results: list | None = No
         if fetch != "product_by_name":
             issues.append(f"db_verify: 不支持的 fetch 配置: {spec!r}")
             continue
-        name = spec.get("name", "")
+        name = str(spec.get("name") or "")
+        if not name:
+            issues.append(
+                f"db_verify[product_by_name]: 缺 name（拿不到商品 → 检查会空转通过）: {spec!r}")
+            continue
         configs = await _fetch_product_configs(token, name)
         for check in spec.get("checks") or []:
             ok, detail = _evaluate_processing_configs_check(configs, str(check))
