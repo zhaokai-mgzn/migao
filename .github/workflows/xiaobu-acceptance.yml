@@ -2,6 +2,11 @@ name: Xiaobu Acceptance (小布 C 端验收)
 permissions:
   contents: read
   issues: write
+  # buildx `--cache-to type=gha` 走的是 Actions 缓存服务（issue #3426）：
+  # 实测仓库 172 条缓存里**全是 setup-node/python/java 的，没有一条 buildx/gha** ——
+  # 即缓存**从未写入**，于是每次 CI 全量重建（CACHED 层数 0 / 重建 43 层）。
+  # 没有 actions: write 时缓存导出会失败，而下面的回落路径把它**静默**吞掉了。
+  actions: write
 
 on:
   workflow_dispatch:
@@ -203,14 +208,27 @@ jobs:
           # 在境外 —— 实测镜像内 `pip install -r requirements.txt` 走阿里云 **632s（~160 kB/s）**，
           # 而这台 runner 自己的 pip（默认 PyPI）装同一份 requirements 只花 **23s**。
           # 栈步骤总 13.1min 里 10.5min 就是这一项。CI 必须改用 PyPI。
+          # ⚠️ 构建输出**留档**（issue #3426）：原写法把 buildx 的输出直接吞掉，
+          # 于是"buildx 失败 → 回落无缓存路径"只能从"没有缓存条目、每次全量重建"**反推**出来。
+          # 留档后回落时打印尾部，缓存为什么没生效一眼可见。
           if build_cached admin-api backend/admin-api backend/admin-api/Dockerfile \
+               > /tmp/buildx-admin.log 2>&1 \
              && build_cached ai-agent-service backend/ai-agent-service backend/ai-agent-service/Dockerfile \
-                  --build-arg PIP_INDEX_URL=https://pypi.org/simple; then
+                  --build-arg PIP_INDEX_URL=https://pypi.org/simple \
+                  > /tmp/buildx-agent.log 2>&1; then
             echo "✅ 镜像构建完成（buildx + GHA cache）"
+            # 缓存是否真的被导入/导出（issue #3426）：有 cache manifest 行才算生效
+            echo "── buildx 缓存活动 ──"
+            grep -ihE "importing cache manifest|exporting cache|cache manifest" \
+              /tmp/buildx-admin.log /tmp/buildx-agent.log | head -6 || \
+              echo "（无 cache manifest 行 —— 缓存未生效）"
             docker compose -f deploy/docker-compose.yml -f /tmp/compose-images.yml up -d --wait \
               --wait-timeout 300 postgres redis admin-api ai-agent-service 2>&1 | tail -20
           else
             echo "⚠️ buildx 缓存构建失败 → 回落 docker compose up --build（无缓存路径）"
+            echo "── buildx 输出尾部（归因用）──"
+            tail -25 /tmp/buildx-admin.log 2>/dev/null || true
+            tail -25 /tmp/buildx-agent.log 2>/dev/null || true
             docker compose -f deploy/docker-compose.yml up -d --build --wait \
               --wait-timeout 300 postgres redis admin-api ai-agent-service 2>&1 | tail -20
           fi
