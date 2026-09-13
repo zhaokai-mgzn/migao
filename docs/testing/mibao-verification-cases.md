@@ -2338,6 +2338,7 @@
 你: [🤖 按上一轮卡片作答]
 你: [🤖 按上一轮卡片作答]
 你: [🤖 按上一轮卡片作答]
+你: [🤖 按上一轮卡片作答]
 期望: product_search
 期望: product_detail
 期望: customer_address_query

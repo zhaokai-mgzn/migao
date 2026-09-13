@@ -1280,6 +1280,10 @@ cases:
           fallback: "确认"
       - auto_respond:
           fallback: "确认"
+      # 轮数余量（issue #3401）：确认卡可能因**补字段**（收货信息后到）而重发一次，
+      # 顾客会继续确认；余量不足时用例会以"确认死循环"红，掩盖预填断言的真实结论。
+      - auto_respond:
+          fallback: "确认"
     expectations:
       - tool: product_search
       - tool: product_detail
