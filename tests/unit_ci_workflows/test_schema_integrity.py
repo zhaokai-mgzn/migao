@@ -43,6 +43,26 @@ def _strip_comments(sql: str) -> str:
     return "\n".join(l for l in sql.split("\n") if not l.lstrip().startswith("--"))
 
 
+# 证据类步骤（路由 dump / DB 审计）的 `if:` 允许的唯一放行条件（issue #3417 提速）。
+# 语义：**默认永远跑**（失败轮次与成功轮次都要留证据），仅 `fast=true` 的迭代 run 跳过。
+# 只认这一个开关 —— 别的 gate（tier/shard/分支）会让证据在正式 run 里静默消失，
+# 那正是「报告说创建成功、库里没有」查不出来的一类问题（acceptance-protocol §2.2）。
+_EVIDENCE_FAST_SKIP = "github.event.inputs.fast != 'true'"
+
+
+def assert_always_unless_fast(step, label: str) -> None:
+    cond = (step or {}).get("if") or ""
+    assert "always()" in cond, (
+        f"{label} 必须 if: always() —— 成功轮次同样要留证据（基线/改进要能对比）"
+    )
+    extra = cond.replace("always()", "").replace("&&", " ").strip()
+    if extra:
+        assert extra == _EVIDENCE_FAST_SKIP, (
+            f"{label} 的 if 只允许额外叠加 fast 跳过开关（{_EVIDENCE_FAST_SKIP}），"
+            f"实际为 {cond!r} —— 别的 gate 会让证据在正式 run 里静默消失"
+        )
+
+
 def _created_tables(body: str):
     return [
         m.group(1).lower()
@@ -791,10 +811,7 @@ class TestRouteTraceDumpStep:
         )
 
     def test_step_is_always_run(self):
-        step = self._step()
-        assert step.get("if") == "always()", (
-            "路由轨迹步骤必须 if: always() —— 基线/改进的**成功**run 同样需要留痕对比"
-        )
+        assert_always_unless_fast(self._step(), "路由轨迹步骤")
 
     def test_step_comes_after_eval(self):
         steps = self._wf()["jobs"]["xiaobu-acceptance"]["steps"]
@@ -1238,9 +1255,7 @@ class TestEvalArtifactAuditStep:
         assert 0 <= i_eval < i_audit, (
             f"审计步骤必须在评测之后（i_eval={i_eval}, i_audit={i_audit}）"
         )
-        assert self._step().get("if") == "always()", (
-            "审计必须 if: always() —— 失败轮次更要看（失败≠没创建；成功≠真创建）"
-        )
+        assert_always_unless_fast(self._step(), "DB 审计步骤")
 
     def test_step_covers_all_write_artifacts(self):
         body = self._step().get("run") or ""
@@ -1421,3 +1436,208 @@ class TestFixtureOrderIdsAreUuidShaped:
         ids = set(self._order_ids())
         referenced = set(re.findall(r"'(a1b2c3d4-[0-9a-f\-]+)'", sql)) - ids
         assert not referenced, f"明细/物流引用了不属于订单主键集合的 id：{referenced}"
+
+
+class TestEvalSpeedKnobs:
+    """评测提速三旋钮 + 快速档边界的 wiring（issue #3417）
+
+    背景：C 端 normal 档一次 ≈11 分钟（30 条真实 LLM × 并发 3），迭代时"改一行等一刻钟"。
+    三个旋钮各有明确的**适用边界**，边界本身必须被测试钉住，否则提速会悄悄变成降级：
+      - `concurrency`：只调并发，语义不变 → 可随时用（含下结论）。
+      - `case_ids`   ：只跑指定用例 → 迭代用；**解析不到必须报错**（少跑≠通过）。
+      - `fast`       ：不重试 + 跳过取证步骤 → **只用于迭代，下结论前必须跑完整档**。
+    最危险的是 fast：若它顺手把「验收剧本」（L1/L2 门禁）也跳过，就会得到
+    "跑得快且全绿"的假象 —— 本类专门钉住"fast 只能跳过取证，不能跳过判定"。
+    """
+
+    EVIDENCE_STEPS = ("real E2E", "路由", "DB 审计")
+    # 允许被 fast 跳过的**全部**步骤关键字（取证 + 失败通知）。
+    # 失败通知也在内：迭代档的红是预期工作状态，不该开"每日全量验收失败"issue（#3417）。
+    FAST_SKIPPABLE = EVIDENCE_STEPS + ("Create Issue",)
+
+    def _wf(self) -> dict:
+        import yaml
+        wf = WORKFLOWS_DIR / "xiaobu-acceptance.yml"
+        return yaml.safe_load(wf.read_text(encoding="utf-8")) or {}
+
+    def _steps(self):
+        return self._wf()["jobs"]["xiaobu-acceptance"]["steps"]
+
+    def _inputs(self):
+        # pyyaml 按 YAML 1.1 把 `on:` 解析成布尔 True（与 line 767 同一处理）
+        wf = self._wf()
+        triggers = wf.get("on") or wf.get(True) or {}
+        assert "workflow_dispatch" in triggers, "workflow 缺 workflow_dispatch"
+        return triggers["workflow_dispatch"]["inputs"]
+
+    def _named(self, *keywords):
+        out = []
+        for s_ in self._steps():
+            name = s_.get("name") or ""
+            if any(k in name for k in keywords):
+                out.append(s_)
+        return out
+
+    def _eval_step(self):
+        steps = [s_ for s_ in self._steps() if "local_runner" in (s_.get("name") or "")]
+        assert len(steps) == 1, f"评测步骤应唯一，实际 {len(steps)} 个"
+        return steps[0]
+
+    # ---- 旋钮本身存在且默认值安全 ----
+
+    def test_inputs_declared_with_safe_defaults(self):
+        inputs = self._inputs()
+        for key in ("case_ids", "concurrency", "fast"):
+            assert key in inputs, f"workflow_dispatch 缺少输入 {key}"
+        assert inputs["case_ids"]["default"] == "", "case_ids 默认必须为空（=全量）"
+        assert inputs["concurrency"]["default"] == "6", (
+            "并发默认 6（实测 3 时评测档 663s）"
+        )
+        assert inputs["fast"]["default"] is False, (
+            "fast 默认必须 false —— 默认档不能是『跳过取证』的档"
+        )
+
+    def test_fast_documented_as_iteration_only(self):
+        desc = self._inputs()["fast"]["description"]
+        assert "下结论" in desc or "完整" in desc, (
+            f"fast 的描述必须写明只用于迭代、下结论要跑完整档，实际：{desc!r}"
+        )
+
+    # ---- 并发旋钮真的接到 runner 上 ----
+
+    def test_concurrency_wired_into_env(self):
+        env = self._eval_step().get("env") or {}
+        assert "EVAL_CONCURRENCY" in env, "评测步骤缺 EVAL_CONCURRENCY"
+        assert "concurrency" in str(env["EVAL_CONCURRENCY"]), (
+            f"EVAL_CONCURRENCY 未接 workflow 输入：{env['EVAL_CONCURRENCY']!r}"
+        )
+
+    # ---- case_ids 旋钮真的接到 runner 上 ----
+
+    def test_case_ids_wired_into_command(self):
+        body = self._eval_step().get("run") or ""
+        assert "--case-ids" in body, "评测步骤未把 --case-ids 传给 local_runner"
+        assert "case_ids" in body, "--case-ids 需要接 workflow 输入而不是写死"
+
+    def test_fast_disables_retries_but_full_keeps_three(self):
+        body = self._eval_step().get("run") or ""
+        # 注意：注释里也会出现 --max-retries（"3：每条失败用例至多重试"），
+        # 所以要找**真的命令行那一处**（后面跟 ${{ }} 表达式）
+        exprs = re.findall(r"--max-retries\s+(\$\{\{[^}]*\}\})", body)
+        assert exprs, "评测步骤缺带表达式的 --max-retries"
+        expr = exprs[-1]
+        assert "fast" in expr and "'0'" in expr and "'3'" in expr, (
+            f"--max-retries 未按 fast 切换（fast=0，完整=3）：{expr!r} —— "
+            "重试是抗噪手段，完整档必须保留"
+        )
+
+    def test_timing_is_echoed(self):
+        body = self._eval_step().get("run") or ""
+        assert "评测档耗时" in body, "评测步骤应回显评测档耗时（持续提速需要可见的基线）"
+
+    # ---- 快速档边界：只能跳过取证，不能跳过判定 ----
+
+    def test_evidence_steps_skip_only_in_fast_mode(self):
+        found = {k: [] for k in self.EVIDENCE_STEPS}
+        for s_ in self._steps():
+            name = s_.get("name") or ""
+            for k in self.EVIDENCE_STEPS:
+                if k in name:
+                    found[k].append(s_)
+        for k, steps in found.items():
+            assert steps, f"未找到取证步骤（关键字 {k}）—— 关键字变了？请同步本测试"
+            for s_ in steps:
+                cond = s_.get("if") or ""
+                assert "fast" in cond, (
+                    f"取证步骤「{s_.get('name')}」未按 fast 跳过（if={cond!r}）"
+                )
+
+    def test_acceptance_scenarios_never_skipped_by_fast(self):
+        """核心安全性质：fast 不能把验收剧本（L1/L2 门禁）一起跳过。
+
+        取证步骤缺了顶多是"证据少"，判定步骤缺了就是"没验收却报全绿"。"""
+        steps = self._named("验收剧本")
+        assert steps, "未找到验收剧本步骤"
+        for s_ in steps:
+            cond = s_.get("if") or ""
+            assert "fast" not in cond, (
+                f"验收剧本步骤不得被 fast 跳过（if={cond!r}）—— "
+                "快速档可以少留证据，但不能不判定"
+            )
+
+    def test_acceptance_scenarios_still_run_when_eval_fails(self):
+        """验收剧本必须 `always()`（与 E2E 同理，issue #3364）。
+
+        若写成 `success()`：评测一红，验收剧本就 skip —— 而后者是**独立**判定源
+        （点卡/打岔/换窗口），两者互相掩盖后，"评测挂了但体验没事"永远看不见。
+        """
+        steps = self._named("验收剧本")
+        assert steps, "未找到验收剧本步骤"
+        for s_ in steps:
+            cond = s_.get("if") or ""
+            assert "always()" in cond, (
+                f"验收剧本步骤必须 if: always()（实际 {cond!r}）—— "
+                "评测失败时它更要跑，否则唯一独立判定源也没了"
+            )
+            extra = cond.replace("always()", "").replace("&&", " ").strip()
+            assert extra in ("", "matrix.shard == 0"), (
+                f"验收剧本只允许 shard==0 这一个附加条件，实际 {cond!r}"
+            )
+
+    def test_fast_skip_list_is_exhaustive(self):
+        """反向守卫：除取证步骤外，其它步骤都不许挂 fast 条件。
+
+        防止将来有人为了"跑得更快"把闸门（依赖安装/栈健康检查/判定）也标上 fast。"""
+        offenders = []
+        for s_ in self._steps():
+            name = s_.get("name") or ""
+            cond = s_.get("if") or ""
+            if "fast" not in cond:
+                continue
+            if not any(k in name for k in self.FAST_SKIPPABLE):
+                offenders.append(name or cond)
+        assert not offenders, (
+            f"以下非取证步骤被 fast 跳过，会让快速档失去判定力：{offenders}"
+        )
+
+    def test_iteration_runs_do_not_file_acceptance_issue(self):
+        """fast / 收窄档不得开「小布 C 端验收失败」issue（issue #3417）。
+
+        这张 issue 的语义是**每日全量验收**结论。若迭代档照建：标题不含分支 →
+        分支迭代失败会与主干验收失败共用同一 issue 线程（去重按标题，直接往主干 issue
+        追加评论）；而且拿 2 条用例的失败开全量验收 issue 是过度断言。
+        """
+        steps = self._named("Create Issue")
+        assert steps, "未找到失败建 issue 步骤（关键字变了？请同步本测试）"
+        for s_ in steps:
+            cond = s_.get("if") or ""
+            assert "failure()" in cond, f"建 issue 步骤必须以 failure() 为前提：{cond!r}"
+            assert "fast" in cond, (
+                f"迭代快速档仍会开验收 issue（if={cond!r}）—— 迭代的红是工作状态，不是验收结论"
+            )
+            assert "case_ids" in cond, (
+                f"收窄档仍会开验收 issue（if={cond!r}）—— 局部失败不能开全量验收 issue"
+            )
+
+    def test_full_runs_still_file_issue(self):
+        """反向守卫：完整档必须照旧建 issue —— 提速不能顺手把告警也关掉。"""
+        steps = self._named("Create Issue")
+        for s_ in steps:
+            cond = s_.get("if") or ""
+            for required in ("failure()", "matrix.shard == 0"):
+                assert required in cond, (
+                    f"完整档建 issue 条件被削弱（缺 {required}）：{cond!r}"
+                )
+
+    def test_helper_rejects_foreign_gates(self):
+        """自证 helper 有效（否则上面几条可能是恒真断言 —— 本仓库出现过的假绿家族）"""
+        ok = {"if": f"always() && {_EVIDENCE_FAST_SKIP}"}
+        assert_always_unless_fast(ok, "dummy")
+        assert_always_unless_fast({"if": "always()"}, "dummy")
+        for bad in ("success()", "always() && matrix.shard == 0",
+                    "always() && github.event.inputs.tier == 'normal'", ""):
+            try:
+                assert_always_unless_fast({"if": bad}, "dummy")
+            except AssertionError:
+                continue
+            raise AssertionError(f"helper 未拦住非法条件 {bad!r} —— 断言形同虚设")

@@ -1790,6 +1790,29 @@ def _seed_phones() -> set:
     return _SEED_PHONES_CACHE
 
 
+def filter_cases_by_ids(cases: list, wanted: str) -> tuple:
+    """按 `--case-ids` 收窄用例集（迭代提速，issue #3417）。
+
+    返回 `(保留的用例, 无法解析的 ID 列表)`。**无法解析必须由调用方报错而非静默少跑**
+    —— 「跑了两条」若被当成通过，就是本仓库反复出现的假绿同族（如字段只映射了渲染器、
+    没映射 CI 加载器）。ID 口径与 `--case-id` 一致：新 ID 与 legacy_id 都认。
+    """
+    wanted_ids = [x.strip() for x in str(wanted or "").split(",") if x.strip()]
+    if not wanted_ids:
+        return list(cases or []), []
+    by_id = {str(getattr(c, "id", "")): c for c in (cases or [])}
+    by_legacy = {str(getattr(c, "legacy_id", "") or ""): c for c in (cases or [])
+                 if getattr(c, "legacy_id", "")}
+    picked, missing = [], []
+    for cid in wanted_ids:
+        c = by_id.get(cid) or by_legacy.get(cid)
+        if c is None:
+            missing.append(cid)
+        else:
+            picked.append(c)
+    return picked, missing
+
+
 def check_forbidden_card_text(results: list, spec: list) -> list:
     """卡片内容反模式断言（issue #3402）：卡标题/选项/字段值不得出现指定子串。
 
@@ -3496,6 +3519,11 @@ async def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("suite", choices=["smoke", "normal", "full", "adversarial", "case"], nargs="?", default="smoke")
     parser.add_argument("--case-id", help="单条用例 ID（支持新 ID 与 legacy_id，如 OR-002 或 O002）")
+    parser.add_argument("--case-ids", default="",
+                        help="逗号分隔的用例 ID 列表（**迭代提速用**）：只跑这些用例，"
+                             "可在任意 tier 上叠加（如 `normal --case-ids OR-019,OR-024`）。"
+                             "为什么需要：全档 30 条 ≈ 11 分钟真实 LLM；改动只需复验几条时，"
+                             "这是把「下结论前的整档」与「改一行看一眼」分开的关键（issue #3417）")
     parser.add_argument("--cases", help="用例库目录（cases/*.yml）——提供时直接读 YAML（单一源）")
     parser.add_argument("--concurrency", type=int,
                         default=int(os.environ.get("EVAL_CONCURRENCY", "1")),
@@ -3548,6 +3576,15 @@ async def main():
 
     def active_cases():
         return [c for c in cases if not c.skip_reason]
+
+    # 迭代提速（issue #3417）：--case-ids 只保留指定用例（与 tier/shard 正交）
+    if (args.case_ids or "").strip():
+        _picked, _missing = filter_cases_by_ids(cases, args.case_ids)
+        if _missing:
+            print(f"❌ --case-ids 里有无法解析的用例 ID: {_missing}（禁止静默少跑）")
+            sys.exit(1)
+        print(f"🎯 --case-ids 收窄：{len(cases)} → {len(_picked)} 条（{args.case_ids}）")
+        cases = _picked
 
     # 分片（issue #3361 评测提速）：在 tier 选择之后切片 —— 保证「每片都只跑自己那份」，
     # 且空片显式报错（0 用例 = 该片白跑，属配置错误，不做静默假绿，同 _ci_verdict 语义）

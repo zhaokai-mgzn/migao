@@ -104,6 +104,36 @@ CI 原先允许 3 次 → 失败多的跑把分钟数全花在重试上。
   （main run 34684474262 评测 17/17、E2E 已 failure）。现在两条腿各自亮灯。
 - 结果按**原始用例顺序**回填（并发不改变报告顺序，便于与历史 run 逐条对比）。
 
+### 2.6 三档分治：完整档 / 收窄档 / 快速档（issue #3417）
+
+上面几轮把**整跑**从 15.6-25.7min 压到 8.7-12.6min，但没解决**迭代**：30 条 normal 用例的
+评测档实测 **663s**（~250 次真实 LLM 往返，`EVAL_CONCURRENCY=3`），"改一行等一刻钟"。
+且本机无 docker → 评测只能在 CI 跑，所以旋钮必须做进 workflow（而不是"本地跑快点"）。
+
+| 旋钮 | 默认 | 作用 | 边界 |
+|---|---|---|---|
+| `concurrency` | 3 → **6** | 同 job 内用例级并发（栈只起一次） | **语义不变** → 任何档可用，含下结论的完整档 |
+| `case_ids` | 空 | 只跑指定用例（与 tier/shard 正交，逗号分隔） | 迭代复验用；**ID 解析不到即报错退出**（少跑 ≠ 通过） |
+| `fast` | `false` | 不重试（`--max-retries 0`）+ 跳过取证（real E2E / 路由 dump / DB 审计） | **只用于迭代，下结论前必须跑完整档** |
+
+**快速档的红线**：只允许跳过**取证**，绝不允许跳过**判定**。验收剧本（点卡/打岔/换窗口）
+是**独立判定源**，若被 `fast` 一起跳过，就会得到"跑得快且全绿"的假象 ——
+评测缺陷与体验缺陷互相掩盖（同 #3364 对 E2E 的结论：只要评测红，E2E 红就永远看不见）。
+
+这条红线由 `TestEvalSpeedKnobs` **双向**钉死：取证步骤必须挂 `fast` 跳过，非取证步骤
+**一律不许**挂 `fast`（防止将来有人为了"更快"把栈健康检查/判定步骤也标上 `fast`）。
+
+**迭代档不开验收 issue**：失败时自动开的「小布 C 端验收失败」issue 语义是**每日全量**结论，
+而迭代档的红是预期中的工作状态；且 issue 标题不含分支 → 分支迭代失败会与主干验收失败
+共用同一线程（去重按标题，直接往主干 issue 追加评论），拿 2 条用例的失败开全量 issue
+也是过度断言。故 `fast=true` 或收窄档不建 issue，**完整档照旧建**（该被看见的红一条不少）。
+
+> 为什么不做"自动降档"：档位是**结论强度**的选择，必须显式声明。
+> 自动降档会让"没验收却报全绿"变得无法察觉 —— 本项目的假绿事故几乎都是"少做了一步但没报错"。
+
+评测档耗时现在回显到日志（`⏱ 评测档耗时 ${SECONDS}s`），让基线持续可见：
+没有可见基线，"提速"就只能靠感觉。
+
 ## 3. 诊断基建（没有它，上面的归因都做不出来）
 
 | 证据 | 出处 |
@@ -133,6 +163,11 @@ EVAL_CONCURRENCY=3 EVAL_ROUND_SLEEP=0.2 EVAL_CASE_SLEEP=0.3 \
 AGENT_EVAL_SUMMARY_JSON=/tmp/summary.json \
 python tests/agent_eval/local_runner.py normal --cases .github/cases --max-retries 1
 
+# 1b) 迭代档（issue #3417）：只复验几条 + 不重试 + 不取证 —— 把"改一行看一眼"压到分钟级
+EVAL_CONCURRENCY=6 python tests/agent_eval/local_runner.py normal --cases .github/cases \
+  --case-ids OR-019,OR-024 --max-retries 0
+#   ⚠️ 收窄/快速档只用于迭代复验；**下结论前必须跑完整档**（见 §2.6 的红线）
+
 # 2) 步骤级耗时（CI）
 gh api repos/<owner>/<repo>/actions/runs/<id>/jobs \
   --jq '.jobs[].steps[] | "\(.name)\t\(.started_at)\t\(.completed_at)"'
@@ -142,6 +177,7 @@ gh run view <id> --log | grep "Start local stack" | ...
 ```
 
 守卫（改动若让优化退化会变红）：
-`tests/unit_ci_workflows/test_schema_integrity.py`（栈缓存 + PyPI 源 + 审计口径）、
+`tests/unit_ci_workflows/test_schema_integrity.py`（栈缓存 + PyPI 源 + 审计口径 +
+`TestEvalSpeedKnobs`：三旋钮接线与快速档边界，含"非取证步骤不许挂 fast"的反向守卫）、
 `backend/ai-agent-service/tests/test_acceptance_case_checks.py`（并发有界、读写门独占、
 报告顺序、预算不被并发突破、pre_clean 只独占清理动作）。
