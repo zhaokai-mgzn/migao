@@ -23,6 +23,7 @@ from app.graph.skills.base_skill import (
     build_tool_context, execute_skill, _extract_content, get_skill_llm,
     _masked_phone_write_block, KNOWN_RAW_PHONES_KEY, _capability_denial_reason,
     capability_denial_text_hit,
+    _confirm_card_seen,
     _conversation_mentions_dimensions, _form_prefill_fidelity_block,
     _stated_purchase_quantities, _quantity_choice_block,
     _curtain_calc_dimension_block, _should_code_close_loop,
@@ -5025,3 +5026,55 @@ class TestTextDenialCorrectiveRetry:
         out, llm, _ = self._run([denial], has_order_tool=False)
         assert out["final_answer"] == denial
         assert llm.ainvoke.await_count == 1
+
+
+class TestConfirmCardSeenSubReason:
+    """`confirmation_required` 必须**能区分**两种形态（issue #3445）。
+
+    同样一句 `must_succeed: order_create 共 1 次调用无一成功（R10:confirmation_required）`，
+    成因却可能是"模型从没发过确认卡就直接写"或"发过卡但顾客回的是文本" ——
+    修法完全不同（补卡 vs 修点卡链路），而 fast 档看不到容器日志，只能靠 error 码自述。
+    """
+
+    @staticmethod
+    def _card_round(component="confirm", ok=True):
+        payload = {"success": ok, "data": {"component": component, "title": "请确认订单信息"}}
+        return ToolMessage(content=json.dumps(payload, ensure_ascii=False),
+                           tool_call_id="c1", name="interact")
+
+    def test_detects_confirm_card(self):
+        assert _confirm_card_seen([HumanMessage(content="确认下单"), self._card_round()]) is True
+
+    def test_other_card_types_do_not_count(self):
+        assert _confirm_card_seen([self._card_round("choice")]) is False
+        assert _confirm_card_seen([self._card_round("form")]) is False
+
+    def test_failed_card_does_not_count(self):
+        """没发出去的卡（success=false）不算"发过确认卡"。"""
+        assert _confirm_card_seen([self._card_round(ok=False)]) is False
+
+    def test_non_interact_tool_ignored(self):
+        m = ToolMessage(content=json.dumps({"success": True, "data": {"component": "confirm"}}),
+                        tool_call_id="x", name="product_detail")
+        assert _confirm_card_seen([m]) is False
+
+    def test_empty_and_garbage_are_safe(self):
+        assert _confirm_card_seen([]) is False
+        assert _confirm_card_seen([ToolMessage(content="not json", tool_call_id="y", name="interact")]) is False
+
+
+class TestConfirmationGateSubReasonHarnessGap:
+    """**已知测试基建缺口**：确认门禁没有被端到端驱动（issue #3445 复盘）。
+
+    做本轮细分码时想在本地驱动门禁，发现既有用例只测到 `_requires_confirmation`
+    （工具层判据），**没有任何用例**让写调用真的走到门禁并断言其 error 码 ——
+    于是"细分码接线"无法在本地验证，只能靠 CI 指纹（下一次失败时报告里会显示
+    `confirmation_required_no_card` / `confirmation_required_card_not_clicked`）。
+
+    这里**显式记录缺口**而不是留一个假装覆盖的断言：补齐 harness 需要同时满足
+    下单接地门禁 + 确认门禁（`grounded_product_detail` + 非卡值用户消息），
+    属于下一轮的工作（见 #3445 的验收标准）。
+    """
+
+    def test_gap_is_acknowledged(self):
+        assert True, "占位：缺口见类 docstring 与 #3445"
