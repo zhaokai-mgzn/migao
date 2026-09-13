@@ -18,7 +18,7 @@ C 端一直没跟。
 
 本测试锁定 C 端 prompt 的加工项契约——删规则即 fail，防重构回退。
 """
-# case_ids: OR-016, CH-010, PR-019, OR-021
+# case_ids: OR-016, CH-010, PR-019, OR-021, OR-022
 import pytest
 
 from app.graph.skills.customer_order_skill import CUSTOMER_ORDER_SYSTEM_PROMPT
@@ -129,6 +129,17 @@ class TestCustomerOrderPromptGrowthGuard:
         assert "不要自己打码" in p, "缺少「展示脱敏由系统做，不要自己打码」规则"
         assert "禁止自我否定" in p, "缺少「禁止能力自我否定」规则（C-A1 拒单形态）"
         assert "13800008000" not in p or "静默写错" in p, "掩码填充值的危害说明缺失"
+
+    def test_prompt_keeps_quantity_vs_dimension_rule(self):
+        """数量口径规则必须在 prompt 里（issue #3395）：'要 3 米' = 买 3 米布，不得当窗宽算料。
+
+        实证：OR-022 顾客「买遮光窗帘，米白 3 米」被当成窗宽 3 米 + 窗高默认 2.7 米 →
+        算料 9 米 → 落库 ¥1584（应为 ¥528），顾客被多收 3 倍钱。
+        """
+        p = CUSTOMER_ORDER_SYSTEM_PROMPT
+        assert "数量口径铁律" in p, "缺少「顾客说米数＝购买数量」规则（多收 3 倍钱的根因）"
+        assert "禁止**当窗宽" in p or "禁止" in p and "窗宽" in p, "规则未禁止把米数当窗宽"
+        assert "curtain_calc" in p, "未说明何时才允许算料"
 
     def test_prompt_not_accidentally_truncated(self):
         n = len(CUSTOMER_ORDER_SYSTEM_PROMPT)

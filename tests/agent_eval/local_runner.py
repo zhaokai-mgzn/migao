@@ -2325,6 +2325,13 @@ def _compact_write_args(args: dict) -> dict:
         ]
     if args.get("sms_code"):
         out["sms_code"] = "***"
+    # 算料入参（issue #3395）：curtain_calc 是**钱的输入** —— 实测模型把顾客的购买米数
+    # 当窗宽、并把窗高默认成 2.7 米算出 9 米布；没有这条证据只能看到 `fabric_meters=9.0`
+    # 结果摘要，看不到"它假设了什么"。故窗宽/窗高/褶皱倍数一并记录。
+    if any(k in args for k in ("window_width", "window_height", "fullness")):
+        for k in ("window_width", "window_height", "fullness", "fabric_width", "mounting"):
+            if args.get(k) is not None:
+                out[k] = args[k]
     return out
 
 
@@ -2400,6 +2407,7 @@ def build_round_trace(results: list) -> list:
                 }
                 for tc in (r.get("tool_calls") or [])
                 if str(tc.get("name", "")).lower() in _WRITE_TOOL_NAMES
+                or str(tc.get("name", "")).lower() == "curtain_calc"
             ],
             # 截断：轨迹用于归因，不是全文存档（全文另见 final_text / 产物）
             "text": text[:60],

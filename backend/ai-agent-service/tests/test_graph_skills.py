@@ -7,7 +7,7 @@ LangGraph Skill 节点测试
 - ToolContext 从 state 正确构建
 - base_skill 的 execute_skill 逻辑
 """
-# case_ids: AG-004, CH-003, CH-023, MC-008, DF-018, HR-005, CU-003, CH-010, CH-012, OR-017, OR-021
+# case_ids: AG-004, CH-003, CH-023, MC-008, DF-018, HR-005, CU-003, CH-010, CH-012, OR-017, OR-021, OR-022
 
 import json
 import pytest
@@ -22,6 +22,7 @@ from app.graph.skills.general_agent import GENERAL_TOOLS, GENERAL_SKILL_CONFIG
 from app.graph.skills.base_skill import (
     build_tool_context, execute_skill, _extract_content, get_skill_llm,
     _masked_phone_write_block, KNOWN_RAW_PHONES_KEY, _capability_denial_reason,
+    _conversation_mentions_dimensions,
 )
 import app.graph.skills.base_skill as lr2
 from app.graph.skills.skill_registry import SkillRegistry
@@ -3332,6 +3333,116 @@ class TestCapabilityDenialHandoffWiring:
     def test_normal_business_reason_still_hands_off(self):
         seen = self._run({"reason": "顾客要求人工核对加工费"}, user_msg="我要找人工核对加工费")
         assert len(seen["calls"]) == 1, "正常业务理由的转人工被拦 → 真回归"
+
+
+class TestCurtainCalcDimensionGuard:
+    """算料必须以**顾客给的窗户尺寸**为前提（issue #3395，DB 实证多收 3 倍钱）。
+
+    实证（run 34748745308，OR-022）：顾客「我想买遮光窗帘，米白 **3 米**，要纳米圈打孔加工」
+    —— 说的是**买 3 米布**；模型却把它当成「窗宽 3 米」，再把窗高默认成 2.7 米去算料：
+
+        P = ceil((3+0.3)×2/2.8) = 3 幅，M = 3×(2.7+0.3) = **9.0 米**
+
+    → `order_create{遮光窗帘×9@168}` 落库 **¥1584**（顾客要的是 ¥528）。同轮还出现 `×9.3`。
+    这类"把购买米数当窗宽再乘褶皱倍数"是**钱的正确性**问题，且顾客视角完全无法察觉。
+
+    判据：会话里**必须出现过窗户尺寸措辞**（窗宽/窗高/宽度/高度/尺寸/多宽/多高/米宽/米高）
+    才允许算料 —— 模型若需要尺寸会先问，问过之后会话里自然就有这些词 → 自愈，不卡死。
+    """
+
+    def test_dimension_mentioned_allows(self):
+        for t in ["窗宽 3 米 窗高 2.7 米 2 倍褶皱 帮我算",
+                  "3米宽 2.5米高 2倍褶皱 打孔帘 用98元一米",
+                  "我家窗户尺寸是 3 米 2.7 米",
+                  "窗户多宽多高我量一下"]:
+            assert _conversation_mentions_dimensions([HumanMessage(content=t)]), f"误拦: {t!r}"
+
+    def test_purchase_meters_not_dimensions(self):
+        """顾客说"要 3 米"是**购买数量**，不是窗户尺寸 → 不得算料（本 issue 的形态）。"""
+        msgs = [HumanMessage(content="我想买遮光窗帘，米白 3 米，要纳米圈打孔加工"),
+                AIMessage(content="好的，帮您看看～"), HumanMessage(content="3 米")]
+        assert not _conversation_mentions_dimensions(msgs), "把购买米数当窗宽 = 多收 3 倍钱"
+
+
+class TestCurtainCalcDimensionGuardWiring:
+    """守卫必须接在工具调用上：无尺寸证据时 curtain_calc 不得真的执行。"""
+
+    def _run(self, args, user_msg="我想买遮光窗帘，米白 3 米，要纳米圈打孔加工",
+             tool_name="curtain_calc", history=None):
+        import asyncio, json as _json
+
+        seen = {"calls": []}
+
+        async def fake_execute(tool, a, ctx, state):
+            seen["calls"].append((tool, a))
+            return (_json.dumps({"success": True, "data": {"fabric_meters": 9.0}}),
+                    {"success": True, "data": {"fabric_meters": 9.0}})
+
+        class _Store:
+            async def load(self, sid):
+                return {}
+
+            async def commit(self, sid, f):
+                return None
+
+        with patch("app.memory.session_memory.SessionMemory"), \
+             patch("app.graph.skills.base_skill.get_breaker") as get_breaker, \
+             patch("app.graph.skills.base_skill.get_skill_llm") as get_llm, \
+             patch("app.graph.skills.base_skill.create_skill_registry") as create_reg, \
+             patch("app.graph.skills.base_skill.set_tool_context"), \
+             patch("app.graph.skills.base_skill._execute_tool_safe", fake_execute), \
+             patch("app.memory.session_state_store.SessionStateStore",
+                   side_effect=lambda *a, **k: _Store()):
+            tool = MagicMock()
+            tool.name = tool_name
+            tool.read_only = True
+            tool.destructive = False
+            tool.requires_confirmation = False
+            registry = MagicMock()
+            registry.get_langchain_tools.return_value = []
+            registry.get_tool.side_effect = lambda n: tool if n == tool_name else None
+            create_reg.return_value = registry
+            breaker = MagicMock()
+
+            async def _pt(fn):
+                return await fn()
+
+            breaker.call = _pt
+            get_breaker.return_value = breaker
+            call = MagicMock(spec=AIMessage)
+            call.content = ""
+            call.tool_calls = [{"name": tool_name, "args": args, "id": "c1"}]
+            final = MagicMock(spec=AIMessage)
+            final.content = "好的"
+            final.tool_calls = []
+            llm = MagicMock()
+            llm.bind_tools.return_value = llm
+            llm.ainvoke = AsyncMock(side_effect=[call, final])
+            get_llm.return_value = llm
+            msgs = list(history or []) + [HumanMessage(content=user_msg)]
+            res = asyncio.run(execute_skill(
+                state=_make_state(messages=msgs),
+                skill_name="customer_order",
+                tool_names=[tool_name], system_prompt="p"))
+        from langchain_core.messages import ToolMessage as _TM
+        seen["tool_content"] = "\n".join(
+            str(getattr(m, "content", "")) for m in (res or {}).get("messages", [])
+            if isinstance(m, _TM))
+        return seen
+
+    def test_calc_blocked_without_dimensions(self):
+        seen = self._run({"window_width": 3.0, "window_height": 2.7, "fabric_price": 168.0})
+        assert seen["calls"] == [], "顾客没给窗户尺寸就不得算料（会把 3 米算成 9 米）"
+        assert "窗" in seen["tool_content"], "必须告诉模型去问窗户尺寸"
+
+    def test_calc_allowed_with_dimensions(self):
+        seen = self._run({"window_width": 3.0, "window_height": 2.7, "fabric_price": 168.0},
+                         user_msg="窗宽 3 米 窗高 2.7 米 2 倍褶皱 打孔帘 用 98 元一米")
+        assert len(seen["calls"]) == 1, "顾客给了尺寸却拦下 → 真回归"
+
+    def test_other_tools_unaffected(self):
+        seen = self._run({"keyword": "窗帘"}, tool_name="product_search")
+        assert len(seen["calls"]) == 1
 
 
 class TestFalseCancelGuard:
