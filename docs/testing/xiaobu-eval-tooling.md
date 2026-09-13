@@ -432,6 +432,15 @@ R7 you=123456  tools=order_create!confirmation_required_no_card,interact  cards=
 这两行才是唯一能证实"补卡真的触发过"的证据（白名单由 `TestFallbackCardLogWhitelist`
 守卫，被删会被 CI 拦）。
 
+**第二形态与代码侧收口**：同一轮两张**同组件**卡还有第二种成因 —— 模型**自己**在一条回复里
+调了两次 `interact`（OR-023 首跑 R1：`tools=…,interact,interact` → `cards=choice,choice`，
+一张问「两个颜色选哪个」、一张「颜色选好啦～」）。这会踩到会话侧的**单槽**待答卡
+（`chat.py` 的 `last_interactive_payload`）：顾客点第一张，回传值与"当前待答卡"对不上。
+agent 侧已收口：C 端**同一组件每轮只发一张**，第二张起回
+`card_already_emitted_this_turn`（可执行的提示，不静默丢），由
+`TestOneInteractiveCardPerTurn` 守卫。**不同组件不受限** —— OR-021 R3 的
+`choice(加工项)+form(收货信息)` 是合法形态（一条消息两个问题），一律"整轮一张"会误伤它。
+
 ## 7. 新增 C 端用例的检查单
 
 1. 在对应域 `.github/cases/*.yml` 新增，**必写** `persona: xiaobu`（C 端专属）；
