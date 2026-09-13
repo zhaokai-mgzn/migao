@@ -151,6 +151,15 @@ jobs:
       - name: "Start local stack (docker-compose: PG + Redis + admin-api + ai-agent DEBUG)"
         id: stack
         env:
+          # ── GHA 缓存服务 v2（issue #3426）──
+          # 上游已知问题：GitHub 把缓存服务迁到 v2（ACTIONS_RESULTS_URL）后，BuildKit 的
+          # `type=gha` 后端在拿不到它认识的端点时会**静默跳过** —— 表现为"构建成功、
+          # 无任何 cache manifest 行、无 error/warning、仓库里 0 条 buildx 缓存"（正是我们实测的形态）：
+          #   · moby/buildkit#5896（ACTIONS_CACHE_SERVICE_V2 不生效）
+          #   · moby/buildkit#5754（为 gha cache 增加 fallback url）
+          # 打开该开关让 BuildKit 走 v2 端点；下一次 run 用 `gh api .../actions/caches`
+          # 与日志里的 cache manifest 行验证是否真的写入。
+          ACTIONS_CACHE_SERVICE_V2: "1"
           # ⚠️ deploy/docker-compose.yml 里 DEV_SERVICE_TOKEN 是 required 无默认值
           # （``${DEV_SERVICE_TOKEN:?...}``）——缺它 compose 直接插值失败，栈根本起不来。
           DEV_SERVICE_TOKEN: ${{ secrets.SMOKE_SERVICE_TOKEN || 'ci-service-token-placeholder' }}

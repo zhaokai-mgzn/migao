@@ -1844,3 +1844,23 @@ class TestBuildxCacheIsWired:
         window = src[i:j]
         assert "cache manifest" in window, "成功分支未报告 cache manifest"
         assert "warn|error" in window, "成功分支未打印 buildx 警告/错误（归因必需）"
+
+
+class TestBuildxCacheServiceV2Enabled:
+    """必须打开 GHA 缓存服务 v2 开关（issue #3426）
+
+    GitHub 把 Actions 缓存服务迁到 v2（`ACTIONS_RESULTS_URL`）后，BuildKit 的 `type=gha`
+    后端在拿不到它认识的端点时会**静默跳过** —— 实测形态正是：
+    构建成功 + **无 cache manifest 行** + **无 error/warning** + 仓库 **0 条 buildx 缓存**。
+    上游依据：moby/buildkit#5896（ACTIONS_CACHE_SERVICE_V2 不生效）、#5754（gha cache fallback url）。
+    """
+
+    def test_switch_present(self):
+        src = (WORKFLOWS_DIR / "xiaobu-acceptance.yml").read_text(encoding="utf-8")
+        # 行锚定：只看**env 赋值行**（`ACTIONS_CACHE_SERVICE_V2:` 开头）——
+        # 首版只查子串，结果被我自己写的**注释**满足 → 变异 M304 存活（假守卫）。
+        assignments = [l.strip() for l in src.split("\n")
+                       if l.strip().startswith("ACTIONS_CACHE_SERVICE_V2:")]
+        assert assignments, (
+            "workflow 里没有 `ACTIONS_CACHE_SERVICE_V2:` 的 env 赋值 —— "
+            "BuildKit 不会走 v2 缓存端点，type=gha 静默失效（注释提到变量名不算）")
