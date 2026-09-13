@@ -20,7 +20,7 @@
       {
         "repeat_until": {
           "tool_called": "order_create",
-          "max": 3
+          "max": 5
         },
         "click": "auto",
         "fallback": "确认下单"
