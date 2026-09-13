@@ -355,6 +355,27 @@ class InteractTool(BaseTool):
                     message="确认信息不能为空",
                 )
 
+            # ── confirmValue 由**实质内容**决定，不采用模型措辞（issue #3401 根因）──
+            # 实证（run 34756290189 工具健康度）：`order_create!confirmation_required × 4`。
+            # 确认门禁要求"用户消息**精确等于**最近一次确认卡的 confirmValue"，而该值此前
+            # 由**模型**书写（工具描述还要求"包含上下文"）→ 模型每次重发确认卡换一种措辞，
+            # 值就变了 → 顾客点的是上一张卡的值 → 门禁判"没确认" → 模型再发卡 →
+            # **确认死循环、订单落不了库**（OR-019/OR-023/OR-024 的失败形态）。
+            # 修法：值 = 确认词前缀 + **字段事实**的确定性序列化 ——
+            #   · 同样的事实 ⇒ 同样的值（无论标题/措辞怎么变）→ 顾客点击必中，循环消失；
+            #   · 事实变了（数量 3→4、总价变）⇒ 值变 → 顾客必须重新确认新明细（语义不削弱）；
+            #   · 仍以「确认」开头 → 门禁的短词判定（`_is_explicit_confirmation`）照常可用；
+            #   · 按钮文字（confirmLabel）与顾客可见文案不受影响。
+            _facts = []
+            for _f in fields or []:
+                if isinstance(_f, dict):
+                    _facts.append(f"{_f.get('label') or ''}={_f.get('value') or ''}")
+                else:
+                    _facts.append(str(_f))
+            if _facts:
+                # 排序：**字段顺序**也是模型自由发挥的一部分（同一批事实可能换个顺序重发），
+                # 排序后"事实集合相同 ⇒ 值相同"才真正成立。
+                confirmValue = "确认：" + "；".join(sorted(_facts))
             interactive_data = {
                 "component": "confirm",
                 "title": title,
