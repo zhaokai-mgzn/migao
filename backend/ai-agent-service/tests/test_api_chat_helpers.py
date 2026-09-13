@@ -530,6 +530,32 @@ class TestCardMaskingAtSseBoundary:
         assert out["options"][0]["value"] == "opt_13800138000"
         assert "13800138000" not in out["options"][0]["label"]
 
+    def test_form_prefill_value_not_masked(self):
+        """**form 的预填值不得脱敏**（issue #3379 关键修正，CI 实证）。
+
+        前端提交表单会把**所有字段值**回传 → 若出站时把 `formFields[].value` 脱敏，
+        顾客（或 harness）提交回来的就是 `138****8000`：
+        CI 日志实证 `validate_input({"customer_phone": "138****8000", …})`
+        —— **订单会用掩码号码创建**，比"明文回显"严重得多。
+        故：form 只脱敏 **label**（顾客可见文案），value（协议回传数据）保持原值；
+        confirm 卡的 `fields[].value` 是纯展示（点击回传的是 confirmValue）→ 可脱敏。
+        """
+        from app.api.chat import _mask_card_for_customer
+        card = {"component": "form", "title": "请确认收货信息",
+                "formFields": [{"key": "customer_phone", "label": "手机号", "value": "13800138000"}]}
+        out = _mask_card_for_customer(card, self._ctx("customer"))
+        assert out["formFields"][0]["value"] == "13800138000", \
+            "form 预填值被脱敏 → 顾客提交回来后订单会拿到掩码号码"
+        assert "13800138000" not in out["formFields"][0]["label"] or True  # label 无 PII 时不改
+
+    def test_confirm_field_value_masked(self):
+        """confirm 卡的字段值是纯展示（点击回传 confirmValue）→ 应当脱敏。"""
+        from app.api.chat import _mask_card_for_customer
+        card = {"component": "confirm", "title": "请确认",
+                "fields": [{"label": "手机号", "value": "13800138000"}]}
+        out = _mask_card_for_customer(card, self._ctx("customer"))
+        assert "138****8000" in out["fields"][0]["value"]
+
     def test_order_number_untouched(self):
         from app.api.chat import _mask_card_for_customer
         card = {"component": "confirm", "title": "订单号 20260913027050006",

@@ -700,9 +700,15 @@ def _mask_card_for_customer(data: dict, context) -> dict:
             res.append(node)
         return res
 
-    for key in ("fields", "formFields"):
-        if isinstance(out.get(key), list):
-            out[key] = _items(out[key], ("label", "value"))
+    # confirm 卡：fields[].value 是**纯展示**（点击回传的是 confirmValue）→ 可脱敏
+    if isinstance(out.get("fields"), list):
+        out["fields"] = _items(out["fields"], ("label", "value"))
+    # ⚠️ form 卡：**只脱敏 label，绝不碰 value**（issue #3379 关键修正）
+    # 前端提交表单会把所有字段值原样回传 —— 出站脱敏 value 等于让顾客提交回
+    # `138****8000`：CI 实证 `validate_input({"customer_phone": "138****8000", …})`
+    # → **订单会用掩码号码创建**，比"明文回显"严重得多。
+    if isinstance(out.get("formFields"), list):
+        out["formFields"] = _items(out["formFields"], ("label",))
     if isinstance(out.get("options"), list):
         out["options"] = _items(out["options"], ("label",))
     return out
