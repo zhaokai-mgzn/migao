@@ -518,7 +518,13 @@ jobs:
       - name: Create Issue on failure (dedup guard)
         # 只在 0 号片建 issue：同一次评测失败会同时命中 N 片，去重靠标题但并发下有竞态，
         # 结果是一次失败开 N 个 issue（噪音）。0 号片的报告已含全局判定。
-        if: failure() && matrix.shard == 0
+        #
+        # 迭代档不建 issue（issue #3417）：本步骤的产物是「小布 C 端验收失败」这条**每日
+        # 全量**结论，而 fast/收窄档的红是迭代中预期出现的工作状态。若照建：① 标题不含
+        # 分支，会让「分支迭代失败」与「主干验收失败」共用同一个 issue 线程（去重还按标题，
+        # 直接往主干 issue 里追加评论）；② 用 2 条用例的失败去开一张全量验收 issue，是**过度
+        # 断言**。完整档（fast=false 且未收窄）照旧建 issue，所以"该被看见的红"一条都不会少。
+        if: failure() && matrix.shard == 0 && github.event.inputs.fast != 'true' && github.event.inputs.case_ids == ''
         uses: actions/github-script@v9
         with:
           script: |

@@ -414,4 +414,7 @@ EVAL_CONCURRENCY=6 python tests/agent_eval/local_runner.py normal --cases .githu
 验收剧本（acceptance-protocol §2/§4）是独立判定源，永远保留 `always()`。
 `--case-ids` 解析不到的 ID 会**报错退出**，不会静默少跑（少跑 ≠ 通过）。
 
+迭代档（`fast=true` 或 `case_ids` 非空）失败时**不会**自动开「小布 C 端验收失败」issue ——
+那张 issue 是每日全量结论，不能被分支迭代/局部失败污染（完整档照旧建 issue）。
+
 性能账与实测数据见 [`eval-pipeline-performance.md`](eval-pipeline-performance.md) §2.6。

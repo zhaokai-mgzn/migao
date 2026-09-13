@@ -1451,6 +1451,9 @@ class TestEvalSpeedKnobs:
     """
 
     EVIDENCE_STEPS = ("real E2E", "路由", "DB 审计")
+    # 允许被 fast 跳过的**全部**步骤关键字（取证 + 失败通知）。
+    # 失败通知也在内：迭代档的红是预期工作状态，不该开"每日全量验收失败"issue（#3417）。
+    FAST_SKIPPABLE = EVIDENCE_STEPS + ("Create Issue",)
 
     def _wf(self) -> dict:
         import yaml
@@ -1591,11 +1594,40 @@ class TestEvalSpeedKnobs:
             cond = s_.get("if") or ""
             if "fast" not in cond:
                 continue
-            if not any(k in name for k in self.EVIDENCE_STEPS):
+            if not any(k in name for k in self.FAST_SKIPPABLE):
                 offenders.append(name or cond)
         assert not offenders, (
             f"以下非取证步骤被 fast 跳过，会让快速档失去判定力：{offenders}"
         )
+
+    def test_iteration_runs_do_not_file_acceptance_issue(self):
+        """fast / 收窄档不得开「小布 C 端验收失败」issue（issue #3417）。
+
+        这张 issue 的语义是**每日全量验收**结论。若迭代档照建：标题不含分支 →
+        分支迭代失败会与主干验收失败共用同一 issue 线程（去重按标题，直接往主干 issue
+        追加评论）；而且拿 2 条用例的失败开全量验收 issue 是过度断言。
+        """
+        steps = self._named("Create Issue")
+        assert steps, "未找到失败建 issue 步骤（关键字变了？请同步本测试）"
+        for s_ in steps:
+            cond = s_.get("if") or ""
+            assert "failure()" in cond, f"建 issue 步骤必须以 failure() 为前提：{cond!r}"
+            assert "fast" in cond, (
+                f"迭代快速档仍会开验收 issue（if={cond!r}）—— 迭代的红是工作状态，不是验收结论"
+            )
+            assert "case_ids" in cond, (
+                f"收窄档仍会开验收 issue（if={cond!r}）—— 局部失败不能开全量验收 issue"
+            )
+
+    def test_full_runs_still_file_issue(self):
+        """反向守卫：完整档必须照旧建 issue —— 提速不能顺手把告警也关掉。"""
+        steps = self._named("Create Issue")
+        for s_ in steps:
+            cond = s_.get("if") or ""
+            for required in ("failure()", "matrix.shard == 0"):
+                assert required in cond, (
+                    f"完整档建 issue 条件被削弱（缺 {required}）：{cond!r}"
+                )
 
     def test_helper_rejects_foreign_gates(self):
         """自证 helper 有效（否则上面几条可能是恒真断言 —— 本仓库出现过的假绿家族）"""
