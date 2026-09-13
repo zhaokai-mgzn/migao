@@ -2335,6 +2335,182 @@ def _order_round(rnd, items, ok=True, total=None):
     }
 
 
+class TestFetchOrderDetailPaths:
+    """订单详情抓取的**路径选择**（issue #3367 实测假失败）。
+
+    ai-agent 的 `order_create` 返回 `id` 实测是 **32 位 hex（无连字符）**，
+    而首版只认"带连字符的 UUID" → 32 位 hex 被当成订单号去走关键词搜索 → 搜不到
+    → 误报"订单查不到明细（未落库？）"。实测同跑 DB 审计 `orders=7`（订单确实落库了），
+    即**假失败**：这类错误会把评测工具的可信度直接打掉。
+    """
+
+    class _Resp:
+        status_code = 200          # _safe_json 走 resp.content（不是 .json()）——
+                                   # 缺 content 会被 except 吞成 None，测出来是"假失败"
+                                   # （我第一版测试替身就漏了它，白查了一轮）
+
+        def __init__(self, payload):
+            import json as _j
+            self._p = payload
+            self.content = _j.dumps(payload, ensure_ascii=False).encode()
+
+        def json(self):
+            return self._p
+
+    def _patched(self, calls, detail_payload, list_items):
+        import unittest.mock as mock
+
+        class _Client:
+            async def __aenter__(self_inner):
+                return self_inner
+
+            async def __aexit__(self_inner, *a):
+                return False
+
+            async def get(self_inner, url, **kw):
+                calls.append((url, (kw or {}).get("params")))
+                if url.rstrip('/').endswith("/orders") or "/orders?" in url:
+                    return TestFetchOrderDetailPaths._Resp(
+                        {"data": {"items": list_items}})
+                return TestFetchOrderDetailPaths._Resp(detail_payload)
+
+        return mock.patch.object(lr.httpx, "AsyncClient", lambda *a, **k: _Client())
+
+    def test_hex_id_is_fetched_directly(self):
+        calls = []
+        detail = {"data": {"orderNo": "x", "items": [{"productName": "遮光窗帘", "quantity": 2}]}}
+        with self._patched(calls, detail, []):
+            out = asyncio.run(lr._fetch_order_detail("tok", "1c3661962eb3504935cb551d16a9c7f0"))
+        assert out == detail, "32 位 hex id 必须能直查到订单（首版这里是假失败）"
+        assert any(u.endswith("/orders/1c3661962eb3504935cb551d16a9c7f0") for u, _ in calls)
+
+    def test_order_no_falls_back_to_keyword_search(self):
+        calls = []
+        detail = {"data": {"orderNo": "20260101000000001", "items": []}}
+        with self._patched(calls, detail, [{"id": "a1b2c3d4-e5f6-4a7b-8c9d-000000000001"}]):
+            out = asyncio.run(lr._fetch_order_detail("tok", "20260101000000001"))
+        assert out == detail
+        assert any(p and p.get("keyword") == "20260101000000001" for _, p in calls), \
+            "订单号必须先走关键词搜索（它不是合法 path 参数）"
+
+    def test_unknown_ref_returns_none(self):
+        with self._patched([], {"data": {}}, []):
+            assert asyncio.run(lr._fetch_order_detail("tok", "不存在的订单号")) in (None, {"data": {}})
+
+
+class TestAmountVerifyChecksRobustness:
+    """`checks` 必须是**列表**语义 —— 字符串形态此前让金额断言静默失效（issue #3367）。
+
+    实证：`yaml_light` 不解析 flow 序列（`[unit_price, subtotal, total]` 原样存成字符串），
+    于是渲染产物里 OR-014/OR-017 的 `checks` 是字符串；`[str(x) for x in "<str>"]` 把它
+    拆成**字符列表** → `"unit_price" in checks` 恒假 → **三项检查全被跳过、函数返回 []（恒通过）**。
+    我为此写的单测用的是 Python 列表，所以单测全绿而线上一直没查钱 —— 典型的"工具自证"盲区。
+    修法分两层：① 解析层把 flow 序列读成列表（根治）；② 运行层**失败关闭**：读不懂就报错，
+    绝不静默跳过。
+    """
+
+    def _run(self, checks, items, total, price=168.0):
+        import unittest.mock as mock
+
+        async def fake_price(token, name):
+            return price
+
+        spec = [{"tool": "order_create", "product_name": "遮光窗帘", "checks": checks}]
+        with mock.patch.object(lr, "_fetch_product_price", new=fake_price):
+            return asyncio.run(lr.check_amount_verify("tok", [_order_round(7, items, total=total)], spec))
+
+    def test_string_checks_still_verify(self):
+        """字符串形态（历史渲染产物）也必须真的查 —— 否则金额断言是装饰品。"""
+        items = [{"product_name": "遮光窗帘", "quantity": 3, "unit_price": 31.8,
+                  "subtotal": 95.4}]          # 凭记忆报价的假单价
+        issues = self._run("[unit_price, subtotal, total]", items, total=95.4)
+        assert issues, "字符串 checks 下金额断言又静默跳过了（假绿）"
+        assert any("单价" in i for i in issues)
+
+    def test_list_checks_verify(self):
+        items = [{"product_name": "遮光窗帘", "quantity": 3, "unit_price": 31.8,
+                  "subtotal": 95.4}]
+        assert self._run(["unit_price", "subtotal", "total"], items, total=95.4)
+
+    def test_garbage_checks_fails_closed(self):
+        """读不懂的 checks 不得当成"没有检查" —— 必须显式报错。"""
+        items = [{"product_name": "遮光窗帘", "quantity": 3, "unit_price": 168.0,
+                  "subtotal": 504.0}]
+        issues = self._run("??? 无法识别的检查项 ???", items, total=504.0)
+        assert issues and "无法识别" in issues[0], "解析不出检查项时必须失败关闭，不能静默通过"
+
+
+class TestDbVerifyOrderItems:
+    """订单明细落库断言（issue #3367 上限用例基建）。
+
+    为什么必须有：`must_succeed` 只证明 order_create 返回成功，
+    `amount_verify` 只核对**这次调用传的参数**（args）—— 两者都**没回答
+    "订单明细真的按行落库了吗"**。多商品下单（上限用例 OR-018）恰恰只有 DB 才说得清：
+    两行商品、各自数量/单价、总额，全在 `orders`/`order_items` 里。
+    此前 db_verify 只支持 `fetch: product_by_name`（商品侧），订单侧是缺口。
+    """
+
+    ORDER = {
+        "data": {
+            "orderNo": "20260101000000001",
+            "totalAmount": 1000.0,
+            "items": [
+                {"productName": "夏日清风窗帘", "quantity": 3, "unitPrice": 158.0},
+                {"productName": "遮光窗帘", "quantity": 2, "unitPrice": 168.0},
+            ],
+        }
+    }
+
+    def _run(self, spec, order=None, lookup_ok=True):
+        import unittest.mock as mock
+
+        async def fake_lookup(token, order_ref):
+            return (order if order is not None else self.ORDER) if lookup_ok else None
+
+        with mock.patch.object(lr, "_fetch_order_detail", new=fake_lookup):
+            return asyncio.run(lr.check_db_verify("tok", [spec], [self._round()]))
+
+    def _spec(self, **kw):
+        base = {"fetch": "order_items", "source": "order_create",
+                "expect_products": ["夏日清风窗帘", "遮光窗帘"]}
+        base.update(kw)
+        return base
+
+    def _round(self):
+        return _order_round(7, [{"product_name": "夏日清风窗帘", "quantity": 3}], total=810.0)
+
+    def test_both_lines_landed_passes(self):
+        assert self._run(self._spec()) == []
+
+    def test_missing_line_fails(self):
+        order = {"data": {"orderNo": "x", "items": [
+            {"productName": "夏日清风窗帘", "quantity": 3, "unitPrice": 158.0}]}}
+        issues = self._run(self._spec(), order=order)
+        assert issues and "遮光窗帘" in issues[0], "少一行商品必须判失败（多商品下单的核心风险）"
+
+    def test_quantity_mismatch_fails(self):
+        order = {"data": {"orderNo": "x", "items": [
+            {"productName": "夏日清风窗帘", "quantity": 1, "unitPrice": 158.0},
+            {"productName": "遮光窗帘", "quantity": 2, "unitPrice": 168.0}]}}
+        issues = self._run(self._spec(expect_quantities={"夏日清风窗帘": 3}), order=order)
+        assert any("数量" in i for i in issues), "数量不符必须判失败"
+
+    def test_order_not_found_fails(self):
+        issues = self._run(self._spec(), lookup_ok=False)
+        assert issues and "查不到" in issues[0], "查不到订单不得静默当通过"
+
+    def test_no_source_order_fails_closed(self):
+        """没有可追溯的 order_create 结果 → 不得静默跳过（宁可红，不可假绿）。"""
+        import unittest.mock as mock
+        with mock.patch.object(lr, "_first_successful_data", new=lambda res, tool: {}):
+            issues = asyncio.run(lr.check_db_verify("tok", [self._spec()], [self._round()]))
+        assert issues and "order_create" in issues[0]
+
+    def test_unknown_fetch_still_rejected(self):
+        issues = self._run({"fetch": "nonsense"})
+        assert issues and "不支持" in issues[0]
+
+
 class TestAmountVerify:
     """单价接地 / 小计自洽 / 总额自洽。"""
 

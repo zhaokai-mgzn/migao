@@ -43,6 +43,61 @@ def _parse_scalar(s):
         return False
     if s in ('[]', '{}'):
         return [] if s == '[]' else {}
+    if s.startswith('[') and s.endswith(']'):
+        # flow 序列（issue #3367）：`[unit_price, subtotal, total]` 此前被原样当字符串，
+        # 直接坑到金额断言 —— `checks` 收字符串后被按字符迭代 → 检查项全部静默跳过。
+        # 只解析**标量**元素（用例里的形态就这些）；解析不出来时保留原字符串（向后兼容，
+        # 由消费侧失败关闭兜底，不在这里抛异常打断整份用例加载）。
+        inner = s[1:-1].strip()
+        if not inner:
+            return []
+        parts, buf, quote = [], '', ''
+        for ch in inner:
+            if quote:
+                if ch == quote:
+                    quote = ''
+                buf += ch
+                continue
+            if ch in ('"', "'"):
+                quote = ch
+                buf += ch
+                continue
+            if ch == ',':
+                parts.append(buf)
+                buf = ''
+                continue
+            buf += ch
+        parts.append(buf)
+        return [_parse_scalar(p) for p in parts if p.strip() != '']
+    if s.startswith('{') and s.endswith('}'):
+        # flow 映射：`{夏日清风窗帘: 3}` → dict（expect_quantities 这类配置会用到）
+        inner = s[1:-1].strip()
+        if not inner:
+            return {}
+        out, buf, quote, depth = {}, '', '', 0
+        items = []
+        for ch in inner:
+            if quote:
+                if ch == quote:
+                    quote = ''
+                buf += ch
+                continue
+            if ch in ('"', "'"):
+                quote = ch
+                buf += ch
+                continue
+            if ch == ',' and depth == 0:
+                items.append(buf)
+                buf = ''
+                continue
+            buf += ch
+        items.append(buf)
+        for it in items:
+            if ':' not in it:
+                continue
+            k, v = it.split(':', 1)
+            out[_parse_scalar(k.strip()) if isinstance(_parse_scalar(k.strip()), str) else str(_parse_scalar(k.strip()))] = _parse_scalar(v)
+        return out
     if len(s) >= 2 and s[0] in ('"', "'") and s[-1] == s[0]:
         return s[1:-1]
     try:
