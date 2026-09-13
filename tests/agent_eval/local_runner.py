@@ -2181,7 +2181,7 @@ def check_write_code_provenance(results: list, case) -> list:
       ② 参数里有码但与顾客给过的都不一致 → 疑似模型自造验证码。
     只报轮次与事实，**不打印码本身**；只对 C 端（xiaobu）生效。
     """
-    if str(getattr(case, "persona", "") or "") != "xiaobu":
+    if not is_customer_case(case):
         return []
     declared = _declared_codes(case)
     issues = []
@@ -2212,6 +2212,46 @@ def check_write_code_provenance(results: list, case) -> list:
     return issues
 
 
+_CUSTOMER_CASE_IDS_CACHE: set | None = None
+
+
+def _customer_case_ids() -> set:
+    """**C 端验收集**的 id 集合（与 `select_cases_for_persona` 同源，避免作用域漂移）。"""
+    global _CUSTOMER_CASE_IDS_CACHE
+    if _CUSTOMER_CASE_IDS_CACHE is None:
+        try:
+            _CUSTOMER_CASE_IDS_CACHE = {
+                str(c.id) for c in select_cases_for_persona(list(ALL_CASES), "xiaobu")}
+        except Exception:
+            _CUSTOMER_CASE_IDS_CACHE = set()
+    return _CUSTOMER_CASE_IDS_CACHE
+
+
+def is_customer_case(case) -> bool:
+    """该用例是否属于 **C 端验收集**（C 端专属断言的作用域判据）。
+
+    为什么不能用"是否声明 `persona: xiaobu`"（issue #3454）：C 端集里还有 **15 条
+    persona 留空（双端）**的用例（靠 #3266 工具集过滤入选，如 OR-014/PR-002/PR-003），
+    它们在 C 端跑、计入通过，却会被"声明判据"整个跳过 →
+    `check_phone_provenance` / `check_write_code_provenance` 对它们**从未生效**
+    （"声称查过而其实没查"家族）。
+    故判据与**选择函数同源**：先看它是否被选进 C 端集，其次才回退看声明。
+    """
+    # **只在本轮就是 C 端 run 时才有意义**：C端专属检查不应在米宝 run 上生效
+    # （双端用例也会被米宝 run 选中 → 不加这道闸就会对 B 端链路误报）。
+    if PERSONA != "xiaobu":
+        return False
+    declared = str(getattr(case, "persona", "") or "").strip()
+    if declared:
+        # **显式声明优先**：persona=mibao 的用例永不算 C 端（B 端链路不同，套 C 端判据会误报 ——
+        # 既有用例 TestPhoneProvenance::test_mibao_persona_not_checked 正是锁这条的，
+        # 首版把 id 判据放在前面 → 显式 mibao 的用例只要 id 在 C 端集里就会被误判成 C 端）。
+        return declared in ("xiaobu", "both")
+    # 未声明（= 双端）：以"是否被选入 C 端集"为准（issue #3454 的修法）
+    cid = str(getattr(case, "id", "") or "")
+    return bool(cid) and cid in _customer_case_ids()
+
+
 async def check_phone_provenance(token: str, case, results: list) -> list:
     """落库手机号必须能追溯到「本用例提供 / 种子夹具」的号码（issue #3386）。
 
@@ -2221,7 +2261,7 @@ async def check_phone_provenance(token: str, case, results: list) -> list:
     只对 C 端（xiaobu）生效：B 端米宝给顾客建单时可能从客户档案取号（非用例提供），
     全局套用会误报。
     """
-    if str(getattr(case, "persona", "") or "") != "xiaobu":
+    if not is_customer_case(case):
         return []
     data = _first_successful_data(results or [], "order_create")
     if not data:
