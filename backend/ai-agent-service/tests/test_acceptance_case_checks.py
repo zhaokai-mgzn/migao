@@ -4399,3 +4399,36 @@ class TestWriteCodeProvenance:
         blob = str(result["failed"])
         assert ("已经给过" in blob or "始终没发出去" in blob), (
             f"run_case 没有把「顾客给了码但写调用没带码」点名（case-level 检查没接线）：{blob[:300]}")
+
+
+class TestUnbackedStateClaimAddressModification:
+    """地址/规格类**完成态**措辞同样要被抓（issue #3440）。
+
+    实证（run 34771663639，CH-025 R2）：顾客「收货地址帮我改成…」→ AI 回「已更新」，
+    而截至该轮没有任何写工具成功（订单若干轮之后才创建）→ 顾客会以为地址已经改好。
+    原词表已含「已更新/已修改」，但**地址语义**的完成态说法（地址已改/已改好/已生效）不在表内，
+    同族形态会漏网。
+    """
+
+    def test_address_completion_phrasings_are_marked(self):
+        for m in ("地址已改", "已改好", "已生效", "已更新"):
+            assert m in lr._WRITE_CLAIM_MARKERS, f"完成态词表缺 {m!r}（同族形态会漏网）"
+
+    @staticmethod
+    def _round(rnd, text, ok_write=False):
+        r = {"__round": rnd, "final_text": text, "interactive": [], "tool_calls": [],
+             "tool_results": []}
+        if ok_write:
+            r["tool_calls"] = [{"name": "order_create", "args": {}}]
+            r["tool_results"] = [{"tool": "order_create", "result": {"success": True}}]
+        return r
+
+    def test_flags_address_claim_without_write(self):
+        res = [self._round(2, "亲，地址已改好，您放心～")]
+        issues = lr.check_unbacked_state_claim(res)
+        assert issues and "R2" in issues[0], issues
+
+    def test_allows_after_successful_write(self):
+        """反向守卫：写成功之后说完成态是可以的（别把正常回复判红）。"""
+        res = [self._round(3, "订单已创建，订单号 123", ok_write=True)]
+        assert lr.check_unbacked_state_claim(res) == []
