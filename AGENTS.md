@@ -13,6 +13,7 @@ Java admin-api + Python ai-agent-service + Next.js admin-web + Taro mini-app。
 2. **三把工具**：提交前跑 `./verify-all.sh gate`（与 CI 同规则）、`./check-ui-regression.sh`（UI 回退）；跨模块改动加 `./contract-check.sh`。
 3. **case_ids**：新增/修改测试文件头部必须声明 `# case_ids:`（对应 `.github/cases/` 用例，否则 CI QA Growth Gate block）。
 4. **GitHub 操作**：禁止直推 main，必须走 PR 且关联 Issue——**PR body 必写 `Closes #<issue号>`**（GitHub 只在 body 含 Closes/Fixes/Resolves 关键词时自动关 issue，标题里的「(issue #xx)」不生效；漏写合并后 issue 不会自动关闭，CI `pr-issue-link` 会打 `needs-issue-link` 标签提醒；无 issue 关联的基建 PR 标 `N/A（基建）`）。详见 `migao-dev-flow` 技能 §2.2/§3.3。合并后 GitHub 异步关闭偶发失效（close-on-merge best-effort，实证 #2910/#2919 未自动关）→ `close-linked-issues.yml` 解析 body 关键词做合并后补偿关闭 + **每 30 分钟定时对账兜底**（issue #2937；事件触发对 native auto-merge 合并实测不可靠，定时对账是最终保证），无需人工；若 issue 仍悬挂再按 §2.2 人工兜底。
+5. **最少代码**：写码前爬「最少代码阶梯」（YAGNI → 复用 → 标准库 → 原生特性 → 已装依赖 → 一行 → 最小实现；**先理解再爬梯**）。只简化实现代码、**不降测试门禁**，安全护栏与既有架构契约永不砍。全文见 [docs/wiki/Code-Minimalism.md](docs/wiki/Code-Minimalism.md)。
 
 ## 按场景找文档（先查索引，按需 Read）
 
@@ -20,6 +21,7 @@ Java admin-api + Python ai-agent-service + Next.js admin-web + Taro mini-app。
 |---|---|
 | 全部场景索引 | [docs/wiki/INDEX.md](docs/wiki/INDEX.md) |
 | 开发流程 / 验证命令清单 | [docs/wiki/Development.md](docs/wiki/Development.md) |
+| 写码最少化（防过度建设/加依赖前） | [docs/wiki/Code-Minimalism.md](docs/wiki/Code-Minimalism.md) |
 | 测试工程规范（拆分/ignore/脱敏/分层） | [docs/testing/test-engineering-standards.md](docs/testing/test-engineering-standards.md) |
 | **验收/评测（下"验收通过"结论前必读）** | [docs/testing/acceptance-protocol.md](docs/testing/acceptance-protocol.md)（配套 DSH 技能 `migao-acceptance`） |
 | CI/CD / 部署 | [docs/wiki/CI-CD.md](docs/wiki/CI-CD.md) |
