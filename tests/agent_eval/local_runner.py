@@ -2661,7 +2661,7 @@ def pending_card_summary(results: list) -> str:
 
 
 def resolve_auto_respond(results: list, fallback: str, form_values: dict,
-                         prefer_text: bool = False) -> str:
+                         prefer_text: bool = False, notes: list | None = None) -> str:
     """`auto_respond` 轮：按**上一轮的待答卡片**自动作答，没有卡片则用 fallback。
 
     为什么要这个机制（CI 实证 run 34627856207，OR-014 / CH-010）：
@@ -2688,13 +2688,19 @@ def resolve_auto_respond(results: list, fallback: str, form_values: dict,
     猜不到何时生效。
     """
     if prefer_text:
-        # 用例显式声明"这一轮就是这句话"（如验证码轮）→ 不答卡
+        # 用例显式声明"这一轮就是这句话"（如验证码轮）→ 不答卡。
+        # ⚠️ 这条提示是**设计内的正常形态**（作者显式声明 prefer_text），全量档每跑打 7 条
+        # （验证码轮 ×4 + 主动打岔 ×3）全是噪声 —— 故改为**只在用例失败时**打印（见 run_case）：
+        # 它在失败时是第一归因线索（"harness 是不是把该答的卡吃了"），在绿跑时只是噪声。
         _pending = pending_card_summary(results)
         if _pending:
-            print(f"⚠️ prefer_text 忽略了待答卡片 [{_pending}] → 本轮发文本 {fallback!r}。"
-                  f"若卡片问的不是同一件事，顾客就是**答非所问**、流程会卡死 —— "
-                  f"请复核该用例的轮次配置（prefer_text 只该用于「顾客此刻就是要说这句话」的轮次，"
-                  f"最典型是验证码轮）。issue #3421")
+            _note = (f"R{len(results or []) + 1} prefer_text 忽略了待答卡片 [{_pending}] → "
+                     f"本轮发文本 {fallback!r}（用例显式声明 prefer_text=true，属正常形态；"
+                     f"若本用例失败，先看这里：卡片问的是不是同一件事）")
+            if notes is not None:
+                notes.append(_note)
+            else:
+                print(f"⚠️ {_note}")
         return fallback
     rounds = results or []
     if rounds:
@@ -3122,6 +3128,10 @@ async def run_case(case, token: str, session_id: str) -> dict:
     # 实测 run 34746134755 全绿但订单全挂 debug_customer_1）→ 这里先断言、并把违规
     # 计入 case_issues（跑轮次前做，1 次 HTTP 且不烧 LLM）。
     case_issues: list = []
+    # prefer_text 轮"忽略了待答卡片"的诊断（issue #3421 复盘）：**只在用例失败时打印** ——
+    # 该形态是作者显式声明的正常形态，绿跑时每跑会产生 7 条噪声（真信号被淹），
+    # 但失败时它是第一归因线索。故先收集，判定后再决定打印。
+    prefer_text_notes: list = []
     try:
         case_issues += await check_debug_user_precondition(token, case)
     except Exception as e:
@@ -3171,6 +3181,7 @@ async def run_case(case, token: str, session_id: str) -> dict:
                 fallback=str(spec.get("fallback") or "确认"),
                 form_values=form_values,
                 prefer_text=bool(spec.get("prefer_text")),
+                notes=prefer_text_notes,
             )
         elif isinstance(msg, dict) and msg.get("auto_fill"):
             # form 卡自动回填（OR-014 基建缺口）：agent 发 form 卡（如客户信息）
@@ -3290,6 +3301,12 @@ async def run_case(case, token: str, session_id: str) -> dict:
         for ci in case_issues:
             failed_expectations.append((ci, "case-level check"))
         score = 0.0
+
+    # prefer_text 诊断**只在失败用例上落地**（见 prefer_text_notes 的说明）：失败时它是
+    # 第一归因线索（"harness 是不是把该答的卡吃了"），绿跑时打它只是噪声。
+    if prefer_text_notes and (case_issues or failed_expectations):
+        for _pn in prefer_text_notes:
+            print(f"  ↳ {_pn}")
 
     return {
         "case_id": case.id,

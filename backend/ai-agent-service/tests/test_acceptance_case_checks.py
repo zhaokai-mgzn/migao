@@ -3508,6 +3508,80 @@ class TestAutoRespondPreferText:
         assert a == b
 
 
+class TestPreferTextNoiseIsFailureOnly:
+    """「prefer_text 忽略了待答卡片」提示**只在用例失败时**打印（issue #3421 复盘）。
+
+    为什么改：该形态按设计就是正常的 —— 作者用 `prefer_text: true` **显式声明**
+    "这一轮顾客就是要说这句话"（最典型是验证码轮，其次是顾客主动打岔）。
+    全量档实测每跑打 7 条（验证码轮 ×4 + 主动打岔 ×3），**全是噪声**；
+    噪声的代价是负的：真信号被淹（这轮就是靠一堆 ⚠️ 里挑出来的）。
+    但它在**失败**时是第一归因线索（"harness 是不是把该答的卡吃了"），故保留、只在失败时打印。
+    """
+
+    _CARD = [{"type": "choice", "title": "选加工项",
+              "options": [{"label": "纳米圈打孔", "value": "pi1"}]}]
+
+    def _results(self):
+        return [{"user_message": "你好", "interactive": list(self._CARD)}]
+
+    def test_note_collected_instead_of_printed(self, capsys):
+        notes: list = []
+        out = lr.resolve_auto_respond(self._results(), "123456", {},
+                                      prefer_text=True, notes=notes)
+        assert out == "123456"
+        assert notes and "prefer_text 忽略了待答卡片" in notes[0], notes
+        assert "R2" in notes[0], f"提示必须带轮次（便于与轨迹对齐）：{notes[0]}"
+        assert "prefer_text 忽略了待答卡片" not in capsys.readouterr().out, (
+            "给了 notes 收集器时不应直接打印 —— 否则绿跑仍是噪声")
+
+    def test_printed_when_no_collector(self, capsys):
+        """没有收集器（直接调用/旧路径）时保持原行为（打印），不静默吞掉。"""
+        lr.resolve_auto_respond(self._results(), "123456", {}, prefer_text=True)
+        assert "prefer_text 忽略了待答卡片" in capsys.readouterr().out
+
+
+class TestPreferTextNotePrintedOnlyOnFailure:
+    """接线：run_case 里该提示**只在失败用例上**打印（否则等于没接）。"""
+
+    def _case(self, expectations):
+        return lr.EvalCase(
+            id="PREFER-TEST", legacy_id="", title="t", skill=lr.Skill.ORDER,
+            difficulty=lr.Difficulty.NORMAL,
+            # 两轮：R1 让 agent 发卡，R2 的 prefer_text 轮才有"待答卡片"可忽略
+            user_inputs=[{"text": "我想买遮光窗帘"},
+                         {"auto_respond": {"fallback": "123456", "prefer_text": True}}],
+            expectations=expectations, data_checks=[],
+        )
+
+    def _run(self, expectations, capsys):
+        import unittest.mock as mock
+
+        async def fake_send(token, session_id, message, images=None, **kwargs):
+            # 带一张待答卡片 —— 否则 prefer_text 根本不触发提示，用例就不具判别力
+            return {"user_message": message, "images": images or [],
+                    "tool_calls": [{"name": "product_search", "args": {}}],
+                    "tool_results": [],
+                    "interactive": [{"component": "choice", "title": "选加工项",
+                                     "options": [{"label": "A", "value": "a"}]}],
+                    "final_text": "好的",
+                    "error": None, "streamed": False, "done": True}
+
+        with mock.patch.object(lr, "send_message", new=fake_send), \
+             mock.patch.object(lr, "PERSONA", "xiaobu"):
+            res = asyncio.run(lr.run_case(self._case(expectations), "tok", "sess"))
+        return res, capsys.readouterr().out
+
+    def test_failing_case_prints_diagnostic(self, capsys):
+        res, out = self._run(["tool: order_create"], capsys)   # 没调 → 失败
+        assert res["score"] == 0.0
+        assert "prefer_text 忽略了待答卡片" in out, "失败用例必须打印该诊断（第一归因线索）"
+
+    def test_passing_case_prints_nothing(self, capsys):
+        res, out = self._run(["tool: product_search"], capsys)  # 调了 → 通过
+        assert res["score"] == 1.0
+        assert "prefer_text 忽略了待答卡片" not in out, "绿跑不得再打这条噪声"
+
+
 class TestAutoRespondNoRepeatCardClick:
     """同卡不重复点（issue #3365，CH-010 实证）。
 
