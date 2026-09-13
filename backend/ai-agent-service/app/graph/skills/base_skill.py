@@ -3474,13 +3474,24 @@ async def execute_skill(
     # ── 8.3b 代码兜底**补发确认卡**（issue #3445）──
     # 实测（CI 三次 `confirmation_required_no_card`）：模型**从没发过确认卡**就直接写单，
     # 被门禁拦回后仍会跳过发卡（话术已给唯一可执行的下一步，3 次复验仍有 2 次命中）。
-    # 卡片的唯一通用发射点是 `chat.py` 解析回复文本里的 `<interact>` 块 ⇒ 这里把卡补进文本：
-    # 顾客因此始终有点卡的入口，而不是"卡在写单被拦、又没有卡可点"。
+    # 卡片有两个发射点（`chat.py`）：`interact` 工具结果分支、以及解析回复文本里的
+    # `<interact>` 块 ⇒ 这里把卡补进**文本**：顾客因此始终有点卡的入口，而不是
+    # "卡在写单被拦、又没有卡可点"。
     # 硬约束（#3414 教训）：**只补卡、不放行写** —— 写仍必须等顾客点卡后由门禁放行；
     # 且仅在"本会话从未出现过确认卡"的形态下补（`card_not_clicked` 说明顾客没点，
     # 那时替他补卡等于替他做决定，不做）。
     if (_no_card_blocked_args and skill_name == "customer_order"
-            and final_content and "<interact>" not in final_content):
+            and final_content and "<interact>" not in final_content
+            # ⚠️ **本轮不许补第二张**（issue #3445 复现）：`interact` 工具路径自己也会发射
+            # 交互卡（`chat.py` 的 `tool_name == "interact"` 分支），与"解析文本里的
+            # `<interact>` 块"是**两个独立发射点**。实测形态（本地复现，同一轮）：
+            #   ① 模型直接写单 → 门禁拦下（`no_card`）→ 记为待补卡；
+            #   ② 模型在**后续迭代**里调 `interact(confirm)` → 工具路径发卡（顾客已看到）；
+            #   ③ 收尾文本里没有 `<interact>` 块 → 这里再补一张 → **同轮两张重复卡**。
+            # 判据取本轮 `new_messages`（本次 `execute_skill` 产生的消息）：它包含第 ② 步
+            # 那个 `interact` 工具结果，能证明"本轮的卡已经发过了"。
+            # 注意**不能**用会话级一次性标记：顾客后续改地址/数量时，新明细仍需要新卡。
+            and not _confirm_card_seen(new_messages)):
         _bfields = confirm_card_fields(_no_card_blocked_args)
         if _bfields:
             _bvalue = confirm_value_for_fields(_bfields)
