@@ -21,8 +21,19 @@ _EMAIL = re.compile(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}")
 
 
 def mask_phone(match: "re.Match[str]") -> str:
+    """`re.sub` 回调：手机号保留前 3 后 4（`13800138000` → `138****8000`）。"""
     num = match.group()
     return num[:3] + "****" + num[-4:]
+
+
+def mask_email(match: "re.Match[str]") -> str:
+    """`re.sub` 回调：邮箱本地部分保留前 2 后打码、域名保留。
+
+    按 `@` 切出**本地部分**再取前缀：本地部分只有 1 个字符时，直接对整段匹配取 `[:2]`
+    会把 `@` 也当成前缀 → `a@b.co` 被写成 `a@***@b.co`（两个 `@`）。
+    """
+    local, _, domain = match.group().partition("@")
+    return local[:2] + "***@" + domain
 
 
 def mask_pii(text: str) -> str:
@@ -30,5 +41,5 @@ def mask_pii(text: str) -> str:
     if not text:
         return text
     out = _PHONE.sub(mask_phone, str(text))
-    out = _EMAIL.sub(lambda m: m.group()[:2] + "***@" + m.group().split("@")[-1], out)
+    out = _EMAIL.sub(mask_email, out)
     return out
