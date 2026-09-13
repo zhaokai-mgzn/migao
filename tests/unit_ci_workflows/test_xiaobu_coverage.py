@@ -294,3 +294,62 @@ class TestSharedGuardPersonaScope:
                      "_curtain_calc_dimension_block"):
             assert name in guards, f"{name} 不存在（改名后需同步本守卫）"
             assert "_is_customer_role(" in guards[name], f"{name} 未声明分端"
+
+
+# 需要"确认卡先行"的 C 端写工具（有副作用的写：顾客必须先看到明细卡再落库）
+CONFIRM_FIRST_WRITE_TOOLS = ("order_create", "aftersale_create")
+
+
+class TestWriteCasesAssertConfirmCardFirst:
+    """C 端**写用例**必须断言「confirm 卡先行」（issue #3414 人工验收实证）。
+
+    背景（run 34760653981，验收 C-A1 唯一违规）：`❌ [L1] 期望出现 confirm 卡片，实际没有`
+    —— 顾客只发了一句「确认下单」，订单就被创建了；顾客**没看到明细卡**。
+    而评测档当时看不见这条要求：10 条 C 端下单用例里只有 CH-010 断言了
+    `interact[confirm] before order_create`。
+
+    `order_before` 的语义（`check_order_before`）：**A 必须出现过**，且首次出现早于 B ——
+    正好表达"顾客先看到明细卡、之后才落库"。故：凡是 `must_succeed` 了写工具的 C 端用例，
+    都必须声明对应的 confirm 卡先行断言（否则这条产品要求就没人守）。
+
+    ⚠️ 只认 `must_succeed`（**要求写成**的用例）；像 DF-020~023 那种把
+    `order_create 未被调用` 写进 expectations 的**对抗用例**不在此列（那里根本不该有卡）。
+    """
+
+    def _xiaobu_cases(self):
+        return [c for c in load_case_dicts(str(CASES_DIR))
+                if (c.get("persona") or "").strip() == "xiaobu"]
+
+    def _must_succeed_tools(self, case):
+        out = []
+        for spec in case.get("must_succeed") or []:
+            if isinstance(spec, dict) and spec.get("tool"):
+                out.append(str(spec["tool"]))
+            elif isinstance(spec, str):
+                out.append(spec)
+        return out
+
+    def test_every_xiaobu_write_case_asserts_confirm_card_first(self):
+        missing = []
+        for c in self._xiaobu_cases():
+            for tool in self._must_succeed_tools(c):
+                if tool not in CONFIRM_FIRST_WRITE_TOOLS:
+                    continue
+                ob = [str(x) for x in (c.get("order_before") or [])]
+                want = f"interact[confirm] before {tool}"
+                if not any(want in x for x in ob):
+                    missing.append(f"{c['id']}: 缺 order_before「{want}」")
+        assert not missing, (
+            "以下 C 端写用例没有断言「confirm 卡先行」—— 顾客可能在没看到明细卡的情况下被下单：\n  "
+            + "\n  ".join(missing)
+            + "\n\n请补 `order_before: [\"interact[confirm] before <写工具>\"]`"
+              "（product 要求见 customer_order_skill 第 4 步：validate_input → interact(confirm)）。")
+
+    def test_current_backfill_is_complete(self):
+        """回归网：至少这些用例已补（防止有人在批量编辑中把断言删掉）。"""
+        by_id = {c["id"]: c for c in self._xiaobu_cases()}
+        for cid in ("CH-010", "OR-017", "OR-018", "OR-019", "OR-020",
+                    "OR-021", "OR-022", "OR-023", "OR-024"):
+            ob = [str(x) for x in (by_id[cid].get("order_before") or [])]
+            assert any("interact[confirm] before order_create" in x for x in ob), \
+                f"{cid} 的 confirm 卡先行断言被删了"
