@@ -938,6 +938,39 @@ def _plan_processing_items_rewrite(tool_results, messages) -> Optional[tuple]:
 _MAX_PROC_OPTIONS = 6
 
 
+def _pending_card_before_last_user(messages) -> bool:
+    """「上一轮 agent 下发了交互卡、顾客正在回应它」= 真正有在办流程。
+
+    为什么不能只看 `state["pending_interact_skill"]`（首版修复的错，被验收重放抓到）：
+    该标记在**任何** CREATION_SKILL 运行后都会被写入（`customer_order` ∈ 创建类 skill），
+    于是"查一次订单"也会把流程标记点亮 → 下一句「算了」照样短路成"已取消"
+    （验收 C-A2 重放 run 34731714846：R2 仍回「好的，已取消。」）。
+
+    判据落在消息序上：**倒数第二条用户消息之后、最后一条用户消息之前**是否存在
+    未答的交互卡（choice/confirm/form）。这正是"顾客在回应一张卡"的形态；
+    而"上一轮只是查询/纯文本"则不算在办。
+    """
+    msgs = list(messages or [])
+    humans = [i for i, m in enumerate(msgs) if isinstance(m, HumanMessage)]
+    if not humans:
+        return False
+    last_h = humans[-1]
+    prev_h = humans[-2] if len(humans) >= 2 else -1
+    for m in msgs[prev_h + 1:last_h]:
+        if not isinstance(m, ToolMessage) or getattr(m, "name", None) != "interact":
+            continue
+        try:
+            payload = json.loads(m.content or "{}")
+        except (ValueError, TypeError):
+            continue
+        if not isinstance(payload, dict) or not payload.get("success"):
+            continue
+        data = payload.get("data") or {}
+        if data.get("component") in ("choice", "confirm", "form"):
+            return True
+    return False
+
+
 def _has_inflight_interactive_card(messages) -> bool:
     """会话里是否已下发过交互卡（= 有**在办**的多轮流程）。
 
@@ -1930,9 +1963,16 @@ async def execute_skill(
         #           ② 整句吞掉真实诉求（"看看有什么窗帘"没有触发 product_search）。
         # 判据：pending 流程标记 / pending_interact_skill / 历史里未完结的交互卡 —— 三者皆无
         # 就说明"没有东西可取消"，此时应正常处理顾客这句话（该搜索就搜索）。
-        _inflight = bool(state.get("pending_interact_skill")) or \
-            bool((state.get("__session_state__") or {}).get("pending_validated")) or \
-            _has_inflight_interactive_card(state.get("messages", []))
+        _pending_validated = False
+        if session_id:
+            try:
+                from app.memory.session_state_store import SessionStateStore
+                from app.graph.pending_validated import PENDING_KEY
+                _full_cancel = await SessionStateStore().load(session_id) or {}
+                _pending_validated = bool(_full_cancel.get(PENDING_KEY))
+            except Exception:
+                _pending_validated = False
+        _inflight = _pending_card_before_last_user(state.get("messages", [])) or _pending_validated
         if _is_cancel_message(last_user_msg) and _inflight:
             logger.info(f"[{skill_name}] Cancel detected | session={session_id} "
                         f"msg={last_user_msg[:24]!r}")

@@ -2844,7 +2844,7 @@ class TestFalseCancelGuard:
 
     def test_cancel_still_short_circuits_when_inflight(self):
         """**有**在办流程时，取消仍应短路（原有能力不得退化）。"""
-        # 注意：历史里的**最后一条 HumanMessage** 才是本轮消息（取消块反向取的就是它）
+        # 消息序必须是"上一轮下发卡 → 顾客回应它"：卡夹在倒数第二条与最后一条用户消息之间
         res, llm = self._run("算了，不弄了", messages=[
             HumanMessage(content="帮我下单"),
             ToolMessage(content=json_dumps({"success": True, "data": {"component": "confirm"}}),
@@ -2853,10 +2853,23 @@ class TestFalseCancelGuard:
         ])
         assert "已取消" in (res.get("final_answer") or ""), "在办流程中的取消必须照旧短路"
 
-    def test_pending_skill_also_counts_as_inflight(self):
-        """`state["pending_interact_skill"]` 非空 = 流程锁定中（graph 会写入该字段）。"""
-        res, _ = self._run("算了", pending_skill="customer_order")
-        assert "已取消" in (res.get("final_answer") or ""), "pending_interact_skill 非空 = 在办，应短路"
+    def test_pending_skill_alone_must_not_authorize_cancel(self):
+        """**流程锁定标记不是"有东西可取消"**（验收重放 run 34731714846 实证）。
+
+        `pending_interact_skill` 在任何 CREATION_SKILL 跑过后都会被写入
+        （`customer_order` ∈ 创建类 skill）—— 于是"查一次订单"也会点亮它，
+        下一句「算了」照样回"已取消"（首版修复就是这么失效的，被验收重放抓到）。
+        故本用例锁住：**只有标记、没有待答卡/待执行写** 时不得短路。
+        """
+        res, llm = self._run("算了", pending_skill="customer_order")
+        assert "已取消" not in (res.get("final_answer") or ""), \
+            "仅流程标记就短路 = 假取消（查单后说「算了」会误报已取消）"
+
+    def test_pending_validated_in_store_counts_as_inflight(self):
+        """已校验待执行的写操作 = 确有在办流程 → 取消应短路。"""
+        res, _ = self._run("算了", store={"pending_validated_input": {
+            "target_tool": "order_create", "target_action": "create"}})
+        assert "已取消" in (res.get("final_answer") or ""), "有待执行写操作时必须短路"
 
 
 def json_dumps(o):
