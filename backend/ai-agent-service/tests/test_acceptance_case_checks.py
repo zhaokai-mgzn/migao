@@ -158,6 +158,58 @@ class TestRunCaseCaseLevelChecks:
         with mock.patch.object(lr, "send_message", new=fake_send):
             return await lr.run_case(case, "tok", "sess")
 
+    async def _run_with_cards(self, case, sequence):
+        """像 `_run` 一样替换 send_message，但**带回 interactive 卡片**（可测"答卡"路径）。"""
+        sent = []
+
+        async def fake_send(token, session_id, message, images=None, **kwargs):
+            sent.append(message)
+            seq = sequence[min(len(sent) - 1, len(sequence) - 1)]
+            tools = seq.get("tools") or []
+            return {
+                "user_message": message,
+                "images": images or [],
+                "interactive": seq.get("cards") or [],
+                "tool_calls": [{"name": n, "args": {}} for n in tools],
+                "tool_results": [{"tool": n, "result": {"success": True}} for n in tools],
+                "final_text": seq.get("text", ""),
+                "error": None,
+                "streamed": False,
+                "done": True,
+            }
+
+        import unittest.mock as mock
+        with mock.patch.object(lr, "send_message", new=fake_send):
+            result = await lr.run_case(case, "tok", "sess")
+        return sent, result
+
+    def test_repeat_until_behavior_end_to_end(self):
+        """**行为级**接线（issue #3430）：重复轮要真的①答卡 ②被问码供码 ③成功即停。
+
+        为什么不用文本级 grep：变异 M260 只把分派条件改成 `elif False:`（保留分支体）
+        → grep 仍能找到 `__repeat__`，断言存活。必须观察**实际发出的文本**。
+        """
+        case = self._case(expectations=["tool: order_create"])
+        case.user_inputs = [
+            "我想买遮光窗帘",
+            {"repeat_until": {"tool_called": "order_create", "max": 3},
+             "code": "123456", "fallback": "确认下单"},
+        ]
+        sent, _ = asyncio.run(self._run_with_cards(case, [
+            {"tools": ["interact"], "text": "请选择加工项",
+             "cards": [{"type": "choice", "title": "加工项",
+                        "options": [{"label": "纳米圈打孔", "value": "pi1"}]}]},
+            {"tools": [], "text": "创建订单前需要验证手机号。请输入短信验证码"},
+            {"tools": ["order_create"], "text": "订单已创建"},
+            {"tools": [], "text": "（不该再发）"},
+        ]))
+        assert len(sent) == 3, f"重复轮次数不对（成功即停失效）：{sent}"
+        assert sent[0] == "我想买遮光窗帘"
+        # choice 卡的作答 = 该 option 的可读值（label/value 由卡片协议决定），关键是**答的是卡**
+        assert "纳米圈打孔" in sent[1] or sent[1] == "pi1", (
+            f"有 choice 卡却没答卡（把验证码喂给卡就是 #3430 的病）：{sent[1]!r}")
+        assert sent[2] == "123456", f"被问验证码却没供码：{sent[2]!r}"
+
     def test_order_before_violation_scores_zero(self):
         """order_create 先于 interact → 用例整体失败（score 0），失败明细含 order_before。"""
         case = self._case(order_before=["interact before order_create"], expectations=["tool: interact", "tool: order_create"], rounds=2)
@@ -4107,3 +4159,94 @@ class TestOrderBeforeCountsOnlySuccessfulWrite:
         results = [self._round(2, ["order_create"], [True])]
         issues = lr.check_order_before(results, ["interact[confirm] before order_create"])
         assert issues and "未调用" in issues[0], issues
+
+
+class TestRepeatUntilTurn:
+    """`repeat_until` 轮：协作型顾客「有卡答卡 → 被问码供码 → 否则确认」（issue #3430）。
+
+    实证（run 34767204074，`case_ids=OR-021`，fast 档关重试 → 0/1）：
+    写用例的固定轮次表按**某一种**卡片序列写，实际序列却是 `form(R3) → choice(R4) → confirm(R7)`
+    → 验证码轮落在加工项多选卡上（顾客答非所问）→ 卡没人答、流程不前进 →
+    轮数耗尽时确认卡刚发出来就没人答它 → `order_create` 从未发生（纯空转，handoff=0）。
+    验收剧本早就用 `repeat_until + click:auto` 解决过同一问题；这里把那份语义搬到评测侧。
+    """
+
+    @staticmethod
+    def _round(rnd, *, final_text="", cards=None, calls=None, statuses=None):
+        r = {"__round": rnd, "final_text": final_text,
+             "interactive": list(cards or []), "tool_calls": [{"name": c} for c in (calls or [])]}
+        if statuses is not None:
+            r["tool_results"] = [{"tool": c, "result": {"success": s}}
+                                 for c, s in zip(calls or [], statuses)]
+        return r
+
+    _FORM_CARD = [{"type": "form", "title": "确认收货信息",
+                   "formFields": [{"key": "customer_name"}, {"key": "customer_phone"}]}]
+    _CONFIRM_CARD = [{"type": "confirm", "title": "请确认订单信息",
+                      "confirmValue": "确认：商品=遮光窗帘；数量=3米"}]
+
+    def test_answers_pending_card_first(self):
+        """有卡先答卡（form 卡 → __FORM__|json 回填），而不是把验证码喂给它。"""
+        results = [self._round(1, cards=self._FORM_CARD)]
+        got = lr.resolve_repeat_turn(results, {"code": "123456", "fallback": "确认下单"},
+                                     {"customer_name": "张三", "customer_phone": "13800138000"})
+        assert got.startswith("__FORM__|"), f"有 form 卡却没答卡：{got!r}"
+        assert "13800138000" in got
+
+    def test_confirm_card_answered_by_confirm_value(self):
+        results = [self._round(1, cards=self._CONFIRM_CARD)]
+        got = lr.resolve_repeat_turn(results, {"fallback": "确认下单"}, {})
+        assert got == "确认：商品=遮光窗帘；数量=3米", got
+
+    def test_supplies_code_when_asked(self):
+        """**本次回归的核心**：agent 索要验证码时必须供码（旧轮次表在这里卡死）。"""
+        results = [self._round(1, final_text="为了您的账户安全，创建订单前需要验证手机号。请输入短信验证码")]
+        got = lr.resolve_repeat_turn(results, {"code": "123456", "fallback": "确认下单"}, {})
+        assert got == "123456", f"被问验证码却没供码：{got!r}"
+
+    def test_falls_back_when_nothing_pending(self):
+        results = [self._round(1, final_text="请问您要做单幅还是双开呢？")]
+        got = lr.resolve_repeat_turn(results, {"code": "123456", "fallback": "确认下单"}, {})
+        assert got == "确认下单", got
+
+    def test_stop_condition_requires_success(self):
+        """停条件只在目标工具**成功**后成立（被门禁挡回不算推进）。"""
+        spec = {"tool_called": "order_create", "max": 3}
+        assert not lr.repeat_stop_met([self._round(1, calls=["order_create"], statuses=[False])], spec)
+        assert lr.repeat_stop_met([self._round(1, calls=["order_create"], statuses=[True])], spec)
+        assert not lr.repeat_stop_met([self._round(1, calls=["product_detail"], statuses=[True])], spec)
+
+    def test_stop_condition_unknown_status_falls_back_to_called(self):
+        """合成轨迹（无 tool_result）→ 退回"调用过即停"，保持可测性。"""
+        spec = {"tool_called": "order_create"}
+        assert lr.repeat_stop_met([self._round(1, calls=["order_create"])], spec)
+
+    def test_expand_respects_max_and_clamps(self):
+        ui = [{"repeat_until": {"tool_called": "order_create", "max": 4}, "fallback": "确认"}]
+        assert len(lr.expand_repeat_turns(ui)) == 4
+        # 上限收紧到 6（重复轮是"顾客继续配合"，不是无限重试）
+        big = [{"repeat_until": {"tool_called": "order_create", "max": 99}}]
+        assert len(lr.expand_repeat_turns(big)) == 6
+        # 非法/缺失 max → 默认 3，不炸
+        assert len(lr.expand_repeat_turns([{"repeat_until": {"tool_called": "x"}}])) == 3
+        assert len(lr.expand_repeat_turns([{"repeat_until": {"tool_called": "x", "max": "abc"}}])) == 3
+
+    def test_run_case_actually_wires_repeat_turns(self):
+        """**接线**必须存在：纯函数对了不等于跑用例时会用上（本仓库反复踩的假绿）。
+
+        `run_case` 里必须①把 user_inputs 过一遍 `expand_repeat_turns`，②有 `__repeat__` 分派。
+        只测纯函数的话，忘了接线时全部断言照样绿。
+        """
+        src = Path(lr.__file__).read_text(encoding="utf-8")
+        seg = src[src.index("async def run_case("):]
+        seg = seg[:seg.index("\n    # 汇总所有轮的 tool 名称")]
+        assert "expand_repeat_turns(" in seg, (
+            "run_case 没有把 user_inputs 展开 —— repeat_until 轮会被当成普通 dict（`text` 为空）")
+        assert "__repeat__" in seg, "run_case 没有 __repeat__ 分派分支 —— 展开出的轮次无人处理"
+
+    def test_expand_keeps_other_turns_untouched(self):
+        ui = ["你好", {"auto_respond": {"fallback": "确认"}},
+              {"repeat_until": {"tool_called": "order_create", "max": 2}, "code": "123456"}]
+        out = lr.expand_repeat_turns(ui)
+        assert out[0] == "你好" and out[1] == ui[1]
+        assert len(out) == 4 and all("__repeat__" in m for m in out[2:])

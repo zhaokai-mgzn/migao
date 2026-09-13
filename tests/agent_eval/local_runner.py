@@ -1968,6 +1968,88 @@ def check_form_prefill(results: list, spec: list) -> list:
     return issues
 
 
+_CODE_REQUEST_HINTS = ("验证码", "校验码", "短信码", "动态码", "verification code")
+
+
+def _agent_asked_for_code(results: list) -> bool:
+    """上一轮 agent 是否在**索要验证码**（供码时机的唯一依据）。"""
+    if not results:
+        return False
+    text = str((results[-1] or {}).get("final_text") or "")
+    return any(h in text for h in _CODE_REQUEST_HINTS)
+
+
+def repeat_stop_met(results: list, spec: dict) -> bool:
+    """`repeat_until` 的停条件：目标工具**已经成功**调用过（issue #3430）。
+
+    为什么要求"成功"而不是"调用过"：被门禁挡回的调用（缺验证码/缺确认）没有推进流程，
+    此时停轮等于把用例钉死在失败态；只在成功（或状态未知）时才停。
+    """
+    want = str((spec or {}).get("tool_called") or "").strip().lower()
+    if not want:
+        return False
+    saw_status = False
+    for r in results or []:
+        called = any(want in str(tc.get("name") or "").lower()
+                     for tc in (r.get("tool_calls") or []))
+        if not called:
+            continue
+        flags = _round_call_success(r, want)
+        if flags:
+            saw_status = True
+            if any(flags):
+                return True
+        elif not saw_status:
+            # 状态未知（无 tool_result，如合成轨迹）→ 退回"调用过即停"
+            return True
+    return False
+
+
+def resolve_repeat_turn(results: list, opts: dict, case_form_values: dict | None = None) -> str:
+    """协作型顾客的「统一一轮」：**有什么卡答什么卡 → 被问验证码就供码 → 否则说 fallback**。
+
+    为什么需要（issue #3430 实证）：写用例的轮次表是按**某一种**卡片序列写的，而实际序列随模型
+    而变（OR-021 实测 `form(R3) → choice(R4) → confirm(R7)`）。固定轮次表一旦错位，
+    验证码轮就落在加工项多选卡上（顾客答非所问）→ 卡没人答、流程不前进 → 轮数耗尽时确认卡
+    刚发出来就没人答它 → `order_create` 从未发生（OR-021 定向复跑 0/1）。
+    验收剧本早就用 `repeat_until + click: auto` 解决过同一问题，本函数把那份语义搬到评测侧。
+    """
+    opts = opts or {}
+    code = str(opts.get("code") or "123456")
+    fallback = str(opts.get("fallback") or "确认下单")
+    fv = dict(case_form_values or {})
+    fv.update(opts.get("form_values") or {})
+    if pending_card_summary(results):
+        # ① 有卡先答卡（confirm→confirmValue / choice→首项 / form→__FORM__|json）
+        return resolve_auto_respond(results, fallback=fallback, form_values=fv, prefer_text=False)
+    if _agent_asked_for_code(results):
+        # ② 被问验证码 → 供码（正是 C-A1/OR-021 卡死的那个点）
+        return code
+    return fallback
+
+
+def expand_repeat_turns(user_inputs: list) -> list:
+    """把 `repeat_until` 轮展开成 N 份「运行时决定发什么」的轮次（issue #3430）。
+
+    `max` 上限收紧到 6：重复轮是"顾客继续配合"，不是无限重试 —— 上限过大只会把
+    模型空转的时间烧进评测墙钟（而墙钟由最慢单条决定，见 eval-pipeline-performance.md §2.6）。
+    """
+    out = []
+    for msg in user_inputs or []:
+        if isinstance(msg, dict) and isinstance(msg.get("repeat_until"), dict):
+            spec = msg["repeat_until"]
+            try:
+                n = int(spec.get("max") or 3)
+            except (TypeError, ValueError):
+                n = 3
+            n = max(1, min(6, n))
+            opts = {k: v for k, v in msg.items() if k != "repeat_until"}
+            out.extend([{"__repeat__": spec, "opts": opts} for _ in range(n)])
+        else:
+            out.append(msg)
+    return out
+
+
 async def check_debug_user_precondition(token: str, case) -> list:
     """多身份用例的**前提校验**：身份覆盖必须真的生效（issue #3391，防假绿）。
 
@@ -2805,6 +2887,8 @@ async def run_case(case, token: str, session_id: str) -> dict:
       {"text": "看看这个", "images": ["https://...jpg"]}      # 带图消息
       {"auto_select": true}                                    # choice 卡自动回第一个选项
       {"new_session": true, "text": "上次我说过……"}            # 先关闭当前会话再开新会话（跨会话记忆）
+      {"repeat_until": {"tool_called": "order_create", "max": 4},
+       "code": "123456", "fallback": "确认下单"}                # 协作型顾客：有卡答卡→被问码供码→否则确认（issue #3430）
 
     new_session 轮（issue #3357）：发送前先 `_end_session` 关掉当前会话（触发记忆候选
     flush 落库）并新建会话。长期记忆只在**新会话**建立 prompt 时注入，同会话内看不到
@@ -2831,7 +2915,11 @@ async def run_case(case, token: str, session_id: str) -> dict:
         if isinstance(_m, dict) and isinstance(_m.get("auto_fill"), dict):
             case_form_values.update(_m["auto_fill"])
 
-    for i, msg in enumerate(case.user_inputs):
+    # `repeat_until` 轮展开（issue #3430）：把「协作型顾客继续配合」表达成一份轮次，
+    # 由运行时按**实际卡片序列/是否被索要验证码**决定这一轮发什么（见 resolve_repeat_turn）。
+    _turns = expand_repeat_turns(list(case.user_inputs or []))
+
+    for i, msg in enumerate(_turns):
         images = []
         if isinstance(msg, dict) and msg.get("new_session"):
             await _end_session(token, session_id,
@@ -2846,6 +2934,11 @@ async def run_case(case, token: str, session_id: str) -> dict:
             # 无法预知（「第一个」/「客户A」文本指代均不稳定）。
             # 无 choice 卡（agent 文本澄清路径）→ fallback「第一个」保持旧语义兼容。
             text = _auto_select_first_option(results) or "第一个"
+        elif isinstance(msg, dict) and msg.get("__repeat__"):
+            # repeat_until 展开出的轮次：目标工具已成功 → 余下的重复轮直接跳过
+            if repeat_stop_met(results, msg.get("__repeat__") or {}):
+                continue
+            text = resolve_repeat_turn(results, msg.get("opts") or {}, case_form_values)
         elif isinstance(msg, dict) and msg.get("auto_respond"):
             # 合作型用户：优先回答上一轮的待答卡片，无卡则用 fallback 文本
             spec = msg.get("auto_respond") or {}

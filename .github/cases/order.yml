@@ -1077,32 +1077,24 @@ cases:
       # ⚠️ 这里**刻意不再重报数量**（issue #3395 复盘）：数量已在 R1 给过，
       # 再答一次「3 米」会被模型读成"再加 3 米" → 落库 ×6（实测 run 34750771576）。
       # 真实顾客回答别的问题时也不会重报数量；改数量由 OR-019 专项覆盖。
-      - auto_respond:
-          fallback: "确认下单"
-          form_values:
-            customer_name: "张三"
-            customer_phone: "13800138000"
-            customer_address: "浙江省杭州市西湖区文三路1号1幢101室"
-            color: "米白"
-            colorName: "米白"
-      - auto_respond:
-          fallback: "确认"
-          form_values:
-            customer_name: "张三"
-            customer_phone: "13800138000"
-            customer_address: "浙江省杭州市西湖区文三路1号1幢101室"
-            color: "米白"
-            colorName: "米白"
-      - auto_respond:
-          fallback: "123456"
-          prefer_text: true
-      - auto_respond:
-          fallback: "123456"
-          prefer_text: true
-      - auto_respond:
-          fallback: "确认"
-      - auto_respond:
-          fallback: "确认"
+      # ── 协作型顾客的"统一一轮"（issue #3430）──
+      # 旧写法是固定轮次表（答卡 ×2 → 验证码 ×2 → 确认 ×2），但**实际卡片序列随模型而变**：
+      # 实测 run 34767204074 的序列是 `form(R3) → choice(R4) → confirm(R7)`，于是验证码轮
+      # 落在「加工项多选卡」上 → 顾客答非所问 → 卡没人答、流程不前进 → 轮数耗尽时确认卡
+      # 刚发出来就没人答它 → `order_create` 从未发生（0/1，纯空转）。
+      # `repeat_until` 把验收剧本里已验证的语义搬进来：**有卡答卡 → 被问验证码就供码 → 否则说确认**，
+      # 直到 `order_create` 成功（被门禁挡回不算成功，故不会提前停）。
+      - repeat_until:
+          tool_called: order_create
+          max: 4
+        code: "123456"
+        fallback: "确认下单"
+        form_values:
+          customer_name: "张三"
+          customer_phone: "13800138000"
+          customer_address: "浙江省杭州市西湖区文三路1号1幢101室"
+          color: "米白"
+          colorName: "米白"
     expectations:
       - tool: product_search
       - tool: product_detail

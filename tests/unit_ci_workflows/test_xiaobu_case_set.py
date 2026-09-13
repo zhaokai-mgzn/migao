@@ -596,6 +596,14 @@ class TestWriteCaseInputsAreComplete:
         if not isinstance(msg, dict):
             return [str(msg)]
         out = []
+        # `repeat_until` 轮的供码/兜底文本（issue #3430）：`{repeat_until: {...}, code, fallback}`
+        # —— 供码是"被问验证码时发出去的那句话"，与 auto_respond.fallback 完全等价。
+        if msg.get("repeat_until") is not None:
+            for k in ("code", "fallback"):
+                if msg.get(k) is not None:
+                    out.append(str(msg[k]))
+            for v in (msg.get("form_values") or {}).values():
+                out.append(str(v))
         for key in ("auto_respond", "auto_fill"):
             block = msg.get(key)
             if isinstance(block, dict):
@@ -689,23 +697,27 @@ class TestCh025AddressPrefillIsExecutable:
             "缺『先查历史地址再写单』的时序断言"
         )
 
-    def test_enough_card_answering_turns_before_otp(self):
-        """CH-025 的流程里有**两类卡**（收货信息 form + 加工项多选），故答卡轮要 ≥2。
+    def test_code_supply_survives_card_sequence_variance(self):
+        """供码机制必须跟得上**实际卡片序列**（issue #3421 → #3430）。
 
-        实证（issue #3421）：只给 1 轮答卡时，第二类卡会顶到验证码轮上 → "123456" 成了
-        加工项的回答 → 3 轮空转、从未下单，且被重试放行标成 `llm-noise`。
+        旧写法是「答卡 ×2 + 验证码 ×2」的固定轮次表，而实测卡片序列是变的
+        （首跑 `form(R2) → choice(R3)`、OR-021 是 `form(R3) → choice(R4) → confirm(R7)`）
+        → 验证码落到加工项多选卡上、顾客答非所问 → 整场不下单，还被重试放行标成 `llm-noise`。
+        故本用例不再依赖轮次表对齐，改为声明 `repeat_until`：
+        **有卡答卡 → 被问验证码就供码 → 否则说确认**，直到 `order_create` 成功。
         """
-        c = self._case()
-        ui = c.get("user_inputs") or []
-        idx_pt = [i for i, u in enumerate(ui)
-                  if isinstance(u, dict) and (u.get("auto_respond") or {}).get("prefer_text")]
-        assert idx_pt, "CH-025 缺验证码轮（prefer_text）"
-        card_idx = [i for i, u in enumerate(ui)
-                    if isinstance(u, dict) and not (u.get("auto_respond") or {}).get("prefer_text")]
-        before = len([i for i in card_idx if i < idx_pt[0]])
-        assert before >= 2, (
-            f"验证码轮之前只有 {before} 轮答卡式答复 —— CH-025 有 form + choice 两类卡，"
-            "至少要 2 轮才能把卡答完（issue #3421 实证：1 轮时顾客答非所问、整场不下单）"
+        ui = self._case().get("user_inputs") or []
+        reps = [u for u in ui if isinstance(u, dict) and isinstance(u.get("repeat_until"), dict)]
+        assert reps, (
+            "CH-025 必须声明 repeat_until 轮 —— 固定轮次表对不上实际卡片序列时，"
+            "验证码会喂给加工项卡、流程空转（issue #3430 实证 0/1）"
+        )
+        spec = reps[0]["repeat_until"]
+        assert str(spec.get("tool_called") or "") == "order_create", (
+            f"repeat_until 的停条件必须是 order_create，实际 {spec.get('tool_called')!r}"
+        )
+        assert any(str(u.get("code") or "").strip() for u in reps), (
+            "repeat_until 轮缺 `code` —— agent 索要验证码时供不出码，流程仍会卡死"
         )
 
     def test_modification_turn_is_really_a_modification(self):
@@ -773,3 +785,69 @@ class TestPreferTextTurnsAreRobust:
             "验证码就永远送不出去（order_create 会以「缺少短信验证码」失败）：\n  "
             + "\n  ".join(bad)
         )
+
+
+class TestRepeatUntilCases:
+    """`repeat_until` 轮的契约（issue #3430）：写用例必须跟得上**实际卡片序列**。
+
+    背景：写用例的固定轮次表按某一种卡片序列写，实际序列随模型而变
+    （OR-021 实测 `form(R3) → choice(R4) → confirm(R7)`）→ 验证码轮落到加工项多选卡上 →
+    顾客答非所问、卡没人答、轮数耗尽时确认卡刚发出 → `order_create` 从未发生（0/1）。
+    `repeat_until` 把验收剧本里已验证的「有什么卡答什么卡 + 被问码就供码」语义搬进评测用例。
+    """
+
+    OTP_TOOLS = {"order_create", "aftersales_create"}
+
+    def _cases(self):
+        return load_case_dicts(CASES_DIR)
+
+    def _repeat_turns(self, case):
+        out = []
+        for u in case.get("user_inputs") or []:
+            if isinstance(u, dict) and isinstance(u.get("repeat_until"), dict):
+                out.append(u)
+        return out
+
+    def test_repeat_until_turns_are_well_formed(self):
+        bad = []
+        for c in self._cases():
+            for u in self._repeat_turns(c):
+                spec = u["repeat_until"]
+                if not str(spec.get("tool_called") or "").strip():
+                    bad.append(f"{c['id']}: repeat_until 缺 tool_called（没有停条件 → 会白跑 N 轮）")
+                raw = spec.get("max")
+                try:
+                    n = int(raw)
+                except (TypeError, ValueError):
+                    bad.append(f"{c['id']}: repeat_until.max={raw!r} 不是整数")
+                    continue
+                if not (1 <= n <= 6):
+                    bad.append(f"{c['id']}: repeat_until.max={n} 越界（1..6，"
+                               f"重复轮是「顾客继续配合」不是无限重试）")
+                if not str(u.get("fallback") or "").strip():
+                    bad.append(f"{c['id']}: repeat_until 轮缺 fallback（无卡无码时会发出默认值，"
+                               f"用例意图不可见）")
+        assert not bad, "repeat_until 轮契约不合法：\n  " + "\n  ".join(bad)
+
+    def test_write_cases_using_repeat_until_supply_code(self):
+        """断言了验证码写工具的 repeat_until 用例**必须**声明 code（否则被问码时无码可给）。"""
+        bad = []
+        for c in self._cases():
+            reps = self._repeat_turns(c)
+            if not reps:
+                continue
+            used = {e.get("tool") for e in (c.get("expectations") or []) if isinstance(e, dict)}
+            if not (used & self.OTP_TOOLS):
+                continue
+            if not any(str(u.get("code") or "").strip() for u in reps):
+                bad.append(c["id"])
+        assert not bad, (
+            "以下用例用 repeat_until 且断言了需验证码的写工具，却没声明 `code` —— "
+            "agent 索要验证码时供不出码，流程仍会卡死：\n  " + "\n  ".join(bad)
+        )
+
+    def test_repeat_turn_does_not_also_declare_prefer_text(self):
+        """同一轮不能既是 repeat_until 又是 auto_respond（两种语义混用会让作者猜不到行为）。"""
+        bad = [f"{c['id']}" for c in self._cases() for u in self._repeat_turns(c)
+               if "auto_respond" in u]
+        assert not bad, f"这些用例的 repeat_until 轮同时写了 auto_respond：{bad}"

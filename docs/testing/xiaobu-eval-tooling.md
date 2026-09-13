@@ -315,6 +315,50 @@ case 级 `auto_fill` 轮声明的值会被所有 `auto_respond` 轮复用，避�
 
 **边界**：`auto_respond` 只解决"卡片驱动的子流程顺序不定"，不替代必要的静态输入
 （选品、数量、验证码这些**用户主动提供**的信息仍要写明）。
+⚠️ 写用例请优先用 §6.4.1 的 `repeat_until`：固定轮次表对不上实际卡片序列时，
+验证码会落到别的卡上 → 整场空转（issue #3430 实证）。
+
+### 6.4.1 写用例的"统一一轮"：`repeat_until`（**优先用它**，issue #3430）
+
+`auto_respond` 解决了"卡片顺序不定"，但仍要求作者**逐轮写死数量与位置**。实测证明这不够：
+写用例的轮次表按某一种卡片序列写，实际序列一变就错位 —— `prefer_text` 的验证码轮落到
+「加工项多选卡」上，顾客答非所问，卡没人答、流程不前进，**轮数耗尽时确认卡刚发出来就没人答它**
+（OR-021 定向复跑 **0/1**；CH-025 首跑同形；两者 `handoff=0`，是纯空转不是转人工）。
+
+验收剧本早就用 `repeat_until + click:auto` 解决过同一问题。评测侧同款语义：
+
+```yaml
+user_inputs:
+  - "我想买遮光窗帘，米白 3 米，要纳米圈打孔加工"
+  - "收货地址帮我改成浙江省杭州市西湖区文三路2号5幢202室"
+  # 协作型顾客的"统一一轮"：有卡答卡 → 被问验证码就供码 → 否则说 fallback，
+  # 直到 `order_create` **成功**（被门禁挡回不算成功 → 不会提前停）
+  - repeat_until:
+      tool_called: order_create
+      max: 4
+    code: "123456"                       # 被问验证码时发这句（dev/CI 栈 SMS_BYPASS_CODE）
+    fallback: "确认下单"
+    form_values:                         # 表单卡按此回填
+      customer_name: "张三"
+      customer_phone: "13800138000"
+      customer_address: "浙江省杭州市西湖区文三路2号5幢202室"
+```
+
+规则（`resolve_repeat_turn`）：
+
+| 上一轮状态 | 这一轮发什么 |
+|---|---|
+| 有待答卡片 | **答卡**（confirm→`confirmValue`；choice→首项；form→`__FORM__|json`） |
+| 无卡，且 agent 在**索要验证码** | `code`（默认 `123456`） |
+| 其它 | `fallback` |
+
+契约（`TestRepeatUntilCases` 守卫，违反即红）：`tool_called` 必填、`max ∈ [1,6]`、
+必须写 `fallback`、断言验证码写工具的用例**必须**写 `code`、不得与 `auto_respond` 混用同一轮。
+
+**为什么 max 上限是 6**：重复轮是"顾客继续配合"，不是无限重试 —— 上限过大只会把模型空转的
+时间烧进评测墙钟（而墙钟由最慢单条决定，见 `eval-pipeline-performance.md` §2.6）。
+
+> 迁移建议：新写用例直接用 `repeat_until`；存量用例按 #3430 逐个迁移（OR-021 / CH-025 已迁）。
 
 ### 6.5 Eval 产物 DB 审计（§2.2 自动化）
 
