@@ -276,7 +276,9 @@ jobs:
         env:
           AI_API_URL: http://localhost:8001
           ADMIN_API_URL: http://localhost:8080
-          SERVICE_TOKEN: ${{ secrets.SMOKE_SERVICE_TOKEN || 'ci-service-token-placeholder' }}
+          # 不注入 SERVICE_TOKEN：C 端验收走 `X-Debug-Role: customer`（acceptance_runner 的
+          # login() 对 xiaobu 返回空 token），**不需要任何 secret** —— 既最小权限，
+          # 也避免 Danger Scan 把"新增 secret 引用"标为待人工审查（本轮被它拦过一次）。
           PERSONA: xiaobu
           PYTHONUTF8: "1"
           PYTHONIOENCODING: utf-8

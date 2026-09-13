@@ -82,3 +82,47 @@ class TestRenderedAmountChecksAreLists:
                     if not isinstance(dv["expect_products"], list):
                         bad.append(f"{c.id}: expect_products={dv['expect_products']!r}")
         assert not bad, f"db_verify.expect_products 非列表：{bad}"
+
+
+class TestFlowParsingDoesNotSwallowProse:
+    """flow 解析必须**保守**：`[id] 说明文字… 返回 []` 不是序列（issue #3367 回归）。
+
+    背景：`yaml_light` 原先不解析 flow 序列，我给 `checks: [a, b]` 加了支持；
+    但真值文件用的是 `- [misc.x] 说明… → 返回 []` —— 这种行**以 `[` 开头、以 `]` 结尾**，
+    被我的新逻辑当成 flow 序列 → 真值 ID 丢失 → `.github/truths.py check` 在 main 上
+    **fail-closed 报红**（Case Contract 门禁），而我直到自己的 PR 被同一个门禁挡住才发现。
+
+    教训：给宽松解析器加语法支持时，必须保证**原有数据形态不被新语法捕获**。
+    """
+
+    def test_truth_line_stays_string(self):
+        doc = yl_load("business_truths:\n  - [misc.parse-extraction-result] 解析：非 JSON → 返回 []\n")
+        item = doc["business_truths"][0]
+        assert isinstance(item, str), f"真值行被误当序列: {item!r}"
+        assert item.startswith("[misc.parse-extraction-result]")
+
+    def test_truth_id_extractable(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("t_mod", REPO_ROOT / ".github" / "truths.py")
+        m = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(m)
+        line = "[misc.extract-llm-flow] prompt 截断 500 字符；异常 → warning 返回 []"
+        assert m.extract_id(line) == "misc.extract-llm-flow"
+
+    def test_real_flow_sequence_still_works(self):
+        doc = yl_load("k:\n  - checks: [unit_price, subtotal, total]\n")
+        assert doc["k"][0]["checks"] == ["unit_price", "subtotal", "total"]
+
+    def test_prose_with_brackets_is_not_a_map(self):
+        doc = yl_load('k: {说明：含 {嵌套} 与 } 结尾}\n')
+        assert isinstance(doc["k"], str), f"散文被误当 flow 映射: {doc['k']!r}"
+
+    def test_truths_index_contains_bracket_ending_truths(self):
+        """端到端：真值索引必须收进"文本以 [] 结尾"的真值（本轮 main 报红的直接原因）。"""
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("t_mod2", REPO_ROOT / ".github" / "truths.py")
+        m = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(m)
+        idx, _conflicts, _unid = m.load_all_truths(str(REPO_ROOT / ".github" / "templates"))
+        for tid in ("misc.parse-extraction-result", "misc.extract-llm-flow"):
+            assert tid in idx, f"真值 {tid} 未进索引（flow 解析吞掉了真值行？）"
