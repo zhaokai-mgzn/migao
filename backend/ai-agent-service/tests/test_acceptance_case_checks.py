@@ -2335,6 +2335,77 @@ def _order_round(rnd, items, ok=True, total=None):
     }
 
 
+class TestAssertionsFailClosed:
+    """断言**配置写错时必须报错**，不得静默跳过（issue #3367 断言层审计）。
+
+    为什么单独立测：`check_forbidden_args` / `check_required_args` 里都有
+    「配置不完整就 `continue`」的路径 —— 于是把 `fields` 写成空/写错键名，
+    那条**隔离/越权下限断言**就变成静默 no-op：用例照样绿，而它本该拦住数据泄露。
+    与"金额断言因 checks 变字符串而静默失效"同族（同一轮先后被发现）。
+    评测工具最危险的不是判错，是**声称查过而其实没查**。
+    """
+
+    def _calls(self, name, args):
+        return [{"__round": 1,
+                 "tool_calls": [{"name": name, "args": args}],
+                 "tool_results": [{"tool": name, "result": {"success": True, "data": {}}}],
+                 "final_text": ""}]
+
+    # ── forbidden_args ──
+    def test_forbidden_args_missing_fields_reports(self):
+        issues = lr.check_forbidden_args(self._calls("customer_logistics_track", {}),
+                                         [{"tool": "customer_logistics_track"}])
+        assert issues and "fields" in issues[0], "缺 fields 的禁止参数断言必须报错（否则静默 no-op）"
+
+    def test_forbidden_args_empty_fields_reports(self):
+        issues = lr.check_forbidden_args(self._calls("customer_logistics_track", {}),
+                                         [{"tool": "customer_logistics_track", "fields": []}])
+        assert issues and "fields" in issues[0]
+
+    def test_forbidden_args_missing_tool_reports(self):
+        issues = lr.check_forbidden_args(self._calls("x", {}), [{"fields": ["a"]}])
+        assert issues and "tool" in issues[0]
+
+    def test_forbidden_args_valid_still_works(self):
+        """合规配置不得被误伤：字段真的没出现 → 无 issue。"""
+        assert lr.check_forbidden_args(self._calls("customer_logistics_track", {"order_id": "1"}),
+                                       [{"tool": "customer_logistics_track",
+                                         "fields": ["tracking_number"]}]) == []
+        # 字段真出现了 → 必须报
+        bad = lr.check_forbidden_args(self._calls("customer_logistics_track", {"tracking_number": "SF1"}),
+                                      [{"tool": "customer_logistics_track",
+                                        "fields": ["tracking_number"]}])
+        assert bad and "tracking_number" in bad[0]
+
+    # ── required_args ──
+    def test_required_args_missing_tool_reports(self):
+        issues = lr.check_required_args(self._calls("order_create", {}), [{"fields": ["items"]}])
+        assert issues and "tool" in issues[0], "缺 tool 的必填参数断言必须报错"
+
+    def test_required_args_missing_fields_reports(self):
+        """只有 tool 没有 fields = 退化成"调用过就算过"（比作者本意弱）→ 必须显式报错。"""
+        issues = lr.check_required_args(self._calls("order_create", {"items": []}),
+                                        [{"tool": "order_create"}])
+        assert issues and "fields" in issues[0]
+
+    def test_required_args_valid_still_works(self):
+        assert lr.check_required_args(self._calls("order_create", {"items": [1]}),
+                                      [{"tool": "order_create", "fields": ["items"]}]) == []
+        bad = lr.check_required_args(self._calls("order_create", {}),
+                                     [{"tool": "order_create", "fields": ["items"]}])
+        assert bad
+
+    # ── db_verify（商品侧）──
+    def test_db_verify_product_without_name_reports(self):
+        issues = asyncio.run(lr.check_db_verify("tok", [{"fetch": "product_by_name", "checks": ["x"]}]))
+        assert issues and "name" in issues[0], "商品侧 db_verify 缺 name 时必须报错"
+
+    # ── must_succeed ──
+    def test_must_succeed_missing_tool_reports(self):
+        issues = lr.check_must_succeed(self._calls("order_create", {}), [{}])
+        assert issues and "tool" in issues[0]
+
+
 class TestFetchOrderDetailPaths:
     """订单详情抓取的**路径选择**（issue #3367 实测假失败）。
 
