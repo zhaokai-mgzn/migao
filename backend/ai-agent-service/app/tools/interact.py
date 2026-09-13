@@ -36,6 +36,10 @@ def _ensure_list(value: Any, field_name: str) -> Optional[List]:
 
 
 def _mask_card_pii(data: dict) -> dict:
+    """（保留工具函数，当前**不在工具层调用**；卡片脱敏改在 SSE 出站层做。）
+
+    见下方 execute 尾部注释：在工具层脱敏会污染模型上下文与 confirmValue。
+    """
     """卡片里**顾客可见的文本**脱敏（issue #3379 P2-2 残留）。
 
     为什么做在卡片层：验收复跑（run 34734188947）里全局断言仍抓到一次完整手机号进
@@ -396,14 +400,10 @@ class InteractTool(BaseTool):
                 message="仅支持 choice、confirm、form 组件",
             )
 
-        # C 端卡片脱敏（issue #3379）：顾客可见文本里的手机号/邮箱必须脱敏；
-        # B 端不脱敏（客服要照实号码联系顾客）。
-        if str(getattr(context, "role", "") or "").lower() == "customer":
-            _before = json.dumps(interactive_data, ensure_ascii=False, default=str)
-            interactive_data = _mask_card_pii(interactive_data)
-            _after = json.dumps(interactive_data, ensure_ascii=False, default=str)
-            if _before != _after:
-                logger.info(f"[interact] 卡片字段脱敏（C 端）| title={title}")
+        # ⚠️ 卡片脱敏**不在这里**做（issue #3379 修正）：工具返回值会进入**模型上下文**
+        # 与 `confirmValue`（顾客回传后要精确匹配）—— 在这里脱敏实测把流程搞坏了
+        # （run 34736385849 验收 2 条违规：卡片显示"待补充完整手机号"，模型反过来问顾客要号码）。
+        # 正确位置是**出站序列化**（chat.py 的 SSE 层）：顾客看到的脱敏，模型上下文保持原值。
 
         logger.info(
             f"[interact] {component} component | title={title} "

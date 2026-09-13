@@ -4,6 +4,7 @@ Covers: chat (helpers), sse (SSEEvent/SSEStreamBuilder),
          upload (_sniff_image_type/_validate_image_file), internal (Pydantic models)
 """
 # case_ids: CH-001, API-004, CH-011, CH-012, OR-017
+import json
 import pytest
 from unittest.mock import MagicMock, patch
 from datetime import datetime, timezone
@@ -486,3 +487,52 @@ class TestStreamBridgeMaskingWiring:
     def test_bridge_keeps_staff_text(self):
         chunks = self._run("客户 13800138000", role="admin")
         assert "13800138000" in "".join(chunks)
+
+
+class TestCardMaskingAtSseBoundary:
+    """卡片脱敏在**出站层**（issue #3379）——顾客看到脱敏，模型上下文保持原值。"""
+
+    def _ctx(self, role):
+        from app.agents.customer_service_agent import AgentContext
+        return AgentContext(tenant_id=1, user_id="u1", session_id="s1", role=role,
+                            identity_type="customer")
+
+    def _card(self):
+        return {"component": "confirm", "title": "请确认收货信息",
+                "fields": [{"label": "收货人", "value": "张三"},
+                           {"label": "手机号", "value": "13800138000"}],
+                "confirmValue": "确认提交：张三 13800138000"}
+
+    def test_customer_card_masked_on_output(self):
+        """**顾客可见部分**（title/fields/formFields/options.label）脱敏；
+        `confirmValue` 属协议值不脱敏（见下一条测试）—— 故不能对整卡 JSON 断言"不含手机号"。"""
+        from app.api.chat import _mask_card_for_customer
+        out = _mask_card_for_customer(self._card(), self._ctx("customer"))
+        assert "138****8000" in out["fields"][1]["value"], f"字段未脱敏: {out['fields']}"
+        assert "13800138000" not in json.dumps(out["fields"], ensure_ascii=False)
+
+    def test_confirm_value_untouched(self):
+        """`confirmValue` 是回传协议值 —— 出站也不改，否则顾客点卡后匹配不上。"""
+        from app.api.chat import _mask_card_for_customer
+        out = _mask_card_for_customer(self._card(), self._ctx("customer"))
+        assert out["confirmValue"] == "确认提交：张三 13800138000"
+
+    def test_staff_card_untouched(self):
+        from app.api.chat import _mask_card_for_customer
+        card = self._card()
+        assert _mask_card_for_customer(card, self._ctx("admin")) == card
+
+    def test_option_values_untouched(self):
+        from app.api.chat import _mask_card_for_customer
+        card = {"component": "choice", "title": "选一下",
+                "options": [{"label": "打孔 13800138000", "value": "opt_13800138000"}]}
+        out = _mask_card_for_customer(card, self._ctx("customer"))
+        assert out["options"][0]["value"] == "opt_13800138000"
+        assert "13800138000" not in out["options"][0]["label"]
+
+    def test_order_number_untouched(self):
+        from app.api.chat import _mask_card_for_customer
+        card = {"component": "confirm", "title": "订单号 20260913027050006",
+                "fields": [{"label": "订单号", "value": "20260913027050006"}]}
+        out = _mask_card_for_customer(card, self._ctx("customer"))
+        assert "20260913027050006" in json.dumps(out, ensure_ascii=False)
