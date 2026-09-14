@@ -310,6 +310,17 @@ cases:
       - "选白色的，散剪，2.8米门幅"
       - "不需要加工项"
       - "确认下单"
+      # 收尾答卡轮（#3544 §2 同款先例；2026-09-15 结论档 run 34841029062 实测）：
+      # B 端写操作受 confirm 门禁约束——文字「确认下单」≠ 点卡，agent 收到后只**发**
+      # 确认卡（R5 实测 tools 含 product_search/product_detail/validate_input +
+      # interact(confirm:请确认订单信息)），轮次用尽即停在待点卡态 →
+      # `order_create` 在预算内**不可能**被调用（失败原文 2 条：`❌ order_create` +
+      # `required_args: 未调用 order_create(action=None)`）。留 2 轮余量
+      # （有卡答卡 / 无卡发原文）；同形：OR-015（#3544 已修）/ CR-001 / AS-003。
+      - auto_respond:
+          fallback: "确认下单"
+      - auto_respond:
+          fallback: "确认"
     expectations:
       - tool: product_detail
         args:

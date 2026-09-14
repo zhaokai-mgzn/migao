@@ -296,8 +296,13 @@ cases:
           tool_called: processing_item_manage
           max: 3
         fallback: "确认"
-      # 回读轮：`update_item` 的返回是 `{item_id, price}`（**只含本次下发的字段**，
-      # 不是合并后的全量对象），所以「其它字段有没有被清空」只能靠**回读**判定。
+      # 回读轮：`update_item` 的返回是 `{item_id, **PUT 回显的完整加工项}`——**是合并后的
+      # 对象**（`_put_item_full` GET 详情 → 覆盖传入字段 → PUT 全量后回显；run 34841029062
+      # 实测 payload 含 19 个字段：aiRecommended / categoryId / name / pricingMethod /
+      # status / unitPrice / updatedAt …）。
+      # ⚠️ 原文写「返回只含本次下发的字段」= 与实现相反，正是它把「不清空其它字段」这条
+      # 题眼**误判为工具层无从自证**、只留了 prose（不计分）—— 2026-09-15 更正并
+      # 把该语义**机器可判化**到 output_verify（见下）。回读轮仍保留（二次证据面）。
       - "再看下加工项纳米圈打孔的单价和计价方式"
       - repeat_until:
           tool_called: processing_item_query
@@ -323,7 +328,22 @@ cases:
       - tool: processing_item_manage
         action: update_item
         expect:
-          price: 9.5          # 下发的就是新单价（真值来自用户输入原文）
+          # 2026-09-15 校准（结论档 run 34841029062 实证假红）：原写 `price: 9.5` ——
+          # `price` 是**工具入参名**，回显报文里的字段名是 admin-api 的 **`unitPrice`**
+          # （`processing_item_manage.py:308` 显式映射 `unitPrice ← price`）。
+          # 实测失败原文：「结果里没有字段 'price'（实际字段: ['aiRecommended', …,
+          # 'unitPrice', 'updatedAt']）」——19 个实际字段里有 unitPrice、没有 price
+          # ⇒ 该断言**恒红**（真值与被测行为无关的空断言），而 agent 那一轮其实成功了
+          # （「✅ 已更新：单价 ¥8.00 → ¥9.50/米」，且 12:18 的 PP-008 回读到 ¥9.5/米）。
+          unitPrice: 9.5      # 真值来自用户输入原文 ¥9.50
+          # 本用例的题眼是「**只改单价不清空其它字段**」：`_put_item_full`（:344）是
+          # 「GET 详情 → 覆盖传入字段 → PUT 全量」，PUT 回显即**合并后的对象**，
+          # 故「没被清空」能且必须在这份 payload 上机器核到（字段被清 → 键缺失/为空 → 红）。
+          # 其中 status / pricingMethod 是**非 @NotBlank 的可选字段**（真正会被
+          # 「只发改动字段」写法清掉的那一类，issue #3584/#3591 的回归面）。
+          name: 纳米圈打孔
+          pricingMethod: per_meter
+          status: active      # 种子 pi_eval_punch status='active'（xiaobu_eval_seed.sql:32）
     forbidden_text:
       - "暂不支持"
       - "功能不存在"
@@ -333,11 +353,11 @@ cases:
       - "无法修改"
     data_checks:
       # 本类用例的**核心断言**（对照 #3591 修的「GET→merge→PUT 全量」语义）：
-      # 只改单价不得把 name / pricingMethod / categoryId 清空。回读轮是本判定的
-      # 证据面（`update_item` 的返回不含未下发字段，工具层无从自证）。
-      - "回读结果中 name 仍为「纳米圈打孔」、pricingMethod 仍为 per_meter（未被清空）——只改 price 不得清空其它字段"
+      # 只改单价不得把 name / pricingMethod / status 清空。2026-09-15 起该语义已**机器可判**
+      # （output_verify 的 name/pricingMethod/status 三个键，见上）；本 prose 仅留作判读说明。
+      - "回读结果中 name 仍为「纳米圈打孔」、pricingMethod 仍为 per_meter、status 仍为 active（未被清空）——只改 price 不得清空其它字段"
     skip_reason: ""
-    merge_log: "2026-09-14 新增（issue #3568）：`processing_item_manage(action=update_item)` 此前**零用例覆盖**（#3591 收口时如实标注的覆盖边界：只有 create 路径被重放）。断言机器可判：must_succeed(action=update_item) + required_args[item_id,price] + output_verify(price=9.5，显式 action) + forbidden_text。回读轮覆盖「部分更新不得清空其它字段」（#3591 的 GET→merge→PUT 语义），工具层无法自证故由回读判定。"
+    merge_log: "2026-09-14 新增（issue #3568）：`processing_item_manage(action=update_item)` 此前**零用例覆盖**（#3591 收口时如实标注的覆盖边界：只有 create 路径被重放）。断言机器可判：must_succeed(action=update_item) + required_args[item_id,price] + output_verify(unitPrice=9.5 + name/pricingMethod/status 未被清空，显式 action) + forbidden_text。2026-09-15 校准（结论档 run 34841029062 实证）：原 output_verify 写 `price: 9.5` = 用**入参名**核**回显字段名**（回显是 unitPrice）→ 恒红假红；同时更正「update_item 返回只含下发字段」的错误注释（PUT 回显是合并后全量对象，故「不清空」可从 payload 机器核到）。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_processing_item_manage.py"

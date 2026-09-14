@@ -30,6 +30,16 @@ cases:
       - auto_select: true
       - "不需要加工项"
       - "确认下单"
+      # 收尾答卡轮（#3544 §2 同款先例；2026-09-15 结论档 run 34841029062 实测）：
+      # B 端写操作受 confirm 门禁约束——文字「确认下单」≠ 点卡，agent 收到后只**发**
+      # 确认卡（R5 实测 tools 含 validate_input + interact(confirm:确认创建订单)），
+      # 轮次用尽即停在待点卡态 → `order_create` 在预算内**不可能**被调用
+      # （失败原文 2 条：`❌ order_create` + `required_args: 未调用 order_create(action=None)`）。
+      # 留 2 轮余量（有卡答卡 / 无卡发原文）；同形：OR-015（#3544 已修）/ OR-008 / AS-003。
+      - auto_respond:
+          fallback: "确认下单"
+      - auto_respond:
+          fallback: "确认"
     expectations:
       - tool: product_detail
       - tool: order_create
@@ -48,7 +58,7 @@ cases:
       - type: product_dedupe
         product_keyword: "遮光窗帘"
     skip_reason: ""
-    merge_log: "eval C001 独有；2026-09-14 校准（#3518）：① 下单轮去「100元的那件」价格点名（独立栈种子只有 ¥168 款，点名不存在的价 → agent 合理查无此价 → 流程不前进），自包含化同 AS-003 先例（#3511）；② pre_clean 去 price 过滤（关键词去重，原 price: 100 在种子 ¥168 的栈上恒不匹配）"
+    merge_log: "eval C001 独有；2026-09-14 校准（#3518）：① 下单轮去「100元的那件」价格点名（独立栈种子只有 ¥168 款，点名不存在的价 → agent 合理查无此价 → 流程不前进），自包含化同 AS-003 先例（#3511）；② pre_clean 去 price 过滤（关键词去重，原 price: 100 在种子 ¥168 的栈上恒不匹配）。2026-09-15 校准（结论档 run 34841029062 实证）：③ 补 2 轮收尾答卡轮——5 轮预算里末轮恰好是 agent **发**确认卡那一轮，没有轮次去点卡 → order_create 必不执行（断言本身合理，不得放宽），照 OR-015（#3544 §2）先例"
     traces:
       tests:
         - "backend/ai-agent-service/tests/manual/mibao_scenarios.py"
