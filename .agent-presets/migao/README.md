@@ -56,6 +56,44 @@ head -3 "$HOME/.dsh/.agent-presets/migao/skills/migao-dev-flow/SKILL.md"
   （不再依赖个人 `~/.dsh` 里的手抄副本）。
 - 软链指向工作区文件，**合并到 `main` 后自动生效**（拉取即更新，无需重链）。
 
+## 本机 live 锚点与运维铁律（2026-09-14 换链后）
+
+**现行锚点**：`~/ai native/migao-preset-live/` —— 产品仓库的 **sparse partial clone**
+（`git clone --filter=blob:none --sparse <migao> migao-preset-live` + `git sparse-checkout set .agent-presets`，约 **6.6MB**），
+`~/.dsh/.agent-presets/migao` 软链指向它的 `.agent-presets/migao`。换链前已核**逐字节一致**
+（`preset.yml` / `agent.cordis.yml` / `skills/*/SKILL.md` 与当时 `origin/main` md5 全同）⇒ 换链**内容中性**。
+自此**可编辑副本只剩产品仓库一份**：研发模式改动只能走产品仓库 PR ——「live 源 vs 权威源」分裂
+（`migao-dev-flow` §17.3 反模式）**已消除**。
+
+**为什么不用 git worktree**：worktree 属 `scripts/dev-worktree.sh rm` / `git worktree prune` 的**清理半径**
+（"可丢弃"语义）。被删 ⇒ 软链悬空 ⇒ **DSH 静默加载不到研发模式**（DSH `src` 注释：
+“a dangling link is not a preset”）。故锚点用**独立 clone**，落在任何 worktree 清理流程之外。
+
+**运维铁律三条（锚点不是"另一个工作区"，是 live 内容本身）**：
+1. **只读**：不得就地编辑、不得切分支、不得留未提交改动 —— 否则会变成「**藏在软链目标里的第三份副本**」：
+   它直接生效，却**没有 PR、没有评审、没有 diff 提醒**，比双源漂移**更隐蔽**。
+2. **只 ff**：更新只允许
+   `git -C "$HOME/ai native/migao-preset-live" fetch origin main && git -C "$HOME/ai native/migao-preset-live" merge --ff-only origin/main`
+   —— `--ff-only` 遇本地改动会失败，正好把第 1 条的违规**暴露出来**。
+3. **不可删**：锚点不参与任何清理流程（不进 `migao-wt/`、不 `rm`、不 `prune`）。
+
+**滞后 vs 漂移（两回事，别混）**：
+- **漂移** = 两个可编辑副本内容矛盾（换链后**已消除**，结构上无法再发生）；
+- **滞后** = 锚点落后 `main`（**常态** —— 锚点不会自己变新）。判别写法：
+  `git -C "$HOME/ai native/migao-preset-live" rev-parse HEAD` vs `git rev-parse origin/main`；
+- **触发时机**：**开工前**、以及**每次合并 preset PR 后**各 ff 一次 —— 否则出现
+  「PR 合并了但研发模式没变」这种难查的错位（那是滞后，不是漂移）。
+
+**健康检查（换链后 / 怀疑异常时）**：
+
+```bash
+readlink "$HOME/.dsh/.agent-presets/migao"        # → …/migao-preset-live/.agent-presets/migao
+cat "$HOME/.dsh/.agent-presets/migao/preset.yml" >/dev/null && echo "preset 元数据可读"
+grep -m1 '^version' "$HOME/.dsh/.agent-presets/migao"/skills/*/SKILL.md   # 应与 main 的版本一致
+```
+
+> ⚠️ 锚点选择**救不了**「从构建产物启动 DSH」这条路径：那条限制与锚点位置无关，见下一节。
+
 ## ⚠️ 已知限制：从构建产物启动时软链会被静默忽略
 
 **软链布局只在「从源码运行 DSH」时可靠**（如 `pnpm dsh web` 经 `tsx` → 解析到包的 `src/`）。
@@ -76,6 +114,17 @@ head -3 "$HOME/.dsh/.agent-presets/migao/skills/migao-dev-flow/SKILL.md"
 - **⚠️ 证据强度限定（登记为未验证项，勿当实测结论）**：以上是**静态证据**（读 `src`/`lib` 源码 + 包入口
   `"main": "lib/index.js"` + 文件 mtime 对比），**尚未实际用构建产物启动 DSH 复现**「研发模式无声消失」；
   本次也**未重建 DSH 的 `lib`**（全仓重建影响面大，且不属于本仓库职责）。**是否重建交由用户裁定。**
+- **frontmatter `description` 是 YAML 纯标量 ⇒ 第一个「空白 + `#`」处静默截断**（`#` 起被当成注释起始）
+  —— 「**文件里写了**」≠「**加载器读到了**」（与 `migao-acceptance`「注释漂移 = 假绿来源」同族，但更隐蔽）。
+  实证（2026-09-15，用**加载器同一个 `yaml` 包**解析）：`migao-dev-flow` 的 `description` 原文
+  **2666 字符，解析结果只有 192 字符**（截断于「v1.11（2026-09-09 issue」），
+  ⇒ v1.12/v1.17/v1.18/v1.19/v1.20 的说明**从未**出现在技能目录里，只有打开文件的人才看得到。
+  **本目录约定（自 dev-flow v1.21 起）**：`description` 只写**有意简短的摘要**（触发语 + 范围）；
+  **变更沿革写进正文 `## 版本沿革` 节**；确需在 frontmatter 放长文本，必须加引号或用块标量（`>-`）
+  —— 不靠加引号救长文本，因为那等于保留「可以无限往后追加」的坏习惯。
+  另注：DSH 的 skill 加载器**只读 `name` + `description`**（缺任一即忽略该技能），且要求
+  **第 1 行就是 `---`**（在 frontmatter 之前加注释会让整个技能被忽略）；`version` **不参与加载**，
+  仅供人工 / 锚点新鲜度核对。
 
 ## 纪律
 

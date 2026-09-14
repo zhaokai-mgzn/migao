@@ -249,3 +249,36 @@ class TestAfterSalesUpdateStatus:
         # 状态更新回执必须用中文业务术语，禁止输出英文枚举
         assert "已解决" in result.message
         assert "resolved" not in result.message
+
+    @patch("app.tools.after_sales_manage.get_admin_api_client")
+    async def test_close_without_reason_fails_closed(
+            self, mock_get_client, tool, admin_tool_context, mock_client):
+        """关闭/拒绝工单必须带原因（issue #3744 / AS-004）：无 reason → 失败关闭且不下发请求。
+
+        红证：改前这里 `success is False` 会失败 —— 旧实现无 reason 也返回成功且 json_data 里
+        没有 remark，admin-api 只在 remark 非空时写 closeReason（AfterSalesTicketService
+        #updateTicketStatus）⇒ 落库 closedAt 有、closeReason 空 = 关闭留痕缺失；
+        而 closed/rejected 是**终态不可再流转**，事后补不回来。
+        """
+        mock_client.put = AsyncMock(return_value={"success": True})
+        mock_get_client.return_value = mock_client
+        for st in ("closed", "rejected"):
+            result = await tool.execute(
+                context=admin_tool_context, action="update_status", ticket_id="t1", status=st)
+            assert result.success is False, f"{st} 无原因必须失败关闭，不得产生无留痕关闭"
+            assert "原因" in result.message
+        mock_client.put.assert_not_called()
+
+    @patch("app.tools.after_sales_manage.get_admin_api_client")
+    async def test_close_with_reason_lands_remark(
+            self, mock_get_client, tool, admin_tool_context, mock_client):
+        """关闭工单带原因 → 原因经 canonical 字段 remark 下发（admin-api 写 closeReason）。"""
+        mock_client.put = AsyncMock(return_value={"success": True})
+        mock_get_client.return_value = mock_client
+        result = await tool.execute(
+            context=admin_tool_context, action="update_status", ticket_id="t1",
+            status="closed", reason="客户已协商一致")
+        assert result.success is True
+        assert mock_client.put.call_args[1]["json_data"] == {
+            "status": "closed", "remark": "客户已协商一致"}
+        assert "已关闭" in result.message
