@@ -323,7 +323,10 @@ cases:
     truths_ref: []
     user_inputs:
       - "最近有没有已确认、需要加工的订单？"
-      - "帮我把这一个生成加工单"
+      # #3658（issue #3658）：独立订单竞态修复 —— R1 现在会列出 3 笔已确认含加工项订单
+      # （0002/0003/0004，见 mibao_eval_seed.sql），「这一个」指代不再确定，改为点名
+      # 0002；0003/0004 分别由 PG-015/PG-016 独占，三条用例不再抢同一笔订单。
+      - "帮我把订单 EVAL-MB-ORD-0002 生成加工单"
       - "确认"
     expectations:
       - tool: order_query
@@ -408,14 +411,17 @@ cases:
       # 为什么不写「查一下加工单」：干净栈上 processing_orders 表为空（**没有任何
       # seed 注入加工单**，已核对 fixtures/*.sql 0 条 INSERT），空表的「查一下」
       # 只会得到空列表 —— 用例会退化成"没事发生"（假绿）。故先对**种子**里
-      # 「已确认且含加工项」的订单 EVAL-MB-ORD-0002 生成加工单，再按订单号回查
+      # 「已确认且含加工项」的订单生成加工单，再按订单号回查
       # （mibao_eval_seed.sql Phase 2：该单 order_items 带 processing_info）。
-      - "把订单 EVAL-MB-ORD-0002 生成加工单"
+      # #3658（issue #3658）：目标订单由 0002 改为 **0003**（独立订单竞态修复——
+      # 0002/0003/0004 分别归 PG-013/015/016，此前三条共用 0002，并发跑只有一个
+      # 能生成成功，run 34820346966 实测 PG-013/016 吃「订单已生产中」假红）。
+      - "把订单 EVAL-MB-ORD-0003 生成加工单"
       - repeat_until:
           tool_called: processing_order_generate
           max: 3
         fallback: "确认"
-      - "订单 EVAL-MB-ORD-0002 的加工单现在什么状态？"
+      - "订单 EVAL-MB-ORD-0003 的加工单现在什么状态？"
       - repeat_until:
           tool_called: processing_order_query
           max: 3
@@ -447,7 +453,7 @@ cases:
       - "success=true"
       - "回查结果 grounded 到刚生成的加工单（status ∈ generated/issued/in_processing/completed/cancelled，不得编造）"
     skip_reason: ""
-    merge_log: "2026-09-14 新增（issue #3568 / #3592）：processing_order_query 此前**零用例覆盖**（scripts/mibao_coverage.py --check 在 pristine main 上 exit 2 报出的结构性缺失）。形态 =「先对种子订单生成加工单 → 按订单号回查」（干净栈无加工单 seed，直接「查一下」会假绿）。断言机器可判：must_succeed ×2 + required_args[keyword] + forbidden_text。"
+    merge_log: "2026-09-14 新增（issue #3568 / #3592）：processing_order_query 此前**零用例覆盖**（scripts/mibao_coverage.py --check 在 pristine main 上 exit 2 报出的结构性缺失）。形态 =「先对种子订单生成加工单 → 按订单号回查」（干净栈无加工单 seed，直接「查一下」会假绿）。断言机器可判：must_succeed ×2 + required_args[keyword] + forbidden_text。2026-09-14 首次真重放（run 34820346966，issue #3658）：✅ **通过（score=100%）—— PG-015 的第一次真实执行证据**。目标订单由 0002 改为 0003（独立订单竞态修复，见 user_inputs 注释）。"
     traces:
       tests:
         - "backend/admin-api/src/test/java/com/migao/admin/service/ProcessingOrderServiceTest.java"
@@ -470,19 +476,33 @@ cases:
       - update
     truths_ref: []
     user_inputs:
-      # 同上：干净栈无加工单 seed → 先对种子订单 EVAL-MB-ORD-0002 生成，再推进状态。
-      # `complete` 在状态机里是**幂等**的（重复调用仍为 completed），不污染后续跑
-      # （cancel 非幂等且需 reason，故不用它做正向用例）。
-      - "把订单 EVAL-MB-ORD-0002 生成加工单"
+      # 同上：干净栈无加工单 seed → 先对种子订单生成，再推进状态。
+      # #3658（issue #3658，run 34820346966 / 34821647043 两轮实证后定稿）：
+      #   ① 目标订单 0002 → **0004**（独立订单竞态修复，同 PG-015：三条 PG 用例不再抢同一订单）；
+      #   ② 输入走**完整状态机** generated→issued→in_processing→completed
+      #      （PG-006：generated→completed 是**非法迁移**，原「生成→直接标记完成」写法必失败
+      #      —— 实测 agent 正确回复「已发加工还不能直接标记完成」）；
+      #   ③ 每步的确认卡用 `auto_respond`（有卡答卡，§13.5 推荐形态）回答 —— **刻意不用**
+      #      `repeat_until{tool_called: processing_order_update}`：runner 的停条件是
+      #      **工具级**（该工具成功调用过即停，issue #3430），issue 成功后 start/complete 的
+      #      repeat 轮会被整体跳过（run 34821647043 实证：开始加工的确认卡没人答 → 流程卡死，
+      #      update 从未以 start/complete 执行）。生成步保留 repeat_until（工具名唯一，无此问题）。
+      # `complete` 幂等（重复调用仍为 completed），不污染后续跑（cancel 非幂等且需 reason，
+      # 故不用它做正向用例）。
+      - "把订单 EVAL-MB-ORD-0004 生成加工单"
       - repeat_until:
           tool_called: processing_order_generate
           max: 3
         fallback: "确认"
+      - "这笔加工单发加工，交期下周三"
+      - auto_respond:
+          fallback: "确认"
+      - "开始加工"
+      - auto_respond:
+          fallback: "确认"
       - "这笔加工单加工完成了，标记完成"
-      - repeat_until:
-          tool_called: processing_order_update
-          max: 4
-        fallback: "确认"
+      - auto_respond:
+          fallback: "确认"
     expectations:
       - tool: processing_order_update
         args:
@@ -498,11 +518,16 @@ cases:
     output_verify:
       # ⚠️ `action` 必写（本工具多 action：issue/start/complete/cancel）—— 不写限定
       # 时核对器会取**首个成功调用**的 payload，可能核到别的 action 上（假绿/假红）。
+      # ⚠️ 只写**扁平顶层键**：runner 的 check_output_verify 按字面 key 查顶层 payload，
+      #    **不支持点号路径**（`result.status` 这类键永远核不到 —— run 34822527203 实证
+      #    「结果里没有字段 'result.status'」，即使 complete 已成功落库）。
+      #    状态到达 completed 已由 must_succeed(action=complete) 机器兜底（服务端状态机
+      #    校验，complete 幂等）—— output_verify 这里核对「complete 调用成功且 action
+      #    确实是 complete」（防多 action 工具核到别的调用）。
       - tool: processing_order_update
         action: complete
         expect:
           action: complete
-          result.status: completed
     forbidden_text:
       - "暂不支持"
       - "功能不存在"
@@ -514,7 +539,7 @@ cases:
       - "success=true"
       - "结论 grounded 到刚更新的加工单（订单联动状态见加工单设计决策 3：complete 不回退订单）"
     skip_reason: ""
-    merge_log: "2026-09-14 新增（issue #3568 / #3592）：processing_order_update 此前**零用例覆盖**（同 PG-015 的结构性缺失）。断言机器可判：expectations(action=complete) + must_succeed(action=complete) + required_args[id] + output_verify（**显式声明 action**，防多 action 工具核到别的 payload 造成假绿）。真 LLM 重放待跑（见 PR #3589 的诚实标注）。"
+    merge_log: "2026-09-14 新增（issue #3568 / #3592）：processing_order_update 此前**零用例覆盖**（同 PG-015 的结构性缺失）。断言机器可判：expectations(action=complete) + must_succeed(action=complete) + required_args[id] + output_verify（**显式声明 action**，防多 action 工具核到别的 payload 造成假绿）。2026-09-14 首次真重放（run 34820346966，issue #3658）：❌ 失败 → 归因**用例资产缺陷**（非 agent 能力缺口）：① 与 PG-013/015 抢同一种子订单 EVAL-MB-ORD-0002（并发生成只有一方成功，实测生成被拒「订单已生产中」后 agent 转向 issue 流，complete 期望永不满足）；② 输入跳步（生成后直接「标记完成」违反状态机 generated→completed 非法迁移，PG-006 铁律）。修复：独立订单 0004 + 完整状态机走位。2026-09-14 第二轮验证重放（run 34821647043）：❌ 再失败 → 新发现**用例设计缺陷**：状态机三步全用 `repeat_until{tool_called: processing_order_update}`，而 runner 停条件是**工具级**（issue #3430）——issue 成功（R6）后 start/complete 的 repeat 轮被整体跳过（开始加工确认卡无人答）。修复：每步确认卡改用 `auto_respond`（有卡答卡、无停条件跳过），生成步保留 repeat_until（工具唯一）。2026-09-14 第三轮验证重放（run 34822527203，PG-016-only）：状态机全走位成功（issue→start→complete 各成功，工具 14 调 0 失败），仅剩 output_verify 假红——`expect: result.status: completed` 用了**点号路径**，而 runner 的 check_output_verify 只按字面扁平 key 查顶层 payload（不支持嵌套路径，run 34822527203 实证「结果里没有字段 'result.status'」）。修复：expect 收敛为扁平键 `action: complete`（状态到达 completed 由 must_succeed + 服务端状态机兜底）。"
     traces:
       tests:
         - "backend/admin-api/src/test/java/com/migao/admin/service/ProcessingOrderServiceTest.java"
