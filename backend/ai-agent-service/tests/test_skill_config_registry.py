@@ -1000,14 +1000,13 @@ class TestLayerPromptToolWhitelist:
       —— 它们正是"教模型别这么干"，允许出现该技能没有的工具名。
     """
 
-    # 已冻结的存量越界（不在本 issue 修复范围内）；每条都必须写明原因 + 归属 issue。
-    # 目标：C 端（本 issue 负责的域）为 0；B 端这几条要改属于行为/产品裁定，另案处理。
-    KNOWN_EXEMPTIONS = {
-        # (skill, tool): 原因
-        ("staff", "interact"):
-            "issue #3317（OPEN）：staff L3/L5 承诺 interact(confirm) 确认卡，但工具集无 interact。"
-            "补 interact vs 收紧 requires_confirmation 是**安全护栏取舍，须产品裁定**",
-    }
+    # 已冻结的存量越界：**当前为空**（C 端 + B 端全部越界都已在本 issue 内修掉）。
+    # 新增请务必写明原因 + 归属 issue；`test_known_exemptions_are_still_needed` 会在
+    # 越界被修好后立刻要求删掉豁免，防止"永久白名单"。
+    #
+    # 曾经的唯一一条（staff/interact，issue #3317）已随 #3590「staff/settings/data 补绑 interact」
+    # 合入 main 而消失 —— 本测试当时立刻报「豁免已失效」，正是这道守卫的价值。
+    KNOWN_EXEMPTIONS = {}
 
     # tests/ -> ai-agent-service/ -> app/graph/skills/references
     _REF_DIR = _os.path.join(
