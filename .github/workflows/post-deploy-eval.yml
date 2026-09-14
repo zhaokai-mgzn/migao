@@ -645,7 +645,7 @@ jobs:
         #     追加进了 issue #3534（原文：「同日同标题再次失败（新增 run）… 无汇总文件
         #     （该腿在产出前失败 → 栈/登录/依赖等环境问题）」—— 归因也是错的：
         #     它们是被**派发侧并发互杀**取消的，不是环境问题）。
-        #     ⇒ 纪律：`cancelled` 不是结果（dev-flow §16.5：跳过不得算 failure；
+        #     ⇒ 纪律：`cancelled` 不是结果（dev-flow §16.7「派发后」：**不是结果、也不再被记成失败**；
         #     migao-acceptance：「cancelled 的 run 不构成结论」）。取消要**可见**（下方
         #     「被取消记录」步骤打 `::warning::` + summary 抬头），但**不变红、不建 issue**。
         #     ⚠️ 不要退回"取消也要刷红留痕"：那正是本条要治的噪音 —— 真失败与假失败同形后，
@@ -698,7 +698,7 @@ jobs:
         #   ① `::warning::` annotation —— 让 run 列表上就能看出"这条不是结论"；
         #   ② summary 抬头写死「本 run 被取消（未评测，不构成结论）」—— 防"绿/取消"被读成"通过"；
         #   ③ 留同槽位链接 —— 取消后要判断某次部署的行为，去它**真正跑完**的那一轮 run。
-        # ⚠️ 退出码保持 0、不建 issue：取消不是失败（dev-flow §16.5 / migao-acceptance）。
+        # ⚠️ 退出码保持 0、不建 issue：取消不是失败（dev-flow §16.7「派发后」/ migao-acceptance）。
         # `cancelled()` 只在**本次 job 自己被取消**时为真；report job 侧用 needs.eval.result。
         if: cancelled()
         run: |
