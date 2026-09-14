@@ -19,6 +19,9 @@
 
 零第三方依赖（仅标准库 + 仓库内纯函数），可在 CI 的 pytest+pyyaml 轻量 job 里跑。
 """
+from __future__ import annotations       # 前置类型注解（脚本需兼容 python3.9 系统解释器）
+
+import re
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -36,10 +39,176 @@ is_positive_case = lr.is_positive_case
 
 PERSONAS = ("xiaobu", "mibao")
 
+# ── 存量豁免清单（burn-down baseline，issue #3575 决策记录）──────────────────────
+# 为什么需要：门禁首次接入时必然与**存量**结构性缺口冲突（工具零用例 / 只有拒绝式断言）。
+# 直接放宽判据 = 门禁变摆设；直接挡住所有 PR = 用存量债锁死流水线。第三条路是
+# **显式、可收缩的清单**：只豁免**已登记**的存量缺口，任何**新出现**的缺口照旧阻塞。
+#
+# 防「白名单变垃圾场」的四道锁（缺一即红，全部由 `load_baseline` + 单测强制）：
+#   ① 每条必须带齐 tool / kind / issue / reason（issue 必须是真实存在的 issue 号格式）；
+#   ② 条目必须**指向该端真实工具**且**确实对应一种已知缺口 kind**；
+#   ③ 条目若指向工具**当前不存在的缺口** = 陈旧登记（销账后没删）→ 阻塞；
+#   ④ 条目 kind 必须与该工具**当前实际的缺口 kind** 一致（例如工具只有 1 条用例，
+#      却登记成 `missing_positive` → 判陈旧，逼登记与实际对齐）。
+# 清单是**工作清单不是免死金牌**：报告里逐条打印归属 issue，补完用例即删条目。
+BASELINE_PATH = REPO_ROOT / ".github" / "eval-coverage-baseline.yml"
+BLOCKING_KINDS = ("uncovered", "missing_positive")
+REPORTING_KINDS = ("thin", "thin_positive")
+GAP_KINDS = BLOCKING_KINDS + REPORTING_KINDS
+ENTRY_REQUIRED_FIELDS = ("tool", "kind", "issue", "reason", "added")
+_ISSUE_RE = re.compile(r"^#\d+$")
+_MIN_REASON_LEN = 8
+
+
+def load_baseline(path=None, persona: str = "", tools=None):
+    """读并**校验**存量豁免清单（fail-closed：文件缺失/格式坏/条目不合规 → 抛 ValueError）。
+
+    返回 `{"path", "meta", "entries", "by_tool", "entries_by_tool", "issues"}`；
+    `entries` 只含该 persona 的条目（其它端的条目在此忽略，但仍会被格式校验）。
+    """
+    path = Path(path) if path else BASELINE_PATH
+    if not path.exists():
+        raise ValueError(
+            f"存量豁免清单不存在: {path}\n"
+            f"    ⇒ 门禁要么全绿（无存量缺口）要么无法豁免存量缺口，二者都必须显式 ——"
+            f"若确实无存量缺口，创建一个只有 meta 的空清单文件"
+        )
+    try:
+        # 用仓库自己的零依赖解析器（`yaml_light`，与 render_cases/truths 同一份实现）：
+        # `case-coverage-gate` job 只做 setup-python，**没有** `pip install`
+        # （pyyaml 只装在 `ci workflow helper unit tests` job）—— 这里 import yaml 会让门禁
+        # 对每个 PR 常红（"覆盖体检无法执行：需要 pyyaml"），且与用例质量无关。
+        from yaml_light import load_file as _load_yaml
+        data = _load_yaml(path)
+    except Exception as exc:
+        raise ValueError(f"{path.name} YAML 解析失败: {exc}")
+    if not isinstance(data, dict):
+        raise ValueError(f"{path.name} 顶层必须是映射（含 version/entries）")
+    entries = data.get("entries")
+    if entries is None:
+        entries = []
+    if not isinstance(entries, list):
+        raise ValueError(f"{path.name} 的 entries 必须是列表")
+
+    end_tools = set(tools) if tools is not None else None
+    by_tool: dict = {}
+    entries_by_tool: dict = {}
+    issues = set()
+    problems = []
+    for i, raw in enumerate(entries):
+        where = f"entries[{i}]"
+        if not isinstance(raw, dict):
+            problems.append(f"{where}: 必须是映射（tool/kind/issue/reason/added）")
+            continue
+        missing = [f for f in ENTRY_REQUIRED_FIELDS if not str(raw.get(f) or "").strip()]
+        if missing:
+            problems.append(f"{where}: 缺字段 {missing}（防白名单变垃圾场：一条不许留空）")
+            continue
+        tool, kind = str(raw["tool"]).strip(), str(raw["kind"]).strip()
+        entry_persona = str(raw.get("persona") or "").strip().lower()
+        issue, reason = str(raw["issue"]).strip(), str(raw["reason"]).strip()
+        where = f"entries[{i}] {tool}[{kind}]"
+        if kind not in GAP_KINDS:
+            problems.append(f"{where}: kind 必须是 {GAP_KINDS} 之一")
+            continue
+        if not _ISSUE_RE.match(issue):
+            problems.append(f"{where}: issue 必须是 '#<数字>'（真实存在的追踪 issue），实际 {issue!r}")
+            continue
+        if len(reason) < _MIN_REASON_LEN:
+            problems.append(f"{where}: reason 至少 {_MIN_REASON_LEN} 字（说清为什么暂时豁免）")
+            continue
+        if entry_persona and entry_persona not in PERSONAS:
+            problems.append(f"{where}: persona 必须是 {PERSONAS} 之一或留空（双端共用）")
+            continue
+        # 归属**别的端**的条目不由本次体检负责（工具真值/缺口由那端的体检校验）
+        if entry_persona and persona and entry_persona != persona:
+            continue
+        # 只对归属本端的条目校验工具真值
+        if end_tools is not None and tool not in end_tools:
+            problems.append(f"{where}: {tool} 不是{persona or '该端'}工具（拼错/工具已删除 → 登记无效）")
+            continue
+        by_tool.setdefault(tool, set()).add(kind)
+        entries_by_tool.setdefault(tool, {})[kind] = raw
+        issues.add(issue)
+    if problems:
+        raise ValueError(
+            f"{path.name} 有 {len(problems)} 条不合规条目：\n  - " + "\n  - ".join(problems)
+        )
+    own = [e for e in entries if isinstance(e, dict)
+           and (not e.get("persona") or not persona
+                or str(e["persona"]).strip().lower() == persona)]
+    return {"path": path, "meta": {k: v for k, v in data.items() if k != "entries"},
+            "entries": own, "by_tool": by_tool, "entries_by_tool": entries_by_tool,
+            "issues": issues}
+
+
+def _attach_baseline(rep: CoverageReport, baseline: dict) -> CoverageReport:
+    """把存量豁免挂到报告上，并算出「陈旧登记」（销账后未删）。
+
+    陈旧 = 登记了某工具某 kind，但该工具**当前不再是**那种缺口（用例已补 / kind 变了）。
+    这类登记必须删，否则清单会越攒越多、丧失"工作清单"的可读性。
+    """
+    rep.baseline = baseline
+    rep.baseline_missing = [
+        (tool, kind)
+        for tool, kinds in baseline.get("by_tool", {}).items()
+        for kind in sorted(kinds)
+        if rep.baseline_is_stale(tool, kind)
+    ]
+    return rep
+
+
 PERSONA_LABELS = {
     "xiaobu": "C 端小布",
     "mibao": "B 端米宝",
 }
+
+_KIND_LABELS = {
+    "uncovered": "零用例（阻塞）",
+    "missing_positive": "缺正向用例（阻塞）",
+    "thin": "仅 1 条用例（只报告）",
+    "thin_positive": "仅 1 条正向用例（只报告）",
+}
+
+
+def render_baseline_worklist(rep: CoverageReport, persona_label: str = "") -> str:
+    """把存量豁免清单当**工作清单**打印：工具 + 缺口 + 归属 issue + 理由 + 销账方式。
+
+    设计意图（issue #3575）：清单必须**可逐条销账**——
+    「补完用例 → 删条目」；条目与当前缺口不一致会被判陈旧登记（job 红），
+    所以清单只可能变短，不会变成免死金牌。
+    """
+    path = rep.baseline.get("path")
+    out = ["=" * 68,
+           f"  存量豁免工作清单（burn-down baseline）— {persona_label or rep.persona}",
+           "=" * 68,
+           f"清单文件: {Path(path).name if path else BASELINE_PATH.name}"
+           f"（补完用例即删除对应条目；清单应单调缩短）"]
+    entries = rep.baseline.get("entries") or []
+    if not entries:
+        out.append("  （空 —— 该端无存量缺口豁免，门禁为纯判据）")
+        return "\n".join(out)
+    for e in entries:
+        tool, kind = str(e["tool"]), str(e["kind"])
+        ids = rep.cases.get(tool) or []
+        status = "已登记豁免" if rep.is_baselined(tool, kind) else "⚠️ 陈旧登记（当前不是该缺口）"
+        out.append(f"  ▸ {tool}  [{_KIND_LABELS.get(kind, kind)}]  {status}")
+        out.append(f"      归属: {e['issue']}   登记日期: {e['added']}")
+        out.append(f"      理由: {e['reason']}")
+        out.append(f"      现状: {len(ids)} 条用例" + (f" {', '.join(ids)}" if ids else "（无）"))
+    if rep.baseline_stale_blocking:
+        out.append("")
+        out.append("  ❌ 阻断型陈旧登记（销账后**必须**删除条目，否则阻塞）:")
+        for tool, kind in rep.baseline_stale_blocking:
+            out.append(f"     - {tool} [{kind}]")
+    if rep.baseline_stale_reporting:
+        out.append("")
+        out.append("  ⚠️ 只报告型陈旧登记（工具已加厚 = 好消息；建议删除条目，不阻塞）:")
+        for tool, kind in rep.baseline_stale_reporting:
+            out.append(f"     - {tool} [{kind}]")
+    out.append("")
+    out.append("  销账方式：补用例（migao-dev-flow §14.5）→ 删本文件对应条目 → CI 保持绿。")
+    return "\n".join(out)
 
 # ── 能力标签（缺口报告的人读性）────────────────────────────────────────────────
 # 只覆盖能力矩阵里需要"说人话"的工具；缺标签的工具有名字也够用。
@@ -126,9 +295,13 @@ class CoverageReport:
     uncovered: list = field(default_factory=list)     # 0 用例（结构性缺失 → 阻塞）
     missing_positive: dict = field(default_factory=dict)   # 缺正向用例（结构性缺失 → 阻塞）
     thin_tools: list = field(default_factory=list)    # 仅 1 条用例（厚度不足 → 只报告）
+    thin_positive: list = field(default_factory=list)  # 仅 1 条且该条是正向（阈值：1 条）
     exempt: dict = field(default_factory=dict)        # tool → 显式豁免理由（非缺口）
     orphan_cases: list = field(default_factory=list)  # [(用例ID, [工具])] 挂到了错的端 → 阻塞
     dangling_cases: list = field(default_factory=list)  # [(用例ID, [工具])] 两端注册表都没有 → 阻塞
+    baseline: dict = field(default_factory=dict)      # CoverageBaseline 或 {}（存量豁免，仅 --check）
+    baseline_stale: list = field(default_factory=list)  # [(tool, kind)] 已销账但登记未删 → 阻塞
+    baseline_missing: list = field(default_factory=list)  # 登记了但当前不是缺口 → 阻塞
 
     @property
     def covered(self) -> int:
@@ -137,6 +310,62 @@ class CoverageReport:
     def uncovered_actionable(self) -> list:
         """排除显式豁免后的真缺口。"""
         return [t for t in self.uncovered if t not in self.exempt]
+
+    # ── 存量豁免（burn-down baseline，issue #3575 决策）───────────────────────
+    def blocking_gaps(self) -> list:
+        """当前**结构性缺失**清单：[(tool, kind)]，kind ∈ {"uncovered", "missing_positive"}。
+
+        kind 的区分是有意的（豁免条目要按真实形态登记，登记错判陈旧）：
+          · `uncovered`        = 零用例（连证据都没有）；
+          · `missing_positive` = 有用例、但**一条正向都没有**（只有对抗档/否定式断言）。
+        """
+        return [(t, "uncovered" if t in self.uncovered_actionable() else "missing_positive")
+                for t in sorted(self.missing_positive)]
+
+    def reporting_gaps(self) -> list:
+        """**只报告**（不阻塞）的厚度不足清单：[(tool, kind)]，kind ∈ {"thin", "thin_positive"}。
+
+        两种 kind 物理上等价（都只有 1 条用例），分开是为了让豁免条目能声明
+        「这唯一一条是不是正向」—— 声明错了视为陈旧登记（见 `baseline_is_stale`）。
+        """
+        out = []
+        for tool in self.thin_tools:
+            out.append((tool, "thin_positive" if tool in self.thin_positive else "thin"))
+        return out
+
+    def all_gap_kinds(self) -> list:
+        """全量缺口清单（含只报告的薄覆盖），既有语义锚点，也用于渲染工作清单。"""
+        return sorted(set(list(self.blocking_gaps()) + self.reporting_gaps()))
+
+    def is_baselined(self, tool: str, kind: str) -> bool:
+        return kind in (self.baseline.get("by_tool", {}).get(tool, set()))
+
+    def baseline_is_stale(self, tool: str, kind: str) -> bool:
+        """已销账（当前不是缺口）但登记还在 → 陈旧登记，必须删（防白名单变垃圾场）。"""
+        return kind in (self.baseline.get("by_tool", {}).get(tool, set())) \
+            and (tool, kind) not in self.all_gap_kinds()
+
+    def baseline_entry(self, tool: str, kind: str) -> dict:
+        return (self.baseline.get("entries_by_tool", {}).get(tool, {}) or {}).get(kind) or {}
+
+    @property
+    def baseline_stale_blocking(self) -> list:
+        """陈旧登记中**会阻断**的那些（kind ∈ BLOCKING_KINDS）→ 阻塞。
+
+        理由：这类豁免在**抑制**一个真实的结构性缺口；销账后不删条目意味着清单在"
+        假装某个缺口还在"，必须逼删（否则白名单腐烂，且后续会掩盖同工具的新缺口）。
+        """
+        return [(t, k) for t, k in self.baseline_missing if k in BLOCKING_KINDS]
+
+    @property
+    def baseline_stale_reporting(self) -> list:
+        """陈旧登记中**只报告**的那些（kind ∈ REPORTING_KINDS）→ 仅警告。
+
+        理由（#3575 排序实证）：这类条目从不抑制任何阻断 —— 工具变厚是好消息。
+        若也判阻塞，会让"补了用例的那个包"（它不知道本清单存在）把 main 变红，
+        即**用工作清单给别人下绊子**。故降级为警告：报告里提示删除，不拦合并。
+        """
+        return [(t, k) for t, k in self.baseline_missing if k in REPORTING_KINDS]
 
     def check_problems(self) -> list:
         """--check 的失败条件（只含**结构性缺失**，不含厚度不足）。"""
@@ -154,17 +383,20 @@ class CoverageReport:
                 f"（拼错/已删除，期望永不满足）: "
                 + ", ".join(f"{cid}({','.join(t)})" for cid, t in self.dangling_cases)
             )
-        missing = self.uncovered_actionable()
-        if missing:
+        if self.baseline_stale_blocking:
             problems.append(
-                f"{len(missing)} 个工具零用例覆盖（结构性缺失）: " + ", ".join(missing)
+                f"{len(self.baseline_stale_blocking)} 条**阻断型**存量豁免已销账但条目未删"
+                f"（清单会腐烂 → 可能掩盖同工具的新缺口）: "
+                + ", ".join(f"{t}[{k}]" for t, k in self.baseline_stale_blocking)
+                + "\n     ⇒ 补完用例即删除该条目（清单只能变短）"
             )
-        if self.missing_positive:
+        new_gaps = [(t, k) for t, k in self.blocking_gaps() if not self.is_baselined(t, k)]
+        if new_gaps:
             problems.append(
-                f"{len(self.missing_positive)} 个工具只有对抗/拒绝用例、**没有任何正向用例**"
-                f"（能力未被证明）: "
-                + ", ".join(f"{t}(现仅 {','.join(ids)})"
-                            for t, ids in sorted(self.missing_positive.items()))
+                f"{len(new_gaps)} 处**新出现**的结构性覆盖缺口（未登记存量豁免）: "
+                + ", ".join(f"{t}[{k}]" for t, k in new_gaps)
+                + f"\n     ⇒ 补用例（migao-dev-flow §14.5）；确有客观原因才登记进 "
+                  f"{BASELINE_PATH.relative_to(REPO_ROOT)}（每条必须带 ≥4 字的 issue 号与理由）"
             )
         return problems
 
@@ -227,8 +459,11 @@ def build_coverage_report(cases, persona: str, tools=None, exempt=None) -> Cover
             rep.uncovered.append(tool)        # 0 用例 → 结构性缺失（阻塞）
         elif len(ids) == 1:
             rep.thin_tools.append(tool)       # 仅 1 条 → 厚度不足（只报告）
-        # 缺正向用例（阻塞）：**已覆盖**却没有一条证明"该工具能力可用"的用例。
-        # 零用例的工具由 uncovered 单独报，不在这里重复（避免同一件事报两遍）。
-        if ids and not rep.positive.get(tool) and tool not in exempt:
+            if rep.positive.get(tool):
+                rep.thin_positive.append(tool)   # 该唯一一条是正向（供豁免条目声明 kind）
+        # 缺正向用例（结构性缺失 → 阻塞）：**被断言过**却没有一条证明"该工具能力可用"的用例
+        # —— 包括两种形态：① 只有对抗档（拒绝/越权路径）② 只有否定式期望。
+        # 零用例的工具也会落在这里，但 `blocking_gaps()` 用 uncovered 归类（避免同一件事报两遍）。
+        if not rep.positive.get(tool) and tool not in exempt:
             rep.missing_positive[tool] = list(ids)
     return rep

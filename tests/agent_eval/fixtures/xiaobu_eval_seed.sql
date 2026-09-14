@@ -145,6 +145,24 @@ INSERT INTO users (id, tenant_id, phone, nickname, role, status, deleted)
 VALUES ('debug_customer_new', 1, '13900139000', '评测新客', 'customer', 'active', 0)
 ON CONFLICT (id) DO NOTHING;
 
+-- 6.1c B 端管理员账号（**转人工通知投递路径可达性**，issue #3553 / CH-008 覆盖缺口）
+--      ⚠️ 不要当脏数据删掉：删除会让 CH-008 的「通知真的送达」重新变成**永不可达**。
+--      为什么必须有：`POST /api/admin/notifications` **按收件人落库、无广播语义**，
+--      `human_handoff._notify_admins` 靠 `GET /api/admin/users?status=active`（默认排除
+--      role=customer，优先 role='admin'）解析收件人。C 端评测栈此前**只有 role='customer'
+--      账号** → 解析不到收件人 → 工具走
+--      `success=True` + `error="admin_notification_skipped_no_recipient"` +
+--      `data.adminNotified=false` 的降级分支 → 「管理员真的收到转人工通知」在评测里
+--      **任何栈都不可达**（CH-008 只能断言「工具调用成功」= 只有一半覆盖）。
+--      本账号（role='admin'，与 NotificationService.triggerForTenantAdmins 口径一致）
+--      让真实投递分支可被机器判定：CH-008 的 `output_verify: adminNotified=true`。
+--      数据隔离影响：本账号**没有任何订单**（C 端订单隔离按 user_id 判定），
+--      也不进 `agent_employees` 员工列表（B 端 employee_manage 按该模型查询）→
+--      不影响 CH-011（跨用户订单拒绝）/ DF-020（冒充管理员）等 C 端隔离用例。
+INSERT INTO users (id, tenant_id, phone, nickname, role, status, deleted)
+VALUES ('debug_admin_eval', 1, '13600136000', '评测管理员', 'admin', 'active', 0)
+ON CONFLICT (id) DO NOTHING;
+
 -- 6.2 历史订单 ×2：一笔已完成（地址预填 + 售后可建单）、一笔已发货（物流查询）
 --     user_id 必须是 debug_customer_1 —— 这是 C 端数据隔离的唯一依据。
 --     ⚠️ created_at **必须显式给值且两笔不同**：`customer_order_query` 按
@@ -194,6 +212,7 @@ DECLARE
   v_orders INTEGER;
   v_items  INTEGER;
   v_new_orders INTEGER;
+  v_admins INTEGER;
 BEGIN
   SELECT count(*) INTO v_orders FROM orders
    WHERE tenant_id = 1 AND user_id = 'debug_customer_1' AND deleted = 0;
@@ -202,13 +221,22 @@ BEGIN
   -- 用例"看起来覆盖了新客路径、其实没覆盖"（假绿）。故这里是**断言**，不只是打印。
   SELECT count(*) INTO v_new_orders FROM orders
    WHERE tenant_id = 1 AND user_id = 'debug_customer_new' AND deleted = 0;
-  RAISE NOTICE 'C 端评测 fixture 核对: debug_customer_1 订单=% 明细=% 新客订单=%',
-    v_orders, v_items, v_new_orders;
+  -- 6.1c 的 B 端管理员必须在：缺失时 CH-008「通知真的送达」会静默降级为
+  -- admin_notification_skipped_no_recipient（success=True 但 adminNotified=false）→
+  -- output_verify 断言会红，但根因是**种子缺失**而非能力缺陷。这里先 fail-closed。
+  SELECT count(*) INTO v_admins FROM users
+   WHERE tenant_id = 1 AND role = 'admin' AND status = 'active' AND deleted = 0;
+  RAISE NOTICE 'C 端评测 fixture 核对: debug_customer_1 订单=% 明细=% 新客订单=% B端管理员=%',
+    v_orders, v_items, v_new_orders, v_admins;
   IF v_orders < 2 THEN
     RAISE EXCEPTION 'C 端 fixture 注入失败：debug_customer_1 订单数=% (<2)', v_orders;
   END IF;
   IF v_new_orders > 0 THEN
     RAISE EXCEPTION '新客 fixture 被污染：debug_customer_new 订单数=%（必须为 0，否则 OR-022 假绿）',
       v_new_orders;
+  END IF;
+  IF v_admins < 1 THEN
+    RAISE EXCEPTION 'C 端 fixture 缺少 B 端管理员账号（role=admin, status=active）：% —— '
+      'CH-008 转人工通知投递分支将不可达（adminNotified 恒 false）', v_admins;
   END IF;
 END $$;

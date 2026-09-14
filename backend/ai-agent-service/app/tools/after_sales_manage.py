@@ -324,11 +324,13 @@ class AfterSalesManageTool(BaseTool):
             )
 
         # 对抗编程：reason → description 字段映射 + 透传所有可选字段
+        # `source` 不下发（issue #3605）：AgentAfterSalesCreateRequest 无该字段（下发即静默丢弃），
+        # 且来源由服务端固化（AfterSalesTicketService.createTicket 内 ticket.setSource("agent")，
+        # 表单入口与 Agent BFF 入口都经过它）——客户端指定来源既无效也多余。
         json_data: Dict[str, Any] = {
             "orderId": order_id,
             "ticketType": ticket_type,
             "description": description if description else reason,  # Java API 用 description
-            "source": "agent",
         }
         if images:
             json_data["images"] = images

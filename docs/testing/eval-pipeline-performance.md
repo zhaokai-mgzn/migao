@@ -339,3 +339,137 @@ job 名随 persona 参数化也不适合做 required 名）。
 > #3587 只交付了本条结论 + ①②（抑制 + 全局槽位）+ ③（缓存实测结论），
 > **没有**动任何既有门禁的 blocking 属性。
 
+## 7. 思考开关的实测账（issue #3573）：**参数生效**，且默认是「开」
+
+> 为什么记在这里：思考预算是**评测/线上共同的主要成本与延迟杠杆**（一条最简 prompt 的
+> 一次调用就能烧掉 100+ reasoning token / 多 0.5-1s）。此前这条杠杆建立在**一个从未实测过
+> 的假设**上，故单独立账。
+
+### 7.1 待验证的问题（不是"优化"，是"证实/证伪"）
+
+`LLMFactory.create_skill_llm` 的思考开关写法来自 MiniMax-M3 时代
+（`app/llm/factory.py:63-69`）：`enable_thinking=True` 发
+`extra_body={"thinking": {"type": "enabled"}}`，`force_no_think=True` 发
+`{"thinking": {"type": "disabled"}}`；**两个都不传 → 不传 `extra_body`**（`tests/test_llm_factory.py:41` 钉死）。
+
+矛盾证据（仓库内已确证，这是本账的起点）：
+
+- 同一 provider（`api.deepseek.com` / `deepseek-flash`）的**视觉路径**在
+  `tests/test_llm_factory.py:81-82` 明确断言
+  「DeepSeek vision（OpenAI 兼容）不传 MiniMax 专属 thinking extra_body」+
+  `assert "extra_body" not in kwargs`（PR #2547 / commit `f7cd3ba9` 引入）；
+- 而 **skill 路径仍在传**（`factory.py:64/67`）；
+- `factory.py:51` 的注释「不传参时 M3 默认仍开思考」是 MiniMax-M3 时代产物，当前模型是
+  `deepseek-flash`（`app/config.py:41,111-112`）。
+
+`_THINKING_INTENTS` / `_MULTI_TURN_THINKING_INTENTS`（`app/graph/skills/base_skill.py:198-224`）
+与 issue #3153（把 5 个写意图纳入 thinking）的全部收益，都以「该开关真的生效」为前提；
+若为静默 no-op，则 #3153 的收益必须重新归因。
+
+### 7.2 实测结论：**参数生效（不是 no-op，也不是被拒）**
+
+- **run id**：`34809425971`（job `thinking-probe-bootstrap`，2026-09-14 05:30Z，
+  `workflow_dispatch` 触发的 `test/3573-thinking-probe`）
+- **专属入口自证**：`34810173534`（`LLM Thinking Probe` workflow 文件自己跑通，39s，
+  结论同上 `VERDICT=参数生效`）—— 证明该 workflow 合入 main 后 `gh workflow run` 可用
+- **探针**：`backend/ai-agent-service/scripts/probe_thinking_effect.py`
+  （3 次真实调用、prompt 极短、不跑评测用例）
+- **CI 入口**：`.github/workflows/llm-thinking-probe.yml`（仅 `workflow_dispatch`，零常态成本）
+- **机器判定**：`VERDICT=参数生效`（两次独立 run 一致 → 非偶然）
+
+出网请求体（拦 httpx 传输层取得，证明 `extra_body` 未被 langchain 静默丢弃）：
+
+| 变体 | 出网 `thinking` | `max_completion_tokens` |
+|---|---|---|
+| A `enable_thinking=True` | `{"type": "enabled"}` | 384000 |
+| B `force_no_think=True` | `{"type": "disabled"}` | 2048 |
+| C 两者都不传（基线） | **不存在该 key** | 2048 |
+
+响应侧证据（同一 prompt「只回答两个字：好的。不要任何解释。」）：
+
+| 变体 | `reasoning_content` | reasoning tokens | output tokens | 耗时 | content |
+|---|---|---|---|---|---|
+| A enabled | **len=164** | 100 | 102 | 1.33s | `好的` |
+| B disabled | **absent** | （无该字段） | **1** | 0.91s | `好的` |
+| C 基线（不传） | **len=537** | 122 | 124 | 1.55s | `好的` |
+
+三条可判定结论：
+
+1. **参数生效**：A 与 B 在 `reasoning_content` 有无、reasoning token 数、output token 数上
+   全面可分（A 102 输出 token vs B **1** 个）。
+   第二次独立 run（`34810173534`）同样形态（A 44 / reasoning 42 vs B **1**，
+   基线 52 / reasoning 50）—— **`disabled` 侧的 output token 稳定为 1 且 `reasoning_content`
+   恒 absent**，`enabled`/基线侧稳定为「有 reasoning + 数十 output token」，非单次偶然。
+2. **DeepSeek 认这个字段，且不校验**：`thinking` 作为顶层 body key 出网、返回 200、无 400；
+   但响应 `response_metadata` 里**不回显**该字段（`model_name/finish_reason/model_provider` +
+   `system_fingerprint`，无 `thinking`/`reasoning` 回显）→ 判定只能靠**行为差异**，不能靠回显。
+3. **provider 默认是「开」**：C（不传 `extra_body`）照样产出 reasoning_content（len=537，
+   122 reasoning tokens），与 A 同级。
+   ⇒ `factory.py:51` 那句「不传参时默认仍开思考」在当前 provider 上**结论仍然成立**
+   （虽然它是 M3 时代的注释）；但**语义已变**：不是「M3 特有的默认」，而是
+   「DeepSeek 的默认思考行为」。`enable_thinking=False` 才是「什么都不说、放任默认」，
+   `force_no_think=True` 才是**真正关闭**。
+
+对既有结论的影响（明确写清，防误读）：
+
+- ✅ **`_THINKING_INTENTS` / `_MULTI_TURN_THINKING_INTENTS` 的调参在当前 provider 上有效**；
+  #3153 的收益**不需要重新归因**（不是「参数没生效所以收益来自别处」）。
+- ⚠️ 但反过来的推论同样重要：因为**默认就是开**，真正省钱的开关是
+  `force_no_think=True`（关思考），而不是 `enable_thinking=True`（那是显式回到默认）。
+  单条最简 prompt 实测，关思考把 output token 从 102 → **1**（-99%）、耗时 1.33s → 0.91s。
+
+一个**未解释的观察**（诚实标注，不编因果）：`input_tokens` 在开思考时稳定为 40、
+关思考时稳定为 14（两次 run 一致），而探针三次用的是**同一个 prompt**。
+看到的最接近的解释是基线那次 `reasoning_content` 里出现「there's a system instruction
+that says I should think before answering」—— 疑似 provider 在思考模式下会附加思考指令，
+但**本次探针没有取证请求侧 messages，无法证实**。若后续要靠 input token 做成本核算，
+需要单独取证（属独立小包，不影响本账三条结论）。
+
+### 7.3 探针顺带发现的能力缺口（属于后续包，本账只记录）
+
+1. **视觉路径缺该开关**：`factory.py:82-105`（`create_vision_llm`）**不传任何 thinking 参数**
+   → 按 §7.2 结论 3，**每次图片识别都在默认开思考**（拍照找同款/识别面料这类任务，
+   推理 token 纯属浪费）。与 skill 路径一致化的做法：显式传
+   `extra_body={"thinking": {"type": "disabled"}}`（或按任务分级）。
+2. **轻量文本路径的 `disabled` 是有效省钱**：`create_intent_llm` / `create_summary_llm` /
+   `create_suggestion_llm` / `create_registration_review_llm` / `create_briefing_llm`
+   （`factory.py:114/137/206/223/240`）都传 `disabled` —— 实测该参数确实生效，这些路径的
+   省 token 设计**成立**（此前无法证实）。
+3. **写法用的是「未文档化的兼容形态」**：`{"thinking": {"type": ...}}` 是 MiniMax 形态，
+   DeepSeek 官方 Thinking Mode 文档（https://api-docs.deepseek.com/guides/thinking_mode/）
+   记的是 `reasoning_effort`。当前实测**能用**（§7.2），但属于依赖兼容行为；
+   是否迁移到官方文档形态是**独立决策**（涉及全部 5 个轻量路径 + 视觉路径），不在本账范围。
+
+### 7.4 复现方法
+
+```bash
+# CI（唯一能拿到真实凭据的路径）：workflow_dispatch 专用入口，3 次真实调用
+gh workflow run llm-thinking-probe.yml
+gh run watch <run-id>
+gh run view <run-id> --log   # 检索 VERDICT= 与 wire#0 thinking
+```
+
+> **入口已常驻 main**（workflow id `357556316`，PR #3579 合入）——`gh workflow run` 随时可复跑；
+> 结论有变（provider 升级 / 换模型）时**先重跑探针再改行为**，别凭记忆推断。
+>
+> ⚠️ 一个 CI 事实（本次取证踩过）：**新增的 workflow 文件在合入默认分支之前无法
+> `workflow_dispatch`** —— GitHub 只在默认分支索引 workflow，`gh workflow run <新文件>`
+> 会报 `HTTP 404: not found on the default branch`。要「先拿结论再合入」时，只能借既有
+> dispatch 入口（或用一次性 `push` 触发）取证；反之若必须先合入，就把「取证」与
+> 「行为改动」拆成两个 PR（本账正是这么做的）。
+
+本地无 `.env`（无 LLM 凭据）时脚本**优雅退出**并打印 `SKIPPED: 本次未发送任何 LLM 调用，
+**不构成任何结论**` —— 不会静默假成功（这是刻意设计：探针最危险的失败模式是"看起来跑过了"）。
+退出码语义：结论（no-op / 生效 / 被拒）**不影响**退出码；只有探针自身没跑成
+（凭据 401/403、网络不可达、服务端 5xx）才非零退出。
+
+### 7.5 后续动作建议（基于本结论）
+
+1. **`_MULTI_TURN_THINKING_INTENTS` 该补齐 5 个写意图** —— 因为参数**确实生效**，
+   多轮写流程（建品/角色/客户/分类/加工项）的迭代 2+ 轮保留思考是**真实可得的收益**，
+   不存在「补了也白补」的情形。
+2. **优先级更高的反而是「关」的一侧**：视觉路径（`create_vision_llm`）缺 `disabled`
+   → 每次识图默认开思考；补上与 skill 路径一致的显式关闭，是**纯赚**的延迟/成本优化。
+3. **不要顺手改 `factory.py` 的行为**：本账是「证实/证伪 + 记录」，行为改动（视觉路径补
+   `disabled`、是否迁移到 `reasoning_effort`）各自独立开包，避免把「实测结论」和
+   「行为变更」混在一个 PR 里（结论可复现，行为变更需要自己的回归）。

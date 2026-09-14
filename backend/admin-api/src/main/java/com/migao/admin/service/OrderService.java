@@ -404,6 +404,27 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
      */
     @Transactional(rollbackFor = Exception.class)
     public OrderDetailResponse createOrder(OrderCreateRequest request, Long tenantId) {
+        // ── 资金/库存完整性闸门（issue #3622）：数量/单价必须为正 ──
+        // 为什么必须在 Service 层显式判定（而不是只靠 DTO 注解）：
+        //   ① Agent 路径 `createOrderForAgent`（下方 BFF 段）是**手工 new `OrderCreateRequest`**
+        //      再调用本方法 —— 程序化构造的 Bean **不经过 Bean Validation**，注解对它无效；
+        //   ② 本方法是三条路径（表单 / Agent / 未来程序化调用）的**唯一共享入口**，判在这里才无死角。
+        // 不判的后果：负数量 → `unitPrice × 负数` 算出**负金额**落库；库存前置校验
+        // （下方 validateStockSufficientForRequest）判据「需求量 ≤ 库存」对**负需求恒真**
+        // → **超卖防线被绕过**。
+        for (int i = 0; i < request.getItems().size(); i++) {
+            OrderCreateRequest.OrderItemRequest itemRequest = request.getItems().get(i);
+            if (itemRequest.getQuantity() == null || itemRequest.getQuantity() <= 0) {
+                throw BusinessException.validationError(
+                        String.format("商品明细第 %d 项的数量必须为大于 0 的整数", i + 1));
+            }
+            if (itemRequest.getUnitPrice() == null
+                    || itemRequest.getUnitPrice().compareTo(BigDecimal.ZERO) <= 0) {
+                throw BusinessException.validationError(
+                        String.format("商品明细第 %d 项的单价必须大于 0", i + 1));
+            }
+        }
+
         // 计算总金额（后端独立计算：unitPrice * quantity + 加工费，不依赖前端 subtotal 防止不一致）
         BigDecimal totalAmount = BigDecimal.ZERO;
         for (OrderCreateRequest.OrderItemRequest itemRequest : request.getItems()) {

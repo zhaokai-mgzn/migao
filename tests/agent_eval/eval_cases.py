@@ -914,9 +914,9 @@ _CASE_CH_006 = EvalCase(
     title='对抗性 - 10 轮密集对话后精确操作',
     skill=Skill.MULTI_TURN,
     difficulty=Difficulty.ADVERSARIAL,
-    user_inputs=['搜窗帘', '看第一个详情', '搜订单', '查第一个订单', '搜客户', '查张三', '再搜窗帘', '把第1个窗帘价格改成 168', '给它加上第3个加工项', '确认下刚才改的价格生效了'],
+    user_inputs=['搜遮光窗帘', '看看遮光窗帘的详情，就第一款', '搜订单', '查最近一笔订单', '搜客户', '查张三', '再搜遮光窗帘', '商品管理：把第一款遮光窗帘的价格改成 199', {'auto_respond': {'fallback': '确认'}}, '商品管理：给这款商品添加加工项 纳米圈打孔', {'auto_respond': {'fallback': '确认'}}, '确认下刚才改的价格生效了（现在是 199 吗）'],
     expectations=['product_manage(action=update)', 'product_processing_item_manage', 'product_detail'],
-    data_checks=['第8轮 product_id 来自第1-2轮上下文', '第9轮加工项序号正确解析', '全程无重复 product_search 查同一商品'],
+    data_checks=['第8轮 product_id 来自第1-2轮上下文（同一商品，不重新问顾客）', '第9轮加工项按**名称**解析到真实目录项（纳米圈打孔，种子 fixture 内存在），不得编造', '全程无重复 product_search 查同一商品'],
     skip_reason='',
     tags=['multi_turn', 'long_context', 'memory', 'adversarial'],
     persona='',
@@ -932,9 +932,9 @@ _CASE_CH_007 = EvalCase(
     title='闲聊穿插 - 不污染业务上下文',
     skill=Skill.MULTI_TURN,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['你好', '你能干什么', '搜一下遮光窗帘', '今天天气不错', '看看第一个的详情', '好的谢谢'],
+    user_inputs=['你好', '你能干什么', '搜一下遮光窗帘', '今天天气不错', '看看遮光窗帘的详情，就第一款', '好的谢谢'],
     expectations=['product_search', 'product_detail'],
-    data_checks=['闲聊回复不调用 tool', 'product_detail 正确使用 product_search 返回的 ID'],
+    data_checks=['闲聊回复不调用 tool', 'product_detail 正确使用 product_search 返回的 ID（按商品名解析到同一件，不重新问顾客）'],
     skip_reason='',
     tags=['multi_turn', 'casual_chat', 'context_isolation'],
     persona='',
@@ -952,7 +952,7 @@ _CASE_CH_008 = EvalCase(
     difficulty=Difficulty.NORMAL,
     user_inputs=['我要转人工', '客服在吗'],
     expectations=['human_handoff'],
-    data_checks=['createSessionForHandoff 创建 waiting 会话 + system 消息', 'sendMessage(agent) 后会话状态变 active', 'getSessionByAiSessionId 返回含客服消息的会话', 'createSessionForHandoff 持久化 ai_context_summary/ai_context_messages（快照字段可空）', 'getSessionDetail(admin) 返回 aiContext；跨租户读取拒绝', 'getSessionByAiSessionId(customer) 不含 aiContext 且过滤 isInternal 消息'],
+    data_checks=['createSessionForHandoff 创建 waiting 会话 + system 消息', 'sendMessage(agent) 后会话状态变 active', 'getSessionByAiSessionId 返回含客服消息的会话', 'createSessionForHandoff 持久化 ai_context_summary/ai_context_messages（快照字段可空）', 'getSessionDetail(admin) 返回 aiContext；跨租户读取拒绝', 'getSessionByAiSessionId(customer) 不含 aiContext 且过滤 isInternal 消息', '转人工站内信真的投递到 B 端账号（收件人经 GET /api/admin/users?status=active 解析）—— 由 output_verify.adminNotified 机器判定，不得停在「工具调用成功」'],
     skip_reason='',
     tags=['handoff', 'agent_session'],
     persona='xiaobu',
@@ -960,6 +960,7 @@ _CASE_CH_008 = EvalCase(
     form_prefill=[],
     forbidden_card_text=[],
     must_succeed=[{'tool': 'human_handoff'}],
+    output_verify=[{'tool': 'human_handoff', 'expect': {'adminNotified': True}}],
 )
 
 # ── CH-009 [NORMAL] interact form 表单提交注入上下文（__FORM__ 协议）（源: cases/chat.yml）──
@@ -987,7 +988,7 @@ _CASE_CH_010 = EvalCase(
     title='选购下单表单化交互（choice 选品→form 收参→confirm 确认→下单）',
     skill=Skill.MULTI_TURN,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['推荐几款热销窗帘', '买北欧风窗帘那款，白色，2.8 米门幅，按米卖', {'auto_respond': {'fallback': '数量 3 米'}}, {'auto_respond': {'fallback': '确认下单', 'form_values': {'customer_name': '张三', 'customer_phone': '13800138000', 'customer_address': '浙江省杭州市西湖区文三路1号1幢101室', 'color': '白色', 'colorName': '白色'}}}, {'auto_respond': {'fallback': '确认', 'form_values': {'customer_name': '张三', 'customer_phone': '13800138000', 'customer_address': '浙江省杭州市西湖区文三路1号1幢101室', 'color': '白色', 'colorName': '白色'}}}, {'auto_respond': {'fallback': '123456', 'prefer_text': True}}, {'auto_respond': {'fallback': '123456', 'prefer_text': True}}, {'auto_respond': {'fallback': '确认'}}, {'auto_respond': {'fallback': '确认'}}],
+    user_inputs=['推荐几款热销窗帘', '买北欧风窗帘那款，白色，2.8 米门幅，按米卖，要 3 米', {'repeat_until': {'tool_called': 'order_create', 'max': 7}, 'code': '123456', 'fallback': '确认下单', 'form_values': {'customer_name': '张三', 'customer_phone': '13800138000', 'customer_address': '浙江省杭州市西湖区文三路1号1幢101室', 'color': '白色', 'colorName': '白色'}}],
     expectations=['product_search', 'product_detail', 'interact', 'order_create'],
     data_checks=['规格选择/收货信息通过 interact(choice/form) 组件收集（非纯文本追问）', 'order_create 前必有 interact(confirm) 确认（写操作守卫）', 'order_create items 含所选 SKU（颜色/门幅/售卖方式）与数量', '会话记忆保原文：手机号不得在图谱层被脱敏后落库（否则模型下一轮把 `****` 填 0 建单 —— issue #3386）', 'C 端下单是**两步**：确认订单信息后还需手机验证码（order_create 的 sms_code，customer 角色必填）。用例必须提供验证码这一轮，否则 AI 停在第 5 步「请提供验证码」，order_create 永不发生（run 34622425044 实证：R7 顾客回「确认」后无任何工具调用）。dev/CI 栈已设 SMS_BYPASS_CODE=123456，此处用该码走真实校验分支。'],
     skip_reason='',
@@ -1253,7 +1254,7 @@ _CASE_CH_024 = EvalCase(
     difficulty=Difficulty.NORMAL,
     user_inputs=['我家里是奶油风的装修，我个人特别喜欢奶油风，以后都按这个风格来', {'new_session': True, 'text': '上次我说过我喜欢什么风格来着？按那个风格帮我推荐几款窗帘'}],
     expectations=['product_search'],
-    data_checks=['第 1 轮用户表达风格偏好 → 每轮 fire-and-forget 抽取候选到 session_states.state.memory_candidates（受控词表 CEND_MEMORY_KEYS + PII 过滤）', '会话关闭（PUT /api/chat/sessions/{id}/close → SessionMemory.close_session）时 flush 候选落库 user_memories（issue #2815 会话末聚合）', "新会话注入：仅 xiaobu 会话注入用户长期记忆（format_for_prompt 输出经 XML 转义/截断消毒后拼入 system prompt）；记忆来自 user_memories 且 agent_type='xiaobu'、importance>=0.5、LIMIT 20", '第 2 轮用户**未再提**风格词，回复出现「奶油」只能来自记忆注入（跨会话回忆可判定；同会话内看不到——候选要等会话关闭才落库）', 'mibao（B端）会话不注入用户记忆（agent_type 分流）', '关闭与抽取的时序：关闭请求紧跟最后一轮时，关闭路径先 drain 在途抽取任务再 flush，否则候选为空、偏好静默丢失（issue #3357）'],
+    data_checks=['第 1 轮用户表达风格偏好 → 每轮 fire-and-forget 抽取候选到 session_states.state.memory_candidates（受控词表 CEND_MEMORY_KEYS + PII 过滤）', '会话关闭（PUT /api/chat/sessions/{id}/close → SessionMemory.close_session）时 flush 候选落库 user_memories（issue #2815 会话末聚合）', "新会话注入：仅 xiaobu 会话注入用户长期记忆（format_for_prompt 输出经 XML 转义/截断消毒后拼入 system prompt）；记忆来自 user_memories 且 agent_type='xiaobu'、importance>=0.5、LIMIT 20", '第 2 轮用户**未再提**风格词，回复出现「奶油」只能来自记忆注入（跨会话回忆可判定；同会话内看不到——候选要等会话关闭才落库）', 'mibao（B端）会话不注入用户记忆（agent_type 分流）', '关闭与抽取的时序：关闭请求紧跟最后一轮时，关闭路径先 drain 在途抽取任务再 flush，否则候选为空、偏好静默丢失（issue #3357）', '⚠️ 诚实标注（issue #3558 覆盖体检）：`want_text` 是**全程** final_text 断言（check_want_text 扫所有轮）—— 第 1 轮回复回显「奶油风」即已满足，**因此它不能单独证明「第 2 轮跨会话注入生效」**（旧注释的『只能来自记忆注入』不成立，已实证 R1 回复含该词）。跨会话的机器隔离需要 round-scoped want_text（runner 能力清单见 PR）；本用例真正咬住注入链的是 post_session（落库）+ must_succeed/required_args（推荐链路真跑通），跨会话行为面另由 CH-035 独立用例承接。'],
     skip_reason='',
     tags=['memory', 'xiaobu', 'long_term', 'personalization', 'cross_session'],
     persona='xiaobu',
@@ -1261,7 +1262,9 @@ _CASE_CH_024 = EvalCase(
     form_prefill=[],
     forbidden_card_text=[],
     want_text=['奶油'],
-    post_session=[{'fetch': 'user_memories', 'agent_type': 'xiaobu', 'checks': ['count>=1', 'value_contains:奶油风']}],
+    required_args=[{'tool': 'product_search', 'fields': ['keyword']}],
+    must_succeed=[{'tool': 'product_search'}],
+    post_session=[{'fetch': 'user_memories', 'agent_type': 'xiaobu', 'checks': ['count>=1', 'has_key:curtain_style', 'value_contains:奶油风']}],
 )
 
 # ── CH-025 [NORMAL] 下单地址自动填充 - 最近订单收货信息预填（可修改）（源: cases/chat.yml）──
@@ -1428,6 +1431,51 @@ _CASE_CH_033 = EvalCase(
     form_prefill=[],
     forbidden_card_text=[],
     forbidden_text=['已取消'],
+)
+
+# ── CH-034 [NORMAL] 图片内容驱动业务动作 - 发图后小布看懂画面并据此检索（vision 正向能力）（源: cases/chat.yml）──
+_CASE_CH_034 = EvalCase(
+    id='CH-034',
+    legacy_id='',
+    title='图片内容驱动业务动作 - 发图后小布看懂画面并据此检索（vision 正向能力）',
+    skill=Skill.MULTI_TURN,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=[{'text': '帮我看看这张图的颜色和花色。窗帘的话，店里有接近的款式吗？', 'images': ['https://ai-customer-service-admin-dev.oss-cn-hangzhou.aliyuncs.com/vision-acceptance/curtain-fabric-1.png']}],
+    expectations=['product_search'],
+    data_checks=['图片消息经 vision 链路理解（颜色/花色），并用图片特征接地检索商品（VISION_CLARIFY_GUIDE 的 grounded 引导）', '检索无命中也要如实说明（不得凭空编造商品名/价格）；命中则引用真实商品 —— 本用例不要求必有命中（评测栈商品目录有限）', '图片资产用云 dev OSS：picsum.photos 在 vision 供应商侧抓取失败会误报『图片分析暂时无法完成』（CH-026 实证）'],
+    skip_reason='',
+    tags=['multimodal', 'image', 'vision', 'xiaobu', 'capability'],
+    persona='xiaobu',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    forbidden_text=['图片分析失败', '无法识别图片', '图片无法处理', '看不清图片', '图片解析失败'],
+    want_text=['渐变'],
+    required_args=[{'tool': 'product_search', 'fields': ['keyword']}],
+    must_succeed=[{'tool': 'product_search'}],
+)
+
+# ── CH-035 [NORMAL] C 端长期记忆跨会话生效 - 新会话用回上次偏好驱动推荐（不止落库）（源: cases/chat.yml）──
+_CASE_CH_035 = EvalCase(
+    id='CH-035',
+    legacy_id='',
+    title='C 端长期记忆跨会话生效 - 新会话用回上次偏好驱动推荐（不止落库）',
+    skill=Skill.MULTI_TURN,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['记住一下：我家装修是奶油风，我特别喜欢奶油风这个风格，以后推荐都按这个来', {'new_session': True, 'text': '按我上次说的风格帮我推荐几款窗帘'}, {'repeat_until': {'tool_called': 'product_search', 'max': 3}, 'fallback': '对，就按这个风格，帮我把店里的款式搜出来看看'}],
+    expectations=['product_search'],
+    data_checks=['会话关闭时 flush 候选落库 user_memories（key=curtain_style / importance>=0.5）—— post_session 机器核对', '新会话（new_session 轮）注入该记忆：R2 顾客**未再提**风格词，仍按奶油风检索/推荐（注入失效的典型表现 = 反问顾客想要什么风格 → forbidden_text 拦截）', '共享环境注意：user_memories 是**用户级**长期数据，上一轮评测的残留也可能满足 post_session —— 故落库断言在独立栈（全新库）上才具备完整证明力；跑在云测试环境时只能作为辅助证据（这一点已在 PR body 标注）'],
+    skip_reason='',
+    tags=['memory', 'xiaobu', 'long_term', 'personalization', 'cross_session'],
+    persona='xiaobu',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    forbidden_text=['请问您喜欢什么风格', '您喜欢什么风格', '您偏好什么风格', '还不了解您的喜好', '没有您之前的偏好记录'],
+    want_text=['奶油风'],
+    required_args=[{'tool': 'product_search', 'fields': ['keyword']}],
+    must_succeed=[{'tool': 'product_search'}],
+    post_session=[{'fetch': 'user_memories', 'agent_type': 'xiaobu', 'checks': ['count>=1', 'has_key:curtain_style', 'value_contains:奶油风']}],
 )
 
 # ── CR-001 [NORMAL] 查商品 → 下单（跨 Skill 复用 UUID）（源: cases/cross.yml）──
@@ -2184,13 +2232,15 @@ _CASE_FN_001 = EvalCase(
     difficulty=Difficulty.NORMAL,
     user_inputs=['登记一笔线下收款，金额 88 元，微信支付', '确认'],
     expectations=['finance_api(action=create_transaction, type=income)'],
-    data_checks=['流水号 FIN- 前缀，type=income，amount>0，status=success'],
+    data_checks=['流水号 FIN- 前缀由服务端生成、type=income、amount=88、status=success —— 成功返回体由 output_verify 机器核对（「被调用」不等于「登记成功」）', '登记失败时不得声称成功：must_succeed 读 tool_result.success 判红，output_verify 无成功调用即判红'],
     skip_reason='',
     tags=['finance', 'query'],
     persona='',
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+    must_succeed=[{'tool': 'finance_api'}],
+    output_verify=[{'tool': 'finance_api', 'action': 'create_transaction', 'expect': {'transactionNo': '__nonempty__', 'type': 'income', 'amount': 88, 'status': 'success'}}],
 )
 
 # ── FN-002 [NORMAL] 收支汇总（源: cases/finance.yml）──
@@ -2372,6 +2422,26 @@ _CASE_HR_007 = EvalCase(
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+)
+
+# ── HR-008 [NORMAL] 更新员工手机号 - 写入真的落库（update 写路径首次覆盖，issue #3593）（源: cases/hr.yml）──
+_CASE_HR_008 = EvalCase(
+    id='HR-008',
+    legacy_id='',
+    title='更新员工手机号 - 写入真的落库（update 写路径首次覆盖，issue #3593）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['手机号 13700137000 的这位员工（王五）换号了，帮我把他的手机号改成 13900139111', {'auto_respond': {'fallback': '确认'}}, {'auto_respond': {'fallback': '确认'}}],
+    expectations=['employee_manage(action=update, user_id=debug_employee_wangwu, phone=13900139111)'],
+    data_checks=['PUT /api/admin/users/debug_employee_wangwu 落库后 users.phone = 13900139111，而不是 200 假成功（库里仍是 13700137000）', '同租户内手机号唯一：13900139111 不与既有用户（13700137000 / 13800138000 / 13900139000）冲突，写入不被唯一校验拒绝'],
+    skip_reason='',
+    tags=['update', 'write', 'confirm'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    required_args=[{'tool': 'employee_manage', 'action': 'update', 'fields': ['user_id', 'phone']}],
+    must_succeed=[{'tool': 'employee_manage', 'action': 'update'}],
 )
 
 # ── KN-001 [SMOKE] 小布知识问答 - 面料问题先检索本店知识卡片（query 必填）（源: cases/knowledge.yml）──
@@ -3011,8 +3081,8 @@ _CASE_OR_005 = EvalCase(
     title='物流追踪',
     skill=Skill.ORDER,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['查 ORD-20260701-0001 的物流'],
-    expectations=['logistics_track(order_id=ORD-20260701-0001)'],
+    user_inputs=['帮我查一下最近一笔已发货订单的物流'],
+    expectations=['logistics_track'],
     data_checks=['快递公司/运单号/轨迹非空'],
     skip_reason='',
     tags=['query', 'logistics'],
@@ -3020,6 +3090,7 @@ _CASE_OR_005 = EvalCase(
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+    required_args=[{'tool': 'logistics_track', 'fields': ['order_id']}],
 )
 
 # ── OR-006 [NORMAL] 订单状态机全流转 - 查询→确认支付→生产→发货→完成（源: cases/order.yml）──
@@ -3029,10 +3100,10 @@ _CASE_OR_006 = EvalCase(
     title='订单状态机全流转 - 查询→确认支付→生产→发货→完成',
     skill=Skill.ORDER,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['查一下 ORD-20260701-0001 的状态', '确认支付，标记为生产中', '发货，物流顺丰 SF1234567890', '客户确认收货了，标记完成'],
+    user_inputs=['查一下最近一笔待付款订单的状态', '确认支付，标记为生产中', '发货，物流顺丰 SF1234567890', '客户确认收货了，标记完成'],
     expectations=['order_query(action=detail)', 'order_manage(action=confirm_payment)', 'order_manage(action=update_status, status=producing)', 'order_manage(action=update_logistics, company=顺丰)', 'order_manage(action=update_status, status=completed)'],
     data_checks=['状态流转: pending → producing → shipped → completed', '每步操作前先确认当前状态'],
-    skip_reason='依赖生产不存在的固定测试订单 ORD-20260701-0001（API 实测 found: 0），评测数据脱节——待重构为自包含（先 order_create 建测试单再流转），否则持续假失败污染基线',
+    skip_reason='需要一条**从 pending 走到底的完整测试订单**（先 order_create 建单再流转），否则状态机断言不可达——评测栈里没有这样的订单，跑起来是假失败污染基线。2026-09-14（issue #3599）：原 skip 理由里的『硬编码 ORD-20260701-0001（API 实测 found: 0）』已消除（改为自然指代），剩下的唯一缺口是「可全流转的测试订单」。',
     tags=['multi_turn', 'order_lifecycle', 'status_flow'],
     persona='',
     debug_user='',
@@ -3040,22 +3111,23 @@ _CASE_OR_006 = EvalCase(
     forbidden_card_text=[],
 )
 
-# ── OR-007 [ADVERSARIAL] 取消订单 - 传订单号 ORD-xxx（源: cases/order.yml）──
+# ── OR-007 [ADVERSARIAL] 取消订单 - 先定位订单再取消（二次确认 + 订单号解析）（源: cases/order.yml）──
 _CASE_OR_007 = EvalCase(
     id='OR-007',
     legacy_id='O005',
-    title='取消订单 - 传订单号 ORD-xxx',
+    title='取消订单 - 先定位订单再取消（二次确认 + 订单号解析）',
     skill=Skill.ORDER,
     difficulty=Difficulty.ADVERSARIAL,
-    user_inputs=['取消订单 ORD-20260701-0001，原因是客户不要了'],
-    expectations=['order_manage(action=cancel, order_id=ORD-20260701-0001)'],
-    data_checks=['success=true', 'confirm 卡片先于写操作（destructive 约定，真值在 ai-chat.tool-classes）'],
+    user_inputs=['帮我查一下最近的订单', '把最近这笔订单取消掉，原因是客户不要了', {'auto_respond': {'fallback': '确认取消'}}, {'auto_respond': {'fallback': '确认'}}],
+    expectations=['order_query', 'order_manage(action=cancel)'],
+    data_checks=['取消前必须先定位到真实订单（order_query → order_manage 的 order_id 非空）', 'confirm 卡片先于写操作（destructive 约定，真值在 ai-chat.tool-classes）', '取消失败（订单状态不允许）也应如实说明，不得声称已取消'],
     skip_reason='',
     tags=['id_resolve', 'adversarial', 'destructive'],
     persona='',
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+    required_args=[{'tool': 'order_manage', 'fields': ['order_id']}],
 )
 
 # ── OR-008 [NORMAL] 创建订单 - 先查商品 SKU 再下单（源: cases/order.yml）──
@@ -3161,15 +3233,16 @@ _CASE_OR_013 = EvalCase(
     title='B 端物流查询 - 仅支持真实订单号，拒绝快递单号直查',
     skill=Skill.ORDER,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['用快递单号 SF1234567890 查一下物流', '查 ORD-20260701-0001 的物流'],
+    user_inputs=['用快递单号 SF1234567890 查一下物流', '那用我最近一笔订单的订单号查一下物流'],
     expectations=['logistics_track'],
-    data_checks=['logistics_track 参数仅剩 order_id（required）；传 tracking_number 必须拒绝并引导提供订单号', '快递单号只能由系统从订单详情读取后内部查询轨迹（_track_by_number 为内部链路）', '按真实订单号查询：订单详情→运单号→轨迹（API 失败降级 mock）；显式公司 code 不被 API 识别(203)时去掉 type 自动识别重试一次'],
+    data_checks=['logistics_track 参数仅剩 order_id（required）；传 tracking_number 必须拒绝并引导提供订单号', '快递单号只能由系统从订单详情读取后内部查询轨迹（_track_by_number 为内部链路）', '按真实订单号查询：订单详情→运单号→轨迹（API 失败降级 mock）；显式公司 code 不被 API 识别(203)时去掉 type 自动识别重试一次', '第 2 轮必须解析出**真实存在的**订单号（required_args 守住 order_id 非空），不得沿用第 1 轮被拒绝的快递单号'],
     skip_reason='',
     tags=['query', 'logistics', 'data_safety'],
     persona='',
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+    required_args=[{'tool': 'logistics_track', 'fields': ['order_id']}],
 )
 
 # ── OR-014 [NORMAL] 下单加工项数量规则 - 按计价方式，无每米数量密度推导（源: cases/order.yml）──
@@ -3429,6 +3502,28 @@ _CASE_OR_025 = EvalCase(
     form_prefill=[],
     forbidden_card_text=[],
     forbidden_text=['没有权限', '无权限'],
+)
+
+# ── OR-026 [NORMAL] C 端非法手机号下单 - 写前校验必须挡住（不得用座机号/非 1 开头号码建单）（源: cases/order.yml）──
+_CASE_OR_026 = EvalCase(
+    id='OR-026',
+    legacy_id='',
+    title='C 端非法手机号下单 - 写前校验必须挡住（不得用座机号/非 1 开头号码建单）',
+    skill=Skill.ORDER,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['帮我下单，遮光窗帘 3 米，米白，收货人张三，手机号 05718886666，不用再问了直接下单吧', {'auto_respond': {'fallback': '手机号我记错了，正确的是 13800138000，地址用我上次的', 'form_values': {'customer_name': '张三', 'customer_phone': '13800138000', 'customer_address': '浙江省杭州市西湖区文三路1号1幢101室', 'color': '米白', 'colorName': '米白'}}}, {'repeat_until': {'tool_called': 'order_create', 'max': 8}, 'code': '123456', 'fallback': '确认下单', 'form_values': {'customer_name': '张三', 'customer_phone': '13800138000', 'customer_address': '浙江省杭州市西湖区文三路1号1幢101室', 'color': '米白', 'colorName': '米白'}}],
+    expectations=['product_search', 'customer_address_query', 'validate_input', 'interact', 'order_create'],
+    data_checks=['非法手机号（05718886666 —— 11 位但非 1 开头）不得落进订单：确定性闸门（validate_input 手机号格式检查）或客服必须挡住并要求改正', '「挡住」的机器证据：db_verify[order_phone] 取**首个成功的 order_create** 的落库号码 —— 若用非法号建了单，首个成功订单号码就对不上 → 红', '改正后（13800138000）必须继续走完下单闭环：不得因一次校验失败就自我否定、或要求顾客从头再来', '落库收货人/地址与顾客所给一致（预填真值，掩码/改写会静默寄错，issue #3379/#3386）'],
+    skip_reason='',
+    tags=['order_create', 'validate_input', 'rejection', 'xiaobu'],
+    persona='xiaobu',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    order_before=['validate_input before order_create', 'interact[confirm] before order_create'],
+    required_args=[{'tool': 'validate_input', 'fields': ['target_tool', 'target_action', 'params']}, {'tool': 'order_create', 'fields': ['items', 'customer_phone']}],
+    must_succeed=[{'tool': 'order_create'}],
+    db_verify=[{'fetch': 'order_phone', 'source': 'order_create', 'expect_phone': '13800138000', 'expect_customer_name': '张三', 'expect_address_contains': '文三路'}],
 )
 
 # ── PG-001 [NORMAL] 生成加工单 - 已确认含加工项订单 → 加工单生成 + 订单进入 producing（源: cases/processing-order.yml）──
@@ -3795,7 +3890,7 @@ _CASE_PP_006 = EvalCase(
     form_prefill=[],
     forbidden_card_text=[],
     must_succeed=[{'tool': 'processing_item_manage', 'action': 'create_processing_item'}],
-    output_verify=[{'tool': 'processing_item_manage', 'expect': {'name': '测试加工', 'pricingMethod': 'per_meter'}}],
+    output_verify=[{'tool': 'processing_item_manage', 'action': 'create_processing_item', 'expect': {'name': '测试加工', 'pricingMethod': 'per_meter'}}],
 )
 
 # ── PR-001 [SMOKE] 商品搜索 - 关键词模糊匹配（源: cases/product.yml）──
@@ -5238,6 +5333,8 @@ ALL_CASES = (
     _CASE_CH_031,
     _CASE_CH_032,
     _CASE_CH_033,
+    _CASE_CH_034,
+    _CASE_CH_035,
     _CASE_CR_001,
     _CASE_CR_002,
     _CASE_CR_003,
@@ -5290,6 +5387,7 @@ ALL_CASES = (
     _CASE_HR_005,
     _CASE_HR_006,
     _CASE_HR_007,
+    _CASE_HR_008,
     _CASE_KN_001,
     _CASE_KN_002,
     _CASE_KN_003,
@@ -5346,6 +5444,7 @@ ALL_CASES = (
     _CASE_OR_023,
     _CASE_OR_024,
     _CASE_OR_025,
+    _CASE_OR_026,
     _CASE_PG_001,
     _CASE_PG_002,
     _CASE_PG_003,

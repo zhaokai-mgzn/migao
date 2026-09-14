@@ -10,7 +10,8 @@ v2 新增:
 - TenantAiConfig 集成: botName + greetingTemplate 替换硬编码
 - channel_config 集成: 不同渠道不同欢迎语
 - human_handoff: 转人工自动创建工单
-- 知识问答简化: LLM 内置知识替代 RAG
+- 知识问答: 知识卡片检索优先（knowledge_search）+ LLM 通用知识兜底
+  （issue #3077 卡片化；旧「LLM 内置知识替代 RAG」描述已失效）
 """
 from typing import Optional
 from loguru import logger
@@ -36,7 +37,7 @@ XIAOBU_CONFIG = AgentConfig(
         "customer_product",     # 商品搜索+详情
         "customer_quote",       # 窗帘算料报价
         "customer_aftersales",  # 售后申请+查询
-        "customer_knowledge",   # 知识问答(LLM内置)
+        "customer_knowledge",   # 知识问答(知识卡片优先 + 通用兜底)
     ],
     fallback_skill="customer_general",
     allowed_roles={"customer"},

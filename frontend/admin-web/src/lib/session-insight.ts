@@ -63,7 +63,6 @@ const TOOL_META: Record<string, ToolMeta> = {
   sku_update: { label: '更新SKU', domain: 'product', write: true },
   category_manage: { label: '分类管理', domain: 'product', write: true },
   processing_item_query: { label: '查询加工项', domain: 'product', write: false },
-  query_processing_items: { label: '查询加工项', domain: 'product', write: false },
   processing_item_manage: { label: '加工项管理', domain: 'product', write: true },
   product_processing_item_manage: { label: '商品加工项管理', domain: 'product', write: true },
   inventory_manage: { label: '库存管理', domain: 'inventory', write: true },
@@ -438,7 +437,6 @@ const QUERY_GROUP: Record<string, string> = {
   product_search: 'product',
   product_detail: 'product',
   processing_item_query: 'processing',
-  query_processing_items: 'processing',
   dashboard_stats: 'data',
 }
 
