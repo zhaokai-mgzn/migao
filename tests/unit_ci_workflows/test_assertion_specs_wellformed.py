@@ -26,7 +26,8 @@ CASES_DIR = REPO_ROOT / ".github" / "cases"
 TOOLS_DIR = REPO_ROOT / "backend" / "ai-agent-service" / "app" / "tools"
 
 SUPPORTED_DB_FETCH = {
-    "product_by_name", "order_items", "order_phone", "after_sales_ticket", "employee"}
+    "product_by_name", "order_items", "order_phone", "after_sales_ticket", "employee",
+    "processing_order"}
 SUPPORTED_POST_SESSION_FETCH = {"user_memories"}
 
 
@@ -135,6 +136,11 @@ class TestAssertionSpecsWellFormed:
                     if not isinstance(s.get("expect_fields"), dict) or not s.get("expect_fields"):
                         bad.append(
                             f"{c['id']}.db_verify[{i}]: employee 缺/空 expect_fields"
+                            f"（空断言 —— 运行时会失败关闭）")
+                if fetch == "processing_order":
+                    if not (s.get("checks") or s.get("keyword")):
+                        bad.append(
+                            f"{c['id']}.db_verify[{i}]: processing_order 缺 checks"
                             f"（空断言 —— 运行时会失败关闭）")
             for i, s in enumerate(_specs(c, "post_session")):
                 if s.get("fetch") not in SUPPORTED_POST_SESSION_FETCH:

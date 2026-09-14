@@ -889,6 +889,108 @@ class TestDbVerifyEmployee:
         assert any("落库字段 'phone' 为空" in i for i in issues), issues
 
 
+class TestDbVerifyProcessingOrder:
+    """`db_verify[processing_order]` 落库核对器（#3544 收口 / 加工单用例包 #3589 需求）。
+
+    `output_verify` 只看工具**回显**的 payload；「改完真落库了吗」此前没有核对能力。
+    纪律与 `employee` 同款：无成功写调用 / 取不到记录 / 命中多条 → **判失败而非跳过**；
+    回读键必须来自**声明的 action** 的成功调用（`processing_order_update` 是多 action 域，
+    避免又踩 #3544 的「取到别的 action 的 payload」）。
+    """
+
+    _SPEC = {"fetch": "processing_order", "action": "complete",
+             "checks": ["status==completed", "completedAt!=null"]}
+
+    def _results(self, payload=None, success=True):
+        return [
+            # R1：别的 action（issue）先成功 —— 回读键不得取自它
+            {"__round": 1,
+             "tool_calls": [{"name": "processing_order_update", "args": {"action": "issue"}}],
+             "tool_results": [{"tool": "processing_order_update",
+                               "result": {"success": True,
+                                          "data": {"id": "po_other", "action": "issue",
+                                                   "processingOrderNo": "PG-OTHER"}}}]},
+            {"__round": 2,
+             "tool_calls": [{"name": "processing_order_update", "args": {"action": "complete"}}],
+             "tool_results": [{"tool": "processing_order_update",
+                               "result": {"success": success,
+                                          "data": payload if payload is not None else {
+                                              "id": "po_1", "action": "complete",
+                                              "processingOrderNo": "PG-20260914-0001"}}}]},
+        ]
+
+    def _run(self, spec, record, payload=None, success=True):
+        import unittest.mock as mock
+
+        async def fake_fetch(token, ref="", keyword=""):
+            return record, ("" if record else "关键词命中 0 条")
+
+        with mock.patch.object(lr, "_fetch_processing_order", new=fake_fetch):
+            return asyncio.run(lr.check_db_verify("tok", [spec], self._results(payload, success)))
+
+    def test_empty_checks_is_config_error(self):
+        """`checks` 空 = 配置错误（不核对任何谓词等于空转）→ 报错。"""
+        issues = self._run({"fetch": "processing_order"}, {"status": "completed"})
+        assert any("checks" in i for i in issues), issues
+
+    def test_record_not_found_fails_not_skips(self):
+        """取不到加工单 → 判失败而非跳过（#3386 口径）。"""
+        issues = self._run(self._SPEC, None)
+        assert any("查不到加工单" in i and "判失败而非跳过" in i for i in issues), issues
+
+    def test_no_successful_write_call_fails(self):
+        """没有该 action 的成功写调用 → 无变更可核对 → 判失败而非跳过。"""
+        issues = self._run(self._SPEC, {"status": "completed"}, success=False)
+        assert any("找不到 processing_order_update" in i for i in issues), issues
+
+    def test_action_scope_excludes_other_action_payload(self):
+        """回读键必须来自声明的 action（complete）—— 若取自 issue 的 payload 会去核对错单。"""
+        seen = {}
+        import unittest.mock as mock
+
+        async def fake_fetch(token, ref="", keyword=""):
+            seen["ref"] = ref
+            return {"status": "completed",
+                    "completedAt": "2026-09-14T10:00:00+08:00"}, ""
+
+        with mock.patch.object(lr, "_fetch_processing_order", new=fake_fetch):
+            issues = asyncio.run(lr.check_db_verify("tok", [self._SPEC], self._results()))
+        assert seen["ref"] == "PG-20260914-0001", seen
+        assert issues == [], issues
+
+    def test_field_mismatch_fails(self):
+        """谓词不成立（库里没变）→ 判失败。"""
+        issues = self._run(self._SPEC, {"status": "issued", "completedAt": None})
+        assert any("status" in i for i in issues), issues
+        assert any("completedAt" in i for i in issues), issues
+
+    def test_all_checks_match_passes(self):
+        issues = self._run(self._SPEC, {"processingOrderNo": "PG-20260914-0001",
+                                        "status": "completed",
+                                        "completedAt": "2026-09-14T10:00:00+08:00"})
+        assert issues == [], issues
+
+    def test_missing_field_vs_null_field_distinguishable(self):
+        """字段不存在（读错字段）与字段为 null（静默忽略）报错不同 —— 修法不同。"""
+        miss = self._run({"fetch": "processing_order", "checks": ["completedAt!=null"]},
+                         {"status": "completed"})
+        null = self._run({"fetch": "processing_order", "checks": ["completedAt!=null"]},
+                         {"status": "completed", "completedAt": None})
+        assert any("没有字段 'completedAt'" in i for i in miss), miss
+        assert any("落库字段 completedAt 为空" in i for i in null), null
+
+    def test_numeric_and_contains_checks(self):
+        rec = {"status": "completed", "printCount": 2, "remark": "加急返工"}
+        assert lr._evaluate_record_check(rec, "printCount>=2")[0]
+        assert lr._evaluate_record_check(rec, "remark~加急")[0]
+        assert not lr._evaluate_record_check(rec, "printCount>5")[0]
+        assert not lr._evaluate_record_check(rec, "status==issued")[0]
+
+    def test_malformed_check_fails(self):
+        ok, detail = lr._evaluate_record_check({"status": "completed"}, "status completed")
+        assert not ok and "无法解析" in detail
+
+
 class TestCiVerdict:
     """CI 判定（issue #3062 假绿修复）：空结果 = 失败，存在未通过 = 失败"""
 

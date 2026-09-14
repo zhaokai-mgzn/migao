@@ -2100,7 +2100,7 @@ _EMPLOYEE_FIELD_ALIASES = {
 _MISSING = object()
 
 
-def _employee_values(detail: dict, path: str):
+def _record_path_values(detail: dict, path: str):
     """按路径取值（支持 `a` 与 `a[].b` 列表展开）；路径不存在返回 `_MISSING`。
 
     字段存在但为 null → 返回 None（与"不存在"区分：前者是「落库为空」，后者是「读错字段」，
@@ -2134,7 +2134,7 @@ def _employee_lookup(detail: dict, key: str) -> tuple:
         cands.append(head + "".join(p.title() for p in rest))
     cands.extend(_EMPLOYEE_FIELD_ALIASES.get(key, ()))
     for cand in cands:
-        val = _employee_values(detail, cand)
+        val = _record_path_values(detail, cand)
         if val is not _MISSING:
             return True, val
     return False, None
@@ -2175,6 +2175,85 @@ async def _fetch_employee(token: str, emp_id: str = "", name: str = "") -> tuple
                 return cands[0], ""
             return None, (f"keyword={name!r} 命中 {len(items)} 条（同名精确 {len(exact)} 条）"
                           f"—— 不猜，判失败")
+    except Exception as e:                                      # noqa: BLE001
+        return None, f"查询异常 {type(e).__name__}"
+
+
+# 落库记录谓词 DSL：`<字段><==|!=|>=|<=|>|<|~><值>`（`~` = 包含，用于文本）。
+# `字段!=null` 是「必须已写入」形态（null 与空串/空列表都算未落库）——
+# 完成时间/关闭时间这类"该写没写"的静默缺陷就靠它抓（#3544：closedAt/closeReason 同族）。
+_RECORD_CHECK_RE = re.compile(r"^([A-Za-z_][A-Za-z0-9_.\[\]]*)\s*(==|!=|>=|<=|>|<|~)\s*(.+)$")
+
+
+def _evaluate_record_check(record: dict, check: str) -> tuple:
+    """评估一条落库记录谓词 → (是否通过, 详情)。
+
+    字段**不存在**（读错字段/跨层改名）与字段**为 null/空**（静默忽略/未写入）给**不同**报错：
+    两者修法完全不同（前者改用例字段名，后者查接收侧丢字段）。
+    """
+    m = _RECORD_CHECK_RE.match(str(check).strip())
+    if not m:
+        return False, (f"无法解析落库谓词 {check!r}"
+                       f"（形如 status==completed / completedAt!=null / processor~张）")
+    field, op, raw = m.groups()
+    val = _record_path_values(record, field)
+    if val is _MISSING:
+        return False, (f"落库记录里没有字段 {field!r}（实际字段: {sorted(record)}）"
+                       f"—— 读错字段/跨层改名，核对不到就不许当通过")
+    if op == "!=" and raw.strip().lower() in ("null", "none", ""):
+        if val is None or (isinstance(val, (str, list, dict)) and not val):
+            return False, (f"落库字段 {field} 为空（期望非空）"
+                           f"—— 该写没写/接收侧静默忽略（#3544 同族）")
+        return True, ""
+    if val is None or (isinstance(val, (str, list, dict)) and not val):
+        return False, f"落库字段 {field} 为空（期望 {op}{raw}）"
+    if op == "~":
+        return (True, "") if _norm_text(raw) in _norm_text(val) else (
+            False, f"落库字段 {field}={val!r} 不含 {raw!r}")
+    got_s = str(val).strip()
+    want_s = raw.strip()
+    if op in ("==", "!="):
+        same = _norm_text(got_s) == _norm_text(want_s)
+        return (True, "") if (same == (op == "==")) else (
+            False, f"落库字段 {field}={val!r} {op} {want_s!r} 不成立")
+    try:
+        g, w = float(val), float(want_s)
+    except (TypeError, ValueError):
+        return False, f"落库字段 {field}={val!r} 与 {want_s!r} 无法做数值比较"
+    ok = {"<": g < w, "<=": g <= w, ">": g > w, ">=": g >= w}[op]
+    return (True, "") if ok else (False, f"落库字段 {field}={g:g} 不满足 {op}{w:g}")
+
+
+async def _fetch_processing_order(token: str, ref: str = "", keyword: str = "") -> tuple:
+    """按加工单号/id 或关键词查 admin-api 加工单（落库真身）→ (记录 或 None, 诊断说明)。
+
+    与 `processing_order_query` 同一读取路径（`GET /api/admin/processing-orders`，keyword 同口径，
+    响应 `data` 是**裸列表**；兼容分页形态）；命中多条**不猜**（宁红不假绿）。
+    """
+    if not (ref or keyword):
+        return None, "缺回读键（processingOrderNo/id）与 keyword（定位不到加工单）"
+    try:
+        async with httpx.AsyncClient() as c:
+            h = _admin_headers(token)
+            r = await c.get(f"{ADMIN_API}/api/admin/processing-orders", headers=h,
+                            params={"keyword": ref or keyword}, timeout=15)
+            rows = (_safe_json(r, {}) or {}).get("data")
+            if isinstance(rows, dict):                 # 兼容分页形态（{items:[…]}
+                rows = rows.get("items") or rows.get("list") or []
+            if not isinstance(rows, list):
+                return None, f"响应 data 形态异常（{type(rows).__name__}）"
+            if ref:
+                for row in rows:
+                    if not isinstance(row, dict):
+                        continue
+                    if (str(row.get("processingOrderNo") or "") == ref
+                            or str(row.get("id") or "") == ref):
+                        return row, ""
+                return None, (f"keyword={ref!r} 命中 {len(rows)} 条但无 "
+                              f"processingOrderNo/id == {ref!r}")
+            if len(rows) == 1 and isinstance(rows[0], dict):
+                return rows[0], ""
+            return None, f"keyword={keyword!r} 命中 {len(rows)} 条（不猜，判失败）"
     except Exception as e:                                      # noqa: BLE001
         return None, f"查询异常 {type(e).__name__}"
 
@@ -2904,6 +2983,51 @@ async def check_db_verify(token: str, db_verify: list, results: list | None = No
                         f"db_verify[order_items]: 「{hit}」数量 {by_name[hit]} ≠ 期望 {want_q}"
                         f"（订单明细共 {_line_count} 行: {_lines}）"
                         f"—— 行数与逐行数量能区分「数量值算错」与「重复行累加」")
+            continue
+
+        if fetch == "processing_order":
+            # 加工单**落库**断言（#3544 收口 / 加工单用例包 #3589 需求）：
+            # `output_verify` 只看工具**回显**的 payload，「改完真落库了吗」此前无核对能力
+            # （现有 fetcher 只有 order_phone/order_items/product_by_name/employee/after_sales_ticket）。
+            src = str(spec.get("source") or "processing_order_update")
+            action = str(spec.get("action") or "").strip()
+            checks = spec.get("checks")
+            if isinstance(checks, str):
+                checks = [t for t in re.split(r"[,\[\]\s]+", checks) if t]
+            if not isinstance(checks, list) or not checks:
+                issues.append(
+                    "db_verify[processing_order]: 缺/空 checks（配置错误 —— 不核对任何字段 = 空转通过）")
+                continue
+            # ① 仅在**确有成功写调用**时核对（同 order_phone 口径），且回读键必须来自
+            #    **声明的 action** 的成功调用 —— 直接复用 output_verify 的作用域选择器
+            #    （`_first_successful_payload`），避免又踩「取到别的 action 的 payload」
+            #    （#3544 实测 PP-006 的假红/假绿双面缺陷）。
+            _pay = _first_successful_payload(results or [], src, action)
+            if not _pay:
+                _scope = f"(action={action})" if action else ""
+                issues.append(
+                    f"db_verify[processing_order]: 找不到 {src}{_scope} 的成功调用"
+                    f"（无变更可核对）—— 判失败而非跳过")
+                continue
+            # ② 回读键：写调用 payload 的 processingOrderNo（或 id）→ 缺失才退回 keyword
+            _ref = str(_pay.get("processingOrderNo") or _pay.get("processing_order_no")
+                       or _pay.get("id") or "").strip()
+            _kw = str(spec.get("keyword") or "").strip()
+            if not _ref and not _kw:
+                issues.append(
+                    "db_verify[processing_order]: 既无回读键（成功调用 payload 的 "
+                    "processingOrderNo/id）也无 keyword —— 配置错误，无从定位加工单")
+                continue
+            _rec, _note = await _fetch_processing_order(token, ref=_ref, keyword=_kw)
+            if not _rec:
+                issues.append(
+                    f"db_verify[processing_order]: 查不到加工单 "
+                    f"{_ref or _kw!r}（{_note or '未落库？'}）—— 判失败而非跳过")
+                continue
+            for _ck in checks:
+                _ok, _detail = _evaluate_record_check(_rec, str(_ck))
+                if not _ok:
+                    issues.append(f"db_verify[processing_order]: {_detail}")
             continue
 
         if fetch == "employee":
