@@ -353,3 +353,101 @@ class TestWriteCasesAssertConfirmCardFirst:
             ob = [str(x) for x in (by_id[cid].get("order_before") or [])]
             assert any("interact[confirm] before order_create" in x for x in ob), \
                 f"{cid} 的 confirm 卡先行断言被删了"
+
+
+# ── 覆盖厚度门禁（scripts/case_coverage.py，C 端 --check 的判据）──────────────────
+sys.path.insert(0, str(REPO_ROOT / "scripts"))
+
+from case_coverage import build_coverage_report, is_positive_case  # noqa: E402
+
+
+class TestCoverageThicknessGate:
+    """新判据：**每个被覆盖的工具必须至少有一条正向用例**。
+
+    为什么旧判据不够（issue #3555）：旧 `--check` 只拦「0 用例的工具」+ 孤儿用例，
+    于是「只有一个越权/拒绝用例」的工具有了绿灯 —— 该工具的**正向能力**没有任何
+    用例证明，属结构性缺失，却与"厚度不足"混为一谈。
+
+    为什么不是 `--max-uncovered` 式的数字阈值（verify-all.sh:66-68 的既有设计意图）：
+    缺口数是**随迭代收敛的活指标**，硬编码数字会制造返工式门禁；本判据只判
+    「有无」不判「多少」—— 一条正向用例是**配置完整性**的下界，不随迭代收敛。
+
+    判据只认**断言文本**（否定式期望），不认 `tier` 标签 —— 实测依据：OR-007
+    「取消订单」/ CU-005「帮我发货」都挂着 `tier: adversarial` 却是正常能力，
+    按标签判会凭空造出假门禁红（见 is_positive_case docstring）。
+    """
+
+    def _report(self):
+        return build_coverage_report(load_case_dicts(str(CASES_DIR)), "xiaobu")
+
+    @staticmethod
+    def _synth(*cases):
+        """构造判据单测用的最小用例（显式 persona: xiaobu —— 缺省 persona 会被
+        `select_cases_for_persona` 的能力过滤挡掉，测不到判据本体）。"""
+        for c in cases:
+            c.setdefault("persona", "xiaobu")
+            c.setdefault("title", c["id"])
+        return list(cases)
+
+    def test_every_tool_has_a_positive_case(self):
+        """当前用例库必须全绿（防回归：谁删掉某工具的最后一条正向用例就报红）。"""
+        rep = self._report()
+        assert not rep.uncovered, f"零覆盖工具: {rep.uncovered}"
+        assert not rep.missing_positive, (
+            "以下 C 端工具没有**任何正向用例**证明其能力可用（只有拒绝/不调用断言）：\n  "
+            + "\n  ".join(f"{t}（现仅被 {ids} 断言）"
+                          for t, ids in sorted(rep.missing_positive.items()))
+        )
+
+    def test_thin_tools_are_reported_not_blocking(self):
+        """厚度不足（仅 1 条用例）只报告、不阻塞 —— 与 verify-all.sh 的活指标意图一致。"""
+        rep = self._report()
+        assert rep.thin_tools, "薄覆盖清单不应为空（validate_input 目前仅 OR-023 一条）"
+        # 薄覆盖不进 --check 失败条件：报告字段与阻塞字段必须是两套
+        assert "validate_input" in rep.thin_tools
+        assert "validate_input" not in rep.missing_positive
+
+    def test_negation_only_tool_is_missing_positive(self):
+        """判据本体：某工具的用例全是「不调用/拒绝」式断言 → 缺正向用例。"""
+        cases = self._synth({
+            "id": "T-REFUSE", "tier": "adversarial",
+            "expectations": [{"tool": "tool_x 未被调用"}],
+        })
+        rep = build_coverage_report(cases, "xiaobu", tools={"tool_x"})
+        assert rep.missing_positive == {"tool_x": ["T-REFUSE"]}
+        assert not is_positive_case(cases[0])
+
+    def test_tool_with_positive_case_passes(self):
+        """判据本体：有一条正向断言 → 不缺正向（标签是 adversarial 也不例外）。"""
+        cases = self._synth({"id": "T-POS", "tier": "adversarial",
+                             "expectations": [{"tool": "tool_x"}]})
+        rep = build_coverage_report(cases, "xiaobu", tools={"tool_x"})
+        assert rep.missing_positive == {}
+        assert is_positive_case(cases[0])
+
+    def test_zero_case_tool_is_uncovered(self):
+        """既有行为不回归：0 用例的工具必须计入 uncovered（旧判据保留）。"""
+        rep = build_coverage_report([], "xiaobu", tools={"tool_x", "tool_y"})
+        assert rep.uncovered == ["tool_x", "tool_y"]
+        assert rep.missing_positive == {}
+        assert rep.thin_tools == []
+
+    def test_single_case_tool_is_thin_but_not_missing_positive(self):
+        """策略断言：某工具仅 1 条正向用例 → 只报告（thin），不阻塞。"""
+        cases = self._synth({"id": "T-ONE", "tier": "normal",
+                             "expectations": [{"tool": "tool_x"}]})
+        rep = build_coverage_report(cases, "xiaobu", tools={"tool_x"})
+        assert rep.thin_tools == ["tool_x"]
+        assert rep.missing_positive == {}
+
+    def test_negated_expectation_is_not_positive(self):
+        """「不许调用 X」式期望不是正向证据（否则拒绝用例会把工具伪装成已覆盖）。"""
+        cases = self._synth({
+            "id": "T-NEG", "tier": "normal",
+            "expectations": [{"tool": "tool_x 未被调用"}],
+        })
+        assert not is_positive_case(cases[0])
+        rep = build_coverage_report(cases, "xiaobu", tools={"tool_x"})
+        assert rep.missing_positive == {"tool_x": ["T-NEG"]}
+        # 覆盖矩阵仍应看到它（用例确实提到了该工具），只是不算正向
+        assert rep.cases["tool_x"] == ["T-NEG"]
