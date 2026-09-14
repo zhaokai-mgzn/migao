@@ -1,0 +1,330 @@
+name: Post-Deploy Eval (部署后全量回归)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 设计意图（issue #3503 / #3483 T3）
+#
+# 1) 为什么"部署后"要跑全量行为回归
+#    现状：合并 main → deploy-ai-agent-service 推到 SWAS（**当前即云测试环境**）
+#    → 只跑 smoke-test（health/存活冒烟）。health 只证明"进程活着、端口在听"，
+#    完全证明不了 agent 的行为没退化（工具路由/确认门禁/金额计算/交互卡这些
+#    只认真实多轮 LLM 会话）。PR 门禁的 agent-eval-smoke 只有 7 条、且打的是
+#    共享 dev 环境 —— 合并进 main 的代码与"部署到环境里的镜像"之间没有任何
+#    行为级把关。本 workflow 就是补这一环：**部署一完成，就在独立栈上跑
+#    mibao + xiaobu 两套 normal 全量 + 完成判定（completion_verdict）**。
+#
+# 2) 为什么是"生产发布门禁的预演"
+#    生产发布入口 deploy-prod.yml 已就位但生产环境尚未部署（三层里的生产层）。
+#    生产门禁要回答的核心问题——"这份镜像的**行为**是否达标、能不能放行"——与
+#    本 workflow 完全同构，只是目标环境不同。故先把**门禁机制**焊死在这里
+#    （触发→独立栈全量→完成判定→失败留痕），生产就绪时把目标环境一换即可，
+#    不需要重新设计门禁（今天不预演，生产上线当天才第一次跑门禁=拿生产赌）。
+#
+# 3) 为什么用独立栈（"标准考场"）
+#    打共享 dev/生产环境评测有三宗罪（#3483 §16.2 纪律 2 实证）：
+#      · 数据污染：写用例（建品/下单/改客户）互相踩，失败真假难辨；
+#      · 部署窗口：main 一合并，服务滚动重启 → 评测中途 502（#3282 自愈过，但
+#        这属于"运气好"）；
+#      · 不可重现：共享环境的状态是历史累积的，别人改一条数据就能让你红。
+#    独立栈（docker compose 起 PG + Redis + admin-api + ai-agent，DEBUG=true）
+#    每次从**全新库**开始 + 注入固定 seed（tests/agent_eval/fixtures/
+#    xiaobu_eval_seed.sql）= 标准考场：同样的代码跑出同样的结论，红了就是代码的
+#    问题，不是环境的锅。这也是"能作为发布门禁"的前提（门禁必须可复现）。
+#
+# 4) 为什么 permissions 必须显式写 issues: write（#3497 实证）
+#    workflow 级 permissions 一旦显式声明，**未列出的 scope 全部归零**（默认
+#    token 权限被收窄），而失败处理步骤调 github.rest.issues.create/search 需要
+#    issues: write。缺它的表现不是报错退回，而是**步骤自身崩溃 + HttpError:
+#    Resource not accessible by integration** → 评测红了却没有任何人知道
+#    （#3270 首发、#3497 在 agent-eval.yml 同款复发）。所以：既然本 workflow 用
+#    permissions 收窄了权限，就必须把 issues: write 显式补回来 —— 失败通知不能静默。
+# ─────────────────────────────────────────────────────────────────────────────
+
+permissions:
+  contents: read
+  issues: write  # ⚠️ 失败建 issue 必需（#3497：缺它 → 失败处理步骤 HttpError 静默崩溃）
+
+on:
+  workflow_run:
+    # ⚠️ 这里必须写**workflow 的 name**（deploy-ai-agent-service.yml 顶部
+    #    `name: Build and Deploy ai-agent-service`），**不是文件名**：
+    #    GitHub 的 workflow_run 只用 name 做匹配，写文件名/写错 name 都不会报错，
+    #    而是**永不触发**（静默失效——与 #3497 同类"看不见的失败"）。
+    workflows: ["Build and Deploy ai-agent-service"]
+    types: [completed]
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  post-deploy-eval:
+    name: 部署后全量回归（独立栈 + 真实 LLM，mibao + xiaobu）
+    runs-on: ubuntu-latest
+    # 90 分钟预算：栈构建（无缓存路径实测 3.4~13min）+ B 端 normal（~47 条）
+    # + C 端 normal（~35 条）串行跑，均含真实 LLM 往返。
+    timeout-minutes: 90
+    # 仅在"真的发生了部署"时跑：
+    #   · workflow_dispatch → 手动补跑/验证
+    #   · workflow_run 结论 success → 部署job成功
+    #   · ⚠️ 再加 `event != 'schedule'` 这道闸：deploy-ai-agent-service 有一条
+    #     `*/20 * * * *` 的合并对账定时（issue #2935 补吞掉的 push 触发）。该定时
+    #     在"镜像已存在"时**全部步骤 skip、job 照样 success**（什么都没部署），
+    #     只看 conclusion 会让本 workflow 每 20 分钟白跑一次全量（72 次/天，
+    #     纯烧真实 LLM token + 刷 issue 噪音）。event=schedule 即"对账跳过了构建"
+    #     （真要补部署时 deploy 侧会走完整流程，此处不拦）。
+    if: >-
+      github.event_name == 'workflow_dispatch'
+      || (github.event.workflow_run.conclusion == 'success'
+          && github.event.workflow_run.event != 'schedule')
+    steps:
+      - name: Checkout（workflow_run 需按被部署的 SHA 取代码）
+        uses: actions/checkout@v7
+        with:
+          # workflow_run 触发时**默认 ref 是默认分支 HEAD，不是被部署的那个 commit**
+          # → 不显式指定就会拿"现在的 main"去评"刚才部署的镜像"，评错了对象。
+          # workflow_dispatch 时 github.event.workflow_run 为空 → 回落 github.sha。
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: backend/ai-agent-service/requirements.txt
+
+      - name: Set up Buildx
+        # 让 `docker compose up --build` 走 BuildKit 构建器（compose v2 在有 buildx
+        # 时默认用它），构建日志更完整、失败更早暴露。
+        uses: docker/setup-buildx-action@v3
+
+      - name: "Export dev RS256 keys for stack (issue #3270)"
+        # admin-api 镜像内没有 rsa/private.pem（被 .gitignore 刻意排除），
+        # 故用仓库已入库的**测试**密钥对，以 PEM 内容注入（多行值走 GITHUB_ENV 传递）。
+        run: |
+          KEY_DIR=backend/admin-api/src/test/resources/rsa
+          test -f "$KEY_DIR/private.pem" || { echo "::error::缺少测试密钥 $KEY_DIR/private.pem"; exit 1; }
+          test -f "$KEY_DIR/public.pem"  || { echo "::error::缺少测试密钥 $KEY_DIR/public.pem"; exit 1; }
+          {
+            echo "JWT_PRIVATE_KEY_PEM<<__PEM_EOF__"
+            cat "$KEY_DIR/private.pem"
+            echo "__PEM_EOF__"
+            echo "JWT_PUBLIC_KEY_PEM<<__PEM_EOF__"
+            cat "$KEY_DIR/public.pem"
+            echo "__PEM_EOF__"
+          } >> "$GITHUB_ENV"
+          # ai-agent 用 JWT_PUBLIC_KEY 校验 admin-api 签发的 RS256 token；
+          # 它在 config.py 里是必填项（非 DEBUG 校验），且 compose 里默认空串 →
+          # 不注入会报「生产环境必须设置以下环境变量：JWT_PUBLIC_KEY」。
+          PUB_ONELINE=$(tr -d '\n' < "$KEY_DIR/public.pem")
+          echo "JWT_PUBLIC_KEY=$PUB_ONELINE" >> "$GITHUB_ENV"
+          echo "✅ 已导出 dev RS256 密钥（PEM 内容 + 公钥）"
+
+      - name: "Start local stack (docker-compose: PG + Redis + admin-api + ai-agent DEBUG)"
+        id: stack
+        env:
+          # ⚠️ deploy/docker-compose.yml 里 DEV_SERVICE_TOKEN 是 required 无默认值
+          # （``${DEV_SERVICE_TOKEN:?...}``）——缺它 compose 直接插值失败，栈根本起不来。
+          DEV_SERVICE_TOKEN: ${{ secrets.SMOKE_SERVICE_TOKEN || 'ci-service-token-placeholder' }}
+          # RS256 密钥由上一步注入 GITHUB_ENV（issue #3270）
+          PRIMARY_API_KEY: ${{ secrets.DEEPSEEK_API_KEY || 'ci-dummy' }}
+          PRIMARY_MODEL: deepseek-flash
+          DASHVECTOR_API_KEY: ci-dummy
+          DASHVECTOR_ENDPOINT: https://ci-dummy.dashvector.cn-hangzhou.aliyuncs.com
+          DASHVECTOR_COLLECTION: ci
+          DEBUG: 'true'
+        run: |
+          # ── 确定性数据库（issue #3270）──
+          # 标准考场要求**全新库**：历史运行残留的旧 schema 与迁移链不匹配
+          # （实测 platform_admins 不存在 / V28 JSON 语法错）→ 迁移失败、建会话 500。
+          # runner 上本无卷，这行是 no-op；保留它是为了"任何执行环境都从零开始"的确定性。
+          docker compose -f deploy/docker-compose.yml down -v 2>&1 | tail -3 || true
+          echo "── 已清空旧卷（fresh DB）──"
+          # ⚠️ set -o pipefail 是必须的：否则 `... up --wait ... 2>&1 | tail -20`
+          # 的退出码取自管道最后一个命令（tail 永远成功）→ compose 失败被吞成
+          # step success → 后续失败处理看不到真因（2026-09-11 实证）。
+          set -o pipefail
+          # DEBUG=true：供 X-Debug-Role 路由（小布身份注入）；fail-closed 保护不受影响
+          docker compose -f deploy/docker-compose.yml up -d --build --wait \
+            --wait-timeout 300 postgres redis admin-api ai-agent-service 2>&1 | tail -20
+
+      - name: "Seed C 端评测业务数据（issue #3270）"
+        # 全新 bootstrap 空库下，agent 搜不到商品 → 反复重试 product_search →
+        # 从不进入 product_detail（依赖数据的用例必然失败，且行为本身合理）。
+        # 注入最小业务数据：商品/颜色/SKU/加工项/加工项关联（幂等，可重复执行）。
+        # 两个 persona 共用同一批 tenant=1 fixture（B 端建品/下单用例同样依赖它）。
+        env:
+          DEV_SERVICE_TOKEN: diagnostics-only-placeholder
+        run: |
+          docker compose -f deploy/docker-compose.yml exec -T postgres \
+            psql -v ON_ERROR_STOP=1 -U app_user -d ai_customer_service \
+            < tests/agent_eval/fixtures/xiaobu_eval_seed.sql
+          echo "── 数据核对 ──"
+          docker compose -f deploy/docker-compose.yml exec -T postgres \
+            psql -U app_user -d ai_customer_service -tAc \
+            "SELECT 'products='||count(*) FROM products WHERE tenant_id=1"
+
+      - name: Install eval runner deps
+        # 依赖分两类（issue #3270 实测逐层暴露）：
+        # 1) eval runner（local_runner.py）只需 httpx + pytest 系（--timeout/--reruns）
+        # 2) real E2E 跑的是 ai-agent 自己的测试套件，其 conftest 依赖 jwt/fastapi 等
+        #    → 必须装 ai-agent requirements，否则 ModuleNotFoundError: No module named 'jwt'
+        run: |
+          pip install -q httpx pytest pytest-timeout pytest-rerunfailures
+          pip install -q -r backend/ai-agent-service/requirements.txt
+
+      - name: Run mibao normal (B 端米宝全量，真实 LLM)
+        # continue-on-error：**要让两个 persona 都跑完**——B 端红了不能把 C 端的
+        # 结论吃掉（任一 persona 红都要有独立证据）。⚠️ 但它本身不会让 job 变红，
+        # 红色状态由后面「评测判定」步骤显式产生（见该步注释）。
+        continue-on-error: true
+        env:
+          AI_API_URL: http://localhost:8001
+          ADMIN_API_URL: http://localhost:8080
+          SERVICE_TOKEN: ${{ secrets.SMOKE_SERVICE_TOKEN || 'ci-service-token-placeholder' }}
+          PERSONA: mibao
+          PYTHONUTF8: "1"
+          PYTHONIOENCODING: utf-8
+          # 用例级并发（单 job 内并行，栈只起一次，issue #3361）
+          EVAL_CONCURRENCY: "6"
+          # 固定节流等待调到最小（#3417：墙钟几乎全在真实 LLM 往返上）
+          EVAL_ROUND_SLEEP: "0.2"
+          EVAL_CASE_SLEEP: "0.3"
+          # 机器可读汇总：**通过的写用例也要看工具结果**（「工具被调用」≠「落库成功」）
+          AGENT_EVAL_TRACE_ALL: "1"
+          AGENT_EVAL_SUMMARY_JSON: /tmp/eval-summary-mibao.json
+        run: |
+          python tests/agent_eval/local_runner.py normal --cases .github/cases
+
+      - name: Run xiaobu normal (C 端小布全量，真实 LLM)
+        continue-on-error: true
+        env:
+          AI_API_URL: http://localhost:8001
+          ADMIN_API_URL: http://localhost:8080
+          SERVICE_TOKEN: ${{ secrets.SMOKE_SERVICE_TOKEN || 'ci-service-token-placeholder' }}
+          PERSONA: xiaobu
+          PYTHONUTF8: "1"
+          PYTHONIOENCODING: utf-8
+          EVAL_CONCURRENCY: "6"
+          EVAL_ROUND_SLEEP: "0.2"
+          EVAL_CASE_SLEEP: "0.3"
+          AGENT_EVAL_TRACE_ALL: "1"
+          AGENT_EVAL_SUMMARY_JSON: /tmp/eval-summary-xiaobu.json
+        run: |
+          python tests/agent_eval/local_runner.py normal --cases .github/cases
+
+      - name: "汇总打印（total/passed/avg_score/completion.ok）"
+        # `always()`：前面任何一步红了（栈没起来/某 persona 崩了）也要把已有证据打出来
+        if: always()
+        run: |
+          for p in mibao xiaobu; do
+            f="/tmp/eval-summary-${p}.json"
+            echo "── ${p}: ${f} ──"
+            if [ ! -f "$f" ]; then
+              echo "⚠️ 无汇总文件（评测未执行到写汇总处：栈启动/登录/依赖失败）"
+              continue
+            fi
+            jq -r '"total=\(.total) passed=\(.passed) failed=\(.failed) avg_score=\(.avg_score) completion.ok=\(.completion.ok) reason=\(.completion.reason)"' "$f"
+          done
+
+      - name: "评测判定（completion_verdict：确定性失败=0 + 关键旅程全过）"
+        # 为什么单独一步（#3483 §16.3 完成定义前置）：
+        #   · 判定 ≠ "全量 100% 绿"：completion.ok = 确定性失败 0 条 + 关键旅程全过，
+        #     已知 LLM 波动按台账放行（追最后 5-10% 方差边际收益为负）；
+        #   · ⚠️ 上面两条评测是 continue-on-error（为了都跑完），**不会让 job 变红**——
+        #     若没有本步，job 永远 success，`if: failure()` 的建 issue 步骤与红色状态
+        #     全都不成立 = 门禁形同虚设（假绿）。故由本步显式 exit 1 产生失败信号。
+        #   · 汇总文件缺失（栈/登录/依赖挂了，评测根本没跑到判定）同样判失败：
+        #     环境问题不许静默变绿。
+        if: always()
+        run: |
+          RC=0
+          for p in mibao xiaobu; do
+            f="/tmp/eval-summary-${p}.json"
+            if [ ! -f "$f" ]; then
+              echo "❌ ${p}: 无汇总文件 → 判定失败（环境/栈/登录异常，禁止假绿）"
+              RC=1
+              continue
+            fi
+            OK=$(jq -r '.completion.ok // false' "$f")
+            REASON=$(jq -r '.completion.reason // ""' "$f")
+            if [ "$OK" = "true" ]; then
+              echo "✅ ${p}: ${REASON}"
+            else
+              echo "❌ ${p}: ${REASON}"
+              RC=1
+            fi
+          done
+          exit $RC
+
+      - name: Create Issue on failure (dedup guard)
+        # 去重守卫（issue #2746）：同日同标题 open issue 已存在 → 仅评论追加，不重复建。
+        # 标题带日期 = 同一天多次部署失败汇到一条 issue 线程，避免刷噪音。
+        if: failure()
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const fs = require('fs')
+            const runUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`
+            const title = `[Post-Deploy] 部署后回归失败 — ${new Date().toISOString().slice(0, 10)}`
+
+            // ── 失败要点：直接读两条评测的机器可读汇总（runner 与本步骤同机）──
+            const points = []
+            for (const p of ['mibao', 'xiaobu']) {
+              const f = `/tmp/eval-summary-${p}.json`
+              if (!fs.existsSync(f)) {
+                points.push(`- ${p}: 无汇总文件（评测未产出 → 栈/登录/依赖异常，非用例失败）`)
+                continue
+              }
+              let s
+              try {
+                s = JSON.parse(fs.readFileSync(f, 'utf8'))
+              } catch (e) {
+                points.push(`- ${p}: 汇总文件解析失败（${e.message}）`)
+                continue
+              }
+              const c = s.completion || {}
+              points.push(`- ${p}: total=${s.total} passed=${s.passed} avg_score=${Number(s.avg_score || 0).toFixed(3)} completion.ok=${c.ok === true} reason=${c.reason || '(无)'}`)
+              const bad = (s.cases || []).filter(x => (x.score || 0) < 1)
+              if (bad.length) {
+                points.push(`  - 未通过：${bad.map(x => `${x.id}(${x.classification || 'unclassified'})`).join(', ')}`)
+              }
+            }
+
+            // 被触发的部署 run（workflow_dispatch 时没有）
+            const deployRun = context.payload.workflow_run
+              ? `\n- 触发的部署 run：https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.payload.workflow_run.id}`
+              : ''
+            const body = [
+              '部署（云测试环境 SWAS）完成后自动跑的**独立栈全量行为回归**失败（真实 LLM，mibao + xiaobu）。',
+              '',
+              `- 本评测 run：${runUrl}${deployRun}`,
+              '',
+              '## 失败要点',
+              ...points,
+              '',
+              '## 怎么读这条 issue',
+              '- 独立栈 + 全新库 + 固定 seed = 标准考场：**确定性失败即为代码问题**，可直接重放；',
+              '- `avg_score` 低但 `completion.ok=true` 属已知 LLM 波动（flake 台账放行）——本 workflow 只在判定失败时开 issue；',
+              '- 判定口径：确定性失败 0 条 + 关键旅程全过（#3483 §16.3 完成定义前置），不是"全量 100% 绿"。',
+            ].join('\n')
+
+            const q = `repo:${context.repo.owner}/${context.repo.repo} is:issue is:open in:title "${title}"`
+            const { data: search } = await github.rest.search.issuesAndPullRequests({ q })
+            if (search.total_count > 0) {
+              const existing = search.items[0]
+              console.log(`⏭️ 已存在同标题 open issue #${existing.number}，仅追加评论`)
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existing.number,
+                body: `同日同标题再次失败（新增 run）：${runUrl}\n\n${points.join('\n')}`,
+              })
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title,
+                body,
+                labels: ['bug', 'role/qa'],
+              })
+            }

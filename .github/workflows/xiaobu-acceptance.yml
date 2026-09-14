@@ -68,9 +68,24 @@ on:
   # 制造噪音，待失败根因排查 + 本地验证提速落地后再恢复；期间 normal 档保留手动触发。
   # 2026-09-13 新增**每周**对抗档（issue #3367）：与 B 端 agent-eval-adversarial.yml 同节拍
   # （周六 03:00 CST = 周五 19:00 UTC）。只跑 adversarial 档，失败按去重守卫开 issue
-  # （每周至多 1 条），不阻塞任何 PR（本 workflow 不由 PR 触发）。
+  # （每周至多 1 条）。
   schedule:
     - cron: '0 19 * * 5'
+  # 2026-09-14（#3504，闭环 #3270 问题 3 / 真值 4）：AI 行为改动的 PR 自动跑 C 端 smoke。
+  # 此前 C 端 smoke 只在手动/定时档跑，PR 阶段**零拦截**（PR 门禁 agent-eval-smoke 打云
+  # 测试环境且只跑米宝）→ C 端核心能力（身份注入/数据隔离/下单）回归只能靠事后发现。
+  # 路径过滤与 pr-check 的 AI 命中规则一致；档位由下方 TIER 表达式落到 smoke。
+  pull_request:
+    paths:
+      - 'backend/ai-agent-service/app/**'
+      - 'tests/agent_eval/**'
+      - '.github/cases/**'
+      - '.github/workflows/xiaobu-acceptance.yml'
+
+# PR 场景同一 PR 的新 push 取消旧的评测 run（避免排队堆积浪费 CI 分钟 + LLM token）
+concurrency:
+  group: xiaobu-acceptance-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -250,16 +265,25 @@ jobs:
               --wait-timeout 300 postgres redis admin-api ai-agent-service 2>&1 | tail -20
           fi
 
-      - name: "Seed C 端评测业务数据（issue #3270）"
+      - name: "Seed 评测业务数据（C 端 #3270 + B 端 #3511）"
         # 全新 bootstrap 空库下，agent 搜不到商品 → 反复重试 product_search →
         # 从不进入 product_detail（PR-003 等依赖数据的用例必然失败，且行为本身合理）。
         # 注入最小业务数据：商品/颜色/SKU/加工项/加工项关联（幂等，可重复执行）。
+        # B 端（persona=mibao）叠加 mibao_eval_seed.sql：2699 商品/刺绣工艺/客户张三/
+        # 员工王五 —— B 端首跑（run 34804430769）14 条阻塞中多数是这些点名数据缺失
+        # （#3496 归因，"看着像能力缺陷，实为数据层缺口"）。
         env:
           DEV_SERVICE_TOKEN: diagnostics-only-placeholder
         run: |
           docker compose -f deploy/docker-compose.yml exec -T postgres \
             psql -v ON_ERROR_STOP=1 -U app_user -d ai_customer_service \
             < tests/agent_eval/fixtures/xiaobu_eval_seed.sql
+          if [ "${{ github.event.inputs.persona || 'xiaobu' }}" = "mibao" ]; then
+            echo "── 叠加 B 端种子（mibao_eval_seed.sql）──"
+            docker compose -f deploy/docker-compose.yml exec -T postgres \
+              psql -v ON_ERROR_STOP=1 -U app_user -d ai_customer_service \
+              < tests/agent_eval/fixtures/mibao_eval_seed.sql
+          fi
           echo "── 数据核对 ──"
           docker compose -f deploy/docker-compose.yml exec -T postgres \
             psql -U app_user -d ai_customer_service -tAc \
@@ -288,6 +312,9 @@ jobs:
           # （DB 审计实证：17/17 全绿但 orders 无新增，order_create 被门禁拦/API 拒）。
           # 默认只打失败用例，写用例的成败藏在通过的用例里看不见。
           AGENT_EVAL_TRACE_ALL: "1"
+          # 波动台账（#3505 汇聚）：本 job 的 flake ledger 落盘为 artifact，
+          # 供高波动用例治理（§14.3）跨 run 汇总，不必回翻每个 run 的日志。
+          AGENT_EVAL_FLAKE_LOG: agent-eval-flakes.json
           # 固定节流等待调到最小（评测墙钟时间几乎全在真实 LLM 往返上：实测 C 端 normal
           # 19m39s 里 ~63s 是纯 sleep、B 端 47 条约 3min；保留少量节流防 API 限流）
           EVAL_ROUND_SLEEP: "0.2"
@@ -574,6 +601,16 @@ jobs:
             # 验收证据（协议 §4.1）：transcript 必须可下载留档，不能只留在日志里
             acceptance/ci-${{ github.run_id }}/
 
+      - name: Upload flake ledger（波动台账汇聚，#3505）
+        # 台账此前只落 job 工作目录、随 runner 销毁 —— 高波动用例治理（§14.3）只能
+        # 逐个 run 翻日志。上传为 artifact 后可跨 run 汇总出"波动榜"。
+        if: always() && hashFiles('agent-eval-flakes.json') != ''
+        uses: actions/upload-artifact@v7
+        with:
+          name: agent-eval-flake-ledger-shard${{ matrix.shard }}
+          path: agent-eval-flakes.json
+          retention-days: 30
+
       - name: Create Issue on failure (dedup guard)
         # 只在 0 号片建 issue：同一次评测失败会同时命中 N 片，去重靠标题但并发下有竞态，
         # 结果是一次失败开 N 个 issue（噪音）。0 号片的报告已含全局判定。
@@ -583,7 +620,8 @@ jobs:
         # 分支，会让「分支迭代失败」与「主干验收失败」共用同一个 issue 线程（去重还按标题，
         # 直接往主干 issue 里追加评论）；② 用 2 条用例的失败去开一张全量验收 issue，是**过度
         # 断言**。完整档（fast=false 且未收窄）照旧建 issue，所以"该被看见的红"一条都不会少。
-        if: failure() && matrix.shard == 0 && github.event.inputs.fast != 'true' && github.event.inputs.case_ids == ''
+        # PR 触发（#3504）同样不建 issue：PR 的红在 PR 页面本身就是信号，建 issue = 噪音。
+        if: failure() && matrix.shard == 0 && github.event.inputs.fast != 'true' && github.event.inputs.case_ids == '' && github.event_name != 'pull_request'
         uses: actions/github-script@v9
         with:
           script: |
