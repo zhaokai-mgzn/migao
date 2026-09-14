@@ -12,6 +12,8 @@ name: LLM Thinking Probe (思考开关实证探针)
 
 on:
   workflow_dispatch:
+  # 🔧 临时验证触发（仅用于本次让「专属 workflow 文件」自己跑一次证明可用，验证后立即移除）
+  push:
 
 permissions:
   contents: read
