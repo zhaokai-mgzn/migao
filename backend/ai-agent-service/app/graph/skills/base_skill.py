@@ -1293,7 +1293,20 @@ def card_fingerprint(args: dict) -> str:
 #   ② 本小句有**自我能力否定** —— 否定动词 / 权限受限 / 把本该自己做的事推给别人的"协助"回避式；
 #   ③ 该否定**不是**归因给顾客/商品等**非自我主体** —— 越权拒绝与客观说明不得被误判（DF-020/021 边界）。
 _ORDER_ACTION_WORDS = ("提交订单", "下单", "创建订单", "建单", "代为提交", "代为下单",
-                       "帮您提交", "帮您下单", "代下单")
+                       "帮您提交", "帮您下单", "代下单",
+                       # B 端（米宝）同义动作词（#3571 族第 6 次复发，OR-014 run 34856561459）：
+                       # 店员口径把"提交订单"说成「落单/出单」—— 此前不在表里，于是
+                       # 「落单（提交订单）属于订单环节的操作」「这单要落单，请回「转人工」」
+                       # 这类句子**整句没有动作锚点** → 判据直接跳过该小句。这是**动作词表**
+                       # （能力锚点），不是整句白名单：判据仍是"锚点 × 否定形态 × 主体归属"。
+                       "落单", "出单", "订单创建", "订单提交")
+
+# 「下单动作 ⇒ 做不到」的**产出式形态**（`V + 不了`）：'落不了' / '下不了' / '办不了' …
+# 为什么用**形态**而不是再往 `_INABILITY_STEMS` 里加词（#3571 族红线）：词表是枚举，
+# 措辞一换就漏（实测 R8「这单在商品线确实**落不了**」/ R9「这单我确实**下不了**」两句
+# 在旧词表下全部返回空）。限定在"下单动作"这一小类动词上，避免把「做不了主」这类
+# 与下单无关的句子算进来。
+_ORDER_UNABLE_RE = re.compile(r"(?:落|下|接|代|提|开|办)不了")
 
 # 「下单能力」的**事实锚点**：能力可达性一律问工具注册表有没有它，
 # 而不是问"当前 skill 叫什么"（判据从白名单改为事实驱动，见 `_order_capability_available`）。
@@ -1304,10 +1317,29 @@ _INABILITY_STEMS = (
     "没法", "没办法", "无法", "不能", "不可以", "做不到", "办不到", "不支持",
     "帮不了", "帮不上", "帮不到", "用不了", "不可用", "未开通", "未启用", "不行", "无权",
 )
-# 权限受限：需与「权限」共现（"没有…权限" / "权限不足"），否定词与「权限」之间**不限距离**
-_PERMISSION_WORD = "权限"
+# 能力/权限受限：需与「能力」「权限」共现（"没有…权限" / "**不具备提交能力**"），
+# 否定词与它之间**不限距离**。OR-014 R7 原话「这单我**不具备提交能力**」——旧的单字
+# `_PERMISSION_WORD = "权限"` 认不出，于是这句真·能力自我否定整句漏配。
+_ABILITY_WORDS = ("权限", "能力")
 _PERMISSION_NEGATIONS = ("没有", "没能", "没法", "无法", "不能", "无", "没",
                          "未开通", "未启用", "不足", "不具备", "不具有", "缺少", "受限")
+
+# ── 「越界/归属错位」形态（#3571 族第 6 次复发，OR-014 run 34856561459 实证）──────────
+# 与"否定动词"形态正交：模型不说"我做不到"，而是把**下单这件事判给别的环节/工作台/模块/人工**
+#   R5「落单（提交订单）**属于订单环节**的操作，我这条线负责的是商品」
+#   R7「订单落单**要走订单工作台**」
+#   R11「这单要落单，请回**「转人工」**」
+# 语义上等价于"我做不到"，事实上相反（order_create 在全局工具表里、会话能被锁回订单流程）。
+# 判据仍是**结构化**的：小句里 ① 有下单动作锚点（动作词或 `V不了` 形态），且
+# ② 有归属错位标记（把它判给别处），且 ③ 该小句不是以顾客/商品等**非自我主体**为主语。
+# 这是**类别词**（环节/工作台/模块/人工…），不是 R5/R7 的整句字面量 —— 由
+# `tests/unit_ci_workflows/test_denial_guard_or014_invariants.py` 的
+# `test_denial_vocab_exists_and_is_morphology_not_sentences` 机械守护（禁止整句入表）。
+_SCOPE_HANDOFF_MARKERS = ("环节", "工作台", "模块", "归属", "不归",
+                          "这条线", "那条线", "业务线", "转人工", "别的部门", "其他部门")
+# 「我这条线 / 商品线 / 订单侧」= agent 对自己的**分工自称**，不是"商品"这个非自我主体 ——
+# 归属错位判据里先把它抹掉再判主体，否则「这单在**商品线**确实落不了」会被"商品"误挡。
+_SELF_SCOPE_COMPOUNDS = ("我这条线", "我那条线", "商品线", "订单线", "商品侧", "订单侧")
 
 # 回避式（#3477 C-A1 P1 原话「顾客需要协助下单」）：不是否定动词，但把**本该自己做**的下单
 # 推给人工/小程序，与「无法代为提交订单」是同一类能力误宣，只是措辞客气一点。
@@ -1338,22 +1370,90 @@ def _has_ordering_intent(message: str) -> bool:
     return any(h in text for h in _ORDER_INTENT_HINTS)
 
 
-async def _relock_order_skill(session_id: str | None) -> None:
+def _flow_owner_skill(state: dict | None = None,
+                      tool_name: str = ORDER_WRITE_TOOL) -> str:
+    """**声明了**该写工具的 skill 名 —— 判据取自注册表声明（`SkillConfig.tool_names`）+ 当前 persona 可达集。
+
+    为什么必须 derive（#3571 族第 6 次复发，OR-014 实证）：`_relock_order_skill` 曾写死
+    `"customer_order"` —— 那是**只存在于小布（C 端）图**里的节点名。米宝（B 端）图只有
+    `order/product/…`（`MIBAO_CONFIG.skill_names`）⇒ B 端会话回锁后会指向一个
+    **图中不存在的节点**（`route_by_intent` 把 pending 名原样返回，条件边映射缺失）——
+    即"恢复了能力"的那一步自己先把会话打坏。
+    这里不引入任何 skill 名字面量：谁声明了 `order_create` 由注册表回答，persona 可达集由
+    `AgentConfig.skill_names` 回答 —— "回锁目标必须真的在该 persona 的图里"由
+    `tests/test_or014_flow_owner_guard.py::TestFlowOwnerIsFactDerived` 与
+    `tests/unit_ci_workflows/test_denial_guard_or014_invariants.py` 机械守护。
+    """
+    try:
+        from app.graph.skills.skill_registry import get_skill_registry
+        owners = [c.name for c in get_skill_registry().get_all()
+                  if tool_name in (getattr(c, "tool_names", None) or [])]
+        if not owners:
+            return ""
+        persona = str((state or {}).get("agent_type") or "")
+        from app.agents.agent_config import find_agent_for_role, get_agent_config
+        if not persona:
+            # 缺 agent_type 的调用点（如既有测试构造的 state）：按**角色声明事实**定 persona
+            # （`AgentConfig.allowed_roles` 是声明式事实，不是名字表）。
+            persona = find_agent_for_role(str((state or {}).get("role") or "")) or ""
+        cfg = get_agent_config(persona) if persona else None
+        reachable = set(cfg.get_all_skill_names()) if cfg else set()
+        for name in owners:
+            if name in reachable:
+                return name
+        # 认不出 persona 时只在**唯一候选**下回锁，避免猜错图（猜错 = 指向图中不存在的节点）
+        return owners[0] if len(owners) == 1 else ""
+    except Exception as e:
+        logger.warning(f"[base_skill] 解析下单流程归属 skill 失败（非致命）: {e}")
+        return ""
+
+
+async def _relock_order_skill(session_id: str | None, state: dict | None = None,
+                              migrate_card_owner: bool = False) -> None:
     """顾客在办下单但当前轮在别的 skill → 把会话**锁回下单流程**（issue #3477）。
 
     为什么必要（C-A1 run 34791767013 实证）：会话被 choice 卡锁在 `customer_product`，
     顾客「确认下单」后小布说"没权限"并转人工 —— 该 skill 没有 `order_create`，
     而守卫（能力误宣/转人工）此前只认 customer_order/customer_aftersales。
-    把 `pending_interact_skill` 锁回 customer_order 后，**下一轮**路由会走下单流程，
-    订单才能真的落下（这是恢复路径，不是口头承诺）。
+    把 `pending_interact_skill` 锁回**声明了该写工具的那个 skill** 后，**下一轮**路由会走下单
+    流程，订单才能真的落下（这是恢复路径，不是口头承诺）。目标由 `_flow_owner_skill` 从
+    注册表事实 derive（不再写死 C 端节点名）。
+
+    `migrate_card_owner=True`：把**在办确认卡的归属标记**随流程一起迁移（#3571 族，OR-014 实证）。
+    为什么必须：下一轮的"答卡轮豁免"要求 `last_card_skill == pending_interact_skill` ——
+    卡是在**漂错的那个 skill**里发的，只回锁流程而不迁移卡归属，用户点这张卡时又会被判成
+    "别的 skill 的卡" → L1 域逃逸再次把会话甩回 product → 乒乓（等于没修）。
+    只迁移 **confirm 卡**（写流程的确认卡）；choice/form 卡（如商品上下架选择器）语义上属于
+    发卡 skill 自己的流程，不跟着订单流程走。
     """
     if not session_id:
         return
+    owner = _flow_owner_skill(state)
+    if not owner:
+        logger.warning("[base_skill] 未能从注册表解析下单流程归属 skill → 跳过回锁（非致命）")
+        return
     try:
         from app.memory.session_memory import SessionMemory
-        await SessionMemory().set_pending_skill(session_id, "customer_order")
+        await SessionMemory().set_pending_skill(session_id, owner)
     except Exception as e:
         logger.warning(f"[base_skill] 锁回下单流程失败（非致命）: {e}")
+        return
+    if not migrate_card_owner:
+        return
+    try:
+        from app.memory.session_state_store import SessionStateStore
+        store = SessionStateStore()
+        full = await store.load(session_id) or {}
+        card = full.get("last_card") or {}
+        if (str(card.get("component") or "") == "confirm"
+                and str(full.get("last_card_skill") or "") != owner):
+            full["last_card_skill"] = owner
+            full["last_confirm_skill"] = owner
+            await store.commit(session_id, full)
+            logger.info(
+                f"[base_skill] 在办确认卡的归属随流程迁移 → {owner} | session={session_id}")
+    except Exception as e:
+        logger.warning(f"[base_skill] 迁移在办卡归属失败（非致命）: {e}")
 
 
 async def _load_session_facts(session_id: str | None) -> dict:
@@ -1452,13 +1552,18 @@ def _negation_positions(clause: str, include_assist: bool) -> list:
         while start >= 0:
             out[start] = False
             start = clause.find(stem, start + 1)
-    perm = clause.find(_PERMISSION_WORD)
-    if perm > 0:
-        # 「没有…权限」：取**最靠近「权限」**的那个否定限定词 —— 中间夹多少字都无所谓
-        # （旧正则写死 `{0,8}`：夹「帮您下单的」正好 5 字还能过，再长一点就漏）
-        best = max((clause.rfind(w, 0, perm) for w in _PERMISSION_NEGATIONS), default=-1)
-        if best >= 0:
-            out.setdefault(best, False)
+    for word in _ABILITY_WORDS:
+        perm = clause.find(word)
+        if perm > 0:
+            # 「没有…权限」/「不具备…能力」：取**最靠近它**的那个否定限定词 —— 中间夹多少字
+            # 都无所谓（旧正则写死 `{0,8}`：夹「帮您下单的」正好 5 字还能过，再长一点就漏）
+            best = max((clause.rfind(w, 0, perm) for w in _PERMISSION_NEGATIONS), default=-1)
+            if best >= 0:
+                out.setdefault(best, False)
+    for m in _ORDER_UNABLE_RE.finditer(clause):
+        # 「V不了」形态（落不了/下不了/办不了…）：把**形态本身**记为否定位置，
+        # 主体归属仍由 `_self_scoped_clause` 判（「该商品落不了单」不得算自我否定）。
+        out.setdefault(m.start(), False)
     if include_assist:
         for stem in CAPABILITY_DENIAL_PATTERNS:
             start = clause.find(stem)
@@ -1492,8 +1597,53 @@ def _self_scoped_clause(clause: str, neg_pos: int) -> bool:
     return is_self
 
 
+def _clause_is_self_line(clause: str) -> bool:
+    """小句是否以 **AI 自己**（而非顾客/商品等第三方）为主语。
+
+    与 `_self_scoped_clause` 同源，但用于**归属错位**判据（那里没有"否定词位置"可锚）：
+    先把「我这条线 / 商品线 / 订单侧」这类**分工自称**抹掉，再判有没有非自我主体
+    （否则「这单在**商品线**确实落不了」会被"商品"误挡成客观说明）。
+    """
+    masked = clause
+    for w in _SELF_SCOPE_COMPOUNDS:
+        masked = masked.replace(w, "")
+    return not any(w in masked for w in _NON_SELF_SUBJECT_WORDS)
+
+
+def _scope_misattribution_hit(text: str) -> str:
+    """「越界/归属错位」形态的自我能力否定；返回命中片段或空串（实证见 `_SCOPE_HANDOFF_MARKERS`）。
+
+    判据 = 同一小句内 ① 下单动作锚点（动作词 **或** `V不了` 形态）② 归属错位标记；
+    另允许**跨小句**：前面已出现自我归属的动作锚点、后面小句把它判给别人
+    （R11「这单要落单，请回「转人工」」被逗号切成两句 —— 只看单句会漏）。
+    """
+    seen_action = False
+    for raw_clause in _CLAUSE_SPLIT_RE.split(str(text or "")):
+        clause = _normalize_clause(raw_clause)
+        if not clause:
+            continue
+        has_action = (any(word in clause for word in _ORDER_ACTION_WORDS)
+                      or _ORDER_UNABLE_RE.search(clause) is not None)
+        self_line = _clause_is_self_line(clause)
+        if has_action:
+            if not self_line:
+                seen_action = False
+                continue
+            seen_action = True
+            if (any(m in clause for m in _SCOPE_HANDOFF_MARKERS)
+                    or _ORDER_UNABLE_RE.search(clause)):
+                return raw_clause.strip()[:60]
+        elif seen_action and self_line and any(m in clause for m in _SCOPE_HANDOFF_MARKERS):
+            return raw_clause.strip()[:60]
+    return ""
+
+
 def capability_denial_text_hit(text: str, *, include_assist: bool = False) -> str:
     """回复文本里是否存在"AI 自己做不到 × 下单动作"的能力误宣；返回命中片段或空串。
+
+    两条**正交**的形态判据，命中任一即算（都不是整句白名单）：
+      · `_negation_positions` 形态：下单动作锚点 × 否定/能力受限（含 `V不了`）；
+      · `_scope_misattribution_hit` 形态：把下单判给别的环节/工作台/人工（OR-014 实证）。
 
     `include_assist=True` 时额外认「协助下单」这类**回避式**（供转人工理由使用：
     理由写"顾客需要协助下单"就是把本该自己做的事推给人工；回复文本里出现"协助下单"
@@ -1503,12 +1653,13 @@ def capability_denial_text_hit(text: str, *, include_assist: bool = False) -> st
         return ""
     for raw_clause in _CLAUSE_SPLIT_RE.split(str(text)):
         clause = _normalize_clause(raw_clause)
-        if not any(word in clause for word in _ORDER_ACTION_WORDS):
+        if not (any(word in clause for word in _ORDER_ACTION_WORDS)
+                or _ORDER_UNABLE_RE.search(clause)):
             continue
         for pos, is_assist in _negation_positions(clause, include_assist):
             if is_assist or _self_scoped_clause(clause, pos):
                 return raw_clause.strip()[:60]
-    return ""
+    return _scope_misattribution_hit(text)
 
 
 _STALL_CORRECTIVE = (
@@ -1521,10 +1672,12 @@ _STALL_CORRECTIVE = (
 
 
 _TEXT_DENIAL_CORRECTIVE_MIDORDER = (
-    "顾客正在下单（本轮消息仍在推进下单、且本会话已查过商品详情）—— 不要说『没权限/不能下单/"
-    "去小程序操作』：下单能力在小布这边是有的，会话会回到下单流程继续完成。"
-    "本轮请给出**可执行的下一步**：缺信息就向顾客问（收货信息/短信验证码），"
-    "或请顾客再确认一次；**不要转人工、不要把顾客推去小程序**。"
+    "用户正在推进下单（本会话已查过商品详情/流程在办）—— 不要说『落单、提交订单属于订单环节』"
+    "『我不具备提交能力』『去订单工作台』『请回「转人工」』『没权限/不能下单』这类话术："
+    "事实相反，`order_create` 在全局工具表里，会话已**锁回负责订单的流程**，下一轮就能真正落单。"
+    "本轮请给出**可执行的下一步**，并且**不要发新卡**（本 skill 的卡片会把会话留在本 skill、"
+    "而本 skill 落不了单）：要素齐了就用一句话说明「已转到订单流程为您落单」，"
+    "缺信息就用一句话问缺的那一项；**不要转人工、不要把用户推去别的模块/工作台/小程序**。"
 )
 
 
@@ -1535,6 +1688,18 @@ _TEXT_DENIAL_CORRECTIVE = (
     "去小程序操作 / 我是咨询客服」这类话术；缺信息就先 `customer_address_query` 查历史地址、"
     "再发 `interact(component=form)` 或用自然语言问；参数齐了走 confirm 卡 → `validate_input` → "
     "`order_create`（含 sms_code）。只有顾客**显式**要求人工、情绪激动或诉求超出能力时才允许引导人工。"
+)
+
+# B 端（米宝，店员/管理员）同义纠正话术：C 端那段提到"小程序 / 短信验证码 / 收货地址查询"
+# 都不是 B 端口径（`ORDER_TOOLS` 里没有 `customer_address_query`，B 端代客下单也不需要
+# 顾客短信码）—— 拿 C 端话术去纠正 B 端，只会把模型推向另一个不存在的工具。
+_TEXT_DENIAL_CORRECTIVE_BIZ = (
+    "你刚才的回复以「我做不了/不归我管」为由把落单推走，但事实相反："
+    "`order_create` 就在本流程的工具表里，**你可以真实落单**。"
+    "请**重新给出回复**：不要再出现「不具备提交能力 / 落单属于订单环节 / 去订单工作台 / "
+    "请回转人工」这类话术；要素齐了就走 confirm 卡 → `validate_input` → `order_create`"
+    "（B 端代客下单不需要顾客短信验证码），缺信息就用一句话问缺的那一项。"
+    "只有用户**显式**要求人工、或诉求真的超出能力时才允许引导人工。"
 )
 
 
@@ -3263,16 +3428,21 @@ async def execute_skill(
                         # issue #3477：顾客在办下单时，即使当前 skill 没有写工具
                         # （如会话被 choice 卡锁在 customer_product），也不许"我下不了单"。
                         # 无写工具时用 MIDORDER 版话术（不声称"order_create 就是本流程的工具"），
-                        # 并把会话锁回下单流程，下一轮才能真的把单下掉。
+                        # 并把会话锁回下单流程（含在办确认卡的归属迁移，见 `_relock_order_skill`），
+                        # 下一轮才能真的把单下掉。
                         _denial_corrected = True
                         logger.warning(
                             f"[{skill_name}] 拦截文本级能力误宣并重答 | session={session_id} "
                             f"hit={_denial_hit!r} mid_order={_order_in_progress}")
                         if _order_in_progress and not _has_write_now:
-                            await _relock_order_skill(session_id)
-                        new_messages.append(SystemMessage(content=(
-                            _TEXT_DENIAL_CORRECTIVE if _has_write_now
-                            else _TEXT_DENIAL_CORRECTIVE_MIDORDER)))
+                            await _relock_order_skill(session_id, state,
+                                                      migrate_card_owner=True)
+                        if _has_write_now:
+                            _fix = (_TEXT_DENIAL_CORRECTIVE if _is_customer_role(state)
+                                    else _TEXT_DENIAL_CORRECTIVE_BIZ)
+                        else:
+                            _fix = _TEXT_DENIAL_CORRECTIVE_MIDORDER
+                        new_messages.append(SystemMessage(content=_fix))
                         continue
                     if new_text:
                         final_content = new_text
@@ -3474,7 +3644,8 @@ async def execute_skill(
                                 f"参数齐了走 confirm 卡 → `validate_input` → `order_create`（含 sms_code）。"
                                 f"只有当顾客**显式**要求人工、情绪激烈或诉求超出能力时，才允许转人工。")
                             if _order_in_progress and not _order_write_tool_here(skill_registry):
-                                await _relock_order_skill(session_id)
+                                await _relock_order_skill(session_id, state,
+                                                          migrate_card_owner=True)
                             return (tool_call,
                                     json.dumps({"success": False,
                                                 "error": "handoff_blocked_capability_denial",
@@ -3501,7 +3672,8 @@ async def execute_skill(
                                 "`validate_input` → `order_create`（含 sms_code）。"
                                 "只有当顾客**显式**要求人工、情绪激烈或诉求超出能力时，才允许转人工。")
                             if _order_in_progress and not _order_write_tool_here(skill_registry):
-                                await _relock_order_skill(session_id)
+                                await _relock_order_skill(session_id, state,
+                                                          migrate_card_owner=True)
                             return (tool_call,
                                     json.dumps({"success": False,
                                                 "error": "handoff_blocked_inflight",
