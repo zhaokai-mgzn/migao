@@ -81,8 +81,10 @@ class OrderCreateTool(BaseTool):
         "【铁律·加工数量口径】processingItems[i].quantity 必须按 pricingMethod 推导，不许凭感觉："
         "per_meter(按米)=面料米数；per_area(按面积)=门幅(米)×面料米数（㎡，**可为小数**，如 2.8×3=8.4）；"
         "per_set(按套)=套数；fixed(一口价)=1（单价即该项总价）。"
-        "items[i].quantity 同样是**可为小数的正数**（per_meter=米数、per_set=1、per_area=宽×高），"
-        "服务端按 DECIMAL(10,2) 保真落库，不得自行取整。"
+        "items[i].quantity 是**订单数量**（驱动库存/销量），必须是**不小于 1 的数**"
+        "（口径 per_meter=米数、per_set=件数、per_area=宽×高；如 1、2.5、8.4），"
+        "<1 会被本地拒绝——服务端库存/销量按**整数件**计，0.5 会被算成 0 件（不扣库存、销量 +0，"
+        "订单却照样成交）。服务端按 DECIMAL(10,2) 保真落库，不得自行取整。"
         "**processingFee 必须等于 Σ(processingItems[i].unitPrice × quantity)**（容差 0.01）——"
         "服务端只按这个明细口径计总额，两处不一致时顾客在确认卡上看到的总额 ≠ 实际落库/收款金额。"
         "【反例】跳过 SKU 选择直接下单；把 sellingMethod/doorWidth 平铺进 items；"
@@ -136,11 +138,13 @@ class OrderCreateTool(BaseTool):
                         },
                         "quantity": {
                             "type": "number",
-                            "exclusiveMinimum": 0,
+                            "minimum": 1,
                             "description": (
-                                "数量（必填，必须为正数，可为小数；负数/0 会被本地拒绝）。"
+                                "订单数量（必填，**不得小于 1**，可为小数；<1 会被本地拒绝）。"
+                                "为什么下限是 1（issue #3682）：服务端库存/销量按整数件计，"
+                                "数量 0.5 → 需求算成 0 件 → 不扣库存、销量 +0，订单却成交（账实不符）。"
                                 "口径按计价方式：per_meter=面料米数（如 2.5）；"
-                                "per_set=1；per_area=宽×高（㎡，如 2.8×3=8.4）；fixed=1"
+                                "per_set=件数；per_area=宽×高（㎡，如 2.8×3=8.4）；fixed=1"
                             ),
                         },
                         "unit_price": {
@@ -196,10 +200,15 @@ class OrderCreateTool(BaseTool):
                                             "unitPrice": {"type": "number", "minimum": 0},
                                             "quantity": {
                                                 "type": "number",
+                                                # 刻意**不设 ≥1 下限**（issue #3682 边界裁定）：
+                                                # 加工数量不驱动库存/销量（只进 Σ unitPrice×quantity
+                                                # 的加工费数学），且 per_area 的面积可以合法 <1 ㎡
+                                                # （如 0.8×0.9=0.72 ㎡）——设 1 会误伤小面积加工单。
+                                                # 负值仍由 _validate_processing_info 拒绝（#3622）。
                                                 "minimum": 0,
                                                 "description": (
                                                     "加工数量，按 pricingMethod 推导：per_meter=面料米数；"
-                                                    "per_area=宽×高（㎡，可为小数如 8.4）；per_set=套数；fixed=1"
+                                                    "per_area=宽×高（㎡，可为小数如 8.4，可小于 1）；per_set=套数；fixed=1"
                                                 ),
                                             },
                                             "unit": {"type": "string"},
@@ -249,7 +258,7 @@ class OrderCreateTool(BaseTool):
 
     @staticmethod
     def _reject_quantity(i: int, raw: Any) -> Optional[ToolResult]:
-        """数量校验（issue #3586）：必须是**正数**（拒绝 0 / 负数），**允许小数**（issue #3666）。
+        """数量校验（issue #3586 + #3666 + #3682）：必须是 **≥ 1 的数**，小数合法（2.5 米 / 8.4 ㎡）。
 
         为什么在工具层 fail-fast：`order_items.quantity` 是**金额与库存的乘数**——
         负数量会算出**负金额**落库（下游 `createOrder` 不做正负判断），
@@ -261,6 +270,16 @@ class OrderCreateTool(BaseTool):
         per_area 的合法面积就是小数（门幅 2.8m × 3m = 8.4 ㎡，刺绣工艺 30 元/㎡
         → 252.00 元），旧实现"拒绝小数 + 服务端截断成整数"会少收 12.00 元；
         服务端 `order_items.quantity` 已同步放宽为 DECIMAL(10,2)。
+
+        issue #3682 把下限从「> 0」收紧为「≥ 1」：服务端 `OrderService` 对
+        `BigDecimal quantity` 取整数部分（`:1051` 库存充足性校验 / `:1408` `deductStock` /
+        `:1409` `increaseSalesCount`）——数量 0.5 时 `needed = 0` 校验**恒通过**、
+        `deductStock(0)` **不减库存**、销量 **+0**，即**订单成交但库存/销量零变动且无告警**。
+        旧实现（Integer + 拒绝非整数）会在下单前挡回 0.5 并给可行动提示，故 <1 是 #3666
+        放宽后**新可达**的静默漏扣。裁定（issue #3682 方案 A）：agent 路径订单数量下限 = 1，
+        与 admin-web 新建订单页的 `min={1}` 同口径 —— 半米不再是「静默漏扣」而是**可行动提示**。
+        注意：下限只加在**驱动库存的 `items[].quantity` 上**；加工数量
+        （`processingInfo.processingItems[].quantity`，per_area 可为 <1 ㎡）不设此下限。
         """
         value = OrderCreateTool._parse_positive_number(raw)
         if value is None:
@@ -269,29 +288,42 @@ class OrderCreateTool(BaseTool):
                 error=f"商品明细第 {i + 1} 项数量无效",
                 message=(
                     f"商品明细第 {i + 1} 项的数量「{raw}」不是有效数字。"
-                    f"数量必须是**正数**（如 3、2.5、8.4），不要带单位或写成文字。"
+                    f"数量必须是**不小于 1 的数**（如 1、2.5、8.4），不要带单位或写成文字。"
                 ),
                 suggestion=(
-                    "请把 quantity 改成正数（按计价方式给数：per_meter 给米数如 2.5，"
+                    "请把 quantity 改成不小于 1 的数（按计价方式给数：per_meter 给米数如 2.5，"
                     "per_area 给宽×高如 8.4，per_set/fixed 给 1；"
                     "若同一商品有多个规格，请拆成多行而不是把数量写在一行里"
                 ),
             )
-        if value <= 0:
+        if value < 1:
+            negative = value < 0
             return ToolResult(
                 success=False,
-                error=f"商品明细第 {i + 1} 项数量必须大于 0",
+                error=f"商品明细第 {i + 1} 项数量不得小于 1",
                 message=(
-                    f"商品明细第 {i + 1} 项的数量是 {raw}，但下单数量必须是**正数**。"
-                    f"数量为负会让订单金额变成负数（{raw} × 单价），导致金额/库存/对账全部出错，"
-                    f"因此系统在调用服务端**之前**就拒绝。"
+                    f"商品明细第 {i + 1} 项的数量是 {raw}，但下单数量**不得小于 1**（米/件）。"
+                    "服务端的库存与销量按**整数件**记：数量小于 1 会被算成 0 件 —— "
+                    "库存不扣减、销量 +0，订单却照样成交（库存账实不符、销量漏计），"
+                    "而且全程没有任何告警。"
+                    + (
+                        f"负数还会把订单金额算成负数（{raw} × 单价），金额/对账跟着一起错。"
+                        if negative else ""
+                    )
+                    + "因此系统在调用服务端**之前**就拒绝。"
                 ),
                 suggestion=(
-                    f"请把 quantity 改成正数：顾客想要 {abs(value):g} 米就填 {abs(value):g}，"
-                    "不要用 -1 之类的占位值表示退款或扣减（退款请用 order_manage 的 refund）"
+                    f"请把 quantity 改成**不少于 1** 的数（可为小数，如 1、2.5、8.4）；"
+                    + (
+                        f"负数请改为正数 —— 顾客想要 {abs(value):g} 米就填 {abs(value):g}，"
+                        "不要用 -1 之类的占位值表示退款或扣减（退款请用 order_manage 的 refund）。"
+                        if negative else
+                        "若顾客确实只要不到 1 米/件，请先与顾客确认数量后再下单"
+                        "（系统按下单数量扣减整件库存，无法受理小于 1 的订单数量）。"
+                    )
                 ),
             )
-        # issue #3666：小数数量是**合法**的（per_meter 米数 / per_area 面积），不再拒绝
+        # issue #3666：小数数量（≥1）是**合法**的（per_meter 米数如 2.5 / per_area 面积如 8.4）
         return None
 
     @staticmethod
@@ -499,7 +531,8 @@ class OrderCreateTool(BaseTool):
     def _validate_item_value_bounds(i: int, item: Dict[str, Any]) -> Optional[ToolResult]:
         """单行明细的**数值语义 + 枚举**校验：在发 HTTP 之前 fail-fast。
 
-        覆盖面（issue #3586）：quantity（正整数）、unit_price（> 0）、subtotal（≥ 0 且 ≥ 数量×单价）。
+        覆盖面（issue #3586）：quantity（≥ 1 的数，可为小数；issue #3682 收紧下限）、
+        unit_price（> 0）、subtotal（≥ 0 且 ≥ 数量×单价）。
         覆盖面（issue #3622，同族残留）：product_name 非空、width/height（≥ 0）、
         processing_info 的 sellingMethod 枚举 / processingFee（≥ 0）/
         processingItems[].pricingMethod 枚举与 quantity/unitPrice/subtotal（≥ 0）。

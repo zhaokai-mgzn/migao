@@ -1,6 +1,7 @@
 package com.migao.admin.dto.agent;
 
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
 import lombok.Data;
@@ -63,12 +64,17 @@ public class AgentOrderCreateRequest {
         private String colorName;
 
         /**
-         * 数量（必填，必须大于 0：负数量会算出负金额并绕过库存校验，issue #3622）。
-         * issue #3666 放宽为 BigDecimal：口径按计价方式——per_meter=米数、per_set=1、
+         * 数量（必填）：口径按计价方式——per_meter=米数、per_set=件数、
          * per_area=宽×高（㎡，可为小数如 8.4）。JSON 传整数（3）照常反序列化为 BigDecimal("3")。
+         *
+         * <p>下限 1（issue #3682）：数量直接驱动库存/销量，而 `OrderService` 对其取整数部分
+         * （`:1051` 库存校验 / `:1408` `deductStock` / `:1409` `increaseSalesCount`）——
+         * 0.5 → `needed = 0` 校验恒通过、扣 0 库存、销量 +0 → **订单成交但库存/销量零变动
+         * 且无任何告警**。旧口径「&gt; 0」是 issue #3666 放宽小数时留下的洞；下限 1 与
+         * ai-agent 工具层（`order_create._reject_quantity`）及表单页 `min={1}` 同口径。</p>
          */
         @NotNull(message = "数量不能为空")
-        @Positive(message = "数量必须大于 0")
+        @DecimalMin(value = "1", message = "数量不能小于 1")
         private BigDecimal quantity;
 
         /** 单价（必填，必须大于 0） */
