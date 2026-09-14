@@ -19,18 +19,30 @@ name: Post-Deploy Eval (部署后全量回归)
 #    （触发→独立栈全量→完成判定→失败留痕），生产就绪时把目标环境一换即可，
 #    不需要重新设计门禁（今天不预演，生产上线当天才第一次跑门禁=拿生产赌）。
 #
-# 3) 为什么用独立栈（"标准考场"）
+# 3) 为什么两个 persona 用 **matrix 并行 job**（而不是一个 job 里顺序跑两个）
+#    · 并行：B 端（米宝）与 C 端（小布）互不等待，墙钟取两者最大值而非求和
+#      —— 门禁是挂在每次部署后面的，**反馈越快越不容易被绕过**（慢门禁 = 没人看）。
+#    · 隔离：matrix 每条腿是**独立 runner + 独立 docker 栈 + 独立新库**，
+#      两个 persona 的种子数据/写用例（建品/下单/改客户）天然不互相污染。
+#      顺序跑同一个栈时，B 端的写用例会改掉 C 端 fixture 依赖的商品/订单状态，
+#      「C 端失败」到底是 C 端退化还是被 B 端踩了，事后无法归因。
+#    · ⚠️ 与 #3417 的教训不冲突：#3417 否掉的是"**为了提速**把同一套栈的用例分片"
+#      （并发建栈把栈启动从 3.4min 抬到 12min，整体更慢）。这里是"**为了隔离**按
+#      persona 分片"，而且只在部署后触发（频率低，不同于 PR 门禁）——翻倍的
+#      CI 分钟数换"并行 + 可归因"，这个交换是值的。
+#
+# 4) 为什么用独立栈（"标准考场"）
 #    打共享 dev/生产环境评测有三宗罪（#3483 §16.2 纪律 2 实证）：
-#      · 数据污染：写用例（建品/下单/改客户）互相踩，失败真假难辨；
+#      · 数据污染：写用例互相踩，失败真假难辨；
 #      · 部署窗口：main 一合并，服务滚动重启 → 评测中途 502（#3282 自愈过，但
 #        这属于"运气好"）；
 #      · 不可重现：共享环境的状态是历史累积的，别人改一条数据就能让你红。
 #    独立栈（docker compose 起 PG + Redis + admin-api + ai-agent，DEBUG=true）
 #    每次从**全新库**开始 + 注入固定 seed（tests/agent_eval/fixtures/
-#    xiaobu_eval_seed.sql）= 标准考场：同样的代码跑出同样的结论，红了就是代码的
-#    问题，不是环境的锅。这也是"能作为发布门禁"的前提（门禁必须可复现）。
+#    xiaobu_eval_seed.sql[+mibao_eval_seed.sql]）= 标准考场：同样的代码跑出同样的
+#    结论，红了就是代码的问题，不是环境的锅。这也是"能作为发布门禁"的前提。
 #
-# 4) 为什么 permissions 必须显式写 issues: write（#3497 实证）
+# 5) 为什么 permissions 必须显式写 issues: write（#3497 实证）
 #    workflow 级 permissions 一旦显式声明，**未列出的 scope 全部归零**（默认
 #    token 权限被收窄），而失败处理步骤调 github.rest.issues.create/search 需要
 #    issues: write。缺它的表现不是报错退回，而是**步骤自身崩溃 + HttpError:
@@ -57,25 +69,30 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
-  post-deploy-eval:
-    name: 部署后全量回归（独立栈 + 真实 LLM，mibao + xiaobu）
+  eval:
+    name: ${{ matrix.persona }} 全量回归（独立栈 + 真实 LLM）
     runs-on: ubuntu-latest
-    # 90 分钟预算：栈构建（无缓存路径实测 3.4~13min）+ B 端 normal（~47 条）
-    # + C 端 normal（~35 条）串行跑，均含真实 LLM 往返。
+    # 90 分钟预算（每条腿）：栈构建（无缓存路径实测 3.4~13min）+ 单 persona
+    # normal 全量（B 端 ~47 条 / C 端 ~35 条）真实 LLM 往返。
     timeout-minutes: 90
     # 仅在"真的发生了部署"时跑：
     #   · workflow_dispatch → 手动补跑/验证
-    #   · workflow_run 结论 success → 部署job成功
+    #   · workflow_run 结论 success → 部署 job 成功
     #   · ⚠️ 再加 `event != 'schedule'` 这道闸：deploy-ai-agent-service 有一条
     #     `*/20 * * * *` 的合并对账定时（issue #2935 补吞掉的 push 触发）。该定时
     #     在"镜像已存在"时**全部步骤 skip、job 照样 success**（什么都没部署），
-    #     只看 conclusion 会让本 workflow 每 20 分钟白跑一次全量（72 次/天，
-    #     纯烧真实 LLM token + 刷 issue 噪音）。event=schedule 即"对账跳过了构建"
-    #     （真要补部署时 deploy 侧会走完整流程，此处不拦）。
+    #     只看 conclusion 会让本 workflow 每 20 分钟白跑一次全量（72 次/天 ×
+    #     2 个 persona，纯烧真实 LLM token + 刷 issue 噪音）。
     if: >-
       github.event_name == 'workflow_dispatch'
       || (github.event.workflow_run.conclusion == 'success'
           && github.event.workflow_run.event != 'schedule')
+    strategy:
+      # fail-fast: false —— 一条腿红了必须让另一条腿跑完：B/C 两端的结论
+      # 互为独立证据，任何一端退化都要能看见（与 xiaobu-acceptance 的分片同理）。
+      fail-fast: false
+      matrix:
+        persona: [mibao, xiaobu]
     steps:
       - name: Checkout（workflow_run 需按被部署的 SHA 取代码）
         uses: actions/checkout@v7
@@ -147,17 +164,25 @@ jobs:
           docker compose -f deploy/docker-compose.yml up -d --build --wait \
             --wait-timeout 300 postgres redis admin-api ai-agent-service 2>&1 | tail -20
 
-      - name: "Seed C 端评测业务数据（issue #3270）"
+      - name: "Seed 评测业务数据（C 端 #3270 + B 端 #3496/#3511）"
         # 全新 bootstrap 空库下，agent 搜不到商品 → 反复重试 product_search →
         # 从不进入 product_detail（依赖数据的用例必然失败，且行为本身合理）。
         # 注入最小业务数据：商品/颜色/SKU/加工项/加工项关联（幂等，可重复执行）。
-        # 两个 persona 共用同一批 tenant=1 fixture（B 端建品/下单用例同样依赖它）。
+        # B 端（persona=mibao）**叠加** mibao_eval_seed.sql：2699 商品/刺绣工艺/客户张三/
+        # 员工王五/历史订单 —— B 端首跑（run 34804430769）14 条阻塞中多数是这些点名
+        # 数据缺失（#3496 归因，"看着像能力缺陷，实为数据层缺口"）。
         env:
           DEV_SERVICE_TOKEN: diagnostics-only-placeholder
         run: |
           docker compose -f deploy/docker-compose.yml exec -T postgres \
             psql -v ON_ERROR_STOP=1 -U app_user -d ai_customer_service \
             < tests/agent_eval/fixtures/xiaobu_eval_seed.sql
+          if [ "${{ matrix.persona }}" = "mibao" ]; then
+            echo "── 叠加 B 端种子（mibao_eval_seed.sql）──"
+            docker compose -f deploy/docker-compose.yml exec -T postgres \
+              psql -v ON_ERROR_STOP=1 -U app_user -d ai_customer_service \
+              < tests/agent_eval/fixtures/mibao_eval_seed.sql
+          fi
           echo "── 数据核对 ──"
           docker compose -f deploy/docker-compose.yml exec -T postgres \
             psql -U app_user -d ai_customer_service -tAc \
@@ -172,16 +197,19 @@ jobs:
           pip install -q httpx pytest pytest-timeout pytest-rerunfailures
           pip install -q -r backend/ai-agent-service/requirements.txt
 
-      - name: Run mibao normal (B 端米宝全量，真实 LLM)
-        # continue-on-error：**要让两个 persona 都跑完**——B 端红了不能把 C 端的
-        # 结论吃掉（任一 persona 红都要有独立证据）。⚠️ 但它本身不会让 job 变红，
-        # 红色状态由后面「评测判定」步骤显式产生（见该步注释）。
+      - name: Run ${{ matrix.persona }} normal（真实 LLM 全量）
+        # continue-on-error 的理由（不是"为了好看"）：
+        #   local_runner 的退出码是 _ci_verdict（**全绿**才算过），而门禁的判定口径是
+        #   completion_verdict（确定性失败=0 + 关键旅程全过，已知 LLM 波动按台账放行，
+        #   #3483 §16.3）。若让 runner 的退出码直接红，一条 llm-noise 就会把整条腿打红
+        #   → 建 issue"追最后 5-10% 方差"（边际收益为负）。故：本步吞掉退出码，
+        #   **红色状态由下一步「判定」按 completion_verdict 显式产生**。
         continue-on-error: true
         env:
           AI_API_URL: http://localhost:8001
           ADMIN_API_URL: http://localhost:8080
           SERVICE_TOKEN: ${{ secrets.SMOKE_SERVICE_TOKEN || 'ci-service-token-placeholder' }}
-          PERSONA: mibao
+          PERSONA: ${{ matrix.persona }}
           PYTHONUTF8: "1"
           PYTHONIOENCODING: utf-8
           # 用例级并发（单 job 内并行，栈只起一次，issue #3361）
@@ -189,90 +217,137 @@ jobs:
           # 固定节流等待调到最小（#3417：墙钟几乎全在真实 LLM 往返上）
           EVAL_ROUND_SLEEP: "0.2"
           EVAL_CASE_SLEEP: "0.3"
-          # 机器可读汇总：**通过的写用例也要看工具结果**（「工具被调用」≠「落库成功」）
+          # 全量逐轮轨迹：**通过**的写用例也要看工具结果 —— 「工具被调用」≠「落库成功」
           AGENT_EVAL_TRACE_ALL: "1"
-          AGENT_EVAL_SUMMARY_JSON: /tmp/eval-summary-mibao.json
-        run: |
-          python tests/agent_eval/local_runner.py normal --cases .github/cases
-
-      - name: Run xiaobu normal (C 端小布全量，真实 LLM)
-        continue-on-error: true
-        env:
-          AI_API_URL: http://localhost:8001
-          ADMIN_API_URL: http://localhost:8080
-          SERVICE_TOKEN: ${{ secrets.SMOKE_SERVICE_TOKEN || 'ci-service-token-placeholder' }}
-          PERSONA: xiaobu
-          PYTHONUTF8: "1"
-          PYTHONIOENCODING: utf-8
-          EVAL_CONCURRENCY: "6"
-          EVAL_ROUND_SLEEP: "0.2"
-          EVAL_CASE_SLEEP: "0.3"
-          AGENT_EVAL_TRACE_ALL: "1"
-          AGENT_EVAL_SUMMARY_JSON: /tmp/eval-summary-xiaobu.json
+          # 机器可读汇总（本 workflow 的判定/结论/issue 要点全部消费它）
+          AGENT_EVAL_SUMMARY_JSON: eval-summary-${{ matrix.persona }}.json
         run: |
           python tests/agent_eval/local_runner.py normal --cases .github/cases
 
       - name: "汇总打印（total/passed/avg_score/completion.ok）"
-        # `always()`：前面任何一步红了（栈没起来/某 persona 崩了）也要把已有证据打出来
+        # `always()`：前面任何一步红了（栈没起来/评测崩了）也要把已有证据打出来
         if: always()
         run: |
-          for p in mibao xiaobu; do
-            f="/tmp/eval-summary-${p}.json"
-            echo "── ${p}: ${f} ──"
-            if [ ! -f "$f" ]; then
-              echo "⚠️ 无汇总文件（评测未执行到写汇总处：栈启动/登录/依赖失败）"
-              continue
-            fi
-            jq -r '"total=\(.total) passed=\(.passed) failed=\(.failed) avg_score=\(.avg_score) completion.ok=\(.completion.ok) reason=\(.completion.reason)"' "$f"
-          done
+          f="eval-summary-${{ matrix.persona }}.json"
+          echo "── ${{ matrix.persona }}: ${f} ──"
+          if [ ! -f "$f" ]; then
+            echo "⚠️ 无汇总文件（评测未执行到写汇总处：栈启动/登录/依赖失败）"
+            exit 0
+          fi
+          jq -r '"total=\(.total) passed=\(.passed) failed=\(.failed) avg_score=\(.avg_score) completion.ok=\(.completion.ok) reason=\(.completion.reason)"' "$f"
 
-      - name: "评测判定（completion_verdict：确定性失败=0 + 关键旅程全过）"
+      - name: "判定（completion_verdict：确定性失败=0 + 关键旅程全过）"
         # 为什么单独一步（#3483 §16.3 完成定义前置）：
         #   · 判定 ≠ "全量 100% 绿"：completion.ok = 确定性失败 0 条 + 关键旅程全过，
-        #     已知 LLM 波动按台账放行（追最后 5-10% 方差边际收益为负）；
-        #   · ⚠️ 上面两条评测是 continue-on-error（为了都跑完），**不会让 job 变红**——
-        #     若没有本步，job 永远 success，`if: failure()` 的建 issue 步骤与红色状态
-        #     全都不成立 = 门禁形同虚设（假绿）。故由本步显式 exit 1 产生失败信号。
+        #     已知 LLM 波动按台账放行；
+        #   · ⚠️ 上一步是 continue-on-error，**不会让 job 变红** —— 没有本步，整条腿
+        #     永远 success，report job 的 needs.eval.result 永远是 success →
+        #     issue 与红灯都不成立 = 门禁形同虚设（假绿）。失败信号由本步显式产生；
         #   · 汇总文件缺失（栈/登录/依赖挂了，评测根本没跑到判定）同样判失败：
         #     环境问题不许静默变绿。
         if: always()
         run: |
-          RC=0
-          for p in mibao xiaobu; do
-            f="/tmp/eval-summary-${p}.json"
-            if [ ! -f "$f" ]; then
-              echo "❌ ${p}: 无汇总文件 → 判定失败（环境/栈/登录异常，禁止假绿）"
-              RC=1
-              continue
-            fi
-            OK=$(jq -r '.completion.ok // false' "$f")
-            REASON=$(jq -r '.completion.reason // ""' "$f")
-            if [ "$OK" = "true" ]; then
-              echo "✅ ${p}: ${REASON}"
-            else
-              echo "❌ ${p}: ${REASON}"
-              RC=1
-            fi
+          f="eval-summary-${{ matrix.persona }}.json"
+          if [ ! -f "$f" ]; then
+            echo "❌ ${{ matrix.persona }}: 无汇总文件 → 判定失败（环境/栈/登录异常，禁止假绿）"
+            exit 1
+          fi
+          OK=$(jq -r '.completion.ok // false' "$f")
+          REASON=$(jq -r '.completion.reason // ""' "$f")
+          if [ "$OK" = "true" ]; then
+            echo "✅ ${{ matrix.persona }}: ${REASON}"
+          else
+            echo "❌ ${{ matrix.persona }}: ${REASON}"
+            exit 1
+          fi
+
+      - name: Upload 汇总 + 波动台账（artifact，跨 persona 不重名）
+        # 为什么上传 (1) 汇总：report job 用它组装 issue 要点——**artifact 是结论
+        #   跨 job 传递的通道**（矩阵每条腿的 job output 会互相覆盖，不可靠）；
+        #   (2) flake 台账（#3505）：台账原本随 runner 销毁，上传后才能跨 run 汇总
+        #   "波动榜"（§14.3 定期回顾的观测信号）。
+        # `always()`：失败轮的汇总恰恰是 report job 最需要的证据。
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: post-deploy-eval-${{ matrix.persona }}
+          path: |
+            eval-summary-${{ matrix.persona }}.json
+            agent-eval-flakes.json
+          # 台账文件在"本次零波动"时不存在，不该因此让步骤变红
+          if-no-files-found: warn
+          retention-days: 30
+
+  report:
+    name: 部署后回归结论（判定汇总 + 失败留痕）
+    needs: [eval]
+    # `always()`：eval 红了/被取消也要出结论（这正是本 job 存在的理由）。
+    # `!= 'skipped'`：触发条件不满足时 eval 整条被 skip（如 20 分钟对账定时），
+    #   此时不该跑结论、更不该建 issue。
+    if: always() && needs.eval.result != 'skipped'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download 两 persona 汇总（issue 要点来源）
+        # 取不到 artifact 不能挡住建 issue（否则又回到"静默"）→ continue-on-error
+        continue-on-error: true
+        uses: actions/download-artifact@v7
+        with:
+          path: artifacts
+
+      - name: 结论打印（绿 run 也留档）
+        # 为什么绿 run 也打：门禁的价值之一是**可回看的结论档**——"某次部署时两端
+        # 各自什么分数、判定口径怎么过"必须能事后翻出来，而不是只有红灯才有记录。
+        if: always()
+        run: |
+          shopt -s nullglob
+          found=0
+          for f in artifacts/*/eval-summary-*.json; do
+            found=1
+            echo "── $(basename "$(dirname "$f")") ──"
+            jq -r '"total=\(.total) passed=\(.passed) failed=\(.failed) avg_score=\(.avg_score) completion.ok=\(.completion.ok) reason=\(.completion.reason)"' "$f"
           done
-          exit $RC
+          # 无 artifact = 该腿在写汇总前就挂了（栈/依赖/infra），必须显式说出来
+          [ "$found" = "1" ] || echo "⚠️ 未取到任何 persona 汇总（评测腿在产出前失败，属环境问题）"
+          echo "eval 聚合结果: ${{ needs.eval.result }}"
 
       - name: Create Issue on failure (dedup guard)
         # 去重守卫（issue #2746）：同日同标题 open issue 已存在 → 仅评论追加，不重复建。
         # 标题带日期 = 同一天多次部署失败汇到一条 issue 线程，避免刷噪音。
-        if: failure()
+        # 触发条件用 needs.eval.result（matrix 下"任一腿红 → 整 job failure"传播）：
+        # 这样"两条腿都绿"绝不会建 issue，而"任一腿红"必然留痕。
+        if: needs.eval.result == 'failure' || needs.eval.result == 'cancelled'
         uses: actions/github-script@v9
+        env:
+          EVAL_RESULT: ${{ needs.eval.result }}
         with:
           script: |
             const fs = require('fs')
             const runUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`
             const title = `[Post-Deploy] 部署后回归失败 — ${new Date().toISOString().slice(0, 10)}`
 
-            // ── 失败要点：直接读两条评测的机器可读汇总（runner 与本步骤同机）──
+            // ── 失败要点：直接读两 persona 的机器可读汇总（artifact 已下载到本 job）──
+            // 为什么要递归找：artifact 的落盘目录名随下载方式变化，递归找文件名
+            // 比硬编码路径更抗变（找不到就如实报"无汇总"，不编造）。
+            const findSummary = (persona) => {
+              const stack = ['artifacts']
+              while (stack.length) {
+                const dir = stack.pop()
+                let entries = []
+                try { entries = fs.readdirSync(dir, { withFileTypes: true }) } catch (e) { continue }
+                for (const e of entries) {
+                  const p = `${dir}/${e.name}`
+                  if (e.isDirectory()) stack.push(p)
+                  else if (e.name === `eval-summary-${persona}.json`) return p
+                }
+              }
+              return null
+            }
+
             const points = []
             for (const p of ['mibao', 'xiaobu']) {
-              const f = `/tmp/eval-summary-${p}.json`
-              if (!fs.existsSync(f)) {
-                points.push(`- ${p}: 无汇总文件（评测未产出 → 栈/登录/依赖异常，非用例失败）`)
+              const f = findSummary(p)
+              if (!f) {
+                points.push(`- ${p}: 无汇总文件（该腿在产出前失败 → 栈/登录/依赖等环境问题，非用例失败）`)
                 continue
               }
               let s
@@ -295,15 +370,16 @@ jobs:
               ? `\n- 触发的部署 run：https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.payload.workflow_run.id}`
               : ''
             const body = [
-              '部署（云测试环境 SWAS）完成后自动跑的**独立栈全量行为回归**失败（真实 LLM，mibao + xiaobu）。',
+              '部署（云测试环境 SWAS）完成后自动跑的**独立栈全量行为回归**失败（真实 LLM，mibao + xiaobu 各自独立栈并行）。',
               '',
               `- 本评测 run：${runUrl}${deployRun}`,
+              `- eval 聚合结果：${process.env.EVAL_RESULT}（矩阵任一腿红 → failure）`,
               '',
               '## 失败要点',
               ...points,
               '',
               '## 怎么读这条 issue',
-              '- 独立栈 + 全新库 + 固定 seed = 标准考场：**确定性失败即为代码问题**，可直接重放；',
+              '- 两条腿各自一套栈 + 全新库 + 固定 seed = 标准考场：**确定性失败即为代码问题**，可直接按用例 ID 重放；',
               '- `avg_score` 低但 `completion.ok=true` 属已知 LLM 波动（flake 台账放行）——本 workflow 只在判定失败时开 issue；',
               '- 判定口径：确定性失败 0 条 + 关键旅程全过（#3483 §16.3 完成定义前置），不是"全量 100% 绿"。',
             ].join('\n')
