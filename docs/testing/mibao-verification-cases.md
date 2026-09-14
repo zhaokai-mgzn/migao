@@ -2893,15 +2893,14 @@
 
 ### PR-017. 商品创建/更新/详情透传「退货回补库存」开关（allow_return_restock） 🔵
 ```
-你: 把「遮光窗帘（100元的那件）」设置成退货后可以回补库存
-你: [🤖 选第一个选项]
-你: 确认
+你: 把遮光窗帘设置成退货后可以回补库存
+你: [🤖 按上一轮卡片作答]
 期望: product_update or product_manage(allow_return_restock=True)
 数据: 商品详情/列表返回 allowReturnRestock（默认 false，开启后为 true）
 数据: 售后工单 refund/return 完结时按商品开关决定是否回补 SKU 库存
 ```
 真值: product-sku-stock.aggregate, product-sku-stock.realtime, aftersales-flow.return-restock-switch
-溯源: issue #2991 新增：窗帘行业定制退货不可再售，商品级开关控制售后完结是否回补库存 ｜ tags: inventory, write, cross_skill
+溯源: issue #2991 新增：窗帘行业定制退货不可再售，商品级开关控制售后完结是否回补库存。2026-09-14 归一（issue #3568）：① 输入去「（100元的那件）」stale 价格点名（种子遮光窗帘 ¥168，实测 agent 合理澄清白耗一轮，同 #3538/#3518）；② 收尾 `auto_select: true` → `auto_respond` 答卡轮（无卡时 auto_select 会发对不上卡片的字面量「第一个」）；③ 补 pre_clean product_dedupe（只按关键词，不带 price 限定） ｜ tags: inventory, write, cross_skill
 
 ### PR-018. B端米宝 product_list 卡片引用对齐 — 只渲染回复文本中实际引用的商品 🔵
 ```

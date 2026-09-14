@@ -679,9 +679,23 @@ cases:
       - product-sku-stock.realtime
       - aftersales-flow.return-restock-switch
     user_inputs:
-      - "把「遮光窗帘（100元的那件）」设置成退货后可以回补库存"
-      - auto_select: true
-      - "确认"
+      # 2026-09-14 消除顺序依赖 / stale 点名归一（issue #3568，同 PR-010/PR-005 #3518 口径）：
+      # 原输入点名「遮光窗帘（**100元**的那件）」—— 评测栈种子（xiaobu_eval_seed.sql）的
+      # 遮光窗帘是 **¥168**（prod_eval_blackout），没有 100 元那件 → agent 合理地澄清
+      # 「只搜到一件遮光窗帘，价格是 168 元，不是 100 元」（run 34805827043 实测）
+      # → 白耗一轮且写工具可能到不了。去掉价格限定（点唯一商品名），用例意图不变。
+      - "把遮光窗帘设置成退货后可以回补库存"
+      # 收尾「答卡轮」（#3518 口径，同 PR-005/PR-016）：**裸文本「确认」不放行写操作**
+      # （文字 ≠ 点卡）→ 有卡答卡（confirm→回 confirmValue；choice→首项），无卡才发原文。
+      # 原 `auto_select: true` 在没有 choice 卡时会退化成发字面量「第一个」（对不上卡片）。
+      - auto_respond:
+          fallback: "确认"
+    pre_clean:
+      # 去重只按关键词（同 #3538/#3518）：原 `price` 限定在种子 ¥168 的栈上恒不匹配
+      # （`matched<=1` → 直接返回「无需去重」= **没去重**）；同名副本存在时 agent 会发
+      # 「哪一件」选择卡，写操作落到不确定的那一件上。
+      - type: product_dedupe
+        product_keyword: "遮光窗帘"
     expectations:
       - tool: product_update or product_manage
         args:
@@ -690,7 +704,7 @@ cases:
       - "商品详情/列表返回 allowReturnRestock（默认 false，开启后为 true）"
       - "售后工单 refund/return 完结时按商品开关决定是否回补 SKU 库存"
     skip_reason: ""
-    merge_log: "issue #2991 新增：窗帘行业定制退货不可再售，商品级开关控制售后完结是否回补库存"
+    merge_log: "issue #2991 新增：窗帘行业定制退货不可再售，商品级开关控制售后完结是否回补库存。2026-09-14 归一（issue #3568）：① 输入去「（100元的那件）」stale 价格点名（种子遮光窗帘 ¥168，实测 agent 合理澄清白耗一轮，同 #3538/#3518）；② 收尾 `auto_select: true` → `auto_respond` 答卡轮（无卡时 auto_select 会发对不上卡片的字面量「第一个」）；③ 补 pre_clean product_dedupe（只按关键词，不带 price 限定）"
     traces:
       tests:
         - "backend/admin-api/src/test/java/com/migao/admin/service/ProductServiceTest.java"
