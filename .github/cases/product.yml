@@ -818,7 +818,7 @@ cases:
     # ⚠️ 为什么**不**同时回填 db_verify[product_by_name]（§14.1 点名的另一半）：
     #   本用例建的商品名 `2699系列雪尼尔窗帘面料` 与评测**种子商品同名同价**
     #   （`tests/agent_eval/fixtures/mibao_eval_seed.sql` 的 `prod_eval_2699`，¥23.80），
-    #   而 `_fetch_product_configs`（`local_runner.py:1844-1855`）按 keyword 取**首条** → 区分不了
+    #   而 `_fetch_product_configs`（`local_runner.py:1905-1916`）按 keyword 取**首条** → 区分不了
     #   「本次新建的」与「种子」；种子恒在 ⇒ 该断言**不管本次 create 成没成功都会绿**（比不加更糟：
     #   看起来有覆盖）。PR-020 能加是因为它的商品名在库里唯一。**待补 runner 能力**：db_verify
     #   支持按「本次成功 create 返回的 product_id」回读（见 issue #3683）。

@@ -1601,17 +1601,18 @@ cases:
     #   · 改正后必须继续走完闭环（不得因一次校验失败就自我否定/要求顾客重头再来）。
     # ⚠️ 边界（2026-09-15 复核修正，issue #3683——**旧注释已过期，不许再照抄**）：
     #   旧注释写「runner 目前没有『某次工具调用必须失败（success=false）』的断言」——
-    #   该能力**已落地**：`must_fail`（`tests/agent_eval/local_runner.py:1518`；其 docstring 自引
+    #   该能力**已落地**：`must_fail`（`tests/agent_eval/local_runner.py:1567`；其 docstring 自引
     #   issue #3544「收口批」，随 PR #3644 的 runner 能力批进 main）。
     #   它的真实语义是「声明的工具（可限定 action）**全程一次都不得成功**；**从未调用 → 通过**」
-    #   （全程判定，无轮次/参数作用域）。
+    #   （全程判定；声明 `action` 时只做到**同轮对齐**（`_round_action_result`，issue #3681），
+    #   仍无轮次 / 参数**值**作用域）。
     #   但本用例的**拒绝半**仍无法用它表达（三种写法都不成立，逐一验过）：
     #     · `must_fail: [{tool: order_create}]` —— 与本例 `must_succeed: order_create` 直接矛盾
     #       （改正号码后必须成功建单）；
     #     · `must_fail: [{tool: validate_input}]` —— 同样矛盾（改正后闸门**必须**放行，
     #       required_args 还要求它带齐 params 被真正调用）；
     #     · `must_fail: [{tool: order_create, action: create}]` —— order_create **没有 action 参数**
-    #       → `local_runner.py:1552`（`if action and not called: continue`）直接整条跳过 = **静默空转**
+    #       → `local_runner.py:1600-1605`（`if not called: continue`）直接整条跳过 = **静默空转**
     #       （比不加更糟：看起来有覆盖，实际零判定）。
     #   本用例要的不变式是**参数值作用域**的：「任何一次以非法号码（05718886666）为
     #   customer_phone 的 order_create 都不得成功」——`must_fail` 只支持 工具×action 粒度，
@@ -1620,7 +1621,7 @@ cases:
     #     让 `must_fail` 条目支持 `args` 值级匹配（如 `{tool: order_create, args: {customer_phone: "05718886666"}}`
     #     ——语义 =「凡匹配该 args 的调用都不得成功」），或补轮次作用域。
     #   ⇒ 在那之前，本用例证明的仍是它的**产出侧后果**（同样机器可判、且 fail-closed）：
-    #     `db_verify[order_phone]` 取**首个成功的 order_create** 的落库号码（`local_runner.py:3113`），
+    #     `db_verify[order_phone]` 取**首个成功的 order_create** 的落库号码（`local_runner.py:3180`），
     #     非法号落单 → 首个成功订单号码对不上 → 红。**不得**为「让拒绝半看起来被测了」
     #     而塞入上面三种矛盾/空转写法之一。
     user_inputs:
