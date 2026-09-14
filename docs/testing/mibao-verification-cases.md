@@ -2608,7 +2608,7 @@
 ```
 你: 查询打孔加工的计价方式
 你: 新增加工项，计价方式选按个
-你: 名称叫测试加工，分类选窗帘加工
+你: 名称叫测试加工，分类选窗帘加工（分类 ID：pcat_eval_curtain）
 你: 计价方式按米，单价 8 元
 你: 确认
 期望: processing_item_query(keyword=打孔)
@@ -2620,7 +2620,7 @@
 产出: processing_item_manage(create_processing_item) → name==测试加工; pricingMethod==per_meter
 ```
 真值: processing-manage.crud, product-sku-stock.create-flow
-溯源: 2026-09-07 改写（issue #3005，回滚 #2986）：行业加工费按米计价、辅料（罗马圈/四爪钩等）含在按米加工费中——per_piece 与「每米数量」密度不符合实际（数量对不上车间工艺、B 端无法对账），已回滚移除；PP-006 由密度配置用例改为计价方式回归断言。2026-09-14 校准（#3544，REPORT §2.3）：① 假绿升级——补 must_succeed（canonical 写成功断言，fail-closed）+ output_verify（name/pricingMethod 产出核对），此前只断言「调用过」，工具三次真执行全失败仍判 ✅（真缺口见 #3543）；② 输入「分类选打孔加工」改为种子里真实存在的「分类选窗帘加工」（原写法是加工项名/分类名混淆，agent 只能如实说没有该分类，白耗一轮）。2026-09-14 收口（#3544，run 34809483940 实测）：`output_verify` 补 `action: create_processing_item` —— 原实现按**工具名**取首个成功 payload，而本工具是多 action（R2 的 list_categories 也成功）→ 核对到 `{'categories': [...]}` 造成**假红**（R5 建成功的 payload 从未被核对）；同时给 runner 加 action 过滤 + L0 不变式「多 action 工具的 output_verify 必须声明 action」 ｜ tags: processing_item, pricing
+溯源: 2026-09-07 改写（issue #3005，回滚 #2986）：行业加工费按米计价、辅料（罗马圈/四爪钩等）含在按米加工费中——per_piece 与「每米数量」密度不符合实际（数量对不上车间工艺、B 端无法对账），已回滚移除；PP-006 由密度配置用例改为计价方式回归断言。2026-09-14 校准（#3544，REPORT §2.3）：① 假绿升级——补 must_succeed（canonical 写成功断言，fail-closed）+ output_verify（name/pricingMethod 产出核对），此前只断言「调用过」，工具三次真执行全失败仍判 ✅（真缺口见 #3543）；② 输入「分类选打孔加工」改为种子里真实存在的「分类选窗帘加工」（原写法是加工项名/分类名混淆，agent 只能如实说没有该分类，白耗一轮）。2026-09-14 收口（#3544，run 34809483940 实测）：`output_verify` 补 `action: create_processing_item` —— 原实现按**工具名**取首个成功 payload，而本工具是多 action（R2 的 list_categories 也成功）→ 核对到 `{'categories': [...]}` 造成**假红**（R5 建成功的 payload 从未被核对）；同时给 runner 加 action 过滤 + L0 不变式「多 action 工具的 output_verify 必须声明 action」。2026-09-14 再校准（#3658，run 34820346966 首次真重放）：实测 agent 首轮把分类名当 category_id 传（create 被拒「加工分类不存在」）后**同轮** list_categories 恢复重试成功（must_succeed 过），但 action 过滤按「该轮含 create 调用」取**首个成功 payload** → 又取到同轮 list_categories 的 `{'categories': [...]}` → 假红。runner 侧修复属禁改区，改为输入直接给分类 ID（pcat_eval_curtain，种子里确定存在），create 首轮成功、不再触发恢复轮（见 user_inputs 注释；计价方式枚举仍是本用例唯一行为面）。 ｜ tags: processing_item, pricing
 
 ### PP-007. 米宝加工项 LLM 行为：只改单价不清空其它字段（部分更新语义） 🔵
 ```
@@ -2759,7 +2759,7 @@
 ### PG-013. 米宝加工单 LLM 行为：查询含加工项订单 → 生成加工单（真实对话） 🔵
 ```
 你: 最近有没有已确认、需要加工的订单？
-你: 帮我把这一个生成加工单
+你: 帮我把订单 EVAL-MB-ORD-0002 生成加工单
 你: 确认
 期望: order_query
 期望: processing_order_generate
@@ -2791,9 +2791,9 @@
 
 ### PG-015. 米宝加工单 LLM 行为：查询加工单（生成 → 按订单号回查状态） 🔵
 ```
-你: 把订单 EVAL-MB-ORD-0002 生成加工单
+你: 把订单 EVAL-MB-ORD-0003 生成加工单
 你: [🔁 按目标工具重复直至成功：processing_order_generate，最多 3 次]
-你: 订单 EVAL-MB-ORD-0002 的加工单现在什么状态？
+你: 订单 EVAL-MB-ORD-0003 的加工单现在什么状态？
 你: [🔁 按目标工具重复直至成功：processing_order_query，最多 3 次]
 期望: processing_order_generate
 期望: processing_order_query
@@ -2807,12 +2807,16 @@
 必须成功: processing_order_generate
 必须成功: processing_order_query
 ```
-溯源: 2026-09-14 新增（issue #3568 / #3592）：processing_order_query 此前**零用例覆盖**（scripts/mibao_coverage.py --check 在 pristine main 上 exit 2 报出的结构性缺失）。形态 =「先对种子订单生成加工单 → 按订单号回查」（干净栈无加工单 seed，直接「查一下」会假绿）。断言机器可判：must_succeed ×2 + required_args[keyword] + forbidden_text。 ｜ tags: processing_order, llm_behavior, tool_call, query
+溯源: 2026-09-14 新增（issue #3568 / #3592）：processing_order_query 此前**零用例覆盖**（scripts/mibao_coverage.py --check 在 pristine main 上 exit 2 报出的结构性缺失）。形态 =「先对种子订单生成加工单 → 按订单号回查」（干净栈无加工单 seed，直接「查一下」会假绿）。断言机器可判：must_succeed ×2 + required_args[keyword] + forbidden_text。2026-09-14 首次真重放（run 34820346966，issue #3658）：✅ **通过（score=100%）—— PG-015 的第一次真实执行证据**。目标订单由 0002 改为 0003（独立订单竞态修复，见 user_inputs 注释）。 ｜ tags: processing_order, llm_behavior, tool_call, query
 
 ### PG-016. 米宝加工单 LLM 行为：更新加工单状态（完成加工，产出核到 completed） 🔵
 ```
-你: 把订单 EVAL-MB-ORD-0002 生成加工单
+你: 把订单 EVAL-MB-ORD-0004 生成加工单
 你: [🔁 按目标工具重复直至成功：processing_order_generate，最多 3 次]
+你: 这笔加工单发加工，交期下周三
+你: [🔁 按目标工具重复直至成功：processing_order_update，最多 3 次]
+你: 开始加工
+你: [🔁 按目标工具重复直至成功：processing_order_update，最多 3 次]
 你: 这笔加工单加工完成了，标记完成
 你: [🔁 按目标工具重复直至成功：processing_order_update，最多 4 次]
 期望: processing_order_update(action=complete)
@@ -2827,7 +2831,8 @@
 必须成功: processing_order_update(complete)
 产出: processing_order_update(complete) → action==complete; result.status==completed
 ```
-溯源: 2026-09-14 新增（issue #3568 / #3592）：processing_order_update 此前**零用例覆盖**（同 PG-015 的结构性缺失）。断言机器可判：expectations(action=complete) + must_succeed(action=complete) + required_args[id] + output_verify（**显式声明 action**，防多 action 工具核到别的 payload 造成假绿）。真 LLM 重放待跑（见 PR #3589 的诚实标注）。 ｜ tags: processing_order, llm_behavior, tool_call, update
+真值: ⚠️ 缺口（见对应模板 ⚠️ 注释）
+溯源: 2026-09-14 新增（issue #3568 / #3592）：processing_order_update 此前**零用例覆盖**（同 PG-015 的结构性缺失）。断言机器可判：expectations(action=complete) + must_succeed(action=complete) + required_args[id] + output_verify（**显式声明 action**，防多 action 工具核到别的 payload 造成假绿）。2026-09-14 首次真重放（run 34820346966，issue #3658）：❌ 失败 → 归因**用例资产缺陷**（非 agent 能力缺口）：① 与 PG-013/015 抢同一种子订单 EVAL-MB-ORD-0002（并发生成只有一方成功，实测生成被拒「订单已生产中」后 agent 转向 issue 流，complete 期望永不满足）；② 输入跳步（生成后直接「标记完成」违反状态机 generated→completed 非法迁移，PG-006 铁律）。修复：独立订单 0004 + 完整状态机走位（见 user_inputs 注释）。 ｜ tags: processing_order, llm_behavior, tool_call, update
 
 ## 商品域（22 case）
 
