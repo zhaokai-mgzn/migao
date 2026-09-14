@@ -149,7 +149,9 @@ jobs:
 
           sys.path.insert(0, ".github")
           sys.path.insert(0, "tests/agent_eval")
-          from behavior_mapping import MAPPING_RULES, map_changed_files_with_source
+          from behavior_mapping import (
+              BEHAVIOR_SOURCE_PREFIXES, MAPPING_RULES, map_changed_files_with_source,
+          )
           from render_cases import load_case_dicts
           from eval_case_filter import case_skip_reason, select_cases_for_persona
 
@@ -159,22 +161,24 @@ jobs:
           ids, source = map_changed_files_with_source(paths)
           # ★ 门禁强度由**来源**决定（见 behavior_mapping.map_changed_files_with_source）：
           #   规则命中 = 与本 PR 改动有因果 → **强信号**，失败**高可见**但**不拦合并**
-          #     （2026-09-14 用户裁定：降为「报告 + PR 评论 + 自动开 issue」，见 §3.2 决策记录）；
+          #     （2026-09-14 用户裁定：降为「报告 + PR 评论 + 自动开 issue」，见 §3.3 决策记录）；
           #   兜底网（映射表没覆盖到时的网）= 与本 PR 改动**无因果** → 只报告（照旧，不建 issue）。
-          #   2026-09-14 dogfooding 首跑实证：只改评测基建（tests/agent_eval/）被兜底网里的
-          #   CH-010（小布下单）判红 —— 无因果阻塞。两者都照跑，区别只在"是否升级为 issue"。
+          #   历史实证（为何要降级）：新建 `tests/..._guard.py`（文件名含 guard）曾让改 finance
+          #   工具的 PR 被判"命中防御规则"→ DF-011/DF-012 以阻塞强度跑 = **假阻塞红**。
+          #   规则作用域已由 #3551 收窄到 BEHAVIOR_SOURCE_PREFIXES（agent 本体源码），
+          #   本 workflow 同步用同一常量算「命中明细」，两处口径不会漂移。
           mode = "blocking" if source == "rules" else "report-only"
 
           # ★ 「哪个文件命中了哪条规则 → 该跑哪些用例」（issue #3563 要求写进 PR 评论/issue）：
-          #   用 behavior_mapping 已公开的 MAPPING_RULES 现算，**不修改该模块**（P4 包独占）。
-          #   规则命中时才输出（兜底网没有"命中"可言）。
+          #   用 behavior_mapping 已公开的 MAPPING_RULES + BEHAVIOR_SOURCE_PREFIXES 现算，
+          #   **不修改该模块**（P4 包独占）。
           rule_hits = []
           if source == "rules":
               import re as _re
+              rule_scope = [p for p in paths if p.startswith(BEHAVIOR_SOURCE_PREFIXES)]
               for pat, case_ids in MAPPING_RULES:
                   rx = _re.compile(pat)
-                  matched = [p for p in paths
-                             if rx.search(p) and "ai-agent-service/app/" in p.replace("\\", "/")]
+                  matched = [p for p in rule_scope if rx.search(p)]
                   if matched:
                       rule_hits.append(f"{pat} → {','.join(case_ids)}（命中文件：{', '.join(matched)}）")
 
