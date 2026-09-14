@@ -3781,6 +3781,45 @@ _CASE_PG_014 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── PG-015 [NORMAL] 加工单查询 - 正向进度查询（读能力，米宝 LLM 行为）（源: cases/processing-order.yml）──
+_CASE_PG_015 = EvalCase(
+    id='PG-015',
+    legacy_id='',
+    title='加工单查询 - 正向进度查询（读能力，米宝 LLM 行为）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['最近生成的加工单到哪了？'],
+    expectations=['processing_order_query'],
+    data_checks=['success=true（无数据时返回空列表也是成功：processing_order_query 是只读查询，keyword/status 均可选）', '返回行含加工单号/订单号/状态中文映射（generated→已生成、issued→已发加工、in_processing→加工中、completed→加工完成、cancelled→已取消）——映射由后端单测锁定，此处只断言工具被调用且成功'],
+    skip_reason='',
+    tags=['processing-order', 'query', 'read', 'llm_behavior'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── PG-016 [NORMAL] 加工单状态更新 - 发加工（正向写能力 + 确认卡，米宝 LLM 行为）（源: cases/processing-order.yml）──
+_CASE_PG_016 = EvalCase(
+    id='PG-016',
+    legacy_id='',
+    title='加工单状态更新 - 发加工（正向写能力 + 确认卡，米宝 LLM 行为）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['查一下最近的加工单', '把第一个发加工', {'auto_respond': {'fallback': '确认'}}],
+    expectations=['processing_order_query', 'processing_order_update(action=issue)'],
+    data_checks=['success=true', '前置：目标环境至少存在一个 status=generated 的加工单（否则查询为空、无法发加工）——CI smoke 档不纳入，normal 档需保证前置数据', 'processing_order_update 是 destructive 写工具：发加工前必须过确认卡（LLM 弹 confirm 卡片，用户确认后才执行）'],
+    skip_reason='',
+    tags=['processing-order', 'update', 'write', 'confirm', 'llm_behavior'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    order_before=['processing_order_query before processing_order_update'],
+    forbidden_text=['暂不支持', '没有这个功能'],
+    required_args=[{'tool': 'processing_order_update', 'fields': ['id', 'action']}],
+)
+
 # ── PP-001 [NORMAL] 加工项选择 - 分页翻页（源: cases/processing.yml）──
 _CASE_PP_001 = EvalCase(
     id='PP-001',
@@ -5459,6 +5498,8 @@ ALL_CASES = (
     _CASE_PG_012,
     _CASE_PG_013,
     _CASE_PG_014,
+    _CASE_PG_015,
+    _CASE_PG_016,
     _CASE_PP_001,
     _CASE_PP_002,
     _CASE_PP_003,

@@ -382,3 +382,77 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+
+  - id: PG-015
+    legacy_id: ""
+    title: "加工单查询 - 正向进度查询（读能力，米宝 LLM 行为）"
+    domains:
+      - processing-order
+    tier: normal
+    tags:
+      - processing-order
+      - query
+      - read
+      - llm_behavior
+    truths_ref: []
+    user_inputs:
+      - "最近生成的加工单到哪了？"
+    expectations:
+      - tool: processing_order_query
+    data_checks:
+      - "success=true（无数据时返回空列表也是成功：processing_order_query 是只读查询，keyword/status 均可选）"
+      - "返回行含加工单号/订单号/状态中文映射（generated→已生成、issued→已发加工、in_processing→加工中、completed→加工完成、cancelled→已取消）——映射由后端单测锁定，此处只断言工具被调用且成功"
+    skip_reason: ""
+    merge_log: "2026-09-14 新增（issue #3626 配套销账）：processing_order_query 此前零用例覆盖（issue #3555 首检点名）——补正向读用例；本文件头部旧注「工具落地时补充 LLM 行为用例」兑现"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_tools_processing_order_query.py"
+      ci:
+        - agent-eval.yml
+      verifies: []
+
+  - id: PG-016
+    legacy_id: ""
+    title: "加工单状态更新 - 发加工（正向写能力 + 确认卡，米宝 LLM 行为）"
+    domains:
+      - processing-order
+    tier: normal
+    tags:
+      - processing-order
+      - update
+      - write
+      - confirm
+      - llm_behavior
+    truths_ref: []
+    user_inputs:
+      - "查一下最近的加工单"
+      - "把第一个发加工"
+      - auto_respond:
+          fallback: "确认"
+    expectations:
+      - tool: processing_order_query
+      - tool: processing_order_update
+        args:
+          action: issue
+    required_args:
+      - tool: processing_order_update
+        fields:
+          - id
+          - action
+    order_before:
+      - "processing_order_query before processing_order_update"
+    forbidden_text:
+      - "暂不支持"
+      - "没有这个功能"
+    data_checks:
+      - "success=true"
+      - "前置：目标环境至少存在一个 status=generated 的加工单（否则查询为空、无法发加工）——CI smoke 档不纳入，normal 档需保证前置数据"
+      - "processing_order_update 是 destructive 写工具：发加工前必须过确认卡（LLM 弹 confirm 卡片，用户确认后才执行）"
+    skip_reason: ""
+    merge_log: "2026-09-14 新增（issue #3626 配套销账）：processing_order_update 此前零用例覆盖（issue #3555 首检点名）——补正向写用例（action=issue 为最小副作用路径，cancel 才联动订单回退）；确认轮用 auto_respond 答卡（#3518 教训：裸文本「确认」会被确认卡挡回）"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_tools_processing_order_update.py"
+      ci:
+        - agent-eval.yml
+      verifies: []

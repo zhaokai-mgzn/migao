@@ -2622,7 +2622,7 @@
 真值: processing-manage.crud, product-sku-stock.create-flow
 溯源: 2026-09-07 改写（issue #3005，回滚 #2986）：行业加工费按米计价、辅料（罗马圈/四爪钩等）含在按米加工费中——per_piece 与「每米数量」密度不符合实际（数量对不上车间工艺、B 端无法对账），已回滚移除；PP-006 由密度配置用例改为计价方式回归断言。2026-09-14 校准（#3544，REPORT §2.3）：① 假绿升级——补 must_succeed（canonical 写成功断言，fail-closed）+ output_verify（name/pricingMethod 产出核对），此前只断言「调用过」，工具三次真执行全失败仍判 ✅（真缺口见 #3543）；② 输入「分类选打孔加工」改为种子里真实存在的「分类选窗帘加工」（原写法是加工项名/分类名混淆，agent 只能如实说没有该分类，白耗一轮）。2026-09-14 收口（#3544，run 34809483940 实测）：`output_verify` 补 `action: create_processing_item` —— 原实现按**工具名**取首个成功 payload，而本工具是多 action（R2 的 list_categories 也成功）→ 核对到 `{'categories': [...]}` 造成**假红**（R5 建成功的 payload 从未被核对）；同时给 runner 加 action 过滤 + L0 不变式「多 action 工具的 output_verify 必须声明 action」 ｜ tags: processing_item, pricing
 
-## processing-order（14 case）
+## processing-order（16 case）
 
 ### PG-001. 生成加工单 - 已确认含加工项订单 → 加工单生成 + 订单进入 producing 🔵
 ```
@@ -2750,6 +2750,32 @@
 跳过: 由 OrderItemImmutabilityTest（反射 tripwire，无 Spring 上下文）验证
 ```
 溯源: 2026-09-12 新增（#3352 决策 C）：加工项创建后不可改 → 加工单快照不会与订单漂移 ｜ tags: processing-order, invariant, decision
+
+### PG-015. 加工单查询 - 正向进度查询（读能力，米宝 LLM 行为） 🔵
+```
+你: 最近生成的加工单到哪了？
+期望: processing_order_query
+数据: success=true（无数据时返回空列表也是成功：processing_order_query 是只读查询，keyword/status 均可选）
+数据: 返回行含加工单号/订单号/状态中文映射（generated→已生成、issued→已发加工、in_processing→加工中、completed→加工完成、cancelled→已取消）——映射由后端单测锁定，此处只断言工具被调用且成功
+```
+溯源: 2026-09-14 新增（issue #3626 配套销账）：processing_order_query 此前零用例覆盖（issue #3555 首检点名）——补正向读用例；本文件头部旧注「工具落地时补充 LLM 行为用例」兑现 ｜ tags: processing-order, query, read, llm_behavior
+
+### PG-016. 加工单状态更新 - 发加工（正向写能力 + 确认卡，米宝 LLM 行为） 🔵
+```
+你: 查一下最近的加工单
+你: 把第一个发加工
+你: [🤖 按上一轮卡片作答]
+期望: processing_order_query
+期望: processing_order_update(action=issue)
+数据: success=true
+数据: 前置：目标环境至少存在一个 status=generated 的加工单（否则查询为空、无法发加工）——CI smoke 档不纳入，normal 档需保证前置数据
+数据: processing_order_update 是 destructive 写工具：发加工前必须过确认卡（LLM 弹 confirm 卡片，用户确认后才执行）
+时序: processing_order_query before processing_order_update
+禁词: 暂不支持
+禁词: 没有这个功能
+必填: processing_order_update() 字段 id, action
+```
+溯源: 2026-09-14 新增（issue #3626 配套销账）：processing_order_update 此前零用例覆盖（issue #3555 首检点名）——补正向写用例（action=issue 为最小副作用路径，cancel 才联动订单回退）；确认轮用 auto_respond 答卡（#3518 教训：裸文本「确认」会被确认卡挡回） ｜ tags: processing-order, update, write, confirm, llm_behavior
 
 ## 商品域（22 case）
 
@@ -3732,8 +3758,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：282（活跃 141，跳过 141）
-- tier 分布：smoke 9 / normal 240 / adversarial 33
+- 用例总数：284（活跃 143，跳过 141）
+- tier 分布：smoke 9 / normal 242 / adversarial 33
 - 售后域：9
 - agents：6
 - api：19
@@ -3752,7 +3778,7 @@
 - ontology：4
 - 订单域：26
 - 加工项域：6
-- processing-order：14
+- processing-order：16
 - 商品域：22
 - registry：1
 - 设置域：8
@@ -3801,4 +3827,6 @@
 - PG-012: 加工单 intent 路由契约 - processing_order_* 路由 order skill（仅米宝可达）
 - PG-013: 米宝加工单 LLM 行为：查询含加工项订单 → 生成加工单（真实对话）
 - PG-014: 订单加工项不可变（源头约束，决策 C）：创建后无任何修改通道
+- PG-015: 加工单查询 - 正向进度查询（读能力，米宝 LLM 行为）
+- PG-016: 加工单状态更新 - 发加工（正向写能力 + 确认卡，米宝 LLM 行为）
 

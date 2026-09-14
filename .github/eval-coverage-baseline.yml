@@ -23,7 +23,7 @@
 #     "补了用例的那个包"（它不知道本清单存在）把 main 变红 —— 用工作清单给别人下绊子。
 #
 # ⚠️ 这是**工作清单**，不是免死金牌：补完用例 → 删条目 → job 保持绿。
-#    清单应**单调缩短**；entries 变长需要 review 说明（当前 3 条阻塞 + 4 条薄覆盖，全部有归属）。
+#    清单应**单调缩短**；entries 变长需要 review 说明（当前 1 条阻塞 + 4 条薄覆盖，全部有归属）。
 
 version: 2
 # ⚠️ 本文件由 `yaml_light`（仓库零依赖解析器）读取 —— 只能用**单行标量**：
@@ -33,20 +33,6 @@ note: "存量缺口 burn-down 清单（#3575 引入）。只豁免已登记项�
 
 entries:
   # ── 结构性缺失（阻塞项，靠本清单才保持绿）──────────────────────────────
-  - tool: processing_order_query
-    kind: uncovered
-    persona: mibao
-    issue: "#3589"
-    reason: 加工单查询零用例（processing-order.yml 属 #3589 包，避免与在飞改动冲突）
-    added: "2026-09-14"
-
-  - tool: processing_order_update
-    kind: uncovered
-    persona: mibao
-    issue: "#3589"
-    reason: 加工单状态更新零用例（写操作，需 confirm 卡先行 + must_succeed；属 #3589 包）
-    added: "2026-09-14"
-
   - tool: order_manage
     kind: missing_positive
     persona: mibao
