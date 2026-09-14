@@ -134,4 +134,5 @@ pytest -q --durations=20    # 单用例 >2s 即可疑
 - 验证流水线：`.github/workflows/case-draft / redraft / verify-trigger`（case-draft / redraft / verify-trigger）
 - 研发流程：TDD → PR → CI Gate → 双验收 → AutoMerge → Close
 - 行为用例单一源（case-contract）：`.github/cases/*.yml` — issue 的 CONTRACT_JSON 声明 `cases: ["OR-002"]`；TDD Red 阶段先跑引用的用例确认 FAIL；新增/修改测试文件头部声明 `# case_ids:`（G5 门禁）
+- **评测分档纪律与完成定义（#3483）**：分层探测（L0 静态不变式 → L1 契约 → L2 迭代档 → L3 验证档 → L4 结论档）；全量复测只在里程碑/结论档跑；完成判定 = `completion_verdict`（确定性失败=0 + 关键旅程 KEY_JOURNEYS_* 全过 + 波动台账放行）。详见技能 `migao-dev-flow` §16 + [acceptance-protocol](../testing/acceptance-protocol.md) §1.6/§1.7
 - 详情见 issue #450 v3.1 + [Testing](Testing.md)
