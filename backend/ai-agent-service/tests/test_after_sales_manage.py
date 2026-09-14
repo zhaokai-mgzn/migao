@@ -237,7 +237,9 @@ class TestAfterSalesUpdateStatus:
         assert result.success is True
         assert result.data == {"ticket_id": "t1", "status": "resolved"}
         assert mock_client.put.call_args[0][0] == "/api/admin/after-sales/t1/status"
-        assert mock_client.put.call_args[1]["json_data"] == {"status": "resolved", "reason": "已处理"}
+        # 下发字段必须用 admin-api DTO 的 canonical 名 remark（Java 侧 remark → closeReason）；
+        # 发 reason 会被静默丢弃（issue #3540 / AS-004），契约哨兵见 test_tool_field_name_contract.py
+        assert mock_client.put.call_args[1]["json_data"] == {"status": "resolved", "remark": "已处理"}
         # 状态更新回执必须用中文业务术语，禁止输出英文枚举
         assert "已解决" in result.message
         assert "resolved" not in result.message
