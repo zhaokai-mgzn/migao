@@ -3627,62 +3627,52 @@ async def execute_skill(
                             )
                         except Exception as _e2:
                             logger.warning(f"[{skill_name}] card-confirm 诊断失败: {_e2}")
-                        # 话术必须与**本 Skill 的实际能力**匹配（issue #3317）：
-                        # 未绑定 interact 的 Skill（B 端 staff/settings/data）若被告知
-                        # "请调用 interact（component=confirm）"，那是一条**不可执行指令** ——
-                        # 模型拿到"请调用 X"却没有 X，会反复重试或直接放弃。
-                        # （不给这些 Skill 补 interact 的理由见 issue #3317：
-                        #   用例库里涉及这 6 个工具的 16 条用例无一条断言 interact，
-                        #   含 smoke 的 HR-001/HR-004 靠口头确认长期通过 —— 补工具是
-                        #   改变 B 端交互形态，收益不明而回归面大。）
-                        if skill_registry.get_tool("interact") is not None:
-                            # 可执行下一步（issue #3445）：CI 实测 `confirmation_required_no_card ×3`
-                            # —— 模型**从没发过确认卡**就直接写单，被拦回后仍反复重试同一个写调用、
-                            # 把轮数烧完（R10 时订单仍未落库）。故话术给出**唯一可执行的下一步**：
-                            #   ① 明确"再调写工具没用"（防重试）；② 指明必须调 interact(confirm)；
-                            #   ③ 回填**已校验参数**（pending_validated_input）与
-                            #      **本次被拦调用的字段骨架**（它自己传过的值），让它照抄即可发卡。
-                            _pending_hint = ""
-                            try:
-                                from app.graph.pending_validated import PENDING_KEY as _PK
-                                from app.graph.pending_validated import is_pending_for as _is_pending
-                                from app.memory.session_state_store import SessionStateStore as _S4
-                                _f4 = await _S4().load(session_id) or {}
-                                _pend4 = _f4.get(_PK) or {}
-                                if _is_pending(_pend4, tool_name) and _pend4.get("params"):
-                                    _pending_hint = (
-                                        " 已校验的参数（**原样**用作卡片 fields，不要改写）："
-                                        + json.dumps(_pend4["params"], ensure_ascii=False,
-                                                     default=str)[:400])
-                            except Exception as _e4:
-                                logger.warning(f"[{skill_name}] pending 参数回填失败（非致命）: {_e4}")
-                            msg = (
-                                f"工具 {tool_name} 是写操作（可能不可逆或产生数据变更），必须先向用户展示"
-                                f"确认卡片并取得明确确认。**不要再次调用 {tool_name}** —— 在顾客点击"
-                                f"确认卡之前它会被同样拦下、白烧一轮。本轮唯一的下一步是：调用 "
-                                f"interact(component=confirm, fields=[…]) "
-                                f"把将要执行的内容展示给顾客，等顾客**点击确认卡**之后再调用 {tool_name}。"
-                                + _confirm_card_fields_hint(args)
-                                + _pending_hint
-                            )
-                        else:
-                            # ⚠️ **本分支当前仍然可达**（issue #3571 复核，2026-09-14）—— 不要
-                            # 当成死代码删掉：`staff`/`settings`/`data` 三个 skill 至今**未绑定
-                            # `interact`**，而它们都有需确认写工具（employee_manage/role_manage、
-                            # settings_manage/notification_manage、session_manage…）
-                            # → 确认门禁会真的落到这一支。既有测试
-                            # `TestConfirmationGateInteractBranch::test_gate_message_does_not_demand_unavailable_tool`
-                            # （skill="staff"、registry 无 interact）就是这一支的活证据。
-                            # 删除前提：**所有能触发门禁的 skill 都绑定 interact** —— 即"统一确认
-                            # 门禁交互形态"那次改动（staff/settings/data 补绑 interact）合入之后。
-                            # 判定命令（任一 gate-reachable skill 缺 interact 就说明仍可达）：
-                            #   grep -L '"interact"' app/graph/skills/*_skill.py
-                            # 若确认全绑定 → 可整段删除本 else 分支（消除"交互形态不一致"残留）。
-                            msg = (
-                                f"工具 {tool_name} 是写操作（可能不可逆或产生数据变更），必须先取得用户明确"
-                                f"确认。本技能没有确认卡片能力：请用文本**完整复述将要执行的操作与影响**"
-                                f"（对象、字段、后果），并请用户回复确认；用户回复确认后再调用本工具。"
-                            )
+                        # ── 确认话术**唯一形态 = 确认卡**（交互形态统一，产品裁定 2026-09-14）──
+                        # 历史（issue #3317）：这里曾按「本 Skill 是否绑 `interact`」分流 ——
+                        # 没绑的（B 端 staff/settings/data）退化成"用文本完整复述并请用户口头确认"。
+                        # 该处置**已被产品裁定推翻**（「写操作应该安全、交互形态要统一」），
+                        # 处置改为**配置层统一**：staff/settings/data 补绑 `interact`
+                        # （#3577 / PR #3590，squash 851e63ce），并由
+                        # `tests/test_skill_config_registry.py` 的三条不变式机械守护
+                        #   · `test_confirmed_write_tools_require_interact_in_same_skill`
+                        #     （绑需确认写工具 → 必须绑 interact）
+                        #   · `test_prompt_promising_confirm_card_requires_interact`
+                        #   · interact 缺席台账（缺席必须写明只读理由）
+                        # ⇒ **"无 interact" 的降级分支对全部已注册 Skill 已不可达**，故整段删除
+                        #   （唯一还能触发门禁却不绑 interact 的 skill 不存在：只剩
+                        #    knowledge/customer_knowledge 未绑，它们只有只读工具 → 门禁不会触发）。
+                        # ⚠️ 不要重新引入按 skill 能力分流的话术分支：那会让"交互形态"再次不统一，
+                        #   且新增 skill 会静默落进降级态 —— 正确做法是补绑 `interact`（配置层）。
+                        #
+                        # 可执行下一步（issue #3445）：CI 实测 `confirmation_required_no_card ×3`
+                        # —— 模型**从没发过确认卡**就直接写单，被拦回后仍反复重试同一个写调用、
+                        # 把轮数烧完（R10 时订单仍未落库）。故话术给出**唯一可执行的下一步**：
+                        #   ① 明确"再调写工具没用"（防重试）；② 指明必须调 interact(confirm)；
+                        #   ③ 回填**已校验参数**（pending_validated_input）与
+                        #      **本次被拦调用的字段骨架**（它自己传过的值），让它照抄即可发卡。
+                        _pending_hint = ""
+                        try:
+                            from app.graph.pending_validated import PENDING_KEY as _PK
+                            from app.graph.pending_validated import is_pending_for as _is_pending
+                            from app.memory.session_state_store import SessionStateStore as _S4
+                            _f4 = await _S4().load(session_id) or {}
+                            _pend4 = _f4.get(_PK) or {}
+                            if _is_pending(_pend4, tool_name) and _pend4.get("params"):
+                                _pending_hint = (
+                                    " 已校验的参数（**原样**用作卡片 fields，不要改写）："
+                                    + json.dumps(_pend4["params"], ensure_ascii=False,
+                                                 default=str)[:400])
+                        except Exception as _e4:
+                            logger.warning(f"[{skill_name}] pending 参数回填失败（非致命）: {_e4}")
+                        msg = (
+                            f"工具 {tool_name} 是写操作（可能不可逆或产生数据变更），必须先向用户展示"
+                            f"确认卡片并取得明确确认。**不要再次调用 {tool_name}** —— 在顾客点击"
+                            f"确认卡之前它会被同样拦下、白烧一轮。本轮唯一的下一步是：调用 "
+                            f"interact(component=confirm, fields=[…]) "
+                            f"把将要执行的内容展示给顾客，等顾客**点击确认卡**之后再调用 {tool_name}。"
+                            + _confirm_card_fields_hint(args)
+                            + _pending_hint
+                        )
                         # 归因细分（issue #3445）：保留 `confirmation_required` 前缀
                         # （既有断言按子串匹配），后缀说明**是哪一种**：
                         #   · _no_card          → 本会话从没发过确认卡（模型跳过确认直接写）
