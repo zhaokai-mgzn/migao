@@ -75,10 +75,10 @@ MAPPING_RULES = [
     # `app/tools/processing_item_manage.py` / `processing_item_query.py` 一并吞进商品域
     # → 改加工项写路径推出的却是 PR-019/PR-020（断言 `product_manage(action=create)`，
     # 与目录 CRUD 无因果），而加工项目录自己的 PP-* 用例一条没跑（#3591 收口实测）。
-    # 现在只锚「商品侧」加工项载体：product_processing_item_manage（商品挂载/摘除加工项）
-    # 与 processing_items.py（查某商品关联加工项及自定义价），二者都属建品价格面。
-    (r"product_skill|product_manage|product_processing_item_manage"
-     r"|app/tools/processing_items\.py",
+    # 现在只锚「商品侧」加工项载体：product_processing_item_manage（商品挂载/摘除加工项）。
+    # （另一载体 `app/tools/processing_items.py` 已在 #3588 随 schema 对齐清理删除，
+    #   规则不再保留指向已删文件的死锚点。）
+    (r"product_skill|product_manage|product_processing_item_manage",
      ["PR-019", "PR-020"]),
     # 交互卡渲染 / 前端 → CH-010、CH-019
     (r"interact\.py|interactive|card", ["CH-010", "CH-019"]),
