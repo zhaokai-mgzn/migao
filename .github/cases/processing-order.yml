@@ -337,20 +337,51 @@ cases:
       - tool: processing_order_generate
         fields:
           - "order_ids"
+    # pre_clean（issue #3833，#3800 同族的**新实例**）：本用例是写类用例 —— 首跑把
+    # `EVAL-MB-ORD-0002` 从 confirmed 转 producing 并生成一张加工单（见下方 data_checks），
+    # 而 `_reset_for_retry` 按 `pre_clean` **opt-in** ⇒ 原来没声明 = 重试前不复位
+    # ⇒ 第 2 次尝试 R1 只看到 1 笔已确认订单（首跑是 2 笔）、R2 看到「加工单早已生成」
+    # ⇒ agent **合理地**不再调 `processing_order_generate` ⇒ 末次必红，且两次成因不同
+    # ⇒ 误分类 `unstable`（实测判定跑 34908262839，末次 trace 逐字见 issue #3833）。
+    # ⚠️ 复位**只动本用例点名的这张专用种子订单**及其加工单 —— seed 注释明写
+    # 「EVAL-MB-ORD-0002 = PG-013 加工单生成用」，且 #3658 已把 0003/0004 分给
+    # PG-015/PG-016；本类型按 `order_no` 精确匹配，**不做**任何子串/模糊匹配
+    # （避免 #3800 记录的 `product_remove` 连带误删形态）。
+    pre_clean:
+      - type: processing_order_reset
+        order_no: "EVAL-MB-ORD-0002"
+    # forbidden_text（issue #3833）：**从全程语义收紧成「轮次 + 措辞」精确断言**。
+    # 全程语义的病灶（本 run 首跑**唯一**红点）：R1 是**问答轮**，agent 逐单如实陈述时说
+    # 「⚠️ 20260915030240002 未见加工项，无法生成加工单」—— 那是对**另一笔**订单的**事实陈述**
+    # （同一轮还说了「✅ 可生成加工单：EVAL-MB-ORD-0002」），却被全程禁令判成"拒绝执行"。
+    # 形态与 `want_text` 的 `{round: n, text: …}` / `{round, any_of}` **同构**
+    # （裸字符串 = 原有全程语义，向后兼容）。
+    # 分档判据（**收紧，不是放宽**）：措辞若在**问答轮有正当语境**（如实披露某单不含加工项 /
+    # 引用系统判定），就限定到**写操作轮**（R2 生成请求 / R3 确认）—— 真拒绝仍必红；
+    # 措辞若属**能力自我否定 / 编造失败**（#3477 家族），任何一轮出现都是错的 ⇒ 保持全程。
     forbidden_text:
+      # 全程：能力自我否定 / 编造失败 —— 本用例的任何一轮都没有正当语境
       - "暂不支持"
       - "功能不存在"
       - "没有这个功能"
-      - "无加工项"
       - "生成未成功"
       - "生成失败"
-      - "无法生成加工单"
-      - "系统判定为"
+      # 写操作轮（R2 生成请求 / R3 确认）：这三条在 R1 问答轮有**如实陈述**的正当语境
+      - round: 2
+        any_of:
+          - "无加工项"
+          - "无法生成加工单"
+          - "系统判定为"
+      - round: 3
+        any_of:
+          - "无加工项"
+          - "无法生成加工单"
+          - "系统判定为"
     data_checks:
       - "前置：目标环境至少存在一个「已确认且含加工项」订单（否则 order_query 为空、无法生成）——CI smoke 档不纳入，normal 档需保证前置数据"
       - "生成后 processing_orders 落新行（status=generated），订单转 producing（验收以 GET /api/admin/processing-orders?keyword=<订单号> 复核）"
     skip_reason: ""
-    merge_log: "2026-09-12 新增（验收缺口 #3348）：米宝加工单 LLM 行为真实对话用例（替代纯单测覆盖）"
+    merge_log: "2026-09-12 新增（验收缺口 #3348）：米宝加工单 LLM 行为真实对话用例（替代纯单测覆盖）；2026-09-15（issue #3833）修双重假红：① 补 `pre_clean: processing_order_reset(order_no=EVAL-MB-ORD-0002)` —— 写类用例自清理，重试前置回到 seed 初始态（confirmed + 无加工单），与首跑等价；② `forbidden_text` 从全程语义收紧成「轮次 + 措辞」：R1 问答轮如实陈述（某单未见加工项/引用系统判定）不再判红，写操作轮（R2/R3）真拒绝仍必红；能力自我否定/编造失败类措辞保持全程。expectations / required_args **未改**"
     traces:
       tests:
         - "tests/agent_eval/local_runner.py"

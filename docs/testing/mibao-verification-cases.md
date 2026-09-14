@@ -48,6 +48,7 @@
 期望: after_sales_manage(action=update_status, status=closed)
 数据: success=true
 数据: closedAt/closeReason 写入 —— 机器断言见 db_verify[after_sales_ticket]（落库 status=closed + closedAt/closeReason 非空 + closeReason 与用户点名原因一致）
+清理: aftersales_ticket_prepare
 落库: after_sales_ticket → expect_status=closed; expect_fields_nonempty=['closedAt', 'closeReason']; expect_close_reason_contains=协商一致
 ```
 真值: aftersales-flow.flow, aftersales-flow.update-guard
@@ -93,6 +94,7 @@
 数据: 用户选择加工项后，所选名称与计价写入换货方案汇总与工单 description；用户说『不需要加工项』才跳过
 数据: processing_items 为空时如实告知『该商品无可用加工项』后继续，不强求
 数据: 换货工单 order_id 来自本轮 order_query 定位结果（不得编造订单号）
+清理: product_dedupe(product_keyword=2699系列雪尼尔窗帘面料、price=23.8)
 时序: order_query before after_sales_manage
 时序: processing_ask before after_sales_manage
 时序: processing_ask before interact[confirm]
@@ -1030,6 +1032,7 @@
 期望: order_create
 数据: order_create items 包含遮光窗帘的 UUID（复用上轮，不重查）
 数据: Context 注入包含 product_ids
+清理: product_dedupe(product_keyword=遮光窗帘)
 必填: order_create() 字段 items[].processing_info.sellingMethod, items[].processing_info.doorWidth
 ```
 真值: id-resolve.no-fabricate, ai-chat.context-memory
@@ -1069,6 +1072,7 @@
 数据: 第4步 product_id 来自第2-3步上下文
 数据: 订单创建成功并包含 SKU 信息
 数据: 第7步自动找到刚创建的订单
+清理: product_dedupe(product_keyword=遮光窗帘)
 必须成功: order_create
 载荷(全场可用): customer_name=张三, customer_phone=13800138000, customer_address=浙江省杭州市西湖区文三路 1 号 1 幢 101 室
 ```
@@ -1098,14 +1102,14 @@
 
 ### CU-003. 给客户打标签 🔵
 ```
-你: 给张三加VIP2活跃标签
-你: [🤖 选第一个选项]
-你: 确认
+你: 给张三（手机号 13800138000）加VIP2标签
+你: [🤖 按上一轮卡片作答]
 期望: customer_manage(action=add_tag)
 数据: add_tag 真实落库（customer_profiles.tags JSONB 写入），重复标签幂等跳过
+清理: customer_tag_remove(customer_keyword=13800138000、customer_index=0、tag_name=VIP2)
 ```
 真值: customer-list.tag-todo
-溯源: verification 4.3 独有；2026-09-09 校准：① truth「tag-todo 空实现」已过时（真实落库）；② 标签名「VIP」生产不存在（实际「VIP2活跃」），改真实标签名；③ 补「选第一个」+「确认」轮（重名澄清 + 标签确认，probe 实证需多轮）。2026-09-10 再校准：agent 重名澄清升级为 choice 交互卡（card 内容 LLM 动态生成），「第一个」文本指代不稳定 → 改 auto_select 自动回第一个选项（runner #3160 支持） ｜ tags: tag, write
+溯源: verification 4.3 独有；2026-09-09 校准：① truth「tag-todo 空实现」已过时（真实落库）；② 标签名「VIP」生产不存在（实际「VIP2活跃」），改真实标签名；③ 补「选第一个」+「确认」轮（重名澄清 + 标签确认，probe 实证需多轮）。2026-09-10 再校准：agent 重名澄清升级为 choice 交互卡（card 内容 LLM 动态生成），「第一个」文本指代不稳定 → 改 auto_select 自动回第一个选项（runner #3160 支持）。2026-09-15（issue #3832）修正三处真值错误：① 标签名改种子目录真有的「VIP2」（原「VIP2活跃」不在目录里 ⇒ pre_clean 结构性空转，见 #3794）；② 姓名改手机号唯一指代（OR-010 建单自动 upsert 出同名张三 ⇒ 重名澄清轮不可控、「张三」落点不确定），删掉 auto_select 轮；③ 收尾轮裸文本「确认」→ auto_respond 答卡轮（裸文本不放行写操作）；④ 补 namespaces 进串行道。断言（customer_manage(action=add_tag)）**未改** ｜ tags: tag, write
 
 ### CU-004. 更新客户资料（部分更新） 🔵
 ```
@@ -1631,6 +1635,7 @@
 你: 确认
 期望: employee_manage(action=create)
 数据: 收集确认后创建成功
+清理: employee_remove(employee_name=王五、employee_phone=13812345678)
 ```
 真值: employee-role.write-require-admin
 溯源: verification 5.2 独有；2026-09-09 校准：① 补「确认」点确认卡轮（agent 第一轮先查角色→validate→发确认卡，需确认后才 create）；② R1 补密码（execute._create_user 要求 password 必填，原 user_inputs 无密码，agent 确认后才发现缺密码反复追问——契约已修，case 同步补密码）。2026-09-15（issue #3781）：补 `namespaces` 声明 + `pre_clean[employee_remove]` —— 本用例造出的第二个「王五」是 HR-003（KEY_JOURNEY）**恒红**的根因（真实 run 34856561459，两次独立审计共同确认的用例资产缺陷） ｜ tags: create
@@ -1642,6 +1647,7 @@
 期望: employee_manage(action=toggle_status, status=disabled)
 数据: 二次确认后停用
 数据: 目标是手机号 13700137000 的种子员工（debug_employee_wangwu），不是任何同名账号
+清理: employee_reactivate(employee_name=王五、employee_phone=13700137000)
 ```
 真值: employee-role.write-require-admin
 溯源: verification 5.3 独有；2026-09-15（issue #3781）根治假红：① `user_inputs` 改为**手机号显式指代**（#3568 范式，同 HR-008）；② `namespaces` 声明 employee_name:王五 / employee_phone:13700137000（与 HR-002 自动串行）；③ `pre_clean.employee_reactivate` 补 `employee_phone` 精确定位（旧实现只按姓名 `next(...)` 取第一条 ⇒ 命中 HR-002 的同名产物）并改为命中多条时全恢复 —— 病灶铁证：真实 run 34856561459 里 HR-003 的 `employee_manage(list)` 返回 `users=2 total=2` ｜ tags: status, destructive
@@ -2256,6 +2262,7 @@
 数据: 订单确认/回复展示加工项含「名称+数量+金额」（如『打孔（罗马圈）3米 ¥24.00』）——数量可见可对账，禁止虚构每米几个的密度推导
 数据: 加工费 = 单价 × 数量（打孔 8 元/米 × 3 米 = 24 元），漏算/错算加工费 = 订单金额错误
 数据: C 端下单是**两步**：确认订单信息后还需手机验证码（order_create 的 sms_code，customer 角色必填）。用例必须提供验证码这一轮，否则 AI 停在第 5 步「请提供验证码」，order_create 永不发生（run 34622425044 实证：R7 顾客回「确认」后无任何工具调用）。dev/CI 栈已设 SMS_BYPASS_CODE=123456，此处用该码走真实校验分支。
+清理: product_dedupe(product_keyword=遮光窗帘)
 必须成功: order_create
 金额: order_create 「遮光窗帘」 → unit_price; subtotal; total
 载荷(全场可用): customer_name=张三, customer_phone=13800138000, customer_address=浙江省杭州市西湖区文三路1号1幢101室, color=米白, colorName=米白
@@ -2276,6 +2283,7 @@
 数据: customer_phone 非 11 位手机号（或不以 1 开头）→ 校验失败提示「请输入 11 位中国大陆手机号」
 数据: 合法参数（customer_name + 11 位 phone + items 非空列表）→ 校验通过 validated=true
 数据: 禁止返回「无需校验（该操作无预定义规则）」跳过（平铺结构 vs 分层读取不匹配的回归防线，sess_7f27137647e14b1e A5 轮实证）
+清理: product_dedupe(product_keyword=遮光窗帘)
 时序: validate_input before order_create
 必填: validate_input() 字段 target_tool, target_action
 ```
@@ -2294,6 +2302,7 @@
 数据: product_detail 返回 processing_items 非空时，生成订单确认卡之前必须主动询问加工项（interact(choice, multiSelect=true) 展示，透传 pageMeta 支持翻页；空则如实告知后继续）
 数据: 用户选择加工项后，order_create 的 processing_info.processingItems 含 {id, name, unitPrice, quantity, unit, pricingMethod, subtotal}，processingFee 计入 subtotal（金额=面料小计+加工费）
 数据: 一次性提交『已选加工项：A、B』→ 解析全部名称，禁止只取第一个；用户说『不需要加工项』才跳过
+清理: product_dedupe(product_keyword=2699系列雪尼尔窗帘面料、price=23.8)
 时序: interact[choice:processing_items] before interact[confirm]
 时序: interact[choice:processing_items] before order_create
 ```
@@ -2587,6 +2596,7 @@
 期望: product_processing_item_manage(action=add)
 期望: processing_item_query
 数据: data.pageMeta != null
+清理: product_dedupe(product_keyword=遮光窗帘)
 ```
 真值: processing-manage.crud, processing-manage.category-sort
 溯源: eval P004 + verification 2.13（查询部分同义）+ 2.14 的查询段；2026-09-14 校准（#3538）：① 输入去「100元的那件」价格点名（独立栈种子只有 ¥168 款，点名不存在的价 → agent 澄清查无此价 → 流程不前进），自包含化同 AS-003（#3511）/CR-001/PR-005/PR-007/PR-021（#3518）先例；② pre_clean 去 price 过滤（关键词去重，原 price 过滤限 100 元、在种子 ¥168 的栈上恒不匹配） ｜ tags: processing_item, pagination
@@ -2817,19 +2827,19 @@
 期望: processing_order_generate
 数据: 前置：目标环境至少存在一个「已确认且含加工项」订单（否则 order_query 为空、无法生成）——CI smoke 档不纳入，normal 档需保证前置数据
 数据: 生成后 processing_orders 落新行（status=generated），订单转 producing（验收以 GET /api/admin/processing-orders?keyword=<订单号> 复核）
+清理: processing_order_reset(order_no=EVAL-MB-ORD-0002)
 时序: order_query before processing_order_generate
 禁词: 暂不支持
 禁词: 功能不存在
 禁词: 没有这个功能
-禁词: 无加工项
 禁词: 生成未成功
 禁词: 生成失败
-禁词: 无法生成加工单
-禁词: 系统判定为
+禁词（第 2 轮）: 无加工项、无法生成加工单、系统判定为
+禁词（第 3 轮）: 无加工项、无法生成加工单、系统判定为
 必填: processing_order_generate() 字段 order_ids
 ```
 真值: ⚠️ 缺口（见对应模板 ⚠️ 注释）
-溯源: 2026-09-12 新增（验收缺口 #3348）：米宝加工单 LLM 行为真实对话用例（替代纯单测覆盖） ｜ tags: processing_order, llm_behavior, tool_call
+溯源: 2026-09-12 新增（验收缺口 #3348）：米宝加工单 LLM 行为真实对话用例（替代纯单测覆盖）；2026-09-15（issue #3833）修双重假红：① 补 `pre_clean: processing_order_reset(order_no=EVAL-MB-ORD-0002)` —— 写类用例自清理，重试前置回到 seed 初始态（confirmed + 无加工单），与首跑等价；② `forbidden_text` 从全程语义收紧成「轮次 + 措辞」：R1 问答轮如实陈述（某单未见加工项/引用系统判定）不再判红，写操作轮（R2/R3）真拒绝仍必红；能力自我否定/编造失败类措辞保持全程。expectations / required_args **未改** ｜ tags: processing_order, llm_behavior, tool_call
 
 ### PG-014. 订单加工项不可变（源头约束，决策 C）：创建后无任何修改通道 🔵
 ```
@@ -2931,6 +2941,7 @@
 你: [🤖 按上一轮卡片作答]
 期望: inventory_manage(action=adjust)
 数据: 返回新库存数量
+清理: product_dedupe(product_keyword=遮光窗帘)
 ```
 真值: product-sku-stock.realtime
 溯源: verification 2.5 独有（adjust 详细真值未确认，见映射表 5.1）。2026-09-14 校准（#3518）：① 输入去「100元的那件」价格点名（独立栈种子 ¥168）；② 收尾改答卡轮；③ pre_clean 去 price 过滤（关键词去重） ｜ tags: inventory, write
@@ -2956,6 +2967,7 @@
 你: [🤖 按上一轮卡片作答]
 期望: product_manage(action=toggle_status, status=on_sale)
 数据: success=true
+清理: product_dedupe(product_keyword=遮光窗帘)
 必填: product_manage(toggle_status) 字段 product_id, status
 必须成功: product_manage(toggle_status)
 ```
@@ -3004,6 +3016,7 @@
 数据: 第3轮 product_id 来自第2轮结果
 数据: 第4轮 product_id 来自第2轮结果
 数据: 全程未重新 product_search 查同一个商品
+清理: product_dedupe(product_keyword=遮光窗帘)
 ```
 真值: id-resolve.index, id-resolve.no-fabricate, product-sku-stock.status-flow
 溯源: eval M001 独有（多轮 ID 复用，覆盖 2.3+2.8 的多轮形态）；2026-09-03 Phase 2 适配：product_update/product_processing_item_manage 均 requires_confirmation，写操作轮后补『确认』（与 OR-010 模式一致）。2026-09-14 消除顺序依赖（issue #3568）：① 泛化「搜索窗帘」+「第一个」→ 点名「遮光窗帘」（返回顺序依赖，同 OR-024 #3408 先例）；②「S钩安装」目录不存在 → 换真实存在且已绑定的「韩式波浪折边」；③ 补 pre_clean product_dedupe（同 PR-005 #3518 口径） ｜ tags: multi_turn, single_skill, full_lifecycle, id_reuse, smoke
@@ -3026,6 +3039,7 @@
 数据: 最终创建成功，返回 product_id
 数据: 创建的加工项数量 = 2
 数据: 全程 AI 主动引导，不等待用户逐项输入
+清理: product_remove(product_keyword=测试窗帘)
 ```
 真值: product-sku-stock.create-flow, product-sku-stock.create-confirm, ai-chat.validate-input
 溯源: eval M002 吸收 verification 8.3（缺信息补全 = validate_input 引导） ｜ tags: multi_turn, guided_flow, full_create, processing_item
@@ -3073,6 +3087,7 @@
 数据: 「已选加工项：打孔加工、韩式折边」被解析为 2 个加工项（不只取第一个）
 数据: 未在用户提交完整列表后再次询问加工项
 数据: 最终创建成功且关联加工项数量 = 2
+清理: product_remove(product_keyword=测试窗帘)
 ```
 真值: product-sku-stock.create-flow, ai-chat.validate-input
 溯源: 2026-09-05 交互验证机制行为层新增（issue #2896 复盘）：前端 choice 多选「完成选择」按钮一次性提交『已选加工项：A、B』格式，需真实 LLM 验证解析全部名称 + 不二次询问。2026-09-10 校准：分类选择升级为 choice 卡（文本无法驱动）→ 加 auto_select 自动点分类卡第一个选项（#3160）+ 补加工项确认轮 ｜ tags: multi_turn, guided_flow, processing_item, multi_select
@@ -3093,6 +3108,7 @@
 数据: 翻页（__PAGE__ 协议）后加工项选择仍可继续（multiSelect 不丢）
 数据: 翻页后勾选累积一次性提交被正确解析
 数据: 最终创建成功
+清理: product_remove(product_keyword=测试窗帘)
 ```
 真值: product-sku-stock.create-flow
 溯源: 2026-09-05 交互验证机制行为层新增（issue #2896 复盘）：翻页后 multiSelect/pagination 契约保持 ｜ tags: multi_turn, processing_item, pagination, multi_select
@@ -3115,6 +3131,7 @@
 数据: 适用分类为空（applicable_product_categories 为空）的加工项仍展示（= 适用所有分类），不因过滤而丢失
 数据: 当前分类无匹配加工项时以文字提示可跳过，不空转强制选择
 数据: 最终创建成功且关联加工项数量正确
+清理: product_dedupe(product_keyword=遮光窗帘)
 必填: processing_item_query() 字段 applicable_category_id
 ```
 真值: product-sku-stock.create-flow, processing-manage.crud
@@ -3127,6 +3144,7 @@
 期望: product_update or product_manage(allow_return_restock=True)
 数据: 商品详情/列表返回 allowReturnRestock（默认 false，开启后为 true）
 数据: 售后工单 refund/return 完结时按商品开关决定是否回补 SKU 库存
+清理: product_dedupe(product_keyword=遮光窗帘)
 ```
 真值: product-sku-stock.aggregate, product-sku-stock.realtime, aftersales-flow.return-restock-switch
 溯源: issue #2991 新增：窗帘行业定制退货不可再售，商品级开关控制售后完结是否回补库存。2026-09-14 归一（issue #3568）：① 输入去「（100元的那件）」stale 价格点名（种子遮光窗帘 ¥168，实测 agent 合理澄清白耗一轮，同 #3538/#3518）；② 收尾 `auto_select: true` → `auto_respond` 答卡轮（无卡时 auto_select 会发对不上卡片的字面量「第一个」）；③ 补 pre_clean product_dedupe（只按关键词，不带 price 限定） ｜ tags: inventory, write, cross_skill
@@ -3152,6 +3170,7 @@
 数据: create 参数含 specifications（材质/克重/工艺等推理属性，随 specs 落库到 product_attributes，非仅展示）
 数据: create 参数含 processing_item_configs（含 customPrice=加工项默认单价 unit_price、unit=真实单位），禁止只传 processing_item_ids 名称列表
 数据: 商品详情接口 processingItemConfigs 回填 unitPrice/finalPrice（customPrice 空时 finalPrice=unitPrice），前端展示非 ¥0.00 且单位正确
+清理: product_dedupe(product_keyword=2699系列雪尼尔窗帘面料、price=23.8)
 禁词: 尚未真正创建
 禁词: 未创建成功
 必填: product_manage(create) 字段 specifications, processing_item_configs.customPrice

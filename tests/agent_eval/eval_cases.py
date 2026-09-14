@@ -1593,7 +1593,7 @@ _CASE_CU_003 = EvalCase(
     title='给客户打标签',
     skill=Skill.CUSTOMER,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['给张三加VIP2活跃标签', {'auto_select': True}, '确认'],
+    user_inputs=['给张三（手机号 13800138000）加VIP2标签', {'auto_respond': {'fallback': '确认'}}],
     expectations=['customer_manage(action=add_tag)'],
     data_checks=['add_tag 真实落库（customer_profiles.tags JSONB 写入），重复标签幂等跳过'],
     skip_reason='',
@@ -1602,7 +1602,8 @@ _CASE_CU_003 = EvalCase(
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
-    pre_clean=[{'type': 'customer_tag_remove', 'customer_keyword': '张三', 'customer_index': 0, 'tag_name': 'VIP2活跃'}],
+    pre_clean=[{'type': 'customer_tag_remove', 'customer_keyword': '13800138000', 'customer_index': 0, 'tag_name': 'VIP2'}],
+    namespaces=['customer_phone:13800138000'],
 )
 
 # ── CU-004 [NORMAL] 更新客户资料（部分更新）（源: cases/customer.yml）──
@@ -3812,8 +3813,9 @@ _CASE_PG_013 = EvalCase(
     form_prefill=[],
     forbidden_card_text=[],
     order_before=['order_query before processing_order_generate'],
-    forbidden_text=['暂不支持', '功能不存在', '没有这个功能', '无加工项', '生成未成功', '生成失败', '无法生成加工单', '系统判定为'],
+    forbidden_text=['暂不支持', '功能不存在', '没有这个功能', '生成未成功', '生成失败', {'round': 2, 'any_of': ['无加工项', '无法生成加工单', '系统判定为']}, {'round': 3, 'any_of': ['无加工项', '无法生成加工单', '系统判定为']}],
     required_args=[{'tool': 'processing_order_generate', 'fields': ['order_ids']}],
+    pre_clean=[{'type': 'processing_order_reset', 'order_no': 'EVAL-MB-ORD-0002'}],
 )
 
 # ── PG-014 [NORMAL] 订单加工项不可变（源头约束，决策 C）：创建后无任何修改通道（源: cases/processing-order.yml）──

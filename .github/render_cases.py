@@ -334,10 +334,29 @@ def to_md(cases):
                 lines.append(f"期望: {exp_to_str(e)}")
             for d in (c.get("data_checks") or []):
                 lines.append(f"数据: {d}")
+            # `pre_clean` 此前**完全不渲染** ⇒ 账本上看不出"写类用例有没有自清理"，
+            # 而这正是 #3794/#3800/#3833 反复踩的那一格（"清理防线空转"只能靠人读
+            # summary JSON 的 `pre_clean` 字段才发现）。补上 ⇒ 前置动作在账本上可见。
+            for pc in (c.get("pre_clean") or []):
+                if isinstance(pc, dict):
+                    _pc_type = str(pc.get("type") or "")
+                    _pc_args = "、".join(f"{k}={v}" for k, v in pc.items() if k != "type")
+                    lines.append(f"清理: {_pc_type}({_pc_args})" if _pc_args else f"清理: {_pc_type}")
+                else:
+                    lines.append(f"清理: {pc}")
             for ob in (c.get("order_before") or []):
                 lines.append(f"时序: {ob}")
             for ft in (c.get("forbidden_text") or []):
-                lines.append(f"禁词: {ft}")
+                # dict 形态（issue #3833 的轮次作用域）必须印清楚，否则账本上只剩
+                # `禁词: {'round': 2, 'any_of': [...]}` —— 读者看不出"哪一轮被禁"，
+                # 而"禁在哪一轮"正是这次收紧的**全部信息量**。
+                # 风格与下方 `全程禁用:` / `必须成功:` 一致。
+                if isinstance(ft, dict):
+                    _ft_scope = f"（第 {ft['round']} 轮）" if ft.get("round") else "（全程）"
+                    _ft_words = ft.get("any_of") or ([ft["text"]] if ft.get("text") else [])
+                    lines.append(f"禁词{_ft_scope}: {'、'.join(str(x) for x in _ft_words)}")
+                else:
+                    lines.append(f"禁词: {ft}")
             for ftl in (c.get("forbidden_tools") or []):
                 _ftl_tool = ftl if isinstance(ftl, str) else (ftl or {}).get("tool")
                 _ftl_act = "" if isinstance(ftl, str) else ((ftl or {}).get("action") or "")

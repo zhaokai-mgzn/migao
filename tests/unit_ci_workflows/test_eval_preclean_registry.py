@@ -1,4 +1,4 @@
-# case_ids: HR-003, HR-002, CU-003
+# case_ids: HR-003, HR-002, CU-003, PG-013
 """`pre_clean` 夹具层 **fail-closed**：注册表 + 未应用必须进结论（issue #3781）。
 
 ## 为什么单开这条守卫
@@ -321,6 +321,11 @@ class TestCleanupFamilyNoopIsNotAFailure:
 
     判定跑 `34865780382` 的 CU-003 就是被这一格折成 `score=0` ⇒ 它 ∈ `KEY_JOURNEYS_MIBAO`
     ⇒ 整条 B 端腿 `completion.ok=false`（而它行为侧 `classification=pass`）。
+
+    ⚠️ `CU003_SPEC` 是**修复前的历史形态**（issue #3832 已把用例的 `tag_name` 改成种子目录
+    真有的 `VIP2`）—— 本类锁的是**清理型分族机制**（"目录里没有该标签"这一格），
+    不是"CU-003 当前长什么样"；用例当前形态的真值由
+    `test_eval_case_asset_truth.py` 守卫。留在这里是因为它是该机制唯一的**真实来源**形态。
     """
 
     CU003_SPEC = {"type": "customer_tag_remove", "customer_keyword": "张三",
@@ -355,7 +360,7 @@ class TestCleanupFamilyNoopIsNotAFailure:
         assert lr.check_preclean_not_applied([demoted]) == []
 
     def test_real_cu003_shape_is_a_benign_noop_end_to_end(self, monkeypatch):
-        """**红证①**：CU-003 的**真实形态**（标签目录里没有 `VIP2活跃`）走**真实分支**
+        """**红证①**：CU-003 的**修复前历史形态**（标签目录里没有 `VIP2活跃`）走**真实分支**
         ⇒ 良性 no-op：不进结论、不折 score、CU-003 不再压整腿 `ok`。
 
         罐装数据取自判定跑的 trace（`customer_manage(tags=2 count=2)` + 种子的
@@ -410,3 +415,54 @@ class TestCleanupFamilyNoopIsNotAFailure:
             [{"case_id": "HR-003", "score": 0.0, "classification": "pass"}],
             lr.KEY_JOURNEYS_MIBAO)
         assert v["ok"] is False and v["journey_failures"] == ["HR-003"], v
+
+
+# ── ⑦ 新增类型的**分族**必须显式选择（issue #3833，`#3800` 同族的新实例）────────────
+class TestProcessingOrderResetIsPrepareFamily:
+    """加工单用例的自清理（`PG-013`）必须是**准备型**，不能落进清理型。
+
+    为什么单锁一格：两族的"目标不存在"处置**相反**（#3791）——
+      · 清理型：目标不存在 = 前置**已满足** ⇒ 良性 no-op，**不进结论**；
+      · 准备型：目标不在位 = 用例带着**假前置**跑完 ⇒ `_PRECONDITION_NOT_APPLIED` ⇒ 进结论。
+    `processing_order_reset` 要的是**肯定式**前置（"点名的订单在、且是 confirmed 且无在途加工单"）
+    ⇒ 与 `aftersales_ticket_prepare` 同族。**误归清理型**会把"栈缺 seed"静默放行
+    （`#3781` 要堵的正是这个）；**误归准备型**对 `employee_remove` 才是灾难（HR-002/003 恒红，
+    见上一条守卫）。本类型的判据是"点名对象在不在"，与 `employee_remove`（谁造的谁清）不同。
+    """
+
+    def test_registered(self):
+        assert "processing_order_reset" in lr._PRECLEAN_TYPES, (
+            "PG-013 声明的 pre_clean 类型没登记 ⇒ 会走配置错误（数据准备未执行）")
+
+    def test_is_prepare_family_not_cleanup(self):
+        assert "processing_order_reset" not in lr._PRECLEAN_CLEANUP_TYPES, (
+            "被归进清理型了 —— 栈缺 seed（点名的订单不在）会被静默放行，#3781 的成果退化")
+
+    def test_missing_target_folds_into_the_conclusion(self, monkeypatch):
+        """**红证**：走**真实分支**（DB 里没有点名订单）⇒ 必须产出可折叠的「未应用」标记。"""
+        import asyncio
+        import types as _types
+
+        class _Conn:
+            async def fetch(self, sql, *a):
+                return []
+
+            async def fetchrow(self, sql, *a):
+                return None                     # 点名的订单不在库里
+
+            async def close(self):
+                return None
+
+        class _Mod:
+            async def connect(self, *a, **k):
+                return _Conn()
+
+        fake = _types.ModuleType("asyncpg")
+        fake.connect = _Mod().connect
+        monkeypatch.setitem(sys.modules, "asyncpg", fake)
+        msg = asyncio.run(lr._run_pre_clean("tok", {"type": "processing_order_reset",
+                                                    "order_no": "EVAL-MB-ORD-0002"}))
+        assert msg.startswith(lr._PRECONDITION_NOT_APPLIED), msg
+        assert "未复位" in msg, msg          # 重试边界据此判"前置不等价"
+        assert lr.check_preclean_not_applied([msg]) == [msg], (
+            f"准备型未应用没有被折叠 —— 又会变成「绿了但没跑」：{msg!r}")
