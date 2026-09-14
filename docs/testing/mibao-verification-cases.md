@@ -30,13 +30,15 @@
 你: 就刚才那笔订单，客户手机号 13800138000，要退货，创建售后工单
 你: 确认创建
 你: 确认
+你: [🤖 按上一轮卡片作答]
+你: [🤖 按上一轮卡片作答]
 期望: order_query
 期望: after_sales_manage or aftersale_create(order_id=复用上轮 UUID)
 数据: success=true
 数据: 工单号匹配 ^AS-\\d{8}-\\d{4}$
 ```
 真值: aftersales-flow.create-order-required, aftersales-flow.dup-guard, aftersales-flow.ticket-format
-溯源: eval C002 + verification 3.3（同义，取 eval 的跨域版） ｜ tags: cross_skill, context_share, create
+溯源: eval C002 + verification 3.3（同义，取 eval 的跨域版）；2026-09-14 自包含化（#3511）→ 指代显式化（#3568，用手机号而非「这个订单」）；2026-09-15 补收尾答卡轮（结论档 run 34841029062 实证：4 轮里末轮是 agent 发确认卡那一轮，after_sales_manage 必不执行）——断言未改 ｜ tags: cross_skill, context_share, create
 
 ### AS-004. 更新工单状态 - 关闭 🔵
 ```
@@ -1022,6 +1024,8 @@
 你: [🤖 选第一个选项]
 你: 不需要加工项
 你: 确认下单
+你: [🤖 按上一轮卡片作答]
+你: [🤖 按上一轮卡片作答]
 期望: product_detail
 期望: order_create
 数据: order_create items 包含遮光窗帘的 UUID（复用上轮，不重查）
@@ -1029,7 +1033,7 @@
 必填: order_create() 字段 items[].processing_info.sellingMethod, items[].processing_info.doorWidth
 ```
 真值: id-resolve.no-fabricate, ai-chat.context-memory
-溯源: eval C001 独有；2026-09-14 校准（#3518）：① 下单轮去「100元的那件」价格点名（独立栈种子只有 ¥168 款，点名不存在的价 → agent 合理查无此价 → 流程不前进），自包含化同 AS-003 先例（#3511）；② pre_clean 去 price 过滤（关键词去重，原 price: 100 在种子 ¥168 的栈上恒不匹配） ｜ tags: cross_skill, context_share
+溯源: eval C001 独有；2026-09-14 校准（#3518）：① 下单轮去「100元的那件」价格点名（独立栈种子只有 ¥168 款，点名不存在的价 → agent 合理查无此价 → 流程不前进），自包含化同 AS-003 先例（#3511）；② pre_clean 去 price 过滤（关键词去重，原 price: 100 在种子 ¥168 的栈上恒不匹配）。2026-09-15 校准（结论档 run 34841029062 实证）：③ 补 2 轮收尾答卡轮——5 轮预算里末轮恰好是 agent **发**确认卡那一轮，没有轮次去点卡 → order_create 必不执行（断言本身合理，不得放宽），照 OR-015（#3544 §2）先例 ｜ tags: cross_skill, context_share
 
 ### CR-002. 对抗性 - 3 个 Skill 连续切换 🔴
 ```
@@ -2144,6 +2148,8 @@
 你: 选白色的，散剪，2.8米门幅
 你: 不需要加工项
 你: 确认下单
+你: [🤖 按上一轮卡片作答]
+你: [🤖 按上一轮卡片作答]
 期望: product_detail(product_id=遮光窗帘)
 期望: order_create
 数据: data.order_id.length > 0
@@ -2651,7 +2657,7 @@
 你: [🔁 按目标工具重复直至成功：processing_item_query，最多 3 次]
 期望: processing_item_manage(action=update_item)
 期望: processing_item_query
-数据: 回读结果中 name 仍为「纳米圈打孔」、pricingMethod 仍为 per_meter（未被清空）——只改 price 不得清空其它字段
+数据: 回读结果中 name 仍为「纳米圈打孔」、pricingMethod 仍为 per_meter、status 仍为 active（未被清空）——只改 price 不得清空其它字段
 禁词: 暂不支持
 禁词: 功能不存在
 禁词: 没有这个功能
@@ -2660,9 +2666,9 @@
 禁词: 无法修改
 必填: processing_item_manage() 字段 item_id, price
 必须成功: processing_item_manage(update_item)
-产出: processing_item_manage(update_item) → price==9.5
+产出: processing_item_manage(update_item) → unitPrice==9.5; name==纳米圈打孔; pricingMethod==per_meter; status==active
 ```
-溯源: 2026-09-14 新增（issue #3568）：`processing_item_manage(action=update_item)` 此前**零用例覆盖**（#3591 收口时如实标注的覆盖边界：只有 create 路径被重放）。断言机器可判：must_succeed(action=update_item) + required_args[item_id,price] + output_verify(price=9.5，显式 action) + forbidden_text。回读轮覆盖「部分更新不得清空其它字段」（#3591 的 GET→merge→PUT 语义），工具层无法自证故由回读判定。 ｜ tags: processing_item, llm_behavior, tool_call, update
+溯源: 2026-09-14 新增（issue #3568）：`processing_item_manage(action=update_item)` 此前**零用例覆盖**（#3591 收口时如实标注的覆盖边界：只有 create 路径被重放）。断言机器可判：must_succeed(action=update_item) + required_args[item_id,price] + output_verify(unitPrice=9.5 + name/pricingMethod/status 未被清空，显式 action) + forbidden_text。2026-09-15 校准（结论档 run 34841029062 实证）：原 output_verify 写 `price: 9.5` = 用**入参名**核**回显字段名**（回显是 unitPrice）→ 恒红假红；同时更正「update_item 返回只含下发字段」的错误注释（PUT 回显是合并后全量对象，故「不清空」可从 payload 机器核到）。 ｜ tags: processing_item, llm_behavior, tool_call, update
 
 ### PP-008. 米宝加工项 LLM 行为：停用加工项（toggle_item_status → inactive） 🔵
 ```

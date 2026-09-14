@@ -105,6 +105,18 @@ cases:
       - "就刚才那笔订单，客户手机号 13800138000，要退货，创建售后工单"
       - "确认创建"
       - "确认"
+      # 收尾答卡轮（#3544 §2 同款先例；2026-09-15 结论档 run 34841029062 实测）：
+      # #3568 只修掉了「哪一笔订单」（指代），**没修「谁去点确认卡」**——4 轮预算里
+      # R4（末轮）恰好是 agent 走到位那一轮：`order_query + validate_input(validated=True)
+      # + interact(confirm:确认创建退款工单？)`，轮次用尽即停在待点卡态 ⇒
+      # `after_sales_manage` 在预算内**不可能**被调用（失败原文：`❌ after_sales_manage or
+      # aftersale_create(order_id=复用上轮 UUID) → unmatched expectation`）。
+      # 断言一字不改（真值内核 = 工单真要建出来），只补「点卡」的机会轮 —— 与
+      # OR-015（#3544 §2 已落地）/ CR-001 / OR-008 同形。
+      - auto_respond:
+          fallback: "确认创建"
+      - auto_respond:
+          fallback: "确认"
     expectations:
       - tool: order_query
       - tool: after_sales_manage or aftersale_create
@@ -114,7 +126,7 @@ cases:
       - "success=true"
       - "工单号匹配 ^AS-\\d{8}-\\d{4}$"
     skip_reason: ""
-    merge_log: "eval C002 + verification 3.3（同义，取 eval 的跨域版）"
+    merge_log: "eval C002 + verification 3.3（同义，取 eval 的跨域版）；2026-09-14 自包含化（#3511）→ 指代显式化（#3568，用手机号而非「这个订单」）；2026-09-15 补收尾答卡轮（结论档 run 34841029062 实证：4 轮里末轮是 agent 发确认卡那一轮，after_sales_manage 必不执行）——断言未改"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_aftersale_create.py"
