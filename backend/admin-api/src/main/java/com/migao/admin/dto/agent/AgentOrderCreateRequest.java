@@ -62,10 +62,14 @@ public class AgentOrderCreateRequest {
         /** 颜色名称（可选；无 skuCode 时兜底解析 SKU 用） */
         private String colorName;
 
-        /** 数量（必填，必须大于 0：负数量会算出负金额并绕过库存校验，issue #3622） */
+        /**
+         * 数量（必填，必须大于 0：负数量会算出负金额并绕过库存校验，issue #3622）。
+         * issue #3666 放宽为 BigDecimal：口径按计价方式——per_meter=米数、per_set=1、
+         * per_area=宽×高（㎡，可为小数如 8.4）。JSON 传整数（3）照常反序列化为 BigDecimal("3")。
+         */
         @NotNull(message = "数量不能为空")
         @Positive(message = "数量必须大于 0")
-        private Integer quantity;
+        private BigDecimal quantity;
 
         /** 单价（必填，必须大于 0） */
         @NotNull(message = "单价不能为空")

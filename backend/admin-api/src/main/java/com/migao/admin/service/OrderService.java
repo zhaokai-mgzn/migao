@@ -338,7 +338,7 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
                             // amount = unitPrice * quantity（兜底：subtotal）
                             BigDecimal itemAmount = BigDecimal.ZERO;
                             if (item.getUnitPrice() != null && item.getQuantity() != null) {
-                                itemAmount = item.getUnitPrice().multiply(BigDecimal.valueOf(item.getQuantity()));
+                                itemAmount = item.getUnitPrice().multiply(item.getQuantity());
                             } else if (item.getSubtotal() != null) {
                                 itemAmount = item.getSubtotal();
                             }
@@ -405,6 +405,8 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
     @Transactional(rollbackFor = Exception.class)
     public OrderDetailResponse createOrder(OrderCreateRequest request, Long tenantId) {
         // ── 资金/库存完整性闸门（issue #3622）：数量/单价必须为正 ──
+        // issue #3666：数量已放宽为 BigDecimal（DECIMAL(10,2)）——判据从「正整数」改为
+        // 「大于 0 的数」：per_area 的合法数量就是小数（门幅 2.8m × 3m = 8.4 ㎡）。
         // 为什么必须在 Service 层显式判定（而不是只靠 DTO 注解）：
         //   ① Agent 路径 `createOrderForAgent`（下方 BFF 段）是**手工 new `OrderCreateRequest`**
         //      再调用本方法 —— 程序化构造的 Bean **不经过 Bean Validation**，注解对它无效；
@@ -414,9 +416,10 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         // → **超卖防线被绕过**。
         for (int i = 0; i < request.getItems().size(); i++) {
             OrderCreateRequest.OrderItemRequest itemRequest = request.getItems().get(i);
-            if (itemRequest.getQuantity() == null || itemRequest.getQuantity() <= 0) {
+            if (itemRequest.getQuantity() == null
+                    || itemRequest.getQuantity().compareTo(BigDecimal.ZERO) <= 0) {
                 throw BusinessException.validationError(
-                        String.format("商品明细第 %d 项的数量必须为大于 0 的整数", i + 1));
+                        String.format("商品明细第 %d 项的数量必须大于 0", i + 1));
             }
             if (itemRequest.getUnitPrice() == null
                     || itemRequest.getUnitPrice().compareTo(BigDecimal.ZERO) <= 0) {
@@ -431,7 +434,7 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
             // 商品金额 = 单价 × 数量
             BigDecimal itemAmount = BigDecimal.ZERO;
             if (itemRequest.getUnitPrice() != null && itemRequest.getQuantity() != null) {
-                itemAmount = itemRequest.getUnitPrice().multiply(BigDecimal.valueOf(itemRequest.getQuantity()));
+                itemAmount = itemRequest.getUnitPrice().multiply(itemRequest.getQuantity());
             }
             // 加工费（从 processingInfo 中解析）
             BigDecimal processingFee = sumProcessingFee(itemRequest.getProcessingInfo());
@@ -823,11 +826,14 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
                 brief.setName(name != null ? String.valueOf(name) : null);
                 BigDecimal unitPrice = toBigDecimal(entry.get("unitPrice"));
                 brief.setUnitPrice(unitPrice);
-                Integer quantity = toInteger(entry.get("quantity"));
+                // issue #3666：必须走十进制解析——旧 toInteger() 把 per_area 的 8.4 截断成 8，
+                // 详情/列表按截断值重算加工费（30×8=240.00）与外层落库 processingFee（252.00）
+                // 自相矛盾。
+                BigDecimal quantity = toBigDecimal(entry.get("quantity"));
                 brief.setQuantity(quantity);
                 BigDecimal amount = BigDecimal.ZERO;
                 if (unitPrice != null && quantity != null) {
-                    amount = unitPrice.multiply(BigDecimal.valueOf(quantity));
+                    amount = unitPrice.multiply(quantity);
                 }
                 brief.setAmount(amount);
                 result.add(brief);
@@ -860,16 +866,6 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         }
     }
 
-    private Integer toInteger(Object value) {
-        if (value == null) return null;
-        if (value instanceof Number) return ((Number) value).intValue();
-        try {
-            return Integer.valueOf(String.valueOf(value));
-        } catch (NumberFormatException e) {
-            return null;
-        }
-    }
-
     /**
      * 计算/解析订单明细小计：优先使用请求中的 subtotal，若为 null 则回退 unitPrice * quantity。
      * 避免前端未传 subtotal 时 totalAmount 被记录为 0 的问题。
@@ -879,7 +875,7 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
             return itemRequest.getSubtotal();
         }
         if (itemRequest.getUnitPrice() != null && itemRequest.getQuantity() != null) {
-            return itemRequest.getUnitPrice().multiply(BigDecimal.valueOf(itemRequest.getQuantity()));
+            return itemRequest.getUnitPrice().multiply(itemRequest.getQuantity());
         }
         return BigDecimal.ZERO;
     }
@@ -892,7 +888,7 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         BeanUtils.copyProperties(item, response);
         // 计算 amount = unitPrice * quantity（优先），否则回退 subtotal
         if (item.getUnitPrice() != null && item.getQuantity() != null) {
-            response.setAmount(item.getUnitPrice().multiply(BigDecimal.valueOf(item.getQuantity())));
+            response.setAmount(item.getUnitPrice().multiply(item.getQuantity()));
         } else {
             response.setAmount(item.getSubtotal());
         }
@@ -1050,11 +1046,14 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
             }
             ProductSku sku = productSkuMapper.selectById(skuId);
             int stock = sku != null && sku.getStock() != null ? sku.getStock() : 0;
-            if (stock < item.getQuantity()) {
+            // issue #3666：数量为 BigDecimal，库存是整数列 → 按整数部分比较（与原 Integer
+            // 语义一致；小数数量（米数/面积）以整数件库存校验，不引入新的舍入规则）
+            int needed = item.getQuantity().intValue();
+            if (stock < needed) {
                 throw BusinessException.validationError(
                         String.format("商品「%s」库存不足：需要 %d 件，当前仅剩 %d 件，请先补货后再%s",
                                 item.getProductName() != null ? item.getProductName() : skuId,
-                                item.getQuantity(), stock, actionLabel));
+                                needed, stock, actionLabel));
             }
         }
     }
@@ -1365,14 +1364,16 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         if (order == null) return;
 
         // 按 productId 聚合数量和金额
-        Map<String, Integer> productQtyMap = new java.util.HashMap<>();
+        // issue #3666：数量放宽为 BigDecimal，聚合也用 BigDecimal（不引入 double/float）；
+        // 销量列是整数 → 仅在写库前取整数部分。
+        Map<String, BigDecimal> productQtyMap = new java.util.HashMap<>();
         Map<String, BigDecimal> productAmountMap = new java.util.HashMap<>();
 
         for (OrderItem item : items) {
             if (item.getProductId() == null) continue;
-            int qty = item.getQuantity() != null ? item.getQuantity() : 0;
+            BigDecimal qty = item.getQuantity() != null ? item.getQuantity() : BigDecimal.ZERO;
             BigDecimal amount = item.getSubtotal() != null ? item.getSubtotal() : BigDecimal.ZERO;
-            productQtyMap.merge(item.getProductId(), qty, Integer::sum);
+            productQtyMap.merge(item.getProductId(), qty, BigDecimal::add);
             productAmountMap.merge(item.getProductId(), amount, BigDecimal::add);
 
             // SKU级库存调整：从 processingInfo 中匹配 SKU
@@ -1384,9 +1385,9 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         }
 
         // 商品级调整
-        for (Map.Entry<String, Integer> entry : productQtyMap.entrySet()) {
+        for (Map.Entry<String, BigDecimal> entry : productQtyMap.entrySet()) {
             String productId = entry.getKey();
-            int totalQty = entry.getValue();
+            int totalQty = entry.getValue().intValue();
             BigDecimal totalAmount = productAmountMap.getOrDefault(productId, BigDecimal.ZERO);
             if (isDeduct) {
                 productMapper.increaseSales(productId, totalQty, totalAmount);
@@ -1403,8 +1404,9 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
     private void deductSkuStock(OrderItem item) {
         Long skuId = matchSkuId(item);
         if (skuId != null && item.getQuantity() != null) {
-            productSkuMapper.deductStock(skuId, item.getQuantity());
-            productSkuMapper.increaseSalesCount(skuId, item.getQuantity());
+            // issue #3666：库存/销量列是整数，取整数部分（与库存校验同一口径）
+            productSkuMapper.deductStock(skuId, item.getQuantity().intValue());
+            productSkuMapper.increaseSalesCount(skuId, item.getQuantity().intValue());
         }
     }
 
@@ -1414,8 +1416,9 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
     private void restoreSkuStock(OrderItem item) {
         Long skuId = matchSkuId(item);
         if (skuId != null && item.getQuantity() != null) {
-            productSkuMapper.restoreStock(skuId, item.getQuantity());
-            productSkuMapper.decreaseSalesCount(skuId, item.getQuantity());
+            // issue #3666：库存/销量列是整数，取整数部分（与库存校验同一口径）
+            productSkuMapper.restoreStock(skuId, item.getQuantity().intValue());
+            productSkuMapper.decreaseSalesCount(skuId, item.getQuantity().intValue());
         }
     }
 
@@ -1570,7 +1573,7 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
             itemReq.setUnitPrice(item.getUnitPrice());
             // subtotal 服务端强制重算（对抗 LLM 编造）
             if (item.getQuantity() != null && item.getUnitPrice() != null) {
-                itemReq.setSubtotal(item.getUnitPrice().multiply(BigDecimal.valueOf(item.getQuantity())));
+                itemReq.setSubtotal(item.getUnitPrice().multiply(item.getQuantity()));
             } else if (item.getSubtotal() != null) {
                 itemReq.setSubtotal(item.getSubtotal());
             }

@@ -81,11 +81,14 @@ public class OrderCreateRequest {
         private String productName;
 
         /**
-         * 数量
+         * 数量（issue #3666 放宽为 DECIMAL(10,2)/BigDecimal）：
+         * 口径按计价方式——per_meter=米数、per_set=1、per_area=宽×高（㎡）。
+         * 这些口径**不都是整数**（2.8m × 3m = 8.4 ㎡），Integer 会截断成 8 →
+         * 30 元/㎡ 的刺绣工艺少收 12.00 元。与 base_price/amount 的金额口径一致。
          */
         @NotNull(message = "数量不能为空")
         @Positive(message = "数量必须大于 0")
-        private Integer quantity;
+        private BigDecimal quantity;
 
         /**
          * 单价

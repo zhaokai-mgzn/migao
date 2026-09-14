@@ -64,10 +64,12 @@ BEHAVIOR_SOURCE_PREFIXES = (
 #   这样将来新增规则也不可能误触用例/测试路径。不变量测试见
 #   `backend/ai-agent-service/tests/test_behavior_mapping.py::TestRulesAnchorToSourcePaths`。
 MAPPING_RULES = [
-    # 下单引导 / 加工项询问 / 金额计算 → OR-016
+    # 下单引导 / 加工项询问 / 金额计算 → OR-016、OR-028
     # （order_skill.py 是 Skill 本体，order_create/order_query 是下单与查单两个 Tool）
+    # OR-028（#3666）：数量语义放宽为 DECIMAL(10,2) 的端到端金额回归网 ——
+    #   改 order_create 的数量 schema（integer→number）必须真跑一次，否则"小数保真"只靠单测证明。
     (r"app/graph/skills/order_skill\.py|app/tools/order_create\.py|app/tools/order_query\.py",
-     ["OR-016"]),
+     ["OR-016", "OR-028"]),
     # 换货 / 售后工单引导 → AS-007
     (r"aftersales|after_sales", ["AS-007"]),
     # 建品（属性 / 加工项价格 / 参数完整性）→ PR-019、PR-020
