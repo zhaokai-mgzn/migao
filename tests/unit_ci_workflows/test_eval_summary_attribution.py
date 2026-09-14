@@ -87,11 +87,26 @@ lr = _load_runner()
 # 本 PR 新增的两个字段名（回归锚点用；改名即视为破坏"只加字段"的契约）
 NEW_CASE_KEY = "failures"
 NEW_COMPLETION_KEY = "failure_reasons"
-# #3761/#3769 追加的顶层新增字段（成本可读信号 + verdict ledger 键）。与前两个同款纪律 ——
-# 只加不改，且必须真的存在（否则下面的"逐字节等价"会退化成**空断言**）。
+# #3805/#3806/#3807/#3803 追加的**用例级**新增字段（同一纪律：只加不改，且必须真的存在）。
+# 逐条理由见 `_strip_new` 的注释；`failures` 的断言（NEW_CASE_KEY）保持不变。
+NEW_CASE_KEYS = {
+    NEW_CASE_KEY,
+    # #3805：用例执行窗口 —— 证据取数的时间锚点（Diagnose 按窗口切片抓容器日志）
+    "started_at", "finished_at",
+    # #3805：首跑证据（reproducible/unstable/infra 分支不再只留归一指纹）
+    "first_attempt_signature", "first_attempt_evidence",
+    # #3807：商品价格复位结果（复位是否真的生效必须可逐条核对）
+    "restore",
+    # #3803：harness/用例形状不兼容（与 agent 行为失败分属不同桶）
+    "harness_incompatible",
+    # #3806：跨 run 复发标注（同一首跑指纹在历史 run 出现过）
+    "cross_run_recurrence",
+}
+# #3761/#3769/#3805 追加的顶层新增字段（成本可读信号 + verdict ledger 键 + 本轮证据窗口）。
 NEW_COST_KEY = "cost"
 NEW_RUN_KEY_KEY = "run_key"
-NEW_TOP_KEYS = {NEW_COST_KEY, NEW_RUN_KEY_KEY}
+NEW_EVIDENCE_KEY = "evidence_window"
+NEW_TOP_KEYS = {NEW_COST_KEY, NEW_RUN_KEY_KEY, NEW_EVIDENCE_KEY}
 
 
 # ── fixtures ────────────────────────────────────────────────────────────────
@@ -155,15 +170,20 @@ def _legacy_payload(label, shard, results):
 
 
 def _strip_new(payload):
-    """去掉本 PR 新增的字段（保序）→ 剩下的必须与改造前逐字节一致。"""
+    """去掉本 PR 新增的字段（保序）→ 剩下的必须与改造前逐字节一致。
+
+    `NEW_CASE_KEYS` 是**集合**（#3805 起用例级新增字段不止 `failures` 一个）：
+    剥掉的每一条都有显式理由与存在性断言（见 `test_only_new_fields_added`），
+    不是"反正不比对"。
+    """
     out = {}
     for k, v in payload.items():
         if k == "cases":
-            out[k] = [{kk: vv for kk, vv in c.items() if kk != NEW_CASE_KEY} for c in v]
+            out[k] = [{kk: vv for kk, vv in c.items() if kk not in NEW_CASE_KEYS} for c in v]
         elif k == "completion":
             out[k] = {kk: vv for kk, vv in v.items() if kk != NEW_COMPLETION_KEY}
         elif k in NEW_TOP_KEYS:
-            continue          # #3761/#3769：顶层新增键，整体剥掉
+            continue          # #3761/#3769/#3805：顶层新增键，整体剥掉
         else:
             out[k] = v
     return out
@@ -318,6 +338,15 @@ class TestCompletionCarriesReasons:
           ② `unstable`（两次皆败但成因不同）移出放行档（`_COMPLETION_RELEASED_CLASSES`
              只剩 `llm-noise`）—— 见下方第二段断言（旧口径会把 OR-014 放进
              `flake_released`，新口径必须进 `deterministic_failures`）。
+
+        ⚠️ 又一个包**有意**追加了三个**独立桶**（均在此显式留痕，键集比对仍逐字严格）：
+          ③ `systemic_recurrence`（#3806）：跨 run 复发的系统性缺口 —— 同一首跑指纹在历史
+             run 反复出现 ⇒ 不是随机波动 ⇒ 不得放行（原先只看本次两次尝试）；
+          ④ `restore_failures`（#3807）：商品价格复位未生效（共享状态未回滚）⇒ 结论不可信；
+          ⑤ `harness_incompatible_failures`（#3803）：载荷字段与待答 form 卡零匹配 ⇒
+             **不是** agent 行为失败（归因单列），但仍然阻塞。
+        本夹具三者皆空 —— 也就是说：**既有桶/文案一字未动**，新增的只是"多出来的失败形态
+        不再混进 `deterministic_failures`（那会继续归因错人）"。
         """
         verdict = lr.completion_verdict(self._results(), (_journey_id(),))
         assert verdict == {
@@ -326,6 +355,9 @@ class TestCompletionCarriesReasons:
             "deterministic_failures": ["PP-007"],
             "journey_failures": [_journey_id()],
             "flake_released": ["OR-014"],
+            "systemic_recurrence": [],
+            "restore_failures": [],
+            "harness_incompatible_failures": [],
             "total": 4, "passed": 1,
         }
         # ② 口径锚点：同样是"两次皆败"，`unstable` 必须进阻塞桶（旧口径会放行）
@@ -337,6 +369,9 @@ class TestCompletionCarriesReasons:
             "deterministic_failures": ["OR-014"],
             "journey_failures": [],
             "flake_released": [],
+            "systemic_recurrence": [],
+            "restore_failures": [],
+            "harness_incompatible_failures": [],
             "total": 1, "passed": 0,
         }
 
@@ -371,6 +406,9 @@ class TestLegacyBytesUnchanged:
         assert NEW_COMPLETION_KEY in new["completion"], "新增字段缺失 → 本锚点什么都没证明"
         assert NEW_COST_KEY in new, "新增字段缺失 → 本锚点什么都没证明"
         assert NEW_RUN_KEY_KEY in new, "新增字段缺失 → 本锚点什么都没证明"
+        assert NEW_EVIDENCE_KEY in new, (
+            "证据窗口缺失（#3805）→ Diagnose 无法按用例窗口取容器日志，"
+            "本锚点也会退化成空断言")
         assert _dump(_strip_new(new)) == _dump(legacy), (
             "除新增字段外 summary 变了（既有字段/键顺序被改动）—— "
             "与历史 run 的对比会失效，且 report job 等消费者可能受影响")
@@ -526,3 +564,70 @@ class TestReleasedFlakesAreListed:
         assert 'r["flake_released"] = True' in src, (
             "runner 没有在「首败 + 重试通过」处打 flake_released 标记 —— "
             "completion.flake_released 会重新变成恒空字段")
+
+
+# ── ⑥ 证据窗口（issue #3805）：失败用例的执行窗口必须可被取数步骤消费 ──────────
+#
+# 病灶：容器日志一直用固定 `--tail=N` 取（取到的是 **dump 那一刻**的日志）。实测判定跑
+# 34873715194：OR-014 的窗口是 01:20–01:47 CST（runner 打印的 `⏱ start=`），而
+# `aikf-ai-agent` 的 `--tail=100` 段起点是 01:48:24 ⇒ 失败窗口内 **0 行**。
+# 修法 = 把窗口写进 artifact + 取数脚本按窗口切片（本类锁这两件事，均可离线跑）。
+
+WINDOWS_SCRIPT = REPO_ROOT / ".github" / "scripts" / "eval_log_windows.sh"
+
+
+class TestEvidenceWindow:
+    def _results(self):
+        a = _case("OR-011", 1.0, "pass")
+        a["started_at"], a["finished_at"] = "2026-09-14T17:19:00+00:00", "2026-09-14T17:19:30+00:00"
+        b = _case("OR-014", 0.0, "reproducible", [("断言原文", "")])
+        b["started_at"], b["finished_at"] = "2026-09-14T17:20:00+00:00", "2026-09-14T17:47:22+00:00"
+        c = _case("PR-014", 0.0, "reproducible", [("断言原文", "")])
+        c["started_at"], c["finished_at"] = "2026-09-14T17:21:30+00:00", "2026-09-14T17:48:27+00:00"
+        return [a, b, c]
+
+    def test_window_covers_all_cases(self, tmp_path):
+        data = _write(tmp_path, self._results())
+        assert data["evidence_window"] == {"since": "2026-09-14T17:19:00+00:00",
+                                          "until": "2026-09-14T17:48:27+00:00"}
+        # 逐用例窗口也必须在：取数脚本按**失败用例**切片，不只用一个全局窗口
+        got = [(c["id"], c.get("started_at"), c.get("finished_at")) for c in data["cases"]]
+        assert all(s and f for _, s, f in got), f"用例窗口缺失：{got}"
+
+    def test_no_window_is_empty_not_fabricated(self, tmp_path):
+        """没有时间戳时 `evidence_window` 必须为空 dict（不编一个假窗口）。"""
+        assert _write(tmp_path, [_case("CH-010", 1.0, "pass")])["evidence_window"] == {}
+
+    def test_slicing_script_returns_failed_case_windows(self, tmp_path):
+        """取数脚本（真实执行）：只给**失败**用例的窗口，格式可被 `docker --since/--until` 直接用。"""
+        import subprocess
+        out = tmp_path / "s.json"
+        lr.write_summary_json(str(out), "post-deploy", "", self._results())
+        got = subprocess.run(["bash", str(WINDOWS_SCRIPT), str(out), "--failed"],
+                             capture_output=True, text=True, check=True).stdout.strip().split("\n")
+        assert got == [
+            "2026-09-14T17:20:00+00:00\t2026-09-14T17:47:22+00:00\tOR-014",
+            "2026-09-14T17:21:30+00:00\t2026-09-14T17:48:27+00:00\tPR-014",
+        ], got
+
+    def test_slicing_script_all_mode_and_missing_window(self, tmp_path):
+        """`--all` 给整轮窗口；没有窗口时**退出码 3**（调用方据此回落固定 tail，不静默空跑）。"""
+        import subprocess
+        out = tmp_path / "s.json"
+        lr.write_summary_json(str(out), "post-deploy", "", self._results())
+        got = subprocess.run(["bash", str(WINDOWS_SCRIPT), str(out), "--all"],
+                             capture_output=True, text=True, check=True).stdout.strip()
+        assert got == "2026-09-14T17:19:00+00:00\t2026-09-14T17:48:27+00:00\tALL", got
+
+        old = tmp_path / "old.json"
+        lr.write_summary_json(str(old), "post-deploy", "", [_case("CH-010", 1.0, "pass")])
+        rc = subprocess.run(["bash", str(WINDOWS_SCRIPT), str(old), "--failed"],
+                            capture_output=True, text=True).returncode
+        assert rc == 3, f"无窗口时必须退 3（调用方回落 tail），实得 {rc}"
+
+    def test_workflows_consume_the_window_not_only_tail(self):
+        """**接线上锁**：三个评测 workflow 的 Diagnose 必须调用取数脚本 —— 否则窗口白写。"""
+        for wf in ("post-deploy-eval.yml", "xiaobu-acceptance.yml", "agent-behavior-eval.yml"):
+            src = (REPO_ROOT / ".github" / "workflows" / wf).read_text(encoding="utf-8")
+            assert "eval_log_windows.sh" in src, f"{wf} 未按用例窗口取数（固定 tail 会丢失败窗口）"
+            assert "--since" in src and "--until" in src, f"{wf} 没把窗口喂给 docker logs"

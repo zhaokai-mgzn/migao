@@ -269,3 +269,132 @@ class TestVerdictContract:
             if entry["released"] != (cls in lr._COMPLETION_RELEASED_CLASSES):
                 bad.append(f"{cls}: released={entry['released']} 与放行档不符")
         assert bad == [], "台账 released 与放行档漂移：\n  " + "\n  ".join(bad)
+
+
+# ── 跨 run 指纹复发（issue #3806）：放行政策补上「跨 run」这一维 ──────────────────
+#
+# 病灶：放行判据只看**本次 run 的两次尝试**（首败 + 重试通过 = `llm-noise` = 放行），
+# 而台账每次 run 独立生成 ⇒「同一首跑指纹」可以永远"首次出现"。
+# 铁证（三个**真实** run 的 `agent-eval-flakes.json`，PR-016）：
+#   run 34856561459 / 34865780382 / 34873715194 的首跑指纹**恒为**
+#   `no_success(interact)||required_arg(processing_item_query,applicable_category_id)`
+#   （首跑通过率 **0/3**），第三次却因"重试碰巧过"被判 `llm-noise` + 放行。
+# ⇒ 判据补一维：同一 `(用例, 首跑指纹)` 在历史 run 里出现过 ⇒ **不是随机波动** ⇒ 不放行。
+# 夹具即上面三个 run 的**真实指纹**（不是编的），且阈值/去重/空指纹都有反向守卫。
+PR016_FP = ("no_success(interact)||"
+            "required_arg(processing_item_query,applicable_category_id)")
+RUN1, RUN2, RUN3 = "34856561459", "34865780382", "34873715194"
+
+
+def _entry(case_id, fingerprint, run_id):
+    return {"case_id": case_id, "first_attempt_signature": fingerprint, "run_id": run_id}
+
+
+class TestCrossRunRecurrence:
+    def _history(self, pairs):
+        hist = {}
+        for rid, entries in pairs:
+            hist = lr.merge_flake_history(hist, entries, rid)
+        return hist
+
+    def _run3_history(self):
+        """run1 / run2 的真实指纹（run3 之前）"""
+        return self._history([
+            (RUN1, [_entry("PR-016", PR016_FP, RUN1), _entry("PR-012", "唯一指纹A", RUN1)]),
+            (RUN2, [_entry("PR-016", PR016_FP, RUN2)]),
+        ])
+
+    def test_recurring_fingerprint_is_not_released(self):
+        """**核心**：PR-016 在 run3 被判 llm-noise（重试通过）—— 历史里指纹已出现 2 次 ⇒ 不放行。"""
+        hist = self._run3_history()
+        r = {"case_id": "PR-016", "score": 1.0, "classification": "llm-noise",
+             "flake_released": True}
+        marked = lr.annotate_cross_run_recurrence([r], [_entry("PR-016", PR016_FP, RUN3)], hist)
+        assert [m["case_id"] for m in marked] == ["PR-016"], "复发指纹没被标注"
+        assert marked[0]["prior_count"] == 2
+        v = lr.completion_verdict([r], ())
+        assert v["ok"] is False, "跨 run 复发的系统性缺口被放行了（政策仍缺这一维）"
+        assert v["systemic_recurrence"] == ["PR-016"]
+        assert v["flake_released"] == [], "复发条目不得留在放行桶里"
+        assert "跨 run 复发" in v["reason"]
+
+    def test_red_proof_without_history_the_old_policy_releases(self):
+        """**红证**：没有历史（= 修前口径）时同一条被判放行 ⇒ 证明新判据真的改变了结论。"""
+        r = {"case_id": "PR-016", "score": 1.0, "classification": "llm-noise",
+             "flake_released": True}
+        assert lr.annotate_cross_run_recurrence([r], [_entry("PR-016", PR016_FP, RUN3)], {}) == []
+        v = lr.completion_verdict([r], ())
+        assert v["ok"] is True and v["flake_released"] == ["PR-016"]
+        assert v["systemic_recurrence"] == []
+
+    def test_random_flake_is_still_released(self):
+        """**反向守卫**：指纹不在历史里（真随机波动）⇒ 仍然放行，不得改判。"""
+        hist = self._run3_history()
+        r = {"case_id": "OR-017", "score": 1.0, "classification": "llm-noise",
+             "flake_released": True}
+        lr.annotate_cross_run_recurrence([r], [_entry("OR-017", "抖动指纹X", RUN3)], hist)
+        assert r.get("cross_run_recurrence") is None
+        v = lr.completion_verdict([r], ())
+        assert v["ok"] is True and v["flake_released"] == ["OR-017"]
+
+    def test_empty_fingerprint_never_counts_as_recurrence(self):
+        """空指纹必须永不判复发：`空 == 空` 会把一批无关用例互相"确认"成复发（假红）。"""
+        hist = self._history([(RUN1, [_entry("A-001", "", RUN1)]), (RUN2, [_entry("A-001", "", RUN2)])])
+        r = {"case_id": "A-001", "score": 1.0, "classification": "llm-noise", "flake_released": True}
+        assert lr.annotate_cross_run_recurrence([r], [_entry("A-001", "", RUN3)], hist) == []
+        assert lr.completion_verdict([r], ())["ok"] is True
+
+    def test_same_fingerprint_across_different_cases_is_only_informational(self):
+        """键带 case_id：不同用例落到同一泛化指纹时**不得**互相判复发（只做信息性提示）。"""
+        hist = self._history([(RUN1, [_entry("PR-016", "no_success(interact)", RUN1)])])
+        r = {"case_id": "PR-014", "score": 1.0, "classification": "llm-noise", "flake_released": True}
+        assert lr.annotate_cross_run_recurrence(
+            [r], [_entry("PR-014", "no_success(interact)", RUN3)], hist) == []
+        assert lr.completion_verdict([r], ())["ok"] is True
+        assert lr.cross_case_fingerprint_cases(hist) == {}   # 历史里只有一条用例
+
+    def test_merge_is_idempotent_per_run(self):
+        """同一 run 重复并入必须只计一次（否则自己把自己判成复发）。"""
+        e = [_entry("PR-016", PR016_FP, RUN1)]
+        hist = lr.merge_flake_history({}, e, RUN1)
+        hist = lr.merge_flake_history(hist, e, RUN1)
+        assert hist["PR-016"][PR016_FP]["runs"] == [RUN1]
+
+    def test_current_run_does_not_count_itself(self):
+        """**顺序契约**：run_suite 必须「先标注（用历史）→ 再并入本次」。
+
+        顺序反过来时，本次 run 会出现在自己的"历史"里 ⇒ **首次出现**的指纹被判复发（假红）。
+        本用例把这条顺序锁进断言（配 `test_merge_is_idempotent_per_run` 的 run_id 去重）。
+        """
+        hist = self._run3_history()
+        new_fp = "首见指纹B"
+        e_new = [_entry("PR-016", new_fp, RUN3)]
+        r = {"case_id": "PR-016", "score": 1.0, "classification": "llm-noise", "flake_released": True}
+        # ① 先标注（历史里没有该指纹）⇒ 不复发（= 本次 run 没把自己算进去）
+        assert lr.annotate_cross_run_recurrence([r], e_new, hist) == []
+        # ② 再并入 ⇒ 下一次 run 看到它才算复发（这正是"跨 run"的含义）
+        hist2 = lr.merge_flake_history(hist, e_new, RUN3)
+        r2 = {"case_id": "PR-016", "score": 1.0, "classification": "llm-noise", "flake_released": True}
+        assert lr.annotate_cross_run_recurrence(
+            [r2], [_entry("PR-016", new_fp, "run-next")], hist2), (
+            "上一次 run 出现过的指纹，本次必须判复发")
+
+    def test_merge_does_not_mutate_input_history(self):
+        """纯函数：不得就地改入参（调用方可能还要用旧索引做对比）。"""
+        hist = self._history([(RUN1, [_entry("PR-016", PR016_FP, RUN1)])])
+        before = repr(hist)
+        lr.merge_flake_history(hist, [_entry("PR-016", PR016_FP, RUN2)], RUN2)
+        assert repr(hist) == before
+
+    def test_recurrence_only_downgrades_released_entries(self):
+        """只有"会被放行"的条目才谈得上被改判；确定性失败照旧进阻塞桶（不重复计数）。"""
+        hist = self._run3_history()
+        r = {"case_id": "PR-016", "score": 0.0, "classification": "reproducible"}
+        lr.annotate_cross_run_recurrence([r], [_entry("PR-016", PR016_FP, RUN3)], hist)
+        v = lr.completion_verdict([r], ())
+        assert v["deterministic_failures"] == ["PR-016"] and v["systemic_recurrence"] == []
+        assert v["ok"] is False
+
+    def test_fingerprint_key_carries_case_and_signature(self):
+        assert lr.flake_fingerprint_key(_entry("PR-016", "fp", RUN1)) == ("PR-016", "fp")
+        assert lr.CROSS_RUN_RECURRENCE_MIN_PRIOR >= 1, "阈值必须 fail-closed（≥1 次历史即复发）"

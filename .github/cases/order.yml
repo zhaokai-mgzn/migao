@@ -620,6 +620,19 @@ cases:
     # run 34627856207 第 4–8 轮每轮只重复 customer_address_query，order_create 永不发生。
     # auto_respond 轮优先回答上一轮卡片（confirm→confirmValue / choice→首项 /
     # form→按声明值回填），无卡时用 fallback 文本兜底 → 用例不再依赖特定提问顺序。
+    #
+    # ⚠️ 但**载荷声明的位置**仍是位置依赖（issue #3804，判定跑 34873715194 铁证）：
+    # 客户信息原先只声明在第 4、5 轮，而 runner 回填需要「本轮声明了载荷」×「上一轮待答卡
+    # 是 form」**同时**成立 ⇒ agent 的发卡时机只要**晚一轮**（实测 R4 被产品侧兜底话术吃掉），
+    # 窗口就用尽、`__FORM__` 全场命中 **0**、`order_create` 永不发生 ⇒ 用例必红，且照样写成
+    # "agent 没下单"（红/绿由"当轮是否恰好抽卡"决定）。故用**用例级** `auto_fill` 声明，
+    # 让载荷**脱离轮次位置**（全场任意轮可用）；轮级声明保留（轮级优先级更高，语义不变）。
+    auto_fill:
+      customer_name: "张三"
+      customer_phone: "13800138000"
+      customer_address: "浙江省杭州市西湖区文三路1号1幢101室"
+      color: "米白"
+      colorName: "米白"
     user_inputs:
       - "帮我下单，遮光窗帘 3 米，要打孔加工"
       - auto_respond:
@@ -1312,6 +1325,15 @@ cases:
     truths_ref:
       - order.create-flow
       - ai-chat.confirm-required
+    # 用例级表单载荷（issue #3804）：客户信息原先只声明在 R3/R4 ⇒ agent 发卡晚一轮
+    # 即整场不可完成（`__FORM__` 命中 0 → order_create 永不发生 → 红且归因错人）。
+    # 声明在用例级 = 载荷**脱离轮次位置**，全场任意轮可用；轮级声明保留（优先级更高）。
+    auto_fill:
+      customer_name: "张三"
+      customer_phone: "13800138000"
+      customer_address: "浙江省杭州市西湖区文三路1号1幢101室"
+      color: "米白"
+      colorName: "米白"
     user_inputs:
       - "我想买遮光窗帘，米白 3 米，要纳米圈打孔加工"
       - auto_respond:
@@ -1516,6 +1538,12 @@ cases:
     truths_ref:
       - order.create-flow
       - ai-chat.confirm-required
+    # 用例级表单载荷（issue #3804）：原先只声明在 R4/R5 ⇒ agent 发卡晚一轮即整场不可完成。
+    # 声明在用例级 = 载荷脱离轮次位置（全场任意轮可用）；轮级声明保留（优先级更高）。
+    auto_fill:
+      customer_name: "张三"
+      customer_phone: "13800138000"
+      customer_address: "浙江省杭州市西湖区文三路1号1幢101室"
     # ── 沉淀验收 C-A1 的真因（issue #3402）──
     # 实证（run 34753219595，C-A1 主路径）：
     #   R4 用户「数量 3 米」→ Agent 发 `choice: 请选择窗帘用量 →

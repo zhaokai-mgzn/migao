@@ -178,6 +178,7 @@ def to_eval_py(cases):
            '    forbidden_card_text: List = field(default_factory=list) # 卡片内容反模式（卡里不得出现「用量/倍数」等把金额翻倍的框架，issue #3402）',
            '    namespaces: List[str] = field(default_factory=list) # 全局命名空间声明（<kind>:<值>，如 customer_phone:13800138000）；两条用例有交集 → 自动串行（issue #3781 并行污染隔离）',
            '    precondition: List[dict] = field(default_factory=list) # 运行期前置断言（order_count_for_phone：运行期间订单数不得增长；不成立则判「前置不成立」而非行为失败，issue #3781）',
+            '    auto_fill: dict = field(default_factory=dict) # **用例级**表单载荷（全场可用）：让客户信息脱离轮次位置（issue #3804）',
            "", ""]
 
     for c in cases:
@@ -234,6 +235,10 @@ def to_eval_py(cases):
             out.append(f"    namespaces={c.get('namespaces')!r},")
         if c.get("precondition"):
             out.append(f"    precondition={c.get('precondition')!r},")
+        # 用例级表单载荷（issue #3804）：只在声明时落字面量，未声明的用例走 dataclass 默认
+        # （缺省 = 无 case 级载荷，行为与旧版逐字一致）
+        if c.get("auto_fill"):
+            out.append(f"    auto_fill={c.get('auto_fill')!r},")
         out.append(")")
         out.append("")
 
@@ -376,6 +381,11 @@ def to_md(cases):
                 lines.append(f"产出: {ov.get('tool')}{_ov_act} → {_ov_exp}")
             for ps in (c.get("post_session") or []):
                 lines.append(f"会话后: {ps.get('fetch')}({ps.get('agent_type', 'xiaobu')}) → {'; '.join(ps.get('checks') or [])}")
+            if c.get("auto_fill"):
+                # 用例级载荷（issue #3804）：读 casebook 的人必须知道"顾客信息全场可用"，
+                # 否则会以为载荷只挂在某几轮（旧形态的位置依赖正是红/绿由发卡时机决定的根因）
+                _af = ", ".join(f"{k}={v}" for k, v in c["auto_fill"].items())
+                lines.append(f"载荷(全场可用): {_af}")
             if c.get("skip_reason"):
                 lines.append(f"跳过: {c['skip_reason']}")
             lines.append("```")

@@ -1070,6 +1070,7 @@
 数据: 订单创建成功并包含 SKU 信息
 数据: 第7步自动找到刚创建的订单
 必须成功: order_create
+载荷(全场可用): customer_name=张三, customer_phone=13800138000, customer_address=浙江省杭州市西湖区文三路 1 号 1 幢 101 室
 ```
 真值: ai-chat.context-memory, ai-chat.intent-domains, order.states, order.logistics, id-resolve.index
 溯源: eval M007 独有（物流查询是旅程一环，独立用例见 OR-005）。2026-09-14 消除顺序依赖（issue #3568）：① 「看看第一个的详情」→ 点名「遮光窗帘」（推荐列表返回顺序依赖，同 OR-024 #3408）；② 色号「白色」→ 种子真实色号「米白」；③ 收尾裸文本「确认下单/确认」→ 答卡轮（#3518 口径）；④ 补 pre_clean product_dedupe + must_succeed[order_create] ｜ tags: multi_turn, real_scenario, cross_skill, full_journey
@@ -2257,6 +2258,7 @@
 数据: C 端下单是**两步**：确认订单信息后还需手机验证码（order_create 的 sms_code，customer 角色必填）。用例必须提供验证码这一轮，否则 AI 停在第 5 步「请提供验证码」，order_create 永不发生（run 34622425044 实证：R7 顾客回「确认」后无任何工具调用）。dev/CI 栈已设 SMS_BYPASS_CODE=123456，此处用该码走真实校验分支。
 必须成功: order_create
 金额: order_create 「遮光窗帘」 → unit_price; subtotal; total
+载荷(全场可用): customer_name=张三, customer_phone=13800138000, customer_address=浙江省杭州市西湖区文三路1号1幢101室, color=米白, colorName=米白
 ```
 真值: order.states, order.create-flow, processing-manage.crud
 溯源: 2026-09-07 改写（issue #3005，回滚 #2986）：行业加工费按米计价、辅料（罗马圈/四爪钩等）含在按米加工费中——回滚 per_piece 与「每米数量」密度（数量=ceil(面料米数×密度) 与实际车间工艺不符、数量隐藏导致 B 端无法对账），数量改为按计价方式派生且展示（per_meter=面料米数、per_set/fixed=1）；2026-09-14 校准（#3538）：pre_clean 去 price 过滤（关键词去重，原 price 过滤限 100 元、在种子遮光窗帘 ¥168 的独立栈上恒不匹配 = 没去重） ｜ tags: order_create, processing_item, pricing
@@ -2465,6 +2467,7 @@
 金额: order_create 「遮光窗帘」 → unit_price; subtotal; total
 落库: order_items → source=order_create; expect_products=['遮光窗帘']; expect_quantities={'遮光窗帘': 3}
 落库: order_phone → source=order_create; expect_phone=13800138000
+载荷(全场可用): customer_name=张三, customer_phone=13800138000, customer_address=浙江省杭州市西湖区文三路1号1幢101室, color=米白, colorName=米白
 ```
 真值: order.create-flow, ai-chat.confirm-required
 溯源: 2026-09-13 新增（issue #3391）：新客路径覆盖（多身份评测 + 无历史地址时的收集能力） ｜ tags: order_create, new_customer, capability, xiaobu
@@ -2516,6 +2519,7 @@
 金额: order_create 「遮光窗帘」 → unit_price; subtotal; total
 落库: order_items → source=order_create; expect_products=['遮光窗帘']; expect_quantities={'遮光窗帘': 3}
 落库: order_phone → source=order_create; expect_phone=13800138000
+载荷(全场可用): customer_name=张三, customer_phone=13800138000, customer_address=浙江省杭州市西湖区文三路1号1幢101室
 ```
 真值: order.create-flow, ai-chat.confirm-required
 溯源: 2026-09-13 新增（issue #3402）：沉淀 C-A1 主路径真因（数量口径 → 产出层反模式断言） ｜ tags: order_create, quantity, ceiling, xiaobu
@@ -3152,6 +3156,7 @@
 禁词: 未创建成功
 必填: product_manage(create) 字段 specifications, processing_item_configs.customPrice
 必须成功: product_manage(create)
+载荷(全场可用): name=2699系列雪尼尔窗帘面料, price=23.8, colors=2699-01 米白, door_widths=2.8米, selling_methods=散剪, sku_code=XNE2699
 ```
 真值: product-sku-stock.low-stock
 溯源: 2026-09-08 新增（issue #3027）：sess_c1fce183dae24f22 复盘 — AI 预填表单展示了推理属性但 create 未落库（product_attributes 0 行）；加工项只传名称列表 → custom_price 全 NULL → 详情页 ¥0.00/米（单位硬编码）。三端修复：prompt 强制 specifications+processing_item_configs、admin-api finalPrice 回退、admin-web 渲染回退；2026-09-09 校准：补真实色卡图（原纯文本「根据这张图片」无 images，agent 要图走不下去）。2026-09-14 资产重写（#3518）：② 色卡识别结果轮由 `auto_select`（对 form 卡发「第一个」→ 表单从未提交）改为按 formFields 真实 key 回填的 `auto_respond`；③ 原文本占位符「颜色…门幅…」补真实值、加工项「波浪定型」换目录中真实存在的「韩式波浪折边」；④ 收尾改协作答卡轮。2026-09-15 §14.1 回填（issue #3683）：补 `must_succeed:[product_manage(action=create)]`（原仅有 expectations 参数级匹配 + required_args，create 失败仍判过）；db_verify 未加——商品名与种子 `prod_eval_2699` 同名同价、`_fetch_product_configs` 取 keyword 首条无法区分本次新建与种子（见用例内注释） ｜ tags: product_create, specifications, processing_item, regression

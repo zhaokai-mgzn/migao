@@ -126,6 +126,13 @@ cases:
       - order.states
       - order.logistics
       - id-resolve.index
+    # 用例级表单载荷（issue #3804）：客户信息原先只声明在 R7/R8，而 R9 仍是可作答轮
+    # ⇒ agent 把客户信息表单发晚一轮（R9）时载荷送不出、`order_create` 永不发生，
+    # 用例必红却写成"agent 没做"。声明在用例级 = 载荷脱离轮次位置。
+    auto_fill:
+      customer_name: "张三"
+      customer_phone: "13800138000"
+      customer_address: "浙江省杭州市西湖区文三路 1 号 1 幢 101 室"
     user_inputs:
       - "你好，我想买窗帘"
       - "有什么遮光好的推荐吗"
