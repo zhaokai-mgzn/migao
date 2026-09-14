@@ -906,13 +906,24 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
         if (product == null) {
             throw BusinessException.notFound("商品");
         }
+        applyStatusTransition(product, status);
+        productMapper.updateById(product);
 
-        String currentStatus = product.getStatus();
+        log.info("更新商品状态成功: id={}, status={}", id, status);
+    }
+
+    /**
+     * 状态流转校验（不写库、不改实体）——违反状态机时抛业务错误。
+     *
+     * 状态机唯一入口，供 @see #updateProductStatus（表单端点）与
+     * @see #updateProductForAgent（Agent 更新端点）共用，避免两处各写一套流转规则。
+     * 单独抽出是为了让调用方能「先校验后落库」：非法流转在任何写入之前失败。
+     */
+    private void validateStatusTransition(String currentStatus, String status) {
         if (currentStatus == null) {
             currentStatus = "draft";
         }
 
-        // 状态流转校验
         List<String> allowedTransitions = STATUS_TRANSITIONS.get(currentStatus);
         if (allowedTransitions == null || !allowedTransitions.contains(status)) {
             String currentLabel = PRODUCT_STATUS_LABELS.getOrDefault(currentStatus, currentStatus);
@@ -925,13 +936,16 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
                             currentLabel, targetLabel,
                             allowedLabels.isEmpty() ? "无" : String.join("/", allowedLabels)));
         }
+    }
 
+    /**
+     * 状态流转校验并就地落到实体（不写库，由调用方统一持久化）。
+     */
+    private void applyStatusTransition(Product product, String status) {
+        validateStatusTransition(product.getStatus(), status);
         product.setStatus(status);
         product.setEditedBy(getCurrentUsername());
         product.setEditedAt(OffsetDateTime.now());
-        productMapper.updateById(product);
-
-        log.info("更新商品状态成功: id={}, {} -> {}", id, currentStatus, status);
     }
 
     /**
@@ -1677,6 +1691,13 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
         }
         if (request.getDoorWidths() != null) { updateReq.setDoorWidths(request.getDoorWidths()); hasUpdate = true; }
 
+        // status 也是有效更新：只传 status 时不能落进下面的 !hasUpdate 分支（那正是本 issue 的假成功路径）。
+        // 这里先做状态机校验（不写库）：非法流转必须在任何写入之前失败，不留部分写入。
+        if (request.getStatus() != null) {
+            validateStatusTransition(product.getStatus(), request.getStatus());
+            hasUpdate = true;
+        }
+
         // 不传 processingItemConfigs，保留现有关联
         updateReq.setProcessingItemConfigs(null);
 
@@ -1684,7 +1705,27 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
             return getProductById(id, tenantId);
         }
 
-        return updateProduct(id, updateReq, tenantId);
+        ProductResponse response = updateProduct(id, updateReq, tenantId);
+
+        // status（上下架）：委托状态机唯一入口 applyStatusTransition（issue #3560）。
+        // 回归背景：product_update 一直在请求体里下发 status，但本 DTO 曾无该字段 + 本方法从不读取它
+        // → Jackson 静默忽略 → hasUpdate 保持 false → 上一行 !hasUpdate 分支返回商品详情
+        // （HTTP 200 + success）→ 米宝回「已下架」而 products.status 未变。与 stock 同型的"假成功"。
+        //
+        // 为什么放在 updateProduct 之后：updateProduct 内部刻意 `product.setStatus(originalStatus)`
+        // （注释「状态变更必须通过 updateProductStatus 接口（含状态机校验）」）——它靠 BeanUtils
+        // 拷贝请求到实体，而 ProductUpdateRequest 也有 status 字段，会绕过状态机。故状态只能由本方法
+        // 在商品更新完成后单独落库；非法流转抛错时整方法 @Transactional 回滚，不留部分写入。
+        if (request.getStatus() != null) {
+            Product latest = productMapper.selectById(id);
+            if (latest == null) {
+                throw BusinessException.notFound("商品");
+            }
+            applyStatusTransition(latest, request.getStatus());
+            productMapper.updateById(latest);
+        }
+
+        return response;
     }
 
     /**

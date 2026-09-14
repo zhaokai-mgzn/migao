@@ -37,7 +37,11 @@ class ProductUpdateTool(BaseTool):
             "price": {"type": "number", "description": "新价格（可选）"},
             "name": {"type": "string", "description": "新名称（可选）"},
             "description": {"type": "string", "description": "新描述（可选）"},
-            "status": {"type": "string", "enum": ["on_sale", "off_sale"], "description": "上下架（可选）"},
+            "status": {
+                "type": "string",
+                "enum": ["on_sale", "off_sale"],
+                "description": "上下架 status=on_sale（上架）/ off_sale（下架）。null 不修改",
+            },
             "allow_return_restock": {
                 "type": "boolean",
                 "description": "退货后是否回补库存（可选，issue #2991）：true=退货回补/可再售，false=定制商品退货不回补。null 不修改",
