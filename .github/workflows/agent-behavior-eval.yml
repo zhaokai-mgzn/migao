@@ -39,7 +39,10 @@ name: Agent Behavior Eval (行为改动映射用例)
 #
 #   §13.2 映射表里的用例并不都是「米宝 + normal + 未 skip」：
 #     · CH-010 是 `persona: xiaobu` 的 C 端用例（米宝跑不了 → 若统一用 mibao 会 exit 1）
-#     · AS-007 / CH-021 / CH-022 在用例库里已 `skip_reason` 非空（任何 persona 都跑不了 → exit 1）
+#     · AS-007 是双端用例，但期望工具（`after_sales_manage` / `order_query`）不在小布工具集内
+#       ⇒ 小布端**选不中**它 —— **不是** `skip_reason`：AS-007 的 `skip_reason` 为空、米宝端照跑
+#       （此前本条误把它与下面两条并列成「已 skip」，已按实测更正）
+#     · CH-021 / CH-022 在用例库里已 `skip_reason` 非空（任何 persona 都跑不了 → exit 1）
 #     · DF-011 / DF-012 是 `tier: adversarial`（normal 档会**静默少跑**）
 #   故 map job 用**用例库自己的选择函数**（render_cases.load_case_dicts +
 #   eval_case_filter.select_cases_for_persona，两者都是零第三方依赖）把映射结果切成
@@ -290,8 +293,9 @@ jobs:
 
       - name: PR 评论（映射计划；评测结果随后更新各自 persona 的评论）
         # 为什么在 map job 就发评论：① 让"这次改了行为、要跑哪几条"在 PR 上**立即可见**
-        # （不必等 5~13 分钟的起栈）；② 全部映射都不可执行时（例如只改了换货 skill →
-        # AS-007 在用例库已 skip），本条评论就是唯一披露渠道 —— 没有它，
+        # （不必等 5~13 分钟的起栈）；② 全部映射都不可执行时（`skip_reason` 非空，
+        # 或该端工具集选不中 —— 如改换货 skill 映射出 `AS-007`，其 `skip_reason` 为空
+        # 但小布端选不中、而本轮只跑小布腿），本条评论就是唯一披露渠道 —— 没有它，
         # 这个 PR 会显示"行为评测通过"，而实际一条都没跑（假绿）。
         #
         # ★ **按 persona 各一条评论**（issue #3563）：评测 job 已改为 persona matrix
@@ -565,7 +569,8 @@ jobs:
           # 通过的写用例也要看工具结果 ——「工具被调用」≠「落库成功」（issue #3270 实证）
           AGENT_EVAL_TRACE_ALL: "1"
           # 波动台账（issue #3563 同类漂移排查）：`runner` 只有在设了这个变量时才落盘台账
-          # （local_runner.py:3899），此前本 workflow 与本变量同族的另两个 workflow
+          # （`local_runner.py` 里按 `AGENT_EVAL_FLAKE_LOG` 环境变量检索 ——
+          #  旧注释写的裸行号会漂移，不再给），此前本 workflow 与本变量同族的另两个 workflow
           # 各写一份口径 → 台账在本 workflow（PR 门禁，波动最需要被看见的地方）静默缺失。
           AGENT_EVAL_FLAKE_LOG: agent-eval-flakes.json
           # 固定节流降到最小：墙钟几乎全在真实 LLM 往返上（与 xiaobu-acceptance 同值）
