@@ -31,6 +31,15 @@ _PHONE_PATTERN = re.compile(r"^1[3-9]\d{9}$")  # 中国大陆手机号
 # 用户口语里的"3米"就是数量 3 —— 带单位的合法输入不得被当成非法值拦掉。
 _NUMERIC_PREFIX_PATTERN = re.compile(r"^[¥￥$]?\s*(?P<num>[+-]?\d+(?:\.\d+)?)")
 
+# 枚举合法值（issue #3622）。单一事实源在 admin-api 侧，工具侧照抄，别名归一化刻意不做：
+# - sellingMethod: `product_skus.selling_method` = bulk_cut(散剪) / full_roll(整卷)；
+#   `OrderService:1435` 回退匹配时按**字面** eq 比较 → 拼写变体静默匹配不到
+#   → 库存校验/销量统计静默丢失（#3621 同源）。
+# - pricingMethod: `ProcessingItemService:298` 只认 per_meter/per_set/fixed/per_area
+#   （per_piece 按个不支持，issue #3005）。
+_SELLING_METHODS = ("bulk_cut", "full_roll")
+_PRICING_METHODS = ("per_meter", "per_set", "fixed", "per_area")
+
 # 万能验证码 bypass（POC/测试阶段，对齐 admin-api 的 sms.bypass-code 机制）。
 # 空字符串 = 禁用 bypass（生产安全默认）。POC 部署时设置 SMS_BYPASS_CODE=123456 与 admin-api 对齐。
 SMS_BYPASS_CODE = os.getenv("SMS_BYPASS_CODE", "")
@@ -120,7 +129,8 @@ class OrderCreateTool(BaseTool):
                     "properties": {
                         "product_name": {
                             "type": "string",
-                            "description": "商品名称（必填）",
+                            "minLength": 1,
+                            "description": "商品名称（必填，不得为空；与 product_detail 返回一致）",
                         },
                         "quantity": {
                             "type": "integer",
@@ -143,11 +153,13 @@ class OrderCreateTool(BaseTool):
                         },
                         "width": {
                             "type": "number",
-                            "description": "宽度（可选，需要尺寸时填写）",
+                            "minimum": 0,
+                            "description": "宽度（米，可选，不得为负；可传 2.8 或「2.8米」）",
                         },
                         "height": {
                             "type": "number",
-                            "description": "高度（可选，需要尺寸时填写）",
+                            "minimum": 0,
+                            "description": "高度（米，可选，不得为负；可传 2.0 或「2.0米」）",
                         },
                         "processing_info": {
                             "type": "object",
@@ -155,10 +167,18 @@ class OrderCreateTool(BaseTool):
                             "properties": {
                                 "colorId": {"type": "string", "description": "颜色ID（字符串，来自商品详情）"},
                                 "colorName": {"type": "string", "description": "颜色名称"},
-                                "sellingMethod": {"type": "string", "description": "售卖方式"},
+                                "sellingMethod": {
+                                    "type": "string",
+                                    "enum": ["bulk_cut", "full_roll"],
+                                    "description": "售卖方式，取 product_detail skus[].selling_method 原值：bulk_cut(散剪) / full_roll(整卷)。拼写变体（散剪/bulkCut）会被本地拒绝",
+                                },
                                 "doorWidth": {"type": "string", "description": "门幅"},
                                 "skuCode": {"type": "string", "description": "SKU编码"},
-                                "processingFee": {"type": "number", "description": "加工费合计"},
+                                "processingFee": {
+                                    "type": "number",
+                                    "minimum": 0,
+                                    "description": "加工费合计（不得为负）= Σ(processingItems[i].unitPrice × quantity)",
+                                },
                                 "processingItems": {
                                     "type": "array",
                                     "description": "加工项列表",
@@ -170,8 +190,12 @@ class OrderCreateTool(BaseTool):
                                             "unitPrice": {"type": "number", "minimum": 0},
                                             "quantity": {"type": "integer", "minimum": 0},
                                             "unit": {"type": "string"},
-                                            "pricingMethod": {"type": "string"},
-                                            "subtotal": {"type": "number"},
+                                            "pricingMethod": {
+                                                "type": "string",
+                                                "enum": ["per_meter", "per_set", "fixed", "per_area"],
+                                                "description": "计价方式，取 product_detail processing_items[].pricing_method 原值：per_meter(按米)/per_set(按套)/fixed(一口价)/per_area(按面积)；per_piece(按个)不支持",
+                                            },
+                                            "subtotal": {"type": "number", "minimum": 0},
                                         },
                                     },
                                 },
@@ -331,12 +355,164 @@ class OrderCreateTool(BaseTool):
         return None
 
     @staticmethod
-    def _validate_item_value_bounds(i: int, item: Dict[str, Any]) -> Optional[ToolResult]:
-        """单行明细的**数值语义**校验（issue #3586）：在发 HTTP 之前 fail-fast。
+    def _reject_invalid_amount(where: str, field_label: str, field_key: str, raw: Any,
+                               impact: str) -> Optional[ToolResult]:
+        """非负数值闸门（issue #3622）：负数/不可解析 → 本地拒绝（HTTP 之前 fail-fast）。
 
-        覆盖面：quantity（正整数）、unit_price（> 0）、subtotal（≥ 0 且 ≥ 数量×单价）。
-        只做确定性判定（无 LLM、无网络），保证"注定失败的调用"不产生 HTTP 往返。
+        覆盖面：`items[].width/height`（尺寸）、`processing_info.processingFee`、
+        `processing_info.processingItems[].quantity/unitPrice/subtotal`。
+
+        为什么在工具层拦：这些值直接进入金额/面积数学 —— 服务端
+        `OrderService.sumProcessingFee()`（:824-829）就是 Σ `unitPrice × quantity`
+        （`extractProcessingItems` :807-811 即这两字段相乘），**任一为负 → 负加工费**
+        直接加进 `totalAmount` 落库（:417）；负尺寸则让 per_area 计价算出负面积。
+        Agent 路径 DTO（`AgentOrderItem`）原先零约束注解、Controller 无 `@Valid` → 后端不拦。
         """
+        value = OrderCreateTool._parse_positive_number(raw)
+        if value is None:
+            return ToolResult(
+                success=False,
+                error=f"{where}{field_label}无效",
+                message=f"{where}的{field_label}「{raw}」不是有效数字。",
+                suggestion=(
+                    f"请把 {field_key} 改成数值型{field_label}（如 2.8 / 8 / 24.00），"
+                    "不要写文字或「宽2.8」这类带前后缀的文本"
+                ),
+            )
+        if value < 0:
+            return ToolResult(
+                success=False,
+                error=f"{where}{field_label}不能为负数",
+                message=(
+                    f"{where}的{field_label}是 {raw}，不能为负数 —— {impact}。"
+                ),
+                suggestion=(
+                    f"请把 {field_key} 改成 ≥ 0 的数值；顾客要减钱请走优惠金额字段，"
+                    "不要用负数代表扣减"
+                ),
+            )
+        return None
+
+    @staticmethod
+    def _reject_invalid_enum(where: str, field_label: str, field_key: str, raw: Any,
+                             legal: tuple) -> Optional[ToolResult]:
+        """枚举闸门（issue #3622）：售卖方式/计价方式必须是**后端字面认得的**枚举值。
+
+        刻意不做别名归一化（"散剪"→bulk_cut）：后端 `OrderService:1435` 是**按字面**
+        eq 匹配 SKU 的，归一化会把"这个字段到底该传什么"的契约藏进工具层；而静默接受
+        变体的代价是**静默不匹配**（SKU 匹配不到 → 库存校验/销量统计静默丢失）。
+        所以拒绝 + 点名合法值，让 LLM 下一轮自愈。
+        """
+        if raw is None:
+            return None  # 可选字段（单 SKU 商品不一定有售卖方式）
+        if isinstance(raw, str) and raw in legal:
+            return None
+        return ToolResult(
+            success=False,
+            error=f"{where}{field_label}无效",
+            message=(
+                f"{where}的{field_label}是「{raw}」，不是后端认得的合法值。"
+                "拼写变体会被**静默**当成另一个规格：SKU 匹配按字面比较 → 匹配不到 → "
+                "库存校验与销量统计静默丢失。"
+            ),
+            suggestion=(
+                f"请改用 product_detail 返回的**原值**：{' / '.join(legal)}"
+                + ("（散剪=bulk_cut、整卷=full_roll）" if field_key.endswith("sellingMethod")
+                   else "（per_piece 按个不支持，issue #3005）")
+            ),
+        )
+
+    @staticmethod
+    def _validate_processing_info(i: int, pinfo: Any) -> Optional[ToolResult]:
+        """`processing_info` 内的范围/枚举闸门（issue #3622）。
+
+        只在 pinfo 是 dict 时校验：JSON 字符串形态是老契约（服务端 `extractProcessingItems`
+        自己解析），工具侧不臆断其内容，避免误报。
+        """
+        if not isinstance(pinfo, dict):
+            return None
+        where = f"商品明细第 {i + 1} 项"
+        rejected = OrderCreateTool._reject_invalid_enum(
+            where, "售卖方式", "processing_info.sellingMethod",
+            pinfo.get("sellingMethod"), _SELLING_METHODS)
+        if rejected is not None:
+            return rejected
+        if pinfo.get("processingFee") is not None:
+            rejected = OrderCreateTool._reject_invalid_amount(
+                where, "加工费", "processing_info.processingFee", pinfo.get("processingFee"),
+                "负加工费会把订单总额拉低（顾客少付钱、财务对账对不上）")
+            if rejected is not None:
+                return rejected
+        raw_items = pinfo.get("processingItems")
+        if raw_items is None:
+            return None
+        if not isinstance(raw_items, list):
+            return ToolResult(
+                success=False,
+                error=f"{where}加工项格式错误",
+                message=(
+                    f"{where}的 processing_info.processingItems 不是列表"
+                    f"（{type(raw_items).__name__}），服务端解析不出加工项与加工费。"
+                ),
+                suggestion="请把 processingItems 写成列表，每项为对象：{name, unitPrice, quantity, pricingMethod}",
+            )
+        for j, entry in enumerate(raw_items):
+            entry_where = f"{where}加工项第 {j + 1} 项"
+            if not isinstance(entry, dict):
+                return ToolResult(
+                    success=False,
+                    error=f"{entry_where}格式错误",
+                    message=(
+                        f"{entry_where}不是对象，服务端 `extractProcessingItems` 会跳过它"
+                        " → 该加工费被静默丢弃（顾客少收钱）。"
+                    ),
+                    suggestion="请把每个加工项写成对象：{name, unitPrice, quantity, pricingMethod}",
+                )
+            rejected = OrderCreateTool._reject_invalid_enum(
+                entry_where, "计价方式", "processingItems[].pricingMethod",
+                entry.get("pricingMethod"), _PRICING_METHODS)
+            if rejected is not None:
+                return rejected
+            for field_key, label, impact in (
+                ("quantity", "数量", "负数量的加工费是负数（服务端按 unitPrice × quantity 计费）"),
+                ("unitPrice", "单价", "负单价的加工费是负数（服务端按 unitPrice × quantity 计费）"),
+                ("subtotal", "小计", "负小计与加工费口径自相矛盾（确认卡金额与落库金额对不上）"),
+            ):
+                if entry.get(field_key) is None:
+                    continue
+                rejected = OrderCreateTool._reject_invalid_amount(
+                    entry_where, label, f"processingItems[].{field_key}",
+                    entry.get(field_key), impact)
+                if rejected is not None:
+                    return rejected
+        return None
+
+    @staticmethod
+    def _validate_item_value_bounds(i: int, item: Dict[str, Any]) -> Optional[ToolResult]:
+        """单行明细的**数值语义 + 枚举**校验：在发 HTTP 之前 fail-fast。
+
+        覆盖面（issue #3586）：quantity（正整数）、unit_price（> 0）、subtotal（≥ 0 且 ≥ 数量×单价）。
+        覆盖面（issue #3622，同族残留）：product_name 非空、width/height（≥ 0）、
+        processing_info 的 sellingMethod 枚举 / processingFee（≥ 0）/
+        processingItems[].pricingMethod 枚举与 quantity/unitPrice/subtotal（≥ 0）。
+        只做确定性判定（无 LLM、无网络），保证"注定失败的调用"不产生 HTTP 往返，
+        也保证「闸门放行的值 = 服务端能接受的值」。
+        """
+        # 商品名称必须非空（#3622：原先只判「字段存在 or None」→ 空串可一路下单）
+        raw_name = item.get("product_name")
+        if isinstance(raw_name, str) and not raw_name.strip():
+            return ToolResult(
+                success=False,
+                error=f"商品明细第 {i + 1} 项商品名称为空",
+                message=(
+                    f"商品明细第 {i + 1} 项的 product_name 是空字符串 —— 空商品名的订单"
+                    "无法在列表/对账里定位商品，也无法作为售后凭证。"
+                ),
+                suggestion=(
+                    "请填写顾客所选商品的名称（与 product_detail 返回的商品名一致），"
+                    "不要用空串占位"
+                ),
+            )
         for field, label in (("quantity", "数量"), ("unit_price", "单价"), ("subtotal", "小计")):
             if field not in item or item.get(field) is None:
                 return None  # 缺字段由必填检查给出提示（此处不重复报错）
@@ -351,9 +527,24 @@ class OrderCreateTool(BaseTool):
             return rejected
         quantity = OrderCreateTool._parse_positive_number(item.get("quantity"))
         unit_price = OrderCreateTool._parse_positive_number(item.get("unit_price"))
-        return OrderCreateTool._reject_subtotal_below_product(
+        rejected = OrderCreateTool._reject_subtotal_below_product(
             i, quantity or 0.0, unit_price or 0.0, item.get("subtotal")
         )
+        if rejected is not None:
+            return rejected
+        # 尺寸（#3622，可选）：负尺寸 → per_area 负面积
+        for field, label, impact in (
+            ("width", "宽度", "负宽度会让按面积（per_area）计价算出负面积"),
+            ("height", "高度", "负高度会让按面积（per_area）计价算出负面积"),
+        ):
+            if item.get(field) is None:
+                continue
+            rejected = OrderCreateTool._reject_invalid_amount(
+                f"商品明细第 {i + 1} 项", label, field, item.get(field), impact)
+            if rejected is not None:
+                return rejected
+        # 加工信息（#3622）：售卖方式/加工费/加工项数量与单价
+        return OrderCreateTool._validate_processing_info(i, item.get("processing_info"))
 
     @staticmethod
     def _otp_key(phone: str, tenant_id: int) -> str:
@@ -615,8 +806,14 @@ class OrderCreateTool(BaseTool):
                     ("height", "height"),
                     ("processing_info", "processingInfo"),
                 ]:
-                    if item.get(py_key) is not None:
-                        entry[java_key] = item[py_key]
+                    value = item.get(py_key)
+                    if value is None:
+                        continue
+                    # 尺寸已在 _validate_item_value_bounds 里按「容忍单位」的口径解析过：
+                    # 这里发**数值**（"2.8米" → 2.8），否则 Java BigDecimal 解析失败 → 白跑一轮 HTTP。
+                    if py_key in ("width", "height"):
+                        value = self._parse_positive_number(value)
+                    entry[java_key] = value
                 items_payload.append(entry)
 
             json_data: Dict[str, Any] = {
