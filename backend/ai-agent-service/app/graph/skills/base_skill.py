@@ -1748,6 +1748,48 @@ def _registry_has_tool(registry, name: str) -> bool:
         return False
 
 
+# ── 订单 → 物流链收口（issue #3799）──────────────────────────────────────────
+# 实证（run 34873715194 的 OR-013 R2，SHA 30527b73）：
+#   顾客「那用我最近一笔订单的订单号查一下物流」→ 模型 `order_query` 拿到真实订单号后
+#   **把订单信息当交付物回复**，`logistics_track` 从未被调用（`tools=['order_query']`），
+#   顾客要的轨迹一个字都没给 —— 推理链只走了一半。同 run 的 OR-005 一轮内走完同一链，
+#   证明工具可用、链本身可行 ⇒ 这是**交付标准**缺失，不是能力缺失。
+# 为什么在代码层收口：提示词/few-shot 只能提高概率（本次是「客户当场看」的场景），
+# 而"顾客要物流 ⇒ 拿到订单号必须继续查轨迹"是**确定性**的交付标准。
+# 判据**全部是事实**，不看顾客话术关键词（禁"含『物流』字样就调工具"式硬绑）：
+#   ① 本轮**意图事实** = 物流查询（路由器已算出的 `intent_result.intent`）；
+#   ② 本 skill 工具集里**真有** `logistics_track`（C 端用小布的 customer_logistics_track，不适用）；
+#   ③ 本回合 `order_query` **成功返回过真实订单号**（`order_nos` 非空——没有订单号时
+#      正确行为是问顾客要订单号，不是硬调）；
+#   ④ 本回合**从未尝试**过 `logistics_track`（模型自己没走完这一步）。
+# 命中后只做一件事：注入一条纠正并让循环继续（**有界一次**），**不代跑工具、不放宽任何守卫**。
+_LOGISTICS_CHAIN_CORRECTIVE = (
+    "【订单→物流链未完成】顾客要的是**物流轨迹**，而你本轮只查到订单号就准备结束回复。"
+    "订单号只是查询轨迹的**入参**，不是交付物 —— 顾客要的「到哪了/什么状态」你还没给。"
+    "本轮**立即**调用 logistics_track(order_id='{order_no}') 查这笔订单的轨迹，"
+    "再把工具返回的状态/轨迹如实回复给顾客。"
+    "若工具返回「该订单尚未发货」「未找到该订单」，**那也是**这条链的有效结果，照实说明即可"
+    "（同样必须真调用工具，不要凭订单状态猜）。禁止只回复订单号或订单信息。"
+)
+
+
+def _logistics_chain_incomplete(
+    *, intent_name: str, registry, order_nos: list, executed_tools) -> bool:
+    """订单→物流链是否**只走了一半**（纯函数，判据全是事实；见上方说明）。"""
+    return bool(
+        intent_name == "logistics_track"
+        and order_nos
+        and "logistics_track" not in (executed_tools or set())
+        and _registry_has_tool(registry, "logistics_track")
+    )
+
+
+def _logistics_chain_corrective(order_nos: list) -> str:
+    """生成链收口纠正文本（用**工具刚返回的真实订单号**举例，不让模型自己猜）。"""
+    return _LOGISTICS_CHAIN_CORRECTIVE.format(
+        order_no=str(order_nos[0]) if order_nos else "")
+
+
 def _order_write_tool_here(registry=None) -> bool:
     """本 skill 的工具子集里有没有下单写工具（= 模型**当下手里就有**下单能力）。
 
@@ -3381,6 +3423,11 @@ async def execute_skill(
                     f"| session={session_id} msg={last_user_msg[:24]!r}")
             # 本轮**模型自己执行过**的工具名（供 8.4 收口判重：防双单）
             _executed_tools: set = set()
+            # 本回合 `order_query` 成功返回过的**真实订单号**（订单→物流链收口的判据③，
+            # 只记事实；跨迭代累计，见 issue #3799）
+            _turn_order_nos: list = []
+            # 链收口纠正**有界**：每个回合一经注入即置位，不再二次注入（见下方判据）
+            _logistics_chain_corrected = False
             # 本次 execute_skill 调用（= 顾客的一个回合）**已下发过的卡片组件**：
             # 同一组件每轮只允许一张（issue #3445）。**整轮**生效，跨 LLM 迭代也要认
             # （模型可能在后续迭代"再补一张"）—— 故在循环**外**初始化（放循环里会被每轮重置，
@@ -3516,6 +3563,31 @@ async def execute_skill(
                             _fix = _TEXT_DENIAL_CORRECTIVE_MIDORDER
                         new_messages.append(SystemMessage(content=_fix))
                         continue
+                    # ── 订单→物流链收口（issue #3799）──
+                    # 模型把「查到订单号」当交付物就收尾 ⇒ 顾客要的轨迹没给（链只走一半）。
+                    # 命中判据全是事实（见 `_logistics_chain_incomplete`），**有界一次**：
+                    # 注入纠正后继续循环让模型自己调 logistics_track；若注入后仍不调，
+                    # 接受本轮结束（不无限注入），但留一条可检索日志便于归因"注入了但模型没跟"。
+                    _chain_incomplete = _logistics_chain_incomplete(
+                        intent_name=intent_name,
+                        registry=skill_registry,
+                        order_nos=_turn_order_nos,
+                        executed_tools=_executed_tools,
+                    )
+                    if _chain_incomplete and not _logistics_chain_corrected:
+                        _logistics_chain_corrected = True
+                        logger.warning(
+                            f"[{skill_name}][logistics-chain] 流程链未走完：本轮 intent={intent_name}、"
+                            f"order_query 已返回 {len(_turn_order_nos)} 个真实订单号、"
+                            f"logistics_track 从未尝试 → 注入纠正并继续本轮 | session={session_id}")
+                        new_messages.append(SystemMessage(
+                            content=_logistics_chain_corrective(_turn_order_nos)))
+                        continue
+                    if _chain_incomplete and _logistics_chain_corrected:
+                        logger.warning(
+                            f"[{skill_name}][logistics-chain] 已注入纠正但模型仍未调用 "
+                            f"logistics_track → 接受本轮结束（不二次注入）| session={session_id} "
+                            f"intent={intent_name} order_nos={len(_turn_order_nos)}")
                     if new_text:
                         final_content = new_text
                     elif not final_content:
@@ -4178,6 +4250,16 @@ async def execute_skill(
 
                 for tool_call, result_str, result_dict in tool_results:
                     tool_name = tool_call["name"]
+                    # 订单→物流链收口（issue #3799）判据③：记账本回合查到的**真实订单号**
+                    # （只读 facts；类型不对就跳过——这条路径不该因为结果形状异常而炸掉主流程）
+                    if tool_name == "order_query" and result_dict.get("success"):
+                        _oq_data = result_dict.get("data")
+                        if isinstance(_oq_data, dict):
+                            for _o in (_oq_data.get("orders") or []):
+                                _no = str((_o or {}).get("order_no") or "").strip() \
+                                    if isinstance(_o, dict) else ""
+                                if _no and _no not in _turn_order_nos:
+                                    _turn_order_nos.append(_no)
                     # 记录 tool 结果到 ContextManager，跨 skill 共享
                     if session_id and result_dict.get("success"):
                         try:
