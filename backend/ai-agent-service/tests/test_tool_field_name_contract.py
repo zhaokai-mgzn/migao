@@ -35,9 +35,10 @@ _REPO_ROOT = Path(__file__).resolve().parents[3]
 _JAVA_MAIN = _REPO_ROOT / "backend" / "admin-api" / "src" / "main" / "java"
 
 # 请求 DTO 实例字段：`private String remark;` / `private List<String> images;`
-# （排除 static 常量与 serialVersionUID）
+# / `private Integer page = 1;`（带初值的字段同样是 Jackson 可绑定字段，漏解析会误报「键被丢弃」）
+# （排除 static 常量与 final 常量 / serialVersionUID）
 _FIELD_RE = re.compile(
-    r"^\s*private\s+(?!static\b)(?!final\b)[\w.<>,\[\]\s]+\s+(\w+)\s*;", re.MULTILINE
+    r"^\s*private\s+(?!static\b)(?!final\b)[\w.<>,\[\]\s]+\s+(\w+)\s*(?:=[^;]*)?;", re.MULTILINE
 )
 
 
