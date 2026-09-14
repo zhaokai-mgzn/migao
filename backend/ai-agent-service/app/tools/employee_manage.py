@@ -84,7 +84,7 @@ class EmployeeManageTool(BaseTool):
             },
             "phone": {
                 "type": "string",
-                "description": "手机号（create/update 时使用）",
+                "description": "手机号（create 必填；update 时可改登录手机号，需租户内未被占用）",
             },
             "password": {
                 "type": "string",
@@ -97,7 +97,7 @@ class EmployeeManageTool(BaseTool):
             "role_ids": {
                 "type": "array",
                 "items": {"type": "string"},
-                "description": "角色 ID 列表（create 时使用）",
+                "description": "角色 ID 列表（role_manage 列表里的角色 id 主键；create/update 时使用，update 时与 role 二选一）",
             },
             "avatar": {
                 "type": "string",

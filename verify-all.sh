@@ -42,6 +42,21 @@ report() {
   fi
 }
 
+# 评测用例覆盖体检（B/C 两端）—— 与 pr-check 的 `Case Coverage Gate` job **同一脚本、
+# 同一参数**（判据在 scripts/case_coverage.py 单一实现），避免「本地绿 CI 红」。
+# 拦什么（结构性缺失）：工具 0 用例 / 只有拒绝式断言而没有任何正向用例 / 用例挂错端 /
+#                      断言了两端都没有的工具 / 端用例集为空。
+# 不拦什么（活指标）：某工具仅 1 条用例的"厚度不足"——缺口数是随迭代收敛的活指标，
+#                    硬编码阈值会制造返工式门禁（issue #3555 判据设计；旧注释见下）。
+# 不加 --max-uncovered：同上，缺口数不设硬阈值。
+case_coverage_check() {
+  local persona
+  for persona in xiaobu mibao; do
+    echo "  🔍 ${persona} 评测覆盖体检"
+    python3 "scripts/${persona}_coverage.py" --check || return 1
+  done
+}
+
 gate_check() {
   echo "── [QA Growth Gate] 本地预检（与 pr-check qa-growth-gate 同规则，含 G5 case_ids 追溯）──"
   git fetch origin main --quiet 2>/dev/null || true
@@ -63,11 +78,7 @@ gate_check() {
     echo "  🔍 扫描新增测试文件的弱断言"
     python3 .github/growth_gate.py --check-weak --files $NEW_TESTS || GATE_RC=1
   fi
-  # C 端小布评测覆盖体检（issue #3266）：孤儿用例必须 0、用例集不得为空。
-  # 不加 --max-uncovered：缺口数是随迭代收敛的活指标，硬编码阈值会制造返工式门禁；
-  # 孤儿用例（声明 xiaobu 却断言非小布工具）是**配置错误**，必须拦截。
-  echo "  🔍 C 端小布评测覆盖体检"
-  python3 scripts/xiaobu_coverage.py --check >/dev/null 2>&1 || GATE_RC=1
+  case_coverage_check || GATE_RC=1
   [ "$GATE_RC" -eq 0 ] && [ "$BLOCKERS" = "0" ]
 }
 
@@ -81,7 +92,8 @@ case "$MODE" in
     report "admin-web tsc"        bash -c "cd '$ROOT/frontend/admin-web' && npx tsc --noEmit"
     report "QA Growth Gate 预检"  gate_check
     report "UI 回退检测"        bash -c "cd '$ROOT' && ./check-ui-regression.sh"
-    report "C 端评测覆盖体检"    bash -c "cd '$ROOT' && python3 scripts/xiaobu_coverage.py --check"
+    # 与 CI 的 Case Coverage Gate 同一脚本同一参数（判据单一实现在 scripts/case_coverage.py）
+    report "评测覆盖体检（B/C 两端）" bash -c "cd '$ROOT' && for p in xiaobu mibao; do python3 scripts/\${p}_coverage.py --check || exit 1; done"
     ;;
   full)
     echo "========== MIGAO 全量验证 =========="
@@ -91,7 +103,8 @@ case "$MODE" in
     report "admin-web tsc"        bash -c "cd '$ROOT/frontend/admin-web' && npx tsc --noEmit"
     report "QA Growth Gate 预检"  gate_check
     report "UI 回退检测"        bash -c "cd '$ROOT' && ./check-ui-regression.sh"
-    report "C 端评测覆盖体检"    bash -c "cd '$ROOT' && python3 scripts/xiaobu_coverage.py --check"
+    # 与 CI 的 Case Coverage Gate 同一脚本同一参数（判据单一实现在 scripts/case_coverage.py）
+    report "评测覆盖体检（B/C 两端）" bash -c "cd '$ROOT' && for p in xiaobu mibao; do python3 scripts/\${p}_coverage.py --check || exit 1; done"
     ;;
   frontend)
     report "admin-web vitest"     bash -c "cd '$ROOT/frontend/admin-web' && npx vitest run"

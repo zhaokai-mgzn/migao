@@ -9,7 +9,10 @@ from app.graph.skills.base_skill import execute_skill
 from app.graph.skills.skill_config import SkillConfig
 
 # 数据 Skill 可用的 Tool 列表
-DATA_TOOLS = ["dashboard_stats", "finance_api", "session_manage"]
+# interact（#3577，2026-09-14 产品裁定「交互形态统一」）：references/prompts/data.md
+# 承诺「写操作先确认再执行，结束会话需确认卡」，门禁补救话术亦要求发确认卡——
+# 不绑则承诺不可执行（#3317 的 6 处之一）。写操作安全由 admin-api 层承担。
+DATA_TOOLS = ["dashboard_stats", "finance_api", "session_manage", "interact"]
 
 # 数据 Skill 专用 System Prompt
 DATA_SYSTEM_PROMPT = """当前聚焦经营看板、财务对账与客服会话，遇到其他领域需求也应承接（如 "查看订单" → 引导进入订单管理）。

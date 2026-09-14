@@ -297,11 +297,19 @@ public class UserService implements UserDetailsService {
     }
 
     /**
-     * 更新用户基本信息（兼容签名，不修改岗位）
+     * 更新用户基本信息（兼容签名，不修改岗位/手机号）
      */
     @Transactional(rollbackFor = Exception.class)
     public User updateUser(String userId, String nickname, String avatar, String role, String permissions) {
-        return updateUser(userId, nickname, avatar, role, null, permissions);
+        return updateUser(userId, nickname, avatar, role, null, permissions, null);
+    }
+
+    /**
+     * 更新用户基本信息（兼容签名，不修改手机号）
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public User updateUser(String userId, String nickname, String avatar, String role, String position, String permissions) {
+        return updateUser(userId, nickname, avatar, role, position, permissions, null);
     }
 
     /**
@@ -313,10 +321,14 @@ public class UserService implements UserDetailsService {
      * @param role     角色
      * @param position 岗位（null 表示不修改；岗位=角色体系 #2969，编辑切岗位时随角色联动）
      * @param permissions 菜单权限码 JSON（如 ["orders.list","products.create"]），null 表示不修改
+     * @param phone    手机号（null/空白/与原值相同 表示不修改；变更时校验租户内唯一。
+     *                 issue #3550：ai-agent 员工管理与 admin-web 员工编辑都下发 phone，
+     *                 原先被静默忽略 → 200 假成功）
      * @return 更新后的用户
      */
     @Transactional(rollbackFor = Exception.class)
-    public User updateUser(String userId, String nickname, String avatar, String role, String position, String permissions) {
+    public User updateUser(String userId, String nickname, String avatar, String role, String position,
+                           String permissions, String phone) {
         // 安全校验：禁止商户侧分配系统保留角色/通配权限（审计 07 P0-2）
         assertAssignableRoleAndPermissions(role, permissions);
 
@@ -330,6 +342,18 @@ public class UserService implements UserDetailsService {
         }
         if (position != null) {
             user.setPosition(position);
+        }
+        // 手机号变更（issue #3550）：与创建口径一致，校验租户内唯一
+        if (StringUtils.hasText(phone) && !phone.equals(user.getPhone())) {
+            LambdaQueryWrapper<User> phoneWrapper = new LambdaQueryWrapper<>();
+            phoneWrapper.eq(User::getPhone, phone)
+                    .eq(User::getTenantId, user.getTenantId())
+                    .eq(User::getDeleted, 0);
+            User existing = userMapper.selectOne(phoneWrapper);
+            if (existing != null && !existing.getId().equals(userId)) {
+                throw BusinessException.validationError("手机号已被注册: " + phone);
+            }
+            user.setPhone(phone);
         }
         if (StringUtils.hasText(role) && !role.equals(user.getRole())) {
             user.setRole(role);
