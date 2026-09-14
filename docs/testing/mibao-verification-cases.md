@@ -2565,7 +2565,7 @@
 真值: order.create-flow
 溯源: 2026-09-14 首跑校准（issue #3666）：固定 2 轮轮次表在 B 端多步下单流程上必然跑不完（agent 只到 product_detail/interact，order_create 未发生 → 假失败），改为 repeat_until(tool_called=order_create, max=8) 协作轮（同 OR-026/OR-021 先例）；2026-09-14 新增（issue #3666）：订单数量语义放宽为 DECIMAL(10,2) 的端到端金额回归网——此前 per_area 小数面积（8.4 ㎡）会被 Integer 截断成 8 ㎡ 少收 12.00 元，且 OrderService 的 toInteger() 会让列表/详情加工费与外层金额自相矛盾 ｜ tags: order_create, processing_item, per_area, decimal_quantity
 
-## 加工项域（8 case）
+## 加工项域（9 case）
 
 ### PP-001. 加工项选择 - 分页翻页 🔵
 ```
@@ -2680,6 +2680,25 @@
 产出: processing_item_manage(toggle_item_status) → status==inactive
 ```
 溯源: 2026-09-14 新增（issue #3568）：`processing_item_manage(action=toggle_item_status)` 此前**零用例覆盖**（同 PP-007 的覆盖边界）。断言机器可判：must_succeed(action=toggle_item_status) + required_args[item_id,status] + output_verify(status=inactive，显式 action) + forbidden_text。⚠️ 数据副作用：停用种子加工项 `pi_eval_punch` 会影响依赖它的用例（OR-016/OR-024 等加工项流程）—— 评测栈每次重建，同栈内请让本条**后跑**（或由 pre_clean 复位）；本包未新增 runner 侧 pre_clean 类型，故在此显式标注。 ｜ tags: processing_item, llm_behavior, tool_call, toggle
+
+### PP-009. 米宝加工项 LLM 行为：per_area 按面积算价（calculate_price 下发 dimensions，不双计） 🔵
+```
+你: 刺绣工艺按面积算多少钱？宽 3.2 米、高 2.5 米
+你: [🔁 按目标工具重复直至成功：processing_item_manage，最多 2 次]
+期望: processing_item_manage(action=calculate_price)
+数据: per_area 的 quantity 是**计件数**（同一尺寸做几件，缺省 1）；面积由 dimensions(宽×高) 承载——把宽×高写进 quantity 会双计（30×8×8=¥1920，应为 ¥240）
+数据: 本端点的契约与 order_create 不同：order_create 由 agent 自己算 quantity=宽×高（acceptance-protocol.md:225 / order.yml:639 的口径只适用那条路径）；calculate_price 由后端从 dimensions 算面积
+数据: 回复需给出金额 ¥240（30 元/㎡ × 8㎡）并对得上用户给的尺寸
+禁词: 无法计算
+禁词: 暂不支持
+禁词: 功能不存在
+禁词: 计算失败
+必填: processing_item_manage() 字段 processing_item_id, width, height
+必须成功: processing_item_manage(calculate_price)
+产出: processing_item_manage(calculate_price) → totalPrice==240.0
+```
+真值: ⚠️ 缺口（见对应模板 ⚠️ 注释）
+溯源: 2026-09-15 新增（issue #3672 / 归因报告 G4）：`processing_item_manage(action=calculate_price)` 此前在用例库**零覆盖**——§14.5 覆盖矩阵只到工具级（本工具已有 4 条正向用例 → 恒绿），per_area 分支 100% 不可达这条缺口在矩阵里永远看不见。断言全部机器可判：must_succeed(action=calculate_price) + required_args[processing_item_id,width,height] + output_verify(totalPrice=240.00，显式 action) + forbidden_text。 ｜ tags: processing_item, llm_behavior, tool_call, calculate_price, per_area
 
 ## processing-order（16 case）
 
@@ -3837,8 +3856,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：287（活跃 147，跳过 140）
-- tier 分布：smoke 9 / normal 245 / adversarial 33
+- 用例总数：288（活跃 148，跳过 140）
+- tier 分布：smoke 9 / normal 246 / adversarial 33
 - 售后域：9
 - agents：6
 - api：19
@@ -3856,7 +3875,7 @@
 - onboarding：5
 - ontology：4
 - 订单域：27
-- 加工项域：8
+- 加工项域：9
 - processing-order：16
 - 商品域：22
 - registry：1
@@ -3910,4 +3929,5 @@
 - PG-016: 米宝加工单 LLM 行为：更新加工单状态（完成加工，产出核到 completed）
 - PP-007: 米宝加工项 LLM 行为：只改单价不清空其它字段（部分更新语义）
 - PP-008: 米宝加工项 LLM 行为：停用加工项（toggle_item_status → inactive）
+- PP-009: 米宝加工项 LLM 行为：per_area 按面积算价（calculate_price 下发 dimensions，不双计）
 

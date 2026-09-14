@@ -841,15 +841,48 @@ def _is_processing_items_card(args: dict) -> bool:
     return any(str(o.get("value", "")).startswith("proc_item") for o in args.get("options") or [])
 
 
+# 文本形态的加工项询问 = **对象词**（说的是不是加工项）+ **询问标记**（是不是在问）。
+# 为什么两条分支必须同口径（issue #3681 / 归因报告 G2 §3.3，先例 OR-017 run 34670989760）：
+#   `_is_processing_items_card` 早就接受「加工项」**或「加工」**（LLM 合法卡标题
+#   「这款窗帘支持**加工**哦，需要帮您加上吗？」不含三字），文本分支却要求**字面「加工项」三字**
+#   —— 而用例自己声明「文本询问亦可，语义由 order_before 保证」（`.github/cases/aftersales.yml:346`）
+#   ⇒ agent 用自然表述问加工项（「刺绣工艺（按面积）需要选哪种？」）被判"没问" →
+#   `order_before[processing_ask …]` 报「全程未调用」→ **整例 score 0（假红温床）**。
+# 口径 = 卡片分支的对象词集合（「加工项」/「加工」）+ 同族对象词「工艺」（问加工工艺同样是
+#   在问加工项）**并且**必须带询问标记 —— 文本分支没有"这是 choice 卡"这种结构保证，
+#   所以不能用"提到加工即算问"（那会把"加工已完成"这类陈述判成询问 → `order_before` 假绿）。
+# ⚠️ 只改**口径**，不动**时机**：`processing_ask` 的时序语义（必须早于写工单）一字未改。
+_PROC_ASK_OBJECT_WORDS = ("加工项", "加工", "工艺")
+_PROC_ASK_INTENT_WORDS = (
+    "选择", "选", "需要", "要不要", "是否", "可以", "确认", "哪种", "哪些", "什么",
+    "吗", "呢", "怎么",
+)
+# 明确**否定/已陈述**的形态（含「加工」二字但不是询问）→ 直接判非询问。
+# 为什么需要（issue #3681 反例）："该商品无可用加工项。" 含「加工项」且含「可」，
+# 旧口径（任何含「加」的句子）会把它判成"问了加工项" ⇒ `order_before` 假绿。
+_PROC_ASK_STATEMENT_MARKERS = (
+    "无可用加工项", "没有可用加工项", "不支持任何加工", "不需要加工", "无需加工",
+    "不用加工", "不加加工项", "无加工项",
+)
+
+
 def _processing_ask_in_round(r: dict) -> bool:
-    """该轮是否包含加工项询问（卡或文本）。文本形态：final_text 含「加工项」+ 询问意图词。"""
+    """该轮是否包含加工项询问（卡或文本）。
+
+    卡片分支：`_is_processing_items_card`（title 含「加工项」/「加工」，或 option 前缀 `proc_item`）。
+    文本分支：与卡片分支**同口径**（见上方 `_PROC_ASK_*` 常量的理由，issue #3681 假红温床）。
+    仍要求"是在问"：纯陈述（"您的订单已发货" / "加工已完成" / "该商品无可用加工项"）判 False。
+    """
     for tc in r.get("tool_calls") or []:
         a = tc.get("args") or {}
         if tc.get("name", "").lower() == "interact" and a.get("component") == "choice":
             if _is_processing_items_card(a):
                 return True
     text = (r.get("final_text") or r.get("text") or "")
-    return "加工项" in text and any(k in text for k in ("选择", "需要", "是否", "加"))
+    if not text or any(k in text for k in _PROC_ASK_STATEMENT_MARKERS):
+        return False
+    return (any(w in text for w in _PROC_ASK_OBJECT_WORDS)
+            and any(w in text for w in _PROC_ASK_INTENT_WORDS))
 
 
 def _round_call_success(r: dict, tool: str) -> list:
@@ -1457,6 +1490,10 @@ def check_must_succeed(results: list, must_succeed: list) -> list:
           - tool: order_create            # 下单用例必须真的建出订单
           - tool: aftersale_create
             action: create                # 可选：按 args.action 过滤
+
+    声明 `action` 时（issue #3681，同 #3667 的同族修法）：取的是**那次调用**自己的成败
+    （同轮同名调用按出现顺序对齐，见 `_round_action_result`）——同一轮里**别的 action
+    成功不能顶替**（那是假绿）；对不齐的合成轨迹回退**工具级**旧语义（不猜，向后兼容）。
     """
     issues = []
     for spec in must_succeed or []:
@@ -1480,16 +1517,28 @@ def check_must_succeed(results: list, must_succeed: list) -> list:
                     continue
                 called = True
                 break
-            # 结果侧：SSE tool_result 里该工具的成败（结果事件不带 args，无法按 action 过滤
-            # —— 所以**指定 action 时只有该轮真的发起了匹配调用，其成功才算数**，
-            # 否则同一工具不同 action 的成败会互相顶替：实测 `action: cancel` 的断言被
-            # 同工具 `action: create` 的成功"顶过"而假绿）
+            # 结果侧（issue #3681 / 同 #3667 的同族修法）：SSE tool_result 事件**不带 args**，
+            # 所以声明 action 时必须按**同轮同名调用的出现顺序**对齐到"那一次调用"自己的结果
+            # —— 否则同一工具不同 action 的成败会互相顶替，**别的 action 成功也能让
+            # `must_succeed[action=X]` 通过（假绿）**。对不齐（合成轨迹）→ 回退工具级旧语义。
+            if action:
+                a_called, _aligned, _legacy = _round_action_result(r, tool, action)
+                if not a_called:
+                    continue
+                if _aligned is not None:
+                    _res = _aligned.get("result")
+                    attempts.append((rnd, bool(_res.get("success") if isinstance(_res, dict)
+                                               else False), None))
+                elif _legacy is not None:
+                    attempts.append((rnd, bool(_legacy), None))
+                else:
+                    # 发起了但没有结果事件（流中断/并发丢弃）→ 按未成功记录，不许静默当成功
+                    attempts.append((rnd, False, "无结果事件"))
+                continue
             matched_results = [
                 st for st in _tool_result_status(r.get("tool_results") or [])
                 if _tool_name_matches(st.get("tool"), tool)
             ]
-            if action and not called:
-                continue
             if not called and not matched_results:
                 continue
             if not matched_results:
@@ -1526,6 +1575,9 @@ def check_must_fail(results: list, must_fail: list) -> list:
         由 `expectations: tool` 表达）；
       · 任一成功调用 → **违规**，并把轮次+错误码之外的尝试列出来便于归因。
     条目形态：`- order_create` 或 `- {tool: order_create, action: create}`。
+
+    声明 `action` 时（issue #3681）：只有**该 action 那次调用**自己的成败才算数（同轮对齐，
+    见 `_round_action_result`）——同轮别的 action 成功/失败都不得顶替（假绿/假红同源）。
     """
     issues = []
     for spec in must_fail or []:
@@ -1543,14 +1595,23 @@ def check_must_fail(results: list, must_fail: list) -> list:
         attempts = 0
         for r in results or []:
             rnd = r.get("__round")
-            called = any(
-                _tool_name_matches(tc.get("name"), tool)
-                and (not action or str((tc.get("args") or {}).get("action") or "") == action)
-                for tc in r.get("tool_calls") or [])
             matched = [st for st in _tool_result_status(r.get("tool_results") or [])
                        if _tool_name_matches(st.get("tool"), tool)]
-            if action and not called:
+            if action:
+                # 与 `must_succeed` 对称（issue #3681）：只有**声明 action 的那次调用**自己的成败
+                # 才算数 —— 同轮别的 action 成功/失败都不得顶替（假绿/假红同源）。
+                called, aligned, legacy = _round_action_result(r, tool, action)
+                if not called:
+                    continue
+                attempts += 1
+                _res = (aligned or {}).get("result")
+                _ok = (bool(_res.get("success") if isinstance(_res, dict) else False)
+                       if aligned is not None else bool(legacy))
+                if _ok:
+                    succeeded.append(rnd)
                 continue
+            called = any(_tool_name_matches(tc.get("name"), tool)
+                         for tc in r.get("tool_calls") or [])
             if not called and not matched:
                 continue
             attempts += len(matched)
@@ -2634,7 +2695,7 @@ def repeat_stop_met(results: list, spec: dict) -> bool:
     saw_status = False
     for r in results or []:
         if want_action:
-            called, aligned = _round_action_result(r, want, want_action)
+            called, aligned, _legacy = _round_action_result(r, want, want_action)
             if not called:
                 continue
             if aligned is not None:
@@ -2948,7 +3009,7 @@ def check_no_full_phone(results: list) -> list:
 
 
 def _round_action_result(r: dict, tool: str, action: str) -> tuple:
-    """本轮「声明 action 的那次调用」的结果 → `(是否发起该调用, 对齐到的 tool_result 或 None)`。
+    """本轮「声明 action 的那次调用」的结果 → `(是否发起该调用, 对齐到的 tool_result, 回退成败)`。
 
     为什么必须**对齐**而不是"该轮有成功就算"（issue #3667，PP-006 实证 run 34820346966）：
     同一轮里模型可以调**同名工具的多个 action**（首轮 `create_processing_item` 被拒后
@@ -2959,19 +3020,25 @@ def _round_action_result(r: dict, tool: str, action: str) -> tuple:
     所以「哪个结果是哪次调用的」只能按**同轮同名调用的出现顺序** —— `tool_calls` 与
     `tool_results` 都由 `customer_service_agent` 按 `state.messages` 顺序产出
     （`tool_result` 只是入队到回合末统一 flush，**相对顺序不变**）。
-    数量对不上（合成轨迹/节点重放）→ 返回 `(True, None)`，由调用方回退旧语义（不猜）。
+
+    第三个返回值 `legacy_ok` = 该轮**按工具名**统计的成败，**只在数量对不齐时**
+    （合成轨迹/节点重放：`called=True` 且 `aligned=None`）由调用方回退使用 —— 向后兼容旧语义，
+    不猜。对齐得上时它就是"那一次自己"的成败，精度只增不减。
     """
     calls = [tc for tc in (r or {}).get("tool_calls") or []
              if _tool_name_matches((tc or {}).get("name"), tool)]
     hit = [i for i, tc in enumerate(calls)
            if str(((tc or {}).get("args") or {}).get("action") or "") == action]
     if not hit:
-        return False, None
+        return False, None, None
     results = [tr for tr in (r or {}).get("tool_results") or []
                if _tool_name_matches((tr or {}).get("tool"), tool)]
+    flags = _round_call_success(r, tool)
+    legacy_ok = any(flags) if flags else None
     if len(results) != len(calls):
-        return True, None
-    return True, results[hit[0]]
+        return True, None, legacy_ok
+    own = (results[hit[0]].get("result") or {})
+    return True, results[hit[0]], bool(own.get("success") if isinstance(own, dict) else False)
 
 
 def _first_successful_payload(results: list, tool: str, action: str = "") -> dict:
@@ -2989,7 +3056,7 @@ def _first_successful_payload(results: list, tool: str, action: str = "") -> dic
     """
     for r in results or []:
         if action:
-            called, aligned = _round_action_result(r, tool, action)
+            called, aligned, _legacy = _round_action_result(r, tool, action)
             if not called:
                 continue
             if aligned is not None:
