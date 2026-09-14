@@ -4398,13 +4398,12 @@ async def execute_skill(
                                 logger.info(
                                     f"[{skill_name}] 建品加工项漏问兜底：confirm 卡改写为 choice 卡 "
                                     f"(options={len(_bp_choice['options'])}) | session={session_id}")
-                            # 记账：本轮任何一张加工项卡发出去过（改写来的或模型自己发的）→ 记「已问过」
-                            if any(
-                                (rd or {}).get("success")
-                                and str((rd or {}).get("data", {}).get("component") or "") == "choice"
-                                and _is_processing_items_card((rd or {}).get("data") or {})
-                                for _tc, _rs, rd in tool_results
-                            ):
+                            # 记账：本轮任何一张加工项卡发出去过（改写来的或模型自己发的）→ 记「已问过」。
+                            # 必须与改写分支**并列**（原先嵌在 `if _bp_plan is not None` 内）：
+                            # 模型**自己**发卡时 `_bp_plan` 为 None ⇒ 原先不记账 ⇒ 本会话后续轮次的
+                            # confirm 卡会被兜底重问一遍，正是 PR-014 data_check「未再次询问加工项」要防的形态
+                            # （与 C 端 OR-017 的"同一件事问第二遍"同族）。判据未变，只调记账时机。
+                            if _has_processing_choice_in_turn(tool_results):
                                 await _mark_processing_items_asked(session_id, "")
                     except Exception as e:
                         logger.warning(f"[{skill_name}] b-create processing-items fallback failed (non-fatal): {e}")
