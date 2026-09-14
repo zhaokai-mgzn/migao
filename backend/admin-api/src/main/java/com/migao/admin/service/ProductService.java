@@ -315,13 +315,19 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
      */
     @Transactional(rollbackFor = Exception.class)
     public ProductResponse createProduct(ProductCreateRequest request, Long tenantId) {
+        // 空分类归一化（#3665 冒烟 B1）：前端草稿发的是 ''（DEFAULT_FORM.categoryId）而非缺省 null。
+        // 若原样透传：validateCategory 因 hasText('')==false 跳过校验 → BeanUtils 把 '' 写进实体
+        // → insert category_id='' → products_category_id_fkey 违例（500）。表列可空、草稿允许
+        // 不选分类（ProductCreateRequest.categoryId 注释）→ 空串一律归一化为 NULL。
+        request.setCategoryId(normalizeBlankToNull(request.getCategoryId()));
+
         // 根据目标状态校验必填字段（draft 状态放宽）
         validateRequiredForStatus(request.getStatus(), request.getCategoryId(), request.getBasePrice());
 
         // 校验分类是否存在
         validateCategory(request.getCategoryId());
 
-        // 创建商品实体
+        // 创建商品实体（categoryId 已在方法开头归一化：'' → null，不得再漏到实体）
         Product product = new Product();
         BeanUtils.copyProperties(request, product);
         product.setTenantId(tenantId);
@@ -378,6 +384,9 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
             throw BusinessException.notFound("商品");
         }
 
+        // 空分类归一化（#3665 冒烟 B1，与 createProduct 同口径）：'' 不得写进实体，否则 FK 违例
+        request.setCategoryId(normalizeBlankToNull(request.getCategoryId()));
+
         // 根据目标状态校验必填字段（draft 状态放宽）
         validateRequiredForStatus(request.getStatus(), request.getCategoryId(), request.getBasePrice());
 
@@ -387,7 +396,7 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
         // 保存原始状态，防止 BeanUtils.copyProperties 绕过状态机
         String originalStatus = product.getStatus();
 
-        // 更新商品属性
+        // 更新商品属性（categoryId 已在方法开头归一化：'' → null，不得再漏到实体）
         BeanUtils.copyProperties(request, product);
         product.setId(id);
         // 恢复状态：状态变更必须通过 updateProductStatus 接口（含状态机校验）
@@ -1404,6 +1413,21 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
         if (category == null) {
             throw BusinessException.validationError("分类不存在");
         }
+    }
+
+    /**
+     * 空分类归一化（#3665 冒烟 B1）：空串/纯空白一律归一化为 null。
+     *
+     * 背景：admin-web 存草稿时 categoryId 初值是 ''（`DEFAULT_FORM.categoryId: ''`），
+     * `handleSubmit` 用 `...form` 原样透传，`buildProductPayload` 不清洗 → 后端
+     * validateCategory 因 hasText('')==false 跳过校验，BeanUtils.copyProperties 把 ''
+     * 写进实体 → insert/update category_id='' → products_category_id_fkey 违例（500）。
+     * 产品契约是「草稿可不选分类」（products.category_id 列本就可空；见
+     * ProductCreateRequest.categoryId 注释），故服务端统一以 null 表达"未选分类"，
+     * 覆盖所有调用方（admin-web / agent BFF）。
+     */
+    private static String normalizeBlankToNull(String value) {
+        return StringUtils.hasText(value) ? value : null;
     }
 
     /**
