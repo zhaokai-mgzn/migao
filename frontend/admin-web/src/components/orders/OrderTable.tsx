@@ -276,13 +276,14 @@ export default function OrderTable({
                   <td className="px-4 py-4 min-w-[280px]">
                     {order.items?.length || order.processingItems?.length ? (
                       <div className="space-y-1.5">
-                      {order.items?.map((item) => {
+                      {order.items?.map((item, itemIdx) => {
                         // #2916: 加工信息嵌套在明细项 processingInfo 内（列表接口不下发顶层 processingItems）
                         const pi = item.processingInfo
                         const fee = getItemProcessingFee(pi)
                         const procList = (Array.isArray(pi?.processingItems) ? pi.processingItems : []) as ProcessingDetail[]
                         return (
-                          <div key={item.id} className="space-y-0.5">
+                          // 列表接口不下发 item.id（#2916）→ key 用 id 兜底序号，避免 React key 警告
+                          <div key={item.id ?? `${order.id}-item-${itemIdx}`} className="space-y-0.5">
                             <div className="text-neutral-700 leading-tight text-xs">
                               <span>{item.productName || item.productCode || '-'}</span>
                               {': '}
