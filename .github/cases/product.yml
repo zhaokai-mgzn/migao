@@ -147,6 +147,11 @@ cases:
       # 没有放行写操作 → 有卡答卡（confirm→回 confirmValue），无卡才发原文「确认」。
       - auto_respond:
           fallback: "确认"
+    # 全局命名空间声明（issue #3781）：与同样争用该全局资源的用例自动互斥，
+    # 消除「同栈并行用例互相写同一命名空间」造成的非确定性（真实 run 34856561459）。
+    namespaces:
+      - "product_name:遮光窗帘"
+
     expectations:
       - tool: inventory_manage
         args:
@@ -181,14 +186,72 @@ cases:
       - product-sku-stock.low-stock
     user_inputs:
       - "看看哪些商品库存不足"
+    # ── 等价路径（issue #3781；真实 run 34856561459 的 PR-006 假红）──
+    # 病灶：原用例只认 `inventory_manage(action=low_stock_alert)` **一条实现路径**，
+    # 而"低库存"在产品里有**两条都被文档认可**的工具路径，且两条的阈值**文档口径不同**：
+    #   · `product_search(stock_status=low_stock)` = **库存≤100**
+    #     （`app/tools/product_search.py:26 LOW_STOCK_THRESHOLD=100`；`:92` 参数文档
+    #      「low_stock=库存≤100（与后台低库存口径一致）」）
+    #   · `inventory_manage(action=low_stock_alert)` 的 `threshold` 参数文档写「默认 10」
+    #     （`app/tools/inventory_manage.py:66` + schema `default: 10`），而
+    #     `_low_stock_alert` 的**形参默认是 100**（同文件 `:359`）—— 三处口径不一致，
+    #     属**产品级语义冲突**，已另开 issue #3783 跟踪（不属评测范围）。
+    # 本 run 实测：agent 走 `product_search`，工具返回 `products=4 total=4`，原文
+    # 「📦 库存偏低（≤100 件）的商品共 4 件」—— 被产品文档认可的等价路径，却被判 0%
+    # （`inventory_manage(action=low_stock_alert) → unmatched expectation`）。
+    #
+    # 修法（**零阈值放宽、零断言删除**）：**一条 OR 声明** = 「用其中任一工具按各自的
+    # 口径字段查出低库存」。`_check_expectation` 原生支持 `A or B`（AS-003 的
+    # `after_sales_manage or aftersale_create` 即同形）；`_arg_mismatch_reason` 的
+    # 判据是"OR 任一分支持有该键**且值相等**"⇒ `stock_status=low_stock` 只对
+    # `product_search` 分支生效、`action=low_stock_alert` 只对 `inventory_manage` 分支生效。
+    #
+    # ⚠️ **不能**写成两条独立声明：runner **逐条**计分（`score = 通过条数/声明条数`，
+    # 见 `run_case` 的 `passed_expectations/total_exp`），一次运行只可能走一条路径
+    # ⇒ 两条独立声明的用例**恒为 50%**（本包实测复现）。
+    # ⚠️ **不能**用 `must_succeed` 给两条路径各写一条：它也是**合取**（每条都必须成功、
+    # 无 OR 语义）⇒ 同样的恒红（本包第一版踩过，负向夹具照出）。
+    # ⇒ 一次运行"只用一条路径"这件事由**语义**保证（agent 回答一个问题不会两条都调）；
+    #   若将来要**机器强制**，需要 runner 支持"OR 断言组"或"args 级 OR"，属 runner 包范围，
+    #   已登记在 #3781（不能为了这条用一个恰好能跑通的近似写法冒充强制）。
+    # ⚠️ **已知的等价路径不完整（如实登记，未掩盖）**：`must_succeed` 声明的是
+    #   `product_search`（本 run 实测走通的那条），故若某次运行改为走
+    #   `inventory_manage(low_stock_alert)`，`expectations` 会过（OR 分支）而
+    #   `must_succeed` 会红 —— 该次红**不是** agent 做错，而是**断言层尚不支持
+    #   "任一路径真成功"（OR 成功组）**。本包**无法离线判定**下次 run 走哪条
+    #   （需真实 LLM），故不猜：如实写在这里 + PR body 的「存疑项」+ #3781 登记。
+    #   若下次全量 run 显示 agent 稳定走 `product_search`（= 本声明正确），无需改动；
+    #   若它改走 `inventory_manage`，正解是补 runner 的 OR 成功组能力（runner 包），
+    #   **不是**把这条 `must_succeed` 删掉（删掉即回到"调了≠成了"的假绿）。
+    # ⚠️ **每条 OR 分支必须带自己的 args**（写成一条 `tool+args` 会变成"两个键都要"：
+    # `_arg_mismatch_reason` 按**单一** args 字典逐键校验，`product_search` 没有 `action`
+    # 字段 ⇒ `missing arg 'action'` ⇒ 两条路径全红）。故此处用 runner 的
+    # `tool(k=v)` 文本形态，每条分支各自的键集（与 AS-003 的
+    # `after_sales_manage or aftersale_create(order_id=复用上轮 UUID)` 同形）。
     expectations:
-      - tool: inventory_manage
-        args:
-          action: low_stock_alert
+      - "inventory_manage(action=low_stock_alert) or product_search(stock_status=low_stock)"
+    # 「调了」≠「成了」（#3361 同族）：`check_expectation` **不读 `success`** ——
+    # 实测把「工具返回 500」喂进去，`product_search` 分支仍判 True。故独立补一层
+    # "真有**一次成功**"的断言（`must_succeed` 只按工具名过滤、不读 args，正好与 OR
+    # 声明互补：OR 声明承担"哪条路径 + 关键值"，它承担"路径真的成功了"）。
+    # 声明两条会因合取语义导致恒红，故取一条；**该条必须与用 args.action 的 OR 分支解耦**：
+    # `product_search` 无 `action` 字段，若声明 `action=low_stock_alert` 则永远匹配不到它。
+    must_succeed:
+      - tool: product_search
+    # ⚠️ **此处刻意不声明 `required_args[product_search.stock_status]`**：`required_args`
+    # 同样是**合取**（每条都必须满足），而 `inventory_manage` 分支**没有** `stock_status`
+    # 字段 ⇒ 加了它，走 `inventory_manage` 的那次运行会因"未调用 product_search"判红 ——
+    # 正是本用例要消除的"过度指定"，只是换了个字段（本包实测照出）。
+    # ⇒ payload 层的键**在场**由 OR 声明的分支键集承担（`stock_status`/`action` 各自必须在
+    #   **对应分支**的调用里在场且值相等，见 `_arg_mismatch_reason`）；"值真的传对了"由
+    #   负向夹具照红（见 PR body 红证表：改错口径值 / 漏带键 / 工具失败 三种都判红）。
+    # ── 数值有据的来源（为什么这里没有额外的机器断言）──
     data_checks:
-      - "每项库存 <= 100"
+      - "报告的低库存商品数 = 该路径工具返回的条数（product_search: data.products/total；inventory_manage: data.count）—— 数值必须有据，不得凭空给数（本 run 实测 4=4）"
+      - "阈值口径必须与所用工具一致：product_search 分支 = ≤100（库存≤100，与后台低库存口径一致）；inventory_manage 分支 = threshold（默认 10）"
+      - "给出的数字必须能指回该工具返回的明细（不得只给个总数而不列商品）"
     skip_reason: ""
-    merge_log: "verification 2.6 独有"
+    merge_log: "verification 2.6 独有。2026-09-15（issue #3781）等价路径校准：原断言 `expectations=['inventory_manage(action=low_stock_alert)']` **过度指定实现路径** —— 真实 run 34856561459 里 agent 走的是 `product_search(stock_status=low_stock)`（产品文档认可：库存≤100，与后台低库存口径一致），回答「库存偏低（≤100 件）的商品共 4 件」且工具返回 `products=4 total=4`（数值有据），却判 0% reproducible。改为接受两条等价路径（**未放宽任何阈值、未删任何断言**：断言内核仍是「低库存这件事被真的查出来了 + 报出的数有据」）。⚠️ 产品级语义冲突「同一个『低库存』在两条工具里是 ≤100 vs ≤10」另开 issue 跟踪（产品问题，非评测问题）：`product_search.py:26 LOW_STOCK_THRESHOLD=100` vs `inventory_manage.py:66` 参数文档「默认 10」+ schema `default: 10`，而 `_low_stock_alert` 形参默认却是 **100**（inventory_manage.py:359）——三处口径不一致，详见该 issue"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_inventory_manage.py"
@@ -222,6 +285,11 @@ cases:
           fallback: "确认"
       - auto_respond:
           fallback: "确认"
+    # 全局命名空间声明（issue #3781）：与同样争用该全局资源的用例自动互斥，
+    # 消除「同栈并行用例互相写同一命名空间」造成的非确定性（真实 run 34856561459）。
+    namespaces:
+      - "product_name:遮光窗帘"
+
     expectations:
       - tool: product_manage
         args:
@@ -275,6 +343,11 @@ cases:
       - "货号用 TEST-CURTAIN-A"
       - "确认创建"
       - "确认创建测试窗帘A"
+    # 全局命名空间声明（issue #3781）：本用例**往全局商品命名空间里写**该名称，
+    # 与同名商品的建/删用例自动互斥（否则会出现"同名多件"→ agent 发选择卡 → 目标工具不执行）。
+    namespaces:
+      - "product_name:测试窗帘A"
+
     expectations:
       - tool: product_manage
         args:
@@ -414,6 +487,12 @@ cases:
       - "需要打孔和韩式折边这两个加工项"
       - "确认创建，没问题"
       - "确认"
+    # 全局命名空间声明（issue #3781）：本用例**往全局商品命名空间里写**该名称，
+    # 与同名商品的建/删用例自动互斥（否则会出现"同名多件"→ agent 发选择卡 → 目标工具不执行）。
+    namespaces:
+      - "product_name:测试窗帘"
+      - "product_name:夏日清风窗帘"
+
     expectations:
       - tool: interact
         args:
@@ -460,6 +539,11 @@ cases:
       - "颜色白色，货号 TEST-001"
       - "不需要加工项"
       - "确认创建"
+    # 全局命名空间声明（issue #3781）：本用例**往全局商品命名空间里写**该名称，
+    # 与同名商品的建/删用例自动互斥（否则会出现"同名多件"→ agent 发选择卡 → 目标工具不执行）。
+    namespaces:
+      - "product_name:测试窗帘"
+
     expectations:
       - tool: product_manage
         args:
@@ -648,6 +732,11 @@ cases:
       # 而收尾轮需要保留原文「确认」的兜底语义 → 用 auto_respond 才能两者兼得。
       - auto_respond:
           fallback: "确认"
+    # 全局命名空间声明（issue #3781）：本用例**往全局商品命名空间里写**该名称，
+    # 与同名商品的建/删用例自动互斥（否则会出现"同名多件"→ agent 发选择卡 → 目标工具不执行）。
+    namespaces:
+      - "product_name:遮光窗帘"
+
     expectations:
       - tool: category_manage
       - tool: processing_item_query

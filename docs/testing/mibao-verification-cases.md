@@ -38,7 +38,7 @@
 数据: 工单号匹配 ^AS-\\d{8}-\\d{4}$
 ```
 真值: aftersales-flow.create-order-required, aftersales-flow.dup-guard, aftersales-flow.ticket-format
-溯源: eval C002 + verification 3.3（同义，取 eval 的跨域版）；2026-09-14 自包含化（#3511）→ 指代显式化（#3568，用手机号而非「这个订单」）；2026-09-15 补收尾答卡轮（结论档 run 34841029062 实证：4 轮里末轮是 agent 发确认卡那一轮，after_sales_manage 必不执行）——断言未改 ｜ tags: cross_skill, context_share, create
+溯源: eval C002 + verification 3.3（同义，取 eval 的跨域版）；2026-09-14 自包含化（#3511）→ 指代显式化（#3568，用手机号而非「这个订单」）；2026-09-15 补收尾答卡轮（结论档 run 34841029062 实证：4 轮里末轮是 agent 发确认卡那一轮，after_sales_manage 必不执行）——断言未改；2026-09-15（issue #3781）补 namespaces + precondition[order_count_for_phone]：本用例依赖「13800138000 名下订单集合稳定」，而同栈并行建单用例（OR-016/CR-001/CH-010/OR-008/OR-009/OR-015/CR-003）会实时改写它 —— 断言内容未改，改的是**前置可见性与互斥** ｜ tags: cross_skill, context_share, create
 
 ### AS-004. 更新工单状态 - 关闭 🔵
 ```
@@ -1632,17 +1632,18 @@
 数据: 收集确认后创建成功
 ```
 真值: employee-role.write-require-admin
-溯源: verification 5.2 独有；2026-09-09 校准：① 补「确认」点确认卡轮（agent 第一轮先查角色→validate→发确认卡，需确认后才 create）；② R1 补密码（execute._create_user 要求 password 必填，原 user_inputs 无密码，agent 确认后才发现缺密码反复追问——契约已修，case 同步补密码） ｜ tags: create
+溯源: verification 5.2 独有；2026-09-09 校准：① 补「确认」点确认卡轮（agent 第一轮先查角色→validate→发确认卡，需确认后才 create）；② R1 补密码（execute._create_user 要求 password 必填，原 user_inputs 无密码，agent 确认后才发现缺密码反复追问——契约已修，case 同步补密码）。2026-09-15（issue #3781）：补 `namespaces` 声明 + `pre_clean[employee_remove]` —— 本用例造出的第二个「王五」是 HR-003（KEY_JOURNEY）**恒红**的根因（真实 run 34856561459，两次独立审计共同确认的用例资产缺陷） ｜ tags: create
 
 ### HR-003. 禁用员工账号 🔵
 ```
-你: 王五离职了，停用账号
+你: 手机号 13700137000 的那位员工（王五）离职了，停用账号
 你: 确认停用
 期望: employee_manage(action=toggle_status, status=disabled)
 数据: 二次确认后停用
+数据: 目标是手机号 13700137000 的种子员工（debug_employee_wangwu），不是任何同名账号
 ```
 真值: employee-role.write-require-admin
-溯源: verification 5.3 独有 ｜ tags: status, destructive
+溯源: verification 5.3 独有；2026-09-15（issue #3781）根治假红：① `user_inputs` 改为**手机号显式指代**（#3568 范式，同 HR-008）；② `namespaces` 声明 employee_name:王五 / employee_phone:13700137000（与 HR-002 自动串行）；③ `pre_clean.employee_reactivate` 补 `employee_phone` 精确定位（旧实现只按姓名 `next(...)` 取第一条 ⇒ 命中 HR-002 的同名产物）并改为命中多条时全恢复 —— 病灶铁证：真实 run 34856561459 里 HR-003 的 `employee_manage(list)` 返回 `users=2 total=2` ｜ tags: status, destructive
 
 ### HR-004. 角色列表 🟢
 ```
@@ -2932,11 +2933,14 @@
 ### PR-006. 低库存预警 🔵
 ```
 你: 看看哪些商品库存不足
-期望: inventory_manage(action=low_stock_alert)
-数据: 每项库存 <= 100
+期望: inventory_manage(action=low_stock_alert) or product_search(stock_status=low_stock)
+数据: 报告的低库存商品数 = 该路径工具返回的条数（product_search: data.products/total；inventory_manage: data.count）—— 数值必须有据，不得凭空给数（本 run 实测 4=4）
+数据: 阈值口径必须与所用工具一致：product_search 分支 = ≤100（库存≤100，与后台低库存口径一致）；inventory_manage 分支 = threshold（默认 10）
+数据: 给出的数字必须能指回该工具返回的明细（不得只给个总数而不列商品）
+必须成功: product_search
 ```
 真值: product-sku-stock.low-stock
-溯源: verification 2.6 独有 ｜ tags: inventory, alert
+溯源: verification 2.6 独有。2026-09-15（issue #3781）等价路径校准：原断言 `expectations=['inventory_manage(action=low_stock_alert)']` **过度指定实现路径** —— 真实 run 34856561459 里 agent 走的是 `product_search(stock_status=low_stock)`（产品文档认可：库存≤100，与后台低库存口径一致），回答「库存偏低（≤100 件）的商品共 4 件」且工具返回 `products=4 total=4`（数值有据），却判 0% reproducible。改为接受两条等价路径（**未放宽任何阈值、未删任何断言**：断言内核仍是「低库存这件事被真的查出来了 + 报出的数有据」）。⚠️ 产品级语义冲突「同一个『低库存』在两条工具里是 ≤100 vs ≤10」另开 issue 跟踪（产品问题，非评测问题）：`product_search.py:26 LOW_STOCK_THRESHOLD=100` vs `inventory_manage.py:66` 参数文档「默认 10」+ schema `default: 10`，而 `_low_stock_alert` 形参默认却是 **100**（inventory_manage.py:359）——三处口径不一致，详见该 issue ｜ tags: inventory, alert
 
 ### PR-007. 商品上架（状态流转） 🔵
 ```

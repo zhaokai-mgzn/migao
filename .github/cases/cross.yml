@@ -40,6 +40,12 @@ cases:
           fallback: "确认下单"
       - auto_respond:
           fallback: "确认"
+    # 全局命名空间声明（issue #3781）：与同样争用该全局资源的用例自动互斥，
+    # 消除「同栈并行用例互相写同一命名空间」造成的非确定性（真实 run 34856561459）。
+    namespaces:
+      - "customer_phone:13800138000"
+      - "product_name:遮光窗帘"
+
     expectations:
       - tool: product_detail
       - tool: order_create
@@ -157,6 +163,12 @@ cases:
       # 不确定的那一件上）。保留最早创建的（= 种子）。
       - type: product_dedupe
         product_keyword: "遮光窗帘"
+    # 全局命名空间声明（issue #3781）：与同样争用该全局资源的用例自动互斥，
+    # 消除「同栈并行用例互相写同一命名空间」造成的非确定性（真实 run 34856561459）。
+    namespaces:
+      - "customer_phone:13800138000"
+      - "product_name:遮光窗帘"
+
     expectations:
       - tool: product_search
       - tool: product_detail

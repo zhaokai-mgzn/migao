@@ -54,8 +54,21 @@ cases:
           action: create
     data_checks:
       - "收集确认后创建成功"
+    # 全局命名空间声明（issue #3781）：本用例**写**员工姓名/手机号命名空间 ——
+    # 每跑一次就往栈里放一个「王五/13812345678」。任何同样依赖「王五」的用例
+    # （HR-003 是 KEY_JOURNEY）都会因**重名**而目标不唯一 ⇒ 必须与本用例互斥。
+    namespaces:
+      - "employee_name:王五"
+      - "employee_phone:13812345678"
+    # 清理自己的产物（幂等；每次尝试前跑，见 local_runner._run_pre_clean）：
+    # 「谁造的谁清」是本病灶的**根治**——只改 HR-003 的 pre_clean 消不掉重名，
+    # 因为重名是 HR-002 造的。清理**不依赖** HR-003 的顺序，故 HR-002 可独立重跑。
+    pre_clean:
+      - type: employee_remove
+        employee_name: "王五"
+        employee_phone: "13812345678"
     skip_reason: ""
-    merge_log: "verification 5.2 独有；2026-09-09 校准：① 补「确认」点确认卡轮（agent 第一轮先查角色→validate→发确认卡，需确认后才 create）；② R1 补密码（execute._create_user 要求 password 必填，原 user_inputs 无密码，agent 确认后才发现缺密码反复追问——契约已修，case 同步补密码）"
+    merge_log: "verification 5.2 独有；2026-09-09 校准：① 补「确认」点确认卡轮（agent 第一轮先查角色→validate→发确认卡，需确认后才 create）；② R1 补密码（execute._create_user 要求 password 必填，原 user_inputs 无密码，agent 确认后才发现缺密码反复追问——契约已修，case 同步补密码）。2026-09-15（issue #3781）：补 `namespaces` 声明 + `pre_clean[employee_remove]` —— 本用例造出的第二个「王五」是 HR-003（KEY_JOURNEY）**恒红**的根因（真实 run 34856561459，两次独立审计共同确认的用例资产缺陷）"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_employee_manage.py"
@@ -75,11 +88,28 @@ cases:
     truths_ref:
       - employee-role.write-require-admin
     user_inputs:
-      - "王五离职了，停用账号"
+      # 显式指代（#3568 范式，同 HR-008）：**以种子号码为主指代**，姓名只作补充。
+      # 种子里 HR-003 点名的员工是 `debug_employee_wangwu / 13700137000`
+      # （`fixtures/mibao_eval_seed.sql:113-120`）；而 HR-002 会创建**另一个同名
+      # 「王五」（13812345678）** ⇒ 只按姓名指代时目标不唯一，agent 给出**正确**的
+      # 安全行为（「系统里有两个「王五」…我需要知道停用哪一个才能安全执行」），
+      # 用例却因此恒红（真实 run 34856561459 的两次独立审计共同确认的用例资产缺陷）。
+      - "手机号 13700137000 的那位员工（王五）离职了，停用账号"
       - "确认停用"
+    # 全局命名空间声明（issue #3781）：与 HR-002（写 employee_name:王五）**自动互斥**，
+    # 两条不再同窗口并跑 —— 这是"重名"这一污染源的结构性隔离。
+    namespaces:
+      - "employee_name:王五"
+      - "employee_phone:13700137000"
     pre_clean:
+      # ⚠️ 唯一性保证有两层（缺一层即可能将来复发）：
+      #   ① `employee_phone` 让定位**精确到种子那一条**（不再是"第一条同名"）；
+      #   ② 命中的条目**全部**恢复为 active（幂等）—— 即便将来又有别人造了同名员工，
+      #      本用例的靶子也仍是"种子里那个号码对应的账号"，且列表里的同名项状态确定。
+      # 每次尝试前都跑（#3751），故必须幂等：`employee_reactivate` 已是幂等无副作用动作。
       - type: employee_reactivate
         employee_name: "王五"
+        employee_phone: "13700137000"
     expectations:
       - tool: employee_manage
         args:
@@ -87,8 +117,9 @@ cases:
           status: disabled
     data_checks:
       - "二次确认后停用"
+      - "目标是手机号 13700137000 的种子员工（debug_employee_wangwu），不是任何同名账号"
     skip_reason: ""
-    merge_log: "verification 5.3 独有"
+    merge_log: "verification 5.3 独有；2026-09-15（issue #3781）根治假红：① `user_inputs` 改为**手机号显式指代**（#3568 范式，同 HR-008）；② `namespaces` 声明 employee_name:王五 / employee_phone:13700137000（与 HR-002 自动串行）；③ `pre_clean.employee_reactivate` 补 `employee_phone` 精确定位（旧实现只按姓名 `next(...)` 取第一条 ⇒ 命中 HR-002 的同名产物）并改为命中多条时全恢复 —— 病灶铁证：真实 run 34856561459 里 HR-003 的 `employee_manage(list)` 返回 `users=2 total=2`"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_employee_manage.py"
@@ -269,6 +300,12 @@ cases:
           action: update
           user_id: "debug_employee_wangwu"
           phone: "13900139111"
+    # 全局命名空间声明（issue #3781）：本用例**依赖并改写**种子里那条员工
+    # （13700137000 → 13900139111）⇒ 与 HR-003（同一员工的 toggle_status）互斥，
+    # 否则 HR-003 点名的「13700137000 的这位员工」可能正被本用例改号。
+    namespaces:
+      - "employee_phone:13700137000"
+      - "employee_phone:13900139111"
     # 写工具**真的成功**断言（#3361「调了 ≠ 成了」）：被 confirm 门禁拦下、工具报错、
     # 或模型压根没执行 update，都在此判失败 —— 这是「update 写路径有没有真的发生」的第一道门。
     must_succeed:

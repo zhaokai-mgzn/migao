@@ -55,6 +55,8 @@ class EvalCase:
     debug_user: str = ""   # 多身份评测：以哪个 DEBUG 顾客身份跑（如 debug_customer_new，issue #3391）
     form_prefill: List[dict] = field(default_factory=list) # form 卡预填断言（老客户收货信息自动带出，issue #3397）
     forbidden_card_text: List = field(default_factory=list) # 卡片内容反模式（卡里不得出现「用量/倍数」等把金额翻倍的框架，issue #3402）
+    namespaces: List[str] = field(default_factory=list) # 全局命名空间声明（<kind>:<值>，如 customer_phone:13800138000）；两条用例有交集 → 自动串行（issue #3781 并行污染隔离）
+    precondition: List[dict] = field(default_factory=list) # 运行期前置断言（order_count_for_phone：运行期间订单数不得增长；不成立则判「前置不成立」而非行为失败，issue #3781）
 
 
 # ── AS-001 [SMOKE] 售后工单列表（源: cases/aftersales.yml）──
@@ -109,6 +111,8 @@ _CASE_AS_003 = EvalCase(
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+    namespaces=['customer_phone:13800138000'],
+    precondition=[{'type': 'order_count_for_phone', 'source': '13800138000'}],
 )
 
 # ── AS-004 [NORMAL] 更新工单状态 - 关闭（源: cases/aftersales.yml）──
@@ -147,6 +151,7 @@ _CASE_AS_005 = EvalCase(
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+    namespaces=['customer_phone:13800138000'],
 )
 
 # ── AS-006 [NORMAL] 售后工单退款/退货完结 - 按商品「退货回补库存」开关决定是否回补库存（源: cases/aftersales.yml）──
@@ -1006,6 +1011,7 @@ _CASE_CH_010 = EvalCase(
     must_succeed=[{'tool': 'order_create'}],
     amount_verify=[{'tool': 'order_create', 'product_name': '北欧风窗帘', 'checks': ['unit_price', 'subtotal', 'processing_fee', 'total']}],
     db_verify=[{'fetch': 'order_phone', 'source': 'order_create', 'expect_phone': '13800138000'}],
+    namespaces=['customer_phone:13800138000'],
 )
 
 # ── CH-011 [ADVERSARIAL] 数据安全 - 跨用户订单查询拒绝 + 订单卡片手机号脱敏（源: cases/chat.yml）──
@@ -1500,6 +1506,7 @@ _CASE_CR_001 = EvalCase(
     forbidden_card_text=[],
     required_args=[{'tool': 'order_create', 'fields': ['items[].processing_info.sellingMethod', 'items[].processing_info.doorWidth']}],
     pre_clean=[{'type': 'product_dedupe', 'product_keyword': '遮光窗帘'}],
+    namespaces=['customer_phone:13800138000', 'product_name:遮光窗帘'],
 )
 
 # ── CR-002 [ADVERSARIAL] 对抗性 - 3 个 Skill 连续切换（源: cases/cross.yml）──
@@ -1538,6 +1545,7 @@ _CASE_CR_003 = EvalCase(
     forbidden_card_text=[],
     must_succeed=[{'tool': 'order_create'}],
     pre_clean=[{'type': 'product_dedupe', 'product_keyword': '遮光窗帘'}],
+    namespaces=['customer_phone:13800138000', 'product_name:遮光窗帘'],
 )
 
 # ── CU-001 [SMOKE] 客户列表（源: cases/customer.yml）──
@@ -2342,6 +2350,8 @@ _CASE_HR_002 = EvalCase(
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+    pre_clean=[{'type': 'employee_remove', 'employee_name': '王五', 'employee_phone': '13812345678'}],
+    namespaces=['employee_name:王五', 'employee_phone:13812345678'],
 )
 
 # ── HR-003 [NORMAL] 禁用员工账号（源: cases/hr.yml）──
@@ -2351,16 +2361,17 @@ _CASE_HR_003 = EvalCase(
     title='禁用员工账号',
     skill=Skill.GENERAL,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['王五离职了，停用账号', '确认停用'],
+    user_inputs=['手机号 13700137000 的那位员工（王五）离职了，停用账号', '确认停用'],
     expectations=['employee_manage(action=toggle_status, status=disabled)'],
-    data_checks=['二次确认后停用'],
+    data_checks=['二次确认后停用', '目标是手机号 13700137000 的种子员工（debug_employee_wangwu），不是任何同名账号'],
     skip_reason='',
     tags=['status', 'destructive'],
     persona='',
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
-    pre_clean=[{'type': 'employee_reactivate', 'employee_name': '王五'}],
+    pre_clean=[{'type': 'employee_reactivate', 'employee_name': '王五', 'employee_phone': '13700137000'}],
+    namespaces=['employee_name:王五', 'employee_phone:13700137000'],
 )
 
 # ── HR-004 [SMOKE] 角色列表（源: cases/hr.yml）──
@@ -2453,6 +2464,7 @@ _CASE_HR_008 = EvalCase(
     forbidden_card_text=[],
     required_args=[{'tool': 'employee_manage', 'action': 'update', 'fields': ['user_id', 'phone']}],
     must_succeed=[{'tool': 'employee_manage', 'action': 'update'}],
+    namespaces=['employee_phone:13700137000', 'employee_phone:13900139111'],
 )
 
 # ── KN-001 [SMOKE] 小布知识问答 - 面料问题先检索本店知识卡片（query 必填）（源: cases/knowledge.yml）──
@@ -3158,6 +3170,7 @@ _CASE_OR_008 = EvalCase(
     form_prefill=[],
     forbidden_card_text=[],
     required_args=[{'tool': 'order_create', 'fields': ['items[].processing_info.sellingMethod', 'items[].processing_info.doorWidth']}],
+    namespaces=['customer_phone:13800138000'],
 )
 
 # ── OR-009 [NORMAL] 下单全流程 - 选品→选SKU→确认数量→下单（源: cases/order.yml）──
@@ -3177,6 +3190,7 @@ _CASE_OR_009 = EvalCase(
     form_prefill=[],
     forbidden_card_text=[],
     required_args=[{'tool': 'order_create', 'fields': ['items[].processing_info.sellingMethod', 'items[].processing_info.doorWidth', 'items[].processing_info.colorName']}],
+    namespaces=['customer_phone:13800138000'],
 )
 
 # ── OR-010 [NORMAL] 创建订单 - 汇总确认简化流程（源: cases/order.yml）──
@@ -3296,6 +3310,7 @@ _CASE_OR_015 = EvalCase(
     order_before=['validate_input before order_create'],
     required_args=[{'tool': 'validate_input', 'fields': ['target_tool', 'target_action']}],
     pre_clean=[{'type': 'product_dedupe', 'product_keyword': '遮光窗帘'}],
+    namespaces=['customer_phone:13800138000', 'product_name:遮光窗帘'],
 )
 
 # ── OR-016 [NORMAL] 创建订单 confirm 前必须主动询问加工项（商品绑定加工项时）（源: cases/order.yml）──
@@ -3316,6 +3331,7 @@ _CASE_OR_016 = EvalCase(
     forbidden_card_text=[],
     order_before=['interact[choice:processing_items] before interact[confirm]', 'interact[choice:processing_items] before order_create'],
     pre_clean=[{'type': 'product_dedupe', 'product_keyword': '2699系列雪尼尔窗帘面料', 'price': 23.8}],
+    namespaces=['customer_phone:13800138000', 'product_name:2699系列雪尼尔窗帘面料'],
 )
 
 # ── OR-017 [NORMAL] C 端自助下单加工项闭环 - 必须查详情→主动询问→加工费落单（不凭列表错报无加工项）（源: cases/order.yml）──
@@ -4123,6 +4139,7 @@ _CASE_PR_005 = EvalCase(
     form_prefill=[],
     forbidden_card_text=[],
     pre_clean=[{'type': 'product_dedupe', 'product_keyword': '遮光窗帘'}],
+    namespaces=['product_name:遮光窗帘'],
 )
 
 # ── PR-006 [NORMAL] 低库存预警（源: cases/product.yml）──
@@ -4133,14 +4150,15 @@ _CASE_PR_006 = EvalCase(
     skill=Skill.PRODUCT,
     difficulty=Difficulty.NORMAL,
     user_inputs=['看看哪些商品库存不足'],
-    expectations=['inventory_manage(action=low_stock_alert)'],
-    data_checks=['每项库存 <= 100'],
+    expectations=['inventory_manage(action=low_stock_alert) or product_search(stock_status=low_stock)'],
+    data_checks=['报告的低库存商品数 = 该路径工具返回的条数（product_search: data.products/total；inventory_manage: data.count）—— 数值必须有据，不得凭空给数（本 run 实测 4=4）', '阈值口径必须与所用工具一致：product_search 分支 = ≤100（库存≤100，与后台低库存口径一致）；inventory_manage 分支 = threshold（默认 10）', '给出的数字必须能指回该工具返回的明细（不得只给个总数而不列商品）'],
     skip_reason='',
     tags=['inventory', 'alert'],
     persona='',
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+    must_succeed=[{'tool': 'product_search'}],
 )
 
 # ── PR-007 [NORMAL] 商品上架（状态流转）（源: cases/product.yml）──
@@ -4162,6 +4180,7 @@ _CASE_PR_007 = EvalCase(
     required_args=[{'tool': 'product_manage', 'action': 'toggle_status', 'fields': ['product_id', 'status']}],
     must_succeed=[{'tool': 'product_manage', 'action': 'toggle_status'}],
     pre_clean=[{'type': 'product_dedupe', 'product_keyword': '遮光窗帘'}],
+    namespaces=['product_name:遮光窗帘'],
 )
 
 # ── PR-008 [NORMAL] 创建商品 - 完整流程（源: cases/product.yml）──
@@ -4180,6 +4199,7 @@ _CASE_PR_008 = EvalCase(
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+    namespaces=['product_name:测试窗帘A'],
 )
 
 # ── PR-009 [ADVERSARIAL] 商品更新 - 名称解析 ID（源: cases/product.yml）──
@@ -4236,6 +4256,7 @@ _CASE_PR_011 = EvalCase(
     form_prefill=[],
     forbidden_card_text=[],
     pre_clean=[{'type': 'product_remove', 'product_keyword': '测试窗帘'}],
+    namespaces=['product_name:测试窗帘', 'product_name:夏日清风窗帘'],
 )
 
 # ── PR-012 [NORMAL] 商品创建中途修改 - 用户纠偏（源: cases/product.yml）──
@@ -4254,6 +4275,7 @@ _CASE_PR_012 = EvalCase(
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+    namespaces=['product_name:测试窗帘'],
 )
 
 # ── PR-013 [NORMAL] 窗帘算料报价 - 褶皱倍数与用布量计算（源: cases/product.yml）──
@@ -4329,6 +4351,7 @@ _CASE_PR_016 = EvalCase(
     form_prefill=[],
     forbidden_card_text=[],
     required_args=[{'tool': 'processing_item_query', 'fields': ['applicable_category_id']}],
+    namespaces=['product_name:遮光窗帘'],
 )
 
 # ── PR-017 [NORMAL] 商品创建/更新/详情透传「退货回补库存」开关（allow_return_restock）（源: cases/product.yml）──

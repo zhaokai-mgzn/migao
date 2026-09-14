@@ -176,6 +176,8 @@ def to_eval_py(cases):
            '    debug_user: str = ""   # 多身份评测：以哪个 DEBUG 顾客身份跑（如 debug_customer_new，issue #3391）',
            '    form_prefill: List[dict] = field(default_factory=list) # form 卡预填断言（老客户收货信息自动带出，issue #3397）',
            '    forbidden_card_text: List = field(default_factory=list) # 卡片内容反模式（卡里不得出现「用量/倍数」等把金额翻倍的框架，issue #3402）',
+           '    namespaces: List[str] = field(default_factory=list) # 全局命名空间声明（<kind>:<值>，如 customer_phone:13800138000）；两条用例有交集 → 自动串行（issue #3781 并行污染隔离）',
+           '    precondition: List[dict] = field(default_factory=list) # 运行期前置断言（order_count_for_phone：运行期间订单数不得增长；不成立则判「前置不成立」而非行为失败，issue #3781）',
            "", ""]
 
     for c in cases:
@@ -226,6 +228,12 @@ def to_eval_py(cases):
             out.append(f"    pre_clean={c.get('pre_clean')!r},")
         if c.get("post_session"):
             out.append(f"    post_session={c.get('post_session')!r},")
+        # 全局命名空间声明 + 运行期前置断言（issue #3781）：只在声明时落字面量，
+        # 未声明的用例走 dataclass 默认（缺省 = 不参与隔离/不设前置，保持既有行为不变）
+        if c.get("namespaces"):
+            out.append(f"    namespaces={c.get('namespaces')!r},")
+        if c.get("precondition"):
+            out.append(f"    precondition={c.get('precondition')!r},")
         out.append(")")
         out.append("")
 
