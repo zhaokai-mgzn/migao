@@ -1,37 +1,60 @@
 name: Close Linked Issues on Merge
 
-# 根本解法（issue #2937，2026-09-05）：
-# GitHub 的 "close on merge"（PR body 关键词自动关闭 issue）是异步 best-effort——
-# 实证：09-05 #2911→#2910、#2927→#2919 合并后 6~10 分钟仍未自动关闭；
-# 同日成功例延迟 86s~6m12s，方差极大，偶发滞后/静默丢失（社区大量同报告）。
-# 本工作流解析已合并 PR body 的 Closes/Fixes/Resolves 关键词，
-# 若对应 issue 仍 open 则强制关闭并留 comment，把「PR 合并 → issue 关闭」变成强保证。
+# 根本解法（issue #2937 建立，issue #3585 修正触发源）：
+# GitHub 的 "close on merge"（PR body 关键词自动关闭 issue）在本仓库实测**不可依赖**——
+# 不是格式问题，也不是分支问题：
+#   · 默认分支确为 main（gh repo view --json defaultBranchRef）；
+#   · #3552 body 第 1 行逐字节即 `Closes #3548`（无引用块 / 无加粗 / 无换行破坏），
+#     GitHub 也已登记关联（closingIssuesReferences=[3548]）；
+#   · 但 05:14:27Z 合并进 main 后 issue #3548 仍 OPEN，timeline 连 closed 事件都没有
+#     （#3554→#3549 同）。人工合并的 #3395→#3394 同样没关（1.5h 后由本 workflow 兜底）。
+# 故「PR 合并 → issue 关闭」必须由本 workflow 做**强保证**，不靠原生 auto-close。
 #
-# 三重触发（互相兜底、全部幂等）：
-# 1. pull_request_target [closed]：手动 UI 合并场景可即时补偿；
-# 2. schedule 每 30 分钟：**对 GitHub 事件触发不可靠的最终兜底**——
-#    native auto-merge 合并实测 3/3 不触发 closed 事件（#2938/#2939/#2940，
-#    community discussion #148367 同症状），定时对账扫近 48h 合并 PR，不依赖任何事件；
-# 3. workflow_dispatch + pr_number：人工对任意已合并 PR 手动补关（自动跑用）。
+# ⚠️ 触发可靠性（issue #3585 实测，本文件此前失效的真因）：
+# auto-merge 由 automerge.yml 用 secrets.GITHUB_TOKEN 开启 → 合并者是 app/github-actions；
+# **GITHUB_TOKEN 引发的合并不会创建新的 workflow run**（GitHub 防递归），于是：
+#   · `pull_request_target [closed]` 对「自动合并」100% 不触发（实测：人工合并 #3395
+#     09:43:48Z → run 09:43:51Z；bot 合并 #3552/#3554 05:14Z → **零 run**）；
+#   · push 同理被吞（见 deploy-reconcile.yml 头部 / issue #3113 同源结论）；
+#   · schedule '*/30' 被 GitHub 节流到实测 2~5.5 小时/次（近 7 天 57 run：
+#     21:01→23:20→01:23Z），"每 30 分钟兜底"是假象。
+# ⇒ 唯一可靠的合并后时机是**不受该合并事件驱动的其它可靠事件**（本文件用 PR opened）。
+#
+# 触发源（互相兜底、全部幂等）：
+# 1. pull_request_target [opened, reopened]（**主兜底，issue #3585 新增**）：PR 打开/重开
+#    必触发（deploy-reconcile.yml / automerge.yml 已实证该事件可靠，仓库迭代不停 ≈ 近实时），
+#    每次对账近 48h 已合并 PR —— 不再依赖被吞的 closed 事件；
+# 2. pull_request_target [closed]：人工合并场景即时补偿（bot 合并不触发，保留无妨）；
+# 3. schedule '*/30'：随机兜底（被节流到数小时，不可依赖但有比没有好）；
+# 4. workflow_dispatch：带 pr_number = 单 PR 精确补偿；不带 = 对账近 48h（人工兜底入口）。
+#
+# API 成本（issue #3585）：本 workflow 现在挂在「每次 PR 打开」上，而近 48h 合并 PR 实测可达
+# 135 个 —— 若沿用「逐个 gh pr view 取 body」，单轮 ≈135 次调用 × 每轮一次的频率会打爆
+# GITHUB_TOKEN 的 1000 请求/小时/仓库限额（超限后 gh 静默失败 → 又变成"不关"）。
+# 故对账模式改为 `gh pr list --json number,mergeCommit,body` **批量取 body**（≈2 个请求），
+# 只有命中的 issue 才各花 1 次 view/close。
 #
 # 安全：不 checkout、不执行 PR 代码，仅通过 API 读取 body / 关闭 issue（无 fork 风险）；
-#       事件模式仅同仓库 PR 生效。幂等：issue 已关 → no-op；无关键词 → 跳过。
+#       只对**已合并** PR 关闭其 body 声明的 issue。幂等：issue 已关 → no-op；无关键词 → 跳过。
 
 on:
   pull_request_target:
-    types: [closed]
+    # opened/reopened 是 auto-merge 合并后的**唯一可靠对账时机**（bot 合并不触发 closed，issue #3585）
+    types: [opened, reopened, closed]
     branches: [main]
   schedule:
     - cron: '*/30 * * * *'
   workflow_dispatch:
     inputs:
       pr_number:
-        description: '已合并 PR 号（手动补偿关闭用，如 2938）'
+        description: '已合并 PR 号（手动补偿关闭用，留空 = 对账近 48h 全部已合并 PR）'
         required: false
         type: string
 
 permissions:
   pull-requests: read
+  # issues: write 是 gh issue close 的必需项：pull_request_target 默认只有只读 token，
+  # 少了这行就会「run 成功但一个 issue 都关不掉」。**勿删**（issue #3585 排查清单首项）。
   issues: write
 
 jobs:
@@ -40,7 +63,9 @@ jobs:
     if: >-
       (github.event_name == 'schedule') ||
       (github.event_name == 'workflow_dispatch') ||
-      (github.event.pull_request.merged == true &&
+      (github.event_name == 'pull_request_target' && github.event.action != 'closed') ||
+      (github.event.action == 'closed' &&
+       github.event.pull_request.merged == true &&
        github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -49,34 +74,57 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
-          PR_NUMBER: ${{ inputs.pr_number || github.event.pull_request.number }}
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_ACTION: ${{ github.event.action }}
+          DISPATCH_PR: ${{ inputs.pr_number }}
+          EVENT_PR: ${{ github.event.pull_request.number }}
         run: |
           set -euo pipefail
 
-          # ---------- 1. 决定本次处理的 PR 列表 ----------
-          if [ "${GITHUB_EVENT_NAME:-}" = "schedule" ]; then
-            since="$(date -u -d '48 hours ago' +%Y-%m-%d)"
-            prs="$(gh pr list --state merged --limit 50 \
-              --search "merged:>=$since" \
-              --json number --jq '.[].number' 2>/dev/null | sort -n | tr '\n' ' ')"
-            echo "🕐 定时对账（GITHUB_EVENT_NAME=schedule）：近 48h 合并 $(wc -w <<<"$prs") 个 PR"
+          # ---------- 1. 决定扫描模式 ----------
+          # a. workflow_dispatch + pr_number → 单 PR 精确补偿
+          # b. pull_request_target[closed]     → 单 PR 即时补偿（**仅人工合并会走到这里**）
+          # c. 其余（PR opened/reopened、schedule、无参 dispatch）→ 对账近 48h 已合并 PR
+          #    （c 是 auto-merge 合并后的实际兜底：其 closed/push 事件被 GITHUB_TOKEN 吞掉）
+          SINGLE_PR=""
+          if [ -n "${DISPATCH_PR// /}" ]; then
+            SINGLE_PR="$DISPATCH_PR";  echo "▶️  手动补偿模式（workflow_dispatch）：PR #$SINGLE_PR"
+          elif [ "$EVENT_NAME" = "pull_request_target" ] && [ "$EVENT_ACTION" = "closed" ]; then
+            SINGLE_PR="$EVENT_PR";     echo "▶️  事件模式（人工合并即时补偿）：PR #$SINGLE_PR"
           else
-            prs="$PR_NUMBER"
-            echo "▶️  事件/手动模式：PR #$PR_NUMBER"
+            echo "🕐 对账模式（事件 $EVENT_NAME/$EVENT_ACTION）：扫近 48h 已合并 PR"
           fi
 
-          if [ -z "${prs// /}" ]; then
+          # ---------- 2. 取候选 PR 的 body（TSV：number<TAB>sha<TAB>body） ----------
+          # jq @tsv 会把 body 里的换行/制表符转义成 \n / \t → 保证「一行一 PR」可安全逐行读；
+          # 关键词正则不受转义影响（`Closes #123` 原样保留）。
+          rows_file="$(mktemp)"
+          if [ -n "$SINGLE_PR" ]; then
+            gh pr view "$SINGLE_PR" --repo "$GH_REPO" --json number,mergeCommit,body \
+              --jq '[(.number|tostring), (.mergeCommit.oid // ""), (.body // "")] | @tsv' \
+              > "$rows_file" 2>/dev/null || true
+          else
+            since="$(date -u -d '48 hours ago' +%Y-%m-%d)"
+            # limit 200 + sort:updated-desc：实测近 48h 合并 PR 可达 135 个，旧值 limit 50
+            # 会静默漏掉 2/3（issue #3585 复盘）。批量 list 一次拿齐 body，**不要**改成逐个 view。
+            gh pr list --state merged --limit 200 \
+              --search "merged:>=$since sort:updated-desc" --repo "$GH_REPO" \
+              --json number,mergeCommit,body \
+              --jq '.[] | [(.number|tostring), (.mergeCommit.oid // ""), (.body // "")] | @tsv' \
+              > "$rows_file" 2>/dev/null || true
+          fi
+
+          n_cand="$(wc -l < "$rows_file" | tr -d ' ')"
+          if [ "$n_cand" = "0" ]; then
             echo "ℹ️ 无待处理 PR，退出"
             exit 0
           fi
+          echo "📋 候选 PR 数：$n_cand"
 
-          # ---------- 2. 对每个 PR 解析关键词并关闭仍 open 的 issue ----------
+          # ---------- 3. 解析关键词并关闭仍 open 的 issue ----------
           n_total=0; n_closed=0
-          for pr in $prs; do
-            data="$(gh pr view "$pr" --repo "$GH_REPO" --json body,mergeCommit \
-              --jq '[.body, .mergeCommit.oid] | @tsv' 2>/dev/null || echo '')"
-            body="$(printf '%s' "$data" | cut -f1)"
-            sha="$(printf '%s' "$data" | cut -f2)"
+          while IFS=$'\t' read -r pr sha body; do
+            [ -n "$pr" ] || continue
 
             # GitHub 官方支持的关键词（大小写不敏感）：close closes closed / fix fixes fixed / resolve resolves resolved
             # 注意：set -o pipefail 下 grep 无匹配返回 1 会让整个管道非零 → set -e 崩溃（issue #2950）。
@@ -96,7 +144,7 @@ jobs:
               case "$state" in
                 OPEN|open)
                   gh issue close "$num" --repo "$GH_REPO" \
-                    --comment "🔁 补偿关闭（close-linked-issues workflow）：PR #$pr 已合并${sha:+（commit \`${sha:0:8}\`）}但 GitHub 异步自动关闭未生效，由本工作流兜底关闭（issue #2937）。"
+                    --comment "🔁 补偿关闭（close-linked-issues workflow）：PR #$pr 已合并${sha:+（commit \`${sha:0:8}\`）}但 GitHub 异步自动关闭未生效，由本工作流兜底关闭（issue #2937/#3585）。"
                   echo "✅ 已关闭 issue #$num（由 PR #$pr 修复）"
                   n_closed=$((n_closed+1))
                   ;;
@@ -105,5 +153,6 @@ jobs:
                   ;;
               esac
             done
-          done
+          done < "$rows_file"
+          rm -f "$rows_file"
           echo "== 完成：扫描 $n_total 个有关键词的 PR，共关闭 $n_closed 个 issue =="
