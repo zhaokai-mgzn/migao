@@ -4,8 +4,10 @@
 # 用户裁定（本轮）：「不要空跑消耗 token；统一评测」。三条规则全部**落在代码里**，
 # 不靠文档约定（文档约定拦不住派发）：
 #
-#   A 统一入口：判定用途的评测**只允许**走 post-deploy-eval.yml 的**分层全库**跑
-#     （`tier=normal`，一次覆盖 mibao + xiaobu 两条腿）。`case_ids` 只留给"定点复现/调试"，
+#   A 统一入口：判定用途的评测**只允许**走 post-deploy-eval.yml 的**分层（档内）全库**跑
+#     （`tier=normal`，一次覆盖 mibao + xiaobu 两条腿）。⚠️ 这里的「全库」= **该档**全库
+#     （`normal` **只跑 NORMAL 档**，不含 smoke/adversarial，三档互斥）——**不等于**
+#     「覆盖全部用例」；判定用途的 normal 跑**只代表 NORMAL 档的结论**。`case_ids` 只留给"定点复现/调试"，
 #     且必须声明 `PURPOSE=debug`。**收窄跑不构成判定结论**（summary 的 total 只反映那几条）。
 #     ⇒ `CASE_IDS` 非空 且 `PURPOSE=determination` ⇒ **退出码 1（拒绝派发）**。
 #   B 结论复用：先查 verdict ledger —— 键 = (sha, tier, case_ids 收窄输入, 用例库指纹,
@@ -26,8 +28,9 @@
 #
 # 输入（env）：
 #   EVAL_SHA        打算评测的对象 SHA（必填；`git rev-parse` 可解析即可）
-#   EVAL_TIER       评测档位（默认 normal）—— 判定用途只认 normal 全库
-#   CASE_IDS        收窄用例（逗号分隔；空 = 全库跑）
+#   EVAL_TIER       评测档位（默认 normal）—— 判定用途只认 normal **档**全库（只跑 NORMAL 档；
+#                   不含 smoke/adversarial，勿据以声称覆盖两者）
+#   CASE_IDS        收窄用例（逗号分隔；空 = 该档全库跑）
 #   PURPOSE         determination（默认）| debug
 #   BASE_REF        变更集计算的基底（默认 origin/main）
 #   REPO            owner/repo（默认 GITHUB_REPOSITORY 或本仓库）
