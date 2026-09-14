@@ -2,14 +2,14 @@
 
 import { useEffect, useState, useCallback, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
-import { ChevronRight, Zap, AlertTriangle } from 'lucide-react'
+import { ChevronRight, Printer, Zap, AlertTriangle } from 'lucide-react'
 import { toast } from 'sonner'
 import { toastRequestError } from '@/lib/api-error'
 import dayjs from 'dayjs'
 import { orderApi } from '@/lib/api'
 import { useRouteId } from '@/lib/use-route-id'
 import { Button, Loading, Modal } from '@/components/ui'
-import { OrderProgressSteps, CloseOrderModal, LogisticsForm, RefundOrderModal, ProcessingOrderBlock } from '@/components/orders'
+import { OrderProgressSteps, CloseOrderModal, LogisticsForm, RefundOrderModal, ProcessingOrderBlock, ShipmentDoc } from '@/components/orders'
 import type { Order, OrderItem, LogisticsFormData } from '@/types'
 import { normalizeOrderStatus } from '@/types'
 import { cn } from '@/lib/utils'
@@ -267,6 +267,7 @@ export default function OrderDetailPage() {
         onConfirmReceive={() => setConfirmReceiveOpen(true)}
         onEditLogistics={() => setShowEditLogistics(true)}
         onRefund={() => setRefundModalOpen(true)}
+        onPrintShipment={() => window.print()}
       />
 
       {/* 基础信息 */}
@@ -314,6 +315,9 @@ export default function OrderDetailPage() {
         orderStatus={order.status}
         hasProcessing={(order.processingItems?.length ?? 0) > 0}
       />
+
+      {/* 纸质发货单（issue #3768）：屏幕上隐藏，仅打印呈现；已发货/已完成可在此补打 */}
+      <ShipmentDoc order={order} logistics={order.logistics} />
 
       {/* 收货信息 */}
       <SectionCard title="收货信息">
@@ -373,6 +377,8 @@ export default function OrderDetailPage() {
             company: order.logistics?.logisticsCompany || '',
             trackingNo: order.logistics?.trackingNo || '',
             shippingMethod: order.logistics?.shippingMethod === 'none' ? 'none' : 'logistics',
+            // 发货人可在此纠正（存量订单为空时填上；不动则后端保留原值，不会被编辑人顶替）
+            shipperName: order.logistics?.shipperName || '',
           }}
         />
       )}
@@ -438,6 +444,8 @@ interface StatusSectionProps {
   onConfirmReceive: () => void
   onEditLogistics: () => void
   onRefund: () => void
+  /** 补打发货单（已发货/已完成；发货页有状态守卫进不去，重打只能在这里） */
+  onPrintShipment: () => void
 }
 
 function StatusSection({
@@ -449,6 +457,7 @@ function StatusSection({
   onConfirmReceive,
   onEditLogistics,
   onRefund,
+  onPrintShipment,
 }: StatusSectionProps) {
   const status = normalizeOrderStatus(order.status as string)
   // 退款展示不再依赖 'refund' 状态：refundAmount > 0 即视为已退款（订单保持原状态）
@@ -533,6 +542,10 @@ function StatusSection({
             <Button variant="secondary" onClick={onEditLogistics}>
               编辑物流
             </Button>
+            <Button variant="secondary" onClick={onPrintShipment} className="gap-1.5">
+              <Printer className="w-4 h-4" />
+              打印发货单
+            </Button>
             <Button onClick={onConfirmReceive} className="gap-1.5">
               确认收货
               <Zap className="w-4 h-4" />
@@ -549,13 +562,17 @@ function StatusSection({
             shippedAt={order.shippedAt}
             receivedAt={order.receivedAt}
           />
-          {!refunded && (
-            <div className="mt-6 pt-5 border-t border-neutral-100 flex justify-end">
+          <div className="mt-6 pt-5 border-t border-neutral-100 flex items-center justify-end gap-3">
+            {!refunded && (
               <Button variant="secondary" onClick={onRefund}>
                 退款
               </Button>
-            </div>
-          )}
+            )}
+            <Button variant="secondary" onClick={onPrintShipment} className="gap-1.5">
+              <Printer className="w-4 h-4" />
+              打印发货单
+            </Button>
+          </div>
         </div>
       )}
 

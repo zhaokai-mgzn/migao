@@ -306,7 +306,8 @@ export const orderApi = {
   },
   
   // 更新物流信息（发货）
-  // 后端实际只接收 { logisticsCompany, trackingNo }。
+  // 后端接收 { logisticsCompany, trackingNo, shipperName? }；shipperName 留空则后端按当前
+  // 登录用户兜底（发货单「经手人」，issue #3768）。
   updateLogistics: (id: string, data: LogisticsFormData) =>
     request.put<ApiResponse<void>>(`/api/admin/orders/${id}/logistics`, buildLogisticsPayload(data)),
 

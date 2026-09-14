@@ -14,6 +14,9 @@ interface LogisticsFormProps {
 export default function LogisticsForm({ open, onClose, onSubmit, initialData }: LogisticsFormProps) {
   const [company, setCompany] = useState(initialData?.company || '')
   const [trackingNo, setTrackingNo] = useState(initialData?.trackingNo || '')
+  // 发货人（发货单「经手人」，issue #3768）：回填已有值供纠正；留空则下发时省略，
+  // 后端保留原发货人（不会被本次编辑人顶替）—— 存量订单为空时也可在此手工补齐
+  const [shipperName, setShipperName] = useState(initialData?.shipperName || '')
   const [loading, setLoading] = useState(false)
   const [errors, setErrors] = useState<{ company?: string; trackingNo?: string }>({})
 
@@ -29,7 +32,12 @@ export default function LogisticsForm({ open, onClose, onSubmit, initialData }: 
     if (!validate()) return
     setLoading(true)
     try {
-      await onSubmit({ company: company.trim(), trackingNo: trackingNo.trim(), shippingMethod: 'logistics' })
+      await onSubmit({
+        company: company.trim(),
+        trackingNo: trackingNo.trim(),
+        shippingMethod: 'logistics',
+        shipperName: shipperName.trim(),
+      })
       onClose()
     } catch (e) {
       // error handled by parent
@@ -70,6 +78,12 @@ export default function LogisticsForm({ open, onClose, onSubmit, initialData }: 
           onChange={(e) => setTrackingNo(e.target.value)}
           error={errors.trackingNo}
           required
+        />
+        <Input
+          label="发货人"
+          placeholder="发货单「经手人」；留空则保留原发货人"
+          value={shipperName}
+          onChange={(e) => setShipperName(e.target.value)}
         />
       </div>
     </Modal>

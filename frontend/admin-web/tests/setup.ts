@@ -182,6 +182,7 @@ vi.mock('lucide-react', () => ({
   Monitor: iconStub('monitor'),
   FolderTree: iconStub('folder-tree'),
   Zap: iconStub('zap'),
+  Printer: iconStub('printer'),
   Calculator: iconStub('calculator'),
   AlertTriangle: iconStub('alert-triangle'),
   ArrowRight: iconStub('arrow-right'),

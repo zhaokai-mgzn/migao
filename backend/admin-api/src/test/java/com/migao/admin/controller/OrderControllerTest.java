@@ -376,4 +376,110 @@ class OrderControllerTest extends BaseControllerTest {
             verify(orderService).createOrder(any(OrderCreateRequest.class), eq(TEST_TENANT_ID));
         }
     }
+
+    // ==================== PUT /api/admin/orders/{id}/logistics ====================
+
+    @Nested
+    @DisplayName("PUT /api/admin/orders/{id}/logistics — 更新物流 + 发货人（issue #3768 / UI-040）")
+    class UpdateLogistics {
+
+        private OrderDetailResponse orderWithStatus(String status) {
+            return buildOrder(ORDER_ID, status);
+        }
+
+        private String logisticsBody(String company, String trackingNo, String shipperName) {
+            StringBuilder sb = new StringBuilder("{\"logisticsCompany\":\"").append(company)
+                    .append("\",\"trackingNo\":\"").append(trackingNo).append("\"");
+            if (shipperName != null) {
+                sb.append(",\"shipperName\":\"").append(shipperName).append("\"");
+            }
+            return sb.append("}").toString();
+        }
+
+        @Test
+        @DisplayName("新建物流：显式传入发货人 → 原样落库")
+        void createsLogisticsWithExplicitShipper() throws Exception {
+            when(orderService.getOrderById(ORDER_ID)).thenReturn(orderWithStatus("confirmed"));
+            when(orderLogisticsService.getByOrderId(ORDER_ID)).thenReturn(List.of());
+            when(orderService.resolveShipperName("王五")).thenReturn("王五");
+
+            mockMvc.perform(put(BASE + "/" + ORDER_ID + "/logistics")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(logisticsBody("顺丰速运", "SF20260915001", "王五")))
+                    .andExpect(status().isOk());
+
+            verify(orderLogisticsService).save(org.mockito.ArgumentMatchers.<OrderLogistics>argThat(l ->
+                    "SF20260915001".equals(l.getTrackingNo()) && "王五".equals(l.getShipperName())));
+        }
+
+        @Test
+        @DisplayName("新建物流：未传发货人 → 用后端兜底（当前登录用户姓名）")
+        void createsLogisticsWithFallbackShipper() throws Exception {
+            when(orderService.getOrderById(ORDER_ID)).thenReturn(orderWithStatus("producing"));
+            when(orderLogisticsService.getByOrderId(ORDER_ID)).thenReturn(List.of());
+            when(orderService.resolveShipperName(null)).thenReturn("李四");
+
+            mockMvc.perform(put(BASE + "/" + ORDER_ID + "/logistics")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(logisticsBody("中通快递", "ZT20260915002", null)))
+                    .andExpect(status().isOk());
+
+            verify(orderLogisticsService).save(org.mockito.ArgumentMatchers.<OrderLogistics>argThat(l ->
+                    "李四".equals(l.getShipperName())));
+        }
+
+        @Test
+        @DisplayName("已有物流：未传发货人 → 保留原发货人（改运单号 ≠ 换经手人）")
+        void keepsExistingShipperWhenNotProvided() throws Exception {
+            OrderLogistics existing = OrderLogistics.builder()
+                    .id("log-001").orderId(ORDER_ID).tenantId(TEST_TENANT_ID)
+                    .logisticsCompany("顺丰速运").trackingNo("SFOLD")
+                    .shipperName("李四").status("in_transit").build();
+
+            when(orderService.getOrderById(ORDER_ID)).thenReturn(orderWithStatus("shipped"));
+            when(orderLogisticsService.getByOrderId(ORDER_ID)).thenReturn(List.of(existing));
+
+            mockMvc.perform(put(BASE + "/" + ORDER_ID + "/logistics")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(logisticsBody("德邦快递", "DB20260915003", null)))
+                    .andExpect(status().isOk());
+
+            verify(orderLogisticsService).updateById(org.mockito.ArgumentMatchers.<OrderLogistics>argThat(l ->
+                    "DB20260915003".equals(l.getTrackingNo()) && "李四".equals(l.getShipperName())));
+        }
+
+        @Test
+        @DisplayName("已有物流：显式传入发货人 → 覆盖（存量订单可人工纠正）")
+        void overwritesShipperWhenExplicitlyProvided() throws Exception {
+            OrderLogistics legacy = OrderLogistics.builder()
+                    .id("log-002").orderId(ORDER_ID).tenantId(TEST_TENANT_ID)
+                    .logisticsCompany("顺丰速运").trackingNo("SFOLD")
+                    .status("in_transit").build(); // 存量：shipperName = null
+
+            when(orderService.getOrderById(ORDER_ID)).thenReturn(orderWithStatus("shipped"));
+            when(orderLogisticsService.getByOrderId(ORDER_ID)).thenReturn(List.of(legacy));
+            when(orderService.resolveShipperName("赵六")).thenReturn("赵六");
+
+            mockMvc.perform(put(BASE + "/" + ORDER_ID + "/logistics")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(logisticsBody("顺丰速运", "SF20260915004", "赵六")))
+                    .andExpect(status().isOk());
+
+            verify(orderLogisticsService).updateById(org.mockito.ArgumentMatchers.<OrderLogistics>argThat(l ->
+                    "赵六".equals(l.getShipperName())));
+        }
+
+        @Test
+        @DisplayName("状态守卫：待付款订单拒绝更新物流")
+        void rejectsNonShippableStatus() throws Exception {
+            when(orderService.getOrderById(ORDER_ID)).thenReturn(orderWithStatus("pending"));
+
+            mockMvc.perform(put(BASE + "/" + ORDER_ID + "/logistics")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(logisticsBody("顺丰速运", "SF20260915005", "王五")))
+                    .andExpect(status().isUnprocessableEntity());
+
+            verify(orderLogisticsService, never()).save(any(OrderLogistics.class));
+        }
+    }
 }
