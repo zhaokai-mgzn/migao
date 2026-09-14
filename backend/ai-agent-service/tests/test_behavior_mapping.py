@@ -1,4 +1,4 @@
-# case_ids: OR-016, AS-007, PR-019, PR-020, CH-010
+# case_ids: OR-016, AS-007, PR-019, PR-020, CH-010, CU-003, CU-004
 """行为改动 diff → 用例映射单测（tests/agent_eval/behavior_mapping.py，issue #3502）。
 
 被测契约（详见模块 docstring）：
@@ -40,6 +40,17 @@ CARD_PATH = "backend/ai-agent-service/app/graph/interact.py"
 VISION_PATH = "backend/ai-agent-service/app/utils/vision_analyzer.py"
 GUARD_PATH = "backend/ai-agent-service/app/tools/guard.py"
 AGENT_PATH = "backend/ai-agent-service/app/agents/mibao.py"
+CUSTOMER_PATH = "backend/ai-agent-service/app/tools/customer_manage.py"
+CUSTOMER_SKILL_PATH = "backend/ai-agent-service/app/graph/skills/customer_skill.py"
+FINANCE_PATH = "backend/ai-agent-service/app/tools/finance_api.py"
+
+# 真实承载防御/熔断逻辑的源码（#3551 全表复核时实测：只有这些是仓内真实存在的载体）
+REAL_DEFENSE_PATHS = [
+    "backend/ai-agent-service/app/graph/clarify_guard.py",
+    "backend/ai-agent-service/app/core/circuit_breaker.py",
+    "backend/ai-agent-service/app/core/fallback.py",
+    "backend/ai-agent-service/app/graph/skills/base_skill.py",
+]
 
 
 class TestRuleHits:
@@ -55,9 +66,24 @@ class TestRuleHits:
         (VISION_PATH, ["CH-021", "CH-026"]),
         (GUARD_PATH, ["DF-011", "DF-012"]),
         (AGENT_PATH, ["CH-003", "CH-022"]),
+        # #3551 补客户域规则：改客户档案 Tool / 客户域 Skill → CU-003（标签）、CU-004（更新资料）
+        (CUSTOMER_PATH, ["CU-003", "CU-004"]),
+        (CUSTOMER_SKILL_PATH, ["CU-003", "CU-004"]),
     ])
     def test_rule_hit(self, path, expected):
         assert bm.map_changed_files_to_case_ids([path]) == expected
+
+    def test_customer_manage_maps_to_customer_domain_cases(self):
+        """改 `customer_manage.py` 必须映射出 CU-004（#3551 旁路发现）。
+
+        修前：映射表无客户域规则 → 改客户档案写路径**不映射任何用例**（只有 prompt 关键词
+        顺带把 prompts/customer.md 映射到 CH-003/CH-022，`customer_manage.py` 本体落兜底网）
+        → 客户域行为改动逃过映射门禁。CU-004「更新客户资料（部分更新）」正是本次
+        「姓名静默丢弃」的承载用例；CU-003（给客户打标签）同属该工具写路径。
+        """
+        cases = bm.map_changed_files_to_case_ids([CUSTOMER_PATH])
+        assert "CU-004" in cases
+        assert cases == ["CU-003", "CU-004"]
 
     def test_defense_rule_covers_injection_keyword(self):
         """防御规则的三种写法（guard/defense/injection）都要能触发 —— 漏一种就等于漏测。"""
@@ -164,6 +190,74 @@ class TestMappingSource:
         for paths in ([ORDER_PATH], ["backend/ai-agent-service/app/main.py"],
                       ["frontend/admin-web/src/app/page.tsx"], []):
             assert bm.map_changed_files_with_source(paths)[0] == bm.map_changed_files_to_case_ids(paths)
+
+
+class TestRulesAnchorToSourcePaths:
+    """规则只锚定 agent 本体源码（#3551 追加：假阻塞红）
+
+    背景（另一 worker 实证）：规则此前对**所有** diff 路径匹配，于是新建的守卫测试文件
+    `test_admin_api_client_kwargs_guard.py`（文件名含 `guard`）让"改 finance 工具"的 PR
+    被判成命中防御规则 → DF-011/DF-012 以**阻塞**强度跑，而它与本 PR 改动**无因果**：
+    假阻塞红 → 每次都要人/agent 花时间证伪，还会诱使去修不该修的东西。
+    §16.5 的规则桶阻塞设计前提就是「规则命中 = 改动真的影响行为」，故必须双向钉住。
+    """
+
+    # ── 反方向 1：用例/测试/文档路径永不允许进规则桶（阻塞）──
+    @pytest.mark.parametrize("path", [
+        # 实证的误触源：测试文件名含 guard（防御规则关键词）
+        "backend/ai-agent-service/tests/test_admin_api_client_kwargs_guard.py",
+        # 其余典型测试/用例/文档路径（含 defense 关键词、纯 test_ 前缀）
+        "backend/ai-agent-service/tests/test_defense_layer.py",
+        "backend/ai-agent-service/tests/test_tools_finance_api.py",
+        "backend/ai-agent-service/tests/test_order_card_render.py",
+        "tests/agent_eval/behavior_mapping.py",
+        ".github/cases/defense.yml",
+        "docs/testing/mibao-verification-cases.md",
+    ])
+    def test_test_and_case_paths_never_hit_rule_bucket(self, path):
+        """测试/用例/文档路径 + 一个本体源码文件同 diff → 必须落兜底网（不阻塞）。"""
+        cases, source = bm.map_changed_files_with_source([FINANCE_PATH, path])
+        assert source == "default_net", (
+            f"{path} 误命中规则桶（source={source}, cases={cases}）→ 与改动无因果的假阻塞红"
+        )
+        assert cases == bm.DEFAULT_BEHAVIOR_CASES
+
+    def test_guard_named_test_file_does_not_trigger_defense_rule(self):
+        """回归（#3551 实证复现）：改 finance 工具 + 新增 `*_guard.py` 测试 → 不得阻塞 DF-011/DF-012。"""
+        cases, source = bm.map_changed_files_with_source([
+            FINANCE_PATH,
+            "backend/ai-agent-service/tests/test_tools_finance_api.py",
+            "backend/ai-agent-service/tests/test_admin_api_client_kwargs_guard.py",
+        ])
+        assert source == "default_net"
+        assert cases == bm.DEFAULT_BEHAVIOR_CASES
+
+    def test_rule_scope_is_subset_of_behavior_domain(self):
+        """规则作用域必须是行为域的子集（防止有人把非行为路径加进作用域）。"""
+        assert all(
+            p.startswith(bm.AI_BEHAVIOR_PATH_PREFIXES) for p in bm.BEHAVIOR_SOURCE_PREFIXES
+        )
+        assert "tests/" not in "".join(bm.BEHAVIOR_SOURCE_PREFIXES)
+
+    # ── 反方向 2：真实防御源码仍必须命中规则桶（防收窄成"永不命中" = 门禁静默失效）──
+    @pytest.mark.parametrize("path", REAL_DEFENSE_PATHS)
+    def test_real_defense_sources_still_hit_rule_bucket(self, path):
+        assert bm.map_changed_files_with_source([path]) == (["DF-011", "DF-012"], "rules")
+
+    def test_real_defense_sources_exist(self):
+        """上面那组"真实载体"必须真的存在于仓内（防又变成凭空的文件名）。"""
+        for path in REAL_DEFENSE_PATHS:
+            assert (REPO_ROOT / path).is_file(), f"防御载体不存在：{path}"
+
+    def test_customer_prompt_change_maps_to_customer_cases(self):
+        """客户域引导词改动 → CU-003/CU-004（与 prompt 规则 CH-003/CH-022 取并集）。
+
+        `prompts/customer.md` 直接规定"更新客户资料"下发的字段名 —— 改它必须真跑客户域用例。
+        """
+        cases, source = bm.map_changed_files_with_source(
+            ["backend/ai-agent-service/app/graph/skills/references/prompts/customer.md"])
+        assert source == "rules"
+        assert cases == ["CH-003", "CH-022", "CU-003", "CU-004"]
 
 
 class TestCaseIdsExistInCaseLibrary:
