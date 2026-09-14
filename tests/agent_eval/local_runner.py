@@ -1874,7 +1874,7 @@ def _is_infra_error(err) -> bool:
     return any(m in s for m in _INFRA_MARKERS)
 
 
-# ── 失败根因指纹（root-cause-stable signature，issue #3727）──────────────────
+# ── 失败根因指纹（root-cause-stable signature，issue #3728）──────────────────
 #
 # 旧实现把**断言渲染文本**当指纹（`f"{exp}|{detail[:60]}"`）：同一根因只要经由不同
 # 断言路径渲染、或尾随细节/组件条数不同，指纹就不同 → `_classify_attempts` 判
