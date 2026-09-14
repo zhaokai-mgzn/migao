@@ -327,16 +327,26 @@ jobs:
               --wait-timeout 300 postgres redis admin-api ai-agent-service 2>&1 | tail -20
           fi
 
-      - name: "Seed 评测业务数据"
-        # 照抄 xiaobu-acceptance.yml：全新空库下 agent 搜不到商品 → 反复重试 product_search，
-        # 从不进入 product_detail（PR-003/PR-019 等依赖数据的用例必然失败，且行为本身合理）。
-        # 注入最小业务数据：商品/颜色/SKU/加工项/加工项关联（幂等，可重复执行）。
+      - name: "Seed 评测业务数据（C 端 #3270 + B 端 #3511）"
+        # 照抄 xiaobu-acceptance.yml 的 seed 步骤（同一套已验证口径），一处必要差异：
+        # 该 workflow 一次只跑一个 persona，故按输入**条件**叠加 B 端种子；而本 workflow 的
+        # 分桶可能同时含 mibao 与 xiaobu 桶（例如 guard.py + interact.py 的 PR）→ 条件叠加
+        # 会漏掉 B 端点名数据。两个 seed 都**幂等**（ON CONFLICT DO NOTHING /
+        # WHERE NOT EXISTS），栈又是跑完即弃的独立栈，故这里**无条件叠加**更安全。
+        #
+        # 为什么必须要 B 端种子（#3511 T3.2 实证）：OR-016 的输入点名「2699系列雪尼尔窗帘面料」
+        # → 干净库里 product_search(products=0) → agent 反复搜 4 轮后宣告"库里没有这款商品"
+        # （行为合理但用例判红）；PR-020 点名「刺绣工艺」同理。缺数据会长得像能力回归。
         env:
           DEV_SERVICE_TOKEN: diagnostics-only-placeholder
         run: |
           docker compose -f deploy/docker-compose.yml exec -T postgres \
             psql -v ON_ERROR_STOP=1 -U app_user -d ai_customer_service \
             < tests/agent_eval/fixtures/xiaobu_eval_seed.sql
+          echo "── 叠加 B 端种子（mibao_eval_seed.sql）──"
+          docker compose -f deploy/docker-compose.yml exec -T postgres \
+            psql -v ON_ERROR_STOP=1 -U app_user -d ai_customer_service \
+            < tests/agent_eval/fixtures/mibao_eval_seed.sql
           echo "── 数据核对 ──"
           # 标签在 bash 侧拼：SQL 里不用「两竖线」做字符串拼接 —— CI helper 的管道规模守卫
           # 把两竖线也当管道计数，而 SQL 的连接符不是 shell 管道（本条注释同样避开那两个字
