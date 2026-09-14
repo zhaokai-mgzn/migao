@@ -197,9 +197,11 @@ class FinanceApiTool(BaseTool):
             payload["remark"] = kwargs["remark"]
 
         client = get_admin_api_client()
+        # 自研客户端（app/utils/http_client.py::AdminApiClient.post）只接受 json_data，
+        # 且无 **kwargs —— 用 httpx 风格的 json= 会 TypeError（issue #3548，FN-001 曾恒失败）
         response = await client.post(
             "/api/admin/finance/transactions",
-            json=payload,
+            json_data=payload,
             tenant_id=context.tenant_id,
             user_id=context.user_id,
         )

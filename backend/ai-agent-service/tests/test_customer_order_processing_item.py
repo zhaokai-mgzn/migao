@@ -19,6 +19,8 @@ C 端一直没跟。
 本测试锁定 C 端 prompt 的加工项契约——删规则即 fail，防重构回退。
 """
 # case_ids: OR-016, CH-010, PR-019, OR-021, OR-022, CH-025
+from pathlib import Path
+
 import pytest
 
 from app.graph.skills.customer_order_skill import CUSTOMER_ORDER_SYSTEM_PROMPT
@@ -218,3 +220,58 @@ class TestProductDetailIronRule:
         assert "禁止" in p and "无加工项" in p, (
             "未禁止「仅凭 product_search 列表断言该商品无加工项」"
         )
+
+
+class TestProcessingQuantityByPricingMethod:
+    """加工数量必须**按计价方式**推导，processingFee 必须 == Σ 明细（issue #3521）。
+
+    实证（CH-010 首跑红）：
+        amount_verify[order_create](R8): 总额 311.4 ≠ Σ小计71.4+加工费252.0=323.4
+    反推：小计 71.4 = 3 × 23.8（面料），落库总额 311.4 = 71.4 + 240，
+    而模型在 `processing_info.processingFee` 里声明的是 252 —— 差别来自**同一个订单里
+    模型对按面积（per_area）的刺绣工艺写了两份面积**（30 × 8 = 240 vs 30 × 8.4 = 252）。
+
+    根因是只有 `per_meter` 有数量口径（prompt 原话"加工数量 = 面料米数"），
+    其余计价方式（per_area/per_set/fixed）**没有规则** → 模型只能猜数量。
+    服务端 `OrderService.sumProcessingFee()` 只认 `Σ processingItems.unitPrice × quantity`
+    （`processingFee` 字段不参与总额计算）→ 顾客在确认卡看到的总额 ≠ 实际落库/收款金额。
+
+    规则落在 **order_create 的工具描述**（而非 system prompt）：
+      · 这是**参数语义**（processingItems 的 quantity 怎么来），与字段定义同处最合适；
+      · C 端下单 prompt 已顶到长度守卫上限（3592/3600），加规则必须先删旧规则 ——
+        在 bug 修复里改别的行为域措辞风险更大，故走零预算的加法路径。
+    另一道**确定性**闸门在 `validate_input`（prompt 会被 LLM 方差漏掉，
+    见 `test_tools_order_create_validation.py` 的加工费一致性用例）。
+
+    本组是 L0 静态不变式（migao-dev-flow §16.1）：合法计价方式集合从
+    `docs/sql/schema.sql` 的 processing_items.pricing_method 注释取（单一源），
+    逐个要求工具描述给出数量口径 —— 改枚举而不补口径会红。
+    """
+
+    # schema.sql: `pricing_method VARCHAR(32) NOT NULL, -- per_meter / per_set / fixed / per_area（…）`
+    _SCHEMA = Path(__file__).resolve().parents[3] / "docs" / "sql" / "schema.sql"
+
+    def _legal_pricing_methods(self) -> list:
+        import re
+        text = self._SCHEMA.read_text(encoding="utf-8")
+        m = re.search(
+            r"pricing_method\s+VARCHAR\([^)]*\)\s*NOT\s+NULL\s*,\s*--\s*([^（(\n]+)", text)
+        assert m, "未能从 docs/sql/schema.sql 解析出 pricing_method 合法取值注释（单一源解析失效）"
+        methods = [t.strip() for t in m.group(1).split("/") if t.strip()]
+        assert len(methods) >= 3, f"解析出的计价方式过少: {methods!r}"
+        return methods
+
+    def test_every_legal_pricing_method_has_a_quantity_rule(self):
+        desc = OrderCreateTool.description
+        missing = [m for m in self._legal_pricing_methods() if m not in desc]
+        assert not missing, (
+            f"order_create 工具描述未给出这些计价方式的加工数量口径: {missing!r}"
+            "（缺口径 → 模型猜数量 → 确认卡金额与落库金额不一致，issue #3521）")
+
+    def test_tool_description_requires_fee_equals_item_sum(self):
+        """必须把「processingFee == Σ(unitPrice × quantity)」写成规则（服务端权威口径）"""
+        desc = OrderCreateTool.description
+        assert "processingFee" in desc, "工具描述未提 processingFee"
+        assert "Σ" in desc and "unitPrice" in desc and "quantity" in desc, (
+            "未点明服务端口径 = Σ(processingItems[i].unitPrice × quantity)")
+

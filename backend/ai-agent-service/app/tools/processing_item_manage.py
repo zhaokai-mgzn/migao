@@ -19,6 +19,15 @@ VALID_ACTIONS = {
     "calculate_price",
 }
 
+# 计价方式 canonical 枚举（与 admin-api ProcessingItemService.validatePricingMethod
+# 及 ProcessingItemCreateRequest.pricingMethod 对齐；issue #3005 回滚后无 per_piece）
+VALID_PRICING_METHODS = {
+    "per_meter": "按米",
+    "per_set": "按套",
+    "fixed": "一口价",
+    "per_area": "按面积",
+}
+
 
 class ProcessingItemManageTool(BaseTool):
     """加工项管理 Tool
@@ -79,6 +88,15 @@ class ProcessingItemManageTool(BaseTool):
                 "type": "number",
                 "description": "单价（create_processing_item 时必填，update_item 时可选）",
             },
+            "pricing_method": {
+                "type": "string",
+                "description": (
+                    "计价方式（create_processing_item 时必填）：per_meter（按米）/ per_set（按套）"
+                    "/ fixed（一口价）/ per_area（按面积）。不支持 per_piece（按个）——"
+                    "行业加工费按米计价、辅料含在加工费中"
+                ),
+                "enum": ["per_meter", "per_set", "fixed", "per_area"],
+            },
             "description": {
                 "type": "string",
                 "description": "描述信息（可选）",
@@ -112,6 +130,7 @@ class ProcessingItemManageTool(BaseTool):
         category_id: Optional[str] = None,
         name: Optional[str] = None,
         price: Optional[float] = None,
+        pricing_method: Optional[str] = None,
         description: Optional[str] = None,
         unit: Optional[str] = None,
         processing_item_id: Optional[str] = None,
@@ -138,7 +157,8 @@ class ProcessingItemManageTool(BaseTool):
 
         try:
             if action == "create_processing_item":
-                return await self._create_item(context, name, category_id, price, description, unit)
+                return await self._create_item(
+                    context, name, category_id, price, pricing_method, description, unit)
             elif action == "update_item":
                 return await self._update_item(context, item_id, name, category_id, price, description, unit)
             elif action == "delete_item":
@@ -178,10 +198,16 @@ class ProcessingItemManageTool(BaseTool):
         name: Optional[str],
         category_id: Optional[str],
         price: Optional[float],
+        pricing_method: Optional[str] = None,
         description: Optional[str] = None,
         unit: Optional[str] = None,
     ) -> ToolResult:
-        """创建加工项"""
+        """创建加工项
+
+        请求体契约以 admin-api `ProcessingItemCreateRequest` 为准（issue #3543）：
+        `name` / `categoryId` / `pricingMethod`(@NotBlank) / `unitPrice`(@NotNull)，
+        其中工具/LLM 侧单价参数名为 `price` → **显式映射**到 `unitPrice`。
+        """
         if not name:
             return ToolResult(
                 success=False,
@@ -200,11 +226,37 @@ class ProcessingItemManageTool(BaseTool):
                 error="缺少价格",
                 message="创建加工项时必须提供 price",
             )
+        if not pricing_method:
+            return ToolResult(
+                success=False,
+                error="缺少计价方式",
+                message="创建加工项时必须提供 pricing_method（计价方式）",
+                suggestion=(
+                    "请向用户确认计价方式，仅支持："
+                    "per_meter（按米）/ per_set（按套）/ fixed（一口价）/ per_area（按面积）"
+                ),
+            )
+        if pricing_method not in VALID_PRICING_METHODS:
+            options = " / ".join(f"{k}（{v}）" for k, v in VALID_PRICING_METHODS.items())
+            return ToolResult(
+                success=False,
+                error=f"不支持的计价方式: {pricing_method}",
+                message=(
+                    f"加工项计价方式仅支持：{options}；per_piece（按个）等其它计价方式不支持，"
+                    f"实际收到 {pricing_method!r}"
+                ),
+                suggestion=(
+                    "请向用户说明加工项只支持上述 4 种计价方式（行业加工费按米计价、辅料含在加工费中），"
+                    "请用户重新选择，不要自行改成其它计价方式"
+                ),
+            )
 
         json_data: Dict[str, Any] = {
             "name": name,
             "categoryId": category_id,
-            "price": price,
+            # 显式映射：admin-api DTO 字段名为 pricingMethod / unitPrice（无 price）
+            "pricingMethod": pricing_method,
+            "unitPrice": price,
         }
         if description:
             json_data["description"] = description
@@ -213,7 +265,7 @@ class ProcessingItemManageTool(BaseTool):
 
         logger.info(
             f"[processing-item-manage] CreateItem: name={name}, category_id={category_id}, "
-            f"price={price} | tenant={context.tenant_id}"
+            f"price={price}, pricing_method={pricing_method} | tenant={context.tenant_id}"
         )
 
         client = get_admin_api_client()

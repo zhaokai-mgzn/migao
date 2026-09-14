@@ -629,7 +629,7 @@
 ### CH-010. 选购下单表单化交互（choice 选品→form 收参→confirm 确认→下单） 🔵
 ```
 你: 推荐几款热销窗帘
-你: 第一款，白色，2.8 米门幅，按米卖
+你: 买北欧风窗帘那款，白色，2.8 米门幅，按米卖
 你: [🤖 按上一轮卡片作答]
 你: [🤖 按上一轮卡片作答]
 你: [🤖 按上一轮卡片作答]
@@ -649,7 +649,7 @@
 时序: interact[confirm] before order_create
 必填: order_create() 字段 customer_phone, items
 必须成功: order_create
-金额: order_create 「北欧风窗帘」 → unit_price; subtotal; total
+金额: order_create 「北欧风窗帘」 → unit_price; subtotal; processing_fee; total
 落库: order_phone → source=order_create; expect_phone=13800138000
 ```
 真值: ai-chat.confirm-required, order.flow
