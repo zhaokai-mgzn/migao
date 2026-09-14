@@ -34,7 +34,7 @@ const mockClearMessages = jest.fn()
 
 jest.mock('../src/store/authStore', () => ({
   useAuthStore: jest.fn(() => ({
-    user: { id: 'u1', nickname: '运营小王', avatar: null, tenant_id: 1, role: 'operator', tenantName: '词元通达' },
+    user: { id: 'u1', nickname: '运营小王', avatar: null, tenantId: 1, role: 'operator', tenantName: '词元通达' },
     isLoggedIn: true,
     logout: mockLogout,
   })),
@@ -59,7 +59,7 @@ describe('ProfilePage', () => {
     jest.clearAllMocks()
     // 重置 mock 到已登录状态（B 端员工）
     ;(useAuthStore as unknown as jest.Mock).mockReturnValue({
-      user: { id: 'u1', nickname: '运营小王', avatar: null, tenant_id: 1, role: 'operator', tenantName: '词元通达' },
+      user: { id: 'u1', nickname: '运营小王', avatar: null, tenantId: 1, role: 'operator', tenantName: '词元通达' },
       isLoggedIn: true,
       logout: mockLogout,
     })
@@ -77,7 +77,7 @@ describe('ProfilePage', () => {
 
   it('未登记的角色码不得原样显示（回退中文，防英文泄漏）', () => {
     ;(useAuthStore as unknown as jest.Mock).mockReturnValue({
-      user: { id: 'u1', nickname: '运营小王', avatar: null, tenant_id: 1, role: 'warehouse_keeper', tenantName: '词元通达' },
+      user: { id: 'u1', nickname: '运营小王', avatar: null, tenantId: 1, role: 'warehouse_keeper', tenantName: '词元通达' },
       isLoggedIn: true,
       logout: mockLogout,
     })

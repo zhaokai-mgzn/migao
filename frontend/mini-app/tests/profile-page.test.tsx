@@ -35,7 +35,7 @@ const mockBindMiniPhone = jest.fn()
 
 jest.mock('../src/store/authStore', () => ({
   useAuthStore: jest.fn(() => ({
-    user: { id: 'u1', nickname: '测试用户', avatar: null, tenant_id: 1 },
+    user: { id: 'u1', nickname: '测试用户', avatar: null, tenantId: 1 },
     isLoggedIn: true,
     setUser: mockSetUser,
     logout: mockLogout,
@@ -81,7 +81,7 @@ describe('ProfilePage', () => {
     jest.clearAllMocks()
     // 重置 mock 到已登录状态
     ;(useAuthStore as unknown as jest.Mock).mockReturnValue({
-      user: { id: 'u1', nickname: '测试用户', avatar: null, tenant_id: 1 },
+      user: { id: 'u1', nickname: '测试用户', avatar: null, tenantId: 1 },
       isLoggedIn: true,
       setUser: mockSetUser,
       logout: mockLogout,
@@ -184,7 +184,7 @@ describe('ProfilePage', () => {
 
   it('已绑定手机号应显示脱敏手机号（不显示绑定按钮）', () => {
     ;(useAuthStore as unknown as jest.Mock).mockReturnValue({
-      user: { id: 'u1', nickname: '测试用户', avatar: null, tenant_id: 1, phone: '13900139000' },
+      user: { id: 'u1', nickname: '测试用户', avatar: null, tenantId: 1, phone: '13900139000' },
       isLoggedIn: true,
       setUser: mockSetUser,
       logout: mockLogout,
