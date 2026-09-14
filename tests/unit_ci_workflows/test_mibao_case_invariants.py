@@ -217,7 +217,12 @@ class TestNoUnknownToolNames:
 # ── B 端覆盖体检（scripts/mibao_coverage.py）与 C 端口径的一致性守卫（issue #3555）──
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
-from case_coverage import build_coverage_report  # noqa: E402
+from case_coverage import (  # noqa: E402
+    BASELINE_PATH,
+    _attach_baseline,
+    build_coverage_report,
+    load_baseline,
+)
 
 
 class TestMibaoCoverageReport:
@@ -264,10 +269,15 @@ class TestMibaoCoverageReport:
         体检的职责是**显式列出**它，而不是让它继续隐形。
         """
         cases = load_case_dicts(str(CASES_DIR))
-        rep = build_coverage_report(cases, "mibao", tools=_mibao_real_toolset())
-        assert "processing_order_query" in rep.uncovered
-        assert "processing_order_update" in rep.uncovered
-        assert not rep.missing_positive, (
-            "B 端出现「只有对抗/拒绝用例」的工具（需补正向用例）:\n  "
-            + "\n  ".join(f"{t}: {ids}" for t, ids in sorted(rep.missing_positive.items()))
-        )
+        tools = _mibao_real_toolset()
+        raw = build_coverage_report(cases, "mibao", tools=tools)
+        assert "processing_order_query" in raw.uncovered
+        assert "processing_order_update" in raw.uncovered
+        # 缺正向用例的工具（只有对抗档）必须逐个**登记在存量豁免清单**里，不许隐形
+        rep = _attach_baseline(build_coverage_report(cases, "mibao", tools=tools),
+                               load_baseline(BASELINE_PATH, "mibao", tools))
+        for tool, kind in rep.blocking_gaps():
+            assert rep.is_baselined(tool, kind), (
+                f"B 端结构性缺口 {tool}[{kind}] 未登记进存量豁免清单 —— "
+                f"门禁会红，且清单里看不到它（补用例见 migao-dev-flow §14.5）"
+            )

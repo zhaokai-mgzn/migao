@@ -17,6 +17,8 @@ import re
 import sys
 from pathlib import Path
 
+import pytest
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / ".github"))
 sys.path.insert(0, str(REPO_ROOT / "tests" / "agent_eval"))   # 复用运行器的选择语义
@@ -361,6 +363,15 @@ sys.path.insert(0, str(REPO_ROOT / "scripts"))
 from case_coverage import build_coverage_report, is_positive_case  # noqa: E402
 
 
+def _synth(*cases):
+    """构造判据单测用的最小用例（显式 persona: xiaobu —— 缺省 persona 会被
+    `select_cases_for_persona` 的能力过滤挡掉，测不到判据本体）。"""
+    for c in cases:
+        c.setdefault("persona", "xiaobu")
+        c.setdefault("title", c["id"])
+    return list(cases)
+
+
 class TestCoverageThicknessGate:
     """新判据：**每个被覆盖的工具必须至少有一条正向用例**。
 
@@ -379,15 +390,6 @@ class TestCoverageThicknessGate:
 
     def _report(self):
         return build_coverage_report(load_case_dicts(str(CASES_DIR)), "xiaobu")
-
-    @staticmethod
-    def _synth(*cases):
-        """构造判据单测用的最小用例（显式 persona: xiaobu —— 缺省 persona 会被
-        `select_cases_for_persona` 的能力过滤挡掉，测不到判据本体）。"""
-        for c in cases:
-            c.setdefault("persona", "xiaobu")
-            c.setdefault("title", c["id"])
-        return list(cases)
 
     def test_every_tool_has_a_positive_case(self):
         """当前用例库必须全绿（防回归：谁删掉某工具的最后一条正向用例就报红）。"""
@@ -409,7 +411,7 @@ class TestCoverageThicknessGate:
 
     def test_negation_only_tool_is_missing_positive(self):
         """判据本体：某工具的用例全是「不调用/拒绝」式断言 → 缺正向用例。"""
-        cases = self._synth({
+        cases = _synth({
             "id": "T-REFUSE", "tier": "adversarial",
             "expectations": [{"tool": "tool_x 未被调用"}],
         })
@@ -418,31 +420,49 @@ class TestCoverageThicknessGate:
         assert not is_positive_case(cases[0])
 
     def test_tool_with_positive_case_passes(self):
-        """判据本体：有一条正向断言 → 不缺正向（标签是 adversarial 也不例外）。"""
-        cases = self._synth({"id": "T-POS", "tier": "adversarial",
-                             "expectations": [{"tool": "tool_x"}]})
+        """判据本体：有一条**正常档**正向断言 → 不缺正向。"""
+        cases = _synth({"id": "T-POS", "tier": "normal",
+                        "expectations": [{"tool": "tool_x"}]})
         rep = build_coverage_report(cases, "xiaobu", tools={"tool_x"})
         assert rep.missing_positive == {}
+        assert rep.blocking_gaps() == []
         assert is_positive_case(cases[0])
+
+    def test_adversarial_only_tool_with_several_cases_is_missing_positive(self):
+        """判据本体：**多条**对抗用例但无一条正向 → 缺正向（且不算薄覆盖）。
+
+        这是"只有越权/拒绝用例 = 该工具正向能力没被证明"的典型形态；与"仅 1 条用例"
+        （厚度不足，只报告）必须区分开。
+        """
+        cases = _synth(
+            {"id": "T-A1", "tier": "adversarial", "expectations": [{"tool": "tool_x"}]},
+            {"id": "T-A2", "tier": "adversarial", "expectations": [{"tool": "tool_x"}]},
+        )
+        rep = build_coverage_report(cases, "xiaobu", tools={"tool_x"})
+        assert rep.missing_positive == {"tool_x": ["T-A1", "T-A2"]}
+        assert rep.thin_tools == []
+        assert rep.blocking_gaps() == [("tool_x", "missing_positive")]
 
     def test_zero_case_tool_is_uncovered(self):
         """既有行为不回归：0 用例的工具必须计入 uncovered（旧判据保留）。"""
         rep = build_coverage_report([], "xiaobu", tools={"tool_x", "tool_y"})
         assert rep.uncovered == ["tool_x", "tool_y"]
-        assert rep.missing_positive == {}
         assert rep.thin_tools == []
+        # 0 用例必然也没有正向用例；kind 归类由 blocking_gaps 收敛为 uncovered（不重复报两遍）
+        assert dict(rep.blocking_gaps()) == {"tool_x": "uncovered", "tool_y": "uncovered"}
 
     def test_single_case_tool_is_thin_but_not_missing_positive(self):
         """策略断言：某工具仅 1 条正向用例 → 只报告（thin），不阻塞。"""
-        cases = self._synth({"id": "T-ONE", "tier": "normal",
-                             "expectations": [{"tool": "tool_x"}]})
+        cases = _synth({"id": "T-ONE", "tier": "normal",
+                        "expectations": [{"tool": "tool_x"}]})
         rep = build_coverage_report(cases, "xiaobu", tools={"tool_x"})
         assert rep.thin_tools == ["tool_x"]
+        assert rep.thin_positive == ["tool_x"]
         assert rep.missing_positive == {}
 
     def test_negated_expectation_is_not_positive(self):
         """「不许调用 X」式期望不是正向证据（否则拒绝用例会把工具伪装成已覆盖）。"""
-        cases = self._synth({
+        cases = _synth({
             "id": "T-NEG", "tier": "normal",
             "expectations": [{"tool": "tool_x 未被调用"}],
         })
@@ -451,3 +471,132 @@ class TestCoverageThicknessGate:
         assert rep.missing_positive == {"tool_x": ["T-NEG"]}
         # 覆盖矩阵仍应看到它（用例确实提到了该工具），只是不算正向
         assert rep.cases["tool_x"] == ["T-NEG"]
+
+
+# ── 存量豁免清单（burn-down baseline）的防腐败守卫（issue #3575 决策）───────────
+from case_coverage import BASELINE_PATH, _attach_baseline, load_baseline  # noqa: E402
+
+_BASELINE_HEAD = """version: 1
+entries:
+"""
+
+
+def _baseline_file(tmp_path, body: str):
+    f = tmp_path / "eval-coverage-baseline.yml"
+    f.write_text(_BASELINE_HEAD + body, encoding="utf-8")
+    return f
+
+
+class TestCoverageBaselineGuard:
+    """存量豁免清单只豁免**已登记的存量缺口**，且条目必须可销账（防白名单变垃圾场）。
+
+    四道锁（前两条在 `load_baseline`，后两条在 `check_problems`）：
+      ① 条目字段齐全（tool/kind/issue/reason/added）+ kind/issue 格式合法 + 工具真实存在；
+      ② 归属别端的条目不由本端校验（避免"B 端工具出现在 C 端清单"式误判）；
+      ③ 条目指向的缺口**当前不存在** = 陈旧登记 → 阻塞（销账后必须删条目）；
+      ④ **新出现**的缺口（未登记）→ 阻塞（这是门禁的核心价值）。
+    """
+
+    def _entry(self, tool="tool_x", kind="uncovered", issue="#1", reason="存量缺口待补用例", added="2026-09-14"):
+        return (f"  - tool: {tool}\n    kind: {kind}\n    issue: \"{issue}\"\n"
+                f"    reason: \"{reason}\"\n    added: \"{added}\"\n")
+
+    def test_missing_field_is_rejected(self, tmp_path):
+        body = "  - tool: tool_x\n    kind: uncovered\n    issue: \"#1\"\n    reason: \"存量缺口待补用例\"\n"
+        with pytest.raises(ValueError, match="缺字段"):
+            load_baseline(_baseline_file(tmp_path, body), "xiaobu", {"tool_x"})
+
+    def test_empty_reason_is_rejected(self, tmp_path):
+        with pytest.raises(ValueError, match="reason 至少"):
+            load_baseline(_baseline_file(tmp_path, self._entry(reason="无")), "xiaobu", {"tool_x"})
+
+    def test_bad_issue_ref_is_rejected(self, tmp_path):
+        with pytest.raises(ValueError, match="issue 必须是"):
+            load_baseline(_baseline_file(tmp_path, self._entry(issue="TBD")), "xiaobu", {"tool_x"})
+
+    def test_unknown_kind_is_rejected(self, tmp_path):
+        with pytest.raises(ValueError, match="kind 必须是"):
+            load_baseline(_baseline_file(tmp_path, self._entry(kind="whatever")), "xiaobu", {"tool_x"})
+
+    def test_tool_not_on_this_end_is_rejected(self, tmp_path):
+        with pytest.raises(ValueError, match="不是xiaobu工具"):
+            load_baseline(_baseline_file(tmp_path, self._entry(tool="typo_tool")), "xiaobu", {"tool_x"})
+
+    def test_other_end_entry_is_ignored_not_rejected(self, tmp_path):
+        """归属别端的条目不由本端校验（工具名不在本端工具集是正常的）。"""
+        body = ("  - tool: mibao_only\n    kind: uncovered\n    persona: mibao\n"
+                "    issue: \"#1\"\n    reason: \"B 端存量缺口待补用例\"\n    added: \"2026-09-14\"\n")
+        bl = load_baseline(_baseline_file(tmp_path, body), "xiaobu", {"tool_x"})
+        assert bl["entries"] == [] and bl["by_tool"] == {}
+
+    def test_baselined_gap_passes_but_new_gap_still_blocks(self, tmp_path):
+        """核心：已登记存量缺口放行；**新出现**的缺口照旧阻塞。"""
+        cases = _synth(
+            {"id": "T-A1", "tier": "adversarial", "expectations": [{"tool": "tool_x"}]},
+            {"id": "T-A2", "tier": "adversarial", "expectations": [{"tool": "tool_x"}]},
+        )
+        tools = {"tool_x", "tool_new"}
+        # 未登记 → 阻塞（新出现的缺口）：tool_new 零用例 → uncovered；
+        # tool_x 有多条对抗档用例但无正向 → missing_positive（都不算正向证据）
+        fresh = build_coverage_report(cases, "xiaobu", tools=tools)
+        assert fresh.blocking_gaps() == [("tool_new", "uncovered"), ("tool_x", "missing_positive")]
+        assert any("新出现" in p for p in fresh.check_problems())
+        # 只登记 tool_new → tool_x 仍阻塞（清单逐条销账，不许一条盖住两条）
+        bl = load_baseline(_baseline_file(tmp_path, self._entry(tool="tool_new")), "xiaobu", tools)
+        partial = _attach_baseline(build_coverage_report(cases, "xiaobu", tools=tools), bl)
+        assert partial.check_problems() and "tool_x[missing_positive]" in partial.check_problems()[0]
+        # 两条都登记 → 全绿
+        body = self._entry(tool="tool_new") + self._entry(tool="tool_x", kind="missing_positive")
+        bl = load_baseline(_baseline_file(tmp_path, body), "xiaobu", tools)
+        rep = _attach_baseline(build_coverage_report(cases, "xiaobu", tools=tools), bl)
+        assert rep.check_problems() == [], f"登记后必须全绿，实际: {rep.check_problems()}"
+        assert rep.is_baselined("tool_new", "uncovered") and rep.is_baselined("tool_x", "missing_positive")
+
+    def test_stale_baseline_entry_blocks(self, tmp_path):
+        """销账后没删条目 = 陈旧登记 → 阻塞（清单只可能变短，不会变垃圾场）。"""
+        cases = _synth({"id": "T-POS", "tier": "normal",
+                             "expectations": [{"tool": "tool_x"}]})
+        rep = build_coverage_report(cases, "xiaobu", tools={"tool_x"})
+        bl = load_baseline(_baseline_file(tmp_path, self._entry(tool="tool_x")), "xiaobu", {"tool_x"})
+        rep = _attach_baseline(rep, bl)
+        assert rep.baseline_missing == [("tool_x", "uncovered")]
+        assert any("陈旧登记" in p or "销账后未删除" in p for p in rep.check_problems())
+
+    def test_kind_mismatch_is_treated_as_stale(self, tmp_path):
+        """登记 kind 必须与实际缺口 kind 一致（防"登记个假的缺口糊弄过去"）。"""
+        cases = _synth({"id": "T-ONE", "tier": "normal",
+                             "expectations": [{"tool": "tool_x"}]})
+        rep = build_coverage_report(cases, "xiaobu", tools={"tool_x"})
+        # 实际只有 1 条（thin_positive），却登记成 missing_positive → 陈旧
+        bl = load_baseline(_baseline_file(tmp_path, self._entry(tool="tool_x", kind="missing_positive")),
+                           "xiaobu", {"tool_x"})
+        rep = _attach_baseline(rep, bl)
+        assert rep.baseline_missing == [("tool_x", "missing_positive")]
+
+    def test_repo_baseline_is_valid_and_real(self):
+        """仓库里的清单本身必须合规，且**只登记真实存在的缺口**（否则等于藏了僵尸条目）。"""
+        cases = load_case_dicts(str(CASES_DIR))
+        for persona in ("xiaobu", "mibao"):
+            rep = build_coverage_report(cases, persona)
+            bl = load_baseline(BASELINE_PATH, persona, rep.tools)
+            rep = _attach_baseline(rep, bl)
+            assert not rep.baseline_missing, (
+                f"{persona} 清单有陈旧登记（销账后未删除）: {rep.baseline_missing}"
+            )
+            assert rep.check_problems() == [], (
+                f"{persona} 覆盖体检在仓库清单下应保持全绿，实际: {rep.check_problems()}"
+            )
+            for e in bl["entries"]:
+                assert rep.is_baselined(e["tool"], e["kind"]), f"条目未生效: {e}"
+
+    def test_repo_baseline_is_shrinking_not_growing(self):
+        """清单必须保持"工作清单"体量：条目数设上限，扩容必须 review。"""
+        cases = load_case_dicts(str(CASES_DIR))
+        all_entries = []
+        for persona in ("mibao", "xiaobu"):
+            rep = build_coverage_report(cases, persona)
+            all_entries += load_baseline(BASELINE_PATH, persona, rep.tools)["entries"]
+        assert len(all_entries) <= 8, (
+            f"存量豁免清单已膨胀到 {len(all_entries)} 条 —— 它是工作清单不是免死金牌，"
+            f"请先销账（补用例后删条目）再扩容"
+        )
