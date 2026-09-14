@@ -1519,7 +1519,9 @@
 你: 登记一笔线下收款，金额 88 元，微信支付
 你: 确认
 期望: finance_api(action=create_transaction, type=income)
-数据: 流水号 FIN- 前缀，type=income，amount>0，status=success
+数据: 流水号 FIN- 前缀由服务端生成、type=income、amount=88、status=success —— 成功返回体由 output_verify 机器核对（「被调用」不等于「登记成功」）
+数据: 登记失败时不得声称成功：成功与否由 must_succeed 读 tool_result.success 机器判定
+必须成功: finance_api
 ```
 真值: finance.txn-types, finance.auto-record, finance.txn-no
 溯源: 财务对账模块新增；2026-09-09 校准：补金额+支付方式+确认轮——create_transaction 必填 type+amount，原「登记一笔线下收款」缺 amount，agent 正确引导补充（单轮过严） ｜ tags: finance, query
