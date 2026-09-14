@@ -13,6 +13,7 @@
 运行层已改为**失败关闭**（配错就报错）。本守卫把同一件事**左移**到 PR 阶段：
 不合法配置在 CI 的零依赖 job 里就会红，不用等真实 LLM 全量跑完才发现。
 """
+import re
 import sys
 from pathlib import Path
 
@@ -22,14 +23,48 @@ sys.path.insert(0, str(REPO_ROOT / ".github"))
 from render_cases import load_case_dicts  # noqa: E402
 
 CASES_DIR = REPO_ROOT / ".github" / "cases"
+TOOLS_DIR = REPO_ROOT / "backend" / "ai-agent-service" / "app" / "tools"
 
-SUPPORTED_DB_FETCH = {"product_by_name", "order_items", "order_phone", "after_sales_ticket"}
+SUPPORTED_DB_FETCH = {
+    "product_by_name", "order_items", "order_phone", "after_sales_ticket", "employee",
+    "processing_order"}
 SUPPORTED_POST_SESSION_FETCH = {"user_memories"}
 
 
 def _specs(case, field):
     for s in case.get(field) or []:
         yield s if isinstance(s, dict) else {"tool": s}
+
+
+def _multi_action_tools() -> dict:
+    """从 tool 源码解析**多 action 工具** → {工具名: 动作集合}（单一源 = 工具源码）。
+
+    为什么需要（issue #3544 实测 run 34809483940）：`output_verify` 按**工具名**取
+    「首个成功调用的 payload」，而多 action 工具（如 `processing_item_manage` 的
+    `list_categories` / `create_processing_item`）在同一次会话里会有多个 action 成功 →
+    可能核对到**别的 action** 的 payload：字段名不撞 = **假红**（PP-006 实证），
+    撞上 = **假绿**。故「多 action 工具必须显式声明 `action`」必须左移成 L0 不变式。
+
+    判定信号（纯文本解析，CI helper job 无 app 依赖）：
+      ① `VALID_ACTIONS = {...}` 且动作数 ≥2；或
+      ② schema 里 `"action": {..., "enum": [a, b, ...]}` 且 ≥2。
+    """
+    out = {}
+    for f in sorted(TOOLS_DIR.glob("*.py")):
+        src = f.read_text(encoding="utf-8")
+        m = re.search(r'^\s*name\s*=\s*"([a-z_][a-z0-9_]*)"', src, re.M)
+        if not m:
+            continue
+        acts = set()
+        va = re.search(r"VALID_ACTIONS\s*=\s*[\{\[](.*?)[\}\]]", src, re.DOTALL)
+        if va:
+            acts |= set(re.findall(r'"([a-z_]+)"', va.group(1)))
+        en = re.search(r'"action"\s*:\s*\{[^}]*?"enum"\s*:\s*\[([^\]]*)\]', src, re.DOTALL)
+        if en:
+            acts |= set(re.findall(r'"([a-z_]+)"', en.group(1)))
+        if len(acts) >= 2:
+            out[m.group(1)] = acts
+    return out
 
 
 class TestAssertionSpecsWellFormed:
@@ -94,6 +129,19 @@ class TestAssertionSpecsWellFormed:
                     bad.append(
                         f"{c['id']}.db_verify[{i}]: after_sales_ticket 既无 expect_fields_nonempty"
                         f" 也无 expect_close_reason_contains（关闭留痕无人核对）")
+                if fetch == "employee":
+                    if not (s.get("id") or s.get("name")):
+                        bad.append(
+                            f"{c['id']}.db_verify[{i}]: employee 缺 id/name（定位不到记录）")
+                    if not isinstance(s.get("expect_fields"), dict) or not s.get("expect_fields"):
+                        bad.append(
+                            f"{c['id']}.db_verify[{i}]: employee 缺/空 expect_fields"
+                            f"（空断言 —— 运行时会失败关闭）")
+                if fetch == "processing_order":
+                    if not (s.get("checks") or s.get("keyword")):
+                        bad.append(
+                            f"{c['id']}.db_verify[{i}]: processing_order 缺 checks"
+                            f"（空断言 —— 运行时会失败关闭）")
             for i, s in enumerate(_specs(c, "post_session")):
                 if s.get("fetch") not in SUPPORTED_POST_SESSION_FETCH:
                     bad.append(f"{c['id']}.post_session[{i}]: 不支持的 fetch={s.get('fetch')!r}")
@@ -124,6 +172,51 @@ class TestAssertionSpecsWellFormed:
                 elif "unit_price" in checks and not s.get("product_name"):
                     bad.append(f"{c['id']}.amount_verify[{i}]: 检查 unit_price 但没有 product_name（取不到真值）")
         assert not bad, "落库/金额断言配置不合法：\n  " + "\n  ".join(bad)
+
+
+class TestOutputVerifyActionScope:
+    """`output_verify` 指向**多 action 工具**时必须显式声明 `action`（L0 不变式，issue #3544）。
+
+    实证（run 34809483940，PP-006）：`processing_item_manage` 是 9 个 action 的工具，
+    同一会话里 R2 的 `list_categories` 先成功 → runner 按**工具名**取到它的 payload
+    `{'categories': [...]}` → 去核对 `name`/`pricingMethod` **必然假红**（真建成功的 R5
+    payload 从未被核对）；反之若两个 action 的 payload 字段名相撞就会**假绿**。
+    这条不变式把「必须声明作用域」左移到 PR 阶段的零成本 job，第 N 次复发不可能。
+    """
+
+    def _cases(self):
+        return load_case_dicts(str(CASES_DIR))
+
+    def test_multi_action_tools_detected(self):
+        """检测器自证：已知多 action 工具必须被认出来（防解析失效 → 守卫恒真）。"""
+        multi = _multi_action_tools()
+        assert len(multi) >= 8, f"只解析出 {len(multi)} 个多 action 工具 —— 解析疑似失效"
+        for name in ("processing_item_manage", "employee_manage", "product_manage",
+                     "after_sales_manage", "category_manage"):
+            assert name in multi, f"{name} 未被识别为多 action 工具（检测器漏了）"
+        # 单 action 工具不得误判（防过度收紧：PR-024 curtain_calc / PR-021 sku_update）
+        for name in ("curtain_calc", "sku_update"):
+            assert name not in multi, f"{name} 被误判为多 action 工具"
+
+    def test_output_verify_on_multi_action_tool_declares_action(self):
+        multi = _multi_action_tools()
+        bad = []
+        for c in self._cases():
+            for i, s in enumerate(_specs(c, "output_verify")):
+                tool = str(s.get("tool") or "")
+                if tool not in multi:
+                    continue
+                action = s.get("action")
+                if not action:
+                    bad.append(
+                        f"{c['id']}.output_verify[{i}]: {tool} 是多 action 工具"
+                        f"（{len(multi[tool])} 个动作）但未声明 action —— "
+                        f"会核对到别的 action 的 payload（假红/假绿双面缺陷，issue #3544）")
+                elif str(action) not in multi[tool]:
+                    bad.append(
+                        f"{c['id']}.output_verify[{i}]: {tool}.action={action!r} 不在该工具的动作集"
+                        f"{sorted(multi[tool])}（拼写错误 → 永远取不到 payload = 假红）")
+        assert not bad, "output_verify 作用域不合法：\n  " + "\n  ".join(bad)
 
 
 # ── 断言词汇表审计（issue #3417 复盘）────────────────────────────────────────────

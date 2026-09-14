@@ -12,6 +12,7 @@ SkillConfig + SkillRegistry 单元测试
 
 import re
 
+import os as _os
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
@@ -26,6 +27,31 @@ from app.agents.agent_config import (
     reset_agent_configs,
 )
 from app.agents.agent_router import AgentRouter
+
+
+@pytest.fixture(autouse=True)
+def _isolate_global_agent_registry():
+    """每个用例结束后把**全局 Agent 注册表**恢复成真实状态（issue #3569）。
+
+    病灶（另一包实证 + 本包复核）：本文件的 `TestAgentConfig.setup_method`（:245）与
+    `TestAgentRouter.setup_method`（:327）都会先 `reset_agent_configs()`（清空**真实**注册表），
+    再注册两个**没有 skill_names** 的 stub，却**没有 teardown** → 泄漏到同文件后续类、
+    以及后续测试文件。读全局注册表的代码（`app/graph/builder.py:42`、
+    `app/graph/nodes.py:153/565`、`app/agents/customer_service_agent.py:127`）拿到 stub 后
+    `skill_names=[]` → 遍历 skill 的循环体一次都不执行 → **静默空转**（用例照绿，什么都没测）。
+
+    实证（修复前，同一份代码只换文件顺序）：
+        pytest tests/test_skill_config_registry.py tests/test_dual_agent.py  → 4 failed
+        pytest tests/test_dual_agent.py tests/test_skill_config_registry.py  → 64 passed
+
+    恢复方式取"重新注册内置 Agent"（`app/agents/agents/__init__.py::register_all_agents`），
+    而不是自造 stub —— 与模块导入时的真实注册路径同一份真值。
+    """
+    yield
+    from app.agents.agents import register_all_agents
+
+    reset_agent_configs()
+    register_all_agents()
 
 
 # ────────────── SkillConfig 测试 ──────────────
@@ -951,4 +977,158 @@ class TestPromptToolPromiseInvariant:
         cfg = get_skill_registry().get_or_raise("customer_order")
         assert {"product_search", "product_detail"} <= set(cfg.tool_names or []), (
             "customer_order 缺商品工具 → 下单接地铁律无法执行（OR-014 死锁实证）"
+        )
+
+
+class TestLayerPromptToolWhitelist:
+    """L3/L5 资产层的工具名也必须在技能工具集内（issue #3569）。
+
+    缺口：上面的 `test_prompts_do_not_promise_missing_tools` 只扫
+    `SkillConfig.system_prompts`（**L4 内联**），而**领域规则 L3**
+    （`references/prompts/{skill}.md`）与 **few-shot L5**
+    （`references/EXAMPLES-{skill}.md`，位置最末、行为影响最大）**从未被这条契约覆盖**。
+    实证（issue #3569）：`EXAMPLES-customer_product.md` 写「先查看知识: knowledge_search」，
+    而 customer_product 工具集只有 `product_search/product_detail/interact`；
+    `EXAMPLES-customer_general.md` 写「order_query(action=list)」而该 skill 只绑
+    `customer_order_query` —— 都是"提示词教模型调不存在的工具"，静态可查却长期无人拦。
+
+    判定口径（沿用 `promised_tools` 的三分法：只认"指令"，不认否定与描述）：
+    - L4 内联：交给 `promised_tools`（指令动词驱动）；
+    - L3 领域规则：**`tool(` / `tool（` 调用形态**即指令；
+    - L5 few-shot：`→ `/`✅ ` 开头的**动作轨迹行**（few-shot 里轨迹就是指令）或调用形态；
+    - 显式 `❌ ` 反例行、以及句内出现否定词（不可用/不要/不能/无法/禁止/切勿/不得）的句子跳过
+      —— 它们正是"教模型别这么干"，允许出现该技能没有的工具名。
+    """
+
+    # 已冻结的存量越界：**当前为空**（C 端 + B 端全部越界都已在本 issue 内修掉）。
+    # 新增请务必写明原因 + 归属 issue；`test_known_exemptions_are_still_needed` 会在
+    # 越界被修好后立刻要求删掉豁免，防止"永久白名单"。
+    #
+    # 曾经的唯一一条（staff/interact，issue #3317）已随 #3590「staff/settings/data 补绑 interact」
+    # 合入 main 而消失 —— 本测试当时立刻报「豁免已失效」，正是这道守卫的价值。
+    KNOWN_EXEMPTIONS = {}
+
+    # tests/ -> ai-agent-service/ -> app/graph/skills/references
+    _REF_DIR = _os.path.join(
+        _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))),
+        "app", "graph", "skills", "references",
+    )
+    _CALL_FORM = re.compile(r"(?<![A-Za-z0-9_])[a-z_]+[\(（]")
+
+    @classmethod
+    def _universe(cls) -> set:
+        """全部 skill 工具集的并集 = 真正存在的工具名全集（与 registry 注册集一致）。"""
+        from app.graph.skills.skill_registry import get_skill_registry
+        out = set()
+        for cfg in get_skill_registry().get_all():
+            out |= set(cfg.tool_names or [])
+        return out
+
+    @classmethod
+    def _layer_tools(cls, text: str, *, fewshot: bool, universe: set) -> set:
+        """抽取一组文本里"被指示调用"的工具名。"""
+        out = set()
+        for raw in text.splitlines():
+            line = raw.strip()
+            if not line or line.startswith("❌"):
+                continue
+            is_trace = fewshot and (line.startswith("→") or line.startswith("✅"))
+            if not (is_trace or cls._CALL_FORM.search(line)):
+                continue
+            # 句级否定过滤：与 promised_tools 同口径（_NEGATIVE）
+            for seg in re.split(r"[。；]", line):
+                if any(neg in seg for neg in TestPromptToolPromiseInvariant._NEGATIVE):
+                    continue
+                for tool in universe:
+                    if re.search(rf"(?<![A-Za-z0-9_]){re.escape(tool)}(?![A-Za-z0-9_])", seg):
+                        out.add(tool)
+        return out
+
+    @classmethod
+    def _read_l3(cls, skill: str) -> str:
+        path = _os.path.join(cls._REF_DIR, "prompts", f"{skill}.md")
+        if not _os.path.exists(path):
+            return ""
+        text = open(path, encoding="utf-8").read()
+        # L3 首部 YAML frontmatter 由 base_skill 剥离（base_skill.py:562-566），不进 prompt → 不参与判定
+        if text.startswith("---"):
+            end = text.find("---", 3)
+            text = text[end + 3:] if end > 0 else text
+        return text
+
+    @classmethod
+    def _read_l5(cls, skill: str) -> str:
+        path = _os.path.join(cls._REF_DIR, f"EXAMPLES-{skill}.md")
+        return open(path, encoding="utf-8").read() if _os.path.exists(path) else ""
+
+    def _violations(self) -> dict:
+        from app.graph.skills.skill_registry import get_skill_registry
+        universe = self._universe()
+        bad = {}
+        for cfg in get_skill_registry().get_all():
+            if not cfg.tool_names:
+                continue
+            tools = set(cfg.tool_names)
+            found = set()
+            for label, text, fewshot in (
+                ("L3", self._read_l3(cfg.name), False),
+                ("L5", self._read_l5(cfg.name), True),
+            ):
+                for tool in self._layer_tools(text, fewshot=fewshot, universe=universe) - tools:
+                    found.add((tool, label))
+            if found:
+                bad[cfg.name] = found
+        return bad
+
+    def test_l3_l5_do_not_name_missing_tools(self):
+        bad = []
+        for skill, found in sorted(self._violations().items()):
+            unexpected = sorted(
+                f"{tool}({label})" for tool, label in found
+                if (skill, tool) not in self.KNOWN_EXEMPTIONS
+            )
+            if unexpected:
+                bad.append(f"{skill}: L3/L5 指示了工具集里没有的工具 → {unexpected}")
+        assert not bad, (
+            "以下技能的**领域规则 L3 / few-shot L5**里指示了它没有的工具"
+            "（模型会调用不存在的工具 → 反复重试/转人工，流程死路）：\n  "
+            + "\n  ".join(bad)
+            + "\n若确属「教模型别这么干」的反例，请把该行标 ❌ 或用否定词表述。"
+        )
+
+    def test_known_exemptions_are_still_needed(self):
+        """豁免项不得腐烂：技能工具集若已补齐该工具，必须删掉对应豁免（防"永久白名单"）。"""
+        violations = self._violations()
+        stale = [
+            f"{skill}/{tool}"
+            for (skill, tool) in self.KNOWN_EXEMPTIONS
+            if not any(t == tool for t, _ in violations.get(skill, set()))
+        ]
+        assert not stale, (
+            "以下豁免已失效（该技能的 L3/L5 不再越界，或工具已补齐）—— 请删除 KNOWN_EXEMPTIONS 对应项："
+            f"{stale}"
+        )
+
+
+class TestGlobalAgentRegistryNotPolluted:
+    """金丝雀：本文件的 stub 注册用例不得把**全局** Agent 注册表留在 stub 状态（issue #3569）。
+
+    放在文件**末尾** —— pytest 按文件内定义顺序执行，所以这里跑在
+    `TestAgentConfig`（:245 reset + 注册 stub）与 `TestAgentRouter`（:327 同型）之后。
+    一旦那两个类又变成「只 setup 无 teardown」，这里立刻红；此前它泄漏还会让**别的测试文件**
+    静默空转（实证：`pytest test_skill_config_registry.py test_dual_agent.py` 4 failed）。
+    """
+
+    def test_real_agent_configs_survive(self):
+        for name in ("mibao", "xiaobu"):
+            cfg = get_agent_config(name)
+            assert cfg.skill_names, (
+                f"{name} 的全局注册被无 skill_names 的测试 stub 覆盖 → 后续测试文件里读全局"
+                f"注册表的代码（builder.py:42 / nodes.py:153,565 / customer_service_agent.py:127）"
+                f"会 skill_names=[] 静默空转。检查 test 级 teardown 恢复是否还在"
+                f"（_isolate_global_agent_registry）。"
+            )
+        # stub 的 fallback 是默认值 "general"，真实小布是 "customer_general" —— 用它区分真值
+        assert get_agent_config("xiaobu").fallback_skill == "customer_general", (
+            "全局 xiaobu 配置不是真实声明（被测试 stub 覆盖）"
         )

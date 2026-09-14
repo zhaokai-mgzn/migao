@@ -1,6 +1,6 @@
-"""order_create 明细数值校验 — 数量/单价/小计的正数闸门（issue #3586）
+"""order_create 明细参数闸门 — 数量/单价/小计/尺寸/加工费/枚举（issue #3586 + #3622）
 
-缺陷：`items[].quantity` 只检查「字段存在」，**不检查正负** → 负数量可落库。
+缺陷（#3586）：`items[].quantity` 只检查「字段存在」，**不检查正负** → 负数量可落库。
 证据链：
 - 工具侧 `int(item["quantity"])` 直转，schema 只声明 `"type": "integer"`（无下限）；
 - 下游 `OrderService.createOrder` 不做正负判断 → `unitPrice × 负数` 算出**负金额**落库，
@@ -8,11 +8,22 @@
 - Agent 路径的 admin-api 入参（`AgentOrderCreateRequest.AgentOrderItem`）**无 Bean Validation**，
   表单路径 `OrderCreateRequest` 的 `@Positive` 不覆盖它 → 后端不会拦。
 
+同族残留（#3622，同一文件同一范式扩展）：
+- `items[].width`/`height` 无下限 → 负尺寸 → per_area **负面积**；
+- `items[].processing_info.processingFee` 无下限 → 负加工费拉低总额；
+- `processing_info.processingItems[].quantity`/`unitPrice`/`subtotal` **运行期无闸门**
+  → `sumProcessingFee`（OrderService:807-829 = Σ unitPrice×quantity）算出**负加工费**；
+- `sellingMethod`/`pricingMethod` 无枚举 → 拼写变体（"散剪"、"per_piece"）静默落库
+  （后端 OrderService:1435 按**字面**比较 SKU.selling_method → 静默不匹配）；
+- `items[].product_name` 只判存在不判非空 → `""` 可通过。
+
 本测试锁三层（L2 值语义 + L1 schema 契约 + L0 静态不变式）：
-1. 负数量/0 数量 → **本地拒绝且未发生 HTTP 调用**（fail-fast）；
-2. 合法输入（正整数、带单位「3米」、字符串数字、单价小数）→ 仍然通过（防过严）；
-3. 拒绝路径必须带**可行动** suggestion；
-4. 静态不变式：所有写工具的**必填数值参数**都必须声明下限（防第 N 次复发）。
+1. 负数量/0 数量/负尺寸/负加工费/非法枚举 → **本地拒绝且未发生 HTTP 调用**（fail-fast）；
+2. 合法输入（正整数、带单位「3米」、字符串数字、单价小数、per_area 小数加工数量、
+   canonical 枚举值）→ 仍然通过（防过严）；
+3. 拒绝路径必须带**可行动** suggestion（说明应改成什么值 / 合法枚举）；
+4. 静态不变式：写工具的金额/数量/尺寸数值参数必须声明下限、枚举型参数必须声明 `enum`
+   （防第 N 次复发，两条锁各带哨兵）。
 """
 # case_ids: OR-024, OR-016
 import importlib
@@ -31,9 +42,35 @@ from app.tools.order_create import OrderCreateTool
 # 的叶子参数，必须声明 `minimum` 或 `exclusiveMinimum`（JSON Schema 下限关键字）。
 # 豁免即「已知缺口」，修掉后**必须从本清单删除**（否则测试会提醒你清单已过期）。
 NUMERIC_BOUND_EXEMPTIONS = {
-    # 归属：W 包（商品域），本包（#3586）不改该文件 → 只报告
+    # 归属：W 包（商品域，product_*.py 文件所有权），本包（#3622）不改这些文件 → 只报告
     "sku_update.price": "商品改价：price 无数值下限声明（负数价格可提交，属同类缺口，归 W 包）",
+    "product_manage.price": "建品 price 无数值下限声明（负数价格可提交，归 W 包 product_*.py）",
+    "product_update.price": "改品 price 无数值下限声明（负数价格可提交，归 W 包 product_*.py）",
+    # 归属：AC 包（加工项域，processing_item_manage.py 文件所有权），本包禁改 → 只报告
+    "processing_item_manage.price": "建/改加工项 price 无数值下限声明（归 AC 包）",
+    "processing_item_manage.quantity": "加工项 quantity 无数值下限声明（归 AC 包）",
 }
+
+# ── 枚举型参数豁免清单（#3622 新增同源锁）──
+# 扫描规则：写工具 schema 里**字段名**属于枚举语义注册表的参数，必须声明非空 `enum`。
+# 为什么用「字段名注册表」而不是「required + enum」：enum 型参数**没声明 enum 时无法
+# 从 schema 反推它是枚举**（信息缺失），而本次缺口（sellingMethod/pricingMethod）
+# 都是**可选嵌套**参数 —— 用 required 过滤会让锁对缺口完全空转（假锁）。
+ENUM_DECLARATION_EXEMPTIONS = {
+    "sku_update.selling_method": (
+        "归属 #3616/#3621（门幅/售卖方式口径包）：该包可能选别名归一化而非拒绝，"
+        "为避免两包对同一字段给出相反契约，本包只报告不改"
+    ),
+}
+
+# ── 语义注册表（#3622）──
+# 金额/数量/尺寸类字段名：一旦为负，直接污染金额/库存/面积数学 → 必须声明下限（含**可选**字段）。
+_MONEY_QTY_SIZE_FIELD_NAMES = {
+    "quantity", "unit_price", "unitPrice", "subtotal",
+    "processingFee", "price", "amount", "width", "height",
+}
+# 枚举型字段名：拼写变体会静默落库（后端按字面比较/落 JSONB）→ 必须声明 `enum`。
+_ENUM_FIELD_NAMES = {"sellingMethod", "selling_method", "pricingMethod", "pricing_method"}
 
 _NUMERIC_TYPES = {"integer", "number"}
 
@@ -61,8 +98,12 @@ def _iter_write_tool_classes():
             yield obj
 
 
-def _walk_required_numeric(tool_name: str, node, path: str = ""):
-    """递归收集 schema 中「必填 + 数值型」的叶子参数 → [(fqn, type, has_bound)]"""
+def _walk_params(tool_name: str, node, path: str = ""):
+    """递归收集 schema 中**所有**叶子参数 → [(fqn, leaf_name, spec, required)]
+
+    单一遍历入口：三条不变式（必填数值下限 / 金额尺寸下限 / 枚举声明）共用，
+    避免多套扫描器各扫各的（#3586 先例：分层读取不一致 → 校验全空转）。
+    """
     found = []
     if not isinstance(node, dict):
         return found
@@ -72,14 +113,31 @@ def _walk_required_numeric(tool_name: str, node, path: str = ""):
         if not isinstance(spec, dict):
             continue
         here = f"{path}{key}"
-        if spec.get("type") in _NUMERIC_TYPES and key in required:
-            has_bound = spec.get("minimum") is not None or spec.get("exclusiveMinimum") is not None
-            found.append((f"{tool_name}.{here}", spec.get("type"), has_bound))
+        found.append((f"{tool_name}.{here}", key, spec, key in required))
         if spec.get("type") == "object":
-            found += _walk_required_numeric(tool_name, spec, f"{here}.")
+            found += _walk_params(tool_name, spec, f"{here}.")
         if spec.get("type") == "array" and isinstance(spec.get("items"), dict):
-            found += _walk_required_numeric(tool_name, spec["items"], f"{here}[].")
+            found += _walk_params(tool_name, spec["items"], f"{here}[].")
     return found
+
+
+def _iter_all_params():
+    """遍历所有写工具的全部叶子参数 → [(fqn, leaf_name, spec, required)]"""
+    for cls in _iter_write_tool_classes():
+        yield from _walk_params(cls.name, getattr(cls, "parameters", {}) or {})
+
+
+def _has_lower_bound(spec: dict) -> bool:
+    return spec.get("minimum") is not None or spec.get("exclusiveMinimum") is not None
+
+
+def _walk_required_numeric(tool_name: str, node, path: str = ""):
+    """递归收集 schema 中「必填 + 数值型」的叶子参数 → [(fqn, type, has_bound)]"""
+    return [
+        (fqn, spec.get("type"), _has_lower_bound(spec))
+        for fqn, _leaf, spec, required in _walk_params(tool_name, node, path)
+        if required and spec.get("type") in _NUMERIC_TYPES
+    ]
 
 
 def test_write_tool_required_numeric_params_declare_lower_bound():
@@ -114,6 +172,101 @@ def test_scan_actually_sees_order_create_numeric_params():
     assert "order_create.items[].quantity" in seen
     assert "order_create.items[].unit_price" in seen
     assert "order_create.items[].subtotal" in seen
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# L0 静态不变式（#3622）：把本包修的字段纳入覆盖面 —— 两条锁 + 两条哨兵
+# ══════════════════════════════════════════════════════════════════════════
+
+def test_write_tool_money_and_size_numeric_params_declare_lower_bound():
+    """L0 静态不变式（#3622）：写工具的**金额/数量/尺寸类**数值参数（含可选）必须声明下限。
+
+    为什么在 #3586 那条锁之外再要一条：原锁只守「必填 + 数值型」叶子，而本次修的四类
+    缺口恰好全是**可选嵌套**参数（width/height、processingFee、processingItems[].*）——
+    用 required 过滤会让锁对本包缺口完全空转（假锁）。故按**字段语义注册表**扫描。
+
+    范围说明：注册表只收「负数会直接污染金额/库存/面积数学」的字段名；其余可选数值字段
+    （top_n / page / delay 等）语义各异，硬套下限会误伤，仍不进本锁。
+    """
+    offenders = []
+    for fqn, leaf, spec, _required in _iter_all_params():
+        if leaf in _MONEY_QTY_SIZE_FIELD_NAMES and spec.get("type") in _NUMERIC_TYPES:
+            if not _has_lower_bound(spec) and fqn not in NUMERIC_BOUND_EXEMPTIONS:
+                offenders.append(fqn)
+    assert offenders == [], (
+        "以下写工具的**金额/数量/尺寸类数值参数**没有声明数值下限（应加 minimum / exclusiveMinimum）：\n  - "
+        + "\n  - ".join(sorted(offenders))
+        + "\n若确认是已知缺口且归属别的任务包，请加入 NUMERIC_BOUND_EXEMPTIONS 并注明归属。"
+    )
+
+
+def test_write_tool_enum_semantic_params_declare_enum():
+    """L0 静态不变式（#3622）：写工具的**枚举型参数**必须在 schema 里声明 `enum`。
+
+    为什么必须有：枚举值拼写变体（"散剪"/"bulkCut"/"per_piece"）会**静默落库**——后端
+    `OrderService:1435` 按字面比较 SKU.selling_method → 静默不匹配 → 库存/销量静默丢失；
+    LLM 侧在 schema 里也看不到合法值。这是**结构性**缺陷（不依赖真实 LLM 探测即可判定），
+    必须在 L0 秒级拦住。
+
+    为什么不用 required 过滤：`enum` 未声明时无法从 schema 反推「它本该是枚举」，而本次
+    缺口（sellingMethod/pricingMethod）都是**可选嵌套**参数 —— required 过滤 = 锁空转。
+    """
+    offenders = []
+    for fqn, leaf, spec, _required in _iter_all_params():
+        if leaf not in _ENUM_FIELD_NAMES:
+            continue
+        enum = spec.get("enum")
+        declared = isinstance(enum, list) and bool(enum)
+        if not declared and fqn not in ENUM_DECLARATION_EXEMPTIONS:
+            offenders.append(fqn)
+    assert offenders == [], (
+        "以下写工具的**枚举型参数**没有声明 `enum`（拼写变体会静默落库）：\n  - "
+        + "\n  - ".join(sorted(offenders))
+        + "\n若确认是已知缺口且归属别的任务包，请加入 ENUM_DECLARATION_EXEMPTIONS 并注明归属。"
+    )
+
+
+def test_enum_declarations_are_non_empty_string_lists():
+    """`enum` 声明本身必须有效：非空字符串列表（防 `enum: []` / `enum: [None]` 式空转声明）"""
+    for fqn, _leaf, spec, _required in _iter_all_params():
+        if "enum" not in spec:
+            continue
+        enum = spec["enum"]
+        assert isinstance(enum, list) and enum, f"{fqn} 的 enum 必须是非空列表"
+        assert all(isinstance(v, str) and v for v in enum), f"{fqn} 的 enum 项必须是非空字符串"
+
+
+def test_scan_actually_sees_order_create_processing_and_size_params():
+    """哨兵（金额/尺寸下限锁）：扫描器必须真的扫到本包修的**可选嵌套**字段。
+
+    防「扫描器空转 → 不变式恒绿」（#3586 同类先例：规则表分层读错 → 校验全空转）。
+    """
+    seen = {fqn for fqn, _leaf, _spec, _required in _iter_all_params()}
+    for fqn in (
+        "order_create.items[].width",
+        "order_create.items[].height",
+        "order_create.items[].processing_info.processingFee",
+        "order_create.items[].processing_info.processingItems[].quantity",
+        "order_create.items[].processing_info.processingItems[].unitPrice",
+        "order_create.items[].processing_info.processingItems[].subtotal",
+    ):
+        assert fqn in seen, f"扫描器没扫到 {fqn}（锁可能空转）"
+
+
+def test_scan_actually_sees_order_create_enum_params():
+    """哨兵（枚举锁）：扫描器必须真的扫到 sellingMethod/pricingMethod"""
+    seen = {fqn for fqn, _leaf, _spec, _required in _iter_all_params()}
+    assert "order_create.items[].processing_info.sellingMethod" in seen
+    assert "order_create.items[].processing_info.processingItems[].pricingMethod" in seen
+
+
+def test_exemptions_reference_existing_params():
+    """豁免清单不得指向不存在的参数（防拼错 fqn 的「假豁免」把真缺口盖住）"""
+    seen = {fqn for fqn, _leaf, _spec, _required in _iter_all_params()}
+    for fqn in NUMERIC_BOUND_EXEMPTIONS:
+        assert fqn in seen, f"NUMERIC_BOUND_EXEMPTIONS 里的 {fqn} 不存在（清单已过期/拼错）"
+    for fqn in ENUM_DECLARATION_EXEMPTIONS:
+        assert fqn in seen, f"ENUM_DECLARATION_EXEMPTIONS 里的 {fqn} 不存在（清单已过期/拼错）"
 
 
 def test_order_create_schema_declares_quantity_and_price_bounds():
@@ -445,3 +598,453 @@ class TestOrderCreateValidInputsStillPass:
             assert "数量" in result.error
             m_verify.assert_not_called()
         mock_client.post.assert_not_called()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# #3622 同族残留：尺寸 / 加工费 / 加工项 / 枚举 / 商品名（同一闸门扩展）
+# ═══════════════════════════════════════════════════════════════════════════
+
+def _processing_item(**overrides):
+    entry = {
+        "id": "pi-1", "name": "打孔", "unitPrice": 8.0, "quantity": 3,
+        "unit": "米", "pricingMethod": "per_meter", "subtotal": 24.0,
+    }
+    entry.update(overrides)
+    return entry
+
+
+def _items_with_processing(**processing_info_overrides):
+    """单行明细 + processing_info（默认合法：bulk_cut + 打孔 8×3）"""
+    pinfo = {
+        "colorName": "米白色",
+        "sellingMethod": "bulk_cut",
+        "doorWidth": "2.8米",
+        "processingItems": [_processing_item()],
+        "processingFee": 24.0,
+    }
+    pinfo.update(processing_info_overrides)
+    return [{
+        "product_name": "遮光窗帘",
+        "quantity": 3,
+        "unit_price": 168.0,
+        "subtotal": 528.0,   # 504 面料 + 24 加工费（OR-014 口径：不要求严格等于数量×单价）
+        "processing_info": pinfo,
+    }]
+
+
+def _ok_client(mock_get_client):
+    mock_client = AsyncMock()
+    mock_client.post = AsyncMock(
+        return_value={"success": True, "data": {"id": "ORD-3622", "orderNo": "ORD-3622"}}
+    )
+    mock_get_client.return_value = mock_client
+    return mock_client
+
+
+class TestOrderCreateDimensionBounds:
+    """items[].width / height：可选的尺寸字段必须非负（负尺寸 → per_area 负面积）"""
+
+    @pytest.mark.parametrize("field,label", [("width", "宽度"), ("height", "高度")])
+    @pytest.mark.parametrize("bad", [-1, -0.5, "-2.8米"])
+    @patch("app.tools.order_create.get_admin_api_client")
+    async def test_negative_dimension_rejected_without_http(
+        self, mock_get_client, field, label, bad, tool, agent_ctx
+    ):
+        mock_client = AsyncMock()
+        mock_get_client.return_value = mock_client
+
+        result = await tool.execute(
+            context=agent_ctx,
+            customer_name="张三",
+            customer_phone="13800138000",
+            items=_items(**{field: bad}),
+        )
+
+        assert result.success is False, f"{field}={bad} 是负尺寸，必须本地拒绝（负面积/负尺寸落库）"
+        assert label in result.error
+        assert result.suggestion, "拒绝路径必须带可行动 suggestion"
+        assert "负数" in (result.message or "") or "负数" in result.suggestion
+        mock_client.post.assert_not_called()
+        mock_get_client.assert_not_called()
+
+    @pytest.mark.parametrize("field", ["width", "height"])
+    @pytest.mark.parametrize("bad", ["abc", "宽2.8", ""])
+    @patch("app.tools.order_create.get_admin_api_client")
+    async def test_unparsable_dimension_rejected(
+        self, mock_get_client, field, bad, tool, agent_ctx
+    ):
+        """非数值尺寸注定被 Java BigDecimal 拒 → 本地 fail-fast 并给可行动提示"""
+        mock_client = AsyncMock()
+        mock_get_client.return_value = mock_client
+
+        result = await tool.execute(
+            context=agent_ctx,
+            customer_name="张三",
+            customer_phone="13800138000",
+            items=_items(**{field: bad}),
+        )
+
+        assert result.success is False
+        assert result.suggestion
+        mock_client.post.assert_not_called()
+
+    @patch("app.tools.order_create.get_admin_api_client")
+    async def test_absent_dimension_still_passes(self, mock_get_client, tool, agent_ctx):
+        """可选字段不传 → 不拦（防过严）"""
+        mock_client = _ok_client(mock_get_client)
+
+        result = await tool.execute(
+            context=agent_ctx, customer_name="张三", customer_phone="13800138000",
+            items=_items(),
+        )
+
+        assert result.success is True, f"可选尺寸字段缺失不应被拦：{result.error}"
+        assert mock_client.post.await_count == 1
+
+    @pytest.mark.parametrize("field,value,expected", [
+        ("width", 2.8, 2.8),
+        ("width", "2.8米", 2.8),       # 带单位口语输入 → 落成数值（与 quantity「3米」同口径）
+        ("height", " 2.0 米 ", 2.0),
+        ("width", 0, 0.0),             # 0 尺寸不构成负面积，放行（schema minimum: 0）
+        ("height", 3, 3.0),
+    ])
+    @patch("app.tools.order_create.get_admin_api_client")
+    async def test_legal_dimension_passes_and_is_normalized(
+        self, mock_get_client, field, value, expected, tool, agent_ctx
+    ):
+        """合法尺寸（含带单位）必须放行，且落到请求体的是**数值**（Java BigDecimal 可直接解析）"""
+        mock_client = _ok_client(mock_get_client)
+
+        result = await tool.execute(
+            context=agent_ctx, customer_name="张三", customer_phone="13800138000",
+            items=_items(**{field: value}),
+        )
+
+        assert result.success is True, f"合法尺寸被误拦：{field}={value} → {result.error}"
+        sent = mock_client.post.await_args.kwargs["json_data"]
+        assert sent["items"][0][field] == expected
+
+
+class TestOrderCreateProcessingFeeAndItemBounds:
+    """processing_info.processingFee / processingItems[].quantity|unitPrice|subtotal 非负闸门
+
+    为什么这层最要紧：服务端 `OrderService.sumProcessingFee()`（:824-829）=
+    Σ `unitPrice × quantity`（`extractProcessingItems` :807-811 就是这两个字段相乘）
+    —— 任一为负 → **负加工费**直接加进 `totalAmount` 落库（第 417 行）。
+    """
+
+    @pytest.mark.parametrize("bad_fee", [-1, -24.0, "-24"])
+    @patch("app.tools.order_create.get_admin_api_client")
+    async def test_negative_processing_fee_rejected(self, mock_get_client, bad_fee, tool, agent_ctx):
+        mock_client = AsyncMock()
+        mock_get_client.return_value = mock_client
+
+        result = await tool.execute(
+            context=agent_ctx, customer_name="张三", customer_phone="13800138000",
+            items=_items_with_processing(processingFee=bad_fee),
+        )
+
+        assert result.success is False
+        assert "加工费" in result.error
+        assert result.suggestion
+        mock_client.post.assert_not_called()
+
+    @patch("app.tools.order_create.get_admin_api_client")
+    async def test_unparsable_processing_fee_rejected(self, mock_get_client, tool, agent_ctx):
+        mock_client = AsyncMock()
+        mock_get_client.return_value = mock_client
+
+        result = await tool.execute(
+            context=agent_ctx, customer_name="张三", customer_phone="13800138000",
+            items=_items_with_processing(processingFee="二十四"),
+        )
+
+        assert result.success is False
+        assert "加工费" in result.error
+        assert result.suggestion
+        mock_client.post.assert_not_called()
+
+    @pytest.mark.parametrize("patch_item", [
+        {"quantity": -3},
+        {"unitPrice": -8},
+        {"quantity": -1, "unitPrice": -2},
+        {"subtotal": -24},
+        {"quantity": "-3米"},
+    ])
+    @patch("app.tools.order_create.get_admin_api_client")
+    async def test_negative_processing_item_value_rejected(
+        self, mock_get_client, patch_item, tool, agent_ctx
+    ):
+        """加工项数量/单价/小计为负 → 负加工费 → 本地拒绝（运行期闸门原先完全缺位）"""
+        mock_client = AsyncMock()
+        mock_get_client.return_value = mock_client
+
+        result = await tool.execute(
+            context=agent_ctx, customer_name="张三", customer_phone="13800138000",
+            items=_items_with_processing(processingItems=[_processing_item(**patch_item)]),
+        )
+
+        assert result.success is False, f"加工项 {patch_item} 为负必须拒绝"
+        assert "加工项" in result.error
+        assert result.suggestion
+        mock_client.post.assert_not_called()
+
+    @pytest.mark.parametrize("patch_item", [
+        {"quantity": "abc"},
+        {"unitPrice": "八元"},
+    ])
+    @patch("app.tools.order_create.get_admin_api_client")
+    async def test_unparsable_processing_item_value_rejected(
+        self, mock_get_client, patch_item, tool, agent_ctx
+    ):
+        mock_client = AsyncMock()
+        mock_get_client.return_value = mock_client
+
+        result = await tool.execute(
+            context=agent_ctx, customer_name="张三", customer_phone="13800138000",
+            items=_items_with_processing(processingItems=[_processing_item(**patch_item)]),
+        )
+
+        assert result.success is False
+        assert "加工项" in result.error
+        assert result.suggestion
+        mock_client.post.assert_not_called()
+
+    @pytest.mark.parametrize("pinfo_overrides,label", [
+        ({"processingFee": 0.0}, "0 加工费（顾客不要加工项）"),
+        ({"processingItems": [_processing_item(quantity=8.4, subtotal=67.2)], "processingFee": 67.2},
+         "per_area 小数加工数量 8.4（#3521 实测形态）"),
+        ({"processingItems": [_processing_item(unitPrice=0.0, subtotal=0.0)], "processingFee": 0.0},
+         "0 元加工项（赠品/免费项）"),
+        ({"processingItems": []}, "无加工项明细（老形态）"),
+        ({"sellingMethod": "full_roll"}, "整卷售卖方式"),
+    ])
+    @patch("app.tools.order_create.get_admin_api_client")
+    async def test_legal_processing_values_still_pass(
+        self, mock_get_client, pinfo_overrides, label, tool, agent_ctx
+    ):
+        """防过严：合法加工口径必须照旧通过（0 费用、小数数量、免费项、老形态）"""
+        mock_client = _ok_client(mock_get_client)
+
+        result = await tool.execute(
+            context=agent_ctx, customer_name="张三", customer_phone="13800138000",
+            items=_items_with_processing(**pinfo_overrides),
+        )
+
+        assert result.success is True, f"{label} 被误拦：{result.error}"
+        assert mock_client.post.await_count == 1
+
+    @pytest.mark.parametrize("bad_entry", ["不是对象", ["列表"], 123, None])
+    @patch("app.tools.order_create.get_admin_api_client")
+    async def test_malformed_processing_item_entry_rejected(
+        self, mock_get_client, bad_entry, tool, agent_ctx
+    ):
+        """加工项元素不是对象 → 后端解析不出金额（静默丢加工费）→ 本地拒绝"""
+        mock_client = AsyncMock()
+        mock_get_client.return_value = mock_client
+
+        result = await tool.execute(
+            context=agent_ctx, customer_name="张三", customer_phone="13800138000",
+            items=_items_with_processing(processingItems=[bad_entry]),
+        )
+
+        assert result.success is False
+        assert "加工项" in result.error
+        assert result.suggestion
+        mock_client.post.assert_not_called()
+
+    @patch("app.tools.order_create.get_admin_api_client")
+    async def test_processing_info_as_json_string_not_silently_misjudged(
+        self, mock_get_client, tool, agent_ctx
+    ):
+        """processing_info 是 JSON 字符串（老形态）→ 不误报（放行交给服务端解析）"""
+        mock_client = _ok_client(mock_get_client)
+
+        result = await tool.execute(
+            context=agent_ctx, customer_name="张三", customer_phone="13800138000",
+            items=_items(processing_info='{"colorName":"白色","sellingMethod":"bulk_cut"}'),
+        )
+
+        assert result.success is True, f"JSON 字符串形态被误拦：{result.error}"
+
+
+class TestOrderCreateEnumGuards:
+    """sellingMethod / pricingMethod 枚举闸门（拼写变体静默落库）
+
+    后端口径（单一事实源）：
+    - `sellingMethod`：`ProductSku.selling_method` = bulk_cut(散剪) / full_roll(整卷)；
+      `OrderService:1435` 按**字面** eq 匹配 SKU → 变体静默不匹配（库存/销量静默丢失）。
+    - `pricingMethod`：`ProcessingItemService:298` 只认 per_meter/per_set/fixed/per_area
+      （per_piece 按个不支持，issue #3005）。
+    """
+
+    @pytest.mark.parametrize("bad", ["散剪", "整卷", "bulkCut", "bulk-cut", "BULK_CUT", "按米", "2.8米"])
+    @patch("app.tools.order_create.get_admin_api_client")
+    async def test_invalid_selling_method_rejected(self, mock_get_client, bad, tool, agent_ctx):
+        mock_client = AsyncMock()
+        mock_get_client.return_value = mock_client
+
+        result = await tool.execute(
+            context=agent_ctx, customer_name="张三", customer_phone="13800138000",
+            items=_items_with_processing(sellingMethod=bad),
+        )
+
+        assert result.success is False, f"售卖方式 {bad!r} 不是合法枚举，必须本地拒绝"
+        assert "售卖方式" in result.error
+        assert "bulk_cut" in result.suggestion and "full_roll" in result.suggestion, (
+            "suggestion 必须点名合法枚举值（LLM 才能自愈）"
+        )
+        mock_client.post.assert_not_called()
+
+    @pytest.mark.parametrize("good", ["bulk_cut", "full_roll"])
+    @patch("app.tools.order_create.get_admin_api_client")
+    async def test_canonical_selling_method_passes(self, mock_get_client, good, tool, agent_ctx):
+        mock_client = _ok_client(mock_get_client)
+
+        result = await tool.execute(
+            context=agent_ctx, customer_name="张三", customer_phone="13800138000",
+            items=_items_with_processing(sellingMethod=good),
+        )
+
+        assert result.success is True, f"合法售卖方式 {good} 被误拦：{result.error}"
+        sent = mock_client.post.await_args.kwargs["json_data"]
+        assert sent["items"][0]["processingInfo"]["sellingMethod"] == good
+
+    @pytest.mark.parametrize("bad", ["per_piece", "perMeter", "per-meter", "按米", "perM", "", "平方米"])
+    @patch("app.tools.order_create.get_admin_api_client")
+    async def test_invalid_pricing_method_rejected(self, mock_get_client, bad, tool, agent_ctx):
+        mock_client = AsyncMock()
+        mock_get_client.return_value = mock_client
+
+        result = await tool.execute(
+            context=agent_ctx, customer_name="张三", customer_phone="13800138000",
+            items=_items_with_processing(
+                processingItems=[_processing_item(pricingMethod=bad)],
+            ),
+        )
+
+        assert result.success is False, f"计价方式 {bad!r} 不是合法枚举，必须本地拒绝"
+        assert "计价方式" in result.error
+        for legal in ("per_meter", "per_set", "fixed", "per_area"):
+            assert legal in result.suggestion, f"suggestion 必须点名 {legal}"
+        mock_client.post.assert_not_called()
+
+    @pytest.mark.parametrize("good", ["per_meter", "per_set", "fixed", "per_area"])
+    @patch("app.tools.order_create.get_admin_api_client")
+    async def test_canonical_pricing_method_passes(self, mock_get_client, good, tool, agent_ctx):
+        mock_client = _ok_client(mock_get_client)
+
+        result = await tool.execute(
+            context=agent_ctx, customer_name="张三", customer_phone="13800138000",
+            items=_items_with_processing(
+                processingItems=[_processing_item(pricingMethod=good)],
+            ),
+        )
+
+        assert result.success is True, f"合法计价方式 {good} 被误拦：{result.error}"
+
+    @patch("app.tools.order_create.get_admin_api_client")
+    async def test_absent_enum_fields_still_pass(self, mock_get_client, tool, agent_ctx):
+        """售卖方式/计价方式是可选的（单 SKU 商品不一定有）→ 缺失不拦"""
+        mock_client = _ok_client(mock_get_client)
+
+        result = await tool.execute(
+            context=agent_ctx, customer_name="张三", customer_phone="13800138000",
+            items=_items_with_processing(sellingMethod=None),
+        )
+
+        assert result.success is True, f"未传售卖方式被误拦：{result.error}"
+
+
+class TestOrderCreateProductNameGuard:
+    """items[].product_name：必须非空（原先只判存在 → \"\" 可通过）"""
+
+    @pytest.mark.parametrize("bad", ["", "   ", "\t\n"])
+    @patch("app.tools.order_create.get_admin_api_client")
+    async def test_blank_product_name_rejected(self, mock_get_client, bad, tool, agent_ctx):
+        mock_client = AsyncMock()
+        mock_get_client.return_value = mock_client
+
+        result = await tool.execute(
+            context=agent_ctx, customer_name="张三", customer_phone="13800138000",
+            items=_items(product_name=bad),
+        )
+
+        assert result.success is False, f"商品名称 {bad!r} 是空串，不得下单"
+        assert "商品名称" in result.error
+        assert result.suggestion
+        mock_client.post.assert_not_called()
+
+    @patch("app.tools.order_create.get_admin_api_client")
+    async def test_normal_product_name_still_passes(self, mock_get_client, tool, agent_ctx):
+        mock_client = _ok_client(mock_get_client)
+
+        result = await tool.execute(
+            context=agent_ctx, customer_name="张三", customer_phone="13800138000",
+            items=_items(),
+        )
+
+        assert result.success is True
+        assert mock_client.post.await_count == 1
+
+
+class TestOrderCreateParamGuardsOrdering:
+    """顺序铁律（#3586 建立、#3622 一致）：确定性校验必须排在 SMS 之前"""
+
+    @pytest.mark.parametrize("items,keyword", [
+        (_items(width=-1), "宽度"),
+        (_items_with_processing(processingFee=-1), "加工费"),
+        (_items_with_processing(sellingMethod="散剪"), "售卖方式"),
+        (_items(product_name=""), "商品名称"),
+    ])
+    @patch("app.tools.order_create.get_admin_api_client")
+    async def test_guards_run_before_sms_verification(
+        self, mock_get_client, items, keyword, tool
+    ):
+        ctx = ToolContext(tenant_id=1, user_id="user_001", session_id="s", role="customer")
+        mock_client = AsyncMock()
+        mock_get_client.return_value = mock_client
+
+        with patch("app.tools.order_create.OrderCreateTool._verify_sms_code", new=AsyncMock()) as m_verify:
+            result = await tool.execute(
+                context=ctx, customer_name="张三", customer_phone="13800138000",
+                sms_code="123456", items=items,
+            )
+            assert result.success is False
+            assert keyword in result.error
+            m_verify.assert_not_called()
+        mock_client.post.assert_not_called()
+
+
+class TestOrderCreateParamGuardSchemaContract:
+    """L1 契约：schema 必须声明本包各闸门（LLM 侧在同一处看到约束）"""
+
+    def test_item_dimension_bounds_declared(self):
+        item_props = OrderCreateTool.parameters["properties"]["items"]["items"]["properties"]
+        assert item_props["width"]["minimum"] == 0
+        assert item_props["height"]["minimum"] == 0
+
+    def test_item_product_name_min_length_declared(self):
+        item_props = OrderCreateTool.parameters["properties"]["items"]["items"]["properties"]
+        assert item_props["product_name"].get("minLength") == 1
+
+    def test_processing_fee_bound_declared(self):
+        pi_props = OrderCreateTool.parameters["properties"]["items"]["items"]["properties"][
+            "processing_info"]["properties"]
+        assert pi_props["processingFee"]["minimum"] == 0
+
+    def test_processing_item_bounds_declared(self):
+        pi_props = OrderCreateTool.parameters["properties"]["items"]["items"]["properties"][
+            "processing_info"]["properties"]
+        entry_props = pi_props["processingItems"]["items"]["properties"]
+        assert entry_props["quantity"]["minimum"] == 0
+        assert entry_props["unitPrice"]["minimum"] == 0
+        assert entry_props["subtotal"]["minimum"] == 0
+
+    def test_enum_declarations(self):
+        pi_props = OrderCreateTool.parameters["properties"]["items"]["items"]["properties"][
+            "processing_info"]["properties"]
+        assert pi_props["sellingMethod"]["enum"] == ["bulk_cut", "full_roll"]
+        entry_props = pi_props["processingItems"]["items"]["properties"]
+        assert entry_props["pricingMethod"]["enum"] == [
+            "per_meter", "per_set", "fixed", "per_area"]

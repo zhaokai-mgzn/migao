@@ -7,7 +7,7 @@ LangGraph Skill 节点测试
 - ToolContext 从 state 正确构建
 - base_skill 的 execute_skill 逻辑
 """
-# case_ids: AG-004, CH-003, CH-023, MC-008, DF-018, HR-005, CU-003, CH-010, CH-012, OR-017, OR-021, OR-022, OR-025, AS-009, CH-013, CH-014, CH-015
+# case_ids: AG-004, CH-003, CH-023, MC-008, DF-018, HR-005, CU-003, CH-010, CH-012, OR-017, OR-021, OR-022, AS-003, AS-007, OR-025, AS-009, CH-013, CH-014, CH-015
 
 import json
 import pytest
@@ -94,12 +94,22 @@ class TestSkillToolSubsets:
         assert len(KNOWLEDGE_TOOLS) == 2
 
     def test_aftersales_tools(self):
-        """售后 Skill 包含正确的 Tool（knowledge_search 已禁用）"""
+        """售后 Skill 包含正确的 Tool（knowledge_search 已禁用）
+
+        issue #3569：原先这里断言 `"product_search" not in AFTERSALES_TOOLS`（初版提交
+        2026-05-06 的窄工具集），但 2026-09-08 issue #3033 已在 prompts/aftersales.md +
+        EXAMPLES-aftersales.md 写明换货流程要 product_search/product_detail 取目标商品档案
+        （加工项），用例 AS-007 的 expectations 也含 product_detail —— 工具集没跟上，
+        断言反而把「提示词承诺做不到的事」锁死了（模型调用撞 tool_not_found）。
+        按同型先例（customer_order #3365：补工具）补上两个**只读**商品工具。
+        """
         assert "order_query" in AFTERSALES_TOOLS
         assert "order_manage" in AFTERSALES_TOOLS
         # [RAG 禁用] assert "knowledge_search" in AFTERSALES_TOOLS
         assert "after_sales_manage" in AFTERSALES_TOOLS
-        assert "product_search" not in AFTERSALES_TOOLS
+        # 换货选目标商品 → 取加工项（issue #3033 / AS-007）
+        assert "product_search" in AFTERSALES_TOOLS
+        assert "product_detail" in AFTERSALES_TOOLS
 
     def test_general_tools_includes_all(self):
         """通用兜底 Skill 包含查询 + 基础管理 Tool + interact（澄清卡承载，Phase 2 #2789）"""
