@@ -1,4 +1,4 @@
-# case_ids: OR-016, AS-007, PR-019, PR-020, CH-010, CU-003, CU-004, HR-001, HR-005, ST-003, ST-005, DA-004, FN-001, PP-002, PP-006, PG-013, CH-013, CH-014, CH-015
+# case_ids: OR-016, AS-007, PR-019, PR-020, CH-010, CU-003, CU-004, HR-001, HR-005, ST-003, ST-005, DA-004, FN-001, PP-002, PP-006, PG-013, CH-013, CH-014, CH-015, CH-008
 """行为改动 diff → 用例映射单测（tests/agent_eval/behavior_mapping.py，issue #3502）。
 
 被测契约（详见模块 docstring）：
@@ -56,6 +56,8 @@ PRODUCT_PROCESSING_ITEM_PATH = "backend/ai-agent-service/app/tools/product_proce
 PROCESSING_ORDER_GENERATE_PATH = "backend/ai-agent-service/app/tools/processing_order_generate.py"
 # 守卫代码的共享载体（防御/熔断 + 写操作守卫 + 转人工建议卡守卫），见 TestBaseSkillRules
 BASE_SKILL_PATH = "backend/ai-agent-service/app/graph/skills/base_skill.py"
+# 转人工 Tool 本体（创建人工会话/工单/通知），见 TestHumanHandoffRules
+HUMAN_HANDOFF_PATH = "backend/ai-agent-service/app/tools/human_handoff.py"
 
 # 真实承载防御/熔断逻辑的源码（#3551 全表复核时实测：只有这些是仓内真实存在的载体）
 # 注：`base_skill.py` 也是防御载体之一，但它同时承载写操作/转人工守卫（#3624 追加规则），
@@ -92,6 +94,8 @@ class TestRuleHits:
         (PROCESSING_ITEM_QUERY_PATH, ["PP-002", "PP-006"]),
         # #3624 补加工单生成（该域唯一可跑的 LLM 用例）
         (PROCESSING_ORDER_GENERATE_PATH, ["PG-013"]),
+        # #3624 补转人工 Tool 本体
+        (HUMAN_HANDOFF_PATH, ["CH-008", "CH-015"]),
     ])
     def test_rule_hit(self, path, expected):
         assert bm.map_changed_files_to_case_ids([path]) == expected
@@ -299,6 +303,45 @@ class TestBaseSkillRules:
     ])
     def test_base_skill_test_and_case_paths_never_enter_rules_bucket(self, path, expected_source):
         """反向断言（#3551 假阻塞防线）：测试/用例路径绝不允许因新规则进规则桶。"""
+        cases, source = bm.map_changed_files_with_source([path])
+        assert source == expected_source
+        assert cases == ([] if expected_source == "none" else bm.DEFAULT_BEHAVIOR_CASES)
+
+
+class TestHumanHandoffRules:
+    """#3624 追加：转人工 Tool 本体 → `CH-008`（创建人工会话，客服工作台可见）/ `CH-015`（显式
+    「转人工」不经建议卡直接转）。
+
+    来源（写工具确认门禁包 #3606 收口实测）：改 `human_handoff.py` 此前落**兜底网**，
+    而当时它看起来"命中了规则"其实只是**测试文件名** `*_confirm_guard.py` 撞上防御关键词
+    `guard` 的误报面（#3551 已用 `BEHAVIOR_SOURCE_PREFIXES` 集中过滤掉）——真正该跑的
+    转人工用例一条没跑。
+
+    映射依据（读用例真实内容）：
+      · `CH-008`「转人工创建人工会话 - 客服工作台可见并可回复」`user_inputs: ["我要转人工","客服在吗"]`
+        → `expectations: human_handoff`（覆盖工具的核心写入：建工单 + 建人工会话）
+      · `CH-015`「用户显式『转人工』不经建议卡片直接转（能力不退化）」`user_inputs: ["我要转人工"]`
+        → `expectations: human_handoff`（覆盖直转路径，与 base_skill 的建议卡分流互补）
+    这两条与 base_skill 规则给出的 `CH-013`/`CH-014`/`CH-015` 是**并集**（同一个转人工族，
+    入口不同：Tool 本体 vs 守卫判据）。
+    """
+
+    def test_human_handoff_maps_to_handoff_cases(self):
+        assert bm.map_changed_files_with_source([HUMAN_HANDOFF_PATH]) == (
+            ["CH-008", "CH-015"], "rules")
+
+    def test_human_handoff_does_not_map_to_defense_cases(self):
+        """防误报面回归：转人工与防御/注入无关 —— 改它也**不得**把 DF-011/DF-012 拉进来
+        （那是 #3606 收口实测的误报形态：`*_confirm_guard.py` 测试文件名命中了防御规则）。"""
+        cases, _ = bm.map_changed_files_with_source([HUMAN_HANDOFF_PATH])
+        assert [c for c in cases if c.startswith("DF-")] == []
+
+    @pytest.mark.parametrize("path, expected_source", [
+        ("backend/ai-agent-service/tests/test_human_handoff.py", "none"),
+        ("backend/ai-agent-service/tests/test_human_handoff_confirm_guard.py", "none"),
+        (".github/cases/chat.yml", "default_net"),
+    ])
+    def test_human_handoff_test_and_case_paths_never_enter_rules_bucket(self, path, expected_source):
         cases, source = bm.map_changed_files_with_source([path])
         assert source == expected_source
         assert cases == ([] if expected_source == "none" else bm.DEFAULT_BEHAVIOR_CASES)
