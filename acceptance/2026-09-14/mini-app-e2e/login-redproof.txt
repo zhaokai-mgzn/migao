@@ -1,0 +1,48 @@
+# 共用登录步骤 · 双向红证（不需要模拟器/网络）— 2026-09-14
+
+被测代码：frontend/mini-app/e2e/lib/login.js（判据 + 注入）+ e2e/run.js（失败关闭接线）
+运行：cd frontend/mini-app && node e2e/login-redproof.js
+```
+【1】纯判据 resolveLoginState —— 双向（缺失/空/非法/过期 ⇒ 红；有效 ⇒ pass）
+  ✅ undefined ⇒ 红 — expected=false actual=false
+  ✅ undefined ⇒ 带 LOGIN_MISSING 标记 — expected="LOGIN_MISSING" actual="LOGIN_MISSING"
+  ✅ '' ⇒ 红 — expected=false actual=false
+  ✅ '   ' ⇒ 红 — expected=false actual=false
+  ✅ 'not-a-jwt' ⇒ 红（非三段） — expected=false actual=false
+  ✅ 过期 JWT ⇒ 红 — expected=false actual=false
+  ✅ 有效 JWT ⇒ pass（不能恒红） — expected=true actual=true
+  ✅ 无 exp JWT ⇒ pass（与产品 checkTokenValidity 一致） — expected=true actual=true
+  ✅ 有效 JWT ⇒ 无 marker — expected=null actual=null
+
+【2】ensureLoggedIn —— 已有登录态 ⇒ 不注入（source=storage）
+  ✅ source — expected="storage" actual="storage"
+  ✅ ok — expected=true actual=true
+  ✅ 未触发短信登录（fetch 未被使用即无异常） — expected=null actual=null
+
+【3】ensureLoggedIn —— 登录态缺失 ⇒ 注入成功（不能恒红）＋ 落 4 个 key
+  ✅ ok — expected=true actual=true
+  ✅ source — expected="injected" actual="injected"
+  ✅ auth_token 已落库且可用 — expected=true actual=true
+  ✅ auth_user 已落库 — expected="string" actual="string"
+  ✅ auth_user 含 botName（导航名断言的数据源） — expected="光头强" actual="光头强"
+  ✅ tenant_id 已归一化落库（camelCase→snake_case） — expected=2 actual=2
+  ✅ auth-store 快照已落库（zustand persist） — expected=true actual=true
+  ✅ 注入后调用了 reLaunch — expected=true actual=true
+
+【4】ensureLoggedIn —— 登录态缺失且注入失败 ⇒ **红**（失败关闭，不许继续跑）
+  ✅ ok=false（红） — expected=false actual=false
+  ✅ 带 LOGIN_MISSING 标记 — expected="LOGIN_MISSING" actual="LOGIN_MISSING"
+  ✅ reason 含定位信息（apiBase） — expected=true actual=true
+  ✅ storage 未被写入假 token — expected=true actual=true
+
+【5】ensureLoggedIn —— 过期 token + 注入失败 ⇒ 红（过期不得被当已登录）
+  ✅ ok=false（红） — expected=false actual=false
+  ✅ marker — expected="LOGIN_MISSING" actual="LOGIN_MISSING"
+
+【6】clearStorage（冷环境验证用）真能清掉登录态
+  ✅ 清空后 auth_token 为空 ⇒ 判据红 — expected=false actual=false
+
+=== 红证汇总：27/27 通过，0 失败 ===
+✅ 双向红证通过：有效登录态 ⇒ pass；缺失/空/非法/过期/注入失败 ⇒ LOGIN_MISSING 红
+EXIT=0
+```

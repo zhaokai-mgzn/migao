@@ -8,26 +8,51 @@
 1. 微信开发者工具已安装（`/Applications/wechatwebdevtools.app`）并**登录账号**
 2. 开发者工具：**设置 → 安全设置 → 服务端口** 开启（自动化连接必需）
 3. 先构建产物：`npm run build:weapp`（产物输出到 `dist/`，含真实 AppID）
-4. **本机已登录小程序**（见下「登录态与可复现性」）——冷环境必须先登录一次
+4. 无需手工登录：`run.js` 会**自动建立登录态**（见下「登录前置步骤」），失败则直接退出
 
-### 登录态与可复现性（2026-09-14 实测登记）
+### 登录前置步骤（单一事实源 `e2e/lib/login.js`，失败关闭）
 
-**本 e2e harness 不注入登录态**，它依赖模拟器 storage 里**已存在**的登录态：
+C 端页面判定登录只查 storage（`checkAuth()` → `getToken()`，`src/store/authStore.ts:137`）。
 
-- 页面侧判据：`src/store/authStore.ts` 的 `checkAuth()`（`:137`）只检查 storage 里的
-  `auth_token` 是否存在且未过期；有 → 直接算已登录，**不会**走 `wx.login`。
-- storage keys：`src/utils/constants.ts:12-16` = `auth_token` / `auth_user` / `tenant_id`。
-- 无 token 时才走 `login()` → `Taro.login()` → `POST /api/auth/mini/login`
-  （`src/utils/auth.ts:18-34`）——该路径在开发者工具模拟器里**曾实测被后端判
-  `WECHAT_API_ERROR: code 无效`**（另一并行工作包实测），故不能假定它能自动兜住。
+**为什么不能走真实微信登录**：产品链路是 `Taro.login()` → `POST /api/auth/mini/login`
+（`src/utils/auth.ts:18-34`），但在**微信开发者工具模拟器里该 code 被后端判
+`WECHAT_API_ERROR: code 无效`**（2026-09-14 实测）——这是**环境限制，不是产品缺陷**。
+⇒ e2e 改用等价方式建立会话：`POST /api/auth/sms/login`（测试环境短信网关 bypass）取 JWT，
+再写入 C 端真正读取的 storage key：
 
-⇒ **推论（对证据可信度的影响，必须知情）**：冷环境（新克隆 / 新模拟器 / storage 被清）
-直接跑 `npm run test:e2e`，断言所依赖的租户数据（问候语 botName、订单/售后/物流）会缺失或降级
-—— 这样的「绿」是**环境残留**给的，不是代码给的。`run.js` 因此每次都会打印并写入报告的
-「登录态」一行（`checkLoginPreflight()` 读 `wx.getStorageSync('auth_token')`，只告警不失败）。
+| key | 产品读取点 | 值 |
+|---|---|---|
+| `auth_token` | `src/utils/auth.ts:63` `getToken()` | JWT |
+| `auth_user` | `src/utils/auth.ts:74` `getUser()`（`app.tsx:20` → `initialize()` 恢复 `user`；导航名/副标题读它的 `botName`/`tenantName`） | `JSON.stringify(user)` |
+| `tenant_id` | `src/utils/auth.ts:87` `getTenantId()` | number（已把 admin-api 的 `tenantId` 归一化为 snake_case） |
+| `auth-store` | zustand persist 快照（`authStore.ts:153`） | `{"state":{...},"version":0}` |
 
-**待办（本包未做）**：把「可复现的登录步骤」落进仓库（`harness` 内一次显式登录：要么注入
-storage 三键、要么走真实 `wx.login`），使证据不依赖环境残留。已在验收报告 §6 登记为未重放项。
+**⛔ 严禁**为了绕过上述环境限制去改产品鉴权代码（`src/store/authStore.ts` / `src/utils/auth.ts` /
+admin-api 鉴权）；本步骤只服务于测试环境。
+
+**行为（失败关闭）**：
+- storage 里已有**有效** `auth_token`（三段 JWT 且未过期）⇒ 直接用，报告里标注
+  「**来自模拟器 storage 残留**，非本 harness 建立」——提醒读者这份证据的可复现性取决于该残留；
+- 无 / 空 / 非法 / 已过期 ⇒ 自动短信登录注入 → `reLaunch` → **重启模拟器会话让 App 冷启动**
+  （`app.tsx:20` 的 `initialize()` 每次 App 装载只跑一次，光 reLaunch 不会重跑）→ 复核；
+- 注入也失败 ⇒ **`LOGIN_MISSING` + 退出码 1**（绝不带着不确定的登录态继续跑，产出「环境残留给的绿」）。
+
+**环境变量**（都有默认值，见 `e2e/lib/login.js` DEFAULTS）：
+`E2E_LOGIN_API_BASE`（默认 `https://app.migaozn.com`）、`E2E_LOGIN_PHONE`（默认 `13800138000`）、
+`E2E_LOGIN_CODE`（默认 `123456`）。
+
+**冷环境复跑（证明证据不依赖环境残留）**：
+```bash
+# 清空模拟器 storage（去掉残留登录态）→ 由共用步骤从零建立 → 全量跑
+cd frontend/mini-app && E2E_COLD_LOGIN=1 npm run test:e2e
+```
+
+**红证（双向，不需要模拟器/网络）**：
+```bash
+cd frontend/mini-app && node e2e/login-redproof.js   # 退出码 0 = 双向红证通过
+```
+覆盖：缺失/空/非 JWT/过期 ⇒ **红**（不能恒真）；有效 ⇒ **pass**（不能恒红）；
+注入成功 ⇒ 4 个 key 真的落库；注入失败/过期 ⇒ `LOGIN_MISSING`。
 
 ## 运行
 
