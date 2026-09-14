@@ -1778,7 +1778,7 @@ async def _fetch_product_price(token: str, name: str) -> float | None:
     return None
 
 
-_KNOWN_AMOUNT_CHECKS = ("unit_price", "subtotal", "total")
+_KNOWN_AMOUNT_CHECKS = ("unit_price", "subtotal", "processing_fee", "total")
 
 
 def _normalize_amount_checks(raw) -> list | None:
@@ -1802,15 +1802,53 @@ def _normalize_amount_checks(raw) -> list | None:
     return None
 
 
+def _canonical_processing_fee(pinfo) -> tuple:
+    """按**服务端口径**算单行加工费：Σ processingItems[].unitPrice × quantity。
+
+    Returns:
+        (fee, 明细字符串) —— 没有 processingItems 列表时返回 (None, "")，调用方回退到
+        模型声明的 `processingFee`（老形态：只写合计不写明细）。
+
+    为什么不信 `processingFee` 字段（issue #3521 归因）：服务端
+    `OrderService.sumProcessingFee()` → `extractProcessingItems()` 只认
+    `unitPrice × quantity`（Java 侧 `brief.amount` 就是这两个字段相乘），
+    **`processingFee` 字段不参与总额计算**。所以模型声明的合计与明细不一致时，
+    顾客在确认卡上看到的总额 ≠ 落库/收款总额 —— 这是钱的问题，必须由断言点名。
+    实证：CH-010 首跑 `总额 311.4 ≠ Σ小计71.4+加工费252.0=323.4`，
+    反推正是「明细 30×8=240 落库 → 总额 311.4」而「声明的 processingFee=252」。
+    """
+    if not isinstance(pinfo, dict):
+        return None, ""
+    raw = pinfo.get("processingItems")
+    if not isinstance(raw, list) or not raw:
+        return None, ""
+    total = 0.0
+    parts = []
+    for entry in raw:
+        if not isinstance(entry, dict):
+            continue
+        try:
+            up = float(entry.get("unitPrice") or 0)
+            qty = float(entry.get("quantity") or 0)
+        except (TypeError, ValueError):
+            continue
+        amount = up * qty
+        total += amount
+        parts.append(f"{entry.get('name') or '?'} {up}×{qty}={round(amount, 2)}")
+    if not parts:
+        return None, ""
+    return total, "、".join(parts)
+
+
 async def check_amount_verify(token: str, results: list, amount_verify: list) -> list:
-    """执行下单金额断言：单价接地 / 小计自洽 / 总额自洽，返回违规列表。
+    """执行下单金额断言：单价接地 / 小计自洽 / 加工费一致 / 总额自洽，返回违规列表。
 
     用例形态：
         amount_verify:
           - tool: order_create
             product_name: "遮光窗帘"        # 用于取商品库单价（接地真值）
             tolerance: 0.01                # 金额容差（默认 0.01）
-            checks: [unit_price, subtotal, total]
+            checks: [unit_price, subtotal, processing_fee, total]
     """
     issues = []
     for spec in amount_verify or []:
@@ -1847,7 +1885,10 @@ async def check_amount_verify(token: str, results: list, amount_verify: list) ->
                     issues.append(f"amount_verify: 商品「{name}」在商品库查不到单价（fixture 缺数据？）")
 
         subtotal_sum = 0.0
-        processing_sum = 0.0
+        processing_sum = 0.0        # Σ 模型**声明**的 processingFee
+        canonical_fee_sum = 0.0     # Σ 加工项明细（服务端权威口径 unitPrice × quantity）
+        has_proc_items = False
+        proc_detail = []
         fee_folded_in = False   # 变体②：小计里已含本行加工费 → total 不再加 Σfee（防双计）
         for i, item in enumerate(items):
             if not isinstance(item, dict):
@@ -1870,6 +1911,11 @@ async def check_amount_verify(token: str, results: list, amount_verify: list) ->
                     processing_sum += fee
                 except (TypeError, ValueError):
                     fee = 0.0
+            canon_fee, detail = _canonical_processing_fee(pinfo)
+            if canon_fee is not None:
+                has_proc_items = True
+                canonical_fee_sum += canon_fee
+                proc_detail.append(f"items[{i}]: {detail}")
             subtotal_sum += sub_f
             if "unit_price" in checks and price is not None:
                 # 只核对被声明商品的单价（多商品订单里其它行按各自商品库价另配 spec）
@@ -1896,9 +1942,23 @@ async def check_amount_verify(token: str, results: list, amount_verify: list) ->
                         f"amount_verify[{tool}](R{rnd}): 「{pname}」小计 {sub_f} ≠ 数量{qty}×单价{up}"
                         f"（或 面料小计+本行加工费 {base + fee}）")
 
+        if "processing_fee" in checks and has_proc_items:
+            # 声明合计 vs 明细合计（服务端口径）—— 不一致就是**钱对不上**：
+            # 确认卡上的总额（模型按声明值算）≠ 落库/收款总额（服务端按明细算）。
+            # 单独点名该矛盾，避免被下面那条"总额不平"吞成含糊的算错（issue #3521）。
+            if abs(processing_sum - canonical_fee_sum) > max(tol, 0.05):
+                issues.append(
+                    f"amount_verify[{tool}](R{rnd}): processingFee 声明 {processing_sum} ≠ "
+                    f"Σ加工项(单价×数量) {canonical_fee_sum}"
+                    f"（服务端按明细计入总额 → 顾客看到的总额与落库不一致；"
+                    f"明细 {'; '.join(proc_detail)}）")
+
         if "total" in checks:
+            # 加工费一律用**服务端口径**核对总额（无明细时回退到声明值）——
+            # 用模型自造的声明值去判系统真值，会把"args 自相矛盾"误报成"总额算错"。
+            fee_for_total = canonical_fee_sum if has_proc_items else processing_sum
             # 防双计（#3511）：若小计已含本行加工费（变体②），expected 不再加 Σfee。
-            expected = subtotal_sum if fee_folded_in else subtotal_sum + processing_sum
+            expected = subtotal_sum if fee_folded_in else subtotal_sum + fee_for_total
             total = None
             for r in results or []:
                 if r.get("__round") != rnd:
@@ -1920,8 +1980,8 @@ async def check_amount_verify(token: str, results: list, amount_verify: list) ->
                 print(f"     ℹ️ amount_verify: {tool} 结果未带总额，跳过 total 检查（单价/小计已查）")
             elif abs(total - expected) > max(tol, 0.05):
                 issues.append(
-                    f"amount_verify[{tool}](R{rnd}): 总额 {total} ≠ Σ小计{subtotal_sum}+加工费{processing_sum}"
-                    f"={expected}")
+                    f"amount_verify[{tool}](R{rnd}): 总额 {total} ≠ Σ小计{subtotal_sum}"
+                    f"+加工费{fee_for_total}={expected}")
     return issues
 
 

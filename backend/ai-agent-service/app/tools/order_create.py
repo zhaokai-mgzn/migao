@@ -57,6 +57,18 @@ class OrderCreateTool(BaseTool):
         "把所选写入 items[i].processing_info.processingItems、合计写入 processingFee 并计入金额；"
         "顾客说不需要可跳过；加工项为空才可告知无可用加工项。"
         "**未询问就直接建单 = 漏收加工费 = 订单金额错误**，属禁止行为。"
+        # 口径规则放工具描述而非 system prompt（issue #3521）：
+        #   ① 这是**参数语义**（processingItems 的 quantity 怎么来），与字段定义同处最合适；
+        #   ② C 端下单 prompt 已顶到长度守卫上限（3592/3600），加规则必须先删旧规则——
+        #      在 bug 修复里改别人行为域的措辞风险更大，故走零预算的加法路径。
+        # 实证：CH-010 首跑 `总额 311.4 ≠ Σ小计71.4+加工费252.0=323.4` —— 小计 71.4=3×23.8，
+        #   落库总额 311.4=71.4+240（服务端按 processingItems 的 unitPrice×quantity 重算），
+        #   而模型声明的 processingFee=252（把按面积的刺绣工艺算成 30×8.4）。同一个订单两份数字。
+        "【铁律·加工数量口径】processingItems[i].quantity 必须按 pricingMethod 推导，不许凭感觉："
+        "per_meter(按米)=面料米数；per_area(按面积)=门幅(米)×面料米数；per_set(按套)=套数；"
+        "fixed(一口价)=1（单价即该项总价）。"
+        "**processingFee 必须等于 Σ(processingItems[i].unitPrice × quantity)**（容差 0.01）——"
+        "服务端只按这个明细口径计总额，两处不一致时顾客在确认卡上看到的总额 ≠ 实际落库/收款金额。"
         "【反例】跳过 SKU 选择直接下单；把 sellingMethod/doorWidth 平铺进 items；"
         "凭 product_search 列表断言'该商品无加工项'（列表本就查不到，必须查详情）。修改订单用 order_manage。WRITE"
     )

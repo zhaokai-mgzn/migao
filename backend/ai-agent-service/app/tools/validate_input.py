@@ -483,6 +483,60 @@ class ValidateInputTool(BaseTool):
                             )
                             break
 
+        # 7. 下单加工费一致性兜底（issue #3521，与上面 #3052 同一理由：
+        #    prompt 指令会被 LLM 方差漏掉 → validate_input 必须是确定性闸门）。
+        #    服务端 OrderService.sumProcessingFee() 只按 `processingItems[i].unitPrice × quantity`
+        #    计总额（Java 侧 brief.amount 就是这两个字段相乘），**`processingFee` 字段不参与**。
+        #    两者不一致时：顾客在确认卡上看到的总额 ≠ 实际落库/收款金额（钱对不上）。
+        #    实证 CH-010 首跑签名 `总额 311.4 ≠ Σ小计71.4+加工费252.0=323.4`：
+        #      小计 71.4 = 3×23.8，落库 311.4 = 71.4 + 240（明细 30×8），
+        #      而声明的 processingFee = 252（把按面积的项另算成 30×8.4）—— 同一个订单两份数字。
+        #    为什么必须拦在**发确认卡之前**：卡上金额由模型按声明值渲染，落库由服务端按明细重算，
+        #    只有校验阶段能同时纠正两边（prompt 只写"必须相等"，方差下不足以兜住）。
+        #    只拦"声明了合计且与明细不符"；没写 processingItems 明细（老形态）不拦，避免误伤。
+        if target_tool == "order_create":
+            for idx, item in enumerate(params.get("items") or []):
+                if not isinstance(item, dict):
+                    continue
+                pinfo = item.get("processing_info")
+                if not isinstance(pinfo, dict):
+                    continue
+                raw_items = pinfo.get("processingItems")
+                if not isinstance(raw_items, list) or not raw_items:
+                    continue
+                detail_sum = 0.0
+                detail_ok = True
+                parts = []
+                for entry in raw_items:
+                    if not isinstance(entry, dict):
+                        detail_ok = False
+                        break
+                    try:
+                        up = float(entry.get("unitPrice"))
+                        qty = float(entry.get("quantity"))
+                    except (TypeError, ValueError):
+                        detail_ok = False
+                        break
+                    detail_sum += up * qty
+                    parts.append(f"{entry.get('name') or '?'} {up}×{qty}={round(up * qty, 2)}")
+                if not detail_ok:
+                    continue
+                declared = pinfo.get("processingFee")
+                if declared is None:
+                    continue
+                try:
+                    declared_f = float(declared)
+                except (TypeError, ValueError):
+                    continue
+                if abs(declared_f - detail_sum) > 0.01:
+                    issues.append(
+                        f"items[{idx}].processing_info.processingFee={declared_f} 与 "
+                        f"Σ加工项(unitPrice×quantity)={round(detail_sum, 2)} 不一致"
+                        f"（{'、'.join(parts)}）。服务端按明细计总额 → 不一致时顾客在确认卡上"
+                        f"看到的总额 ≠ 实际落库/收款金额（issue #3521）。"
+                        f"请把 processingFee 改成 {round(detail_sum, 2)} 后重新校验。"
+                    )
+
         if issues:
             return ToolResult(
                 success=False,
