@@ -74,10 +74,12 @@ def load_baseline(path=None, persona: str = "", tools=None):
             f"若确实无存量缺口，创建一个只有 meta 的空清单文件"
         )
     try:
-        import yaml
-        data = yaml.safe_load(path.read_text(encoding="utf-8"))
-    except ImportError as exc:                      # pragma: no cover - 环境缺 pyyaml
-        raise ValueError(f"读取 {path.name} 需要 pyyaml: {exc}")
+        # 用仓库自己的零依赖解析器（`yaml_light`，与 render_cases/truths 同一份实现）：
+        # `case-coverage-gate` job 只做 setup-python，**没有** `pip install`
+        # （pyyaml 只装在 `ci workflow helper unit tests` job）—— 这里 import yaml 会让门禁
+        # 对每个 PR 常红（"覆盖体检无法执行：需要 pyyaml"），且与用例质量无关。
+        from yaml_light import load_file as _load_yaml
+        data = _load_yaml(path)
     except Exception as exc:
         raise ValueError(f"{path.name} YAML 解析失败: {exc}")
     if not isinstance(data, dict):

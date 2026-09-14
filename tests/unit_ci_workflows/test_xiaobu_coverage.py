@@ -13,7 +13,9 @@ PR-013 被写成**不带 persona 的 B 端档位** + skip_reason 挂起 → C �
 工具全集**从源码解析**（不 import app.*：本目录是零依赖测试，CI 的
 unit_ci_workflows job 只装了 pytest+pyyaml；app 侧依赖 langchain 装不上）。
 """
+import os
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -599,4 +601,69 @@ class TestCoverageBaselineGuard:
         assert len(all_entries) <= 8, (
             f"存量豁免清单已膨胀到 {len(all_entries)} 条 —— 它是工作清单不是免死金牌，"
             f"请先销账（补用例后删条目）再扩容"
+        )
+
+
+class TestCoverageGateRunsOnCiDependencies:
+    """体检 CLI 必须**零第三方依赖**—— CI 的 `case-coverage-gate` job 只做 setup-python。
+
+    背景（CI 实证，本组测试的由来）：`pr-check.yml` 里 `case-coverage-gate` job
+    **没有** `pip install`（`pip install -q pytest pyyaml` 只存在于 `ci workflow helper
+    unit tests` job）。因此体检脚本一旦 `import yaml`，本地（开发机装了 pyyaml）全绿，
+    CI 直接 `❌ 覆盖体检无法执行：读取 eval-coverage-baseline.yml 需要 pyyaml` ——
+    门禁对**每个 PR** 常红，且红的原因与用例质量无关（比缺口本身更糟：它挡住所有合并）。
+
+    仓库既有解法是 `yaml_light`（`render_cases.py` / `truths.py` 等同样跑在无 pip 的 job 上）。
+    本组按 **job 的真实依赖面**回归（子进程 + 假 `yaml` 模块），而不是"本地装了就算过"。
+    """
+
+    CLIS = ("scripts/xiaobu_coverage.py", "scripts/mibao_coverage.py")
+
+    def _env_without_pyyaml(self, tmp_path) -> dict:
+        """造一个 PyYAML **不可导入**的环境（等价于 CI 的 python3）。"""
+        (tmp_path / "yaml.py").write_text(
+            "raise ImportError('PyYAML 不在 CI 依赖里')\n", encoding="utf-8")
+        return dict(os.environ, PYTHONPATH=str(tmp_path))
+
+    @pytest.mark.parametrize("cli", CLIS)
+    def test_check_passes_without_pyyaml(self, tmp_path, cli):
+        proc = subprocess.run(
+            [sys.executable, cli, "--check"], cwd=str(REPO_ROOT),
+            env=self._env_without_pyyaml(tmp_path), capture_output=True, text=True)
+        assert proc.returncode == 0, (
+            f"{cli} --check 在无 PyYAML 的环境下失败（CI 的 case-coverage-gate job "
+            f"不装 pyyaml，门禁会对每个 PR 常红）:\n{proc.stdout}\n{proc.stderr}"
+        )
+
+    def test_baseline_loader_needs_no_pyyaml(self, tmp_path):
+        """单点回归：`load_baseline` 本身不得 import yaml（比 CLI 更快定位到根因）。"""
+        code = (
+            f"import sys; sys.path.insert(0, {str(REPO_ROOT / 'scripts')!r});"
+            "from case_coverage import BASELINE_PATH, load_baseline;"
+            "print(len(load_baseline(BASELINE_PATH, 'mibao', None)['entries']))"
+        )
+        proc = subprocess.run(
+            [sys.executable, "-c", code], cwd=str(REPO_ROOT),
+            env=self._env_without_pyyaml(tmp_path), capture_output=True, text=True)
+        assert proc.returncode == 0, (
+            f"load_baseline 在无 PyYAML 环境下不可用:\n{proc.stdout}\n{proc.stderr}"
+        )
+        assert int(proc.stdout.strip()) > 0, (
+            "清单读到了 0 条 —— 解析器（yaml_light）读不动本文件的语法，"
+            "存量豁免会全部失效并当作新缺口阻塞"
+        )
+
+    def test_baseline_parses_with_yaml_light(self, tmp_path):
+        """清单文件必须落在 `yaml_light` 支持的语法子集内（多行字符串/flow 会整份读不到）。
+
+        `>-` 折叠标量是易踩的一处：`yaml_light` 只认单行标量，遇到 `note: >-` 会把
+        `>-` 当字符串、随后**在缩进更深的散文行处停止解析** → `entries` 整段丢失，
+        且不报错（静默读成"清单为空"）。
+        """
+        sys.path.insert(0, str(REPO_ROOT / ".github"))
+        from yaml_light import load_file  # noqa: E402
+        data = load_file(str(BASELINE_PATH))
+        assert (data.get("entries") or []), (
+            "yaml_light 解析不出 entries —— 清单用了超出子集的语法"
+            "（如 `>-` 多行字符串 / flow style）"
         )
