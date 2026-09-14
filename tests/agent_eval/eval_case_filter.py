@@ -12,6 +12,9 @@
 依赖：仅标准库 + `.github/render_cases.filter_by_persona`（仓库内单一源）。
 """
 import re
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
 # ── C 端（小布）工具集真值 ──
 # 单一真值来源 = customer_*_skill.py 的 CUSTOMER_*_TOOLS 并集，此处内联是为了让本模块
@@ -39,6 +42,33 @@ XIAOBU_TOOLS = frozenset({
 
 # 评测 runner 侧的「非真实工具」伪期望（不计入工具集校验）
 PSEUDO_TOOLS = frozenset({"direct_reply"})
+
+# ── B 端（米宝）工具集真值 ──
+# 单一真值来源 = 米宝声明的 skill 源码里的 `*_TOOLS` 常量并集，此处内联文件名是为了让
+# 本模块独立可跑（不 import app 包：CI 的 unit_ci_workflows job 只装了 pytest+pyyaml）。
+# 一致性由契约测试锁定：
+#   tests/unit_ci_workflows/test_mibao_case_invariants.py::TestMibaoToolsetTruth
+#   （含"米宝声明的每个 skill 都必须解析出工具"的防静默漏解析守卫）
+# 背景（issue #3555）：B 端此前**没有**任何"哪个工具没被测"的体检（scripts/ 只有
+# xiaobu_coverage.py），工具覆盖缺口只能靠真实 LLM 全量复测撞出来。把解析放在这里，
+# 使 B 端覆盖体检（scripts/mibao_coverage.py）与用例边界守卫共用同一口径，不产生漂移。
+MIBAO_SKILL_FILES = (
+    # mibao.py MIBAO_CONFIG.skill_names（顺序一致，便于人工比对）
+    "order_skill", "product_skill", "aftersales_skill", "customer_skill",
+    "staff_skill", "settings_skill", "data_skill", "knowledge_skill",
+    "general_agent",          # MIBAO_CONFIG.fallback_skill = "general"
+)
+
+# B 端工具数下界（防「源码解析静默变空」→ 覆盖矩阵假绿 = 体检失效）。
+# 不是覆盖门禁阈值：只用来发现**解析器坏了**（新增能力后请同步上调）。
+MIBAO_TOOLSET_MIN = 25
+
+# 「非正向」期望的否定标记：出现这些词的期望 = 拒绝/不调用断言，不构成正向证据
+# （形如 `tool: order_create 未被调用`；详见 acceptance-protocol §1.3「断言必须可执行」）。
+NEGATION_MARKERS = (
+    "未被调用", "未调用", "不调用", "不得调用", "没有调用",
+    "未触发", "不触发", "不应调用", "拒绝调用",
+)
 
 # 工具名形态：ASCII 小写下划线标识符（真工具名都符合；中文/含等号的断言串不符）
 TOOL_NAME_RE = re.compile(r"^[a-z][a-z0-9_]*$")
@@ -137,21 +167,109 @@ def case_expectation_tools(c) -> set:
     只收 ASCII 小写下划线形态的标识符，避免把机器可判定断言（success=true 等）
     误当工具名 —— 曾导致 `success=true` 被拆成 "success" 混入工具集判断。
     """
-    exps = c.get("expectations") if isinstance(c, dict) else getattr(c, "expectations", None)
     out = set()
-    for exp in (exps or []):
-        if isinstance(exp, dict):
-            # dict 形态的 tool 字段本身也可能是 "A or B"（runner 的 OR 分支语义）
-            branches = (exp.get("tool") or "").split(" or ")
-        elif isinstance(exp, str):
-            branches = exp.split(" or ")
-        else:
-            continue
-        for br in branches:
-            tool = re.split(r"[\(:\s]", br.strip(), 1)[0]
-            if tool and tool not in PSEUDO_TOOLS and TOOL_NAME_RE.match(tool):
-                out.add(tool)
+    for exp in (c.get("expectations") if isinstance(c, dict) else getattr(c, "expectations", None)) or []:
+        out |= set(expectation_branches(exp))
     return out
+
+
+def expectation_branches(exp) -> list:
+    """单条期望里引用的工具名（**保留 OR 分支**，不做并集后判可跑性）。
+
+    与 `case_expectation_tools` 同一套提取语义，但保留分支结构 —— 端归属判定需要
+    「**至少一个**分支可跑」而不是「全部分支都可跑」：`after_sales_manage or
+    aftersale_create` 的 aftersale_create 不在 B 端可跑集，但该期望在 B 端仍有合法路径
+    （先例 AS-003/AS-005，误判即造假红）。
+
+    取词分隔符含 `[`：`interact[confirm]` 的工具名是 `interact`（组件限定符不是工具名）。
+    """
+    if isinstance(exp, dict):
+        raw = str(exp.get("tool") or "")
+    elif isinstance(exp, str):
+        raw = exp
+    else:
+        return []
+    out = []
+    for branch in re.split(r"\s+or\s+", raw, flags=re.IGNORECASE):
+        tool = re.split(r"[\(:\[\s]", branch.strip(), 1)[0]
+        if tool and tool not in PSEUDO_TOOLS and TOOL_NAME_RE.match(tool):
+            out.append(tool)
+    return out
+
+
+def is_negated_expectation(exp) -> bool:
+    """该期望是否为**否定式**（「X 未被调用」等）—— 拒绝断言不构成工具的覆盖证据。"""
+    if isinstance(exp, dict):
+        raw = str(exp.get("tool") or "")
+    elif isinstance(exp, str):
+        raw = exp
+    else:
+        return False
+    return any(mark in raw for mark in NEGATION_MARKERS)
+
+
+def is_positive_case(c) -> bool:
+    """该用例是否提供**正向证据**（issue #3555 覆盖厚度判据）。
+
+    正向 = 用例断言某个真实工具**被调用**（`expectation_branches` 非空），且该期望
+    **不是否定式**（`is_negated_expectation`：`tool: order_create 未被调用` 这类）。
+
+    **为什么不用 tier 当判据**（实测否决，2026-09-14）：对抗档里存在**正常能力**的用例
+    ——OR-007（「取消订单 ORD-xxx」）/ CU-005（「帮我发货」）都是合法诉求，只因挂
+    `tier: adversarial` 就被算成"没有正向用例" → 凭空造出假门禁红。判据只认**断言文本**，
+    不认标签：标签是人写的，断言是机器读的（acceptance-protocol §1.3 同一原则）。
+
+    ⚠️ 已知边界：把「拒绝」写成**非否定式**期望（`tool: customer_order_query` + data_checks
+    里写"返回空/拒绝"）的用例仍会被算作正向 —— 这类用例的 data_checks 是自然语义、
+    机器判不了（协议 §1.3 要求可执行化，属另一条在飞治理线）。本判据取保守侧：
+    宁可少拦（漏报），也不造假红（误报），因为假红会逼迫后续放宽阈值。
+    """
+    exps = (c.get("expectations") if isinstance(c, dict) else getattr(c, "expectations", None)) or []
+    return any(expectation_branches(e) and not is_negated_expectation(e) for e in exps)
+
+
+def skill_file(skill_name: str) -> Path:
+    """skill 文件名 → 源码路径（`name` 与 `name_skill` 两种命名都在用）。"""
+    base = REPO_ROOT / "backend" / "ai-agent-service" / "app" / "graph" / "skills"
+    for cand in (f"{skill_name}.py", f"{skill_name}_skill.py"):
+        if (base / cand).exists():
+            return base / cand
+    return base / f"{skill_name}.py"          # 不存在 → 调用方据此报错（不静默跳过）
+
+
+def _skill_tools(skill_name: str) -> set:
+    """解析一个 skill 源码里的 `*_TOOLS` 列表字面量（纯文本，零 app 依赖）。"""
+    path = skill_file(skill_name)
+    if not path.exists():
+        return set()
+    src = path.read_text(encoding="utf-8")
+    found = set()
+    for m in re.finditer(r"^[A-Z_]+_TOOLS\s*=\s*\[([^\]]*)\]", src, re.M):
+        found |= set(re.findall(r'"([^"]+)"', m.group(1)))
+    return found
+
+
+def mibao_real_toolset() -> set:
+    """B 端（米宝）可跑工具集真值 = 米宝声明的 skill 源码 `*_TOOLS` 并集。
+
+    单一实现（issue #3555）：覆盖体检脚本与用例边界守卫共用本函数，避免复制一套
+    平行解析产生口径漂移。返回空/缩水说明解析口径坏了 —— 调用方应据此报错，
+    而不是把"解析不到工具"当成"没有缺口"（那正是体检失效的形态）。
+    """
+    tools: set = set()
+    for name in MIBAO_SKILL_FILES:
+        tools |= _skill_tools(name)
+    return tools
+
+
+def skill_files_without_tools() -> list:
+    """声明了却解析不出任何工具的 skill 文件（= 解析口径漂移/文件改名，必须报错）。"""
+    return [n for n in MIBAO_SKILL_FILES if not _skill_tools(n)]
+
+
+def toolset_below_floor(tools) -> bool:
+    """工具集是否低于下界（= 源码解析静默失效，体检会假绿）。"""
+    return len(tools) < MIBAO_TOOLSET_MIN
 
 
 def select_cases_for_persona(cases, persona: str = "") -> list:
@@ -187,3 +305,9 @@ def select_cases_for_persona(cases, persona: str = "") -> list:
         if tools and tools <= XIAOBU_TOOLS and is_customer_facing_case(c):
             kept.append(c)          # 双端 + 工具在 C 端能力内 + 语义适配自助场景
     return kept
+
+
+def selected_case_ids(cases, persona: str) -> set:
+    """该端**实际会跑**的用例 ID 集合（供报告渲染按 tier 分组用，避免二次过滤漂移）。"""
+    return {(c.get("id") if isinstance(c, dict) else getattr(c, "id", "?"))
+            for c in select_cases_for_persona(cases, persona)}
