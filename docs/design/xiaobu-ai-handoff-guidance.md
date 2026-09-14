@@ -1,7 +1,7 @@
 # 小布 AI 自动引导转人工（Guided Handoff）设计
 
 > 状态：设计评审中 ｜ 范围：ai-agent-service 为主（admin-api/admin-web 零改动）｜ 目标版本：v1
-> 关联：CH-008（转人工→人工会话闭环）、ST-008（关键词/非营业降级）、UI-010（快捷入口改版）、tdd-iron-law §3（写操作 confirm 守卫）
+> 关联：CH-008（转人工→人工会话闭环）、ST-008（关键词/非营业降级）、UI-010（快捷入口改版）、migao-dev-flow（确认门禁已代码化：`test_write_tool_confirm_gate_invariant`）
 
 ## 1. 背景与目标
 

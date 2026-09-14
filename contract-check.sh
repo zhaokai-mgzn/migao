@@ -34,7 +34,6 @@ check() {
 # KnowledgeDocStatus（知识库同步状态）、售后 AfterSalesStatus（处理中）
 PROC_RESIDUE=$(grep -rn "processing" backend/ai-agent-service/app/tools/order_query.py \
     backend/ai-agent-service/app/tools/order_manage.py \
-    backend/ai-agent-service/app/graph/skills/references/SKILL-order.md \
     backend/ai-agent-service/app/graph/skills/references/prompts/order.md \
     backend/ai-agent-service/app/tools/order_create.py \
     frontend/admin-web/src/types/index.ts 2>/dev/null \

@@ -62,7 +62,7 @@ app/
 
 每个 Skill 必须含：
 - `{name}_skill.py` — 节点定义 + System Prompt
-- `references/SKILL-{name}.md` — 元数据(name, domain, tools, triggers, constraints)
+- `references/prompts/{name}.md` — 域提示词（base_skill.py 组装进 system prompt；无对应文件时读空）
 - `references/EXAMPLES-{name}.md` — Few-shot(正确流程 + 反例)
 
 Tool 铁律：写前校验 → 失败给 suggestion → 写前弹 confirm → 反幻觉规则

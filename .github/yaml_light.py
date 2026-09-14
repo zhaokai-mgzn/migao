@@ -1,4 +1,4 @@
-"""yaml_light — 极简 YAML 子集解析器（供二郎神引擎读 tech-stack.yml）。
+"""yaml_light — 极简 YAML 子集解析器（供 QA Growth Gate 引擎读 tech-stack.yml）。
 
 支持: block mapping / block sequence / 标量(字符串/数字/布尔/null/空[]/{})。
 不支持: flow style / 多行字符串 / anchor / tag。足够解析 tech-stack.yml 这类简单结构。
