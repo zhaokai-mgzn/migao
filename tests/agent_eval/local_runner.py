@@ -1848,6 +1848,7 @@ async def check_amount_verify(token: str, results: list, amount_verify: list) ->
 
         subtotal_sum = 0.0
         processing_sum = 0.0
+        fee_folded_in = False   # 变体②：小计里已含本行加工费 → total 不再加 Σfee（防双计）
         for i, item in enumerate(items):
             if not isinstance(item, dict):
                 issues.append(f"amount_verify[{tool}](R{rnd}): items[{i}] 非对象")
@@ -1862,11 +1863,13 @@ async def check_amount_verify(token: str, results: list, amount_verify: list) ->
                 continue
             pname = str(item.get("product_name") or "")
             pinfo = item.get("processing_info") or {}
+            fee = 0.0
             if isinstance(pinfo, dict):
                 try:
-                    processing_sum += float(pinfo.get("processingFee") or 0)
+                    fee = float(pinfo.get("processingFee") or 0)
+                    processing_sum += fee
                 except (TypeError, ValueError):
-                    pass
+                    fee = 0.0
             subtotal_sum += sub_f
             if "unit_price" in checks and price is not None:
                 # 只核对被声明商品的单价（多商品订单里其它行按各自商品库价另配 spec）
@@ -1876,12 +1879,26 @@ async def check_amount_verify(token: str, results: list, amount_verify: list) ->
                             f"amount_verify[{tool}](R{rnd}): 「{pname}」单价 {up} ≠ 商品库 {price}"
                             f"（凭记忆报价？）")
             if "subtotal" in checks:
-                if abs(sub_f - qty * up) > tol:
+                # 两种**合法约定**都放行（#3511 T3.2 归因，acceptance-protocol §14.2 有效性漂移）：
+                #   ① 面料小计：subtotal = 数量 × 单价（服务端 canonical —— AgentOrderCreateRequest
+                #      「subtotal 可选 → 服务端按 quantity × unitPrice 重算」；C 端 seed 亦为 504=3×168）
+                #   ② 含加工费：subtotal = 面料小计 + 本行 processingFee（工具描述「processingFee
+                #      并**计入金额**」的自然读法；B 端首跑实测 528=504+24）
+                # 两式在服务端都会被规范化、用户可见结果一致 → 对合法变体判红 = 假失败。
+                # 防松弛：与两式都不符（如 OR-014 历史真缺陷 ¥95.4）**仍判红**。
+                base = qty * up
+                matches_canonical = abs(sub_f - base) <= tol
+                matches_folded = fee > 0 and abs(sub_f - (base + fee)) <= tol
+                if matches_folded and not matches_canonical:
+                    fee_folded_in = True
+                if not (matches_canonical or matches_folded):
                     issues.append(
-                        f"amount_verify[{tool}](R{rnd}): 「{pname}」小计 {sub_f} ≠ 数量{qty}×单价{up}")
+                        f"amount_verify[{tool}](R{rnd}): 「{pname}」小计 {sub_f} ≠ 数量{qty}×单价{up}"
+                        f"（或 面料小计+本行加工费 {base + fee}）")
 
         if "total" in checks:
-            expected = subtotal_sum + processing_sum
+            # 防双计（#3511）：若小计已含本行加工费（变体②），expected 不再加 Σfee。
+            expected = subtotal_sum if fee_folded_in else subtotal_sum + processing_sum
             total = None
             for r in results or []:
                 if r.get("__round") != rnd:
@@ -3528,20 +3545,31 @@ async def run_suite(cases, label: str, classify: bool = True, retry_budget: int 
     retries_used = 0   # 已消耗的重试次数（受 retry_budget 约束）
     budget_exhausted = False
 
-    async def _pre_clean_for_case(case, gate) -> None:
-        """执行用例声明的 pre_clean（写共享数据的**短动作**）。
+    async def _pre_clean_for_case(case, gate) -> list:
+        """执行用例声明的 pre_clean（写共享数据的**短动作**）；返回消息列表（随结果落盘）。
 
         issue #3361 提速第三轮：pre_clean 只需**它自身**与其它用例互斥，不必让随后的
         用例主体一起独占（后者会让慢用例变成整跑尾巴）。调用点负责提供独占窗口
         （gate.writer()），且**不能在本任务已持读位时调用** —— 那会死锁。
+
+        为什么返回消息（#3511 归因）：pre_clean 结果此前**只 print**，于是"数据准备没生效"
+        与"能力缺陷"在报告里同形 —— B 端首跑 AS-004 实测：R1 `after_sales_manage(items=0)`
+        看着像 agent 不会关单，实为该用例 `pre_clean: aftersales_ticket_prepare` 未生效
+        （库里 0 条工单）。返回后随用例结果落盘，归因可区分数据层与能力层
+        （acceptance-protocol 五层归因：基础设施/数据层优先）。
         """
+        msgs = []
         for spec in (getattr(case, "pre_clean", None) or []):
             try:
                 _msg = await _run_pre_clean(token, spec)
                 if _msg:
                     print(f"     🧹 pre_clean: {_msg}")
+                    msgs.append(str(_msg))
             except Exception as e:
+                # 失败同样入结果（此前只有 print → 归因时看不见"准备失败"）
                 print(f"     ⚠️ pre_clean 失败（非致命）: {e}")
+                msgs.append(f"⚠️ pre_clean 失败: {e}")
+        return msgs
 
     _retry_lock = asyncio.Lock()
 
@@ -3563,14 +3591,17 @@ async def run_suite(cases, label: str, classify: bool = True, retry_budget: int 
             retries_used += 1
             return True
 
-    async def _run_one_case(i: int, case):
+    async def _run_one_case(i: int, case, pre_clean_msgs=None):
         """跑单个用例（会话/重试分类/打印/结果记录）。
 
-        前置的 pre_clean 由调度器在**独占窗口**里先跑（见 `_pre_clean_for_case`）。
+        前置的 pre_clean 由调度器在**独占窗口**里先跑（见 `_pre_clean_for_case`），
+        其消息通过 `pre_clean_msgs` 传入并**随结果落盘**（#3511：让"数据准备生效与否"
+        在报告里可见，与能力缺陷可区分）。
         """
         nonlocal budget_exhausted
         if case.skip_reason:
             return None
+        pre_clean_msgs = list(pre_clean_msgs or [])
 
         # 用例起始时间戳（UTC）——用于把 CI 的**路由 dump**（ai-agent 日志，带时间戳）
         # 按用例切开。没有这个锚点，日志里连续的 intent/route 行无法归属到具体用例，
@@ -3662,6 +3693,8 @@ async def run_suite(cases, label: str, classify: bool = True, retry_budget: int 
                         print(f"     ↳ {_ln}")
                     r = r2
             r["classification"] = classification
+            # pre_clean 证据（#3511）：数据准备结果随用例落盘，归因时与能力缺陷可区分
+            r["pre_clean"] = pre_clean_msgs
             # 结果不在此处 append（并发顺序不定）——由调用方按原始用例顺序回填
 
             status = "✅" if r["score"] >= 1.0 else "⚠️" if r["score"] >= 0.5 else "❌"
@@ -3691,6 +3724,7 @@ async def run_suite(cases, label: str, classify: bool = True, retry_budget: int 
                 "passed": 0, "total": 0, "score": 0.0,
                 "failed": [(f"EXCEPTION: {e}", "case crashed")],
                 "last_error": str(e), "final_text": "", "classification": "error",
+                "pre_clean": pre_clean_msgs,
             }
             r = exc_record   # 崩溃用例同样交给调用方回填（顺序稳定）
         finally:
@@ -3748,18 +3782,19 @@ async def run_suite(cases, label: str, classify: bool = True, retry_budget: int 
 
         async def _parallel_task(i, c):
             # ① pre_clean（若有）在**独占窗口**里跑 —— 必须在读位之外获取，否则自锁
+            _pc = []
             if getattr(c, "pre_clean", None):
                 async with gate.writer():
-                    await _pre_clean_for_case(c, gate)
+                    _pc = await _pre_clean_for_case(c, gate)
             # ② 主体并行
             async with gate.reader():
-                results_by_idx[i] = await _run_one_case(i, c)
+                results_by_idx[i] = await _run_one_case(i, c, _pc)
 
         async def _serial_task(i, c):
             # 独占用例：pre_clean 与主体在**同一个**独占窗口内（不再嵌套获取）
             async with gate.writer():
-                await _pre_clean_for_case(c, gate)
-                results_by_idx[i] = await _run_one_case(i, c)
+                _pc = await _pre_clean_for_case(c, gate)
+                results_by_idx[i] = await _run_one_case(i, c, _pc)
 
         await asyncio.gather(*[_parallel_task(i, c) for i, c in parallel],
                              *[_serial_task(i, c) for i, c in serial])
@@ -3770,16 +3805,26 @@ async def run_suite(cases, label: str, classify: bool = True, retry_budget: int 
         gate = ConcurrencyGate(concurrency)   # 只用它的独占窗口包 pre_clean
 
         async def _bounded(i, c):
+            _pc = []
             if getattr(c, "pre_clean", None):
                 async with gate.writer():          # 清理动作独占（此时本任务未持读位）
-                    await _pre_clean_for_case(c, gate)
+                    _pc = await _pre_clean_for_case(c, gate)
             async with sem:
-                results_by_idx[i] = await _run_one_case(i, c)
+                results_by_idx[i] = await _run_one_case(i, c, _pc)
 
         await asyncio.gather(*[_bounded(i, c) for i, c in parallel])
     else:
+        # 串行路径（concurrency<=1，**runner 默认值**）：pre_clean 同样必须执行！
+        # 修复（#3511 归因中发现的基建缺陷）：此前该分支直接 `_run_one_case`，
+        # **完全跳过 pre_clean** —— 而 EVAL_CONCURRENCY 未设时默认就是 1（旧 B 端通道
+        # agent-eval.yml 正是如此）→ 商品去重/员工恢复/工单准备/客户准备等数据动作
+        # 静默不执行，把"数据层失败"伪装成"能力缺陷"（B 端 80 轮里反复出现的形态）。
+        # 串行无需读写门（无并发重叠），故 gate 传 None。
         for i, c in indexed:
-            results_by_idx[i] = await _run_one_case(i, c)
+            _pc = []
+            if getattr(c, "pre_clean", None):
+                _pc = await _pre_clean_for_case(c, None)
+            results_by_idx[i] = await _run_one_case(i, c, _pc)
 
     # 按**原始用例顺序**回填（并发不改变报告顺序，便于与历史 run 逐条对比）
     results = [results_by_idx[i] for i in sorted(results_by_idx) if results_by_idx[i] is not None]
@@ -4021,7 +4066,9 @@ def write_summary_json(path: str, label: str, shard: str, results: list) -> None
                               if _declares_order_write(r) and r.get("score", 0) >= 1.0),
         "cases": [
             {"id": r.get("case_id"), "score": r.get("score", 0),
-             "classification": r.get("classification", "")}
+             "classification": r.get("classification", ""),
+             # pre_clean 证据（#3511）：机器可读，供归因区分"数据准备没生效"与"能力缺陷"
+             "pre_clean": r.get("pre_clean") or []}
             for r in results
         ],
         "completion": completion_verdict(

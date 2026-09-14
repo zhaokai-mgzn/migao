@@ -331,6 +331,13 @@ async def get_current_user(
                     tenant_id=1,
                     identity_type="account",
                     role=UserRole.ADMIN,
+                    # 通配权限（#3511 HR-003 归因）：DEBUG 管理员身份此前 permissions=[] →
+                    # role=admin 只过 allowed_roles 粗筛，声明 required_permissions 的工具
+                    # （employee_manage 等）一律「权限不足」——评测栈实测 `employee_manage!权限不足`，
+                    # agent 行为正确却无法执行（环境缺陷被误读为能力缺陷）。
+                    # 仅 DEBUG + 显式 X-Debug-Role 分支可达（生产 DEBUG=false 永不进入，
+                    # 且"无 header 即 401"的 fail-closed 语义不变）。
+                    permissions=["*"],
                 )
             request.state.user = default_user
             return default_user
