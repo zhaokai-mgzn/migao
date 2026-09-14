@@ -1179,7 +1179,7 @@ class AfterSalesTicketServiceTest {
                 .id("item-" + productId)
                 .orderId("order-001")
                 .productId(productId)
-                .quantity(2)
+                .quantity(BigDecimal.valueOf(2))
                 .build();
     }
 

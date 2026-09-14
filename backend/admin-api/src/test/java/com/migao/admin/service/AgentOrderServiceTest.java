@@ -71,7 +71,7 @@ class AgentOrderServiceTest {
             req.setCustomerName("张三");
             req.setCustomerPhone("13800001111");
             AgentOrderCreateRequest.AgentOrderItem item = new AgentOrderCreateRequest.AgentOrderItem();
-            item.setProductName("窗帘"); item.setQuantity(2);
+            item.setProductName("窗帘"); item.setQuantity(BigDecimal.valueOf(2));
             item.setUnitPrice(new BigDecimal("150"));
             req.setItems(List.of(item));
 
@@ -126,7 +126,7 @@ class AgentOrderServiceTest {
             item.setProductName("遮光窗帘"); item.setProductId("p-001");
             item.setSkuCode(skuCode); item.setColorName(colorName);
             item.setProcessingInfo(processingInfo);
-            item.setQuantity(2); item.setUnitPrice(unitPrice);
+            item.setQuantity(BigDecimal.valueOf(2)); item.setUnitPrice(unitPrice);
             req.setItems(List.of(item));
             return req;
         }
@@ -214,7 +214,7 @@ class AgentOrderServiceTest {
         // `OrderCreateRequest`/`AgentOrderItem` 上的 @Positive「只加注解」是拦不住它的。
         // 控制器层由 AgentOrderCreateValidationTest 锁（422），本组锁服务层显式判定（调用方绕过 HTTP 也能拦住）。
 
-        private AgentOrderCreateRequest buildQtyReq(Integer quantity, BigDecimal unitPrice) {
+        private AgentOrderCreateRequest buildQtyReq(BigDecimal quantity, BigDecimal unitPrice) {
             AgentOrderCreateRequest req = new AgentOrderCreateRequest();
             req.setCustomerName("张三");
             req.setCustomerPhone("13800001111");
@@ -229,7 +229,7 @@ class AgentOrderServiceTest {
         @Test
         @DisplayName("负数量 → 拒绝（不 insert 订单：负金额会污染总额，负需求还绕过库存校验）")
         void negativeQuantityRejected() {
-            AgentOrderCreateRequest req = buildQtyReq(-3, new BigDecimal("168"));
+            AgentOrderCreateRequest req = buildQtyReq(BigDecimal.valueOf(-3), new BigDecimal("168"));
 
             assertThatThrownBy(() -> orderService.createOrderForAgent(req, 1L))
                     .isInstanceOf(BusinessException.class)
@@ -241,7 +241,7 @@ class AgentOrderServiceTest {
         @Test
         @DisplayName("0 数量 → 拒绝（0 元明细）")
         void zeroQuantityRejected() {
-            AgentOrderCreateRequest req = buildQtyReq(0, new BigDecimal("168"));
+            AgentOrderCreateRequest req = buildQtyReq(BigDecimal.valueOf(0), new BigDecimal("168"));
 
             assertThatThrownBy(() -> orderService.createOrderForAgent(req, 1L))
                     .isInstanceOf(BusinessException.class)
@@ -253,7 +253,7 @@ class AgentOrderServiceTest {
         @Test
         @DisplayName("负单价 → 拒绝（负单价 × 数量 = 负金额）")
         void negativeUnitPriceRejected() {
-            AgentOrderCreateRequest req = buildQtyReq(3, new BigDecimal("-168"));
+            AgentOrderCreateRequest req = buildQtyReq(BigDecimal.valueOf(3), new BigDecimal("-168"));
 
             assertThatThrownBy(() -> orderService.createOrderForAgent(req, 1L))
                     .isInstanceOf(BusinessException.class)
@@ -265,7 +265,7 @@ class AgentOrderServiceTest {
         @Test
         @DisplayName("0 单价 → 拒绝")
         void zeroUnitPriceRejected() {
-            AgentOrderCreateRequest req = buildQtyReq(3, BigDecimal.ZERO);
+            AgentOrderCreateRequest req = buildQtyReq(BigDecimal.valueOf(3), BigDecimal.ZERO);
 
             assertThatThrownBy(() -> orderService.createOrderForAgent(req, 1L))
                     .isInstanceOf(BusinessException.class)
@@ -277,7 +277,7 @@ class AgentOrderServiceTest {
         @Test
         @DisplayName("合法数量/单价 → 仍可下单（防过严：闸门不是「永远下不了单」）")
         void legalQuantityAndPriceStillPass() {
-            AgentOrderCreateRequest req = buildQtyReq(3, new BigDecimal("168"));
+            AgentOrderCreateRequest req = buildQtyReq(BigDecimal.valueOf(3), new BigDecimal("168"));
             mockOrderInsert();
 
             OrderDetailResponse result = orderService.createOrderForAgent(req, 1L);
@@ -291,7 +291,7 @@ class AgentOrderServiceTest {
     @DisplayName("createOrder 共享入口的参数闸门（#3622：程序化调用同样拦住）")
     class CreateOrderSharedGuard {
 
-        private OrderCreateRequest buildReq(Integer quantity, BigDecimal unitPrice) {
+        private OrderCreateRequest buildReq(BigDecimal quantity, BigDecimal unitPrice) {
             OrderCreateRequest req = new OrderCreateRequest();
             req.setCustomerName("张三");
             req.setCustomerPhone("13800001111");
@@ -300,7 +300,7 @@ class AgentOrderServiceTest {
             item.setQuantity(quantity);
             item.setUnitPrice(unitPrice);
             item.setSubtotal(unitPrice == null ? null
-                    : unitPrice.multiply(BigDecimal.valueOf(quantity == null ? 0 : quantity)));
+                    : unitPrice.multiply(quantity == null ? BigDecimal.ZERO : quantity));
             req.setItems(List.of(item));
             return req;
         }
@@ -308,7 +308,7 @@ class AgentOrderServiceTest {
         @Test
         @DisplayName("createOrder（绕过 @Valid 的程序化调用）负数量 → 拒绝且不落库")
         void negativeQuantityRejectedInSharedEntry() {
-            OrderCreateRequest req = buildReq(-2, new BigDecimal("100"));
+            OrderCreateRequest req = buildReq(BigDecimal.valueOf(-2), new BigDecimal("100"));
 
             assertThatThrownBy(() -> orderService.createOrder(req, 1L))
                     .isInstanceOf(BusinessException.class)
@@ -320,7 +320,7 @@ class AgentOrderServiceTest {
         @Test
         @DisplayName("createOrder 负单价 → 拒绝且不落库")
         void negativeUnitPriceRejectedInSharedEntry() {
-            OrderCreateRequest req = buildReq(2, new BigDecimal("-100"));
+            OrderCreateRequest req = buildReq(BigDecimal.valueOf(2), new BigDecimal("-100"));
 
             assertThatThrownBy(() -> orderService.createOrder(req, 1L))
                     .isInstanceOf(BusinessException.class)
@@ -332,7 +332,7 @@ class AgentOrderServiceTest {
         @Test
         @DisplayName("createOrder 合法值 → 照旧成功（防过严）")
         void legalValuesStillPassInSharedEntry() {
-            OrderCreateRequest req = buildReq(2, new BigDecimal("100"));
+            OrderCreateRequest req = buildReq(BigDecimal.valueOf(2), new BigDecimal("100"));
             mockOrderInsert2();
 
             OrderDetailResponse result = orderService.createOrder(req, 1L);

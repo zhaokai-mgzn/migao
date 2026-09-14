@@ -118,7 +118,7 @@ class OrderServiceTest {
                 .orderId("order-001")
                 .productId("prod-001")
                 .productName("蜂巢帘")
-                .quantity(2)
+                .quantity(BigDecimal.valueOf(2))
                 .unitPrice(new BigDecimal("299.50"))
                 .subtotal(new BigDecimal("599.00"))
                 .build();
@@ -305,7 +305,7 @@ class OrderServiceTest {
         OrderCreateRequest.OrderItemRequest itemReq = new OrderCreateRequest.OrderItemRequest();
         itemReq.setProductId("prod-001");
         itemReq.setProductName("蜂巢帘");
-        itemReq.setQuantity(2);
+        itemReq.setQuantity(BigDecimal.valueOf(2));
         itemReq.setUnitPrice(new BigDecimal("299.50"));
         itemReq.setSubtotal(new BigDecimal("599.00"));
 
@@ -355,14 +355,14 @@ class OrderServiceTest {
         OrderCreateRequest.OrderItemRequest item1 = new OrderCreateRequest.OrderItemRequest();
         item1.setProductId("prod-001");
         item1.setProductName("蜂巢帘");
-        item1.setQuantity(1);
+        item1.setQuantity(BigDecimal.valueOf(1));
         item1.setUnitPrice(new BigDecimal("299.00"));
         item1.setSubtotal(new BigDecimal("299.00"));
 
         OrderCreateRequest.OrderItemRequest item2 = new OrderCreateRequest.OrderItemRequest();
         item2.setProductId("prod-002");
         item2.setProductName("百叶帘");
-        item2.setQuantity(1);
+        item2.setQuantity(BigDecimal.valueOf(1));
         item2.setUnitPrice(new BigDecimal("199.00"));
         item2.setSubtotal(new BigDecimal("199.00"));
 
@@ -404,7 +404,7 @@ class OrderServiceTest {
         OrderCreateRequest.OrderItemRequest itemReq = new OrderCreateRequest.OrderItemRequest();
         itemReq.setProductId("prod-001");
         itemReq.setProductName("蜂巢帘");
-        itemReq.setQuantity(2);
+        itemReq.setQuantity(BigDecimal.valueOf(2));
         itemReq.setUnitPrice(new BigDecimal("299.50"));
         itemReq.setSubtotal(new BigDecimal("599.00"));
         itemReq.setProcessingInfo(Map.of("skuId", 100L));
@@ -432,7 +432,7 @@ class OrderServiceTest {
         OrderCreateRequest.OrderItemRequest itemReq = new OrderCreateRequest.OrderItemRequest();
         itemReq.setProductId("prod-001");
         itemReq.setProductName("蜂巢帘");
-        itemReq.setQuantity(2);
+        itemReq.setQuantity(BigDecimal.valueOf(2));
         itemReq.setUnitPrice(new BigDecimal("299.50"));
         itemReq.setSubtotal(new BigDecimal("599.00"));
         itemReq.setProcessingInfo(Map.of("skuId", 100L));
@@ -477,7 +477,7 @@ class OrderServiceTest {
         OrderCreateRequest.OrderItemRequest itemReq = new OrderCreateRequest.OrderItemRequest();
         itemReq.setProductId("prod-001");
         itemReq.setProductName("蜂巢帘");
-        itemReq.setQuantity(2);
+        itemReq.setQuantity(BigDecimal.valueOf(2));
         itemReq.setUnitPrice(new BigDecimal("299.50"));
         itemReq.setSubtotal(new BigDecimal("599.00"));
 
@@ -677,7 +677,7 @@ class OrderServiceTest {
         OrderCreateRequest.OrderItemRequest itemReq = new OrderCreateRequest.OrderItemRequest();
         itemReq.setProductId("prod-001");
         itemReq.setProductName("蜂巢帘");
-        itemReq.setQuantity(1);
+        itemReq.setQuantity(BigDecimal.valueOf(1));
         itemReq.setUnitPrice(new BigDecimal("100.00"));
         itemReq.setSubtotal(new BigDecimal("100.00"));
 
@@ -1031,7 +1031,7 @@ class OrderServiceTest {
         OrderCreateRequest.OrderItemRequest itemReq = new OrderCreateRequest.OrderItemRequest();
         itemReq.setProductId("prod-001");
         itemReq.setProductName("蜂巢帘");
-        itemReq.setQuantity(2);
+        itemReq.setQuantity(BigDecimal.valueOf(2));
         itemReq.setUnitPrice(new BigDecimal("299.50"));
         itemReq.setSubtotal(new BigDecimal("599.00"));
 
@@ -1082,7 +1082,7 @@ class OrderServiceTest {
         OrderCreateRequest.OrderItemRequest itemReq = new OrderCreateRequest.OrderItemRequest();
         itemReq.setProductId("prod-001");
         itemReq.setProductName("蜂巢帘");
-        itemReq.setQuantity(2);
+        itemReq.setQuantity(BigDecimal.valueOf(2));
         itemReq.setUnitPrice(new BigDecimal("299.50"));
         itemReq.setSubtotal(new BigDecimal("599.00"));
 
@@ -1178,7 +1178,7 @@ class OrderServiceTest {
         OrderCreateRequest.OrderItemRequest itemReq = new OrderCreateRequest.OrderItemRequest();
         itemReq.setProductId("prod-001");
         itemReq.setProductName("蜂巢帘");
-        itemReq.setQuantity(2);
+        itemReq.setQuantity(BigDecimal.valueOf(2));
         itemReq.setUnitPrice(new BigDecimal("299.50"));
         itemReq.setSubtotal(new BigDecimal("599.00"));
 
@@ -1234,7 +1234,7 @@ class OrderServiceTest {
         OrderCreateRequest.OrderItemRequest itemReq = new OrderCreateRequest.OrderItemRequest();
         itemReq.setProductId("prod-001");
         itemReq.setProductName("蜂巢帘");
-        itemReq.setQuantity(2);
+        itemReq.setQuantity(BigDecimal.valueOf(2));
         itemReq.setUnitPrice(new BigDecimal("299.50"));
         itemReq.setSubtotal(new BigDecimal("599.00"));
 
@@ -1374,15 +1374,17 @@ class OrderServiceTest {
     // ======================== 超卖校验测试 ========================
 
     private OrderItem buildItemWithSku(Long skuId, int quantity) {
+        // issue #3666：OrderItem.quantity 放宽为 BigDecimal（mock 侧保持 int 入参，便于既有断言）
+        BigDecimal qty = BigDecimal.valueOf(quantity);
         return OrderItem.builder()
                 .id("item-sku-" + skuId)
                 .tenantId(1L)
                 .orderId("order-001")
                 .productId("prod-001")
                 .productName("蜂巢帘")
-                .quantity(quantity)
+                .quantity(qty)
                 .unitPrice(new BigDecimal("299.50"))
-                .subtotal(new BigDecimal("299.50").multiply(BigDecimal.valueOf(quantity)))
+                .subtotal(new BigDecimal("299.50").multiply(qty))
                 .processingInfo(Map.of("skuId", skuId))
                 .build();
     }
@@ -1535,7 +1537,7 @@ class OrderServiceTest {
         OrderCreateRequest.OrderItemRequest itemReq = new OrderCreateRequest.OrderItemRequest();
         itemReq.setProductId("prod-001");
         itemReq.setProductName("蜂巢帘");
-        itemReq.setQuantity(2);
+        itemReq.setQuantity(BigDecimal.valueOf(2));
         itemReq.setUnitPrice(new BigDecimal("299.50"));
         itemReq.setSubtotal(new BigDecimal("599.00"));
 
@@ -1582,7 +1584,7 @@ class OrderServiceTest {
         OrderCreateRequest.OrderItemRequest itemReq = new OrderCreateRequest.OrderItemRequest();
         itemReq.setProductId("prod-001");
         itemReq.setProductName("蜂巢帘");
-        itemReq.setQuantity(1);
+        itemReq.setQuantity(BigDecimal.valueOf(1));
         itemReq.setUnitPrice(new BigDecimal("299.50"));
         itemReq.setSubtotal(new BigDecimal("299.50"));
 
@@ -1790,7 +1792,7 @@ class OrderServiceTest {
                 .orderId("order-001")
                 .productId("prod-001")
                 .productName("蜂巢帘")
-                .quantity(2)
+                .quantity(BigDecimal.valueOf(2))
                 .unitPrice(new BigDecimal("299.50"))
                 .subtotal(new BigDecimal("599.00"))
                 .processingInfo(info)

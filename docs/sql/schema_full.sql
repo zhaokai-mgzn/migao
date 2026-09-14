@@ -425,7 +425,9 @@ CREATE TABLE IF NOT EXISTS order_items (
     order_id VARCHAR(36) NOT NULL REFERENCES orders(id),
     product_id VARCHAR(36),
     product_name VARCHAR(200),
-    quantity INTEGER DEFAULT 1,
+    -- 数量（口径按计价方式：per_meter=米数 / per_set=1 / per_area=宽×高㎡，可为小数）
+    -- issue #3666：由 INTEGER 放宽为 DECIMAL(10,2)，避免 per_area 小数面积（如 8.4 ㎡）被截断少收
+    quantity DECIMAL(10,2) DEFAULT 1,
     unit_price DECIMAL(12,2),
     width DECIMAL(8,2),
     height DECIMAL(8,2),

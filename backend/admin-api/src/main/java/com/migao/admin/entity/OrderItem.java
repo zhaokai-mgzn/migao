@@ -31,7 +31,11 @@ public class OrderItem {
 
     private String productName;
 
-    private Integer quantity;
+    /**
+     * 数量（issue #3666：DECIMAL(10,2)）。口径按计价方式——per_meter=米数、
+     * per_set=1、per_area=宽×高（㎡，可为小数如 8.4）。
+     */
+    private BigDecimal quantity;
 
     private BigDecimal unitPrice;
 
