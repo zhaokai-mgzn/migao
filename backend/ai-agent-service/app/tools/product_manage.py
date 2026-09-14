@@ -34,7 +34,12 @@ class ProductManageTool(BaseTool):
         "toggle_status 需 product_id+status(on_sale/off_sale)。"
         "【反例】增删商品加工项用 product_processing_item_manage，不要用本工具。"
         "【标注】WRITE|DESTRUCTIVE"
-        "【铁律】用户明确要求写操作（禁用/创建/调整/删除/上下架/重置等）时：先查必要信息拿真实 ID → 展示操作预览 + 确认卡 → 用户确认后立即调用写工具执行，禁止只查询/展示列表就停（HR-003/PP-006/PR-005 实拍：agent 只 list/query 不执行写工具判失败）。"
+        "【铁律】用户明确要求写操作（禁用/调整/删除/上下架/重置等**单步写**）时：先查必要信息拿真实 ID → 展示操作预览 + 确认卡 → 用户确认后立即调用写工具执行，禁止只查询/展示列表就停（HR-003/PP-006/PR-005 实拍：agent 只 list/query 不执行写工具判失败）。"
+        "【create 例外（多步引导，禁止抢跑）】action=create 不是单步写，而是**多步引导流程**："
+        "分类确认 → **必须先发加工项多选卡**（processing_item_query(applicable_category_id=已确认商品分类ID) → "
+        "interact(component=choice, multiSelect=true)，按适用分类过滤/推荐）→ 货号 → 汇总确认卡 → 用户确认后才执行 create。"
+        "**禁止跳过加工项询问直接发汇总确认卡**（PR-014 实拍：跳过 ⇒ 加工项多选卡未下发 ⇒ 判失败）。"
+        "仅当用户本轮明确说「不需要加工项」才可跳过该步。"
     )
 
     allowed_roles = ["admin", "agent", "tenant_admin", "operator"]
