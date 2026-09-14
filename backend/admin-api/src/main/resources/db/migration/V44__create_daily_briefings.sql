@@ -30,23 +30,6 @@ CREATE INDEX IF NOT EXISTS idx_daily_briefings_tenant_date
     ON daily_briefings (tenant_id, biz_date);
 
 -- 3) RLS 策略（多租户行级安全隔离，与全库同构）
--- 幂等守卫（issue #3615，真库实测）：`docs/sql/schema.sql`（bootstrap）已建**同名策略**
--- tenant_isolation_daily_briefings，而本条原为裸 `CREATE POLICY` → bootstrap-first 库上报
--- 「策略 "tenant_isolation_daily_briefings" 已经存在」→ 本文件整条回滚且**不写入
--- schema_migrations** → 每次重启重跑再报一次（噪音）。
--- PG 不支持 `CREATE POLICY IF NOT EXISTS`（实测 PG 16.15 报语法错误），
--- 故照 V42/V25 的 `DO $$` + `pg_policies` 存在性守卫范式（仓库既有幂等写法，不发明新语法）。
 ALTER TABLE daily_briefings ENABLE ROW LEVEL SECURITY;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_policies
-        WHERE schemaname = current_schema()
-          AND tablename = 'daily_briefings'
-          AND policyname = 'tenant_isolation_daily_briefings'
-    ) THEN
-        CREATE POLICY tenant_isolation_daily_briefings ON daily_briefings
-            USING (tenant_id::text = current_setting('app.current_tenant_id'));
-    END IF;
-END $$;
+CREATE POLICY tenant_isolation_daily_briefings ON daily_briefings
+    USING (tenant_id::text = current_setting('app.current_tenant_id'));

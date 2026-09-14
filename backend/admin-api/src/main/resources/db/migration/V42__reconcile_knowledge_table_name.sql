@@ -46,33 +46,10 @@ BEGIN
     END IF;
 END $$;
 
--- 索引名收敛（与 V37 的三条改名为同一目标）。
--- 幂等修正（issue #3615）：原注释写「IF EXISTS 保证幂等」**不成立** ——
--- `ALTER INDEX IF EXISTS` 只守卫**源索引**，不守卫**目标索引名**；实测在
--- 「源索引在、目标索引名已占用」的库上报「关系 "idx_knowledge_cards_tenant" 已经存在」→
--- 整文件回滚且不写 schema_migrations（干净 bootstrap 顺序下源索引已被上面 DO 块的
--- DROP TABLE ... 连带删除而侥幸不报错，但该顺序依赖不可靠）→ 补与 V37 同款双向守卫。
-DO $$
-BEGIN
-    IF EXISTS (SELECT 1 FROM pg_class WHERE relkind = 'i'
-               AND relname = 'idx_knowledge_entries_tenant')
-       AND NOT EXISTS (SELECT 1 FROM pg_class WHERE relkind = 'i'
-                       AND relname = 'idx_knowledge_cards_tenant') THEN
-        ALTER INDEX idx_knowledge_entries_tenant RENAME TO idx_knowledge_cards_tenant;
-    END IF;
-    IF EXISTS (SELECT 1 FROM pg_class WHERE relkind = 'i'
-               AND relname = 'idx_knowledge_entries_status')
-       AND NOT EXISTS (SELECT 1 FROM pg_class WHERE relkind = 'i'
-                       AND relname = 'idx_knowledge_cards_status') THEN
-        ALTER INDEX idx_knowledge_entries_status RENAME TO idx_knowledge_cards_status;
-    END IF;
-    IF EXISTS (SELECT 1 FROM pg_class WHERE relkind = 'i'
-               AND relname = 'idx_knowledge_entries_category')
-       AND NOT EXISTS (SELECT 1 FROM pg_class WHERE relkind = 'i'
-                       AND relname = 'idx_knowledge_cards_category') THEN
-        ALTER INDEX idx_knowledge_entries_category RENAME TO idx_knowledge_cards_category;
-    END IF;
-END $$;
+-- 索引名收敛（与 V37 的三条改名为同一目标；IF EXISTS 保证幂等）
+ALTER INDEX IF EXISTS idx_knowledge_entries_tenant RENAME TO idx_knowledge_cards_tenant;
+ALTER INDEX IF EXISTS idx_knowledge_entries_status RENAME TO idx_knowledge_cards_status;
+ALTER INDEX IF EXISTS idx_knowledge_entries_category RENAME TO idx_knowledge_cards_category;
 
 -- 终态索引兜底（无论走哪条分支都要有）
 CREATE INDEX IF NOT EXISTS idx_knowledge_cards_tenant ON knowledge_cards(tenant_id);

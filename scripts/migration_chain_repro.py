@@ -10,9 +10,25 @@
    是否有迁移失败（有则 admin-api 启动打印「schema 可能与代码不一致」噪音）；
 2. **幂等性**：清空 `schema_migrations` 后全量重跑，是否仍全绿。
 
-迁移植根因（issue #3615）：`ALTER TABLE/INDEX ... IF EXISTS` **只守卫源对象、不守卫目标**，
-`CREATE POLICY` 无守卫（PG 不支持 `IF NOT EXISTS`）→ bootstrap-first 库上 V37/V42/V44 失败
-→ 整文件回滚且**不写入 schema_migrations** → 每次启动重跑再报一次。
+## ⚠️ 现状与期望输出（issue #3615 尚未修复，本脚本当前必然 exit=1）
+
+已发布迁移（V37/V42/V44）的幂等化受 `danger_scan`「已发布迁移只增不改」required 护栏约束，
+**当前未修**，故本脚本在 `main`/现状上**如实报红**（这正是它作为证据的价值）：
+
+```
+现状（预期）：❌ 迁移失败（已跳过）: V37__rename_knowledge_entries_to_cards.sql
+              ❌ 迁移失败（已跳过）: V44__create_daily_briefings.sql
+              迁移文件 42 条 / schema_migrations 40 行   → exit=1（打印原告警）
+
+修复后（预期）：迁移文件 42 条 / schema_migrations 42 行
+              ✅ 无迁移失败 —— 不会打印「schema 可能与代码不一致」  → exit=0
+              再跑 --rerun 亦 exit=0（幂等）
+```
+
+迁移植根因（issue #3615，真库实测）：`ALTER TABLE/INDEX ... IF EXISTS` **只守卫源对象、
+不守卫目标**，`CREATE POLICY` 无守卫（PG 不支持 `IF NOT EXISTS`）→ bootstrap-first 库上
+V37/V42/V44 失败 → 整文件回滚且**不写入 `schema_migrations`** → 每次启动重跑再报一次。
+存量缺口清单与逐条证据见 `tests/unit_ci_workflows/test_migration_idempotency.py` 模块 docstring。
 
 ## 为什么本机无 docker 也能验证
 
