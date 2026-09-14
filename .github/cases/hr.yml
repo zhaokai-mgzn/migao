@@ -217,3 +217,84 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+
+  - id: HR-008
+    legacy_id: ""
+    title: "更新员工手机号 - 写入真的落库（update 写路径首次覆盖，issue #3593）"
+    domains:
+      - hr
+    tier: normal
+    tags:
+      - update
+      - write
+      - confirm
+    truths_ref:
+      - employee-role.users-endpoint
+      - employee-role.write-require-admin
+      - employee-role.update-field-consumption
+    # ── 缺口背景（issue #3593 / 缺陷 #3550，PR #3561 已修）──
+    # HR-001~007 只有 list / create / toggle_status，**没有任何用例断言 update
+    # （改角色 / 改手机号）真的落库**。米宝下发 {phone} / {roleIds}，而修复前的
+    # AdminUserController.updateUser 无这两个字段的读取点 → Jackson 静默忽略 →
+    # HTTP 200 + success=true → 米宝回「已更新」而库里（user.phone / user.role /
+    # user_roles）**零变更**。HIGH 缺陷潜伏至今的用例层根因即此：断言只到
+    # 「工具被调用过」，而假成功连 success=true 都满足。
+    user_inputs:
+      # 点名对象必须是种子/目录里真实存在的（§13.5）：mibao_eval_seed.sql 的员工「王五」
+      # （users.id=debug_employee_wangwu / phone=13700137000）。
+      # **以原号码为主指代**（姓名只作补充）：HR-002 会创建另一个同名「王五」
+      # （13812345678），同一栈内并行跑时列表里会出现两个「王五」——
+      # 按号码指代可让 agent 无需澄清即可定位（§13.5 点名陷阱 + #3568 顺序依赖治理）。
+      - "手机号 13700137000 的这位员工（王五）换号了，帮我把他的手机号改成 13900139111"
+      # 收尾 = **答卡轮**（§13.5 铁律 / #3518）：employee_manage 是 destructive 写工具，
+      # 受 confirm 门禁约束；裸文本「确认」会被挡回的情形在 B 端写用例里已多次实证。
+      # 米宝 staff_skill **没有**绑定 interact（#3317）→ 该技能的门禁话术是「用文本完整复述
+      # 将要执行的操作并请用户回复确认」，故 fallback 文本「确认」正是门禁认的确认词
+      # （_CONFIRM_EXACT 含「确认」）；若模型自行下发了 confirm 卡，auto_respond 会回该卡的
+      # confirmValue（= 前端点击协议），两条路径都通。
+      # ⚠️ 刻意**不用** repeat_until：其停条件是「目标工具成功调用过」，而 employee_manage
+      # 是本用例的**读工具**（R1 先 list 找到 user_id）→ 一次成功的 list 就会提前停轮、
+      # 确认轮被跳过（local_runner.repeat_stop_met 只按工具名+success 判，不区分 action）。
+      # 故用两轮固定答卡轮：确认卡/确认请求常在收尾轮才出现，单轮答卡可能吃不到（#3518 实测形态）。
+      - auto_respond:
+          fallback: "确认"
+      - auto_respond:
+          fallback: "确认"
+    expectations:
+      # 值级断言（机器可判）：本轮必须下发 update、目标必须是种子员工、新号码必须逐字一致。
+      # 拦的是「发错 action / 改错人 / 号码写错或掩码化」。
+      # ⚠️ 本层**拦不住**接收侧静默忽略（#3550 的真身）——那一类需要落库核对能力，见 merge_log。
+      - tool: employee_manage
+        args:
+          action: update
+          user_id: "debug_employee_wangwu"
+          phone: "13900139111"
+    # 写工具**真的成功**断言（#3361「调了 ≠ 成了」）：被 confirm 门禁拦下、工具报错、
+    # 或模型压根没执行 update，都在此判失败 —— 这是「update 写路径有没有真的发生」的第一道门。
+    must_succeed:
+      - tool: employee_manage
+        action: update
+    # 参数完整性（payload 契约）：update 必须带 user_id 与 phone，缺任一即无效写。
+    required_args:
+      - tool: employee_manage
+        action: update
+        fields:
+          - user_id
+          - phone
+    data_checks:
+      # ⚠️ 以下为自然语义描述，**不计分**（acceptance-protocol §1.3 铁律）：机器可判部分由上面的
+      # expectations / must_succeed / required_args 承担；落库层核对待 db_verify[employee] 能力
+      # 落地后回填为可执行断言（规格见 merge_log，归属 runner 包）。
+      - "PUT /api/admin/users/debug_employee_wangwu 落库后 users.phone = 13900139111，而不是 200 假成功（库里仍是 13700137000）"
+      - "同租户内手机号唯一：13900139111 不与既有用户（13700137000 / 13800138000 / 13900139000）冲突，写入不被唯一校验拒绝"
+    skip_reason: ""
+    merge_log: "2026-09-14 新增（issue #3593）：员工更新（改手机号）落库断言缺失 —— HR-001~007 无任何 update 覆盖，是 #3550（phone/roleIds 被 admin-api 静默忽略 → 200 假成功，PR #3561 已修）潜伏至今的用例层根因。断言口径：expectations.args 值级（action=update + 目标=种子员工 debug_employee_wangwu + 新值逐字 13900139111）+ must_succeed[update]（写真的成功）+ required_args[user_id, phone]（下发参数完整）。⚠️ 仍缺的能力：仓库 db_verify 只有 order_phone / order_items / product_by_name，**没有员工/用户核对器** ⇒ 接收侧静默忽略这一精确类尚不能机器判定。需要的 runner 规格（归属 runner 包，本包不碰 local_runner.py）：db_verify: [{fetch: employee, name: 「王五」, expect_fields: {phone: 「13900139111」}}] —— 取数走 GET /api/admin/users?keyword=<name>（或 /api/admin/users/{id}）→ 在 items 里按 name/phone 定位 → 逐条比对 expect_fields（值不等即失败，取不到记录也判失败而非跳过）；expect_fields.role_code 可同时覆盖角色侧（roleIds）同源缺陷。本条选「改手机号」而非「改角色」的理由：role 的**合法下发形态有两种**（role_ids=[角色表主键] 或 role=角色 code，见 AdminUserController.updateUser 与 employee_manage._update_user 的 if role_ids / elif role 分支），在 required_args / expectations 无 OR 分支能力时对任一形态做值级断言都会造成另一半假红；手机号只有 phone 一种形态，可做值级断言。角色侧（roleIds ↔ role code）的落库断言由同一 db_verify[employee].expect_fields.role_code 承担，建议 runner 包一并实现。"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_employee_field_consumption_contract.py"
+        - "backend/ai-agent-service/tests/test_tools_employee_manage.py"
+        - "backend/admin-api/src/test/java/com/migao/admin/controller/AdminUserControllerTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/UserServiceTest.java"
+      ci:
+        - agent-eval.yml
+      verifies: []

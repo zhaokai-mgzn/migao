@@ -2373,6 +2373,26 @@ _CASE_HR_007 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── HR-008 [NORMAL] 更新员工手机号 - 写入真的落库（update 写路径首次覆盖，issue #3593）（源: cases/hr.yml）──
+_CASE_HR_008 = EvalCase(
+    id='HR-008',
+    legacy_id='',
+    title='更新员工手机号 - 写入真的落库（update 写路径首次覆盖，issue #3593）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['手机号 13700137000 的这位员工（王五）换号了，帮我把他的手机号改成 13900139111', {'auto_respond': {'fallback': '确认'}}, {'auto_respond': {'fallback': '确认'}}],
+    expectations=['employee_manage(action=update, user_id=debug_employee_wangwu, phone=13900139111)'],
+    data_checks=['PUT /api/admin/users/debug_employee_wangwu 落库后 users.phone = 13900139111，而不是 200 假成功（库里仍是 13700137000）', '同租户内手机号唯一：13900139111 不与既有用户（13700137000 / 13800138000 / 13900139000）冲突，写入不被唯一校验拒绝'],
+    skip_reason='',
+    tags=['update', 'write', 'confirm'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    required_args=[{'tool': 'employee_manage', 'action': 'update', 'fields': ['user_id', 'phone']}],
+    must_succeed=[{'tool': 'employee_manage', 'action': 'update'}],
+)
+
 # ── KN-001 [SMOKE] 小布知识问答 - 面料问题先检索本店知识卡片（query 必填）（源: cases/knowledge.yml）──
 _CASE_KN_001 = EvalCase(
     id='KN-001',
@@ -5285,6 +5305,7 @@ ALL_CASES = (
     _CASE_HR_005,
     _CASE_HR_006,
     _CASE_HR_007,
+    _CASE_HR_008,
     _CASE_KN_001,
     _CASE_KN_002,
     _CASE_KN_003,
