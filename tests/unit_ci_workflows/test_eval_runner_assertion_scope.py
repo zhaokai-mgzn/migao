@@ -1,4 +1,4 @@
-# case_ids: PG-016, PG-015, PP-006
+# case_ids: PG-016, PG-015, PP-006, OR-013
 """`local_runner` 断言能力的**作用域**契约（issue #3667，确定性层）。
 
 本文件锁住三条**已在真实重放里暴露**的 runner 能力缺口（零 LLM、纯函数，秒级）：
@@ -16,8 +16,13 @@
 ⚠️ 本目录（`tests/unit_ci_workflows`）跑在 CI 的 `ci workflow helper unit tests` job 里，
 该 job 只 `pip install pytest pyyaml`（见 `.github/workflows/pr-check.yml`），
 而 `local_runner` 有模块级 `import httpx` → 见下方 `_load_runner()` 的最小替身。
+
+另有 §③（issue #3792，OR-013）：**用例脆弱** —— 多步意图压在单轮且无 `repeat_until` 兜底
+（判定跑 `34865780382` 判 `reproducible` 而 ⑤ 同一条 `score=1.0`）。它测的不是 runner 能力，
+而是"用例已补协作轮 **且** 断言没被放宽"这两件事实在**单一源**上同时成立。
 """
 import asyncio
+import re
 import sys
 import types
 from pathlib import Path
@@ -376,3 +381,98 @@ class TestProcessingOrderDbVerifyContract:
               "action": "complete", "checks": ["status==completed"]}],
             self._results(), _fake)
         assert seen["ref"] == "JG-2026-0001"
+
+
+# ── ③ 多步意图必须有协作轮兜底（issue #3792 / OR-013）──────────────────────────
+
+class TestMultiStepIntentHasACollaborativeTurn:
+    """`OR-013` 的**用例脆弱**：把「`order_query` 拿订单号 → `logistics_track` 查轨迹」
+    两步**压在一轮里**、R2 之后再无轮次 ⇒ 模型一旦分两轮做就**必然判 0**。
+
+    真实证据（判定跑 `34865780382`，SHA `4e5b33db`）：R1 正确拒绝快递单号（用例要求的行为）、
+    R2 只走到 `order_query` ⇒ `unmatched expectation: logistics_track` +
+    `required_args: 未调用 logistics_track(action=None)` ⇒ 判 `reproducible`；
+    而 ⑤ 同一条用例 `score=1.0`（那次恰好一轮链式做完）⇒ 对**轮次结构**敏感，不是产品回归。
+
+    本类用**纯函数**（零 LLM、零网络）锁两件事：① 用例末尾确实有指向 `logistics_track` 的
+    协作轮（给出下一步机会）；② **断言没有放宽** —— 协作轮用尽仍不调 `logistics_track`
+    时照旧判红（防"改成永绿"）。
+    """
+
+    def _case(self) -> dict:
+        """从**单一源**（`.github/cases/order.yml`）取 OR-013 —— 不看生成物，
+        这样"改了用例但忘了重渲染"不会被本守卫掩盖（Case Contract 另有一道）。"""
+        import yaml
+        yml = yaml.safe_load((REPO_ROOT / ".github" / "cases" / "order.yml")
+                             .read_text(encoding="utf-8"))
+        return {c["id"]: c for c in yml["cases"]}["OR-013"]
+
+    def _repeat_turns(self) -> list:
+        return [t for t in (self._case().get("user_inputs") or [])
+                if isinstance(t, dict) and isinstance(t.get("repeat_until"), dict)]
+
+    def test_case_declares_a_logistics_collaborative_turn(self):
+        """用例末尾必须有指向 `logistics_track` 的 `repeat_until` 轮 —— 删掉即红
+        （退回"只做第一步就判 0"的脆弱形态）。"""
+        repeats = self._repeat_turns()
+        assert [t["repeat_until"].get("tool_called") for t in repeats] == ["logistics_track"], (
+            f"OR-013 没有 logistics_track 的协作轮（两步意图又被压在一轮里）：{repeats}")
+        assert int(repeats[-1]["repeat_until"].get("max") or 0) >= 1, repeats[-1]
+        # fallback 必须**中性**：不得替 agent 报出订单号/快递单号（那等于 harness 干了被测能力）
+        fallback = str(repeats[-1].get("fallback") or "")
+        assert fallback.strip(), "协作轮缺 fallback（无卡时会发空文本）"
+        assert "SF1234567890" not in fallback, fallback
+        assert not re.search(r"\d{6,}", fallback), (
+            f"fallback 里出现了订单号形态的数字串（替 agent 报单号 = 掩盖被测能力）：{fallback!r}")
+
+    def _results_only_first_step(self) -> list:
+        """「只做了第一步」的形态（= 判定跑里 OR-013 的实形）：R1 拒绝快递单号（无工具），
+        R2 只 `order_query` 成功。"""
+        rounds = [_round(1, [], []),
+                  _round(2, [("order_query", None)],
+                         [("order_query", True, {"orders": 5, "total": 15})])]
+        for r in rounds:
+            r["__all_tool_names"] = ["order_query"]
+        return rounds
+
+    def test_first_step_only_state_gets_another_turn(self):
+        """**红证①**：只做到第一步时，停条件**不成立** ⇒ harness 会再发协作轮
+        （给出"下一步的机会"），而不是就此判 0。"""
+        results = self._results_only_first_step()
+        assert lr.repeat_stop_met(results, {"tool_called": "logistics_track"}) is False, (
+            "只做了第一步就停机 —— 协作轮形同虚设")
+        # "机会"真的存在（展开后的轮次数 > 声明的 2 轮），而不是纸面声明
+        turns = lr.expand_repeat_turns(self._case()["user_inputs"])
+        assert len(turns) > len(self._case()["user_inputs"]) or len(turns) > 2, turns
+        assert turns[-1].get("__repeat__"), turns[-1]
+
+    def test_never_calling_logistics_track_still_fails(self):
+        """**红证②（防改绿）**：协作轮用尽仍没有 `logistics_track` ⇒ 断言照旧落空，
+        且失败原文**复现判定跑的原串**（`unmatched expectation` + `未调用 …(action=None)`）。"""
+        results = self._results_only_first_step()
+        for rnd in (3, 4, 5):                      # 协作轮发完（max=3）仍只答话、不调工具
+            r = _round(rnd, [], [])
+            r["__all_tool_names"] = ["order_query"]
+            results.append(r)
+        assert all(lr.check_expectation(r, "logistics_track")[0] is False for r in results), (
+            "从没调用 logistics_track 却被判满足 —— 断言被放水了")
+        assert lr.check_required_args(
+            results, [{"tool": "logistics_track", "fields": ["order_id"]}]) == [
+            "required_args: 未调用 logistics_track(action=None)"], (
+            "协作轮用尽后的失败原文与判定跑不一致（断言被改了）")
+
+    def test_later_successful_call_satisfies_the_same_assertions(self):
+        """**反向锚点（防"永红"）**：同一套断言在"协作轮里补上了 `logistics_track(order_id)`"
+        时**判绿** —— 证明上面两条不是在断言一件永远为假的事（跑通的路径不被本改动伤到）。"""
+        results = self._results_only_first_step()
+        # R3：协作轮里模型补上了 `logistics_track(order_id=…)`（args 才是 required_args 的核对对象）
+        r3 = _round(3, [("logistics_track", None)],
+                    [("logistics_track", True, {"order_id": "EVAL-MB-ORD-0003"})])
+        r3["tool_calls"][0]["args"] = {"order_id": "EVAL-MB-ORD-0003"}
+        r3["__all_tool_names"] = ["order_query", "logistics_track"]
+        results.append(r3)
+        assert any(lr.check_expectation(r, "logistics_track")[0] for r in results)
+        assert lr.check_required_args(
+            results, [{"tool": "logistics_track", "fields": ["order_id"]}]) == []
+        # 成功即停机（停条件用"成功"）⇒ 余下的协作轮自动跳过（不白烧轮次）
+        assert lr.repeat_stop_met(results, {"tool_called": "logistics_track"}) is True
