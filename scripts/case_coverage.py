@@ -252,8 +252,12 @@ def action_binding_violations(cases, tools=None) -> list:
          旧实现只遍历「有 action 维度的工具」，`must_fail: [{tool: order_create, action: create}]`
          （OR-026 被拒的写法，runner 里整条静默跳过）**整个不被检查**；
       ② `skip_reason` 非空的用例**照扫**（调用方传入全量用例，别先过
-         `select_cases_for_persona`）—— 用例解 skip 时不得带着永不满足的声明上场
-         （OR-006 的 `order_query(action=detail)` 就是靠 skip 藏住的，见 #3702）；
+         `select_cases_for_persona`）—— 用例解 skip 时不得带着永不满足的声明上场。
+         （**历史实例，非现状**：OR-006 曾声明 `order_query(action=detail)`，而 `detail` 并非
+         该工具 action 枚举取值——真值为 `list / statistics / follow_status_stats`——靠
+         `skip_reason` 藏住而长期未被发现；已由 #3702（合入 PR #3715，`eab62fad`）按真实语义
+         改为 `action: list`，其 `action_dangling` 登记条目亦已销账删除。此处保留为
+         「skip 会藏住非法声明」的说明性实例；引用前请以 `.github/cases/order.yml` 为准。）
       ③ 收 `repeat_until.action`（停条件悬空 → 用例空转到轮数耗尽）。
     """
     tools = registered_tools() if tools is None else set(tools)
@@ -716,7 +720,10 @@ def build_coverage_report(cases, persona: str, tools=None, exempt=None) -> Cover
     # `action_binding_violations`（与 L0 不变式同一函数）。
     # 与上方覆盖统计**有意分开**：
     #   · 扫**全库**用例（含 `skip_reason` 非空者）—— skip 免的是"参与覆盖统计"，
-    #     不免"声明合法性"（OR-006 的 `order_query(action=detail)` 就是靠 skip 藏住的）；
+    #     不免"声明合法性"。（**历史实例，非现状**：OR-006 曾声明
+    #     `order_query(action=detail)`——`detail` 不在该工具 action 枚举真值
+    #     `list / statistics / follow_status_stats` 内——靠 skip 藏住而长期未被发现；
+    #     已由 #3702（合入 PR #3715，`eab62fad`）改为 `action: list`，条目已销账删除。）
     #   · 覆盖「工具没有 action 维度」（旧实现只遍历 `action_tools` = 放行）；
     #   · 收 `repeat_until.action`。
     rep.action_tools = action_catalog(tools)
