@@ -1490,4 +1490,102 @@ class ProductServiceTest {
         assertThat(captor.getValue().getProcessingItemId()).isEqualTo("pi-punch");
         assertThat(captor.getValue().getCustomPrice()).isEqualByComparingTo(new BigDecimal("10.00"));
     }
+
+    // ======================== Agent SKU 调价：中文标签/门幅写法归一化 ========================
+    // issue #3539 / PR-021：agent 与前端按中文业务术语传参（「散剪」「2.8米」），
+    // 而 product_skus 落库的是枚举/数值（bulk_cut、2.8）——字面 eq 必然 0 行命中，
+    // 对外表现为「SKU不存在」（实测 run 34805827043：sku_update 连续两次失败）。
+
+    /** 与 product_colors 里遮光窗帘的既有 SKU 同形：枚举 bulk_cut + 数值门幅 2.8 */
+    private ProductSku evalBlackoutSku() {
+        return ProductSku.builder()
+                .id(2001L).tenantId(1L).productId("prod-001")
+                .colorName("米白").sellingMethod("bulk_cut").doorWidth("2.8")
+                .price(new BigDecimal("168.00")).stock(500).skuCode("EVAL-BLK-28-米白").build();
+    }
+
+    @Test
+    @DisplayName("SKU调价（PR-021）- agent 传中文「散剪」必须命中 bulk_cut 存量行")
+    @SuppressWarnings("unchecked")
+    void updateSkuPrice_ChineseSellingMethodLabel_MatchesEnumStoredRow() {
+        // Given: 库里是枚举 bulk_cut
+        ProductSku sku = evalBlackoutSku();
+        when(productSkuMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(sku));
+        when(productSkuMapper.updateById(any(ProductSku.class))).thenReturn(1);
+
+        // When: agent 按中文业务术语传参（实测轨迹原样）
+        productService.updateSkuPrice("prod-001", "米白", "散剪", "2.8", new BigDecimal("150.00"), 1L);
+
+        // Then: 落库的是该行 + 新价格
+        ArgumentCaptor<ProductSku> skuCaptor = ArgumentCaptor.forClass(ProductSku.class);
+        verify(productSkuMapper).updateById(skuCaptor.capture());
+        assertThat(skuCaptor.getValue().getId()).isEqualTo(2001L);
+        assertThat(skuCaptor.getValue().getPrice()).isEqualByComparingTo(new BigDecimal("150.00"));
+
+        // 且查询条件里是枚举，不是中文标签（复用 translateSellingMethod，无第二套口径）
+        // 注：MP 的 formatParam 是惰性 ISqlSegment，须先触发 SQL 段生成才会物化参数表
+        ArgumentCaptor<LambdaQueryWrapper<ProductSku>> wrapperCaptor =
+                ArgumentCaptor.forClass(LambdaQueryWrapper.class);
+        verify(productSkuMapper).selectList(wrapperCaptor.capture());
+        LambdaQueryWrapper<ProductSku> captured = wrapperCaptor.getValue();
+        captured.getSqlSegment();
+        assertThat(captured.getParamNameValuePairs().values())
+                .anyMatch(v -> "bulk_cut".equals(v))
+                .noneMatch(v -> "散剪".equals(v));
+    }
+
+    @Test
+    @DisplayName("SKU调价（PR-021）- agent 传「2.8米」必须命中存量数值门幅「2.8」行（双侧容错）")
+    void updateSkuPrice_DoorWidthWithUnitSuffix_FallsBackToStoredNumericWidth() {
+        // Given: 精确匹配（door_width = '2.8米'）0 行；放宽门幅后能取到存量行（door_width = '2.8'）
+        ProductSku sku = evalBlackoutSku();
+        when(productSkuMapper.selectList(any(LambdaQueryWrapper.class)))
+                .thenReturn(Collections.emptyList())
+                .thenReturn(List.of(sku));
+        when(productSkuMapper.updateById(any(ProductSku.class))).thenReturn(1);
+
+        // When
+        productService.updateSkuPrice("prod-001", "米白", "散剪", "2.8米", new BigDecimal("150.00"), 1L);
+
+        // Then: 兜底命中并原地改价（不新建行、不改库里的门幅写法）
+        ArgumentCaptor<ProductSku> skuCaptor = ArgumentCaptor.forClass(ProductSku.class);
+        verify(productSkuMapper).updateById(skuCaptor.capture());
+        assertThat(skuCaptor.getValue().getDoorWidth()).isEqualTo("2.8");
+        assertThat(skuCaptor.getValue().getPrice()).isEqualByComparingTo(new BigDecimal("150.00"));
+    }
+
+    @Test
+    @DisplayName("SKU调价 - 门幅精确命中时不再兜底查询（避免无谓第二跳）")
+    void updateSkuPrice_ExactWidthMatch_DoesNotRunFallbackQuery() {
+        // Given
+        ProductSku sku = evalBlackoutSku();
+        when(productSkuMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(sku));
+        when(productSkuMapper.updateById(any(ProductSku.class))).thenReturn(1);
+
+        // When
+        productService.updateSkuPrice("prod-001", "米白", "bulk_cut", "2.8", new BigDecimal("150.00"), 1L);
+
+        // Then
+        verify(productSkuMapper, times(1)).selectList(any(LambdaQueryWrapper.class));
+        verify(productSkuMapper).updateById(any(ProductSku.class));
+    }
+
+    @Test
+    @DisplayName("SKU调价 - 兜底仍无命中时抛 404 且不写库")
+    void updateSkuPrice_NotFound_ThrowsAndNeverWrites() {
+        // Given: 精确 + 兜底都 0 行
+        when(productSkuMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(Collections.emptyList());
+
+        // When & Then: 与线上指纹一致（sku_update!SKU不存在）——message=SKU不存在，suggestion 供 agent 自修复
+        assertThatThrownBy(() ->
+                productService.updateSkuPrice("prod-001", "米白", "散剪", "2.8米", new BigDecimal("150.00"), 1L))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("SKU不存在")
+                .satisfies(ex -> {
+                    BusinessException bex = (BusinessException) ex;
+                    assertThat(bex.getHttpStatus()).isEqualTo(404);
+                    assertThat(bex.getSuggestion()).contains("product_detail");
+                });
+        verify(productSkuMapper, never()).updateById(any(ProductSku.class));
+    }
 }

@@ -1854,21 +1854,22 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
      */
     /**
      * 更新单个 SKU 的价格。按颜色/售卖方式/门幅匹配。
+     *
+     * <p>归一化（issue #3539）：agent / 前端按**中文业务术语**传参（「散剪」「整卷」「2.8米」），
+     * 而 product_skus 落库的是枚举/数值（bulk_cut、full_roll、2.8）——直接字面 eq 必然 0 行命中，
+     * 对外表现为「SKU不存在」（实测 run 34805827043：PR-021 的 sku_update 连续两次失败，
+     * 自修复只把门幅「2.8米」修成「2.8」，售卖方式的中文标签一直没救回来）。
+     *
+     * <p>故：① 售卖方式复用建品路径同一个 {@link #translateSellingMethod(String)}
+     * （不新增第二套映射表）；② 门幅先按原值精确匹配，未命中再按「去掉 米/m 后缀」双侧归一化兜底
+     * —— 库内两种写法都真实存在（种子 SKU 是 '2.8'，agent 建品落库的是 '2.8米'），
+     * 只做输入侧去后缀会反向打不到后者。
      */
     public void updateSkuPrice(String productId, String color, String sellingMethod,
                                 String doorWidth, java.math.BigDecimal price, Long tenantId) {
-        LambdaQueryWrapper<ProductSku> w = new LambdaQueryWrapper<ProductSku>()
-                .eq(ProductSku::getProductId, productId)
-                .eq(ProductSku::getTenantId, tenantId);
-        if (org.springframework.util.StringUtils.hasText(color))
-            w.eq(ProductSku::getColorName, color);
-        if (org.springframework.util.StringUtils.hasText(sellingMethod))
-            w.eq(ProductSku::getSellingMethod, sellingMethod);
-        if (org.springframework.util.StringUtils.hasText(doorWidth))
-            w.eq(ProductSku::getDoorWidth, doorWidth);
-
-        // 多结果时取第一个匹配并给提示（常见于不填门幅时同名颜色+散剪有多个门幅）
-        java.util.List<ProductSku> candidates = productSkuMapper.selectList(w.last("LIMIT 2"));
+        String normalizedMethod = translateSellingMethod(sellingMethod);
+        java.util.List<ProductSku> candidates =
+                selectSkuCandidatesForPriceUpdate(productId, color, normalizedMethod, doorWidth, tenantId);
         if (candidates.isEmpty()) {
             throw BusinessException.notFound("SKU",
                     "未找到匹配的 SKU。请用 product_detail 查看可用 SKU 后重试");
@@ -1882,6 +1883,52 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
         productSkuMapper.updateById(sku);
         log.info("SKU价格已更新: product={}, color={}, method={}, width={}, price={}",
                 productId, color, sellingMethod, doorWidth, price);
+    }
+
+    /**
+     * SKU 调价候选匹配：门幅精确匹配优先；未命中时放宽门幅条件、在 Java 侧做「去 米/m 后缀」
+     * 双侧归一化比较（不改写库内值，也不新增 SKU 行）。
+     * 返回最多 2 条，供调用方「取第一个 + 多命中告警」（常见于不填门幅时同名颜色+散剪有多个门幅）。
+     */
+    private java.util.List<ProductSku> selectSkuCandidatesForPriceUpdate(String productId, String color,
+                                                                        String sellingMethod, String doorWidth,
+                                                                        Long tenantId) {
+        java.util.List<ProductSku> exact = productSkuMapper.selectList(
+                skuPriceUpdateScope(productId, color, sellingMethod, tenantId)
+                        .eq(StringUtils.hasText(doorWidth), ProductSku::getDoorWidth, doorWidth)
+                        .last("LIMIT 2"));
+        if (!exact.isEmpty() || !StringUtils.hasText(doorWidth)) {
+            return exact;
+        }
+        String targetWidth = normalizeDoorWidth(doorWidth);
+        return productSkuMapper.selectList(
+                        skuPriceUpdateScope(productId, color, sellingMethod, tenantId))
+                .stream()
+                .filter(s -> targetWidth.equals(normalizeDoorWidth(s.getDoorWidth())))
+                .limit(2)
+                .collect(java.util.stream.Collectors.toList());
+    }
+
+    /** 调价定位范围：商品 + 租户（拦截器之外显式带租户）+ 可选的颜色/售卖方式 */
+    private LambdaQueryWrapper<ProductSku> skuPriceUpdateScope(String productId, String color,
+                                                               String sellingMethod, Long tenantId) {
+        return new LambdaQueryWrapper<ProductSku>()
+                .eq(ProductSku::getProductId, productId)
+                .eq(ProductSku::getTenantId, tenantId)
+                .eq(StringUtils.hasText(color), ProductSku::getColorName, color)
+                .eq(StringUtils.hasText(sellingMethod), ProductSku::getSellingMethod, sellingMethod);
+    }
+
+    /**
+     * 门幅归一化：「2.8米」「2.8m」「2.8 M」→「2.8」。
+     * 仅用于匹配兜底比较，<b>不回写库</b>（库内保持原写法，避免 SKU 编码/前端展示口径漂移）。
+     * 与 {@link #toWidthShort(String)} 同源假设：门幅的语义是数字，「2.8米」与「2.8」等价。
+     */
+    private static String normalizeDoorWidth(String rawDoorWidth) {
+        if (rawDoorWidth == null) {
+            return null;
+        }
+        return rawDoorWidth.trim().replaceAll("(?i)\\s*[米m]$", "").trim();
     }
 
     /**
