@@ -620,7 +620,11 @@ export interface ProcessingOrderUpdateParams {
 // 物流信息
 export interface LogisticsInfo {  logisticsCompany?: string
   trackingNo?: string
-  /** 发货人（发货单纸面「经手人」，issue #3768）；存量订单为 undefined → 打印留空 */
+  /**
+   * 发货人（发货单纸面「经手人」，issue #3768）。
+   * 存量已发货订单为 undefined/NULL（历史上从未采集）→ 纸面该栏显示「-」
+   * （#3818 裁定，与 #3768 判据一致；不得留白、不得 undefined/null）。
+   */
   shipperName?: string
   status?: string
   shippingMethod?: 'logistics' | 'none'  // 物流发货 / 无需物流

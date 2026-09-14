@@ -16,6 +16,9 @@ import { cn, formatFullDateTime } from '@/lib/utils'
  * 4. 数据全部取自订单本身（明细不可变，见 OrderItemImmutabilityTest/PG-014），
  *    不需要快照表 —— 这是「发货单不建实体」的依据。
  * 5. 运单号未产生时留空线（纸面手写），不编造。
+ * 6. **发货人栏「-」口径**（issue #3818 裁定）：存量已发货订单 `shipper_name` 为 NULL/空
+ *    （历史上从未采集）→ 纸面发货人栏显示「-」，与 #3768 判据一致；**不得**留白、
+ *    不得 undefined/null。与第 5 条区分：留空只给「运单号/物流公司」（发货前手写用）。
  */
 interface ShipmentDocProps {
   order: Order
@@ -78,7 +81,9 @@ export default function ShipmentDoc({ order, logistics, shipperName, className }
             <DocCell label="下单时间" value={formatFullDateTime(order.createdAt)} />
           </tr>
           <tr>
-            <DocCell label="发货人" value={shipper || undefined} />
+            {/* 存量订单 shipper_name 为 NULL/空 ⇒ 纸面显示「-」（#3818 裁定；见文件头第 6 条）。
+                只有这一栏走「-」，运单号/物流公司仍留空供纸面手写（第 5 条） */}
+            <DocCell label="发货人" value={shipper || '-'} />
             <DocCell label="打印时间" value={formatFullDateTime(new Date().toISOString())} />
           </tr>
         </tbody>
