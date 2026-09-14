@@ -481,6 +481,47 @@ class AfterSalesTicketServiceTest {
     }
 
     @Test
+    @DisplayName("更新工单状态 - pending -> closed（产品裁定 #3541：允许直接关闭，含关闭时间/原因）")
+    void updateTicketStatus_PendingToClosed() {
+        // given
+        AfterSalesStatusUpdateRequest request = new AfterSalesStatusUpdateRequest();
+        request.setStatus("closed");
+        request.setRemark("误建工单，线下已处理");
+
+        when(afterSalesTicketMapper.selectById("ticket-001")).thenReturn(testTicket);
+        when(afterSalesTicketMapper.updateById(any(AfterSalesTicket.class))).thenReturn(1);
+
+        // when
+        afterSalesTicketService.updateTicketStatus("ticket-001", request);
+
+        // then: 落库状态为 closed，且写入关闭时间与关闭原因（closeReason = request.remark）
+        verify(afterSalesTicketMapper).updateById(argThat((AfterSalesTicket t) ->
+                "closed".equals(t.getStatus())
+                        && t.getClosedAt() != null
+                        && "误建工单，线下已处理".equals(t.getCloseReason())));
+    }
+
+    @Test
+    @DisplayName("更新工单状态失败 - closed 终态不允许再变更（防放宽 pending 时整体放松校验）")
+    void updateTicketStatus_ClosedStateNoTransition() {
+        // given
+        AfterSalesTicket closedTicket = AfterSalesTicket.builder()
+                .id("ticket-005")
+                .status("closed")
+                .build();
+
+        AfterSalesStatusUpdateRequest request = new AfterSalesStatusUpdateRequest();
+        request.setStatus("processing");
+
+        when(afterSalesTicketMapper.selectById("ticket-005")).thenReturn(closedTicket);
+
+        // when & then
+        assertThatThrownBy(() -> afterSalesTicketService.updateTicketStatus("ticket-005", request))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("不允许");
+    }
+
+    @Test
     @DisplayName("更新工单状态 - processing -> resolved")
     void updateTicketStatus_ProcessingToResolved() {
         // given

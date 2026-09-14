@@ -53,9 +53,12 @@ public class AfterSalesTicketService extends ServiceImpl<AfterSalesTicketMapper,
     /**
      * 合法的状态流转定义
      * key: 当前状态, value: 允许流转到的目标状态集合
+     *
+     * pending -> closed：产品裁定允许未处理工单直接关闭（误建/线下已处理的工单，
+     * 无需先经过并不存在的「处理中」阶段），见 issue #3541。
      */
     private static final Map<String, Set<String>> STATUS_TRANSITIONS = Map.of(
-            "pending", Set.of("processing", "rejected"),
+            "pending", Set.of("processing", "rejected", "closed"),
             "processing", Set.of("resolved", "closed"),
             "resolved", Set.of(),
             "rejected", Set.of(),
@@ -377,7 +380,8 @@ public class AfterSalesTicketService extends ServiceImpl<AfterSalesTicketMapper,
 
     /**
      * 更新工单状态
-     * 遵循状态流转规则：pending -> processing/rejected, processing -> resolved/closed
+     * 遵循状态流转规则：pending -> processing/rejected/closed, processing -> resolved/closed
+     * （resolved/rejected/closed 为终态，不允许再变更；pending -> closed 见 #3541）
      *
      * @param id      工单ID
      * @param request 状态更新请求
