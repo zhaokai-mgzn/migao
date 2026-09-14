@@ -27,8 +27,12 @@ from langchain_core.messages import HumanMessage
 import app.graph.skills.base_skill as base_skill
 from app.graph.skills.base_skill import execute_skill
 
-#: 用户可见兜底话术（#3805 的指纹句）——本单**不改**它
-FALLBACK_TEXT = "抱歉，我遇到了一些问题，请稍后重试。"
+#: 用户可见兜底话术（issue #3810 起从「抱歉，我遇到了一些问题，请稍后重试。」改为下面这句）
+#: —— 原句是**无信息量通用句**：顾客不知道这轮有没有成功、下一步做什么（#3810 明确禁止
+#: 改成"静默成功"或"无信息量通用句"）。新句纯中文、说明"这轮没成功"、给出可执行的下一步，
+#: 且**不含**写流程的成功/取消标记（否则「创建类流程」的 pending_skill 判定会把失败的写流程
+#: 当成已完成而解锁 —— 那是把失败伪装成成功）。
+FALLBACK_TEXT = "刚才这轮没成功，请您再说一次，我继续为您办理。"
 #: 审计行里出现的稳定标记（同类吞点的统一检索入口）
 AUDIT_MARK = "LLM failed"
 #: `str(exc)` 在审计行里的上限（截断上限，防多行/超长异常消息破坏"一行 = 一条审计"）
@@ -123,20 +127,23 @@ def _incident_id(line: str) -> str:
 
 
 class TestFallbackWordingStaysCompliant:
-    """兜底话术零变更：非技术、低学历可懂（本单不靠改话术做归因）"""
+    """兜底话术合规：非技术、低学历可懂、有信息量（issue #3810 的措辞纪律）"""
 
     @pytest.mark.asyncio
-    async def test_user_visible_text_is_unchanged_and_non_technical(self):
+    async def test_user_visible_text_is_non_technical_and_actionable(self):
         result = await _run_one_turn(ValueError("internal provider payload 400"))
 
         assert result["final_answer"] == FALLBACK_TEXT, (
-            "兜底话术被改动 —— 本单只加可归因性，不改话术（改动需单独走行为体检）"
+            "兜底话术被改动 —— 改话术必须同步改本断言并说明理由（#3810 有明确的措辞纪律）"
         )
         # C 端/B 端约定：不得把异常类型、英文技术术语、堆栈抛给用户
         assert not re.search(r"[A-Za-z]", result["final_answer"]), (
             "用户可见兜底话术出现英文/技术术语：%r" % result["final_answer"]
         )
         assert "Traceback" not in result["final_answer"]
+        # 反向守卫：不得退化成"静默成功"或"无信息量通用句"（#3810 明令）
+        assert "没成功" in result["final_answer"], "顾客必须知道这轮没成功"
+        assert "再说一次" in result["final_answer"], "必须给出可执行的下一步（可重试）"
 
 
 class TestLLMExceptionIsAttributable:

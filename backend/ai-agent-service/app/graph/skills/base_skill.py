@@ -16,7 +16,6 @@ Skill 基础执行逻辑
 """
 
 import asyncio
-import hashlib
 import json
 import re
 import time
@@ -34,6 +33,7 @@ from app.graph.pending_validated import extract_pending, is_pending_for, PENDING
 from app.tools.base import ToolContext
 from app.tools.registry import ToolRegistry, set_tool_context, get_tool_context
 from app.utils.log_sanitizer import LogSanitizer
+import app.utils.error_incident as _err_inc
 from app.memory.user_memory import UserMemoryManager
 from app.suggestions.preference_tracker import PreferenceTracker
 from app.core import (
@@ -42,7 +42,7 @@ from app.core import (
     get_breaker,
 )
 from app.llm import LLMFactory, select_model, has_images, call_with_retry, cost_tracker
-from app.middleware.logging_middleware import get_request_id
+from app.llm.retry_policy import _is_retryable
 
 
 # ── LLM 熔断器作用域与超时（issue #3270）──
@@ -74,54 +74,25 @@ def llm_breaker_name(skill_name: str) -> str:
 
 # ── 异常吞点的**可归因性**（issue #3805，产品侧）──
 # 背景（判定跑 34873715194 / SHA 30527b73，B 端 OR-014）：R4/R9/R10/R11 四轮逐字返回
-# 同一句 `抱歉，我遇到了一些问题，请稍后重试。`、四轮 `tools=-` —— 唯一产生点就是下面
-# `execute_skill` 的 `except Exception` 兜底。异常被吞成一句**无标识**话术，同一会话
-# 连吞 4 次（R9–R11 连续 3 轮），而产物里查不到异常类型与原因（根因 undetermined）。
+# 同一句兜底、四轮 `tools=-` —— 唯一产生点就是下面 `execute_skill` 的 `except Exception`
+# 兜底。异常被吞成一句**无标识**话术，同一会话连吞 4 次（R9–R11 连续 3 轮），
+# 而产物里查不到异常类型与原因（根因 undetermined）。
 #
-# 这里**只补归因**、不动话术与判据（熔断 / 超时 / 轮次耗尽各自的守卫原样保留）：
+# 归因三项（#3809 建立，issue #3810 起与另两个用户可见落点**共用同一实现**）：
 #   ① 异常身份：`error=<类型>: <str(exc)>` + traceback（`logger.opt(exception=…)`）——
 #      只记 type+str 时，KeyError/AttributeError 这类异常定位不到出错行；
 #   ② 上下文：skill / session / 租户 / 轮次 / HTTP request_id；
 #   ③ `incident=` 短码：同一 (会话 × 异常类型) ⇒ 同一短码
 #      ⇒「连续 N 轮吞同一个异常」的 N 条日志可聚成一个 incident。
-# 用户可见话术**未改动**：C 端/B 端约定兜底话术必须面向低学历用户、禁英文技术术语与堆栈，
-# 故短码只落日志与审计（后续若要上屏，短码是哈希、不含内部细节，可安全外露）。
-EXC_MSG_MAX = 300
+# 实现已收敛到 `app/utils/error_incident.py`（单一实现，跨落点同码），此处 re-export
+# 保持既有引用面（`base_skill.llm_incident_id` / `safe_exc_message` / `_current_request_id`）。
+# 用户可见话术的纪律：C 端/B 端约定兜底话术必须面向低学历用户、**禁英文技术术语与堆栈**，
+# 故类型/消息/短码只落日志与审计。
+EXC_MSG_MAX = _err_inc.EXC_MSG_MAX
+llm_incident_id = _err_inc.llm_incident_id
+safe_exc_message = _err_inc.safe_exc_message
+_current_request_id = _err_inc.current_request_id
 
-
-def llm_incident_id(session_id: str, exc_type: str) -> str:
-    """异常吞点的稳定 incident 短码：`(会话, 异常类型)` → 8 位十六进制。
-
-    确定性（不随机）是刻意的：同一会话连续 N 轮吞同一个异常必须得到**同一个**短码，
-    否则"连续 3 轮同一句兜底"在日志里是 3 条互不相识的记录，聚合不出来。
-    短码是哈希，不回显会话号/异常原文 ⇒ 不含内部细节。
-    """
-    raw = f"{session_id or '-'}|{exc_type or 'Unknown'}".encode("utf-8")
-    return hashlib.sha256(raw).hexdigest()[:8]
-
-
-def safe_exc_message(exc: BaseException, limit: int = EXC_MSG_MAX) -> str:
-    """异常消息 → 单行 + 脱敏 + 截断（结构化审计专用）。
-
-    单行化：判定跑产物与线上排查都是按行检索，多行异常消息（供应商错误常回显多行
-    JSON / 请求体）会把「一行 = 一条审计」撕开，grep 直接失效。
-    脱敏 + 截断：异常回显里可能带手机号/邮箱与超长请求体（复用既有 LogSanitizer）。
-    """
-    text = " ".join(str(exc).split())
-    text = LogSanitizer.mask_text(text)
-    if len(text) > limit:
-        text = text[:limit] + "…"
-    return text
-
-
-def _current_request_id() -> str:
-    """当前 HTTP 请求的 request_id（与响应头 `X-Request-ID` / 中间件请求日志同源）。
-
-    它是把「用户看到那一句兜底」对到「日志里那次失败」的锚点：一轮 = 一个请求，
-    中间件的 `[<req_id>] POST /api/chat/… started/completed` 给出该轮的墙钟窗口。
-    单测/非请求上下文里为空 ⇒ 记 `-`，不影响审计其它字段。
-    """
-    return get_request_id() or "-"
 
 
 def _strip_think_tags(text: str) -> str:
@@ -3418,6 +3389,11 @@ async def execute_skill(
             # 是**合法**的一条消息两个问题（两个组件各有答案面，前端逐张渲染）——
             # 一刀切"只准一张"会把这个正常流程也拦掉。
             _turn_card_components: set = set()
+            # `_llm_error_retried`：**本次 `execute_skill`（= 顾客的一个回合）**是否已因
+            # "瞬时类异常"重试过一次。刻意放**循环外**：预算是"一轮对话一次机会"，
+            # 不是"每个 ReAct 迭代一次" —— 后者在同一故障持续时会把 8 个迭代全烧在重试上，
+            # 最后退化成"轮次耗尽"话术（用户仍得不到任何进展，且白烧 8 次配额）。
+            _llm_error_retried = False
             for iteration in range(max_iterations):
                 logger.info(f"[{skill_name}] Iteration {iteration+1}/{max_iterations} | session={session_id}")
 
@@ -3432,6 +3408,9 @@ async def execute_skill(
                     current_llm = llm_no_thinking or llm_with_tools
 
                 # ── LLM 调用（超时 + 熔断保护）──
+                # 熔断 / 超时 / 轮次耗尽的守卫**不动**（它们各有自己的分支与话术）。
+                # 瞬时类异常的**一次**自动恢复预算由循环外的 `_llm_error_retried` 管
+                # （每回合一次，不随迭代重置）。
                 try:
                     logger.info(f"[{skill_name}][DIAG] LLM calling | iter={iteration+1} msgs={len(full_messages)+len(new_messages)} session={session_id}")
                     llm_breaker = get_breaker(llm_breaker_name(skill_name))
@@ -3458,18 +3437,47 @@ async def execute_skill(
                     final_content = "抱歉，响应超时，请换个方式描述您的需求。"
                     break
                 except Exception as e:
-                    # issue #3805：话术**不变**（低学历用户可懂、无技术术语），
-                    # 但要能把"用户看到这一句"对到"日志里这一次异常"：
-                    # incident 短码（同会话×同异常类型可聚合）+ 类型/消息/traceback +
-                    # skill/会话/租户/轮次/请求 id。格式：先结构化行，traceback 随后。
-                    _incident = llm_incident_id(session_id, type(e).__name__)
-                    logger.opt(exception=e).error(
-                        f"[{skill_name}][SLS] LLM failed | session={session_id} "
-                        f"error={type(e).__name__}: {safe_exc_message(e)}"
-                        f" | incident={_incident} tenant={state.get('tenant_id')} "
-                        f"iter={iteration+1} req={_current_request_id()}"
+                    # ── ① 瞬时类异常：**允许有限次自动恢复**（issue #3810 演示护航）──
+                    # 判据是**事实驱动**的：异常类型是否属"瞬时/可重试"（`_is_retryable`：
+                    # 超时、429/5xx、连接层），以及本回合是否已经重试过 ——
+                    # **不看**兜底话术里有没有关键词（那会把"事实"变成"措辞匹配"）。
+                    # 为什么必须有这一步：#3805 的实测形态正是"同一会话连吞 3 轮同一句兜底"
+                    # （R9–R11）——会话卡在同一个瞬时故障上。对瞬时故障再给**一次**机会，
+                    # 演示现场就能自愈，而不是每一轮都撞同一堵墙。
+                    # 预算：**每回合 1 次**（`_llm_error_retried` 在循环外初始化）——
+                    # 不用"每迭代 1 次"，否则同一故障持续时 8 个迭代全烧在重试上，
+                    # 最后退化成"轮次耗尽"话术（用户仍无进展，还白烧 8 次配额）。
+                    # ⚠️ 不得把失败伪装成成功：重试仍失败时走下面同一条如实兜底。
+                    if _is_retryable(e) and not _llm_error_retried:
+                        _llm_error_retried = True
+                        _retry_incident = llm_incident_id(session_id, type(e).__name__)
+                        logger.opt(exception=e).warning(
+                            f"[{skill_name}][SLS] LLM call 重试（瞬时类异常）"
+                            f" | session={session_id} error={type(e).__name__}: "
+                            f"{safe_exc_message(e)} | incident={_retry_incident} "
+                            f"tenant={state.get('tenant_id')} iter={iteration+1} "
+                            f"req={_current_request_id()}"
+                        )
+                        continue
+                    # ── ② 重试后仍失败 / 不可重试：如实告知"这轮没成功、可以重试" ──
+                    # #3805 的 `抱歉，我遇到了一些问题…` 属于**无信息量通用句**（用户不知道
+                    # 这轮有没有成功、下一步该做什么），且 #3810 要求不得改成"静默成功"。
+                    # 现话术：纯中文 + 说明"这轮没成功" + 给出可执行的下一步，**不出现**
+                    # 异常类型/英文标识/堆栈/字段名（C 端低学历用户约定，见 #3707 族）。
+                    # 复杂度上刻意保持通用：这里区分不了"有部分工具结果"（工具结果落库在
+                    # 失败迭代之后，本点拿不到事实），无事实依据的分支就是过度建设。
+                    # ⚠️ 措辞不得含 CREATION_SKILL_NAMES 流程的成功/取消标记（如"已创建"
+                    #    "已下单"）——否则第 10 步的 pending_skill 判定会把失败的写流程
+                    #    当成"已完成"解锁，那是把失败伪装成成功。
+                    _err_inc.log_exception_audit(
+                        logger=logger,
+                        mark=f"[{skill_name}][SLS] LLM failed",
+                        exc=e,
+                        session_id=session_id,
+                        extra=(f"tenant={state.get('tenant_id')} iter={iteration+1} "
+                               f"req={_current_request_id()}"),
                     )
-                    final_content = "抱歉，我遇到了一些问题，请稍后重试。"
+                    final_content = "刚才这轮没成功，请您再说一次，我继续为您办理。"
                     break
 
                 new_messages.append(response)
