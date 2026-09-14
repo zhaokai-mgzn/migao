@@ -3749,6 +3749,18 @@ async def run_suite(cases, label: str, classify: bool = True, retry_budget: int 
         print("    先修环境再谈分数：查 admin-api 日志有无 500、schema 是否缺列、熔断是否打开。")
         print("!" * 68)
 
+    # ── 完成判定（#3483 T2）：确定性失败清零 + 关键旅程全过 + 波动台账 = 完成 ──
+    journey_ids = KEY_JOURNEYS_XIAOBU if PERSONA == "xiaobu" else KEY_JOURNEYS_MIBAO
+    verdict = completion_verdict(results, journey_ids)
+    mark = "✅ 评测完成（可下结论）" if verdict["ok"] else "⛔ 评测未完成"
+    print(f"\n{mark}：{verdict['reason']}")
+    if verdict["deterministic_failures"]:
+        print(f"   🔬 确定性失败（必须修）: {', '.join(verdict['deterministic_failures'])}")
+    if verdict["journey_failures"]:
+        print(f"   🧭 关键旅程失败（不放行）: {', '.join(verdict['journey_failures'])}")
+    if verdict["flake_released"]:
+        print(f"   🎲 已放行波动（flake 台账）: {', '.join(verdict['flake_released'])}")
+
     return results
 
 
@@ -3822,6 +3834,79 @@ def _ci_verdict(results: list) -> tuple[bool, str]:
     return True, "全部用例通过"
 
 
+# ── 完成判定（#3483 T2「完成定义前置」）──
+# 关键旅程 = P0 跨域核心链路：用户真会走的路，任何一条失败都不放行（即使分类 llm-noise）。
+# mibao 旅程多为双端用例（B 端全量会跑）；xiaobu 旅程为 C 端专属。
+# 新增旅程必须在此登记（completion_verdict 的存在性守卫在测试里锁定）。
+KEY_JOURNEYS_MIBAO = (
+    "OR-016", "PR-019", "PR-020", "AS-007", "FN-004",
+    "HR-003", "DA-002", "CU-003", "CT-002",
+)
+KEY_JOURNEYS_XIAOBU = (
+    "OR-012", "CH-010", "OR-017", "KN-001", "CH-008", "CH-024",
+)
+
+# 放行档：已在 flake 台账留痕的 LLM 波动（分类由 run_suite 的 _classify_attempts 给出）
+_COMPLETION_RELEASED_CLASSES = frozenset({"llm-noise", "unstable"})
+
+
+def completion_verdict(results: list, key_journey_ids: tuple = ()) -> dict:
+    """评测完成判定（机器可读）——「完成定义前置」，取代「全量 100% 绿才算完」。
+
+    旧闭环（B 端 80 轮差距分析实证）：全量复测是唯一判据，最后 5-10% 是 LLM 方差，
+    追 100% 边际收益为负（三测自述「逐个校准 case 追波动边际收益递减」）。
+    本判定把「可不可以下结论」变成可判定的谓词：
+      - **确定性失败**（reproducible / error / no-retry-budget / infra / 无分类证据且
+        score<1）= 代码缺陷或本轮不可信 → 必须处理，未完成；
+      - **关键旅程失败**（key_journey_ids 中 score<1）= P0 旅程不过 → 未完成
+        （波动也不放行）；
+      - **已知波动**（llm-noise / unstable，runner 已记入 flake 台账）→ 放行但列出。
+    判定不改 _ci_verdict：PR 门禁（smoke/normal 全绿）与结论档（本判定）各司其职。
+
+    Returns:
+        {"ok", "reason", "deterministic_failures", "journey_failures",
+         "flake_released", "total", "passed"}
+    """
+    if not results:
+        return {"ok": False, "reason": "0 个用例执行（环境/登录失败，禁止假绿）",
+                "deterministic_failures": [], "journey_failures": [],
+                "flake_released": [], "total": 0, "passed": 0}
+    journey_set = set(key_journey_ids or ())
+    deterministic, journey_fail, flake_released = [], [], []
+    for r in results:
+        cid = str(r.get("case_id") or "?")
+        if r.get("score", 0) >= 1.0:
+            continue
+        if cid in journey_set:
+            journey_fail.append(cid)
+        elif str(r.get("classification") or "") in _COMPLETION_RELEASED_CLASSES:
+            flake_released.append(cid)
+        else:
+            deterministic.append(cid)
+    ok = not deterministic and not journey_fail
+    total = len(results)
+    passed = sum(1 for r in results if r.get("score", 0) >= 1.0)
+    if ok:
+        parts = ["确定性失败=0，关键旅程全过"]
+        if flake_released:
+            parts.append(f"放行波动 {len(flake_released)} 条（台账）")
+        reason = "，".join(parts) + f"（{total} 条，{passed} 通过）"
+    else:
+        parts = []
+        if deterministic:
+            parts.append(f"确定性失败 {len(deterministic)} 条: {', '.join(deterministic)}")
+        if journey_fail:
+            parts.append(f"关键旅程失败 {len(journey_fail)} 条: {', '.join(journey_fail)}")
+        reason = "；".join(parts)
+    return {
+        "ok": ok, "reason": reason,
+        "deterministic_failures": deterministic,
+        "journey_failures": journey_fail,
+        "flake_released": flake_released,
+        "total": total, "passed": passed,
+    }
+
+
 def write_summary_json(path: str, label: str, shard: str, results: list) -> None:
     """写机器可读的本次运行汇总（issue #3361 分片基建）。
 
@@ -3854,6 +3939,8 @@ def write_summary_json(path: str, label: str, shard: str, results: list) -> None
              "classification": r.get("classification", "")}
             for r in results
         ],
+        "completion": completion_verdict(
+            results, KEY_JOURNEYS_XIAOBU if PERSONA == "xiaobu" else KEY_JOURNEYS_MIBAO),
     }
     try:
         with open(path, "w", encoding="utf-8") as f:
