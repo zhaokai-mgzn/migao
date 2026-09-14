@@ -1,6 +1,6 @@
 """失败指纹必须 **根因稳定**（root-cause-stable）——确定性失败不得被洗成 LLM 波动。
 
-## 为什么需要这组守卫（issue #3727）
+## 为什么需要这组守卫（issue #3728）
 
 `local_runner._failure_signature` 是「两次失败是不是同一个根因」的唯一判据，
 它决定 `_classify_attempts` 出 `reproducible` 还是 `unstable`，而 `completion_verdict`
