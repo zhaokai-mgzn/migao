@@ -82,7 +82,28 @@ on:
       - '.github/cases/**'
       - '.github/workflows/xiaobu-acceptance.yml'
 
-# PR 场景同一 PR 的新 push 取消旧的评测 run（避免排队堆积浪费 CI 分钟 + LLM token）
+# ── 评测并发槽位：两层语义（issue #3563；job 级共享槽位与 AD 的 #3587 同一落地方式）──
+# 修前：`group` 按 PR 号/run_id 分组 → **跨 PR 无任何约束**。实测（2026-09-14 05:28Z）
+#   13 个 in-progress 里 6 条是本类评测（Xiaobu Acceptance ×5 + Agent Behavior Eval ×1），
+#   queued 60 个 run —— 其中一个 PR 的 **required** 检查（admin-api unit tests）也在队列里，
+#   9 个 PR 全部 BLOCKED。**不是队列深，是并发预算被 PR 层评测吃光，required 被饿死。**
+# 修后（两层，缺一不可）：
+#   · **文件级**（下面这块）保持"按 PR" + `cancel-in-progress: true` —— 同一 PR 连推 3 次时，
+#     前两次的栈构建与 token 立刻作废（PR 迭代的必需品，别丢）；
+#   · **job 级**（见 `xiaobu-acceptance:` job 的 concurrency）加共享槽位
+#     `eval-stack-global` —— 真正会起栈的 job 全局串行，同一时刻仓库内只有一套评测栈在构建。
+#   单一说明见 docs/testing/eval-environments.md §3.3（三处一致：本 workflow +
+#   agent-behavior-eval + post-deploy-eval #3587）。
+#
+# ⚠️ 为什么不把文件级 group 直接换成共享槽位：那样"新 push"必须**排在**旧 run 后面，
+#   既丢 PR 迭代性，又让被取代的旧 run 跑完整套栈 —— 最坏组合。
+#
+# ★ job 级 `cancel-in-progress: false`：**故意不 cancel 正在跑的那条**（评测 job 的产物就是
+#   结论本身，cancel 掉正在跑的一条 = 那个 PR 永远拿不到该信号；同 #3526 论证）。
+#   ⚠️ 语义副作用（**必须知道**，详见 §3.3）：GitHub 的 concurrency 是"一个 group 同时
+#   1 running + 1 pending"，新 run 进入**已有 pending** 的 group 时，**旧的 pending 会被取消**
+#   ⇒ 突发期部分 run 拿到 `cancelled` 而不是"排队后跑"。这是**有意的取舍**：评测是
+#   **信息性**（不 required，§16.5），cancel 不阻塞合并；行为信号由**部署后全量轮**承担。
 concurrency:
   group: xiaobu-acceptance-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: true
@@ -122,11 +143,42 @@ jobs:
           echo "matrix={"shard":[${parts}],"total":[${N}]}" >> "$GITHUB_OUTPUT"
           echo "分片: ${N} 份"
 
+      - name: 评测并发槽位说明（防「排队」被误读成「停滞/坏了」）
+        # 本步骤在**抢槽位之前**跑（shards job 不占评测槽），所以它一定会输出 ——
+        # 用它把"这个 run 会不会排队 / 为什么可能被 cancel"写在日志与 run summary 里。
+        # 背景：本会话实测发生过把"排队"误判为"停滞"；同理，一个 cancelled 的评测
+        # check 极易被后来者读成"CI 坏了"或"这个 PR 有问题"（issue #3563 显式要求可区分）。
+        run: |
+          {
+            echo "## 🧵 评测并发槽位"
+            echo ""
+            echo "- 本 workflow 与 \`agent-behavior-eval\` / \`post-deploy-eval\` **共用** group：\`eval-stack-global\`"
+            echo "- 语义：一个 group 同时 **1 running + 1 pending**；新 run 进入已有 pending 的 group 时，"
+            echo "  **旧的 pending 会被取消**（GitHub 固有语义，\`cancel-in-progress: false\` 不阻止这一条）"
+            echo "- 因此："
+            echo "  1. **排队**：本 run 会在 group 里等前一条评测跑完（不是卡住 —— 评测单条要 5~15min）"
+            echo "  2. **被取消**：若期间有更新的评测 run 进来，本 run 可能被标成 \`cancelled\`；"
+            echo "     这**不代表代码有问题**，行为信号由**部署后全量轮**（post-deploy-eval，双 persona 全量）承担"
+            echo "- 为什么不让评测互相 cancel 正在跑的那条：评测 job 的产物就是结论本身，"
+            echo "  cancel 掉正在跑的一条 = 那个 PR 永远拿不到该信号（活锁，见 #3526）"
+            echo ""
+            echo "本 run：event=\`${{ github.event_name }}\` ref=\`${{ github.ref_name }}\` "
+            echo "PR=\`${{ github.event.pull_request.number || '(非 PR)' }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "── 评测并发槽位：group=eval-stack-global（1 running + 1 pending；更新的 run 会取代 pending）──"
+          echo "── 若本 run 长时间未开始：属于**排队**（评测单条 5~15min），不是卡住 ──"
+
   xiaobu-acceptance:
     needs: shards
     name: ${{ github.event.inputs.persona || 'xiaobu' }} Acceptance (DEBUG 本地栈 + 真实 LLM)
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    # ★ **job 级**共享槽位（真正的并发约束，见文件头 concurrency 段与 §3.3）：
+    #   文件级 group 只管"同 PR 新 push 取消被取代的 run"；只有这里才管
+    #   "仓库内同一时刻只有一套评测栈在构建/运行" —— required 检查因此不再被长任务饿死。
+    concurrency:
+      group: eval-stack-global
+      cancel-in-progress: false
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.shards.outputs.matrix) }}
@@ -269,25 +321,20 @@ jobs:
         # 全新 bootstrap 空库下，agent 搜不到商品 → 反复重试 product_search →
         # 从不进入 product_detail（PR-003 等依赖数据的用例必然失败，且行为本身合理）。
         # 注入最小业务数据：商品/颜色/SKU/加工项/加工项关联（幂等，可重复执行）。
-        # B 端（persona=mibao）叠加 mibao_eval_seed.sql：2699 商品/刺绣工艺/客户张三/
-        # 员工王五 —— B 端首跑（run 34804430769）14 条阻塞中多数是这些点名数据缺失
-        # （#3496 归因，"看着像能力缺陷，实为数据层缺口"）。
+        #
+        # ★ 口径**单一实现**（issue #3563）：本步骤只调用 scripts/eval_stack_seed.sh，
+        #   规则（xiaobu=仅 C 端种子 / mibao=C 端+B 端）在脚本里，与
+        #   agent-behavior-eval.yml、post-deploy-eval.yml **共用同一份** —— 禁止在此内联
+        #   fixture 路径。历史根因：三处各写一份且互不相等（本 workflow 条件叠加、
+        #   behavior-eval 无条件叠加）→ 同一个 persona 在两处拿到不同栈 →
+        #   CH-010 在 behavior-eval 上 0%、在本 workflow 上 100%
+        #   （实测 run 34805981549 vs 34807824585）。
+        #   静态锁：tests/unit_ci_workflows/test_eval_stack_seed_parity.py（L0，秒级零 LLM）。
         env:
           DEV_SERVICE_TOKEN: diagnostics-only-placeholder
         run: |
-          docker compose -f deploy/docker-compose.yml exec -T postgres \
-            psql -v ON_ERROR_STOP=1 -U app_user -d ai_customer_service \
-            < tests/agent_eval/fixtures/xiaobu_eval_seed.sql
-          if [ "${{ github.event.inputs.persona || 'xiaobu' }}" = "mibao" ]; then
-            echo "── 叠加 B 端种子（mibao_eval_seed.sql）──"
-            docker compose -f deploy/docker-compose.yml exec -T postgres \
-              psql -v ON_ERROR_STOP=1 -U app_user -d ai_customer_service \
-              < tests/agent_eval/fixtures/mibao_eval_seed.sql
-          fi
-          echo "── 数据核对 ──"
-          docker compose -f deploy/docker-compose.yml exec -T postgres \
-            psql -U app_user -d ai_customer_service -tAc \
-            "SELECT 'products='||count(*) FROM products WHERE tenant_id=1"
+          # 非 mibao 时仅注 C 端种子：叠加 B 端会改 created_at 排序，污染 C 端选品链路
+          bash scripts/eval_stack_seed.sh --persona "${{ github.event.inputs.persona || 'xiaobu' }}"
 
       - name: Install eval runner deps
         # ⚠️ 依赖分两类（issue #3270 实测逐层暴露）：
