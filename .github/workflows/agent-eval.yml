@@ -39,7 +39,18 @@ jobs:
           SERVICE_TOKEN: ${{ secrets.SMOKE_SERVICE_TOKEN }}
           PYTHONUTF8: "1"
           PYTHONIOENCODING: utf-8
+          # 波动台账（#3505 汇聚）：flake ledger 落盘 + artifact 上传，供高波动用例
+          # 治理（§14.3）跨 run 汇总；否则台账随 runner 销毁、只能翻日志。
+          AGENT_EVAL_FLAKE_LOG: agent-eval-flakes.json
         run: python tests/agent_eval/local_runner.py normal --cases .github/cases
+
+      - name: Upload flake ledger（波动台账汇聚，#3505）
+        if: always() && hashFiles('agent-eval-flakes.json') != ''
+        uses: actions/upload-artifact@v7
+        with:
+          name: agent-eval-flake-ledger
+          path: agent-eval-flakes.json
+          retention-days: 30
 
       - name: Create Issue on failure (dedup guard)
         if: failure()
