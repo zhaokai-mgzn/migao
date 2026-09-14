@@ -1,6 +1,6 @@
 ---
 name: migao-acceptance
-version: 1.7.2
+version: 1.7.3
 # ⚠️ YAML 纯标量陷阱 + 本仓库取舍（v1.7，2026-09-15，与 migao-dev-flow v1.21 同法）：
 # `description` 是 YAML **纯标量** ⇒ 解析在第一个「空白 + `#`」处**截断**，其余内容**静默丢失**
 # ——「文件里写了」≠「加载器读到了」（与本节「注释漂移 = 假绿来源」同族）。
@@ -111,7 +111,7 @@ description: MIGAO AI 可执行验收协议——验收/评测/「验收通过/�
 `product_update(price=X)` 只写**商品级** `products.base_price`，**SKU 级** `product_skus.price` 留旧价；
 而**下单取价的权威来源是 SKU 级**（`OrderService.validateAgentItemUnitPrice`：
 `productSkuMapper.selectList(...)` → `skus.get(0).getPrice()` → 与请求单价不一致即拒
-（**按这三段代码串检索**；`@c5f07f29` 依次在 `OrderService.java:1639` / `:1650` / `:1654`）
+（**按这三段代码串检索**；`OrderService.java` **第 1639 / 1650 / 1654 行**，`@c5f07f29`）
 ⇒ 客户按旧价成交。主会话随后用 `case_ids=OR-014,AS-004` 重放（run `34853616766`）**绿了**，
 并据此写下「缺陷已修复」—— **该结论对 OR-014 过强**：
 
@@ -121,7 +121,7 @@ description: MIGAO AI 可执行验收协议——验收/评测/「验收通过/�
 | `34853616766` | 修复后重放（**绿**） | **`168.0`** | 该 `case_ids` 把**制造分叉的 PR-010 排除在外** ⇒ 栈内**无分叉态**（读到的是**种子原值**） |
 
 ⇒ 商品库**没有分叉**，该 PR 新增的分支（`ProductService` 里 `} else if (request.getBasePrice() != null) {`
-→ 把价同步到 SKU —— **按该分支条件串检索**；`@c5f07f29` 在 `ProductService.java:433`，同步处 `:445-449`）**在那次运行里从未被触发**；
+→ 把价同步到 SKU —— **按该分支条件串检索**；`ProductService.java` **第 433 行**、同步处**第 445-449 行**，`@c5f07f29`）**在那次运行里从未被触发**；
 那次绿只证明「**干净栈上 OR-014 通过**」，**不构成对修复的判别性验证**。
 
 **判据（写重放结论前必须回答的两问）**：
@@ -130,7 +130,7 @@ description: MIGAO AI 可执行验收协议——验收/评测/「验收通过/�
    本例是 OR-014 的 R1 trace 里 `price` 的读数：**`198.0` 才说明分叉态存在**（`168.0` = 无分叉）；
 2. **若未复现 ⇒ 该次绿不构成判别性验证**：必须**如实标注**（不得写成「已修复」），并以
    **确定性层证据**兜底 —— 本例是 `ProductServiceTest#updateProduct_BasePriceSyncsToSkus`
-   （**按测试方法名检索**；`@c5f07f29` 位于 `ProductServiceTest.java:559`）：**改前** `Wanted but not invoked: productSkuMapper.update(...)`
+   （**按测试方法名检索**；`ProductServiceTest.java` **第 559 行**，`@c5f07f29`）：**改前** `Wanted but not invoked: productSkuMapper.update(...)`
    （改价从不落 SKU，即分叉本体）→ **改后** `Tests run: 80, Failures: 0`
    （两个读数为 PR #3746 更正评论记录的改前/改后结果）；确定性层与 LLM 方差、调度顺序**无关**。
 
@@ -319,7 +319,7 @@ description: MIGAO AI 可执行验收协议——验收/评测/「验收通过/�
 - 并行度上限：评测型流水线同时 ≤3（runner 竞争 + 真实 LLM 成本）；
 - 合并后按受影响档位重跑验证（静态 → 迭代档 → 全量），并做 §5 的 case 有效性验证。
 
-## 版本沿革（v1.1 → v1.7.2）
+## 版本沿革（v1.1 → v1.7.3）
 
 > 本节由 **v1.7** 从 frontmatter `description` **逐字迁入**（条目文本未改，仅加列表符号）。
 > 背景：frontmatter `description` 是 YAML 纯标量，会在第一个「空白 + `#`」处**静默截断** ——
@@ -337,3 +337,4 @@ description: MIGAO AI 可执行验收协议——验收/评测/「验收通过/�
 - v1.7（2026-09-15 实证，本次）：新增「假绿形态：重放未复现缺陷的前置条件」—— 重放真跑真绿但缺陷前置条件不在 ⇒ 修复路径未被行使（PR #3746 / OR-014 / PR-010 实证）；并按要求把 `description` 收敛为有意简短的摘要、沿革迁入正文本节。本节的**每处引用（行号 / run id / 评论 id）均逐行核验**（核验基准 `@541bacbe`）：权威价 = SKU 级 （`OrderService.validateAgentItemUnitPrice` 的 `skus.get(0).getPrice()` → 不一致即拒）、`ProductService` 的 `} else if (request.getBasePrice() != null) {` 新增分支、`ProductServiceTest#updateProduct_BasePriceSyncsToSkus`、`_needs_serial_lane` —— **均按符号/文本检索**（行号为 `@<sha>` 限定值，不单独承重）。
 - v1.7.1（2026-09-14，本次）：在「结论档机器判定」补一条**证据来源**口径 —— 验收证据可取自「**合并后的一次统一验证**」（一次全量档 + 独立盲审），不必每个改动各跑一次；但须标注证据对应的 **SHA / 批次**，且**不得**用批合并掩盖单体回归（详见 `migao-dev-flow` §17.4 的代价与边界）。
 - v1.7.2（2026-09-14，本次）：把本节引用的**裸行号**改成**稳定引用**（符号/文本锚点优先，行号仅以 `@<sha>` 限定形式保留）—— 实测 `local_runner.py` 的 3 个行号在 **4 分钟**内失效（`@541bacbe` `:4939`/`:4959`/`:5551` → `@c5f07f29` `:5088`/`:5108`/`:5749`）。
+- v1.7.3（2026-09-14，本次）：引用写法统一为「**第 N 行**（可带 `@<sha>`）」，不再写 `path:NNN`（避免被模式扫描误判为残留引用、被读者误当现值）；判据见 `migao-dev-flow` §16.7「引用纪律」。
