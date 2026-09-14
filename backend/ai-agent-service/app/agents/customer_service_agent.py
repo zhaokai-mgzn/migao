@@ -195,6 +195,25 @@ class BaseAgent:
                 f" | session={context.session_id} error={e}"
             )
 
+        # ── 最近一张确认卡（#3557）──
+        # 路由层要在**意图重判之前**判断"本轮是不是点卡确认轮"，而 `last_confirm_value`
+        # 原本只在写工具门禁处（base_skill）用到、且答卡轮已被路由走偏时根本到不了门禁。
+        # 这里按既有 `pending_interact_skill` 的同一模式一次性恢复：
+        # confirmValue 与"发卡 skill"同处写入（base_skill 的 interact 成功路径 + 补卡路径）。
+        last_confirm_value = ""
+        last_confirm_skill = ""
+        if context.session_id:
+            try:
+                from app.memory.session_state_store import SessionStateStore
+                _card_state = await SessionStateStore().load(context.session_id) or {}
+                last_confirm_value = str(_card_state.get("last_confirm_value") or "")
+                last_confirm_skill = str(_card_state.get("last_confirm_skill") or "")
+            except Exception as e:
+                logger.warning(
+                    f"[_build_initial_state] Failed to load last_confirm_* "
+                    f"| session={context.session_id} error={e}"
+                )
+
         return {
             "messages": messages,
             "agent_type": self._agent_type,
@@ -211,6 +230,8 @@ class BaseAgent:
             "skill_used": "",
             "suggestions": [],
             "pending_interact_skill": pending_skill,
+            "last_confirm_value": last_confirm_value,
+            "last_confirm_skill": last_confirm_skill,
         }
     
     async def achat(

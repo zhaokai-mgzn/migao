@@ -41,3 +41,8 @@ class AgentState(TypedDict):
 
     # 跨轮状态持久化
     pending_interact_skill: str      # 跨轮锁定的 Skill（如 product/order），防止 LLM 分类器误判跳走
+    # 最近一张确认卡（#3557）：答卡轮判据 = 本轮输入逐字等于 last_confirm_value
+    # **且** last_confirm_skill == pending_interact_skill（= 本 skill 自己发的卡）。
+    # 由 _build_initial_state 从 SessionStateStore 恢复；base_skill 发卡时写入。
+    last_confirm_value: str          # 最近一次确认卡的 confirmValue（答卡回传的原文）
+    last_confirm_skill: str          # 下发该卡的 skill 名

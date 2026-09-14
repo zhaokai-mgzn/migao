@@ -3948,6 +3948,8 @@ async def execute_skill(
                         # 回传的正是这个值 —— 精确匹配它 = 显式确认（见 _is_card_confirm_value）。
                         # 否则长 confirmValue（工具描述强制含上下文）过不了 24 字上限，
                         # 写操作永不落库（run 34678939564 + DB 审计实证假绿）。
+                        # 同处记 `last_confirm_skill`（#3557）：路由层靠"本 skill 自己发的卡"
+                        # 判定答卡轮（否则卡值里的跨域词会把会话甩到别的 skill）。
                         try:
                             _data = result_dict.get("data") or {}
                             if _data.get("component") == "confirm" and _data.get("confirmValue"):
@@ -3955,6 +3957,7 @@ async def execute_skill(
                                 _store = SessionStateStore()
                                 _full = await _store.load(session_id) or {}
                                 _full["last_confirm_value"] = str(_data["confirmValue"])
+                                _full["last_confirm_skill"] = skill_name
                                 await _store.commit(session_id, _full)
                                 logger.info(
                                     f"[{skill_name}] last_confirm_value 持久化: "
@@ -4022,6 +4025,8 @@ async def execute_skill(
                 _bstore = SessionStateStore()
                 _bfull = await _bstore.load(session_id) or {}
                 _bfull["last_confirm_value"] = _bvalue
+                # 同处记发卡 skill（#3557）：路由层的答卡轮判据需要"这张卡是谁发的"
+                _bfull["last_confirm_skill"] = skill_name
                 await _bstore.commit(session_id, _bfull)
             except Exception as _be:
                 logger.warning(f"[{skill_name}] 补发卡的 confirmValue 落库失败（非致命）: {_be}")
