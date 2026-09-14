@@ -1,6 +1,6 @@
 name: Close Linked Issues on Merge
 
-# 根本解法（issue #2937 建立，issue #3585 修正触发源）：
+# 根本解法（issue #2937 建立，issue #3585 修正触发源，issue #3700 修正扫描窗口+自愈信号）：
 # GitHub 的 "close on merge"（PR body 关键词自动关闭 issue）在本仓库实测**不可依赖**——
 # 不是格式问题，也不是分支问题：
 #   · 默认分支确为 main（gh repo view --json defaultBranchRef）；
@@ -15,23 +15,54 @@ name: Close Linked Issues on Merge
 # **GITHUB_TOKEN 引发的合并不会创建新的 workflow run**（GitHub 防递归），于是：
 #   · `pull_request_target [closed]` 对「自动合并」100% 不触发（实测：人工合并 #3395
 #     09:43:48Z → run 09:43:51Z；bot 合并 #3552/#3554 05:14Z → **零 run**）；
-#   · push 同理被吞（见 deploy-reconcile.yml 头部 / issue #3113 同源结论）；
 #   · schedule '*/30' 被 GitHub 节流到实测 2~5.5 小时/次（近 7 天 57 run：
 #     21:01→23:20→01:23Z），"每 30 分钟兜底"是假象。
 # ⇒ 唯一可靠的合并后时机是**不受该合并事件驱动的其它可靠事件**（本文件用 PR opened）。
+#
+# ⚠️ push 触发的**真实边界**（#3700 实测，2026-09-14；别把它当 bot 合并的兜底）：
+# 本文件新增 `push: [main]`，但 push 与 `closed` 受**同一条** GITHUB_TOKEN 递归抑制：
+#   · bot 合并 PR #3722/#3723（`merged_by=github-actions[bot]`）→ squash commit
+#     `41c9a83a` / `d6cd9935`。前者改了 `backend/admin-api/.../MigrationRunner.java`，
+#     命中 deploy-admin-api.yml 的 `paths: backend/admin-api/**` —— 但
+#     `gh api .../actions/runs?head_sha=41c9a83a` **零 run**（d6cd9935 同）；
+#   · 同日**人工**合并 #3596（`merged_by=zhaokai-mgzn`，squash f841c5c9）→ push run
+#     05:51:24Z（命中 deploy-frontend 的 paths）。
+# ⇒ push 覆盖「人工合并 / 直推 main」的确定性合并后对账，**不覆盖 bot 合并**；
+#   bot 合并仍靠「下一个 PR opened/reopened」+ 定时兜底。加它是为了**别只依赖 cron**，
+#   不是宣称 bot 合并已被覆盖（注释写错会让下一个人漏掉逃生口，见 migao-acceptance v1.4）。
 #
 # 触发源（互相兜底、全部幂等）：
 # 1. pull_request_target [opened, reopened]（**主兜底，issue #3585 新增**）：PR 打开/重开
 #    必触发（deploy-reconcile.yml / automerge.yml 已实证该事件可靠，仓库迭代不停 ≈ 近实时），
 #    每次对账近 48h 已合并 PR —— 不再依赖被吞的 closed 事件；
-# 2. pull_request_target [closed]：人工合并场景即时补偿（bot 合并不触发，保留无妨）；
-# 3. schedule '*/30'：随机兜底（被节流到数小时，不可依赖但有比没有好）；
-# 4. workflow_dispatch：带 pr_number = 单 PR 精确补偿；不带 = 对账近 48h（人工兜底入口）。
+# 2. push → main（**#3700 新增**）：与合并同一因果链，覆盖人工合并/直推（边界见上）；
+# 3. pull_request_target [closed]：人工合并场景即时补偿（bot 合并不触发，保留无妨）；
+# 4. schedule '*/30'：随机兜底（被节流到数小时，不可依赖但有比没有好）；
+# 5. workflow_dispatch：带 pr_number = 单 PR 精确补偿；不带 = 对账近 48h（人工兜底入口）。
 #
-# API 成本（issue #3585）：本 workflow 现在挂在「每次 PR 打开」上，而近 48h 合并 PR 实测可达
-# 135 个 —— 若沿用「逐个 gh pr view 取 body」，单轮 ≈135 次调用 × 每轮一次的频率会打爆
+# ⚠️ 扫描窗口（issue #3700 实测，别再退回「固定条数」）：
+# 旧实现用 `--limit 50`（后改 200）取"最近合并的 PR"，把 limit 当窗口用 ——
+# run 34849099546 / 34849723414 / 34849806775 日志逐字 `📋 候选 PR 数：200`（被顶满），
+# 而实测近 48h 已合并 PR **212** 个 ⇒ 12 个永远扫不到（#3692→#3688 就这么悬挂）。
+# 现按 `mergedAt` 过滤时间窗，并**分页取齐**：请求数翻倍直到「服务端返回数 < 请求数」
+# 才算窗口穷尽；取不齐（撞 MAX_LIMIT）**必须告警**，不得静默 success。
+#
+# ⚠️ 自愈信号（issue #3700 要求 3）：一次对账里出现下列任一情况 → `::warning::` + step summary，
+# 而不是像 run 34849723414 那样「扫描 152 个有关键词的 PR、关闭 0 个、job success、零告警」：
+#   · 发现带 closing 关键词的已合并 PR、其中 issue 仍 OPEN，却关闭了 0 个；
+#   · 关闭失败（#3585 排查首项 = `issues: write` 缺失）；
+#   · issue 状态查询失败（gh 限流 → 静默漏关）；
+#   · 窗口取不齐（撞 MAX_LIMIT，可能漏扫）；
+#   · 补偿关闭发生在合并后超过 LATE_MINUTES（= 合并后触发链路有缺口，正是 #3700 失效 2）。
+# ⚠️ 否定式护栏（#3559 误关）：朴素正则会把「不 `Closes #3559`」也算命中并秒关 live issue。
+#    现按「否定词 + ≤24 字符 + 关键词#号」整段删除后再提取；**只收窄，不放宽**：
+#    关键词集合仍是 GitHub 官方那一组（close/closed/closes、fix/fixed/fixes、
+#    resolve/resolved/resolves），逐字未动。
+#
+# API 成本（issue #3585）：本 workflow 现在挂在「每次 PR 打开 + 每次 push」上，而近 48h 合并 PR
+# 实测可达 212 个 —— 若沿用「逐个 gh pr view 取 body」，单轮 ≈212 次调用会打爆
 # GITHUB_TOKEN 的 1000 请求/小时/仓库限额（超限后 gh 静默失败 → 又变成"不关"）。
-# 故对账模式改为 `gh pr list --json number,mergeCommit,body` **批量取 body**（≈2 个请求），
+# 故对账模式用 `gh pr list --json number,mergeCommit,body,mergedAt` **批量取 body**（≈1 请求/页），
 # 只有命中的 issue 才各花 1 次 view/close。
 #
 # 安全：不 checkout、不执行 PR 代码，仅通过 API 读取 body / 关闭 issue（无 fork 风险）；
@@ -41,6 +72,10 @@ on:
   pull_request_target:
     # opened/reopened 是 auto-merge 合并后的**唯一可靠对账时机**（bot 合并不触发 closed，issue #3585）
     types: [opened, reopened, closed]
+    branches: [main]
+  push:
+    # #3700：与合并同一因果链的确定性合并后触发（覆盖人工合并/直推 main；bot 合并仍被
+    # GITHUB_TOKEN 递归抑制，见文件头「push 触发的真实边界」实测证据）。
     branches: [main]
   schedule:
     - cron: '*/30 * * * *'
@@ -63,6 +98,7 @@ jobs:
     if: >-
       (github.event_name == 'schedule') ||
       (github.event_name == 'workflow_dispatch') ||
+      (github.event_name == 'push') ||
       (github.event_name == 'pull_request_target' && github.event.action != 'closed') ||
       (github.event.action == 'closed' &&
        github.event.pull_request.merged == true &&
@@ -78,60 +114,149 @@ jobs:
           EVENT_ACTION: ${{ github.event.action }}
           DISPATCH_PR: ${{ inputs.pr_number }}
           EVENT_PR: ${{ github.event.pull_request.number }}
+          # 扫描窗口与自愈阈值（issue #3700）—— 可调，但调大/调小都要保留「取不齐即告警」。
+          RECONCILE_HOURS: '48'
+          PAGE_LIMIT: '100'
+          MAX_LIMIT: '1000'
+          LATE_MINUTES: '15'
         run: |
           set -euo pipefail
 
-          # ---------- 1. 决定扫描模式 ----------
-          # a. workflow_dispatch + pr_number → 单 PR 精确补偿
-          # b. pull_request_target[closed]     → 单 PR 即时补偿（**仅人工合并会走到这里**）
-          # c. 其余（PR opened/reopened、schedule、无参 dispatch）→ 对账近 48h 已合并 PR
-          #    （c 是 auto-merge 合并后的实际兜底：其 closed/push 事件被 GITHUB_TOKEN 吞掉）
-          SINGLE_PR=""
-          if [ -n "${DISPATCH_PR// /}" ]; then
-            SINGLE_PR="$DISPATCH_PR";  echo "▶️  手动补偿模式（workflow_dispatch）：PR #$SINGLE_PR"
-          elif [ "$EVENT_NAME" = "pull_request_target" ] && [ "$EVENT_ACTION" = "closed" ]; then
-            SINGLE_PR="$EVENT_PR";     echo "▶️  事件模式（人工合并即时补偿）：PR #$SINGLE_PR"
+          RECONCILE_HOURS="${RECONCILE_HOURS:-48}"
+          PAGE_LIMIT="${PAGE_LIMIT:-100}"
+          MAX_LIMIT="${MAX_LIMIT:-1000}"
+          LATE_MINUTES="${LATE_MINUTES:-15}"
+
+          # ---------- 0. 时间窗（issue #3700）----------
+          # 判定口径 = `mergedAt` 字符串比较（ISO-8601 UTC 可按字典序比大小）。
+          # GNU date 用 -d、BSD/macOS date 用 -v：本脚本必须能在本地复跑
+          # （不可复跑的判定 = 不可验证的判定，同 eval_supersede.sh 的理由）。
+          if date -u -d "${RECONCILE_HOURS} hours ago" +%Y-%m-%dT%H:%M:%SZ >/dev/null 2>&1; then
+            cutoff="$(date -u -d "${RECONCILE_HOURS} hours ago" +%Y-%m-%dT%H:%M:%SZ)"
+            since="$(date -u -d "${RECONCILE_HOURS} hours ago" +%Y-%m-%d)"
+            late_cutoff="$(date -u -d "${LATE_MINUTES} minutes ago" +%Y-%m-%dT%H:%M:%SZ)"
           else
-            echo "🕐 对账模式（事件 $EVENT_NAME/$EVENT_ACTION）：扫近 48h 已合并 PR"
+            cutoff="$(date -u -v-"${RECONCILE_HOURS}"H +%Y-%m-%dT%H:%M:%SZ)"
+            since="$(date -u -v-"${RECONCILE_HOURS}"H +%Y-%m-%d)"
+            late_cutoff="$(date -u -v-"${LATE_MINUTES}"M +%Y-%m-%dT%H:%M:%SZ)"
           fi
 
-          # ---------- 2. 取候选 PR 的 body（TSV：number<TAB>sha<TAB>body） ----------
-          # jq @tsv 会把 body 里的换行/制表符转义成 \n / \t → 保证「一行一 PR」可安全逐行读；
-          # 关键词正则不受转义影响（`Closes #123` 原样保留）。
-          rows_file="$(mktemp)"
-          if [ -n "$SINGLE_PR" ]; then
-            gh pr view "$SINGLE_PR" --repo "$GH_REPO" --json number,mergeCommit,body \
-              --jq '[(.number|tostring), (.mergeCommit.oid // ""), (.body // "")] | @tsv' \
-              > "$rows_file" 2>/dev/null || true
+          # ---------- 1. 决定扫描模式 ----------
+          # a. workflow_dispatch + pr_number → 单 PR 精确补偿（**不套时间窗**：人显式点名）
+          # b. pull_request_target[closed]     → 单 PR 即时补偿（**仅人工合并会走到这里**）
+          # c. 其余（PR opened/reopened、push、schedule、无参 dispatch）→ 对账时间窗内已合并 PR
+          #    （c 是 auto-merge 合并后的实际兜底：其 closed/push 事件被 GITHUB_TOKEN 吞掉）
+          SINGLE_PR=""
+          WINDOW_FILTER=1
+          if [ -n "${DISPATCH_PR// /}" ]; then
+            SINGLE_PR="$DISPATCH_PR";  WINDOW_FILTER=0
+            echo "▶️  手动补偿模式（workflow_dispatch）：PR #$SINGLE_PR"
+          elif [ "$EVENT_NAME" = "pull_request_target" ] && [ "$EVENT_ACTION" = "closed" ]; then
+            SINGLE_PR="$EVENT_PR";     WINDOW_FILTER=0
+            echo "▶️  事件模式（人工合并即时补偿）：PR #$SINGLE_PR"
           else
-            since="$(date -u -d '48 hours ago' +%Y-%m-%d)"
-            # limit 200 + sort:updated-desc：实测近 48h 合并 PR 可达 135 个，旧值 limit 50
-            # 会静默漏掉 2/3（issue #3585 复盘）。批量 list 一次拿齐 body，**不要**改成逐个 view。
-            gh pr list --state merged --limit 200 \
-              --search "merged:>=$since sort:updated-desc" --repo "$GH_REPO" \
-              --json number,mergeCommit,body \
-              --jq '.[] | [(.number|tostring), (.mergeCommit.oid // ""), (.body // "")] | @tsv' \
-              > "$rows_file" 2>/dev/null || true
+            echo "🕐 对账模式（事件 $EVENT_NAME/${EVENT_ACTION}）：near ${RECONCILE_HOURS}h merged PRs (mergedAt >= ${cutoff})"
+          fi
+
+          # ---------- 2. 取候选 PR 的 body（TSV：number<TAB>sha<TAB>body<TAB>mergedAt）----------
+          # jq @tsv 会把 body 里的换行/制表符转义成 \n / \t → 保证「一行一 PR」可安全逐行读；
+          # 关键词正则不受转义影响（`Closes #123` 原样保留），否定护栏会先把 \n 还原再按行判定。
+          rows_file="$(mktemp)"
+          trap 'rm -f "$rows_file"' EXIT
+          n_pages=0
+          truncated=0
+          if [ -n "$SINGLE_PR" ]; then
+            # #3700 同族补齐：单 PR 补偿模式此前是 `|| true` —— 号码写错/限流/无权限时
+            # 0 行 ⇒ 走到「无待处理 PR，退出」⇒ **静默 success**（人显式要求补偿却没做）。
+            if ! gh pr view "$SINGLE_PR" --repo "$GH_REPO" --json number,mergeCommit,body,mergedAt \
+                --jq '[(.number|tostring), (.mergeCommit.oid // ""), (.body // ""), (.mergedAt // "")] | @tsv' \
+                > "$rows_file" 2>/dev/null; then
+              echo "::error::单 PR 补偿查询失败（PR #${SINGLE_PR}：号码错/无权限/限流）—— 本轮未对账，不得当作 success"
+              exit 1
+            fi
+            # 且必须**确实已合并**：否则会拿未合并 PR 的 `Closes` 去关 issue（假关闭）。
+            if [ -z "$(cut -f4 "$rows_file")" ]; then
+              echo "::warning::PR #$SINGLE_PR 尚未合并（mergedAt 为空）→ 跳过：只对**已合并** PR 关闭其声明的 issue"
+              exit 0
+            fi
+            n_pages=1
+          else
+            # 分页取齐（#3700）：每轮把请求数翻倍，直到「服务端返回数 < 请求数」
+            # —— 这**证明**时间窗内已无更多 PR（这才是「分页越过窗口」，而不是拿条数当窗口）。
+            limit="$PAGE_LIMIT"
+            while :; do
+              n_pages=$((n_pages+1))
+              if ! gh pr list --state merged --limit "$limit" \
+                  --search "merged:>=$since sort:updated-desc" --repo "$GH_REPO" \
+                  --json number,mergeCommit,body,mergedAt \
+                  --jq '.[] | [(.number|tostring), (.mergeCommit.oid // ""), (.body // ""), (.mergedAt // "")] | @tsv' \
+                  > "$rows_file" 2>/dev/null; then
+                echo "::error::gh pr list 失败（限流/权限/网络）—— 本轮未对账，不得当作 success（#3585 同族：gh 静默失败 = 不关）"
+                exit 1
+              fi
+              n_got="$(wc -l < "$rows_file" | tr -d ' ')"
+              # 取齐判据：返回数 < 请求数 ⇒ 窗口内已无更多（分页越过窗口）
+              if [ "$n_got" -lt "$limit" ]; then break; fi
+              if [ "$limit" -ge "$MAX_LIMIT" ]; then
+                truncated=1
+                echo "::warning::对账窗口可能被截断（#3700）：已取 $n_got 个（= 请求上限 ${limit}，MAX_LIMIT=${MAX_LIMIT}）—— 窗口内可能有更多已合并 PR 未被扫描，别把本轮当『已对账完』"
+                break
+              fi
+              limit=$(( limit * 2 ))
+              [ "$limit" -gt "$MAX_LIMIT" ] && limit="$MAX_LIMIT"
+            done
           fi
 
           n_cand="$(wc -l < "$rows_file" | tr -d ' ')"
+          # 人读标签：截断 = 「本轮窗口可能不完整」的自证，别只留 0/1（step summary 也用它）
+          if [ "$truncated" = "1" ]; then trunc_label=true; else trunc_label=false; fi
+          echo "📋 候选 PR 数：${n_cand}（请求 $n_pages 次，PAGE_LIMIT=${PAGE_LIMIT}，MAX_LIMIT=${MAX_LIMIT}，截断=${trunc_label}）"
           if [ "$n_cand" = "0" ]; then
             echo "ℹ️ 无待处理 PR，退出"
+            {
+              echo "### Close linked issues 对账（事件 ${EVENT_NAME}/${EVENT_ACTION}）"
+              echo ""
+              echo "- 时间窗：near ${RECONCILE_HOURS}h（mergedAt >= ${cutoff}）"
+              echo "- 候选 PR：0（无待处理）"
+            } >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
             exit 0
           fi
-          echo "📋 候选 PR 数：$n_cand"
 
           # ---------- 3. 解析关键词并关闭仍 open 的 issue ----------
-          n_total=0; n_closed=0
-          while IFS=$'\t' read -r pr sha body; do
+          n_window=0; n_total=0; n_closed=0; n_stale=0; n_close_fail=0; n_unknown=0; n_late=0
+          while IFS=$'\t' read -r pr sha body merged_at; do
             [ -n "$pr" ] || continue
+
+            # 时间窗（#3700）：按 mergedAt 过滤，不拿"最近 N 条"当窗口
+            if [ "$WINDOW_FILTER" = "1" ] && [ -n "$merged_at" ] && [ "$merged_at" \< "$cutoff" ]; then
+              continue
+            fi
+            n_window=$((n_window+1))
 
             # GitHub 官方支持的关键词（大小写不敏感）：close closes closed / fix fixes fixed / resolve resolves resolved
             # 注意：set -o pipefail 下 grep 无匹配返回 1 会让整个管道非零 → set -e 崩溃（issue #2950）。
             #       必须 || issues="" 兜底，否则 PR body 无关键词时脚本在「跳过」分支之前就退出。
-            issues="$(printf '%s' "$body" | grep -oiE '(close|closes|closed|fix|fixes|fixed|resolve|resolves|resolved)[[:space:]]*#[0-9]+' | grep -oE '#[0-9]+' | sort -u | tr '\n' ' ')" || issues=""
+            # ⚠️ 否定式护栏（#3559 实证：body 写「不 `Closes #3559`」被朴素正则命中并秒关 live issue）：
+            #   逐行先把「否定词 + ≤24 字符（不跨句读）+ 关键词#号」整段删除，再提取。
+            #   只收窄不放宽：关键词集合 = GitHub 官方那一组，逐字未动。
+            #   （jq @tsv 把换行转义成字面 \n，先还原为真实换行，避免跨行误判）
+            body_lines="${body//\\n/$'\n'}"
+            issues=""
+            while IFS= read -r line; do
+              [ -n "${line// /}" ] || continue
+              low="$(printf '%s' "$line" | tr '[:upper:]' '[:lower:]')"
+              stripped="$(printf '%s' "$low" | sed -E 's/(不|勿|无需|不必|not|never|without)[^,.;:!?。，；：！？]{0,24}(close|closes|closed|fix|fixes|fixed|resolve|resolves|resolved)[[:space:]]*#[0-9]+//g')"
+              found="$(printf '%s' "$stripped" | grep -oE '(close|closes|closed|fix|fixes|fixed|resolve|resolves|resolved)[[:space:]]*#[0-9]+' | grep -oE '#[0-9]+' || true)"
+              [ -n "$found" ] && issues="$issues $found"
+            done <<< "$body_lines"
 
-            if [ -z "$issues" ]; then
+            if [ -n "${issues// /}" ]; then
+              issues="$(printf '%s\n' $issues | sort -u | tr '\n' ' ')"
+            else
+              issues=""
+            fi
+
+            if [ -z "${issues// /}" ]; then
               echo "ℹ️  PR #$pr body 无 Closes/Fixes/Resolves 关键词，跳过"
               continue
             fi
@@ -143,16 +268,71 @@ jobs:
               # 注意：gh API 返回大写 OPEN/CLOSED，比较必须大小写无关（E2E 实证踩坑）
               case "$state" in
                 OPEN|open)
-                  gh issue close "$num" --repo "$GH_REPO" \
-                    --comment "🔁 补偿关闭（close-linked-issues workflow）：PR #$pr 已合并${sha:+（commit \`${sha:0:8}\`）}但 GitHub 异步自动关闭未生效，由本工作流兜底关闭（issue #2937/#3585）。"
-                  echo "✅ 已关闭 issue #$num（由 PR #$pr 修复）"
-                  n_closed=$((n_closed+1))
+                  n_stale=$((n_stale+1))
+                  if gh issue close "$num" --repo "$GH_REPO" \
+                      --comment "🔁 补偿关闭（close-linked-issues workflow）：PR #$pr 已合并${sha:+（commit \`${sha:0:8}\`）}但 GitHub 异步自动关闭未生效，由本工作流兜底关闭（issue #2937/#3585/#3700）。"; then
+                    echo "✅ 已关闭 issue #${num}（由 PR #$pr 修复）"
+                    n_closed=$((n_closed+1))
+                    # 延迟判据（#3700 自愈信号）：关闭发生在合并后超过 LATE_MINUTES
+                    # ⇒ 说明「合并后没有任何确定性触发」这个缺口真的咬到了。
+                    if [ -n "$merged_at" ] && [ "$merged_at" \< "$late_cutoff" ]; then
+                      n_late=$((n_late+1))
+                      echo "⏱️  issue #$num 在合并后超过 ${LATE_MINUTES} 分钟才被补偿关闭（mergedAt=${merged_at}）"
+                    fi
+                  else
+                    n_close_fail=$((n_close_fail+1))
+                    echo "::warning::关闭 issue #$num 失败（由 PR #$pr 声明关闭）—— 该 issue 仍悬挂；先查 permissions.issues: write（#3585 排查首项）与 gh 限流"
+                  fi
                   ;;
                 *)
-                  echo "⏭️  issue #$num 当前 state=$state，无需处理"
+                  echo "⏭️  issue #$num 当前 state=${state}，无需处理"
+                  [ "$state" = "unknown" ] && n_unknown=$((n_unknown+1))
                   ;;
               esac
             done
           done < "$rows_file"
-          rm -f "$rows_file"
+          echo "📥 窗口内 PR 数：${n_window}（候选 ${n_cand}）"
           echo "== 完成：扫描 $n_total 个有关键词的 PR，共关闭 $n_closed 个 issue =="
+
+          # ---------- 4. 自愈信号（#3700：别静默 success）----------
+          alarms=""
+          if [ "$n_total" -ge 1 ] && [ "$n_stale" -ge 1 ] && [ "$n_closed" -eq 0 ]; then
+            echo "::warning::自愈信号（#3700）：发现 $n_total 个带 Closes 关键词的已合并 PR、其中 $n_stale 个 issue 仍 OPEN，却关闭了 0 个 —— 关单链路失效，别把本轮当『已对账』（查 issues: write / gh 限流，参见 #3585）"
+            alarms="${alarms}found-but-closed-zero "
+          fi
+          if [ "$n_close_fail" -gt 0 ]; then
+            echo "::warning::有 $n_close_fail 个 issue 关闭失败（#3700）：仍会悬挂到下一轮"
+            alarms="${alarms}close-failed "
+          fi
+          if [ "$n_unknown" -gt 0 ]; then
+            echo "::warning::有 $n_unknown 个 issue 状态查询失败（gh 静默失败/限流，#3585）—— 本轮可能漏关"
+            alarms="${alarms}state-unknown "
+          fi
+          if [ "$truncated" = "1" ]; then
+            echo "::warning::对账窗口被截断（#3700）：MAX_LIMIT=$MAX_LIMIT 装不下窗口内的已合并 PR"
+            alarms="${alarms}window-truncated "
+          fi
+          if [ "$n_late" -gt 0 ]; then
+            echo "::warning::延迟关闭（#3700）：有 $n_late 个 issue 在合并后超过 ${LATE_MINUTES} 分钟才被补偿关闭 —— 合并后的确定性触发缺失，正是本 issue 的失效 2"
+            alarms="${alarms}late-close "
+          fi
+
+          {
+            echo "### Close linked issues 对账（事件 ${EVENT_NAME}/${EVENT_ACTION}）"
+            echo ""
+            echo "- 时间窗：near ${RECONCILE_HOURS}h（mergedAt >= ${cutoff}）"
+            echo "- 取数：请求 $n_pages 次（PAGE_LIMIT=${PAGE_LIMIT}，MAX_LIMIT=${MAX_LIMIT}，截断=${trunc_label}）"
+            echo "- 候选 PR：${n_cand}；窗口内 PR：${n_window}；带 closing 关键词：$n_total"
+            echo "- 需关闭（issue 仍 OPEN）：${n_stale}；已关闭：${n_closed}；关闭失败：${n_close_fail}；状态未知：$n_unknown"
+            echo "- 延迟关闭（>${LATE_MINUTES}min）：$n_late"
+            if [ -n "$alarms" ]; then
+              echo ""
+              echo "⚠️ **本轮有告警**（${alarms}）—— 详见本 run 的 \`::warning::\` 注释；**本轮不构成『已对账完』**。"
+            fi
+          } >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
+
+          # ---------- 5. 退出码 ----------
+          # 关闭失败 = 该关却没关成（#3585 的最坏形态：run success 但一个都关不掉）→ 必须红。
+          # 其余（延迟/截断/状态未知）是**降级**信号 → 只告警不刷红，避免告警疲劳。
+          if [ "$n_close_fail" -gt 0 ]; then exit 1; fi
+          exit 0

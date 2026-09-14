@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 评测「被取代即抑制」判定（issue #3587 / #3654）。
+# 评测「被取代即抑制」判定（issue #3587 / #3654 / #3709）。
 #
 # 为什么单独一个脚本（而不是写死在 workflow 的 run 里）：
 #   ① **可本地复跑**——判定逻辑是纯文本/纯 SHA 比对，不该只能"推上去赌一轮 CI"才验证得了
@@ -16,22 +16,37 @@
 #   ⚠️ 两种模式一致：**只有 `skip` 会抑制；一切异常都落到 `run`（fail-open）**——
 #     判定逻辑本身绝不能成为"漏评"的来源。
 #
+# ⚠️ 手动 workflow_dispatch 默认**免抑制**（#3709，2026-09-15 修正）：
+#   dispatch 是「人显式要求评这一条」（回滚复验/补跑），按定义不该被 deploy 判据
+#   当成"已被取代"。此前它与部署门禁共用 `MODE=deploy` ⇒ 派发与执行之间只要 main
+#   动过就**静默空转**：实测 run 34841093824（`tier=adversarial -f case_ids=DF-011`）
+#   整体 `completed/success`、**每个评测步骤 skipped**、artifacts `total_count=0`
+#   —— 一条用例都没跑却报绿（而 workflow 注释当时写着"永不抑制"，读者据此漏传逃生口）。
+#   现在：`EVENT_NAME=workflow_dispatch` ⇒ 默认 `FORCE_EVAL=true`；
+#   **要抑制必须显式传 `force_eval=false`**（逃生口保留，省成本路径不消失）。
+#   自动门禁（workflow_run 部署后 / schedule 全量）**不受影响**：它们没有 inputs。
+#
 # 退出码恒为 0：**抑制不是失败**（不得刷红、不得自动开 issue）。
 #
 # 输入（env）：
-#   EVAL_SHA      被评 SHA（必填）
-#   MODE          deploy（默认，#3587 原判据）| schedule（#3654 每 3 天全量判据）
-#   FORCE_EVAL    'true' → 强制评测，不抑制（手动补跑/回滚复验用）
-#   REPO          owner/repo（默认取 GITHUB_REPOSITORY）
-#   RUN_ID        本 run id（仅用于留档链接）
-#   MAIN_SHA      可选覆盖：跳过 ls-remote，直接用它当 main HEAD（**给测试用**）
-#   MAIN_REMOTE   可选覆盖远端地址（默认 https://github.com/<REPO>.git；测试用它构造
-#                 "远端不可达"以演练 fail-open 分支）
-#   MAIN_REF      远端 ref（默认 refs/heads/main）
-#   LAST_EVAL_SHA 可选覆盖：schedule 模式下跳过 gh 查询，直接用它当"上次全量覆盖的 SHA"
-#                 （**给测试用**；CI 里由脚本自己查本 workflow 上一次 schedule run）
-#   LAST_EVAL_CMD 可选覆盖：schedule 模式下"取上次全量 SHA"的命令（默认 gh api ...；
-#                 **给测试用**，如 `false` 演练查询失败 = fail-open 分支）
+#   EVAL_SHA        被评 SHA（必填）
+#   MODE            deploy（默认，#3587 原判据）| schedule（#3654 每 3 天全量判据）
+#   EVENT_NAME      GITHUB 事件名（#3709）：'workflow_dispatch' ⇒ 默认免抑制
+#   FORCE_EVAL_INPUT  workflow_dispatch 的 force_eval **原始输入值**（#3709）。
+#                   'false'（大小写无关）⇒ 允许抑制；其它/缺省 ⇒ 免抑制。
+#                   ⚠️ 与 FORCE_EVAL 的分工：本变量只描述"人怎么选的"，由脚本决定默认；
+#                   workflow **不得**再直接从该输入注入 FORCE_EVAL（它恒有值，会盖掉默认）。
+#   FORCE_EVAL      'true'/'false' 显式覆盖（**给测试与兼容用**；设了它就不再走上面的默认）
+#   REPO            owner/repo（默认取 GITHUB_REPOSITORY）
+#   RUN_ID          本 run id（仅用于留档链接）
+#   MAIN_SHA        可选覆盖：跳过 ls-remote，直接用它当 main HEAD（**给测试用**）
+#   MAIN_REMOTE     可选覆盖远端地址（默认 https://github.com/<REPO>.git；测试用它构造
+#                   "远端不可达"以演练 fail-open 分支）
+#   MAIN_REF        远端 ref（默认 refs/heads/main）
+#   LAST_EVAL_SHA   可选覆盖：schedule 模式下跳过 gh 查询，直接用它当"上次全量覆盖的 SHA"
+#                   （**给测试用**；CI 里由脚本自己查本 workflow 上一次 schedule run）
+#   LAST_EVAL_CMD   可选覆盖：schedule 模式下"取上次全量 SHA"的命令（默认 gh api ...；
+#                   **给测试用**，如 `false` 演练查询失败 = fail-open 分支）
 set -uo pipefail
 
 REPO="${REPO:-${GITHUB_REPOSITORY:-}}"
@@ -39,13 +54,36 @@ RUN_ID="${RUN_ID:-${GITHUB_RUN_ID:-unknown}}"
 EVAL_SHA="${EVAL_SHA:-}"
 MAIN_REF="${MAIN_REF:-refs/heads/main}"
 MAIN_REMOTE="${MAIN_REMOTE:-https://github.com/${REPO}.git}"
-FORCE_EVAL="${FORCE_EVAL:-false}"
+# FORCE_EVAL 不再是"默认 false"：空 = 未显式覆盖，由下面按事件名决定（#3709）。
+FORCE_EVAL="${FORCE_EVAL:-}"
+EVENT_NAME="${EVENT_NAME:-}"
+FORCE_EVAL_INPUT="${FORCE_EVAL_INPUT:-}"
 MODE="${MODE:-deploy}"
 LAST_EVAL_SHA="${LAST_EVAL_SHA:-}"
 LAST_EVAL_CMD="${LAST_EVAL_CMD:-}"
 SUPERSEDE_WORKFLOW="post-deploy-eval.yml"
 
 RUN_URL="https://github.com/${REPO}/actions/runs/${RUN_ID}"
+
+# ── #3709：解析"手动 dispatch 默认免抑制" ──
+# 大小写无关：GitHub 的 boolean input 可能以 'True'/'False' 出现（既有注释已记录该坑）。
+if [ -z "$FORCE_EVAL" ]; then
+  if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+    case "$(printf '%s' "$FORCE_EVAL_INPUT" | tr '[:upper:]' '[:lower:]')" in
+      false|no|0)
+        FORCE_EVAL=false
+        echo "workflow_dispatch + force_eval=${FORCE_EVAL_INPUT}（人显式要求抑制）→ 仍走『被取代即抑制』判据（#3709 逃生口）"
+        ;;
+      *)
+        FORCE_EVAL=true
+        echo "workflow_dispatch（人显式要求评测）→ **默认免抑制**（#3709）；要抑制请显式传 force_eval=false"
+        ;;
+    esac
+  else
+    # 自动门禁（workflow_run 部署后 / schedule 全量）语义不变：它们没有 inputs。
+    FORCE_EVAL=false
+  fi
+fi
 
 if [ "$MODE" = "schedule" ]; then
   # ── schedule（每 3 天全量，#3654）：main 未动即抑制 ──

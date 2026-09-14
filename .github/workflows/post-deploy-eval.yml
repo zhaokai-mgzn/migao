@@ -131,9 +131,9 @@ on:
           - '6'
           - '8'
       force_eval:
-        description: '【#3587】true = 强制评测，即使 main 已前进（默认 false：被取代即抑制）。⚠️ 只有手动触发能设；自动门禁（部署后）恒走默认判定'
+        description: '【#3587/#3709】手动触发的默认是 true = **免抑制**（人显式要求"我就要这一条"，回滚复验/补跑）。要恢复"被取代即抑制"请**显式传 false**。⚠️ 只对手动触发生效：自动门禁（部署后 workflow_run / schedule 全量）恒走默认判定，不受本输入影响'
         required: false
-        default: false
+        default: true
         type: boolean
 
 # ── 为什么不加 `concurrency: cancel-in-progress`（#3526 的有意决策），以及 #3587 怎么在不违反它的前提下提速 ──
@@ -234,10 +234,17 @@ jobs:
       #
       # ⚠️ 跳过**不得**算 failure：本步永远 exit 0（job 照常 success，report job 照常出结论），
       #    否则会刷红 + 自动开 issue（把"省成本"变成"制造噪音"）。
-      # ⚠️ workflow_run（部署后自动门禁）走 deploy 判据；workflow_dispatch 是**人显式要求**
-      #    评某次部署（回滚复验/补跑），按定义就是"我就要这一条"，故永不抑制。
+      # ⚠️ 各事件的实际抑制行为（**以实现为准**，#3709 更正 —— 此前这里写着
+      #    「workflow_dispatch … **永不**抑制」，与实现不符，读者据此漏传逃生口拿到一个绿的空跑）：
+      #    · workflow_run（部署后自动门禁）→ deploy 判据（被取代即抑制）；
+      #    · schedule（每 3 天全量）→ schedule 判据（main 未动即抑制）；
+      #    · **workflow_dispatch（人显式要求补跑/回滚复验）→ 默认免抑制**（#3709）；
+      #      要恢复"被取代即抑制"必须**显式传 `force_eval=false`**（逃生口保留）。
+      # ⚠️ 未评测必须**显眼**（#3709 要求 3）：被抑制时下方留档步骤打 `::warning::`
+      #    annotation + summary 抬头「本 run 未评测」。**不要**改成 failure ——
+      #    "跳过不算失败"是有意设计（部署门禁不该因省成本刷红），要的是可见，不是变红。
       # ══════════════════════════════════════════════════════════════════════════
-      - name: "抑制判定（#3587/#3654：SHA 被取代或 main 未动则跳过评测，留链接链）"
+      - name: "抑制判定（#3587/#3654/#3709：SHA 被取代或 main 未动则跳过评测，留链接链）"
         id: supersede
         env:
           EVAL_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
@@ -245,12 +252,16 @@ jobs:
           RUN_ID: ${{ github.run_id }}
           # #3654：schedule（每 3 天全量）走"main 未动即抑制"判据；其余（部署门禁/手动）走 #3587 判据
           MODE: ${{ github.event_name == 'schedule' && 'schedule' || 'deploy' }}
-          # 手动触发的两个逃生口（自动门禁 untouched）：
-          #   · FORCE_EVAL=true → 明知 main 已前进也要评这一次（回滚复验/补跑特定部署）；
-          #   · 其余情况（含 workflow_run 部署后门禁、schedule 全量）走默认判定。
-          # ⚠️ 用三元而不是 `|| 'false'`：boolean input 经 format() 会变成 'True'/'False'
-          #    （大小写不同），三元写出的是规范的小写 'true'/'false'。
-          FORCE_EVAL: ${{ github.event.inputs.force_eval == true && 'true' || 'false' }}
+          # #3709：把**事件名**与 **force_eval 原始输入值**交给脚本，由脚本决定默认：
+          #   · workflow_dispatch → 默认免抑制；显式 force_eval=false 才允许抑制（逃生口）；
+          #   · workflow_run / schedule → 语义不变（它们没有 inputs）。
+          # ⚠️ 这里**故意不再直接注入 FORCE_EVAL**：boolean input 恒有值（默认 true），
+          #    直接注入会盖掉脚本的 dispatch 默认 = 本修复被静默回滚。
+          # ⚠️ 也不用 `github.event.inputs.force_eval == true` 这类三元写法：boolean input
+          #    经表达式转换可能出现 'True'/'False'（大小写不同）；改由脚本做（大小写无关、
+          #    可本地复跑、有单测钉死 —— 与 eval_supersede.sh 的设计理由一致）。
+          EVENT_NAME: ${{ github.event_name }}
+          FORCE_EVAL_INPUT: ${{ github.event.inputs.force_eval }}
         run: bash .github/scripts/eval_supersede.sh
 
       # ══════════════════════════════════════════════════════════════════════════
@@ -582,15 +593,23 @@ jobs:
             exit 1
           fi
 
-      - name: "被抑制记录（#3587/#3654：本 run 未评测，结论由取代/后续 run 承担）"
+      - name: "被抑制记录（#3587/#3654/#3709：本 run 未评测，结论由取代/后续 run 承担）"
         # 抑制时**必须**留一条显式、可检索的记录（不是"静默跳过"）：谁取代了谁、链接在哪。
         # 这段同时写进 job summary（审计端口），使"某次部署时行为到底怎样"仍可追到链条上。
         # #3654：schedule 抑制（main 未动）同样走这里留档，措辞兼容两种模式。
+        # #3709：**未评测必须在 run 上显眼** —— 实测 run 34841093824 的形态是"整体 success +
+        #   每个评测步骤 skipped + artifact 0"，只靠一个 success 的步骤名会被读成"评测通过"
+        #   （主会话险些据此写「DF-011 已通过」）。故这里打 `::warning::` annotation，
+        #   并让 summary **抬头就是**「本 run 未评测」。
+        # ⚠️ 只告警**不改退出码**：跳过不得算 failure（有意设计，见「抑制判定」段）。
         if: always() && steps.supersede.outputs.superseded == 'true'
         run: |
-          MSG="⏭️ 本次评测被抑制（#3587/#3654）：run 对应 SHA 已被更新的 main 取代，或 main 自上次全量以来未变动；结论由取代/后续的 run 承担（链接见上方「抑制判定」步骤输出）。"
-          echo "$MSG"
-          echo "### ${MSG}" >> "$GITHUB_STEP_SUMMARY"
+          MSG="⏭️ 本 run 未评测（#3709）：run 对应 SHA 已被更新的 main 取代，或 main 自上次全量以来未变动 —— 本次**没有**结论，别把它读成「评测通过」；结论由取代/后续的 run 承担（链接见上方「抑制判定」步骤输出）。"
+          echo "::warning::${MSG}"
+          echo "${MSG}"
+          echo "## ⏭️ 本 run 未评测（#3709：被抑制，不构成结论）" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "${MSG}" >> "$GITHUB_STEP_SUMMARY"
           echo "被抑制对象（旧 SHA）: https://github.com/${{ github.repository }}/commit/${{ github.event.workflow_run.head_sha || github.sha }}" >> "$GITHUB_STEP_SUMMARY"
           echo "取代它的 run 列表: https://github.com/${{ github.repository }}/actions/workflows/post-deploy-eval.yml?query=branch%3Amain" >> "$GITHUB_STEP_SUMMARY"
 
@@ -708,17 +727,23 @@ jobs:
           [ "$found" = "1" ] || echo "⚠️ 未取到任何 persona 汇总（评测腿在产出前失败，属环境问题）"
           echo "eval 聚合结果: ${{ needs.eval.result }}"
 
-      - name: 被抑制留档（#3587：结论档的链接链，非静默跳过）
+      - name: 被抑制留档（#3587/#3709：本 run 未评测，结论档的链接链，非静默跳过）
         # ① #3587：抑制必须**留档**，否则"某次部署时行为到底怎样"这条审计线索就断了
         # （这正是 #3526 那条"不 cancel"注释要保的东西）。
         # 这里把「被抑制的对象 SHA → 取代它的 run 列表」写进 run summary：
         # 审计者从被抑制的 run 出发，两步就能到达"真正给出结论的那次 run"。
-        # 注：本步骤只留档，**绝不建 issue**（抑制不是失败）。
+        # #3709：summary **抬头**必须是「本 run 未评测」，并打 `::warning::` annotation
+        # —— 让"绿"不再等于"评测通过"（实测 run 34841093824 险些被读成"用例已通过"）。
+        # 注：本步骤只留档 + 告警，**绝不**建 issue、**绝不**非零退出（抑制不是失败）。
         if: always() && needs.eval.outputs.superseded == 'true'
         run: |
-          echo "⏭️ 本次部署后回归被抑制（#3587）：被评 SHA 已被更新的 main 取代，未消耗栈构建与真实 LLM。"
+          MSG="⏭️ 本 run 未评测（#3709）：被评 SHA 已被更新的 main 取代 —— 未消耗栈构建与真实 LLM，本次**没有**结论，别读成「评测通过」。"
+          echo "::warning::${MSG}"
+          echo "${MSG}"
           {
-            echo "## ⏭️ 本次部署后回归被抑制（#3587）"
+            echo "## ⏭️ 本 run 未评测（#3709：被抑制，不构成结论）"
+            echo ""
+            echo "${MSG}"
             echo ""
             echo "本次 run 对应的 SHA 已被更新的 \`main\` 取代（连合场景下只有最后一轮的 main 状态有意义）。"
             echo "**没有**消耗独立栈构建与真实 LLM 成本，**不是**失败（不建 issue）。"
