@@ -1697,6 +1697,24 @@ cases:
       # 的保真链路，不是让模型做算术。给面积真值可去掉"模型自己算 8 vs 8.4"的方差源，
       # 让断言只咬住截断缺陷本身（8.4 被截断成 8 → 加工费 240.00 ≠ 252.00 → 判红）。
       - "再加刺绣工艺加工，面积算 8.4 平方米"
+      # 收尾协作轮（§13.5 先例 OR-026/OR-021）：B 端下单是「选规格 → 选加工项 → 填收货信息 →
+      # 确认卡 → 写单」多步流程，**固定轮次表写不准**（首跑 2 轮就耗尽轮次：agent 只跑到
+      # product_detail/interact，order_create 从未发生 → 用例判红，假失败）。
+      # repeat_until 由 runner 按"order_create 是否**成功**"决定继续：有卡答卡（choice→首项 /
+      # form→按 form_values 回填 / confirm→确认），直到写单成功或到 max。
+      - repeat_until:
+          tool_called: order_create
+          max: 8
+        # code：B 端（员工角色）下单本不走 SMS 分支，但约定「repeat_until + 断言 order_create
+        # 必须声明 code」（test_xiaobu_case_set 不变式）——顾客/员工被问码时供得出码，防流程卡死。
+        code: "123456"
+        fallback: "确认下单"
+        form_values:
+          customer_name: "张三"
+          customer_phone: "13800138000"
+          customer_address: "浙江省杭州市西湖区文三路1号1幢101室"
+          color: "2699-03暖米色"
+          colorName: "2699-03暖米色"
     expectations:
       - tool: product_detail
       - tool: order_create
@@ -1717,7 +1735,7 @@ cases:
       - "订单总额 = 面料小计 23.80×3=71.40 + 加工费 252.00 = 323.40 元"
       - "订单明细数量落库为 3（面料米数），DECIMAL(10,2) 列不得改变整数数量的落库语义"
     skip_reason: ""
-    merge_log: "2026-09-14 新增（issue #3666）：订单数量语义放宽为 DECIMAL(10,2) 的端到端金额回归网——此前 per_area 小数面积（8.4 ㎡）会被 Integer 截断成 8 ㎡ 少收 12.00 元，且 OrderService 的 toInteger() 会让列表/详情加工费与外层金额自相矛盾"
+    merge_log: "2026-09-14 首跑校准（issue #3666）：固定 2 轮轮次表在 B 端多步下单流程上必然跑不完（agent 只到 product_detail/interact，order_create 未发生 → 假失败），改为 repeat_until(tool_called=order_create, max=8) 协作轮（同 OR-026/OR-021 先例）；2026-09-14 新增（issue #3666）：订单数量语义放宽为 DECIMAL(10,2) 的端到端金额回归网——此前 per_area 小数面积（8.4 ㎡）会被 Integer 截断成 8 ㎡ 少收 12.00 元，且 OrderService 的 toInteger() 会让列表/详情加工费与外层金额自相矛盾"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_order_create_processing_quantity.py"

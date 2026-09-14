@@ -3542,7 +3542,7 @@ _CASE_OR_028 = EvalCase(
     title='B 端下单加工项按面积计价 - 小数面积 8.4 ㎡ 保真（不得截断成 8 少收钱）',
     skill=Skill.ORDER,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['给张三下单，手机 13800138000；2699系列雪尼尔窗帘面料，2699-03暖米色，散剪，2.8米门幅，要 3 米', '再加刺绣工艺加工，面积算 8.4 平方米'],
+    user_inputs=['给张三下单，手机 13800138000；2699系列雪尼尔窗帘面料，2699-03暖米色，散剪，2.8米门幅，要 3 米', '再加刺绣工艺加工，面积算 8.4 平方米', {'repeat_until': {'tool_called': 'order_create', 'max': 8}, 'code': '123456', 'fallback': '确认下单', 'form_values': {'customer_name': '张三', 'customer_phone': '13800138000', 'customer_address': '浙江省杭州市西湖区文三路1号1幢101室', 'color': '2699-03暖米色', 'colorName': '2699-03暖米色'}}],
     expectations=['product_detail', 'order_create'],
     data_checks=['刺绣工艺 per_area 数量 = 8.4 ㎡，加工费 = 30 × 8.4 = 252.00 元（截断成 8 会变 240.00，少收 12.00）', '订单总额 = 面料小计 23.80×3=71.40 + 加工费 252.00 = 323.40 元', '订单明细数量落库为 3（面料米数），DECIMAL(10,2) 列不得改变整数数量的落库语义'],
     skip_reason='',

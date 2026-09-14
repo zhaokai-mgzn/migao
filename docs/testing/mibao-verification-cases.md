@@ -2548,6 +2548,7 @@
 ```
 你: 给张三下单，手机 13800138000；2699系列雪尼尔窗帘面料，2699-03暖米色，散剪，2.8米门幅，要 3 米
 你: 再加刺绣工艺加工，面积算 8.4 平方米
+你: [🔁 按目标工具重复直至成功：order_create，最多 8 次]
 期望: product_detail
 期望: order_create
 数据: 刺绣工艺 per_area 数量 = 8.4 ㎡，加工费 = 30 × 8.4 = 252.00 元（截断成 8 会变 240.00，少收 12.00）
@@ -2558,7 +2559,7 @@
 落库: order_items → source=order_create; expect_products=['2699系列雪尼尔窗帘面料']; expect_quantities={'2699系列雪尼尔窗帘面料': 3}
 ```
 真值: order.create-flow
-溯源: 2026-09-14 新增（issue #3666）：订单数量语义放宽为 DECIMAL(10,2) 的端到端金额回归网——此前 per_area 小数面积（8.4 ㎡）会被 Integer 截断成 8 ㎡ 少收 12.00 元，且 OrderService 的 toInteger() 会让列表/详情加工费与外层金额自相矛盾 ｜ tags: order_create, processing_item, per_area, decimal_quantity
+溯源: 2026-09-14 首跑校准（issue #3666）：固定 2 轮轮次表在 B 端多步下单流程上必然跑不完（agent 只到 product_detail/interact，order_create 未发生 → 假失败），改为 repeat_until(tool_called=order_create, max=8) 协作轮（同 OR-026/OR-021 先例）；2026-09-14 新增（issue #3666）：订单数量语义放宽为 DECIMAL(10,2) 的端到端金额回归网——此前 per_area 小数面积（8.4 ㎡）会被 Integer 截断成 8 ㎡ 少收 12.00 元，且 OrderService 的 toInteger() 会让列表/详情加工费与外层金额自相矛盾 ｜ tags: order_create, processing_item, per_area, decimal_quantity
 
 ## 加工项域（8 case）
 
