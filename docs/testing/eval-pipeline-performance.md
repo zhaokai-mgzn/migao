@@ -260,10 +260,12 @@ gh run view <id> --log | grep "Start local stack" | ...
 
 - **run id**：`34809425971`（job `thinking-probe-bootstrap`，2026-09-14 05:30Z，
   `workflow_dispatch` 触发的 `test/3573-thinking-probe`）
+- **专属入口自证**：`34810173534`（`LLM Thinking Probe` workflow 文件自己跑通，39s，
+  结论同上 `VERDICT=参数生效`）—— 证明该 workflow 合入 main 后 `gh workflow run` 可用
 - **探针**：`backend/ai-agent-service/scripts/probe_thinking_effect.py`
   （3 次真实调用、prompt 极短、不跑评测用例）
 - **CI 入口**：`.github/workflows/llm-thinking-probe.yml`（仅 `workflow_dispatch`，零常态成本）
-- **机器判定**：`VERDICT=参数生效`
+- **机器判定**：`VERDICT=参数生效`（两次独立 run 一致 → 非偶然）
 
 出网请求体（拦 httpx 传输层取得，证明 `extra_body` 未被 langchain 静默丢弃）：
 
@@ -285,6 +287,9 @@ gh run view <id> --log | grep "Start local stack" | ...
 
 1. **参数生效**：A 与 B 在 `reasoning_content` 有无、reasoning token 数、output token 数上
    全面可分（A 102 输出 token vs B **1** 个）。
+   第二次独立 run（`34810173534`）同样形态（A 44 / reasoning 42 vs B **1**，
+   基线 52 / reasoning 50）—— **`disabled` 侧的 output token 稳定为 1 且 `reasoning_content`
+   恒 absent**，`enabled`/基线侧稳定为「有 reasoning + 数十 output token」，非单次偶然。
 2. **DeepSeek 认这个字段，且不校验**：`thinking` 作为顶层 body key 出网、返回 200、无 400；
    但响应 `response_metadata` 里**不回显**该字段（`model_name/finish_reason/model_provider` +
    `system_fingerprint`，无 `thinking`/`reasoning` 回显）→ 判定只能靠**行为差异**，不能靠回显。
@@ -302,6 +307,13 @@ gh run view <id> --log | grep "Start local stack" | ...
 - ⚠️ 但反过来的推论同样重要：因为**默认就是开**，真正省钱的开关是
   `force_no_think=True`（关思考），而不是 `enable_thinking=True`（那是显式回到默认）。
   单条最简 prompt 实测，关思考把 output token 从 102 → **1**（-99%）、耗时 1.33s → 0.91s。
+
+一个**未解释的观察**（诚实标注，不编因果）：`input_tokens` 在开思考时稳定为 40、
+关思考时稳定为 14（两次 run 一致），而探针三次用的是**同一个 prompt**。
+看到的最接近的解释是基线那次 `reasoning_content` 里出现「there's a system instruction
+that says I should think before answering」—— 疑似 provider 在思考模式下会附加思考指令，
+但**本次探针没有取证请求侧 messages，无法证实**。若后续要靠 input token 做成本核算，
+需要单独取证（属独立小包，不影响本账三条结论）。
 
 ### 6.3 探针顺带发现的能力缺口（属于后续包，本账只记录）
 
