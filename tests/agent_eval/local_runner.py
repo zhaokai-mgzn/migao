@@ -3528,20 +3528,31 @@ async def run_suite(cases, label: str, classify: bool = True, retry_budget: int 
     retries_used = 0   # 已消耗的重试次数（受 retry_budget 约束）
     budget_exhausted = False
 
-    async def _pre_clean_for_case(case, gate) -> None:
-        """执行用例声明的 pre_clean（写共享数据的**短动作**）。
+    async def _pre_clean_for_case(case, gate) -> list:
+        """执行用例声明的 pre_clean（写共享数据的**短动作**）；返回消息列表（随结果落盘）。
 
         issue #3361 提速第三轮：pre_clean 只需**它自身**与其它用例互斥，不必让随后的
         用例主体一起独占（后者会让慢用例变成整跑尾巴）。调用点负责提供独占窗口
         （gate.writer()），且**不能在本任务已持读位时调用** —— 那会死锁。
+
+        为什么返回消息（#3511 归因）：pre_clean 结果此前**只 print**，于是"数据准备没生效"
+        与"能力缺陷"在报告里同形 —— B 端首跑 AS-004 实测：R1 `after_sales_manage(items=0)`
+        看着像 agent 不会关单，实为该用例 `pre_clean: aftersales_ticket_prepare` 未生效
+        （库里 0 条工单）。返回后随用例结果落盘，归因可区分数据层与能力层
+        （acceptance-protocol 五层归因：基础设施/数据层优先）。
         """
+        msgs = []
         for spec in (getattr(case, "pre_clean", None) or []):
             try:
                 _msg = await _run_pre_clean(token, spec)
                 if _msg:
                     print(f"     🧹 pre_clean: {_msg}")
+                    msgs.append(str(_msg))
             except Exception as e:
+                # 失败同样入结果（此前只有 print → 归因时看不见"准备失败"）
                 print(f"     ⚠️ pre_clean 失败（非致命）: {e}")
+                msgs.append(f"⚠️ pre_clean 失败: {e}")
+        return msgs
 
     _retry_lock = asyncio.Lock()
 
@@ -3563,14 +3574,17 @@ async def run_suite(cases, label: str, classify: bool = True, retry_budget: int 
             retries_used += 1
             return True
 
-    async def _run_one_case(i: int, case):
+    async def _run_one_case(i: int, case, pre_clean_msgs=None):
         """跑单个用例（会话/重试分类/打印/结果记录）。
 
-        前置的 pre_clean 由调度器在**独占窗口**里先跑（见 `_pre_clean_for_case`）。
+        前置的 pre_clean 由调度器在**独占窗口**里先跑（见 `_pre_clean_for_case`），
+        其消息通过 `pre_clean_msgs` 传入并**随结果落盘**（#3511：让"数据准备生效与否"
+        在报告里可见，与能力缺陷可区分）。
         """
         nonlocal budget_exhausted
         if case.skip_reason:
             return None
+        pre_clean_msgs = list(pre_clean_msgs or [])
 
         # 用例起始时间戳（UTC）——用于把 CI 的**路由 dump**（ai-agent 日志，带时间戳）
         # 按用例切开。没有这个锚点，日志里连续的 intent/route 行无法归属到具体用例，
@@ -3662,6 +3676,8 @@ async def run_suite(cases, label: str, classify: bool = True, retry_budget: int 
                         print(f"     ↳ {_ln}")
                     r = r2
             r["classification"] = classification
+            # pre_clean 证据（#3511）：数据准备结果随用例落盘，归因时与能力缺陷可区分
+            r["pre_clean"] = pre_clean_msgs
             # 结果不在此处 append（并发顺序不定）——由调用方按原始用例顺序回填
 
             status = "✅" if r["score"] >= 1.0 else "⚠️" if r["score"] >= 0.5 else "❌"
@@ -3691,6 +3707,7 @@ async def run_suite(cases, label: str, classify: bool = True, retry_budget: int 
                 "passed": 0, "total": 0, "score": 0.0,
                 "failed": [(f"EXCEPTION: {e}", "case crashed")],
                 "last_error": str(e), "final_text": "", "classification": "error",
+                "pre_clean": pre_clean_msgs,
             }
             r = exc_record   # 崩溃用例同样交给调用方回填（顺序稳定）
         finally:
@@ -3748,18 +3765,19 @@ async def run_suite(cases, label: str, classify: bool = True, retry_budget: int 
 
         async def _parallel_task(i, c):
             # ① pre_clean（若有）在**独占窗口**里跑 —— 必须在读位之外获取，否则自锁
+            _pc = []
             if getattr(c, "pre_clean", None):
                 async with gate.writer():
-                    await _pre_clean_for_case(c, gate)
+                    _pc = await _pre_clean_for_case(c, gate)
             # ② 主体并行
             async with gate.reader():
-                results_by_idx[i] = await _run_one_case(i, c)
+                results_by_idx[i] = await _run_one_case(i, c, _pc)
 
         async def _serial_task(i, c):
             # 独占用例：pre_clean 与主体在**同一个**独占窗口内（不再嵌套获取）
             async with gate.writer():
-                await _pre_clean_for_case(c, gate)
-                results_by_idx[i] = await _run_one_case(i, c)
+                _pc = await _pre_clean_for_case(c, gate)
+                results_by_idx[i] = await _run_one_case(i, c, _pc)
 
         await asyncio.gather(*[_parallel_task(i, c) for i, c in parallel],
                              *[_serial_task(i, c) for i, c in serial])
@@ -3770,16 +3788,26 @@ async def run_suite(cases, label: str, classify: bool = True, retry_budget: int 
         gate = ConcurrencyGate(concurrency)   # 只用它的独占窗口包 pre_clean
 
         async def _bounded(i, c):
+            _pc = []
             if getattr(c, "pre_clean", None):
                 async with gate.writer():          # 清理动作独占（此时本任务未持读位）
-                    await _pre_clean_for_case(c, gate)
+                    _pc = await _pre_clean_for_case(c, gate)
             async with sem:
-                results_by_idx[i] = await _run_one_case(i, c)
+                results_by_idx[i] = await _run_one_case(i, c, _pc)
 
         await asyncio.gather(*[_bounded(i, c) for i, c in parallel])
     else:
+        # 串行路径（concurrency<=1，**runner 默认值**）：pre_clean 同样必须执行！
+        # 修复（#3511 归因中发现的基建缺陷）：此前该分支直接 `_run_one_case`，
+        # **完全跳过 pre_clean** —— 而 EVAL_CONCURRENCY 未设时默认就是 1（旧 B 端通道
+        # agent-eval.yml 正是如此）→ 商品去重/员工恢复/工单准备/客户准备等数据动作
+        # 静默不执行，把"数据层失败"伪装成"能力缺陷"（B 端 80 轮里反复出现的形态）。
+        # 串行无需读写门（无并发重叠），故 gate 传 None。
         for i, c in indexed:
-            results_by_idx[i] = await _run_one_case(i, c)
+            _pc = []
+            if getattr(c, "pre_clean", None):
+                _pc = await _pre_clean_for_case(c, None)
+            results_by_idx[i] = await _run_one_case(i, c, _pc)
 
     # 按**原始用例顺序**回填（并发不改变报告顺序，便于与历史 run 逐条对比）
     results = [results_by_idx[i] for i in sorted(results_by_idx) if results_by_idx[i] is not None]
@@ -4021,7 +4049,9 @@ def write_summary_json(path: str, label: str, shard: str, results: list) -> None
                               if _declares_order_write(r) and r.get("score", 0) >= 1.0),
         "cases": [
             {"id": r.get("case_id"), "score": r.get("score", 0),
-             "classification": r.get("classification", "")}
+             "classification": r.get("classification", ""),
+             # pre_clean 证据（#3511）：机器可读，供归因区分"数据准备没生效"与"能力缺陷"
+             "pre_clean": r.get("pre_clean") or []}
             for r in results
         ],
         "completion": completion_verdict(
