@@ -110,9 +110,20 @@ cases:
     truths_ref:
       - customer-list.partial-update
     user_inputs:
-      - "张三手机号改成 13900001111"
-      - "第一个"
-      - "确认"
+      # 2026-09-14 消除顺序依赖（issue #3568）：原第 1 轮只给姓名「张三」，第 2 轮发**裸文本
+      # 「第一个」**——落点完全由「重名客户列表返回顺序」决定（生产有 3 位张三；独立栈种子
+      # 只有 1 位时该轮又对不上任何卡片）。注意这里**不能**用 `auto_select`：那条路在
+      # 「没有卡片」时仍会发字面量「第一个」（runner resolve_auto_select_turn 的 ③ 档），
+      # 在干净栈上等于对空气说话。
+      # 改用客户列表支持的**手机号关键词**（customer_manage.list keyword 支持手机号）
+      # 做唯一指代 —— 种子客户 `cust_eval_zhangsan` 的手机号即 13800138000，唯一命中，
+      # 无需重名澄清轮。用例意图（部分更新：只改 phone，其余字段不动）不变。
+      - "张三（手机号 13800138000）的手机号改成 13900001111"
+      # 收尾「答卡轮」（#3518/#3568 口径，同 PR-005/PR-016）：agent 在收尾轮只发 confirm 卡、
+      # **裸文本「确认」不放行写操作**（文字 ≠ 点卡）→ 有卡答卡（confirm→回 confirmValue），
+      # 无卡才发 fallback 原文。
+      - auto_respond:
+          fallback: "确认"
     expectations:
       - tool: customer_manage
         args:
@@ -120,7 +131,7 @@ cases:
     data_checks:
       - "仅 phone 被更新，未传字段保持原值"
     skip_reason: ""
-    merge_log: "verification 4.4 独有；2026-09-09 校准：补「选第一个」+「确认」两轮——「张三」生产有 3 位重名，agent 正确发 choice 卡澄清（#3142 修 validate_input 空转后不再幻觉「不支持」），需用户点选+确认后 update；probe 实证完整流程走通（重名澄清→选第一个→确认→update 成功）"
+    merge_log: "verification 4.4 独有；2026-09-09 校准：补「选第一个」+「确认」两轮——「张三」生产有 3 位重名，agent 正确发 choice 卡澄清（#3142 修 validate_input 空转后不再幻觉「不支持」），需用户点选+确认后 update；probe 实证完整流程走通（重名澄清→选第一个→确认→update 成功）。2026-09-14 消除顺序依赖（issue #3568）：裸文本「第一个」→ 手机号唯一指代（重名澄清轮消失，干净栈/生产栈同判；连打三轮的澄清轮次表也随之消失）"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_base.py"

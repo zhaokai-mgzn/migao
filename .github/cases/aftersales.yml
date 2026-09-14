@@ -51,7 +51,12 @@ cases:
     truths_ref:
       - aftersales-flow.detail-history
     user_inputs:
-      - "看一下 AS-20260701-0001 工单详情"
+      # 2026-09-14 自包含化（issue #3568）：原为 `AS-20260701-0001` —— 评测环境**不存在**
+      # 的工单号（与 AS-006 的 skip_reason「依赖生产不存在的固定测试工单」同源，只是本条
+      # 没被标 skip）→ 干净库上 agent 如实回「工单不存在」（行为合理）→ 用例恒红。
+      # 换成 mibao_eval_seed.sql Phase 3 的 seed 工单（含 created 时间线，「首条
+      # status=pending」的断言有据可依）。
+      - "看一下 AS-20260914-9001 工单详情"
     expectations:
       - tool: after_sales_manage
         args:
@@ -59,7 +64,7 @@ cases:
     data_checks:
       - "statusHistory 按时间正序，首条 status=pending"
     skip_reason: ""
-    merge_log: "verification 3.2 独有"
+    merge_log: "verification 3.2 独有。2026-09-14 自包含化（issue #3568）：AS-20260701-0001 评测环境不存在（同 AS-006 形态）→ 换 seed 工单 AS-20260914-9001"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_after_sales_basic.py"
@@ -87,8 +92,17 @@ cases:
       # 的存量数据**，独立栈（干净库）必然查不到 → B 端首跑假失败（agent 行为合理：
       # 订单不存在）。改为自包含问法：先查最近订单，再对该单挂退货工单。
       # 同款先例见差距分析 OR-006「case 假设固定订单存在，无 seed 机制」。
-      - "查一下最近的订单"
-      - "这个订单客户要退货，创建售后工单"
+      # 2026-09-14 再校准（issue #3568，B 端基线实测归因）：原 R2 是「**这个订单**客户要退货」
+      # —— **单数相对指代**且用例没有任何澄清应答轮 → agent 合理地回「您说的『这个订单』我
+      # 没法确定具体是哪一笔，麻烦确认下订单号」→ R2 起零工具、4 轮 score 67%。
+      # 同栈数据残留会放大该缺陷：B 端基线实测 R1「最近的订单」返回 `orders=5 total=5`，
+      # 而种子只有 2~3 单 —— 其余是**同栈并行用例（OR-016/CR-001/CH-010）建单的残留**
+      # ⇒ 任何用「最近/第一」这种相对指代的用例，语义都会随同栈其它用例漂移。
+      # 修法（照 AS-005 的手法，**对残留免疫**）：R1 用客户手机号**显式指代**（order_query.list
+      # 的 keyword/receiver 都支持手机号），R2 也带上手机号 —— 即使 agent 重新 order_query
+      # 也必然命中同一客户，而不是依赖「列表第一条」。
+      - "查一下客户手机号 13800138000 最近的订单"
+      - "就刚才那笔订单，客户手机号 13800138000，要退货，创建售后工单"
       - "确认创建"
       - "确认"
     expectations:
@@ -122,11 +136,18 @@ cases:
       - aftersales-flow.update-guard
     user_inputs:
       - "查看最近的售后工单"
+      # 2026-09-14 消除顺序依赖（issue #3568）：原为「把**第一张**未处理的工单关闭」——
+      # 落点由工单**列表返回顺序**决定：同一份代码在「只有 1 张 pending」（独立栈）与
+      # 「多张 pending」（生产/跑过几轮后残留）两种栈上关闭的是**不同工单**，断言
+      # `success=true` 仍会绿 → 结论不可比。改为点名 seed 工单号（mibao_eval_seed.sql
+      # Phase 3 的 `AS-20260914-9001`，pending/return），`pre_clean` 保证该形态存在。
       # 关闭原因必须由用户点名（#3544 断言可执行化）：工具 schema 的 `reason` 只写
       # 「create 时必填」→ 用户不说原因时 agent 不会传，closeReason 恒为空 ——
       # 那样「closeReason 落库」这条断言就没有真值可比（是不可判定，不是产品缺陷）。
       # 点名后「落库 closeReason == 用户点名的原因」才有可判定谓词（同 §13.5 自包含化）。
-      - "把第一张未处理的工单关闭，关闭原因写「客户已协商一致」"
+      # ⚠️ 两条并行线的**叠加**（#3568 输入侧确定性 + #3544 机器断言），互不覆盖：
+      # 点名工单号消除顺序依赖，点名原因给 db_verify 提供真值。
+      - "把工单 AS-20260914-9001 关闭，关闭原因写「客户已协商一致」"
       - "确认"
     pre_clean:
       - type: aftersales_ticket_prepare
@@ -151,7 +172,7 @@ cases:
       - "success=true"
       - "closedAt/closeReason 写入 —— 机器断言见 db_verify[after_sales_ticket]（落库 status=closed + closedAt/closeReason 非空 + closeReason 与用户点名原因一致）"
     skip_reason: ""
-    merge_log: "verification 3.4 独有；2026-09-14 校准（#3544）：① 「closedAt/closeReason 写入」原是自然语义、不计分（runner 计分白名单只认 success=true / error.code= / 未被调用）→ 升级为 db_verify[after_sales_ticket] 落库断言（新增核对器，见 tests/agent_eval/local_runner.py）；② 用户点名的关闭原因补进输入（工具 reason 仅 create 必填，用户不说原因则 closeReason 无真值可判）；③ 关闭态字段缺失/状态未落地即判红（fail-closed，不空转通过）"
+    merge_log: "verification 3.4 独有；2026-09-14 校准（#3544）：① 「closedAt/closeReason 写入」原是自然语义、不计分（runner 计分白名单只认 success=true / error.code= / 未被调用）→ 升级为 db_verify[after_sales_ticket] 落库断言（新增核对器，见 tests/agent_eval/local_runner.py）；② 用户点名的关闭原因补进输入（工具 reason 仅 create 必填，用户不说原因则 closeReason 无真值可判）；③ 关闭态字段缺失/状态未落地即判红（fail-closed，不空转通过）。2026-09-14 消除顺序依赖（issue #3568）：「第一张未处理的工单」→ 点名 seed 工单号 AS-20260914-9001（列表顺序依赖：多张 pending 时关闭对象不确定）；与 #3544 叠加不覆盖——点名工单号消除顺序依赖，点名原因给 db_verify 提供真值"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_after_sales_basic.py"
@@ -176,7 +197,13 @@ cases:
       - aftersales-flow.create-order-required
     user_inputs:
       - "客户张三说窗帘颜色不对，帮我查下他的订单"
-      - "最近一个订单 ORD-20260701-0001"
+      # 2026-09-14 自包含化（issue #3568）：原第 2 轮把「最近一个订单」与硬编码单号
+      # `ORD-20260701-0001` 写在一起——该单号**评测环境根本不存在**（order.yml OR-006/
+      # OR-010 的 skip 说明已实测 `found: 0`）→ 独立栈/干净库上该轮必然查不到 → agent
+      # 无从建单（行为合理）→ 用例假红（§13.5「依赖云环境存量数据」）。
+      # 改为环境无关的**唯一指代**：客户手机号（order_query.list 的 keyword/receiver 都支持
+      # 手机号），种子/生产两种栈上都能定位到「张三的最近订单」。同 AS-003（#3511）先例。
+      - "最近那个订单，客户手机号 13800138000"
       - "客户要退货，创建售后工单"
       - "原因：颜色与图片不符，退款"
       - "这工单现在什么状态了"
@@ -188,7 +215,7 @@ cases:
       - "aftersale_create 的 order_id 来自第2步查询结果"
       - "售后工单包含正确的退款原因"
     skip_reason: ""
-    merge_log: "eval M008 独有（售后全旅程）"
+    merge_log: "eval M008 独有（售后全旅程）。2026-09-14 自包含化（issue #3568）：第 2 轮硬编码单号 ORD-20260701-0001（评测环境不存在，OR-006/OR-010 已实测 found:0）→ 换手机号唯一指代，同 AS-003（#3511）先例"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_mibao_advanced_multiturn.py"
@@ -243,27 +270,85 @@ cases:
       - aftersales-flow.agent-create
       - aftersales-flow.flow
     user_inputs:
-      - "面料有瑕疵，帮我换货，换成2699系列雪尼尔窗帘面料"
+      # 2026-09-14 自包含化（issue #3568）：原为**单轮**输入 —— 而换货在业务上必须先有
+      # 订单（after_sales_manage.create 要求 order_id）。用户没给订单号时 agent 正确地
+      # 先要订单号 → 后续轮次不存在 → 用例恒不可达，被 skip_reason 挂着"待重构"，本条
+      # 因此**从未被执行**（存量覆盖缺口）。补齐「先定位订单」轮，用例意图不变。
+      # 只碰种子/目录里**真实存在**的对象（tests/agent_eval/fixtures/mibao_eval_seed.sql
+      # 的 prod_eval_2699 及其关联加工项），不点名不存在对象（§13.5 种子守卫）。
+      - "面料有瑕疵，帮我换货"
+      # 选单轮用 **repeat_until 答卡**而不是静态文本（issue #3568，**真 LLM 重放实测驱动**）：
+      # 首版写成「就是最近那个订单，客户张三，手机号 13800138000」——CI 首次真重放
+      # （run 34809750975，独立栈）实测 agent 仍然发 **choice 卡**让顾客确认哪一单
+      # （`interact(component=choice title=请选择需要换货的订单 options=5)`，因为该客户
+      # 名下有 5 笔订单），R2 静态文本对不上卡片 → 流程原地打转、R8 仍无
+      # `after_sales_manage`。⇒ 这正是 §13.5 的「卡在中间轮」，必须用答卡轮：
+      # repeat_until 在「待答是卡」时点首项（= 前端点击协议），无卡时才发 fallback 文本。
+      # 本条用例的**被测能力是换货流程的加工项确认**，订单选择是前置步骤 → 由 harness
+      # 正常作答，而不是把"选哪一单"变成被测项（§任务书：不要硬编码、也不要放宽断言）。
+      - repeat_until:
+          tool_called: order_query
+          max: 2
+        fallback: "换成2699系列雪尼尔窗帘面料"
+      - "换成2699系列雪尼尔窗帘面料"
+      # 答卡轮（§13.5）：卡片由 LLM 动态生成（选项名预知不了）→ 按「有卡答卡：
+      # confirm 点确认 / choice 回首项 / form 按声明回填 / 无卡发 fallback」作答，
+      # 直到写工具成功；停条件用**成功**避免重复落库。先例 OR-021/CH-033/PR-016。
+      # max=5：R1 报瑕疵 / R2 定位订单 / R3 点目标商品 / R4 加工项询问 / R5 答卡 /
+      #   R6 答 confirm 卡 / R7 建单（成功后的余量轮自动跳过）。
+      # ⚠️ **fallback 必须是中性文本，不得替 agent 说出加工项**（2026-09-14 真重放修正）：
+      # 首版 fallback 写「需要打孔加工」，run 34812509606 实测**替 agent 把加工项说了出来**
+      # → 换货 confirm 卡里凭空出现「加工项=打孔加工」，掩盖了「agent 从未查目标商品的
+      # processing_items、也从未主动询问加工项」这一**真实缺口**（该 run 的
+      # `product_detail` 期望未满足即其证据）。fallback 改为「好的」后：agent 主动问
+      # （发加工项卡或文本询问）→ harness 正常答卡；agent 不问 → 加工项为空、
+      # `order_before[processing_ask …]` 直接判红 → **缺口不再被 harness 掩盖**
+      # （§任务书：不允许靠放宽断言/替 agent 干活让自己变绿）。
+      - repeat_until:
+          tool_called: after_sales_manage
+          max: 5
+        fallback: "好的"
     pre_clean:
       - type: product_dedupe
         product_keyword: "2699系列雪尼尔窗帘面料"
         price: 23.8
     expectations:
+      - tool: order_query
       - tool: product_detail
-      - tool: interact or direct_reply
       - tool: after_sales_manage
         args:
           action: create
           ticket_type: exchange
+    order_before:
+      # 自包含化的**核心断言**：换货工单必须挂在**已定位到**的订单上 ——
+      # 旧单轮形态正是死在这里（无订单可挂就别写工单）。
+      # ⚠️ 2026-09-14 **真重放校正**（run 34815074088）：删除 `order_query before product_detail`。
+      # 该断言**业务上不成立**：它要求「先查订单、再查换货目标商品」，但顾客是**先点名目标商品**的
+      # （R2「换成2699系列雪尼尔窗帘面料」），agent 先 product_search/product_detail 了解目标商品
+      # 与加工项、再回头定位原订单（实测 R2 product_detail → R5 order_query → R8 after_sales_manage），
+      # 完全正确 —— 原断言把这种合法顺序判成 `order_query(R5) 晚于 product_detail(R2)`，
+      # 进而整例判红（case-level check → score 0%）。**这是用例作者写错的断言（假红），不是 agent 缺陷**。
+      # 真正的要求是「写工单前必须已定位到订单」，由下一条（成功的写调用）覆盖。
+      - "order_query before after_sales_manage"
+      # 加工项询问必须早于写工单（原断言，保留）。
+      - "processing_ask before after_sales_manage"
+      - "processing_ask before interact[confirm]"
     data_checks:
+      # 「调了 ≠ 成了」（issue #3361 口径）：单轮形态没有工具成功断言，写工单失败也会判 100%。
+      # 这里用**机器可判的 data_checks**（`success=true` 计入评分，见 local_runner
+      # `scoring_checks` 的 success=true / error.code= 规则）而不是 `must_succeed`：
+      # 本条是 **B 端专属工具**（after_sales_manage 不在小布工具集），而
+      # `tests/unit_ci_workflows/test_xiaobu_case_set.py::test_must_succeed_tools_are_customer_capabilities`
+      # 对**全库** must_succeed 声明做「必须在 C 端工具集内」校验（未按 persona 收窄）→
+      # 声明 must_succeed[after_sales_manage] 会直接打红该守卫。两者等价强度，
+      # 故取不越界的写法（守卫收窄另行治理，不在本包范围）。
+      - "success=true"
       - "换货目标商品 product_detail 返回 processing_items 非空时，confirm 卡之前必须主动询问加工项（interact(choice, multiSelect=true)，透传 pageMeta 支持翻页；文本询问亦可，语义由 order_before 保证）"
       - "用户选择加工项后，所选名称与计价写入换货方案汇总与工单 description；用户说『不需要加工项』才跳过"
       - "processing_items 为空时如实告知『该商品无可用加工项』后继续，不强求"
-    order_before:
-      - "processing_ask before after_sales_manage"
-      - "processing_ask before interact[confirm]"
-    skip_reason: "换货需先定位订单（用户未提供订单号，agent 正确先要订单号），但 case 期望单轮直达 product_detail/after_sales_manage——数据不完整；order_before 加工项时序断言已由 prompt+EXAMPLES 固化，待重构为自包含（先下单再换货）"
-    merge_log: "2026-09-08 新增（issue #3033 复盘 sess_50ff3e3c824c4a70）：换货选 2699 面料（绑 5 加工项）全程未提加工项；aftersales.md 补换货加工项确认规则 + EXAMPLES 例 4"
+      - "换货工单 order_id 来自本轮 order_query 定位结果（不得编造订单号）"
+    skip_reason: ""
+    merge_log: "2026-09-08 新增（issue #3033 复盘 sess_50ff3e3c824c4a70）：换货选 2699 面料（绑 5 加工项）全程未提加工项；aftersales.md 补换货加工项确认规则 + EXAMPLES 例 4。2026-09-14 自包含化（issue #3568）：原单轮输入缺「先定位订单」轮 → 用例恒不可达被 skip（**从未执行**）→ 补 order_query 定位轮 + 答卡轮（repeat_until max=5），断言加两条 order_query 时序 + success=true，解 skip。**两次真 LLM 重放驱动迭代**：① run 34809750975 得 75% 且首版「静态文本选单轮」对不上 agent 的 choice 选单卡（该客户名下 6 笔订单）→ 改答卡轮；② run 34812509606 得 75% 且**换货工单已真实创建**（`ticketNo=AS-20260914-9002`）→ 首版 fallback「需要打孔加工」**替 agent 把加工项说了出来**、把缺口掩盖成「卡里有加工项」→ 改中性「好的」。③ run 34815074088（中性 fallback）得 0%，trace 显示**流程本身完全正确**：R2 product_detail（发现 2 条同名）→ 选品卡 → R3 **agent 主动发加工项 choice 卡** → R5 order_query → R8 after_sales_manage 建单成功；唯一失败项是我自己加的 `order_before[order_query before product_detail]`（**业务上不成立的过度约束**）→ 已删除该条，保留 `order_query before after_sales_manage` 与两条 `processing_ask` 时序"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_prompt_snapshots.py"

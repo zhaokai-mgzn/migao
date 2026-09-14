@@ -259,3 +259,136 @@ cases:
         - pr-check.yml
       verifies: []
 
+
+  # ==========================================================================
+  # LLM 行为正向用例（issue #3568）：补 processing_item_manage 的**改价 / 停用**路径
+  # 缺口。加工项契约修复包（#3591）收口时如实标注：`.github/cases/**` 里零
+  # `update_item` / `toggle_item_status` 用例，它的 CI 重放只能证「工具健康度与
+  # create 路径无回归」，**不能真实覆盖改价/停用路径**（PP 域重演 PG 域那个零覆盖缺口）。
+  # ==========================================================================
+
+  - id: PP-007
+    legacy_id: ""
+    title: "米宝加工项 LLM 行为：只改单价不清空其它字段（部分更新语义）"
+    domains:
+      - processing
+      - chat
+    tier: normal
+    tags:
+      - processing_item
+      - llm_behavior
+      - tool_call
+      - update
+    truths_ref: []
+    user_inputs:
+      # 自包含/残留免疫（照 PG-015/PG-016 先例）：**点名种子/目录里真实存在的加工项**。
+      # `纳米圈打孔` 是 xiaobu_eval_seed.sql 的种子加工项（pi_eval_punch，¥8.00/米，
+      # pricing_method=per_meter），不是假设存在的对象。
+      - "把加工项纳米圈打孔的单价改成 9.5 元一米"
+      - repeat_until:
+          tool_called: processing_item_manage
+          max: 3
+        fallback: "确认"
+      # 回读轮：`update_item` 的返回是 `{item_id, price}`（**只含本次下发的字段**，
+      # 不是合并后的全量对象），所以「其它字段有没有被清空」只能靠**回读**判定。
+      - "再看下加工项纳米圈打孔的单价和计价方式"
+      - repeat_until:
+          tool_called: processing_item_query
+          max: 3
+        fallback: "确认"
+    expectations:
+      - tool: processing_item_manage
+        args:
+          action: update_item
+      - tool: processing_item_query
+    must_succeed:
+      - tool: processing_item_manage
+        action: update_item
+    required_args:
+      - tool: processing_item_manage
+        fields:
+          - item_id
+          - price
+    output_verify:
+      # ⚠️ `action` 必写（本工具多 action：create_processing_item / update_item /
+      # delete_item / toggle_item_status / …）—— 不限定会取**首个成功调用**的 payload，
+      # 可能核到别的 action 上（假绿/假红）。
+      - tool: processing_item_manage
+        action: update_item
+        expect:
+          price: 9.5          # 下发的就是新单价（真值来自用户输入原文）
+    forbidden_text:
+      - "暂不支持"
+      - "功能不存在"
+      - "没有这个功能"
+      - "修改失败"
+      - "更新失败"
+      - "无法修改"
+    data_checks:
+      # 本类用例的**核心断言**（对照 #3591 修的「GET→merge→PUT 全量」语义）：
+      # 只改单价不得把 name / pricingMethod / categoryId 清空。回读轮是本判定的
+      # 证据面（`update_item` 的返回不含未下发字段，工具层无从自证）。
+      - "回读结果中 name 仍为「纳米圈打孔」、pricingMethod 仍为 per_meter（未被清空）——只改 price 不得清空其它字段"
+    skip_reason: ""
+    merge_log: "2026-09-14 新增（issue #3568）：`processing_item_manage(action=update_item)` 此前**零用例覆盖**（#3591 收口时如实标注的覆盖边界：只有 create 路径被重放）。断言机器可判：must_succeed(action=update_item) + required_args[item_id,price] + output_verify(price=9.5，显式 action) + forbidden_text。回读轮覆盖「部分更新不得清空其它字段」（#3591 的 GET→merge→PUT 语义），工具层无法自证故由回读判定。"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_tools_processing_item_manage.py"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ProcessingItemServiceTest.java"
+      ci:
+        - agent-eval.yml
+      verifies: []
+
+  - id: PP-008
+    legacy_id: ""
+    title: "米宝加工项 LLM 行为：停用加工项（toggle_item_status → inactive）"
+    domains:
+      - processing
+      - chat
+    tier: normal
+    tags:
+      - processing_item
+      - llm_behavior
+      - tool_call
+      - toggle
+    truths_ref: []
+    user_inputs:
+      - "把加工项纳米圈打孔停用"
+      - repeat_until:
+          tool_called: processing_item_manage
+          max: 3
+        fallback: "确认"
+    expectations:
+      - tool: processing_item_manage
+        args:
+          action: toggle_item_status
+    must_succeed:
+      - tool: processing_item_manage
+        action: toggle_item_status
+    required_args:
+      - tool: processing_item_manage
+        fields:
+          - item_id
+          - status
+    output_verify:
+      # ⚠️ 显式 `action`（多 action 工具，理由同 PP-007）
+      - tool: processing_item_manage
+        action: toggle_item_status
+        expect:
+          status: inactive    # 工具返回 {item_id, status}，目标状态即停用
+    forbidden_text:
+      - "暂不支持"
+      - "功能不存在"
+      - "没有这个功能"
+      - "停用失败"
+      - "无法停用"
+    data_checks:
+      - "status 目标值为 inactive（工具返回 `{item_id, status}` 可直接核对）；重复执行幂等（再停用一次仍是 inactive）"
+    skip_reason: ""
+    merge_log: "2026-09-14 新增（issue #3568）：`processing_item_manage(action=toggle_item_status)` 此前**零用例覆盖**（同 PP-007 的覆盖边界）。断言机器可判：must_succeed(action=toggle_item_status) + required_args[item_id,status] + output_verify(status=inactive，显式 action) + forbidden_text。⚠️ 数据副作用：停用种子加工项 `pi_eval_punch` 会影响依赖它的用例（OR-016/OR-024 等加工项流程）—— 评测栈每次重建，同栈内请让本条**后跑**（或由 pre_clean 复位）；本包未新增 runner 侧 pre_clean 类型，故在此显式标注。"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_tools_processing_item_manage.py"
+      ci:
+        - agent-eval.yml
+      verifies: []

@@ -33,20 +33,10 @@ note: "存量缺口 burn-down 清单（#3575 引入）。只豁免已登记项�
 
 entries:
   # ── 结构性缺失（阻塞项，靠本清单才保持绿）──────────────────────────────
-  - tool: processing_order_query
-    kind: uncovered
-    persona: mibao
-    issue: "#3589"
-    reason: 加工单查询零用例（processing-order.yml 属 #3589 包，避免与在飞改动冲突）
-    added: "2026-09-14"
-
-  - tool: processing_order_update
-    kind: uncovered
-    persona: mibao
-    issue: "#3589"
-    reason: 加工单状态更新零用例（写操作，需 confirm 卡先行 + must_succeed；属 #3589 包）
-    added: "2026-09-14"
-
+  # ✅ 销账（2026-09-14，issue #3568 / PR #3589）：`processing_order_query` /
+  #    `processing_order_update` 的 uncovered 条目**已删除** —— 配套正向用例
+  #    **PG-015**（查询）/ **PG-016**（更新状态）在**同一个 PR** 里补上（processing-order.yml）。
+  #    补用例与删条目必须同 PR：分开做会出现「main 带陈旧登记」或「main 带零覆盖缺口」的红窗口。
   - tool: order_manage
     kind: missing_positive
     persona: mibao
@@ -62,13 +52,9 @@ entries:
     reason: C 端仅 OR-023 一条（正向）；缺"非法输入必须挡住写操作"的拒绝半
     added: "2026-09-14"
 
-  - tool: processing_order_generate
-    kind: thin_positive
-    persona: mibao
-    issue: "#3589"
-    reason: 仅 PG-013 一条（正向）；加工单生成链路的负向/边界无覆盖（属 #3589 包）
-    added: "2026-09-14"
-
+  # ✅ 销账（2026-09-14，issue #3568 / PR #3589）：`processing_order_generate` 的
+  #    thin_positive 条目**已删除** —— 该工具现由 PG-013 + PG-015 + PG-016 三条覆盖
+  #    （不再「仅 PG-013 一条」）；且原条目追踪的 `#3589` 是本 PR，合并后即非 open。
   - tool: session_manage
     kind: thin_positive
     persona: mibao

@@ -82,7 +82,7 @@ _CASE_AS_002 = EvalCase(
     title='售后工单详情',
     skill=Skill.AFTERSALES,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['看一下 AS-20260701-0001 工单详情'],
+    user_inputs=['看一下 AS-20260914-9001 工单详情'],
     expectations=['after_sales_manage(action=detail)'],
     data_checks=['statusHistory 按时间正序，首条 status=pending'],
     skip_reason='',
@@ -100,7 +100,7 @@ _CASE_AS_003 = EvalCase(
     title='查订单 → 创建退款工单（跨域复用 order_id）',
     skill=Skill.AFTERSALES,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['查一下最近的订单', '这个订单客户要退货，创建售后工单', '确认创建', '确认'],
+    user_inputs=['查一下客户手机号 13800138000 最近的订单', '就刚才那笔订单，客户手机号 13800138000，要退货，创建售后工单', '确认创建', '确认'],
     expectations=['order_query', 'after_sales_manage or aftersale_create(order_id=复用上轮 UUID)'],
     data_checks=['success=true', '工单号匹配 ^AS-\\\\d{8}-\\\\d{4}$'],
     skip_reason='',
@@ -118,7 +118,7 @@ _CASE_AS_004 = EvalCase(
     title='更新工单状态 - 关闭',
     skill=Skill.AFTERSALES,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['查看最近的售后工单', '把第一张未处理的工单关闭，关闭原因写「客户已协商一致」', '确认'],
+    user_inputs=['查看最近的售后工单', '把工单 AS-20260914-9001 关闭，关闭原因写「客户已协商一致」', '确认'],
     expectations=['after_sales_manage(action=update_status, status=closed)'],
     data_checks=['success=true', 'closedAt/closeReason 写入 —— 机器断言见 db_verify[after_sales_ticket]（落库 status=closed + closedAt/closeReason 非空 + closeReason 与用户点名原因一致）'],
     skip_reason='',
@@ -138,7 +138,7 @@ _CASE_AS_005 = EvalCase(
     title='售后处理全流程 - 查单→确认问题→建工单→跟踪',
     skill=Skill.AFTERSALES,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['客户张三说窗帘颜色不对，帮我查下他的订单', '最近一个订单 ORD-20260701-0001', '客户要退货，创建售后工单', '原因：颜色与图片不符，退款', '这工单现在什么状态了'],
+    user_inputs=['客户张三说窗帘颜色不对，帮我查下他的订单', '最近那个订单，客户手机号 13800138000', '客户要退货，创建售后工单', '原因：颜色与图片不符，退款', '这工单现在什么状态了'],
     expectations=['order_query', 'after_sales_manage or aftersale_create', 'after_sales_manage or aftersale_query'],
     data_checks=['aftersale_create 的 order_id 来自第2步查询结果', '售后工单包含正确的退款原因'],
     skip_reason='',
@@ -174,16 +174,16 @@ _CASE_AS_007 = EvalCase(
     title='换货选目标商品后必须确认加工项（before 生成换货工单确认卡）',
     skill=Skill.AFTERSALES,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['面料有瑕疵，帮我换货，换成2699系列雪尼尔窗帘面料'],
-    expectations=['product_detail', 'interact or direct_reply', 'after_sales_manage(action=create, ticket_type=exchange)'],
-    data_checks=['换货目标商品 product_detail 返回 processing_items 非空时，confirm 卡之前必须主动询问加工项（interact(choice, multiSelect=true)，透传 pageMeta 支持翻页；文本询问亦可，语义由 order_before 保证）', '用户选择加工项后，所选名称与计价写入换货方案汇总与工单 description；用户说『不需要加工项』才跳过', 'processing_items 为空时如实告知『该商品无可用加工项』后继续，不强求'],
-    skip_reason='换货需先定位订单（用户未提供订单号，agent 正确先要订单号），但 case 期望单轮直达 product_detail/after_sales_manage——数据不完整；order_before 加工项时序断言已由 prompt+EXAMPLES 固化，待重构为自包含（先下单再换货）',
+    user_inputs=['面料有瑕疵，帮我换货', {'repeat_until': {'tool_called': 'order_query', 'max': 2}, 'fallback': '换成2699系列雪尼尔窗帘面料'}, '换成2699系列雪尼尔窗帘面料', {'repeat_until': {'tool_called': 'after_sales_manage', 'max': 5}, 'fallback': '好的'}],
+    expectations=['order_query', 'product_detail', 'after_sales_manage(action=create, ticket_type=exchange)'],
+    data_checks=['success=true', '换货目标商品 product_detail 返回 processing_items 非空时，confirm 卡之前必须主动询问加工项（interact(choice, multiSelect=true)，透传 pageMeta 支持翻页；文本询问亦可，语义由 order_before 保证）', '用户选择加工项后，所选名称与计价写入换货方案汇总与工单 description；用户说『不需要加工项』才跳过', 'processing_items 为空时如实告知『该商品无可用加工项』后继续，不强求', '换货工单 order_id 来自本轮 order_query 定位结果（不得编造订单号）'],
+    skip_reason='',
     tags=['exchange', 'processing_item', 'guided_flow'],
     persona='',
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
-    order_before=['processing_ask before after_sales_manage', 'processing_ask before interact[confirm]'],
+    order_before=['order_query before after_sales_manage', 'processing_ask before after_sales_manage', 'processing_ask before interact[confirm]'],
     pre_clean=[{'type': 'product_dedupe', 'product_keyword': '2699系列雪尼尔窗帘面料', 'price': 23.8}],
 )
 
@@ -1526,7 +1526,7 @@ _CASE_CR_003 = EvalCase(
     title='真实场景全旅程 - 咨询→查商品→下单→查物流',
     skill=Skill.CROSS,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['你好，我想买窗帘', '有什么遮光好的推荐吗', '看看第一个的详情', '就这个，帮我下单，客户张三 13800138000，2件', '白色的，散剪，2.8米门幅', '不需要加工项', '确认下单', '确认', '订单怎么样了，发货了吗', '好的谢谢'],
+    user_inputs=['你好，我想买窗帘', '有什么遮光好的推荐吗', '看看遮光窗帘的详情', '就这个，帮我下单，客户张三 13800138000，2件', '米白，散剪，2.8米门幅', '不需要加工项', {'auto_respond': {'fallback': '确认下单', 'form_values': {'customer_name': '张三', 'customer_phone': '13800138000', 'customer_address': '浙江省杭州市西湖区文三路 1 号 1 幢 101 室'}}}, {'auto_respond': {'fallback': '确认', 'form_values': {'customer_name': '张三', 'customer_phone': '13800138000', 'customer_address': '浙江省杭州市西湖区文三路 1 号 1 幢 101 室'}}}, {'auto_respond': {'fallback': '确认'}}, '订单怎么样了，发货了吗', '好的谢谢'],
     expectations=['product_search', 'product_detail', 'order_create', 'order_query'],
     data_checks=['第4步 product_id 来自第2-3步上下文', '订单创建成功并包含 SKU 信息', '第7步自动找到刚创建的订单'],
     skip_reason='',
@@ -1535,6 +1535,8 @@ _CASE_CR_003 = EvalCase(
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+    must_succeed=[{'tool': 'order_create'}],
+    pre_clean=[{'type': 'product_dedupe', 'product_keyword': '遮光窗帘'}],
 )
 
 # ── CU-001 [SMOKE] 客户列表（源: cases/customer.yml）──
@@ -1599,7 +1601,7 @@ _CASE_CU_004 = EvalCase(
     title='更新客户资料（部分更新）',
     skill=Skill.CUSTOMER,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['张三手机号改成 13900001111', '第一个', '确认'],
+    user_inputs=['张三（手机号 13800138000）的手机号改成 13900001111', {'auto_respond': {'fallback': '确认'}}],
     expectations=['customer_manage(action=update)'],
     data_checks=['仅 phone 被更新，未传字段保持原值'],
     skip_reason='',
@@ -3788,6 +3790,49 @@ _CASE_PG_014 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── PG-015 [NORMAL] 米宝加工单 LLM 行为：查询加工单（生成 → 按订单号回查状态）（源: cases/processing-order.yml）──
+_CASE_PG_015 = EvalCase(
+    id='PG-015',
+    legacy_id='',
+    title='米宝加工单 LLM 行为：查询加工单（生成 → 按订单号回查状态）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['把订单 EVAL-MB-ORD-0002 生成加工单', {'repeat_until': {'tool_called': 'processing_order_generate', 'max': 3}, 'fallback': '确认'}, '订单 EVAL-MB-ORD-0002 的加工单现在什么状态？', {'repeat_until': {'tool_called': 'processing_order_query', 'max': 3}, 'fallback': '确认'}],
+    expectations=['processing_order_generate', 'processing_order_query'],
+    data_checks=['success=true', '回查结果 grounded 到刚生成的加工单（status ∈ generated/issued/in_processing/completed/cancelled，不得编造）'],
+    skip_reason='',
+    tags=['processing_order', 'llm_behavior', 'tool_call', 'query'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    forbidden_text=['暂不支持', '功能不存在', '没有这个功能', '无法查询'],
+    required_args=[{'tool': 'processing_order_query', 'fields': ['keyword']}],
+    must_succeed=[{'tool': 'processing_order_generate'}, {'tool': 'processing_order_query'}],
+)
+
+# ── PG-016 [NORMAL] 米宝加工单 LLM 行为：更新加工单状态（完成加工，产出核到 completed）（源: cases/processing-order.yml）──
+_CASE_PG_016 = EvalCase(
+    id='PG-016',
+    legacy_id='',
+    title='米宝加工单 LLM 行为：更新加工单状态（完成加工，产出核到 completed）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['把订单 EVAL-MB-ORD-0002 生成加工单', {'repeat_until': {'tool_called': 'processing_order_generate', 'max': 3}, 'fallback': '确认'}, '这笔加工单加工完成了，标记完成', {'repeat_until': {'tool_called': 'processing_order_update', 'max': 4}, 'fallback': '确认'}],
+    expectations=['processing_order_update(action=complete)'],
+    data_checks=['success=true', '结论 grounded 到刚更新的加工单（订单联动状态见加工单设计决策 3：complete 不回退订单）'],
+    skip_reason='',
+    tags=['processing_order', 'llm_behavior', 'tool_call', 'update'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    forbidden_text=['暂不支持', '功能不存在', '没有这个功能', '无法更新', '更新失败'],
+    required_args=[{'tool': 'processing_order_update', 'fields': ['id']}],
+    must_succeed=[{'tool': 'processing_order_update', 'action': 'complete'}],
+    output_verify=[{'tool': 'processing_order_update', 'action': 'complete', 'expect': {'action': 'complete', 'result.status': 'completed'}}],
+)
+
 # ── PP-001 [NORMAL] 加工项选择 - 分页翻页（源: cases/processing.yml）──
 _CASE_PP_001 = EvalCase(
     id='PP-001',
@@ -3898,6 +3943,50 @@ _CASE_PP_006 = EvalCase(
     forbidden_card_text=[],
     must_succeed=[{'tool': 'processing_item_manage', 'action': 'create_processing_item'}],
     output_verify=[{'tool': 'processing_item_manage', 'action': 'create_processing_item', 'expect': {'name': '测试加工', 'pricingMethod': 'per_meter'}}],
+)
+
+# ── PP-007 [NORMAL] 米宝加工项 LLM 行为：只改单价不清空其它字段（部分更新语义）（源: cases/processing.yml）──
+_CASE_PP_007 = EvalCase(
+    id='PP-007',
+    legacy_id='',
+    title='米宝加工项 LLM 行为：只改单价不清空其它字段（部分更新语义）',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['把加工项纳米圈打孔的单价改成 9.5 元一米', {'repeat_until': {'tool_called': 'processing_item_manage', 'max': 3}, 'fallback': '确认'}, '再看下加工项纳米圈打孔的单价和计价方式', {'repeat_until': {'tool_called': 'processing_item_query', 'max': 3}, 'fallback': '确认'}],
+    expectations=['processing_item_manage(action=update_item)', 'processing_item_query'],
+    data_checks=['回读结果中 name 仍为「纳米圈打孔」、pricingMethod 仍为 per_meter（未被清空）——只改 price 不得清空其它字段'],
+    skip_reason='',
+    tags=['processing_item', 'llm_behavior', 'tool_call', 'update'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    forbidden_text=['暂不支持', '功能不存在', '没有这个功能', '修改失败', '更新失败', '无法修改'],
+    required_args=[{'tool': 'processing_item_manage', 'fields': ['item_id', 'price']}],
+    must_succeed=[{'tool': 'processing_item_manage', 'action': 'update_item'}],
+    output_verify=[{'tool': 'processing_item_manage', 'action': 'update_item', 'expect': {'price': 9.5}}],
+)
+
+# ── PP-008 [NORMAL] 米宝加工项 LLM 行为：停用加工项（toggle_item_status → inactive）（源: cases/processing.yml）──
+_CASE_PP_008 = EvalCase(
+    id='PP-008',
+    legacy_id='',
+    title='米宝加工项 LLM 行为：停用加工项（toggle_item_status → inactive）',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['把加工项纳米圈打孔停用', {'repeat_until': {'tool_called': 'processing_item_manage', 'max': 3}, 'fallback': '确认'}],
+    expectations=['processing_item_manage(action=toggle_item_status)'],
+    data_checks=['status 目标值为 inactive（工具返回 `{item_id, status}` 可直接核对）；重复执行幂等（再停用一次仍是 inactive）'],
+    skip_reason='',
+    tags=['processing_item', 'llm_behavior', 'tool_call', 'toggle'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    forbidden_text=['暂不支持', '功能不存在', '没有这个功能', '停用失败', '无法停用'],
+    required_args=[{'tool': 'processing_item_manage', 'fields': ['item_id', 'status']}],
+    must_succeed=[{'tool': 'processing_item_manage', 'action': 'toggle_item_status'}],
+    output_verify=[{'tool': 'processing_item_manage', 'action': 'toggle_item_status', 'expect': {'status': 'inactive'}}],
 )
 
 # ── PR-001 [SMOKE] 商品搜索 - 关键词模糊匹配（源: cases/product.yml）──
@@ -4071,7 +4160,7 @@ _CASE_PR_010 = EvalCase(
     title='商品全生命周期 - 搜索→查看→修改→关联加工项→验证',
     skill=Skill.PRODUCT,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['搜索窗帘', '看看第一个的详情', '把价格改成 198', '确认', '给它加上S钩安装', '确认', '再看看这个商品的详情确认一下'],
+    user_inputs=['搜索遮光窗帘', '看看遮光窗帘的详情', '把价格改成 198', '确认', '给它加上韩式波浪折边', '确认', '再看看这个商品的详情确认一下'],
     expectations=['product_search', 'product_detail(product_id=复用上轮 UUID)', 'product_update(price=198)', 'product_processing_item_manage(action=add)', 'product_detail'],
     data_checks=['第3轮 product_id 来自第2轮结果', '第4轮 product_id 来自第2轮结果', '全程未重新 product_search 查同一个商品'],
     skip_reason='',
@@ -4080,6 +4169,7 @@ _CASE_PR_010 = EvalCase(
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+    pre_clean=[{'type': 'product_dedupe', 'product_keyword': '遮光窗帘'}],
 )
 
 # ── PR-011 [NORMAL] 创建商品完整引导流程 - AI 主导收集信息（源: cases/product.yml）──
@@ -4201,7 +4291,7 @@ _CASE_PR_017 = EvalCase(
     title='商品创建/更新/详情透传「退货回补库存」开关（allow_return_restock）',
     skill=Skill.PRODUCT,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['把「遮光窗帘（100元的那件）」设置成退货后可以回补库存', {'auto_select': True}, '确认'],
+    user_inputs=['把遮光窗帘设置成退货后可以回补库存', {'auto_respond': {'fallback': '确认'}}],
     expectations=['product_update or product_manage(allow_return_restock=True)'],
     data_checks=['商品详情/列表返回 allowReturnRestock（默认 false，开启后为 true）', '售后工单 refund/return 完结时按商品开关决定是否回补 SKU 库存'],
     skip_reason='',
@@ -4210,6 +4300,7 @@ _CASE_PR_017 = EvalCase(
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+    pre_clean=[{'type': 'product_dedupe', 'product_keyword': '遮光窗帘'}],
 )
 
 # ── PR-018 [NORMAL] B端米宝 product_list 卡片引用对齐 — 只渲染回复文本中实际引用的商品（源: cases/product.yml）──
@@ -5466,12 +5557,16 @@ ALL_CASES = (
     _CASE_PG_012,
     _CASE_PG_013,
     _CASE_PG_014,
+    _CASE_PG_015,
+    _CASE_PG_016,
     _CASE_PP_001,
     _CASE_PP_002,
     _CASE_PP_003,
     _CASE_PP_005,
     _CASE_PP_004,
     _CASE_PP_006,
+    _CASE_PP_007,
+    _CASE_PP_008,
     _CASE_PR_001,
     _CASE_PR_002,
     _CASE_PR_003,

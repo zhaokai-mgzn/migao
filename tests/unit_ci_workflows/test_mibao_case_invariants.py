@@ -16,7 +16,7 @@
 与 C 端测试的关系：本文件只覆盖 B 端跑的一面（mibao 专属 + 双端）；C 端跑的一面
 由 test_xiaobu_case_set.py 覆盖（选中用例不得含 B 端专属工具等）。
 """
-# case_ids: OR-016, PR-019, PR-020, AS-003, AS-005, CH-011, FN-004, HR-003, DA-002, CU-003, PP-006, PR-021
+# case_ids: OR-016, PR-019, PR-020, AS-003, AS-005, CH-011, FN-004, HR-003, DA-002, CU-003, PP-006, PR-021, PG-015, PG-016
 import re
 import sys
 from pathlib import Path
@@ -304,6 +304,12 @@ class TestMibaoCoverageReport:
     def test_real_gaps_are_reported_not_papered_over(self):
         """回归网：B 端**任何**结构性缺口都必须被体检报出并登记在清单里（防阈值放水到看不见）。
 
+        **缺口已销账（2026-09-14，issue #3568 / #3592）**：加工单域的
+        `processing_order_query` / `processing_order_update` 此前是**零覆盖**的结构性
+        缺口（体检在 pristine main 上 exit 2 报出）。本包已补正向用例 **PG-015**（查询）
+        / **PG-016**（更新状态），并**同步删除** `eval-coverage-baseline.yml` 里对应的
+        两条 `uncovered` 阻断型条目（补用例与删条目必须同 PR，否则陈旧登记即红）。
+        故本条不再硬编码工具名（销账后工具名会漂移）—— 见下不变式。
         **不硬编码具体工具**（加工单域已由 #3589 销账、order_manage 由 #3603 跟踪，
         工具集与缺口会随迭代变化）：断言的是**不变式** ——
           ① 体检报出的每个 blocking gap 都必须在存量豁免清单里有对应条目（不许隐形）；

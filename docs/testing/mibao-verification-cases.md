@@ -17,17 +17,17 @@
 
 ### AS-002. 售后工单详情 🔵
 ```
-你: 看一下 AS-20260701-0001 工单详情
+你: 看一下 AS-20260914-9001 工单详情
 期望: after_sales_manage(action=detail)
 数据: statusHistory 按时间正序，首条 status=pending
 ```
 真值: aftersales-flow.detail-history
-溯源: verification 3.2 独有 ｜ tags: query, detail
+溯源: verification 3.2 独有。2026-09-14 自包含化（issue #3568）：AS-20260701-0001 评测环境不存在（同 AS-006 形态）→ 换 seed 工单 AS-20260914-9001 ｜ tags: query, detail
 
 ### AS-003. 查订单 → 创建退款工单（跨域复用 order_id） 🔵
 ```
-你: 查一下最近的订单
-你: 这个订单客户要退货，创建售后工单
+你: 查一下客户手机号 13800138000 最近的订单
+你: 就刚才那笔订单，客户手机号 13800138000，要退货，创建售后工单
 你: 确认创建
 你: 确认
 期望: order_query
@@ -41,7 +41,7 @@
 ### AS-004. 更新工单状态 - 关闭 🔵
 ```
 你: 查看最近的售后工单
-你: 把第一张未处理的工单关闭，关闭原因写「客户已协商一致」
+你: 把工单 AS-20260914-9001 关闭，关闭原因写「客户已协商一致」
 你: 确认
 期望: after_sales_manage(action=update_status, status=closed)
 数据: success=true
@@ -49,12 +49,12 @@
 落库: after_sales_ticket → expect_status=closed; expect_fields_nonempty=['closedAt', 'closeReason']; expect_close_reason_contains=协商一致
 ```
 真值: aftersales-flow.flow, aftersales-flow.update-guard
-溯源: verification 3.4 独有；2026-09-14 校准（#3544）：① 「closedAt/closeReason 写入」原是自然语义、不计分（runner 计分白名单只认 success=true / error.code= / 未被调用）→ 升级为 db_verify[after_sales_ticket] 落库断言（新增核对器，见 tests/agent_eval/local_runner.py）；② 用户点名的关闭原因补进输入（工具 reason 仅 create 必填，用户不说原因则 closeReason 无真值可判）；③ 关闭态字段缺失/状态未落地即判红（fail-closed，不空转通过） ｜ tags: update, status
+溯源: verification 3.4 独有；2026-09-14 校准（#3544）：① 「closedAt/closeReason 写入」原是自然语义、不计分（runner 计分白名单只认 success=true / error.code= / 未被调用）→ 升级为 db_verify[after_sales_ticket] 落库断言（新增核对器，见 tests/agent_eval/local_runner.py）；② 用户点名的关闭原因补进输入（工具 reason 仅 create 必填，用户不说原因则 closeReason 无真值可判）；③ 关闭态字段缺失/状态未落地即判红（fail-closed，不空转通过）。2026-09-14 消除顺序依赖（issue #3568）：「第一张未处理的工单」→ 点名 seed 工单号 AS-20260914-9001（列表顺序依赖：多张 pending 时关闭对象不确定）；与 #3544 叠加不覆盖——点名工单号消除顺序依赖，点名原因给 db_verify 提供真值 ｜ tags: update, status
 
 ### AS-005. 售后处理全流程 - 查单→确认问题→建工单→跟踪 🔵
 ```
 你: 客户张三说窗帘颜色不对，帮我查下他的订单
-你: 最近一个订单 ORD-20260701-0001
+你: 最近那个订单，客户手机号 13800138000
 你: 客户要退货，创建售后工单
 你: 原因：颜色与图片不符，退款
 你: 这工单现在什么状态了
@@ -65,7 +65,7 @@
 数据: 售后工单包含正确的退款原因
 ```
 真值: aftersales-flow.status-enums, aftersales-flow.timeline, aftersales-flow.create-order-required
-溯源: eval M008 独有（售后全旅程） ｜ tags: multi_turn, cross_skill, real_scenario
+溯源: eval M008 独有（售后全旅程）。2026-09-14 自包含化（issue #3568）：第 2 轮硬编码单号 ORD-20260701-0001（评测环境不存在，OR-006/OR-010 已实测 found:0）→ 换手机号唯一指代，同 AS-003（#3511）先例 ｜ tags: multi_turn, cross_skill, real_scenario
 
 ### AS-006. 售后工单退款/退货完结 - 按商品「退货回补库存」开关决定是否回补库存 🔵
 ```
@@ -80,19 +80,24 @@
 
 ### AS-007. 换货选目标商品后必须确认加工项（before 生成换货工单确认卡） 🔵
 ```
-你: 面料有瑕疵，帮我换货，换成2699系列雪尼尔窗帘面料
+你: 面料有瑕疵，帮我换货
+你: [🔁 按目标工具重复直至成功：order_query，最多 2 次]
+你: 换成2699系列雪尼尔窗帘面料
+你: [🔁 按目标工具重复直至成功：after_sales_manage，最多 5 次]
+期望: order_query
 期望: product_detail
-期望: interact or direct_reply
 期望: after_sales_manage(action=create, ticket_type=exchange)
+数据: success=true
 数据: 换货目标商品 product_detail 返回 processing_items 非空时，confirm 卡之前必须主动询问加工项（interact(choice, multiSelect=true)，透传 pageMeta 支持翻页；文本询问亦可，语义由 order_before 保证）
 数据: 用户选择加工项后，所选名称与计价写入换货方案汇总与工单 description；用户说『不需要加工项』才跳过
 数据: processing_items 为空时如实告知『该商品无可用加工项』后继续，不强求
+数据: 换货工单 order_id 来自本轮 order_query 定位结果（不得编造订单号）
+时序: order_query before after_sales_manage
 时序: processing_ask before after_sales_manage
 时序: processing_ask before interact[confirm]
-跳过: 换货需先定位订单（用户未提供订单号，agent 正确先要订单号），但 case 期望单轮直达 product_detail/after_sales_manage——数据不完整；order_before 加工项时序断言已由 prompt+EXAMPLES 固化，待重构为自包含（先下单再换货）
 ```
 真值: aftersales-flow.agent-create, aftersales-flow.flow
-溯源: 2026-09-08 新增（issue #3033 复盘 sess_50ff3e3c824c4a70）：换货选 2699 面料（绑 5 加工项）全程未提加工项；aftersales.md 补换货加工项确认规则 + EXAMPLES 例 4 ｜ tags: exchange, processing_item, guided_flow
+溯源: 2026-09-08 新增（issue #3033 复盘 sess_50ff3e3c824c4a70）：换货选 2699 面料（绑 5 加工项）全程未提加工项；aftersales.md 补换货加工项确认规则 + EXAMPLES 例 4。2026-09-14 自包含化（issue #3568）：原单轮输入缺「先定位订单」轮 → 用例恒不可达被 skip（**从未执行**）→ 补 order_query 定位轮 + 答卡轮（repeat_until max=5），断言加两条 order_query 时序 + success=true，解 skip。**两次真 LLM 重放驱动迭代**：① run 34809750975 得 75% 且首版「静态文本选单轮」对不上 agent 的 choice 选单卡（该客户名下 6 笔订单）→ 改答卡轮；② run 34812509606 得 75% 且**换货工单已真实创建**（`ticketNo=AS-20260914-9002`）→ 首版 fallback「需要打孔加工」**替 agent 把加工项说了出来**、把缺口掩盖成「卡里有加工项」→ 改中性「好的」。③ run 34815074088（中性 fallback）得 0%，trace 显示**流程本身完全正确**：R2 product_detail（发现 2 条同名）→ 选品卡 → R3 **agent 主动发加工项 choice 卡** → R5 order_query → R8 after_sales_manage 建单成功；唯一失败项是我自己加的 `order_before[order_query before product_detail]`（**业务上不成立的过度约束**）→ 已删除该条，保留 `order_query before after_sales_manage` 与两条 `processing_ask` 时序 ｜ tags: exchange, processing_item, guided_flow
 
 ### AS-008. C 端售后进度查询 - 仅限本人工单 + 拒绝跨用户/快递单号式越权查询 🔵
 ```
@@ -1044,12 +1049,13 @@
 ```
 你: 你好，我想买窗帘
 你: 有什么遮光好的推荐吗
-你: 看看第一个的详情
+你: 看看遮光窗帘的详情
 你: 就这个，帮我下单，客户张三 13800138000，2件
-你: 白色的，散剪，2.8米门幅
+你: 米白，散剪，2.8米门幅
 你: 不需要加工项
-你: 确认下单
-你: 确认
+你: [🤖 按上一轮卡片作答]
+你: [🤖 按上一轮卡片作答]
+你: [🤖 按上一轮卡片作答]
 你: 订单怎么样了，发货了吗
 你: 好的谢谢
 期望: product_search
@@ -1059,9 +1065,10 @@
 数据: 第4步 product_id 来自第2-3步上下文
 数据: 订单创建成功并包含 SKU 信息
 数据: 第7步自动找到刚创建的订单
+必须成功: order_create
 ```
 真值: ai-chat.context-memory, ai-chat.intent-domains, order.states, order.logistics, id-resolve.index
-溯源: eval M007 独有（物流查询是旅程一环，独立用例见 OR-005） ｜ tags: multi_turn, real_scenario, cross_skill, full_journey
+溯源: eval M007 独有（物流查询是旅程一环，独立用例见 OR-005）。2026-09-14 消除顺序依赖（issue #3568）：① 「看看第一个的详情」→ 点名「遮光窗帘」（推荐列表返回顺序依赖，同 OR-024 #3408）；② 色号「白色」→ 种子真实色号「米白」；③ 收尾裸文本「确认下单/确认」→ 答卡轮（#3518 口径）；④ 补 pre_clean product_dedupe + must_succeed[order_create] ｜ tags: multi_turn, real_scenario, cross_skill, full_journey
 
 ## 客户域（6 case）
 
@@ -1097,14 +1104,13 @@
 
 ### CU-004. 更新客户资料（部分更新） 🔵
 ```
-你: 张三手机号改成 13900001111
-你: 第一个
-你: 确认
+你: 张三（手机号 13800138000）的手机号改成 13900001111
+你: [🤖 按上一轮卡片作答]
 期望: customer_manage(action=update)
 数据: 仅 phone 被更新，未传字段保持原值
 ```
 真值: customer-list.partial-update
-溯源: verification 4.4 独有；2026-09-09 校准：补「选第一个」+「确认」两轮——「张三」生产有 3 位重名，agent 正确发 choice 卡澄清（#3142 修 validate_input 空转后不再幻觉「不支持」），需用户点选+确认后 update；probe 实证完整流程走通（重名澄清→选第一个→确认→update 成功） ｜ tags: update
+溯源: verification 4.4 独有；2026-09-09 校准：补「选第一个」+「确认」两轮——「张三」生产有 3 位重名，agent 正确发 choice 卡澄清（#3142 修 validate_input 空转后不再幻觉「不支持」），需用户点选+确认后 update；probe 实证完整流程走通（重名澄清→选第一个→确认→update 成功）。2026-09-14 消除顺序依赖（issue #3568）：裸文本「第一个」→ 手机号唯一指代（重名澄清轮消失，干净栈/生产栈同判；连打三轮的澄清轮次表也随之消失） ｜ tags: update
 
 ### CU-005. 对抗性 - 模糊名称渐进澄清（老王→王建国→订单→发货） 🔴
 ```
@@ -2538,7 +2544,7 @@
 真值: order.create-flow, ai-chat.confirm-required
 溯源: 2026-09-14 新增（issue #3558 覆盖体检）：validate_input 在 C 端仅 OR-023（正向半），补拒绝半——非法号码不得落单 ｜ tags: order_create, validate_input, rejection, xiaobu
 
-## 加工项域（6 case）
+## 加工项域（8 case）
 
 ### PP-001. 加工项选择 - 分页翻页 🔵
 ```
@@ -2616,7 +2622,45 @@
 真值: processing-manage.crud, product-sku-stock.create-flow
 溯源: 2026-09-07 改写（issue #3005，回滚 #2986）：行业加工费按米计价、辅料（罗马圈/四爪钩等）含在按米加工费中——per_piece 与「每米数量」密度不符合实际（数量对不上车间工艺、B 端无法对账），已回滚移除；PP-006 由密度配置用例改为计价方式回归断言。2026-09-14 校准（#3544，REPORT §2.3）：① 假绿升级——补 must_succeed（canonical 写成功断言，fail-closed）+ output_verify（name/pricingMethod 产出核对），此前只断言「调用过」，工具三次真执行全失败仍判 ✅（真缺口见 #3543）；② 输入「分类选打孔加工」改为种子里真实存在的「分类选窗帘加工」（原写法是加工项名/分类名混淆，agent 只能如实说没有该分类，白耗一轮）。2026-09-14 收口（#3544，run 34809483940 实测）：`output_verify` 补 `action: create_processing_item` —— 原实现按**工具名**取首个成功 payload，而本工具是多 action（R2 的 list_categories 也成功）→ 核对到 `{'categories': [...]}` 造成**假红**（R5 建成功的 payload 从未被核对）；同时给 runner 加 action 过滤 + L0 不变式「多 action 工具的 output_verify 必须声明 action」 ｜ tags: processing_item, pricing
 
-## processing-order（14 case）
+### PP-007. 米宝加工项 LLM 行为：只改单价不清空其它字段（部分更新语义） 🔵
+```
+你: 把加工项纳米圈打孔的单价改成 9.5 元一米
+你: [🔁 按目标工具重复直至成功：processing_item_manage，最多 3 次]
+你: 再看下加工项纳米圈打孔的单价和计价方式
+你: [🔁 按目标工具重复直至成功：processing_item_query，最多 3 次]
+期望: processing_item_manage(action=update_item)
+期望: processing_item_query
+数据: 回读结果中 name 仍为「纳米圈打孔」、pricingMethod 仍为 per_meter（未被清空）——只改 price 不得清空其它字段
+禁词: 暂不支持
+禁词: 功能不存在
+禁词: 没有这个功能
+禁词: 修改失败
+禁词: 更新失败
+禁词: 无法修改
+必填: processing_item_manage() 字段 item_id, price
+必须成功: processing_item_manage(update_item)
+产出: processing_item_manage(update_item) → price==9.5
+```
+溯源: 2026-09-14 新增（issue #3568）：`processing_item_manage(action=update_item)` 此前**零用例覆盖**（#3591 收口时如实标注的覆盖边界：只有 create 路径被重放）。断言机器可判：must_succeed(action=update_item) + required_args[item_id,price] + output_verify(price=9.5，显式 action) + forbidden_text。回读轮覆盖「部分更新不得清空其它字段」（#3591 的 GET→merge→PUT 语义），工具层无法自证故由回读判定。 ｜ tags: processing_item, llm_behavior, tool_call, update
+
+### PP-008. 米宝加工项 LLM 行为：停用加工项（toggle_item_status → inactive） 🔵
+```
+你: 把加工项纳米圈打孔停用
+你: [🔁 按目标工具重复直至成功：processing_item_manage，最多 3 次]
+期望: processing_item_manage(action=toggle_item_status)
+数据: status 目标值为 inactive（工具返回 `{item_id, status}` 可直接核对）；重复执行幂等（再停用一次仍是 inactive）
+禁词: 暂不支持
+禁词: 功能不存在
+禁词: 没有这个功能
+禁词: 停用失败
+禁词: 无法停用
+必填: processing_item_manage() 字段 item_id, status
+必须成功: processing_item_manage(toggle_item_status)
+产出: processing_item_manage(toggle_item_status) → status==inactive
+```
+溯源: 2026-09-14 新增（issue #3568）：`processing_item_manage(action=toggle_item_status)` 此前**零用例覆盖**（同 PP-007 的覆盖边界）。断言机器可判：must_succeed(action=toggle_item_status) + required_args[item_id,status] + output_verify(status=inactive，显式 action) + forbidden_text。⚠️ 数据副作用：停用种子加工项 `pi_eval_punch` 会影响依赖它的用例（OR-016/OR-024 等加工项流程）—— 评测栈每次重建，同栈内请让本条**后跑**（或由 pre_clean 复位）；本包未新增 runner 侧 pre_clean 类型，故在此显式标注。 ｜ tags: processing_item, llm_behavior, tool_call, toggle
+
+## processing-order（16 case）
 
 ### PG-001. 生成加工单 - 已确认含加工项订单 → 加工单生成 + 订单进入 producing 🔵
 ```
@@ -2745,6 +2789,46 @@
 ```
 溯源: 2026-09-12 新增（#3352 决策 C）：加工项创建后不可改 → 加工单快照不会与订单漂移 ｜ tags: processing-order, invariant, decision
 
+### PG-015. 米宝加工单 LLM 行为：查询加工单（生成 → 按订单号回查状态） 🔵
+```
+你: 把订单 EVAL-MB-ORD-0002 生成加工单
+你: [🔁 按目标工具重复直至成功：processing_order_generate，最多 3 次]
+你: 订单 EVAL-MB-ORD-0002 的加工单现在什么状态？
+你: [🔁 按目标工具重复直至成功：processing_order_query，最多 3 次]
+期望: processing_order_generate
+期望: processing_order_query
+数据: success=true
+数据: 回查结果 grounded 到刚生成的加工单（status ∈ generated/issued/in_processing/completed/cancelled，不得编造）
+禁词: 暂不支持
+禁词: 功能不存在
+禁词: 没有这个功能
+禁词: 无法查询
+必填: processing_order_query() 字段 keyword
+必须成功: processing_order_generate
+必须成功: processing_order_query
+```
+溯源: 2026-09-14 新增（issue #3568 / #3592）：processing_order_query 此前**零用例覆盖**（scripts/mibao_coverage.py --check 在 pristine main 上 exit 2 报出的结构性缺失）。形态 =「先对种子订单生成加工单 → 按订单号回查」（干净栈无加工单 seed，直接「查一下」会假绿）。断言机器可判：must_succeed ×2 + required_args[keyword] + forbidden_text。 ｜ tags: processing_order, llm_behavior, tool_call, query
+
+### PG-016. 米宝加工单 LLM 行为：更新加工单状态（完成加工，产出核到 completed） 🔵
+```
+你: 把订单 EVAL-MB-ORD-0002 生成加工单
+你: [🔁 按目标工具重复直至成功：processing_order_generate，最多 3 次]
+你: 这笔加工单加工完成了，标记完成
+你: [🔁 按目标工具重复直至成功：processing_order_update，最多 4 次]
+期望: processing_order_update(action=complete)
+数据: success=true
+数据: 结论 grounded 到刚更新的加工单（订单联动状态见加工单设计决策 3：complete 不回退订单）
+禁词: 暂不支持
+禁词: 功能不存在
+禁词: 没有这个功能
+禁词: 无法更新
+禁词: 更新失败
+必填: processing_order_update() 字段 id
+必须成功: processing_order_update(complete)
+产出: processing_order_update(complete) → action==complete; result.status==completed
+```
+溯源: 2026-09-14 新增（issue #3568 / #3592）：processing_order_update 此前**零用例覆盖**（同 PG-015 的结构性缺失）。断言机器可判：expectations(action=complete) + must_succeed(action=complete) + required_args[id] + output_verify（**显式声明 action**，防多 action 工具核到别的 payload 造成假绿）。真 LLM 重放待跑（见 PR #3589 的诚实标注）。 ｜ tags: processing_order, llm_behavior, tool_call, update
+
 ## 商品域（22 case）
 
 ### PR-001. 商品搜索 - 关键词模糊匹配 🟢
@@ -2843,11 +2927,11 @@
 
 ### PR-010. 商品全生命周期 - 搜索→查看→修改→关联加工项→验证 🔵
 ```
-你: 搜索窗帘
-你: 看看第一个的详情
+你: 搜索遮光窗帘
+你: 看看遮光窗帘的详情
 你: 把价格改成 198
 你: 确认
-你: 给它加上S钩安装
+你: 给它加上韩式波浪折边
 你: 确认
 你: 再看看这个商品的详情确认一下
 期望: product_search
@@ -2860,7 +2944,7 @@
 数据: 全程未重新 product_search 查同一个商品
 ```
 真值: id-resolve.index, id-resolve.no-fabricate, product-sku-stock.status-flow
-溯源: eval M001 独有（多轮 ID 复用，覆盖 2.3+2.8 的多轮形态）；2026-09-03 Phase 2 适配：product_update/product_processing_item_manage 均 requires_confirmation，写操作轮后补『确认』（与 OR-010 模式一致） ｜ tags: multi_turn, single_skill, full_lifecycle, id_reuse, smoke
+溯源: eval M001 独有（多轮 ID 复用，覆盖 2.3+2.8 的多轮形态）；2026-09-03 Phase 2 适配：product_update/product_processing_item_manage 均 requires_confirmation，写操作轮后补『确认』（与 OR-010 模式一致）。2026-09-14 消除顺序依赖（issue #3568）：① 泛化「搜索窗帘」+「第一个」→ 点名「遮光窗帘」（返回顺序依赖，同 OR-024 #3408 先例）；②「S钩安装」目录不存在 → 换真实存在且已绑定的「韩式波浪折边」；③ 补 pre_clean product_dedupe（同 PR-005 #3518 口径） ｜ tags: multi_turn, single_skill, full_lifecycle, id_reuse, smoke
 
 ### PR-011. 创建商品完整引导流程 - AI 主导收集信息 🔵
 ```
@@ -2976,15 +3060,14 @@
 
 ### PR-017. 商品创建/更新/详情透传「退货回补库存」开关（allow_return_restock） 🔵
 ```
-你: 把「遮光窗帘（100元的那件）」设置成退货后可以回补库存
-你: [🤖 选第一个选项]
-你: 确认
+你: 把遮光窗帘设置成退货后可以回补库存
+你: [🤖 按上一轮卡片作答]
 期望: product_update or product_manage(allow_return_restock=True)
 数据: 商品详情/列表返回 allowReturnRestock（默认 false，开启后为 true）
 数据: 售后工单 refund/return 完结时按商品开关决定是否回补 SKU 库存
 ```
 真值: product-sku-stock.aggregate, product-sku-stock.realtime, aftersales-flow.return-restock-switch
-溯源: issue #2991 新增：窗帘行业定制退货不可再售，商品级开关控制售后完结是否回补库存 ｜ tags: inventory, write, cross_skill
+溯源: issue #2991 新增：窗帘行业定制退货不可再售，商品级开关控制售后完结是否回补库存。2026-09-14 归一（issue #3568）：① 输入去「（100元的那件）」stale 价格点名（种子遮光窗帘 ¥168，实测 agent 合理澄清白耗一轮，同 #3538/#3518）；② 收尾 `auto_select: true` → `auto_respond` 答卡轮（无卡时 auto_select 会发对不上卡片的字面量「第一个」）；③ 补 pre_clean product_dedupe（只按关键词，不带 price 限定） ｜ tags: inventory, write, cross_skill
 
 ### PR-018. B端米宝 product_list 卡片引用对齐 — 只渲染回复文本中实际引用的商品 🔵
 ```
@@ -3726,8 +3809,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：282（活跃 141，跳过 141）
-- tier 分布：smoke 9 / normal 240 / adversarial 33
+- 用例总数：286（活跃 146，跳过 140）
+- tier 分布：smoke 9 / normal 244 / adversarial 33
 - 售后域：9
 - agents：6
 - api：19
@@ -3745,8 +3828,8 @@
 - onboarding：5
 - ontology：4
 - 订单域：26
-- 加工项域：6
-- processing-order：14
+- 加工项域：8
+- processing-order：16
 - 商品域：22
 - registry：1
 - 设置域：8
@@ -3795,4 +3878,8 @@
 - PG-012: 加工单 intent 路由契约 - processing_order_* 路由 order skill（仅米宝可达）
 - PG-013: 米宝加工单 LLM 行为：查询含加工项订单 → 生成加工单（真实对话）
 - PG-014: 订单加工项不可变（源头约束，决策 C）：创建后无任何修改通道
+- PG-015: 米宝加工单 LLM 行为：查询加工单（生成 → 按订单号回查状态）
+- PG-016: 米宝加工单 LLM 行为：更新加工单状态（完成加工，产出核到 completed）
+- PP-007: 米宝加工项 LLM 行为：只改单价不清空其它字段（部分更新语义）
+- PP-008: 米宝加工项 LLM 行为：停用加工项（toggle_item_status → inactive）
 
