@@ -764,7 +764,13 @@ workflow 内红 + PR 评论"（强信号）；**规则命中红 = 改动真的�
 1. **过筛（跑之前先问）**：任何验证 / 评测动作先问 —— **「两种可能的结果，会不会导致不同的下一步动作？」**
    不会 ⇒ **不跑**，并把它记为「**未跑**」，**绝不记为通过**。
 2. **同一判定点只跑一次**（A 统一入口 + B 结论复用；v1.26 起**已落码**，#3769）：
-   判定用途的评测只走**分层全库跑**（一次覆盖两个 persona）；`case_ids` 只用于**定点复现 / 调试**，
+   判定用途的评测只走**分层全库跑**（`tier=normal`，一次覆盖两个 persona）；
+   ⚠️ **「全库」= 该档的全库，不等于「覆盖全部用例」**：`local_runner` 按 **difficulty** 选档、
+   三档**互斥**，故 `tier=normal` **只跑 NORMAL 档**、**不含 SMOKE / ADVERSARIAL**
+   （runner 侧原文「每日回归：normal tier（smoke 由 PR gate 跑，adversarial 由每周任务跑）」；档位边界
+   亦写在 `post-deploy-eval.yml` 的 `tier` 输入描述里）。⇒ **判定用途的 normal 跑只代表 NORMAL 档的结论**，
+   别据以声称覆盖 smoke/adversarial（要全档结论就分别派档，或**显式声明覆盖边界**）。
+   `case_ids` 只用于**定点复现 / 调试**，
    且必须显式标注「**非判定用途**」。**落到代码里的判据 = `.github/scripts/eval_dispatch_guard.sh`**：
    - **A**：`CASE_IDS` 非空 且 `PURPOSE=determination` ⇒ **`exit 1` 拒绝派发**（workflow 内
      `MODE=ci` 同样硬拦）—— 收窄跑的 summary `total` 只反映那几条，**拿它下判定结论就是假绿**；
@@ -928,4 +934,8 @@ workflow 内红 + PR 评论"（强信号）；**规则命中红 = 改动真的�
   ① §16.6 **新增第 6 条「派发前先查槽位」**（`.github/scripts/eval_slot_status.sh`：`0` 可派 / `2` 被占用 ⇒ **不要派发** / `3` 无法判定且**不谎报空闲**；理由 = 全局槽位稀缺，并发派发互相饿死/互杀，实测一个窗口 10 连 `cancelled`）；
   ② §16.7「派发后」把「`cancelled` 的 run 不是结果」升级为「**不是结果、也不再被记成失败**」（判定补 `!cancelled()`、建 issue 去掉 `|| cancelled`、新增「被取消记录/留档」+ summary 抬头「本 run 被取消（未评测，不构成结论）」），并**修正过期表述**（原文写该 run 的 `判定 = failure`，那是 #3770 前的行为）+ 给出**引用前必核三条**（结论已出 / 未被取消 / 未被抑制）；
   ③ §16.7「禁空跑」的 ②③ 由「待落地」改为**已落码锚点**（`eval_dispatch_guard.sh`：A `exit 1` 拒派收窄判定 / B `run_key` ledger 命中即 `exit 2` 不重复跑 / C 变更集为空 ⇒ `⏭️ …未跑`），与 §16.6 ⑥ 互相链一句、不重复表述。
+  ④ **`tier` 的语义边界**（同族：会误导的文档真值）—— `local_runner` 按 difficulty 分档、三档互斥，
+  故 `tier=normal` **只跑 NORMAL 档**（不含 SMOKE/ADVERSARIAL）：§16.7「禁空跑」② 的「全库」已就地注明
+  「**该档**全库 ≠ 覆盖全部用例」，`post-deploy-eval.yml` 的 `tier` 输入描述同步由「normal（全量）」收紧为
+  「normal（**只跑 NORMAL 档**全量；不含 SMOKE/ADVERSARIAL）」+ 紧邻注释登记边界（**只改描述/注释，默认值仍 `normal`**）。
   同时清掉 `.github/workflows/agent-behavior-eval.yml` 注释里「AS-007 已 `skip_reason` 非空」的过期举例（实测 `skip_reason` 为空、米宝端照跑；小布端选不中是**工具集**口径而非 skip）——**只改注释，不动 `unrunnable` 过滤逻辑**。

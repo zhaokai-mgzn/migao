@@ -163,7 +163,8 @@ group 名不带 workflow 前缀即**跨 workflow 生效**。
 3. **结论复用（ledger）**：判定结论按 summary 的 **`run_key`** =
    `(sha, tier, case_ids=空, 用例库 tree hash, 跑批策略版本)` 复用 —— 同 SHA 已有两个 persona
    都 `completion.ok=true` 的**全库** run ⇒ **不重复跑**（派发前守卫 `.github/scripts/eval_dispatch_guard.sh`
-   命中即给出可引用的 run id）。键**缺一不可**是刻意的：旧 run 无 `run_key` / artifact 缺失 ⇒
+   命中即给出可引用的 run id）。⚠️ 这里的「全库」= **该档**全库（`normal` 档**不含** smoke/adversarial，
+   三档互斥），**不等于「覆盖全部用例」** —— 判定用途的 normal 跑只代表 NORMAL 档的结论。键**缺一不可**是刻意的：旧 run 无 `run_key` / artifact 缺失 ⇒
    **不命中，宁可多跑**；判定用途被收窄（`case_ids` 非空 + `PURPOSE=determination`）⇒ **拒绝派发**；
 4. **空跑守卫**：**评测相关路径**（runner / 用例库 / ai-agent 行为源 / 评测 workflow）变更集为空 ⇒ 不派发，
    打印 **`⏭️ 评测相关代码无变更 ⇒ 未跑（引用 <run_id>）`** —— **「没跑」必须长得像「没跑」**

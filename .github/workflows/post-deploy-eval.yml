@@ -106,10 +106,17 @@ on:
   #    没有 inputs，表达式 `${{ github.event.inputs.tier || 'normal' }}` 天然回落
   #    normal 全量 —— 门禁的判定口径**不因任何人传参而改变**（这正是选表达式而非
   #    "读 env 再判断"的原因：不存在"门禁被输入削弱"的代码路径）。
+  # ⚠️ **tier 的语义边界（与 ② 同族：会误导的文档真值）**：`local_runner` 按 **difficulty** 选档，
+  #    三个档位**互斥**（各自再滤 `skip_reason`）—— 故 `tier=normal` **只**跑 NORMAL 档，
+  #    **不含** SMOKE 与 ADVERSARIAL（runner 侧原文：「# 每日回归：normal tier
+  #    （smoke 由 PR gate 跑，adversarial 由每周任务跑）」，按该注释文本检索）。
+  #    ⇒ **判定用途的 normal 跑只代表 NORMAL 档的结论**，勿据以声称"覆盖了全部用例"；
+  #    要全档结论就分别派 smoke / adversarial，或**显式声明覆盖边界**。
+  #    （故上面那句「全量」的准确含义是「**NORMAL 档全量**」，输入描述已按此收紧。）
   workflow_dispatch:
     inputs:
       tier:
-        description: '评测档位：normal（全量，默认=自动门禁同款）| smoke（门禁级快档）| adversarial（安全/对抗）。⚠️ 仅手动触发生效，部署后自动门禁恒为 normal 全量'
+        description: '评测档位：normal（**只跑 NORMAL 档**全量，默认=自动门禁同款；**不含 SMOKE/ADVERSARIAL**）| smoke（门禁级快档）| adversarial（安全/对抗）。⚠️ 仅手动触发生效，部署后自动门禁恒为 normal 全量'
         required: false
         default: normal
         type: choice
@@ -563,7 +570,8 @@ jobs:
           AGENT_EVAL_TRACE_ALL: "1"
           # 波动台账（issue #3563 同类漂移排查）：本 workflow 的判定口径是
           # completion_verdict「已知波动按台账放行」（#3483 §16.3），而 runner 只有在设了
-          # AGENT_EVAL_FLAKE_LOG 时才落盘台账（local_runner.py:3899）—— 此前这里漏设，
+          # AGENT_EVAL_FLAKE_LOG 时才落盘台账（`local_runner.py` 里按 `AGENT_EVAL_FLAKE_LOG`
+          # 环境变量检索 —— 旧注释写的裸行号已漂移，不再给）—— 此前这里漏设，
           # 于是下方 artifact 里的 agent-eval-flakes.json **永远不存在**，
           # "按台账放行"实际退化成"按本次运行的分类放行"（跨 run 的波动榜也攒不起来）。
           AGENT_EVAL_FLAKE_LOG: agent-eval-flakes.json
