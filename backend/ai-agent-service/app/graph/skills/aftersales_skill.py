@@ -11,7 +11,14 @@ from app.graph.skills.skill_config import SkillConfig
 # 售后 Skill 可用的 Tool 列表
 # 售后场景需要查询订单(了解问题订单)+ 订单管理(退款等操作)+ 售后工单管理
 # [RAG 禁用] 移除 knowledge_search,原用于查询售后政策
+# product_search/product_detail（只读）：换货/维修要先看**目标商品档案**（加工项/计价方式），
+# 才能在换货工单确认卡之前主动问清加工项（issue #3033 + 用例 AS-007）。此前
+# prompts/aftersales.md 与 EXAMPLES-aftersales.md 都点名这两个工具，但工具集没绑定
+# → 「提示词承诺了做不到的事」，模型只会撞 tool_not_found（issue #3569 的静态不变式
+# TestLayerPromptToolWhitelist 抓到）。同型先例 customer_order（#3365），修法同为补工具。
 AFTERSALES_TOOLS = ["order_query", "order_manage", "after_sales_manage",
+    "product_search",  # 换货选目标商品：按名称定位
+    "product_detail",  # 取目标商品档案（processing_items / 计价方式）
     "validate_input",  # 写操作前置校验
     "interact",        # 交互卡片：写操作 confirm、售后类型/原因 choice
 ]
