@@ -32,6 +32,34 @@ Java admin-api + Python ai-agent-service + Next.js admin-web + Taro mini-app。
 | CI/CD / 部署 | [docs/wiki/CI-CD.md](docs/wiki/CI-CD.md) |
 | 行为用例单一源 | `.github/cases/`（改后必须跑 `render_cases.py` 并提交生成物） |
 
+## 开发环境准备（获取研发模式）
+
+「米高研发」= DSH agent preset（`preset.yml` + `agent.cordis.yml` + `migao-dev-flow` / `migao-acceptance`
+两个技能），**权威源就是本仓库 [`.agent-presets/migao/`](.agent-presets/migao/README.md)** —— 随代码一起评审、一起回溯。
+DSH 从 root `~/.dsh/.agent-presets/`（`USER_PRESET_DIR = '.agent-presets'`）发现 preset，
+因此把它软链到本仓库该路径即可获得同一份研发模式：
+
+**⚠️ 顺序铁律：先合并含 `.agent-presets/migao/` 的 PR，再执行换链** —— 仓库尚无该路径时换链会让 DSH 当场失效。
+
+```bash
+# 在已克隆（且已含该路径）的 migao 仓库根目录执行
+ls .agent-presets/migao/preset.yml     # ① 先确认仓库里已有该路径
+
+# ② 摘掉旧目录 / 旧软链（若是实体目录，先备份而不是直接删）
+mv "$HOME/.dsh/.agent-presets/migao" "$HOME/.dsh/.agent-presets/migao.bak-$(date +%Y%m%d-%H%M%S)" 2>/dev/null || true
+
+# ③ 换链：-s 建软链 / -f 覆盖已存在项 / -n 不跟随已存在的软链目录
+ln -sfn "$PWD/.agent-presets/migao" "$HOME/.dsh/.agent-presets/migao"
+
+# ④ 校验：应能读到 preset 元数据与技能
+cat "$HOME/.dsh/.agent-presets/migao/preset.yml"
+head -3 "$HOME/.dsh/.agent-presets/migao/skills/migao-dev-flow/SKILL.md"
+```
+
+- **换机 / 新队友**：`git clone` 本仓库 → 在仓库根跑上面 ②~④，即获得同一份研发模式（不再依赖个人 `~/.dsh` 手抄副本）。
+- **改研发模式 = 提 PR**：改 `.agent-presets/migao/**` 走正常 PR 流程（评审 + 回溯）；软链指向工作区文件，合并/拉取后自动生效。
+- 历史独立仓库 `zhaokai-mgzn/migao-agent-presets` 现为**历史 / 镜像，以本仓库为准**；其远程去留（保留/归档/删除）**待用户裁定**，裁定前不动它。详见 [`.agent-presets/migao/README.md`](.agent-presets/migao/README.md)。
+
 ## 环境
 
 - 本地只启 3 组件：admin-api(:8080) + ai-agent-service(:8001) + admin-web(:3001)；DB/Redis 用云 dev
