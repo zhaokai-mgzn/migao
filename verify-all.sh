@@ -31,8 +31,18 @@ report() {
   # ⚠️ 日志路径必须**按检查项唯一**：此前是固定的 /tmp/verify-all-$$.log（$$ 是 shell PID，
   #    整个进程内不变）→ 每个检查项都覆盖同一个文件 → 多项失败时只剩最后一项的日志，
   #    "日志: xxx" 指向的内容与失败项对不上，现场排查当场被带偏。
+  # ⚠️ slug 还必须**与环境 locale 无关**（2026-09-14 实证，issue #3724 的 CI 红）：
+  #    `tr -c '[:alnum:]'` 的 `[:alnum:]` 随 locale 变 —— UTF-8 下 CJK 算 alnum（保留中文），
+  #    C locale 下 CJK 逐字节变 `-`。同一句 `report "QA Growth Gate 预检"` 因此得到
+  #    **不同**文件名：本机 `/tmp/verify-all-<PID>-QA-Growth-Gate-预检.log`、
+  #    CI `/tmp/verify-all-<PID>-QA-Growth-Gate.log` ⇒ 任何按名重建路径的代码/人都会找错文件
+  #    （「本地绿 / CI 红」）。故 `tr` 显式钉 `LC_ALL=C`。
+  # ⚠️ 但钉了 C locale 之后，**纯 CJK 检查名**的 ASCII 部分为空（如「检查项甲」/「检查项乙」
+  #    都退化成空 slug）⇒ 只靠 `tr` 会让两项**共用同一个日志文件**，唯一性丢失。
+  #    故再拼 `cksum`（POSIX，macOS/GNU 均有）兜底：唯一性不依赖名字能否 ASCII 化。
   local slug
-  slug="$(printf '%s' "$name" | tr -c '[:alnum:]' '-' | sed 's/-\{2,\}/-/g; s/^-//; s/-$//')"
+  slug="$(printf '%s' "$name" | LC_ALL=C tr -c '[:alnum:]' '-' | sed 's/-\{2,\}/-/g; s/^-//; s/-$//')"
+  slug="${slug:+${slug}-}$(printf '%s' "$name" | cksum | awk '{print $1}')"
   local log="/tmp/verify-all-$$-${slug}.log"
   local rc=0
   "$@" > "$log" 2>&1
