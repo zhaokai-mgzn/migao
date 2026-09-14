@@ -1564,8 +1564,59 @@ def check_must_succeed(results: list, must_succeed: list) -> list:
     return issues
 
 
+def _args_value_matches(got, want) -> bool:
+    """`must_fail.args` 的值比较（容错数字/字符串同值 + 首尾空白，其余按严格相等）。
+
+    为什么容错（issue #3689）：用例写 YAML（`price: 23.8` / `"13800138000"`），
+    而模型回显的 payload 是 JSON（可能是字符串或数字、可能带空白）——同一事实的两种形态
+    不该判不匹配（不匹配 = 该次调用不算作用域内 = **假绿**：脏单落库却报"没匹配上"）。
+    """
+    if got == want:
+        return True
+    if isinstance(got, (int, float, bool)) or isinstance(want, (int, float, bool)):
+        try:
+            return float(got) == float(want)
+        except (TypeError, ValueError):
+            return False
+    return str(got).strip() == str(want).strip()
+
+
+def _round_scoped_call_success(r: dict, tool: str, scope: dict) -> tuple:
+    """本轮里**匹配 `scope`（action / args 值级）**的调用是否有成功 → `(是否发起匹配调用, 是否成功)`。
+
+    对齐规则与 `_round_action_result`（issue #3667/#3681）**同源**：`tool_result` 事件不带 args
+    （`app/api/sse.py` 只发 `{'tool','result'}`），所以"哪个结果是哪次调用的"只能按**同轮同名调用的
+    出现顺序**对齐；对齐不上（结果数 ≠ 调用数，如合成轨迹/节点重放）时回退该轮该工具的口径，
+    **不猜也不静默放过**（与 `_round_action_result` 的 `legacy_ok` 回退一致）。
+
+    `scope` 支持的键：`action`（字符串，或空 = 不限）、`args`（值级 dict，全部键都须命中）。
+    """
+    calls = [tc for tc in (r or {}).get("tool_calls") or []
+             if _tool_name_matches((tc or {}).get("name"), tool)]
+    if not calls:
+        return False, False
+    action = str(scope.get("action") or "")
+    want_args = scope.get("args") or {}
+
+    def _hit(tc) -> bool:
+        a = (tc or {}).get("args") or {}
+        if action and str(a.get("action") or "") != action:
+            return False
+        return all(k in a and _args_value_matches(a[k], v) for k, v in want_args.items())
+
+    hit = [i for i, tc in enumerate(calls) if _hit(tc)]
+    if not hit:
+        return False, False
+    results = [tr for tr in (r or {}).get("tool_results") or []
+               if _tool_name_matches((tr or {}).get("tool"), tool)]
+    if len(results) != len(calls):
+        return True, any(_round_call_success(r, tool))
+    return True, any(
+        bool((results[i].get("result") or {}).get("success")) for i in hit)
+
+
 def check_must_fail(results: list, must_fail: list) -> list:
-    """**必须失败**断言：声明的工具（可限定 action）**一次都不得成功**（`must_succeed` 的镜像）。
+    """**必须失败**断言：声明的工具（可限定 `action` / `args`）**一次都不得成功**。
 
     为什么与 `must_succeed` 并列（issue #3544 收口批 / OR-026「拒绝半」）：`must_succeed`
     管「业务必须真的发生」，本断言管「业务**不得**发生」——例如非法手机号下单场景，
@@ -1574,10 +1625,30 @@ def check_must_fail(results: list, must_fail: list) -> list:
       · 从未调用 → **通过**（"拒绝"未必等于"尝试"；要求必须尝试是另一个断言的事，
         由 `expectations: tool` 表达）；
       · 任一成功调用 → **违规**，并把轮次+错误码之外的尝试列出来便于归因。
-    条目形态：`- order_create` 或 `- {tool: order_create, action: create}`。
+    条目形态：`- order_create` / `- {tool: order_create, action: create}` /
+    `- {tool: order_create, args: {customer_phone: "05718886666"}}`。
 
     声明 `action` 时（issue #3681）：只有**该 action 那次调用**自己的成败才算数（同轮对齐，
     见 `_round_action_result`）——同轮别的 action 成功/失败都不得顶替（假绿/假红同源）。
+
+    声明 `args` 时（issue #3689 / OR-026）：语义 =「**凡匹配该 args 的那次调用**都不得成功」——
+    这是**参数值级作用域**，工具×action 粒度表达不了 OR-026 的不变式
+    （「任何一次以非法号码 `05718886666` 为 `customer_phone` 的 `order_create` 都不得成功」）。
+      · 旧实现**从不读 `args`** → 静默降级成工具级「全程一次都不得成功」→ 与 OR-026 自己的
+        `must_succeed[order_create]` 直接冲突（用例照抄即**恒红**）；
+      · 现在按 `_round_scoped_call_success` 同轮对齐到**那一次调用**（不借同轮别的调用的成败）。
+      · 为什么不做轮次作用域（`rounds: [R1]`）：**值级不变式必须在任何轮都成立**
+        （第 3 轮用非法号建单同样违规），而轮次下标会随卡片序列漂移而错位
+        （`migao-dev-flow` §13.5 / §6.4.1 的 `repeat_until` 先例）——故不做那个更弱的口径。
+
+    **配置 fail-closed**（"断言'未评估'也是一种失败"）：条目里出现**未支持的键**（`rounds`/拼错的
+    `arg`）或 `args` 不是非空映射（`yaml_light` 会把 flow 序列读成字符串）→ **报配置错误**，
+    绝不静默忽略（静默忽略的后果：断言悄悄降级/空转，报告上却"看起来有覆盖"）。
+
+    ⚠️ 本函数**看不到工具 schema**，故「声明了 action 但该工具根本没有 action 参数」这类结构性
+    配置错误由 L0 静态不变式拦（`tests/unit_ci_workflows/test_eval_assertion_action_binding.py`）——
+    这里不能靠"该轮没调到该 action"判红：那是**合格通过**（从未调用 = 通过），
+    反例 `order_query` 有 `"default": "list"`，模型不带 action 参数调用也合法。
     """
     issues = []
     for spec in must_fail or []:
@@ -1591,12 +1662,33 @@ def check_must_fail(results: list, must_fail: list) -> list:
         if not tool:
             issues.append(f"must_fail: 配置缺 tool: {spec!r}（该断言会静默跳过）")
             continue
+        unknown = sorted(set(spec) - {"tool", "action", "args"})
+        if unknown:
+            issues.append(
+                f"must_fail: 条目含未支持的键 {unknown}（会被静默忽略 → 断言降级/空转）: {spec!r}"
+                f"—— 支持 tool/action/args；轮次作用域未实现（值级作用域见 issue #3689）")
+            continue
+        want_args = spec.get("args")
+        if want_args is not None and (not isinstance(want_args, dict) or not want_args):
+            issues.append(
+                f"must_fail: args 必须是非空映射（拿不到作用域 → 断言会空转）: {spec!r}")
+            continue
         succeeded: list = []
         attempts = 0
         for r in results or []:
             rnd = r.get("__round")
             matched = [st for st in _tool_result_status(r.get("tool_results") or [])
                        if _tool_name_matches(st.get("tool"), tool)]
+            if want_args:
+                # 参数**值级**作用域（issue #3689 / OR-026）：只算匹配该 args 的那次调用自己。
+                scoped = {"action": action, "args": want_args}
+                called, ok = _round_scoped_call_success(r, tool, scoped)
+                if not called:
+                    continue
+                attempts += 1
+                if ok:
+                    succeeded.append(rnd)
+                continue
             if action:
                 # 与 `must_succeed` 对称（issue #3681）：只有**声明 action 的那次调用**自己的成败
                 # 才算数 —— 同轮别的 action 成功/失败都不得顶替（假绿/假红同源）。
@@ -1618,6 +1710,9 @@ def check_must_fail(results: list, must_fail: list) -> list:
             succeeded += [rnd for st in matched if st.get("ok")]
         if succeeded:
             _scope = f"(action={action})" if action else ""
+            if want_args:
+                _scope = (f"(action={action}, " if action else "(") + "args=" \
+                    + json.dumps(want_args, ensure_ascii=False, sort_keys=True) + ")"
             _rounds = ", ".join(f"R{x}" for x in succeeded)
             issues.append(
                 f"must_fail: {tool}{_scope} 在 {_rounds} **成功**了 —— 该操作必须被拒绝/不成立"
@@ -1902,16 +1997,28 @@ def _evaluate_processing_configs_check(configs: list, check: str) -> tuple[bool,
     return True, ""
 
 
-async def _fetch_product_configs(token: str, name: str) -> list:
-    """按商品名查 admin-api，返回 processingItemConfigs（落库真实数据）。"""
+async def _fetch_product_configs(token: str, name: str = "", product_id: str = "") -> list:
+    """查商品库返回 `processingItemConfigs`（落库真实数据）。
+
+    两条定位路径（issue #3689 / PR-019）：
+      · `product_id` 给定时**直查该商品**（`GET /api/admin/products/{id}`）——回读键来自
+        **本次成功写调用**的 payload（`product_manage(action=create)` 回
+        `{"product_id":…}`，见 `app/tools/product_manage.py:245`）；
+      · 否则按 `name` 关键词搜（`page/size=1` 取**首条**）——存量语义，用于商品名在库里唯一时。
+    ⚠️ 为什么必须支持第一种：PR-019 建的商品名与评测种子同名同价
+    （`fixtures/mibao_eval_seed.sql:30` 的 `prod_eval_2699`，¥23.80），keyword 首条命中的是
+    **种子** ⇒ 不管本次 create 成没成功都绿（假绿）。按 id 回读才能真正核对"本次新建的那条"。
+    """
     async with httpx.AsyncClient() as c:
         h = _admin_headers(token)
-        r = await c.get(f"{ADMIN_API}/api/admin/products", headers=h,
-                        params={"keyword": name, "page": 1, "size": 1}, timeout=15)
-        items = (_safe_json(r, {}) or {}).get("data", {}).get("items", [])
-        if not items:
-            return []
-        pid = items[0]["id"]
+        pid = str(product_id or "").strip()
+        if not pid:
+            r = await c.get(f"{ADMIN_API}/api/admin/products", headers=h,
+                            params={"keyword": name, "page": 1, "size": 1}, timeout=15)
+            items = (_safe_json(r, {}) or {}).get("data", {}).get("items", [])
+            if not items:
+                return []
+            pid = items[0]["id"]
         rd = await c.get(f"{ADMIN_API}/api/admin/products/{pid}", headers=h, timeout=15)
         return (_safe_json(rd, {}) or {}).get("data", {}).get("processingItemConfigs") or []
 
@@ -1980,14 +2087,41 @@ async def _fetch_product_price(token: str, name: str) -> float | None:
     return None
 
 
+def _ticket_ref_of(data) -> str:
+    """工单引用取值（**单一实现**，防两处口径漂移）：`ticket_id`/`ticketId` → 否则工单形态的 `id`。
+
+    为什么单列（issue #3689 / AS-007）：`_first_successful_ticket_payload` 与
+    `check_db_verify[after_sales_ticket]` 都要取这个引用 —— 两处各写一份时，只改一处就会
+    "筛得出载荷却提不出引用"（本次实测踩到：核对器仍报「找不到成功调用」）。
+    `id` 的接受条件同 `_first_successful_ticket_payload`（须带工单特征键）。
+    """
+    d = data if isinstance(data, dict) else {}
+    tid = str(d.get("ticket_id") or d.get("ticketId") or "").strip()
+    if not tid and str(d.get("id") or "").strip() and any(
+            str(d.get(k) or "").strip() for k in ("ticketNo", "ticketType", "orderId")):
+        tid = str(d["id"]).strip()
+    return tid
+
+
 def _first_successful_ticket_payload(results: list, tool: str, expect_status: str) -> tuple:
     """首个**成功**的 `after_sales_manage` 调用里带工单引用的 payload（可选按状态过滤）。
 
     为什么不能直接用 `_first_successful_data`（issue #3544 / AS-004）：该函数取的是
     「第一个成功调用」的 payload，而 AS-004 的 R1 是 `list`（payload = {items,total}）
     → 拿它去核对工单落库会指向一个**根本没有 ticket_id** 的载荷。故按 payload 形状筛：
-    带 ticket_id 且（声明了 expect_status 时）`status` 相符 —— 后者能区分同一工单上的
+    带工单引用且（声明了 expect_status 时）`status` 相符 —— 后者能区分同一工单上的
     多次状态变更（如先 processing 后 closed），不会核对错那一次。
+
+    工单引用的键**按两条写路径的真实形状**认（issue #3689 / AS-007）：
+      · `update_status` 路径 → `ticket_id`（`app/tools/after_sales_manage.py:435`
+        `data={"ticket_id":…, "status":…}`）；
+      · `create` / `detail` 路径 → **`id`**（`:369`/`:281` 原样返回 admin-api 的
+        `AfterSalesDetailResponse`，其字段是 `id`/`ticketNo`/`status`，
+        **没有 `ticket_id`**）。旧实现只认 `ticket_id`/`ticketId` ⇒ create 形态恒返回
+        `(None, {})` ⇒ AS-007 的 `db_verify[after_sales_ticket]` 一加就**永久假红**
+        （"找不到成功调用（判失败而非跳过）"）。
+    ⚠️ 裸 `id` **不算** 工单引用：必须同时带工单特征键（`ticketNo`/`ticketType`/`orderId`），
+    否则将来出现「带 id 的非工单载荷」时会把核对指向一个根本不是工单的对象（假绿）。
     """
     for r in results or []:
         for tr in r.get("tool_results") or []:
@@ -1997,7 +2131,7 @@ def _first_successful_ticket_payload(results: list, tool: str, expect_status: st
             data = res.get("data") if res.get("success") else None
             if not isinstance(data, dict):
                 continue
-            tid = str(data.get("ticket_id") or data.get("ticketId") or "").strip()
+            tid = _ticket_ref_of(data)
             if not tid:
                 continue
             if expect_status and str(data.get("status") or "").strip() != expect_status:
@@ -3368,8 +3502,7 @@ async def check_db_verify(token: str, db_verify: list, results: list | None = No
                     "（拿不到期望值 → 检查会空转通过）")
                 continue
             _rnd, _data = _first_successful_ticket_payload(results or [], src, expect_status)
-            ticket_ref = str((_data or {}).get("ticket_id")
-                             or (_data or {}).get("ticketId") or "").strip()
+            ticket_ref = _ticket_ref_of(_data)
             if not ticket_ref:
                 issues.append(
                     f"db_verify[after_sales_ticket]: 找不到 {src}(status={expect_status}) 的"
@@ -3408,15 +3541,35 @@ async def check_db_verify(token: str, db_verify: list, results: list | None = No
             issues.append(f"db_verify: 不支持的 fetch 配置: {spec!r}")
             continue
         name = str(spec.get("name") or "")
-        if not name:
+        # 回读**本次写的那条记录**（issue #3689 / PR-019）：声明 `source`（+`action`）时，
+        # 回读键取自该次成功写调用的 payload（`product_manage(action=create)` 回
+        # `{"product_id":…}`），按 id 直查 —— 与 `db_verify[processing_order]` 的回读口径同源。
+        # ⚠️ 为什么不能只靠 keyword：PR-019 的商品名与种子同名同价，keyword 取首条命中的是
+        # **种子** ⇒ 种子恒在 ⇒ 该断言不管本次 create 成没成功都绿（假绿，比不加更糟）。
+        src = str(spec.get("source") or "")
+        action = str(spec.get("action") or "")
+        product_id = ""
+        if src:
+            _pay = _first_successful_payload(results or [], src, action)
+            product_id = str(_pay.get("product_id") or _pay.get("productId")
+                             or _pay.get("id") or "").strip()
+            if not product_id:
+                _scope = f"(action={action})" if action else ""
+                issues.append(
+                    f"db_verify[product_by_name]: 找不到 {src}{_scope} 的成功调用或 payload 里没有 "
+                    f"product_id（回读键取自本次成功写调用）—— 判失败而非跳过"
+                    f"（静默回退到 keyword 首条正是假绿本身）")
+                continue
+        if not product_id and not name:
             issues.append(
                 f"db_verify[product_by_name]: 缺 name（拿不到商品 → 检查会空转通过）: {spec!r}")
             continue
-        configs = await _fetch_product_configs(token, name)
+        configs = (await _fetch_product_configs(token, product_id=product_id, name=name)
+                   if product_id else await _fetch_product_configs(token, name))
         for check in spec.get("checks") or []:
             ok, detail = _evaluate_processing_configs_check(configs, str(check))
             if not ok:
-                issues.append(f"db_verify[{name}]: {detail}")
+                issues.append(f"db_verify[{name or product_id}]: {detail}")
     return issues
 
 
