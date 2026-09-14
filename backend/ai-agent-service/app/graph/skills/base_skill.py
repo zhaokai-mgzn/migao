@@ -1033,14 +1033,25 @@ def _pending_card_before_last_user(messages) -> bool:
     return False
 
 
-def _confirm_card_seen(messages) -> bool:
-    """会话历史里是否**出现过确认卡**（用于把 `confirmation_required` 细分成两种形态）。
+def _confirm_card_seen(messages, session_state: dict | None = None) -> bool:
+    """会话里是否**出现过确认卡**（用于把 `confirmation_required` 细分成两种形态）。
 
     为什么需要（issue #3445）：同样是写单被确认门禁挡回，两种成因的修法完全不同 ——
       · **从没发过确认卡** → 模型跳过确认直接写（该做的是把确认卡补上）；
       · **发过卡但这次回复不是卡值**（顾客回了文本 / harness 没点卡）→ 该修的是点卡链路。
     而 CI 指纹原本只有一句 `confirmation_required`，两种形态长得一模一样，只能人肉翻容器日志
     （fast 档还看不到）。故把细分写进 error 码，让报告自己说话。
+
+    ⚠️ **`messages` 在真实链路里查不到卡（issue #3750 实证，别再依赖它）**：
+    图每轮由 `app/agents/customer_service_agent.py::_convert_history` 从 DB 历史重建，
+    **只构造 `HumanMessage`/`AIMessage`**，且 `app/graph/builder.py` 的 `graph.compile()`
+    **没有 checkpointer** ⇒ 跨轮 `interact` 的 `ToolMessage` 根本不存在（本轮的那条只进
+    `new_messages`）。后果（run 34849029334 / SHA 929732b4 的 OR-026）：R2 明明发出了
+    `interact(component=confirm …)`，R3 写调用仍被判 `confirmation_required_no_card`，
+    而 `confirmation_required_card_not_clicked` 在最需要它的"发过卡但顾客没点"多轮场景**不可达**。
+    故补 `session_state` 这一**真实存在**的证据源：`last_confirm_value` / `last_card`
+    由 `interact` 成功路径与 8.3b 补卡路径持久化（本文件 `:3968-3975` / `:4037`）。
+    只影响**细分码与补卡判据**，不改任何放行条件。
     """
     for msg in messages or []:
         if not isinstance(msg, ToolMessage) or getattr(msg, "name", None) != "interact":
@@ -1052,6 +1063,11 @@ def _confirm_card_seen(messages) -> bool:
         if not isinstance(payload, dict) or not payload.get("success"):
             continue
         if (payload.get("data") or {}).get("component") == "confirm":
+            return True
+    if isinstance(session_state, dict):
+        if str(session_state.get("last_confirm_value") or ""):
+            return True
+        if str((session_state.get("last_card") or {}).get("component") or "") == "confirm":
             return True
     return False
 
@@ -1660,6 +1676,70 @@ def _confirm_card_fields_hint(args: dict) -> str:
     if not fields:
         return ""
     return "，建议卡片 fields=" + json.dumps(fields, ensure_ascii=False)
+
+
+# ── 8.6 草稿态回复归一（issue #3750）──────────────────────────────────────────
+# C 端下单 prompt 有两处铁律（`app/graph/skills/customer_order_skill.py`）：
+#   · `:81-82`「在办流程里的任何修改（加工项/地址/数量/颜色/门幅）都只是草稿、订单未创建 →
+#     说「记下了，下单时一并提交」；**禁止**「已更新/已修改」」；
+#   · `:91`「**验证码**：顾客**确认后**，友好引导…」（= 点确认卡**之后**才轮到验证码）。
+# 两条都只写在 prompt 里，实测都被 LLM 违反，后果同族 —— **顾客可见的"承诺与事实不符"**
+# （run 34849029334 / SHA 929732b4 的 OR-026 两条失败指纹逐一对应）：
+#   · 次败 R2「手机号已更新」，而**截至该轮没有任何写工具成功**
+#     （评测全局检查 `check_unbacked_state_claim` 判红）。
+#   · 首败 R3/R4 在确认卡**待顾客点击**期间反复回「验证码收到啦 / 请把验证码发我」→
+#     协作型顾客按话术供码 → 写调用被确认门禁拦下（**这是正确行为**）→ 顾客的动作
+#     永远推不动流程 → agent 再发卡、再提验证码 … 循环到轮数耗尽，
+#     `order_create` 全程 2 次调用**无一成功**（issue #3445 家族：被
+#     `confirmation_required` 挡回后流程不收敛；指纹 `confirmation_required_no_card`）。
+# 处置与既有惯例一致（「改 3 次 prompt 修不好 → 代码管」，同 8.3b 补卡 / 加工项卡改写）：
+# 写未成功前，回复只允许「草稿态措辞 + 唯一下一步（点确认卡）」。**只改文本，
+# 不放行任何写调用**（`#3414` 教训），确认门禁本身一字不动。
+_DRAFT_CLAIM_MARKERS = (
+    # 变更态（在办流程里的修改）：prompt `:81` 显式点名「已更新/已修改」
+    "已为您更新", "已更新", "已修改", "已改好", "地址已改", "已生效",
+    # 完成态（订单类写宣告）：prompt `:82`「"订单已创建"**仅**可在 order_create 成功后说」
+    "已成功提交", "已为您提交", "已提交订单", "订单已提交", "订单已创建",
+    "已为您下单", "下单成功", "已创建",
+)
+_DRAFT_STATE_PHRASE = "已记下（下单时一并提交）"
+# 与断言侧同源（`tests/agent_eval/local_runner.py:_CODE_REQUEST_HINTS`）：顾客与评测
+# harness 一样，靠回复文本里这几个词判断"客服在索要验证码"。
+_DRAFT_CODE_ASK_HINTS = ("验证码", "校验码", "短信码", "动态码", "verification code")
+
+
+def normalize_draft_state_reply(text: str) -> tuple:
+    """写未成功前的回复归一：**草稿态措辞 + 唯一下一步**。返回 `(新文本, 命中说明)`。
+
+    纯函数（无 IO），便于单测直接钉住判据。两件事：
+      ① 完成/变更态措辞 → 草稿态措辞（`customer_order_skill.py:81-82` 的代码兜底）；
+      ② 去掉「索要/复述验证码」的句子 —— 确认卡待点时**唯一**可执行下一步是点卡，
+         此时提验证码会把顾客引向一个**推不动流程**的动作（写调用必被门禁拦下，
+         见本文件 8.6 头部实证），这正是 #3445 家族"流程不收敛"的成因。
+
+    `<interact>` 卡片块（8.3b 补的卡或模型自己给的卡）先摘出来原样放回，
+    避免把卡片字段/confirmValue 误删（卡是顾客唯一的操作入口）。
+    """
+    raw = str(text or "")
+    if not raw:
+        return raw, []
+    head, sep, card = raw.partition("<interact>")
+    notes: list = []
+    for marker in _DRAFT_CLAIM_MARKERS:
+        if marker in head:
+            notes.append(f"完成态措辞「{marker}」→ 草稿态")
+            head = head.replace(marker, _DRAFT_STATE_PHRASE)
+    kept = []
+    for seg in re.split(r"(?<=[。！？!?；;\n])", head):
+        if seg and any(h in seg for h in _DRAFT_CODE_ASK_HINTS):
+            notes.append("去掉验证码诉求句（确认卡待点，唯一下一步＝点卡）")
+            continue
+        kept.append(seg)
+    head = "".join(kept)
+    if not head.strip():
+        # 全被删净时不留下空回复（顾客必须拿到**一个**可执行动作）
+        head = "亲，订单信息我记下了，麻烦您点一下上方卡片确认，我马上帮您提交～"
+    return head + sep + card, notes
 
 
 def _capability_denial_reason(args: dict) -> str:
@@ -2971,6 +3051,7 @@ async def execute_skill(
     _denial_corrected = False      # 文本级能力误宣只纠正一次（issue #3443）
     _stall_corrected = False       # 「确认却不动手」只纠正一次（issue #3445 类）
     _no_card_blocked_args = None   # 本轮"没发过确认卡就写单"被拦的参数（issue #3445 代码兜底）
+    _write_ok = False              # 本轮是否有**写工具成功**（8.6 草稿态归一的前置，issue #3750）
     vision_analysis = ""
 
     if is_multimodal:
@@ -3215,6 +3296,9 @@ async def execute_skill(
                     # `execute_skill` 的局部变量 —— 不加 `nonlocal` 会创建一个**新局部**，
                     # 收尾的"补发确认卡"永远读不到（首版即此错，被新增用例当场抓住）。
                     nonlocal _no_card_blocked_args
+                    # 同理 `_write_ok`（issue #3750）：不加 nonlocal 只会创建一个**新局部**，
+                    # 收尾 8.6 永远读到 False ⇒ "本轮写成功了"判不出来，成功回执也可能被归一。
+                    nonlocal _write_ok
                     tool_name = tool_call["name"]
                     args = tool_call.get("args", {})
                     # ── C 端同一组件每轮只允许**一张**卡（issue #3445，OR-023 实证）──
@@ -3677,8 +3761,17 @@ async def execute_skill(
                         # （既有断言按子串匹配），后缀说明**是哪一种**：
                         #   · _no_card          → 本会话从没发过确认卡（模型跳过确认直接写）
                         #   · _card_not_clicked → 发过卡，但这次回复不是卡值（顾客回文本/未点卡）
+                        # 会话卡片证据取自**落库的会话状态**（issue #3750）：`state["messages"]`
+                        # 里不会有跨轮 `interact` 的 ToolMessage（原因见 `_confirm_card_seen`），
+                        # 只靠它会让细分码恒为 `_no_card`。
+                        _card_state3 = {}
+                        try:
+                            from app.memory.session_state_store import SessionStateStore as _S6
+                            _card_state3 = await _S6().load(session_id) or {}
+                        except Exception as _e6:
+                            logger.warning(f"[{skill_name}] 最近确认卡读取失败（非致命）: {_e6}")
                         _err3 = ("confirmation_required_card_not_clicked"
-                                 if _confirm_card_seen(state.get("messages", []))
+                                 if _confirm_card_seen(state.get("messages", []), _card_state3)
                                  else "confirmation_required_no_card")
                         if _err3 == "confirmation_required_no_card":
                             # 代码兜底（issue #3445）：本轮模型**从没发过确认卡**就写了单 ——
@@ -3717,6 +3810,8 @@ async def execute_skill(
                     else:
                         result_str, result_dict = await _execute_tool_safe(tool, args, tool_context, state)
                     _executed_tools.add(tool_name)
+                    if result_dict.get("success") and not getattr(tool, "read_only", False):
+                        _write_ok = True
                     if not result_dict.get("success") and result_dict.get("suggestion"):
                         corrected = await _self_correct_retry(tool, args, tool_context, skill_name, result_dict, session_id, tenant_id, state)
                         if corrected:
@@ -4096,6 +4191,8 @@ async def execute_skill(
                     _msg8 = str((_res8 or {}).get("message") or "").strip()
                     if _msg8:
                         final_content = _msg8
+                    if (_res8 or {}).get("success"):
+                        _write_ok = True
                     if (_res8 or {}).get("success") and is_pending_for(_pending8, _target8):
                         _f8.pop(PENDING_KEY, None)
                         await _S8().commit(session_id, _f8)
@@ -4114,6 +4211,35 @@ async def execute_skill(
     # SSE 文本/卡片在 `app/api/chat.py` 的 `_mask_for_customer` / `_mask_card_for_customer`，
     # C 端 `GET /history` 回放在 `app/api/chat.py::get_history`。
     # 另有一层兜底：模型若真把掩码值填回写工具，`_masked_phone_write_block` 会拦下并回放真号。
+
+    # ── 8.6 草稿态回复归一（issue #3750）──
+    # 判据（保守，四条同时成立才动文本；任一不成立就一字不改）：
+    #   ① C 端 + 下单域 Skill（与 8.3b 同域；B 端写流程各异，不在此列）；
+    #   ② 存在「已校验待执行」的写（`validate_input` 通过后落库的 `pending_validated_input`，
+    #      写成功后由本文件 `:3915` 清除 ⇒ 已闭环的轮次自动不在范围内）；
+    #   ③ 该写**还没被顾客确认**（`confirmed_write_tool != target`）。点卡/文本确认的轮次由
+    #      `_inject_pending_validated`（`:2742-2751`）在**开轮前**就记下放行标记 ⇒
+    #      "已确认、正在等验证码"这一正常形态**不会**被误归（否则会把"请输入短信验证码"
+    #      这句**必要**引导也删掉，反倒造出真死锁）；
+    #   ④ 本轮没有任何写工具成功（成功即闭环，回复该说"订单已提交成功"）。
+    # 命中后只改**回复文本**：完成/变更态措辞 → 草稿态；去掉验证码诉求句（唯一下一步＝点卡）。
+    # ⚠️ 不放行任何写调用（#3414），确认门禁与 `:3614` 的拦截逻辑一字不动。
+    if (session_id and final_content and skill_name == "customer_order"
+            and not _write_ok and _is_customer_role(state)):
+        try:
+            from app.memory.session_state_store import SessionStateStore as _S9
+            _f9 = await _S9().load(session_id) or {}
+            _pend9 = _f9.get(PENDING_KEY) or {}
+            _target9 = str((_pend9 or {}).get("target_tool") or "")
+            if _target9 and _f9.get("confirmed_write_tool") != _target9:
+                _new9, _notes9 = normalize_draft_state_reply(final_content)
+                if _notes9 and _new9 != final_content:
+                    logger.info(
+                        f"[{skill_name}] 草稿态回复归一（{_target9} 写未成功）："
+                        f"{'；'.join(_notes9)} | session={session_id}")
+                    final_content = _new9
+        except Exception as _e9:
+            logger.warning(f"[{skill_name}] 草稿态回复归一失败（非致命）: {_e9}")
 
     # ── 9. 返回值 ──
     result: dict[str, Any] = {"messages": new_messages, "final_answer": final_content, "skill_used": skill_name}
