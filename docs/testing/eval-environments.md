@@ -67,6 +67,58 @@
 - **翻案成本**：若将来要纳入 required，需先解决"方差卡合并"（例如只对确定性失败 required、
   或把该 job 拆成"确定性部分 required + LLM 部分信息性"），**禁止裸加 required**。
 
+### 3.3 仓库级评测槽位 `eval-stack-global`（#3587）：排队，不 cancel
+
+**问题**：每个评测 workflow 各自一条排队队列 → 多个 workflow / 多个 PR 同时**并发建栈**互抢
+runner 与 Docker Hub 出口，栈启动从 3.4min 被抬到 12min，评测轮次从 8min 被抬到 12min、
+确定性失败从 9 条涨到 13 条（#3417 实测；`eval-pipeline-performance.md` §2.2）。
+排队不只是慢 —— **它让结论变不准**（并发制造假失败）。
+
+**做法**：让所有**会起独立栈**的评测 workflow 共用同一个 concurrency group
+（`eval-stack-global`）。GitHub 的语义是「同 group 至多 1 个 running，其余 queued」，
+group 名不带 workflow 前缀即**跨 workflow 生效**。
+
+| workflow | 现状 | 落地改法（精确到行） | 预期效果 |
+|---|---|---|---|
+| `post-deploy-eval.yml` | ✅ **已改**（#3587） | 文件级新增 `concurrency: { group: eval-stack-global, cancel-in-progress: false }` | 部署后全量回归全局串行，不再与其它评测抢栈 |
+| `agent-behavior-eval.yml` | ⏳ 待改（另包） | 第 58-60 行：`group:` 从 `agent-behavior-eval-${{ github.event.pull_request.number \|\| github.ref }}` 改为 `eval-stack-global`；`cancel-in-progress: true` **保持不变** | 同 PR 新 push 仍即时取消旧 run（省栈省 token）；**跨 PR** 不再并发建栈，改为排队 |
+| `xiaobu-acceptance.yml` | ⏳ 待改（另包） | 文件级（第 86-88 行）**保持不变**；在 `xiaobu-acceptance` job（第 125 行 `xiaobu-acceptance:` 下、`timeout-minutes` 之后）新增 job 级 `concurrency: { group: eval-stack-global, cancel-in-progress: false }` | PR 级取消语义**完全保留**（新 push 仍能立刻杀掉排队中的旧 run —— 它还没起栈，杀掉最省）；真正起栈的 job 进入全局槽位，**同一时刻仓库内只有一套评测栈在构建** |
+
+**为什么 xiaobu 的改法与其他两个不同（关键取舍，别抄错）**：
+`xiaobu-acceptance.yml` 的文件级 `cancel-in-progress: true` 是**PR 迭代**的必需品
+（同一个 PR 连推 3 次，前两次的栈构建与 token 全废）。若把文件级 group 换成共享槽位并
+`cancel-in-progress: false`，新 push 就必须**排在**旧 run 后面 —— 那既丢了 PR 迭代性，
+又让旧 run 有机会跑完整套栈，是最坏组合。
+故 xiaobu 用 **job 级** group：PR 级"取消旧的排队 run"（便宜、正确）+ job 级"全局串行建栈"
+（消除互抢）。两层语义各司其职，**不做二选一**。
+
+**注意事项**：
+1. **不要为了"更快"把 `cancel-in-progress` 改成 true**（对 post-deploy-eval）——
+   取消在跑的长评测会让门禁永远跑不完（活锁）+ 结论档永久丢失（#3526 决策，勿翻案）；
+2. **共享槽位的代价是排队**：并发建栈消失后，同时提交的多条评测会串行。
+   这正是 #3587 要的（少付一份栈构建 + 少一份假失败），但它**不缩短单次评测** ——
+   单次提速仍靠 `case_ids` 收窄 + `fast`（评测档）+ GHCR 预构建镜像（栈固定成本，
+   见 `eval-pipeline-performance.md` §2.7）；
+3. 新增**会起独立栈**的评测 workflow 时，一并加入 `eval-stack-global`
+   （不起栈的纯计算 job/workflow 不必加入）；
+4. group 名是**契约**：改名等于把队列拆散，改名必须同步改所有 workflow + 本文档
+   （守卫：`tests/unit_ci_workflows/test_post_deploy_eval_supersede.py::TestGlobalEvalSlot`）。
+
+### 3.4 抑制「已被取代的 run」（#3587）：门禁不因抑制而消失
+
+`post-deploy-eval.yml` 在**任何真实成本之前**比对「本次被评 SHA」与「远端 main HEAD」：
+不等即说明这份镜像已被更新的 commit 覆盖，**跳过评测**并打印链接链
+（被评 SHA 的 commit → 取代它的 main commit → 取代它的 run 列表），
+**不计 failure、不建 issue**。
+
+- **它不违反"不 cancel-in-progress"那条决策**：抑制不是取消 —— 取消发生在长评测跑了一半
+  （钱和时间已烧掉、且没有任何结论）；抑制发生在花钱之前（秒级比对、0 token、0 栈构建），
+  且结论由**取代它的那次 run** 承担并有链接可追。「某次部署时行为到底怎样」仍可回答 ——
+  答的是"这个 **main 状态**"而不是"这个已被覆盖的 commit"；
+- **fail-open**：`git ls-remote` 失败 / 取值不可得 / 手动 `workflow_dispatch` → **一律照常评测**。
+  判定逻辑本身绝不能成为"漏评"的来源；
+- **手动逃生口**：`workflow_dispatch` 的 `force_eval=true` 可强制评测（回滚复验/补跑特定部署）。
+
 ## 四、与米高研发模式的衔接
 
 - 档位纪律 / 全量降频 / 完成定义 / **门禁矩阵（含量化 blocking 属性）**：`migao-dev-flow` §16（§16.5）；
