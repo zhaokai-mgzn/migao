@@ -89,12 +89,12 @@ on:
 #   9 个 PR 全部 BLOCKED。**不是队列深，是并发预算被 PR 层评测吃光，required 被饿死。**
 # 修后：两类 PR 层评测（本 workflow + agent-behavior-eval）共用 `eval-stack-global`，
 #   与 post-deploy-eval 同一 group 名（AD 包在那边落地）—— 三处一致，由
-#   docs/testing/eval-environments.md §1.2 单一说明。
+#   docs/testing/eval-environments.md §3.4 单一说明。
 #
 # ★ `cancel-in-progress: false`：**故意不 cancel**。
 #   评测 job 的产物就是结论本身；cancel 掉正在跑的那条 = 那个 PR 永远拿不到该信号（活锁）。
 #   与 post-deploy-eval.yml 里"为什么不加 cancel-in-progress"的既有论证同源（#3526）。
-#   ⚠️ 语义副作用（**必须知道**，详见 §1.2）：GitHub 的 concurrency 是"一个 group 同时
+#   ⚠️ 语义副作用（**必须知道**，详见 §3.4）：GitHub 的 concurrency 是"一个 group 同时
 #   1 running + 1 pending"，新 run 进入一个**已有 pending** 的 group 时，**旧的 pending
 #   会被取消** —— 突发期多数 PR 拿到的是 `cancelled` 而不是"排队后跑"。这是**有意的取舍**：
 #   这两条评测是**信息性**（不 required，§16.5），cancel 不阻塞合并；行为信号由

@@ -50,7 +50,7 @@ name: Agent Behavior Eval (行为改动映射用例)
 # ★ 门禁分层（2026-09-14 dogfooding 首跑复盘 → 同日用户裁定后**再降一级**）：
 #   `rules`（改动确实落在该行为域）= **强信号**，失败 → **报告 + PR 评论 + 自动开 issue**，
 #     **不拦合并**（**2026-09-14 用户裁定"按建议来"**，决策记录见
-#     docs/testing/eval-environments.md §3.2；理由：① 规则按路径正则匹配产出过**假阻塞红**；
+#     docs/testing/eval-environments.md §3.3；理由：① 规则按路径正则匹配产出过**假阻塞红**；
 #     ② PR 层 LLM 评测不构成合并门禁，阻塞只带来"先证伪才能继续"的摩擦；
 #     ③ 真拦截由确定性 required 层 + 部署后全量承担）；
 #   `default_net`（无规则命中时的网）= 与本 PR 改动**无因果** → 失败**只报告**、**不开 issue**
@@ -78,11 +78,11 @@ env:
 #   是评测型 job（各自一套 docker 栈 + 真实 LLM），queued 60 个 run，**required 检查被饿死**
 #   （9 个 PR 全 BLOCKED）。
 # 修后：与 xiaobu-acceptance 共用 `eval-stack-global`（post-deploy-eval 亦同，AD 包落地）
-#   —— 三处一致，单一说明见 docs/testing/eval-environments.md §1.2。
+#   —— 三处一致，单一说明见 docs/testing/eval-environments.md §3.4。
 #
 # ★ `cancel-in-progress: false`：**故意不 cancel 正在跑的那条**（评测 job 的产物就是结论
 #   本身，cancel 掉 = 那个 PR 永远拿不到该信号；同 post-deploy-eval.yml 的 #3526 论证）。
-#   ⚠️ 副作用（有意取舍，§1.2 详述）：GitHub 是"一个 group 同时 1 running + 1 pending"，
+#   ⚠️ 副作用（有意取舍，§3.4 详述）：GitHub 是"一个 group 同时 1 running + 1 pending"，
 #   新 run 进来会**取消旧的 pending** → 突发期多数 PR 拿到 `cancelled` 而非"排队后跑"。
 #   这两条评测是**信息性**（不 required，§16.5）：cancel 不阻塞合并，行为信号由部署后全量轮承担。
 concurrency:
@@ -331,7 +331,7 @@ jobs:
               lines.push(netMode
                 ? '**映射来源**：无规则命中 → 跑 **兜底网** `DEFAULT_BEHAVIOR_CASES`（用例与本 PR 改动**无因果**，失败**只报告**、不建 issue）'
                 : '**映射来源**：**规则命中**（用例与本 PR 改动**有因果** → 失败是**强信号**，必须人工/AI 判断；'
-                  + '**不拦合并**，失败会**自动开 issue** 追踪 —— 2026-09-14 用户裁定，见 §3.2 决策记录）')
+                  + '**不拦合并**，失败会**自动开 issue** 追踪 —— 2026-09-14 用户裁定，见 §3.3 决策记录）')
               lines.push('')
               if (!netMode && process.env.RULE_HITS && process.env.RULE_HITS.trim()) {
                 lines.push('**命中的规则**（哪个文件 → 哪条规则 → 哪些用例）：')
@@ -549,7 +549,7 @@ jobs:
           # 两个退出码分开记（门禁分层，见文件头 ★ 段）：
           #   BLOCK_STATUS：规则命中桶 —— 与本 PR 改动有因果，失败是**强信号**
           #                 （2026-09-14 起**不再红**：降为「报告 + PR 评论 + 自动开 issue」，
-          #                  见 docs/testing/eval-environments.md §3.2 决策记录）
+          #                  见 docs/testing/eval-environments.md §3.3 决策记录）
           #   SOFT_STATUS ：兜底网桶 —— 无规则命中，与本 PR 改动无因果 → 只报告（照旧，不建 issue）
           BLOCK_STATUS=0
           SOFT_STATUS=0
@@ -589,7 +589,7 @@ jobs:
             fi
           done <<< "$BUCKETS"
           echo ""
-          # ── 门禁降级（2026-09-14 用户裁定，§3.2 决策记录）────────────────────
+          # ── 门禁降级（2026-09-14 用户裁定，§3.3 决策记录）────────────────────
           # 规则命中失败**不再让 workflow 变红**，改为「报告 + PR 评论 + 自动开 issue」。
           # 为什么：① 它产出过**假阻塞红**（规则按路径正则匹配，测试文件名含 `guard` 就命中
           # 防御规则 → 把一个改 finance 工具的 PR 判成命中 DF-011/DF-012）；
@@ -814,7 +814,7 @@ jobs:
             lines.push('')
             lines.push(`**门禁判定**：${ruleFail
               ? `🚨 **规则命中的用例未过**（**强信号，必须人工/AI 判断**）—— `
-                + '**本门禁不拦合并**（2026-09-14 用户裁定，§3.2 决策记录），'
+                + '**本门禁不拦合并**（2026-09-14 用户裁定，§3.3 决策记录），'
                 + '已**自动开 issue** 追踪；真拦截由确定性 required 层 + 部署后全量承担。'
               : (passed
                   ? (softFail
