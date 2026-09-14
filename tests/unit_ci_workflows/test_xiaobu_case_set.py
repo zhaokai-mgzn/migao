@@ -354,10 +354,20 @@ class TestWriteToolSuccessAssertions:
             )
 
     def test_must_succeed_tools_are_customer_capabilities(self):
-        """声明的工具必须真在 C 端工具集内（拼错 = 断言永远失败/永远无意义）。"""
-        from eval_case_filter import XIAOBU_TOOLS
+        """声明的工具必须真在 C 端工具集内（拼错 = 断言永远失败/永远无意义）。
+
+        ⚠️ 必须**按 persona 过滤**（issue #3544 修正闸门 bug）：本文件是「C 端用例集契约」
+        （见模块 docstring），但旧实现遍历**全部**用例 → 等于规定「B 端用例不得使用
+        `must_succeed`」。而 `must_succeed` 恰是「调了 ≠ 成了」假绿的唯一机器防线
+        （issue #3361：order_create 返回 tool_not_found 也判绿）—— B 端工具
+        （processing_item_manage/sku_update）一旦声明即撞本断言 → **B 端结构性无法
+        升级假绿断言**。B 端对称面见 test_mibao_case_invariants.py。
+        """
+        from eval_case_filter import XIAOBU_TOOLS, case_persona
         bad = []
         for c in self._cases():
+            if case_persona(c) != PERSONA:      # PERSONA = "xiaobu"
+                continue                        # B 端/双端用例由 B 端不变式负责
             for m in c.get("must_succeed") or []:
                 tool = m if isinstance(m, str) else (m or {}).get("tool")
                 if tool and tool not in XIAOBU_TOOLS:

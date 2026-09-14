@@ -37,6 +37,87 @@ STATUS_TO_API = {
     "read": "read",
 }
 
+# ── 创建通知收件人（issue #3567，HIGH：B 端「创建通知」能力实际不可用）────────
+# ⚠️ 后来者注意（这四条最容易再踩，issue #3567 与 #3553 同型）：
+# ① admin-api `POST /api/admin/notifications` **按收件人落库，没有广播语义** ——
+#    站内信按 recipientId 分发给该用户（NotificationController.getUnreadCount →
+#    getCurrentUserId()），收件人必须由调用方**显式解析**，否则落库后谁也看不到。
+# ② `recipientId` / `recipientType` 是 CreateNotificationRequest 的 @NotBlank 必填字段
+#    —— 缺一即**恒 400**（此前漏发 recipientType，创建通知永远失败）。
+# ③ `recipientType` 合法口径 = "employee"（口径同 NotificationService.triggerForTenantAdmins
+#    L366 `ctx.put("recipientType", "employee")`；DTO 注释亦为 user / employee）。
+# ④ `channel` 合法值只有 wechat / sms / email / internal（DTO L39-41，默认 internal）
+#    —— tool schema 暴露的 "system" 只是语义化别名，必须经 CHANNEL_TO_API 映射后再发。
+# 收件人来源：GET /api/admin/users（AdminUserController；服务令牌 ROLE_SERVICE 绕过
+# employee:list 权限；UserService.getUserPage 默认排除 role=customer）。
+_NOTIFY_RECIPIENT_TYPE = "employee"
+_NOTIFY_RECIPIENT_LOOKUP_SIZE = 50
+_NOTIFY_NO_RECIPIENT = "notification_skipped_no_recipient"
+_NOTIFY_RECIPIENT_NOT_FOUND = "notification_recipient_not_found"
+_NOTIFY_RESOLUTION_FAILED = "notification_recipient_resolution_failed"
+_NOTIFY_SEND_FAILED = "notification_send_failed"
+
+
+def _build_notification_payload(
+    *,
+    recipient_id: str,
+    title: str,
+    content: str,
+    channel: Optional[str],
+) -> Dict[str, Any]:
+    """构造 CreateNotificationRequest 请求体（含全部 @NotBlank 必填字段）。
+
+    issue #3567：此前漏发 recipientType（DTO @NotBlank）→ admin-api 恒 400；
+    channel 走 CHANNEL_TO_API 映射，保证发出的值属合法集合（wechat/sms/email/internal）。
+    """
+    return {
+        "recipientId": recipient_id,
+        "recipientType": _NOTIFY_RECIPIENT_TYPE,
+        "title": title,
+        "content": content,
+        "channel": CHANNEL_TO_API.get(channel or "system", "internal"),
+    }
+
+
+async def _resolve_tenant_recipients(context: ToolContext) -> tuple:
+    """解析租户内可接收站内信的 B 端账号（员工/管理员，接口已排除 role=customer）。
+
+    Returns:
+        (recipients, error)：recipients 为 [{"id", "name", "role"}]，管理员优先；
+        解析失败时 recipients 为空且 error 非空（由调用方决定分级语义）。
+    """
+    client = get_admin_api_client()
+    try:
+        response = await client.get(
+            "/api/admin/users",
+            params={"page": 1, "size": _NOTIFY_RECIPIENT_LOOKUP_SIZE, "status": "active"},
+            tenant_id=context.tenant_id,
+            user_id=context.user_id,
+        )
+    except Exception as e:
+        logger.error(
+            f"[notification_manage] 收件人解析异常: tenant={context.tenant_id}, "
+            f"error={type(e).__name__}: {e}"
+        )
+        return [], f"{type(e).__name__}: {e}"
+
+    if not response.get("success"):
+        error = (response.get("error") or {}).get("message", "unknown")
+        logger.error(
+            f"[notification_manage] 收件人解析失败: tenant={context.tenant_id}, error={error}"
+        )
+        return [], str(error)
+
+    items = (response.get("data") or {}).get("items") or []
+    recipients = [
+        {"id": u.get("id"), "name": u.get("name"), "role": u.get("role")}
+        for u in items if u.get("id")
+    ]
+    # 优先管理员（口径同 NotificationService.triggerForTenantAdmins: users.role='admin'），
+    # 其余在职 B 端账号一并保留（供 LLM 在收件人缺失时自纠）
+    recipients.sort(key=lambda u: u.get("role") != "admin")
+    return recipients, None
+
 
 class NotificationManageTool(BaseTool):
     """通知管理 Tool
@@ -83,7 +164,10 @@ class NotificationManageTool(BaseTool):
             },
             "recipient_id": {
                 "type": "string",
-                "description": "接收人用户 ID（create 时必填）",
+                "description": (
+                    "接收人用户 ID（create 时必填）——必须是本租户**在职员工/管理员**账号 ID"
+                    "（站内信按该 ID 分发给本人，无广播语义；不存在的 ID 会被拒绝）"
+                ),
             },
             "title": {
                 "type": "string",
@@ -388,7 +472,19 @@ class NotificationManageTool(BaseTool):
         content: Optional[str],
         channel: Optional[str],
     ) -> ToolResult:
-        """创建通知"""
+        """创建通知
+
+        issue #3567：`POST /api/admin/notifications` 按收件人落库（无广播语义）且
+        `recipientId`/`recipientType` 为 DTO @NotBlank 必填 —— 收件人必须**显式解析**
+        为租户内在职 B 端账号（getUserPage 已排除 role=customer），并且
+        **不允许兼容性猜测**：解析不到收件人时显式失败，绝不静默成功（落一条无人可见的通知）。
+
+        分级语义（口径同 human_handoff #3553）：
+        - 解析/投递失败 → `success=False`（`notification_recipient_resolution_failed` /
+          `notification_recipient_not_found` / `notification_send_failed`）；
+        - 租户内无在职 B 端账号（没人可通知）→ `success=True` 但显式带
+          `error=notification_skipped_no_recipient` + `data.notificationSent=False` + ERROR 日志。
+        """
         if not recipient_id:
             return ToolResult(
                 success=False,
@@ -410,39 +506,112 @@ class NotificationManageTool(BaseTool):
                 message="创建通知时必须提供通知内容（content）",
             )
 
-        json_data: Dict[str, Any] = {
-            "recipientId": recipient_id,
-            "title": title,
-            "content": content,
-        }
-        if channel:
-            if channel not in VALID_CHANNELS:
-                return ToolResult(
-                    success=False,
-                    error=f"无效的通知渠道: {channel}",
-                    message=f"不支持的通知渠道，可选：{', '.join(VALID_CHANNELS)}",
-                )
-            # 映射为 admin-api 实际渠道值（system → internal）
-            json_data["channel"] = CHANNEL_TO_API.get(channel, channel)
-
-        client = get_admin_api_client()
-        response = await client.post(
-            "/api/admin/notifications",
-            json_data=json_data,
-            tenant_id=context.tenant_id,
-            user_id=context.user_id,
-        )
-
-        if not response.get("success"):
-            error_msg = response.get("error", {}).get("message", "创建失败")
+        if channel and channel not in VALID_CHANNELS:
             return ToolResult(
                 success=False,
-                error=error_msg,
-                message=f"创建通知失败：{error_msg}",
+                error=f"无效的通知渠道: {channel}",
+                message=f"不支持的通知渠道，可选：{', '.join(VALID_CHANNELS)}",
             )
 
-        data = response.get("data", {})
+        recipients, resolve_error = await _resolve_tenant_recipients(context)
+        if resolve_error:
+            # 投递/解析失败 → 显式失败（不猜、不静默）
+            return ToolResult(
+                success=False,
+                error=_NOTIFY_RESOLUTION_FAILED,
+                message=f"创建通知失败：无法确认接收人（{resolve_error}）",
+                suggestion="收件人解析失败（admin-api 不可用或权限不足），请稍后重试",
+            )
+
+        if not recipients:
+            # 租户内无在职 B 端账号：系统里没有「人」可通知 —— 站内信落库即无人可见，
+            # 故不发出请求，但必须显式可见（error + data.notificationSent=false，绝不静默）
+            logger.error(
+                f"[notification_manage] 创建通知中止：租户内无在职 B 端账号（员工/管理员），"
+                f"站内信无收件人 | recipient_id={recipient_id}, tenant={context.tenant_id}"
+            )
+            return ToolResult(
+                success=True,
+                data={
+                    "notificationSent": False,
+                    "recipientId": recipient_id,
+                    "availableRecipients": [],
+                },
+                error=_NOTIFY_NO_RECIPIENT,
+                message=f"通知未发送：租户内没有可接收站内信的在职账号（原定接收人 {recipient_id}）",
+                suggestion=(
+                    "请在「设置-员工管理」添加管理员/员工账号并置为在职后再发送通知"
+                ),
+            )
+
+        matched = next((r for r in recipients if r["id"] == recipient_id), None)
+        if matched is None:
+            # 收件人不是租户内在职 B 端账号：落库也会成为无人可见的孤儿通知 → 显式失败，
+            # 并回传真实可选收件人供 LLM 自纠（不做「随便换个人发」的兼容性猜测）
+            available = [r["id"] for r in recipients]
+            logger.error(
+                f"[notification_manage] 创建通知中止：收件人不在租户在职 B 端账号内 | "
+                f"recipient_id={recipient_id}, tenant={context.tenant_id}, available={available}"
+            )
+            return ToolResult(
+                success=False,
+                data={
+                    "notificationSent": False,
+                    "recipientId": recipient_id,
+                    "availableRecipients": available,
+                },
+                error=_NOTIFY_RECIPIENT_NOT_FOUND,
+                message=f"通知未发送：接收人 {recipient_id} 不是本租户在职员工/管理员账号",
+                suggestion=(
+                    f"接收人 ID 不存在或已停用，请改用真实在职账号 ID 后重试"
+                    f"（可选：{', '.join(available)}）"
+                ),
+            )
+
+        json_data = _build_notification_payload(
+            recipient_id=recipient_id, title=title, content=content, channel=channel,
+        )
+
+        client = get_admin_api_client()
+        try:
+            response = await client.post(
+                "/api/admin/notifications",
+                json_data=json_data,
+                tenant_id=context.tenant_id,
+                user_id=context.user_id,
+            )
+        except Exception as e:
+            logger.error(
+                f"[notification_manage] 创建通知投递异常: recipient={recipient_id}, "
+                f"tenant={context.tenant_id}, error={type(e).__name__}: {e}"
+            )
+            return ToolResult(
+                success=False,
+                data={"notificationSent": False, "recipientId": recipient_id},
+                error=_NOTIFY_SEND_FAILED,
+                message="创建通知失败：通知投递异常，请稍后重试",
+                suggestion="通知投递失败，请稍后重试；若持续失败请联系技术支持",
+            )
+
+        if not response.get("success"):
+            error_msg = (response.get("error") or {}).get("message", "创建失败")
+            logger.error(
+                f"[notification_manage] 创建通知投递失败: recipient={recipient_id}, "
+                f"tenant={context.tenant_id}, error={error_msg}"
+            )
+            return ToolResult(
+                success=False,
+                data={"notificationSent": False, "recipientId": recipient_id},
+                error=_NOTIFY_SEND_FAILED,
+                message=f"创建通知失败：{error_msg}",
+                suggestion="通知未送达，请稍后重试；若持续失败请联系技术支持",
+            )
+
+        data = dict(response.get("data") or {})
         new_id = data.get("id", "")
+        data["notificationSent"] = True
+        data["recipientId"] = recipient_id
+        data["recipientType"] = _NOTIFY_RECIPIENT_TYPE
 
         logger.info(
             f"Notification created: id={new_id}, recipient={recipient_id}, "

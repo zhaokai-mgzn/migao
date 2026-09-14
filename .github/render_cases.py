@@ -332,7 +332,17 @@ def to_md(cases):
             for av in (c.get("amount_verify") or []):
                 lines.append(f"金额: {av.get('tool', 'order_create')} 「{av.get('product_name', '')}」 → {'; '.join(av.get('checks') or [])}")
             for dv in (c.get("db_verify") or []):
-                lines.append(f"落库: {dv.get('fetch')} {dv.get('name')} → {'; '.join(dv.get('checks') or [])}")
+                # 结构化核对器（无 checks 串，如 after_sales_ticket #3544）也要可读：
+                # 否则 casebook 只剩 "fetch None → "，新断言在文档里完全不可见。
+                _dv_parts = dv.get("checks")
+                if not _dv_parts:
+                    _dv_parts = [f"{k}={v}" for k, v in dv.items() if k != "fetch"]
+                _dv_head = f" {dv['name']}" if dv.get("name") else ""
+                lines.append(f"落库: {dv.get('fetch')}{_dv_head} → {'; '.join(map(str, _dv_parts))}")
+            for ov in (c.get("output_verify") or []):
+                # 产出侧断言（#3544：PP-006/PR-021 假绿升级用的就是它）此前未渲染 → 补齐
+                _ov_exp = "; ".join(f"{k}=={v}" for k, v in (ov.get("expect") or {}).items())
+                lines.append(f"产出: {ov.get('tool')} → {_ov_exp}")
             for ps in (c.get("post_session") or []):
                 lines.append(f"会话后: {ps.get('fetch')}({ps.get('agent_type', 'xiaobu')}) → {'; '.join(ps.get('checks') or [])}")
             if c.get("skip_reason"):

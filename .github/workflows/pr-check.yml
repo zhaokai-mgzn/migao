@@ -175,6 +175,70 @@ jobs:
           ./check-ui-regression.sh --head
         shell: bash
 
+  # ============ 用例覆盖体检门禁 — 纯静态 YAML 分析，零 LLM，秒级（issue #3555）============
+  # 为什么单独成 job（而不是塞进 qa-growth-gate）：qa-growth-gate 判的是"改了代码有没有
+  # 对应测试"，本 job 判的是"评测用例库**覆盖到了哪些能力**"—— 两者失败时的可操作清单不同
+  # （前者=补测试，后者=补 case），分开成 job 才能各自给出可操作输出、各自可观测。
+  # 判据全部在 scripts/case_coverage.py（与 verify-all.sh 同一脚本、同一参数 → 不会本地绿 CI 红）：
+  #   结构性缺失（阻塞）：工具 0 用例 / 只有拒绝式断言而**没有任何正向用例** / 用例挂错端 /
+  #                        断言了两端都没有的工具 / 端用例集为空；
+  #   厚度不足（只报告不阻塞）：某工具仅 1 条用例 —— 缺口数是随迭代收敛的活指标，
+  #                        不做硬编码阈值门禁（verify-all.sh:66-68 的既有设计意图）。
+  # 确定性层（无 LLM 方差）→ 可安全作为 required 候选。
+  case-coverage-gate:
+    name: Case Coverage Gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+
+      # 两个体检共用同一份判据模块（scripts/case_coverage.py），只有 persona 不同。
+      # 输出写临时文件（step summary 与失败打印复用），自然语言报告只打一遍。
+      - name: Case coverage check (xiaobu + mibao)
+        env:
+          PERSONAS: "xiaobu mibao"
+        run: |
+          set -uo pipefail
+          rc=0
+          for persona in $PERSONAS; do
+            out="$RUNNER_TEMP/coverage-$persona.txt"
+            {
+              echo "===== $persona 覆盖体检 ====="
+              python3 "scripts/${persona}_coverage.py" --check || rc=1
+            } > "$out" 2>&1
+            cat "$out"
+            {
+              echo "### $persona 覆盖体检"
+              echo ''
+              echo '```'
+              cat "$out"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          done
+          exit $rc
+
+      - name: Print actionable list on failure
+        if: failure()
+        run: |
+          set -uo pipefail
+          echo "::error::覆盖体检未通过 —— 下面是可操作清单（缺用例的工具 / 端点错配）"
+          cat "$RUNNER_TEMP/coverage-xiaobu.txt" "$RUNNER_TEMP/coverage-mibao.txt"
+
+      # 阻塞检查：失败时打标签，与 qa-growth-gate 同一处置（提示补用例，而不是改判据）
+      - name: Label PR on failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          echo "❌ Case Coverage Gate 未通过：评测用例库存在能力覆盖缺口（缺正向用例 / 零覆盖 / 用例挂错端）。"
+          echo "补用例见 migao-dev-flow §14.5；判据实现见 scripts/case_coverage.py。"
+          gh pr edit "$PR_NUMBER" --add-label "review/needs-changes" 2>/dev/null || true
+
   # ============ QA Growth Gate — 事前测试覆盖门禁（block 模式）============
   qa-growth-gate:
     name: QA Growth Gate

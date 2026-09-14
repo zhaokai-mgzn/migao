@@ -1147,17 +1147,34 @@ class TestCustomerSkillPendingLock:
 class TestConfirmGateGuidance:
     """确认门禁的话术必须**可执行**：Skill 没绑 `interact` 时不能说"请调用 interact"
 
-    背景（issue #3317）：`_requires_confirmation` 拦截未确认写操作时固定返回
-    「请调用 interact（component=confirm）展示操作预览」—— 但 B 端 `staff`/`settings`/
-    `data` 三个 Skill **没有绑定 `interact`**，这条指令对 LLM 是**不可执行的**。
-    实测现象：模型拿到"请调用 X"却没有 X，反复重试或直接放弃。
+    背景（issue #3317）：`_requires_confirmation` 拦截未确认写操作时返回
+    「请调用 interact（component=confirm）展示操作预览」—— 若某 Skill 没有绑定
+    `interact`，这条指令对 LLM 是**不可执行的**（模型拿到"请调用 X"却没有 X，
+    会反复重试或直接放弃）。
 
-    为什么不给这些 Skill 直接补 `interact`（issue #3317 的另一种解法）：
-    证据不支持 —— 用例库里涉及这 6 个工具的 16 条用例**没有一条**断言 `interact`
-    （含 smoke 的 HR-001/HR-004，它们靠**口头确认**走通并长期通过）。
-    补工具会改变 B 端交互形态（可能开始弹卡），而 B 端 105 条用例只能在
-    手动、面向生产的评测里验证 —— 收益不明而回归面很大。
-    故采取"**让话术与能力匹配**"：有 `interact` → 要求弹卡；没有 → 要求文本复述+口头确认。
+    📌 决策记录（2026-09-14 产品裁定，**推翻**本类原先记录的"不补 interact"决定）：
+      原处置是「让话术与能力匹配」—— 有 `interact` → 要求弹卡；没有 → 要求文本复述 +
+      口头确认。理由是「B 端 16 条相关用例无一条断言 `interact`，补工具会改变 B 端交互形态，
+      收益不明而回归面大」。**该决定已被产品裁定推翻**，裁定原话：
+        「我的要求是**写操作应该是安全的**，我们在 **admin-api 层面做了限制**，
+          我希望**交互形态是统一的**。」
+      ⇒ 处置改为**配置层统一**：staff / settings / data 补绑 `interact`（#3577，覆盖
+      #3317 的 6 处工具绑定）；**禁止**收紧/移除 `requires_confirmation`（那是降低写操作
+      安全性的 B 路径）—— 写操作安全边界由 **admin-api 层**承担，agent 侧确认卡属
+      **交互一致性**，不是唯一安全网。
+
+      因此 `base_skill` 里这条"按本 Skill 是否绑 `interact` 分流话术"的代码分支
+      （在 base_skill.py，属其它包所有权，本包未改）**对全部已注册 Skill 已不可达**：
+      由 `tests/test_skill_config_registry.py` 的三条**常量/断言驱动**不变式守护 ——
+      `test_confirmed_write_tools_require_interact_in_same_skill`（绑需确认写工具 → 必须绑
+      interact）、`test_prompt_promising_confirm_card_requires_interact`（prompt 承诺确认卡
+      → 必须绑 interact）、`test_interact_absent_only_for_recorded_read_only_skills`
+      （缺 interact 者必须登记在豁免台账且只读理由成立）。交互形态不再由"运行时探测工具有无"
+      决定，而是由配置 + 不变式锁定。
+
+      本类下方两个用例**保留为防御性兜底**：它们构造的是"动态 tool_names 子集"
+      （非注册 Skill：只给了写工具、没给 interact）的形态 —— 该分支作为防御性代码仍有价值，
+      但其"B 端三 Skill 话术分流"的原始用途已消失。
     """
 
     def _gate_result(self, *, has_interact: bool):
