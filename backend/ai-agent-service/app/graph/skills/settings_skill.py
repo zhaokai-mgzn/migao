@@ -11,7 +11,10 @@ from app.graph.skills.skill_config import SkillConfig
 # 系统配置 Skill 可用的 Tool 列表
 # category_manage 归属 product_skill，不在 settings 域
 # #3081: quick_reply_manage 已随快捷回复功能下线移除（被知识卡片替代）
-SETTINGS_TOOLS = ["validate_input", "settings_manage", "notification_manage"]
+# interact（#3577，2026-09-14 产品裁定「交互形态统一」）：references/prompts/settings.md
+# 承诺「写操作先校验参数 + 确认卡 + 用户确认后执行」，门禁补救话术亦要求发确认卡——
+# 不绑则承诺不可执行（#3317 的 6 处之一）。写操作安全由 admin-api 层承担。
+SETTINGS_TOOLS = ["validate_input", "settings_manage", "notification_manage", "interact"]
 
 # 系统配置 Skill 专用 System Prompt
 SETTINGS_SYSTEM_PROMPT = """当前对话聚焦在系统设置、AI 配置、站内通知等管理事务，但不要自我设限也不要拒绝其他领域问题。
