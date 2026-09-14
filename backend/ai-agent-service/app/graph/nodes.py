@@ -262,13 +262,19 @@ async def intent_router_node(state: AgentState) -> dict:
         if msg_len <= 5:
             _SKILL_TO_INTENT = {
                 "product": "product_inquiry",
+                "customer_product": "product_inquiry",
                 "order": "order_query",
+                "customer_order": "order_query",
                 "aftersales": "after_sales",
+                "customer_aftersales": "after_sales",
                 "customer": "customer_query",
                 "staff": "employee_manage",
                 "settings": "system_settings",
                 "data": "dashboard",
                 "general": "general",
+                "customer_general": "general",
+                "customer_knowledge": "general",
+                "customer_quote": "quote",
             }
             synthetic_intent = _SKILL_TO_INTENT.get(pending_skill, "general")
             logger.info(
@@ -330,6 +336,25 @@ async def intent_router_node(state: AgentState) -> dict:
                         f"[intent_router] Clarify guard (plan_rewrite) failed (non-fatal): {e}"
                     )
 
+            # ── L1 规则优先（issue #3476，C-A1 P1 实证）──
+            # `_SKILL_TO_INTENT` 的键是**域**名，C 端 pending 值（customer_product 等）
+            # 已在上方补齐；但即使补齐，"确认下单"在 customer_product 锁里合成出来的是
+            # product_inquiry —— 那会让 escape 命中 order 域关键词却路由回商品技能，
+            # 模型依然没有 order_create 可用。短消息里带**领域信号**（交易动词/查单/
+            # 退换货…）时必须按 L1 的高置信结果走（"确认下单"→ order_create 0.98）。
+            # 放澄清护栏**之后**：护栏判"模糊轮"优先给兜底示例；领域信号轮不算模糊。
+            from app.router.rule_matcher import RuleMatcher
+            _l1 = RuleMatcher().match(last_user_msg)
+            if _l1 and _l1.intent.value not in ("general", "greeting", "farewell",
+                                                "capabilities"):
+                return {
+                    "intent_result": {
+                        "intent": _l1.intent.value,
+                        "confidence": getattr(_l1, "confidence", 0.99),
+                        "source": "rule_short",
+                    },
+                    "route_decision": {"action": "full_agent"},
+                }
             return {
                 "intent_result": {
                     "intent": synthetic_intent,
