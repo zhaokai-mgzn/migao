@@ -312,7 +312,12 @@ class DailyBriefingServiceTest {
 
             assertThat(result).isNotNull();
             assertThat(result.getVerifyStatus()).isEqualTo("verified");
-            assertThat(result.getBizDate()).isEqualTo(java.time.LocalDate.now());
+            // 业务"今日"口径 = 服务常量（Asia/Shanghai），断言必须与该常量同源：
+            // 用 JVM 默认时区（CI = UTC）时，UTC 16:00–24:00（北京次日 00:00–08:00）两侧"今天"差一天
+            // ⇒ 每天 8 小时必然假红、阻断所有 PR（issue #3796）。
+            // 另独立钉死该常量值本身，避免"服务改时区、断言跟着漂移"式的空断言。
+            assertThat(DailyBriefingService.CST).isEqualTo(java.time.ZoneId.of("Asia/Shanghai"));
+            assertThat(result.getBizDate()).isEqualTo(java.time.LocalDate.now(DailyBriefingService.CST));
             assertThat(result.getSourceSnapshot()).isNotNull();
             verify(dailyBriefingMapper).insert(any(DailyBriefing.class));
         }
