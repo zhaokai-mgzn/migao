@@ -8,7 +8,7 @@
 - intent_router_node：plan_rewrite 路径澄清轮护栏（连续模糊意图触发兜底）
 - route_by_intent：direct_reply + 多模态重定向 general、escape hatch 切换、会话连续性
 """
-# case_ids: CH-002, CH-003, CH-018, CH-021, CH-022, OR-017
+# case_ids: CH-002, CH-003, CH-018, CH-021, CH-022, OR-017, PR-007
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -21,6 +21,13 @@ from app.graph.nodes import (
     direct_reply_node,
     intent_router_node,
     route_by_intent,
+)
+
+# PR-007（#3557）R2 实发原文：商品上下架确认卡的 confirmValue，逐字回传。
+# 卡值里的「（改为停售，买家不可下单）」含「下单」—— 缺陷链的触发器。
+PR007_CONFIRM_VALUE = (
+    "确认：商品名称=遮光窗帘；当前价格=¥168.00；当前状态=在售；"
+    "操作=下架（改为停售，买家不可下单）"
 )
 
 
@@ -145,6 +152,54 @@ class TestIntentRouterNode:
         result = await intent_router_node(state)
         assert result["intent_result"]["intent"] == "order_create", (
             f"「确认下单」必须按 L1 给 order_create，实得 {result['intent_result']['intent']}")
+
+    @pytest.mark.asyncio
+    async def test_card_confirm_round_keeps_own_skill_intent(self):
+        """#3557 G1：答卡轮（逐字回传**本 skill** 卡的 confirmValue）不重判意图。
+
+        这是缺陷链的**第一个判据点**（`intent_router_node` → `IntentRouter.route()`
+        → L1 规则表先于 LLM 分类器）：卡值里的「（改为停售，买家不可下单）」含「下单」
+        → L1 判 `order_create` 0.98 → 路由到 order skill（无 product_manage）
+        → 零工具调用 + 「订单模块」口径拒绝（CI run 34808115143，PR-007 50%）。
+        答卡轮保持本 skill 的合成意图后，后续 route_by_intent 的 G1 豁免才能生效。
+        """
+        from app.graph.nodes import _CARD_CONFIRM_INTENT_SOURCE
+        confirm = PR007_CONFIRM_VALUE
+        state = {
+            "pending_interact_skill": "product",
+            "last_confirm_skill": "product",
+            "last_confirm_value": confirm,
+            "session_id": "s1",
+            "agent_type": "mibao",
+            "messages": [HumanMessage(content=confirm)],
+        }
+        result = await intent_router_node(state)
+        assert result["intent_result"]["source"] == _CARD_CONFIRM_INTENT_SOURCE
+        assert result["intent_result"]["intent"] != "order_create", (
+            "答卡轮仍被判成 order_create —— 会话将被路由到 order skill（#3557 第一判据点）"
+        )
+
+    @pytest.mark.asyncio
+    async def test_card_confirm_round_long_msg_skips_llm_classifier(self):
+        """答卡轮不得进入 LLM 分类（msg_len > 5 的"长消息允许话题切换"分支）。
+
+        L1 在此之前已判出 order_create；若不短路，长消息分支会真的调分类器
+        ——修复必须在此拦下（零 LLM 可复现，不依赖模型采样）。
+        """
+        from app.graph.nodes import _CARD_CONFIRM_INTENT_SOURCE
+        confirm = PR007_CONFIRM_VALUE
+        state = {
+            "pending_interact_skill": "product",
+            "last_confirm_skill": "product",
+            "last_confirm_value": confirm,
+            "session_id": "s1",
+            "agent_type": "mibao",
+            "messages": [HumanMessage(content=confirm)],
+        }
+        with patch("app.router.intent_router.IntentRouter") as mock_router:
+            result = await intent_router_node(state)
+        mock_router.assert_not_called()
+        assert result["intent_result"]["source"] == _CARD_CONFIRM_INTENT_SOURCE
 
     @pytest.mark.asyncio
     async def test_bare_confirm_keeps_synthetic(self):
@@ -490,6 +545,78 @@ class TestRouteByIntent:
         assert result == "customer_quote"
         assert state["pending_interact_skill"] == "customer_quote"
 
+    # ── #3557（G1）：确认卡「答卡轮」必须留在发卡 skill 里 ──────────────────────
+    # 判据不是"答卡轮一律不切域"（那会踩 #3361：报价卡后顾客另起一句「确认下单」
+    # 必须切到 customer_order），而是**本轮输入逐字等于本 skill 自己那张卡的
+    # confirmValue** —— 只有点击卡片回传系统自产值才会逐字相等。
+    def test_pr007_confirm_card_round_stays_in_product_skill(self):
+        """PR-007 R2：逐字回传商品上下架卡的 confirmValue → 必须留在 product。
+
+        缺陷（issue #3557 / CI run 34808115143，PR-007 score 50%）：卡值里那句
+        「（改为停售，买家不可下单）」含「下单」→ L1 规则表判 `order_create`
+        （`rule_matcher.py`）→ 本领域词表 `{"查商品","搜商品","创建商品","商品管理"}`
+        全不命中 → escape hatch 命中 order 域词 → **清空会话锁** → intent 兜底
+        `order_create → 'order'` → 进 `order` skill（`ORDER_TOOLS` 里**没有**
+        `product_manage`）→ 零工具调用，模型只能以「订单模块」口径拒执行。
+        确定性：零 LLM 可复现（同一句去掉「（改为停售，买家不可下单）」即不复现）。
+        """
+        state = {
+            "pending_interact_skill": "product",
+            "last_confirm_skill": "product",
+            "last_confirm_value": PR007_CONFIRM_VALUE,
+            "route_decision": {"action": "full_agent"},
+            "intent_result": {"intent": "order_create", "confidence": 0.98, "source": "rule"},
+            "messages": [HumanMessage(content=PR007_CONFIRM_VALUE)],
+            "session_id": "sess_pr007",
+            "agent_type": "mibao",
+        }
+        result = route_by_intent(state)
+        assert result == "product", (
+            f"答卡轮被路由到 {result!r}——发卡 skill 的上下文丢失，"
+            "写工具 product_manage 不可达（#3557）"
+        )
+        assert state["pending_interact_skill"] == "product", "答卡轮不得清空本 skill 的会话锁"
+
+    def test_pr007_counterfactual_card_value_without_cross_domain_word(self):
+        """反事实对照：同一句**去掉**「（改为停售，买家不可下单）」→ 仍留 product。
+
+        这条修复前就该绿 —— 它证明缺陷的判据是「卡值文本是否命中跨域关键词」，
+        与答卡机制本身无关（PR-016 形态的无跨域词卡值同样留得住）。
+        """
+        value = "确认：商品名称=遮光窗帘；当前价格=¥168.00；当前状态=在售；操作=下架"
+        state = {
+            "pending_interact_skill": "product",
+            "last_confirm_skill": "product",
+            "last_confirm_value": value,
+            "route_decision": {"action": "full_agent"},
+            "intent_result": {"intent": "product_inquiry", "confidence": 0.95, "source": "rule"},
+            "messages": [HumanMessage(content=value)],
+            "session_id": "sess_pr007_cf",
+            "agent_type": "mibao",
+        }
+        assert route_by_intent(state) == "product"
+        assert state["pending_interact_skill"] == "product"
+
+    def test_card_value_from_other_skill_does_not_block_escape(self):
+        """反向契约：卡是**别的 skill** 发的 → 答卡轮豁免不生效，照旧允许话题切换。
+
+        这条与原 `test_pending_skill_escape_hatch_switches_domain` 同源，补上
+        `last_confirm_skill` 区分度：只有"本 skill 自己那张卡"才配豁免。
+        """
+        state = {
+            "pending_interact_skill": "product",
+            "last_confirm_skill": "order",          # 卡由 order skill 下发
+            "last_confirm_value": "确认：订单号=EVAL-ORD-0001；操作=发货",
+            "route_decision": {"action": "full_agent"},
+            "intent_result": {"intent": "order_query"},
+            "messages": [HumanMessage(content="帮我查一下订单")],
+            "agent_type": "mibao",
+        }
+        with patch.dict("app.graph.nodes._INTENT_TO_ROUTE",
+                        {"mibao": {"order_query": "order_skill", "general": "general"}}):
+            result = route_by_intent(state)
+        assert result == "order_skill"
+
     def test_no_pending_routes_by_intent(self):
         state = {
             "route_decision": {"action": "full_agent"},
@@ -589,3 +716,78 @@ class TestCurrentDomainSignalPriority:
         mapping = {"order_create": "customer_order_skill", "general": "customer_general_skill"}
         assert self._route("我要下单", "customer_quote", "order_create",
                            mapping) == "customer_order_skill"
+
+
+class TestEscapeHatchHonoursRuleIntent:
+    """#3557 G3/T2：escape hatch 丢弃 L1 已算出的高置信 intent（独立根因，非答卡轮）。
+
+    `_SKILL_DOMAIN_KEYWORDS["product"]` 只有**查询**口径（查商品/搜商品/创建商品/商品管理），
+    没有任何商品**动作**词；且 `route_by_intent` 完全不参考 L1 高置信判定 ⇒ 会话锁在非商品域
+    时，商品动作全部被困：
+
+    | 前置         | 输入                | L1 判定            | 旧行为（探针实测） |
+    |---|---|---|---|
+    | pending=order | 再把它上架           | product_inquiry 0.95 | order（拒绝）|
+    | pending=order | 改一下遮光窗帘的价格   | product_inquiry      | order（拒绝）|
+    | pending=order | 查一下库存           | product_inquiry      | order（拒绝）|
+    | pending=order | 把遮光窗帘下架        | 无 L1（动作词不在表内）| order（拒绝）|
+
+    修法两层（最小）：① product 词表补**商品专属动作词**「上架/下架」（裸名词会坏事，
+    见 `_SKILL_DOMAIN_PATTERNS` 注释；动词不会——C 端下单/报价/售后话术里不出现）；
+    ② L1 高置信（`route_decision.source == "rule"`）判到**可路由**的域 → 放行逃逸，
+    不再要求消息逐字命中词表。
+    """
+
+    @staticmethod
+    def _route(msg, pending, intent, source="rule", mapping=None):
+        state = {
+            "messages": [HumanMessage(content=msg)],
+            "pending_interact_skill": pending,
+            "route_decision": {"action": "full_agent", "source": source},
+            "intent_result": {"intent": intent, "confidence": 0.95, "source": source},
+            "agent_type": "mibao",
+            "session_id": "sess_g3",
+        }
+        with patch.dict("app.graph.nodes._INTENT_TO_ROUTE",
+                        {"mibao": mapping or {"product_inquiry": "product_skill",
+                                              "order_query": "order_skill",
+                                              "general": "general_skill"}}):
+            return route_by_intent(state)
+
+    @pytest.mark.parametrize("msg,intent", [
+        ("再把它上架", "product_inquiry"),          # 动作词 + L1 高置信
+        ("把遮光窗帘下架", "product_inquiry"),        # 动作词（L1 不认，靠词表补）→ 补词后 L1 亦命中
+        ("改一下遮光窗帘的价格", "product_inquiry"),  # 查询口径词表不含，靠 L1 放行
+        ("查一下库存", "product_inquiry"),           # 同上
+    ])
+    def test_product_action_escapes_non_product_lock(self, msg, intent):
+        result = self._route(msg, "order", intent)
+        assert result == "product_skill", (
+            f"pending=order 时 {msg!r} 仍被困在 {result!r} —— "
+            "order skill 没有 product_manage，模型只能以「模块越界」口径拒绝（G3/T2）"
+        )
+
+    def test_low_confidence_intent_does_not_escape(self):
+        """反向保护：LLM 分类器（source=classifier）判出的意图**不**放行逃逸。
+
+        放宽口子必须只对 L1 规则命中开（高置信、确定性）；否则短信/答卡值被
+        分类器误判成别的域时会重演"会话锁被甩走"的老问题。
+        """
+        assert self._route("好的", "order", "product_inquiry",
+                           source="classifier") == "order"
+
+    def test_rule_intent_without_target_skill_stays(self):
+        """反向保护：L1 判到**不可路由**的意图（无对应 skill 映射）→ 不逃逸。"""
+        assert self._route("你好", "order", "greeting", source="rule",
+                           mapping={"greeting": "direct_reply"}) == "order"
+
+    def test_product_action_words_are_minimal_set(self):
+        """词表只补商品**专属动作**词（防贪多引入跨域误切换）。"""
+        from app.graph.nodes import _SKILL_DOMAIN_KEYWORDS
+        product_kw = _SKILL_DOMAIN_KEYWORDS["product"]
+        assert {"上架", "下架"} <= product_kw
+        # 「价格」「库存」**故意不加**：C 端报价/下单话术高频出现（「这个价格帮我下单」
+        # 「库存还有吗」），入表会让 customer_quote/customer_order 的会话锁被误逃逸；
+        # 这两条由上面的 L1 高置信放行覆盖（不需要进词表）。
+        assert "价格" not in product_kw and "库存" not in product_kw
+
