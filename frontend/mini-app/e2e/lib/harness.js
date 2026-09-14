@@ -259,21 +259,23 @@ async function waitForStreamEnd(page, timeoutMs = 60000) {
 }
 
 /**
- * 等待**新增**一条某种气泡（按数量判定新消息）——比「文本与旧气泡不同」可靠：
- * 旧写法 `aiReply2 !== prevAiText` 有竞态（发送后 AI 可能已经开始/完成回复，
- * 快照的 prevAiText 就是新回复本身 → 误判「无新内容」；2026-09-14 实测 run5 假红）。
- * 返回 { count, text }，超时返回 null。
+ * 等待「本次发送触发的助手回复」（正确判据：**发送前的基线文本** → 之后出现**不同且非空**的助手文本）
+ *
+ * 两个都试过、都不对的写法（2026-09-14 实测，别再退回）：
+ *  ① `aiReply2 !== prevAiText` 但 prevAiText 在**发送之后**才取：此刻新回复可能已开始/完成，
+ *     快照到的「旧」文本就是新回复本身 → **假红**（run5 实测：回复 len=491 却判「无新内容」）。
+ *  ② 按**气泡数量增加**判定：小程序的助手气泡在**流式一开始就被创建**（TypingIndicator 靠它显示），
+ *     若快照晚于该创建时刻，数量永远不会增加 → **假红**（cold-run3 实测：`2→2`，而末条 AI 气泡
+ *     正是本次问题的回复，len=324）。
+ * ⇒ 唯一稳的判据 = **发送前**取基线文本，之后等「非空且 != 基线」。返回文本，超时返回 null。
  */
-async function waitForBubbleCountIncrease(page, role, prevCount, timeoutMs = 120000) {
+async function waitForAssistantReply(page, prevText, timeoutMs = 120000) {
   const start = Date.now()
   while (Date.now() - start < timeoutMs) {
     try {
-      const els = await page.$$(`.message-bubble--${role}`)
-      if (els && els.length > prevCount) {
-        const t = (await els[els.length - 1].text()) || ''
-        const meaningful = t.replace(/\|/g, '').replace(/\d{1,2}:\d{2}/g, '').trim()
-        if (meaningful.length >= 2) return { count: els.length, text: t }
-      }
+      const t = (await lastBubbleText(page, 'assistant')) || ''
+      const meaningful = t.replace(/\|/g, '').replace(/\d{1,2}:\d{2}/g, '').trim()
+      if (meaningful.length >= 2 && t !== prevText) return t
     } catch {}
     await sleep(1000)
   }
@@ -436,7 +438,7 @@ module.exports = {
   waitForText,
   waitForBubble,
   waitForBubbleText,
-  waitForBubbleCountIncrease,
+  waitForAssistantReply,
   waitForStreamEnd,
   waitForStreamIdle,
   countBubbles,

@@ -17,7 +17,7 @@ const {
   waitForText,
   waitForBubble,
   waitForBubbleText,
-  waitForBubbleCountIncrease,
+  waitForAssistantReply,
   countBubbles,
   waitForStreamEnd,
   waitForStreamIdle,
@@ -117,6 +117,8 @@ async function run(mp) {
     bar.voiceBtn ? 'message-input__icon-btn--voice 存在' : '未找到语音键（语音不支持或已回归）')
 
   const QUESTION = '你好，有什么热销的窗帘推荐？'
+  // **发送前**取基线：新回复可能在我们取基线之前就已开始/完成，「发送后再取」会把自己的回复当旧文本（假红）
+  const prevAiText = await lastBubbleText(page, 'assistant')
   // 草稿就绪时（尚未发送）落一张截图：文件名与状态一致才算证据（见 harness.capture 的稳定帧说明）
   const typed = await typeAndSend(page, QUESTION, 10000, async () => {
     await capture(mp, SCENARIO, '04a-draft-send-key.png')
@@ -131,14 +133,25 @@ async function run(mp) {
     const userBubble2 = await waitForBubbleText(page, 'user', QUESTION, 30000)
     rep.step('键盘输入消息上屏（新气泡+新内容）', !!userBubble2,
       userBubble2 ? `${userBubble2.slice(0, 50)}` : '未出现新用户气泡')
-    // 按**气泡数量增加**判定新回复（不用「文本与旧气泡不同」：AI 回复可能已开始/完成，
-    // 快照到的旧文本就是新回复本身 → 竞态假红，2026-09-14 run5 实测）
-    const prevAiCount = await countBubbles(page, 'assistant')
-    const aiReply2 = await waitForBubbleCountIncrease(page, 'assistant', prevAiCount, 120000)
-    rep.step('AI 回复第二条（SSE 流式，新气泡）', !!aiReply2,
-      aiReply2
-        ? `${aiReply2.text.replace(/\n/g, ' ').slice(0, 60)}…(len=${aiReply2.text.length} bubbles=${prevAiCount}→${aiReply2.count})`
-        : `${prevAiCount} 条 assistant 气泡，120s 内未新增`)
+    // 判据 = 发送前基线 → 之后出现「非空且 != 基线」的助手文本（见 harness.waitForAssistantReply 注释：
+    // 文本比对取基线太晚、气泡计数在被计数前就已创建，两种写法都会假红 —— 2026-09-14 run5 / cold-run3 实测）
+    const aiReply2 = await waitForAssistantReply(page, prevAiText, 120000)
+    let failDetail = ''
+    if (!aiReply2) {
+      // 失败也要留下可归因证据：最终气泡数 / 是否仍在流式 / 末条 AI 文本 / 页面错误横幅
+      const postBar = await probeInputBar(page)
+      const nowCount = await countBubbles(page, 'assistant')
+      const lastText = (await lastBubbleText(page, 'assistant')) || ''
+      const errEl = await page.$('.chat-page__error-text')
+      const errText = errEl ? (await errEl.text()) || '' : ''
+      failDetail =
+        `发送前基线(末条AI len=${(prevAiText || '').length}) → 120s 内未出现新回复；` +
+        `assistant 气泡数 ${nowCount}；` +
+        `流式中(停止键)=${postBar.stopBtn}；末条AI气泡=${JSON.stringify(lastText.replace(/\n/g, ' ').slice(0, 40))}(len=${lastText.length})；` +
+        `页面错误横幅=${errText ? JSON.stringify(errText.slice(0, 60)) : '无'}`
+    }
+    rep.step('AI 回复第二条（SSE 流式，新内容）', !!aiReply2,
+      aiReply2 ? `${aiReply2.replace(/\n/g, ' ').slice(0, 60)}…(len=${aiReply2.length})` : failDetail)
     await waitForStreamEnd(page, 60000)
     await capture(mp, SCENARIO, '04-typed-reply.png')
   } else {

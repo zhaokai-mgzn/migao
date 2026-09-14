@@ -119,10 +119,10 @@
 
 | # | 修复 | 依据 | 重放安排 |
 |---|---|---|---|
-| 1 | `AI 回复第二条` 改按气泡数量判定（`waitForBubbleCountIncrease`） | run5 红证（旧写法实测假红） | **由 e393f824 对齐轮顺带重放**（该轮必然要重跑 e2e） |
+| 1 | `AI 回复第二条` 断言 | run5 红证（旧写法实测假红）→ 后经冷跑发现「气泡计数」写法同样假红 | ✅ **已闭环（follow-up PR #3720）**：改为**发送前**取基线 → 等非空且 != 基线（`waitForAssistantReply`）；红线+绿线双向证据见 `COLD-RUN.md` §A′/§B′ |
 | 2 | 草稿态截图抓取时机（`typeAndSend` 的 `onDraftReady` 回调，抓在点发送**之前**） | 视觉复核指出 run5 的 `04a-draft-send-key.png` 内容为发送后状态（草稿已清空） | 同上 |
 | 3 | FormCard 条件分支的**绿路径** | run3/run4 提供了红证（未标 required 时旧断言必红），条件分支的绿路径本轮未被触发 | 同上（FormCard 是否出现由 LLM 决定，不可确定性构造） |
-| 4 | **可复现登录步骤**（仓库内） | 本 harness **不注入登录态**，依赖模拟器 storage 里残留的 `auth_token`（`checkAuth()` `src/store/authStore.ts:137` 只查 storage；keys `src/utils/constants.ts:12-16`）。`wx.login` 在模拟器里曾判 `code 无效` ⇒ **冷环境跑不出本次证据** | 同上（需模拟器验证「注入 storage」或「真实 wx.login」两条路径）；本包先做「依赖可见化」：`run.js` 每次打印并写入报告的「登录态」行 + README 登记 |
+| 4 | **可复现登录步骤**（仓库内） | 本 harness 原**不注入登录态**，依赖模拟器 storage 残留（冷环境跑不出证据） | ✅ **已闭环（follow-up PR #3720）**：`e2e/lib/login.js` 共用登录步骤 + 缺失即 `LOGIN_MISSING` 失败关闭 + 双向红证（31/31）+ **冷环境 38/38 绿证**（`COLD-RUN.md`） |
 | 5 | 输入条「单行布局」断言（`__row` 三者同行） | 另一工作包的新布局会把加图键移出 `__actions`、给 textarea 加深一层父节点；`__row`/`__field` **在 main 上尚不存在** ⇒ 本包**不能**断言，否则 PR 在其合并前必红 | 待其合并后补断言（现有选择器已双版本兼容，见 README「输入条选择器只依赖稳定类名」） |
 
 ## 7. 证据清单
@@ -132,7 +132,12 @@
 | `REPORT.md` | 本报告 |
 | `stale-guard-redproof.txt` | 护栏 5 场景红证/绿证矩阵（含指纹判据「不误报」绿证、源码无残留改动自证） |
 | `runs-summary.md` | 5 轮 PASS/FAIL + 红色步骤 + 归因 |
-| `run-logs/run1..5.txt` | 5 轮完整控制台输出（含每条断言的详情与稳定帧日志） |
+| `run-logs/run1..5.txt` | 首包 5 轮完整控制台输出（含每条断言的详情与稳定帧日志） |
+| `COLD-RUN.md` | **follow-up（PR #3720）**：冷环境复跑（清 storage 从零建立登录态）38/38 绿证 + `LOGIN_MISSING` 三判据双证据 + 「基线快照晚于被测事件」假红根因 |
+| `run-logs/cold-run{1,3,4}-*.txt` | 冷跑原始日志（1=清 storage 首跑 / 3=诊断加强后抓到真缺陷 / 4=修正后 38/38 绿） |
+| `e2e-report-cold-run4-green.md` | 冷环境终局报告（报告头含登录态来源与期望身份、构建内容指纹） |
+| `login-redproof.txt` | 共用登录步骤的双向红证（31/31，脱网脱模拟器）+ live 登录响应形状附录 |
+| `screenshots-cold-run4/` | 冷环境终局关键截图（空态语音键 / 键盘输入回复 / 订单脱敏 / 转人工横幅） |
 | `e2e-report-run5.md` | 脚本生成的原始步骤级报告（run5，含被测构建时间行） |
 | `e2e-report-before-fix-2632.md` | 修前基线（26 PASS / 6 FAIL） |
 | `screenshots/` | 9 张关键截图（内容经 GLM-5.3-Flash 视觉复核；`02-chat-typed-reply.png` 附 §5-3 存疑标注） |

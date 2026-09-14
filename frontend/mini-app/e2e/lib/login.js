@@ -25,16 +25,16 @@
  *
  * ## ⚠️ 注入形状 = **逐字镜像生产存下的形状**（不补字段、不改名）
  *
- * 2026-09-14 发现的**产品侧契约不一致**（另一包修产品，本文件**只镜像不遮蔽**）：
- * - 生产写入路径：`src/utils/auth.ts:47` `setStorageSync(USER, JSON.stringify(user))`，
- *   而 `user` 直接来自接口响应 ⇒ **生产存下的 user 是 admin-api 的原始 camelCase 形状**
- *   （`backend/admin-api/.../dto/LoginResponse.java` 的 UserInfo：`id, nickname, avatar, role,
- *   identityType, roles, tenantId, tenantName, botName` —— **没有 `tenant_id`**）。
- * - 但 C 端类型声明 `User.tenant_id: number`（**必填**，`src/types/index.ts:11`）⇒ 运行时恒
- *   `undefined`，**类型在骗人**；而 `src/utils/imageUpload.ts:25` 会读 `getTenantId()`。
- * ⇒ 若 harness 在注入时**补一个 `tenant_id` 让断言过**，就会造出「**harness 形状 ≠ 生产形状**」：
- *   将来任何读 `user.tenant_id` 的代码会**e2e 绿、生产挂** —— 这正是我们要治的「证据层假绿」。
- *   **故本文件不做任何补字段/改名**，注入的就是响应原物；契约不一致由产品侧修复收口。
+ * 唯一判据是**生产实际存下的那段 JSON**，与类型声明是否准确**无关**（类型曾经在骗人，现在修好了，
+ * 但判据始终是同一条 —— 故这段不会随类型再变而过期）：
+ * - 生产写入路径：`src/utils/auth.ts` `setStorageSync(USER, JSON.stringify(user))`，`user` 直接来自
+ *   接口响应 ⇒ **生产存下的就是 admin-api 的原始 camelCase 形状**
+ *   （`backend/admin-api/.../dto/LoginResponse.java` 的 UserInfo，**没有 `tenant_id`**）。
+ * - 历史缺陷（2026-09-14 修复，PR #3727）：C 端类型曾声明 `User.tenant_id: number` 而后端从未提供该字段
+ *   ⇒ 运行时恒 `undefined`；当时若 harness「补个 `tenant_id` 让它过」，就会造出
+ *   「**harness 形状 ≠ 生产形状**」——将来读该字段的代码会 **e2e 绿、生产挂**（证据层假绿）。
+ *   **故本文件始终不做任何补字段/改名**：注入响应原物；**这条纪律与类型是否已修无关**，
+ *   红证里那两条反向锁死（`auth_user` 未含 `tenant_id`、键集合 == 响应原物）也**永久保留**。
  *
  * ## 本步骤能复现什么、不能复现什么（边界，不夸大）
  * - ✅ 能复现：**登录态本身可复现**（不再依赖环境残留）、租户级数据（`botName`/`tenantName`、订单/售后/物流会话）。
@@ -196,10 +196,7 @@ async function ensureLoggedIn(mp, opts = {}) {
       ok: false,
       source: 'none',
       marker: LOGIN_MISSING,
-      reason:
-        `建立登录态失败（短信登录 ${apiBase}）：${e.message}\n` +
-        '   ⇒ 无登录态时断言依赖的租户数据（botName/租户副标/订单脱敏）会缺失或降级，' +
-        '那种「绿」属于环境残留假绿，故直接失败。',
+      reason: `建立登录态失败（短信登录 ${apiBase}）：${e.message}`,
     }
   }
 

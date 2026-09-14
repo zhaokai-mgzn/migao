@@ -25,6 +25,25 @@ const SCENARIOS = [
 
 async function main() {
   console.log('🚀 启动小布小程序 E2E 验收（微信开发者工具模拟器）...')
+  const reportPath = path.join(path.dirname(SCREENSHOT_DIR), 'report.md')
+
+  /**
+   * 前置失败时**必须清掉上一轮的报告**：否则「本轮 exit 1」与「目录里那份旧报告」会同时存在，
+   * 下游完全可能把旧报告当成本轮结论（2026-09-14 固化：失败必须连证据一起失效）。
+   */
+  const abortBeforeRun = (title, detail) => {
+    console.error(`\n⛔ ${title}（e2e 已中止，未跑任何场景）：\n`)
+    console.error(`   ${detail}\n`)
+    try {
+      if (fs.existsSync(reportPath)) {
+        fs.rmSync(reportPath, { force: true })
+        console.error(`   已删除上一轮的陈旧报告 ${path.relative(process.cwd(), reportPath)}（避免被误当本轮结论）\n`)
+      }
+    } catch (e) {
+      console.error(`   ⚠️ 陈旧报告删除失败：${e.message}\n`)
+    }
+    process.exit(1)
+  }
 
   // ── 陈旧构建护栏（失败关闭）：dist 与 src/config 不一致时直接退出，不进模拟器 ──
   let freshnessLine = ''
@@ -39,9 +58,7 @@ async function main() {
     freshMode = fresh.mode
     console.log(`✅ 构建新鲜度检查通过[${fresh.mode}]：${freshnessLine}`)
   } catch (e) {
-    console.error('\n⛔ 陈旧构建护栏拦截（e2e 已中止，未连接模拟器）：\n')
-    console.error(`   ${e.message}\n`)
-    process.exit(1)
+    abortBeforeRun('陈旧构建护栏拦截', e.message)
   }
 
   let mp = await launch(process.env.E2E_PORT ? Number(process.env.E2E_PORT) : 0)
@@ -68,10 +85,12 @@ async function main() {
     login = { ...recheck, source: recheck.ok ? 'injected' : recheck.source }
   }
   if (!login.ok) {
-    console.error(`\n⛔ ${login.marker}：${login.reason}\n`)
-    console.error('   ⇒ 无登录态时断言依赖的租户数据（botName/租户副标/订单脱敏）会缺失或降级，')
-    console.error('     那种「绿」是环境残留给的，不是代码给的 —— 故直接失败，不产出不可复现的证据。')
-    process.exit(1)
+    abortBeforeRun(
+      `${login.marker}`,
+      `${login.reason}\n` +
+        '   ⇒ 无登录态时断言依赖的租户数据（botName/租户副标/订单脱敏）会缺失或降级，' +
+        '那种「绿」是环境残留给的，不是代码给的 —— 故直接失败，不产出不可复现的证据。'
+    )
   }
   const expect = login.user
     ? `，期望 botName=${login.user.botName ?? '(未配置→兜底小布)'} / tenantName=${login.user.tenantName ?? '(空)'}`
@@ -137,7 +156,6 @@ async function main() {
   lines.push(`| 判定 | ${totalFail === 0 ? '**全部通过，验收通过**' : '**存在失败项，需修复**'} |`)
   lines.push('')
 
-  const reportPath = path.join(path.dirname(SCREENSHOT_DIR), 'report.md')
   fs.writeFileSync(reportPath, lines.join('\n'), 'utf8')
 
   console.log('\n\n📋 E2E 验收汇总:')

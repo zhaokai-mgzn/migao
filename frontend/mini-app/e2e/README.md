@@ -27,12 +27,13 @@ C 端页面判定登录只查 storage（`checkAuth()` → `getToken()`，`src/st
 | `tenant_id` | `src/utils/auth.ts:87` `getTenantId()` | number（已把 admin-api 的 `tenantId` 归一化为 snake_case） |
 | `auth-store` | zustand persist 快照（`authStore.ts:153`） | `{"state":{...},"version":0}` |
 
-> ⚠️ **注入形状 = 逐字镜像生产存下的形状**（不补字段、不改名）。2026-09-14 发现的产品侧契约不一致：
-> 生产 `src/utils/auth.ts:47` 把接口返回的 `user` **原样** `JSON.stringify` 存进 `auth_user`，
-> 而 admin-api 的 `LoginResponse.UserInfo` 是 **camelCase（`tenantId`，没有 `tenant_id`）**，
-> 但 C 端类型声明 `User.tenant_id: number`（**必填**，`src/types/index.ts:11`）⇒ 运行时恒 `undefined`。
-> **harness 不得在注入时补一个 `tenant_id` 让断言过** —— 那会造出「harness 形状 ≠ 生产形状」，
+> ⚠️ **注入形状 = 逐字镜像生产存下的形状**（不补字段、不改名）。唯一判据是**生产实际存下的那段 JSON**，
+> 与类型声明是否准确**无关**：生产 `src/utils/auth.ts` 把接口返回的 `user` **原样**
+> `JSON.stringify` 存进 `auth_user`，而 admin-api 的 `LoginResponse.UserInfo` 是 **camelCase**。
+> **harness 不得在注入时补字段/改名让断言过** —— 那会造出「harness 形状 ≠ 生产形状」，
 > 将来读到该字段的代码会 **e2e 绿、生产挂**（又一种证据层假绿）。
+> 历史缺陷（曾声明 `User.tenant_id` 而后端不提供，已由 PR #3727 修为 `tenantId`）只是**当时的一个实例**；
+> 这条纪律与类型是否已修无关，红证里「未含 `tenant_id`」「键集合 == 响应原物」两条**永久保留**。
 > 契约不一致由**产品侧**修复收口（契约修复包 PR #3727；仓库级 H5 spec 的同类注入由它一并修），本 harness 只镜像。
 > **权威形状已 live 复核**（2026-09-14）：`data.user` 键 = `botName, id, identityType, nickname, role, roles,
 > tenantId, tenantName`（无 `tenant_id`；实测 `tenantId=1`/`tenantName=词元通达`/`botName=光头强`/`identityType=sms`）。
@@ -62,6 +63,12 @@ admin-api 鉴权）；本步骤只服务于测试环境。
 # 清空模拟器 storage（去掉残留登录态）→ 由共用步骤从零建立 → 全量跑
 cd frontend/mini-app && E2E_COLD_LOGIN=1 npm run test:e2e
 ```
+`E2E_COLD_LOGIN` 走的是 `wx.clearStorageSync()`（**全量清**）而非逐键删 ⇒ 将来新增的一次性/引导类
+storage key（如输入条一次性引导 `voice_hint_seen`）**天然会被清掉**，不会因残留而"跳过引导"。
+
+**`e2e/report.md` 是单槽产物**：每次运行覆盖；**任何前置失败（陈旧构建 / `LOGIN_MISSING`）会把它删掉**
+再 exit 1 —— 只做到"不产出新报告"不够，上一轮的旧报告同样会被下游当成本轮结论（"陈旧产物被当结论"的假绿）。
+需要留档请在跑完后 copy 出去（`acceptance/<日期>/mini-app-e2e/`）。
 
 **红证（双向，不需要模拟器/网络）**：
 ```bash
@@ -149,7 +156,10 @@ DOM 里已多出两条消息）。故 `capture()` 连抓直到**连续两帧完�
   加深一层父节点。所有输入条访问都收敛在 `lib/harness.js` 的 `probeInputBar()` /
   `typeAndSend()`，**该布局落地后只需复核这一个文件**（届时可另加「三者同行」的 `__row`
   断言；现在**不能**加，`__row`/`__field` 在 main 上还不存在）。
-- **SSE 回复较慢**：真实 LLM + 工具调用，回复等待窗口 120s
+- **SSE 回复较慢**：真实 LLM + 工具调用，回复等待窗口 120s。判「本次发送是否收到回复」只能用
+  `harness.waitForAssistantReply(page, 发送前基线)`：**基线必须在发送前取**，否则「比较文本」与
+  「比较气泡数量」两种写法都会假红（助手气泡在流式一开始就已创建；发送后取到的"旧文本"就是新回复本身）。
+  2026-09-14 实测：同一断言先后以这两种方式假红（`acceptance/2026-09-14/mini-app-e2e/COLD-RUN.md` §B′）。
 - **端口**：自动化默认 9420（由 `cli auto --auto-port` 建立）；开发者工具自身 IDE 端口（如 21161）不是自动化端口
 - **新增场景文件**：放 `scenarios/` 下并在 `run.js` 的 `SCENARIOS` 注册；文件头必须带 `// case_ids: ...`（QA Growth Gate）
 - **产物不入库**：`screenshots/` 与 `report.md` 已 gitignore；留档请 copy **关键**截图 + 报告到 `acceptance/<日期>/mini-app-e2e/`
