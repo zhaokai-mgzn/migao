@@ -32,7 +32,18 @@ _SKILL_DOMAIN_KEYWORDS = {
     # 「退」单独入表（issue #3361）：C 端口语里"我要退上次买的那单"不含"退货"三字，
     # 但语义百分百是售后 —— 漏掉它导致流程被甩去 order 域（见下方「本领域信号优先」注释）。
     "aftersales": {"售后", "退货", "退款", "换货", "投诉", "退"},
-    "product": {"查商品", "搜商品", "创建商品", "商品管理"},
+    "product": {
+        "查商品", "搜商品", "创建商品", "商品管理",
+        # 商品**动作**词（#3557 G3/T2）：原表只有管理端**查询**口径，一个动作词都没有
+        # → 会话锁在非商品域时「再把它上架」「把遮光窗帘下架」逃不出去 → 被困在
+        # order/aftersales（其工具集没有 `product_manage`）→ 模型以「模块越界」口径拒绝。
+        # 只收**商品专属动作**：这两个词在下单/报价/售后话术里不出现（对照
+        # `_SKILL_DOMAIN_PATTERNS` 的注释——裸名词会坏事，动词不会）。
+        # 「价格」「库存」**故意不收**：C 端「这个价格帮我下单」「库存还有吗」高频
+        # → 入表会让 customer_quote/customer_order 的会话锁被误逃逸；那两条走
+        # `route_by_intent` 的 L1 高置信放行（见 `_rule_intent_domain`）。
+        "上架", "下架",
+    },
     "customer": {"客户", "会员"},
     "staff": {"员工", "角色", "权限"},
     "settings": {"设置", "配置", "通知", "快捷回复"},
@@ -52,6 +63,25 @@ _SKILL_DOMAIN_PATTERNS = {
         r"(?:推荐|看看|看一下|有什么|有没有|想看看).{0,8}(?:窗帘|窗纱|面料|布艺)",
         r"(?:窗帘|窗纱|面料|布艺).{0,6}(?:推荐|有哪些|有什么|怎么选|哪种好)",
     ),
+}
+
+
+# ── Skill → 意图（短消息快捷路由 / 答卡轮保持本 skill 意图，#3557）──
+_SKILL_TO_INTENT = {
+    "product": "product_inquiry",
+    "customer_product": "product_inquiry",
+    "order": "order_query",
+    "customer_order": "order_query",
+    "aftersales": "after_sales",
+    "customer_aftersales": "after_sales",
+    "customer": "customer_query",
+    "staff": "employee_manage",
+    "settings": "system_settings",
+    "data": "dashboard",
+    "general": "general",
+    "customer_general": "general",
+    "customer_knowledge": "general",
+    "customer_quote": "quote",
 }
 
 
@@ -94,6 +124,77 @@ def _msg_has_domain_keyword(text: str) -> bool:
         return True
     # 句式信号同源（issue #3364）：「有什么窗帘推荐」是实质诉求，不该被当澄清轮
     return any(_msg_matches_domain_pattern(text, d) for d in _SKILL_DOMAIN_PATTERNS)
+
+
+# ── 确认卡「答卡轮」（#3557 G1）──
+# 答卡轮 = 本轮用户输入**逐字等于本会话最近一张确认卡的 confirmValue**
+# （`base_skill.py` 的 `_is_card_confirm_value` 同源语义：该值由系统自产并展示，
+# 用户不可能"碰巧"逐字相等 → 只可能来自点击卡片）。
+_CARD_CONFIRM_INTENT_SOURCE = "card_confirm"
+
+
+def _is_card_confirm_round(state: dict) -> bool:
+    """本轮是否是「点卡确认」轮：输入逐字等于**本 skill 自己那张卡**的 confirmValue。
+
+    为什么**必须**带上 `last_confirm_skill == pending_interact_skill`（issue #3557 vs #3361）：
+    - #3557（本判据要治的）：商品上下架卡的 `confirmValue` 里那句「（改为停售，**买家不可下单**）」
+      含跨域词「下单」→ L1 规则表判 `order_create` → escape hatch 清锁 → 进 `order` skill
+      （无 `product_manage`）→ 零工具调用 + 「订单模块」口径拒绝（run 34808115143，PR-007 50%）。
+    - #3361（**不许**踩的契约）：`pending=customer_quote` + 顾客**另起一句**
+      「确认下单/我要下单/帮我下单」**必须**切到 `customer_order`（报价 skill 没有
+      order_create，不切就"报价后下不了单"）。
+    两者的判别式**不是**"答卡轮一律不切域"（那会踩 #3361），而是"**本轮输入是否逐字等于
+    本 skill 自己那张卡的 confirmValue**"：#3361 的输入是顾客新写的一句话，
+    与报价卡的 confirmValue 不相等 → 照旧放行切换。
+    """
+    pending = str(state.get("pending_interact_skill") or "")
+    card_skill = str(state.get("last_confirm_skill") or "")
+    card_value = str(state.get("last_confirm_value") or "")
+    if not (pending and card_skill == pending and card_value):
+        return False
+    msg = (_get_last_human_text(state.get("messages", []) or []) or "").strip()
+    return bool(msg) and msg == card_value.strip()
+
+
+# 已知领域：`_SKILL_DOMAIN_KEYWORDS` 的键 + knowledge（无关键词表但有独立 skill）
+_KNOWN_DOMAINS = frozenset(_SKILL_DOMAIN_KEYWORDS) | {"knowledge"}
+
+
+def _route_key_domain(route_key: str) -> str:
+    """路由 key → 领域（无法判定时返回 ""）。
+
+    `_get_intent_to_route`（生产，`skill_registry`）给的是**域 key**（`product`/`order`），
+    而测试里的映射表与 builder 的 `skill_route_map` 用的是**节点 id**（`product_skill`）。
+    两种命名都要能识别，否则 escape hatch 的域比较在测试/生产之间不一致。
+    """
+    key = str(route_key or "")
+    if not key or key in ("general", "direct_reply"):
+        return ""
+    if key in _KNOWN_DOMAINS:
+        return key
+    base = key[:-len("_skill")] if key.endswith("_skill") else ""
+    if base in _KNOWN_DOMAINS:
+        return base
+    if base.startswith("customer_"):
+        base = base[len("customer_"):]
+    return base if base in _KNOWN_DOMAINS else ""
+
+
+def _rule_intent_domain(intent: str, agent_type: str) -> str:
+    """L1 规则命中的 intent 对应的 skill 域（无法路由到具体域时返回 ""）。
+
+    用于 escape hatch：**尊重 L1 已算出的高置信判定**，而不是只认关键词表。
+    """
+    return _route_key_domain(_intent_to_route_key(intent, agent_type))
+
+
+def _intent_to_route_key(intent: str, agent_type: str) -> str:
+    """intent → 路由 key（懒加载按 agent_type 分桶的映射表）。"""
+    global _INTENT_TO_ROUTE
+    _key = agent_type or ""
+    if _key not in _INTENT_TO_ROUTE:
+        _INTENT_TO_ROUTE[_key] = _get_intent_to_route(agent_type)
+    return _INTENT_TO_ROUTE[_key].get(intent, "general")
 
 
 # ────────────────────── 多模态内容处理 ──────────────────────
@@ -258,24 +359,31 @@ async def intent_router_node(state: AgentState) -> dict:
         last_user_msg = _get_last_human_text(messages) or ""
         msg_len = len(last_user_msg.strip()) if last_user_msg else 0
 
+        # ── 答卡轮豁免（#3557 G1，**必须最先判**）──
+        # 点卡确认轮不重判意图：卡值里可能含跨域词（PR-007 的「买家不可下单」含「下单」），
+        # 走 L1 规则表会被判成 `order_create` → 路由到 order skill（无 product_manage）
+        # → 零工具调用 + 「订单模块」口径拒绝（CI run 34808115143，PR-007 50%）。
+        # 放最前面：本轮的实质意图就是"确认刚才那张卡"，无需（也不该）重新分类；
+        # 判据与 #3361 的契约不冲突（那个场景的输入不是本 skill 卡的 confirmValue），
+        # 见 `_is_card_confirm_round` 的完整说明。
+        if _is_card_confirm_round(state):
+            synthetic_intent = _SKILL_TO_INTENT.get(pending_skill, "general")
+            logger.info(
+                f"[intent_router] 答卡轮：保持本 skill 意图（不重判）"
+                f" | pending_skill={pending_skill} → intent={synthetic_intent}"
+                f" | session={session_id}"
+            )
+            return {
+                "intent_result": {
+                    "intent": synthetic_intent,
+                    "confidence": 0.99,
+                    "source": _CARD_CONFIRM_INTENT_SOURCE,
+                },
+                "route_decision": {"action": "full_agent"},
+            }
+
         # 短消息：沿用 pending_skill 快捷路由（节省 LLM 调用，防止误分类）
         if msg_len <= 5:
-            _SKILL_TO_INTENT = {
-                "product": "product_inquiry",
-                "customer_product": "product_inquiry",
-                "order": "order_query",
-                "customer_order": "order_query",
-                "aftersales": "after_sales",
-                "customer_aftersales": "after_sales",
-                "customer": "customer_query",
-                "staff": "employee_manage",
-                "settings": "system_settings",
-                "data": "dashboard",
-                "general": "general",
-                "customer_general": "general",
-                "customer_knowledge": "general",
-                "customer_quote": "quote",
-            }
             synthetic_intent = _SKILL_TO_INTENT.get(pending_skill, "general")
             logger.info(
                 f"[intent_router] Intent rewrite (short msg): pending_skill={pending_skill}"
@@ -722,9 +830,25 @@ def route_by_intent(state: AgentState) -> str:
         # 注意：不能用字符数判断——中文确认消息（如"好的，确认创建，克重选中"）轻松超过10字。
         # 仅当消息包含其他领域的显式触发词时才允许逃逸。
         last_msg = _get_last_human_text(state.get("messages", [])) or ""
+        _pending_domain = _skill_keyword_domain(pending_skill)
+
+        # ── 答卡轮豁免（#3557 G1）：点本 skill 自己那张卡 → 留在本 skill ──
+        # 卡值由系统按"必须含上下文"的协议生成，可能含**其他域**的词（PR-007 的
+        # 「（改为停售，买家不可下单）」含「下单」）→ 下面的 escape hatch 会把它当成
+        # 话题切换、清掉会话锁 → intent 兜底成 order → 进 order skill（无 product_manage）
+        # → 零工具调用 + 「订单模块」口径拒绝。同源判据也用在 `intent_router_node`
+        # （那里会先被 L1 规则表劫持，所以两处都要拦）。
+        # 与 #3361 的契约不冲突：那个场景的输入不是本 skill 卡的 confirmValue，见
+        # `_is_card_confirm_round`。
+        if _is_card_confirm_round(state):
+            logger.info(
+                f"[route_by_intent] 答卡轮：留在本 skill（不判话题切换）"
+                f" | skill={pending_skill} | session={session_id}"
+            )
+            return pending_skill
+
         # 使用模块级单一来源关键词表（plan_rewrite 护栏与 escape hatch 共用）
         # 如果用户消息包含非当前 skill 领域的关键词，允许切换
-        _pending_domain = _skill_keyword_domain(pending_skill)
         current_domain_keywords = _SKILL_DOMAIN_KEYWORDS.get(_pending_domain, set())
         # ── 本领域信号优先：消息里带了**当前技能领域**的关键词 → 不切走（issue #3361 实证）──
         # CH-012 复现型红灯的真因：R1 在 customer_aftersales 下发「请选择要退货的订单」卡，
@@ -740,6 +864,24 @@ def route_by_intent(state: AgentState) -> str:
                 f"(domain={_pending_domain}) | session={session_id}"
             )
             return pending_skill
+        # ── L1 高置信判定优先于关键词表（#3557 G3/T2）──
+        # 缺陷：`_SKILL_DOMAIN_KEYWORDS["product"]` 是**管理端查询口径**（查商品/搜商品/
+        # 创建商品/商品管理），无任何商品**动作**词 → `pending=order` 时「改一下遮光窗帘的
+        # 价格」「查一下库存」这类 L1 已高置信判为 `product_inquiry` 的输入照样被困在 order
+        # （`order` 的 `ORDER_TOOLS` 没有 `product_manage`）→ 只能以「模块越界」口径拒绝。
+        # 修法：L1 规则命中（`source == "rule"`，**确定性、高置信**）判到**可路由的别的域**
+        # → 放行逃逸；LLM 分类器结果不放行（防短信/答卡值被分类器误判成别的域时把锁甩走）。
+        _rule_domain = ""
+        if str((state.get("intent_result") or {}).get("source") or "") == "rule":
+            _rule_domain = _rule_intent_domain(intent, state.get("agent_type", ""))
+        if _rule_domain and _rule_domain != _pending_domain:
+            logger.info(
+                f"[route_by_intent] Escape hatch: L1 高置信域切换 "
+                f"'{_pending_domain}' → '{_rule_domain}' (intent={intent}) | session={session_id}"
+            )
+            state["pending_interact_skill"] = ""
+            return _intent_to_route_key(intent, state.get("agent_type", ""))
+
         for skill_domain, keywords in _SKILL_DOMAIN_KEYWORDS.items():
             if skill_domain == _pending_domain:
                 continue
@@ -766,8 +908,4 @@ def route_by_intent(state: AgentState) -> str:
         f"(pending_skill={pending_skill or 'none'}, action={action}) | session={session_id}"
     )
 
-    global _INTENT_TO_ROUTE
-    agent_type = state.get("agent_type", "")
-    if agent_type not in _INTENT_TO_ROUTE:
-        _INTENT_TO_ROUTE[agent_type] = _get_intent_to_route(agent_type)
-    return _INTENT_TO_ROUTE[agent_type].get(intent, "general")
+    return _intent_to_route_key(intent, state.get("agent_type", ""))

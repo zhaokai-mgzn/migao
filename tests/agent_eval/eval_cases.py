@@ -4114,6 +4114,8 @@ _CASE_PR_007 = EvalCase(
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+    required_args=[{'tool': 'product_manage', 'action': 'toggle_status', 'fields': ['product_id', 'status']}],
+    must_succeed=[{'tool': 'product_manage', 'action': 'toggle_status'}],
     pre_clean=[{'type': 'product_dedupe', 'product_keyword': '遮光窗帘'}],
 )
 

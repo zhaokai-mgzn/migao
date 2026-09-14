@@ -227,6 +227,20 @@ cases:
         args:
           action: toggle_status
           status: on_sale
+    # ── 假绿升级（#3557 / 归因报告 §2.6 A5）──
+    # 「期望里出现过工具名」只证明模型**想**下架/上架，判不出"卡答了但没执行"
+    # （run 34808115143：R2 起零工具调用，仍判 50%）。`success=true` 属计分白名单，
+    # 但对**哪个 action 成功**无判别力 → 升 must_succeed（canonical 写成功，fail-closed）
+    # + required_args（调用必须带全 product_id/status，防"空调用"顶过）。
+    must_succeed:
+      - tool: product_manage
+        action: toggle_status
+    required_args:
+      - tool: product_manage
+        action: toggle_status
+        fields:
+          - product_id
+          - status
     data_checks:
       - "success=true"
     pre_clean:
@@ -234,7 +248,7 @@ cases:
       - type: product_dedupe
         product_keyword: "遮光窗帘"
     skip_reason: ""
-    merge_log: "verification 2.7 独有；2026-09-10 校准：评测商品均已 on_sale，「上架」无操作对象 → 改自包含状态流转（下架→上架），验证完整流转且每次从 on_sale 起跑。2026-09-14 校准（#3518）：① 输入去「100元的那件」价格点名（独立栈种子 ¥168）；② 两处裸文本「确认」改答卡轮（+1 余量轮）；③ pre_clean 去 price 过滤"
+    merge_log: "verification 2.7 独有；2026-09-10 校准：评测商品均已 on_sale，「上架」无操作对象 → 改自包含状态流转（下架→上架），验证完整流转且每次从 on_sale 起跑。2026-09-14 校准（#3518）：① 输入去「100元的那件」价格点名（独立栈种子 ¥168）；② 两处裸文本「确认」改答卡轮（+1 余量轮）；③ pre_clean 去 price 过滤。2026-09-14 校准（#3557）：假绿升级——升 must_succeed(toggle_status) + required_args(product_id/status)；根因修复见 app/graph/nodes.py 的答卡轮豁免（答卡轮不再被卡值里的跨域词路由到 order skill）"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_product_search.py"

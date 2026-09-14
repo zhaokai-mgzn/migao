@@ -2901,9 +2901,11 @@
 你: [🤖 按上一轮卡片作答]
 期望: product_manage(action=toggle_status, status=on_sale)
 数据: success=true
+必填: product_manage(toggle_status) 字段 product_id, status
+必须成功: product_manage(toggle_status)
 ```
 真值: product-sku-stock.status-flow
-溯源: verification 2.7 独有；2026-09-10 校准：评测商品均已 on_sale，「上架」无操作对象 → 改自包含状态流转（下架→上架），验证完整流转且每次从 on_sale 起跑。2026-09-14 校准（#3518）：① 输入去「100元的那件」价格点名（独立栈种子 ¥168）；② 两处裸文本「确认」改答卡轮（+1 余量轮）；③ pre_clean 去 price 过滤 ｜ tags: status, write
+溯源: verification 2.7 独有；2026-09-10 校准：评测商品均已 on_sale，「上架」无操作对象 → 改自包含状态流转（下架→上架），验证完整流转且每次从 on_sale 起跑。2026-09-14 校准（#3518）：① 输入去「100元的那件」价格点名（独立栈种子 ¥168）；② 两处裸文本「确认」改答卡轮（+1 余量轮）；③ pre_clean 去 price 过滤。2026-09-14 校准（#3557）：假绿升级——升 must_succeed(toggle_status) + required_args(product_id/status)；根因修复见 app/graph/nodes.py 的答卡轮豁免（答卡轮不再被卡值里的跨域词路由到 order skill） ｜ tags: status, write
 
 ### PR-008. 创建商品 - 完整流程 🔵
 ```

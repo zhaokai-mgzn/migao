@@ -4,7 +4,7 @@ Covers: AgentResponse, AgentContext, BaseAgent, get_agent, reset_agent,
          _extract_msg_content, backward compat aliases, and the async
          methods (_build_initial_state / achat / astream_chat).
 """
-# case_ids: AG-001, AG-002, AG-003, AG-004, AG-005, AG-006
+# case_ids: AG-001, AG-002, AG-003, AG-004, AG-005, AG-006, PR-007
 
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -340,16 +340,24 @@ class TestBuildInitialState:
 
     @pytest.mark.asyncio
     async def test_returns_15_keys(self):
-        """_build_initial_state 返回 15 个键（原 18 精简到 13，新增 permissions/tenant_name 权限与品牌字段）"""
+        """_build_initial_state 返回 17 个键（15 + #3557 的确认卡两字段：
+
+        `last_confirm_value` / `last_confirm_skill` —— 路由层的答卡轮判据需要它们；
+        未注入时答卡轮会被 L1 规则表劫持（#3557）。
+        """
         agent = _bare_agent()
-        with patch("app.memory.session_memory.SessionMemory") as mock_sm:
+        with patch("app.memory.session_memory.SessionMemory") as mock_sm, \
+                patch("app.memory.session_state_store.SessionStateStore") as mock_store:
             mem = mock_sm.return_value
             mem.get_plan_state = AsyncMock(return_value=None)
             mem.get_pending_skill = AsyncMock(return_value="")
+            mock_store.return_value.load = AsyncMock(return_value=None)
             state = await agent._build_initial_state(
                 [HumanMessage(content="hi")], self._ctx()
             )
-        assert len(state) == 15
+        assert len(state) == 17
+        assert state["last_confirm_value"] == ""
+        assert state["last_confirm_skill"] == ""
         assert state["messages"][0].content == "hi"
         assert state["agent_type"] == "xiaobu"
         assert state["tenant_id"] == 1
@@ -362,6 +370,31 @@ class TestBuildInitialState:
         assert "entities" not in state
         assert "recent_entities" not in state
         assert "cached_answer" not in state
+
+    @pytest.mark.asyncio
+    async def test_restores_last_confirm_card_state(self):
+        """#3557：最近一张确认卡（confirmValue + 发卡 skill）必须恢复到初始状态。
+
+        路由层要在**意图重判之前**判"本轮是不是点卡确认轮"，而这两个值原本只在
+        写工具门禁处（base_skill）读 —— 答卡轮被路由走偏后根本到不了门禁。
+        """
+        agent = _bare_agent()
+        with patch("app.memory.session_memory.SessionMemory") as mock_sm, \
+                patch("app.memory.session_state_store.SessionStateStore") as mock_store:
+            mem = mock_sm.return_value
+            mem.get_plan_state = AsyncMock(return_value=None)
+            mem.get_pending_skill = AsyncMock(return_value="product")
+            mock_store.return_value.load = AsyncMock(return_value={
+                "pending_skill": "product",
+                "last_confirm_value": "确认：商品名称=遮光窗帘；操作=下架",
+                "last_confirm_skill": "product",
+            })
+            state = await agent._build_initial_state(
+                [HumanMessage(content="确认：商品名称=遮光窗帘；操作=下架")], self._ctx()
+            )
+        assert state["pending_interact_skill"] == "product"
+        assert state["last_confirm_value"] == "确认：商品名称=遮光窗帘；操作=下架"
+        assert state["last_confirm_skill"] == "product"
 
 
 class TestAchat:
