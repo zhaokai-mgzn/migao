@@ -41,7 +41,7 @@ from render_cases import load_case_dicts  # noqa: E402
 import eval_case_filter as lr  # noqa: E402
 from case_coverage import (  # noqa: E402
     BASELINE_PATH, PERSONA_LABELS, _attach_baseline, build_coverage_report,
-    case_title, load_baseline, render_baseline_worklist, tool_label,
+    case_title, load_baseline, render_action_gaps, render_baseline_worklist, tool_label,
 )
 
 CASES_DIR = REPO_ROOT / ".github" / "cases"
@@ -96,6 +96,7 @@ def render_text(rep, cases, by_tier) -> str:
             out.append(f"  {cid}: {extra}")
         out.append("")
     _render_thin(out, rep)
+    out.append(render_action_gaps(rep, PERSONA_LABELS[PERSONA]))
     return "\n".join(out)
 
 
@@ -224,6 +225,7 @@ def render_md(rep, by_tier) -> str:
         for cid, extra in rep.dangling_cases:
             out.append(f"| {cid} | {', '.join(extra)} |")
         out.append("")
+    out.append(render_action_gaps(rep, PERSONA_LABELS[PERSONA], md=True))
     return "\n".join(out)
 
 

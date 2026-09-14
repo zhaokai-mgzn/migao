@@ -52,12 +52,133 @@ PERSONAS = ("xiaobu", "mibao")
 #      却登记成 `missing_positive` → 判陈旧，逼登记与实际对齐）。
 # 清单是**工作清单不是免死金牌**：报告里逐条打印归属 issue，补完用例即删条目。
 BASELINE_PATH = REPO_ROOT / ".github" / "eval-coverage-baseline.yml"
-BLOCKING_KINDS = ("uncovered", "missing_positive")
+BLOCKING_KINDS = ("uncovered", "missing_positive", "action_dangling")
 REPORTING_KINDS = ("thin", "thin_positive")
 GAP_KINDS = BLOCKING_KINDS + REPORTING_KINDS
 ENTRY_REQUIRED_FIELDS = ("tool", "kind", "issue", "reason", "added")
 _ISSUE_RE = re.compile(r"^#\d+$")
 _MIN_REASON_LEN = 8
+
+# ── action 级覆盖（工具级之下的一层，issue #3667）────────────────────────────────
+# 背景：工具级矩阵问不出「这个工具**有**用例，但它的某个 action 从没被测」——
+# 实证 `processing_item_manage` 9 个 action 只有 3 个被断言、
+# `processing_order_update` 4 个只有 1 个（PG-016 靠 `action: complete` 撑起整域覆盖），
+# 而工具级矩阵把它们显示成"✅ 已覆盖"。真值取**工具源码的 action 枚举**（不是从用例反推，
+# 否则缺失的 action 根本不在集合里 = 缺口不可见）。
+#
+# 处置分两档（与既有 `dangling_cases` / `thin_tools` 同构，见 issue #3667 决策记录）：
+#   · `action_uncovered`（该工具有用例、该 action 零覆盖）→ **只报告**：仓库实测 41 处，
+#     阻塞即大面积飘红 = 用存量债锁死流水线；且它本质是**厚度**指标（§14.5 已把"仅 1 条用例"
+#     定为只报告），不是"能力完全没被测"的结构性缺失；
+#   · `action_dangling`（用例声明了工具**不存在**的 action）→ **阻塞**：这是配置错误
+#     （断言永不满足 = 假红/假绿），与拼错工具名的 `dangling_cases` 同一家族，实测仅 1 处。
+TOOLS_DIR = REPO_ROOT / "backend" / "ai-agent-service" / "app" / "tools"
+_ACTION_PROP_RE = re.compile(r'"action"\s*:\s*\{')
+_ENUM_RE = re.compile(r'"enum"\s*:\s*\[(.*?)\]', re.S)
+_ACTION_VALUE_RE = re.compile(r'"([A-Za-z_][A-Za-z0-9_]*)"')
+_ACTION_ARG_RE = re.compile(r"action\s*=\s*([A-Za-z_][A-Za-z0-9_]*)")
+# 解析到的「多 action 工具」数下界（防源码解析静默失效 → action 报告假绿）。
+# 不是覆盖门禁阈值：只用来发现**解析器坏了**（新增多 action 工具后请同步上调）。
+ACTION_TOOL_FLOOR = 15
+
+
+def tool_declared_actions(tool: str) -> set:
+    """工具源码声明的 action 全集（真值 = `parameters.properties.action.enum`）。
+
+    ⚠️ 用**花括号配对**取 `action` 属性块，而不是 `.*?"enum"` 非贪婪跨属性匹配：
+    后者在"action 无 enum、但后面某个属性有 enum"的工具上会**串味**（把 status 的枚举
+    当成 action 的），串味的后果是缺口判错且**看不出来**。
+    """
+    path = TOOLS_DIR / f"{tool}.py"
+    if not path.exists():
+        return set()
+    try:
+        src = path.read_text(encoding="utf-8")
+    except OSError:
+        return set()
+    m = _ACTION_PROP_RE.search(src)
+    if not m:
+        return set()
+    start, depth, end = m.end() - 1, 0, -1
+    for i in range(start, len(src)):
+        if src[i] == "{":
+            depth += 1
+        elif src[i] == "}":
+            depth -= 1
+            if depth == 0:
+                end = i
+                break
+    if end < 0:
+        return set()
+    e = _ENUM_RE.search(src[start + 1:end])
+    if not e:
+        return set()
+    return set(_ACTION_VALUE_RE.findall(e.group(1)))
+
+
+def action_catalog(tools) -> dict:
+    """该端「工具 → 声明的 action 全集」（只含**有 action 维度**的工具）。"""
+    out = {}
+    for t in sorted(tools):
+        acts = tool_declared_actions(t)
+        if acts:
+            out[t] = acts
+    return out
+
+
+def _split_actions(raw) -> list:
+    """`raw` → action 名列表；支持 `a or b`（仓库实有此形态：notification_manage）。"""
+    out = []
+    for part in re.split(r"\s+or\s+", str(raw or ""), flags=re.IGNORECASE):
+        part = part.strip()
+        if re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", part):
+            out.append(part)
+    return out
+
+
+def case_declared_actions(case) -> dict:
+    """用例**机器可判声明**里的 `tool → {action}`（不做自然语义猜测）。
+
+    来源（2026-09-14 实测清点，覆盖仓库现有全部形态）：
+      · `expectations[].args.action`（dict 形态）与 `expectations` 字符串形态
+        （`customer_manage(action=list)`）；
+      · `must_succeed[] / output_verify[] / required_args[] / must_fail[]` 的 `{tool, action}`；
+      · `db_verify[]` 的 `{source, action}`（`source` 指写工具，同 runner 口径）。
+    **不收**自然语义 `data_checks`（"customer_id 从 customer_manage 查询获得"）——
+    它不是可执行判据（acceptance-protocol §1.3），拿它当覆盖证据就是"看起来有覆盖"。
+    """
+    def get(key):
+        return (case.get(key) if isinstance(case, dict)
+                else getattr(case, key, None)) or []
+
+    out: dict = {}
+
+    def add(tool, raw_action) -> None:
+        tool = str(tool or "").strip()
+        if tool:
+            for a in _split_actions(raw_action):
+                out.setdefault(tool, set()).add(a)
+
+    for exp in get("expectations"):
+        if isinstance(exp, dict):
+            args = exp.get("args")
+            add(exp.get("tool"), (args or {}).get("action") if isinstance(args, dict) else None)
+            continue
+        # 字符串形态（`customer_manage(action=list)`）：只认**单分支**——`A or B` 下
+        # action 归属哪个分支无法从文本判定，宁可不收（本判据在"新增断言能力"上取保守侧：
+        # 漏收只少一条报告，误收会造出假 `action_dangling` 阻塞）。
+        branches = lr.expectation_branches(exp)
+        if len(branches) == 1:
+            for m in _ACTION_ARG_RE.finditer(str(exp)):
+                add(branches[0], m.group(1))
+    for key in ("must_succeed", "output_verify", "required_args", "must_fail"):
+        for spec in get(key):
+            if isinstance(spec, dict):
+                add(spec.get("tool"), spec.get("action"))
+    for spec in get("db_verify"):
+        if isinstance(spec, dict):
+            add(spec.get("tool") or spec.get("source"), spec.get("action"))
+    return out
 
 
 def load_baseline(path=None, persona: str = "", tools=None):
@@ -166,6 +287,7 @@ PERSONA_LABELS = {
 _KIND_LABELS = {
     "uncovered": "零用例（阻塞）",
     "missing_positive": "缺正向用例（阻塞）",
+    "action_dangling": "用例声明了工具不存在的 action（阻塞）",
     "thin": "仅 1 条用例（只报告）",
     "thin_positive": "仅 1 条正向用例（只报告）",
 }
@@ -302,6 +424,10 @@ class CoverageReport:
     baseline: dict = field(default_factory=dict)      # CoverageBaseline 或 {}（存量豁免，仅 --check）
     baseline_stale: list = field(default_factory=list)  # [(tool, kind)] 已销账但登记未删 → 阻塞
     baseline_missing: list = field(default_factory=list)  # 登记了但当前不是缺口 → 阻塞
+    action_tools: dict = field(default_factory=dict)    # tool → 源码声明的 action 全集（真值）
+    action_cases: dict = field(default_factory=dict)    # (tool, action) → [用例 ID]（被断言的 action）
+    action_uncovered: list = field(default_factory=list)  # [(tool, action)] 有工具用例但该 action 零覆盖 → 只报告
+    action_dangling: list = field(default_factory=list)   # [(tool, action)] 用例声明了工具不存在的 action → 阻塞
 
     @property
     def covered(self) -> int:
@@ -313,14 +439,16 @@ class CoverageReport:
 
     # ── 存量豁免（burn-down baseline，issue #3575 决策）───────────────────────
     def blocking_gaps(self) -> list:
-        """当前**结构性缺失**清单：[(tool, kind)]，kind ∈ {"uncovered", "missing_positive"}。
+        """当前**结构性缺失**清单：[(tool, kind)]，kind ∈ BLOCKING_KINDS。
 
         kind 的区分是有意的（豁免条目要按真实形态登记，登记错判陈旧）：
           · `uncovered`        = 零用例（连证据都没有）；
-          · `missing_positive` = 有用例、但**一条正向都没有**（只有对抗档/否定式断言）。
+          · `missing_positive` = 有用例、但**一条正向都没有**（只有对抗档/否定式断言）；
+          · `action_dangling`  = 用例声明了工具**不存在**的 action（#3667；断言永不满足）。
         """
         return [(t, "uncovered" if t in self.uncovered_actionable() else "missing_positive")
-                for t in sorted(self.missing_positive)]
+                for t in sorted(self.missing_positive)] \
+            + sorted({(t, "action_dangling") for t, _a in self.action_dangling})
 
     def reporting_gaps(self) -> list:
         """**只报告**（不阻塞）的厚度不足清单：[(tool, kind)]，kind ∈ {"thin", "thin_positive"}。
@@ -390,6 +518,18 @@ class CoverageReport:
                 + ", ".join(f"{t}[{k}]" for t, k in self.baseline_stale_blocking)
                 + "\n     ⇒ 补完用例即删除该条目（清单只能变短）"
             )
+        # 悬空 action 单独报（比 `new_gaps` 的通用文案更具体），但仍**尊重存量豁免**：
+        # 否则登记了也挡不住它，门禁会在 main 上常红（与 `new_gaps` 的 is_baselined 口径一致）。
+        unresolved_dangling = [(t, a) for t, a in self.action_dangling
+                               if not self.is_baselined(t, "action_dangling")]
+        if unresolved_dangling:
+            problems.append(
+                f"{len(unresolved_dangling)} 处用例声明了工具**不存在**的 action"
+                f"（断言永不满足 = 假红/假绿，同 `dangling_cases` 家族）: "
+                + ", ".join(f"{t}(action={a})[{','.join(self.action_cases.get((t, a)) or [])}]"
+                            for t, a in unresolved_dangling)
+                + "\n     ⇒ 核对工具 schema 的 action 枚举后改用例声明"
+            )
         new_gaps = [(t, k) for t, k in self.blocking_gaps() if not self.is_baselined(t, k)]
         if new_gaps:
             problems.append(
@@ -453,6 +593,12 @@ def build_coverage_report(cases, persona: str, tools=None, exempt=None) -> Cover
                 if tool in tools:
                     rep.positive.setdefault(tool, []).append(cid)
 
+        for tool, acts in case_declared_actions(case).items():
+            if tool not in tools:
+                continue
+            for a in sorted(acts):
+                rep.action_cases.setdefault((tool, a), []).append(cid)
+
     for tool in sorted(tools):
         ids = rep.cases.get(tool) or []
         if not ids:
@@ -466,4 +612,77 @@ def build_coverage_report(cases, persona: str, tools=None, exempt=None) -> Cover
         # 零用例的工具也会落在这里，但 `blocking_gaps()` 用 uncovered 归类（避免同一件事报两遍）。
         if not rep.positive.get(tool) and tool not in exempt:
             rep.missing_positive[tool] = list(ids)
+
+    # ── action 级（#3667）：真值取源码枚举；零用例工具的 action 由工具级 uncovered 报，不重复 ──
+    # 单 action 工具（枚举只有 1 项，如 `customer_order_query` 的 `list`）**不报未覆盖**：
+    # 调该工具 == 调那个 action，工具级已覆盖即 action 级已覆盖 —— 报出来是**假缺口**
+    # （会把 100% 覆盖的工具显示成"未覆盖 1/1"）。悬空检测对它们照旧生效（声明错 action 仍是错）。
+    rep.action_tools = action_catalog(tools)
+    declared_by_tool: dict = {}
+    for (tool, action) in rep.action_cases:
+        declared_by_tool.setdefault(tool, set()).add(action)
+    for tool, acts in rep.action_tools.items():
+        declared = declared_by_tool.get(tool, set())
+        if rep.cases.get(tool) and len(acts) > 1:
+            rep.action_uncovered += [(tool, a) for a in sorted(acts - declared)]
+        rep.action_dangling += [(tool, a) for a in sorted(declared - acts)]
     return rep
+
+
+# ── action 级报告渲染（两个 CLI 共用同一实现，防口径漂移）───────────────────────
+
+def render_action_gaps(rep: CoverageReport, persona_label: str = "", md: bool = False) -> str:
+    """action 级覆盖报告（§⑥）：未覆盖 action（只报告）+ 悬空 action（--check 拦截）。
+
+    为什么单列：工具级矩阵把它们显示成"✅ 已覆盖"（`processing_item_manage` 9 个 action
+    只有 3 个被断言），本段就是它下面那一层的**补用例任务书**（issue #3667）。
+    未覆盖 action 多到不适合逐条阻塞（仓库实测 41 处），故只报告；悬空 action 是配置错误（阻塞）。
+    """
+    if not rep.action_tools and not rep.action_dangling:
+        return ""
+    total_actions = sum(len(a) for a in rep.action_tools.values())
+    multi = len([t for t, a in rep.action_tools.items() if len(a) > 1])
+    out = []
+    if md:
+        out += ["", "## ⑦ action 级覆盖（工具级之下的一层，issue #3667）", "",
+                f"- 有 action 维度的工具：**{len(rep.action_tools)} 个**（多 action {multi} 个），"
+                f"action 合计 **{total_actions} 个**",
+                f"- 未被任何用例断言的 action（**只报告不阻塞**）：**{len(rep.action_uncovered)} 个**",
+                f"- 用例声明了工具**不存在**的 action（`--check` 拦截）：**{len(rep.action_dangling)} 个**"]
+        if rep.action_dangling:
+            out += ["", "| 用例声明 | 工具 | 不存在的 action | 工具实际 action |", "|---|---|---|---|"]
+            for tool, action in rep.action_dangling:
+                out.append(f"| {', '.join(rep.action_cases.get((tool, action)) or [])} | `{tool}` | "
+                           f"`{action}` | {', '.join(sorted(rep.action_tools.get(tool) or []))} |")
+        if rep.action_uncovered:
+            out += ["", "| 工具 | 能力 | 未覆盖 action | 已覆盖 action |", "|---|---|---|---|"]
+            for tool in sorted({t for t, _a in rep.action_uncovered}):
+                miss = [a for t, a in rep.action_uncovered if t == tool]
+                done = sorted({a for (t, a) in rep.action_cases if t == tool})
+                out.append(f"| `{tool}` | {tool_label(rep.persona, tool)} | "
+                           f"{', '.join(miss)} | {', '.join(done) or '（无）'} |")
+        return "\n".join(out)
+
+    multi = len([t for t, a in rep.action_tools.items() if len(a) > 1])
+    out += ["", f"── ⑥ action 级覆盖（工具级之下的一层，issue #3667；{persona_label or rep.persona}）──",
+            f"  有 action 维度的工具 {len(rep.action_tools)} 个（其中**多** action {multi} 个"
+            f"，未覆盖只对它们有意义）/ action 合计 {total_actions} 个"
+            f"；未覆盖 {len(rep.action_uncovered)} 个（只报告不阻塞）"]
+    if rep.action_dangling:
+        out.append("")
+        out.append("  ❌ 用例声明了工具**不存在**的 action（`--check` 拦截；断言永不满足 = 假红/假绿）:")
+        for tool, action in rep.action_dangling:
+            ids = ", ".join(rep.action_cases.get((tool, action)) or [])
+            out.append(f"     {tool}(action={action})  ← {ids}"
+                       f"；该工具实际 action: {', '.join(sorted(rep.action_tools.get(tool) or []))}")
+    if rep.action_uncovered:
+        out.append("")
+        out.append("  ⚠️ 未被任何用例断言的 action（只报告不阻塞 —— 它本质是**厚度**指标，")
+        out.append("     与「仅 1 条用例」同级；硬阈值会制造返工式门禁，故只进工作清单）:")
+        for tool in sorted({t for t, _a in rep.action_uncovered}):
+            miss = [a for t, a in rep.action_uncovered if t == tool]
+            done = sorted({a for (t, a) in rep.action_cases if t == tool})
+            out.append(f"     {tool:32} {tool_label(rep.persona, tool):22} "
+                       f"未覆盖 {len(miss)}/{len(miss) + len(done)}: {', '.join(miss)}")
+    return "\n".join(out)
+

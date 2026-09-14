@@ -123,8 +123,8 @@ python3 scripts/xiaobu_coverage.py --md && python3 scripts/mibao_coverage.py --m
 
 输出：① 工具覆盖矩阵（缺口标 ⚠️，含正向用例数）② 用例归属（按 tier）
 ③ 孤儿用例（期望工具该端没有 = 端点挂错，门禁拦截）④ **薄覆盖清单**
-（缺正向用例 ❌ 阻塞 / 仅 1 条用例 ⚠️ 只报告）。
-另有**显式豁免**区：有用例但声明了 `skip_reason` 的工具（如 C 端 `customer_address_query`
+（缺正向用例 ❌ 阻塞 / 仅 1 条用例 ⚠️ 只报告）⑤ 显式豁免 ⑥ **action 级覆盖**（见下）。
+**显式豁免**区：有用例但声明了 `skip_reason` 的工具（如 C 端 `customer_address_query`
 由 CH-025 覆盖但 skip，改由 pytest 验证）——豁免必须显式声明理由，不得靠「看起来有覆盖」。
 
 ### 判据（issue #3555 收紧）
@@ -136,6 +136,18 @@ python3 scripts/xiaobu_coverage.py --md && python3 scripts/mibao_coverage.py --m
 | 用例期望工具该端没有（挂错端） | 该端每轮必挂的固定噪音 | ❌ 阻塞 |
 | 断言了两端注册表都没有的工具 | 拼错/已删除 → 期望永不满足 | ❌ 阻塞 |
 | 工具仅 1 条用例 | **厚度不足**（随迭代收敛的活指标） | ⚠️ 只报告，不阻塞 |
+| **action 级**：该工具有用例、但某 action 零覆盖（#3667） | 工具级"✅ 已覆盖"下面的那一层厚度缺口 | ⚠️ 只报告，不阻塞 |
+| **action 级**：用例声明了工具**不存在**的 action（#3667） | 断言永不满足（假红/假绿），同拼错工具名家族 | ❌ 阻塞 |
+
+**action 级判据（issue #3667，报告 §⑥）**：工具级矩阵问不出「这个工具**有**用例，
+但它的某个 action 从没被测」—— 实证 `processing_item_manage` 9 个 action 只有 3 个被断言、
+`processing_order_update` 4 个只有 1 个（PG-016 用 `action: complete` 撑起整域覆盖）。
+真值取**工具源码的 `action` 枚举**（不是从用例反推，否则缺失的 action 根本不在集合里
+= 缺口不可见）。**分档理由**：实测 41 处 action 未覆盖 → 阻塞即大面积飘红
+（用存量债锁死流水线），且它本质是**厚度**指标（与"仅 1 条用例"同级）；
+而 `action_dangling`（如 CU-005 声明 `customer_manage(action=query)`，该工具无此 action）
+是**配置错误**、实测仅 1 处，故与 `dangling_cases` 同档**阻塞**（可按 §14.5 登记存量豁免，
+销账后条目即陈旧 → 必须删除）。单 action 工具的 action 级"缺口"不报（调工具 == 调该 action）。
 
 「正向用例」= 正常诉求下断言真实工具被调用（`eval_case_filter.is_positive_case`）；
 判据只认**断言文本**（否定式期望排除），**不认 `tier` 标签** —— 实测 OR-007「取消订单」
@@ -396,10 +408,34 @@ user_inputs:
 契约（`TestRepeatUntilCases` 守卫，违反即红）：`tool_called` 必填、`max ∈ [1,6]`、
 必须写 `fallback`、断言验证码写工具的用例**必须**写 `code`、不得与 `auto_respond` 混用同一轮。
 
-**为什么 max 上限是 6**：重复轮是"顾客继续配合"，不是无限重试 —— 上限过大只会把模型空转的
-时间烧进评测墙钟（而墙钟由最慢单条决定，见 `eval-pipeline-performance.md` §2.6）。
+#### 停条件的 **action 级**收窄：`action`（issue #3667）
+
+`repeat_until` 默认停条件是**工具级**（该工具成功调用过即停）。当**同一个工具**承担多步
+状态机时这不够 —— PG-016 实证（run 34821647043）：加工单三步 `issue → start → complete`
+走的是同一个 `processing_order_update`，工具级停条件在第一步就命中 → 后两步的重复轮被
+**整体跳过**（开始加工的确认卡无人答）→ 用例当时只能改用 `auto_respond` 逐轮写死。
+声明 `action` 即可把停条件收窄到**某一次**调用：
+
+```yaml
+user_inputs:
+  - "这笔加工单加工完成了，标记完成"
+  - repeat_until:
+      tool_called: processing_order_update
+      action: complete          # ← 该 action **成功**才停（其它 action 成功不算）
+      max: 3
+    fallback: "确认"
+```
+
+语义：① 本轮必须**真的发起**该 action 的调用；② 停在那次调用**成功**的那一轮
+（被门禁挡回不算推进）；③ 同一轮里别的 action 成功、声明的 action 失败 → **不停**
+（按同轮同名调用的出现顺序对齐 `tool_calls` ↔ `tool_results`，见
+`local_runner._round_action_result`）。不写 `action` 时行为与旧版完全一致。
 
 > 迁移建议：新写用例直接用 `repeat_until`；存量用例按 #3430 逐个迁移（OR-021 / CH-025 已迁）。
+> **同一个工具多步状态机**别再用 `auto_respond` 逐轮写死 —— 用 `action` 收窄停条件。
+
+**为什么 max 上限是 6**：重复轮是"顾客继续配合"，不是无限重试 —— 上限过大只会把模型空转的
+时间烧进评测墙钟（而墙钟由最慢单条决定，见 `eval-pipeline-performance.md` §2.6）。
 
 ### 6.5 Eval 产物 DB 审计（§2.2 自动化）
 
@@ -635,7 +671,8 @@ EVAL_CONCURRENCY=6 python tests/agent_eval/local_runner.py normal --cases .githu
 | **能力误宣（能做说做不了）** | `check_false_inability`（含转人工理由文本） | ✅ |
 | **假成功（报错却说成功）** | `check_false_success`（细化：报错后有写成功则不算谎报） | ✅ |
 | **隐私（完整手机号回显）** | `check_no_full_phone`（C 端全局） | ✅ |
-| **金额/数量正确性** | `amount_verify`（与商品库真值比）、`output_verify`（工具 payload 真值）、`db_verify`（落库明细/号码） | ✅ |
+| **金额/数量正确性** | `amount_verify`（与商品库真值比）、`output_verify`（工具 payload 真值，**支持点号路径** `result.status`，issue #3667）、`db_verify`（落库明细/号码，见下行） | ✅ |
+| **落库断言能力清单（`db_verify` 的 `fetch` 取值）** | `order_phone`（落库手机号/收货人/地址）、`order_items`（订单明细行与数量）、`product_by_name`（建品加工项配置）、`employee`（员工/用户落库字段）、`after_sales_ticket`（工单落库状态/关闭字段）、**`processing_order`**（B 端加工单落库：按成功调用 payload 的 `processingOrderNo`/`id` 回读，`checks` 断言 `status==completed` / `completedAt!=null` 等谓词，支持点号路径） | ✅ |
 | **号码/验证码来源可追溯** | `check_phone_provenance`、`check_write_code_provenance`（三态） | ✅ |
 | **耗轮数（对话效率）** | 软监控（无硬断言） | **有意不做硬断言**：`repeat_until` 展开会把"协作等待轮"计入总轮数、LLM 方差使单跑轮数抖动 —— 硬上限必然误伤；拖沓由"首跑失败指纹 + flake 台账 + 每轮 `rounds=` 对比"间接显性化。若要硬断言，需先采集 ≥10 跑分用例基线 |
 | **同一问题被问两遍（卡片维度）** | `check_repeated_card_ask`（同卡 + 已作答 → 判红；confirm/choice/form 全覆盖；防假阳性：未答过不报、改明细后新卡不报） | ✅（矩阵补行）；**文本提问**（非卡片）的重复问仍无判据 —— 无结构化信号，识别成本高于收益，**有意不做**（加工项文本问答已由 agent 守卫 #3473 覆盖） |
