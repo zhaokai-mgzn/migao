@@ -56,6 +56,14 @@ on:
           # 企业级标准里这些是硬要求，故补齐：本 workflow 的临时栈天然适合跑对抗
           # （每次重建、互不污染，比共享环境更安全）。
           - adversarial
+      persona:
+        description: '被测 Agent：xiaobu（C 端小布，默认）| mibao（B 端米宝，独立栈并行评测 #3483 T3）——B 端走 C 端模式（flash + 并发 + 独立栈）'
+        required: false
+        default: xiaobu
+        type: choice
+        options:
+          - xiaobu
+          - mibao
   # 2026-09-06 暂停**每日**定时调度（issue #2957）：连续 5+ 日 daily failure 且自动开 issue
   # 制造噪音，待失败根因排查 + 本地验证提速落地后再恢复；期间 normal 档保留手动触发。
   # 2026-09-13 新增**每周**对抗档（issue #3367）：与 B 端 agent-eval-adversarial.yml 同节拍
@@ -101,7 +109,7 @@ jobs:
 
   xiaobu-acceptance:
     needs: shards
-    name: Xiaobu Acceptance (DEBUG 本地栈 + 真实 LLM)
+    name: ${{ github.event.inputs.persona || 'xiaobu' }} Acceptance (DEBUG 本地栈 + 真实 LLM)
     runs-on: ubuntu-latest
     timeout-minutes: 60
     strategy:
@@ -268,12 +276,12 @@ jobs:
           pip install -q httpx pytest pytest-timeout pytest-rerunfailures
           pip install -q -r backend/ai-agent-service/requirements.txt
 
-      - name: Run xiaobu local_runner (C 端身份，真实 LLM)
+      - name: Run ${{ github.event.inputs.persona || 'xiaobu' }} local_runner (真实 LLM)
         env:
           AI_API_URL: http://localhost:8001
           ADMIN_API_URL: http://localhost:8080
           SERVICE_TOKEN: ${{ secrets.SMOKE_SERVICE_TOKEN || 'ci-service-token-placeholder' }}
-          PERSONA: xiaobu
+          PERSONA: ${{ github.event.inputs.persona || 'xiaobu' }}
           PYTHONUTF8: "1"
           PYTHONIOENCODING: utf-8
           # 全量逐轮轨迹：**通过**的写用例也要看工具结果 —— 「工具被调用」≠「落库成功」
@@ -318,19 +326,20 @@ jobs:
             ${{ github.event.inputs.case_ids != '' && format('--case-ids "{0}"', github.event.inputs.case_ids) || '' }}
           echo "⏱ 评测档耗时 ${SECONDS}s（并发=$EVAL_CONCURRENCY，用例=${CASE_IDS:-全部}，重试=$([ "$FAST" = "true" ] && echo 关 || echo 3)）"
 
-      - name: Run xiaobu 验收剧本（acceptance-protocol §2/§4：真实动作 + 证据落盘）
+      - name: Run ${{ github.event.inputs.persona || 'xiaobu' }} 验收剧本（acceptance-protocol §2/§4：真实动作 + 证据落盘）
         # 为什么单列一步（issue #3367）：协议要求"验收剧本 ≠ 评测用例" ——
         # 评测用例是脚本化多轮，验收剧本要含**点卡 / 打岔 / 换窗口**这类真实动作，
         # 并产出 transcript artifact（§4.1，AI 原文不得省略）+ 报告骨架（§4.2）。
         # 只在 0 号片跑（与 E2E 同理：同一套栈，跑 N 份纯浪费）。
-        if: always() && matrix.shard == 0
+        # mibao 暂跳过（C-A1/A2/A3 剧本是 C 端旅程；B 端剧本 T3.2 补）
+        if: always() && matrix.shard == 0 && github.event.inputs.persona != 'mibao'
         env:
           AI_API_URL: http://localhost:8001
           ADMIN_API_URL: http://localhost:8080
           # 不注入 SERVICE_TOKEN：C 端验收走 `X-Debug-Role: customer`（acceptance_runner 的
           # login() 对 xiaobu 返回空 token），**不需要任何 secret** —— 既最小权限，
           # 也避免 Danger Scan 把"新增 secret 引用"标为待人工审查（本轮被它拦过一次）。
-          PERSONA: xiaobu
+          PERSONA: ${{ github.event.inputs.persona || 'xiaobu' }}
           PYTHONUTF8: "1"
           PYTHONIOENCODING: utf-8
           ACCEPTANCE_DATE: "ci-${{ github.run_id }}"
@@ -359,7 +368,8 @@ jobs:
         # 而 E2E 自己的红灯比评测更早存在（main run 34684474262 评测 17/17、E2E 已 failure）
         # —— 只要评测红，E2E 红就永远看不见，两个缺陷互相掩盖。
         # fast 档跳过（issue #3417 提速）：取证步骤对"改一行看一眼"无价值，且不省它就没法快
-        if: always() && matrix.shard == 0 && github.event.inputs.fast != 'true'
+        # mibao 跳过（C 端专属数据隔离 E2E；B 端 E2E T3.2 补）
+        if: always() && matrix.shard == 0 && github.event.inputs.fast != 'true' && github.event.inputs.persona != 'mibao'
         working-directory: backend/ai-agent-service
         env:
           CI: 'true'
@@ -578,7 +588,8 @@ jobs:
         with:
           script: |
             const runUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`
-            const title = `[Xiaobu] 小布 C 端验收失败 — ${new Date().toISOString().slice(0, 10)}`
+            const personaLabel = "${{ github.event.inputs.persona || 'xiaobu' }}" === "xiaobu" ? "小布 C 端" : "米宝 B 端"
+            const title = `[Xiaobu] ${personaLabel} 验收失败 — ${new Date().toISOString().slice(0, 10)}`
             // 去重守卫（issue #2746）：同日同标题 open issue 已存在 → 仅评论追加，不重复建
             const q = `repo:${context.repo.owner}/${context.repo.repo} is:issue is:open in:title "${title}"`
             const { data: search } = await github.rest.search.issuesAndPullRequests({ q })
