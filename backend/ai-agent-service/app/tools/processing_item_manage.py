@@ -28,6 +28,26 @@ VALID_PRICING_METHODS = {
     "per_area": "按面积",
 }
 
+# admin-api `ProcessingItemUpdateRequest`（PUT /api/admin/processing-items/{id}）是
+# **全量替换**语义：name / categoryId / pricingMethod 为 @NotBlank、unitPrice 为 @NotNull
+# （另有 0.10~999.99 与最多 2 位小数约束），只发用户改动的那几个字段 → Bean Validation 失败
+# → GlobalExceptionHandler 返回 **422**（issue #3584）。
+# 故本工具更新加工项一律「GET 详情 → 用户显式传入字段覆盖 → PUT 全量」，
+# 既保证必填齐全，也保证「只改一个字段」不会清空其它字段。
+ITEM_REQUIRED_FIELDS = ("name", "categoryId", "pricingMethod", "unitPrice")
+ITEM_REQUIRED_FIELD_LABELS = {
+    "name": "name（加工项名称）",
+    "categoryId": "categoryId（分类 ID，工具参数 category_id）",
+    "pricingMethod": "pricingMethod（计价方式，工具参数 pricing_method）",
+    "unitPrice": "unitPrice（单价，工具参数 price）",
+}
+ITEM_CARRY_OVER_FIELDS = ITEM_REQUIRED_FIELDS + (
+    "unit", "minQuantity", "maxQuantity", "description", "options",
+    "applicableProductCategories", "processingDays", "aiRecommended", "status",
+)
+UNIT_PRICE_MIN = 0.10
+UNIT_PRICE_MAX = 999.99
+
 
 class ProcessingItemManageTool(BaseTool):
     """加工项管理 Tool
@@ -74,24 +94,35 @@ class ProcessingItemManageTool(BaseTool):
             },
             "item_id": {
                 "type": "string",
-                "description": "加工项 ID（update_item/delete_item 时必填）",
+                "description": "加工项 ID（update_item/delete_item/toggle_item_status 时必填）",
             },
             "category_id": {
                 "type": "string",
-                "description": "加工分类 ID（create_processing_item 时必填，update_item/update_category/delete_category 时必填）",
+                "description": (
+                    "加工分类 ID（create_processing_item 时必填；update_item 时可选——不传则沿用该加工项原分类；"
+                    "update_category/delete_category 时必填）"
+                ),
             },
             "name": {
                 "type": "string",
-                "description": "名称（create_processing_item/create_category 时必填，update_item/update_category 时可选）",
+                "description": (
+                    "名称（create_processing_item/create_category 时必填；"
+                    "update_item/update_category 时可选——不传则沿用原名称）"
+                ),
             },
             "price": {
                 "type": "number",
-                "description": "单价（create_processing_item 时必填，update_item 时可选）",
+                "description": (
+                    "单价（元，对应 admin-api 的 unitPrice；create_processing_item 时必填；"
+                    "update_item 时可选——不传则沿用该加工项原单价）。"
+                    "取值 0.10~999.99，最多 2 位小数"
+                ),
             },
             "pricing_method": {
                 "type": "string",
                 "description": (
-                    "计价方式（create_processing_item 时必填）：per_meter（按米）/ per_set（按套）"
+                    "计价方式（create_processing_item 时必填；update_item 时可选——不传则沿用原计价方式）："
+                    "per_meter（按米）/ per_set（按套）"
                     "/ fixed（一口价）/ per_area（按面积）。不支持 per_piece（按个）——"
                     "行业加工费按米计价、辅料含在加工费中"
                 ),
@@ -99,11 +130,11 @@ class ProcessingItemManageTool(BaseTool):
             },
             "description": {
                 "type": "string",
-                "description": "描述信息（可选）",
+                "description": "描述信息（可选，update_item 传入时覆盖原描述）",
             },
             "unit": {
                 "type": "string",
-                "description": "计量单位（create_processing_item 时可选）",
+                "description": "计量单位（create_processing_item/update_item 时可选）",
             },
             "processing_item_id": {
                 "type": "string",
@@ -160,7 +191,8 @@ class ProcessingItemManageTool(BaseTool):
                 return await self._create_item(
                     context, name, category_id, price, pricing_method, description, unit)
             elif action == "update_item":
-                return await self._update_item(context, item_id, name, category_id, price, description, unit)
+                return await self._update_item(
+                    context, item_id, name, category_id, price, pricing_method, description, unit)
             elif action == "delete_item":
                 return await self._delete_item(context, item_id)
             elif action == "toggle_item_status":
@@ -290,49 +322,54 @@ class ProcessingItemManageTool(BaseTool):
             message=f"加工项「{name}」创建成功",
         )
 
-    async def _update_item(
+    async def _put_item_full(
         self,
         context: ToolContext,
-        item_id: Optional[str],
-        name: Optional[str],
-        category_id: Optional[str],
-        price: Optional[float],
-        description: Optional[str] = None,
-        unit: Optional[str] = None,
+        item_id: str,
+        overrides: Dict[str, Any],
+        action_label: str,
+        fail_prefix: str,
+        success_message: str,
     ) -> ToolResult:
-        """更新加工项"""
-        if not item_id:
+        """GET 详情 → 用户显式传入字段覆盖 → PUT 全量（admin-api 是全量替换语义，issue #3584）"""
+        client = get_admin_api_client()
+        detail_response = await client.get(
+            f"/api/admin/processing-items/{item_id}",
+            tenant_id=context.tenant_id,
+            user_id=context.user_id,
+        )
+        if not detail_response.get("success"):
+            error_msg = detail_response.get("error", {}).get("message", "查询失败")
             return ToolResult(
                 success=False,
-                error="缺少加工项 ID",
-                message="更新加工项时必须提供 item_id",
+                error=error_msg,
+                message=f"{fail_prefix}：读取加工项详情失败——{error_msg}",
+                suggestion="请确认 item_id 是否正确（可先用 processing_item_query 查询加工项）",
             )
 
-        json_data: Dict[str, Any] = {}
-        if name:
-            json_data["name"] = name
-        if category_id:
-            json_data["categoryId"] = category_id
-        if price is not None:
-            json_data["price"] = price
-        if description:
-            json_data["description"] = description
-        if unit:
-            json_data["unit"] = unit
+        detail = detail_response.get("data") or {}
+        json_data: Dict[str, Any] = {
+            key: detail.get(key) for key in ITEM_CARRY_OVER_FIELDS if detail.get(key) is not None
+        }
+        json_data.update(overrides)
 
-        if not json_data:
+        missing = [key for key in ITEM_REQUIRED_FIELDS if json_data.get(key) in (None, "")]
+        if missing:
             return ToolResult(
                 success=False,
-                error="缺少更新内容",
-                message="更新加工项时至少提供 name、category_id、price 或 description 之一",
+                error="加工项缺少必填字段",
+                message=(
+                    f"更新加工项需全量提交必填字段，但该加工项缺少："
+                    f"{'、'.join(ITEM_REQUIRED_FIELD_LABELS[key] for key in missing)}，无法自动补齐"
+                ),
+                suggestion="请让用户补齐上述字段后重试（在本次调用中显式提供对应参数）",
             )
 
         logger.info(
-            f"[processing-item-manage] UpdateItem: item_id={item_id}, fields={list(json_data.keys())} "
-            f"| tenant={context.tenant_id}"
+            f"[processing-item-manage] {action_label}: item_id={item_id}, "
+            f"fields={list(json_data.keys())} | tenant={context.tenant_id}"
         )
 
-        client = get_admin_api_client()
         response = await client.put(
             f"/api/admin/processing-items/{item_id}",
             json_data=json_data,
@@ -345,13 +382,91 @@ class ProcessingItemManageTool(BaseTool):
             return ToolResult(
                 success=False,
                 error=error_msg,
-                message=f"更新加工项失败：{error_msg}",
+                message=f"{fail_prefix}：{error_msg}",
             )
 
         return ToolResult(
             success=True,
-            data={"item_id": item_id, **json_data},
-            message="加工项已更新",
+            data={"item_id": item_id, **(response.get("data") or {})},
+            message=success_message,
+        )
+
+    async def _update_item(
+        self,
+        context: ToolContext,
+        item_id: Optional[str],
+        name: Optional[str],
+        category_id: Optional[str],
+        price: Optional[float],
+        pricing_method: Optional[str] = None,
+        description: Optional[str] = None,
+        unit: Optional[str] = None,
+    ) -> ToolResult:
+        """更新加工项
+
+        请求体契约以 admin-api `ProcessingItemUpdateRequest` 为准（issue #3584）：
+        全量替换语义，`name`/`categoryId`/`pricingMethod`(@NotBlank) + `unitPrice`(@NotNull)
+        缺一即 422；工具/LLM 侧单价参数名为 `price` → **显式映射**到 `unitPrice`。
+        未传的字段从 GET 详情继承（不传 ≠ 清空）。
+        """
+        if not item_id:
+            return ToolResult(
+                success=False,
+                error="缺少加工项 ID",
+                message="更新加工项时必须提供 item_id",
+            )
+
+        if pricing_method is not None and pricing_method not in VALID_PRICING_METHODS:
+            options = " / ".join(f"{k}（{v}）" for k, v in VALID_PRICING_METHODS.items())
+            return ToolResult(
+                success=False,
+                error=f"不支持的计价方式: {pricing_method}",
+                message=(
+                    f"加工项计价方式仅支持：{options}；per_piece（按个）等其它计价方式不支持，"
+                    f"实际收到 {pricing_method!r}"
+                ),
+                suggestion="请向用户确认计价方式后重试，不要自行改成其它计价方式",
+            )
+
+        if price is not None and not (UNIT_PRICE_MIN <= price <= UNIT_PRICE_MAX):
+            return ToolResult(
+                success=False,
+                error="单价超出允许范围",
+                message=(
+                    f"加工项单价必须在 {UNIT_PRICE_MIN:.2f} ~ {UNIT_PRICE_MAX:.2f} 元之间"
+                    f"（最多 2 位小数），实际收到 {price}"
+                ),
+                suggestion="请向用户确认单价后重试",
+            )
+
+        json_data: Dict[str, Any] = {}
+        if name:
+            json_data["name"] = name
+        if category_id:
+            json_data["categoryId"] = category_id
+        if price is not None:
+            json_data["unitPrice"] = price  # 显式映射：DTO 字段名为 unitPrice（无 price）
+        if pricing_method:
+            json_data["pricingMethod"] = pricing_method
+        if description:
+            json_data["description"] = description
+        if unit:
+            json_data["unit"] = unit
+
+        if not json_data:
+            return ToolResult(
+                success=False,
+                error="缺少更新内容",
+                message="更新加工项时至少提供 name、category_id、price、pricing_method 或 description 之一",
+            )
+
+        return await self._put_item_full(
+            context,
+            item_id,
+            json_data,
+            action_label="UpdateItem",
+            fail_prefix="更新加工项失败",
+            success_message="加工项已更新",
         )
 
     async def _delete_item(self, context: ToolContext, item_id: Optional[str]) -> ToolResult:
@@ -392,7 +507,13 @@ class ProcessingItemManageTool(BaseTool):
         item_id: Optional[str],
         status: Optional[str],
     ) -> ToolResult:
-        """启用/停用加工项"""
+        """启用/停用加工项
+
+        admin-api **没有** `PUT /api/admin/processing-items/{id}/status` 子资源
+        （该路径恒 404，issue #3584）；`status` 是 `ProcessingItemUpdateRequest` 的合法
+        可选字段 → 走真实存在的 `PUT /{id}`；因该端点是全量替换语义，
+        同样「GET 详情 → merge → PUT 全量」，避免只发 status 触发 422 或清空其它字段。
+        """
         if not item_id:
             return ToolResult(
                 success=False,
@@ -406,32 +527,14 @@ class ProcessingItemManageTool(BaseTool):
                 message="请提供有效的状态值：active（启用）或 inactive（停用）",
             )
 
-        logger.info(
-            f"[processing-item-manage] ToggleItemStatus: item_id={item_id}, status={status} "
-            f"| tenant={context.tenant_id}"
-        )
-
-        client = get_admin_api_client()
-        response = await client.put(
-            f"/api/admin/processing-items/{item_id}/status",
-            json_data={"status": status},
-            tenant_id=context.tenant_id,
-            user_id=context.user_id,
-        )
-
-        if not response.get("success"):
-            error_msg = response.get("error", {}).get("message", "操作失败")
-            return ToolResult(
-                success=False,
-                error=error_msg,
-                message=f"加工项状态更新失败：{error_msg}",
-            )
-
         status_text = "启用" if status == "active" else "停用"
-        return ToolResult(
-            success=True,
-            data={"item_id": item_id, "status": status},
-            message=f"加工项已{status_text}",
+        return await self._put_item_full(
+            context,
+            item_id,
+            {"status": status},
+            action_label="ToggleItemStatus",
+            fail_prefix="加工项状态更新失败",
+            success_message=f"加工项已{status_text}",
         )
 
     async def _list_categories(self, context: ToolContext) -> ToolResult:

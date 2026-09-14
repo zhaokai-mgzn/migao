@@ -2,6 +2,15 @@
 AI 智能客服系统 - 商品搜索 Tool
 
 搜索商品列表，根据关键词、分类等条件查询商品。
+
+⚠️ 后端契约（admin-api `dto/ProductQueryRequest.java`）：查询参数只有
+keyword/name/productId/categoryId/status/recommended/page/size/stockBelow/skuCode/
+createdFrom/createdTo/startDate/endDate/sortBy/sortOrder —— **没有** minPrice/maxPrice/
+stockStatus。Spring 默认忽略未知字段（FAIL_ON_UNKNOWN_PROPERTIES=false）→ 下发这三个键
+等于没筛：后端返回全量，工具却报「找到 N 件相关商品」，LLM 再把全量叙述成「已筛选出
+100-200 元的商品」＝**幻觉式筛选**（工具接口审计 A1）。
+因此：价格区间在本工具内做**本地过滤**（total 取过滤后真实条数）；库存筛选下发后端
+真实字段 `stockBelow`（语义：stock ≤ 阈值，见 ProductService）。
 """
 
 from typing import Any, Dict, List, Optional
@@ -10,6 +19,16 @@ from loguru import logger
 from app.tools.base import BaseTool, ToolContext, ToolResult
 from app.utils.http_client import get_admin_api_client
 from app.utils.field_mapper import FieldMapper
+
+
+# 库存筛选词表 → 后端 stockBelow 值（ProductQueryRequest.stockBelow；语义 stock ≤ 阈值）
+# LOW_STOCK=100 与后台低库存口径一致（#1396：Dashboard 卡片 / DailyBriefing / admin-web 均为 100）
+LOW_STOCK_THRESHOLD = 100
+OUT_OF_STOCK_THRESHOLD = 0
+STOCK_STATUS_TO_STOCK_BELOW: Dict[str, int] = {
+    "low_stock": LOW_STOCK_THRESHOLD,
+    "out_of_stock": OUT_OF_STOCK_THRESHOLD,
+}
 
 
 class ProductSearchTool(BaseTool):
@@ -25,8 +44,15 @@ class ProductSearchTool(BaseTool):
     
     name = "product_search"
     description = (
-        "【触发】用户问'有什么XX''搜XX''找XX商品''有没有XX'或提到商品关键词/分类时调用。【前置】keyword 可选，缺关键词时列出全部。支持 stock_status 筛选缺货/低库存。【反例】查单个商品详情用 product_detail，查分类用 category_manage(tree)。【标注】READONLY — 放心调用，无需确认"
+        "【触发】用户问'有什么XX''搜XX''找XX商品''有没有XX''XX元左右的商品'或提到商品关键词/分类时调用。"
+        "【前置】keyword 可选，缺关键词时列出全部。"
+        "stock_status 支持 low_stock（库存≤100）/out_of_stock（库存≤0）；"
+        "min_price/max_price（元）为本地过滤（后端不支持价格筛选），只作用于本次返回的 size 条，"
+        "需更大范围请调大 size。"
+        "【反例】查单个商品详情用 product_detail，查分类用 category_manage(tree)。"
+        "【标注】READONLY — 放心调用，无需确认"
     )
+
     # 含 operator：admin-api 员工角色（RoleService operator 有 product:list 权限码，
     # 角色码漂移修复 POC-2761 D 项）。customer 保留（C 端商品搜索）。
     allowed_roles = ["customer", "admin", "agent", "tenant_admin", "operator"]
@@ -44,11 +70,11 @@ class ProductSearchTool(BaseTool):
             },
             "min_price": {
                 "type": "number",
-                "description": "最低价格（可选）",
+                "description": "最低价格（元，可选）。后端不支持价格筛选 → 本工具对返回结果做本地过滤，只作用于本次返回的 size 条",
             },
             "max_price": {
                 "type": "number",
-                "description": "最高价格（可选）",
+                "description": "最高价格（元，可选）。后端不支持价格筛选 → 本工具对返回结果做本地过滤，只作用于本次返回的 size 条",
             },
             "page": {
                 "type": "integer",
@@ -57,13 +83,17 @@ class ProductSearchTool(BaseTool):
             },
             "size": {
                 "type": "integer",
-                "description": "每页数量，默认 5",
+                "description": "每页数量，默认 5。价格区间为本地过滤，调大 size 可扩大筛选范围",
                 "default": 5,
             },
             "stock_status": {
                 "type": "string",
-                "description": "库存状态筛选（可选）：in_stock（有库存）/ low_stock（低库存）/ out_of_stock（缺货）",
-                "enum": ["in_stock", "low_stock", "out_of_stock"],
+                "description": (
+                    "库存状态筛选（可选）：low_stock=库存≤100（与后台低库存口径一致）/ "
+                    "out_of_stock=库存≤0。对应后端 stockBelow 字段；"
+                    "「有货」后端无法表达（stockBelow 只有「≤」语义），请在结果里按 stock 判断"
+                ),
+                "enum": ["low_stock", "out_of_stock"],
             },
         },
     }
@@ -85,11 +115,11 @@ class ProductSearchTool(BaseTool):
             context: Tool 执行上下文
             keyword: 搜索关键词
             category_id: 分类 ID
-            min_price: 最低价格
-            max_price: 最高价格
+            min_price: 最低价格（本地过滤）
+            max_price: 最高价格（本地过滤）
             page: 页码
             size: 每页数量
-            stock_status: 库存状态筛选（in_stock/low_stock/out_of_stock）
+            stock_status: 库存状态筛选（low_stock/out_of_stock，映射后端 stockBelow）
             
         Returns:
             ToolResult: 搜索结果
@@ -105,12 +135,22 @@ class ProductSearchTool(BaseTool):
                 message="您没有权限搜索商品",
                 suggestion="请联系管理员获取商品查看权限",
             )
+
+        # 库存筛选值校验：词表外的取值（如历史 in_stock）必须显式拒绝，
+        # 绝不下发后端不认的词（静默返回全量 → 又变成幻觉式筛选）
+        if stock_status and stock_status not in STOCK_STATUS_TO_STOCK_BELOW:
+            return ToolResult(
+                success=False,
+                error=f"不支持的库存筛选: {stock_status}",
+                message=f"库存状态仅支持：{', '.join(sorted(STOCK_STATUS_TO_STOCK_BELOW))}",
+                suggestion="请用 low_stock（库存≤100）或 out_of_stock（库存≤0）；「有货」请在结果里按 stock 判断",
+            )
         
         try:
             # 搜索请求日志
             logger.info(f"[product-search] Searching: keyword='{keyword}' category={category_id} | tenant={context.tenant_id}")
             
-            # 构建查询参数
+            # 构建查询参数（键必须 ∈ ProductQueryRequest 字段，否则 Spring 静默忽略）
             params: Dict[str, Any] = {
                 "page": page,
                 "size": size,
@@ -120,12 +160,10 @@ class ProductSearchTool(BaseTool):
                 params["keyword"] = keyword
             if category_id:
                 params["categoryId"] = category_id
-            if min_price is not None:
-                params["minPrice"] = min_price
-            if max_price is not None:
-                params["maxPrice"] = max_price
+            # 库存筛选：只下发后端真实字段 stockBelow（绝不发 stockStatus）
             if stock_status:
-                params["stockStatus"] = stock_status
+                params["stockBelow"] = STOCK_STATUS_TO_STOCK_BELOW[stock_status]
+            # 价格区间：后端无价格字段 → 绝不下发 minPrice/maxPrice，改在下方本地过滤
             
             # 调用 admin-api
             client = get_admin_api_client()
@@ -169,7 +207,25 @@ class ProductSearchTool(BaseTool):
                     f"Product search filtered {filtered_count} records due to tenant_id mismatch, "
                     f"tenant={context.tenant_id}"
                 )
-                total = max(0, total - filtered_count)
+                # total 取「本工具实际验证通过的条数」：既不沿用含越权记录的后端 total，
+                # 也不用 max(0, total - filtered_count) 这类按丢弃数估算的错语义
+                total = len(verified_records)
+
+            # 价格区间本地过滤（后端 ProductQueryRequest 无价格字段）：
+            # total 必须是过滤后的真实条数（审计 A1 —— 错语义 total 会让 LLM 报出全量件数）
+            price_range_desc = ""
+            scanned_count = len(verified_records)
+            if min_price is not None or max_price is not None:
+                verified_records = [
+                    r for r in verified_records
+                    if self._price_in_range(FieldMapper.get_price(r), min_price, max_price)
+                ]
+                total = len(verified_records)
+                price_range_desc = self._price_range_desc(min_price, max_price)
+                logger.info(
+                    f"[product-search] Local price filter {price_range_desc}: "
+                    f"{scanned_count} -> {total}（后端不支持价格筛选）"
+                )
             
             # 格式化商品列表
             products = self._format_products(verified_records)
@@ -179,10 +235,19 @@ class ProductSearchTool(BaseTool):
             )
             
             if not products:
+                if price_range_desc:
+                    # 商品是存在的，只是不在价格区间 → 措辞必须说清，不能报「没找到相关商品」
+                    message = (
+                        f"在检索到的 {scanned_count} 件商品中，没有价格{price_range_desc}的商品；"
+                        f"可放宽价格区间、换关键词，或调大 size 扩大检索范围"
+                    )
+                else:
+                    message = f"抱歉，没有找到与'{keyword}'相关的商品，换个关键词试试？"
                 return ToolResult(
                     success=True,
                     data={"products": [], "total": 0, "page": page, "size": size},
-                    message=f"抱歉，没有找到与'{keyword}'相关的商品，换个关键词试试？",                )
+                    message=message,
+                )
 
             # 构建摘要：取前3个商品名 + ID 前缀，LLM 写操作时直接用 UUID
             top_items = []
@@ -194,6 +259,16 @@ class ProductSearchTool(BaseTool):
             if len(products) > 3:
                 names_str += f" 等{len(products)}件"
 
+            if price_range_desc:
+                # 本地过滤后的口径必须披露「扫描范围」（后端分页 → 只筛了本次返回的 size 条），
+                # 否则 LLM 会把「本次筛出 M 件」叙述成「全店共 M 件」
+                message = (
+                    f"在检索到的 {scanned_count} 件商品中，筛出 {total} 件价格{price_range_desc}的商品: "
+                    f"{names_str}"
+                )
+            else:
+                message = f"找到 {total} 件相关商品: {names_str}"
+
             return ToolResult(
                 success=True,
                 data={
@@ -203,7 +278,8 @@ class ProductSearchTool(BaseTool):
                     "size": size,
                     "total_pages": (total + size - 1) // size,
                 },
-                message=f"找到 {total} 件相关商品: {names_str}",            )
+                message=message,
+            )
             
         except Exception as e:
             logger.error(f"[product-search] Search failed | tenant={context.tenant_id} error={type(e).__name__}: {e}", exc_info=True)
@@ -213,6 +289,26 @@ class ProductSearchTool(BaseTool):
                 message="搜索商品时出错，请稍后重试",
                 suggestion="请稍后重试，或尝试更精确的关键词",
             )
+
+    @staticmethod
+    def _price_in_range(price: Optional[float], min_price: Optional[float], max_price: Optional[float]) -> bool:
+        """价格是否落在区间内（价格缺失的记录无法证明命中 → 排除）"""
+        if price is None:
+            return False
+        if min_price is not None and price < min_price:
+            return False
+        if max_price is not None and price > max_price:
+            return False
+        return True
+
+    @staticmethod
+    def _price_range_desc(min_price: Optional[float], max_price: Optional[float]) -> str:
+        """价格区间的中文描述（用于向用户/LLM 说明过滤口径）"""
+        if min_price is not None and max_price is not None:
+            return f"在 {min_price}-{max_price} 元之间"
+        if min_price is not None:
+            return f"不低于 {min_price} 元"
+        return f"不高于 {max_price} 元"
     
     def _format_products(self, records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """格式化商品列表

@@ -1,9 +1,16 @@
 """
 AI 智能客服系统 - 商品管理 Tool
 
-创建、更新、上下架商品，管理加工项。
+创建、更新、上下架商品（加工项增删已拆分为 product_processing_item_manage）。
 Agent BFF: create/update 走 /api/admin/agent/products, toggle_status 走原端点。
 ID 解析、默认值填充、字段规范化由 Java Agent 端点负责。
+
+⚠️ 后端契约：create 的 payload 键必须 ∈ `dto/agent/AgentProductCreateRequest` 字段
+（name/categoryId/basePrice/skuCode/description/brand/unit/pricingType/stock/status/
+images/detailImages/colors/sellingMethods/doorWidths/processingItemIds/
+processingItemConfigs/specifications/stockDeductionMode/allowReturnRestock）——
+Spring 静默忽略未知字段，下发 DTO 没有的键 = 无声丢数据 + 工具报成功（工具审计 A4：
+`skus` 因此被删）。
 """
 
 from typing import Any, Dict, Optional
@@ -40,8 +47,10 @@ class ProductManageTool(BaseTool):
         "properties": {
             "action": {
                 "type": "string",
-                "enum": ["create", "update", "toggle_status", "manage_processing_items"],
-                "description": "操作类型",
+                # enum 必须 ⊆ VALID_ACTIONS（:16）：manage_processing_items 已拆分为独立工具，
+                # 留在 enum 里会让 LLM 选到运行时必拒的死分支（工具审计 B1）
+                "enum": ["create", "update", "toggle_status"],
+                "description": "操作类型：create（创建商品，必填 name+price）/ update（修改已有商品字段，必传 product_id 且只传要改的字段）/ toggle_status（上架或下架，必传 product_id+status(on_sale/off_sale)）",
             },
             "product_id": {
                 "type": "string",
@@ -101,15 +110,7 @@ class ProductManageTool(BaseTool):
                 "type": "boolean",
                 "description": "退货后是否回补库存（可选，create 时使用，issue #2991）：true=退货回补/可再售，false=定制商品退货不回补。缺省 false",
             },
-            # manage_processing_items 专用参数
-            "processing_item_action": {
-                "type": "string", "enum": ["add", "remove"],
-                "description": "加工项操作类型。manage_processing_items 时必填",
-            },
-            "skus": {
-                "type": "array", "items": {"type": "object"},
-                "description": "SKU数组。系统自动生成，一般不需要手动传",
-            },
+            # manage_processing_items 专用参数已随该 action 移除（拆分为 product_processing_item_manage）
         },
         "required": ["action"],
     }
@@ -135,10 +136,8 @@ class ProductManageTool(BaseTool):
         selling_methods: Optional[list] = None,
         door_widths: Optional[list] = None,
         sku_code: Optional[str] = None,
-        skus: Optional[list] = None,
         processing_item_configs: Optional[list] = None,
         pricing_type: Optional[str] = None,
-        processing_item_action: Optional[str] = None,
         allow_return_restock: Optional[bool] = None,
     ) -> ToolResult:
         if not self.check_permission(context):
@@ -159,7 +158,7 @@ class ProductManageTool(BaseTool):
                 return await self._create_product(context, name, category_id, price,
                     description, stock_quantity, processing_item_ids, brand, images,
                     detail_images, specifications, unit, colors, selling_methods,
-                    door_widths, sku_code, skus, processing_item_configs, pricing_type,
+                    door_widths, sku_code, processing_item_configs, pricing_type,
                     status, allow_return_restock)
             elif action == "update":
                 return await self._update_product(context, product_id, name, category_id,
@@ -185,7 +184,7 @@ class ProductManageTool(BaseTool):
     async def _create_product(self, context, name, category_id, price, description,
                                stock_quantity, processing_item_ids, brand, images,
                                detail_images, specifications, unit, colors,
-                               selling_methods, door_widths, sku_code, skus,
+                               selling_methods, door_widths, sku_code,
                                processing_item_configs, pricing_type, status,
                                allow_return_restock=None) -> ToolResult:
         if not name:
@@ -207,7 +206,6 @@ class ProductManageTool(BaseTool):
         if colors: json_data["colors"] = colors
         if selling_methods: json_data["sellingMethods"] = selling_methods
         if door_widths: json_data["doorWidths"] = door_widths
-        if skus: json_data["skus"] = skus
         if sku_code: json_data["skuCode"] = sku_code
         if specifications: json_data["specifications"] = specifications
         if unit: json_data["unit"] = unit

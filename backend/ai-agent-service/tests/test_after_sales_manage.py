@@ -1,5 +1,7 @@
 """AfterSalesManageTool 单元测试 — 售后工单查询/创建/状态流转。
 
+# case_ids: AS-001, AS-002, AS-004, AS-007
+
 覆盖 list/detail/create/update_status 的正常路径与参数校验，
 以及 destructive 工具只读 action 的确认豁免（DF-008）。
 """
@@ -184,7 +186,9 @@ class TestAfterSalesCreate:
         assert json_data["orderId"] == "o1"
         assert json_data["ticketType"] == "refund"
         assert json_data["description"] == "尺寸不符"
-        assert json_data["source"] == "agent"
+        # 不下发 source（issue #3605）：DTO AgentAfterSalesCreateRequest 无该字段 → 静默丢弃；
+        # 来源由服务端固化（AfterSalesTicketService.createTicket 内 setSource("agent")）
+        assert "source" not in json_data
 
     @patch("app.tools.after_sales_manage.get_admin_api_client")
     async def test_create_kwargs_passthrough(self, mock_get_client, tool, admin_tool_context, mock_client):
