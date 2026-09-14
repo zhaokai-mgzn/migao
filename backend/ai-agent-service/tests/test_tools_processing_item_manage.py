@@ -1,5 +1,5 @@
 """ProcessingItemManageTool 单元测试 — 加工项/加工分类 CRUD + 价格计算。"""
-# case_ids: PP-002, PP-003, PP-004, PP-006
+# case_ids: PP-002, PP-003, PP-004, PP-006, PP-009
 import ast
 import inspect
 import re
@@ -604,3 +604,161 @@ class TestProcessingCalculatePrice:
             context=admin_tool_context, action="calculate_price", processing_item_id="pi-1", quantity=2)
         assert result.success is True
         assert "90" in result.message
+
+
+# =============================================================================
+# issue #3667：per_area（按面积计价）加工项价格计算 100% 走不通——工具层契约断裂
+# =============================================================================
+# 契约差异（本包已复核代码确认，与归因报告 §5.3 一致）：
+#   · `calculate_price` 端点（POST /api/admin/processing-items/calculate）：
+#     后端**自己**从请求体的 `dimensions` 算 area = 宽×高，再算
+#     `totalPrice = unitPrice × area × quantity`
+#     （ProcessingItemService.java:248-254；缺 width/height → :310-318 直接抛
+#      「按面积计价需要提供 width 和 height 尺寸」）。
+#     ⇒ 本端点下 `quantity` 是**计件数**（同一尺寸做几件；#3005 口径「per_area 传 1 或
+#       实际计数值」，ProcessingItemService.java:213-215）。
+#   · `order_create` 路径的「per_area → quantity = 宽×高」口径（
+#     acceptance-protocol.md:225 / order.yml:639）**只适用那条路径**：那条路径由 agent
+#     自己算好数量放进 processing_info，后端只做 `unitPrice × quantity`。
+#   ❌ 把该口径套到 calculate_price：dimensions 仍为 null → **照样抛错**；
+#      即使补了 dimensions，`quantity=面积` 会**双计**（30×8×8 = ¥1920，应为 ¥240）。
+#   ✅ 最小修法：schema/execute 补 `width`/`height` 并下发 `dimensions`，
+#      `quantity` 保持计件数语义（有尺寸但未传数量时缺省 1）。
+#
+# 真值取自 B 端评测种子（tests/agent_eval/fixtures/mibao_eval_seed.sql:76-83）：
+# `pi_eval_embroidery`（刺绣工艺，per_area，30.00 元/平方米）→ 3.2m × 2.5m = 8㎡
+# → 30 × 8 × 1 = ¥240.00。
+PER_AREA_ITEM_ID = "pi_eval_embroidery"
+PER_AREA_UNIT_PRICE = 30.00
+PER_AREA_WIDTH = 3.2
+PER_AREA_HEIGHT = 2.5
+PER_AREA_AREA = PER_AREA_WIDTH * PER_AREA_HEIGHT      # 8.0 ㎡
+
+
+class TestCalculatePricePerAreaDimensions:
+    """per_area 的尺寸通路：payload 带 dimensions，且面积不折进 quantity（不双计）。"""
+
+    def test_schema_exposes_width_and_height_for_per_area(self, tool):
+        """schema↔签名契约：模型必须能从上架的 schema 看到 width/height 参数。
+
+        模型看不见的参数等于不存在（本缺口的根因之一就是 schema 里没有尺寸参数）。
+        """
+        props = tool.parameters["properties"]
+        assert "width" in props, "per_area 需要尺寸，schema 必须暴露 width"
+        assert "height" in props, "per_area 需要尺寸，schema 必须暴露 height"
+        assert props["width"]["type"] == "number"
+        assert props["height"]["type"] == "number"
+        blob = props["width"]["description"] + props["height"]["description"]
+        assert "per_area" in blob, "描述必须点明 per_area 需要尺寸（否则模型不会填）"
+        assert "面积" in blob
+        # quantity 的语义必须写清「per_area 是计件数、面积由 width/height 承载」，
+        # 否则模型会照 order_create 口径把面积写进 quantity → 双计。
+        qty_desc = props["quantity"]["description"]
+        assert "计件" in qty_desc and "per_area" in qty_desc
+
+    @patch("app.tools.processing_item_manage.get_admin_api_client")
+    async def test_per_area_payload_carries_dimensions_and_count(
+        self, mock_get_client, tool, admin_tool_context, mock_client
+    ):
+        """D1-1：per_area 调用必须下发 dimensions；quantity 是计件数（缺省 1）。
+
+        双计排除：按后端口径（unitPrice × area × quantity）用**工具实际下发的 payload**
+        复算，得 30 × 8 × 1 = ¥240.00；若把面积折进 quantity 则是 30 × 8 × 8 = ¥1920。
+        """
+        mock_client.post = AsyncMock(return_value={
+            "success": True, "data": {"totalPrice": 240.00, "pricingMethod": "per_area"},
+        })
+        mock_get_client.return_value = mock_client
+
+        result = await tool.execute(
+            context=admin_tool_context, action="calculate_price",
+            processing_item_id=PER_AREA_ITEM_ID, width=PER_AREA_WIDTH, height=PER_AREA_HEIGHT)
+
+        assert result.success is True
+        payload = mock_client.post.call_args[1]["json_data"]
+        assert payload["dimensions"] == {"width": PER_AREA_WIDTH, "height": PER_AREA_HEIGHT}
+        # 面积由 dimensions 承载 ⇒ quantity 是计件数，未传时缺省 1（不是宽×高）
+        assert payload["quantity"] == 1
+        assert payload["quantity"] != PER_AREA_AREA, "面积不得折进 quantity（会双计）"
+        # 用后端口径（unitPrice × area × quantity）复算工具下发的 payload
+        computed = PER_AREA_UNIT_PRICE * (
+            payload["dimensions"]["width"] * payload["dimensions"]["height"]) * payload["quantity"]
+        assert computed == 240.00, f"后端口径复算应为 ¥240.00，实际 ¥{computed}"
+        assert "240" in result.message
+
+    @patch("app.tools.processing_item_manage.get_admin_api_client")
+    async def test_per_area_quantity_is_piece_count_not_area(
+        self, mock_get_client, tool, admin_tool_context, mock_client
+    ):
+        """同一尺寸做 2 件：quantity=2 是**计件数**，面积仍只在 dimensions 里。"""
+        mock_client.post = AsyncMock(return_value={"success": True, "data": {"totalPrice": 480.00}})
+        mock_get_client.return_value = mock_client
+
+        result = await tool.execute(
+            context=admin_tool_context, action="calculate_price",
+            processing_item_id=PER_AREA_ITEM_ID,
+            width=PER_AREA_WIDTH, height=PER_AREA_HEIGHT, quantity=2)
+
+        assert result.success is True
+        payload = mock_client.post.call_args[1]["json_data"]
+        assert payload["quantity"] == 2
+        assert payload["dimensions"] == {"width": PER_AREA_WIDTH, "height": PER_AREA_HEIGHT}
+        computed = PER_AREA_UNIT_PRICE * PER_AREA_AREA * payload["quantity"]
+        assert computed == 480.00
+
+    @patch("app.tools.processing_item_manage.get_admin_api_client")
+    async def test_partial_dimensions_fail_fast_without_http(
+        self, mock_get_client, tool, admin_tool_context, mock_client
+    ):
+        """D1-3（最省形态）：只给一半尺寸 → 本地 fail-fast，不发 HTTP。
+
+        不额外 GET 查计价方式（最少代码阶梯：后端话术已明确，多一次往返只换来同一句提示）。
+        """
+        mock_get_client.return_value = mock_client
+
+        result = await tool.execute(
+            context=admin_tool_context, action="calculate_price",
+            processing_item_id=PER_AREA_ITEM_ID, width=PER_AREA_WIDTH)
+
+        assert result.success is False
+        assert "width" in result.message and "height" in result.message
+        mock_client.post.assert_not_called()
+
+    @pytest.mark.parametrize("pricing_item,quantity", [
+        ("pi_eval_punch", 3),      # per_meter：quantity = 面料米数
+        ("pi-per-set", 2),         # per_set：quantity = 套数
+        ("pi-fixed", 1),           # fixed：后端算一口价
+    ])
+    @patch("app.tools.processing_item_manage.get_admin_api_client")
+    async def test_non_per_area_path_not_regressed(
+        self, mock_get_client, tool, admin_tool_context, mock_client, pricing_item, quantity
+    ):
+        """非 per_area 路径**不回归**：不带尺寸时不新增 dimensions 键，payload 与改前一致。"""
+        mock_client.post = AsyncMock(return_value={"success": True, "data": {"totalPrice": 24.0}})
+        mock_get_client.return_value = mock_client
+
+        result = await tool.execute(
+            context=admin_tool_context, action="calculate_price",
+            processing_item_id=pricing_item, quantity=quantity)
+
+        assert result.success is True
+        payload = mock_client.post.call_args[1]["json_data"]
+        assert payload == {"processingItemId": pricing_item, "quantity": quantity}
+        assert "dimensions" not in payload
+
+    @patch("app.tools.processing_item_manage.get_admin_api_client")
+    async def test_missing_quantity_still_required_without_dimensions(
+        self, mock_get_client, tool, admin_tool_context, mock_client
+    ):
+        """quantity 缺省 1 **只对带尺寸的调用生效**：不带尺寸仍必须显式给数量。
+
+        （否则 per_meter 漏传数量会被静默当 1 米 → 少算加工费。）
+        """
+        mock_get_client.return_value = mock_client
+
+        result = await tool.execute(
+            context=admin_tool_context, action="calculate_price", processing_item_id="pi_eval_punch")
+
+        assert result.success is False
+        assert "缺少数量" in result.error
+        mock_client.post.assert_not_called()

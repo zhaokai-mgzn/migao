@@ -399,3 +399,85 @@ cases:
       ci:
         - agent-eval.yml
       verifies: []
+
+  # ==========================================================================
+  # action 级正向用例（issue #3672 / 归因报告 G4）：`calculate_price` 此前在整个
+  # 用例库**零覆盖**（`grep -rn "calculate_price" .github/cases/*.yml` → 0 命中）。
+  #
+  # ⚠️ 为什么覆盖门禁看不见这条缺口（action 级盲区，PR #3589 §6.5 指出的机制）：
+  # §14.5 的覆盖矩阵判据只到**工具级** —— `processing_item_manage` 已有
+  # PP-002/PP-006/PP-007/PP-008 等正向用例 ⇒ 矩阵**恒绿**，而
+  # `action=calculate_price` 的 per_area 分支实测 **100% 不可达**
+  # （schema 无尺寸参数 + payload 从不下发 `dimensions` → admin-api
+  # `calculateArea` 对 null dimensions 必抛「按面积计价需要提供 width 和 height 尺寸」）。
+  # ⇒ 「工具级绿 ≠ action 级可用」：本条把该 action 纳入射程。
+  # ==========================================================================
+
+  - id: PP-009
+    legacy_id: ""
+    title: "米宝加工项 LLM 行为：per_area 按面积算价（calculate_price 下发 dimensions，不双计）"
+    domains:
+      - processing
+      - chat
+    tier: normal
+    tags:
+      - processing_item
+      - llm_behavior
+      - tool_call
+      - calculate_price
+      - per_area
+    truths_ref: []
+    user_inputs:
+      # 自包含（§13.5）：点名**种子里真实存在**的 per_area 加工项 ——
+      # `刺绣工艺` = `pi_eval_embroidery`（tests/agent_eval/fixtures/mibao_eval_seed.sql:76-83，
+      # per_area / 30.00 元/平方米 / 单位平方米），不是假设存在的对象。
+      # 尺寸由用户明确给出（不给的话模型只能猜，金额不可复现）。
+      - "刺绣工艺按面积算多少钱？宽 3.2 米、高 2.5 米"
+      # 协作轮（§13.5 先例 OR-021/CH-033）：agent 若先澄清/先查目录，本轮回一句同样明确的
+      # 诉求把流程推完；目标工具**成功**后余下重复轮自动跳过（repeat_stop_met）。
+      - repeat_until:
+          tool_called: processing_item_manage
+          max: 2
+        fallback: "用刺绣工艺算，宽 3.2 米、高 2.5 米，帮我报个价"
+    expectations:
+      - tool: processing_item_manage
+        args:
+          action: calculate_price
+    must_succeed:
+      # 「调了 ≠ 成了」：修复前本调用**每次**都失败（dimensions=null → 后端 400），
+      # 只断言 expectations 会假绿。
+      - tool: processing_item_manage
+        action: calculate_price
+    required_args:
+      # 尺寸必须真的传进来 —— 这正是本缺口的核心（模型此前**没有**合法参数可传）。
+      - tool: processing_item_manage
+        fields:
+          - processing_item_id
+          - width
+          - height
+    output_verify:
+      # ⚠️ 多 action 工具必须声明 action（#3544 实测：不限定会核到 R* list_categories 的 payload）
+      - tool: processing_item_manage
+        action: calculate_price
+        expect:
+          # 后端口径：totalPrice = unitPrice × area × quantity = 30 × (3.2×2.5) × 1 = 240.00
+          # 双计形态是 30 × 8 × 8 = 1920.00（把宽×高也写进 quantity），本断言直接排除。
+          # 真值来源：mibao_eval_seed.sql:80（unit_price=30.00，per_area）。
+          totalPrice: 240.00
+    forbidden_text:
+      - "无法计算"
+      - "暂不支持"
+      - "功能不存在"
+      - "计算失败"
+    data_checks:
+      - "per_area 的 quantity 是**计件数**（同一尺寸做几件，缺省 1）；面积由 dimensions(宽×高) 承载——把宽×高写进 quantity 会双计（30×8×8=¥1920，应为 ¥240）"
+      - "本端点的契约与 order_create 不同：order_create 由 agent 自己算 quantity=宽×高（acceptance-protocol.md:225 / order.yml:639 的口径只适用那条路径）；calculate_price 由后端从 dimensions 算面积"
+      - "回复需给出金额 ¥240（30 元/㎡ × 8㎡）并对得上用户给的尺寸"
+    skip_reason: ""
+    merge_log: "2026-09-15 新增（issue #3672 / 归因报告 G4）：`processing_item_manage(action=calculate_price)` 此前在用例库**零覆盖**——§14.5 覆盖矩阵只到工具级（本工具已有 4 条正向用例 → 恒绿），per_area 分支 100% 不可达这条缺口在矩阵里永远看不见。断言全部机器可判：must_succeed(action=calculate_price) + required_args[processing_item_id,width,height] + output_verify(totalPrice=240.00，显式 action) + forbidden_text。"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_tools_processing_item_manage.py"
+      ci:
+        - agent-eval.yml
+      verifies: []
