@@ -1624,6 +1624,10 @@ class TestEvalSpeedKnobs:
 
         若写成 `success()`：评测一红，验收剧本就 skip —— 而后者是**独立**判定源
         （点卡/打岔/换窗口），两者互相掩盖后，"评测挂了但体验没事"永远看不见。
+
+        persona 例外（#3483 T3.1）：mibao 复用本通道但 C 端旅程剧本（C-A1/A2/A3）
+        不适配 B 端（B 端剧本 T3.2 补），故允许附加 `persona != 'mibao'` 条件——
+        但**不许挂 fast/success**（speed 轴红线不变：独立判定源不能被 gate 掉）。
         """
         steps = self._named("验收剧本")
         assert steps, "未找到验收剧本步骤"
@@ -1633,9 +1637,11 @@ class TestEvalSpeedKnobs:
                 f"验收剧本步骤必须 if: always()（实际 {cond!r}）—— "
                 "评测失败时它更要跑，否则唯一独立判定源也没了"
             )
-            extra = cond.replace("always()", "").replace("&&", " ").strip()
-            assert extra in ("", "matrix.shard == 0"), (
-                f"验收剧本只允许 shard==0 这一个附加条件，实际 {cond!r}"
+            extra = " ".join(cond.replace("always()", "").replace("&&", " ").split())
+            allowed = ("", "matrix.shard == 0",
+                       "matrix.shard == 0 github.event.inputs.persona != 'mibao'")
+            assert extra in allowed, (
+                f"验收剧本只允许 shard==0 与 persona!=mibao 两个附加条件，实际 {cond!r}"
             )
 
     def test_fast_skip_list_is_exhaustive(self):
