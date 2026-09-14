@@ -10,6 +10,7 @@ AI 智能客服系统 - 订单创建 Tool
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 from typing import Any, Dict, List, Optional
@@ -25,6 +26,10 @@ _OTP_KEY_PREFIX = "sms:otp:"
 _OTP_TTL_SECONDS = 300  # 5分钟有效期
 _OTP_VALID_PATTERN = re.compile(r"^\d{4,6}$")  # 4-6位数字验证码
 _PHONE_PATTERN = re.compile(r"^1[3-9]\d{9}$")  # 中国大陆手机号
+
+# 数值参数解析（issue #3586）：允许货币符号前缀 + 单位后缀（"¥168.00" / "3米" / "2.8 米"）。
+# 用户口语里的"3米"就是数量 3 —— 带单位的合法输入不得被当成非法值拦掉。
+_NUMERIC_PREFIX_PATTERN = re.compile(r"^[¥￥$]?\s*(?P<num>[+-]?\d+(?:\.\d+)?)")
 
 # 万能验证码 bypass（POC/测试阶段，对齐 admin-api 的 sms.bypass-code 机制）。
 # 空字符串 = 禁用 bypass（生产安全默认）。POC 部署时设置 SMS_BYPASS_CODE=123456 与 admin-api 对齐。
@@ -119,15 +124,18 @@ class OrderCreateTool(BaseTool):
                         },
                         "quantity": {
                             "type": "integer",
-                            "description": "数量（必填）",
+                            "exclusiveMinimum": 0,
+                            "description": "数量（必填，必须为正整数；负数/0 会被本地拒绝）",
                         },
                         "unit_price": {
                             "type": "number",
-                            "description": "单价（必填）",
+                            "exclusiveMinimum": 0,
+                            "description": "单价（必填，必须大于 0 元）",
                         },
                         "subtotal": {
                             "type": "number",
-                            "description": "小计 = 数量 × 单价（必填）",
+                            "minimum": 0,
+                            "description": "小计 = 数量 × 单价 + 加工费（必填，不得为负）",
                         },
                         "product_id": {
                             "type": "string",
@@ -159,8 +167,8 @@ class OrderCreateTool(BaseTool):
                                         "properties": {
                                             "id": {"type": "string"},
                                             "name": {"type": "string"},
-                                            "unitPrice": {"type": "number"},
-                                            "quantity": {"type": "integer"},
+                                            "unitPrice": {"type": "number", "minimum": 0},
+                                            "quantity": {"type": "integer", "minimum": 0},
                                             "unit": {"type": "string"},
                                             "pricingMethod": {"type": "string"},
                                             "subtotal": {"type": "number"},
@@ -176,6 +184,176 @@ class OrderCreateTool(BaseTool):
         },
         "required": ["customer_name", "customer_phone", "items"],
     }
+
+    @staticmethod
+    def _parse_positive_number(raw: Any) -> Optional[float]:
+        """解析数值参数（数量/单价/小计），容忍 LLM 常见形态并**拒绝非正数**。
+
+        契约（issue #3586）：
+        - 数值型直接取用；字符串数字（"3"）与**带单位**的合法输入（"3米"、"¥168.00"、
+          "2.8 米"）按前导数字解析——用户口语里的"3米"就是数量 3，不能因为带单位拦掉；
+        - 布尔值（True/False）不算数字（Python 里 bool 是 int 子类，必须显式排除）；
+        - NaN / Infinity、空值、非数字文本 → None（交由调用方给出可行动提示）。
+
+        Returns: float 值；无法解析返回 None。
+        """
+        if isinstance(raw, bool) or raw is None:
+            return None
+        if isinstance(raw, (int, float)):
+            value = float(raw)
+            return value if math.isfinite(value) else None
+        if isinstance(raw, str):
+            m = _NUMERIC_PREFIX_PATTERN.match(raw.strip())
+            if not m:
+                return None
+            value = float(m.group("num"))
+            return value if math.isfinite(value) else None
+        return None
+
+    @staticmethod
+    def _reject_quantity(i: int, raw: Any) -> Optional[ToolResult]:
+        """数量校验（issue #3586）：必须是正整数（拒绝 0 / 负数 / 非整数小数）。
+
+        为什么在工具层 fail-fast：`order_items.quantity` 是**金额与库存的乘数**——
+        负数量会算出**负金额**落库（下游 `createOrder` 不做正负判断），
+        0 数量产出 0 元明细；且 Agent 路径的 admin-api 入参（AgentOrderItem）
+        **未做 Bean Validation**，等 HTTP 回来才拒绝等于白跑一轮且提示不可行动。
+        """
+        value = OrderCreateTool._parse_positive_number(raw)
+        if value is None:
+            return ToolResult(
+                success=False,
+                error=f"商品明细第 {i + 1} 项数量无效",
+                message=(
+                    f"商品明细第 {i + 1} 项的数量「{raw}」不是有效数字。"
+                    f"数量必须是**正整数**（如 3、10），不要带单位或写成文字。"
+                ),
+                suggestion=(
+                    "请把 quantity 改成正整数（按米数/件数取整，如 3 米 → 3）；"
+                    "若同一商品有多个规格，请拆成多行而不是把数量写在一行里"
+                ),
+            )
+        if value <= 0:
+            return ToolResult(
+                success=False,
+                error=f"商品明细第 {i + 1} 项数量必须大于 0",
+                message=(
+                    f"商品明细第 {i + 1} 项的数量是 {raw}，但下单数量必须是**正数**。"
+                    f"数量为负会让订单金额变成负数（{raw} × 单价），导致金额/库存/对账全部出错，"
+                    f"因此系统在调用服务端**之前**就拒绝。"
+                ),
+                suggestion=(
+                    f"请把 quantity 改成正整数：顾客想要 {abs(value):g} 米就填 {abs(value):g}，"
+                    "不要用 -1 之类的占位值表示退款或扣减（退款请用 order_manage 的 refund）"
+                ),
+            )
+        if value != int(value):
+            return ToolResult(
+                success=False,
+                error=f"商品明细第 {i + 1} 项数量必须为整数",
+                message=(
+                    f"商品明细第 {i + 1} 项的数量是 {raw}，但订单数量只支持**整数**（最小 1）。"
+                    f"小数会被服务端截断（{raw} → {int(value)}），造成少收钱/少发货。"
+                ),
+                suggestion=(
+                    f"请把数量取整为整数（例如 {value:g} → {max(1, round(value))}）；"
+                    "不足 1 米的零头请与顾客确认后按整数计"
+                ),
+            )
+        return None
+
+    @staticmethod
+    def _reject_non_positive_amount(i: int, field: str, raw: Any) -> Optional[ToolResult]:
+        """金额类字段校验（issue #3586）：单价/小计必须是 ≥ 0 的数，单价必须 > 0。
+
+        admin-api `OrderCreateRequest.OrderItemRequest` 对 unitPrice/subtotal 标了
+        `@Positive`（必须 > 0）；工具侧提前对齐，避免"注定被拒的调用白跑一轮"。
+        """
+        label = "单价" if field == "unit_price" else "小计"
+        value = OrderCreateTool._parse_positive_number(raw)
+        if value is None:
+            return ToolResult(
+                success=False,
+                error=f"商品明细第 {i + 1} 项{label}无效",
+                message=f"商品明细第 {i + 1} 项的{label}「{raw}」不是有效数字。",
+                suggestion=f"请填写数字型{label}（元），如 168 或 168.00",
+            )
+        if value < 0:
+            return ToolResult(
+                success=False,
+                error=f"商品明细第 {i + 1} 项{label}不能为负数",
+                message=(
+                    f"商品明细第 {i + 1} 项的{label}是 {raw}，订单{label}不能为负数"
+                    f"（负金额会污染订单总额与财务对账）。"
+                ),
+                suggestion=(
+                    f"请把 {field} 改成 ≥ 0 的数；折扣请走优惠金额，不要在明细里写负数"
+                ),
+            )
+        if field == "unit_price" and value == 0:
+            return ToolResult(
+                success=False,
+                error=f"商品明细第 {i + 1} 项单价必须大于 0",
+                message=(
+                    f"商品明细第 {i + 1} 项的单价是 0，服务端要求单价必须大于 0 元"
+                    f"（免费的加工项应计 0 元加工费，但面料单价必须 > 0）。"
+                ),
+                suggestion="请向顾客确认单价后填写大于 0 的金额（如 168）；赠品请用 0 元加工项表达，不要整行 0 元",
+            )
+        return None
+
+    @staticmethod
+    def _reject_subtotal_below_product(i: int, quantity: float, unit_price: float,
+                                       raw: Any) -> Optional[ToolResult]:
+        """小计自洽校验（issue #3586）：subtotal 不得小于「数量 × 单价」。
+
+        口径说明（不误伤）：**不要求严格相等**——本行业 subtotal = 面料金额 + 加工费
+        （先例：OR-014 的 288 = 168×? 面料 + 打孔加工费），因此只拦"比面料金额还小"的
+        自相矛盾值（少收钱 + 金额对不上账）。容差 0.01 吸浮点误差。
+        """
+        value = OrderCreateTool._parse_positive_number(raw)
+        if value is None:
+            return None  # 无法解析已在 _reject_non_positive_amount 覆盖
+        expected = quantity * unit_price
+        if value < expected - 0.01:
+            return ToolResult(
+                success=False,
+                error=f"商品明细第 {i + 1} 项小计与数量×单价不符",
+                message=(
+                    f"商品明细第 {i + 1} 项：小计 {raw} < 数量 {quantity:g} × 单价 {unit_price:g} "
+                    f"= {expected:.2f}，订单金额自相矛盾（会少收钱）。"
+                ),
+                suggestion=(
+                    f"请把 subtotal 改为「数量 × 单价 + 加工费」= {expected:.2f} 起"
+                    "（含加工费时应大于该值）；顾客打折请走优惠金额字段"
+                ),
+            )
+        return None
+
+    @staticmethod
+    def _validate_item_value_bounds(i: int, item: Dict[str, Any]) -> Optional[ToolResult]:
+        """单行明细的**数值语义**校验（issue #3586）：在发 HTTP 之前 fail-fast。
+
+        覆盖面：quantity（正整数）、unit_price（> 0）、subtotal（≥ 0 且 ≥ 数量×单价）。
+        只做确定性判定（无 LLM、无网络），保证"注定失败的调用"不产生 HTTP 往返。
+        """
+        for field, label in (("quantity", "数量"), ("unit_price", "单价"), ("subtotal", "小计")):
+            if field not in item or item.get(field) is None:
+                return None  # 缺字段由必填检查给出提示（此处不重复报错）
+        rejected = OrderCreateTool._reject_quantity(i, item.get("quantity"))
+        if rejected is not None:
+            return rejected
+        rejected = OrderCreateTool._reject_non_positive_amount(i, "unit_price", item.get("unit_price"))
+        if rejected is not None:
+            return rejected
+        rejected = OrderCreateTool._reject_non_positive_amount(i, "subtotal", item.get("subtotal"))
+        if rejected is not None:
+            return rejected
+        quantity = OrderCreateTool._parse_positive_number(item.get("quantity"))
+        unit_price = OrderCreateTool._parse_positive_number(item.get("unit_price"))
+        return OrderCreateTool._reject_subtotal_below_product(
+            i, quantity or 0.0, unit_price or 0.0, item.get("subtotal")
+        )
 
     @staticmethod
     def _otp_key(phone: str, tenant_id: int) -> str:
@@ -322,7 +500,33 @@ class OrderCreateTool(BaseTool):
                 suggestion="请提供至少一件商品的信息（名称、数量、单价）",
             )
 
-        # Gap-1 安全加固: SMS 验证码校验（仅 customer 角色需要）
+        # 校验每个商品项
+        for i, item in enumerate(items):
+            if not isinstance(item, dict):
+                return ToolResult(
+                    success=False,
+                    error=f"商品明细第 {i + 1} 项格式错误",
+                    message=f"商品明细第 {i + 1} 项必须是对象，包含 product_name、quantity、unit_price、subtotal",
+                )
+            required_fields = ["product_name", "quantity", "unit_price", "subtotal"]
+            for field in required_fields:
+                if field not in item or item[field] is None:
+                    return ToolResult(
+                        success=False,
+                        error=f"商品明细第 {i + 1} 项缺少 {field}",
+                        message=f"商品明细第 {i + 1} 项缺少必填字段：{field}",
+                    )
+            # 数值语义闸门（issue #3586）：数量/单价/小计的正负与量级 —— 在发 HTTP 之前拒绝。
+            # 负数量会算出负金额落库（下游 createOrder 不做正负判断、Agent 路径 DTO 无 Bean Validation），
+            # 库存校验也会被负需求绕过；0 数量则产出 0 元明细。fail-fast 且给可行动 suggestion。
+            _bounds_reject = self._validate_item_value_bounds(i, item)
+            if _bounds_reject is not None:
+                return _bounds_reject
+
+        # Gap-1 安全加固: SMS 验证码校验（仅 customer 角色需要）。
+        # ⚠️ 顺序铁律（issue #3586）：纯本地的**确定性**校验（明细格式/数量/金额）必须排在
+        # SMS 之前 —— 前者零成本零副作用，后者要读 Redis；参数本身就非法时不该先产生
+        # 一次验证码往返（也不该因为「验证码错误」掩盖真正的参数错误）。
         if self._needs_sms_verification(context):
             if not sms_code:
                 return ToolResult(
@@ -350,23 +554,6 @@ class OrderCreateTool(BaseTool):
                     message="短信验证码错误或已过期，请重新获取验证码",
                     suggestion="请重新请求发送短信验证码，并在5分钟内完成验证",
                 )
-
-        # 校验每个商品项
-        for i, item in enumerate(items):
-            if not isinstance(item, dict):
-                return ToolResult(
-                    success=False,
-                    error=f"商品明细第 {i + 1} 项格式错误",
-                    message=f"商品明细第 {i + 1} 项必须是对象，包含 product_name、quantity、unit_price、subtotal",
-                )
-            required_fields = ["product_name", "quantity", "unit_price", "subtotal"]
-            for field in required_fields:
-                if field not in item or item[field] is None:
-                    return ToolResult(
-                        success=False,
-                        error=f"商品明细第 {i + 1} 项缺少 {field}",
-                        message=f"商品明细第 {i + 1} 项缺少必填字段：{field}",
-                    )
 
         # ── 同一张单里出现**完全相同的商品行** → fail-closed（issue #3392，DB 实证）──
         # 实证（run 34747025719）：新客用例 OR-022 期望 3 米（168×3 + 打孔 8×3 = ¥528），
@@ -412,11 +599,14 @@ class OrderCreateTool(BaseTool):
             # 对抗编程：透传 LLM 提供的所有字段，避免静默丢弃 productId/width/height/processingInfo
             items_payload = []
             for item in items:
+                # 数值已在上方 _validate_item_value_bounds 校验（正整数/非负金额），
+                # 这里用解析值而非裸 int()/float() —— 让 "3米" 这类带单位输入落成 3，
+                # 避免 int("3米") 抛 ValueError 走异常兜底（错误提示不可行动）。
                 entry: Dict[str, Any] = {
                     "productName": item["product_name"],
-                    "quantity": int(item["quantity"]),
-                    "unitPrice": float(item["unit_price"]),
-                    "subtotal": float(item["subtotal"]),
+                    "quantity": int(self._parse_positive_number(item["quantity"])),
+                    "unitPrice": self._parse_positive_number(item["unit_price"]),
+                    "subtotal": self._parse_positive_number(item["subtotal"]),
                 }
                 # 透传可选字段 — 不信任 LLM 一定传，但传了就不能丢
                 for py_key, java_key in [

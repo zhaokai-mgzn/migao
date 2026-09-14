@@ -1553,7 +1553,7 @@
 真值: finance.summary
 溯源: 本期默认时间范围（本月1号~今天） ｜ tags: finance, summary
 
-## 人事域（7 case）
+## 人事域（8 case）
 
 ### HR-001. 员工列表 🟢
 ```
@@ -1628,6 +1628,20 @@
 ```
 真值: employee-role.users-endpoint
 溯源: 2026-09-07 新增：员工管理混入 C 端消费者账号治理（issue #3004） ｜ tags: employee, list, scoping
+
+### HR-008. 更新员工手机号 - 写入真的落库（update 写路径首次覆盖，issue #3593） 🔵
+```
+你: 手机号 13700137000 的这位员工（王五）换号了，帮我把他的手机号改成 13900139111
+你: [🤖 按上一轮卡片作答]
+你: [🤖 按上一轮卡片作答]
+期望: employee_manage(action=update, user_id=debug_employee_wangwu, phone=13900139111)
+数据: PUT /api/admin/users/debug_employee_wangwu 落库后 users.phone = 13900139111，而不是 200 假成功（库里仍是 13700137000）
+数据: 同租户内手机号唯一：13900139111 不与既有用户（13700137000 / 13800138000 / 13900139000）冲突，写入不被唯一校验拒绝
+必填: employee_manage(update) 字段 user_id, phone
+必须成功: employee_manage(update)
+```
+真值: employee-role.users-endpoint, employee-role.write-require-admin, employee-role.update-field-consumption
+溯源: 2026-09-14 新增（issue #3593）：员工更新（改手机号）落库断言缺失 —— HR-001~007 无任何 update 覆盖，是 #3550（phone/roleIds 被 admin-api 静默忽略 → 200 假成功，PR #3561 已修）潜伏至今的用例层根因。断言口径：expectations.args 值级（action=update + 目标=种子员工 debug_employee_wangwu + 新值逐字 13900139111）+ must_succeed[update]（写真的成功）+ required_args[user_id, phone]（下发参数完整）。⚠️ 仍缺的能力：仓库 db_verify 只有 order_phone / order_items / product_by_name / after_sales_ticket（末项为 #3580 同批新增），**没有员工/用户核对器** ⇒ 接收侧静默忽略这一精确类尚不能机器判定。需要的 runner 规格（归属 runner 包，本包不碰 local_runner.py）：db_verify: [{fetch: employee, name: 「王五」, expect_fields: {phone: 「13900139111」}}] —— 取数走 GET /api/admin/users?keyword=<name>（或 /api/admin/users/{id}）→ 在 items 里按 name/phone 定位 → 逐条比对 expect_fields（值不等即失败，取不到记录也判失败而非跳过）；expect_fields.role_code 可同时覆盖角色侧（roleIds）同源缺陷。本条选「改手机号」而非「改角色」的理由：role 的**合法下发形态有两种**（role_ids=[角色表主键] 或 role=角色 code，见 AdminUserController.updateUser 与 employee_manage._update_user 的 if role_ids / elif role 分支），在 required_args / expectations 无 OR 分支能力时对任一形态做值级断言都会造成另一半假红；手机号只有 phone 一种形态，可做值级断言。角色侧（roleIds ↔ role code）的落库断言由同一 db_verify[employee].expect_fields.role_code 承担，建议 runner 包一并实现。 ｜ tags: update, write, confirm
 
 ## knowledge（7 case）
 
@@ -3640,8 +3654,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：278（活跃 137，跳过 141）
-- tier 分布：smoke 9 / normal 236 / adversarial 33
+- 用例总数：279（活跃 138，跳过 141）
+- tier 分布：smoke 9 / normal 237 / adversarial 33
 - 售后域：9
 - agents：6
 - api：19
@@ -3653,7 +3667,7 @@
 - 数据域：10
 - 防御域：22
 - finance：4
-- 人事域：7
+- 人事域：8
 - knowledge：7
 - misc：15
 - onboarding：5
