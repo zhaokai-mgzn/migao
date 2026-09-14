@@ -37,6 +37,46 @@ def _round(n, **kw):
     return base
 
 
+class TestToolDigestInTranscript:
+    """transcript 必须带**工具结果摘要**（复核 AI 在重放 2 指出的证据缺口）。
+
+    此前 transcript 只有工具名 → 「订单号/金额/成了没有」类结论无法从证据核验，
+    UA（体验层）判定与复核只能拿回复原文互证。`evidence.json` 本就有全量载荷，
+    这里只摘**顾客可感知**字段进 transcript（不落 PII 全量）。
+    """
+
+    def _round(self, results):
+        return {"id": "C-X", "domain": "order", "title": "t", "rounds": [{
+            "round": 1, "session": "s1", "user_text": "下单", "user_images": 0,
+            "ai_text": "好", "tools": [{"name": "order_create", "args": {}}],
+            "interactive": [], "tool_results": results, "error": None,
+        }]}
+
+    def test_success_payload_facts_printed(self):
+        out = ar.render(self._round([{
+            "tool": "order_create",
+            "result": {"success": True, "data": {"orderNo": "2026091400001",
+                                                 "totalAmount": 528.0,
+                                                 "orders": [1, 2]}}}]))
+        assert "order_create" in out and "2026091400001" in out
+        assert "totalAmount=528" in out
+        assert "orders_n=2" in out, f"列表类载荷要给条数：{out}"
+
+    def test_failure_error_printed(self):
+        out = ar.render(self._round([{
+            "tool": "order_create",
+            "result": {"success": False, "error": "缺少短信验证码"}}]))
+        assert "❌" in out and "缺少短信验证码" in out
+
+    def test_no_pii_dump(self):
+        """不得把全量载荷（含手机号等）整段写进 transcript。"""
+        out = ar.render(self._round([{
+            "tool": "customer_address_query",
+            "result": {"success": True, "data": {"customer_phone": "13800138000",
+                                                 "customer_address": "杭州市西湖区文三路1号"}}}]))
+        assert "13800138000" not in out, f"摘要里不得出现完整手机号：{out}"
+
+
 class TestCheckEvaluation:
     """L1/L2 断言求值（协议 §3：关键行为必须机器可判）。"""
 

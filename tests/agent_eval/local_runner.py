@@ -1066,6 +1066,37 @@ _WRITE_TOOL_NAMES = frozenset({
 # 为什么不收"已加上/已添加"：加工项/颜色这类**草稿选择**在对话里本来就用这个措辞
 # （订单要等 confirm 才写），收进来会把正常话术判红 —— 与"宁可漏报不可误报"一致；
 # 那类草稿态措辞改用 prompt 约束（见 order skill 的草稿/完成态措辞约定）。
+# 将来/条件语境的线索词（命中标记出现在这些语境里 → **不是**"已经发生"的完成态宣告）。
+# 实证（run 34790723445，OR-023 首跑假红）原文：「…麻烦点「确认下单」哦～ 确认后我会发个短信
+# 验证码给您，完成最后一步就**下单成功啦** 🎉」—— 这是**将来**语义，旧判据只做子串匹配判红；
+# 假红经重试放行后进 flake 台账，把真信号一起淹掉（本守卫的既有取向是"宁可漏报不可误报"）。
+_CLAIM_FUTURE_PARTICLES = ("就", "将", "会", "即可", "才能")
+_CLAIM_FUTURE_CUES = ("确认后", "完成后", "提交后", "点击后", "点完", "稍后", "马上", "稍等", "然后")
+
+
+def _is_future_claim(text: str, marker: str) -> bool:
+    """标记词是否处在**将来/条件**语境里（那样不是"已经发生"的完成态宣告）。
+
+    判据（局部、保守）：
+      · 标记词**紧前 6 字**内出现将来助词（就/将/会/即可/才能）；或
+      · 标记词**所在小句**（按句读切）里出现条件/将来线索词（确认后/完成后/稍后…）。
+    已知取舍：带"就"的**过去叙述**（"点了确认后订单就提交成功了"）会被一并放行 ——
+    本守卫刻意选"宁可漏报不可误报"：假红会让整个台账失去可信度（真信号被淹）。
+    """
+    i = str(text or "").find(marker)
+    if i < 0:
+        return False
+    before = text[max(0, i - 6):i]
+    if any(p in before for p in _CLAIM_FUTURE_PARTICLES):
+        return True
+    start = 0
+    for j in range(i - 1, -1, -1):
+        if text[j] in "。！？!?；;，,\n":
+            start = j + 1
+            break
+    return any(c in text[start:i] for c in _CLAIM_FUTURE_CUES)
+
+
 _WRITE_CLAIM_MARKERS = (
     "订单已创建", "已为您下单", "下单成功", "订单已提交", "已提交订单",
     "工单已创建", "售后单已创建", "已为您提交", "已成功提交",
@@ -1157,7 +1188,8 @@ def check_unbacked_state_claim(results: list) -> list:
             if st.get("ok") and str(st.get("tool") or "") in _WRITE_TOOL_NAMES:
                 wrote_ok = True
         text = str(r.get("final_text") or "")
-        hit = next((m for m in _WRITE_CLAIM_MARKERS if m in text), None)
+        hit = next((m for m in _WRITE_CLAIM_MARKERS
+                    if m in text and not _is_future_claim(text, m)), None)
         if hit and not wrote_ok:
             issues.append(
                 f"状态宣告无工具落地(R{r.get('__round')}): 回复称「{hit}」，"

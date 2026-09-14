@@ -562,7 +562,7 @@ EVAL_CONCURRENCY=6 python tests/agent_eval/local_runner.py normal --cases .githu
 | **号码/验证码来源可追溯** | `check_phone_provenance`、`check_write_code_provenance`（三态） | ✅ |
 | **耗轮数（对话效率）** | —— | **缺**：一个"5 轮能办完拖到 9 轮"的退化不会被判红；但直接加上限断言风险高（`repeat_until` 展开、模型方差），需先用多跑数据定基线 |
 | **同一问题被问两遍（文本维度）** | —— | **缺**：目前只有加工项与 confirm 两处；"重复问地址/数量/颜色"没有判据 |
-| **工具返回值载荷进 transcript** | —— | **缺**（复核 AI 在重放 2 已指出）：`evidence.json` 有 `tools`，但 `render` 不打印结果载荷 → "订单号/金额"类结论只能靠回复原文 + 用例断言互证 |
+| **工具返回值载荷进 transcript** | ✅ `_tool_digest`：每轮打印 `📄 <tool> → orderNo=…, totalAmount=…, orders_n=…`（只摘顾客可感知字段，不落 PII 全量） | ✅（本批补齐 —— 复核 AI 在重放 2 指出的证据缺口） |
 | **验收体验层（可懂度/诚实性）** | UA 判定（AI 用户代理：persona + 原文引用 + 基准对照，见 §acceptance-protocol） | ✅（人工零执行；每轮需按模板逐条判，模板见 `acceptance/*/REPORT.md`） |
 
 ### 用法
