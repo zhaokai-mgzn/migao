@@ -25,8 +25,12 @@
   ✅ auth_token 已落库且可用 — expected=true actual=true
   ✅ auth_user 已落库 — expected="string" actual="string"
   ✅ auth_user 含 botName（导航名断言的数据源） — expected="光头强" actual="光头强"
-  ✅ tenant_id 已归一化落库（camelCase→snake_case） — expected=2 actual=2
+  ✅ auth_user.tenantId 原样保留（camelCase，与响应一致） — expected=2 actual=2
+  ✅ auth_user **未被补** tenant_id 字段（harness 不遮蔽产品契约不一致） — expected=false actual=false
+  ✅ auth_user 键集合 = 响应原物（多键即遮蔽） — expected="botName,id,nickname,tenantId,tenantName" actual="botName,id,nickname,tenantId,tenantName"
+  ✅ tenant_id storage key = 会话租户（独立 key，非 user 字段） — expected=2 actual=2
   ✅ auth-store 快照已落库（zustand persist） — expected=true actual=true
+  ✅ auth-store.state.user 与 auth_user 同形（同一份镜像） — expected="{\"id\":\"u1\",\"nickname\":\"赵凯\",\"tenantId\":2,\"tenantName\":\"词元通达\",\"botName\":\"光头强\"}" actual="{\"id\":\"u1\",\"nickname\":\"赵凯\",\"tenantId\":2,\"tenantName\":\"词元通达\",\"botName\":\"光头强\"}"
   ✅ 注入后调用了 reLaunch — expected=true actual=true
 
 【4】ensureLoggedIn —— 登录态缺失且注入失败 ⇒ **红**（失败关闭，不许继续跑）
@@ -42,7 +46,7 @@
 【6】clearStorage（冷环境验证用）真能清掉登录态
   ✅ 清空后 auth_token 为空 ⇒ 判据红 — expected=false actual=false
 
-=== 红证汇总：27/27 通过，0 失败 ===
+=== 红证汇总：31/31 通过，0 失败 ===
 ✅ 双向红证通过：有效登录态 ⇒ pass；缺失/空/非法/过期/注入失败 ⇒ LOGIN_MISSING 红
 EXIT=0
 ```

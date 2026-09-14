@@ -27,6 +27,16 @@ C 端页面判定登录只查 storage（`checkAuth()` → `getToken()`，`src/st
 | `tenant_id` | `src/utils/auth.ts:87` `getTenantId()` | number（已把 admin-api 的 `tenantId` 归一化为 snake_case） |
 | `auth-store` | zustand persist 快照（`authStore.ts:153`） | `{"state":{...},"version":0}` |
 
+> ⚠️ **注入形状 = 逐字镜像生产存下的形状**（不补字段、不改名）。2026-09-14 发现的产品侧契约不一致：
+> 生产 `src/utils/auth.ts:47` 把接口返回的 `user` **原样** `JSON.stringify` 存进 `auth_user`，
+> 而 admin-api 的 `LoginResponse.UserInfo` 是 **camelCase（`tenantId`，没有 `tenant_id`）**，
+> 但 C 端类型声明 `User.tenant_id: number`（**必填**，`src/types/index.ts:11`）⇒ 运行时恒 `undefined`。
+> **harness 不得在注入时补一个 `tenant_id` 让断言过** —— 那会造出「harness 形状 ≠ 生产形状」，
+> 将来读到该字段的代码会 **e2e 绿、生产挂**（又一种证据层假绿）。
+> 契约不一致由**产品侧**修复收口（另一工作包），本 harness 只镜像。
+> 独立的 storage key `tenant_id` 是另一回事：生产存**登录请求的 tenantId**，短信登录无该参数 ⇒
+> 取会话的 `user.tenantId`（语义同为「会话所属租户」），已在代码注释里声明该差异。
+
 **⛔ 严禁**为了绕过上述环境限制去改产品鉴权代码（`src/store/authStore.ts` / `src/utils/auth.ts` /
 admin-api 鉴权）；本步骤只服务于测试环境。
 

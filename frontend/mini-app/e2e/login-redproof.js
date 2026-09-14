@@ -112,9 +112,15 @@ async function main() {
     check('source', r.source, 'injected')
     check('auth_token 已落库且可用', login.resolveLoginState(mp.store[login.STORAGE.TOKEN]).ok, true)
     check('auth_user 已落库', typeof mp.store[login.STORAGE.USER], 'string')
-    check('auth_user 含 botName（导航名断言的数据源）', JSON.parse(mp.store[login.STORAGE.USER]).botName, '光头强')
-    check('tenant_id 已归一化落库（camelCase→snake_case）', mp.store[login.STORAGE.TENANT_ID], 2)
+    const storedUser = JSON.parse(mp.store[login.STORAGE.USER])
+    check('auth_user 含 botName（导航名断言的数据源）', storedUser.botName, '光头强')
+    // 形状镜像：接口返回的是 camelCase tenantId，**不得**被 harness 补成 snake_case tenant_id
+    check('auth_user.tenantId 原样保留（camelCase，与响应一致）', storedUser.tenantId, 2)
+    check('auth_user **未被补** tenant_id 字段（harness 不遮蔽产品契约不一致）', 'tenant_id' in storedUser, false)
+    check('auth_user 键集合 = 响应原物（多键即遮蔽）', Object.keys(storedUser).sort().join(','), 'botName,id,nickname,tenantId,tenantName')
+    check('tenant_id storage key = 会话租户（独立 key，非 user 字段）', mp.store[login.STORAGE.TENANT_ID], 2)
     check('auth-store 快照已落库（zustand persist）', JSON.parse(mp.store[login.STORAGE.STORE]).state.isLoggedIn, true)
+    check('auth-store.state.user 与 auth_user 同形（同一份镜像）', JSON.stringify(JSON.parse(mp.store[login.STORAGE.STORE]).state.user), JSON.stringify(storedUser))
     check('注入后调用了 reLaunch', mp.calls.some((c) => c[0] === 'reLaunch'), true)
   }
 

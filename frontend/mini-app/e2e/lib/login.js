@@ -23,8 +23,22 @@
  * | `tenant_id` | `src/utils/auth.ts:87` `getTenantId()` | number |
  * | `auth-store` | zustand `persist`（`authStore.ts:153` `name: 'auth-store'`）的快照，冷启动 `user` 兜底来源 | `{"state":{...},"version":0}` |
  *
- * 注意：C 端 `User.tenant_id` 是 snake_case（`src/types/index.ts:11`），而 admin-api 的
- * `LoginResponse.UserInfo` 是 `tenantId`（camelCase）⇒ 这里做一次归一化，避免 `tenant_id` 落空。
+ * ## ⚠️ 注入形状 = **逐字镜像生产存下的形状**（不补字段、不改名）
+ *
+ * 2026-09-14 发现的**产品侧契约不一致**（另一包修产品，本文件**只镜像不遮蔽**）：
+ * - 生产写入路径：`src/utils/auth.ts:47` `setStorageSync(USER, JSON.stringify(user))`，
+ *   而 `user` 直接来自接口响应 ⇒ **生产存下的 user 是 admin-api 的原始 camelCase 形状**
+ *   （`backend/admin-api/.../dto/LoginResponse.java` 的 UserInfo：`id, nickname, avatar, role,
+ *   identityType, roles, tenantId, tenantName, botName` —— **没有 `tenant_id`**）。
+ * - 但 C 端类型声明 `User.tenant_id: number`（**必填**，`src/types/index.ts:11`）⇒ 运行时恒
+ *   `undefined`，**类型在骗人**；而 `src/utils/imageUpload.ts:25` 会读 `getTenantId()`。
+ * ⇒ 若 harness 在注入时**补一个 `tenant_id` 让断言过**，就会造出「**harness 形状 ≠ 生产形状**」：
+ *   将来任何读 `user.tenant_id` 的代码会**e2e 绿、生产挂** —— 这正是我们要治的「证据层假绿」。
+ *   **故本文件不做任何补字段/改名**，注入的就是响应原物；契约不一致由产品侧修复收口。
+ *
+ * 唯一例外是独立的 storage key `tenant_id`（不是 user 的字段）：生产在
+ * `src/utils/auth.ts:48` 存的是**登录请求里的 tenantId**；短信登录没有该参数，
+ * 故取本次会话的 `user.tenantId`（语义同为「会话所属租户」），并在此显式声明这一差异。
  *
  * 依赖：**只用 node 内置 + 传入的 mp**（不 require harness）—— 这样红证脚本可以脱离模拟器运行。
  */
@@ -134,9 +148,9 @@ async function smsLoginSession({
     const token = data.accessToken || data.token
     const user = data.user
     if (!token || !user) throw new Error('登录响应缺少 accessToken/user')
-    // 归一化：C 端 User.tenant_id 为 snake_case（src/types/index.ts:11），admin-api 返回 tenantId
-    const normalized = { ...user, tenant_id: user.tenant_id ?? user.tenantId ?? null }
-    return { token, user: normalized, tenantId: normalized.tenant_id, url }
+    // **原物直存**（见文件头「注入形状 = 逐字镜像生产」）：不补字段、不改名，
+    // 即使 C 端 User 类型声明了接口并不返回的 tenant_id，也不在这里「修好」它。
+    return { token, user, tenantId: user.tenantId ?? null, url }
   } finally {
     clearTimeout(timer)
   }
@@ -183,7 +197,9 @@ async function ensureLoggedIn(mp, opts = {}) {
   if (session.tenantId !== null && session.tenantId !== undefined) {
     await writeStorage(mp, STORAGE.TENANT_ID, session.tenantId)
   }
-  // zustand persist 快照：冷启动时 app.tsx:20 initialize() 之外的 user 兜底来源
+  // zustand persist 快照（zustand ^5.0.15 的包裹形状 = {"state":…,"version":0}）：
+  // 生产里 `login()` 的 `set({token,user,isLoggedIn})` 会由 persist 写出这一份（partialize 只留这三项，
+  // authStore.ts:156-160）⇒ 这里同样**原物镜像**，user 用响应原样、不补字段。
   await writeStorage(
     mp,
     STORAGE.STORE,
