@@ -42,10 +42,10 @@ PR #3674 本地 `./verify-all.sh quick` **绿**，CI 却红在
 
 任何一条被改坏，本测试红 —— 就地拦住「本地绿 / CI 红」复发。
 """
-import glob
 import re
 import shlex
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -63,6 +63,7 @@ EXEMPT: frozenset = frozenset()
 _VICTIM_FILE = "test_order_create_quantity_bounds.py"
 
 _COLLECT_TIMEOUT = 300
+_ENV_CACHE: dict = {}
 
 
 def _code_of(script_text: str) -> str:
@@ -150,80 +151,75 @@ def _pytest_argv(cmd: str) -> list:
     return argv[argv.index("pytest") + 1:]
 
 
-def _expand_globs(argv: list) -> list:
-    """模拟 bash 的 glob/目录展开（相对于 ai-agent-service 的 cwd）。
-
-    选择集里若出现 `tests/test_tools_*.py` 这类**带引号**的 glob（旧白名单写法），
-    bash 不展开、pytest 收到字面 `*` → 报 usage error 退出 4（"file or directory not found"）——
-    那样守卫只会报"收集失败"，看不出**真正的**后果（静默跳过 127 个文件）。
-    先按 bash 语义展开，缺口才能以「跳过 N 个顶层文件」的形式暴露。
-    """
-    out = []
-    for a in argv:
-        if a.startswith("-"):
-            out.append(a)
-            continue
-        hits = glob.glob(a, root_dir=SERVICE_DIR)
-        out.extend(hits if hits else [a])
-    return out
-
-
 def _selected_paths(script_text: str = None, mode: str = "quick") -> list:
-    """quick/full 选择集里的**路径参数**（剥掉 `-q`/`--no-cov`/`-n`+`4` 等开关）。"""
+    """quick/full 选择集里的**可收集路径参数**（`-q`/`--no-cov`/`-n 4` 等开关已剥掉）。"""
     text = SCRIPT.read_text(encoding="utf-8") if script_text is None else script_text
-    argv = _expand_globs(_pytest_argv(_ai_agent_cmd(text, mode)))
-    out, skip_next = [], False
-    for a in argv:
-        if skip_next:
-            skip_next = False
-            continue
-        if a.startswith("-"):
-            skip_next = a == "-n"  # `-n 4` 的 4 不是路径
-            continue
-        out.append(a)
-    return out
+    return _collectable(_pytest_argv(_ai_agent_cmd(text, mode)))
 
 
 def _top_level_tests() -> list:
     return sorted(p.name for p in TESTS_DIR.glob("test_*.py"))
 
 
-def _pytest_ignores() -> set:
-    """`pytest.ini` 的 `addopts` 里 `--ignore=tests/xxx.py` 的顶层文件名。
+def _expand_glob(pat: str) -> list:
+    """按 bash 语义展开一条路径参数（glob 或相对目录）。
 
-    这些文件**从不**参与 `pytest tests/`（真实 LLM/真实环境/手动脚本），与"选择集漏掉"
-    是两码事 —— 不能被当成缺口，但也**不许**把 EXEMPT 当垃圾桶（见陈旧豁免守卫）。
+    ⚠️ 用 `Path.glob` 而非 `glob.glob(root_dir=…)`：后者需要 Python ≥3.10，
+    而本文件所在 job（`ci-workflow-tests`）的解释器版本不受我们控制 ——
+    历史 `glob.glob(root_dir=)` 在 3.9 直接 TypeError（实测）。
     """
-    import configparser
-
-    ini = SERVICE_DIR / "pytest.ini"
-    if not ini.exists():
-        return set()
-    cp = configparser.ConfigParser()
-    cp.read(ini, encoding="utf-8")
-    addopts = cp.get("pytest", "addopts", fallback="")
-    return {
-        Path(m.group(1)).name
-        for m in re.finditer(r"--ignore=(tests/[\w./-]+\.py)", addopts)
-        if "/" not in m.group(1)[len("tests/"):]  # 只取 tests/ 顶层被 ignore 的文件
-    }
+    if any(ch in pat for ch in "*?["):
+        return [p.relative_to(SERVICE_DIR).as_posix()
+                for p in sorted(SERVICE_DIR.glob(pat))]
+    return [pat] if (SERVICE_DIR / pat).exists() else [pat]
 
 
-# `--collect-only -q` 的两种输出形态（取决于是否有 `-n`/xdist）：`path: <count>` 或 `path::用例`
-_COUNT_LINE_RE = re.compile(r"^(?P<path>\S+): \d+$")
+def _collectable(argv: list) -> list:
+    """从 quick 选择集里挑出**可收集的路径**（glob 按 bash 语义展开，其余丢弃）。
+
+    `-q`/`--no-cov` 等开关丢弃；`-n 4` 这类**带值开关的裸值**（纯数字）也丢弃：
+    本守卫只需要选择集的**路径语义**，其余一律自己控制。
+    """
+    out = []
+    for a in argv:
+        if a.startswith("-") or a.isdigit():
+            continue
+        out.extend(_expand_glob(a))
+    return out
+
+
+def _ai_agent_env() -> bool:
+    """当前解释器是否具备跑 ai-agent 测试套件收集的环境。
+
+    `tests/unit_ci_workflows` 的 CI job（pr-check.yml `ci-workflow-tests`）只装
+    `pytest pyyaml`，**没有** ai-agent 依赖 ⇒ `pytest tests/` 收集会 ImportError。
+    此时行为验证必须**显式跳过**（而不是红）：CI 仍由静态判据把关
+    （选择集必须含整个 `tests/` 目录 + quick/full 一致），只是少一层行为兜底。
+    """
+    if "ok" not in _ENV_CACHE:
+        probe = subprocess.run(
+            [sys.executable, "-c", "import fastapi, pytest_asyncio, pytest_cov"],
+            capture_output=True, text=True,
+        )
+        _ENV_CACHE["ok"] = probe.returncode == 0
+        _ENV_CACHE["why"] = (probe.stderr or "").strip().splitlines()[-1:] or [""]
+    return _ENV_CACHE["ok"]
 
 
 def _collected_files() -> set:
-    """把 quick 档的 ai-agent 命令真跑一遍 `--collect-only`，返回「至少贡献 1 个用例」的文件。
+    """把 quick 档的 ai-agent 选择集真跑一遍收集，返回「至少贡献 1 个用例」的文件。
 
     行为验证：只静态看命令行文本挡不住「文本对、语义已漂移」。
-    `--collect-only -q` 对每个收集到用例的文件打印一行（`path: <count>`），
+    `--collect-only -q` 对每个收集到用例的文件打印一行（`path: <count>` 或 `path::用例`），
     未贡献任何用例的文件**不会出现** —— 正是本守卫要的判据（静默跳过 = 不出现）。
     """
-    argv = _expand_globs(_pytest_argv(_ai_agent_cmd(SCRIPT.read_text(encoding="utf-8"), "quick")))
-    python = SERVICE_DIR / ".venv" / "bin" / "python"
-    assert python.exists(), f"找不到 {python} —— L0 守卫依赖本地 venv 验证选择集"
-    cmd = [str(python), "-m", "pytest", *argv, "--collect-only", "-q", "-p", "no:cacheprovider"]
+    if not _ai_agent_env():
+        pytest.skip(
+            "当前解释器缺 ai-agent 依赖（fastapi/pytest_asyncio/pytest_cov）——"
+            f"无法真跑选择集收集，行为验证跳过；静态判据仍生效。{_ENV_CACHE['why']}"
+        )
+    paths = _collectable(_pytest_argv(_ai_agent_cmd(SCRIPT.read_text(encoding="utf-8"), "quick")))
+    cmd = [sys.executable, "-m", "pytest", *paths, "--collect-only", "-q", "-p", "no:cacheprovider"]
     r = subprocess.run(cmd, cwd=SERVICE_DIR, capture_output=True, text=True,
                        timeout=_COLLECT_TIMEOUT)
     assert r.returncode == 0, (
@@ -249,6 +245,31 @@ def _collected_files() -> set:
         f"$ {' '.join(cmd)}\n{r.stdout[-2000:]}"
     )
     return set(out)
+
+
+def _pytest_ignores() -> set:
+    """`pytest.ini` 的 `addopts` 里 `--ignore=tests/xxx.py` 的顶层文件名。
+
+    这些文件**从不**参与 `pytest tests/`（真实 LLM/真实环境/手动脚本），与"选择集漏掉"
+    是两码事 —— 不能被当成缺口，但也**不许**把 EXEMPT 当垃圾桶（见陈旧豁免守卫）。
+    """
+    import configparser
+
+    ini = SERVICE_DIR / "pytest.ini"
+    if not ini.exists():
+        return set()
+    cp = configparser.ConfigParser()
+    cp.read(ini, encoding="utf-8")
+    addopts = cp.get("pytest", "addopts", fallback="")
+    return {
+        Path(m.group(1)).name
+        for m in re.finditer(r"--ignore=(tests/[\w./-]+\.py)", addopts)
+        if "/" not in m.group(1)[len("tests/"):]  # 只取 tests/ 顶层被 ignore 的文件
+    }
+
+
+# `--collect-only -q` 的两种输出形态（取决于是否有 `-n`/xdist）：`path: <count>` 或 `path::用例`
+_COUNT_LINE_RE = re.compile(r"^(?P<path>\S+): \d+$")
 
 
 _COLLECTED_CACHE = {}
@@ -338,9 +359,9 @@ class TestVerifyAllQuickScope:
         for pat in old_selection.split():
             if pat.startswith("-"):
                 continue
-            hits = glob.glob(pat, root_dir=TESTS_DIR)
-            if hits:
-                covered.update(Path(h).name for h in hits)
+            hits = [p for p in TESTS_DIR.glob(pat) if p.is_file()]
+            if hits:  # `tests/test_tools_*.py` 这类 glob：逐个文件被覆盖
+                covered.update(p.name for p in hits)
             else:  # `tests/unit` 是目录：整目录被覆盖
                 covered.update(p.name for p in (TESTS_DIR / pat).glob("test_*.py"))
         assert not any(p in ("tests", "tests/") for p in old_selection.split()), "变异输入构造错误"

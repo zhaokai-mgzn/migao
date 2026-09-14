@@ -99,9 +99,11 @@ describe('在线接待工作台 - 转人工前 AI 对话上下文展示（GB/T 4
 
     render(<HumanAgentSessionsPage />)
 
-    // 等待会话列表加载 → 点击会话
-    await waitFor(() => expect(getSessionsMock).toHaveBeenCalled())
-    fireEvent.click(screen.getByText('张先生'))
+    // 等会话卡片「可见」再点击 —— 不能只等 mock 被调用：mock 已调用但列表还没 render 时
+    // getByText 会抛 getElementError（全量套件负载下偶发，issue #3688）
+    fireEvent.click(await screen.findByText('张先生'))
+    // 前置条件（触发确认）：会话列表 API 确已调用 —— 结果可见性由上方 click 起效断言
+    expect(getSessionsMock).toHaveBeenCalled()
 
     // AI 上下文分区（标题/摘要/角色标注/内容）
     expect(await screen.findByText(/顾客与 AI 客服（小布）的对话 · 转人工前/)).toBeInTheDocument()
@@ -121,13 +123,16 @@ describe('在线接待工作台 - 转人工前 AI 对话上下文展示（GB/T 4
 
     render(<HumanAgentSessionsPage />)
 
-    await waitFor(() => expect(getSessionsMock).toHaveBeenCalled())
-    fireEvent.click(screen.getByText('张先生'))
+    // 同上：等卡片可见再点击（issue #3688）
+    fireEvent.click(await screen.findByText('张先生'))
+    expect(getSessionsMock).toHaveBeenCalled()
 
-    await waitFor(() => expect(getSessionMock).toHaveBeenCalled())
+    // 详情「可见」断言：等详情加载完成后再断言页面状态（不能只等 getSessionMock 被调用）
+    expect(await screen.findByText(/您好，请问有什么可以帮您/)).toBeInTheDocument()
+    // 前置条件（触发确认）：详情 API 确已调用
+    expect(getSessionMock).toHaveBeenCalled()
+    // 无 aiContext：不渲染 AI 分区，页面正常
     expect(screen.queryByText(/顾客与 AI 客服（小布）的对话 · 转人工前/)).not.toBeInTheDocument()
     expect(screen.queryByText(/以下为人工接待记录/)).not.toBeInTheDocument()
-    // 人工消息正常
-    expect(screen.getByText(/您好，请问有什么可以帮您/)).toBeInTheDocument()
   })
 })

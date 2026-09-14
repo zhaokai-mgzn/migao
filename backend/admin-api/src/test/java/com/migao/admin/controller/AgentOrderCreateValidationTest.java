@@ -40,9 +40,13 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * 本测试锁的是「**Agent 路径与表单路径同口径**」。
  *
  * <p><b>「注解真的执行」怎么验</b>：断言 HTTP **422** + `error.code=VALIDATION_ERROR` +
- * `error.details[i].message` 是**注解上的 message 原文**（"数量必须大于 0" / "单价必须大于 0"）
+ * `error.details[i].message` 是**注解上的 message 原文**（"数量不能小于 1" / "单价必须大于 0"）
  * + `orderService` **完全没被调用**。这三条只有 Bean Validation 在控制器层真的跑了才会同时成立
  * —— 只要有人去掉 `@Valid` 或注解，报文立刻退化成 200 且 service 被调用，本测试变红。</p>
+ *
+ * <p>数量下限从「&gt; 0」收紧为「≥ 1」（issue #3682）：0.5 会被服务端按整数件算成 0 件
+ * （`OrderService` `intValue()`：`needed=0` 校验恒通过、`deductStock(0)` 不减库存、销量 +0），
+ * 订单成交却零扣减且无告警。下限与表单页 `min={1}` 同口径。</p>
  *
  * <p>为什么还需要 Service 层测试：`createOrderForAgent` 是**手工 `new OrderCreateRequest()`**
  * 再转交 `createOrder()`，程序化构造的 Bean **不经过 Bean Validation** —— 故 Service 层另有
@@ -82,7 +86,7 @@ class AgentOrderCreateValidationTest extends BaseControllerTest {
     }
 
     @Nested
-    @DisplayName("拒绝：负数量 / 0 数量（负金额 + 超卖防线被绕过）")
+    @DisplayName("拒绝：负数量 / 0 数量 / <1 的小数（负金额 + 超卖防线被绕过 + 静默漏扣库存）")
     class QuantityRange {
 
         @Test
@@ -94,7 +98,7 @@ class AgentOrderCreateValidationTest extends BaseControllerTest {
                     .andExpect(jsonPath("$.success").value(false))
                     .andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
                     .andExpect(jsonPath("$.error.details[0].field").value("items[0].quantity"))
-                    .andExpect(jsonPath("$.error.details[0].message").value("数量必须大于 0"));
+                    .andExpect(jsonPath("$.error.details[0].message").value("数量不能小于 1"));
 
             verifyNoInteractions(orderService);
         }
@@ -105,7 +109,20 @@ class AgentOrderCreateValidationTest extends BaseControllerTest {
             mockMvc.perform(post(CREATE).contentType(MediaType.APPLICATION_JSON)
                             .content(createBody("0", "168")))
                     .andExpect(status().isUnprocessableEntity())
-                    .andExpect(jsonPath("$.error.details[0].message").value("数量必须大于 0"));
+                    .andExpect(jsonPath("$.error.details[0].message").value("数量不能小于 1"));
+
+            verifyNoInteractions(orderService);
+        }
+
+        @Test
+        @DisplayName("quantity=0.5 → 422（issue #3682：服务端会按整数件算成 0 件 → 不扣库存、销量 +0）")
+        void subOneQuantityRejected() throws Exception {
+            mockMvc.perform(post(CREATE).contentType(MediaType.APPLICATION_JSON)
+                            .content(createBody("0.5", "168")))
+                    .andExpect(status().isUnprocessableEntity())
+                    .andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
+                    .andExpect(jsonPath("$.error.details[0].field").value("items[0].quantity"))
+                    .andExpect(jsonPath("$.error.details[0].message").value("数量不能小于 1"));
 
             verifyNoInteractions(orderService);
         }
@@ -186,6 +203,32 @@ class AgentOrderCreateValidationTest extends BaseControllerTest {
                             .content(createBody("3", "168")))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.success").value(true));
+
+            verify(orderService, times(1)).createOrderForAgent(any(), eq(TEST_TENANT_ID));
+        }
+
+        @Test
+        @DisplayName("quantity=1 → 200（下限值本身必须放行，防「闸门把正常订单挡在门外」）")
+        void minimumQuantityOnePasses() throws Exception {
+            when(orderService.createOrderForAgent(any(), anyLong()))
+                    .thenReturn(stubOrder("o-min"));
+
+            mockMvc.perform(post(CREATE).contentType(MediaType.APPLICATION_JSON)
+                            .content(createBody("1", "168")))
+                    .andExpect(status().isOk());
+
+            verify(orderService, times(1)).createOrderForAgent(any(), eq(TEST_TENANT_ID));
+        }
+
+        @Test
+        @DisplayName("quantity=8.4 → 200（issue #3682：≥1 的小数（per_area 面积）不误伤）")
+        void decimalQuantityPasses() throws Exception {
+            when(orderService.createOrderForAgent(any(), anyLong()))
+                    .thenReturn(stubOrder("o-dec"));
+
+            mockMvc.perform(post(CREATE).contentType(MediaType.APPLICATION_JSON)
+                            .content(createBody("8.4", "168")))
+                    .andExpect(status().isOk());
 
             verify(orderService, times(1)).createOrderForAgent(any(), eq(TEST_TENANT_ID));
         }

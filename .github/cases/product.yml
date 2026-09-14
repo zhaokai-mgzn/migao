@@ -810,6 +810,21 @@ cases:
       - tool: product_manage
         args:
           action: create
+    # ── §14.1 回填（2026-09-15，issue #3683）：写工具「调了 ≠ 成了」──
+    # expectations 的参数级匹配 + required_args 只能证明「**发**了 create 且参数齐全」，
+    # **create 失败 / 被 confirm 门禁拦下时本用例仍会判通过**（调用名照样出现在 tool_calls 里）。
+    # 建品用例的核心产出就是这个 create，故回填 canonical 写成功断言（fail-closed）：
+    # 一次都没成功 → 判红。**不放宽**任何既有断言（required_args / forbidden_text 原样）。
+    # ⚠️ 为什么**不**同时回填 db_verify[product_by_name]（§14.1 点名的另一半）：
+    #   本用例建的商品名 `2699系列雪尼尔窗帘面料` 与评测**种子商品同名同价**
+    #   （`tests/agent_eval/fixtures/mibao_eval_seed.sql` 的 `prod_eval_2699`，¥23.80），
+    #   而 `_fetch_product_configs`（`local_runner.py:1905-1916`）按 keyword 取**首条** → 区分不了
+    #   「本次新建的」与「种子」；种子恒在 ⇒ 该断言**不管本次 create 成没成功都会绿**（比不加更糟：
+    #   看起来有覆盖）。PR-020 能加是因为它的商品名在库里唯一。**待补 runner 能力**：db_verify
+    #   支持按「本次成功 create 返回的 product_id」回读（见 issue #3683）。
+    must_succeed:
+      - tool: product_manage
+        action: create
     data_checks:
       - "create 参数含 specifications（材质/克重/工艺等推理属性，随 specs 落库到 product_attributes，非仅展示）"
       - "create 参数含 processing_item_configs（含 customPrice=加工项默认单价 unit_price、unit=真实单位），禁止只传 processing_item_ids 名称列表"
@@ -828,7 +843,7 @@ cases:
         product_keyword: "2699系列雪尼尔窗帘面料"
         price: 23.8
     skip_reason: ""
-    merge_log: "2026-09-08 新增（issue #3027）：sess_c1fce183dae24f22 复盘 — AI 预填表单展示了推理属性但 create 未落库（product_attributes 0 行）；加工项只传名称列表 → custom_price 全 NULL → 详情页 ¥0.00/米（单位硬编码）。三端修复：prompt 强制 specifications+processing_item_configs、admin-api finalPrice 回退、admin-web 渲染回退；2026-09-09 校准：补真实色卡图（原纯文本「根据这张图片」无 images，agent 要图走不下去）。2026-09-14 资产重写（#3518）：② 色卡识别结果轮由 `auto_select`（对 form 卡发「第一个」→ 表单从未提交）改为按 formFields 真实 key 回填的 `auto_respond`；③ 原文本占位符「颜色…门幅…」补真实值、加工项「波浪定型」换目录中真实存在的「韩式波浪折边」；④ 收尾改协作答卡轮"
+    merge_log: "2026-09-08 新增（issue #3027）：sess_c1fce183dae24f22 复盘 — AI 预填表单展示了推理属性但 create 未落库（product_attributes 0 行）；加工项只传名称列表 → custom_price 全 NULL → 详情页 ¥0.00/米（单位硬编码）。三端修复：prompt 强制 specifications+processing_item_configs、admin-api finalPrice 回退、admin-web 渲染回退；2026-09-09 校准：补真实色卡图（原纯文本「根据这张图片」无 images，agent 要图走不下去）。2026-09-14 资产重写（#3518）：② 色卡识别结果轮由 `auto_select`（对 form 卡发「第一个」→ 表单从未提交）改为按 formFields 真实 key 回填的 `auto_respond`；③ 原文本占位符「颜色…门幅…」补真实值、加工项「波浪定型」换目录中真实存在的「韩式波浪折边」；④ 收尾改协作答卡轮。2026-09-15 §14.1 回填（issue #3683）：补 `must_succeed:[product_manage(action=create)]`（原仅有 expectations 参数级匹配 + required_args，create 失败仍判过）；db_verify 未加——商品名与种子 `prod_eval_2699` 同名同价、`_fetch_product_configs` 取 keyword 首条无法区分本次新建与种子（见用例内注释）"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_prompt_snapshots.py"
@@ -887,8 +902,16 @@ cases:
         checks:
           - "processingItemConfigs.all.finalPrice>0"
           - "processingItemConfigs.刺绣工艺.finalPrice==45"
+    # ── §14.1 回填（2026-09-15，issue #3683）：补「本次 create 真的成功了」──
+    # 本用例的 db_verify 按**名字**回读落库值（名字唯一，故可作为产物侧断言），但它回答的是
+    # 「库里有没有这么一件」——**同一栈上前几轮评测残留的同名商品也能满足它** ⇒「本次 create
+    # 没成功」仍可能判绿（数据库层断言不绑定「本次调用」）。must_succeed 读的是**本场**
+    # tool_result.success（按 action=create 过滤），与 db_verify 互补，缺一不可。
+    must_succeed:
+      - tool: product_manage
+        action: create
     skip_reason: ""
-    merge_log: "2026-09-08 新增（issue #3056 复盘）：建品自定义加工价曾被 BFF create 的 ids 分支静默丢弃（45→30，读回退掩盖后复发）。required_args 只查 create args 层，本 case 用 db_verify 查落库层（finalPrice=确认价），args+落库双保险。2026-09-14 校准（#3518）：① 收尾裸文本「确认创建」改协作答卡轮（confirm 门禁：文字≠点卡；确认卡常在收尾轮才下发，需余量轮）；② 加工项「波浪定型」换目录中真实存在的「韩式波浪折边」"
+    merge_log: "2026-09-08 新增（issue #3056 复盘）：建品自定义加工价曾被 BFF create 的 ids 分支静默丢弃（45→30，读回退掩盖后复发）。required_args 只查 create args 层，本 case 用 db_verify 查落库层（finalPrice=确认价），args+落库双保险。2026-09-14 校准（#3518）：① 收尾裸文本「确认创建」改协作答卡轮（confirm 门禁：文字≠点卡；确认卡常在收尾轮才下发，需余量轮）；② 加工项「波浪定型」换目录中真实存在的「韩式波浪折边」。2026-09-15 §14.1 回填（issue #3683）：补 `must_succeed:[product_manage(action=create)]` —— db_verify 的落库断言可能被残留同名商品满足，「本次写真的成功了」此前无断言"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_acceptance_case_checks.py"
