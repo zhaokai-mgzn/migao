@@ -122,7 +122,6 @@ async function run(mp) {
                 `（避免向真实后端发出空表单消息）。校验分支由单测 tests/form-card.test.tsx 覆盖`)
             }
             await capture(mp, SCENARIO, '02-form-card.png')
-            shot('02-form-card.png')
           }
         } else {
           rep.step('第3轮：下单意图收到回复', false, `发送未完成：${t3.reason}`)
@@ -156,12 +155,13 @@ async function run(mp) {
     rep.step('S5：订单卡片手机号脱敏', false, `发送未完成：${order.reason}`)
   }
 
-  await capture(mp, SCENARIO, '05-final.png')
+  // 终态补拍（#3761）：实测 `05-final.png` 与 `04-order-card.png` 逐字节相同 ⇒ 绿路径跳过、失败时补抓。
+  await rep.captureFinal(mp, SCENARIO, '05-final.png')
   shot('01-recommend.png')
   shot('02-form-card.png')
-  shot('03-confirm-card.png')
+  // ⚠️ 原 `shot('03-confirm-card.png')` 已删：该图**从未被 capture**（本场景没有 confirm-card 抓取点），
+  //    却出现在 report.md 的「截图」清单里 —— 报告声称有、磁盘上没有（证据清单与产物不一致）。
   shot('04-order-card.png')
-  shot('05-final.png')
 
   return rep.result()
 }

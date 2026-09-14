@@ -118,9 +118,17 @@ on:
           - smoke
           - adversarial
       case_ids:
-        description: '【降频提速】只跑这些用例（逗号分隔，如 OR-016,AS-007）——留空=按 tier 全量。改动只需复验几条时用它（30 条≈11 分钟 → 1~2 分钟）；传了它 summary 的 total 只反映这几条，别用它下"全量结论"'
+        description: '【定点复现/调试专用 · ⚠️ 非判定用途】只跑这些用例（逗号分隔，如 OR-016,AS-007）——留空=按 tier 全库跑。传了它 summary 的 total 只反映这几条；配合 purpose=determination 会被「派发合规守卫」**直接 fail**（#3769：判定用途只允许全库跑）'
         required: false
         default: ''
+      purpose:
+        description: '【#3769 统一入口】determination（默认，判定用途：必须全库跑，一次覆盖两条腿）| debug（定点复现/调试：允许配 case_ids，**不构成判定结论**，PR/证据里要标注）。⚠️ case_ids 非空 + determination ⇒ 直接 fail'
+        required: false
+        default: determination
+        type: choice
+        options:
+          - determination
+          - debug
       concurrency:
         description: '【提速】用例级并发（同 job 内，栈只起一次）。⚠️ 评测墙钟由**最慢单条用例 + 重试尾巴**决定，并发 3→6 实测只省 ~6%（#3417）——默认 6，别指望它翻倍'
         required: false
@@ -263,6 +271,29 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           FORCE_EVAL_INPUT: ${{ github.event.inputs.force_eval }}
         run: bash .github/scripts/eval_supersede.sh
+
+      - name: "派发合规守卫（#3769：判定用途不得收窄用例集，直接 fail）"
+        # 为什么放在这里（抑制判定之后、任何真实成本之前）：
+        #   · #3769 用户裁定：判定用途的评测**只允许**走本 workflow 的**分层全库**跑
+        #     （tier=normal，一次覆盖 mibao + xiaobu 两条腿）；`case_ids` 只留给
+        #     「定点复现/调试」。收窄跑 summary 的 total 只反映那几条 —— 拿它当判定
+        #     结论就是假绿（既有教训：per-case 派发 + 8 个 run 被 cancel 的浪费也来自这里）。
+        #   · **规则落在代码里**（.github/scripts/eval_dispatch_guard.sh MODE=ci），不靠文档约定
+        #     —— 文档约定拦不住派发（.agent-presets 里的口径也只是"提醒"）。
+        #   · `MODE=ci` 只执行 A：B（结论复用）/C（空跑守卫）需要"派发前"的变更集与候选 run
+        #     查询，属**派发侧**职责（放在这里等于钱已经花了才判断该不该花）；
+        #     派发侧用法见同一脚本的 MODE=dispatch。
+        #   · ⚠️ 这里**必须**是 fail（不是 skip）：违规派发本身就是浪费的入口，
+        #     放行等于把规则变装饰。真正的"省钱跳过"是 B/C 两条（它们以退出码 2 + ⏭️ 表达，
+        #     且**看起来像没跑**，绝不像"通过"）。
+        if: github.event_name == 'workflow_dispatch' && steps.supersede.outputs.superseded != 'true'
+        env:
+          MODE: ci
+          EVAL_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+          EVAL_TIER: ${{ github.event.inputs.tier || 'normal' }}
+          CASE_IDS: ${{ github.event.inputs.case_ids }}
+          PURPOSE: ${{ github.event.inputs.purpose || 'determination' }}
+        run: bash .github/scripts/eval_dispatch_guard.sh
 
       # ══════════════════════════════════════════════════════════════════════════
       # ② 部署 diff 定向（#3654：按改动点跑有限受影响用例，全量兜底）
@@ -519,6 +550,12 @@ jobs:
           # 用例级并发（单 job 内并行，栈只起一次，issue #3361）
           # #3526：默认 6 = 原值（自动门禁行为不变），仅手动触发时可调
           EVAL_CONCURRENCY: ${{ github.event.inputs.concurrency || '6' }}
+          # #3769：用途进 runner（summary 的 run_key.run_mode）—— 遥测据此把
+          # 「判定用途全库跑」与「定点复验小跑」分开计数（同一个 total 在两处含义不同）。
+          EVAL_PURPOSE: ${{ github.event.inputs.purpose || 'determination' }}
+          # #3769：收窄输入进 runner（run_key.case_ids）—— 非空 ⇒ 键必然不同 ⇒
+          # 该 run 的结论**不得**被 verdict ledger 当作判定结论复用。
+          EVAL_CASE_IDS_INPUT: ${{ github.event.inputs.case_ids }}
           # 固定节流等待调到最小（#3417：墙钟几乎全在真实 LLM 往返上）
           EVAL_ROUND_SLEEP: "0.2"
           EVAL_CASE_SLEEP: "0.3"
@@ -564,6 +601,20 @@ jobs:
             exit 0
           fi
           jq -r '"total=\(.total) passed=\(.passed) failed=\(.failed) avg_score=\(.avg_score) completion.ok=\(.completion.ok) reason=\(.completion.reason)"' "$f"
+          # ── 成本可读信号（#3761）──
+          # 为什么必须在汇总里打：这一轮"贵在哪"此前完全不可读（只有用例 ID 列表），
+          # 于是"评测废钱"根本没法管理。该块由 local_runner 从**实测**计时写入（不估算）。
+          # ⚠️ `(.cost // {})` 兜底：旧 run 的 summary 没有该键，不能让老产物把本步弄红。
+          jq -r '(.cost // {}) as $c
+                 | "💰 cost: wall_clock=\($c.wall_clock_s)s avg_case=\($c.avg_case_s)s "
+                 + "retried=\(($c.retried_cases // []) | length)条 "
+                 + "slowest=\($c.slowest_cases // [] | tostring) "
+                 + "tokens=\($c.tokens // "null")"' "$f"
+          # ── 遥测：区分「真跑」与「空跑/跳过」（#3769 用户裁定：两者必须分开计数）──
+          # 为什么必须分开：`total=N passed=M` 在"判定全库跑"与"定点小跑"里含义完全不同，
+          # 混在一起会让"覆盖率/成本"两个口径同时失真。`run_key.run_mode` 是判定用途与否的
+          # 机器可读标记（determination=全库判定；debug=定点复现，不构成判定结论）。
+          echo "📊 telemetry: ran=true mode=$(jq -r '.run_key.run_mode // "unknown"' "$f") tier=$(jq -r '.run_key.tier // "?"' "$f") cases=$(jq -r '.run_key.executed_count // 0' "$f") retried=$(jq -r '(.cost.retried_cases // []) | length' "$f")"
 
       - name: "判定（completion_verdict：确定性失败=0 + 关键旅程全过）"
         # 为什么单独一步（#3483 §16.3 完成定义前置）：
@@ -577,7 +628,21 @@ jobs:
         #   · ① #3587：被抑制的 run 在此**显式**回显"未评测"，并跳过判定 ——
         #     抑制不是失败（不刷红、不建 issue），也**绝不能**落进下面"无汇总文件 →
         #     判定失败"的分支（那会把"省成本"变成"每次连合都刷一个假红灯"）。
-        if: always() && steps.supersede.outputs.superseded != 'true'
+        #   · ② #3761（本次）：**被取消的 run 同样不得判失败** —— 与抑制同源的理由，
+        #     但触发路径不同：上游被 cancel（`Start local stack` 跑到一半被杀）⇒ 没有
+        #     `eval-summary-*.json` ⇒ 本步会走下面的「无汇总文件 → 判定失败」分支。
+        #     实证（2026-09-14，run 34855662092 / 34856014641 / 34854787236）：三个 run 的
+        #     `conclusion=cancelled`，而本步显示 `[failure]`，于是 report job 的
+        #     `Create Issue on failure`（原 `if` 含 `|| cancelled`）把三条**假失败**评论
+        #     追加进了 issue #3534（原文：「同日同标题再次失败（新增 run）… 无汇总文件
+        #     （该腿在产出前失败 → 栈/登录/依赖等环境问题）」—— 归因也是错的：
+        #     它们是被**派发侧并发互杀**取消的，不是环境问题）。
+        #     ⇒ 纪律：`cancelled` 不是结果（dev-flow §16.5：跳过不得算 failure；
+        #     migao-acceptance：「cancelled 的 run 不构成结论」）。取消要**可见**（下方
+        #     「被取消记录」步骤打 `::warning::` + summary 抬头），但**不变红、不建 issue**。
+        #     ⚠️ 不要退回"取消也要刷红留痕"：那正是本条要治的噪音 —— 真失败与假失败同形后，
+        #     #3534 这种"部署后回归失败"issue 的每一条都要人工甄别，信号反而更差。
+        if: always() && !cancelled() && steps.supersede.outputs.superseded != 'true'
         run: |
           f="eval-summary-${{ matrix.persona }}.json"
           if [ ! -f "$f" ]; then
@@ -612,6 +677,39 @@ jobs:
           echo "${MSG}" >> "$GITHUB_STEP_SUMMARY"
           echo "被抑制对象（旧 SHA）: https://github.com/${{ github.repository }}/commit/${{ github.event.workflow_run.head_sha || github.sha }}" >> "$GITHUB_STEP_SUMMARY"
           echo "取代它的 run 列表: https://github.com/${{ github.repository }}/actions/workflows/post-deploy-eval.yml?query=branch%3Amain" >> "$GITHUB_STEP_SUMMARY"
+          # 遥测（#3769）：**未跑**必须与"真跑"分开计数，且不许像"通过"。
+          echo "📊 telemetry: ran=false reason=superseded（未评测，不是通过）"
+
+      - name: "被取消记录（#3761：run 被取消 ⇒ 未评测，不构成结论，不算失败）"
+        # 为什么单独一步（#3761 实证）：取消通常发生在**最贵的那一步**（`Start local stack`）
+        # —— 栈已经建到一半、成本已付，而结论为零。此时**最不该**发生的事是"再把它记成
+        # 一次部署后回归失败"（原路径：无汇总文件 → 判定 failure → report job 建 issue）。
+        # 实证（2026-09-14 14:29–14:33）：issue #3534 被追加了 3 条假失败评论，对应 run
+        # 34854787236 / 34855662092 / 34856014641 的 `conclusion` 全是 `cancelled`。
+        # 故本步只做三件事（可见，但不变红）：
+        #   ① `::warning::` annotation —— 让 run 列表上就能看出"这条不是结论"；
+        #   ② summary 抬头写死「本 run 被取消（未评测，不构成结论）」—— 防"绿/取消"被读成"通过"；
+        #   ③ 留同槽位链接 —— 取消后要判断某次部署的行为，去它**真正跑完**的那一轮 run。
+        # ⚠️ 退出码保持 0、不建 issue：取消不是失败（dev-flow §16.5 / migao-acceptance）。
+        # `cancelled()` 只在**本次 job 自己被取消**时为真；report job 侧用 needs.eval.result。
+        if: cancelled()
+        run: |
+          MSG="🚫 本 run 被取消（不是失败，#3761）：评测未跑完、**没有结论** —— 不得读成「评测通过」，也不得算作「部署后回归失败」。已付的建栈成本不产出结论；派发前请先查槽位占用（.github/scripts/eval_slot_status.sh，口径见 dev-flow 16.6）。"
+          echo "::warning::${MSG}"
+          echo "${MSG}"
+          {
+            echo "## 🚫 本 run 被取消（未评测，不构成结论）"
+            echo ""
+            echo "${MSG}"
+            echo ""
+            echo "- 触发事件: \`${{ github.event_name }}\`"
+            echo "- 被评对象 SHA: https://github.com/${{ github.repository }}/commit/${{ github.event.workflow_run.head_sha || github.sha }}"
+            echo "- 同槽位（\`eval-stack-global\`）的 run 列表: https://github.com/${{ github.repository }}/actions/workflows/post-deploy-eval.yml"
+            echo ""
+            echo "**不判 failure、不建 issue**（取消不是结果，重复留红会让真失败与噪音同形）。"
+          } >> "$GITHUB_STEP_SUMMARY"
+          # 遥测（#3769）：取消 = 未跑（零结论），与"真跑"分开计数。
+          echo "📊 telemetry: ran=false reason=cancelled（未评测，不是通过、也不是失败）"
 
       - name: "Diagnose on failure (issue #3270/#3526): containers + compose config + DB probe"
         # ── 降频/提速改动 2/3 失败归因（#3526）：平移 xiaobu-acceptance.yml 的
@@ -722,6 +820,12 @@ jobs:
             found=1
             echo "── $(basename "$(dirname "$f")") ──"
             jq -r '"total=\(.total) passed=\(.passed) failed=\(.failed) avg_score=\(.avg_score) completion.ok=\(.completion.ok) reason=\(.completion.reason)"' "$f"
+            # 成本可读信号（#3761）：结论档也要能回答"这轮多久、贵在哪条用例、有没有重试"。
+            # `(.cost // null)`：旧产物没有该键 → 打 null，不当成错误。
+            jq -r '(.cost // {}) as $c
+                   | "💰 cost: wall_clock=\($c.wall_clock_s)s avg_case=\($c.avg_case_s)s "
+                   + "retried=\(($c.retried_cases // []) | length)条 slowest=\($c.slowest_cases // [] | tostring) "
+                   + "tokens=\($c.tokens // "null")"' "$f"
           done
           # 无 artifact = 该腿在写汇总前就挂了（栈/依赖/infra），必须显式说出来
           [ "$found" = "1" ] || echo "⚠️ 未取到任何 persona 汇总（评测腿在产出前失败，属环境问题）"
@@ -752,12 +856,37 @@ jobs:
             echo "- 取代它的 run（结论档在此）：https://github.com/${{ github.repository }}/actions/workflows/post-deploy-eval.yml?query=branch%3Amain"
           } >> "$GITHUB_STEP_SUMMARY"
 
+      - name: "被取消留档（#3761：run 被取消 ⇒ 未评测，不建 issue、不判失败）"
+        # 与上面的「被抑制留档」同款理由，但触发条件不同：抑制是"花钱之前就判定无对象"，
+        # 取消是"钱已经花了一半、被外部杀掉"（实测多来自派发侧并发互杀）。
+        # 两者共同点：**都没有结论**，故都不得被记成失败。原实现把 `cancelled` 也算进
+        # `Create Issue on failure` 的条件，导致 issue #3534 收到 3 条归因错误的假失败评论
+        # （把"被取消"写成"栈/登录/依赖等环境问题"）—— 本条修的就是这个语义错位。
+        # ⚠️ report job 自己没被取消，故判据取 `needs.eval.result`（不是 `cancelled()`）。
+        if: always() && needs.eval.result == 'cancelled'
+        run: |
+          MSG="🚫 本 run 的评测腿被**取消**（不是失败，#3761）：没有汇总、**没有结论** —— 不建 issue，也不得读成「评测通过」或「部署后回归失败」。"
+          echo "::warning::${MSG}"
+          echo "${MSG}"
+          {
+            echo "## 🚫 本 run 被取消（未评测，不构成结论）"
+            echo ""
+            echo "${MSG}"
+            echo ""
+            echo "判据：\`needs.eval.result == 'cancelled'\`（取消不是结果，见 dev-flow 16.5）。"
+            echo "要判断某次部署的行为，请找该 SHA 上**真正跑完**的那一轮 run。"
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Create Issue on failure (dedup guard)
         # 去重守卫（issue #2746）：同日同标题 open issue 已存在 → 仅评论追加，不重复建。
         # 标题带日期 = 同一天多次部署失败汇到一条 issue 线程，避免刷噪音。
         # 触发条件用 needs.eval.result（matrix 下"任一腿红 → 整 job failure"传播）：
         # 这样"两条腿都绿"绝不会建 issue，而"任一腿红"必然留痕。
-        if: needs.eval.result == 'failure' || needs.eval.result == 'cancelled'
+        # ⚠️ #3761：**去掉 `|| needs.eval.result == 'cancelled'`** —— 取消不是失败。
+        # 原条件让"被派发侧互杀取消"的 run 也建/追加 issue（实证：issue #3534 的 3 条假失败
+        # 评论）。取消的可追溯性由 eval job 的「被取消记录」与本 job 的「被取消留档」承担
+        # （`::warning::` + summary），**不靠红 issue**——否则真失败会被噪音淹没。
+        if: needs.eval.result == 'failure'
         uses: actions/github-script@v9
         env:
           EVAL_RESULT: ${{ needs.eval.result }}

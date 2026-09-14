@@ -69,8 +69,8 @@ async function run(mp) {
     rep.step('用户消息上屏（转人工意图）', false, `发送未完成：${typed.reason}`)
   }
 
-  await capture(mp, SCENARIO, '02-final.png')
-  shot('02-final.png')
+  // 终态补拍（#3761）：实测 `02-final.png` 与 `01-handoff.png` 逐字节相同 ⇒ 绿路径跳过、失败时补抓。
+  await rep.captureFinal(mp, SCENARIO, '02-final.png')
   return rep.result()
 }
 

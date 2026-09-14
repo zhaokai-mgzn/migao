@@ -18,6 +18,47 @@ const DIST_APP_PATH = path.join(PROJECT_PATH, 'dist', 'app.js')
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
 /**
+ * 取证预算计数（issue #3761）：`mp.screenshot()` 的**真实调用次数**与稳定等待。
+ *
+ * 为什么要内置计数：`capture()` 的语义是"连抓直到连续两帧 md5 一致"，**一次调用实际抓几次**
+ * 只有运行时才知道（验收报告 §5-2 实测：点发送后连抓 3 张帧各不同）。不计数就只能拿
+ * "调用点数量 × 猜"当成本，而"评测/取证废钱"恰恰是本轮要治的问题 —— 可测才可管理。
+ *
+ * 真值基线（2026-09-14 21:56 真实一轮，`e2e/report.md` + `screenshots/`）：
+ *   16 次 `capture()` → 16 张 PNG（每张 ≥2 次 `mp.screenshot()` ⇒ 底层抓取 ≥32 次），
+ *   其中 **5 张与另一张逐字节相同**（`md5` 比对：aftersales/01==02、handoff/01==02、
+ *   multiturn/04==05、chat/03==04==05）⇒ 31% 的取证是同一状态的重复。
+ *   ⇒ 改造后绿路径 16 → 11 张（重复的终态改由 `rep.captureFinal` 在**失败时**补抓）。
+ */
+const SHOT_STATS = { calls: 0, waits: 0, waitMs: 0, perName: {} }
+
+/** 清零计数（自检脚本用；正常运行无需调用） */
+function resetShotStats() {
+  SHOT_STATS.calls = 0
+  SHOT_STATS.waits = 0
+  SHOT_STATS.waitMs = 0
+  SHOT_STATS.perName = {}
+}
+
+/** 取证预算的可读摘要（run.js 打进控制台与 report.md） */
+function formatShotStats() {
+  const names = Object.keys(SHOT_STATS.perName)
+  const lines = [
+    `📸 取证预算：mp.screenshot() 实际调用 ${SHOT_STATS.calls} 次 / ${names.length} 张图；` +
+      `稳定等待 ${SHOT_STATS.waits} 次 × interval = ${(SHOT_STATS.waitMs / 1000).toFixed(1)}s` +
+      `（其中 ${names.length} 张是稳定帧证据，每次 ≥2 帧）`,
+  ]
+  const multi = names.filter((n) => SHOT_STATS.perName[n] > 2)
+  if (multi.length) {
+    lines.push(
+      `   需 >2 帧才稳定的图（收紧 maxAttempts 前必须先看这一行）：` +
+        multi.map((n) => `${n}(${SHOT_STATS.perName[n]}帧)`).join(', ')
+    )
+  }
+  return lines.join('\n')
+}
+
+/**
  * 陈旧构建护栏（失败关闭，issue #3696/#3705 结构性问题的直接对策）
  *
  * 背景（2026-09-14 实证）：`#2953` 输入条重设计后 `src/` 已更新，但 `dist/` 仍是 09-04 的旧产物 ——
@@ -163,6 +204,16 @@ async function waitForPageReady(mp, timeoutMs = 60000) {
  * 过渡帧/滞后帧（探针实测：输入草稿后立即抓 → 与 1.5s 后抓的帧不同；点发送后连抓
  * 3 张帧各不同，约 3~4.5s 才稳定）。直接落盘会让**截图证据与被断言的 DOM 状态不一致**
  * —— 而截图正是验收报告里给人看的那一条证据链。故连抓直到「连续两帧完全一致」。
+ *
+ * ⚠️ **本机制不得删除**（`migao-acceptance` v1.4「证据层假绿」的正确治法）：它保证
+ * 「不是过渡帧」。**边界**（验收报告 §5-2 第 6 条）：稳定 ≠ 新鲜 —— 若底层帧滞后超过
+ * 等待窗口，仍会拿到"稳定的旧帧"，那属另一层问题，不靠删这里解决。
+ *
+ * #3761 的成本口径：`maxAttempts=5 / intervalMs=1500` **保持不变** —— 收紧需要"每张图
+ * 实际抓了几帧"的实测分布（`formatShotStats()` 会打出来），而现有实证（上述探针：
+ * 3~4.5s 才稳定 ⇒ 需要第 3~4 帧）恰恰说明**不能**提前收紧：改成"最多 2 帧"会把过渡帧
+ * 当证据落盘，正是本条要防的假绿。要省成本请改**取证范围**（`rep.captureFinal`），
+ * 不要动这里的稳定性判据。
  */
 async function capture(mp, scenario, name, maxAttempts = 5, intervalMs = 1500) {
   const dir = path.join(SCREENSHOT_DIR, scenario)
@@ -170,6 +221,7 @@ async function capture(mp, scenario, name, maxAttempts = 5, intervalMs = 1500) {
   const file = path.join(dir, name)
   let prevHash = null
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    SHOT_STATS.calls += 1
     try {
       await mp.screenshot({ path: file })
     } catch (e) {
@@ -179,11 +231,17 @@ async function capture(mp, scenario, name, maxAttempts = 5, intervalMs = 1500) {
     const hash = crypto.createHash('md5').update(fs.readFileSync(file)).digest('hex')
     if (hash === prevHash) {
       if (attempt > 2) console.log(`  [shot] ${name} 稳定帧（第 ${attempt - 1} 次抓取才稳定）`)
+      SHOT_STATS.perName[name] = attempt
       return file
     }
     prevHash = hash
-    if (attempt < maxAttempts) await sleep(intervalMs)
+    if (attempt < maxAttempts) {
+      SHOT_STATS.waits += 1
+      SHOT_STATS.waitMs += intervalMs
+      await sleep(intervalMs)
+    }
   }
+  SHOT_STATS.perName[name] = maxAttempts
   console.warn(`[harness] ${name} 连续 ${maxAttempts} 帧仍在变化（流式/动画中），落盘最后一帧`)
   return file
 }
@@ -420,6 +478,28 @@ function makeReporter(scenarioName) {
       screenshots.push(p)
       return p
     },
+    /**
+     * 终态补拍（**证据按需**，issue #3761）：只在「本场景已出现失败步骤」时才抓。
+     *
+     * 为什么（实测，2026-09-14 21:56 真实一轮，对 `screenshots/<scenario>/*.png` 做 md5 比对）：
+     * 16 张图里 5 张与另一张**逐字节相同** —— `aftersales/01==02`、`handoff/01==02`、
+     * `multiturn/04==05`、`chat/03==04==05`（同一场景内两次抓取之间没有任何交互，
+     * 状态没变）。这些"终态重拍"在**绿路径**下是纯浪费（每次 ≥2 次 `mp.screenshot()`），
+     * 而 5 张里有 4 张的内容已被前一张完整覆盖。
+     *
+     * 而失败路径恰恰最需要终态证据（`migao-acceptance` v1.4「失败即丢证据」）⇒
+     * 判据就是"有失败才抓"：**绿路径 0 成本，红路径证据一张不减**。
+     * ⚠️ 不得改成无条件抓（退回到 16 张的浪费），也不得整体删掉（失败时就没有终态证据了）。
+     */
+    async captureFinal(mp, scenario, name) {
+      if (!steps.some((s) => !s.pass)) {
+        console.log(`  ⏭ ${name} 跳过（本场景全绿：终态与已抓证据同帧，重拍是纯浪费 #3761）`)
+        return null
+      }
+      const p = await capture(mp, scenario, name)
+      if (p) screenshots.push(path.join(scenario, name))
+      return p
+    },
     result() {
       return { name: scenarioName, steps, screenshots }
     },
@@ -433,6 +513,9 @@ module.exports = {
   launch,
   waitForPageReady,
   capture,
+  SHOT_STATS,
+  resetShotStats,
+  formatShotStats,
   sleep,
   waitForElement,
   waitForText,
