@@ -123,6 +123,12 @@ DYNAMIC_KEY_SITES: dict[str, str] = {
         "由 tests/test_tool_field_name_contract.py 的运行期契约（WriteContract CU-004）"
         "+ customer_manage 的字段白名单兜底（issue #3551 / PR #3562）"
     ),
+    "app/tools/processing_item_manage.py|PUT /api/admin/processing-items/{}": (
+        "update 路径被 #3591 改为「GET 详情 → 覆盖 → 全量 PUT」（admin-api 是全量替换语义）："
+        "键 = 后端自身 GET 响应里 ITEM_CARRY_OVER_FIELDS ∩ detail（**由接收端字段本身派生，构造上必然合法**）"
+        "+ overrides（调用方按 schema 传入的显式字段）→ 静态不可解析，"
+        "由 admin-api ProcessingItemUpdateRequest 字段集 + schema properties 共同约束"
+    ),
     "app/tools/settings_manage.py|PUT /api/admin/tenant/ai-config": (
         "`json_data.update(ai_config)`：ai_config 是 schema 里的自由字典（key 由 LLM 直供，"
         "如 greetingTemplate/businessHours 之外的租户 AI 配置项），静态不可解析 → "
@@ -139,11 +145,7 @@ UNATTRIBUTABLE_CALLS: dict[str, str] = {
 # 工具调用指向 admin-api 不存在的端点（404 类跨模块契约缺陷）：
 # key = (工具文件相对路径, HTTP 方法, 归一化端点)
 ENDPOINT_ALLOWLIST: dict[tuple[str, str, str], dict[str, str]] = {
-    ("app/tools/processing_item_manage.py", "PUT", "/api/admin/processing-items/{}/status"): {
-        "reason": "ProcessingItemController 无 PUT /{id}/status 映射（只有 GET/POST/PUT/DELETE /{id} 与 POST /calculate）→ 启用/停用加工项恒 404",
-        "owner": "processing 域归属包（processing_item_manage ↔ ProcessingItemController 端点对齐）",
-        "issue": "#3543",
-    },
+    # 当前为空：processing_item_manage 的 PUT /processing-items/{}/status（404）已由 #3591 改用真实端点
 }
 
 # ── 白名单：存量缺陷工作清单（每条必须带 reason + owner + issue）─────────────
@@ -152,32 +154,7 @@ ENDPOINT_ALLOWLIST: dict[tuple[str, str, str], dict[str, str]] = {
 # 修复归属包改完 payload 后，**必须删除对应条目**（否则 test_allowlist_entries_are_current 红）。
 ALLOWLIST: dict[tuple[str, str, str], dict[str, str]] = {
     # ── product 域（issue #3574）───────────────────────────────────────────
-    ("app/tools/product_manage.py", "/api/admin/agent/products", "skus"): {
-        "reason": "AgentProductCreateRequest 无 skus 字段（SKU 由 colors/doorWidths 等派生）→ 传了也不落库；schema 却声明该参数，反向诱导 LLM 传",
-        "owner": "product 域归属包（product_manage schema+payload 对齐）",
-        "issue": "#3574",
-    },
-    ("app/tools/product_search.py", "/api/admin/products", "minPrice"): {
-        "reason": "ProductQueryRequest 无 minPrice（就近字段是 stockBelow）→ 价格筛选 100% 无效却返回全量 → 「幻觉式筛选」后 LLM 叙述成已筛出",
-        "owner": "product 域归属包（product_search 价格/库存筛选）",
-        "issue": "#3574",
-    },
-    ("app/tools/product_search.py", "/api/admin/products", "maxPrice"): {
-        "reason": "同 minPrice：ProductQueryRequest 无 maxPrice → 静默忽略，价格区间筛选恒失效",
-        "owner": "product 域归属包（product_search 价格/库存筛选）",
-        "issue": "#3574",
-    },
-    ("app/tools/product_search.py", "/api/admin/products", "stockStatus"): {
-        "reason": "ProductQueryRequest 无 stockStatus（就近字段是 stockBelow，语义不同）→ schema 教的 in_stock/low_stock/out_of_stock 词表后端不存在",
-        "owner": "product 域归属包（product_search 价格/库存筛选）",
-        "issue": "#3574",
-    },
     # ── processing 域（issue #3543）────────────────────────────────────────
-    ("app/tools/processing_item_manage.py", "/api/admin/processing-items/{}", "price"): {
-        "reason": "ProcessingItemUpdateRequest 字段名是 unitPrice（无 price）→ 改单价 100% 无效，且 data 把 price 原样回显成「已更新」",
-        "owner": "processing 域归属包（processing_item_manage 单价字段对齐）",
-        "issue": "#3543",
-    },
     ("app/tools/processing_item_manage.py", "/api/admin/processing-categories", "description"): {
         "reason": "ProcessingCategoryCreateRequest 只有 name/sortOrder/status（无 description）→ 建分类时 LLM 填的说明被丢弃",
         "owner": "processing 域归属包（加工分类 description 双方对齐）",
@@ -191,11 +168,6 @@ ALLOWLIST: dict[tuple[str, str, str], dict[str, str]] = {
     # ── HR / 通知 / 售后域 ────────────────────────────────────────────────
     ("app/tools/aftersale_query.py", "/api/admin/after-sales", "customerId"): {
         "reason": "AfterSalesController 列表端点只声明 page/size/status/ticketType/keyword（无 customerId）→ 多查全量再本地裁剪，total 与分页语义已错",
-        "owner": "aftersales 域归属包（本门禁新发现，待建 issue）",
-        "issue": "#3570",
-    },
-    ("app/tools/after_sales_manage.py", "/api/admin/agent/after-sales", "source"): {
-        "reason": "AgentAfterSalesCreateRequest 无 source 字段（本门禁新发现）→ 工单来源标记 'agent' 静默丢弃",
         "owner": "aftersales 域归属包（本门禁新发现，待建 issue）",
         "issue": "#3570",
     },
