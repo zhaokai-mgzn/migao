@@ -1,4 +1,4 @@
-# case_ids: PG-016, PP-006, CU-005, OR-023
+# case_ids: PG-016, PP-006, CU-005, OR-023, OR-006, OR-026
 """覆盖矩阵的 **action 级**判据契约（issue #3667）。
 
 **为什么需要**：工具级矩阵问不出「这个工具**有**用例，但它的某个 action 从没被测」——
@@ -207,11 +207,11 @@ class TestDanglingActionBlocks:
         assert any("已销账但条目未删" in p for p in rep.check_problems())
 
 
-def _baseline_file(tmp_path, kind: str):
+def _baseline_file(tmp_path, kind: str, tool: str = "order_manage"):
     f = tmp_path / "eval-coverage-baseline.yml"
     f.write_text(
         "version: 2\nentries:\n"
-        "  - tool: order_manage\n"
+        f"  - tool: {tool}\n"
         f"    kind: {kind}\n"
         "    persona: mibao\n"
         '    issue: "#3669"\n'
@@ -247,22 +247,28 @@ class TestRepoActionLevelJudgement:
             assert rep.check_problems() == [], f"{persona}: {rep.check_problems()}"
 
     def test_repo_dangling_action_blocks_without_baseline(self):
-        """**去掉豁免清单必红** + 仓库真值归零（CU-005 修正后，issue #3683）。
+        """**去掉豁免清单必红** + 仓库真值只剩**已登记**的那一条（issue #3701）。
 
-        两半锁，缺一不可：
-          ① 仓库真值：真实用例库**不得再有**悬空 action —— CU-005 的
-             `customer_manage(action=query)` 已按真实语义改为 `action: list`（该工具枚举无
-             query），两端都必须报 0 处；将来新引入的悬空 action 会立刻打红本断言；
-          ② 判据不被削弱：把一个人为的悬空 action 注入**真实用例集**后，在**无清单**下
-             必须阻塞（`action_dangling` + `check_problems()` + `blocking_gaps()` 三处同验）——
-             真实仓库已无悬空 action 可作反例（那正是本次修复的目标），故用注入方式在同一套
-             引擎（真实 cases + 真实工具枚举）上继续锁住「去掉清单必红」。
+        三半锁，缺一不可：
+          ① 仓库真值：悬空 action 只剩 `order_query(action=detail)`（OR-006，**已登记**在
+             `.github/eval-coverage-baseline.yml`）—— CU-005 的
+             `customer_manage(action=query)` 已按真实语义改为 `action: list`（#3683），
+             OR-006 这条是 #3701 补齐盲区②后**新暴露的存量项**（不是本 PR 引入的，
+             归用例资产包按 #3702 销账）；将来新引入的悬空 action 会立刻打红本断言；
+          ② **去掉清单必红**：不带清单时 `check_problems()` 必须报出该条（含用例 ID）——
+             这正是门禁的拦截力所在（清单只豁免**已登记**项）；
+          ③ 判据不被削弱：把人为悬空 action 注入**真实用例集**后，在无清单下必须阻塞
+             （`action_dangling` + `check_problems()` + `blocking_gaps()` 三处同验）。
         """
-        for persona in ("mibao", "xiaobu"):
-            rep = _rep(self.cases, persona)
-            assert rep.action_dangling == [], (
-                f"{persona}: 用例库声明了工具不存在的 action"
-                f"（配置错误，断言永不满足）—— {rep.action_dangling}")
+        rep = _rep(self.cases, "mibao")
+        assert rep.action_dangling == [("order_query", "detail")], (
+            f"B 端悬空 action 集合变了（新引入的悬空声明会在此暴露）: {rep.action_dangling}")
+        assert rep.action_dangling_cases[("order_query", "detail")] == ["OR-006"]
+        assert any("order_query(action=detail)[OR-006]" in p for p in rep.check_problems()), (
+            "无清单时必须报出该悬空 action（去掉豁免清单必红）")
+        assert _rep(self.cases, "xiaobu").action_dangling == [], (
+            "C 端不得有悬空 action（order_query 不是小布工具）")
+
         injected = list(self.cases) + [
             _case("T-DANGLING", expectations=[{"tool": "order_manage",
                                               "args": {"action": "no_such_action"}}])]
@@ -282,3 +288,88 @@ class TestRepoActionLevelJudgement:
     def test_xiaobu_has_no_action_dangling(self):
         rep = _rep(self.cases, "xiaobu")
         assert rep.action_dangling == []
+
+
+# ── ⑥ 门禁侧的三处假绿盲区（issue #3701）─────────────────────────────────────
+# 背景：判据本身（#3667 落地）是对的，但**接入门禁的写法**漏了三处，实测全部放行：
+#   ① 只遍历 `action_catalog()`（**有** action 维度的工具）；
+#   ② 只扫 `select_cases_for_persona()` 选中的用例（`skip_reason` 非空即丢）；
+#   ③ 不收 `repeat_until.action`。
+# 本组把三处**逐条锁死**（红证用合成用例，不依赖"仓库里恰好有违规"——仓库的那条
+# `order_query(action=detail)` 已登记进清单，将来销账后本组仍必须有效）。
+
+class TestGateActionDanglingBlindspots:
+    """三处盲区的门禁级红证（#3701）；每条都在**真实工具枚举**上验，不 mock 真值。"""
+
+    def test_blindspot1_action_on_tool_without_action_param_is_reported(self):
+        """**盲区①**：`order_create` 没有 action 参数 ⇒ 声明 `action: create` 必被报出。
+
+        OR-026 被拒的写法（`must_fail: [{tool: order_create, action: create}]`）：
+        旧门禁只遍历"有 action 维度的工具"，这条**整个不被检查** —— 而 runner 侧
+        `must_fail` 遇到「从未调用」是**通过**，于是缺陷静默空转。
+        """
+        rep = _rep([_case("T-B1", must_fail=[{"tool": "order_create", "action": "create"}])],
+                   tools={"order_create", "order_query"})
+        assert rep.action_dangling == [("order_create", "create")], rep.action_dangling
+        assert rep.action_dangling_cases == {("order_create", "create"): ["T-B1"]}
+        assert ("order_create", "action_dangling") in rep.blocking_gaps()
+        assert any("order_create(action=create)[T-B1]" in p for p in rep.check_problems())
+
+    def test_blindspot2_skipped_case_is_still_scanned(self):
+        """**盲区②**：`skip_reason` 非空的用例照扫 —— skip 免"覆盖统计"，不免"声明合法性"。
+
+        红证用**真仓库的 skip 用例**注入悬空 action（而不是断言"仓库里恰好有违规"）：
+        用例解 skip 时就不得带着永不满足的断言上场。
+        """
+        skipped = [c for c in load_case_dicts(str(CASES_DIR))
+                   if str(c.get("skip_reason") or "").strip()]
+        assert skipped, "仓库应有 skip 用例（否则本断言失去意义）"
+        probe = dict(skipped[0])
+        probe["must_fail"] = [{"tool": "order_create", "action": "create"}]
+        rep = _rep([probe], tools={"order_create"})
+        assert rep.cases_run == 0, "前置条件：该用例确实被 skip（不参与覆盖统计）"
+        assert rep.uncovered == ["order_create"], "前置条件：工具级确实零覆盖"
+        assert rep.action_dangling == [("order_create", "create")], (
+            "skip 的用例必须仍参与 action 存在性校验（旧门禁整体跳过 = 假绿）")
+
+    def test_blindspot3_repeat_until_action_is_collected(self):
+        """**盲区③**：`repeat_until.action` 悬空 → 必被报出（停条件永不命中 = 空转）。"""
+        rep = _rep([_case("T-B3", expectations=[{"tool": "order_query"}],
+                          user_inputs=[{"repeat_until": {"tool_called": "order_query",
+                                                         "action": "detail", "max": 3}}])],
+                   tools={"order_query"})
+        assert rep.action_dangling == [("order_query", "detail")], rep.action_dangling
+        assert any("order_query(action=detail)[T-B3]" in p for p in rep.check_problems())
+
+    def test_repeat_until_is_not_counted_as_coverage_evidence(self):
+        """**分档锁**：停条件只参与"是否存在"校验，**不**算覆盖证据（否则 action 缺口静默缩水）。"""
+        rep = _rep([_case("T-B4", expectations=[{"tool": "order_manage"}],
+                          user_inputs=[{"repeat_until": {"tool_called": "order_manage",
+                                                         "action": "cancel", "max": 3}}])],
+                   tools={"order_manage"})
+        assert ("order_manage", "cancel") in rep.action_uncovered, (
+            "`repeat_until.action` 被当成覆盖证据了 —— 覆盖矩阵会虚高")
+
+    def test_blindspot1_does_not_fire_for_tools_without_source_file(self):
+        """**假红面**：工具源码文件不存在（拼错/已删除）不在此判据报 —— 那是 `dangling_cases` 的事。"""
+        rep = _rep([_case("T-B5", expectations=[{"tool": "no_such_tool",
+                                                 "args": {"action": "x"}}])],
+                   tools={"no_such_tool"})
+        assert rep.action_dangling == [], (
+            "不存在的工具被当成『无 action 参数』误报 —— 会与 dangling_cases 双报且指错方向")
+
+    def test_baselined_dangling_is_exempt_but_stays_visible(self, tmp_path):
+        """清单登记后不阻塞，但报告**仍显示该条**（工作清单必须看得见待销账项）。"""
+        bl = load_baseline(_baseline_file(tmp_path, "action_dangling", tool="order_query"),
+                           "mibao", {"order_query"})
+        rep = _attach_baseline(
+            _rep([_case("T-B6", expectations=[{"tool": "order_query",
+                                               "args": {"action": "detail"}}])],
+                 tools={"order_query"}), bl)
+        assert rep.check_problems() == [], rep.check_problems()
+        assert "order_query(action=detail)" in render_action_gaps(rep), (
+            "登记豁免后报告里看不到该条 —— 工作清单失去销账线索")
+        # 缺口消失（销账）后条目即陈旧 → 阻塞，逼删条目（清单只可能变短）
+        rep2 = _attach_baseline(_rep([], "mibao", tools={"order_query"}), bl)
+        assert rep2.baseline_stale_blocking == [("order_query", "action_dangling")]
+

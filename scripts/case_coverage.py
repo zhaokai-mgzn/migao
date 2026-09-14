@@ -71,7 +71,12 @@ _MIN_REASON_LEN = 8
 #     阻塞即大面积飘红 = 用存量债锁死流水线；且它本质是**厚度**指标（§14.5 已把"仅 1 条用例"
 #     定为只报告），不是"能力完全没被测"的结构性缺失；
 #   · `action_dangling`（用例声明了工具**不存在**的 action）→ **阻塞**：这是配置错误
-#     （断言永不满足 = 假红/假绿），与拼错工具名的 `dangling_cases` 同一家族，实测仅 1 处。
+#     （断言永不满足 = 假红/假绿），与拼错工具名的 `dangling_cases` 同一家族。
+#     #3701 补齐三处**假绿盲区**（旧实现实测全部放行）：① 只遍历「有 action 维度的工具」
+#     （OR-026 那种 `must_fail: [{tool: order_create, action: create}]` 被整条跳过）；
+#     ② 只扫 `select_cases_for_persona()` 选中的用例（skip 的用例藏住悬空声明，如 OR-006）；
+#     ③ 不收 `repeat_until.action`。判据唯一实现在 `action_binding_violations`（下方），
+#     L0 不变式 `tests/unit_ci_workflows/test_eval_assertion_action_binding.py` 调用同一函数。
 TOOLS_DIR = REPO_ROOT / "backend" / "ai-agent-service" / "app" / "tools"
 _ACTION_PROP_RE = re.compile(r'"action"\s*:\s*\{')
 _ENUM_RE = re.compile(r'"enum"\s*:\s*\[(.*?)\]', re.S)
@@ -178,6 +183,93 @@ def case_declared_actions(case) -> dict:
     for spec in get("db_verify"):
         if isinstance(spec, dict):
             add(spec.get("tool") or spec.get("source"), spec.get("action"))
+    return out
+
+
+def repeat_until_bindings(case) -> list:
+    """用例 `user_inputs[].repeat_until.action` 声明的 `(tool, action)`（#3667 的 action 级停条件）。
+
+    ⚠️ 只服务于「声明的 action **是否存在**」这一配置合法性判据（`action_binding_violations`），
+    **不作为覆盖证据**（停条件不等于断言，拿它当"该 action 被测过"会虚增覆盖率）。
+    """
+    out = []
+    for ui in (case.get("user_inputs") if isinstance(case, dict)
+               else getattr(case, "user_inputs", None)) or []:
+        if not isinstance(ui, dict):
+            continue
+        spec = ui.get("repeat_until")
+        for s in (spec if isinstance(spec, list) else [spec]):
+            if not isinstance(s, dict):
+                continue
+            tool = str(s.get("tool_called") or s.get("tool") or "").strip()
+            action = str(s.get("action") or "").strip()
+            if tool and action:
+                out.append((tool, action))
+    return out
+
+
+def case_action_bindings(case) -> dict:
+    """用例声明的**全部** `tool → {action}`：机器可判断言 + `repeat_until.action`。
+
+    与 `case_declared_actions` 的分工（有意分开，别合并）：后者是**覆盖证据**
+    （skip 的用例不算证据、停条件也不算证据）；本函数只喂 `action_binding_violations`
+    这一配置合法性判据 —— 把停条件也算成覆盖会让 `action_uncovered` 静默缩水。
+    """
+    out = {t: set(a) for t, a in case_declared_actions(case).items()}
+    for tool, action in repeat_until_bindings(case):
+        out.setdefault(tool, set()).add(action)
+    return out
+
+
+def action_enum(tool: str) -> set | None:
+    """工具源码声明的 action 枚举；`None` = 该工具**没有源码文件**（不在本判据职责内）。
+
+    与 `tool_declared_actions` 同一份解析实现，只多区分「工具不存在」（None）与
+    「工具存在但没有 action 维度」（空集）—— 后者是**结构性配置错误**（声明任何 action
+    都永不满足，必须报出），前者交给工具级 `dangling_cases` 判据，避免同一件事报两遍。
+    """
+    if not (TOOLS_DIR / f"{tool}.py").exists():
+        return None
+    return tool_declared_actions(tool)
+
+
+def registered_tools() -> set:
+    """两端注册表并集（B 端米宝 + C 端小布）—— 未注册工具由 `dangling_cases` 判据管。"""
+    return set(lr.mibao_real_toolset()) | set(lr.XIAOBU_TOOLS)
+
+
+def action_binding_violations(cases, tools=None) -> list:
+    """`[(case_id, tool, action, kind)]`；kind = `no_action_param`（工具无 action 维度）
+    或 `not_in_enum`（枚举不含该值）—— 两者都是"断言永不满足"，都不静默跳过。
+
+    **「声明的 action 必须真实存在于该工具的 action 枚举」的唯一实现点**：门禁
+    （`build_coverage_report`，两个 CLI 共用）与 L0 静态不变式
+    （`tests/unit_ci_workflows/test_eval_assertion_action_binding.py`）都调用本函数，
+    禁止任何一方另写一套 —— 两套判据必然漂移，后果就是"单测绿 ≠ 门禁绿"。
+
+    三处**必须**的覆盖面（issue #3701：旧实现的三处假绿盲区，实测全部放行）：
+      ① 工具**没有** action 维度时声明 `action` 同样是悬空（`no_action_param`）——
+         旧实现只遍历「有 action 维度的工具」，`must_fail: [{tool: order_create, action: create}]`
+         （OR-026 被拒的写法，runner 里整条静默跳过）**整个不被检查**；
+      ② `skip_reason` 非空的用例**照扫**（调用方传入全量用例，别先过
+         `select_cases_for_persona`）—— 用例解 skip 时不得带着永不满足的声明上场
+         （OR-006 的 `order_query(action=detail)` 就是靠 skip 藏住的，见 #3702）；
+      ③ 收 `repeat_until.action`（停条件悬空 → 用例空转到轮数耗尽）。
+    """
+    tools = registered_tools() if tools is None else set(tools)
+    out = []
+    for case in cases:
+        cid = case.get("id") if isinstance(case, dict) else getattr(case, "id", "?")
+        for tool, acts in case_action_bindings(case).items():
+            if tool not in tools:
+                continue                    # 未注册工具：另有工具级 `dangling_cases` 判据
+            enum = action_enum(tool)
+            if enum is None:
+                continue                    # 工具无源码文件：工具存在性另判
+            for a in sorted(acts):
+                if a not in enum:
+                    out.append((cid, tool, a,
+                                "not_in_enum" if enum else "no_action_param"))
     return out
 
 
@@ -428,6 +520,9 @@ class CoverageReport:
     action_cases: dict = field(default_factory=dict)    # (tool, action) → [用例 ID]（被断言的 action）
     action_uncovered: list = field(default_factory=list)  # [(tool, action)] 有工具用例但该 action 零覆盖 → 只报告
     action_dangling: list = field(default_factory=list)   # [(tool, action)] 用例声明了工具不存在的 action → 阻塞
+    # (tool, action) → [用例 ID]（**含 skip_reason 非空的用例**，见 #3701 盲区②：
+    # skip 只免"参与覆盖统计"，不免"声明合法性"）。dangling 报错信息从这里取。
+    action_dangling_cases: dict = field(default_factory=dict)
 
     @property
     def covered(self) -> int:
@@ -526,7 +621,7 @@ class CoverageReport:
             problems.append(
                 f"{len(unresolved_dangling)} 处用例声明了工具**不存在**的 action"
                 f"（断言永不满足 = 假红/假绿，同 `dangling_cases` 家族）: "
-                + ", ".join(f"{t}(action={a})[{','.join(self.action_cases.get((t, a)) or [])}]"
+                + ", ".join(f"{t}(action={a})[{','.join(self.action_dangling_cases.get((t, a)) or [])}]"
                             for t, a in unresolved_dangling)
                 + "\n     ⇒ 核对工具 schema 的 action 枚举后改用例声明"
             )
@@ -617,6 +712,13 @@ def build_coverage_report(cases, persona: str, tools=None, exempt=None) -> Cover
     # 单 action 工具（枚举只有 1 项，如 `customer_order_query` 的 `list`）**不报未覆盖**：
     # 调该工具 == 调那个 action，工具级已覆盖即 action 级已覆盖 —— 报出来是**假缺口**
     # （会把 100% 覆盖的工具显示成"未覆盖 1/1"）。悬空检测对它们照旧生效（声明错 action 仍是错）。
+    # ── 悬空 action（#3667 引入 / #3701 补 3 处盲区）：判据**唯一实现**在
+    # `action_binding_violations`（与 L0 不变式同一函数）。
+    # 与上方覆盖统计**有意分开**：
+    #   · 扫**全库**用例（含 `skip_reason` 非空者）—— skip 免的是"参与覆盖统计"，
+    #     不免"声明合法性"（OR-006 的 `order_query(action=detail)` 就是靠 skip 藏住的）；
+    #   · 覆盖「工具没有 action 维度」（旧实现只遍历 `action_tools` = 放行）；
+    #   · 收 `repeat_until.action`。
     rep.action_tools = action_catalog(tools)
     declared_by_tool: dict = {}
     for (tool, action) in rep.action_cases:
@@ -625,7 +727,9 @@ def build_coverage_report(cases, persona: str, tools=None, exempt=None) -> Cover
         declared = declared_by_tool.get(tool, set())
         if rep.cases.get(tool) and len(acts) > 1:
             rep.action_uncovered += [(tool, a) for a in sorted(acts - declared)]
-        rep.action_dangling += [(tool, a) for a in sorted(declared - acts)]
+    for cid, tool, action, _kind in action_binding_violations(cases, tools):
+        rep.action_dangling_cases.setdefault((tool, action), []).append(cid)
+    rep.action_dangling = sorted(rep.action_dangling_cases)
     return rep
 
 
@@ -643,6 +747,18 @@ def render_action_gaps(rep: CoverageReport, persona_label: str = "", md: bool = 
     total_actions = sum(len(a) for a in rep.action_tools.values())
     multi = len([t for t, a in rep.action_tools.items() if len(a) > 1])
     out = []
+
+    def _actual(tool: str) -> str:
+        """该工具真实声明的 action；空 = **没有 action 维度**（声明任何 action 都悬空）。"""
+        acts = sorted(rep.action_tools.get(tool) or [])
+        return ", ".join(acts) if acts else "（该工具无 action 参数）"
+
+    def _ids(pair) -> str:
+        return ", ".join(rep.action_dangling_cases.get(pair) or [])
+
+    def _exempt_mark(tool: str) -> str:
+        return "（已登记存量豁免）" if rep.is_baselined(tool, "action_dangling") else ""
+
     if md:
         out += ["", "## ⑦ action 级覆盖（工具级之下的一层，issue #3667）", "",
                 f"- 有 action 维度的工具：**{len(rep.action_tools)} 个**（多 action {multi} 个），"
@@ -652,8 +768,8 @@ def render_action_gaps(rep: CoverageReport, persona_label: str = "", md: bool = 
         if rep.action_dangling:
             out += ["", "| 用例声明 | 工具 | 不存在的 action | 工具实际 action |", "|---|---|---|---|"]
             for tool, action in rep.action_dangling:
-                out.append(f"| {', '.join(rep.action_cases.get((tool, action)) or [])} | `{tool}` | "
-                           f"`{action}` | {', '.join(sorted(rep.action_tools.get(tool) or []))} |")
+                out.append(f"| {_ids((tool, action))}{_exempt_mark(tool)} | `{tool}` | "
+                           f"`{action}` | {_actual(tool)} |")
         if rep.action_uncovered:
             out += ["", "| 工具 | 能力 | 未覆盖 action | 已覆盖 action |", "|---|---|---|---|"]
             for tool in sorted({t for t, _a in rep.action_uncovered}):
@@ -672,9 +788,8 @@ def render_action_gaps(rep: CoverageReport, persona_label: str = "", md: bool = 
         out.append("")
         out.append("  ❌ 用例声明了工具**不存在**的 action（`--check` 拦截；断言永不满足 = 假红/假绿）:")
         for tool, action in rep.action_dangling:
-            ids = ", ".join(rep.action_cases.get((tool, action)) or [])
-            out.append(f"     {tool}(action={action})  ← {ids}"
-                       f"；该工具实际 action: {', '.join(sorted(rep.action_tools.get(tool) or []))}")
+            out.append(f"     {tool}(action={action})  ← {_ids((tool, action))}{_exempt_mark(tool)}"
+                       f"；该工具实际 action: {_actual(tool)}")
     if rep.action_uncovered:
         out.append("")
         out.append("  ⚠️ 未被任何用例断言的 action（只报告不阻塞 —— 它本质是**厚度**指标，")

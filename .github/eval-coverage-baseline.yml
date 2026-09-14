@@ -30,14 +30,14 @@
 #     "补了用例的那个包"（它不知道本清单存在）把 main 变红 —— 用工作清单给别人下绊子。
 #
 # ⚠️ 这是**工作清单**，不是免死金牌：补完用例 → 删条目 → job 保持绿。
-#    清单应**单调缩短**；entries 变长需要 review 说明（当前 1 条阻塞 + 3 条薄覆盖，全部有归属；
-#    #3667 引入的 1 条 action_dangling 已由 #3683/#3669 销账删除，留档见文件末）。
+#    清单应**单调缩短**；entries 变长需要 review 说明（当前 2 条阻塞 + 3 条薄覆盖，全部有归属；
+#    #3667 引入的 customer_manage/action_dangling 已由 #3683/#3669 销账删除，留档见文件末）。
 
 version: 2
 # ⚠️ 本文件由 `yaml_light`（仓库零依赖解析器）读取 —— 只能用**单行标量**：
 #    多行字符串（`>-`）/ flow style 会让解析在缩进更深的行处**静默停止**，
 #    entries 整段读成空 = 存量缺口全部当作新缺口阻塞（门禁全红，且看不出原因）。
-note: "存量缺口 burn-down 清单（#3575 引入）。只豁免已登记项；新缺口照旧阻塞；补完用例即删条目（陈旧登记被判红）。当前 1 条阻塞（order_manage/missing_positive）+ 3 条薄覆盖（validate_input / session_manage / sku_update），全部有归属；action_dangling 条目已于 2026-09-15（issue #3683/#3669）销账删除。"
+note: "存量缺口 burn-down 清单（#3575 引入）。只豁免已登记项；新缺口照旧阻塞；补完用例即删条目（陈旧登记被判红）。当前 2 条阻塞（order_manage/missing_positive + order_query/action_dangling）+ 3 条薄覆盖（validate_input / session_manage / sku_update），全部有归属；customer_manage 的 action_dangling 条目已于 2026-09-15（issue #3683/#3669）销账删除。"
 
 entries:
   # ── 结构性缺失（阻塞项，靠本清单才保持绿）──────────────────────────────
@@ -51,6 +51,19 @@ entries:
     issue: "#3603"
     reason: 仅 OR-007/CU-005 两条 adversarial —— 正常档的改状态/发货路径无评测证据
     added: "2026-09-14"
+
+  # action_dangling（issue #3701 补齐 3 处假绿盲区后**新暴露**的存量项，不是本次引入）：
+  #   OR-006（.github/cases/order.yml）声明 `order_query(action=detail)`，而该工具枚举真值是
+  #   `list / statistics / follow_status_stats`（app/tools/order_query.py）—— 该 expectation
+  #   永不满足（参数级匹配下必红；报了错也算过的形态则是假绿，见 migao-acceptance v1.2）。
+  #   它此前不可见，是因为该用例 `skip_reason` 非空、旧门禁只扫"被选中的可跑用例"。
+  #   销账方式（#3702，归用例资产包）：解 skip 时一并把该 action 按真实语义修正 → 删本条目。
+  - tool: order_query
+    kind: action_dangling
+    persona: mibao
+    issue: "#3702"
+    reason: OR-006 声明 order_query(action=detail)（该工具枚举无 detail）且被 skip_reason 藏住，解 skip 时须一并按真实语义修正
+    added: "2026-09-15"
 
   # ── 厚度不足（本来就只报告；登记 = 进工作清单，便于逐条销账）──────────────
   - tool: validate_input
