@@ -71,7 +71,15 @@ MAPPING_RULES = [
     # 换货 / 售后工单引导 → AS-007
     (r"aftersales|after_sales", ["AS-007"]),
     # 建品（属性 / 加工项价格 / 参数完整性）→ PR-019、PR-020
-    (r"product_skill|product_manage|processing_item", ["PR-019", "PR-020"]),
+    # ⚠️ 关键词收窄（#3624）：原为 `processing_item`（裸词），把**加工项目录**的
+    # `app/tools/processing_item_manage.py` / `processing_item_query.py` 一并吞进商品域
+    # → 改加工项写路径推出的却是 PR-019/PR-020（断言 `product_manage(action=create)`，
+    # 与目录 CRUD 无因果），而加工项目录自己的 PP-* 用例一条没跑（#3591 收口实测）。
+    # 现在只锚「商品侧」加工项载体：product_processing_item_manage（商品挂载/摘除加工项）
+    # 与 processing_items.py（查某商品关联加工项及自定义价），二者都属建品价格面。
+    (r"product_skill|product_manage|product_processing_item_manage"
+     r"|app/tools/processing_items\.py",
+     ["PR-019", "PR-020"]),
     # 交互卡渲染 / 前端 → CH-010、CH-019
     (r"interact\.py|interactive|card", ["CH-010", "CH-019"]),
     # 图片 / 视觉链路 → CH-021、CH-026
@@ -91,6 +99,41 @@ MAPPING_RULES = [
     # 承载文件 = 客户档案 Tool 本体 + 客户域 Skill/prompt/示例（相对 app/ 的路径）。
     (r"customer_(manage|skill|general_skill)|prompts/customer\.md|SKILL-customer|EXAMPLES-customer",
      ["CU-003", "CU-004"]),
+    # 人事（员工 / 角色）Skill 本体 → HR-001（员工列表 → employee_manage(list)）、
+    # HR-005（建角色 + 分配权限 → role_manage(create) + **确认卡轮**）—— #3624 补齐。
+    # 为什么现在必须补：#3577（产品裁定「交互形态统一」）刚给 staff 绑上 `interact`
+    # （写操作 confirm 卡），交互形态变了；此前改这个文件**零 HR 用例**（落兜底网 = 只报告）。
+    # 为什么是这两条（读过用例真实内容）：HR-001 覆盖 employee_manage 绑定，HR-005 覆盖
+    # role_manage 绑定 + validate→confirm→execute 的确认链。刻意**不**含 HR-002/HR-003
+    # （employee_manage 写路径）：本地 flake 台账里它们是 `reproducible` 红（非波动），
+    # 放进强信号集 = 每个改 staff 的 PR 恒红且与本 PR 无因果（假阻塞）。
+    (r"app/graph/skills/staff_skill\.py", ["HR-001", "HR-005"]),
+    # 系统配置（设置 / 站内通知）Skill 本体 → ST-003（改密码 → settings_manage(change_password)
+    # + 确认）、ST-005（标已读 → notification_manage(mark_read)）—— #3624 补齐。
+    # 两条分别覆盖该 skill 的两个需确认写工具（settings_manage / notification_manage），
+    # 也就是 #3577 补绑 interact 后最需要真信号的两条写路径。
+    (r"app/graph/skills/settings_skill\.py", ["ST-003", "ST-005"]),
+    # 数据分析（看板 / 财务 / 会话）Skill 本体 → DA-004（会话监控 → session_manage(monitor)）、
+    # FN-001（登记线下收款 → finance_api(create_transaction) + 确认）—— #3624 补齐。
+    # 同样按「需确认写工具」挑：data 绑的写工具是 finance_api / session_manage，各取一条；
+    # 不取 DA-001~DA-003（dashboard_stats 只读，改 skill 绑定与否不由它们判定）
+    # 也不取 FN-004（台账里 `reproducible` 红，同 HR-002/HR-003 的理由）。
+    (r"app/graph/skills/data_skill\.py", ["DA-004", "FN-001"]),
+    # 加工项目录（PP-*）→ PP-002（分类/目录查询，期望 `processing_item_query or
+    # processing_item_manage`）、PP-006（计价方式 + 新增加工项，期望
+    # `processing_item_query(keyword=打孔)` + `processing_item_manage(action=create_processing_item)`
+    # + 确认轮）—— #3624 补齐。这是**目录 CRUD** 与商品侧挂载（PR-019/PR-020）的分界。
+    # 台账提示 PP-002/PP-006 历史上 `reproducible` 红（多为 #3555/#3591 旧契约缺陷余波），
+    # 已按 §14.2 记入归因队列；本门禁现为「报告制」，不会阻塞合并。
+    (r"app/tools/processing_item_manage\.py|app/tools/processing_item_query\.py",
+     ["PP-002", "PP-006"]),
+    # 加工单生成（PG-*）→ PG-013（「最近有没有已确认、需要加工的订单？」→ 生成加工单 + 确认轮）
+    # —— #3624 补齐。只锚 `generate`：PG-001~PG-012/PG-014 全部 skip（Java 单测验证），
+    # PG-013 是该域**唯一可跑的 LLM 用例**，数据前置见
+    # `tests/agent_eval/fixtures/mibao_eval_seed.sql`（EVAL-MB-ORD-0002，confirmed + 带加工项）。
+    # `processing_order_query` / `processing_order_update` **刻意不锚**：零可跑用例，
+    # 锚了就是「挂不相关用例」= 假阻塞（不变量测试锁住了这条边界）。
+    (r"app/tools/processing_order_generate\.py", ["PG-013"]),
 ]
 
 # 无规则命中时的默认集（§13.2 的四个核心域各取一条）。
