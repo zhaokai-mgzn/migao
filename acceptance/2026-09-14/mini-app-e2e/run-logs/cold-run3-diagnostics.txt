@@ -1,0 +1,79 @@
+npm warn Unknown env config "manage-package-manager-versions". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+
+> mini-app@1.0.0 test:e2e
+> node e2e/run.js
+
+🚀 启动小布小程序 E2E 验收（微信开发者工具模拟器）...
+✅ 构建新鲜度检查通过[content-hash]：内容指纹 fc36841d9431…（dist/.build-stamp.json 构建于 2026-09-14T13:05:58.349Z）
+[harness] launch 尝试（port=9571）
+✅ 已连接模拟器
+[harness] E2E_COLD_LOGIN=1 → 先清空模拟器 storage（去掉环境残留登录态），从零建立
+[harness] 已注入登录态 → 重启模拟器会话，让 App 冷启动读取注入态…
+[harness] launch 尝试（port=9513）
+[harness] 登录态：已登录（本 harness 经短信登录注入，已通过短信登录注入（https://app.migaozn.com/api/auth/sms/login），期望 botName=光头强 / tenantName=词元通达）
+✅ 页面就绪: pages/chat/index/index
+
+
+━━━ run ━━━
+  ✅ 入口页面为对话页 — path=pages/chat/index/index
+  ✅ 导航栏客服名已渲染（botName 非空） — name=光头强
+  ✅ 导航栏副标（租户名·智能购物助手） — text=词元通达 · 智能购物助手
+  ✅ 会话初始化完成（快捷操作/空态/消息任一出现） — quickActions=true empty=true bubbles=0
+  ✅ 「🔄 新对话」回到空会话（快捷操作重现） — 快捷操作已重现
+  ✅ 导航名与空态问候语同源（同一 botName） — nav=光头强 empty=你好，我是光头强
+  ✅ 快捷操作卡片存在（算料报价/查订单/找产品/售后咨询/查物流） — items=5 first=🧮算料报价
+  ✅ 点击快捷操作后用户消息上屏 — 帮我算一下窗帘用料和价格21:47
+  ✅ AI 助手回复（SSE 流式） — 🤖 AI 助手亲，算窗帘用料和价格没问题～ 需要您先告诉我几个尺寸信息，我帮您算得准准的😊亲，表格已经发您啦～ 填一…(len=198)
+  ✅ 输入条单容器：textarea 常驻且无模式切换键 — textarea=true container=true modeSwitch=false holdBtn=false
+  ✅ placeholder「发消息或按住说话」（双语义） — placeholder=发消息或按住说话
+  ✅ 空草稿时右下为「按住说话」语音键 — message-input__icon-btn--voice 存在
+  ✅ 有草稿 → 语音键收起 + 发送键出现且激活（自适应动作键） — voiceBefore=true voiceAfter=false sendClass=message-input__icon-btn message-input__icon-btn--send streamIdleWait=4ms
+  ✅ 键盘输入消息上屏（新气泡+新内容） — 你好，有什么热销的窗帘推荐？21:47
+  ❌ AI 回复第二条（SSE 流式，新气泡） — 2→2 条 assistant 气泡，120s 内未出现新回复；流式中(停止键)=false；末条AI气泡="🤖 AI 助手亲，为您挑了几款店里比较受欢迎的窗帘～ 😊  🛒 **热销窗"(len=324)；页面错误横幅=无
+  [shot] 05-final.png 稳定帧（第 2 次抓取才稳定）
+
+━━━ run ━━━
+  ✅ 切换到「我的」tab — path=pages/profile/index/index
+  ✅ 个人中心页渲染 — profile-page 存在
+  ✅ 用户信息区展示 — nickname=微信用户
+  ✅ 「我的订单」区块 — 存在
+  ✅ 「我的售后」区块 — 存在
+  ✅ 设置项（关于我们/隐私协议） — labels=关于我们 / 隐私协议
+  [shot] 02-profile-full.png 稳定帧（第 3 次抓取才稳定）
+
+━━━ run ━━━
+  [login] navigateTo 超时（已登录自动跳转的预期行为）: timeout waiting for automator response
+  ✅ 登录页可达 — 当前页=pages/chat/index/index（已登录自动跳转，预期行为）
+
+━━━ run ━━━
+  ✅ 页面就绪 — path=pages/chat/index/index
+  ✅ 第1轮：推荐窗帘收到回复（卡片或文本） — 出现 .message-bubble--assistant
+  [shot] 01-recommend.png 稳定帧（第 3 次抓取才稳定）
+  ✅ 第2轮：选品规格收到回复（新气泡） — 已回复
+  ✅ 第3轮：下单意图收到回复 — 已回复（信息性：form-card=未出现，纯文本收参同属合法）
+  ✅ S5：订单卡片手机号脱敏 — 脱敏格式匹配
+  [shot] 05-final.png 稳定帧（第 2 次抓取才稳定）
+
+━━━ run ━━━
+  ✅ 入口页面为对话页 — path=pages/chat/index/index
+  ✅ 新对话后快捷操作重现 — 快捷操作已出现
+  ✅ 售后咨询快捷卡片存在 — label=🤝售后咨询
+  ✅ 点击后用户消息上屏（售后意图） — 我想咨询售后问题21:51
+  ✅ AI 售后回复（SSE 流式） — 🤖 AI 助手亲，您好～ 我是米高窗帘的售后客服小布 😊 售后问题都能帮您处理，请问您需要哪方面的帮助呢？亲，抱歉刚才多弹了一步～ 您直接在上面的选项里点选…(len=152)
+  ✅ 回复语义与售后相关 — 含售后语义
+  [shot] 02-final.png 稳定帧（第 2 次抓取才稳定）
+
+━━━ run ━━━
+  ✅ 入口页面为对话页 — path=pages/chat/index/index
+  ✅ 输入框可用（单容器 textarea 常驻） — textarea 可见
+  ✅ 用户消息上屏（转人工意图） — 我要转人工21:52
+  ✅ AI 回复（转人工处理话术） — 🤖 AI 助手亲，已经帮您转接人工啦～不过现在是**非营业时间**，人工客服已经休息了😊  您先留言告诉我遇到的问题（比如订单号、是退换货还是其他问题），我…
+  ✅ C 端「已转人工」横幅出现 — handoff 横幅存在
+  [shot] 02-final.png 稳定帧（第 2 次抓取才稳定）
+
+
+📋 E2E 验收汇总:
+  ✅ PASS: 37 项
+  ❌ FAIL: 1 项
+  📄 报告: /Users/guangzhen.zk/ai native/migao/frontend/mini-app/e2e/report.md
+  🖼 截图: /Users/guangzhen.zk/ai native/migao/frontend/mini-app/e2e/screenshots/
