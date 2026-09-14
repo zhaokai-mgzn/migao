@@ -150,11 +150,15 @@ class ProcessingItemManageTool(BaseTool):
             },
             "width": {
                 "type": "number",
-                "description": "宽度（米，calculate_price 时按面积计价 per_area 必填；与 height 一起决定面积=宽×高）",
+                # exclusiveMinimum 0 = 与后端同口径（ProcessingItemService.calculateArea
+                # 对 <=0 的尺寸抛「尺寸必须大于 0」），也是 #3622 的数值下限不变式要求。
+                "exclusiveMinimum": 0,
+                "description": "宽度（米，calculate_price 时按面积计价 per_area 必填；与 height 一起决定面积=宽×高，须大于 0）",
             },
             "height": {
                 "type": "number",
-                "description": "高度（米，calculate_price 时按面积计价 per_area 必填；与 width 一起决定面积=宽×高）",
+                "exclusiveMinimum": 0,
+                "description": "高度（米，calculate_price 时按面积计价 per_area 必填；与 width 一起决定面积=宽×高，须大于 0）",
             },
             "status": {
                 "type": "string",

@@ -648,6 +648,9 @@ class TestCalculatePricePerAreaDimensions:
         assert "height" in props, "per_area 需要尺寸，schema 必须暴露 height"
         assert props["width"]["type"] == "number"
         assert props["height"]["type"] == "number"
+        # 数值下限（#3622 的 L0 不变式 + 与后端同口径：calculateArea 对 <=0 抛「尺寸必须大于 0」）
+        assert props["width"]["exclusiveMinimum"] == 0
+        assert props["height"]["exclusiveMinimum"] == 0
         blob = props["width"]["description"] + props["height"]["description"]
         assert "per_area" in blob, "描述必须点明 per_area 需要尺寸（否则模型不会填）"
         assert "面积" in blob
