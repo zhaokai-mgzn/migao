@@ -849,7 +849,7 @@
 ```
 你: 我想买遮光窗帘，米白 3 米，要纳米圈打孔加工
 你: 收货地址帮我改成浙江省杭州市西湖区文三路2号5幢202室
-你: (空)
+你: [🔁 按目标工具重复直至成功：order_create，最多 8 次]
 期望: customer_address_query
 期望: interact
 期望: order_create
@@ -2172,7 +2172,7 @@
 金额: order_create 「遮光窗帘」 → unit_price; subtotal; total
 ```
 真值: order.states, order.create-flow, processing-manage.crud
-溯源: 2026-09-07 改写（issue #3005，回滚 #2986）：行业加工费按米计价、辅料（罗马圈/四爪钩等）含在按米加工费中——回滚 per_piece 与「每米数量」密度（数量=ceil(面料米数×密度) 与实际车间工艺不符、数量隐藏导致 B 端无法对账），数量改为按计价方式派生且展示（per_meter=面料米数、per_set/fixed=1） ｜ tags: order_create, processing_item, pricing
+溯源: 2026-09-07 改写（issue #3005，回滚 #2986）：行业加工费按米计价、辅料（罗马圈/四爪钩等）含在按米加工费中——回滚 per_piece 与「每米数量」密度（数量=ceil(面料米数×密度) 与实际车间工艺不符、数量隐藏导致 B 端无法对账），数量改为按计价方式派生且展示（per_meter=面料米数、per_set/fixed=1）；2026-09-14 校准（#3538）：pre_clean 去 price 过滤（关键词去重，原 price 过滤限 100 元、在种子遮光窗帘 ¥168 的独立栈上恒不匹配 = 没去重） ｜ tags: order_create, processing_item, pricing
 
 ### OR-015. order_create 写操作前置校验必须真正执行（validate_input 规则分层修复，issue #3029 复盘） 🔵
 ```
@@ -2190,7 +2190,7 @@
 必填: validate_input() 字段 target_tool, target_action
 ```
 真值: order.create-flow
-溯源: 2026-09-08 新增（issue #3029 复盘）：_VALIDATION_RULES[order_create] 平铺结构而 execute 按 tool_rules.get(target_action) 分层读取 → 校验永远空转，手机号/必填空转；修复为 {create: {...}} 分层并对齐 product_manage，补 L2 单测；2026-09-09 校准：补「散剪规格→跳过加工项→确认」三轮（遮光窗帘有散剪/整卷需澄清售卖方式，单轮到不了 validate_input；probe 实证 4 轮走通） ｜ tags: order_create, validate_input, defense
+溯源: 2026-09-08 新增（issue #3029 复盘）：_VALIDATION_RULES[order_create] 平铺结构而 execute 按 tool_rules.get(target_action) 分层读取 → 校验永远空转，手机号/必填空转；修复为 {create: {...}} 分层并对齐 product_manage，补 L2 单测；2026-09-09 校准：补「散剪规格→跳过加工项→确认」三轮（遮光窗帘有散剪/整卷需澄清售卖方式，单轮到不了 validate_input；probe 实证 4 轮走通）；2026-09-14 校准（#3538）：pre_clean 去 price 过滤（关键词去重，原 price 过滤限 100 元、在种子遮光窗帘 ¥168 的独立栈上恒不匹配 = 没去重） ｜ tags: order_create, validate_input, defense
 
 ### OR-016. 创建订单 confirm 前必须主动询问加工项（商品绑定加工项时） 🔵
 ```
@@ -2322,7 +2322,7 @@
 ```
 你: 我想买遮光窗帘，米白 3 米，要纳米圈打孔加工
 你: [🤖 按上一轮卡片作答]
-你: (空)
+你: [🔁 按目标工具重复直至成功：order_create，最多 8 次]
 期望: product_search
 期望: product_detail
 期望: order_create
@@ -2454,7 +2454,7 @@
 
 ### PP-001. 加工项选择 - 分页翻页 🔵
 ```
-你: 给遮光窗帘（100元的那件）添加加工项
+你: 给遮光窗帘添加加工项
 你: 选打孔加工和韩式折边
 你: 确认
 期望: product_processing_item_manage(action=add)
@@ -2462,7 +2462,7 @@
 数据: data.pageMeta != null
 ```
 真值: processing-manage.crud, processing-manage.category-sort
-溯源: eval P004 + verification 2.13（查询部分同义）+ 2.14 的查询段 ｜ tags: processing_item, pagination
+溯源: eval P004 + verification 2.13（查询部分同义）+ 2.14 的查询段；2026-09-14 校准（#3538）：① 输入去「100元的那件」价格点名（独立栈种子只有 ¥168 款，点名不存在的价 → agent 澄清查无此价 → 流程不前进），自包含化同 AS-003（#3511）/CR-001/PR-005/PR-007/PR-021（#3518）先例；② pre_clean 去 price 过滤（关键词去重，原 price 过滤限 100 元、在种子 ¥168 的栈上恒不匹配） ｜ tags: processing_item, pagination
 
 ### PP-002. 加工项分类列表 🔵
 ```
@@ -2912,7 +2912,7 @@
 你: 根据这张图片录入商品（色卡图，可识别材质/克重） [📷 附 1 图]
 你: [🤖 按上一轮卡片作答]
 你: [🤖 按上一轮卡片作答]
-你: (空)
+你: [🔁 按目标工具重复直至成功：product_manage，最多 3 次]
 期望: product_manage(action=create)
 数据: create 参数含 specifications（材质/克重/工艺等推理属性，随 specs 落库到 product_attributes，非仅展示）
 数据: create 参数含 processing_item_configs（含 customPrice=加工项默认单价 unit_price、unit=真实单位），禁止只传 processing_item_ids 名称列表
@@ -2929,7 +2929,7 @@
 你: 创建一个窗帘商品，名称：盯防加工项价格0908，单价：88元/米，分类：窗帘布艺，颜色：浅灰
 你: 商品名称: 盯防加工项价格0908\n单价(元/米): 88\n分类: 窗帘布艺\n颜色: 浅灰\n售卖方式: 散剪\n门幅: 2.8米\n货号: DF-0908
 你: 已选加工项：刺绣工艺（价格自定义为45元/平方米）、韩式波浪折边
-你: (空)
+你: [🔁 按目标工具重复直至成功：product_manage，最多 3 次]
 期望: product_manage(action=create)
 数据: create 参数 processing_item_configs 含 customPrice=用户确认价（刺绣工艺 45）
 数据: 创建后商品详情 processingItemConfigs 的 finalPrice = 用户确认价（非默认价回退）——issue #3056 回归防线
