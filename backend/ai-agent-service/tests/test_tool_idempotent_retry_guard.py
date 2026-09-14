@@ -117,11 +117,22 @@ _FAILED = {
 }
 
 
-def _retry(tool, result_dict=None):
-    return _self_correct_retry(
+async def _retry(tool, result_dict=None) -> tuple:
+    """复刻调用点语义（`base_skill.py` 的 `if corrected: result_str, result_dict = corrected`）。
+
+    Returns:
+        (outcome, effective)：
+        - outcome = `_self_correct_retry` 原返回值（None = 未重试）；
+        - effective = **模型最终看到的工具结果 dict** —— 断言一律以业务口径（这个 payload）
+          为准，而不是断言哨兵值，这样"护栏生效"与"模型收到什么"是同一件事。
+    """
+    original = dict(result_dict or _FAILED)
+    outcome = await _self_correct_retry(
         tool, {"name": ""}, _CTX, "test_skill",
-        dict(result_dict or _FAILED), "s-test", 999, dict(_STATE),
+        dict(original), "s-test", 999, dict(_STATE),
     )
+    effective = outcome[1] if outcome else original
+    return outcome, effective
 
 
 # ── 行为护栏：非幂等不重试 ───────────────────────────────────────────────────
@@ -130,7 +141,7 @@ class TestNonIdempotentRetrySuppressed:
     """非幂等写工具：即使失败 + 带 suggestion，也不得自动重试（否则重复副作用）。
 
     断言口径：`tool.calls` 为空 = **没有任何"重放"发生**（首次失败是调用方给的既成事实，
-    重试才是本护栏要拦的那一次真实副作用）。
+    重试才是本护栏要拦的那一次真实副作用）；`effective` = 模型侧实际收到的结果。
     """
 
     async def test_non_idempotent_write_tool_not_retried(self):
@@ -140,12 +151,15 @@ class TestNonIdempotentRetrySuppressed:
             "app.graph.skills.base_skill.LLMFactory.create_suggestion_llm",
             return_value=llm,
         ) as factory:
-            corrected = await _retry(tool)
+            _, effective = await _retry(tool)
 
-        assert corrected is None, "非幂等写工具不得返回重试结果"
         assert factory.call_count == 0, "非幂等写工具不得触发 suggestion_llm（重试入口必须关闭）"
         assert llm.invoked == [], "非幂等写工具不得调用修正 LLM"
         assert tool.calls == [], f"非幂等写工具不得被重放执行（实际 {tool.calls!r}）→ 重复副作用"
+        # 业务口径：模型拿到的仍是**原始失败 + suggestion**（交回模型决策），不是被重试"救"成的成功
+        assert effective["success"] is False, "模型必须收到失败结果（而非重试后的成功）"
+        assert effective["error"] == "bad_param"
+        assert effective["suggestion"] == _FAILED["suggestion"], "suggestion 必须原样交回模型"
 
     async def test_human_handoff_like_tool_not_retried(self):
         """转人工（CH-013/015）：非幂等，重复调用会创建重复人工会话。"""
@@ -155,8 +169,9 @@ class TestNonIdempotentRetrySuppressed:
             "app.graph.skills.base_skill.LLMFactory.create_suggestion_llm",
             return_value=_FakeLLM({"name": "修正后的名字"}),
         ):
-            assert await _retry(tool) is None
-        assert tool.calls == []
+            _, effective = await _retry(tool)
+        assert tool.calls == [], "转人工类工具不得被重放（重复人工会话）"
+        assert effective["success"] is False
 
     async def test_tool_without_idempotency_attribute_not_retried(self):
         """未声明 idempotent 的**非 BaseTool** 替身：fail-safe 视为不可重试。"""
@@ -178,8 +193,9 @@ class TestNonIdempotentRetrySuppressed:
             "app.graph.skills.base_skill.LLMFactory.create_suggestion_llm",
             return_value=_FakeLLM({"name": "修正后的名字"}),
         ):
-            assert await _retry(tool) is None
+            _, effective = await _retry(tool)
         assert tool.calls == 0, "缺幂等性标注的工具不得被重试"
+        assert effective["success"] is False
 
 
 # ── 防回归：幂等工具既有重试能力不得被关闭 ──────────────────────────────────
@@ -194,13 +210,13 @@ class TestIdempotentRetryPreserved:
             "app.graph.skills.base_skill.LLMFactory.create_suggestion_llm",
             return_value=llm,
         ) as factory:
-            corrected = await _retry(tool)
+            outcome, effective = await _retry(tool)
 
         assert factory.call_count == 1, "幂等写工具的既有重试不得被关闭"
-        assert corrected is not None, "幂等写工具修正成功应返回重试结果"
-        result_str, result_dict = corrected
-        assert result_dict["success"] is True
-        assert json.loads(result_str)["data"] == {"created": True}
+        # 业务口径：重试成功 → 模型收到的是**修正后的成功结果**（含真实数据）
+        assert effective["success"] is True, "幂等写工具修正成功应把成功结果交回模型"
+        assert effective["data"] == {"created": True}
+        assert json.loads(outcome[0])["data"] == {"created": True}
         assert tool.calls == [{"name": "修正后的名字"}], "幂等写工具应带修正参数重试一次"
 
     async def test_idempotent_read_tool_still_retried(self):
@@ -210,16 +226,17 @@ class TestIdempotentRetryPreserved:
             "app.graph.skills.base_skill.LLMFactory.create_suggestion_llm",
             return_value=llm,
         ):
-            corrected = await _retry(tool)
+            _, effective = await _retry(tool)
 
-        assert corrected is not None
+        assert effective["success"] is True
         assert tool.calls == [{"name": "修正后的名字"}]
 
     async def test_no_suggestion_still_no_retry(self):
         """既有语义不变：无 suggestion 时不重试。"""
         tool = _IdempotentWriteTool()
-        assert await _retry(tool, {"success": False, "message": "失败"}) is None
+        _, effective = await _retry(tool, {"success": False, "message": "失败"})
         assert tool.calls == []
+        assert effective["success"] is False
 
 
 # ── 静态锁（L0）：每个写工具必须显式表态幂等性 ─────────────────────────────
