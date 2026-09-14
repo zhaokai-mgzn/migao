@@ -198,9 +198,21 @@ cases:
       - "发货，物流顺丰 SF1234567890"
       - "客户确认收货了，标记完成"
     expectations:
+      # 修正（issue #3702）：原声明 `args.action: detail` 是**该工具不存在的取值** ——
+      # `order_query` 的 action 枚举真值 = `list / statistics / follow_status_stats`
+      # （`backend/ai-agent-service/app/tools/order_query.py`）。声明的语义在真实链路里
+      # 没有对应 action（配置错误，L0 不变式 `test_eval_assertion_action_binding.py` 拦的就是它）。
+      #   · 本轮意图 =「查某一笔订单的状态」→ 在本工具里就是 `action: list`
+      #     （list 支持 order_id / status 过滤，且是 schema 默认值）；
+      #   · **否掉** `statistics` / `follow_status_stats`：两者是"汇总统计"语义、不接收其他
+      #     参数，回答不了"这一笔订单现在什么状态"；
+      #   · **否掉**「去掉 args.action 只断言工具被调用」：那是**放宽**匹配
+      #     （裸工具名=任意 action 都算过），而 list 是真实存在的正确取值，没有放宽的必要。
+      # 有意**不**加 `status: pending` 等值级作用域：本轮用户是自然指代（"最近一笔待付款订单"），
+      # 由 agent 自行解析，写死筛选值会制造新的假红。
       - tool: order_query
         args:
-          action: detail
+          action: list
       - tool: order_manage
         args:
           action: confirm_payment
@@ -220,7 +232,7 @@ cases:
       - "状态流转: pending → producing → shipped → completed"
       - "每步操作前先确认当前状态"
     skip_reason: "需要一条**从 pending 走到底的完整测试订单**（先 order_create 建单再流转），否则状态机断言不可达——评测栈里没有这样的订单，跑起来是假失败污染基线。2026-09-14（issue #3599）：原 skip 理由里的『硬编码 ORD-20260701-0001（API 实测 found: 0）』已消除（改为自然指代），剩下的唯一缺口是「可全流转的测试订单」。"
-    merge_log: "eval M006 吸收 verification 1.6（单步 update_status）、1.7 的状态更新段，并吸收 eval O004（标记已发货）；2026-09-14 去掉栈上不存在的硬编码订单号（issue #3599）"
+    merge_log: "eval M006 吸收 verification 1.6（单步 update_status）、1.7 的状态更新段，并吸收 eval O004（标记已发货）；2026-09-14 去掉栈上不存在的硬编码订单号（issue #3599）；2026-09-15 修正 order_query 的声明（issue #3702）：原 `action: detail` 不在该工具枚举内（list/statistics/follow_status_stats），改为真实且语义正确的 `action: list`（查单=按 order_id/status 过滤；statistics/follow_status_stats 是汇总统计，与『查这一笔的状态』意图不符）"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_mibao_advanced_multiturn.py"

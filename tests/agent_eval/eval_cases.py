@@ -3112,7 +3112,7 @@ _CASE_OR_006 = EvalCase(
     skill=Skill.ORDER,
     difficulty=Difficulty.NORMAL,
     user_inputs=['查一下最近一笔待付款订单的状态', '确认支付，标记为生产中', '发货，物流顺丰 SF1234567890', '客户确认收货了，标记完成'],
-    expectations=['order_query(action=detail)', 'order_manage(action=confirm_payment)', 'order_manage(action=update_status, status=producing)', 'order_manage(action=update_logistics, company=顺丰)', 'order_manage(action=update_status, status=completed)'],
+    expectations=['order_query(action=list)', 'order_manage(action=confirm_payment)', 'order_manage(action=update_status, status=producing)', 'order_manage(action=update_logistics, company=顺丰)', 'order_manage(action=update_status, status=completed)'],
     data_checks=['状态流转: pending → producing → shipped → completed', '每步操作前先确认当前状态'],
     skip_reason='需要一条**从 pending 走到底的完整测试订单**（先 order_create 建单再流转），否则状态机断言不可达——评测栈里没有这样的订单，跑起来是假失败污染基线。2026-09-14（issue #3599）：原 skip 理由里的『硬编码 ORD-20260701-0001（API 实测 found: 0）』已消除（改为自然指代），剩下的唯一缺口是「可全流转的测试订单」。',
     tags=['multi_turn', 'order_lifecycle', 'status_flow'],
