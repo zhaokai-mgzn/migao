@@ -9,7 +9,7 @@
   属「工具调用全对、用户看到的话是错的」类缺陷，PR-019 用本断言拦截。
 - interactive 事件采集：send_message 捕获 SSE interactive 事件（卡片证据）。
 """
-# case_ids: OR-016, AS-007, PR-019, CH-010, CH-024, OR-021, OR-022, PR-024, CH-025
+# case_ids: OR-016, AS-007, PR-019, CH-010, CH-024, OR-021, OR-022, PR-024, CH-025, AS-004
 import asyncio
 from types import SimpleNamespace
 import importlib.util
@@ -640,6 +640,113 @@ class TestRunCaseDbVerify:
         configs = [{"processingItemName": "刺绣工艺", "finalPrice": 45.0}]
         result = asyncio.run(self._run(case, configs))
         assert result["score"] == 1.0
+
+
+class TestDbVerifyAfterSalesTicket:
+    """db_verify[after_sales_ticket] 落库核对器（issue #3544 / AS-004 假绿升级）。
+
+    背景：AS-004 的 `data_checks: "closedAt/closeReason 写入"` 是自然语义、**不计分**
+    （run_case 的计分白名单只认 success=true / error.code= / 未被调用）→「工单真的关闭了、
+    关闭字段真的落库」从未被机器校验。本核对器从 `after_sales_manage` 的**成功**调用取
+    工单引用 → 查 admin-api 工单详情 → 断言落库 status 与关闭留痕（closedAt/closeReason）。
+    四条判据：缺期望值/无成功调用 → **判失败而非跳过**；状态未落地 → 失败；留痕缺失 → 失败。
+    """
+
+    _SPEC = {
+        "fetch": "after_sales_ticket",
+        "expect_status": "closed",
+        "expect_fields_nonempty": ["closedAt", "closeReason"],
+        "expect_close_reason_contains": "协商一致",
+    }
+
+    def _results(self, payload, success=True):
+        """构造 results：R1 = list（无 ticket_id，模拟「先查列表」），R2 = 关闭调用。"""
+        return [
+            {"__round": 1,
+             "tool_calls": [{"name": "after_sales_manage", "args": {"action": "list"}}],
+             "tool_results": [{"tool": "after_sales_manage",
+                               "result": {"success": True,
+                                          "data": {"items": [{"id": "tkt_eval_as_9001"}],
+                                                   "total": 1}}}],
+             "final_text": "找到 1 张未处理工单"},
+            {"__round": 2,
+             "tool_calls": [{"name": "after_sales_manage",
+                             "args": {"action": "update_status", "status": "closed"}}],
+             "tool_results": [{"tool": "after_sales_manage",
+                               "result": {"success": success, "data": payload}}],
+             "final_text": "工单已关闭"},
+        ]
+
+    def _run(self, spec, detail, payload=None, success=True):
+        import unittest.mock as mock
+        payload = payload if payload is not None else {
+            "ticket_id": "tkt_eval_as_9001", "status": "closed"}
+
+        async def fake_detail(token, ref):
+            return detail
+
+        with mock.patch.object(lr, "_fetch_ticket_detail", new=fake_detail):
+            return asyncio.run(lr.check_db_verify(
+                "tok", [spec], self._results(payload, success=success)))
+
+    def test_missing_expect_status_fails_not_skips(self):
+        """缺 expect_status → 判失败（空转通过 = 「声称查过而其实没查」，同 order_phone 防呆）。"""
+        issues = self._run({"fetch": "after_sales_ticket"}, None)
+        assert issues, "缺期望值时必须报失败，不能静默跳过"
+        assert any("expect_status" in i for i in issues)
+
+    def test_ticket_not_closed_fails(self):
+        """工具回显成功、工单其实仍是 pending（状态流转没生效）→ 判失败。"""
+        issues = self._run(self._SPEC, {"status": "pending", "closedAt": None,
+                                        "closeReason": None})
+        assert any("落库状态" in i for i in issues)
+
+    def test_closed_with_reason_passes(self):
+        """真的关闭 + closedAt/closeReason 落库 + 原因与用户点名一致 → 通过。"""
+        issues = self._run(self._SPEC, {
+            "status": "closed",
+            "closedAt": "2026-09-14T09:30:00+08:00",
+            "closeReason": "客户已协商一致，同意关闭",
+        })
+        assert issues == []
+
+    def test_closed_without_close_reason_fails(self):
+        """落库 closeReason 为空（#3540：工具下发 reason 而 DTO 只接 remark）→ 判失败。
+
+        这是 AS-004 从假绿转真红的核心一条：关闭状态落地了、但「为什么关闭」没留痕。
+        """
+        issues = self._run(self._SPEC, {
+            "status": "closed",
+            "closedAt": "2026-09-14T09:30:00+08:00",
+            "closeReason": None,
+        })
+        assert any("closeReason" in i for i in issues)
+
+    def test_close_reason_mismatch_fails(self):
+        """落库原因与用户点名的不一致 → 判失败。"""
+        issues = self._run(self._SPEC, {
+            "status": "closed",
+            "closedAt": "2026-09-14T09:30:00+08:00",
+            "closeReason": "缺货",
+        })
+        assert any("closeReason" in i for i in issues)
+
+    def test_no_successful_close_call_fails(self):
+        """close 调用失败（如 pending→closed 被状态机拒绝）→ 判失败而非跳过。"""
+        issues = self._run(self._SPEC, {"status": "closed"}, success=False)
+        assert any("找不到" in i and "成功调用" in i for i in issues)
+
+    def test_ticket_detail_missing_fails(self):
+        """成功调用返回的工单在 admin-api 查不到详情（未落库）→ 判失败。"""
+        issues = self._run(self._SPEC, None)
+        assert any("查不到详情" in i for i in issues)
+
+    def test_flow_sequence_string_fields_nonempty(self):
+        """yaml_light 不解析 flow 序列：`[closedAt, closeReason]` 整串进来也要能核对。"""
+        spec = dict(self._SPEC, expect_fields_nonempty="[closedAt, closeReason]")
+        issues = self._run(spec, {"status": "closed", "closedAt": "2026-09-14T09:30:00+08:00",
+                                  "closeReason": None})
+        assert any("closeReason" in i for i in issues)
 
 
 class TestCiVerdict:
