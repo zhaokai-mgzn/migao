@@ -138,8 +138,10 @@ export default function ShipOrder() {
     )
   }
 
-  // 状态守卫：仅待发货状态可进入发货页
-  const shippableStatuses = new Set(['pending_shipment', 'confirmed', 'processing'])
+  // 状态守卫：仅待发货状态可进入发货页。
+  // 后端状态枚举：pending/confirmed/producing/shipped/completed/cancelled
+  // （producing = 加工单流转后订单进入「生产中」，仍属待发货；'processing' 是历史误写，从不产生）
+  const shippableStatuses = new Set(['pending_shipment', 'confirmed', 'producing'])
   if (!shippableStatuses.has(order.status)) {
     return (
       <div className="p-6 text-center py-12">
