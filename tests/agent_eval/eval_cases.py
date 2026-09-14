@@ -1449,7 +1449,7 @@ _CASE_CH_034 = EvalCase(
     form_prefill=[],
     forbidden_card_text=[],
     forbidden_text=['图片分析失败', '无法识别图片', '图片无法处理', '看不清图片', '图片解析失败'],
-    want_text=['蓝'],
+    want_text=['渐变'],
     required_args=[{'tool': 'product_search', 'fields': ['keyword']}],
     must_succeed=[{'tool': 'product_search'}],
 )

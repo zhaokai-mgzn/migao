@@ -981,7 +981,7 @@
 禁词: 图片无法处理
 禁词: 看不清图片
 禁词: 图片解析失败
-必须: 蓝
+必须: 渐变
 必填: product_search() 字段 keyword
 必须成功: product_search
 ```
