@@ -291,18 +291,23 @@ cases:
           max: 2
         fallback: "换成2699系列雪尼尔窗帘面料"
       - "换成2699系列雪尼尔窗帘面料"
-      # 答卡轮（§13.5）：加工项卡由 LLM 动态生成（choice/multiSelect，选项名预知不了）
-      # → repeat_until 按「有卡答卡：confirm 点确认 / choice 回首项 / form 按声明回填 /
-      # 无卡发 fallback」作答，直到写工具成功；停条件用**成功**避免重复落库。
-      # 先例 OR-021/CH-033/PR-016。
-      # max=5：R1 报瑕疵 / R2 定位订单 / R3 点目标商品 / R4 加工项询问 / R5 答加工项卡 /
-      #   R6 答 confirm 卡 / R7 建单（停在成功后的余量轮）。
-      # 原 max=4（6 轮）会**在 confirm 卡刚发出来时轮数耗尽**——正是 OR-021 实测过的
-      # "卡死在最后一步"形态（issue #3430），故留足余量。
+      # 答卡轮（§13.5）：卡片由 LLM 动态生成（选项名预知不了）→ 按「有卡答卡：
+      # confirm 点确认 / choice 回首项 / form 按声明回填 / 无卡发 fallback」作答，
+      # 直到写工具成功；停条件用**成功**避免重复落库。先例 OR-021/CH-033/PR-016。
+      # max=5：R1 报瑕疵 / R2 定位订单 / R3 点目标商品 / R4 加工项询问 / R5 答卡 /
+      #   R6 答 confirm 卡 / R7 建单（成功后的余量轮自动跳过）。
+      # ⚠️ **fallback 必须是中性文本，不得替 agent 说出加工项**（2026-09-14 真重放修正）：
+      # 首版 fallback 写「需要打孔加工」，run 34812509606 实测**替 agent 把加工项说了出来**
+      # → 换货 confirm 卡里凭空出现「加工项=打孔加工」，掩盖了「agent 从未查目标商品的
+      # processing_items、也从未主动询问加工项」这一**真实缺口**（该 run 的
+      # `product_detail` 期望未满足即其证据）。fallback 改为「好的」后：agent 主动问
+      # （发加工项卡或文本询问）→ harness 正常答卡；agent 不问 → 加工项为空、
+      # `order_before[processing_ask …]` 直接判红 → **缺口不再被 harness 掩盖**
+      # （§任务书：不允许靠放宽断言/替 agent 干活让自己变绿）。
       - repeat_until:
           tool_called: after_sales_manage
           max: 5
-        fallback: "需要打孔加工"
+        fallback: "好的"
     pre_clean:
       - type: product_dedupe
         product_keyword: "2699系列雪尼尔窗帘面料"
@@ -337,7 +342,7 @@ cases:
       - "processing_items 为空时如实告知『该商品无可用加工项』后继续，不强求"
       - "换货工单 order_id 来自本轮 order_query 定位结果（不得编造订单号）"
     skip_reason: ""
-    merge_log: "2026-09-08 新增（issue #3033 复盘 sess_50ff3e3c824c4a70）：换货选 2699 面料（绑 5 加工项）全程未提加工项；aftersales.md 补换货加工项确认规则 + EXAMPLES 例 4。2026-09-14 自包含化（issue #3568）：原单轮输入缺「先定位订单」轮 → 用例恒不可达被 skip（**从未执行**）→ 补 order_query 定位轮 + 答卡轮（repeat_until max=5，共 8 轮），断言加两条 order_query 时序 + success=true，解 skip"
+    merge_log: "2026-09-08 新增（issue #3033 复盘 sess_50ff3e3c824c4a70）：换货选 2699 面料（绑 5 加工项）全程未提加工项；aftersales.md 补换货加工项确认规则 + EXAMPLES 例 4。2026-09-14 自包含化（issue #3568）：原单轮输入缺「先定位订单」轮 → 用例恒不可达被 skip（**从未执行**）→ 补 order_query 定位轮 + 答卡轮（repeat_until max=5），断言加两条 order_query 时序 + success=true，解 skip。**两次真 LLM 重放驱动迭代**：① run 34809750975 得 75% 且首版「静态文本选单轮」对不上 agent 的 choice 选单卡（该客户名下 6 笔订单）→ 改答卡轮；② run 34812509606 得 75% 且**换货工单已真实创建**（`ticketNo=AS-20260914-9002`，orderNo=20260914055850001）→ 剩下的 `product_detail` 未满足系 **agent 真实缺口**（换货时从未查目标商品的 processing_items、也从未主动询问加工项），而首版 fallback「需要打孔加工」**替 agent 把加工项说了出来**、把该缺口掩盖成「卡里有加工项」→ fallback 改中性「好的」后缺口不再被掩盖"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_prompt_snapshots.py"
