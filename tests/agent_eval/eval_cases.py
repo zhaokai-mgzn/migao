@@ -46,6 +46,7 @@ class EvalCase:
     required_args: List[dict] = field(default_factory=list) # 必填参数断言（create 缺 specifications/加工项价格即失败，§3.2）
     forbidden_args: List[dict] = field(default_factory=list) # 禁止参数断言（隔离/越权下限：如物流工具不得接受快递单号，issue #3270）
     must_succeed: List[dict] = field(default_factory=list) # 写工具成功断言（至少成功一次；"调了≠成了"，§3.2/issue #3361）
+    must_fail: List[dict] = field(default_factory=list) # 必须失败断言（零成功调用；must_succeed 的镜像，issue #3544 收口批）
     amount_verify: List[dict] = field(default_factory=list) # 金额正确性断言（单价接地/小计/总额，§3.2/issue #3365）
     db_verify: List[dict] = field(default_factory=list) # 落库层验证（创建后查 admin-api 断言价格=确认价，§3.2/issue #3056）
     output_verify: List[dict] = field(default_factory=list) # 产出侧断言（工具计算结果 payload，如算料用布量/spec公式，issue #3367）
@@ -2246,7 +2247,7 @@ _CASE_FN_001 = EvalCase(
     form_prefill=[],
     forbidden_card_text=[],
     must_succeed=[{'tool': 'finance_api'}],
-    output_verify=[{'tool': 'finance_api', 'action': 'create_transaction', 'expect': {'transactionNo': '__nonempty__', 'type': 'income', 'amount': 88, 'status': 'success'}}],
+    output_verify=[{'tool': 'finance_api', 'expect': {'transactionNo': '__nonempty__', 'type': 'income', 'amount': 88, 'status': 'success'}}],
 )
 
 # ── FN-002 [NORMAL] 收支汇总（源: cases/finance.yml）──

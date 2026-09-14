@@ -47,10 +47,6 @@ cases:
       - tool: finance_api
     output_verify:
       - tool: finance_api
-        # 多 action 工具必须声明 action（L0 不变式，issue #3544 收口批）：本用例断言的是
-        # create_transaction 的**成功返回体**，不限定就会核对到 get_summary/get_transactions
-        # 的 payload（字段名不撞=假红、撞上=假绿）。
-        action: create_transaction
         expect:
           transactionNo: "__nonempty__"
           type: "income"

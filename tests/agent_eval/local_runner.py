@@ -1515,6 +1515,55 @@ def check_must_succeed(results: list, must_succeed: list) -> list:
     return issues
 
 
+def check_must_fail(results: list, must_fail: list) -> list:
+    """**必须失败**断言：声明的工具（可限定 action）**一次都不得成功**（`must_succeed` 的镜像）。
+
+    为什么与 `must_succeed` 并列（issue #3544 收口批 / OR-026「拒绝半」）：`must_succeed`
+    管「业务必须真的发生」，本断言管「业务**不得**发生」——例如非法手机号下单场景，
+    agent 必须被写前校验挡住：**最坏形态是"调了且成了"**（脏单落库），而
+    「调了但失败了」与「压根没调」都算合格拒绝。
+      · 从未调用 → **通过**（"拒绝"未必等于"尝试"；要求必须尝试是另一个断言的事，
+        由 `expectations: tool` 表达）；
+      · 任一成功调用 → **违规**，并把轮次+错误码之外的尝试列出来便于归因。
+    条目形态：`- order_create` 或 `- {tool: order_create, action: create}`。
+    """
+    issues = []
+    for spec in must_fail or []:
+        if isinstance(spec, str):
+            spec = {"tool": spec}
+        if not isinstance(spec, dict):
+            issues.append(f"must_fail: 配置非字符串/字典: {spec!r}")
+            continue
+        tool = str(spec.get("tool") or "")
+        action = str(spec.get("action") or "")
+        if not tool:
+            issues.append(f"must_fail: 配置缺 tool: {spec!r}（该断言会静默跳过）")
+            continue
+        succeeded: list = []
+        attempts = 0
+        for r in results or []:
+            rnd = r.get("__round")
+            called = any(
+                _tool_name_matches(tc.get("name"), tool)
+                and (not action or str((tc.get("args") or {}).get("action") or "") == action)
+                for tc in r.get("tool_calls") or [])
+            matched = [st for st in _tool_result_status(r.get("tool_results") or [])
+                       if _tool_name_matches(st.get("tool"), tool)]
+            if action and not called:
+                continue
+            if not called and not matched:
+                continue
+            attempts += len(matched)
+            succeeded += [rnd for st in matched if st.get("ok")]
+        if succeeded:
+            _scope = f"(action={action})" if action else ""
+            _rounds = ", ".join(f"R{x}" for x in succeeded)
+            issues.append(
+                f"must_fail: {tool}{_scope} 在 {_rounds} **成功**了 —— 该操作必须被拒绝/不成立"
+                f"（脏数据落库形态；共 {attempts} 次尝试）")
+    return issues
+
+
 def check_forbidden_text(results: list, forbidden_text: list) -> list:
     """final_text 反模式词：任一轮回复含任一禁词 → 违规（幻觉式撤回/报错文案）。
 
@@ -3980,6 +4029,9 @@ async def run_case(case, token: str, session_id: str) -> dict:
     # 写工具成功断言（issue #3361）：期望里有写工具 ≠ 写操作真的发生。
     # 放在 required_args 之后：先证明「参数给对了」，再证明「东西真做出来了」。
     case_issues += check_must_succeed(results, getattr(case, "must_succeed", []) or [])
+    # 必须失败（issue #3544 收口批）：must_succeed 的镜像 —— 「业务不得发生」也要机器可判，
+    # 最坏形态是"调了且成了"（脏数据落库），而"调了但失败"/"压根没调"都算合格拒绝。
+    case_issues += check_must_fail(results, getattr(case, "must_fail", []) or [])
     # 金额正确性断言（issue #3365）：写成功 ≠ 钱算对（单价接地/小计/总额）
     if getattr(case, "amount_verify", None):
         try:
@@ -4753,6 +4805,7 @@ def load_cases_from_yaml(cases_dir: str) -> list:
             required_args=c.get("required_args") or [],
             forbidden_args=c.get("forbidden_args") or [],
             must_succeed=c.get("must_succeed") or [],
+            must_fail=c.get("must_fail") or [],
             amount_verify=c.get("amount_verify") or [],
             db_verify=c.get("db_verify") or [],
             # 产出侧断言（issue #3367）。**这里曾经漏映射**（issue #3417 复盘）：

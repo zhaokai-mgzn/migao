@@ -167,6 +167,7 @@ def to_eval_py(cases):
            '    required_args: List[dict] = field(default_factory=list) # 必填参数断言（create 缺 specifications/加工项价格即失败，§3.2）',
     '    forbidden_args: List[dict] = field(default_factory=list) # 禁止参数断言（隔离/越权下限：如物流工具不得接受快递单号，issue #3270）',
             '    must_succeed: List[dict] = field(default_factory=list) # 写工具成功断言（至少成功一次；"调了≠成了"，§3.2/issue #3361）',
+            '    must_fail: List[dict] = field(default_factory=list) # 必须失败断言（零成功调用；must_succeed 的镜像，issue #3544 收口批）',
             '    amount_verify: List[dict] = field(default_factory=list) # 金额正确性断言（单价接地/小计/总额，§3.2/issue #3365）',
             '    db_verify: List[dict] = field(default_factory=list) # 落库层验证（创建后查 admin-api 断言价格=确认价，§3.2/issue #3056）',
             '    output_verify: List[dict] = field(default_factory=list) # 产出侧断言（工具计算结果 payload，如算料用布量/spec公式，issue #3367）',
@@ -213,6 +214,8 @@ def to_eval_py(cases):
             out.append(f"    forbidden_args={c.get('forbidden_args')!r},")
         if c.get("must_succeed"):
             out.append(f"    must_succeed={c.get('must_succeed')!r},")
+        if c.get("must_fail"):
+            out.append(f"    must_fail={c.get('must_fail')!r},")
         if c.get("amount_verify"):
             out.append(f"    amount_verify={c.get('amount_verify')!r},")
         if c.get("db_verify"):
@@ -337,6 +340,10 @@ def to_md(cases):
                 _ms_tool = ms if isinstance(ms, str) else ms.get("tool")
                 _ms_act = "" if isinstance(ms, str) else (ms.get("action") or "")
                 lines.append(f"必须成功: {_ms_tool}({_ms_act})" if _ms_act else f"必须成功: {_ms_tool}")
+            for mf in (c.get("must_fail") or []):
+                _mf_tool = mf if isinstance(mf, str) else mf.get("tool")
+                _mf_act = "" if isinstance(mf, str) else (mf.get("action") or "")
+                lines.append(f"必须失败: {_mf_tool}({_mf_act})" if _mf_act else f"必须失败: {_mf_tool}")
             for av in (c.get("amount_verify") or []):
                 lines.append(f"金额: {av.get('tool', 'order_create')} 「{av.get('product_name', '')}」 → {'; '.join(av.get('checks') or [])}")
             for dv in (c.get("db_verify") or []):

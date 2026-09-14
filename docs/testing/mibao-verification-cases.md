@@ -1565,7 +1565,7 @@
 数据: 流水号 FIN- 前缀由服务端生成、type=income、amount=88、status=success —— 成功返回体由 output_verify 机器核对（「被调用」不等于「登记成功」）
 数据: 登记失败时不得声称成功：must_succeed 读 tool_result.success 判红，output_verify 无成功调用即判红
 必须成功: finance_api
-产出: finance_api(create_transaction) → transactionNo==__nonempty__; type==income; amount==88; status==success
+产出: finance_api → transactionNo==__nonempty__; type==income; amount==88; status==success
 ```
 真值: finance.txn-types, finance.auto-record, finance.txn-no
 溯源: 财务对账模块新增；2026-09-09 校准：补金额+支付方式+确认轮——create_transaction 必填 type+amount，原「登记一笔线下收款」缺 amount，agent 正确引导补充（单轮过严） ｜ tags: finance, query

@@ -9,7 +9,7 @@
   属「工具调用全对、用户看到的话是错的」类缺陷，PR-019 用本断言拦截。
 - interactive 事件采集：send_message 捕获 SSE interactive 事件（卡片证据）。
 """
-# case_ids: OR-016, AS-007, PR-019, CH-010, CH-024, OR-021, OR-022, PR-024, CH-025, AS-004, PP-006, PR-021, HR-003, DF-020, DF-021, DF-022, DF-023
+# case_ids: OR-016, AS-007, PR-019, CH-010, CH-024, OR-021, OR-022, PR-024, CH-025, AS-004, PP-006, PR-021, HR-003, DF-020, DF-021, DF-022, DF-023, OR-026
 import asyncio
 from types import SimpleNamespace
 import importlib.util
@@ -887,6 +887,63 @@ class TestDbVerifyEmployee:
                             "expect_fields": {"phone": "13700137001"}},
                            {"id": "u1", "name": "王五", "phone": None})
         assert any("落库字段 'phone' 为空" in i for i in issues), issues
+
+
+class TestMustFail:
+    """`must_fail` 必须失败断言（issue #3544 收口批，`must_succeed` 的镜像）。
+
+    消费者：OR-026「非法手机号下单必须被写前校验挡住」——最坏形态是"调了且成了"（脏单落库）；
+    「调了但失败」与「压根没调」都算合格拒绝。
+    """
+
+    def _results(self, rounds):
+        """rounds: {轮次: (是否调用, 成功与否)} —— 未给出的轮次 = 没调用"""
+        out = []
+        for rnd in sorted(rounds):
+            called, ok = rounds[rnd]
+            calls = [{"name": "order_create", "args": {"items": []}}] if called else []
+            results = []
+            if called:
+                results = [{"tool": "order_create",
+                            "result": {"success": ok,
+                                       "error": None if ok else "手机号不合法"}}]
+            out.append({"__round": rnd, "tool_calls": calls, "tool_results": results,
+                        "final_text": f"R{rnd}"})
+        return out
+
+    def test_never_called_passes(self):
+        """压根没调 = 合格拒绝（"拒绝"未必等于"尝试"）。"""
+        assert lr.check_must_fail(self._results({1: (False, False)}), ["order_create"]) == []
+
+    def test_attempted_but_failed_passes(self):
+        """调了但被校验挡住 = 合格拒绝（这正是 OR-026 期望的形态）。"""
+        assert lr.check_must_fail(self._results({1: (True, False)}), ["order_create"]) == []
+
+    def test_success_violates(self):
+        """最坏形态：脏单落库 → 违规，且点名轮次。"""
+        issues = lr.check_must_fail(self._results({1: (True, False), 2: (True, True)}),
+                                    ["order_create"])
+        assert issues and "R2" in issues[0] and "成功" in issues[0], issues
+
+    def test_first_attempt_success_also_violates(self):
+        """首轮就成功（没有"先失败后成功"的掩护）同样违规。"""
+        assert lr.check_must_fail(self._results({1: (True, True)}), ["order_create"])
+
+    def test_action_scoped(self):
+        results = [{"__round": 1,
+                    "tool_calls": [{"name": "order_manage", "args": {"action": "cancel"}}],
+                    "tool_results": [{"tool": "order_manage",
+                                      "result": {"success": True}}]}]
+        spec = [{"tool": "order_manage", "action": "create"}]
+        assert lr.check_must_fail(results, spec) == []          # 别的 action 不算
+        spec2 = [{"tool": "order_manage", "action": "cancel"}]
+        assert lr.check_must_fail(results, spec2)               # 该 action 成功 = 违规
+
+    def test_missing_tool_fails_closed(self):
+        assert lr.check_must_fail(self._results({1: (False, False)}), [{"action": "create"}])
+
+    def test_no_specs_noop(self):
+        assert lr.check_must_fail(self._results({1: (True, True)}), []) == []
 
 
 class TestForbiddenTools:
@@ -4750,6 +4807,7 @@ class TestAssertionVocabularyIsMappedByLoader:
         "required_args": ('    required_args:\n      - tool: t\n        fields: [x]\n', None),
         "forbidden_args": ('    forbidden_args:\n      - tool: t\n        fields: [x]\n', None),
         "must_succeed": ('    must_succeed:\n      - tool: t\n', None),
+        "must_fail": ('    must_fail:\n      - tool: t\n', None),
         "amount_verify": ('    amount_verify:\n      - tool: t\n        checks: [total]\n', None),
         "db_verify": ('    db_verify:\n      - fetch: order_items\n        source: order_create\n', None),
         "output_verify": ('    output_verify:\n      - tool: t\n        field: payload\n', None),
