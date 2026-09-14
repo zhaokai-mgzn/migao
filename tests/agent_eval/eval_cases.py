@@ -4351,6 +4351,7 @@ _CASE_PR_016 = EvalCase(
     form_prefill=[],
     forbidden_card_text=[],
     required_args=[{'tool': 'processing_item_query', 'fields': ['applicable_category_id']}],
+    pre_clean=[{'type': 'product_dedupe', 'product_keyword': '遮光窗帘'}],
     namespaces=['product_name:遮光窗帘'],
 )
 

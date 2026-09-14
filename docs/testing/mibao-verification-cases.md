@@ -3114,7 +3114,7 @@
 必填: processing_item_query() 字段 applicable_category_id
 ```
 真值: product-sku-stock.create-flow, processing-manage.crud
-溯源: 2026-09-06 新增（issue #2964）：加工项「适用商品分类」配置此前无消费方，建品流程按已选分类过滤/推荐加工项（设计意图见 docs/design/admin-dashboard-design.md §6.1.1 适用商品分类+AI推荐）。2026-09-14 校准（#3518）：收尾裸文本「确认」改答卡轮（B 端 confirm 门禁：文字≠点卡） ｜ tags: processing_item, product_category, guided_flow, recommendation
+溯源: 2026-09-06 新增（issue #2964）：加工项「适用商品分类」配置此前无消费方，建品流程按已选分类过滤/推荐加工项（设计意图见 docs/design/admin-dashboard-design.md §6.1.1 适用商品分类+AI推荐）。2026-09-14 校准（#3518）：收尾裸文本「确认」改答卡轮（B 端 confirm 门禁：文字≠点卡）；2026-09-15 补自清理（issue #3800，判定跑 run 34865780382 实证）：本用例建的同名商品与种子 `prod_eval_blackout`（遮光窗帘）撞名，而 `namespaces` 只保证并行互斥、不解决重试前置等价性（#3751 的复位按 pre_clean opt-in）⇒ 首跑建出的那件留到重试 ⇒ agent 正确拒绝建重复 ⇒ 指纹漂移误判 unstable（首跑指纹无 `no_success(product_manage)`、重试指纹有，即铁证）⇒ 补 `product_dedupe{遮光窗帘}`（保留最早创建 = 种子）；**不能用 product_remove**（子串删全部 ⇒ 会连种子一起删，而它是 PR-005/PR-007/CR-001/CR-003/OR-015 的共享前置）；expectations/required_args/data_checks 原样未动 ｜ tags: processing_item, product_category, guided_flow, recommendation
 
 ### PR-017. 商品创建/更新/详情透传「退货回补库存」开关（allow_return_restock） 🔵
 ```

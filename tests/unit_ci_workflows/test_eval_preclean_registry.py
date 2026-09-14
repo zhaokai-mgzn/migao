@@ -229,6 +229,40 @@ class TestRealCasesUseTheNewTypeMinimally:
         assert re.fullmatch(r"\d{11}", str(h3[0]["employee_phone"]))
 
 
+class TestCreateCasesDeclareTheirOwnCleanup:
+    """写类「创建全局可命名对象」用例必须能**自清理**（issue #3800）。
+
+    为什么单锁一条（PR-016）：`namespaces` 只给**并行互斥**，**不解决重试前置等价性** ——
+    #3751 的重试复位按 `pre_clean` **opt-in**（`_reset_for_retry` 对未声明者返回 None）
+    ⇒ 没有 `pre_clean` 的建品用例，首跑造出的商品会留到重试 ⇒ agent **正确地**拒绝建重复
+    ⇒ 两次前置不同 ⇒ 指纹漂移 ⇒ 误判 `unstable`（本 run 的 PR-016 实红）。
+    """
+
+    def _by_id(self, fname: str) -> dict:
+        import yaml
+        doc = yaml.safe_load((CASES_DIR / fname).read_text(encoding="utf-8"))
+        return {c["id"]: c for c in doc["cases"]}
+
+    def test_pr016_cleans_its_own_seed_colliding_product(self):
+        """PR-016 建的商品与**种子同名**（「遮光窗帘」/ `prod_eval_blackout`）⇒
+        必须用 `product_dedupe`（保留最早创建 = 种子），**不能**用 `product_remove`
+        （子串删全部 ⇒ 会连种子一起删，而它是 5 条用例的共享前置）。"""
+        c = self._by_id("product.yml")["PR-016"]
+        assert "遮光窗帘" in str(c.get("user_inputs") or ""), (
+            "PR-016 的输入变了？本守卫的前提是「它建的商品与种子同名」")
+        pc = c.get("pre_clean") or []
+        assert [s.get("type") for s in pc] == ["product_dedupe"], (
+            f"PR-016 缺自清理 ⇒ 重试前置与首跑不等价（#3800）：{pc}")
+        assert pc[0].get("product_keyword") == "遮光窗帘", pc
+        assert "product_name:遮光窗帘" in (c.get("namespaces") or []), c.get("namespaces")
+
+    def test_pr016_does_not_use_the_destructive_remove(self):
+        """**红证锚点**：`product_remove` 会删**全部**子串命中项（含种子）——
+        对「遮光窗帘」这种共享前置是破坏性的，必须被本守卫挡住。"""
+        assert "product_remove" not in [s.get("type")
+                                        for s in (self._by_id("product.yml")["PR-016"].get("pre_clean") or [])]
+
+
 # ── httpx 替身：零网络、零 LLM 地走**真实分支**（issue #3791 的红证手段）──────────
 # 为什么需要它：本文件的其余用例只能断言**纯函数**（消息 → 是否折叠）。而 #3791 的病灶
 # 长在**分支里**（`customer_tag_remove` 的"标签不在目录"那一格）—— 只测纯函数会漏掉它，
