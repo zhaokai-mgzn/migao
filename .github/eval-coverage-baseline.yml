@@ -1,0 +1,70 @@
+# 评测用例库「覆盖体检」存量豁免清单（burn-down baseline）—— issue #3575 / PR #3578
+#
+# 这是什么：`scripts/xiaobu_coverage.py --check` / `scripts/mibao_coverage.py --check`
+# （CI: pr-check.yml 的 `Case Coverage Gate`）的**存量缺口豁免表**。
+#
+# 为什么需要：门禁首次接入时必然与**存量**结构性缺口冲突。放宽判据 = 门禁变摆设；
+# 挡住所有 PR = 用存量债锁死流水线。第三条路 = **显式、可收缩的清单**：
+#   · 只豁免**已登记**的存量缺口；
+#   · 任何**新出现**的缺口照旧阻塞（这是门禁的核心价值）；
+#   · 销账（补完用例）后必须删条目，否则「陈旧登记」会让 job 红（防白名单变垃圾场）。
+#
+# 每条必填 5 个字段，缺一即报告红（校验实现在 scripts/case_coverage.py::load_baseline）：
+#   tool    该端真实工具名（拼错/已删除 → 判无效）
+#   kind    结构性缺失（**阻断型**，必须登记才不红）：uncovered | missing_positive
+#           厚度不足（**只报告型**，本来就只报告；登记只为进工作清单）：thin | thin_positive
+#   issue   追踪 issue（`#<数字>`）—— CI 会校验它**仍然 open**（关了说明该销账了）
+#   reason  为什么暂时豁免（≥8 字）
+#   added   登记日期
+#
+# 陈旧登记（销账后没删条目）的**分级**（#3575 排序实证）：
+#   · 阻断型（uncovered/missing_positive）→ **阻塞**：它在抑制真实缺口，不删会腐烂并掩盖新缺口；
+#   · 只报告型（thin/thin_positive）→ **只警告**：工具变厚是好消息；若也阻塞，就会让
+#     "补了用例的那个包"（它不知道本清单存在）把 main 变红 —— 用工作清单给别人下绊子。
+#
+# ⚠️ 这是**工作清单**，不是免死金牌：补完用例 → 删条目 → job 保持绿。
+#    清单应**单调缩短**；entries 变长需要 review 说明（当前 3 条阻塞 + 4 条薄覆盖，全部有归属）。
+
+version: 2
+# ⚠️ 本文件由 `yaml_light`（仓库零依赖解析器）读取 —— 只能用**单行标量**：
+#    多行字符串（`>-`）/ flow style 会让解析在缩进更深的行处**静默停止**，
+#    entries 整段读成空 = 存量缺口全部当作新缺口阻塞（门禁全红，且看不出原因）。
+note: "存量缺口 burn-down 清单（#3575 引入）。只豁免已登记项；新缺口照旧阻塞；补完用例即删条目（陈旧登记被判红）。"
+
+entries:
+  # ── 结构性缺失（阻塞项，靠本清单才保持绿）──────────────────────────────
+  # ✅ 销账（2026-09-14，issue #3568 / PR #3589）：`processing_order_query` /
+  #    `processing_order_update` 的 uncovered 条目**已删除** —— 配套正向用例
+  #    **PG-015**（查询）/ **PG-016**（更新状态）在**同一个 PR** 里补上（processing-order.yml）。
+  #    补用例与删条目必须同 PR：分开做会出现「main 带陈旧登记」或「main 带零覆盖缺口」的红窗口。
+  - tool: order_manage
+    kind: missing_positive
+    persona: mibao
+    issue: "#3603"
+    reason: 仅 OR-007/CU-005 两条 adversarial —— 正常档的改状态/发货路径无评测证据
+    added: "2026-09-14"
+
+  # ── 厚度不足（本来就只报告；登记 = 进工作清单，便于逐条销账）──────────────
+  - tool: validate_input
+    kind: thin_positive
+    persona: xiaobu
+    issue: "#3558"
+    reason: C 端仅 OR-023 一条（正向）；缺"非法输入必须挡住写操作"的拒绝半
+    added: "2026-09-14"
+
+  # ✅ 销账（2026-09-14，issue #3568 / PR #3589）：`processing_order_generate` 的
+  #    thin_positive 条目**已删除** —— 该工具现由 PG-013 + PG-015 + PG-016 三条覆盖
+  #    （不再「仅 PG-013 一条」）；且原条目追踪的 `#3589` 是本 PR，合并后即非 open。
+  - tool: session_manage
+    kind: thin_positive
+    persona: mibao
+    issue: "#3592"
+    reason: 仅 DA-004 一条（正向）；在线会话/排队/历史会话其它动作无覆盖（#3592 跟踪）
+    added: "2026-09-14"
+
+  - tool: sku_update
+    kind: thin_positive
+    persona: mibao
+    issue: "#3559"
+    reason: 仅 PR-021 一条；该用例 data_checks 缺 success=true（假绿口径）须先修再加厚
+    added: "2026-09-14"

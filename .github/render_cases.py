@@ -340,9 +340,11 @@ def to_md(cases):
                 _dv_head = f" {dv['name']}" if dv.get("name") else ""
                 lines.append(f"落库: {dv.get('fetch')}{_dv_head} → {'; '.join(map(str, _dv_parts))}")
             for ov in (c.get("output_verify") or []):
-                # 产出侧断言（#3544：PP-006/PR-021 假绿升级用的就是它）此前未渲染 → 补齐
+                # 产出侧断言（#3544：PP-006/PR-021 假绿升级用的就是它）此前未渲染 → 补齐；
+                # action 一并渲染：多 action 工具的作用域是这条断言的关键信息（漏读会误判）
                 _ov_exp = "; ".join(f"{k}=={v}" for k, v in (ov.get("expect") or {}).items())
-                lines.append(f"产出: {ov.get('tool')} → {_ov_exp}")
+                _ov_act = f"({ov['action']})" if ov.get("action") else ""
+                lines.append(f"产出: {ov.get('tool')}{_ov_act} → {_ov_exp}")
             for ps in (c.get("post_session") or []):
                 lines.append(f"会话后: {ps.get('fetch')}({ps.get('agent_type', 'xiaobu')}) → {'; '.join(ps.get('checks') or [])}")
             if c.get("skip_reason"):

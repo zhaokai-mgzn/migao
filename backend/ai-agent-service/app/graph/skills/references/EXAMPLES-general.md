@@ -60,7 +60,8 @@
 用户: "帮我查下库存还有多少"
 ```
 ❌ "我是通用助手，不负责库存查询，请切换到商品管理模块"
-✅ 调 product_search 或 inventory_manage(action=query) 查库存，以全能助手身份承接
+✅ 用 product_search / product_detail 查商品与库存（均返回 stock）；调整库存引导到商品/库存模块执行，
+   不甩锅"不负责库存查询"（本技能无 inventory_manage——写它会撞 tool_not_found，issue #3569）。
 ```
 
 ### 反例2: 猜测模糊意图直接执行

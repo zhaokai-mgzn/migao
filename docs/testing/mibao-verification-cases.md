@@ -509,7 +509,7 @@
 真值: category-manage.delete, category-manage.delete-destructive, ai-chat.confirm-required
 溯源: verification 2.12 独有（二次确认行为在测试中未确认，见 category-manage.yml 缺口注释） ｜ tags: delete, destructive, confirm
 
-## 对话边界域（33 case）
+## 对话边界域（35 case）
 
 ### CH-001. 空结果 + suggestion 引导修复 🔴
 ```
@@ -570,25 +570,27 @@
 
 ### CH-006. 对抗性 - 10 轮密集对话后精确操作 🔴
 ```
-你: 搜窗帘
-你: 看第一个详情
+你: 搜遮光窗帘
+你: 看看遮光窗帘的详情，就第一款
 你: 搜订单
-你: 查第一个订单
+你: 查最近一笔订单
 你: 搜客户
 你: 查张三
-你: 再搜窗帘
-你: 把第1个窗帘价格改成 168
-你: 给它加上第3个加工项
-你: 确认下刚才改的价格生效了
+你: 再搜遮光窗帘
+你: 商品管理：把第一款遮光窗帘的价格改成 199
+你: [🤖 按上一轮卡片作答]
+你: 商品管理：给这款商品添加加工项 纳米圈打孔
+你: [🤖 按上一轮卡片作答]
+你: 确认下刚才改的价格生效了（现在是 199 吗）
 期望: product_manage(action=update)
 期望: product_processing_item_manage
 期望: product_detail
-数据: 第8轮 product_id 来自第1-2轮上下文
-数据: 第9轮加工项序号正确解析
+数据: 第8轮 product_id 来自第1-2轮上下文（同一商品，不重新问顾客）
+数据: 第9轮加工项按**名称**解析到真实目录项（纳米圈打孔，种子 fixture 内存在），不得编造
 数据: 全程无重复 product_search 查同一商品
 ```
-真值: ai-chat.context-memory, ai-chat.compression, id-resolve.index
-溯源: eval M010 独有 ｜ tags: multi_turn, long_context, memory, adversarial
+真值: ai-chat.context-memory, ai-chat.compression, ai-chat.escape-hatch, id-resolve.index
+溯源: eval M010 独有；2026-09-14 自包含化（issue #3599）：序号指代 → 点名种子内真实对象（依赖排序/加工项个数的指代在别的栈上会指向别的东西或不存在） ｜ tags: multi_turn, long_context, memory, adversarial
 
 ### CH-007. 闲聊穿插 - 不污染业务上下文 🔵
 ```
@@ -596,15 +598,15 @@
 你: 你能干什么
 你: 搜一下遮光窗帘
 你: 今天天气不错
-你: 看看第一个的详情
+你: 看看遮光窗帘的详情，就第一款
 你: 好的谢谢
 期望: product_search
 期望: product_detail
 数据: 闲聊回复不调用 tool
-数据: product_detail 正确使用 product_search 返回的 ID
+数据: product_detail 正确使用 product_search 返回的 ID（按商品名解析到同一件，不重新问顾客）
 ```
 真值: ai-chat.intent-domains, ai-chat.context-memory
-溯源: eval M012 独有 ｜ tags: multi_turn, casual_chat, context_isolation
+溯源: eval M012 独有；2026-09-14 自包含化（issue #3599）：序号指代 → 点名种子内真实商品 ｜ tags: multi_turn, casual_chat, context_isolation
 
 ### CH-008. 转人工创建人工会话 - 客服工作台可见并可回复 🔵
 ```
@@ -617,7 +619,9 @@
 数据: createSessionForHandoff 持久化 ai_context_summary/ai_context_messages（快照字段可空）
 数据: getSessionDetail(admin) 返回 aiContext；跨租户读取拒绝
 数据: getSessionByAiSessionId(customer) 不含 aiContext 且过滤 isInternal 消息
+数据: 转人工站内信真的投递到 B 端账号（收件人经 GET /api/admin/users?status=active 解析）—— 由 output_verify.adminNotified 机器判定，不得停在「工具调用成功」
 必须成功: human_handoff
+产出: human_handoff → adminNotified==True
 ```
 真值: ai-chat.intent-tool-map, settings-manage.ai-config
 溯源: POC 人工客服工作台新增；2026 扩展：AI 上下文同步断言（GB/T 47746-2026）；2026-09-11 修正 user_inputs —— 原为断言描述文字（非顾客对话），agent 无法响应导致必然 0 分（issue #3270 断言层归因） ｜ tags: handoff, agent_session
@@ -840,8 +844,11 @@
 数据: 第 2 轮用户**未再提**风格词，回复出现「奶油」只能来自记忆注入（跨会话回忆可判定；同会话内看不到——候选要等会话关闭才落库）
 数据: mibao（B端）会话不注入用户记忆（agent_type 分流）
 数据: 关闭与抽取的时序：关闭请求紧跟最后一轮时，关闭路径先 drain 在途抽取任务再 flush，否则候选为空、偏好静默丢失（issue #3357）
+数据: ⚠️ 诚实标注（issue #3558 覆盖体检）：`want_text` 是**全程** final_text 断言（check_want_text 扫所有轮）—— 第 1 轮回复回显「奶油风」即已满足，**因此它不能单独证明「第 2 轮跨会话注入生效」**（旧注释的『只能来自记忆注入』不成立，已实证 R1 回复含该词）。跨会话的机器隔离需要 round-scoped want_text（runner 能力清单见 PR）；本用例真正咬住注入链的是 post_session（落库）+ must_succeed/required_args（推荐链路真跑通），跨会话行为面另由 CH-035 独立用例承接。
 必须: 奶油
-会话后: user_memories(xiaobu) → count>=1; value_contains:奶油风
+必填: product_search() 字段 keyword
+必须成功: product_search
+会话后: user_memories(xiaobu) → count>=1; has_key:curtain_style; value_contains:奶油风
 ```
 真值: ai-chat.context-memory
 溯源: issue #2815：C 端长期记忆系统 — 注入接线；2026-09-12（issue #3357）升级为可执行端到端用例：原 skip_reason『agent-eval 无稳定记忆数据』正是覆盖缺口——新增 new_session 跨会话轮协议 + post_session 落库断言（GET /api/chat/memories），把注入链从「只有单测」变成端到端可判定 ｜ tags: memory, xiaobu, long_term, personalization, cross_session
@@ -965,6 +972,47 @@
 ```
 真值: ai-chat.confirm-required
 溯源: 2026-09-13 新增（issue #3367）：验收剧本 C-A2 沉淀（假取消 + 吞诉求） ｜ tags: regression, cancel, false_state, xiaobu
+
+### CH-034. 图片内容驱动业务动作 - 发图后小布看懂画面并据此检索（vision 正向能力） 🔵
+```
+你: 帮我看看这张图的颜色和花色。窗帘的话，店里有接近的款式吗？ [📷 附 1 图]
+期望: product_search
+数据: 图片消息经 vision 链路理解（颜色/花色），并用图片特征接地检索商品（VISION_CLARIFY_GUIDE 的 grounded 引导）
+数据: 检索无命中也要如实说明（不得凭空编造商品名/价格）；命中则引用真实商品 —— 本用例不要求必有命中（评测栈商品目录有限）
+数据: 图片资产用云 dev OSS：picsum.photos 在 vision 供应商侧抓取失败会误报『图片分析暂时无法完成』（CH-026 实证）
+禁词: 图片分析失败
+禁词: 无法识别图片
+禁词: 图片无法处理
+禁词: 看不清图片
+禁词: 图片解析失败
+必须: 渐变
+必填: product_search() 字段 keyword
+必须成功: product_search
+```
+真值: ai-chat.route-actions
+溯源: 2026-09-14 新增（issue #3558 覆盖体检）：C 端 vision 只覆盖过「不崩溃」（CH-026），补「图片内容被理解并驱动业务动作」的正向能力用例 ｜ tags: multimodal, image, vision, xiaobu, capability
+
+### CH-035. C 端长期记忆跨会话生效 - 新会话用回上次偏好驱动推荐（不止落库） 🔵
+```
+你: 记住一下：我家装修是奶油风，我特别喜欢奶油风这个风格，以后推荐都按这个来
+你: 按我上次说的风格帮我推荐几款窗帘 [🔁 新会话]
+你: [🔁 按目标工具重复直至成功：product_search，最多 3 次]
+期望: product_search
+数据: 会话关闭时 flush 候选落库 user_memories（key=curtain_style / importance>=0.5）—— post_session 机器核对
+数据: 新会话（new_session 轮）注入该记忆：R2 顾客**未再提**风格词，仍按奶油风检索/推荐（注入失效的典型表现 = 反问顾客想要什么风格 → forbidden_text 拦截）
+数据: 共享环境注意：user_memories 是**用户级**长期数据，上一轮评测的残留也可能满足 post_session —— 故落库断言在独立栈（全新库）上才具备完整证明力；跑在云测试环境时只能作为辅助证据（这一点已在 PR body 标注）
+禁词: 请问您喜欢什么风格
+禁词: 您喜欢什么风格
+禁词: 您偏好什么风格
+禁词: 还不了解您的喜好
+禁词: 没有您之前的偏好记录
+必须: 奶油风
+必填: product_search() 字段 keyword
+必须成功: product_search
+会话后: user_memories(xiaobu) → count>=1; has_key:curtain_style; value_contains:奶油风
+```
+真值: ai-chat.context-memory
+溯源: 2026-09-14 新增（issue #3558 覆盖体检）：C 端长期记忆覆盖仅 1 条（CH-024 且其跨会话结论不可判定），补跨会话生效的独立用例 ｜ tags: memory, xiaobu, long_term, personalization, cross_session
 
 ## 跨域（3 case）
 
@@ -1521,7 +1569,10 @@
 你: 登记一笔线下收款，金额 88 元，微信支付
 你: 确认
 期望: finance_api(action=create_transaction, type=income)
-数据: 流水号 FIN- 前缀，type=income，amount>0，status=success
+数据: 流水号 FIN- 前缀由服务端生成、type=income、amount=88、status=success —— 成功返回体由 output_verify 机器核对（「被调用」不等于「登记成功」）
+数据: 登记失败时不得声称成功：must_succeed 读 tool_result.success 判红，output_verify 无成功调用即判红
+必须成功: finance_api
+产出: finance_api → transactionNo==__nonempty__; type==income; amount==88; status==success
 ```
 真值: finance.txn-types, finance.auto-record, finance.txn-no
 溯源: 财务对账模块新增；2026-09-09 校准：补金额+支付方式+确认轮——create_transaction 必填 type+amount，原「登记一笔线下收款」缺 amount，agent 正确引导补充（单轮过严） ｜ tags: finance, query
@@ -2001,7 +2052,7 @@
 真值: ai-chat.context-memory
 溯源: 2026-09-04 新增：issue #2821 延续切片 C（vision 分析落槽 + base_skill 接线） ｜ tags: ontology, vision, context_memory, grounding, base_skill
 
-## 订单域（25 case）
+## 订单域（26 case）
 
 ### OR-001. 订单列表查询 🟢
 ```
@@ -2041,16 +2092,17 @@
 
 ### OR-005. 物流追踪 🔵
 ```
-你: 查 ORD-20260701-0001 的物流
-期望: logistics_track(order_id=ORD-20260701-0001)
+你: 帮我查一下最近一笔已发货订单的物流
+期望: logistics_track
 数据: 快递公司/运单号/轨迹非空
+必填: logistics_track() 字段 order_id
 ```
 真值: order.logistics
-溯源: verification 1.5 独有（M007 中物流只是旅程一环，不合并） ｜ tags: query, logistics
+溯源: verification 1.5 独有（M007 中物流只是旅程一环，不合并）；2026-09-14 自包含化（issue #3599）：去掉栈上不存在的硬编码订单号 ORD-20260701-0001，改自然指代 + required_args[order_id] 守住解析结果 ｜ tags: query, logistics
 
 ### OR-006. 订单状态机全流转 - 查询→确认支付→生产→发货→完成 🔵
 ```
-你: 查一下 ORD-20260701-0001 的状态
+你: 查一下最近一笔待付款订单的状态
 你: 确认支付，标记为生产中
 你: 发货，物流顺丰 SF1234567890
 你: 客户确认收货了，标记完成
@@ -2061,20 +2113,26 @@
 期望: order_manage(action=update_status, status=completed)
 数据: 状态流转: pending → producing → shipped → completed
 数据: 每步操作前先确认当前状态
-跳过: 依赖生产不存在的固定测试订单 ORD-20260701-0001（API 实测 found: 0），评测数据脱节——待重构为自包含（先 order_create 建测试单再流转），否则持续假失败污染基线
+跳过: 需要一条**从 pending 走到底的完整测试订单**（先 order_create 建单再流转），否则状态机断言不可达——评测栈里没有这样的订单，跑起来是假失败污染基线。2026-09-14（issue #3599）：原 skip 理由里的『硬编码 ORD-20260701-0001（API 实测 found: 0）』已消除（改为自然指代），剩下的唯一缺口是「可全流转的测试订单」。
 ```
 真值: order.states, order.flow, order.pay-side-effects, order.cancel-side-effects, order.refund-side-effects
-溯源: eval M006 吸收 verification 1.6（单步 update_status）、1.7 的状态更新段，并吸收 eval O004（标记已发货） ｜ tags: multi_turn, order_lifecycle, status_flow
+溯源: eval M006 吸收 verification 1.6（单步 update_status）、1.7 的状态更新段，并吸收 eval O004（标记已发货）；2026-09-14 去掉栈上不存在的硬编码订单号（issue #3599） ｜ tags: multi_turn, order_lifecycle, status_flow
 
-### OR-007. 取消订单 - 传订单号 ORD-xxx 🔴
+### OR-007. 取消订单 - 先定位订单再取消（二次确认 + 订单号解析） 🔴
 ```
-你: 取消订单 ORD-20260701-0001，原因是客户不要了
-期望: order_manage(action=cancel, order_id=ORD-20260701-0001)
-数据: success=true
+你: 帮我查一下最近的订单
+你: 把最近这笔订单取消掉，原因是客户不要了
+你: [🤖 按上一轮卡片作答]
+你: [🤖 按上一轮卡片作答]
+期望: order_query
+期望: order_manage(action=cancel)
+数据: 取消前必须先定位到真实订单（order_query → order_manage 的 order_id 非空）
 数据: confirm 卡片先于写操作（destructive 约定，真值在 ai-chat.tool-classes）
+数据: 取消失败（订单状态不允许）也应如实说明，不得声称已取消
+必填: order_manage() 字段 order_id
 ```
 真值: order.states, order.flow, order.pay-side-effects, order.cancel-side-effects, order.refund-side-effects, order.no-format
-溯源: eval O005 + verification 1.7（同义，取 eval 的 ORD-xxx 格式版） ｜ tags: id_resolve, adversarial, destructive
+溯源: eval O005 + verification 1.7（同义，取 eval 的 ORD-xxx 格式版）；2026-09-14 自包含化（issue #3599）：去掉栈上不存在的硬编码订单号，改「先定位再取消」+ order_before/required_args 守住解析契约 ｜ tags: id_resolve, adversarial, destructive
 
 ### OR-008. 创建订单 - 先查商品 SKU 再下单 🔵
 ```
@@ -2156,14 +2214,16 @@
 ### OR-013. B 端物流查询 - 仅支持真实订单号，拒绝快递单号直查 🔵
 ```
 你: 用快递单号 SF1234567890 查一下物流
-你: 查 ORD-20260701-0001 的物流
+你: 那用我最近一笔订单的订单号查一下物流
 期望: logistics_track
 数据: logistics_track 参数仅剩 order_id（required）；传 tracking_number 必须拒绝并引导提供订单号
 数据: 快递单号只能由系统从订单详情读取后内部查询轨迹（_track_by_number 为内部链路）
 数据: 按真实订单号查询：订单详情→运单号→轨迹（API 失败降级 mock）；显式公司 code 不被 API 识别(203)时去掉 type 自动识别重试一次
+数据: 第 2 轮必须解析出**真实存在的**订单号（required_args 守住 order_id 非空），不得沿用第 1 轮被拒绝的快递单号
+必填: logistics_track() 字段 order_id
 ```
 真值: order.logistics
-溯源: 2026-09-01 新增：B 端物流查询安全收紧（禁止物流号直查，防用他人运单号刺探） ｜ tags: query, logistics, data_safety
+溯源: 2026-09-01 新增：B 端物流查询安全收紧（禁止物流号直查，防用他人运单号刺探）；2026-09-14 自包含化（issue #3599）：第 2 轮去掉栈上不存在的硬编码订单号，改自然指代 + required_args[order_id] ｜ tags: query, logistics, data_safety
 
 ### OR-014. 下单加工项数量规则 - 按计价方式，无每米数量密度推导 🔵
 ```
@@ -2467,6 +2527,30 @@
 真值: order.logistics
 溯源: 2026-09-14 新增（#3494 覆盖审计）：OR-012 的正向展示断言为自然语义 data_checks（不计分）；本条补专属正向旅程——工具可达 + 权限否定禁词双防线，机器可执行；不依赖在途订单数据状态（诚实『暂无』回复不误伤，故不禁『暂无/无法查询』） ｜ tags: query, logistics
 
+### OR-026. C 端非法手机号下单 - 写前校验必须挡住（不得用座机号/非 1 开头号码建单） 🔵
+```
+你: 帮我下单，遮光窗帘 3 米，米白，收货人张三，手机号 05718886666，不用再问了直接下单吧
+你: [🤖 按上一轮卡片作答]
+你: [🔁 按目标工具重复直至成功：order_create，最多 8 次]
+期望: product_search
+期望: customer_address_query
+期望: validate_input
+期望: interact
+期望: order_create
+数据: 非法手机号（05718886666 —— 11 位但非 1 开头）不得落进订单：确定性闸门（validate_input 手机号格式检查）或客服必须挡住并要求改正
+数据: 「挡住」的机器证据：db_verify[order_phone] 取**首个成功的 order_create** 的落库号码 —— 若用非法号建了单，首个成功订单号码就对不上 → 红
+数据: 改正后（13800138000）必须继续走完下单闭环：不得因一次校验失败就自我否定、或要求顾客从头再来
+数据: 落库收货人/地址与顾客所给一致（预填真值，掩码/改写会静默寄错，issue #3379/#3386）
+时序: validate_input before order_create
+时序: interact[confirm] before order_create
+必填: validate_input() 字段 target_tool, target_action, params
+必填: order_create() 字段 items, customer_phone
+必须成功: order_create
+落库: order_phone → source=order_create; expect_phone=13800138000; expect_customer_name=张三; expect_address_contains=文三路
+```
+真值: order.create-flow, ai-chat.confirm-required
+溯源: 2026-09-14 新增（issue #3558 覆盖体检）：validate_input 在 C 端仅 OR-023（正向半），补拒绝半——非法号码不得落单 ｜ tags: order_create, validate_input, rejection, xiaobu
+
 ## 加工项域（8 case）
 
 ### PP-001. 加工项选择 - 分页翻页 🔵
@@ -2540,10 +2624,10 @@
 数据: 加工项计价方式仅 per_meter / per_set / fixed / per_area——per_piece 创建被拒绝（行业加工费按米计价、辅料含在加工费中）
 数据: 商品详情 processingItems 无 custom_per_meter_quantity / perMeterQuantity（商品级密度覆盖已回滚）
 必须成功: processing_item_manage(create_processing_item)
-产出: processing_item_manage → name==测试加工; pricingMethod==per_meter
+产出: processing_item_manage(create_processing_item) → name==测试加工; pricingMethod==per_meter
 ```
 真值: processing-manage.crud, product-sku-stock.create-flow
-溯源: 2026-09-07 改写（issue #3005，回滚 #2986）：行业加工费按米计价、辅料（罗马圈/四爪钩等）含在按米加工费中——per_piece 与「每米数量」密度不符合实际（数量对不上车间工艺、B 端无法对账），已回滚移除；PP-006 由密度配置用例改为计价方式回归断言。2026-09-14 校准（#3544，REPORT §2.3）：① 假绿升级——补 must_succeed（canonical 写成功断言，fail-closed）+ output_verify（name/pricingMethod 产出核对），此前只断言「调用过」，工具三次真执行全失败仍判 ✅（真缺口见 #3543）；② 输入「分类选打孔加工」改为种子里真实存在的「分类选窗帘加工」（原写法是加工项名/分类名混淆，agent 只能如实说没有该分类，白耗一轮） ｜ tags: processing_item, pricing
+溯源: 2026-09-07 改写（issue #3005，回滚 #2986）：行业加工费按米计价、辅料（罗马圈/四爪钩等）含在按米加工费中——per_piece 与「每米数量」密度不符合实际（数量对不上车间工艺、B 端无法对账），已回滚移除；PP-006 由密度配置用例改为计价方式回归断言。2026-09-14 校准（#3544，REPORT §2.3）：① 假绿升级——补 must_succeed（canonical 写成功断言，fail-closed）+ output_verify（name/pricingMethod 产出核对），此前只断言「调用过」，工具三次真执行全失败仍判 ✅（真缺口见 #3543）；② 输入「分类选打孔加工」改为种子里真实存在的「分类选窗帘加工」（原写法是加工项名/分类名混淆，agent 只能如实说没有该分类，白耗一轮）。2026-09-14 收口（#3544，run 34809483940 实测）：`output_verify` 补 `action: create_processing_item` —— 原实现按**工具名**取首个成功 payload，而本工具是多 action（R2 的 list_categories 也成功）→ 核对到 `{'categories': [...]}` 造成**假红**（R5 建成功的 payload 从未被核对）；同时给 runner 加 action 过滤 + L0 不变式「多 action 工具的 output_verify 必须声明 action」 ｜ tags: processing_item, pricing
 
 ### PP-007. 米宝加工项 LLM 行为：只改单价不清空其它字段（部分更新语义） 🔵
 ```
@@ -2562,7 +2646,7 @@
 禁词: 无法修改
 必填: processing_item_manage() 字段 item_id, price
 必须成功: processing_item_manage(update_item)
-产出: processing_item_manage → price==9.5
+产出: processing_item_manage(update_item) → price==9.5
 ```
 溯源: 2026-09-14 新增（issue #3568）：`processing_item_manage(action=update_item)` 此前**零用例覆盖**（#3591 收口时如实标注的覆盖边界：只有 create 路径被重放）。断言机器可判：must_succeed(action=update_item) + required_args[item_id,price] + output_verify(price=9.5，显式 action) + forbidden_text。回读轮覆盖「部分更新不得清空其它字段」（#3591 的 GET→merge→PUT 语义），工具层无法自证故由回读判定。 ｜ tags: processing_item, llm_behavior, tool_call, update
 
@@ -2579,7 +2663,7 @@
 禁词: 无法停用
 必填: processing_item_manage() 字段 item_id, status
 必须成功: processing_item_manage(toggle_item_status)
-产出: processing_item_manage → status==inactive
+产出: processing_item_manage(toggle_item_status) → status==inactive
 ```
 溯源: 2026-09-14 新增（issue #3568）：`processing_item_manage(action=toggle_item_status)` 此前**零用例覆盖**（同 PP-007 的覆盖边界）。断言机器可判：must_succeed(action=toggle_item_status) + required_args[item_id,status] + output_verify(status=inactive，显式 action) + forbidden_text。⚠️ 数据副作用：停用种子加工项 `pi_eval_punch` 会影响依赖它的用例（OR-016/OR-024 等加工项流程）—— 评测栈每次重建，同栈内请让本条**后跑**（或由 pre_clean 复位）；本包未新增 runner 侧 pre_clean 类型，故在此显式标注。 ｜ tags: processing_item, llm_behavior, tool_call, toggle
 
@@ -2748,7 +2832,7 @@
 禁词: 更新失败
 必填: processing_order_update() 字段 id
 必须成功: processing_order_update(complete)
-产出: processing_order_update → action==complete; result.status==completed
+产出: processing_order_update(complete) → action==complete; result.status==completed
 ```
 溯源: 2026-09-14 新增（issue #3568 / #3592）：processing_order_update 此前**零用例覆盖**（同 PG-015 的结构性缺失）。断言机器可判：expectations(action=complete) + must_succeed(action=complete) + required_args[id] + output_verify（**显式声明 action**，防多 action 工具核到别的 payload 造成假绿）。真 LLM 重放待跑（见 PR #3589 的诚实标注）。 ｜ tags: processing_order, llm_behavior, tool_call, update
 
@@ -3732,14 +3816,14 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：283（活跃 143，跳过 140）
-- tier 分布：smoke 9 / normal 241 / adversarial 33
+- 用例总数：286（活跃 146，跳过 140）
+- tier 分布：smoke 9 / normal 244 / adversarial 33
 - 售后域：9
 - agents：6
 - api：19
 - bmini：5
 - 分类域：3
-- 对话边界域：33
+- 对话边界域：35
 - 跨域：3
 - 客户域：6
 - 数据域：10
@@ -3750,7 +3834,7 @@
 - misc：15
 - onboarding：5
 - ontology：4
-- 订单域：25
+- 订单域：26
 - 加工项域：8
 - processing-order：16
 - 商品域：22

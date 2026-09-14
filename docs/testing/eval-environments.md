@@ -16,6 +16,37 @@
 无部署窗口干扰；可注入快模型与并发（当前 `deepseek-flash` + `EVAL_CONCURRENCY=6`）。
 代价：起栈固定成本 ~2-3 min（#3426 GHCR 预构建镜像在压）、干净栈需 seed 补齐业务数据（T3.2 `mibao_eval_seed.sql`）。
 
+### 1.1 种子口径：单一实现 + 每个 persona 一套栈（#3563，2026-09-14 固化）
+
+「标准考场」的前提是**同一个 persona 在任一 workflow 上拿到同一份数据栈**。此前三个
+评测 workflow 各写一份种子规则、且互不相等（`xiaobu-acceptance`/`post-deploy-eval`
+只在 `persona=mibao` 时叠 B 端种子，`agent-behavior-eval` **无条件**叠加），后果是
+**同一用例结论相反**：CH-010 在 `agent-behavior-eval` 上 0%（栈里 `products=4`，
+B 端 `prod_eval_2699` 因 `created_at` 更新而排在首条 → 用例的「第一款」指到了 B 端商品）、
+在 `xiaobu-acceptance` 上 100%（`products=3`，首条是 C 端「北欧风窗帘」）。
+
+**口径（单一真值 = `scripts/eval_stack_seed.sh`，三个 workflow 都调用它）**：
+
+| persona | 栈内种子 | 为什么 |
+|---|---|---|
+| `xiaobu` | **仅** C 端 `xiaobu_eval_seed.sql` | 叠加 B 端会改 `created_at` 排序 → 商品列表（`ORDER BY created_at DESC`）首条漂到 B 端 → C 端选品/「第一款」链路假失败 |
+| `mibao` | C 端 `xiaobu_eval_seed.sql` + B 端 `mibao_eval_seed.sql` | B 端点名数据缺失（2699 商品/刺绣工艺/客户张三/员工王五）会被误判成能力回归（#3496/#3511） |
+
+两条纪律：
+1. **一个栈只服务一个 persona**：`agent-behavior-eval` 已改 persona matrix
+   （每个 persona 一个 job + 独立栈 + 该 persona 的种子），与 `post-deploy-eval`
+   的 matrix 同款「独立 runner + 独立栈 + 独立新库」（#3515）；
+2. **能 L0 拦的不许流到 L2+**：口径漂移由
+   `tests/unit_ci_workflows/test_eval_stack_seed_parity.py` 秒级静态锁拦
+   （workflow 只许调单一源、xiaobu 栈不许含 B 端、同栈不许混 persona、
+   评测旋钮/节流值三路同值），**零 LLM**。
+
+同族 workflow 的旋钮（`EVAL_ROUND_SLEEP` / `EVAL_CASE_SLEEP` / `EVAL_CONCURRENCY` /
+`AGENT_EVAL_TRACE_ALL` / `AGENT_EVAL_FLAKE_LOG`）也由同一组静态锁逐项钉住 ——
+`AGENT_EVAL_FLAKE_LOG` 曾真实漏设（`post-deploy-eval` 上传了永不存在的
+`agent-eval-flakes.json`，`agent-behavior-eval` 既不落盘也不上传）。
+
+
 ## 二、各层用例档位（档位纪律见 migao-dev-flow §16）
 
 | 触发 | 环境 | 档位 | 说明 |
@@ -45,7 +76,7 @@
 |---|---|---|---|
 | PR（任意） | 三模块单测 / QA Growth Gate / ci-helper / gitleaks / Danger Scan | ★ **required（硬拦合并）** | pr-check 等 |
 | PR（AI 行为文件） | C 端 smoke（persona=xiaobu，独立栈）+ B 端 smoke（云测试环境） | 信息性（**不阻塞**） | `xiaobu-acceptance.yml`（pull_request + paths）/ pr-check |
-| PR（AI 行为文件） | **映射用例**（diff → §13.2 用例集，独立栈 + PR 评论）——**分层**：规则命中失败→**阻塞**；兜底默认集失败→**只报告**（评论标"无因果"） | 规则桶阻塞 / 兜底网信息性 | `agent-behavior-eval.yml`（#3502/#3523） |
+| PR（AI 行为文件） | **映射用例**（diff → §13.2 用例集，独立栈 + PR 评论 + 规则命中失败自动开 issue）——**分层**：规则命中失败 → **强信号**（报告 + 评论 + issue，**不拦合并**）；兜底默认集失败 → **只报告**（评论标"无因果"，**不开 issue**） | **均为信息性**（报告 + 评论 + issue） | `agent-behavior-eval.yml`（#3502/#3523/#3563） |
 | 部署（ai-agent 成功） | **双 persona 矩阵并行全量**（各自独立栈/全新库）→ completion_verdict 判定 → 失败去重建 issue | 部署后拦截 | `post-deploy-eval.yml`（#3503/#3515） |
 | 每周六 | adversarial 档 | 信息性 | `xiaobu-acceptance.yml`（schedule） |
 | 里程碑 / 下结论 | 结论档（全量 + 验收剧本 + 双裁判 + completion_verdict） | **结论前置（必过）** | 协议 v1.3 §1.6/§1.7 |
@@ -81,7 +112,7 @@ group 名不带 workflow 前缀即**跨 workflow 生效**。
 | workflow | 现状 | 落地改法（精确到行） | 预期效果 |
 |---|---|---|---|
 | `post-deploy-eval.yml` | ✅ **已改**（#3587） | 文件级新增 `concurrency: { group: eval-stack-global, cancel-in-progress: false }` | 部署后全量回归全局串行，不再与其它评测抢栈 |
-| `agent-behavior-eval.yml` | ⏳ 待改（另包） | 第 58-60 行：`group:` 从 `agent-behavior-eval-${{ github.event.pull_request.number \|\| github.ref }}` 改为 `eval-stack-global`；`cancel-in-progress: true` **保持不变** | 同 PR 新 push 仍即时取消旧 run（省栈省 token）；**跨 PR** 不再并发建栈，改为排队 |
+| `agent-behavior-eval.yml` | ✅ **已改**（#3563） | 与 xiaobu 同款**两层**：文件级 group 保持按 PR（`cancel-in-progress: true`）；在 `behavior-eval` job 加 job 级 `eval-stack-global-${{ matrix.persona }}`（`cancel-in-progress: false`） | 同 PR 新 push 仍即时取消旧 run；每个 persona 的栈全局串行（带 persona 后缀 = 该 workflow 的两条腿本就是两套独立栈，不带后缀会互相挤掉 pending 腿） |
 | `xiaobu-acceptance.yml` | ⏳ 待改（另包） | 文件级（第 86-88 行）**保持不变**；在 `xiaobu-acceptance` job（第 125 行 `xiaobu-acceptance:` 下、`timeout-minutes` 之后）新增 job 级 `concurrency: { group: eval-stack-global, cancel-in-progress: false }` | PR 级取消语义**完全保留**（新 push 仍能立刻杀掉排队中的旧 run —— 它还没起栈，杀掉最省）；真正起栈的 job 进入全局槽位，**同一时刻仓库内只有一套评测栈在构建** |
 
 **为什么 xiaobu 的改法与其他两个不同（关键取舍，别抄错）**：
@@ -104,7 +135,40 @@ group 名不带 workflow 前缀即**跨 workflow 生效**。
 4. group 名是**契约**：改名等于把队列拆散，改名必须同步改所有 workflow + 本文档
    （守卫：`tests/unit_ci_workflows/test_post_deploy_eval_supersede.py::TestGlobalEvalSlot`）。
 
-### 3.4 抑制「已被取代的 run」（#3587）：门禁不因抑制而消失
+**落地细节（#3563，与本文档其余部分一致）**：PR 触发的两条评测走**两层** group ——
+文件级管「同 PR 新 push 取消被取代的 run」（PR 迭代必需，**别丢**），job 级才是共享槽位。
+`agent-behavior-eval` 是 persona matrix（两条腿 = 两套独立栈），其 job 级 group 带
+`-${{ matrix.persona }}` 后缀：不带后缀时，新 run 的 mibao 腿会把旧 run 的 **pending xiaobu 腿**
+挤掉 → 丢掉一整个 persona 的结论。
+**诚实边界**：该槽位保的是「**最新的评测 run 会跑**」，不是「每个 PR 都拿到行为信号」——
+突发期被取代的 pending run 会 `cancelled`（信息性检查，不阻塞合并；行为信号由部署后全量轮承担）。
+要「每 PR 都有信号」必须分离 runner 池（超出仓库范围，本轮不选）。
+### 3.4 决策记录：规则命中**不再阻塞**，降为「报告 + PR 评论 + 自动开 issue」（2026-09-14 用户确认）
+
+- **决策**（2026-09-14，用户裁定原话"按建议来"）：`agent-behavior-eval` 的**规则命中**用例
+  失败时，workflow **不再变红**（评测步骤恒 `exit 0`），门禁语义从「规则桶阻塞 / 兜底网信息性」
+  降为「**均为信息性**」，但**高可见**：
+  1. **PR 评论**（每个 persona 一条，marker 带 persona）：明确写「命中的规则 = 哪个文件 → 哪条
+     规则 → 哪些用例」+「执行计划」+「结果」，并**显式标注这是强信号、必须人工/AI 判断，只是不拦合并**；
+  2. **自动开 issue**（去重守卫照 `post-deploy-eval.yml` 范式）：标题含**用例 ID + PR 号**，
+     body 带映射来源（命中规则明细）+ 失败要点 + 门禁语义说明；同标题 open issue 存在则追加评论；
+  3. 两者都**区分规则命中与兜底网**（兜底网失败只报告，**不开 issue**）。
+- **理由**：
+  ① 它产出过**假阻塞红** —— 规则按路径**正则**匹配，存在误命中风险（实测形态：测试文件名含
+     `guard` 就命中 `(guard|defense|injection)` 规则 → 把一个改 finance 工具的 PR 判成命中
+     防御规则、跑 DF-011/DF-012；该误命中的**修正**由另一个包改
+     `tests/agent_eval/behavior_mapping.py` 承担，与本文档的门禁语义是两件事）；
+  ② PR 层 LLM 评测**不构成合并门禁**（§16.5：LLM 行为层有意不进 required），
+     阻塞只带来「必须先证伪才能继续」的摩擦；
+  ③ 真拦截由**确定性 required 层**（9 项）+ **部署后全量**（post-deploy-eval，双 persona）
+     承担 —— 少一层 PR 层阻塞不会让真回归漏网。
+- **不弱化信号的落点**：step summary（`## 🧪 行为映射用例评测结果`）+ `::warning::` +
+  PR 评论 + **自动开 issue**；issue 是这条"强信号"的持久承接，不会随 PR 关闭而消失。
+- **同源决策记录待同步**：`migao-dev-flow` 技能文件 §16.5 另有一份决策记录，
+  由另一包（K）在改 —— 本决策在**技能文件侧**的同步待该包合并后进行（本 PR 不改技能文件）。
+
+
+### 3.5 抑制「已被取代的 run」（#3587）：门禁不因抑制而消失
 
 `post-deploy-eval.yml` 在**任何真实成本之前**比对「本次被评 SHA」与「远端 main HEAD」：
 不等即说明这份镜像已被更新的 commit 覆盖，**跳过评测**并打印链接链

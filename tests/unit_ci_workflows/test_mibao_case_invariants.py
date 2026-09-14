@@ -257,7 +257,12 @@ class TestNoUnknownToolNames:
 # ── B 端覆盖体检（scripts/mibao_coverage.py）与 C 端口径的一致性守卫（issue #3555）──
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
-from case_coverage import build_coverage_report  # noqa: E402
+from case_coverage import (  # noqa: E402
+    BASELINE_PATH,
+    _attach_baseline,
+    build_coverage_report,
+    load_baseline,
+)
 
 
 class TestMibaoCoverageReport:
@@ -297,27 +302,33 @@ class TestMibaoCoverageReport:
         )
 
     def test_real_gaps_are_reported_not_papered_over(self):
-        """回归网：B 端真实缺口必须被体检**报出来**（防阈值放水到看不见）。
+        """回归网：B 端**任何**结构性缺口都必须被体检报出并登记在清单里（防阈值放水到看不见）。
 
         **缺口已销账（2026-09-14，issue #3568 / #3592）**：加工单域的
         `processing_order_query` / `processing_order_update` 此前是**零覆盖**的结构性
-        缺口（体检在 pristine main 上 exit 2 报出、#3592 登记存量豁免）。本包已补正向
-        用例 **PG-015**（查询）/ **PG-016**（更新状态），故断言由「必须仍在未覆盖清单里」
-        改为**反向守卫** ——「**不得**重新变成未覆盖，且确实落在被覆盖集合里」。
-        这是 fail-closed 的：若将来有人删掉这两条用例（或改坏它们的 `expectations`），
-        本测试立刻变红，缺口不会被静默放回。
+        缺口（体检在 pristine main 上 exit 2 报出）。本包已补正向用例 **PG-015**（查询）
+        / **PG-016**（更新状态），并**同步删除** `eval-coverage-baseline.yml` 里对应的
+        两条 `uncovered` 阻断型条目（补用例与删条目必须同 PR，否则陈旧登记即红）。
+        故本条不再硬编码工具名（销账后工具名会漂移）—— 见下不变式。
+        **不硬编码具体工具**（加工单域已由 #3589 销账、order_manage 由 #3603 跟踪，
+        工具集与缺口会随迭代变化）：断言的是**不变式** ——
+          ① 体检报出的每个 blocking gap 都必须在存量豁免清单里有对应条目（不许隐形）；
+          ② 清单里的**阻断型**条目必须对应当前真实缺口（陈旧即红，与运行时同判据）；
+          ③ 判据没被削弱：人为注入一个零用例工具时必须被报出来。
         """
         cases = load_case_dicts(str(CASES_DIR))
-        rep = build_coverage_report(cases, "mibao", tools=_mibao_real_toolset())
-        # 正向证据先立（防「不在 uncovered」只是因为解析两边都空 = 本测试空转假绿）。
-        # `rep.cases` = tool → [用例 ID]（含对抗/否定）。
-        assert rep.cases, "覆盖矩阵的 cases 为空 —— 解析疑似失效（本测试会空转假绿）"
-        for tool in ("processing_order_query", "processing_order_update"):
-            assert rep.cases.get(tool), f"{tool} 没有被任何用例覆盖（PG-015/PG-016 未生效）"
-            assert tool not in rep.uncovered, (
-                f"{tool} 又变回零覆盖（PG-015/PG-016 被删/被改坏？）——"
-                f"B 端加工单域的正向覆盖不得回退")
-        assert not rep.missing_positive, (
-            "B 端出现「只有对抗/拒绝用例」的工具（需补正向用例）:\n  "
-            + "\n  ".join(f"{t}: {ids}" for t, ids in sorted(rep.missing_positive.items()))
+        tools = _mibao_real_toolset()
+        rep = _attach_baseline(build_coverage_report(cases, "mibao", tools=tools),
+                               load_baseline(BASELINE_PATH, "mibao", tools))
+        for tool, kind in rep.blocking_gaps():
+            assert rep.is_baselined(tool, kind), (
+                f"B 端结构性缺口 {tool}[{kind}] 未登记进存量豁免清单 —— "
+                f"门禁会红，且清单里看不到它（补用例见 migao-dev-flow §14.5）"
+            )
+        assert not rep.baseline_stale_blocking, (
+            f"清单有阻断型陈旧登记（销账后未删条目）: {rep.baseline_stale_blocking}"
+        )
+        synthetic = build_coverage_report([], "mibao", tools=tools | {"__synthetic_zero_case_tool__"})
+        assert "__synthetic_zero_case_tool__" in synthetic.uncovered, (
+            "零用例工具没被报出来 —— 判据被削弱了（check 恒绿的形态）"
         )

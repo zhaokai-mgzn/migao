@@ -11,6 +11,7 @@ import com.migao.admin.dto.agent.AgentOrderUpdateRequest;
 import com.migao.admin.security.SecurityUser;
 import com.migao.admin.service.OrderService;
 import com.migao.admin.security.RequirePermission;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.core.Authentication;
@@ -38,9 +39,16 @@ public class AgentOrderController {
      * Agent 专用创建订单。
      * POST /api/admin/agent/orders
      * subtotal 服务端按 quantity × unitPrice 强制重算。
+     *
+     * `@Valid`（issue #3622）：让 `AgentOrderCreateRequest.AgentOrderItem` 上的
+     * `@NotNull/@Positive` **真的执行** —— 修复前该端点无 `@Valid`，负数量/负单价一路落库
+     * （负金额 + 库存校验对负需求恒真 → 超卖防线被绕过）。校验失败由
+     * `GlobalExceptionHandler` 统一返回 422 VALIDATION_ERROR（与表单路径
+     * `/api/admin/orders` 同口径）；Service 层另有显式判定兜住绕过 HTTP 的调用方。
      */
     @PostMapping
-    public ApiResponse<OrderDetailResponse> createOrder(@RequestBody AgentOrderCreateRequest request) {
+    public ApiResponse<OrderDetailResponse> createOrder(
+            @Valid @RequestBody AgentOrderCreateRequest request) {
         Long tenantId = TenantContext.getTenantId();
         // C 端数据隔离：绑定当前真实用户（ServiceTokenFilter 从 X-User-Id 透传）
         request.setUserId(currentUserId());

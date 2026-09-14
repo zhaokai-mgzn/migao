@@ -552,16 +552,37 @@ class TestXiaobuEvalFixture:
         )
 
     def test_workflow_references_fixture_path(self):
+        """fixture 路径 + fail-fast 必须存在于**种子单一源**里（issue #3563）。
+
+        issue #3563 起 workflow 侧不再内联 fixture 路径（那正是"三处各写一份规则"的
+        病灶形态），改为调用 `scripts/eval_stack_seed.sh`。本测试的**原意**（"workflow
+        真的会装这套 fixture、且失败即 fail"）不变，只是取证点从 workflow 步骤体下移到
+        单一源：由 `test_eval_stack_seed_parity.py` 锁定"workflow 确实调用了它"，
+        本测试锁定"单一源确实注这套 fixture 且 fail-fast"—— 两者合起来与原断言等价
+        （不降门禁强度）。
+        """
         import yaml
         wf = WORKFLOWS_DIR / "xiaobu-acceptance.yml"
         d = yaml.safe_load(wf.read_text(encoding="utf-8")) or {}
         step = next((s_ for s_ in d["jobs"]["xiaobu-acceptance"]["steps"]
                      if "Seed" in (s_.get("name") or "")), {})
         body = step.get("run") or ""
-        assert "tests/agent_eval/fixtures/xiaobu_eval_seed.sql" in body, (
-            "workflow 未引用 fixture 文件路径"
+        assert "scripts/eval_stack_seed.sh" in body, (
+            "workflow 未调用种子单一源 scripts/eval_stack_seed.sh（issue #3563："
+            "禁止在 workflow 里内联种子规则）"
         )
-        assert "ON_ERROR_STOP=1" in body, "注入步骤应 fail-fast（ON_ERROR_STOP=1）"
+        script = Path(__file__).parent.parent.parent / "scripts" / "eval_stack_seed.sh"
+        assert script.is_file(), "种子单一源脚本缺失"
+        script_text = script.read_text(encoding="utf-8")
+        assert "tests/agent_eval/fixtures" in script_text, (
+            "单一源未引用 fixture 目录（若改名为多行/变量拼接，请同步本断言的取证方式）"
+        )
+        assert "xiaobu_eval_seed.sql" in script_text, "单一源未引用 C 端 fixture"
+        assert "ON_ERROR_STOP=1" in script_text, "注入必须 fail-fast（ON_ERROR_STOP=1）"
+        # 注入必须落到 compose 的 postgres 服务（同原断言的语义）
+        assert "docker compose" in script_text and "exec -T postgres" in script_text, (
+            "单一源未通过 docker compose exec postgres 注入"
+        )
 
 
 class TestXiaobuFixtureCustomerOrders:
