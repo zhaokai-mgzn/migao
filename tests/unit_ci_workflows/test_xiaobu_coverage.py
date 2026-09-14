@@ -599,8 +599,11 @@ class TestCoverageBaselineGuard:
             rep = build_coverage_report(cases, persona)
             bl = load_baseline(BASELINE_PATH, persona, rep.tools)
             rep = _attach_baseline(rep, bl)
-            assert not rep.baseline_missing, (
-                f"{persona} 清单有陈旧登记（销账后未删除）: {rep.baseline_missing}"
+            # 只对**阻断型**陈旧登记报错：只报告型（thin*）陈旧 = 别的包把用例补厚了，
+            # 是好消息；若这里也报错，别人的 PR 会被本清单连坐到**required 的 CI job** 上。
+            assert not rep.baseline_stale_blocking, (
+                f"{persona} 清单有**阻断型**陈旧登记（销账后未删除 → 会腐烂并掩盖新缺口）: "
+                f"{rep.baseline_stale_blocking}"
             )
             assert rep.check_problems() == [], (
                 f"{persona} 覆盖体检在仓库清单下应保持全绿，实际: {rep.check_problems()}"
