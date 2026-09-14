@@ -134,8 +134,25 @@ class TestRedProofAgainstLegacyBehaviour:
 _PENDING = {"target_tool": "order_create", "target_action": "create", "params": {}}
 
 
+class _DemoWriteTool:
+    """测试替身：`read_only=False` + 不受确认门禁（只用来隔离判据④）。"""
+
+    name = "demo_write"
+    read_only = False
+    destructive = False
+    requires_confirmation = False
+    parameters = {"type": "object", "properties": {}}
+
+
+def _tool_call(name: str, args: dict):
+    msg = MagicMock(spec=AIMessage)
+    msg.content = ""
+    msg.tool_calls = [{"name": name, "args": args, "id": "t1"}]
+    return msg
+
+
 def _run_epilogue(reply_text: str, *, store_state: dict | None = None,
-                  tool_side: list | None = None):
+                  tool_side: list | None = None, write_tool=None):
     """跑一次 `execute_skill`，返回 `final_answer`。
 
     `store_state` = 会话状态（模拟 SessionStateStore 里已落库的内容）；
@@ -177,7 +194,8 @@ def _run_epilogue(reply_text: str, *, store_state: dict | None = None,
          patch("app.graph.skills.base_skill._execute_tool_safe", fake_execute):
         registry = MagicMock()
         registry.get_langchain_tools.return_value = []
-        registry.get_tool.return_value = None
+        registry.get_tool.side_effect = lambda n: (write_tool if n == getattr(write_tool, "name", None)
+                                                  else None)
         create_reg.return_value = registry
         breaker = MagicMock()
 
@@ -233,9 +251,28 @@ class TestEpilogueGuard:
 
     def test_closed_loop_keeps_success_wording(self):
         """写已闭环（pending 已清）→「订单已提交成功」必须原样保留（不得误改成草稿态）。"""
-        done = "亲，订单已经帮您提交成功啦！📋 订单号：20260914991500013"
+        # 用**命中标记**的话术（真实回执就长这样）：这样一旦判据②失效（把已闭环的轮次
+        # 也纳入归一），断言就会红 —— 否则测试是空断言（"没改"可能只是"本来就没命中"）。
+        done = "亲，订单已提交成功啦！📋 订单号：20260914991500013"
         answer, _ = _run_epilogue(done, store_state={})
-        assert "已提交成功" in answer or "提交成功" in answer, (
+        assert "订单已提交成功" in answer, (
             f"把已成功的回执误改成草稿态（顾客会以为没下单）：{answer!r}")
         assert _DRAFT_STATE_PHRASE not in answer, (
             f"成功的回执被改写成草稿态措辞：{answer!r}")
+
+    def test_write_success_this_turn_disables_normalization(self):
+        """**反向红证（隔离判据④）**：同一轮有**非只读工具成功** ⇒ 不得归一。
+
+        构造方式：pending 目标仍是 `order_create` 且**未被确认**（判据②③仍成立），
+        只让本轮成功执行一把**非只读且不受确认门禁**的工具 ⇒ 唯一能让守卫闭嘴的就是判据④
+        （`not _write_ok`）。用本文件自带的测试替身而不是真实 B 端工具，避免测试与
+        另一个包的改动面耦合。
+        为什么必须有这条：否则"把守卫写成恒真"也能过前面所有断言（假绿）。
+        """
+        answer, _ = _run_epilogue(
+            "好的亲，已为您提交转人工申请，客服马上就联系您～",
+            store_state={"pending_validated_input": _PENDING},
+            tool_side=[_tool_call("demo_write", {"note": "x"})],
+            write_tool=_DemoWriteTool())
+        assert "已为您提交转人工申请" in answer, (
+            f"本轮有非只读工具成功，回复却被归一（守卫判据④失效）：{answer!r}")

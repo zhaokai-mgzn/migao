@@ -3296,6 +3296,9 @@ async def execute_skill(
                     # `execute_skill` 的局部变量 —— 不加 `nonlocal` 会创建一个**新局部**，
                     # 收尾的"补发确认卡"永远读不到（首版即此错，被新增用例当场抓住）。
                     nonlocal _no_card_blocked_args
+                    # 同理 `_write_ok`（issue #3750）：不加 nonlocal 只会创建一个**新局部**，
+                    # 收尾 8.6 永远读到 False ⇒ "本轮写成功了"判不出来，成功回执也可能被归一。
+                    nonlocal _write_ok
                     tool_name = tool_call["name"]
                     args = tool_call.get("args", {})
                     # ── C 端同一组件每轮只允许**一张**卡（issue #3445，OR-023 实证）──
