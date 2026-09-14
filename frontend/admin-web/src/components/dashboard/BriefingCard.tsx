@@ -74,7 +74,7 @@ function ItemRow({ item, tone }: { item: BriefingItem; tone: 'todo' | 'risk' | '
 }
 
 function ReviewStrip({ items }: { items: BriefingReviewItem[] }) {
-  if (!items.length) return null
+  if (!items || !items.length) return null
   return (
     <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
       {items.map((r, i) => (
@@ -104,7 +104,14 @@ export default function BriefingCard({ enabled = true }: BriefingCardProps) {
       const data = res.data.data
       setGenerated(!!data?.generated)
       setVerifyStatus(data?.verifyStatus ?? null)
-      setBriefing(data?.content ?? null)
+      // 后端 failed 状态返回 content={}（空对象）：归一化为 null，
+      // 避免渲染期 briefing.review.length 等对 undefined 取属性崩溃（UI 旅程实证）
+      const content = data?.content
+      if (content && typeof content === 'object' && Array.isArray(content.review)) {
+        setBriefing(content as BriefingContent)
+      } else {
+        setBriefing(null)
+      }
     } catch (e) {
       console.error('Briefing load:', e)
       setGenerated(false)
@@ -186,7 +193,7 @@ export default function BriefingCard({ enabled = true }: BriefingCardProps) {
             )}
 
             {/* 昨日回顾 */}
-            {briefing.review.length > 0 && (
+            {briefing.review?.length > 0 && (
               <div>
                 <h3 className="mb-2 text-xs font-semibold text-neutral-500">昨日回顾</h3>
                 <ReviewStrip items={briefing.review} />
@@ -194,7 +201,7 @@ export default function BriefingCard({ enabled = true }: BriefingCardProps) {
             )}
 
             {/* 今日必办 */}
-            {briefing.todo.length > 0 && (
+            {briefing.todo?.length > 0 && (
               <div>
                 <h3 className="mb-2 flex items-center gap-1.5 text-xs font-semibold text-neutral-500">
                   <ListTodo className="h-3.5 w-3.5 text-primary-500" /> 今日必办
@@ -206,7 +213,7 @@ export default function BriefingCard({ enabled = true }: BriefingCardProps) {
             )}
 
             {/* 风险预警 */}
-            {briefing.risks.length > 0 && (
+            {briefing.risks?.length > 0 && (
               <div>
                 <h3 className="mb-2 flex items-center gap-1.5 text-xs font-semibold text-neutral-500">
                   <AlertTriangle className="h-3.5 w-3.5 text-red-500" /> 风险预警
@@ -218,7 +225,7 @@ export default function BriefingCard({ enabled = true }: BriefingCardProps) {
             )}
 
             {/* 优化建议 */}
-            {briefing.suggestions.length > 0 && (
+            {briefing.suggestions?.length > 0 && (
               <div>
                 <h3 className="mb-2 flex items-center gap-1.5 text-xs font-semibold text-neutral-500">
                   <Lightbulb className="h-3.5 w-3.5 text-amber-500" /> 优化建议
@@ -230,7 +237,7 @@ export default function BriefingCard({ enabled = true }: BriefingCardProps) {
             )}
 
             {/* 全部区块为空（如全部条目被校验丢弃但 summary 存在）→ 提示性兜底 */}
-            {briefing.todo.length === 0 && briefing.risks.length === 0 && briefing.suggestions.length === 0 && (
+            {(briefing.todo?.length ?? 0) === 0 && (briefing.risks?.length ?? 0) === 0 && (briefing.suggestions?.length ?? 0) === 0 && (
               <p className="text-xs text-neutral-400">今日暂无待办事项与预警，经营平稳。</p>
             )}
           </div>

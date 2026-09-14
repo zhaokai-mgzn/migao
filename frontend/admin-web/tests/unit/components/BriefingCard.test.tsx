@@ -95,6 +95,18 @@ describe('BriefingCard（智能每日经营简报卡，issue #3468）', () => {
     await waitFor(() => expect(screen.getByText(/未通过数字校验/)).toBeInTheDocument())
   })
 
+  it('content 为空对象（failed 落库形态）→ 不崩溃，展示安全提示（UI 旅程实证回归）', async () => {
+    // 后端 failed 时 content={}（空对象）：修复前渲染期对 undefined.length 崩溃
+    getToday.mockResolvedValue({
+      data: { data: { generated: true, verifyStatus: 'failed', content: {}, bizDate: '2026-09-14' } },
+    })
+    render(<BriefingCard enabled />)
+
+    await waitFor(() => expect(screen.getByText(/未通过数字校验/)).toBeInTheDocument())
+    // 不崩溃 = 页面主体仍在
+    expect(screen.getByText('每日经营简报')).toBeInTheDocument()
+  })
+
   it('接口异常 → 降级为空态，不影响页面主体', async () => {
     getToday.mockRejectedValue(new Error('network'))
     render(<BriefingCard enabled />)
