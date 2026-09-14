@@ -93,9 +93,11 @@ describe('ProfilePage', () => {
     expect(screen.getByText('测试用户')).toBeTruthy()
   })
 
-  it('已登录应显示用户 ID', () => {
-    render(<ProfilePage />)
-    expect(screen.getByText('ID: u1')).toBeTruthy()
+  it('已登录不应出现内部 ID 行（面向低学历用户：原文案是页面唯一英文标签 + 不可读哈希）', () => {
+    const { container } = render(<ProfilePage />)
+    // 原「ID: <32 位内部哈希>」行已移除：改中文标签也治不了"值看不懂"，而它不承载任何用户可用信息
+    expect(container.querySelector('.user-id')).toBeNull()
+    expect(screen.queryByText(/^ID:/)).toBeNull()
   })
 
   it('应显示头像首字母', () => {
