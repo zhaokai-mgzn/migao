@@ -647,6 +647,9 @@ def _scalar_value_matches(exp_s: str, act_s: str) -> bool:
         # 中文语义描述值：仅 key 存在（旧弱断言兼容）
         return True
     if exp_s.lower() in ("true", "false"):
+        # 布尔字面量大小写不敏感：用例 YAML 写 `multiSelect: true`，经 render_cases 渲染成
+        # Python `True`（`exp_to_str` 的 f-string），而实际值来自 JSON（`true`）——
+        # 按 `exp_s.lower()` 归一后 True/true 两种写法行为一致（run 34856561459 归因线索 #2）。
         truthy = {"true", "1"} if exp_s.lower() == "true" else {"false", "0"}
         return act_s.lower() in truthy
     try:
@@ -743,18 +746,48 @@ def _interactive_satisfies(exp_args, result: dict) -> tuple[bool, str]:
     → 假失败（CI 实证 CH-013：行为正确却 50 分）。这里把「用户看到一张交互卡」
     作为真实语义：工具调用与 interactive 事件任一命中即可。
 
-    exp_args 指定 `component` 时须组件类型一致（防松弛过度）。
+    exp_args 指定 `component` 时须组件类型一致（防松弛过度）；卡片 payload 里
+    **带**该键时也须一致 —— 期望声明了 `multiSelect=true` 却被静默忽略就是弱断言
+    （卡片是真单选的也能过；run 34856561459 PR-016 的
+    `interact(component=choice, multiSelect=True)` 就是这个"看不出真伪"的形态）。
+    卡片**不带**该键时保持旧行为（缺省即单选，旧用例没写该键，不得因补校验而误伤）。
     """
     cards = result.get("interactive") or []
     if not cards:
         return False, "无 interactive 事件"
     want_comp = ""
+    want: dict = {}
     if isinstance(exp_args, dict):
         want_comp = str(exp_args.get("component") or "").lower()
+        want = {k: v for k, v in exp_args.items() if k != "component"}
+    bad_arg = ""
     for card in cards:
         comp = str(card.get("component") or card.get("type") or "").lower()
-        if not want_comp or comp == want_comp:
-            return True, f"interactive 事件命中（component={comp or '?'}）"
+        if want_comp and comp != want_comp:
+            continue
+        bad = ""
+        for k, exp_v in want.items():
+            if k not in card:
+                continue                      # 卡片未声明该键 → 维持旧行为（不额外判罪）
+            act_v = card[k]
+            if isinstance(act_v, bool) or isinstance(exp_v, bool):
+                if _scalar_value_matches(str(exp_v), str(act_v)):
+                    continue
+            elif isinstance(act_v, list):
+                if {str(x) for x in act_v} and str(exp_v) in {str(x) for x in act_v}:
+                    continue
+            elif _scalar_value_matches(str(exp_v), str(act_v)):
+                continue
+            bad = f"interactive 事件 arg '{k}' expected {exp_v} got {act_v}"
+            break
+        if bad:
+            # 本轮可能下发多张同组件卡：一张不符不等于没有一张符合 → 继续看后面的卡
+            # （旧实现多卡时也是"任一命中即过"，不得因补校验而变严）
+            bad_arg = bad_arg or bad
+            continue
+        return True, f"interactive 事件命中（component={comp or '?'}）"
+    if bad_arg:
+        return False, bad_arg
     return False, f"interactive 事件组件不匹配（期望 {want_comp}）"
 
 
@@ -1459,7 +1492,7 @@ def check_required_args(results: list, required_args: list) -> list:
                 f"required_args[{tool}]: 缺/空 fields —— 该断言会退化为「调用过即通过」，"
                 f"请写明要校验的必填字段: {req!r}")
             continue
-        found = None
+        calls = []
         for r in results:
             for tc in r.get("tool_calls") or []:
                 if tool.lower() not in str(tc.get("name", "")).lower():
@@ -1467,18 +1500,31 @@ def check_required_args(results: list, required_args: list) -> list:
                 a = tc.get("args") or {}
                 if action and a.get("action") != action:
                     continue
-                found = (r.get("__round"), a)
-                break
-            if found:
-                break
-        if found is None:
+                calls.append((r.get("__round"), a))
+        if not calls:
             issues.append(f"required_args: 未调用 {tool}(action={action})")
             continue
-        rnd, args = found
-        for f in req.get("fields") or []:
-            ok, detail = _check_required_field(args, str(f))
-            if not ok:
-                issues.append(f"required_args[{tool}.{f}](R{rnd}): {detail}")
+        # 调用选择器 = **"存在一次满足全部字段的调用"**（与 expectations 的「任一轮命中即过」同口径）。
+        # 原实现只看**第一次**调用 ⇒ 首次调用天然不含该字段时断言恒红 ——
+        # run 34856561459（B 端 normal）PR-016 实形：R1 拉加工项目录（尚无分类）无
+        # applicable_category_id、R5 按已选分类过滤才带上 → 判红；而该用例 data_checks
+        # 记录的口径是「processing_item_query **携带** applicable_category_id」（= 至少一次携带）。
+        # 任何一次调用都不满足 → 仍红（断言不放宽）；报最可诊断的那次
+        # （字段真不符 > 字段缺失，避免只看到"缺失或为空"而误判为"从没传过"）。
+        reasons = []
+        for rnd, args in calls:
+            miss = []
+            for f in req.get("fields") or []:
+                ok, detail = _check_required_field(args, str(f))
+                if not ok:
+                    miss.append(f"required_args[{tool}.{f}](R{rnd}): {detail}")
+            if not miss:
+                reasons = []
+                break
+            reasons.append(miss)
+        if reasons:
+            issues.extend(
+                next((m for m in reasons if not any("缺失或为空" in x for x in m)), reasons[0]))
     return issues
 
 
