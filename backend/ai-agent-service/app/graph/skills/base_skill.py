@@ -1132,7 +1132,12 @@ def extract_sms_code(text: str) -> str:
     或「验证码 123456」这种形态，故用 `fullmatch`。
     """
     import re as _re
-    m = _re.fullmatch(r"\s*(?:短信验证码|验证码)?\s*[:：]?\s*(\d{4,6})\s*", str(text or ""))
+    # 先去掉**所有空白**：顾客会把验证码连空格打出来（「1 2 3 4 5 6」），
+    # 不归一化就等于"没给过码"—— 而"没给过码"在新守卫下会被拦下（误伤面在这里）。
+    flat = _re.sub(r"\s+", "", str(text or ""))
+    m = _re.fullmatch(
+        r"(?:短信验证码|验证码|校验码|动态码)?[:：]?(?:是|为)?(\d{4,6})[。.！!～~哦呀哈啊]*",
+        flat)
     return m.group(1) if m else ""
 
 
@@ -2969,8 +2974,8 @@ async def execute_skill(
                         #  `resolve_sms_code` 的实证说明）。没有真值时不动模型入参。
                         _known_code = (extract_sms_code(last_user_msg)
                                        or await _stored_sms_code(session_id))
-                        _final_code, _why = resolve_sms_code(
-                            _known_code, (args or {}).get("sms_code"))
+                        _given_code = str((args or {}).get("sms_code") or "").strip()
+                        _final_code, _why = resolve_sms_code(_known_code, _given_code)
                         if _final_code and _why:
                             args = {**args, "sms_code": _final_code}
                             logger.info(
@@ -2978,6 +2983,30 @@ async def execute_skill(
                                 f"（{'本轮消息' if extract_sms_code(last_user_msg) else '会话记住的验证码'}）"
                                 f"| session={session_id}"
                             )
+                        elif _given_code and not _known_code and _is_customer_role(state):
+                            # ── 没有真值 → 不许自造（issue #3434 第三种形态）──
+                            # 实证（全量档 run 34789368315，OR-022 **首跑失败**）：脚本轮与实际卡序
+                            # 错位后流程变噪，模型在**顾客还没给过任何码**时自己写了一个码去调
+                            # order_create → 必然被工具拒（订单落库失败），只能靠重试捞回来。
+                            # 短信只发到**顾客手机**上，模型"写一个"没有第二种结局 ——
+                            # 唯一正确的下一步是**问顾客要码**，故这里拦下并给出这条路。
+                            # 只对 C 端生效（分端纪律）：B 端店员代客下单的码来自线下沟通。
+                            logger.warning(
+                                f"[{skill_name}] 拦下**自造验证码**的 order_create"
+                                f"（本会话没有任何已知的码）| session={session_id}"
+                                f" given_len={len(_given_code)}")
+                            return (tool_call,
+                                    json.dumps({
+                                        "success": False,
+                                        "error": "sms_code_not_from_customer",
+                                        "message": ("顾客**还没给过验证码** —— 请不要自己写一个："
+                                                    "短信只发到顾客手机上，写错必然被拒、订单落不了库。"
+                                                    "本轮正确的下一步是**向顾客要码**："
+                                                    "回复里明确请顾客把收到的短信验证码发过来"
+                                                    "（或先发确认卡让顾客点确认），拿到码之后再调用 order_create。"),
+                                    }, ensure_ascii=False),
+                                    {"success": False,
+                                     "error": "sms_code_not_from_customer"})
                     if args is not tool_call.get("args"):
                         tool_call = {**tool_call, "args": args}
                     # ── 缺参等待期拦截（issue #3365，OR-017）──

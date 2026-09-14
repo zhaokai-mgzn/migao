@@ -3576,6 +3576,83 @@ class TestAutoRespondPreferText:
         assert a == b
 
 
+class TestAutoSelectAnswersAnyPendingCard:
+    """`auto_select` 轮遇到**非 choice 卡**时必须答卡，不能发「第一个」（issue #3445 复盘）。
+
+    实证（全量档 run 34789368315，OR-018 **首跑失败**，新加的 `ai=` 让它第一次可见）：
+    该轮待答的是 **form（收货信息）卡**，harness 却发了字面量「第一个」→
+    agent 只能反问「抱歉我这边没太看明白您说的『第一个』指的是哪一项呢？」→
+    流程变噪、**顾客还没给过验证码**时模型自造了一个码 → `order_create` 必然被拒 →
+    首跑失败，只能靠重试捞回来（记 llm-noise）。
+    """
+
+    _FORM = [{"type": "form", "title": "请确认收货信息",
+              "formFields": [{"key": "customer_name", "label": "收货人"},
+                             {"key": "customer_phone", "label": "手机号"}]}]
+    _CHOICE = [{"type": "choice", "title": "选加工项",
+                "options": [{"label": "纳米圈打孔", "value": "proc_item_pi1"}]}]
+
+    def _results(self, interactive):
+        return [{"user_message": "我要买两款窗帘", "interactive": interactive}]
+
+    def test_form_card_is_answered_not_first_placeholder(self):
+        text = lr.resolve_auto_select_turn(
+            self._results(self._FORM),
+            {"customer_name": "张三", "customer_phone": "13800138000"})
+        assert text.startswith("__FORM__|"), (
+            f"待答是 form 卡时必须按表单协议回填，而不是发「第一个」：{text!r}")
+        assert "张三" in text
+
+    def test_choice_card_still_clicks_first_option(self):
+        """choice 卡行为**不得改变**：按前端点击协议回**首项 label**（不是内部 id）。"""
+        text = lr.resolve_auto_select_turn(self._results(self._CHOICE), {})
+        assert text == "纳米圈打孔", f"choice 卡行为不得改变：{text!r}"
+
+    def test_no_card_keeps_first_placeholder(self):
+        """没有卡片时保留「第一个」—— 那是**答 agent 的文本提问**（重名澄清等场景）。"""
+        text = lr.resolve_auto_select_turn(self._results([]), {})
+        assert text == "第一个", text
+
+    def test_run_case_wiring_sends_form_answer(self):
+        """接线：`run_case` 的 auto_select 轮必须走 `resolve_auto_select_turn`（否则守卫不生效）。"""
+        import unittest.mock as mock
+
+        sent = []
+
+        async def fake_send(token, session_id, message, images=None, **kwargs):
+            sent.append(message)
+            return {"user_message": message, "images": images or [],
+                    "tool_calls": [{"name": "product_search", "args": {}}],
+                    "tool_results": [],
+                    "interactive": self._FORM if len(sent) == 1 else [],
+                    "final_text": "好的", "error": None,
+                    "streamed": False, "done": True}
+
+        case = lr.EvalCase(
+            id="AUTOSEL-TEST", legacy_id="", title="t", skill=lr.Skill.ORDER,
+            difficulty=lr.Difficulty.NORMAL,
+            # 两轮：R1 让 agent 发 form 卡；R2 的 auto_select 轮**待答就是那张 form 卡**
+            # （卡必须在"上一轮"，`pending_card_summary` 只看最近一轮）
+            user_inputs=[{"text": "我要买两款窗帘"},
+                         {"auto_select": True,
+                          "auto_fill": {"customer_name": "张三",
+                                        "customer_phone": "13800138000"}}],
+            expectations=["tool: product_search"], data_checks=[])
+
+        with mock.patch.object(lr, "send_message", new=fake_send), \
+             mock.patch.object(lr, "PERSONA", "xiaobu"):
+            asyncio.run(lr.run_case(case, "tok", "sess"))
+        assert len(sent) == 2
+        assert sent[1].startswith("__FORM__|"), (
+            f"auto_select 轮遇到 form 卡必须按表单协议回填，实得 {sent[1]!r}")
+
+    def test_confirm_card_answered_with_confirm_value(self):
+        card = [{"type": "confirm", "title": "请确认订单信息",
+                 "confirmValue": "确认：商品=遮光窗帘"}]
+        text = lr.resolve_auto_select_turn(self._results(card), {})
+        assert text == "确认：商品=遮光窗帘", text
+
+
 class TestPreferTextNoiseIsFailureOnly:
     """「prefer_text 忽略了待答卡片」提示**只在用例失败时**打印（issue #3421 复盘）。
 

@@ -2341,8 +2341,11 @@ class TestInTurnDuplicateWriteCoalescing:
             get_llm.return_value = llm
             mem_cls.return_value.set_pending_skill = AsyncMock(return_value=True)
 
+            # 用户消息里带**顾客给过的验证码**（与 args 里的码一致）：
+            # 否则会先被"无真值不得自造验证码"的守卫拦下（issue #3434 第三种形态），
+            # 本轮要验的"同轮重复写合并"就测不到了 —— 两个守卫是正交的。
             result = asyncio.run(execute_skill(
-                state=_make_state(messages=[HumanMessage(content="确认下单")]),
+                state=_make_state(messages=[HumanMessage(content="123456")]),
                 skill_name="customer_order",
                 tool_names=["order_create"], system_prompt="p",
             ))
@@ -2764,7 +2767,8 @@ class TestSmsCodeBackfill:
     代码兜底：顾客上一条消息**整条就是验证码** → 执行前补进 args。
     """
 
-    def _run(self, user_msg, args, store_extra: dict | None = None):
+    def _run(self, user_msg, args, store_extra: dict | None = None,
+             role: str = "customer"):
         import asyncio, json as _json
 
         seen = {}
@@ -2816,11 +2820,17 @@ class TestSmsCodeBackfill:
             llm.bind_tools.return_value = llm
             llm.ainvoke = AsyncMock(side_effect=[call, final])
             get_llm.return_value = llm
-            asyncio.run(execute_skill(
-                state=_make_state(messages=[HumanMessage(content=user_msg)]),
+            self._last_out = asyncio.run(execute_skill(
+                state=_make_state(messages=[HumanMessage(content=user_msg)], role=role),
                 skill_name="customer_order",
                 tool_names=["order_create"], system_prompt="p"))
         return seen
+
+    def _run_out(self, user_msg, args, store_extra: dict | None = None,
+                 role: str = "customer"):
+        """同 `_run`，但返回 `execute_skill` 的输出（用于断言拦截话术）。"""
+        self._run(user_msg, args, store_extra=store_extra, role=role)
+        return self._last_out
 
     def test_code_backfilled_when_customer_gave_it(self):
         seen = self._run("123456", {"items": []})
@@ -2844,14 +2854,16 @@ class TestSmsCodeBackfill:
         seen = self._run("123456", {"items": [], "sms_code": "123456"})
         assert seen.get("sms_code") == "123456"
 
-    def test_invented_code_kept_when_no_known_code(self):
-        """**没有任何已知的码**时不得乱动模型的入参（守旧行为的安全边界）。
+    def test_no_known_code_b_side_keeps_model_value(self):
+        """**没有已知的码**时：B 端保持模型入参（C 端已改为拦截，见上一条）。
 
-        顾客从没给过码（如这轮只说了手机号）→ 我们没有真值可比 → 保持模型原样，
-        让工具按自己的校验去拒/提示，而不是凭空写一个。
+        为什么分端：B 端店员代客下单时，码是**线下**（电话/微信）跟顾客要的，
+        系统里本来就没有"顾客给过的码"可比 —— 一律拦下会让代客下单走不通。
+        C 端则相反：码只可能来自顾客在本会话里发过的消息，没有就是没有（模型不会变出来）。
         """
-        seen = self._run("我的手机号是 13800138000", {"items": [], "sms_code": "654321"})
-        assert seen.get("sms_code") == "654321", "无真值时不得改写模型的验证码"
+        seen = self._run("我的手机号是 13800138000", {"items": [], "sms_code": "654321"},
+                         role="admin")
+        assert seen.get("sms_code") == "654321", "B 端不得被拦截"
 
     def test_invented_code_replaced_by_stored_code(self):
         """上一条不是码（顾客点了确认卡）时，用**会话记住的码**纠正模型自造的码。"""
@@ -2941,6 +2953,36 @@ class TestSmsCodeBackfill:
         assert resolve_sms_code(" 123456 ", "123456") == ("123456", "")
         assert resolve_sms_code("123456", " 123456 ") == ("123456", "")
 
+    def test_invented_code_blocked_when_no_known_code(self):
+        """**没有真值**时不许自造验证码 —— 拦下并让模型先问顾客（run 34789368315 OR-022 首跑）。
+
+        实证形态：该次尝试 R3 的脚本轮与实际卡序错位（harness 发「第一个」而待答卡是 form）
+        → 流程变噪 → 模型在**顾客还没给过任何码**时自己写了一个码调 order_create
+        → 必然被工具拒（`订单不落库`），首跑失败、只能靠重试。
+        短信只发到顾客手机上：模型"写一个"没有第二种结局，唯一正确的下一步是**问顾客**。
+        """
+        seen = self._run("我的手机号是 13800138000", {"items": [], "sms_code": "654321"})
+        assert seen == {}, (
+            f"无真值时自造的验证码不得真的去写单（应拦下并让模型先要码）：{seen}")
+
+    def test_invented_code_block_reports_actionable_next_step(self):
+        out = self._run_out("我的手机号是 13800138000", {"items": [], "sms_code": "654321"})
+        blob = str(out)
+        assert "sms_code_not_from_customer" in blob, f"未给出可判别的错误码：{blob[:200]}"
+        assert "请顾客" in blob or "向顾客" in blob or "要码" in blob, (
+            f"拦截话术必须给出唯一可执行的下一步（向顾客要码）：{blob[:300]}")
+
+    def test_known_code_case_not_blocked(self):
+        """有真值（顾客给过码）时**不得**走拦截分支 —— 正常纠正/补齐路径不变。"""
+        seen = self._run("123456", {"items": [], "sms_code": "654321"})
+        assert seen.get("sms_code") == "123456"
+
+    def test_b_side_not_blocked(self):
+        """分端纪律：B 端（店员代客下单）不受这条 C 端守卫约束。"""
+        seen = self._run("我的手机号是 13800138000", {"items": [], "sms_code": "654321"},
+                         role="admin")
+        assert seen.get("sms_code") == "654321", "B 端被 C 端守卫误伤"
+
     def test_extract_sms_code_shapes(self):
         from app.graph.skills.base_skill import extract_sms_code
         assert extract_sms_code("123456") == "123456"
@@ -2949,6 +2991,14 @@ class TestSmsCodeBackfill:
         assert extract_sms_code("13800138000") == ""
         assert extract_sms_code("123456 顺便问下") == ""
         assert extract_sms_code("") == ""
+        # 口语形态（真值识别得越准，"无真值就拦截"这条守卫的误伤面越小）
+        assert extract_sms_code("1 2 3 4 5 6") == "123456"
+        assert extract_sms_code("验证码是123456") == "123456"
+        assert extract_sms_code("验证码：123456哦") == "123456"
+        assert extract_sms_code("123456。") == "123456"
+        # 反例仍须为负（别把订单号/手机号当码）
+        assert extract_sms_code("订单号 20260914022990005") == ""
+        assert extract_sms_code("我的手机号是 13800138000") == ""
 
 
 class TestSmsCodeRememberedAcrossTurns:
