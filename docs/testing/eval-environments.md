@@ -52,7 +52,8 @@ B 端 `prod_eval_2699` 因 `created_at` 更新而排在首条 → 用例的「�
 | 触发 | 环境 | 档位 | 说明 |
 |---|---|---|---|
 | PR（AI 行为文件改动，**仅 app/** 源文件） | 独立栈 | **映射用例 fast 迭代档**（persona 按命中用例分桶） | #3502 diff 驱动 + #3653 收窄：只跑 §13.2 映射用例（规则命中或兜底网），normal 桶 `--max-retries 0`；**C 端 smoke 不再进 PR 门禁**（#3653 与行为映射档合并去重，降为按需 `workflow_dispatch`）；B 端云冒烟已从 pr-check 移除（评的是已部署 main，与本 PR 无因果） |
-| 部署到云测试环境后 | 独立栈 | **normal 全量（mibao + xiaobu）** | #3503 起自动触发，失败去重建 issue |
+| 部署到云测试环境后 | 独立栈 | **diff 定向（fast）**：`git diff <被评SHA>^ <被评SHA>` → §13.2 映射 case_ids + `--max-retries 0`；**宽爆炸半径文件 / 无 AI 行为文件 / 映射表未覆盖（default_net）→ 强制回退全量 normal** | #3503 起自动触发 + #3654 定向化（用户裁定），失败去重建 issue；判定口径（completion_verdict）两档一致 |
+| 每 3 天（schedule cron `0 3 */3 * *`） | 独立栈 | **normal 全量（mibao + xiaobu）** | #3654 起承担宽度覆盖（定向漏掉的大范围回归）；main 自上次全量未动 → 抑制不白跑 |
 | 每周六 | 独立栈 | adversarial | 只追踪不阻塞 |
 | 里程碑 / 下结论前 | 独立栈 | **结论档**：全量 + 验收剧本 + 双 AI 交叉验证（GLM-5.3-Flash 复核）+ `completion_verdict` | 见 acceptance-protocol v1.3 §1.6/§1.7 |
 
@@ -76,7 +77,8 @@ B 端 `prod_eval_2699` 因 `created_at` 更新而排在首条 → 用例的「�
 | PR（任意） | 三模块单测 / QA Growth Gate / ci-helper / gitleaks / Danger Scan | ★ **required（硬拦合并）** | pr-check 等 |
 | PR（AI 行为文件，**仅 app/**） | **映射用例 fast 迭代档**（persona 按命中用例分桶派生；规则命中失败 → 报告 + 评论 + 自动开 issue，兜底网失败 → 只报告；**均不拦合并**） | **均为信息性** | `agent-behavior-eval.yml`（#3502/#3523/#3563/#3653） |
 | PR（AI 行为文件） | ~~C 端 smoke + B 端云冒烟~~ —— **已移除**（#3653）：C 端 smoke 降为按需 `workflow_dispatch`（xiaobu-acceptance 不再 pull_request 触发）；B 端云冒烟从 pr-check 移除（评的是已部署 main，与本 PR 无因果） | — | — |
-| 部署（ai-agent 成功） | **双 persona 矩阵并行全量**（各自独立栈/全新库）→ completion_verdict 判定 → 失败去重建 issue | 部署后拦截 | `post-deploy-eval.yml`（#3503/#3515） |
+| 部署（ai-agent 成功） | **双 persona 矩阵行为回归**（各自独立栈/全新库）→ 档位 = **diff 定向 fast**（受影响用例；宽爆炸半径/未覆盖 → 回退全量 normal）→ completion_verdict 判定 → 失败去重建 issue | 部署后拦截 | `post-deploy-eval.yml`（#3503/#3515/#3654） |
+| 每 3 天（本 workflow 的 schedule cron） | 双 persona 矩阵 **normal 全量**（各自独立栈/全新库）→ completion_verdict 判定 → 失败去重建 issue | 部署后拦截（宽度覆盖） | `post-deploy-eval.yml`（#3654） |
 | 每周六 | adversarial 档 | 信息性 | `xiaobu-acceptance.yml`（schedule） |
 | 里程碑 / 下结论 | 结论档（全量 + 验收剧本 + 双裁判 + completion_verdict） | **结论前置（必过）** | 协议 v1.3 §1.6/§1.7 |
 
@@ -181,6 +183,53 @@ group 名不带 workflow 前缀即**跨 workflow 生效**。
 - **fail-open**：`git ls-remote` 失败 / 取值不可得 / 手动 `workflow_dispatch` → **一律照常评测**。
   判定逻辑本身绝不能成为"漏评"的来源；
 - **手动逃生口**：`workflow_dispatch` 的 `force_eval=true` 可强制评测（回滚复验/补跑特定部署）。
+- **#3654 追加**：`MODE=schedule`（每 3 天全量）走**方向相反**的判据 —— 本次 schedule 的
+  SHA 与**上一次 schedule 全量**的 SHA 比对，相等 = main 未动 → 抑制（同一状态已有结论，
+  重跑是纯浪费）；不等 → 跑。查询失败/取值为空一律 fail-open。两种模式共同点：只有
+  `skip` 会抑制、一切异常照常跑、skip 不计 failure 且留链接链。
+
+### 3.6 决策记录：部署后评测改「diff 定向 + 宽爆炸半径回退全量」，全量改每 3 天 cron（2026-09-14 用户裁定）
+
+- **决策**（2026-09-14，用户裁定，方向已定）：`post-deploy-eval.yml` 的**部署后评测
+  不再每次全量**：
+  1. **部署触发（workflow_run）→ diff 定向**：`git diff <被评SHA>^ <被评SHA>` 驱动，
+     复用 #3502 映射表（`tests/agent_eval/behavior_mapping.py`）把改动文件映射成
+     case_ids + fast（`--max-retries 0`），每条 matrix 腿按 persona 过滤后只跑受影响用例；
+  2. **三个保守边界强制回退全量**（宁多跑不少跑，安全优先）：
+     ① **宽爆炸半径文件**（`base_skill.py` / `nodes.py` / `references/**` /
+        `registry.py` / `factory.py` / `app/graph/**` 等共享/行为层）——映射对这些
+        文件**不精确**，命中即全量（**显式硬规则**，不只兜底；清单被 L0 变异守卫锁住）；
+     ② 无 AI 行为文件（docs/前端等）→ case_ids 空 → 全量兜底（现状）；
+     ③ 有 AI 行为文件但映射表未覆盖（default_net）→ 全量 —— 部署后拦截是**硬门禁**
+        （失败去重建 issue），PR 层「default_net 只报告（无因果）」的语义不适用于这里；
+  3. **全量改每 3 天 schedule cron**（`0 3 */3 * *`，03:00 UTC 低流量时刻）：tier 恒
+     normal、双 persona 全量，承担**宽度覆盖**（定向漏掉的大范围回归）；
+     main 自上次全量未动 → 抑制不白跑（`eval_supersede.sh` MODE=schedule）；
+  4. 手动 `workflow_dispatch` 保留任意档位兜底（tier/case_ids/concurrency/force_eval）。
+- **理由**：
+  ① 近 2.5 小时 CI 真实 LLM 成本 ≈ ¥135-295，主因是部署后全量 + PR 层冗余（PR 层
+     去冗余由另一包做）；单次 persona 全量 ≈ ¥15-20（B 端 ~47 条 / C 端 ~35 条真实往返）；
+  ② 每次部署全量的**收益递减**：大多数部署只改个别域，全量里 90% 用例与本次改动无因果；
+     受影响用例定向（fast）把"每次部署"的成本压到 ¥1-3；
+  ③ 「每次部署完整留痕」的旧意图**不再成立**：被抑制/被取代的 run 已证明"留痕的结论
+     描述的不是 main 当前状态"（#3587）；新的完整留痕由「定向 run（本次部署）+ 每 3 天
+     全量（宽度覆盖）+ 失败二分归因（确定性失败=代码问题，按用例 ID 重放）」承担。
+- **为什么不把 default_net 用在部署层**（与 PR 层 #3502 的差异，刻意为之）：
+  PR 层 default_net = 4 条"无因果"信号只报告；部署后拦截是硬门禁（失败建 issue），
+  映射表没覆盖的域 = 不知道影响面 = 全量（§13.2 盲区，保守边界）。代价是未覆盖域
+  的部署仍烧全量，但「宁多跑不少跑」对**门禁**是对的——省成本由受影响的多数部署承担。
+- **persona 维度**：规则命中的 case_ids 是 persona 专属的（如 OR-016=mibao、
+  AS-007=xiaobu），每条腿按本端可执行集过滤（复用 `select_cases_for_persona`，与
+  local_runner 同口径）；本端无对应用例 → 跑本端默认网子集（最窄主链路信号），
+  深度覆盖由每 3 天全量承担。
+- **成本模型**：定向部署 ¥1-3/次 + 每 3 天全量 ¥15-20/次（≈ 每周 2.3 次全量）——
+  按 20 次合并/周估算 ≈ 20×¥2 + 2.3×¥18 ≈ **¥82/周**（对比原每次部署双 persona 全量
+  ≈ ¥360/周，省 ~77%）；若部署改动落在未覆盖域，该次按全量计（保守边界，模型上界）。
+- **守卫**：`tests/unit_ci_workflows/test_post_deploy_eval_targeted.py`（diff→case_ids
+  纯函数 / 宽爆炸半径强制全量 + 清单变异锁 / 无映射规则回退全量 / schedule→tier 恒
+  normal / CLI 真实用例库接线）+ `test_post_deploy_eval_supersede.py::TestScheduleSuppression`
+  （schedule 抑制判据）。改动后**不触发任何真实评测 run 验证**（静态守卫 + 推演足够，
+  本包是省成本包）。
 
 ## 四、与米高研发模式的衔接
 

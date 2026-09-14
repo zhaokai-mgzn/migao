@@ -10,7 +10,7 @@
     先前那轮评价的镜像已被后续 commit 覆盖：付两份栈构建 + 两份真实 LLM，
     买回一条描述*已经不是 main 的状态*的结论。
 
-本测试锁定两件事（**判据来自行为，不来自实现细节**）：
+本测试锁定三件事（**判据来自行为，不来自实现细节**）：
 
 ① 抑制的判定口径必须可复现（脚本可本地跑，两种结果都要演练到）：
    · 本次 SHA == main HEAD                    → superseded=false（照常评测）
@@ -24,6 +24,10 @@
    （#3526 的有意纪律：取消会让长评测永远跑不完 + 结论档永久丢失）。
    首版写成 `group: post-deploy-eval-${{ github.run_id }}` 时本测试必须红——
    那等于每个 run 一个队列 = 完全没串行（变异测试 M1）。
+
+③ （#3654 追加）schedule（每 3 天全量）的抑制判据 = **"main 未动即跳过"**，方向与
+   deploy 相反：本次 schedule 的 SHA == 上次 schedule 全量的 SHA → main 未前进 →
+   同一状态已有结论 → 抑制（省一整轮全量）；不等 → 跑。查询失败/取值为空一律 fail-open。
 """
 # case_ids: MC-012
 import os
@@ -226,6 +230,87 @@ class TestSupersedeIsWiredBeforeCost:
         assert "failure" in cond and "superseded" not in cond, (
             f"建 issue 条件被改动（{cond!r}）—— 抑制不得成为建 issue 的触发条件"
         )
+
+
+class TestScheduleSuppression:
+    """③ #3654：schedule（每 3 天全量）的抑制判据 = "main 未动即跳过"（方向与 deploy 相反）。
+
+    为什么方向相反：deploy 抑制的是"被取代的旧状态"（main 前进了 → skip）；
+    schedule 抑制的是"没新东西可评"（main 没动 → skip）。共同点：只有 skip 抑制，
+    一切异常 fail-open 照常跑；skip 不计 failure、留链接链。
+    """
+
+    def _run_schedule(self, eval_sha, last_eval_sha, *, force: str = "false",
+                      last_cmd: str = None) -> tuple:
+        env = dict(os.environ)
+        env.update({"EVAL_SHA": eval_sha, "MODE": "schedule", "FORCE_EVAL": force,
+                    "REPO": "o/r", "RUN_ID": "7"})
+        if last_cmd is not None:
+            env["LAST_EVAL_CMD"] = last_cmd          # 显式覆盖查询命令（如 false = 查询失败）
+        elif last_eval_sha is None:
+            env["LAST_EVAL_CMD"] = "false"           # 默认：查询必然失败 → 演练 fail-open（不走真网络）
+        else:
+            env["LAST_EVAL_SHA"] = last_eval_sha     # 测试钩子：跳过 gh 查询直接注入"上次全量 SHA"
+        r = subprocess.run(["bash", str(SCRIPT)], capture_output=True, text=True, env=env,
+                           timeout=60)
+        assert r.returncode == 0, (
+            f"schedule 抑制判定退出码 {r.returncode} —— 抑制**永远不得**以非零退出：\n"
+            f"{r.stdout}\n{r.stderr}"
+        )
+        m = re.search(r"superseded=(true|false)", r.stdout)
+        assert m, f"stdout 缺 superseded 标记（脚本输出协议被破坏）：\n{r.stdout}"
+        return m.group(1), r.stdout
+
+    def test_main_unchanged_since_last_full_is_superseded(self):
+        """main 自上次 schedule 全量以来未变动 → 抑制（同一状态已有结论，重跑是纯浪费）。"""
+        superseded, out = self._run_schedule(SHA_A, SHA_A)
+        assert superseded == "true", f"main 未动却要重跑全量 → 每 3 天档没省下钱：\n{out}"
+        assert "未变动" in out
+
+    def test_main_moved_since_last_full_runs(self):
+        """main 已前进 → 照常跑（这正是 schedule 全量存在的意义）。"""
+        superseded, out = self._run_schedule(SHA_B, SHA_A)
+        assert superseded == "false", f"main 已前进却抑制 → 全量档漏掉新状态：\n{out}"
+        assert "已前进" in out
+
+    def test_last_sha_unavailable_is_fail_open(self):
+        """上次全量 SHA 查询失败（首次运行/gh 抖动）→ 照常评测（宁可慢，不可漏评）。"""
+        superseded, out = self._run_schedule(SHA_A, None)
+        assert superseded == "false", f"查询失败却抑制 → 全量档被网络抖动吃掉：\n{out}"
+        assert "fail-open" in out
+
+    def test_last_cmd_failure_is_fail_open(self):
+        """LAST_EVAL_CMD 查询命令失败 → 同样 fail-open（测试显式演练 gh 失败分支）。"""
+        superseded, out = self._run_schedule(SHA_A, None, last_cmd="false")
+        assert superseded == "false", f"gh 查询失败却抑制：\n{out}"
+        assert "fail-open" in out
+
+    def test_empty_eval_sha_is_fail_open(self):
+        """EVAL_SHA 为空 → fail-open（无依据不得跳过）。"""
+        superseded, _ = self._run_schedule("", SHA_A)
+        assert superseded == "false", "EVAL_SHA 为空却抑制 → 无依据的跳过"
+
+    def test_force_eval_escapes_schedule_suppression(self):
+        """FORCE_EVAL=true 是逃生口：手动强制时即使 main 未动也要跑。"""
+        superseded, out = self._run_schedule(SHA_A, SHA_A, force="true")
+        assert superseded == "false", "FORCE_EVAL=true 仍被 schedule 抑制 → 补跑不可能"
+        assert "FORCE_EVAL" in out
+
+    def test_schedule_skip_keeps_audit_chain(self):
+        """schedule 抑制同样必须留可追溯链接（审计链不因模式而断）。"""
+        _, out = self._run_schedule(SHA_A, SHA_A)
+        assert f"commit/{SHA_A}" in out, "schedule 抑制未打印 commit 链接 → 审计链断"
+        assert "actions/runs/7" in out, "schedule 抑制未打印本 run 链接 → 被抑制方自身不留档"
+
+    def test_schedule_skip_never_counts_as_failure(self):
+        """跳过不计 failure 的声明必须存在于两种模式（消费方不得当红灯）。"""
+        _, out = self._run_schedule(SHA_A, SHA_A)
+        assert "不计 failure" in out
+
+    def test_schedule_mode_echoes_superseded_to_stdout(self):
+        """脚本 stdout 必须恒输出 superseded=（本测试的解析依据 + 人工可读判定）。"""
+        out = self._run_schedule(SHA_B, SHA_A)[1]
+        assert "superseded=false" in out
 
 
 class TestGlobalEvalSlot:
