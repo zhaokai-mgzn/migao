@@ -4890,6 +4890,9 @@ async def run_suite(cases, label: str, classify: bool = True, retry_budget: int 
         # 用例起始时间戳（UTC）——用于把 CI 的**路由 dump**（ai-agent 日志，带时间戳）
         # 按用例切开。没有这个锚点，日志里连续的 intent/route 行无法归属到具体用例，
         # 「某用例被路由到哪个 Skill」就只能靠猜（实测踩到：CH-013/CH-014 交错无法分辨）。
+        # ⏱ 同时记单调时钟起点（issue #3761 成本可见化）：用例读秒进 summary 的 `cost`，
+        # 让"这一轮贵在哪条用例/有没有重试"可读 —— 否则"评测废钱"永远不可管理。
+        _t0 = time.monotonic()
         print(f"  ⏱ {case.id} start={datetime.now(timezone.utc).isoformat(timespec='seconds')}")
 
         # 每个用例用独立 session，避免前序用例污染上下文
@@ -5070,6 +5073,9 @@ async def run_suite(cases, label: str, classify: bool = True, retry_budget: int 
 
         if CASE_SLEEP:
             await asyncio.sleep(CASE_SLEEP)  # rate limit（可配：EVAL_CASE_SLEEP）
+        # 用例级耗时（含重试与重试前置复位；不含调度器的 pre_clean 独占窗口）——
+        # issue #3761：`cost.cases` 由它聚合而来，慢用例/重试尾巴一眼可见。
+        r["duration_s"] = round(time.monotonic() - _t0, 1)
         return r
 
     # ── 并行调度（issue #3361 评测提速第二轮）──
@@ -5468,7 +5474,98 @@ def _summary_case(result: dict, failures: list) -> dict:
     return entry
 
 
-def write_summary_json(path: str, label: str, shard: str, results: list) -> None:
+def _cost_block(results: list, elapsed_s: float) -> dict:
+    """本轮评测的**成本可读信号**（issue #3761）—— "废钱"只有可读才可管理。
+
+    为什么加（实证）：取消/失败轮拿到的是一条 ID 列表，没人知道"这轮贵在哪条用例、
+    有没有重试尾巴、总共跑了多久"——于是成本决策只能靠感觉。本块把这些变成机器可读。
+
+    字段（全部来自本轮**实测**，不估算、不编造）：
+      wall_clock_s   本轮 runner 墙钟秒数（由 main 计时；测试/单跑未注入时为 null）
+      cases          {用例 ID: 耗时秒}（含重试与重试前置复位；由 `_run_one_case` 记）
+      avg_case_s     每条用例平均耗时（无用例时为 null）
+      slowest_cases  最慢 3 条 [(ID, 秒)]，降序 —— 成本归因的入口
+      retried_cases  发生过重试的用例 ID（重试 = 成本翻倍的直接来源）
+      tokens         **恒为 null**：本 runner 只经 HTTP/SSE 调 ai-agent-service，
+                     token 用量产生在**服务内部**（服务侧才有 LLM 客户端），runner 侧拿不到
+      tokens_note    为什么是 null（不编数字）
+    """
+    cases = {str(r.get("case_id") or "?"): r.get("duration_s") for r in results
+             if r.get("duration_s") is not None}
+    ordered = sorted(cases.items(), key=lambda kv: kv[1], reverse=True)
+    return {
+        "wall_clock_s": round(elapsed_s, 1) if elapsed_s else None,
+        "cases": cases,
+        "avg_case_s": round(sum(cases.values()) / len(cases), 1) if cases else None,
+        "slowest_cases": [[cid, secs] for cid, secs in ordered[:3]],
+        "retried_cases": [str(r.get("case_id") or "?") for r in results if r.get("retried")],
+        # 拿不到就是拿不到：`tokens` 恒 null，且把"为什么"写在旁边，避免下一个人
+        # 把 null 当成"这轮零 token"（那正是 migao-acceptance 说的"编数字"）。
+        "tokens": None,
+        "tokens_note": "runner 只经 HTTP/SSE 调 ai-agent-service，LLM token 用量产生于服务内部，"
+                       "runner 侧不可得（未编造）",
+    }
+
+
+def _git_cases_fingerprint() -> str:
+    """`.github/cases` 在**本次 checkout 的 SHA** 上的 tree hash（issue #3769）。
+
+    为什么用 git tree hash 而不是"解析 YAML 再哈希"：用例库是仓库文件，tree hash 天然是
+    **内容指纹**（改一个用例就变），零依赖、两侧（runner / 派发侧守卫）用同一条命令即得同一值，
+    不存在"两份解析实现漂移"的风险。取不到（浅克隆缺对象 / 非 git 环境）⇒ 返回空串，
+    派发侧据此**拒绝复用**（宁可多跑一次，不可复用过期结论）。
+    """
+    import subprocess
+    rev = os.environ.get("GITHUB_SHA") or "HEAD"
+    try:
+        out = subprocess.run(["git", "rev-parse", f"{rev}:.github/cases"],
+                             capture_output=True, text=True, timeout=10)
+        return out.stdout.strip() if out.returncode == 0 else ""
+    except Exception:
+        return ""
+
+
+def _run_key(results: list, label: str) -> dict:
+    """verdict ledger 的键（issue #3769）——「同一件事不重复跑」的机器判据。
+
+    用户裁定（本轮）：判定用途的评测只走**全库**跑；同一 SHA 已有结论就不许再跑。
+    键 = (sha, tier, case_ids 收窄输入, 用例库指纹, 跑批策略版本, persona)：
+
+      · `case_ids` **非空 ⇒ 键必然不同** —— 收窄跑是"定点复现/调试"，**不是**判定结论，
+        不能顶替全库结论（既有教训：`--case-ids` 收窄后 summary 的 total 只反映那几条，
+        拿它下"全量结论"就是假绿）；
+      · `cases_fingerprint` = 用例库 tree hash（用例改了就换键）；
+      · `policy_version` = 放行口径/分类/指纹实现的源码哈希（见 `eval_policy_version.py`）——
+        策略变了旧结论不再等价。
+
+    ⚠️ 只加字段：既有键一个不动（summary 的契约测试锁死）。
+    """
+    try:
+        from eval_policy_version import policy_version
+        _pv = policy_version()
+    except Exception:
+        _pv = "unknown"
+    import hashlib
+    ids = ",".join(sorted(str(r.get("case_id") or "?") for r in results))
+    return {
+        "sha": os.environ.get("GITHUB_SHA", "") or "local",
+        "tier": label,
+        # 收窄输入（本进程实际使用的 --case-ids；空串 = 全库跑 = 判定用途）
+        "case_ids": os.environ.get("EVAL_CASE_IDS_INPUT", ""),
+        "cases_fingerprint": _git_cases_fingerprint(),
+        "executed_ids_fingerprint": hashlib.sha256(ids.encode()).hexdigest()[:16],
+        "executed_count": len(results),
+        "policy_version": _pv,
+        "persona": PERSONA,
+        # 用途（#3769 用户裁定）：determination = 判定用途（必须全库跑）；
+        # debug = 定点复现/调试（**不构成判定结论**）。遥测据此把"真跑"与
+        # "定点小跑"分开计数（同一个 total 数字在两处的含义完全不同）。
+        "run_mode": os.environ.get("EVAL_PURPOSE", "determination"),
+    }
+
+
+def write_summary_json(path: str, label: str, shard: str, results: list,
+                       elapsed_s: float = None) -> None:
     """写机器可读的本次运行汇总（issue #3361 分片基建）。
 
     为什么需要：分片后每个 job 只跑一部分用例，后续步骤（DB 审计、假绿告警）若按
@@ -5488,6 +5585,10 @@ def write_summary_json(path: str, label: str, shard: str, results: list) -> None
       cases：[{id, score, classification, pre_clean}]（+ 失败用例的 `failures`：断言级原因数组）
               （+ 重试前置未复位时的 `precondition`：#3751）
       completion：completion_verdict 的判定结果 + failure_reasons（ID → 首要原因）
+      cost：本轮**成本可读信号**（#3761，见 `_cost_block`：wall_clock_s / cases / avg_case_s /
+            slowest_cases / retried_cases / tokens=null+原因）—— **只加不改**既有字段
+      run_key：verdict ledger 的键（#3769，见 `_run_key`：sha/tier/case_ids/cases_fingerprint/
+               policy_version/persona）—— 同一键已有结论就不重复跑（**只加不改**）
     """
     import json as _json
     def _declares_order_write(r) -> bool:
@@ -5518,11 +5619,20 @@ def write_summary_json(path: str, label: str, shard: str, results: list) -> None
         for cid in (_verdict["deterministic_failures"] + _verdict["journey_failures"]
                     + _verdict["flake_released"])
     }
+    # 成本块（#3761）：**只加**顶层键（既有字段/键顺序一字未动 —— 消费者
+    # `report` job 的 jq 与 `TestLegacyBytesUnchanged` 都依赖这一点）。
+    payload["cost"] = _cost_block(results, elapsed_s)
+    # verdict ledger 的键（#3769）：同一 SHA 已有结论 ⇒ 派发侧据此拒绝重复跑。
+    payload["run_key"] = _run_key(results, label)
     try:
         with open(path, "w", encoding="utf-8") as f:
             _json.dump(payload, f, ensure_ascii=False, indent=2)
+        _cost = payload["cost"]
         print(f"📊 运行汇总 → {path}（total={payload['total']} passed={payload['passed']} "
               f"order_write_cases={payload['order_write_cases']}）")
+        print(f"💰 本轮成本：wall_clock={_cost['wall_clock_s']}s "
+              f"avg_case={_cost['avg_case_s']}s 重试用例={len(_cost['retried_cases'])} 条 "
+              f"最慢={_cost['slowest_cases'][:3]}")
     except Exception as e:
         print(f"⚠️ 汇总写出失败（非致命）: {e}")
 
@@ -5681,6 +5791,10 @@ def load_cases_from_yaml(cases_dir: str) -> list:
 
 async def main():
     import argparse
+    # 本轮墙钟起点（issue #3761 成本可见化）：从进程进入 main 到写汇总，含栈外的一切
+    # runner 侧耗时（用例执行 + 重试 + 重试前置复位）；**不含**栈构建与 seed（那是 workflow
+    # 步骤，成本由 run 的墙钟体现）。
+    _run_t0 = time.monotonic()
     parser = argparse.ArgumentParser()
     parser.add_argument("suite", choices=["smoke", "normal", "full", "adversarial", "case"], nargs="?", default="smoke")
     parser.add_argument("--case-id", help="单条用例 ID（支持新 ID 与 legacy_id，如 OR-002 或 O002）")
@@ -5749,6 +5863,8 @@ async def main():
             print(f"❌ --case-ids 里有无法解析的用例 ID: {_missing}（禁止静默少跑）")
             sys.exit(1)
         print(f"🎯 --case-ids 收窄：{len(cases)} → {len(_picked)} 条（{args.case_ids}）")
+        # 记进 env 供 run_key 使用（#3769：收窄跑 ⇒ 键必然不同 ⇒ 不构成判定结论）
+        os.environ["EVAL_CASE_IDS_INPUT"] = args.case_ids
         cases = _picked
 
     # 分片（issue #3361 评测提速）：在 tier 选择之后切片 —— 保证「每片都只跑自己那份」，
@@ -5801,7 +5917,8 @@ async def main():
     # 机器可读汇总（分片审计/报告消费；env 未设则跳过）
     _sum_path = os.environ.get("AGENT_EVAL_SUMMARY_JSON")
     if _sum_path:
-        write_summary_json(_sum_path, args.suite, args.shard, results)
+        write_summary_json(_sum_path, args.suite, args.shard, results,
+                           elapsed_s=time.monotonic() - _run_t0)
 
     sys.exit(0 if ok else 1)
 
