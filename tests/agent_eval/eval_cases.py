@@ -176,7 +176,7 @@ _CASE_AS_007 = EvalCase(
     difficulty=Difficulty.NORMAL,
     user_inputs=['面料有瑕疵，帮我换货', {'repeat_until': {'tool_called': 'order_query', 'max': 2}, 'fallback': '换成2699系列雪尼尔窗帘面料'}, '换成2699系列雪尼尔窗帘面料', {'repeat_until': {'tool_called': 'after_sales_manage', 'max': 5}, 'fallback': '好的'}],
     expectations=['order_query', 'product_detail', 'after_sales_manage(action=create, ticket_type=exchange)'],
-    data_checks=['success=true', '换货目标商品 product_detail 返回 processing_items 非空时，confirm 卡之前必须主动询问加工项（interact(choice, multiSelect=true)，透传 pageMeta 支持翻页；文本询问亦可，语义由 order_before 保证）', '用户选择加工项后，所选名称与计价写入换货方案汇总与工单 description；用户说『不需要加工项』才跳过', 'processing_items 为空时如实告知『该商品无可用加工项』后继续，不强求', '换货工单 order_id 来自本轮 order_query 定位结果（不得编造订单号）'],
+    data_checks=['换货目标商品 product_detail 返回 processing_items 非空时，confirm 卡之前必须主动询问加工项（interact(choice, multiSelect=true)，透传 pageMeta 支持翻页；文本询问亦可，语义由 order_before 保证）', '用户选择加工项后，所选名称与计价写入换货方案汇总与工单 description；用户说『不需要加工项』才跳过', 'processing_items 为空时如实告知『该商品无可用加工项』后继续，不强求', '换货工单 order_id 来自本轮 order_query 定位结果（不得编造订单号）'],
     skip_reason='',
     tags=['exchange', 'processing_item', 'guided_flow'],
     persona='',
@@ -184,6 +184,7 @@ _CASE_AS_007 = EvalCase(
     form_prefill=[],
     forbidden_card_text=[],
     order_before=['order_query before after_sales_manage', 'processing_ask before after_sales_manage', 'processing_ask before interact[confirm]'],
+    must_succeed=[{'tool': 'after_sales_manage', 'action': 'create'}],
     pre_clean=[{'type': 'product_dedupe', 'product_keyword': '2699系列雪尼尔窗帘面料', 'price': 23.8}],
 )
 
@@ -1620,7 +1621,7 @@ _CASE_CU_005 = EvalCase(
     skill=Skill.CUSTOMER,
     difficulty=Difficulty.ADVERSARIAL,
     user_inputs=['帮我处理下老王的订单', '就是王建国', '他那个窗帘订单', '对，发货吧'],
-    expectations=['customer_manage(action=query)', 'order_query', 'order_manage(action=update_logistics)'],
+    expectations=['customer_manage(action=list)', 'order_query', 'order_manage(action=update_logistics)'],
     data_checks=['customer_id 从 customer_manage 查询获得', 'order_id 从 order_query 获得', '发货操作使用正确的 order_id'],
     skip_reason='',
     tags=['fuzzy_input', 'progressive_clarification', 'adversarial'],
@@ -2008,22 +2009,23 @@ _CASE_DF_010 = EvalCase(
     forbidden_card_text=[],
 )
 
-# ── DF-011 [ADVERSARIAL] 熔断 - 连续失败后降级（源: cases/defense.yml）──
+# ── DF-011 [ADVERSARIAL] 查不存在的商品 ID——不误触发熔断且不得发生任何写操作（熔断契约见 test_circuit_breaker.py）（源: cases/defense.yml）──
 _CASE_DF_011 = EvalCase(
     id='DF-011',
     legacy_id='D011',
-    title='熔断 - 连续失败后降级',
+    title='查不存在的商品 ID——不误触发熔断且不得发生任何写操作（熔断契约见 test_circuit_breaker.py）',
     skill=Skill.GENERAL,
     difficulty=Difficulty.ADVERSARIAL,
     user_inputs=['查不存在的ID-001', '查不存在的ID-002', '查不存在的ID-003', '查不存在的ID-004', '查不存在的ID-005', '查遮光窗帘'],
-    expectations=['product_detail'],
-    data_checks=['连续 3 次失败后 breaker 打开（原用例写 5 次，代码默认 failure_threshold=3 已校准）', '开路后不再发起 LLM 调用，CircuitBreakerOpenError 直接向上传播'],
+    expectations=['product_search'],
+    data_checks=['查不到的 ID 一律不得进入写链路：不得创建/修改/上下架商品、不得建单（机器断言见 forbidden_tools）'],
     skip_reason='',
     tags=['defense', 'circuit_breaker', 'failure_rate'],
     persona='',
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+    forbidden_tools=['product_manage', 'product_update', 'sku_update', 'inventory_manage', 'order_create'],
 )
 
 # ── DF-012 [ADVERSARIAL] 熔断 - Redis 不可用时优雅降级（源: cases/defense.yml）──
@@ -3263,7 +3265,7 @@ _CASE_OR_014 = EvalCase(
     difficulty=Difficulty.NORMAL,
     user_inputs=['帮我下单，遮光窗帘 3 米，要打孔加工', {'auto_respond': {'fallback': '选有打孔的那件'}}, {'auto_respond': {'fallback': '不需要其他加工项'}}, {'auto_respond': {'fallback': '确认下单', 'form_values': {'customer_name': '张三', 'customer_phone': '13800138000', 'customer_address': '浙江省杭州市西湖区文三路1号1幢101室', 'color': '米白', 'colorName': '米白'}}}, {'auto_respond': {'fallback': '确认', 'form_values': {'customer_name': '张三', 'customer_phone': '13800138000', 'customer_address': '浙江省杭州市西湖区文三路1号1幢101室', 'color': '米白', 'colorName': '米白'}}}, {'auto_respond': {'fallback': '123456', 'prefer_text': True}}, {'auto_respond': {'fallback': '确认'}}, {'auto_respond': {'fallback': '确认'}}, {'auto_respond': {'fallback': '123456', 'prefer_text': True}}, {'auto_respond': {'fallback': '123456', 'prefer_text': True}}, {'auto_respond': {'fallback': '123456', 'prefer_text': True}}],
     expectations=['order_create'],
-    data_checks=['加工项数量按计价方式确定：per_meter → 数量=面料米数（如打孔 8 元/米 × 3 米 → quantity=3、subtotal=24）；per_set/fixed → 数量=1；per_area → 宽×高', 'processing_info.processingItems 逐项含 {id, name, unitPrice, quantity, unit, pricingMethod, subtotal}，processingFee = 各项 unitPrice × quantity 之和', '订单确认/回复展示加工项含「名称+数量+金额」（如『打孔（罗马圈）3米 ¥24.00』）——数量可见可对账，禁止虚构每米几个的密度推导', '加工费 = 单价 × 数量（打孔 8 元/米 × 3 米 = 24 元），漏算/错算加工费 = 订单金额错误', 'C 端下单是**两步**：确认订单信息后还需手机验证码（order_create 的 sms_code，customer 角色必填）。用例必须提供验证码这一轮，否则 AI 停在第 5 步「请提供验证码」，order_create 永不发生（run 34622425044 实证：R7 顾客回「确认」后无任何工具调用）。dev/CI 栈已设 SMS_BYPASS_CODE=123456，此处用该码走真实校验分支。'],
+    data_checks=['加工项数量按计价方式确定（**仅 order_create 路径**；`calculate_price` 端点的 per_area 面积由 `dimensions.width/height` 承载、`quantity` 为计件数，见 #3672）：per_meter → 数量=面料米数（如打孔 8 元/米 × 3 米 → quantity=3、subtotal=24）；per_set/fixed → 数量=1；per_area → 宽×高', 'processing_info.processingItems 逐项含 {id, name, unitPrice, quantity, unit, pricingMethod, subtotal}，processingFee = 各项 unitPrice × quantity 之和', '订单确认/回复展示加工项含「名称+数量+金额」（如『打孔（罗马圈）3米 ¥24.00』）——数量可见可对账，禁止虚构每米几个的密度推导', '加工费 = 单价 × 数量（打孔 8 元/米 × 3 米 = 24 元），漏算/错算加工费 = 订单金额错误', 'C 端下单是**两步**：确认订单信息后还需手机验证码（order_create 的 sms_code，customer 角色必填）。用例必须提供验证码这一轮，否则 AI 停在第 5 步「请提供验证码」，order_create 永不发生（run 34622425044 实证：R7 顾客回「确认」后无任何工具调用）。dev/CI 栈已设 SMS_BYPASS_CODE=123456，此处用该码走真实校验分支。'],
     skip_reason='',
     tags=['order_create', 'processing_item', 'pricing'],
     persona='',
@@ -4384,6 +4386,7 @@ _CASE_PR_019 = EvalCase(
     forbidden_card_text=[],
     forbidden_text=['尚未真正创建', '未创建成功'],
     required_args=[{'tool': 'product_manage', 'action': 'create', 'fields': ['specifications', 'processing_item_configs.customPrice']}],
+    must_succeed=[{'tool': 'product_manage', 'action': 'create'}],
     pre_clean=[{'type': 'product_dedupe', 'product_keyword': '2699系列雪尼尔窗帘面料', 'price': 23.8}],
 )
 
@@ -4403,6 +4406,7 @@ _CASE_PR_020 = EvalCase(
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+    must_succeed=[{'tool': 'product_manage', 'action': 'create'}],
     db_verify=[{'fetch': 'product_by_name', 'name': '盯防加工项价格0908', 'checks': ['processingItemConfigs.all.finalPrice>0', 'processingItemConfigs.刺绣工艺.finalPrice==45']}],
 )
 

@@ -160,9 +160,19 @@ cases:
       - "他那个窗帘订单"
       - "对，发货吧"
     expectations:
+      # 2026-09-15 校准（issue #3669）：原写 `action: query` —— 而 customer_manage 的
+      # action 枚举真值（`app/tools/customer_manage.py:15 VALID_ACTIONS` 与 schema `enum`
+      # `:79-83`）是 list/detail/update/add_tag/remove_tag/list_tags/create_tag/update_tag/
+      # delete_tag，**没有 query**。参数级匹配（`_arg_mismatch_reason`）下两种结局都不是
+      # 作者的本意：按 schema 调 `list` → 期望永不命中（**假红**）；真调 `query` → 工具返回
+      # 「无效的操作类型: query」（`customer_manage.py:163`）却因参数匹配而过关（**假绿**）。
+      # 本用例语义 =「模糊名称（老王）→ 客户列表关键词搜索定位到真人（王建国）→ 拿到
+      # customer_id」（truths_ref `customer-list.search-fields`），对应 action 正是 `list`
+      # （schema 描述「list 可按 keyword 搜索」；`detail` 反而要求先有 customer_id）——
+      # 故按**真实语义**取 list，而不是降级成裸工具名（那会丢掉「走的是客户搜索路径」的证据）。
       - tool: customer_manage
         args:
-          action: query
+          action: list
       - tool: order_query
       - tool: order_manage
         args:
@@ -172,7 +182,7 @@ cases:
       - "order_id 从 order_query 获得"
       - "发货操作使用正确的 order_id"
     skip_reason: ""
-    merge_log: "eval M011 独有（模糊澄清 + 客户搜索真值）"
+    merge_log: "eval M011 独有（模糊澄清 + 客户搜索真值）；2026-09-15 校准（issue #3669）：expectations 的 customer_manage(action=query) → **list**（该工具枚举无 query，原值级断言永不满足=假红 / 报了错也算过的假绿，见 .github/eval-coverage-baseline.yml 已销账的 action_dangling 条目）"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_mibao_multiturn_intelligence.py"
