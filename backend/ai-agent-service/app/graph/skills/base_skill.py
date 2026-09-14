@@ -16,6 +16,7 @@ Skill 基础执行逻辑
 """
 
 import asyncio
+import hashlib
 import json
 import re
 import time
@@ -41,6 +42,7 @@ from app.core import (
     get_breaker,
 )
 from app.llm import LLMFactory, select_model, has_images, call_with_retry, cost_tracker
+from app.middleware.logging_middleware import get_request_id
 
 
 # ── LLM 熔断器作用域与超时（issue #3270）──
@@ -68,6 +70,58 @@ def llm_breaker_name(skill_name: str) -> str:
     同一 skill 多次取名字必须稳定（否则每次新建熔断器 → 熔断失效）。
     """
     return f"{LLM_BREAKER_PREFIX}{skill_name or 'unknown'}"
+
+
+# ── 异常吞点的**可归因性**（issue #3805，产品侧）──
+# 背景（判定跑 34873715194 / SHA 30527b73，B 端 OR-014）：R4/R9/R10/R11 四轮逐字返回
+# 同一句 `抱歉，我遇到了一些问题，请稍后重试。`、四轮 `tools=-` —— 唯一产生点就是下面
+# `execute_skill` 的 `except Exception` 兜底。异常被吞成一句**无标识**话术，同一会话
+# 连吞 4 次（R9–R11 连续 3 轮），而产物里查不到异常类型与原因（根因 undetermined）。
+#
+# 这里**只补归因**、不动话术与判据（熔断 / 超时 / 轮次耗尽各自的守卫原样保留）：
+#   ① 异常身份：`error=<类型>: <str(exc)>` + traceback（`logger.opt(exception=…)`）——
+#      只记 type+str 时，KeyError/AttributeError 这类异常定位不到出错行；
+#   ② 上下文：skill / session / 租户 / 轮次 / HTTP request_id；
+#   ③ `incident=` 短码：同一 (会话 × 异常类型) ⇒ 同一短码
+#      ⇒「连续 N 轮吞同一个异常」的 N 条日志可聚成一个 incident。
+# 用户可见话术**未改动**：C 端/B 端约定兜底话术必须面向低学历用户、禁英文技术术语与堆栈，
+# 故短码只落日志与审计（后续若要上屏，短码是哈希、不含内部细节，可安全外露）。
+EXC_MSG_MAX = 300
+
+
+def llm_incident_id(session_id: str, exc_type: str) -> str:
+    """异常吞点的稳定 incident 短码：`(会话, 异常类型)` → 8 位十六进制。
+
+    确定性（不随机）是刻意的：同一会话连续 N 轮吞同一个异常必须得到**同一个**短码，
+    否则"连续 3 轮同一句兜底"在日志里是 3 条互不相识的记录，聚合不出来。
+    短码是哈希，不回显会话号/异常原文 ⇒ 不含内部细节。
+    """
+    raw = f"{session_id or '-'}|{exc_type or 'Unknown'}".encode("utf-8")
+    return hashlib.sha256(raw).hexdigest()[:8]
+
+
+def safe_exc_message(exc: BaseException, limit: int = EXC_MSG_MAX) -> str:
+    """异常消息 → 单行 + 脱敏 + 截断（结构化审计专用）。
+
+    单行化：判定跑产物与线上排查都是按行检索，多行异常消息（供应商错误常回显多行
+    JSON / 请求体）会把「一行 = 一条审计」撕开，grep 直接失效。
+    脱敏 + 截断：异常回显里可能带手机号/邮箱与超长请求体（复用既有 LogSanitizer）。
+    """
+    text = " ".join(str(exc).split())
+    text = LogSanitizer.mask_text(text)
+    if len(text) > limit:
+        text = text[:limit] + "…"
+    return text
+
+
+def _current_request_id() -> str:
+    """当前 HTTP 请求的 request_id（与响应头 `X-Request-ID` / 中间件请求日志同源）。
+
+    它是把「用户看到那一句兜底」对到「日志里那次失败」的锚点：一轮 = 一个请求，
+    中间件的 `[<req_id>] POST /api/chat/… started/completed` 给出该轮的墙钟窗口。
+    单测/非请求上下文里为空 ⇒ 记 `-`，不影响审计其它字段。
+    """
+    return get_request_id() or "-"
 
 
 def _strip_think_tags(text: str) -> str:
@@ -3404,7 +3458,17 @@ async def execute_skill(
                     final_content = "抱歉，响应超时，请换个方式描述您的需求。"
                     break
                 except Exception as e:
-                    logger.error(f"[{skill_name}][SLS] LLM failed | session={session_id} error={type(e).__name__}: {e}")
+                    # issue #3805：话术**不变**（低学历用户可懂、无技术术语），
+                    # 但要能把"用户看到这一句"对到"日志里这一次异常"：
+                    # incident 短码（同会话×同异常类型可聚合）+ 类型/消息/traceback +
+                    # skill/会话/租户/轮次/请求 id。格式：先结构化行，traceback 随后。
+                    _incident = llm_incident_id(session_id, type(e).__name__)
+                    logger.opt(exception=e).error(
+                        f"[{skill_name}][SLS] LLM failed | session={session_id} "
+                        f"error={type(e).__name__}: {safe_exc_message(e)}"
+                        f" | incident={_incident} tenant={state.get('tenant_id')} "
+                        f"iter={iteration+1} req={_current_request_id()}"
+                    )
                     final_content = "抱歉，我遇到了一些问题，请稍后重试。"
                     break
 
