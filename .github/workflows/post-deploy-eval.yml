@@ -381,25 +381,17 @@ jobs:
         # 全新 bootstrap 空库下，agent 搜不到商品 → 反复重试 product_search →
         # 从不进入 product_detail（依赖数据的用例必然失败，且行为本身合理）。
         # 注入最小业务数据：商品/颜色/SKU/加工项/加工项关联（幂等，可重复执行）。
-        # B 端（persona=mibao）**叠加** mibao_eval_seed.sql：2699 商品/刺绣工艺/客户张三/
-        # 员工王五/历史订单 —— B 端首跑（run 34804430769）14 条阻塞中多数是这些点名
-        # 数据缺失（#3496 归因，"看着像能力缺陷，实为数据层缺口"）。
+        #
+        # ★ 口径**单一实现**（issue #3563）：本步骤只调用 scripts/eval_stack_seed.sh，
+        #   规则（xiaobu=仅 C 端种子 / mibao=C 端+B 端）在脚本里，与
+        #   xiaobu-acceptance.yml、agent-behavior-eval.yml **共用同一份** —— 禁止在此内联
+        #   fixture 路径。矩阵每条腿自带 persona → 每套栈恰装该 persona 的种子，
+        #   与其它 workflow 上同 persona 的栈逐字节同构（这才是"标准考场"的前提）。
+        #   静态锁：tests/unit_ci_workflows/test_eval_stack_seed_parity.py（L0）。
         env:
           DEV_SERVICE_TOKEN: diagnostics-only-placeholder
         run: |
-          docker compose -f deploy/docker-compose.yml exec -T postgres \
-            psql -v ON_ERROR_STOP=1 -U app_user -d ai_customer_service \
-            < tests/agent_eval/fixtures/xiaobu_eval_seed.sql
-          if [ "${{ matrix.persona }}" = "mibao" ]; then
-            echo "── 叠加 B 端种子（mibao_eval_seed.sql）──"
-            docker compose -f deploy/docker-compose.yml exec -T postgres \
-              psql -v ON_ERROR_STOP=1 -U app_user -d ai_customer_service \
-              < tests/agent_eval/fixtures/mibao_eval_seed.sql
-          fi
-          echo "── 数据核对 ──"
-          docker compose -f deploy/docker-compose.yml exec -T postgres \
-            psql -U app_user -d ai_customer_service -tAc \
-            "SELECT 'products='||count(*) FROM products WHERE tenant_id=1"
+          bash scripts/eval_stack_seed.sh --persona "${{ matrix.persona }}"
 
       - name: Install eval runner deps
         # ① #3587：被取代的 run 不装依赖（省 runner 分钟），理由见「抑制判定」。
@@ -448,6 +440,12 @@ jobs:
           EVAL_CASE_SLEEP: "0.3"
           # 全量逐轮轨迹：**通过**的写用例也要看工具结果 —— 「工具被调用」≠「落库成功」
           AGENT_EVAL_TRACE_ALL: "1"
+          # 波动台账（issue #3563 同类漂移排查）：本 workflow 的判定口径是
+          # completion_verdict「已知波动按台账放行」（#3483 §16.3），而 runner 只有在设了
+          # AGENT_EVAL_FLAKE_LOG 时才落盘台账（local_runner.py:3899）—— 此前这里漏设，
+          # 于是下方 artifact 里的 agent-eval-flakes.json **永远不存在**，
+          # "按台账放行"实际退化成"按本次运行的分类放行"（跨 run 的波动榜也攒不起来）。
+          AGENT_EVAL_FLAKE_LOG: agent-eval-flakes.json
           # 机器可读汇总（本 workflow 的判定/结论/issue 要点全部消费它）
           AGENT_EVAL_SUMMARY_JSON: eval-summary-${{ matrix.persona }}.json
         run: |
