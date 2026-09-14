@@ -24,7 +24,7 @@
    已声明字段 —— 删除 `source` 前必红，删除后绿。
 
 解析器**复用**既有两套口径（不造第四套）：
-- Java DTO 字段：`tests/test_tool_field_name_contract.py::_dto_fields`；
+- Java 接收类型字段：`tests/test_tool_field_name_contract.py::_receiver_fields_from_java`（#3562 口径）；
 - `@RequestBody Map` handler 读取点：`tests/test_employee_field_consumption_contract.py::_read_keys/_method_body`。
 """
 from __future__ import annotations
@@ -34,7 +34,7 @@ from unittest.mock import AsyncMock, patch
 
 # 单一事实源复用：既有跨端契约测试的解析器（同正则 / 同口径）
 from tests.test_employee_field_consumption_contract import _method_body, _read_keys
-from tests.test_tool_field_name_contract import _dto_fields
+from tests.test_tool_field_name_contract import _receiver_fields_from_java
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _JAVA_CONTROLLER = _REPO_ROOT / "backend/admin-api/src/main/java/com/migao/admin/controller"
@@ -167,7 +167,7 @@ async def test_after_sales_manage_create_payload_keys_are_declared_in_agent_dto(
     # 业务内容必须落在已声明字段上（禁止「多发一个别名字段」凑数）
     assert payload["description"] == "尺寸不符要求退款"
 
-    declared = _dto_fields("AgentAfterSalesCreateRequest")
+    declared = _receiver_fields_from_java("AgentAfterSalesCreateRequest")
     dropped = _dropped_keys(payload, declared, "AgentAfterSalesCreateRequest")
     assert not dropped, (
         f"after_sales_manage(create) 下发 {dropped}，但 AgentAfterSalesCreateRequest 未声明 —— "
