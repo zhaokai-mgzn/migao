@@ -398,9 +398,13 @@ class AfterSalesManageTool(BaseTool):
                 message=f"不支持的状态值,可选:{valid_labels}",
             )
 
+        # 对抗编程：reason → remark 字段映射。
+        # AfterSalesStatusUpdateRequest 只声明 status/remark，Java 侧用 remark 写入
+        # closeReason（closed/rejected 时）+ internalNotes；发 reason 会被 Spring
+        # 静默丢弃（HTTP 200 但 closeReason 恒为空，issue #3540 / AS-004）。
         json_data: Dict[str, Any] = {"status": status}
         if reason:
-            json_data["reason"] = reason
+            json_data["remark"] = reason
 
         client = get_admin_api_client()
         response = await client.put(
