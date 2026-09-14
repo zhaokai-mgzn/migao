@@ -224,12 +224,13 @@ cases:
     # 34806789461 / 34807151893）里 create_processing_item **每次都失败**
     # （`failed=processing_item_manage!参数校验失败`；根因=请求缺 pricingMethod/unitPrice，
     # 由 #3543 在工具/契约层修复），用例却因只断言「调用过」而判 ✅（假绿）。
-    # 本断言是产出侧、fail-closed：找不到该工具的**成功**调用 → 直接判红，
-    # 并核对产出字段 = 「加工项真的建出来了，且计价方式落在本用例真值内核上」。
-    # ⚠️ 未用 `must_succeed`（issue 首选形态）的原因：tests/unit_ci_workflows/
-    # test_xiaobu_case_set.py::test_must_succeed_tools_are_customer_capabilities **不按
-    # persona 过滤**（潜在 bug；实测把 PP-006 判为「must_succeed 了非 C 端工具」→ CI 红）——
-    # 在该不变式补 persona 过滤 / B 端对称面之前，output_verify 提供同等 fail-closed 语义。
+    # ① must_succeed = canonical 写成功断言（issue #3544 首选形态，fail-closed：
+    #    一次都没成功 → 判红；被 confirm 门禁拦下的尝试不算违规，只要最终成功）；
+    # ② output_verify = 产出侧值核对（must_succeed 只说"成了"，说不出"建的是哪一项、
+    #    什么计价方式"）—— 两者互补，不是替代（同 OR-016 的 expectations + amount_verify 形态）。
+    must_succeed:
+      - tool: processing_item_manage
+        action: create_processing_item
     output_verify:
       - tool: processing_item_manage
         expect:
@@ -243,7 +244,7 @@ cases:
       - "加工项计价方式仅 per_meter / per_set / fixed / per_area——per_piece 创建被拒绝（行业加工费按米计价、辅料含在加工费中）"
       - "商品详情 processingItems 无 custom_per_meter_quantity / perMeterQuantity（商品级密度覆盖已回滚）"
     skip_reason: ""
-    merge_log: "2026-09-07 改写（issue #3005，回滚 #2986）：行业加工费按米计价、辅料（罗马圈/四爪钩等）含在按米加工费中——per_piece 与「每米数量」密度不符合实际（数量对不上车间工艺、B 端无法对账），已回滚移除；PP-006 由密度配置用例改为计价方式回归断言。2026-09-14 校准（#3544，REPORT §2.3）：① 假绿升级——补 output_verify（processing_item_manage 成功调用 fail-closed + name/pricingMethod 产出核对），此前只断言「调用过」，工具三次真执行全失败仍判 ✅（真缺口见 #3543）；② 输入「分类选打孔加工」改为种子里真实存在的「分类选窗帘加工」（原写法是加工项名/分类名混淆，agent 只能如实说没有该分类，白耗一轮）"
+    merge_log: "2026-09-07 改写（issue #3005，回滚 #2986）：行业加工费按米计价、辅料（罗马圈/四爪钩等）含在按米加工费中——per_piece 与「每米数量」密度不符合实际（数量对不上车间工艺、B 端无法对账），已回滚移除；PP-006 由密度配置用例改为计价方式回归断言。2026-09-14 校准（#3544，REPORT §2.3）：① 假绿升级——补 must_succeed（canonical 写成功断言，fail-closed）+ output_verify（name/pricingMethod 产出核对），此前只断言「调用过」，工具三次真执行全失败仍判 ✅（真缺口见 #3543）；② 输入「分类选打孔加工」改为种子里真实存在的「分类选窗帘加工」（原写法是加工项名/分类名混淆，agent 只能如实说没有该分类，白耗一轮）"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_processing_item_query.py"

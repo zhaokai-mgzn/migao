@@ -2524,10 +2524,11 @@
 数据: processing_item_query 响应条目无 per_meter_quantity（每米数量已回滚移除，issue #3005）
 数据: 加工项计价方式仅 per_meter / per_set / fixed / per_area——per_piece 创建被拒绝（行业加工费按米计价、辅料含在加工费中）
 数据: 商品详情 processingItems 无 custom_per_meter_quantity / perMeterQuantity（商品级密度覆盖已回滚）
+必须成功: processing_item_manage(create_processing_item)
 产出: processing_item_manage → name==测试加工; pricingMethod==per_meter
 ```
 真值: processing-manage.crud, product-sku-stock.create-flow
-溯源: 2026-09-07 改写（issue #3005，回滚 #2986）：行业加工费按米计价、辅料（罗马圈/四爪钩等）含在按米加工费中——per_piece 与「每米数量」密度不符合实际（数量对不上车间工艺、B 端无法对账），已回滚移除；PP-006 由密度配置用例改为计价方式回归断言。2026-09-14 校准（#3544，REPORT §2.3）：① 假绿升级——补 output_verify（processing_item_manage 成功调用 fail-closed + name/pricingMethod 产出核对），此前只断言「调用过」，工具三次真执行全失败仍判 ✅（真缺口见 #3543）；② 输入「分类选打孔加工」改为种子里真实存在的「分类选窗帘加工」（原写法是加工项名/分类名混淆，agent 只能如实说没有该分类，白耗一轮） ｜ tags: processing_item, pricing
+溯源: 2026-09-07 改写（issue #3005，回滚 #2986）：行业加工费按米计价、辅料（罗马圈/四爪钩等）含在按米加工费中——per_piece 与「每米数量」密度不符合实际（数量对不上车间工艺、B 端无法对账），已回滚移除；PP-006 由密度配置用例改为计价方式回归断言。2026-09-14 校准（#3544，REPORT §2.3）：① 假绿升级——补 must_succeed（canonical 写成功断言，fail-closed）+ output_verify（name/pricingMethod 产出核对），此前只断言「调用过」，工具三次真执行全失败仍判 ✅（真缺口见 #3543）；② 输入「分类选打孔加工」改为种子里真实存在的「分类选窗帘加工」（原写法是加工项名/分类名混淆，agent 只能如实说没有该分类，白耗一轮） ｜ tags: processing_item, pricing
 
 ## processing-order（14 case）
 
@@ -2947,11 +2948,12 @@
 你: [🤖 选第一个选项]
 你: 确认
 期望: sku_update
-数据: sku_update 真成功且价格为 150 元（= 用户确认价）：机器断言见上方 output_verify（成功调用 fail-closed + new_price==150）；裸断言「调用过」不算覆盖（#3544 假绿升级）
+数据: sku_update 真成功且价格为 150 元（= 用户确认价）：机器断言见 must_succeed（写成功）+ output_verify（new_price==150）；裸断言「调用过」不算覆盖（#3544 假绿升级）
+必须成功: sku_update
 产出: sku_update → new_price==150
 ```
 真值: product-sku-stock.realtime
-溯源: Round 72 评测覆盖审计：sku_update（SKU 级调价）注册于 product_skill 但无 case 覆盖（盲区）→ 补 SKU 调价场景。2026-09-14 校准（#3518）：输入去「100元的那件」价格点名（独立栈种子 ¥168）。2026-09-14 校准（#3544，REPORT §2.2）：假绿升级——`data_checks` 的自然语义「sku_update 成功（价格落库）」不计分（同 run 两次 sku_update 全失败仍判 ✅）→ 补 output_verify（成功调用 fail-closed + new_price==150），缺陷未修前本用例由假绿转真红（#3539 修复后转绿）。⚠️ 遗留：本 run 该例真实失败点是 `sku_update!SKU不存在`——根因已由 #3539 定位为**中文标签 vs 枚举字面匹配**（非种子缺口），非本 PR 的用例层问题 ｜ tags: sku, write, pricing
+溯源: Round 72 评测覆盖审计：sku_update（SKU 级调价）注册于 product_skill 但无 case 覆盖（盲区）→ 补 SKU 调价场景。2026-09-14 校准（#3518）：输入去「100元的那件」价格点名（独立栈种子 ¥168）。2026-09-14 校准（#3544，REPORT §2.2）：假绿升级——`data_checks` 的自然语义「sku_update 成功（价格落库）」不计分（同 run 两次 sku_update 全失败仍判 ✅）→ 补 must_succeed（canonical 写成功断言）+ output_verify（new_price==150），缺陷未修前本用例由假绿转真红（#3539 修复后转绿）。⚠️ 遗留：本 run 该例真实失败点是 `sku_update!SKU不存在`——根因已由 #3539 定位为**中文标签 vs 枚举字面匹配**（非种子缺口），非本 PR 的用例层问题 ｜ tags: sku, write, pricing
 
 ### PR-024. 小布算料上限 - 定宽布买高 + 对花损耗（窗高超定高上限，必须走定宽分支并告警） 🔵
 ```

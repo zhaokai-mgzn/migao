@@ -16,7 +16,7 @@
 与 C 端测试的关系：本文件只覆盖 B 端跑的一面（mibao 专属 + 双端）；C 端跑的一面
 由 test_xiaobu_case_set.py 覆盖（选中用例不得含 B 端专属工具等）。
 """
-# case_ids: OR-016, PR-019, PR-020, AS-003, AS-005, CH-011, FN-004, HR-003, DA-002, CU-003
+# case_ids: OR-016, PR-019, PR-020, AS-003, AS-005, CH-011, FN-004, HR-003, DA-002, CU-003, PP-006, PR-021
 import re
 import sys
 from pathlib import Path
@@ -172,6 +172,46 @@ class TestBendCaseToolBoundary:
                 assert set(branches) & bend_tools, (
                     f"{cid} 期望 {exp} 在 B 端无可跑分支（OR 分支收紧过头了？）"
                 )
+
+
+class TestBendWriteToolSuccessAssertions:
+    """B 端 `must_succeed` 的**工具集归属**（issue #3544：闸门对称面）。
+
+    为什么必须补（闸门 bug 的对称面）：`test_xiaobu_case_set.py` 的
+    `test_must_succeed_tools_are_customer_capabilities` 原先遍历**全部**用例、要求
+    `must_succeed` 工具 ∈ XIAOBU_TOOLS —— 等于规定「B 端用例不得声明 must_succeed」，
+    而它正是「调了 ≠ 成了」假绿的唯一机器防线（issue #3361）。修正为按 persona 过滤后，
+    若没有本对称面，B 端用例就能 `must_succeed` 一个拼错/越界的工具名
+    （断言永远无意义）而**无人拦截** —— C 端点名的「拼写错误或越界」风险会搬到 B 端。
+
+    范围：B 端全量会跑的用例（mibao 专属 + 双端），与 `_bend_runnable_cases()` 一致。
+    实证（2026-09-14）：`processing_item_manage` / `sku_update` 都在米宝 skill 工具集内，
+    PP-006 / PR-021 因此可安全使用 `must_succeed` 升级假绿断言。
+    """
+
+    def test_must_succeed_tools_are_bend_capabilities(self):
+        bend = _mibao_real_toolset()
+        bad = []
+        for c in _bend_runnable_cases():
+            for m in c.get("must_succeed") or []:
+                tool = m if isinstance(m, str) else (m or {}).get("tool")
+                if tool and tool not in bend:
+                    bad.append(f"{c['id']}: {tool}")
+        assert not bad, (
+            f"B 端可跑用例 must_succeed 声明了非 B 端工具（拼写错误或越界）: {bad}")
+
+    def test_must_succeed_tool_matches_persona_boundary(self):
+        """双向护栏：C 端专属工具不得出现在 B 端可跑用例的 must_succeed 里。"""
+        c_only = {"aftersale_create", "curtain_calc", "customer_order_query",
+                  "customer_address_query", "customer_logistics_track", "human_handoff"}
+        bad = []
+        for c in _bend_runnable_cases():
+            for m in c.get("must_succeed") or []:
+                tool = m if isinstance(m, str) else (m or {}).get("tool")
+                if tool in c_only:
+                    bad.append(f"{c['id']}: {tool}")
+        assert not bad, (
+            f"B 端可跑用例 must_succeed 了 C 端专属工具（B 端跑必挂 = 固定噪音）: {bad}")
 
 
 class TestNoUnknownToolNames:

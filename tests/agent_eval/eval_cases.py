@@ -3794,6 +3794,7 @@ _CASE_PP_006 = EvalCase(
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+    must_succeed=[{'tool': 'processing_item_manage', 'action': 'create_processing_item'}],
     output_verify=[{'tool': 'processing_item_manage', 'expect': {'name': '测试加工', 'pricingMethod': 'per_meter'}}],
 )
 
@@ -4176,13 +4177,14 @@ _CASE_PR_021 = EvalCase(
     difficulty=Difficulty.NORMAL,
     user_inputs=['把遮光窗帘的米白色散剪规格改成 150 元', {'auto_select': True}, '确认'],
     expectations=['sku_update'],
-    data_checks=['sku_update 真成功且价格为 150 元（= 用户确认价）：机器断言见上方 output_verify（成功调用 fail-closed + new_price==150）；裸断言「调用过」不算覆盖（#3544 假绿升级）'],
+    data_checks=['sku_update 真成功且价格为 150 元（= 用户确认价）：机器断言见 must_succeed（写成功）+ output_verify（new_price==150）；裸断言「调用过」不算覆盖（#3544 假绿升级）'],
     skip_reason='',
     tags=['sku', 'write', 'pricing'],
     persona='',
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+    must_succeed=[{'tool': 'sku_update'}],
     output_verify=[{'tool': 'sku_update', 'expect': {'new_price': 150}}],
 )
 
