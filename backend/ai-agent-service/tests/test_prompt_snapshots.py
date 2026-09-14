@@ -54,6 +54,24 @@ def test_skill_has_principles(skill):
 
 
 @pytest.mark.parametrize("skill", MIBAO_SKILLS)
+def test_global_rules_forbid_english_in_user_facing_replies(skill):
+    """全局规则必须要求「面向用户一律中文」，且覆盖**技术术语（SKU/ID）**而不只是英文枚举。
+
+    为什么锁这条：用户（顾客尤其低学历用户、以及商家员工）看不懂英文单词。
+    规则原先只禁「英文枚举」（pending/refund），实测仍漏出 `SKU`（小布 1 次 / 米宝 3 次）
+    与 `ID`（米宝 1 次）——见 2026-09-14 结论档 run 34841029062 的回复文本。
+    ⚠️ 本断言同时防「把规则改回只禁枚举」的回退：只留 ① 会让 ② 类泄漏重新发生。
+    """
+    prompt = _build_system_prompt(skill)
+    assert "面向用户一律中文" in prompt, f"{skill}: 缺少「面向用户一律中文」语言铁律"
+    # ② 类（技术术语）必须被点名，否则模型不知道 SKU/ID 也算「英文」
+    assert "SKU" in prompt, f"{skill}: 语言规则未点名 SKU（技术术语会漏给用户）"
+    assert "UUID" in prompt, f"{skill}: 语言规则未点名 UUID/ID 一类标识"
+    # ① 类（英文枚举）不得被删掉
+    assert "pending" in prompt or "refund" in prompt, f"{skill}: 英文枚举禁令被删除"
+
+
+@pytest.mark.parametrize("skill", MIBAO_SKILLS)
 def test_skill_prompt_length_reasonable(skill):
     """Prompt 长度在合理范围（200-11200 字符）
 
@@ -227,7 +245,7 @@ def test_snapshot_all_skills():
         "staff": 8000,    # +3100: 领域 prompt 补齐创建角色流程（HR-005 场景）+ EXAMPLES 补角色创建示例（Round 32）
         "settings": 6500, # +1600: 领域 prompt 补齐配置/通知流程（Round 34）
         "data": 6500,     # +1700: 领域 prompt 补齐看板/会话流程（Round 34）
-        "general": 6000,  # +600: Phase 2 (#2789) 澄清卡引导（choice 候选示例）达 5465；+200: 兜底库存查询改真实工具（issue #3569，达 5827）
+        "general": 6200,  # +600: Phase 2 (#2789) 澄清卡引导（choice 候选示例）达 5465；+200: 兜底库存查询改真实工具（issue #3569，达 5827）；+200: 面向用户一律中文（扩到 SKU/ID 等技术术语，达 6079）
         "knowledge": 7000,  # issue #3569：knowledge 域（B 端知识问答）补入厚度门禁，达 5032
     }
     for skill, max_len in expected_max.items():
