@@ -39,26 +39,35 @@
   刻意不复制第二份解析器：本项目已踩过「两套门禁各管一摊、口径漂移」的坑（见 #3570）；
   `test_sibling_contract_registry_agrees_with_scanner` 把两者口径互锁。
 
-## 扫描范围（起步 = Agent 端点 + 显式登记表；可增量扩面）
+## 扫描范围：**全量**（不设射程白名单）
 
-- **Agent 端点**（自动派生，新增 Agent 工具自动纳入）：`AGENT_ENDPOINT_PREFIXES`；
-- **显式登记端点**（`SCOPE_EXPLICIT_PATHS`）：承载已确证缺陷的存量端点 + 已确认干净的
-  核心域端点（先把它们锁住防回退）；
-- 其余 ~20 个端点**暂不在射程**，扩面路径见 issue #3570（每批加一条
-  `SCOPE_EXPLICIT_PATHS` + 跑一次报告模式即可看到新批次的存量欠账清单）。
+射程 = `app/tools/*.py` 里**全部** admin-api 客户端调用点（当前 105 个，其中带 payload 的 35 个），
+端点与 DTO 字段**全部自动解析自 Java 源码** —— 没有任何需要人工维护的 endpoint map，
+因此「全量」与「部分」的维护成本相同（本 PR 实测：105/105 调用点都能唯一解析到端点）。
+
+**为什么不做「只覆盖 Agent 端点」的分批射程**（这条是本 PR 的修订，有实证）：
+本 PR 的首版确实按「Agent 端点 + 显式登记表」分批，并把「射程外的存量欠账」列成扩面清单
+发出去。**该清单 7 条里 7 条是误报** —— 根因是当时扫描器还有 4 个解析缺陷
+（方法级注解导致形参错位等，见 `test_scanner_recognizes_known_java_shapes` 的回归锁），
+而射程外那部分**当时没有自检兜底**，于是错误结论被当成工作清单派了出去。
+⇒ 现在：**全量断言 + 全量自检**，「未检查的表面」这个概念被彻底删除，
+不会再有任何「看起来是欠账其实是误报」的清单流出去。
 
 ## 制度化的关键：只允许存量收敛，不允许新增
 
-1. 射程内 payload key ∉ 接收端可读键 → **红**（未登记的新键一律红）；
+1. payload key ∉ 接收端可读键 → **红**（未登记的新键一律红）；
 2. 无法解析的 key（动态构造）的调用点必须在 `DYNAMIC_KEY_SITES` 显式登记并写明理由 → 否则红；
 3. 带 payload 但路径无法静态归属的调用点必须在 `UNATTRIBUTABLE_CALLS` 登记 → 否则红
-   （否则它会静默脱离射程）；
+   （否则它会静默脱离门禁）；
 4. 已知存量缺陷必须在 `ALLOWLIST` 登记 `reason` + `owner` + `issue`，缺任一字段 → 红；
 5. **白名单条目对应的缺陷一旦被修好（key 不再下发）→ 该条目变「陈旧」→ 红**，
    逼后续包逐条销账（白名单即工作清单，不允许变成垃圾场）；
 6. 同族缺陷「工具调用的端点在后端不存在（404）」由 `ENDPOINT_ALLOWLIST` 同规则治理；
-7. 显式登记端点必须在 Java 源码里真实存在（防登记表陈旧 → 静默不再覆盖）；
-8. 扫描器自检（射程内调用点数与端点可解析性）→ 防扫描器静默退化造成「空转绿」。
+7. **扫描器自检（两条，缺一不可）**：
+   a. 表面自检 —— 调用点数量下限 + 每个调用点唯一解析到端点 + 接收类型可解析（防空转绿）；
+   b. **形状自检** —— 断言扫描器认得 4 类历史上真的解析错过的 Java 形态
+      （`@RequestBody Map` 逐键读取 / 方法级注解在签名前 / `@GetMapping({"", "/x"})` 数组 /
+      带初值的 DTO 字段）。**误报与漏报都会红**，这就是本 PR 首版误报清单的防复发锁。
 
 报告模式（开发时看全量欠账，不改任何文件）：
     .venv/bin/python -c "import tests.conftest, runpy, sys; \\
@@ -106,26 +115,6 @@ _JAVA_MAIN = _REPO_ROOT / "backend" / "admin-api" / "src" / "main" / "java"
 # 工具源码里 payload 的四种形态（app/utils/http_client.py::AdminApiClient 的形参名）
 PAYLOAD_KWARGS = ("json_data", "params", "data")
 
-# ── 扫描范围 ────────────────────────────────────────────────────────────────
-
-# Agent 端点前缀：自动化派生，新增 Agent 工具无需登记即纳入
-AGENT_ENDPOINT_PREFIXES = ("/api/admin/agent", "/api/admin/agent-sessions")
-
-# 显式登记端点（存量缺陷所在；扩面时逐条加）
-SCOPE_EXPLICIT_PATHS = (
-    "/api/admin/orders",                      # order_query 订单查询/统计（已确认干净，纳入防回归）
-    "/api/admin/users/{}",                    # employee_manage（Map body，handler 作用域读键）
-    "/api/admin/customers/{}",                # customer_manage（CustomerProfile 实体）
-    "/api/admin/notifications",               # human_handoff 通知（恒 400）
-    "/api/admin/products",                     # product_search / product_manage 查询与建品
-    "/api/admin/processing-items/{}",         # processing_item_manage 更新单价
-    "/api/admin/processing-categories",       # processing_item_manage 建分类
-    "/api/admin/processing-categories/{}",    # processing_item_manage 改分类
-    "/api/admin/after-sales",                 # aftersale_query / human_handoff 建工单
-    "/api/admin/after-sales/{}/status",       # after_sales_manage 改状态
-    "/api/admin/finance/transactions",        # finance_api 登记交易
-)
-
 # 无法静态解析 payload 键（动态构造）的调用点：必须显式登记
 # key = "文件|HTTP方法 归一化端点"（不按行号 —— 行号随并行改动漂移会让登记失效）
 DYNAMIC_KEY_SITES: dict[str, str] = {
@@ -133,6 +122,11 @@ DYNAMIC_KEY_SITES: dict[str, str] = {
         "update 的 data 是自由字典透传（key 由 LLM 直供），静态不可解析 → "
         "由 tests/test_tool_field_name_contract.py 的运行期契约（WriteContract CU-004）"
         "+ customer_manage 的字段白名单兜底（issue #3551 / PR #3562）"
+    ),
+    "app/tools/settings_manage.py|PUT /api/admin/tenant/ai-config": (
+        "`json_data.update(ai_config)`：ai_config 是 schema 里的自由字典（key 由 LLM 直供，"
+        "如 greetingTemplate/businessHours 之外的租户 AI 配置项），静态不可解析 → "
+        "由 schema 的 properties 声明 + admin-api `TenantAiConfig` 实体字段共同约束"
     ),
 }
 
@@ -206,12 +200,12 @@ ALLOWLIST: dict[tuple[str, str, str], dict[str, str]] = {
         "issue": "#3570",
     },
 }
-# 本门禁的**已知覆盖面边界**（不在射程内，别误以为已覆盖）：
+# 本门禁的**已知覆盖面边界**（不在断言面内，别误以为已覆盖）：
 # ① 「缺失的必填键」：如 human_handoff 通知少发 recipientId/recipientType（#3553）——
 #    缺键不是「多发了接收端不读的键」，需必填校验层（validate_input/后端 @NotBlank）兜底；
 # ② 「键对但值越界」：如 human_handoff 的 channel="system"（枚举合法值 wechat/sms/email/internal）
 #    —— 键 ∈ DTO 字段所以本门禁放行，值域校验属各自 schema enum 与后端 @Pattern 的职责；
-# ③ 射程外的 100+ 端点（见 SCOPE_EXPLICIT_PATHS 与 issue #3570 的扩面路径）。
+# ③ 端点存在性与值域/必填（各有独立门禁：test_tool_call_endpoints_exist / validate_input / @NotBlank）。
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -648,10 +642,29 @@ def _resolve_payload_expr(
     （只看调用点**之前**的语句，避免审计脚本「整函数作用域收键」导致的串扰假阳性）。
     """
     module_funcs = module_funcs or {}
+    if isinstance(expr, ast.Constant) and expr.value is None:
+        return [], []  # `params or None` 的兜底分支：语义是「不传 payload」，不是动态键
     if isinstance(expr, ast.Dict):
         return _dict_keys(expr)
     if isinstance(expr, ast.Name):
         return _resolve_named(expr.id, func_node, before_line, module_funcs)
+    if isinstance(expr, ast.BoolOp):
+        # `params=params or None`（短路兜底写法）：各操作数都可能是实际发出的 payload
+        keys: list[tuple[str, int]] = []
+        dyn: list[tuple[str, int]] = []
+        for v in expr.values:
+            k, d = _resolve_payload_expr(v, func_node, before_line, module_funcs)
+            keys += k
+            dyn += d
+        return keys, dyn
+    if isinstance(expr, ast.IfExp):
+        keys = []
+        dyn = []
+        for v in (expr.body, expr.orelse):
+            k, d = _resolve_payload_expr(v, func_node, before_line, module_funcs)
+            keys += k
+            dyn += d
+        return keys, dyn
     if isinstance(expr, ast.Call):
         callee = (
             expr.func.id
@@ -830,14 +843,9 @@ def _lookup_endpoints(verb: str, path: str) -> tuple[JavaEndpoint, ...]:
     return tuple(hits)
 
 
-def _in_scope(endpoint: str) -> bool:
-    if endpoint.startswith(AGENT_ENDPOINT_PREFIXES):
-        return True
-    return endpoint in {_norm_path(p) for p in SCOPE_EXPLICIT_PATHS}
-
-
-def _scoped_calls() -> tuple[ToolCall, ...]:
-    return tuple(c for c in _tool_calls() if c.payload_kwarg and _in_scope(c.endpoint))
+def _payload_calls() -> tuple[ToolCall, ...]:
+    """全部带 payload 的 admin-api 调用点（= 本门禁的表面，无分批射程）。"""
+    return tuple(c for c in _tool_calls() if c.payload_kwarg)
 
 
 def _resolve_endpoint(call: ToolCall) -> JavaEndpoint | None:
@@ -846,9 +854,9 @@ def _resolve_endpoint(call: ToolCall) -> JavaEndpoint | None:
 
 
 def _violations() -> list[tuple[ToolCall, JavaEndpoint, list[str]]]:
-    """射程内、静态键完整、且键 ∈ 接收端可读键 不成立 → 违规清单。"""
+    """静态键完整、且键 ∈ 接收端可读键 不成立 → 违规清单。"""
     out = []
-    for call in _scoped_calls():
+    for call in _payload_calls():
         ep = _resolve_endpoint(call)
         if ep is None:
             continue
@@ -866,23 +874,24 @@ def _violations() -> list[tuple[ToolCall, JavaEndpoint, list[str]]]:
 # ══════════════════════════════════════════════════════════════════════════
 
 
-def test_scanner_sees_the_scope() -> None:
-    """扫描器自检：射程内必须有调用点，且端点能在 Java 源码里解析出来。
+def test_scanner_sees_the_whole_surface() -> None:
+    """扫描器自检（表面）：调用点数量下限 + 每个调用点唯一解析到端点 + 接收类型可解析。
 
     防「扫描器静默退化」——正则失配 / 路径口径漂移会让后面所有断言变成空转绿。
     """
-    calls = _scoped_calls()
-    assert len(calls) >= 8, (
-        f"射程内只扫到 {len(calls)} 个 payload 调用点（预期 ≥8）——"
-        f"扫描器或 SCOPE 配置已失效，禁止以空转绿收场"
+    calls = _payload_calls()
+    assert len(calls) >= 30, (
+        f"只扫到 {len(calls)} 个 payload 调用点（预期 ≥30）——"
+        f"扫描器或路径解析已失效，禁止以空转绿收场"
     )
     unresolved = sorted(
         f"{c.file}:{c.line} {c.method} {c.endpoint}"
         for c in calls
         if _resolve_endpoint(c) is None
+        and (c.file, c.method, c.endpoint) not in ENDPOINT_ALLOWLIST
     )
     assert not unresolved, (
-        "射程内调用点无法在 admin-api controller 源码里解析到端点（路径口径漂移？）：\n  "
+        "调用点无法在 admin-api controller 源码里唯一解析到端点（路径口径漂移？）：\n  "
         + "\n  ".join(unresolved)
     )
     no_body = sorted(
@@ -898,8 +907,61 @@ def test_scanner_sees_the_scope() -> None:
     )
 
 
+def test_scanner_recognizes_known_java_shapes() -> None:
+    """扫描器自检（形状）：Java 侧解析必须认得 4 类历史上真的解析错过的形态。
+
+    本 PR 首版曾据此产出**7 条全为误报**的「扩面欠账清单」并外发（已从 PR body 撤回），
+    根因就是这 4 类形态没被解析对、且当时没有这层自检。下列断言把每一类钉死：
+    解析回归 → 本测试红（而不是让错误清单再流出去）。
+    """
+    problems = []
+
+    def readable(verb: str, path: str, body: str | None = None) -> frozenset[str]:
+        eps = _lookup_endpoints(verb, path)
+        if len(eps) != 1:
+            problems.append(f"{verb} {path}: 端点解析命中 {len(eps)} 条（应为 1）")
+            return frozenset()
+        ep = eps[0]
+        if body is not None and ep.body_type != body:
+            problems.append(
+                f"{verb} {path}: @RequestBody 解析为 {ep.body_type!r}（应为 {body!r}）"
+                f" @ {ep.controller}:{ep.line}"
+            )
+        return _receiving_keys(ep) or frozenset()
+
+    # ① `@RequestBody Map<String,Object>`：必须收 handler 作用域内逐键 .get/.getOrDefault
+    #    （AdminRoleController.createRole 带方法级 @RequirePermission，正是形参错位的高发点）
+    role_keys = readable("POST", "/api/admin/roles")
+    for k in ("name", "code", "description", "permissionIds"):
+        if k not in role_keys:
+            problems.append(f"POST /api/admin/roles: Map body 逐键读取未识别出 {k!r}")
+
+    # ② 方法级注解在签名前：形参不能丢（GET /api/admin/users 的 page/size 曾被整段错位漏掉）
+    user_keys = readable("GET", "/api/admin/users")
+    for k in ("page", "size", "keyword", "status", "role"):
+        if k not in user_keys:
+            problems.append(f"GET /api/admin/users: @RequestParam 未识别出 {k!r}")
+
+    # ③ `@GetMapping({"", "/tree"})` 数组形态：两条路径都要能解析
+    if len(_lookup_endpoints("GET", "/api/admin/categories/tree")) != 1:
+        problems.append("GET /api/admin/categories/tree: 数组形态 @GetMapping 未解析")
+
+    # ④ 带初值的 DTO 字段（private Integer page = 1;）不能被漏掉
+    product_keys = readable("GET", "/api/admin/products")
+    for k in ("page", "size", "stockBelow"):
+        if k not in product_keys:
+            problems.append(f"GET /api/admin/products: 带初值/普通 DTO 字段未识别出 {k!r}")
+
+    # ⑤ 反例（防「解析过宽」把误报堵住反向变成漏报）：产品查询不得凭空多出价格/库存状态键
+    for bogus in ("minPrice", "maxPrice", "stockStatus"):
+        if bogus in product_keys:
+            problems.append(f"GET /api/admin/products: 接收端可读键不应包含 {bogus!r}（假阴性风险）")
+
+    assert not problems, "❌ 扫描器形状自检失败（解析回归会让清单变成误报）：\n  " + "\n  ".join(problems)
+
+
 def test_payload_keys_are_readable_by_receiver() -> None:
-    """核心门禁：射程内 payload 键 ⊆ 接收端可读键。
+    """核心门禁：payload 键 ⊆ 接收端可读键（全量调用点）。
 
     未登记的新键 → 红（**允许存量收敛，不允许新增**）。
     存量缺陷修好后白名单条目会变陈旧 → 由 test_allowlist_entries_are_current 逼销账。
@@ -961,7 +1023,7 @@ def test_allowlist_entries_are_current() -> None:
         for call, _ep, bad in _violations()
         for k in bad
     }
-    dynamic_sites = {(c.file, c.endpoint) for c in _scoped_calls() if c.dynamic}
+    dynamic_sites = {(c.file, c.endpoint) for c in _payload_calls() if c.dynamic}
     stale = sorted(
         k for k in ALLOWLIST
         if k not in live and (k[0], k[1]) not in dynamic_sites
@@ -970,17 +1032,6 @@ def test_allowlist_entries_are_current() -> None:
         "🎉 下列白名单条目已不再命中（缺陷已修复）→ **请直接从 ALLOWLIST 删除这些条目**，"
         "让工作清单逐条销账（issue #3570）：\n  "
         + "\n  ".join(f"{f} → {p} 键 {k!r}" for f, p, k in stale)
-    )
-
-
-def test_explicit_scope_endpoints_exist() -> None:
-    """显式登记端点必须真实存在（防登记表陈旧 → 静默不再覆盖）。"""
-    known = set(_java_endpoints())
-    known_paths = {p for _v, p in known}
-    missing = sorted(p for p in (_norm_path(x) for x in SCOPE_EXPLICIT_PATHS) if p not in known_paths)
-    assert not missing, (
-        "❌ SCOPE_EXPLICIT_PATHS 登记了 admin-api 不存在的端点（改名/删除？）：\n  "
-        + "\n  ".join(missing)
     )
 
 
@@ -1022,11 +1073,11 @@ def test_dynamic_payload_sites_are_registered() -> None:
     """静态扫不到 payload 键的调用点必须显式登记理由（防「藏在动态构造后面」躲开门禁）。"""
     unregistered = sorted(
         f"{c.file}:{c.line} {c.method} {c.endpoint} → {[d[0] for d in c.dynamic]}"
-        for c in _scoped_calls()
+        for c in _payload_calls()
         if c.dynamic and f"{c.file}|{c.method} {c.endpoint}" not in DYNAMIC_KEY_SITES
     )
     assert not unregistered, (
-        "❌ 下列射程内调用点的 payload 键无法静态解析，且未在 DYNAMIC_KEY_SITES 登记理由\n"
+        "❌ 下列调用点的 payload 键无法静态解析，且未在 DYNAMIC_KEY_SITES 登记理由\n"
         "（动态构造会让本门禁静默失效 → 必须登记或改成静态可解析）：\n  "
         + "\n  ".join(unregistered)
     )
@@ -1040,8 +1091,6 @@ def test_unknown_payload_kwarg_names() -> None:
     allowed = set(PAYLOAD_KWARGS) | {"tenant_id", "user_id", "timeout"}
     bad = []
     for call in _tool_calls():
-        if not _in_scope(call.endpoint):
-            continue
         for expr, _line in call.dynamic:
             if expr.startswith("未知 kwarg "):
                 bad.append(f"{call.file}:{call.line} {call.method} {call.endpoint} → {expr}")
@@ -1088,7 +1137,7 @@ def test_payload_calls_are_attributable_to_an_endpoint() -> None:
     静态可读的路径字面量/f-string（或在 `UNATTRIBUTABLE_CALLS` 显式登记理由）。
 
     只约束 admin-api 客户端（`get_admin_api_client()` 的返回值）：工具里还有第三方
-    HTTP 客户端（如 `httpx` + `settings.LOGISTICS_API_URL`），不在跨模块契约射程内。
+    HTTP 客户端（如 `httpx` + `settings.LOGISTICS_API_URL`），不属跨模块契约断言面。
     """
     unattributed = []
     for path in sorted(_TOOLS_DIR.glob("*.py")):
@@ -1150,25 +1199,13 @@ def _admin_client_names(scope: ast.AST) -> set[str]:
     return names
 
 
-def test_allowlist_entries_are_in_scope() -> None:
-    """白名单条目必须落在当前射程内（否则条目永远不会被判定为陈旧 → 静默腐烂）。"""
-    scoped = {(c.file, c.endpoint) for c in _scoped_calls()}
-    orphan = sorted(
-        f"{f} → {p} 键 {k!r}" for (f, p, k) in ALLOWLIST if (f, p) not in scoped
-    )
-    assert not orphan, (
-        "❌ 下列白名单条目不在射程内（SCOPE_EXPLICIT_PATHS 尚未登记该端点 / 调用点已移除）：\n  "
-        + "\n  ".join(orphan)
-    )
-
-
 if __name__ == "__main__":  # pragma: no cover - 开发期报告模式
     import sys
 
     if "--report" not in sys.argv:
         raise SystemExit("用法: python -m tests.test_tool_payload_backend_contract --report")
-    print(f"扫描到 payload 调用点 {len(_tool_calls())} 个，射程内 {len(_scoped_calls())} 个\n")
-    for call in _scoped_calls():
+    print(f"扫描到全部调用点 {len(_tool_calls())} 个，其中带 payload {len(_payload_calls())} 个\n")
+    for call in _payload_calls():
         ep = _resolve_endpoint(call)
         readable = _receiving_keys(ep) if ep else None
         bad = sorted(k for k in call.key_set if readable is not None and k not in readable)
@@ -1178,8 +1215,6 @@ if __name__ == "__main__":  # pragma: no cover - 开发期报告模式
             f"[{call.payload_kwarg}] keys={sorted(call.key_set)} bad={bad}"
             + (f" dyn={[d[0] for d in call.dynamic]}" if call.dynamic else "")
         )
-    print("\n── 射程外但可解析的调用点（扩面候选）──")
-    outside = [c for c in _tool_calls() if c.payload_kwarg and not _in_scope(c.endpoint)]
-    print(f"共 {len(outside)} 个；涉及端点 {len({c.endpoint for c in outside})} 个")
-    for ep in sorted({c.endpoint for c in outside}):
-        print("   ", ep)
+    print("\n── 无 payload 的调用点（只读端点，不在本门禁断言面）──")
+    readonly = [c for c in _tool_calls() if not c.payload_kwarg]
+    print(f"共 {len(readonly)} 个；端点 {sorted({c.endpoint for c in readonly})}")

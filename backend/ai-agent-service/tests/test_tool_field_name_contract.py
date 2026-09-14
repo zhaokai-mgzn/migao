@@ -62,22 +62,53 @@ _FIELD_RE = re.compile(
 )
 
 
+def _balanced_brace_block(src: str, open_idx: int) -> str:
+    """取 `{` 开始的整段配平代码块（内部类解析用）。"""
+    depth = 0
+    for i in range(open_idx, len(src)):
+        if src[i] == "{":
+            depth += 1
+        elif src[i] == "}":
+            depth -= 1
+            if depth == 0:
+                return src[open_idx : i + 1]
+    return src[open_idx:]
+
+
+def _source_of_receiver_type(class_name: str) -> str | None:
+    """定位接收类型的源码：优先同名文件，其次**内部类**（无独立文件）。
+
+    内部类形态真实存在：`SettingsController.java:323` 的
+    `public static class ChangePasswordRequest` 就是 `PUT /api/admin/settings/password`
+    的 `@RequestBody` 类型 —— 只按文件名找会解析不到（跨模块门禁曾因此报「接收类型无法解析」）。
+    """
+    matches = sorted(_JAVA_MAIN.rglob(f"{class_name}.java"))
+    if matches:
+        return matches[0].read_text(encoding="utf-8")
+    pat = re.compile(rf"\b(?:class|record)\s+{re.escape(class_name)}\b[^{{;]*\{{")
+    for path in sorted(_JAVA_MAIN.rglob("*.java")):
+        src = path.read_text(encoding="utf-8")
+        m = pat.search(src)
+        if m:
+            return _balanced_brace_block(src, src.index("{", m.start()))
+    return None
+
+
 @lru_cache(maxsize=None)
 def _receiver_fields_from_java(class_name: str) -> frozenset[str]:
-    """解析 admin-api 接收类型（请求 DTO 或实体）的实例字段名。
+    """解析 admin-api 接收类型（请求 DTO / 实体 / 内部类）的实例字段名。
 
     单一事实源 = Java 源码，不维护第二份清单。
     """
     if not _JAVA_MAIN.is_dir():
         pytest.skip(f"admin-api Java 源码不存在（{_JAVA_MAIN}），无法校验跨服务字段契约")
-    matches = sorted(_JAVA_MAIN.rglob(f"{class_name}.java"))
-    assert matches, (
-        f"未找到接收类型 {class_name}.java —— REGISTRY 登记的契约类已改名/删除；"
-        f"请同步更新 {__file__} 的 REGISTRY"
+    src = _source_of_receiver_type(class_name)
+    assert src is not None, (
+        f"未找到接收类型 {class_name}（既无 {class_name}.java，也无同名内部类）——"
+        f"REGISTRY 登记的契约类已改名/删除；请同步更新 {__file__} 的 REGISTRY"
     )
-    src = matches[0].read_text(encoding="utf-8")
     fields = frozenset(_FIELD_RE.findall(src))
-    assert fields, f"{class_name}.java 未解析到任何字段（正则需适配）：{matches[0]}"
+    assert fields, f"{class_name} 未解析到任何字段（正则需适配；来源源码片段如下）：\n{src[:400]}"
     return fields
 
 
