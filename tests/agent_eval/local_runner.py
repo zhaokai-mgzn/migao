@@ -4841,6 +4841,96 @@ def match_form_values(card_keys: list, values: dict) -> dict:
     return out
 
 
+# ── 用例资产的**载荷窗口**静态审计（issue #3804）────────────────────────────
+# 病灶：载荷（客户信息）原先只声明在固定的第 4、5 轮，而 runner 回填 form 卡需要
+# 「**本轮**声明了载荷」×「上一轮待答卡是 form」**同时**成立 ⇒ agent 的发卡时机
+# 只要**晚一轮**，窗口就用尽、`__FORM__` 全场命中 0 ⇒ 用例必红，且失败串写成
+# `order_create 从未被调用`（归因指向产品）。修法 = **用例级 `auto_fill`**（载荷脱离轮次位置）。
+#
+# 下面两个纯函数是那条不变式的**单一实现**（L0 `tests/unit_ci_workflows/` 与 L2
+# `backend/ai-agent-service/tests/` 共用；两处各写一套就会出现"一个能填一个不能填"的鬼故事）：
+#   > 若用例声明了表单载荷，则**最后一个"能作答 form 卡"的轮次**必须能交付载荷。
+# 判据取"最后一个"而不是"每一个"是为了**零误报**：早先那些"答别的卡"的轮次没有载荷
+# 是合法的 —— 只要**尾部**仍有窗口，agent 晚发卡也能补上。
+#
+# ⚠️ runner 运行时**不消费**这两个函数（它们是给守卫用的静态审计）；
+# 放这里是为了不让守卫各写一份平行实现（与 `flake_history.py` 复用 runner 同款纪律）。
+
+
+def declared_payload_keys(case: dict) -> set:
+    """用例**声明过**的载荷字段名（= 作者预期的 form 卡字段集合）。"""
+    keys = set((case.get("auto_fill") or {}).keys())
+    for m in (case.get("user_inputs") or []):
+        if not isinstance(m, dict):
+            continue
+        keys |= set(((m.get("auto_respond") or {}).get("form_values") or {}).keys())
+        keys |= set((m.get("repeat_until") or {}).get("form_values") or {})
+        keys |= set(m.get("form_values") or {})
+        keys |= set((m.get("auto_fill") or {}).keys())
+    return keys
+
+
+def payload_window_audit(case: dict) -> dict:
+    """单条用例的载荷窗口审计（纯函数，零网络/零 LLM）。
+
+    Returns: {"case_id", "applies", "answer_rounds", "deliverable_rounds",
+              "last_answer_round", "violation"}
+    """
+    expected = declared_payload_keys(case)
+    result = {"case_id": case.get("id", ""), "applies": bool(expected),
+              "answer_rounds": [], "deliverable_rounds": [],
+              "last_answer_round": None, "violation": ""}
+    if not expected:
+        return result
+
+    # 与 `run_case` 同一装配顺序：case 级 auto_fill 作基座 → 并入所有**轮级** auto_fill
+    base = dict(case.get("auto_fill") or {})
+    for m in (case.get("user_inputs") or []):
+        if isinstance(m, dict) and isinstance(m.get("auto_fill"), dict):
+            base.update(m["auto_fill"])
+
+    for idx, turn in enumerate(expand_repeat_turns(list(case.get("user_inputs") or [])), 1):
+        if not isinstance(turn, dict):
+            continue                                   # 纯文本轮：作答不了卡片
+        opts = turn.get("opts") or {}
+        can_answer = False
+        values = dict(base)
+        if turn.get("__repeat__"):
+            can_answer = True                          # repeat_until：有卡答卡/被问码供码
+            values.update(opts.get("form_values") or {})
+        elif turn.get("auto_respond"):
+            spec = turn["auto_respond"] or {}
+            if spec.get("prefer_text"):
+                continue                               # 显式无视卡片（验证码轮）
+            can_answer = True
+            values.update(spec.get("form_values") or {})
+        elif turn.get("auto_fill"):
+            can_answer = True
+            values.update(turn.get("auto_fill") or {})
+        elif turn.get("auto_select"):
+            can_answer = True                          # `resolve_auto_select_turn` 也答 form 卡
+        if not can_answer:
+            continue
+        result["answer_rounds"].append(idx)
+        # 卡上出现 expected 里任意字段名时，本轮能否交付载荷（与生产同函数）
+        if match_form_values(sorted(expected), values):
+            result["deliverable_rounds"].append(idx)
+
+    if not result["answer_rounds"]:
+        return result
+    last = result["answer_rounds"][-1]
+    result["last_answer_round"] = last
+    if last not in result["deliverable_rounds"]:
+        result["violation"] = (
+            f"{result['case_id']}: 载荷窗口在最后一个可作答轮次之前用尽 —— "
+            f"第 {last} 轮（可作答 form 卡）拿不到载荷；声明窗口只在 "
+            f"{result['deliverable_rounds'] or '（没有任何一轮）'}。"
+            f"agent 发卡时机晚一轮 ⇒ `__FORM__` 全场命中 0 ⇒ 用例必红且归因错人"
+            f"（issue #3804）。修法：加**用例级** `auto_fill:`（载荷脱离轮次位置）。"
+        )
+    return result
+
+
 def resolve_auto_respond(results: list, fallback: str, form_values: dict,
                          prefer_text: bool = False, notes: list | None = None) -> str:
     """`auto_respond` 轮：按**上一轮的待答卡片**自动作答，没有卡片则用 fallback。

@@ -398,3 +398,84 @@ class TestCrossRunRecurrence:
     def test_fingerprint_key_carries_case_and_signature(self):
         assert lr.flake_fingerprint_key(_entry("PR-016", "fp", RUN1)) == ("PR-016", "fp")
         assert lr.CROSS_RUN_RECURRENCE_MIN_PRIOR >= 1, "阈值必须 fail-closed（≥1 次历史即复发）"
+
+
+
+# ── 真实数据锚点：**哪些既有放行会被改判**（issue #3806 的红证要求）────────────
+# 上面几条用的是 PR-016 一个指纹；这里把**真实历史**整体冻成夹具：数据抄自 8 个真实 run
+# 的 `agent-eval-flakes.json`（`gh run download`，零 LLM；复算脚本见 PR body）。
+# 判据 = **真实** `cross_run_recurrence`，输入 = 真实台账条目，期望 = 真实复算结果。
+# 价值：口径若被放松（如阈值改回"看本次两次尝试"、键去掉 case_id、指纹被清空），
+# 这 5 条改判会立刻消失 ⇒ 红。
+# 真实数据（8 个真实 run 的 agent-eval-flakes.json；本 run = 34873715194，历史 = 前 3 个 run）
+REAL_PRIOR_RUNS = ['34856561459', '34865780382', '34867559987']
+REAL_TARGET_RUN = '34873715194'
+# 该 run 里被判 released 的真实条目（case_id, 首跑指纹）—— 全部抄自 artifact，未编造
+REAL_RELEASED = [
+    ('PG-016', 'no_success(processing_order_update)'),
+    ('PR-012', 'no_success(processing_item_query)'),
+    ('PR-016', 'no_success(interact)||required_arg(processing_item_query,applicable_category_id)'),
+    ('PP-001', 'no_success(product_processing_item_manage)'),
+    ('OR-011', 'no_success(order_create)'),
+    ('OR-010', 'no_success(order_create)||no_success(validate_input)||want_text_missing(订单号)'),
+    ('PR-017', 'no_success(product_update)'),
+]
+REAL_REJUDGED = ['OR-011', 'PG-016', 'PP-001', 'PR-016', 'PR-017']
+REAL_STILL_RELEASED = ['OR-010', 'PR-012']
+REAL_HISTORY = {
+    ('OR-011', 'no_success(order_create)'): ['34865780382'],
+    ('PG-016', 'no_success(processing_order_update)'): ['34856561459', '34865780382'],
+    ('PP-001', 'no_success(product_processing_item_manage)'): ['34856561459', '34865780382', '34867559987'],
+    ('PR-016', 'no_success(interact)||required_arg(processing_item_query,applicable_category_id)'): ['34856561459', '34865780382'],
+    ('PR-017', 'no_success(product_update)'): ['34865780382', '34867559987'],
+}
+
+class TestRealHistoryRejudgement:
+    """run 34873715194 的 7 条放行里，**5 条**在真实历史上应被改判、**2 条**仍放行。"""
+
+    def _history(self):
+        hist = {}
+        for (cid, fp), runs in REAL_HISTORY.items():
+            for rid in runs:
+                hist = lr.merge_flake_history(
+                    hist, [{"case_id": cid, "first_attempt_signature": fp}], rid)
+        return hist
+
+    def test_five_of_seven_released_entries_are_rejudged(self):
+        hist = self._history()
+        rejudged, still = set(), set()
+        for cid, fp in REAL_RELEASED:
+            entry = {"case_id": cid, "first_attempt_signature": fp,
+                     "classification": "llm-noise", "released": True}
+            (rejudged if lr.cross_run_recurrence(entry, hist) else still).add(cid)
+        assert sorted(rejudged) == REAL_REJUDGED, (
+            f"真实历史上应被改判的放行条目变了：{sorted(rejudged)} ≠ {REAL_REJUDGED}"
+            f"（口径被放松 ⇒ 系统性缺口又会按『LLM 波动』放行）")
+        assert sorted(still) == REAL_STILL_RELEASED, (
+            f"应仍放行的随机波动条目变了：{sorted(still)} ≠ {REAL_STILL_RELEASED}")
+
+    def test_verdict_blocks_exactly_the_rejudged_ones(self):
+        """端到端（判定层）：改判的进 `systemic_recurrence`，随机的留在 `flake_released`。"""
+        hist = self._history()
+        results = [{"case_id": cid, "score": 1.0, "classification": "llm-noise",
+                    "flake_released": True} for cid, _ in REAL_RELEASED]
+        ledger = [{"case_id": cid, "first_attempt_signature": fp, "classification": "llm-noise"}
+                  for cid, fp in REAL_RELEASED]
+        lr.annotate_cross_run_recurrence(results, ledger, hist)
+        v = lr.completion_verdict(results, ())
+        assert sorted(v["systemic_recurrence"]) == REAL_REJUDGED, v
+        assert sorted(v["flake_released"]) == REAL_STILL_RELEASED, v
+        assert v["ok"] is False, "跨 run 复发的系统性缺口被放行了（#3806 的政策没生效）"
+        assert "跨 run 复发" in v["reason"], v["reason"]
+
+    def test_build_time_index_is_empty_for_these_runs(self):
+        """**红证（修前口径）**：不提供历史（= 只看本次两次尝试）⇒ 7 条**全部**放行、ok=True。
+
+        这一条就是"修前会怎样"的可执行版本：`REAL_REJUDGED` 里的 5 条在修前全被放行。
+        """
+        results = [{"case_id": cid, "score": 1.0, "classification": "llm-noise",
+                    "flake_released": True} for cid, _ in REAL_RELEASED]
+        v = lr.completion_verdict(results, ())
+        assert v["ok"] is True, v
+        assert sorted(v["flake_released"]) == sorted({cid for cid, _ in REAL_RELEASED}), v
+        assert v["systemic_recurrence"] == [], v

@@ -2099,7 +2099,7 @@ class TestAutoRespond:
         results = self._last([{"component": "form", "formFields": [{"key": "unknown_key"}]}])
         out = lr.resolve_auto_respond(results, fallback="确认下单", form_values={"a": 1})
         inc = lr.parse_harness_incompatible(out)
-        assert inc is not None, f"载荷零匹配却静默降级为 fallback 文本：{out!r}（issue #3803 复发）"
+        assert isinstance(inc, dict), f"载荷零匹配却静默降级为 fallback 文本：{out!r}（issue #3803 复发）"
         assert inc["kind"] == "form_fields_mismatch"
         assert inc["card_fields"] == ["unknown_key"] and inc["case_fields"] == ["a"]
 

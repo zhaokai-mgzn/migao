@@ -685,6 +685,10 @@ jobs:
         # `failures`（断言级原文，issue #3708）与 `started_at/finished_at`（用例窗口）
         # —— 此前只落在 /tmp、随 runner 销毁 ⇒ C 端红 run 的可归因面退化为"日志 + 指纹"，
         # 与 post-deploy（会上传 summary）能力不一致。
+        # ⚠️ 这里写的是**工作区外的绝对路径** `/tmp/eval-summary-shard<N>.json`：
+        # `actions/upload-artifact@v7` **支持**它（2026-09-15 审计实证：
+        # `llm-thinking-probe.yml` 用 `path: /tmp/llm-thinking-probe-verdict.txt` 上传成功，
+        # artifact 10334936046 可下载到 8221 字节的正文）——故不需要"先复制进工作区"。
         # 条件从「有台账才传」放宽为「总是传」：**零波动**的 run 恰恰只有汇总可留
         # （确定性失败不产生台账条目）。文件缺失由 `if-no-files-found: warn` 兜底，
         # 不让步骤变红。

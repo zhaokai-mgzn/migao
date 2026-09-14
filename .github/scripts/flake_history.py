@@ -50,17 +50,42 @@ def _load_runner():
 
 lr = _load_runner()
 
-FLAKE_ARTIFACT_PREFIX = "agent-eval-flakes"
+# ── 台账 artifact 的**真实**名字前缀（#3806 复核；2026-09-15 实测）───────────────
+# ⚠️ 本常量是"机制是否活着"的唯一开关：命中不了真实名字 ⇒ 索引恒空 ⇒ 复发判据
+# **永不生效**（"实现了但永不生效"，本仓库最贵的假绿形态）。
+#
+# 实测证据（`gh api repos/<repo>/actions/artifacts?per_page=100`，2026-09-15）：
+#   · `agent-eval-flake-ledger`                     ← agent-eval.yml
+#   · `agent-eval-flake-ledger-behavior-<persona>`  ← agent-behavior-eval.yml
+#   · `agent-eval-flake-ledger-shard<N>`            ← xiaobu-acceptance.yml
+#   · `post-deploy-eval-<persona>`                  ← post-deploy-eval.yml（汇总+台账同 artifact）
+# 抢救包的原值 `agent-eval-flakes` **一个都匹配不上**（真实名字里 `flake` 后是 `-` 而非 `s`）
+# —— 而它的单测用的是**编造**的 artifact 名（`agent-eval-flakes`），于是守卫恰好掩盖了缺口：
+# 用真实名字跑 `flake_history.py fetch` 得到的是 `命中 flake 台账 artifact 0 个 / 0 条用例`。
+#
+# 防复发：`tests/unit_ci_workflows/test_flake_history_index.py::
+# TestArtifactPrefixesMatchRealProducers` 从 **workflow 源**（唯一事实源）派生"哪些 artifact
+# 装着台账"，逐条断言被本常量命中 ⇒ 新增/改名上传点而不更新这里 → 直接红。
+FLAKE_ARTIFACT_PREFIXES = (
+    "agent-eval-flake",     # 三处 `agent-eval-flake-ledger*`
+    "post-deploy-eval-",    # post-deploy：台账与汇总同一个 artifact
+)
 FLAKE_LEDGER_NAME = "agent-eval-flakes.json"
 
 
-def select_flake_artifacts(artifacts: list, limit: int = 12, prefix: str = FLAKE_ARTIFACT_PREFIX) -> list:
+def select_flake_artifacts(artifacts: list, limit: int = 12,
+                           prefixes: tuple = FLAKE_ARTIFACT_PREFIXES) -> list:
     """从 `gh api .../artifacts` 的结果里挑出 flake 台账 artifact（纯函数，可单测）。
 
     排序 = 创建时间**倒序**（新的在前）；只保留 `expired == false` 的。
+    `prefixes` 收字符串是**容错**（`startswith(str)` 会按单字符元组逐字匹配 ⇒ 静默恒假，
+    正是本单踩过的形态）；调用方仍应传元组，默认值即 `FLAKE_ARTIFACT_PREFIXES`。
     """
+    if isinstance(prefixes, str):
+        prefixes = (prefixes,)
     picked = [a for a in (artifacts or [])
-              if str(a.get("name") or "").startswith(prefix) and not a.get("expired")]
+              if str(a.get("name") or "").startswith(tuple(prefixes))
+              and not a.get("expired")]
     picked.sort(key=lambda a: str(a.get("created_at") or ""), reverse=True)
     return picked[:max(0, int(limit))]
 
@@ -118,6 +143,14 @@ def fetch_history(repo: str, limit: int, out: Path) -> dict:
     cases = len(history)
     fps = sum(len(v or {}) for v in history.values())
     print(f"📇 跨 run 指纹索引 → {out}（{cases} 条用例 / {fps} 个指纹）")
+    if not history:
+        # **不许静默退化**（#3806 的立意与 #3803 同族）：索引为空 ⇒ 复发判据本次不生效
+        # ⇒ 放行政策悄悄退回"只看本次两次尝试"（正是本单要修的那个口径）。
+        # 用 `::warning::` 落进 run 的 annotation，让人在 run 页面上就能看见
+        # （`continue-on-error: true` 只保证"不因此变红"，不保证"看得见"）。
+        print("::warning::跨 run 波动指纹索引为空（未命中任何 flake 台账 artifact，"
+              f"prefixes={FLAKE_ARTIFACT_PREFIXES}）—— #3806 的复发判据本次**不生效**，"
+              "放行政策退化为只按本次两次尝试；若本应命中，说明上传点改名/过期了")
     return history
 
 
@@ -157,6 +190,8 @@ def main() -> int:
     if args.cmd == "fetch":
         if not args.repo:
             print("⚠️ 未提供 --repo 且 GITHUB_REPOSITORY 为空 → 写空索引（判定退化为现状）")
+            print("::warning::跨 run 波动指纹索引未取（GITHUB_REPOSITORY 为空）"
+                  "—— #3806 的复发判据本次**不生效**")
             Path(args.out).write_text("{}", encoding="utf-8")
             return 0
         fetch_history(args.repo, args.limit, Path(args.out))

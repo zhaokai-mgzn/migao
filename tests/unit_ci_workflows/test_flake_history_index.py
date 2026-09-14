@@ -8,11 +8,13 @@
 本文件把这条链**逐环**锁住（全部离线可跑，零 LLM）。
 """
 import importlib.util
+import re
 import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPTS = REPO_ROOT / ".github" / "scripts"
+WORKFLOWS = REPO_ROOT / ".github" / "workflows"
 RUNNER_PATH = REPO_ROOT / "tests" / "agent_eval" / "local_runner.py"
 
 
@@ -46,26 +48,105 @@ def test_runner_exposes_the_history_env_contract():
 def test_script_uses_the_single_implementation():
     """② 脚本侧：并入口径必须复用 runner 的实现（不许第二份平行实现）。"""
     fh = _flake_history()
-    assert fh.lr.merge_flake_history is not None
-    assert fh.FLAKE_ARTIFACT_PREFIX == "agent-eval-flakes"
+    assert callable(fh.lr.merge_flake_history), "脚本没复用 runner 的 merge_flake_history"
+    assert fh.FLAKE_LEDGER_NAME == "agent-eval-flakes.json"
 
 
-def test_select_flake_artifacts_filters_and_sorts():
-    """③ 纯函数：只挑 flake 台账、剔除过期、按新→旧、受 limit 约束。"""
-    fh = _flake_history()
-    arts = [
-        {"name": "agent-eval-flakes", "created_at": "2026-09-14T00:00:00Z", "expired": False,
-         "workflow_run": {"id": 1}},
-        {"name": "post-deploy-eval-mibao", "created_at": "2026-09-15T00:00:00Z", "expired": False,
-         "workflow_run": {"id": 2}},
-        {"name": "agent-eval-flakes-mibao", "created_at": "2026-09-15T10:00:00Z", "expired": False,
-         "workflow_run": {"id": 3}},
-        {"name": "agent-eval-flakes", "created_at": "2026-09-16T00:00:00Z", "expired": True,
-         "workflow_run": {"id": 4}},
-    ]
-    assert [a["workflow_run"]["id"] for a in fh.select_flake_artifacts(arts, limit=5)] == [3, 1]
-    assert [a["workflow_run"]["id"] for a in fh.select_flake_artifacts(arts, limit=1)] == [3]
-    assert fh.select_flake_artifacts([], limit=5) == []
+# ── ②b 「机制是否活着」的唯一开关：前缀必须命中**真实** artifact 名 ──────────────
+# 病灶（抢救包 e2a094a1 复核，2026-09-15 实测）：常量写的是 `agent-eval-flakes`，
+# 而仓库**真实**上传的名字是 `agent-eval-flake-ledger*` / `post-deploy-eval-*`
+# （`flake` 后是 `-` 不是 `s`）⇒ 一个都匹配不上：
+#
+#     $ python3 .github/scripts/flake_history.py fetch --out /tmp/h.json --limit 12
+#     ℹ️ 命中 flake 台账 artifact 0 个（limit=12）
+#     📇 跨 run 指纹索引 → /tmp/h.json（0 条用例 / 0 个指纹）
+#
+# ⇒ #3806 的复发判据**永不生效**（放行政策照旧只看本次两次尝试 = 本单要修的口径）。
+# 而旧守卫用的 fixture 名字（`agent-eval-flakes` / `agent-eval-flakes-mibao`）恰好是
+# **编造**的 —— 于是守卫替这个缺口做了伪证。本类把 fixture 换成**从 workflow 源派生**，
+# 漂移即红：上传点改名/新增而不更新前缀 → 这里先红。
+
+UPLOAD_ARTIFACT_BLOCK = re.compile(
+    r"uses:\s*actions/upload-artifact@\S+\s*\n\s*with:\s*\n(.*?)(?=\n\s*- name:|\Z)", re.S)
+
+
+def _flake_ledger_producer_names() -> list:
+    """从 workflow 源派生"哪个 artifact 里装着 flake 台账"（唯一事实源 = workflow 本身）。"""
+    names = []
+    for wf in sorted(WORKFLOWS.glob("*.yml")):
+        for m in UPLOAD_ARTIFACT_BLOCK.finditer(wf.read_text(encoding="utf-8")):
+            block = m.group(1)
+            if "agent-eval-flakes.json" not in block:      # 这个 artifact 不装台账
+                continue
+            nm = re.search(r"name:\s*(\S[^\n]*)", block)
+            if nm:
+                names.append(nm.group(1).strip())
+    return names
+
+
+class TestArtifactPrefixesMatchRealProducers:
+    def test_every_real_ledger_artifact_is_matched_by_the_prefixes(self):
+        """**核心**：workflow 里每个装着台账的 artifact 名都必须被前缀命中。"""
+        fh = _flake_history()
+        names = _flake_ledger_producer_names()
+        assert names, ("一个台账 artifact 都没派生出来 —— 派生正则失效，本守卫会静默空跑"
+                       "（先修 `_flake_ledger_producer_names`）")
+        arts = [{"name": n, "created_at": "2026-09-15T00:00:00Z", "expired": False,
+                 "workflow_run": {"id": i}} for i, n in enumerate(names)]
+        selected = {a["name"] for a in fh.select_flake_artifacts(arts, limit=50)}
+        missing = sorted(n for n in names if n not in selected)
+        assert missing == [], (
+            f"这些真实台账 artifact 被 `FLAKE_ARTIFACT_PREFIXES={fh.FLAKE_ARTIFACT_PREFIXES}` "
+            f"漏掉 ⇒ 跨 run 索引取不到它们 ⇒ #3806 复发判据对它们**永不生效**（死代码）：\n  "
+            + "\n  ".join(missing))
+
+    def test_old_prefix_would_have_missed_everything(self):
+        """**红证**：抢救包的原前缀 `agent-eval-flakes` 对真实名字命中 **0** 个。
+
+        真随机波动会漂移，但 artifact 名不会 —— 这条断言把"前缀写错 = 机制静默死掉"
+        这件事钉成可复算的红证（改回旧值 ⇒ 本用例红）。
+        """
+        fh = _flake_history()
+        names = _flake_ledger_producer_names()
+        assert names, "派生失效（见上一条）"
+        hit_old = [n for n in names if n.startswith("agent-eval-flakes")]
+        assert hit_old == [], (
+            f"旧前缀竟命中 {hit_old} —— 若仓库真把 artifact 改名成 `agent-eval-flakes*`，"
+            f"请同步更新本红证与 `FLAKE_ARTIFACT_PREFIXES`，而不是删掉这条断言")
+        hit_new = [n for n in names if n.startswith(fh.FLAKE_ARTIFACT_PREFIXES)]
+        assert sorted(hit_new) == sorted(names), f"新前缀没覆盖全部：{sorted(names)}"
+
+    def test_unrelated_artifacts_are_not_selected(self):
+        """反向守卫：与台账无关的 artifact 不许被选中（否则白下载 + 成本）。"""
+        fh = _flake_history()
+        arts = [{"name": n, "created_at": "2026-09-15T00:00:00Z", "expired": False,
+                 "workflow_run": {"id": i}}
+                for i, n in enumerate(["xiaobu-visual-diffs", "gitleaks-results.sarif",
+                                       "xiaobu-acceptance-artifacts-shard0"])]
+        assert fh.select_flake_artifacts(arts, limit=50) == []
+
+    def test_expired_and_limit_still_apply(self):
+        """剔除过期 + 新→旧排序 + limit（防止上面两条把纯函数契约覆盖掉）。"""
+        fh = _flake_history()
+        arts = [
+            {"name": "agent-eval-flake-ledger", "created_at": "2026-09-14T00:00:00Z",
+             "expired": False, "workflow_run": {"id": 1}},
+            {"name": "post-deploy-eval-mibao", "created_at": "2026-09-15T00:00:00Z",
+             "expired": False, "workflow_run": {"id": 2}},
+            {"name": "agent-eval-flake-ledger-shard0", "created_at": "2026-09-16T00:00:00Z",
+             "expired": True, "workflow_run": {"id": 3}},
+        ]
+        assert [a["workflow_run"]["id"] for a in fh.select_flake_artifacts(arts, limit=5)] == [2, 1]
+        assert [a["workflow_run"]["id"] for a in fh.select_flake_artifacts(arts, limit=1)] == [2]
+        assert fh.select_flake_artifacts([], limit=5) == []
+
+    def test_string_prefix_is_not_char_exploded(self):
+        """容错：传字符串不许被 `startswith` 当单字符元组（静默恒假 = 同一个坑）。"""
+        fh = _flake_history()
+        arts = [{"name": "post-deploy-eval-mibao", "created_at": "2026-09-15T00:00:00Z",
+                 "expired": False, "workflow_run": {"id": 2}}]
+        assert [a["workflow_run"]["id"] for a in
+                fh.select_flake_artifacts(arts, limit=5, prefixes="post-deploy-eval-")] == [2]
 
 
 def _workflow(name: str) -> str:
@@ -101,3 +182,20 @@ class TestCrossRunIndexIsWired:
         src = _workflow(self.WF)
         block = src[src.index("flake_history.py fetch") - 1200:src.index("flake_history.py fetch")]
         assert "continue-on-error: true" in block, "取索引步骤必须 continue-on-error"
+
+    def test_empty_index_is_visible_not_silent(self, tmp_path, monkeypatch, capsys):
+        """**不许静默退化**：索引为空 ⇒ 复发判据本次不生效 ⇒ 必须留 `::warning::`。
+
+        为什么单列一条（#3806 与 #3803 同族）：`continue-on-error: true` 只保证"不因此
+        变红"，**不保证看得见** —— 而"取不到历史"与"真的没有复发"在结论上长得一模一样。
+        这正是本仓库最贵的形态（绿了但没跑）。红证：删掉 `fetch_history` 里的
+        `::warning::` ⇒ 本用例红。
+        """
+        fh = _flake_history()
+        monkeypatch.setattr(fh, "list_artifacts", lambda repo: [])
+        hist = fh.fetch_history("o/r", 12, tmp_path / "h.json")
+        out = capsys.readouterr().out
+        assert hist == {}
+        assert "::warning::" in out and "不生效" in out, (
+            f"索引为空却没有任何可见信号（放行政策悄悄退回旧口径）：{out!r}")
+        assert (tmp_path / "h.json").read_text(encoding="utf-8").strip() == "{}"

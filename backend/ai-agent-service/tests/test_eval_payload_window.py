@@ -64,82 +64,29 @@ if str(REPO_ROOT / ".github") not in sys.path:
 from render_cases import load_case_dicts  # noqa: E402
 
 
-def declared_payload_keys(case: dict) -> set:
-    """用例**声明过**的载荷字段名（= 作者预期的 form 卡字段集合）。"""
-    keys = set((case.get("auto_fill") or {}).keys())
-    for m in (case.get("user_inputs") or []):
-        if not isinstance(m, dict):
-            continue
-        keys |= set(((m.get("auto_respond") or {}).get("form_values") or {}).keys())
-        keys |= set((m.get("repeat_until") or {}).get("form_values") or {})
-        keys |= set(m.get("form_values") or {})
-        keys |= set((m.get("auto_fill") or {}).keys())
-    return keys
-
-
-def payload_window_audit(case: dict) -> dict:
-    """单条用例的载荷窗口审计（纯函数，零网络/零 LLM）。
-
-    Returns: {"applies", "answer_rounds", "deliverable_rounds", "last_answer_round",
-              "violation"}
-    """
-    expected = declared_payload_keys(case)
-    result = {"case_id": case.get("id", ""), "applies": bool(expected),
-              "answer_rounds": [], "deliverable_rounds": [],
-              "last_answer_round": None, "violation": ""}
-    if not expected:
-        return result
-
-    # 与 `run_case` 同一装配顺序：case 级 auto_fill 作基座 → 并入所有**轮级** auto_fill
-    base = dict(case.get("auto_fill") or {})
-    for m in (case.get("user_inputs") or []):
-        if isinstance(m, dict) and isinstance(m.get("auto_fill"), dict):
-            base.update(m["auto_fill"])
-
-    for idx, turn in enumerate(lr.expand_repeat_turns(list(case.get("user_inputs") or [])), 1):
-        if not isinstance(turn, dict):
-            continue                                   # 纯文本轮：作答不了卡片
-        opts = turn.get("opts") or {}
-        can_answer = False
-        values = dict(base)
-        if turn.get("__repeat__"):
-            can_answer = True                          # repeat_until：有卡答卡/被问码供码
-            values.update(opts.get("form_values") or {})
-        elif turn.get("auto_respond"):
-            spec = turn["auto_respond"] or {}
-            if spec.get("prefer_text"):
-                continue                               # 显式无视卡片（验证码轮）
-            can_answer = True
-            values.update(spec.get("form_values") or {})
-        elif turn.get("auto_fill"):
-            can_answer = True
-            values.update(turn.get("auto_fill") or {})
-        elif turn.get("auto_select"):
-            can_answer = True                          # `resolve_auto_select_turn` 也答 form 卡
-        if not can_answer:
-            continue
-        result["answer_rounds"].append(idx)
-        # 卡上出现 expected 里任意字段名时，本轮能否交付载荷（与生产同函数）
-        if lr.match_form_values(sorted(expected), values):
-            result["deliverable_rounds"].append(idx)
-
-    if not result["answer_rounds"]:
-        return result
-    last = result["answer_rounds"][-1]
-    result["last_answer_round"] = last
-    if last not in result["deliverable_rounds"]:
-        result["violation"] = (
-            f"{result['case_id']}: 载荷窗口在最后一个可作答轮次之前用尽 —— "
-            f"第 {last} 轮（可作答 form 卡）拿不到载荷；声明窗口只在 "
-            f"{result['deliverable_rounds'] or '（没有任何一轮）'}。"
-            f"agent 发卡时机晚一轮 ⇒ `__FORM__` 全场命中 0 ⇒ 用例必红且归因错人"
-            f"（issue #3804）。修法：加**用例级** `auto_fill:`（载荷脱离轮次位置）。"
-        )
-    return result
+# ⚠️ 两个纯函数（`declared_payload_keys` / `payload_window_audit`）的**单一实现**在
+# `tests/agent_eval/local_runner.py`（#3804）—— 本文件与 L0
+# `tests/unit_ci_workflows/test_eval_auto_respond_l0.py` 共用，避免两处各写一套口径。
+declared_payload_keys = lr.declared_payload_keys
+payload_window_audit = lr.payload_window_audit
 
 
 def _cases():
     return load_case_dicts(str(CASES_DIR))
+
+
+def _must_case(case_id):
+    """取唯一命中的用例；**缺失/重名即失败**（守卫对象不存在时下面的断言会静默空跑）。
+
+    刻意不用「非空存在性断言」：那是 QA Gate 的弱断言形态
+    （`growth_gate.py --check-weak`，命中即 block PR）。这里校验的是**命中条数**，
+    比"非空"更强，也说明清楚"为什么必须是 1 条"。
+    """
+    found = [c for c in _cases() if c.get("id") == case_id]
+    assert len(found) == 1, (
+        f"用例库里 {case_id} 命中 {len(found)} 条（期望恰好 1 条）—— 守卫对象缺失或重名，"
+        f"本文件的断言会静默空跑")
+    return found[0]
 
 
 def test_guard_is_not_vacuous():
@@ -177,8 +124,7 @@ def test_guard_flags_or014_regression_variant():
 
     这正是"退化即红"：若哪天有人把用例级载荷改回"只声明在第 4、5 轮"，本用例先红。
     """
-    or014 = next((c for c in _cases() if c.get("id") == "OR-014"), None)
-    assert or014 is not None, "用例库里没有 OR-014 —— 守卫对象缺失，请检查用例库"
+    or014 = _must_case("OR-014")
     assert payload_window_audit(or014)["violation"] == "", "OR-014 现状应当已经不违规"
 
     regressed = {k: v for k, v in or014.items() if k != "auto_fill"}
@@ -190,8 +136,7 @@ def test_guard_flags_or014_regression_variant():
 
 def test_or023_repeat_until_window_is_wide():
     """反向守卫：**不该**红的形态不许红（`repeat_until` 展开出的宽窗口，OR-023）。"""
-    or023 = next((c for c in _cases() if c.get("id") == "OR-023"), None)
-    assert or023 is not None
+    or023 = _must_case("OR-023")
     a = payload_window_audit(or023)
     assert a["applies"], "OR-023 声明了载荷 —— 守卫必须适用（否则它在静默空跑）"
     assert not a["violation"], f"OR-023 的 repeat_until 窗口被误判为违规：{a}"
@@ -201,8 +146,7 @@ def test_or023_repeat_until_window_is_wide():
 @pytest.mark.parametrize("case_id", ["PR-016"])
 def test_auto_fill_only_cases_are_covered(case_id):
     """`auto_fill` 轮并集也构成 case 级窗口（PR-016 是这一形态的正例）。"""
-    case = next((c for c in _cases() if c.get("id") == case_id), None)
-    assert case is not None, f"用例库里没有 {case_id}"
+    case = _must_case(case_id)
     a = payload_window_audit(case)
     assert a["applies"] and not a["violation"], a
 
@@ -254,8 +198,7 @@ def _replay_run3(case_level: dict, declared_rounds: dict | None = None) -> dict:
 
 def test_or014_run3_replay_hits_form_payload():
     """OR-014 重放：case 级载荷让 `__FORM__` 从 **0** 变 **>0**（本单的核心红证）。"""
-    or014 = next((c for c in _cases() if c.get("id") == "OR-014"), None)
-    assert or014 is not None
+    or014 = _must_case("OR-014")
     case_level = dict(or014.get("auto_fill") or {})
     assert case_level, "OR-014 缺用例级载荷 —— 修复被回退（本断言即红证之一）"
     # 轮级载荷（修前唯一的通道）：只声明在第 4、5 轮
