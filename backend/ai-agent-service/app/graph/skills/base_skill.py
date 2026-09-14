@@ -4303,29 +4303,32 @@ async def execute_skill(
                 if skill_name == "product":
                     try:
                         _bp_msgs = new_messages + state.get("messages", [])
-                        if await _b_create_processing_items_not_asked(session_id):
-                            _bp_plan = _plan_b_create_processing_items_rewrite(tool_results, _bp_msgs)
-                            if _bp_plan is not None:
-                                _bp_idx, _bp_choice = _bp_plan
-                                _bp_tc, _bp_rs, _bp_rd = tool_results[_bp_idx]
-                                _bp_rd = dict(_bp_rd)
-                                _bp_rd["data"] = _bp_choice
-                                _bp_rd["message"] = (
-                                    f"已展示{_bp_choice['title']}"
-                                    "（代码兜底：建品漏问加工项，confirm 卡改写为多选 choice 卡）")
-                                tool_results[_bp_idx] = (
-                                    _bp_tc, json.dumps(_bp_rd, ensure_ascii=False, default=str), _bp_rd)
-                                logger.info(
-                                    f"[{skill_name}] 建品加工项漏问兜底：confirm 卡改写为 choice 卡 "
-                                    f"(options={len(_bp_choice['options'])}) | session={session_id}")
-                            # 记账：本轮任何一张加工项卡发出去过（改写来的或模型自己发的）→ 记「已问过」
-                            if any(
-                                (rd or {}).get("success")
-                                and str((rd or {}).get("data", {}).get("component") or "") == "choice"
-                                and _is_processing_items_card((rd or {}).get("data") or {})
-                                for _tc, _rs, rd in tool_results
-                            ):
-                                await _mark_processing_items_asked(session_id, "")
+                        # 先跑**纯函数**（零 IO）：不是"本轮正发 confirm 卡 + 有真实加工项 + 未拒/未答"
+                        # 就整段跳过 —— 避免每轮都去读会话状态（产品链路的常见轮次根本不发 confirm 卡）。
+                        _bp_plan = _plan_b_create_processing_items_rewrite(tool_results, _bp_msgs)
+                        if _bp_plan is not None and await _b_create_processing_items_not_asked(session_id):
+                            _bp_idx, _bp_choice = _bp_plan
+                            _bp_tc, _bp_rs, _bp_rd = tool_results[_bp_idx]
+                            _bp_rd = dict(_bp_rd)
+                            _bp_rd["data"] = _bp_choice
+                            _bp_rd["message"] = (
+                                f"已展示{_bp_choice['title']}"
+                                "（代码兜底：建品漏问加工项，confirm 卡改写为多选 choice 卡）")
+                            tool_results[_bp_idx] = (
+                                _bp_tc, json.dumps(_bp_rd, ensure_ascii=False, default=str), _bp_rd)
+                            logger.info(
+                                f"[{skill_name}] 建品加工项漏问兜底：confirm 卡改写为 choice 卡 "
+                                f"(options={len(_bp_choice['options'])}) | session={session_id}")
+                        # 记账：本轮任何一张加工项卡发出去过（改写来的或模型自己发的）→ 记「已问过」。
+                        # 必须与改写分支**并列**（不在其内）：模型自己发卡时也要记账，否则本会话
+                        # 后续轮次会被兜底重问一遍（C 端踩过的"同一件事问第二遍"）。
+                        if any(
+                            (rd or {}).get("success")
+                            and str((rd or {}).get("data", {}).get("component") or "") == "choice"
+                            and _is_processing_items_card((rd or {}).get("data") or {})
+                            for _tc, _rs, rd in tool_results
+                        ):
+                            await _mark_processing_items_asked(session_id, "")
                     except Exception as e:
                         logger.warning(f"[{skill_name}] b-create processing-items fallback failed (non-fatal): {e}")
 
