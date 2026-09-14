@@ -143,7 +143,7 @@ _VALIDATION_RULES: Dict[str, Dict[str, Any]] = {
         "update": {
             "required": ["customer_id", "data"],
             "customer_id": {"type": str, "min_len": 1, "label": "客户 UUID"},
-            "data": {"type": dict, "label": "更新数据（可含 phone/name 等字段）"},
+            "data": {"type": dict, "label": "更新数据（可写字段：wechatNickname/phone/gender/region*/vipLevel/customerStatus/agentNotes/tags/customFields）"},
         },
         "add_tag": {
             "required": ["customer_id", "tag_id"],
