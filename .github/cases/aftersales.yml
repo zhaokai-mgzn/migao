@@ -117,6 +117,20 @@ cases:
           fallback: "确认创建"
       - auto_respond:
           fallback: "确认"
+    # 全局命名空间声明 + 运行期前置断言（issue #3781，真实 run 34856561459 的 AS-003）。
+    # 病灶：本用例按**客户手机号**定位"唯一目标单"，而栈里 OR-016 / CR-001 / CH-010 /
+    # OR-008 / OR-009 / OR-015 / CR-003 等**并行**用例都在同一个手机号（13800138000）
+    # 下建单 → 审计读到 `orders=10 total=11` → `orders=13 total=13`（运行期间还在增长）
+    # ⇒ `auto_respond` 选中的可能是并行用例**刚建的**订单；GLM 盲审据此判
+    # `missing_precondition`，另一个归因包判真产品缺陷 —— 同一份证据两种归因。
+    # 治法：① 声明命名空间 → 与同手机号的建单用例**自动互斥**（不再同窗口）；
+    #       ② 声明运行期前置断言 → 运行期间订单数一旦增长即判「前置不成立」
+    #          （**不是**行为失败），并在 summary 里留 `capture → after` 两个读数。
+    namespaces:
+      - "customer_phone:13800138000"
+    precondition:
+      - type: order_count_for_phone
+        source: "13800138000"
     expectations:
       - tool: order_query
       - tool: after_sales_manage or aftersale_create
@@ -126,7 +140,7 @@ cases:
       - "success=true"
       - "工单号匹配 ^AS-\\d{8}-\\d{4}$"
     skip_reason: ""
-    merge_log: "eval C002 + verification 3.3（同义，取 eval 的跨域版）；2026-09-14 自包含化（#3511）→ 指代显式化（#3568，用手机号而非「这个订单」）；2026-09-15 补收尾答卡轮（结论档 run 34841029062 实证：4 轮里末轮是 agent 发确认卡那一轮，after_sales_manage 必不执行）——断言未改"
+    merge_log: "eval C002 + verification 3.3（同义，取 eval 的跨域版）；2026-09-14 自包含化（#3511）→ 指代显式化（#3568，用手机号而非「这个订单」）；2026-09-15 补收尾答卡轮（结论档 run 34841029062 实证：4 轮里末轮是 agent 发确认卡那一轮，after_sales_manage 必不执行）——断言未改；2026-09-15（issue #3781）补 namespaces + precondition[order_count_for_phone]：本用例依赖「13800138000 名下订单集合稳定」，而同栈并行建单用例（OR-016/CR-001/CH-010/OR-008/OR-009/OR-015/CR-003）会实时改写它 —— 断言内容未改，改的是**前置可见性与互斥**"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_aftersale_create.py"
@@ -219,6 +233,11 @@ cases:
       - "客户要退货，创建售后工单"
       - "原因：颜色与图片不符，退款"
       - "这工单现在什么状态了"
+    # 全局命名空间声明（issue #3781）：与同样争用该全局资源的用例自动互斥，
+    # 消除「同栈并行用例互相写同一命名空间」造成的非确定性（真实 run 34856561459）。
+    namespaces:
+      - "customer_phone:13800138000"
+
     expectations:
       - tool: order_query
       - tool: after_sales_manage or aftersale_create

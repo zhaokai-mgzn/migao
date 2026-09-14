@@ -36,8 +36,13 @@ lr = _load_runner()
 JOURNEY = ("OR-016", "PR-019")
 
 
-def _r(case_id, score, classification="pass"):
-    return {"case_id": case_id, "score": score, "classification": classification}
+def _r(case_id, score, classification="pass", flake_released=False):
+    """一条用例结果。`flake_released=True` = 真实链路里 `run_case` 在
+    「首败 + 重试通过」那一刻打的标记（issue #3781；此时 `score == 1.0`）。"""
+    d = {"case_id": case_id, "score": score, "classification": classification}
+    if flake_released:
+        d["flake_released"] = True
+    return d
 
 
 class TestCompletionVerdict:
@@ -74,6 +79,65 @@ class TestCompletionVerdict:
         v = lr.completion_verdict([_r("AS-007", 0.0, "llm-noise")], JOURNEY)
         assert v["ok"] is True
         assert "AS-007" in v["flake_released"]
+
+    # ── issue #3781：`flake_released` 曾是**恒为空**的死字段（真实 run 34856561459）──
+    # 放行档的语义前提是"重试**通过**" ⇒ 该用例最终 `score == 1.0`，而旧实现的断言序是
+    # 「score >= 1.0 → continue」在前、「分类命中放行档 → 记入 flake_released」在后
+    # ⇒ 放行条目**永远走不到那一句**。run 实证：mibao `classes = pass 67 / reproducible 5
+    # / llm-noise 6`、台账 `released=True` 6 条（PG-016/OR-010/OR-016/PR-007/PP-001/PR-005），
+    # 而 `completion.flake_released == []`；xiaobu 同形（1 条 llm-noise → `[]`）。
+
+    def test_released_flake_with_passing_score_is_listed(self):
+        """**红证**：真实形态（首败+重试通过 → score=1.0 + 标记）必须出现在放行列表里。
+
+        改造前本用例必红（`flake_released == []`）——见 `_legacy_guard_released()` 的
+        "改造前算法"复刻，两者对比即"改前不列 / 改后必列"。
+        """
+        v = lr.completion_verdict(
+            [_r("PR-005", 1.0, "llm-noise", flake_released=True),
+             _r("PR-007", 1.0, "llm-noise", flake_released=True),
+             _r("OR-001", 1.0, "pass")], JOURNEY)
+        assert v["ok"] is True
+        assert sorted(v["flake_released"]) == ["PR-005", "PR-007"], (
+            f"重试通过的放行条目没有出现在 flake_released（旧 bug 复现）：{v}")
+        assert "放行波动 2 条" in v["reason"], v["reason"]
+
+    def test_legacy_guard_drops_the_same_entries_red_proof(self):
+        """**红证**（对照）：把判定循环还原成**改造前**的写法 ⇒ 同输入下放行列表为空。
+
+        这是"改造前该断言会红"的机器证明：不需要 git 回滚，直接在测试里保留旧算法的
+        独立副本（刻意不复用新实现 —— 复用会让两边同源、一起变，红证失效）。
+        """
+        results = [_r("PR-005", 1.0, "llm-noise", flake_released=True)]
+        legacy = []
+        for r in results:
+            if r.get("score", 0) >= 1.0:
+                continue                      # ← 改造前的第一句：放行条目在这里被丢掉
+            if str(r.get("classification") or "") in lr._COMPLETION_RELEASED_CLASSES:
+                legacy.append(r["case_id"])
+        assert legacy == [], "旧算法不该列出任何放行条目（这正是要修的 bug）"
+        assert lr.completion_verdict(results, JOURNEY)["flake_released"] == ["PR-005"], (
+            "新算法必须列出它 —— 否则本次修复没有改变任何行为")
+
+    def test_journey_release_marker_does_not_leak_into_released_bucket(self):
+        """关键旅程优先不变：**失败**的旅程用例即使打了放行标记也只进 `journey_failures`。
+
+        两种形态分开断言（这是最容易写错的地方）：
+          · 旅程用例 `score<1` + 分类命中放行档（离线夹具形态）⇒ 进 `journey_failures`，
+            **不**进 `flake_released`（见既有 `test_journey_failure_blocks_even_llm_noise`）；
+          · 旅程用例 `score==1.0`（重试**通过**，带放行标记）⇒ 它根本不是失败 ⇒ 不进任何
+            失败桶，**也绝不进放行桶**（放行桶只列"失败被放行"的条目，不是"通过的用例"）。
+        """
+        v = lr.completion_verdict(
+            [_r("OR-016", 1.0, "llm-noise", flake_released=True)], JOURNEY)
+        assert v["ok"] is True, v
+        assert v["flake_released"] == [], (
+            f"通过的旅程用例被列进了放行桶（放行桶语义是「失败但被放行」）：{v}")
+        assert v["journey_failures"] == [] and v["deterministic_failures"] == [], v
+        # 对照：**失败**的旅程用例（离线夹具形态）必须被拦下
+        blocked = lr.completion_verdict([_r("OR-016", 0.0, "llm-noise")], JOURNEY)
+        assert blocked["ok"] is False and blocked["journey_failures"] == ["OR-016"]
+        assert blocked["flake_released"] == []
 
     def test_unstable_blocks(self):
         """**口径变更**：`unstable`（两次皆败、成因不同）不再放行 ——

@@ -441,3 +441,88 @@ class TestCostBlockIsMeasuredNotFabricated:
             "`_run_one_case` 没记用例耗时 —— cost.cases 会永远是空字典（假功能）"
         assert "elapsed_s=time.monotonic() - _run_t0" in src, \
             "main 没把墙钟传给 write_summary_json —— cost.wall_clock_s 永远是 None"
+
+
+# ── ⑥ 放行波动必须**列出来**（issue #3781）：`flake_released` 曾是恒空死字段 ──────
+#
+# 真实 run 34856561459 的产物原文（本用例的夹具就是照它构造的）：
+#   · mibao `eval-summary-mibao.json`：`cases` 分类 `pass 67 / reproducible 5 /
+#     llm-noise 6`；`agent-eval-flakes.json` 里 `released=True` 6 条
+#     （PG-016 / OR-010 / OR-016 / PR-007 / PP-001 / PR-005）；
+#   · **但** `completion.flake_released == []`；xiaobu 同形（1 条 llm-noise → `[]`）。
+# 根因：放行档的语义前提是"重试**通过**" ⇒ 该用例最终 `score == 1.0`，而旧判定的断言序是
+# 「`score >= 1.0` → `continue`」在前 ⇒ 放行条目永远走不到记录那一句。
+#
+# ⚠️ 这里**不是**改放行政策（政策仍由 `_COMPLETION_RELEASED_CLASSES` 表达，只放行
+# `llm-noise`），改的是**报告口径**：台账说放行了 6 条，结论摘要就不能说 0 条。
+
+class TestReleasedFlakesAreListed:
+    # run 34856561459 的台账 `released=True` 6 条。**注意** `OR-016` 同时也在
+    # `KEY_JOURNEYS_MIBAO` 里 —— 它在该 run 是「重试通过 ⇒ score=1.0」，因此**没有**
+    # 触发旅程拦截（旅程拦截只对 `score<1` 生效）；而真正失败的旅程是 `HR-003`。
+    # 本夹具照这个真实形态构造：失败旅程（HR-003）与放行条目（其余 5 条）**不相交**；
+    # 「旅程用例失败 + 分类命中放行档 ⇒ 不许放行」由 `test_completion_verdict.py`
+    # 的 `test_journey_failure_blocks_even_llm_noise` 单独锁（两者判据不同，别混）。
+    RELEASED = ["PG-016", "OR-010", "PR-007", "PP-001", "PR-005"]
+    FAILED_JOURNEY = "HR-003"
+
+    def _real_run_shape(self, journey_id):
+        """照 run 34856561459 的形状构造 results（放行条目 = score 1.0 + 标记）。"""
+        released = []
+        for cid in self.RELEASED:
+            c = _case(cid, 1.0, "llm-noise", pre_clean=["重试前置复位: …"])
+            c["flake_released"] = True          # = run_case 在「首败+重试通过」处打的标记
+            released.append(c)
+        return released + [
+            _case(self.FAILED_JOURNEY, 0.0, "reproducible",
+                  [("关键旅程断言原文", "case-level check")]),
+            _case("PP-007", 0.0, "reproducible", [("output_verify[…]: 结果里没有字段 'price'", "")]),
+        ]
+
+    def test_summary_lists_the_released_flakes(self, tmp_path):
+        """顶层 `completion.flake_released` 必须列出放行条目（且**不放宽** ok 判定）。"""
+        journey = _journey_id()
+        data = _write(tmp_path, self._real_run_shape(journey))
+        c = data["completion"]
+        assert sorted(c["flake_released"]) == sorted(self.RELEASED), (
+            f"放行条目没被列出（旧 bug：恒空）：{c['flake_released']}")
+        assert c["ok"] is False, "关键旅程失败 + 确定性失败仍在 ⇒ ok 必须为 false（未放宽）"
+        assert self.FAILED_JOURNEY in c["journey_failures"]
+        assert "PP-007" in c["deterministic_failures"]
+        # 逐条留痕：`failure_reasons` 要覆盖放行条目（"为什么放行"不含空缺）
+        assert set(c["failure_reasons"]) >= set(self.RELEASED)
+
+    def test_case_entry_marks_the_released_flake(self, tmp_path):
+        """条目级也留痕（`flake_released: true`）—— 顶层只有 ID，条目给出 score/分类。"""
+        data = _write(tmp_path, self._real_run_shape(_journey_id()))
+        by_id = {x["id"]: x for x in data["cases"]}
+        for cid in self.RELEASED:
+            assert by_id[cid].get("flake_released") is True, (
+                f"{cid} 是放行波动，条目里没有标记（归因时读不出「为什么它没算失败」）")
+            assert by_id[cid]["score"] == 1.0 and by_id[cid]["classification"] == "llm-noise"
+        # 非放行条目**不带**该键（不给几十条通过用例刷屏）
+        assert "flake_released" not in by_id["PP-007"]
+
+    def test_legacy_guard_drops_them_red_proof(self, tmp_path):
+        """**红证**：把判定循环还原成**改造前**写法 ⇒ 同一份输入下列表为空。
+
+        刻意**不复用**新实现（复用会让两边同源、一起变，红证失效）：这里保留旧算法的
+        独立副本，与新实现的输出对比 —— "改前 0 条 / 改后 6 条"。
+        """
+        results = self._real_run_shape(_journey_id())
+        legacy = []
+        for r in results:
+            if r.get("score", 0) >= 1.0:
+                continue                      # ← 改造前的第一句（放行条目在这里被丢掉）
+            if str(r.get("classification") or "") in lr._COMPLETION_RELEASED_CLASSES:
+                legacy.append(r["case_id"])
+        assert legacy == [], "旧算法不该列出任何放行条目 —— 这正是要修的 bug"
+        assert sorted(lr.completion_verdict(results, (_journey_id(),))["flake_released"]) \
+            == sorted(self.RELEASED)
+
+    def test_runner_actually_sets_the_marker(self):
+        """静态防"字段在但永远不赋值"（假功能）：runner 必须在放行那刻打标记。"""
+        src = (REPO_ROOT / "tests" / "agent_eval" / "local_runner.py").read_text(encoding="utf-8")
+        assert 'r["flake_released"] = True' in src, (
+            "runner 没有在「首败 + 重试通过」处打 flake_released 标记 —— "
+            "completion.flake_released 会重新变成恒空字段")

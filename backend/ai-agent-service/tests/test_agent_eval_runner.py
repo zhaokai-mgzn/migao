@@ -684,11 +684,35 @@ class TestRequiredArgsDeepPath:
 class TestPreCleanProductRemove:
     """_run_pre_clean product_remove：建品残留商品清理（下架→删除，防全量重名）"""
 
-    def test_product_remove_unknown_type_skips(self):
-        import asyncio, unittest.mock as mock
-        async def run():
-            return await lr._run_pre_clean("tok", {"type": "bogus"})
-        assert asyncio.run(run()) == "未知 pre_clean 类型: bogus（跳过）"
+    def test_unknown_type_is_a_config_error_not_a_silent_skip(self):
+        """未知 `pre_clean` 类型 = **可辨配置错误**（issue #3781），不再静默跳过。
+
+        ## 为什么改（旧行为是假绿温床）
+
+        旧实现 `return f"未知 pre_clean 类型: {_type}（跳过）"`，调用侧
+        （`_pre_clean_for_case`）只把它当一行消息打印（`🧹 pre_clean: …`）——
+        **数据压根没准备，用例照跑**，其红/绿还会被读成"agent 能力缺陷"
+        （`migao-acceptance`「空跑：绿了但没跑」同族）。在**新增一个 type** 时最危险：
+        新 type 没被 runner 认出来就静默退回成"什么都没做"。
+
+        现行为：返回带 `_PRECLEAN_CONFIG_ERR` 稳定前缀的配置错误 ⇒ 被
+        `check_preclean_not_applied` 折进**用例结论**（score=0 + 进 summary 的 failures），
+        并在重试边界复用 #3751 的"前置未复位"标记（语义扩到"前置压根没被应用"）。
+
+        ## 红证（本文件这一条即对照）
+
+        把实现改回 `f"未知 pre_clean 类型: {_type}（跳过）"` ⇒ 本断言必红；
+        把 `check_preclean_not_applied` 的判据放宽成"含『跳过』" ⇒
+        `test_eval_preclean_registry.py::test_idempotent_success_messages_are_not_flagged` 红。
+        """
+        import asyncio
+        msg = asyncio.run(lr._run_pre_clean("tok", {"type": "bogus"}))
+        assert msg.startswith(lr._PRECLEAN_CONFIG_ERR), msg
+        assert "'bogus'" in msg and "未执行" in msg, msg
+        # 必须能被折叠器捞出来（否则"可辨"只是文案，进不了结论）
+        assert lr.check_preclean_not_applied([msg]) == [msg]
+        # 且措辞不得含「未复位」/「失败」以外的歧义 —— 重试边界按稳定前缀判，逐一核对
+        assert any(msg.startswith(m) for m in lr._PRECLEAN_BAD_MARKERS)
 
     def test_product_remove_no_items(self):
         import asyncio, unittest.mock as mock

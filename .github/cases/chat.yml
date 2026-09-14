@@ -443,6 +443,11 @@ cases:
           customer_address: "浙江省杭州市西湖区文三路1号1幢101室"
           color: "白色"
           colorName: "白色"
+    # 全局命名空间声明（issue #3781）：与同样争用该全局资源的用例自动互斥，
+    # 消除「同栈并行用例互相写同一命名空间」造成的非确定性（真实 run 34856561459）。
+    namespaces:
+      - "customer_phone:13800138000"
+
     expectations:
       - tool: product_search
       - tool: product_detail

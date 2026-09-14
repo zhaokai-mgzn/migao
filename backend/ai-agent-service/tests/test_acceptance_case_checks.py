@@ -4816,6 +4816,13 @@ class TestAssertionVocabularyIsMappedByLoader:
         "debug_user": ('    debug_user: "debug_customer_new"\n', "debug_customer_new"),
         "form_prefill": ('    form_prefill:\n      - field: customer_phone\n        expect: "13800138000"\n', None),
         "forbidden_card_text": ('    forbidden_card_text:\n      - "用量"\n', ["用量"]),
+        # 并行污染隔离 + 运行期前置断言（issue #3781）：两者都必须经 CI 的 YAML 装载路径
+        # 活下来 —— 漏映射 = 隔离静默失效 / 前置断言静默不跑（#3391/#3417 同款假绿）。
+        "namespaces": ('    namespaces:\n      - "customer_phone:13800138000"\n',
+                       ["customer_phone:13800138000"]),
+        "precondition": ('    precondition:\n      - type: order_count_for_phone\n'
+                         '        source: "13800138000"\n',
+                         [{"type": "order_count_for_phone", "source": "13800138000"}]),
     }
 
     def _vocabulary(self):

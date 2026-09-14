@@ -269,6 +269,176 @@ async def _reset_aftersales_ticket(ticket_no: str) -> str:
     return (f"已复位工单 {ticket_no} → pending（清空 closedAt/closeReason/internalNotes）")
 
 
+# ── pre_clean 支持的类型（**单一事实源**，issue #3781）─────────────────────────
+# 为什么必须有一个显式登记表：`_run_pre_clean` 对未知 type 的旧行为是
+# `return f"未知 pre_clean 类型: {_type}（跳过）"` —— 调用侧只把它当消息打印
+# （`🧹 pre_clean: …`），**不进该用例的结论** ⇒ **拼错/未实现的 type = 静默跳过**：
+# 数据没准备、用例照跑。这是标准的假绿温床（`migao-acceptance`「空跑：绿了但没跑」），
+# 而且恰恰在"新增一个 type"时最危险 —— 新类型没被 runner 认出来就退回成"什么都没做"。
+# 现在：① 本集合是唯一真值；② 未登记的 type 走 **config_error**（进用例结论）；
+# ③ L0 静态不变式（`tests/unit_ci_workflows/test_eval_preclean_registry.py`）锁
+# 「用例库里出现的每个 type 都必须在此登记」——拼错在 CI 直接红。
+_PRECLEAN_TYPES = frozenset({
+    "product_remove",          # 建品残留清理（下架→删除）
+    "product_dedupe",          # 同名商品去重（保留最早创建 = 种子）
+    "customer_tag_remove",     # 客户标签清理（写类 case 自我污染防线）
+    "user_memories_clear",     # 用户级长期记忆清理（post_session 断言前）
+    "aftersales_ticket_prepare",   # 工单复位回 seed 初始态
+    "employee_reactivate",     # 员工恢复 active（支持 employee_phone 精确定位）
+    "employee_remove",         # 员工删除（HR-002 产物清理；#3781 新增）
+})
+
+# 配置错误的**稳定前缀**：`_pre_clean_for_case` 据此把它们折进用例结论
+# （形态对齐 `db_verify: 不支持的 fetch 配置` → 签名折叠成 `config_error(db_verify)`）。
+_PRECLEAN_CONFIG_ERR = "pre_clean: 不支持的 type"
+
+# 「前置**未应用/未生效**」的稳定标记（issue #3781）。两族：
+#   · `_PRECLEAN_CONFIG_ERR`      —— 夹具层配置错误（type 未知/未实现）⇒ 数据压根没准备；
+#   · `_PRECONDITION_NOT_APPLIED` —— 夹具层**目标状态不存在，清理无从施加**（员工/标签查不到），
+#     即"本该被清掉/复位的那个前置在库里根本没有"。两者都让用例带着**假前置**跑完，
+#     旧实现只打印一行日志（`migao-acceptance`「空跑：绿了但没跑」同族）。
+# 处置：折进用例结论（score=0 + 进 summary 的 `failures`，形态对齐
+# `db_verify: 不支持的 fetch 配置` → `config_error(db_verify)`），并在重试边界
+# 复用同一标记表达"第二次尝试的前置与首次不等价"（#3751 标记语义从"复位失败"扩到
+# "前置压根没被应用"）。
+_PRECONDITION_NOT_APPLIED = "pre_clean: 前置未应用"
+_PRECLEAN_BAD_MARKERS = (_PRECLEAN_CONFIG_ERR, _PRECONDITION_NOT_APPLIED)
+
+
+def namespace_claims(case) -> set:
+    """用例声明的全局命名空间键（`EvalCase.namespaces`，形态 `<kind>:<值>`）——纯函数。
+
+    为什么是**声明式**而不是让 runner 去猜：命名空间是**用例资产的知识**
+    （"我依赖哪个客户手机号 / 哪个员工姓名 / 哪个商品名"），runner 无法从工具调用可靠
+    反推（同一个 `order_create` 既可以写张三的单也可以写李四的）。声明出来 ⇒ 可静态
+    审计（L0 守卫：声明必须与 `user_inputs` 里的字面量对得上，防"声明了没用的键"
+    导致隔离形同虚设）。
+    """
+    return {str(k).strip() for k in (getattr(case, "namespaces", None) or []) if str(k).strip()}
+
+
+def namespace_conflict_groups(cases: list) -> dict:
+    """按命名空间键分组，返回**只有一条声明**之外的争用组 `{key: [case_id, …]}`。
+
+    为什么需要（issue #3781）：同栈并行用例互写同一全局命名空间是**假红的结构性来源**
+    （HR-002 造第二个「王五」⇒ HR-003 目标不唯一；OR-016/CR-001/CH-010 在同一个手机号下
+    建单 ⇒ AS-003 的"唯一目标单"前置被实时改写）。有交集的用例必须**互不重叠**。
+    """
+    owner: dict = {}
+    for c in cases or []:
+        for k in sorted(namespace_claims(c)):
+            owner.setdefault(k, []).append(str(getattr(c, "id", "") or "?"))
+    return {k: ids for k, ids in owner.items() if len(ids) > 1}
+
+
+def needs_serial_lane(case, ns_conflicted_ids=frozenset()) -> bool:
+    """用例**主体**是否必须独占执行（纯函数，便于 L0 单测与代价测量）。
+
+    判据（issue #3361 提速第三轮 + #3781）：
+      · 标签 `id_reuse`/`update`/`full_lifecycle`（商品改价类：跑前快照、跑后恢复同一批
+        商品，整个用例期间都持有共享商品状态）；
+      · 声明 `post_session`（断言用户级长期状态，运行中写 user_memories，而所有用例共用
+        同一个评测顾客）；
+      · **命名空间撞车**（`ns_conflicted_ids` 里的用例）：撞车的两条必须互不重叠，
+        否则其中一条的产物会改掉另一条的前置。
+
+    ⚠️ **不用**「声明了 pre_clean 就整体独占」：实测那是**加性**成本（C 端 OR-014 一个人
+    跑 ~5.5min 把 10.2min 的评测顶到上限）——pre_clean 只是"评测前把共享数据清干净"的
+    **短写动作**，真正需要隔离的只有这个动作（见 `_run_one_case` 的 pre_clean 独占窗口），
+    用例主体各自建数据，可以并行。
+    """
+    tags = set(getattr(case, "tags", None) or [])
+    return bool(tags & {"id_reuse", "update", "full_lifecycle"}) \
+        or bool(getattr(case, "post_session", None)) \
+        or str(getattr(case, "id", "") or "") in set(ns_conflicted_ids or ())
+
+
+def serialize_seconds(cases: list, durations: dict, concurrency: int = 6) -> dict:
+    """**代价模型**（纯函数，零 LLM）：估算调度方案的墙钟下界，便于把"隔离的代价"量化。
+
+    模型（保守 = 给出下界，真实墙钟只会更长，因为还有 LLM 方差与重试尾巴）：
+      · 并行道：`max(Σ并行时长 / 并发度, 最长单条)` —— 并发度槽位被占满的理想摊派；
+      · 串行道：Σ串行时长 —— 串行用例**互不重叠**（这正是隔离的定义）；
+      · 两者**可以重叠**（读写门的语义：读者排空即进入，不阻塞整批）⇒ 取 max。
+    真实调度的 `ConcurrencyGate` 更细（并行用例持读位、串行用例持写位），本模型是它的
+    上界近似；用于**比较两种方案谁更贵**足够（比值稳定，不依赖具体实现细节）。
+
+    为什么要有它：`migao-dev-flow` §17.4 要求"不要只声明『几乎免费』"——
+    PR 里写"隔离代价 X 秒"必须是算出来的，而不是感觉出来的。
+    """
+    ns = namespace_conflict_groups(cases)
+    conflicted = {i for g in ns.values() for i in g}
+    par, ser = [], []
+    for c in (cases or []):
+        d = float(durations.get(str(getattr(c, "id", "") or ""), 0.0) or 0.0)
+        (ser if needs_serial_lane(c, conflicted) else par).append(d)
+    k = max(1, int(concurrency or 1))
+    parallel_s = max((sum(par) / k), (max(par) if par else 0.0))
+    serial_s = sum(ser)
+    return {"cases": len(cases or []), "parallel_lane": len(par), "serial_lane": len(ser),
+            "conflict_groups": len(ns), "parallel_s": round(parallel_s, 1),
+            "serial_s": round(serial_s, 1), "wall_s": round(max(parallel_s, serial_s), 1)}
+
+
+async def _eval_find_users(client, headers, name: str = "", phone: str = "") -> list:
+    """按**姓名 / 手机号**精确查员工账号（评测前置的数据层基元，issue #3781）。
+
+    为什么单独抽出来（真实 run 34856561459 的 `HR-003` 假红铁证）：
+    旧 `employee_reactivate` 的实现是 `GET /api/admin/users?page=1&size=50` 后
+    `next(u for u in items if u.get("name") == name)` —— **拿第一条同名**。
+    而同 run 的 `HR-002`（创建员工-开账号）会创建**第二个同名「王五」**
+    （`13812345678`，种子里的是 `debug_employee_wangwu / 13700137000`）⇒
+    `HR-003` 跑到 `employee_manage` 查询时 `users=2 total=2`，agent 给出**正确**的
+    安全行为（「系统里有两个「王五」…我需要知道停用哪一个才能安全执行」），
+    而 `employee_manage(action=toggle_status, status=disabled)` 永不成立 ⇒
+    标准全量跑法下**恒红**；且 `HR-003` 在 `KEY_JOURNEYS_MIBAO` 里 ⇒
+    B 端 `completion.ok` 被**永久**压住。这**不是**产品缺陷，是用例资产缺陷。
+
+    故本基元：分页取全（`size=200`，旧实现的 50 条上限本身也会漏），
+    并按 **name 精确 + phone 精确（做数字归一）** 双条件过滤 ——
+    手机号是员工的**唯一**标识（`HR-008` 已按 #3568 的「显式指代」范式用手机号点名），
+    用它定位可让用例对"同名残留"免疫。
+    """
+    want_name = str(name or "").strip()
+    want_phone = re.sub(r"\D", "", str(phone or ""))
+    if not want_name and not want_phone:
+        return []
+    out = []
+    for page in (1, 2):
+        r = await client.get(f"{ADMIN_API}/api/admin/users", headers=headers,
+                             params={"page": page, "size": 200}, timeout=15)
+        items = (_safe_json(r, {}) or {}).get("data", {}).get("items", [])
+        for u in items:
+            if want_name and str(u.get("name") or "").strip() != want_name:
+                continue
+            if want_phone and re.sub(r"\D", "", str(u.get("phone") or "")) != want_phone:
+                continue
+            if u not in out:
+                out.append(u)
+        if len(items) < 200:
+            break
+    return out
+
+
+async def _eval_remove_users(client, headers, name: str = "", phone: str = "") -> int:
+    """删除匹配的员工账号（`HR-002` 产物清理专用，issue #3781）；返回删除条数。
+
+    走 `DELETE /api/admin/users/{id}`（`AdminUserController.deleteUser` @`:268`，
+    无请求体；与 `employee_manage` 的 `delete` action 同一路径与权限码
+    `employee:create` —— `app/tools/employee_manage.py:_delete_user` 传的就是裸 DELETE）。
+    """
+    removed = 0
+    for u in await _eval_find_users(client, headers, name, phone):
+        uid = u.get("id")
+        if not uid:
+            continue
+        r = await client.delete(f"{ADMIN_API}/api/admin/users/{uid}",
+                                headers=headers, timeout=15)
+        if r.status_code < 300:
+            removed += 1
+    return removed
+
+
 async def _run_pre_clean(token: str, spec: dict) -> str:
     """评测前数据清理（写类 case 自我污染防线，§14.2/CU-003）。
 
@@ -276,10 +446,17 @@ async def _run_pre_clean(token: str, spec: dict) -> str:
     - customer_tag_remove: 移除「customer_keyword 匹配的第 customer_index 位客户」
       上的 tag_name 标签（case 每次成功 add_tag 即污染生产数据 → 下一跑幂等拒绝，
       在 run_case 前把目标客户标签清干净，保证写流程从干净状态开始）。
+    - employee_remove: 删除匹配的测试员工（`HR-002` 产物「王五/13812345678」清理）——
+      **幂等**：不存在即返回 0 条（不是错误），符合"清理成功"语义。
+    - employee_reactivate: 恢复被评测禁用的测试员工；**支持 employee_phone 精确定位**
+      （#3781：只用姓名会命中同名残留 → 目标不确定 → 用例恒红）。
 
     ⚠️ 调用时机（issue #3751）：本函数是**前置**动作，只允许在**一次尝试开始之前**执行；
     `run_suite` 在首次尝试前与**每次重试前**都会调用它（attempt 边界），但绝不在
     `run_case`/`db_verify` 之后调用 —— 否则会把该次尝试的真实产物抹掉（红线）。
+
+    ⚠️ 消息措辞红线（#3751）：`_run_one_case._reset_for_retry` 靠子串
+    「未复位」/「失败」判"复位没成功" ⇒ **成功路径的消息不得含这两个词**。
     """
     _type = spec.get("type", "")
     if _type == "product_remove":
@@ -333,24 +510,54 @@ async def _run_pre_clean(token: str, spec: dict) -> str:
         # agent 合理说「已停用无需操作」→ 评测前恢复 active。
         # Round 75：查不到时重试 2 次（网络波动 _safe_json 降级返回空 →
         # 误报「不存在」跳过 → 王五未恢复 → agent 见 disabled 合理不操作 → 失败）
+        # issue #3781：**加 phone 精确定位 + 多命中全恢复** ——
+        #   · 只给 employee_name 时会命中同名残留（HR-002 造的第二个「王五」），
+        #     旧实现 `next(...)` 取第一条 ⇒ 恢复的对象不确定 ⇒ HR-003 恒红；
+        #   · `employee_phone` 一旦声明即按「姓名 ∧ 手机号」双条件定位（唯一）；
+        #   · 命中多条时**全部**恢复为 active（幂等、无副作用）并如实报出条数 ——
+        #     不静默取第一条（那是本 bug 的形态），也不报错中断（前置动作不该伪装成用例失败）。
         name = str(spec.get("employee_name", ""))
+        phone = str(spec.get("employee_phone", "") or "")
         async with httpx.AsyncClient() as c:
             h = _admin_headers(token)
-            target = None
+            targets = []
             for attempt in range(3):
-                r = await c.get(f"{ADMIN_API}/api/admin/users", headers=h,
-                                params={"page": 1, "size": 50}, timeout=15)
-                items = (_safe_json(r, {}) or {}).get("data", {}).get("items", [])
-                target = next((u for u in items if u.get("name") == name), None)
-                if target is not None:
+                targets = await _eval_find_users(c, h, name, phone)
+                if targets:
                     break
-            if target is None:
-                return f"员工「{name}」查询 3 次未命中（跳过）"
-            if target.get("status") != "disabled":
-                return f"员工「{name}」状态 {target.get('status')}，无需恢复"
-            await c.put(f"{ADMIN_API}/api/admin/users/{target.get('id')}/status",
-                        headers=h, json={"status": "active"}, timeout=15)
-            return f"已恢复「{name}」为 active（防存量消耗）"
+            _who = f"「{name}」" + (f"（手机号 {phone}）" if phone else "")
+            if not targets:
+                # #3781：**前置未应用**要进结论（旧文案「查询 3 次未命中（跳过）」只打印一行
+                # ⇒ "员工没被复位"与"agent 不会停用员工"在报告里同形，本仓库踩过的形态）。
+                return (f"{_PRECONDITION_NOT_APPLIED}: 员工 {_who} 查询 3 次未命中"
+                        f"—— 该用例的停用前置**未复位**（栈缺 seed？见 fixtures/mibao_eval_seed.sql）")
+            changed = 0
+            for t in targets:
+                if t.get("status") == "disabled":
+                    await c.put(f"{ADMIN_API}/api/admin/users/{t.get('id')}/status",
+                                headers=h, json={"status": "active"}, timeout=15)
+                    changed += 1
+            if not changed:
+                return f"员工 {_who} 状态 {targets[0].get('status')}，无需恢复"
+            if len(targets) > 1:
+                return (f"已恢复 {changed}/{len(targets)} 个同名员工 {_who} 为 active"
+                        f"（同名 {len(targets)} 个：声明 employee_phone 可精确定位）")
+            return f"已恢复 {_who} 为 active（防存量消耗）"
+    if _type == "employee_remove":
+        # 删除匹配的测试员工（幂等清理；#3781）。
+        # 用途：HR-002 每跑一次就往**全局命名空间**里放一个「王五/13812345678」，
+        # 而 HR-003 的 pre_clean 只能改状态、**消不掉重名** ⇒ 标准全量跑法下
+        # HR-003 目标不唯一 ⇒ 恒红（且它是 KEY_JOURNEY ⇒ 永久压住 B 端 completion.ok）。
+        # 本类型是该病灶的**根治**：谁造的谁清（HR-002 声明 employee_remove）。
+        name = str(spec.get("employee_name", ""))
+        phone = str(spec.get("employee_phone", "") or "")
+        async with httpx.AsyncClient() as c:
+            h = _admin_headers(token)
+            removed = await _eval_remove_users(c, h, name, phone)
+        _who = f"「{name}」" + (f"（手机号 {phone}）" if phone else "")
+        # ⚠️ 措辞红线：不含「未复位」/「失败」（见 docstring）
+        return (f"已清理 {removed} 个测试员工 {_who}"
+                if removed else f"无 {_who} 员工需清理（幂等）")
     if _type == "user_memories_clear":
         # 清掉**上一轮会话**flush 落库的长期记忆（issue #3544 收口批）：
         # `post_session[user_memories]` 断言的是「用户级长期状态」，共享/复用栈上会被上轮
@@ -381,8 +588,18 @@ async def _run_pre_clean(token: str, spec: dict) -> str:
         # seed 工单缺失 = 栈的 seed 没装（数据层问题），如实报出来（归因可见），不静默兜底。
         ticket_no = str(spec.get("ticket_no") or _SEED_AFTERSALES_TICKET_NO)
         return await _reset_aftersales_ticket(ticket_no)
+    if _type not in _PRECLEAN_TYPES:
+        # 配置错误，**不是**静默跳过（issue #3781）：旧行为 `（跳过）` 只被打印一行，
+        # 用例照跑 ⇒ "数据压根没准备"在报告里读不出来。现在走稳定前缀，由
+        # `_pre_clean_for_case` 折进用例结论（score=0 + 进 summary 的 failures）。
+        return (f"{_PRECLEAN_CONFIG_ERR}: {_type!r}（该用例的数据准备**未执行**，"
+                f"结论不可归因于 agent）—— 合法类型见 local_runner._PRECLEAN_TYPES: "
+                f"{sorted(_PRECLEAN_TYPES)}")
+    # ── customer_tag_remove（登记表里的最后一个 ⇒ 落到这里即它；其余情况是
+    #    "登记了但漏写实现体"，同样走配置错误，不许退回静默）──
     if _type != "customer_tag_remove":
-        return f"未知 pre_clean 类型: {_type}（跳过）"
+        return (f"{_PRECLEAN_CONFIG_ERR}: {_type!r} 已登记但未实现（数据准备**未执行**）"
+                f"—— 请补实现或从 _PRECLEAN_TYPES 移除")
     async with httpx.AsyncClient() as c:
         h = _admin_headers(token)
         kw = str(spec.get("customer_keyword", ""))
@@ -400,7 +617,11 @@ async def _run_pre_clean(token: str, spec: dict) -> str:
         tag_id = next((t.get("id") for t in tags
                        if isinstance(t, dict) and t.get("name") == spec.get("tag_name")), None)
         if not tag_id:
-            return f"标签「{spec.get('tag_name')}」不存在（跳过清理）"
+            # #3781：标签目录里没有该标签 ⇒ 本次清理**无从施加**（前置未应用）。
+            # 对 CU-003 而言这一格未必隐藏缺陷（用例是"加标签"，标签不在目录里本就无需清），
+            # 但**必须可见**：否则"写类 case 的自我污染防线有没有真的生效"在报告里读不出来。
+            return (f"{_PRECONDITION_NOT_APPLIED}: 标签「{spec.get('tag_name')}」不在标签目录里"
+                    f"（清理无从施加；若用例确实依赖该标签已存在，这就是数据层缺口）")
         if tag_id in (customer.get("tags") or []):
             await c.delete(f"{ADMIN_API}/api/admin/customers/{cid}/tags/{tag_id}",
                            headers=h, timeout=15)
@@ -2108,6 +2329,15 @@ _CASE_ATOM_RULES = (
     (re.compile(r"^want_text: (?:配置|round)"), "config_error(want_text)"),
     (re.compile(r"^forbidden_card_text: 空配置"), "config_error(forbidden_card_text)"),
     (re.compile(r"^order_before: 无法解析"), "config_error(order_before)"),
+    # 夹具层（pre_clean，issue #3781）：**前置未应用**必须与行为失败**分属不同根因**——
+    # 它的原文里带 `pre_clean:` / `precondition` 前缀（`check_preclean_not_applied` 折入），
+    # 折叠成固定 token 而非通用 token：两次尝试的原文里含用例名/号码，通用 token 会把
+    # "同一件事"洗成"两次不同违反点"（→ 误判 unstable）。类型名保留（不同 type 不同根因）。
+    (re.compile(r"^pre_clean: 不支持的 type: '?([A-Za-z0-9_, ]+)'?"),
+     "config_error(pre_clean)"),
+    (re.compile(r"^pre_clean: 前置未应用"), "precondition_not_applied(pre_clean)"),
+    (re.compile(r"^PRECONDITION_NOT_APPLIED"), "precondition_not_applied(pre_clean)"),
+    (re.compile(r"^PRECONDITION_NOT_RESTORED"), "precondition_not_restored(pre_clean)"),
     # ③ 参数层：工具 + 键名 = 结构身份（值/轮次/缺失值文案丢弃）
     (re.compile(rf"^required_args\[({_TOOL})\.([^\]]+)\]"), "required_arg({0},{1})"),
     (re.compile(rf"^forbidden_args\[({_TOOL})\.([^\]]+)\]"), "forbidden_arg({0},{1})"),
@@ -2761,7 +2991,16 @@ async def check_amount_verify(token: str, results: list, amount_verify: list) ->
                 total = args.get("total_amount")
                 total = float(total) if total is not None else None
             if total is None:
-                print(f"     ℹ️ amount_verify: {tool} 结果未带总额，跳过 total 检查（单价/小计已查）")
+                # #3781 单独裁定（**可接受，但必须可见，不删不改判**）：走到这里要求
+                # "工具结果与 `args.total_amount` **都**没有总额"，而 `amount_verify` 的
+                # 存在前提是写工具**成功**且用例已声明要查 `total` ⇒ 属**latent 覆盖缺口**
+                # （不是"数据没准备却照跑"，与 pre_clean 那三处不同族）。
+                # 实证本 run 从未触发：全 run 两条腿 `grep -c '结果未带总额，跳过 total 检查' = 0`，
+                # 11 条声明 `checks: [total]` 的用例都拿到了真实 `totalAmount`。
+                # 从 ℹ️ 升为 ⚠️ 并**点名覆盖缺口**：让"总额这一次没被核对"在日志里显眼，
+                # 而不是安静地少查一项（"看着查过了"）。
+                print(f"     ⚠️ 覆盖缺口: amount_verify: {tool} 结果与 args 均未带总额 ⇒ 本次"
+                      f"**未核对 total**（单价/小计已查）—— 该用例声明的 total 检查未生效")
             elif abs(total - expected) > max(tol, 0.05):
                 issues.append(
                     f"amount_verify[{tool}](R{rnd}): 总额 {total} ≠ Σ小计{subtotal_sum}"
@@ -3373,6 +3612,141 @@ async def check_debug_user_precondition(token: str, case) -> list:
             f"「有历史收货信息」路径（假绿）。检查：case.debug_user 是否映射到装载链路 + "
             f"app/utils/auth.py 是否接受该头"]
     return []
+
+
+# ── 用例前置的**运行期一致性断言**（issue #3781）───────────────────────────────
+# 为什么需要（真实 run 34856561459 的 `AS-003`，两次独立审计在此**判分歧**）：
+#   GLM-5.3-Flash 盲审判 `missing_precondition`（「13800138000 名下订单数在用例运行
+#   期间还在增长：`orders=10 total=11` → `orders=13 total=13`」），另一个归因包判
+#   **真产品缺陷**。两边看的是同一份证据却给出相反归因 —— 根因是**证据里没有"前置是否
+#   成立"这一行**：`auto_respond` 选中的是并行用例刚建的订单，究竟是 agent 选错了、
+#   还是 harness 没给一个确定的目标单，报告里读不出来。
+# ⇒ 治法：让用例能**声明**自己的前置，由 harness 在**运行期**观测它是否漂移：
+#   ① 尝试开始前取基线（capture）；
+#   ② 尝试结束后取现值（after）；
+#   ③ 漂移（`after - capture > max_growth`）→ 记一条**断言级失败**，原文形如
+#      `precondition[order_count_for_phone]: … (capture=… → after=…)` —— 于是
+#      「前置不成立」与「行为失败」在 summary 的 `failures` 里**形态不同、可机器分辨**，
+#      不再需要靠人读日志猜（这正是两次审计分歧的治本点）。
+# ⚠️ 措辞红线：成功路径的消息**不得含**「未复位」/「失败」（见 `_run_pre_clean` docstring）。
+_PRECONDITION_NO_DRIFT = 0
+
+
+def precondition_capture_shape(specs: list) -> dict:
+    """声明的前置断言里**需要取基线**的源（按类型）——纯函数，便于单测与静态守卫。
+
+    当前支持：
+      · `order_count_for_phone`：`{"source": "<手机号>"}` → 基线 = 该号码名下订单总数。
+    返回 `{type: [source, …]}`（保序去重）。未知类型原样返回 —— 由
+    `check_precondition_declared` 静态守卫判"声明了没人实现的类型"（fail-closed）。
+    """
+    out: dict = {}
+    for s in specs or []:
+        if not isinstance(s, dict):
+            continue
+        t = str(s.get("type") or "")
+        if not t:
+            continue
+        out.setdefault(t, [])
+        src = str(s.get("source") or "")
+        if src and src not in out[t]:
+            out[t].append(src)
+    return out
+
+
+async def _probe_phone_order_count(token: str, phone: str) -> int | None:
+    """该手机号名下订单**总数**（`PageResponse.total`）；取不到返回 None。
+
+    走 `GET /api/admin/orders?receiver=<手机号>`（`OrderController.getOrders` 的
+    `receiver` 参数，服务端按收货人手机号过滤）—— 与 `AS-003` 的
+    `order_query` 定位同一批订单，故"总数增长"就是该用例前置被破坏的**直接观测值**。
+    返回 None = 请求/解析异常（**不**当成 0：0 会被读成"订单没了"，是另一种误判）。
+    """
+    if not str(phone or "").strip():
+        return None
+    try:
+        async with httpx.AsyncClient() as c:
+            r = await c.get(f"{ADMIN_API}/api/admin/orders", headers=_admin_headers(token),
+                            params={"receiver": str(phone), "page": 1, "size": 1}, timeout=15)
+            body = _safe_json(r, None)
+    except Exception:
+        return None
+    if not isinstance(body, dict):
+        return None
+    data = body.get("data") or {}
+    total = data.get("total")
+    try:
+        return int(total)
+    except (TypeError, ValueError):
+        return None
+
+
+def check_precondition_drift(specs: list, before: dict, after: dict) -> list:
+    """运行期前置一致性断言（**纯函数**，issue #3781）——返回断言级问题串。
+
+    `before`/`after` 形态：`{"<type>:<source>": int}`（取不到的源不入字典）。
+    判据：`after - before > max_growth`（默认 `_PRECONDITION_NO_DRIFT = 0`，
+    即"运行期间**不得**新增"）→ 前置漂移。
+    取不到基线/现值时**不报**（那是环境层问题，由 pre_clean 消息与 infra 通道承载；
+    在这里报会把"网络抖动"伪装成"前置不成立"，正是本仓库反复踩的归因污染）。
+
+    ⚠️ 这是**前置**断言，不是行为断言：它判的是"harness 给的靶子还在不在"，
+    与 agent 对错**正交** —— 故消息里显式写出 `capture/after` 两个读数。
+    """
+    issues = []
+    for s in specs or []:
+        if not isinstance(s, dict):
+            issues.append(f"precondition: 配置非字典: {s!r}（该断言会静默跳过）")
+            continue
+        t = str(s.get("type") or "")
+        src = str(s.get("source") or "")
+        if not t or not src:
+            issues.append(f"precondition: 配置缺 type/source（该断言会静默跳过）: {s!r}")
+            continue
+        if t != "order_count_for_phone":
+            issues.append(
+                f"precondition: 未知 type {t!r}（该断言会静默跳过）—— "
+                f"请实现后再声明，禁止留一个不生效的守卫")
+            continue
+        key = f"{t}:{src}"
+        b, a = before.get(key), after.get(key)
+        if b is None or a is None:
+            continue
+        try:
+            max_growth = int(s.get("max_growth", _PRECONDITION_NO_DRIFT))
+        except (TypeError, ValueError):
+            max_growth = _PRECONDITION_NO_DRIFT
+        if a - b > max_growth:
+            issues.append(
+                f"precondition[{t}]: 前置在本次运行期间漂移 —— 手机号 {src} 名下订单 "
+                f"capture={b} → after={a}（允许增长 ≤{max_growth}）。本次红/绿"
+                f"**不可归因于 agent 行为**：并行用例改写了本用例依赖的目标集合"
+                f"（`auto_respond` 选中的可能是别人刚建的订单）")
+    return issues
+
+
+def check_precondition_declared(specs: list) -> list:
+    """声明层静态一致（L0）：声明的 type 必须已有实现（fail-closed，不静默跳过）。"""
+    issues = []
+    for t in precondition_capture_shape(specs):
+        if t != "order_count_for_phone":
+            issues.append(f"precondition: 声明的 type {t!r} 没有实现（断言会静默跳过）")
+    return issues
+
+
+def check_preclean_not_applied(msgs: list) -> list:
+    """把 `pre_clean` 的**未应用/配置错误**折进用例结论（issue #3781）；返回断言级问题串。
+
+    为什么必须有（假绿温床）：`_run_pre_clean` 对"type 未知/未实现"与"目标状态不存在"
+    两类情况旧行为都是**返回一句话、调用侧只 print 一行** ⇒ **数据压根没准备，用例照跑**，
+    且该用例的红/绿会被读成"agent 能力缺陷"。形态对齐既有
+    `db_verify: 不支持的 fetch 配置` → `config_error(db_verify)`。
+
+    判据用**稳定前缀**（`_PRECLEAN_BAD_MARKERS`）而不是宽松的"含『跳过』"：
+    后者会把正常的幂等消息（如「客户无「VIP2活跃」标签，无需清理」）误判成配置错误。
+    """
+    return [str(m) for m in (msgs or [])
+            if str(m).startswith(_PRECLEAN_BAD_MARKERS)]
 
 
 _SMS_CODE_RE = re.compile(r"^\s*(?:短信验证码|验证码)?\s*[:：]?\s*(\d{4,6})\s*$")
@@ -4614,6 +4988,9 @@ async def run_case(case, token: str, session_id: str) -> dict:
         case_issues += await check_debug_user_precondition(token, case)
     except Exception as e:
         case_issues.append(f"debug_user 前提校验执行失败: {type(e).__name__}: {e}")
+    # 前置断言的**声明层**一致性（issue #3781，L0/零 LLM）：声明了没实现的 type
+    # ⇒ 断言会静默跳过（"看起来有覆盖"），fail-closed 报出来。
+    case_issues += check_precondition_declared(getattr(case, "precondition", None) or [])
 
     # case 级表单值：所有 `auto_fill` 轮声明的并集 —— auto_respond 轮回答表单时复用，
     # 避免同一份收货信息在用例里重复声明（少一处漂移）
@@ -4874,7 +5251,10 @@ async def run_suite(cases, label: str, classify: bool = True, retry_budget: int 
             try:
                 _msg = await _run_pre_clean(token, spec)
                 if _msg:
-                    print(f"     🧹 pre_clean: {_msg}")
+                    # 配置错误（未知/未实现的 type）走 ⚠️ 前缀 + **原样保留稳定前缀**，
+                    # 由 `_run_one_case` 折进用例结论（issue #3781）——不再只是一行 🧹。
+                    _is_cfg = str(_msg).startswith(_PRECLEAN_CONFIG_ERR)
+                    print(f"     {'⚠️' if _is_cfg else '🧹'} pre_clean: {_msg}")
                     msgs.append(str(_msg))
             except Exception as e:
                 # 失败同样入结果（此前只有 print → 归因时看不见"准备失败"）
@@ -4930,8 +5310,26 @@ async def run_suite(cases, label: str, classify: bool = True, retry_budget: int 
         if case.skip_reason:
             return None
         pre_clean_msgs = list(pre_clean_msgs or [])
+        # 前置**未应用/配置错误**折进结论（issue #3781）：pre_clean 是夹具层动作，跑在
+        # `run_case` 之前，故这里（尝试边界）把它折成 case-level 断言失败 —— 否则
+        # "数据压根没准备"只会留下一行 🧹/⚠️ 日志，用例照跑并可能判绿（假绿温床）。
+        _pre_clean_bad = check_preclean_not_applied(pre_clean_msgs)
+        for _b in _pre_clean_bad:
+            print(f"     ⛔ 前置未应用（判该用例失败）: {_b[:200]}")
         # 前置未复位的标记（初始为空；仅当"该用例声明了 pre_clean 且复位失败"时写入）
         precondition_note = ""
+        if _pre_clean_bad:
+            # 复用 #3751 的标记语义（从"复位失败"扩到"前置未应用"，见 #3781）：
+            # 该用例的前置不成立 ⇒ 其红/绿**不可归因于 agent**。
+            precondition_note = (
+                "PRECONDITION_NOT_APPLIED: 夹具层前置未生效/未应用 "
+                f"（{' | '.join(_pre_clean_bad)[:200]}）—— 本次结论不可归因于 agent")
+        # 运行期前置一致性断言（issue #3781）：基线在这里取（= 本函数是**尝试边界**，
+        # 等价于 pre_clean 的复位语义），每次尝试各自一份；见 `_precondition_snapshot`。
+        _precond_specs = list(getattr(case, "precondition", None) or [])
+        _precond_base: dict = {}
+        _precond_base_label = ""
+        _attempt_no = 0
 
         # 用例起始时间戳（UTC）——用于把 CI 的**路由 dump**（ai-agent 日志，带时间戳）
         # 按用例切开。没有这个锚点，日志里连续的 intent/route 行无法归属到具体用例，
@@ -4969,8 +5367,46 @@ async def run_suite(cases, label: str, classify: bool = True, retry_budget: int 
             长期状态）—— 若它与尝试不同窗口，写共享状态的串行用例可在中间插入，
             断言读到的就不是本次尝试的产物。
             """
+            nonlocal _precond_base, _precond_base_label, _attempt_no
             async with (attempt_scope() if attempt_scope else _no_concurrency_scope()):
+                # ① 前置基线（issue #3781）：**在 agent 跑之前**取（这就是"基线快照
+                #    必须早于被测事件"那条铁律的落点 —— 取晚了会把本次产物读成基线，
+                #    与 migao-acceptance「基线快照晚于被测事件」同族）。
+                #    标签按"第几次进入尝试"给（不能用 r['retried']：那是**上一次**
+                #    尝试返回后打的标记，在这里是滞后值）。
+                _attempt_no += 1
+                if _precond_specs and not _precond_base:
+                    for _src in precondition_capture_shape(_precond_specs).get(
+                            "order_count_for_phone", []):
+                        _n = await _probe_phone_order_count(token, _src)
+                        if _n is not None:
+                            _precond_base[f"order_count_for_phone:{_src}"] = _n
+                    if _precond_base:
+                        _precond_base_label = ("capture" if _attempt_no == 1
+                                               else f"capture(attempt{_attempt_no})")
                 _r = await run_case(case, token, sid)
+                # ② 前置漂移断言（只在**首次尝试**做；重试轮的前置由 pre_clean 复位过，
+                #    与首次不等价，把它算进来会把"复位"误判成"漂移"）
+                if _precond_specs and _precond_base and not _r.get("retried"):
+                    _after = {}
+                    for _src in precondition_capture_shape(_precond_specs).get(
+                            "order_count_for_phone", []):
+                        _n = await _probe_phone_order_count(token, _src)
+                        if _n is not None:
+                            _after[f"order_count_for_phone:{_src}"] = _n
+                    _issues = check_precondition_drift(_precond_specs, _precond_base, _after)
+                    if _issues:
+                        # 前置不成立 ⇒ 本用例本次尝试的判定**不可归因于 agent**：
+                        # 记成断言级失败（原文进 summary 的 failures，形态可机器分辨）。
+                        for _i in _issues:
+                            _r["failed"].append((_i, _CASE_LEVEL_DETAIL))
+                        _r["score"] = 0.0
+                        _r["precondition_check"] = " · ".join(_issues)
+                        print(f"     ⚠️ {case.id} 前置断言：{_issues[0][:180]}")
+                    elif _precond_base:
+                        _shown = "，".join(f"{k.split(':')[1]}={v}"
+                                          for k, v in _precond_base.items())
+                        _r["precondition_baseline"] = f"{_precond_base_label}: {_shown}"
                 # 评测会话清理（协议 §2.2）+ 关闭后置断言（issue #3357）：
                 # 长时记忆候选只在会话关闭时 flush 落库（issue #2815），故 user_memories
                 # 断言只能在 _end_session **之后**执行；跨会话用例取 run_case 回报的最后
@@ -4994,7 +5430,11 @@ async def run_suite(cases, label: str, classify: bool = True, retry_budget: int 
                 # `_pre_clean_for_case` 捕获异常时给的含「失败」；成功路径只说「已复位…」。
                 # ⚠️ 新增 pre_clean 类型时：**成功消息不得含「未复位」/「失败」**
                 # （否则会被误判成"前置未复位" → 结论被错误地标为不可归因）。
+                # #3781 扩展：语义从"复位**失败**"扩到"前置**压根没被应用**"
+                # —— 配置错误（type 未知/未实现）与目标状态不存在（员工/标签查不到）时，
+                # 第二次尝试的前置同样 ≠ 首次 ⇒ 结论同样不可归因于 agent。
                 _ok = not any(("未复位" in str(m)) or ("失败" in str(m))
+                              or str(m).startswith(_PRECLEAN_BAD_MARKERS)
                               for m in (_msgs or []))
             except Exception as e:      # 复位失败不中断评测，但必须可见
                 _msgs = [f"⚠️ 重试前置复位异常: {type(e).__name__}: {e}"]
@@ -5045,6 +5485,13 @@ async def run_suite(cases, label: str, classify: bool = True, retry_budget: int 
                         for _ln in _ev1.split("\n"):
                             print(f"     ↳ {_ln}")
                     r = r2
+                    # 「本用例是**被放行的波动**」这件事必须**随结果走**（issue #3781）：
+                    # 放行档的语义前提是"重试**通过**"⇒ 最终 `score == 1.0`，而
+                    # `completion_verdict` 断言循环的第一句就是 `score >= 1.0 → continue`
+                    # ⇒ 只看结果的分类永远统计不到放行条目，`completion.flake_released`
+                    # **恒为空**（假字段）。台账里 `released` 为真、结论摘要却是 `[]` ——
+                    # 两处口径打架。故在**唯一**知道"首败+重试通过"的位置打这个标记。
+                    r["flake_released"] = True
                     flake_ledger.append(build_flake_entry(
                         case.id, case.title, "llm-noise", r_prev, r2,
                         os.environ.get("GITHUB_RUN_ID", "local"),
@@ -5076,6 +5523,13 @@ async def run_suite(cases, label: str, classify: bool = True, retry_budget: int 
             r["pre_clean"] = pre_clean_msgs
             # 前置未复位的机器可见标记（issue #3751）：重试前置 ≠ 首次前置时，本次重试的
             # 红/绿**不可归因于 agent**（见 PR body）。随 summary 落盘 → 结论可判。
+            # 前置未应用 ⇒ 判该用例失败（issue #3781）：这是**夹具层**失败，不是 agent 行为，
+            # 故原文带 `pre_clean: …` 前缀（与 `db_verify: …` / `required_args: …` 同族，
+            # `_failure_signature` 可折叠成 config_error/前置族，不会与行为失败混淆）。
+            if _pre_clean_bad:
+                for _b in _pre_clean_bad:
+                    r["failed"].append((_b, _CASE_LEVEL_DETAIL))
+                r["score"] = 0.0
             if precondition_note:
                 r["precondition"] = precondition_note
                 print(f"     ⚠️ {precondition_note}")
@@ -5136,30 +5590,44 @@ async def run_suite(cases, label: str, classify: bool = True, retry_budget: int 
     #   ② 声明 pre_clean（评测前清理共享数据）；
     #   ③ 声明 post_session（断言的是**用户级**长期状态，运行中会写 user_memories，
     #      而所有用例共用同一个评测顾客）。
+    #   ④ **命名空间撞车**（issue #3781）：两条并行用例声明了同一个全局命名空间键
+    #      （同一员工名 / 同一客户手机号 / 同一商品名 / 同一分类名 / 同一加工项名）。
     # 其余用例（只读查询 / 各自新建订单工单 / 纯对话）并行安全。
-    def _needs_serial_lane(c) -> bool:
-        """用例**主体**是否必须独占执行。
+    #
+    # ── ④ 要解决的是什么（真实 run 34856561459 的两次独立审计共同确认）──
+    # 「同栈并行用例互相写同一命名空间」——**假红的结构性来源**，与 agent 能力无关：
+    #   · `HR-002` 造出第二个同名「王五」⇒ `HR-003` 目标不唯一 ⇒ 恒红（铁证，见
+    #     `_eval_find_users` docstring）；
+    #   · `AS-003` 跑动期间「13800138000 名下订单数还在增长」（`orders=10 total=11`
+    #     → `orders=13 total=13`）⇒ 其"按手机号定位唯一目标单"的前置被并行建单的用例
+    #     （OR-016 / CR-001 / CH-010 都用同一个手机号）从底下改掉，审计据此判
+    #     `missing_precondition`。
+    # 治法：**声明 → 自动串行**（数据隔离优先，不做全局降并发）。
+    # 声明的是"我依赖/写哪个全局资源"（`EvalCase.namespaces`，key 形态 `<kind>:<值>`）；
+    # 两条声明有交集的用例**自动**进串行道（独立窗口持有，见下方 gate/sem 分支）。
+    # 代价是**局部的**：只有真正撞车的少数用例串行，其余（绝大多数是只读查询 /
+    # 纯对话 / 各建各的数据）仍并行 —— 远比"全局降到 1 并发"（评测时长 ×并发度）便宜。
+    def _ns_claims(c) -> set:
+        return namespace_claims(c)
 
-        判据（issue #3361 提速第三轮）：实测「独占用例」是**加性**的 —— 它不能与任何用例
-        重叠，于是整段评测 = 并行段 + 独占段。C 端 normal 里 OR-014 因 `pre_clean`
-        被判独占，一个人跑 ~5.5min，把 10.2min 的评测直接顶到上限。
-        而 `pre_clean` 只是"评测前把共享数据清干净"的**短写动作**（product_dedupe 等），
-        真正的隔离需求只覆盖这个动作，不覆盖随后的用例主体（主体是下单/查询，各自新建数据）。
-        故：pre_clean 改由**独占窗口只包住清理动作**（见 `_run_one_case` 的 pre_clean 块），
-        用例主体回到并行道；仍整体独占的只剩：
-          - 标签 id_reuse/update/full_lifecycle（商品改价类：跑前快照、跑后恢复同一批商品，
-            整个用例期间都持有共享商品状态）；
-          - 声明 post_session（断言用户级长期状态，运行中写 user_memories，
-            而所有用例共用同一个评测顾客）。
-        """
-        tags = set(getattr(c, "tags", None) or [])
-        return bool(tags & {"id_reuse", "update", "full_lifecycle"}) \
-            or bool(getattr(c, "post_session", None))
+    ns_conflict = namespace_conflict_groups(cases)
+    ns_conflicted_ids = {cid for ids in ns_conflict.values() for cid in ids}
+    _needs_serial_lane = needs_serial_lane
 
     indexed = [(i, c) for i, c in enumerate(cases)]
-    parallel = [(i, c) for i, c in indexed if not _needs_serial_lane(c)]
-    serial = [(i, c) for i, c in indexed if _needs_serial_lane(c)]
+    parallel = [(i, c) for i, c in indexed if not _needs_serial_lane(c, ns_conflicted_ids)]
+    serial = [(i, c) for i, c in indexed if _needs_serial_lane(c, ns_conflicted_ids)]
     results_by_idx: dict = {}
+
+    # 命名空间撞车的**可见性**（issue #3781）：隔离动作必须能在作业日志里读到
+    # "哪两条用例因为争哪个资源而被串行化" —— 否则下一个人只看到"评测变慢了"，
+    # 又会去把并发调回去（本仓库"注释漂移/静默行为"家族的形态）。
+    if ns_conflict:
+        _lines = "；".join(f"{k} → {'/'.join(ids)}" for k, ids in sorted(ns_conflict.items()))
+        print(f"🔒 命名空间隔离（同资源争用 → 自动串行，共 {len(ns_conflict)} 组）：{_lines}")
+        print(f"   争用用例 {len(ns_conflicted_ids)} 条进串行道；"
+              f"全量 {len(cases)} 条中 {len(parallel)} 条仍并行"
+              f"（不做全局降并发 —— 见 _needs_serial_lane docstring）")
 
     def _reset_for(c, g, in_writer: bool):
         """该用例**重试前**的复位回调（按用例 opt-in：没声明 `pre_clean` 就返回 None）。
@@ -5420,6 +5888,23 @@ def completion_verdict(results: list, key_journey_ids: tuple = ()) -> dict:
       - **关键旅程失败**（key_journey_ids 中 score<1）= P0 旅程不过 → 未完成
         （波动也不放行）；
       - **放行**：`llm-noise`（首次失败、新 session 重试通过，runner 已记入 flake 台账）。
+
+    ⚠️ **放行条目为什么不能只看 `score<1`**（issue #3781，真实 run 34856561459 实证）：
+    放行档的语义前提就是"重试**通过**" ⇒ 该用例的最终 `score == 1.0`。旧实现的断言
+    序是「`score >= 1.0 → continue`」在前、「分类命中放行档 → 记入 `flake_released`」在后
+    ⇒ **放行条目永远走不到那一句**，`completion.flake_released` 结构上**恒为 `[]`**
+    （该 run：mibao `classes = pass 67 / reproducible 5 / llm-noise 6`、
+    xiaobu 亦有 1 条 llm-noise，而两条腿的 `flake_released` 都是 `[]`）。
+    这是**报告口径**的 bug，与放行政策无关（政策仍是 `_COMPLETION_RELEASED_CLASSES`，
+    只放行 `llm-noise`，一次都没通过的一律阻塞）。
+
+    故放行条目改为**两类来源取并集**（都指向同一件事，不会造出"没通过却放行"的新路径）：
+      ① `r["flake_released"] is True` —— 真实链路里 `run_case` 在"首败 + 重试通过"
+         那一刻打的标记（放行条目 `score==1.0`，走的就是这条）；
+      ② `score<1` 且分类命中放行档 —— 保留旧行为，兼容离线重放 / 手工构造的 results
+         （`_r("AS-007", 0.0, "llm-noise")` 这类夹具形态）。
+    关键旅程的优先级不变（旅程失败连 `llm-noise` 也不放行）。
+
     判定不改 _ci_verdict：PR 门禁（smoke/normal 全绿）与结论档（本判定）各司其职。
 
     Returns:
@@ -5435,6 +5920,9 @@ def completion_verdict(results: list, key_journey_ids: tuple = ()) -> dict:
     for r in results:
         cid = str(r.get("case_id") or "?")
         if r.get("score", 0) >= 1.0:
+            # 重试通过的放行条目（score==1.0）在这里被捞出来——见 docstring 的 #3781 说明
+            if r.get("flake_released") and cid not in journey_set:
+                flake_released.append(cid)
             continue
         if cid in journey_set:
             journey_fail.append(cid)
@@ -5515,6 +6003,17 @@ def _summary_case(result: dict, failures: list) -> dict:
              "pre_clean": result.get("pre_clean") or []}
     if result.get("precondition"):
         entry["precondition"] = result["precondition"]
+    # 前置基线读数（issue #3781）：把"运行前该手机号名下有多少单"这一行**写进证据**，
+    # 否则"前置是否成立"又一次只能靠猜 —— 那正是本次两次审计在同一份证据上判分歧的根因。
+    if result.get("precondition_baseline"):
+        entry["precondition_baseline"] = result["precondition_baseline"]
+    if result.get("precondition_check"):
+        entry["precondition_check"] = result["precondition_check"]
+    # 放行波动标记（issue #3781）：条目级留痕 —— 顶层 `completion.flake_released` 给出
+    # ID 列表，这里给出"该 ID 的最终 score/分类是什么"，让"为什么放行"可逐条核对
+    # （缺省不带该键，同 failures：通过用例不刷屏，只有真放行的少数条目才带）。
+    if result.get("flake_released"):
+        entry["flake_released"] = True
     if failures:
         entry["failures"] = failures
     return entry
@@ -5831,6 +6330,15 @@ def load_cases_from_yaml(cases_dir: str) -> list:
             forbidden_card_text=c.get("forbidden_card_text") or [],
             pre_clean=c.get("pre_clean") or [],
             post_session=c.get("post_session") or [],
+            # 并行污染隔离 + 运行期前置断言（issue #3781）。**必须在这里映射**：
+            # CI 走的是本装载路径（`--cases .github/cases`），不是生成物 `eval_cases.py`
+            # —— 漏映射 = `namespaces` 恒为空 ⇒ 隔离静默失效（而 `precondition` 恒为空
+            # ⇒ 前置断言静默不跑），两条都会**静默退化成"什么都没做"**（#3391/#3417 同款
+            # 教训：渲染器映射了、装载器漏了，单测只覆盖生成物 → CI 全绿但机制没生效）。
+            # `tests/test_acceptance_case_checks.py::TestAssertionVocabularyIsMappedByLoader`
+            # 按词汇表逐字段守住这一格。
+            namespaces=c.get("namespaces") or [],
+            precondition=c.get("precondition") or [],
         ))
     return cases
 
