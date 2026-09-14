@@ -343,9 +343,9 @@ cases:
     truths_ref:
       - ai-chat.confirm-required
       - order.flow
-    # ── 交互轮用 auto_respond（合作型用户：有什么卡就答什么卡）──
-    # 同 OR-014：静态脚本无法覆盖 agent 多变的提问顺序（表单/choice/confirm 顺序随模型变），
-    # 对不上就卡死（实测 run 34627856207：卡在信息收集，order_create 永不发生）。
+    # ── 交互轮用 auto_respond/repeat_until（合作型用户：有什么卡就答什么卡）──
+    # 同 OR-014/OR-021：静态轮次表无法覆盖 agent 多变的提问顺序
+    # （实测 run 34627856207：卡在信息收集，order_create 永不发生）。
     user_inputs:
       - "推荐几款热销窗帘"
       # ⚠️ 必须**点名商品**，不能用「第一款」（issue #3521 归因，§13.5「依赖不确定顺序」）：
@@ -360,47 +360,38 @@ cases:
       #   该前提在叠加 B 端种子的栈里**不成立**（一个 seed 管不了另一个 seed 的插入顺序）。
       #   故改自包含：点名 C 端种子里真实存在、且有「白色」+ per_meter 加工项的商品
       #   （先例 AS-003 / CR-001 / OR-006 自包含化）。
-      - "买北欧风窗帘那款，白色，2.8 米门幅，按米卖"
-      - auto_respond:
-          fallback: "数量 3 米"
-      - auto_respond:
-          fallback: "确认下单"
-          form_values:
-            customer_name: "张三"
-            customer_phone: "13800138000"
-            customer_address: "浙江省杭州市西湖区文三路1号1幢101室"
-            color: "白色"
-            colorName: "白色"
-      - auto_respond:
-          fallback: "确认"
-          form_values:
-            customer_name: "张三"
-            customer_phone: "13800138000"
-            customer_address: "浙江省杭州市西湖区文三路1号1幢101室"
-            color: "白色"
-            colorName: "白色"
-      - auto_respond:
-          fallback: "123456"
-          # 验证码轮：顾客这一刻就是"把收到的码发出去"，不是去点卡 ——
-          # 必须显式声明 prefer_text，否则若此时有卡在等（choice/confirm），
-          # harness 会去答题卡、把验证码轮吃掉（issue #3367 实证：CH-010 首跑
-          # R6/R7 两轮验证码都被卡吃掉 → order_create!缺少短信验证码 → 订单不落库）
-          prefer_text: true
-      - auto_respond:
-          fallback: "123456"
-          # 验证码轮：顾客这一刻就是"把收到的码发出去"，不是去点卡 ——
-          # 必须显式声明 prefer_text，否则若此时有卡在等（choice/confirm），
-          # harness 会去答题卡、把验证码轮吃掉（issue #3367 实证：CH-010 首跑
-          # R6/R7 两轮验证码都被卡吃掉 → order_create!缺少短信验证码 → 订单不落库）
-          prefer_text: true
-      # 轮数余量（issue #3361）：模型的卡序**合法但不固定** —— 实测同一用例两次跑，
-      # 一次 R4 先发加工项 choice 卡、一次先发收货信息 form 卡，后者比前者多一轮 →
-      # 7 轮用尽仍未 order_create（判红，但失败长相像"能力不行"，真因是**用例轮数不够**）。
-      # 合作型用户会一直把卡答完，故尾部留 2 轮余量（fallback「确认」/验证码，答不到卡也无害）。
-      - auto_respond:
-          fallback: "确认"
-      - auto_respond:
-          fallback: "确认"
+      #
+      # ⚠️ **数量随商品一次给齐**（不再单独一轮，issue #3521 §13.5 二次归因）：
+      #   原写法是「…按米卖」+ 下一轮 `auto_respond {fallback: "数量 3 米"}`。但 `auto_respond`
+      #   的语义是**有卡先答卡** —— agent 若先发加工项 choice 卡，那一轮就被拿去答题卡，
+      #   「3 米」整场送不出去 → agent 连续 6 轮追问米数 → 轮数耗尽、order_create 未调用。
+      #   实证 run 34809138878（C 端干净栈，本用例商品已钉死之后）：
+      #     R2 商品/规格 → agent 先发加工项 choice 卡；R3 原「数量 3 米」轮变成
+      #     「已选加工项：纳米圈打孔」；R5~R8 agent 反复「还差米数」；R9 仍在要米数 → 判红。
+      #   一句话陈述不会被卡片吃掉，也不会被重复陈述触发「重述＝相加」
+      #   （#3394/#3395 落库 ×2 的前科；OR-021 因此刻意不在协作轮里重报数量）。
+      - "买北欧风窗帘那款，白色，2.8 米门幅，按米卖，要 3 米"
+      # ── 协作型顾客「统一一轮」（§13.5 / issue #3430，与 OR-021 同形）──
+      # 有卡答卡（加工项 choice→首项 / form→按声明键回填 / confirm→confirmValue）、
+      # 被索码就供 123456、都没有则说 fallback；直到 order_create **成功**才停
+      # （被门禁挡回不算成功 → 不会提前停）。
+      # 为什么换掉原来的固定轮次表（答卡 ×2 → 验证码 ×2 → 确认 ×2）：卡序随模型变，
+      # 固定表一旦错位，验证码轮就落在加工项/确认卡上（顾客答非所问）→ 流程不前进。
+      #   · fallback **刻意不带数量**：重述数量会被模型读成"再加 3 米"（#3395 前科）；
+      #   · 验证码不再单列 `prefer_text` 轮 —— `resolve_repeat_turn` 里「明确索码/写调用缺码」
+      #     优先于答卡（issue #3430），码不会送不出去，且 `code:` 会被 `_declared_codes`
+      #     计入「顾客给过的码」，`check_write_code_provenance` 不会误判自造码。
+      - repeat_until:
+          tool_called: order_create
+          max: 7
+        code: "123456"
+        fallback: "确认下单"
+        form_values:
+          customer_name: "张三"
+          customer_phone: "13800138000"
+          customer_address: "浙江省杭州市西湖区文三路1号1幢101室"
+          color: "白色"
+          colorName: "白色"
     expectations:
       - tool: product_search
       - tool: product_detail

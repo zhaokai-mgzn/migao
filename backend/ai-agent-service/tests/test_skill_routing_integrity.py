@@ -4,7 +4,7 @@
 验证新增 Skill 不会抢走已有 Skill 的路由，
 确保 Skill Registry 注册正确、意图映射不冲突。
 """
-# case_ids: DF-008, DF-015, PR-008, OR-009, OR-010, CH-010, HR-005, ST-003, ST-005, FN-001
+# case_ids: DF-008, DF-015, PR-008, OR-009, OR-010, CH-010, CH-019, HR-005, ST-003, ST-005, FN-001
 
 import dataclasses
 
@@ -129,14 +129,10 @@ def test_general_has_only_read_tools():
         )
 
 
-# 写操作 Tool 列表（应从领域 Skill 中调用，不应在 general 中）
-ALL_WRITE_TOOLS = {
-    "product_manage", "order_manage", "order_create",
-    "inventory_manage", "after_sales_manage",
-    "customer_manage", "employee_manage", "role_manage",
-    "settings_manage", "notification_manage",
-    "category_manage", "processing_item_manage",
-}
+# 注（issue #3594 / #3624）：此处原有硬编码 `ALL_WRITE_TOOLS` 常量（12 个工具名）——
+# 既从未被任何测试引用（死代码），又是与确认门禁测试同源的**枚举式清单**。
+# 凡是需要"全部写工具"的判据，一律从注册表派生（见下方 registry 驱动测试与
+# `TestWriteSkillInteractInvariant`），不再维护第二份人工清单（枚举必然滞后于现实，§16.1 L0）。
 
 
 def test_each_skill_has_unique_domain():
