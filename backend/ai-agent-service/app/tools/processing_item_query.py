@@ -9,6 +9,8 @@ AI 智能客服系统 - 加工项查询 Tool
 注意：本 Tool 与 query_processing_items 不同：
 - query_processing_items：查询「某商品」关联的加工项及其自定义价格
 - processing_item_query：查询「店铺加工项目录」，支持按名称、分类、状态搜索
+两者的消歧说明**已同时写进各自的 `description`**（LLM 只看得见 `description`，见
+`base.get_schema()`）；本 docstring 仅供开发者阅读。
 """
 
 import json
@@ -32,12 +34,17 @@ class ProcessingItemQueryTool(BaseTool):
 
     name = "processing_item_query"
     description = (
-        "查询店铺加工项目录。用于创建流程阶段2（用户已确认名称/价格等基本信息后）。"
-        "支持按 keyword/category_id/status/applicable_category_id 筛选。"
+        "查询店铺加工项目录（店铺维度，与具体商品无关）。"
+        "【触发】用户问'有哪些加工项''加工项列表/分类/单价/计价方式'时；"
+        "或建品流程阶段2（用户已确认名称/价格等基本信息后）。"
+        "【参数】keyword/category_id/status/applicable_category_id 均可选。"
         "applicable_category_id（适用商品分类 ID）：建品流程在用户确认商品分类后传入，"
         "只返回适用于该商品分类的加工项（applicable_product_categories 包含该分类，"
         "或无该配置=适用所有分类）。用户只需列表时传空参数。"
-        "创建/修改/删除加工项用 processing_item_manage。READONLY"
+        "【反例】查「某个商品」关联的加工项及其默认价/自定义价/最终价"
+        "用 query_processing_items（商品维度），不要用本工具；"
+        "创建/修改/删除加工项用 processing_item_manage。"
+        "【标注】READONLY"
     )
 
     parameters = {

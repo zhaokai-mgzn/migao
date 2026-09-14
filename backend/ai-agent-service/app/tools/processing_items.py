@@ -2,6 +2,10 @@
 AI 智能客服系统 - 加工项价格查询 Tool
 
 查询商品关联的加工项及其价格（含自定义价格）。
+
+⚠️ 与 processing_item_query 是同名易混的双胞胎工具（工具审计 B2）：
+消歧说明必须写在类属性 `description` 里（`base.get_schema()` 只把
+`self.description` 拼进 schema，模块 docstring / 类 docstring LLM 都看不见）。
 """
 
 from typing import Any, Dict, List, Optional
@@ -24,8 +28,13 @@ class ProcessingItemsTool(BaseTool):
     
     name = "query_processing_items"
     description = (
-        "查询商品关联的加工项及其价格（含自定义价格和最终价格）。"
-        "当需要了解商品的加工项配置、加工费用明细、自定义定价时使用。"
+        "【触发】用户问'这个商品有哪些加工项''XX商品的加工费是多少''这件衣服的加工项怎么定价'"
+        "（商品维度：某件商品关联了哪些加工项、默认价/自定义价/最终价各是多少）时调用。"
+        "【参数】product_id（32 位 UUID）与 product_name 二选一，优先 product_id；"
+        "只给 product_name 时工具会模糊搜索取第一条匹配商品，可能选错，先列出候选让用户确认更稳。"
+        "【反例】查店铺加工项目录（有哪些加工项、分类、单价、计价方式，与具体商品无关）"
+        "用 processing_item_query，不要用本工具；创建/修改/删除加工项用 processing_item_manage。"
+        "【标注】READONLY"
     )
     
     parameters = {

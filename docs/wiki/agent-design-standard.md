@@ -27,11 +27,21 @@
 ```python
 name = "processing_item_query"
 description = (
-    "查询店铺加工项目录。用于创建流程阶段2（用户已确认名称/价格等基本信息后）。"
-    "支持按 keyword/category_id/status 筛选。"
-    "创建/修改/删除加工项用 processing_item_manage。READONLY"
+    "查询店铺加工项目录（店铺维度，与具体商品无关）。"
+    "【触发】用户问'有哪些加工项''加工项列表/分类/单价/计价方式'时；"
+    "或建品流程阶段2（用户已确认名称/价格等基本信息后）。"
+    "【参数】keyword/category_id/status/applicable_category_id 均可选。"
+    "【反例】查「某个商品」关联的加工项及其默认价/自定义价/最终价"
+    "用 query_processing_items（商品维度），不要用本工具；"
+    "创建/修改/删除加工项用 processing_item_manage。"
+    "【标注】READONLY"
 )
 ```
+
+> 第 3 条「与相似 tool 的区别」必须**点名**相似工具（上面点了 `query_processing_items`）：
+> 消歧只写在模块/类 docstring 里没用——`base.get_schema()` 只把类属性
+> `description` 拼进 schema，docstring LLM 看不见（issue #3574 实证：
+> `query_processing_items` 与 `processing_item_query` 仅词序差异，消歧说明却写在 docstring）。
 
 ```python
 name = "order_create"
