@@ -5,7 +5,7 @@
 > **重放**：run [34810196540](https://github.com/zhaokai-mgzn/migao/actions/runs/34810196540)（`--ref infra/3595-bend-repro` = 最新 main `6f320693`，`case_ids=AS-003,OR-015`，并发 6）
 > **一句话结论**：**两条都是评测资产缺陷，0 条是 "agent 能力做不到"**。
 > - **OR-015 = 纯脚本侧**（4 轮台词从未回答 agent 反复追问的「颜色」）→ 修法**已在 #3544 第 2 条登记**；
-> - **AS-003 = 序号/相对指代依赖 + 无澄清应答轮**（R1 实测返回 **5 单**，脚本第 2 轮用单数「这个订单」）→ 属 **#3568**（"消除用例顺序依赖"）同一族；
+> - **AS-003 = 序号/相对指代依赖 + 无澄清应答轮**（R1 实测返回 **5 单**，脚本第 2 轮用单数「这个订单」）→ 属 **#3568**（"消除用例顺序依赖"）同一族；as-merged 轮实测其呈现为 **flaky**（首跑红/重试绿，`[llm-noise]`）——**能否通过取决于 agent 那一轮是否替用户猜订单**，见 §5.2；
 > - **与 #3583 无关**（已逐 hunk 核对，见 §4）：它一行都没碰 `order_create` / `order_manage` / `confirm_payment` 规则。
 
 ---
@@ -15,7 +15,7 @@
 | 用例 | 基线 `34809055526` | 关键签名 | 归因层级 | 定性 | 处置 |
 |---|---|---|---|---|---|
 | **OR-015** | ❌ 0%（`validate_input` + `order_create` 双 unmatched） | 4 轮 `interact(choice)` 追问颜色，**零写工具** | 引导层（脚本缺应答轮） | **用例资产缺陷** | 已登记 **#3544** §2；本包给行号级改法（§3.1） |
-| **AS-003** | ❌ 67%（`after_sales_manage or aftersale_create` unmatched） | R2 起 `tools=-`，原文「"这个订单"我没法确定具体是哪一笔」 | 数据/引导层（多单无唯一指代 + 缺澄清轮） | **用例资产缺陷**（非双端挂错端） | 并入 **#3568** 范围；本包给行号级改法（§3.2） |
+| **AS-003** | ❌ 67%（两 run `[reproducible]`）→ **as-merged 轮 `[llm-noise]`（首跑红/重试绿）** | R1 返回 5 单；R2 零工具 + 拒在订单模块建售后工单 | 数据/引导层（多单无唯一指代 + 缺澄清轮） | **用例资产缺陷**（非双端挂错端）——**且是「轮次运气」型 flake**（§5.2） | 并入 **#3568** 范围；本包给行号级改法（§3.2） |
 
 **两条为何卡住 `completion_verdict`**：runner 把「两次同指纹失败」判为 `reproducible`（`tests/agent_eval/local_runner.py:1599`、`_classify_attempts` `:1652-1661`），
 而 `completion_verdict` 把 `reproducible` 计入**确定性失败**（`:3942-3948`）→ 判据「确定性失败 = 0」不成立 ⇒ **"评测可下结论"被卡死**（不是"分数不够高"，是"结论未验证"）。
@@ -150,6 +150,8 @@ baseline 结尾原文：
 - 基线 run 全量日志里 `order_create` 成功 **8 次**（5 条用例 + 重试），`order_query` 计数分布为 `orders=0`×4 / `orders=1`×13 / **`orders=5`×3** / **`orders=6`×2** ⇒ **同一独立栈内并行用例（OR-016 / CR-001 / CH-010 / PR-*）持续建单**，"最近的订单"返回的条数**不可预测**（实测 5 和 6 都出现过）。
   ⇒ 「先查最近订单再对该单操作」这一形态在**共享栈 + 并发用例**下**天然无法收敛到唯一订单**——这是**评测基础设施层的结构性问题**（同 #3568 的母题），不是本用例独有的偶发。
 
+**重放补充（run 34810196540，最新 main，与基线指纹一致）**：R2 原文完整化为「退货这单我先把两件事说清楚：**1️⃣ 创建售后工单不在订单模块的能力范围内**——售后工单属于售后流程受理…」；但 agent **没有拒绝对话** —— R4 它主动改走售后流程并下发一张收集表单（`interact(component=form title=请补充退货工单信息（订单号 / 退货原因 / 退款金额） formFields=3)`）。⇒ 失败机制更精确地是：**脚本 4 轮台词中没有任何一轮去消歧"哪一笔订单"、也没有回答这张 form 卡**（R4 是最后一轮），`after_sales_manage` 在轮次预算内不可能被调用。这使"用例资产缺陷"的判定更硬：**agent 提供了可继续的路径，是脚本没走**。
+
 **(c) 排除"双端挂错端"**（静态判定，零 LLM）
 
 ```text
@@ -160,6 +162,16 @@ mibao  AS-003 selected: True
 （`eval_case_filter.select_cases_for_persona`，`eval_case_filter.py:156-190`）
 - `order_query` **不在** `XIAOBU_TOOLS`（`:23-41`）⇒ AS-003 **不会被 C 端用例集选中**（C 端要求"全部期望工具 ⊆ 小布工具集"），故它**只在 mibao 跑**，不存在"跑在错误 Agent 上"的问题。
 - 因此期望里的 `aftersale_create` 分支**在 B 端永久不可达**（B 端售后工具是 `after_sales_manage`，`backend/ai-agent-service/app/graph/skills/aftersales_skill.py:14`；`aftersale_create` 只出现在 C 端 `customer_*_skill` 与 `references/EXAMPLES-customer_aftersales.md`）。这是**死分支**，属表述性缺陷（不致命，但会误导读者以为该用例双端通用）。
+
+**(d0) 三次独立 run 的行为分布（为 §5.2 的 flake 判定提供前因）**
+
+| run | 环境 | AS-003 结果 | agent 在"哪一笔订单"上的取向 |
+|---|---|---|---|
+| `34809055526`（基线） | main `50f709ec` | ❌ 67% 首跑/重试**同指纹**（`reproducible`） | **要澄清**（R2 文本「麻烦确认下订单号」） |
+| `34810196540`（本包重放） | main `6f320693` | ❌ 67%（`reproducible`） | **要澄清**（R2 文本 + R4 发 `form` 收集卡） |
+| `34811367846`（as-merged 重放） | main `1d619006` | 首跑 ❌ → **重试 ✅**（`llm-noise`） | 首跑**要澄清**（R4 发 `choice 请选择要退货的订单`）／重试**替用户猜**（`已按 EVAL-MB-ORD-0002 准备好退货售后工单`） |
+
+⇒ 「要澄清」是**占多数**的取向（3/3 首跑），「替用户猜」只出现过 1 次（1 次重试）。两种取向**都合规**，因此**结果不由代码决定、由 LLM 那一轮决定** —— 这正是「相对指代 + 无消歧轮」脚本的结构性缺陷，也解释了为什么它在不同 run 上时而 `reproducible`、时而 `llm-noise`。
 
 **(d) 为什么说"不是 agent 能力做不到"（同 run 同栈对照）**
 
@@ -191,7 +203,14 @@ mibao  AS-003 selected: True
 > `order.yml` 归 **L**、`aftersales.yml` 归 **N**（#3568 的文件范围含 `aftersales.yml`）。以下为**建议文本**，交主会话转派；落地后必须重渲染生成物
 > （`python3 .github/render_cases.py --cases .github/cases --out-eval tests/agent_eval/eval_cases.py --out-md docs/testing/mibao-verification-cases.md`）。
 
-### 3.1 OR-015（`.github/cases/order.yml:630-634`）→ 转派 #3544 第 2 条
+### 3.1 OR-015（`.github/cases/order.yml`）→ **已由 #3544 / PR #3580 落地（`c533f051` 已合并）**
+
+> ⚠️ **落地状态更新**：本节写于 #3580 合并前。合并后的 main 上，`.github/cases/order.yml:630-649` 已按同一判定被改写为
+> `auto_respond{f"米白，不添加加工项，确认下单"}` + 两个收尾答卡轮（`确认下单` / `确认`），并在注释里引用了同一份证据（`REPORT §2.1`、种子 `xiaobu_eval_seed.sql:70-71` 的米白/浅灰）。
+> 即成对证据已齐：改后 run `34808913709` → **OR-015 ✅ 100%**（`validate_input(validated=True)` + `order_create` 成功）。
+> 故本节以下内容**保留为方法论参考**（改法方向、断言白名单、"禁止放宽断言"三条仍然有效），**不再是待执行任务**。
+>
+**原建议（历史记录，改法方向已验证有效）**
 
 **问题行**：`:631-634`（`user_inputs` 4 轮，无颜色、收尾为裸文本）
 
@@ -216,7 +235,7 @@ mibao  AS-003 selected: True
 **并补收尾轮**（写工具受 confirm 门禁约束，裸文本"确认下单"≠点卡）：
 `repeat_until: {tool_called: order_create, max: 3}` + `auto_respond.fallback: "确认下单"`（先例 OR-021 / CH-033，`migao-dev-flow` §13.5）。
 
-**不要动**：`expectations`（`:635-637`）、`order_before`（`:638-639`）、`required_args`（`:640-644`）、`data_checks`（`:645-649`）—— 它们是该用例的真值内核。
+**不要动**（`#3580` 亦未动，可对照其合并态）：`expectations`、`order_before`、`required_args`、`data_checks` —— 它们是该用例的真值内核。
 **可选加固**（属评测基建，非本 issue 必需）：`data_checks` 4 条里只有第 3 条含 `validated=true` 但**不含 `success=true` 关键词** ⇒ 按 `local_runner.py:3454-3457` **不计分**；建议把关键那条改写成含 `success=true` / `未被调用` 的机器可判定形。
 
 ### 3.2 AS-003（`.github/cases/aftersales.yml:85-101`）→ 转派 #3568
@@ -244,28 +263,54 @@ mibao  AS-003 selected: True
 
 ## 4. 与 PR #3583（O 包，`validate_input.py`）的关系判定
 
-**结论：无关。OR-015 的失败链路不在 #3583 的改动面内。**
+> **修订说明（重要，先读）**：#3583 于本包进行中**已合并**（merge commit `1d619006`）。本节据**合并后的 main 源码**重做核对，并**订正**先前据 `gh pr diff 3583` 得到的一处不完整结论（该 `pr diff` 输出**漏掉了 `validate_input.py` 第一个 hunk**，导致我一度写了"diff 对 `order_manage/confirm_payment` 零命中"——**该表述错误，已作废**）。结论方向不变，但依据改为**合并态源码 + 逐块字节比对**。
 
-`gh pr diff 3583` 的完整 hunk 清单（`validate_input.py` 5 段 + 测试 3 段）：
+### 4.1 判定：**无关（对 OR-015 而言）**
 
-| # | hunk | 改到的规则 |
-|---|---|---|
-| 1 | `@@ -92,7 +92,9 @@` | `inventory_manage.adjust` → 新增 `nonzero`（adjustment=0 拦下） |
-| 2 | `@@ -162,7 +164,9 @@` | `finance_api.create_transaction` → `amount.min: 0 → 0.01` |
-| 3 | `@@ -175,22 +179,66 @@` | `notification_manage.create` → `+ recipient_id`；`processing_item_manage.create_processing_item` → `+ pricing_method/price` + 枚举/区间/`max_len` |
-| 4 | `@@ -219,18 +267,28 @@` | `settings_manage.update_settings/update_ai_config`（删掉不存在的 `data`）；`processing_item_manage.delete` → `delete_item`；`sku_update.update` → `+ price` |
-| 5 | `@@ -404,11 +462,25 @@` | `execute()` 引擎能力（`max` / `max_len` / `nonzero`） |
-| 6 | `@@ -1,5 +1,11 @@`（测试） | 新增 `TestProcessingItemCreateGateMatchesContract` 等 |
-| 7 | `@@ -409,9 +415,14 @@`（测试） | `test_notification_mark_read` |
-| 8 | `@@ -450,3 +461,276 @@`（测试） | 新增 `TestValidateInputGateContractAudit` + L0 静态不变式 |
+**决定性证据（字节级，可复验）**：`order_create` 规则块在基线与合并后的 main 上**完全一致**：
 
-**逐条核对**：`grep -n "order_manage\|order_create\|confirm_payment" /tmp/pr3583.diff` → **0 命中**。
-#3583 的 PR body 把 `order_manage.update_status/update_logistics/confirm_payment` 无规则（A9）**明确列为"⏸ 建议独立包"**，即**不在本 PR 范围内**。
-PR body 的 `# case_ids: PR-005, AS-003, PR-019, OR-015, HR-005, PP-006, PR-021, FN-001, ST-001` 来自 `tests/test_tools_validate_input.py` 的头注释（引用面），**不等于**"改了这些用例的链路"。
+```
+$ git show 50f709ec:backend/ai-agent-service/app/tools/validate_input.py  > /tmp/vi_before.py
+$ # 取出各版本的 "order_create": { ... } 整块做字符串比对
+order_create BEFORE == AFTER ? True
+```
 
-⇒ **OR-015 不适用"已由 #3583 覆盖、待其合并后重放验证"** 这一分支；它是纯脚本侧缺陷，修 `order.yml` 的应答轮即可（§3.1）。#3583 合并后**不会**让 OR-015 转绿（`validate_input` 仍不会被调用，因为 agent 仍缺颜色）。
+即 `_VALIDATION_RULES["order_create"]["create"]` 的 `required=["customer_name","customer_phone","items"]` 与全部字段类型规则**一行未动** ⇒ OR-015 所断言的
+`validate_input(target_tool=order_create, target_action=create)`（`order.yml:651`、`:656-659`）**行为面不变**。
 
----
+**但 #3583 确实动了 order 域的其他规则（订正后的完整清单）**：
+
+```
+$ git diff 50f709ec origin/main -- backend/ai-agent-service/app/tools/validate_input.py | grep '^@@'
+@@ -52,13 +52,48 @@     ← 【先前漏掉】order_manage: 新增 update_status / update_logistics /
+                          confirm_payment / cancel / refund 五个 action 的 required 与取值约束
+                          （文件内注释原文：「三个此前无规则的 action（issue #3566 核查）：
+                            闸门走『该操作无预定义规则』直接放行，连 order_id 都不校验
+                            ——其中 confirm_payment 是**资金动作**」）
+@@ -92,7 +127,9 @@     inventory_manage.adjust      → +nonzero
+@@ -143,7 +180,7 @@    customer_manage.update        → +data 字段说明
+@@ -162,7 +199,9 @@    finance_api.create_transaction → amount.min 0 → 0.01
+@@ -175,22 +214,66 @@  notification_manage.create    → +recipient_id
+                          processing_item_manage.create/update → +pricing_method/price/枚举/区间
+@@ -219,18 +302,28 @@  settings_manage.update_settings/update_ai_config、delete→delete_item、sku_update+price
+@@ -404,11 +497,25 @@  execute() 引擎 +max/+max_len/+nonzero
+@@ -465,7 +572,7 @@    processing_item_configs 不再强制 `unit`（契约无此字段）
+@@ -477,11 +584,11 @@  同上（删 unit 必填）
+```
+
+⇒ **#3583 = 闸门与契约对齐**（含 order_manage 的 5 个 action），**不含 order_create 的任何变更**。
+
+### 4.2 因此 OR-015 不适用"已由 #3583 覆盖"分支
+
+- OR-015 的失败**发生在 `validate_input` 被调用之前**：agent 卡在「颜色」这个 SKU 维度，`tools=` 里根本没有 `validate_input`（§2.1，两个独立 run 同构）。
+- #3583 无论是否合并，都**不会**改变这一前提 ⇒ **OR-015 不会因 #3583 转绿**。
+- OR-015 的实际修法是 **#3544 / PR #3580**（"OR-015 补应答轮"），**已于 `c533f051` 合并进 main**；其修法与 §3.1 的建议一致（补颜色应答轮 + 收尾答卡轮），且 #3580 已附成对重放证据（run `34808913709`：`OR-015 ✅ 100%`，R3 `米白 · 散剪 · 2.8米门幅 · ¥168/米` 答上颜色卡 → `validate_input(validated=True)` → `order_create` 成功）。
+  ⇒ **§3.1 的行号级改法对当前 main 已部分过时**（`:631-649` 已被 #3544 改写）；本节保留其**方法论价值**（"有什么卡答什么卡"+ `repeat_until`），落地时以 #3544 的实现为准。
+
+### 4.3 残留影响（与 OR-015 无关，但值得登记）
+
+#3583 新增的 `order_manage.confirm_payment` 等闸门规则，会让 **OR-016 R4 之后的收款确认轮**（`order.yml` OR-016 用例）真正过闸门 —— 属**正常加固**，与本 issue 的两条用例无因果。
+同时 `#3583` 也带来一处**行为面变化**（`processing_item_configs` 不再要求 `unit`），与本 issue 无关，不作展开。
 
 ## 5. 重放验证（§5 / §13.3）
 
@@ -284,14 +329,40 @@ PR body 的 `# case_ids: PR-005, AS-003, PR-019, OR-015, HR-005, PP-006, PR-021,
 
 > _（本节在 run 出结论后回填；若 run 结论与基线一致，则"最新 main 仍复现"成立；若某条转绿，则须按 §5 补"改前/改后"成对证据并重新归因。）_
 
-### 5.2 修复后的重放判据（交修复者，§5 成对证据要求）
+### 5.2 as-merged 重放（run [34811367846](https://github.com/zhaokai-mgzn/migao/actions/runs/34811367846)，`--ref main`，headSha `1d619006`）：**一条关键结论订正**
+
+触发背景：本包进行中 **#3580（含 OR-015 补应答轮）与 #3583 相继合并**，故对**合并态 main** 补跑一次同收窄命令，验证「两条是否已转绿」。
+
+```
+🎯 --case-ids 收窄：105 → 2 条（AS-003,OR-015）
+🔵 ✅ OR-015: order_create 写操作前置校验必须真正执行（validate_input 规则分层修复…）   score=100%
+🔵 ✅ AS-003: 查订单 → 创建退款工单（跨域复用 order_id）（重试后通过） 🎲噪声·重试放行(已记账)  score=100%
+   - AS-003 [llm-noise] 首次失败、新 session 重试通过（LLM 波动）
+每日回归（normal） 结果: 2/2 通过, 均分 100%
+✅ 评测完成（可下结论）：确定性失败=0，关键旅程全过（2 条，2 通过）｜⏱ 76s（重试=3）
+```
+
+| 用例 | 结论 | 说明 |
+|---|---|---|
+| **OR-015** | ✅ **100% 且非 flake**（`rounds=5`） | `R3 you=米白 · 散剪 · 2.8米门幅 · ¥168.0/米`（答上颜色 choice 卡）→ R4 `validate_input(validated=True)` + 发 confirm 卡 → R5 `order_create` 成功（`orderNo=20260914404740001`）。与 #3544 / #3580 的成对证据（run `34808913709`）一致 ⇒ **修复有效，本包对它的归因被证实**。 |
+| **AS-003** | ⚠️ **靠重试放行（`[llm-noise]`），不是真绿** | 首跑**红**（`failed=after_sales_manage or aftersale_create(order_id=复用上轮 UUID)`，`rounds=4 tools=['order_query','order_query','order_query','interact']`）；新 session 重试**绿**。⇒ **必须订正先前表述**（见下）。 |
+
+#### ⚠️ 订正：AS-003 **不是**严格 deterministic，而是「轮次运气」型 flake —— 但**用例缺陷的判定反而更硬**
+
+- **首跑红（run 34811367846，留痕原文）**：R2 `tools=-` 原文「创建售后工单是**售后模块**的功能，当前咱们在订单模块，我这边没法直接建单，需要切到售后流程发起～ 另外，"这个订单…」；R3「…**① 目标订单还没确定** 您说的是"这个订单"…」；R4 才发 `interact(choice title=请选择要退货的订单 options=2)` —— 即 **agent 到第 4 轮（最后一轮）才把"选哪一单"做成卡片**，脚本没有第 5 轮去点它。
+- **重试绿（同 run，留痕原文）**：R4 `tools=order_query,after_sales_manage,validate_input,interact`，agent 原文「已按 **EVAL-MB-ORD-0002** 准备好退货售后工单」⇒ 这一轮它**替用户把"这个订单"猜成了 `…0002`** 并走通全链路。
+- ⇒ 两条路径都不违反 agent 的行为规范（一条"要澄清"、一条"按最近订单合理默认"），**结果由 LLM 那一轮的取向决定** ⇒ `[llm-noise]`（runner 口径：首跑失败、新 session 重试通过）。
+- **这不改变归因**：在 5 单里用单数「这个订单」的脚本**本来就依赖运气**；能否通过取决于"agent 是否愿意替用户猜"。**修法仍然是消除相对指代**（§3.2），而不是"重试放行"——`llm-noise` 只意味着"不计入 `completion_verdict` 的确定性失败"，**不等于这条用例可信**。
+- **对 `completion_verdict` 的实际影响**：本次 as-merged 轮 `确定性失败=0` ⇒ **结论档在"确定性失败"这一项上不再被这两条卡住**；但 AS-003 仍会以 flake 形式反复出现在台账（`agent-eval-flakes.json`），属 §14.3「波动台账治理」对象。
+
+### 5.3 修复后的重放判据（交修复者，§5 成对证据要求）
 
 | 用例 | 修复前的失败签名（已留档） | 修复后必须达到 |
 |---|---|---|
-| **OR-015** | `tools=` 无 `validate_input` / `order_create`；`❌ validate_input` + `❌ order_create`（run 34809055526） | `validate_input(validated=True)` 与 `order_create` 均出现在 `tools=`；`order_before` 通过；`score=100%` |
-| **AS-003** | `tools=['order_query']`，R2 起 `tools=-`（run 34809055526） | `after_sales_manage(action=create)`（B 端通道）被真实调用且 `success=true`；工单号落库匹配 `^AS-\d{8}-\d{4}$` |
+| **OR-015** | `tools=` 无 `validate_input` / `order_create`；`❌ validate_input` + `❌ order_create`（run 34809055526） | ✅ **已达成**（as-merged run [34811367846](https://github.com/zhaokai-mgzn/migao/actions/runs/34811367846)：`rounds=5`、`validate_input(validated=True)` + `order_create` 落库、`score=100%`，且**非 flake**） |
+| **AS-003** | `tools=['order_query']`，R2 起 `tools=-`（run 34809055526） | ⏳ **未达成（须先修脚本 §3.2）**：as-merged 轮只在"agent 替用户猜单"的那次**重试**里达成（`after_sales_manage` + `validate_input(validated=True)`），首跑仍红 ⇒ **修脚本后须以"不依赖重试的绿"验收** |
 
-**有效性验证（§13.3 红线）**：两条的"改前必 fail"证据**已有**（run `34809055526` 的 100% 复现 + `[reproducible]` 分类）；"改后必 pass"证据需在用例改动 PR 上跑上面同一条收窄命令取得 —— **缺这一步 = 未闭环**。
+**有效性验证（§13.3 红线）**：两条的"改前必 fail"证据**已有**（run `34809055526` 的 100% 复现 + `[reproducible]` 分类）；**OR-015 的"改后必 pass"已由 #3580 与本包 as-merged 轮双向取得**；**AS-003 尚未闭环**（要靠重试才绿 ≠ 可信的绿）——修 §3.2 后跑同一条收窄命令取得"首跑即绿"才算闭环。
 
 ---
 
