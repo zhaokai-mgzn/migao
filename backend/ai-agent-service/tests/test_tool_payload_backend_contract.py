@@ -153,11 +153,6 @@ ALLOWLIST: dict[tuple[str, str, str], dict[str, str]] = {
         "owner": "product 域归属包（product_search 价格/库存筛选）",
         "issue": "#3574",
     },
-    ("app/tools/product_update.py", "/api/admin/agent/products/{}", "status"): {
-        "reason": "AgentProductUpdateRequest 无 status 字段（改状态走 agent/products/{id}/status 独立端点）→ 静默丢弃 + message 逐字回显『商品已更新: status』",
-        "owner": "product 域归属包（product_update ↔ AgentProductUpdateRequest）",
-        "issue": "#3560",
-    },
     # ── processing 域（issue #3543）────────────────────────────────────────
     ("app/tools/processing_item_manage.py", "/api/admin/processing-items/{}", "price"): {
         "reason": "ProcessingItemUpdateRequest 字段名是 unitPrice（无 price）→ 改单价 100% 无效，且 data 把 price 原样回显成「已更新」",
@@ -175,26 +170,6 @@ ALLOWLIST: dict[tuple[str, str, str], dict[str, str]] = {
         "issue": "#3543",
     },
     # ── HR / 通知 / 售后域 ────────────────────────────────────────────────
-    ("app/tools/employee_manage.py", "/api/admin/users/{}", "phone"): {
-        "reason": "PUT /users/{id} 的 @RequestBody Map 只读 name/avatar/role/position/password/permissions（无 phone）→ 改手机号静默失效但 HTTP 200",
-        "owner": "HR 域归属包（employee_manage ↔ AdminUserController）",
-        "issue": "#3550",
-    },
-    ("app/tools/employee_manage.py", "/api/admin/users/{}", "roleIds"): {
-        "reason": "同 phone：handler 作用域 Map 只读单值 role（无 roleIds）→ 多岗位下发被丢弃（改角色假成功）",
-        "owner": "HR 域归属包（employee_manage ↔ AdminUserController）",
-        "issue": "#3550",
-    },
-    ("app/tools/human_handoff.py", "/api/admin/notifications", "recipientRole"): {
-        "reason": "CreateNotificationRequest 无 recipientRole（是 recipientId + recipientType，且两者 @NotBlank）→ 通知恒 400 被吞成 warning，转人工通知静默不达",
-        "owner": "handoff 域归属包（human_handoff 通知 payload ↔ CreateNotificationRequest）",
-        "issue": "#3553",
-    },
-    ("app/tools/human_handoff.py", "/api/admin/notifications", "type"): {
-        "reason": "CreateNotificationRequest 无 type 字段 → 静默丢弃（通知分类信息丢失）",
-        "owner": "handoff 域归属包（human_handoff 通知 payload ↔ CreateNotificationRequest）",
-        "issue": "#3553",
-    },
     ("app/tools/aftersale_query.py", "/api/admin/after-sales", "customerId"): {
         "reason": "AfterSalesController 列表端点只声明 page/size/status/ticketType/keyword（无 customerId）→ 多查全量再本地裁剪，total 与分页语义已错",
         "owner": "aftersales 域归属包（本门禁新发现，待建 issue）",
@@ -602,31 +577,79 @@ def _dict_keys(node: ast.Dict) -> tuple[list[tuple[str, int]], list[tuple[str, i
     return keys, dyn
 
 
+def _helper_return_keys(
+    callee: str, module_funcs: dict[str, ast.AST]
+) -> tuple[list[tuple[str, int]], list[tuple[str, int]]] | None:
+    """跟随模块/类内 payload 构造 helper（`payload = _build_notify_payload(...)`）。
+
+    只认「helper 里有 return 字典字面量」这一种形态（收其 `return {...}` 的键）；
+    认不出就返回 None，让调用方按动态构造登记 —— 不猜、不静默放过。
+    """
+    fdef = module_funcs.get(callee)
+    if fdef is None:
+        return None
+    keys: list[tuple[str, int]] = []
+    dyn: list[tuple[str, int]] = []
+    found = False
+    for node in ast.walk(fdef):
+        if not isinstance(node, ast.Return) or node.value is None:
+            continue
+        if isinstance(node.value, ast.Dict):
+            k, d = _dict_keys(node.value)
+            keys += k
+            dyn += d
+            found = True
+        elif isinstance(node.value, ast.Name):
+            k, d = _resolve_named(node.value.id, fdef, node.lineno, module_funcs)
+            keys += k
+            dyn += d
+            found = True
+    if not found:
+        return None
+    return keys, dyn
+
+
 def _resolve_payload_expr(
-    expr: ast.AST, func_node: ast.AST, before_line: int
+    expr: ast.AST,
+    func_node: ast.AST,
+    before_line: int,
+    module_funcs: dict[str, ast.AST] | None = None,
 ) -> tuple[list[tuple[str, int]], list[tuple[str, int]]]:
     """解析 payload 表达式 → (静态键, 动态点)。
 
     `before_line` 之前的同名赋值 / `name["k"]=v` / `name.update(...)` 全部计入
     （只看调用点**之前**的语句，避免审计脚本「整函数作用域收键」导致的串扰假阳性）。
     """
+    module_funcs = module_funcs or {}
     if isinstance(expr, ast.Dict):
         return _dict_keys(expr)
     if isinstance(expr, ast.Name):
-        return _resolve_named(expr.id, func_node, before_line)
-    if isinstance(expr, ast.Call) and isinstance(expr.func, ast.Name) and expr.func.id == "dict":
-        keys = [
-            (kw.arg, kw.lineno)
-            for kw in expr.keywords
-            if kw.arg
-        ]
-        return keys, [] if keys else [("<dict() 动态>", expr.lineno)]
+        return _resolve_named(expr.id, func_node, before_line, module_funcs)
+    if isinstance(expr, ast.Call):
+        callee = (
+            expr.func.id
+            if isinstance(expr.func, ast.Name)
+            else expr.func.attr
+            if isinstance(expr.func, ast.Attribute)
+            else ""
+        )
+        if callee == "dict":
+            keys = [(kw.arg, kw.lineno) for kw in expr.keywords if kw.arg]
+            return keys, [] if keys else [("<dict() 动态>", expr.lineno)]
+        followed = _helper_return_keys(callee, module_funcs)
+        if followed is not None:
+            return followed
     return [], [(ast.unparse(expr)[:40], getattr(expr, "lineno", 0))]
 
 
 def _resolve_named(
-    name: str, func_node: ast.AST, before_line: int, _seen: frozenset[str] = frozenset()
+    name: str,
+    func_node: ast.AST,
+    before_line: int,
+    module_funcs: dict[str, ast.AST] | None = None,
+    _seen: frozenset[str] = frozenset(),
 ) -> tuple[list[tuple[str, int]], list[tuple[str, int]]]:
+    module_funcs = module_funcs or {}
     if name in _seen:
         return [], []
     _seen = _seen | {name}
@@ -649,9 +672,23 @@ def _resolve_named(
                         keys += k
                         dyn += d
                     elif isinstance(node.value, ast.Name):
-                        k, d = _resolve_named(node.value.id, func_node, node.lineno, _seen)
+                        k, d = _resolve_named(
+                            node.value.id, func_node, node.lineno, module_funcs, _seen
+                        )
                         keys += k
                         dyn += d
+                    elif isinstance(node.value, ast.Call):
+                        callee = (
+                            node.value.func.id
+                            if isinstance(node.value.func, ast.Name)
+                            else getattr(node.value.func, "attr", "")
+                        )
+                        followed = _helper_return_keys(callee, module_funcs)
+                        if followed is None:
+                            dyn.append((ast.unparse(node.value)[:40], node.lineno))
+                        else:
+                            keys += followed[0]
+                            dyn += followed[1]
                     else:
                         dyn.append((ast.unparse(node.value)[:40], node.lineno))
         # name["k"] = v
@@ -702,6 +739,8 @@ def _tool_calls() -> tuple[ToolCall, ...]:
             for n in ast.walk(tree)
             if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
         ]
+        # helper 名 → 定义（payload 常由 `_build_xxx_payload(...)` 返回字典构造）
+        funcs_by_name = {f.name: f for f in funcs}
         for node in ast.walk(tree):
             if not isinstance(node, ast.Call):
                 continue
@@ -723,7 +762,7 @@ def _tool_calls() -> tuple[ToolCall, ...]:
             for kw in node.keywords:
                 if kw.arg in PAYLOAD_KWARGS:
                     payload_kw = kw.arg
-                    k, d = _resolve_payload_expr(kw.value, scope, node.lineno)
+                    k, d = _resolve_payload_expr(kw.value, scope, node.lineno, funcs_by_name)
                     keys += k
                     dyn += d
                 elif kw.arg is not None and kw.arg not in ("tenant_id", "user_id", "timeout"):
