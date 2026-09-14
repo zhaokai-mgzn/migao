@@ -17,12 +17,12 @@
 
 ### AS-002. 售后工单详情 🔵
 ```
-你: 看一下 AS-20260701-0001 工单详情
+你: 看一下 AS-20260914-9001 工单详情
 期望: after_sales_manage(action=detail)
 数据: statusHistory 按时间正序，首条 status=pending
 ```
 真值: aftersales-flow.detail-history
-溯源: verification 3.2 独有 ｜ tags: query, detail
+溯源: verification 3.2 独有。2026-09-14 自包含化（issue #3568）：AS-20260701-0001 评测环境不存在（同 AS-006 形态）→ 换 seed 工单 AS-20260914-9001 ｜ tags: query, detail
 
 ### AS-003. 查订单 → 创建退款工单（跨域复用 order_id） 🔵
 ```
@@ -41,19 +41,19 @@
 ### AS-004. 更新工单状态 - 关闭 🔵
 ```
 你: 查看最近的售后工单
-你: 把第一张未处理的工单关闭
+你: 把工单 AS-20260914-9001 关闭
 你: 确认
 期望: after_sales_manage(action=update_status, status=closed)
 数据: success=true
 数据: closedAt/closeReason 写入
 ```
 真值: aftersales-flow.flow, aftersales-flow.update-guard
-溯源: verification 3.4 独有 ｜ tags: update, status
+溯源: verification 3.4 独有。2026-09-14 消除顺序依赖（issue #3568）：「第一张未处理的工单」→ 点名 seed 工单号 AS-20260914-9001（列表顺序依赖：多张 pending 时关闭对象不确定） ｜ tags: update, status
 
 ### AS-005. 售后处理全流程 - 查单→确认问题→建工单→跟踪 🔵
 ```
 你: 客户张三说窗帘颜色不对，帮我查下他的订单
-你: 最近一个订单 ORD-20260701-0001
+你: 最近那个订单，客户手机号 13800138000
 你: 客户要退货，创建售后工单
 你: 原因：颜色与图片不符，退款
 你: 这工单现在什么状态了
@@ -64,7 +64,7 @@
 数据: 售后工单包含正确的退款原因
 ```
 真值: aftersales-flow.status-enums, aftersales-flow.timeline, aftersales-flow.create-order-required
-溯源: eval M008 独有（售后全旅程） ｜ tags: multi_turn, cross_skill, real_scenario
+溯源: eval M008 独有（售后全旅程）。2026-09-14 自包含化（issue #3568）：第 2 轮硬编码单号 ORD-20260701-0001（评测环境不存在，OR-006/OR-010 已实测 found:0）→ 换手机号唯一指代，同 AS-003（#3511）先例 ｜ tags: multi_turn, cross_skill, real_scenario
 
 ### AS-006. 售后工单退款/退货完结 - 按商品「退货回补库存」开关决定是否回补库存 🔵
 ```
@@ -79,19 +79,25 @@
 
 ### AS-007. 换货选目标商品后必须确认加工项（before 生成换货工单确认卡） 🔵
 ```
-你: 面料有瑕疵，帮我换货，换成2699系列雪尼尔窗帘面料
+你: 面料有瑕疵，帮我换货
+你: 就是最近那个订单，客户张三，手机号 13800138000
+你: 换成2699系列雪尼尔窗帘面料
+你: [🔁 按目标工具重复直至成功：after_sales_manage，最多 5 次]
+期望: order_query
 期望: product_detail
-期望: interact or direct_reply
 期望: after_sales_manage(action=create, ticket_type=exchange)
+数据: success=true
 数据: 换货目标商品 product_detail 返回 processing_items 非空时，confirm 卡之前必须主动询问加工项（interact(choice, multiSelect=true)，透传 pageMeta 支持翻页；文本询问亦可，语义由 order_before 保证）
 数据: 用户选择加工项后，所选名称与计价写入换货方案汇总与工单 description；用户说『不需要加工项』才跳过
 数据: processing_items 为空时如实告知『该商品无可用加工项』后继续，不强求
+数据: 换货工单 order_id 来自本轮 order_query 定位结果（不得编造订单号）
+时序: order_query before product_detail
+时序: order_query before after_sales_manage
 时序: processing_ask before after_sales_manage
 时序: processing_ask before interact[confirm]
-跳过: 换货需先定位订单（用户未提供订单号，agent 正确先要订单号），但 case 期望单轮直达 product_detail/after_sales_manage——数据不完整；order_before 加工项时序断言已由 prompt+EXAMPLES 固化，待重构为自包含（先下单再换货）
 ```
 真值: aftersales-flow.agent-create, aftersales-flow.flow
-溯源: 2026-09-08 新增（issue #3033 复盘 sess_50ff3e3c824c4a70）：换货选 2699 面料（绑 5 加工项）全程未提加工项；aftersales.md 补换货加工项确认规则 + EXAMPLES 例 4 ｜ tags: exchange, processing_item, guided_flow
+溯源: 2026-09-08 新增（issue #3033 复盘 sess_50ff3e3c824c4a70）：换货选 2699 面料（绑 5 加工项）全程未提加工项；aftersales.md 补换货加工项确认规则 + EXAMPLES 例 4。2026-09-14 自包含化（issue #3568）：原单轮输入缺「先定位订单」轮 → 用例恒不可达被 skip（**从未执行**）→ 补 order_query 定位轮 + 答卡轮（repeat_until max=5，共 8 轮），断言加两条 order_query 时序 + success=true，解 skip ｜ tags: exchange, processing_item, guided_flow
 
 ### AS-008. C 端售后进度查询 - 仅限本人工单 + 拒绝跨用户/快递单号式越权查询 🔵
 ```
@@ -1001,12 +1007,13 @@
 ```
 你: 你好，我想买窗帘
 你: 有什么遮光好的推荐吗
-你: 看看第一个的详情
+你: 看看遮光窗帘的详情
 你: 就这个，帮我下单，客户张三 13800138000，2件
-你: 白色的，散剪，2.8米门幅
+你: 米白，散剪，2.8米门幅
 你: 不需要加工项
-你: 确认下单
-你: 确认
+你: [🤖 按上一轮卡片作答]
+你: [🤖 按上一轮卡片作答]
+你: [🤖 按上一轮卡片作答]
 你: 订单怎么样了，发货了吗
 你: 好的谢谢
 期望: product_search
@@ -1016,9 +1023,10 @@
 数据: 第4步 product_id 来自第2-3步上下文
 数据: 订单创建成功并包含 SKU 信息
 数据: 第7步自动找到刚创建的订单
+必须成功: order_create
 ```
 真值: ai-chat.context-memory, ai-chat.intent-domains, order.states, order.logistics, id-resolve.index
-溯源: eval M007 独有（物流查询是旅程一环，独立用例见 OR-005） ｜ tags: multi_turn, real_scenario, cross_skill, full_journey
+溯源: eval M007 独有（物流查询是旅程一环，独立用例见 OR-005）。2026-09-14 消除顺序依赖（issue #3568）：① 「看看第一个的详情」→ 点名「遮光窗帘」（推荐列表返回顺序依赖，同 OR-024 #3408）；② 色号「白色」→ 种子真实色号「米白」；③ 收尾裸文本「确认下单/确认」→ 答卡轮（#3518 口径）；④ 补 pre_clean product_dedupe + must_succeed[order_create] ｜ tags: multi_turn, real_scenario, cross_skill, full_journey
 
 ## 客户域（6 case）
 
@@ -1054,14 +1062,13 @@
 
 ### CU-004. 更新客户资料（部分更新） 🔵
 ```
-你: 张三手机号改成 13900001111
-你: 第一个
-你: 确认
+你: 张三（手机号 13800138000）的手机号改成 13900001111
+你: [🤖 按上一轮卡片作答]
 期望: customer_manage(action=update)
 数据: 仅 phone 被更新，未传字段保持原值
 ```
 真值: customer-list.partial-update
-溯源: verification 4.4 独有；2026-09-09 校准：补「选第一个」+「确认」两轮——「张三」生产有 3 位重名，agent 正确发 choice 卡澄清（#3142 修 validate_input 空转后不再幻觉「不支持」），需用户点选+确认后 update；probe 实证完整流程走通（重名澄清→选第一个→确认→update 成功） ｜ tags: update
+溯源: verification 4.4 独有；2026-09-09 校准：补「选第一个」+「确认」两轮——「张三」生产有 3 位重名，agent 正确发 choice 卡澄清（#3142 修 validate_input 空转后不再幻觉「不支持」），需用户点选+确认后 update；probe 实证完整流程走通（重名澄清→选第一个→确认→update 成功）。2026-09-14 消除顺序依赖（issue #3568）：裸文本「第一个」→ 手机号唯一指代（重名澄清轮消失，干净栈/生产栈同判；连打三轮的澄清轮次表也随之消失） ｜ tags: update
 
 ### CU-005. 对抗性 - 模糊名称渐进澄清（老王→王建国→订单→发货） 🔴
 ```
@@ -2753,11 +2760,11 @@
 
 ### PR-010. 商品全生命周期 - 搜索→查看→修改→关联加工项→验证 🔵
 ```
-你: 搜索窗帘
-你: 看看第一个的详情
+你: 搜索遮光窗帘
+你: 看看遮光窗帘的详情
 你: 把价格改成 198
 你: 确认
-你: 给它加上S钩安装
+你: 给它加上韩式波浪折边
 你: 确认
 你: 再看看这个商品的详情确认一下
 期望: product_search
@@ -2770,7 +2777,7 @@
 数据: 全程未重新 product_search 查同一个商品
 ```
 真值: id-resolve.index, id-resolve.no-fabricate, product-sku-stock.status-flow
-溯源: eval M001 独有（多轮 ID 复用，覆盖 2.3+2.8 的多轮形态）；2026-09-03 Phase 2 适配：product_update/product_processing_item_manage 均 requires_confirmation，写操作轮后补『确认』（与 OR-010 模式一致） ｜ tags: multi_turn, single_skill, full_lifecycle, id_reuse, smoke
+溯源: eval M001 独有（多轮 ID 复用，覆盖 2.3+2.8 的多轮形态）；2026-09-03 Phase 2 适配：product_update/product_processing_item_manage 均 requires_confirmation，写操作轮后补『确认』（与 OR-010 模式一致）。2026-09-14 消除顺序依赖（issue #3568）：① 泛化「搜索窗帘」+「第一个」→ 点名「遮光窗帘」（返回顺序依赖，同 OR-024 #3408 先例）；②「S钩安装」目录不存在 → 换真实存在且已绑定的「韩式波浪折边」；③ 补 pre_clean product_dedupe（同 PR-005 #3518 口径） ｜ tags: multi_turn, single_skill, full_lifecycle, id_reuse, smoke
 
 ### PR-011. 创建商品完整引导流程 - AI 主导收集信息 🔵
 ```
@@ -3633,7 +3640,7 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：278（活跃 137，跳过 141）
+- 用例总数：278（活跃 138，跳过 140）
 - tier 分布：smoke 9 / normal 236 / adversarial 33
 - 售后域：9
 - agents：6

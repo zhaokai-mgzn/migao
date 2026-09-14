@@ -328,13 +328,28 @@ cases:
       - id-resolve.no-fabricate
       - product-sku-stock.status-flow
     user_inputs:
-      - "搜索窗帘"
-      - "看看第一个的详情"
+      # 2026-09-14 消除顺序依赖（issue #3568）：原为泛化「搜索窗帘」+「看看第一个的详情」——
+      # 「窗帘」在种子/目录里命中多款（遮光窗帘/北欧风窗帘/夏日清风窗帘/2699 面料…），
+      # 「第一个」由 **product_search 返回顺序**决定 → 后续所有轮（改价/加加工项/复核）
+      # 都挂在这个不确定对象上：同一份代码在排序不同的栈上会操作不同商品（OR-024 先例
+      # #3408/#3409 的同族缺陷）。改为**点名真实存在的种子商品**（遮光窗帘 =
+      # prod_eval_blackout，见 xiaobu_eval_seed.sql），用例意图（多轮 UUID 复用 /
+      # 不重查 / 写操作确认闸）完全不变。
+      - "搜索遮光窗帘"
+      - "看看遮光窗帘的详情"
       - "把价格改成 198"
       - "确认"
-      - "给它加上S钩安装"
+      # 「S钩安装」在目录里**不存在**（种子/目录只有 纳米圈打孔 / 韩式波浪折边 / 高温定型 /
+      # 刺绣工艺）→ agent 反复搜不到（行为合理）→ 该轮恒不推进（§13.5「点名不存在对象」）。
+      # 换成种子商品已绑定的真实加工项（prod_eval_blackout ↔ pi_eval_hem）。
+      - "给它加上韩式波浪折边"
       - "确认"
       - "再看看这个商品的详情确认一下"
+    pre_clean:
+      # 同 PR-005/#3518 口径：按关键词去重，保证「遮光窗帘」在栈里只有一件（否则
+      # agent 发「哪一件」选择卡，且改价会落到不确定的那一件上）。保留最早创建的（= 种子）。
+      - type: product_dedupe
+        product_keyword: "遮光窗帘"
     expectations:
       - tool: product_search
       - tool: product_detail
@@ -352,7 +367,7 @@ cases:
       - "第4轮 product_id 来自第2轮结果"
       - "全程未重新 product_search 查同一个商品"
     skip_reason: ""
-    merge_log: "eval M001 独有（多轮 ID 复用，覆盖 2.3+2.8 的多轮形态）；2026-09-03 Phase 2 适配：product_update/product_processing_item_manage 均 requires_confirmation，写操作轮后补『确认』（与 OR-010 模式一致）"
+    merge_log: "eval M001 独有（多轮 ID 复用，覆盖 2.3+2.8 的多轮形态）；2026-09-03 Phase 2 适配：product_update/product_processing_item_manage 均 requires_confirmation，写操作轮后补『确认』（与 OR-010 模式一致）。2026-09-14 消除顺序依赖（issue #3568）：① 泛化「搜索窗帘」+「第一个」→ 点名「遮光窗帘」（返回顺序依赖，同 OR-024 #3408 先例）；②「S钩安装」目录不存在 → 换真实存在且已绑定的「韩式波浪折边」；③ 补 pre_clean product_dedupe（同 PR-005 #3518 口径）"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_mibao_multiturn_intelligence.py"
