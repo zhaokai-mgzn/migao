@@ -417,7 +417,14 @@ class TestMultiStepIntentHasACollaborativeTurn:
         repeats = self._repeat_turns()
         assert [t["repeat_until"].get("tool_called") for t in repeats] == ["logistics_track"], (
             f"OR-013 没有 logistics_track 的协作轮（两步意图又被压在一轮里）：{repeats}")
-        assert int(repeats[-1]["repeat_until"].get("max") or 0) >= 1, repeats[-1]
+        # ⚠️ 预算**不许悄悄加宽**（用户裁定）：fallback 是"**有意义的重问**"（明确再要一次物流）
+        # ⇒ 一轮追加已经是公平的第二次机会；而 R2 顾客**本来就说了**「查一下物流」，
+        # agent 把订单号当交付物是**真实行为缺口**（issue #3799）⇒ `max` 越大越会掩盖它。
+        # 两轮预算足够覆盖"先反问/发卡"的路径（答卡 1 + 追问 1），"一轮做成"的路径零额外轮次。
+        budget = int(repeats[-1]["repeat_until"].get("max") or 0)
+        assert 1 <= budget <= 2, (
+            f"OR-013 的协作轮预算被放到 {budget} —— 会掩盖'对首次请求不交付'（issue #3799）；"
+            f"要加宽必须先有真跑证据并同步改这条守卫")
         # fallback 必须**中性**：不得替 agent 报出订单号/快递单号（那等于 harness 干了被测能力）
         fallback = str(repeats[-1].get("fallback") or "")
         assert fallback.strip(), "协作轮缺 fallback（无卡时会发空文本）"
