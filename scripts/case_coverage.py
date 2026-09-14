@@ -196,11 +196,15 @@ def render_baseline_worklist(rep: CoverageReport, persona_label: str = "") -> st
         out.append(f"      归属: {e['issue']}   登记日期: {e['added']}")
         out.append(f"      理由: {e['reason']}")
         out.append(f"      现状: {len(ids)} 条用例" + (f" {', '.join(ids)}" if ids else "（无）"))
-    stale = rep.baseline_missing
-    if stale:
+    if rep.baseline_stale_blocking:
         out.append("")
-        out.append("  ❌ 陈旧登记（销账后必须删除条目，否则本清单会越攒越多）:")
-        for tool, kind in stale:
+        out.append("  ❌ 阻断型陈旧登记（销账后**必须**删除条目，否则阻塞）:")
+        for tool, kind in rep.baseline_stale_blocking:
+            out.append(f"     - {tool} [{kind}]")
+    if rep.baseline_stale_reporting:
+        out.append("")
+        out.append("  ⚠️ 只报告型陈旧登记（工具已加厚 = 好消息；建议删除条目，不阻塞）:")
+        for tool, kind in rep.baseline_stale_reporting:
             out.append(f"     - {tool} [{kind}]")
     out.append("")
     out.append("  销账方式：补用例（migao-dev-flow §14.5）→ 删本文件对应条目 → CI 保持绿。")
@@ -344,6 +348,25 @@ class CoverageReport:
     def baseline_entry(self, tool: str, kind: str) -> dict:
         return (self.baseline.get("entries_by_tool", {}).get(tool, {}) or {}).get(kind) or {}
 
+    @property
+    def baseline_stale_blocking(self) -> list:
+        """陈旧登记中**会阻断**的那些（kind ∈ BLOCKING_KINDS）→ 阻塞。
+
+        理由：这类豁免在**抑制**一个真实的结构性缺口；销账后不删条目意味着清单在"
+        假装某个缺口还在"，必须逼删（否则白名单腐烂，且后续会掩盖同工具的新缺口）。
+        """
+        return [(t, k) for t, k in self.baseline_missing if k in BLOCKING_KINDS]
+
+    @property
+    def baseline_stale_reporting(self) -> list:
+        """陈旧登记中**只报告**的那些（kind ∈ REPORTING_KINDS）→ 仅警告。
+
+        理由（#3575 排序实证）：这类条目从不抑制任何阻断 —— 工具变厚是好消息。
+        若也判阻塞，会让"补了用例的那个包"（它不知道本清单存在）把 main 变红，
+        即**用工作清单给别人下绊子**。故降级为警告：报告里提示删除，不拦合并。
+        """
+        return [(t, k) for t, k in self.baseline_missing if k in REPORTING_KINDS]
+
     def check_problems(self) -> list:
         """--check 的失败条件（只含**结构性缺失**，不含厚度不足）。"""
         problems = []
@@ -360,11 +383,12 @@ class CoverageReport:
                 f"（拼错/已删除，期望永不满足）: "
                 + ", ".join(f"{cid}({','.join(t)})" for cid, t in self.dangling_cases)
             )
-        if self.baseline_missing:
+        if self.baseline_stale_blocking:
             problems.append(
-                f"{len(self.baseline_missing)} 条存量豁免登记指向**当前不存在的缺口**"
-                f"（销账后未删除 = 白名单会越攒越多）: "
-                + ", ".join(f"{t}[{k}]" for t, k in self.baseline_missing)
+                f"{len(self.baseline_stale_blocking)} 条**阻断型**存量豁免已销账但条目未删"
+                f"（清单会腐烂 → 可能掩盖同工具的新缺口）: "
+                + ", ".join(f"{t}[{k}]" for t, k in self.baseline_stale_blocking)
+                + "\n     ⇒ 补完用例即删除该条目（清单只能变短）"
             )
         new_gaps = [(t, k) for t, k in self.blocking_gaps() if not self.is_baselined(t, k)]
         if new_gaps:

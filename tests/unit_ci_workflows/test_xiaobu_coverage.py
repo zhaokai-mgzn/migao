@@ -562,7 +562,24 @@ class TestCoverageBaselineGuard:
         bl = load_baseline(_baseline_file(tmp_path, self._entry(tool="tool_x")), "xiaobu", {"tool_x"})
         rep = _attach_baseline(rep, bl)
         assert rep.baseline_missing == [("tool_x", "uncovered")]
-        assert any("陈旧登记" in p or "销账后未删除" in p for p in rep.check_problems())
+        assert rep.baseline_stale_blocking == [("tool_x", "uncovered")]
+        assert any("已销账但条目未删" in p for p in rep.check_problems())
+
+    def test_stale_reporting_entry_only_warns(self, tmp_path):
+        """只报告型的陈旧登记**不阻塞**（否则工作清单会给销账方下绊子）。
+
+        #3575 排序实证：C 端 `validate_input[thin_positive]` 由 #3613（补 C 端薄覆盖）销账 ——
+        那个包的作者不知道本清单存在；若陈旧登记也判阻塞，main 会因"别人补了用例"变红。
+        故：阻断型豁免的陈旧登记 = 阻塞；只报告型 = 警告（报告里提示删除）。
+        """
+        cases = _synth({"id": "T-ONE", "tier": "normal", "expectations": [{"tool": "tool_x"}]})
+        # 实际缺口是 thin_positive，却登记成 thin → 陈旧，但属"只报告"级
+        bl = load_baseline(_baseline_file(tmp_path, self._entry(tool="tool_x", kind="thin")),
+                           "xiaobu", {"tool_x"})
+        rep = _attach_baseline(build_coverage_report(cases, "xiaobu", tools={"tool_x"}), bl)
+        assert rep.baseline_stale_reporting == [("tool_x", "thin")]
+        assert rep.baseline_stale_blocking == []
+        assert rep.check_problems() == [], "只报告型陈旧登记不得阻塞合并"
 
     def test_kind_mismatch_is_treated_as_stale(self, tmp_path):
         """登记 kind 必须与实际缺口 kind 一致（防"登记个假的缺口糊弄过去"）。"""

@@ -11,11 +11,16 @@
 #
 # 每条必填 5 个字段，缺一即报告红（校验实现在 scripts/case_coverage.py::load_baseline）：
 #   tool    该端真实工具名（拼错/已删除 → 判无效）
-#   kind    结构性缺失（阻塞，必须登记才不红）：uncovered | missing_positive
-#           厚度不足（本来就只报告，登记只为进工作清单）：thin | thin_positive
+#   kind    结构性缺失（**阻断型**，必须登记才不红）：uncovered | missing_positive
+#           厚度不足（**只报告型**，本来就只报告；登记只为进工作清单）：thin | thin_positive
 #   issue   追踪 issue（`#<数字>`）—— CI 会校验它**仍然 open**（关了说明该销账了）
 #   reason  为什么暂时豁免（≥8 字）
 #   added   登记日期
+#
+# 陈旧登记（销账后没删条目）的**分级**（#3575 排序实证）：
+#   · 阻断型（uncovered/missing_positive）→ **阻塞**：它在抑制真实缺口，不删会腐烂并掩盖新缺口；
+#   · 只报告型（thin/thin_positive）→ **只警告**：工具变厚是好消息；若也阻塞，就会让
+#     "补了用例的那个包"（它不知道本清单存在）把 main 变红 —— 用工作清单给别人下绊子。
 #
 # ⚠️ 这是**工作清单**，不是免死金牌：补完用例 → 删条目 → job 保持绿。
 #    清单应**单调缩短**；entries 变长需要 review 说明（当前 3 条阻塞 + 4 条薄覆盖，全部有归属）。
