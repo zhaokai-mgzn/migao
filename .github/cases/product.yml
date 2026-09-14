@@ -595,8 +595,10 @@ cases:
       # 收尾发裸文本时 agent 会停在卡上（回「请核对上方确认卡片…点确认我就执行」）→ product_manage 不执行。
       # `auto_respond`：有卡答卡（confirm→回卡片 confirmValue，= 前端点击协议；choice→首项；
       # form→按声明值回填），无卡才发原文「确认」（同 CU-003 / OR-014 先例）。
-      # ⚠️ 不用 `auto_select`：它**不支持 fallback 字段**（run_case 只把 results/form_values 传进
-      # resolve_auto_select_turn，见 local_runner.py），无 choice 卡时会发字面量「第一个」→ 对不上卡片。
+      # ⚠️ 不用 `auto_select`：它**不支持 fallback 字段**（run_case 只把 results + case_form_values
+      # 传进 resolve_auto_select_turn，见 local_runner.py）。两者都能答 confirm/choice 卡，
+      # 但 auto_select 在没有待答卡时会发字面量「第一个」（对不上任何卡片），
+      # 而收尾轮需要保留原文「确认」的兜底语义 → 用 auto_respond 才能两者兼得。
       - auto_respond:
           fallback: "确认"
     expectations:
