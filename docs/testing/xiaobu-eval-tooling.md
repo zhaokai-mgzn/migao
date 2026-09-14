@@ -504,6 +504,29 @@ customer_order/customer_aftersales；③ 旧正则在"没有"与"权限"之间�
 - 措辞表补「协助下单」「没有X下单的权限」等**隔词权限话术**。
 
 评测侧（`check_false_inability`）与 agent 侧**同源**同步覆盖（变体验证：去掉模糊权限形态 → 新用例红）。
+
+**根治（issue #3571，2026-09-14）——判据从"skill 名白名单"彻底改为"状态 × 工具事实"**：
+
+上面那次修法仍留了两处**名字/措辞驱动**的判据（`_has_order_write_tool(skill_name, …)` 硬编码
+`skill_name != "customer_order"`；`_mid_order` 仍由**本轮措辞关键词** `_ORDER_INTENT_HINTS` 决定），
+所以第四次复发（#3476）之后又出现同族形态。现在：
+
+| 旧判据（名字/措辞驱动） | 新判据（事实/状态驱动） |
+|---|---|
+| `_has_order_write_tool(skill_name, registry)` | `_order_write_tool_here(registry)`：**工具注册表事实**（本 skill 子集有没有 `order_create`），判据看不到 skill 名 |
+| `_mid_order = 意图关键词 × grounded` | `_order_flow_in_progress(...)`：**跨轮状态**（`pending_validated_input.target_tool` / `pending_interact_skill`+`grounded_product_detail` / 在办卡），措辞只作兜底 |
+| `skill_name in ("customer_order","customer_aftersales")` | `_handoff_guard_applies(registry, …)`：**工具属性事实**（本 skill 有 `destructive`/`requires_confirmation` 写工具） |
+| `_AGENT_INABILITY_RE` 正则窗口 `{0,8}` + 精确子串词表 | `capability_denial_text_hit`：**语义归一 + 结构化判据**（小句内"下单动作词 × 自我能力否定 × 非自我主体排除"，不设距离窗口；`没有`→`没` 归一，插词/语序无关） |
+
+可达性判据 = 「**本 skill 工具事实** ∨（**在办流程状态** × **全局工具事实**）」——两条缺一不可
+（只按全局判会放过越权/真不可达；只按状态判会在工具未注册时声称"你可以下单"）。
+越权边界保留：非自我主体验证 + 顾客显式诉求/情绪/能力外诉求仍走 `has_escalation_signal` 放行
+（DF-020/DF-021 边界）。
+
+防第 5 次复发（**零 LLM 静态锁**，L0）：`tests/unit_ci_workflows/test_capability_guard_invariants.py`
+（判据函数不得接收/引用 `skill_name`、不得出现 skill 名字面量、接线处不得再有 `skill_name in (…)`、
+覆盖必须由工具属性派生 —— 新增 skill 自动纳入，无需改白名单）；
+行为面回归：`backend/ai-agent-service/tests/test_capability_denial_guard.py`。
 ### 6.9 短消息路由：L1 规则优先于"合成意图"（issue #3476，C-A1 P1 的入口）
 
 `pending_interact_skill` 存在时，≤5 字短消息走**合成意图**快捷路由 —— 旧实现的

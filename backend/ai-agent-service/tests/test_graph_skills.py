@@ -7,7 +7,7 @@ LangGraph Skill 节点测试
 - ToolContext 从 state 正确构建
 - base_skill 的 execute_skill 逻辑
 """
-# case_ids: AG-004, CH-003, CH-023, MC-008, DF-018, HR-005, CU-003, CH-010, CH-012, OR-017, OR-021, OR-022
+# case_ids: AG-004, CH-003, CH-023, MC-008, DF-018, HR-005, CU-003, CH-010, CH-012, OR-017, OR-021, OR-022, OR-025, AS-009, CH-013, CH-014, CH-015
 
 import json
 import pytest
@@ -1522,11 +1522,16 @@ class TestInflightHandoffGuard:
              patch("app.graph.skills.base_skill.set_tool_context"), \
              patch("app.graph.skills.base_skill._execute_tool_safe", fake_execute):
             from app.tools.human_handoff import HumanHandoffTool
+            from app.tools.aftersale_create import AftersaleCreateTool
             registry = MagicMock()
             registry.get_langchain_tools.return_value = []
             registry.get_tool.side_effect = lambda n: (
                 HumanHandoffTool() if n == "human_handoff" else None)
             create_reg.return_value = registry
+            # 守卫的适用性判据已从 skill 名字面量改为**工具属性事实**（issue #3571）：
+            # `customer_aftersales` 的真实工具集含 `aftersale_create`（destructive/需确认写工具），
+            # 这正是它落在守卫范围内的原因 —— 假 registry 只给 human_handoff 会让判据失真。
+            registry.get_all_tools.return_value = [AftersaleCreateTool(), HumanHandoffTool()]
 
             breaker = MagicMock()
 
@@ -1620,6 +1625,10 @@ class TestInflightHandoffGuard:
             # 技能工具集里**有** aftersale_create（CH-012 的真实情形）
             registry.get_tool.side_effect = lambda n: (
                 HumanHandoffTool() if n == "human_handoff" else (MagicMock() if n == "aftersale_create" else None))
+            # 事实驱动判据读**工具属性**（issue #3571）：fixture 要给出真实工具实例，
+            # 自动生成的 MagicMock 没有 destructive/requires_confirmation 标记。
+            from app.tools.aftersale_create import AftersaleCreateTool
+            registry.get_all_tools.return_value = [AftersaleCreateTool(), HumanHandoffTool()]
             create_reg.return_value = registry
 
             breaker = MagicMock()
@@ -5200,9 +5209,17 @@ class TestTextDenialCorrectiveRetry:
         assert "没办法直接帮您提交订单" in out["final_answer"]
 
     def test_other_skill_untouched(self):
-        """非办单 skill 说"下不了单"可能属实 → 不拦、不重答。"""
+        """非办单 skill 说"下不了单"可能属实 → 不拦、不重答。
+
+        ⚠️ fixture 必须**如实**反映该 skill 的工具子集（issue #3571）：判据已从
+        "skill 名是不是 customer_order"改为"工具集里有没有 order_create"这一**事实**，
+        所以给 `customer_knowledge` 挂一个它**从来不会有**的 order_create 就不再是
+        "非办单 skill"了（首版 harness 即此错）。真实事实：customer_knowledge 无 order_create。
+        （"工具就在手上却仍自我否定"的正向形态由
+        `tests/test_capability_denial_guard.py::TestTextDenialCorrectionCrossSkill` 覆盖。）
+        """
         denial = "这边没办法直接帮您提交订单哦"
-        out, llm, _ = self._run([denial], skill="customer_knowledge")
+        out, llm, _ = self._run([denial], skill="customer_knowledge", has_order_tool=False)
         assert out["final_answer"] == denial
         assert llm.ainvoke.await_count == 1
 
