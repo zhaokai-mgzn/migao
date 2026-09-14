@@ -33,7 +33,13 @@ C 端页面判定登录只查 storage（`checkAuth()` → `getToken()`，`src/st
 > 但 C 端类型声明 `User.tenant_id: number`（**必填**，`src/types/index.ts:11`）⇒ 运行时恒 `undefined`。
 > **harness 不得在注入时补一个 `tenant_id` 让断言过** —— 那会造出「harness 形状 ≠ 生产形状」，
 > 将来读到该字段的代码会 **e2e 绿、生产挂**（又一种证据层假绿）。
-> 契约不一致由**产品侧**修复收口（另一工作包），本 harness 只镜像。
+> 契约不一致由**产品侧**修复收口（契约修复包 PR #3727；仓库级 H5 spec 的同类注入由它一并修），本 harness 只镜像。
+> **权威形状已 live 复核**（2026-09-14）：`data.user` 键 = `botName, id, identityType, nickname, role, roles,
+> tenantId, tenantName`（无 `tenant_id`；实测 `tenantId=1`/`tenantName=词元通达`/`botName=光头强`/`identityType=sms`）。
+> null 字段（如 `avatar`）可能被后端省略 ⇒ 原物镜像自动正确。
+>
+> **能复现 / 不能复现（边界）**：✅ 登录态本身 + 租户级数据；❌ **微信顾客身份**（`identityType=sms` 是
+> 短信/后台身份）⇒「顾客本人数据隔离」类断言不能由这条会话背书（由 agent-eval CH-011 覆盖）。
 > 独立的 storage key `tenant_id` 是另一回事：生产存**登录请求的 tenantId**，短信登录无该参数 ⇒
 > 取会话的 `user.tenantId`（语义同为「会话所属租户」），已在代码注释里声明该差异。
 

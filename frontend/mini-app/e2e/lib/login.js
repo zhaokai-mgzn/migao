@@ -36,6 +36,17 @@
  *   将来任何读 `user.tenant_id` 的代码会**e2e 绿、生产挂** —— 这正是我们要治的「证据层假绿」。
  *   **故本文件不做任何补字段/改名**，注入的就是响应原物；契约不一致由产品侧修复收口。
  *
+ * ## 本步骤能复现什么、不能复现什么（边界，不夸大）
+ * - ✅ 能复现：**登录态本身可复现**（不再依赖环境残留）、租户级数据（`botName`/`tenantName`、订单/售后/物流会话）。
+ * - ❌ 不能复现：**微信顾客身份**。短信登录返回的 `identityType` 实测为 `sms`（B 端/短信身份，见下 live 实测），
+ *   而 C 端生产会话来自 `wx.login` 的微信顾客 ⇒ **「顾客本人数据隔离」类断言不能由这条会话背书**
+ *   （那部分由 agent-eval CH-011 覆盖；H5 兜底形态同样有此限制，见 issue #3696）。
+ *
+ * ## live 实测（2026-09-14，POST https://app.migaozn.com/api/auth/sms/login）
+ * `data.user` 键 = `botName, id, identityType, nickname, role, roles, tenantId, tenantName`
+ * （**无 `tenant_id`**；本次实测 `tenantId=1` / `tenantName=词元通达` / `botName=光头强` / `identityType=sms`）。
+ * 注意 `avatar` 等 null 字段可能被后端省略 ⇒ **原物镜像**同样自动正确（不假设键集合）。
+ *
  * 唯一例外是独立的 storage key `tenant_id`（不是 user 的字段）：生产在
  * `src/utils/auth.ts:48` 存的是**登录请求里的 tenantId**；短信登录没有该参数，
  * 故取本次会话的 `user.tenantId`（语义同为「会话所属租户」），并在此显式声明这一差异。
