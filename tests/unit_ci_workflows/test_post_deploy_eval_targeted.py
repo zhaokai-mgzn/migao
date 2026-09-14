@@ -113,21 +113,26 @@ class TestComputeMode:
 
     def test_order_tool_change_uses_default_net_for_xiaobu(self):
         """同一次部署的 xiaobu 腿：映射出的 OR-016 不在本端可执行集（#3266 过滤）
-        → 跑本端默认网子集（最窄主链路信号；真实集 = {CH-010}）。"""
+        → 跑本端默认网子集（最窄主链路信号）。
+
+        ⚠️ 期望集随 #3725 变化：默认网补进 OR-017（C 端加工项闭环）后，本端子集
+        = `DEFAULT_BEHAVIOR_CASES ∩ xiaobu 可执行集` = {CH-010, OR-017}（两条都在注入集里）。
+        """
         mode, case_ids, reason = self.mod.compute_mode(
             ["backend/ai-agent-service/app/tools/order_create.py"], "xiaobu", XIAOBU_CASE_IDS)
         assert mode == "targeted", reason
-        assert case_ids == ["CH-010"], case_ids  # DEFAULT_BEHAVIOR_CASES ∩ xiaobu 可执行集
+        assert case_ids == ["CH-010", "OR-017"], case_ids  # = DEFAULT_BEHAVIOR_CASES ∩ xiaobu 集
         assert "默认网子集" in reason
 
     def test_aftersales_change_default_net_for_xiaobu(self):
-        """售后改动映射到 AS-007，但 AS-007 不在 xiaobu 可执行集 → 本端默认网子集。
+        """售后改动映射到 AS-007，但 AS-007 不在 xiaobu 可执行集 → 本端默认网子集
+        （#3725 后该子集含 OR-017）。
         注：diff 文件故意用 `app/tools/aftersales_tool.py`（不在 app/graph/ 下，避开宽爆炸半径）。"""
         mode, case_ids, reason = self.mod.compute_mode(
             ["backend/ai-agent-service/app/tools/aftersales_tool.py"],
             "xiaobu", XIAOBU_CASE_IDS)
         assert mode == "targeted", reason
-        assert case_ids == ["CH-010"], case_ids
+        assert case_ids == ["CH-010", "OR-017"], case_ids
         assert "默认网子集" in reason
 
     def test_aftersales_change_targets_as007_for_mibao(self):
@@ -271,7 +276,7 @@ class TestTargetedCliWiring:
     def test_order_change_xiaobu_default_net(self):
         out = self._run(["backend/ai-agent-service/app/tools/order_create.py"], "xiaobu")
         assert "mode=targeted" in out, out
-        assert "case_ids=CH-010" in out, out  # 真实 xiaobu 集：默认网子集只剩 CH-010
+        assert "case_ids=CH-010,OR-017" in out, out  # 真实 xiaobu 集：默认网子集（#3725 后含 OR-017）
 
     def test_order_change_mibao_targeted_through_cli(self):
         out = self._run(["backend/ai-agent-service/app/tools/order_create.py"], "mibao")

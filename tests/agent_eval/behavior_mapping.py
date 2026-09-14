@@ -165,11 +165,37 @@ MAPPING_RULES = [
     (r"app/tools/human_handoff\.py", ["CH-008", "CH-015"]),
 ]
 
-# 无规则命中时的默认集（§13.2 的四个核心域各取一条）。
+# 无规则命中时的默认集（兜底网）：§13.2 各核心域的代表用例 + 曾**不可达**的关键用例。
 # 为什么给默认集而不是"不跑"：AI 行为文件（如 app/main.py、app/graph/graph.py）改了
 # 却匹配不到任何规则，说明**映射表本身没覆盖到**，此时静默跳过 = 把漏测伪装成"无需测试"。
 # 跑一组核心域用例至少能证明主链路没被改崩（覆盖面窄，但比零信号强）。
-DEFAULT_BEHAVIOR_CASES = ["CH-010", "OR-016", "PR-019", "AS-007"]
+#
+# ⚠️ 口径（issue #3725 补记）：**兜底网成员必须"可达"** —— 既在映射结果里（否则无论改什么
+# 文件都选不中 = 结构性不可达），又能被 `select_cases_for_persona` 在至少一个 persona 下
+# 选得中、且 `skip_reason` 为空（否则会进 workflow 的 unrunnable = 在网里也不会执行）。
+# 这条不变式由 `tests/unit_ci_workflows/test_behavior_gate_reachability.py` 锁定
+# （关键用例登记表 + 真实入口见证 + 注入式红证），别再让射程被无声缩小。
+#
+# ── 本次补充（issue #3725）：三条**修前不可达**的用例 ──
+# 修前实测（origin/main @41c9a83a）：OR-015/OR-017/AS-003 **既不在 MAPPING_RULES、
+# 也不在本默认集** ⇒ 无论改什么文件，门禁都选不中它们。实证危害：PR #3718（修 OR-015
+# "模块越界拒绝"）的真实 LLM 迭代档选中的是 CH-003/CH-013/CH-014/CH-015/DF-011/DF-012
+# —— **修 OR-015 的 PR，自己的门禁没跑 OR-015**，作者只能另写纯函数探针自证。
+# 补充理由（逐条有据）：
+#   · OR-015（mibao）：run 34841029062 的结论档 `completion.deterministic_failures` 含
+#     `OR-015` —— 能红、且红的是真行为缺陷（高价值信号）；
+#   · AS-003（双端）：同一次结论档的 `deterministic_failures` = `['AS-003','CR-001',
+#     'OR-008','OR-015','PG-016','PP-007']`；
+#   · OR-017（xiaobu）：OR-015/OR-016「加工项闭环」的 **C 端对位用例**（§13.2 订单域）；
+#     全量 xiaobu 腿通过 ⇒ 未观测到失败，入选理由是消掉"结构性不可达"、保住 C 端对位信号。
+# **只补兜底网（只报告、不阻塞）**：给 `app/graph/nodes.py` 之类路由层加**阻塞型**规则桶
+# 是另一件事（须先校准稳定性）——`:55-62` 记录的 #3551「规则过宽 ⇒ 假阻塞红」教训仍在，
+# 故本 PR 刻意不动规则桶（红线见测试 `TestLayeringUnchanged`）。
+# 成本：命中兜底网的 PR 从 4 条 → 7 条，按 persona 分桶后实为 **mibao +2 / xiaobu +1**
+# （AS-003/OR-015 归 mibao，OR-017 归 xiaobu；见 PR body 的触发频率实测）。
+# 顺序：字典序（与 `map_changed_files_to_case_ids` 的"去重 + 字典序稳定排序"契约一致，
+# 让 workflow 的 `case_ids` 输出可跨机器比对）。
+DEFAULT_BEHAVIOR_CASES = ["AS-003", "AS-007", "CH-010", "OR-015", "OR-016", "OR-017", "PR-019"]
 
 
 def is_ai_behavior_file(path: str) -> bool:
