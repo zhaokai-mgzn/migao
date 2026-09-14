@@ -22,7 +22,9 @@ OR-016、改售后 → AS-007、改建品 → PR-019/PR-020、改交互卡 → C
 - 命中多条规则取**并集**（同一文件既可能是 agent prompt 又是订单 skill）；
 - 存在 AI 行为文件（`backend/ai-agent-service/app/`、`tests/agent_eval/`、`.github/cases/`）
   但无任何规则命中 → 返回 `DEFAULT_BEHAVIOR_CASES`（宁多跑几条，不漏跑）；
-- 完全没有 AI 行为文件 → 返回 `[]`（非行为改动不该烧真实 LLM token）。
+- 完全没有 AI 行为文件 → 返回 `[]`（非行为改动不该烧真实 LLM token）；
+- **规则只锚定 agent 本体源码**（`BEHAVIOR_SOURCE_PREFIXES`）：用例/测试/文档路径
+  （`tests/**`、`.github/cases/**`）永不进规则桶（阻塞），只能落兜底网（#3551 假阻塞修复）。
 
 零第三方依赖是硬要求：workflow 的 map job 只装系统 python3（不 pip install），
 单测也要秒级跑完（§16.1 的 L0 静态层）。
@@ -38,10 +40,29 @@ AI_BEHAVIOR_PATH_PREFIXES = (
     ".github/cases/",                  # 用例单一源（改用例 → 用例本身要真跑一遍）
 )
 
+# ── 规则作用域（#3551：规则只能锚定这些路径 = agent 本体源码）──
+# 只有本体源码的改动才可能与用例有**因果**；用例/测试/文档路径一律走兜底网（不阻塞）。
+# 详见 MAPPING_RULES 上方的「统一约定」注释与 TestRulesAnchorToSourcePaths。
+BEHAVIOR_SOURCE_PREFIXES = (
+    "backend/ai-agent-service/app/",
+)
+
 # ── 改动类型 → 必跑用例（逐条对应 migao-dev-flow §13.2 映射表；按声明顺序匹配，可命中多条）──
 # 为什么是「文件名/路径」而不是「语义」：CI 里只能拿到 `git diff --name-only`，
 # 没有 AST、也不该猜语义 —— 正则覆盖 §13.2 里列出的改动承载文件即可，
 # 过细则漏（改 skills/ 别名也要跑），过宽则烧 token。
+#
+# ⚠️ 统一约定（#3551 追加，2026-09-14 实证的假阻塞红）：
+#   **规则只锚定 agent 本体源码**（`BEHAVIOR_SOURCE_PREFIXES` 内的路径），
+#   绝不允许匹配 `tests/**`、`.github/cases/**`、`docs/**` 等用例/测试/文档路径。
+#   为什么：规则命中 = 阻塞型门禁，前提是「改动真的影响行为」；而按关键词匹配路径时，
+#   一个**测试文件名**就能触发规则 —— 实证：新建 `tests/test_admin_api_client_kwargs_guard.py`
+#   （文件名含 `guard`）让改 finance 工具的 PR 被判成"命中防御规则" → DF-011/DF-012 以阻塞强度
+#   跑，与本 PR 改动无因果 → **假阻塞红**（每次都要人/agent 花时间证伪，还会诱使去修不该修的东西）。
+#   假阻塞比没有门禁更糟（§16.5：规则桶阻塞的设计前提就是因果性）。
+#   过滤在 `map_changed_files_with_source` 里**集中实现**（不是靠每条正则自觉）——
+#   这样将来新增规则也不可能误触用例/测试路径。不变量测试见
+#   `backend/ai-agent-service/tests/test_behavior_mapping.py::TestRulesAnchorToSourcePaths`。
 MAPPING_RULES = [
     # 下单引导 / 加工项询问 / 金额计算 → OR-016
     # （order_skill.py 是 Skill 本体，order_create/order_query 是下单与查单两个 Tool）
@@ -55,10 +76,21 @@ MAPPING_RULES = [
     (r"interact\.py|interactive|card", ["CH-010", "CH-019"]),
     # 图片 / 视觉链路 → CH-021、CH-026
     (r"vision|image|图片", ["CH-021", "CH-026"]),
-    # 防御 / Prompt 注入 / 边界 → DF-011、DF-012
-    (r"guard|defense|injection|inject", ["DF-011", "DF-012"]),
+    # 防御 / 熔断降级 / 边界 → DF-011、DF-012
+    # 两类载体都列出：① 真实承载防御逻辑的源码（否则该规则近乎空转 —— 实测全仓仅
+    # `app/graph/clarify_guard.py` 命中，而熔断/降级所在的 `app/core/*` 反而落进兜底网 = 不阻塞，
+    # 真信号比假阳性还弱）；② 历史关键词（guard/defense/injection）保留，防将来这些文件落地时漏掉。
+    (r"clarify_guard\.py|circuit_breaker\.py|app/core/fallback\.py"
+     r"|app/graph/skills/base_skill\.py|guard\.py|defense|injection|inject",
+     ["DF-011", "DF-012"]),
     # agent 声明 / prompt（澄清、多轮、转人工口径）→ CH-003、CH-022
     (r"app/agents/|prompt", ["CH-003", "CH-022"]),
+    # 客户档案（更新档案 / 标签 / 客户域引导词）→ CU-003、CU-004
+    # §13.2 映射表原**缺客户域**（#3551 补齐）：改 `customer_manage.py` 写路径不映射任何用例 =
+    # 客户域行为改动逃过映射门禁（旁路发现，与"姓名静默丢弃"同一轮修复）。
+    # 承载文件 = 客户档案 Tool 本体 + 客户域 Skill/prompt/示例（相对 app/ 的路径）。
+    (r"customer_(manage|skill|general_skill)|prompts/customer\.md|SKILL-customer|EXAMPLES-customer",
+     ["CU-003", "CU-004"]),
 ]
 
 # 无规则命中时的默认集（§13.2 的四个核心域各取一条）。
@@ -89,8 +121,10 @@ def map_changed_files_to_case_ids(paths: list) -> list:
         （workflow 的 `case_ids` 输出与 PR 评论要可比对，不能随机序）。
         没有任何 AI 行为文件改动 → `[]`；有但无规则命中 → `DEFAULT_BEHAVIOR_CASES`。
 
-    注意：规则对所有输入路径匹配，AI 行为文件的**存在与否**只决定
-    "默认集 / 空" 这条分支 —— 即非 AI 行为路径（如纯前端样式）不会单独触发评测。
+    注意：规则**只对本体的源码路径（`BEHAVIOR_SOURCE_PREFIXES`）匹配**；
+    AI 行为文件的**存在与否**只决定 "默认集 / 空" 这条分支 —— 非 AI 行为路径（如纯前端样式）
+    不会单独触发评测；用例/测试/文档路径（`tests/**`、`.github/cases/**`）永不命中规则桶，
+    只能落兜底网（#3551：否则一个测试文件名就能造出与改动无因果的**假阻塞红**）。
     """
     return map_changed_files_with_source(paths)[0]
 
@@ -117,10 +151,15 @@ def map_changed_files_with_source(paths: list) -> tuple:
     if not any(is_ai_behavior_file(p) for p in changed):
         return [], "none"  # 非行为改动：不触发评测（省真实 LLM 成本）
 
+    # ★ 规则作用域：只有 agent 本体源码才可能"与本 PR 改动有因果"。
+    #   用例/测试/文档路径（tests/**、.github/cases/**）在此被排除 → 永远不会进规则桶（阻塞），
+    #   只能落兜底网（不阻塞）。#3551 实证：测试文件名含 `guard` 曾让 DF-011/DF-012 假阻塞。
+    rule_scope = [p for p in changed if p.startswith(BEHAVIOR_SOURCE_PREFIXES)]
+
     matched: set = set()
     for pattern, case_ids in MAPPING_RULES:
         rx = re.compile(pattern)
-        if any(rx.search(p) for p in changed):
+        if any(rx.search(p) for p in rule_scope):
             matched.update(case_ids)  # 并集：一个文件可能同时命中多条规则
 
     if not matched:
