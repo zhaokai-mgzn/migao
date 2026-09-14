@@ -1,18 +1,22 @@
 """评测完成判定谓词单测（tests/agent_eval/local_runner.py::completion_verdict）
 
 #3483 T2「完成定义前置」：评测完成 = 确定性失败清零 + 关键旅程 case 全过 +
-已知波动（llm-noise/unstable）由 flake 台账放行。取代「全量 100% 绿才算完」的
+已知波动（**只有** llm-noise）由 flake 台账放行。取代「全量 100% 绿才算完」的
 旧判据（B 端 80 轮差距分析实证：最后 5-10% 是 LLM 方差，追 100% 边际收益为负——
 三测自述「逐个校准 case 追波动边际收益递减」）。
 
-判定语义：
-- 确定性失败（reproducible / error / no-retry-budget / infra / 未知分类但 score<1）
-  = 代码缺陷或本轮不可信，必须处理 → 未完成；
+判定语义（**口径变更**：`unstable` 不再放行，见 `_COMPLETION_RELEASED_CLASSES`）：
+- 必须处理的失败（阻塞）：除 `llm-noise` 外的一切 score<1 ——
+  reproducible / unstable / error / no-retry-budget / infra / 未知分类；
 - 关键旅程用例（KEY_JOURNEYS_*，P0 跨域核心链路）任何一条 score<1 → 未完成
   （旅程是用户真会走的路，波动也不放行）；
-- llm-noise / unstable（已由 runner 记入 flake 台账）→ 放行但列出。
+- `llm-noise`（首次失败、新 session 重试通过，已记入 flake 台账）→ 放行但列出。
+
+为什么 `unstable` 也被阻塞：它只证明"两次失败不是同一件事"，**没有**证明"其中
+有一次是对的"（实证 OR-014 run 34841029062：一次"下单成功但金额错 168≠198"、
+一次"order_create 从未被调用" —— 2/2 都真失败）。波动放行的前提是"有一次通过"。
 """
-# case_ids: OR-016, PR-019, PR-020, AS-007, FN-004, HR-003, DA-002, CU-003, CT-002, OR-012, CH-010, OR-017, KN-001, CH-008, CH-024
+# case_ids: OR-016, PR-019, PR-020, AS-007, FN-004, HR-003, DA-002, CU-003, CT-002, OR-012, CH-010, OR-017, KN-001, CH-008, CH-024, OR-014
 import importlib.util
 from pathlib import Path
 
@@ -71,10 +75,13 @@ class TestCompletionVerdict:
         assert v["ok"] is True
         assert "AS-007" in v["flake_released"]
 
-    def test_unstable_released(self):
+    def test_unstable_blocks(self):
+        """**口径变更**：`unstable`（两次皆败、成因不同）不再放行 ——
+        它只证明"两次不是同一件事"，没有证明"其中有一次是对的"（OR-014 实证）。"""
         v = lr.completion_verdict([_r("CU-003", 0.0, "unstable")], JOURNEY)
-        assert v["ok"] is True
-        assert "CU-003" in v["flake_released"]
+        assert v["ok"] is False
+        assert "CU-003" in v["deterministic_failures"]
+        assert v["flake_released"] == []
 
     def test_journey_failure_blocks_even_llm_noise(self):
         """关键旅程不放行：P0 旅程 score<1 即使分类 llm-noise 也判未完成"""
@@ -111,3 +118,90 @@ class TestCompletionVerdict:
         ids = {c["id"] for c in load_case_dicts(str(REPO_ROOT / ".github" / "cases"))}
         for jid in (set(lr.KEY_JOURNEYS_MIBAO) | set(lr.KEY_JOURNEYS_XIAOBU)):
             assert jid in ids, f"关键旅程 {jid} 不存在于 cases/（完成判定将空转）"
+
+
+# ── 契约守卫（口径变更的护栏）：分类枚举封闭 + buckets 三方一致 ──────────────────
+#
+# 为什么需要：`completion_verdict` 的输出被三方消费 —— runner 打印、summary 的
+# `completion` 字段、flake 台账（`cases[].classification` ↔ `deterministic_failures` /
+# `flake_released` ↔ 台账条目）。口径变更（`unstable` 移出放行档）如果只改常量、
+# 不锁契约，就会出现"分类说一套、bucket 说另一套"的静默漂移。
+
+# 分类值是**封闭枚举**（`_classify_attempts` + 两条终态路径）。新增/改名必须同时
+# 更新这里 + `FLAKE_REASONS` + 台账消费方；本守卫以红灯逼出这次同步。
+CLASSIFICATIONS = frozenset({
+    "pass", "llm-noise", "reproducible", "unstable", "infra", "no-retry-budget", "error"})
+# 需要 flake 台账 reason 文案的档（pass/error 是终态，不进 flake 台账）
+FLAKE_CLASSES = CLASSIFICATIONS - {"pass", "error"}
+
+
+class TestVerdictContract:
+    def test_released_classes_are_a_subset_of_the_closed_enum(self):
+        assert lr._COMPLETION_RELEASED_CLASSES <= CLASSIFICATIONS
+        assert lr._COMPLETION_RELEASED_CLASSES == frozenset({"llm-noise"}), (
+            "放行档只允许 llm-noise（首次失败 + 重试通过）；`unstable` 已改为阻塞")
+
+    def test_every_flake_class_has_a_reason(self):
+        assert set(lr.FLAKE_REASONS) == FLAKE_CLASSES, (
+            "FLAKE_REASONS 必须与分类枚举一一对应（新增分类必须给 reason，删除必须清）")
+        missing = [c for c in FLAKE_CLASSES if len(str(lr.FLAKE_REASONS.get(c) or "")) < 8]
+        assert missing == [], f"这些分类的 reason 文案缺失/过短: {missing}"
+
+    def test_classify_attempts_only_returns_enum_members(self):
+        """穷举 16 种尝试组合（首次成败 × 重试成败 × infra × 指纹同异）→ 返回值都属枚举。"""
+        same = [("tool: order_create", "unmatched")]
+        diff = [("tool: order_query", "unmatched")]
+        seen = set()
+        for s1 in (1.0, 0.0):
+            for s2 in (1.0, 0.0):
+                for infra in (None, "httpx.ConnectError: refused"):
+                    for f2 in (same, diff):
+                        got = lr._classify_attempts(
+                            {"score": s1, "failed": same, "last_error": infra},
+                            {"score": s2, "failed": f2, "last_error": infra})
+                        seen.add(got)
+        unknown = sorted(seen - CLASSIFICATIONS)
+        assert unknown == [], f"_classify_attempts 返回了枚举外的分类: {unknown}"
+        assert seen == CLASSIFICATIONS - {"pass", "error"} or len(seen) >= 4, (
+            f"穷举未覆盖到足够多的分类（实得 {sorted(seen)}）—— 守卫疑似空转")
+
+    def test_buckets_partition_failed_cases_and_follow_the_release_policy(self):
+        """三方一致：失败用例**恰好**落在 deterministic / journey / released 三者之一，
+        且 `released` 桶 == 分类命中放行档的用例（关键旅程优先）。"""
+        results = [
+            _r("OK-001", 1.0, "pass"),
+            _r("AS-007", 0.0, "llm-noise"),        # 放行档（非旅程）
+            _r("OR-001", 0.0, "reproducible"),
+            _r("OR-014", 0.0, "unstable"),         # 口径变更后阻塞
+            _r("CT-002", 0.0, "infra"),
+            _r("DA-002", 0.0, "no-retry-budget"),
+            _r("X-001", 0.0, ""),                  # 无分类证据 → 保守阻塞
+            _r("FN-004", 0.0, "error"),
+            _r("OR-016", 0.0, "llm-noise"),        # 关键旅程：旅程桶优先于放行
+        ]
+        journey = ("OR-016", "PR-019")
+        v = lr.completion_verdict(results, journey)
+        failed = {r["case_id"] for r in results if r["score"] < 1.0}
+        det, rel, jou = (set(v["deterministic_failures"]), set(v["flake_released"]),
+                         set(v["journey_failures"]))
+        assert det | rel | jou == failed, "有失败用例没落进任何一个桶（三方不一致）"
+        assert not (det & rel) and not (det & jou) and not (rel & jou), "桶之间必须互斥"
+        assert v["ok"] == (not det and not jou)
+        by_id = {r["case_id"]: r for r in results}
+        for cid in rel:
+            assert str(by_id[cid].get("classification") or "") in lr._COMPLETION_RELEASED_CLASSES, (
+                f"{cid} 进了放行桶但分类不在放行档（放行口径漂移）")
+        for cid in det - jou:
+            assert str(by_id[cid].get("classification") or "") not in lr._COMPLETION_RELEASED_CLASSES
+        assert "OR-014" in det, "unstable 必须落在阻塞桶"
+        assert "OR-016" in jou, "关键旅程优先于放行档"
+
+    def test_ledger_released_flag_matches_the_policy(self):
+        """台账条目的 `released` 字段与放行档同源（台账是"为什么放行"的唯一长期证据）。"""
+        attempt = {"score": 0.0, "failed": [("tool: order_create", "unmatched")], "last_error": None}
+        bad = []
+        for cls in sorted(FLAKE_CLASSES):
+            entry = lr.build_flake_entry("OR-014", "t", cls, attempt, attempt, "run", "sha")
+            if entry["released"] != (cls in lr._COMPLETION_RELEASED_CLASSES):
+                bad.append(f"{cls}: released={entry['released']} 与放行档不符")
+        assert bad == [], "台账 released 与放行档漂移：\n  " + "\n  ".join(bad)

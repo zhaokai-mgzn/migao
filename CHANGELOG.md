@@ -6,6 +6,33 @@
 
 ## [Unreleased]
 
+### 评测完成判定收紧：`unstable`（两次皆败但成因不同）不再按波动放行（2026-09-14）
+
+- `tests/agent_eval/local_runner.py`：`_COMPLETION_RELEASED_CLASSES` 由 `{llm-noise, unstable}`
+  收为 **`{llm-noise}`** —— 放行档只保留「首次失败、新 session 重试通过」；两次都没通过的
+  用例（含 `unstable`）一律进阻塞桶。理由：`unstable` 只证明"两次失败不是同一件事"，
+  **没有**证明"其中有一次是对的"；实证 OR-014（run 34841029062）一次"下单成功但金额错
+  168≠198"、一次"`order_create` 从未被调用"，2/2 都真失败
+- **分类新增「指纹子集」规则**：两次指纹有**真子集**关系（共有部分非空）⇒ `reproducible`
+  （纯结构判据，集合包含）。实证 AS-004（run 34849029334）：首败 = 两条**实质**落库断言
+  （`落库 closeReason 为空` + `closeReason 不含期望值`），次败 = 这两条 + 一条
+  `after_sales_manage … unmatched expectation` —— 机械按"指纹不同"判发散 ⇒ 真回归被洗成
+  波动、`deterministic_failures` 漏计。注意：**指纹不同 ≠ 必然 `unstable`**
+- 台账条目新增 `released` 字段（与 `_COMPLETION_RELEASED_CLASSES` 同源）—— 口径变更后
+  "分类名"已读不出处置，台账自证放行与否
+- 影响面（离线重放 6 个真实 run、**43 条去重台账条目**）：放行条目 29 → **21**（全部 21 条
+  `llm-noise` 保留放行，8 条 `unstable` 改判阻塞）；分类变化 3 条（`unstable → reproducible`：
+  PG-016 / AS-004 / PR-005）；**run×persona 结论翻转 2 处** ——
+  `34846098440` mibao（PG-016 假绿，`ok` true→false）与 `34849029334` xiaobu
+  （OR-026，`ok` true→false）
+- 单测：`test_completion_verdict.py` 新增契约守卫（分类枚举封闭 + buckets 三方一致 +
+  台账 `released` 同源），`test_unstable_released` → `test_unstable_blocks`；
+  `test_failure_signature_root_cause.py` 增加 OR-014 / AS-004 / OR-026 三个**真实**指纹夹具
+  （两次皆败 / 指纹子集 / 成因不同三形态）；`test_eval_summary_attribution.py` 的
+  `completion_verdict` 语义冻结锚点同步显式更新（并加上 `unstable` 阻塞锚点）
+- ⚠️ 门禁口径变更，属**待裁定**项（决策请求见对应 PR）；`.agent-presets/**` 里的技能副本
+  仍写「llm-noise / unstable 放行」，需由该文件的负责方同步（本 PR 按避让约定未改）
+
 ### 米宝主推理模型迁移 DeepSeek-V4.1-Flash（模型名 canonical = `deepseek-flash`）（2026-09-11，#3319）
 
 - `ai-agent-service`：DeepSeek 于 2026-09-10 发布 **DeepSeek-V4.1-Flash**，官方 API 将模型名改为 **`deepseek-flash`**（原生多模态），旧名 `deepseek-v4-flash` / `deepseek-v4-flash-vision-exp` 对应模型已下线、仅作**临时兼容路由**指向 V4.1-Flash。本次把仓库内模型名统一到 canonical 名（`config.py` 的 `LLM_MODEL_PRIMARY`/`LLM_MODEL_FAST`/`INTENT_MODEL`/`VISION_MODEL` 默认值、`.env.example`、4 个 CI workflow、`deploy/docker-compose.yml`、README、wiki 模型表）

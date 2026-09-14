@@ -11,6 +11,7 @@
 ```
 
 顶层 `completion` 也只给一串 ID：`"确定性失败 6 条: AS-003, CR-001, OR-008, OR-015, PG-016, PP-007"`。
+（该串是 run 34841029062 的**原始产物原文**；口径变更后文案为「必须处理的失败 N 条」。）
 ⇒ 要分类这 6 条（真回归 / 用例缺陷 / 种子环境）**只能手工挖 2705 行作业日志**
 （`gh run view --job … --log | grep ❌`）；而 CI 日志有保留期，**过期后这批失败永久失去可归因性**。
 
@@ -303,15 +304,33 @@ class TestCompletionCarriesReasons:
 
         为什么单独锁：`failure_reasons` 是**附加**字段，绝不能变成"顺手改判定口径"的入口
         （改了口径，历史 run 与本 run 就不可比了）。
+
+        ⚠️ 本次**有意**改了两处口径，均在此处显式留痕（不是"顺手"）：
+          ① `reason` 文案「确定性失败 N 条」→「必须处理的失败 N 条」——桶里现在也含
+             `unstable`，"确定性"这个词已不准确；
+          ② `unstable`（两次皆败但成因不同）移出放行档（`_COMPLETION_RELEASED_CLASSES`
+             只剩 `llm-noise`）—— 见下方第二段断言（旧口径会把 OR-014 放进
+             `flake_released`，新口径必须进 `deterministic_failures`）。
         """
         verdict = lr.completion_verdict(self._results(), (_journey_id(),))
         assert verdict == {
             "ok": False,
-            "reason": f"确定性失败 1 条: PP-007；关键旅程失败 1 条: {_journey_id()}",
+            "reason": f"必须处理的失败 1 条: PP-007；关键旅程失败 1 条: {_journey_id()}",
             "deterministic_failures": ["PP-007"],
             "journey_failures": [_journey_id()],
             "flake_released": ["OR-014"],
             "total": 4, "passed": 1,
+        }
+        # ② 口径锚点：同样是"两次皆败"，`unstable` 必须进阻塞桶（旧口径会放行）
+        unstable = lr.completion_verdict(
+            [_case("OR-014", 0.0, "unstable", [("断言原文", "")])], (_journey_id(),))
+        assert unstable == {
+            "ok": False,
+            "reason": "必须处理的失败 1 条: OR-014",
+            "deterministic_failures": ["OR-014"],
+            "journey_failures": [],
+            "flake_released": [],
+            "total": 1, "passed": 0,
         }
 
 

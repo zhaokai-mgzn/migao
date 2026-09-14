@@ -11,7 +11,8 @@
  */
 const fs = require('fs')
 const path = require('path')
-const { launch, waitForPageReady, checkLoginPreflight, assertDistFresh, SCREENSHOT_DIR } = require('./lib/harness')
+const { launch, waitForPageReady, assertDistFresh, SCREENSHOT_DIR } = require('./lib/harness')
+const { ensureLoggedIn, clearStorage } = require('./lib/login')
 
 const SCENARIOS = [
   require('./scenarios/chat-scenario'),
@@ -24,6 +25,25 @@ const SCENARIOS = [
 
 async function main() {
   console.log('🚀 启动小布小程序 E2E 验收（微信开发者工具模拟器）...')
+  const reportPath = path.join(path.dirname(SCREENSHOT_DIR), 'report.md')
+
+  /**
+   * 前置失败时**必须清掉上一轮的报告**：否则「本轮 exit 1」与「目录里那份旧报告」会同时存在，
+   * 下游完全可能把旧报告当成本轮结论（2026-09-14 固化：失败必须连证据一起失效）。
+   */
+  const abortBeforeRun = (title, detail) => {
+    console.error(`\n⛔ ${title}（e2e 已中止，未跑任何场景）：\n`)
+    console.error(`   ${detail}\n`)
+    try {
+      if (fs.existsSync(reportPath)) {
+        fs.rmSync(reportPath, { force: true })
+        console.error(`   已删除上一轮的陈旧报告 ${path.relative(process.cwd(), reportPath)}（避免被误当本轮结论）\n`)
+      }
+    } catch (e) {
+      console.error(`   ⚠️ 陈旧报告删除失败：${e.message}\n`)
+    }
+    process.exit(1)
+  }
 
   // ── 陈旧构建护栏（失败关闭）：dist 与 src/config 不一致时直接退出，不进模拟器 ──
   let freshnessLine = ''
@@ -38,21 +58,47 @@ async function main() {
     freshMode = fresh.mode
     console.log(`✅ 构建新鲜度检查通过[${fresh.mode}]：${freshnessLine}`)
   } catch (e) {
-    console.error('\n⛔ 陈旧构建护栏拦截（e2e 已中止，未连接模拟器）：\n')
-    console.error(`   ${e.message}\n`)
-    process.exit(1)
+    abortBeforeRun('陈旧构建护栏拦截', e.message)
   }
 
-  const mp = await launch(process.env.E2E_PORT ? Number(process.env.E2E_PORT) : 0)
+  let mp = await launch(process.env.E2E_PORT ? Number(process.env.E2E_PORT) : 0)
   console.log('✅ 已连接模拟器')
-  // 登录态前置检查（可复现性声明）：harness 不注入登录态，依赖模拟器 storage 里的 auth_token
-  const login = await checkLoginPreflight(mp)
+
+  // ── 登录前置步骤（失败关闭，单一事实源 e2e/lib/login.js）──
+  // 为什么要它：C 端 checkAuth() 只看 storage（authStore.ts:137），而模拟器里 wx.login 的 code
+  // 被后端判 WECHAT_API_ERROR: code 无效（环境限制）⇒ 不建立登录态就只能「吃环境残留」，
+  // 冷环境跑不出证据（migao-acceptance v1.4「环境残留给的绿」）。缺失/注入失败 ⇒ 直接失败退出。
+  if (process.env.E2E_COLD_LOGIN === '1') {
+    console.log('[harness] E2E_COLD_LOGIN=1 → 先清空模拟器 storage（去掉环境残留登录态），从零建立')
+    await clearStorage(mp)
+  }
+  let login = await ensureLoggedIn(mp)
+  if (login.ok && login.source === 'injected') {
+    // 注入后必须让 App **冷启动**才能读到注入的 user（导航名/副标题的数据源）：
+    // app.tsx:20 的 initialize() 每次 App 装载只跑一次，光 reLaunch 不会重跑。
+    console.log('[harness] 已注入登录态 → 重启模拟器会话，让 App 冷启动读取注入态…')
+    try {
+      await mp.close()
+    } catch {}
+    mp = await launch(0)
+    const recheck = await ensureLoggedIn(mp)
+    login = { ...recheck, source: recheck.ok ? 'injected' : recheck.source }
+  }
+  if (!login.ok) {
+    abortBeforeRun(
+      `${login.marker}`,
+      `${login.reason}\n` +
+        '   ⇒ 无登录态时断言依赖的租户数据（botName/租户副标/订单脱敏）会缺失或降级，' +
+        '那种「绿」是环境残留给的，不是代码给的 —— 故直接失败，不产出不可复现的证据。'
+    )
+  }
+  const expect = login.user
+    ? `，期望 botName=${login.user.botName ?? '(未配置→兜底小布)'} / tenantName=${login.user.tenantName ?? '(空)'}`
+    : ''
   loginLine =
-    login.loggedIn === true
-      ? `模拟器 storage 已登录（auth_token …${login.tokenTail}，来自环境残留/外部写入，非本 harness 注入）`
-      : login.loggedIn === false
-        ? '⚠️ 未登录（storage 无 auth_token）—— 结果不可作为验收证据'
-        : '未知（前置检查不可用）'
+    login.source === 'storage'
+      ? `已登录（**来自模拟器 storage 残留**，非本 harness 建立 ⇒ 本机证据仅在登录态可复现时有效）`
+      : `已登录（本 harness 经短信登录注入，${login.reason}${expect}）`
   console.log(`[harness] 登录态：${loginLine}`)
   const readyPage = await waitForPageReady(mp)
   console.log(readyPage ? `✅ 页面就绪: ${readyPage.path}` : '⚠️ 30s 内页面未就绪（继续尝试，步骤级会重试）')
@@ -110,7 +156,6 @@ async function main() {
   lines.push(`| 判定 | ${totalFail === 0 ? '**全部通过，验收通过**' : '**存在失败项，需修复**'} |`)
   lines.push('')
 
-  const reportPath = path.join(path.dirname(SCREENSHOT_DIR), 'report.md')
   fs.writeFileSync(reportPath, lines.join('\n'), 'utf8')
 
   console.log('\n\n📋 E2E 验收汇总:')
