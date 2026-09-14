@@ -56,6 +56,44 @@ head -3 "$HOME/.dsh/.agent-presets/migao/skills/migao-dev-flow/SKILL.md"
   （不再依赖个人 `~/.dsh` 里的手抄副本）。
 - 软链指向工作区文件，**合并到 `main` 后自动生效**（拉取即更新，无需重链）。
 
+## 本机 live 锚点与运维铁律（2026-09-14 换链后）
+
+**现行锚点**：`~/ai native/migao-preset-live/` —— 产品仓库的 **sparse partial clone**
+（`git clone --filter=blob:none --sparse <migao> migao-preset-live` + `git sparse-checkout set .agent-presets`，约 **6.6MB**），
+`~/.dsh/.agent-presets/migao` 软链指向它的 `.agent-presets/migao`。换链前已核**逐字节一致**
+（`preset.yml` / `agent.cordis.yml` / `skills/*/SKILL.md` 与当时 `origin/main` md5 全同）⇒ 换链**内容中性**。
+自此**可编辑副本只剩产品仓库一份**：研发模式改动只能走产品仓库 PR ——「live 源 vs 权威源」分裂
+（`migao-dev-flow` §17.3 反模式）**已消除**。
+
+**为什么不用 git worktree**：worktree 属 `scripts/dev-worktree.sh rm` / `git worktree prune` 的**清理半径**
+（"可丢弃"语义）。被删 ⇒ 软链悬空 ⇒ **DSH 静默加载不到研发模式**（DSH `src` 注释：
+“a dangling link is not a preset”）。故锚点用**独立 clone**，落在任何 worktree 清理流程之外。
+
+**运维铁律三条（锚点不是"另一个工作区"，是 live 内容本身）**：
+1. **只读**：不得就地编辑、不得切分支、不得留未提交改动 —— 否则会变成「**藏在软链目标里的第三份副本**」：
+   它直接生效，却**没有 PR、没有评审、没有 diff 提醒**，比双源漂移**更隐蔽**。
+2. **只 ff**：更新只允许
+   `git -C "$HOME/ai native/migao-preset-live" fetch origin main && git -C "$HOME/ai native/migao-preset-live" merge --ff-only origin/main`
+   —— `--ff-only` 遇本地改动会失败，正好把第 1 条的违规**暴露出来**。
+3. **不可删**：锚点不参与任何清理流程（不进 `migao-wt/`、不 `rm`、不 `prune`）。
+
+**滞后 vs 漂移（两回事，别混）**：
+- **漂移** = 两个可编辑副本内容矛盾（换链后**已消除**，结构上无法再发生）；
+- **滞后** = 锚点落后 `main`（**常态** —— 锚点不会自己变新）。判别写法：
+  `git -C "$HOME/ai native/migao-preset-live" rev-parse HEAD` vs `git rev-parse origin/main`；
+- **触发时机**：**开工前**、以及**每次合并 preset PR 后**各 ff 一次 —— 否则出现
+  「PR 合并了但研发模式没变」这种难查的错位（那是滞后，不是漂移）。
+
+**健康检查（换链后 / 怀疑异常时）**：
+
+```bash
+readlink "$HOME/.dsh/.agent-presets/migao"        # → …/migao-preset-live/.agent-presets/migao
+cat "$HOME/.dsh/.agent-presets/migao/preset.yml" >/dev/null && echo "preset 元数据可读"
+grep -m1 '^version' "$HOME/.dsh/.agent-presets/migao"/skills/*/SKILL.md   # 应与 main 的版本一致
+```
+
+> ⚠️ 锚点选择**救不了**「从构建产物启动 DSH」这条路径：那条限制与锚点位置无关，见下一节。
+
 ## ⚠️ 已知限制：从构建产物启动时软链会被静默忽略
 
 **软链布局只在「从源码运行 DSH」时可靠**（如 `pnpm dsh web` 经 `tsx` → 解析到包的 `src/`）。
