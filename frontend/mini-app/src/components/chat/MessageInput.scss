@@ -1,6 +1,6 @@
 @use '../../styles/variables.scss' as *;
 
-// 输入条（豆包式单容器）：textarea 常驻 + 右下自适应动作组
+// 输入条（豆包式单容器）：单行 [加图][输入框][主动作键]，容器高度随内容增长
 // 设计依据：docs/design/agent-input-bar-unified-design.md §4.1/§4.5（C 端深蓝金 token）
 // 尺度约定：designWidth 750，1px = 1rpx；触摸键统一 88px（44pt，对齐 MessageList 头像尺度）
 .message-input {
@@ -8,17 +8,51 @@
   flex-direction: column;
   background: $bg-primary;
   border-top: 1px solid $border-color;
-  padding: $space-sm $space-md 0;
-  padding-bottom: env(safe-area-inset-bottom);
+  padding: $space-sm $space-md;
+  // 基础内边距 + 安全区（禁止写成 `padding-bottom: env(...)`：那会把基础内边距覆盖成 0，输入条贴死底边）
+  padding-bottom: calc(#{$space-sm} + env(safe-area-inset-bottom));
 
-  // ── 单容器（浅灰底大圆角）──
+  // ── 一次性语音引导（输入条容器上方一行小字，可关闭；只出现一次）──
+  &__hint {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: $space-sm;
+    padding: 0 $space-sm $space-sm;
+  }
+
+  &__hint-text {
+    font-size: 24px;
+    color: $text-secondary;
+  }
+
+  &__hint-close {
+    // 56px 触达目标（独立复核：40px 级关闭键触达目标偏小）；整行也可点关闭（见 tsx onClick）
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    background: rgba(10, 37, 64, 0.06);
+  }
+
+  &__hint-close-icon {
+    width: 28px;
+    height: 28px;
+  }
+
+  // ── 单容器（浅灰底圆角）──
   &__container {
     display: flex;
     flex-direction: column;
     gap: $space-sm;
     background: $bg-secondary;
-    border-radius: 48px; // 24pt 大圆角（对齐参考图容器质感）
-    padding: $space-md;
+    // 44px @ 单行条高 ~104px ⇒ 近似胶囊；内容变高（多行/图片）时仍是克制的圆角卡片
+    border-radius: 44px;
+    // 横向 12px（触摸键距容器边缘不再贴边，独立复核实测原 8px 偏紧）；纵向 8px
+    padding: $space-sm $space-md;
   }
 
   // ── 录音状态条（录音中内嵌容器顶部，替代旧 placeholder 文案 hack）──
@@ -82,25 +116,47 @@
     height: 24px;
   }
 
+  // ── 单行输入行：[加图][输入框 flex:1][主动作键] ──
+  // align-items: flex-end ⇒ 单行时三者同底（输入框包裹层与触摸键等高 = 视觉居中对齐）；
+  // 多行 autoHeight 时按钮贴底，不随输入框一起被拉伸。
+  &__row {
+    display: flex;
+    align-items: flex-end;
+    gap: $space-xs;
+  }
+
+  // 输入框包裹层：撑满剩余宽度 + 与触摸键等高（文案在 88px 盒内垂直居中）
+  // padding-right：文字行尾与右侧动作键之间留出固定间距（独立复核实测长句行尾原仅距 ~4px，偏挤；
+  // 现为 row gap 4px + field 内边距 12px = 16px ≈ 8.3 CSS px）
+  &__field {
+    flex: 1;
+    min-width: 0;
+    min-height: 88px;
+    padding-right: $space-md;
+    display: flex;
+    align-items: center;
+  }
+
   // ── 文本输入（常驻）──
   &__textarea {
     width: 100%;
     font-size: 28px;
-    line-height: 1.5;
+    line-height: 1.5; // 行盒 42px
     color: $text-primary;
-    min-height: 40px;
+    min-height: 42px; // = 单行行盒高度（原 40px 小于行盒，与触摸键高度对不齐）
   }
 
   &__placeholder {
-    color: $text-tertiary;
+    // $text-tertiary 在 $bg-secondary 上对比度仅 ~2.3:1（独立复核提出可读性问题）；
+    // 换 $text-secondary ≈5.1:1，面向低学历/老年用户的 C 端可读性优先
+    color: $text-secondary;
   }
 
-  // ── 右下自适应动作组 ──
+  // ── 主动作键组（右，单键自适应：按住说话/发送/停止）──
   &__actions {
     display: flex;
     align-items: center;
-    justify-content: flex-end;
-    gap: $space-md;
+    flex-shrink: 0;
   }
 
   &__icon-btn {
@@ -111,10 +167,23 @@
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
-    background: transparent;
+    // 品牌浅蓝底：裸线性图标不像"可点按钮"（两轮独立盲化复核均提出，低学历用户看不出可点）。
+    // 实测过纯白底方案：像素上是白色（#fff）但落在 #f5f7fa 容器上只有 ~4% 亮度差，复核里仍被判为"裸图标" ⇒ 改用
+    // $primary-light（色相差异比亮度差更易识别）。触摸热区仍是 88px（44pt）不变。三态实底键在下方覆盖。
+    background: $primary-light;
 
     &--disabled {
       opacity: 0.4;
+    }
+
+    // 空态语音主键：宽胶囊（语音优先的显性层级）+ 可见文字标签；
+    // 触控高度仍是 88px（44pt）不变，只把"裸图标"升级成"看得懂的按钮"
+    &--wide {
+      width: auto;
+      min-width: 88px;
+      padding: 0 $space-lg;
+      border-radius: 44px;
+      gap: $space-xs;
     }
 
     // 发送：品牌渐变实底 + 反白箭头（继承瑞幸式品牌键）
@@ -137,6 +206,14 @@
   &__icon {
     width: 48px;
     height: 48px;
+  }
+
+  // 「按住 说话」文字标签：低学历/老年用户要"看得懂"，主操作不能只靠一枚波形图标
+  &__voice-label {
+    font-size: 28px;
+    font-weight: 500;
+    color: $text-primary;
+    white-space: nowrap;
   }
 }
 
