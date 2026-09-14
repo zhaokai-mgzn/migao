@@ -2247,7 +2247,7 @@ _CASE_FN_001 = EvalCase(
     form_prefill=[],
     forbidden_card_text=[],
     must_succeed=[{'tool': 'finance_api'}],
-    output_verify=[{'tool': 'finance_api', 'expect': {'transactionNo': '__nonempty__', 'type': 'income', 'amount': 88, 'status': 'success'}}],
+    output_verify=[{'tool': 'finance_api', 'action': 'create_transaction', 'expect': {'transactionNo': '__nonempty__', 'type': 'income', 'amount': 88, 'status': 'success'}}],
 )
 
 # ── FN-002 [NORMAL] 收支汇总（源: cases/finance.yml）──
