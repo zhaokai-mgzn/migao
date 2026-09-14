@@ -87,7 +87,6 @@
 期望: order_query
 期望: product_detail
 期望: after_sales_manage(action=create, ticket_type=exchange)
-数据: success=true
 数据: 换货目标商品 product_detail 返回 processing_items 非空时，confirm 卡之前必须主动询问加工项（interact(choice, multiSelect=true)，透传 pageMeta 支持翻页；文本询问亦可，语义由 order_before 保证）
 数据: 用户选择加工项后，所选名称与计价写入换货方案汇总与工单 description；用户说『不需要加工项』才跳过
 数据: processing_items 为空时如实告知『该商品无可用加工项』后继续，不强求
@@ -95,9 +94,10 @@
 时序: order_query before after_sales_manage
 时序: processing_ask before after_sales_manage
 时序: processing_ask before interact[confirm]
+必须成功: after_sales_manage(create)
 ```
 真值: aftersales-flow.agent-create, aftersales-flow.flow
-溯源: 2026-09-08 新增（issue #3033 复盘 sess_50ff3e3c824c4a70）：换货选 2699 面料（绑 5 加工项）全程未提加工项；aftersales.md 补换货加工项确认规则 + EXAMPLES 例 4。2026-09-14 自包含化（issue #3568）：原单轮输入缺「先定位订单」轮 → 用例恒不可达被 skip（**从未执行**）→ 补 order_query 定位轮 + 答卡轮（repeat_until max=5），断言加两条 order_query 时序 + success=true，解 skip。**两次真 LLM 重放驱动迭代**：① run 34809750975 得 75% 且首版「静态文本选单轮」对不上 agent 的 choice 选单卡（该客户名下 6 笔订单）→ 改答卡轮；② run 34812509606 得 75% 且**换货工单已真实创建**（`ticketNo=AS-20260914-9002`）→ 首版 fallback「需要打孔加工」**替 agent 把加工项说了出来**、把缺口掩盖成「卡里有加工项」→ 改中性「好的」。③ run 34815074088（中性 fallback）得 0%，trace 显示**流程本身完全正确**：R2 product_detail（发现 2 条同名）→ 选品卡 → R3 **agent 主动发加工项 choice 卡** → R5 order_query → R8 after_sales_manage 建单成功；唯一失败项是我自己加的 `order_before[order_query before product_detail]`（**业务上不成立的过度约束**）→ 已删除该条，保留 `order_query before after_sales_manage` 与两条 `processing_ask` 时序 ｜ tags: exchange, processing_item, guided_flow
+溯源: 2026-09-08 新增（issue #3033 复盘 sess_50ff3e3c824c4a70）：换货选 2699 面料（绑 5 加工项）全程未提加工项；aftersales.md 补换货加工项确认规则 + EXAMPLES 例 4。2026-09-14 自包含化（issue #3568）：原单轮输入缺「先定位订单」轮 → 用例恒不可达被 skip（**从未执行**）→ 补 order_query 定位轮 + 答卡轮（repeat_until max=5），断言加两条 order_query 时序 + success=true，解 skip。**两次真 LLM 重放驱动迭代**：① run 34809750975 得 75% 且首版「静态文本选单轮」对不上 agent 的 choice 选单卡（该客户名下 6 笔订单）→ 改答卡轮；② run 34812509606 得 75% 且**换货工单已真实创建**（`ticketNo=AS-20260914-9002`）→ 首版 fallback「需要打孔加工」**替 agent 把加工项说了出来**、把缺口掩盖成「卡里有加工项」→ 改中性「好的」。③ run 34815074088（中性 fallback）得 0%，trace 显示**流程本身完全正确**：R2 product_detail（发现 2 条同名）→ 选品卡 → R3 **agent 主动发加工项 choice 卡** → R5 order_query → R8 after_sales_manage 建单成功；唯一失败项是我自己加的 `order_before[order_query before product_detail]`（**业务上不成立的过度约束**）→ 已删除该条，保留 `order_query before after_sales_manage` 与两条 `processing_ask` 时序。2026-09-15 断言侧升级（issue #3683，归因报告 §G2：能力缺口已被三条独立证据否证——`aftersales.md:27-31` 有规则 / run 34815074088 R3 agent 主动发加工项 choice 卡 / run 34817668476 最终断言集 1.00 pass）：① `data_checks: success=true` → `must_succeed:[after_sales_manage(action=create)]`（canonical 写成功断言；旧「C 端守卫全库校验」的阻塞理由已随 #3544/#3580 的 persona 收窄失效）；② 报告要求的 `db_verify[after_sales_ticket,expect_status=pending]` **未加**——create 路径 payload 键是 `id` 而核对器只认 `ticket_id`（探针 `create 形态 -> (None, {})`），照抄即永久假红，已登记为待补 runner 能力；③ 未放宽 `processing_ask` 时序、未回加已删的 `order_query before product_detail` ｜ tags: exchange, processing_item, guided_flow
 
 ### AS-008. C 端售后进度查询 - 仅限本人工单 + 拒绝跨用户/快递单号式越权查询 🔵
 ```
@@ -1118,7 +1118,7 @@
 你: 就是王建国
 你: 他那个窗帘订单
 你: 对，发货吧
-期望: customer_manage(action=query)
+期望: customer_manage(action=list)
 期望: order_query
 期望: order_manage(action=update_logistics)
 数据: customer_id 从 customer_manage 查询获得
@@ -1126,7 +1126,7 @@
 数据: 发货操作使用正确的 order_id
 ```
 真值: id-resolve.name, customer-list.search-fields, order.states
-溯源: eval M011 独有（模糊澄清 + 客户搜索真值） ｜ tags: fuzzy_input, progressive_clarification, adversarial
+溯源: eval M011 独有（模糊澄清 + 客户搜索真值）；2026-09-15 校准（issue #3669）：expectations 的 customer_manage(action=query) → **list**（该工具枚举无 query，原值级断言永不满足=假红 / 报了错也算过的假绿，见 .github/eval-coverage-baseline.yml 已销账的 action_dangling 条目） ｜ tags: fuzzy_input, progressive_clarification, adversarial
 
 ### CU-006. C 端租户域名路由 - 微信用户经企业域名自动关联租户并落 CRM 客户档案（#3011） 🔵
 ```
@@ -2238,7 +2238,7 @@
 你: [🤖 按上一轮卡片作答]
 你: [🤖 按上一轮卡片作答]
 期望: order_create
-数据: 加工项数量按计价方式确定：per_meter → 数量=面料米数（如打孔 8 元/米 × 3 米 → quantity=3、subtotal=24）；per_set/fixed → 数量=1；per_area → 宽×高
+数据: 加工项数量按计价方式确定（**仅 order_create 路径**；`calculate_price` 端点的 per_area 面积由 `dimensions.width/height` 承载、`quantity` 为计件数，见 #3672）：per_meter → 数量=面料米数（如打孔 8 元/米 × 3 米 → quantity=3、subtotal=24）；per_set/fixed → 数量=1；per_area → 宽×高
 数据: processing_info.processingItems 逐项含 {id, name, unitPrice, quantity, unit, pricingMethod, subtotal}，processingFee = 各项 unitPrice × quantity 之和
 数据: 订单确认/回复展示加工项含「名称+数量+金额」（如『打孔（罗马圈）3米 ¥24.00』）——数量可见可对账，禁止虚构每米几个的密度推导
 数据: 加工费 = 单价 × 数量（打孔 8 元/米 × 3 米 = 24 元），漏算/错算加工费 = 订单金额错误
@@ -3136,9 +3136,10 @@
 禁词: 尚未真正创建
 禁词: 未创建成功
 必填: product_manage(create) 字段 specifications, processing_item_configs.customPrice
+必须成功: product_manage(create)
 ```
 真值: product-sku-stock.low-stock
-溯源: 2026-09-08 新增（issue #3027）：sess_c1fce183dae24f22 复盘 — AI 预填表单展示了推理属性但 create 未落库（product_attributes 0 行）；加工项只传名称列表 → custom_price 全 NULL → 详情页 ¥0.00/米（单位硬编码）。三端修复：prompt 强制 specifications+processing_item_configs、admin-api finalPrice 回退、admin-web 渲染回退；2026-09-09 校准：补真实色卡图（原纯文本「根据这张图片」无 images，agent 要图走不下去）。2026-09-14 资产重写（#3518）：② 色卡识别结果轮由 `auto_select`（对 form 卡发「第一个」→ 表单从未提交）改为按 formFields 真实 key 回填的 `auto_respond`；③ 原文本占位符「颜色…门幅…」补真实值、加工项「波浪定型」换目录中真实存在的「韩式波浪折边」；④ 收尾改协作答卡轮 ｜ tags: product_create, specifications, processing_item, regression
+溯源: 2026-09-08 新增（issue #3027）：sess_c1fce183dae24f22 复盘 — AI 预填表单展示了推理属性但 create 未落库（product_attributes 0 行）；加工项只传名称列表 → custom_price 全 NULL → 详情页 ¥0.00/米（单位硬编码）。三端修复：prompt 强制 specifications+processing_item_configs、admin-api finalPrice 回退、admin-web 渲染回退；2026-09-09 校准：补真实色卡图（原纯文本「根据这张图片」无 images，agent 要图走不下去）。2026-09-14 资产重写（#3518）：② 色卡识别结果轮由 `auto_select`（对 form 卡发「第一个」→ 表单从未提交）改为按 formFields 真实 key 回填的 `auto_respond`；③ 原文本占位符「颜色…门幅…」补真实值、加工项「波浪定型」换目录中真实存在的「韩式波浪折边」；④ 收尾改协作答卡轮。2026-09-15 §14.1 回填（issue #3683）：补 `must_succeed:[product_manage(action=create)]`（原仅有 expectations 参数级匹配 + required_args，create 失败仍判过）；db_verify 未加——商品名与种子 `prod_eval_2699` 同名同价、`_fetch_product_configs` 取 keyword 首条无法区分本次新建与种子（见用例内注释） ｜ tags: product_create, specifications, processing_item, regression
 
 ### PR-020. 建品加工项价格落库盯防 — 自定义价须等于用户确认价（BFF 合并回归） 🔵
 ```
@@ -3149,10 +3150,11 @@
 期望: product_manage(action=create)
 数据: create 参数 processing_item_configs 含 customPrice=用户确认价（刺绣工艺 45）
 数据: 创建后商品详情 processingItemConfigs 的 finalPrice = 用户确认价（非默认价回退）——issue #3056 回归防线
+必须成功: product_manage(create)
 落库: product_by_name 盯防加工项价格0908 → processingItemConfigs.all.finalPrice>0; processingItemConfigs.刺绣工艺.finalPrice==45
 ```
 真值: product-sku-stock.create-flow, ai-chat.validate-input
-溯源: 2026-09-08 新增（issue #3056 复盘）：建品自定义加工价曾被 BFF create 的 ids 分支静默丢弃（45→30，读回退掩盖后复发）。required_args 只查 create args 层，本 case 用 db_verify 查落库层（finalPrice=确认价），args+落库双保险。2026-09-14 校准（#3518）：① 收尾裸文本「确认创建」改协作答卡轮（confirm 门禁：文字≠点卡；确认卡常在收尾轮才下发，需余量轮）；② 加工项「波浪定型」换目录中真实存在的「韩式波浪折边」 ｜ tags: product_create, processing_item, price, regression
+溯源: 2026-09-08 新增（issue #3056 复盘）：建品自定义加工价曾被 BFF create 的 ids 分支静默丢弃（45→30，读回退掩盖后复发）。required_args 只查 create args 层，本 case 用 db_verify 查落库层（finalPrice=确认价），args+落库双保险。2026-09-14 校准（#3518）：① 收尾裸文本「确认创建」改协作答卡轮（confirm 门禁：文字≠点卡；确认卡常在收尾轮才下发，需余量轮）；② 加工项「波浪定型」换目录中真实存在的「韩式波浪折边」。2026-09-15 §14.1 回填（issue #3683）：补 `must_succeed:[product_manage(action=create)]` —— db_verify 的落库断言可能被残留同名商品满足，「本次写真的成功了」此前无断言 ｜ tags: product_create, processing_item, price, regression
 
 ### PR-021. 单独 SKU 调价 - 修改某规格价格 🔵
 ```
