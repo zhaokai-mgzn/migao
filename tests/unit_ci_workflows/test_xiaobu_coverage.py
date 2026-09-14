@@ -413,7 +413,7 @@ class TestCoverageThicknessGate:
         改为**合成用例**驱动（本类已有 `_synth`），断言的机制逐字不变：
         仅 1 条用例的工具 → 进 `thin_tools`（只报告），不进 `uncovered`/`missing_positive`（阻塞字段）。
         """
-        cases = _synth({"id": "T-THIN", "expectations": [{"tool": "tool_x"}]})
+        cases = self._synth({"id": "T-THIN", "expectations": [{"tool": "tool_x"}]})
         rep = build_coverage_report(cases, "xiaobu", tools={"tool_x"})
         assert rep.thin_tools == ["tool_x"], (
             f"仅 1 条用例的工具必须进薄覆盖清单（只报告不阻塞），实得 {rep.thin_tools}")
