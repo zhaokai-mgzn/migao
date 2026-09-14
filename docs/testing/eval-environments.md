@@ -57,7 +57,8 @@ B 端 `prod_eval_2699` 因 `created_at` 更新而排在首条 → 用例的「�
 | 每周六 | 独立栈 | adversarial | 只追踪不阻塞 |
 | 里程碑 / 下结论前 | 独立栈 | **结论档**：全量 + 验收剧本 + 双 AI 交叉验证（GLM-5.3-Flash 复核）+ `completion_verdict` | 见 acceptance-protocol v1.3 §1.6/§1.7 |
 
-**完成判定**（T2，#3487）：`completion_verdict` = 确定性失败 0 + 关键旅程全过 + 已知波动台账放行。
+**完成判定**（T2，#3487）：`completion_verdict` = 必须处理的失败 0（除 `llm-noise` 外的一切
+score<1，含 `unstable`）+ 关键旅程全过 + **仅 `llm-noise`** 台账放行。
 完成 ≠ 全量 100% 绿（追 LLM 方差边际收益为负）。
 
 ## 三、生产上线门禁（#3503 预演 → 未来生产发布）

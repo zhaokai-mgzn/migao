@@ -1860,8 +1860,10 @@ def _last_round_error_verdict(results: list, expectations: list, data_checks: li
 # 目标：把「失败→人工 gh run rerun 拼人品」变成「机器判定」——
 #   - llm-noise     ：第二次（新 session）通过 → 噪声，自动放行并记 flake 台账；
 #   - reproducible  ：两次同指纹失败 → 确定性回归，禁止 rerun 掩盖（按签名排查）；
-#   - unstable      ：两次失败但指纹不同 → LLM 发散，标注待查（可 rerun 取证）；
+#   - unstable      ：两次皆败但指纹不同 → 成因不同，**默认阻塞**（见 _COMPLETION_RELEASED_CLASSES）；
 #   - infra         ：失败为传输/超时/5xx → 运行级重试（workflow 已整跑重试 1 次）。
+# ⚠️ 分类与**放行档**是两件事：分类回答"两次失败是不是同一件事"，放行档回答"这条红灯
+# 能不能按波动放过去"。`unstable` 分类仍然准确，但它**不再**是放行档（口径变更，见下）。
 _INFRA_MARKERS = (
     "transport", "connect", "timeout", "all connection attempts failed",
     " 502", " 503", " 504", "internal server error", "bad gateway",
@@ -2139,11 +2141,11 @@ def _failure_atom(exp, detail) -> str:
     return _expectation_atom(e, d)
 
 
-def _failure_signature(result: dict) -> str:
-    """失败指纹：**结构化失败身份**的集合（排序去重后 `||` 连接）→ 判定两次失败是否同根因。
+def _failure_atoms(result: dict) -> frozenset:
+    """一次失败尝试的**结构化失败身份集合**（`_failure_signature` 的集合形态）。
 
-    两次指纹一致 = 同一违反点确定性复现（`reproducible`，禁止 rerun 掩盖）；
-    不一致 = 各次不同违反点（`unstable`）。归一/归并规则与理由见本节顶部注释。
+    集合形态供 `_classify_attempts` 做**包含关系**判定（指纹子集 ⇒ 共有部分稳定复现，
+    AS-004 实证）；字符串形态供台账/日志人读。两者同源，不得各自实现。
     """
     atoms = set()
     for exp, detail in (result.get("failed") or []):
@@ -2153,13 +2155,24 @@ def _failure_signature(result: dict) -> str:
     err = result.get("last_error")
     if err:
         atoms.add("error(%s)" % _error_kind(err))
-    return "||".join(sorted(atoms))
+    return frozenset(atoms)
+
+
+def _failure_signature(result: dict) -> str:
+    """失败指纹：**结构化失败身份**的集合（排序去重后 `||` 连接）→ 判定两次失败是否同根因。
+
+    两次指纹一致 = 同一违反点确定性复现（`reproducible`，禁止 rerun 掩盖）；
+    一个是另一个的**真子集** = 共有部分稳定复现（同样 `reproducible`，见
+    `_classify_attempts` 的规则③）；其余不一致 = 各次不同违反点（`unstable`）。
+    归一/归并规则与理由见本节顶部注释。
+    """
+    return "||".join(sorted(_failure_atoms(result)))
 
 
 FLAKE_REASONS = {
     "llm-noise": "首次失败、新 session 重试通过（LLM 波动）",
     "reproducible": "两次同指纹失败（确定性回归，禁止 rerun 掩盖，按签名排查）",
-    "unstable": "两次失败但指纹不同（LLM 发散，标注待查）",
+    "unstable": "两次皆败但成因不同（无一次通过 —— 不按波动放行，默认阻塞）",
     "infra": "传输/超时/5xx（运行级，可整跑重试）",
     "no-retry-budget": "重试预算用尽，未做第二次尝试（结论未验证）",
 }
@@ -2198,6 +2211,9 @@ def build_flake_entry(case_id: str, title: str, classification: str,
     台账是「为什么放行这条红灯」的**唯一长期证据**（issue #2890），所以它必须自带
     两次尝试的指纹：只记第二次（通过那次）的指纹时，`llm-noise` 就等于"无证据的波动"——
     实测 OR-017 连续 3 跑都是这种形态，每次都因为看不到首跑指纹而无法归因（issue #3365）。
+
+    `released` 让台账**自证放行与否**（口径变更后 `unstable` 不再放行，靠分类名已读不出
+    处置）：值与 `_COMPLETION_RELEASED_CLASSES` 同源，契约守卫锁两者一致。
     """
     return {
         "case_id": case_id,
@@ -2206,20 +2222,38 @@ def build_flake_entry(case_id: str, title: str, classification: str,
         "reason": FLAKE_REASONS.get(classification, classification),
         "signature": _failure_signature(second),
         "first_attempt_signature": _failure_signature(first),
+        "released": classification in _COMPLETION_RELEASED_CLASSES,
         "run_id": run_id,
         "sha": sha,
     }
 
 
 def _classify_attempts(first: dict, second: dict) -> str:
-    """两次尝试（同用例、新 session）结果的波动分类。"""
+    """两次尝试（同用例、新 session）结果的波动分类。
+
+    规则（按序）：
+      ① 首跑通过 → `pass`；② 重试通过 → `llm-noise`（唯一可放行档）；
+      ③ 运行级错误 → `infra`；
+      ④ 两次指纹**相同** → `reproducible`；
+      ⑤ 两次指纹有**真子集**关系（`a ⊆ b` 或 `b ⊆ a`，且共有部分非空）→ `reproducible`
+         —— 共有部分**稳定复现**，多挂的那条只是当次额外抖出来的（AS-004 实证：
+         首败 = 「落库 closeReason 为空 + closeReason 不含期望值」两条 db_verify，
+         次败 = 这两条 **+** 一条 `after_sales_manage … unmatched expectation`；
+         机械按"指纹不同"判发散 ⇒ 真回归被洗成波动，且 `deterministic_failures` 漏计）；
+      ⑥ 其余（两次皆败、成因不同且无包含关系）→ `unstable`（不属放行档 ⇒ 默认阻塞）。
+    """
     if first.get("score", 0) >= 1.0:
         return "pass"
     if second.get("score", 0) >= 1.0:
         return "llm-noise"
     if _is_infra_error(first.get("last_error")) or _is_infra_error(second.get("last_error")):
         return "infra"
-    if _failure_signature(first) == _failure_signature(second):
+    a, b = _failure_atoms(first), _failure_atoms(second)
+    if a == b:
+        return "reproducible"
+    # 子集规则：**共有部分必须非空**（否则 `∅ ⊆ X` 恒真 → 空指纹会吞掉一切，
+    # 把"这次根本没记录到失败"洗成"稳定复现"）。
+    if (a & b) and (a <= b or b <= a):
         return "reproducible"
     return "unstable"
 
@@ -4856,7 +4890,7 @@ async def run_suite(cases, label: str, classify: bool = True, retry_budget: int 
             cls_note = {
                 "llm-noise": " 🎲噪声·重试放行(已记账)",
                 "reproducible": " 🔬复现型回归·禁止rerun",
-                "unstable": " 🧬不稳定·两次不同指纹",
+                "unstable": " 🧬两次皆败·成因不同(阻塞)",
                 "infra": " 🌐运行级故障",
             }.get(classification, "")
             print(f"  {icon} {status} {case.id}: {case.title[:50]}{retry_note}{cls_note}")
@@ -5130,8 +5164,16 @@ KEY_JOURNEYS_XIAOBU = (
     "OR-012", "CH-010", "OR-017", "KN-001", "CH-008", "CH-024",
 )
 
-# 放行档：已在 flake 台账留痕的 LLM 波动（分类由 run_suite 的 _classify_attempts 给出）
-_COMPLETION_RELEASED_CLASSES = frozenset({"llm-noise", "unstable"})
+# 放行档（**门禁口径**，与"分类"分离）：**只有**「首次失败、新 session 重试通过」
+# 才是可放行的 LLM 波动 —— 一次都没通过时没有"波动"证据，只有"这个用例当下不工作"。
+#
+# ⚠️ 口径变更（待裁定，见 PR）：`unstable`（两次皆败、**成因不同**）自本次起**不再放行**。
+# 它只证明"两次失败不是同一件事"，**没有**证明"其中有一次是对的"；实证 OR-014
+# （run 34841029062，台账 `unstable`）：一次"下单成功但金额错 168≠198"，一次
+# "order_create 从未被调用" —— 2/2 都真失败，按"LLM 发散可放行"处置站不住。
+# 影响面（离线重放 5 个真实 run 的 summary/flakes）：1 条历史结论翻转
+# （run 34849029334 xiaobu `completion.ok` true→false，来自 OR-026）。
+_COMPLETION_RELEASED_CLASSES = frozenset({"llm-noise"})
 
 
 def completion_verdict(results: list, key_journey_ids: tuple = ()) -> dict:
@@ -5140,11 +5182,13 @@ def completion_verdict(results: list, key_journey_ids: tuple = ()) -> dict:
     旧闭环（B 端 80 轮差距分析实证）：全量复测是唯一判据，最后 5-10% 是 LLM 方差，
     追 100% 边际收益为负（三测自述「逐个校准 case 追波动边际收益递减」）。
     本判定把「可不可以下结论」变成可判定的谓词：
-      - **确定性失败**（reproducible / error / no-retry-budget / infra / 无分类证据且
-        score<1）= 代码缺陷或本轮不可信 → 必须处理，未完成；
+      - **必须处理的失败（阻塞）**：除 `llm-noise` 外的一切 score<1 ——
+        reproducible / unstable / error / no-retry-budget / infra / 无分类证据。
+        `unstable`（两次皆败但成因不同）**曾与 `llm-noise` 一并放行**，现改为阻塞：
+        两次都没通过就没有"波动"证据（实证 OR-014：2/2 真失败，成因还不同）；
       - **关键旅程失败**（key_journey_ids 中 score<1）= P0 旅程不过 → 未完成
         （波动也不放行）；
-      - **已知波动**（llm-noise / unstable，runner 已记入 flake 台账）→ 放行但列出。
+      - **放行**：`llm-noise`（首次失败、新 session 重试通过，runner 已记入 flake 台账）。
     判定不改 _ci_verdict：PR 门禁（smoke/normal 全绿）与结论档（本判定）各司其职。
 
     Returns:
@@ -5171,14 +5215,14 @@ def completion_verdict(results: list, key_journey_ids: tuple = ()) -> dict:
     total = len(results)
     passed = sum(1 for r in results if r.get("score", 0) >= 1.0)
     if ok:
-        parts = ["确定性失败=0，关键旅程全过"]
+        parts = ["必须处理的失败=0，关键旅程全过"]
         if flake_released:
-            parts.append(f"放行波动 {len(flake_released)} 条（台账）")
+            parts.append(f"放行波动 {len(flake_released)} 条（台账，仅 llm-noise）")
         reason = "，".join(parts) + f"（{total} 条，{passed} 通过）"
     else:
         parts = []
         if deterministic:
-            parts.append(f"确定性失败 {len(deterministic)} 条: {', '.join(deterministic)}")
+            parts.append(f"必须处理的失败 {len(deterministic)} 条: {', '.join(deterministic)}")
         if journey_fail:
             parts.append(f"关键旅程失败 {len(journey_fail)} 条: {', '.join(journey_fail)}")
         reason = "；".join(parts)
