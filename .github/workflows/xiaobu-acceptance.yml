@@ -265,16 +265,25 @@ jobs:
               --wait-timeout 300 postgres redis admin-api ai-agent-service 2>&1 | tail -20
           fi
 
-      - name: "Seed C 端评测业务数据（issue #3270）"
+      - name: "Seed 评测业务数据（C 端 #3270 + B 端 #3511）"
         # 全新 bootstrap 空库下，agent 搜不到商品 → 反复重试 product_search →
         # 从不进入 product_detail（PR-003 等依赖数据的用例必然失败，且行为本身合理）。
         # 注入最小业务数据：商品/颜色/SKU/加工项/加工项关联（幂等，可重复执行）。
+        # B 端（persona=mibao）叠加 mibao_eval_seed.sql：2699 商品/刺绣工艺/客户张三/
+        # 员工王五 —— B 端首跑（run 34804430769）14 条阻塞中多数是这些点名数据缺失
+        # （#3496 归因，"看着像能力缺陷，实为数据层缺口"）。
         env:
           DEV_SERVICE_TOKEN: diagnostics-only-placeholder
         run: |
           docker compose -f deploy/docker-compose.yml exec -T postgres \
             psql -v ON_ERROR_STOP=1 -U app_user -d ai_customer_service \
             < tests/agent_eval/fixtures/xiaobu_eval_seed.sql
+          if [ "${{ github.event.inputs.persona || 'xiaobu' }}" = "mibao" ]; then
+            echo "── 叠加 B 端种子（mibao_eval_seed.sql）──"
+            docker compose -f deploy/docker-compose.yml exec -T postgres \
+              psql -v ON_ERROR_STOP=1 -U app_user -d ai_customer_service \
+              < tests/agent_eval/fixtures/mibao_eval_seed.sql
+          fi
           echo "── 数据核对 ──"
           docker compose -f deploy/docker-compose.yml exec -T postgres \
             psql -U app_user -d ai_customer_service -tAc \
