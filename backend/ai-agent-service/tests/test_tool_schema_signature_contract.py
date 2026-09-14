@@ -1,6 +1,6 @@
 """
-工具契约扫描 — parameters schema ↔ execute() 签名一致性
-# case_ids: PP-001, PR-010, OR-001
+工具契约扫描 — parameters schema ↔ execute() 签名一致性 / description ↔ schema 参数一致性
+# case_ids: PP-001, PR-010, OR-001, PP-006
 
 防「schema 声明了参数但 execute 签名没有接收」导致的 TypeError 静默崩溃。
 生产事故（sess_fba38395ed094a9d 系列，issue #2892/#2894）：
@@ -130,3 +130,86 @@ def test_detector_catches_schema_without_signature():
     assert not has_kwargs
     missing = [k for k in props if _norm(k) not in sig_params]
     assert missing == ["extra_field"], f"检测器应识别出 extra_field 缺失，得到 {missing}"
+
+
+# ── ① 契约层（续）：description 点名的参数必须存在于 schema properties ──
+#
+# 回归（issue #3543 / acceptance/2026-09-14/replay-triage §2.3）：
+# processing_item_manage 的 description 写「调 processing_item_manage(action=create_processing_item,
+# name, category_id, pricing_method)」，但 parameters.properties 里**没有** pricing_method，
+# execute() 也不接收 → LLM 永远拿不到这个参数 → 创建请求缺 admin-api @NotBlank 的 pricingMethod
+# → Bean Validation 422「参数校验失败」→ B 端「新增加工项」完全不可用，且单测（只断言 categoryId）
+# 与评测用例（只断言"工具被调用过"）双双放过。
+# 规则：description 中以「本工具名(关键字参数…)」形式点名的参数，必须都在 schema 里声明。
+
+_DOC_ARG_IDENT_RE = re.compile(r"^[a-z_][a-z0-9_]*$")
+
+
+def _documented_args(tool_name: str, description: str) -> list[str]:
+    """提取 description 里「<tool_name>(k=v, name, ...)」形式点名的参数名。
+
+    只解析**含 `=` 的参数列表**（关键字参数式调用描述）：不含 `=` 的括号组是
+    action 值说明（如 `employee_manage(list)` 的 `list` 是 action，不是参数），
+    中文说明（如 `list_categories(查分类树,安全)`）由 ASCII 标识符过滤自然排除。
+    """
+    args: list[str] = []
+    for m in re.finditer(r"\b" + re.escape(tool_name) + r"\s*\(([^()]*)\)", description or ""):
+        group = m.group(1)
+        if "=" not in group:
+            continue
+        for part in group.split(","):
+            key = part.strip().split("=", 1)[0].strip()
+            if _DOC_ARG_IDENT_RE.match(key):
+                args.append(key)
+    return args
+
+
+def _scan_description_schema_drifts() -> list[dict]:
+    """扫描全部工具：description 点名的参数必须 ⊆ schema properties。"""
+    drifts = []
+    for cls in _iter_tool_classes():
+        props = set((getattr(cls, "parameters", {}) or {}).get("properties", {}))
+        documented = _documented_args(cls.name, getattr(cls, "description", "") or "")
+        missing = sorted({a for a in documented if _norm(a) not in {_norm(p) for p in props}})
+        if missing:
+            drifts.append({"tool": cls.name, "missing_keys": missing})
+    return drifts
+
+
+def test_documented_params_in_description_exist_in_schema():
+    """全量工具：description 里点名的参数必须存在于 schema properties。
+
+    防「描述要求了 schema 不存在、execute 也不接收的参数」——LLM 按描述传参
+    要么被静默丢弃、要么 TypeError；而工具只能拿到缺参的调用（issue #3543）。
+    """
+    drifts = _scan_description_schema_drifts()
+    assert drifts == [], (
+        "以下工具 description 点名了 schema properties 里不存在的参数，"
+        "LLM 按描述传参将丢失或被拒：\n"
+        + "\n".join(f"  🔴 {d['tool']}: {d['missing_keys']}" for d in drifts)
+    )
+
+
+def test_description_drift_detector_catches_missing_property():
+    """检测器自身有效性：description 点名 extra_field 但 properties 无 → 必被识别。"""
+    class _DriftTool(BaseTool):
+        name = "test_description_drift"
+        description = "调 test_description_drift(action=create, item_id, ghost_field) 创建。"
+        parameters = {
+            "type": "object",
+            "properties": {
+                "action": {"type": "string"},
+                "item_id": {"type": "string"},
+            },
+            "required": ["action"],
+        }
+
+        async def execute(self, context, action: str, item_id: str = ""):
+            from app.tools.base import ToolResult
+            return ToolResult(success=True)
+
+    documented = _documented_args(_DriftTool.name, _DriftTool.description)
+    props = {_norm(p) for p in _DriftTool.parameters["properties"]}
+    missing = [a for a in documented if _norm(a) not in props]
+    assert documented == ["action", "item_id", "ghost_field"]
+    assert missing == ["ghost_field"]
