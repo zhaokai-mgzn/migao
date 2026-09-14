@@ -79,8 +79,10 @@ class OrderCreateTool(BaseTool):
         #   落库总额 311.4=71.4+240（服务端按 processingItems 的 unitPrice×quantity 重算），
         #   而模型声明的 processingFee=252（把按面积的刺绣工艺算成 30×8.4）。同一个订单两份数字。
         "【铁律·加工数量口径】processingItems[i].quantity 必须按 pricingMethod 推导，不许凭感觉："
-        "per_meter(按米)=面料米数；per_area(按面积)=门幅(米)×面料米数；per_set(按套)=套数；"
-        "fixed(一口价)=1（单价即该项总价）。"
+        "per_meter(按米)=面料米数；per_area(按面积)=门幅(米)×面料米数（㎡，**可为小数**，如 2.8×3=8.4）；"
+        "per_set(按套)=套数；fixed(一口价)=1（单价即该项总价）。"
+        "items[i].quantity 同样是**可为小数的正数**（per_meter=米数、per_set=1、per_area=宽×高），"
+        "服务端按 DECIMAL(10,2) 保真落库，不得自行取整。"
         "**processingFee 必须等于 Σ(processingItems[i].unitPrice × quantity)**（容差 0.01）——"
         "服务端只按这个明细口径计总额，两处不一致时顾客在确认卡上看到的总额 ≠ 实际落库/收款金额。"
         "【反例】跳过 SKU 选择直接下单；把 sellingMethod/doorWidth 平铺进 items；"
@@ -133,9 +135,13 @@ class OrderCreateTool(BaseTool):
                             "description": "商品名称（必填，不得为空；与 product_detail 返回一致）",
                         },
                         "quantity": {
-                            "type": "integer",
+                            "type": "number",
                             "exclusiveMinimum": 0,
-                            "description": "数量（必填，必须为正整数；负数/0 会被本地拒绝）",
+                            "description": (
+                                "数量（必填，必须为正数，可为小数；负数/0 会被本地拒绝）。"
+                                "口径按计价方式：per_meter=面料米数（如 2.5）；"
+                                "per_set=1；per_area=宽×高（㎡，如 2.8×3=8.4）；fixed=1"
+                            ),
                         },
                         "unit_price": {
                             "type": "number",
@@ -188,7 +194,14 @@ class OrderCreateTool(BaseTool):
                                             "id": {"type": "string"},
                                             "name": {"type": "string"},
                                             "unitPrice": {"type": "number", "minimum": 0},
-                                            "quantity": {"type": "integer", "minimum": 0},
+                                            "quantity": {
+                                                "type": "number",
+                                                "minimum": 0,
+                                                "description": (
+                                                    "加工数量，按 pricingMethod 推导：per_meter=面料米数；"
+                                                    "per_area=宽×高（㎡，可为小数如 8.4）；per_set=套数；fixed=1"
+                                                ),
+                                            },
                                             "unit": {"type": "string"},
                                             "pricingMethod": {
                                                 "type": "string",
@@ -236,12 +249,18 @@ class OrderCreateTool(BaseTool):
 
     @staticmethod
     def _reject_quantity(i: int, raw: Any) -> Optional[ToolResult]:
-        """数量校验（issue #3586）：必须是正整数（拒绝 0 / 负数 / 非整数小数）。
+        """数量校验（issue #3586）：必须是**正数**（拒绝 0 / 负数），**允许小数**（issue #3666）。
 
         为什么在工具层 fail-fast：`order_items.quantity` 是**金额与库存的乘数**——
         负数量会算出**负金额**落库（下游 `createOrder` 不做正负判断），
         0 数量产出 0 元明细；且 Agent 路径的 admin-api 入参（AgentOrderItem）
         **未做 Bean Validation**，等 HTTP 回来才拒绝等于白跑一轮且提示不可行动。
+
+        issue #3666 起**不再要求整数**：数量口径按计价方式（docs/testing/
+        acceptance-protocol.md:225）——per_meter=米数、per_set=1、per_area=宽×高（㎡）。
+        per_area 的合法面积就是小数（门幅 2.8m × 3m = 8.4 ㎡，刺绣工艺 30 元/㎡
+        → 252.00 元），旧实现"拒绝小数 + 服务端截断成整数"会少收 12.00 元；
+        服务端 `order_items.quantity` 已同步放宽为 DECIMAL(10,2)。
         """
         value = OrderCreateTool._parse_positive_number(raw)
         if value is None:
@@ -250,10 +269,11 @@ class OrderCreateTool(BaseTool):
                 error=f"商品明细第 {i + 1} 项数量无效",
                 message=(
                     f"商品明细第 {i + 1} 项的数量「{raw}」不是有效数字。"
-                    f"数量必须是**正整数**（如 3、10），不要带单位或写成文字。"
+                    f"数量必须是**正数**（如 3、2.5、8.4），不要带单位或写成文字。"
                 ),
                 suggestion=(
-                    "请把 quantity 改成正整数（按米数/件数取整，如 3 米 → 3）；"
+                    "请把 quantity 改成正数（按计价方式给数：per_meter 给米数如 2.5，"
+                    "per_area 给宽×高如 8.4，per_set/fixed 给 1；"
                     "若同一商品有多个规格，请拆成多行而不是把数量写在一行里"
                 ),
             )
@@ -267,23 +287,11 @@ class OrderCreateTool(BaseTool):
                     f"因此系统在调用服务端**之前**就拒绝。"
                 ),
                 suggestion=(
-                    f"请把 quantity 改成正整数：顾客想要 {abs(value):g} 米就填 {abs(value):g}，"
+                    f"请把 quantity 改成正数：顾客想要 {abs(value):g} 米就填 {abs(value):g}，"
                     "不要用 -1 之类的占位值表示退款或扣减（退款请用 order_manage 的 refund）"
                 ),
             )
-        if value != int(value):
-            return ToolResult(
-                success=False,
-                error=f"商品明细第 {i + 1} 项数量必须为整数",
-                message=(
-                    f"商品明细第 {i + 1} 项的数量是 {raw}，但订单数量只支持**整数**（最小 1）。"
-                    f"小数会被服务端截断（{raw} → {int(value)}），造成少收钱/少发货。"
-                ),
-                suggestion=(
-                    f"请把数量取整为整数（例如 {value:g} → {max(1, round(value))}）；"
-                    "不足 1 米的零头请与顾客确认后按整数计"
-                ),
-            )
+        # issue #3666：小数数量是**合法**的（per_meter 米数 / per_area 面积），不再拒绝
         return None
 
     @staticmethod
@@ -790,12 +798,13 @@ class OrderCreateTool(BaseTool):
             # 对抗编程：透传 LLM 提供的所有字段，避免静默丢弃 productId/width/height/processingInfo
             items_payload = []
             for item in items:
-                # 数值已在上方 _validate_item_value_bounds 校验（正整数/非负金额），
+                # 数值已在上方 _validate_item_value_bounds 校验（正数/非负金额），
                 # 这里用解析值而非裸 int()/float() —— 让 "3米" 这类带单位输入落成 3，
                 # 避免 int("3米") 抛 ValueError 走异常兜底（错误提示不可行动）。
+                # issue #3666：quantity 保留小数（旧 int() 会把 per_area 的 8.4 截断成 8）。
                 entry: Dict[str, Any] = {
                     "productName": item["product_name"],
-                    "quantity": int(self._parse_positive_number(item["quantity"])),
+                    "quantity": self._parse_positive_number(item["quantity"]),
                     "unitPrice": self._parse_positive_number(item["unit_price"]),
                     "subtotal": self._parse_positive_number(item["subtotal"]),
                 }

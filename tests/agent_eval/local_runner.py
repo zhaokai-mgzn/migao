@@ -3092,7 +3092,9 @@ async def check_db_verify(token: str, db_verify: list, results: list | None = No
                 if nm:
                     by_name.setdefault(nm, 0)
                     try:
-                        by_name[nm] += int((it or {}).get("quantity") or 0)
+                        # issue #3666：order_items.quantity 已放宽为 DECIMAL(10,2)
+                        # （per_meter 米数 / per_area 面积可为小数），断言用 float 保真
+                        by_name[nm] += float((it or {}).get("quantity") or 0)
                     except (TypeError, ValueError):
                         pass
             for want in spec.get("expect_products") or []:
@@ -3106,7 +3108,7 @@ async def check_db_verify(token: str, db_verify: list, results: list | None = No
             # 前者是数量值算错、后者是重复行累加（工具层已加 fail-closed 守卫）。
             # 没有这个诊断，失败信息只会说"9 ≠ 3"，排查只能靠猜。
             _lines = " + ".join(
-                f"{str((it or {}).get('productName') or '?')}×{int((it or {}).get('quantity') or 0)}"
+                f"{str((it or {}).get('productName') or '?')}×{float((it or {}).get('quantity') or 0):g}"
                 f"@{float((it or {}).get('unitPrice') or 0):g}"
                 for it in items)
             _line_count = len(items)
@@ -3116,7 +3118,7 @@ async def check_db_verify(token: str, db_verify: list, results: list | None = No
                 if hit is None:
                     continue
                 try:
-                    want_q = int(q)
+                    want_q = float(q)
                 except (TypeError, ValueError):
                     continue
                 if by_name[hit] != want_q:

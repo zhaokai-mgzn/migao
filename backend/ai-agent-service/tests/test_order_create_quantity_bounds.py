@@ -2,7 +2,8 @@
 
 缺陷（#3586）：`items[].quantity` 只检查「字段存在」，**不检查正负** → 负数量可落库。
 证据链：
-- 工具侧 `int(item["quantity"])` 直转，schema 只声明 `"type": "integer"`（无下限）；
+- 工具侧 `int(item["quantity"])` 直转，schema 只声明 `"type": "integer"`（无下限）
+  （issue #3666 已把数量放宽为 `"type": "number"` + 服务端 DECIMAL(10,2)，小数合法）；
 - 下游 `OrderService.createOrder` 不做正负判断 → `unitPrice × 负数` 算出**负金额**落库，
   且「需求量 ≤ 库存」对负需求恒真 → 库存校验被绕过；
 - Agent 路径的 admin-api 入参（`AgentOrderCreateRequest.AgentOrderItem`）**无 Bean Validation**，
@@ -25,7 +26,7 @@
 4. 静态不变式：写工具的金额/数量/尺寸数值参数必须声明下限、枚举型参数必须声明 `enum`
    （防第 N 次复发，两条锁各带哨兵）。
 """
-# case_ids: OR-024, OR-016
+# case_ids: OR-024, OR-016, OR-028
 import importlib
 import inspect
 import pkgutil
@@ -342,7 +343,8 @@ class TestOrderCreateQuantityBounds:
         suggestion = result.suggestion or ""
         assert suggestion, "拒绝路径必须带 suggestion（否则 LLM 无法自愈）"
         # 可行动 = 指明正确取值形态 + 说明负数为什么不行（不是「参数错误」这类空话）
-        assert "正整数" in suggestion
+        # issue #3666：口径改为「正数」（小数合法），断言同步
+        assert "正数" in suggestion
         if bad_qty < 0:
             assert "金额变成负数" in (result.message or "") or "负数" in suggestion
         mock_client.post.assert_not_called()
@@ -363,28 +365,45 @@ class TestOrderCreateQuantityBounds:
             )
             assert mock_client.post.await_count == 0
 
-    @pytest.mark.parametrize("bad_qty,expect_kw", [
-        (2.5, "整数"),
-        ("2.5米", "整数"),
+    @pytest.mark.parametrize("qty,expected", [
+        (2.5, 2.5),
+        ("2.5米", 2.5),
+        (8.4, 8.4),
+        ("8.4", 8.4),
     ])
     @patch("app.tools.order_create.get_admin_api_client")
-    async def test_fractional_quantity_rejected_not_truncated(
-        self, mock_get_client, bad_qty, expect_kw, tool, agent_ctx
+    async def test_fractional_quantity_preserved_not_truncated(
+        self, mock_get_client, qty, expected, tool, agent_ctx
     ):
-        """小数数量必须**拒绝**而不是静默截断（int(2.5)=2 → 少收钱/少发货）"""
+        """小数数量必须**保真透传**，不得拒绝也不得截断（issue #3666）。
+
+        口径：per_meter=米数（2.5 米）、per_area=宽×高（2.8×3=8.4 ㎡）。
+        旧行为（拒绝小数 + 服务端 Integer 截断）会让 8.4 ㎡ 落成 8 ㎡ →
+        30 元/㎡ 的刺绣工艺从 252.00 元变 240.00 元 = **少收 12.00 元**。
+        """
         mock_client = AsyncMock()
+        mock_client.post = AsyncMock(
+            return_value={"success": True, "data": {"id": "ORD-3666", "orderNo": "ORD-3666"}}
+        )
         mock_get_client.return_value = mock_client
 
         result = await tool.execute(
             context=agent_ctx,
             customer_name="张三",
             customer_phone="13800138000",
-            items=_items(quantity=bad_qty),
+            items=[{
+                "product_name": "刺绣窗帘",
+                "quantity": qty,
+                "unit_price": 100.0,
+                "subtotal": 840.0,
+            }],
         )
 
-        assert result.success is False, "2.5 米被静默截断成 2 米会让顾客少收货/商家少收钱"
-        assert expect_kw in (result.error + (result.message or ""))
-        mock_client.post.assert_not_called()
+        assert result.success is True, f"小数数量被误拦：{qty} → {result.error} {(result.message or '')}"
+        sent = mock_client.post.await_args.kwargs["json_data"]
+        assert sent["items"][0]["quantity"] == pytest.approx(expected), (
+            f"数量必须保真透传（{qty} → {expected}），不得截断成 {int(expected)}"
+        )
 
     @pytest.mark.parametrize("bad_qty", ["abc", "", True, float("nan"), float("inf")])
     @patch("app.tools.order_create.get_admin_api_client")
@@ -533,7 +552,7 @@ class TestOrderCreateValidInputsStillPass:
     async def test_unit_suffixed_quantity_sent_as_integer(
         self, mock_get_client, tool, agent_ctx
     ):
-        """「3米」→ 请求体 quantity=3（int），不得把「3米」原样发给 Java Integer"""
+        """「3米」→ 请求体 quantity=3（数值），不得把「3米」原样发给服务端 BigDecimal"""
         mock_client = AsyncMock()
         mock_client.post = AsyncMock(
             return_value={"success": True, "data": {"id": "ORD-3586", "orderNo": "ORD-3586"}}
