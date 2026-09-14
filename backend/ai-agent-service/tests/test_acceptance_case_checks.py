@@ -9,7 +9,7 @@
   属「工具调用全对、用户看到的话是错的」类缺陷，PR-019 用本断言拦截。
 - interactive 事件采集：send_message 捕获 SSE interactive 事件（卡片证据）。
 """
-# case_ids: OR-016, AS-007, PR-019, CH-010, CH-024, OR-021, OR-022, PR-024, CH-025, AS-004
+# case_ids: OR-016, AS-007, PR-019, CH-010, CH-024, OR-021, OR-022, PR-024, CH-025, AS-004, PP-006, PR-021, HR-003
 import asyncio
 from types import SimpleNamespace
 import importlib.util
@@ -747,6 +747,146 @@ class TestDbVerifyAfterSalesTicket:
         issues = self._run(spec, {"status": "closed", "closedAt": "2026-09-14T09:30:00+08:00",
                                   "closeReason": None})
         assert any("closeReason" in i for i in issues)
+
+
+class TestOutputVerifyActionScope:
+    """`output_verify` 的 `action` 过滤（issue #3544 收口，run 34809483940 实证）。
+
+    多 action 工具（`processing_item_manage` 有 9 个动作）里，**别的 action** 先成功就会
+    把它的 payload 顶给 output_verify → 字段名不撞=假红（PP-006 实测）、撞上=假绿。
+    """
+
+    def _results(self):
+        return [
+            # R1：非目标 action（list_categories）先成功 —— payload 只有 categories
+            {"__round": 1,
+             "tool_calls": [{"name": "processing_item_manage",
+                             "args": {"action": "list_categories"}}],
+             "tool_results": [{"tool": "processing_item_manage",
+                               "result": {"success": True,
+                                          "data": {"categories": [{"id": "pcat_eval_curtain"}]}}}]},
+            # R2：目标 action（create_processing_item）成功 —— 这才是要核对的产出
+            {"__round": 2,
+             "tool_calls": [{"name": "processing_item_manage",
+                             "args": {"action": "create_processing_item"}}],
+             "tool_results": [{"tool": "processing_item_manage",
+                               "result": {"success": True,
+                                          "data": {"id": "pi_x", "name": "测试加工",
+                                                   "pricingMethod": "per_meter",
+                                                   "unitPrice": 8.0}}}]},
+        ]
+
+    def test_action_scoped_picks_target_payload(self):
+        """声明 action → 取目标 action 的 payload（修复前会取到 R1 的 categories → 假红）。"""
+        issues = lr.check_output_verify(self._results(), [{
+            "tool": "processing_item_manage", "action": "create_processing_item",
+            "expect": {"name": "测试加工", "pricingMethod": "per_meter"},
+        }])
+        assert issues == [], issues
+
+    def test_without_action_still_reads_first_payload(self):
+        """不声明 action → 保持旧语义（取首个成功 payload）—— 这是**为什么必须加 L0 不变式**
+        而不是把「不声明」也当对：旧语义在多 action 工具上就是错的靶子。"""
+        issues = lr.check_output_verify(self._results(), [{
+            "tool": "processing_item_manage", "expect": {"name": "测试加工"},
+        }])
+        assert any("没有字段 'name'" in i for i in issues), issues
+
+    def test_declared_action_never_succeeds_fails_closed(self):
+        """声明了 action 但该 action 从未成功 → 判失败，不退回「随便找个 payload」。"""
+        issues = lr.check_output_verify(self._results(), [{
+            "tool": "processing_item_manage", "action": "update_item",
+            "expect": {"name": "测试加工"},
+        }])
+        assert any("找不到成功调用的结果" in i and "action=update_item" in i for i in issues), issues
+
+    def test_single_action_tool_unchanged(self):
+        """单 action 工具（curtain_calc / sku_update）行为不变（不因新增参数而误伤）。"""
+        results = [{"__round": 1,
+                    "tool_calls": [{"name": "sku_update", "args": {"price": 150}}],
+                    "tool_results": [{"tool": "sku_update",
+                                      "result": {"success": True,
+                                                 "data": {"new_price": 150}}}]}]
+        assert lr.check_output_verify(results, [{
+            "tool": "sku_update", "expect": {"new_price": 150}}]) == []
+
+
+class TestDbVerifyEmployee:
+    """`db_verify[employee]` 落库核对器（issue #3544 收口 / HR 用例包 #3593 需求）。
+
+    `must_succeed`（调用成功）+ `required_args`（参数发对）都拦不住**接收侧静默忽略**
+    （#3550 真身：admin-api 丢掉 phone/roleIds 仍回 200）—— 只有读**落库行**才能定胜负。
+    """
+
+    def _results(self, success=True):
+        return [{"__round": 1,
+                 "tool_calls": [{"name": "employee_manage",
+                                 "args": {"action": "update"}}],
+                 "tool_results": [{"tool": "employee_manage",
+                                   "result": {"success": success, "data": {"id": "u1"}}}]}]
+
+    def _run(self, spec, employee, success=True):
+        import unittest.mock as mock
+
+        async def fake_fetch(token, emp_id="", name=""):
+            return employee, ("" if employee else "keyword 命中 0 条")
+
+        with mock.patch.object(lr, "_fetch_employee", new=fake_fetch):
+            return asyncio.run(lr.check_db_verify("tok", [spec], self._results(success)))
+
+    _SPEC = {"fetch": "employee", "name": "王五",
+             "expect_fields": {"phone": "13700137001",
+                               "role_code": "admin"}}
+
+    def test_missing_expect_fields_is_config_error(self):
+        """缺/空 expect_fields = 配置错误（不核对任何字段等于空转）→ 报错。"""
+        issues = self._run({"fetch": "employee", "name": "王五"}, {"id": "u1"})
+        assert any("expect_fields" in i for i in issues), issues
+
+    def test_record_not_found_fails_not_skips(self):
+        """取不到记录 → 判失败而非跳过（#3386 口径：防「空转通过」）。"""
+        issues = self._run(self._SPEC, None)
+        assert any("查不到员工/用户" in i and "判失败而非跳过" in i for i in issues), issues
+
+    def test_no_successful_write_call_fails(self):
+        """没有成功的写调用 → 没有变更事实可核对 → 判失败而非跳过。"""
+        issues = self._run(self._SPEC, {"id": "u1", "phone": "13700137001"}, success=False)
+        assert any("找不到 employee_manage 的成功调用" in i for i in issues), issues
+
+    def test_field_mismatch_fails(self):
+        """下发对 + 调用成功 + 库里没变 = 静默忽略（#3550 形态）→ 判失败。"""
+        issues = self._run(self._SPEC, {"id": "u1", "name": "王五",
+                                       "phone": "13700137000",           # 旧值：没被更新
+                                       "role": "employee"})
+        assert any("落库 phone" in i for i in issues), issues
+        assert any("落库 role_code" in i for i in issues), issues
+
+    def test_all_fields_match_passes(self):
+        """字段全部相符 → 通过。"""
+        issues = self._run(self._SPEC, {"id": "u1", "name": "王五",
+                                       "phone": "13700137001", "role": "admin"})
+        assert issues == [], issues
+
+    def test_role_code_alias_and_list_value(self):
+        """`role_code` 支持跨层改名（roles[].code 列表形态），任一元素命中即通过。"""
+        issues = self._run(self._SPEC, {"id": "u1", "name": "王五",
+                                       "phone": "13700137001",
+                                       "roles": [{"id": 3, "name": "管理员", "code": "admin"}]})
+        assert issues == [], issues
+
+    def test_field_absent_fails_with_actual_fields(self):
+        """期望字段在落库记录里根本不存在（读错字段/跨层改名未登记）→ 判失败并列出实际字段。"""
+        issues = self._run({"fetch": "employee", "name": "王五",
+                            "expect_fields": {"department": "车间"}},
+                           {"id": "u1", "name": "王五"})
+        assert any("没有字段 'department'" in i for i in issues), issues
+
+    def test_null_field_reports_empty_not_missing(self):
+        """字段存在但为 null → 报「落库为空」（与「读错字段」区分：修法不同）。"""
+        issues = self._run({"fetch": "employee", "name": "王五",
+                            "expect_fields": {"phone": "13700137001"}},
+                           {"id": "u1", "name": "王五", "phone": None})
+        assert any("落库字段 'phone' 为空" in i for i in issues), issues
 
 
 class TestCiVerdict:

@@ -2086,6 +2086,98 @@ async def _fetch_ticket_detail(token: str, ticket_ref: str) -> dict | None:
 # `output_verify.expect` 里的特殊哨兵：断言该字段**非空**（用于 warning 这类"有意为之"的文本）
 OUTPUT_NONEMPTY = "__nonempty__"
 
+# ── 员工/用户落库核对（`db_verify[employee]`，issue #3544 收口 / HR 用例包 #3593 需求）──
+# 用例侧字段名 → admin-api `AdminUserController.toEmployeeMap` 实际暴露的路径。
+# 为什么需要改名映射：跨层字段名不一致是这轮反复踩到的缺陷类（#3540 reason/remark、
+# #3549 name/wechatNickname）—— 核对器按**用例侧口径**收参，读库时按实际路径解析，
+# 并把「记录里没有这个字段」显式报出来（而不是静默判过）。
+_EMPLOYEE_FIELD_ALIASES = {
+    "role_code": ("role", "roles[].code"),
+    "employee_name": ("name",),
+    "nickname": ("name",),
+}
+
+_MISSING = object()
+
+
+def _employee_values(detail: dict, path: str):
+    """按路径取值（支持 `a` 与 `a[].b` 列表展开）；路径不存在返回 `_MISSING`。
+
+    字段存在但为 null → 返回 None（与"不存在"区分：前者是「落库为空」，后者是「读错字段」，
+    两者的修法完全不同，必须能分辨 —— 同 `db_verify[order_phone]` 的「查不到手机号/未落库？」）。
+    """
+    cur: list = [detail]
+    for part in path.split("."):
+        expanded = part.endswith("[]")
+        key = part[:-2] if expanded else part
+        nxt: list = []
+        for node in cur:
+            if not isinstance(node, dict) or key not in node:
+                continue
+            val = node[key]
+            if expanded:
+                if isinstance(val, list):
+                    nxt.extend(val)
+            else:
+                nxt.append(val)
+        if not nxt:
+            return _MISSING
+        cur = nxt
+    return cur[0] if len(cur) == 1 else cur
+
+
+def _employee_lookup(detail: dict, key: str) -> tuple:
+    """按用例侧字段名取值 → (是否找到, 值)。候选：字面 key → camelCase → 跨层改名。"""
+    cands = [key]
+    if "_" in key:
+        head, *rest = key.split("_")
+        cands.append(head + "".join(p.title() for p in rest))
+    cands.extend(_EMPLOYEE_FIELD_ALIASES.get(key, ()))
+    for cand in cands:
+        val = _employee_values(detail, cand)
+        if val is not _MISSING:
+            return True, val
+    return False, None
+
+
+def _employee_value_matches(want, got) -> bool:
+    """期望值与落库值比对：任一侧是列表时按「任一元素命中」判定（roles[].code 形态）。"""
+    wants = want if isinstance(want, list) else [want]
+    gots = got if isinstance(got, list) else [got]
+    return any(_norm_text(w) == _norm_text(g) for w in wants for g in gots)
+
+
+async def _fetch_employee(token: str, emp_id: str = "", name: str = "") -> tuple:
+    """按用户 id 或姓名查 admin-api 员工记录（落库真身）→ (记录 或 None, 诊断说明)。
+
+    取数路径与写入路径同一实体：`employee_manage` 的写操作打到 `/api/admin/users/{id}`，
+    读回也走 `GET /api/admin/users/{id}`（或 `?keyword=` 列表，`toEmployeeMap` 同一套字段）。
+    歧义（同名多条）**不猜**：宁可判失败（宁红不假绿），把命中条数写进说明。
+    """
+    if not emp_id and not name:
+        return None, "缺 id/name（定位不到记录）"
+    try:
+        async with httpx.AsyncClient() as c:
+            h = _admin_headers(token)
+            if emp_id:
+                r = await c.get(f"{ADMIN_API}/api/admin/users/{emp_id}", headers=h, timeout=15)
+                body = _safe_json(r, None)
+                data = (body or {}).get("data") if isinstance(body, dict) else None
+                if isinstance(data, dict) and data:
+                    return data, ""
+                return None, f"GET /api/admin/users/{emp_id} 无 data"
+            r = await c.get(f"{ADMIN_API}/api/admin/users", headers=h,
+                            params={"keyword": name, "page": 1, "size": 20}, timeout=15)
+            items = (_safe_json(r, {}) or {}).get("data", {}).get("items", []) or []
+            exact = [it for it in items if _norm_text((it or {}).get("name")) == _norm_text(name)]
+            cands = exact or items
+            if len(cands) == 1 and isinstance(cands[0], dict):
+                return cands[0], ""
+            return None, (f"keyword={name!r} 命中 {len(items)} 条（同名精确 {len(exact)} 条）"
+                          f"—— 不猜，判失败")
+    except Exception as e:                                      # noqa: BLE001
+        return None, f"查询异常 {type(e).__name__}"
+
 
 async def _resolve_order_detail(token: str, data: dict):
     """由 `order_create` 的 payload 拿到 (ref, 订单详情)。
@@ -2617,6 +2709,35 @@ def check_no_full_phone(results: list) -> list:
     return issues
 
 
+def _first_successful_payload(results: list, tool: str, action: str = "") -> dict:
+    """首个**成功**调用的 `result.data`（可按 `args.action` 限定是**哪一次**调用）。
+
+    为什么需要 action 限定（issue #3544 实测 run 34809483940）：`output_verify` 原先只按
+    **工具名**取首个成功结果，而工具是**多 action** 的（`processing_item_manage` 的
+    `list_categories` / `create_processing_item` / … 共用一个名字）→ PP-006 的
+    `output_verify[name/pricingMethod]` 取到了 R2 `list_categories` 的 payload
+    `{'categories': [...]}` → **假红**（真建成功的 R5 payload 从未被核对）；反之若字段名
+    撞上（如都叫 `items`）就会**假绿**（核对了错的 action 还说"产出对"）。
+    `tool_results` 事件不带 args（见 `check_must_succeed` 的同款说明），故与 `must_succeed`
+    同构处理：**该轮真的发起了匹配 action 的调用**，才认这一轮的结果。
+    """
+    for r in results or []:
+        if action:
+            called = any(
+                _tool_name_matches(tc.get("name"), tool)
+                and str((tc.get("args") or {}).get("action") or "") == action
+                for tc in r.get("tool_calls") or [])
+            if not called:
+                continue
+        for tr in r.get("tool_results") or []:
+            if not _tool_name_matches(tr.get("tool"), tool):
+                continue
+            res = tr.get("result") if isinstance(tr.get("result"), dict) else {}
+            if res.get("success") and isinstance(res.get("data"), dict):
+                return res["data"]
+    return {}
+
+
 def check_output_verify(results: list, output_verify: list) -> list:
     """断言**工具计算结果的 payload**（issue #3367）。
 
@@ -2627,6 +2748,7 @@ def check_output_verify(results: list, output_verify: list) -> list:
     为什么必须补：算料报价（curtain_calc）的价值全在算出来的数上，而此前
     "用布量算错/公式选错分支"在评测里完全不可见 —— 只能断言"调了 curtain_calc"。
     数值按容差比较（默认 0.01）；字符串按相等；`__nonempty__` 断言非空。
+    多 action 工具务必声明 `action:`，否则会核对到另一个 action 的 payload（#3544 实测假红）。
     失败关闭：找不到成功调用 / 缺 tool / 缺 expect / payload 缺字段 → 一律报错，不静默跳过。
     """
     issues = []
@@ -2643,20 +2765,12 @@ def check_output_verify(results: list, output_verify: list) -> list:
             issues.append(f"output_verify[{tool}]: 缺 expect（空断言）: {spec!r}")
             continue
         tol = float(spec.get("tolerance", 0.01))
-        _rnd, _args, data = _first_successful_call(results, tool)
-        payload = {}
-        for r in results or []:
-            for tr in r.get("tool_results") or []:
-                if not _tool_name_matches(tr.get("tool"), tool):
-                    continue
-                res = tr.get("result") if isinstance(tr.get("result"), dict) else {}
-                if res.get("success") and isinstance(res.get("data"), dict):
-                    payload = res["data"]
-                    break
-            if payload:
-                break
+        action = str(spec.get("action") or "").strip()
+        payload = _first_successful_payload(results, tool, action)
         if not payload:
-            issues.append(f"output_verify[{tool}]: 找不到成功调用的结果（无从核对产出）")
+            _scope = f"(action={action})" if action else ""
+            issues.append(
+                f"output_verify[{tool}]{_scope}: 找不到成功调用的结果（无从核对产出）")
             continue
         for key, want in expect.items():
             if key not in payload:
@@ -2790,6 +2904,50 @@ async def check_db_verify(token: str, db_verify: list, results: list | None = No
                         f"db_verify[order_items]: 「{hit}」数量 {by_name[hit]} ≠ 期望 {want_q}"
                         f"（订单明细共 {_line_count} 行: {_lines}）"
                         f"—— 行数与逐行数量能区分「数量值算错」与「重复行累加」")
+            continue
+
+        if fetch == "employee":
+            # 员工/用户**落库**断言（issue #3544 收口 / HR 用例包 #3593 需求）：
+            # `must_succeed` 只证明「工具调用成功」、`required_args` 只证明「参数发对了」——
+            # **接收侧静默忽略**（#3550 真身：admin-api 丢掉 phone/roleIds 仍回 200）两者都拦不住；
+            # 用例的离线自检第 ⑦ 类（下发对 + success=true + 库里未变）此前会被放过。
+            # 本核对器读**落库行**定胜负（产出侧，不绑定实现机制）。
+            src = str(spec.get("source") or "employee_manage")
+            expect_fields = spec.get("expect_fields")
+            if not isinstance(expect_fields, dict) or not expect_fields:
+                issues.append(
+                    "db_verify[employee]: 缺/空 expect_fields（配置错误 —— 不核对任何字段 = 空转通过）")
+                continue
+            # 仅在**确有成功写调用**时核对（同 order_phone 口径）：没有写调用 = 没有变更事实
+            _rnd, _wargs, _ = _first_successful_call(results or [], src)
+            if _wargs is None:
+                issues.append(
+                    f"db_verify[employee]: 找不到 {src} 的成功调用（无变更可核对）—— 判失败而非跳过")
+                continue
+            _emp_ref = str(spec.get("id") or spec.get("name") or "")
+            _emp, _note = await _fetch_employee(
+                token, emp_id=str(spec.get("id") or ""), name=str(spec.get("name") or ""))
+            if not _emp:
+                issues.append(
+                    f"db_verify[employee]: 查不到员工/用户 {_emp_ref!r}（{_note or '未落库？'}）"
+                    f"—— 判失败而非跳过")
+                continue
+            for _k, _want in expect_fields.items():
+                _found, _got = _employee_lookup(_emp, str(_k))
+                if not _found:
+                    issues.append(
+                        f"db_verify[employee]: 落库记录里没有字段 {_k!r}"
+                        f"（实际字段: {sorted(_emp)}）—— 跨层字段名不一致，核对不到就不许当通过")
+                    continue
+                if _got is None or (isinstance(_got, list) and not _got):
+                    issues.append(
+                        f"db_verify[employee]: 落库字段 {_k!r} 为空（期望 {_want!r}）"
+                        f"—— 接收侧静默忽略（#3550 形态）")
+                    continue
+                if not _employee_value_matches(_want, _got):
+                    issues.append(
+                        f"db_verify[employee]: 落库 {_k} 实际 {_got!r} ≠ 期望 {_want!r} "
+                        f"（员工 {_emp_ref!r}）—— 下发对 + 调用成功 + 库里没变 = 静默忽略")
             continue
 
         if fetch == "after_sales_ticket":
