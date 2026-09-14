@@ -128,12 +128,23 @@ MAPPING_RULES = [
     (r"app/tools/processing_item_manage\.py|app/tools/processing_item_query\.py",
      ["PP-002", "PP-006"]),
     # 加工单生成（PG-*）→ PG-013（「最近有没有已确认、需要加工的订单？」→ 生成加工单 + 确认轮）
-    # —— #3624 补齐。只锚 `generate`：PG-001~PG-012/PG-014 全部 skip（Java 单测验证），
-    # PG-013 是该域**唯一可跑的 LLM 用例**，数据前置见
-    # `tests/agent_eval/fixtures/mibao_eval_seed.sql`（EVAL-MB-ORD-0002，confirmed + 带加工项）。
-    # `processing_order_query` / `processing_order_update` **刻意不锚**：零可跑用例，
-    # 锚了就是「挂不相关用例」= 假阻塞（不变量测试锁住了这条边界）。
+    # —— #3624 补齐。PG-001~PG-012/PG-014 全部 skip（Java 单测验证），PG-013/PG-015/PG-016
+    # 是该域唯三可跑的 LLM 用例，数据前置见 `tests/agent_eval/fixtures/mibao_eval_seed.sql`
+    # （EVAL-MB-ORD-0002，confirmed + 带加工项）。
     (r"app/tools/processing_order_generate\.py", ["PG-013"]),
+    # 加工单查询（PG-*）→ PG-015（生成 → 按订单号回查状态）—— #3658 补锚。
+    # 前提变化：PG-015 随 #3568/#3589 落地（此前 query 零可跑用例，锚了 = 挂不相关
+    # 用例 = 假阻塞；「刻意不锚」注释与不变量测试随本批同步反转/更新）。
+    (r"app/tools/processing_order_query\.py", ["PG-015"]),
+    # 加工单状态流转（PG-*）→ PG-016（完成加工，output_verify 核到 completed）
+    # —— #3658 补锚，理由同 query。
+    (r"app/tools/processing_order_update\.py", ["PG-016"]),
+    # 商品侧加工项挂载 Tool（product_processing_item_manage）→ PP-001/PP-003 —— #3658 补充。
+    # 覆盖核查结论：PP-001（normal，期望 `product_processing_item_manage(action=add)` +
+    # `processing_item_query`）、PP-003（adversarial，confirm 卡 + action=add）**直接行使本工具**；
+    # 此前只经商品规则（下方）锚到 PR-019/PR-020（`product_manage(action=create)` 建品价格，
+    # 与本文件无因果）→ 并集：商品域保留，另补本工具的直测用例（改挂载路径必须真跑它们）。
+    (r"app/tools/product_processing_item_manage\.py", ["PP-001", "PP-003"]),
     # 守卫代码的共享载体 `base_skill.py` → 转人工族 CH-013/CH-014/CH-015 —— #3624 追加。
     # 为什么：base_skill 的守卫判据（不满情绪→建议 interact 卡→用户确认后转人工；
     # 用户拒绝后本会话不再自动建议；显式「转人工」不经建议卡直接转）正是这三条用例的

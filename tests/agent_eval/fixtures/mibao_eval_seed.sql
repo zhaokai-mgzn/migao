@@ -170,11 +170,25 @@ VALUES
   ('b1c2d3e4-f5a6-4b7c-8d9e-000000000002', 1, 'EVAL-MB-ORD-0002', NULL, '张三', '13800138000',
    '浙江省杭州市西湖区文三路 1 号 1 幢 101 室', 528.00, 'confirmed', 'paid', TRUE,
    'completed', 'B 端评测 fixture：已确认含加工项订单（PG-013 加工单生成用）',
-   TIMESTAMPTZ '2026-09-10 10:00:00+08', TIMESTAMPTZ '2026-09-10 10:00:00+08', 0)
+   TIMESTAMPTZ '2026-09-10 10:00:00+08', TIMESTAMPTZ '2026-09-10 10:00:00+08', 0),
+  -- #3658（issue #3658）：PG-013/015/016 竞态修复 —— 三条用例此前**共用** EVAL-MB-ORD-0002，
+  -- 并发跑时只有一个能生成加工单成功（PG-015 实测赢、PG-013/016 吃「订单已生产中」假红）。
+  -- 现各自独立订单：0002=PG-013、0003=PG-015（查）、0004=PG-016（状态流转）。
+  -- 客户刻意用**不同手机号**（李四/王五），避免污染 AS-003/AS-007 的「张三 13800138000 最近订单」定位。
+  ('b1c2d3e4-f5a6-4b7c-8d9e-000000000003', 1, 'EVAL-MB-ORD-0003', NULL, '李四', '13900139000',
+   '浙江省杭州市拱墅区莫干山路 2 号 2 幢 202 室', 540.00, 'confirmed', 'paid', TRUE,
+   'completed', 'B 端评测 fixture：已确认含加工项订单（PG-015 加工单查询用）',
+   TIMESTAMPTZ '2026-09-11 10:00:00+08', TIMESTAMPTZ '2026-09-11 10:00:00+08', 0),
+  ('b1c2d3e4-f5a6-4b7c-8d9e-000000000004', 1, 'EVAL-MB-ORD-0004', NULL, '王五', '13700137000',
+   '浙江省杭州市滨江区江南大道 3 号 3 幢 303 室', 524.00, 'confirmed', 'paid', TRUE,
+   'completed', 'B 端评测 fixture：已确认含加工项订单（PG-016 加工单状态流转用）',
+   TIMESTAMPTZ '2026-09-12 10:00:00+08', TIMESTAMPTZ '2026-09-12 10:00:00+08', 0)
 ON CONFLICT (id) DO NOTHING;
 
 -- 订单明细：第二笔带 processing_info（PG-013「需要加工的订单」的判定依据）；
 -- 加工项与 pi_eval_punch（纳米圈打孔 ¥8/米）一致，quantity=3 米 → subtotal=24。
+-- 0003/0004 的 processing_info 分别用种子里真实存在的 pi_eval_hem（韩式波浪折边 ¥12/米，
+-- quantity=3 → 36）与 pi_eval_iron（高温定型 ¥10/米，quantity=2 → 20），金额与 total 对齐。
 INSERT INTO order_items
   (id, tenant_id, order_id, product_id, product_name, quantity, unit_price,
    width, height, processing_info, subtotal, deleted)
@@ -184,6 +198,14 @@ VALUES
   ('oit_mb_0002', 1, 'b1c2d3e4-f5a6-4b7c-8d9e-000000000002', 'prod_eval_blackout', '遮光窗帘',
    3, 168.00, 3.00, 2.80,
    '{"colorName":"米白","sellingMethod":"bulk_cut","doorWidth":"2.8","processingItems":[{"id":"pi_eval_punch","name":"纳米圈打孔","unitPrice":8.0,"quantity":3,"unit":"米","pricingMethod":"per_meter","subtotal":24.0}],"processingFee":24.0}'::jsonb,
+   504.00, 0),
+  ('oit_mb_0003', 1, 'b1c2d3e4-f5a6-4b7c-8d9e-000000000003', 'prod_eval_blackout', '遮光窗帘',
+   3, 168.00, 3.00, 2.80,
+   '{"colorName":"米白","sellingMethod":"bulk_cut","doorWidth":"2.8","processingItems":[{"id":"pi_eval_hem","name":"韩式波浪折边","unitPrice":12.0,"quantity":3,"unit":"米","pricingMethod":"per_meter","subtotal":36.0}],"processingFee":36.0}'::jsonb,
+   504.00, 0),
+  ('oit_mb_0004', 1, 'b1c2d3e4-f5a6-4b7c-8d9e-000000000004', 'prod_eval_blackout', '遮光窗帘',
+   3, 168.00, 3.00, 2.80,
+   '{"colorName":"米白","sellingMethod":"bulk_cut","doorWidth":"2.8","processingItems":[{"id":"pi_eval_iron","name":"高温定型","unitPrice":10.0,"quantity":2,"unit":"米","pricingMethod":"per_meter","subtotal":20.0}],"processingFee":20.0}'::jsonb,
    504.00, 0)
 ON CONFLICT (id) DO NOTHING;
 
@@ -192,19 +214,35 @@ DO $$
 DECLARE
   v_done   INTEGER;
   v_conf   INTEGER;
+  v_conf3  INTEGER;
+  v_conf4  INTEGER;
   v_proc   INTEGER;
+  v_proc3  INTEGER;
+  v_proc4  INTEGER;
 BEGIN
   SELECT count(*) INTO v_done FROM orders
    WHERE tenant_id = 1 AND order_no = 'EVAL-MB-ORD-0001' AND deleted = 0;
   SELECT count(*) INTO v_conf FROM orders
    WHERE tenant_id = 1 AND order_no = 'EVAL-MB-ORD-0002' AND status = 'confirmed' AND deleted = 0;
+  SELECT count(*) INTO v_conf3 FROM orders
+   WHERE tenant_id = 1 AND order_no = 'EVAL-MB-ORD-0003' AND status = 'confirmed' AND deleted = 0;
+  SELECT count(*) INTO v_conf4 FROM orders
+   WHERE tenant_id = 1 AND order_no = 'EVAL-MB-ORD-0004' AND status = 'confirmed' AND deleted = 0;
   SELECT count(*) INTO v_proc FROM order_items
    WHERE order_id = 'b1c2d3e4-f5a6-4b7c-8d9e-000000000002'
      AND processing_info IS NOT NULL AND deleted = 0;
-  RAISE NOTICE 'B 端 Phase 2 核对: 已完成订单=% 已确认订单=% 含加工项明细=%',
-    v_done, v_conf, v_proc;
-  IF v_done < 1 OR v_conf < 1 OR v_proc < 1 THEN
-    RAISE EXCEPTION 'B 端 Phase 2 注入失败：已完成=% 已确认=% 含加工项=%', v_done, v_conf, v_proc;
+  SELECT count(*) INTO v_proc3 FROM order_items
+   WHERE order_id = 'b1c2d3e4-f5a6-4b7c-8d9e-000000000003'
+     AND processing_info IS NOT NULL AND deleted = 0;
+  SELECT count(*) INTO v_proc4 FROM order_items
+   WHERE order_id = 'b1c2d3e4-f5a6-4b7c-8d9e-000000000004'
+     AND processing_info IS NOT NULL AND deleted = 0;
+  RAISE NOTICE 'B 端 Phase 2 核对: 已完成订单=% 已确认订单(0002/0003/0004)=%/ %/ % 含加工项明细(0002/0003/0004)=%/ %/%',
+    v_done, v_conf, v_conf3, v_conf4, v_proc, v_proc3, v_proc4;
+  IF v_done < 1 OR v_conf < 1 OR v_proc < 1
+     OR v_conf3 < 1 OR v_proc3 < 1 OR v_conf4 < 1 OR v_proc4 < 1 THEN
+    RAISE EXCEPTION 'B 端 Phase 2 注入失败：已完成=% 已确认=% 含加工项=%（0003: %/% 0004: %/%）',
+      v_done, v_conf, v_proc, v_conf3, v_proc3, v_conf4, v_proc4;
   END IF;
 END $$;
 

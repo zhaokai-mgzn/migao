@@ -1,4 +1,4 @@
-# case_ids: OR-016, AS-007, PR-019, PR-020, CH-010, CU-003, CU-004, HR-001, HR-005, ST-003, ST-005, DA-004, FN-001, PP-002, PP-006, PG-013, CH-013, CH-014, CH-015, CH-008
+# case_ids: OR-016, AS-007, PR-019, PR-020, CH-010, CU-003, CU-004, HR-001, HR-005, ST-003, ST-005, DA-004, FN-001, PP-002, PP-006, PP-001, PP-003, PG-013, PG-015, PG-016, CH-013, CH-014, CH-015, CH-008
 """行为改动 diff → 用例映射单测（tests/agent_eval/behavior_mapping.py，issue #3502）。
 
 被测契约（详见模块 docstring）：
@@ -52,8 +52,11 @@ PROCESSING_ITEM_MANAGE_PATH = "backend/ai-agent-service/app/tools/processing_ite
 PROCESSING_ITEM_QUERY_PATH = "backend/ai-agent-service/app/tools/processing_item_query.py"
 # 商品侧加工项挂载 Tool（与目录 CRUD 是两件事，仍归商品域）
 PRODUCT_PROCESSING_ITEM_PATH = "backend/ai-agent-service/app/tools/product_processing_item_manage.py"
-# 加工单生成（PG-* 域）：该域唯一可跑的 LLM 用例是 PG-013
+# 加工单生成（PG-* 域）：PG-013/PG-015/PG-016 是该域唯三可跑的 LLM 用例
 PROCESSING_ORDER_GENERATE_PATH = "backend/ai-agent-service/app/tools/processing_order_generate.py"
+# #3658 补锚：PG-015（查询）/ PG-016（状态流转）随 #3568/#3589 落地 → query/update 不再是「零可跑用例」
+PROCESSING_ORDER_QUERY_PATH = "backend/ai-agent-service/app/tools/processing_order_query.py"
+PROCESSING_ORDER_UPDATE_PATH = "backend/ai-agent-service/app/tools/processing_order_update.py"
 # 守卫代码的共享载体（防御/熔断 + 写操作守卫 + 转人工建议卡守卫），见 TestBaseSkillRules
 BASE_SKILL_PATH = "backend/ai-agent-service/app/graph/skills/base_skill.py"
 # 转人工 Tool 本体（创建人工会话/工单/通知），见 TestHumanHandoffRules
@@ -221,12 +224,16 @@ class TestProcessingDomainRules:
         cases = bm.map_changed_files_to_case_ids([path])
         assert "PR-019" not in cases and "PR-020" not in cases
 
-    def test_product_side_processing_item_still_maps_to_product_cases(self):
-        """收窄关键词不得丢规则：商品侧加工项挂载 Tool 仍走商品域（PR-019/PR-020）。"""
-        assert bm.map_changed_files_to_case_ids([PRODUCT_PROCESSING_ITEM_PATH]) == ["PR-019", "PR-020"]
+    def test_product_side_processing_item_maps_to_product_and_direct_cases(self):
+        """收窄关键词不得丢规则，且 #3658 起并集补锚直测用例：商品侧加工项挂载 Tool 仍走
+        商品域（PR-019/PR-020，#3624 决策），**同时**补锚直接行使它的 PP-001（normal，
+        `product_processing_item_manage(action=add)`）/ PP-003（adversarial，confirm 卡 + add）。
+        """
+        assert bm.map_changed_files_to_case_ids([PRODUCT_PROCESSING_ITEM_PATH]) == [
+            "PP-001", "PP-003", "PR-019", "PR-020"]
 
     def test_processing_order_generate_hits_pg013(self):
-        """加工单生成 → PG-013（该域唯一可跑的 LLM 用例；PG-001~PG-012/PG-014 全部 skip）。
+        """加工单生成 → PG-013（PG-001~PG-012/PG-014 全部 skip）。
 
         前置数据已就绪：`tests/agent_eval/fixtures/mibao_eval_seed.sql` 为 PG-013 种了
         `EVAL-MB-ORD-0002`（confirmed + 明细带 processing_info）。
@@ -234,15 +241,16 @@ class TestProcessingDomainRules:
         assert bm.map_changed_files_with_source(
             [PROCESSING_ORDER_GENERATE_PATH]) == (["PG-013"], "rules")
 
-    @pytest.mark.parametrize("path", [
-        "backend/ai-agent-service/app/tools/processing_order_query.py",
-        "backend/ai-agent-service/app/tools/processing_order_update.py",
+    @pytest.mark.parametrize("path, expected", [
+        (PROCESSING_ORDER_QUERY_PATH, ["PG-015"]),
+        (PROCESSING_ORDER_UPDATE_PATH, ["PG-016"]),
     ])
-    def test_processing_order_query_and_update_are_not_anchored(self, path):
-        """刻意**不**锚 query/update：它们零可跑用例（PG-005~PG-008/PG-011 等全 skip），
-        锚了就是把不相关用例挂上去 —— 假阻塞。等它们有了可跑用例再补规则。"""
-        assert bm.map_changed_files_with_source([path]) == (
-            bm.DEFAULT_BEHAVIOR_CASES, "default_net")
+    def test_processing_order_query_and_update_are_anchored(self, path, expected):
+        """#3658 补锚：PG-015/016 随 #3568/#3589 落地后，query/update 不再是「零可跑用例」——
+        原「刻意不锚」注释的前提（假阻塞）已消失，改这两个 Tool 必须真跑它们各自的用例
+        （PG-015：生成 → 按订单号回查；PG-016：完成加工，output_verify 核到 completed）。
+        """
+        assert bm.map_changed_files_with_source([path]) == (expected, "rules")
 
     @pytest.mark.parametrize("path", [
         "backend/ai-agent-service/tests/test_tools_processing_item_manage.py",
