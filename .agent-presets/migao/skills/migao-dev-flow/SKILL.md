@@ -1,7 +1,13 @@
 ---
 name: migao-dev-flow
-version: 1.19.0
-description: MIGAO 项目开发提效流程固化 — 开发、验证、提交、部署的完整规范。改动 MIGAO 代码前必须加载，确保用对工具、跑对检查、避免 UI 回退和 CI 返工。v1.1：修正 Agent Eval 重试命令 + 新增 dependabot PR 处理 SOP + CI/本地环境差异已知坑。 v1.11（2026-09-09 issue #3070 复盘固化）：新增「§15 前端页面级改动的 UI 旅程强制验证」——交互测试断言"结果可见"而非"函数被调用"、页面级改动必须真实浏览器走查（面包屑/样式基准/布局遮挡几何探针/写操作成果物可见）、布局视觉问题不得仅靠 vitest（Tailwind p-* 覆盖 pb-* 类 CSS 级联陷阱实测）。v1.12（2026-09-09 issue #3080 实证）：新增「§15.5 截图视觉确认」——主模型/子代理不支持图片输入（read_image 报 does not declare image input）时，用 workflow 自动路由到 GLM-5.3-Flash 视觉模型（scnet-token-plan）开子代理读图判定，输出作为 UA 层证据，与 DOM 断言互补。v1.17（2026-09-14 issue #3555）：新增「§14.5 覆盖厚度」——把覆盖体检变成真门禁：C 端 `scripts/xiaobu_coverage.py` 判据收紧（**每个被覆盖的工具必须至少有一条正向用例**，「只有越权/拒绝用例」= 结构性缺失 → 阻塞；「仅 1 条用例」= 厚度不足 → 只报告，尊重 verify-all.sh 的活指标设计意图）+ 新增 B 端对称体检 `scripts/mibao_coverage.py`（复用 eval_case_filter/render_cases 既有纯函数，不复制平行实现）+ 接入 CI pr-check `Case Coverage Gate` job（纯静态零 LLM，本脚本与本地 verify-all.sh 同参数）。v1.1.1：修正部署后验证端点。v1.2：新增「分支滞留+切换污染」红线与 git worktree 规范。v1.3（2026-09-04）：新增「多会话并发规范」（一会话一 worktree + 会话锁 + 端口隔离 + 分支卫生）、CI 队列治理（concurrency/paths 门控/agent-eval 按变更触发省真实 LLM token）、验证分级降本。v1.4（2026-09-05）：新增「PR body 必写 Closes #xx」红线（自动关 issue 闭环，杜绝修复后 issue 无人关闭的伪积压）+ 存量 12 个 open issue 中 8 个已修复未关闭的实证教训 + CI pr-issue-link 检查说明 + GitHub 治理自动化（stale 回收/automerge/dependabot ignore 收口）。v1.5（2026-09-06）：新增「§9 本地验证防恶化」——本地 .env 云库泄漏致 pytest 从分钟级恶化到小时级的根因复盘（issue #2957，quick 58min→57s）+ 体检命令 + 六条防复发红线（云库隔离/timeout 兜底/依赖漂移/未 mock 外部调用禁止）。v1.6（2026-09-06）：新增「§10 云资源运维（aliyun CLI 自服务）」——AI 具备阿里云运维权限账号能力（本机 aliyun CLI 已配凭据），可直接自服务 RDS 白名单/实例查询，无需人工控制台操作；固化实例 ID、白名单分组、追加命令与安全边界（保留原 IP 追加而非覆盖）。v1.18（2026-09-14 实证固化）：新增「§16.6 评测派发与数字留痕」四条踩过的坑——① 手动 `workflow_dispatch` 评测**必须**带 `-f force_eval=true`（否则被静默抑制：步骤全 skipped、artifact 0、整体 success；workflow 注释里的"永不抑制"与实现不符）；② `case_ids` 是**全矩阵共享**的，只传一端专属 ID 会让另一条腿立即红（`禁止静默少跑` 守卫 `local_runner.py:4292`）；③ `continue-on-error` 让 `Run <persona>` 步骤"显示 success ≠ 成功"，读结论只看 `判定（completion_verdict）` + artifact；④ **每个计数必须锚定 SHA**（`基线 @<sha> = N → 本 PR = M`），禁止旧基线配新结果造出幽灵 delta。v1.19（2026-09-14 实证修正）：**§2.1 ②`./verify-all.sh gate` 必须在 `git commit` 之后跑** —— 它的弱断言检查按 `git diff --diff-filter=A origin/main...HEAD` 取"新增测试文件"，**未提交时新增集为空 ⇒ 静默空跑并通过**（假绿；实测同一命令 commit 前 ✅ / commit 后 ❌）。正确顺序：先 commit，再跑 ②③④。
+version: 1.20.0
+# ⚠️ 下面 description 是 YAML **纯标量** ⇒ 解析会在第一个「空格+#」处**截断**（把 ` #NNNN` 当成注释起始）。
+#    实测（本 PR 改动前，锚定 origin/main@9670af53）：本行原文 2229 字符，YAML 解析结果只有
+#    169 字符（截断于「v1.11（2026-09-09 issue #3070」）⇒ v1.12/v1.17/v1.18/v1.19 的说明**从未**被加载器读到。
+#    ⇒ 想让 **skill 加载器**读到某条说明，必须写在**截断点之前**；行末的历史沿革条目只有打开文件的人才看得到。
+#    （本条注释本身不参与解析。若哪天要彻底修掉截断：把整个值改成引号包裹或块标量 `>-`，
+#      代价是 skill 目录里的 description 变成 2k+ 字符 —— 需先确认是否可接受。）
+description: MIGAO 项目开发提效流程固化（**当前 v1.20**；完整沿革见本行末） — 开发、验证、提交、部署的完整规范。改动 MIGAO 代码前必须加载，确保用对工具、跑对检查、避免 UI 回退和 CI 返工。v1.1：修正 Agent Eval 重试命令 + 新增 dependabot PR 处理 SOP + CI/本地环境差异已知坑。 v1.11（2026-09-09 issue #3070 复盘固化）：新增「§15 前端页面级改动的 UI 旅程强制验证」——交互测试断言"结果可见"而非"函数被调用"、页面级改动必须真实浏览器走查（面包屑/样式基准/布局遮挡几何探针/写操作成果物可见）、布局视觉问题不得仅靠 vitest（Tailwind p-* 覆盖 pb-* 类 CSS 级联陷阱实测）。v1.12（2026-09-09 issue #3080 实证）：新增「§15.5 截图视觉确认」——主模型/子代理不支持图片输入（read_image 报 does not declare image input）时，用 workflow 自动路由到 GLM-5.3-Flash 视觉模型（scnet-token-plan）开子代理读图判定，输出作为 UA 层证据，与 DOM 断言互补。v1.17（2026-09-14 issue #3555）：新增「§14.5 覆盖厚度」——把覆盖体检变成真门禁：C 端 `scripts/xiaobu_coverage.py` 判据收紧（**每个被覆盖的工具必须至少有一条正向用例**，「只有越权/拒绝用例」= 结构性缺失 → 阻塞；「仅 1 条用例」= 厚度不足 → 只报告，尊重 verify-all.sh 的活指标设计意图）+ 新增 B 端对称体检 `scripts/mibao_coverage.py`（复用 eval_case_filter/render_cases 既有纯函数，不复制平行实现）+ 接入 CI pr-check `Case Coverage Gate` job（纯静态零 LLM，本脚本与本地 verify-all.sh 同参数）。v1.1.1：修正部署后验证端点。v1.2：新增「分支滞留+切换污染」红线与 git worktree 规范。v1.3（2026-09-04）：新增「多会话并发规范」（一会话一 worktree + 会话锁 + 端口隔离 + 分支卫生）、CI 队列治理（concurrency/paths 门控/agent-eval 按变更触发省真实 LLM token）、验证分级降本。v1.4（2026-09-05）：新增「PR body 必写 Closes #xx」红线（自动关 issue 闭环，杜绝修复后 issue 无人关闭的伪积压）+ 存量 12 个 open issue 中 8 个已修复未关闭的实证教训 + CI pr-issue-link 检查说明 + GitHub 治理自动化（stale 回收/automerge/dependabot ignore 收口）。v1.5（2026-09-06）：新增「§9 本地验证防恶化」——本地 .env 云库泄漏致 pytest 从分钟级恶化到小时级的根因复盘（issue #2957，quick 58min→57s）+ 体检命令 + 六条防复发红线（云库隔离/timeout 兜底/依赖漂移/未 mock 外部调用禁止）。v1.6（2026-09-06）：新增「§10 云资源运维（aliyun CLI 自服务）」——AI 具备阿里云运维权限账号能力（本机 aliyun CLI 已配凭据），可直接自服务 RDS 白名单/实例查询，无需人工控制台操作；固化实例 ID、白名单分组、追加命令与安全边界（保留原 IP 追加而非覆盖）。v1.18（2026-09-14 实证固化）：新增「§16.6 评测派发与数字留痕」四条踩过的坑——① 手动 `workflow_dispatch` 评测**必须**带 `-f force_eval=true`（否则被静默抑制：步骤全 skipped、artifact 0、整体 success；workflow 注释里的"永不抑制"与实现不符）〔⚠️ **该条已被 v1.20 修正**：现在 dispatch **默认免抑制**，要抑制才需显式 `force_eval=false`——勿照抄本条〕；② `case_ids` 是**全矩阵共享**的，只传一端专属 ID 会让另一条腿立即红（`禁止静默少跑` 守卫 `local_runner.py:4292`）；③ `continue-on-error` 让 `Run <persona>` 步骤"显示 success ≠ 成功"，读结论只看 `判定（completion_verdict）` + artifact；④ **每个计数必须锚定 SHA**（`基线 @<sha> = N → 本 PR = M`），禁止旧基线配新结果造出幽灵 delta。v1.19（2026-09-14 实证修正）：**§2.1 ②`./verify-all.sh gate` 必须在 `git commit` 之后跑** —— 它的弱断言检查按 `git diff --diff-filter=A origin/main...HEAD` 取"新增测试文件"，**未提交时新增集为空 ⇒ 静默空跑并通过**（假绿；实测同一命令 commit 前 ✅ / commit 后 ❌）。正确顺序：先 commit，再跑 ②③④。v1.20（2026-09-15 实证修正，issue #3709）：**修正 §16.6 ①**——`workflow_dispatch` 评测**默认免抑制**（要恢复「被取代即抑制」须**显式**传 `-f force_eval=false`），故 v1.18 那条「手动派发**必须**带 `-f force_eval=true`」已成**假真值**；被抑制时 run 上现在有 `::warning::` 标注 + summary 抬头「本 run 未评测」，**据此不得再把「绿」读成「评测通过」**；自动门禁（workflow_run/schedule）语义不变。并在 §2.2 补「引用式 `Closes` 样例同样会被朴素正则命中」的自检提示（PR body 证据表是同一入口）。
 ---
 
 # MIGAO 开发提效流程
@@ -69,7 +75,15 @@ description: MIGAO 项目开发提效流程固化 — 开发、验证、提交�
 - **PR body 必写 `Closes #<issue号>`**（v1.4 新增，2026-09-05 治理固化）：GitHub 只在 PR **body** 含 `Closes/Fixes/Resolves #xx` 关键词时自动关闭 issue，**标题里的「(issue #xx)」不生效**。不写 = 修复合并了 issue 还挂着，全靠人回头对账（实证：9-05 存量 12 个 open issue 里 8 个已修复未关闭）。创建 PR 时在 body 首行写 `Closes #xx`；无 issue 关联的基建类 PR 标 `N/A（基建）`。CI 有 `pr-issue-link` 检查（见 §3），漏写会打 `needs-issue-link` 标签提醒。
 - **要表达「不关某 issue」时，绝不能把关键词写在 issue 号前**（v1.19 新增，2026-09-15 实证误关）：`close-linked-issues.yml` 用**朴素 grep 正则** `(close|closes|closed|fix|fixes|fixed|resolve|resolves|resolved)[[:space:]]*#[0-9]+` 扫 body，**否定句照样命中**——写成「不 `Closes #3559`（保持 OPEN）」会在合并后**秒级误关**该 issue；更麻烦的是该工作流的**定时对账会对近 48h 合并的 PR 反复重扫当前 body**，措辞不改就**反复误关**。
   - 正确写法：**把关键词与 issue 号拆开**（如「#3559 保持 OPEN——本 PR 不涉及关闭它」）；
-  - 自检：`printf '%s' "$BODY" | grep -oiE '(close|closes|closed|fix|fixes|fixed|resolve|resolves|resolved)[[:space:]]*#[0-9]+'` —— 输出必须**只剩**你本意要关的那些；
+  - ⚠️ **不只是否定句**（v1.20 新增，2026-09-15 实证）：正则只看「关键词 + 空格 + `#号`」这一形态，
+    **不区分语义** —— 所以**任何"引用"都会命中**：证据表/复现记录里贴 `Closes #NNNN` 样例、
+    回归清单里罗列"本 PR 关掉了哪些"、甚至贴在反引号里的整句 `Closes #3559`（反引号**不**隔断
+    关键词与号，只有**插在两者之间**才有效）。
+    实证（本会话 PR #3737）：红证表里引用了 5 个关键词+号样例 ⇒ 自查发现会**误关 5 个别人的 issue**
+    （含已 CLOSED 的），改成 `` `Closes` + `#NNNN` `` 形式后才提交。
+  - 自检：`printf '%s' "$BODY" | grep -oiE '(close|closes|closed|fix|fixes|fixed|resolve|resolves|resolved)[[:space:]]*#[0-9]+'` —— 输出必须**只剩**你本意要关的那些；**0 条命中也是合法结果**（关联已 CLOSED 的 issue / 纯基建 PR 就该是 0）。
+  - 关联**已 CLOSED** 的 issue（如"实现 #3709 的收口要求"）**不要**写 `Closes`——用「关联 #NNNN」
+    这类不带关键词的措辞；否则每轮对账都会拿到一条"该关却没关成"的无效目标（#3559 家族）。
   - 误关后：重开 issue + 同时改写 body（否则下一轮对账再关一次）。
 
 ### 2.3 多会话并发规范（v1.3 新增，2026-09-04 实战固化：多 DSH 会话并行踩脚治理）
@@ -613,16 +627,31 @@ workflow 内红 + PR 评论"（强信号）；**规则命中红 = 改动真的�
 波动台账现上传 artifact（`agent-eval-flake-ledger*`，30 天）——高波动用例治理
 （§14.3 双周回顾）从这里取数，不再翻 run 日志。
 
-### 16.6 评测派发与数字留痕（v1.18 新增，2026-09-14 实证固化）
+### 16.6 评测派发与数字留痕（v1.18 新增，2026-09-14 实证固化；v1.20 修正第 1 条）
 
 四条都是本会话**踩过**的（每条都有 run 级证据），照做能省一整轮 90min 评测：
 
-1. **手动派发必须带 `-f force_eval=true`。** `workflow_dispatch` **同样**走 deploy 判据
-   （`eval_supersede.sh` 只有 `schedule` 走 schedule 判据）——派发与执行之间只要 main 动过
-   （本仓库合并极频繁、评测常排队）就会被**静默抑制**。实测：`tier=adversarial -f case_ids=DF-011`
-   的 run 整体 `completed/success`，而**每个评测步骤都是 `skipped`、artifact 为 0**。
-   ⚠️ workflow 注释里那句「workflow_dispatch … **永不抑制**」与实现不符——**它直接导致漏传逃生口**
-   （注释漂移 = 假绿来源，见 migao-acceptance v1.4）。引用任何 run 前先核「步骤级 / 产物级 / 新鲜度」三条。
+1. **手动派发的现状真值（v1.20 修正，#3709 修复后）**：`workflow_dispatch` **默认免抑制**。
+   `eval_supersede.sh` 按 `EVENT_NAME=workflow_dispatch` ⇒ `FORCE_EVAL=true`（语义 = 人显式要求
+   "我就要这一条"，回滚复验/补跑）；**要恢复「被取代即抑制」必须显式传 `-f force_eval=false`**
+   （逃生口保留，省成本路径不消失）。**自动门禁**（`workflow_run` 部署后 / `schedule` 每 3 天全量）
+   语义**不变** —— 它们没有 inputs，不受该默认值影响。
+   - ⚠️ **被抑制时要看得见**：run 上会打 `::warning::` 标注（两条 persona 腿 + report job 共三条），
+     step summary 抬头是「本 run 未评测（不构成结论）」。**据此不得再把「绿」读成「评测通过」**
+     （抑制**依旧不是 failure**：不刷红、不建 issue —— 要的是可见，不是变红）。
+     **引用任何 run 前先核「步骤级 / 产物级 / 新鲜度」三条**（migao-acceptance v1.3）。
+   - ⚠️ **历史坑（#3709，2026-09-14 实证）**：修复前 dispatch 与部署门禁共用 `MODE=deploy` 判据
+     ⇒ 派发与执行之间只要 main 动过（本仓库合并极频繁、评测常排队）就被**静默抑制**：
+     `tier=adversarial -f case_ids=DF-011` 的 run 整体 `completed/success`，而**每个评测步骤
+     都是 `skipped`、artifact 为 0**（一条用例都没跑）。v1.18 据此写下的「手动派发**必须**带
+     `-f force_eval=true`」在修复后**已成假真值** —— 照抄它反而会让人以为"不传就会空跑"。
+   - ⚠️ workflow 注释一度写着「workflow_dispatch … **永不抑制**」（与实现不符 → 主会话正是读了
+     它才漏传逃生口）。**注释漂移 = 假绿来源**（migao-acceptance v1.4）：**引用注释作为判断依据前
+     先核实现**，改行为必须同步改注释。
+   - ✅ 判据**可本地复跑**（不必推上去赌一轮 CI）：`bash .github/scripts/eval_supersede.sh`，
+     用 `EVENT_NAME` / `FORCE_EVAL_INPUT` / `MAIN_SHA` 覆盖即可演练「dispatch 免抑制 /
+     显式 `force_eval=false` 抑制 / 自动门禁不变」三种结果 —— 单测
+     `tests/unit_ci_workflows/test_post_deploy_eval_supersede.py` 已把口径钉死。
 
 2. **`case_ids` 是全矩阵共享的，不是按 persona 过滤的。** 只传**一端专属**用例 ID 会让
    **另一条腿立即红**（runner 有 `--case-ids 里有无法解析的用例 ID（禁止静默少跑）` 守卫，
