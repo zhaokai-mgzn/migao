@@ -474,6 +474,33 @@ async def run_scenario(sc: dict, token: str) -> dict:
             "sessions": sessions, "rounds": rounds}
 
 
+def _tool_digest(tr: dict) -> dict:
+    """把一次工具调用的结果压成**可核验的事实**（订单号/金额/状态/条数）。
+
+    为什么要它（复核 AI 在重放 2 主动声明的证据限制）：transcript 里此前只有工具**名**，
+    于是「订单号/金额/成功与否」类结论无法从证据核验 —— UA（体验层）判定与复核 AI
+    只能拿回复原文互证，等于体验层的证据缺一半。`evidence.json` 里本来就有全量载荷，
+    这里只把**顾客可感知**的字段摘出来进 transcript（不落 PII 全量）。
+    """
+    tr = tr if isinstance(tr, dict) else {}
+    res = tr.get("result") if isinstance(tr.get("result"), dict) else {}
+    data = res.get("data") if isinstance(res.get("data"), dict) else {}
+    out: dict = {"tool": str(tr.get("tool") or ""), "ok": bool(res.get("success"))}
+    if not res.get("success"):
+        out["error"] = str(res.get("error") or "")[:60]
+        return out
+    for k in ("id", "orderNo", "order_no", "totalAmount", "total_amount",
+              "actual_amount", "status", "quantity"):
+        v = data.get(k)
+        if v not in (None, "", [], {}):
+            out[k] = v if isinstance(v, (int, float, bool)) else str(v)[:40]
+    for k in ("orders", "items", "products", "logistics_list"):
+        v = data.get(k)
+        if isinstance(v, list):
+            out[f"{k}_n"] = len(v)
+    return out
+
+
 def render(scenario_result: dict) -> str:
     """渲染成可读验收记录（供人工评估）"""
     lines = []
@@ -490,6 +517,13 @@ def render(scenario_result: dict) -> str:
             lines.append(_fmt_interactive(i))
         for t in rd["tools"]:
             lines.append(_fmt_tool(t))
+        # 结果载荷摘要（复核 AI 的证据缺口）：让"订单号/金额/成了没有"可从证据核验
+        for d in [_tool_digest(t) for t in (rd.get("tool_results") or [])]:
+            _facts = ", ".join(f"{k}={v}" for k, v in d.items() if k not in ("tool", "ok"))
+            if d.get("ok"):
+                lines.append(f"  📄 {d.get('tool')} → {_facts or 'ok'}")
+            else:
+                lines.append(f"  📄 {d.get('tool')} → ❌ {d.get('error') or 'failed'}")
         if rd["ai_text"]:
             # 协议 §4.1：**任何一轮的 AI 原文不得省略** —— 截断会让"话术很长但没给出口"
             # 这类体验问题在证据里消失（UA 判定必须能读到全文）

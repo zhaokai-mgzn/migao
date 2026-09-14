@@ -2860,6 +2860,35 @@ class TestUnbackedStateClaim:
             self._rounds(("已为您下单成功", ["order_create"]),
                          ("订单已创建，随时可以问我进度哦", []))) == []
 
+    def test_future_phrasing_not_flagged(self):
+        """**将来/条件**语境的措辞不是完成态宣告（run 34790723445，OR-023 首跑假红）。
+
+        实证原文（R2，该轮 `tools=product_detail,customer_address_query,validate_input,interact`，
+        零写成功）：
+        「亲，订单信息都帮您核对好啦，麻烦点「确认下单」哦～ 确认后我会发个短信验证码给您，
+        完成最后一步就**下单成功啦** 🎉」
+        —— 这是**将来**（"完成最后一步就…"），不是"已经下单成功"。旧判据只做子串匹配 → 判红 →
+        经重试放行、进 flake 台账，把真信号一起淹掉（假红代价 = 让台账失去可信度）。
+        """
+        assert lr.check_unbacked_state_claim(self._rounds(
+            ("亲，订单信息都帮您核对好啦，麻烦点「确认下单」哦～ 确认后我会发个短信验证码给您，"
+             "完成最后一步就下单成功啦 🎉", []))) == []
+
+    def test_future_cue_variants_not_flagged(self):
+        """条件/将来助词族（就会/将/即可/稍后马上…）都算将来语境。"""
+        for text in ("确认后订单就会下单成功啦",
+                     "您点确认后我会提示订单已提交",
+                     "完成后即可看到订单已创建",
+                     "稍后马上帮您下单成功"):
+            assert lr.check_unbacked_state_claim(self._rounds((text, []))) == [], text
+
+    def test_real_premature_claim_still_flagged(self):
+        """反向守卫：**真的**提前宣告（无将来语境）必须继续判红。"""
+        for text in ("好的，已为您下单成功 🎉",
+                     "订单已提交成功，订单号 20260913027050006",
+                     "您的收货地址已更新"):
+            assert lr.check_unbacked_state_claim(self._rounds((text, []))), text
+
     def test_read_side_claims_not_flagged(self):
         """只读动作的措辞（查到/整理/列出）不属于写宣告。"""
         assert lr.check_unbacked_state_claim(
