@@ -2455,13 +2455,7 @@
 ```
 你: 帮我下单，遮光窗帘 3 米，要打孔加工
 你: [🤖 按上一轮卡片作答]
-你: [🤖 按上一轮卡片作答]
-你: [🤖 按上一轮卡片作答]
-你: [🤖 按上一轮卡片作答]
-你: [🤖 按上一轮卡片作答]
-你: [🤖 按上一轮卡片作答]
-你: [🤖 按上一轮卡片作答]
-你: [🤖 按上一轮卡片作答]
+你: [🔁 按目标工具重复直至成功：order_create，最多 8 次]
 期望: product_search
 期望: product_detail
 期望: customer_address_query
@@ -2479,7 +2473,7 @@
 落库: order_phone → source=order_create; expect_phone=13800138000; expect_customer_name=张三; expect_address_contains=文三路
 ```
 真值: order.create-flow, ai-chat.confirm-required
-溯源: 2026-09-13 新增（issue #3397）：补齐零断言能力（地址预填 + 写前校验） ｜ tags: order_create, prefill, address, xiaobu
+溯源: 2026-09-13 新增（issue #3397）：补齐零断言能力（地址预填 + 写前校验）；2026-09-14 协作轮重构（issue #3646）：固定 9 轮台词表实测与真实卡序列错位（R1 发 2 张 choice 卡、R2 的「米白」被当成加工项应答、R3 起 7 轮全 `tools=-`、order_create 从未发生 = 真实重放 0%/unstable），改为「有卡答卡 + repeat_until(order_create) 停机」；expectations/must_succeed/order_before/amount_verify/db_verify 原样保留（未放宽） ｜ tags: order_create, prefill, address, xiaobu
 
 ### OR-024. C 端顾客已给数量后不得再问用量/褶皱倍数（防 2 倍金额与流程空转） 🔵
 ```
