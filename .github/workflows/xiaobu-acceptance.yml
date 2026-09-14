@@ -40,8 +40,12 @@ on:
         required: false
         default: false
         type: boolean
+      # ⚠️ tier 的语义边界（与 post-deploy-eval 同口径）：`local_runner` 按 difficulty 选档、
+      #    三档**互斥**（各自再滤 `skip_reason`）⇒ `normal` **只跑 NORMAL 档**，**不含**
+      #    SMOKE / ADVERSARIAL。**判定用途的 normal 跑只代表 NORMAL 档的结论**，
+      #    勿据以声称"覆盖了全部用例"（要全档结论就分别派档，或**显式声明覆盖边界**）。
       tier:
-        description: '评测档位：smoke（门禁级，快）| normal（C 端全量，每日回归）| adversarial（安全/对抗，每周）'
+        description: '评测档位：smoke（门禁级，快）| normal（**只跑 NORMAL 档**，C 端全量·每日回归；**不含 SMOKE/ADVERSARIAL** —— 判定用途勿据以声称覆盖两者）| adversarial（安全/对抗，每周）'
         required: false
         default: smoke
         type: choice
