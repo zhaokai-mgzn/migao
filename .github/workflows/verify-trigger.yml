@@ -1,70 +1,359 @@
 name: verify-trigger
 
+# 「PR 合并 → 自动评审/验收」链路的唯一入口（issue #3608）。
+#
+# ── 触发源为什么不能用 `pull_request: types:[closed]`（2026-09-14 实测，非推断）──
+# auto-merge 由 `automerge.yml` 用 `secrets.GITHUB_TOKEN` 开启 ⇒ **合并者恒为 `app/github-actions`**。
+# GitHub 既有语义：**由 `GITHUB_TOKEN` 引发的事件不创建新的 workflow run**（防递归）
+# ⇒ bot 合并的 PR **100% 不触发** `pull_request: [closed]`，而 bot 合并是本仓库常态。
+#
+# 实测对照（近 48h 全量 18 个 run，逐条核对合并者）：
+#   人工合并 → 秒级触发：#3395 09:43:48Z→run 09:43:50Z（2s）/ #3385 06:17:49Z→06:17:51Z /
+#                        #3382 04:50:05Z→04:50:08Z / #3366 21:46:29Z→21:46:32Z
+#   bot 合并 → 零 run：#3547 05:13:11Z / #3552 05:14:27Z / #3554 05:14:34Z / #3555 05:19:44Z /
+#                      #3580 05:38:43Z（同时段其它 workflow 的 run 都在，只有本 workflow 缺席）
+#   影响量化：48h 内 135 个 PR 合并，117 个（87%）由 bot 合并，其中 77 个 body 带 `Closes #N`
+#            ⇒ 77 个本该触发却零 run；存量带 `ai-verify/pending` 的 issue 数 = 0。
+#   另有一段 09-05 08:42Z → 09-12 21:16Z 的 7 天整零 run 空窗。
+#
+# 同一根因前两例：`deploy-reconcile.yml`（issue #3113，push 被吞）、
+# `close-linked-issues.yml`（issue #3585，closed 被吞）。本文件是第三例。
+#
+# ── 可靠触发源（照 #3113/#3585 既有范式，勿另发明）──
+#   1. `pull_request_target: [opened, reopened]` —— PR 打开必触发（已被 automerge/deploy-reconcile/
+#      pr-check 证实可靠），并在**对账模式**下扫出近 48h 内被吞掉的历史合并 PR；
+#   2. `pull_request: [closed]` —— 保留作**人工**合并的即时补偿（bot 合并这条路径无效，仅兜底）；
+#   3. `schedule` + `workflow_dispatch` —— 手动/定时兜底（schedule 实测被随机节流到 2~5.5h 间隔，
+#      不可当实时保证，仅作最后防线）。
+#
+# ── 两种模式必须分离（防假触发）──
+#   · 单 PR 模式：只允许 `workflow_dispatch` 的 `pr_number` 输入，或 `closed` 事件启用。
+#     `opened/reopened` 事件里的 `github.event.pull_request` 是**未合并** PR，若误入单 PR 模式
+#     就会拿未合并 PR 的 `Closes #x` 去贴 VERIFY_TRIGGER / reopen issue（假验收）。禁止。
+#   · 对账模式：`opened/reopened/schedule/workflow_dispatch` 走这条，`gh pr list --state merged`
+#     批量扫近 48h 已合并 PR。
+#
+# ── 幂等/限流（bot 合并是常态 ⇒ 修好后对账会一次扫出大量历史 PR，必须防「修复本身变黑洞」）──
+# 突发流量评估（实测口径）：48h 内 77 个 body 带 `Closes #N` 的 bot 合并 PR 全部未被处理，
+# 若不节流，一次对账就会连发 77 条 issue comment + 77 次 add-label + 至多 77 次 reopen。
+# 故加**三道**节流（缺一不可）：
+#   ① 幂等：issue 上已有指向**该 PR 号**的 `VERIFY_TRIGGER` 标记 → skip；
+#     第二道：issue 已带任一 `ai-verify/*` 标签 → 视为已在验收流程，不重复入队。
+#     两道都在**贴标记之前**判定，故重复 run 不会重复产生副作用。
+#   ② 按事件类型收窄候选窗口：`opened/reopened` 是最频繁的触发（每个新 PR 一次），
+#      只扫**最近 5 个**已合并 PR 做轻量补漏（~20 次 API）；完整窗口只给 `schedule` /
+#      `workflow_dispatch`（30 分钟一次，天然限流）。
+#   ③ 预算闸：run 开头读 `gh api rate_limit`，剩余 < 150 直接退出（fail-open，下次 run 继续）——
+#      绝不在限额边缘跑长循环，避免「跑到一半被限流 → 后半段静默失败」。
+# 单角色 API 成本实测：已处理过的 issue 只花 1 次调用（提前 return），
+# 真正需要贴标记的 issue 花 5 次（comments/comment/labels/edit/state）。稳态下每次
+# `opened` run ≈ 20 次调用，远低于 `GITHUB_TOKEN` 1000 请求/小时/仓库。
+#   · **每个**候选 PR 在每个分支都打一行日志（含 skip 分支）——旧版 `No linked issue, skip`
+#     没有任何输出，正是它静默失效 7 天无人发现的原因。
+#   · 取数一律 `gh pr list --json`（**禁逐 PR `gh pr view`**：实测 135 个 PR 会打爆限额）；
+#     `--limit 200` 有依据：实测 48h 合并数 135（留 ~1.5x 余量），
+#     旧值 50 会静默漏掉 85/135。
+
 on:
+  pull_request_target:
+    types: [opened, reopened]
   pull_request:
     types: [closed]
+  schedule:
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: '单 PR 模式：要补触发验收的 PR 号（留空 = 对账近 N 小时已合并 PR）'
+        required: false
+        type: string
+      hours:
+        description: '对账时间窗口（小时，默认 6；首次补历史可传 48）'
+        required: false
+        default: '6'
+        type: string
 
 permissions:
   contents: read
   issues: write
   pull-requests: read
 
+concurrency:
+  group: verify-trigger
+  cancel-in-progress: false
+
 jobs:
   trigger:
+    name: Post VERIFY_TRIGGER
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # ⚠️ 关键一行：不能要求 `github.event.pull_request.merged == true`——`pull_request_target`
+    # 的 opened/reopened 事件里 `merged` 恒为 null/false，旧写法会把可靠触发源一并 skip 掉。
+    # 合并状态只在 `pull_request` 事件（closed）里判定；`pull_request_target` 的 opened/reopened
+    # 走对账模式，对账本身只扫 `--state merged`，天然不碰未合并 PR。
+    if: github.event_name != 'pull_request' || github.event.pull_request.merged == true
     steps:
+      # 只用 gh API 读 PR body / 写 issue comment，**不 checkout PR 代码**（`pull_request_target`
+      # 下执行 PR 代码 = 高危，可读 secrets）。
+      # 但必须 checkout main：新版 gh CLI 在无 git 上下文时无法解析仓库
+      # （automerge.yml 2026-09-05 issue #2929 踩过：`failed to run git: not a git repository`）。
+      # ref 固定 `main`（永不取 PR head），并另用 GH_REPO 双保险。
+      - name: Checkout main（仅提供 git 上下文，不取 PR 代码）
+        uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 1
+
       - name: 护栏检查
         env:
           EVENT_NAME: ${{ github.event_name }}
           MERGED: ${{ github.event.pull_request.merged }}
         run: |
-          if [ "$EVENT_NAME" != "pull_request" ]; then
-            echo "⏭️  非 PR 事件，跳过"; exit 0
+          # 与 job 级 `if` 双保险：万一 job 级 if 被改回「必须 merged==true」，
+          # 这里仍保证 opened/reopened（可靠触发源）不会被 skip —— 见文件头「关键一行」。
+          if [ "$EVENT_NAME" = "pull_request" ] && [ "$MERGED" != "true" ]; then
+            echo "⏭️  pull_request 非合并（关闭未合入），跳过"; exit 0
           fi
-          if [ "$MERGED" != "true" ]; then
-            echo "⏭️  PR 未合并，跳过"; exit 0
+          if [ "$EVENT_NAME" = "pull_request_target" ] && [ "$MERGED" != "true" ]; then
+            echo "ℹ️  pull_request_target（${GITHUB_ACTION:-opened/reopened}）：PR 当时未合并，按常规走对账模式（只扫 --state merged）"
           fi
-      - uses: actions/checkout@v7
-      - name: 贴 VERIFY_TRIGGER + 打标签
+          echo "✅ 事件 $EVENT_NAME 通过护栏"
+
+      - name: API 预算闸（防跑到一半被限流）
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PR_BODY: ${{ github.event.pull_request.body }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          PR_TITLE: ${{ github.event.pull_request.title }}
-          PR_URL: ${{ github.event.pull_request.html_url }}
-          PR_SHA: ${{ github.event.pull_request.merge_commit_sha }}
-          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          GH_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
-          ISSUE_NUM=$(echo "$PR_BODY" | grep -oP '(Fixes|Closes|Resolves)\s+#\K\d+' | head -1 || echo "")
-          if [ -z "$ISSUE_NUM" ]; then echo "No linked issue, skip"; exit 0; fi
-          AI_DRAFT=$(gh issue view "$ISSUE_NUM" --json labels --jq '.labels[].name' | grep -c '^ai-draft$' || echo "0")
-          if [ "$AI_DRAFT" -gt 0 ]; then echo "✅ ai-draft issue，跳过自动验收"; exit 0; fi
-          ISSUE_LABELS=$(gh issue view "$ISSUE_NUM" --json labels --jq '.labels[].name')
-          if echo "$ISSUE_LABELS" | grep -qE '^type/(infra|chore|docs|meta|refactor)$'; then
-            echo "⏭️  工程类 issue（type/infra|chore|docs|meta|refactor），无业务真值，跳过自动评审验收 reopen"
+          REMAIN=$(gh api rate_limit --jq '.resources.core.remaining' 2>/dev/null || echo "9999")
+          echo "GITHUB_TOKEN 剩余额度：$REMAIN / 小时"
+          if [ "$REMAIN" -lt 150 ]; then
+            echo "⚠️  剩余额度 < 150，本次退出（fail-open：不半途而废，下次 run 继续）"
+            echo "skip_run=true" >> "$GITHUB_ENV"
+          fi
+
+      - name: 解析模式 + 收集候选 PR 号
+        id: collect
+        if: env.skip_run != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_ACTION: ${{ github.event.action }}
+          DISPATCH_PR: ${{ inputs.pr_number }}
+          HOURS_INPUT: ${{ inputs.hours }}
+          EVENT_PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          SINGLE=""
+          # ── 单 PR 模式只允许 dispatch 显式 pr_number 或 closed 事件（见文件头「两种模式必须分离」）──
+          # 判据里的 `EVENT_ACTION = "closed"` 是**必须保留**的：
+          # opened/reopened 事件里的 `github.event.pull_request.number` 是未合并 PR，
+          # 误入单 PR 模式就会拿未合并 PR 的 `Closes #x` 去贴标记 / reopen issue（假验收）。
+          if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ -n "${DISPATCH_PR:-}" ]; then
+            SINGLE="$DISPATCH_PR"
+          elif [ "$EVENT_NAME" = "pull_request" ] && [ "$EVENT_ACTION" = "closed" ] && [ -n "${EVENT_PR_NUMBER:-}" ]; then
+            # EVENT_ACTION = "closed"（且 PR 必须已合并，由 job 闸与 step 护栏共同保证）
+            SINGLE="$EVENT_PR_NUMBER"
+          fi
+
+          if [ -n "$SINGLE" ]; then
+            echo "mode=single"
+            echo "mode=single" >> "$GITHUB_OUTPUT"
+            echo "$SINGLE" > /tmp/candidates.txt
+            echo "单 PR 模式：PR #$SINGLE"
             exit 0
           fi
-          if echo "$ISSUE_LABELS" | grep -qE '^(needs-truths|needs-draft)$'; then
-            echo "⏭️  issue 缺业务真值（needs-truths/needs-draft），无真值可验收，跳过 reopen + ai-verify/pending"
+
+          HOURS="${HOURS_INPUT:-6}"
+          case "$HOURS" in ''|*[!0-9]*) HOURS=6 ;; esac
+          # 限流②：最频繁的触发源（opened/reopened，每个新 PR 一次）只做轻量补漏；
+          # 完整窗口交给 schedule / workflow_dispatch（30 分钟一次，天然限流）。
+          if [ "$EVENT_NAME" = "pull_request_target" ]; then
+            LIMIT=5
+            HOURS=1
+            MODE_NAME="opened-catchup"
+          else
+            LIMIT=200
+            MODE_NAME="reconcile"
+          fi
+          SINCE=$(date -u -d "-${HOURS} hours" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
+                  || date -u -v-"${HOURS}"H +%Y-%m-%dT%H:%M:%SZ)
+          echo "mode=$MODE_NAME"
+          echo "mode=$MODE_NAME" >> "$GITHUB_OUTPUT"
+          echo "since=$SINCE" >> "$GITHUB_OUTPUT"
+          # 批量取数：一次 list 拿候选号（--limit 依据见文件头）。
+          # 不叠 `--search "merged:>=..."`：`--search` 会切换结果排序语义，与 `--limit`
+          # 组合可能静默截断/漏掉目标 PR；时间窗口统一交给 processing step 用
+          # `mergedAt` 精确过滤（同一份 SINCE，避免「收集用一套、处理用另一套」）。
+          # `gh pr list --state merged` 默认按创建时间倒序 ≈ 合并倒序，取最近 LIMIT 个
+          # 即可覆盖近 HOURS 小时的合并（6h 实测约 20 个，48h 约 135 个，LIMIT 余量充足）。
+          gh pr list --state merged --limit "$LIMIT" \
+            --json number --jq '.[].number' | sort -n > /tmp/candidates.txt || true
+          echo "mode=${MODE_NAME} since=${SINCE} limit=${LIMIT}，候选（近 ${HOURS}h 已合并，取最近 ${LIMIT} 个）PR 数：$(wc -l < /tmp/candidates.txt | tr -d ' ')"
+
+      - name: 处理候选 PR（贴 VERIFY_TRIGGER + 打标签 + reopen，全部幂等）
+        if: env.skip_run != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          MODE: ${{ steps.collect.outputs.mode }}
+          SINCE: ${{ steps.collect.outputs.since }}
+        run: |
+          set -euo pipefail
+          POSTED=0; SKIPPED=0; NOPR=0; IDEMPOTENT=0; FAILED=0
+          : > /tmp/posted.txt
+
+          if [ ! -s /tmp/candidates.txt ]; then
+            echo "⚠️  零候选 PR，结束"
+            printf '| 候选 PR | 0 |\n' > /tmp/summary.md
             exit 0
           fi
-          cat > /tmp/verify.md << COMMENT
-          ## 🤖 自动评审验收触发
-          PR [#$PR_NUMBER]($PR_URL) 已合入 \`main\`。
-          | 项目 | 值 |
-          |------|-----|
-          | Issue | #$ISSUE_NUM |
-          | Commit | \`$PR_SHA\` |
-          | Author | @$PR_AUTHOR |
-          ---
-          <!-- VERIFY_TRIGGER
-          { "issue_id": $ISSUE_NUM, "pr_number": $PR_NUMBER, "commit": "$PR_SHA", "pr_author": "$PR_AUTHOR", "merged_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)" }
-          -->
-          COMMENT
-          gh issue comment "$ISSUE_NUM" --body-file /tmp/verify.md
-          gh issue edit "$ISSUE_NUM" --add-label "ai-verify/pending" 2>/dev/null || true
-          if [ "$(gh issue view "$ISSUE_NUM" --json state --jq '.state')" = "CLOSED" ]; then
-            gh issue reopen "$ISSUE_NUM" 2>/dev/null || true
+
+          # ── 一次批量取 body/mergeCommit/mergedAt（禁逐 PR `gh pr view`：会打爆 1000/h 限额）──
+          # 用 `gh pr list --json` 拿原始 JSON，再用 runner 自带 python3 过滤/转义成 TSV。
+          # 为什么不用 `gh ... --jq` 传变量：`gh` 的 `--jq` 只接受一个表达式，**不支持
+          # `--argjson`/`--arg`**；而把候选号内联进表达式
+          # （`('"$NUMS"' | split(",") | map(tonumber) | index($n))`）在只有 1 个候选时会被
+          # jq 词法解析成**数字** → `split cannot be applied to: number` → 取数为 0，
+          # run 仍报 success 但 posted=0（「静默一条都没处理」，本 PR dispatch 实测踩到）。
+          # python 过滤顺带做 TSV 转义（正文里的制表符/换行会打乱 while read 的字段切分）。
+          gh pr list --state merged --limit 200 \
+            --json number,mergeCommit,mergedAt,body,title,url,author > /tmp/prs.json 2>/tmp/prdata.err || true
+          if [ -s /tmp/prdata.err ]; then echo "⚠️  gh pr list stderr: $(head -3 /tmp/prdata.err)"; fi
+          python3 - "$SINCE" <<'PYEOF' > /tmp/prdata.tsv
+          import json, sys
+          since = sys.argv[1]
+          cand = {int(x) for x in open('/tmp/candidates.txt') if x.strip()}
+          rows = json.load(open('/tmp/prs.json', encoding='utf-8'))
+          def esc(v):
+              return str(v if v is not None else '').replace('\t', ' ').replace('\n', ' ').replace('\r', ' ')
+          n = 0
+          for r in sorted(rows, key=lambda r: r['number']):
+              if r['number'] not in cand:
+                  continue
+              at = r.get('mergedAt') or ''
+              if at and at < since:      # ISO8601 UTC 可按字典序比较
+                  continue
+              n += 1
+              print('\t'.join([str(r['number']),
+                                (r.get('mergeCommit') or {}).get('oid') or '',
+                                at,
+                                (r.get('author') or {}).get('login') or '',
+                                esc(r.get('title')), esc(r.get('url')), esc(r.get('body'))]))
+          print(f'# matched {n}', file=sys.stderr)
+          PYEOF
+          NCAND=$(wc -l < /tmp/candidates.txt | tr -d ' ')
+          NFETCH=$(wc -l < /tmp/prdata.tsv | tr -d ' ')
+          echo "取到 ${NFETCH} 条 PR 数据（候选 ${NCAND}，窗口 >= ${SINCE}）"
+          # 失败关闭：有候选却一条都取不到 = 取数链路缺陷（本 PR 已踩过一次：run 34811018961
+          # 报 success 但 posted=0），必须报红而不是静默「处理了 0 个」。
+          if [ "$NFETCH" -eq 0 ]; then
+            echo "❌ 有 ${NCAND} 个候选 PR 却取到 0 条数据 —— 取数链路缺陷（不当静默成功处理）"
+            exit 1
           fi
-          echo "✅ VERIFY_TRIGGER posted + ai-verify/pending"
+
+          ITER=0
+          while IFS=$'\t' read -r PR_NUM SHA MERGED_AT AUTHOR TITLE PR_URL BODY; do
+            [ -z "${PR_NUM:-}" ] && continue
+            # ── 限流③：循环内每 10 个候选复核一次额度，不足即停（不半途而废，下次 run 续跑）──
+            ITER=$((ITER+1))
+            if [ $((ITER % 10)) -eq 1 ]; then
+              LEFT=$(gh api rate_limit --jq '.resources.core.remaining' 2>/dev/null || echo "9999")
+              if [ "$LEFT" -lt 150 ]; then
+                echo "⚠️  额度剩 $LEFT < 150，停止本轮（已处理 $((ITER-1)) 个候选，其余留给下次 run）"
+                break
+              fi
+            fi
+            # 用 POSIX ERE（`grep -oiE`）而非 GNU 专属的 `-oP`/`\K`：后者在 macOS 本地
+            # 静默报错（invalid option -- P）→ 本地复现/调试时表现为「一条都不触发」，
+            # 把真实缺陷伪装成环境差异（本包 dry-run 实测踩到）。行为等价（大小写不敏感、
+            # 取第一个匹配），但双平台一致。
+            ISSUE_NUM=$(printf '%s' "$BODY" | grep -oiE '(fixes|closes|resolves)[[:space:]]+#[0-9]+' | head -1 | grep -oE '[0-9]+$' || true)
+            if [ -z "$ISSUE_NUM" ]; then
+              echo "PR #$PR_NUM ⏭️  无 linked issue（body 无 Closes/Fixes/Resolves #N）"
+              NOPR=$((NOPR+1)); continue
+            fi
+            if ! gh issue view "$ISSUE_NUM" --json number >/dev/null 2>&1; then
+              echo "PR #$PR_NUM ⚠️  linked issue #$ISSUE_NUM 不存在（PR body 误写），跳过"
+              NOPR=$((NOPR+1)); continue
+            fi
+            LABELS=$(gh issue view "$ISSUE_NUM" --json labels --jq '.labels[].name' 2>/dev/null || echo "")
+
+            # ── 幂等①：该 PR 是否已在本 issue 贴过 VERIFY_TRIGGER 标记（标记带 "pr_number": N）──
+            if gh issue view "$ISSUE_NUM" --comments --json comments --jq '.comments[].body' 2>/dev/null \
+                 | grep -qF "\"pr_number\": $PR_NUM,"; then
+              echo "PR #$PR_NUM → issue #$ISSUE_NUM ⏭️  已处理过（VERIFY_TRIGGER 标记已在，幂等）"
+              IDEMPOTENT=$((IDEMPOTENT+1)); continue
+            fi
+            # ── 幂等②：issue 已在验收流程中（任一 ai-verify/* 标签）→ 不重复入队 ──
+            if echo "$LABELS" | grep -qE '^ai-verify/'; then
+              echo "PR #$PR_NUM → issue #$ISSUE_NUM ⏭️  已有 ai-verify/* 标签（幂等），跳过"
+              IDEMPOTENT=$((IDEMPOTENT+1)); continue
+            fi
+
+            # ── 门禁（沿用旧版语义，不改判据）──
+            if echo "$LABELS" | grep -qx 'ai-draft'; then
+              echo "PR #$PR_NUM → issue #$ISSUE_NUM ⏭️  ai-draft issue，跳过自动验收"
+              SKIPPED=$((SKIPPED+1)); continue
+            fi
+            if echo "$LABELS" | grep -qE '^type/(infra|chore|docs|meta|refactor)$'; then
+              echo "PR #$PR_NUM → issue #$ISSUE_NUM ⏭️  工程类 issue（type/infra|chore|docs|meta|refactor），无业务真值，跳过"
+              SKIPPED=$((SKIPPED+1)); continue
+            fi
+            if echo "$LABELS" | grep -qE '^(needs-truths|needs-draft)$'; then
+              echo "PR #$PR_NUM → issue #$ISSUE_NUM ⏭️  issue 缺业务真值（needs-truths/needs-draft），跳过"
+              SKIPPED=$((SKIPPED+1)); continue
+            fi
+
+            # ── 贴机器可读触发标记（acceptance-protocol 的验收锚点）──
+            # MERGED_AT 来自上面的批量取数（不再逐 PR `gh pr view`——那会打爆限额）
+            {
+              printf '## 🤖 自动评审验收触发\n'
+              printf 'PR [#%s](%s) 已合入 `main`。\n' "$PR_NUM" "$PR_URL"
+              printf '| 项目 | 值 |\n|------|-----|\n'
+              printf '| Issue | #%s |\n| Commit | `%s` |\n| Author | @%s |\n' "$ISSUE_NUM" "$SHA" "$AUTHOR"
+              printf -- '---\n'
+              printf '<!-- VERIFY_TRIGGER\n'
+              printf '{ "issue_id": %s, "pr_number": %s, "commit": "%s", "pr_author": "%s", "merged_at": "%s", "detected_via": "%s" }\n' \
+                "$ISSUE_NUM" "$PR_NUM" "$SHA" "$AUTHOR" "${MERGED_AT:-$SINCE}" "${MODE:-?}"
+              printf -- '-->\n'
+            } > /tmp/verify.md
+            if gh issue comment "$ISSUE_NUM" --body-file /tmp/verify.md; then
+              gh issue edit "$ISSUE_NUM" --add-label "ai-verify/pending" 2>/dev/null || true
+              if [ "$(gh issue view "$ISSUE_NUM" --json state --jq '.state')" = "CLOSED" ]; then
+                gh issue reopen "$ISSUE_NUM" 2>/dev/null || true
+              fi
+              echo "PR #$PR_NUM → issue #$ISSUE_NUM ✅ VERIFY_TRIGGER posted + ai-verify/pending"
+              POSTED=$((POSTED+1)); echo "$PR_NUM" >> /tmp/posted.txt
+            else
+              echo "PR #$PR_NUM → issue #$ISSUE_NUM ⚠️  comment 失败（限流/权限）"
+              FAILED=$((FAILED+1))
+            fi
+          done < /tmp/prdata.tsv
+
+          echo "──── 汇总（mode=${MODE:-?}）────"
+          echo "posted=$POSTED idempotent_skip=$IDEMPOTENT guard_skip=$SKIPPED no_linked_issue=$NOPR failed=$FAILED"
+          if [ -s /tmp/posted.txt ]; then
+            echo "本次新触发验收的 PR：$(tr '\n' ' ' < /tmp/posted.txt)"
+          fi
+          {
+            echo "### verify-trigger 运行结果（mode=${MODE:-?}）"
+            echo ""
+            echo "| 指标 | 数量 |"
+            echo "|---|---|"
+            echo "| 候选 PR | $(wc -l < /tmp/candidates.txt 2>/dev/null | tr -d ' ') |"
+            echo "| ✅ 新触发验收 | $POSTED |"
+            echo "| ⏭️ 幂等跳过 | $IDEMPOTENT |"
+            echo "| ⏭️ 门禁跳过（无真值/工程类/ai-draft） | $SKIPPED |"
+            echo "| ⏭️ 无 linked issue | $NOPR |"
+            echo "| ⚠️ 失败 | $FAILED |"
+          } > /tmp/summary.md
+          cat /tmp/summary.md
+          {
+            echo "## verify-trigger summary"
+            echo ""
+            cat /tmp/summary.md
+            echo ""
+            echo "触发源 mode=\`${MODE:-?}\`（可靠源 = \`pull_request_target: opened/reopened\` 对账）"
+          } >> "$GITHUB_STEP_SUMMARY"
