@@ -127,6 +127,52 @@ class TestIntentRouterNode:
         assert result["route_decision"]["action"] == "full_agent"
 
     @pytest.mark.asyncio
+    async def test_short_order_signal_uses_l1_not_synthetic(self):
+        """短消息带**下单**信号（「确认下单」4 字）→ 必须按 L1 给 order_create（#3476 根因）。
+
+        C-A1 P1 实证（run 34791767013）：pending=customer_product 时「确认下单」走短消息路径，
+        而 `_SKILL_TO_INTENT` 的键是**域**名（product/order…），C 端 pending 值是
+        customer_product/customer_order → **全部 miss → 一律 general** →
+        escape 命中 order 域关键词却路由到 customer_general（没有 order_create）
+        → 模型只能说"我下不了单"并转人工（C-A1 L1 违规 3 条）。
+        """
+        state = {
+            "pending_interact_skill": "customer_product",
+            "session_id": "s1",
+            "agent_type": "xiaobu",
+            "messages": [HumanMessage(content="确认下单")],
+        }
+        result = await intent_router_node(state)
+        assert result["intent_result"]["intent"] == "order_create", (
+            f"「确认下单」必须按 L1 给 order_create，实得 {result['intent_result']['intent']}")
+
+    @pytest.mark.asyncio
+    async def test_bare_confirm_keeps_synthetic(self):
+        """回归：无领域信号的短消息（「确认」）仍走合成意图（pending 域），不得被 L1 抢走。"""
+        state = {
+            "pending_interact_skill": "customer_product",
+            "session_id": "s1",
+            "agent_type": "xiaobu",
+            "messages": [HumanMessage(content="确认")],
+        }
+        result = await intent_router_node(state)
+        assert result["intent_result"]["intent"] == "product_inquiry", result
+
+    @pytest.mark.asyncio
+    async def test_short_order_signal_any_c_pending_skill(self):
+        """不只 customer_product：customer_knowledge / customer_general 同样要能被下单信号拉回。"""
+        for pending in ("customer_knowledge", "customer_general", "customer_product"):
+            state = {
+                "pending_interact_skill": pending,
+                "session_id": "s1",
+                "agent_type": "xiaobu",
+                "messages": [HumanMessage(content="确认下单")],
+            }
+            result = await intent_router_node(state)
+            assert result["intent_result"]["intent"] == "order_create", (
+                f"pending={pending} 时「确认下单」未按 L1 给 order_create")
+
+    @pytest.mark.asyncio
     async def test_pending_skill_order_maps_to_order_query(self):
         state = {
             "pending_interact_skill": "order",
@@ -500,6 +546,19 @@ class TestCurrentDomainSignalPriority:
         mapping = {"order_query": "customer_order_skill", "general": "customer_general_skill"}
         assert self._route("帮我查一下我的订单", "customer_product", "order_query",
                            mapping) == "customer_order_skill"
+
+    def test_order_signal_escapes_product_lock(self):
+        """在办商品锁里顾客说「确认下单」（intent=order_create）→ 必须逃逸到下单技能。
+
+        C-A1 P1 的完整链条（#3476）：pending=customer_product 时「确认下单」被
+        短消息合成意图打成 general → escape 命中 order 域关键词却路由到 general skill
+        （无 order_create）→ 模型只能"我下不了单"并转人工。本测试锁"escape + 正确意图
+        → 落到下单技能"这一半。
+        """
+        mapping = {"order_create": "customer_order_skill", "general": "customer_general_skill"}
+        assert self._route("确认下单", "customer_product", "order_create",
+                           mapping) == "customer_order_skill", (
+            "下单信号必须从商品锁逃逸到下单技能（C-A1 P1）")
 
     def test_customer_product_inquiry_switches_to_product(self):
         """C 端口语型商品询问必须能切到商品域（issue #3364，E2E 实测红）。

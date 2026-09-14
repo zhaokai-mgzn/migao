@@ -504,6 +504,18 @@ customer_order/customer_aftersales；③ 旧正则在"没有"与"权限"之间�
 - 措辞表补「协助下单」「没有X下单的权限」等**隔词权限话术**。
 
 评测侧（`check_false_inability`）与 agent 侧**同源**同步覆盖（变体验证：去掉模糊权限形态 → 新用例红）。
+### 6.9 短消息路由：L1 规则优先于"合成意图"（issue #3476，C-A1 P1 的入口）
+
+`pending_interact_skill` 存在时，≤5 字短消息走**合成意图**快捷路由 —— 旧实现的
+`_SKILL_TO_INTENT` 键是**域**名（product/order…），C 端 pending 值
+（customer_product/customer_order）**全部 miss → 一律 general**：
+「确认下单」(4 字) 在 customer_product 锁里被合成成 general → escape 命中 order 域关键词
+却路由到 customer_general（无 order_create）→ 模型只能说"我下不了单"并转人工。
+
+修法：短消息先过 **L1 规则**（「确认下单」→ order_create，0.98；「查订单」→ order_query），
+L1 不命中（"确认"/"好的"/"米白"这类点卡值/短确认）才用合成意图；合成映射补 C 端 skill 名
+（customer_product→product_inquiry 等）。澄清护栏（#2796）在 L1 检查**之前** —— 模糊轮
+优先给兜底示例，领域信号轮不算模糊。
 
 ## 7. 新增 C 端用例的检查单
 
