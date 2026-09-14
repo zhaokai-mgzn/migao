@@ -202,15 +202,23 @@ class BaseAgent:
         # confirmValue 与"发卡 skill"同处写入（base_skill 的 interact 成功路径 + 补卡路径）。
         last_confirm_value = ""
         last_confirm_skill = ""
+        last_card: dict = {}
+        last_card_skill = ""
         if context.session_id:
             try:
                 from app.memory.session_state_store import SessionStateStore
                 _card_state = await SessionStateStore().load(context.session_id) or {}
                 last_confirm_value = str(_card_state.get("last_confirm_value") or "")
                 last_confirm_skill = str(_card_state.get("last_confirm_skill") or "")
+                # 最近一张**任意类型**交互卡（#3557 家族扩展）：choice / form 卡的答卡轮
+                # 没有 last_confirm_* 可依，路由层靠这两个字段判"是不是本 skill 卡的答卡"
+                # （run 34841029062 OR-015 R4 实证缺口）。
+                _last_card = _card_state.get("last_card")
+                last_card = _last_card if isinstance(_last_card, dict) else {}
+                last_card_skill = str(_card_state.get("last_card_skill") or "")
             except Exception as e:
                 logger.warning(
-                    f"[_build_initial_state] Failed to load last_confirm_* "
+                    f"[_build_initial_state] Failed to load last_confirm_*/last_card "
                     f"| session={context.session_id} error={e}"
                 )
 
@@ -232,6 +240,8 @@ class BaseAgent:
             "pending_interact_skill": pending_skill,
             "last_confirm_value": last_confirm_value,
             "last_confirm_skill": last_confirm_skill,
+            "last_card": last_card,
+            "last_card_skill": last_card_skill,
         }
     
     async def achat(

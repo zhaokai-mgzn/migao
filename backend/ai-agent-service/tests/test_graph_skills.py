@@ -5554,6 +5554,25 @@ class TestConfirmationGateNoCardRepro:
         out, executed = self._run("确认")
         assert "confirmation_required" not in str(out), "明确确认被误拦"
 
+    def test_interact_tool_path_persists_last_card(self):
+        """发卡侧（#3557 家族扩展）：`interact` 工具路径发的卡必须整体落 `last_card`。
+
+        路由层的答卡轮豁免读 `last_card` / `last_card_skill`（判"本轮输入是否被本 skill
+        自己那张卡接受"）。**没有这条写入链，豁免永远拿不到卡记录 = 修复空转**
+        （run 34841029062 OR-015 R4：choice 卡答卡轮不被识别 → L1 域逃逸清锁 →
+        落到 product skill，零工具 + 「我承接的是商品侧的工作」）。
+        """
+        shared: dict = {}
+        out, executed = self._run("123456", model_calls_card=True, store_state=shared)
+        assert "interact" in executed, f"用例前提不成立（executed={executed}）"
+        assert shared.get("last_card_skill") == "customer_order", (
+            f"发卡 skill 未落库：{shared.get('last_card_skill')!r}")
+        card = shared.get("last_card") or {}
+        assert card.get("component") == "confirm", f"卡载荷未落库：{card!r}"
+        # 与 confirm 专用字段同源（同一次写入），不得只落其中之一
+        assert shared.get("last_confirm_skill") == "customer_order"
+        assert shared.get("last_confirm_value")
+
 
 class TestOneInteractiveCardPerTurn:
     """C 端每轮**只下发一张**交互卡（issue #3445 的第二个重复卡形态）。
