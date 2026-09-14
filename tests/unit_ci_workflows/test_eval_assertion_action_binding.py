@@ -1,4 +1,4 @@
-# case_ids: OR-026, CU-005, PG-016
+# case_ids: OR-026, CU-005, PG-016, OR-006
 """**声明的 `action` 必须真实存在于该工具的 action 枚举**（L0 静态不变式，issue #3689）。
 
 ## 为什么是 L0（`migao-dev-flow` §16.1）
@@ -7,15 +7,17 @@
 不允许流到真实 LLM 重放去撞。先例：CU-005 的 `customer_manage(action=query)`
 （该工具枚举无 `query`，已在 #3683 修正）。
 
-## 本文件补的是既有门禁**拦不住**的三处（实测，见 issue #3689）
-既有判据 = `scripts/case_coverage.py` 的 `action_dangling`（阻塞 + 存量豁免清单），
-但它有三处盲区，**恰恰覆盖不住 OR-026 登记的那个静默空转形态**：
+## 判据的**单一实现点**（issue #3701 收口）
+判据函数 `action_binding_violations` 住在 `scripts/case_coverage.py`，由
+**门禁**（`build_coverage_report` → 两个 CLI 的 `--check`）与**本文件**共同调用 ——
+本文件不再自带一份平行实现（此前正因门禁那份有三处盲区，才出现"单测层绿 ≠ 门禁绿"）。
+`TestGateAndInvariantAgree` 锁住两侧**同一口径**（同输入 → 同结果）。
 
-| 盲区 | 实测（origin/main） | 后果 |
-|---|---|---|
-| 只遍历 `action_catalog()`（**有** action 维度的工具）—— `case_coverage.py:625` `for tool, acts in rep.action_tools.items()` | `must_fail: [{tool: order_create, action: create}]`（`order_create` 无 action 属性）**不被报出** | 正是 OR-026 里"整条静默跳过"的形态，门禁放行 |
-| 只扫 `select_cases_for_persona()` 选中的用例（`skip_reason` 非空即丢） | OR-006 声明 `order_query(action=detail)`（枚举只有 `list/statistics/follow_status_stats`）因该用例 skip 而**不可见** | 用例一旦解 skip 即带着永不满足的断言上场 |
-| `case_declared_actions()` 不收 `repeat_until.action`（#3667 新增的 action 级停条件） | `repeat_until: {tool_called: X, action: <拼错>}` 不被检查 | 停条件永不命中 → 用例空转到轮数耗尽 |
+| 盲区（#3701 修前，门禁实测放行） | 修后 |
+|---|---|
+| 只遍历 `action_catalog()`（**有** action 维度的工具）：`must_fail: [{tool: order_create, action: create}]`（`order_create` 无 action 属性，OR-026 被拒的写法）不被报出 | 工具**没有** action 维度时声明 action = `no_action_param`，必报 |
+| 只扫 `select_cases_for_persona()` 选中的用例（`skip_reason` 非空即丢）：OR-006 的 `order_query(action=detail)` 被藏住（#3702） | 扫**全库**用例（含 skip）—— skip 只免"参与覆盖统计"，不免"声明合法性" |
+| `case_declared_actions()` 不收 `repeat_until.action`（#3667 的 action 级停条件） | 收（停条件悬空 → 用例空转到轮数耗尽） |
 
 ## 红证（本文件自带）
 `TestRedEvidence*` 组用**合成用例**（行为确实错了）证明判据会红：
@@ -39,99 +41,32 @@ for _p in (REPO_ROOT / ".github", REPO_ROOT / "tests" / "agent_eval", REPO_ROOT 
     sys.path.insert(0, str(_p))
 
 from case_coverage import (  # noqa: E402
-    ACTION_TOOL_FLOOR, action_catalog, case_declared_actions, tool_declared_actions,
+    ACTION_TOOL_FLOOR, action_binding_violations, action_catalog, action_enum,
+    build_coverage_report, registered_tools, tool_declared_actions, toolset_for,
 )
-from eval_case_filter import XIAOBU_TOOLS, mibao_real_toolset  # noqa: E402
 from render_cases import load_case_dicts  # noqa: E402
 
 CASES_DIR = REPO_ROOT / ".github" / "cases"
 
 # ── 存量登记（burn-down）：一条一登记，销账即删 ────────────────────────────────
-# 判据在加入本文件前**从未生效**（既有门禁只扫"可跑用例 + 有 action 维度的工具"），
+# 判据在 #3701 前**从未在门禁里生效**（门禁只扫"可跑用例 + 有 action 维度的工具"），
 # 故这条是**新暴露出来的存量缺口**，不是本次改动引入的：
-#   OR-006（`order.yml:174`）声明 `order_query(action=detail)`，而该工具枚举 =
-#   `list / statistics / follow_status_stats`（`app/tools/order_query.py:61`）——
-#   该 expectation 永不满足。用例当前 `skip_reason` 非空（缺"可全流转的测试订单"，#3599）
+#   OR-006（`order.yml`）声明 `order_query(action=detail)`，而该工具枚举 =
+#   `list / statistics / follow_status_stats`（`app/tools/order_query.py`）——
+#   该 expectation 永不满足。用例当前 `skip_reason` 非空（缺"可全流转的测试订单"）
 #   故跑不到，属于隐藏的假红。**归用例资产包销账**（本包不碰 cases/*.yml）。
-# 销账后本表**必须删条目**（`test_known_exemption_is_not_stale` 会红），清单只可能变短。
+# 门禁侧的**同一缺口**登记在 `.github/eval-coverage-baseline.yml`
+# （`order_query` / `action_dangling` / persona mibao / issue #3702）——
+# 两处都必须在销账时删除，且各自都有"陈旧即红"的守卫（门禁：`check_problems()`；
+# 本文件：`test_known_exemption_is_not_stale`），故漏删任何一处都会被 CI 抓住。
 _KNOWN_DANGLING: dict = {
     ("OR-006", "order_query", "detail"): {
-        "issue": "#3599",
-        "reason": "order_query 枚举无 detail；用例待解 skip（#3599）时须一并按真实语义修正"
+        "issue": "#3702",
+        "reason": "order_query 枚举无 detail；用例待解 skip（#3599/#3702）时须一并按真实语义修正"
                   "（runner/门禁口径见 #3689）",
         "added": "2026-09-15",
     },
 }
-
-
-def _registered_tools() -> set:
-    """两端注册表并集（B 端米宝 + C 端小布）—— 未注册工具由 `dangling_cases` 判据管。"""
-    return set(mibao_real_toolset()) | set(XIAOBU_TOOLS)
-
-
-def _action_enum(tool: str) -> set | None:
-    """工具源码声明的 action 枚举；`None` = **该工具没有 action 维度**（schema 无 action 属性）。
-
-    真值口径与 `case_coverage.tool_declared_actions` 同一份实现（源码 `action.enum`），
-    只是把"无 action 维度"与"枚举为空"区分开 —— 前者是**结构性**错误（声明任何 action 都悬空），
-    后者同样悬空，故判据上用不到这个区分；这里保留区分只为把报错信息写准。
-    """
-    if not (REPO_ROOT / "backend" / "ai-agent-service" / "app" / "tools" / f"{tool}.py").exists():
-        return None                       # 未注册工具：另由工具存在性判据负责
-    return tool_declared_actions(tool)
-
-
-def _repeat_until_bindings(case) -> list:
-    """用例 `user_inputs[].repeat_until.action` 声明的 (tool, action)（#3667 的 action 级停条件）。"""
-    out = []
-    for ui in (case.get("user_inputs") or []):
-        if not isinstance(ui, dict):
-            continue
-        spec = ui.get("repeat_until")
-        for s in (spec if isinstance(spec, list) else [spec]):
-            if not isinstance(s, dict):
-                continue
-            tool = str(s.get("tool_called") or s.get("tool") or "").strip()
-            action = str(s.get("action") or "").strip()
-            if tool and action:
-                out.append((tool, action))
-    return out
-
-
-def declared_bindings(cases) -> list:
-    """全库声明的 `(case_id, tool, action)` —— expectations/must_* /required_args/output_verify/
-    db_verify（经 `case_declared_actions`）+ `repeat_until.action`（本文件补的盲区）。"""
-    out = []
-    for case in cases:
-        cid = case.get("id") if isinstance(case, dict) else getattr(case, "id", "?")
-        for tool, acts in case_declared_actions(case).items():
-            for a in sorted(acts):
-                out.append((cid, tool, a))
-        for tool, a in _repeat_until_bindings(case):
-            out.append((cid, tool, a))
-    return out
-
-
-def action_binding_violations(cases) -> list:
-    """`[(case_id, tool, action, kind)]`；kind ∈ {no_action_param, not_in_enum}。
-
-    `no_action_param` = 该工具 schema 根本没有 action 属性（声明什么 action 都不可能命中）；
-    `not_in_enum`     = 有 action 维度，但枚举里没有这个值。
-    两者都是"断言永不满足"，**不静默跳过**（这就是 fail-closed 的落点）。
-    """
-    tools = _registered_tools()
-    out = []
-    for cid, tool, action in declared_bindings(cases):
-        if tool not in tools:
-            continue                       # 未注册工具由既有 dangling_cases 判据负责
-        enum = _action_enum(tool)
-        if enum is None:
-            continue
-        if not enum:
-            out.append((cid, tool, action, "no_action_param"))
-        elif action not in enum:
-            out.append((cid, tool, action, "not_in_enum"))
-    return out
 
 
 def _unregistered_violations(violations) -> list:
@@ -149,7 +84,7 @@ class TestRedEvidenceDanglingActionBlocks:
 
         `order_create` 无 action 参数（`app/tools/order_create.py` 无 `"action"` 属性）
         ⇒ runner 里 `if not called: continue` 整条静默跳过（假绿）。
-        既有门禁（只遍历有 action 维度的工具）**看不见它**，本不变式必须看见。
+        #3701 前的门禁（只遍历有 action 维度的工具）**看不见它**，判据必须看见。
         """
         cases = [{"id": "T-RED-1", "must_fail": [{"tool": "order_create", "action": "create"}]}]
         v = action_binding_violations(cases)
@@ -216,9 +151,11 @@ class TestRepoActionBinding:
         """真值解析下界：解析口径漂移（文件改名/枚举挪走）会让本判据**假绿**，必须拦住。"""
         assert tool_declared_actions("order_manage") == {
             "update_status", "update_logistics", "cancel", "confirm_payment", "refund"}
-        assert _action_enum("order_create") == set(), (
+        assert action_enum("order_create") == set(), (
             "order_create 被判定为『有 action 维度』—— 判据口径漂移（OR-026 的静默空转拦不住）")
-        assert len(action_catalog(_registered_tools())) >= ACTION_TOOL_FLOOR
+        assert action_enum("no_such_tool") is None, (
+            "不存在的工具必须返回 None（与『无 action 维度』区分）—— 否则工具名拼错会被误判成悬空 action")
+        assert len(action_catalog(registered_tools())) >= ACTION_TOOL_FLOOR
 
     def test_repo_has_no_unregistered_action_bindings(self):
         """全库阻塞项 = 0（存量条目已显式登记，见 `_KNOWN_DANGLING`）。"""
@@ -246,3 +183,48 @@ class TestRepoActionBinding:
         for key in _KNOWN_DANGLING:
             assert key in current, (
                 f"存量登记已销账但条目未删: {key} —— 删除 `_KNOWN_DANGLING` 里的该条目")
+
+
+class TestGateAndInvariantAgree:
+    """**门禁与 L0 不变式必须同一口径**（issue #3701 的核心验收）。
+
+    #3701 的病根不是"判据写错"，而是**同一个判据存在两份实现**（门禁那份漏了三处，
+    单测那份补上了）→ 「单测层绿 ≠ 门禁绿」。收口方式：判据函数只有一份
+    （`case_coverage.action_binding_violations`），本组测试把"两侧同口径"变成**可执行断言** ——
+    将来任何一方被单独改成另一套逻辑，这里立刻红。
+    """
+
+    @classmethod
+    def setup_class(cls):
+        cls.cases = load_case_dicts(str(CASES_DIR))
+
+    def test_gate_reports_exactly_the_invariant_violations(self):
+        """逐端比对：门禁报出的 `(tool, action)` == 不变式报出的合法映射（含 skip 用例）。"""
+        invariant = {(t, a) for _c, t, a, _k in action_binding_violations(self.cases)}
+        assert invariant, "仓库应有 ≥1 处悬空声明（OR-006，已登记）—— 否则本断言失去意义"
+        for persona in ("mibao", "xiaobu"):
+            rep = build_coverage_report(self.cases, persona)
+            expected = {p for p in invariant if p[0] in toolset_for(persona)}
+            assert set(rep.action_dangling) == expected, (
+                f"{persona}: 门禁与 L0 不变式的悬空 action 口径不一致"
+                f"（门禁 {sorted(rep.action_dangling)} vs 不变式 {sorted(expected)}）"
+            )
+
+    def test_union_of_both_ends_covers_every_violation(self):
+        """两端并集 = 全库违规（防"某条用例被 persona 过滤掉 → 两端都不扫"的漏网）。
+
+        门禁按端归属报（一个 tool 只属一端），故单端看不见另一端工具上的悬空声明 ——
+        本断言锁住"合起来不漏"，并锁住报错信息里**带得出用例 ID**（销账靠它定位）。
+        """
+        invariant = {(t, a) for _c, t, a, _k in action_binding_violations(self.cases)}
+        union = set()
+        for persona in ("mibao", "xiaobu"):
+            rep = build_coverage_report(self.cases, persona)
+            union |= set(rep.action_dangling)
+            for pair in rep.action_dangling:
+                assert rep.action_dangling_cases.get(pair), (
+                    f"{persona}: 悬空 action {pair} 没有关联到任何用例 ID —— "
+                    f"报了错但定位不到用例（销账无从下手）")
+        assert union == invariant, (
+            f"两端并集 {sorted(union)} 未覆盖全库违规 {sorted(invariant)}")
+
