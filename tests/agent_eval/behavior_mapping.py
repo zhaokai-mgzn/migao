@@ -76,6 +76,9 @@ def is_ai_behavior_file(path: str) -> bool:
 def map_changed_files_to_case_ids(paths: list) -> list:
     """变更文件路径列表 → 该跑的评测用例 ID 列表（去重 + 字典序稳定排序）。
 
+    等价于 `map_changed_files_with_source(paths)[0]`（用例集口径只有一份实现，
+    见该函数）。需要知道结果**来自规则命中还是兜底网**时用那个。
+
     Args:
         paths: `git diff --name-only` 的输出行（仓根相对路径，如
             `backend/ai-agent-service/app/graph/skills/order_skill.py`）。
@@ -89,10 +92,30 @@ def map_changed_files_to_case_ids(paths: list) -> list:
     注意：规则对所有输入路径匹配，AI 行为文件的**存在与否**只决定
     "默认集 / 空" 这条分支 —— 即非 AI 行为路径（如纯前端样式）不会单独触发评测。
     """
+    return map_changed_files_with_source(paths)[0]
+
+
+def map_changed_files_with_source(paths: list) -> tuple:
+    """同 `map_changed_files_to_case_ids`，但额外给出结果**来源**（门禁分层用）。
+
+    Returns:
+        `(case_ids, source)`，`source` ∈：
+          - `"rules"`：命中 MAPPING_RULES —— 改动确实落在该行为域，失败是**真信号**；
+          - `"default_net"`：无规则命中、走 `DEFAULT_BEHAVIOR_CASES` 兜底网；
+          - `"none"`：没有 AI 行为文件改动（不触发评测）。
+
+    ★ 为什么要区分来源（issue #3502 门禁分层，2026-09-14 dogfooding 首跑实证）：
+      规则命中的用例与"本 PR 改了什么"有**因果**（改 order_skill.py → OR-016 红 = 真回归），
+      失败必须拦合并；而兜底网是"映射表没覆盖到"时的**网**，与本 PR 改动**无因果** ——
+      实证：只改 `tests/agent_eval/behavior_mapping.py`（评测基建）就被兜底网里的
+      CH-010（小布下单表单化交互）判红，属无因果阻塞。故 workflow 对两者分层：
+      `rules` → 阻塞；`default_net` → 只报告（PR 评论显式标注）。
+      兜底网本身**不取消**：无规则命中时静默跳过才是更坏的选择（把漏测伪装成"无需测试"）。
+    """
     changed = [p.strip() for p in paths if p and p.strip()]
 
     if not any(is_ai_behavior_file(p) for p in changed):
-        return []  # 非行为改动：不触发评测（省真实 LLM 成本）
+        return [], "none"  # 非行为改动：不触发评测（省真实 LLM 成本）
 
     matched: set = set()
     for pattern, case_ids in MAPPING_RULES:
@@ -101,6 +124,6 @@ def map_changed_files_to_case_ids(paths: list) -> list:
             matched.update(case_ids)  # 并集：一个文件可能同时命中多条规则
 
     if not matched:
-        return list(DEFAULT_BEHAVIOR_CASES)
+        return list(DEFAULT_BEHAVIOR_CASES), "default_net"
 
-    return sorted(matched)
+    return sorted(matched), "rules"

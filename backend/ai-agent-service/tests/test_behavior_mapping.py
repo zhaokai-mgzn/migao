@@ -130,6 +130,42 @@ class TestOrderingStability:
         assert result == ["DF-011", "DF-012", "PR-019", "PR-020"]
 
 
+class TestMappingSource:
+    """结果来源分类（门禁分层：规则命中阻塞 / 兜底网只报告，issue #3502）
+
+    背景（2026-09-14 dogfooding 首跑实证）：只改 `tests/agent_eval/behavior_mapping.py`
+    （评测基建）会被兜底网里的 CH-010（小布下单）判红 —— 与本 PR 改动**无因果**。
+    故 workflow 需要知道"这批用例是规则命中还是兜底网"，二者门禁强度不同。
+    """
+
+    def test_rule_hit_reports_rules_source(self):
+        assert bm.map_changed_files_with_source([ORDER_PATH]) == (["OR-016"], "rules")
+
+    def test_default_net_reports_default_source(self):
+        cases, source = bm.map_changed_files_with_source(
+            ["backend/ai-agent-service/app/main.py"])
+        assert source == "default_net"
+        assert cases == bm.DEFAULT_BEHAVIOR_CASES
+
+    def test_no_ai_behavior_file_reports_none_source(self):
+        assert bm.map_changed_files_with_source(["frontend/admin-web/src/app/page.tsx"]) == ([], "none")
+        assert bm.map_changed_files_with_source([]) == ([], "none")
+
+    def test_rule_hit_beats_default_net(self):
+        """既改了无规则命中的 AI 文件、又命中规则 → 来源必须是 rules（不能退化成兜底网，
+        否则真信号会被降级成"只报告"）。"""
+        cases, source = bm.map_changed_files_with_source(
+            ["backend/ai-agent-service/app/main.py", ORDER_PATH])
+        assert source == "rules"
+        assert cases == ["OR-016"]
+
+    def test_source_api_and_plain_api_agree(self):
+        """两个入口的用例集必须完全一致（单一实现，防两套口径漂移）。"""
+        for paths in ([ORDER_PATH], ["backend/ai-agent-service/app/main.py"],
+                      ["frontend/admin-web/src/app/page.tsx"], []):
+            assert bm.map_changed_files_with_source(paths)[0] == bm.map_changed_files_to_case_ids(paths)
+
+
 class TestCaseIdsExistInCaseLibrary:
     """L0 不变式：映射引用的每个用例 ID 都必须真实存在于用例库（§16.1 静态层）"""
 
