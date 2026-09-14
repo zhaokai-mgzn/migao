@@ -27,8 +27,34 @@ cases:
         args:
           action: create_transaction
           type: income
+    # ── 断言可执行化：堵住「工具失败 100%、用例仍 100% 绿」的假绿（issue #3558 / #3548）──
+    # 假绿实证（2026-09-14 云测试环境真实重放，缺陷部署期）：`finance_api.py:202` 用 `json=`
+    # 调自研客户端（`AdminApiClient.post` 只收 `json_data`）→ 必抛 TypeError → 线下收支登记
+    # **100% 失效**；而本用例照样 score=100%，同一次跑分还打印「工具失败率 100%」。
+    # 三处漏点：① expectations 只断言「finance_api 被调用 + args」，不看 tool_result.success；
+    #          ② 旧 data_checks「status=success」是自然语义，且不含 runner 计分所需的
+    #             字面量 `success=true` → 整条**根本没进评分**；
+    #          ③ 本用例没有任何「成功/产出」断言。
+    # 修法（不放宽任何既有断言，只加机器判定）：
+    #   ① `must_succeed` —— 读 tool_result.success（「调了 ≠ 成了」的直接判定，issue #3361 起
+    #      就是仓库的写/关键工具成功断言；闸门口径已由 #3580 按 persona 收窄 → B 端用例可安全声明）；
+    #   ② `output_verify` —— 核对**成功返回体**字段（流水号非空 + 类型/金额/状态），
+    #      失败关闭：找不到成功调用即判红（`找不到成功调用的结果（无从核对产出）`），不静默跳过。
+    # 有效性验证（两个方向都跑过，见 PR body）：
+    #   · 缺陷态（线上真实重放 + 把线上失败形状喂给 runner 真实断言函数）→ `must_succeed`/`output_verify` 双红；
+    #   · 修复态（#3548 合并部署后真实重放）→ 双绿 100%。
+    must_succeed:
+      - tool: finance_api
+    output_verify:
+      - tool: finance_api
+        expect:
+          transactionNo: "__nonempty__"
+          type: "income"
+          amount: 88
+          status: "success"
     data_checks:
-      - "流水号 FIN- 前缀，type=income，amount>0，status=success"
+      - "流水号 FIN- 前缀由服务端生成、type=income、amount=88、status=success —— 成功返回体由 output_verify 机器核对（「被调用」不等于「登记成功」）"
+      - "登记失败时不得声称成功：must_succeed 读 tool_result.success 判红，output_verify 无成功调用即判红"
     skip_reason: ""
     merge_log: "财务对账模块新增；2026-09-09 校准：补金额+支付方式+确认轮——create_transaction 必填 type+amount，原「登记一笔线下收款」缺 amount，agent 正确引导补充（单轮过严）"
     traces:

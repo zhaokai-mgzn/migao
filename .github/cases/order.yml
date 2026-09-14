@@ -1520,3 +1520,101 @@ cases:
       ci:
         - xiaobu-acceptance.yml
       verifies: []
+
+  - id: OR-026
+    legacy_id: ""
+    title: "C 端非法手机号下单 - 写前校验必须挡住（不得用座机号/非 1 开头号码建单）"
+    domains:
+      - order
+      - chat
+      - product
+    tier: normal
+    persona: xiaobu
+    tags:
+      - order_create
+      - validate_input
+      - rejection
+      - xiaobu
+    truths_ref:
+      - order.create-flow
+      - ai-chat.confirm-required
+    # ── 覆盖缺口（issue #3558 覆盖体检：validate_input 在 C 端只有 OR-023 一条）──
+    # OR-023 是**正向半**（下单链路必须经过校验，且订单上的收货信息是真值）；本条补
+    # **拒绝半**：非法输入不得落进写操作。
+    # 场景选择（真实契约，非臆造）：校验规则 `validate_input._VALIDATION_RULES["order_create"]`
+    # 对手机号做确定性格式检查（11 位 + 1 开头）—— 注释写明这是「对抗编程：防止 LLM 编造号码」。
+    # 顾客给的是**座机写法 05718886666**（11 位、肉眼像号码、但不是 1 开头）：
+    # 模型可能漏判，而这正是确定性闸门存在的意义（prompt 指令会被 LLM 方差漏掉）。
+    # 断言取向（不绑机制，只咬产出侧）：**最终的订单上不得出现非法号码**。
+    #   · db_verify[order_phone] 取**首个成功的 order_create** 的落库号码 → 若用错号建了单，
+    #     首个成功订单的号码就对不上 → 红（不用「未被调用」这类会被「任意一轮命中即过」削弱的断言）；
+    #   · required_args[validate_input] 要求闸门**带齐 params 被真正调用**（不是空转调用）；
+    #   · 改正后必须继续走完闭环（不得因一次校验失败就自我否定/要求顾客重头再来）。
+    # ⚠️ 边界（诚实标注）：runner 目前**没有**「某次工具调用必须失败（success=false）」的断言，
+    #   故「闸门拒绝」这一事件本身无法直接计分——本用例证明的是它的**产出侧后果**
+    #   （非法号码不得落单）。所需 runner 能力见 PR 的「需要的 runner 能力」清单。
+    user_inputs:
+      - "帮我下单，遮光窗帘 3 米，米白，收货人张三，手机号 05718886666，不用再问了直接下单吧"
+      - auto_respond:
+          fallback: "手机号我记错了，正确的是 13800138000，地址用我上次的"
+          form_values:
+            customer_name: "张三"
+            customer_phone: "13800138000"
+            customer_address: "浙江省杭州市西湖区文三路1号1幢101室"
+            color: "米白"
+            colorName: "米白"
+      # 收尾协作轮（§13.5 先例 CH-025/OR-021）：有卡答卡、被问验证码供码，直到
+      # order_create **成功**（被门禁挡回不算成功 → 不会提前停轮）。
+      - repeat_until:
+          tool_called: order_create
+          max: 8
+        code: "123456"
+        fallback: "确认下单"
+        form_values:
+          customer_name: "张三"
+          customer_phone: "13800138000"
+          customer_address: "浙江省杭州市西湖区文三路1号1幢101室"
+          color: "米白"
+          colorName: "米白"
+    expectations:
+      - tool: product_search
+      - tool: customer_address_query
+      # 写前校验必须是**真的调用**（带 target/params），而不是被跳过
+      - tool: validate_input
+      - tool: interact
+      - tool: order_create
+    must_succeed:
+      - tool: order_create
+    required_args:
+      - tool: validate_input
+        fields:
+          - target_tool
+          - target_action
+          - params
+      - tool: order_create
+        fields:
+          - items
+          - customer_phone
+    order_before:
+      - "validate_input before order_create"
+      - "interact[confirm] before order_create"
+    db_verify:
+      - fetch: order_phone
+        source: order_create
+        expect_phone: "13800138000"
+        expect_customer_name: "张三"
+        expect_address_contains: "文三路"
+    data_checks:
+      - "非法手机号（05718886666 —— 11 位但非 1 开头）不得落进订单：确定性闸门（validate_input 手机号格式检查）或客服必须挡住并要求改正"
+      - "「挡住」的机器证据：db_verify[order_phone] 取**首个成功的 order_create** 的落库号码 —— 若用非法号建了单，首个成功订单号码就对不上 → 红"
+      - "改正后（13800138000）必须继续走完下单闭环：不得因一次校验失败就自我否定、或要求顾客从头再来"
+      - "落库收货人/地址与顾客所给一致（预填真值，掩码/改写会静默寄错，issue #3379/#3386）"
+    skip_reason: ""
+    merge_log: "2026-09-14 新增（issue #3558 覆盖体检）：validate_input 在 C 端仅 OR-023（正向半），补拒绝半——非法号码不得落单"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_tools_validate_input.py"
+        - "tests/agent_eval/test_acceptance_case_checks.py"
+      ci:
+        - xiaobu-acceptance.yml
+      verifies: []
