@@ -217,7 +217,7 @@ DB(RLS) ─► 聚合SQL ─► 指标快照 ─┬─► 脱敏层 ─► LLM �
 ### 8.8 安全验收清单（实现后逐条勾选）
 
 - [ ] 全链路无客户 PII 进入 prompt（脱敏单测覆盖）
-- [ ] `daily_briefing` RLS 策略生效（跨租户查询返回空）
+- [ ] `daily_briefing` RLS 策略 fail-closed 兜底生效（应用层 TenantLineInnerInterceptor 注入 tenant_id 为主，RLS 策略为纵深防御；非 super_admin 连接无法跨租户读到简报数据）
 - [ ] 开关关闭后：调度跳过 + 生成入口拦截 + 菜单隐藏（三处都验证）
 - [ ] LLM 失败不展示假数据（故障注入测试）
 - [ ] 非 admin 修改开关被拒（权限测试）

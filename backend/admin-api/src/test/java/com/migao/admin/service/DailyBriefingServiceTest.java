@@ -244,6 +244,47 @@ class DailyBriefingServiceTest {
             assertThat(vr.status()).isEqualTo("partial");
             assertThat(vr.todoKept()).isEqualTo(1);
         }
+
+        @Test
+        @DisplayName("summary 自由文本含快照外数字 → summary 降级为空（P2-2 防自由文本编造）")
+        void summaryWithForeignNumberDegrades() throws Exception {
+            // summary 里写 9999（快照无此数）→ summary 应被清空，条目仍保留
+            String llmOutput = """
+                    {
+                      "summary": "昨日订单 9999 单，经营平稳",
+                      "todo": [{"priority": "high", "title": "10 个订单待发货", "metrics": [{"key": "pending_ship_orders", "value": 10}]}],
+                      "risks": [],
+                      "suggestions": []
+                    }
+                    """;
+            JsonNode briefing = objectMapper.readTree(llmOutput);
+
+            var vr = service.verifyAndFilter(briefing, metrics());
+            JsonNode content = objectMapper.valueToTree(vr.content());
+
+            assertThat(vr.status()).isEqualTo("verified");
+            assertThat(content.path("summary").asText()).isEmpty();
+            assertThat(vr.todoKept()).isEqualTo(1);
+        }
+
+        @Test
+        @DisplayName("summary 数字均来自快照 → summary 保留")
+        void summaryWithSnapshotNumbersKept() throws Exception {
+            String llmOutput = """
+                    {
+                      "summary": "昨日订单 5 单，10 个订单待发货",
+                      "todo": [{"priority": "high", "title": "10 个订单待发货", "metrics": [{"key": "pending_ship_orders", "value": 10}]}],
+                      "risks": [],
+                      "suggestions": []
+                    }
+                    """;
+            JsonNode briefing = objectMapper.readTree(llmOutput);
+
+            var vr = service.verifyAndFilter(briefing, metrics());
+            JsonNode content = objectMapper.valueToTree(vr.content());
+
+            assertThat(content.path("summary").asText()).isEqualTo("昨日订单 5 单，10 个订单待发货");
+        }
     }
 
     @Nested

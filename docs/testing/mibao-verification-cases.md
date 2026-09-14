@@ -1165,7 +1165,7 @@
 你: 智能每日经营简报企业开关行为自检
 数据: tenants.briefing_enabled 默认 false；开关关闭时 generateForTenant 直接返回 null 且 LLM 调用数为 0（熔断）
 数据: 更新配置开启瞬间立即生成当日简报；关闭后调度跳过该租户（generateDueTenants 内部拦截），已生成历史保留但入口隐藏
-数据: 仅 admin（system:manage）可改开关；变更写操作日志
+数据: 仅 admin（system:manage）可改开关；变更写操作日志（audit_logs：action=update, resource_type=briefing_config，含开关状态）
 跳过: 开关熔断由 admin-api 单测验证（DailyBriefingServiceTest$SwitchBreaker + BriefingControllerTest），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 溯源: 2026-09-14 新增（issue #3468）：智能每日经营简报 MVP — 企业开关即熔断（数据安全红线 3） ｜ tags: briefing, toggle, security
@@ -1184,7 +1184,7 @@
 ```
 你: 智能每日经营简报数据安全自检
 数据: 聚合快照只含数字指标 + 脱敏事实（订单数/工单数），不含客户手机号/姓名/地址/会话原文（快照 JSON 断言无 PII 字段）
-数据: daily_briefings 表含 tenant_id + RLS 策略 tenant_isolation_daily_briefings（跨租户查询返回空）
+数据: daily_briefings 表含 tenant_id + RLS 策略 tenant_isolation_daily_briefings（fail-closed 兜底；应用层 TenantLineInnerInterceptor 注入 tenant_id 为主，RLS 为纵深防御）
 数据: 简报展示层脱敏别名「客户A/B」，点击查看真名复用客户详情 RBAC（customers:view），无权限角色点击不可见真名
 跳过: PII 隔离由 admin-api 单测（DailyBriefingServiceTest$Aggregation）+ migration 契约验证；RLS 由 V44 迁移/SchemaMigrationTest 验证，非 LLM 行为，不进入 agent-eval 冒烟
 ```

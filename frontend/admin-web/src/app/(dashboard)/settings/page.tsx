@@ -324,7 +324,7 @@ export default function SettingsPage() {
                           <div>
                             <div className="text-sm font-medium text-neutral-700">启用智能每日经营简报</div>
                             <div className="text-xs text-neutral-500">
-                              开启后：每日定时生成简报、侧边栏显示「每日简报」入口；关闭后：停止生成、入口隐藏（历史保留）
+                              开启后：立即生成今日简报、此后每日定时生成、侧边栏显示「每日简报」入口；关闭后：停止生成、入口隐藏（历史保留）
                             </div>
                           </div>
                           <button
@@ -337,8 +337,17 @@ export default function SettingsPage() {
                               const prev = briefingConfig
                               setBriefingConfig({ ...prev, enabled: next })
                               try {
-                                await briefingApi.updateConfig({ enabled: next })
-                                toast.success(next ? '已开启智能每日经营简报，今日简报已生成' : '已关闭智能每日经营简报')
+                                const res = await briefingApi.updateConfig({ enabled: next })
+                                // P2-4: toast 与真实结果一致 —— 开启后今日简报可能生成失败
+                                // （LLM 不可用等），不无条件宣称「已生成」
+                                const cfg = res.data.data
+                                setBriefingConfig({
+                                  enabled: !!cfg?.enabled,
+                                  generateTime: cfg?.generateTime || '06:00',
+                                })
+                                toast.success(next
+                                  ? '已开启智能每日经营简报，今日简报将尽快生成'
+                                  : '已关闭智能每日经营简报')
                               } catch {
                                 setBriefingConfig(prev)
                                 toast.error('保存失败')

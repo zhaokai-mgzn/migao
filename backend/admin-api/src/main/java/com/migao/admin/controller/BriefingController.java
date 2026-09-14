@@ -4,9 +4,13 @@ import com.migao.admin.config.TenantContext;
 import com.migao.admin.dto.ApiResponse;
 import com.migao.admin.entity.DailyBriefing;
 import com.migao.admin.security.RequirePermission;
+import com.migao.admin.security.SecurityUser;
+import com.migao.admin.service.AuditLogService;
 import com.migao.admin.service.DailyBriefingService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.HashMap;
@@ -30,6 +34,7 @@ import java.util.Map;
 public class BriefingController {
 
     private final DailyBriefingService dailyBriefingService;
+    private final AuditLogService auditLogService;
 
     /**
      * 今日简报。未生成返回 data=null + generated=false，
@@ -61,6 +66,7 @@ public class BriefingController {
     /**
      * 更新简报配置（企业开关）。仅 admin（system:manage）。
      * 开启瞬间立即生成当日简报；关闭即熔断（调度跳过 + 生成入口拦截）。
+     * 变更写操作日志（审计，设计文档 §8.4；开关变更记谁/何时/开或关）。
      */
     @RequirePermission("system:manage")
     @PutMapping("/config")
@@ -69,7 +75,26 @@ public class BriefingController {
         boolean enabled = Boolean.TRUE.equals(data.get("enabled"));
         String generateTime = data.get("generateTime") != null ? String.valueOf(data.get("generateTime")) : null;
         log.info("更新简报配置 tenantId={} enabled={} generateTime={}", tenantId, enabled, generateTime);
-        return ApiResponse.success(dailyBriefingService.updateConfig(tenantId, enabled, generateTime));
+        Map<String, Object> config = dailyBriefingService.updateConfig(tenantId, enabled, generateTime);
+
+        // 审计：开关变更（谁、何时、开/关）
+        try {
+            Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+            String userId = null, userName = null;
+            if (auth != null && auth.getPrincipal() instanceof SecurityUser su) {
+                userId = su.getUserId();
+                userName = su.getUsername();
+            }
+            Map<String, Object> details = new HashMap<>();
+            details.put("enabled", config.get("enabled"));
+            details.put("generateTime", config.get("generateTime"));
+            auditLogService.recordLogAsync(tenantId, userId, userName,
+                    "update", "briefing_config", String.valueOf(tenantId), "智能每日经营简报配置",
+                    details, null, null);
+        } catch (Exception e) {
+            log.warn("简报配置变更审计失败（不阻断）: {}", e.getMessage());
+        }
+        return ApiResponse.success(config);
     }
 
     /**
