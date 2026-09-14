@@ -211,21 +211,34 @@ def is_negated_expectation(exp) -> bool:
 def is_positive_case(c) -> bool:
     """该用例是否提供**正向证据**（issue #3555 覆盖厚度判据）。
 
-    正向 = 用例断言某个真实工具**被调用**（`expectation_branches` 非空），且该期望
-    **不是否定式**（`is_negated_expectation`：`tool: order_create 未被调用` 这类）。
+    正向 = 用例断言某个真实工具被调用（`expectation_branches` 非空），且该期望
+    **不是否定式**（`is_negated_expectation`：`tool: order_create 未被调用` 这类），
+    且用例**不属于对抗档**（`tier: adversarial`）。
 
-    **为什么不用 tier 当判据**（实测否决，2026-09-14）：对抗档里存在**正常能力**的用例
-    ——OR-007（「取消订单 ORD-xxx」）/ CU-005（「帮我发货」）都是合法诉求，只因挂
-    `tier: adversarial` 就被算成"没有正向用例" → 凭空造出假门禁红。判据只认**断言文本**，
-    不认标签：标签是人写的，断言是机器读的（acceptance-protocol §1.3 同一原则）。
+    **为什么排除对抗档**：对抗档的输入是攻击载荷/越权请求，哪怕它断言了工具被调用
+    （如 CH-011 断言 `customer_order_query` + data_checks「跨用户查询返回空/拒绝」），
+    证明的也是**越权防线**，不是"正常诉求下该能力可用"。在对抗档里 `tool: X` 这种
+    非否定式写法恰恰表示"调了但应被拒绝"，不能当正向证据。
 
-    ⚠️ 已知边界：把「拒绝」写成**非否定式**期望（`tool: customer_order_query` + data_checks
-    里写"返回空/拒绝"）的用例仍会被算作正向 —— 这类用例的 data_checks 是自然语义、
-    机器判不了（协议 §1.3 要求可执行化，属另一条在飞治理线）。本判据取保守侧：
-    宁可少拦（漏报），也不造假红（误报），因为假红会逼迫后续放宽阈值。
+    ⚠️ 这会带来一类**预期红**（判据有意取严格侧）：某工具**唯一**被断言之处是对抗档时，
+    门禁要求补一条**正常档**用例。B 端实证：`order_manage` 仅 OR-007「取消订单」/CU-005
+    「帮我发货」两条 adversarial 用例 —— 业务语义正常，但作为 adversarial 档不进
+    「正常诉求下能力可用」的证据链（已登记进 .github/eval-coverage-baseline.yml 待补）。
+
+    **已知边界（诚实声明）**：把"拒绝"写成非否定式期望 + **正常档**（`tier: normal`
+    + data_checks 写"返回空/拒绝"）的用例仍会被算作正向 —— 那类 data_checks 是自然语义、
+    机器判不了（acceptance-protocol §1.3 要求可执行化，属另一条在飞治理线）。本判据取
+    保守侧：宁可漏报，不造假红（假红会逼迫后续放宽阈值）。
     """
-    exps = (c.get("expectations") if isinstance(c, dict) else getattr(c, "expectations", None)) or []
-    return any(expectation_branches(e) and not is_negated_expectation(e) for e in exps)
+    if isinstance(c, dict):
+        tier, exps = c.get("tier") or "", c.get("expectations")
+    else:
+        tier = getattr(c, "tier", "") or getattr(c, "difficulty", "")
+        exps = getattr(c, "expectations", None)
+    if str(getattr(tier, "value", tier)).strip().lower() == "adversarial":
+        return False
+    return any(expectation_branches(e) and not is_negated_expectation(e) for e in (exps or []))
+
 
 
 def skill_file(skill_name: str) -> Path:
