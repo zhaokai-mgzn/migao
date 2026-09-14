@@ -1,13 +1,17 @@
 ---
 name: migao-dev-flow
-version: 1.20.0
-# ⚠️ 下面 description 是 YAML **纯标量** ⇒ 解析会在第一个「空格+#」处**截断**（把 ` #NNNN` 当成注释起始）。
-#    实测（本 PR 改动前，锚定 origin/main@9670af53）：本行原文 2229 字符，YAML 解析结果只有
-#    169 字符（截断于「v1.11（2026-09-09 issue #3070」）⇒ v1.12/v1.17/v1.18/v1.19 的说明**从未**被加载器读到。
-#    ⇒ 想让 **skill 加载器**读到某条说明，必须写在**截断点之前**；行末的历史沿革条目只有打开文件的人才看得到。
-#    （本条注释本身不参与解析。若哪天要彻底修掉截断：把整个值改成引号包裹或块标量 `>-`，
-#      代价是 skill 目录里的 description 变成 2k+ 字符 —— 需先确认是否可接受。）
-description: MIGAO 项目开发提效流程固化（**当前 v1.20**；完整沿革见本行末） — 开发、验证、提交、部署的完整规范。改动 MIGAO 代码前必须加载，确保用对工具、跑对检查、避免 UI 回退和 CI 返工。v1.1：修正 Agent Eval 重试命令 + 新增 dependabot PR 处理 SOP + CI/本地环境差异已知坑。 v1.11（2026-09-09 issue #3070 复盘固化）：新增「§15 前端页面级改动的 UI 旅程强制验证」——交互测试断言"结果可见"而非"函数被调用"、页面级改动必须真实浏览器走查（面包屑/样式基准/布局遮挡几何探针/写操作成果物可见）、布局视觉问题不得仅靠 vitest（Tailwind p-* 覆盖 pb-* 类 CSS 级联陷阱实测）。v1.12（2026-09-09 issue #3080 实证）：新增「§15.5 截图视觉确认」——主模型/子代理不支持图片输入（read_image 报 does not declare image input）时，用 workflow 自动路由到 GLM-5.3-Flash 视觉模型（scnet-token-plan）开子代理读图判定，输出作为 UA 层证据，与 DOM 断言互补。v1.17（2026-09-14 issue #3555）：新增「§14.5 覆盖厚度」——把覆盖体检变成真门禁：C 端 `scripts/xiaobu_coverage.py` 判据收紧（**每个被覆盖的工具必须至少有一条正向用例**，「只有越权/拒绝用例」= 结构性缺失 → 阻塞；「仅 1 条用例」= 厚度不足 → 只报告，尊重 verify-all.sh 的活指标设计意图）+ 新增 B 端对称体检 `scripts/mibao_coverage.py`（复用 eval_case_filter/render_cases 既有纯函数，不复制平行实现）+ 接入 CI pr-check `Case Coverage Gate` job（纯静态零 LLM，本脚本与本地 verify-all.sh 同参数）。v1.1.1：修正部署后验证端点。v1.2：新增「分支滞留+切换污染」红线与 git worktree 规范。v1.3（2026-09-04）：新增「多会话并发规范」（一会话一 worktree + 会话锁 + 端口隔离 + 分支卫生）、CI 队列治理（concurrency/paths 门控/agent-eval 按变更触发省真实 LLM token）、验证分级降本。v1.4（2026-09-05）：新增「PR body 必写 Closes #xx」红线（自动关 issue 闭环，杜绝修复后 issue 无人关闭的伪积压）+ 存量 12 个 open issue 中 8 个已修复未关闭的实证教训 + CI pr-issue-link 检查说明 + GitHub 治理自动化（stale 回收/automerge/dependabot ignore 收口）。v1.5（2026-09-06）：新增「§9 本地验证防恶化」——本地 .env 云库泄漏致 pytest 从分钟级恶化到小时级的根因复盘（issue #2957，quick 58min→57s）+ 体检命令 + 六条防复发红线（云库隔离/timeout 兜底/依赖漂移/未 mock 外部调用禁止）。v1.6（2026-09-06）：新增「§10 云资源运维（aliyun CLI 自服务）」——AI 具备阿里云运维权限账号能力（本机 aliyun CLI 已配凭据），可直接自服务 RDS 白名单/实例查询，无需人工控制台操作；固化实例 ID、白名单分组、追加命令与安全边界（保留原 IP 追加而非覆盖）。v1.18（2026-09-14 实证固化）：新增「§16.6 评测派发与数字留痕」四条踩过的坑——① 手动 `workflow_dispatch` 评测**必须**带 `-f force_eval=true`（否则被静默抑制：步骤全 skipped、artifact 0、整体 success；workflow 注释里的"永不抑制"与实现不符）〔⚠️ **该条已被 v1.20 修正**：现在 dispatch **默认免抑制**，要抑制才需显式 `force_eval=false`——勿照抄本条〕；② `case_ids` 是**全矩阵共享**的，只传一端专属 ID 会让另一条腿立即红（`禁止静默少跑` 守卫 `local_runner.py:4292`）；③ `continue-on-error` 让 `Run <persona>` 步骤"显示 success ≠ 成功"，读结论只看 `判定（completion_verdict）` + artifact；④ **每个计数必须锚定 SHA**（`基线 @<sha> = N → 本 PR = M`），禁止旧基线配新结果造出幽灵 delta。v1.19（2026-09-14 实证修正）：**§2.1 ②`./verify-all.sh gate` 必须在 `git commit` 之后跑** —— 它的弱断言检查按 `git diff --diff-filter=A origin/main...HEAD` 取"新增测试文件"，**未提交时新增集为空 ⇒ 静默空跑并通过**（假绿；实测同一命令 commit 前 ✅ / commit 后 ❌）。正确顺序：先 commit，再跑 ②③④。v1.20（2026-09-15 实证修正，issue #3709）：**修正 §16.6 ①**——`workflow_dispatch` 评测**默认免抑制**（要恢复「被取代即抑制」须**显式**传 `-f force_eval=false`），故 v1.18 那条「手动派发**必须**带 `-f force_eval=true`」已成**假真值**；被抑制时 run 上现在有 `::warning::` 标注 + summary 抬头「本 run 未评测」，**据此不得再把「绿」读成「评测通过」**；自动门禁（workflow_run/schedule）语义不变。并在 §2.2 补「引用式 `Closes` 样例同样会被朴素正则命中」的自检提示（PR body 证据表是同一入口）。
+version: 1.21.0
+# ⚠️ YAML 纯标量陷阱 + 本仓库取舍（v1.21，2026-09-15 实证）：
+# `description` 是 YAML **纯标量** ⇒ 解析在第一个「空白 + `#`」处**截断**（`#` 起被当成注释起始），
+# 其余内容**静默丢失** —— 「文件里写了」≠「加载器读到了」（与「注释漂移 = 假绿来源」同族，但更隐蔽）。
+# 实证（锚定 origin/main 改动前版本）：原文 2666 字符，用**加载器同一个 `yaml` 包**解析只得到 192 字符
+# （截断于「v1.11（2026-09-09 issue」）⇒ v1.12/v1.17/v1.18/v1.19/v1.20 的说明**从未**被 skill 加载器读到。
+# **取舍**：`description` 只写**有意简短**的摘要（触发语 + 范围）；**变更沿革写进正文 `## 版本沿革`**。
+# 不靠「加引号 / 块标量」救长文本 —— 那等于保留「可以无限往后追加」的坏习惯，下一次照样踩。
+# 若确需在 frontmatter 放长文本：必须加引号或块标量（`>-`），并接受技能目录多背 ~2k 字符的代价。
+# 另注：skill 加载器**只读 `name` + `description`**，且要求**第 1 行就是 `---`**
+# （行前加注释会让整个技能被忽略）；`version` 不参与加载，仅供人工 / 锚点新鲜度核对。
+description: MIGAO 项目开发提效流程固化 — 开发、验证、提交、部署的完整规范。**改动 MIGAO 代码前必须加载**：三把工具（`verify-all.sh` / `contract-check.sh` / `check-ui-regression.sh`）、提交流程与 CI 门禁（case_ids / QA Growth Gate / auto-merge）、行为改动自动体检（§13）、用例库演进（§14）、前端 UI 旅程（§15）、分层探测与门禁矩阵（§16）、并行修复原则（§17）。**变更沿革已迁至正文「版本沿革」节**（frontmatter 只放简短摘要：纯标量会在「空白 + `#`」处静默截断）。
 ---
 
 # MIGAO 开发提效流程
@@ -715,3 +719,25 @@ workflow 内红 + PR 评论"（强信号）；**规则命中红 = 改动真的�
 | **改了单一事实源后没回头同步「在飞」的引用副本**（v1.20 新增，2026-09-15 实证） | 按旧稿写出的 brief 会**忠实产出旧口径**，副本合入后与源**直接矛盾**——读者拿到两个打架的"事实源"，比不写更糟；且 brief 里的笔误会被**逐字复制**进产物（实证：把两个 **issue** 写成 **PR**，文档照抄并合入，事后需更正）。**规避**：① brief 优先写**源路径 + 章节号**让 worker 去读源，只在"措辞本身就是交付物"时才整段内联；② 改了源就 `grep` 出在飞 PR/分支里引用该内容的位置，逐一对齐；③ 副本已合并 → 开**跟随 PR**（上一行：禁止向已合并分支追加） |
 
 > **一句话**：**「分支 ≠ 交付」**。squash / rebase / merge 三种合并方式都会让「commit 可达性」失去判据意义；只有**主干上的文件内容**是事实。这两行是同一枚硬币的两面：上一行防「以为合了其实没合」，这一行防「以为没合其实合了」。
+
+## 版本沿革（v1.1 → v1.21）
+
+> 本节由 **v1.21** 从 frontmatter `description` **逐字迁入**（条目文本未改，仅加列表符号并按版本排序）。
+> 背景：frontmatter `description` 是 YAML 纯标量，会在第一个「空白 + `#`」处**静默截断** ——
+> 改动前原文 2666 字符，加载器实际只读到 192 字符，v1.12 之后的条目**从未**出现在技能目录里。
+> 约定：**description 只放简短摘要（触发语 + 范围），沿革放本节点**；要给 agent 读到的规范必须写正文。
+
+- v1.1：修正 Agent Eval 重试命令 + 新增 dependabot PR 处理 SOP + CI/本地环境差异已知坑。 
+- v1.1.1：修正部署后验证端点。
+- v1.2：新增「分支滞留+切换污染」红线与 git worktree 规范。
+- v1.3（2026-09-04）：新增「多会话并发规范」（一会话一 worktree + 会话锁 + 端口隔离 + 分支卫生）、CI 队列治理（concurrency/paths 门控/agent-eval 按变更触发省真实 LLM token）、验证分级降本。
+- v1.4（2026-09-05）：新增「PR body 必写 Closes #xx」红线（自动关 issue 闭环，杜绝修复后 issue 无人关闭的伪积压）+ 存量 12 个 open issue 中 8 个已修复未关闭的实证教训 + CI pr-issue-link 检查说明 + GitHub 治理自动化（stale 回收/automerge/dependabot ignore 收口）。
+- v1.5（2026-09-06）：新增「§9 本地验证防恶化」——本地 .env 云库泄漏致 pytest 从分钟级恶化到小时级的根因复盘（issue #2957，quick 58min→57s）+ 体检命令 + 六条防复发红线（云库隔离/timeout 兜底/依赖漂移/未 mock 外部调用禁止）。
+- v1.6（2026-09-06）：新增「§10 云资源运维（aliyun CLI 自服务）」——AI 具备阿里云运维权限账号能力（本机 aliyun CLI 已配凭据），可直接自服务 RDS 白名单/实例查询，无需人工控制台操作；固化实例 ID、白名单分组、追加命令与安全边界（保留原 IP 追加而非覆盖）。
+- v1.11（2026-09-09 issue #3070 复盘固化）：新增「§15 前端页面级改动的 UI 旅程强制验证」——交互测试断言"结果可见"而非"函数被调用"、页面级改动必须真实浏览器走查（面包屑/样式基准/布局遮挡几何探针/写操作成果物可见）、布局视觉问题不得仅靠 vitest（Tailwind p-* 覆盖 pb-* 类 CSS 级联陷阱实测）。
+- v1.12（2026-09-09 issue #3080 实证）：新增「§15.5 截图视觉确认」——主模型/子代理不支持图片输入（read_image 报 does not declare image input）时，用 workflow 自动路由到 GLM-5.3-Flash 视觉模型（scnet-token-plan）开子代理读图判定，输出作为 UA 层证据，与 DOM 断言互补。
+- v1.17（2026-09-14 issue #3555）：新增「§14.5 覆盖厚度」——把覆盖体检变成真门禁：C 端 `scripts/xiaobu_coverage.py` 判据收紧（**每个被覆盖的工具必须至少有一条正向用例**，「只有越权/拒绝用例」= 结构性缺失 → 阻塞；「仅 1 条用例」= 厚度不足 → 只报告，尊重 verify-all.sh 的活指标设计意图）+ 新增 B 端对称体检 `scripts/mibao_coverage.py`（复用 eval_case_filter/render_cases 既有纯函数，不复制平行实现）+ 接入 CI pr-check `Case Coverage Gate` job（纯静态零 LLM，本脚本与本地 verify-all.sh 同参数）。
+- v1.18（2026-09-14 实证固化）：新增「§16.6 评测派发与数字留痕」四条踩过的坑——① 手动 `workflow_dispatch` 评测**必须**带 `-f force_eval=true`（否则被静默抑制：步骤全 skipped、artifact 0、整体 success；workflow 注释里的"永不抑制"与实现不符）〔⚠️ **该条已被 v1.20 修正**：现在 dispatch **默认免抑制**，要抑制才需显式 `force_eval=false`——勿照抄本条〕；② `case_ids` 是**全矩阵共享**的，只传一端专属 ID 会让另一条腿立即红（`禁止静默少跑` 守卫 `local_runner.py:4292`）；③ `continue-on-error` 让 `Run <persona>` 步骤"显示 success ≠ 成功"，读结论只看 `判定（completion_verdict）` + artifact；④ **每个计数必须锚定 SHA**（`基线 @<sha> = N → 本 PR = M`），禁止旧基线配新结果造出幽灵 delta。
+- v1.19（2026-09-14 实证修正）：**§2.1 ②`./verify-all.sh gate` 必须在 `git commit` 之后跑** —— 它的弱断言检查按 `git diff --diff-filter=A origin/main...HEAD` 取"新增测试文件"，**未提交时新增集为空 ⇒ 静默空跑并通过**（假绿；实测同一命令 commit 前 ✅ / commit 后 ❌）。正确顺序：先 commit，再跑 ②③④。
+- v1.20（2026-09-15 实证修正，issue #3709）：**修正 §16.6 ①**——`workflow_dispatch` 评测**默认免抑制**（要恢复「被取代即抑制」须**显式**传 `-f force_eval=false`），故 v1.18 那条「手动派发**必须**带 `-f force_eval=true`」已成**假真值**；被抑制时 run 上现在有 `::warning::` 标注 + summary 抬头「本 run 未评测」，**据此不得再把「绿」读成「评测通过」**；自动门禁（workflow_run/schedule）语义不变。并在 §2.2 补「引用式 `Closes` 样例同样会被朴素正则命中」的自检提示（PR body 证据表是同一入口）。
+- v1.21（2026-09-15 实证修正，本次）：**修掉 frontmatter `description` 被 YAML 静默截断**（纯标量在第一个「空白 + `#`」处截断）——实测原文 2666 字符仅解析出 192 字符，v1.12/v1.17/v1.18/v1.19/v1.20 的说明**从未**被 skill 加载器读到。取舍：`description` 收敛为**有意简短的摘要**，**沿革迁入正文本节**（不靠加引号救长文本，避免「可无限追加」的坏习惯复发）；并登记「加载器只读 `name`/`description`，且要求第 1 行是 `---`」。
