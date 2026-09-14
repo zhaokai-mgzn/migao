@@ -182,7 +182,14 @@ group 名不带 workflow 前缀即**跨 workflow 生效**。
   答的是"这个 **main 状态**"而不是"这个已被覆盖的 commit"；
 - **fail-open**：`git ls-remote` 失败 / 取值不可得 / 手动 `workflow_dispatch` → **一律照常评测**。
   判定逻辑本身绝不能成为"漏评"的来源；
-- **手动逃生口**：`workflow_dispatch` 的 `force_eval=true` 可强制评测（回滚复验/补跑特定部署）。
+- **手动逃生口（#3709 更正，以实现为准）**：`workflow_dispatch` **默认免抑制**（人显式要求
+  「我就要这一条」，回滚复验/补跑）；要恢复"被取代即抑制"必须**显式传 `force_eval=false`**。
+  ⚠️ 旧文本写的是「`force_eval=true` 才强制评测」—— 与实现不符（此前 dispatch 走的是 deploy
+  判据，默认被静默抑制），实测 run 34841093824 整体 `success` 而**每个评测步骤 `skipped`、
+  artifact 为 0**（一条用例都没跑）。引用本条前先核实现，别照抄。
+- **#3709 追加：未评测必须显眼**。被抑制时 workflow 打 `::warning::` annotation，并把
+  step summary 抬头写成「本 run 未评测（不构成结论）」—— 让"绿"不再等于"评测通过"。
+  ⚠️ 抑制**依旧不是 failure**（不刷红、不建 issue）：要的是**可见**，不是变红。
 - **#3654 追加**：`MODE=schedule`（每 3 天全量）走**方向相反**的判据 —— 本次 schedule 的
   SHA 与**上一次 schedule 全量**的 SHA 比对，相等 = main 未动 → 抑制（同一状态已有结论，
   重跑是纯浪费）；不等 → 跑。查询失败/取值为空一律 fail-open。两种模式共同点：只有

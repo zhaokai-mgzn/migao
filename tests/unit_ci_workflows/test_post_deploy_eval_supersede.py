@@ -78,30 +78,46 @@ def _step_index(keyword: str) -> int:
 
 
 def run_supersede(eval_sha: str, main_sha, *, force: str = "false", repo: str = "o/r",
-                  run_id: str = "123", main_ref: str = "refs/heads/main") -> tuple:
+                  run_id: str = "123", main_ref: str = "refs/heads/main",
+                  event: str = None, force_input: str = None,
+                  script: Path = None) -> tuple:
     """**真跑**判定脚本（不重写判定逻辑）→ (superseded, stdout)。
 
     `MAIN_SHA` 覆盖是脚本内置的测试钩子：否则只能拿真实远端 HEAD 当唯一输入，
     「未曾被取代」那条分支就永远演练不到（而它恰恰是"不许漏评"的那一半）。
     `main_sha=None` 时改用**必然连不上**的远端来演练 ls-remote 失败（fail-open）分支，
     不用真网络、也不靠超时。
+
+    #3709 追加：`event`（GITHUB 事件名）与 `force_input`（workflow_dispatch 的
+    force_eval 输入原值）。**不传 FORCE_EVAL**（模拟 workflow 不再直接注入它，
+    改由脚本按事件名决定默认），以验证"dispatch 默认免抑制"这条规则本身。
     """
     env = dict(os.environ)
     env.update({
         "EVAL_SHA": eval_sha,
-        "FORCE_EVAL": force,
         "REPO": repo,
         "RUN_ID": run_id,
         "MAIN_REF": main_ref,
     })
+    # 关键：EVENT_NAME / FORCE_EVAL_INPUT 由调用方显式给定；FORCE_EVAL 仅在不验证
+    # dispatch 默认值时注入（旧测试的契约）。
+    if event is None:
+        env["FORCE_EVAL"] = force
+    else:
+        env.pop("FORCE_EVAL", None)
+        env["EVENT_NAME"] = event
+        if force_input is not None:
+            env["FORCE_EVAL_INPUT"] = force_input
+        else:
+            env.pop("FORCE_EVAL_INPUT", None)
     if main_sha is None:
         env.pop("MAIN_SHA", None)
         # 保留本地 git 配置（HOME），只把远端指向一个必然失败、且**立即**失败的位置
         env["MAIN_REMOTE"] = "/nonexistent/migao-test-remote.git"
     else:
         env["MAIN_SHA"] = main_sha
-    r = subprocess.run(["bash", str(SCRIPT)], capture_output=True, text=True, env=env,
-                       timeout=60)
+    r = subprocess.run(["bash", str(script or SCRIPT)], capture_output=True, text=True,
+                       env=env, timeout=60)
     assert r.returncode == 0, (
         f"判定脚本退出码 {r.returncode} —— 抑制**永远不得**以非零退出（会被当成失败刷红）：\n"
         f"{r.stdout}\n{r.stderr}"
@@ -349,3 +365,184 @@ class TestGlobalEvalSlot:
         assert "eval-stack-global" in doc, "文档未写明共享 group 名"
         for wf in ("agent-behavior-eval.yml", "xiaobu-acceptance.yml"):
             assert wf in doc, f"文档未给出 {wf} 的落地改法（改哪一行 + 预期效果 + 注意事项）"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# #3709：dispatch 可被**静默抑制**，而注释写着「永不抑制」
+# ─────────────────────────────────────────────────────────────────────────────
+_SUPPRESSED_RECORD_STEPS = ("被抑制记录", "被抑制留档")
+
+
+def _visible_marking_problems(doc: dict) -> list:
+    """判据（可被变异体证伪）：被抑制时**两个**留档步骤都必须
+    ① 打 `::warning::` annotation（run 上可见的「未评测」标记）
+    ② 标题里带「未评测」字样（step summary 抬头可检索）。
+    缺一条 → 返回一条问题描述（空列表 = 合格）。"""
+    problems = []
+    for kw in _SUPPRESSED_RECORD_STEPS:
+        hits = [s for job in (doc.get("jobs") or {}).values()
+                for s in (job.get("steps") or []) if kw in (s.get("name") or "")]
+        if not hits:
+            problems.append(f"缺「{kw}」步骤")
+            continue
+        for s in hits:
+            run = s.get("run") or ""
+            if "::warning::" not in run:
+                problems.append(f"{kw}: 未评测时没有 ::warning:: annotation（run 上不可见）")
+            if "未评测" not in run:
+                problems.append(f"{kw}: 标题/正文未写明「未评测」")
+    return problems
+
+
+class TestDispatchSuppressionIsNeverSilent:
+    """#3709：一条**人显式要求**的评测被静默抑制，却报 success、零产物。
+
+    实证 run 34841093824（`tier=adversarial -f case_ids=DF-011`）：整体 `completed/success`，
+    `Run mibao…` / `判定（completion_verdict…）` / `Upload 汇总 + 波动台账` **全 skipped**，
+    artifacts `total_count = 0`，三个 job 全 success —— 一条用例都没跑，却给出绿色结论。
+    主会话**险些**据此写「DF-011 已通过」；拦住它的只是"核到 artifacts=0"。
+
+    根因：`eval_supersede.sh` 的 `MODE="${MODE:-deploy}"` 只让 `schedule` 走 schedule 判据，
+    `workflow_dispatch` 与部署门禁一样落进 **deploy** 判据（派发时刻的 main HEAD ≠ 执行时刻的
+    main HEAD ⇒ "已被取代" ⇒ 抑制）。而 workflow 注释写着「workflow_dispatch … **永不抑制**」
+    —— 主会话**正是读了这句注释**才没传 `force_eval=true`（注释漂移 = 假绿来源，
+    migao-acceptance v1.4）。
+
+    本类锁三件事：① dispatch 默认免抑制（**保留** `force_eval=false` 逃生口）；
+    ② 自动门禁语义不变；③ 未评测必须**显眼**，但**不得**改成 failure
+    （「跳过不得算 failure」是有意设计：部署门禁不该因省成本刷红）。
+    """
+
+    def test_dispatch_defaults_to_running(self):
+        """dispatch 且未显式传 force_eval ⇒ **不抑制**（人显式要求 = 我就要这一条）。"""
+        superseded, out = run_supersede(SHA_A, SHA_B, event="workflow_dispatch")
+        assert superseded == "false", (
+            f"workflow_dispatch 默认仍被抑制 → #3709 原样复发（人显式要求的评测静默空转）：\n{out}"
+        )
+        assert "workflow_dispatch" in out, f"未回显事件名（判定不可审计）：\n{out}"
+
+    def test_only_the_event_name_flips_the_decision(self):
+        """红证：**只**把事件名从 workflow_dispatch 换成 workflow_run，其余输入完全相同 ⇒
+        一个照常跑、一个被抑制。这证明「免抑制」确实由这条规则带来，而不是夹具巧合。"""
+        dispatch, _ = run_supersede(SHA_A, SHA_B, event="workflow_dispatch")
+        wf_run, _ = run_supersede(SHA_A, SHA_B, event="workflow_run")
+        assert (dispatch, wf_run) == ("false", "true"), (
+            f"事件名是唯一变量时判定未翻转（dispatch={dispatch}, workflow_run={wf_run}）"
+            " —— 要么 dispatch 仍被抑制，要么自动门禁被判成了免抑制"
+        )
+
+    def test_dispatch_escape_hatch_preserved(self):
+        """逃生口必须保留：显式 `force_eval=false` ⇒ 仍可抑制（省成本路径不消失）。"""
+        superseded, out = run_supersede(SHA_A, SHA_B, event="workflow_dispatch",
+                                        force_input="false")
+        assert superseded == "true", (
+            f"显式 force_eval=false 无法抑制 → 逃生口被砍（省成本的抑制路径消失）：\n{out}"
+        )
+
+    def test_dispatch_force_input_accepts_boolean_case_variants(self):
+        """GitHub 的 boolean input 可能以 'True'/'False' 出现（大小写不同）——
+        `workflow_dispatch` 的默认值必须大小写无关，否则默认形态会被判成「显式关闭」。"""
+        cases = {"true": "false", "True": "false", "TRUE": "false",
+                 "false": "true", "False": "true", "FALSE": "true", "": "false"}
+        for raw, expected in cases.items():
+            superseded, out = run_supersede(SHA_A, SHA_B, event="workflow_dispatch",
+                                            force_input=raw)
+            assert superseded == expected, (
+                f"force_eval={raw!r} 的判定应为 superseded={expected}，实得 {superseded}：\n{out}"
+            )
+
+    def test_automatic_gates_semantics_unchanged(self):
+        """自动门禁（workflow_run 部署门禁）语义**不得**被 dispatch 默认值波及。"""
+        assert run_supersede(SHA_A, SHA_B, event="workflow_run")[0] == "true", (
+            "部署门禁的「被取代即抑制」被破坏了（连合场景会重复烧双份成本，见 #3587）"
+        )
+        assert run_supersede(SHA_A, SHA_A, event="workflow_run")[0] == "false", (
+            "部署门禁在未被取代时也必须照常跑（不得漏评）"
+        )
+
+    def test_suppression_step_passes_event_name_and_raw_input(self):
+        """接线：判定步骤必须把**事件名**与**原始 force_eval 输入**交给脚本。
+
+        并**不得**再直接注入 `FORCE_EVAL` —— 它恒有值（boolean input 必有默认），
+        会覆盖脚本的"dispatch 默认免抑制"，等于本次修复被静默回滚。"""
+        step = _named("抑制判定")[0]
+        env = step.get("env") or {}
+        assert env.get("EVENT_NAME") == "${{ github.event_name }}", (
+            f"未把 github.event_name 交给脚本（EVENT_NAME={env.get('EVENT_NAME')!r}）"
+        )
+        assert "github.event.inputs.force_eval" in str(env.get("FORCE_EVAL_INPUT", "")), (
+            f"未把 force_eval 原始输入交给脚本（FORCE_EVAL_INPUT={env.get('FORCE_EVAL_INPUT')!r}）"
+        )
+        assert "FORCE_EVAL" not in env, (
+            "workflow 又直接注入 FORCE_EVAL —— 它恒有值，会盖掉脚本的 dispatch 默认免抑制"
+        )
+
+    def test_force_eval_input_defaults_to_true(self):
+        """UI/默认语义：dispatch 的 force_eval 默认 true（要抑制得显式传 false）。"""
+        inputs = (((_load().get("on") or _load().get(True) or {})
+                   .get("workflow_dispatch") or {}).get("inputs") or {})
+        fe = inputs.get("force_eval") or {}
+        assert fe.get("type") == "boolean", f"force_eval 不是 boolean input：{fe!r}"
+        assert fe.get("default") is True, (
+            f"force_eval 默认值应为 true（= dispatch 默认免抑制），实为 {fe.get('default')!r}"
+        )
+        assert "false" in (fe.get("description") or ""), (
+            "描述未说明「传 false 才抑制」——读者找不到逃生口（#3709 的诱因就是注释没写清）"
+        )
+
+    def test_stale_never_suppress_comment_is_gone(self):
+        """注释漂移必须更正（#3709 的直接诱因）：不得再声称 dispatch「永不抑制」。"""
+        src = (WORKFLOWS_DIR / WORKFLOW).read_text(encoding="utf-8")
+        assert "永不抑制" not in src, (
+            "workflow 里仍留着「永不抑制」的错误注释 —— 它正是主会话漏传逃生口的依据"
+        )
+        assert "force_eval=false" in src or "force_eval=false" in (
+            SCRIPT.read_text(encoding="utf-8")
+        ), "更正后的正确口径（要抑制需显式 force_eval=false）未写进注释/脚本"
+
+    def test_suppressed_run_is_visibly_marked(self):
+        """未评测必须**显眼**（issue #3709 要求 3），而不是只靠一个 success 的步骤名。"""
+        problems = _visible_marking_problems(_load())
+        assert not problems, f"被抑制时不够显眼：{problems}"
+
+    def test_visible_marking_goes_red_without_warning_annotation(self):
+        """红证：删掉留档步骤里的 `::warning::` ⇒ 同一条判据立刻报出问题。
+
+        变异必须真的改到文本（前置条件不满足直接 fail），否则是空断言。"""
+        doc = _load()
+        run = None
+        target = None
+        for job in (doc.get("jobs") or {}).values():
+            for s in (job.get("steps") or []):
+                if "被抑制记录" in (s.get("name") or ""):
+                    target, run = s, s.get("run") or ""
+        if target is None or "::warning::" not in run:
+            pytest.fail(
+                "找不到「被抑制记录」步骤或它没有 ::warning:: —— 判据锚点漂移，红证不成立"
+            )
+        mutated_run = run.replace("::warning::", "")
+        if mutated_run == run:
+            pytest.fail("变异未命中 ::warning::（判据锚点漂移）")
+        target["run"] = mutated_run
+        problems = _visible_marking_problems(doc)
+        assert problems, (
+            "去掉 ::warning:: 后判据仍然通过 —— 说明这条判据没有判别力（空断言）"
+        )
+        assert any("::warning::" in p for p in problems), (
+            f"报出的问题未指向缺 annotation：{problems}"
+        )
+
+    def test_suppression_never_becomes_failure(self):
+        """**不得**把「被抑制」改成 failure：跳过不算 failure 是有意设计
+        （部署门禁不该因省成本刷红），本 issue 要的是「可见」不是「变红」。"""
+        for job in (_load().get("jobs") or {}).values():
+            for s in (job.get("steps") or []):
+                if any(k in (s.get("name") or "") for k in _SUPPRESSED_RECORD_STEPS):
+                    run = s.get("run") or ""
+                    assert "exit 1" not in run, (
+                        f"留档步骤 {s.get('name')!r} 变成失败退出 —— 抑制会被刷成红灯 + 自动开 issue"
+                    )
+                    cond = s.get("if") or ""
+                    assert "superseded" in cond, (
+                        f"留档步骤 {s.get('name')!r} 未挂在 superseded 条件上（if={cond!r}）"
+                    )
