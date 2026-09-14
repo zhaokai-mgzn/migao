@@ -5763,3 +5763,129 @@ class TestInFlightOrderGuardsAcrossSkills:
             "name": "human_handoff", "args": {"reason": "顾客要求人工"}, "id": "h1"}]),
             last_user_msg="我要下单，但是先给我转人工客服")
         assert executed == ["human_handoff"], "在办下单中顾客显式要求人工 → 不得拦"
+
+
+class TestStallCorrectiveWhenConfirmed:
+    """「顾客已确认却不动手」：一次纠正重试（issue #3445/#3477 类）。
+
+    实证（run 34794687762 的 OR-024 首跑，`ai=` 让轨迹第一次可读）：顾客 R4「确认下单」、
+    R5「确认」、R6/R7 给验证码，模型却 9 轮全在 product_detail/customer_address_query 打转，
+    validate_input → order_create **从未发生**（8.4 收口要有 pending 才触发，validate_input
+    没跑 → 收口也救不了，只能靠重试碰巧捞回）。
+    """
+
+    def _run(self, calls_list, *, last_user_msg="确认下单", grounded=True,
+             skill="customer_order"):
+        import asyncio
+
+        executed = []
+
+        async def fake_execute(tool, args, ctx, state):
+            executed.append(tool.name)
+            payload = {"success": True, "data": {}}
+            return (json.dumps(payload, ensure_ascii=False), payload)
+
+        class _Store:
+            async def load(self, sid):
+                return ({"grounded_product_detail": {"product_id": "p1"}}
+                        if grounded else {})
+
+            async def commit(self, sid, full):
+                return True
+
+            async def clear(self, sid):
+                return True
+
+        def _mk(calls=None, text=""):
+            m = MagicMock(spec=AIMessage)
+            m.content = text
+            m.tool_calls = calls or []
+            return m
+
+        responses = [_mk(calls=c) for c in calls_list]
+        responses.append(_mk(text="好的，这就为您提交"))
+
+        with patch("app.memory.session_memory.SessionMemory"), \
+             patch("app.memory.session_state_store.SessionStateStore",
+                   side_effect=lambda *a, **k: _Store()), \
+             patch("app.graph.skills.base_skill.get_breaker") as get_breaker, \
+             patch("app.graph.skills.base_skill.get_skill_llm") as get_llm, \
+             patch("app.graph.skills.base_skill.create_skill_registry") as create_reg, \
+             patch("app.graph.skills.base_skill.set_tool_context"), \
+             patch("app.graph.skills.base_skill._execute_tool_safe", fake_execute):
+            from app.tools.order_create import OrderCreateTool
+            from app.tools.interact import InteractTool
+            registry = MagicMock()
+            registry.get_langchain_tools.return_value = []
+            pd = MagicMock(name="product_detail")
+            pd.read_only = True
+            registry.get_tool.side_effect = lambda n: (
+                OrderCreateTool() if n == "order_create"
+                else (InteractTool() if n == "interact"
+                      else (pd if n == "product_detail" else None)))
+            create_reg.return_value = registry
+            breaker = MagicMock()
+
+            async def _pt(fn):
+                return await fn()
+
+            breaker.call = _pt
+            get_breaker.return_value = breaker
+            llm = MagicMock()
+            llm.bind_tools.return_value = llm
+            llm.ainvoke = AsyncMock(side_effect=responses)
+            get_llm.return_value = llm
+            out = asyncio.run(execute_skill(
+                state=_make_state(messages=[HumanMessage(content=last_user_msg)],
+                                  role="customer"),
+                skill_name=skill,
+                tool_names=["order_create", "interact"], system_prompt="p",
+            ))
+        return out, executed
+
+    def test_query_only_stall_gets_corrective(self):
+        """顾客确认 + 已接地 + 本轮只查商品（无写/无 interact）→ 注入纠正、重答一次。"""
+        out, executed = self._run([
+            [{"name": "product_detail", "args": {"product_id": "p1"}, "id": "t1"}],
+        ])
+        blob = str(out)
+        assert "不要空转" in blob or "不要再重复查询" in blob, (
+            f"纠正话术必须进到上下文（模型应被要求推进写流程）：{blob[:300]}")
+        # 纠正后 LLM 被再次调用，最终回复是**重新生成**的那条（而不是首轮查询的延续）
+        assert "这就为您提交" in str(out.get("final_answer") or ""), (
+            f"纠正后模型应重新生成回复：{str(out.get('final_answer'))[:120]!r}")
+
+    def test_no_corrective_when_interact_asked(self):
+        """本轮发了 interact（在等顾客回答）→ 不算空转，不纠正。"""
+        out, executed = self._run([
+            [{"name": "interact", "args": {"component": "choice", "title": "选颜色",
+                                           "options": [{"label": "米白", "value": "米白"}]},
+              "id": "t1"}],
+        ])
+        assert "不要空转" not in str(out), "模型在等顾客回答，不是空转"
+
+    def test_no_corrective_when_not_confirmed(self):
+        """顾客没有确认（还在选品）→ 不触发（模型正常问问题是该做的）。"""
+        out, executed = self._run([
+            [{"name": "product_detail", "args": {"product_id": "p1"}, "id": "t1"}],
+        ], last_user_msg="推荐几款窗帘")
+        assert "不要空转" not in str(out)
+
+    def test_no_corrective_when_not_grounded(self):
+        """商品没查过（流程没启动）→ 不触发（保守，防误伤）。"""
+        out, executed = self._run([
+            [{"name": "product_detail", "args": {"product_id": "p1"}, "id": "t1"}],
+        ], grounded=False)
+        assert "不要空转" not in str(out)
+
+    def test_only_once_per_turn(self):
+        """同一次 execute_skill 里只纠正一次（防死循环）。"""
+        out, executed = self._run([
+            [{"name": "product_detail", "args": {"product_id": "p1"}, "id": "t1"}],
+            [{"name": "product_detail", "args": {"product_id": "p1"}, "id": "t2"}],
+            [{"name": "product_detail", "args": {"product_id": "p1"}, "id": "t3"}],
+        ])
+        assert str(out).count("不要空转") == 1, (
+            "纠正话术在上下文里只出现一次（继续空转也不重复纠正）")
+        assert len(executed) >= 2, (
+            f"纠正后模型仍会继续查询/推进（不会因一次纠正就空转终止）：{executed}")

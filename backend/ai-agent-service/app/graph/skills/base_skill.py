@@ -1372,6 +1372,15 @@ def capability_denial_text_hit(text: str) -> str:
     return ""
 
 
+_STALL_CORRECTIVE = (
+    "顾客已经明确确认下单、商品也已经查过了 —— **不要再重复查询商品/地址/报价**。"
+    "如果收货信息已齐（可先用 `customer_address_query` 取历史地址），本轮必须推进写流程："
+    "`validate_input` → `interact(component=confirm)` 展示明细 → 顾客确认后 `order_create`"
+    "（含 sms_code）；如果还缺信息（收货人/手机号/地址/验证码），用一句话问缺的那一项，"
+    "**不要空转在只读查询上**。"
+)
+
+
 _TEXT_DENIAL_CORRECTIVE_MIDORDER = (
     "顾客正在下单（本轮消息仍在推进下单、且本会话已查过商品详情）—— 不要说『没权限/不能下单/"
     "去小程序操作』：下单能力在小布这边是有的，会话会回到下单流程继续完成。"
@@ -1388,6 +1397,16 @@ _TEXT_DENIAL_CORRECTIVE = (
     "再发 `interact(component=form)` 或用自然语言问；参数齐了走 confirm 卡 → `validate_input` → "
     "`order_create`（含 sms_code）。只有顾客**显式**要求人工、情绪激动或诉求超出能力时才允许引导人工。"
 )
+
+
+def _stall_has_progress(tool_calls: list) -> bool:
+    """本轮是否**实质推进**了写流程（有写/校验调用，或 interact 在等顾客回答）。
+
+    供「确认却不动手」纠正使用：模型在顾客确认后仍反复查商品/地址（OR-024 首跑 9 轮）
+    属于**空转** —— 没有 validate_input/order_create 也没有 interact，等于在原地打转。
+    """
+    names = {str((tc or {}).get("name") or "") for tc in (tool_calls or [])}
+    return bool(names & {"validate_input", "order_create", "interact"})
 
 
 def _has_order_write_tool(skill_name: str, registry=None) -> bool:
@@ -2730,6 +2749,7 @@ async def execute_skill(
     new_messages: List[Any] = []
     final_content = ""
     _denial_corrected = False      # 文本级能力误宣只纠正一次（issue #3443）
+    _stall_corrected = False       # 「确认却不动手」只纠正一次（issue #3445 类）
     _no_card_blocked_args = None   # 本轮"没发过确认卡就写单"被拦的参数（issue #3445 代码兜底）
     vision_analysis = ""
 
@@ -3705,6 +3725,27 @@ async def execute_skill(
                                 )
                         except Exception as e:
                             logger.warning(f"[{skill_name}] last_confirm_value persist failed (non-fatal): {e}")
+
+                # ── 「顾客已确认却不动手」：一次纠正重试（issue #3445/#3477 类）──
+                # 实测（run 34794687762 的 OR-024 首跑，`ai=` 让轨迹第一次可读）：
+                # 顾客 R4「确认下单」、R5「确认」、R6/R7 给验证码，模型却 9 轮全在
+                # product_detail/customer_address_query 打转，validate_input → order_create
+                # **从未发生**。8.4 确认收口要求先有 pending（validate_input 跑过才写）——
+                # validate_input 没跑 → 收口也救不了，只能靠重试碰巧捞回。
+                # 判据（保守）：C 端 + 顾客本轮明确确认/推进下单 + 商品已接地 + 本轮
+                # **没有实质推进**（无 validate_input/order_create/interact）→ 注入一次纠正。
+                # interact 在等顾客回答不算空转（模型刚问了问题，等输入是正确行为）。
+                if (not _stall_corrected and _is_customer_role(state)
+                        and (_is_explicit_confirmation(last_user_msg)
+                             or _has_ordering_intent(last_user_msg))
+                        and await _order_flow_started(session_id, state)
+                        and not _stall_has_progress(response.tool_calls)):
+                    _stall_corrected = True
+                    logger.warning(
+                        f"[{skill_name}] 顾客已确认但本轮空转（无写/无 interact）→ 纠正重答"
+                        f" | session={session_id} last_msg={last_user_msg[:20]!r}")
+                    new_messages.append(SystemMessage(content=_STALL_CORRECTIVE))
+                    continue
             else:
                 # 达到 max_iterations — 不暴露 LLM 的半截思考，用友好兜底
                 final_content = "抱歉，处理步骤较多，请稍后重试或换个简单的方式描述需求。"
