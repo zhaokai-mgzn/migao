@@ -71,7 +71,14 @@ class ProductManageTool(BaseTool):
             "status": {
                 "type": "string",
                 "enum": ["on_sale", "off_sale"],
-                "description": "商品状态",
+                # ⚠️ 这是**有意的权限边界，不是缺口**（issue #3686，有意为之请勿"补齐"）：
+                # 后端 ProductService.STATUS_TRANSITIONS 有 4 值（draft/under_review/on_sale/off_sale），
+                # 但 Agent 只负责**上下架**；草稿创建与送审（draft → under_review → on_sale）
+                # 是 admin-web 后台的商品运营流程，需人工编辑资料并承担审核语义。
+                # 给 Agent 放开这两值 = 让对话直接跳过审核门禁（越权），违反最小权限。
+                # 若确实需要 Agent 送审，须先补权限设计 + 审核责任归属，再改本枚举。
+                "description": "商品状态：仅 on_sale(上架) / off_sale(下架)。"
+                               "草稿(draft)与送审(under_review)是后台人工流程，Agent 无权限——这是有意的权限边界",
             },
             "colors": {
                 "type": "array", "items": {"type": "string"},

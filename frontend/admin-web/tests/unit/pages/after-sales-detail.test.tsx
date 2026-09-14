@@ -284,4 +284,18 @@ describe('AfterSalesDetailPage', () => {
     expect(mockGetTicket).toHaveBeenCalledTimes(1)
     expect(screen.getByRole('button', { name: '接受处理' })).toBeInTheDocument()
   })
+
+  // issue #3686：来源三值都要有中文标签（旧实现只认 customer/agent，merchant 会渲染成 '-'）
+  it.each([
+    ['customer', '客户提交'],
+    ['agent', '客服创建'],
+    ['merchant', '商家创建'],
+  ])('来源 %s 渲染为「%s」（无 - 回退）', async (source, label) => {
+    mockGetTicket.mockResolvedValue({ data: { data: { ...mockTicket, source } } })
+
+    render(<AfterSalesDetailPage />)
+
+    const sourceRow = (await screen.findByText('来源')).parentElement as HTMLElement
+    expect(within(sourceRow).getByText(label)).toBeInTheDocument()
+  })
 })
