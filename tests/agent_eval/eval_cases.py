@@ -3706,6 +3706,7 @@ _CASE_PG_015 = EvalCase(
     forbidden_card_text=[],
     forbidden_text=['暂不支持', '功能不存在', '没有这个功能', '无法查询'],
     required_args=[{'tool': 'processing_order_query', 'fields': ['keyword']}],
+    must_succeed=[{'tool': 'processing_order_generate'}, {'tool': 'processing_order_query'}],
 )
 
 # ── PG-016 [NORMAL] 米宝加工单 LLM 行为：更新加工单状态（完成加工，产出核到 completed）（源: cases/processing-order.yml）──
@@ -3726,6 +3727,7 @@ _CASE_PG_016 = EvalCase(
     forbidden_card_text=[],
     forbidden_text=['暂不支持', '功能不存在', '没有这个功能', '无法更新', '更新失败'],
     required_args=[{'tool': 'processing_order_update', 'fields': ['id']}],
+    must_succeed=[{'tool': 'processing_order_update', 'action': 'complete'}],
     output_verify=[{'tool': 'processing_order_update', 'action': 'complete', 'expect': {'action': 'complete', 'result.status': 'completed'}}],
 )
 
@@ -3839,6 +3841,50 @@ _CASE_PP_006 = EvalCase(
     forbidden_card_text=[],
     must_succeed=[{'tool': 'processing_item_manage', 'action': 'create_processing_item'}],
     output_verify=[{'tool': 'processing_item_manage', 'expect': {'name': '测试加工', 'pricingMethod': 'per_meter'}}],
+)
+
+# ── PP-007 [NORMAL] 米宝加工项 LLM 行为：只改单价不清空其它字段（部分更新语义）（源: cases/processing.yml）──
+_CASE_PP_007 = EvalCase(
+    id='PP-007',
+    legacy_id='',
+    title='米宝加工项 LLM 行为：只改单价不清空其它字段（部分更新语义）',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['把加工项纳米圈打孔的单价改成 9.5 元一米', {'repeat_until': {'tool_called': 'processing_item_manage', 'max': 3}, 'fallback': '确认'}, '再看下加工项纳米圈打孔的单价和计价方式', {'repeat_until': {'tool_called': 'processing_item_query', 'max': 3}, 'fallback': '确认'}],
+    expectations=['processing_item_manage(action=update_item)', 'processing_item_query'],
+    data_checks=['回读结果中 name 仍为「纳米圈打孔」、pricingMethod 仍为 per_meter（未被清空）——只改 price 不得清空其它字段'],
+    skip_reason='',
+    tags=['processing_item', 'llm_behavior', 'tool_call', 'update'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    forbidden_text=['暂不支持', '功能不存在', '没有这个功能', '修改失败', '更新失败', '无法修改'],
+    required_args=[{'tool': 'processing_item_manage', 'fields': ['item_id', 'price']}],
+    must_succeed=[{'tool': 'processing_item_manage', 'action': 'update_item'}],
+    output_verify=[{'tool': 'processing_item_manage', 'action': 'update_item', 'expect': {'price': 9.5}}],
+)
+
+# ── PP-008 [NORMAL] 米宝加工项 LLM 行为：停用加工项（toggle_item_status → inactive）（源: cases/processing.yml）──
+_CASE_PP_008 = EvalCase(
+    id='PP-008',
+    legacy_id='',
+    title='米宝加工项 LLM 行为：停用加工项（toggle_item_status → inactive）',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['把加工项纳米圈打孔停用', {'repeat_until': {'tool_called': 'processing_item_manage', 'max': 3}, 'fallback': '确认'}],
+    expectations=['processing_item_manage(action=toggle_item_status)'],
+    data_checks=['status 目标值为 inactive（工具返回 `{item_id, status}` 可直接核对）；重复执行幂等（再停用一次仍是 inactive）'],
+    skip_reason='',
+    tags=['processing_item', 'llm_behavior', 'tool_call', 'toggle'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    forbidden_text=['暂不支持', '功能不存在', '没有这个功能', '停用失败', '无法停用'],
+    required_args=[{'tool': 'processing_item_manage', 'fields': ['item_id', 'status']}],
+    must_succeed=[{'tool': 'processing_item_manage', 'action': 'toggle_item_status'}],
+    output_verify=[{'tool': 'processing_item_manage', 'action': 'toggle_item_status', 'expect': {'status': 'inactive'}}],
 )
 
 # ── PR-001 [SMOKE] 商品搜索 - 关键词模糊匹配（源: cases/product.yml）──
@@ -5413,6 +5459,8 @@ ALL_CASES = (
     _CASE_PP_005,
     _CASE_PP_004,
     _CASE_PP_006,
+    _CASE_PP_007,
+    _CASE_PP_008,
     _CASE_PR_001,
     _CASE_PR_002,
     _CASE_PR_003,

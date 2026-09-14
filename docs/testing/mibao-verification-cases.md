@@ -2459,7 +2459,7 @@
 真值: order.logistics
 溯源: 2026-09-14 新增（#3494 覆盖审计）：OR-012 的正向展示断言为自然语义 data_checks（不计分）；本条补专属正向旅程——工具可达 + 权限否定禁词双防线，机器可执行；不依赖在途订单数据状态（诚实『暂无』回复不误伤，故不禁『暂无/无法查询』） ｜ tags: query, logistics
 
-## 加工项域（6 case）
+## 加工项域（8 case）
 
 ### PP-001. 加工项选择 - 分页翻页 🔵
 ```
@@ -2536,6 +2536,44 @@
 ```
 真值: processing-manage.crud, product-sku-stock.create-flow
 溯源: 2026-09-07 改写（issue #3005，回滚 #2986）：行业加工费按米计价、辅料（罗马圈/四爪钩等）含在按米加工费中——per_piece 与「每米数量」密度不符合实际（数量对不上车间工艺、B 端无法对账），已回滚移除；PP-006 由密度配置用例改为计价方式回归断言。2026-09-14 校准（#3544，REPORT §2.3）：① 假绿升级——补 must_succeed（canonical 写成功断言，fail-closed）+ output_verify（name/pricingMethod 产出核对），此前只断言「调用过」，工具三次真执行全失败仍判 ✅（真缺口见 #3543）；② 输入「分类选打孔加工」改为种子里真实存在的「分类选窗帘加工」（原写法是加工项名/分类名混淆，agent 只能如实说没有该分类，白耗一轮） ｜ tags: processing_item, pricing
+
+### PP-007. 米宝加工项 LLM 行为：只改单价不清空其它字段（部分更新语义） 🔵
+```
+你: 把加工项纳米圈打孔的单价改成 9.5 元一米
+你: [🔁 按目标工具重复直至成功：processing_item_manage，最多 3 次]
+你: 再看下加工项纳米圈打孔的单价和计价方式
+你: [🔁 按目标工具重复直至成功：processing_item_query，最多 3 次]
+期望: processing_item_manage(action=update_item)
+期望: processing_item_query
+数据: 回读结果中 name 仍为「纳米圈打孔」、pricingMethod 仍为 per_meter（未被清空）——只改 price 不得清空其它字段
+禁词: 暂不支持
+禁词: 功能不存在
+禁词: 没有这个功能
+禁词: 修改失败
+禁词: 更新失败
+禁词: 无法修改
+必填: processing_item_manage() 字段 item_id, price
+必须成功: processing_item_manage(update_item)
+产出: processing_item_manage → price==9.5
+```
+溯源: 2026-09-14 新增（issue #3568）：`processing_item_manage(action=update_item)` 此前**零用例覆盖**（#3591 收口时如实标注的覆盖边界：只有 create 路径被重放）。断言机器可判：must_succeed(action=update_item) + required_args[item_id,price] + output_verify(price=9.5，显式 action) + forbidden_text。回读轮覆盖「部分更新不得清空其它字段」（#3591 的 GET→merge→PUT 语义），工具层无法自证故由回读判定。 ｜ tags: processing_item, llm_behavior, tool_call, update
+
+### PP-008. 米宝加工项 LLM 行为：停用加工项（toggle_item_status → inactive） 🔵
+```
+你: 把加工项纳米圈打孔停用
+你: [🔁 按目标工具重复直至成功：processing_item_manage，最多 3 次]
+期望: processing_item_manage(action=toggle_item_status)
+数据: status 目标值为 inactive（工具返回 `{item_id, status}` 可直接核对）；重复执行幂等（再停用一次仍是 inactive）
+禁词: 暂不支持
+禁词: 功能不存在
+禁词: 没有这个功能
+禁词: 停用失败
+禁词: 无法停用
+必填: processing_item_manage() 字段 item_id, status
+必须成功: processing_item_manage(toggle_item_status)
+产出: processing_item_manage → status==inactive
+```
+溯源: 2026-09-14 新增（issue #3568）：`processing_item_manage(action=toggle_item_status)` 此前**零用例覆盖**（同 PP-007 的覆盖边界）。断言机器可判：must_succeed(action=toggle_item_status) + required_args[item_id,status] + output_verify(status=inactive，显式 action) + forbidden_text。⚠️ 数据副作用：停用种子加工项 `pi_eval_punch` 会影响依赖它的用例（OR-016/OR-024 等加工项流程）—— 评测栈每次重建，同栈内请让本条**后跑**（或由 pre_clean 复位）；本包未新增 runner 侧 pre_clean 类型，故在此显式标注。 ｜ tags: processing_item, llm_behavior, tool_call, toggle
 
 ## processing-order（16 case）
 
@@ -2681,8 +2719,10 @@
 禁词: 没有这个功能
 禁词: 无法查询
 必填: processing_order_query() 字段 keyword
+必须成功: processing_order_generate
+必须成功: processing_order_query
 ```
-溯源: 2026-09-14 新增（issue #3568 / #3592）：processing_order_query 此前**零用例覆盖**（scripts/mibao_coverage.py --check 在 pristine main 上 exit 2 报出的结构性缺失）。形态 =「先对种子订单生成加工单 → 按订单号回查」（干净栈无加工单 seed，直接「查一下」会假绿）。断言机器可判：success=true + required_args[keyword] + forbidden_text。 ｜ tags: processing_order, llm_behavior, tool_call, query
+溯源: 2026-09-14 新增（issue #3568 / #3592）：processing_order_query 此前**零用例覆盖**（scripts/mibao_coverage.py --check 在 pristine main 上 exit 2 报出的结构性缺失）。形态 =「先对种子订单生成加工单 → 按订单号回查」（干净栈无加工单 seed，直接「查一下」会假绿）。断言机器可判：must_succeed ×2 + required_args[keyword] + forbidden_text。 ｜ tags: processing_order, llm_behavior, tool_call, query
 
 ### PG-016. 米宝加工单 LLM 行为：更新加工单状态（完成加工，产出核到 completed） 🔵
 ```
@@ -2699,9 +2739,10 @@
 禁词: 无法更新
 禁词: 更新失败
 必填: processing_order_update() 字段 id
+必须成功: processing_order_update(complete)
 产出: processing_order_update → action==complete; result.status==completed
 ```
-溯源: 2026-09-14 新增（issue #3568 / #3592）：processing_order_update 此前**零用例覆盖**（同 PG-015 的结构性缺失）。断言机器可判：expectations(action=complete) + success=true + required_args[id] + output_verify（**显式声明 action**，防多 action 工具核到别的 payload 造成假绿）。真 LLM 重放待跑（见 PR #3589 的诚实标注）。 ｜ tags: processing_order, llm_behavior, tool_call, update
+溯源: 2026-09-14 新增（issue #3568 / #3592）：processing_order_update 此前**零用例覆盖**（同 PG-015 的结构性缺失）。断言机器可判：expectations(action=complete) + must_succeed(action=complete) + required_args[id] + output_verify（**显式声明 action**，防多 action 工具核到别的 payload 造成假绿）。真 LLM 重放待跑（见 PR #3589 的诚实标注）。 ｜ tags: processing_order, llm_behavior, tool_call, update
 
 ## 商品域（22 case）
 
@@ -3683,8 +3724,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：280（活跃 140，跳过 140）
-- tier 分布：smoke 9 / normal 238 / adversarial 33
+- 用例总数：282（活跃 142，跳过 140）
+- tier 分布：smoke 9 / normal 240 / adversarial 33
 - 售后域：9
 - agents：6
 - api：19
@@ -3702,7 +3743,7 @@
 - onboarding：5
 - ontology：4
 - 订单域：25
-- 加工项域：6
+- 加工项域：8
 - processing-order：16
 - 商品域：22
 - registry：1
@@ -3754,4 +3795,6 @@
 - PG-014: 订单加工项不可变（源头约束，决策 C）：创建后无任何修改通道
 - PG-015: 米宝加工单 LLM 行为：查询加工单（生成 → 按订单号回查状态）
 - PG-016: 米宝加工单 LLM 行为：更新加工单状态（完成加工，产出核到 completed）
+- PP-007: 米宝加工项 LLM 行为：只改单价不清空其它字段（部分更新语义）
+- PP-008: 米宝加工项 LLM 行为：停用加工项（toggle_item_status → inactive）
 

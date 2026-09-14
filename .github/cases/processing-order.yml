@@ -423,6 +423,14 @@ cases:
     expectations:
       - tool: processing_order_generate
       - tool: processing_order_query
+    must_succeed:
+      # 守卫口径已按 persona 收窄（#3580 修 `test_must_succeed_tools_are_customer_capabilities`
+      # 的「遍历全库」bug：现在 `case_persona(c) != PERSONA: continue`，B 端/双端用例
+      # 由 `test_mibao_case_invariants.py` 负责）→ B 端专属工具可以声明 must_succeed。
+      # 这是比 `success=true` **更强**的断言：`must_succeed` 是「调了 ≠ 成了」的机器防线，
+      # 会把每次尝试的轮次+错误码写进失败详情（工具层失败与模型层漏调可一行区分）。
+      - tool: processing_order_generate
+      - tool: processing_order_query
     required_args:
       - tool: processing_order_query
         fields:
@@ -434,15 +442,12 @@ cases:
       - "无法查询"
     data_checks:
       # 「调了 ≠ 成了」（issue #3361）：`success=true` 由 local_runner 的 scoring_checks
-      # （success=true / error.code= / 未被调用）计入评分，是**机器可判**的等价强度断言。
-      # 不用 `must_succeed`：本条是 **B 端专属工具**（不在小布工具集），而
-      # tests/unit_ci_workflows/test_xiaobu_case_set.py::test_must_succeed_tools_are_customer_capabilities
-      # 对**全库** must_succeed 声明做「必须在 C 端工具集内」校验（未按 persona 收窄）→
-      # 声明即打红该守卫（建议另行开 issue 收窄该守卫口径）。
+      # 计入评分；**同时**在 `must_succeed` 里声明工具（更强：把每次尝试的轮次+错误码
+      # 写进失败详情）。两条并存不冲突（前者计入 expectations 评分，后者独立核验）。
       - "success=true"
       - "回查结果 grounded 到刚生成的加工单（status ∈ generated/issued/in_processing/completed/cancelled，不得编造）"
     skip_reason: ""
-    merge_log: "2026-09-14 新增（issue #3568 / #3592）：processing_order_query 此前**零用例覆盖**（scripts/mibao_coverage.py --check 在 pristine main 上 exit 2 报出的结构性缺失）。形态 =「先对种子订单生成加工单 → 按订单号回查」（干净栈无加工单 seed，直接「查一下」会假绿）。断言机器可判：success=true + required_args[keyword] + forbidden_text。"
+    merge_log: "2026-09-14 新增（issue #3568 / #3592）：processing_order_query 此前**零用例覆盖**（scripts/mibao_coverage.py --check 在 pristine main 上 exit 2 报出的结构性缺失）。形态 =「先对种子订单生成加工单 → 按订单号回查」（干净栈无加工单 seed，直接「查一下」会假绿）。断言机器可判：must_succeed ×2 + required_args[keyword] + forbidden_text。"
     traces:
       tests:
         - "backend/admin-api/src/test/java/com/migao/admin/service/ProcessingOrderServiceTest.java"
@@ -482,6 +487,10 @@ cases:
       - tool: processing_order_update
         args:
           action: complete
+    must_succeed:
+      # 守卫口径已按 persona 收窄（#3580）→ B 端专属工具可声明，理由同 PG-015。
+      - tool: processing_order_update
+        action: complete
     required_args:
       - tool: processing_order_update
         fields:
@@ -501,12 +510,11 @@ cases:
       - "无法更新"
       - "更新失败"
     data_checks:
-      # 同 PG-015：`success=true` 机器可判且计入评分；不用 must_succeed（B 端工具会被
-      # C 端口径守卫拦，见 PG-015 注释）。
+      # 同 PG-015：`success=true` 计入评分，**并**在 `must_succeed` 声明工具（更强）。
       - "success=true"
       - "结论 grounded 到刚更新的加工单（订单联动状态见加工单设计决策 3：complete 不回退订单）"
     skip_reason: ""
-    merge_log: "2026-09-14 新增（issue #3568 / #3592）：processing_order_update 此前**零用例覆盖**（同 PG-015 的结构性缺失）。断言机器可判：expectations(action=complete) + success=true + required_args[id] + output_verify（**显式声明 action**，防多 action 工具核到别的 payload 造成假绿）。真 LLM 重放待跑（见 PR #3589 的诚实标注）。"
+    merge_log: "2026-09-14 新增（issue #3568 / #3592）：processing_order_update 此前**零用例覆盖**（同 PG-015 的结构性缺失）。断言机器可判：expectations(action=complete) + must_succeed(action=complete) + required_args[id] + output_verify（**显式声明 action**，防多 action 工具核到别的 payload 造成假绿）。真 LLM 重放待跑（见 PR #3589 的诚实标注）。"
     traces:
       tests:
         - "backend/admin-api/src/test/java/com/migao/admin/service/ProcessingOrderServiceTest.java"
