@@ -793,14 +793,18 @@ jobs:
               echo ""
               echo "════════ 失败用例窗口（来自 $f）════════"
               cat /tmp/win-$$.txt
+              # ⚠️ 内层命令一律 `< /dev/null`：它跑在 `while read` 的循环体里，一旦
+              #    有命令去读 stdin，就会**静默吃掉**循环剩余输入（只处理第一条窗口 =
+              #    证据静默截断，与本 issue 的立意正相反）。tabs 由 IFS 指定，不受影响。
+
               while IFS="$(printf '\t')" read -r W_SINCE W_UNTIL W_CASE; do
                 [ -n "$W_SINCE" ] || continue
                 echo "════════ [$W_CASE] ai-agent-service: $W_SINCE → $W_UNTIL ════════"
                 docker compose -f deploy/docker-compose.yml logs --no-color \
-                  --since "$W_SINCE" --until "$W_UNTIL" ai-agent-service
+                  --since "$W_SINCE" --until "$W_UNTIL" ai-agent-service < /dev/null
                 echo "════════ [$W_CASE] admin-api: $W_SINCE → $W_UNTIL ════════"
                 docker compose -f deploy/docker-compose.yml logs --no-color \
-                  --since "$W_SINCE" --until "$W_UNTIL" admin-api
+                  --since "$W_SINCE" --until "$W_UNTIL" admin-api < /dev/null
               done < /tmp/win-$$.txt
             fi
           done

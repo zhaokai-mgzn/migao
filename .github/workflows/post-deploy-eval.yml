@@ -785,15 +785,18 @@ jobs:
                 "eval-summary-${{ matrix.persona }}.json" --failed > "$WINDOWS_FILE" 2>/dev/null; then
             echo "── 失败用例窗口（每条用例各自切片，不再用固定行数）──"
             cat "$WINDOWS_FILE"
+            # ⚠️ 内层命令一律 `< /dev/null`：它跑在 `while read` 的循环体里，一旦
+            #    有命令去读 stdin，就会**静默吃掉**循环剩余输入（只处理第一条窗口 =
+            #    证据静默截断，与本 issue 的立意正相反）。tabs 由 IFS 指定，不受影响。
             while IFS="$(printf '\t')" read -r W_SINCE W_UNTIL W_CASE; do
               [ -n "$W_SINCE" ] || continue
               echo ""
               echo "════════ [$W_CASE] ai-agent-service 窗口: $W_SINCE → $W_UNTIL ════════"
               docker compose -f deploy/docker-compose.yml logs --no-color \
-                --since "$W_SINCE" --until "$W_UNTIL" ai-agent-service || true
+                --since "$W_SINCE" --until "$W_UNTIL" ai-agent-service < /dev/null || true
               echo "════════ [$W_CASE] admin-api 窗口: $W_SINCE → $W_UNTIL ════════"
               docker compose -f deploy/docker-compose.yml logs --no-color \
-                --since "$W_SINCE" --until "$W_UNTIL" admin-api || true
+                --since "$W_SINCE" --until "$W_UNTIL" admin-api < /dev/null || true
             done < "$WINDOWS_FILE"
             # 基础设施容器仍给固定行数（它们不承载用例级证据，只需"栈活着吗"）
             for c in postgres redis; do
