@@ -1,3 +1,4 @@
+// case_ids: AS-001, AS-002, AS-003, AS-005
 package com.migao.admin.controller;
 
 import com.migao.admin.dto.*;
@@ -167,7 +168,7 @@ class AfterSalesControllerTest extends BaseControllerTest {
         void createExchange() throws Exception {
             AfterSalesDetailResponse d = buildTicket(TICKET_ID, "pending", "exchange");
 
-            when(afterSalesTicketService.createTicket(any(AfterSalesCreateRequest.class), eq(TEST_TENANT_ID), anyString()))
+            when(afterSalesTicketService.createTicket(any(AfterSalesCreateRequest.class), eq(TEST_TENANT_ID), anyString(), anyString()))
                     .thenReturn(d);
 
             String body = """
@@ -230,14 +231,14 @@ class AfterSalesControllerTest extends BaseControllerTest {
         @Test
         @DisplayName("创建工单携带租户 ID")
         void createPassesTenantId() throws Exception {
-            when(afterSalesTicketService.createTicket(any(AfterSalesCreateRequest.class), eq(TEST_TENANT_ID), anyString()))
+            when(afterSalesTicketService.createTicket(any(AfterSalesCreateRequest.class), eq(TEST_TENANT_ID), anyString(), anyString()))
                     .thenReturn(buildTicket(TICKET_ID, "pending", "return"));
 
             String body = "{\"orderId\":\"order-001\",\"ticketType\":\"return\",\"description\":\"test\"}";
 
             mockMvc.perform(post(BASE).contentType(MediaType.APPLICATION_JSON).content(body));
 
-            verify(afterSalesTicketService).createTicket(any(AfterSalesCreateRequest.class), eq(TEST_TENANT_ID), anyString());
+            verify(afterSalesTicketService).createTicket(any(AfterSalesCreateRequest.class), eq(TEST_TENANT_ID), anyString(), anyString());
         }
 
         @Test

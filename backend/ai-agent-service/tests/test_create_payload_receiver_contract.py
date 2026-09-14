@@ -179,21 +179,33 @@ async def test_after_sales_manage_create_payload_keys_are_declared_in_agent_dto(
 
 
 def test_agent_ticket_source_is_assigned_by_server_not_client():
-    """删除客户端 `source` 键是无损的：工单来源由服务端固化（issue #3605 定性 (iii)）。
+    """客户端 `source` 键被删除是无损的：来源**始终由服务端**在 `createTicket` 内写库。
 
-    两个创建入口（表单 `createTicket` 与 Agent BFF `createTicketForAgent`）都委托到
-    `AfterSalesTicketService.createTicket`，来源在该方法体内赋值 —— 因此客户端键既无效
-    （DTO 无字段）又多余。本断言防止「服务端赋值被删 + 客户端键也被删」→ source 变 null。
+    issue #3605 定性 (iii)：客户端键既无效（DTO 无字段 → Spring 静默丢弃）又多余。
+    issue #3686 更新：原断言锁的字面量 `setSource("agent")` 本身就是要修的 bug
+    （无条件硬编码 ⇒ C 端顾客工单被误标 agent、DDL DEFAULT 'customer' 成死默认）；
+    现在服务端按**真实来源**写值（customer/agent/merchant，由入口/请求头决定）。
+
+    本断言的**不变量**（两条，与 #3605 的目标一致，且不再锁死具体取值）：
+    1. `createTicket` 方法体内**必然**调用 `ticket.setSource(...)` —— 防止「服务端赋值被删
+       + 客户端键也被删」→ source 变 null；
+    2. 该赋值**不是硬编码字面量**（`setSource("agent")` 形态已复现为 bug）—— 防止回退到
+       无条件硬编码。
     """
+    # 定位 4 参重载（真正的建单实现体）：3 参重载只做委托，不写 source
     body = _handler_body(_JAVA_SERVICE / "AfterSalesTicketService.java",
-                         "public AfterSalesDetailResponse createTicket(")
-    assert 'ticket.setSource("agent")' in body, (
-        "AfterSalesTicketService.createTicket 不再固化 source —— 客户端已不下发该键，"
+                         "public AfterSalesDetailResponse createTicket(AfterSalesCreateRequest request, Long tenantId, String operator,")
+    assert "ticket.setSource(" in body, (
+        "AfterSalesTicketService.createTicket 不再写 source —— 客户端已不下发该键，"
         "工单来源会变成 null（如确需客户端可指定，必须先在 AgentAfterSalesCreateRequest 补字段）"
+    )
+    assert 'setSource("agent")' not in body and "setSource(SOURCE_AGENT)" not in body, (
+        "AfterSalesTicketService.createTicket 又出现**无条件硬编码**来源（issue #3686 回归）："
+        "C 端顾客工单会被误标 agent。来源必须按入口/声明值解析（resolveSource）。"
     )
 
     agent_body = _handler_body(_JAVA_SERVICE / "AfterSalesTicketService.java",
                                "public AfterSalesDetailResponse createTicketForAgent(")
     assert "createTicket(" in agent_body, (
-        "createTicketForAgent 不再委托 createTicket → 上述服务端固化断言对 Agent 入口失效"
+        "createTicketForAgent 不再委托 createTicket → 上述服务端写来源断言对 Agent 入口失效"
     )

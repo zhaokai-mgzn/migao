@@ -186,9 +186,11 @@ class TestAfterSalesCreate:
         assert json_data["orderId"] == "o1"
         assert json_data["ticketType"] == "refund"
         assert json_data["description"] == "尺寸不符"
-        # 不下发 source（issue #3605）：DTO AgentAfterSalesCreateRequest 无该字段 → 静默丢弃；
-        # 来源由服务端固化（AfterSalesTicketService.createTicket 内 setSource("agent")）
+        # 不下发 body 里的 source（issue #3605）：DTO AgentAfterSalesCreateRequest 无该字段 → 静默丢弃。
+        # issue #3686：来源改由 X-Agent-Client **请求头**声明（不由 payload 决定），
+        # 服务端按真实来源写库（本工具 = B 端米宝 AI 建单 → agent）。
         assert "source" not in json_data
+        assert mock_client.post.call_args[1]["headers"]["X-Agent-Client"] == "agent"
 
     @patch("app.tools.after_sales_manage.get_admin_api_client")
     async def test_create_kwargs_passthrough(self, mock_get_client, tool, admin_tool_context, mock_client):

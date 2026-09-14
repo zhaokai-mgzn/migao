@@ -13,7 +13,8 @@
 | 订单状态（DB） | `pending / confirmed / producing / shipped / completed / cancelled` | `OrderService.java` 状态机；**生产中是 producing 不是 processing** |
 | 订单状态（前端展示） | `pending_payment / pending_shipment / shipped / completed / closed / refund` | `types/index.ts` `BackendToFrontendStatus` 映射 |
 | 售后工单状态 | `pending / processing / rejected / resolved / closed` | `AfterSalesTicketService.java` |
-| 商品状态 | `draft / on_sale / off_sale / under_review` | `ProductService.java` `STATUS_TRANSITIONS`（4 值状态机，已核实=后端真值）；前端 `types/index.ts ProductStatus` 同 4 值。⚠️ **Agent 侧能力缺口**（issue #3574 复核）：`product_manage` 的 `VALID_PRODUCT_STATUSES`/schema enum 只有 `on_sale / off_sale`（toggle_status 不能设 draft/under_review）→ 按需另开 issue 扩能力，别把台账改成 2 值 |
+| 商品状态 | `draft / on_sale / off_sale / under_review` | `ProductService.java` `STATUS_TRANSITIONS`（4 值状态机，已核实=后端真值）；前端 `types/index.ts ProductStatus` 同 4 值。**Agent 侧只放开 `on_sale / off_sale`（2 值）—— 有意的权限边界，非能力缺口、不扩枚举，见第九节 #3686** |
+| 售后工单来源 | `customer / agent / merchant` | `AfterSalesTicketService.SOURCE_*`（`VALID_SOURCES` 白名单）。语义 = 工单**真实来源**：customer=顾客发起 / agent=AI 建单 / merchant=人工建单。写入路径见第八节（#3686） |
 | 加工单状态 | `generated / issued / in_processing / completed / cancelled` | `ProcessingOrderService.java` 状态机（issue #3340，1 订单 1 加工单） |
 
 ## 二、关键字段名（前后端 + Agent 三端一致）
@@ -102,3 +103,33 @@ grep -rn "字段名" backend/admin-api/src frontend/admin-web/src backend/ai-age
 | 模板套用 | `POST /api/admin/knowledge/templates/{templateId}/apply` | 复制为租户卡片（sourceType=template/sourceRef=templateId/status=published），按 (tenant_id,title) 去重，返回 {created,skipped} |
 | 候选队列 | `GET /api/admin/knowledge/candidates` + `POST /{id}/adopt` / `adopt-edited` / `reject` | 待确认队列闭环：候选读+写路径齐全；采纳转卡片 published（来源继承），拒绝记 status_note |
 | 待确认计数 | `GET /api/admin/knowledge/candidates/pending-count` | 前端红点 |
+
+## 八、售后工单来源写入契约（issue #3686，2026-09-14）
+
+`after_sales_tickets.source` = 工单**真实来源**（`customer` 顾客发起 / `agent` AI 建单 /
+`merchant` 人工建单）。此前服务端在 `AfterSalesTicketService.createTicket` 内**无条件**
+`setSource("agent")` ⇒ C 端小布顾客工单被误标 agent、DDL `DEFAULT 'customer'` 成死默认。
+
+| 建单入口 | 端点 | 来源取值来源 | 落库值 |
+|---|---|---|---|
+| admin-web 后台表单 | `POST /api/admin/after-sales` | 该 URL 唯一调用方是 admin-web 工单页（`api.ts` ← `after-sales/page.tsx`）⇒ 绑定常量 | `merchant` |
+| 小布（C 端）`aftersale_create` | `POST /api/admin/agent/after-sales` | ai-agent 侧 `ToolContext.ticket_source` = `customer`（role 折叠） | `customer` |
+| 米宝（B 端）`after_sales_manage` | 同上 | 同上 = `agent` | `agent` |
+| 转人工 `human_handoff` | 同上 | 同上；该工具 `check_permission` 只放 C 端角色 ⇒ 恒 `customer` | `customer` |
+| 评测 seed SQL（`tests/agent_eval/fixtures/*.sql`） | 直插 | 显式列出 `source` 列 | 由 seed 指定 |
+
+**服务端无法自行判定 Agent 侧来源**（3 个工具打同一 URL、同一组 header、均 Service Token
+认证 ⇒ `getCurrentOperator()` 恒 `internal-service`、body 无 `source`）⇒ 由内部调用方经
+**请求头 `X-Agent-Client`** 声明，服务端只接受白名单值，缺省/未知一律回退 `agent`
+（= 既有行为，向后兼容）。**不放 body**：来源不由客户端 payload 决定（#3605 取舍，且避开
+payload 契约门禁射程）。
+
+DDL `source VARCHAR(32) DEFAULT 'customer'` 现状：服务端各路径均显式写值 ⇒ 该默认**不可达**
+（死默认），保留作防御性兜底（原始 SQL 插单）并已加注释；`DROP DEFAULT` 会触发 Flyway
+迁移，不划算 —— 如确需清理另开 issue。
+
+## 九、有意的三端差异（登记真实意图，避免被当成缺口"补齐"）
+
+| 差异 | 值域 | 裁定与理由 |
+|---|---|---|
+| 商品状态（agent `product_manage`） | 后端/前端 4 值 `draft/on_sale/off_sale/under_review`；**Agent 2 值 `on_sale/off_sale`** | **有意的权限边界（#3686 裁定，不扩枚举）**：Agent 只负责上下架；新建草稿、`draft→under_review→on_sale` 送审是 admin-web 后台的商品运营流程（需人工编辑资料并承担审核语义）。给 Agent 放开这两值 = 对话可跳过审核门禁（越权），违反最小权限。真值同时写在 `product_manage.py` 的 `status` 字段 description 内。**需要 Agent 送审时必须先补权限设计 + 审核责任归属，再改枚举** |
