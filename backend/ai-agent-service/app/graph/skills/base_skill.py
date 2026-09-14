@@ -3950,21 +3950,31 @@ async def execute_skill(
                         # 写操作永不落库（run 34678939564 + DB 审计实证假绿）。
                         # 同处记 `last_confirm_skill`（#3557）：路由层靠"本 skill 自己发的卡"
                         # 判定答卡轮（否则卡值里的跨域词会把会话甩到别的 skill）。
+                        # 并**同时**记下最近一张卡整体（任意 component，含 choice / form）
+                        # —— 路由层的答卡轮豁免此前只覆盖 confirm 卡，于是
+                        # 「已选加工项：纳米圈打孔 · ¥9.5/米」这类系统自产的 choice 卡答卡值
+                        # 被 L1 规则表（关键词「加工项」→ product_inquiry）当成话题切换，
+                        # 清掉会话锁 → 落到 product skill（无 order_create）→ 零工具拒答
+                        # （run 34841029062 OR-015 R4/R5、OR-016 R2 实证）。
                         try:
                             _data = result_dict.get("data") or {}
-                            if _data.get("component") == "confirm" and _data.get("confirmValue"):
+                            _component = str(_data.get("component") or "")
+                            if _component:
                                 from app.memory.session_state_store import SessionStateStore
                                 _store = SessionStateStore()
                                 _full = await _store.load(session_id) or {}
-                                _full["last_confirm_value"] = str(_data["confirmValue"])
-                                _full["last_confirm_skill"] = skill_name
+                                _full["last_card"] = _data
+                                _full["last_card_skill"] = skill_name
+                                if _component == "confirm" and _data.get("confirmValue"):
+                                    _full["last_confirm_value"] = str(_data["confirmValue"])
+                                    _full["last_confirm_skill"] = skill_name
+                                    logger.info(
+                                        f"[{skill_name}] last_confirm_value 持久化: "
+                                        f"{str(_data['confirmValue'])[:40]} | session={session_id}"
+                                    )
                                 await _store.commit(session_id, _full)
-                                logger.info(
-                                    f"[{skill_name}] last_confirm_value 持久化: "
-                                    f"{str(_data['confirmValue'])[:40]} | session={session_id}"
-                                )
                         except Exception as e:
-                            logger.warning(f"[{skill_name}] last_confirm_value persist failed (non-fatal): {e}")
+                            logger.warning(f"[{skill_name}] last_card persist failed (non-fatal): {e}")
 
                 # ── 「顾客已确认却不动手」：一次纠正重试（issue #3445/#3477 类）──
                 # 实测（run 34794687762 的 OR-024 首跑，`ai=` 让轨迹第一次可读）：

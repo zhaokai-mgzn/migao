@@ -156,6 +156,78 @@ def _is_card_confirm_round(state: dict) -> bool:
     return bool(msg) and msg == card_value.strip()
 
 
+# ── 交互卡「答卡轮」（#3557 G1 家族扩展：choice / form 卡同样在射程内）──
+# #3677 的 `_is_card_confirm_round` 只覆盖 **confirm** 卡：`last_confirm_value` /
+# `last_confirm_skill` 仅在 `interact` 发 confirm 卡时落库（base_skill 的 interact
+# 成功分支）。**choice / form 卡的答卡轮因此完全不在豁免射程内** —— 实测代价
+# （run 34841029062，OR-015 R4）：
+#   R3 order skill 发 `interact(choice, multiSelect, prefix=已选加工项：)` 加工项卡
+#   R4 顾客答卡「已选加工项：纳米圈打孔 · ¥9.5/米」→ 含 L1 商品域关键词「加工项」
+#      （rule_matcher.py:41）→ intent=product_inquiry(source=rule)
+#      → 下方 L1 高置信域逃逸（#3625 G3/T2）判 product ≠ order → **清掉 order 会话锁**
+#      → 落到 product skill（PRODUCT_TOOLS 无 order_create）→ 零工具 + 「我承接的是
+#        商品侧的工作」（R5「确认」沿用被污染的锁，同签名）。
+# 判据与 #3557 / #3361 一致：**本轮输入是否被"本 skill 自己刚发的那张卡"接受**，
+# 而不是"有没有卡"——报价卡后顾客另起一句「确认下单」不在这张卡的取值集合里，
+# 照旧放行切换（#3361 不回归）。
+def _card_accepts_answer(card: dict, msg: str) -> bool:
+    """本轮消息是否是**这张卡**接受的答复（对齐前端点击协议，单一事实源
+    `frontend/admin-web/src/components/chat/InteractiveMessage.tsx`）：
+
+    - `confirm` → 逐字等于 `confirmValue`（点击回传的就是这个值）；
+    - `choice`  → 逐字等于某个 option 的 `label`/`value`，或逐字等于多选卡的
+      `multiSelectSkipLabel`（「不需要加工项」）；多选提交 = `multiSelectSubmitPrefix`
+      前缀（「已选加工项：A、B」）；
+    - `form`    → `__FORM__|{json}`（`app/api/chat.py` 的表单提交协议）。
+    """
+    if not msg or not isinstance(card, dict):
+        return False
+    component = str(card.get("component") or "")
+    if component == "confirm":
+        value = str(card.get("confirmValue") or "").strip()
+        return bool(value) and msg == value
+    if component == "choice":
+        accepted = set()
+        for opt in (card.get("options") or []):
+            if isinstance(opt, dict):
+                accepted.update(str(opt.get(k) or "").strip() for k in ("label", "value"))
+            else:
+                accepted.add(str(opt).strip())
+        accepted.discard("")
+        accepted.add(str(card.get("multiSelectSkipLabel") or "").strip())
+        if msg in accepted:
+            return True
+        if card.get("multiSelect"):
+            prefix = str(card.get("multiSelectSubmitPrefix") or "已选加工项：")
+            return bool(prefix) and msg.startswith(prefix)
+        return False
+    if component == "form":
+        return msg.startswith("__FORM__|")
+    return False
+
+
+def _is_card_answer_round(state: dict) -> bool:
+    """本轮是否是答卡轮（**任意卡型**）：输入被**本 skill 自己刚发的卡**接受。
+
+    `last_card` / `last_card_skill` 由 base_skill 在 `interact` 发卡成功时落库
+    （任意 component），`_build_initial_state` 恢复 —— 判据与 confirm 卡版本同源：
+    卡是系统自己产出的，用户不可能"碰巧"逐字命中它的取值集合。
+    """
+    pending = str(state.get("pending_interact_skill") or "")
+    card_skill = str(state.get("last_card_skill") or "")
+    card = state.get("last_card") or {}
+    if not (pending and card_skill == pending and card):
+        return False
+    msg = (_get_last_human_text(state.get("messages", []) or []) or "").strip()
+    return _card_accepts_answer(card, msg)
+
+
+def _is_own_card_round(state: dict) -> bool:
+    """答卡轮总判据：confirm 卡走 `last_confirm_*`（#3677 原判据，不改），
+    其余卡型走 `last_card`（choice / form，#3557 家族扩展）。"""
+    return _is_card_confirm_round(state) or _is_card_answer_round(state)
+
+
 # 已知领域：`_SKILL_DOMAIN_KEYWORDS` 的键 + knowledge（无关键词表但有独立 skill）
 _KNOWN_DOMAINS = frozenset(_SKILL_DOMAIN_KEYWORDS) | {"knowledge"}
 
@@ -365,8 +437,9 @@ async def intent_router_node(state: AgentState) -> dict:
         # → 零工具调用 + 「订单模块」口径拒绝（CI run 34808115143，PR-007 50%）。
         # 放最前面：本轮的实质意图就是"确认刚才那张卡"，无需（也不该）重新分类；
         # 判据与 #3361 的契约不冲突（那个场景的输入不是本 skill 卡的 confirmValue），
-        # 见 `_is_card_confirm_round` 的完整说明。
-        if _is_card_confirm_round(state):
+        # 见 `_is_card_confirm_round` / `_is_card_answer_round` 的完整说明。
+        # 卡型覆盖：confirm（#3677）+ choice / form（run 34841029062 OR-015 R4 实证）。
+        if _is_own_card_round(state):
             synthetic_intent = _SKILL_TO_INTENT.get(pending_skill, "general")
             logger.info(
                 f"[intent_router] 答卡轮：保持本 skill 意图（不重判）"
@@ -834,13 +907,15 @@ def route_by_intent(state: AgentState) -> str:
 
         # ── 答卡轮豁免（#3557 G1）：点本 skill 自己那张卡 → 留在本 skill ──
         # 卡值由系统按"必须含上下文"的协议生成，可能含**其他域**的词（PR-007 的
-        # 「（改为停售，买家不可下单）」含「下单」）→ 下面的 escape hatch 会把它当成
-        # 话题切换、清掉会话锁 → intent 兜底成 order → 进 order skill（无 product_manage）
-        # → 零工具调用 + 「订单模块」口径拒绝。同源判据也用在 `intent_router_node`
+        # 「（改为停售，买家不可下单）」含「下单」；OR-015 R4 的加工项多选卡答卡
+        # 「已选加工项：纳米圈打孔 · ¥9.5/米」含「加工项」）→ 下面的 escape hatch 会把它
+        # 当成**话题切换**、清掉会话锁 → intent 兜底成 order/product → 进一个**没有该流程
+        # 所需工具**的 skill（PRODUCT_TOOLS 无 order_create / ORDER_TOOLS 无 product_manage）
+        # → 零工具调用 + 「模块越界」口径拒绝。同源判据也用在 `intent_router_node`
         # （那里会先被 L1 规则表劫持，所以两处都要拦）。
-        # 与 #3361 的契约不冲突：那个场景的输入不是本 skill 卡的 confirmValue，见
-        # `_is_card_confirm_round`。
-        if _is_card_confirm_round(state):
+        # 卡型覆盖：confirm（#3677）+ choice / form（本 PR；run 34841029062 OR-015 R4）。
+        # 与 #3361 的契约不冲突：那个场景的输入不是本 skill 卡的取值，见 `_card_accepts_answer`。
+        if _is_own_card_round(state):
             logger.info(
                 f"[route_by_intent] 答卡轮：留在本 skill（不判话题切换）"
                 f" | skill={pending_skill} | session={session_id}"
