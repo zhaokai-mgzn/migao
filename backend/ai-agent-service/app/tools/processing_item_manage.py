@@ -142,7 +142,23 @@ class ProcessingItemManageTool(BaseTool):
             },
             "quantity": {
                 "type": "number",
-                "description": "数量（calculate_price 时必填）",
+                "description": (
+                    "数量（calculate_price 时必填；per_meter 传面料米数，per_set 传套数）。"
+                    "⚠️ per_area（按面积）：quantity 是**计件数**（同一尺寸做几件，默认 1），"
+                    "面积由 width×height 得出——禁止把宽×高写进 quantity（后端会再乘一次面积 → 双计）"
+                ),
+            },
+            "width": {
+                "type": "number",
+                # exclusiveMinimum 0 = 与后端同口径（ProcessingItemService.calculateArea
+                # 对 <=0 的尺寸抛「尺寸必须大于 0」），也是 #3622 的数值下限不变式要求。
+                "exclusiveMinimum": 0,
+                "description": "宽度（米，calculate_price 时按面积计价 per_area 必填；与 height 一起决定面积=宽×高，须大于 0）",
+            },
+            "height": {
+                "type": "number",
+                "exclusiveMinimum": 0,
+                "description": "高度（米，calculate_price 时按面积计价 per_area 必填；与 width 一起决定面积=宽×高，须大于 0）",
             },
             "status": {
                 "type": "string",
@@ -166,6 +182,8 @@ class ProcessingItemManageTool(BaseTool):
         unit: Optional[str] = None,
         processing_item_id: Optional[str] = None,
         quantity: Optional[float] = None,
+        width: Optional[float] = None,
+        height: Optional[float] = None,
         status: Optional[str] = None,
     ) -> ToolResult:
         """执行加工项管理操作"""
@@ -206,7 +224,8 @@ class ProcessingItemManageTool(BaseTool):
             elif action == "delete_category":
                 return await self._delete_category(context, category_id)
             elif action == "calculate_price":
-                return await self._calculate_price(context, processing_item_id, quantity)
+                return await self._calculate_price(
+                    context, processing_item_id, quantity, width, height)
             else:
                 return ToolResult(
                     success=False,
@@ -698,33 +717,63 @@ class ProcessingItemManageTool(BaseTool):
         context: ToolContext,
         processing_item_id: Optional[str],
         quantity: Optional[float],
+        width: Optional[float] = None,
+        height: Optional[float] = None,
     ) -> ToolResult:
-        """计算加工项价格"""
+        """计算加工项价格
+
+        ⚠️ 本端点（POST /api/admin/processing-items/calculate）与 `order_create` **不是同一套契约**
+        （issue #3672；契约差异的归因见 `acceptance/2026-09-15/agent-gap-triage/REPORT.md` §G4）：
+
+        - `order_create`：agent 自己把 per_area 的 `quantity` 算成「宽×高」放进
+          `processing_info`，后端只做 `unitPrice × quantity`；
+        - **本端点**：后端自己从请求体的 `dimensions` 算 `area = 宽×高`，再算
+          `totalPrice = unitPrice × area × quantity`（`ProcessingItemService.java:248-254`；
+          缺 width/height → `:310-318` 直接抛「按面积计价需要提供 width 和 height 尺寸」）。
+
+        ⇒ per_area 必须下发 `dimensions`，且 `quantity` 是**计件数**（同一尺寸做几件，缺省 1）。
+        把「宽×高」写进 quantity 会**双计**（30×8×8 = ¥1920，应为 ¥240）。
+        """
         if not processing_item_id:
             return ToolResult(
                 success=False,
                 error="缺少加工项 ID",
                 message="计算价格时必须提供 processing_item_id",
             )
-        if quantity is None:
+        if (width is None) != (height is None):
             return ToolResult(
                 success=False,
-                error="缺少数量",
-                message="计算价格时必须提供 quantity",
+                error="尺寸不完整",
+                message="按面积计价需要同时提供宽度和高度（width 与 height，单位：米）",
             )
+
+        has_dimensions = width is not None and height is not None
+        if quantity is None:
+            if not has_dimensions:
+                return ToolResult(
+                    success=False,
+                    error="缺少数量",
+                    message="计算价格时必须提供 quantity",
+                )
+            # per_area：面积由 dimensions 承载，quantity 是计件数，缺省 1
+            quantity = 1
 
         logger.info(
             f"[processing-item-manage] CalculatePrice: item_id={processing_item_id}, "
-            f"quantity={quantity} | tenant={context.tenant_id}"
+            f"quantity={quantity}, dimensions={width}x{height} | tenant={context.tenant_id}"
         )
+
+        json_data: Dict[str, Any] = {
+            "processingItemId": processing_item_id,
+            "quantity": quantity,
+        }
+        if has_dimensions:
+            json_data["dimensions"] = {"width": width, "height": height}
 
         client = get_admin_api_client()
         response = await client.post(
             "/api/admin/processing-items/calculate",
-            json_data={
-                "processingItemId": processing_item_id,
-                "quantity": quantity,
-            },
+            json_data=json_data,
             tenant_id=context.tenant_id,
             user_id=context.user_id,
         )
