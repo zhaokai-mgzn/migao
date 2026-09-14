@@ -91,3 +91,65 @@
 ## 数据卫生
 
 冒烟产生的测试数据（冒烟* 商品/订单/加工单/员工/分类/加工项）已全部从云 dev 库清理；SMS 限流键已清除；本地服务已停。**发现并复现问题的 DB 证据**：加工单 JG-20260914-9984（completed 全流程落库实证，清理前截图留证）。
+
+---
+
+# 附录 A：深度层（父会话追加，2026-09-14 晚）
+
+## A1 按钮粗扫（②）：18/18 页全绿
+
+对 18 个 dashboard 页逐一枚举可见可交互控件（button/a/form 控件，每页 ≤30）逐个点击，断言「无 console/page error + 页面不崩 + 弹窗可关/导航可回退」。**结果 18/18 全绿**（完整日志 `depth-out/sweep-run.log`）：商品列表/新建/加工项/分类/订单列表/新建订单/售后/客户/财务/员工/岗位/设置/通知/看板/简报/在线接待/会话/对话 全部控件点击无坏死。
+
+## A2 单据状态机显式全边表（③）：19/19 ✅
+
+| # | 检查项 | 结果 | 证据 |
+|---|--------|------|------|
+| 1 | 订单: 创建 pending | ✅ | API 建单 |
+| 2 | 订单: pending→completed 非法直跳被拒（#3583 闸门） | ✅ | 400 validation |
+| 3 | 订单: pending→confirmed（确认收款） | ✅ | 200 + 收款流水落库 |
+| 4 | 订单: confirmed 重复收款被拒 | ✅ | 400 validation（仅 pending 可收） |
+| 5 | 加工单: confirmed→generated（生成） | ✅ | GenerateResult.success |
+| 6 | 加工单: generated→completed 非法迁移被拒（PG-006 教训） | ✅ | 400「加工单状态不允许从 [已生成] 变更为 [加工完成]」 |
+| 7 | 加工单: generated→in_processing 非法迁移被拒 | ✅ | 400 |
+| 8 | 加工单: generated→issued（发加工） | ✅ | status=issued |
+| 9 | 加工单: issued→in_processing（开始加工） | ✅ | status=in_processing |
+| 10 | 加工单: in_processing→completed（加工完成） | ✅ | status=completed（DB 实证） |
+| 11 | 加工单: completed→cancel 非法迁移被拒 | ✅ | 400（终态） |
+| 12 | 加工单: 空 orderIds 生成被拒 | ✅ | 400 |
+| 13 | 售后: 创建 pending 工单 | ✅ | |
+| 14 | 售后: pending→processing | ✅ | |
+| 15 | 售后: processing→closed（原因必填落库） | ✅ | DB 回读 closeReason 与 UI 一致 |
+| 16 | 售后: closed→processing 非法迁移被拒 | ✅ | 400（终态） |
+| 17 | 售后: pending→closed 直接关闭允许（#3541 裁定） | ✅ | |
+| 18 | 联动4: 商品下架→上架（on_sale↔off_sale） | ✅ | DB 回读 status=on_sale |
+| 19 | 联动3: 员工改手机号/岗位（HR-008） | ✅ | DB 回读 phone/position 落库 |
+
+## A3 跨单据联动场景（④）：8/8 ✅（UI + DB 双断言）
+
+场景 1（建品→下单→收款→加工单→完成，**带颜色**，DB 回读实证）：
+
+| 断言 | 结果 | 证据（DB） |
+|------|------|-----------|
+| 建单（商品+SKU门幅2.8米+加工项锁边） | ✅ | order 创建 |
+| 确认收款（pending→confirmed） | ✅ | finance_transactions income ¥31.30 |
+| **SKU 库存扣减 100→98** | ✅ | product_skus.stock |
+| **SKU 销量 +2** | ✅ | product_skus.sales_count |
+| 商品级销量 +2（stock 以 SKU 级为准） | ✅ | products.sales_count |
+| 加工单生成 + 全流程 completed | ✅ | processing_orders.status=completed |
+| 订单状态推进 producing | ✅ | orders.status=producing |
+
+场景 2（售后 closed 原因落库）：**closeReason = UI 填写值（逐字一致）+ closedAt 非空** ✅
+场景 3（员工改手机号/岗位）：**users.phone / users.position 更新值落库** ✅
+场景 4（商品上下架）：**products.status 回读 on_sale** ✅
+场景 5（客户 wechatNickname）：见旅程 20/21（列表/详情无空名、无报错；改名链路 UI 走查通过）——命名一致性为后端契约项 B2 关联观察。
+
+> 注：不追求的深度（表单校验分支/异常流/权限矩阵）如实标注不在本次冒烟范围；本深度层聚焦「状态机全边合法遍历 + 非法迁移拒绝 + 跨单据数据联动落库」。
+
+## A4 阶段 2（C 端小程序）状态
+
+- **形态**：DevTools 调试端口驱动真实小程序（首选，父会话裁定） + H5 渲染兜底（已跑）。
+- **H5 兜底（stub，与 CI xiaobu-h5-visual 同法）**：C1 首页渲染 ✅ / C2 消息上屏 ✅ / C3 我的页 ✅ / C4 登录页 ⏳（H5 无一键登录表单，渲染判定待真机/DevTools 登录形态确认）/ C5 卡片容器 ✅ —— **4/5**，全部如实标注「UI-only（agent 响应由本地 stub 提供）」。
+- **DevTools 真实小程序冒烟**：DevTools 已登录（login:true）+ 真实 AppID（project.private.config.json）+ 自动化已启用（cli auto ✔）+ weapp dist 已构建（build:weapp 3.4s 成功）；**阻塞点 = DevTools「设置→安全设置→服务端口」开关**（CLI 无法开启；21161 为 IDE server 端口而非自动化 WS 端口）。该开关打开 + 重启 DevTools 后，miniprogram-automator 即可连接，按 10 条旅程清单跑（登录旅程=真机扫码或 wx.login 直通；其余 9 条=自动化 + mock/注入 token，标注形态）。
+- **C 端旅程清单（10 条）**：① 首页（对话 tab 欢迎语/快捷入口/新品推荐/输入框）② 商品搜索/列表（ProductCard）③ 窗帘计算器（curtain_calc 输入尺寸→报价）④ 报价单（QuotationCard 与 build_quote 真值一致）⑤ 下单两步流（选商品+加工项→短信验证码形态→提交）⑥ 我的订单（列表/详情/状态）⑦ 售后（换货/退货申请→进度）⑧ 转人工客服（human_handoff→会话）⑨ 我的（跨会话记忆推荐痕迹）⑩ 个人设置。
+- **真机扫码验证**：`cli preview` 二维码已请求生成（`/tmp/ui-smoke/c-end-preview-qr.png`，待用户配合扫码一次完成真实链路登录证据）。
+- 凭据红线遵守：本机已配置真实微信凭据（AppID/Secret 不打印、不提交、不写入本报告）。
