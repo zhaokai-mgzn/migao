@@ -875,6 +875,17 @@ cases:
       - regression
     truths_ref:
       - product-sku-stock.low-stock
+    # 用例级表单载荷（issue #3804）：色卡识别结果的 6 个 canonical 字段原先只声明在 R2
+    # 一轮（结构化回填窗口 W=1），而 R4 的 repeat_until 轮也是可作答轮 —— agent 把
+    # 「色卡识别结果」form 卡发晚一轮时，结构化路径整场失效（只剩自包含文本兜底）。
+    # 声明在用例级 = 载荷脱离轮次位置（全场任意轮可用）；R2 轮级声明保留（优先级更高）。
+    auto_fill:
+      name: "2699系列雪尼尔窗帘面料"
+      price: "23.8"
+      colors: "2699-01 米白"
+      door_widths: "2.8米"
+      selling_methods: "散剪"
+      sku_code: "XNE2699"
     user_inputs:
       - text: "根据这张图片录入商品（色卡图，可识别材质/克重）"
         images:

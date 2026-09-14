@@ -2087,9 +2087,49 @@ class TestAutoRespond:
         assert out is not None and out.startswith("__FORM__|")
         assert '"customer_name": "张三"' in out and '"color": "米白"' in out
 
-    def test_form_without_matching_values_falls_back(self):
+    def test_form_without_matching_values_reports_harness_incompatible(self):
+        """字段**一个都对不上**时不许静默降级（issue #3803）。
+
+        ⚠️ 本条原先是 `test_form_without_matching_values_falls_back`，断言的是**旧行为**
+        （静默走 fallback 文本）。旧行为的后果有实证：用例声明了载荷却送不出去 ⇒ 顾客永远
+        填不上表 ⇒ 用例必红，而失败串写成 `order_create 从未被调用` ⇒ **归因指向产品**。
+        现在返回**独立签名**（`__HARNESS_INCOMPATIBLE__|{kind: form_fields_mismatch}`），
+        由 `run_case` 记为"harness/用例形状不兼容"，不进 agent 行为失败桶。
+        """
         results = self._last([{"component": "form", "formFields": [{"key": "unknown_key"}]}])
-        assert lr.resolve_auto_respond(results, fallback="确认下单", form_values={"a": 1}) == "确认下单"
+        out = lr.resolve_auto_respond(results, fallback="确认下单", form_values={"a": 1})
+        inc = lr.parse_harness_incompatible(out)
+        assert isinstance(inc, dict), f"载荷零匹配却静默降级为 fallback 文本：{out!r}（issue #3803 复发）"
+        assert inc["kind"] == "form_fields_mismatch"
+        assert inc["card_fields"] == ["unknown_key"] and inc["case_fields"] == ["a"]
+
+    def test_form_without_values_still_falls_back(self):
+        """反向守卫：用例**没提供**载荷时行为不变（仍走 fallback）—— 不得把正常路径改红。"""
+        results = self._last([{"component": "form", "formFields": [{"key": "unknown_key"}]}])
+        assert lr.resolve_auto_respond(results, fallback="确认下单", form_values={}) == "确认下单"
+
+    def test_form_synonym_field_names_are_filled(self):
+        """同义字段名可回填（issue #3803 治法①）：卡上 `name`/`phone` ↔ 用例 `customer_name`/`customer_phone`。
+
+        映射表必须**可枚举**（`FORM_FIELD_ALIASES`），且回填的键是**卡声明的键**
+        （前端按卡字段回填，写用例的键会落空）。
+        """
+        results = self._last([{"component": "form",
+                               "formFields": [{"key": "name"}, {"key": "phone"}]}])
+        out = lr.resolve_auto_respond(
+            results, fallback="确认",
+            form_values={"customer_name": "张三", "customer_phone": "13800138000"})
+        assert out.startswith("__FORM__|"), out
+        assert '"name": "张三"' in out and '"phone": "13800138000"' in out, out
+
+    def test_form_exact_key_match_is_unchanged_by_aliases(self):
+        """反向守卫：精确同名优先 —— 有同义组也不能改写既有正常路径的输出。"""
+        results = self._last([{"component": "form",
+                               "formFields": [{"key": "customer_name"}, {"key": "customer_phone"}]}])
+        out = lr.resolve_auto_respond(
+            results, fallback="确认",
+            form_values={"customer_name": "张三", "customer_phone": "13800138000"})
+        assert out == '__FORM__|{"customer_name": "张三", "customer_phone": "13800138000"}', out
 
     def test_no_card_uses_fallback(self):
         assert lr.resolve_auto_respond(self._last([]), fallback="数量 3 米", form_values={}) == "数量 3 米"
@@ -4823,6 +4863,10 @@ class TestAssertionVocabularyIsMappedByLoader:
         "precondition": ('    precondition:\n      - type: order_count_for_phone\n'
                          '        source: "13800138000"\n',
                          [{"type": "order_count_for_phone", "source": "13800138000"}]),
+        # 用例级表单载荷（issue #3804）：让"客户信息"脱离轮次位置。漏映射 = 载荷仍绑死
+        # 在少数轮次（agent 发卡晚一轮即整场不可完成），与上面四个字段同族假绿。
+        "auto_fill": ('    auto_fill:\n      customer_name: "张三"\n',
+                      {"customer_name": "张三"}),
     }
 
     def _vocabulary(self):

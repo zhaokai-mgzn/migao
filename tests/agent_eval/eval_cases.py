@@ -57,6 +57,7 @@ class EvalCase:
     forbidden_card_text: List = field(default_factory=list) # 卡片内容反模式（卡里不得出现「用量/倍数」等把金额翻倍的框架，issue #3402）
     namespaces: List[str] = field(default_factory=list) # 全局命名空间声明（<kind>:<值>，如 customer_phone:13800138000）；两条用例有交集 → 自动串行（issue #3781 并行污染隔离）
     precondition: List[dict] = field(default_factory=list) # 运行期前置断言（order_count_for_phone：运行期间订单数不得增长；不成立则判「前置不成立」而非行为失败，issue #3781）
+    auto_fill: dict = field(default_factory=dict) # **用例级**表单载荷（全场可用）：让客户信息脱离轮次位置（issue #3804）
 
 
 # ── AS-001 [SMOKE] 售后工单列表（源: cases/aftersales.yml）──
@@ -1546,6 +1547,7 @@ _CASE_CR_003 = EvalCase(
     must_succeed=[{'tool': 'order_create'}],
     pre_clean=[{'type': 'product_dedupe', 'product_keyword': '遮光窗帘'}],
     namespaces=['customer_phone:13800138000', 'product_name:遮光窗帘'],
+    auto_fill={'customer_name': '张三', 'customer_phone': '13800138000', 'customer_address': '浙江省杭州市西湖区文三路 1 号 1 幢 101 室'},
 )
 
 # ── CU-001 [SMOKE] 客户列表（源: cases/customer.yml）──
@@ -3289,6 +3291,7 @@ _CASE_OR_014 = EvalCase(
     must_succeed=[{'tool': 'order_create'}],
     amount_verify=[{'tool': 'order_create', 'product_name': '遮光窗帘', 'checks': ['unit_price', 'subtotal', 'total']}],
     pre_clean=[{'type': 'product_dedupe', 'product_keyword': '遮光窗帘'}],
+    auto_fill={'customer_name': '张三', 'customer_phone': '13800138000', 'customer_address': '浙江省杭州市西湖区文三路1号1幢101室', 'color': '米白', 'colorName': '米白'},
 )
 
 # ── OR-015 [NORMAL] order_create 写操作前置校验必须真正执行（validate_input 规则分层修复，issue #3029 复盘）（源: cases/order.yml）──
@@ -3466,6 +3469,7 @@ _CASE_OR_022 = EvalCase(
     must_succeed=[{'tool': 'order_create'}],
     amount_verify=[{'tool': 'order_create', 'product_name': '遮光窗帘', 'checks': ['unit_price', 'subtotal', 'total']}],
     db_verify=[{'fetch': 'order_items', 'source': 'order_create', 'expect_products': ['遮光窗帘'], 'expect_quantities': {'遮光窗帘': 3}}, {'fetch': 'order_phone', 'source': 'order_create', 'expect_phone': '13800138000'}],
+    auto_fill={'customer_name': '张三', 'customer_phone': '13800138000', 'customer_address': '浙江省杭州市西湖区文三路1号1幢101室', 'color': '米白', 'colorName': '米白'},
 )
 
 # ── OR-023 [NORMAL] C 端老客户下单 - 自动带出上次收货信息（form 预填真值，不得再问一遍）（源: cases/order.yml）──
@@ -3510,6 +3514,7 @@ _CASE_OR_024 = EvalCase(
     must_succeed=[{'tool': 'order_create'}],
     amount_verify=[{'tool': 'order_create', 'product_name': '遮光窗帘', 'checks': ['unit_price', 'subtotal', 'total']}],
     db_verify=[{'fetch': 'order_items', 'source': 'order_create', 'expect_products': ['遮光窗帘'], 'expect_quantities': {'遮光窗帘': 3}}, {'fetch': 'order_phone', 'source': 'order_create', 'expect_phone': '13800138000'}],
+    auto_fill={'customer_name': '张三', 'customer_phone': '13800138000', 'customer_address': '浙江省杭州市西湖区文三路1号1幢101室'},
 )
 
 # ── OR-025 [NORMAL] C 端物流正向查询 - 工具可达 + 能力不否定（权限类禁词）（源: cases/order.yml）──
@@ -4412,6 +4417,7 @@ _CASE_PR_019 = EvalCase(
     required_args=[{'tool': 'product_manage', 'action': 'create', 'fields': ['specifications', 'processing_item_configs.customPrice']}],
     must_succeed=[{'tool': 'product_manage', 'action': 'create'}],
     pre_clean=[{'type': 'product_dedupe', 'product_keyword': '2699系列雪尼尔窗帘面料', 'price': 23.8}],
+    auto_fill={'name': '2699系列雪尼尔窗帘面料', 'price': '23.8', 'colors': '2699-01 米白', 'door_widths': '2.8米', 'selling_methods': '散剪', 'sku_code': 'XNE2699'},
 )
 
 # ── PR-020 [NORMAL] 建品加工项价格落库盯防 — 自定义价须等于用户确认价（BFF 合并回归）（源: cases/product.yml）──

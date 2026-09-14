@@ -596,11 +596,42 @@ jobs:
         run: |
           echo "── 容器状态 ──"
           docker compose -f deploy/docker-compose.yml ps -a || true
-          for c in postgres redis admin-api ai-agent-service; do
-            echo ""
-            echo "════════ container logs: $c ════════"
-            docker compose -f deploy/docker-compose.yml logs --no-color --tail=100 "$c" || true
-          done
+          # 按**用例窗口**取容器日志（issue #3805 病灶 1）：固定行数取到的是 dump 那一刻的
+          # 日志，失败用例的执行窗口早已过去（实测 OR-014 窗口 01:20–01:47 CST，而
+          # ai-agent 的 `--tail=100` 段起点 01:48:24 ⇒ 窗口内 **0 行**）。runner 把
+          # `⏱ <case> start=` 锚点写进了 summary 的 started_at/finished_at，本步骤按它切片。
+          WINDOWS_FILE="/tmp/eval-windows-shard${{ matrix.shard }}.txt"
+          if bash .github/scripts/eval_log_windows.sh \
+                "/tmp/eval-summary-shard${{ matrix.shard }}.json" --failed > "$WINDOWS_FILE" 2>/dev/null; then
+            echo "── 失败用例窗口（每条用例各自切片）──"
+            cat "$WINDOWS_FILE"
+            # ⚠️ 内层命令一律 `< /dev/null`：它跑在 `while read` 的循环体里，一旦
+            #    有命令去读 stdin，就会**静默吃掉**循环剩余输入（只处理第一条窗口 =
+            #    证据静默截断，与本 issue 的立意正相反）。tabs 由 IFS 指定，不受影响。
+
+            while IFS="$(printf '\t')" read -r W_SINCE W_UNTIL W_CASE; do
+              [ -n "$W_SINCE" ] || continue
+              echo ""
+              echo "════════ [$W_CASE] ai-agent-service 窗口: $W_SINCE → $W_UNTIL ════════"
+              docker compose -f deploy/docker-compose.yml logs --no-color \
+                --since "$W_SINCE" --until "$W_UNTIL" ai-agent-service < /dev/null || true
+              echo "════════ [$W_CASE] admin-api 窗口: $W_SINCE → $W_UNTIL ════════"
+              docker compose -f deploy/docker-compose.yml logs --no-color \
+                --since "$W_SINCE" --until "$W_UNTIL" admin-api < /dev/null || true
+            done < "$WINDOWS_FILE"
+            for c in postgres redis; do
+              echo ""
+              echo "════════ container logs（固定 tail，仅环境归因）: $c ════════"
+              docker compose -f deploy/docker-compose.yml logs --no-color --tail=100 "$c" || true
+            done
+          else
+            echo "⚠️ 无失败用例窗口（见上一条 stderr）→ 回落固定 tail（证据可能不含失败窗口）"
+            for c in postgres redis admin-api ai-agent-service; do
+              echo ""
+              echo "════════ container logs: $c ════════"
+              docker compose -f deploy/docker-compose.yml logs --no-color --tail=100 "$c" || true
+            done
+          fi
           echo ""
           echo "── 直接 docker logs（compose logs 为空时兜底）──"
           for n in aikf-postgres aikf-redis aikf-admin-api aikf-ai-agent; do
@@ -653,11 +684,26 @@ jobs:
       - name: Upload flake ledger（波动台账汇聚，#3505）
         # 台账此前只落 job 工作目录、随 runner 销毁 —— 高波动用例治理（§14.3）只能
         # 逐个 run 翻日志。上传为 artifact 后可跨 run 汇总出"波动榜"。
-        if: always() && hashFiles('agent-eval-flakes.json') != ''
+        #
+        # 同时上传**本片运行汇总**（issue #3805 同类取数缺失，扫描 H7）：它含
+        # `failures`（断言级原文，issue #3708）与 `started_at/finished_at`（用例窗口）
+        # —— 此前只落在 /tmp、随 runner 销毁 ⇒ C 端红 run 的可归因面退化为"日志 + 指纹"，
+        # 与 post-deploy（会上传 summary）能力不一致。
+        # ⚠️ 这里写的是**工作区外的绝对路径** `/tmp/eval-summary-shard<N>.json`：
+        # `actions/upload-artifact@v7` **支持**它（2026-09-15 审计实证：
+        # `llm-thinking-probe.yml` 用 `path: /tmp/llm-thinking-probe-verdict.txt` 上传成功，
+        # artifact 10334936046 可下载到 8221 字节的正文）——故不需要"先复制进工作区"。
+        # 条件从「有台账才传」放宽为「总是传」：**零波动**的 run 恰恰只有汇总可留
+        # （确定性失败不产生台账条目）。文件缺失由 `if-no-files-found: warn` 兜底，
+        # 不让步骤变红。
+        if: always() && !cancelled()
         uses: actions/upload-artifact@v7
         with:
           name: agent-eval-flake-ledger-shard${{ matrix.shard }}
-          path: agent-eval-flakes.json
+          path: |
+            agent-eval-flakes.json
+            /tmp/eval-summary-shard${{ matrix.shard }}.json
+          if-no-files-found: warn
           retention-days: 30
 
       - name: Create Issue on failure (dedup guard)

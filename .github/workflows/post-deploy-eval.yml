@@ -521,6 +521,23 @@ jobs:
           pip install -q httpx pytest pytest-timeout pytest-rerunfailures
           pip install -q -r backend/ai-agent-service/requirements.txt
 
+      - name: "跨 run 波动指纹索引（#3806：只消费既有 artifact，不额外跑评测）"
+        # 为什么需要（issue #3806）：放行政策（`llm-noise` = 首跑失败 + 重试通过）此前只看
+        # **本次 run 的两次尝试**，而台账每次 run 独立生成 ⇒「同一首跑指纹」可以永远"首次
+        # 出现"：PR-016 的首跑指纹在 **3/3** 次 run 都出现（首跑通过率 0/3），第三次却因
+        # "重试碰巧过"被判 `llm-noise` 放行 —— 系统性缺口被长期当随机波动。
+        # 本步骤把仓库里**已有的** flake 台账 artifact（各评测 workflow 都上传、保留 30 天）
+        # 汇总成滚动索引，供 runner 的 `completion_verdict` 判"跨 run 复发"。
+        # ⚠️ 纯取数：没有任何一步需要额外派发真实评测（成本纪律）。
+        # ⚠️ `continue-on-error`：取不到历史（无凭据/首次/网络抖动）不是失败 ——
+        #    没有索引时判定**退化为现状**（不新增假红）；有索引时复发必须显式处理。
+        if: steps.supersede.outputs.superseded != 'true'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python3 .github/scripts/flake_history.py fetch --out flake-history.json --limit 12
+
       - name: Run ${{ matrix.persona }} ${{ github.event.inputs.tier || 'normal' }}（真实 LLM）
         # ① #3587：这一条是**真实 LLM 成本的大头**，被取代的 run 在此止步。
         if: steps.supersede.outputs.superseded != 'true'
@@ -575,6 +592,11 @@ jobs:
           # 于是下方 artifact 里的 agent-eval-flakes.json **永远不存在**，
           # "按台账放行"实际退化成"按本次运行的分类放行"（跨 run 的波动榜也攒不起来）。
           AGENT_EVAL_FLAKE_LOG: agent-eval-flakes.json
+          # 跨 run 指纹索引（issue #3806）：上一步由 `.github/scripts/flake_history.py` 从
+          # **既有** flake 台账 artifact 汇总而来。runner 用它判"同一首跑指纹是否复发"
+          # （复发 ⇒ 不按波动放行）；runner 结束后把本次台账**并入**同一文件，
+          # 下方 artifact 上传即完成索引滚动（下一位消费者拿到的是累积历史）。
+          AGENT_EVAL_FLAKE_HISTORY: flake-history.json
           # 机器可读汇总（本 workflow 的判定/结论/issue 要点全部消费它）
           AGENT_EVAL_SUMMARY_JSON: eval-summary-${{ matrix.persona }}.json
         run: |
@@ -751,11 +773,47 @@ jobs:
           echo "persona=${{ matrix.persona }}"
           echo "── 容器状态 ──"
           docker compose -f deploy/docker-compose.yml ps -a || true
-          for c in postgres redis admin-api ai-agent-service; do
-            echo ""
-            echo "════════ container logs: $c ════════"
-            docker compose -f deploy/docker-compose.yml logs --no-color --tail=100 "$c" || true
-          done
+          # ── 按**用例窗口**取容器日志（issue #3805 病灶 1）──
+          # 固定行数（--tail=100）取到的是**dump 那一刻**的日志：实测判定跑 34873715194
+          # 的 ai-agent 段只覆盖 01:48:24–01:48:27 CST，而 OR-014 的窗口是 01:20–01:47 CST
+          # ⇒ **失败窗口内 0 行**（离线复算：同一份日志流上 tail=100 → 窗口内 0 行；
+          # 按窗口切片 → 372 行）。runner 一直打印 `⏱ <case> start=<UTC ISO>`，
+          # 现在这个锚点也写进 summary（`started_at`/`finished_at`）并由
+          # `.github/scripts/eval_log_windows.sh` 消费 —— 本步骤只改**取数**，不改判定。
+          WINDOWS_FILE="eval-windows-${{ matrix.persona }}.txt"
+          if bash .github/scripts/eval_log_windows.sh \
+                "eval-summary-${{ matrix.persona }}.json" --failed > "$WINDOWS_FILE" 2>/dev/null; then
+            echo "── 失败用例窗口（每条用例各自切片，不再用固定行数）──"
+            cat "$WINDOWS_FILE"
+            # ⚠️ 内层命令一律 `< /dev/null`：它跑在 `while read` 的循环体里，一旦
+            #    有命令去读 stdin，就会**静默吃掉**循环剩余输入（只处理第一条窗口 =
+            #    证据静默截断，与本 issue 的立意正相反）。tabs 由 IFS 指定，不受影响。
+            while IFS="$(printf '\t')" read -r W_SINCE W_UNTIL W_CASE; do
+              [ -n "$W_SINCE" ] || continue
+              echo ""
+              echo "════════ [$W_CASE] ai-agent-service 窗口: $W_SINCE → $W_UNTIL ════════"
+              docker compose -f deploy/docker-compose.yml logs --no-color \
+                --since "$W_SINCE" --until "$W_UNTIL" ai-agent-service < /dev/null || true
+              echo "════════ [$W_CASE] admin-api 窗口: $W_SINCE → $W_UNTIL ════════"
+              docker compose -f deploy/docker-compose.yml logs --no-color \
+                --since "$W_SINCE" --until "$W_UNTIL" admin-api < /dev/null || true
+            done < "$WINDOWS_FILE"
+            # 基础设施容器仍给固定行数（它们不承载用例级证据，只需"栈活着吗"）
+            for c in postgres redis; do
+              echo ""
+              echo "════════ container logs（固定 tail，仅环境归因）: $c ════════"
+              docker compose -f deploy/docker-compose.yml logs --no-color --tail=100 "$c" || true
+            done
+          else
+            # 回落：汇总没有窗口字段（评测未跑到写窗口处 / 旧版汇总 / 被抑制）——
+            # 有界 tail 仍然比没有证据好，但显式标注"这不是窗口化证据"。
+            echo "⚠️ 无失败用例窗口（见上一条 stderr）→ 回落固定 tail（证据可能不含失败窗口）"
+            for c in postgres redis admin-api ai-agent-service; do
+              echo ""
+              echo "════════ container logs: $c ════════"
+              docker compose -f deploy/docker-compose.yml logs --no-color --tail=100 "$c" || true
+            done
+          fi
           echo ""
           echo "── 直接 docker logs（compose logs 为空时兜底）──"
           for n in aikf-postgres aikf-redis aikf-admin-api aikf-ai-agent; do
@@ -797,6 +855,9 @@ jobs:
           path: |
             eval-summary-${{ matrix.persona }}.json
             agent-eval-flakes.json
+            # 跨 run 指纹索引（issue #3806）：runner 结束时已把本次台账并入 ⇒ 上传即完成
+            # **索引滚动**（下一次 run 的 fetch 步骤取到的就是累积历史）。缺省不存在时不报红。
+            flake-history.json
           # 台账文件在"本次零波动"时不存在，不该因此让步骤变红
           if-no-files-found: warn
           retention-days: 30

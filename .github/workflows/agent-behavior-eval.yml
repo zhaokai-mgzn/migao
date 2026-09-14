@@ -781,11 +781,41 @@ jobs:
           set +e
           echo "── 容器状态 ──"
           docker compose -f deploy/docker-compose.yml ps -a
-          for c in postgres redis admin-api ai-agent-service; do
-            echo ""
-            echo "════════ container logs: $c ════════"
-            docker compose -f deploy/docker-compose.yml logs --no-color --tail=80 "$c"
+          # 按**用例窗口**取容器日志（issue #3805 病灶 1）：本 workflow 是多桶串接（每桶一份
+          # /tmp/eval-summary-<桶>.json），固定行数取到的是 dump 那一刻的日志 —— 先跑完的
+          # 桶的失败窗口早已过去。runner 把 `⏱ <case> start=` 锚点写进了 summary
+          # 的 started_at/finished_at，这里逐桶按窗口切片（取不到窗口再回落固定 tail）。
+          WINDOWS_ANY=0
+          for f in /tmp/eval-summary-*.json; do
+            [ -f "$f" ] || continue
+            if bash .github/scripts/eval_log_windows.sh "$f" --failed > /tmp/win-$$.txt 2>/dev/null; then
+              WINDOWS_ANY=1
+              echo ""
+              echo "════════ 失败用例窗口（来自 $f）════════"
+              cat /tmp/win-$$.txt
+              # ⚠️ 内层命令一律 `< /dev/null`：它跑在 `while read` 的循环体里，一旦
+              #    有命令去读 stdin，就会**静默吃掉**循环剩余输入（只处理第一条窗口 =
+              #    证据静默截断，与本 issue 的立意正相反）。tabs 由 IFS 指定，不受影响。
+
+              while IFS="$(printf '\t')" read -r W_SINCE W_UNTIL W_CASE; do
+                [ -n "$W_SINCE" ] || continue
+                echo "════════ [$W_CASE] ai-agent-service: $W_SINCE → $W_UNTIL ════════"
+                docker compose -f deploy/docker-compose.yml logs --no-color \
+                  --since "$W_SINCE" --until "$W_UNTIL" ai-agent-service < /dev/null
+                echo "════════ [$W_CASE] admin-api: $W_SINCE → $W_UNTIL ════════"
+                docker compose -f deploy/docker-compose.yml logs --no-color \
+                  --since "$W_SINCE" --until "$W_UNTIL" admin-api < /dev/null
+              done < /tmp/win-$$.txt
+            fi
           done
+          if [ "$WINDOWS_ANY" = "0" ]; then
+            echo "⚠️ 无失败用例窗口（桶汇总缺失/无窗口字段）→ 回落固定 tail（证据可能不含失败窗口）"
+            for c in postgres redis admin-api ai-agent-service; do
+              echo ""
+              echo "════════ container logs: $c ════════"
+              docker compose -f deploy/docker-compose.yml logs --no-color --tail=80 "$c"
+            done
+          fi
           echo ""
           echo "── DB 关键状态探针 ──"
           PRODUCTS=$(docker compose -f deploy/docker-compose.yml exec -T postgres \

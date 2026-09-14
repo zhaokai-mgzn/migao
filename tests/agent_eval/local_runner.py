@@ -109,7 +109,15 @@ import httpx
 
 # ── 数据隔离：保存/恢复商品状态 ──
 
-_saved_states: dict = {}  # {product_id: {"price": ...}}
+_saved_states: dict = {}  # {product_id: {"basePrice": ..., "name": ...}}
+
+# 商品改价的**权威字段名**（issue #3807）：admin-api 的
+# `AgentProductUpdateRequest` 只有 `basePrice`（`ProductResponse.getPrice()` 只是
+# `return basePrice` 的只读派生）。旧实现发 `{"price": …}` ⇒ Jackson 忽略未知属性、
+# `basePrice` 保持 null（= 不修改）⇒ **复位静默空转**：种子「遮光窗帘」¥168 被 PR-010
+# 改成 198 后，此后全场读到 198（两次判定跑独立复现）。单一源：
+# backend/admin-api/src/main/java/com/migao/admin/dto/agent/AgentProductUpdateRequest.java
+PRODUCT_PRICE_FIELD = "basePrice"
 
 
 def _safe_json(resp, default=None):
@@ -128,7 +136,14 @@ def _safe_json(resp, default=None):
 
 
 async def snapshot_product(token: str, product_keyword: str) -> str | None:
-    """保存商品当前状态，返回 product_id"""
+    """保存商品当前状态，返回 product_id。
+
+    取值键显式取 **`basePrice`**（issue #3807）：它才是写路径的权威字段
+    （`AgentProductUpdateRequest.basePrice`），`ProductResponse.getPrice()` 只是
+    `return basePrice` 的派生 getter。旧实现写的是 `p.get("price") or p.get("basePrice")`
+    —— 一旦 `getPrice()` 语义漂移（如将来加价/含税），快照就会取到**不是写路径那个值**，
+    复位随即静默错位。`price` 仅作兜底（响应里 basePrice 缺失时）。
+    """
     async with httpx.AsyncClient() as c:
         h = _admin_headers(token)
         r = await c.get(f"{ADMIN_API}/api/admin/products", headers=h,
@@ -138,22 +153,66 @@ async def snapshot_product(token: str, product_keyword: str) -> str | None:
             return None
         p = items[0]
         pid = p["id"]
-        price = p.get("price") or p.get("basePrice")
-        _saved_states[pid] = {"price": price, "name": p.get("name", "")}
+        price = p.get(PRODUCT_PRICE_FIELD)
+        if price is None:
+            price = p.get("price")
+        _saved_states[pid] = {PRODUCT_PRICE_FIELD: price, "name": p.get("name", "")}
         return pid
 
 
-async def restore_product(token: str, product_id: str):
-    """恢复商品到保存的状态"""
+async def restore_product(token: str, product_id: str) -> str:
+    """恢复商品到保存的状态 —— **复位失败必须可见**（issue #3807）。
+
+    旧实现两个缺陷，合起来让"改价永不复原"完全不可见：
+      ① 请求体发 `{"price": …}` 而 DTO 只认 `basePrice` ⇒ 静默 no-op；
+      ② 不检查响应状态 ⇒ 连 HTTP 错误都不留痕。
+    现在：① 发权威字段 `basePrice`；② 非 2xx 即记账；③ **回读校验** —— 复位是否
+    真的生效不再靠推测（"看起来复位了、其实空转"是与 pre_clean 同族的静默 no-op 面）。
+    返回可读消息（含 ❌/⚠️ 前缀即表示需要处理），调用方把它计入用例结果，
+    让「前置未复位」进结论而不是留在日志里。
+
+    ⚠️ 刻意**不抛异常**：本函数在 `finally` 分支被调用，抛异常会覆盖真正的用例结果
+    （把"复位失败"变成"用例崩溃"）—— 归因反而更差。故以返回值 + 调用点记账表达失败。
+    """
     if product_id not in _saved_states:
-        return
+        return ""
     saved = _saved_states[product_id]
+    price = saved.get(PRODUCT_PRICE_FIELD)
+    short = str(product_id)[:8]
+    if price is None:
+        return (f"PRECONDITION_NOT_RESTORED: 商品 {short} 无快照价格，跳过价格复位"
+                f"（后续读价用例的基线未证实）")
     async with httpx.AsyncClient() as c:
         h = _admin_headers(token)
-        price = saved.get("price")
-        if price is not None:
-            await c.patch(f"{ADMIN_API}/api/admin/agent/products/{product_id}",
-                         headers=h, json={"price": price})
+        r = await c.patch(f"{ADMIN_API}/api/admin/agent/products/{product_id}",
+                          headers=h, json={PRODUCT_PRICE_FIELD: price}, timeout=15)
+        if getattr(r, "status_code", 0) >= 300:
+            return (f"PRECONDITION_NOT_RESTORED: 价格复位失败 —— 商品 {short} 应复位为 {price}，"
+                    f"PATCH 返回 {r.status_code}（前置未复位，后续读价用例不可信）")
+        # 回读校验：2xx ≠ 值已落地（旧 bug 正是"2xx 但字段名没人认"）
+        try:
+            rr = await c.get(f"{ADMIN_API}/api/admin/products", headers=h,
+                             params={"keyword": saved.get("name") or "", "page": 1, "size": 20},
+                             timeout=15)
+            items = (_safe_json(rr, {}) or {}).get("data", {}).get("items", [])
+            cur = next((p for p in items if p.get("id") == product_id), None)
+        except Exception as e:
+            return (f"PRECONDITION_NOT_RESTORED: 价格复位回读失败"
+                    f"（{type(e).__name__}: {e}）：商品 {short} 复位结果**未证实**")
+        if cur is None:
+            return (f"PRECONDITION_NOT_RESTORED: 价格复位回读未命中商品 {short}"
+                    f"（复位结果未证实）")
+        got = cur.get(PRODUCT_PRICE_FIELD)
+        if got is None:
+            got = cur.get("price")
+        try:
+            same = got is not None and float(got) == float(price)
+        except (TypeError, ValueError):
+            same = str(got) == str(price)
+        if not same:
+            return (f"PRECONDITION_NOT_RESTORED: 价格复位未生效 —— 商品 {short} 回读 {got}，"
+                    f"期望 {price}（复位字段名/契约不符）")
+        return f"✅ 价格已复位：商品 {short} → {price}（回读一致）"
 
 
 async def _end_session(token: str, session_id: str, debug_user: str = "") -> None:
@@ -2402,6 +2461,11 @@ _CASE_ATOM_RULES = (
     (re.compile(r"^want_text: (?:配置|round)"), "config_error(want_text)"),
     (re.compile(r"^forbidden_card_text: 空配置"), "config_error(forbidden_card_text)"),
     (re.compile(r"^order_before: 无法解析"), "config_error(order_before)"),
+    # 夹具/harness 形状不兼容（issue #3803）：**必须与 agent 行为失败分属不同原子**。
+    # 旧形态下这条红会被折成 `no_success(order_create)`（看着像产品不会下单），
+    # 折叠后是 `harness_incompatible(form_fields_mismatch)` —— 归因一眼可辨，
+    # 且"两次尝试是否同因"也按这件事判（不会与真实行为回归混为一谈）。
+    (re.compile(r"^harness_incompatible\((\w+)\)"), "harness_incompatible({0})"),
     # 夹具层（pre_clean，issue #3781）：**前置未应用**必须与行为失败**分属不同根因**——
     # 它的原文里带 `pre_clean:` / `precondition` 前缀（`check_preclean_not_applied` 折入），
     # 折叠成固定 token 而非通用 token：两次尝试的原文里含用例名/号码，通用 token 会把
@@ -2596,7 +2660,10 @@ def _failure_signature(result: dict) -> str:
 
 
 FLAKE_REASONS = {
-    "llm-noise": "首次失败、新 session 重试通过（LLM 波动）",
+    # 口径（issue #3806）：`llm-noise` = **随机**波动 —— 判据补上"跨 run 复发"这一维后，
+    # "首跑必败、重试偶过"不再是噪声（同一首跑指纹在历史 run 里反复出现 ⇒ 系统性缺口，
+    # 不得放行）。故 reason 文案必须写"随机"，不能只写"重试通过"（后者把确定性缺口也包进来）。
+    "llm-noise": "首次失败、新 session 重试通过，且同一首跑指纹未在历史 run 复发（随机波动）",
     "reproducible": "两次同指纹失败（确定性回归，禁止 rerun 掩盖，按签名排查）",
     "unstable": "两次皆败但成因不同（无一次通过 —— 不按波动放行，默认阻塞）",
     "infra": "传输/超时/5xx（运行级，可整跑重试）",
@@ -2682,6 +2749,140 @@ def _classify_attempts(first: dict, second: dict) -> str:
     if (a & b) and (a <= b or b <= a):
         return "reproducible"
     return "unstable"
+
+
+# ── 跨 run 指纹复发：放行政策缺的那一维（issue #3806）────────────────────────
+# 病灶：放行判据（`_classify_attempts` → `_COMPLETION_RELEASED_CLASSES`）只看**本次 run
+# 的两次尝试** —— 「首跑失败 + 新 session 重试通过」= `llm-noise` = 放行。于是一个
+# **首跑必败、重试偶过**的系统性缺口可以永远以"LLM 波动"被放行（台账是每次 run 独立
+# 生成的，`released` 只是本次结论 ⇒ 同一指纹可以永远"首次出现"）。
+#
+# 铁证（三个真实 run 的 `agent-eval-flakes.json`，PR-016）：
+#   run 34856561459 / 34865780382 / 34873715194 的首跑指纹**恒为**
+#   `no_success(interact)||required_arg(processing_item_query,applicable_category_id)`
+#   （首跑通过率 **0/3**），第三次却因"重试碰巧过"被判 `llm-noise` + 放行。
+#   ⇒ 真随机波动的首跑指纹会漂移；**同一指纹连续跨 run 复现 ⇒ 不是随机 ⇒ 不得放行**。
+#
+# 本层只加**判据**，不改分类：`llm-noise` 仍是"首败+重试通过"，但它的**口径收紧为
+# 「随机」波动**（同一 `(用例, 首跑指纹)` 未在历史 run 里出现过）。
+#
+# 历史怎么来（**不需要额外跑评测**）：flake 台账 artifact（§11 留存 30 天）由
+# `.github/scripts/flake_history.py` 汇总成一份**滚动索引** artifact
+# `agent-eval-flake-history`（`gh api` 列举 + `gh run download`，纯取数）。
+# 无历史（本地跑 / 索引取不到 / 首次运行）时**不新增判定**（退化为现状），
+# 因此本地不会因为缺历史造出假红 —— 但 CI 里只要有历史，复发就必须显式处理。
+FLAKE_HISTORY_ENV = "AGENT_EVAL_FLAKE_HISTORY"
+# 复发阈值：历史里出现过 **≥1** 次（= 跨 run 至少出现 2 次）即判复发。取最小阈值是
+# **有意的 fail-closed**：口径收紧后 `llm-noise` 的语义就是"随机波动"，而同一指纹在
+# 同一用例的首跑上连续出现已经不是随机的表现。
+CROSS_RUN_RECURRENCE_MIN_PRIOR = 1
+
+
+def flake_fingerprint_key(entry: dict) -> tuple:
+    """复发判定的键 = `(用例, 首跑指纹)`。
+
+    为什么带 case_id 而不是只看指纹全局：`_failure_atoms` 会把失败归一到**结构** token
+    （如 `no_success(order_create)`），不同用例天然可能落到同一个 token —— 全局键会把
+    一堆无关用例互相"确认"成复发（假红）。跨用例的同指纹是**信息性**信号
+    （`cross_case_fingerprint_cases`），不进判定。
+    """
+    return (str(entry.get("case_id") or ""), str(entry.get("first_attempt_signature") or ""))
+
+
+def load_flake_history(path: str) -> dict:
+    """读跨 run 指纹索引；文件缺失/内容坏 → 空索引（**不报错**：历史取不到不是失败）。
+
+    索引形态（由 `merge_flake_history` 生成）：
+        {"<case_id>": {"<fingerprint>": {"runs": ["<run_id>", ...]}}}
+    """
+    if not path:
+        return {}
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+    except Exception:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def merge_flake_history(history: dict, entries: list, run_id: str = "") -> dict:
+    """把本次台账并入索引（返回**新**索引，不改入参）。
+
+    去重键 = run_id（同一个 run 重复并入是幂等的）；`run_id` 为空时按"本次"记一个
+    占位符 —— 宁可少记一次也不能把同一份台账重复计入（重复会把"出现过 1 次"算成 2 次
+    ⇒ 自己把自己判成复发）。
+    """
+    out = {cid: {fp: dict(info) for fp, info in (fps or {}).items()}
+           for cid, fps in (history or {}).items()}
+    rid = str(run_id or "unknown-run")
+    for e in entries or []:
+        cid, fp = flake_fingerprint_key(e)
+        if not cid or not fp:
+            continue
+        info = out.setdefault(cid, {}).setdefault(fp, {"runs": []})
+        runs = [str(x) for x in (info.get("runs") or [])]
+        if rid not in runs:
+            runs.append(rid)
+        info["runs"] = runs
+    return out
+
+
+def cross_run_recurrence(entry: dict, history: dict) -> dict | None:
+    """本条台账的**首跑指纹**是否已在本索引（历史 run）里出现过 → 复发证据，否则 None。
+
+    空指纹**永不**算复发：`_failure_signature` 可能返回空串（没有失败断言也没有
+    last_error 的形态），空串相等会把一批无关用例互相"确认"成复发（假红）。
+    """
+    cid, fp = flake_fingerprint_key(entry)
+    if not cid or not fp:
+        return None
+    prior = ((history or {}).get(cid) or {}).get(fp)
+    if not isinstance(prior, dict):
+        return None
+    runs = [str(x) for x in (prior.get("runs") or [])]
+    if len(runs) < CROSS_RUN_RECURRENCE_MIN_PRIOR:
+        return None
+    return {"case_id": cid, "fingerprint": fp, "prior_runs": runs,
+            "prior_count": len(runs)}
+
+
+def annotate_cross_run_recurrence(results: list, ledger: list, history: dict) -> list:
+    """把"跨 run 复发"标注挂到对应**结果**上（`r["cross_run_recurrence"]`）。
+
+    为什么挂在结果上而不是另建一张表：`completion_verdict` 只吃 `results`（签名稳定，
+    离线重放/单测都按它构造）—— 挂结果上则判定与台账天然一致，不需要第二份状态。
+    返回被标注的条目列表（便于打印"哪些既有放行会被改判"，这是本单的红证要求）。
+    """
+    by_id: dict = {}
+    for r in results or []:
+        by_id.setdefault(str(r.get("case_id") or ""), []).append(r)
+    marked = []
+    for e in ledger or []:
+        info = cross_run_recurrence(e, history)
+        if not info:
+            continue
+        targets = by_id.get(info["case_id"]) or []
+        if not targets:
+            continue
+        # 同一用例在一次 run 里只可能有一条台账条目（重试分类只做一次）
+        targets[0]["cross_run_recurrence"] = info
+        marked.append({**info, "classification": e.get("classification", "")})
+    return marked
+
+
+def cross_case_fingerprint_cases(history: dict) -> dict:
+    """**信息性**：同一首跑指纹出现在多个用例上（往往是同一能力面，如 #3320 家族）。
+
+    不进判定（键带 case_id 是为避免误判），只作为"系统性缺口"的报告线索：
+    一个缺口命中多条用例时，修一处不会让它们全绿。
+    """
+    fp_to_cases: dict = {}
+    for cid, fps in (history or {}).items():
+        for fp in (fps or {}):
+            if fp:
+                fp_to_cases.setdefault(fp, []).append(cid)
+    return {fp: sorted(cases) for fp, cases in fp_to_cases.items() if len(cases) > 1}
+
 
 
 # ── db_verify：落库层验证（acceptance-protocol §3.2 / issue #3056 回归防线）──
@@ -4567,6 +4768,169 @@ def pending_card_summary(results: list) -> str:
     return "、".join(parts)
 
 
+# ── form 卡字段名匹配（issue #3803）─────────────────────────────────────────
+# 病灶（判定跑 34873715194 实证）：form 分支按**卡自己声明的 `formFields[].key`** 去交集
+# `form_values`，**交集为空就 `return fallback`** —— 静默降级。于是一次"卡片形状漂移"
+# （agent 因任何原因改发了另一张形状不同的 form 卡，如「补全客户信息（下单必填）」的字段
+# 叫 `name`/`phone`，而用例写的是 `customer_name`/`customer_phone`）会让顾客**永远填不上表**
+# ⇒ 用例必红，而失败串写成 `order_create 从未被调用` ⇒ **归因错人**（看起来像 agent 不会下单）。
+#
+# 两层治法：
+#   ① **同义组映射**（下表，**可枚举、可单测**，不是隐式魔法）：精确同名优先，
+#      精确没命中时按"卡字段所在的同义组"取载荷 —— 让更多真实卡形状能被回填；
+#   ② 仍然一个都对不上时**不许静默**：返回独立签名 `harness_incompatible(form_fields_mismatch)`，
+#      由 `run_case` 记为**harness/用例形状不兼容**，不写成 agent 行为失败。
+#
+# 映射方向以**卡声明的键**为准：`__FORM__|{json}` 的键必须是卡字段名（前端按卡字段回填）。
+FORM_FIELD_GROUPS = (
+    ("customer_name", "name", "receiver", "consignee", "contact_name", "contact",
+     "收货人", "联系人", "姓名"),
+    ("customer_phone", "phone", "mobile", "mobile_phone", "tel", "telephone",
+     "contact_phone", "手机号", "手机", "电话"),
+    ("customer_address", "address", "addr", "shipping_address", "delivery_address",
+     "收货地址", "地址"),
+    ("color", "colorName", "colour", "color_name", "颜色"),
+)
+FORM_FIELD_ALIASES = {k: tuple(g) for g in FORM_FIELD_GROUPS for k in g}
+
+HARNESS_INCOMPATIBLE_PREFIX = "__HARNESS_INCOMPATIBLE__|"
+
+
+def harness_incompatible(kind: str, **detail) -> str:
+    """harness/用例形状不兼容的**独立签名**（issue #3803）。
+
+    载荷是 JSON 文本而不是异常：`resolve_auto_respond` 的返回值只承载"这一轮要发什么"，
+    抛异常会把整个用例炸成 exception（归因更差）。`run_case` 识别这个前缀后：
+    ① 仍然发 fallback 文本（流程继续）；② 记 `harness_incompatible(...)` 独立族失败。
+    """
+    return HARNESS_INCOMPATIBLE_PREFIX + json.dumps({"kind": kind, **detail}, ensure_ascii=False)
+
+
+def parse_harness_incompatible(text) -> dict | None:
+    """识别 `harness_incompatible(...)` 签名 → dict；不是签名则 None。"""
+    s = str(text or "")
+    if not s.startswith(HARNESS_INCOMPATIBLE_PREFIX):
+        return None
+    try:
+        data = json.loads(s[len(HARNESS_INCOMPATIBLE_PREFIX):])
+    except Exception:
+        return {"kind": "unparseable"}
+    return data if isinstance(data, dict) else {"kind": "unparseable"}
+
+
+def match_form_values(card_keys: list, values: dict) -> dict:
+    """按**卡声明的字段名**从用例载荷里取值 → `{card_key: value}`。
+
+    ① 精确同名优先（与旧实现逐字一致 ⇒ **正常路径零变化**，反向红证要求）；
+    ② 精确没命中时用同义组（`FORM_FIELD_ALIASES`）兜底；仍未命中则跳过该字段。
+    值是 `None` 的载荷视为"没给"（`__FORM__` 里塞 null 等于让前端填空）。
+    """
+    out: dict = {}
+    vmap = {str(k): v for k, v in (values or {}).items()}
+    for raw in (card_keys or []):
+        key = str(raw or "")
+        if not key or key in out:
+            continue
+        if key in vmap and vmap[key] is not None:
+            out[key] = vmap[key]
+            continue
+        for alias in FORM_FIELD_ALIASES.get(key, ()):
+            if alias in vmap and vmap[alias] is not None:
+                out[key] = vmap[alias]
+                break
+    return out
+
+
+# ── 用例资产的**载荷窗口**静态审计（issue #3804）────────────────────────────
+# 病灶：载荷（客户信息）原先只声明在固定的第 4、5 轮，而 runner 回填 form 卡需要
+# 「**本轮**声明了载荷」×「上一轮待答卡是 form」**同时**成立 ⇒ agent 的发卡时机
+# 只要**晚一轮**，窗口就用尽、`__FORM__` 全场命中 0 ⇒ 用例必红，且失败串写成
+# `order_create 从未被调用`（归因指向产品）。修法 = **用例级 `auto_fill`**（载荷脱离轮次位置）。
+#
+# 下面两个纯函数是那条不变式的**单一实现**（L0 `tests/unit_ci_workflows/` 与 L2
+# `backend/ai-agent-service/tests/` 共用；两处各写一套就会出现"一个能填一个不能填"的鬼故事）：
+#   > 若用例声明了表单载荷，则**最后一个"能作答 form 卡"的轮次**必须能交付载荷。
+# 判据取"最后一个"而不是"每一个"是为了**零误报**：早先那些"答别的卡"的轮次没有载荷
+# 是合法的 —— 只要**尾部**仍有窗口，agent 晚发卡也能补上。
+#
+# ⚠️ runner 运行时**不消费**这两个函数（它们是给守卫用的静态审计）；
+# 放这里是为了不让守卫各写一份平行实现（与 `flake_history.py` 复用 runner 同款纪律）。
+
+
+def declared_payload_keys(case: dict) -> set:
+    """用例**声明过**的载荷字段名（= 作者预期的 form 卡字段集合）。"""
+    keys = set((case.get("auto_fill") or {}).keys())
+    for m in (case.get("user_inputs") or []):
+        if not isinstance(m, dict):
+            continue
+        keys |= set(((m.get("auto_respond") or {}).get("form_values") or {}).keys())
+        keys |= set((m.get("repeat_until") or {}).get("form_values") or {})
+        keys |= set(m.get("form_values") or {})
+        keys |= set((m.get("auto_fill") or {}).keys())
+    return keys
+
+
+def payload_window_audit(case: dict) -> dict:
+    """单条用例的载荷窗口审计（纯函数，零网络/零 LLM）。
+
+    Returns: {"case_id", "applies", "answer_rounds", "deliverable_rounds",
+              "last_answer_round", "violation"}
+    """
+    expected = declared_payload_keys(case)
+    result = {"case_id": case.get("id", ""), "applies": bool(expected),
+              "answer_rounds": [], "deliverable_rounds": [],
+              "last_answer_round": None, "violation": ""}
+    if not expected:
+        return result
+
+    # 与 `run_case` 同一装配顺序：case 级 auto_fill 作基座 → 并入所有**轮级** auto_fill
+    base = dict(case.get("auto_fill") or {})
+    for m in (case.get("user_inputs") or []):
+        if isinstance(m, dict) and isinstance(m.get("auto_fill"), dict):
+            base.update(m["auto_fill"])
+
+    for idx, turn in enumerate(expand_repeat_turns(list(case.get("user_inputs") or [])), 1):
+        if not isinstance(turn, dict):
+            continue                                   # 纯文本轮：作答不了卡片
+        opts = turn.get("opts") or {}
+        can_answer = False
+        values = dict(base)
+        if turn.get("__repeat__"):
+            can_answer = True                          # repeat_until：有卡答卡/被问码供码
+            values.update(opts.get("form_values") or {})
+        elif turn.get("auto_respond"):
+            spec = turn["auto_respond"] or {}
+            if spec.get("prefer_text"):
+                continue                               # 显式无视卡片（验证码轮）
+            can_answer = True
+            values.update(spec.get("form_values") or {})
+        elif turn.get("auto_fill"):
+            can_answer = True
+            values.update(turn.get("auto_fill") or {})
+        elif turn.get("auto_select"):
+            can_answer = True                          # `resolve_auto_select_turn` 也答 form 卡
+        if not can_answer:
+            continue
+        result["answer_rounds"].append(idx)
+        # 卡上出现 expected 里任意字段名时，本轮能否交付载荷（与生产同函数）
+        if match_form_values(sorted(expected), values):
+            result["deliverable_rounds"].append(idx)
+
+    if not result["answer_rounds"]:
+        return result
+    last = result["answer_rounds"][-1]
+    result["last_answer_round"] = last
+    if last not in result["deliverable_rounds"]:
+        result["violation"] = (
+            f"{result['case_id']}: 载荷窗口在最后一个可作答轮次之前用尽 —— "
+            f"第 {last} 轮（可作答 form 卡）拿不到载荷；声明窗口只在 "
+            f"{result['deliverable_rounds'] or '（没有任何一轮）'}。"
+            f"agent 发卡时机晚一轮 ⇒ `__FORM__` 全场命中 0 ⇒ 用例必红且归因错人"
+            f"（issue #3804）。修法：加**用例级** `auto_fill:`（载荷脱离轮次位置）。"
+        )
+    return result
+
+
 def resolve_auto_respond(results: list, fallback: str, form_values: dict,
                          prefer_text: bool = False, notes: list | None = None) -> str:
     """`auto_respond` 轮：按**上一轮的待答卡片**自动作答，没有卡片则用 fallback。
@@ -4583,8 +4947,11 @@ def resolve_auto_respond(results: list, fallback: str, form_values: dict,
     优先级（按"最能推进流程"排序）：confirm > choice > form > fallback。
     - confirm → 回 `confirmValue`（前端点击协议就是发这个值），缺失时用 fallback
     - choice  → 回第一个 option 的 value（等同点击首项）
-    - form    → 按 form 卡自己声明的 field key 匹配 `form_values`，拼 `__FORM__|{json}`
-                （与 `_auto_fill_form` 同一协议）；无匹配字段 → fallback
+    - form    → 按 form 卡自己声明的 field key 匹配 `form_values`（精确同名优先，其次
+                `FORM_FIELD_ALIASES` 同义组），拼 `__FORM__|{json}`
+                （与 `_auto_fill_form` 同一协议）；**用例提供了载荷而一个字段都对不上**时
+                返回独立签名 `harness_incompatible(form_fields_mismatch)` —— 不再静默
+                降级成 fallback 文本（issue #3803：那会让红归因错人）
 
     `prefer_text=True`（用例声明 `auto_respond: {fallback: ..., prefer_text: true}`）：
     **无视待答卡片，直接发 fallback 文本**。用于"顾客这一刻就是要说这句话"的轮次 ——
@@ -4654,14 +5021,19 @@ def resolve_auto_respond(results: list, fallback: str, form_values: dict,
 
         form = by_comp.get("form")
         if form is not None:
-            filled = {}
-            for f in (form.get("formFields") or []):
-                key = str(f.get("key") or "")
-                if key and key in (form_values or {}):
-                    filled[key] = form_values[key]
+            _card_keys = [str(f.get("key") or "") for f in (form.get("formFields") or [])]
+            filled = match_form_values(_card_keys, form_values or {})
             if filled:
-                import json as _json
-                return f"__FORM__|{_json.dumps(filled, ensure_ascii=False)}"
+                return f"__FORM__|{json.dumps(filled, ensure_ascii=False)}"
+            if form_values:
+                # 用例**提供了载荷**（它期望被自动回填）而卡字段一个都对不上 ⇒ **不许
+                # 静默降级**（issue #3803）：回一个独立签名，由 run_case 记为
+                # "harness/用例形状不兼容"（不是 agent 行为失败），本轮仍发 fallback。
+                return harness_incompatible(
+                    "form_fields_mismatch",
+                    card_fields=[k for k in _card_keys if k],
+                    case_fields=sorted(str(k) for k in (form_values or {})),
+                )
 
     return fallback
 
@@ -4671,6 +5043,9 @@ def _auto_fill_form(results: list, values: dict) -> str | None:
     用 case 声明的字段值构造 `__FORM__|{json}` 回传（FormCard 提交协议，line 98）。
 
     只填 form 卡声明且 case 提供的字段；缺字段返回 None（调用方 fallback 文本）。
+    匹配口径与 `resolve_auto_respond` 的 form 分支**同一处**（`match_form_values`）：
+    精确同名优先 + 同义组兜底 —— 两个入口各写一套匹配，就会出现"同一个卡一张能填、
+    一张不能填"的鬼故事（issue #3803 的同族风险）。
     """
     if not results:
         return None
@@ -4678,16 +5053,11 @@ def _auto_fill_form(results: list, values: dict) -> str | None:
         comp = str(iv.get("type") or iv.get("component") or "")
         if comp != "form":
             continue
-        fields = iv.get("formFields") or []
-        filled = {}
-        for f in fields:
-            key = str(f.get("key") or "")
-            if key and key in values:
-                filled[key] = values[key]
+        _keys = [str(f.get("key") or "") for f in (iv.get("formFields") or [])]
+        filled = match_form_values(_keys, values or {})
         if not filled:
             return None
-        import json as _json
-        return f"__FORM__|{_json.dumps(filled, ensure_ascii=False)}"
+        return f"__FORM__|{json.dumps(filled, ensure_ascii=False)}"
     return None
 
 
@@ -5067,10 +5437,23 @@ async def run_case(case, token: str, session_id: str) -> dict:
 
     # case 级表单值：所有 `auto_fill` 轮声明的并集 —— auto_respond 轮回答表单时复用，
     # 避免同一份收货信息在用例里重复声明（少一处漂移）
-    case_form_values: dict = {}
+    #
+    # **用例级 `auto_fill:`（issue #3804）** —— 载荷**脱离轮次位置**：
+    # 旧形态把客户信息只声明在固定的第 4、5 轮（`auto_respond.form_values` 是**轮级**
+    # 临时值，不可补充），而 runner 回填需要「本轮声明了载荷」×「上一轮待答卡是 form」
+    # **同时**成立 ⇒ agent 的发卡时机只要**晚一轮**（实测 OR-014：R4 被产品侧兜底话术
+    # 吃掉），窗口就用尽、`__FORM__` 全场命中 **0**、`order_create` 永不发生 ⇒ 用例必红
+    # 且归因指向"agent 不会下单"。用例级声明让载荷在**全场任意轮**都可用。
+    # 轮级 `auto_fill` 仍按原语义并入（并集），轮级 `auto_respond.form_values` 仍**只在该轮**
+    # 生效（覆盖 case 级）—— 既有用例行为零变化。
+    case_form_values: dict = dict(getattr(case, "auto_fill", None) or {})
     for _m in (case.user_inputs or []):
         if isinstance(_m, dict) and isinstance(_m.get("auto_fill"), dict):
             case_form_values.update(_m["auto_fill"])
+
+    # harness/用例形状不兼容（issue #3803）：载荷字段与卡字段零匹配时**不许静默降级**，
+    # 也不许把这次红记成 agent 行为失败 —— 收集成独立族，判定时单列。
+    harness_incompat: list = []
 
     # `repeat_until` 轮展开（issue #3430）：把「协作型顾客继续配合」表达成一份轮次，
     # 由运行时按**实际卡片序列/是否被索要验证码**决定这一轮发什么（见 resolve_repeat_turn）。
@@ -5113,10 +5496,28 @@ async def run_case(case, token: str, session_id: str) -> dict:
                 prefer_text=bool(spec.get("prefer_text")),
                 notes=prefer_text_notes,
             )
+            # §3803：载荷与待答 form 卡字段零匹配 ⇒ 本轮**仍发 fallback**（流程继续），
+            # 但把"形状不兼容"记成独立族 —— 不写成 agent 行为失败（归因不落在产品头上）。
+            _inc = parse_harness_incompatible(text)
+            if _inc is not None:
+                harness_incompat.append(_inc)
+                text = str(spec.get("fallback") or "确认")
+            _pending = pending_card_summary(results)
+            if _pending:
+                # 失败时的第一归因线索（issue #3803 要求 3）：把**待答卡类型**与**本轮
+                # 实际发出的内容**一起留痕，让"是脚本不吃卡/形状不匹配"与"agent 没做"
+                # 一眼可分（绿跑不打印，避免每跑刷 7 条噪声 —— 见 prefer_text_notes 说明）。
+                prefer_text_notes.append(
+                    f"R{i + 1} 待答卡=[{_pending}] → 本轮实发 {text!r}"
+                    + (f"（harness_incompatible: {_inc.get('kind')}）" if _inc else ""))
         elif isinstance(msg, dict) and msg.get("auto_fill"):
             # form 卡自动回填（OR-014 基建缺口）：agent 发 form 卡（如客户信息）
             # 时用 case 声明的字段值构造 __FORM__|{json} 回传（FormCard 提交协议）。
-            text = _auto_fill_form(results, msg.get("auto_fill") or {}) or "确认"
+            # 用例级 `auto_fill`（issue #3804）作为**基座**并入：否则"声明在哪一轮"又变成
+            # 决定成败的位置依赖（轮级 dict 覆盖之，保持既有用例语义）。
+            _af = dict(case_form_values)
+            _af.update(msg.get("auto_fill") or {})
+            text = _auto_fill_form(results, _af) or "确认"
         elif isinstance(msg, dict):
             text = msg.get("text", "")
             images = msg.get("images") or []
@@ -5235,6 +5636,15 @@ async def run_case(case, token: str, session_id: str) -> dict:
         case_issues += check_write_code_provenance(results, case)
     except Exception as e:
         case_issues.append(f"phone_provenance 执行失败: {e}")
+    # harness/用例形状不兼容（issue #3803）：**独立族**，措辞必须与"agent 没做"可辨。
+    # 判红仍然判红（fail-closed，不放宽任何断言），但归因落在 harness/用例形状上 ——
+    # 旧形态把这种红写成 `order_create 从未被调用`，让人去查产品能力（归因错人）。
+    for _inc in harness_incompat:
+        case_issues.append(
+            f"harness_incompatible({_inc.get('kind')}): 用例载荷字段 "
+            f"{_inc.get('case_fields')} 与待答 form 卡字段 {_inc.get('card_fields')} "
+            f"**零匹配** —— 本次红是 harness/用例形状不兼容，不代表 agent 行为失败"
+            f"（改法：用例声明 case 级 auto_fill，或把卡字段写进 FORM_FIELD_ALIASES）")
     if case_issues:
         for ci in case_issues:
             failed_expectations.append((ci, "case-level check"))
@@ -5248,6 +5658,9 @@ async def run_case(case, token: str, session_id: str) -> dict:
 
     return {
         "case_id": case.id,
+        # 形状不兼容的事实随结果落盘（issue #3803）：判定层据此把它从"agent 行为失败"
+        # 里分出来单列（`harness_incompatible_failures`），而不是混进确定性回归清单。
+        "harness_incompatible": list(harness_incompat),
         "title": case.title,
         "difficulty": case.difficulty.value,
         "tags": case.tags,
@@ -5410,7 +5823,10 @@ async def run_suite(cases, label: str, classify: bool = True, retry_budget: int 
         # ⏱ 同时记单调时钟起点（issue #3761 成本可见化）：用例读秒进 summary 的 `cost`，
         # 让"这一轮贵在哪条用例/有没有重试"可读 —— 否则"评测废钱"永远不可管理。
         _t0 = time.monotonic()
-        print(f"  ⏱ {case.id} start={datetime.now(timezone.utc).isoformat(timespec='seconds')}")
+        # 窗口起点同时**落进结果**（issue #3805）：这一行此前只 print 到 job 日志，
+        # 没有任何取数步骤读它 —— 失败后只能按固定行数 tail，取到的是 dump 时刻的日志。
+        _started_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        print(f"  ⏱ {case.id} start={_started_at}")
 
         # 每个用例用独立 session，避免前序用例污染上下文
         session_id = await get_or_create_session(
@@ -5428,6 +5844,8 @@ async def run_suite(cases, label: str, classify: bool = True, retry_budget: int 
                 pid = await snapshot_product(token, kw)
                 if pid and pid not in snapshot_pids:
                     snapshot_pids.append(pid)
+        # 价格复位结果（issue #3807）：失败必须进结论，不能只留一行日志
+        restore_msgs: list = []
 
         # 注：pre_clean 已移到调度器（`_pre_clean_for_case`），因为它的独占窗口必须在
         # 用例主体**之外**获取 —— 若在持读位时再去要写位会死锁（本轮实测踩到：
@@ -5571,7 +5989,24 @@ async def run_suite(cases, label: str, classify: bool = True, retry_budget: int 
                         os.environ.get("GITHUB_SHA", "")[:12]))
                 else:
                     # reproducible / unstable / infra：保留第二次尝试作为失败证据
+                    # ⚠️ 这里曾**只** `r = r2`（issue #3805）：首跑的逐轮轨迹/断言原文/
+                    #    last_error 全被丢弃，台账里只剩一个归一指纹（如
+                    #    `no_success(order_create)`）⇒ 无法回答"两次是否同因、首跑停在哪一轮"
+                    #    —— 而这正是 `reproducible` 这个分类**唯一**的判别依据。
+                    #    现在与 llm-noise 分支同口径：首跑证据既打印也落盘（结果 + 台账）。
+                    _sig1 = _failure_signature(r_prev)
+                    if _sig1:
+                        print(f"     ↳ 首跑失败指纹（两次同因判定依据）: {_sig1[:300]}")
+                    _ev1 = format_first_attempt_evidence(r_prev)
+                    if _ev1:
+                        for _ln in _ev1.split("\n"):
+                            print(f"     ↳ {_ln}")
                     r = r2
+                    # 首跑证据随结果/台账落盘（issue #3805）：artifact 保留期内可离线复核，
+                    # 不必回头翻 90 天前的 job 日志（那里也没有——见 Diagnose 的窗口切片）。
+                    r["first_attempt_signature"] = _sig1
+                    if _ev1:
+                        r["first_attempt_evidence"] = _ev1
                     flake_ledger.append(build_flake_entry(
                         case.id, case.title, classification, r_prev, r2,
                         os.environ.get("GITHUB_RUN_ID", "local"),
@@ -5641,8 +6076,33 @@ async def run_suite(cases, label: str, classify: bool = True, retry_budget: int 
             }
             r = exc_record   # 崩溃用例同样交给调用方回填（顺序稳定）
         finally:
+            # 商品改价复位（issue #3807）：**复位失败必须可见**——旧实现发错字段名
+            # （`price` vs DTO 的 `basePrice`）且不看响应，复位永远空转而日志一片安静，
+            # 于是种子 ¥168 被 PR-010 改成 198 后**此后全场读 198**（顺序依赖/幽灵 delta 来源）。
+            # 现在把每条复位结果（含回读校验）记账进结果，失败带 `PRECONDITION_NOT_RESTORED`
+            # 标记（与 #3751/#3781 同族），由 completion_verdict 折进结论。
             for pid in snapshot_pids:
-                await restore_product(token, pid)
+                try:
+                    _restore_msg = await restore_product(token, pid)
+                except Exception as _re:      # 复位崩了同样不许静默
+                    _restore_msg = (f"PRECONDITION_NOT_RESTORED: 价格复位异常 "
+                                    f"{type(_re).__name__}: {_re}")
+                if not _restore_msg:
+                    continue
+                restore_msgs.append(_restore_msg)
+                if _restore_msg.startswith("PRECONDITION_NOT_RESTORED"):
+                    print(f"     ⛔ 前置未复位（进结论）: {_restore_msg[:200]}")
+                else:
+                    print(f"     🧹 {_restore_msg[:160]}")
+        if isinstance(r, dict) and restore_msgs:
+            r["restore"] = restore_msgs
+            _not_restored = [m for m in restore_msgs
+                            if str(m).startswith("PRECONDITION_NOT_RESTORED")]
+            if _not_restored and not r.get("precondition"):
+                # 该用例结束后**共享商品价格处于未知状态** ⇒ 它自己与后续读价用例的
+                # 结论都不可靠；用既有 `precondition` 通道（#3751）把这件事写进证据。
+                r["precondition"] = ("PRECONDITION_NOT_RESTORED: 商品价格复位未生效 "
+                                     f"（{_not_restored[0][:160]}）—— 本用例与后续读价用例结果不可信")
 
         if CASE_SLEEP:
             await asyncio.sleep(CASE_SLEEP)  # rate limit（可配：EVAL_CASE_SLEEP）
@@ -5656,6 +6116,15 @@ async def run_suite(cases, label: str, classify: bool = True, retry_budget: int 
         # 且两条道**口径不对称**：串行道（`_serial_task`）先取 `gate.writer()` 再进本函数
         # ⇒ 它的独占等待**不计入**。要"单条真实耗时"需另加读数（本 issue 不做）。
         r["duration_s"] = round(time.monotonic() - _t0, 1)
+        _finished_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        # 用例执行窗口（issue #3805）：**证据取数的时间锚点**。
+        # `print(f"⏱ {case.id} start=…")` 那一行只活在 job 日志里、且从没有任何 workflow
+        # 步骤消费它 ⇒ 失败后 dump 只能按固定行数 `--tail=N` 取，取到的全是**dump 那一刻**
+        # 的日志（实测 OR-014 窗口 01:20–01:47 CST，而 ai-agent 的 tail 段起点 01:48:24 ⇒
+        # 整个失败窗口的证据 0 行）。把窗口写进**artifact**（summary JSON）后，Diagnose 步骤
+        # 才能按窗口切片（见 .github/scripts/eval_log_windows.sh）。
+        r["finished_at"] = _finished_at
+        r["started_at"] = _started_at
         return r
 
     # ── 并行调度（issue #3361 评测提速第二轮）──
@@ -5798,6 +6267,41 @@ async def run_suite(cases, label: str, classify: bool = True, retry_budget: int 
     passed_count = sum(1 for r in results if r["score"] >= 1.0)
     total_score = sum(r["score"] for r in results)
 
+
+    # ── 跨 run 指纹复发（issue #3806）：放行政策补上"跨 run"这一维 ──
+    # 顺序**必须**是「先标注（用历史）→ 再把本次并入索引」：反过来会让本次 run 自己
+    # 出现在"历史"里 ⇒ 首跑指纹自己把自己判成复发（假红）。
+    if flake_ledger:
+        try:
+            _hist_path = os.environ.get(FLAKE_HISTORY_ENV, "")
+            _history = load_flake_history(_hist_path) if _hist_path else {}
+            _marked = annotate_cross_run_recurrence(results, flake_ledger, _history)
+            if _marked:
+                print(f"\n🔁 跨 run 复发的系统性缺口（{len(_marked)} 条，**不按波动放行**）"
+                      f"—— 同一首跑指纹在历史 run 里已出现过：")
+                for _m in _marked:
+                    print(f"   - {_m['case_id']} [{_m.get('classification','')}] "
+                          f"priors={_m['prior_count']} fp={_m['fingerprint'][:120]}")
+            elif _hist_path:
+                print(f"\n🔁 跨 run 指纹索引已加载（{_hist_path}）：本次无复发指纹")
+            else:
+                print(f"\n🔁 未提供跨 run 指纹索引（{FLAKE_HISTORY_ENV} 为空）"
+                      f"—— 本次不判复发（历史取不到不等于没有；CI 由 "
+                      f".github/scripts/flake_history.py 提供）")
+            _cross_case = cross_case_fingerprint_cases(_history)
+            if _cross_case:
+                print(f"   ℹ️ 同一指纹跨**多个用例**（信息性，不进判定）：")
+                for _fp, _cases in list(_cross_case.items())[:5]:
+                    print(f"      {_fp[:100]} ← {', '.join(_cases)}")
+            if _hist_path:
+                _updated = merge_flake_history(
+                    _history, flake_ledger, os.environ.get("GITHUB_RUN_ID", "local"))
+                with open(_hist_path, "w", encoding="utf-8") as _hf:
+                    import json as _json3
+                    _json3.dump(_updated, _hf, ensure_ascii=False, indent=1)
+                print(f"   ↳ 已并入本次台账 → {_hist_path}（供后续 run 判定复发）")
+        except Exception as e:
+            print(f"⚠️ 跨 run 复发判定失败（非致命，退化为现状）: {e}")
 
     # ── flake 台账（issue #2890）：落盘 + 摘要，驱动断言收敛与高波动用例治理 ──
     if classify and flake_ledger:
@@ -5967,7 +6471,14 @@ def completion_verdict(results: list, key_journey_ids: tuple = ()) -> dict:
         两次都没通过就没有"波动"证据（实证 OR-014：2/2 真失败，成因还不同）；
       - **关键旅程失败**（key_journey_ids 中 score<1）= P0 旅程不过 → 未完成
         （波动也不放行）；
-      - **放行**：`llm-noise`（首次失败、新 session 重试通过，runner 已记入 flake 台账）。
+      - **放行**：`llm-noise`（首次失败、新 session 重试通过，runner 已记入 flake 台账）
+        —— 但放行口径自 #3806 起收紧为「**随机**波动」：同一 `(用例, 首跑指纹)` 在历史
+        run 里出现过（`r["cross_run_recurrence"]`）⇒ **不属随机 ⇒ 不放行**，进
+        `systemic_recurrence`（跨 run 复发的系统性缺口）。这是**有意的 fail-closed**：
+        它会让更多用例变红，正是本单要的效果（PR-016 首跑 0/3 通过却因"重试碰巧过"被
+        放行了三次）。
+      - **前置未复位**（#3807）：`restore` 里带 `PRECONDITION_NOT_RESTORED` 的用例 ⇒
+        共享商品价格处于未知状态 ⇒ 独立进 `restore_failures` 并阻塞（与本用例 score 无关）。
 
     ⚠️ **放行条目为什么不能只看 `score<1`**（issue #3781，真实 run 34856561459 实证）：
     放行档的语义前提就是"重试**通过**" ⇒ 该用例的最终 `score == 1.0`。旧实现的断言
@@ -5989,34 +6500,57 @@ def completion_verdict(results: list, key_journey_ids: tuple = ()) -> dict:
 
     Returns:
         {"ok", "reason", "deterministic_failures", "journey_failures",
-         "flake_released", "total", "passed"}
+         "flake_released", "systemic_recurrence", "restore_failures", "total", "passed"}
     """
     if not results:
         return {"ok": False, "reason": "0 个用例执行（环境/登录失败，禁止假绿）",
                 "deterministic_failures": [], "journey_failures": [],
-                "flake_released": [], "total": 0, "passed": 0}
+                "flake_released": [], "systemic_recurrence": [], "restore_failures": [],
+                "harness_incompatible_failures": [], "total": 0, "passed": 0}
     journey_set = set(key_journey_ids or ())
     deterministic, journey_fail, flake_released = [], [], []
+    systemic, restore_fail, harness_bad = [], [], []
+
+    def _is_recurring(r) -> bool:
+        return bool(r.get("cross_run_recurrence"))
+
     for r in results:
         cid = str(r.get("case_id") or "?")
+        # 前置未复位（#3807）：与本用例 score 无关 —— 它污染的是**共享资源**（商品价格），
+        # 影响的是后续用例；不独立成桶的话"复位空转"永远只是一行日志。
+        if any("PRECONDITION_NOT_RESTORED" in str(m) for m in (r.get("restore") or [])):
+            restore_fail.append(cid)
+        # harness/用例形状不兼容（#3803）：判红照旧阻塞，但**归因单列** ——
+        # 不进 `deterministic_failures`（那是"agent/产品的确定性回归"清单）。
+        if r.get("harness_incompatible"):
+            harness_bad.append(cid)
         if r.get("score", 0) >= 1.0:
             # 重试通过的放行条目（score==1.0）在这里被捞出来——见 docstring 的 #3781 说明
             if r.get("flake_released") and cid not in journey_set:
-                flake_released.append(cid)
+                if _is_recurring(r):
+                    systemic.append(cid)
+                else:
+                    flake_released.append(cid)
             continue
         if cid in journey_set:
             journey_fail.append(cid)
         elif str(r.get("classification") or "") in _COMPLETION_RELEASED_CLASSES:
-            flake_released.append(cid)
+            if _is_recurring(r):
+                systemic.append(cid)
+            else:
+                flake_released.append(cid)
+        elif cid in harness_bad:
+            pass          # 已单列，不重复计入"必须处理的失败"
         else:
             deterministic.append(cid)
-    ok = not deterministic and not journey_fail
+    ok = (not deterministic and not journey_fail and not systemic
+          and not restore_fail and not harness_bad)
     total = len(results)
     passed = sum(1 for r in results if r.get("score", 0) >= 1.0)
     if ok:
         parts = ["必须处理的失败=0，关键旅程全过"]
         if flake_released:
-            parts.append(f"放行波动 {len(flake_released)} 条（台账，仅 llm-noise）")
+            parts.append(f"放行波动 {len(flake_released)} 条（台账，仅随机波动）")
         reason = "，".join(parts) + f"（{total} 条，{passed} 通过）"
     else:
         parts = []
@@ -6024,12 +6558,24 @@ def completion_verdict(results: list, key_journey_ids: tuple = ()) -> dict:
             parts.append(f"必须处理的失败 {len(deterministic)} 条: {', '.join(deterministic)}")
         if journey_fail:
             parts.append(f"关键旅程失败 {len(journey_fail)} 条: {', '.join(journey_fail)}")
+        if systemic:
+            parts.append(f"跨 run 复发的系统性缺口 {len(systemic)} 条"
+                         f"（同一首跑指纹在历史 run 反复出现，不按波动放行）: {', '.join(systemic)}")
+        if restore_fail:
+            parts.append(f"前置未复位 {len(restore_fail)} 条"
+                         f"（共享状态未回滚，结论不可信）: {', '.join(restore_fail)}")
+        if harness_bad:
+            parts.append(f"harness/用例形状不兼容 {len(harness_bad)} 条"
+                         f"（**不是** agent 行为失败，需改用例/harness）: {', '.join(harness_bad)}")
         reason = "；".join(parts)
     return {
         "ok": ok, "reason": reason,
         "deterministic_failures": deterministic,
         "journey_failures": journey_fail,
         "flake_released": flake_released,
+        "systemic_recurrence": systemic,
+        "restore_failures": restore_fail,
+        "harness_incompatible_failures": harness_bad,
         "total": total, "passed": passed,
     }
 
@@ -6081,8 +6627,32 @@ def _summary_case(result: dict, failures: list) -> dict:
              "classification": result.get("classification", ""),
              # pre_clean 证据（#3511）：机器可读，供归因区分"数据准备没生效"与"能力缺陷"
              "pre_clean": result.get("pre_clean") or []}
+    # 用例执行窗口（issue #3805）：**证据取数的时间锚点**。写进 artifact 之后，
+    # Diagnose 步骤才能按窗口切片抓容器日志（而不是固定 `--tail=N`，那个取到的是
+    # dump 时刻的日志、整个失败窗口一行都没有）。
+    for _k in ("started_at", "finished_at"):
+        if result.get(_k):
+            entry[_k] = result[_k]
     if result.get("precondition"):
         entry["precondition"] = result["precondition"]
+    # 首跑证据（issue #3805）：reproducible/unstable/infra 分支曾只留归一指纹 ⇒
+    # "两次是否同因、首跑停在哪一轮"不可得。现在逐轮摘要随 artifact 落盘。
+    if result.get("first_attempt_signature"):
+        entry["first_attempt_signature"] = result["first_attempt_signature"]
+    if result.get("first_attempt_evidence"):
+        entry["first_attempt_evidence"] = result["first_attempt_evidence"]
+    # 商品价格复位结果（issue #3807）：复位是否真的生效必须可逐条核对，
+    # 而不是"日志里静悄悄 = 复位成功"。
+    if result.get("restore"):
+        entry["restore"] = result["restore"]
+    # harness/用例形状不兼容（issue #3803）：随 artifact 落盘，归因可机器分辨
+    # （"用例/卡形状对不上"与"agent 没做"必须能分开，否则红会一直指错人）。
+    if result.get("harness_incompatible"):
+        entry["harness_incompatible"] = result["harness_incompatible"]
+    # 跨 run 复发（issue #3806）：条目标注 —— 顶层 `completion.systemic_recurrence`
+    # 给出 ID 列表，这里给出该条的指纹与历史 run，让"为什么不放行"可逐条核对。
+    if result.get("cross_run_recurrence"):
+        entry["cross_run_recurrence"] = result["cross_run_recurrence"]
     # 前置基线读数（issue #3781）：把"运行前该手机号名下有多少单"这一行**写进证据**，
     # 否则"前置是否成立"又一次只能靠猜 —— 那正是本次两次审计在同一份证据上判分歧的根因。
     if result.get("precondition_baseline"):
@@ -6199,6 +6769,26 @@ def _run_key(results: list, label: str) -> dict:
     }
 
 
+def _evidence_window(results: list) -> dict:
+    """本轮**证据窗口**（issue #3805）：全部用例里最早的 `started_at` → 最晚的 `finished_at`。
+
+    为什么要落进 summary：容器日志的取数一直用固定 `--tail=N`（取到的是 **dump 那一刻**
+    的日志），而 runner 的 `⏱ <case> start=` 锚点**从没有任何步骤消费** ⇒ 失败用例的
+    执行窗口整段不可得（实测 OR-014 窗口 01:20–01:47 CST，ai-agent 的 tail 段起点 01:48:24）。
+    `docker logs --since/--until` 直接吃 RFC3339 时间戳，故把窗口写进 artifact 后
+    Diagnose 步骤即可切片（见 `.github/scripts/eval_log_windows.sh`）。
+
+    时间串格式恒为 `YYYY-MM-DDTHH:MM:SS+00:00`（同长度、同时区）⇒ 字典序即时间序，
+    `min`/`max` 可直接用（不需要解析，避免跨平台 date 差异）。缺乏窗口时返回 `{}`
+    （调用方据此回落固定 tail，而不是造一个假窗口）。
+    """
+    starts = [str(r.get("started_at")) for r in (results or []) if r.get("started_at")]
+    ends = [str(r.get("finished_at")) for r in (results or []) if r.get("finished_at")]
+    if not starts or not ends:
+        return {}
+    return {"since": min(starts), "until": max(ends)}
+
+
 def write_summary_json(path: str, label: str, shard: str, results: list,
                        elapsed_s: float = None) -> None:
     """写机器可读的本次运行汇总（issue #3361 分片基建）。
@@ -6234,6 +6824,11 @@ def write_summary_json(path: str, label: str, shard: str, results: list,
     payload = {
         "label": label,
         "shard": shard or "",
+        # 本轮**证据窗口**（issue #3805）：容器的 `docker logs --since/--until` 直接吃
+        # RFC3339 时间戳。取全部用例的最小起点 → 这样"整轮评测期间"的容器日志都能按
+        # 时间取回，不再依赖固定行数 tail（`--tail=100` 实测只覆盖 dump 前 3 秒的
+        # ai-agent 日志，而失败用例的窗口早已过去）。
+        "evidence_window": _evidence_window(results),
         "total": len(results),
         "passed": sum(1 for r in results if r.get("score", 0) >= 1.0),
         "failed": sum(1 for r in results if r.get("score", 0) < 1.0),
@@ -6429,6 +7024,13 @@ def load_cases_from_yaml(cases_dir: str) -> list:
             # 按词汇表逐字段守住这一格。
             namespaces=c.get("namespaces") or [],
             precondition=c.get("precondition") or [],
+            # 用例级表单载荷（issue #3804）：CI 走的是本 YAML 装载路径（`--cases .github/cases`），
+            # 而**不是**生成物 `eval_cases.py` —— 漏映射 = 用例声明了没人消费 = 载荷窗口
+            # 仍绑死在某些轮次（"声称修了而其实没修"，与 `debug_user`/`output_verify`/
+            # `namespaces` 四次同款假绿）。由
+            # `tests/test_acceptance_case_checks.py::TestAssertionVocabularyIsMappedByLoader`
+            # 的 PROBES 逐字段守住（新增字段不配 probe 直接红）。
+            auto_fill=c.get("auto_fill") or {},
         ))
     return cases
 
