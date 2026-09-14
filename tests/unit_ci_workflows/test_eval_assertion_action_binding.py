@@ -16,7 +16,7 @@
 | 盲区（#3701 修前，门禁实测放行） | 修后 |
 |---|---|
 | 只遍历 `action_catalog()`（**有** action 维度的工具）：`must_fail: [{tool: order_create, action: create}]`（`order_create` 无 action 属性，OR-026 被拒的写法）不被报出 | 工具**没有** action 维度时声明 action = `no_action_param`，必报 |
-| 只扫 `select_cases_for_persona()` 选中的用例（`skip_reason` 非空即丢）：OR-006 的 `order_query(action=detail)` 被藏住（#3702） | 扫**全库**用例（含 skip）—— skip 只免"参与覆盖统计"，不免"声明合法性" |
+| 只扫 `select_cases_for_persona()` 选中的用例（`skip_reason` 非空即丢）：OR-006 的 `order_query(action=detail)` 被藏住（#3702） | 扫**全库**用例（含 skip）—— skip 只免"参与覆盖统计"，不免"声明合法性"（该用例的非法声明已由 #3702 改为 `action: list`） |
 | `case_declared_actions()` 不收 `repeat_until.action`（#3667 的 action 级停条件） | 收（停条件悬空 → 用例空转到轮数耗尽） |
 
 ## 红证（本文件自带）
@@ -49,29 +49,33 @@ from render_cases import load_case_dicts  # noqa: E402
 CASES_DIR = REPO_ROOT / ".github" / "cases"
 
 # ── 存量登记（burn-down）：一条一登记，销账即删 ────────────────────────────────
-# 判据在 #3701 前**从未在门禁里生效**（门禁只扫"可跑用例 + 有 action 维度的工具"），
-# 故这条是**新暴露出来的存量缺口**，不是本次改动引入的：
-#   OR-006（`order.yml`）声明 `order_query(action=detail)`，而该工具枚举 =
-#   `list / statistics / follow_status_stats`（`app/tools/order_query.py`）——
-#   该 expectation 永不满足。用例当前 `skip_reason` 非空（缺"可全流转的测试订单"）
-#   故跑不到，属于隐藏的假红。**归用例资产包销账**（本包不碰 cases/*.yml）。
-# 门禁侧的**同一缺口**登记在 `.github/eval-coverage-baseline.yml`
-# （`order_query` / `action_dangling` / persona mibao / issue #3702）——
-# 两处都必须在销账时删除，且各自都有"陈旧即红"的守卫（门禁：`check_problems()`；
+# **已归零**（2026-09-15，issue #3702）：最后一条是 OR-006 —— 它声明
+# `order_query(action=detail)`，而该工具枚举 = `list / statistics / follow_status_stats`
+# （`app/tools/order_query.py`）→ 该 expectation 声明的取值在真实链路里不存在。
+# 该用例已按真实语义改为 `action: list`，门禁侧同一缺口（`.github/eval-coverage-baseline.yml`
+# 的 `order_query` / `action_dangling` / persona mibao）也在同一个 PR 删除 —— 两处登记与销账
+# 必须配对，且各自都有"陈旧即红"的守卫（门禁：`check_problems()` 的 `baseline_stale_blocking`；
 # 本文件：`test_known_exemption_is_not_stale`），故漏删任何一处都会被 CI 抓住。
-_KNOWN_DANGLING: dict = {
-    ("OR-006", "order_query", "detail"): {
-        "issue": "#3702",
-        "reason": "order_query 枚举无 detail；用例待解 skip（#3599/#3702）时须一并按真实语义修正"
-                  "（runner/门禁口径见 #3689）",
-        "added": "2026-09-15",
-    },
-}
+# ⚠️ 清单归零后「遍历 `_KNOWN_DANGLING` 逐个断言」会**空转恒真**（循环体不执行 = 空断言，
+# `migao-acceptance` v1.3）—— 故守卫改为**注入式自证**（见 `_stale_exemptions` 与该测试）。
+# 新增存量登记时照旧往里加；销账后**必须删条目**（清单只可能变短）。
+_KNOWN_DANGLING: dict = {}
 
 
 def _unregistered_violations(violations) -> list:
     """扣掉显式登记的存量条目 → 其余即阻塞项。"""
     return [v for v in violations if (v[0], v[1], v[2]) not in _KNOWN_DANGLING]
+
+
+def _stale_exemptions(current: set, registry: dict | None = None) -> list:
+    """`registry` 里**语料中已不存在**的登记 → 陈旧登记（销账后必须删条目，防白名单腐烂）。
+
+    抽出成函数是为了让"守卫会响"这件事**可注入地证明**：清单归零后，直接遍历
+    `_KNOWN_DANGLING` 的写法循环体不执行 = 恒真（守卫静默失效），故改由本函数承担，
+    测试里用合成 registry 走红/绿两面（见 `test_known_exemption_is_not_stale`）。
+    """
+    reg = _KNOWN_DANGLING if registry is None else registry
+    return [k for k in reg if k not in current]
 
 
 # ── 红证：合成"行为确实错了"的用例 → 判据必须红 ────────────────────────────────
@@ -178,11 +182,37 @@ class TestRepoActionBinding:
         assert v and v[0][1] == "order_create" and v[0][3] == "no_action_param", v
 
     def test_known_exemption_is_not_stale(self):
-        """**清单只能变短**：登记条目对应的违规若已消失 → 红，逼删条目（防白名单腐烂）。"""
+        """**清单只能变短**：登记条目对应的违规若已消失 → 红，逼删条目（防白名单腐烂）。
+
+        ⚠️ #3702 销账后 `_KNOWN_DANGLING` 已归零 ⇒ 旧写法 `for key in _KNOWN_DANGLING:`
+        的**循环体不执行 = 恒真**（守卫静默失效，正是 `migao-acceptance` v1.3 的"空断言"）。
+        故改为**注入式自证**（三面都要锁，缺一即降强度）：
+          ① 仓库真值：全库（含 skip）声明的 action 全部合法 ⇒ **无任何陈旧登记**；
+          ② **红证**：注入一条"语料里已不存在"的登记 → 必须判为陈旧（守卫会响）；
+          ③ **假红面**：注入一条"语料里确实存在"的登记 → **不得**误判陈旧。
+        """
         current = {(c, t, a) for c, t, a, _k in action_binding_violations(self.cases)}
-        for key in _KNOWN_DANGLING:
-            assert key in current, (
-                f"存量登记已销账但条目未删: {key} —— 删除 `_KNOWN_DANGLING` 里的该条目")
+        # ① 仓库真值（同时是下面 ② 判据的"锚"：这一集合已为空，不能再拿它当非空前提）
+        stale = _stale_exemptions(current)
+        assert stale == [], (
+            "存量登记已销账但条目未删: "
+            + ", ".join(map(str, stale)) + " —— 删除 `_KNOWN_DANGLING` 里的该条目")
+
+        # ② 红证：借用一条**真实存在过**的违规形态，但它不在语料里 ⇒ 必判陈旧
+        ghost = {("T-STALE", "order_query", "detail"):
+                 {"issue": "#0000", "reason": "红证夹具（语料里不存在）", "added": "2026-09-15"}}
+        assert _stale_exemptions(current, ghost) == [("T-STALE", "order_query", "detail")], (
+            "陈旧的存量登记没有被判红 —— 守卫空转（白名单会腐烂）")
+
+        # ③ 假红面：合成一条**真违规**进语料，同一登记必须被判为"仍在使用"（不得误红）
+        live_cases = [{"id": "T-LIVE",
+                       "expectations": [{"tool": "order_query", "args": {"action": "detail"}}]}]
+        live_current = {(c, t, a) for c, t, a, _k in action_binding_violations(live_cases)}
+        assert live_current == {("T-LIVE", "order_query", "detail")}, live_current
+        live = {("T-LIVE", "order_query", "detail"):
+                {"issue": "#0000", "reason": "红证夹具（语料里存在）", "added": "2026-09-15"}}
+        assert _stale_exemptions(live_current, live) == [], (
+            "仍在抑制真实缺口的登记被判成陈旧 —— 假红（会逼人删掉有效豁免）")
 
 
 class TestGateAndInvariantAgree:
@@ -198,13 +228,34 @@ class TestGateAndInvariantAgree:
     def setup_class(cls):
         cls.cases = load_case_dicts(str(CASES_DIR))
 
+    # 注入夹具（合成语料副本）：两端各一条悬空声明，语义与真实链路无关，只为让关系式
+    # 在**非空集合**上有判别力。`order_query` 属 B 端、`aftersale_query` 属 C 端（实测）。
+    _INJECT = (
+        {"id": "T-AGREE-M", "expectations": [{"tool": "order_query", "args": {"action": "detail"}}]},
+        {"id": "T-AGREE-X", "expectations": [{"tool": "aftersale_query",
+                                              "args": {"action": "no_such_action"}}]},
+    )
+
     def test_gate_reports_exactly_the_invariant_violations(self):
-        """逐端比对：门禁报出的 `(tool, action)` == 不变式报出的合法映射（含 skip 用例）。"""
-        invariant = {(t, a) for _c, t, a, _k in action_binding_violations(self.cases)}
-        assert invariant, "仓库应有 ≥1 处悬空声明（OR-006，已登记）—— 否则本断言失去意义"
+        """逐端比对：门禁报出的 `(tool, action)` == 不变式报出的合法映射（含 skip 用例）。
+
+        ⚠️ 关系式的**前提必须由构造保证非空**：#3702 销账后仓库真值已归零
+        （全库零悬空声明）—— 直接拿它比"空集 == 空集"是**没有判别力**的空断言
+        （`migao-acceptance` v1.3）。故在**语料副本**上追加合成悬空声明，让关系式在
+        **非空集合**上成立。这是**加强**不是放宽：
+          ① 仓库真值必须为空（新引入的悬空声明会立刻打红本断言）；
+          ② 注入后 门禁 vs 不变式 仍必须**逐端一致**（这才是本组的原始目的）。
+        """
+        assert action_binding_violations(self.cases) == [], (
+            "仓库真值：全库（含 skip）不得有悬空 action 声明 —— 新增的会在此暴露")
+        cases = self.cases + list(self._INJECT)
+        invariant = {(t, a) for _c, t, a, _k in action_binding_violations(cases)}
+        assert invariant == {("order_query", "detail"), ("aftersale_query", "no_such_action")}, (
+            f"注入后的悬空集合与预期不符（判据口径漂移）: {sorted(invariant)}")
         for persona in ("mibao", "xiaobu"):
-            rep = build_coverage_report(self.cases, persona)
+            rep = build_coverage_report(cases, persona)
             expected = {p for p in invariant if p[0] in toolset_for(persona)}
+            assert expected, f"{persona}: 注入夹具没落在该端 —— 本断言退化为空集比对"
             assert set(rep.action_dangling) == expected, (
                 f"{persona}: 门禁与 L0 不变式的悬空 action 口径不一致"
                 f"（门禁 {sorted(rep.action_dangling)} vs 不变式 {sorted(expected)}）"
@@ -215,11 +266,15 @@ class TestGateAndInvariantAgree:
 
         门禁按端归属报（一个 tool 只属一端），故单端看不见另一端工具上的悬空声明 ——
         本断言锁住"合起来不漏"，并锁住报错信息里**带得出用例 ID**（销账靠它定位）。
+        前提同样**由构造保证非空**（注入两端的悬空声明，见 `_INJECT`）：仓库真值已归零，
+        空集上的"并集相等"没有判别力。
         """
-        invariant = {(t, a) for _c, t, a, _k in action_binding_violations(self.cases)}
+        cases = self.cases + list(self._INJECT)
+        invariant = {(t, a) for _c, t, a, _k in action_binding_violations(cases)}
+        assert len(invariant) == 2, f"注入夹具失效（应有两端各一条）: {sorted(invariant)}"
         union = set()
         for persona in ("mibao", "xiaobu"):
-            rep = build_coverage_report(self.cases, persona)
+            rep = build_coverage_report(cases, persona)
             union |= set(rep.action_dangling)
             for pair in rep.action_dangling:
                 assert rep.action_dangling_cases.get(pair), (

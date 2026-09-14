@@ -137,17 +137,39 @@ python3 scripts/xiaobu_coverage.py --md && python3 scripts/mibao_coverage.py --m
 | 断言了两端注册表都没有的工具 | 拼错/已删除 → 期望永不满足 | ❌ 阻塞 |
 | 工具仅 1 条用例 | **厚度不足**（随迭代收敛的活指标） | ⚠️ 只报告，不阻塞 |
 | **action 级**：该工具有用例、但某 action 零覆盖（#3667） | 工具级"✅ 已覆盖"下面的那一层厚度缺口 | ⚠️ 只报告，不阻塞 |
-| **action 级**：用例声明了工具**不存在**的 action（#3667） | 断言永不满足（假红/假绿），同拼错工具名家族 | ❌ 阻塞 |
+| **action 级**：用例声明了工具**不存在**的 action（#3667 立判据，#3701 补齐覆盖面） | 断言永不满足（假红/假绿），同拼错工具名家族 | ❌ 阻塞 |
 
-**action 级判据（issue #3667，报告 §⑥）**：工具级矩阵问不出「这个工具**有**用例，
+**action 级判据（issue #3667 立判据，#3701 补齐覆盖面，报告 §⑥）**：工具级矩阵问不出「这个工具**有**用例，
 但它的某个 action 从没被测」—— 实证 `processing_item_manage` 9 个 action 只有 3 个被断言、
 `processing_order_update` 4 个只有 1 个（PG-016 用 `action: complete` 撑起整域覆盖）。
 真值取**工具源码的 `action` 枚举**（不是从用例反推，否则缺失的 action 根本不在集合里
 = 缺口不可见）。**分档理由**：实测 41 处 action 未覆盖 → 阻塞即大面积飘红
 （用存量债锁死流水线），且它本质是**厚度**指标（与"仅 1 条用例"同级）；
-而 `action_dangling`（如 CU-005 声明 `customer_manage(action=query)`，该工具无此 action）
-是**配置错误**、实测仅 1 处，故与 `dangling_cases` 同档**阻塞**（可按 §14.5 登记存量豁免，
+而 `action_dangling`（用例声明了工具**不存在**的 action —— 先例 OR-006 原先声明的
+`order_query(action=detail)`，该工具枚举只有 `list / statistics / follow_status_stats`）
+是**配置错误**，故与 `dangling_cases` 同档**阻塞**（可按 §14.5 登记存量豁免，
 销账后条目即陈旧 → 必须删除）。单 action 工具的 action 级"缺口"不报（调工具 == 调该 action）。
+
+**「声明的 action 是否存在」是单一实现点**：`scripts/case_coverage.py::action_binding_violations`
+（配套 `case_action_bindings` / `repeat_until_bindings` / `action_enum` / `registered_tools`）——
+**门禁**（`build_coverage_report` → 两个 CLI 的 `--check`）与 **L0 静态不变式**
+（`tests/unit_ci_workflows/test_eval_assertion_action_binding.py`）调用**同一个函数**，
+两侧同口径由 `TestGateAndInvariantAgree` 锁住（#3701 前门禁那份实现漏了三处，
+才出现"单测层绿 ≠ 门禁绿"）。判据收的声明面（2026-09-14 实测清点，覆盖仓库现有全部形态）：
+
+- `expectations[].args.action`（dict 形态；**字符串形态只认单分支** `customer_manage(action=list)`
+  —— `A or B` 下 action 归属哪个分支无法从文本判定，宁可不收）；
+- `must_succeed[] / output_verify[] / required_args[] / must_fail[]` 的 `{tool, action}`；
+- `db_verify[].{source｜tool, action}`（`source` 指写工具，同 runner 口径）；
+- `user_inputs[].repeat_until.action`（#3667 的 action 级停条件，停条件悬空 = 用例空转到轮数耗尽）；
+- **工具没有 `action` 维度**时声明 action 同样悬空（`no_action_param`：如 OR-026 一度想写的
+  `must_fail: [{tool: order_create, action: create}]`，`order_create` 无 action 属性）；
+- `skip_reason` 非空的用例**照扫** —— skip 只免"参与覆盖统计"，不免"声明合法性"
+  （OR-006 的悬空声明此前正是被 `skip_reason` 藏住的，用例侧已按真实语义修正，见 issue #3702）。
+
+**两个口径有意分开**（别合并）：**覆盖统计**只认机器可判断言（`case_declared_actions`）——
+`repeat_until.action`（停条件）与 `skip_reason` 非空的用例**不算覆盖证据**，
+否则 `action_uncovered` 会静默缩水（有测试锁住该分档）。
 
 「正向用例」= 正常诉求下断言真实工具被调用（`eval_case_filter.is_positive_case`）；
 判据只认**断言文本**（否定式期望排除），**不认 `tier` 标签** —— 实测 OR-007「取消订单」
