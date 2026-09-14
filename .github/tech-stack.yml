@@ -101,6 +101,11 @@ modules:
         tests:
           - 'tests/test_knowledge_{1}.py'
           - 'tests/test_{1}.py'
+      # 智能每日经营简报（issue #3468）：briefing 由 test_briefing_generator 覆盖
+      - pattern: 'backend/ai-agent-service/app/briefing/(.+)\.py'
+        tests:
+          - 'tests/test_briefing_{1}.py'
+          - 'tests/test_{1}.py'
       - pattern: 'backend/ai-agent-service/app/(.+)\.py'
         tests:
           - 'tests/test_{1}.py'

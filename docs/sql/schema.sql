@@ -26,6 +26,8 @@ CREATE TABLE tenants (
     status VARCHAR(32) DEFAULT 'active',
     auth_config JSONB DEFAULT '{}',
     bailian_config JSONB DEFAULT '{}',
+    briefing_enabled BOOLEAN DEFAULT FALSE,
+    briefing_generate_time VARCHAR(5) DEFAULT '06:00',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     deleted INTEGER DEFAULT 0
@@ -747,6 +749,25 @@ CREATE UNIQUE INDEX IF NOT EXISTS uk_processing_orders_no
     ON processing_orders (processing_order_no);
 
 -- ================================================
+-- 9.6 智能每日经营简报（issue #3468，V44 迁移）
+-- ================================================
+CREATE TABLE IF NOT EXISTS daily_briefings (
+    id VARCHAR(64) PRIMARY KEY,
+    tenant_id BIGINT NOT NULL REFERENCES tenants(id),
+    biz_date DATE NOT NULL,
+    content JSONB NOT NULL DEFAULT '{}',
+    source_snapshot JSONB NOT NULL DEFAULT '{}',
+    verify_status VARCHAR(32) NOT NULL DEFAULT 'pending',  -- pending / verified / partial / failed
+    generated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    deleted INT DEFAULT 0,
+    CONSTRAINT uk_daily_briefings_tenant_date UNIQUE (tenant_id, biz_date)
+);
+CREATE INDEX IF NOT EXISTS idx_daily_briefings_tenant_date
+    ON daily_briefings (tenant_id, biz_date);
+
+-- ================================================
 -- 10. 审计日志表
 -- ================================================
 
@@ -1185,6 +1206,10 @@ CREATE POLICY tenant_isolation_notification_rules ON notification_rules
 
 ALTER TABLE notifications ENABLE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_notifications ON notifications
+    USING (tenant_id::text = current_setting('app.current_tenant_id'));
+
+ALTER TABLE daily_briefings ENABLE ROW LEVEL SECURITY;
+CREATE POLICY tenant_isolation_daily_briefings ON daily_briefings
     USING (tenant_id::text = current_setting('app.current_tenant_id'));
 
 -- ================================================

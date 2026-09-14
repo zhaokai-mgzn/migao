@@ -50,6 +50,9 @@ import type {
   ActiveSession,
   PendingTask,
   ProductRanking,
+  TodayBriefingResponse,
+  BriefingConfig,
+  BriefingContent,
   Customer,
   CustomerListParams,
   CustomerDetail,
@@ -627,6 +630,25 @@ export const settingsApi = {
     request.get<ApiResponse<PageResponse<LoginLog>>>('/api/admin/settings/login-logs', { params }),
 }
 
+// 智能每日经营简报 API（issue #3468）
+export const briefingApi = {
+  /** 今日简报（未生成返回 generated=false，前端展示引导空态） */
+  getToday: () =>
+    request.get<ApiResponse<TodayBriefingResponse>>('/api/admin/briefing/today'),
+
+  /** 简报配置（企业开关 + 生成时刻；菜单显隐 = 开关 ∧ 角色权限） */
+  getConfig: () =>
+    request.get<ApiResponse<BriefingConfig>>('/api/admin/briefing/config'),
+
+  /** 更新简报配置（仅 admin；开启瞬间立即生成当日简报，关闭即熔断） */
+  updateConfig: (data: Partial<BriefingConfig>) =>
+    request.put<ApiResponse<BriefingConfig>>('/api/admin/briefing/config', data),
+
+  /** 手动触发当日生成（仅 admin） */
+  generate: () =>
+    request.post<ApiResponse<{ generated: boolean; verifyStatus?: string; reason?: string; content?: BriefingContent }>>('/api/admin/briefing/generate'),
+}
+
 // 员工管理 API
 export const employeeApi = {
   /** #2969 岗位=角色体系：岗位列表来自 roleApi.getAllRoles（含岗位默认权限） */
@@ -859,6 +881,7 @@ const api = {
   chat: chatApi,
   customer: customerApi,
   settings: settingsApi,
+  briefing: briefingApi,
   employee: employeeApi,
   role: roleApi,
   permission: permissionApi,

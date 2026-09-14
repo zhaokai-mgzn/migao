@@ -1079,7 +1079,7 @@
 真值: customer-list.profile-creation, auth.mini-program-login
 溯源: 2026-09-07 新增：C 端租户域名路由改造（issue #3011） ｜ tags: c-end, tenant, domain, customer_profile
 
-## 数据域（7 case）
+## 数据域（10 case）
 
 ### DA-001. 经营概览 🔵
 ```
@@ -1159,6 +1159,36 @@
 ```
 真值: dashboard-ui.ranking-caliber
 溯源: 2026-09-07 新增：#2984 经营看板排行数据自洽治理 — 生产实证今日订单 0 但排行显示 356 件+▲187.1%（实为近7天 pending 测试单累计 × 7天环比，被 UI「日涨/较昨日」标注误导）；2026-09-07 补：#2989 幽灵商品行治理（product_id 为 NULL 明细不进排行） ｜ tags: dashboard, ranking, ui, data-quality
+
+### DA-008. 智能每日经营简报：企业开关熔断（关闭=不生成+菜单隐藏，issue #3468） 🔵
+```
+你: 智能每日经营简报企业开关行为自检
+数据: tenants.briefing_enabled 默认 false；开关关闭时 generateForTenant 直接返回 null 且 LLM 调用数为 0（熔断）
+数据: 更新配置开启瞬间立即生成当日简报；关闭后调度跳过该租户（generateDueTenants 内部拦截），已生成历史保留但入口隐藏
+数据: 仅 admin（system:manage）可改开关；变更写操作日志
+跳过: 开关熔断由 admin-api 单测验证（DailyBriefingServiceTest$SwitchBreaker + BriefingControllerTest），非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-09-14 新增（issue #3468）：智能每日经营简报 MVP — 企业开关即熔断（数据安全红线 3） ｜ tags: briefing, toggle, security
+
+### DA-009. 智能每日经营简报：数字回填校验（LLM 编造即丢弃，issue #3468） 🔵
+```
+你: 智能每日经营简报数字校验行为自检
+数据: LLM 输出每条目必须带 metrics 引用（key+value），key 不在聚合快照或 value 与快照不一致 → 条目丢弃（不展示编造数字）
+数据: 全部条目被丢弃 → verify_status=failed，前端展示安全提示而非假数据；部分丢弃 → partial
+数据: LLM 失败/超时 → 落 failed 记录，不 fallback 昨日数据冒充今日
+跳过: 数字回填校验由 admin-api 单测验证（DailyBriefingServiceTest$VerifyAndFilter）+ ai-agent 单测（test_briefing_generator.py），非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-09-14 新增（issue #3468）：智能每日经营简报 MVP — 数字回填校验层（数据安全红线 4） ｜ tags: briefing, llm-verify, security
+
+### DA-010. 智能每日经营简报：PII 不进 prompt + RLS 隔离（issue #3468） 🔵
+```
+你: 智能每日经营简报数据安全自检
+数据: 聚合快照只含数字指标 + 脱敏事实（订单数/工单数），不含客户手机号/姓名/地址/会话原文（快照 JSON 断言无 PII 字段）
+数据: daily_briefings 表含 tenant_id + RLS 策略 tenant_isolation_daily_briefings（跨租户查询返回空）
+数据: 简报展示层脱敏别名「客户A/B」，点击查看真名复用客户详情 RBAC（customers:view），无权限角色点击不可见真名
+跳过: PII 隔离由 admin-api 单测（DailyBriefingServiceTest$Aggregation）+ migration 契约验证；RLS 由 V44 迁移/SchemaMigrationTest 验证，非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-09-14 新增（issue #3468）：智能每日经营简报 MVP — 数据安全红线 1/2（PII 不进 prompt + RLS 租户隔离） ｜ tags: briefing, privacy, security
 
 ## 防御域（22 case）
 
@@ -3579,8 +3609,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：273（活跃 135，跳过 138）
-- tier 分布：smoke 9 / normal 231 / adversarial 33
+- 用例总数：276（活跃 135，跳过 141）
+- tier 分布：smoke 9 / normal 234 / adversarial 33
 - 售后域：8
 - agents：6
 - api：19
@@ -3589,7 +3619,7 @@
 - 对话边界域：33
 - 跨域：3
 - 客户域：6
-- 数据域：7
+- 数据域：10
 - 防御域：22
 - finance：4
 - 人事域：7
@@ -3623,6 +3653,9 @@
 - CH-030: C 端交互组件提交锁（防重复提交）—— confirm/choice/form 点选/提交后本地锁卡，已答消息携带 interactiveAnswered，历史回放后不复活
 - CH-031: C 端交互组件历史回放透传—— getSessionMessages 映射透传 interactive/interactive_answered，刷新/切会话后已答卡片只读呈现而非消失
 - CH-032: C 端交互组件流式门控 + XML 伪代码兜底剥离—— 流式期间交互组件隐藏（防闪烁/防误点），历史残留 <interact>/```tool_call 伪代码块不展示
+- DA-008: 智能每日经营简报：企业开关熔断（关闭=不生成+菜单隐藏，issue #3468）
+- DA-009: 智能每日经营简报：数字回填校验（LLM 编造即丢弃，issue #3468）
+- DA-010: 智能每日经营简报：PII 不进 prompt + RLS 隔离（issue #3468）
 - KN-001: 小布知识问答 - 面料问题先检索本店知识卡片（query 必填）
 - KN-002: 小布知识问答 - 清洗保养类问题走知识卡片检索
 - KN-003: 米宝知识问答 - 本店售后政策先检索知识卡片（B 端接线回归，issue #3059）

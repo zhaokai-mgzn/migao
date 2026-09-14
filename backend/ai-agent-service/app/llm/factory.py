@@ -207,6 +207,23 @@ class LLMFactory:
         )
 
     @staticmethod
+    def create_briefing_llm() -> ChatOpenAI:
+        """创建智能每日经营简报生成 LLM（issue #3468）
+
+        - temperature=0  确定性输出，便于 JSON 解析与数字对账
+        - max_completion_tokens=1200  四区块简报（摘要+回顾+待办+风险+建议）
+        - thinking=disabled  关闭深度思考，降低延迟与成本
+        """
+        return _new_chat_model(
+            model=settings.INTENT_MODEL,
+            api_key=LLM_API_KEY,
+            base_url=LLM_BASE_URL,
+            temperature=0,
+            max_completion_tokens=1200,
+            extra_body={"thinking": {"type": "disabled"}},
+        )
+
+    @staticmethod
     def create_suggestion_llm() -> ChatOpenAI:
         """创建建议/推荐生成 LLM
 

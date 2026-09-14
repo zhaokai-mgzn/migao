@@ -909,6 +909,56 @@ export interface ProductRanking {
   dailyChange: number
 }
 
+// ========== 智能每日经营简报（issue #3468）==========
+
+// 简报指标引用（数字回填校验：key/value 均来自聚合快照，禁止 LLM 编造）
+export interface BriefingMetricRef {
+  key: string
+  value: number
+}
+
+// 简报条目（待办/风险/建议通用结构）
+export interface BriefingItem {
+  priority?: string
+  severity?: string
+  title: string
+  reason?: string
+  detail?: string
+  link?: string
+  metrics: BriefingMetricRef[]
+}
+
+// 简报回顾指标
+export interface BriefingReviewItem {
+  label: string
+  value: number
+  unit?: string
+  change?: string
+}
+
+// 简报内容（四区块）
+export interface BriefingContent {
+  summary: string
+  review: BriefingReviewItem[]
+  todo: BriefingItem[]
+  risks: BriefingItem[]
+  suggestions: BriefingItem[]
+}
+
+// 今日简报响应
+export interface TodayBriefingResponse {
+  generated: boolean
+  verifyStatus: string | null
+  content: BriefingContent | null
+  bizDate: string | null
+}
+
+// 简报配置（企业开关 + 生成时刻）
+export interface BriefingConfig {
+  enabled: boolean
+  generateTime: string
+}
+
 // 待处理任务
 export interface PendingTask {
   id: string

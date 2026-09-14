@@ -24,6 +24,7 @@ const ROUTE_PERMISSION_MAP: Array<{ prefix: string; code: string }> = [
   { prefix: '/settings', code: 'system:manage' },
   { prefix: '/knowledge', code: 'knowledge:manage' },
   { prefix: '/roles', code: 'system:manage' },
+  { prefix: '/briefing', code: 'dashboard:view' },
   { prefix: '/dashboard', code: 'dashboard:view' },
 ]
 
