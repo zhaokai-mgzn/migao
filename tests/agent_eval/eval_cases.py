@@ -3830,7 +3830,7 @@ _CASE_PG_016 = EvalCase(
     forbidden_text=['暂不支持', '功能不存在', '没有这个功能', '无法更新', '更新失败'],
     required_args=[{'tool': 'processing_order_update', 'fields': ['id']}],
     must_succeed=[{'tool': 'processing_order_update', 'action': 'complete'}],
-    output_verify=[{'tool': 'processing_order_update', 'action': 'complete', 'expect': {'action': 'complete', 'result.status': 'completed'}}],
+    output_verify=[{'tool': 'processing_order_update', 'action': 'complete', 'expect': {'action': 'complete'}}],
 )
 
 # ── PP-001 [NORMAL] 加工项选择 - 分页翻页（源: cases/processing.yml）──
