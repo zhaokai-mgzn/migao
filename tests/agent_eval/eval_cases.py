@@ -3189,7 +3189,7 @@ _CASE_OR_014 = EvalCase(
     forbidden_card_text=[],
     must_succeed=[{'tool': 'order_create'}],
     amount_verify=[{'tool': 'order_create', 'product_name': '遮光窗帘', 'checks': ['unit_price', 'subtotal', 'total']}],
-    pre_clean=[{'type': 'product_dedupe', 'product_keyword': '遮光窗帘', 'price': 100}],
+    pre_clean=[{'type': 'product_dedupe', 'product_keyword': '遮光窗帘'}],
 )
 
 # ── OR-015 [NORMAL] order_create 写操作前置校验必须真正执行（validate_input 规则分层修复，issue #3029 复盘）（源: cases/order.yml）──
@@ -3210,7 +3210,7 @@ _CASE_OR_015 = EvalCase(
     forbidden_card_text=[],
     order_before=['validate_input before order_create'],
     required_args=[{'tool': 'validate_input', 'fields': ['target_tool', 'target_action']}],
-    pre_clean=[{'type': 'product_dedupe', 'product_keyword': '遮光窗帘', 'price': 100}],
+    pre_clean=[{'type': 'product_dedupe', 'product_keyword': '遮光窗帘'}],
 )
 
 # ── OR-016 [NORMAL] 创建订单 confirm 前必须主动询问加工项（商品绑定加工项时）（源: cases/order.yml）──
@@ -3692,7 +3692,7 @@ _CASE_PP_001 = EvalCase(
     title='加工项选择 - 分页翻页',
     skill=Skill.PRODUCT,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['给遮光窗帘（100元的那件）添加加工项', '选打孔加工和韩式折边', '确认'],
+    user_inputs=['给遮光窗帘添加加工项', '选打孔加工和韩式折边', '确认'],
     expectations=['product_processing_item_manage(action=add)', 'processing_item_query'],
     data_checks=['data.pageMeta != null'],
     skip_reason='',
@@ -3701,7 +3701,7 @@ _CASE_PP_001 = EvalCase(
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
-    pre_clean=[{'type': 'product_dedupe', 'product_keyword': '遮光窗帘', 'price': 100}],
+    pre_clean=[{'type': 'product_dedupe', 'product_keyword': '遮光窗帘'}],
 )
 
 # ── PP-002 [NORMAL] 加工项分类列表（源: cases/processing.yml）──

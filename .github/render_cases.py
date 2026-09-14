@@ -296,6 +296,15 @@ def to_md(cases):
                         _tags.append("🤖 选第一个选项")
                     if msg.get("auto_fill"):
                         _tags.append("🤖 自动填表")
+                    if msg.get("repeat_until"):
+                        # repeat_until 轮也是「协议轮」：harness 每轮按"有卡答卡/被问验证码
+                        # 就供码/否则发 fallback"作答，直到目标工具成功（issue #3538）。
+                        # 此前无 text 且无上述标签 → 渲染成「你: (空)」，casebook 读不出
+                        # 这轮在干什么（OR-021/CH-033/PR-016/PR-021 均此形态）。
+                        _ru = msg["repeat_until"] or {}
+                        _tags.append(
+                            f"🔁 按目标工具重复直至成功：{_ru.get('tool_called', '?')}"
+                            f"，最多 {_ru.get('max', '?')} 次")
                     if _imgs:
                         _tags.append(f"📷 附 {len(_imgs)} 图")
                     suffix = (" [" + " ".join(_tags) + "]") if _tags else ""
