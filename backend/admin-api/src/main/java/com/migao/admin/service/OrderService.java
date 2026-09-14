@@ -404,22 +404,30 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
      */
     @Transactional(rollbackFor = Exception.class)
     public OrderDetailResponse createOrder(OrderCreateRequest request, Long tenantId) {
-        // ── 资金/库存完整性闸门（issue #3622）：数量/单价必须为正 ──
-        // issue #3666：数量已放宽为 BigDecimal（DECIMAL(10,2)）——判据从「正整数」改为
-        // 「大于 0 的数」：per_area 的合法数量就是小数（门幅 2.8m × 3m = 8.4 ㎡）。
+        // ── 资金/库存完整性闸门（issue #3622 / #3682）：数量 ≥ 1，单价 > 0 ──
+        // issue #3666：数量已放宽为 BigDecimal（DECIMAL(10,2)），per_area 的合法数量就是小数
+        // （门幅 2.8m × 3m = 8.4 ㎡）——但不能因此放行 <1。
+        // issue #3682：下限从「> 0」收紧为「≥ 1」——`items[].quantity` 直接驱动库存/销量，
+        // 而下面 `validateStockSufficientForRequest`/`deductSkuStock` 对 quantity 取整数部分
+        // （`:1051` `intValue()` 库存校验 / `:1408` `deductStock` / `:1409` `increaseSalesCount`）：
+        // 0.5 → `needed = 0` 校验**恒通过**、`deductStock(0)` **不减库存**、销量 **+0**
+        // → **订单成交但库存/销量零变动，且全程无告警**（账实不符）。
+        // 旧实现（quantity 为 Integer + agent 工具层拒绝非整数）在下单前就挡回 0.5 并给可行动
+        // 提示，故 <1 是 #3666 放宽后**新可达**的静默漏扣。裁定（#3682 方案 A）：下限 = 1，
+        // 与 admin-web 表单页 `min={1}` 及 ai-agent 工具层同口径；≥1 的小数仍合法（保真落库）。
         // 为什么必须在 Service 层显式判定（而不是只靠 DTO 注解）：
         //   ① Agent 路径 `createOrderForAgent`（下方 BFF 段）是**手工 new `OrderCreateRequest`**
         //      再调用本方法 —— 程序化构造的 Bean **不经过 Bean Validation**，注解对它无效；
         //   ② 本方法是三条路径（表单 / Agent / 未来程序化调用）的**唯一共享入口**，判在这里才无死角。
         // 不判的后果：负数量 → `unitPrice × 负数` 算出**负金额**落库；库存前置校验
         // （下方 validateStockSufficientForRequest）判据「需求量 ≤ 库存」对**负需求恒真**
-        // → **超卖防线被绕过**。
+        // → **超卖防线被绕过**；0 < 数量 < 1 → 库存/销量零扣减（本条 issue #3682）。
         for (int i = 0; i < request.getItems().size(); i++) {
             OrderCreateRequest.OrderItemRequest itemRequest = request.getItems().get(i);
             if (itemRequest.getQuantity() == null
-                    || itemRequest.getQuantity().compareTo(BigDecimal.ZERO) <= 0) {
+                    || itemRequest.getQuantity().compareTo(BigDecimal.ONE) < 0) {
                 throw BusinessException.validationError(
-                        String.format("商品明细第 %d 项的数量必须大于 0", i + 1));
+                        String.format("商品明细第 %d 项的数量不能小于 1", i + 1));
             }
             if (itemRequest.getUnitPrice() == null
                     || itemRequest.getUnitPrice().compareTo(BigDecimal.ZERO) <= 0) {

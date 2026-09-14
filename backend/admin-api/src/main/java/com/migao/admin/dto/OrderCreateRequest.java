@@ -1,6 +1,7 @@
 package com.migao.admin.dto;
 
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
@@ -81,13 +82,18 @@ public class OrderCreateRequest {
         private String productName;
 
         /**
-         * 数量（issue #3666 放宽为 DECIMAL(10,2)/BigDecimal）：
-         * 口径按计价方式——per_meter=米数、per_set=1、per_area=宽×高（㎡）。
+         * 数量（issue #3666 放宽为 DECIMAL(10,2)/BigDecimal；issue #3682 收紧下限为 1）：
+         * 口径按计价方式——per_meter=米数、per_set=件数、per_area=宽×高（㎡）。
          * 这些口径**不都是整数**（2.8m × 3m = 8.4 ㎡），Integer 会截断成 8 →
          * 30 元/㎡ 的刺绣工艺少收 12.00 元。与 base_price/amount 的金额口径一致。
+         *
+         * <p>下限为什么是 1（而不是「&gt; 0」）：`OrderService` 对 quantity 取整数部分驱动
+         * 库存/销量（`:1051` 库存校验 / `:1408` `deductStock` / `:1409` `increaseSalesCount`）
+         * —— 0.5 → `needed = 0` 校验恒通过、扣 0 库存、销量 +0 → **订单成交但库存/销量零变动
+         * 且无任何告警**。下限与表单页 `orders/new/page.tsx` 的 `min={1}` 同口径。</p>
          */
         @NotNull(message = "数量不能为空")
-        @Positive(message = "数量必须大于 0")
+        @DecimalMin(value = "1", message = "数量不能小于 1")
         private BigDecimal quantity;
 
         /**
