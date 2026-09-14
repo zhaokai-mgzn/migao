@@ -11,7 +11,7 @@
  */
 const fs = require('fs')
 const path = require('path')
-const { launch, waitForPageReady, assertDistFresh, SCREENSHOT_DIR } = require('./lib/harness')
+const { launch, waitForPageReady, checkLoginPreflight, assertDistFresh, SCREENSHOT_DIR } = require('./lib/harness')
 
 const SCENARIOS = [
   require('./scenarios/chat-scenario'),
@@ -28,6 +28,7 @@ async function main() {
   // ── 陈旧构建护栏（失败关闭）：dist 与 src/config 不一致时直接退出，不进模拟器 ──
   let freshnessLine = ''
   let freshMode = ''
+  let loginLine = ''
   try {
     const fresh = assertDistFresh()
     freshnessLine =
@@ -44,6 +45,15 @@ async function main() {
 
   const mp = await launch(process.env.E2E_PORT ? Number(process.env.E2E_PORT) : 0)
   console.log('✅ 已连接模拟器')
+  // 登录态前置检查（可复现性声明）：harness 不注入登录态，依赖模拟器 storage 里的 auth_token
+  const login = await checkLoginPreflight(mp)
+  loginLine =
+    login.loggedIn === true
+      ? `模拟器 storage 已登录（auth_token …${login.tokenTail}，来自环境残留/外部写入，非本 harness 注入）`
+      : login.loggedIn === false
+        ? '⚠️ 未登录（storage 无 auth_token）—— 结果不可作为验收证据'
+        : '未知（前置检查不可用）'
+  console.log(`[harness] 登录态：${loginLine}`)
   const readyPage = await waitForPageReady(mp)
   console.log(readyPage ? `✅ 页面就绪: ${readyPage.path}` : '⚠️ 30s 内页面未就绪（继续尝试，步骤级会重试）')
   console.log('')
@@ -70,6 +80,7 @@ async function main() {
   lines.push(`- 时间: ${new Date().toLocaleString('zh-CN')}`)
   lines.push('- 环境: 微信开发者工具模拟器 + app.migaozn.com 测试环境')
   lines.push(`- 被测构建（新鲜度护栏）: [${freshMode}] ${freshnessLine}`)
+  lines.push(`- 登录态: ${loginLine}`)
   lines.push('')
   for (const r of reports) {
     const pass = r.steps.filter((s) => s.pass).length

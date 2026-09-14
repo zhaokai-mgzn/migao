@@ -8,6 +8,26 @@
 1. 微信开发者工具已安装（`/Applications/wechatwebdevtools.app`）并**登录账号**
 2. 开发者工具：**设置 → 安全设置 → 服务端口** 开启（自动化连接必需）
 3. 先构建产物：`npm run build:weapp`（产物输出到 `dist/`，含真实 AppID）
+4. **本机已登录小程序**（见下「登录态与可复现性」）——冷环境必须先登录一次
+
+### 登录态与可复现性（2026-09-14 实测登记）
+
+**本 e2e harness 不注入登录态**，它依赖模拟器 storage 里**已存在**的登录态：
+
+- 页面侧判据：`src/store/authStore.ts` 的 `checkAuth()`（`:137`）只检查 storage 里的
+  `auth_token` 是否存在且未过期；有 → 直接算已登录，**不会**走 `wx.login`。
+- storage keys：`src/utils/constants.ts:12-16` = `auth_token` / `auth_user` / `tenant_id`。
+- 无 token 时才走 `login()` → `Taro.login()` → `POST /api/auth/mini/login`
+  （`src/utils/auth.ts:18-34`）——该路径在开发者工具模拟器里**曾实测被后端判
+  `WECHAT_API_ERROR: code 无效`**（另一并行工作包实测），故不能假定它能自动兜住。
+
+⇒ **推论（对证据可信度的影响，必须知情）**：冷环境（新克隆 / 新模拟器 / storage 被清）
+直接跑 `npm run test:e2e`，断言所依赖的租户数据（问候语 botName、订单/售后/物流）会缺失或降级
+—— 这样的「绿」是**环境残留**给的，不是代码给的。`run.js` 因此每次都会打印并写入报告的
+「登录态」一行（`checkLoginPreflight()` 读 `wx.getStorageSync('auth_token')`，只告警不失败）。
+
+**待办（本包未做）**：把「可复现的登录步骤」落进仓库（`harness` 内一次显式登录：要么注入
+storage 三键、要么走真实 `wx.login`），使证据不依赖环境残留。已在验收报告 §6 登记为未重放项。
 
 ## 运行
 
@@ -81,6 +101,13 @@ DOM 里已多出两条消息）。故 `capture()` 连抓直到**连续两帧完�
 - **发送键需要先有草稿才渲染**：先 `textarea.input(文本)`，再等 `.message-input__icon-btn--send`。
   用 harness 的 `typeAndSend()`（发送键缺失/禁用一律返回 `ok=false`，禁止 `if (btn) tap()` 静默跳过 ——
   跳过会让「消息没发出」伪装成「后端无回复」）。
+- **输入条选择器只依赖「稳定类名」**：`__container` / `__textarea` / `__icon-btn`（含
+  `--voice`/`--send`/`--stop`/`--disabled`）。**不要**依赖 `__actions` 的子元素数量或
+  textarea 的父层结构 —— 另一工作包正在把输入条从「column 两行」改为「`__row` 单行
+  （加图键 → `__field` > Textarea → `__actions` 主动作键）」，那会移动加图键、给 textarea
+  加深一层父节点。所有输入条访问都收敛在 `lib/harness.js` 的 `probeInputBar()` /
+  `typeAndSend()`，**该布局落地后只需复核这一个文件**（届时可另加「三者同行」的 `__row`
+  断言；现在**不能**加，`__row`/`__field` 在 main 上还不存在）。
 - **SSE 回复较慢**：真实 LLM + 工具调用，回复等待窗口 120s
 - **端口**：自动化默认 9420（由 `cli auto --auto-port` 建立）；开发者工具自身 IDE 端口（如 21161）不是自动化端口
 - **新增场景文件**：放 `scenarios/` 下并在 `run.js` 的 `SCENARIOS` 注册；文件头必须带 `// case_ids: ...`（QA Growth Gate）

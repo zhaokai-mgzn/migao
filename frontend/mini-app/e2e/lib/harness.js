@@ -157,6 +157,33 @@ async function waitForPageReady(mp, timeoutMs = 60000) {
 }
 
 /**
+ * 登录态前置检查（**可复现性声明**，issue #3705/#3696）
+ *
+ * 本 harness **不注入登录态**：C 端页面自己走 `checkAuth()`（`src/store/authStore.ts:137`）
+ * —— 只要模拟器 storage 里有有效的 `auth_token`（keys 见 `src/utils/constants.ts:12-16`：
+ * `auth_token` / `auth_user` / `tenant_id`）就直接算已登录；否则才走 `login()` →
+ * `Taro.login()` → `/api/auth/mini/login`（`src/utils/auth.ts:18-34`），而后者在开发者工具里
+ * 曾实测被后端判 `WECHAT_API_ERROR: code 无效`。
+ *
+ * ⇒ **冷环境（新克隆/新模拟器）首次运行前必须先登录一次**，否则断言依赖的租户数据
+ * （问候语 botName、订单/售后/物流数据）会缺失或降级 —— 那种「绿」是环境残留给的，不是代码给的。
+ * 本检查只**告警不失败**（`mp.evaluate` 在个别 IDE 版本不可用）：先让依赖可见，避免静默。
+ */
+async function checkLoginPreflight(mp) {
+  try {
+    const token = await mp.evaluate(() => wx.getStorageSync('auth_token'))
+    if (!token) {
+      console.warn('[harness] ⚠️ 模拟器 storage 无 auth_token：本机未登录，结果不可作为验收证据（先手工登录一次）')
+      return { loggedIn: false }
+    }
+    return { loggedIn: true, tokenTail: String(token).slice(-6) }
+  } catch (e) {
+    console.warn(`[harness] ⚠️ 登录态前置检查不可用（忽略）: ${e.message.slice(0, 120)}`)
+    return { loggedIn: null }
+  }
+}
+
+/**
  * 全屏截图并保存到 e2e/screenshots/<scenario>/<name>，返回绝对路径
  *
  * **稳定帧等待**（2026-09-14 实测新增）：`mp.screenshot()` 在 UI 刚变化后可能返回
@@ -430,6 +457,7 @@ module.exports = {
   SCREENSHOT_DIR,
   launch,
   waitForPageReady,
+  checkLoginPreflight,
   capture,
   sleep,
   waitForElement,
