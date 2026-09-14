@@ -337,6 +337,53 @@ class AfterSalesTicketServiceTest {
         verify(afterSalesTicketMapper).insert(any(AfterSalesTicket.class));
     }
 
+    // issue #3605：ai-agent 侧已删除客户端下发的 `source` 键（AgentAfterSalesCreateRequest 无该字段，
+    // 下发即静默丢弃）。本条证明删除是**无损**的：来源由服务端在 createTicket 内固化，
+    // 客户端不传 source 时落库仍是 "agent"（两个创建入口都委托该方法）。
+    @Test
+    @DisplayName("Agent 入口建单：客户端不传 source → 落库来源仍为 agent（服务端固化）")
+    void createTicketForAgent_PersistsAgentSourceWithoutClientKey() {
+        // given：与 ai-agent `after_sales_manage.py::_create_ticket` 修复后的 payload 同形（无 source）
+        com.migao.admin.dto.agent.AgentAfterSalesCreateRequest request =
+                new com.migao.admin.dto.agent.AgentAfterSalesCreateRequest();
+        request.setOrderId("0f8fad5b-d9cb-469f-a165-70867728950e");
+        request.setTicketType("return");
+        request.setReason("尺寸不符要求退款");
+
+        when(orderMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(testOrder);
+        when(orderMapper.selectById("0f8fad5b-d9cb-469f-a165-70867728950e")).thenReturn(testOrder);
+        when(afterSalesTicketMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
+        when(afterSalesTicketMapper.insert(any(AfterSalesTicket.class))).thenAnswer(invocation -> {
+            AfterSalesTicket t = invocation.getArgument(0);
+            t.setId("ticket-agent");
+            return 1;
+        });
+        when(afterSalesTicketMapper.selectById("ticket-agent")).thenReturn(
+                AfterSalesTicket.builder()
+                        .id("ticket-agent")
+                        .tenantId(1L)
+                        .ticketNo("AS-20250425-0003")
+                        .orderId("0f8fad5b-d9cb-469f-a165-70867728950e")
+                        .customerId("张三")
+                        .ticketType("return")
+                        .status("pending")
+                        .description("尺寸不符要求退款")
+                        .priority("normal")
+                        .source("agent")
+                        .createdAt(OffsetDateTime.now())
+                        .updatedAt(OffsetDateTime.now())
+                        .build());
+
+        // when
+        afterSalesTicketService.createTicketForAgent(request, 1L, "test-user");
+
+        // then
+        org.mockito.ArgumentCaptor<AfterSalesTicket> ticketCaptor =
+                org.mockito.ArgumentCaptor.forClass(AfterSalesTicket.class);
+        verify(afterSalesTicketMapper).insert(ticketCaptor.capture());
+        assertThat(ticketCaptor.getValue().getSource()).isEqualTo("agent");
+    }
+
     @Test
     @DisplayName("创建售后工单失败 - 关联订单不存在")
     void createTicket_OrderNotFound() {
