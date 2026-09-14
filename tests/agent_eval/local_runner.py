@@ -190,6 +190,85 @@ async def _end_session(token: str, session_id: str, debug_user: str = "") -> Non
     # 人工会话本身是**待人工处理的工单**，也不该由评测 harness 关闭。
 
 
+# ── 前置复位直连 DB（attempt 边界的 fixture 动作，issue #3751）─────────────────
+# 为什么需要 DB 直连：**"把被用例点名的对象复位回初始态"在现有 HTTP 面上做不到** ——
+#   admin-api `PUT /api/admin/after-sales/{id}/status` 的 `STATUS_TRANSITIONS` 把 `closed`
+#   设为**终态**（`AfterSalesTicketService.java:103-109`：`closed → Set.of()`），且关闭分支
+#   只 `setClosedAt/setCloseReason`（`:501-506`）、**没有清空路径** ⇒ 首跑关掉的工单在重试前
+#   无法复位 ⇒ 第 2 次尝试的前置 ≠ 第 1 次的前置（AS-004 实测：首跑已 closed + closeReason
+#   残留 ⇒ 重试 agent 合理地"不再关闭" ⇒ 必红，且与首跑成因不同 → 指纹漂移 → 误判）。
+#   故复位与 `scripts/eval_stack_seed.sh` 走**同一条 DB**（只是不经 psql）：seed 的初始态
+#   就是真值来源（`fixtures/mibao_eval_seed.sql:302`）。
+# ⚠️ 红线：复位**只允许发生在一次尝试开始之前**（attempt 边界，见 `run_suite` 的重试分支）。
+#   绝不能在断言/`db_verify` 之后调用 —— 那会把本次尝试的真实产物抹掉，把真失败洗成绿。
+_EVAL_DB_DSN_DEFAULT = "postgresql://app_user:%s@127.0.0.1:5432/ai_customer_service"
+
+# seed 工单：AS-004 点名的对象（`fixtures/mibao_eval_seed.sql:302` 的 'AS-20260914-9001'）
+_SEED_AFTERSALES_TICKET_NO = "AS-20260914-9001"
+
+# 复位到 seed 初始态：状态回 pending + **清空关闭留痕**（closedAt/closeReason/internalNotes）。
+# 只回状态不清留痕 = 假绿：`db_verify[after_sales_ticket]` 的
+# `expect_fields_nonempty: [closedAt, closeReason]` + `expect_close_reason_contains` 会被
+# **首跑残留**满足（重试即使什么都没写也可能过这条核对器）。
+_RESET_AFTERSALES_TICKET_SQL = """
+UPDATE after_sales_tickets
+   SET status = 'pending', closed_at = NULL, close_reason = NULL,
+       internal_notes = NULL, updated_at = NOW()
+ WHERE tenant_id = 1 AND ticket_no = $1
+RETURNING id
+"""
+
+
+def _eval_db_dsn() -> str:
+    """前置复位用的 DB DSN（fixture 动作，非断言取数 —— `db_verify` 仍走 HTTP 产出侧）。
+
+    取法：`EVAL_DB_URL` 优先；否则 compose 栈口径（CI 的 postgres 端口已发布到宿主，
+    评测步骤已 `pip install -r backend/ai-agent-service/requirements.txt` 带上 asyncpg）。
+    本地 `.env` 里的 SQLAlchemy 风格 DSN（`postgresql+asyncpg://`）会被归一 —— 直接从
+    `DATABASE_URL` 抄过来也能用。
+    """
+    dsn = os.environ.get("EVAL_DB_URL", "").strip()
+    if not dsn:
+        pwd = os.environ.get("DEV_DB_PASSWORD") or "dev_password_123"
+        dsn = _EVAL_DB_DSN_DEFAULT % pwd
+    return dsn.replace("postgresql+asyncpg://", "postgresql://") \
+              .replace("postgres+asyncpg://", "postgresql://")
+
+
+async def _reset_aftersales_ticket(ticket_no: str) -> str:
+    """把被点名的工单复位回 seed 初始态；返回人读消息（随结果落盘，归因可见）。
+
+    为什么返回消息而不是静默返回 bool：复位没生效与"能力缺陷"在报告里同形是本仓库
+    反复踩过的归因盲区（#3511）—— 复位失败必须能在 `eval-summary-*.json` 的
+    `pre_clean` 字段里读到**为什么**（DB 不可达 / asyncpg 缺失 / 工单不在）。
+    失败**不中断**评测（环境问题不该伪装成用例失败），但消息里显式写明
+    "重试前置可能与首次不等价"，让结论可判。
+    """
+    try:
+        import asyncpg  # 延迟导入：本模块的**模块级**第三方依赖仍只有 httpx
+    except ImportError as e:
+        return (f"未复位工单 {ticket_no}（asyncpg 不可用: {e}）"
+                f"—— 若本用例首跑改变了该工单状态，重试前置将与首次不等价")
+    try:
+        conn = await asyncpg.connect(_eval_db_dsn(), timeout=8)
+        try:
+            row = await conn.fetchrow(_RESET_AFTERSALES_TICKET_SQL, ticket_no)
+            if row is None:
+                return (f"未复位：库里没有工单 {ticket_no}"
+                        f"（栈缺 seed？见 fixtures/mibao_eval_seed.sql）")
+            # 时间线同样复位（seed 只留建单那条 'created'）：首跑的 status_change 记录
+            # 会让"工单详情历史"与初始态不一致（详情页/历史类断言的可比性）。
+            await conn.execute(
+                "DELETE FROM ticket_timeline WHERE ticket_id = $1 AND action <> 'created'",
+                row["id"])
+        finally:
+            await conn.close()
+    except Exception as e:
+        return (f"未复位工单 {ticket_no}（DB 不可达/失败: {type(e).__name__}: {e}）"
+                f"—— 若本用例首跑改变了该工单状态，重试前置将与首次不等价")
+    return (f"已复位工单 {ticket_no} → pending（清空 closedAt/closeReason/internalNotes）")
+
+
 async def _run_pre_clean(token: str, spec: dict) -> str:
     """评测前数据清理（写类 case 自我污染防线，§14.2/CU-003）。
 
@@ -197,6 +276,10 @@ async def _run_pre_clean(token: str, spec: dict) -> str:
     - customer_tag_remove: 移除「customer_keyword 匹配的第 customer_index 位客户」
       上的 tag_name 标签（case 每次成功 add_tag 即污染生产数据 → 下一跑幂等拒绝，
       在 run_case 前把目标客户标签清干净，保证写流程从干净状态开始）。
+
+    ⚠️ 调用时机（issue #3751）：本函数是**前置**动作，只允许在**一次尝试开始之前**执行；
+    `run_suite` 在首次尝试前与**每次重试前**都会调用它（attempt 边界），但绝不在
+    `run_case`/`db_verify` 之后调用 —— 否则会把该次尝试的真实产物抹掉（红线）。
     """
     _type = spec.get("type", "")
     if _type == "product_remove":
@@ -285,25 +368,19 @@ async def _run_pre_clean(token: str, spec: dict) -> str:
                         f"—— 不计入断言，仅提示 post_session 可能受残留影响")
             return f"已清理长期记忆（agent_type={agent_type}）"
     if _type == "aftersales_ticket_prepare":
-        # 确保有 pending 工单供「关闭工单」case 使用：AS-004 关闭后存量被消耗 →
-        # 无 pending 时用真实订单创建一张退款工单（数据治理：存量资源准备）。
-        async with httpx.AsyncClient() as c:
-            h = _admin_headers(token)
-            r = await c.get(f"{ADMIN_API}/api/admin/after-sales", headers=h,
-                            params={"page": 1, "size": 5}, timeout=15)
-            items = (_safe_json(r, {}) or {}).get("data", {}).get("items", [])
-            pending = [t for t in items if t.get("status") == "pending"]
-            if pending:
-                return f"已有 {len(pending)} 张 pending 工单"
-            r = await c.get(f"{ADMIN_API}/api/admin/orders", headers=h,
-                            params={"page": 1, "size": 1}, timeout=15)
-            orders = (_safe_json(r, {}) or {}).get("data", {}).get("items", [])
-            if not orders:
-                return "无订单可创建测试工单"
-            await c.post(f"{ADMIN_API}/api/admin/after-sales", headers=h,
-                         json={"orderId": orders[0].get("id"), "ticketType": "refund",
-                               "reason": "评测准备工单"}, timeout=15)
-            return "已创建测试工单（供关闭）"
+        # 把**被用例点名的**工单复位回 seed 初始态（issue #3751 前置等价性）。
+        # 旧实现只保证"栈里存在 pending 工单"——`已有 N 张 pending 工单` 就直接 return
+        # （run 34849029334 的 summary 原文即此），于是 AS-004 首跑把
+        # `tkt_eval_as_9001`（AS-20260914-9001）关掉后，**重试**看到的是 closed ⇒
+        # agent 合理地"不再关闭"（末次 trace：「这条工单不用再关了……当前已经是「已关闭」状态」）
+        # ⇒ 重试必红，且两次失败成因不同 → 指纹漂移 → 旧口径误判 unstable 放行。
+        # 复位对象 = 用例点名的那张（默认 seed 工单 AS-20260914-9001；`ticket_no` 可覆盖）。
+        # ⚠️ 旧的"无 pending 就用真实订单建一张退款工单"回落**已移除**：本用例点名的是一张
+        # **特定的**工单（`AS-20260914-9001`），建一张随机工单既满足不了用例输入，也会
+        # 让 db_verify 指向别的对象（#3544/#3568 正是为消除这种不确定性才点名的）。
+        # seed 工单缺失 = 栈的 seed 没装（数据层问题），如实报出来（归因可见），不静默兜底。
+        ticket_no = str(spec.get("ticket_no") or _SEED_AFTERSALES_TICKET_NO)
+        return await _reset_aftersales_ticket(ticket_no)
     if _type != "customer_tag_remove":
         return f"未知 pre_clean 类型: {_type}（跳过）"
     async with httpx.AsyncClient() as c:
@@ -4779,17 +4856,36 @@ async def run_suite(cases, label: str, classify: bool = True, retry_budget: int 
             retries_used += 1
             return True
 
-    async def _run_one_case(i: int, case, pre_clean_msgs=None):
+    async def _run_one_case(i: int, case, pre_clean_msgs=None, attempt_scope=None,
+                            reset_before_retry=None):
         """跑单个用例（会话/重试分类/打印/结果记录）。
 
         前置的 pre_clean 由调度器在**独占窗口**里先跑（见 `_pre_clean_for_case`），
         其消息通过 `pre_clean_msgs` 传入并**随结果落盘**（#3511：让"数据准备生效与否"
         在报告里可见，与能力缺陷可区分）。
+
+        attempt_scope（issue #3751）：一次尝试的**执行窗口**工厂（并发门下 = `gate.reader`）。
+        读位**按尝试各取一次**，不再整条用例持位 —— 这样重试前的复位（`reset_before_retry`）
+        才能在**未持读位**时拿到写位；在持读位时去要写位会死锁（`ConcurrencyGate.writer`
+        等 `readers == 0`）。
+
+        reset_before_retry（issue #3751，本包核心）：**重试前把前置复位到与首次尝试等价**。
+        不传 = 不复位（用例没声明 pre_clean → 不 opt-in）。调用点是**尝试边界**：
+        `run_case` → `_close_and_verify_session`（含 post_session 断言）→ **然后**才复位 →
+        下一次 `run_case`。⚠️ 红线：**绝不在断言/`db_verify` 之后复位本次尝试的产物** ——
+        那会把真失败洗成绿；本包测试锁死「事件序列 = reset→attempt→reset→attempt」
+        （尾部出现 reset 即红）。
+
+        前置没复位成功时（DB 不可达/asyncpg 缺失/工单不在），结果里会带
+        `PRECONDITION_NOT_RESTORED` 标记（随 summary 落盘）：那种情况下第二次尝试与首次
+        前置**不等价**，其红/绿**不可归因于 agent**（见 issue #3751）。
         """
         nonlocal budget_exhausted
         if case.skip_reason:
             return None
         pre_clean_msgs = list(pre_clean_msgs or [])
+        # 前置未复位的标记（初始为空；仅当"该用例声明了 pre_clean 且复位失败"时写入）
+        precondition_note = ""
 
         # 用例起始时间戳（UTC）——用于把 CI 的**路由 dump**（ai-agent 日志，带时间戳）
         # 按用例切开。没有这个锚点，日志里连续的 intent/route 行无法归属到具体用例，
@@ -4817,17 +4913,58 @@ async def run_suite(cases, label: str, classify: bool = True, retry_budget: int 
         # 用例主体**之外**获取 —— 若在持读位时再去要写位会死锁（本轮实测踩到：
         # 并行任务持 reader 又请求 writer → 互等 → 跑挂）。
 
+        async def _attempt(sid: str):
+            """一次尝试（run_case + 会话关闭/后置断言）在**同一个执行窗口**内。
+
+            为什么两者同窗口：`_close_and_verify_session` 跑 post_session 断言（读用户级
+            长期状态）—— 若它与尝试不同窗口，写共享状态的串行用例可在中间插入，
+            断言读到的就不是本次尝试的产物。
+            """
+            async with (attempt_scope() if attempt_scope else _no_concurrency_scope()):
+                _r = await run_case(case, token, sid)
+                # 评测会话清理（协议 §2.2）+ 关闭后置断言（issue #3357）：
+                # 长时记忆候选只在会话关闭时 flush 落库（issue #2815），故 user_memories
+                # 断言只能在 _end_session **之后**执行；跨会话用例取 run_case 回报的最后
+                # 一个会话 id（首个会话已在换会话时关闭）。
+                await _close_and_verify_session(case, token, _r, sid)
+                return _r
+
+        async def _reset_for_retry() -> None:
+            """重试前的**前置复位**（attempt 边界；见 `_run_one_case` docstring 的红线）。
+
+            没声明 `pre_clean` 的用例不 opt-in（`reset_before_retry is None`）—— 全局复位会
+            伤到别的用例依赖的状态（`reset_before_retry` 由调度器按用例声明注入）。
+            """
+            nonlocal precondition_note
+            if reset_before_retry is None:
+                return
+            try:
+                _msgs = await reset_before_retry()
+                # "没复位成功"的判据（单一处）：复位消息里带**显式失败措辞**
+                # —— `_reset_aftersales_ticket` 的失败消息含「未复位」，
+                # `_pre_clean_for_case` 捕获异常时给的含「失败」；成功路径只说「已复位…」。
+                # ⚠️ 新增 pre_clean 类型时：**成功消息不得含「未复位」/「失败」**
+                # （否则会被误判成"前置未复位" → 结论被错误地标为不可归因）。
+                _ok = not any(("未复位" in str(m)) or ("失败" in str(m))
+                              for m in (_msgs or []))
+            except Exception as e:      # 复位失败不中断评测，但必须可见
+                _msgs = [f"⚠️ 重试前置复位异常: {type(e).__name__}: {e}"]
+                _ok = False
+            _msgs = [str(m) for m in (_msgs or [])]
+            pre_clean_msgs.extend(f"重试前置复位: {m}" for m in _msgs)
+            for _m in _msgs:
+                print(f"     🧹 重试前置复位: {_m}")
+            if not _ok:
+                precondition_note = (
+                    "PRECONDITION_NOT_RESTORED: 第二次尝试的前置与首次不等价 "
+                    f"（{' | '.join(_msgs)[:200]}）—— 本次重试结论不可归因于 agent")
+
         try:
-            r = await run_case(case, token, session_id)
+            r = await _attempt(session_id)
             # 真实 LLM 评测 flaky 容错：失败用例自动重试 1 次（新 session 隔离上下文），
             # 并按指纹分类（issue #2890）：噪声放行 + 记台账；复现型/不稳定型显式标注，
             # 禁止 rerun 掩盖确定性回归。
             classification = "pass"
-            # 评测会话清理（协议 §2.2）+ 关闭后置断言（issue #3357）：
-            # 长时记忆候选只在会话关闭时 flush 落库（issue #2815），故 user_memories
-            # 断言只能在 _end_session **之后**执行；跨会话用例取 run_case 回报的最后
-            # 一个会话 id（首个会话已在换会话时关闭）。
-            await _close_and_verify_session(case, token, r, session_id)
             # 预算判定与占用由 _reserve_retry 原子完成（并发下不会突破预算）；
             # 短路求值保证「通过用例」不占用额度。
             if r["score"] < 1.0 and classify and not await _reserve_retry():
@@ -4835,12 +4972,16 @@ async def run_suite(cases, label: str, classify: bool = True, retry_budget: int 
                 classification = "no-retry-budget"
             elif r["score"] < 1.0 and classify:
                 r_prev = r          # 首次尝试（下面会把 r 重绑成重试结果）
+                # ── 前置等价性（issue #3751）：重试前把前置复位到与首次尝试等价 ──
+                # 否则第 2 次尝试的前置 = 第 1 次尝试的产物（AS-004 实证：首跑已
+                # closed + closeReason 残留 ⇒ 重试 agent 合理地"不再关闭" ⇒ 必红，
+                # 且与首跑成因不同 → 指纹漂移 → 旧口径误判 unstable 放行）。
+                # 复位是**前置**动作，只能在这次边界（上一次尝试的断言已全部跑完）发生。
+                await _reset_for_retry()
                 retry_sid = await get_or_create_session(
                     token, prefer_new=True, debug_user=getattr(case, "debug_user", "") or "")
-                r2 = await run_case(case, token, retry_sid)
+                r2 = await _attempt(retry_sid)
                 r2["retried"] = True
-                # 重试同样要关闭 + 跑 post_session：否则重试"通过"是假绿
-                await _close_and_verify_session(case, token, r2, retry_sid)
                 classification = _classify_attempts(r, r2)
                 if classification == "llm-noise":
                     # 首次尝试的失败证据必须留痕（issue #3365）：`r = r2` 之后只打印通过
@@ -4868,12 +5009,13 @@ async def run_suite(cases, label: str, classify: bool = True, retry_budget: int 
                         os.environ.get("GITHUB_SHA", "")[:12]))
             elif r["score"] < 1.0 and await _reserve_retry():
                 # --no-classify 兼容模式：旧的无差别单次重试（同样受重试预算约束）
+                # 前置复位与 classify 路径**同一处语义**（issue #3751）：兼容模式也不能
+                # 拿"首次尝试的产物"当第二次尝试的前置。
+                await _reset_for_retry()
                 retry_sid = await get_or_create_session(
                     token, prefer_new=True, debug_user=getattr(case, "debug_user", "") or "")
-                r2 = await run_case(case, token, retry_sid)
+                r2 = await _attempt(retry_sid)
                 r2["retried"] = True
-                # 与 classify 路径一致：重试会话同样关闭 + 跑 post_session（否则假绿）
-                await _close_and_verify_session(case, token, r2, retry_sid)
                 if r2["score"] >= 1.0 or r2["score"] > r["score"]:
                     # 同 classify 路径：重试救回来的话，首跑证据必须留痕（issue #3367）
                     _ev0 = format_first_attempt_evidence(r)
@@ -4883,6 +5025,11 @@ async def run_suite(cases, label: str, classify: bool = True, retry_budget: int 
             r["classification"] = classification
             # pre_clean 证据（#3511）：数据准备结果随用例落盘，归因时与能力缺陷可区分
             r["pre_clean"] = pre_clean_msgs
+            # 前置未复位的机器可见标记（issue #3751）：重试前置 ≠ 首次前置时，本次重试的
+            # 红/绿**不可归因于 agent**（见 PR body）。随 summary 落盘 → 结论可判。
+            if precondition_note:
+                r["precondition"] = precondition_note
+                print(f"     ⚠️ {precondition_note}")
             # 结果不在此处 append（并发顺序不定）——由调用方按原始用例顺序回填
 
             status = "✅" if r["score"] >= 1.0 else "⚠️" if r["score"] >= 0.5 else "❌"
@@ -4913,6 +5060,8 @@ async def run_suite(cases, label: str, classify: bool = True, retry_budget: int 
                 "failed": [(f"EXCEPTION: {e}", "case crashed")],
                 "last_error": str(e), "final_text": "", "classification": "error",
                 "pre_clean": pre_clean_msgs,
+                # 崩溃前若已判定"前置未复位"，标记照旧落盘（结论不可归因于 agent）
+                "precondition": precondition_note,
             }
             r = exc_record   # 崩溃用例同样交给调用方回填（顺序稳定）
         finally:
@@ -4960,6 +5109,26 @@ async def run_suite(cases, label: str, classify: bool = True, retry_budget: int 
     serial = [(i, c) for i, c in indexed if _needs_serial_lane(c)]
     results_by_idx: dict = {}
 
+    def _reset_for(c, g, in_writer: bool):
+        """该用例**重试前**的复位回调（按用例 opt-in：没声明 `pre_clean` 就返回 None）。
+
+        为什么按用例 opt-in（issue #3751 裁定条件 3）：复位动的是**共享数据**，全局复位会
+        伤到别的用例依赖的状态；只有用例自己声明了 `pre_clean`（= 它要求一份确定的前置）
+        才做。
+        `in_writer=True` 表示该任务**已持写位**（串行道 / 无并发门），此时**不得**再取
+        `g.writer()`（`ConcurrencyGate.writer` 等 `readers == 0` 且不重入 → 死锁）。
+        """
+        if not getattr(c, "pre_clean", None):
+            return None
+
+        async def _again():
+            if in_writer:
+                return await _pre_clean_for_case(c, g)
+            async with g.writer():
+                return await _pre_clean_for_case(c, g)
+
+        return _again
+
     gate = None
     if concurrency > 1 and parallel and serial:
         # 读写门：并行用例持读位、串行用例持写位 —— 串行用例**不必等整批跑完**
@@ -4974,15 +5143,18 @@ async def run_suite(cases, label: str, classify: bool = True, retry_budget: int 
             if getattr(c, "pre_clean", None):
                 async with gate.writer():
                     _pc = await _pre_clean_for_case(c, gate)
-            # ② 主体并行
-            async with gate.reader():
-                results_by_idx[i] = await _run_one_case(i, c, _pc)
+            # ② 主体并行：读位**每次尝试各取一次**（attempt_scope）—— 重试前的复位需要在
+            #    "未持读位"时拿写位（issue #3751；整条用例持读位时取写位会死锁）
+            results_by_idx[i] = await _run_one_case(
+                i, c, _pc, attempt_scope=gate.reader,
+                reset_before_retry=_reset_for(c, gate, in_writer=False))
 
         async def _serial_task(i, c):
             # 独占用例：pre_clean 与主体在**同一个**独占窗口内（不再嵌套获取）
             async with gate.writer():
                 _pc = await _pre_clean_for_case(c, gate)
-                results_by_idx[i] = await _run_one_case(i, c, _pc)
+                results_by_idx[i] = await _run_one_case(
+                    i, c, _pc, reset_before_retry=_reset_for(c, gate, in_writer=True))
 
         await asyncio.gather(*[_parallel_task(i, c) for i, c in parallel],
                              *[_serial_task(i, c) for i, c in serial])
@@ -4990,15 +5162,19 @@ async def run_suite(cases, label: str, classify: bool = True, retry_budget: int 
         sem = asyncio.Semaphore(concurrency)
         print(f"⚡ 并发执行：{len(parallel)} 条并行（并发度 {concurrency}）")
 
-        gate = ConcurrencyGate(concurrency)   # 只用它的独占窗口包 pre_clean
+        gate = ConcurrencyGate(concurrency)   # 独占窗口包 pre_clean（与重试前的复位）
 
         async def _bounded(i, c):
             _pc = []
             if getattr(c, "pre_clean", None):
                 async with gate.writer():          # 清理动作独占（此时本任务未持读位）
                     _pc = await _pre_clean_for_case(c, gate)
+            # 尝试同样走读位（issue #3751）：否则**别的用例**的重试复位（写位）会与本次
+            # 尝试重叠 —— 那正是"复位动共享数据"要避免的窗口。
             async with sem:
-                results_by_idx[i] = await _run_one_case(i, c, _pc)
+                results_by_idx[i] = await _run_one_case(
+                    i, c, _pc, attempt_scope=gate.reader,
+                    reset_before_retry=_reset_for(c, gate, in_writer=False))
 
         await asyncio.gather(*[_bounded(i, c) for i, c in parallel])
     else:
@@ -5007,12 +5183,15 @@ async def run_suite(cases, label: str, classify: bool = True, retry_budget: int 
         # **完全跳过 pre_clean** —— 而 EVAL_CONCURRENCY 未设时默认就是 1（旧 B 端通道
         # agent-eval.yml 正是如此）→ 商品去重/员工恢复/工单准备/客户准备等数据动作
         # 静默不执行，把"数据层失败"伪装成"能力缺陷"（B 端 80 轮里反复出现的形态）。
-        # 串行无需读写门（无并发重叠），故 gate 传 None。
+        # 串行无需读写门（无并发重叠），故 gate 传 None；复位回调按 in_writer=True 直调
+        # （没有并发就没有"复位窗口"需要独占）。
         for i, c in indexed:
             _pc = []
             if getattr(c, "pre_clean", None):
                 _pc = await _pre_clean_for_case(c, None)
-            results_by_idx[i] = await _run_one_case(i, c, _pc)
+            results_by_idx[i] = await _run_one_case(
+                i, c, _pc, reset_before_retry=_reset_for(c, None, in_writer=True))
+
 
     # 按**原始用例顺序**回填（并发不改变报告顺序，便于与历史 run 逐条对比）
     results = [results_by_idx[i] for i in sorted(results_by_idx) if results_by_idx[i] is not None]
@@ -5272,11 +5451,18 @@ def _summary_case(result: dict, failures: list) -> dict:
     `failures` **只在真有失败时带上**：一个 shard 里几十条通过用例各挂一个 `"failures": []`
     就是纯刷屏噪音，而缺省语义与空数组等价（`jq` 侧 `(.failures // [])` 即可）。
     既有字段（`id/score/classification/pre_clean`）一件不少、顺序不变。
+
+    `precondition`（issue #3751）：重试前置**未复位**时的机器可读标记
+    （`PRECONDITION_NOT_RESTORED: …`）—— 缺省不带该键（同 failures 的理由）。
+    该情形下第二次尝试的前置与首次不等价 ⇒ **本次结论不可归因于 agent**，
+    判定/归因脚本据此把该用例排除在"行为回归"之外。
     """
     entry = {"id": result.get("case_id"), "score": result.get("score", 0),
              "classification": result.get("classification", ""),
              # pre_clean 证据（#3511）：机器可读，供归因区分"数据准备没生效"与"能力缺陷"
              "pre_clean": result.get("pre_clean") or []}
+    if result.get("precondition"):
+        entry["precondition"] = result["precondition"]
     if failures:
         entry["failures"] = failures
     return entry
@@ -5300,6 +5486,7 @@ def write_summary_json(path: str, label: str, shard: str, results: list) -> None
       order_write_cases：本片声明 must_succeed: order_create 的用例数（0 → 审计不该告警）
       write_cases_ok：其中通过的条数（通过却没落库 = 真假绿）
       cases：[{id, score, classification, pre_clean}]（+ 失败用例的 `failures`：断言级原因数组）
+              （+ 重试前置未复位时的 `precondition`：#3751）
       completion：completion_verdict 的判定结果 + failure_reasons（ID → 首要原因）
     """
     import json as _json
@@ -5338,6 +5525,17 @@ def write_summary_json(path: str, label: str, shard: str, results: list) -> None
               f"order_write_cases={payload['order_write_cases']}）")
     except Exception as e:
         print(f"⚠️ 汇总写出失败（非致命）: {e}")
+
+
+@asynccontextmanager
+async def _no_concurrency_scope():
+    """一次尝试的**空执行窗口**（串行道 / 无并发门时的默认值）。
+
+    存在意义（issue #3751）：尝试窗口在并发门下是 `ConcurrencyGate.reader`（按尝试各取
+    一次读位），串行道/无门时无需任何占位 —— 用同一个调用形态（`async with scope()`）
+    让 `_run_one_case` 不必分叉，避免"两条路各写一份尝试逻辑"的漂移。
+    """
+    yield
 
 
 class ConcurrencyGate:
