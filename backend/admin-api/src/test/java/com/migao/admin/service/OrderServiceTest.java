@@ -96,6 +96,9 @@ class OrderServiceTest {
         MapperBuilderAssistant assistant = new MapperBuilderAssistant(conf, "");
         TableInfoHelper.initTableInfo(assistant, Order.class);
         TableInfoHelper.initTableInfo(assistant, OrderItem.class);
+        // issue #3621：matchSkuId 组合回退用 LambdaQueryWrapper<ProductSku>，
+        // 断言 wrapper 查询条件（归一化后的枚举）需要 lambda 缓存
+        TableInfoHelper.initTableInfo(assistant, ProductSku.class);
 
         testOrder = Order.builder()
                 .id("order-001")
@@ -1761,5 +1764,216 @@ class OrderServiceTest {
         when(orderMapper.update(any(), any())).thenReturn(0);
         assertThatThrownBy(() -> orderService.revertProducingToConfirmed("order-001", "加工单取消回退"))
                 .isInstanceOf(BusinessException.class);
+    }
+
+    // ================================================================
+    // 门幅 / 售卖方式口径统一 — matchSkuId 回退分支（issue #3621）
+    // ================================================================
+    // 背景：processingInfo 由 agent/前端写入，售卖方式是中文标签（散剪/整卷）、门幅带单位
+    // （2.8米，见 ai-agent order_create schema）；product_skus 落库的是枚举 bulk_cut + 裸数值 2.8。
+    // 旧回退分支字面 eq → 0 行命中 → restoreSkuStock/deductSkuStock 的 `if (skuId != null)`
+    // 静默跳过 → 取消订单不回补库存、销量不记（账实不符，无告警）。现与主线共用一套归一化口径，
+    // 且未命中时留 WARN（不静默）。反向断言：真正不同的门幅/售卖方式仍不得匹配（防归一化过宽）。
+
+    private static final Long COMBO_SKU_ID = 3001L;
+
+    /** agent/前端写入 processingInfo 的真实形态：colorId + 中文售卖方式 + 带单位门幅 */
+    private OrderItem buildItemWithCombination(String sellingMethod, String doorWidth) {
+        Map<String, Object> info = new LinkedHashMap<>();
+        info.put("colorId", 11L);
+        info.put("colorName", "米白");
+        info.put("sellingMethod", sellingMethod);
+        info.put("doorWidth", doorWidth);
+        return OrderItem.builder()
+                .id("item-combo")
+                .tenantId(1L)
+                .orderId("order-001")
+                .productId("prod-001")
+                .productName("蜂巢帘")
+                .quantity(2)
+                .unitPrice(new BigDecimal("299.50"))
+                .subtotal(new BigDecimal("599.00"))
+                .processingInfo(info)
+                .build();
+    }
+
+    /** 库内既有 SKU：枚举 bulk_cut + 门幅写法可指定（种子是 2.8，agent 建品落库的是 2.8米） */
+    private ProductSku storedSku(String sellingMethod, String doorWidth) {
+        return ProductSku.builder()
+                .id(COMBO_SKU_ID)
+                .tenantId(1L)
+                .productId("prod-001")
+                .colorId(11L)
+                .colorName("米白")
+                .sellingMethod(sellingMethod)
+                .doorWidth(doorWidth)
+                .price(new BigDecimal("168.00"))
+                .stock(10)
+                .salesCount(5)
+                .build();
+    }
+
+    private ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> attachOrderLogAppender() {
+        ch.qos.logback.classic.Logger logger =
+                (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(OrderService.class);
+        ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> appender =
+                new ch.qos.logback.core.read.ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        return appender;
+    }
+
+    private void detachOrderLogAppender(
+            ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> appender) {
+        ch.qos.logback.classic.Logger logger =
+                (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(OrderService.class);
+        logger.detachAppender(appender);
+    }
+
+    @Test
+    @DisplayName("#3621 取消订单回补：中文售卖方式「散剪」+ 带单位门幅「2.8米」必须命中库内 bulk_cut/2.8 行")
+    void cancelOrder_restoresStockForChineseMethodAndUnitWidth() {
+        // given: 订单明细是 agent 写入形态（散剪 / 2.8米），库内是 bulk_cut / 2.8
+        testOrder.setStatus("confirmed");
+        OrderItem item = buildItemWithCombination("散剪", "2.8米");
+        when(orderMapper.selectById("order-001")).thenReturn(testOrder);
+        when(orderMapper.update(any(), any())).thenReturn(1);
+        when(orderItemMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(item));
+        when(productSkuMapper.selectList(any(LambdaQueryWrapper.class)))
+                .thenReturn(List.of(storedSku("bulk_cut", "2.8")));
+
+        // when
+        orderService.cancelOrder("order-001", "客户不要了");
+
+        // then: 库存回补 + 销量减记落到既有 SKU 行（不再静默跳过）
+        verify(productSkuMapper).restoreStock(COMBO_SKU_ID, 2);
+        verify(productSkuMapper).decreaseSalesCount(COMBO_SKU_ID, 2);
+    }
+
+    @Test
+    @DisplayName("#3621 取消订单回补：库内带单位写法（2.8米）+ 明细裸数值（2.8）同样必须命中")
+    void cancelOrder_restoresStockWhenStoredWidthHasUnit() {
+        testOrder.setStatus("confirmed");
+        OrderItem item = buildItemWithCombination("散剪", "2.8");
+        when(orderMapper.selectById("order-001")).thenReturn(testOrder);
+        when(orderMapper.update(any(), any())).thenReturn(1);
+        when(orderItemMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(item));
+        when(productSkuMapper.selectList(any(LambdaQueryWrapper.class)))
+                .thenReturn(List.of(storedSku("bulk_cut", "2.8米")));
+
+        orderService.cancelOrder("order-001", "客户不要了");
+
+        verify(productSkuMapper).restoreStock(COMBO_SKU_ID, 2);
+    }
+
+    @Test
+    @DisplayName("#3621 确认支付扣减：中文售卖方式 + 带单位门幅同样必须命中（扣减侧同一口径）")
+    void confirmPayment_deductsStockForChineseMethodAndUnitWidth() {
+        testOrder.setStatus("pending");
+        OrderItem item = buildItemWithCombination("散剪", "2.8米");
+        ProductSku sku = storedSku("bulk_cut", "2.8");
+
+        when(orderMapper.selectById("order-001")).thenReturn(testOrder);
+        when(orderMapper.update(any(), any())).thenReturn(1);
+        when(orderItemMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(item));
+        when(productSkuMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(sku));
+        when(productSkuMapper.selectById(COMBO_SKU_ID)).thenReturn(sku);
+
+        orderService.confirmPayment("order-001");
+
+        verify(productSkuMapper).deductStock(COMBO_SKU_ID, 2);
+        verify(productSkuMapper).increaseSalesCount(COMBO_SKU_ID, 2);
+    }
+
+    @Test
+    @DisplayName("#3621 反向断言：真正不同的门幅（2.8米 vs 库内 3.2）不得匹配，且必须留 WARN（不静默）")
+    void cancelOrder_doesNotRestoreStockWhenDoorWidthDiffers() {
+        testOrder.setStatus("confirmed");
+        OrderItem item = buildItemWithCombination("散剪", "2.8米");
+        when(orderMapper.selectById("order-001")).thenReturn(testOrder);
+        when(orderMapper.update(any(), any())).thenReturn(1);
+        when(orderItemMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(item));
+        when(productSkuMapper.selectList(any(LambdaQueryWrapper.class)))
+                .thenReturn(List.of(storedSku("bulk_cut", "3.2")));
+
+        ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> appender =
+                attachOrderLogAppender();
+        try {
+            orderService.cancelOrder("order-001", "客户不要了");
+
+            // 不同门幅不得被归一化合并
+            verify(productSkuMapper, never()).restoreStock(anyLong(), anyInt());
+            verify(productSkuMapper, never()).decreaseSalesCount(anyLong(), anyInt());
+            // 且不静默：必须留下可观测告警（说明后果）
+            assertThat(appender.list).anyMatch(e ->
+                    e.getLevel() == ch.qos.logback.classic.Level.WARN
+                            && e.getFormattedMessage().contains("未匹配到 SKU")
+                            && e.getFormattedMessage().contains("不回补"));
+        } finally {
+            detachOrderLogAppender(appender);
+        }
+    }
+
+    @Test
+    @DisplayName("#3621 反向断言：不同售卖方式（整卷 vs 库内散剪）即便门幅相同也不得匹配")
+    void cancelOrder_doesNotRestoreStockWhenSellingMethodDiffers() {
+        testOrder.setStatus("confirmed");
+        OrderItem item = buildItemWithCombination("整卷", "2.8米");
+        when(orderMapper.selectById("order-001")).thenReturn(testOrder);
+        when(orderMapper.update(any(), any())).thenReturn(1);
+        when(orderItemMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(item));
+        // 模拟 SQL 按归一化后的枚举过滤：明细是「整卷」→ 查 full_roll，库内只有 bulk_cut 行 → 0 候选
+        when(productSkuMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
+
+        ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> appender =
+                attachOrderLogAppender();
+        try {
+            orderService.cancelOrder("order-001", "客户不要了");
+
+            // 不同售卖方式不得被归一化合并（不得回补到 bulk_cut 行）
+            verify(productSkuMapper, never()).restoreStock(anyLong(), anyInt());
+            // 且查询条件里是归一化后的枚举，不是中文标签（无第二套映射口径）
+            ArgumentCaptor<LambdaQueryWrapper<ProductSku>> wrapperCaptor =
+                    ArgumentCaptor.forClass(LambdaQueryWrapper.class);
+            verify(productSkuMapper).selectList(wrapperCaptor.capture());
+            LambdaQueryWrapper<ProductSku> captured = wrapperCaptor.getValue();
+            captured.getSqlSegment(); // MP 的 formatParam 是惰性 ISqlSegment，须先触发 SQL 段生成
+            assertThat(captured.getParamNameValuePairs().values())
+                    .anyMatch(v -> "full_roll".equals(v))
+                    .noneMatch(v -> "整卷".equals(v));
+            // 未命中不静默
+            assertThat(appender.list).anyMatch(e ->
+                    e.getLevel() == ch.qos.logback.classic.Level.WARN
+                            && e.getFormattedMessage().contains("未匹配到 SKU"));
+        } finally {
+            detachOrderLogAppender(appender);
+        }
+    }
+
+    @Test
+    @DisplayName("#3621 skuId 主键漂移（陈旧 id）→ 不得静默命中 0 行，应回退组合匹配到现有行")
+    void cancelOrder_fallsBackToCombinationWhenSkuIdIsStale() {
+        testOrder.setStatus("confirmed");
+        // 明细里 skuId=999 已被 agent 重建路径「删旧行+插新行」废弃（库内查不到）
+        Map<String, Object> info = new LinkedHashMap<>();
+        info.put("skuId", 999L);
+        info.put("colorId", 11L);
+        info.put("sellingMethod", "散剪");
+        info.put("doorWidth", "2.8米");
+        OrderItem item = buildItemWithCombination("散剪", "2.8米");
+        item.setProcessingInfo(info);
+
+        when(orderMapper.selectById("order-001")).thenReturn(testOrder);
+        when(orderMapper.update(any(), any())).thenReturn(1);
+        when(orderItemMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(item));
+        when(productSkuMapper.selectById(999L)).thenReturn(null);
+        when(productSkuMapper.selectList(any(LambdaQueryWrapper.class)))
+                .thenReturn(List.of(storedSku("bulk_cut", "2.8")));
+
+        orderService.cancelOrder("order-001", "客户不要了");
+
+        // 回退到组合匹配的现有行，而不是拿陈旧 id 去 update（命中 0 行的静默失败）
+        verify(productSkuMapper).restoreStock(COMBO_SKU_ID, 2);
+        verify(productSkuMapper, never()).restoreStock(eq(999L), anyInt());
     }
 }

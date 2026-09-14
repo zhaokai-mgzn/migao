@@ -1401,6 +1401,15 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
     /**
      * 根据 OrderItem 的 processingInfo 匹配对应的 SKU ID
      * processingInfo 格式: { "colorId": N, "sellingMethod": "...", "doorWidth": "...", "skuId": N, ... }
+     *
+     * <p>口径统一（issue #3621）：processingInfo 由 agent / 前端写入，售卖方式是中文标签
+     * （{@code 散剪}）、门幅带单位（{@code 2.8米}），而库内是枚举（{@code bulk_cut}）
+     * 与裸数值（{@code 2.8}）。旧回退分支字面 {@code eq} 必然 0 行命中，而两个调用点都是
+     * {@code if (skuId != null)} —— 静默跳过 → 取消订单不回补库存、销量不记（账实不符）。
+     * 现：① 复用 {@link SkuNotation} 同一套归一化口径（不新增第二套映射）；
+     * ② 陈旧 skuId 先校验存在性，不存在则回退组合匹配（防主键漂移后 update 命中 0 行的静默失败）；
+     * ③ 明细**带 SKU 标识但匹配不到**时不再静默，留 WARN（含后果说明）。
+     * 明细完全不带 SKU 规格信息时保持既有设计（无 SKU 级库存调整），不告警。
      */
     @SuppressWarnings("unchecked")
     private Long matchSkuId(OrderItem item) {
@@ -1410,44 +1419,91 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         if (processingInfo instanceof Map) {
             Map<String, Object> info = (Map<String, Object>) processingInfo;
 
-            // 优先使用 skuId（如果前端传了）
             Object skuIdObj = info.get("skuId");
+            Object colorIdObj = info.get("colorId");
+            Object sellingMethod = info.get("sellingMethod");
+            Object doorWidth = info.get("doorWidth");
+
+            // 明细不带任何 SKU 规格信息 → 无 SKU 级库存调整（与 validateStockSufficientForItems 注释一致）
+            if (skuIdObj == null && colorIdObj == null && sellingMethod == null && doorWidth == null) {
+                return null;
+            }
+
+            // 优先使用 skuId（如果前端传了）；先校验存在性 —— 主键漂移（agent 重建路径可能
+            // 「删旧行 + 插新行」）后拿着陈旧 id 直接返回，会让扣减/回补 update 命中 0 行且完全静默
             if (skuIdObj != null) {
                 try {
-                    return Long.valueOf(skuIdObj.toString());
+                    Long skuId = Long.valueOf(skuIdObj.toString());
+                    if (productSkuMapper.selectById(skuId) != null) {
+                        return skuId;
+                    }
+                    log.warn("matchSkuId: processingInfo.skuId 在库中已不存在（主键漂移），改走组合回退, orderId={}, productId={}, skuId={}",
+                            item.getOrderId(), item.getProductId(), skuId);
                 } catch (NumberFormatException e) {
                     log.warn("matchSkuId: skuId 格式错误, orderId={}, productId={}, skuId={}",
                             item.getOrderId(), item.getProductId(), skuIdObj);
                 }
             }
 
-            // 回退：通过 colorId + sellingMethod + doorWidth 匹配
-            Object colorIdObj = info.get("colorId");
-            Object sellingMethod = info.get("sellingMethod");
-            Object doorWidth = info.get("doorWidth");
-
-            if (colorIdObj != null && sellingMethod != null && doorWidth != null) {
-                try {
-                    Long colorId = Long.valueOf(colorIdObj.toString());
-                    LambdaQueryWrapper<ProductSku> wrapper = new LambdaQueryWrapper<ProductSku>()
-                            .eq(ProductSku::getProductId, item.getProductId())
-                            .eq(ProductSku::getColorId, colorId)
-                            .eq(ProductSku::getSellingMethod, sellingMethod.toString())
-                            .eq(ProductSku::getDoorWidth, doorWidth.toString());
-                    ProductSku sku = productSkuMapper.selectOne(wrapper);
-                    if (sku != null) {
-                        return sku.getId();
-                    }
-                } catch (NumberFormatException e) {
-                    log.warn("matchSkuId: colorId 格式错误, orderId={}, productId={}, colorId={}",
-                            item.getOrderId(), item.getProductId(), colorIdObj);
+            // 回退：通过 colorId + sellingMethod + doorWidth 匹配（与建品/调价同一套归一化口径）
+            if (colorIdObj == null || sellingMethod == null || doorWidth == null) {
+                log.warn("matchSkuId: 明细带 SKU 标识但组合字段不全（需 colorId+sellingMethod+doorWidth），无法定位 SKU → 该明细库存不回补、销量不记, orderId={}, productId={}, colorId={}, sellingMethod={}, doorWidth={}",
+                        item.getOrderId(), item.getProductId(), colorIdObj, sellingMethod, doorWidth);
+                return null;
+            }
+            try {
+                Long colorId = Long.valueOf(colorIdObj.toString());
+                ProductSku sku = findSkuByCombination(item.getProductId(), colorId,
+                        sellingMethod.toString(), doorWidth.toString());
+                if (sku == null) {
+                    log.warn("matchSkuId: 按组合（含门幅/售卖方式归一化）未匹配到 SKU → 该明细库存不回补、销量不记, orderId={}, productId={}, colorId={}, sellingMethod={}, doorWidth={}",
+                            item.getOrderId(), item.getProductId(), colorId, sellingMethod, doorWidth);
+                    return null;
                 }
+                return sku.getId();
+            } catch (NumberFormatException e) {
+                log.warn("matchSkuId: colorId 格式错误, orderId={}, productId={}, colorId={}",
+                        item.getOrderId(), item.getProductId(), colorIdObj);
             }
         }
         return null;
     }
 
     // ======================== Agent BFF 方法 ========================
+
+    /**
+     * 组合回退匹配：商品 + 颜色 + 售卖方式（归一化后）定位候选，门幅在 Java 侧按
+     * {@link SkuNotation#sameDoorWidth} 双侧归一化比较（库内 {@code 2.8} 与明细
+     * {@code 2.8米} / {@code 门幅2.8米} 视为同一物理门幅；{@code 2.8} vs {@code 3.2} 不等）。
+     *
+     * <p>只归一化<b>匹配比较</b>，不回写库内值（与 #3546 调价路径同一处理）。同一组合命中
+     * 多行时取第一条并告警，便于发现历史重复行。
+     *
+     * @return 命中的 SKU；未命中返回 null（调用方负责告警，不再静默跳过）
+     */
+    private ProductSku findSkuByCombination(String productId, Long colorId,
+                                            String sellingMethod, String doorWidth) {
+        List<ProductSku> candidates = productSkuMapper.selectList(
+                new LambdaQueryWrapper<ProductSku>()
+                        .eq(ProductSku::getProductId, productId)
+                        .eq(ProductSku::getColorId, colorId)
+                        .eq(ProductSku::getSellingMethod, SkuNotation.normalizeSellingMethod(sellingMethod)));
+        ProductSku found = null;
+        int hits = 0;
+        for (ProductSku candidate : candidates) {
+            if (SkuNotation.sameDoorWidth(candidate.getDoorWidth(), doorWidth)) {
+                if (found == null) {
+                    found = candidate;
+                }
+                hits++;
+            }
+        }
+        if (hits > 1) {
+            log.warn("matchSkuId: 归一化后同一组合命中多行 SKU（库内可能存在同门幅重复行），取第一条: productId={}, colorId={}, sellingMethod={}, doorWidth={}, hits={}",
+                    productId, colorId, sellingMethod, doorWidth, hits);
+        }
+        return found;
+    }
 
     /**
      * Agent 专用创建订单。
