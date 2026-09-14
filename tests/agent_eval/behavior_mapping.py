@@ -134,6 +134,15 @@ MAPPING_RULES = [
     # `processing_order_query` / `processing_order_update` **刻意不锚**：零可跑用例，
     # 锚了就是「挂不相关用例」= 假阻塞（不变量测试锁住了这条边界）。
     (r"app/tools/processing_order_generate\.py", ["PG-013"]),
+    # 守卫代码的共享载体 `base_skill.py` → 转人工族 CH-013/CH-014/CH-015 —— #3624 追加。
+    # 为什么：base_skill 的守卫判据（不满情绪→建议 interact 卡→用户确认后转人工；
+    # 用户拒绝后本会话不再自动建议；显式「转人工」不经建议卡直接转）正是这三条用例的
+    # 行为面，而此前改它只命中防御规则 DF-011/DF-012（幂等重试 #3564 收口实测）。
+    # 与防御规则是**并集**（同一个文件两类守卫），不是替代。
+    # ⚠️ 明确**不含** OR-016：该用例当前自相矛盾（`user_inputs[1]` 裸文本 vs `order_before`
+    # 时序断言，另一包校准中），挂上去会让每个改 base_skill.py 的 PR 吃到规则命中红
+    # （仓库级红，与 #3551 的 DF-011 假阻塞同型）—— 待校准合入后再补。
+    (r"app/graph/skills/base_skill\.py", ["CH-013", "CH-014", "CH-015"]),
 ]
 
 # 无规则命中时的默认集（§13.2 的四个核心域各取一条）。

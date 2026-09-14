@@ -1,4 +1,4 @@
-# case_ids: OR-016, AS-007, PR-019, PR-020, CH-010, CU-003, CU-004, HR-001, HR-005, ST-003, ST-005, DA-004, FN-001, PP-002, PP-006, PG-013
+# case_ids: OR-016, AS-007, PR-019, PR-020, CH-010, CU-003, CU-004, HR-001, HR-005, ST-003, ST-005, DA-004, FN-001, PP-002, PP-006, PG-013, CH-013, CH-014, CH-015
 """行为改动 diff → 用例映射单测（tests/agent_eval/behavior_mapping.py，issue #3502）。
 
 被测契约（详见模块 docstring）：
@@ -54,13 +54,16 @@ PROCESSING_ITEM_QUERY_PATH = "backend/ai-agent-service/app/tools/processing_item
 PRODUCT_PROCESSING_ITEM_PATH = "backend/ai-agent-service/app/tools/product_processing_item_manage.py"
 # 加工单生成（PG-* 域）：该域唯一可跑的 LLM 用例是 PG-013
 PROCESSING_ORDER_GENERATE_PATH = "backend/ai-agent-service/app/tools/processing_order_generate.py"
+# 守卫代码的共享载体（防御/熔断 + 写操作守卫 + 转人工建议卡守卫），见 TestBaseSkillRules
+BASE_SKILL_PATH = "backend/ai-agent-service/app/graph/skills/base_skill.py"
 
 # 真实承载防御/熔断逻辑的源码（#3551 全表复核时实测：只有这些是仓内真实存在的载体）
+# 注：`base_skill.py` 也是防御载体之一，但它同时承载写操作/转人工守卫（#3624 追加规则），
+# 期望集不再是纯 DF-*，故单列到 TestBaseSkillRules 里断言全集。
 REAL_DEFENSE_PATHS = [
     "backend/ai-agent-service/app/graph/clarify_guard.py",
     "backend/ai-agent-service/app/core/circuit_breaker.py",
     "backend/ai-agent-service/app/core/fallback.py",
-    "backend/ai-agent-service/app/graph/skills/base_skill.py",
 ]
 
 
@@ -253,6 +256,52 @@ class TestProcessingDomainRules:
         """用例库路径只能在行为域内走兜底网，绝不进规则桶。"""
         assert bm.map_changed_files_with_source([path]) == (
             bm.DEFAULT_BEHAVIOR_CASES, "default_net")
+
+
+class TestBaseSkillRules:
+    """#3624 追加：`base_skill.py` 是守卫代码的**共享载体**，必须映射到它守护的行为面。
+
+    证据（幂等重试 #3564 收口实测）：改 `base_skill.py` 此前只映射 `DF-011`/`DF-012`
+    （防御规则），§13.2 的转人工族 `CH-013`/`CH-014`/`CH-015` **不在集合内** —— 而
+    base_skill 的守卫判据（不满情绪→建议卡→用户确认转人工；用户拒绝后本会话不再自动建议；
+    显式「转人工」不经建议卡直接转）正是这三条用例要覆盖的行为面。
+
+    **明确排除 OR-016**：它当前是已知的用例自相矛盾（`user_inputs[1]` 为裸文本，与
+    `order_before` 时序断言冲突，由另一包校准中）。挂上去会让**每个改 `base_skill.py` 的 PR**
+    吃到规则命中红（仓库级红，与 #3551 的 DF-011 假阻塞同型）。**待 OR-016 校准合入后再补映射。**
+    """
+
+    def test_base_skill_maps_to_handoff_cases(self):
+        """改守卫载体 → 转人工族用例必须进强信号集（修复前只有 DF-*）。"""
+        cases, source = bm.map_changed_files_with_source([BASE_SKILL_PATH])
+        assert source == "rules"
+        assert {"CH-013", "CH-014", "CH-015"} <= set(cases)
+
+    def test_base_skill_keeps_defense_mapping(self):
+        """共享载体：防御规则对 base_skill 的锚定不得因新规则丢失（并集语义）。"""
+        cases, _ = bm.map_changed_files_with_source([BASE_SKILL_PATH])
+        assert [c for c in cases if c.startswith("DF-")] == ["DF-011", "DF-012"]
+
+    def test_base_skill_does_not_map_to_order_case(self):
+        """刻意排除 OR-016（用例自相矛盾、校准中）——防"每个改 base_skill 的 PR"恒红。"""
+        cases, _ = bm.map_changed_files_with_source([BASE_SKILL_PATH])
+        assert "OR-016" not in cases
+
+    def test_base_skill_expected_full_set(self):
+        """锁定全集（并集 + 字典序）：新规则只能通过改这条断言进入。"""
+        assert bm.map_changed_files_with_source([BASE_SKILL_PATH]) == (
+            ["CH-013", "CH-014", "CH-015", "DF-011", "DF-012"], "rules")
+
+    @pytest.mark.parametrize("path, expected_source", [
+        ("backend/ai-agent-service/tests/test_base_skill.py", "none"),
+        ("backend/ai-agent-service/tests/test_base_skill_guard.py", "none"),
+        (".github/cases/chat.yml", "default_net"),
+    ])
+    def test_base_skill_test_and_case_paths_never_enter_rules_bucket(self, path, expected_source):
+        """反向断言（#3551 假阻塞防线）：测试/用例路径绝不允许因新规则进规则桶。"""
+        cases, source = bm.map_changed_files_with_source([path])
+        assert source == expected_source
+        assert cases == ([] if expected_source == "none" else bm.DEFAULT_BEHAVIOR_CASES)
 
 
 class TestUnionAndDedupe:
