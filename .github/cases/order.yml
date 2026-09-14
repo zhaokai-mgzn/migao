@@ -630,8 +630,23 @@ cases:
     user_inputs:
       - "创建订单，张三 13800138000 遮光窗帘 3 米"
       - "散剪，2.8米门幅"
-      - "不添加加工项，确认下单"
-      - "确认下单"
+      # 颜色应答轮（#3544 / REPORT §2.1）：原 4 轮台词从未回答 agent 反复追问的「颜色」
+      # → 轮次用尽停在待确认态（断言本身合理）。agent 取颜色走的是 interact(choice) 卡
+      # （run 34807151893 R2 原文：「『遮光窗帘』散剪（2.8 米门幅）有**两个颜色**可选，
+      # 请点击选择颜色」`cards=choice`），且「颜色」是商品真实存在的必填 SKU 维度
+      # （种子 product_colors：米白 sort_order=1 / 浅灰=2，xiaobu_eval_seed.sql:70-71）
+      # —— 不是 agent 编造的字段，也不是断言过严。
+      # 有卡答卡（choice→首项=米白，= 前端点击协议；form→按声明值回填），无卡才发含颜色的
+      # 原文（§13.5 陷阱：静态文本答不了卡；同 OR-014 的协作轮形态）。
+      - auto_respond:
+          fallback: "米白，不添加加工项，确认下单"
+      # 收尾答卡轮（§13.5：写操作收尾发裸文本「确认下单」= 文字 ≠ 点卡）：R2 实测 R4 收到
+      # 「确认下单」后 agent 只发了 interact(confirm) 卡（validate_input 已真执行），
+      # 没有第 5 轮去点它 → order_create 永不发生。留 2 轮余量（有卡答卡 / 无卡发原文）。
+      - auto_respond:
+          fallback: "确认下单"
+      - auto_respond:
+          fallback: "确认"
     expectations:
       - tool: validate_input
       - tool: order_create
@@ -655,7 +670,7 @@ cases:
       - type: product_dedupe
         product_keyword: "遮光窗帘"
     skip_reason: ""
-    merge_log: "2026-09-08 新增（issue #3029 复盘）：_VALIDATION_RULES[order_create] 平铺结构而 execute 按 tool_rules.get(target_action) 分层读取 → 校验永远空转，手机号/必填空转；修复为 {create: {...}} 分层并对齐 product_manage，补 L2 单测；2026-09-09 校准：补「散剪规格→跳过加工项→确认」三轮（遮光窗帘有散剪/整卷需澄清售卖方式，单轮到不了 validate_input；probe 实证 4 轮走通）；2026-09-14 校准（#3538）：pre_clean 去 price 过滤（关键词去重，原 price 过滤限 100 元、在种子遮光窗帘 ¥168 的独立栈上恒不匹配 = 没去重）"
+    merge_log: "2026-09-08 新增（issue #3029 复盘）：_VALIDATION_RULES[order_create] 平铺结构而 execute 按 tool_rules.get(target_action) 分层读取 → 校验永远空转，手机号/必填空转；修复为 {create: {...}} 分层并对齐 product_manage，补 L2 单测；2026-09-09 校准：补「散剪规格→跳过加工项→确认」三轮（遮光窗帘有散剪/整卷需澄清售卖方式，单轮到不了 validate_input；probe 实证 4 轮走通）；2026-09-14 校准（#3538）：pre_clean 去 price 过滤（关键词去重，原 price 过滤限 100 元、在种子遮光窗帘 ¥168 的独立栈上恒不匹配 = 没去重）。2026-09-14 校准（#3544，REPORT §2.1）：补颜色应答轮——原 4 轮台词从未回答 agent 追问的「颜色」（三个 run 行为签名同构：R-verify/R1 四轮全卡颜色、R2 的 R3/R4 卡颜色），轮次用尽即停在待确认态；R3 改协作答卡轮（choice→首项=米白，无卡发含颜色原文），并补 2 轮收尾答卡余量（R2 实测 R4 只发 confirm 卡、无轮去点 → order_create 永不发生）。expectations / order_before / required_args 保持不动（REPORT §2.1 明确「保持不动」，未放宽）"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_validate_input.py"

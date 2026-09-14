@@ -9,8 +9,14 @@ from app.graph.skills.base_skill import execute_skill
 from app.graph.skills.skill_config import SkillConfig
 
 # 人事 Skill 可用的 Tool 列表
+# interact（#3577，2026-09-14 产品裁定「交互形态统一」）：门禁 `_requires_confirmation`
+# 拦截未确认写操作时的补救话术是「请调用 interact(component=confirm) 发确认卡」，而
+# references/prompts/staff.md 同样承诺「立即调 interact(component=confirm) 发确认卡片」——
+# 不绑则该承诺不可执行（#3317 的 6 处之一）。写操作安全由 admin-api 层承担，
+# agent 侧确认卡是交互一致性，不替代 admin-api 校验（不收紧、不移除写工具的门禁标记）。
 STAFF_TOOLS = ["employee_manage", "role_manage",
     "validate_input",  # 写操作前置校验
+    "interact",         # 交互卡片：写操作 confirm
 ]
 
 # 人事 Skill 专用 System Prompt

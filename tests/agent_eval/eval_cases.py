@@ -116,15 +116,16 @@ _CASE_AS_004 = EvalCase(
     title='更新工单状态 - 关闭',
     skill=Skill.AFTERSALES,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['查看最近的售后工单', '把第一张未处理的工单关闭', '确认'],
+    user_inputs=['查看最近的售后工单', '把第一张未处理的工单关闭，关闭原因写「客户已协商一致」', '确认'],
     expectations=['after_sales_manage(action=update_status, status=closed)'],
-    data_checks=['success=true', 'closedAt/closeReason 写入'],
+    data_checks=['success=true', 'closedAt/closeReason 写入 —— 机器断言见 db_verify[after_sales_ticket]（落库 status=closed + closedAt/closeReason 非空 + closeReason 与用户点名原因一致）'],
     skip_reason='',
     tags=['update', 'status'],
     persona='',
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+    db_verify=[{'fetch': 'after_sales_ticket', 'expect_status': 'closed', 'expect_fields_nonempty': ['closedAt', 'closeReason'], 'expect_close_reason_contains': '协商一致'}],
     pre_clean=[{'type': 'aftersales_ticket_prepare'}],
 )
 
@@ -987,7 +988,7 @@ _CASE_CH_010 = EvalCase(
     title='选购下单表单化交互（choice 选品→form 收参→confirm 确认→下单）',
     skill=Skill.MULTI_TURN,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['推荐几款热销窗帘', '买北欧风窗帘那款，白色，2.8 米门幅，按米卖', {'auto_respond': {'fallback': '数量 3 米'}}, {'auto_respond': {'fallback': '确认下单', 'form_values': {'customer_name': '张三', 'customer_phone': '13800138000', 'customer_address': '浙江省杭州市西湖区文三路1号1幢101室', 'color': '白色', 'colorName': '白色'}}}, {'auto_respond': {'fallback': '确认', 'form_values': {'customer_name': '张三', 'customer_phone': '13800138000', 'customer_address': '浙江省杭州市西湖区文三路1号1幢101室', 'color': '白色', 'colorName': '白色'}}}, {'auto_respond': {'fallback': '123456', 'prefer_text': True}}, {'auto_respond': {'fallback': '123456', 'prefer_text': True}}, {'auto_respond': {'fallback': '确认'}}, {'auto_respond': {'fallback': '确认'}}],
+    user_inputs=['推荐几款热销窗帘', '买北欧风窗帘那款，白色，2.8 米门幅，按米卖，要 3 米', {'repeat_until': {'tool_called': 'order_create', 'max': 7}, 'code': '123456', 'fallback': '确认下单', 'form_values': {'customer_name': '张三', 'customer_phone': '13800138000', 'customer_address': '浙江省杭州市西湖区文三路1号1幢101室', 'color': '白色', 'colorName': '白色'}}],
     expectations=['product_search', 'product_detail', 'interact', 'order_create'],
     data_checks=['规格选择/收货信息通过 interact(choice/form) 组件收集（非纯文本追问）', 'order_create 前必有 interact(confirm) 确认（写操作守卫）', 'order_create items 含所选 SKU（颜色/门幅/售卖方式）与数量', '会话记忆保原文：手机号不得在图谱层被脱敏后落库（否则模型下一轮把 `****` 填 0 建单 —— issue #3386）', 'C 端下单是**两步**：确认订单信息后还需手机验证码（order_create 的 sms_code，customer 角色必填）。用例必须提供验证码这一轮，否则 AI 停在第 5 步「请提供验证码」，order_create 永不发生（run 34622425044 实证：R7 顾客回「确认」后无任何工具调用）。dev/CI 栈已设 SMS_BYPASS_CODE=123456，此处用该码走真实校验分支。'],
     skip_reason='',
@@ -2231,13 +2232,14 @@ _CASE_FN_001 = EvalCase(
     difficulty=Difficulty.NORMAL,
     user_inputs=['登记一笔线下收款，金额 88 元，微信支付', '确认'],
     expectations=['finance_api(action=create_transaction, type=income)'],
-    data_checks=['流水号 FIN- 前缀由服务端生成、type=income、amount=88、status=success —— 成功返回体由 output_verify 机器核对（「被调用」不等于「登记成功」）', '登记失败时不得声称成功：无成功调用时 output_verify 直接判红（失败关闭，不静默跳过）'],
+    data_checks=['流水号 FIN- 前缀由服务端生成、type=income、amount=88、status=success —— 成功返回体由 output_verify 机器核对（「被调用」不等于「登记成功」）', '登记失败时不得声称成功：must_succeed 读 tool_result.success 判红，output_verify 无成功调用即判红'],
     skip_reason='',
     tags=['finance', 'query'],
     persona='',
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+    must_succeed=[{'tool': 'finance_api'}],
     output_verify=[{'tool': 'finance_api', 'expect': {'transactionNo': '__nonempty__', 'type': 'income', 'amount': 88, 'status': 'success'}}],
 )
 
@@ -2420,6 +2422,26 @@ _CASE_HR_007 = EvalCase(
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+)
+
+# ── HR-008 [NORMAL] 更新员工手机号 - 写入真的落库（update 写路径首次覆盖，issue #3593）（源: cases/hr.yml）──
+_CASE_HR_008 = EvalCase(
+    id='HR-008',
+    legacy_id='',
+    title='更新员工手机号 - 写入真的落库（update 写路径首次覆盖，issue #3593）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['手机号 13700137000 的这位员工（王五）换号了，帮我把他的手机号改成 13900139111', {'auto_respond': {'fallback': '确认'}}, {'auto_respond': {'fallback': '确认'}}],
+    expectations=['employee_manage(action=update, user_id=debug_employee_wangwu, phone=13900139111)'],
+    data_checks=['PUT /api/admin/users/debug_employee_wangwu 落库后 users.phone = 13900139111，而不是 200 假成功（库里仍是 13700137000）', '同租户内手机号唯一：13900139111 不与既有用户（13700137000 / 13800138000 / 13900139000）冲突，写入不被唯一校验拒绝'],
+    skip_reason='',
+    tags=['update', 'write', 'confirm'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    required_args=[{'tool': 'employee_manage', 'action': 'update', 'fields': ['user_id', 'phone']}],
+    must_succeed=[{'tool': 'employee_manage', 'action': 'update'}],
 )
 
 # ── KN-001 [SMOKE] 小布知识问答 - 面料问题先检索本店知识卡片（query 必填）（源: cases/knowledge.yml）──
@@ -3248,7 +3270,7 @@ _CASE_OR_015 = EvalCase(
     title='order_create 写操作前置校验必须真正执行（validate_input 规则分层修复，issue #3029 复盘）',
     skill=Skill.ORDER,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['创建订单，张三 13800138000 遮光窗帘 3 米', '散剪，2.8米门幅', '不添加加工项，确认下单', '确认下单'],
+    user_inputs=['创建订单，张三 13800138000 遮光窗帘 3 米', '散剪，2.8米门幅', {'auto_respond': {'fallback': '米白，不添加加工项，确认下单'}}, {'auto_respond': {'fallback': '确认下单'}}, {'auto_respond': {'fallback': '确认'}}],
     expectations=['validate_input', 'order_create'],
     data_checks=['validate_input(target_tool=order_create, target_action=create) 必须真正执行必填与类型校验：缺少 customer_name/customer_phone/items 任一 → 校验失败并给出缺失字段列表', 'customer_phone 非 11 位手机号（或不以 1 开头）→ 校验失败提示「请输入 11 位中国大陆手机号」', '合法参数（customer_name + 11 位 phone + items 非空列表）→ 校验通过 validated=true', '禁止返回「无需校验（该操作无预定义规则）」跳过（平铺结构 vs 分层读取不匹配的回归防线，sess_7f27137647e14b1e A5 轮实证）'],
     skip_reason='',
@@ -3855,7 +3877,7 @@ _CASE_PP_006 = EvalCase(
     title='加工项计价方式 - 按米/按套/一口价/按面积，无 per_piece 与每米数量',
     skill=Skill.PRODUCT,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['查询打孔加工的计价方式', '新增加工项，计价方式选按个', '名称叫测试加工，分类选打孔加工', '计价方式按米，单价 8 元', '确认'],
+    user_inputs=['查询打孔加工的计价方式', '新增加工项，计价方式选按个', '名称叫测试加工，分类选窗帘加工', '计价方式按米，单价 8 元', '确认'],
     expectations=['processing_item_query(keyword=打孔)', 'processing_item_manage(action=create_processing_item)'],
     data_checks=['processing_item_query 响应条目无 per_meter_quantity（每米数量已回滚移除，issue #3005）', '加工项计价方式仅 per_meter / per_set / fixed / per_area——per_piece 创建被拒绝（行业加工费按米计价、辅料含在加工费中）', '商品详情 processingItems 无 custom_per_meter_quantity / perMeterQuantity（商品级密度覆盖已回滚）'],
     skip_reason='',
@@ -3864,6 +3886,8 @@ _CASE_PP_006 = EvalCase(
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+    must_succeed=[{'tool': 'processing_item_manage', 'action': 'create_processing_item'}],
+    output_verify=[{'tool': 'processing_item_manage', 'expect': {'name': '测试加工', 'pricingMethod': 'per_meter'}}],
 )
 
 # ── PR-001 [SMOKE] 商品搜索 - 关键词模糊匹配（源: cases/product.yml）──
@@ -4245,13 +4269,15 @@ _CASE_PR_021 = EvalCase(
     difficulty=Difficulty.NORMAL,
     user_inputs=['把遮光窗帘的米白色散剪规格改成 150 元', {'auto_select': True}, '确认'],
     expectations=['sku_update'],
-    data_checks=['sku_update 成功（价格落库）'],
+    data_checks=['sku_update 真成功且价格为 150 元（= 用户确认价）：机器断言见 must_succeed（写成功）+ output_verify（new_price==150）；裸断言「调用过」不算覆盖（#3544 假绿升级）'],
     skip_reason='',
     tags=['sku', 'write', 'pricing'],
     persona='',
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+    must_succeed=[{'tool': 'sku_update'}],
+    output_verify=[{'tool': 'sku_update', 'expect': {'new_price': 150}}],
 )
 
 # ── PR-024 [NORMAL] 小布算料上限 - 定宽布买高 + 对花损耗（窗高超定高上限，必须走定宽分支并告警）（源: cases/product.yml）──
@@ -5358,6 +5384,7 @@ ALL_CASES = (
     _CASE_HR_005,
     _CASE_HR_006,
     _CASE_HR_007,
+    _CASE_HR_008,
     _CASE_KN_001,
     _CASE_KN_002,
     _CASE_KN_003,

@@ -27,11 +27,23 @@
 ```python
 name = "processing_item_query"
 description = (
-    "查询店铺加工项目录。用于创建流程阶段2（用户已确认名称/价格等基本信息后）。"
-    "支持按 keyword/category_id/status 筛选。"
-    "创建/修改/删除加工项用 processing_item_manage。READONLY"
+    "查询店铺加工项目录（店铺维度，与具体商品无关）。"
+    "【触发】用户问'有哪些加工项''加工项列表/分类/单价/计价方式'时；"
+    "或建品流程阶段2（用户已确认名称/价格等基本信息后）。"
+    "【参数】keyword/category_id/status/applicable_category_id 均可选。"
+    "【反例】查某个商品的详情及其关联加工项用 product_detail，不要用本工具；"
+    "创建/修改/删除加工项用 processing_item_manage。"
+    "【标注】READONLY"
 )
 ```
+
+> 第 3 条「与相似 tool 的区别」必须写进**类属性 `description`** 并点名（上面点了
+> `product_detail` / `processing_item_manage`）：写在模块/类 docstring 里没用——
+> `base.get_schema()` 只把 `description` 拼进 schema，docstring LLM 看不见。
+> issue #3574 实证：`processing_item_query` 与 `query_processing_items` 曾是一对仅词序
+> 差异的双胞胎，消歧说明却写在 docstring；且后者**从未注册进 registry**（LLM 根本看不到）
+> ——死工具已删除，并新增 L0 不变式（`tests/test_tool_schema_contract_invariants.py`）
+> 锁「工具类必须注册或显式标 `deprecated = True`」「描述点名的工具必须真实注册」。
 
 ```python
 name = "order_create"
