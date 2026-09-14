@@ -56,7 +56,11 @@ public class DailyBriefingService {
     /** 数字对账容差：metrics value 与快照值之差绝对值 ≤ 容差即视为一致（浮点/舍入） */
     private static final double METRIC_TOLERANCE = 0.001;
 
-    private static final ZoneId CST = ZoneId.of("Asia/Shanghai");
+    /**
+     * 业务时区（简报"今日"口径）：包级可见，供同包测试断言复用同一常量，
+     * 避免测试另写一份 "Asia/Shanghai" 造成两处漂移（issue #3796）。
+     */
+    static final ZoneId CST = ZoneId.of("Asia/Shanghai");
     private static final ZoneOffset CST_OFFSET = ZoneOffset.ofHours(8);
 
     // ==================== 企业开关（红线 3）====================
