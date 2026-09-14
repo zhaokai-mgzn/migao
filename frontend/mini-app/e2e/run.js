@@ -4,12 +4,14 @@
  *   1. 微信开发者工具已安装并打开（登录账号）
  *   2. 设置 → 安全设置 → 服务端口 已开启（自动化连接必需）
  *   3. 已执行 npm run build:weapp（产物在 dist/）
+ *      —— dist/app.js 比 src/ 或 config/ 旧时本入口**直接报错退出**（陈旧构建护栏，失败关闭）
  * 运行：npm run test:e2e
  * 产物：e2e/screenshots/<scenario>/*.png + e2e/report.md（均被 gitignore，不入库）
+ *      留档请 copy 关键项到 acceptance/<日期>/mini-app-e2e/（issue #3696）
  */
 const fs = require('fs')
 const path = require('path')
-const { launch, waitForPageReady, SCREENSHOT_DIR } = require('./lib/harness')
+const { launch, waitForPageReady, checkLoginPreflight, assertDistFresh, SCREENSHOT_DIR } = require('./lib/harness')
 
 const SCENARIOS = [
   require('./scenarios/chat-scenario'),
@@ -22,8 +24,36 @@ const SCENARIOS = [
 
 async function main() {
   console.log('🚀 启动小布小程序 E2E 验收（微信开发者工具模拟器）...')
+
+  // ── 陈旧构建护栏（失败关闭）：dist 与 src/config 不一致时直接退出，不进模拟器 ──
+  let freshnessLine = ''
+  let freshMode = ''
+  let loginLine = ''
+  try {
+    const fresh = assertDistFresh()
+    freshnessLine =
+      fresh.mode === 'content-hash'
+        ? `内容指纹 ${String(fresh.hash).slice(0, 12)}…（dist/.build-stamp.json 构建于 ${fresh.stamp.builtAt}）`
+        : `mtime 判据（无构建指纹）：dist/app.js ${new Date(fresh.distMtimeMs).toLocaleString('zh-CN')}`
+    freshMode = fresh.mode
+    console.log(`✅ 构建新鲜度检查通过[${fresh.mode}]：${freshnessLine}`)
+  } catch (e) {
+    console.error('\n⛔ 陈旧构建护栏拦截（e2e 已中止，未连接模拟器）：\n')
+    console.error(`   ${e.message}\n`)
+    process.exit(1)
+  }
+
   const mp = await launch(process.env.E2E_PORT ? Number(process.env.E2E_PORT) : 0)
   console.log('✅ 已连接模拟器')
+  // 登录态前置检查（可复现性声明）：harness 不注入登录态，依赖模拟器 storage 里的 auth_token
+  const login = await checkLoginPreflight(mp)
+  loginLine =
+    login.loggedIn === true
+      ? `模拟器 storage 已登录（auth_token …${login.tokenTail}，来自环境残留/外部写入，非本 harness 注入）`
+      : login.loggedIn === false
+        ? '⚠️ 未登录（storage 无 auth_token）—— 结果不可作为验收证据'
+        : '未知（前置检查不可用）'
+  console.log(`[harness] 登录态：${loginLine}`)
   const readyPage = await waitForPageReady(mp)
   console.log(readyPage ? `✅ 页面就绪: ${readyPage.path}` : '⚠️ 30s 内页面未就绪（继续尝试，步骤级会重试）')
   console.log('')
@@ -49,6 +79,8 @@ async function main() {
   lines.push('')
   lines.push(`- 时间: ${new Date().toLocaleString('zh-CN')}`)
   lines.push('- 环境: 微信开发者工具模拟器 + app.migaozn.com 测试环境')
+  lines.push(`- 被测构建（新鲜度护栏）: [${freshMode}] ${freshnessLine}`)
+  lines.push(`- 登录态: ${loginLine}`)
   lines.push('')
   for (const r of reports) {
     const pass = r.steps.filter((s) => s.pass).length
