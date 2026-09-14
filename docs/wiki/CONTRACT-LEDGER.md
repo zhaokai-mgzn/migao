@@ -27,6 +27,7 @@
 | 下单用户ID | `userId`（Order/OrderCreateRequest/AgentOrderCreateRequest，来自 X-User-Id 透传） | — | `context.user_id`（customer_order_query 强制注入） | **C 端数据隔离字段**（V20260901）；B 端查询用 B 端 order_query，C 端用小布专用 customer_order_query |
 | 加工单号 | `processingOrderNo` | `processingOrderNo` | `processingOrderNo`（读响应） | 生成格式 `JG-YYYYMMDD-XXXX`，DB 唯一（issue #3340） |
 | 加工单状态 | `status`（generated/issued/in_processing/completed/cancelled） | `status`（同枚举） | `status`（同枚举） | 中文映射 `PO_STATUS_TEXT`（processing_order_query.py） |
+| **订单明细数量** | `quantity` **`BigDecimal`**（OrderCreateRequest.OrderItemRequest / AgentOrderCreateRequest.AgentOrderItem / OrderItem / OrderDetailResponse / OrderListResponse）——DB `order_items.quantity DECIMAL(10,2)`（V45） | `quantity: number`（decimal 安全） | `items[].quantity` JSON Schema `"type": "number"`（可为小数） | **口径按计价方式**：per_meter=米数 / per_set=1 / per_area=宽×高（㎡）；**可为小数**（如 2.8×3=8.4 ㎡），三端一律**不得取整/截断**（issue #3666，原 Integer/INTEGER 会少收钱）。JSON 传整数 3 仍反序列化为 BigDecimal("3") |
 
 ## 三、端点签名（勿自造）
 
@@ -81,6 +82,7 @@ grep -rn "字段名" backend/admin-api/src frontend/admin-web/src backend/ai-age
 | 计价方式 | `pricingMethod`（ProcessingItem/Response/Create/Update，枚举 per_meter/per_set/fixed/per_area） | `PricingMethod` 同枚举 | `pricing_method`（tool 透传） | per_piece 创建/更新被 validatePricingMethod 拒绝 |
 | 数量规则 | per_meter → 数量=面料米数；per_set/fixed → 1；per_area → 面积 | 同（deriveProcessingQty） | 同（order prompt） | B 端下单展示「名称+数量+金额」供对账，无数量输入框 |
 | 价格计算入参 | `quantity`（PriceCalculateRequest，per_meter 传面料米数） | — | `quantity` | fabricMeters 字段已删除，无密度推导 |
+| 数量类型（issue #3666） | `BigDecimal`（ProcessingItem/订单明细/订单列表/详情 DTO） | `number` | `number` | 全部为十进制、**禁止取整**；服务端 `OrderService.extractProcessingItems()` 走 `toBigDecimal()`（旧 `toInteger()` 把 per_area 8.4 截断成 8 → 列表/详情加工费与外层落库金额自相矛盾） |
 
 ## 七、LLM WIKI 知识板块契约（issue #3051，2026-09-08 起）
 

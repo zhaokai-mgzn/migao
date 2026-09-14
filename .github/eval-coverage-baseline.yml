@@ -11,19 +11,27 @@
 #
 # 每条必填 5 个字段，缺一即报告红（校验实现在 scripts/case_coverage.py::load_baseline）：
 #   tool    该端真实工具名（拼错/已删除 → 判无效）
-#   kind    结构性缺失（**阻断型**，必须登记才不红）：uncovered | missing_positive
+#   kind    结构性缺失（**阻断型**，必须登记才不红）：uncovered | missing_positive | action_dangling
 #           厚度不足（**只报告型**，本来就只报告；登记只为进工作清单）：thin | thin_positive
 #   issue   追踪 issue（`#<数字>`）—— CI 会校验它**仍然 open**（关了说明该销账了）
 #   reason  为什么暂时豁免（≥8 字）
 #   added   登记日期
 #
+# action 级判据（issue #3667 新增）：`scripts/case_coverage.py` 除工具级矩阵外，还按
+#   **工具源码的 action 枚举**算「该 action 有没有被任何用例断言」。实测 41 处未覆盖
+#   → **只报告**（厚度指标，阻塞即大面积飘红 = 用存量债锁死流水线）；而
+#   `action_dangling`（用例声明了工具**不存在**的 action，断言永不满足）→ **阻塞**
+#   （配置错误，同 `dangling_cases` 家族；实测仅 1 处）。
+#
 # 陈旧登记（销账后没删条目）的**分级**（#3575 排序实证）：
-#   · 阻断型（uncovered/missing_positive）→ **阻塞**：它在抑制真实缺口，不删会腐烂并掩盖新缺口；
+#   · 阻断型（uncovered/missing_positive/action_dangling）→ **阻塞**：它在抑制真实缺口，
+#     不删会腐烂并掩盖新缺口；
 #   · 只报告型（thin/thin_positive）→ **只警告**：工具变厚是好消息；若也阻塞，就会让
 #     "补了用例的那个包"（它不知道本清单存在）把 main 变红 —— 用工作清单给别人下绊子。
 #
 # ⚠️ 这是**工作清单**，不是免死金牌：补完用例 → 删条目 → job 保持绿。
-#    清单应**单调缩短**；entries 变长需要 review 说明（当前 3 条阻塞 + 4 条薄覆盖，全部有归属）。
+#    清单应**单调缩短**；entries 变长需要 review 说明（当前 4 条阻塞 + 4 条薄覆盖，全部有归属；
+#    #3667 新增的 1 条 action_dangling 见文件末，理由在该条目注释里）。
 
 version: 2
 # ⚠️ 本文件由 `yaml_light`（仓库零依赖解析器）读取 —— 只能用**单行标量**：
@@ -67,4 +75,17 @@ entries:
     persona: mibao
     issue: "#3559"
     reason: 仅 PR-021 一条；该用例 data_checks 缺 success=true（假绿口径）须先修再加厚
+    added: "2026-09-14"
+
+  # ── action 级（#3667 新增判据；本条目是**用例资产缺陷**，不是 agent 缺口）────────
+  # CU-005 声明 `customer_manage(action=query)`，而该工具枚举是
+  # list/detail/update/add_tag/remove_tag/list_tags/create_tag/update_tag/delete_tag
+  # —— **没有 query** → 断言永不满足（agent 按 schema 调 list 则永不命中 = 假红；
+  # 真调 query 则工具报「无效的操作类型」却因参数匹配而通过 = 假绿）。
+  # 修法（改用例，不在 #3667 基建 PR 内）见 issue #3669；改完本条即成陈旧登记 → 必须删除。
+  - tool: customer_manage
+    kind: action_dangling
+    persona: mibao
+    issue: "#3669"
+    reason: CU-005 声明 action=query 而 customer_manage 无该 action（断言永不满足）
     added: "2026-09-14"

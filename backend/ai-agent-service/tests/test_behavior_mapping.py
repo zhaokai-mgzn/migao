@@ -1,4 +1,4 @@
-# case_ids: OR-016, AS-007, PR-019, PR-020, CH-010, CU-003, CU-004, HR-001, HR-005, ST-003, ST-005, DA-004, FN-001, PP-002, PP-006, PP-001, PP-003, PG-013, PG-015, PG-016, CH-013, CH-014, CH-015, CH-008
+# case_ids: OR-016, OR-028, AS-007, PR-019, PR-020, CH-010, CU-003, CU-004, HR-001, HR-005, ST-003, ST-005, DA-004, FN-001, PP-002, PP-006, PP-001, PP-003, PG-013, PG-015, PG-016, CH-013, CH-014, CH-015, CH-008
 """行为改动 diff → 用例映射单测（tests/agent_eval/behavior_mapping.py，issue #3502）。
 
 被测契约（详见模块 docstring）：
@@ -76,9 +76,9 @@ class TestRuleHits:
     """每条映射规则都要命中（规则表 = §13.2 的可执行形态，漏一条就漏一类改动）"""
 
     @pytest.mark.parametrize("path, expected", [
-        (ORDER_PATH, ["OR-016"]),
-        ("backend/ai-agent-service/app/tools/order_create.py", ["OR-016"]),
-        ("backend/ai-agent-service/app/tools/order_query.py", ["OR-016"]),
+        (ORDER_PATH, ["OR-016", "OR-028"]),
+        ("backend/ai-agent-service/app/tools/order_create.py", ["OR-016", "OR-028"]),
+        ("backend/ai-agent-service/app/tools/order_query.py", ["OR-016", "OR-028"]),
         (AFTERSALES_PATH, ["AS-007"]),
         (PRODUCT_PATH, ["PR-019", "PR-020"]),
         (CARD_PATH, ["CH-010", "CH-019"]),
@@ -361,7 +361,7 @@ class TestUnionAndDedupe:
     def test_multi_rule_union(self):
         """一个文件同时命中 agent 规则与订单规则 → 两组用例都要跑（并集，不取第一个命中）。"""
         result = bm.map_changed_files_to_case_ids([AGENT_PATH, ORDER_PATH])
-        assert result == ["CH-003", "CH-022", "OR-016"]
+        assert result == ["CH-003", "CH-022", "OR-016", "OR-028"]
 
     def test_multi_file_across_rules_dedupes(self):
         """多个文件命中同一规则 → 用例 ID 只出现一次（去重）。"""
@@ -406,7 +406,7 @@ class TestOrderingStability:
         backward = bm.map_changed_files_to_case_ids([AGENT_PATH, CARD_PATH, ORDER_PATH])
         assert forward == backward
         assert forward == sorted(forward)
-        assert forward == ["CH-003", "CH-010", "CH-019", "CH-022", "OR-016"]
+        assert forward == ["CH-003", "CH-010", "CH-019", "CH-022", "OR-016", "OR-028"]
 
     def test_rule_declaration_order_does_not_leak_into_output(self):
         """结果按用例 ID 字典序（不是 MAPPING_RULES 的声明序）——写死期望值锁住口径。"""
@@ -423,7 +423,7 @@ class TestMappingSource:
     """
 
     def test_rule_hit_reports_rules_source(self):
-        assert bm.map_changed_files_with_source([ORDER_PATH]) == (["OR-016"], "rules")
+        assert bm.map_changed_files_with_source([ORDER_PATH]) == (["OR-016", "OR-028"], "rules")
 
     def test_default_net_reports_default_source(self):
         cases, source = bm.map_changed_files_with_source(
@@ -441,7 +441,7 @@ class TestMappingSource:
         cases, source = bm.map_changed_files_with_source(
             ["backend/ai-agent-service/app/main.py", ORDER_PATH])
         assert source == "rules"
-        assert cases == ["OR-016"]
+        assert cases == ["OR-016", "OR-028"]
 
     def test_source_api_and_plain_api_agree(self):
         """两个入口的用例集必须完全一致（单一实现，防两套口径漂移）。"""

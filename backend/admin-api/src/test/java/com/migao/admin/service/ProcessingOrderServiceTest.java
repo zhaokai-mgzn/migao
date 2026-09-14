@@ -116,7 +116,7 @@ class ProcessingOrderServiceTest {
                 .tenantId(TENANT)
                 .orderId("order-001")
                 .productName("布艺遮光帘A")
-                .quantity(2)
+                .quantity(BigDecimal.valueOf(2))
                 .width(new BigDecimal("2.5"))
                 .height(new BigDecimal("2.8"))
                 .processingInfo(processingInfo(colorName))
@@ -129,7 +129,7 @@ class ProcessingOrderServiceTest {
                 .tenantId(TENANT)
                 .orderId("order-001")
                 .productName("现货成品")
-                .quantity(1)
+                .quantity(BigDecimal.valueOf(1))
                 .processingInfo(new HashMap<String, Object>())
                 .build();
     }
@@ -440,7 +440,7 @@ class ProcessingOrderServiceTest {
     void generateWithJsonStringProcessingInfo() {
         OrderItem item = OrderItem.builder()
                 .id("item-1").tenantId(TENANT).orderId("order-001")
-                .productName("布艺遮光帘A").quantity(2)
+                .productName("布艺遮光帘A").quantity(BigDecimal.valueOf(2))
                 .width(new BigDecimal("2.5")).height(new BigDecimal("2.8"))
                 .processingInfo("{\"processingFee\":30,\"colorName\":\"米白\","
                         + "\"processingItems\":[{\"id\":\"p1\",\"name\":\"打孔\",\"unitPrice\":3,\"quantity\":10,\"unit\":\"米\"}]}")

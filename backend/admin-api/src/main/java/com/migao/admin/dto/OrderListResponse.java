@@ -99,7 +99,7 @@ public class OrderListResponse {
         private String productId;
         private String productName;
         private String productCode;
-        private Integer quantity;
+        private BigDecimal quantity;
         private BigDecimal unitPrice;
         /** 金额 = unitPrice * quantity（展示用） */
         private BigDecimal amount;

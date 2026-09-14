@@ -134,9 +134,9 @@ public class OrderDetailResponse {
         private String skuCode;
 
         /**
-         * 数量
+         * 数量（口径按计价方式：per_meter=米数 / per_set=1 / per_area=宽×高㎡，可为小数）
          */
-        private Integer quantity;
+        private BigDecimal quantity;
 
         /**
          * 单价
@@ -196,9 +196,9 @@ public class OrderDetailResponse {
         private BigDecimal unitPrice;
 
         /**
-         * 数量
+         * 数量（口径按计价方式：per_meter=米数 / per_set=1 / per_area=宽×高㎡，可为小数）
          */
-        private Integer quantity;
+        private BigDecimal quantity;
 
         /**
          * 金额 = unitPrice * quantity
