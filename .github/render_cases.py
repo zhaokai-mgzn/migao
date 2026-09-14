@@ -343,7 +343,13 @@ def to_md(cases):
             for mf in (c.get("must_fail") or []):
                 _mf_tool = mf if isinstance(mf, str) else mf.get("tool")
                 _mf_act = "" if isinstance(mf, str) else (mf.get("action") or "")
-                lines.append(f"必须失败: {_mf_tool}({_mf_act})" if _mf_act else f"必须失败: {_mf_tool}")
+                _mf_head = f"必须失败: {_mf_tool}({_mf_act})" if _mf_act else f"必须失败: {_mf_tool}"
+                # `args` 值级作用域（issue #3689 / #3702）：只印 `工具(action)` 会让人读账本
+                # （mibao-verification-cases.md）**看不到到底在匹配什么值** —— 账本失真。
+                # 风格与同函数的 `必填: … 字段 …` / `禁参: … 不得含 …` 一致（限定词接在同行）。
+                _mf_scope = ", ".join(
+                    f"{k}={v}" for k, v in ((mf.get("args") or {}) if isinstance(mf, dict) else {}).items())
+                lines.append(f"{_mf_head} 值级作用域: {_mf_scope}" if _mf_scope else _mf_head)
             for av in (c.get("amount_verify") or []):
                 lines.append(f"金额: {av.get('tool', 'order_create')} 「{av.get('product_name', '')}」 → {'; '.join(av.get('checks') or [])}")
             for dv in (c.get("db_verify") or []):

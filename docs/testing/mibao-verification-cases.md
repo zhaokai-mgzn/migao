@@ -2113,7 +2113,7 @@
 你: 确认支付，标记为生产中
 你: 发货，物流顺丰 SF1234567890
 你: 客户确认收货了，标记完成
-期望: order_query(action=detail)
+期望: order_query(action=list)
 期望: order_manage(action=confirm_payment)
 期望: order_manage(action=update_status, status=producing)
 期望: order_manage(action=update_logistics, company=顺丰)
@@ -2123,7 +2123,7 @@
 跳过: 需要一条**从 pending 走到底的完整测试订单**（先 order_create 建单再流转），否则状态机断言不可达——评测栈里没有这样的订单，跑起来是假失败污染基线。2026-09-14（issue #3599）：原 skip 理由里的『硬编码 ORD-20260701-0001（API 实测 found: 0）』已消除（改为自然指代），剩下的唯一缺口是「可全流转的测试订单」。
 ```
 真值: order.states, order.flow, order.pay-side-effects, order.cancel-side-effects, order.refund-side-effects
-溯源: eval M006 吸收 verification 1.6（单步 update_status）、1.7 的状态更新段，并吸收 eval O004（标记已发货）；2026-09-14 去掉栈上不存在的硬编码订单号（issue #3599） ｜ tags: multi_turn, order_lifecycle, status_flow
+溯源: eval M006 吸收 verification 1.6（单步 update_status）、1.7 的状态更新段，并吸收 eval O004（标记已发货）；2026-09-14 去掉栈上不存在的硬编码订单号（issue #3599）；2026-09-15 修正 order_query 的声明（issue #3702）：原 `action: detail` 不在该工具枚举内（list/statistics/follow_status_stats），改为真实且语义正确的 `action: list`（查单=按 order_id/status 过滤；statistics/follow_status_stats 是汇总统计，与『查这一笔的状态』意图不符） ｜ tags: multi_turn, order_lifecycle, status_flow
 
 ### OR-007. 取消订单 - 先定位订单再取消（二次确认 + 订单号解析） 🔴
 ```

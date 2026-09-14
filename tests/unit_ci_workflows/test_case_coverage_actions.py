@@ -247,25 +247,21 @@ class TestRepoActionLevelJudgement:
             assert rep.check_problems() == [], f"{persona}: {rep.check_problems()}"
 
     def test_repo_dangling_action_blocks_without_baseline(self):
-        """**去掉豁免清单必红** + 仓库真值只剩**已登记**的那一条（issue #3701）。
+        """**去掉豁免清单必红** + 仓库真值已**归零**（#3701 引入本条，issue #3702 销账）。
 
         三半锁，缺一不可：
-          ① 仓库真值：悬空 action 只剩 `order_query(action=detail)`（OR-006，**已登记**在
-             `.github/eval-coverage-baseline.yml`）—— CU-005 的
-             `customer_manage(action=query)` 已按真实语义改为 `action: list`（#3683），
-             OR-006 这条是 #3701 补齐盲区②后**新暴露的存量项**（不是本 PR 引入的，
-             归用例资产包按 #3702 销账）；将来新引入的悬空 action 会立刻打红本断言；
-          ② **去掉清单必红**：不带清单时 `check_problems()` 必须报出该条（含用例 ID）——
-             这正是门禁的拦截力所在（清单只豁免**已登记**项）；
-          ③ 判据不被削弱：把人为悬空 action 注入**真实用例集**后，在无清单下必须阻塞
-             （`action_dangling` + `check_problems()` + `blocking_gaps()` 三处同验）。
+          ① 仓库真值：悬空 action **已归零** —— CU-005 的 `customer_manage(action=query)`
+             已按真实语义改为 `action: list`（#3683）；OR-006 的
+             `order_query(action=detail)` 已改为 `action: list`（#3702，该工具枚举无 detail）。
+             将来新引入的悬空 action 会立刻打红本断言（判别力就在这里）；
+          ② **去掉清单必红**：判据本身不得被削弱 —— 由下方注入**真实用例集副本**
+             承担（`action_dangling` + `check_problems()` 文本**带用例 ID** + `blocking_gaps()`
+             三处同验），不再依赖"仓库里恰好有一条真实违规"；
+          ③ C 端同样归零（`order_query` 本就不是小布工具）。
         """
         rep = _rep(self.cases, "mibao")
-        assert rep.action_dangling == [("order_query", "detail")], (
-            f"B 端悬空 action 集合变了（新引入的悬空声明会在此暴露）: {rep.action_dangling}")
-        assert rep.action_dangling_cases[("order_query", "detail")] == ["OR-006"]
-        assert any("order_query(action=detail)[OR-006]" in p for p in rep.check_problems()), (
-            "无清单时必须报出该悬空 action（去掉豁免清单必红）")
+        assert rep.action_dangling == [], (
+            f"B 端出现悬空 action 声明（断言永不满足 = 假红/假绿）: {rep.action_dangling}")
         assert _rep(self.cases, "xiaobu").action_dangling == [], (
             "C 端不得有悬空 action（order_query 不是小布工具）")
 
@@ -274,7 +270,11 @@ class TestRepoActionLevelJudgement:
                                               "args": {"action": "no_such_action"}}])]
         rep2 = _rep(injected, "mibao")
         assert ("order_manage", "no_such_action") in rep2.action_dangling
-        assert any("order_manage(action=no_such_action)" in p for p in rep2.check_problems())
+        assert rep2.action_dangling_cases[("order_manage", "no_such_action")] == ["T-DANGLING"], (
+            "报错信息里带不出用例 ID —— 销账无从定位")
+        assert any("order_manage(action=no_such_action)[T-DANGLING]" in p
+                   for p in rep2.check_problems()), (
+            "注入悬空 action 后 check_problems() 未报出（去掉豁免清单必红）")
         assert ("order_manage", "action_dangling") in rep2.blocking_gaps()
 
     def test_repo_uncovered_actions_alone_never_block(self):
@@ -295,8 +295,8 @@ class TestRepoActionLevelJudgement:
 #   ① 只遍历 `action_catalog()`（**有** action 维度的工具）；
 #   ② 只扫 `select_cases_for_persona()` 选中的用例（`skip_reason` 非空即丢）；
 #   ③ 不收 `repeat_until.action`。
-# 本组把三处**逐条锁死**（红证用合成用例，不依赖"仓库里恰好有违规"——仓库的那条
-# `order_query(action=detail)` 已登记进清单，将来销账后本组仍必须有效）。
+# 本组把三处**逐条锁死**（红证一律用合成用例，不依赖"仓库里恰好有违规"——仓库原先那条
+# 真实违规 `order_query(action=detail)` 已由 #3702 按真实语义修正，本组必须照样有效）。
 
 class TestGateActionDanglingBlindspots:
     """三处盲区的门禁级红证（#3701）；每条都在**真实工具枚举**上验，不 mock 真值。"""
