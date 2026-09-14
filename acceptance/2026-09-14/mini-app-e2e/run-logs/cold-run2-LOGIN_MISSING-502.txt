@@ -1,0 +1,23 @@
+npm warn Unknown env config "manage-package-manager-versions". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+
+> mini-app@1.0.0 test:e2e
+> node e2e/run.js
+
+🚀 启动小布小程序 E2E 验收（微信开发者工具模拟器）...
+✅ 构建新鲜度检查通过[content-hash]：内容指纹 fc36841d9431…（dist/.build-stamp.json 构建于 2026-09-14T13:05:58.349Z）
+[harness] launch 尝试（port=9561）
+✅ 已连接模拟器
+[harness] E2E_COLD_LOGIN=1 → 先清空模拟器 storage（去掉环境残留登录态），从零建立
+
+⛔ LOGIN_MISSING（e2e 已中止，未跑任何场景）：
+
+   建立登录态失败（短信登录 https://app.migaozn.com）：HTTP 502：<html>
+<head><title>502 Bad Gateway</title></head>
+<body>
+<center><h1>502 Bad Gateway</h1></center>
+<hr><center>nginx/1.31.3</center>
+</body>
+</html>
+
+   ⇒ 无登录态时断言依赖的租户数据（botName/租户副标/订单脱敏）会缺失或降级，那种「绿」是环境残留给的，不是代码给的 —— 故直接失败，不产出不可复现的证据。
+

@@ -170,12 +170,29 @@ UA 只扮演了 C 端顾客 persona，B 端商家后台的浏览器操作旅程�
 
 - runner 输出机器可读完成判定（`tests/agent_eval/local_runner.py::completion_verdict`，
   日志 + summary JSON `completion` 字段）：
-  - **确定性失败 = 0**：reproducible / error / no-retry-budget / infra / 无分类
-    证据且 score<1，均属必须处理的确定性失败；
+  - **必须处理的失败 = 0**：除 `llm-noise` 外的一切 score<1 —— reproducible /
+    unstable / error / no-retry-budget / infra / 无分类证据，均属必须处理；
   - **关键旅程全过**：`KEY_JOURNEYS_MIBAO`（9 条）/ `KEY_JOURNEYS_XIAOBU`（6 条）
     任何一条 score<1 → 未完成（P0 旅程波动也不放行）；
-  - **已知波动放行**：llm-noise / unstable 已由 runner 记入 flake 台账 → 放行但列出；
+  - **已知波动放行**：**只有 `llm-noise`**（首次失败、新 session 重试通过）—— runner
+    记入 flake 台账（条目 `released: true`）后放行但列出；
   - 空结果 = 未完成（防假绿）。
+- **`unstable` 为什么也阻塞**（口径变更）：它只证明"两次失败不是同一件事"，**没有**
+  证明"其中有一次是对的"。实证 OR-014（run 34841029062）：一次"下单成功但金额错
+  168≠198"、一次"order_create 从未被调用" —— 2/2 都真失败，按"LLM 发散可放行"
+  处置站不住（该 run 的独立审计也判它"不当放行"）。波动放行的前提是**有过一次通过**。
+  同类实证 OR-026（run 34849029334 xiaobu）：一次"order_create 2 次调用无一成功 +
+  无订单落库"、一次"回复称已更新但零写工具成功" —— 该 run 的 `completion.ok=true`
+  **正是建立在这条放行上**。
+- **分类规则（`_classify_attempts`，判"两次是不是同一件事"）**：`pass`（首跑通过）/
+  `llm-noise`（重试通过）/ `infra`（运行级）/ `reproducible`（两次指纹**相同**）/ 
+  **`reproducible`（两次指纹有真子集关系，共有部分非空）** / `unstable`（其余）。
+  > **指纹子集 ⇒ 共有部分稳定复现**（实证 AS-004，run 34849029334）：首败 = 两条
+  > **实质**落库断言（`落库 closeReason 为空` + `closeReason 不含期望值`），次败 =
+  > 这两条 **+** 一条 `after_sales_manage … unmatched expectation`。机械按"指纹不同"
+  > 判发散 ⇒ 真回归被洗成波动、且 `deterministic_failures` **漏计**。这是纯结构判据
+  > （集合包含），不需要语义理解。**注意**：指纹不同 ≠ 必然 `unstable` ——
+  > **指纹**回答"是不是同一件事"，**分类**回答"这条红灯怎么处置"。
 - 用途：结论档/里程碑判定"可不可以下结论"；PR 门禁（`_ci_verdict` 全绿）另行生效。
 - 结论报告（§4.2）的结论栏须引用 completion_verdict 输出作为完成证据。
 

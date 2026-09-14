@@ -157,33 +157,6 @@ async function waitForPageReady(mp, timeoutMs = 60000) {
 }
 
 /**
- * 登录态前置检查（**可复现性声明**，issue #3705/#3696）
- *
- * 本 harness **不注入登录态**：C 端页面自己走 `checkAuth()`（`src/store/authStore.ts:137`）
- * —— 只要模拟器 storage 里有有效的 `auth_token`（keys 见 `src/utils/constants.ts:12-16`：
- * `auth_token` / `auth_user` / `tenant_id`）就直接算已登录；否则才走 `login()` →
- * `Taro.login()` → `/api/auth/mini/login`（`src/utils/auth.ts:18-34`），而后者在开发者工具里
- * 曾实测被后端判 `WECHAT_API_ERROR: code 无效`。
- *
- * ⇒ **冷环境（新克隆/新模拟器）首次运行前必须先登录一次**，否则断言依赖的租户数据
- * （问候语 botName、订单/售后/物流数据）会缺失或降级 —— 那种「绿」是环境残留给的，不是代码给的。
- * 本检查只**告警不失败**（`mp.evaluate` 在个别 IDE 版本不可用）：先让依赖可见，避免静默。
- */
-async function checkLoginPreflight(mp) {
-  try {
-    const token = await mp.evaluate(() => wx.getStorageSync('auth_token'))
-    if (!token) {
-      console.warn('[harness] ⚠️ 模拟器 storage 无 auth_token：本机未登录，结果不可作为验收证据（先手工登录一次）')
-      return { loggedIn: false }
-    }
-    return { loggedIn: true, tokenTail: String(token).slice(-6) }
-  } catch (e) {
-    console.warn(`[harness] ⚠️ 登录态前置检查不可用（忽略）: ${e.message.slice(0, 120)}`)
-    return { loggedIn: null }
-  }
-}
-
-/**
  * 全屏截图并保存到 e2e/screenshots/<scenario>/<name>，返回绝对路径
  *
  * **稳定帧等待**（2026-09-14 实测新增）：`mp.screenshot()` 在 UI 刚变化后可能返回
@@ -286,21 +259,23 @@ async function waitForStreamEnd(page, timeoutMs = 60000) {
 }
 
 /**
- * 等待**新增**一条某种气泡（按数量判定新消息）——比「文本与旧气泡不同」可靠：
- * 旧写法 `aiReply2 !== prevAiText` 有竞态（发送后 AI 可能已经开始/完成回复，
- * 快照的 prevAiText 就是新回复本身 → 误判「无新内容」；2026-09-14 实测 run5 假红）。
- * 返回 { count, text }，超时返回 null。
+ * 等待「本次发送触发的助手回复」（正确判据：**发送前的基线文本** → 之后出现**不同且非空**的助手文本）
+ *
+ * 两个都试过、都不对的写法（2026-09-14 实测，别再退回）：
+ *  ① `aiReply2 !== prevAiText` 但 prevAiText 在**发送之后**才取：此刻新回复可能已开始/完成，
+ *     快照到的「旧」文本就是新回复本身 → **假红**（run5 实测：回复 len=491 却判「无新内容」）。
+ *  ② 按**气泡数量增加**判定：小程序的助手气泡在**流式一开始就被创建**（TypingIndicator 靠它显示），
+ *     若快照晚于该创建时刻，数量永远不会增加 → **假红**（cold-run3 实测：`2→2`，而末条 AI 气泡
+ *     正是本次问题的回复，len=324）。
+ * ⇒ 唯一稳的判据 = **发送前**取基线文本，之后等「非空且 != 基线」。返回文本，超时返回 null。
  */
-async function waitForBubbleCountIncrease(page, role, prevCount, timeoutMs = 120000) {
+async function waitForAssistantReply(page, prevText, timeoutMs = 120000) {
   const start = Date.now()
   while (Date.now() - start < timeoutMs) {
     try {
-      const els = await page.$$(`.message-bubble--${role}`)
-      if (els && els.length > prevCount) {
-        const t = (await els[els.length - 1].text()) || ''
-        const meaningful = t.replace(/\|/g, '').replace(/\d{1,2}:\d{2}/g, '').trim()
-        if (meaningful.length >= 2) return { count: els.length, text: t }
-      }
+      const t = (await lastBubbleText(page, 'assistant')) || ''
+      const meaningful = t.replace(/\|/g, '').replace(/\d{1,2}:\d{2}/g, '').trim()
+      if (meaningful.length >= 2 && t !== prevText) return t
     } catch {}
     await sleep(1000)
   }
@@ -457,14 +432,13 @@ module.exports = {
   SCREENSHOT_DIR,
   launch,
   waitForPageReady,
-  checkLoginPreflight,
   capture,
   sleep,
   waitForElement,
   waitForText,
   waitForBubble,
   waitForBubbleText,
-  waitForBubbleCountIncrease,
+  waitForAssistantReply,
   waitForStreamEnd,
   waitForStreamIdle,
   countBubbles,
