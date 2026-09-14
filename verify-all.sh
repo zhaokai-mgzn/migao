@@ -10,6 +10,10 @@
 #   ./verify-all.sh agent          # 仅 AI Agent
 #   ./verify-all.sh gate           # 仅 QA Growth Gate 预检（本地跑 CI 规则）
 #
+# ⚠️ gate 档依赖**已提交**的 diff（`git diff … origin/main...HEAD`）：工作区有未提交改动
+#    时预检无法覆盖它们，会**直接失败并提示先 commit**（issue #3724：旧实现对空集静默放行，
+#    制造「本地绿 / CI 红」假绿）。顺序：先 `git commit`，再跑 gate（migao-dev-flow §2.1）。
+#
 # 返回码：全部通过=0，任一失败=1。开发自查与 CI 用同一命令。
 # =============================================================================
 set -uo pipefail
@@ -61,7 +65,23 @@ gate_check() {
   echo "── [QA Growth Gate] 本地预检（与 pr-check qa-growth-gate 同规则，含 G5 case_ids 追溯）──"
   git fetch origin main --quiet 2>/dev/null || true
   CHANGED=$(git diff --name-only origin/main...HEAD 2>/dev/null || echo "")
+  # 未提交改动（issue #3724）：本函数的扫描源 `git diff … origin/main...HEAD` **只含已提交内容**。
+  # 「因为没提交所以扫不到」与「确实没有变更」必须可区分 —— 旧实现把两者一视同仁地打印
+  # 「跳过」+ return 0（✅ 假绿：绿了但没跑，与 migao-acceptance v1.3「空跑」同族）；
+  # 后果是「本地绿 / CI 红」（新增测试里的弱断言在提交后才被 CI 的同一检查抓到）。
+  # ⚠️ `-uall` 不能省：默认 `--porcelain` 会把**整个未跟踪目录**折叠成一行 `?? tests/`，
+  #    新增测试所在的目录若本身还没入库，这一行既匹配不上测试文件过滤、也拿不到文件名
+  #    ⇒ 工作区新增测试又被漏扫（缺陷原地复发，实测）。`-uall` 展开到文件级。
+  UNCOMMITTED=$(git status --porcelain -uall 2>/dev/null || echo "")
   if [ -z "$CHANGED" ]; then
+    if [ -n "$UNCOMMITTED" ]; then
+      echo "  ❌ 工作区有未提交改动，且已提交 diff 为空（HEAD == origin/main）⇒ 预检无内容可扫描。"
+      echo "     ⚠️ 这不是「没有变更」，是「没有**已提交**的变更」：弱断言检查按已提交 diff 取"
+      echo "        新增测试文件，未提交时该集合恒为空 ⇒ 空集被当成通过（假绿，issue #3724）。"
+      echo "     ⇒ 新增测试的弱断言、缺测/case_ids 追溯**均未被检查**。"
+      echo "     处置：先 \`git commit\`，再重跑 ./verify-all.sh gate（migao-dev-flow §2.1）。"
+      return 1
+    fi
     echo "  ⚠️ 无变更或无法对比 origin/main，跳过"
     return 0
   fi
@@ -72,11 +92,25 @@ gate_check() {
     --json --json-file /tmp/growth-gate-local.json
   GATE_RC=$?
   BLOCKERS=$(python3 -c "import json;print(json.load(open('/tmp/growth-gate-local.json')).get('blocker_count',0))" 2>/dev/null || echo 1)
-  # 弱断言检查（与 pr-check 的 Check weak asserts step 一致：只扫新增测试文件）
-  NEW_TESTS=$(git diff --diff-filter=A --name-only origin/main...HEAD 2>/dev/null | grep -E '\.(py|java|ts|tsx)$' | grep -iE 'test|spec' || true)
+  # 弱断言检查（与 pr-check 的 Check weak asserts step 语义一致：只扫「新增测试文件」）。
+  # 与 CI 的唯一差别是扫描源：CI 上 PR 的改动必然已提交；本地可能还没提交 ⇒ 这里把
+  # **工作区新增/未跟踪**的测试文件一并纳入，使「提交前跑」也真的有效（issue #3724）。
+  # ⚠️ 用 `awk`（POSIX）而非 `sed 's/^\(A\|??\)…'`：`\|` 交替是 GNU 扩展，macOS 自带
+  #    BSD sed 不认（静默不匹配 ⇒ 工作区新增文件又被漏扫，缺陷原地复发，实测）。
+  WORKTREE_NEW_TESTS=$(printf '%s\n' "$UNCOMMITTED" | awk '$1=="A"||$1=="??"{print $2}' \
+    | grep -E '\.(py|java|ts|tsx)$' | grep -iE 'test|spec' || true)
+  NEW_TESTS=$( { git diff --diff-filter=A --name-only origin/main...HEAD 2>/dev/null || true; \
+                 printf '%s\n' "$WORKTREE_NEW_TESTS"; } | sort -u | grep -v '^$' || true)
   if [ -n "$NEW_TESTS" ]; then
     echo "  🔍 扫描新增测试文件的弱断言"
+    if [ -n "$WORKTREE_NEW_TESTS" ]; then
+      echo "  ⚠️ 扫描集已并入工作区未提交的新增测试文件（未 commit，CI 尚看不到）："
+      printf '%s\n' "$WORKTREE_NEW_TESTS" | sed 's/^/     /'
+      echo "     ⚠️ 限此一项：其余未提交改动的缺测/case_ids 追溯需 commit 后重跑才有效。"
+    fi
     python3 .github/growth_gate.py --check-weak --files $NEW_TESTS || GATE_RC=1
+  elif [ -n "$UNCOMMITTED" ]; then
+    echo "  ⚠️ 工作区有未提交改动但无新增测试文件 ⇒ 弱断言无可扫对象（已显式判定，非空跑）"
   fi
   case_coverage_check || GATE_RC=1
   [ "$GATE_RC" -eq 0 ] && [ "$BLOCKERS" = "0" ]
