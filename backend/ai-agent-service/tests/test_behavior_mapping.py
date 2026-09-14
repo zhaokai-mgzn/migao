@@ -1,4 +1,4 @@
-# case_ids: OR-016, AS-007, PR-019, PR-020, CH-010, CU-003, CU-004
+# case_ids: OR-016, AS-007, PR-019, PR-020, CH-010, CU-003, CU-004, HR-001, HR-005, ST-003, ST-005, DA-004, FN-001, PP-002, PP-006, PG-013, CH-013, CH-014, CH-015, CH-008
 """行为改动 diff → 用例映射单测（tests/agent_eval/behavior_mapping.py，issue #3502）。
 
 被测契约（详见模块 docstring）：
@@ -43,13 +43,29 @@ AGENT_PATH = "backend/ai-agent-service/app/agents/mibao.py"
 CUSTOMER_PATH = "backend/ai-agent-service/app/tools/customer_manage.py"
 CUSTOMER_SKILL_PATH = "backend/ai-agent-service/app/graph/skills/customer_skill.py"
 FINANCE_PATH = "backend/ai-agent-service/app/tools/finance_api.py"
+# #3624 补齐的三类承载文件（此前全部落兜底网 = 一条本域用例都不跑）
+STAFF_PATH = "backend/ai-agent-service/app/graph/skills/staff_skill.py"
+SETTINGS_PATH = "backend/ai-agent-service/app/graph/skills/settings_skill.py"
+DATA_PATH = "backend/ai-agent-service/app/graph/skills/data_skill.py"
+# 加工项目录（PP-* 域）：processing_item_manage=写 / processing_item_query=查目录
+PROCESSING_ITEM_MANAGE_PATH = "backend/ai-agent-service/app/tools/processing_item_manage.py"
+PROCESSING_ITEM_QUERY_PATH = "backend/ai-agent-service/app/tools/processing_item_query.py"
+# 商品侧加工项挂载 Tool（与目录 CRUD 是两件事，仍归商品域）
+PRODUCT_PROCESSING_ITEM_PATH = "backend/ai-agent-service/app/tools/product_processing_item_manage.py"
+# 加工单生成（PG-* 域）：该域唯一可跑的 LLM 用例是 PG-013
+PROCESSING_ORDER_GENERATE_PATH = "backend/ai-agent-service/app/tools/processing_order_generate.py"
+# 守卫代码的共享载体（防御/熔断 + 写操作守卫 + 转人工建议卡守卫），见 TestBaseSkillRules
+BASE_SKILL_PATH = "backend/ai-agent-service/app/graph/skills/base_skill.py"
+# 转人工 Tool 本体（创建人工会话/工单/通知），见 TestHumanHandoffRules
+HUMAN_HANDOFF_PATH = "backend/ai-agent-service/app/tools/human_handoff.py"
 
 # 真实承载防御/熔断逻辑的源码（#3551 全表复核时实测：只有这些是仓内真实存在的载体）
+# 注：`base_skill.py` 也是防御载体之一，但它同时承载写操作/转人工守卫（#3624 追加规则），
+# 期望集不再是纯 DF-*，故单列到 TestBaseSkillRules 里断言全集。
 REAL_DEFENSE_PATHS = [
     "backend/ai-agent-service/app/graph/clarify_guard.py",
     "backend/ai-agent-service/app/core/circuit_breaker.py",
     "backend/ai-agent-service/app/core/fallback.py",
-    "backend/ai-agent-service/app/graph/skills/base_skill.py",
 ]
 
 
@@ -69,6 +85,17 @@ class TestRuleHits:
         # #3551 补客户域规则：改客户档案 Tool / 客户域 Skill → CU-003（标签）、CU-004（更新资料）
         (CUSTOMER_PATH, ["CU-003", "CU-004"]),
         (CUSTOMER_SKILL_PATH, ["CU-003", "CU-004"]),
+        # #3624 补 staff/settings/data 三个 skill（此前全部落兜底网）
+        (STAFF_PATH, ["HR-001", "HR-005"]),
+        (SETTINGS_PATH, ["ST-003", "ST-005"]),
+        (DATA_PATH, ["DA-004", "FN-001"]),
+        # #3624 补加工项目录域（此前被商品规则的 `processing_item` 关键词吞掉 → 映射成建品价格用例）
+        (PROCESSING_ITEM_MANAGE_PATH, ["PP-002", "PP-006"]),
+        (PROCESSING_ITEM_QUERY_PATH, ["PP-002", "PP-006"]),
+        # #3624 补加工单生成（该域唯一可跑的 LLM 用例）
+        (PROCESSING_ORDER_GENERATE_PATH, ["PG-013"]),
+        # #3624 补转人工 Tool 本体
+        (HUMAN_HANDOFF_PATH, ["CH-008", "CH-015"]),
     ])
     def test_rule_hit(self, path, expected):
         assert bm.map_changed_files_to_case_ids([path]) == expected
@@ -95,6 +122,229 @@ class TestRuleHits:
         """prompt 单独成关键词：prompt 目录下的改动不经过 app/agents/ 也要跑 CH-003/CH-022。"""
         assert bm.map_changed_files_to_case_ids(
             ["backend/ai-agent-service/app/prompts/order_prompt.txt"]) == ["CH-003", "CH-022"]
+
+
+class TestStaffSettingsDataRules:
+    """#3624 缺口①：staff / settings / data 三个 skill 必须映射到本域用例。
+
+    修前实测（origin/main）：三个 skill 文件全部得到
+    `(DEFAULT_BEHAVIOR_CASES, 'default_net')` —— 改它们一条 HR/ST/DA 用例都不跑；而
+    #3577（产品裁定「交互形态统一」）刚把 `interact` 绑进这三个 skill（确认卡形态变了）。
+    兜底网按 #3502 分层「只报告」，于是 HR/ST/DA 的确认卡行为在 CI 里**没有任何真实 LLM 信号**。
+
+    映射依据（逐条读用例真实内容后确定，不是照抄）：
+      · HR-001「员工列表」→ `employee_manage(action=list)`（staff 绑定工具之一，smoke）
+      · HR-005「创建角色 - 分配权限」→ `role_manage(action=create)` + 「确认创建」轮
+        （覆盖另一个绑定工具与 confirm 卡路径）
+      · ST-003「修改密码」→ `settings_manage(action=change_password)`（该 skill 的写路径 + 确认）
+      · ST-005「通知标记已读」→ `notification_manage(mark_read/read_all)`（第二个写工具）
+      · DA-004「客服会话监控」→ `session_manage(action=monitor)`
+      · FN-001「资金流水查询与登记」→ `finance_api(action=create_transaction)` + 「确认」轮
+    刻意**不**映射 HR-002/HR-003（employee_manage 写路径）：本地 flake 台账
+    （`agent-eval-flakes.json`，2026-09-14）里它们是 `reproducible`（同指纹两次失败，非波动）
+    —— 放进强信号集会让每个改 staff 的 PR 恒红、且与本 PR 改动无因果（假阻塞成因）；
+    待其按 §14.2 归因修复后再评估是否纳入。
+    """
+
+    @pytest.mark.parametrize("path, expected", [
+        (STAFF_PATH, ["HR-001", "HR-005"]),
+        (SETTINGS_PATH, ["ST-003", "ST-005"]),
+        (DATA_PATH, ["DA-004", "FN-001"]),
+    ])
+    def test_skill_change_lands_in_rules_bucket(self, path, expected):
+        """改这三个 skill 的本体 → 命中规则桶，且就是本域用例（来源必须是 rules）。"""
+        assert bm.map_changed_files_with_source([path]) == (expected, "rules")
+
+    @pytest.mark.parametrize("path", [STAFF_PATH, SETTINGS_PATH, DATA_PATH])
+    def test_anchored_skill_file_exists(self, path):
+        """规则锚定的是本体源码真实路径（防退化成凭空的文件名）。"""
+        assert (REPO_ROOT / path).is_file(), f"锚定文件不存在：{path}"
+
+    @pytest.mark.parametrize("path, expected_source", [
+        # 与三个新规则同名的**测试**文件（第三个含历史上误触过的 `guard` 关键词）——
+        # `backend/ai-agent-service/tests/**` 不在 AI 行为域内 → 整个 diff 不触发评测（none）
+        ("backend/ai-agent-service/tests/test_staff_skill.py", "none"),
+        ("backend/ai-agent-service/tests/test_settings_skill_guard.py", "none"),
+        ("backend/ai-agent-service/tests/test_data_skill.py", "none"),
+        # 评测基建 / 用例库单一源在行为域内，但绝不能进规则桶 → 兜底网
+        ("tests/agent_eval/behavior_mapping.py", "default_net"),
+        (".github/cases/hr.yml", "default_net"),
+        (".github/cases/settings.yml", "default_net"),
+        (".github/cases/data.yml", "default_net"),
+    ])
+    def test_test_and_case_paths_never_enter_rules_bucket(self, path, expected_source):
+        """反向断言（#3551 回归防线）：新规则不得把 tests/**、.github/cases/** 拉进规则桶。
+
+        规则桶 = 与改动有因果的强信号集；若测试文件名/用例文件名能命中规则，就会出现
+        「与改动无因果的红」—— 正是 #3551 实证过的假阻塞（`*_guard.py` 命中防御规则）。
+        两者都可能出现：非行为域路径 → `none`（不触发评测）；行为域内的测试/用例路径
+        → `default_net`（跑兜底网但**不**是规则桶）。判据只有一个：**source != "rules"**。
+        """
+        cases, source = bm.map_changed_files_with_source([path])
+        assert source == expected_source, f"{path} 误进规则桶（cases={cases}）"
+        assert source != "rules"
+        assert cases == ([] if expected_source == "none" else bm.DEFAULT_BEHAVIOR_CASES)
+
+    def test_mixed_diff_with_test_file_does_not_change_case_ids(self):
+        """同一个 diff 里混入测试文件 → 规则桶用例集不增不减。"""
+        assert bm.map_changed_files_with_source(
+            [STAFF_PATH, "backend/ai-agent-service/tests/test_staff_skill_guard.py"]
+        ) == (["HR-001", "HR-005"], "rules")
+
+    def test_case_library_paths_alone_fall_to_default_net(self):
+        """用例库路径单独出现时同样只落兜底网（不因 hr.yml/settings.yml/data.yml 触发新规则）。"""
+        assert bm.map_changed_files_with_source(
+            [".github/cases/hr.yml", ".github/cases/settings.yml", ".github/cases/data.yml"]
+        ) == (bm.DEFAULT_BEHAVIOR_CASES, "default_net")
+
+
+class TestProcessingDomainRules:
+    """#3624 缺口③：加工项目录（PP-*）与加工单生成（PG-*）此前无规则。
+
+    实证（#3591 收口）：改 `processing_item_manage.py`，映射推出的却是
+    **PR-019/PR-020（商品建品价格）** —— 根因是 product 规则的 `processing_item`
+    关键词把加工项目录文件吞进商品域（union 里也没有任何 PP-*），加工项目录自己的
+    用例一条没跑（#3511 的旁路同型：规则的**关键词**比意图宽 → 映射到无因果的用例）。
+    """
+
+    @pytest.mark.parametrize("path", [PROCESSING_ITEM_MANAGE_PATH, PROCESSING_ITEM_QUERY_PATH])
+    def test_processing_item_library_hits_pp_cases(self, path):
+        """PP-002（分类列表，期望 `processing_item_query or processing_item_manage`）覆盖查目录；
+        PP-006（计价方式 + 新增加工项，期望 `processing_item_query(keyword=打孔)` +
+        `processing_item_manage(action=create_processing_item)`）覆盖写目录与确认轮。"""
+        assert bm.map_changed_files_with_source([path]) == (["PP-002", "PP-006"], "rules")
+
+    @pytest.mark.parametrize("path", [PROCESSING_ITEM_MANAGE_PATH, PROCESSING_ITEM_QUERY_PATH])
+    def test_processing_item_library_no_longer_maps_to_product_cases(self, path):
+        """改加工项目录**不得**再映射到商品建品价格用例（PR-019/PR-020 断言的是
+        `product_manage(action=create)`，与目录 CRUD 无因果 —— 那就是假阻塞）。"""
+        cases = bm.map_changed_files_to_case_ids([path])
+        assert "PR-019" not in cases and "PR-020" not in cases
+
+    def test_product_side_processing_item_still_maps_to_product_cases(self):
+        """收窄关键词不得丢规则：商品侧加工项挂载 Tool 仍走商品域（PR-019/PR-020）。"""
+        assert bm.map_changed_files_to_case_ids([PRODUCT_PROCESSING_ITEM_PATH]) == ["PR-019", "PR-020"]
+
+    def test_processing_order_generate_hits_pg013(self):
+        """加工单生成 → PG-013（该域唯一可跑的 LLM 用例；PG-001~PG-012/PG-014 全部 skip）。
+
+        前置数据已就绪：`tests/agent_eval/fixtures/mibao_eval_seed.sql` 为 PG-013 种了
+        `EVAL-MB-ORD-0002`（confirmed + 明细带 processing_info）。
+        """
+        assert bm.map_changed_files_with_source(
+            [PROCESSING_ORDER_GENERATE_PATH]) == (["PG-013"], "rules")
+
+    @pytest.mark.parametrize("path", [
+        "backend/ai-agent-service/app/tools/processing_order_query.py",
+        "backend/ai-agent-service/app/tools/processing_order_update.py",
+    ])
+    def test_processing_order_query_and_update_are_not_anchored(self, path):
+        """刻意**不**锚 query/update：它们零可跑用例（PG-005~PG-008/PG-011 等全 skip），
+        锚了就是把不相关用例挂上去 —— 假阻塞。等它们有了可跑用例再补规则。"""
+        assert bm.map_changed_files_with_source([path]) == (
+            bm.DEFAULT_BEHAVIOR_CASES, "default_net")
+
+    @pytest.mark.parametrize("path", [
+        "backend/ai-agent-service/tests/test_tools_processing_item_manage.py",
+        "backend/ai-agent-service/tests/test_tools_processing_order_generate.py",
+    ])
+    def test_processing_unit_test_paths_do_not_trigger_rules(self, path):
+        """`backend/ai-agent-service/tests/**` 不在行为域内 → 不触发评测（更不会进规则桶）。"""
+        assert bm.map_changed_files_with_source([path]) == ([], "none")
+
+    @pytest.mark.parametrize("path", [
+        ".github/cases/processing.yml",
+        ".github/cases/processing-order.yml",
+    ])
+    def test_processing_case_library_paths_fall_to_default_net(self, path):
+        """用例库路径只能在行为域内走兜底网，绝不进规则桶。"""
+        assert bm.map_changed_files_with_source([path]) == (
+            bm.DEFAULT_BEHAVIOR_CASES, "default_net")
+
+
+class TestBaseSkillRules:
+    """#3624 追加：`base_skill.py` 是守卫代码的**共享载体**，必须映射到它守护的行为面。
+
+    证据（幂等重试 #3564 收口实测）：改 `base_skill.py` 此前只映射 `DF-011`/`DF-012`
+    （防御规则），§13.2 的转人工族 `CH-013`/`CH-014`/`CH-015` **不在集合内** —— 而
+    base_skill 的守卫判据（不满情绪→建议卡→用户确认转人工；用户拒绝后本会话不再自动建议；
+    显式「转人工」不经建议卡直接转）正是这三条用例要覆盖的行为面。
+
+    **明确排除 OR-016**：它当前是已知的用例自相矛盾（`user_inputs[1]` 为裸文本，与
+    `order_before` 时序断言冲突，由另一包校准中）。挂上去会让**每个改 `base_skill.py` 的 PR**
+    吃到规则命中红（仓库级红，与 #3551 的 DF-011 假阻塞同型）。**待 OR-016 校准合入后再补映射。**
+    """
+
+    def test_base_skill_maps_to_handoff_cases(self):
+        """改守卫载体 → 转人工族用例必须进强信号集（修复前只有 DF-*）。"""
+        cases, source = bm.map_changed_files_with_source([BASE_SKILL_PATH])
+        assert source == "rules"
+        assert {"CH-013", "CH-014", "CH-015"} <= set(cases)
+
+    def test_base_skill_keeps_defense_mapping(self):
+        """共享载体：防御规则对 base_skill 的锚定不得因新规则丢失（并集语义）。"""
+        cases, _ = bm.map_changed_files_with_source([BASE_SKILL_PATH])
+        assert [c for c in cases if c.startswith("DF-")] == ["DF-011", "DF-012"]
+
+    def test_base_skill_does_not_map_to_order_case(self):
+        """刻意排除 OR-016（用例自相矛盾、校准中）——防"每个改 base_skill 的 PR"恒红。"""
+        cases, _ = bm.map_changed_files_with_source([BASE_SKILL_PATH])
+        assert "OR-016" not in cases
+
+    def test_base_skill_expected_full_set(self):
+        """锁定全集（并集 + 字典序）：新规则只能通过改这条断言进入。"""
+        assert bm.map_changed_files_with_source([BASE_SKILL_PATH]) == (
+            ["CH-013", "CH-014", "CH-015", "DF-011", "DF-012"], "rules")
+
+    @pytest.mark.parametrize("path, expected_source", [
+        ("backend/ai-agent-service/tests/test_base_skill.py", "none"),
+        ("backend/ai-agent-service/tests/test_base_skill_guard.py", "none"),
+        (".github/cases/chat.yml", "default_net"),
+    ])
+    def test_base_skill_test_and_case_paths_never_enter_rules_bucket(self, path, expected_source):
+        """反向断言（#3551 假阻塞防线）：测试/用例路径绝不允许因新规则进规则桶。"""
+        cases, source = bm.map_changed_files_with_source([path])
+        assert source == expected_source
+        assert cases == ([] if expected_source == "none" else bm.DEFAULT_BEHAVIOR_CASES)
+
+
+class TestHumanHandoffRules:
+    """#3624 追加：转人工 Tool 本体 → `CH-008`（创建人工会话，客服工作台可见）/ `CH-015`（显式
+    「转人工」不经建议卡直接转）。
+
+    来源（写工具确认门禁包 #3606 收口实测）：改 `human_handoff.py` 此前落**兜底网**，
+    而当时它看起来"命中了规则"其实只是**测试文件名** `*_confirm_guard.py` 撞上防御关键词
+    `guard` 的误报面（#3551 已用 `BEHAVIOR_SOURCE_PREFIXES` 集中过滤掉）——真正该跑的
+    转人工用例一条没跑。
+
+    映射依据（读用例真实内容）：
+      · `CH-008`「转人工创建人工会话 - 客服工作台可见并可回复」`user_inputs: ["我要转人工","客服在吗"]`
+        → `expectations: human_handoff`（覆盖工具的核心写入：建工单 + 建人工会话）
+      · `CH-015`「用户显式『转人工』不经建议卡片直接转（能力不退化）」`user_inputs: ["我要转人工"]`
+        → `expectations: human_handoff`（覆盖直转路径，与 base_skill 的建议卡分流互补）
+    这两条与 base_skill 规则给出的 `CH-013`/`CH-014`/`CH-015` 是**并集**（同一个转人工族，
+    入口不同：Tool 本体 vs 守卫判据）。
+    """
+
+    def test_human_handoff_maps_to_handoff_cases(self):
+        assert bm.map_changed_files_with_source([HUMAN_HANDOFF_PATH]) == (
+            ["CH-008", "CH-015"], "rules")
+
+    def test_human_handoff_does_not_map_to_defense_cases(self):
+        """防误报面回归：转人工与防御/注入无关 —— 改它也**不得**把 DF-011/DF-012 拉进来
+        （那是 #3606 收口实测的误报形态：`*_confirm_guard.py` 测试文件名命中了防御规则）。"""
+        cases, _ = bm.map_changed_files_with_source([HUMAN_HANDOFF_PATH])
+        assert [c for c in cases if c.startswith("DF-")] == []
+
+    @pytest.mark.parametrize("path, expected_source", [
+        ("backend/ai-agent-service/tests/test_human_handoff.py", "none"),
+        ("backend/ai-agent-service/tests/test_human_handoff_confirm_guard.py", "none"),
+        (".github/cases/chat.yml", "default_net"),
+    ])
+    def test_human_handoff_test_and_case_paths_never_enter_rules_bucket(self, path, expected_source):
+        cases, source = bm.map_changed_files_with_source([path])
+        assert source == expected_source
+        assert cases == ([] if expected_source == "none" else bm.DEFAULT_BEHAVIOR_CASES)
 
 
 class TestUnionAndDedupe:

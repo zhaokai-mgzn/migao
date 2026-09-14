@@ -4,9 +4,9 @@
 验证新增 Skill 不会抢走已有 Skill 的路由，
 确保 Skill Registry 注册正确、意图映射不冲突。
 """
-# case_ids: DF-008, DF-015, PR-008, OR-009, OR-010, CH-010, CH-019
+# case_ids: DF-008, DF-015, PR-008, OR-009, OR-010, CH-010, CH-019, HR-005, ST-003, ST-005, FN-001
 
-import re
+import dataclasses
 
 import pytest
 
@@ -14,37 +14,18 @@ from app.graph.skills.skill_registry import get_skill_registry, reset_skill_regi
 from app.tools.registry import get_tool_registry
 from app.agents.agent_config import get_agent_config
 
-# 理由必须引用的证据锚点：issue 号（#3317）或用例 ID（CH-019）
-_EVIDENCE_ANCHOR_RE = re.compile(r"#\d+|[A-Z]{2}-\d{3}")
+
+# ── 确认卡可达性判据（#3624：从注册表派生，不再维护 skill 名枚举）──
+# 旧实现硬编码 `("product", "order", "aftersales", "customer")`，与
+# `test_tool_schema_consistency.py::ALWAYS_SKIP_PARAMS` 同一反模式：**清单必然滞后于现实**。
+# 实证：`staff` / `settings` / `data`（#3577 刚补绑 interact）不在清单里，
+# 把它们任一 skill 的 `interact` 拿掉，旧断言**仍然全绿** → 门禁静默漏检。
+# 判据改为「工具注册表的真实元数据」推导，与 `base_skill._requires_confirmation`
+# 同一份口径（destructive / requires_confirmation 才要求确认，见该函数 docstring）。
 
 
-# 允许「不绑 interact」的 B 端写 skill：它们持有需确认写工具，但**经评估**走
-# base_skill 的文本确认降级话术（「本技能没有确认卡片能力：请完整复述并请用户回复确认」）。
-# 语义是**许可**（不是断言），补绑 interact 后条目自动失效、用例仍全绿。
-# 每条必须带理由 + 证据锚点，且必须仍是「持有需确认写工具的 B 端 skill」（见卫生测试）。
-B_SKILL_TEXT_CONFIRM_ALLOWED: dict[str, str] = {
-    "staff": (
-        "employee_manage / role_manage 是 destructive 写，但本 skill 未绑 interact。"
-        "既有决策 issue #3317：用例库涉及这 6 个工具的 16 条用例无一条断言 interact"
-        "（含 smoke 的 HR-001/HR-004 靠口头确认长期通过），故改为让门禁话术按「本 skill "
-        "是否有 interact」分流（文本复述 + 请用户回复确认），而不是给不可执行指令。"
-        "交互形态统一由 #3577 推进（补绑 interact 后本条即失效）。"
-    ),
-    "settings": (
-        "settings_manage（destructive）/ notification_manage（requires_confirmation）"
-        "均为需确认写，本 skill 未绑 interact —— 同 issue #3317 决策，走文本确认降级话术"
-        "（ST-001~ST-005 用例未断言 interact）。统一交互形态由 #3577 推进。"
-    ),
-    "data": (
-        "finance_api / session_manage 为 requires_confirmation 高风险写（审计 07 P0-L1），"
-        "本 skill 未绑 interact —— 同 issue #3317 决策，走文本确认降级话术"
-        "（DA-* 用例未断言 interact）。统一交互形态由 #3577 推进。"
-    ),
-}
-
-
-def _confirm_needing_tools(skill, tool_registry) -> list[str]:
-    """skill 持有的「需确认写工具」名（判据与 base_skill._requires_confirmation 一致）。"""
+def _confirm_needing_tools(skill, tool_registry) -> list:
+    """skill 绑定的「需确认写工具」名单（判据与 `base_skill._requires_confirmation` 一致）。"""
     found = []
     for tool_name in (skill.tool_names or []):
         tool = tool_registry.get_tool(tool_name)
@@ -56,21 +37,27 @@ def _confirm_needing_tools(skill, tool_registry) -> list[str]:
     return sorted(found)
 
 
-def _mibao_skill_names() -> list[str]:
-    """米宝（B 端）skill 名 —— 按 persona 归属从 skill registry 派生。
+def _write_skills_missing_interact(skills, tool_registry) -> tuple:
+    """从注册表派生 `(写 skill 名单, 违规项)`。
 
-    ⚠️ 刻意**不用** `get_agent_config("mibao").get_all_skill_names()`：AgentConfig 是
-    可变全局单例，`test_skill_config_registry.TestAgentRouter.setup_method` 会
-    `reset_agent_configs()` 后注册只含角色的 **stub** mibao（无 skill_names，且无 teardown）
-    → 跨文件顺序耦合：与本文件同跑时 mibao 的 skill_names 为空，断言静默空转/误红。
-    skill registry 的 persona 归属是稳定事实源（与 skill_registry.get_intent_to_route_map
-    的过滤口径一致），且本文件的 autouse fixture 会重置它 → 无跨文件污染。
+    「写 skill」= 绑定了至少一个**需确认写工具**的 skill —— 它们被
+    `base_skill._requires_confirmation` 拦截时，补救话术是「请调用
+    `interact(component=confirm)` 发确认卡」；本 Skill 内没有 `interact`
+    = 门禁给出的路径**不可达**（#3317 的缺陷形态）。
+
+    接收 `skills` 可迭代对象（而不是直接读全局注册表）是为了让**变异验证**能用同一份
+    派生逻辑跑在改动过的配置上（见 `TestWriteSkillInteractInvariant`）——
+    判据只有一份实现，测试与断言不会漂移。
     """
-    return [
-        config.name
-        for config in get_skill_registry().get_all()
-        if "mibao" in (config.system_prompts or {})
-    ]
+    write_skills, violations = [], []
+    for skill in skills:
+        needs = _confirm_needing_tools(skill, tool_registry)
+        if not needs:
+            continue
+        write_skills.append(skill.name)
+        if "interact" not in (skill.tool_names or []):
+            violations.append(f"{skill.name} 持有需确认写工具 {needs} 但未绑定 interact")
+    return sorted(write_skills), violations
 
 
 @pytest.fixture(autouse=True)
@@ -142,10 +129,10 @@ def test_general_has_only_read_tools():
         )
 
 
-# 注（issue #3594）：此处原有硬编码 `ALL_WRITE_TOOLS` 常量（12 个工具名）——
+# 注（issue #3594 / #3624）：此处原有硬编码 `ALL_WRITE_TOOLS` 常量（12 个工具名）——
 # 既从未被任何测试引用（死代码），又是与确认门禁测试同源的**枚举式清单**。
-# 凡是需要"全部写工具"的判据，一律从注册表派生（见下方 registry 驱动测试），
-# 不再维护第二份人工清单（枚举必然滞后于现实，见 §16.1 L0）。
+# 凡是需要"全部写工具"的判据，一律从注册表派生（见下方 registry 驱动测试与
+# `TestWriteSkillInteractInvariant`），不再维护第二份人工清单（枚举必然滞后于现实，§16.1 L0）。
 
 
 def test_each_skill_has_unique_domain():
@@ -226,89 +213,144 @@ def test_prompt_required_interact_tools_are_bound():
 
 
 def test_all_write_skills_bind_interact_via_confirm_guard():
-    """写操作 confirm 守卫（base_skill 代码层拦截提示调 interact confirm）要求
-    所有持有**需确认写工具**的 B 端 Skill 具备 interact，否则被拦截后 LLM 调不到工具。
+    """写操作 confirm 守卫要求：**所有**持有需确认写工具的 Skill 必须绑定 `interact`。
 
-    **registry 驱动（issue #3594）**：判据不再写死 skill 名单 —— 遍历
-    `_mibao_skill_names()`（B 端 skill，按 persona 从 skill registry 派生）的真实绑定，
-    用**工具注册表的真实元数据**（`destructive` / `requires_confirmation`）推导出
-    「持有需确认写工具的 skill」。原实现硬编码 4 元组
-    `("product", "order", "aftersales", "customer")`，
-    漏掉 staff/settings/data —— 枚举式清单必然滞后于现实（与
-    `test_tool_schema_consistency.py::ALWAYS_SKIP_PARAMS` 同一反模式）：
-    新增写 skill / 新写工具绑到旧 skill 时，门禁静默漏检（本 issue 的写工具零门禁
-    就是这样活下来的）。实证：把 `general`（不在旧 4 元组内）的 interact 拿掉，
-    旧枚举断言仍绿、本用例红。
+    根因（#3317）：`base_skill._requires_confirmation` 拦截未确认写操作时，补救话术是
+    「请调用 `interact(component=confirm)` 展示操作预览」。若该 Skill 的 tool_names 里
+    没有 `interact`，这条指令对 LLM **不可执行**（拿到"请调用 X"却没有 X → 反复重试或放弃），
+    确认卡路径不可达，写操作只能靠"上一轮口头确认"侥幸放行。
 
-    例外（**许可**语义，非断言）：`B_SKILL_TEXT_CONFIRM_ALLOWED` 登记的 skill 允许
-    不绑 interact —— 它们走 base_skill 的**文本确认降级话术**（issue #3317：拦截话术
-    按本 Skill 是否有 interact 分流，不再给出不可执行指令）。
-    许可是**自清除**的：这些 skill 将来补绑 interact 后本用例仍全绿（见 #3577），
-    条目自然失效，不需要同时改这里 —— 这正是删掉枚举的意义。
+    **registry 驱动（#3624 收敛，替换原硬编码 4 元组）**：判据不再写死 skill 名单 ——
+    遍历 `get_skill_registry().get_all()` 的真实绑定 × `get_tool_registry()` 的真实元数据
+    （`destructive` / `requires_confirmation`，与 `_requires_confirmation` 同一口径）。
+    旧实现 `("product", "order", "aftersales", "customer")` 正是「枚举清单必然滞后」：
+    `staff` / `settings` / `data`（#3577 产品裁定「交互形态统一」刚给它们补绑 `interact`）
+    都不在清单里 —— 拿掉其中任一个的 `interact`，旧断言仍全绿（实测见
+    `TestWriteSkillInteractInvariant`），新对象/新写工具落地时照旧无人检查。
+
+    覆盖面：全部已注册 Skill（B 端 + C 端）—— 确认卡可达性与 persona 无关，
+    `test_skill_config_registry.py::test_confirmed_write_tools_require_interact_in_same_skill`
+    是同一不变式在 C 端的**子集**（该文件 docstring 里"B 端经评估不补 interact"的前提
+    已被 #3577 推翻）。
     """
-    skill_registry = get_skill_registry()
-    tool_registry = get_tool_registry()
-
-    write_skills: list[str] = []
-    violations: list[str] = []
-    for name in _mibao_skill_names():
-        skill = skill_registry.get(name)
-        if skill is None:
-            continue
-        needs = _confirm_needing_tools(skill, tool_registry)
-        if not needs:
-            continue
-        write_skills.append(name)
-        if "interact" in (skill.tool_names or []):
-            continue
-        if name in B_SKILL_TEXT_CONFIRM_ALLOWED:
-            continue
-        violations.append(f"{name} 持有需确认写工具 {needs} 但未绑定 interact")
+    write_skills, violations = _write_skills_missing_interact(
+        get_skill_registry().get_all(), get_tool_registry()
+    )
 
     assert write_skills, (
-        "推导出的「持有需确认写工具的 B 端 Skill」集合为空 —— registry 派生逻辑失效，"
+        "派生的「持有需确认写工具的 Skill」集合为空 —— registry 派生逻辑失效，"
         "本用例会空转假绿"
     )
     assert not violations, (
-        "以下 B 端 Skill 的确认卡路径不可达（写工具被 confirm 守卫拦截后无 interact 可调，"
-        "且未登记文本确认降级许可）：\n  " + "\n  ".join(violations)
-        + "\n处置：① 给该 skill 补绑 interact（交互形态统一，见 #3577）；或 "
-        "② 在 B_SKILL_TEXT_CONFIRM_ALLOWED 登记并写明理由 + 证据锚点。"
+        "以下 Skill 的确认卡路径不可达（写操作被 confirm 守卫拦截后，本 Skill 内调不到 "
+        "interact）：\n  " + "\n  ".join(violations)
+        + "\n处置：给该 Skill 补绑 interact（写操作 confirm 卡，交互形态统一见 #3577）。"
     )
 
 
-def test_text_confirm_allowlist_is_live_and_reasoned():
-    """文本确认降级许可清单的卫生：每条带理由 + 证据锚点，且**确实仍是写 skill**。
+class TestWriteSkillInteractInvariant:
+    """收敛后的不变式必须**非空转**、且覆盖真实写 skill（#3624 双向锁定）。
 
-    - key 必须是 mibao 注册的 skill（防陈旧/拼写错误）；
-    - 每条必须带理由，且引用证据锚点（issue 号 / 用例 ID）—— 防豁免清单变垃圾场；
-    - 每条必须**仍然持有需确认写工具**：否则该条目已无意义（skill 变纯只读，
-      或已补绑 interact 由别处兜住）→ 红，强制清理。
+    为什么单独立类：registry 派生很容易"写成一个永远返回空的函数"（假绿）。
+    这里用**同一份派生逻辑**（`_write_skills_missing_interact`）跑在变异输入上，
+    证明它真的读 `tool_names` 与工具元数据；再用"不得窄于旧枚举"锁住收敛方向。
     """
-    skill_registry = get_skill_registry()
-    tool_registry = get_tool_registry()
-    mibao_skills = set(_mibao_skill_names())
 
-    problems: list[str] = []
-    for name, reason in B_SKILL_TEXT_CONFIRM_ALLOWED.items():
-        text = (reason or "").strip()
-        if not text:
-            problems.append(f"{name}: 缺 reason（许可必须写明理由，禁止裸登记）")
-        elif not _EVIDENCE_ANCHOR_RE.search(text):
-            problems.append(
-                f"{name}: reason 未引用证据锚点（issue #NNNN 或用例 ID XX-999）"
+    # 旧实现的硬编码清单 —— 只作为**回归锚点**（证明收敛真的带来增益、防回退），
+    # 不再是判据本身。
+    LEGACY_ENUMERATION = ("product", "order", "aftersales", "customer")
+
+    @staticmethod
+    def _derived_write_skills() -> list:
+        return _write_skills_missing_interact(
+            get_skill_registry().get_all(), get_tool_registry()
+        )[0]
+
+    @staticmethod
+    def _without_interact(skill_name: str) -> list:
+        """真实注册表的副本，其中 `skill_name` 的 `interact` 被拿掉（模拟回归）。"""
+        return [
+            dataclasses.replace(
+                config, tool_names=[t for t in config.tool_names if t != "interact"]
+            ) if config.name == skill_name else config
+            for config in get_skill_registry().get_all()
+        ]
+
+    # ── 方向 1：不变式必须真的会红（防空转）──
+    @pytest.mark.parametrize("skill_name", ["settings", "staff", "data", "general"])
+    def test_invariant_catches_skill_that_lost_interact(self, skill_name):
+        """变验验证：拿掉某写 skill 的 `interact` → 派生必须把它报为违规。
+
+        参数含 `settings`（用户点名的回归场景）、`staff` / `data`（同为 #3577 补绑的三处）
+        与 `general`（兜底也持写工具）—— 后三个**都不在旧枚举里**，旧判据对它们恒绿。
+        """
+        write_skills, violations = _write_skills_missing_interact(
+            self._without_interact(skill_name), get_tool_registry()
+        )
+        assert skill_name in write_skills, (
+            f"{skill_name} 未被识别为写 skill —— 派生过窄（漏检）"
+        )
+        assert any(v.startswith(f"{skill_name} ") for v in violations), (
+            f"拿掉 {skill_name} 的 interact 后不变式仍然全绿 —— 派生逻辑空转"
+        )
+
+    def test_unmutated_registry_has_no_violation(self):
+        """对照：真实注册表（未变异）无违规 —— 上一条的红确实来自变异。"""
+        write_skills, violations = _write_skills_missing_interact(
+            get_skill_registry().get_all(), get_tool_registry()
+        )
+        assert write_skills and not violations, violations
+
+    # ── 方向 2：收敛不得过窄（防漏检）──
+    def test_derived_skills_strictly_exceed_legacy_enumeration(self):
+        """派生集必须**严格超出**旧枚举 —— 旧枚举漏掉的 skill 必须有人检查。
+
+        这条同时是防回退闸门：谁把判据改回硬编码 4 元组（或其等价物），这里就红。
+        """
+        derived = set(self._derived_write_skills())
+        assert derived > set(self.LEGACY_ENUMERATION), (
+            f"派生集 {sorted(derived)} 未超出旧枚举 {sorted(self.LEGACY_ENUMERATION)} —— "
+            f"枚举漏掉的 skill 仍无人检查（#3624 的缺陷形态）"
+        )
+
+    @pytest.mark.parametrize("skill_name", ["product", "order", "aftersales", "customer",
+                                            "staff", "settings", "data", "general"])
+    def test_real_write_skills_are_all_covered(self, skill_name):
+        """真实写 skill 全部进入判据（防收敛过窄导致漏检）。
+
+        名单 = 旧枚举 ∪ #3577 补绑 interact 的 staff/settings/data ∪ 兜底 general。
+        若某个 skill **合法地**不再持有任何需确认写工具，应连同本条一起删掉该参数
+        （判据本身仍是注册表派生，这里只是"派生结果不得缩水"的回归锚点）。
+        """
+        assert skill_name in self._derived_write_skills(), (
+            f"{skill_name} 持有需确认写工具却不在判据内 —— 收敛过窄"
+        )
+
+    def test_every_derived_skill_really_holds_confirm_needing_tools(self):
+        """自一致性：被判定为"写 skill"的必须真的持有需确认写工具
+        （防判据退化成"所有 skill 一律要求 interact"）。"""
+        registry = get_skill_registry()
+        tool_registry = get_tool_registry()
+        for name in self._derived_write_skills():
+            skill = registry.get(name)
+            assert skill is not None, f"派生出的 skill '{name}' 不在注册表里"
+            assert _confirm_needing_tools(skill, tool_registry), (
+                f"{name} 没有任何需确认写工具，不该被判为写 skill"
             )
-        if name not in mibao_skills:
-            problems.append(f"{name}: 不是 mibao 注册的 skill（陈旧条目或拼写错误）")
-            continue
-        skill = skill_registry.get(name)
-        if skill is not None and not _confirm_needing_tools(skill, tool_registry):
-            problems.append(
-                f"{name}: 已不持有需确认写工具，许可条目无意义（应删除）"
-            )
-    assert not problems, (
-        "文本确认降级许可清单存在陈旧/不达标条目：\n  " + "\n  ".join(problems)
-    )
+
+    def test_criterion_matches_confirm_gate(self):
+        """判据与 `base_skill._requires_confirmation` 对齐：派生出的"需确认写工具"在
+        未确认的自然语言消息下必须真被门禁拦（否则"需要确认"是我自己编的口径）。"""
+        from app.graph.skills.base_skill import _requires_confirmation
+
+        registry = get_skill_registry()
+        tool_registry = get_tool_registry()
+        for name in self._derived_write_skills():
+            for tool_name in _confirm_needing_tools(registry.get(name), tool_registry):
+                tool = tool_registry.get_tool(tool_name)
+                assert _requires_confirmation(tool, {"action": "delete"}, "帮我处理一下这个") is True, (
+                    f"{name}.{tool_name} 被判为需确认写工具，但门禁未拦 —— 判据与门禁漂移"
+                )
 
 
 def test_general_binds_interact_for_clarify_cards():
