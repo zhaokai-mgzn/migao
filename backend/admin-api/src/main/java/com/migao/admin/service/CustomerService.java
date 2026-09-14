@@ -75,6 +75,15 @@ public class CustomerService extends ServiceImpl<CustomerProfileMapper, Customer
         Page<CustomerProfile> customerPage = new Page<>(page, size);
         Page<CustomerProfile> resultPage = customerProfileMapper.selectPage(customerPage, wrapper);
 
+        // tags 口径统一（#3665 冒烟 B2）：列表与详情必须同形态（标签对象数组）。
+        // customer_profiles.tags 存的是标签 ID 数组，原样下发会让前端拿到字符串数组，
+        // 与 CustomerTag[] 类型契约不符（冒烟期只能页内容忍 → 空 chip + React key 警告）。
+        // 复用详情同一套解析实现（resolveCustomerTags），租户标签按页缓存避免 N+1。
+        Map<Long, List<CustomerTag>> tenantTagCache = new HashMap<>();
+        for (CustomerProfile record : resultPage.getRecords()) {
+            record.setTags(resolveCustomerTags(record, tenantTagCache));
+        }
+
         return PageResponse.of(resultPage.getTotal(), resultPage.getCurrent(),
                 resultPage.getSize(), resultPage.getRecords());
     }
@@ -96,14 +105,7 @@ public class CustomerService extends ServiceImpl<CustomerProfileMapper, Customer
         detail.put("profile", profile);
 
         // 查询客户已关联标签（按 profile.tags 中的标签 ID 过滤，而非返回租户全部标签）
-        List<CustomerTag> allTags = getCustomerTags(profile.getTenantId());
-        List<String> linkedTagIds = readTagIds(profile.getTags());
-        List<CustomerTag> tags = linkedTagIds.isEmpty()
-                ? List.of()
-                : allTags.stream()
-                        .filter(t -> linkedTagIds.contains(t.getId()))
-                        .toList();
-        detail.put("tags", tags);
+        detail.put("tags", resolveCustomerTags(profile, new HashMap<>()));
 
         // 查询订单历史（最近10条）
         LambdaQueryWrapper<Order> orderWrapper = new LambdaQueryWrapper<>();
@@ -418,6 +420,33 @@ public class CustomerService extends ServiceImpl<CustomerProfileMapper, Customer
                     .toList();
         }
         return List.of(String.valueOf(tags));
+    }
+
+    /**
+     * 把档案里的标签 ID 列表解析为标签对象列表（列表与详情**唯一**口径，见 #3665 冒烟 B2）。
+     *
+     * 「客户 tags 是对象数组」这一 API 契约的单一实现点：getCustomerPage 与 getCustomerDetail
+     * 都必须经此方法产出，避免两处各写一套再次分叉（冒烟实证：列表下发字符串 ID 数组、
+     * 详情下发对象数组，前端只能靠页内容忍）。
+     *
+     * @param profile       客户档案（tags 可为原始 ID 数组）
+     * @param tenantTagCache 租户 ID → 标签列表 的页内缓存，避免列表逐行查标签；传 null 则不缓存
+     * @return 客户已关联的标签对象列表（顺序与档案中 ID 顺序无关；未打标时为空列表）
+     */
+    private List<CustomerTag> resolveCustomerTags(CustomerProfile profile,
+                                                  Map<Long, List<CustomerTag>> tenantTagCache) {
+        List<String> linkedTagIds = readTagIds(profile.getTags());
+        if (linkedTagIds.isEmpty()) {
+            // 无标签：直接空列表，省一次标签表查询（与详情原有 `linkedTagIds.isEmpty() ? List.of()` 一致）
+            return List.of();
+        }
+        Long tenantId = profile.getTenantId();
+        List<CustomerTag> allTags = tenantTagCache == null
+                ? getCustomerTags(tenantId)
+                : tenantTagCache.computeIfAbsent(tenantId, this::getCustomerTags);
+        return allTags.stream()
+                .filter(t -> linkedTagIds.contains(t.getId()))
+                .toList();
     }
 
     /**

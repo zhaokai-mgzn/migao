@@ -194,7 +194,8 @@ class ProductManageTool(BaseTool):
             )
 
         json_data: Dict[str, Any] = {"name": name}
-        if category_id: json_data["categoryId"] = category_id
+        # 空分类不下发（#3665 冒烟 B1）：'' 会让后端 category_id 违 FK；用 strip 兼容纯空白
+        if category_id and category_id.strip(): json_data["categoryId"] = category_id
         if price is not None: json_data["basePrice"] = price
         if description: json_data["description"] = description
         if stock_quantity is not None: json_data["stock"] = int(stock_quantity)
@@ -260,7 +261,9 @@ class ProductManageTool(BaseTool):
         # 只传非 None 字段（null = 不修改，Java Agent PATCH 端点自动处理）
         json_data: Dict[str, Any] = {}
         if name is not None: json_data["name"] = name
-        if category_id is not None: json_data["categoryId"] = category_id
+        # 空分类不下发（#3665 冒烟 B1）：与 create 真值判断同口径——'' 会被后端
+        # resolveCategoryId('') → null → 422「无法找到匹配的分类」，纯空白同理
+        if category_id is not None and category_id.strip(): json_data["categoryId"] = category_id
         if price is not None: json_data["basePrice"] = price
         if description is not None: json_data["description"] = description
         if stock_quantity is not None: json_data["stock"] = int(stock_quantity)

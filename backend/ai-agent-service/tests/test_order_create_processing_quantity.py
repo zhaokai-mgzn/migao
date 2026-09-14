@@ -11,7 +11,7 @@
 1. 工具层：order_create 完整透传 processing_info.processingItems（含 quantity/unitPrice/subtotal），processingFee = 各项单价×数量之和
 2. Prompt 层：order prompt 固化按米规则、不含密度推导（perMeterQuantity 已从 prompt 移除）
 """
-# case_ids: OR-014
+# case_ids: OR-014, OR-028
 import os
 from unittest.mock import AsyncMock, patch
 
@@ -149,6 +149,73 @@ class TestOrderCreateProcessingPassthrough:
         assert pi["processingItems"][0]["quantity"] == 1
         assert pi["processingItems"][0]["subtotal"] == 50.0
         assert pi["processingFee"] == 50.0
+
+
+    @patch("app.tools.order_create.get_admin_api_client")
+    async def test_per_area_decimal_quantity_preserved(
+        self, mock_get_client, tool, agent_ctx
+    ):
+        """per_area 小数面积（门幅 2.8m × 3m = 8.4 ㎡，刺绣 30 元/㎡）必须保真（issue #3666）。
+
+        旧行为：`items[].quantity` 被 `int()` 取整、`processingItems[].quantity` schema 为
+        integer、服务端 `order_items.quantity` 是 INTEGER 列 —— 8.4 会被截断成 8，
+        加工费从 30×8.4=252.00 元变 30×8=240.00 元 = **少收 12.00 元**。
+        口径依据：docs/testing/acceptance-protocol.md:225
+        `quantity 按计价方式（per_meter=米数 / per_set=1 / per_area=宽×高）`。
+        """
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(
+            return_value={"success": True, "data": {"id": "ORD-3666", "orderNo": "ORD-3666"}}
+        )
+        mock_get_client.return_value = mock_client
+
+        items = [
+            {
+                "product_name": "刺绣窗帘",
+                "quantity": 8.4,          # per_area：宽 2.8 × 高 3.0 = 8.4 ㎡
+                "unit_price": 100.0,
+                "subtotal": 1092.0,       # 面料 840.00 + 加工费 252.00
+                "width": 2.8,
+                "height": 3.0,
+                "processing_info": {
+                    "sellingMethod": "bulk_cut",
+                    "doorWidth": "2.8米",
+                    "processingFee": 252.0,   # 30 元/㎡ × 8.4 ㎡
+                    "processingItems": [
+                        {
+                            "id": "pi-embroidery",
+                            "name": "刺绣工艺",
+                            "unitPrice": 30.0,
+                            "quantity": 8.4,
+                            "unit": "㎡",
+                            "pricingMethod": "per_area",
+                            "subtotal": 252.0,
+                        }
+                    ],
+                },
+            }
+        ]
+
+        result = await tool.execute(
+            context=agent_ctx,
+            customer_name="张三",
+            customer_phone="13800138000",
+            items=items,
+        )
+
+        assert result.success is True, f"per_area 小数面积被误拦：{result.error} {(result.message or '')}"
+        sent = mock_client.post.call_args[1]["json_data"]
+        entry = sent["items"][0]
+        # ① 明细数量保真（不得 int() 截断成 8）
+        assert entry["quantity"] == pytest.approx(8.4), "明细数量 8.4 必须保真透传"
+        pi = entry["processingInfo"]
+        # ② 加工项数量与加工费保真
+        assert pi["processingItems"][0]["quantity"] == pytest.approx(8.4)
+        assert pi["processingFee"] == pytest.approx(252.0)
+        # ③ 金额数学关系：加工费 = 单价 × 数量（252.00，不是截断后的 240.00）
+        assert pi["processingItems"][0]["unitPrice"] * pi["processingItems"][0]["quantity"] == pytest.approx(252.0)
+        # ④ 总额自洽：面料(100×8.4=840) + 加工费(252) = 1092.00
+        assert entry["unitPrice"] * entry["quantity"] + pi["processingFee"] == pytest.approx(1092.0)
 
 
 class TestOrderPromptQuantityRules:

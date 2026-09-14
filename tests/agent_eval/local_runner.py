@@ -2619,15 +2619,33 @@ def repeat_stop_met(results: list, spec: dict) -> bool:
 
     为什么要求"成功"而不是"调用过"：被门禁挡回的调用（缺验证码/缺确认）没有推进流程，
     此时停轮等于把用例钉死在失败态；只在成功（或状态未知）时才停。
+
+    `action`（issue #3667）：可选，把停条件从**工具级**收窄到**某一次 action**。
+    为什么需要（PG-016 实证 run 34821647043）：状态机三步（issue → start → complete）
+    走的是**同一个** `processing_order_update`，工具级停条件在第一步就命中 →
+    后两步的重复轮被整体跳过（开始加工的确认卡无人答）→ 用例只能改用 `auto_respond`
+    逐轮写死（那正是 `repeat_until` 想消灭的写法）。声明 `action` 后：
+    该轮必须**真的发起过**这个 action 的调用，且**对齐到的那次调用**成功才停。
     """
     want = str((spec or {}).get("tool_called") or "").strip().lower()
     if not want:
         return False
+    want_action = str((spec or {}).get("action") or "").strip()
     saw_status = False
     for r in results or []:
-        called = any(want in str(tc.get("name") or "").lower()
-                     for tc in (r.get("tool_calls") or []))
-        if not called:
+        if want_action:
+            called, aligned = _round_action_result(r, want, want_action)
+            if not called:
+                continue
+            if aligned is not None:
+                saw_status = True
+                res = aligned.get("result") if isinstance(aligned.get("result"), dict) else {}
+                if res.get("success"):
+                    return True
+                continue
+            # 对齐不了（数量不等）→ 落到下面的工具级判定（本轮已确认是目标 action 的调用）
+        elif not any(want in str(tc.get("name") or "").lower()
+                     for tc in (r.get("tool_calls") or [])):
             continue
         flags = _round_call_success(r, want)
         if flags:
@@ -2929,6 +2947,33 @@ def check_no_full_phone(results: list) -> list:
     return issues
 
 
+def _round_action_result(r: dict, tool: str, action: str) -> tuple:
+    """本轮「声明 action 的那次调用」的结果 → `(是否发起该调用, 对齐到的 tool_result 或 None)`。
+
+    为什么必须**对齐**而不是"该轮有成功就算"（issue #3667，PP-006 实证 run 34820346966）：
+    同一轮里模型可以调**同名工具的多个 action**（首轮 `create_processing_item` 被拒后
+    **同轮** `list_categories` 恢复成功）→ 只按工具名在该轮里取首个成功 `tool_result`
+    会取到**别的 action** 的 payload（假红；字段名撞上时是假绿）。
+
+    怎么对齐：`tool_result` 事件不带 args（`app/api/sse.py` 只发 `{'tool','result'}`），
+    所以「哪个结果是哪次调用的」只能按**同轮同名调用的出现顺序** —— `tool_calls` 与
+    `tool_results` 都由 `customer_service_agent` 按 `state.messages` 顺序产出
+    （`tool_result` 只是入队到回合末统一 flush，**相对顺序不变**）。
+    数量对不上（合成轨迹/节点重放）→ 返回 `(True, None)`，由调用方回退旧语义（不猜）。
+    """
+    calls = [tc for tc in (r or {}).get("tool_calls") or []
+             if _tool_name_matches((tc or {}).get("name"), tool)]
+    hit = [i for i, tc in enumerate(calls)
+           if str(((tc or {}).get("args") or {}).get("action") or "") == action]
+    if not hit:
+        return False, None
+    results = [tr for tr in (r or {}).get("tool_results") or []
+               if _tool_name_matches((tr or {}).get("tool"), tool)]
+    if len(results) != len(calls):
+        return True, None
+    return True, results[hit[0]]
+
+
 def _first_successful_payload(results: list, tool: str, action: str = "") -> dict:
     """首个**成功**调用的 `result.data`（可按 `args.action` 限定是**哪一次**调用）。
 
@@ -2938,16 +2983,19 @@ def _first_successful_payload(results: list, tool: str, action: str = "") -> dic
     `output_verify[name/pricingMethod]` 取到了 R2 `list_categories` 的 payload
     `{'categories': [...]}` → **假红**（真建成功的 R5 payload 从未被核对）；反之若字段名
     撞上（如都叫 `items`）就会**假绿**（核对了错的 action 还说"产出对"）。
-    `tool_results` 事件不带 args（见 `check_must_succeed` 的同款说明），故与 `must_succeed`
-    同构处理：**该轮真的发起了匹配 action 的调用**，才认这一轮的结果。
+
+    声明 action 时按 `_round_action_result` **对齐到那一次调用**：该 action 这次没成功
+    → 换下一轮（**不借同轮别的 action 的 payload** —— 那正是 #3667 修的同轮取错）。
     """
     for r in results or []:
         if action:
-            called = any(
-                _tool_name_matches(tc.get("name"), tool)
-                and str((tc.get("args") or {}).get("action") or "") == action
-                for tc in r.get("tool_calls") or [])
+            called, aligned = _round_action_result(r, tool, action)
             if not called:
+                continue
+            if aligned is not None:
+                res = aligned.get("result") if isinstance(aligned.get("result"), dict) else {}
+                if res.get("success") and isinstance(res.get("data"), dict):
+                    return res["data"]
                 continue
         for tr in r.get("tool_results") or []:
             if not _tool_name_matches(tr.get("tool"), tool):
@@ -2956,6 +3004,27 @@ def _first_successful_payload(results: list, tool: str, action: str = "") -> dic
             if res.get("success") and isinstance(res.get("data"), dict):
                 return res["data"]
     return {}
+
+
+def _payload_lookup(payload: dict, key: str) -> tuple:
+    """按 `expect` 的键取值 → `(是否找到, 值)`。支持**点号路径**（`result.status`）。
+
+    为什么需要（issue #3667 / PG-016 实证 run 34822527203）：`check_output_verify` 原先只按
+    **字面顶层 key** 取值，`result.status` 这类嵌套产出**永远核不到** → 用例只能把 expect
+    收敛成扁平键，**丢掉了对嵌套产出的核对能力**（而嵌套恰好是工具回显的常态：
+    `processing_order_update` 的 `{action, result:{status,…}}`）。
+    取值顺序：**字面 key 优先**（兼容"键名里真有点号"的 payload，不改既有语义）→ 点号逐段下钻。
+    边界：只下钻**字典**路径；列表下标（`list.0.status`）暂不支持 —— 有需要时按用例反馈再加。
+    """
+    if key in payload:
+        return True, payload[key]
+    cur = payload
+    for part in str(key).split("."):
+        if isinstance(cur, dict) and part in cur:
+            cur = cur[part]
+            continue
+        return False, None
+    return True, cur
 
 
 def check_output_verify(results: list, output_verify: list) -> list:
@@ -2993,11 +3062,11 @@ def check_output_verify(results: list, output_verify: list) -> list:
                 f"output_verify[{tool}]{_scope}: 找不到成功调用的结果（无从核对产出）")
             continue
         for key, want in expect.items():
-            if key not in payload:
+            found, got = _payload_lookup(payload, key)
+            if not found:
                 issues.append(
                     f"output_verify[{tool}]: 结果里没有字段 {key!r}（实际字段: {sorted(payload)}）")
                 continue
-            got = payload[key]
             if want == OUTPUT_NONEMPTY:
                 if not str(got or "").strip():
                     issues.append(f"output_verify[{tool}]: {key} 期望非空，实际 {got!r}")
@@ -3092,7 +3161,9 @@ async def check_db_verify(token: str, db_verify: list, results: list | None = No
                 if nm:
                     by_name.setdefault(nm, 0)
                     try:
-                        by_name[nm] += int((it or {}).get("quantity") or 0)
+                        # issue #3666：order_items.quantity 已放宽为 DECIMAL(10,2)
+                        # （per_meter 米数 / per_area 面积可为小数），断言用 float 保真
+                        by_name[nm] += float((it or {}).get("quantity") or 0)
                     except (TypeError, ValueError):
                         pass
             for want in spec.get("expect_products") or []:
@@ -3106,7 +3177,7 @@ async def check_db_verify(token: str, db_verify: list, results: list | None = No
             # 前者是数量值算错、后者是重复行累加（工具层已加 fail-closed 守卫）。
             # 没有这个诊断，失败信息只会说"9 ≠ 3"，排查只能靠猜。
             _lines = " + ".join(
-                f"{str((it or {}).get('productName') or '?')}×{int((it or {}).get('quantity') or 0)}"
+                f"{str((it or {}).get('productName') or '?')}×{float((it or {}).get('quantity') or 0):g}"
                 f"@{float((it or {}).get('unitPrice') or 0):g}"
                 for it in items)
             _line_count = len(items)
@@ -3116,7 +3187,7 @@ async def check_db_verify(token: str, db_verify: list, results: list | None = No
                 if hit is None:
                     continue
                 try:
-                    want_q = int(q)
+                    want_q = float(q)
                 except (TypeError, ValueError):
                     continue
                 if by_name[hit] != want_q:

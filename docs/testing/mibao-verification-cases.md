@@ -2051,7 +2051,7 @@
 真值: ai-chat.context-memory
 溯源: 2026-09-04 新增：issue #2821 延续切片 C（vision 分析落槽 + base_skill 接线） ｜ tags: ontology, vision, context_memory, grounding, base_skill
 
-## 订单域（26 case）
+## 订单域（27 case）
 
 ### OR-001. 订单列表查询 🟢
 ```
@@ -2543,6 +2543,22 @@
 ```
 真值: order.create-flow, ai-chat.confirm-required
 溯源: 2026-09-14 新增（issue #3558 覆盖体检）：validate_input 在 C 端仅 OR-023（正向半），补拒绝半——非法号码不得落单 ｜ tags: order_create, validate_input, rejection, xiaobu
+
+### OR-028. B 端下单加工项按面积计价 - 小数面积 8.4 ㎡ 保真（不得截断成 8 少收钱） 🔵
+```
+你: 给张三下单，手机 13800138000；2699系列雪尼尔窗帘面料，2699-03暖米色，散剪，2.8米门幅，要 3 米
+你: 再加刺绣工艺加工，面积算 8.4 平方米
+期望: product_detail
+期望: order_create
+数据: 刺绣工艺 per_area 数量 = 8.4 ㎡，加工费 = 30 × 8.4 = 252.00 元（截断成 8 会变 240.00，少收 12.00）
+数据: 订单总额 = 面料小计 23.80×3=71.40 + 加工费 252.00 = 323.40 元
+数据: 订单明细数量落库为 3（面料米数），DECIMAL(10,2) 列不得改变整数数量的落库语义
+必须成功: order_create
+金额: order_create 「2699系列雪尼尔窗帘面料」 → unit_price; subtotal; processing_fee; total
+落库: order_items → source=order_create; expect_products=['2699系列雪尼尔窗帘面料']; expect_quantities={'2699系列雪尼尔窗帘面料': 3}
+```
+真值: order.create-flow
+溯源: 2026-09-14 新增（issue #3666）：订单数量语义放宽为 DECIMAL(10,2) 的端到端金额回归网——此前 per_area 小数面积（8.4 ㎡）会被 Integer 截断成 8 ㎡ 少收 12.00 元，且 OrderService 的 toInteger() 会让列表/详情加工费与外层金额自相矛盾 ｜ tags: order_create, processing_item, per_area, decimal_quantity
 
 ## 加工项域（8 case）
 
@@ -3816,8 +3832,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：286（活跃 146，跳过 140）
-- tier 分布：smoke 9 / normal 244 / adversarial 33
+- 用例总数：287（活跃 147，跳过 140）
+- tier 分布：smoke 9 / normal 245 / adversarial 33
 - 售后域：9
 - agents：6
 - api：19
@@ -3834,7 +3850,7 @@
 - misc：15
 - onboarding：5
 - ontology：4
-- 订单域：26
+- 订单域：27
 - 加工项域：8
 - processing-order：16
 - 商品域：22

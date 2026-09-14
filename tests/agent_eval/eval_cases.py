@@ -3535,6 +3535,27 @@ _CASE_OR_026 = EvalCase(
     db_verify=[{'fetch': 'order_phone', 'source': 'order_create', 'expect_phone': '13800138000', 'expect_customer_name': '张三', 'expect_address_contains': '文三路'}],
 )
 
+# ── OR-028 [NORMAL] B 端下单加工项按面积计价 - 小数面积 8.4 ㎡ 保真（不得截断成 8 少收钱）（源: cases/order.yml）──
+_CASE_OR_028 = EvalCase(
+    id='OR-028',
+    legacy_id='',
+    title='B 端下单加工项按面积计价 - 小数面积 8.4 ㎡ 保真（不得截断成 8 少收钱）',
+    skill=Skill.ORDER,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['给张三下单，手机 13800138000；2699系列雪尼尔窗帘面料，2699-03暖米色，散剪，2.8米门幅，要 3 米', '再加刺绣工艺加工，面积算 8.4 平方米'],
+    expectations=['product_detail', 'order_create'],
+    data_checks=['刺绣工艺 per_area 数量 = 8.4 ㎡，加工费 = 30 × 8.4 = 252.00 元（截断成 8 会变 240.00，少收 12.00）', '订单总额 = 面料小计 23.80×3=71.40 + 加工费 252.00 = 323.40 元', '订单明细数量落库为 3（面料米数），DECIMAL(10,2) 列不得改变整数数量的落库语义'],
+    skip_reason='',
+    tags=['order_create', 'processing_item', 'per_area', 'decimal_quantity'],
+    persona='mibao',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    must_succeed=[{'tool': 'order_create'}],
+    amount_verify=[{'tool': 'order_create', 'product_name': '2699系列雪尼尔窗帘面料', 'checks': ['unit_price', 'subtotal', 'processing_fee', 'total']}],
+    db_verify=[{'fetch': 'order_items', 'source': 'order_create', 'expect_products': ['2699系列雪尼尔窗帘面料'], 'expect_quantities': {'2699系列雪尼尔窗帘面料': 3}}],
+)
+
 # ── PG-001 [NORMAL] 生成加工单 - 已确认含加工项订单 → 加工单生成 + 订单进入 producing（源: cases/processing-order.yml）──
 _CASE_PG_001 = EvalCase(
     id='PG-001',
@@ -5545,6 +5566,7 @@ ALL_CASES = (
     _CASE_OR_024,
     _CASE_OR_025,
     _CASE_OR_026,
+    _CASE_OR_028,
     _CASE_PG_001,
     _CASE_PG_002,
     _CASE_PG_003,

@@ -687,7 +687,7 @@ CREATE TABLE order_items (
     order_id VARCHAR(36) NOT NULL REFERENCES orders(id),
     product_id VARCHAR(36),                         -- 关联商品
     product_name VARCHAR(200),                      -- 商品名称
-    quantity INTEGER DEFAULT 1,                     -- 数量
+    quantity DECIMAL(10,2) DEFAULT 1,               -- 数量（计价方式口径：per_meter=米数/per_set=1/per_area=宽×高㎡，issue #3666）
     unit_price DECIMAL(12,2),                       -- 单价
     width DECIMAL(8,2),                             -- 宽度(米)
     height DECIMAL(8,2),                            -- 高度(米)

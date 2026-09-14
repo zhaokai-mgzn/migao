@@ -1659,3 +1659,69 @@ cases:
       ci:
         - xiaobu-acceptance.yml
       verifies: []
+
+  - id: OR-028
+    legacy_id: ""
+    title: "B 端下单加工项按面积计价 - 小数面积 8.4 ㎡ 保真（不得截断成 8 少收钱）"
+    domains:
+      - order
+      - processing
+    persona: mibao
+    tier: normal
+    tags:
+      - order_create
+      - processing_item
+      - per_area
+      - decimal_quantity
+    truths_ref:
+      - order.create-flow
+    # ── 容量缺陷回归网（issue #3666）──
+    # 现象：订单数量语义过窄 —— `order_items.quantity` 是 INTEGER，而数量口径按计价方式
+    #   （docs/testing/acceptance-protocol.md:225：per_meter=米数 / per_set=1 / per_area=宽×高）。
+    #   per_area 的合法面积可以是小数：门幅 2.8m × 3m = **8.4 ㎡**，刺绣工艺 30 元/㎡
+    #   → 正确 252.00 元；整数只能表示 8 → 240.00 元 = **少收 12.00 元**。
+    # 归因（代码级）：DTO/entity `Integer quantity` + `order_items.quantity INTEGER`
+    #   + `OrderService.extractProcessingItems()` 走 `toInteger()`（8.4 → 8，列表/详情
+    #   加工费按截断值重算，与外层落库金额自相矛盾）。
+    # 裁定：放宽为 DECIMAL(10,2)/BigDecimal（方案 A）。
+    # 本条断言**金额数学关系**（acceptance-protocol §3.2）：
+    #   Σ加工费 = 30 × 8.4 = 252.00（截断成 8 会得 240.00 → processing_fee 断言判红）；
+    #   总额 = 面料 23.80×3 + 252.00 = 323.40；
+    #   落库明细数量 = 3（面料米数）—— 数量列放宽后仍必须保真。
+    # 注：本条不依赖"模型自己算面积"这一 LLM 算术能力（那是另一条能力线，且 8 vs 8.4
+    #   的首跑分歧正是 chat.yml:408 记录的**选中错商品**导致的金额不可复现）——
+    #   顾客在开口时说清面积真值，断言聚焦「数值透传→落库→计费」这一确定性链路。
+    user_inputs:
+      - "给张三下单，手机 13800138000；2699系列雪尼尔窗帘面料，2699-03暖米色，散剪，2.8米门幅，要 3 米"
+      # 刻意**只给面积真值**（不给门幅×米数的乘法题）：本条测的是「数值透传→落库→计费」
+      # 的保真链路，不是让模型做算术。给面积真值可去掉"模型自己算 8 vs 8.4"的方差源，
+      # 让断言只咬住截断缺陷本身（8.4 被截断成 8 → 加工费 240.00 ≠ 252.00 → 判红）。
+      - "再加刺绣工艺加工，面积算 8.4 平方米"
+    expectations:
+      - tool: product_detail
+      - tool: order_create
+    must_succeed:
+      - tool: order_create
+    amount_verify:
+      - tool: order_create
+        product_name: "2699系列雪尼尔窗帘面料"
+        checks: [unit_price, subtotal, processing_fee, total]
+    db_verify:
+      - fetch: order_items
+        source: order_create
+        expect_products: ["2699系列雪尼尔窗帘面料"]
+        expect_quantities:
+          2699系列雪尼尔窗帘面料: 3
+    data_checks:
+      - "刺绣工艺 per_area 数量 = 8.4 ㎡，加工费 = 30 × 8.4 = 252.00 元（截断成 8 会变 240.00，少收 12.00）"
+      - "订单总额 = 面料小计 23.80×3=71.40 + 加工费 252.00 = 323.40 元"
+      - "订单明细数量落库为 3（面料米数），DECIMAL(10,2) 列不得改变整数数量的落库语义"
+    skip_reason: ""
+    merge_log: "2026-09-14 新增（issue #3666）：订单数量语义放宽为 DECIMAL(10,2) 的端到端金额回归网——此前 per_area 小数面积（8.4 ㎡）会被 Integer 截断成 8 ㎡ 少收 12.00 元，且 OrderService 的 toInteger() 会让列表/详情加工费与外层金额自相矛盾"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_order_create_processing_quantity.py"
+        - "backend/ai-agent-service/tests/test_order_create_quantity_bounds.py"
+      ci:
+        - agent-eval.yml
+      verifies: []
