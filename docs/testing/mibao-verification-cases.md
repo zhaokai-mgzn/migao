@@ -2533,7 +2533,7 @@
 真值: processing-manage.crud, product-sku-stock.create-flow
 溯源: 2026-09-07 改写（issue #3005，回滚 #2986）：行业加工费按米计价、辅料（罗马圈/四爪钩等）含在按米加工费中——per_piece 与「每米数量」密度不符合实际（数量对不上车间工艺、B 端无法对账），已回滚移除；PP-006 由密度配置用例改为计价方式回归断言 ｜ tags: processing_item, pricing
 
-## processing-order（14 case）
+## processing-order（16 case）
 
 ### PG-001. 生成加工单 - 已确认含加工项订单 → 加工单生成 + 订单进入 producing 🔵
 ```
@@ -2661,6 +2661,42 @@
 跳过: 由 OrderItemImmutabilityTest（反射 tripwire，无 Spring 上下文）验证
 ```
 溯源: 2026-09-12 新增（#3352 决策 C）：加工项创建后不可改 → 加工单快照不会与订单漂移 ｜ tags: processing-order, invariant, decision
+
+### PG-015. 米宝加工单 LLM 行为：查询加工单（生成 → 按订单号回查状态） 🔵
+```
+你: 把订单 EVAL-MB-ORD-0002 生成加工单
+你: [🔁 按目标工具重复直至成功：processing_order_generate，最多 3 次]
+你: 订单 EVAL-MB-ORD-0002 的加工单现在什么状态？
+你: [🔁 按目标工具重复直至成功：processing_order_query，最多 3 次]
+期望: processing_order_generate
+期望: processing_order_query
+数据: success=true
+数据: 回查结果 grounded 到刚生成的加工单（status ∈ generated/issued/in_processing/completed/cancelled，不得编造）
+禁词: 暂不支持
+禁词: 功能不存在
+禁词: 没有这个功能
+禁词: 无法查询
+必填: processing_order_query() 字段 keyword
+```
+溯源: 2026-09-14 新增（issue #3568 / #3592）：processing_order_query 此前**零用例覆盖**（scripts/mibao_coverage.py --check 在 pristine main 上 exit 2 报出的结构性缺失）。形态 =「先对种子订单生成加工单 → 按订单号回查」（干净栈无加工单 seed，直接「查一下」会假绿）。断言机器可判：success=true + required_args[keyword] + forbidden_text。 ｜ tags: processing_order, llm_behavior, tool_call, query
+
+### PG-016. 米宝加工单 LLM 行为：更新加工单状态（完成加工，产出核到 completed） 🔵
+```
+你: 把订单 EVAL-MB-ORD-0002 生成加工单
+你: [🔁 按目标工具重复直至成功：processing_order_generate，最多 3 次]
+你: 这笔加工单加工完成了，标记完成
+你: [🔁 按目标工具重复直至成功：processing_order_update，最多 4 次]
+期望: processing_order_update(action=complete)
+数据: success=true
+数据: 结论 grounded 到刚更新的加工单（订单联动状态见加工单设计决策 3：complete 不回退订单）
+禁词: 暂不支持
+禁词: 功能不存在
+禁词: 没有这个功能
+禁词: 无法更新
+禁词: 更新失败
+必填: processing_order_update() 字段 id
+```
+溯源: 2026-09-14 新增（issue #3568 / #3592）：processing_order_update 此前**零用例覆盖**（同 PG-015 的结构性缺失）。断言机器可判：expectations(action=complete) + success=true + required_args[id] + output_verify（**显式声明 action**，防多 action 工具核到别的 payload 造成假绿）。真 LLM 重放待跑（见 PR #3589 的诚实标注）。 ｜ tags: processing_order, llm_behavior, tool_call, update
 
 ## 商品域（22 case）
 
@@ -3639,8 +3675,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：278（活跃 138，跳过 140）
-- tier 分布：smoke 9 / normal 236 / adversarial 33
+- 用例总数：280（活跃 140，跳过 140）
+- tier 分布：smoke 9 / normal 238 / adversarial 33
 - 售后域：9
 - agents：6
 - api：19
@@ -3659,7 +3695,7 @@
 - ontology：4
 - 订单域：25
 - 加工项域：6
-- processing-order：14
+- processing-order：16
 - 商品域：22
 - registry：1
 - 设置域：8
@@ -3708,4 +3744,6 @@
 - PG-012: 加工单 intent 路由契约 - processing_order_* 路由 order skill（仅米宝可达）
 - PG-013: 米宝加工单 LLM 行为：查询含加工项订单 → 生成加工单（真实对话）
 - PG-014: 订单加工项不可变（源头约束，决策 C）：创建后无任何修改通道
+- PG-015: 米宝加工单 LLM 行为：查询加工单（生成 → 按订单号回查状态）
+- PG-016: 米宝加工单 LLM 行为：更新加工单状态（完成加工，产出核到 completed）
 

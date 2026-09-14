@@ -3687,6 +3687,47 @@ _CASE_PG_014 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── PG-015 [NORMAL] 米宝加工单 LLM 行为：查询加工单（生成 → 按订单号回查状态）（源: cases/processing-order.yml）──
+_CASE_PG_015 = EvalCase(
+    id='PG-015',
+    legacy_id='',
+    title='米宝加工单 LLM 行为：查询加工单（生成 → 按订单号回查状态）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['把订单 EVAL-MB-ORD-0002 生成加工单', {'repeat_until': {'tool_called': 'processing_order_generate', 'max': 3}, 'fallback': '确认'}, '订单 EVAL-MB-ORD-0002 的加工单现在什么状态？', {'repeat_until': {'tool_called': 'processing_order_query', 'max': 3}, 'fallback': '确认'}],
+    expectations=['processing_order_generate', 'processing_order_query'],
+    data_checks=['success=true', '回查结果 grounded 到刚生成的加工单（status ∈ generated/issued/in_processing/completed/cancelled，不得编造）'],
+    skip_reason='',
+    tags=['processing_order', 'llm_behavior', 'tool_call', 'query'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    forbidden_text=['暂不支持', '功能不存在', '没有这个功能', '无法查询'],
+    required_args=[{'tool': 'processing_order_query', 'fields': ['keyword']}],
+)
+
+# ── PG-016 [NORMAL] 米宝加工单 LLM 行为：更新加工单状态（完成加工，产出核到 completed）（源: cases/processing-order.yml）──
+_CASE_PG_016 = EvalCase(
+    id='PG-016',
+    legacy_id='',
+    title='米宝加工单 LLM 行为：更新加工单状态（完成加工，产出核到 completed）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['把订单 EVAL-MB-ORD-0002 生成加工单', {'repeat_until': {'tool_called': 'processing_order_generate', 'max': 3}, 'fallback': '确认'}, '这笔加工单加工完成了，标记完成', {'repeat_until': {'tool_called': 'processing_order_update', 'max': 4}, 'fallback': '确认'}],
+    expectations=['processing_order_update(action=complete)'],
+    data_checks=['success=true', '结论 grounded 到刚更新的加工单（订单联动状态见加工单设计决策 3：complete 不回退订单）'],
+    skip_reason='',
+    tags=['processing_order', 'llm_behavior', 'tool_call', 'update'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    forbidden_text=['暂不支持', '功能不存在', '没有这个功能', '无法更新', '更新失败'],
+    required_args=[{'tool': 'processing_order_update', 'fields': ['id']}],
+    output_verify=[{'tool': 'processing_order_update', 'action': 'complete', 'expect': {'action': 'complete', 'result.status': 'completed'}}],
+)
+
 # ── PP-001 [NORMAL] 加工项选择 - 分页翻页（源: cases/processing.yml）──
 _CASE_PP_001 = EvalCase(
     id='PP-001',
@@ -5359,6 +5400,8 @@ ALL_CASES = (
     _CASE_PG_012,
     _CASE_PG_013,
     _CASE_PG_014,
+    _CASE_PG_015,
+    _CASE_PG_016,
     _CASE_PP_001,
     _CASE_PP_002,
     _CASE_PP_003,

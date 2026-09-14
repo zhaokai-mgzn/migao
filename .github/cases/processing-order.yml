@@ -382,3 +382,134 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+
+  # ==========================================================================
+  # LLM 行为正向用例（issue #3568 / #3592）：补 processing_order_query /
+  # processing_order_update 的**零覆盖**缺口（门禁 `scripts/mibao_coverage.py --check`
+  # 在 pristine main 上 exit 2 报出的结构性缺失）。
+  # 断言全部机器可判：expectations + must_succeed + required_args + output_verify（带 action）。
+  # ==========================================================================
+
+  - id: PG-015
+    legacy_id: ""
+    title: "米宝加工单 LLM 行为：查询加工单（生成 → 按订单号回查状态）"
+    domains:
+      - processing-order
+      - order
+      - chat
+    tier: normal
+    tags:
+      - processing_order
+      - llm_behavior
+      - tool_call
+      - query
+    truths_ref: []
+    user_inputs:
+      # 为什么不写「查一下加工单」：干净栈上 processing_orders 表为空（**没有任何
+      # seed 注入加工单**，已核对 fixtures/*.sql 0 条 INSERT），空表的「查一下」
+      # 只会得到空列表 —— 用例会退化成"没事发生"（假绿）。故先对**种子**里
+      # 「已确认且含加工项」的订单 EVAL-MB-ORD-0002 生成加工单，再按订单号回查
+      # （mibao_eval_seed.sql Phase 2：该单 order_items 带 processing_info）。
+      - "把订单 EVAL-MB-ORD-0002 生成加工单"
+      - repeat_until:
+          tool_called: processing_order_generate
+          max: 3
+        fallback: "确认"
+      - "订单 EVAL-MB-ORD-0002 的加工单现在什么状态？"
+      - repeat_until:
+          tool_called: processing_order_query
+          max: 3
+        fallback: "确认"
+    expectations:
+      - tool: processing_order_generate
+      - tool: processing_order_query
+    required_args:
+      - tool: processing_order_query
+        fields:
+          - keyword
+    forbidden_text:
+      - "暂不支持"
+      - "功能不存在"
+      - "没有这个功能"
+      - "无法查询"
+    data_checks:
+      # 「调了 ≠ 成了」（issue #3361）：`success=true` 由 local_runner 的 scoring_checks
+      # （success=true / error.code= / 未被调用）计入评分，是**机器可判**的等价强度断言。
+      # 不用 `must_succeed`：本条是 **B 端专属工具**（不在小布工具集），而
+      # tests/unit_ci_workflows/test_xiaobu_case_set.py::test_must_succeed_tools_are_customer_capabilities
+      # 对**全库** must_succeed 声明做「必须在 C 端工具集内」校验（未按 persona 收窄）→
+      # 声明即打红该守卫（建议另行开 issue 收窄该守卫口径）。
+      - "success=true"
+      - "回查结果 grounded 到刚生成的加工单（status ∈ generated/issued/in_processing/completed/cancelled，不得编造）"
+    skip_reason: ""
+    merge_log: "2026-09-14 新增（issue #3568 / #3592）：processing_order_query 此前**零用例覆盖**（scripts/mibao_coverage.py --check 在 pristine main 上 exit 2 报出的结构性缺失）。形态 =「先对种子订单生成加工单 → 按订单号回查」（干净栈无加工单 seed，直接「查一下」会假绿）。断言机器可判：success=true + required_args[keyword] + forbidden_text。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ProcessingOrderServiceTest.java"
+      ci:
+        - agent-eval.yml
+      verifies: []
+
+  - id: PG-016
+    legacy_id: ""
+    title: "米宝加工单 LLM 行为：更新加工单状态（完成加工，产出核到 completed）"
+    domains:
+      - processing-order
+      - order
+      - chat
+    tier: normal
+    tags:
+      - processing_order
+      - llm_behavior
+      - tool_call
+      - update
+    truths_ref: []
+    user_inputs:
+      # 同上：干净栈无加工单 seed → 先对种子订单 EVAL-MB-ORD-0002 生成，再推进状态。
+      # `complete` 在状态机里是**幂等**的（重复调用仍为 completed），不污染后续跑
+      # （cancel 非幂等且需 reason，故不用它做正向用例）。
+      - "把订单 EVAL-MB-ORD-0002 生成加工单"
+      - repeat_until:
+          tool_called: processing_order_generate
+          max: 3
+        fallback: "确认"
+      - "这笔加工单加工完成了，标记完成"
+      - repeat_until:
+          tool_called: processing_order_update
+          max: 4
+        fallback: "确认"
+    expectations:
+      - tool: processing_order_update
+        args:
+          action: complete
+    required_args:
+      - tool: processing_order_update
+        fields:
+          - id
+    output_verify:
+      # ⚠️ `action` 必写（本工具多 action：issue/start/complete/cancel）—— 不写限定
+      # 时核对器会取**首个成功调用**的 payload，可能核到别的 action 上（假绿/假红）。
+      - tool: processing_order_update
+        action: complete
+        expect:
+          action: complete
+          result.status: completed
+    forbidden_text:
+      - "暂不支持"
+      - "功能不存在"
+      - "没有这个功能"
+      - "无法更新"
+      - "更新失败"
+    data_checks:
+      # 同 PG-015：`success=true` 机器可判且计入评分；不用 must_succeed（B 端工具会被
+      # C 端口径守卫拦，见 PG-015 注释）。
+      - "success=true"
+      - "结论 grounded 到刚更新的加工单（订单联动状态见加工单设计决策 3：complete 不回退订单）"
+    skip_reason: ""
+    merge_log: "2026-09-14 新增（issue #3568 / #3592）：processing_order_update 此前**零用例覆盖**（同 PG-015 的结构性缺失）。断言机器可判：expectations(action=complete) + success=true + required_args[id] + output_verify（**显式声明 action**，防多 action 工具核到别的 payload 造成假绿）。真 LLM 重放待跑（见 PR #3589 的诚实标注）。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ProcessingOrderServiceTest.java"
+      ci:
+        - agent-eval.yml
+      verifies: []
