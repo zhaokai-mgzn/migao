@@ -9,7 +9,7 @@
   属「工具调用全对、用户看到的话是错的」类缺陷，PR-019 用本断言拦截。
 - interactive 事件采集：send_message 捕获 SSE interactive 事件（卡片证据）。
 """
-# case_ids: OR-016, AS-007, PR-019, CH-010, CH-024, OR-021, OR-022, PR-024, CH-025, AS-004, PP-006, PR-021, HR-003
+# case_ids: OR-016, AS-007, PR-019, CH-010, CH-024, OR-021, OR-022, PR-024, CH-025, AS-004, PP-006, PR-021, HR-003, DF-020, DF-021, DF-022, DF-023, OR-026
 import asyncio
 from types import SimpleNamespace
 import importlib.util
@@ -887,6 +887,151 @@ class TestDbVerifyEmployee:
                             "expect_fields": {"phone": "13700137001"}},
                            {"id": "u1", "name": "王五", "phone": None})
         assert any("落库字段 'phone' 为空" in i for i in issues), issues
+
+
+class TestMustFail:
+    """`must_fail` 必须失败断言（issue #3544 收口批，`must_succeed` 的镜像）。
+
+    消费者：OR-026「非法手机号下单必须被写前校验挡住」——最坏形态是"调了且成了"（脏单落库）；
+    「调了但失败」与「压根没调」都算合格拒绝。
+    """
+
+    def _results(self, rounds):
+        """rounds: {轮次: (是否调用, 成功与否)} —— 未给出的轮次 = 没调用"""
+        out = []
+        for rnd in sorted(rounds):
+            called, ok = rounds[rnd]
+            calls = [{"name": "order_create", "args": {"items": []}}] if called else []
+            results = []
+            if called:
+                results = [{"tool": "order_create",
+                            "result": {"success": ok,
+                                       "error": None if ok else "手机号不合法"}}]
+            out.append({"__round": rnd, "tool_calls": calls, "tool_results": results,
+                        "final_text": f"R{rnd}"})
+        return out
+
+    def test_never_called_passes(self):
+        """压根没调 = 合格拒绝（"拒绝"未必等于"尝试"）。"""
+        assert lr.check_must_fail(self._results({1: (False, False)}), ["order_create"]) == []
+
+    def test_attempted_but_failed_passes(self):
+        """调了但被校验挡住 = 合格拒绝（这正是 OR-026 期望的形态）。"""
+        assert lr.check_must_fail(self._results({1: (True, False)}), ["order_create"]) == []
+
+    def test_success_violates(self):
+        """最坏形态：脏单落库 → 违规，且点名轮次。"""
+        issues = lr.check_must_fail(self._results({1: (True, False), 2: (True, True)}),
+                                    ["order_create"])
+        assert issues and "R2" in issues[0] and "成功" in issues[0], issues
+
+    def test_first_attempt_success_also_violates(self):
+        """首轮就成功（没有"先失败后成功"的掩护）同样违规。"""
+        assert lr.check_must_fail(self._results({1: (True, True)}), ["order_create"])
+
+    def test_action_scoped(self):
+        results = [{"__round": 1,
+                    "tool_calls": [{"name": "order_manage", "args": {"action": "cancel"}}],
+                    "tool_results": [{"tool": "order_manage",
+                                      "result": {"success": True}}]}]
+        spec = [{"tool": "order_manage", "action": "create"}]
+        assert lr.check_must_fail(results, spec) == []          # 别的 action 不算
+        spec2 = [{"tool": "order_manage", "action": "cancel"}]
+        assert lr.check_must_fail(results, spec2)               # 该 action 成功 = 违规
+
+    def test_missing_tool_fails_closed(self):
+        assert lr.check_must_fail(self._results({1: (False, False)}), [{"action": "create"}])
+
+    def test_no_specs_noop(self):
+        assert lr.check_must_fail(self._results({1: (True, True)}), []) == []
+
+
+class TestForbiddenTools:
+    """`forbidden_tools` 全程禁用断言（issue #3544 收口批，must_succeed 的镜像）。
+
+    背景：既有「`X 未被调用`」写在 expectations/data_checks 里会被计分，但语义是「**本轮**
+    没调用」+ 计分循环「任一轮满足即通过」⇒ **多轮用例恒真**（存量 5 条：CH-002 /
+    DF-020~023）。本断言把它变成跨轮机器判定：任何一轮调用即违规。
+    """
+
+    def _results(self, call_rounds):
+        """call_rounds: {轮次: [(tool, args), ...]}"""
+        out = []
+        for rnd in sorted(call_rounds):
+            calls = [{"name": t, "args": a} for t, a in call_rounds[rnd]]
+            out.append({"__round": rnd, "tool_calls": calls, "final_text": f"R{rnd}"})
+        return out
+
+    def test_vacuous_old_semantics_vs_new(self):
+        """旧写法在多轮里恒真（R2 没调用就算过）、新断言抓到 R1 的调用 → 这就是升级的意义。"""
+        results = self._results({1: [("order_create", {})], 2: []})
+        # 旧语义（本轮没调用 + 任一轮即过）：R2 满足 ⇒ 恒真
+        assert lr.check_expectation(results[1], "order_create 未被调用")[0] is True
+        # 新断言：全程禁用 → R1 调用即违规
+        issues = lr.check_forbidden_tools(results, ["order_create"])
+        assert issues and "R1" in issues[0], issues
+
+    def test_never_called_passes(self):
+        results = self._results({1: [("product_search", {})], 2: [("interact", {})]})
+        assert lr.check_forbidden_tools(results, ["order_create", "aftersale_create"]) == []
+
+    def test_action_scoped(self):
+        """限定 action：同工具别的 action 不算违规（CH-002 形态：只禁 create）。"""
+        results = self._results({1: [("product_manage", {"action": "list"})]})
+        spec = [{"tool": "product_manage", "action": "create"}]
+        assert lr.check_forbidden_tools(results, spec) == []
+        results2 = self._results({2: [("product_manage", {"action": "create"})]})
+        issues = lr.check_forbidden_tools(results2, spec)
+        assert issues and "action=create" in issues[0], issues
+
+    def test_gate_blocked_call_still_counts(self):
+        """被确认门禁挡回的调用也算违规（更严：用户说「算了」时连写工具都不该发）。"""
+        results = self._results({2: [("order_create", {"items": []})]})
+        results[0]["tool_results"] = [{"tool": "order_create",
+                                       "result": {"success": False,
+                                                  "error": "confirmation_required"}}]
+        assert lr.check_forbidden_tools(results, ["order_create"])
+
+    def test_missing_tool_fails_closed(self):
+        assert lr.check_forbidden_tools(self._results({1: []}), [{"action": "create"}])
+
+    def test_no_specs_noop(self):
+        assert lr.check_forbidden_tools(self._results({1: [("order_create", {})]}), []) == []
+
+
+class TestWantTextScopes:
+    """`want_text` 的轮次作用域与「任一生效」（issue #3544 收口批）。"""
+
+    def _results(self):
+        return [
+            {"__round": 1, "final_text": "好的，已经记住了您的偏好：米白色", "tool_calls": []},
+            {"__round": 2, "final_text": "您上次提到的是浅灰色窗帘", "tool_calls": []},
+        ]
+
+    def test_legacy_string_keeps_global_semantics(self):
+        assert lr.check_want_text(self._results(), ["记住了"]) == []
+        assert lr.check_want_text(self._results(), ["不存在的话"]) != []
+
+    def test_round_scoped_distinguishes_echo(self):
+        """关键：R1 的回显不该满足「R2 必须说出 X」——这正是记忆用例此前无法判定的点。"""
+        results = self._results()
+        assert lr.check_want_text(results, [{"round": 2, "text": "米白色"}]) != []   # R2 没说米白色
+        assert lr.check_want_text(results, [{"round": 1, "text": "米白色"}]) == []
+        assert lr.check_want_text(results, [{"round": 2, "text": "浅灰色"}]) == []
+
+    def test_any_of_semantics(self):
+        """视觉/措辞天然发散：任一词命中即通过（逐词全中会把合格回答判红）。"""
+        assert lr.check_want_text(self._results(), [{"any_of": ["米白", "浅灰"]}]) == []
+        assert lr.check_want_text(self._results(), [{"any_of": ["墨绿", "酒红"]}]) != []
+
+    def test_round_out_of_range_fails_loud(self):
+        """round 超出实际轮数 = 断言永不成立 → 必须报出来（而不是静默不检查）。"""
+        issues = lr.check_want_text(self._results(), [{"round": 9, "text": "x"}])
+        assert issues and "超出实际轮数" in issues[0], issues
+
+    def test_empty_spec_fails(self):
+        assert lr.check_want_text(self._results(), [{"round": 1}]) != []
+        assert lr.check_want_text(self._results(), [{"any_of": []}]) != []
 
 
 class TestDbVerifyProcessingOrder:
@@ -4657,10 +4802,12 @@ class TestAssertionVocabularyIsMappedByLoader:
     PROBES = {
         "order_before": ('    order_before:\n      - "a before b"\n', ["a before b"]),
         "forbidden_text": ('    forbidden_text:\n      - "没法帮您提交"\n', ["没法帮您提交"]),
+        "forbidden_tools": ('    forbidden_tools:\n      - order_create\n', ["order_create"]),
         "want_text": ('    want_text:\n      - "已经帮您下单"\n', ["已经帮您下单"]),
         "required_args": ('    required_args:\n      - tool: t\n        fields: [x]\n', None),
         "forbidden_args": ('    forbidden_args:\n      - tool: t\n        fields: [x]\n', None),
         "must_succeed": ('    must_succeed:\n      - tool: t\n', None),
+        "must_fail": ('    must_fail:\n      - tool: t\n', None),
         "amount_verify": ('    amount_verify:\n      - tool: t\n        checks: [total]\n', None),
         "db_verify": ('    db_verify:\n      - fetch: order_items\n        source: order_create\n', None),
         "output_verify": ('    output_verify:\n      - tool: t\n        field: payload\n', None),

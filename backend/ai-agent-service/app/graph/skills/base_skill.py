@@ -1265,23 +1265,46 @@ def card_fingerprint(args: dict) -> str:
 # `human_handoff(reason="顾客需协助下单（智能客服无法代为提交订单）")` —— 而 `order_create`
 # 就是这个 skill 自己的写工具（OR-014/017/018/019/020 都真实落单）。
 # 这类"能力误宣"比答错更伤：顾客明明要买，系统却告诉他"我下不了单"，转化路径被自己掐断。
-CAPABILITY_DENIAL_PATTERNS = (
-    "无法代为提交", "没法代为提交", "无法提交订单", "没法提交订单", "不能提交订单",
-    "无法代为下单", "没法代为下单", "无法帮您下单", "没法帮您下单", "无法帮您提交",
-    "没法帮您提交", "无法下单", "没法下单", "不能下单", "无法创建订单", "没法创建订单",
-    "无法建单", "没法建单", "智能客服无法", "小布无法", "小布没法",
-    # **权限类**措辞（issue #3421，C-A1 验收剧本原话）：
-    # 实证 run 34763744203 `human_handoff({"reason": "客户请求协助下单（智能客服无下单权限）"})`
-    # —— 上面那批是"动宾"式（无法下单/无法代为提交），「**无下单权限**」不在其中 →
-    # 明明 `order_create` 就是它自己的写工具，却以"没权限"为由把顾客推给人工。
-    "无下单权限", "没有下单权限", "无权限下单", "无提交订单权限", "无权下单",
-    "无法帮您完成下单", "没法帮您完成下单", "无法帮您完成订单", "不能帮您下单",
-    "人工协助下单", "协助您完成下单",
-    # 「协助下单」单列（issue #3477，C-A1 P1 实证）：转人工理由原文是
-    # 「顾客需要协助下单」—— 下单本来就是小布能做的，用"需要协助"为理由转人工
-    # 与"无法代为提交订单"是同一类能力误宣，只是措辞客气一点。
-    "协助下单",
+# ── 能力自我否定的**语义归一判据**（#3389/#3477/#3443/#3476 四次复发的根治）──────────
+# 为什么不再用"主体 + 否定词 + 动作词"的正则窗口与**精确子串词表**：
+# 它们把**字面间隔**写死了（主体后 `{0,8}`、否定词到「权限」之间 `{0,8}`、词表要求逐字相等），
+# 于是"措辞一变即漏"就是必然 —— 本轮实测的漏配（旧实现对这些句子全部返回空）：
+#   「非常抱歉，小布这边没有办法帮您直接下单哦」  ← 「这边」一插入就超出 8 字窗口
+#   「没有权限帮您下单」                        ← 句首没有主体标记，旧正则要求主体在前
+#   「抱歉，下单功能暂时不可用」「这边帮不了您下单呢」「小布暂时不支持下单哦」
+# 现在改为**语义归一 + 结构化判据**：按小句切分后判三条（**不设距离窗口**，插词/语序无关）：
+#   ① 本小句有**下单动作词** —— 判据锚在"下单"这一具体能力上，不是泛化的"做不到"；
+#   ② 本小句有**自我能力否定** —— 否定动词 / 权限受限 / 把本该自己做的事推给别人的"协助"回避式；
+#   ③ 该否定**不是**归因给顾客/商品等**非自我主体** —— 越权拒绝与客观说明不得被误判（DF-020/021 边界）。
+_ORDER_ACTION_WORDS = ("提交订单", "下单", "创建订单", "建单", "代为提交", "代为下单",
+                       "帮您提交", "帮您下单", "代下单")
+
+# 「下单能力」的**事实锚点**：能力可达性一律问工具注册表有没有它，
+# 而不是问"当前 skill 叫什么"（判据从白名单改为事实驱动，见 `_order_capability_available`）。
+ORDER_WRITE_TOOL = "order_create"
+
+# 否定/受限语义词干（"我做不到"一族）
+_INABILITY_STEMS = (
+    "没法", "没办法", "无法", "不能", "不可以", "做不到", "办不到", "不支持",
+    "帮不了", "帮不上", "帮不到", "用不了", "不可用", "未开通", "未启用", "不行", "无权",
 )
+# 权限受限：需与「权限」共现（"没有…权限" / "权限不足"），否定词与「权限」之间**不限距离**
+_PERMISSION_WORD = "权限"
+_PERMISSION_NEGATIONS = ("没有", "没能", "没法", "无法", "不能", "无", "没",
+                         "未开通", "未启用", "不足", "不具备", "不具有", "缺少", "受限")
+
+# 回避式（#3477 C-A1 P1 原话「顾客需要协助下单」）：不是否定动词，但把**本该自己做**的下单
+# 推给人工/小程序，与「无法代为提交订单」是同一类能力误宣，只是措辞客气一点。
+# 只在**转人工理由**路径生效（回复文本里出现"协助下单"是合法服务话术，不纠正）。
+CAPABILITY_DENIAL_PATTERNS = ("协助下单", "协助完成下单", "协助您完成下单",
+                              "人工协助", "需要协助")
+
+# 主体标记：自我（否定归因给 AI 自己）vs 非自我（顾客/商品等 → 客观说明或真实越权）
+_AGENT_SELF_WORDS = ("我", "我们", "小布", "智能客服", "客服", "这边")
+_NON_SELF_SUBJECT_WORDS = ("顾客", "客户", "您", "买家", "用户", "商家", "商品", "库存",
+                           "这款", "该款", "该商品", "货")
+
+_CLAUSE_SPLIT_RE = re.compile(r"[。！？；\n，,、]+")
 
 
 # ── 「顾客正在下单」+「流程已有真实进展」→ 无信号转人工即放弃流程（issue #3421）──
@@ -1317,20 +1340,67 @@ async def _relock_order_skill(session_id: str | None) -> None:
         logger.warning(f"[base_skill] 锁回下单流程失败（非致命）: {e}")
 
 
+async def _load_session_facts(session_id: str | None) -> dict:
+    """读本会话的**跨轮事实**（未持久化/异常时返回空 dict，不抛）。"""
+    if not session_id:
+        return {}
+    try:
+        from app.memory.session_state_store import SessionStateStore
+        return await SessionStateStore().load(session_id) or {}
+    except Exception:
+        return {}
+
+
 async def _order_flow_started(session_id: str | None, state: dict | None = None) -> bool:
     """下单流程是否已有**真实进展**：本会话成功查过商品详情（`grounded_product_detail`）。
 
     为什么用这个标记：它是"流程真的开始了"的权威痕迹（查商品是下单链路的必经步骤），
     且不依赖 `state["messages"]` 是否带回上一轮 ToolMessage（跨轮可靠）。
     """
-    if not session_id:
+    return bool((await _load_session_facts(session_id)).get("grounded_product_detail"))
+
+
+def _flow_state_in_progress(state: dict | None = None) -> bool:
+    """会话是否**锁定在某个在办业务流程**中（跨轮 pending 锁 / 未完结交互卡）。
+
+    纯**状态事实**（与 skill 名、措辞都无关）：卡片发出即锁、写操作成功即清。
+    供"顾客在办下单"与"在办流程中无信号转人工"两处复用（单一事实源）。
+    """
+    st = state or {}
+    return bool(st.get("pending_interact_skill")) or \
+        _has_inflight_interactive_card(st.get("messages", []))
+
+
+async def _order_flow_in_progress(session_id: str | None, state: dict | None = None,
+                                  last_user_msg: str = "") -> bool:
+    """顾客是否**处于在办下单流程**（状态/事实驱动，与 skill 名和措辞无关）。
+
+    四条独立事实，命中任一即算在办：
+      ① 已校验过**下单写参数**（`pending_validated_input.target_tool == order_create`）
+         —— 最强证据（顾客已经走到写前一步）；
+      ② 本会话成功查过商品详情（`grounded_product_detail`）**且流程仍锁定中**
+         （pending 锁 / 未完结交互卡）—— #3477 的形态（choice 卡把会话锁在 customer_product）；
+      ③ 本会话查过商品详情 **且** 本轮消息仍在下单 —— 保留原判据作措辞兜底。
+
+    为什么 ② 必需（issue #3477 C-A1 run 34791767013 实证）：顾客已说「确认下单」，
+    但旧判据只看**本轮消息里的关键词**（`_ORDER_INTENT_HINTS`）—— 顾客改说「好的，就按这个来」
+    就判为"不在办" → 守卫整段失效、顾客被推给人工。**状态在，就不允许由措辞决定守卫是否生效。**
+    """
+    # 廉价前置（性能）：既无在办迹象（无跨轮锁/在办卡）、本轮也没有下单动作 → 直接 False，
+    # **不查会话存储**。这条判据会在每个 tool 调用前评估，真实链路里每轮有多个 tool 调用，
+    # 无条件 `SessionStateStore.load` 会白白多出 N 次存储往返。
+    # 覆盖性说明：① 的 `pending_validated_input` 总是伴随跨轮 pending 锁（写流程锁在
+    # `execute_skill` 收尾写入）→ 走 ② 的 `_flow_state_in_progress(state)` 分支仍会命中；
+    # ②/③ 本就要求"已接地商品"，而无在办迹象时它也不会成立。
+    if not (_flow_state_in_progress(state) or _has_ordering_intent(last_user_msg)):
         return False
-    try:
-        from app.memory.session_state_store import SessionStateStore
-        _s = await SessionStateStore().load(session_id) or {}
-        return bool(_s.get("grounded_product_detail"))
-    except Exception:
+    facts = await _load_session_facts(session_id)
+    _pvi = facts.get("pending_validated_input") or {}
+    if str((_pvi or {}).get("target_tool") or "") == ORDER_WRITE_TOOL:
+        return True
+    if not facts.get("grounded_product_detail"):
         return False
+    return _flow_state_in_progress(state) or _has_ordering_intent(last_user_msg)
 
 
 # ── 回复**文本**里的能力自我否定（issue #3443，C-A1 transcript 实证）──────────
@@ -1342,33 +1412,86 @@ async def _order_flow_started(session_id: str | None, state: dict | None = None)
 # 已有的两道守卫都挡不住它：#3421 管的是**工具参数**（handoff reason），
 # `_write_input_recovery_block` 之类管的是**工具调用**；而本条是**最终回复文本**。
 #
-# 判据与评测侧 `_false_inability_hit`（tests/agent_eval/local_runner.py）**同源**：
-# 「agent 主语 + 否定动词」与「下单动作词」必须在**同一句**且距离很近 ——
-# 否则「我是小布，您的专属咨询客服」这类正常开场白会被误判。
-_AGENT_INABILITY_RE = re.compile(
-    r"(?:我|我们|小布|智能客服|客服|这边)[^。！？\n]{0,8}"
-    r"(?:没法|无法|不能|没办法|做不到|没有权限|无权限|没权限"
-    r"|没(?:有)?[^。！？\n]{0,8}权限)")
-_TEXT_ORDER_ACTION_WORDS = ("提交订单", "下单", "创建订单", "建单", "代为提交", "代为下单",
-                            "帮您提交", "帮您下单")
-_INABILITY_WINDOW = 24
+# 判据与评测侧 `check_false_inability`（tests/agent_eval/local_runner.py）**同源**：
+# 都锁在"**AI 自己** × **下单动作**"上。差异：agent 侧判据已升级为**语义归一**
+# （小句内共现 + 非自我主体排除，见下），不再受措辞/插词影响；评测侧仍是「主体 + 否定词 +
+# 动作词 + 24 字窗口」的旧正则形态（属评测包领地，如需同源覆盖由评测包同步 —— 本轮只跑体检不改）。
+# 「我是小布，您的专属咨询客服」这类正常开场白两侧都不会误判（无否定 / 无下单动作）。
+def _normalize_clause(clause: str) -> str:
+    """语义归一：抹平**无意义的写法差异**（不改变判据语义），再交给结构化判据。
+
+    「没有」→「没」：口语里两者完全等价（「没办法帮您下单」/「**没有**办法帮您下单」），
+    归一后一套语义词干就覆盖两种写法 —— 旧词表要求逐字相等，「没有办法」直接漏配
+    （这也正是"措辞一变即失效"的形态之一：多一个「有」字）。
+    零宽字符/全角空格一并清掉，避免"肉眼相同"的句子判定不同。
+    """
+    return clause.replace("没有", "没").replace("\u200b", "").replace("\u3000", " ")
 
 
-def capability_denial_text_hit(text: str) -> str:
-    """回复文本里是否存在"AI 自己做不到 × 下单动作"的能力误宣；返回命中片段或空串。"""
+def _negation_positions(clause: str, include_assist: bool) -> list:
+    """小句里所有"自我能力否定"的 `(下标, 是否回避式)`（否定动词 / 权限受限 / 回避式协助）。"""
+    out: dict = {}
+    for stem in _INABILITY_STEMS:
+        start = clause.find(stem)
+        while start >= 0:
+            out[start] = False
+            start = clause.find(stem, start + 1)
+    perm = clause.find(_PERMISSION_WORD)
+    if perm > 0:
+        # 「没有…权限」：取**最靠近「权限」**的那个否定限定词 —— 中间夹多少字都无所谓
+        # （旧正则写死 `{0,8}`：夹「帮您下单的」正好 5 字还能过，再长一点就漏）
+        best = max((clause.rfind(w, 0, perm) for w in _PERMISSION_NEGATIONS), default=-1)
+        if best >= 0:
+            out.setdefault(best, False)
+    if include_assist:
+        for stem in CAPABILITY_DENIAL_PATTERNS:
+            start = clause.find(stem)
+            while start >= 0:
+                out[start] = True
+                start = clause.find(stem, start + 1)
+    return sorted(out.items())
+
+
+def _self_scoped_clause(clause: str, neg_pos: int) -> bool:
+    """该否定是否**归因于 AI 自己**（= 能力误宣）而不是顾客/商品等非自我主体。
+
+    取否定词之前**最近的**主体标记：自我标记（我/小布/智能客服/这边…）→ 是；
+    非自我主体（顾客/您/商品/库存…）→ 不是（客观说明、真实越权、顾客自己的权限问题）；
+    两者都没有 → 视为**隐含主语**（AI 自己）—— 「没有权限帮您下单」这类句首形式，
+    旧正则因为强制要求主体标记在前而漏掉。
+
+    ⚠️ 回避式（"协助下单"）不走这条判定（见 `_negation_positions` 的 `is_assist`）：
+    「顾客需要协助下单」的主语虽是顾客，但语义正是**把本该自己做下单推给人工**
+    （与「无法代为提交订单」同族，issue #3477 C-A1 P1 原话），故不得被"非自我主体"挡掉。
+    """
+    best_pos, is_self = -1, True
+    for word in _AGENT_SELF_WORDS:
+        i = clause.rfind(word, 0, neg_pos)
+        if i > best_pos:
+            best_pos, is_self = i, True
+    for word in _NON_SELF_SUBJECT_WORDS:
+        i = clause.rfind(word, 0, neg_pos)
+        if i > best_pos:
+            best_pos, is_self = i, False
+    return is_self
+
+
+def capability_denial_text_hit(text: str, *, include_assist: bool = False) -> str:
+    """回复文本里是否存在"AI 自己做不到 × 下单动作"的能力误宣；返回命中片段或空串。
+
+    `include_assist=True` 时额外认「协助下单」这类**回避式**（供转人工理由使用：
+    理由写"顾客需要协助下单"就是把本该自己做的事推给人工；回复文本里出现"协助下单"
+    可以是合法服务话术，故默认不认）。
+    """
     if not text:
         return ""
-    for seg in re.split(r"[。！？\n]", str(text)):
-        neg = _AGENT_INABILITY_RE.search(seg)
-        if not neg:
+    for raw_clause in _CLAUSE_SPLIT_RE.split(str(text)):
+        clause = _normalize_clause(raw_clause)
+        if not any(word in clause for word in _ORDER_ACTION_WORDS):
             continue
-        for verb in _TEXT_ORDER_ACTION_WORDS:
-            pos = seg.find(verb)
-            if pos < 0:
-                continue
-            # 动词必须紧邻否定短语（24 字窗口），避免跨半句误判
-            if abs(pos - neg.start()) <= _INABILITY_WINDOW or abs(pos - neg.end()) <= _INABILITY_WINDOW:
-                return seg.strip()[:60]
+        for pos, is_assist in _negation_positions(clause, include_assist):
+            if is_assist or _self_scoped_clause(clause, pos):
+                return raw_clause.strip()[:60]
     return ""
 
 
@@ -1409,23 +1532,83 @@ def _stall_has_progress(tool_calls: list) -> bool:
     return bool(names & {"validate_input", "order_create", "interact"})
 
 
-def _has_order_write_tool(skill_name: str, registry=None) -> bool:
-    """本 skill 当前是否有可用的下单写工具（决定"能力误宣"是否成立）。
-
-    为什么按 skill 判定而不是按 persona：`order_create` 是**小布 customer_order** 的写工具；
-    其它 skill（知识/商品/售后）说"我下不了单"可能属实，拦下来反而堵死正确行为。
-
-    ⚠️ `registry` 必须**显式传入**：`skill_registry` 是 `execute_skill` 的**局部变量**，
-    模块级函数看不见它 —— 首版写成全局引用会被下面的 `except` 静默吞掉，
-    守卫变成永远不触发的 no-op（本仓库反复出现的"假守卫"形态）。故这里不做静默兜底：
-    registry 为 None 时显式返回 False，并由调用方传真实 registry。
-    """
-    if skill_name != "customer_order" or registry is None:
+def _registry_has_tool(registry, name: str) -> bool:
+    """当前 skill 的工具子集里有没有这个工具（**事实**，不看 skill 名）。"""
+    if registry is None:
         return False
     try:
-        return registry.get_tool("order_create") is not None
+        return registry.get_tool(name) is not None
     except Exception:
         return False
+
+
+def _order_write_tool_here(registry=None) -> bool:
+    """本 skill 的工具子集里有没有下单写工具（= 模型**当下手里就有**下单能力）。
+
+    旧实现写成 `_has_order_write_tool(skill_name, registry)`，硬编码
+    `skill_name != "customer_order" → False` —— **skill 名字面量白名单**：
+    会话被 choice 卡锁在别的 skill（#3477 C-A1 实测 `customer_product`）、B 端 `order`
+    skill、或将来任何新 skill 只要含 `order_create`，都会被判成"没有能力"。
+    四次复发（#3389→#3477→#3443→#3476）的共同机制就是这一类白名单。现在只读**工具注册表事实**。
+    """
+    return _registry_has_tool(registry, ORDER_WRITE_TOOL)
+
+
+def _tool_registered_globally(name: str) -> bool:
+    """**全局**工具注册表里有没有这个工具（= 产品/本部署是否具备该能力）。
+
+    全局注册表是"能力事实"的权威来源；本 skill 的子集只是**本轮**可见的工具。
+    """
+    try:
+        from app.tools.registry import get_tool_registry
+        return get_tool_registry().get_tool(name) is not None
+    except Exception:
+        return False
+
+
+def _order_capability_available(registry=None, *, order_in_progress: bool = False) -> bool:
+    """下单能力是否**可达**（=「我做不了下单」这句话是否为**假**）。
+
+    · 本 skill 直接可写（工具就在手上）→ 可达，与 skill 名无关；
+    · 本 skill 子集没有该工具、但**顾客在办下单流程**且**全局具备该能力**
+      → 会话会被锁回下单流程（`_relock_order_skill`），能力在**会话层可达**。
+
+    两条缺一不可（防过度纠正）：只按全局判（生产里几乎恒真）会把越权/真不可达的诉求也放过；
+    只按状态判会在工具根本没注册的环境里声称"你可以下单"。
+    """
+    if _order_write_tool_here(registry):
+        return True
+    return bool(order_in_progress) and _tool_registered_globally(ORDER_WRITE_TOOL)
+
+
+def _registry_has_confirm_write_tool(registry=None) -> bool:
+    """本 skill 是否有「需确认的写工具」= **业务办理型流程**（此时转人工可能是在放弃流程）。
+
+    取代旧的 `skill_name in ("customer_order", "customer_aftersales")` 白名单：
+    判据取自**工具属性**（destructive / requires_confirmation，与确认门禁同源）。
+    新增 skill 只要声明了写工具就**自动**纳入守卫，无需改任何名字清单
+    （由 `tests/test_capability_denial_guard.py` 的 L0 不变式锁定）。
+    """
+    if registry is None:
+        return False
+    try:
+        return any(getattr(t, "destructive", False) or getattr(t, "requires_confirmation", False)
+                   for t in registry.get_all_tools())
+    except Exception:
+        return False
+
+
+def _handoff_guard_applies(registry=None, *, order_in_progress: bool = False,
+                           denial_reason_hit: str = "") -> bool:
+    """转人工守卫是否适用（取代 `skill_name in ("customer_order", "customer_aftersales")`）。
+
+    三类**事实/状态**，任一成立即适用 —— 与 skill 名字面量无关：
+      · 理由本身就是能力误宣（`denial_reason_hit` 非空）：任何 skill 都拦（#3389，本已跨 skill）；
+      · 顾客在办下单（`order_in_progress`）：跨 skill 拦（#3477 C-A1，会话被卡在 customer_product）；
+      · 本 skill 有需确认写工具（业务办理型流程）：白名单的**事实等价物**（CH-012 依赖此支）。
+    """
+    return bool(denial_reason_hit) or bool(order_in_progress) or \
+        _registry_has_confirm_write_tool(registry)
 
 
 def confirm_card_fields(args: dict) -> list:
@@ -1482,15 +1665,22 @@ def _confirm_card_fields_hint(args: dict) -> str:
 def _capability_denial_reason(args: dict) -> str:
     """转人工的 reason/summary 是否是「AI 自己做不到」的能力误宣；返回命中片段或空串。
 
-    只认明确的**自我能力否定**措辞（顾客显式诉求/情绪/正常业务理由都不在此列），
-    避免把"顾客要求人工核价"这类正确转人工拦成故障。
+    复用**同一个**语义归一判据（`capability_denial_text_hit`，单一事实源，避免
+    agent 侧两套词表漂移），并额外认「协助下单」这类**回避式**措辞（issue #3477：
+    理由写"顾客需要协助下单"就是把本该自己做的下单推给人工）。
+    只认明确的**自我能力否定**措辞（顾客显式诉求/情绪/正常业务理由都不在此列，
+    因为"非自我主体"的否定会被 `_self_scoped_clause` 排除），避免把
+    "顾客要求人工核价"这类正确转人工拦成故障。
+
+    ⚠️ `reason` 与 `summary` **分别**判定（不拼接）：两者是模型写的两个独立字段，
+    拼在一起会让前一个字段的主体（如「顾客需协助」）串到后一个字段的否定上，
+    把「无法代为提交订单」误判成"非自我主体"而漏配（既有测试
+    `TestCapabilityDenialInHandoffReason::test_summary_field_scanned` 即此形）。
     """
-    text = f"{str((args or {}).get('reason') or '')} {str((args or {}).get('summary') or '')}"
-    if not text.strip():
-        return ""
-    for pat in CAPABILITY_DENIAL_PATTERNS:
-        if pat in text:
-            return text.strip()[:60]
+    for field in ((args or {}).get("reason"), (args or {}).get("summary")):
+        hit = capability_denial_text_hit(str(field or ""), include_assist=True)
+        if hit:
+            return hit
     return ""
 
 
@@ -2980,11 +3170,15 @@ async def execute_skill(
                     # 能力误宣（issue #3443）：文本里"我做不了下单"→ 带纠正提示**重答一次**
                     # （只一次，防死循环）。重答走完整循环，故模型可以继续调工具把单下掉。
                     _denial_hit = capability_denial_text_hit(new_text)
-                    _mid_order_now = (_has_ordering_intent(last_user_msg)
-                                      and await _order_flow_started(session_id, state))
-                    _has_write_now = _has_order_write_tool(skill_name, skill_registry)
+                    # 判据 = **在办下单流程状态 × 工具能力事实**（与 skill 名无关，#3477 根治）：
+                    #   · `_has_write_now`：下单写工具就在**本 skill** 手上（注册表事实）；
+                    #   · `_order_in_progress`：顾客处于在办下单流程（跨轮状态事实，不靠本轮措辞）。
+                    _order_in_progress = await _order_flow_in_progress(
+                        session_id, state, last_user_msg)
+                    _has_write_now = _order_write_tool_here(skill_registry)
                     if (_denial_hit and not _denial_corrected
-                            and (_has_write_now or _mid_order_now)):
+                            and _order_capability_available(
+                                skill_registry, order_in_progress=_order_in_progress)):
                         # issue #3477：顾客在办下单时，即使当前 skill 没有写工具
                         # （如会话被 choice 卡锁在 customer_product），也不许"我下不了单"。
                         # 无写工具时用 MIDORDER 版话术（不声称"order_create 就是本流程的工具"），
@@ -2992,8 +3186,8 @@ async def execute_skill(
                         _denial_corrected = True
                         logger.warning(
                             f"[{skill_name}] 拦截文本级能力误宣并重答 | session={session_id} "
-                            f"hit={_denial_hit!r} mid_order={_mid_order_now}")
-                        if _mid_order_now and not _has_write_now:
+                            f"hit={_denial_hit!r} mid_order={_order_in_progress}")
+                        if _order_in_progress and not _has_write_now:
                             await _relock_order_skill(session_id)
                         new_messages.append(SystemMessage(content=(
                             _TEXT_DENIAL_CORRECTIVE if _has_write_now
@@ -3152,12 +3346,22 @@ async def execute_skill(
                     # （还创建了投诉工单）→ 流程被放弃、轮数耗尽、aftersale_create 未发生。
                     # 判据与 handoff_judge 同源：显式请求 / 负面情绪 / 能力外诉求 三者皆无
                     # → 不是用户要的转人工，而是模型放弃流程 → 阻止并给出可执行指引。
-                    _mid_order = (_has_ordering_intent(last_user_msg)
-                                  and await _order_flow_started(session_id, state))
+                    #
+                    # 适用性判据（issue #3477 根治）：旧实现是 `skill_name in
+                    # ("customer_order", "customer_aftersales")` 这一**字面量白名单** ——
+                    # 会话被 choice 卡锁在 `customer_product` 时整段失效（C-A1 run 34791767013
+                    # 实测：顾客「确认下单」→ 转人工照过、建了工单）。现在由
+                    # `_handoff_guard_applies` 按**事实/状态**判定（见其 docstring）。
+                    # ⚠️ 只在真是 human_handoff 时才查会话状态：本函数对**每个** tool 调用
+                    # 都会跑，而下单流程本身就在办（必然有 pending 锁）→ 无条件查会白加 N 次存储往返。
+                    _order_in_progress = (
+                        await _order_flow_in_progress(session_id, state, last_user_msg)
+                        if tool_name == "human_handoff" else False)
                     _denial_now = _capability_denial_reason(args)
                     if (tool_name == "human_handoff"
-                            and (skill_name in ("customer_order", "customer_aftersales")
-                                 or _mid_order or _denial_now)):
+                            and _handoff_guard_applies(
+                                skill_registry, order_in_progress=_order_in_progress,
+                                denial_reason_hit=_denial_now)):
                         from app.graph.handoff_judge import has_escalation_signal
                         # 在办判据两条取并集（issue #3361 实证）：
                         #   ① 消息历史里能扫到未完结的交互卡（原实现）；
@@ -3168,8 +3372,7 @@ async def execute_skill(
                         # R2 顾客点明订单、R3 顾客只回退货原因「质量问题」，agent 直接
                         # human_handoff（并建了投诉工单）→ 流程被放弃、aftersale_create
                         # 未发生；当时 ① 判为 False（历史里扫不到那张卡）→ 兜底形同虚设。
-                        _inflight = bool(state.get("pending_interact_skill")) or \
-                            _has_inflight_interactive_card(state.get("messages", []))
+                        _inflight = _flow_state_in_progress(state)
                         # 能力误宣（issue #3389）：以"我下不了单/无法代为提交订单"为理由转人工，
                         # 无论有没有在办卡都拦 —— 这是**能力否定**，不是顾客诉求。
                         _denial = _capability_denial_reason(args)
@@ -3186,7 +3389,7 @@ async def execute_skill(
                                 f"没有再发 `interact(component=form)` 或用自然语言问姓名/手机号/地址；"
                                 f"参数齐了走 confirm 卡 → `validate_input` → `order_create`（含 sms_code）。"
                                 f"只有当顾客**显式**要求人工、情绪激烈或诉求超出能力时，才允许转人工。")
-                            if _mid_order and skill_name != "customer_order":
+                            if _order_in_progress and not _order_write_tool_here(skill_registry):
                                 await _relock_order_skill(session_id)
                             return (tool_call,
                                     json.dumps({"success": False,
@@ -3197,10 +3400,12 @@ async def execute_skill(
                         # （查过商品详情）时，即使没有待答卡片，无信号转人工也是放弃流程。
                         # 不这么做会漏掉 C-A1 的形态：卡片已被顾客点掉 → `_inflight` 为假 →
                         # 放行转人工 → 9 轮不下单（L1 违规 3 条）。
+                        # 判据用**状态驱动**的 `_order_in_progress`（#3477）：旧写法
+                        # `_has_ordering_intent(last_user_msg) and _order_flow_started(...)`
+                        # 由**本轮措辞关键词**决定，顾客改说「好的，就按这个来」即失效。
                         if (not has_escalation_signal(last_user_msg)
                                 and not _inflight
-                                and _has_ordering_intent(last_user_msg)
-                                and await _order_flow_started(session_id, state)):
+                                and _order_in_progress):
                             logger.warning(
                                 f"[{skill_name}] 拦截「顾客在下单却无信号转人工」 | "
                                 f"session={session_id} last_msg={last_user_msg[:30]!r}")
@@ -3211,7 +3416,7 @@ async def execute_skill(
                                 "`interact(component=form)` 或直接问；然后走 confirm 卡 → "
                                 "`validate_input` → `order_create`（含 sms_code）。"
                                 "只有当顾客**显式**要求人工、情绪激烈或诉求超出能力时，才允许转人工。")
-                            if _mid_order and skill_name != "customer_order":
+                            if _order_in_progress and not _order_write_tool_here(skill_registry):
                                 await _relock_order_skill(session_id)
                             return (tool_call,
                                     json.dumps({"success": False,
@@ -3422,50 +3627,52 @@ async def execute_skill(
                             )
                         except Exception as _e2:
                             logger.warning(f"[{skill_name}] card-confirm 诊断失败: {_e2}")
-                        # 话术必须与**本 Skill 的实际能力**匹配（issue #3317）：
-                        # 未绑定 interact 的 Skill（B 端 staff/settings/data）若被告知
-                        # "请调用 interact（component=confirm）"，那是一条**不可执行指令** ——
-                        # 模型拿到"请调用 X"却没有 X，会反复重试或直接放弃。
-                        # （不给这些 Skill 补 interact 的理由见 issue #3317：
-                        #   用例库里涉及这 6 个工具的 16 条用例无一条断言 interact，
-                        #   含 smoke 的 HR-001/HR-004 靠口头确认长期通过 —— 补工具是
-                        #   改变 B 端交互形态，收益不明而回归面大。）
-                        if skill_registry.get_tool("interact") is not None:
-                            # 可执行下一步（issue #3445）：CI 实测 `confirmation_required_no_card ×3`
-                            # —— 模型**从没发过确认卡**就直接写单，被拦回后仍反复重试同一个写调用、
-                            # 把轮数烧完（R10 时订单仍未落库）。故话术给出**唯一可执行的下一步**：
-                            #   ① 明确"再调写工具没用"（防重试）；② 指明必须调 interact(confirm)；
-                            #   ③ 回填**已校验参数**（pending_validated_input）与
-                            #      **本次被拦调用的字段骨架**（它自己传过的值），让它照抄即可发卡。
-                            _pending_hint = ""
-                            try:
-                                from app.graph.pending_validated import PENDING_KEY as _PK
-                                from app.graph.pending_validated import is_pending_for as _is_pending
-                                from app.memory.session_state_store import SessionStateStore as _S4
-                                _f4 = await _S4().load(session_id) or {}
-                                _pend4 = _f4.get(_PK) or {}
-                                if _is_pending(_pend4, tool_name) and _pend4.get("params"):
-                                    _pending_hint = (
-                                        " 已校验的参数（**原样**用作卡片 fields，不要改写）："
-                                        + json.dumps(_pend4["params"], ensure_ascii=False,
-                                                     default=str)[:400])
-                            except Exception as _e4:
-                                logger.warning(f"[{skill_name}] pending 参数回填失败（非致命）: {_e4}")
-                            msg = (
-                                f"工具 {tool_name} 是写操作（可能不可逆或产生数据变更），必须先向用户展示"
-                                f"确认卡片并取得明确确认。**不要再次调用 {tool_name}** —— 在顾客点击"
-                                f"确认卡之前它会被同样拦下、白烧一轮。本轮唯一的下一步是：调用 "
-                                f"interact(component=confirm, fields=[…]) "
-                                f"把将要执行的内容展示给顾客，等顾客**点击确认卡**之后再调用 {tool_name}。"
-                                + _confirm_card_fields_hint(args)
-                                + _pending_hint
-                            )
-                        else:
-                            msg = (
-                                f"工具 {tool_name} 是写操作（可能不可逆或产生数据变更），必须先取得用户明确"
-                                f"确认。本技能没有确认卡片能力：请用文本**完整复述将要执行的操作与影响**"
-                                f"（对象、字段、后果），并请用户回复确认；用户回复确认后再调用本工具。"
-                            )
+                        # ── 确认话术**唯一形态 = 确认卡**（交互形态统一，产品裁定 2026-09-14）──
+                        # 历史（issue #3317）：这里曾按「本 Skill 是否绑 `interact`」分流 ——
+                        # 没绑的（B 端 staff/settings/data）退化成"用文本完整复述并请用户口头确认"。
+                        # 该处置**已被产品裁定推翻**（「写操作应该安全、交互形态要统一」），
+                        # 处置改为**配置层统一**：staff/settings/data 补绑 `interact`
+                        # （#3577 / PR #3590，squash 851e63ce），并由
+                        # `tests/test_skill_config_registry.py` 的三条不变式机械守护
+                        #   · `test_confirmed_write_tools_require_interact_in_same_skill`
+                        #     （绑需确认写工具 → 必须绑 interact）
+                        #   · `test_prompt_promising_confirm_card_requires_interact`
+                        #   · interact 缺席台账（缺席必须写明只读理由）
+                        # ⇒ **"无 interact" 的降级分支对全部已注册 Skill 已不可达**，故整段删除
+                        #   （唯一还能触发门禁却不绑 interact 的 skill 不存在：只剩
+                        #    knowledge/customer_knowledge 未绑，它们只有只读工具 → 门禁不会触发）。
+                        # ⚠️ 不要重新引入按 skill 能力分流的话术分支：那会让"交互形态"再次不统一，
+                        #   且新增 skill 会静默落进降级态 —— 正确做法是补绑 `interact`（配置层）。
+                        #
+                        # 可执行下一步（issue #3445）：CI 实测 `confirmation_required_no_card ×3`
+                        # —— 模型**从没发过确认卡**就直接写单，被拦回后仍反复重试同一个写调用、
+                        # 把轮数烧完（R10 时订单仍未落库）。故话术给出**唯一可执行的下一步**：
+                        #   ① 明确"再调写工具没用"（防重试）；② 指明必须调 interact(confirm)；
+                        #   ③ 回填**已校验参数**（pending_validated_input）与
+                        #      **本次被拦调用的字段骨架**（它自己传过的值），让它照抄即可发卡。
+                        _pending_hint = ""
+                        try:
+                            from app.graph.pending_validated import PENDING_KEY as _PK
+                            from app.graph.pending_validated import is_pending_for as _is_pending
+                            from app.memory.session_state_store import SessionStateStore as _S4
+                            _f4 = await _S4().load(session_id) or {}
+                            _pend4 = _f4.get(_PK) or {}
+                            if _is_pending(_pend4, tool_name) and _pend4.get("params"):
+                                _pending_hint = (
+                                    " 已校验的参数（**原样**用作卡片 fields，不要改写）："
+                                    + json.dumps(_pend4["params"], ensure_ascii=False,
+                                                 default=str)[:400])
+                        except Exception as _e4:
+                            logger.warning(f"[{skill_name}] pending 参数回填失败（非致命）: {_e4}")
+                        msg = (
+                            f"工具 {tool_name} 是写操作（可能不可逆或产生数据变更），必须先向用户展示"
+                            f"确认卡片并取得明确确认。**不要再次调用 {tool_name}** —— 在顾客点击"
+                            f"确认卡之前它会被同样拦下、白烧一轮。本轮唯一的下一步是：调用 "
+                            f"interact(component=confirm, fields=[…]) "
+                            f"把将要执行的内容展示给顾客，等顾客**点击确认卡**之后再调用 {tool_name}。"
+                            + _confirm_card_fields_hint(args)
+                            + _pending_hint
+                        )
                         # 归因细分（issue #3445）：保留 `confirmation_required` 前缀
                         # （既有断言按子串匹配），后缀说明**是哪一种**：
                         #   · _no_card          → 本会话从没发过确认卡（模型跳过确认直接写）
