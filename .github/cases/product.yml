@@ -591,7 +591,14 @@ cases:
           sku_code: "TEST-002"
       - "已选加工项：高温定型"
       - "颜色米白色，货号 TEST-002"
-      - "确认"
+      # 收尾 = 「答卡轮」（#3518）：B 端写工具受 confirm 门禁约束 —— **发文字「确认」≠ 点确认卡**，
+      # 收尾发裸文本时 agent 会停在卡上（回「请核对上方确认卡片…点确认我就执行」）→ product_manage 不执行。
+      # `auto_respond`：有卡答卡（confirm→回卡片 confirmValue，= 前端点击协议；choice→首项；
+      # form→按声明值回填），无卡才发原文「确认」（同 CU-003 / OR-014 先例）。
+      # ⚠️ 不用 `auto_select`：它**不支持 fallback 字段**（run_case 只把 results/form_values 传进
+      # resolve_auto_select_turn，见 local_runner.py），无 choice 卡时会发字面量「第一个」→ 对不上卡片。
+      - auto_respond:
+          fallback: "确认"
     expectations:
       - tool: category_manage
       - tool: processing_item_query
@@ -613,7 +620,7 @@ cases:
       - "当前分类无匹配加工项时以文字提示可跳过，不空转强制选择"
       - "最终创建成功且关联加工项数量正确"
     skip_reason: ""
-    merge_log: "2026-09-06 新增（issue #2964）：加工项「适用商品分类」配置此前无消费方，建品流程按已选分类过滤/推荐加工项（设计意图见 docs/design/admin-dashboard-design.md §6.1.1 适用商品分类+AI推荐）"
+    merge_log: "2026-09-06 新增（issue #2964）：加工项「适用商品分类」配置此前无消费方，建品流程按已选分类过滤/推荐加工项（设计意图见 docs/design/admin-dashboard-design.md §6.1.1 适用商品分类+AI推荐）。2026-09-14 校准（#3518）：收尾裸文本「确认」改答卡轮（B 端 confirm 门禁：文字≠点卡）"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_processing_item_query.py"
@@ -709,7 +716,10 @@ cases:
       - auto_select: true
       - "商品名称: 2699系列雪尼尔窗帘面料\n单价(元/米): 23.8\n颜色…门幅…"
       - "已选加工项：刺绣工艺 ¥30/平方米、波浪定型 ¥8/米"
-      - "确认创建"
+      # 收尾 = 「答卡轮」（#3518）：同 PR-016 —— 裸文本「确认创建」过不了 B 端 confirm 门禁
+      # （文字 ≠ 点确认卡），agent 会停在卡上不再调 product_manage。
+      - auto_respond:
+          fallback: "确认创建"
     expectations:
       - tool: product_manage
         args:
@@ -732,7 +742,7 @@ cases:
         product_keyword: "2699系列雪尼尔窗帘面料"
         price: 23.8
     skip_reason: ""
-    merge_log: "2026-09-08 新增（issue #3027）：sess_c1fce183dae24f22 复盘 — AI 预填表单展示了推理属性但 create 未落库（product_attributes 0 行）；加工项只传名称列表 → custom_price 全 NULL → 详情页 ¥0.00/米（单位硬编码）。三端修复：prompt 强制 specifications+processing_item_configs、admin-api finalPrice 回退、admin-web 渲染回退；2026-09-09 校准：补真实色卡图（原纯文本「根据这张图片」无 images，agent 要图走不下去）"
+    merge_log: "2026-09-08 新增（issue #3027）：sess_c1fce183dae24f22 复盘 — AI 预填表单展示了推理属性但 create 未落库（product_attributes 0 行）；加工项只传名称列表 → custom_price 全 NULL → 详情页 ¥0.00/米（单位硬编码）。三端修复：prompt 强制 specifications+processing_item_configs、admin-api finalPrice 回退、admin-web 渲染回退；2026-09-09 校准：补真实色卡图（原纯文本「根据这张图片」无 images，agent 要图走不下去）。2026-09-14 校准（#3518）：收尾裸文本「确认创建」改答卡轮（B 端 confirm 门禁：文字≠点卡）"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_prompt_snapshots.py"
@@ -764,7 +774,16 @@ cases:
       - "创建一个窗帘商品，名称：盯防加工项价格0908，单价：88元/米，分类：窗帘布艺，颜色：浅灰"
       - "商品名称: 盯防加工项价格0908\n单价(元/米): 88\n分类: 窗帘布艺\n颜色: 浅灰\n售卖方式: 散剪\n门幅: 2.8米\n货号: DF-0908"
       - "已选加工项：刺绣工艺（价格自定义为45元/平方米）、波浪定型"
-      - "确认创建"
+      # 收尾 = 「协作轮」（#3518）：裸文本「确认创建」过不了 B 端 confirm 门禁（文字 ≠ 点确认卡）；
+      # 且实测确认卡是在**收尾轮才下发**的（run 34805827043 R4：agent 收到「确认创建」后才
+      # interact(confirm)，confirmValue=确认：分类=窗帘布艺；加工项①=刺绣工艺 ¥45/平方米…），
+      # 单发一轮答卡仍会剩一张没人答的卡 → 给余量：有卡答卡（confirm→回 confirmValue），
+      # 无卡发原文；product_manage 一旦成功调用立即停轮（被门禁挡回不算成功，
+      # 故不会提前停；同 OR-021 / CH-033 的 repeat_until 先例）。
+      - repeat_until:
+          tool_called: product_manage
+          max: 3
+        fallback: "确认创建"
     expectations:
       - tool: product_manage
         args:
@@ -779,7 +798,7 @@ cases:
           - "processingItemConfigs.all.finalPrice>0"
           - "processingItemConfigs.刺绣工艺.finalPrice==45"
     skip_reason: ""
-    merge_log: "2026-09-08 新增（issue #3056 复盘）：建品自定义加工价曾被 BFF create 的 ids 分支静默丢弃（45→30，读回退掩盖后复发）。required_args 只查 create args 层，本 case 用 db_verify 查落库层（finalPrice=确认价），args+落库双保险"
+    merge_log: "2026-09-08 新增（issue #3056 复盘）：建品自定义加工价曾被 BFF create 的 ids 分支静默丢弃（45→30，读回退掩盖后复发）。required_args 只查 create args 层，本 case 用 db_verify 查落库层（finalPrice=确认价），args+落库双保险。2026-09-14 校准（#3518）：收尾裸文本「确认创建」改协作答卡轮（confirm 门禁：文字≠点卡；确认卡常在收尾轮才下发，需余量轮）"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_acceptance_case_checks.py"

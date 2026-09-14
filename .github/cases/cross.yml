@@ -21,7 +21,12 @@ cases:
       - ai-chat.context-memory
     user_inputs:
       - "查一下遮光窗帘"
-      - "用遮光窗帘（100元的那件）给张三创建订单，2件，手机13800138000"
+      # 自包含化（#3518，同 AS-003 先例 #3511）：原输入点名「遮光窗帘（100元的那件）」，
+      # 而评测栈种子只有 ¥168 的那一款（prod_eval_blackout）→ 独立栈实测 agent 回
+      # 「系统里「遮光窗帘」只有这 1 款，售价是 ¥168/米，没有 ¥100 的款式」
+      # （run 34805827043 R2）→ 下单草稿不启动、后续轮次空转（order_create 从未调用）。
+      # 改为不点名价格的问法 —— 用例意图（查商品→下单→跨 Skill 复用 UUID）不变。
+      - "用遮光窗帘给张三创建订单，2件，手机13800138000"
       - auto_select: true
       - "不需要加工项"
       - "确认下单"
@@ -41,7 +46,7 @@ cases:
         product_keyword: "遮光窗帘"
         price: 100
     skip_reason: ""
-    merge_log: "eval C001 独有"
+    merge_log: "eval C001 独有；2026-09-14 校准（#3518）：下单轮去「100元的那件」价格点名（独立栈种子只有 ¥168 款，点名不存在的价 → agent 合理查无此价 → 流程不前进），自包含化同 AS-003 先例（#3511）"
     traces:
       tests:
         - "backend/ai-agent-service/tests/manual/mibao_scenarios.py"
