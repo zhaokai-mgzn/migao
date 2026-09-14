@@ -42,11 +42,13 @@ cases:
       - "order_create items 包含遮光窗帘的 UUID（复用上轮，不重查）"
       - "Context 注入包含 product_ids"
     pre_clean:
+      # 去重只按关键词（#3518）：用例已不再点名价格，`price: 100` 在独立栈（种子 ¥168 款）恒不匹配
+      # → 等于没去重；同名「遮光窗帘」有副本时 agent 会发「哪一件」选择卡。按关键词去重保留
+      # 最早创建的（= 种子商品），删掉其余副本。
       - type: product_dedupe
         product_keyword: "遮光窗帘"
-        price: 100
     skip_reason: ""
-    merge_log: "eval C001 独有；2026-09-14 校准（#3518）：下单轮去「100元的那件」价格点名（独立栈种子只有 ¥168 款，点名不存在的价 → agent 合理查无此价 → 流程不前进），自包含化同 AS-003 先例（#3511）"
+    merge_log: "eval C001 独有；2026-09-14 校准（#3518）：① 下单轮去「100元的那件」价格点名（独立栈种子只有 ¥168 款，点名不存在的价 → agent 合理查无此价 → 流程不前进），自包含化同 AS-003 先例（#3511）；② pre_clean 去 price 过滤（关键词去重，原 price: 100 在种子 ¥168 的栈上恒不匹配）"
     traces:
       tests:
         - "backend/ai-agent-service/tests/manual/mibao_scenarios.py"

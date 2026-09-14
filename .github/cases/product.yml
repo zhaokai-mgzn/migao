@@ -139,8 +139,14 @@ cases:
     truths_ref:
       - product-sku-stock.realtime
     user_inputs:
-      - "调整遮光窗帘（100元的那件）的库存，出库10件，备注样品寄出"
-      - "确认"
+      # 自包含化（#3518）：原输入点名「遮光窗帘（100元的那件）」，独立栈种子只有 ¥168 那一款
+      # （prod_eval_blackout）→ 实测 agent 回「只搜到一件「遮光窗帘」，价格是 168 元，不是 100 元」
+      # （run 34805827043），把一轮消耗在澄清价格上、`inventory_manage(adjust)` 从未调用。
+      - "调整遮光窗帘的库存，出库10件，备注样品寄出"
+      # 收尾「答卡轮」（#3518，同 PR-016）：本 run 里 agent 在收尾轮只发 confirm 卡、文本「确认」
+      # 没有放行写操作 → 有卡答卡（confirm→回 confirmValue），无卡才发原文「确认」。
+      - auto_respond:
+          fallback: "确认"
     expectations:
       - tool: inventory_manage
         args:
@@ -148,11 +154,13 @@ cases:
     data_checks:
       - "返回新库存数量"
     pre_clean:
+      # 去重只按关键词（#3518）：用例已不再点名价格，`price: 100` 过滤器在独立栈（种子 ¥168）
+      # 恒不匹配、等于没去重 → 同名「遮光窗帘」重复时 agent 会发「哪一件」选择卡。
+      # 按关键词去重保留最早创建的（= 种子），删掉其余副本。
       - type: product_dedupe
         product_keyword: "遮光窗帘"
-        price: 100
     skip_reason: ""
-    merge_log: "verification 2.5 独有（adjust 详细真值未确认，见映射表 5.1）"
+    merge_log: "verification 2.5 独有（adjust 详细真值未确认，见映射表 5.1）。2026-09-14 校准（#3518）：① 输入去「100元的那件」价格点名（独立栈种子 ¥168）；② 收尾改答卡轮；③ pre_clean 去 price 过滤（关键词去重）"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_inventory_manage.py"
@@ -200,10 +208,20 @@ cases:
     truths_ref:
       - product-sku-stock.status-flow
     user_inputs:
-      - "把遮光窗帘（100元的那件）下架"
-      - "确认"
+      # 自包含化（#3518）：原输入点名「遮光窗帘（100元的那件）」→ 实测 agent 回「没找到 100 元的那件」
+      # （run 34805827043 R1）→ 一轮消耗在澄清、`product_manage(toggle_status)` 从未发生。
+      - "把遮光窗帘下架"
+      # 收尾「答卡轮」（#3518）：本 run 两处裸文本「确认」都被 agent 挡回（「您没有在确认卡片上点确认」）
+      # → 有卡答卡（confirm→回 confirmValue），无卡才发原文「确认」。
+      - auto_respond:
+          fallback: "确认"
       - "再把它上架"
-      - "确认"
+      # 「上架」段用同一形态 + 一轮余量：确认卡常在收尾轮才下发（同 PR-020 的实测形态），
+      # 单轮答卡吃不到那张卡。
+      - auto_respond:
+          fallback: "确认"
+      - auto_respond:
+          fallback: "确认"
     expectations:
       - tool: product_manage
         args:
@@ -212,11 +230,11 @@ cases:
     data_checks:
       - "success=true"
     pre_clean:
+      # 去重只按关键词（#3518）：用例已不再点名价格（独立栈种子 ¥168），`price: 100` 恒不匹配。
       - type: product_dedupe
         product_keyword: "遮光窗帘"
-        price: 100
     skip_reason: ""
-    merge_log: "verification 2.7 独有；2026-09-10 校准：评测商品均已 on_sale，「上架」无操作对象 → 改自包含状态流转（下架→上架），验证完整流转且每次从 on_sale 起跑"
+    merge_log: "verification 2.7 独有；2026-09-10 校准：评测商品均已 on_sale，「上架」无操作对象 → 改自包含状态流转（下架→上架），验证完整流转且每次从 on_sale 起跑。2026-09-14 校准（#3518）：① 输入去「100元的那件」价格点名（独立栈种子 ¥168）；② 两处裸文本「确认」改答卡轮（+1 余量轮）；③ pre_clean 去 price 过滤"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_product_search.py"
@@ -715,13 +733,36 @@ cases:
       - text: "根据这张图片录入商品（色卡图，可识别材质/克重）"
         images:
           - "https://ai-customer-service-admin-dev.oss-cn-hangzhou.aliyuncs.com/images/2026/09/04/e5a68d1a02f844c6a45846784765a737.jpg"
-      - auto_select: true
-      - "商品名称: 2699系列雪尼尔窗帘面料\n单价(元/米): 23.8\n颜色…门幅…"
-      - "已选加工项：刺绣工艺 ¥30/平方米、波浪定型 ¥8/米"
-      # 收尾 = 「答卡轮」（#3518）：同 PR-016 —— 裸文本「确认创建」过不了 B 端 confirm 门禁
-      # （文字 ≠ 点确认卡），agent 会停在卡上不再调 product_manage。
+      # ── 2026-09-14 资产重写（#3518，run 34805827043 逐轮归因）──
+      # ② 色卡识别结果轮：待答的是 **form 卡**（title「新建商品 — 常青藤色卡识别结果（请确认/修改）」
+      #    formFields=6）。原为 `auto_select: true` → 无 choice 卡时发字面量「第一个」→ 实测 agent
+      #    回「上一轮的表单我没收到提交内容」，识别到的名称/单价从未进草稿（后续轮次全部空转）。
+      #    改为按 formFields 的**真实 key** 回填（canonical 字段：name/price/colors/selling_methods/
+      #    door_widths/sku_code —— 见 app/graph/skills/product_skill.py「Vision 预填」与
+      #    references/EXAMPLES-product.md 示例 2）；若这一轮待答的不是 form 卡、或字段 key 对不上，
+      #    则退回自包含文本。原 R3 文本里的「颜色…门幅…」是**未替换的占位符**（实测 agent 回
+      #    「您消息里的『颜色…门幅…』被截断了」）→ 这里补真实字段值。
       - auto_respond:
-          fallback: "确认创建"
+          fallback: "商品名称: 2699系列雪尼尔窗帘面料\n单价(元/米): 23.8\n颜色: 2699-01 米白\n门幅: 2.8米\n售卖方式: 散剪\n货号: XNE2699"
+          form_values:
+            name: "2699系列雪尼尔窗帘面料"
+            price: "23.8"
+            colors: "2699-01 米白"
+            door_widths: "2.8米"
+            selling_methods: "散剪"
+            sku_code: "XNE2699"
+      # ③ 加工项轮：有 choice 卡就点首项，否则说明已选。加工项必须是**目录里真实存在的**
+      #    （独立栈种子目录：刺绣工艺 ¥30/平方米、高温定型 ¥10/米、纳米圈打孔 ¥8/米、韩式波浪折边 ¥12/米）——
+      #    原文本的「波浪定型 ¥8/米」目录中不存在（实测 agent 回「加工项目录里没有完全同名的项」）。
+      - auto_respond:
+          fallback: "已选加工项：刺绣工艺 ¥30/平方米、韩式波浪折边 ¥12/米"
+      # ④ 收尾协作轮：有卡答卡（confirm→回 confirmValue，= 前端点击协议），无卡发原文；
+      #    `product_manage` 一旦成功即停轮（被门禁挡回不算成功 → 不会提前停；同 OR-021/CH-033 先例）。
+      #    fallback 做成**自包含**：若模型仍以文本追问缺项，这一轮能把规格+加工项+确认一次补齐。
+      - repeat_until:
+          tool_called: product_manage
+          max: 3
+        fallback: "商品名称: 2699系列雪尼尔窗帘面料；单价(元/米): 23.8；颜色: 2699-01 米白；门幅: 2.8米；售卖方式: 散剪；货号: XNE2699；已选加工项：刺绣工艺 ¥30/平方米、韩式波浪折边 ¥12/米；确认创建"
     expectations:
       - tool: product_manage
         args:
@@ -744,7 +785,7 @@ cases:
         product_keyword: "2699系列雪尼尔窗帘面料"
         price: 23.8
     skip_reason: ""
-    merge_log: "2026-09-08 新增（issue #3027）：sess_c1fce183dae24f22 复盘 — AI 预填表单展示了推理属性但 create 未落库（product_attributes 0 行）；加工项只传名称列表 → custom_price 全 NULL → 详情页 ¥0.00/米（单位硬编码）。三端修复：prompt 强制 specifications+processing_item_configs、admin-api finalPrice 回退、admin-web 渲染回退；2026-09-09 校准：补真实色卡图（原纯文本「根据这张图片」无 images，agent 要图走不下去）。2026-09-14 校准（#3518）：收尾裸文本「确认创建」改答卡轮（B 端 confirm 门禁：文字≠点卡）"
+    merge_log: "2026-09-08 新增（issue #3027）：sess_c1fce183dae24f22 复盘 — AI 预填表单展示了推理属性但 create 未落库（product_attributes 0 行）；加工项只传名称列表 → custom_price 全 NULL → 详情页 ¥0.00/米（单位硬编码）。三端修复：prompt 强制 specifications+processing_item_configs、admin-api finalPrice 回退、admin-web 渲染回退；2026-09-09 校准：补真实色卡图（原纯文本「根据这张图片」无 images，agent 要图走不下去）。2026-09-14 资产重写（#3518）：② 色卡识别结果轮由 `auto_select`（对 form 卡发「第一个」→ 表单从未提交）改为按 formFields 真实 key 回填的 `auto_respond`；③ 原文本占位符「颜色…门幅…」补真实值、加工项「波浪定型」换目录中真实存在的「韩式波浪折边」；④ 收尾改协作答卡轮"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_prompt_snapshots.py"
@@ -775,7 +816,11 @@ cases:
     user_inputs:
       - "创建一个窗帘商品，名称：盯防加工项价格0908，单价：88元/米，分类：窗帘布艺，颜色：浅灰"
       - "商品名称: 盯防加工项价格0908\n单价(元/米): 88\n分类: 窗帘布艺\n颜色: 浅灰\n售卖方式: 散剪\n门幅: 2.8米\n货号: DF-0908"
-      - "已选加工项：刺绣工艺（价格自定义为45元/平方米）、波浪定型"
+      # 加工项换目录中真实存在的一项（#3518）：原「波浪定型」在独立栈种子目录里不存在
+      # （目录：刺绣工艺 ¥30/平方米、高温定型 ¥10/米、纳米圈打孔 ¥8/米、韩式波浪折边 ¥12/米），
+      # 实测 agent 回「您说的「波浪定型」在加工项目录里没有完全同名的项」→ 白耗一轮。
+      # 自定义价仍挂在「刺绣工艺 ¥45/平方米」上（db_verify 断言的就是它）。
+      - "已选加工项：刺绣工艺（价格自定义为45元/平方米）、韩式波浪折边"
       # 收尾 = 「协作轮」（#3518）：裸文本「确认创建」过不了 B 端 confirm 门禁（文字 ≠ 点确认卡）；
       # 且实测确认卡是在**收尾轮才下发**的（run 34805827043 R4：agent 收到「确认创建」后才
       # interact(confirm)，confirmValue=确认：分类=窗帘布艺；加工项①=刺绣工艺 ¥45/平方米…），
@@ -800,7 +845,7 @@ cases:
           - "processingItemConfigs.all.finalPrice>0"
           - "processingItemConfigs.刺绣工艺.finalPrice==45"
     skip_reason: ""
-    merge_log: "2026-09-08 新增（issue #3056 复盘）：建品自定义加工价曾被 BFF create 的 ids 分支静默丢弃（45→30，读回退掩盖后复发）。required_args 只查 create args 层，本 case 用 db_verify 查落库层（finalPrice=确认价），args+落库双保险。2026-09-14 校准（#3518）：收尾裸文本「确认创建」改协作答卡轮（confirm 门禁：文字≠点卡；确认卡常在收尾轮才下发，需余量轮）"
+    merge_log: "2026-09-08 新增（issue #3056 复盘）：建品自定义加工价曾被 BFF create 的 ids 分支静默丢弃（45→30，读回退掩盖后复发）。required_args 只查 create args 层，本 case 用 db_verify 查落库层（finalPrice=确认价），args+落库双保险。2026-09-14 校准（#3518）：① 收尾裸文本「确认创建」改协作答卡轮（confirm 门禁：文字≠点卡；确认卡常在收尾轮才下发，需余量轮）；② 加工项「波浪定型」换目录中真实存在的「韩式波浪折边」"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_acceptance_case_checks.py"
@@ -822,7 +867,9 @@ cases:
     truths_ref:
       - product-sku-stock.realtime
     user_inputs:
-      - "把遮光窗帘（100元的那件）的米白色散剪规格改成 150 元"
+      # 自包含化（#3518）：原输入点名「遮光窗帘（100元的那件）」，独立栈种子只有 ¥168 款
+      # （run 34805827043 R1 agent 主动纠偏「¥168，不是 100 元」，一轮被消耗在澄清价格上）。
+      - "把遮光窗帘的米白色散剪规格改成 150 元"
       - auto_select: true
       - "确认"
     expectations:
@@ -830,7 +877,7 @@ cases:
     data_checks:
       - "sku_update 成功（价格落库）"
     skip_reason: ""
-    merge_log: "Round 72 评测覆盖审计：sku_update（SKU 级调价）注册于 product_skill 但无 case 覆盖（盲区）→ 补 SKU 调价场景"
+    merge_log: "Round 72 评测覆盖审计：sku_update（SKU 级调价）注册于 product_skill 但无 case 覆盖（盲区）→ 补 SKU 调价场景。2026-09-14 校准（#3518）：输入去「100元的那件」价格点名（独立栈种子 ¥168）。⚠️ 遗留：本 run 该例真实失败点是 `sku_update!SKU不存在`（种子遮光窗帘只有部分规格 SKU）——属**数据层**（种子 SKU 待补），非本 PR 的用例层问题"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_sku_update.py"

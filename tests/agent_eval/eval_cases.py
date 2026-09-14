@@ -1446,7 +1446,7 @@ _CASE_CR_001 = EvalCase(
     form_prefill=[],
     forbidden_card_text=[],
     required_args=[{'tool': 'order_create', 'fields': ['items[].processing_info.sellingMethod', 'items[].processing_info.doorWidth']}],
-    pre_clean=[{'type': 'product_dedupe', 'product_keyword': '遮光窗帘', 'price': 100}],
+    pre_clean=[{'type': 'product_dedupe', 'product_keyword': '遮光窗帘'}],
 )
 
 # ── CR-002 [ADVERSARIAL] 对抗性 - 3 个 Skill 连续切换（源: cases/cross.yml）──
@@ -3874,7 +3874,7 @@ _CASE_PR_005 = EvalCase(
     title='调整库存 - 出库',
     skill=Skill.PRODUCT,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['调整遮光窗帘（100元的那件）的库存，出库10件，备注样品寄出', '确认'],
+    user_inputs=['调整遮光窗帘的库存，出库10件，备注样品寄出', {'auto_respond': {'fallback': '确认'}}],
     expectations=['inventory_manage(action=adjust)'],
     data_checks=['返回新库存数量'],
     skip_reason='',
@@ -3883,7 +3883,7 @@ _CASE_PR_005 = EvalCase(
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
-    pre_clean=[{'type': 'product_dedupe', 'product_keyword': '遮光窗帘', 'price': 100}],
+    pre_clean=[{'type': 'product_dedupe', 'product_keyword': '遮光窗帘'}],
 )
 
 # ── PR-006 [NORMAL] 低库存预警（源: cases/product.yml）──
@@ -3911,7 +3911,7 @@ _CASE_PR_007 = EvalCase(
     title='商品上架（状态流转）',
     skill=Skill.PRODUCT,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['把遮光窗帘（100元的那件）下架', '确认', '再把它上架', '确认'],
+    user_inputs=['把遮光窗帘下架', {'auto_respond': {'fallback': '确认'}}, '再把它上架', {'auto_respond': {'fallback': '确认'}}, {'auto_respond': {'fallback': '确认'}}],
     expectations=['product_manage(action=toggle_status, status=on_sale)'],
     data_checks=['success=true'],
     skip_reason='',
@@ -3920,7 +3920,7 @@ _CASE_PR_007 = EvalCase(
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
-    pre_clean=[{'type': 'product_dedupe', 'product_keyword': '遮光窗帘', 'price': 100}],
+    pre_clean=[{'type': 'product_dedupe', 'product_keyword': '遮光窗帘'}],
 )
 
 # ── PR-008 [NORMAL] 创建商品 - 完整流程（源: cases/product.yml）──
@@ -4132,7 +4132,7 @@ _CASE_PR_019 = EvalCase(
     title='建品规格与加工项价格落库 — 推理属性经 specifications 落库、加工项经 processing_item_configs 携带价格',
     skill=Skill.PRODUCT,
     difficulty=Difficulty.NORMAL,
-    user_inputs=[{'text': '根据这张图片录入商品（色卡图，可识别材质/克重）', 'images': ['https://ai-customer-service-admin-dev.oss-cn-hangzhou.aliyuncs.com/images/2026/09/04/e5a68d1a02f844c6a45846784765a737.jpg']}, {'auto_select': True}, '商品名称: 2699系列雪尼尔窗帘面料\\n单价(元/米): 23.8\\n颜色…门幅…', '已选加工项：刺绣工艺 ¥30/平方米、波浪定型 ¥8/米', {'auto_respond': {'fallback': '确认创建'}}],
+    user_inputs=[{'text': '根据这张图片录入商品（色卡图，可识别材质/克重）', 'images': ['https://ai-customer-service-admin-dev.oss-cn-hangzhou.aliyuncs.com/images/2026/09/04/e5a68d1a02f844c6a45846784765a737.jpg']}, {'auto_respond': {'fallback': '商品名称: 2699系列雪尼尔窗帘面料\\n单价(元/米): 23.8\\n颜色: 2699-01 米白\\n门幅: 2.8米\\n售卖方式: 散剪\\n货号: XNE2699', 'form_values': {'name': '2699系列雪尼尔窗帘面料', 'price': '23.8', 'colors': '2699-01 米白', 'door_widths': '2.8米', 'selling_methods': '散剪', 'sku_code': 'XNE2699'}}}, {'auto_respond': {'fallback': '已选加工项：刺绣工艺 ¥30/平方米、韩式波浪折边 ¥12/米'}}, {'repeat_until': {'tool_called': 'product_manage', 'max': 3}, 'fallback': '商品名称: 2699系列雪尼尔窗帘面料；单价(元/米): 23.8；颜色: 2699-01 米白；门幅: 2.8米；售卖方式: 散剪；货号: XNE2699；已选加工项：刺绣工艺 ¥30/平方米、韩式波浪折边 ¥12/米；确认创建'}],
     expectations=['product_manage(action=create)'],
     data_checks=['create 参数含 specifications（材质/克重/工艺等推理属性，随 specs 落库到 product_attributes，非仅展示）', 'create 参数含 processing_item_configs（含 customPrice=加工项默认单价 unit_price、unit=真实单位），禁止只传 processing_item_ids 名称列表', '商品详情接口 processingItemConfigs 回填 unitPrice/finalPrice（customPrice 空时 finalPrice=unitPrice），前端展示非 ¥0.00 且单位正确'],
     skip_reason='',
@@ -4153,7 +4153,7 @@ _CASE_PR_020 = EvalCase(
     title='建品加工项价格落库盯防 — 自定义价须等于用户确认价（BFF 合并回归）',
     skill=Skill.PRODUCT,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['创建一个窗帘商品，名称：盯防加工项价格0908，单价：88元/米，分类：窗帘布艺，颜色：浅灰', '商品名称: 盯防加工项价格0908\\n单价(元/米): 88\\n分类: 窗帘布艺\\n颜色: 浅灰\\n售卖方式: 散剪\\n门幅: 2.8米\\n货号: DF-0908', '已选加工项：刺绣工艺（价格自定义为45元/平方米）、波浪定型', {'repeat_until': {'tool_called': 'product_manage', 'max': 3}, 'fallback': '确认创建'}],
+    user_inputs=['创建一个窗帘商品，名称：盯防加工项价格0908，单价：88元/米，分类：窗帘布艺，颜色：浅灰', '商品名称: 盯防加工项价格0908\\n单价(元/米): 88\\n分类: 窗帘布艺\\n颜色: 浅灰\\n售卖方式: 散剪\\n门幅: 2.8米\\n货号: DF-0908', '已选加工项：刺绣工艺（价格自定义为45元/平方米）、韩式波浪折边', {'repeat_until': {'tool_called': 'product_manage', 'max': 3}, 'fallback': '确认创建'}],
     expectations=['product_manage(action=create)'],
     data_checks=['create 参数 processing_item_configs 含 customPrice=用户确认价（刺绣工艺 45）', '创建后商品详情 processingItemConfigs 的 finalPrice = 用户确认价（非默认价回退）——issue #3056 回归防线'],
     skip_reason='',
@@ -4172,7 +4172,7 @@ _CASE_PR_021 = EvalCase(
     title='单独 SKU 调价 - 修改某规格价格',
     skill=Skill.PRODUCT,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['把遮光窗帘（100元的那件）的米白色散剪规格改成 150 元', {'auto_select': True}, '确认'],
+    user_inputs=['把遮光窗帘的米白色散剪规格改成 150 元', {'auto_select': True}, '确认'],
     expectations=['sku_update'],
     data_checks=['sku_update 成功（价格落库）'],
     skip_reason='',

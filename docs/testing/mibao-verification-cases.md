@@ -981,7 +981,7 @@
 必填: order_create() 字段 items[].processing_info.sellingMethod, items[].processing_info.doorWidth
 ```
 真值: id-resolve.no-fabricate, ai-chat.context-memory
-溯源: eval C001 独有；2026-09-14 校准（#3518）：下单轮去「100元的那件」价格点名（独立栈种子只有 ¥168 款，点名不存在的价 → agent 合理查无此价 → 流程不前进），自包含化同 AS-003 先例（#3511） ｜ tags: cross_skill, context_share
+溯源: eval C001 独有；2026-09-14 校准（#3518）：① 下单轮去「100元的那件」价格点名（独立栈种子只有 ¥168 款，点名不存在的价 → agent 合理查无此价 → 流程不前进），自包含化同 AS-003 先例（#3511）；② pre_clean 去 price 过滤（关键词去重，原 price: 100 在种子 ¥168 的栈上恒不匹配） ｜ tags: cross_skill, context_share
 
 ### CR-002. 对抗性 - 3 个 Skill 连续切换 🔴
 ```
@@ -2696,13 +2696,13 @@
 
 ### PR-005. 调整库存 - 出库 🔵
 ```
-你: 调整遮光窗帘（100元的那件）的库存，出库10件，备注样品寄出
-你: 确认
+你: 调整遮光窗帘的库存，出库10件，备注样品寄出
+你: [🤖 按上一轮卡片作答]
 期望: inventory_manage(action=adjust)
 数据: 返回新库存数量
 ```
 真值: product-sku-stock.realtime
-溯源: verification 2.5 独有（adjust 详细真值未确认，见映射表 5.1） ｜ tags: inventory, write
+溯源: verification 2.5 独有（adjust 详细真值未确认，见映射表 5.1）。2026-09-14 校准（#3518）：① 输入去「100元的那件」价格点名（独立栈种子 ¥168）；② 收尾改答卡轮；③ pre_clean 去 price 过滤（关键词去重） ｜ tags: inventory, write
 
 ### PR-006. 低库存预警 🔵
 ```
@@ -2715,15 +2715,16 @@
 
 ### PR-007. 商品上架（状态流转） 🔵
 ```
-你: 把遮光窗帘（100元的那件）下架
-你: 确认
+你: 把遮光窗帘下架
+你: [🤖 按上一轮卡片作答]
 你: 再把它上架
-你: 确认
+你: [🤖 按上一轮卡片作答]
+你: [🤖 按上一轮卡片作答]
 期望: product_manage(action=toggle_status, status=on_sale)
 数据: success=true
 ```
 真值: product-sku-stock.status-flow
-溯源: verification 2.7 独有；2026-09-10 校准：评测商品均已 on_sale，「上架」无操作对象 → 改自包含状态流转（下架→上架），验证完整流转且每次从 on_sale 起跑 ｜ tags: status, write
+溯源: verification 2.7 独有；2026-09-10 校准：评测商品均已 on_sale，「上架」无操作对象 → 改自包含状态流转（下架→上架），验证完整流转且每次从 on_sale 起跑。2026-09-14 校准（#3518）：① 输入去「100元的那件」价格点名（独立栈种子 ¥168）；② 两处裸文本「确认」改答卡轮（+1 余量轮）；③ pre_clean 去 price 过滤 ｜ tags: status, write
 
 ### PR-008. 创建商品 - 完整流程 🔵
 ```
@@ -2909,10 +2910,9 @@
 ### PR-019. 建品规格与加工项价格落库 — 推理属性经 specifications 落库、加工项经 processing_item_configs 携带价格 🔵
 ```
 你: 根据这张图片录入商品（色卡图，可识别材质/克重） [📷 附 1 图]
-你: [🤖 选第一个选项]
-你: 商品名称: 2699系列雪尼尔窗帘面料\n单价(元/米): 23.8\n颜色…门幅…
-你: 已选加工项：刺绣工艺 ¥30/平方米、波浪定型 ¥8/米
 你: [🤖 按上一轮卡片作答]
+你: [🤖 按上一轮卡片作答]
+你: (空)
 期望: product_manage(action=create)
 数据: create 参数含 specifications（材质/克重/工艺等推理属性，随 specs 落库到 product_attributes，非仅展示）
 数据: create 参数含 processing_item_configs（含 customPrice=加工项默认单价 unit_price、unit=真实单位），禁止只传 processing_item_ids 名称列表
@@ -2922,13 +2922,13 @@
 必填: product_manage(create) 字段 specifications, processing_item_configs.customPrice
 ```
 真值: product-sku-stock.low-stock
-溯源: 2026-09-08 新增（issue #3027）：sess_c1fce183dae24f22 复盘 — AI 预填表单展示了推理属性但 create 未落库（product_attributes 0 行）；加工项只传名称列表 → custom_price 全 NULL → 详情页 ¥0.00/米（单位硬编码）。三端修复：prompt 强制 specifications+processing_item_configs、admin-api finalPrice 回退、admin-web 渲染回退；2026-09-09 校准：补真实色卡图（原纯文本「根据这张图片」无 images，agent 要图走不下去）。2026-09-14 校准（#3518）：收尾裸文本「确认创建」改答卡轮（B 端 confirm 门禁：文字≠点卡） ｜ tags: product_create, specifications, processing_item, regression
+溯源: 2026-09-08 新增（issue #3027）：sess_c1fce183dae24f22 复盘 — AI 预填表单展示了推理属性但 create 未落库（product_attributes 0 行）；加工项只传名称列表 → custom_price 全 NULL → 详情页 ¥0.00/米（单位硬编码）。三端修复：prompt 强制 specifications+processing_item_configs、admin-api finalPrice 回退、admin-web 渲染回退；2026-09-09 校准：补真实色卡图（原纯文本「根据这张图片」无 images，agent 要图走不下去）。2026-09-14 资产重写（#3518）：② 色卡识别结果轮由 `auto_select`（对 form 卡发「第一个」→ 表单从未提交）改为按 formFields 真实 key 回填的 `auto_respond`；③ 原文本占位符「颜色…门幅…」补真实值、加工项「波浪定型」换目录中真实存在的「韩式波浪折边」；④ 收尾改协作答卡轮 ｜ tags: product_create, specifications, processing_item, regression
 
 ### PR-020. 建品加工项价格落库盯防 — 自定义价须等于用户确认价（BFF 合并回归） 🔵
 ```
 你: 创建一个窗帘商品，名称：盯防加工项价格0908，单价：88元/米，分类：窗帘布艺，颜色：浅灰
 你: 商品名称: 盯防加工项价格0908\n单价(元/米): 88\n分类: 窗帘布艺\n颜色: 浅灰\n售卖方式: 散剪\n门幅: 2.8米\n货号: DF-0908
-你: 已选加工项：刺绣工艺（价格自定义为45元/平方米）、波浪定型
+你: 已选加工项：刺绣工艺（价格自定义为45元/平方米）、韩式波浪折边
 你: (空)
 期望: product_manage(action=create)
 数据: create 参数 processing_item_configs 含 customPrice=用户确认价（刺绣工艺 45）
@@ -2936,18 +2936,18 @@
 落库: product_by_name 盯防加工项价格0908 → processingItemConfigs.all.finalPrice>0; processingItemConfigs.刺绣工艺.finalPrice==45
 ```
 真值: product-sku-stock.create-flow, ai-chat.validate-input
-溯源: 2026-09-08 新增（issue #3056 复盘）：建品自定义加工价曾被 BFF create 的 ids 分支静默丢弃（45→30，读回退掩盖后复发）。required_args 只查 create args 层，本 case 用 db_verify 查落库层（finalPrice=确认价），args+落库双保险。2026-09-14 校准（#3518）：收尾裸文本「确认创建」改协作答卡轮（confirm 门禁：文字≠点卡；确认卡常在收尾轮才下发，需余量轮） ｜ tags: product_create, processing_item, price, regression
+溯源: 2026-09-08 新增（issue #3056 复盘）：建品自定义加工价曾被 BFF create 的 ids 分支静默丢弃（45→30，读回退掩盖后复发）。required_args 只查 create args 层，本 case 用 db_verify 查落库层（finalPrice=确认价），args+落库双保险。2026-09-14 校准（#3518）：① 收尾裸文本「确认创建」改协作答卡轮（confirm 门禁：文字≠点卡；确认卡常在收尾轮才下发，需余量轮）；② 加工项「波浪定型」换目录中真实存在的「韩式波浪折边」 ｜ tags: product_create, processing_item, price, regression
 
 ### PR-021. 单独 SKU 调价 - 修改某规格价格 🔵
 ```
-你: 把遮光窗帘（100元的那件）的米白色散剪规格改成 150 元
+你: 把遮光窗帘的米白色散剪规格改成 150 元
 你: [🤖 选第一个选项]
 你: 确认
 期望: sku_update
 数据: sku_update 成功（价格落库）
 ```
 真值: product-sku-stock.realtime
-溯源: Round 72 评测覆盖审计：sku_update（SKU 级调价）注册于 product_skill 但无 case 覆盖（盲区）→ 补 SKU 调价场景 ｜ tags: sku, write, pricing
+溯源: Round 72 评测覆盖审计：sku_update（SKU 级调价）注册于 product_skill 但无 case 覆盖（盲区）→ 补 SKU 调价场景。2026-09-14 校准（#3518）：输入去「100元的那件」价格点名（独立栈种子 ¥168）。⚠️ 遗留：本 run 该例真实失败点是 `sku_update!SKU不存在`（种子遮光窗帘只有部分规格 SKU）——属**数据层**（种子 SKU 待补），非本 PR 的用例层问题 ｜ tags: sku, write, pricing
 
 ### PR-024. 小布算料上限 - 定宽布买高 + 对花损耗（窗高超定高上限，必须走定宽分支并告警） 🔵
 ```
