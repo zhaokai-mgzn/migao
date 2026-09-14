@@ -18,7 +18,9 @@ cases:
       - processing-manage.crud
       - processing-manage.category-sort
     user_inputs:
-      - "给遮光窗帘（100元的那件）添加加工项"
+      # 去价格点名（#3538，同 PR-005/PR-007/PR-021 #3518 先例）：独立栈种子只有
+      # ¥168 的「遮光窗帘」，点名「100元的那件」→ agent 合理澄清「没有 ¥100 的款式」白耗一轮。
+      - "给遮光窗帘添加加工项"
       - "选打孔加工和韩式折边"
       - "确认"
     expectations:
@@ -29,11 +31,14 @@ cases:
     data_checks:
       - "data.pageMeta != null"
     pre_clean:
+      # 去重只按关键词（#3538）：原先的 price 过滤条件（限 100 元）在独立栈
+      # （种子遮光窗帘 ¥168 款）恒不匹配 → 等于没去重；同名「遮光窗帘」有副本时
+      # agent 会发「哪一件」选择卡。按关键词去重保留最早创建的
+      # （= 种子商品，加工项最全），删掉其余副本。
       - type: product_dedupe
         product_keyword: "遮光窗帘"
-        price: 100
     skip_reason: ""
-    merge_log: "eval P004 + verification 2.13（查询部分同义）+ 2.14 的查询段"
+    merge_log: "eval P004 + verification 2.13（查询部分同义）+ 2.14 的查询段；2026-09-14 校准（#3538）：① 输入去「100元的那件」价格点名（独立栈种子只有 ¥168 款，点名不存在的价 → agent 澄清查无此价 → 流程不前进），自包含化同 AS-003（#3511）/CR-001/PR-005/PR-007/PR-021（#3518）先例；② pre_clean 去 price 过滤（关键词去重，原 price 过滤限 100 元、在种子 ¥168 的栈上恒不匹配）"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_processing_item_query.py"
