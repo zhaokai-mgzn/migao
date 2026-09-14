@@ -1,6 +1,6 @@
 """
 工具下发字段名 ↔ admin-api 请求 DTO 字段契约（跨服务写请求边界）
-# case_ids: AS-004
+# case_ids: AS-004, CU-004
 
 ① 契约层（docs/testing/interaction-verification.md「① 契约层」）：确定性、零 LLM、
 mock 客户端 + 静态解析 Java 源码 —— 拦「工具下发的字段名与 API DTO 字段不一致」
@@ -84,6 +84,20 @@ REGISTRY: tuple[WriteContract, ...] = (
         endpoint="/api/admin/after-sales/t1/status",
         dto_class="AfterSalesStatusUpdateRequest",
         content_value="客户取消订单",
+    ),
+    # CU-004「更新客户资料」：姓名经 `wechatNickname` 下发
+    # （CustomerProfile 无 `name` 列；下发 `name` 即静默丢弃 = 假成功，issue #3551）
+    WriteContract(
+        tool_module="app.tools.customer_manage",
+        tool_kwargs={
+            "action": "update",
+            "customer_id": "c1",
+            "data": {"name": "李四", "phone": "13900001111"},
+        },
+        client_method="put",
+        endpoint="/api/admin/customers/c1",
+        dto_class="CustomerProfile",
+        content_value="李四",
     ),
 )
 
