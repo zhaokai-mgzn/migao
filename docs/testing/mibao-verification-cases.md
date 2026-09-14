@@ -2940,12 +2940,12 @@
 你: 看看哪些商品库存不足
 期望: inventory_manage(action=low_stock_alert) or product_search(stock_status=low_stock)
 数据: 报告的低库存商品数 = 该路径工具返回的条数（product_search: data.products/total；inventory_manage: data.count）—— 数值必须有据，不得凭空给数（本 run 实测 4=4）
-数据: 阈值口径必须与所用工具一致：product_search 分支 = ≤100（库存≤100，与后台低库存口径一致）；inventory_manage 分支 = threshold（默认 10）
+数据: 阈值口径必须与所用工具一致：product_search 分支 = ≤100（库存≤100，与后台低库存口径一致）；inventory_manage 分支 = threshold（默认 100 —— 与 product_search 同一单点来源 app/tools/stock_semantics.py，见 #3783）
 数据: 给出的数字必须能指回该工具返回的明细（不得只给个总数而不列商品）
 必须成功: product_search
 ```
 真值: product-sku-stock.low-stock
-溯源: verification 2.6 独有。2026-09-15（issue #3781）等价路径校准：原断言 `expectations=['inventory_manage(action=low_stock_alert)']` **过度指定实现路径** —— 真实 run 34856561459 里 agent 走的是 `product_search(stock_status=low_stock)`（产品文档认可：库存≤100，与后台低库存口径一致），回答「库存偏低（≤100 件）的商品共 4 件」且工具返回 `products=4 total=4`（数值有据），却判 0% reproducible。改为接受两条等价路径（**未放宽任何阈值、未删任何断言**：断言内核仍是「低库存这件事被真的查出来了 + 报出的数有据」）。⚠️ 产品级语义冲突「同一个『低库存』在两条工具里是 ≤100 vs ≤10」另开 issue 跟踪（产品问题，非评测问题）：`product_search.py:26 LOW_STOCK_THRESHOLD=100` vs `inventory_manage.py:66` 参数文档「默认 10」+ schema `default: 10`，而 `_low_stock_alert` 形参默认却是 **100**（inventory_manage.py:359）——三处口径不一致，详见该 issue ｜ tags: inventory, alert
+溯源: verification 2.6 独有。2026-09-15（issue #3781）等价路径校准：原断言 `expectations=['inventory_manage(action=low_stock_alert)']` **过度指定实现路径** —— 真实 run 34856561459 里 agent 走的是 `product_search(stock_status=low_stock)`（产品文档认可：库存≤100，与后台低库存口径一致），回答「库存偏低（≤100 件）的商品共 4 件」且工具返回 `products=4 total=4`（数值有据），却判 0% reproducible。改为接受两条等价路径（**未放宽任何阈值、未删任何断言**：断言内核仍是「低库存这件事被真的查出来了 + 报出的数有据」）。⚠️ 产品级语义冲突「同一个『低库存』在两条工具里是 ≤100 vs ≤10」另开 issue 跟踪（产品问题，非评测问题）：`product_search.py:26 LOW_STOCK_THRESHOLD=100` vs `inventory_manage.py:66` 参数文档「默认 10」+ schema `default: 10`，而 `_low_stock_alert` 形参默认却是 **100**（inventory_manage.py:359）——三处口径不一致，详见该 issue ｜ 2026-09-15 跟进（#3783 收敛后）：两工具改用单点来源 `app/tools/stock_semantics.py`（权威口径 100、上界含），schema 描述/default 同源生成，上文所述三处口径已消除；本日志中 `product_search.py:26` / `inventory_manage.py:66` / `:359` 是**当时的行号**，现行锚点为 `stock_semantics.py::LOW_STOCK_THRESHOLD` 与 `low_stock_alert_threshold_schema()` ｜ tags: inventory, alert
 
 ### PR-007. 商品上架（状态流转） 🔵
 ```
