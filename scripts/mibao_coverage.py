@@ -41,7 +41,7 @@ import eval_case_filter as lr  # noqa: E402
 from render_cases import load_case_dicts  # noqa: E402
 from case_coverage import (  # noqa: E402
     BASELINE_PATH, PERSONA_LABELS, _attach_baseline, build_coverage_report,
-    case_title, load_baseline, render_baseline_worklist, tool_label,
+    case_title, load_baseline, render_action_gaps, render_baseline_worklist, tool_label,
 )
 
 CASES_DIR = REPO_ROOT / ".github" / "cases"
@@ -152,6 +152,7 @@ def render_text(rep, cases, by_tier) -> str:
         out.append("── 显式豁免（非缺口）──")
         for t, reason in sorted(rep.exempt.items()):
             out.append(f"  ⓘ  {t:32} {reason}")
+    out.append(render_action_gaps(rep, PERSONA_LABELS[PERSONA]))
     return "\n".join(out)
 
 
@@ -211,6 +212,7 @@ def render_md(rep, by_tier) -> str:
         for cid, tools in rep.orphan_cases:
             out.append(f"| {cid} | {', '.join(tools)} |")
         out.append("")
+    out.append(render_action_gaps(rep, PERSONA_LABELS[PERSONA], md=True))
     return "\n".join(out)
 
 
