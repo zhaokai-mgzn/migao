@@ -1,4 +1,4 @@
-// case_ids: PR-001, PR-002, PR-003, PR-004, PR-005, PR-006, PP-006, PR-017, PR-019, PR-021
+// case_ids: PR-001, PR-002, PR-003, PR-004, PR-005, PR-006, PR-008, PP-006, PR-017, PR-019, PR-021
 // PP-006（issue #3005，回滚 #2986）：商品-加工项关联只支持价格自定义（custom_price），
 // 「每米数量」密度（custom_per_meter_quantity）已回滚移除，响应无密度字段
 // PR-021（#3539/#3546 同族，#3616）：SKU 匹配口径归一化——调价路径（#3546）与本文件尾部新增的
@@ -1777,6 +1777,168 @@ class ProductServiceTest {
         verify(productSkuMapper, times(2)).updateById(any(ProductSku.class));
         verify(productSkuMapper, never()).insert(any(ProductSku.class));
         verify(productSkuMapper, never()).deleteById((java.io.Serializable) any());
+    }
+
+    // ============ 空分类归一化（#3665，冒烟报告 B1）============
+    // 背景：admin-web 存草稿时 categoryId 初值是 ''（`DEFAULT_FORM.categoryId: ''`），
+    // handleSubmit 用 `...form` 原样透传、buildProductPayload 不清洗 → 后端 validateCategory
+    // 因 StringUtils.hasText('') == false 直接 return（跳过校验），随后 BeanUtils.copyProperties
+    // 把 '' 写进实体 → insert category_id='' → products_category_id_fkey 违例（500）。
+    // 表列本身可空（categories(id) FK，nullable），「草稿可不选分类」是既有契约
+    // （ProductCreateRequest.categoryId 注释「草稿状态允许为空」）→ 最小修法 = 空串归一化为 null。
+
+    @Test
+    @DisplayName("创建商品 - 草稿空分类（''）归一化为 NULL 落库，不再触发 FK 违例")
+    void createProduct_BlankCategoryId_NormalizedToNull() {
+        // Given：前端草稿真实载荷（categoryId 为空串）
+        ProductCreateRequest request = new ProductCreateRequest();
+        request.setName("冒烟草稿商品");
+        request.setCategoryId("");
+        request.setStatus("draft");
+
+        ArgumentCaptor<Product> captor = ArgumentCaptor.forClass(Product.class);
+        when(productMapper.insert(captor.capture())).thenAnswer(invocation -> {
+            Product p = invocation.getArgument(0);
+            p.setId("prod-blank-cat");
+            return 1;
+        });
+        when(productMapper.selectById("prod-blank-cat")).thenReturn(Product.builder()
+                .id("prod-blank-cat").name("冒烟草稿商品").status("draft").categoryId(null).build());
+
+        // When
+        ProductResponse result = productService.createProduct(request, 1L);
+
+        // Then：落库 category_id 为 NULL（而不是 ''），空串不进分类查询
+        assertThat(result).isNotNull();
+        assertThat(captor.getValue().getCategoryId()).isNull();
+        verify(categoryMapper, never()).selectById(any());
+    }
+
+    @Test
+    @DisplayName("创建商品 - 空白分类（'   '）同样归一化为 NULL")
+    void createProduct_WhitespaceCategoryId_NormalizedToNull() {
+        ProductCreateRequest request = new ProductCreateRequest();
+        request.setName("冒烟草稿商品2");
+        request.setCategoryId("   ");
+        request.setStatus("draft");
+
+        ArgumentCaptor<Product> captor = ArgumentCaptor.forClass(Product.class);
+        when(productMapper.insert(captor.capture())).thenAnswer(invocation -> {
+            Product p = invocation.getArgument(0);
+            p.setId("prod-blank-cat-2");
+            return 1;
+        });
+        when(productMapper.selectById("prod-blank-cat-2")).thenReturn(Product.builder()
+                .id("prod-blank-cat-2").name("冒烟草稿商品2").status("draft").build());
+
+        productService.createProduct(request, 1L);
+
+        assertThat(captor.getValue().getCategoryId()).isNull();
+    }
+
+    @Test
+    @DisplayName("更新商品 - 空分类（''）归一化为 NULL 落库（update 路径同口径）")
+    void updateProduct_BlankCategoryId_NormalizedToNull() {
+        // Given
+        ProductUpdateRequest request = new ProductUpdateRequest();
+        request.setName("更新后的商品");
+        request.setCategoryId("");
+        request.setBasePrice(new BigDecimal("399.00"));
+
+        when(productMapper.selectById("prod-001")).thenReturn(testProduct);
+        ArgumentCaptor<Product> captor = ArgumentCaptor.forClass(Product.class);
+        when(productMapper.updateById(captor.capture())).thenReturn(1);
+        when(productMapper.selectById("prod-001"))
+                .thenReturn(testProduct)
+                .thenReturn(Product.builder().id("prod-001").name("更新后的商品")
+                        .basePrice(new BigDecimal("399.00")).build());
+
+        // When
+        productService.updateProduct("prod-001", request, 1L);
+
+        // Then
+        assertThat(captor.getValue().getCategoryId()).isNull();
+        verify(categoryMapper, never()).selectById(any());
+    }
+
+    @Test
+    @DisplayName("创建商品 - 非法分类 id 仍被拒（空串归一化不得削弱分类校验）")
+    void createProduct_InvalidCategoryStillRejected() {
+        ProductCreateRequest request = new ProductCreateRequest();
+        request.setName("非法分类商品");
+        request.setCategoryId("nonexistent-cat");
+
+        when(categoryMapper.selectById("nonexistent-cat")).thenReturn(null);
+
+        assertThatThrownBy(() -> productService.createProduct(request, 1L))
+                .isInstanceOf(BusinessException.class)
+                .hasMessage("分类不存在");
+        verify(productMapper, never()).insert(any(Product.class));
+    }
+
+    @Test
+    @DisplayName("创建商品 - 非草稿空分类仍被拒（'分类ID不能为空'语义不变）")
+    void createProduct_NonDraftBlankCategoryStillRejected() {
+        ProductCreateRequest request = new ProductCreateRequest();
+        request.setName("上架缺分类商品");
+        request.setCategoryId("");
+        request.setStatus("on_sale");
+        request.setBasePrice(new BigDecimal("10.00"));
+
+        assertThatThrownBy(() -> productService.createProduct(request, 1L))
+                .isInstanceOf(BusinessException.class)
+                .hasMessage("分类ID不能为空");
+        verify(productMapper, never()).insert(any(Product.class));
+    }
+
+    @Test
+    @DisplayName("创建商品 - 合法分类 id 原样落库（归一化不得误伤正常值）")
+    void createProduct_ValidCategoryPreserved() {
+        ProductCreateRequest request = new ProductCreateRequest();
+        request.setName("正常分类商品");
+        request.setCategoryId("cat-001");
+        request.setBasePrice(new BigDecimal("199.00"));
+
+        when(categoryMapper.selectById("cat-001")).thenReturn(testCategory);
+        ArgumentCaptor<Product> captor = ArgumentCaptor.forClass(Product.class);
+        when(productMapper.insert(captor.capture())).thenAnswer(invocation -> {
+            Product p = invocation.getArgument(0);
+            p.setId("prod-valid-cat");
+            return 1;
+        });
+        when(productMapper.selectById("prod-valid-cat")).thenReturn(Product.builder()
+                .id("prod-valid-cat").name("正常分类商品").categoryId("cat-001").build());
+
+        productService.createProduct(request, 1L);
+
+        assertThat(captor.getValue().getCategoryId()).isEqualTo("cat-001");
+    }
+
+    @Test
+    @DisplayName("空分类归一化（#3665）静态不变式 - 每条请求→实体拷贝路径都要先过 normalizeBlankToNull")
+    void blankCategoryNormalization_AppliedOnEveryCopyPropertiesPath() throws Exception {
+        // L0 静态不变式（migao-dev-flow §16.1）：BeanUtils.copyProperties(请求, 实体) 是把
+        // categoryId 透传进实体的唯一入口，每个**方法内**的拷贝之前都必须先过
+        // normalizeBlankToNull——防「修一处漏一处」（本缺陷正是 create/update 两条路径同形）。
+        String source = String.join("\n", java.nio.file.Files.readAllLines(productServiceSourceFile()));
+        // 按方法签名切分（含包级/私有方法；注释里的签名不算——只认行首缩进的声明）
+        String[] methods = source.split("(?m)^    (?:public|private|protected|static|@|\\w[\\w<>,\\[\\] .]*\\()");
+        int checked = 0;
+        for (String method : methods) {
+            int copyAt = method.indexOf("BeanUtils.copyProperties(request, product)");
+            if (copyAt < 0) continue;
+            checked++;
+            int guardAt = method.indexOf("normalizeBlankToNull(request.getCategoryId())");
+            String signature = method.lines().findFirst().orElse("?").trim();
+            assertThat(guardAt)
+                    .as("方法 %s 的请求→实体拷贝前未做空分类归一化（normalizeBlankToNull）", signature)
+                    .isGreaterThanOrEqualTo(0);
+            assertThat(guardAt)
+                    .as("方法 %s 的空分类归一化必须在拷贝之前", signature)
+                    .isLessThan(copyAt);
+        }
+        // 回归护栏：拷贝路径消失说明本不变式的探测目标变了，必须同步核对实现
+        assertThat(checked).as("未找到请求→实体拷贝路径，静态不变式失效").isEqualTo(2);
     }
 
     @Test

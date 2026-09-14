@@ -3,7 +3,7 @@
 对应 app/tools/product_manage.py 的 create/update/toggle_status 三条 action，
 覆盖正常路径、参数校验、camelCase 字段映射、异常泛化兜底。
 """
-# case_ids: PR-007, PR-008
+# case_ids: PR-007, PR-008, PR-009
 import pytest
 from unittest.mock import AsyncMock, patch
 
@@ -132,6 +132,24 @@ class TestProductCreate:
         assert "⚠️" in result.message
         assert "skuCode 已存在" in result.message
 
+    @patch("app.tools.product_manage.get_admin_api_client")
+    async def test_create_blank_category_id_omitted(self, mock_get_client, tool, admin_tool_context, mock_client):
+        """空分类（''/空白）不下发 categoryId（#3665 冒烟 B1）：
+        后端空串会被 BeanUtils 写进实体 → products_category_id_fkey 违例（500）。
+        create 走真值判断，口径必须与 update 一致：空串不下发。"""
+        mock_client.post = AsyncMock(return_value={"success": True, "data": {"id": "p-1"}})
+        mock_get_client.return_value = mock_client
+
+        for blank in ("", "   "):
+            mock_client.post.reset_mock()
+            result = await tool.execute(
+                context=admin_tool_context, action="create", name="窗帘", category_id=blank
+            )
+            assert result.success is True
+            assert "categoryId" not in mock_client.post.call_args[1]["json_data"], (
+                f"空分类 {blank!r} 不应下发 categoryId"
+            )
+
 
 class TestProductUpdate:
     @patch("app.tools.product_manage.get_admin_api_client")
@@ -182,6 +200,40 @@ class TestProductUpdate:
         assert json_data == {"name": "新名字", "basePrice": 88.0, "stock": 5}
         assert "categoryId" not in json_data
         assert "description" not in json_data
+
+    @patch("app.tools.product_manage.get_admin_api_client")
+    async def test_update_blank_category_id_omitted(self, mock_get_client, tool, admin_tool_context, mock_client):
+        """空分类（''/空白）不下发 categoryId（#3665 冒烟 B1，update 路径）。
+
+        修复前用 `if category_id is not None` → 空串照样透传 → 后端 resolveCategoryId('') 返回 null
+        → 422「无法找到匹配的分类：」（或 BeanUtils 写 '' 触发 FK 违例）。
+        与 create 的真值判断口径统一：空串不下发。"""
+        mock_client.patch = AsyncMock(return_value={"success": True, "data": {"id": "p-1"}})
+        mock_get_client.return_value = mock_client
+
+        for blank in ("", "   "):
+            mock_client.patch.reset_mock()
+            result = await tool.execute(
+                context=admin_tool_context, action="update", product_id="p-1",
+                name="新名字", category_id=blank,
+            )
+            assert result.success is True
+            json_data = mock_client.patch.call_args[1]["json_data"]
+            assert "categoryId" not in json_data, f"空分类 {blank!r} 不应下发 categoryId"
+            assert result.data["updated_fields"] == ["name"]
+
+    @patch("app.tools.product_manage.get_admin_api_client")
+    async def test_update_valid_category_id_preserved(self, mock_get_client, tool, admin_tool_context, mock_client):
+        """合法分类 id 原样下发（空串归一化不得误伤正常值）。"""
+        mock_client.patch = AsyncMock(return_value={"success": True, "data": {"id": "p-1"}})
+        mock_get_client.return_value = mock_client
+
+        await tool.execute(
+            context=admin_tool_context, action="update", product_id="p-1", category_id="cat-1"
+        )
+
+        json_data = mock_client.patch.call_args[1]["json_data"]
+        assert json_data["categoryId"] == "cat-1"
 
 
 class TestProductToggleStatus:
