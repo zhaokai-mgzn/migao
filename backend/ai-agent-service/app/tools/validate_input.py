@@ -52,13 +52,48 @@ _VALIDATION_RULES: Dict[str, Dict[str, Any]] = {
         },
     },
     "order_manage": {
+        # 三个此前无规则的 action（issue #3566 核查）：闸门走「该操作无预定义规则」直接
+        # 放行，连 order_id 都不校验——其中 confirm_payment 是**资金动作**。
+        # 真实契约在 Service 分支里（`OrderService.java:1585-1629`），工具统一 PATCH
+        # `/api/admin/agent/orders/{id}`（`order_manage.py:128`）。
+        "update_status": {
+            "required": ["order_id", "status"],
+            "order_id": {"type": str, "min_len": 1, "label": "订单ID或订单号"},
+            # 状态集 = `OrderService.java:79-86` STATUS_TRANSITIONS（key ∪ 目标值），
+            # 非法值/非法流转由 Service 拒（`:507-521`），闸门先拦非法取值
+            "status": {
+                "type": str,
+                "min_len": 1,
+                "label": "订单新状态（pending/confirmed/producing/shipped/completed/cancelled）",
+                "enum": ["pending", "confirmed", "producing", "shipped", "completed", "cancelled"],
+            },
+        },
+        "update_logistics": {
+            "required": ["order_id", "logistics_company", "tracking_number"],
+            "order_id": {"type": str, "min_len": 1, "label": "订单ID或订单号"},
+            "logistics_company": {"type": str, "min_len": 1, "label": "快递公司"},
+            "tracking_number": {"type": str, "min_len": 1, "label": "运单号"},
+        },
+        "confirm_payment": {
+            "required": ["order_id"],
+            "order_id": {"type": str, "min_len": 1, "label": "订单ID或订单号"},
+        },
         "cancel": {
             "required": ["order_id"],
             "order_id": {"type": str, "min_len": 1, "label": "订单ID或订单号"},
+            "cancel_reason": {"type": str, "label": "取消原因（可选）"},
         },
         "refund": {
             "required": ["order_id"],
             "order_id": {"type": str, "min_len": 1, "label": "订单ID或订单号"},
+            # 退款额可选（缺省全额，`OrderService.java:1123`），但显式传 0 必被拒
+            # （`:1125-1135`：负数拒、累计封顶后 <=0 → 「已全额退款，无需重复退款」）
+            "refund_amount": {
+                "type": (int, float),
+                "min": 0.01,
+                "label": "退款金额（元，可选；不传=全额退款）",
+            },
+            "refund_reason": {"type": str, "label": "退款原因（可选）"},
         },
     },
     "processing_order_generate": {
@@ -537,7 +572,7 @@ class ValidateInputTool(BaseTool):
                 if not pcs or not isinstance(pcs, list) or not pcs:
                     issues.append(
                         "选了加工项但未传 processing_item_configs（必须为列表，每项含 "
-                        "{processingItemId, customPrice, unit}；customPrice 取 processing_item_query 返回的 unit_price）"
+                        "{processingItemId, customPrice}；customPrice 取 processing_item_query 返回的 unit_price）"
                     )
                 else:
                     for pc in pcs:
@@ -549,11 +584,11 @@ class ValidateInputTool(BaseTool):
                                 f"processing_item_configs 缺价格 customPrice/unit_price: {str(pc)[:100]}"
                             )
                             break
-                        if not pc.get("unit"):
-                            issues.append(
-                                f"processing_item_configs 缺单位 unit: {str(pc)[:100]}"
-                            )
-                            break
+                        # ⚠️ 不再要求 `unit`（issue #3566 核查）：契约里**没有**这个字段——
+                        # agent 路径 `AgentProductCreateRequest.AgentProcessingItemConfig`
+                        # 只有 processingItemId + customPrice（`AgentProductCreateRequest.java:88-93`），
+                        # 表单路径 `ProcessingItemConfigInput.java:12-22` 同。旧规则逼 LLM
+                        # 编一个接收侧不读的键（Jackson 静默丢弃）=「下发字段接收侧不读」同型缺陷。
 
         # 7. 下单加工费一致性兜底（issue #3521，与上面 #3052 同一理由：
         #    prompt 指令会被 LLM 方差漏掉 → validate_input 必须是确定性闸门）。

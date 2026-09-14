@@ -269,7 +269,15 @@ class TestProductCreateDeterministicAttrs:
         assert result.success is False
         assert "customPrice" in result.message or "unit" in result.message
 
-    async def test_processing_configs_missing_unit_fails(self, tool, admin_tool_context):
+    async def test_processing_configs_without_unit_passes(self, tool, admin_tool_context):
+        """过严修复（issue #3566 核查）：`unit` 不是加工项配置的契约字段。
+
+        契约（agent 路径）：`AgentProductCreateRequest.AgentProcessingItemConfig` 只有
+        `processingItemId` + `customPrice`（`AgentProductCreateRequest.java:88-93`）；
+        表单路径 `ProcessingItemConfigInput.java:12-22` 同样无 `unit`。
+        旧闸门强制每项含 `unit` → 逼 LLM 编一个接收侧根本不读的键（Jackson 静默丢弃），
+        属「下发字段接收侧不读」同型缺陷。`customPrice` 仍在契约里，继续必填。
+        """
         result = await tool.execute(
             context=admin_tool_context,
             target_tool="product_manage",
@@ -279,8 +287,8 @@ class TestProductCreateDeterministicAttrs:
                     "processing_item_ids": ["pi_a"],
                     "processing_item_configs": [{"processingItemId": "pi_a", "customPrice": 30.0}]},
         )
-        assert result.success is False
-        assert "unit" in result.message
+        assert result.success is True, result.message
+        assert "unit" not in result.message
 
     async def test_processing_configs_with_price_passes(self, tool, admin_tool_context):
         result = await tool.execute(
@@ -734,3 +742,95 @@ class TestValidationRuleKeysAreLive:
         broken = {**_VALIDATION_RULES,
                   "processing_item_manage": {"delete": {"required": ["item_id"]}}}
         assert _dead_rule_keys(broken) == [("processing_item_manage", "delete")]
+
+
+class TestOrderManageGateMatchesContract:
+    """`order_manage` 三个此前无规则的 action（issue #3566，含资金动作 confirm_payment）。
+
+    工具统一走 `PATCH /api/admin/agent/orders/{id}`（`order_manage.py:128`），
+    真实契约在 Service 分支里（`OrderService.java:1585-1629`）：
+    - `update_status` → `status` 必填 + 合法状态集
+      （`OrderService.java:1595-1597`；状态集 `:79-86` STATUS_TRANSITIONS 的 key ∪ 目标值）
+    - `update_logistics` → `logisticsCompany` + `trackingNumber` 均必填（`:1614-1619`）
+    - `confirm_payment` → 只需 `order_id`
+    - `cancel` / `refund` → 只需 `order_id`（reason/amount 可选；`refund_amount=0`
+      必被拒：`OrderService.java:1125-1135` 退款额 <0 拒、累计封顶后 `<=0` 报「已全额退款」）
+    """
+
+    ORDER = "ORD-20260101-0001"
+
+    async def test_update_status_missing_status_blocked(self, tool, admin_tool_context):
+        result = await tool.execute(
+            context=admin_tool_context, target_tool="order_manage",
+            target_action="update_status", params={"order_id": self.ORDER},
+        )
+        assert result.success is False
+        assert "status" in result.message
+
+    async def test_update_status_illegal_value_blocked(self, tool, admin_tool_context):
+        """LLM 传中文状态（「已发货」）会被 Service 拒（`OrderService.java:507-511`）→ 闸门先拦。"""
+        result = await tool.execute(
+            context=admin_tool_context, target_tool="order_manage",
+            target_action="update_status",
+            params={"order_id": self.ORDER, "status": "已发货"},
+        )
+        assert result.success is False
+        assert "status" in result.message
+        assert "shipped" in result.message and "cancelled" in result.message
+
+    async def test_update_status_legal_passes(self, tool, admin_tool_context):
+        result = await tool.execute(
+            context=admin_tool_context, target_tool="order_manage",
+            target_action="update_status",
+            params={"order_id": self.ORDER, "status": "shipped"},
+        )
+        assert result.success is True, result.message
+
+    async def test_update_logistics_requires_company_and_tracking(self, tool, admin_tool_context):
+        missing_tracking = await tool.execute(
+            context=admin_tool_context, target_tool="order_manage",
+            target_action="update_logistics",
+            params={"order_id": self.ORDER, "logistics_company": "顺丰"},
+        )
+        assert missing_tracking.success is False
+        assert "tracking_number" in missing_tracking.message
+
+        ok = await tool.execute(
+            context=admin_tool_context, target_tool="order_manage",
+            target_action="update_logistics",
+            params={"order_id": self.ORDER, "logistics_company": "顺丰",
+                    "tracking_number": "SF1234567890"},
+        )
+        assert ok.success is True, ok.message
+
+    async def test_confirm_payment_requires_order_id(self, tool, admin_tool_context):
+        """资金动作：此前连 order_id 都不校验。"""
+        blocked = await tool.execute(
+            context=admin_tool_context, target_tool="order_manage",
+            target_action="confirm_payment", params={"action": "confirm_payment"},
+        )
+        assert blocked.success is False
+        assert "order_id" in blocked.message
+
+        ok = await tool.execute(
+            context=admin_tool_context, target_tool="order_manage",
+            target_action="confirm_payment", params={"order_id": self.ORDER},
+        )
+        assert ok.success is True, ok.message
+
+    async def test_refund_zero_amount_blocked(self, tool, admin_tool_context):
+        """退款额 0 → Service 必拒（`OrderService.java:1132-1135` 累计封顶后 <=0）。"""
+        blocked = await tool.execute(
+            context=admin_tool_context, target_tool="order_manage",
+            target_action="refund",
+            params={"order_id": self.ORDER, "refund_amount": 0},
+        )
+        assert blocked.success is False
+        assert "refund_amount" in blocked.message
+
+        ok = await tool.execute(
+            context=admin_tool_context, target_tool="order_manage",
+            target_action="refund",
+            params={"order_id": self.ORDER, "refund_amount": 120.5, "refund_reason": "尺寸不符"},
+        )
+        assert ok.success is True, ok.message
