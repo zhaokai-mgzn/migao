@@ -400,12 +400,22 @@ class TestCoverageThicknessGate:
         )
 
     def test_thin_tools_are_reported_not_blocking(self):
-        """厚度不足（仅 1 条用例）只报告、不阻塞 —— 与 verify-all.sh 的活指标意图一致。"""
-        rep = self._report()
-        assert rep.thin_tools, "薄覆盖清单不应为空（validate_input 目前仅 OR-023 一条）"
+        """厚度不足（仅 1 条用例）只报告、不阻塞 —— 与 verify-all.sh 的活指标意图一致。
+
+        ⚠️ 2026-09-14（issue #3558）：原实现拿**真实用例库的活数据**当夹具
+        （`assert rep.thin_tools`，注释写明「validate_input 目前仅 OR-023 一条」）——
+        而该 issue 恰好补上这个缺口（validate_input 1 → 2 条，C 端薄覆盖清单随之清空）
+        → 这条**机制守卫自己红了**：守卫与被守卫对象耦合，把能力修好反而踩红门禁。
+        改为**合成用例**驱动（本类已有 `_synth`），断言的机制逐字不变：
+        仅 1 条用例的工具 → 进 `thin_tools`（只报告），不进 `uncovered`/`missing_positive`（阻塞字段）。
+        """
+        cases = self._synth({"id": "T-THIN", "expectations": [{"tool": "tool_x"}]})
+        rep = build_coverage_report(cases, "xiaobu", tools={"tool_x"})
+        assert rep.thin_tools == ["tool_x"], (
+            f"仅 1 条用例的工具必须进薄覆盖清单（只报告不阻塞），实得 {rep.thin_tools}")
         # 薄覆盖不进 --check 失败条件：报告字段与阻塞字段必须是两套
-        assert "validate_input" in rep.thin_tools
-        assert "validate_input" not in rep.missing_positive
+        assert "tool_x" not in rep.uncovered
+        assert "tool_x" not in rep.missing_positive
 
     def test_negation_only_tool_is_missing_positive(self):
         """判据本体：某工具的用例全是「不调用/拒绝」式断言 → 缺正向用例。"""
