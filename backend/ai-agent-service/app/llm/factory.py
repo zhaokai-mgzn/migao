@@ -87,6 +87,13 @@ class LLMFactory:
         # `OpenAIError: Missing credentials` → 图片能力（拍照找同款/识别面料）不可用。
         # CI 实证：CH-026「澄清卡后发图」因缺凭据失败。
         # 语义：显式配置的独立视觉 key 优先；未配置则兜底主模型 key/base_url。
+        # 显式关闭思考（探针实证 #3573 / PR #3579，run 34809425971）：deepseek-flash
+        # 缺省=开思考——基线不传 extra_body 照样产出 reasoning_content（len=537/122 tokens）。
+        # 视觉识别（拍照找同款/识面料）是轻量任务，无需深度思考 ⇒ 显式 thinking=disabled，
+        # 与 skill 路径 create_skill_llm(force_no_think=True)（本文件 :63-64）语义一致；
+        # 实测关思考 output 102→1 token（-99%）、耗时 1.55s→0.91s，且 content 输出不变。
+        # 透传性：DeepSeek 认该顶层 body key 且不校验（200、无 400），
+        # ChatOpenAI（OpenAI 兼容客户端）与 ChatDeepSeek 均按 extra_body 原样出网。
         return ChatOpenAI(
             model=model,
             api_key=settings.VISION_API_KEY or settings.PRIMARY_API_KEY,
@@ -95,6 +102,7 @@ class LLMFactory:
             streaming=True,
             max_completion_tokens=16384,
             request_timeout=60,
+            extra_body={"thinking": {"type": "disabled"}},
         )
 
     @staticmethod
