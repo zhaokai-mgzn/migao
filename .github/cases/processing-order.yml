@@ -477,34 +477,32 @@ cases:
     truths_ref: []
     user_inputs:
       # 同上：干净栈无加工单 seed → 先对种子订单生成，再推进状态。
-      # #3658（issue #3658）两项修复（run 34820346966 首次真重放实证）：
+      # #3658（issue #3658，run 34820346966 / 34821647043 两轮实证后定稿）：
       #   ① 目标订单 0002 → **0004**（独立订单竞态修复，同 PG-015：三条 PG 用例不再抢同一订单）；
-      #   ② 输入从「生成 → 直接标记完成」改为**完整状态机走位** generated→issued→
-      #      in_processing→completed（PG-006：generated→completed 是**非法迁移**，
-      #      原写法即使无竞态也必失败 —— 实测 agent 正确回复「已发加工还不能直接标记完成」）。
-      #      每步一个写动作 + repeat_until（停条件=工具**成功**，issue #3430）+ fallback 答确认卡。
-      # `complete` 在状态机里是**幂等**的（重复调用仍为 completed），不污染后续跑
-      # （cancel 非幂等且需 reason，故不用它做正向用例）。
+      #   ② 输入走**完整状态机** generated→issued→in_processing→completed
+      #      （PG-006：generated→completed 是**非法迁移**，原「生成→直接标记完成」写法必失败
+      #      —— 实测 agent 正确回复「已发加工还不能直接标记完成」）；
+      #   ③ 每步的确认卡用 `auto_respond`（有卡答卡，§13.5 推荐形态）回答 —— **刻意不用**
+      #      `repeat_until{tool_called: processing_order_update}`：runner 的停条件是
+      #      **工具级**（该工具成功调用过即停，issue #3430），issue 成功后 start/complete 的
+      #      repeat 轮会被整体跳过（run 34821647043 实证：开始加工的确认卡没人答 → 流程卡死，
+      #      update 从未以 start/complete 执行）。生成步保留 repeat_until（工具名唯一，无此问题）。
+      # `complete` 幂等（重复调用仍为 completed），不污染后续跑（cancel 非幂等且需 reason，
+      # 故不用它做正向用例）。
       - "把订单 EVAL-MB-ORD-0004 生成加工单"
       - repeat_until:
           tool_called: processing_order_generate
           max: 3
         fallback: "确认"
       - "这笔加工单发加工，交期下周三"
-      - repeat_until:
-          tool_called: processing_order_update
-          max: 3
-        fallback: "确认"
+      - auto_respond:
+          fallback: "确认"
       - "开始加工"
-      - repeat_until:
-          tool_called: processing_order_update
-          max: 3
-        fallback: "确认"
+      - auto_respond:
+          fallback: "确认"
       - "这笔加工单加工完成了，标记完成"
-      - repeat_until:
-          tool_called: processing_order_update
-          max: 4
-        fallback: "确认"
+      - auto_respond:
+          fallback: "确认"
     expectations:
       - tool: processing_order_update
         args:
@@ -536,7 +534,7 @@ cases:
       - "success=true"
       - "结论 grounded 到刚更新的加工单（订单联动状态见加工单设计决策 3：complete 不回退订单）"
     skip_reason: ""
-    merge_log: "2026-09-14 新增（issue #3568 / #3592）：processing_order_update 此前**零用例覆盖**（同 PG-015 的结构性缺失）。断言机器可判：expectations(action=complete) + must_succeed(action=complete) + required_args[id] + output_verify（**显式声明 action**，防多 action 工具核到别的 payload 造成假绿）。2026-09-14 首次真重放（run 34820346966，issue #3658）：❌ 失败 → 归因**用例资产缺陷**（非 agent 能力缺口）：① 与 PG-013/015 抢同一种子订单 EVAL-MB-ORD-0002（并发生成只有一方成功，实测生成被拒「订单已生产中」后 agent 转向 issue 流，complete 期望永不满足）；② 输入跳步（生成后直接「标记完成」违反状态机 generated→completed 非法迁移，PG-006 铁律）。修复：独立订单 0004 + 完整状态机走位（见 user_inputs 注释）。"
+    merge_log: "2026-09-14 新增（issue #3568 / #3592）：processing_order_update 此前**零用例覆盖**（同 PG-015 的结构性缺失）。断言机器可判：expectations(action=complete) + must_succeed(action=complete) + required_args[id] + output_verify（**显式声明 action**，防多 action 工具核到别的 payload 造成假绿）。2026-09-14 首次真重放（run 34820346966，issue #3658）：❌ 失败 → 归因**用例资产缺陷**（非 agent 能力缺口）：① 与 PG-013/015 抢同一种子订单 EVAL-MB-ORD-0002（并发生成只有一方成功，实测生成被拒「订单已生产中」后 agent 转向 issue 流，complete 期望永不满足）；② 输入跳步（生成后直接「标记完成」违反状态机 generated→completed 非法迁移，PG-006 铁律）。修复：独立订单 0004 + 完整状态机走位。2026-09-14 第二轮验证重放（run 34821647043）：❌ 再失败 → 新发现**用例设计缺陷**：状态机三步全用 `repeat_until{tool_called: processing_order_update}`，而 runner 停条件是**工具级**（issue #3430）——issue 成功（R6）后 start/complete 的 repeat 轮被整体跳过（开始加工确认卡无人答）。修复：每步确认卡改用 `auto_respond`（有卡答卡、无停条件跳过），生成步保留 repeat_until（工具唯一）。"
     traces:
       tests:
         - "backend/admin-api/src/test/java/com/migao/admin/service/ProcessingOrderServiceTest.java"

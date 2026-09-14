@@ -3818,7 +3818,7 @@ _CASE_PG_016 = EvalCase(
     title='米宝加工单 LLM 行为：更新加工单状态（完成加工，产出核到 completed）',
     skill=Skill.GENERAL,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['把订单 EVAL-MB-ORD-0004 生成加工单', {'repeat_until': {'tool_called': 'processing_order_generate', 'max': 3}, 'fallback': '确认'}, '这笔加工单发加工，交期下周三', {'repeat_until': {'tool_called': 'processing_order_update', 'max': 3}, 'fallback': '确认'}, '开始加工', {'repeat_until': {'tool_called': 'processing_order_update', 'max': 3}, 'fallback': '确认'}, '这笔加工单加工完成了，标记完成', {'repeat_until': {'tool_called': 'processing_order_update', 'max': 4}, 'fallback': '确认'}],
+    user_inputs=['把订单 EVAL-MB-ORD-0004 生成加工单', {'repeat_until': {'tool_called': 'processing_order_generate', 'max': 3}, 'fallback': '确认'}, '这笔加工单发加工，交期下周三', {'auto_respond': {'fallback': '确认'}}, '开始加工', {'auto_respond': {'fallback': '确认'}}, '这笔加工单加工完成了，标记完成', {'auto_respond': {'fallback': '确认'}}],
     expectations=['processing_order_update(action=complete)'],
     data_checks=['success=true', '结论 grounded 到刚更新的加工单（订单联动状态见加工单设计决策 3：complete 不回退订单）'],
     skip_reason='',

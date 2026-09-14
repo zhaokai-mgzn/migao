@@ -2814,11 +2814,11 @@
 你: 把订单 EVAL-MB-ORD-0004 生成加工单
 你: [🔁 按目标工具重复直至成功：processing_order_generate，最多 3 次]
 你: 这笔加工单发加工，交期下周三
-你: [🔁 按目标工具重复直至成功：processing_order_update，最多 3 次]
+你: [🤖 按上一轮卡片作答]
 你: 开始加工
-你: [🔁 按目标工具重复直至成功：processing_order_update，最多 3 次]
+你: [🤖 按上一轮卡片作答]
 你: 这笔加工单加工完成了，标记完成
-你: [🔁 按目标工具重复直至成功：processing_order_update，最多 4 次]
+你: [🤖 按上一轮卡片作答]
 期望: processing_order_update(action=complete)
 数据: success=true
 数据: 结论 grounded 到刚更新的加工单（订单联动状态见加工单设计决策 3：complete 不回退订单）
@@ -2832,7 +2832,7 @@
 产出: processing_order_update(complete) → action==complete; result.status==completed
 ```
 真值: ⚠️ 缺口（见对应模板 ⚠️ 注释）
-溯源: 2026-09-14 新增（issue #3568 / #3592）：processing_order_update 此前**零用例覆盖**（同 PG-015 的结构性缺失）。断言机器可判：expectations(action=complete) + must_succeed(action=complete) + required_args[id] + output_verify（**显式声明 action**，防多 action 工具核到别的 payload 造成假绿）。2026-09-14 首次真重放（run 34820346966，issue #3658）：❌ 失败 → 归因**用例资产缺陷**（非 agent 能力缺口）：① 与 PG-013/015 抢同一种子订单 EVAL-MB-ORD-0002（并发生成只有一方成功，实测生成被拒「订单已生产中」后 agent 转向 issue 流，complete 期望永不满足）；② 输入跳步（生成后直接「标记完成」违反状态机 generated→completed 非法迁移，PG-006 铁律）。修复：独立订单 0004 + 完整状态机走位（见 user_inputs 注释）。 ｜ tags: processing_order, llm_behavior, tool_call, update
+溯源: 2026-09-14 新增（issue #3568 / #3592）：processing_order_update 此前**零用例覆盖**（同 PG-015 的结构性缺失）。断言机器可判：expectations(action=complete) + must_succeed(action=complete) + required_args[id] + output_verify（**显式声明 action**，防多 action 工具核到别的 payload 造成假绿）。2026-09-14 首次真重放（run 34820346966，issue #3658）：❌ 失败 → 归因**用例资产缺陷**（非 agent 能力缺口）：① 与 PG-013/015 抢同一种子订单 EVAL-MB-ORD-0002（并发生成只有一方成功，实测生成被拒「订单已生产中」后 agent 转向 issue 流，complete 期望永不满足）；② 输入跳步（生成后直接「标记完成」违反状态机 generated→completed 非法迁移，PG-006 铁律）。修复：独立订单 0004 + 完整状态机走位。2026-09-14 第二轮验证重放（run 34821647043）：❌ 再失败 → 新发现**用例设计缺陷**：状态机三步全用 `repeat_until{tool_called: processing_order_update}`，而 runner 停条件是**工具级**（issue #3430）——issue 成功（R6）后 start/complete 的 repeat 轮被整体跳过（开始加工确认卡无人答）。修复：每步确认卡改用 `auto_respond`（有卡答卡、无停条件跳过），生成步保留 repeat_until（工具唯一）。 ｜ tags: processing_order, llm_behavior, tool_call, update
 
 ## 商品域（22 case）
 
