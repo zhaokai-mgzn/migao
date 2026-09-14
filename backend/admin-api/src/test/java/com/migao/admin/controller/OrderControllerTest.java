@@ -284,4 +284,96 @@ class OrderControllerTest extends BaseControllerTest {
             verifyNoInteractions(orderService);
         }
     }
+
+    // ==================== POST /api/admin/orders 数量下限（issue #3682） ====================
+
+    /**
+     * 表单路径的**订单数量下限**（issue #3682 方案 A：下限 = 1）。
+     *
+     * <p>为什么表单路径也要拦：`items[].quantity` 直接驱动服务端库存/销量，而
+     * `OrderService` 对 `BigDecimal quantity` 取整数部分（`:1051` 库存校验 / `:1408`
+     * `deductStock` / `:1409` `increaseSalesCount`）——数量 0.5 → `needed=0` 校验恒通过、
+     * `deductStock(0)` 不减库存、销量 +0，**订单成交但库存/销量零变动且无告警**。</p>
+     *
+     * <p>表单页虽有 `min={1}`，但该页面**没有 `&lt;form&gt;` 元素**（提交按钮是
+     * `Button onClick={handleSubmit}`），原生 `min` 不参与校验，页面 JS 判据是
+     * `quantity &lt;= 0` → 0.5 在表单路径同样可达。故服务端下限是这条路径的唯一硬拦。</p>
+     */
+    @Nested
+    @DisplayName("POST /api/admin/orders — 数量下限 1（#3682）")
+    class QuantityLowerBound {
+
+        private String bodyWithQuantity(String quantity, String subtotal) {
+            return String.format("""
+                    {"customerName":"张三","customerPhone":"13800138000","items":[{"productId":"prod-001","productName":"窗帘","quantity":%s,"unitPrice":100,"subtotal":%s}]}
+                    """, quantity, subtotal);
+        }
+
+        @Test
+        @DisplayName("quantity=0.5 → 422「数量不能小于 1」（0.5 会被库存/销量按 0 件计 → 静默漏扣）")
+        void subOneQuantityRejected() throws Exception {
+            mockMvc.perform(post(BASE).contentType(MediaType.APPLICATION_JSON)
+                            .content(bodyWithQuantity("0.5", "50")))
+                    .andExpect(status().isUnprocessableEntity())
+                    .andExpect(jsonPath("$.success").value(false))
+                    .andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
+                    .andExpect(jsonPath("$.error.details[0].field").value("items[0].quantity"))
+                    .andExpect(jsonPath("$.error.details[0].message").value("数量不能小于 1"));
+
+            verifyNoInteractions(orderService);
+        }
+
+        @Test
+        @DisplayName("quantity=0 → 422（0 元明细与 <1 同口径）")
+        void zeroQuantityRejected() throws Exception {
+            // 小计用正值：否则 subtotal 的 @Positive 也会失败，字段错误顺序不确定 → 断言不稳
+            mockMvc.perform(post(BASE).contentType(MediaType.APPLICATION_JSON)
+                            .content(bodyWithQuantity("0", "100")))
+                    .andExpect(status().isUnprocessableEntity())
+                    .andExpect(jsonPath("$.error.details[0].field").value("items[0].quantity"))
+                    .andExpect(jsonPath("$.error.details[0].message").value("数量不能小于 1"));
+
+            verifyNoInteractions(orderService);
+        }
+
+        @Test
+        @DisplayName("quantity=1 → 200（下限值本身必须放行）")
+        void minimumQuantityOnePasses() throws Exception {
+            when(orderService.createOrder(any(OrderCreateRequest.class), eq(TEST_TENANT_ID)))
+                    .thenReturn(buildOrder(ORDER_ID, "pending"));
+
+            mockMvc.perform(post(BASE).contentType(MediaType.APPLICATION_JSON)
+                            .content(bodyWithQuantity("1", "100")))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.success").value(true));
+
+            verify(orderService).createOrder(any(OrderCreateRequest.class), eq(TEST_TENANT_ID));
+        }
+
+        @Test
+        @DisplayName("quantity=3 → 200（整数数量不误伤）")
+        void integerQuantityPasses() throws Exception {
+            when(orderService.createOrder(any(OrderCreateRequest.class), eq(TEST_TENANT_ID)))
+                    .thenReturn(buildOrder(ORDER_ID, "pending"));
+
+            mockMvc.perform(post(BASE).contentType(MediaType.APPLICATION_JSON)
+                            .content(bodyWithQuantity("3", "300")))
+                    .andExpect(status().isOk());
+
+            verify(orderService).createOrder(any(OrderCreateRequest.class), eq(TEST_TENANT_ID));
+        }
+
+        @Test
+        @DisplayName("quantity=8.4 → 200（OR-028 小数数量 ≥1 不误伤，仍走 DECIMAL 口径）")
+        void decimalQuantityPasses() throws Exception {
+            when(orderService.createOrder(any(OrderCreateRequest.class), eq(TEST_TENANT_ID)))
+                    .thenReturn(buildOrder(ORDER_ID, "pending"));
+
+            mockMvc.perform(post(BASE).contentType(MediaType.APPLICATION_JSON)
+                            .content(bodyWithQuantity("8.4", "840")))
+                    .andExpect(status().isOk());
+
+            verify(orderService).createOrder(any(OrderCreateRequest.class), eq(TEST_TENANT_ID));
+        }
+    }
 }

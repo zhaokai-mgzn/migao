@@ -341,6 +341,59 @@ class AgentOrderServiceTest {
             verify(orderMapper).insert(any(Order.class));
         }
 
+        // ── 数量下限 1（issue #3682）：<1 会被库存/销量按 0 件计 → 静默漏扣 ──
+        //
+        // 为什么 Service 层必须有：本类是「程序化调用」的唯一防线 ——
+        // `createOrderForAgent` 手工 new `OrderCreateRequest` 转交 `createOrder()`，
+        // 不过 Bean Validation（@DecimalMin 对它无效），故实体判据在 Service 里。
+
+        @Test
+        @DisplayName("createOrder 数量 0.5 → 拒绝且不落库（#3682：intValue()->0 → 不扣库存、销量 +0）")
+        void subOneQuantityRejectedInSharedEntry() {
+            OrderCreateRequest req = buildReq(new BigDecimal("0.5"), new BigDecimal("100"));
+
+            assertThatThrownBy(() -> orderService.createOrder(req, 1L))
+                    .isInstanceOf(BusinessException.class)
+                    .hasMessageContaining("数量")
+                    .hasMessageContaining("1");
+
+            verify(orderMapper, never()).insert(any(Order.class));
+        }
+
+        @Test
+        @DisplayName("createOrder Agent 路径数量 0.5 → 拒绝（createOrderForAgent 同样受影响）")
+        void subOneQuantityRejectedOnAgentPath() {
+            AgentOrderCreateRequest req = new AgentOrderCreateRequest();
+            req.setCustomerName("张三");
+            req.setCustomerPhone("13800001111");
+            AgentOrderCreateRequest.AgentOrderItem item = new AgentOrderCreateRequest.AgentOrderItem();
+            item.setProductName("遮光窗帘");
+            item.setQuantity(new BigDecimal("0.5"));
+            item.setUnitPrice(new BigDecimal("168"));
+            req.setItems(List.of(item));
+
+            assertThatThrownBy(() -> orderService.createOrderForAgent(req, 1L))
+                    .isInstanceOf(BusinessException.class)
+                    .hasMessageContaining("数量");
+
+            verify(orderMapper, never()).insert(any(Order.class));
+        }
+
+        @Test
+        @DisplayName("createOrder 数量 1 与 8.4 → 照旧成功（下限不误伤整数与小数，OR-028 口径）")
+        void minimumAndDecimalQuantityStillPassInSharedEntry() {
+            OrderCreateRequest req = buildReq(new BigDecimal("1"), new BigDecimal("100"));
+            mockOrderInsert2();
+            assertThat(orderService.createOrder(req, 1L)).as("数量 1 = 下限值，必须放行").isNotNull();
+            verify(orderMapper).insert(any(Order.class));
+
+            OrderCreateRequest decimalReq = buildReq(new BigDecimal("8.4"), new BigDecimal("100"));
+            mockOrderInsert2();
+            assertThat(orderService.createOrder(decimalReq, 1L))
+                    .as("数量 8.4（per_area 面积）≥1，必须放行").isNotNull();
+            verify(orderMapper, times(2)).insert(any(Order.class));
+        }
+
         private void mockOrderInsert2() {
             when(orderMapper.insert(any(Order.class))).thenAnswer(inv -> {
                 Order o = inv.getArgument(0);

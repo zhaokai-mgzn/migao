@@ -25,8 +25,22 @@
 3. 拒绝路径必须带**可行动** suggestion（说明应改成什么值 / 合法枚举）；
 4. 静态不变式：写工具的金额/数量/尺寸数值参数必须声明下限、枚举型参数必须声明 `enum`
    （防第 N 次复发，两条锁各带哨兵）。
+
+同族残留（issue #3682，`items[].quantity` 下限从「>0」收紧为「≥1」）：
+- #3666 把数量放宽为**可为小数的正数**（per_area 的 8.4 ㎡ 必须保真），但 `>0` 同时放行了
+  **<1 的小数**（如 0.5 米）——而服务端 `OrderService` 对 `BigDecimal quantity` 取整数部分
+  （`:1051` 库存校验 / `:1408` `deductStock` / `:1409` `increaseSalesCount`）：
+  0.5 → `needed=0` 校验恒通过、`deductStock(0)` 不减库存、销量 +0 →
+  **订单成交但库存/销量零变动，且无任何告警**（账实不符）。
+- 旧实现（`quantity` 为 Integer + `_reject_quantity` 拒绝非整数）在**下单前**就挡回 0.5
+  并给可行动提示，故这是 #3666 放宽后**新可达**的静默漏扣，不是「回归」。
+- 裁定（issue #3682 方案 A）：agent 路径的**订单数量**下限 = 1，与 admin-web 表单
+  `orders/new/page.tsx:1081` 的 `min={1}` 同口径；**小数仍合法**（2.5 米 / 8.4 ㎡）。
+- 边界：`processingInfo.processingItems[].quantity`（加工数量）**不设该下限**——它不驱动
+  库存/销量，且 per_area 的面积可以合法 <1 ㎡（设 ≥1 会误伤小面积加工单，见本文件
+  `TestOrderCreateParamGuardSchemaContract.test_processing_item_bounds_declared`）。
 """
-# case_ids: OR-024, OR-016, OR-028
+# case_ids: OR-024, OR-016, OR-028, OR-015
 import importlib
 import inspect
 import pkgutil
@@ -271,9 +285,14 @@ def test_exemptions_reference_existing_params():
 
 
 def test_order_create_schema_declares_quantity_and_price_bounds():
-    """L1 契约：order_create 的 schema 必须声明数量/单价/小计下限（LLM 侧在同一处看到约束）"""
+    """L1 契约：order_create 的 schema 必须声明数量/单价/小计下限（LLM 侧在同一处看到约束）
+
+    quantity（issue #3682）：下限是 `minimum: 1`（不是 `exclusiveMinimum: 0`）——
+    <1 的数量会静默漏扣库存/销量（服务端取整数部分 = 0），故与 admin-web 的 `min={1}` 同口径。
+    """
     item_props = OrderCreateTool.parameters["properties"]["items"]["items"]["properties"]
-    assert item_props["quantity"].get("exclusiveMinimum") == 0
+    assert item_props["quantity"].get("minimum") == 1
+    assert "exclusiveMinimum" not in item_props["quantity"]
     assert item_props["unit_price"].get("exclusiveMinimum") == 0
     assert item_props["subtotal"].get("minimum") == 0
 
@@ -300,14 +319,17 @@ def _items(**overrides):
 
 
 class TestOrderCreateQuantityBounds:
-    """数量：必须为正整数（拒绝负数/0/小数），且在 HTTP 之前拒绝"""
+    """数量：必须 ≥ 1（拒绝负数/0/<1），且**允许小数**（2.5 米 / 8.4 ㎡），HTTP 之前拒绝
 
-    @pytest.mark.parametrize("bad_qty", [-1, -3, 0, "-1", "-3米", "-2.5"])
+    issue #3682 方案 A：下限 1（旧口径 >0 会放行 0.5 → 服务端取整成 0 → 静默漏扣库存/销量）。
+    """
+
+    @pytest.mark.parametrize("bad_qty", [-1, -3, 0, "-1", "-3米", "-2.5", 0.5, 0.99, "0.5米", 0.01])
     @patch("app.tools.order_create.get_admin_api_client")
-    async def test_non_positive_quantity_rejected_without_http_call(
+    async def test_below_min_quantity_rejected_without_http_call(
         self, mock_get_client, bad_qty, tool, agent_ctx
     ):
-        """负数量/0 被本地拒绝，且**未发生任何 HTTP 调用**（fail-fast，不白跑一轮）"""
+        """负数/0/**<1 的小数**被本地拒绝，且**未发生任何 HTTP 调用**（fail-fast，不白跑一轮）"""
         mock_client = AsyncMock()
         mock_get_client.return_value = mock_client
 
@@ -324,12 +346,13 @@ class TestOrderCreateQuantityBounds:
         mock_client.post.assert_not_called()
         mock_get_client.assert_not_called()
 
-    @pytest.mark.parametrize("bad_qty", [-1, 0])
+    @pytest.mark.parametrize("bad_qty", [0.5, 0.99, "0.5米", -1, 0])
     @patch("app.tools.order_create.get_admin_api_client")
-    async def test_rejection_suggestion_is_actionable(
+    async def test_below_min_quantity_message_is_actionable(
         self, mock_get_client, bad_qty, tool, agent_ctx
     ):
-        """拒绝路径必须给出**可行动** suggestion：说明应改成什么值、为什么不能是负数"""
+        """<1 的拒绝必须说明**为什么**（库存/销量按整件计 → 0.5 会零扣减）与**改成什么**
+        （「不少于 1 米/件」）——否则 LLM 只会原样重试同一份参数。"""
         mock_client = AsyncMock()
         mock_get_client.return_value = mock_client
 
@@ -342,18 +365,66 @@ class TestOrderCreateQuantityBounds:
 
         suggestion = result.suggestion or ""
         assert suggestion, "拒绝路径必须带 suggestion（否则 LLM 无法自愈）"
-        # 可行动 = 指明正确取值形态 + 说明负数为什么不行（不是「参数错误」这类空话）
-        # issue #3666：口径改为「正数」（小数合法），断言同步
-        assert "正数" in suggestion
+        # 可行动 = 指明正确取值下限（不是「参数错误」这类空话）
+        assert "不少于 1" in suggestion or "≥ 1" in suggestion or ">= 1" in suggestion, (
+            f"suggestion 必须给出数量下限（当前：{suggestion}）"
+        )
+        # 说明影响：<1 会静默漏扣库存/销量（这是本 issue 的缺陷本体）
+        blob = f"{result.message or ''}{suggestion}"
+        assert "库存" in blob and ("销量" in blob or "漏扣" in blob), (
+            f"<1 的拒绝必须说清影响（库存/销量零变动），当前：{blob}"
+        )
+        mock_client.post.assert_not_called()
+
+    @pytest.mark.parametrize("bad_qty", [0.5, 0.99, 0.01])
+    @patch("app.tools.order_create.get_admin_api_client")
+    async def test_sub_one_quantity_never_sent_to_server(
+        self, mock_get_client, bad_qty, tool, agent_ctx
+    ):
+        """<1 的数量绝不能以任何形式进入请求体（防「校验放行 + 0.5 透传」半修：
+        服务端 `intValue()` 会把它当成 0 件 → 扣 0 库存、销量 +0）"""
+        mock_client = AsyncMock()
+        mock_get_client.return_value = mock_client
+
+        result = await tool.execute(
+            context=agent_ctx,
+            customer_name="张三",
+            customer_phone="13800138000",
+            items=_items(quantity=bad_qty),
+        )
+
+        assert result.success is False
+        assert mock_client.post.await_count == 0
+
+    @pytest.mark.parametrize("bad_qty", [-1, 0, 0.5])
+    @patch("app.tools.order_create.get_admin_api_client")
+    async def test_rejection_suggestion_is_actionable(
+        self, mock_get_client, bad_qty, tool, agent_ctx
+    ):
+        """拒绝路径必须给出**可行动** suggestion：说明应改成什么值、为什么不行"""
+        mock_client = AsyncMock()
+        mock_get_client.return_value = mock_client
+
+        result = await tool.execute(
+            context=agent_ctx,
+            customer_name="张三",
+            customer_phone="13800138000",
+            items=_items(quantity=bad_qty),
+        )
+
+        suggestion = result.suggestion or ""
+        assert suggestion, "拒绝路径必须带 suggestion（否则 LLM 无法自愈）"
+        # issue #3682：口径从「正数」（>0）收紧为「不少于 1」（小数量仍合法）
+        assert "不少于 1" in suggestion or "≥ 1" in suggestion or ">= 1" in suggestion
         if bad_qty < 0:
             assert "金额变成负数" in (result.message or "") or "负数" in suggestion
         mock_client.post.assert_not_called()
 
-    @pytest.mark.parametrize("bad_qty", [-1, -3, 0])
+    @pytest.mark.parametrize("bad_qty", [-1, -3, 0, 0.5])
     async def test_negative_quantity_not_normalized_into_payload(
         self, bad_qty, tool, agent_ctx
     ):
-        """负数数量绝不能以任何形式进入请求体（防「校验放行 + 负值透传」半修）"""
+        """越界数量绝不能以任何形式进入请求体（防「校验放行 + 负值/<1 透传」半修）"""
         with patch("app.tools.order_create.get_admin_api_client") as mock_get_client:
             mock_client = AsyncMock()
             mock_get_client.return_value = mock_client
@@ -404,6 +475,123 @@ class TestOrderCreateQuantityBounds:
         assert sent["items"][0]["quantity"] == pytest.approx(expected), (
             f"数量必须保真透传（{qty} → {expected}），不得截断成 {int(expected)}"
         )
+
+    @pytest.mark.parametrize("qty,expected", [
+        (1, 1),                       # 下限值本身：1 是合法的最小订单数量
+        (1.0, 1.0),
+        ("1米", 1),
+        (1.5, 1.5),                   # 下限之上的小数照旧合法
+    ])
+    @patch("app.tools.order_create.get_admin_api_client")
+    async def test_minimum_quantity_one_is_valid(
+        self, mock_get_client, qty, expected, tool, agent_ctx
+    ):
+        """下限 1 **不得误伤**：数量 1 / 1.5 必须照常下单（闸门不是「把订单挡在门外」）"""
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(
+            return_value={"success": True, "data": {"id": "ORD-3682", "orderNo": "ORD-3682"}}
+        )
+        mock_get_client.return_value = mock_client
+
+        result = await tool.execute(
+            context=agent_ctx,
+            customer_name="张三",
+            customer_phone="13800138000",
+            items=_items(quantity=qty),
+        )
+
+        assert result.success is True, f"下限值被误拦：{qty} → {result.error} {(result.message or '')}"
+        sent = mock_client.post.await_args.kwargs["json_data"]
+        assert sent["items"][0]["quantity"] == pytest.approx(expected)
+
+    @patch("app.tools.order_create.get_admin_api_client")
+    async def test_per_area_case_or028_fabric_3m_with_8_4_sqm_processing_still_passes(
+        self, mock_get_client, tool, agent_ctx
+    ):
+        """**OR-028 防误伤证据**：面料 3 米（items[].quantity=3）+ 刺绣 per_area 8.4 ㎡
+        （processingItems[].quantity=8.4，加工费 30×8.4=252.00）。
+
+        这是「两条 quantity 口径不同」的实拍形态：
+        - `items[].quantity` = 面料米数 3（≥1，受本发明约束）；
+        - `processingItems[].quantity` = 面积 8.4 ㎡（**不设 ≥1 下限**，且必须保真不截断 —— 
+          截断成 8 会少收 12.00 元）。
+        若有人把 processingItems 也设成 minimum 1，本测试仍绿（8.4≥1）；真正防误伤的是下一条
+        `test_small_per_area_below_one_sqm_still_passes`（0.72 ㎡）。
+        """
+        mock_client = _ok_client(mock_get_client)
+        pinfo = {
+            "colorName": "2699-03暖米色",
+            "sellingMethod": "bulk_cut",
+            "doorWidth": "2.8米",
+            "processingItems": [_processing_item(
+                id="pi-embroidery", name="刺绣工艺", unitPrice=30.0, quantity=8.4,
+                unit="㎡", pricingMethod="per_area", subtotal=252.0)],
+            "processingFee": 252.0,
+        }
+
+        result = await tool.execute(
+            context=agent_ctx,
+            customer_name="张三",
+            customer_phone="13800138000",
+            items=[{
+                "product_name": "2699系列雪尼尔窗帘面料",
+                "quantity": 3,
+                "unit_price": 23.80,
+                "subtotal": 323.40,   # 71.40 面料 + 252.00 加工费
+                "width": 2.8,
+                "height": 3.0,
+                "processing_info": pinfo,
+            }],
+        )
+
+        assert result.success is True, f"OR-028 形态被误拦：{result.error} {(result.message or '')}"
+        sent = mock_client.post.await_args.kwargs["json_data"]
+        assert sent["items"][0]["quantity"] == pytest.approx(3)
+        assert sent["items"][0]["processingInfo"]["processingItems"][0]["quantity"] \
+            == pytest.approx(8.4), "加工项面积 8.4 ㎡ 必须保真（截断成 8 → 少收 12.00 元）"
+        assert sent["items"][0]["processingInfo"]["processingFee"] == pytest.approx(252.0)
+
+    @patch("app.tools.order_create.get_admin_api_client")
+    async def test_small_per_area_below_one_sqm_still_passes(
+        self, mock_get_client, tool, agent_ctx
+    ):
+        """**裁定边界（防误伤）**：`processingItems[].quantity` **不设 ≥1 下限**。
+
+        理由：加工数量**不驱动库存/销量**（只进 `Σ unitPrice×quantity` 的加工费数学），
+        而 per_area 的面积可以合法小于 1 ㎡（如 0.8m × 0.9m = 0.72 ㎡）。
+        若给它也设 `minimum: 1`，这类小面积加工单会被硬拒 = 误伤。
+        本测试锁住「0.72 ㎡ 加工项照旧下单且金额保真」，防止后人「顺手统一下限」。
+        """
+        mock_client = _ok_client(mock_get_client)
+        pinfo = {
+            "colorName": "米白色",
+            "sellingMethod": "bulk_cut",
+            "processingItems": [_processing_item(
+                id="pi-embroidery", name="刺绣工艺", unitPrice=30.0, quantity=0.72,
+                unit="㎡", pricingMethod="per_area", subtotal=21.60)],
+            "processingFee": 21.60,
+        }
+
+        result = await tool.execute(
+            context=agent_ctx,
+            customer_name="张三",
+            customer_phone="13800138000",
+            items=[{
+                "product_name": "遮光窗帘",
+                "quantity": 1,
+                "unit_price": 168.0,
+                "subtotal": 189.60,   # 168.00 面料 + 21.60 加工费
+                "processing_info": pinfo,
+            }],
+        )
+
+        assert result.success is True, (
+            f"小面积（<1 ㎡）加工项被误拦 —— processingItems 不该有 ≥1 下限：{result.error}"
+        )
+        sent = mock_client.post.await_args.kwargs["json_data"]
+        assert sent["items"][0]["processingInfo"]["processingItems"][0]["quantity"] \
+            == pytest.approx(0.72)
+        assert sent["items"][0]["processingInfo"]["processingFee"] == pytest.approx(21.60)
 
     @pytest.mark.parametrize("bad_qty", ["abc", "", True, float("nan"), float("inf")])
     @patch("app.tools.order_create.get_admin_api_client")
