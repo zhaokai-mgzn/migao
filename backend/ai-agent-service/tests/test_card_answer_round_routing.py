@@ -73,9 +73,15 @@ ORDER_ANSWER_R5 = "确认"
 
 
 def _l1(msg: str) -> IntentResult:
-    """真实 L1 结果（不 mock 规则表——探针数值就是要被钉住的被测事实）。"""
+    """真实 L1 结果（不 mock 规则表——探针数值就是要被钉住的被测事实）。
+
+    未命中 = **本用例自己的前提写错了**（不是"跳过"）→ 显式前提失败 `pytest.fail`
+    （不用 `assert is not None`：那是存在性弱断言，会被 QA Growth Gate 的
+    `--check-weak` 判为凑数断言，见 `.github/growth_gate.py:_WEAK_PATTERNS`）。
+    """
     result = RuleMatcher().match(msg)
-    assert result is not None, f"L1 未命中 {msg!r}，本用例的缺陷前提不成立"
+    if result is None:
+        pytest.fail(f"L1 未命中 {msg!r}，本用例的缺陷前提不成立")
     return result
 
 
