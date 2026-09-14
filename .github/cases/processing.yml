@@ -203,7 +203,13 @@ cases:
     user_inputs:
       - "查询打孔加工的计价方式"
       - "新增加工项，计价方式选按个"
-      - "名称叫测试加工，分类选打孔加工"
+      # 分类名归一（#3544 / REPORT §2.3 建议 3）：独立栈种子里加工分类只有
+      # pcat_eval_curtain「窗帘加工」（xiaobu_eval_seed.sql:24），原输入「分类选打孔加工」
+      # 是**加工项名（纳米圈打孔）/ 分类名混淆** —— 实测 run 34807151893 R3：agent 如实回
+      # 「加工分类里没有『打孔加工』，目前只有一个…」并降级到「窗帘加工」，白耗一轮。
+      # 本用例的真值内核是**计价方式枚举**（per_meter/per_set/fixed/per_area，无 per_piece），
+      # 不是分类名，故改用种子里真实存在的分类名。
+      - "名称叫测试加工，分类选窗帘加工"
       - "计价方式按米，单价 8 元"
       - "确认"
     expectations:
@@ -213,12 +219,32 @@ cases:
       - tool: processing_item_manage
         args:
           action: create_processing_item
+    # ── 假绿升级（#3544 / REPORT §2.3 建议 2：「调了 ≠ 成了」）──
+    # `expectations` 里出现工具名只证明「模型想建」：三个独立 run（34805827043 /
+    # 34806789461 / 34807151893）里 create_processing_item **每次都失败**
+    # （`failed=processing_item_manage!参数校验失败`；根因=请求缺 pricingMethod/unitPrice，
+    # 由 #3543 在工具/契约层修复），用例却因只断言「调用过」而判 ✅（假绿）。
+    # ① must_succeed = canonical 写成功断言（issue #3544 首选形态，fail-closed：
+    #    一次都没成功 → 判红；被 confirm 门禁拦下的尝试不算违规，只要最终成功）；
+    # ② output_verify = 产出侧值核对（must_succeed 只说"成了"，说不出"建的是哪一项、
+    #    什么计价方式"）—— 两者互补，不是替代（同 OR-016 的 expectations + amount_verify 形态）。
+    must_succeed:
+      - tool: processing_item_manage
+        action: create_processing_item
+    output_verify:
+      - tool: processing_item_manage
+        expect:
+          # 真建出用户点名的那一项（而不是误建别的项）
+          name: "测试加工"
+          # 真值内核（计价方式枚举）：按米 → per_meter，取自 admin-api
+          # ProcessingItemResponse 的落库回读值（#3543 修复后 _create_item 显式下发 pricingMethod）
+          pricingMethod: "per_meter"
     data_checks:
       - "processing_item_query 响应条目无 per_meter_quantity（每米数量已回滚移除，issue #3005）"
       - "加工项计价方式仅 per_meter / per_set / fixed / per_area——per_piece 创建被拒绝（行业加工费按米计价、辅料含在加工费中）"
       - "商品详情 processingItems 无 custom_per_meter_quantity / perMeterQuantity（商品级密度覆盖已回滚）"
     skip_reason: ""
-    merge_log: "2026-09-07 改写（issue #3005，回滚 #2986）：行业加工费按米计价、辅料（罗马圈/四爪钩等）含在按米加工费中——per_piece 与「每米数量」密度不符合实际（数量对不上车间工艺、B 端无法对账），已回滚移除；PP-006 由密度配置用例改为计价方式回归断言"
+    merge_log: "2026-09-07 改写（issue #3005，回滚 #2986）：行业加工费按米计价、辅料（罗马圈/四爪钩等）含在按米加工费中——per_piece 与「每米数量」密度不符合实际（数量对不上车间工艺、B 端无法对账），已回滚移除；PP-006 由密度配置用例改为计价方式回归断言。2026-09-14 校准（#3544，REPORT §2.3）：① 假绿升级——补 must_succeed（canonical 写成功断言，fail-closed）+ output_verify（name/pricingMethod 产出核对），此前只断言「调用过」，工具三次真执行全失败仍判 ✅（真缺口见 #3543）；② 输入「分类选打孔加工」改为种子里真实存在的「分类选窗帘加工」（原写法是加工项名/分类名混淆，agent 只能如实说没有该分类，白耗一轮）"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_processing_item_query.py"

@@ -31,7 +31,10 @@ tools: customer_manage, order_query, product_search, interact
 ## 更新客户资料流程
 
 1. `customer_manage(action=list, keyword=...)` 或 detail 定位客户，拿到真实 customer_id。
-2. 收集要更新的字段（如 phone/name），**必须先确认要改什么再执行**。
+2. 收集要更新的字段（如 phone/wechatNickname），**必须先确认要改什么再执行**。**客户实体没有 `name` 列**
+   （姓名存 `wechatNickname`），`data` 的 key 必须是真实可写字段：`wechatNickname`/`phone`/`gender`/
+   `regionProvince`/`regionCity`/`regionDistrict`/`vipLevel`/`customerStatus`/`agentNotes`/`tags`/`customFields`；
+   其它 key 工具会直接报错、不做任何修改（禁止谎报已更新）。
 3. `validate_input(target_tool=customer_manage, target_action=update, params={customer_id, data})` → `interact(component=confirm)` 确认卡 → 用户确认后执行 update。
 
 ## 领域规则

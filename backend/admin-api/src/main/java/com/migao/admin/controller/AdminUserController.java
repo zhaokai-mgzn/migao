@@ -182,7 +182,7 @@ public class AdminUserController {
      * 更新用户
      *
      * PUT /api/admin/users/{id}
-     * Body: { "name": "xxx", "phone": "xxx", "password": "xxx" }
+     * Body: { "name": "xxx", "phone": "xxx", "password": "xxx", "roleIds": ["xxx"] }
      * 权限：employee:create
      */
     @PutMapping("/{id}")
@@ -192,9 +192,24 @@ public class AdminUserController {
         String avatar = (String) body.get("avatar");
         String role = (String) body.get("role");
         String position = (String) body.get("position");
+        String phone = (String) body.get("phone");
         Long tenantId = TenantContext.getTenantId();
 
-        // 岗位=角色体系（#2969）：未显式传 role 时，按岗位名解析岗位角色（编辑切岗位联动角色）
+        // 角色解析（issue #3550）：与 createUser 同语义 —— 显式 role 优先，否则 roleIds
+        // （角色表主键 ID 列表）取首个解析角色 code。原先 updateUser 完全忽略 roleIds
+        // → 米宝/前端「改成某角色」HTTP 200 假成功，user.role 与 user_roles 均未变。
+        if (!org.springframework.util.StringUtils.hasText(role)
+                && body.get("roleIds") instanceof List<?> roleIdList && !roleIdList.isEmpty()) {
+            String roleId = String.valueOf(roleIdList.get(0));
+            try {
+                Role roleEntity = roleService.getRoleById(roleId);
+                role = roleEntity.getCode();
+            } catch (Exception e) {
+                log.warn("根据 roleId 查找角色失败: {}", roleId, e);
+            }
+        }
+
+        // 岗位=角色体系（#2969）：未显式传 role/roleIds 时，按岗位名解析岗位角色（编辑切岗位联动角色）
         if (role == null && org.springframework.util.StringUtils.hasText(position)) {
             Role positionRole = roleService.getRoleByPosition(position, tenantId);
             if (positionRole != null) {
@@ -240,7 +255,7 @@ public class AdminUserController {
         }
 
         log.info("更新用户: id={}, name={}, position={}", id, name, position);
-        User user = userService.updateUser(id, name, avatar, role, position, permissions);
+        User user = userService.updateUser(id, name, avatar, role, position, permissions, phone);
         return ApiResponse.success(user);
     }
 

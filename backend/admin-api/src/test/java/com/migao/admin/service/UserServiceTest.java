@@ -1,5 +1,5 @@
 package com.migao.admin.service;
-// case_ids: HR-002, DF-007, HR-007
+// case_ids: HR-002, DF-007, HR-007, HR-004
 
 import com.migao.admin.dto.PageResponse;
 import com.migao.admin.entity.Role;
@@ -407,8 +407,59 @@ class UserServiceTest {
                 });
     }
 
-    // ======================== toggleUserStatus (disable/enable) 测试 ========================
+    // ======================== updateUser 手机号更新（issue #3550） ========================
 
+    @Test
+    @DisplayName("更新用户手机号 - 新号未被占用则落库")
+    void updateUser_ChangePhone_Success() {
+        // given
+        when(userMapper.selectById("user-001")).thenReturn(testUser);
+        when(userMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(null); // 新号未被占用
+        when(userMapper.updateById(any(User.class))).thenReturn(1);
+
+        // when
+        userService.updateUser("user-001", null, null, null, null, null, "13900000002");
+
+        // then
+        assertThat(testUser.getPhone()).isEqualTo("13900000002");
+        verify(userMapper).updateById(any(User.class));
+    }
+
+    @Test
+    @DisplayName("更新用户手机号 - 租户内已被他人占用则报错，不落库")
+    void updateUser_ChangePhone_Conflict() {
+        // given
+        when(userMapper.selectById("user-001")).thenReturn(testUser);
+        when(userMapper.selectOne(any(LambdaQueryWrapper.class)))
+                .thenReturn(User.builder().id("other-user").phone("13900000002").tenantId(1L).build());
+
+        // when & then
+        assertThatThrownBy(() ->
+                userService.updateUser("user-001", null, null, null, null, null, "13900000002"))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("手机号已被注册");
+
+        assertThat(testUser.getPhone()).isEqualTo("13800138000"); // 未改
+        verify(userMapper, never()).updateById(any(User.class));
+    }
+
+    @Test
+    @DisplayName("更新用户手机号 - 与现有号相同/为空则不校验不修改")
+    void updateUser_SameOrBlankPhone_Noop() {
+        // given
+        when(userMapper.selectById("user-001")).thenReturn(testUser);
+        when(userMapper.updateById(any(User.class))).thenReturn(1);
+
+        // when
+        userService.updateUser("user-001", null, null, null, null, null, "13800138000");
+        userService.updateUser("user-001", null, null, null, null, null, "  ");
+
+        // then
+        assertThat(testUser.getPhone()).isEqualTo("13800138000");
+        verify(userMapper, never()).selectOne(any(LambdaQueryWrapper.class));
+    }
+
+    // ======================== toggleUserStatus (disable/enable) 测试 ========================
     @Test
     @DisplayName("禁用用户成功")
     void disableUser_Success() {
