@@ -320,9 +320,15 @@ cases:
           action: create
           ticket_type: exchange
     order_before:
-      # 自包含化的**核心新增断言**：换货方案（选目标商品）必须在 order_query 定位到
-      # 订单之后 —— 旧单轮形态正是死在这里（无订单可挂）。
-      - "order_query before product_detail"
+      # 自包含化的**核心断言**：换货工单必须挂在**已定位到**的订单上 ——
+      # 旧单轮形态正是死在这里（无订单可挂就别写工单）。
+      # ⚠️ 2026-09-14 **真重放校正**（run 34815074088）：删除 `order_query before product_detail`。
+      # 该断言**业务上不成立**：它要求「先查订单、再查换货目标商品」，但顾客是**先点名目标商品**的
+      # （R2「换成2699系列雪尼尔窗帘面料」），agent 先 product_search/product_detail 了解目标商品
+      # 与加工项、再回头定位原订单（实测 R2 product_detail → R5 order_query → R8 after_sales_manage），
+      # 完全正确 —— 原断言把这种合法顺序判成 `order_query(R5) 晚于 product_detail(R2)`，
+      # 进而整例判红（case-level check → score 0%）。**这是用例作者写错的断言（假红），不是 agent 缺陷**。
+      # 真正的要求是「写工单前必须已定位到订单」，由下一条（成功的写调用）覆盖。
       - "order_query before after_sales_manage"
       # 加工项询问必须早于写工单（原断言，保留）。
       - "processing_ask before after_sales_manage"
@@ -342,7 +348,7 @@ cases:
       - "processing_items 为空时如实告知『该商品无可用加工项』后继续，不强求"
       - "换货工单 order_id 来自本轮 order_query 定位结果（不得编造订单号）"
     skip_reason: ""
-    merge_log: "2026-09-08 新增（issue #3033 复盘 sess_50ff3e3c824c4a70）：换货选 2699 面料（绑 5 加工项）全程未提加工项；aftersales.md 补换货加工项确认规则 + EXAMPLES 例 4。2026-09-14 自包含化（issue #3568）：原单轮输入缺「先定位订单」轮 → 用例恒不可达被 skip（**从未执行**）→ 补 order_query 定位轮 + 答卡轮（repeat_until max=5），断言加两条 order_query 时序 + success=true，解 skip。**两次真 LLM 重放驱动迭代**：① run 34809750975 得 75% 且首版「静态文本选单轮」对不上 agent 的 choice 选单卡（该客户名下 6 笔订单）→ 改答卡轮；② run 34812509606 得 75% 且**换货工单已真实创建**（`ticketNo=AS-20260914-9002`，orderNo=20260914055850001）→ 剩下的 `product_detail` 未满足系 **agent 真实缺口**（换货时从未查目标商品的 processing_items、也从未主动询问加工项），而首版 fallback「需要打孔加工」**替 agent 把加工项说了出来**、把该缺口掩盖成「卡里有加工项」→ fallback 改中性「好的」后缺口不再被掩盖"
+    merge_log: "2026-09-08 新增（issue #3033 复盘 sess_50ff3e3c824c4a70）：换货选 2699 面料（绑 5 加工项）全程未提加工项；aftersales.md 补换货加工项确认规则 + EXAMPLES 例 4。2026-09-14 自包含化（issue #3568）：原单轮输入缺「先定位订单」轮 → 用例恒不可达被 skip（**从未执行**）→ 补 order_query 定位轮 + 答卡轮（repeat_until max=5），断言加两条 order_query 时序 + success=true，解 skip。**两次真 LLM 重放驱动迭代**：① run 34809750975 得 75% 且首版「静态文本选单轮」对不上 agent 的 choice 选单卡（该客户名下 6 笔订单）→ 改答卡轮；② run 34812509606 得 75% 且**换货工单已真实创建**（`ticketNo=AS-20260914-9002`）→ 首版 fallback「需要打孔加工」**替 agent 把加工项说了出来**、把缺口掩盖成「卡里有加工项」→ 改中性「好的」。③ run 34815074088（中性 fallback）得 0%，trace 显示**流程本身完全正确**：R2 product_detail（发现 2 条同名）→ 选品卡 → R3 **agent 主动发加工项 choice 卡** → R5 order_query → R8 after_sales_manage 建单成功；唯一失败项是我自己加的 `order_before[order_query before product_detail]`（**业务上不成立的过度约束**）→ 已删除该条，保留 `order_query before after_sales_manage` 与两条 `processing_ask` 时序"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_prompt_snapshots.py"

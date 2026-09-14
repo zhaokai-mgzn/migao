@@ -181,7 +181,7 @@ _CASE_AS_007 = EvalCase(
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
-    order_before=['order_query before product_detail', 'order_query before after_sales_manage', 'processing_ask before after_sales_manage', 'processing_ask before interact[confirm]'],
+    order_before=['order_query before after_sales_manage', 'processing_ask before after_sales_manage', 'processing_ask before interact[confirm]'],
     pre_clean=[{'type': 'product_dedupe', 'product_keyword': '2699系列雪尼尔窗帘面料', 'price': 23.8}],
 )
 
