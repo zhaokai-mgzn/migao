@@ -587,7 +587,7 @@ EVAL_CONCURRENCY=6 python tests/agent_eval/local_runner.py normal --cases .githu
 | **卡片是否出现** | `expectations: interact`（工具调用或 SSE interactive 事件任一命中，见 §6.2 三发射路径） | ✅ |
 | **卡片数量/同轮重复** | `check_duplicate_cards`（同轮同组件 ≥2 张判红）+ 轨迹 `cards=X,X(⚠️重复)` | ✅（#3445 新增） |
 | **卡片内容不编造** | `check_forbidden_card_text`（卡片文案禁词）；`check_form_prefill`（form 预填值必须来自真实来源） | ✅ |
-| **卡片提问不重复问** | 加工项「已答不再问」（`_user_already_answered_processing`，C-A1 实证）+ `check_confirm_loop`（同事实 confirm 卡 ≥3 次） | ✅（本轮新增者只覆盖加工项；**其它问题类型的"重复问"仍缺**） |
+| **卡片提问不重复问** | 加工项「已答不再问」（`_user_already_answered_processing`）+ `check_confirm_loop`（同事实 confirm ≥3 次）+ **`check_repeated_card_ask`**（同卡 + 顾客已作答 → 判红，confirm/choice/form 三类卡都覆盖） | ✅（矩阵补行） |
 | **写用例必须"能答卡"** | `TestWriteCasesCanAnswerCards`（用例契约层） | ✅ |
 | **文案反模式（禁词）** | `forbidden_text` / `want_text` | ✅ |
 | **状态宣告必须有工具落地** | `check_unbacked_state_claim` | ✅ |
@@ -596,8 +596,8 @@ EVAL_CONCURRENCY=6 python tests/agent_eval/local_runner.py normal --cases .githu
 | **隐私（完整手机号回显）** | `check_no_full_phone`（C 端全局） | ✅ |
 | **金额/数量正确性** | `amount_verify`（与商品库真值比）、`output_verify`（工具 payload 真值）、`db_verify`（落库明细/号码） | ✅ |
 | **号码/验证码来源可追溯** | `check_phone_provenance`、`check_write_code_provenance`（三态） | ✅ |
-| **耗轮数（对话效率）** | —— | **缺**：一个"5 轮能办完拖到 9 轮"的退化不会被判红；但直接加上限断言风险高（`repeat_until` 展开、模型方差），需先用多跑数据定基线 |
-| **同一问题被问两遍（文本维度）** | —— | **缺**：目前只有加工项与 confirm 两处；"重复问地址/数量/颜色"没有判据 |
+| **耗轮数（对话效率）** | 软监控（无硬断言） | **有意不做硬断言**：`repeat_until` 展开会把"协作等待轮"计入总轮数、LLM 方差使单跑轮数抖动 —— 硬上限必然误伤；拖沓由"首跑失败指纹 + flake 台账 + 每轮 `rounds=` 对比"间接显性化。若要硬断言，需先采集 ≥10 跑分用例基线 |
+| **同一问题被问两遍（卡片维度）** | `check_repeated_card_ask`（同卡 + 已作答 → 判红；confirm/choice/form 全覆盖；防假阳性：未答过不报、改明细后新卡不报） | ✅（矩阵补行）；**文本提问**（非卡片）的重复问仍无判据 —— 无结构化信号，识别成本高于收益，**有意不做**（加工项文本问答已由 agent 守卫 #3473 覆盖） |
 | **工具返回值载荷进 transcript** | ✅ `_tool_digest`：每轮打印 `📄 <tool> → orderNo=…, totalAmount=…, orders_n=…`（只摘顾客可感知字段，不落 PII 全量） | ✅（本批补齐 —— 复核 AI 在重放 2 指出的证据缺口） |
 | **验收体验层（可懂度/诚实性）** | UA 判定（AI 用户代理：persona + 原文引用 + 基准对照，见 §acceptance-protocol） | ✅（人工零执行；每轮需按模板逐条判，模板见 `acceptance/*/REPORT.md`） |
 
