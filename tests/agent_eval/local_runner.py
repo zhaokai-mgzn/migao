@@ -4957,6 +4957,22 @@ def _failure_texts(result: dict) -> list:
     return out
 
 
+def _summary_case(result: dict, failures: list) -> dict:
+    """单个用例的 summary 条目（issue #3708）。
+
+    `failures` **只在真有失败时带上**：一个 shard 里几十条通过用例各挂一个 `"failures": []`
+    就是纯刷屏噪音，而缺省语义与空数组等价（`jq` 侧 `(.failures // [])` 即可）。
+    既有字段（`id/score/classification/pre_clean`）一件不少、顺序不变。
+    """
+    entry = {"id": result.get("case_id"), "score": result.get("score", 0),
+             "classification": result.get("classification", ""),
+             # pre_clean 证据（#3511）：机器可读，供归因区分"数据准备没生效"与"能力缺陷"
+             "pre_clean": result.get("pre_clean") or []}
+    if failures:
+        entry["failures"] = failures
+    return entry
+
+
 def write_summary_json(path: str, label: str, shard: str, results: list) -> None:
     """写机器可读的本次运行汇总（issue #3361 分片基建）。
 
@@ -4965,16 +4981,16 @@ def write_summary_json(path: str, label: str, shard: str, results: list) -> None
     顺带让"本次跑了什么、结果如何"可被脚本消费（报告/看板/回归对比），不必解析日志。
 
     **失败可归因（issue #3708）**：判红时"哪些用例 + 为什么"必须能从这份文件直接读全，
-    不再依赖作业日志（日志有保留期）。故每个用例条目带 `failures`（断言级原文），
-    `completion` 附加 `failure_reasons`（ID → 首要原因）。**纯序列化**：既有字段、
-    `completion_verdict` 的算法与 `reason` 原文一字未动（否则与历史 run 的对比失效）。
+    不再依赖作业日志（日志有保留期）。故**失败用例**条目带 `failures`（断言级原文；
+    通过用例不加这个键，不给几十条 `[]` 刷屏），`completion` 附加 `failure_reasons`
+    （ID → 首要原因）。**纯序列化**：既有字段、`completion_verdict` 的算法与 `reason`
+    原文一字未动（否则与历史 run 的对比失效）。
 
     字段：
       label/shard/total/passed/failed/avg_score
       order_write_cases：本片声明 must_succeed: order_create 的用例数（0 → 审计不该告警）
       write_cases_ok：其中通过的条数（通过却没落库 = 真假绿）
-      cases：[{id, score, classification, pre_clean, failures}]
-              （`failures`：断言级失败原因数组；通过用例为 `[]`）
+      cases：[{id, score, classification, pre_clean}]（+ 失败用例的 `failures`：断言级原因数组）
       completion：completion_verdict 的判定结果 + failure_reasons（ID → 首要原因）
     """
     import json as _json
@@ -4993,15 +5009,7 @@ def write_summary_json(path: str, label: str, shard: str, results: list) -> None
         "order_write_cases": sum(1 for r in results if _declares_order_write(r)),
         "write_cases_ok": sum(1 for r in results
                               if _declares_order_write(r) and r.get("score", 0) >= 1.0),
-        "cases": [
-            {"id": r.get("case_id"), "score": r.get("score", 0),
-             "classification": r.get("classification", ""),
-             # pre_clean 证据（#3511）：机器可读，供归因区分"数据准备没生效"与"能力缺陷"
-             "pre_clean": r.get("pre_clean") or [],
-             # 失败原因（#3708）：断言级原文 —— `score=0` 不必再挖日志；通过用例为 []
-             "failures": _reasons[str(r.get("case_id") or "?")]}
-            for r in results
-        ],
+        "cases": [_summary_case(r, _reasons[str(r.get("case_id") or "?")]) for r in results],
         "completion": completion_verdict(
             results, KEY_JOURNEYS_XIAOBU if PERSONA == "xiaobu" else KEY_JOURNEYS_MIBAO),
     }

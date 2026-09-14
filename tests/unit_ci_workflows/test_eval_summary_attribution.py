@@ -23,7 +23,7 @@
 
 1. **失败用例**：条目带 `failures`，内容是**断言级原文**（如
    `output_verify[...]: 结果里没有字段 'price'`），不需要再挖日志；
-2. **通过用例**：`failures` 为空数组 —— **不产生噪音**；
+2. **通过用例**：条目**不带** `failures` 键（缺省，不是几十条空数组刷屏）—— **无噪音**；
 3. **顶层**：`completion.failure_reasons` = `ID → 首要原因`（确定性失败 / 关键旅程 / 放行波动全含），
    与既有 `deterministic_failures`（ID 列表，已有消费者）**并存**；
 4. **纯序列化**：`score` / `classification` / `completion.ok` 的算法**逐字不变**，
@@ -33,7 +33,7 @@
 
 | 断言 | 红证 |
 |---|---|
-| ①② `failures` 带原因 / 通过为空 | 改造前本文件必红（`KeyError: 'failures'`），TDD 实测见 PR 描述 |
+| ①② `failures` 带原因 / 通过缺省 | 改造前本文件必红（`KeyError: 'failures'`），TDD 实测见 PR 描述 |
 | ③ `failure_reasons` 映射 | 同上（改造前 `completion` 无该键） |
 | ④ **逐字节等价** | `_legacy_payload()` 是改造前 `write_summary_json` 的**独立逐字副本**（刻意不复用新 helper，否则两边同源、改了旧字段一起变，闸门失效）；且断言"新增字段确实存在"防止锚点退化成**空断言** |
 | ④ `completion_verdict` 语义冻结 | 整字典 `==`（键集 + `reason` 原文 + 三个 ID 列表 + 计数），改一个字即红 |
@@ -200,12 +200,26 @@ class TestFailedCaseCarriesReason:
         assert data["cases"][0]["failures"] == ["tool: order_create → 工具未被调用（0 次）"]
 
     def test_passing_case_has_no_failures_noise(self, tmp_path):
-        """通过用例 `failures` 为空数组 —— 不产生噪音（`score=1` ⇔ 无失败断言）。"""
+        """通过用例**不带** `failures` 键 —— 不是空数组刷屏（缺省语义与空数组等价）。
+
+        为什么要"缺省"而不是 `[]`：一个 shard 里几十条通过用例，每条挂一个 `"failures": []`
+        就是纯噪音；缺省时 `jq` 侧 `(.failures // [])` 一样好写。
+        """
         data = _write(tmp_path, [
             _case("OR-016", 1.0, "pass"),
             _case("PP-007", 0.0, "reproducible", [("断言原文", "case-level check")])])
-        assert data["cases"][0]["failures"] == []
+        assert "failures" not in data["cases"][0], "通过用例挂了 failures 键 → 空数组刷屏"
         assert data["cases"][1]["failures"] == ["断言原文"]
+
+    def test_no_empty_array_flood_across_summary(self, tmp_path):
+        """整份 summary 里**不存在空 `failures` 数组**（刷屏的机器可判形态）。"""
+        results = ([_case(f"OR-{i:03d}", 1.0, "pass") for i in range(1, 21)]
+                   + [_case("PP-007", 0.0, "reproducible", [("唯一失败原因", "")])])
+        data = _write(tmp_path, results)
+        empties = [c["id"] for c in data["cases"]
+                   if "failures" in c and not c["failures"]]
+        assert empties == [], f"这些用例带了空 failures 数组: {empties}"
+        assert sum(1 for c in data["cases"] if "failures" in c) == 1
 
 
 # ── ② 端到端（无栈）：真实断言 → summary ─────────────────────────────────────
