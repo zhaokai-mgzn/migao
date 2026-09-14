@@ -302,18 +302,16 @@ class TestMibaoCoverageReport:
         )
 
     def test_real_gaps_are_reported_not_papered_over(self):
-        """回归网：B 端真实缺口必须被体检**报出来**（防阈值放水到看不见）。
+        """回归网：B 端**任何**结构性缺口都必须被体检报出并登记在清单里（防阈值放水到看不见）。
 
-        当前存量（2026-09-14）：加工单域的 `processing_order_query` /
-        `processing_order_update` 零覆盖 —— 这是真实结构缺口，补用例由配套 PR 负责；
-        体检的职责是**显式列出**它，而不是让它继续隐形。
+        **不硬编码具体工具**（加工单域已由 #3589 销账、order_manage 由 #3603 跟踪，
+        工具集与缺口会随迭代变化）：断言的是**不变式** ——
+          ① 体检报出的每个 blocking gap 都必须在存量豁免清单里有对应条目（不许隐形）；
+          ② 清单里的**阻断型**条目必须对应当前真实缺口（陈旧即红，与运行时同判据）；
+          ③ 判据没被削弱：人为注入一个零用例工具时必须被报出来。
         """
         cases = load_case_dicts(str(CASES_DIR))
         tools = _mibao_real_toolset()
-        raw = build_coverage_report(cases, "mibao", tools=tools)
-        assert "processing_order_query" in raw.uncovered
-        assert "processing_order_update" in raw.uncovered
-        # 缺正向用例的工具（只有对抗档）必须逐个**登记在存量豁免清单**里，不许隐形
         rep = _attach_baseline(build_coverage_report(cases, "mibao", tools=tools),
                                load_baseline(BASELINE_PATH, "mibao", tools))
         for tool, kind in rep.blocking_gaps():
@@ -321,3 +319,10 @@ class TestMibaoCoverageReport:
                 f"B 端结构性缺口 {tool}[{kind}] 未登记进存量豁免清单 —— "
                 f"门禁会红，且清单里看不到它（补用例见 migao-dev-flow §14.5）"
             )
+        assert not rep.baseline_stale_blocking, (
+            f"清单有阻断型陈旧登记（销账后未删条目）: {rep.baseline_stale_blocking}"
+        )
+        synthetic = build_coverage_report([], "mibao", tools=tools | {"__synthetic_zero_case_tool__"})
+        assert "__synthetic_zero_case_tool__" in synthetic.uncovered, (
+            "零用例工具没被报出来 —— 判据被削弱了（check 恒绿的形态）"
+        )
