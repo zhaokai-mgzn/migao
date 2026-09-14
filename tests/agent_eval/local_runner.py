@@ -1874,21 +1874,286 @@ def _is_infra_error(err) -> bool:
     return any(m in s for m in _INFRA_MARKERS)
 
 
-def _failure_signature(result: dict) -> str:
-    """失败指纹：失败期望（断言+原因）与最后轮错误首行 → 判定两次失败是否同根因。
+# ── 失败根因指纹（root-cause-stable signature，issue #3727）──────────────────
+#
+# 旧实现把**断言渲染文本**当指纹（`f"{exp}|{detail[:60]}"`）：同一根因只要经由不同
+# 断言路径渲染、或尾随细节/组件条数不同，指纹就不同 → `_classify_attempts` 判
+# `unstable` → `completion_verdict` 按「LLM 波动」**放行** → `completion.ok` 假绿。
+#
+# 实证（run 34846098440 / SHA 4c466d4d，`agent-eval-flakes.json` 的 PG-016）：
+#   · 两次失败的第 0/1 组件**逐字相同**（`must_succeed: … 从未被调用`、
+#     `output_verify[…] 找不到成功调用的结果`）—— 根因是同一个：agent
+#     **从未成功调用** `processing_order_update(action=complete)`；
+#   · 差异只在第 2/3 组件：一次渲染成 `unmatched expectation: …(action=complete)`，
+#     另一次渲染成 `tool '…' matched but arg 'action' expected …`，且
+#     `required_args: 未调用 …` 只在其中一次出现。
+#   ⇒ 判 `unstable` → 按「LLM 波动」放行 → `deterministic_failures=[]` →
+#     `completion.ok` 由 false 变 true。这是**系统性**的假绿通道，不止 PG-016。
+#
+# 现在指纹 = **结构化失败身份的集合**（规范 token，排序去重）：
+#   · 归一（丢弃自由文本细节）：保留**结构身份**（断言族 → 规范 kind、工具名、
+#     参数键名、case 级检查名），丢弃轮次 `(R3)`、实际值、错误正文、条数；
+#   · 归并（同根因 ⇒ 同 token）：`action` 是**调用选择器**而非载荷值 ——
+#     「arg 'action' 不符」「unmatched expectation: t(action=X)」「must_succeed:
+#     t 从未被调用」「required_args: 未调用 t」「output_verify[t] 找不到成功调用」
+#     都是同一件事：**声明的那次调用没有成功发生** → 统一成 `no_success(<tool>)`；
+#   · 条数容忍：集合语义 + 上面这层归并 ⇒ 组件条数差异（3 条 vs 4 条）自然消失。
+#
+# 为什么仍能区分真波动（不做成常量）：**载荷层**的违反保留键名身份
+# （`arg_mismatch(<tool>,<key>)` / `output_missing_field(<tool>,<key>)` /
+# `db_mismatch(<fetch>,<field>)` …），与「调用从未发生」不同 token；载荷**值**、
+# 轮次、错误正文属 LLM 抖动噪声，丢弃它们才不会把同一个违反点误判成发散
+# （这是本次修复的正向目标，不是放宽判定）。
+_TOOL = r"[a-z][a-z0-9_.]*"          # 工具名形态（小写标识符，可带命名空间点）
+_CASE_LEVEL_DETAIL = "case-level check"
+_LAST_ROUND_ERR_RE = re.compile(r"^最后轮报错（用例未预期错误）[:：]\s*(.*)$", re.DOTALL)
+_ROUND_RE = re.compile(r"[(（]?\s*R\d+\s*[)）]?")
+_LITERAL_RE = re.compile(r"「[^」]*」|'[^']*'|`[^`]*`|\"[^\"]*\"")
+_NUM_RE = re.compile(r"\d+(?:\.\d+)?")
 
-    两次失败指纹一致 = 大概率确定性复现（同一违反点），不一致 = 各次不同路径的
-    随机失败。错误事件保留前 100 字符（如 "AttributeError: 'list' object ..."）。
+
+def _generic_token(text) -> str:
+    """把自由文本压成稳定 token：去轮次/字面值/数字，只留"在说什么"的形状。"""
+    s = _ROUND_RE.sub("", str(text or ""))
+    s = _LITERAL_RE.sub("<v>", s)
+    s = _NUM_RE.sub("#", s)
+    return re.sub(r"\s+", " ", s).strip()
+
+
+def _generic_atom(msg: str) -> str:
+    """未知断言族的兜底 token：族名 + 首个括号键。
+
+    未知族**不能退化成原文**（原文含轮次/实际值 → 指纹不稳定，正是本次要修的洞），
+    也**不能退化成常量**（所有未知族并成一个 token → 真波动被误判成确定性失败）。
+    取「族名 + 首个括号键」：同族同键 ⇒ 同 token；异族/异键 ⇒ 不同 token。
     """
-    parts = [
-        f"{exp}|{str(detail)[:60]}"
-        for exp, detail in result.get("failed", [])
-    ]
-    parts = sorted(set(parts))
+    s = _generic_token(msg)
+    head = re.split(r"[:：（(\[,，)]", s, 1)[0].strip()
+    key = ""
+    m = re.match(r"^[^\[（(]*[\[（(]([^\]）)]+)", s)
+    if m:
+        key = m.group(1).strip()
+    parts = [p for p in (head, key) if p]
+    return "other(%s)" % "|".join(parts) if parts else "other(?)"
+
+
+def _error_kind(err) -> str:
+    """错误事件的**种类**（异常类名 / 错误码），丢弃消息正文（正文含抖动细节）。
+
+    与 `_is_infra_error` 的分工：后者只看"是不是运行级错误"并先行分流；
+    这里只回答"两次的错是不是同一类"。
+    """
+    head = re.split(r"[:：(\n]", str(err or ""), 1)[0].strip()
+    if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_.]*", head or ""):
+        return head
+    return _generic_token(err)[:60] or "unknown"
+
+
+# case 级断言消息 → 规范 token 的规则表：`(正则, 模板)`，模板里的 `{0}/{1}`
+# 对应捕获组。**顺序敏感**（具体的在前，宽泛的在后）。
+_CASE_ATOM_RULES = (
+    # ① 「声明的调用没有（成功地）发生」簇 —— 本次修复的核心：多条渲染路径一个 token。
+    #    条数差异（`required_args` 只在一侧渲染）随集合语义消失。
+    (re.compile(rf"^must_succeed: ({_TOOL}) 从未被调用"), "no_success({0})"),
+    (re.compile(rf"^must_succeed: ({_TOOL}) 共 \d+ 次调用"), "no_success({0})"),
+    (re.compile(rf"^required_args: 未调用 ({_TOOL})\(action="), "no_success({0})"),
+    (re.compile(rf"^output_verify\[({_TOOL})\].*?: 找不到成功调用的结果"), "no_success({0})"),
+    (re.compile(rf"^amount_verify: 未找到 ({_TOOL}) 的成功调用"), "no_success({0})"),
+    (re.compile(rf"^db_verify\[[^\]]+\]: 找不到 ({_TOOL})"), "no_success({0})"),
+    # ② 断言**配置错误**（与业务行为无关，但必须可辨、稳定；不含 repr 细节）
+    (re.compile(r"^must_succeed: 配置"), "config_error(must_succeed)"),
+    (re.compile(r"^must_fail: 配置"), "config_error(must_fail)"),
+    (re.compile(r"^must_fail: 条目含未支持的键"), "config_error(must_fail)"),
+    (re.compile(r"^forbidden_tools: 配置"), "config_error(forbidden_tools)"),
+    (re.compile(r"^required_args: 配置"), "config_error(required_args)"),
+    (re.compile(rf"^required_args\[({_TOOL})\]: 缺/空 fields"), "config_error(required_args,{0})"),
+    (re.compile(r"^forbidden_args: 配置"), "config_error(forbidden_args)"),
+    (re.compile(rf"^forbidden_args\[({_TOOL})\]: 缺/空 fields"), "config_error(forbidden_args,{0})"),
+    (re.compile(r"^output_verify: 配置"), "config_error(output_verify)"),
+    (re.compile(rf"^output_verify\[({_TOOL})\]: 缺 expect"), "config_error(output_verify,{0})"),
+    (re.compile(r"^db_verify: 配置非字典"), "config_error(db_verify)"),
+    (re.compile(r"^db_verify: 不支持的 fetch"), "config_error(db_verify)"),
+    (re.compile(r"^db_verify\[product_by_name\]: 缺 name"), "config_error(db_verify)"),
+    (re.compile(r"^post_session: 不支持的 fetch"), "config_error(post_session)"),
+    (re.compile(r"^amount_verify: 配置非字典"), "config_error(amount_verify)"),
+    (re.compile(rf"^amount_verify\[({_TOOL})\]: 无法识别 checks"), "config_error(amount_verify,{0})"),
+    (re.compile(r"^amount_verify: 声明了 unit_price 检查但未给 product_name"),
+     "config_error(amount_verify)"),
+    (re.compile(r"^form_prefill: 配置"), "config_error(form_prefill)"),
+    (re.compile(r"^want_text: (?:配置|round)"), "config_error(want_text)"),
+    (re.compile(r"^forbidden_card_text: 空配置"), "config_error(forbidden_card_text)"),
+    (re.compile(r"^order_before: 无法解析"), "config_error(order_before)"),
+    # ③ 参数层：工具 + 键名 = 结构身份（值/轮次/缺失值文案丢弃）
+    (re.compile(rf"^required_args\[({_TOOL})\.([^\]]+)\]"), "required_arg({0},{1})"),
+    (re.compile(rf"^forbidden_args\[({_TOOL})\.([^\]]+)\]"), "forbidden_arg({0},{1})"),
+    (re.compile(rf"^must_fail: ({_TOOL})"), "must_fail_violated({0})"),
+    (re.compile(rf"^forbidden_tools: ({_TOOL})"), "forbidden_tool({0})"),
+    # ④ 产出层：工具 + 字段名 = 结构身份（缺字段 / 值不符 分属不同根因）
+    (re.compile(rf"^output_verify\[({_TOOL})\].*?: 结果里没有字段 '([^']+)'"),
+     "output_missing_field({0},{1})"),
+    (re.compile(rf"^output_verify\[({_TOOL})\](?:\([^)]*\))?: (\S+) 期望"),
+     "output_value_mismatch({0},{1})"),
+    # ⑤ 金额层
+    (re.compile(rf"^amount_verify\[({_TOOL})\].*?: .*单价"), "amount_verify({0},unit_price)"),
+    (re.compile(rf"^amount_verify\[({_TOOL})\].*?: .*小计"), "amount_verify({0},subtotal)"),
+    (re.compile(rf"^amount_verify\[({_TOOL})\].*?: processingFee"),
+     "amount_verify({0},processing_fee)"),
+    (re.compile(rf"^amount_verify\[({_TOOL})\].*?: 总额"), "amount_verify({0},total)"),
+    (re.compile(rf"^amount_verify\[({_TOOL})\].*?: items 为空"), "amount_verify({0},no_items)"),
+    (re.compile(rf"^amount_verify\[({_TOOL})\].*?: items\[\d+\] 非对象"),
+     "amount_verify({0},bad_item)"),
+    (re.compile(rf"^amount_verify\[({_TOOL})\].*?: items\[\d+\] 数量/单价非数值"),
+     "amount_verify({0},bad_item_value)"),
+    (re.compile(r"^amount_verify: 商品「"), "amount_verify(fixture_missing_price)"),
+    # ⑥ 落库层：fetch 资源 + 字段 = 结构身份（订单号/值/行数丢弃）
+    (re.compile(r"^db_verify\[order_phone\]: 订单 \S+ 查不到手机号"),
+     "db_missing(order_phone,phone)"),
+    (re.compile(r"^db_verify\[order_phone\]: 订单 \S+ 落库手机号"),
+     "db_mismatch(order_phone,phone)"),
+    (re.compile(r"^db_verify\[order_phone\]: 订单 \S+ 收货人"),
+     "db_mismatch(order_phone,customer_name)"),
+    (re.compile(r"^db_verify\[order_phone\]: 订单 \S+ 收货地址"),
+     "db_mismatch(order_phone,address)"),
+    (re.compile(r"^db_verify\[order_items\]: 订单 \S+ 查不到明细"), "db_missing(order_items)"),
+    (re.compile(r"^db_verify\[order_items\]: 订单 \S+ 明细里没有「([^」]+)」"),
+     "db_missing(order_items,{0})"),
+    (re.compile(r"^db_verify\[order_items\]: 「([^」]+)」数量"),
+     "db_mismatch(order_items,quantity:{0})"),
+    (re.compile(r"^db_verify\[processing_order\]: 查不到加工单"), "db_missing(processing_order)"),
+    (re.compile(r"^db_verify\[processing_order\]: "), "db_mismatch(processing_order)"),
+    (re.compile(r"^db_verify\[employee\]: 查不到员工"), "db_missing(employee)"),
+    (re.compile(r"^db_verify\[employee\]: 落库记录里没有字段 '([^']+)'"),
+     "db_missing(employee,{0})"),
+    (re.compile(r"^db_verify\[employee\]: 落库字段 '([^']+)' 为空"), "db_empty(employee,{0})"),
+    (re.compile(r"^db_verify\[employee\]: 落库 (\S+) 实际"), "db_mismatch(employee,{0})"),
+    (re.compile(r"^db_verify\[after_sales_ticket\]: 工单 \S+ 查不到详情"),
+     "db_missing(after_sales_ticket)"),
+    (re.compile(r"^db_verify\[after_sales_ticket\]: 工单 \S+ 落库状态"),
+     "db_mismatch(after_sales_ticket,status)"),
+    (re.compile(r"^db_verify\[after_sales_ticket\]: 工单 \S+ 落库字段 (\S+) 为空"),
+     "db_empty(after_sales_ticket,{0})"),
+    (re.compile(r"^db_verify\[after_sales_ticket\]: 工单 \S+ 落库 closeReason"),
+     "db_mismatch(after_sales_ticket,close_reason)"),
+    (re.compile(r"^db_verify\[product_by_name\]"), "db_mismatch(product_by_name)"),
+    # ⑦ 时序 / 文本 / 卡片 / 能力类
+    (re.compile(r"^order_before\[(.+?) before .+?\]: 全程未调用"), "order_before_missing({0})"),
+    (re.compile(r"^order_before\[(.+?) before .+?\]: .+?[(（]R\d+[)）] 晚于"),
+     "order_before_reversed({0})"),
+    (re.compile(r"^forbidden_text: 回复含反模式词「([^」]+)」"), "forbidden_text({0})"),
+    (re.compile(r"^want_text.*?: 未出现任一正向关键词"), "want_text_missing(any_of)"),
+    (re.compile(r"^want_text.*?: 未出现正向关键词「([^」]+)」"), "want_text_missing({0})"),
+    (re.compile(r"^卡片出现禁用词「([^」]+)」"), "forbidden_card_text({0})"),
+    (re.compile(r"^form_prefill\[([^\]]+)\]: 会话里没有出现任何 form 卡"),
+     "form_prefill_missing({0})"),
+    (re.compile(r"^form_prefill\[([^\]]+)\]: form 卡里没有字段"), "form_prefill_missing_field({0})"),
+    (re.compile(r"^form_prefill\[([^\]]+)\][^(]*: 字段存在但"), "form_prefill_empty({0})"),
+    (re.compile(r"^form_prefill\[([^\]]+)\][^(]*: 预填值"), "form_prefill_mismatch({0})"),
+    (re.compile(r"^重复交互卡"), "duplicate_cards"),
+    (re.compile(r"^重复问已答过的卡"), "repeated_card_ask"),
+    (re.compile(r"^能力误宣[(（]转人工理由"), "false_inability(handoff_reason)"),
+    (re.compile(r"^能力误宣"), "false_inability"),
+    (re.compile(r"^状态宣告无工具落地"), "unbacked_state_claim"),
+    (re.compile(r"^回复出现完整手机号"), "full_phone_leak"),
+    (re.compile(r"^落库手机号"), "phone_provenance"),
+    (re.compile(r"^R\d+[:：] order_create 因缺验证码失败"), "write_code_missing"),
+    (re.compile(r"^R\d+[:：] order_create 因验证码失败"), "write_code_mismatch"),
+    (re.compile(r"^post_session\[user_memories"), "post_session(user_memories)"),
+    # 注：「确认死循环…」这类没有专属族的检查**有意不给规则**：走 `_generic_atom`
+    # 保留中文族名（`other(确认死循环)`）—— 令牌既可读又稳定，且不丢归因线索。
+    # ⑧ 断言自身执行失败（异常类名 = 结构身份，消息正文丢弃）
+    (re.compile(r"^(.+?) 执行失败[:：] ?([A-Za-z_][A-Za-z0-9_.]*)"), "check_error({0},{1})"),
+    (re.compile(r"^debug_user 前提校验执行失败"), "precondition_error(debug_user)"),
+)
+
+
+def _case_issue_atom(msg: str) -> str:
+    """case 级断言消息（`detail == "case-level check"`）→ 规范 token。"""
+    s = str(msg or "")
+    for pat, tpl in _CASE_ATOM_RULES:
+        m = pat.match(s)
+        if m:
+            return tpl.format(*m.groups())
+    m = _LAST_ROUND_ERR_RE.match(s)
+    if m:
+        # 与 `result["last_error"]` 的 token 同形 → 同一件事只留一个身份
+        return "error(%s)" % _error_kind(m.group(1))
+    return _generic_atom(s)
+
+
+def _expectation_tool(exp: str) -> str:
+    """期望声明里的工具名（OR 分支取首个形如工具名的分支）；取不到返回空串。"""
+    for part in re.split(r"\s+or\s+", str(exp or "")):
+        part = part.strip()
+        if re.fullmatch(_TOOL, part):
+            return part.lower()
+        name, args = _parse_expectation(part)
+        if args is not None and re.fullmatch(_TOOL, name or ""):
+            return name.lower()
+    return ""
+
+
+def _expectation_atom(exp: str, detail: str) -> str:
+    """`expectations` 失败的渲染 → 规范 token。
+
+    两条渲染路径归一（PG-016 实证）：
+      · `unmatched expectation: t(action=x)` —— 没有任何一次调用满足声明；
+      · `tool 't' matched but arg 'action' expected x got y` —— 名字对上但
+        **调用选择器**不符 ⇒ 等价于「声明的那次调用没发生」；
+      两者都 → `no_success(t)`。而 `action` 之外的键不符属**载荷层**违反，
+      保留键名（`arg_mismatch(t,k)`）—— 与"从未调用"是不同根因。
+    """
+    d = str(detail or "")
+    if d.startswith("unmatched expectation"):
+        tool = _expectation_tool(exp)
+        if tool:
+            return "no_success(%s)" % tool
+        return "unmatched_expectation(%s)" % (_generic_token(exp)[:60] or "?")
+    if d.startswith("tool '") and " matched but " in d:
+        name = d.split("'")[1] if d.count("'") >= 2 else _expectation_tool(exp)
+        reason = d.split(" matched but ", 1)[1]
+        m = re.match(r"missing arg '([^']+)'", reason)
+        if m:
+            return "arg_missing(%s,%s)" % (name, m.group(1))
+        m = re.match(r"arg '([^']+)'", reason)
+        if m:
+            key = m.group(1)
+            if key == "action":
+                return "no_success(%s)" % name
+            return "arg_mismatch(%s,%s)" % (name, key)
+        return "arg_mismatch(%s,?)" % name
+    if d.startswith("expected direct_reply"):
+        return "direct_reply_expected_but_tool_calls"
+    if d.startswith("expected success but got error"):
+        return "success_expected_but_error"
+    m = re.match(r"expected error (\S+) but got", d)
+    if m:
+        return "error_code_expected(%s)" % m.group(1)
+    return "expectation(%s)" % (_generic_token(exp)[:60] or "?")
+
+
+def _failure_atom(exp, detail) -> str:
+    """一条失败渲染 `(exp, detail)` → 规范 token。"""
+    e, d = str(exp or ""), str(detail or "")
+    if d == _CASE_LEVEL_DETAIL or _LAST_ROUND_ERR_RE.match(e):
+        return _case_issue_atom(e)
+    return _expectation_atom(e, d)
+
+
+def _failure_signature(result: dict) -> str:
+    """失败指纹：**结构化失败身份**的集合（排序去重后 `||` 连接）→ 判定两次失败是否同根因。
+
+    两次指纹一致 = 同一违反点确定性复现（`reproducible`，禁止 rerun 掩盖）；
+    不一致 = 各次不同违反点（`unstable`）。归一/归并规则与理由见本节顶部注释。
+    """
+    atoms = set()
+    for exp, detail in (result.get("failed") or []):
+        atom = _failure_atom(exp, detail)
+        if atom:
+            atoms.add(atom)
     err = result.get("last_error")
     if err:
-        parts.append(f"error|{str(err)[:100]}")
-    return "||".join(parts)
+        atoms.add("error(%s)" % _error_kind(err))
+    return "||".join(sorted(atoms))
 
 
 FLAKE_REASONS = {
