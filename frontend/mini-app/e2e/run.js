@@ -11,7 +11,8 @@
  */
 const fs = require('fs')
 const path = require('path')
-const { launch, waitForPageReady, assertDistFresh, SCREENSHOT_DIR } = require('./lib/harness')
+const { launch, waitForPageReady, assertDistFresh, SCREENSHOT_DIR, SHOT_STATS,
+        formatShotStats } = require('./lib/harness')
 const { ensureLoggedIn, clearStorage } = require('./lib/login')
 
 const SCENARIOS = [
@@ -117,6 +118,12 @@ async function main() {
 
   await mp.close()
 
+  // ── 取证预算（#3761）：把「这一轮到底抓了多少次、等了多久」打出来 ──
+  // 为什么必须在入口打印：`capture()` 一次调用实际抓几帧只有运行时才知道，不打印就只能
+  // 拿「调用点数量 × 猜」当成本。数字同时写进 report.md（结论档可回看）。
+  console.log(`\n${formatShotStats()}`)
+  const shotStatsLine = formatShotStats().replace(/\n\s+/g, ' ')
+
   // ── 汇总报告 ──
   const lines = []
   let totalPass = 0
@@ -127,6 +134,7 @@ async function main() {
   lines.push('- 环境: 微信开发者工具模拟器 + app.migaozn.com 测试环境')
   lines.push(`- 被测构建（新鲜度护栏）: [${freshMode}] ${freshnessLine}`)
   lines.push(`- 登录态: ${loginLine}`)
+  lines.push(`- 取证预算（mp.screenshot() 实际调用）: ${shotStatsLine}`)
   lines.push('')
   for (const r of reports) {
     const pass = r.steps.filter((s) => s.pass).length
@@ -155,6 +163,16 @@ async function main() {
   lines.push(`| ❌ FAIL | ${totalFail} |`)
   lines.push(`| 判定 | ${totalFail === 0 ? '**全部通过，验收通过**' : '**存在失败项，需修复**'} |`)
   lines.push('')
+  // 取证预算落到报告里（#3761）：成本可见才可管理；`SHOT_STATS.perName` 的逐图帧数
+  // 是「能否收紧 maxAttempts」的唯一实测依据（>2 帧的图必须先看这份清单）。
+  lines.push('## 取证预算（#3761）')
+  lines.push('')
+  lines.push(`- mp.screenshot() 实际调用: **${SHOT_STATS.calls}** 次`)
+  lines.push(`- 稳定帧图数: ${Object.keys(SHOT_STATS.perName).length} 张`)
+  lines.push(`- 稳定等待: ${SHOT_STATS.waits} 次 × 1.5s = **${(SHOT_STATS.waitMs / 1000).toFixed(1)}s**`)
+  const multiFrame = Object.keys(SHOT_STATS.perName).filter((n) => SHOT_STATS.perName[n] > 2)
+  lines.push(`- 需 >2 帧才稳定的图: ${multiFrame.length ? multiFrame.map((n) => `${n}(${SHOT_STATS.perName[n]}帧)`).join(', ') : '（无）'}`)
+  lines.push('')
 
   fs.writeFileSync(reportPath, lines.join('\n'), 'utf8')
 
@@ -163,6 +181,7 @@ async function main() {
   console.log(`  ❌ FAIL: ${totalFail} 项`)
   console.log(`  📄 报告: ${reportPath}`)
   console.log(`  🖼 截图: ${SCREENSHOT_DIR}/`)
+  console.log(`  📸 mp.screenshot(): ${SHOT_STATS.calls} 次（${Object.keys(SHOT_STATS.perName).length} 张图）`)
   process.exit(totalFail === 0 ? 0 : 1)
 }
 

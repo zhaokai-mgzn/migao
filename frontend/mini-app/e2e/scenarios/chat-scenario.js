@@ -78,7 +78,6 @@ async function run(mp) {
   rep.step('导航名与空态问候语同源（同一 botName）', !!sameBot,
     `nav=${navName} empty=${sameBot || '(空态未渲染/文案不一致)'}`)
   await capture(mp, SCENARIO, '02-ready.png')
-  shot('02-ready.png')
 
   // ── 5. 快捷操作发消息（真实链路：点卡片 → SSE 回复）──
   if (qa2) {
@@ -95,7 +94,6 @@ async function run(mp) {
       aiReply ? `${aiReply.replace(/\n/g, ' ').slice(0, 60)}…(len=${aiReply.length})` : '120s 内无回复')
     await waitForStreamEnd(page, 60000) // 等流结束，避免下一次发送被 isStreaming 守卫吞掉
     await capture(mp, SCENARIO, '03-quick-action-reply.png')
-    shot('03-quick-action-reply.png')
   } else {
     rep.step('快捷操作发消息', false, '新对话后快捷操作未出现')
   }
@@ -153,18 +151,25 @@ async function run(mp) {
     rep.step('AI 回复第二条（SSE 流式，新内容）', !!aiReply2,
       aiReply2 ? `${aiReply2.replace(/\n/g, ' ').slice(0, 60)}…(len=${aiReply2.length})` : failDetail)
     await waitForStreamEnd(page, 60000)
-    await capture(mp, SCENARIO, '04-typed-reply.png')
+    // ⚠️ 原 `04-typed-reply.png` 已删（#3761 实测 + 验收报告 §5-3 判定）：
+    //    · 2026-09-14 21:56 那轮里 `chat/03 == 04 == 05` **逐字节相同**（同一状态三连拍）；
+    //    · 更早的验收入库报告（acceptance/2026-09-14/mini-app-e2e/REPORT.md §5-3）已**独立判定**
+    //      `chat/04` 画面显示的是**上一轮**（算料报价）内容，与同时刻 DOM 断言不一致，
+    //      并明确写下「当前**不得**把 chat/04 当作列表状态的证据引用」⇒ 结论本来就不依赖它。
+    //    · 视口是否跟随最新消息是**另一个**未决问题（该报告 §5-3 假设 (b)，需模拟器判决实验），
+    //      不由本改动承担，也不因此把这张图改回'证据'。
   } else {
     rep.step('键盘输入消息上屏（新气泡+新内容）', false, `发送未完成：${typed.reason}`)
   }
 
   // ── 7. 终态截图 ──
-  await capture(mp, SCENARIO, '05-final.png')
+  // 终态补拍（#3761）：实测 `05-final.png` 与 `03/04` 同帧 ⇒ 绿路径跳过（0 成本）、失败时补抓。
+  await rep.captureFinal(mp, SCENARIO, '05-final.png')
+  // 报告登记只在**这里**做一次（原先 `02-ready`/`03-quick-action-reply` 在正文与尾部各登记一次
+  // → report.md 的「截图」清单里同一张图出现两遍，读起来像抓了两次）。
   shot('01-entry.png')
   shot('02-ready.png')
   shot('03-quick-action-reply.png')
-  shot('04-typed-reply.png')
-  shot('05-final.png')
 
   return rep.result()
 }

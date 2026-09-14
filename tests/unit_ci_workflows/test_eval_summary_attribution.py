@@ -87,6 +87,11 @@ lr = _load_runner()
 # 本 PR 新增的两个字段名（回归锚点用；改名即视为破坏"只加字段"的契约）
 NEW_CASE_KEY = "failures"
 NEW_COMPLETION_KEY = "failure_reasons"
+# #3761/#3769 追加的顶层新增字段（成本可读信号 + verdict ledger 键）。与前两个同款纪律 ——
+# 只加不改，且必须真的存在（否则下面的"逐字节等价"会退化成**空断言**）。
+NEW_COST_KEY = "cost"
+NEW_RUN_KEY_KEY = "run_key"
+NEW_TOP_KEYS = {NEW_COST_KEY, NEW_RUN_KEY_KEY}
 
 
 # ── fixtures ────────────────────────────────────────────────────────────────
@@ -150,13 +155,15 @@ def _legacy_payload(label, shard, results):
 
 
 def _strip_new(payload):
-    """去掉本 PR 新增的两个字段（保序）→ 剩下的必须与改造前逐字节一致。"""
+    """去掉本 PR 新增的字段（保序）→ 剩下的必须与改造前逐字节一致。"""
     out = {}
     for k, v in payload.items():
         if k == "cases":
             out[k] = [{kk: vv for kk, vv in c.items() if kk != NEW_CASE_KEY} for c in v]
         elif k == "completion":
             out[k] = {kk: vv for kk, vv in v.items() if kk != NEW_COMPLETION_KEY}
+        elif k in NEW_TOP_KEYS:
+            continue          # #3761/#3769：顶层新增键，整体剥掉
         else:
             out[k] = v
     return out
@@ -362,6 +369,8 @@ class TestLegacyBytesUnchanged:
         # 红证前置：新增字段必须真的存在，否则下面的"等价"是**空断言**
         assert NEW_CASE_KEY in new["cases"][1], "新增字段缺失 → 本锚点什么都没证明"
         assert NEW_COMPLETION_KEY in new["completion"], "新增字段缺失 → 本锚点什么都没证明"
+        assert NEW_COST_KEY in new, "新增字段缺失 → 本锚点什么都没证明"
+        assert NEW_RUN_KEY_KEY in new, "新增字段缺失 → 本锚点什么都没证明"
         assert _dump(_strip_new(new)) == _dump(legacy), (
             "除新增字段外 summary 变了（既有字段/键顺序被改动）—— "
             "与历史 run 的对比会失效，且 report job 等消费者可能受影响")
@@ -377,3 +386,58 @@ class TestLegacyBytesUnchanged:
         assert data["cases"][1]["pre_clean"] == ["商品去重完成", "⚠️ pre_clean 失败: 超时"]
         assert data["order_write_cases"] == 2 and data["write_cases_ok"] == 1
         assert data["avg_score"] == (1.0 + 0.0 + 0.75 + 1.0) / 4
+
+
+# ── ⑤ 成本可见化（#3761）：`cost` 块必须**来自实测**，缺数据时不得编 ──────────
+
+class TestCostBlockIsMeasuredNotFabricated:
+    """评测成本只有可读才可管理；而"字段在、值恒空"是一种**伪装**（空断言）。
+
+    故这里两条一起锁：
+      ① 有实测输入 ⇒ `cost` 如实反映（墙钟 / 用例耗时 / 平均 / 最慢 / 重试）；
+      ② 无实测输入 ⇒ **如实为空**（`cases == {}`、`avg_case_s is None`、`tokens is None`），
+         绝不用 0 或估算值冒充 —— `tokens` 拿不到就必须是 null + 写明原因（不编数字）。
+    """
+
+    def test_cost_reflects_measured_timings(self, tmp_path):
+        results = [
+            _case("CH-010", 1.0, "pass"),
+            _case("OR-017", 0.0, "reproducible", [("断言原文", "")]),
+            _case("KN-001", 1.0, "pass"),
+        ]
+        results[0]["duration_s"] = 12.5
+        results[1]["duration_s"] = 41.0
+        results[2]["duration_s"] = 6.5
+        results[1]["retried"] = True
+        out = tmp_path / "s.json"
+        lr.write_summary_json(str(out), "post-deploy", "", results, elapsed_s=123.4)
+        cost = json.loads(out.read_text(encoding="utf-8"))["cost"]
+
+        assert cost["wall_clock_s"] == 123.4, "注入的墙钟没进 summary（cost 与实际脱节）"
+        assert cost["cases"] == {"CH-010": 12.5, "OR-017": 41.0, "KN-001": 6.5}
+        assert cost["avg_case_s"] == round((12.5 + 41.0 + 6.5) / 3, 1)
+        assert cost["slowest_cases"][0] == ["OR-017", 41.0], "最慢用例排序不对（成本归因入口失效）"
+        assert cost["retried_cases"] == ["OR-017"], "重试用例没被记下（重试=成本翻倍的来源）"
+
+    def test_tokens_is_null_with_reason(self, tmp_path):
+        """token 用量 runner 侧不可得 ⇒ 必须 null + 写明原因，不许编一个 0。"""
+        cost = _write(tmp_path, [_case("CH-010", 1.0, "pass")])["cost"]
+        assert cost["tokens"] is None, "runner 拿不到 token 却给了值 —— 编数字"
+        assert cost["tokens_note"], "tokens=null 却没写原因（下一个人会把它读成「零 token」）"
+
+    def test_cost_is_empty_not_zero_when_nothing_measured(self, tmp_path):
+        """没有任何耗时输入时，`cost` 必须**如实为空**（空断言的反面）。"""
+        cost = _write(tmp_path, [_case("CH-010", 1.0, "pass")])["cost"]
+        assert cost["cases"] == {}
+        assert cost["avg_case_s"] is None
+        assert cost["slowest_cases"] == []
+        assert cost["retried_cases"] == []
+        assert cost["wall_clock_s"] is None, "未注入墙钟却给了值 —— 说明是算出来的假数"
+
+    def test_runner_actually_records_and_passes_timings(self):
+        """静态防"字段在但永远为空"：runner 必须真的记用例耗时并把墙钟传进来。"""
+        src = (REPO_ROOT / "tests" / "agent_eval" / "local_runner.py").read_text(encoding="utf-8")
+        assert 'r["duration_s"] = round(time.monotonic() - _t0, 1)' in src, \
+            "`_run_one_case` 没记用例耗时 —— cost.cases 会永远是空字典（假功能）"
+        assert "elapsed_s=time.monotonic() - _run_t0" in src, \
+            "main 没把墙钟传给 write_summary_json —— cost.wall_clock_s 永远是 None"
