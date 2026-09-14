@@ -101,9 +101,14 @@ def _mode_block(code: str, mode: str) -> str:
     raise AssertionError(f"verify-all.sh 顶层 case 里找不到 `{mode})` 分支（或它没有被 `;;` 结束）")
 
 
-# `report "名称" bash -c "命令行"`：命令行是最外层双引号内的内容（其中单引号是**字面量**，
-# 因为 bash 在双引号内不把单引号当引号 —— 故 shlex.split 会直接报 "No closing quotation"，不能用）。
-_REPORT_RE = re.compile(r"^\s*report\s+(?:\"[^\"]*\"|\S+)\s+bash\s+-c\s+\"(?P<cmd>[^\"]*)\"\s*$")
+# `report "名称" bash -c "命令行"`（或带运行环境声明的 `report_env <key> "名称" bash -c "…"`）：
+# 命令行是最外层双引号内的内容（其中单引号是**字面量**，因为 bash 在双引号内不把单引号当引号 ——
+# 故 shlex.split 会直接报 "No closing quotation"，不能用）。
+# ⚠️ `(?:_env\s+\S+)?`：依赖运行环境的检查项现在走 `report_env <env-key> …`（三态里的「未就绪」
+#    由它表达），**命令行的位置与内容不变** —— 本守卫关心的仍是同一件事（选择集）。
+_REPORT_RE = re.compile(
+    r"^\s*report(?:_env\s+\S+)?\s+(?:\"[^\"]*\"|\S+)\s+bash\s+-c\s+\"(?P<cmd>[^\"]*)\"\s*$"
+)
 
 # 脚本顶层的简单赋值 `NAME="值"` / `NAME=值`（quick/full 共用选择集就靠这个变量）
 _ASSIGN_RE = re.compile(r"^\s*(?P<name>[A-Za-z_][A-Za-z0-9_]*)=(?P<val>\"[^\"]*\"|'[^']*'|\S+)\s*$")

@@ -209,17 +209,42 @@ def test_uncommitted_without_findings_warns_visibly_but_does_not_fail(tmp_path):
 
 
 def test_uncommitted_state_is_distinguishable_from_no_change(tmp_path):
-    """「没提交」与「没有变更」的输出必须不同（同一句话 = 不可区分 = 本缺陷根因）。"""
+    """「没提交」与「没有变更」必须**可区分**，且两者都不得是「假装通过」（issue #3724）。
+
+    ⚠️ 2026-09-15 语义更新（**禁空跑**，直接人类裁定）：零变更集**不再是「合法空跑」** ——
+    脚本现在会在跑**任何**检查之前就拒绝执行并**非零退出**
+    （`⏭️ 无变更 ⇒ 未执行任何检查（这不是通过）`），因此在零 diff 的树上**根本不产生检查项日志**。
+    理由：在一棵与 main 完全一致的树上跑验证没有边际信息，把它那排 ✅ 读成「验证通过」正是
+    migao-acceptance v1.3 的「空跑（绿了但没跑）」。
+    故 clean 分支改为**直接跑脚本**（不再经 `_run_gate`：它要求必须定位到日志，而这里本就不该有日志）。
+    """
     dirty = _make_repo(tmp_path / "dirty")
     (dirty / "README.md").write_text("baseline\ndirty edit\n", encoding="utf-8")
     _, dirty_out, _ = _run_gate(dirty)
 
     clean = _make_repo(tmp_path / "clean")
-    clean_rc, clean_out, clean_log = _run_gate(clean)
+    env = dict(os.environ)
+    env.update(_GIT_ENV)
+    env.update(_C_LOCALE_ENV)
+    proc = subprocess.run(
+        ["bash", "verify-all.sh", "gate"], cwd=str(clean),
+        capture_output=True, text=True, env=env, timeout=_RUN_TIMEOUT,
+    )
+    clean_out = "%s%s" % (proc.stdout, proc.stderr)
 
-    assert clean_rc == 0, f"真的没有变更时应保持「跳过」并通过（合法空跑）：\n{clean_out}\n{clean_log}"
-    assert _SILENT_SKIP in clean_log, f"无变更时保留原提示（合法空跑）；控制台：\n{clean_out}\n{clean_log}"
-    assert "未提交" not in clean_out, f"无未提交改动时不得冒出告警（防误伤）：\n{clean_out}"
+    assert proc.returncode != 0, (
+        "零变更集必须**非零退出**（禁空跑：零 diff 的树上跑验证没有边际信息）：\n" + clean_out
+    )
+    assert "无变更 ⇒ 未执行任何检查" in clean_out, (
+        "零变更集必须显式声明「未执行任何检查（这不是通过）」：\n" + clean_out
+    )
+    assert _SILENT_SKIP not in clean_out, (
+        "零变更集不得再走 gate_check 的「跳过」分支（那正是「跑了但什么都没扫」的旧形态）：\n"
+        + clean_out
+    )
+    assert "✅" not in clean_out, (
+        "零 diff 的树上**不许**出现任何 ✅ —— 那是把空跑说成通过：\n" + clean_out
+    )
     assert "未提交" in dirty_out, (
         "两种状态的输出必须可区分（这正是 issue #3724 要消除的「不可区分」）"
     )
@@ -277,8 +302,12 @@ def test_old_behaviour_mutation_reproduces_silent_pass(tmp_path):
     script = repo / "verify-all.sh"
     text = script.read_text(encoding="utf-8")
     # 变异：把「未提交感知」摘掉 = 旧实现（对工作区状态无感知）
+    # ⚠️ 2026-09-15：变更集来源已抽成共享实现 `worktree_changes()`，gate_check 里只留
+    # `UNCOMMITTED=$(worktree_changes)` ⇒ 变异点跟着搬家（**强度不变**：仍是把「未提交感知」摘掉，
+    # 仍是 `hits == 1` 的精确锚点）。禁空跑判据用的是**函数本体**（未被变异）⇒ 本次运行仍会真跑 gate，
+    # 从而让"旧行为 = 静默通过"这一断言继续可判定。
     mutated, hits = re.subn(
-        r'UNCOMMITTED=\$\(git status --porcelain[^)]*\)', 'UNCOMMITTED=""', text
+        r'UNCOMMITTED=\$\(worktree_changes\)', 'UNCOMMITTED=""', text
     )
     assert hits == 1, f"变异点丢失（命中 {hits} 处）：gate_check 的未提交感知被改名/改写了？"
     script.write_text(mutated, encoding="utf-8")
