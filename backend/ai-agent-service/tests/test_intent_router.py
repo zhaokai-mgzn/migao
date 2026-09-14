@@ -551,12 +551,18 @@ class TestIntentRouterPendingSkill:
 
     @pytest.mark.asyncio
     async def test_pending_skill_exactly_five_chars_skips_llm(self):
-        """pending_skill + 5字消息(边界) → 跳过 LLM"""
+        """pending_skill + 5字消息(边界) → 跳过 LLM（快捷路径的本意）。
+
+        L1 优先（#3476）后：「继续查订单」含「查订单」→ 按 L1 给 order_query
+        （source=rule_short），不再是合成意图 plan_rewrite —— 但两者都**不调 LLM**，
+        快捷路径的语义不变（省 LLM 调用、防止点卡值被误分类）。
+        """
         from app.graph.nodes import intent_router_node
         state = self._make_state("order", "继续查订单")  # exactly 5 chars
 
         result = await intent_router_node(state)
-        assert result["intent_result"]["source"] == "plan_rewrite"
+        assert result["intent_result"]["intent"] == "order_query", result
+        assert result["intent_result"]["source"] == "rule_short", result
 
 
 class TestEntityHint:
