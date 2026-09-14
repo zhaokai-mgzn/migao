@@ -1848,6 +1848,7 @@ async def check_amount_verify(token: str, results: list, amount_verify: list) ->
 
         subtotal_sum = 0.0
         processing_sum = 0.0
+        fee_folded_in = False   # 变体②：小计里已含本行加工费 → total 不再加 Σfee（防双计）
         for i, item in enumerate(items):
             if not isinstance(item, dict):
                 issues.append(f"amount_verify[{tool}](R{rnd}): items[{i}] 非对象")
@@ -1862,11 +1863,13 @@ async def check_amount_verify(token: str, results: list, amount_verify: list) ->
                 continue
             pname = str(item.get("product_name") or "")
             pinfo = item.get("processing_info") or {}
+            fee = 0.0
             if isinstance(pinfo, dict):
                 try:
-                    processing_sum += float(pinfo.get("processingFee") or 0)
+                    fee = float(pinfo.get("processingFee") or 0)
+                    processing_sum += fee
                 except (TypeError, ValueError):
-                    pass
+                    fee = 0.0
             subtotal_sum += sub_f
             if "unit_price" in checks and price is not None:
                 # 只核对被声明商品的单价（多商品订单里其它行按各自商品库价另配 spec）
@@ -1876,12 +1879,26 @@ async def check_amount_verify(token: str, results: list, amount_verify: list) ->
                             f"amount_verify[{tool}](R{rnd}): 「{pname}」单价 {up} ≠ 商品库 {price}"
                             f"（凭记忆报价？）")
             if "subtotal" in checks:
-                if abs(sub_f - qty * up) > tol:
+                # 两种**合法约定**都放行（#3511 T3.2 归因，acceptance-protocol §14.2 有效性漂移）：
+                #   ① 面料小计：subtotal = 数量 × 单价（服务端 canonical —— AgentOrderCreateRequest
+                #      「subtotal 可选 → 服务端按 quantity × unitPrice 重算」；C 端 seed 亦为 504=3×168）
+                #   ② 含加工费：subtotal = 面料小计 + 本行 processingFee（工具描述「processingFee
+                #      并**计入金额**」的自然读法；B 端首跑实测 528=504+24）
+                # 两式在服务端都会被规范化、用户可见结果一致 → 对合法变体判红 = 假失败。
+                # 防松弛：与两式都不符（如 OR-014 历史真缺陷 ¥95.4）**仍判红**。
+                base = qty * up
+                matches_canonical = abs(sub_f - base) <= tol
+                matches_folded = fee > 0 and abs(sub_f - (base + fee)) <= tol
+                if matches_folded and not matches_canonical:
+                    fee_folded_in = True
+                if not (matches_canonical or matches_folded):
                     issues.append(
-                        f"amount_verify[{tool}](R{rnd}): 「{pname}」小计 {sub_f} ≠ 数量{qty}×单价{up}")
+                        f"amount_verify[{tool}](R{rnd}): 「{pname}」小计 {sub_f} ≠ 数量{qty}×单价{up}"
+                        f"（或 面料小计+本行加工费 {base + fee}）")
 
         if "total" in checks:
-            expected = subtotal_sum + processing_sum
+            # 防双计（#3511）：若小计已含本行加工费（变体②），expected 不再加 Σfee。
+            expected = subtotal_sum if fee_folded_in else subtotal_sum + processing_sum
             total = None
             for r in results or []:
                 if r.get("__round") != rnd:
