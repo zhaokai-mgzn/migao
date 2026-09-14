@@ -65,6 +65,11 @@ python3 .github/render_cases.py \
 - 多候选名称歧义处理（id-resolve.yml）
 - 订单号生成规则 ORD-yyyyMMdd-XXXX（order.yml，解析侧已写真值 order.no-format）
 
+> **能力覆盖缺口（哪个工具没人测）不写在这里** —— 那是脚本算出来的活清单，写进文档必然过期。
+> 跑 `python3 scripts/xiaobu_coverage.py --check`（C 端）/ `python3 scripts/mibao_coverage.py --check`
+> （B 端）得到「工具覆盖矩阵 + 缺正向用例 + 薄覆盖」清单，矩阵可直接当补用例任务书；
+> 同一检查也是 CI 的 `Case Coverage Gate`（阻塞判据与"何时必须补用例"见 migao-dev-flow §14.5）。
+
 > 2026-08-14 补挖完成的 10 处缺口：注入防护/输出长度/速率限制/Redis 降级/JWT/输入长度（defense）、来源标注（ai-chat，写真值=机制不存在）、change_password（settings）、删除分类 DESTRUCTIVE（category）、订单号解析（order）——全部回代码核实后写为真值。
 
 ## 用例预期校准记录（并源时按代码修正的旧用例）
