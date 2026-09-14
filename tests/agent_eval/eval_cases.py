@@ -4792,16 +4792,16 @@ _CASE_UI_006 = EvalCase(
     forbidden_card_text=[],
 )
 
-# ── UI-007 [NORMAL] 小布 C 端输入条 - 单容器双语义（textarea 常驻 + 右下按住说话松开发送）（源: cases/ui.yml）──
+# ── UI-007 [NORMAL] 小布 C 端输入条 - 单容器语音优先（textarea 常驻 + 带文字标签的宽胶囊「按住 说话」松开发送）（源: cases/ui.yml）──
 _CASE_UI_007 = EvalCase(
     id='UI-007',
     legacy_id='',
-    title='小布 C 端输入条 - 单容器双语义（textarea 常驻 + 右下按住说话松开发送）',
+    title='小布 C 端输入条 - 单容器语音优先（textarea 常驻 + 带文字标签的宽胶囊「按住 说话」松开发送）',
     skill=Skill.GENERAL,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['小布 C 端（小程序/H5 同源）输入条重构为单容器布局：textarea 常驻（placeholder「发消息或按住说话」），右下动作组为 [添图][按住说话]，有草稿时语音键位变为发送；上滑取消录音'],
+    user_inputs=['小布 C 端（小程序/H5 同源）输入条为单容器语音优先布局：textarea 常驻（语音优先 placeholder「按住说话，也可以打字」），空草稿时右侧主键是带文字标签的宽胶囊「按住 说话」，有草稿时该键位变为发送；上滑取消录音；首访给一条一次性可关闭的语音引导'],
     expectations=['direct_reply'],
-    data_checks=['mini-app MessageInput 单容器：textarea 常驻渲染（无键盘/语音模式切换键），placeholder 含「发消息或按住说话」', '按住语音键（touchStart）调用 startRecording，松开（touchEnd）调用 stopAndTranscribe → 转写文本直接 onSend（行为保持不变）；上滑超过阈值取消不发送', '添图入口统一：选图进草稿（预览可删），无按住模式下直接发图旁路；空文本有图点发送 → 纯图消息（UI-013 协议不变）', '自适应动作键：草稿为空显示语音键，有草稿变为发送，流式中变为停止；流式/无会话时禁止录音；转写失败 toast「未听清，请重试」不发送'],
+    data_checks=['mini-app MessageInput 单容器：textarea 常驻渲染（无键盘/语音模式切换键，已退役的 hold-btn/mode-btn/btn 类名不得复用），语音可用时 placeholder 为「按住说话，也可以打字」，语音不可用（H5）时回落纯键盘措辞且不显示语音入口', '语音优先形态：空草稿主键是带可见文字标签「按住 说话」的宽胶囊（图标 + 文字 + 按钮底齐备，触控区仍为 88px/44pt），有草稿变为发送圆键、流式中变为停止键；单行时加图键/输入框/主键同行垂直居中（真实几何由模拟器探针取证）', '一次性语音引导：首访展示即落已读标记（storage key voice_hint_seen）故只出现一次，可点关闭键立即消失，语音不可用时不展示；不因用户打字而提示改用语音', '按住语音键（touchStart）调用 startRecording，松开（touchEnd）调用 stopAndTranscribe → 转写文本直接 onSend（行为保持不变）；上滑超过阈值取消不发送', '添图入口统一：选图进草稿（预览可删），无按住模式下直接发图旁路；空文本有图点发送 → 纯图消息（UI-013 协议不变）', '自适应动作键：草稿为空显示语音键，有草稿变为发送，流式中变为停止；流式/无会话时禁止录音；转写失败 toast「未听清，请重试」不发送'],
     skip_reason='纯前端 C 端输入交互由 mini-app jest 单测验证（message-input.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟；xiaobu H5 E2E 基建在 WIP 分支（main 未落）',
     tags=['mini-app', 'voice-input', 'hold-to-talk'],
     persona='',

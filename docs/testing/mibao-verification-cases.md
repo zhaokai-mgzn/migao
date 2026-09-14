@@ -3418,18 +3418,20 @@
 真值: frontend-fix.session-list-single-filter, frontend-fix.session-reopen-banner
 溯源: 2026-08-31 新增：会话管理状态 tab 与筛选控件移除，单列表 + 续聊 banner（参考 DSH 会话模型评审结论） ｜ tags: ui, session-list, reopen
 
-### UI-007. 小布 C 端输入条 - 单容器双语义（textarea 常驻 + 右下按住说话松开发送） 🔵
+### UI-007. 小布 C 端输入条 - 单容器语音优先（textarea 常驻 + 带文字标签的宽胶囊「按住 说话」松开发送） 🔵
 ```
-你: 小布 C 端（小程序/H5 同源）输入条重构为单容器布局：textarea 常驻（placeholder「发消息或按住说话」），右下动作组为 [添图][按住说话]，有草稿时语音键位变为发送；上滑取消录音
+你: 小布 C 端（小程序/H5 同源）输入条为单容器语音优先布局：textarea 常驻（语音优先 placeholder「按住说话，也可以打字」），空草稿时右侧主键是带文字标签的宽胶囊「按住 说话」，有草稿时该键位变为发送；上滑取消录音；首访给一条一次性可关闭的语音引导
 期望: direct_reply
-数据: mini-app MessageInput 单容器：textarea 常驻渲染（无键盘/语音模式切换键），placeholder 含「发消息或按住说话」
+数据: mini-app MessageInput 单容器：textarea 常驻渲染（无键盘/语音模式切换键，已退役的 hold-btn/mode-btn/btn 类名不得复用），语音可用时 placeholder 为「按住说话，也可以打字」，语音不可用（H5）时回落纯键盘措辞且不显示语音入口
+数据: 语音优先形态：空草稿主键是带可见文字标签「按住 说话」的宽胶囊（图标 + 文字 + 按钮底齐备，触控区仍为 88px/44pt），有草稿变为发送圆键、流式中变为停止键；单行时加图键/输入框/主键同行垂直居中（真实几何由模拟器探针取证）
+数据: 一次性语音引导：首访展示即落已读标记（storage key voice_hint_seen）故只出现一次，可点关闭键立即消失，语音不可用时不展示；不因用户打字而提示改用语音
 数据: 按住语音键（touchStart）调用 startRecording，松开（touchEnd）调用 stopAndTranscribe → 转写文本直接 onSend（行为保持不变）；上滑超过阈值取消不发送
 数据: 添图入口统一：选图进草稿（预览可删），无按住模式下直接发图旁路；空文本有图点发送 → 纯图消息（UI-013 协议不变）
 数据: 自适应动作键：草稿为空显示语音键，有草稿变为发送，流式中变为停止；流式/无会话时禁止录音；转写失败 toast「未听清，请重试」不发送
 跳过: 纯前端 C 端输入交互由 mini-app jest 单测验证（message-input.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟；xiaobu H5 E2E 基建在 WIP 分支（main 未落）
 ```
 真值: frontend-fix.xiaobu-voice-holdtalk
-溯源: 2026-09-06 修订：输入条单容器重构（删模式切换键、textarea 常驻、语音改右下按住键、添图统一草稿语义），「松开直接发送」行为保持不变（issue #2952）；2026-08-31 新增：小布 C 端语音输入（按住说话/松开发送/键盘切换，参考瑞幸 C 端设计） ｜ tags: mini-app, voice-input, hold-to-talk
+溯源: 2026-09-14 修订（语音优先）：placeholder 改「按住说话，也可以打字」（H5 回落「打字告诉我您想找什么」）、空态主键由裸波形图标升级为带文字标签的宽胶囊「按住 说话」、新增首访一次性可关闭引导（voice_hint_seen）；单容器/无模式切换/松开直接发送等行为断言不变（issue #3741）；2026-09-06 修订：输入条单容器重构（删模式切换键、textarea 常驻、语音改右下按住键、添图统一草稿语义），「松开直接发送」行为保持不变（issue #2952）；2026-08-31 新增：小布 C 端语音输入（按住说话/松开发送/键盘切换，参考瑞幸 C 端设计） ｜ tags: mini-app, voice-input, hold-to-talk
 
 ### UI-008. 米高会话列表折叠/展开窄 rail（参考 DSH sidebar 折叠交互） 🔵
 ```
