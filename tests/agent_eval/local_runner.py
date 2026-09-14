@@ -1004,6 +1004,89 @@ def check_confirm_loop(results: list, limit: int = 3) -> list:
     ]
 
 
+def _card_fingerprint(args: dict) -> str:
+    """交互卡指纹（component + title + 字段/选项内容）—— 用于识别"同一张卡"。
+
+    改数量/地址后的新卡（fields/options 内容变了）指纹必然不同 → 不算重复问。
+    """
+    import json as _json
+    a = args or {}
+    comp = str(a.get("component") or "")
+    title = str(a.get("title") or "")
+    body = _json.dumps([a.get("fields") or [], a.get("options") or [],
+                        a.get("confirmValue") or ""],
+                       ensure_ascii=False, sort_keys=True)
+    return f"{comp}|{title}|{body}"
+
+
+def _card_answer_matchers(args: dict) -> list:
+    """顾客"作答"该卡的判定函数列表（命中任一即视为已答）。
+
+    confirm → 回 confirmValue（前端点击协议就是发这个值）；
+    choice → 回某 option 的 label/value（或"已选加工项：…"多选提交）；
+    form → 回 `__FORM__|{json}`。
+    """
+    a = args or {}
+    comp = str(a.get("component") or "")
+    if comp == "confirm":
+        cv = str(a.get("confirmValue") or "")
+        return [lambda m, cv=cv: str(m or "") == cv] if cv else []
+    if comp == "choice":
+        labels = {str(o.get("label") or "") for o in (a.get("options") or []) if isinstance(o, dict)}
+        values = {str(o.get("value") or "") for o in (a.get("options") or []) if isinstance(o, dict)}
+
+        def _hit(m, labels=labels, values=values):
+            m = str(m or "").strip()
+            return m in labels or m in values or m.startswith("已选加工项：")
+        return [_hit]
+    if comp == "form":
+        return [lambda m: str(m or "").startswith("__FORM__|")]
+    return []
+
+
+def check_repeated_card_ask(results: list) -> list:
+    """「同一张卡顾客**已答过**又被重问」→ 违规（issue #3477 复盘 / 断言矩阵补行）。
+
+    背景（C-A1 R5，run 34788143133 transcript）：R2 小布**文本**问「需要一起加工吗？」→
+    R3 顾客答「纳米圈打孔」→ R5 又发加工项 choice 卡 —— 同一件事问第二遍（加工项侧已由
+    agent 守卫修 #3473，这里补**评测断言**，覆盖地址/数量/颜色等所有"同卡重问"）。
+
+    与 `check_confirm_loop` 的分工：那条按"同事实 confirm ≥3 次"；本条按"同卡 + 已作答"，
+    对 confirm/choice/form 三类卡都生效。**防假阳性**：
+      · 顾客没答过（回的是别的）→ 模型重发同卡是等回答，合法；
+      · 改数量/地址后的**新卡**（指纹不同）→ 顾客须重新确认，合法；
+      · 同一轮内并发两张同卡由 `check_duplicate_cards` 管，这里不重复报。
+    """
+    issues = []
+    cards: dict = {}   # fp -> {"round", "matchers", "answered"}
+    for r in results or []:
+        rnd = r.get("__round")
+        # 先结算"已答"：顾客对本轮之前发出过的卡作答
+        for rec in cards.values():
+            if not rec["answered"] and any(
+                    fn(r.get("user_message")) for fn in rec["matchers"]):
+                rec["answered"] = True
+        for tc in (r.get("tool_calls") or []):
+            if str(tc.get("name") or "").lower() != "interact":
+                continue
+            a = tc.get("args") or {}
+            if not a.get("component"):
+                continue
+            fp = _card_fingerprint(a)
+            if fp in cards:
+                rec = cards[fp]
+                if rec["answered"]:
+                    issues.append(
+                        f"重复问已答过的卡(R{rnd}): 「{a.get('title') or a.get('component')}」"
+                        f"在 R{rec['round']} 发过且顾客已作答，又被重问 —— 顾客要多答一遍")
+                    cards.pop(fp, None)   # 同一张卡只报一次
+            else:
+                cards[fp] = {"round": rnd,
+                             "matchers": _card_answer_matchers(a),
+                             "answered": False}
+    return issues
+
+
 def check_duplicate_cards(results: list) -> list:
     """同一轮下发**两张同组件交互卡** → 违规（issue #3445，本地复现的重复卡缺陷）。
 
@@ -3355,6 +3438,8 @@ async def run_case(case, token: str, session_id: str) -> dict:
         case_issues += check_false_inability(results)
         # 重复交互卡（issue #3445）：C 端实测同轮两张 confirm 卡（两个发射点各发一张）
         case_issues += check_duplicate_cards(results)
+        # 同卡重问（issue #3477 复盘）：顾客已答过又被重问 → 判红
+        case_issues += check_repeated_card_ask(results)
     case_issues += check_confirm_loop(results)
     case_issues += check_false_success(results)
     if getattr(case, "db_verify", None):

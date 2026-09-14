@@ -4908,3 +4908,71 @@ class TestOrderBeforeAcceptsCardEvidence:
                    self._round(5, calls=["order_create"], statuses=[True])]
         assert lr.check_order_before(
             results, ["interact[confirm] before order_create"]), "choice 卡不该被当成确认卡"
+
+
+class TestRepeatedCardAsk:
+    """「同一张卡问两遍（顾客已答过再问）」→ 判红（issue #3477 复盘 / 断言矩阵补行）。
+
+    背景（C-A1 R5，run 34788143133 transcript）：R2 小布**文本**问「需要一起加工吗？」→
+    R3 顾客答「纳米圈打孔」→ R5 又发加工项 choice 卡 —— 同一件事问第二遍，顾客要多答一次
+    才能继续（UA 判定因此记"有条件通过"）。加工项侧已由 agent 守卫修（#3473），
+    但**地址/数量/颜色**等其它重复问没有判据 —— 本检查补"同卡重问"这一面。
+
+    判据（保守，防假阳性）：
+      · 同卡 = component + title + 字段/选项内容都相同（指纹一致）；
+      · 必须在两次之间**顾客已作答**（confirm → 回 confirmValue；choice → 回某 option 的
+        label/value；form → `__FORM__|`）—— 没答过（顾客回别的）→ 模型重发是合法行为；
+      · 改数量/地址后的新卡（指纹不同）不算重问。
+    """
+
+    def _round(self, rnd, user_msg, calls=None):
+        return {"__round": rnd, "user_message": user_msg,
+                "tool_calls": calls or [], "tool_results": [],
+                "interactive": [], "final_text": ""}
+
+    def _confirm(self, title="请确认订单信息", cv="确认：商品=遮光窗帘"):
+        return {"name": "interact", "args": {"component": "confirm", "title": title,
+                                             "confirmValue": cv,
+                                             "fields": [{"label": "商品", "value": "遮光窗帘"}]}}
+
+    def _choice(self, title="选加工项", label="纳米圈打孔"):
+        return {"name": "interact", "args": {"component": "choice", "title": title,
+                                             "options": [{"label": label, "value": "pi1"}]}}
+
+    def test_confirm_card_reasked_after_answer_flagged(self):
+        """confirm 卡顾客已点（回 confirmValue）后又被重发 → 判红。"""
+        results = [self._round(1, "确认下单", [self._confirm()]),
+                   self._round(2, "确认：商品=遮光窗帘"),
+                   self._round(3, "确认下单", [self._confirm()])]
+        issues = lr.check_repeated_card_ask(results)
+        assert issues and "R3" in issues[0], issues
+
+    def test_choice_card_reasked_after_answer_flagged(self):
+        """choice 卡顾客已答（回 option label）后又被重发 → 判红。"""
+        results = [self._round(1, "选加工项", [self._choice()]),
+                   self._round(2, "纳米圈打孔"),
+                   self._round(3, "还要", [self._choice()])]
+        assert lr.check_repeated_card_ask(results), "已答过的 choice 卡重问必须判红"
+
+    def test_unanswered_card_reask_not_flagged(self):
+        """顾客**没答**（回别的）→ 模型重发同卡是合法行为（等顾客回答）。"""
+        results = [self._round(1, "确认下单", [self._confirm()]),
+                   self._round(2, "你们送货上门吗"),
+                   self._round(3, "确认下单", [self._confirm()])]
+        assert lr.check_repeated_card_ask(results) == [], "没答过就不算重复问"
+
+    def test_changed_facts_new_card_not_flagged(self):
+        """改数量/地址后的**新卡**（指纹不同）→ 不是重问（顾客必须重新确认新明细）。"""
+        c1 = self._confirm(cv="确认：数量=3米")
+        c2 = self._confirm(cv="确认：数量=4米")
+        results = [self._round(1, "确认下单", [c1]),
+                   self._round(2, "确认：数量=3米"),
+                   self._round(3, "改数量 4 米"),
+                   self._round(4, "确认下单", [c2])]
+        assert lr.check_repeated_card_ask(results) == [], "新明细的新卡不是重复问"
+
+    def test_wiring_in_run_case_customer_scope(self):
+        """接线：C 端 run_case 必须调用（否则检查永不生效）。"""
+        import inspect
+        src = inspect.getsource(lr.run_case)
+        assert "check_repeated_card_ask" in src
