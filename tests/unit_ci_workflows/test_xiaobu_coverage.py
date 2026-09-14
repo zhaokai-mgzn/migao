@@ -485,6 +485,48 @@ class TestCoverageThicknessGate:
         assert rep.cases["tool_x"] == ["T-NEG"]
 
 
+# ── 跨包共享测试 helper 的调用形态不变式（issue #3640 集成缺陷固化）─────────────
+class TestSharedHelperCallShape:
+    """共享 helper（`_synth` 等模块级函数）禁止用 `self.xxx` 调用。
+
+    事故（#3609 × #3613 合并后）：`#3609` 把 `_synth` 从 `TestCoverageThicknessGate` 的
+    静态方法提升为**模块级函数**（多测试类共用）；`#3613` 基于旧版本重写测试时写了
+    `self._synth(...)` → `AttributeError`，而该测试属 **required** 的
+    `ci workflow helper unit tests` → main 上每个 PR 都白挂一条红。
+
+    这类"同一 helper 一会儿是方法、一会儿是函数"的错位，靠人 review 会漏（两边各自看都没错，
+    错在合并后的整体）。故用静态不变式钉住：模块级 helper 一律 `_helper(...)` 调用。
+    """
+
+    HELPERS = ("_synth",)
+
+    def test_shared_helpers_are_called_as_module_functions(self):
+        import ast
+        src = Path(__file__).read_text(encoding="utf-8")
+        tree = ast.parse(src)
+        module_funcs = {n.name for n in tree.body if isinstance(n, ast.FunctionDef)}
+        offenders = []
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Attribute) or node.attr not in self.HELPERS:
+                continue
+            if not (isinstance(node.value, ast.Name) and node.value.id == "self"):
+                continue
+            if node.attr in module_funcs:
+                offenders.append(f"L{node.lineno}: self.{node.attr}(...) —— 应写 {node.attr}(...)")
+        assert not offenders, (
+            "共享测试 helper 用了 self.xxx 调用（模块级函数必须 `_helper(...)`）：\n  "
+            + "\n  ".join(offenders)
+        )
+
+    def test_module_helpers_are_defined_at_module_level(self):
+        """反向保护：`_synth` 必须仍是模块级函数（被提升回方法会让上面的守卫失效）。"""
+        import ast
+        tree = ast.parse(Path(__file__).read_text(encoding="utf-8"))
+        assert "_synth" in {n.name for n in tree.body if isinstance(n, ast.FunctionDef)}, (
+            "_synth 不再是模块级函数 —— 跨测试类共用失效（#3609 的重构）"
+        )
+
+
 # ── 存量豁免清单（burn-down baseline）的防腐败守卫（issue #3575 决策）───────────
 from case_coverage import BASELINE_PATH, _attach_baseline, load_baseline  # noqa: E402
 
