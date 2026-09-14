@@ -44,7 +44,8 @@ name: Agent Behavior Eval (行为改动映射用例)
 #   故 map job 用**用例库自己的选择函数**（render_cases.load_case_dicts +
 #   eval_case_filter.select_cases_for_persona，两者都是零第三方依赖）把映射结果切成
 #   (persona, tier) 分桶，评测步骤逐桶调用 runner —— 每个桶的命令形状与原设计一致
-#   （`<tier> --cases .github/cases --case-ids <ids> --max-retries 3`）；
+#   （`<tier> --cases .github/cases --case-ids <ids> --max-retries 0`，fast 迭代档，
+#   issue #3653；非 normal 档走 full 桶不传重试参数）；
 #   不可执行的映射（已 skip）在 PR 评论里**显式披露**，绝不静默丢。
 #
 # ★ 门禁分层（2026-09-14 dogfooding 首跑复盘 → 同日用户裁定后**再降一级**）：
@@ -60,6 +61,22 @@ name: Agent Behavior Eval (行为改动映射用例)
 #   （小布下单表单化交互）红了（`amount_verify: 总额 311.4 ≠ Σ小计71.4+加工费252.0=323.4`）。
 #   runner 自己的语义（`unstable` 分类 + 关键旅程不放行）**不改**：分层只决定"是否升级为
 #   issue / 是否拦合并"，不改变评测怎么判；偶发波动照 §3.1 走 re-run。
+#
+# ★ PR 层去冗余（issue #3653，2026-09-15 用户裁定）：PR 层只保留**定向映射用例**，
+#   **完整覆盖交给部署后/批次轮**（AD：docs/testing/eval-pipeline-performance.md §6.2）：
+#   1. **只跑规则命中的用例**（无规则命中时兜底网照旧，report-only）—— 不跑 smoke/
+#      Acceptance/云冒烟任何其它档（那些层已在 xiaobu-acceptance / pr-check 移除或降按需）；
+#   2. **fast 迭代档**（§16.2：收窄 + fast = 1-3 分钟）：normal 桶一律 `--max-retries 0`
+#      （失败按首跑结果计入、不重试、不取证；完整档/结论档由部署后全量轮承担）；
+#      唯一例外是**非 normal 档映射用例**（DF-011/DF-012 adversarial）走 full 桶串行
+#      —— runner 的 full 档不接收 --max-retries（禁改 tests/agent_eval，见下），
+#      且 1-2 条代价可接受，每周六 adversarial 档 + 部署后全量共同兜底；
+#   3. **persona 按命中的用例分桶选**：只跑命中所及 persona 的腿，**不允许无差别双 persona**
+#      （personas 从分桶派生，见 map job；命中集横跨双端才双腿都跑）；
+#   4. **paths 前置门**只认 `backend/ai-agent-service/app/**`（行为源文件）。
+#   实测成本基线（本会话 2.5h）：197 次真实 LLM 评测 ≈ ¥135-295 —— 本 PR 后
+#   行为类 PR 只付「行为映射 fast 档」一层，其余三层（C 端 smoke / B 端云冒烟 /
+#   xiaobu PR 档）不再触发。
 permissions:
   contents: read
   # 发布/更新 PR 评论必需
@@ -95,13 +112,15 @@ concurrency:
 
 on:
   pull_request:
-    # 只在**行为面**路径变化时触发（AI 行为文件的三处真值来源）。
-    # 与 tests/agent_eval/behavior_mapping.py 的 AI_BEHAVIOR_PATH_PREFIXES 同一口径：
-    # 这里决定"workflow 要不要起"，那里决定"跑哪些用例"。
+    # ★ paths 前置门（issue #3653）：只认 **agent 本体行为源文件**（与
+    #   tests/agent_eval/behavior_mapping.py 的 BEHAVIOR_SOURCE_PREFIXES 同一口径 =
+    #   §13.2 映射表的源路径）—— 纯 cases/评测基建/文档/前端 PR **不再触发行为评测**：
+    #   那些改动由确定性层兜底（tests/unit_ci_workflows L0 静态测试 / Case Contract /
+    #   覆盖门禁），完整行为覆盖由部署后全量轮（post-deploy-eval）承担。
+    #   ⚠️ 本 workflow 是**信息性**（不进 required，§16.5），paths 收窄不会让
+    #   required check 悬空；workflow 自身的改动由 L0 静态测试锁定，无需自我触发。
     paths:
       - 'backend/ai-agent-service/app/**'
-      - 'tests/agent_eval/**'
-      - '.github/cases/**'
 
 jobs:
   # ── ① 纯计算 job：diff → 该跑的用例（秒级，不起栈、不烧 LLM）──
@@ -357,6 +376,9 @@ jobs:
                 + 'mibao 栈装 C 端+B 端种子 —— 同一 persona 在任一 workflow 上数据栈同构。')
               lines.push('> 每个 persona 一套**独立栈**（issue #3563）：xiaobu 栈只装 C 端种子、'
                 + 'mibao 栈装 C 端+B 端种子 —— 同一 persona 在任一 workflow 上数据栈同构。')
+              lines.push('> PR 层 = **fast 迭代档**（issue #3653）：normal 桶 \`--max-retries 0\`'
+                + '（失败按首跑结果计入、不重试）；非 normal 档用例（如 DF-011/DF-012）'
+                + '走 full 桶串行（runner full 档不接收重试参数）。完整档/结论档由部署后全量轮承担。')
               if (process.env.UNRUNNABLE && process.env.UNRUNNABLE.trim()) {
                 lines.push('')
                 lines.push('**未执行**（用例库当前状态导致，不是本 PR 的问题）：')
@@ -582,7 +604,16 @@ jobs:
             echo ""
             echo "── [$N] persona=$persona 档位=$suite 门禁=$mode 用例=$ids ──"
             EXTRA=()
-            if [ "$suite" = "normal" ]; then EXTRA=(--max-retries 3); fi
+            # ★ PR 层 = L2 迭代档（§16.2 收窄 + fast = 1-3 分钟，issue #3653）：
+            #   normal 桶一律 **fast**：--max-retries 0 = 失败按首跑结果计入
+            #   （标签 no-retry-budget），**不重试**。这是"省真实 LLM 成本"的核心一刀
+            #   （实测 197 次 → 行为类 PR 只付这一层）；完整档/结论档由部署后全量轮承担。
+            if [ "$suite" = "normal" ]; then EXTRA=(--max-retries 0); fi
+            # 非 normal 档（adversarial/edge…）照旧走 full 桶 —— runner 的 full 档
+            # **不接收 --max-retries/--concurrency**（禁改 tests/agent_eval），无法开 fast：
+            # 串行 + 重试不限，但通常只有 1~2 条对抗映射用例（DF-011/DF-012），代价可接受；
+            # 完整 adversarial 面由每周六档 + 部署后全量兜底。若命中集全为非 normal 档
+            # 且不想等串行，可对 PR 评论按 §3.1 处理（信息性，不拦合并）。
             # full 档**不按 tier 过滤**（`--case-ids` 之后就是"要几条跑几条"），
             # 故非 normal 用例（adversarial/edge…）只能走 full —— 走 normal 会被静默过滤掉。
             # full 档当前不接收 --concurrency/--max-retries（runner 只有 normal/smoke 档传），
@@ -842,6 +873,9 @@ jobs:
             lines.push('')
             lines.push('> `blocking` = 规则命中（**强信号**，失败不拦合并 + 开 issue）；'
               + '`report-only` = 兜底网（无因果，失败只报告）')
+            lines.push('> PR 层 = **fast 迭代档**（issue #3653）：normal 桶 `--max-retries 0`'
+              + '（失败按首跑结果计入、不重试）；非 normal 档用例走 full 桶串行。'
+              + '完整档/结论档由部署后全量轮承担。')
             if (ruleFail && process.env.RULE_HITS && process.env.RULE_HITS.trim()) {
               lines.push('')
               lines.push('**命中的规则**（哪个文件 → 哪条规则 → 哪些用例）：')

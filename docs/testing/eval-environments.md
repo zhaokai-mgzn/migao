@@ -51,8 +51,7 @@ B 端 `prod_eval_2699` 因 `created_at` 更新而排在首条 → 用例的「�
 
 | 触发 | 环境 | 档位 | 说明 |
 |---|---|---|---|
-| PR（AI 行为文件改动） | 独立栈 | **smoke**（B 端 + C 端 persona） | #3504 起 C 端 smoke 自动进 PR 门禁；B 端 smoke 由 pr-check 打云测试环境 |
-| PR（行为文件改动） | 独立栈 | **映射用例迭代档** | #3502 起 diff 驱动自动跑 §13.2 映射用例（15-30 条） |
+| PR（AI 行为文件改动，**仅 app/** 源文件） | 独立栈 | **映射用例 fast 迭代档**（persona 按命中用例分桶） | #3502 diff 驱动 + #3653 收窄：只跑 §13.2 映射用例（规则命中或兜底网），normal 桶 `--max-retries 0`；**C 端 smoke 不再进 PR 门禁**（#3653 与行为映射档合并去重，降为按需 `workflow_dispatch`）；B 端云冒烟已从 pr-check 移除（评的是已部署 main，与本 PR 无因果） |
 | 部署到云测试环境后 | 独立栈 | **normal 全量（mibao + xiaobu）** | #3503 起自动触发，失败去重建 issue |
 | 每周六 | 独立栈 | adversarial | 只追踪不阻塞 |
 | 里程碑 / 下结论前 | 独立栈 | **结论档**：全量 + 验收剧本 + 双 AI 交叉验证（GLM-5.3-Flash 复核）+ `completion_verdict` | 见 acceptance-protocol v1.3 §1.6/§1.7 |
@@ -75,8 +74,8 @@ B 端 `prod_eval_2699` 因 `created_at` 更新而排在首条 → 用例的「�
 | 触发 | 门禁 | 属性 | 实现 |
 |---|---|---|---|
 | PR（任意） | 三模块单测 / QA Growth Gate / ci-helper / gitleaks / Danger Scan | ★ **required（硬拦合并）** | pr-check 等 |
-| PR（AI 行为文件） | C 端 smoke（persona=xiaobu，独立栈）+ B 端 smoke（云测试环境） | 信息性（**不阻塞**） | `xiaobu-acceptance.yml`（pull_request + paths）/ pr-check |
-| PR（AI 行为文件） | **映射用例**（diff → §13.2 用例集，独立栈 + PR 评论 + 规则命中失败自动开 issue）——**分层**：规则命中失败 → **强信号**（报告 + 评论 + issue，**不拦合并**）；兜底默认集失败 → **只报告**（评论标"无因果"，**不开 issue**） | **均为信息性**（报告 + 评论 + issue） | `agent-behavior-eval.yml`（#3502/#3523/#3563） |
+| PR（AI 行为文件，**仅 app/**） | **映射用例 fast 迭代档**（persona 按命中用例分桶派生；规则命中失败 → 报告 + 评论 + 自动开 issue，兜底网失败 → 只报告；**均不拦合并**） | **均为信息性** | `agent-behavior-eval.yml`（#3502/#3523/#3563/#3653） |
+| PR（AI 行为文件） | ~~C 端 smoke + B 端云冒烟~~ —— **已移除**（#3653）：C 端 smoke 降为按需 `workflow_dispatch`（xiaobu-acceptance 不再 pull_request 触发）；B 端云冒烟从 pr-check 移除（评的是已部署 main，与本 PR 无因果） | — | — |
 | 部署（ai-agent 成功） | **双 persona 矩阵并行全量**（各自独立栈/全新库）→ completion_verdict 判定 → 失败去重建 issue | 部署后拦截 | `post-deploy-eval.yml`（#3503/#3515） |
 | 每周六 | adversarial 档 | 信息性 | `xiaobu-acceptance.yml`（schedule） |
 | 里程碑 / 下结论 | 结论档（全量 + 验收剧本 + 双裁判 + completion_verdict） | **结论前置（必过）** | 协议 v1.3 §1.6/§1.7 |
