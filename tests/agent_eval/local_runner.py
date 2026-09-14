@@ -4926,6 +4926,37 @@ def completion_verdict(results: list, key_journey_ids: tuple = ()) -> dict:
     }
 
 
+# `case_issues` 折进 `failed_expectations` 时用的固定 detail（见 `run_case`）。它在 summary
+# 里是纯噪音（断言原文已自带 `output_verify[...]` / `required_args:` 前缀），故序列化时不带上。
+# 与那处字面量若将来漂移，代价仅是 summary 里多一句 detail —— 不影响任何判定。
+_CASE_LEVEL_DETAIL = "case-level check"
+
+
+def _failure_texts(result: dict) -> list:
+    """用例的逐条失败原因（**断言级原文**，issue #3708「失败可归因」层）。
+
+    为什么需要（实测代价，run 34841029062）：结论档 `eval-summary-*.json` 此前只有
+    `id/score/classification/pre_clean` ⇒ `score=0` **无从定位** —— 把"确定性失败 6 条"
+    分类成"真回归 / 用例缺陷 / 种子环境"只能手工挖 2705 行作业日志；而 CI 日志有保留期，
+    **过期后这批失败就永久失去可归因性**。原因串 runner 本来就在构造
+    （`failed_expectations` = expectations 逐条 + `case_issues` 折成的 case-level 条目），
+    这里只是把它**序列化出去**（`migao-acceptance` v1.2 治法 3 / §16.2 完成定义）。
+
+    为什么取 `failed` 而不是只取 `case_issues`：`score<1.0` ⇔ 本列表非空
+    （`run_case` 里每条失败的 expectation 都 append，`case_issues` 同样折进来并在有值时
+    把 score 置 0）；只取 `case_issues` 会让"期望不匹配"型失败仍只剩一个 `score=0`。
+    反向同样成立 ⇒ **通过用例天然是空列表**，不产生噪音。
+    """
+    out = []
+    for item in (result.get("failed") or []):
+        if isinstance(item, (list, tuple)) and len(item) >= 2:
+            exp, detail = str(item[0]), str(item[1] or "")
+        else:                       # 容错：非 (断言, 详情) 二元组的形态照样可读
+            exp, detail = str(item), ""
+        out.append(f"{exp} → {detail}" if detail and detail != _CASE_LEVEL_DETAIL else exp)
+    return out
+
+
 def write_summary_json(path: str, label: str, shard: str, results: list) -> None:
     """写机器可读的本次运行汇总（issue #3361 分片基建）。
 
@@ -4933,16 +4964,25 @@ def write_summary_json(path: str, label: str, shard: str, results: list) -> None
     "全局应有 N 条订单"判断就会误报 —— 审计必须知道**本片是否真的跑了写用例**。
     顺带让"本次跑了什么、结果如何"可被脚本消费（报告/看板/回归对比），不必解析日志。
 
+    **失败可归因（issue #3708）**：判红时"哪些用例 + 为什么"必须能从这份文件直接读全，
+    不再依赖作业日志（日志有保留期）。故每个用例条目带 `failures`（断言级原文），
+    `completion` 附加 `failure_reasons`（ID → 首要原因）。**纯序列化**：既有字段、
+    `completion_verdict` 的算法与 `reason` 原文一字未动（否则与历史 run 的对比失效）。
+
     字段：
       label/shard/total/passed/failed/avg_score
       order_write_cases：本片声明 must_succeed: order_create 的用例数（0 → 审计不该告警）
       write_cases_ok：其中通过的条数（通过却没落库 = 真假绿）
-      cases：[{id, score, classification}]
+      cases：[{id, score, classification, pre_clean, failures}]
+              （`failures`：断言级失败原因数组；通过用例为 `[]`）
+      completion：completion_verdict 的判定结果 + failure_reasons（ID → 首要原因）
     """
     import json as _json
     def _declares_order_write(r) -> bool:
         # build_round_trace/结果里不保留 case 声明，故用"该用例的工具列表含 order_create"近似
         return "order_create" in (r.get("tool_calls") or [])
+    # 每条用例的失败原因（断言级原文）：用例条目与顶层 failure_reasons 共用，只算一次
+    _reasons = {str(r.get("case_id") or "?"): _failure_texts(r) for r in results}
     payload = {
         "label": label,
         "shard": shard or "",
@@ -4957,11 +4997,22 @@ def write_summary_json(path: str, label: str, shard: str, results: list) -> None
             {"id": r.get("case_id"), "score": r.get("score", 0),
              "classification": r.get("classification", ""),
              # pre_clean 证据（#3511）：机器可读，供归因区分"数据准备没生效"与"能力缺陷"
-             "pre_clean": r.get("pre_clean") or []}
+             "pre_clean": r.get("pre_clean") or [],
+             # 失败原因（#3708）：断言级原文 —— `score=0` 不必再挖日志；通过用例为 []
+             "failures": _reasons[str(r.get("case_id") or "?")]}
             for r in results
         ],
         "completion": completion_verdict(
             results, KEY_JOURNEYS_XIAOBU if PERSONA == "xiaobu" else KEY_JOURNEYS_MIBAO),
+    }
+    # 顶层判定**只加不改**（#3708）：`completion_verdict` 的算法/`reason` 原文一字未动
+    # （与历史 run 的对比必须仍成立），只**附加** `ID → 首要原因` 映射，让"哪些用例 + 为什么"
+    # 一次读全（完整原因列表在各用例条目的 `failures`；放行波动也列出，否则"为什么放行"缺证据）。
+    _verdict = payload["completion"]
+    _verdict["failure_reasons"] = {
+        cid: (_reasons.get(cid) or [""])[0]
+        for cid in (_verdict["deterministic_failures"] + _verdict["journey_failures"]
+                    + _verdict["flake_released"])
     }
     try:
         with open(path, "w", encoding="utf-8") as f:
