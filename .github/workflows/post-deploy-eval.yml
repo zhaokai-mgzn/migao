@@ -54,6 +54,12 @@ name: Post-Deploy Eval (部署后全量回归)
 permissions:
   contents: read
   issues: write  # ⚠️ 失败建 issue 必需（#3497：缺它 → 失败处理步骤 HttpError 静默崩溃）
+  # ── 降频/提速改动 3/3（#3526）：镜像层缓存需要 actions: write ──
+  # 栈构建改用 buildx + `--cache-to type=gha`（Actions 缓存服务）。没有 actions: write 时
+  # **缓存导出会失败**，而失败表现不是报错退出，而是"永远 0 命中、每次全量重建"——
+  # xiaobu-acceptance.yml 的 #3426 实测正是踩了这个（仓库 172 条缓存里没有一条 buildx）。
+  # 声明它不影响本 workflow 其余语义（permissions 是收窄语义，这里只补回缓存所需的一格）。
+  actions: write
 
 on:
   workflow_run:
@@ -63,7 +69,47 @@ on:
     #    而是**永不触发**（静默失效——与 #3497 同类"看不见的失败"）。
     workflows: ["Build and Deploy ai-agent-service"]
     types: [completed]
+  # ── 降频输入（#3526）────────────────────────────────────────────────────────
+  # 背景：本 workflow 由 #3515 落地（矩阵并行：mibao/xiaobu 各自独立栈全量）。
+  # 每次 ai-agent 部署成功 → 双栈 × 双 persona **全量真实 LLM** → CI 分钟 + token 成本 ×2。
+  # 自动门禁不能降频（门禁被削弱就形同虚设），但**手动补跑**经常只需要 1-2 条用例的
+  # 快速复验 → 故只对 workflow_dispatch 提供三个旋钮。
+  #
+  # ⚠️ 铁律：以下输入**只对 workflow_dispatch 生效**。workflow_run（部署后自动门禁）
+  #    没有 inputs，表达式 `${{ github.event.inputs.tier || 'normal' }}` 天然回落
+  #    normal 全量 —— 门禁的判定口径**不因任何人传参而改变**（这正是选表达式而非
+  #    "读 env 再判断"的原因：不存在"门禁被输入削弱"的代码路径）。
   workflow_dispatch:
+    inputs:
+      tier:
+        description: '评测档位：normal（全量，默认=自动门禁同款）| smoke（门禁级快档）| adversarial（安全/对抗）。⚠️ 仅手动触发生效，部署后自动门禁恒为 normal 全量'
+        required: false
+        default: normal
+        type: choice
+        options:
+          - normal
+          - smoke
+          - adversarial
+      case_ids:
+        description: '【降频提速】只跑这些用例（逗号分隔，如 OR-016,AS-007）——留空=按 tier 全量。改动只需复验几条时用它（30 条≈11 分钟 → 1~2 分钟）；传了它 summary 的 total 只反映这几条，别用它下"全量结论"'
+        required: false
+        default: ''
+      concurrency:
+        description: '【提速】用例级并发（同 job 内，栈只起一次）。⚠️ 评测墙钟由**最慢单条用例 + 重试尾巴**决定，并发 3→6 实测只省 ~6%（#3417）——默认 6，别指望它翻倍'
+        required: false
+        default: '6'
+        type: choice
+        options:
+          - '3'
+          - '6'
+          - '8'
+
+# ── 为什么不加 `concurrency: cancel-in-progress`（#3526 的有意决策，勿当遗漏）──
+# xiaobu-acceptance.yml 对 PR 场景用 cancel-in-progress 取消旧 run（PR 迭代快、取消划算）。
+# 本 workflow 恰恰相反：它挂在**每次部署**后面跑长评测（双 persona normal 全量，90min 预算）。
+# main 频繁合并时，取消在跑的长评测 → ① 门禁永远跑不完（旧 run 被杀、新 run 重头再来，
+# 形成"永远在跑、永远没结论"的活锁）；② 结论档丢失 —— 事后无法回答"某次部署时行为到底
+# 怎样"。宁可排队串行，也要让每一次部署都有完整的判定留痕。故**不**声明 concurrency。
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -109,9 +155,18 @@ jobs:
           cache: pip
           cache-dependency-path: backend/ai-agent-service/requirements.txt
 
-      - name: Set up Buildx
-        # 让 `docker compose up --build` 走 BuildKit 构建器（compose v2 在有 buildx
-        # 时默认用它），构建日志更完整、失败更早暴露。
+      - name: Set up Buildx（镜像层缓存，issue #3361 / #3526）
+        # ── 降频/提速改动 2/3（#3526）：从"无缓存全量重建"改为 buildx + GHA 层缓存 ──
+        # 平移 xiaobu-acceptance.yml 已验证的路径（#3426）。为什么必须：
+        #   · 本 workflow 有 **两条腿（mibao/xiaobu）各起一套栈**，且 Dockerfile 每次都
+        #     `mvn clean package` + `pip install -r`；
+        #   · 无缓存时栈构建实测在 **3.4~13min** 剧烈波动（GitHub runner 共享出口 IP，
+        #     基础镜像/依赖被 Docker Hub 限流就直奔 13min）—— 这是 90min 预算里最大且
+        #     最不稳的一块；
+        #   · 双 persona 矩阵把这份代价 ×2。
+        # buildx + `type=gha` 让层跨 run 复用：命中时大幅缩短，未命中只是退化为全量重建。
+        # ⚠️ 这里的 buildx 不再只是"让 compose 用 BuildKit"——下方构建段会**显式**调
+        #    `docker buildx build`，故这一步是硬依赖（原注释描述的是旧用法，已更新）。
         uses: docker/setup-buildx-action@v3
 
       - name: "Export dev RS256 keys for stack (issue #3270)"
@@ -160,9 +215,68 @@ jobs:
           # 的退出码取自管道最后一个命令（tail 永远成功）→ compose 失败被吞成
           # step success → 后续失败处理看不到真因（2026-09-11 实证）。
           set -o pipefail
-          # DEBUG=true：供 X-Debug-Role 路由（小布身份注入）；fail-closed 保护不受影响
-          docker compose -f deploy/docker-compose.yml up -d --build --wait \
-            --wait-timeout 300 postgres redis admin-api ai-agent-service 2>&1 | tail -20
+          # DEBUG=true（见上 env）：供 X-Debug-Role 路由（小布身份注入）；fail-closed 保护不受影响。
+          # ── 降频/提速改动 2/3（#3526）：镜像构建走 buildx + GHA 层缓存 ──
+          # 平移 xiaobu-acceptance.yml 已验证写法（#3426）：
+          #   · 用显式 tag + 覆盖文件把 compose 指向这些镜像，避免依赖 compose 的默认
+          #     命名规则（v1 `_` / v2 `-` 差异）；缓存命中时两条腿合计 ~1min；
+          #   · **失败必须回落** `docker compose up --build`（无缓存路径）—— 缓存服务是
+          #     尽力而为的优化，绝不能因为缓存抖动把门禁挡在门外（宁可慢，不可漏）；
+          #   · 构建输出**留档**并回显命中情况：原写法把输出直接吞掉，于是"缓存到底有没有
+          #     生效/是否回落"只能从"没有缓存条目、每次全量重建"**反推**（#3426 的教训是
+          #     这个静默吃了半个月）。现在 CACHED 层数与是否回落都在日志里显式可见。
+          # ⚠️ PIP_INDEX_URL：Dockerfile 默认用阿里云镜像（国内开发快），但 GitHub runner
+          #    在境外 —— 实测镜像内 pip 走阿里云 632s（~160 kB/s），同一份 requirements 用
+          #    默认 PyPI 只 23s。栈步骤 13.1min 里 10.5min 就是这一项（#3426 实测）。
+          cat > /tmp/compose-images.yml <<'YAML'
+          services:
+            admin-api:
+              image: migao-eval-admin-api
+            ai-agent-service:
+              image: migao-eval-ai-agent-service
+          YAML
+          TAG_ADMIN=migao-eval-admin-api
+          TAG_AGENT=migao-eval-ai-agent-service
+          # scope 显式带 workflow 名：GHA 缓存按 scope 分区，与 xiaobu-acceptance 分开可避免
+          # 两边互相淘汰对方的层（层本身兼容，但缓存容量有限，分区减少抖动）。
+          build_cached() {
+            local scope="$1" tag="$2" ctx="$3" df="$4"; shift 4
+            docker buildx build \
+              --cache-from "type=gha,scope=${scope}" \
+              --cache-to "type=gha,scope=${scope},mode=max" \
+              --build-arg BUILDKIT_INLINE_CACHE=1 \
+              "$@" \
+              -t "$tag" -f "$df" "$ctx" --load
+          }
+          if build_cached postdeploy-admin-api "$TAG_ADMIN" \
+               backend/admin-api backend/admin-api/Dockerfile \
+               > /tmp/buildx-admin.log 2>&1 \
+             && build_cached postdeploy-ai-agent "$TAG_AGENT" \
+                  backend/ai-agent-service backend/ai-agent-service/Dockerfile \
+                  --build-arg PIP_INDEX_URL=https://pypi.org/simple \
+                  > /tmp/buildx-agent.log 2>&1; then
+            echo "✅ 镜像构建完成（buildx + GHA cache，未回落）"
+            # ── 缓存命中回显（#3526 要求：CACHED 层数 / 是否回落必须可见）──
+            # CACHED 行数 = 复用的层数；命中 0 层 = 缓存没起作用（与"回落"是两种不同故障，
+            # 必须能一眼区分：回落看下面 else 分支的告警，命中 0 看这个计数）。
+            for lg in /tmp/buildx-admin.log /tmp/buildx-agent.log; do
+              echo "── $(basename "$lg"): CACHED 层数=$(grep -c 'CACHED' "$lg" || true) ──"
+            done
+            # cache manifest 行 = 缓存真的被导入/导出（#3426：没有它=缓存从未写入）
+            echo "── buildx 缓存活动 ──"
+            grep -ihE "importing cache manifest|exporting cache|cache manifest" \
+              /tmp/buildx-admin.log /tmp/buildx-agent.log | head -6 || \
+              echo "（无 cache manifest 行 —— 缓存未生效，检查 actions: write / scope）"
+            docker compose -f deploy/docker-compose.yml -f /tmp/compose-images.yml up -d --wait \
+              --wait-timeout 300 postgres redis admin-api ai-agent-service 2>&1 | tail -20
+          else
+            echo "::warning:: ⚠️ buildx 缓存构建失败 → 回落 docker compose up --build（无缓存路径）"
+            echo "── 回落前 buildx 输出尾部（归因用：证明是缓存问题而非代码问题）──"
+            tail -25 /tmp/buildx-admin.log 2>/dev/null || true
+            tail -25 /tmp/buildx-agent.log 2>/dev/null || true
+            docker compose -f deploy/docker-compose.yml up -d --build --wait \
+              --wait-timeout 300 postgres redis admin-api ai-agent-service 2>&1 | tail -20
+          fi
 
       - name: "Seed 评测业务数据（C 端 #3270 + B 端 #3496/#3511）"
         # 全新 bootstrap 空库下，agent 搜不到商品 → 反复重试 product_search →
@@ -197,7 +311,16 @@ jobs:
           pip install -q httpx pytest pytest-timeout pytest-rerunfailures
           pip install -q -r backend/ai-agent-service/requirements.txt
 
-      - name: Run ${{ matrix.persona }} normal（真实 LLM 全量）
+      - name: Run ${{ matrix.persona }} ${{ github.event.inputs.tier || 'normal' }}（真实 LLM）
+        # ── 降频输入 1/3（#3526）：档位/收窄/并发三个旋钮只对 workflow_dispatch 生效 ──
+        # 表达式天然满足"门禁不被削弱"：
+        #   · workflow_run（部署后自动门禁）没有 inputs → `|| 'normal'` 回落全量；
+        #   · ${{ github.event.inputs.case_ids != '' && ... || '' }} → 手动留空时展开为空串，
+        #     命令行**不会**多出 --case-ids 参数（与 xiaobu-acceptance.yml 同款写法，已验证）；
+        #   · 并发同理回落 6（即当前值，自动门禁行为完全不变）。
+        # ⚠️ case_ids 收窄后 summary 的 total 只反映这几条 —— 那是"迭代复验"信号，
+        #    不是"全量结论"；真正放行与否由 completion_verdict + 下方判定步骤说话。
+        #
         # continue-on-error 的理由（不是"为了好看"）：
         #   local_runner 的退出码是 _ci_verdict（**全绿**才算过），而门禁的判定口径是
         #   completion_verdict（确定性失败=0 + 关键旅程全过，已知 LLM 波动按台账放行，
@@ -212,8 +335,11 @@ jobs:
           PERSONA: ${{ matrix.persona }}
           PYTHONUTF8: "1"
           PYTHONIOENCODING: utf-8
+          # 计时/日志提示用（#3526）：收窄档在日志里可见（留空 = 按档全量）
+          CASE_IDS: ${{ github.event.inputs.case_ids }}
           # 用例级并发（单 job 内并行，栈只起一次，issue #3361）
-          EVAL_CONCURRENCY: "6"
+          # #3526：默认 6 = 原值（自动门禁行为不变），仅手动触发时可调
+          EVAL_CONCURRENCY: ${{ github.event.inputs.concurrency || '6' }}
           # 固定节流等待调到最小（#3417：墙钟几乎全在真实 LLM 往返上）
           EVAL_ROUND_SLEEP: "0.2"
           EVAL_CASE_SLEEP: "0.3"
@@ -222,7 +348,16 @@ jobs:
           # 机器可读汇总（本 workflow 的判定/结论/issue 要点全部消费它）
           AGENT_EVAL_SUMMARY_JSON: eval-summary-${{ matrix.persona }}.json
         run: |
-          python tests/agent_eval/local_runner.py normal --cases .github/cases
+          TIER="${{ github.event.inputs.tier || 'normal' }}"
+          # ⚠️ 这两行故意不用 `${CASE_IDS:-...}` 之类的参数展开式（更不用管道）：
+          #    tests/unit_ci_workflows/test_step_exit_code_propagation.py 的规模守卫
+          #    （判据 = 整段 run 文本含竖线且不含 pipefail）在本仓库**已经顶在上限**
+          #    （origin/main 实测 38 比 38）—— 本步骤新增一个竖线就会把它顶红，而它守的是
+          #    **退出码传播**语义，与本次降频改动无关。故要打印的值直接展开，不引入竖线。
+          echo "── 评测档位: $TIER（persona=${{ matrix.persona }}）──"
+          echo "── 并发=$EVAL_CONCURRENCY，case_ids=${CASE_IDS}（空=按档全量）──"
+          python tests/agent_eval/local_runner.py "$TIER" --cases .github/cases \
+            ${{ github.event.inputs.case_ids != '' && format('--case-ids "{0}"', github.event.inputs.case_ids) || '' }}
 
       - name: "汇总打印（total/passed/avg_score/completion.ok）"
         # `always()`：前面任何一步红了（栈没起来/评测崩了）也要把已有证据打出来
@@ -259,6 +394,70 @@ jobs:
           else
             echo "❌ ${{ matrix.persona }}: ${REASON}"
             exit 1
+          fi
+
+      - name: "Diagnose on failure (issue #3270/#3526): containers + compose config + DB probe"
+        # ── 降频/提速改动 2/3 失败归因（#3526）：平移 xiaobu-acceptance.yml 的
+        #    「Diagnose on failure」段 ──
+        # 为什么需要（失败归因面窄的实证）：`docker compose up --wait` 在依赖容器
+        # `exited (3)` 时只报一句 "dependency failed to start"，**真正的启动错误被吞掉**
+        # —— 本 workflow 是 90min 长评测，红了之后若只看到"评测连不上"，无法区分
+        # 「栈没起来（环境/基建）」与「agent 行为退化（真门禁信号）」。这两种红的处置
+        # 完全不同（前者重跑/修基建，后者按用例 ID 重放），归因面窄 = 红也不可行动。
+        # 故失败时 dump：容器状态 + 四容器日志 tail + compose 配置解析 + DB 探针。
+        #
+        # ⚠️ 必须给 DEV_SERVICE_TOKEN 一个值：deploy/docker-compose.yml 把它声明为
+        #    required（``${DEV_SERVICE_TOKEN:?...}``），缺它连 `docker compose ps/logs`
+        #    都会插值失败、拿不到任何容器信息（2026-09-11 实测踩到）。
+        #    此处**故意用固定占位串而非真实 secret** —— 诊断只读容器日志，不需要
+        #    有效令牌，用非敏感值既满足插值又不扩大 secrets 暴露面。
+        #
+        # ⚠️ `if: failure()` 且放在「判定」**之后**：判定步骤是显式 exit 1 的那一步，
+        #    排在它后面才能覆盖"评测失败 + 判定失败"两种红（放在评测之前则判定红时
+        #    诊断不触发）。矩阵下每条腿各自诊断（fail-fast: false，失败对象不混淆）。
+        if: failure()
+        env:
+          DEV_SERVICE_TOKEN: diagnostics-only-placeholder
+        run: |
+          # ⚠️ 本步骤只读、每行都做「失败即真」兜底，但**刻意不在 run 的文本里写竖线字符
+          #    （含注释）**：规模守卫 TestPipefailPatternInventory 的判据是「整段 run 文本
+          #    含竖线且不含 pipefail」，而本仓库该计数已顶在上限（origin/main 实测 38 比 38）
+          #    —— 本步骤多一个竖线就会把那个守卫顶红，而它守的是**退出码传播**语义，
+          #    与本次降频改动无关。故这里用文字描述，不写字面竖线。
+          echo "── 本腿身份（矩阵归因：是 B 端还是 C 端的栈出了问题）──"
+          echo "persona=${{ matrix.persona }}"
+          echo "── 容器状态 ──"
+          docker compose -f deploy/docker-compose.yml ps -a || true
+          for c in postgres redis admin-api ai-agent-service; do
+            echo ""
+            echo "════════ container logs: $c ════════"
+            docker compose -f deploy/docker-compose.yml logs --no-color --tail=100 "$c" || true
+          done
+          echo ""
+          echo "── 直接 docker logs（compose logs 为空时兜底）──"
+          for n in aikf-postgres aikf-redis aikf-admin-api aikf-ai-agent; do
+            echo "── $n ──"
+            docker logs --tail=60 "$n" 2>&1 || true
+          done
+          echo ""
+          echo "── compose 配置解析（确认变量插值成功）──"
+          docker compose -f deploy/docker-compose.yml config --services || true
+          echo ""
+          echo "── DB 关键状态探针（tenant 种子 / schema_migrations）──"
+          # 这两个探针回答"是种子/迁移没跑成，还是 agent 行为退化"：
+          #   tenant 种子缺失 → 会话创建 500（环境问题）；迁移链断裂 → schema 与代码不匹配。
+          docker compose -f deploy/docker-compose.yml exec -T postgres \
+            psql -U app_user -d ai_customer_service -c "SELECT id,name FROM tenants;" 2>&1 || true
+          docker compose -f deploy/docker-compose.yml exec -T postgres \
+            psql -U app_user -d ai_customer_service -c "SELECT version FROM schema_migrations ORDER BY version DESC LIMIT 8;" 2>&1 || true
+          echo ""
+          echo "── 本腿汇总文件（判定红时直接看 reason；未产出则说明挂在环境层）──"
+          # 整份 cat（不截断、不接管道）：summary 体积小，日志里保留完整 JSON 比"截断到 2000 字节"
+          # 更适合归因（issue 要点也正是从这份文件读的）。
+          if [ -f "eval-summary-${{ matrix.persona }}.json" ]; then
+            cat "eval-summary-${{ matrix.persona }}.json"
+          else
+            echo "⚠️ 无 eval-summary-${{ matrix.persona }}.json（评测未跑到写汇总处，属环境/栈问题）"
           fi
 
       - name: Upload 汇总 + 波动台账（artifact，跨 persona 不重名）
