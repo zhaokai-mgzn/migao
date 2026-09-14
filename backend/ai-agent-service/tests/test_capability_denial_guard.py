@@ -146,11 +146,13 @@ class TestCapabilityPredicatesAreFactDriven:
         那是事实名而不是 skill 名 —— 裸子串会把事实判据误报成白名单。
         """
         names = set(_SKILL_NAME_SAMPLES)
+        # 真实 skill 名一并纳入（新增 skill 自动进入本不变式）；取不到就用静态样本兜底
         try:
             from app.graph.skills.skill_registry import get_skill_registry
-            names |= set(get_skill_registry().get_names())
         except Exception:
-            pass
+            get_skill_registry = None
+        if get_skill_registry is not None:
+            names |= set(get_skill_registry().get_names())
         offenders = []
         for name in self.GUARD_FUNCS:
             fn = getattr(base_skill, name)
