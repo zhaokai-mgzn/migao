@@ -150,8 +150,71 @@ BEGIN
 END $$;
 
 -- ============================================================================
--- Phase 2 TODO（#3496 剩余失败）：AS-003/AS-004/PG-013 依赖**含加工项的历史订单**，
--- 需按 6.x 的 orders/order_items 模式补 B 端种子订单（含加工项关联）。
--- 另有 HR-003 的真实失败形态是 `employee_manage!权限不足` —— 属**独立栈 debug 身份
--- 的角色权限配置缺口**（非种子问题），需在栈侧给 debug admin 身份补员工管理权限。
+-- Phase 2（#3511）：B 端历史订单 —— AS-003（退货挂单）/ PG-013（加工单生成）
+-- ============================================================================
+-- 为什么需要：B 端首跑（run 34804430769）这三条失败的原因是**干净库没有可挂单/可加工的订单**：
+--   · AS-003 原输入硬编码订单号「20260910619250007」（云测试环境存量数据）→ 干净库必然查不到
+--     ⇒ 本 PR 同时把该用例**自包含化**（输入改为「查一下最近的订单」，见 aftersales.yml）
+--   · PG-013 输入「最近有没有已确认、需要加工的订单？」→ 需要 status=confirmed 且明细带
+--     processing_info 的订单存在，否则 agent 无从生成加工单（行为合理）
+-- 命名/金额与 C 端 seed（xiaobu_eval_seed.sql）同风格，便于互证。
+INSERT INTO orders
+  (id, tenant_id, order_no, user_id, customer_name, customer_phone, customer_address,
+   total_amount, status, payment_status, stock_deducted, follow_status, remark,
+   created_at, updated_at, deleted)
+VALUES
+  ('b1c2d3e4-f5a6-4b7c-8d9e-000000000001', 1, 'EVAL-MB-ORD-0001', NULL, '张三', '13800138000',
+   '浙江省杭州市西湖区文三路 1 号 1 幢 101 室', 528.00, 'completed', 'paid', TRUE,
+   'completed', 'B 端评测 fixture：已完成订单（AS-003 退货挂单用）',
+   TIMESTAMPTZ '2026-09-01 10:00:00+08', TIMESTAMPTZ '2026-09-05 10:00:00+08', 0),
+  ('b1c2d3e4-f5a6-4b7c-8d9e-000000000002', 1, 'EVAL-MB-ORD-0002', NULL, '张三', '13800138000',
+   '浙江省杭州市西湖区文三路 1 号 1 幢 101 室', 528.00, 'confirmed', 'paid', TRUE,
+   'completed', 'B 端评测 fixture：已确认含加工项订单（PG-013 加工单生成用）',
+   TIMESTAMPTZ '2026-09-10 10:00:00+08', TIMESTAMPTZ '2026-09-10 10:00:00+08', 0)
+ON CONFLICT (id) DO NOTHING;
+
+-- 订单明细：第二笔带 processing_info（PG-013「需要加工的订单」的判定依据）；
+-- 加工项与 pi_eval_punch（纳米圈打孔 ¥8/米）一致，quantity=3 米 → subtotal=24。
+INSERT INTO order_items
+  (id, tenant_id, order_id, product_id, product_name, quantity, unit_price,
+   width, height, processing_info, subtotal, deleted)
+VALUES
+  ('oit_mb_0001', 1, 'b1c2d3e4-f5a6-4b7c-8d9e-000000000001', 'prod_eval_blackout', '遮光窗帘',
+   3, 168.00, 3.00, 2.80, NULL, 504.00, 0),
+  ('oit_mb_0002', 1, 'b1c2d3e4-f5a6-4b7c-8d9e-000000000002', 'prod_eval_blackout', '遮光窗帘',
+   3, 168.00, 3.00, 2.80,
+   '{"colorName":"米白","sellingMethod":"bulk_cut","doorWidth":"2.8","processingItems":[{"id":"pi_eval_punch","name":"纳米圈打孔","unitPrice":8.0,"quantity":3,"unit":"米","pricingMethod":"per_meter","subtotal":24.0}],"processingFee":24.0}'::jsonb,
+   504.00, 0)
+ON CONFLICT (id) DO NOTHING;
+
+-- 数据核对（Phase 2）
+DO $$
+DECLARE
+  v_done   INTEGER;
+  v_conf   INTEGER;
+  v_proc   INTEGER;
+BEGIN
+  SELECT count(*) INTO v_done FROM orders
+   WHERE tenant_id = 1 AND order_no = 'EVAL-MB-ORD-0001' AND deleted = 0;
+  SELECT count(*) INTO v_conf FROM orders
+   WHERE tenant_id = 1 AND order_no = 'EVAL-MB-ORD-0002' AND status = 'confirmed' AND deleted = 0;
+  SELECT count(*) INTO v_proc FROM order_items
+   WHERE order_id = 'b1c2d3e4-f5a6-4b7c-8d9e-000000000002'
+     AND processing_info IS NOT NULL AND deleted = 0;
+  RAISE NOTICE 'B 端 Phase 2 核对: 已完成订单=% 已确认订单=% 含加工项明细=%',
+    v_done, v_conf, v_proc;
+  IF v_done < 1 OR v_conf < 1 OR v_proc < 1 THEN
+    RAISE EXCEPTION 'B 端 Phase 2 注入失败：已完成=% 已确认=% 含加工项=%', v_done, v_conf, v_proc;
+  END IF;
+END $$;
+
+-- ============================================================================
+-- Phase 3 TODO（#3496 剩余失败）：
+--   · AS-004「查看最近的售后工单 → 关闭第一张未处理工单」需要**预置未处理工单**
+--     （after_sales 系表 seed，Phase 3）
+--   · HR-003 真实失败形态是 `employee_manage!权限不足` —— 属**独立栈评测身份的角色权限
+--     配置缺口**（非种子，见 #3511 评论的机制定位：tool 需 allowed_roles/employee:list，
+--     默认岗位由 Flyway V29/V32 种入 → 需在栈侧授予评测身份含该权限的岗位；
+--     **不得放宽工具护栏**）
+--   · PR-016（applicable_category_id 未传）待重放判别：真行为缺口 → 修引导；等价变体 → 校准断言
 -- ============================================================================
