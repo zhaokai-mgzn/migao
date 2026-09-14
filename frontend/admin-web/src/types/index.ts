@@ -620,6 +620,8 @@ export interface ProcessingOrderUpdateParams {
 // 物流信息
 export interface LogisticsInfo {  logisticsCompany?: string
   trackingNo?: string
+  /** 发货人（发货单纸面「经手人」，issue #3768）；存量订单为 undefined → 打印留空 */
+  shipperName?: string
   status?: string
   shippingMethod?: 'logistics' | 'none'  // 物流发货 / 无需物流
   tracks?: LogisticsTrack[]
@@ -716,6 +718,8 @@ export interface LogisticsFormData {
   company: string
   trackingNo: string
   shippingMethod: 'logistics' | 'none'
+  /** 发货人（发货单「经手人」，issue #3768）：默认预填当前登录人姓名，可改成实际发货人 */
+  shipperName?: string
 }
 
 // 关闭订单参数

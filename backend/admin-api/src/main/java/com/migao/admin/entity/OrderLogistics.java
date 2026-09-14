@@ -30,6 +30,12 @@ public class OrderLogistics {
 
     private String trackingNo;
 
+    /**
+     * 发货人姓名（发货单纸面「经手人」，issue #3768）。
+     * 存量数据为 null —— 历史上从未采集，打印/展示时空值显示「-」。
+     */
+    private String shipperName;
+
     /** in_transit / delivered / returned */
     private String status;
 

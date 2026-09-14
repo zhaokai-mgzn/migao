@@ -1316,3 +1316,50 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+
+  - id: UI-040
+    legacy_id: ""
+    title: "发货单：发货人落库（预填当前登录人可改）+ 可打印纸质单据（发货前打 / 发货后补打）（#3768）"
+    domains:
+      - ui
+      - frontend
+      - order
+    tier: normal
+    tags:
+      - ui
+      - order
+      - shipment
+      - print
+      - admin-web
+    truths_ref:
+      - frontend-fix.vitest
+    user_inputs:
+      - "发货时要拿着一张单据照单拣货/打包，纸面还要留经手人（发货人）；但系统里发货只填了承运商+运单号，既没有可打印的发货单，也没有任何发货人留痕"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "发货页新增「发货人」输入：默认预填当前登录人姓名（name→nickname→username 兜底链，但**不**退化为「管理员」这类角色名），允许改成实际经手人；清空则拒绝提交（toast「请输入发货人」）"
+      - "确认发货 payload 携带 shipperName（trim 后非空才下发）；后端 PUT /api/admin/orders/{id}/logistics 落库 order_logistics.shipper_name，传空时用 SecurityUser.userId 查 users.nickname 兜底（agent order_manage(update_logistics) 路径同口径——order_manage 透传 X-User-Id）"
+      - "更新已有物流时**仅**在显式传入非空才覆盖发货人：改运单号/纠错不等于换经手人；存量订单（shipper_name 为 NULL）不为历史数据猜经手人"
+      - "order_logistics.shipper_name 必须 nullable：存量已发货订单历史上无此数据，打印留空，不得回填假值（否则迁移失败或纸面出现伪造经手人）"
+      - "新增可打印「发货单」（ShipmentDoc）：A4（@page size: A4）+ body visibility 隔离；纸面含 订单号/下单时间/收货人/电话/地址/商品明细（品名·货号·颜色·规格·数量·单价·金额）/合计（总数量+总金额）/加工项与加工费合计/备注/发货人/物流公司·运单号（发货前留空供手写，发货后带出）"
+      - "入口两处：发货页（发货前打印，发货人取当前输入值，未保存也印）+ 订单详情页 shipped/completed 状态「打印发货单」（补打——发货页有状态守卫，shipped 后进不去）；待付款等未发货状态不显示该入口"
+      - "发货单渲染在页面级，**不得**放进 Modal（Modal 为 max-h-full + 内部 overflow-y-auto，打印只会打出可视一屏、多页明细被裁）；每页只挂一份（.shipment-print-area 为全局选择器，挂两份会打印出两套单据）"
+      - "不向 C 端顾客泄漏发货人：customer_logistics_track 按白名单字段构造返回（order_id/order_no/tracking_number/company/status/status_text/latest/traces），响应中不含 shipperName"
+    skip_reason: "纯前端 UI + 后端字段落库，由 vitest 单测（ShipmentDoc/ship-order/order-detail/data-adapter）与 MockMvc/Service 单测（OrderControllerTest/AgentOrderServiceTest/UserServiceTest）验证；非 LLM 行为（agent 工具参数未变，发货人由后端按 X-User-Id 兜底），不进入 agent-eval 冒烟"
+    merge_log: "2026-09-15 新增（issue #3768）：发货单闭环 —— 发货人落库（预填登录人可改 + 后端 userId 兜底；更新不覆盖原经手人）+ 可打印纸质发货单（A4，发货前打 / 发货后补打）+ C 端不泄漏发货人"
+    traces:
+      tests:
+        - "frontend/admin-web/tests/unit/components/ShipmentDoc.test.tsx"
+        - "frontend/admin-web/tests/unit/components/LogisticsForm.test.tsx"
+        - "frontend/admin-web/tests/unit/pages/ship-order.test.tsx"
+        - "tests/e2e/specs/orders/shipment-doc.spec.ts"
+        - "frontend/admin-web/tests/unit/pages/order-detail.test.tsx"
+        - "frontend/admin-web/tests/unit/lib/data-adapter.test.ts"
+        - "backend/admin-api/src/test/java/com/migao/admin/controller/OrderControllerTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/AgentOrderServiceTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/UserServiceTest.java"
+        - "backend/ai-agent-service/tests/test_tools_customer_logistics_track.py"
+      ci:
+        - pr-check.yml
+      verifies: []

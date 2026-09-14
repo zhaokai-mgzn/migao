@@ -705,6 +705,7 @@ CREATE TABLE order_logistics (
     order_id VARCHAR(64) NOT NULL REFERENCES orders(id),
     logistics_company VARCHAR(128) NOT NULL,
     tracking_no VARCHAR(128) NOT NULL,
+    shipper_name VARCHAR(64),                 -- 发货人（发货单纸面「经手人」，V45 迁移；存量 NULL）
     status VARCHAR(32) DEFAULT 'in_transit',  -- in_transit / delivered / returned
     tracking_info JSONB DEFAULT '[]',  -- 物流轨迹
     shipped_at TIMESTAMP WITH TIME ZONE,

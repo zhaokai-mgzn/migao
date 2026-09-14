@@ -66,6 +66,8 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
     private final ObjectMapper objectMapper;
     private final NotificationService notificationService;
     private final ProcessingOrderMapper processingOrderMapper;
+    /** 发货人兜底解析（issue #3768）：当前登录用户姓名 */
+    private final UserService userService;
 
     /**
      * 订单号序列号（线程安全）
@@ -741,6 +743,7 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
             logisticsInfo.setTrackingNo(logistics.getTrackingNo());
             logisticsInfo.setStatus(logistics.getStatus());
             logisticsInfo.setTrackingInfo(logistics.getTrackingInfo());
+            logisticsInfo.setShipperName(logistics.getShipperName());
             logisticsInfo.setShippedAt(logistics.getShippedAt());
             logisticsInfo.setDeliveredAt(logistics.getDeliveredAt());
             response.setLogistics(logisticsInfo);
@@ -1707,7 +1710,7 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
                     throw BusinessException.validationError("trackingNumber 不能为空");
                 }
                 upsertLogistics(resolvedId, request.getLogisticsCompany().trim(),
-                        request.getTrackingNumber().trim());
+                        request.getTrackingNumber().trim(), null);
                 // 发货语义：记录物流后将订单流转为 shipped（与契约 order_manage(update_logistics) 可发货一致）
                 shipOrderIfApplicable(resolvedId);
                 yield getOrderById(resolvedId);
@@ -1718,9 +1721,30 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
     }
 
     /**
-     * 更新/创建订单物流信息：存在最新物流记录则更新，否则新建（status=in_transit）。
+     * 发货人取值（issue #3768）：显式传入优先，否则用当前登录用户姓名兜底。
+     *
+     * <p>两条发货路径共用同一口径 —— B 端 {@code PUT /api/admin/orders/{id}/logistics}
+     * （前端发货页预填当前登录人、可改成实际发货人）与 agent
+     * {@code order_manage(action=update_logistics)}（透传 {@code X-User-Id}）。
+     *
+     * @param provided 请求显式提供的发货人，可为空
+     * @return 发货人姓名；都取不到时返回 null（打印/展示显示「-」）
      */
-    private void upsertLogistics(String orderId, String logisticsCompany, String trackingNo) {
+    public String resolveShipperName(String provided) {
+        if (StringUtils.hasText(provided)) {
+            return provided.trim();
+        }
+        return userService.resolveCurrentUserDisplayName();
+    }
+
+    /**
+     * 更新/创建订单物流信息：存在最新物流记录则更新，否则新建（status=in_transit）。
+     *
+     * <p>发货人（issue #3768）语义：新建时取 {@code resolveShipperName(provided)}；
+     * 更新时**仅**在显式传入非空时覆盖 —— 后续改运单号/纠错不等于换发货人，
+     * 也不能因为「别人来改单号」就把经手人改成那个人，更不能为存量历史数据猜一个经手人。
+     */
+    private void upsertLogistics(String orderId, String logisticsCompany, String trackingNo, String shipperName) {
         List<OrderLogistics> existing = orderLogisticsMapper.selectByOrderId(orderId, TenantContext.getTenantId());
         if (existing == null || existing.isEmpty()) {
             OrderLogistics logistics = OrderLogistics.builder()
@@ -1728,15 +1752,22 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
                     .orderId(orderId)
                     .logisticsCompany(logisticsCompany)
                     .trackingNo(trackingNo)
+                    .shipperName(resolveShipperName(shipperName))
                     .status("in_transit")
                     .shippedAt(OffsetDateTime.now())
                     .build();
             orderLogisticsMapper.insert(logistics);
-            log.info("创建物流信息成功: orderId={}, trackingNo={}", orderId, trackingNo);
+            log.info("创建物流信息成功: orderId={}, trackingNo={}, shipper={}",
+                    orderId, trackingNo, logistics.getShipperName());
         } else {
             OrderLogistics latest = existing.get(0);
             latest.setLogisticsCompany(logisticsCompany);
             latest.setTrackingNo(trackingNo);
+            // 仅显式传入才覆盖：兜底值属于「新建时的经手人」，不能用它改写已记录的发货人
+            // （否则改一次运单号/agent 补一次单号就会把经手人换成当次操作人）
+            if (StringUtils.hasText(shipperName)) {
+                latest.setShipperName(shipperName.trim());
+            }
             if (latest.getStatus() == null) {
                 latest.setStatus("in_transit");
             }

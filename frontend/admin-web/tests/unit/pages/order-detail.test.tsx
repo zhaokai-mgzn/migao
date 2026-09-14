@@ -1,4 +1,4 @@
-// case_ids: OR-001, OR-002, OR-003, UI-024
+// case_ids: OR-001, OR-002, OR-003, UI-024, UI-040
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -49,6 +49,8 @@ vi.mock('dayjs', () => ({
 vi.mock('@/components/orders', () => ({
   OrderProgressSteps: () => <div data-testid="order-progress">OrderProgressSteps</div>,
   ProcessingOrderBlock: () => <div data-testid="po-block">ProcessingOrderBlock</div>,
+  // 纸质发货单（issue #3768）：本文件只验证入口按钮，单据内容由 ShipmentDoc.test.tsx 覆盖
+  ShipmentDoc: () => <div data-testid="shipment-doc">ShipmentDoc</div>,
   CloseOrderModal: ({ open }: any) => open ? <div data-testid="close-modal">CloseModal</div> : null,
   LogisticsForm: ({ open }: any) => open ? <div data-testid="logistics-form">LogisticsForm</div> : null,
   RefundOrderModal: ({ open, onConfirm }: any) =>
@@ -254,6 +256,61 @@ describe('OrderDetailPage', () => {
     await waitFor(() => {
       expect(screen.getByRole('button', { name: '退款' })).toBeInTheDocument()
     })
+  })
+
+  // ===== 补打发货单（issue #3768 / UI-040）：发货页有状态守卫进不去，重打只能从详情页 =====
+
+  it('已发货订单操作区显示「打印发货单」且点击真的触发 window.print', async () => {
+    const printSpy = vi.fn()
+    window.print = printSpy as any
+    mockGetOrder.mockResolvedValue({
+      data: { data: { ...mockOrder, status: 'shipped', refundAmount: 0 } },
+    })
+    render(<OrderDetailPage />)
+
+    const btn = await screen.findByRole('button', { name: /打印发货单/ })
+    await userEvent.setup().click(btn)
+
+    expect(printSpy).toHaveBeenCalledTimes(1)
+  })
+
+  it('已完成订单也能补打发货单', async () => {
+    mockGetOrder.mockResolvedValue({
+      data: { data: { ...mockOrder, status: 'completed', refundAmount: 0 } },
+    })
+    render(<OrderDetailPage />)
+
+    expect(await screen.findByRole('button', { name: /打印发货单/ })).toBeInTheDocument()
+  })
+
+  it('待付款订单没有发货单入口（未发货谈不上补打）', async () => {
+    mockGetOrder.mockResolvedValue({
+      data: { data: { ...mockOrder, status: 'pending_payment', refundAmount: 0 } },
+    })
+    render(<OrderDetailPage />)
+
+    await waitFor(() => expect(screen.getAllByText('订单详情').length).toBeGreaterThanOrEqual(1))
+    expect(screen.queryByRole('button', { name: /打印发货单/ })).not.toBeInTheDocument()
+  })
+
+  it('编辑物流弹窗回填已落库的发货人（存量为空时也可在此补齐）', async () => {
+    mockGetOrder.mockResolvedValue({
+      data: {
+        data: {
+          ...mockOrder,
+          status: 'shipped',
+          refundAmount: 0,
+          logistics: { logisticsCompany: '顺丰速运', trackingNo: 'SF1', shipperName: '王五' },
+        },
+      },
+    })
+    render(<OrderDetailPage />)
+
+    await userEvent.setup().click(await screen.findByRole('button', { name: '编辑物流' }))
+
+    // LogisticsForm 在本文件被 mock 成占位 div；此处只锁定「弹窗被打开」这一可见结果，
+    // 回填细节由 LogisticsForm/发货人字段的组件测试与后端落库测试覆盖
+    expect(await screen.findByTestId('logistics-form')).toBeInTheDocument()
   })
 
   it('已退款订单（refundAmount > 0）操作区不显示 退款 按钮', async () => {

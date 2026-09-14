@@ -44,6 +44,8 @@ class AgentOrderServiceTest {
     @Mock(lenient = true) private com.fasterxml.jackson.databind.ObjectMapper objectMapper;
     @Mock(lenient = true) private FinanceTransactionMapper financeTransactionMapper;
     @Mock(lenient = true) private ProcessingOrderMapper processingOrderMapper;
+    /** 发货人兜底（issue #3768）：agent 无独立身份 → 取当前登录用户姓名 */
+    @Mock(lenient = true) private UserService userService;
 
     private Order testOrder;
 
@@ -439,6 +441,8 @@ class AgentOrderServiceTest {
         @DisplayName("无物流记录时新建物流并将 confirmed 订单流转为 shipped")
         void createsLogisticsAndShips() {
             AgentOrderUpdateRequest req = buildRequest("顺丰", "SF1234567890");
+            // 发货人兜底：agent 透传的 X-User-Id → users.nickname
+            when(userService.resolveCurrentUserDisplayName()).thenReturn("李四");
 
             when(orderMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(testOrder); // resolve UUID
             when(orderLogisticsMapper.selectByOrderId(eq("order-uuid-001"), any())).thenReturn(List.of()); // 无物流 → 新建
@@ -452,9 +456,10 @@ class AgentOrderServiceTest {
             OrderDetailResponse result = (OrderDetailResponse)
                     orderService.updateOrderForAgent("order-uuid-001", req, 1L);
 
-            // then: 创建物流记录 + 状态流转 shipped
+            // then: 创建物流记录（含发货人兜底）+ 状态流转 shipped
             verify(orderLogisticsMapper).insert(org.mockito.ArgumentMatchers.<OrderLogistics>argThat(l ->
-                    "顺丰".equals(l.getLogisticsCompany()) && "SF1234567890".equals(l.getTrackingNo())));
+                    "顺丰".equals(l.getLogisticsCompany()) && "SF1234567890".equals(l.getTrackingNo())
+                            && "李四".equals(l.getShipperName())));
             verify(orderMapper).update(any(), any());
             assertThat(result).isNotNull();
         }
@@ -463,10 +468,14 @@ class AgentOrderServiceTest {
         @DisplayName("已有物流记录时更新物流信息")
         void updatesExistingLogistics() {
             AgentOrderUpdateRequest req = buildRequest("中通", "ZT123456");
+            // 关键判别力：当前操作人**有名字**。若实现用「兜底值」去覆盖已记录的发货人，
+            // 这里就会把「李四」改成「王五」→ 断言红。（不 stub 的话兜底恒为 null，
+            // 缺陷实现也能"看起来对"——那是无判别力的假绿）
+            when(userService.resolveCurrentUserDisplayName()).thenReturn("王五");
 
             OrderLogistics existing = OrderLogistics.builder()
                     .id("log-001").orderId("order-uuid-001").tenantId(1L)
-                    .logisticsCompany("顺丰").trackingNo("SFOLD").status("in_transit").build();
+                    .logisticsCompany("顺丰").trackingNo("SFOLD").shipperName("李四").status("in_transit").build();
 
             when(orderMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(testOrder);
             when(orderLogisticsMapper.selectByOrderId(eq("order-uuid-001"), any())).thenReturn(List.of(existing));
@@ -479,9 +488,39 @@ class AgentOrderServiceTest {
             // when
             orderService.updateOrderForAgent("order-uuid-001", req, 1L);
 
-            // then: 更新最新物流记录
+            // then: 更新最新物流记录，且**不覆盖**已记录的发货人
+            // （改运单号/纠错 ≠ 换发货人；agent 本次操作人不该顶替首发的经手人）
             verify(orderLogisticsMapper).updateById(org.mockito.ArgumentMatchers.<OrderLogistics>argThat(l ->
-                    "中通".equals(l.getLogisticsCompany()) && "ZT123456".equals(l.getTrackingNo())));
+                    "中通".equals(l.getLogisticsCompany()) && "ZT123456".equals(l.getTrackingNo())
+                            && "李四".equals(l.getShipperName())));
+        }
+
+        @Test
+        @DisplayName("存量订单（发货人为空）改运单号：不为历史数据猜经手人")
+        void doesNotGuessShipperForLegacyRecord() {
+            AgentOrderUpdateRequest req = buildRequest("中通", "ZT123456");
+            // 关键判别力：当前操作人**有名字** —— 缺陷实现会把「王五」写进历史订单，
+            // 于是纸面上出现一个从未发过这批货的经手人
+            when(userService.resolveCurrentUserDisplayName()).thenReturn("王五");
+
+            OrderLogistics legacy = OrderLogistics.builder()
+                    .id("log-002").orderId("order-uuid-001").tenantId(1L)
+                    .logisticsCompany("顺丰").trackingNo("SFOLD").status("in_transit").build(); // shipperName = null
+
+            when(orderMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(testOrder);
+            when(orderLogisticsMapper.selectByOrderId(eq("order-uuid-001"), any())).thenReturn(List.of(legacy));
+            when(orderLogisticsMapper.updateById(any(OrderLogistics.class))).thenReturn(1);
+            when(orderMapper.selectById("order-uuid-001")).thenReturn(testOrder);
+            when(orderMapper.update(any(), any())).thenReturn(1);
+            when(orderItemMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
+            when(orderItemMapper.selectByOrderId(any(), any())).thenReturn(List.of());
+
+            // when
+            orderService.updateOrderForAgent("order-uuid-001", req, 1L);
+
+            // then: 发货人保持 null（宁可空白显示「-」，也不把当次操作人写成历史经手人）
+            verify(orderLogisticsMapper).updateById(org.mockito.ArgumentMatchers.<OrderLogistics>argThat(l ->
+                    l.getShipperName() == null));
         }
 
         @Test

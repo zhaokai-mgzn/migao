@@ -8,11 +8,14 @@ import com.migao.admin.exception.BusinessException;
 import com.migao.admin.mapper.RoleMapper;
 import com.migao.admin.mapper.UserMapper;
 import com.migao.admin.mapper.UserRoleMapper;
+import com.migao.admin.security.SecurityUser;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
@@ -94,6 +97,38 @@ public class UserService implements UserDetailsService {
             throw BusinessException.notFound("用户");
         }
         return user;
+    }
+
+    /**
+     * 当前登录用户的展示姓名（操作人留痕用，如发货单「发货人」，issue #3768）。
+     *
+     * <p>用 {@link SecurityUser#getUserId()} 查 users.nickname —— <b>不能</b>直接取
+     * {@code SecurityUser.displayName}：内部服务调用（agent 代发）时它恒为
+     * "internal-service"，B 端登录时它是 JWT 的 username（通常是手机号），都不是「姓名」。
+     *
+     * <p>真实操作人由两条路径共同保证：B 端 JWT（subject = users.id）、ai-agent 透传的
+     * {@code X-User-Id}（{@code ServiceTokenFilter} 落到 {@code SecurityUser.userId}）。
+     *
+     * @return 姓名（昵称优先，退化为手机号）；解析不到（未认证 / 平台管理员 / 用户不存在）
+     *         返回 null —— 这是尽力而为的展示字段，不抛异常打断发货主流程
+     */
+    public String resolveCurrentUserDisplayName() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || !(auth.getPrincipal() instanceof SecurityUser securityUser)) {
+            return null;
+        }
+        String userId = securityUser.getUserId();
+        if (!StringUtils.hasText(userId)) {
+            return null;
+        }
+        User user = userMapper.selectById(userId);
+        if (user == null) {
+            return null;
+        }
+        if (StringUtils.hasText(user.getNickname())) {
+            return user.getNickname();
+        }
+        return StringUtils.hasText(user.getPhone()) ? user.getPhone() : null;
     }
 
     /**
