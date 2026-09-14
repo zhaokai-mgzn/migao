@@ -14,8 +14,8 @@
 
 | 用例 | 基线 `34809055526` | 关键签名 | 归因层级 | 定性 | 处置 |
 |---|---|---|---|---|---|
-| **OR-015** | ❌ 0%（`validate_input` + `order_create` 双 unmatched） | 4 轮 `interact(choice)` 追问颜色，**零写工具** | 引导层（脚本缺应答轮） | **用例资产缺陷** | 已登记 **#3544** §2；本包给行号级改法（§3.1） |
-| **AS-003** | ❌ 67%（`after_sales_manage or aftersale_create` unmatched） | R2 起 `tools=-`，原文「"这个订单"我没法确定具体是哪一笔」 | 数据/引导层（多单无唯一指代 + 缺澄清轮） | **用例资产缺陷**（非双端挂错端） | 并入 **#3568** 范围；本包给行号级改法（§3.2） |
+| **OR-015** | ❌ 0%（两 run 一致，`[reproducible]`） | 4 轮 `interact(choice)` 追问颜色，**零写工具** | 引导层（脚本缺应答轮） | **用例资产缺陷** | 已登记 **#3544** §2；本包给行号级改法（§3.1） |
+| **AS-003** | ❌ 67%（两 run 一致，`[reproducible]`） | R1 返回 5 单；R2 无工具 + 拒在订单模块建售后工单 | 数据/引导层（多单无唯一指代 + 缺澄清轮） | **用例资产缺陷**（非双端挂错端） | 并入 **#3568** 范围；本包给行号级改法（§3.2） |
 
 **两条为何卡住 `completion_verdict`**：runner 把「两次同指纹失败」判为 `reproducible`（`tests/agent_eval/local_runner.py:1599`、`_classify_attempts` `:1652-1661`），
 而 `completion_verdict` 把 `reproducible` 计入**确定性失败**（`:3942-3948`）→ 判据「确定性失败 = 0」不成立 ⇒ **"评测可下结论"被卡死**（不是"分数不够高"，是"结论未验证"）。
@@ -88,10 +88,12 @@ baseline 结尾原文：
 #### 判据（三条，逐条可验）
 
 1. **写工具零调用**：`tools=` 汇总里**没有** `validate_input`，**没有** `order_create`；4 轮全是 `product_search` / `product_detail` / `interact`。→ 断言 `expectations: [validate_input, order_create]` 必然 unmatched（`order.yml:635-637`）。
-2. **agent 行为合理且可解释**：`product_detail(prod_eval_blackout)` 返回**2 个颜色**（米白 / 浅灰，`tests/agent_eval/fixtures/mibao_eval_seed.sql` 的 `product_colors`），交互卡是该 SKU 维度的**唯一合法取值路径** → agent 反复请求「颜色」不是缺陷，是正确行为（同期 **OR-016**（`order.yml:667+`）首轮输入里**显式给了**「2699-03暖米色」→ 4 轮走通 `order_create`，`score=100%`，同 run 同栈对照）。
+2. **agent 行为合理且可解释（且颜色数据可静态定位）**：`product_detail(prod_eval_blackout)` 返回**恒定 2 个颜色** —— 单一源是 **C 端种子** `tests/agent_eval/fixtures/xiaobu_eval_seed.sql:69-71`（`米白`/`浅灰`，B 端栈是"C 端 seed 先跑 + mibao seed 叠加"，故 B 端同样有）；两个颜色各有一条 `bulk_cut / 2.8` 的 `product_skus` 行（同文件 `:88-94`）⇒ 交互卡是该 SKU 维度的**唯一合法取值路径**，且**确定性**（非本 run 偶发） → agent 反复请求「颜色」不是缺陷，是正确行为（同期 **OR-016**（`order.yml:667+`）首轮输入里**显式给了**「2699-03暖米色」→ 4 轮走通 `order_create`，`score=100%`，同 run 同栈对照）。
 3. **脚本从未提供颜色**：`order.yml:630-634` 的 4 轮台词为
    `创建订单，张三 13800138000 遮光窗帘 3 米` / `散剪，2.8米门幅` / `不添加加工项，确认下单` / `确认下单`
    —— **无一轮含颜色值**，而 R3/R4 发的是**裸文本**（B 端写操作受 confirm 门禁约束：文字 ≠ 点卡，见 `migao-dev-flow` §13.5），所以即使 agent 走到收尾也拿不到"点卡"信号。
+
+**另一处可静态定位的确认**：`order.yml:632` 的 R2 台词 `散剪，2.8米门幅` 是**裸文本**（不是点卡值），agent 本轮无卡可答、颜色槽位仍空，于是 R2 继续发颜色卡 —— 与 R1 的卡 `cardreq=choice:请选择遮光窗帘的规格（颜色 | 售卖方式 | 门幅 | 单价）` 是同一件事的两面，脚本没有任何一轮把"颜色"这个槽位填上。
 
 **为什么是确定性而非 LLM 发散**：两条失败路径（本 run R1–R4 全卡颜色 / 另一 worker run `34807151893` R1–R4 走到 `validate_input` 后卡确认卡）**都**以「脚本台词用尽、停在待应答态」收尾，签名稳定 ⇒ runner 判 `[reproducible]` 与行为事实一致。
 
@@ -280,9 +282,63 @@ PR body 的 `# case_ids: PR-005, AS-003, PR-019, OR-015, HR-005, PP-006, PR-021,
 
 **本机限制（已核实，未伪造）**：本机**无 docker**、`backend/ai-agent-service/.env` **不存在**（无 LLM 凭据）⇒ **本机无法跑真实 LLM**，故重放全部走 CI。
 
-### 5.1 run 34810196540 结论（回填）
+### 5.1 run [34810196540](https://github.com/zhaokai-mgzn/migao/actions/runs/34810196540) 结论：**两条在最新 main 上仍复现（`[reproducible]` ×2）**
 
-> _（本节在 run 出结论后回填；若 run 结论与基线一致，则"最新 main 仍复现"成立；若某条转绿，则须按 §5 补"改前/改后"成对证据并重新归因。）_
+```
+🎯 --case-ids 收窄：105 → 2 条（AS-003,OR-015）
+🔵 ⚠️ AS-003: 查订单 → 创建退款工单（跨域复用 order_id） 🔬复现型回归·禁止rerun
+🔵 ❌ OR-015: order_create 写操作前置校验必须真正执行（validate_input 规则分层修复…） 🔬复现型回归·禁止rerun
+   - AS-003 [reproducible] 两次同指纹失败（确定性回归，禁止 rerun 掩盖，按签名排查）
+   - OR-015 [reproducible] 两次同指纹失败（确定性回归，禁止 rerun 掩盖，按签名排查）
+每日回归（normal） 结果: 0/2 通过, 均分 33%
+⛔ 评测未完成：确定性失败 2 条: AS-003, OR-015
+```
+
+> ⚠️ `0/2 通过, 均分 33%` 是**收窄集**（`--case-ids` 只跑这 2 条）的口径，**不得**当作"B 端全量"结论。
+
+**重放逐轮原文（run 34810196540）**
+
+```
+🔵 ⚠️ AS-003  rounds=4 tools=['order_query','order_query','interact','interact'] score=67%
+   trace: [R1 you=查一下最近的订单 tools=order_query
+             data=order_query(orders=5 total=5 page=1 page_size=10 total_pages=1) ai=📦 最近订单（共 5 个）…]
+          [R2 you=这个订单客户要退货，创建售后工单 tools=-
+             ai=退货这单我先把两件事说清楚： **1️⃣ 创建售后工单不在订单模块的能力范围内**——售后工单属于售后流程受理。请直接]
+          [R3 you=确认创建 tools=-
+             ai=📌 这里有两件事必须说清楚，避免您误以为已经办了： **1️⃣ 我还没有发出过确认卡片**，所以目前**没有任何操作被]
+          [R4 you=确认 tools=order_query,interact,interact
+             failed=interact!form 组件需要至少一个 formField
+             data=order_query(orders=5…);interact(form 组件需要至少一个 formField);
+                  interact(component=form title=请补充退货工单信息（订单号 / 退货原因 / 退款金额） formFields=3 submitLabel=提交信息)
+             ai=明白，我这就按售后流程推进。不过有两项信息我还缺（**哪一笔订单**、**退货原因/退款金额**），先请您补一下 👇
+             cards=form cardreq=form:请补充退货工单信息（订单号 / 退货原因 / 退款金额）]
+   ❌ after_sales_manage or aftersale_create(order_id=复用上轮 UUID) → unmatched expectation
+
+🔵 ❌ OR-015  rounds=4
+   tools=['product_search','product_detail','interact','product_detail','interact','product_detail','interact','product_detail','interact'] score=0%
+   trace: [R1 you=创建订单，张三 13800138000 遮光窗帘 3 米 tools=product_search,product_detail,interact
+             data=product_detail(id=prod_eval_blackout name=遮光窗帘 … price=168.0 stock=1000)
+             ai=…已为您展示规格选项，请点击选择颜色（米白或浅灰），选好后我继续为您办理下 cards=choice
+             cardreq=choice:请选择遮光窗帘的规格]
+          [R2 you=散剪，2.8米门幅 tools=product_detail,interact
+             ai=已收到「散剪 · 2.8米门幅」，该规格有 2 个颜色可选，请点击选择： - **米白** · 散剪 · 2.8米门幅
+             cards=choice cardreq=choice:散剪 · 2.8米门幅 已收到，请选择颜色]
+          [R3 you=不添加加工项，确认下单 tools=product_detail,interact
+             ai=已收到 ✅ 不添加加工项，已记下。 不过订单还差颜色未确认——您之前选择的「散剪 · 2.8米门幅」有米白、浅灰两个颜
+             cards=choice cardreq=choice:请选择颜色（散剪 · 2.8米门幅）]
+          [R4 you=确认下单 tools=product_detail,interact
+             ai=抱歉打断一下 —— 订单目前还差**颜色**这一项，系统必须确定颜色才能落单，我不能替您猜（米白 / 浅灰同价，都可用）
+             cards=choice cardreq=choice:请选择颜色（散剪 · 2.8米门幅）——订单还差]
+   ❌ validate_input  → unmatched expectation: validate_input
+   ❌ order_create    → unmatched expectation: order_create
+🔧 工具健康度: 工具调用 13 次，失败 1 次（8%）· interact!form 组件需要至少一个 formField × 1
+```
+
+**重放相对基线的新增信息（三条，均已并入上方归因）**
+
+1. **AS-003 R2 原文完整化**：基线被 60 字截断，重放显示 agent **同时**说了「创建售后工单**不在订单模块的能力范围内**」——但**它并未拒绝对话**：R4 它主动改走售后流程并下发了一张收集用的 form 卡（`title=请补充退货工单信息（订单号 / 退货原因 / 退款金额） formFields=3`）。⇒ 真实的失败机制是：**脚本的 4 轮台词里没有任何一轮去消歧"哪一笔订单"或回答这张 form 卡**，`after_sales_manage` 因此在轮次预算内不可能被调用。这是"**用例资产缺陷**"的更硬证据（agent 提供了可继续的路径，脚本没走）。
+2. **R4 的 `failed=interact!form 组件需要至少一个 formField × 1`** 与重放前的先例报告（`REPORT-3528-verify.md` §2.4 观察项：PR-016 R2 R1 同形态）**同族**：agent 先发一次空表单再自愈（同轮第二次 `interact` 成功带 `formFields=3`）。属**模型单次失误 + 同轮自愈**，记为观察项（**不是**本条失败主因；本轮 13 次工具调用仅 1 次失败）。
+3. **两条的失败指纹跨 run 完全一致**（基线 R1–R4 追问颜色 / 重放 R1–R4 追问颜色；基线 R2 无工具 / 重放 R2 无工具）⇒ **`reproducible` 与行为事实一致**，"最新 main 仍复现"成立，**归因结论不变**（两条均为评测资产缺陷）。
 
 ### 5.2 修复后的重放判据（交修复者，§5 成对证据要求）
 
