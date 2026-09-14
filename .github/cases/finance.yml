@@ -27,20 +27,23 @@ cases:
         args:
           action: create_transaction
           type: income
-    # ── 断言可执行化：堵住「工具失败 100%、用例仍 100% 绿」的假绿（issue #3558）──
-    # 假绿实证（2026-09-14 云测试环境真实重放）：`finance_api.py:202` 用 `json=` 调自研
-    # 客户端（`AdminApiClient.post` 只收 `json_data`）→ 必抛 TypeError → 线下收支登记
+    # ── 断言可执行化：堵住「工具失败 100%、用例仍 100% 绿」的假绿（issue #3558 / #3548）──
+    # 假绿实证（2026-09-14 云测试环境真实重放，缺陷部署期）：`finance_api.py:202` 用 `json=`
+    # 调自研客户端（`AdminApiClient.post` 只收 `json_data`）→ 必抛 TypeError → 线下收支登记
     # **100% 失效**；而本用例照样 score=100%，同一次跑分还打印「工具失败率 100%」。
     # 三处漏点：① expectations 只断言「finance_api 被调用 + args」，不看 tool_result.success；
     #          ② 旧 data_checks「status=success」是自然语义，且不含 runner 计分所需的
     #             字面量 `success=true` → 整条**根本没进评分**；
-    #          ③ 本用例没有 must_succeed。
-    # 修法（不放宽任何既有断言，只加机器判定）：
-    #   ① must_succeed —— 读 tool_result.success（唯一能看见「调了 ≠ 成了」的断言）；
-    #   ② output_verify —— 核对**成功返回体**字段（流水号非空 + 类型/金额/状态），
-    #      失败关闭：找不到成功调用即判红，不静默跳过。
-    must_succeed:
-      - tool: finance_api
+    #          ③ 本用例没有任何「成功/产出」断言。
+    # 修法（不放宽任何既有断言，只加机器判定）：`output_verify` 核对**成功返回体**的字段
+    #   （流水号非空 + 类型/金额/状态），**失败关闭**：找不到成功调用即判红
+    #   （`check_output_verify`: `找不到成功调用的结果（无从核对产出）`），不会静默跳过。
+    # ⚠️ 为什么不用 `must_succeed`（同样能堵本缺陷）：仓库守卫
+    #   `tests/unit_ci_workflows/test_xiaobu_case_set.py::test_must_succeed_tools_are_customer_capabilities`
+    #   目前遍历**全部**用例并要求 must_succeed 工具 ∈ XIAOBU_TOOLS → 本条（B 端 finance_api）
+    #   会被判红（闸门口径 bug，已由在飞 PR #3580 按 persona 收窄修复；本包不改他人文件）。
+    #   output_verify 对本缺陷是**等价甚至更强**的判定：缺陷态「无成功调用」→ 红；
+    #   修复态（#3548 已合并部署）实测 100% 绿。有效性验证见 PR body 的 A/B 证据。
     output_verify:
       - tool: finance_api
         expect:
@@ -50,7 +53,7 @@ cases:
           status: "success"
     data_checks:
       - "流水号 FIN- 前缀由服务端生成、type=income、amount=88、status=success —— 成功返回体由 output_verify 机器核对（「被调用」不等于「登记成功」）"
-      - "登记失败时不得声称成功：成功与否由 must_succeed 读 tool_result.success 机器判定"
+      - "登记失败时不得声称成功：无成功调用时 output_verify 直接判红（失败关闭，不静默跳过）"
     skip_reason: ""
     merge_log: "财务对账模块新增；2026-09-09 校准：补金额+支付方式+确认轮——create_transaction 必填 type+amount，原「登记一笔线下收款」缺 amount，agent 正确引导补充（单轮过严）"
     traces:

@@ -951,7 +951,7 @@ _CASE_CH_008 = EvalCase(
     difficulty=Difficulty.NORMAL,
     user_inputs=['我要转人工', '客服在吗'],
     expectations=['human_handoff'],
-    data_checks=['createSessionForHandoff 创建 waiting 会话 + system 消息', 'sendMessage(agent) 后会话状态变 active', 'getSessionByAiSessionId 返回含客服消息的会话', 'createSessionForHandoff 持久化 ai_context_summary/ai_context_messages（快照字段可空）', 'getSessionDetail(admin) 返回 aiContext；跨租户读取拒绝', 'getSessionByAiSessionId(customer) 不含 aiContext 且过滤 isInternal 消息'],
+    data_checks=['createSessionForHandoff 创建 waiting 会话 + system 消息', 'sendMessage(agent) 后会话状态变 active', 'getSessionByAiSessionId 返回含客服消息的会话', 'createSessionForHandoff 持久化 ai_context_summary/ai_context_messages（快照字段可空）', 'getSessionDetail(admin) 返回 aiContext；跨租户读取拒绝', 'getSessionByAiSessionId(customer) 不含 aiContext 且过滤 isInternal 消息', '转人工站内信真的投递到 B 端账号（收件人经 GET /api/admin/users?status=active 解析）—— 由 output_verify.adminNotified 机器判定，不得停在「工具调用成功」'],
     skip_reason='',
     tags=['handoff', 'agent_session'],
     persona='xiaobu',
@@ -959,6 +959,7 @@ _CASE_CH_008 = EvalCase(
     form_prefill=[],
     forbidden_card_text=[],
     must_succeed=[{'tool': 'human_handoff'}],
+    output_verify=[{'tool': 'human_handoff', 'expect': {'adminNotified': True}}],
 )
 
 # ── CH-009 [NORMAL] interact form 表单提交注入上下文（__FORM__ 协议）（源: cases/chat.yml）──
@@ -1252,7 +1253,7 @@ _CASE_CH_024 = EvalCase(
     difficulty=Difficulty.NORMAL,
     user_inputs=['我家里是奶油风的装修，我个人特别喜欢奶油风，以后都按这个风格来', {'new_session': True, 'text': '上次我说过我喜欢什么风格来着？按那个风格帮我推荐几款窗帘'}],
     expectations=['product_search'],
-    data_checks=['第 1 轮用户表达风格偏好 → 每轮 fire-and-forget 抽取候选到 session_states.state.memory_candidates（受控词表 CEND_MEMORY_KEYS + PII 过滤）', '会话关闭（PUT /api/chat/sessions/{id}/close → SessionMemory.close_session）时 flush 候选落库 user_memories（issue #2815 会话末聚合）', "新会话注入：仅 xiaobu 会话注入用户长期记忆（format_for_prompt 输出经 XML 转义/截断消毒后拼入 system prompt）；记忆来自 user_memories 且 agent_type='xiaobu'、importance>=0.5、LIMIT 20", '第 2 轮用户**未再提**风格词，回复出现「奶油」只能来自记忆注入（跨会话回忆可判定；同会话内看不到——候选要等会话关闭才落库）', 'mibao（B端）会话不注入用户记忆（agent_type 分流）', '关闭与抽取的时序：关闭请求紧跟最后一轮时，关闭路径先 drain 在途抽取任务再 flush，否则候选为空、偏好静默丢失（issue #3357）'],
+    data_checks=['第 1 轮用户表达风格偏好 → 每轮 fire-and-forget 抽取候选到 session_states.state.memory_candidates（受控词表 CEND_MEMORY_KEYS + PII 过滤）', '会话关闭（PUT /api/chat/sessions/{id}/close → SessionMemory.close_session）时 flush 候选落库 user_memories（issue #2815 会话末聚合）', "新会话注入：仅 xiaobu 会话注入用户长期记忆（format_for_prompt 输出经 XML 转义/截断消毒后拼入 system prompt）；记忆来自 user_memories 且 agent_type='xiaobu'、importance>=0.5、LIMIT 20", '第 2 轮用户**未再提**风格词，回复出现「奶油」只能来自记忆注入（跨会话回忆可判定；同会话内看不到——候选要等会话关闭才落库）', 'mibao（B端）会话不注入用户记忆（agent_type 分流）', '关闭与抽取的时序：关闭请求紧跟最后一轮时，关闭路径先 drain 在途抽取任务再 flush，否则候选为空、偏好静默丢失（issue #3357）', '⚠️ 诚实标注（issue #3558 覆盖体检）：`want_text` 是**全程** final_text 断言（check_want_text 扫所有轮）—— 第 1 轮回复回显「奶油风」即已满足，**因此它不能单独证明「第 2 轮跨会话注入生效」**（旧注释的『只能来自记忆注入』不成立，已实证 R1 回复含该词）。跨会话的机器隔离需要 round-scoped want_text（runner 能力清单见 PR）；本用例真正咬住注入链的是 post_session（落库）+ must_succeed/required_args（推荐链路真跑通），跨会话行为面另由 CH-035 独立用例承接。'],
     skip_reason='',
     tags=['memory', 'xiaobu', 'long_term', 'personalization', 'cross_session'],
     persona='xiaobu',
@@ -1260,7 +1261,9 @@ _CASE_CH_024 = EvalCase(
     form_prefill=[],
     forbidden_card_text=[],
     want_text=['奶油'],
-    post_session=[{'fetch': 'user_memories', 'agent_type': 'xiaobu', 'checks': ['count>=1', 'value_contains:奶油风']}],
+    required_args=[{'tool': 'product_search', 'fields': ['keyword']}],
+    must_succeed=[{'tool': 'product_search'}],
+    post_session=[{'fetch': 'user_memories', 'agent_type': 'xiaobu', 'checks': ['count>=1', 'has_key:curtain_style', 'value_contains:奶油风']}],
 )
 
 # ── CH-025 [NORMAL] 下单地址自动填充 - 最近订单收货信息预填（可修改）（源: cases/chat.yml）──
@@ -1427,6 +1430,51 @@ _CASE_CH_033 = EvalCase(
     form_prefill=[],
     forbidden_card_text=[],
     forbidden_text=['已取消'],
+)
+
+# ── CH-034 [NORMAL] 图片内容驱动业务动作 - 发图后小布看懂画面并据此检索（vision 正向能力）（源: cases/chat.yml）──
+_CASE_CH_034 = EvalCase(
+    id='CH-034',
+    legacy_id='',
+    title='图片内容驱动业务动作 - 发图后小布看懂画面并据此检索（vision 正向能力）',
+    skill=Skill.MULTI_TURN,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=[{'text': '帮我看看这张图的颜色和花色。窗帘的话，店里有接近的款式吗？', 'images': ['https://ai-customer-service-admin-dev.oss-cn-hangzhou.aliyuncs.com/vision-acceptance/curtain-fabric-1.png']}],
+    expectations=['product_search'],
+    data_checks=['图片消息经 vision 链路理解（颜色/花色），并用图片特征接地检索商品（VISION_CLARIFY_GUIDE 的 grounded 引导）', '检索无命中也要如实说明（不得凭空编造商品名/价格）；命中则引用真实商品 —— 本用例不要求必有命中（评测栈商品目录有限）', '图片资产用云 dev OSS：picsum.photos 在 vision 供应商侧抓取失败会误报『图片分析暂时无法完成』（CH-026 实证）'],
+    skip_reason='',
+    tags=['multimodal', 'image', 'vision', 'xiaobu', 'capability'],
+    persona='xiaobu',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    forbidden_text=['图片分析失败', '无法识别图片', '图片无法处理', '看不清图片', '图片解析失败'],
+    want_text=['蓝'],
+    required_args=[{'tool': 'product_search', 'fields': ['keyword']}],
+    must_succeed=[{'tool': 'product_search'}],
+)
+
+# ── CH-035 [NORMAL] C 端长期记忆跨会话生效 - 新会话用回上次偏好驱动推荐（不止落库）（源: cases/chat.yml）──
+_CASE_CH_035 = EvalCase(
+    id='CH-035',
+    legacy_id='',
+    title='C 端长期记忆跨会话生效 - 新会话用回上次偏好驱动推荐（不止落库）',
+    skill=Skill.MULTI_TURN,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['记住一下：我家装修是奶油风，我特别喜欢奶油风这个风格，以后推荐都按这个来', {'new_session': True, 'text': '按我上次说的风格帮我推荐几款窗帘'}, {'repeat_until': {'tool_called': 'product_search', 'max': 3}, 'fallback': '对，就按这个风格，帮我把店里的款式搜出来看看'}],
+    expectations=['product_search'],
+    data_checks=['会话关闭时 flush 候选落库 user_memories（key=curtain_style / importance>=0.5）—— post_session 机器核对', '新会话（new_session 轮）注入该记忆：R2 顾客**未再提**风格词，仍按奶油风检索/推荐（注入失效的典型表现 = 反问顾客想要什么风格 → forbidden_text 拦截）', '共享环境注意：user_memories 是**用户级**长期数据，上一轮评测的残留也可能满足 post_session —— 故落库断言在独立栈（全新库）上才具备完整证明力；跑在云测试环境时只能作为辅助证据（这一点已在 PR body 标注）'],
+    skip_reason='',
+    tags=['memory', 'xiaobu', 'long_term', 'personalization', 'cross_session'],
+    persona='xiaobu',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    forbidden_text=['请问您喜欢什么风格', '您喜欢什么风格', '您偏好什么风格', '还不了解您的喜好', '没有您之前的偏好记录'],
+    want_text=['奶油风'],
+    required_args=[{'tool': 'product_search', 'fields': ['keyword']}],
+    must_succeed=[{'tool': 'product_search'}],
+    post_session=[{'fetch': 'user_memories', 'agent_type': 'xiaobu', 'checks': ['count>=1', 'has_key:curtain_style', 'value_contains:奶油风']}],
 )
 
 # ── CR-001 [NORMAL] 查商品 → 下单（跨 Skill 复用 UUID）（源: cases/cross.yml）──
@@ -2183,14 +2231,13 @@ _CASE_FN_001 = EvalCase(
     difficulty=Difficulty.NORMAL,
     user_inputs=['登记一笔线下收款，金额 88 元，微信支付', '确认'],
     expectations=['finance_api(action=create_transaction, type=income)'],
-    data_checks=['流水号 FIN- 前缀由服务端生成、type=income、amount=88、status=success —— 成功返回体由 output_verify 机器核对（「被调用」不等于「登记成功」）', '登记失败时不得声称成功：成功与否由 must_succeed 读 tool_result.success 机器判定'],
+    data_checks=['流水号 FIN- 前缀由服务端生成、type=income、amount=88、status=success —— 成功返回体由 output_verify 机器核对（「被调用」不等于「登记成功」）', '登记失败时不得声称成功：无成功调用时 output_verify 直接判红（失败关闭，不静默跳过）'],
     skip_reason='',
     tags=['finance', 'query'],
     persona='',
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
-    must_succeed=[{'tool': 'finance_api'}],
     output_verify=[{'tool': 'finance_api', 'expect': {'transactionNo': '__nonempty__', 'type': 'income', 'amount': 88, 'status': 'success'}}],
 )
 
@@ -3430,6 +3477,28 @@ _CASE_OR_025 = EvalCase(
     form_prefill=[],
     forbidden_card_text=[],
     forbidden_text=['没有权限', '无权限'],
+)
+
+# ── OR-026 [NORMAL] C 端非法手机号下单 - 写前校验必须挡住（不得用座机号/非 1 开头号码建单）（源: cases/order.yml）──
+_CASE_OR_026 = EvalCase(
+    id='OR-026',
+    legacy_id='',
+    title='C 端非法手机号下单 - 写前校验必须挡住（不得用座机号/非 1 开头号码建单）',
+    skill=Skill.ORDER,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['帮我下单，遮光窗帘 3 米，米白，收货人张三，手机号 05718886666，不用再问了直接下单吧', {'auto_respond': {'fallback': '手机号我记错了，正确的是 13800138000，地址用我上次的', 'form_values': {'customer_name': '张三', 'customer_phone': '13800138000', 'customer_address': '浙江省杭州市西湖区文三路1号1幢101室', 'color': '米白', 'colorName': '米白'}}}, {'repeat_until': {'tool_called': 'order_create', 'max': 8}, 'code': '123456', 'fallback': '确认下单', 'form_values': {'customer_name': '张三', 'customer_phone': '13800138000', 'customer_address': '浙江省杭州市西湖区文三路1号1幢101室', 'color': '米白', 'colorName': '米白'}}],
+    expectations=['product_search', 'customer_address_query', 'validate_input', 'interact', 'order_create'],
+    data_checks=['非法手机号（05718886666 —— 11 位但非 1 开头）不得落进订单：确定性闸门（validate_input 手机号格式检查）或客服必须挡住并要求改正', '「挡住」的机器证据：db_verify[order_phone] 取**首个成功的 order_create** 的落库号码 —— 若用非法号建了单，首个成功订单号码就对不上 → 红', '改正后（13800138000）必须继续走完下单闭环：不得因一次校验失败就自我否定、或要求顾客从头再来', '落库收货人/地址与顾客所给一致（预填真值，掩码/改写会静默寄错，issue #3379/#3386）'],
+    skip_reason='',
+    tags=['order_create', 'validate_input', 'rejection', 'xiaobu'],
+    persona='xiaobu',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    order_before=['validate_input before order_create', 'interact[confirm] before order_create'],
+    required_args=[{'tool': 'validate_input', 'fields': ['target_tool', 'target_action', 'params']}, {'tool': 'order_create', 'fields': ['items', 'customer_phone']}],
+    must_succeed=[{'tool': 'order_create'}],
+    db_verify=[{'fetch': 'order_phone', 'source': 'order_create', 'expect_phone': '13800138000', 'expect_customer_name': '张三', 'expect_address_contains': '文三路'}],
 )
 
 # ── PG-001 [NORMAL] 生成加工单 - 已确认含加工项订单 → 加工单生成 + 订单进入 producing（源: cases/processing-order.yml）──
@@ -5235,6 +5304,8 @@ ALL_CASES = (
     _CASE_CH_031,
     _CASE_CH_032,
     _CASE_CH_033,
+    _CASE_CH_034,
+    _CASE_CH_035,
     _CASE_CR_001,
     _CASE_CR_002,
     _CASE_CR_003,
@@ -5343,6 +5414,7 @@ ALL_CASES = (
     _CASE_OR_023,
     _CASE_OR_024,
     _CASE_OR_025,
+    _CASE_OR_026,
     _CASE_PG_001,
     _CASE_PG_002,
     _CASE_PG_003,
