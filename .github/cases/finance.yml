@@ -46,7 +46,11 @@ cases:
     must_succeed:
       - tool: finance_api
     output_verify:
+      # ⚠️ `action` 必填（issue #3544 的新不变式）：finance_api 是**多 action 工具**
+      # （create_transaction / get_summary / get_transactions / get_reconciliation），
+      # 缺 action 会按**工具名**取首个成功 payload → 可能核到别的 action 的返回（假红/假绿双面）。
       - tool: finance_api
+        action: create_transaction
         expect:
           transactionNo: "__nonempty__"
           type: "income"
