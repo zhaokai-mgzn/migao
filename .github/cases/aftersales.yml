@@ -319,6 +319,37 @@ cases:
         args:
           action: create
           ticket_type: exchange
+    # ── 断言可执行化（2026-09-15，issue #3683；归因报告 §G2：能力缺口已被否证，属断言侧）──
+    # 「调了 ≠ 成了」（issue #3361 口径）：expectations 参数级匹配只能证明「模型想建工单」，
+    # 证明不了「工单真做出来了」（写工具被 confirm 门禁拦下 / 后端报错时，调用名照样出现在
+    # tool_calls 里）。原写法是 `data_checks: "success=true"`（计分白名单口径）—— 已升级为
+    # canonical 的 `must_succeed`（fail-closed：一次都没成功 → 判红，且按 action=create 过滤，
+    # 不会被同工具其它 action 的成功「顶过」，见 `local_runner.py:1483-1492`）。
+    # ⚠️ 旧注释的阻塞理由**已失效**（2026-09-15 复核）：旧文称
+    # `test_xiaobu_case_set.py::test_must_succeed_tools_are_customer_capabilities` 对**全库**
+    # 校验、B 端工具声明即打红。该守卫**已按 persona 收窄**（`case_persona(c) != "xiaobu"` → skip，
+    # issue #3544/#3580），B 端对称面见 `test_mibao_case_invariants.py::TestBendWriteToolSuccessAssertions`
+    # （after_sales_manage ∈ 米宝工具集 → 合法）。
+    must_succeed:
+      - tool: after_sales_manage
+        action: create
+    # ⚠️ 报告 §3.4-M2 要求的 `db_verify: [{fetch: after_sales_ticket, expect_status: pending}]`
+    #   **本次未加**——不是遗漏，是加了会**恒红**（零 LLM 确定性探针实测，issue #3683）：
+    #   · `check_db_verify` 的 after_sales_ticket 分支取工单引用走
+    #     `_first_successful_ticket_payload`（`local_runner.py:1939`），**只认 payload 里的
+    #     `ticket_id` / `ticketId`**；
+    #   · 而 **create 路径**的 payload 是 `AfterSalesDetailResponse` **原样返回**
+    #     （`app/tools/after_sales_manage.py:358 data = response.get("data", {})` → `:367 data=data`），
+    #     键是 `id` / `ticketNo` / `status` / `ticketType`（`AfterSalesDetailResponse.java:15-38`；
+    #     `:359 new_ticket_id = data.get("id")` 即其证）——**没有 `ticket_id`**；
+    #     只有 `_update_status` 自己拼了 `{"ticket_id":…, "status":…}`（`:435`，AS-004 走的正是那条路）。
+    #   · 探针输出（create 形态 → `(None, {})`；update 形态 → `(3, {'ticket_id':…, 'status':'closed'})`）
+    #     ⇒ 照抄报告原文加上，会一直报「找不到 after_sales_manage(status=pending) 的成功调用
+    #     （无工单可核对）—— 判失败而非跳过」（fail-closed）＝ **永久假红**，比不加更糟
+    #     （制造一个与行为无关的固定红，污染结论）。
+    #   ⇒ **待补 runner 能力（归属 runner 包，本包不实现，见 issue #3683）**：让
+    #     `_first_successful_ticket_payload` 兼容 create payload 的 `id`（或让 create payload 带上
+    #     `ticket_id`）。补上后本节即可回填报告要求的落库断言（status=pending）。
     order_before:
       # 自包含化的**核心断言**：换货工单必须挂在**已定位到**的订单上 ——
       # 旧单轮形态正是死在这里（无订单可挂就别写工单）。
@@ -334,21 +365,19 @@ cases:
       - "processing_ask before after_sales_manage"
       - "processing_ask before interact[confirm]"
     data_checks:
-      # 「调了 ≠ 成了」（issue #3361 口径）：单轮形态没有工具成功断言，写工单失败也会判 100%。
-      # 这里用**机器可判的 data_checks**（`success=true` 计入评分，见 local_runner
-      # `scoring_checks` 的 success=true / error.code= 规则）而不是 `must_succeed`：
-      # 本条是 **B 端专属工具**（after_sales_manage 不在小布工具集），而
-      # `tests/unit_ci_workflows/test_xiaobu_case_set.py::test_must_succeed_tools_are_customer_capabilities`
-      # 对**全库** must_succeed 声明做「必须在 C 端工具集内」校验（未按 persona 收窄）→
-      # 声明 must_succeed[after_sales_manage] 会直接打红该守卫。两者等价强度，
-      # 故取不越界的写法（守卫收窄另行治理，不在本包范围）。
-      - "success=true"
+      # 「调了 ≠ 成了」已升为**机器断言**（2026-09-15，issue #3683）：见上方
+      # `must_succeed: [after_sales_manage(action=create)]`。原 `"success=true"` 条目
+      # （2026-09-14 #3568 引入）随之删除 —— 它被 `check_expectation` 解析成
+      # **「某一轮没有 error」**（`local_runner.py:765-768`：`if not result.get("error"): return True`），
+      # 对「工单真的建出来了」**近乎恒过**（多数轮次本来就没有 error）⇒ 删它是**升级而非削弱**
+      # （旧写法给的是"看起来有覆盖"）。下列条目仍是自然语义（不计分），其中「加工项」一条的
+      # 机器语义由 `order_before[processing_ask]` 保证。
       - "换货目标商品 product_detail 返回 processing_items 非空时，confirm 卡之前必须主动询问加工项（interact(choice, multiSelect=true)，透传 pageMeta 支持翻页；文本询问亦可，语义由 order_before 保证）"
       - "用户选择加工项后，所选名称与计价写入换货方案汇总与工单 description；用户说『不需要加工项』才跳过"
       - "processing_items 为空时如实告知『该商品无可用加工项』后继续，不强求"
       - "换货工单 order_id 来自本轮 order_query 定位结果（不得编造订单号）"
     skip_reason: ""
-    merge_log: "2026-09-08 新增（issue #3033 复盘 sess_50ff3e3c824c4a70）：换货选 2699 面料（绑 5 加工项）全程未提加工项；aftersales.md 补换货加工项确认规则 + EXAMPLES 例 4。2026-09-14 自包含化（issue #3568）：原单轮输入缺「先定位订单」轮 → 用例恒不可达被 skip（**从未执行**）→ 补 order_query 定位轮 + 答卡轮（repeat_until max=5），断言加两条 order_query 时序 + success=true，解 skip。**两次真 LLM 重放驱动迭代**：① run 34809750975 得 75% 且首版「静态文本选单轮」对不上 agent 的 choice 选单卡（该客户名下 6 笔订单）→ 改答卡轮；② run 34812509606 得 75% 且**换货工单已真实创建**（`ticketNo=AS-20260914-9002`）→ 首版 fallback「需要打孔加工」**替 agent 把加工项说了出来**、把缺口掩盖成「卡里有加工项」→ 改中性「好的」。③ run 34815074088（中性 fallback）得 0%，trace 显示**流程本身完全正确**：R2 product_detail（发现 2 条同名）→ 选品卡 → R3 **agent 主动发加工项 choice 卡** → R5 order_query → R8 after_sales_manage 建单成功；唯一失败项是我自己加的 `order_before[order_query before product_detail]`（**业务上不成立的过度约束**）→ 已删除该条，保留 `order_query before after_sales_manage` 与两条 `processing_ask` 时序"
+    merge_log: "2026-09-08 新增（issue #3033 复盘 sess_50ff3e3c824c4a70）：换货选 2699 面料（绑 5 加工项）全程未提加工项；aftersales.md 补换货加工项确认规则 + EXAMPLES 例 4。2026-09-14 自包含化（issue #3568）：原单轮输入缺「先定位订单」轮 → 用例恒不可达被 skip（**从未执行**）→ 补 order_query 定位轮 + 答卡轮（repeat_until max=5），断言加两条 order_query 时序 + success=true，解 skip。**两次真 LLM 重放驱动迭代**：① run 34809750975 得 75% 且首版「静态文本选单轮」对不上 agent 的 choice 选单卡（该客户名下 6 笔订单）→ 改答卡轮；② run 34812509606 得 75% 且**换货工单已真实创建**（`ticketNo=AS-20260914-9002`）→ 首版 fallback「需要打孔加工」**替 agent 把加工项说了出来**、把缺口掩盖成「卡里有加工项」→ 改中性「好的」。③ run 34815074088（中性 fallback）得 0%，trace 显示**流程本身完全正确**：R2 product_detail（发现 2 条同名）→ 选品卡 → R3 **agent 主动发加工项 choice 卡** → R5 order_query → R8 after_sales_manage 建单成功；唯一失败项是我自己加的 `order_before[order_query before product_detail]`（**业务上不成立的过度约束**）→ 已删除该条，保留 `order_query before after_sales_manage` 与两条 `processing_ask` 时序。2026-09-15 断言侧升级（issue #3683，归因报告 §G2：能力缺口已被三条独立证据否证——`aftersales.md:27-31` 有规则 / run 34815074088 R3 agent 主动发加工项 choice 卡 / run 34817668476 最终断言集 1.00 pass）：① `data_checks: success=true` → `must_succeed:[after_sales_manage(action=create)]`（canonical 写成功断言；旧「C 端守卫全库校验」的阻塞理由已随 #3544/#3580 的 persona 收窄失效）；② 报告要求的 `db_verify[after_sales_ticket,expect_status=pending]` **未加**——create 路径 payload 键是 `id` 而核对器只认 `ticket_id`（探针 `create 形态 -> (None, {})`），照抄即永久假红，已登记为待补 runner 能力；③ 未放宽 `processing_ask` 时序、未回加已删的 `order_query before product_detail`"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_prompt_snapshots.py"

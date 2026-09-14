@@ -636,7 +636,15 @@ cases:
         product_name: "遮光窗帘"
         checks: [unit_price, subtotal, total]
     data_checks:
-      - "加工项数量按计价方式确定：per_meter → 数量=面料米数（如打孔 8 元/米 × 3 米 → quantity=3、subtotal=24）；per_set/fixed → 数量=1；per_area → 宽×高"
+      # ⚠️ 口径**作用域限定**（2026-09-15，issue #3683 / #3672；旧表述无限定，已实际误导过修法）：
+      #   下面这条只适用于 **order_create 路径**（agent 自己把面积算进
+      #   `processing_info.processingItems[].quantity`）。
+      #   **`processing_item_manage(action=calculate_price)` 端点是另一套契约**：后端自己从
+      #   `dimensions` 算 `area=宽×高`，再 `unitPrice × area × quantity`（`ProcessingItemService.java:248-254`
+      #   + `:310-318`）⇒ 把「宽×高」写进该端点的 `quantity` 会**必然双计**
+      #   （实测：dimensions + quantity=8 → ¥1920.00；正确 payload → ¥240.00）。
+      #   该端点请用 `width`/`height` 承载面积、`quantity` 作计件数（见 #3672 / PP-009）。
+      - "加工项数量按计价方式确定（**仅 order_create 路径**；`calculate_price` 端点的 per_area 面积由 `dimensions.width/height` 承载、`quantity` 为计件数，见 #3672）：per_meter → 数量=面料米数（如打孔 8 元/米 × 3 米 → quantity=3、subtotal=24）；per_set/fixed → 数量=1；per_area → 宽×高"
       - "processing_info.processingItems 逐项含 {id, name, unitPrice, quantity, unit, pricingMethod, subtotal}，processingFee = 各项 unitPrice × quantity 之和"
       - "订单确认/回复展示加工项含「名称+数量+金额」（如『打孔（罗马圈）3米 ¥24.00』）——数量可见可对账，禁止虚构每米几个的密度推导"
       - "加工费 = 单价 × 数量（打孔 8 元/米 × 3 米 = 24 元），漏算/错算加工费 = 订单金额错误"
@@ -1591,9 +1599,30 @@ cases:
     #     首个成功订单的号码就对不上 → 红（不用「未被调用」这类会被「任意一轮命中即过」削弱的断言）；
     #   · required_args[validate_input] 要求闸门**带齐 params 被真正调用**（不是空转调用）；
     #   · 改正后必须继续走完闭环（不得因一次校验失败就自我否定/要求顾客重头再来）。
-    # ⚠️ 边界（诚实标注）：runner 目前**没有**「某次工具调用必须失败（success=false）」的断言，
-    #   故「闸门拒绝」这一事件本身无法直接计分——本用例证明的是它的**产出侧后果**
-    #   （非法号码不得落单）。所需 runner 能力见 PR 的「需要的 runner 能力」清单。
+    # ⚠️ 边界（2026-09-15 复核修正，issue #3683——**旧注释已过期，不许再照抄**）：
+    #   旧注释写「runner 目前没有『某次工具调用必须失败（success=false）』的断言」——
+    #   该能力**已落地**：`must_fail`（`tests/agent_eval/local_runner.py:1518`；其 docstring 自引
+    #   issue #3544「收口批」，随 PR #3644 的 runner 能力批进 main）。
+    #   它的真实语义是「声明的工具（可限定 action）**全程一次都不得成功**；**从未调用 → 通过**」
+    #   （全程判定，无轮次/参数作用域）。
+    #   但本用例的**拒绝半**仍无法用它表达（三种写法都不成立，逐一验过）：
+    #     · `must_fail: [{tool: order_create}]` —— 与本例 `must_succeed: order_create` 直接矛盾
+    #       （改正号码后必须成功建单）；
+    #     · `must_fail: [{tool: validate_input}]` —— 同样矛盾（改正后闸门**必须**放行，
+    #       required_args 还要求它带齐 params 被真正调用）；
+    #     · `must_fail: [{tool: order_create, action: create}]` —— order_create **没有 action 参数**
+    #       → `local_runner.py:1552`（`if action and not called: continue`）直接整条跳过 = **静默空转**
+    #       （比不加更糟：看起来有覆盖，实际零判定）。
+    #   本用例要的不变式是**参数值作用域**的：「任何一次以非法号码（05718886666）为
+    #   customer_phone 的 order_create 都不得成功」——`must_fail` 只支持 工具×action 粒度，
+    #   表达不了；等价地也表达不了「某一轮必须失败」（runner 只做全程判定）。
+    #   ⇒ 待补 runner 能力（**如实登记，归属 runner 包，本用例包不实现**）：
+    #     让 `must_fail` 条目支持 `args` 值级匹配（如 `{tool: order_create, args: {customer_phone: "05718886666"}}`
+    #     ——语义 =「凡匹配该 args 的调用都不得成功」），或补轮次作用域。
+    #   ⇒ 在那之前，本用例证明的仍是它的**产出侧后果**（同样机器可判、且 fail-closed）：
+    #     `db_verify[order_phone]` 取**首个成功的 order_create** 的落库号码（`local_runner.py:3113`），
+    #     非法号落单 → 首个成功订单号码对不上 → 红。**不得**为「让拒绝半看起来被测了」
+    #     而塞入上面三种矛盾/空转写法之一。
     user_inputs:
       - "帮我下单，遮光窗帘 3 米，米白，收货人张三，手机号 05718886666，不用再问了直接下单吧"
       - auto_respond:

@@ -223,6 +223,14 @@ UA 只扮演了 C 端顾客 persona，B 端商家后台的浏览器操作旅程�
 
 - 涉及金额的验收点必须断言**数学关系**：如 `subtotal = 面料小计 + processingFee`、
   `quantity 按计价方式（per_meter=米数 / per_set=1 / per_area=宽×高）`；
+  ⚠️ **作用域限定（2026-09-15，issue #3683/#3672）：以上口径只适用 `order_create` 路径**
+  （agent 把面积算进 `processing_info.processingItems[].quantity`）。
+  `processing_item_manage(action=calculate_price)` 是**另一套契约**：后端自己从
+  `dimensions` 算 `area=宽×高`，再 `unitPrice × area × quantity`
+  （`ProcessingItemService.java:248-254` + `:310-318`）——把「宽×高」写进该端点的 `quantity`
+  会**必然双计**（实测：`dimensions` + `quantity=8` → ¥1920.00；正确 payload → ¥240.00）。
+  该端点用 `width`/`height` 承载面积、`quantity` 作计件数。原表述无限定，已实际把一次
+  per_area 归因引向「传 quantity=8.4 即可修」的错误修法；
 - 数据落库断言：create 类 payload 必须断言完整结构（如 `processing_item_configs` 含
   `customPrice=unit_price`、`unit=真实单位`），禁止只断"工具被调用"。
 - **写工具成功断言（`must_succeed`，issue #3361）**：期望里出现写工具（`order_create` /
