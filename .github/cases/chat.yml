@@ -450,6 +450,7 @@ cases:
       - order
       - defense
     tier: adversarial
+    persona: xiaobu
     tags:
       - data_safety
       - mask
