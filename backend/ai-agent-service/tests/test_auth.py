@@ -228,6 +228,14 @@ class TestGetCurrentUser:
         user = await get_current_user(request, authorization=None)
         assert user.user_id == "dev_user"
         assert user.tenant_id == 1
+        # #3511（HR-003 归因）：DEBUG 管理员身份必须带**通配权限**——
+        # 否则 role=admin 只能过 allowed_roles 粗筛，凡声明 required_permissions 的
+        # 工具（employee_manage 等）会一律「权限不足」：B 端独立栈实测
+        # `employee_manage!权限不足`，agent 行为正确却无法执行（评测环境缺陷，非能力缺陷）。
+        assert "*" in user.permissions, (
+            "DEBUG 管理员身份缺通配权限 permissions=['*'] → 需要 required_permissions 的"
+            "工具在评测栈里必然『权限不足』（HR-003 实测形态）"
+        )
 
     @patch("app.utils.auth.settings")
     @pytest.mark.asyncio
