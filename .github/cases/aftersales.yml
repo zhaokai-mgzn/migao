@@ -141,7 +141,13 @@ cases:
       # 「多张 pending」（生产/跑过几轮后残留）两种栈上关闭的是**不同工单**，断言
       # `success=true` 仍会绿 → 结论不可比。改为点名 seed 工单号（mibao_eval_seed.sql
       # Phase 3 的 `AS-20260914-9001`，pending/return），`pre_clean` 保证该形态存在。
-      - "把工单 AS-20260914-9001 关闭"
+      # 关闭原因必须由用户点名（#3544 断言可执行化）：工具 schema 的 `reason` 只写
+      # 「create 时必填」→ 用户不说原因时 agent 不会传，closeReason 恒为空 ——
+      # 那样「closeReason 落库」这条断言就没有真值可比（是不可判定，不是产品缺陷）。
+      # 点名后「落库 closeReason == 用户点名的原因」才有可判定谓词（同 §13.5 自包含化）。
+      # ⚠️ 两条并行线的**叠加**（#3568 输入侧确定性 + #3544 机器断言），互不覆盖：
+      # 点名工单号消除顺序依赖，点名原因给 db_verify 提供真值。
+      - "把工单 AS-20260914-9001 关闭，关闭原因写「客户已协商一致」"
       - "确认"
     pre_clean:
       - type: aftersales_ticket_prepare
@@ -150,11 +156,23 @@ cases:
         args:
           action: update_status
           status: closed
+    # 落库层「真的关闭了」（#3544 假绿升级 / 同 PP-006·PR-021 形态）：工具回显
+    # `success=true` 只证明调用没报错，证明不了工单状态与关闭字段真的落库。
+    # ⚠️ 依赖两条并行线（各自独立）：① admin-api 放宽 pending→closed（#3541，产品已裁定）；
+    # ② 状态变更原因字段名对齐（#3540：工具下发 `reason` 而 DTO 只接 `remark`
+    # → closeReason 静默不落库）。两条合入前本用例为**真红**（期望行为，非回归）。
+    db_verify:
+      - fetch: after_sales_ticket
+        expect_status: "closed"
+        expect_fields_nonempty:
+          - closedAt
+          - closeReason
+        expect_close_reason_contains: "协商一致"
     data_checks:
       - "success=true"
-      - "closedAt/closeReason 写入"
+      - "closedAt/closeReason 写入 —— 机器断言见 db_verify[after_sales_ticket]（落库 status=closed + closedAt/closeReason 非空 + closeReason 与用户点名原因一致）"
     skip_reason: ""
-    merge_log: "verification 3.4 独有。2026-09-14 消除顺序依赖（issue #3568）：「第一张未处理的工单」→ 点名 seed 工单号 AS-20260914-9001（列表顺序依赖：多张 pending 时关闭对象不确定）"
+    merge_log: "verification 3.4 独有；2026-09-14 校准（#3544）：① 「closedAt/closeReason 写入」原是自然语义、不计分（runner 计分白名单只认 success=true / error.code= / 未被调用）→ 升级为 db_verify[after_sales_ticket] 落库断言（新增核对器，见 tests/agent_eval/local_runner.py）；② 用户点名的关闭原因补进输入（工具 reason 仅 create 必填，用户不说原因则 closeReason 无真值可判）；③ 关闭态字段缺失/状态未落地即判红（fail-closed，不空转通过）。2026-09-14 消除顺序依赖（issue #3568）：「第一张未处理的工单」→ 点名 seed 工单号 AS-20260914-9001（列表顺序依赖：多张 pending 时关闭对象不确定）；与 #3544 叠加不覆盖——点名工单号消除顺序依赖，点名原因给 db_verify 提供真值"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_after_sales_basic.py"
