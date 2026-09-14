@@ -1469,7 +1469,7 @@ cases:
     truths_ref:
       - order.logistics
     user_inputs:
-      - "帮我看看我刚下的那个遮光窗帘订单，快递到哪了"
+      - "帮我看看我刚下的那单的快递物流到哪了"
     expectations:
       - tool: customer_logistics_track
     forbidden_text:
