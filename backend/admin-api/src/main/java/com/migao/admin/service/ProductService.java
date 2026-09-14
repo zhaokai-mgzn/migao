@@ -430,6 +430,24 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
                     request.getSellingMethods(), request.getDoorWidths(),
                     skuPrice, skuStock,
                     request.getSkus());
+        } else if (request.getBasePrice() != null) {
+            // 改价必须落到 SKU（issue #3743 / OR-014）：只给 basePrice、不给
+            // colors/sellingMethods/doorWidths/skus 的部分更新（agent 的
+            // `product_update(price=X)` 走的就是这条：updateProductForAgent 只 set basePrice）
+            // 上面那个分支不成立 ⇒ `saveColorsAndSkus` 里唯一会把 basePrice 写进 SKU 的
+            // `sku.setPrice(basePrice)` 从不执行 ⇒ product_skus.price 停留在旧价。
+            //
+            // 后果是**客户可见的错价**：商品库出现「商品级 basePrice ≠ SKU 级 price」两个价，
+            // 而 agent 下单的**权威价**正是 SKU 级（OrderService 取价校验取 ProductSku.price）
+            // ⇒ 米宝按旧 SKU 价报价并成交，商户刚改的价对 AI 报价无效。
+            //
+            // 显式带 `skus`（前端表单逐 SKU 定价）时走上面的分支、SKU 级价优先，本分支不参与。
+            ProductSku priceSync = new ProductSku();
+            priceSync.setPrice(request.getBasePrice());
+            productSkuMapper.update(priceSync, new LambdaQueryWrapper<ProductSku>()
+                    .eq(ProductSku::getProductId, id)
+                    .eq(ProductSku::getTenantId, tenantId));
+            log.info("商品改价已同步到 SKU: id={}, price={}", id, request.getBasePrice());
         }
 
         // 更新商品属性：仅当请求中明确提交 brand 或 specifications 时才重写，避免误清空

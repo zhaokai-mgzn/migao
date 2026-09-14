@@ -1,4 +1,4 @@
-// case_ids: PR-001, PR-002, PR-003, PR-004, PR-005, PR-006, PR-008, PP-006, PR-017, PR-019, PR-021
+// case_ids: PR-001, PR-002, PR-003, PR-004, PR-005, PR-006, PR-008, PP-006, PR-017, PR-019, PR-021, OR-014
 // PP-006（issue #3005，回滚 #2986）：商品-加工项关联只支持价格自定义（custom_price），
 // 「每米数量」密度（custom_per_meter_quantity）已回滚移除，响应无密度字段
 // PR-021（#3539/#3546 同族，#3616）：SKU 匹配口径归一化——调价路径（#3546）与本文件尾部新增的
@@ -552,6 +552,38 @@ class ProductServiceTest {
         // Then
         assertThat(result).isNotNull();
         verify(productMapper).updateById(any(Product.class));
+    }
+
+    @Test
+    @DisplayName("改价必须同步到 SKU（issue #3743 / OR-014：商品级 198 与 SKU 级 168 分叉）")
+    void updateProduct_BasePriceSyncsToSkus() {
+        // Given：只下发 basePrice，不带 colors/sellingMethods/doorWidths/skus
+        // —— 正是 agent `product_update(price=X)` 的形态（updateProductForAgent 只 set basePrice）
+        ProductUpdateRequest request = new ProductUpdateRequest();
+        request.setName("遮光窗帘");
+        request.setCategoryId("cat-001");
+        request.setBasePrice(new BigDecimal("198.00"));
+
+        when(productMapper.selectById("prod-001")).thenReturn(testProduct);
+        when(categoryMapper.selectById("cat-001")).thenReturn(testCategory);
+        when(productMapper.updateById(any(Product.class))).thenReturn(1);
+
+        // getProductById 内部会再读一次商品（同 updateProduct_Success 的口径）
+        Product updatedProduct = Product.builder()
+                .id("prod-001")
+                .name("遮光窗帘")
+                .categoryId("cat-001")
+                .basePrice(new BigDecimal("198.00"))
+                .build();
+        when(productMapper.selectById("prod-001")).thenReturn(testProduct).thenReturn(updatedProduct);
+
+        // When
+        productService.updateProduct("prod-001", request, 1L);
+
+        // Then：新价必须落到该商品全部 SKU —— 改前这里**从不被调用**（红证）
+        ArgumentCaptor<ProductSku> skuCaptor = ArgumentCaptor.forClass(ProductSku.class);
+        verify(productSkuMapper).update(skuCaptor.capture(), any());
+        assertThat(skuCaptor.getValue().getPrice()).isEqualByComparingTo("198.00");
     }
 
     @Test
