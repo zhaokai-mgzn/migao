@@ -73,21 +73,25 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 # ── 评测并发槽位：仓库级共享（issue #3563，2026-09-14 用户裁定）───────────────
-# 修前：`group` 按 PR 号/ref 分组 → **跨 PR 无约束**，与本 workflow 同族的两条评测
+# 修前：`group` 按 PR 号/ref 分组 → **跨 PR 无约束**，与同族的两条评测
 #   （xiaobu-acceptance / post-deploy-eval）各占各的槽 → 实测 13 个 in-progress 里有 6 条
 #   是评测型 job（各自一套 docker 栈 + 真实 LLM），queued 60 个 run，**required 检查被饿死**
 #   （9 个 PR 全 BLOCKED）。
-# 修后：与 xiaobu-acceptance 共用 `eval-stack-global`（post-deploy-eval 亦同，AD 包落地）
-#   —— 三处一致，单一说明见 docs/testing/eval-environments.md §3.4。
+# 修后（**两层语义**，与 xiaobu-acceptance.yml 的落地方式一致，见 AD 的 #3587 / 本文档 §3.3）：
+#   · **文件级** group 仍是"按 PR" → 同 PR 新 push 即时取消被取代的 run（省栈省 token，PR 迭代必需）；
+#   · **job 级** group 才是共享槽位 `eval-stack-global-${{ matrix.persona }}` ——
+#     真正会起栈的 job 进入全局槽位，保证仓库内同一时刻每个 persona 只有一套评测栈在跑。
+#   ⚠️ 为什么不把文件级 group 直接换成共享槽位：那样"新 push"就必须**排在**旧 run 后面，
+#     既丢了 PR 迭代性，又让被取代的旧 run 有机会跑完整套栈 —— 最坏组合（AD 的 #3587 实测论证）。
 #
-# ★ `cancel-in-progress: false`：**故意不 cancel 正在跑的那条**（评测 job 的产物就是结论
-#   本身，cancel 掉 = 那个 PR 永远拿不到该信号；同 post-deploy-eval.yml 的 #3526 论证）。
-#   ⚠️ 副作用（有意取舍，§3.4 详述）：GitHub 是"一个 group 同时 1 running + 1 pending"，
-#   新 run 进来会**取消旧的 pending** → 突发期多数 PR 拿到 `cancelled` 而非"排队后跑"。
-#   这两条评测是**信息性**（不 required，§16.5）：cancel 不阻塞合并，行为信号由部署后全量轮承担。
+# ★ `cancel-in-progress: false`（job 级）：**故意不 cancel 正在跑的那条**
+#   （评测 job 的产物就是结论本身，cancel 掉 = 那个 PR 永远拿不到该信号；同 #3526 论证）。
+#   ⚠️ 副作用（有意取舍，§3.3 详述）：GitHub 是"一个 group 同时 1 running + 1 pending"，
+#   新 run 进来会**取消旧的 pending** ⇒ 突发期部分 PR/腿拿到 `cancelled` 而非"排队后跑"；
+#   这些评测是**信息性**（不 required，§16.5）：cancel 不阻塞合并，行为信号由部署后全量轮承担。
 concurrency:
-  group: eval-stack-global
-  cancel-in-progress: false
+  group: agent-behavior-eval-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 on:
   pull_request:
@@ -386,6 +390,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.map.outputs.personas) }}
+    # ★ **job 级**共享槽位（与 xiaobu-acceptance 同款两层语义，见文件头 concurrency 段）：
+    #   文件级 group 管"同 PR 新 push 取消被取代的 run"（省栈省 token）；
+    #   job 级 group 才管"仓库内同一时刻只有一套评测栈在构建/运行"。
+    #   group 带 `-${{ matrix.persona }}`：两条腿是**两套独立栈**，本就要并行；
+    #   若不带后缀，新 run 的 mibao 腿会把旧 run 的 pending xiaobu 腿挤掉 ⇒ 丢掉一整个 persona 的结论。
+    concurrency:
+      group: eval-stack-global-${{ matrix.persona }}
+      cancel-in-progress: false
     # 与 xiaobu-acceptance 同量级：栈在无 buildx 缓存时回落全量构建（~13min），
     # 评测本身是多个分桶串行（每桶内并发 6）+ 失败重试
     timeout-minutes: 60

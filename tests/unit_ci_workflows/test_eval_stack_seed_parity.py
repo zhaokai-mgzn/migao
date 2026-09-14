@@ -335,27 +335,69 @@ class TestEvalConcurrencySlot:
 
     实测背景（2026-09-14 05:28Z）：13 个 in-progress 里 6 条是评测型 job
     （各自一套 docker 栈 + 真实 LLM），queued 60 个 run，**required 检查被饿死**，
-    9 个 PR 全部 BLOCKED。修法 = 评测类共用 `eval-stack-global`（三处一致，
-    单一说明见 `docs/testing/eval-environments.md` §3.4）。
+    9 个 PR 全部 BLOCKED。
+
+    ★ 落地形态是**两层**（与 AD 的 #3587 对 xiaobu-acceptance 的方案一致）：
+      · **文件级** group 保持"按 PR" + `cancel-in-progress: true`
+        —— 同 PR 新 push 即时取消被取代的 run（省栈省 token；PR 迭代必需品）；
+      · **job 级** group = 共享槽位 `eval-stack-global`（`cancel-in-progress: false`）
+        —— 真正会起栈的 job 全局串行，required 不再被长任务饿死。
+    **不要**把文件级 group 直接换成共享槽位：那样新 push 必须排在旧 run 后面，
+    丢掉 PR 迭代性，还让被取代的旧 run 跑完整套栈（最坏组合）。
+    单一说明见 `docs/testing/eval-environments.md` §3.3。
     """
 
     GROUP = "eval-stack-global"
 
+    # 各 workflow 里"真正起栈"的 job 名
+    EVAL_JOB = {
+        "xiaobu-acceptance.yml": "xiaobu-acceptance",
+        "agent-behavior-eval.yml": "behavior-eval",
+    }
+
     @pytest.mark.parametrize("workflow", ("xiaobu-acceptance.yml", "agent-behavior-eval.yml"))
-    def test_shares_repo_wide_slot(self, workflow: str):
+    def test_file_level_group_keeps_per_pr_cancel(self, workflow: str):
+        """文件级必须仍是**按 PR** + cancel-in-progress=true（PR 迭代的取消能力别丢）。"""
         conc = _load_workflow(workflow).get("concurrency") or {}
-        assert conc.get("group") == self.GROUP, (
-            f"{workflow} 的 concurrency.group={conc.get('group')!r}，应为 {self.GROUP!r} —— "
-            "评测类各自分组 = 跨 PR 无约束 → 并发预算被吃光、required 被饿死"
+        assert conc.get("cancel-in-progress") is True, (
+            f"{workflow} 文件级 cancel-in-progress={conc.get('cancel-in-progress')!r}，必须为 True —— "
+            "同一 PR 连推多次时，被取代的 run 应立刻作废（省栈省 token）"
+        )
+        assert self.GROUP not in str(conc.get("group") or ""), (
+            f"{workflow} 把**文件级** group 换成了共享槽位（{conc.get('group')!r}）—— "
+            "那样新 push 必须排在旧 run 后面：丢 PR 迭代性 + 旧 run 跑完整套栈 = 最坏组合。"
+            "共享槽位要加在 **job 级**（见 test_eval_job_has_global_slot）"
+        )
+        assert "pull_request.number" in str(conc.get("group") or ""), (
+            f"{workflow} 文件级 group 未按 PR 号分组（{conc.get('group')!r}）"
         )
 
     @pytest.mark.parametrize("workflow", ("xiaobu-acceptance.yml", "agent-behavior-eval.yml"))
-    def test_does_not_cancel_running_eval(self, workflow: str):
-        """不许 cancel 正在跑的评测（否则那个 PR 永远拿不到结论 = 活锁，#3526）。"""
-        conc = _load_workflow(workflow).get("concurrency") or {}
+    def test_eval_job_has_global_slot(self, workflow: str):
+        """真正的并发约束在 **job 级**：起栈的 job 必须进共享槽位且不 cancel 正在跑的。"""
+        job = (_jobs(workflow).get(self.EVAL_JOB[workflow])) or {}
+        conc = job.get("concurrency") or {}
+        assert str(conc.get("group") or "").startswith(self.GROUP), (
+            f"{workflow}/{self.EVAL_JOB[workflow]} 的 job 级 concurrency.group="
+            f"{conc.get('group')!r}，应以 {self.GROUP!r} 开头 —— "
+            "没有它 = 跨 PR 无约束 → 并发建栈把栈启动从 3.4min 抬到 12min、required 被饿死"
+        )
         assert conc.get("cancel-in-progress") is False, (
-            f"{workflow} 的 cancel-in-progress={conc.get('cancel-in-progress')!r}，必须为 False —— "
-            "评测 job 的产物就是结论本身"
+            f"{workflow}/{self.EVAL_JOB[workflow]} job 级 cancel-in-progress 必须为 False —— "
+            "评测 job 的产物就是结论本身，cancel 正在跑的一条 = 那个 PR 永远拿不到该信号（#3526）"
+        )
+
+    def test_behavior_eval_slot_is_per_persona(self):
+        """matrix 腿 = 两套独立栈 → job 级 group 必须带 persona 后缀。
+
+        不带后缀时，新 run 的 mibao 腿会把旧 run 的 **pending xiaobu 腿**挤掉 →
+        丢掉一整个 persona 的结论（比慢更糟：结论缺失而不自知）。
+        """
+        job = _jobs("agent-behavior-eval.yml")["behavior-eval"]
+        group = str((job.get("concurrency") or {}).get("group") or "")
+        assert "matrix.persona" in group, (
+            f"behavior-eval 的 job 级 group={group!r} 未带 persona 维度 —— "
+            "两条 matrix 腿会互相挤掉 pending 状态"
         )
 
     @pytest.mark.parametrize("workflow", ("xiaobu-acceptance.yml", "agent-behavior-eval.yml"))
@@ -370,22 +412,27 @@ class TestEvalConcurrencySlot:
             f"{workflow} 的槽位说明必须同时讲清「排队」与「被取消」两种状态"
         )
 
-    def test_three_workflows_share_the_same_group_name(self):
-        """三处（含 post-deploy-eval，AD 包落地）group 名必须一致 —— 只读断言，不改它。"""
-        names = {
-            wf: ((_load_workflow(wf).get("concurrency") or {}).get("group"))
-            for wf in EVAL_WORKFLOWS
-        }
-        if not names["post-deploy-eval.yml"]:
-            # 跨包一致性哨兵（issue #3563）：post-deploy-eval 的槽位由 AD 包落地，
-            # 尚未合并前**不拦**本 PR 的 CI；一旦落地，本断言自动生效并锁死三处同名。
-            pytest.skip(
-                "post-deploy-eval.yml 尚未加 concurrency 槽位（AD 包负责）—— "
-                f"落地后本断言会要求它等于 {self.GROUP!r}（跨包一致性哨兵）"
-            )
-        assert len(set(names.values())) == 1, (
-            f"评测类 workflow 的 group 名不一致：{names} —— 三处必须同名（§3.4 单一说明）"
+    def test_three_workflows_share_the_same_slot_name(self):
+        """三处（含 post-deploy-eval #3587）用**同一个**槽位名 —— 只读断言，不改它。
+
+        post-deploy-eval 是**文件级**槽位（它没有 PR 触发，不存在 PR 迭代问题），
+        故它的文件级 group 就等于共享槽位名。
+        """
+        pde = _load_workflow("post-deploy-eval.yml").get("concurrency") or {}
+        pde_group = str(pde.get("group") or "")
+        assert pde_group, (
+            "post-deploy-eval.yml 尚未加 concurrency 槽位（#3587 负责）—— 跨包一致性哨兵，"
+            f"落地后应为 {self.GROUP!r}"
         )
+        assert pde_group.startswith(self.GROUP), (
+            f"post-deploy-eval 的槽位名 {pde_group!r} 与本 PR 的 {self.GROUP!r} 不一致 —— "
+            "group 名是契约，改名等于把队列拆散（§3.3 注意事项 4）"
+        )
+        for wf, job_name in self.EVAL_JOB.items():
+            group = str(((_jobs(wf).get(job_name) or {}).get("concurrency") or {}).get("group") or "")
+            assert group.startswith(self.GROUP), (
+                f"{wf}/{job_name} 的 job 级槽位 {group!r} 与 post-deploy-eval 不同源"
+            )
 
 
 class TestBehaviorGateIsNonBlocking:

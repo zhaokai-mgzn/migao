@@ -26,6 +26,18 @@ class ProcessingOrderGenerateTool(BaseTool):
 
     allowed_roles = ["admin", "tenant_admin", "operator"]
     read_only = False
+    # requires_confirmation=True（issue #3594 写工具确认门禁分类审计）：
+    # 本工具是**真实业务写**——批量创建加工单（快照固化五要素）并把订单 confirmed
+    # 推进到 producing（加工方据此排产），副作用不可忽略。此前 destructive /
+    # requires_confirmation 均为 False ⇒ 完全不经 `_requires_confirmation` 代码门禁，
+    # 只靠 prompt 文本铁律（间接提示注入面，审计 07 P0-L1），且与**三处已声明**的
+    # 二次确认要求自相矛盾：本文件 description「批量生成前必须列出订单清单并二次确认」、
+    # references/prompts/order.md「批量前先确认」、order_skill.py「写操作 confirm」。
+    # 不标 destructive：加工单可由 processing_order_update(action=cancel) 取消、订单回退
+    # 已确认（可逆），故按「非 destructive 但高风险写操作」口径标记。
+    # 所属 skill `order` 已绑定 interact + validate_input ⇒ 确认卡路径可达，不会出现
+    # 「被拦截却调不到 interact」的不可执行指令（issue #3317）。
+    requires_confirmation = True
     destructive = False
     idempotent = True
 

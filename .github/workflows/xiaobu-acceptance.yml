@@ -82,26 +82,31 @@ on:
       - '.github/cases/**'
       - '.github/workflows/xiaobu-acceptance.yml'
 
-# ── 评测并发槽位：仓库级共享（issue #3563，2026-09-14 用户裁定）───────────────
+# ── 评测并发槽位：两层语义（issue #3563；job 级共享槽位与 AD 的 #3587 同一落地方式）──
 # 修前：`group` 按 PR 号/run_id 分组 → **跨 PR 无任何约束**。实测（2026-09-14 05:28Z）
 #   13 个 in-progress 里 6 条是本类评测（Xiaobu Acceptance ×5 + Agent Behavior Eval ×1），
 #   queued 60 个 run —— 其中一个 PR 的 **required** 检查（admin-api unit tests）也在队列里，
 #   9 个 PR 全部 BLOCKED。**不是队列深，是并发预算被 PR 层评测吃光，required 被饿死。**
-# 修后：两类 PR 层评测（本 workflow + agent-behavior-eval）共用 `eval-stack-global`，
-#   与 post-deploy-eval 同一 group 名（AD 包在那边落地）—— 三处一致，由
-#   docs/testing/eval-environments.md §3.4 单一说明。
+# 修后（两层，缺一不可）：
+#   · **文件级**（下面这块）保持"按 PR" + `cancel-in-progress: true` —— 同一 PR 连推 3 次时，
+#     前两次的栈构建与 token 立刻作废（PR 迭代的必需品，别丢）；
+#   · **job 级**（见 `xiaobu-acceptance:` job 的 concurrency）加共享槽位
+#     `eval-stack-global` —— 真正会起栈的 job 全局串行，同一时刻仓库内只有一套评测栈在构建。
+#   单一说明见 docs/testing/eval-environments.md §3.3（三处一致：本 workflow +
+#   agent-behavior-eval + post-deploy-eval #3587）。
 #
-# ★ `cancel-in-progress: false`：**故意不 cancel**。
-#   评测 job 的产物就是结论本身；cancel 掉正在跑的那条 = 那个 PR 永远拿不到该信号（活锁）。
-#   与 post-deploy-eval.yml 里"为什么不加 cancel-in-progress"的既有论证同源（#3526）。
-#   ⚠️ 语义副作用（**必须知道**，详见 §3.4）：GitHub 的 concurrency 是"一个 group 同时
-#   1 running + 1 pending"，新 run 进入一个**已有 pending** 的 group 时，**旧的 pending
-#   会被取消** —— 突发期多数 PR 拿到的是 `cancelled` 而不是"排队后跑"。这是**有意的取舍**：
-#   这两条评测是**信息性**（不 required，§16.5），cancel 不阻塞合并；行为信号由
-#   **部署后全量轮**（post-deploy-eval，双 persona 全量）承担。
+# ⚠️ 为什么不把文件级 group 直接换成共享槽位：那样"新 push"必须**排在**旧 run 后面，
+#   既丢 PR 迭代性，又让被取代的旧 run 跑完整套栈 —— 最坏组合。
+#
+# ★ job 级 `cancel-in-progress: false`：**故意不 cancel 正在跑的那条**（评测 job 的产物就是
+#   结论本身，cancel 掉正在跑的一条 = 那个 PR 永远拿不到该信号；同 #3526 论证）。
+#   ⚠️ 语义副作用（**必须知道**，详见 §3.3）：GitHub 的 concurrency 是"一个 group 同时
+#   1 running + 1 pending"，新 run 进入**已有 pending** 的 group 时，**旧的 pending 会被取消**
+#   ⇒ 突发期部分 run 拿到 `cancelled` 而不是"排队后跑"。这是**有意的取舍**：评测是
+#   **信息性**（不 required，§16.5），cancel 不阻塞合并；行为信号由**部署后全量轮**承担。
 concurrency:
-  group: eval-stack-global
-  cancel-in-progress: false
+  group: xiaobu-acceptance-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -168,6 +173,12 @@ jobs:
     name: ${{ github.event.inputs.persona || 'xiaobu' }} Acceptance (DEBUG 本地栈 + 真实 LLM)
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    # ★ **job 级**共享槽位（真正的并发约束，见文件头 concurrency 段与 §3.3）：
+    #   文件级 group 只管"同 PR 新 push 取消被取代的 run"；只有这里才管
+    #   "仓库内同一时刻只有一套评测栈在构建/运行" —— required 检查因此不再被长任务饿死。
+    concurrency:
+      group: eval-stack-global
+      cancel-in-progress: false
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.shards.outputs.matrix) }}

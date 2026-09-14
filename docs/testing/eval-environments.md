@@ -98,7 +98,52 @@ B 端 `prod_eval_2699` 因 `created_at` 更新而排在首条 → 用例的「�
 - **翻案成本**：若将来要纳入 required，需先解决"方差卡合并"（例如只对确定性失败 required、
   或把该 job 拆成"确定性部分 required + LLM 部分信息性"），**禁止裸加 required**。
 
-### 3.3 决策记录：规则命中**不再阻塞**，降为「报告 + PR 评论 + 自动开 issue」（2026-09-14 用户确认）
+### 3.3 仓库级评测槽位 `eval-stack-global`（#3587）：排队，不 cancel
+
+**问题**：每个评测 workflow 各自一条排队队列 → 多个 workflow / 多个 PR 同时**并发建栈**互抢
+runner 与 Docker Hub 出口，栈启动从 3.4min 被抬到 12min，评测轮次从 8min 被抬到 12min、
+确定性失败从 9 条涨到 13 条（#3417 实测；`eval-pipeline-performance.md` §2.2）。
+排队不只是慢 —— **它让结论变不准**（并发制造假失败）。
+
+**做法**：让所有**会起独立栈**的评测 workflow 共用同一个 concurrency group
+（`eval-stack-global`）。GitHub 的语义是「同 group 至多 1 个 running，其余 queued」，
+group 名不带 workflow 前缀即**跨 workflow 生效**。
+
+| workflow | 现状 | 落地改法（精确到行） | 预期效果 |
+|---|---|---|---|
+| `post-deploy-eval.yml` | ✅ **已改**（#3587） | 文件级新增 `concurrency: { group: eval-stack-global, cancel-in-progress: false }` | 部署后全量回归全局串行，不再与其它评测抢栈 |
+| `agent-behavior-eval.yml` | ✅ **已改**（#3563） | 与 xiaobu 同款**两层**：文件级 group 保持按 PR（`cancel-in-progress: true`）；在 `behavior-eval` job 加 job 级 `eval-stack-global-${{ matrix.persona }}`（`cancel-in-progress: false`） | 同 PR 新 push 仍即时取消旧 run；每个 persona 的栈全局串行（带 persona 后缀 = 该 workflow 的两条腿本就是两套独立栈，不带后缀会互相挤掉 pending 腿） |
+| `xiaobu-acceptance.yml` | ⏳ 待改（另包） | 文件级（第 86-88 行）**保持不变**；在 `xiaobu-acceptance` job（第 125 行 `xiaobu-acceptance:` 下、`timeout-minutes` 之后）新增 job 级 `concurrency: { group: eval-stack-global, cancel-in-progress: false }` | PR 级取消语义**完全保留**（新 push 仍能立刻杀掉排队中的旧 run —— 它还没起栈，杀掉最省）；真正起栈的 job 进入全局槽位，**同一时刻仓库内只有一套评测栈在构建** |
+
+**为什么 xiaobu 的改法与其他两个不同（关键取舍，别抄错）**：
+`xiaobu-acceptance.yml` 的文件级 `cancel-in-progress: true` 是**PR 迭代**的必需品
+（同一个 PR 连推 3 次，前两次的栈构建与 token 全废）。若把文件级 group 换成共享槽位并
+`cancel-in-progress: false`，新 push 就必须**排在**旧 run 后面 —— 那既丢了 PR 迭代性，
+又让旧 run 有机会跑完整套栈，是最坏组合。
+故 xiaobu 用 **job 级** group：PR 级"取消旧的排队 run"（便宜、正确）+ job 级"全局串行建栈"
+（消除互抢）。两层语义各司其职，**不做二选一**。
+
+**注意事项**：
+1. **不要为了"更快"把 `cancel-in-progress` 改成 true**（对 post-deploy-eval）——
+   取消在跑的长评测会让门禁永远跑不完（活锁）+ 结论档永久丢失（#3526 决策，勿翻案）；
+2. **共享槽位的代价是排队**：并发建栈消失后，同时提交的多条评测会串行。
+   这正是 #3587 要的（少付一份栈构建 + 少一份假失败），但它**不缩短单次评测** ——
+   单次提速仍靠 `case_ids` 收窄 + `fast`（评测档）+ GHCR 预构建镜像（栈固定成本，
+   见 `eval-pipeline-performance.md` §2.7）；
+3. 新增**会起独立栈**的评测 workflow 时，一并加入 `eval-stack-global`
+   （不起栈的纯计算 job/workflow 不必加入）；
+4. group 名是**契约**：改名等于把队列拆散，改名必须同步改所有 workflow + 本文档
+   （守卫：`tests/unit_ci_workflows/test_post_deploy_eval_supersede.py::TestGlobalEvalSlot`）。
+
+**落地细节（#3563，与本文档其余部分一致）**：PR 触发的两条评测走**两层** group ——
+文件级管「同 PR 新 push 取消被取代的 run」（PR 迭代必需，**别丢**），job 级才是共享槽位。
+`agent-behavior-eval` 是 persona matrix（两条腿 = 两套独立栈），其 job 级 group 带
+`-${{ matrix.persona }}` 后缀：不带后缀时，新 run 的 mibao 腿会把旧 run 的 **pending xiaobu 腿**
+挤掉 → 丢掉一整个 persona 的结论。
+**诚实边界**：该槽位保的是「**最新的评测 run 会跑**」，不是「每个 PR 都拿到行为信号」——
+突发期被取代的 pending run 会 `cancelled`（信息性检查，不阻塞合并；行为信号由部署后全量轮承担）。
+要「每 PR 都有信号」必须分离 runner 池（超出仓库范围，本轮不选）。
+### 3.4 决策记录：规则命中**不再阻塞**，降为「报告 + PR 评论 + 自动开 issue」（2026-09-14 用户确认）
 
 - **决策**（2026-09-14，用户裁定原话"按建议来"）：`agent-behavior-eval` 的**规则命中**用例
   失败时，workflow **不再变红**（评测步骤恒 `exit 0`），门禁语义从「规则桶阻塞 / 兜底网信息性」
@@ -122,29 +167,21 @@ B 端 `prod_eval_2699` 因 `created_at` 更新而排在首条 → 用例的「�
 - **同源决策记录待同步**：`migao-dev-flow` 技能文件 §16.5 另有一份决策记录，
   由另一包（K）在改 —— 本决策在**技能文件侧**的同步待该包合并后进行（本 PR 不改技能文件）。
 
-### 3.4 评测类 workflow 统一并发槽位：`eval-stack-global`（2026-09-14 用户确认）
 
-- **背景（实测，2026-09-14 05:28Z）**：13 个 in-progress 里 **6 条是评测型 job**
-  （`Xiaobu Acceptance` ×5 + `Agent Behavior Eval` ×1，各自一套 docker 栈 + 真实 LLM），
-  queued 60 个 run —— 其中一个 PR 的 **required** 检查（admin-api unit tests）也在队列里，
-  **9 个 PR 全部 BLOCKED**。⇒ 不是队列深，是**并发预算被 PR 层评测吃光，required 被饿死**。
-- **决策**：**评测类 workflow 统一加入 `eval-stack-global` 槽位**
-  （`.github/workflows/{xiaobu-acceptance,agent-behavior-eval,post-deploy-eval}.yml`
-  的 `concurrency.group` 同名，`cancel-in-progress: false`）。这条是**三处一致的单一说明**。
-- **为什么排队而不 cancel 正在跑的那条**：评测 job 的产物就是结论本身，cancel 掉正在跑的
-  一条 = 那个 PR 永远拿不到该信号（活锁；`post-deploy-eval.yml` 里 #3526 的既有论证同源）。
-- **⚠️ 必须知道的语义副作用（有意取舍）**：GitHub concurrency 是「一个 group 同时
-  **1 running + 1 pending**」，新 run 进入一个**已有 pending** 的 group 时，**旧的 pending
-  会被取消** —— 突发期多数 PR 拿到的是 `cancelled` 而**不是**"排队后跑"。
-  - 这两条评测是**信息性**（§16.5）：被取消**不阻塞合并**（PR 仍按 required 合并）；
-  - 行为信号**延后到部署后全量轮**（`post-deploy-eval` 双 persona 全量）承担 ——
-    与 §16.2「全量复测降频」、§16.5 门禁矩阵一致；
-  - **诚实边界**：单槽位保的是"**最新的评测 run** 会跑"，不是"**每个 PR** 都拿到行为信号"。
-    要"每 PR 都有信号"需要分离 runner 池（超出仓库范围，本轮不选）。
-- **可观测性（防误读）**：两个 workflow 都在**抢槽位之前**把槽位语义写进
-  `$GITHUB_STEP_SUMMARY` 并打印到日志 —— 让人从 UI 就能区分
-  「**排队**」（评测单条 5~15min，正常）与「**被取代而取消**」（不代表代码有问题），
-  不再把排队/取消误判成"CI 卡住"或"这个 PR 有问题"。
+### 3.5 抑制「已被取代的 run」（#3587）：门禁不因抑制而消失
+
+`post-deploy-eval.yml` 在**任何真实成本之前**比对「本次被评 SHA」与「远端 main HEAD」：
+不等即说明这份镜像已被更新的 commit 覆盖，**跳过评测**并打印链接链
+（被评 SHA 的 commit → 取代它的 main commit → 取代它的 run 列表），
+**不计 failure、不建 issue**。
+
+- **它不违反"不 cancel-in-progress"那条决策**：抑制不是取消 —— 取消发生在长评测跑了一半
+  （钱和时间已烧掉、且没有任何结论）；抑制发生在花钱之前（秒级比对、0 token、0 栈构建），
+  且结论由**取代它的那次 run** 承担并有链接可追。「某次部署时行为到底怎样」仍可回答 ——
+  答的是"这个 **main 状态**"而不是"这个已被覆盖的 commit"；
+- **fail-open**：`git ls-remote` 失败 / 取值不可得 / 手动 `workflow_dispatch` → **一律照常评测**。
+  判定逻辑本身绝不能成为"漏评"的来源；
+- **手动逃生口**：`workflow_dispatch` 的 `force_eval=true` 可强制评测（回滚复验/补跑特定部署）。
 
 ## 四、与米高研发模式的衔接
 

@@ -103,13 +103,41 @@ on:
           - '3'
           - '6'
           - '8'
+      force_eval:
+        description: '【#3587】true = 强制评测，即使 main 已前进（默认 false：被取代即抑制）。⚠️ 只有手动触发能设；自动门禁（部署后）恒走默认判定'
+        required: false
+        default: false
+        type: boolean
 
-# ── 为什么不加 `concurrency: cancel-in-progress`（#3526 的有意决策，勿当遗漏）──
+# ── 为什么不加 `concurrency: cancel-in-progress`（#3526 的有意决策），以及 #3587 怎么在不违反它的前提下提速 ──
 # xiaobu-acceptance.yml 对 PR 场景用 cancel-in-progress 取消旧 run（PR 迭代快、取消划算）。
 # 本 workflow 恰恰相反：它挂在**每次部署**后面跑长评测（双 persona normal 全量，90min 预算）。
 # main 频繁合并时，取消在跑的长评测 → ① 门禁永远跑不完（旧 run 被杀、新 run 重头再来，
 # 形成"永远在跑、永远没结论"的活锁）；② 结论档丢失 —— 事后无法回答"某次部署时行为到底
-# 怎样"。宁可排队串行，也要让每一次部署都有完整的判定留痕。故**不**声明 concurrency。
+# 怎样"。宁可排队串行，也要让每一次部署都有完整的判定留痕。
+#
+# #3587（本次）：把上面那条纪律**加强**为"仓库级串行槽位"，并新增"被取代即抑制"：
+#   · concurrency group 固定为 `eval-stack-global`（**不是**按 run 区分，否则等于没串行）+
+#     cancel-in-progress: false —— 所有 run 共用一个仓库级评测槽位：**排队，但绝不并发建栈**。
+#     跨 workflow 语义与"另两个评测 workflow 怎么加入同一 group"见
+#     docs/testing/eval-environments.md §3.3。这不是 cancel，是"更严格的串行"。
+#   · job 内最早一步「抑制判定」：本次 run 对应的 SHA ≠ 当前 main HEAD → **跳过评测**并留链接链。
+#     为什么不违反上面 ②（结论档丢失）：被抑制的 run 评价的对象（那份镜像 / 那个 main 状态）
+#     **已被后续 commit 取代**，它测出来的结论描述的是一个*已经不是 main* 的状态——留它才是
+#     误导（#3587 实测：连合两个 PR 时两轮评测都在排队，而只有最后一轮的 main 状态有意义）。
+#     抑制时显式打印「被取代它的 SHA + 被取代它的 run 链接」，审计链从
+#     "每一次部署一条结论"变成"每一个 main 状态一条结论"，可追、不丢。
+#   · 关键差别：**抑制 ≠ 取消**。取消发生在长评测跑了一半（钱和时间已经烧掉、且没有任何结论）；
+#     抑制发生在**任何真实成本发生之前**（秒级 SHA 比对、0 LLM token、0 栈构建）。
+#     旧 run 被杀 → 结论永久丢失；旧 run 被抑制 → 结论由取代它的 run 承担，且有链接可追。
+concurrency:
+  # 静态 group 名（不含任何表达式）= 仓库级共享槽位。GitHub 的并发语义是
+  # "同 group 内至多 1 个 running，其余 queued"，故这一行即"全局串行化"。
+  # 跨 workflow 也生效（group 名不带 workflow 前缀）：其他评测 workflow 只要声明同一
+  # group 名就自动进入同一队列 —— 落地步骤见 docs/testing/eval-environments.md §3.3。
+  group: eval-stack-global
+  # 保持 #3526 纪律：宁可排队，不取消（取消会让长评测永远跑不完且结论永久丢失）。
+  cancel-in-progress: false
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -118,6 +146,11 @@ jobs:
   eval:
     name: ${{ matrix.persona }} 全量回归（独立栈 + 真实 LLM）
     runs-on: ubuntu-latest
+    # ① #3587：把「本次是否被抑制」传给 report job —— 抑制要留档，但不能被误当失败。
+    # ⚠️ 矩阵下 job output 取**最后一条腿**的值；两条腿都在同一次 run 内用同一对
+    #    SHA 做判定，故取值一致（不依赖哪条腿先写）。
+    outputs:
+      superseded: ${{ steps.supersede.outputs.superseded }}
     # 90 分钟预算（每条腿）：栈构建（无缓存路径实测 3.4~13min）+ 单 persona
     # normal 全量（B 端 ~47 条 / C 端 ~35 条）真实 LLM 往返。
     timeout-minutes: 90
@@ -133,6 +166,7 @@ jobs:
       github.event_name == 'workflow_dispatch'
       || (github.event.workflow_run.conclusion == 'success'
           && github.event.workflow_run.event != 'schedule')
+
     strategy:
       # fail-fast: false —— 一条腿红了必须让另一条腿跑完：B/C 两端的结论
       # 互为独立证据，任何一端退化都要能看见（与 xiaobu-acceptance 的分片同理）。
@@ -147,6 +181,40 @@ jobs:
           # → 不显式指定就会拿"现在的 main"去评"刚才部署的镜像"，评错了对象。
           # workflow_dispatch 时 github.event.workflow_run 为空 → 回落 github.sha。
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      # ══════════════════════════════════════════════════════════════════════════
+      # ① 抑制「已被取代的 run」（#3587）—— 放在**最早**（任何真实成本之前）
+      #
+      # 问题（实测，2026-09-14）：连合两个 PR → 两次部署 → 两个评测 run 同时排队，
+      # 而**只有最后一轮的 main 状态有意义**（前一轮的镜像已被后一 commit 覆盖）：
+      # 付两份栈构建 + 两份真实 LLM 成本，买回一条描述旧状态的结论。
+      #
+      # 判据：本次 run 对应 SHA（= 被部署的 commit）与当前 main HEAD 比对。
+      #   · 相等（含 ls-remote 失败/空值等一切异常）→ **照常评测**（fail-open：绝不漏评）；
+      #   · 不等 → 已被更新的 commit 取代 → **skip 评测**，并留「被取代它的 SHA + 链接链」。
+      #
+      # 与"不 cancel-in-progress"那条注释的关系（显式论证，见文件头 concurrency 段）：
+      # 抑制**不是**取消 —— 它不打断任何在跑的评测，而是在花钱之前判定"这条结论已无对象"，
+      # 并把审计链指向取代它的那次 run。结论档不丢（由更新的那次 run 承担 + 链接可追）。
+      #
+      # ⚠️ 跳过**不得**算 failure：本步永远 exit 0（job 照常 success，report job 照常出结论），
+      #    否则会刷红 + 自动开 issue（把"省成本"变成"制造噪音"）。
+      # ⚠️ 只对 workflow_run（部署后自动门禁）抑制。workflow_dispatch 是**人显式要求**
+      #    评某次部署（回滚复验/补跑），按定义就是"我就要这一条"，故永不抑制。
+      # ══════════════════════════════════════════════════════════════════════════
+      - name: "抑制判定（#3587：本次 SHA != main HEAD 则跳过评测，留链接链）"
+        id: supersede
+        env:
+          EVAL_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+          # 手动触发的两个逃生口（自动门禁 untouched）：
+          #   · FORCE_EVAL=true → 明知 main 已前进也要评这一次（回滚复验/补跑特定部署）；
+          #   · 其余情况（含 workflow_run 部署后门禁）走默认判定。
+          # ⚠️ 用三元而不是 `|| 'false'`：boolean input 经 format() 会变成 'True'/'False'
+          #    （大小写不同），三元写出的是规范的小写 'true'/'false'。
+          FORCE_EVAL: ${{ github.event.inputs.force_eval == true && 'true' || 'false' }}
+        run: bash .github/scripts/eval_supersede.sh
 
       - name: Set up Python 3.11
         uses: actions/setup-python@v7
@@ -193,6 +261,8 @@ jobs:
 
       - name: "Start local stack (docker-compose: PG + Redis + admin-api + ai-agent DEBUG)"
         id: stack
+        # ① #3587：被取代的 run 在这里就停（栈还没建、token 还没烧）—— 见「抑制判定」步骤。
+        if: steps.supersede.outputs.superseded != 'true'
         env:
           # ⚠️ deploy/docker-compose.yml 里 DEV_SERVICE_TOKEN 是 required 无默认值
           # （``${DEV_SERVICE_TOKEN:?...}``）——缺它 compose 直接插值失败，栈根本起不来。
@@ -228,6 +298,15 @@ jobs:
           # ⚠️ PIP_INDEX_URL：Dockerfile 默认用阿里云镜像（国内开发快），但 GitHub runner
           #    在境外 —— 实测镜像内 pip 走阿里云 632s（~160 kB/s），同一份 requirements 用
           #    默认 PyPI 只 23s。栈步骤 13.1min 里 10.5min 就是这一项（#3426 实测）。
+          #
+          # ── #3587 ③：把"到底走没走缓存"变成**同一行**的结论（不再靠反推）──
+          # 实测（2026-09-14 run 34806843585）：这一步**实际走的是回落分支且毫无痕迹** ——
+          # 日志里既没有 "✅ 镜像构建完成（buildx + GHA cache，未回落）"，也没有
+          # "::warning:: 回落"。于是"缓存生效了吗 / 有没有回落 / 构建花了多久"三个问题
+          # 在日志里**都没有答案**（这正是 #3426 "静默吃了半个月"的同族问题）。
+          # 故：构建前先打印预期路径，构建后打印**判定行 + 耗时 + 是否回落 + 失败的那条腿**。
+          BUILD_T0=$SECONDS
+          echo "── 镜像构建开始 ts=${BUILD_T0}s（预期路径: buildx + type=gha cache）──"
           cat > /tmp/compose-images.yml <<'YAML'
           services:
             admin-api:
@@ -248,14 +327,30 @@ jobs:
               "$@" \
               -t "$tag" -f "$df" "$ctx" --load
           }
+          # ⚠️ 两条腿分开判（原来用 `A && B` 嵌套）：否则"admin-api 挂了"与
+          #    "ai-agent 挂了"在日志里长得一模一样，归因还得人肉猜。
+          BUILD_OK=true
+          BUILD_FAILED_LEG=""
           if build_cached postdeploy-admin-api "$TAG_ADMIN" \
                backend/admin-api backend/admin-api/Dockerfile \
-               > /tmp/buildx-admin.log 2>&1 \
-             && build_cached postdeploy-ai-agent "$TAG_AGENT" \
-                  backend/ai-agent-service backend/ai-agent-service/Dockerfile \
-                  --build-arg PIP_INDEX_URL=https://pypi.org/simple \
-                  > /tmp/buildx-agent.log 2>&1; then
+               > /tmp/buildx-admin.log 2>&1; then
+            echo "── buildx 期望路径: admin-api 腿 OK ──"
+          else
+            BUILD_OK=false
+            BUILD_FAILED_LEG="admin-api"
+          fi
+          if build_cached postdeploy-ai-agent "$TAG_AGENT" \
+               backend/ai-agent-service backend/ai-agent-service/Dockerfile \
+               --build-arg PIP_INDEX_URL=https://pypi.org/simple \
+               > /tmp/buildx-agent.log 2>&1; then
+            echo "── buildx 期望路径: ai-agent 腿 OK ──"
+          else
+            BUILD_OK=false
+            BUILD_FAILED_LEG="${BUILD_FAILED_LEG:+${BUILD_FAILED_LEG},}ai-agent"
+          fi
+          if [ "$BUILD_OK" = "true" ]; then
             echo "✅ 镜像构建完成（buildx + GHA cache，未回落）"
+            echo "── 构建判定行: 路径=buildx+gha-cache 回落=否 耗时=$((SECONDS-BUILD_T0))s ──"
             # ── 缓存命中回显（#3526 要求：CACHED 层数 / 是否回落必须可见）──
             # CACHED 行数 = 复用的层数；命中 0 层 = 缓存没起作用（与"回落"是两种不同故障，
             # 必须能一眼区分：回落看下面 else 分支的告警，命中 0 看这个计数）。
@@ -270,15 +365,19 @@ jobs:
             docker compose -f deploy/docker-compose.yml -f /tmp/compose-images.yml up -d --wait \
               --wait-timeout 300 postgres redis admin-api ai-agent-service 2>&1 | tail -20
           else
-            echo "::warning:: ⚠️ buildx 缓存构建失败 → 回落 docker compose up --build（无缓存路径）"
+            echo "── 构建判定行: 路径=回落compose-up--build 回落=是 失败腿=${BUILD_FAILED_LEG} 耗时=$((SECONDS-BUILD_T0))s ──"
+            echo "::warning:: ⚠️ buildx 缓存构建失败（失败腿 ${BUILD_FAILED_LEG}）→ 回落 docker compose up --build（无缓存路径）"
             echo "── 回落前 buildx 输出尾部（归因用：证明是缓存问题而非代码问题）──"
             tail -25 /tmp/buildx-admin.log 2>/dev/null || true
             tail -25 /tmp/buildx-agent.log 2>/dev/null || true
             docker compose -f deploy/docker-compose.yml up -d --build --wait \
               --wait-timeout 300 postgres redis admin-api ai-agent-service 2>&1 | tail -20
           fi
+          echo "── 栈步骤总耗时 $(($SECONDS-BUILD_T0))s（构建 + 起容器 + healthcheck）──"
 
       - name: "Seed 评测业务数据（C 端 #3270 + B 端 #3496/#3511）"
+        # ① #3587：被抑制的 run 不碰栈（栈也没起）—— 跳过，理由见「抑制判定」。
+        if: steps.supersede.outputs.superseded != 'true'
         # 全新 bootstrap 空库下，agent 搜不到商品 → 反复重试 product_search →
         # 从不进入 product_detail（依赖数据的用例必然失败，且行为本身合理）。
         # 注入最小业务数据：商品/颜色/SKU/加工项/加工项关联（幂等，可重复执行）。
@@ -295,6 +394,8 @@ jobs:
           bash scripts/eval_stack_seed.sh --persona "${{ matrix.persona }}"
 
       - name: Install eval runner deps
+        # ① #3587：被取代的 run 不装依赖（省 runner 分钟），理由见「抑制判定」。
+        if: steps.supersede.outputs.superseded != 'true'
         # 依赖分两类（issue #3270 实测逐层暴露）：
         # 1) eval runner（local_runner.py）只需 httpx + pytest 系（--timeout/--reruns）
         # 2) real E2E 跑的是 ai-agent 自己的测试套件，其 conftest 依赖 jwt/fastapi 等
@@ -304,6 +405,8 @@ jobs:
           pip install -q -r backend/ai-agent-service/requirements.txt
 
       - name: Run ${{ matrix.persona }} ${{ github.event.inputs.tier || 'normal' }}（真实 LLM）
+        # ① #3587：这一条是**真实 LLM 成本的大头**，被取代的 run 在此止步。
+        if: steps.supersede.outputs.superseded != 'true'
         # ── 降频输入 1/3（#3526）：档位/收窄/并发三个旋钮只对 workflow_dispatch 生效 ──
         # 表达式天然满足"门禁不被削弱"：
         #   · workflow_run（部署后自动门禁）没有 inputs → `|| 'normal'` 回落全量；
@@ -359,7 +462,9 @@ jobs:
 
       - name: "汇总打印（total/passed/avg_score/completion.ok）"
         # `always()`：前面任何一步红了（栈没起来/评测崩了）也要把已有证据打出来
-        if: always()
+        # ① #3587：被抑制的 run 没有汇总可打 —— 附加 `!cancelled()` 与 `superseded != true`
+        #    （用 `!cancelled()` 而非 `success()`，保持 always 的"失败也要打证据"语义）。
+        if: always() && !cancelled() && steps.supersede.outputs.superseded != 'true'
         run: |
           f="eval-summary-${{ matrix.persona }}.json"
           echo "── ${{ matrix.persona }}: ${f} ──"
@@ -378,7 +483,10 @@ jobs:
         #     issue 与红灯都不成立 = 门禁形同虚设（假绿）。失败信号由本步显式产生；
         #   · 汇总文件缺失（栈/登录/依赖挂了，评测根本没跑到判定）同样判失败：
         #     环境问题不许静默变绿。
-        if: always()
+        #   · ① #3587：被抑制的 run 在此**显式**回显"未评测"，并跳过判定 ——
+        #     抑制不是失败（不刷红、不建 issue），也**绝不能**落进下面"无汇总文件 →
+        #     判定失败"的分支（那会把"省成本"变成"每次连合都刷一个假红灯"）。
+        if: always() && steps.supersede.outputs.superseded != 'true'
         run: |
           f="eval-summary-${{ matrix.persona }}.json"
           if [ ! -f "$f" ]; then
@@ -393,6 +501,17 @@ jobs:
             echo "❌ ${{ matrix.persona }}: ${REASON}"
             exit 1
           fi
+
+      - name: "被抑制记录（#3587：本 run 未评测，结论由取代它的 run 承担）"
+        # 抑制时**必须**留一条显式、可检索的记录（不是"静默跳过"）：谁取代了谁、链接在哪。
+        # 这段同时写进 job summary（审计端口），使"某次部署时行为到底怎样"仍可追到链条上。
+        if: always() && steps.supersede.outputs.superseded == 'true'
+        run: |
+          MSG="⏭️ 本次评测被抑制（#3587）：run 对应 SHA 已被更新的 main 取代；结论由取代它的 run 承担（链接见上方「抑制判定」步骤输出）。"
+          echo "$MSG"
+          echo "### ${MSG}" >> "$GITHUB_STEP_SUMMARY"
+          echo "被抑制对象（旧 SHA）: https://github.com/${{ github.repository }}/commit/${{ github.event.workflow_run.head_sha || github.sha }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "取代它的 run 列表: https://github.com/${{ github.repository }}/actions/workflows/post-deploy-eval.yml?query=branch%3Amain" >> "$GITHUB_STEP_SUMMARY"
 
       - name: "Diagnose on failure (issue #3270/#3526): containers + compose config + DB probe"
         # ── 降频/提速改动 2/3 失败归因（#3526）：平移 xiaobu-acceptance.yml 的
@@ -464,7 +583,8 @@ jobs:
         #   (2) flake 台账（#3505）：台账原本随 runner 销毁，上传后才能跨 run 汇总
         #   "波动榜"（§14.3 定期回顾的观测信号）。
         # `always()`：失败轮的汇总恰恰是 report job 最需要的证据。
-        if: always()
+        # ① #3587：被抑制的 run 没有汇总/台账可传（也不是失败），跳过以免产出空 artifact。
+        if: always() && !cancelled() && steps.supersede.outputs.superseded != 'true'
         uses: actions/upload-artifact@v7
         with:
           name: post-deploy-eval-${{ matrix.persona }}
@@ -506,6 +626,25 @@ jobs:
           # 无 artifact = 该腿在写汇总前就挂了（栈/依赖/infra），必须显式说出来
           [ "$found" = "1" ] || echo "⚠️ 未取到任何 persona 汇总（评测腿在产出前失败，属环境问题）"
           echo "eval 聚合结果: ${{ needs.eval.result }}"
+
+      - name: 被抑制留档（#3587：结论档的链接链，非静默跳过）
+        # ① #3587：抑制必须**留档**，否则"某次部署时行为到底怎样"这条审计线索就断了
+        # （这正是 #3526 那条"不 cancel"注释要保的东西）。
+        # 这里把「被抑制的对象 SHA → 取代它的 run 列表」写进 run summary：
+        # 审计者从被抑制的 run 出发，两步就能到达"真正给出结论的那次 run"。
+        # 注：本步骤只留档，**绝不建 issue**（抑制不是失败）。
+        if: always() && needs.eval.outputs.superseded == 'true'
+        run: |
+          echo "⏭️ 本次部署后回归被抑制（#3587）：被评 SHA 已被更新的 main 取代，未消耗栈构建与真实 LLM。"
+          {
+            echo "## ⏭️ 本次部署后回归被抑制（#3587）"
+            echo ""
+            echo "本次 run 对应的 SHA 已被更新的 \`main\` 取代（连合场景下只有最后一轮的 main 状态有意义）。"
+            echo "**没有**消耗独立栈构建与真实 LLM 成本，**不是**失败（不建 issue）。"
+            echo ""
+            echo "- 被抑制的对象（旧 SHA）：https://github.com/${{ github.repository }}/commit/${{ github.event.workflow_run.head_sha || github.sha }}"
+            echo "- 取代它的 run（结论档在此）：https://github.com/${{ github.repository }}/actions/workflows/post-deploy-eval.yml?query=branch%3Amain"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Create Issue on failure (dedup guard)
         # 去重守卫（issue #2746）：同日同标题 open issue 已存在 → 仅评论追加，不重复建。

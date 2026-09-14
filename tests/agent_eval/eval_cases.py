@@ -987,7 +987,7 @@ _CASE_CH_010 = EvalCase(
     title='选购下单表单化交互（choice 选品→form 收参→confirm 确认→下单）',
     skill=Skill.MULTI_TURN,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['推荐几款热销窗帘', '买北欧风窗帘那款，白色，2.8 米门幅，按米卖', {'auto_respond': {'fallback': '数量 3 米'}}, {'auto_respond': {'fallback': '确认下单', 'form_values': {'customer_name': '张三', 'customer_phone': '13800138000', 'customer_address': '浙江省杭州市西湖区文三路1号1幢101室', 'color': '白色', 'colorName': '白色'}}}, {'auto_respond': {'fallback': '确认', 'form_values': {'customer_name': '张三', 'customer_phone': '13800138000', 'customer_address': '浙江省杭州市西湖区文三路1号1幢101室', 'color': '白色', 'colorName': '白色'}}}, {'auto_respond': {'fallback': '123456', 'prefer_text': True}}, {'auto_respond': {'fallback': '123456', 'prefer_text': True}}, {'auto_respond': {'fallback': '确认'}}, {'auto_respond': {'fallback': '确认'}}],
+    user_inputs=['推荐几款热销窗帘', '买北欧风窗帘那款，白色，2.8 米门幅，按米卖，要 3 米', {'repeat_until': {'tool_called': 'order_create', 'max': 7}, 'code': '123456', 'fallback': '确认下单', 'form_values': {'customer_name': '张三', 'customer_phone': '13800138000', 'customer_address': '浙江省杭州市西湖区文三路1号1幢101室', 'color': '白色', 'colorName': '白色'}}],
     expectations=['product_search', 'product_detail', 'interact', 'order_create'],
     data_checks=['规格选择/收货信息通过 interact(choice/form) 组件收集（非纯文本追问）', 'order_create 前必有 interact(confirm) 确认（写操作守卫）', 'order_create items 含所选 SKU（颜色/门幅/售卖方式）与数量', '会话记忆保原文：手机号不得在图谱层被脱敏后落库（否则模型下一轮把 `****` 填 0 建单 —— issue #3386）', 'C 端下单是**两步**：确认订单信息后还需手机验证码（order_create 的 sms_code，customer 角色必填）。用例必须提供验证码这一轮，否则 AI 停在第 5 步「请提供验证码」，order_create 永不发生（run 34622425044 实证：R7 顾客回「确认」后无任何工具调用）。dev/CI 栈已设 SMS_BYPASS_CODE=123456，此处用该码走真实校验分支。'],
     skip_reason='',
@@ -2372,6 +2372,26 @@ _CASE_HR_007 = EvalCase(
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+)
+
+# ── HR-008 [NORMAL] 更新员工手机号 - 写入真的落库（update 写路径首次覆盖，issue #3593）（源: cases/hr.yml）──
+_CASE_HR_008 = EvalCase(
+    id='HR-008',
+    legacy_id='',
+    title='更新员工手机号 - 写入真的落库（update 写路径首次覆盖，issue #3593）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['手机号 13700137000 的这位员工（王五）换号了，帮我把他的手机号改成 13900139111', {'auto_respond': {'fallback': '确认'}}, {'auto_respond': {'fallback': '确认'}}],
+    expectations=['employee_manage(action=update, user_id=debug_employee_wangwu, phone=13900139111)'],
+    data_checks=['PUT /api/admin/users/debug_employee_wangwu 落库后 users.phone = 13900139111，而不是 200 假成功（库里仍是 13700137000）', '同租户内手机号唯一：13900139111 不与既有用户（13700137000 / 13800138000 / 13900139000）冲突，写入不被唯一校验拒绝'],
+    skip_reason='',
+    tags=['update', 'write', 'confirm'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    required_args=[{'tool': 'employee_manage', 'action': 'update', 'fields': ['user_id', 'phone']}],
+    must_succeed=[{'tool': 'employee_manage', 'action': 'update'}],
 )
 
 # ── KN-001 [SMOKE] 小布知识问答 - 面料问题先检索本店知识卡片（query 必填）（源: cases/knowledge.yml）──
@@ -5290,6 +5310,7 @@ ALL_CASES = (
     _CASE_HR_005,
     _CASE_HR_006,
     _CASE_HR_007,
+    _CASE_HR_008,
     _CASE_KN_001,
     _CASE_KN_002,
     _CASE_KN_003,
