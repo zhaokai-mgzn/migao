@@ -185,18 +185,41 @@ cases:
     truths_ref:
       - ai-chat.context-memory
       - ai-chat.compression
+      - ai-chat.escape-hatch
       - id-resolve.index
     user_inputs:
-      - "搜窗帘"
-      - "看第一个详情"
+      # ── 自包含化（issue #3599：同一缺陷类已在 aftersales.yml 实证两次）──
+      # 原台词用「第1个/第一个/第3个」序号指代：序号由**搜索排序**与**该商品真实拥有的
+      # 加工项个数**决定，是栈相关量（product_search 默认 ORDER BY created_at DESC；
+      # 独立栈叠加 B 端种子后排序还会变）→ 同一个"第 3 个加工项"在不同栈指向不同东西，
+      # 甚至根本不存在（该商品只有 2 个加工项时）→ 假失败/白耗澄清轮。
+      # 改法：多轮长上下文与精确操作仍是本用例的核心（10 轮、跨域穿插、改价后回查是否生效），
+      # 但**指代对象点名种子内真实存在的实体**（遮光窗帘 + 加工项目录里的「纳米圈打孔」，
+      # 见 tests/agent_eval/fixtures/xiaobu_eval_seed.sql），不再依赖排序/个数。
+      - "搜遮光窗帘"
+      - "看看遮光窗帘的详情，就第一款"
       - "搜订单"
-      - "查第一个订单"
+      - "查最近一笔订单"
       - "搜客户"
       - "查张三"
-      - "再搜窗帘"
-      - "把第1个窗帘价格改成 168"
-      - "给它加上第3个加工项"
-      - "确认下刚才改的价格生效了"
+      - "再搜遮光窗帘"
+      # ⚠️ 跨域回切必须带**显式触发词**（真值 ai-chat.escape-hatch：非当前域需显式触发词
+      # 才允许切换，词表含「商品管理」）。实测（云测试环境）：R8 只说「把…价格改成 168」
+      # 时，agent 仍停在「客户」域并**正确地**拒绝执行 —— 它甚至回了「你直接对我说一句
+      # 『修改商品价格』」。这不是能力缺陷，是**用例没说协议语言**（§13.5 同类）。
+      # ⚠️ 目标价必须**不同于** fixture 价（种子 prod_eval_blackout = ¥168）：实测云环境
+      # R8 说「改成 168」时 agent 正确识别为**同值操作**并拒绝执行（"已经是 ¥168，无需变更"）
+      # → product_manage 永不发生。改成一个真正的变更值（199）。
+      - "商品管理：把第一款遮光窗帘的价格改成 199"
+      # 答卡轮（§13.5：写操作卡下发后**必须有点卡轮**，裸文本「确认」≠ 点卡）——
+      # 实测：R8/R9 两轮都只发了 interact(confirm) 卡，没有轮次去点它 →
+      # product_manage / product_processing_item_manage 永不执行（用例以"改价没生效"红）。
+      - auto_respond:
+          fallback: "确认"
+      - "商品管理：给这款商品添加加工项 纳米圈打孔"
+      - auto_respond:
+          fallback: "确认"
+      - "确认下刚才改的价格生效了（现在是 199 吗）"
     expectations:
       - tool: product_manage
         args:
@@ -204,11 +227,11 @@ cases:
       - tool: product_processing_item_manage
       - tool: product_detail
     data_checks:
-      - "第8轮 product_id 来自第1-2轮上下文"
-      - "第9轮加工项序号正确解析"
+      - "第8轮 product_id 来自第1-2轮上下文（同一商品，不重新问顾客）"
+      - "第9轮加工项按**名称**解析到真实目录项（纳米圈打孔，种子 fixture 内存在），不得编造"
       - "全程无重复 product_search 查同一商品"
     skip_reason: ""
-    merge_log: "eval M010 独有"
+    merge_log: "eval M010 独有；2026-09-14 自包含化（issue #3599）：序号指代 → 点名种子内真实对象（依赖排序/加工项个数的指代在别的栈上会指向别的东西或不存在）"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_mibao_multiturn_intelligence.py"
@@ -235,16 +258,21 @@ cases:
       - "你能干什么"
       - "搜一下遮光窗帘"
       - "今天天气不错"
-      - "看看第一个的详情"
+      # 自包含化（issue #3599）：原为「看看第一个的详情」—— 序号由搜索排序决定
+      # （`ORDER BY created_at DESC`，栈相关；独立栈叠加 B 端种子后排序还会变）→
+      # 「第一个」在不同栈指向不同商品。改为**点名商品 + 就地消歧**（"就第一款"）：
+      # 同名商品 >1 时 agent 会**正确**反问要哪一件（云环境实测 5 件同名 → 固定轮次表
+      # 会把它误判成"没调 product_detail"），点明序号后在任何栈都可达。
+      - "看看遮光窗帘的详情，就第一款"
       - "好的谢谢"
     expectations:
       - tool: product_search
       - tool: product_detail
     data_checks:
       - "闲聊回复不调用 tool"
-      - "product_detail 正确使用 product_search 返回的 ID"
+      - "product_detail 正确使用 product_search 返回的 ID（按商品名解析到同一件，不重新问顾客）"
     skip_reason: ""
-    merge_log: "eval M012 独有"
+    merge_log: "eval M012 独有；2026-09-14 自包含化（issue #3599）：序号指代 → 点名种子内真实商品"
     traces:
       tests:
         - "backend/ai-agent-service/tests/manual/mibao_scenarios.py"

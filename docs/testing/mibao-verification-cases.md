@@ -563,25 +563,27 @@
 
 ### CH-006. 对抗性 - 10 轮密集对话后精确操作 🔴
 ```
-你: 搜窗帘
-你: 看第一个详情
+你: 搜遮光窗帘
+你: 看看遮光窗帘的详情，就第一款
 你: 搜订单
-你: 查第一个订单
+你: 查最近一笔订单
 你: 搜客户
 你: 查张三
-你: 再搜窗帘
-你: 把第1个窗帘价格改成 168
-你: 给它加上第3个加工项
-你: 确认下刚才改的价格生效了
+你: 再搜遮光窗帘
+你: 商品管理：把第一款遮光窗帘的价格改成 199
+你: [🤖 按上一轮卡片作答]
+你: 商品管理：给这款商品添加加工项 纳米圈打孔
+你: [🤖 按上一轮卡片作答]
+你: 确认下刚才改的价格生效了（现在是 199 吗）
 期望: product_manage(action=update)
 期望: product_processing_item_manage
 期望: product_detail
-数据: 第8轮 product_id 来自第1-2轮上下文
-数据: 第9轮加工项序号正确解析
+数据: 第8轮 product_id 来自第1-2轮上下文（同一商品，不重新问顾客）
+数据: 第9轮加工项按**名称**解析到真实目录项（纳米圈打孔，种子 fixture 内存在），不得编造
 数据: 全程无重复 product_search 查同一商品
 ```
-真值: ai-chat.context-memory, ai-chat.compression, id-resolve.index
-溯源: eval M010 独有 ｜ tags: multi_turn, long_context, memory, adversarial
+真值: ai-chat.context-memory, ai-chat.compression, ai-chat.escape-hatch, id-resolve.index
+溯源: eval M010 独有；2026-09-14 自包含化（issue #3599）：序号指代 → 点名种子内真实对象（依赖排序/加工项个数的指代在别的栈上会指向别的东西或不存在） ｜ tags: multi_turn, long_context, memory, adversarial
 
 ### CH-007. 闲聊穿插 - 不污染业务上下文 🔵
 ```
@@ -589,15 +591,15 @@
 你: 你能干什么
 你: 搜一下遮光窗帘
 你: 今天天气不错
-你: 看看第一个的详情
+你: 看看遮光窗帘的详情，就第一款
 你: 好的谢谢
 期望: product_search
 期望: product_detail
 数据: 闲聊回复不调用 tool
-数据: product_detail 正确使用 product_search 返回的 ID
+数据: product_detail 正确使用 product_search 返回的 ID（按商品名解析到同一件，不重新问顾客）
 ```
 真值: ai-chat.intent-domains, ai-chat.context-memory
-溯源: eval M012 独有 ｜ tags: multi_turn, casual_chat, context_isolation
+溯源: eval M012 独有；2026-09-14 自包含化（issue #3599）：序号指代 → 点名种子内真实商品 ｜ tags: multi_turn, casual_chat, context_isolation
 
 ### CH-008. 转人工创建人工会话 - 客服工作台可见并可回复 🔵
 ```
@@ -2025,16 +2027,17 @@
 
 ### OR-005. 物流追踪 🔵
 ```
-你: 查 ORD-20260701-0001 的物流
-期望: logistics_track(order_id=ORD-20260701-0001)
+你: 帮我查一下最近一笔已发货订单的物流
+期望: logistics_track
 数据: 快递公司/运单号/轨迹非空
+必填: logistics_track() 字段 order_id
 ```
 真值: order.logistics
-溯源: verification 1.5 独有（M007 中物流只是旅程一环，不合并） ｜ tags: query, logistics
+溯源: verification 1.5 独有（M007 中物流只是旅程一环，不合并）；2026-09-14 自包含化（issue #3599）：去掉栈上不存在的硬编码订单号 ORD-20260701-0001，改自然指代 + required_args[order_id] 守住解析结果 ｜ tags: query, logistics
 
 ### OR-006. 订单状态机全流转 - 查询→确认支付→生产→发货→完成 🔵
 ```
-你: 查一下 ORD-20260701-0001 的状态
+你: 查一下最近一笔待付款订单的状态
 你: 确认支付，标记为生产中
 你: 发货，物流顺丰 SF1234567890
 你: 客户确认收货了，标记完成
@@ -2045,20 +2048,26 @@
 期望: order_manage(action=update_status, status=completed)
 数据: 状态流转: pending → producing → shipped → completed
 数据: 每步操作前先确认当前状态
-跳过: 依赖生产不存在的固定测试订单 ORD-20260701-0001（API 实测 found: 0），评测数据脱节——待重构为自包含（先 order_create 建测试单再流转），否则持续假失败污染基线
+跳过: 需要一条**从 pending 走到底的完整测试订单**（先 order_create 建单再流转），否则状态机断言不可达——评测栈里没有这样的订单，跑起来是假失败污染基线。2026-09-14（issue #3599）：原 skip 理由里的『硬编码 ORD-20260701-0001（API 实测 found: 0）』已消除（改为自然指代），剩下的唯一缺口是「可全流转的测试订单」。
 ```
 真值: order.states, order.flow, order.pay-side-effects, order.cancel-side-effects, order.refund-side-effects
-溯源: eval M006 吸收 verification 1.6（单步 update_status）、1.7 的状态更新段，并吸收 eval O004（标记已发货） ｜ tags: multi_turn, order_lifecycle, status_flow
+溯源: eval M006 吸收 verification 1.6（单步 update_status）、1.7 的状态更新段，并吸收 eval O004（标记已发货）；2026-09-14 去掉栈上不存在的硬编码订单号（issue #3599） ｜ tags: multi_turn, order_lifecycle, status_flow
 
-### OR-007. 取消订单 - 传订单号 ORD-xxx 🔴
+### OR-007. 取消订单 - 先定位订单再取消（二次确认 + 订单号解析） 🔴
 ```
-你: 取消订单 ORD-20260701-0001，原因是客户不要了
-期望: order_manage(action=cancel, order_id=ORD-20260701-0001)
-数据: success=true
+你: 帮我查一下最近的订单
+你: 把最近这笔订单取消掉，原因是客户不要了
+你: [🤖 按上一轮卡片作答]
+你: [🤖 按上一轮卡片作答]
+期望: order_query
+期望: order_manage(action=cancel)
+数据: 取消前必须先定位到真实订单（order_query → order_manage 的 order_id 非空）
 数据: confirm 卡片先于写操作（destructive 约定，真值在 ai-chat.tool-classes）
+数据: 取消失败（订单状态不允许）也应如实说明，不得声称已取消
+必填: order_manage() 字段 order_id
 ```
 真值: order.states, order.flow, order.pay-side-effects, order.cancel-side-effects, order.refund-side-effects, order.no-format
-溯源: eval O005 + verification 1.7（同义，取 eval 的 ORD-xxx 格式版） ｜ tags: id_resolve, adversarial, destructive
+溯源: eval O005 + verification 1.7（同义，取 eval 的 ORD-xxx 格式版）；2026-09-14 自包含化（issue #3599）：去掉栈上不存在的硬编码订单号，改「先定位再取消」+ order_before/required_args 守住解析契约 ｜ tags: id_resolve, adversarial, destructive
 
 ### OR-008. 创建订单 - 先查商品 SKU 再下单 🔵
 ```
@@ -2140,14 +2149,16 @@
 ### OR-013. B 端物流查询 - 仅支持真实订单号，拒绝快递单号直查 🔵
 ```
 你: 用快递单号 SF1234567890 查一下物流
-你: 查 ORD-20260701-0001 的物流
+你: 那用我最近一笔订单的订单号查一下物流
 期望: logistics_track
 数据: logistics_track 参数仅剩 order_id（required）；传 tracking_number 必须拒绝并引导提供订单号
 数据: 快递单号只能由系统从订单详情读取后内部查询轨迹（_track_by_number 为内部链路）
 数据: 按真实订单号查询：订单详情→运单号→轨迹（API 失败降级 mock）；显式公司 code 不被 API 识别(203)时去掉 type 自动识别重试一次
+数据: 第 2 轮必须解析出**真实存在的**订单号（required_args 守住 order_id 非空），不得沿用第 1 轮被拒绝的快递单号
+必填: logistics_track() 字段 order_id
 ```
 真值: order.logistics
-溯源: 2026-09-01 新增：B 端物流查询安全收紧（禁止物流号直查，防用他人运单号刺探） ｜ tags: query, logistics, data_safety
+溯源: 2026-09-01 新增：B 端物流查询安全收紧（禁止物流号直查，防用他人运单号刺探）；2026-09-14 自包含化（issue #3599）：第 2 轮去掉栈上不存在的硬编码订单号，改自然指代 + required_args[order_id] ｜ tags: query, logistics, data_safety
 
 ### OR-014. 下单加工项数量规则 - 按计价方式，无每米数量密度推导 🔵
 ```

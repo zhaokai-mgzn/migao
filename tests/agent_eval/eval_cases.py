@@ -913,9 +913,9 @@ _CASE_CH_006 = EvalCase(
     title='对抗性 - 10 轮密集对话后精确操作',
     skill=Skill.MULTI_TURN,
     difficulty=Difficulty.ADVERSARIAL,
-    user_inputs=['搜窗帘', '看第一个详情', '搜订单', '查第一个订单', '搜客户', '查张三', '再搜窗帘', '把第1个窗帘价格改成 168', '给它加上第3个加工项', '确认下刚才改的价格生效了'],
+    user_inputs=['搜遮光窗帘', '看看遮光窗帘的详情，就第一款', '搜订单', '查最近一笔订单', '搜客户', '查张三', '再搜遮光窗帘', '商品管理：把第一款遮光窗帘的价格改成 199', {'auto_respond': {'fallback': '确认'}}, '商品管理：给这款商品添加加工项 纳米圈打孔', {'auto_respond': {'fallback': '确认'}}, '确认下刚才改的价格生效了（现在是 199 吗）'],
     expectations=['product_manage(action=update)', 'product_processing_item_manage', 'product_detail'],
-    data_checks=['第8轮 product_id 来自第1-2轮上下文', '第9轮加工项序号正确解析', '全程无重复 product_search 查同一商品'],
+    data_checks=['第8轮 product_id 来自第1-2轮上下文（同一商品，不重新问顾客）', '第9轮加工项按**名称**解析到真实目录项（纳米圈打孔，种子 fixture 内存在），不得编造', '全程无重复 product_search 查同一商品'],
     skip_reason='',
     tags=['multi_turn', 'long_context', 'memory', 'adversarial'],
     persona='',
@@ -931,9 +931,9 @@ _CASE_CH_007 = EvalCase(
     title='闲聊穿插 - 不污染业务上下文',
     skill=Skill.MULTI_TURN,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['你好', '你能干什么', '搜一下遮光窗帘', '今天天气不错', '看看第一个的详情', '好的谢谢'],
+    user_inputs=['你好', '你能干什么', '搜一下遮光窗帘', '今天天气不错', '看看遮光窗帘的详情，就第一款', '好的谢谢'],
     expectations=['product_search', 'product_detail'],
-    data_checks=['闲聊回复不调用 tool', 'product_detail 正确使用 product_search 返回的 ID'],
+    data_checks=['闲聊回复不调用 tool', 'product_detail 正确使用 product_search 返回的 ID（按商品名解析到同一件，不重新问顾客）'],
     skip_reason='',
     tags=['multi_turn', 'casual_chat', 'context_isolation'],
     persona='',
@@ -3010,8 +3010,8 @@ _CASE_OR_005 = EvalCase(
     title='物流追踪',
     skill=Skill.ORDER,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['查 ORD-20260701-0001 的物流'],
-    expectations=['logistics_track(order_id=ORD-20260701-0001)'],
+    user_inputs=['帮我查一下最近一笔已发货订单的物流'],
+    expectations=['logistics_track'],
     data_checks=['快递公司/运单号/轨迹非空'],
     skip_reason='',
     tags=['query', 'logistics'],
@@ -3019,6 +3019,7 @@ _CASE_OR_005 = EvalCase(
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+    required_args=[{'tool': 'logistics_track', 'fields': ['order_id']}],
 )
 
 # ── OR-006 [NORMAL] 订单状态机全流转 - 查询→确认支付→生产→发货→完成（源: cases/order.yml）──
@@ -3028,10 +3029,10 @@ _CASE_OR_006 = EvalCase(
     title='订单状态机全流转 - 查询→确认支付→生产→发货→完成',
     skill=Skill.ORDER,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['查一下 ORD-20260701-0001 的状态', '确认支付，标记为生产中', '发货，物流顺丰 SF1234567890', '客户确认收货了，标记完成'],
+    user_inputs=['查一下最近一笔待付款订单的状态', '确认支付，标记为生产中', '发货，物流顺丰 SF1234567890', '客户确认收货了，标记完成'],
     expectations=['order_query(action=detail)', 'order_manage(action=confirm_payment)', 'order_manage(action=update_status, status=producing)', 'order_manage(action=update_logistics, company=顺丰)', 'order_manage(action=update_status, status=completed)'],
     data_checks=['状态流转: pending → producing → shipped → completed', '每步操作前先确认当前状态'],
-    skip_reason='依赖生产不存在的固定测试订单 ORD-20260701-0001（API 实测 found: 0），评测数据脱节——待重构为自包含（先 order_create 建测试单再流转），否则持续假失败污染基线',
+    skip_reason='需要一条**从 pending 走到底的完整测试订单**（先 order_create 建单再流转），否则状态机断言不可达——评测栈里没有这样的订单，跑起来是假失败污染基线。2026-09-14（issue #3599）：原 skip 理由里的『硬编码 ORD-20260701-0001（API 实测 found: 0）』已消除（改为自然指代），剩下的唯一缺口是「可全流转的测试订单」。',
     tags=['multi_turn', 'order_lifecycle', 'status_flow'],
     persona='',
     debug_user='',
@@ -3039,22 +3040,23 @@ _CASE_OR_006 = EvalCase(
     forbidden_card_text=[],
 )
 
-# ── OR-007 [ADVERSARIAL] 取消订单 - 传订单号 ORD-xxx（源: cases/order.yml）──
+# ── OR-007 [ADVERSARIAL] 取消订单 - 先定位订单再取消（二次确认 + 订单号解析）（源: cases/order.yml）──
 _CASE_OR_007 = EvalCase(
     id='OR-007',
     legacy_id='O005',
-    title='取消订单 - 传订单号 ORD-xxx',
+    title='取消订单 - 先定位订单再取消（二次确认 + 订单号解析）',
     skill=Skill.ORDER,
     difficulty=Difficulty.ADVERSARIAL,
-    user_inputs=['取消订单 ORD-20260701-0001，原因是客户不要了'],
-    expectations=['order_manage(action=cancel, order_id=ORD-20260701-0001)'],
-    data_checks=['success=true', 'confirm 卡片先于写操作（destructive 约定，真值在 ai-chat.tool-classes）'],
+    user_inputs=['帮我查一下最近的订单', '把最近这笔订单取消掉，原因是客户不要了', {'auto_respond': {'fallback': '确认取消'}}, {'auto_respond': {'fallback': '确认'}}],
+    expectations=['order_query', 'order_manage(action=cancel)'],
+    data_checks=['取消前必须先定位到真实订单（order_query → order_manage 的 order_id 非空）', 'confirm 卡片先于写操作（destructive 约定，真值在 ai-chat.tool-classes）', '取消失败（订单状态不允许）也应如实说明，不得声称已取消'],
     skip_reason='',
     tags=['id_resolve', 'adversarial', 'destructive'],
     persona='',
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+    required_args=[{'tool': 'order_manage', 'fields': ['order_id']}],
 )
 
 # ── OR-008 [NORMAL] 创建订单 - 先查商品 SKU 再下单（源: cases/order.yml）──
@@ -3160,15 +3162,16 @@ _CASE_OR_013 = EvalCase(
     title='B 端物流查询 - 仅支持真实订单号，拒绝快递单号直查',
     skill=Skill.ORDER,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['用快递单号 SF1234567890 查一下物流', '查 ORD-20260701-0001 的物流'],
+    user_inputs=['用快递单号 SF1234567890 查一下物流', '那用我最近一笔订单的订单号查一下物流'],
     expectations=['logistics_track'],
-    data_checks=['logistics_track 参数仅剩 order_id（required）；传 tracking_number 必须拒绝并引导提供订单号', '快递单号只能由系统从订单详情读取后内部查询轨迹（_track_by_number 为内部链路）', '按真实订单号查询：订单详情→运单号→轨迹（API 失败降级 mock）；显式公司 code 不被 API 识别(203)时去掉 type 自动识别重试一次'],
+    data_checks=['logistics_track 参数仅剩 order_id（required）；传 tracking_number 必须拒绝并引导提供订单号', '快递单号只能由系统从订单详情读取后内部查询轨迹（_track_by_number 为内部链路）', '按真实订单号查询：订单详情→运单号→轨迹（API 失败降级 mock）；显式公司 code 不被 API 识别(203)时去掉 type 自动识别重试一次', '第 2 轮必须解析出**真实存在的**订单号（required_args 守住 order_id 非空），不得沿用第 1 轮被拒绝的快递单号'],
     skip_reason='',
     tags=['query', 'logistics', 'data_safety'],
     persona='',
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+    required_args=[{'tool': 'logistics_track', 'fields': ['order_id']}],
 )
 
 # ── OR-014 [NORMAL] 下单加工项数量规则 - 按计价方式，无每米数量密度推导（源: cases/order.yml）──

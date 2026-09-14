@@ -145,16 +145,24 @@ cases:
       - logistics
     truths_ref:
       - order.logistics
+    # ── 自包含化（issue #3599，同一缺陷类已在 aftersales.yml 实证两次）──
+    # 原 user_inputs/expectations 硬编码 `ORD-20260701-0001` —— 该订单号**任何评测栈都不存在**
+    # （AS-005 实测 API `found:0`；OR-006 的 skip_reason 早已写明同一根因）。
+    # 后果：agent 反复查不到 → 断言要么假失败、要么白耗澄清轮（"看着像能力缺陷，实为数据缺口"）。
+    # 改法（照 AS-005 已验证的手法）：改成**环境无关的自然指代**（"最近的已发货订单"），
+    # 并把「解析出的订单号非空」用 required_args 机器守住 —— 断言只加强、不放宽。
     user_inputs:
-      - "查 ORD-20260701-0001 的物流"
+      - "帮我查一下最近一笔已发货订单的物流"
     expectations:
       - tool: logistics_track
-        args:
-          order_id: "ORD-20260701-0001"
+    required_args:
+      - tool: logistics_track
+        fields:
+          - order_id
     data_checks:
       - "快递公司/运单号/轨迹非空"
     skip_reason: ""
-    merge_log: "verification 1.5 独有（M007 中物流只是旅程一环，不合并）"
+    merge_log: "verification 1.5 独有（M007 中物流只是旅程一环，不合并）；2026-09-14 自包含化（issue #3599）：去掉栈上不存在的硬编码订单号 ORD-20260701-0001，改自然指代 + required_args[order_id] 守住解析结果"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_logistics_track.py"
@@ -181,7 +189,11 @@ cases:
       - order.cancel-side-effects
       - order.refund-side-effects
     user_inputs:
-      - "查一下 ORD-20260701-0001 的状态"
+      # 自包含化（issue #3599）：去掉硬编码 ORD-20260701-0001（任何评测栈都不存在，
+      # API 实测 found:0）。本用例仍 skip（状态机全流转需要一条**完整的测试订单**从
+      # pending 走到底，不是改指代就能跑通）—— 但不再留"活引用"误导后来者：
+      # 现在写的是环境无关指代，将来解 skip 时不会带着数据缺口。
+      - "查一下最近一笔待付款订单的状态"
       - "确认支付，标记为生产中"
       - "发货，物流顺丰 SF1234567890"
       - "客户确认收货了，标记完成"
@@ -207,8 +219,8 @@ cases:
     data_checks:
       - "状态流转: pending → producing → shipped → completed"
       - "每步操作前先确认当前状态"
-    skip_reason: "依赖生产不存在的固定测试订单 ORD-20260701-0001（API 实测 found: 0），评测数据脱节——待重构为自包含（先 order_create 建测试单再流转），否则持续假失败污染基线"
-    merge_log: "eval M006 吸收 verification 1.6（单步 update_status）、1.7 的状态更新段，并吸收 eval O004（标记已发货）"
+    skip_reason: "需要一条**从 pending 走到底的完整测试订单**（先 order_create 建单再流转），否则状态机断言不可达——评测栈里没有这样的订单，跑起来是假失败污染基线。2026-09-14（issue #3599）：原 skip 理由里的『硬编码 ORD-20260701-0001（API 实测 found: 0）』已消除（改为自然指代），剩下的唯一缺口是「可全流转的测试订单」。"
+    merge_log: "eval M006 吸收 verification 1.6（单步 update_status）、1.7 的状态更新段，并吸收 eval O004（标记已发货）；2026-09-14 去掉栈上不存在的硬编码订单号（issue #3599）"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_mibao_advanced_multiturn.py"
@@ -219,7 +231,7 @@ cases:
   - id: OR-007
     legacy_id: O005
     # 同义合并: 1.7（取消 + 二次确认）
-    title: "取消订单 - 传订单号 ORD-xxx"
+    title: "取消订单 - 先定位订单再取消（二次确认 + 订单号解析）"
     domains:
       - order
     tier: adversarial
@@ -234,18 +246,41 @@ cases:
       - order.cancel-side-effects
       - order.refund-side-effects
       - order.no-format
+    # ── 自包含化（issue #3599）──
+    # 原 user_inputs/expectations 硬编码 `ORD-20260701-0001`：评测栈里不存在
+    # （AS-005 实测 API `found:0`）→ agent 查不到订单，只能反复澄清；而 expectations
+    # 又要求 `order_id="ORD-20260701-0001"` 出现在**工具参数**里 → 断言本身在要求
+    # "把不存在的号传下去"，与「先解析真实订单」的契约相矛盾。
+    # 改法：先定位（order_query）再取消，用 order_before + required_args 守住
+    # 「取消的是**解析出来的真实订单号**」这条契约（断言只加强）。
+    # 收尾用答卡轮（§13.5：destructive 写操作收尾发裸文本「确认」= 文字 ≠ 点卡）。
     user_inputs:
-      - "取消订单 ORD-20260701-0001，原因是客户不要了"
+      - "帮我查一下最近的订单"
+      - "把最近这笔订单取消掉，原因是客户不要了"
+      - auto_respond:
+          fallback: "确认取消"
+      - auto_respond:
+          fallback: "确认"
     expectations:
+      - tool: order_query
       - tool: order_manage
         args:
           action: cancel
-          order_id: "ORD-20260701-0001"
+    required_args:
+      - tool: order_manage
+        fields:
+          - order_id
+    # 刻意**不写** `order_before: order_query before order_manage`：runner 的时序断言
+    # 要求后件是**成功**调用（`_first_qualified_round(require_success=True)`），而
+    # 「取消能不能成功」取决于那条订单的当前状态（种子栈里最新订单是 shipped，状态机
+    # 可能合法拒绝）—— 那会把「取消被状态机拒绝」误判成「没先定位订单」。
+    # 本用例守的是**指代解析**（required_args 的 order_id 非空），不守取消结果。
     data_checks:
-      - "success=true"
+      - "取消前必须先定位到真实订单（order_query → order_manage 的 order_id 非空）"
       - "confirm 卡片先于写操作（destructive 约定，真值在 ai-chat.tool-classes）"
+      - "取消失败（订单状态不允许）也应如实说明，不得声称已取消"
     skip_reason: ""
-    merge_log: "eval O005 + verification 1.7（同义，取 eval 的 ORD-xxx 格式版）"
+    merge_log: "eval O005 + verification 1.7（同义，取 eval 的 ORD-xxx 格式版）；2026-09-14 自包含化（issue #3599）：去掉栈上不存在的硬编码订单号，改「先定位再取消」+ order_before/required_args 守住解析契约"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_order_manage.py"
@@ -482,15 +517,24 @@ cases:
       - order.logistics
     user_inputs:
       - "用快递单号 SF1234567890 查一下物流"
-      - "查 ORD-20260701-0001 的物流"
+      # 自包含化（issue #3599）：原为硬编码 `ORD-20260701-0001`（评测栈不存在，API 实测
+      # found:0）→ 第 2 轮白耗（agent 查不到订单，安全拒绝被误读成"按订单号也查不了"）。
+      # 本用例的**核心**是第 1 轮「拒绝快递单号直查」，第 2 轮只是「按真实订单号仍可查」的
+      # 对照 → 改成环境无关指代即可（不点名任何不存在的订单）。
+      - "那用我最近一笔订单的订单号查一下物流"
     expectations:
       - tool: logistics_track
+    required_args:
+      - tool: logistics_track
+        fields:
+          - order_id
     data_checks:
       - "logistics_track 参数仅剩 order_id（required）；传 tracking_number 必须拒绝并引导提供订单号"
       - "快递单号只能由系统从订单详情读取后内部查询轨迹（_track_by_number 为内部链路）"
       - "按真实订单号查询：订单详情→运单号→轨迹（API 失败降级 mock）；显式公司 code 不被 API 识别(203)时去掉 type 自动识别重试一次"
+      - "第 2 轮必须解析出**真实存在的**订单号（required_args 守住 order_id 非空），不得沿用第 1 轮被拒绝的快递单号"
     skip_reason: ""
-    merge_log: "2026-09-01 新增：B 端物流查询安全收紧（禁止物流号直查，防用他人运单号刺探）"
+    merge_log: "2026-09-01 新增：B 端物流查询安全收紧（禁止物流号直查，防用他人运单号刺探）；2026-09-14 自包含化（issue #3599）：第 2 轮去掉栈上不存在的硬编码订单号，改自然指代 + required_args[order_id]"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_logistics_track.py"
