@@ -4043,6 +4043,17 @@ class TestFalseInability:
                   "我没办法代为下单"]:
             assert self._run([t]), f"未抓住能力误宣变体: {t!r}"
 
+    def test_interleaved_permission_wording_flagged(self):
+        """C-A1 P1（run 34791767013，issue #3477）的**隔词权限话术**必须判红。
+
+        原文「小布是智能客服，**没有帮您下单的权限**」——"没有"与"权限"之间隔着
+        「帮您下单的」，旧正则 `没有权限` 连写匹配不上 → 评测侧漏判
+        （与 agent 侧 `capability_denial_text_hit` 同源，两处一起修）。
+        """
+        for t in ["小布是智能客服，没有帮您下单的权限，这个操作必须在小程序商城完成",
+                  "亲，这边没有帮您提交订单的权限，我教您在小程序里下单吧"]:
+            assert self._run([t]), f"未抓住隔词权限话术: {t!r}"
+
     def test_reverse_order_phrase_flagged(self):
         """语序颠倒（动词在前）也要抓。"""
         assert self._run(["下单需要您自己去小程序操作，我没法帮您完成"])

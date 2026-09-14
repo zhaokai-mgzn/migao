@@ -491,6 +491,20 @@ agent 侧已收口：C 端**同一组件每轮只发一张**，第二张起回
 `代码补齐|代码纠正 order_create.sms_code` —— 由完整档的日志 dump 白名单兜住
 （`TestFallbackCardLogWhitelist` 同时守卫卡片与验证码两类标记）。
 
+### 6.8 在办下单 + 当前 skill 无写工具 → 守卫**跨 skill**生效（issue #3477 / #3476）
+
+C-A1 实证（run 34791767013）：会话被 choice 卡锁在 `customer_product`，顾客「确认下单」后
+小布回「**没有帮您下单的权限**」并 `human_handoff` 建单 —— 因为：
+① 文本级能力误宣纠正只认"当前 skill 有 order_create"；② handoff 守卫只认
+customer_order/customer_aftersales；③ 旧正则在"没有"与"权限"之间隔着「帮您下单的」时匹配不上。
+
+修法（agent 侧，`base_skill`）：
+- 文本级纠正与转人工拦截扩展到「顾客**在办下单**」（下单意图 × 已查过商品）这一**状态**，与 skill 名无关；
+- 被拦/被纠正时把 `pending_interact_skill` **锁回 customer_order** —— 下一轮路由真能完成下单（恢复路径）；
+- 措辞表补「协助下单」「没有X下单的权限」等**隔词权限话术**。
+
+评测侧（`check_false_inability`）与 agent 侧**同源**同步覆盖（变体验证：去掉模糊权限形态 → 新用例红）。
+
 ## 7. 新增 C 端用例的检查单
 
 1. 在对应域 `.github/cases/*.yml` 新增，**必写** `persona: xiaobu`（C 端专属）；

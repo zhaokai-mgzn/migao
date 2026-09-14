@@ -1277,6 +1277,10 @@ CAPABILITY_DENIAL_PATTERNS = (
     "无下单权限", "没有下单权限", "无权限下单", "无提交订单权限", "无权下单",
     "无法帮您完成下单", "没法帮您完成下单", "无法帮您完成订单", "不能帮您下单",
     "人工协助下单", "协助您完成下单",
+    # 「协助下单」单列（issue #3477，C-A1 P1 实证）：转人工理由原文是
+    # 「顾客需要协助下单」—— 下单本来就是小布能做的，用"需要协助"为理由转人工
+    # 与"无法代为提交订单"是同一类能力误宣，只是措辞客气一点。
+    "协助下单",
 )
 
 
@@ -1293,6 +1297,24 @@ def _has_ordering_intent(message: str) -> bool:
     """顾客这一轮是否在**推进下单**（"确认下单"/"数量 3 米"/"就这个"…）。"""
     text = str(message or "")
     return any(h in text for h in _ORDER_INTENT_HINTS)
+
+
+async def _relock_order_skill(session_id: str | None) -> None:
+    """顾客在办下单但当前轮在别的 skill → 把会话**锁回下单流程**（issue #3477）。
+
+    为什么必要（C-A1 run 34791767013 实证）：会话被 choice 卡锁在 `customer_product`，
+    顾客「确认下单」后小布说"没权限"并转人工 —— 该 skill 没有 `order_create`，
+    而守卫（能力误宣/转人工）此前只认 customer_order/customer_aftersales。
+    把 `pending_interact_skill` 锁回 customer_order 后，**下一轮**路由会走下单流程，
+    订单才能真的落下（这是恢复路径，不是口头承诺）。
+    """
+    if not session_id:
+        return
+    try:
+        from app.memory.session_memory import SessionMemory
+        await SessionMemory().set_pending_skill(session_id, "customer_order")
+    except Exception as e:
+        logger.warning(f"[base_skill] 锁回下单流程失败（非致命）: {e}")
 
 
 async def _order_flow_started(session_id: str | None, state: dict | None = None) -> bool:
@@ -1324,7 +1346,9 @@ async def _order_flow_started(session_id: str | None, state: dict | None = None)
 # 「agent 主语 + 否定动词」与「下单动作词」必须在**同一句**且距离很近 ——
 # 否则「我是小布，您的专属咨询客服」这类正常开场白会被误判。
 _AGENT_INABILITY_RE = re.compile(
-    r"(?:我|我们|小布|智能客服|客服|这边)[^。！？\n]{0,8}(?:没法|无法|不能|没办法|做不到|没有权限|无权限|没权限)")
+    r"(?:我|我们|小布|智能客服|客服|这边)[^。！？\n]{0,8}"
+    r"(?:没法|无法|不能|没办法|做不到|没有权限|无权限|没权限"
+    r"|没(?:有)?[^。！？\n]{0,8}权限)")
 _TEXT_ORDER_ACTION_WORDS = ("提交订单", "下单", "创建订单", "建单", "代为提交", "代为下单",
                             "帮您提交", "帮您下单")
 _INABILITY_WINDOW = 24
@@ -1346,6 +1370,14 @@ def capability_denial_text_hit(text: str) -> str:
             if abs(pos - neg.start()) <= _INABILITY_WINDOW or abs(pos - neg.end()) <= _INABILITY_WINDOW:
                 return seg.strip()[:60]
     return ""
+
+
+_TEXT_DENIAL_CORRECTIVE_MIDORDER = (
+    "顾客正在下单（本轮消息仍在推进下单、且本会话已查过商品详情）—— 不要说『没权限/不能下单/"
+    "去小程序操作』：下单能力在小布这边是有的，会话会回到下单流程继续完成。"
+    "本轮请给出**可执行的下一步**：缺信息就向顾客问（收货信息/短信验证码），"
+    "或请顾客再确认一次；**不要转人工、不要把顾客推去小程序**。"
+)
 
 
 _TEXT_DENIAL_CORRECTIVE = (
@@ -2898,12 +2930,24 @@ async def execute_skill(
                     # 能力误宣（issue #3443）：文本里"我做不了下单"→ 带纠正提示**重答一次**
                     # （只一次，防死循环）。重答走完整循环，故模型可以继续调工具把单下掉。
                     _denial_hit = capability_denial_text_hit(new_text)
-                    if _denial_hit and not _denial_corrected and _has_order_write_tool(skill_name, skill_registry):
+                    _mid_order_now = (_has_ordering_intent(last_user_msg)
+                                      and await _order_flow_started(session_id, state))
+                    _has_write_now = _has_order_write_tool(skill_name, skill_registry)
+                    if (_denial_hit and not _denial_corrected
+                            and (_has_write_now or _mid_order_now)):
+                        # issue #3477：顾客在办下单时，即使当前 skill 没有写工具
+                        # （如会话被 choice 卡锁在 customer_product），也不许"我下不了单"。
+                        # 无写工具时用 MIDORDER 版话术（不声称"order_create 就是本流程的工具"），
+                        # 并把会话锁回下单流程，下一轮才能真的把单下掉。
                         _denial_corrected = True
                         logger.warning(
                             f"[{skill_name}] 拦截文本级能力误宣并重答 | session={session_id} "
-                            f"hit={_denial_hit!r}")
-                        new_messages.append(SystemMessage(content=_TEXT_DENIAL_CORRECTIVE))
+                            f"hit={_denial_hit!r} mid_order={_mid_order_now}")
+                        if _mid_order_now and not _has_write_now:
+                            await _relock_order_skill(session_id)
+                        new_messages.append(SystemMessage(content=(
+                            _TEXT_DENIAL_CORRECTIVE if _has_write_now
+                            else _TEXT_DENIAL_CORRECTIVE_MIDORDER)))
                         continue
                     if new_text:
                         final_content = new_text
@@ -3058,8 +3102,12 @@ async def execute_skill(
                     # （还创建了投诉工单）→ 流程被放弃、轮数耗尽、aftersale_create 未发生。
                     # 判据与 handoff_judge 同源：显式请求 / 负面情绪 / 能力外诉求 三者皆无
                     # → 不是用户要的转人工，而是模型放弃流程 → 阻止并给出可执行指引。
+                    _mid_order = (_has_ordering_intent(last_user_msg)
+                                  and await _order_flow_started(session_id, state))
+                    _denial_now = _capability_denial_reason(args)
                     if (tool_name == "human_handoff"
-                            and skill_name in ("customer_order", "customer_aftersales")):
+                            and (skill_name in ("customer_order", "customer_aftersales")
+                                 or _mid_order or _denial_now)):
                         from app.graph.handoff_judge import has_escalation_signal
                         # 在办判据两条取并集（issue #3361 实证）：
                         #   ① 消息历史里能扫到未完结的交互卡（原实现）；
@@ -3088,6 +3136,8 @@ async def execute_skill(
                                 f"没有再发 `interact(component=form)` 或用自然语言问姓名/手机号/地址；"
                                 f"参数齐了走 confirm 卡 → `validate_input` → `order_create`（含 sms_code）。"
                                 f"只有当顾客**显式**要求人工、情绪激烈或诉求超出能力时，才允许转人工。")
+                            if _mid_order and skill_name != "customer_order":
+                                await _relock_order_skill(session_id)
                             return (tool_call,
                                     json.dumps({"success": False,
                                                 "error": "handoff_blocked_capability_denial",
@@ -3111,6 +3161,8 @@ async def execute_skill(
                                 "`interact(component=form)` 或直接问；然后走 confirm 卡 → "
                                 "`validate_input` → `order_create`（含 sms_code）。"
                                 "只有当顾客**显式**要求人工、情绪激烈或诉求超出能力时，才允许转人工。")
+                            if _mid_order and skill_name != "customer_order":
+                                await _relock_order_skill(session_id)
                             return (tool_call,
                                     json.dumps({"success": False,
                                                 "error": "handoff_blocked_inflight",
