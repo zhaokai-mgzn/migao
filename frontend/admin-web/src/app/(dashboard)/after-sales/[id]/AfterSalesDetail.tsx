@@ -30,9 +30,14 @@ import dayjs from 'dayjs'
 import { cn } from '@/lib/utils'
 
 // 状态操作配置：根据当前状态决定可用操作
+// 注意：这里必须与后端 AfterSalesTicketService.STATUS_TRANSITIONS 保持一致，
+// 否则会出现「后端允许但界面走不到」的断链（issue #3541/#3576：pending → closed 已由
+// 后端放开，前端却只在 processing 提供「关闭工单」）。
 const statusActions: Record<AfterSalesStatus, { label: string; targetStatus: AfterSalesStatus; variant?: 'danger' | 'secondary' }[]> = {
   pending: [
     { label: '接受处理', targetStatus: 'processing' },
+    // 误建/线下已处理的工单允许直接关闭（#3541 裁定）；形态与 processing 的关闭项一致（同 label / 同 variant + 同确认弹窗收集 remark 作为关闭原因）
+    { label: '关闭工单', targetStatus: 'closed', variant: 'secondary' },
     { label: '拒绝', targetStatus: 'rejected', variant: 'danger' },
   ],
   processing: [
