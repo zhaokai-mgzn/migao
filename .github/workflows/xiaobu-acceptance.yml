@@ -71,16 +71,14 @@ on:
   # （每周至多 1 条）。
   schedule:
     - cron: '0 19 * * 5'
-  # 2026-09-14（#3504，闭环 #3270 问题 3 / 真值 4）：AI 行为改动的 PR 自动跑 C 端 smoke。
-  # 此前 C 端 smoke 只在手动/定时档跑，PR 阶段**零拦截**（PR 门禁 agent-eval-smoke 打云
-  # 测试环境且只跑米宝）→ C 端核心能力（身份注入/数据隔离/下单）回归只能靠事后发现。
-  # 路径过滤与 pr-check 的 AI 命中规则一致；档位由下方 TIER 表达式落到 smoke。
-  pull_request:
-    paths:
-      - 'backend/ai-agent-service/app/**'
-      - 'tests/agent_eval/**'
-      - '.github/cases/**'
-      - '.github/workflows/xiaobu-acceptance.yml'
+  # ── PR 触发档已移除（issue #3653，2026-09-15：与行为映射档**合并去重**）──
+  # 曾于 2026-09-14（#3504）加 pull_request 触发跑 C 端 smoke；按 AD §6.3 结论
+  # （PR 层只保留定向映射用例，完整覆盖交部署后/批次轮）移除：
+  #   · C 端规则命中的 PR 已由 agent-behavior-eval 以 xiaobu persona 跑**映射用例**
+  #     （fast 迭代档）—— 覆盖并严格强于 smoke 的 C 端抽样（smoke 只剩 KN-001 一条
+  #     C 端专属），PR 层不再另起一套栈 = 少一次栈构建 + 少一轮真实 LLM；
+  #   · 纯 C 端行为改动（无规则命中）由 behavior-eval 的兜底网（含 CH-010）兜底；
+  #   · C 端 smoke/normal/adversarial 保留 **workflow_dispatch + schedule**（按需/每周）。
 
 # ── 评测并发槽位：两层语义（issue #3563；job 级共享槽位与 AD 的 #3587 同一落地方式）──
 # 修前：`group` 按 PR 号/run_id 分组 → **跨 PR 无任何约束**。实测（2026-09-14 05:28Z）
