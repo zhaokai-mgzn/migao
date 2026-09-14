@@ -1,4 +1,4 @@
-# case_ids: PG-012
+# case_ids: PG-012, PR-013, PR-024, KN-001, KN-002
 """
 防线 2: Prompt 黄金快照测试
 
@@ -10,6 +10,8 @@
 
 改动 references/ 下的 Prompt 文件后运行此测试即可发现意外变更。
 """
+
+import os as _os
 
 import pytest
 
@@ -207,6 +209,7 @@ def test_snapshot_all_skills():
         "settings": 600,
         "data": 500,
         "general": 700,
+        "knowledge": 3000,   # 有 EXAMPLES（issue #3569 补：knowledge 域此前不在任何厚度门禁里）
     }
     for skill, min_len in expected_min.items():
         prompt = _build_system_prompt(skill)
@@ -224,7 +227,8 @@ def test_snapshot_all_skills():
         "staff": 8000,    # +3100: 领域 prompt 补齐创建角色流程（HR-005 场景）+ EXAMPLES 补角色创建示例（Round 32）
         "settings": 6500, # +1600: 领域 prompt 补齐配置/通知流程（Round 34）
         "data": 6500,     # +1700: 领域 prompt 补齐看板/会话流程（Round 34）
-        "general": 5800,  # +600: Phase 2 (#2789) 澄清卡引导（choice 候选示例）达 5465
+        "general": 6000,  # +600: Phase 2 (#2789) 澄清卡引导（choice 候选示例）达 5465；+200: 兜底库存查询改真实工具（issue #3569，达 5827）
+        "knowledge": 7000,  # issue #3569：knowledge 域（B 端知识问答）补入厚度门禁，达 5032
     }
     for skill, max_len in expected_max.items():
         prompt = _build_system_prompt(skill)
@@ -317,3 +321,116 @@ def test_customer_general_image_clarify_not_default_search():
     assert "不要默认直接搜相似" in CUSTOMER_GENERAL_SYSTEM_PROMPT, (
         "customer_general 图片段仍默认直接搜相似（应意图明确才搜）"
     )
+
+
+# ============ C 端（小布）Prompt 厚度门禁（issue #3569） ============
+#
+# 为什么 C 端需要单独一套门禁：
+# 1) 上面 `test_snapshot_all_skills` 只列 8 个 B 端 skill，且调用
+#    `_build_system_prompt(skill)` **不传 inline_prompt**；而 C 端 6 个域
+#    （customer_order/customer_product/customer_quote/customer_aftersales/
+#    customer_knowledge/customer_general）的领域规则**大量写在
+#    `{SKILL}_SYSTEM_PROMPT`（L4 内联）里**、`references/prompts/{skill}.md`（L3）多为空
+#    → 只测 references 层等于对 C 端结构性不可见，C 端可无限变薄而 CI 全绿。
+# 2) `_read_cached`（base_skill.py:512-524）在文件缺失时**静默返回 ""** → 删掉一个
+#    `EXAMPLES-{skill}.md` 不会有任何报错，只是 prompt 悄悄变薄（"无声变薄"的机制根源）。
+#    故这里额外显式断言 EXAMPLES 文件存在且非空、且组装结果里真的有 few-shot 段。
+#
+# 快照值取自 2026-09-14 实测（issue #3569）。每项 4 个数字，分别守不同的"变薄"路径：
+#   (EXAMPLES 最小字符, 内联 prompt 最小字符, 组装后最小字符, 组装后最大字符)
+#   - EXAMPLES 最小 → 文件被删/清空/截成残片（L5 无声消失）
+#   - 内联最小     → `{SKILL}_SYSTEM_PROMPT` 被删空/大幅删减（C 端规则主载体在 L4）
+#   - 组装后最小   → L3（prompts/{skill}.md）或上两层被削
+#   - 组装后最大   → 重复拼接、失控膨胀
+# 只抓"整层消失/大幅删减"；单条规则的丢失由本文件的关键词断言（如"候选意图卡"）兜住。
+# 失败时判断：故意增删内容 → 更新对应数字；意外变更 → 查 references/ 与 skill 内联是否被误改。
+CUSTOMER_SKILL_LENGTH_SNAPSHOT = {
+    # 域                    EXAMPLES≥  内联≥   组装≥     组装≤
+    "customer_order":      (1000,     3200,   7500,     10500),
+    "customer_product":    (800,       800,   4900,     7000),
+    "customer_quote":      (1500,      900,   7500,     11000),
+    "customer_aftersales": (1400,     1400,   5700,     9000),
+    "customer_knowledge":  (1000,      700,   6400,     8800),
+    "customer_general":    (600,       900,   4900,     7000),
+}
+
+_EXAMPLES_DIR = _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))),
+                              "app", "graph", "skills", "references")
+
+
+def _customer_inline_prompt(skill: str) -> str:
+    """该 skill 运行时真正注入的内联 prompt（L4 = `SkillConfig.system_prompts[persona]`）。
+
+    运行时调用点 base_skill.py:2663 即 `_build_system_prompt(skill_name, inline_prompt=system_prompt)`。
+    """
+    from app.graph.skills.skill_registry import get_skill_registry
+
+    cfg = get_skill_registry().get_or_raise(skill)
+    inline = (cfg.system_prompts or {}).get(cfg.default_persona, "")
+    assert inline, f"{skill}: SkillConfig.system_prompts[{cfg.default_persona}] 为空（C 端规则主要在这层）"
+    return inline
+
+
+def _customer_prompt(skill: str) -> str:
+    """按**运行时口径**组装 C 端 prompt：显式传入内联 prompt（L4）。
+
+    这一点是关键：`test_snapshot_all_skills` 调 `_build_system_prompt(skill)` 不传内联，
+    对"规则主要写在内联里"的 C 端结构性不可见。
+    """
+    return _build_system_prompt(skill, inline_prompt=_customer_inline_prompt(skill))
+
+
+@pytest.mark.parametrize("skill", sorted(CUSTOMER_SKILL_LENGTH_SNAPSHOT))
+def test_customer_prompt_has_fewshot_examples(skill):
+    """C 端每个域必须有非空 `EXAMPLES-{skill}.md`（L5），且真的拼进了 prompt。
+
+    L5 位于 prompt 最末（衰减最小、行为影响最大）。文件缺失时 `_read_cached`
+    （base_skill.py:512-524）静默返回 ""，连"## Few-shot 参考示例"标题都不会出现，
+    却没有任何红灯 —— 这是"无声变薄"的机制根源。
+    """
+    path = _os.path.join(_EXAMPLES_DIR, "EXAMPLES-" + skill + ".md")
+    assert _os.path.exists(path), (
+        f"{skill}: 缺少 {path} —— C 端 few-shot 是行为影响最大的一层，不允许缺（issue #3569）"
+    )
+    with open(path, "r", encoding="utf-8") as f:
+        content = f.read().strip()
+    min_chars = CUSTOMER_SKILL_LENGTH_SNAPSHOT[skill][0]
+    assert len(content) >= min_chars, (
+        f"{skill}: EXAMPLES 只有 {len(content)} 字符 < {min_chars} —— 被清空/截断？"
+    )
+    assert "## Few-shot 参考示例" in _customer_prompt(skill), (
+        f"{skill}: 组装后的 prompt 没有 few-shot 段 —— EXAMPLES 未被加载"
+    )
+
+
+@pytest.mark.parametrize("skill", sorted(CUSTOMER_SKILL_LENGTH_SNAPSHOT))
+def test_customer_inline_prompt_thickness(skill):
+    """C 端内联 prompt（L4）不得被删减 —— C 端 6 个域都没有 L3，规则 100% 压在这层。"""
+    inline = _customer_inline_prompt(skill)
+    min_chars = CUSTOMER_SKILL_LENGTH_SNAPSHOT[skill][1]
+    assert len(inline) >= min_chars, (
+        f"{skill}: 内联 prompt 只有 {len(inline)} 字符 < {min_chars} —— "
+        f"C 端领域规则主要在这层，被删减等于能力静默降级"
+    )
+
+
+@pytest.mark.parametrize("skill", sorted(CUSTOMER_SKILL_LENGTH_SNAPSHOT))
+def test_customer_prompt_length_snapshot(skill):
+    """C 端组装后长度（含内联 prompt）必须在区间内 —— 防无声变薄与失控膨胀。"""
+    _, _, min_len, max_len = CUSTOMER_SKILL_LENGTH_SNAPSHOT[skill]
+    prompt = _customer_prompt(skill)
+    assert len(prompt) >= min_len, (
+        f"{skill}: C 端 prompt 长度 {len(prompt)} < {min_len}。"
+        f"检查 prompts/{skill}.md（L3）/ EXAMPLES-{skill}.md（L5）/ 内联 prompt 是否被削。"
+    )
+    assert len(prompt) <= max_len, (
+        f"{skill}: C 端 prompt 长度 {len(prompt)} > {max_len}（可能重复拼接），"
+        f"确认后更新 CUSTOMER_SKILL_LENGTH_SNAPSHOT。"
+    )
+    # 90% 预警（与 B 端快照同口径）：别一加就顶格
+    if len(prompt) > max_len * 0.9:
+        import warnings
+        warnings.warn(
+            f"⚠️  {skill}: C 端 prompt 长度 {len(prompt)}/{max_len} "
+            f"({len(prompt)*100//max_len}%) — 接近上限，新内容需精简"
+        )
