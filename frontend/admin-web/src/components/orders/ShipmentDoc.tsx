@@ -101,16 +101,18 @@ export default function ShipmentDoc({ order, logistics, shipperName, className }
       </table>
 
       <SectionTitle>商品明细</SectionTitle>
-      <table className="w-full border-collapse mb-2">
+      {/* table-layout: fixed —— 列宽由表头声明的百分比决定（auto 布局按内容分配，
+          长商品名/长地址会把列撑歪，纸面每单都可能不一样）；配合表头 whitespace-nowrap 防折行 */}
+      <table className="w-full border-collapse mb-2" style={{ tableLayout: 'fixed' }}>
         <thead>
           <tr>
-            <DocTh>商品</DocTh>
-            <DocTh>货号</DocTh>
-            <DocTh>颜色</DocTh>
-            <DocTh>规格尺寸</DocTh>
-            <DocTh align="right">单价(元/米)</DocTh>
-            <DocTh align="right">数量(米)</DocTh>
-            <DocTh align="right">金额(元)</DocTh>
+            <DocTh className="w-[26%]">商品</DocTh>
+            <DocTh className="w-[9%]">货号</DocTh>
+            <DocTh className="w-[9%]">颜色</DocTh>
+            <DocTh className="w-[12%]">规格尺寸</DocTh>
+            <DocTh align="right" className="w-[13%]">单价(元/米)</DocTh>
+            <DocTh align="right" className="w-[11%]">数量(米)</DocTh>
+            <DocTh align="right" className="w-[14%]">金额(元)</DocTh>
           </tr>
         </thead>
         <tbody>
@@ -215,12 +217,21 @@ function DocCell({ label, value }: { label: string; value?: string }) {
   )
 }
 
-function DocTh({ children, align = 'left' }: { children: React.ReactNode; align?: 'left' | 'right' }) {
+function DocTh({
+  children,
+  align = 'left',
+  className,
+}: {
+  children: React.ReactNode
+  align?: 'left' | 'right'
+  className?: string
+}) {
   return (
     <th
       className={cn(
         'border border-neutral-400 px-2 py-1.5 font-semibold whitespace-nowrap',
-        align === 'right' ? 'text-right' : 'text-left'
+        align === 'right' ? 'text-right' : 'text-left',
+        className
       )}
     >
       {children}

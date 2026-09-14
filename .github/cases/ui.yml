@@ -1353,6 +1353,7 @@ cases:
         - "frontend/admin-web/tests/unit/components/ShipmentDoc.test.tsx"
         - "frontend/admin-web/tests/unit/components/LogisticsForm.test.tsx"
         - "frontend/admin-web/tests/unit/pages/ship-order.test.tsx"
+        - "tests/e2e/specs/orders/shipment-doc.spec.ts"
         - "frontend/admin-web/tests/unit/pages/order-detail.test.tsx"
         - "frontend/admin-web/tests/unit/lib/data-adapter.test.ts"
         - "backend/admin-api/src/test/java/com/migao/admin/controller/OrderControllerTest.java"
