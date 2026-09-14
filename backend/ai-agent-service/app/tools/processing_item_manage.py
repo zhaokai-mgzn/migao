@@ -719,7 +719,7 @@ class ProcessingItemManageTool(BaseTool):
         """计算加工项价格
 
         ⚠️ 本端点（POST /api/admin/processing-items/calculate）与 `order_create` **不是同一套契约**
-        （issue #3667）：
+        （issue #3672；契约差异的归因见 `acceptance/2026-09-15/agent-gap-triage/REPORT.md` §G4）：
 
         - `order_create`：agent 自己把 per_area 的 `quantity` 算成「宽×高」放进
           `processing_info`，后端只做 `unitPrice × quantity`；
