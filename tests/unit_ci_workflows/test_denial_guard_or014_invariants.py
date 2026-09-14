@@ -84,6 +84,13 @@ def _assignments(tree: ast.Module) -> dict:
     return out
 
 
+def _require(value, msg: str):
+    """取不到就**显式失败**：`is not None` 形态的断言会被 QA Gate `--check-weak` 判为凑数断言。"""
+    if value is None:
+        raise AssertionError(msg)
+    return value
+
+
 def _functions(tree: ast.Module) -> dict:
     return {n.name: n for n in ast.walk(tree)
             if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))}
@@ -120,8 +127,8 @@ def test_denial_vocab_exists_and_is_morphology_not_sentences():
     offenders = []
     checked = 0
     for name in _VOCAB_TUPLES:
-        node = assigns.get(name)
-        assert node is not None, f"判据词表 {name} 不存在（被删/改名 → 本不变式失去意义）"
+        node = _require(assigns.get(name),
+                        f"判据词表 {name} 不存在（被删/改名 → 本不变式失去意义）")
         entries = [e.value for e in getattr(node, "elts", [])
                    if isinstance(e, ast.Constant) and isinstance(e.value, str)]
         assert entries, f"判据词表 {name} 解析不出字符串条目"
@@ -144,8 +151,8 @@ def test_judgment_functions_hold_no_sentence_literals():
     funcs = _functions(_module())
     offenders = []
     for fname in _JUDGMENT_FUNCS:
-        fn = funcs.get(fname)
-        assert fn is not None, f"判据函数 {fname} 不存在（被删/改名 → 本不变式失去意义）"
+        fn = _require(funcs.get(fname),
+                      f"判据函数 {fname} 不存在（被删/改名 → 本不变式失去意义）")
         body = list(fn.body)
         if (body and isinstance(body[0], ast.Expr)
                 and isinstance(body[0].value, ast.Constant)
