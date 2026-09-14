@@ -3815,7 +3815,7 @@ _CASE_PP_006 = EvalCase(
     form_prefill=[],
     forbidden_card_text=[],
     must_succeed=[{'tool': 'processing_item_manage', 'action': 'create_processing_item'}],
-    output_verify=[{'tool': 'processing_item_manage', 'expect': {'name': '测试加工', 'pricingMethod': 'per_meter'}}],
+    output_verify=[{'tool': 'processing_item_manage', 'action': 'create_processing_item', 'expect': {'name': '测试加工', 'pricingMethod': 'per_meter'}}],
 )
 
 # ── PR-001 [SMOKE] 商品搜索 - 关键词模糊匹配（源: cases/product.yml）──
