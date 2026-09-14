@@ -115,28 +115,46 @@ _JAVA_MAIN = _REPO_ROOT / "backend" / "admin-api" / "src" / "main" / "java"
 # 工具源码里 payload 的四种形态（app/utils/http_client.py::AdminApiClient 的形参名）
 PAYLOAD_KWARGS = ("json_data", "params", "data")
 
-# 无法静态解析 payload 键（动态构造）的调用点：必须显式登记
-# key = "文件|HTTP方法 归一化端点"（不按行号 —— 行号随并行改动漂移会让登记失效）
-DYNAMIC_KEY_SITES: dict[str, str] = {
-    "app/tools/customer_manage.py|PUT /api/admin/customers/{}": (
-        "update 的 data 是自由字典透传（key 由 LLM 直供），静态不可解析 → "
-        "由 tests/test_tool_field_name_contract.py 的运行期契约（WriteContract CU-004）"
-        "+ customer_manage 的字段白名单兜底（issue #3551 / PR #3562）"
-    ),
-    "app/tools/processing_item_manage.py|PUT /api/admin/processing-items/{}": (
-        "update 路径被 #3591 改为「GET 详情 → 覆盖 → 全量 PUT」（admin-api 是全量替换语义）："
-        "键 = 后端自身 GET 响应里 ITEM_CARRY_OVER_FIELDS ∩ detail（**由接收端字段本身派生，构造上必然合法**）"
-        "+ overrides（调用方按 schema 传入的显式字段）→ 静态不可解析，"
-        "由 admin-api ProcessingItemUpdateRequest 字段集 + schema properties 共同约束"
-    ),
-    "app/tools/settings_manage.py|PUT /api/admin/tenant/ai-config": (
-        "`json_data.update(ai_config)`：ai_config 是 schema 里的自由字典（key 由 LLM 直供，"
-        "如 greetingTemplate/businessHours 之外的租户 AI 配置项），静态不可解析 → "
-        "由 schema 的 properties 声明 + admin-api `TenantAiConfig` 实体字段共同约束"
-    ),
+# 静态不可解析 payload 的调用点：必须显式登记「谁在兜底」——禁止自由文本
+# key = "文件|HTTP方法 归一化端点"
+#
+# 为什么这条必须结构化：动态登记会让该调用点**同时**躲开「键 ⊆ 接收端字段」与「陈旧条目」
+# 两个检查（静态键集为空 ⇒ 无从比对、也无从判定条目是否已销账）⇒ 动态登记是门禁自身的
+# 失明点。故要求二选一，二者都可机器校验：
+#   ① covered_by：指向仓库内**真实存在**的测试文件，且该文件必须提到本工具模块
+#      （= 运行期补偿控制：真跑工具、断言实际 payload 键）→ 由 test_dynamic_sites_… 校验；
+#   ② 没有补偿控制时：必须给出 reason + owner + issue（**有主的欠账**，不是「有人会管」）。
+DYNAMIC_KEY_SITES: dict[str, dict[str, str]] = {
+    "app/tools/customer_manage.py|PUT /api/admin/customers/{}": {
+        "reason": (
+            "update 的 data 是自由字典透传（key 由 LLM 直供），静态不可解析"
+        ),
+        "owner": "customer 域归属包（issue #3551 / PR #3562）",
+        "issue": "#3551",
+        "covered_by": "backend/ai-agent-service/tests/test_customer_manage.py",
+    },
+    "app/tools/processing_item_manage.py|PUT /api/admin/processing-items/{}": {
+        "reason": (
+            "update 路径为「GET 详情 → 覆盖 → 全量 PUT」（admin-api 是全量替换语义，issue #3584）："
+            "键 = 后端自身 GET 响应里 ITEM_CARRY_OVER_FIELDS ∩ detail（由接收端字段本身派生）"
+            "+ overrides（调用方按 schema 传入的显式字段）→ 静态不可解析"
+        ),
+        "owner": "processing 域归属包（issue #3543 / #3591）",
+        "issue": "#3543",
+        "covered_by": "backend/ai-agent-service/tests/test_tools_processing_item_manage.py",
+    },
+    "app/tools/settings_manage.py|PUT /api/admin/tenant/ai-config": {
+        "reason": (
+            "`json_data.update(ai_config)`：ai_config 是 schema 里的自由字典（key 由 LLM 直供）→ "
+            "静态不可解析；**且当前没有任何运行期 key 校验**（test_tools_settings_manage.py 只断言 "
+            "success，不校验 payload 键）⇒ 错误键会被 Spring 静默丢弃。属有主欠账，不是已兜底"
+        ),
+        "owner": "settings 域归属包（update_ai_config 自由字典缺 key 白名单/后端校验）",
+        "issue": "#3570",
+    },
 }
 
-# 带 payload 但路径无法静态渲染（会静默脱离射程）的调用点：必须显式登记
+# 带 payload 但路径无法静态渲染（会静默脱离门禁）的调用点：必须显式登记
 # key = "文件|HTTP方法 <路径表达式>"
 UNATTRIBUTABLE_CALLS: dict[str, str] = {
     # 例："app/tools/xxx.py|POST some_path_var": "为什么无法归属 + 由谁兜底"
@@ -978,8 +996,10 @@ def _registry_problems(registry: dict, label: str) -> list[str]:
 
 def test_registry_entries_are_complete() -> None:
     """登记表纪律：ALLOWLIST 与 ENDPOINT_ALLOWLIST 每条必须带 reason + owner + issue。"""
-    problems = _registry_problems(ALLOWLIST, "ALLOWLIST") + _registry_problems(
-        ENDPOINT_ALLOWLIST, "ENDPOINT_ALLOWLIST"
+    problems = (
+        _registry_problems(ALLOWLIST, "ALLOWLIST")
+        + _registry_problems(ENDPOINT_ALLOWLIST, "ENDPOINT_ALLOWLIST")
+        + _registry_problems(DYNAMIC_KEY_SITES, "DYNAMIC_KEY_SITES")
     )
     assert not problems, "❌ 登记表条目不完整：\n  " + "\n  ".join(problems)
 
@@ -1052,6 +1072,41 @@ def test_dynamic_payload_sites_are_registered() -> None:
         "❌ 下列调用点的 payload 键无法静态解析，且未在 DYNAMIC_KEY_SITES 登记理由\n"
         "（动态构造会让本门禁静默失效 → 必须登记或改成静态可解析）：\n  "
         + "\n  ".join(unregistered)
+    )
+
+
+def test_dynamic_sites_have_a_compensating_control_or_an_owner() -> None:
+    """动态登记不得成为门禁自身的失明点：每个站点必须给出「谁在兜底」或「有主欠账」。
+
+    - `covered_by` 必须指向仓库内**真实存在**的测试文件，且该文件必须提到对应工具模块
+      （防「随便填一个文件名」这类空转链接）；
+    - 未给 `covered_by` 的条目 = 承认「当前无人兜底」→ 必须带 owner + issue
+      （由 test_registry_entries_are_complete 强制），即**有主欠账**而不是自由文本。
+    """
+    problems = []
+    for site, meta in sorted(DYNAMIC_KEY_SITES.items()):
+        tool_module = site.split("|", 1)[0].removesuffix(".py").split("/")[-1]
+        covered_by = meta.get("covered_by", "").strip()
+        if not covered_by:
+            continue  # 无补偿控制 → 有主欠账（owner+issue 由完整性检查强制）
+        path = _REPO_ROOT / covered_by
+        if not path.is_file():
+            problems.append(f"{site}: covered_by 指向不存在的文件 {covered_by!r}")
+            continue
+        if tool_module not in path.read_text(encoding="utf-8"):
+            problems.append(
+                f"{site}: covered_by={covered_by!r} 未提及工具模块 {tool_module!r}"
+                f"（空转链接：该文件并不覆盖这个工具）"
+            )
+    # 未登记的动态站点（若上面的登记检查漏掉某种形态）在这里也必须红
+    problems += [
+        f"{c.file}|{c.method} {c.endpoint}: 动态站点未登记"
+        for c in _payload_calls()
+        if c.dynamic and f"{c.file}|{c.method} {c.endpoint}" not in DYNAMIC_KEY_SITES
+    ]
+    assert not problems, (
+        "❌ 动态登记站点的兜底声明不可机器校验（动态登记 = 门禁失明点，必须交代归属）：\n  "
+        + "\n  ".join(problems)
     )
 
 
