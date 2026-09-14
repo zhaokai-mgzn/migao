@@ -2008,22 +2008,23 @@ _CASE_DF_010 = EvalCase(
     forbidden_card_text=[],
 )
 
-# ── DF-011 [ADVERSARIAL] 熔断 - 连续失败后降级（源: cases/defense.yml）──
+# ── DF-011 [ADVERSARIAL] 查不存在的商品 ID——不误触发熔断且不得发生任何写操作（熔断契约见 test_circuit_breaker.py）（源: cases/defense.yml）──
 _CASE_DF_011 = EvalCase(
     id='DF-011',
     legacy_id='D011',
-    title='熔断 - 连续失败后降级',
+    title='查不存在的商品 ID——不误触发熔断且不得发生任何写操作（熔断契约见 test_circuit_breaker.py）',
     skill=Skill.GENERAL,
     difficulty=Difficulty.ADVERSARIAL,
     user_inputs=['查不存在的ID-001', '查不存在的ID-002', '查不存在的ID-003', '查不存在的ID-004', '查不存在的ID-005', '查遮光窗帘'],
-    expectations=['product_detail'],
-    data_checks=['连续 3 次失败后 breaker 打开（原用例写 5 次，代码默认 failure_threshold=3 已校准）', '开路后不再发起 LLM 调用，CircuitBreakerOpenError 直接向上传播'],
+    expectations=['product_search'],
+    data_checks=['查不到的 ID 一律不得进入写链路：不得创建/修改/上下架商品、不得建单（机器断言见 forbidden_tools）'],
     skip_reason='',
     tags=['defense', 'circuit_breaker', 'failure_rate'],
     persona='',
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+    forbidden_tools=['product_manage', 'product_update', 'sku_update', 'inventory_manage', 'order_create'],
 )
 
 # ── DF-012 [ADVERSARIAL] 熔断 - Redis 不可用时优雅降级（源: cases/defense.yml）──
