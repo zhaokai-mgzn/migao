@@ -61,6 +61,35 @@ Commit: `feat(frontend): 描述` / `fix(backend): 描述` / `test:` / `refactor:
 2. `pytest.ini` 保留 `--timeout=120 --timeout-method=thread`：hang 用例 120s 兜底快速失败。
 3. `verify-all.sh`：ai-agent quick 去 `--no-cov`、full 用 `-n 4` 并行（pytest-xdist）。
 
+## verify-all.sh 档位覆盖面（2026-09-14 固化，issue #3680）
+
+**quick 与 full 对 ai-agent 用同一选择集**（`AI_AGENT_TESTS="tests/ -q --no-cov -n 4"`）——
+quick 省掉的只是 admin-api 的**全量** Maven（`mvnw test` vs `mvnw test -q`）等开销，
+**不是 ai-agent 覆盖**：两档的 ai-agent 判据完全一致。
+
+| 档位 | admin-api | ai-agent | admin-web |
+|---|---|---|---|
+| `quick` | `./mvnw test -q` | `pytest tests/ -n 4` | vitest + tsc |
+| `full`  | `./mvnw test` | `pytest tests/ -n 4` | vitest + tsc |
+
+**实测墙钟（issue #3680 取证，本机）**：ai-agent 检查项改前 **1103 passed / 13.8s** →
+改后 **3859 passed / 20 skipped / 44.2s**（+30s；`-n 4` 并行）。
+整档 `./verify-all.sh quick` 改前 **1m35s**、改后 **2m15s~3m10s**（负载波动下可拉长；
+本机曾因另一会话 Maven 满载量到 3m9s~5m50s）。**整档耗时大头始终是 admin-api 的 Maven**，
+故本改动不改变"快档"定位；若整档持续 >5 分钟，先按上文「本地验证防恶化」体检（环境问题）。
+
+**教训（本地绿 / CI 红制造机）**：quick 的 ai-agent 选择曾是 glob 白名单
+（`tests/unit tests/test_tools_*.py tests/test_graph_*.py tests/test_intent_router.py`），
+当时只匹配 `tests/` 顶层 169 个测试文件里的 42 个 —— 其余 127 个（~75%）被**静默跳过**
+（不报错、无提示、退出码 0）。实证：PR #3674 本地 `./verify-all.sh quick` 绿，CI 却红在
+`tests/test_order_create_quantity_bounds.py`（#3622 的 L0 静态不变式），而 `gate` 档只跑
+QA 预检、不跑单测 ⇒ 开发者本地**没有任何一层**能看到它。
+
+**红线**：禁止把 ai-agent 选择改回 glob 白名单（**失败开放**：新增顶层测试文件默认漏掉）；
+`tests/` 目录选择是**失败关闭**的（新增文件默认被覆盖）。
+守卫：`tests/unit_ci_workflows/test_verify_all_quick_scope.py`（L0，含真实 `--collect-only`
+行为验证 + 旧白名单变异测试），改回去必红。
+
 **开发中体检**（发现本地验证变慢时按序，秒级）：
 ```bash
 cd backend/ai-agent-service
