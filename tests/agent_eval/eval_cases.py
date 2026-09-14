@@ -203,6 +203,25 @@ _CASE_AS_008 = EvalCase(
     forbidden_args=[{'tool': 'aftersale_query', 'fields': ['user_id', 'customer_id', 'customer_phone']}],
 )
 
+# ── AS-009 [NORMAL] C 端售后进度正向查询 - 工具可达 + 能力不否定（权限类禁词）（源: cases/aftersales.yml）──
+_CASE_AS_009 = EvalCase(
+    id='AS-009',
+    legacy_id='',
+    title='C 端售后进度正向查询 - 工具可达 + 能力不否定（权限类禁词）',
+    skill=Skill.AFTERSALES,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['我上次申请的那个换货单现在处理到哪一步了'],
+    expectations=['aftersale_query'],
+    data_checks=['正向可达性：aftersale_query 被调用（expectation 机器断言）；回复不得出现『没有权限/无权限』（forbidden_text 机器断言，防 #3477 类能力自我否定在售后域的对应）', '状态 grounded 到本人真实工单，无工单时如实说明（不禁『暂无』——诚实正确行为）'],
+    skip_reason='',
+    tags=['query', 'aftersale'],
+    persona='xiaobu',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    forbidden_text=['没有权限', '无权限'],
+)
+
 # ── AG-001 [NORMAL] AgentResponse/AgentContext 数据结构 + _extract_msg_content think 剥离（源: cases/agents.yml）──
 _CASE_AG_001 = EvalCase(
     id='AG-001',
@@ -3392,6 +3411,25 @@ _CASE_OR_024 = EvalCase(
     db_verify=[{'fetch': 'order_items', 'source': 'order_create', 'expect_products': ['遮光窗帘'], 'expect_quantities': {'遮光窗帘': 3}}, {'fetch': 'order_phone', 'source': 'order_create', 'expect_phone': '13800138000'}],
 )
 
+# ── OR-025 [NORMAL] C 端物流正向查询 - 工具可达 + 能力不否定（权限类禁词）（源: cases/order.yml）──
+_CASE_OR_025 = EvalCase(
+    id='OR-025',
+    legacy_id='',
+    title='C 端物流正向查询 - 工具可达 + 能力不否定（权限类禁词）',
+    skill=Skill.ORDER,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['帮我看看我刚下的那单的快递物流到哪了'],
+    expectations=['customer_logistics_track'],
+    data_checks=['正向可达性：customer_logistics_track 被调用（expectation 机器断言）；回复不得出现『没有权限/无权限』（forbidden_text 机器断言，防 #3477 类能力自我否定在查询域的对应）', '物流内容 grounded 到本人订单（运单号/快递公司），不编造单号（自然语义，防线以 expectation + forbidden_text 为准）'],
+    skip_reason='',
+    tags=['query', 'logistics'],
+    persona='xiaobu',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    forbidden_text=['没有权限', '无权限'],
+)
+
 # ── PG-001 [NORMAL] 生成加工单 - 已确认含加工项订单 → 加工单生成 + 订单进入 producing（源: cases/processing-order.yml）──
 _CASE_PG_001 = EvalCase(
     id='PG-001',
@@ -5128,6 +5166,7 @@ ALL_CASES = (
     _CASE_AS_006,
     _CASE_AS_007,
     _CASE_AS_008,
+    _CASE_AS_009,
     _CASE_AG_001,
     _CASE_AG_002,
     _CASE_AG_003,
@@ -5301,6 +5340,7 @@ ALL_CASES = (
     _CASE_OR_022,
     _CASE_OR_023,
     _CASE_OR_024,
+    _CASE_OR_025,
     _CASE_PG_001,
     _CASE_PG_002,
     _CASE_PG_003,

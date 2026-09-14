@@ -4,7 +4,7 @@
 > 单一源：`ershen/seed/migao/cases/`（部署副本 `.github/cases/`）。
 > 启动服务后按序执行；每轮 Case 独立。tier：🟢 smoke / 🔵 normal / 🔴 adversarial。
 
-## 售后域（8 case）
+## 售后域（9 case）
 
 ### AS-001. 售后工单列表 🟢
 ```
@@ -105,6 +105,18 @@
 ```
 真值: aftersales-flow.status-enums, aftersales-flow.flow
 溯源: 2026-09-11 新增（issue #3266 C 端评测覆盖体检）：aftersale_query 是唯一无任何 C 端用例覆盖的真实能力缺口——AS-005 的 `after_sales_manage or aftersale_query` 因 after_sales_manage 属 B 端工具被 C 端用例集排除后，C 端售后查询能力归零；本条补 C 端专属进度查询 + 数据隔离断言 ｜ tags: query, aftersale, data_safety, xiaobu
+
+### AS-009. C 端售后进度正向查询 - 工具可达 + 能力不否定（权限类禁词） 🔵
+```
+你: 我上次申请的那个换货单现在处理到哪一步了
+期望: aftersale_query
+数据: 正向可达性：aftersale_query 被调用（expectation 机器断言）；回复不得出现『没有权限/无权限』（forbidden_text 机器断言，防 #3477 类能力自我否定在售后域的对应）
+数据: 状态 grounded 到本人真实工单，无工单时如实说明（不禁『暂无』——诚实正确行为）
+禁词: 没有权限
+禁词: 无权限
+```
+真值: aftersales-flow.status-enums
+溯源: 2026-09-14 新增（#3494 覆盖审计）：AS-008 的正向展示断言为自然语义 data_checks（不计分）；本条补专属正向旅程——工具可达 + 权限否定禁词双防线，机器可执行；不依赖工单数据状态（诚实『暂无』回复不误伤） ｜ tags: query, aftersale
 
 ## agents（6 case）
 
@@ -1973,7 +1985,7 @@
 真值: ai-chat.context-memory
 溯源: 2026-09-04 新增：issue #2821 延续切片 C（vision 分析落槽 + base_skill 接线） ｜ tags: ontology, vision, context_memory, grounding, base_skill
 
-## 订单域（24 case）
+## 订单域（25 case）
 
 ### OR-001. 订单列表查询 🟢
 ```
@@ -2425,6 +2437,18 @@
 ```
 真值: order.create-flow, ai-chat.confirm-required
 溯源: 2026-09-13 新增（issue #3402）：沉淀 C-A1 主路径真因（数量口径 → 产出层反模式断言） ｜ tags: order_create, quantity, ceiling, xiaobu
+
+### OR-025. C 端物流正向查询 - 工具可达 + 能力不否定（权限类禁词） 🔵
+```
+你: 帮我看看我刚下的那单的快递物流到哪了
+期望: customer_logistics_track
+数据: 正向可达性：customer_logistics_track 被调用（expectation 机器断言）；回复不得出现『没有权限/无权限』（forbidden_text 机器断言，防 #3477 类能力自我否定在查询域的对应）
+数据: 物流内容 grounded 到本人订单（运单号/快递公司），不编造单号（自然语义，防线以 expectation + forbidden_text 为准）
+禁词: 没有权限
+禁词: 无权限
+```
+真值: order.logistics
+溯源: 2026-09-14 新增（#3494 覆盖审计）：OR-012 的正向展示断言为自然语义 data_checks（不计分）；本条补专属正向旅程——工具可达 + 权限否定禁词双防线，机器可执行；不依赖在途订单数据状态（诚实『暂无』回复不误伤，故不禁『暂无/无法查询』） ｜ tags: query, logistics
 
 ## 加工项域（6 case）
 
@@ -3609,9 +3633,9 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：276（活跃 135，跳过 141）
-- tier 分布：smoke 9 / normal 234 / adversarial 33
-- 售后域：8
+- 用例总数：278（活跃 137，跳过 141）
+- tier 分布：smoke 9 / normal 236 / adversarial 33
+- 售后域：9
 - agents：6
 - api：19
 - bmini：5
@@ -3627,7 +3651,7 @@
 - misc：15
 - onboarding：5
 - ontology：4
-- 订单域：24
+- 订单域：25
 - 加工项域：6
 - processing-order：14
 - 商品域：22

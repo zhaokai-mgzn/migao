@@ -1455,6 +1455,36 @@ cases:
     skip_reason: ""
     merge_log: "2026-09-13 新增（issue #3402）：沉淀 C-A1 主路径真因（数量口径 → 产出层反模式断言）"
 
+  - id: OR-025
+    legacy_id: ""
+    title: "C 端物流正向查询 - 工具可达 + 能力不否定（权限类禁词）"
+    domains:
+      - order
+      - chat
+    tier: normal
+    persona: xiaobu
+    tags:
+      - query
+      - logistics
+    truths_ref:
+      - order.logistics
+    user_inputs:
+      - "帮我看看我刚下的那单的快递物流到哪了"
+    expectations:
+      - tool: customer_logistics_track
+    forbidden_text:
+      - "没有权限"
+      - "无权限"
+    data_checks:
+      - "正向可达性：customer_logistics_track 被调用（expectation 机器断言）；回复不得出现『没有权限/无权限』（forbidden_text 机器断言，防 #3477 类能力自我否定在查询域的对应）"
+      - "物流内容 grounded 到本人订单（运单号/快递公司），不编造单号（自然语义，防线以 expectation + forbidden_text 为准）"
+    skip_reason: ""
+    merge_log: "2026-09-14 新增（#3494 覆盖审计）：OR-012 的正向展示断言为自然语义 data_checks（不计分）；本条补专属正向旅程——工具可达 + 权限否定禁词双防线，机器可执行；不依赖在途订单数据状态（诚实『暂无』回复不误伤，故不禁『暂无/无法查询』）"
+    traces:
+      ci:
+        - xiaobu-acceptance.yml
+      verifies: []
+
 
     traces:
       tests:
