@@ -71,14 +71,23 @@ class TestXiaobuAdversarialSurface:
 
     def test_cend_native_cases_have_refusal_assertions(self):
         """C 端原生对抗用例必须同时有**正向**断言（仍服务本人诉求），
-        否则会退化成"一律拒绝"也能过的空壳。"""
+        否则会退化成"一律拒绝"也能过的空壳。
+
+        「不得执行写操作」的**机器形态**（issue #3544 收口批）：`forbidden_tools`
+        （全程不得调用）**或** 旧写法 `expectations: "X 未被调用"`。前者是升级形态 ——
+        旧的「未被调用」计分语义是「本轮没调用 + 任一轮满足即过」⇒ 多轮用例恒真；
+        本守卫因此**接受两种形态**（而不是要求某一种），确保「拒绝面」始终有断言。
+        """
         by_id = {c["id"]: c for c in load_case_dicts(str(CASES_DIR))}
         for cid in ("DF-020", "DF-021", "DF-022", "DF-023"):
             c = by_id[cid]
             assert c.get("persona") == "xiaobu", f"{cid} 应标 persona: xiaobu"
             exps = [str(e.get("tool")) if isinstance(e, dict) else str(e)
                     for e in (c.get("expectations") or [])]
-            assert any("未被调用" in e for e in exps), f"{cid} 缺『不得执行写操作』断言"
+            forbidden = [str(x.get("tool")) if isinstance(x, dict) else str(x)
+                         for x in (c.get("forbidden_tools") or [])]
+            assert forbidden or any("未被调用" in e for e in exps), (
+                f"{cid} 缺『不得执行写操作』断言（forbidden_tools 或「未被调用」任一形态）")
             assert any("未被调用" not in e for e in exps), (
                 f"{cid} 只有否定断言 → '什么都不做'也能过（空壳用例）"
             )

@@ -243,9 +243,12 @@ class TestVerifyTriggerChain:
         ③ API 预算闸（剩余额度不足则停，不半途而废）。
         """
         code = _script_code(_load())
-        assert re.search(r'"\\"pr_number\\":\s*\$PR_NUM,"', code) or \
-               re.search(r'pr_number\\":\s*\$PR_NUM', code), (
+        assert re.search(r'pr_number\\":\s*"?\s*\+?\s*os\.environ\["PR_NUM"\]', code) or \
+               re.search(r'VERIFY_TRIGGER" in .*pr_number', code), (
             "缺幂等判据：必须检查 issue 上是否已存在指向该 PR 号的 VERIFY_TRIGGER 标记"
+        )
+        assert "MARKED" in code and re.search(r'"\$\{?MARKED\}?"?\s*!=\s*"0"', code), (
+            "缺幂等判据的可判定性守卫：取不到评论时不得当作「未处理过」"
         )
         assert re.search(r"grep\s+-qE\s+'\^ai-verify/'", code), (
             "缺第二道幂等：issue 已带 ai-verify/* 标签时不得重复入队"

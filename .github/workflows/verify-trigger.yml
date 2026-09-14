@@ -199,14 +199,14 @@ jobs:
           GH_REPO: ${{ github.repository }}
           MODE: ${{ steps.collect.outputs.mode }}
           SINCE: ${{ steps.collect.outputs.since }}
+          REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
-          POSTED=0; SKIPPED=0; NOPR=0; IDEMPOTENT=0; FAILED=0
+          POSTED=0; IDEMPOTENT=0; SKIPPED=0; NOPR=0; FAILED=0
           : > /tmp/posted.txt
 
           if [ ! -s /tmp/candidates.txt ]; then
             echo "⚠️  零候选 PR，结束"
-            printf '| 候选 PR | 0 |\n' > /tmp/summary.md
             exit 0
           fi
 
@@ -233,7 +233,7 @@ jobs:
               if r['number'] not in cand:
                   continue
               at = r.get('mergedAt') or ''
-              if at and at < since:      # ISO8601 UTC 可按字典序比较
+              if since and at and at < since:   # ISO8601 UTC 可按字典序比较
                   continue
               n += 1
               print('\t'.join([str(r['number']),
@@ -261,14 +261,13 @@ jobs:
             if [ $((ITER % 10)) -eq 1 ]; then
               LEFT=$(gh api rate_limit --jq '.resources.core.remaining' 2>/dev/null || echo "9999")
               if [ "$LEFT" -lt 150 ]; then
-                echo "⚠️  额度剩 $LEFT < 150，停止本轮（已处理 $((ITER-1)) 个候选，其余留给下次 run）"
+                echo "⚠️  额度剩 ${LEFT} < 150，停止本轮（已处理 $((ITER-1)) 个候选，其余留给下次 run）"
                 break
               fi
             fi
-            # 用 POSIX ERE（`grep -oiE`）而非 GNU 专属的 `-oP`/`\K`：后者在 macOS 本地
-            # 静默报错（invalid option -- P）→ 本地复现/调试时表现为「一条都不触发」，
-            # 把真实缺陷伪装成环境差异（本包 dry-run 实测踩到）。行为等价（大小写不敏感、
-            # 取第一个匹配），但双平台一致。
+            # 用 POSIX ERE（`grep -oiE`）而非 GNU 专属的 `-oP`/`\K`：后者在 macOS 本地静默报错
+            # （invalid option -- P）→ 本地复现时表现为「一条都不触发」，把真实缺陷伪装成环境差异
+            # （本包 dry-run 实测踩到）。行为等价（大小写不敏感、取第一个匹配），双平台一致。
             ISSUE_NUM=$(printf '%s' "$BODY" | grep -oiE '(fixes|closes|resolves)[[:space:]]+#[0-9]+' | head -1 | grep -oE '[0-9]+$' || true)
             if [ -z "$ISSUE_NUM" ]; then
               echo "PR #$PR_NUM ⏭️  无 linked issue（body 无 Closes/Fixes/Resolves #N）"
@@ -278,15 +277,36 @@ jobs:
               echo "PR #$PR_NUM ⚠️  linked issue #$ISSUE_NUM 不存在（PR body 误写），跳过"
               NOPR=$((NOPR+1)); continue
             fi
-            LABELS=$(gh issue view "$ISSUE_NUM" --json labels --jq '.labels[].name' 2>/dev/null || echo "")
 
-            # ── 幂等①：该 PR 是否已在本 issue 贴过 VERIFY_TRIGGER 标记（标记带 "pr_number": N）──
-            if gh issue view "$ISSUE_NUM" --comments --json comments --jq '.comments[].body' 2>/dev/null \
-                 | grep -qF "\"pr_number\": $PR_NUM,"; then
-              echo "PR #$PR_NUM → issue #$ISSUE_NUM ⏭️  已处理过（VERIFY_TRIGGER 标记已在，幂等）"
+            # ── 幂等①（**必须先判**）：该 PR 是否已在本 issue 贴过 VERIFY_TRIGGER 标记 ──
+            # 顺序有意：标记判据回答「这个 PR 处理过没有」，与门禁/标签无关，是最早的短路点。
+            # 放最前才能保证「重复 run 零副作用」在任何标签状态下都成立、且日志可观测
+            # （实测踩到：把标签判据放前面时，若 issue 后来被打上 needs-truths 等门禁标签，
+            #   真因被 gate-skip 掩盖 —— 日志里看不到幂等命中，验收时无法定位到这一层）。
+            # 判据对**格式不敏感**：VERIFY_TRIGGER 标记与「该 PR 号」同现即算处理过，不绑定
+            # `"pr_number": N,` 的精确写法（换字段顺序/空白就会被判成没处理过 → 退化成
+            # 每次 run 重复贴标记 + 重复 reopen，是本链路最危险的失效方向）。
+            # 用 python 判定而非把 `$PR_NUM` 拼进 `gh --jq`：gh 的 --jq 只接受一个表达式、
+            # 不支持 --arg/--argjson，拼字符串依赖引号层级 —— runner 上曾静默判否（本 PR 实测）。
+            # ⚠️ 用 `gh api ... --paginate` 而非 `gh issue view --comments`：后者**不支持
+            # `--paginate`**（实测 runner 返回 `unknown flag: --paginate` → 空 JSON → 判据恒 0
+            #   → 幂等失效）。`gh api` 会分页取全评论，且不依赖 jq 变量拼接。
+            gh api "repos/$REPO/issues/$ISSUE_NUM/comments" --paginate > /tmp/issue_comments.json 2>/tmp/issue_comments.err || true
+            echo "  [幂等判据] comments 条数=$(python3 -c 'import json;p="/tmp/issue_comments.json";d=json.load(open(p)) if __import__("os").path.getsize(p) else [];print(len(d if isinstance(d,list) else (d.get("comments") or [])))' 2>/dev/null || echo NA)"
+            # JSON 形状兼容：`gh api` 返回裸数组，`gh issue view --json comments` 返回 {"comments":[...]}。
+            MARKED=$(PR_NUM="$PR_NUM" python3 -c 'import json,os; p="/tmp/issue_comments.json"; d=json.load(open(p)) if os.path.exists(p) and os.path.getsize(p) else []; cs=d if isinstance(d,list) else (d.get("comments") or []); n="\"pr_number\": "+os.environ["PR_NUM"]; print(sum(1 for c in cs if "VERIFY_TRIGGER" in (c.get("body") or "") and n in (c.get("body") or "")))' 2>/dev/null || echo "ERR")
+            if [ "${MARKED}" = "ERR" ] || [ -z "${MARKED}" ]; then
+              echo "PR #$PR_NUM → issue #$ISSUE_NUM ⚠️  幂等判据不可判定（gh/python 失败）→ 跳过，避免重复贴标记"
+              FAILED=$((FAILED+1)); continue
+            fi
+            if [ "${MARKED}" != "0" ]; then
+              echo "PR #$PR_NUM → issue #$ISSUE_NUM ⏭️  已处理过（VERIFY_TRIGGER 标记已在，幂等，命中=${MARKED}）"
               IDEMPOTENT=$((IDEMPOTENT+1)); continue
             fi
+
             # ── 幂等②：issue 已在验收流程中（任一 ai-verify/* 标签）→ 不重复入队 ──
+            LABELS=$(gh issue view "$ISSUE_NUM" --json labels --jq '.labels[].name' 2>/dev/null || echo "")
+            echo "  [门禁判据] pr=#$PR_NUM labels=$(echo "$LABELS" | tr '\n' ',')"
             if echo "$LABELS" | grep -qE '^ai-verify/'; then
               echo "PR #$PR_NUM → issue #$ISSUE_NUM ⏭️  已有 ai-verify/* 标签（幂等），跳过"
               IDEMPOTENT=$((IDEMPOTENT+1)); continue
@@ -316,7 +336,7 @@ jobs:
               printf -- '---\n'
               printf '<!-- VERIFY_TRIGGER\n'
               printf '{ "issue_id": %s, "pr_number": %s, "commit": "%s", "pr_author": "%s", "merged_at": "%s", "detected_via": "%s" }\n' \
-                "$ISSUE_NUM" "$PR_NUM" "$SHA" "$AUTHOR" "${MERGED_AT:-$SINCE}" "${MODE:-?}"
+                "$ISSUE_NUM" "$PR_NUM" "$SHA" "$AUTHOR" "${MERGED_AT:-${SINCE}}" "${MODE:-?}"
               printf -- '-->\n'
             } > /tmp/verify.md
             if gh issue comment "$ISSUE_NUM" --body-file /tmp/verify.md; then
@@ -338,22 +358,16 @@ jobs:
             echo "本次新触发验收的 PR：$(tr '\n' ' ' < /tmp/posted.txt)"
           fi
           {
-            echo "### verify-trigger 运行结果（mode=${MODE:-?}）"
+            echo "## verify-trigger summary（mode=${MODE:-?}）"
             echo ""
             echo "| 指标 | 数量 |"
             echo "|---|---|"
-            echo "| 候选 PR | $(wc -l < /tmp/candidates.txt 2>/dev/null | tr -d ' ') |"
+            echo "| 候选 PR | ${NCAND} |"
             echo "| ✅ 新触发验收 | $POSTED |"
             echo "| ⏭️ 幂等跳过 | $IDEMPOTENT |"
             echo "| ⏭️ 门禁跳过（无真值/工程类/ai-draft） | $SKIPPED |"
             echo "| ⏭️ 无 linked issue | $NOPR |"
             echo "| ⚠️ 失败 | $FAILED |"
-          } > /tmp/summary.md
-          cat /tmp/summary.md
-          {
-            echo "## verify-trigger summary"
-            echo ""
-            cat /tmp/summary.md
             echo ""
             echo "触发源 mode=\`${MODE:-?}\`（可靠源 = \`pull_request_target: opened/reopened\` 对账）"
           } >> "$GITHUB_STEP_SUMMARY"

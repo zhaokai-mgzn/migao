@@ -1345,37 +1345,34 @@ cases:
     # 本用例把正反两面都咬住：命中历史信息 → 必须带进 form 且为真值；新客路径由 OR-022 守。
     user_inputs:
       - "帮我下单，遮光窗帘 3 米，要打孔加工"
+      # ── 协作应答（issue #3646，§13.5 卡序漂移）──
+      # 旧版是**固定 9 轮台词表**，实测与真实卡序列错位：
+      #   R1 发了 2 张 choice 卡（其中一张重复）→ R2 本意答「颜色（米白）」却被当成
+      #   「加工项」应答 → R3 起 7 轮全部 `tools=-`（喂到了错误的卡上）→
+      #   `order_create` 从未发生（真实重放 0%，runner 标 unstable）。
+      # 改为「有卡答卡、无卡发含关键信息的原文」：choice→首项 / form→按声明值回填 /
+      # confirm→confirmValue，避免把用例绑死在某个卡序上。
       - auto_respond:
-          fallback: "米白"
-      # 收货信息轮：老客户应当**预填**，顾客只需确认（harness 按 form_values 回填）
-      - auto_respond:
-          fallback: "确认下单"
+          fallback: "米白，要打孔加工，不加别的加工项"
           form_values:
             customer_name: "张三"
             customer_phone: "13800138000"
             customer_address: "浙江省杭州市西湖区文三路1号1幢101室"
             color: "米白"
             colorName: "米白"
-      - auto_respond:
-          fallback: "确认"
-          form_values:
-            customer_name: "张三"
-            customer_phone: "13800138000"
-            customer_address: "浙江省杭州市西湖区文三路1号1幢101室"
-      - auto_respond:
-          fallback: "123456"
-          prefer_text: true
-      - auto_respond:
-          fallback: "123456"
-          prefer_text: true
-      - auto_respond:
-          fallback: "确认"
-      - auto_respond:
-          fallback: "确认"
-      # 轮数余量（issue #3401）：确认卡可能因**补字段**（收货信息后到）而重发一次，
-      # 顾客会继续确认；余量不足时用例会以"确认死循环"红，掩盖预填断言的真实结论。
-      - auto_respond:
-          fallback: "确认"
+      # 收尾协作轮（先例 CH-025 / OR-021 / CH-033）：被问验证码供码、其余答卡，
+      # 直到 `order_create` **成功**（被门禁挡回不算成功 → 不会提前停轮）。
+      - repeat_until:
+          tool_called: order_create
+          max: 8
+        code: "123456"
+        fallback: "确认下单"
+        form_values:
+          customer_name: "张三"
+          customer_phone: "13800138000"
+          customer_address: "浙江省杭州市西湖区文三路1号1幢101室"
+          color: "米白"
+          colorName: "米白"
     expectations:
       - tool: product_search
       - tool: product_detail
@@ -1419,7 +1416,7 @@ cases:
       - "预填值必须是真值 —— 掩码值会被顾客原样提交，订单会用掩码建号"
       - "写操作前必须经过 validate_input（confirm → 校验 → order_create）"
     skip_reason: ""
-    merge_log: "2026-09-13 新增（issue #3397）：补齐零断言能力（地址预填 + 写前校验）"
+    merge_log: "2026-09-13 新增（issue #3397）：补齐零断言能力（地址预填 + 写前校验）；2026-09-14 协作轮重构（issue #3646）：固定 9 轮台词表实测与真实卡序列错位（R1 发 2 张 choice 卡、R2 的「米白」被当成加工项应答、R3 起 7 轮全 `tools=-`、order_create 从未发生 = 真实重放 0%/unstable），改为「有卡答卡 + repeat_until(order_create) 停机」；expectations/must_succeed/order_before/amount_verify/db_verify 原样保留（未放宽）"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_acceptance_case_checks.py"

@@ -7,7 +7,7 @@ LangGraph Skill 节点测试
 - ToolContext 从 state 正确构建
 - base_skill 的 execute_skill 逻辑
 """
-# case_ids: AG-004, CH-003, CH-023, MC-008, DF-018, HR-005, CU-003, CH-010, CH-012, OR-017, OR-021, OR-022, AS-003, AS-007
+# case_ids: AG-004, CH-003, CH-023, MC-008, DF-018, HR-005, CU-003, CH-010, CH-012, OR-017, OR-021, OR-022, AS-003, AS-007, OR-025, AS-009, CH-013, CH-014, CH-015
 
 import json
 import pytest
@@ -1264,16 +1264,32 @@ class TestConfirmGateGuidance:
         result, _ = self._gate_result(has_interact=True)
         blob = str(result)
         assert "component=confirm" in blob, "有 interact 时应指引弹卡确认"
-        assert "完整复述" not in blob, "有 interact 时不应走文本复述分支"
+        assert "完整复述" not in blob, "不应再有文本复述降级分支"
 
-    def test_gate_message_does_not_demand_unavailable_tool(self):
+    def test_gate_message_is_always_card_path(self):
+        """门禁话术**唯一形态 = 确认卡**（交互形态统一，产品裁定 2026-09-14）。
+
+        历史：这里原有一条 `test_gate_message_does_not_demand_unavailable_tool` ——
+        断言"Skill 未绑 `interact` 时退化为文本复述话术"（issue #3317 的旧处置）。
+        该处置已被产品裁定推翻，处置改为**配置层统一**（staff/settings/data 补绑
+        `interact`，#3577 / PR #3590），`base_skill` 里那条按"本 Skill 有无 interact"
+        分流的代码分支已**物理删除** —— 对全部已注册 Skill 不可达（唯一未绑 interact 的
+        `knowledge`/`customer_knowledge` 只有只读工具，门禁永不触发）。
+
+        本用例锁**新常态**：即使 registry 里没有 `interact`（动态构造/未来 skill 的形态），
+        话术也**只会**是确认卡路径，绝不会退化成"用文本完整复述 + 口头确认" ——
+        若有人把降级分支加回来，本条必红。真正的"配置层不缺 interact"由
+        `tests/test_skill_config_registry.py` 的三条不变式守护（补绑是配置层的事）。
+        """
         result, _ = self._gate_result(has_interact=False)
         blob = str(result)
-        assert "component=confirm" not in blob, (
-            "Skill 未绑定 interact 时，门禁不能说「请调用 interact（component=confirm）」——"
-            "那是不可执行指令，会让模型反复重试或放弃（issue #3317）"
+        assert "component=confirm" in blob, (
+            "门禁话术只应有确认卡形态（交互形态统一）——不该按 skill 能力分流"
         )
-        assert "完整复述" in blob, "应改为要求用文本完整复述操作并请用户回复确认"
+        assert "完整复述" not in blob, (
+            "文本复述降级话术已删除（配置层统一绑 interact 后该分支不可达）——"
+            "不得重新引入，需统一到确认卡路径（#3577 / 产品裁定 2026-09-14）"
+        )
 
 
 class TestProcessingItemsFallback:
@@ -1549,11 +1565,16 @@ class TestInflightHandoffGuard:
              patch("app.graph.skills.base_skill.set_tool_context"), \
              patch("app.graph.skills.base_skill._execute_tool_safe", fake_execute):
             from app.tools.human_handoff import HumanHandoffTool
+            from app.tools.aftersale_create import AftersaleCreateTool
             registry = MagicMock()
             registry.get_langchain_tools.return_value = []
             registry.get_tool.side_effect = lambda n: (
                 HumanHandoffTool() if n == "human_handoff" else None)
             create_reg.return_value = registry
+            # 守卫的适用性判据已从 skill 名字面量改为**工具属性事实**（issue #3571）：
+            # `customer_aftersales` 的真实工具集含 `aftersale_create`（destructive/需确认写工具），
+            # 这正是它落在守卫范围内的原因 —— 假 registry 只给 human_handoff 会让判据失真。
+            registry.get_all_tools.return_value = [AftersaleCreateTool(), HumanHandoffTool()]
 
             breaker = MagicMock()
 
@@ -1647,6 +1668,10 @@ class TestInflightHandoffGuard:
             # 技能工具集里**有** aftersale_create（CH-012 的真实情形）
             registry.get_tool.side_effect = lambda n: (
                 HumanHandoffTool() if n == "human_handoff" else (MagicMock() if n == "aftersale_create" else None))
+            # 事实驱动判据读**工具属性**（issue #3571）：fixture 要给出真实工具实例，
+            # 自动生成的 MagicMock 没有 destructive/requires_confirmation 标记。
+            from app.tools.aftersale_create import AftersaleCreateTool
+            registry.get_all_tools.return_value = [AftersaleCreateTool(), HumanHandoffTool()]
             create_reg.return_value = registry
 
             breaker = MagicMock()
@@ -5227,9 +5252,17 @@ class TestTextDenialCorrectiveRetry:
         assert "没办法直接帮您提交订单" in out["final_answer"]
 
     def test_other_skill_untouched(self):
-        """非办单 skill 说"下不了单"可能属实 → 不拦、不重答。"""
+        """非办单 skill 说"下不了单"可能属实 → 不拦、不重答。
+
+        ⚠️ fixture 必须**如实**反映该 skill 的工具子集（issue #3571）：判据已从
+        "skill 名是不是 customer_order"改为"工具集里有没有 order_create"这一**事实**，
+        所以给 `customer_knowledge` 挂一个它**从来不会有**的 order_create 就不再是
+        "非办单 skill"了（首版 harness 即此错）。真实事实：customer_knowledge 无 order_create。
+        （"工具就在手上却仍自我否定"的正向形态由
+        `tests/test_capability_denial_guard.py::TestTextDenialCorrectionCrossSkill` 覆盖。）
+        """
         denial = "这边没办法直接帮您提交订单哦"
-        out, llm, _ = self._run([denial], skill="customer_knowledge")
+        out, llm, _ = self._run([denial], skill="customer_knowledge", has_order_tool=False)
         assert out["final_answer"] == denial
         assert llm.ainvoke.await_count == 1
 

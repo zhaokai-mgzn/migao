@@ -449,6 +449,15 @@ gh run watch <run-id>
 gh run view <run-id> --log   # 检索 VERDICT= 与 wire#0 thinking
 ```
 
+> **入口已常驻 main**（workflow id `357556316`，PR #3579 合入）——`gh workflow run` 随时可复跑；
+> 结论有变（provider 升级 / 换模型）时**先重跑探针再改行为**，别凭记忆推断。
+>
+> ⚠️ 一个 CI 事实（本次取证踩过）：**新增的 workflow 文件在合入默认分支之前无法
+> `workflow_dispatch`** —— GitHub 只在默认分支索引 workflow，`gh workflow run <新文件>`
+> 会报 `HTTP 404: not found on the default branch`。要「先拿结论再合入」时，只能借既有
+> dispatch 入口（或用一次性 `push` 触发）取证；反之若必须先合入，就把「取证」与
+> 「行为改动」拆成两个 PR（本账正是这么做的）。
+
 本地无 `.env`（无 LLM 凭据）时脚本**优雅退出**并打印 `SKIPPED: 本次未发送任何 LLM 调用，
 **不构成任何结论**` —— 不会静默假成功（这是刻意设计：探针最危险的失败模式是"看起来跑过了"）。
 退出码语义：结论（no-op / 生效 / 被拒）**不影响**退出码；只有探针自身没跑成

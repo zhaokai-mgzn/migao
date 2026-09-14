@@ -78,8 +78,12 @@ class TestCreateVariants:
         assert kwargs["model"] == "vm"
         assert kwargs["api_key"] == "vk"
         assert kwargs["base_url"] == "vb"
-        # DeepSeek vision（OpenAI 兼容）不传 MiniMax 专属 thinking extra_body
-        assert "extra_body" not in kwargs
+        # 探针实证（#3573 / PR #3579，run 34809425971）：deepseek-flash 缺省=开思考——
+        # 基线不传 extra_body 照样产出 reasoning_content（len=537 / 122 reasoning tokens），
+        # `force_no_think=True`（thinking=disabled）才真正关闭（无 reasoning、output 1 token、~0.9s）。
+        # 视觉识别（拍照找同款/识面料）是轻量任务 ⇒ 显式关闭思考是成本正解，
+        # 与 skill 路径 `create_skill_llm(force_no_think=True)`（factory.py:63-64）语义一致。
+        assert kwargs["extra_body"] == {"thinking": {"type": "disabled"}}
         assert kwargs["max_completion_tokens"] == 16384
 
     def test_create_intent_llm(self):
