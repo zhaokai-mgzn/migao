@@ -277,9 +277,19 @@ cases:
       # 只碰种子/目录里**真实存在**的对象（tests/agent_eval/fixtures/mibao_eval_seed.sql
       # 的 prod_eval_2699 及其关联加工项），不点名不存在对象（§13.5 种子守卫）。
       - "面料有瑕疵，帮我换货"
-      # 订单定位轮给**姓名 + 手机号**（order_query.list 的 keyword/receiver 都支持手机号）：
-      # 「最近那个订单」单独用时依赖列表排序，而两个字段一起给 = 唯一指代（同 AS-005 口径）。
-      - "就是最近那个订单，客户张三，手机号 13800138000"
+      # 选单轮用 **repeat_until 答卡**而不是静态文本（issue #3568，**真 LLM 重放实测驱动**）：
+      # 首版写成「就是最近那个订单，客户张三，手机号 13800138000」——CI 首次真重放
+      # （run 34809750975，独立栈）实测 agent 仍然发 **choice 卡**让顾客确认哪一单
+      # （`interact(component=choice title=请选择需要换货的订单 options=5)`，因为该客户
+      # 名下有 5 笔订单），R2 静态文本对不上卡片 → 流程原地打转、R8 仍无
+      # `after_sales_manage`。⇒ 这正是 §13.5 的「卡在中间轮」，必须用答卡轮：
+      # repeat_until 在「待答是卡」时点首项（= 前端点击协议），无卡时才发 fallback 文本。
+      # 本条用例的**被测能力是换货流程的加工项确认**，订单选择是前置步骤 → 由 harness
+      # 正常作答，而不是把"选哪一单"变成被测项（§任务书：不要硬编码、也不要放宽断言）。
+      - repeat_until:
+          tool_called: order_query
+          max: 2
+        fallback: "换成2699系列雪尼尔窗帘面料"
       - "换成2699系列雪尼尔窗帘面料"
       # 答卡轮（§13.5）：加工项卡由 LLM 动态生成（choice/multiSelect，选项名预知不了）
       # → repeat_until 按「有卡答卡：confirm 点确认 / choice 回首项 / form 按声明回填 /

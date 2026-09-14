@@ -172,7 +172,7 @@ _CASE_AS_007 = EvalCase(
     title='换货选目标商品后必须确认加工项（before 生成换货工单确认卡）',
     skill=Skill.AFTERSALES,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['面料有瑕疵，帮我换货', '就是最近那个订单，客户张三，手机号 13800138000', '换成2699系列雪尼尔窗帘面料', {'repeat_until': {'tool_called': 'after_sales_manage', 'max': 5}, 'fallback': '需要打孔加工'}],
+    user_inputs=['面料有瑕疵，帮我换货', {'repeat_until': {'tool_called': 'order_query', 'max': 2}, 'fallback': '换成2699系列雪尼尔窗帘面料'}, '换成2699系列雪尼尔窗帘面料', {'repeat_until': {'tool_called': 'after_sales_manage', 'max': 5}, 'fallback': '需要打孔加工'}],
     expectations=['order_query', 'product_detail', 'after_sales_manage(action=create, ticket_type=exchange)'],
     data_checks=['success=true', '换货目标商品 product_detail 返回 processing_items 非空时，confirm 卡之前必须主动询问加工项（interact(choice, multiSelect=true)，透传 pageMeta 支持翻页；文本询问亦可，语义由 order_before 保证）', '用户选择加工项后，所选名称与计价写入换货方案汇总与工单 description；用户说『不需要加工项』才跳过', 'processing_items 为空时如实告知『该商品无可用加工项』后继续，不强求', '换货工单 order_id 来自本轮 order_query 定位结果（不得编造订单号）'],
     skip_reason='',
