@@ -4011,6 +4011,28 @@ _CASE_PP_008 = EvalCase(
     output_verify=[{'tool': 'processing_item_manage', 'action': 'toggle_item_status', 'expect': {'status': 'inactive'}}],
 )
 
+# ── PP-009 [NORMAL] 米宝加工项 LLM 行为：per_area 按面积算价（calculate_price 下发 dimensions，不双计）（源: cases/processing.yml）──
+_CASE_PP_009 = EvalCase(
+    id='PP-009',
+    legacy_id='',
+    title='米宝加工项 LLM 行为：per_area 按面积算价（calculate_price 下发 dimensions，不双计）',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['刺绣工艺按面积算多少钱？宽 3.2 米、高 2.5 米', {'repeat_until': {'tool_called': 'processing_item_manage', 'max': 2}, 'fallback': '用刺绣工艺算，宽 3.2 米、高 2.5 米，帮我报个价'}],
+    expectations=['processing_item_manage(action=calculate_price)'],
+    data_checks=['per_area 的 quantity 是**计件数**（同一尺寸做几件，缺省 1）；面积由 dimensions(宽×高) 承载——把宽×高写进 quantity 会双计（30×8×8=¥1920，应为 ¥240）', '本端点的契约与 order_create 不同：order_create 由 agent 自己算 quantity=宽×高（acceptance-protocol.md:225 / order.yml:639 的口径只适用那条路径）；calculate_price 由后端从 dimensions 算面积', '回复需给出金额 ¥240（30 元/㎡ × 8㎡）并对得上用户给的尺寸'],
+    skip_reason='',
+    tags=['processing_item', 'llm_behavior', 'tool_call', 'calculate_price', 'per_area'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    forbidden_text=['无法计算', '暂不支持', '功能不存在', '计算失败'],
+    required_args=[{'tool': 'processing_item_manage', 'fields': ['processing_item_id', 'width', 'height']}],
+    must_succeed=[{'tool': 'processing_item_manage', 'action': 'calculate_price'}],
+    output_verify=[{'tool': 'processing_item_manage', 'action': 'calculate_price', 'expect': {'totalPrice': 240.0}}],
+)
+
 # ── PR-001 [SMOKE] 商品搜索 - 关键词模糊匹配（源: cases/product.yml）──
 _CASE_PR_001 = EvalCase(
     id='PR-001',
@@ -5594,6 +5616,7 @@ ALL_CASES = (
     _CASE_PP_006,
     _CASE_PP_007,
     _CASE_PP_008,
+    _CASE_PP_009,
     _CASE_PR_001,
     _CASE_PR_002,
     _CASE_PR_003,
