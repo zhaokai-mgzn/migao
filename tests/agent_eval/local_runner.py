@@ -3722,17 +3722,14 @@ def _agent_asked_for_code(results: list) -> bool:
     return any(h in text for h in _CODE_REQUEST_HINTS)
 
 
-def needs_verification_code(results: list) -> bool:
-    """顾客这一轮**必须供码**吗：agent 在文字里索要，或上一轮的写调用因缺码被挡（issue #3430）。
+def _code_gate_blocked(results: list) -> bool:
+    """上一轮的写调用**因缺码被挡**（机器可观测的**硬**信号，issue #3430）。
 
-    为什么不能只看文字（run 34768306581 实证）：agent 每轮都**重发同一张确认卡**，
-    而写调用在后台因「缺少短信验证码」失败 —— 若按"有卡先答卡"处理，harness 会一轮轮点卡、
-    **验证码永远送不出去**，用例卡死（两轮 trace 的 `you=` 都是确认卡 confirmValue，
-    `failed=order_create!缺少短信验证码`）。所以：**明确的索码/缺码信号优先于答卡**
-    （答卡可以下一轮再做，码不供就只能原地打转）。
+    与 `_agent_asked_for_code` 分家的理由（issue #3829 / OR-026 根因，判定跑 34908262839）：
+    "文字里出现验证码"是**软**信号 —— agent 解释「手机号用来接收下单验证码」也会命中，
+    而它并没有在索码；硬信号则是一次**真实发生的**"码没送到"事故（写调用 success=false）。
+    两者混为一谈时，软信号会无条件压过"待答 form 卡可回填"，把载荷永久饿死。
     """
-    if _agent_asked_for_code(results):
-        return True
     if not results:
         return False
     for st in _tool_result_status((results[-1] or {}).get("tool_results") or []):
@@ -3742,6 +3739,23 @@ def needs_verification_code(results: list) -> bool:
         if any(h in blob for h in _CODE_REQUEST_HINTS) or "短信" in blob or "sms" in blob.lower():
             return True
     return False
+
+
+def needs_verification_code(results: list) -> bool:
+    """顾客这一轮**必须供码**吗：agent 在文字里索要（软），或上一轮的写调用因缺码被挡（硬）。
+
+    为什么不能只看文字（run 34768306581 实证）：agent 每轮都**重发同一张确认卡**，
+    而写调用在后台因「缺少短信验证码」失败 —— 若按"有卡先答卡"处理，harness 会一轮轮点卡、
+    **验证码永远送不出去**，用例卡死（两轮 trace 的 `you=` 都是确认卡 confirmValue，
+    `failed=order_create!缺少短信验证码`）。所以：**明确的索码/缺码信号优先于答卡**
+    （答卡可以下一轮再做，码不供就只能原地打转）。
+
+    ⚠️ 本函数保留"软信号也算真"的宽语义（既有调用方零变化）；**优先级裁决**在
+    `resolve_repeat_turn` 里做 —— 那里才区分软/硬，见 `_code_gate_blocked`。
+    """
+    if _agent_asked_for_code(results):
+        return True
+    return _code_gate_blocked(results)
 
 
 def repeat_stop_met(results: list, spec: dict) -> bool:
@@ -3796,18 +3810,46 @@ def resolve_repeat_turn(results: list, opts: dict, case_form_values: dict | None
     验证码轮就落在加工项多选卡上（顾客答非所问）→ 卡没人答、流程不前进 → 轮数耗尽时确认卡
     刚发出来就没人答它 → `order_create` 从未发生（OR-021 定向复跑 0/1）。
     验收剧本早就用 `repeat_until + click: auto` 解决过同一问题，本函数把那份语义搬到评测侧。
+
+    Why（issue #3829 / OR-026 C 端腿判红，判定跑 34908262839 @2b8dfbc2）
+    ------------------------------------------------------------------
+    旧顺序把**文字里提到"验证码"**当成"在索码"，且**无条件优先于答卡** ⇒ 当 agent 卡在
+    "手机号不对"这一步、每轮都解释「需要 11 位手机号**用来接收下单验证码**」时，
+    harness 每轮都回 `123456`，而它**当轮刚发的那张 form 卡**（`formFields=3`，载荷完全对得上）
+    永远没人答 ⇒ `__FORM__` 全场命中 **0** ⇒ `order_create`/`validate_input` 从未发生 ⇒
+    用例必红，失败串还写成「agent 不会下单」（归因错人）。零 LLM 重放（真实函数）：
+    8 轮全部返回 `123456`，`__FORM__` 命中 0/8。
+    （现场 trace：R3/R4/R5 的 `you=` 都是 `123456`，R4/R5 的 `cards=form` 无人答；
+    same-fingerprint 首跑 34865780382 复现同一形态 → `reproducible`。）
+    ⇒ 治法：**软信号不再压过硬事实**。待答卡里若有**能回填的 form 卡**，先交载荷
+    （顾客对着一张明确问收货信息的表单，真实行为就是把信息填进去）。
+    只此一格行为改变：
+      · 硬信号（写调用因缺码被挡）→ 仍**最优先**供码（语义逐字不变）；
+      · 文字索码 **且无可回填 form 卡**（无卡/卡字段对不上/载荷已发过）→ 仍供码（不变）；
+      · 无索码信号 → 答卡/fallback（不变）。
     """
     opts = opts or {}
     code = str(opts.get("code") or "123456")
     fallback = str(opts.get("fallback") or "确认下单")
     fv = dict(case_form_values or {})
     fv.update(opts.get("form_values") or {})
-    # ① 明确的索码/缺码信号**优先于答卡**：agent 重发确认卡 + 后台写调用缺码时，
-    #    一轮轮点卡会让码永远送不出去（run 34768306581 实证：R5/R6 都是点卡 → 卡死）。
+    # ① 硬信号（上一轮写调用**因缺码被挡**：一次真实发生的"码没送到"事故）**最高优先**：
+    #    agent 重发确认卡 + 后台写调用缺码时，一轮轮点卡会让码永远送不出去
+    #    （run 34768306581 实证：R5/R6 都是点卡 → 卡死）。此处语义与旧实现逐字一致。
+    if _code_gate_blocked(results):
+        return code
     if needs_verification_code(results):
+        # ② 软信号（文字提到"验证码"）——**待答卡里有能回填的 form 卡时先交载荷**（issue #3829）：
+        #    否则"说明性提及"会让载荷全场送不出去（OR-026 根因）。载荷只交一次：
+        #    已发过同一份载荷说明 agent 没接住，此时退回供码（避免「重发同一答复」死循环，
+        #    与 `resolve_auto_respond` 对 confirm/choice 的"不重复点同一张卡"同源纪律）。
+        _answer = _auto_fill_form(results, fv)
+        if _answer and not any(
+                str((r or {}).get("user_message") or "").strip() == _answer for r in results):
+            return _answer
         return code
     if pending_card_summary(results):
-        # ② 有卡答卡（confirm→confirmValue / choice→首项 / form→__FORM__|json）
+        # ③ 有卡答卡（confirm→confirmValue / choice→首项 / form→__FORM__|json）
         return resolve_auto_respond(results, fallback=fallback, form_values=fv, prefer_text=False)
     return fallback
 
@@ -4754,6 +4796,12 @@ def pending_card_summary(results: list) -> str:
     之后 3 轮空转、`order_create` 从未调用）。这种"用例配置与卡片类型对不上"的错
     **不会报错**，只会表现为随机失败 → 还被重试放行标成 `llm-noise`，把用例缺陷藏起来。
     故把待答卡片显式打出来，让"答非所问"一眼可见。
+
+    **form 卡的字段名**一并打出（issue #3829）：字段名是"载荷能不能回填这张卡"的
+    唯一判据，而它此前**只以 `formFields=3` 这样的个数**出现在 trace 里 ——
+    OR-026 判红时想确认"是不是字段名对不上"却取不到证据（判定跑 34908262839 的
+    `cards=form` / `formFields=3` 两处都不带 key）。本函数只在**用例失败时**打印
+    （见 `run_case` 的 prefer_text_notes），所以补字段名不会污染绿跑日志。
     """
     rounds = results or []
     if not rounds:
@@ -4764,7 +4812,13 @@ def pending_card_summary(results: list) -> str:
         if not comp:
             continue
         title = str((iv or {}).get("title") or "").strip()
-        parts.append(f"{comp}:{title[:24]}" if title else comp)
+        head = f"{comp}:{title[:24]}" if title else comp
+        # form 卡：附上**字段名清单**（`#3803`/`#3829` 的归因证据 —— 零匹配时一眼可辨）
+        keys = [str((f or {}).get("key") or "") for f in ((iv or {}).get("formFields") or [])]
+        keys = [k for k in keys if k]
+        if keys:
+            head += "[" + ",".join(keys) + "]"
+        parts.append(head)
     return "、".join(parts)
 
 
