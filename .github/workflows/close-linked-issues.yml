@@ -31,6 +31,34 @@ name: Close Linked Issues on Merge
 #   bot 合并仍靠「下一个 PR opened/reopened」+ 定时兜底。加它是为了**别只依赖 cron**，
 #   不是宣称 bot 合并已被覆盖（注释写错会让下一个人漏掉逃生口，见 migao-acceptance v1.4）。
 #
+# ══════════════════════════════════════════════════════════════════════════════
+# 🚫 平台限制（#3700 收口裁定，2026-09-15）—— **不要**再试图用 push 覆盖 bot 合并
+#
+# 结论：**本平台对 bot 合并不存在"确定性的合并后事件"**，因此本 workflow 没有、
+#       也不可能有"合并即对账"的触发器。这是平台约束，不是本文件的实现缺陷。
+#
+# 证据（三个 bot 合并 commit，**零 workflow run**，且其中一个命中 push paths）：
+#   · `41c9a83a`（PR #3722，命中 deploy-admin-api 的 `paths: backend/admin-api/**`）→ 0 run；
+#   · `d6cd9935`（PR #3723）→ 0 run；
+#   · `3f282c0c`（PR #3737 = 修本 issue 的那个 PR，由 bot 合并）→ 0 run
+#     —— 即**本文件自己新增的 `push` 触发器，在其自身合并时也没有触发**（自证）。
+#   而同日的**人工**合并（#3596 / `f841c5c9`）→ push run `05:51:24Z`。
+# 机理：auto-merge 由 `automerge.yml` 用 `secrets.GITHUB_TOKEN` 开启 ⇒ 合并者恒为
+#   `app/github-actions`，GITHUB_TOKEN 引发的事件**不创建新的 workflow run**（GitHub 防递归），
+#   `closed` 与 `push` 同时被吞（issue #3585 / #3113 同源结论）。
+#
+# ▶ 已**明确裁定不加** automerge 轮询（`workflow_run` 监听 automerge 完成也没用：automerge.yml
+#   在"开启 auto-merge"那一刻就结束，早于真正合并）。理由：轮询要耦合 `automerge.yml`
+#   的内部实现，收益/脆弱性不成比例。
+#
+# ▶ 残留缺口的**性质已改变**（这才是本 issue 的收口点）：从
+#     「**永远不关**（静默 success，无人知晓）」降级为
+#     「**晚关**（下一次 PR opened/reopened 或 cron 兜底时补上，且 `n_late>0` 会显式告警）」。
+#   即：残留**不是"漏"而是"迟"** —— 由上方的分页取齐（窗口内一个不漏）+ 5 条自愈信号
+#   （尤其 `n_late`）把"迟"变成可见。⇒ **发现本 workflow「没在合并瞬间关 issue」时，
+#   先看它有没有 `::warning::`（延迟关闭）再判断，不要据此再提"加个合并后触发"的需求**。
+# ══════════════════════════════════════════════════════════════════════════════
+#
 # 触发源（互相兜底、全部幂等）：
 # 1. pull_request_target [opened, reopened]（**主兜底，issue #3585 新增**）：PR 打开/重开
 #    必触发（deploy-reconcile.yml / automerge.yml 已实证该事件可靠，仓库迭代不停 ≈ 近实时），
