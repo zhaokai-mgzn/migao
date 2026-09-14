@@ -369,6 +369,10 @@ class HumanHandoffTool(BaseTool):
                 json_data=json_data,
                 tenant_id=context.tenant_id,
                 user_id=context.user_id,
+                # 工单真实来源（issue #3686）：转人工工单的发起方就是当前会话调用方 ——
+                # C 端小布顾客转人工 → "customer"；B 端米宝转人工 → "agent"。
+                # 放 header 不放 body（同 #3605 取舍：来源不由 payload 决定）。
+                headers={"X-Agent-Client": context.ticket_source},
             )
 
             if not response.get("success"):

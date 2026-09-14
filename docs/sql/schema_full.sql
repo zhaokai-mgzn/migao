@@ -623,6 +623,9 @@ CREATE TABLE IF NOT EXISTS after_sales_tickets (
     customer_id VARCHAR(64),
     ticket_type VARCHAR(32) NOT NULL,
     status VARCHAR(32) DEFAULT 'pending',
+    -- 工单真实来源：customer=顾客发起 / agent=AI 建单 / merchant=人工建单。
+    -- 服务端各建单路径均显式写值（AfterSalesTicketService.SOURCE_*，#3686）⇒ 本默认不可达，
+    -- 仅作原始 SQL 插单的防御性兜底（勿删：DROP DEFAULT 需 Flyway 迁移，收益不抵成本）。
     source VARCHAR(32) DEFAULT 'customer',
     priority VARCHAR(16) DEFAULT 'normal',
     handler_id VARCHAR(64) REFERENCES agent_employees(id),

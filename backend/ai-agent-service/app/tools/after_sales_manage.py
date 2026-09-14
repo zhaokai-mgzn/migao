@@ -345,6 +345,9 @@ class AfterSalesManageTool(BaseTool):
             json_data=json_data,
             tenant_id=context.tenant_id,
             user_id=context.user_id,
+            # 工单真实来源（issue #3686）：本工具是米宝（B 端）管理工具，
+            # context.ticket_source = "agent"（AI 建单）。放 header 不放 body（同 #3605 取舍）。
+            headers={"X-Agent-Client": context.ticket_source},
         )
 
         if not response.get("success"):
