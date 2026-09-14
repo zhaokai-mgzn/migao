@@ -5,7 +5,12 @@
 发图轮报错时，前面轮次可能已命中 success=true / tool 等 expectation，
 旧逻辑把用例计为通过（假验收 —— 线上 sess_806703a2dcca4059 图片崩溃正是此类）。
 """
-# case_ids: CH-021, CH-024, CH-026, OR-001, PR-001, DA-002, PP-003, PP-004, AS-001, AS-002, CU-003
+# case_ids: CH-021, CH-024, CH-026, OR-001, PR-001, DA-002, PP-003, PP-004, AS-001, AS-002, CU-003, PR-016
+#
+# 2026-09-15 新增（评测归因：run 34856561459 B 端 5 条失败）：
+#   · TestRequiredArgsAnyCallSatisfies —— PR-016 的 required_args 是**假红**（只看首次调用）；
+#   · TestBoolLiteralTolerance / TestInteractiveCardArgAssertion —— 归因线索「multiSelect 大小写」
+#     被独立证伪（容差本已存在），顺手把「卡片 multiSelect 声明被静默忽略」的弱断言钉死。
 import importlib.util
 from pathlib import Path
 
@@ -777,3 +782,122 @@ class TestEndSession:
         with mock.patch.object(lr.httpx, "AsyncClient", _Client):
             asyncio.run(lr._end_session("tok", "sid-9"))
         assert urls[0] == ("PUT", f"{lr.AI_API}/api/chat/sessions/sid-9/close")
+
+
+class TestRequiredArgsAnyCallSatisfies:
+    """required_args 的调用选择器语义：**"存在一次满足的调用"**，而非"只看第一次调用"。
+
+    归因来源（run 34856561459，B 端 normal 档，PR-016）：
+        ❌ required_args[processing_item_query.applicable_category_id](R1): 缺失或为空: applicable_category_id
+    该 run 的 PR-016 轨迹里 `processing_item_query` 被调用多次（R1 拉目录 / R5 按分类过滤 /
+    R6 复述），而断言只看了 **R1** 那一次。用例 data_checks 记录的口径是
+    「processing_item_query **携带** applicable_category_id」（= 至少一次携带），
+    故"只看首次"把用例断言**收窄**了：只要 agent 的第一次目录拉取发生在分类确认之前
+    （真实流程里就是如此：先拉目录/分类，再按已选分类过滤），断言**恒红** ——
+    失败与「加工项有没有按分类过滤」这个被测行为无关，属 runner 断言缺陷（假红）。
+    """
+
+    def _results(self, first_call_args, later_call_args):
+        return [
+            {"__round": 1, "tool_calls": [{"name": "processing_item_query", "args": first_call_args}]},
+            {"__round": 5, "tool_calls": [{"name": "processing_item_query", "args": later_call_args}]},
+        ]
+
+    def _req(self):
+        return [{"tool": "processing_item_query", "fields": ["applicable_category_id"]}]
+
+    def test_later_call_satisfies(self):
+        """首次调用无 applicable_category_id、后续调用有 → 必须通过（run 34856561459 实形）。"""
+        results = self._results({"action": "list"}, {"action": "list", "applicable_category_id": "cat_eval_curtain"})
+        assert lr.check_required_args(results, self._req()) == []
+
+    def test_no_call_satisfies_still_fails(self):
+        """任何一次调用都没有该字段 → 必须仍然红（防把断言改松成空断言）。"""
+        results = self._results({"action": "list"}, {"action": "list"})
+        issues = lr.check_required_args(results, self._req())
+        assert len(issues) == 1
+        assert "applicable_category_id" in issues[0]
+
+    def test_single_call_case_still_fails(self):
+        """只有一次调用且缺字段 → 必须仍然红（PP-005 形态：单轮分类筛选）。"""
+        results = [{"__round": 1, "tool_calls": [{"name": "processing_item_query", "args": {}}]}]
+        assert len(lr.check_required_args(results, self._req())) == 1
+
+    def test_single_call_satisfied_unchanged(self):
+        """单次调用满足字段 → 通过（行为不变基线）。"""
+        results = [{"__round": 1, "tool_calls": [
+            {"name": "processing_item_query", "args": {"applicable_category_id": "cat_eval_curtain"}}]}]
+        assert lr.check_required_args(results, self._req()) == []
+
+
+class TestBoolLiteralTolerance:
+    """期望里的布尔字面量容差：YAML `multiSelect: true` 经 render_cases 渲染成
+    Python `True`，而 agent 调用/卡片透传的是 JSON 布尔 `true`。
+
+    归因来源（run 34856561459，B 端 PR-016）：
+        ❌ interact(component=choice, multiSelect=True) → unmatched expectation
+    独立验证结论：**`True` vs `true` 不是本次失败原因**（`_interactive_satisfies`
+    只校验 component，工具调用路径的 `str(True)==str(True)` 也能自比相等）。
+    但该容差本身缺失：`multiSelect=True` 与 `multiSelect=true` 两种写法在
+    「卡片带 multiSelect=JSON true」时行为不一致 —— 属断言可满足性缺陷，一并钉死，
+    免得下一个人再按"大小写不匹配"排查（本 run 的归因线索 #2 即此误判）。
+    """
+
+    def test_python_bool_matches_json_bool(self):
+        for exp in ("True", "true"):
+            assert lr._scalar_value_matches(exp, "true") is True, exp
+            assert lr._scalar_value_matches(exp, "True") is True, exp
+        for exp in ("False", "false"):
+            assert lr._scalar_value_matches(exp, "false") is True, exp
+
+    def test_bool_still_mismatches_opposite_value(self):
+        assert lr._scalar_value_matches("true", "false") is False
+        assert lr._scalar_value_matches("True", "false") is False
+        # 非布尔字面量不得被容差吞掉
+        assert lr._scalar_value_matches("true", "yes") is False
+
+
+class TestInteractiveCardArgAssertion:
+    """`interact(component=choice, multiSelect=true)` 的 args 必须真的被校验。
+
+    基线行为（保持）：卡片以 SSE interactive 事件下发（无 tool_call）时，用事件
+    payload 的 component 满足期望（issue #3270，防 CH-013 假失败）。
+    缺口：事件里有 `multiSelect` 时，期望声明的 `multiSelect=true` 被**静默忽略** ——
+    卡片是真单选的（multiSelect 缺省 false）也算过，即声明的断言不成立（弱断言）。
+    """
+
+    EXPECT = "interact(component=choice, multiSelect=True)"
+
+    def _res(self, iv, tc=()):
+        return {"tool_calls": list(tc), "interactive": list(iv),
+                "__all_tool_names": [t["name"] for t in tc], "final_text": "", "error": None}
+
+    def test_card_without_multiselect_still_passes_component_only(self):
+        """基线不回归：只发 choice 卡（payload 无 multiSelect）仍满足 component=choice。"""
+        ok, _ = lr.check_expectation(self._res([{"component": "choice"}]), self.EXPECT)
+        assert ok
+
+    def test_card_declaring_single_select_fails(self):
+        """卡片显式声明 multiSelect=false → 期望 multiSelect=true 不得通过。"""
+        ok, detail = lr.check_expectation(
+            self._res([{"component": "choice", "multiSelect": False}]), self.EXPECT)
+        assert not ok, detail
+
+    def test_card_declaring_multi_select_passes(self):
+        ok, _ = lr.check_expectation(
+            self._res([{"component": "choice", "multiSelect": True}]), self.EXPECT)
+        assert ok
+
+    def test_tool_call_path_bool_tolerance(self):
+        """工具调用路径：args 里 JSON true 满足期望 True（大小写容差）。"""
+        ok, detail = lr.check_expectation(
+            self._res([], [{"name": "interact", "args": {"component": "choice", "multiSelect": True}}]),
+            self.EXPECT)
+        assert ok, detail
+
+    def test_multiple_cards_any_hit_passes(self):
+        """同轮多张同组件卡：一张声明单选、一张声明多选 → 多选那张命中即过（旧行为不放严）。"""
+        ok, detail = lr.check_expectation(
+            self._res([{"component": "choice", "multiSelect": False},
+                       {"component": "choice", "multiSelect": True}]), self.EXPECT)
+        assert ok, detail
