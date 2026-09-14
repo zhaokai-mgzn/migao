@@ -1,0 +1,4 @@
+# 本机残留备份，不入库
+*.rc2-backup
+*.bak
+.DS_Store

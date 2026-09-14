@@ -109,6 +109,62 @@ GUARDED_DDL_EXEMPTIONS: set = set()
 # 存量登记表涉及的已发布迁移（前向防护的射程边界）
 _PUBLISHED_AT_ISSUE = set(LEGACY_UNGUARDED)
 
+# ── 单一事实源：Java `MigrationRunner` 的「已知良性」集合（issue #3714）──
+# 背景：评测栈 bootstrap-first 起栈时，MigrationRunner 逐条执行迁移链，上面登记的 3 个
+# 已发布迁移必失败 → 每次起栈都打印 `❌ 本次有 N 条迁移失败，schema 可能与代码不一致
+# （请立即修复并在修复后重跑）`。这句行动指令**必然为假**（无物可修、重跑必复现）→
+# 告警疲劳 → 真失败与永久噪音**同形**，正是本仓库自认的最大失败模式（归因层失效）。
+#
+# 修法（不触碰已发布迁移：`.github/danger_scan.py` 的「已发布迁移只增不改」是 required 护栏）：
+# Java 侧引入 `KNOWN_BENIGN_LEGACY` 命中即降级为 INFO + 汇总行分开计数，**真失败仍 ERROR**。
+# ⇒「同一个判据两份实现必然漂移」（#3701 教训）→ 本模块**锁死两边键集合相等**（下方测试）。
+#
+# 解析口径：Java 常量的 **Key** 必须逐行写成 `文件名 ← 理由` 形态的字符串字面量
+# （理由里的 issue 号不受约束）；为防「理由文本里恰好含 `.sql`」被误读成键，
+# 只认 `KNOWN_BENIGN_LEGACY` 声明行与 `# ── END KNOWN_BENIGN_LEGACY ──` 标记之间的字符串字面量。
+_MIGRATION_RUNNER_JAVA = (
+    Path(__file__).parent.parent.parent
+    / "backend" / "admin-api" / "src" / "main" / "java" / "com" / "migao" / "admin"
+    / "config" / "MigrationRunner.java"
+)
+_JAVA_KEY_MARKER = "MIGAO_BENIGN_LEGACY_BEGIN"
+_JAVA_KEY_END_MARKER = "MIGAO_BENIGN_LEGACY_END"
+_JAVA_STRING_LITERAL_RE = re.compile(r'"([^"\\]+)"')
+# 键形态 = 迁移文件名（V{n}__desc.sql）：理由文本（含 issue 号）天然不匹配 ⇒ 只取键、不取理由。
+# 这也顺带锁住「理由文本里恰好含 `.sql`」不会污染键集合。
+_JAVA_MIGRATION_FILENAME_RE = re.compile(r"^V\d+__[\w.]+\.sql$")
+
+
+def extract_java_known_benign_filenames(java_text: str) -> set:
+    """从 `MigrationRunner.java` 源码文本提取「已知良性存量」迁移文件名集合。
+
+    只认 `KNOWN_BENIGN_LEGACY` 声明行到 `END KNOWN_BENIGN_LEGACY` 标记之间的字符串字面量
+    （见上方解析口径）。标记缺失 / 重复 → 抛错（fail-closed，**不得**静默返回空集 ——
+    空集会让「两边集合相等」断言在空集上恒真，那正是空断言）。
+    """
+    # 防误命中：两个标记都必须**恰好出现一次**且顺序正确 —— 0 次 = 边界不可知；
+    # 多次 = 可能有多份集合。两种情况都必须响（fail-closed，不能猜、不能静默返回空集）
+    n_start, n_end = java_text.count(_JAVA_KEY_MARKER), java_text.count(_JAVA_KEY_END_MARKER)
+    if n_start != 1 or n_end != 1:
+        raise AssertionError(
+            f"`{_JAVA_KEY_MARKER}` / `{_JAVA_KEY_END_MARKER}` 在 MigrationRunner.java 里"
+            f"出现次数应各为 1，实际 {n_start} / {n_end} —— 缺失或重复都让键边界不可知"
+            "（重复会静默合并多份集合，判据失守）"
+        )
+    start = java_text.find(_JAVA_KEY_MARKER)
+    end = java_text.find(_JAVA_KEY_END_MARKER)
+    if end < start:
+        raise AssertionError(
+            f"`{_JAVA_KEY_END_MARKER}` 出现在 `{_JAVA_KEY_MARKER}` 声明之前 —— "
+            "解析区间为空（fail-closed）"
+        )
+    body = java_text[start:end]
+    return {
+        lit for lit in _JAVA_STRING_LITERAL_RE.findall(body)
+        if _JAVA_MIGRATION_FILENAME_RE.match(lit)
+    }
+
+
 _POLICY_RE = re.compile(r"\bCREATE\s+POLICY\b", re.I)
 _RENAME_RE = re.compile(r"\bRENAME\s+TO\b", re.I)
 _RENAME_OBJECT_RE = re.compile(
@@ -321,3 +377,95 @@ class TestMigrationIdempotencyInvariant:
             "新增条目等于把护栏放宽，需先走豁免机制裁决"
         )
         assert not GUARDED_DDL_EXEMPTIONS, "业务豁免清单应保持为空（有豁免必须逐条写理由）"
+
+
+class TestKnownBenignSetSingleSourceOfTruth:
+    """Java `KNOWN_BENIGN_LEGACY` ↔ Python `LEGACY_UNGUARDED` 必须**键集合相等**（issue #3714）。
+
+    为什么需要（#3701 教训）：同一个判据两份实现 ⇒ 必然漂移。Java 侧降级谁、Python 侧登记谁，
+    是同一个事实（「哪些非幂等迁移是已诊断的存量」）；两边各自维护 = 迟早一边降级了
+    而另一边没登记（或反之）。漂移后果是**假绿**：
+      · Java 多降级一条 → 真失败被当噪音吞掉（告警失效）；
+      · Python 多登记一条 → 前向防护的射程边界被悄悄放宽（新迁移漏网）。
+    """
+
+    def test_java_and_python_key_sets_are_equal(self):
+        assert _MIGRATION_RUNNER_JAVA.exists(), (
+            f"找不到 MigrationRunner.java: {_MIGRATION_RUNNER_JAVA}"
+        )
+        java_keys = extract_java_known_benign_filenames(
+            _MIGRATION_RUNNER_JAVA.read_text(encoding="utf-8")
+        )
+        py_keys = set(LEGACY_UNGUARDED)
+
+        # 非空前提（防「空集上恒真」的空断言）：两边都必须真解析出东西
+        assert java_keys, (
+            "MigrationRunner.java 的 `KNOWN_BENIGN_LEGACY` 解析结果为空 —— "
+            "要么集合被删空（噪音修法退化）、要么解析口径失效（fail-closed）"
+        )
+        assert py_keys, "存量登记表为空 —— 本测试失去被测对象（存量缺口若真已清空，请一并删本测试）"
+
+        assert java_keys == py_keys, (
+            "Java `KNOWN_BENIGN_LEGACY` 与 Python `LEGACY_UNGUARDED` **键集合不相等** —— "
+            "两边是同一个判据的两份实现，漂移即假绿（#3714 / #3701）。\n"
+            f"  只在 Java（会被降级为 INFO，但 Python 未登记）: {sorted(java_keys - py_keys)}\n"
+            f"  只在 Python（前向防护射程被放宽，Java 未降级）: {sorted(py_keys - java_keys)}\n"
+            "  修复：两边同步增删；若某迁移已被新迁移补齐/已修好，**两边同时销账**（该集合只能变短）。"
+        )
+
+    def test_java_key_extractor_has_red_control(self):
+        """注入式红证（不依赖仓库真值）：解析口径必须能分辨「多一项 / 少一项」，且标记缺失必抛错。
+
+        形态选择：**注入式红证** 而非「真值主张」——后者（`assert 仓库当下恰有该缺陷`）会在
+        缺陷被修好的那一刻自毁、并把报错指向无关 PR（migao-acceptance v1.4「断言形态」）。
+        """
+        base = "V44__create_daily_briefings.sql"
+        snippet = (
+            "    // MIGAO_BENIGN_LEGACY_BEGIN\n"
+            "    private static final Map<String, String> KNOWN_BENIGN_LEGACY = Map.of(\n"
+            f'            "{base}", "理由（见 #3615/#3714）");\n'
+            "    // MIGAO_BENIGN_LEGACY_END\n"
+        )
+        assert extract_java_known_benign_filenames(snippet) == {base}
+
+        # ① 人为「多一项」→ 解析结果必变（红证：多降级一条会被判出来）
+        extra = snippet.replace(
+            f'"{base}",', f'"{base}",\n            "V99__injected_extra.sql",'
+        )
+        assert extract_java_known_benign_filenames(extra) == {base, "V99__injected_extra.sql"}, (
+            "解析器漏掉新增键 —— 「多降级一条」不会被判出（守卫失效）"
+        )
+
+        # ② 人为「少一项」→ 解析结果必变（红证：漏降级一条会被判出来）
+        missing = (
+            "    // MIGAO_BENIGN_LEGACY_BEGIN\n"
+            "    private static final Map<String, String> KNOWN_BENIGN_LEGACY = Map.of();\n"
+            "    // MIGAO_BENIGN_LEGACY_END\n"
+        )
+        assert extract_java_known_benign_filenames(missing) == set(), (
+            "解析器凭空造出键 —— 「漏降级一条」不会被判出（守卫失效）"
+        )
+
+        # ③ 键与理由各就各位：理由文本（含 `.sql` 字样 / issue 号）不得被当成键
+        reason_with_sql = (
+            "    // MIGAO_BENIGN_LEGACY_BEGIN\n"
+            "    private static final Map<String, String> KNOWN_BENIGN_LEGACY = Map.of(\n"
+            f'            "{base}", "目标态已由 docs/sql/schema.sql 引导达成（见 #3615/#3714）");\n'
+            "    // MIGAO_BENIGN_LEGACY_END\n"
+        )
+        assert extract_java_known_benign_filenames(reason_with_sql) == {base}, (
+            "理由文本里的 `.sql` 被误读成键 —— 键集合会虚假膨胀（两边相等断言被污染）"
+        )
+
+        # ④ 声明标记缺失 → 必须抛错，不得静默返回空集（否则相等断言在空集上恒真）
+        for broken, why in [
+            (snippet.replace("// MIGAO_BENIGN_LEGACY_BEGIN\n", ""), "声明标记缺失"),
+            (snippet.replace("MIGAO_BENIGN_LEGACY_END", "（无结束标记）"), "结束标记缺失"),
+            # 标记重复：两份集合若被静默合并，等于判据失守
+            (snippet + snippet, "标记重复"),
+        ]:
+            try:
+                extract_java_known_benign_filenames(broken)
+            except AssertionError:
+                continue
+            raise AssertionError(f"{why} 时解析器未 fail-closed（静默返回了集合）")
