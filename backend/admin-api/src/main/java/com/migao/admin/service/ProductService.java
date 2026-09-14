@@ -653,6 +653,15 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
     /**
      * 在现有 SKU 中匹配输入：
      * 1. 优先按真实 DB id（前端表单携带）；2. 其次按组合（colorId/colorName + sellingMethod + doorWidth，Agent 按名称重建路径）。
+     *
+     * <p>组合匹配的**归一化口径**（issue #3616，同族 #3539/#3546）：售卖方式用中文标签（「散剪」）
+     * 还是英文枚举（bulk_cut）、门幅写「2.8米」还是「2.8」，库内两种写法都真实存在
+     * （demo-seed 落 '2.8米'、eval 种子落 '2.8'；{@link #toWidthShort(String)} 早已把两者当同一门幅）。
+     * 字面 {@code Objects.equals} 会把**同一组合**判为不同 → 旧行被当成「缺失」物理删除 + 插入新行
+     * （主键漂移 → 订单 processingInfo 里旧 skuId 断链，正是本方法上方注释要防的），且失败静默无报错。
+     * 故这里复用**与调价路径同一套**归一化入口：{@link #translateSellingMethod(String)} +
+     * {@link #normalizeDoorWidth(String)}（双侧归一，库内在哪一侧是哪种写法都能命中），
+     * 不新增第二套映射、不新增/删除 SKU 行。
      */
     private ProductSku matchExistingSku(Map<Long, ProductSku> skuById, List<ProductSku> existingSkus,
                                         ProductSkuInput input, Long resolvedColorId) {
@@ -667,8 +676,10 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
                     || (StringUtils.hasText(input.getColorName())
                         && input.getColorName().equals(s.getColorName()));
             if (colorMatches
-                    && java.util.Objects.equals(input.getSellingMethod(), s.getSellingMethod())
-                    && java.util.Objects.equals(input.getDoorWidth(), s.getDoorWidth())) {
+                    && java.util.Objects.equals(translateSellingMethod(input.getSellingMethod()),
+                                                translateSellingMethod(s.getSellingMethod()))
+                    && java.util.Objects.equals(normalizeDoorWidth(input.getDoorWidth()),
+                                                normalizeDoorWidth(s.getDoorWidth()))) {
                 return s;
             }
         }
@@ -1962,8 +1973,12 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
 
     /**
      * 门幅归一化：「2.8米」「2.8m」「2.8 M」→「2.8」。
-     * 仅用于匹配兜底比较，<b>不回写库</b>（库内保持原写法，避免 SKU 编码/前端展示口径漂移）。
+     * 仅用于匹配比较，<b>不回写库</b>（库内保持原写法，避免 SKU 编码/前端展示口径漂移）。
      * 与 {@link #toWidthShort(String)} 同源假设：门幅的语义是数字，「2.8米」与「2.8」等价。
+     *
+     * <p><b>单一入口</b>（issue #3616）：调价路径 {@link #selectSkuCandidatesForPriceUpdate} 与
+     * 建品/更新商品路径 {@link #matchExistingSku} 都必须走本方法，禁止裸比字面值
+     * （有静态不变式测试锁定，见 ProductServiceTest#skuMatch_NoBareEqualityComparison_OnSellingMethodOrDoorWidth）。
      */
     private static String normalizeDoorWidth(String rawDoorWidth) {
         if (rawDoorWidth == null) {
@@ -2175,7 +2190,11 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
     }
 
     /**
-     * 售卖方式中文 → 英文
+     * 售卖方式中文 → 英文（幂等：英文原样透传）。
+     *
+     * <p><b>单一入口</b>（issue #3616）：建品/更新商品的入参翻译、调价路径的查询条件
+     * （{@link #updateSkuPrice}）、以及组合匹配 {@link #matchExistingSku} 的双侧比较，
+     * 全部复用本方法，禁止另建第二套映射。
      */
     private String translateSellingMethod(String raw) {
         if (raw == null) return null;

@@ -35,7 +35,8 @@
 ### 例4: 下单（金额来自上下文商品/算料数据，不问顾客价格）
 顾客: "我要买雪尼尔遮光窗帘 3 米，帮我下单"
 ```
-→ 上下文已有商品单价（product_detail/curtain_calc 结果）→ 金额 = 单价×数量
+→ 金额 = 单价×数量；单价取自 product_detail 查询结果（或上一轮算料报价的结论；
+  本 skill 无 curtain_calc 工具，需要算料时说明"我帮您转到算料报价"）
 → 收集收货信息：interact(component=form)（姓名/手机号/地址）
 → interact(component=confirm)：商品 雪尼尔遮光窗帘 3米 × ¥xx = 总价 ¥xxx、收货信息
 → 顾客确认 → 验证码 → order_create(items unit_price=商品单价) → 回执订单号
@@ -69,7 +70,7 @@
 顾客: "我要买夏日清风窗帘 3 米下单"
 ```
 ❌ "这款窗帘的单价是多少元/米呢？您告诉我我帮您算总价"（价格是商品数据，不该问顾客；实测导致下单卡死）
-✅ 从 product_detail/curtain_calc 结果取单价 → 金额=单价×数量 → 收货表单 → confirm 确认 → 验证码 → order_create
+✅ 从 product_detail 结果取单价（或沿用上一轮算料报价结论）→ 金额=单价×数量 → 收货表单 → confirm 确认 → 验证码 → order_create
 ```
 
 ### 反例4: B端语气对顾客
