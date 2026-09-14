@@ -30,15 +30,15 @@ entries:
   - tool: processing_order_query
     kind: uncovered
     persona: mibao
-    issue: "#3592"
-    reason: 加工单查询在 .github/cases/ 内零用例断言（B 端全量每轮都不测它）
+    issue: "#3589"
+    reason: 加工单查询零用例（processing-order.yml 属 #3589 包，避免与在飞改动冲突）
     added: "2026-09-14"
 
   - tool: processing_order_update
     kind: uncovered
     persona: mibao
-    issue: "#3592"
-    reason: 加工单状态更新零用例（写操作，需 confirm 卡先行 + must_succeed 断言）
+    issue: "#3589"
+    reason: 加工单状态更新零用例（写操作，需 confirm 卡先行 + must_succeed；属 #3589 包）
     added: "2026-09-14"
 
   - tool: order_manage
@@ -59,15 +59,15 @@ entries:
   - tool: processing_order_generate
     kind: thin_positive
     persona: mibao
-    issue: "#3592"
-    reason: 仅 PG-013 一条（正向）；加工单生成链路的负向/边界无覆盖
+    issue: "#3589"
+    reason: 仅 PG-013 一条（正向）；加工单生成链路的负向/边界无覆盖（属 #3589 包）
     added: "2026-09-14"
 
   - tool: session_manage
     kind: thin_positive
     persona: mibao
     issue: "#3592"
-    reason: 仅 DA-004 一条（正向）；在线会话/排队/历史会话其它动作无覆盖
+    reason: 仅 DA-004 一条（正向）；在线会话/排队/历史会话其它动作无覆盖（#3592 跟踪）
     added: "2026-09-14"
 
   - tool: sku_update
