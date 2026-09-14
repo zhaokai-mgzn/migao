@@ -40,7 +40,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import eval_case_filter as lr  # noqa: E402
 from render_cases import load_case_dicts  # noqa: E402
 from case_coverage import (  # noqa: E402
-    PERSONA_LABELS, build_coverage_report, case_title, tool_label,
+    BASELINE_PATH, PERSONA_LABELS, _attach_baseline, build_coverage_report,
+    case_title, load_baseline, render_baseline_worklist, tool_label,
 )
 
 CASES_DIR = REPO_ROOT / ".github" / "cases"
@@ -218,6 +219,10 @@ def main():
     ap.add_argument("--check", action="store_true",
                     help="门禁模式：结构性缺失（孤儿/零覆盖/缺正向/空用例集/解析失效）→ exit 1")
     ap.add_argument("--md", action="store_true", help="输出 Markdown")
+    ap.add_argument("--baseline", default=None,
+                    help=f"存量豁免清单（默认 {BASELINE_PATH.name}）—— 只豁免已登记的存量缺口")
+    ap.add_argument("--strict-gaps", action="store_true",
+                    help="忽略存量豁免（用于验证判据本身：所有结构性缺口都必须阻塞）")
     args = ap.parse_args()
 
     fatal = sanity_errors()
@@ -228,6 +233,15 @@ def main():
         return 1
 
     rep = build_report()
+    if args.check:
+        if args.strict_gaps:
+            print(f"  （--strict-gaps：忽略 {BASELINE_PATH.name} 的存量豁免）", file=sys.stderr)
+        else:
+            try:
+                _attach_baseline(rep, load_baseline(args.baseline, "mibao", rep.tools))
+            except ValueError as exc:
+                print(f"❌ 覆盖体检无法执行：\n{exc}", file=sys.stderr)
+                return 1
     cases = load_case_dicts(str(CASES_DIR))
     by_tier = _by_tier(cases, lr.selected_case_ids(cases, PERSONA))
 
@@ -235,6 +249,9 @@ def main():
         print(render_md(rep, by_tier))
     else:
         print(render_text(rep, cases, by_tier))
+    if rep.baseline:
+        print("")
+        print(render_baseline_worklist(rep, persona_label=PERSONA_LABELS[PERSONA]))
 
     if args.check:
         problems = rep.check_problems()
