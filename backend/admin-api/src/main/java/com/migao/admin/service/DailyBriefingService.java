@@ -320,10 +320,19 @@ public class DailyBriefingService {
     /**
      * 校验 LLM 输出的每条目：其 metrics 引用的 (key, value) 必须与快照一致，
      * key 不在快照或 value 不一致 → 丢弃该条；全部被丢弃 → status=failed。
+     * summary 文本中的数字也必须能在快照中找到（P2-2：LLM 在自由文本里编数字
+     * 无法被 metrics 引用机制拦截，故对 summary 提取数字做对账）。
      */
     VerifyResult verifyAndFilter(JsonNode briefing, Map<String, Number> metrics) {
         ObjectNode content = objectMapper.createObjectNode();
-        content.put("summary", briefing.path("summary").asText(""));
+        String summary = briefing.path("summary").asText("");
+        // summary 数字对账：提取文本中的数字（整数/小数），任一数字不在快照 → summary 降级为空
+        // （防 LLM 在 summary 自由文本中编造经营数字，红线 4 覆盖到自由文本层）
+        if (!summaryNumbersMatchSnapshot(summary, metrics)) {
+            log.warn("简报 summary 含快照外数字，已降级为空（防编造）: {}", summary);
+            summary = "";
+        }
+        content.put("summary", summary);
         content.set("review", keepReview(briefing.path("review"), metrics));
 
         ArrayNode todo = keepItems(briefing.path("todo"), metrics);
@@ -414,6 +423,25 @@ public class DailyBriefingService {
             }
         }
         return false;
+    }
+
+    /** summary 文本数字对账：提取所有数字，任一不在快照中 → false（防自由文本编造） */
+    private boolean summaryNumbersMatchSnapshot(String summary, Map<String, Number> metrics) {
+        if (summary == null || summary.isEmpty()) {
+            return true;   // 空 summary 无需对账
+        }
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("\\d+(?:\\.\\d+)?").matcher(summary);
+        while (m.find()) {
+            try {
+                double num = Double.parseDouble(m.group());
+                if (!valueExistsInSnapshot(num, metrics)) {
+                    return false;
+                }
+            } catch (NumberFormatException e) {
+                return false;
+            }
+        }
+        return true;
     }
 
     // ==================== 定时生成 ====================
