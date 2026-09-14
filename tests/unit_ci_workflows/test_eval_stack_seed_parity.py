@@ -330,6 +330,135 @@ class TestEvalWorkflowKnobParity:
         )
 
 
+class TestEvalConcurrencySlot:
+    """评测类 workflow 统一并发槽位（issue #3563：required 不再被评测饿死）。
+
+    实测背景（2026-09-14 05:28Z）：13 个 in-progress 里 6 条是评测型 job
+    （各自一套 docker 栈 + 真实 LLM），queued 60 个 run，**required 检查被饿死**，
+    9 个 PR 全部 BLOCKED。修法 = 评测类共用 `eval-stack-global`（三处一致，
+    单一说明见 `docs/testing/eval-environments.md` §3.4）。
+    """
+
+    GROUP = "eval-stack-global"
+
+    @pytest.mark.parametrize("workflow", ("xiaobu-acceptance.yml", "agent-behavior-eval.yml"))
+    def test_shares_repo_wide_slot(self, workflow: str):
+        conc = _load_workflow(workflow).get("concurrency") or {}
+        assert conc.get("group") == self.GROUP, (
+            f"{workflow} 的 concurrency.group={conc.get('group')!r}，应为 {self.GROUP!r} —— "
+            "评测类各自分组 = 跨 PR 无约束 → 并发预算被吃光、required 被饿死"
+        )
+
+    @pytest.mark.parametrize("workflow", ("xiaobu-acceptance.yml", "agent-behavior-eval.yml"))
+    def test_does_not_cancel_running_eval(self, workflow: str):
+        """不许 cancel 正在跑的评测（否则那个 PR 永远拿不到结论 = 活锁，#3526）。"""
+        conc = _load_workflow(workflow).get("concurrency") or {}
+        assert conc.get("cancel-in-progress") is False, (
+            f"{workflow} 的 cancel-in-progress={conc.get('cancel-in-progress')!r}，必须为 False —— "
+            "评测 job 的产物就是结论本身"
+        )
+
+    @pytest.mark.parametrize("workflow", ("xiaobu-acceptance.yml", "agent-behavior-eval.yml"))
+    def test_slot_semantics_are_observable(self, workflow: str):
+        """槽位语义必须写进 run summary —— 否则「排队/被取消」会被误读成「卡住/PR 有问题」。"""
+        bodies = "\n".join((s.get("run") or "") for s in _steps(workflow))
+        assert "GITHUB_STEP_SUMMARY" in bodies, (
+            f"{workflow} 未把并发槽位语义写进 GITHUB_STEP_SUMMARY（可观测性要求）"
+        )
+        assert self.GROUP in bodies, f"{workflow} 的槽位说明未提到 group 名 {self.GROUP!r}"
+        assert "排队" in bodies and "取消" in bodies, (
+            f"{workflow} 的槽位说明必须同时讲清「排队」与「被取消」两种状态"
+        )
+
+    def test_three_workflows_share_the_same_group_name(self):
+        """三处（含 post-deploy-eval，AD 包落地）group 名必须一致 —— 只读断言，不改它。"""
+        names = {
+            wf: ((_load_workflow(wf).get("concurrency") or {}).get("group"))
+            for wf in EVAL_WORKFLOWS
+        }
+        if not names["post-deploy-eval.yml"]:
+            # 跨包一致性哨兵（issue #3563）：post-deploy-eval 的槽位由 AD 包落地，
+            # 尚未合并前**不拦**本 PR 的 CI；一旦落地，本断言自动生效并锁死三处同名。
+            pytest.skip(
+                "post-deploy-eval.yml 尚未加 concurrency 槽位（AD 包负责）—— "
+                f"落地后本断言会要求它等于 {self.GROUP!r}（跨包一致性哨兵）"
+            )
+        assert len(set(names.values())) == 1, (
+            f"评测类 workflow 的 group 名不一致：{names} —— 三处必须同名（§3.4 单一说明）"
+        )
+
+
+class TestBehaviorGateIsNonBlocking:
+    """行为映射门禁：规则命中**不拦合并**但高可见（2026-09-14 用户裁定，§3.3）。
+
+    锁三件事（缺一即回到"假阻塞红"或"假绿"）：
+      1. 评测步骤**恒 exit 0**（不再因规则桶失败变红）；
+      2. 规则命中失败**自动开 issue**（去重守卫 + 标题含用例 ID 与 PR 号）；
+      3. PR 评论**区分**规则命中与兜底网，且不得把规则命中失败显示成"✅ 通过"（假绿）。
+    """
+
+    WORKFLOW = "agent-behavior-eval.yml"
+
+    def _eval_step(self) -> dict:
+        return next((s for s in _steps(self.WORKFLOW) if s.get("id") == "eval"), {})
+
+    def test_eval_step_always_exits_zero(self):
+        run = self._eval_step().get("run") or ""
+        assert run, "未找到评测步骤（守卫前提失效）"
+        assert re.search(r"^\s*exit 0\s*$", run, re.M), (
+            "评测步骤未 `exit 0` —— 规则命中失败仍会让 workflow 变红，"
+            "与 2026-09-14 裁定（降为报告制）不符"
+        )
+        assert not re.search(r"^\s*exit \"?\$?\{?(BLOCK_STATUS|STATUS)", run, re.M), (
+            "评测步骤仍以规则桶退出码 exit（阻塞语义未降级）"
+        )
+
+    def test_rule_matched_failure_creates_issue(self):
+        steps = _steps(self.WORKFLOW)
+        # 只认**开 issue**（`issues.create({...})`），不认发评论（issues.createComment）
+        issue_steps = [s for s in steps
+                       if re.search(r"issues\.create\s*\(\s*\{",
+                                    ((s.get("with") or {}).get("script") or ""))]
+        assert issue_steps, "规则命中失败未自动开 issue（裁定要求「报告 + 高可见」的落点）"
+        step = issue_steps[0]
+        cond = str(step.get("if") or "")
+        assert "rule_failed" in cond, (
+            f"开 issue 的条件未绑定「规则命中失败」标志（if={cond!r}）—— "
+            "否则兜底网失败也会开 issue（无因果噪音）"
+        )
+        script = step["with"]["script"]
+        assert "search.issuesAndPullRequests" in script, (
+            "开 issue 未带去重守卫（同标题 open issue 已存在应追加评论，照 post-deploy-eval 范式）"
+        )
+        assert "PR_NUMBER" in script and "MAPPED_CASE_IDS" in script, (
+            "issue 标题/body 必须含用例 ID 与 PR 号（用户明确要求）"
+        )
+        assert "rule_hits" in (step.get("env") or {}) or "RULE_HITS" in (step.get("env") or {}), (
+            "issue body 必须带映射来源（哪个文件命中哪条规则）（用户明确要求）"
+        )
+
+    def test_permissions_allow_issue_creation(self):
+        perms = _load_workflow(self.WORKFLOW).get("permissions") or {}
+        assert perms.get("issues") == "write", (
+            "permissions 缺 issues: write —— issues.create 会 HttpError 静默崩溃"
+            "（#3497 实证：permissions 一旦显式声明，未列出的 scope 全部归零）"
+        )
+
+    def test_pr_comment_distinguishes_rule_hit_from_default_net(self):
+        scripts = "\n".join(
+            ((s.get("with") or {}).get("script") or "") for s in _steps(self.WORKFLOW)
+        )
+        assert "兜底网" in scripts and "规则命中" in scripts, (
+            "PR 评论必须能区分「规则命中」与「兜底网」（用户明确要求，别混在一起）"
+        )
+        assert "强信号" in scripts, "PR 评论必须显式标注规则命中失败是**强信号**（只是不拦合并）"
+        # 假绿防线：规则命中失败不得被显示成"✅ 通过"
+        assert re.search(r"ruleFail\s*\?", scripts), (
+            "结果评论未按**用例层面失败**判定规则命中失败（步骤恒 exit 0 后，"
+            "只看 outcome 会把规则命中失败显示成「✅ 通过」= 假绿）"
+        )
+
+
 class TestSeedBeforeEvalOrdering:
     """注种子必须早于评测（否则空库上依赖数据的用例必然失败）。"""
 

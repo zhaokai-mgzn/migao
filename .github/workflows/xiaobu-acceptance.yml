@@ -82,10 +82,26 @@ on:
       - '.github/cases/**'
       - '.github/workflows/xiaobu-acceptance.yml'
 
-# PR 场景同一 PR 的新 push 取消旧的评测 run（避免排队堆积浪费 CI 分钟 + LLM token）
+# ── 评测并发槽位：仓库级共享（issue #3563，2026-09-14 用户裁定）───────────────
+# 修前：`group` 按 PR 号/run_id 分组 → **跨 PR 无任何约束**。实测（2026-09-14 05:28Z）
+#   13 个 in-progress 里 6 条是本类评测（Xiaobu Acceptance ×5 + Agent Behavior Eval ×1），
+#   queued 60 个 run —— 其中一个 PR 的 **required** 检查（admin-api unit tests）也在队列里，
+#   9 个 PR 全部 BLOCKED。**不是队列深，是并发预算被 PR 层评测吃光，required 被饿死。**
+# 修后：两类 PR 层评测（本 workflow + agent-behavior-eval）共用 `eval-stack-global`，
+#   与 post-deploy-eval 同一 group 名（AD 包在那边落地）—— 三处一致，由
+#   docs/testing/eval-environments.md §1.2 单一说明。
+#
+# ★ `cancel-in-progress: false`：**故意不 cancel**。
+#   评测 job 的产物就是结论本身；cancel 掉正在跑的那条 = 那个 PR 永远拿不到该信号（活锁）。
+#   与 post-deploy-eval.yml 里"为什么不加 cancel-in-progress"的既有论证同源（#3526）。
+#   ⚠️ 语义副作用（**必须知道**，详见 §1.2）：GitHub 的 concurrency 是"一个 group 同时
+#   1 running + 1 pending"，新 run 进入一个**已有 pending** 的 group 时，**旧的 pending
+#   会被取消** —— 突发期多数 PR 拿到的是 `cancelled` 而不是"排队后跑"。这是**有意的取舍**：
+#   这两条评测是**信息性**（不 required，§16.5），cancel 不阻塞合并；行为信号由
+#   **部署后全量轮**（post-deploy-eval，双 persona 全量）承担。
 concurrency:
-  group: xiaobu-acceptance-${{ github.event.pull_request.number || github.run_id }}
-  cancel-in-progress: true
+  group: eval-stack-global
+  cancel-in-progress: false
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -121,6 +137,31 @@ jobs:
           done
           echo "matrix={"shard":[${parts}],"total":[${N}]}" >> "$GITHUB_OUTPUT"
           echo "分片: ${N} 份"
+
+      - name: 评测并发槽位说明（防「排队」被误读成「停滞/坏了」）
+        # 本步骤在**抢槽位之前**跑（shards job 不占评测槽），所以它一定会输出 ——
+        # 用它把"这个 run 会不会排队 / 为什么可能被 cancel"写在日志与 run summary 里。
+        # 背景：本会话实测发生过把"排队"误判为"停滞"；同理，一个 cancelled 的评测
+        # check 极易被后来者读成"CI 坏了"或"这个 PR 有问题"（issue #3563 显式要求可区分）。
+        run: |
+          {
+            echo "## 🧵 评测并发槽位"
+            echo ""
+            echo "- 本 workflow 与 \`agent-behavior-eval\` / \`post-deploy-eval\` **共用** group：\`eval-stack-global\`"
+            echo "- 语义：一个 group 同时 **1 running + 1 pending**；新 run 进入已有 pending 的 group 时，"
+            echo "  **旧的 pending 会被取消**（GitHub 固有语义，\`cancel-in-progress: false\` 不阻止这一条）"
+            echo "- 因此："
+            echo "  1. **排队**：本 run 会在 group 里等前一条评测跑完（不是卡住 —— 评测单条要 5~15min）"
+            echo "  2. **被取消**：若期间有更新的评测 run 进来，本 run 可能被标成 \`cancelled\`；"
+            echo "     这**不代表代码有问题**，行为信号由**部署后全量轮**（post-deploy-eval，双 persona 全量）承担"
+            echo "- 为什么不让评测互相 cancel 正在跑的那条：评测 job 的产物就是结论本身，"
+            echo "  cancel 掉正在跑的一条 = 那个 PR 永远拿不到该信号（活锁，见 #3526）"
+            echo ""
+            echo "本 run：event=\`${{ github.event_name }}\` ref=\`${{ github.ref_name }}\` "
+            echo "PR=\`${{ github.event.pull_request.number || '(非 PR)' }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "── 评测并发槽位：group=eval-stack-global（1 running + 1 pending；更新的 run 会取代 pending）──"
+          echo "── 若本 run 长时间未开始：属于**排队**（评测单条 5~15min），不是卡住 ──"
 
   xiaobu-acceptance:
     needs: shards

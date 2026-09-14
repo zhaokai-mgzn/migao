@@ -76,7 +76,7 @@ B 端 `prod_eval_2699` 因 `created_at` 更新而排在首条 → 用例的「�
 |---|---|---|---|
 | PR（任意） | 三模块单测 / QA Growth Gate / ci-helper / gitleaks / Danger Scan | ★ **required（硬拦合并）** | pr-check 等 |
 | PR（AI 行为文件） | C 端 smoke（persona=xiaobu，独立栈）+ B 端 smoke（云测试环境） | 信息性（**不阻塞**） | `xiaobu-acceptance.yml`（pull_request + paths）/ pr-check |
-| PR（AI 行为文件） | **映射用例**（diff → §13.2 用例集，独立栈 + PR 评论）——**分层**：规则命中失败→**阻塞**；兜底默认集失败→**只报告**（评论标"无因果"） | 规则桶阻塞 / 兜底网信息性 | `agent-behavior-eval.yml`（#3502/#3523） |
+| PR（AI 行为文件） | **映射用例**（diff → §13.2 用例集，独立栈 + PR 评论 + 规则命中失败自动开 issue）——**分层**：规则命中失败 → **强信号**（报告 + 评论 + issue，**不拦合并**）；兜底默认集失败 → **只报告**（评论标"无因果"，**不开 issue**） | **均为信息性**（报告 + 评论 + issue） | `agent-behavior-eval.yml`（#3502/#3523/#3563） |
 | 部署（ai-agent 成功） | **双 persona 矩阵并行全量**（各自独立栈/全新库）→ completion_verdict 判定 → 失败去重建 issue | 部署后拦截 | `post-deploy-eval.yml`（#3503/#3515） |
 | 每周六 | adversarial 档 | 信息性 | `xiaobu-acceptance.yml`（schedule） |
 | 里程碑 / 下结论 | 结论档（全量 + 验收剧本 + 双裁判 + completion_verdict） | **结论前置（必过）** | 协议 v1.3 §1.6/§1.7 |
@@ -97,6 +97,54 @@ B 端 `prod_eval_2699` 因 `created_at` 更新而排在首条 → 用例的「�
   规则命中红 = 改动真的影响了行为，必须先看产物再决定；
 - **翻案成本**：若将来要纳入 required，需先解决"方差卡合并"（例如只对确定性失败 required、
   或把该 job 拆成"确定性部分 required + LLM 部分信息性"），**禁止裸加 required**。
+
+### 3.3 决策记录：规则命中**不再阻塞**，降为「报告 + PR 评论 + 自动开 issue」（2026-09-14 用户确认）
+
+- **决策**（2026-09-14，用户裁定原话"按建议来"）：`agent-behavior-eval` 的**规则命中**用例
+  失败时，workflow **不再变红**（评测步骤恒 `exit 0`），门禁语义从「规则桶阻塞 / 兜底网信息性」
+  降为「**均为信息性**」，但**高可见**：
+  1. **PR 评论**（每个 persona 一条，marker 带 persona）：明确写「命中的规则 = 哪个文件 → 哪条
+     规则 → 哪些用例」+「执行计划」+「结果」，并**显式标注这是强信号、必须人工/AI 判断，只是不拦合并**；
+  2. **自动开 issue**（去重守卫照 `post-deploy-eval.yml` 范式）：标题含**用例 ID + PR 号**，
+     body 带映射来源（命中规则明细）+ 失败要点 + 门禁语义说明；同标题 open issue 存在则追加评论；
+  3. 两者都**区分规则命中与兜底网**（兜底网失败只报告，**不开 issue**）。
+- **理由**：
+  ① 它产出过**假阻塞红** —— 规则按路径**正则**匹配，存在误命中风险（实测形态：测试文件名含
+     `guard` 就命中 `(guard|defense|injection)` 规则 → 把一个改 finance 工具的 PR 判成命中
+     防御规则、跑 DF-011/DF-012；该误命中的**修正**由另一个包改
+     `tests/agent_eval/behavior_mapping.py` 承担，与本文档的门禁语义是两件事）；
+  ② PR 层 LLM 评测**不构成合并门禁**（§16.5：LLM 行为层有意不进 required），
+     阻塞只带来「必须先证伪才能继续」的摩擦；
+  ③ 真拦截由**确定性 required 层**（9 项）+ **部署后全量**（post-deploy-eval，双 persona）
+     承担 —— 少一层 PR 层阻塞不会让真回归漏网。
+- **不弱化信号的落点**：step summary（`## 🧪 行为映射用例评测结果`）+ `::warning::` +
+  PR 评论 + **自动开 issue**；issue 是这条"强信号"的持久承接，不会随 PR 关闭而消失。
+- **同源决策记录待同步**：`migao-dev-flow` 技能文件 §16.5 另有一份决策记录，
+  由另一包（K）在改 —— 本决策在**技能文件侧**的同步待该包合并后进行（本 PR 不改技能文件）。
+
+### 3.4 评测类 workflow 统一并发槽位：`eval-stack-global`（2026-09-14 用户确认）
+
+- **背景（实测，2026-09-14 05:28Z）**：13 个 in-progress 里 **6 条是评测型 job**
+  （`Xiaobu Acceptance` ×5 + `Agent Behavior Eval` ×1，各自一套 docker 栈 + 真实 LLM），
+  queued 60 个 run —— 其中一个 PR 的 **required** 检查（admin-api unit tests）也在队列里，
+  **9 个 PR 全部 BLOCKED**。⇒ 不是队列深，是**并发预算被 PR 层评测吃光，required 被饿死**。
+- **决策**：**评测类 workflow 统一加入 `eval-stack-global` 槽位**
+  （`.github/workflows/{xiaobu-acceptance,agent-behavior-eval,post-deploy-eval}.yml`
+  的 `concurrency.group` 同名，`cancel-in-progress: false`）。这条是**三处一致的单一说明**。
+- **为什么排队而不 cancel 正在跑的那条**：评测 job 的产物就是结论本身，cancel 掉正在跑的
+  一条 = 那个 PR 永远拿不到该信号（活锁；`post-deploy-eval.yml` 里 #3526 的既有论证同源）。
+- **⚠️ 必须知道的语义副作用（有意取舍）**：GitHub concurrency 是「一个 group 同时
+  **1 running + 1 pending**」，新 run 进入一个**已有 pending** 的 group 时，**旧的 pending
+  会被取消** —— 突发期多数 PR 拿到的是 `cancelled` 而**不是**"排队后跑"。
+  - 这两条评测是**信息性**（§16.5）：被取消**不阻塞合并**（PR 仍按 required 合并）；
+  - 行为信号**延后到部署后全量轮**（`post-deploy-eval` 双 persona 全量）承担 ——
+    与 §16.2「全量复测降频」、§16.5 门禁矩阵一致；
+  - **诚实边界**：单槽位保的是"**最新的评测 run** 会跑"，不是"**每个 PR** 都拿到行为信号"。
+    要"每 PR 都有信号"需要分离 runner 池（超出仓库范围，本轮不选）。
+- **可观测性（防误读）**：两个 workflow 都在**抢槽位之前**把槽位语义写进
+  `$GITHUB_STEP_SUMMARY` 并打印到日志 —— 让人从 UI 就能区分
+  「**排队**」（评测单条 5~15min，正常）与「**被取代而取消**」（不代表代码有问题），
+  不再把排队/取消误判成"CI 卡住"或"这个 PR 有问题"。
 
 ## 四、与米高研发模式的衔接
 
