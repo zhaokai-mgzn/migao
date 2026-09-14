@@ -358,7 +358,26 @@ cases:
 
   - id: DF-011
     legacy_id: D011
-    title: "熔断 - 连续失败后降级"
+    # ── 2026-09-14 归因（issue #3679，CI run 34838080233）：本条原为**用例资产缺陷**，非行为回归 ──
+    # 原 `expectations: [product_detail]` 与熔断面都对不上真实链路，机器断言恒红：
+    #   ① 实跑 `rounds=6 tools=['product_search','order_query',…] score=0%` → agent 对
+    #      「查不存在的ID-00X」走的是 `product_search`，`product_detail` **一次都没被调用**
+    #      （product skill 的工具集里两者都有，`app/graph/skills/product_skill.py:13-25`）
+    #      ⇒ `unmatched expectation: product_detail` 恒成立。
+    #   ② 用例的两条 data_checks 全是**自然语义**（runner `local_runner.py:4057-4061` 只把
+    #      `success=true`/`error.code=`/`未被调用` 形态计入评分）⇒ 0 条计分断言。
+    #   ③ 更根本：它以「连续 3 次失败后 breaker 打开」为前提，而「商品不存在」是 **404**
+    #      → `http_client._do_call` 对 4xx **直接返回不抛异常**（有意设计：4xx 非服务故障）
+    #      → `failure_count` 恒为 0、breaker 永不 OPEN。实测「工具调用 12 次，失败 0 次（0%）」。
+    # ⇒ 熔断契约（`defense.breaker-threshold` / `defense.breaker-no-retry`）**不可由端到端用例
+    #    证明**，已下沉为机器断言：
+    #    `backend/ai-agent-service/tests/unit/test_circuit_breaker.py`
+    #    （`TestOpenBreakerBlocksTheCallEntirely` 计数证明"开路后底层函数零调用" +
+    #     「`CircuitBreakerOpenError` 穿重试层不重试」；`TestHttpClient4xxDoesNotTripBreaker`
+    #     〈假设① 的根因：4xx 不算失败 / 5xx 必须算〉）。
+    # 本条端到端只保留**可观测且真实**的防御性质：查不到就不动写工具。**未放宽任何断言** ——
+    # 原断言从未被满足过（恒红），把它换成真实形态是"可执行化"而不是"降门槛"。
+    title: "查不存在的商品 ID——不误触发熔断且不得发生任何写操作（熔断契约见 test_circuit_breaker.py）"
     domains:
       - chat
     tier: adversarial
@@ -376,16 +395,24 @@ cases:
       - "查不存在的ID-004"
       - "查不存在的ID-005"
       - "查遮光窗帘"
+    # 与真实链路一致（run 34838080233 实测工具序列里 `product_search` 5 次、`order_query` 4 次）；
+    # 原 `product_detail` 属误写（agent 一次都没调用它）。
     expectations:
-      - tool: product_detail
+      - tool: product_search
+    # 结构性护栏（机器可判、恒真风险为 0）：查不到商品时**任何写工具都不得被尝试**。
+    forbidden_tools:
+      - product_manage
+      - product_update
+      - sku_update
+      - inventory_manage
+      - order_create
     data_checks:
-      - "连续 3 次失败后 breaker 打开（原用例写 5 次，代码默认 failure_threshold=3 已校准）"
-      - "开路后不再发起 LLM 调用，CircuitBreakerOpenError 直接向上传播"
+      - "查不到的 ID 一律不得进入写链路：不得创建/修改/上下架商品、不得建单（机器断言见 forbidden_tools）"
     skip_reason: ""
-    merge_log: "eval D011 独有；熔断阈值按代码校准 5→3"
+    merge_log: "eval D011 独有；熔断阈值按代码校准 5→3。2026-09-14 归因（#3679，CI run 34838080233）：`expectations` 由 product_detail 改为 product_search（真实链路工具）；两条自然语义 data_checks（不计分、且以「连续 3 次失败」这一**不存在的前提**为基础——404 不计入熔断）下沉为 test_circuit_breaker.py 的机器断言；端到端保留真实可观测的「查不到不得写」护栏（forbidden_tools）"
     traces:
       tests:
-        - "backend/ai-agent-service/tests/test_performance_isolation.py"
+        - "backend/ai-agent-service/tests/unit/test_circuit_breaker.py"
       ci:
         - agent-eval.yml
       verifies: []

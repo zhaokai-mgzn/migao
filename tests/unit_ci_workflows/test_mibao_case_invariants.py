@@ -16,7 +16,7 @@
 与 C 端测试的关系：本文件只覆盖 B 端跑的一面（mibao 专属 + 双端）；C 端跑的一面
 由 test_xiaobu_case_set.py 覆盖（选中用例不得含 B 端专属工具等）。
 """
-# case_ids: OR-016, PR-019, PR-020, AS-003, AS-005, CH-011, FN-004, HR-003, DA-002, CU-003, PP-006, PR-021, PG-015, PG-016
+# case_ids: OR-016, PR-019, PR-020, AS-003, AS-005, CH-011, FN-004, HR-003, DA-002, CU-003, PP-006, PR-021, PG-015, PG-016, DF-011
 import re
 import sys
 from pathlib import Path
@@ -331,4 +331,70 @@ class TestMibaoCoverageReport:
         synthetic = build_coverage_report([], "mibao", tools=tools | {"__synthetic_zero_case_tool__"})
         assert "__synthetic_zero_case_tool__" in synthetic.uncovered, (
             "零用例工具没被报出来 —— 判据被削弱了（check 恒绿的形态）"
+        )
+
+
+# ── 熔断类 truths：只能由 L0 契约测试证明，不能由端到端用例证明（#3679）──
+# 归因实证（CI run 34838080233，DF-011）：端到端跑的是**真实 LLM + 真 HTTP**，
+# 而「连续 N 次失败后 breaker 打开」的前提在「商品不存在」这类输入上**根本不成立** ——
+# 404 是客户端错误，`http_client._do_call` 对 4xx 直接返回不抛异常（有意设计）
+# ⇒ `failure_count` 恒 0、breaker 永不 OPEN。端到端只能证明"可观测的防御行为"，
+# 契约本身必须落在 `CircuitBreaker` 的纯逻辑单测上（零 LLM、可注入假失败轨迹）。
+_CIRCUIT_BREAKER_TEST_PATH = "backend/ai-agent-service/tests/unit/test_circuit_breaker.py"
+BREAKER_TRUTHS = frozenset({"defense.breaker-threshold", "defense.breaker-no-retry"})
+
+
+class TestCircuitBreakerTruthsHaveExecutableHome:
+    """熔断类 truths 的机器断言**必须在 L0 契约测试里**（#3679 复发的静态拦截）。"""
+
+    def test_breaker_cases_point_at_the_l0_contract_test(self):
+        """引用了熔断 truths 的用例，`traces.tests` 必须指向真实存在的 L0 契约测试。
+
+        为什么需要：DF-011 原先 `traces.tests` 指向
+        `tests/test_performance_isolation.py` —— 该文件只覆盖并发/租户隔离，
+        **一行熔断断言都没有**（`grep -c CircuitBreaker` = 0）。于是"用例声称有测试
+        覆盖"这句话在追溯链上是假的：真出问题时没人能从 traces 找到断言。
+        """
+        cases = load_case_dicts(str(CASES_DIR))
+        offenders = []
+        seen = set()
+        for c in cases:
+            refs = set(c.get("truths_ref") or [])
+            breaker_refs = sorted(refs & BREAKER_TRUTHS)
+            if not breaker_refs:
+                continue
+            seen.add(c["id"])
+            declared = set((c.get("traces") or {}).get("tests") or [])
+            if _CIRCUIT_BREAKER_TEST_PATH not in declared:
+                offenders.append(
+                    f"{c['id']} 引用 {breaker_refs}，但 traces.tests 未声明 "
+                    f"{_CIRCUIT_BREAKER_TEST_PATH}（现有: {sorted(declared) or '无'}）"
+                )
+        assert not offenders, (
+            "熔断 truths 缺少机器断言归属（端到端证明不了熔断契约，见 #3679）：\n  "
+            + "\n  ".join(offenders)
+        )
+        assert "DF-011" in seen, (
+            "DF-011 不再声明熔断 truths —— 该用例是熔断契约的既有归属，"
+            "删除即失去追溯（改语义请连带更新 BREAKER_TRUTHS）"
+        )
+
+    def test_declared_breaker_test_path_really_exists(self):
+        """`traces.tests` 里声明的路径必须真的存在（防拼错路径的假追溯）。"""
+        assert (REPO_ROOT / _CIRCUIT_BREAKER_TEST_PATH).exists(), (
+            f"{_CIRCUIT_BREAKER_TEST_PATH} 不存在 —— traces.tests 指向了不存在的文件"
+        )
+
+    def test_df011_does_not_claim_an_unreachable_expectation(self):
+        """DF-011 回归网：不得把 `product_detail` 写回期望。
+
+        实证（run 34838080233，rounds=6）：agent 对「查不存在的ID-00X」调的是
+        `product_search`，`product_detail` **一次都没被调用**（product skill 两个工具都有，
+        属模型选择）⇒ 期望 `product_detail` 是恒不满足的误写，每次全量必红。
+        """
+        df011 = next(c for c in load_case_dicts(str(CASES_DIR)) if c.get("id") == "DF-011")
+        tools = case_expectation_tools(df011)
+        assert "product_detail" not in tools, (
+            "DF-011 期望又写回了 product_detail —— 该工具在此链路中从未被调用过"
+            "（误写会制造恒红噪音，见 #3679）"
         )

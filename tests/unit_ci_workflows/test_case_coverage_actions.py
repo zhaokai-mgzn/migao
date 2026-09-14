@@ -12,9 +12,10 @@
 | 判据 | 处置 | 理由 |
 |---|---|---|
 | `action_uncovered`：该工具有用例、该 action 零覆盖 | **只报告**（`check_problems()` 不含它） | 仓库实测 41 处 → 阻塞即大面积飘红 = 用存量债锁死流水线；本质是**厚度**指标（§14.5 已把"仅 1 条用例"定为只报告） |
-| `action_dangling`：用例声明了工具**不存在**的 action | **阻塞**（可登记存量豁免） | 配置错误、断言永不满足（假红/假绿），与拼错工具名的 `dangling_cases` 同家族；实测仅 1 处（CU-005） |
+| `action_dangling`：用例声明了工具**不存在**的 action | **阻塞**（可登记存量豁免） | 配置错误、断言永不满足（假红/假绿），与拼错工具名的 `dangling_cases` 同家族；实测首例仅 1 处（CU-005），已于 #3683 按真实语义修正 → **现为 0 处** |
 
-判据不被削弱的锁：**去掉豁免清单必须红**（下 `test_repo_dangling_action_blocks_without_baseline`），
+判据不被削弱的锁：**去掉豁免清单必须红**（下 `test_repo_dangling_action_blocks_without_baseline`：
+仓库已无悬空 action 可作反例，改为把人为悬空 action 注入真实用例集后验阻塞），
 且人为注入一个悬空 action 时必须被报出来。
 """
 import sys
@@ -246,10 +247,29 @@ class TestRepoActionLevelJudgement:
             assert rep.check_problems() == [], f"{persona}: {rep.check_problems()}"
 
     def test_repo_dangling_action_blocks_without_baseline(self):
-        """**去掉豁免清单必红**：CU-005 的悬空 action 必须在无清单时阻塞。"""
-        rep = _rep(self.cases, "mibao")
-        assert ("customer_manage", "query") in rep.action_dangling
-        assert any("customer_manage(action=query)" in p for p in rep.check_problems())
+        """**去掉豁免清单必红** + 仓库真值归零（CU-005 修正后，issue #3683）。
+
+        两半锁，缺一不可：
+          ① 仓库真值：真实用例库**不得再有**悬空 action —— CU-005 的
+             `customer_manage(action=query)` 已按真实语义改为 `action: list`（该工具枚举无
+             query），两端都必须报 0 处；将来新引入的悬空 action 会立刻打红本断言；
+          ② 判据不被削弱：把一个人为的悬空 action 注入**真实用例集**后，在**无清单**下
+             必须阻塞（`action_dangling` + `check_problems()` + `blocking_gaps()` 三处同验）——
+             真实仓库已无悬空 action 可作反例（那正是本次修复的目标），故用注入方式在同一套
+             引擎（真实 cases + 真实工具枚举）上继续锁住「去掉清单必红」。
+        """
+        for persona in ("mibao", "xiaobu"):
+            rep = _rep(self.cases, persona)
+            assert rep.action_dangling == [], (
+                f"{persona}: 用例库声明了工具不存在的 action"
+                f"（配置错误，断言永不满足）—— {rep.action_dangling}")
+        injected = list(self.cases) + [
+            _case("T-DANGLING", expectations=[{"tool": "order_manage",
+                                              "args": {"action": "no_such_action"}}])]
+        rep2 = _rep(injected, "mibao")
+        assert ("order_manage", "no_such_action") in rep2.action_dangling
+        assert any("order_manage(action=no_such_action)" in p for p in rep2.check_problems())
+        assert ("order_manage", "action_dangling") in rep2.blocking_gaps()
 
     def test_repo_uncovered_actions_alone_never_block(self):
         """仓库里 41 处 action 未覆盖，但（在清单下）不得产生任何阻塞项。"""
