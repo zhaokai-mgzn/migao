@@ -736,7 +736,7 @@ workflow 内红 + PR 评论"（强信号）；**规则命中红 = 改动真的�
   （`@541bacbe` 为 `:4939` / `:4959` / `:5551` → `@c5f07f29` 变成 `:5088` / `:5108` / `:5749`，
   因为该文件正被别的包编辑）。写法：**符号 / 文本锚点优先**（函数名、守卫串、注释串、测试方法名），
   行号只在必要时以 **`@<sha>` 限定**形式给出（例：`_needs_serial_lane`（`@c5f07f29` 位于 `:5088`））。
-  ⚠️ **「版本沿革」节是历史记录**：其中的行号为**当时值**，不要照抄。
+  ⚠️ **「版本沿革」节是历史记录**：其中的行号为**当时值**，不要照抄；**已过期的沿革行号就地替换为可检索文本**（v1.24 已把 `- v1.18` 条目里的 `local_runner.py:4292` 换成「按 `禁止静默少跑` 守卫文本检索」）。
 - **引用必须对 `origin/main` 读**：不要在**落后的本地工作副本**里 grep 行号 / 判存在性 ——
   本轮一批错行号**全部**来自落后 main **87 个提交**、且脏的主工作区（`aa64bb98`）：
   `OrderService.java:1030` / `:1432-1437`、`local_runner.py:3745-3771`、`product.yml:314`、
@@ -858,7 +858,7 @@ workflow 内红 + PR 评论"（强信号）；**规则命中红 = 改动真的�
 - v1.11（2026-09-09 issue #3070 复盘固化）：新增「§15 前端页面级改动的 UI 旅程强制验证」——交互测试断言"结果可见"而非"函数被调用"、页面级改动必须真实浏览器走查（面包屑/样式基准/布局遮挡几何探针/写操作成果物可见）、布局视觉问题不得仅靠 vitest（Tailwind p-* 覆盖 pb-* 类 CSS 级联陷阱实测）。
 - v1.12（2026-09-09 issue #3080 实证）：新增「§15.5 截图视觉确认」——主模型/子代理不支持图片输入（read_image 报 does not declare image input）时，用 workflow 自动路由到 GLM-5.3-Flash 视觉模型（scnet-token-plan）开子代理读图判定，输出作为 UA 层证据，与 DOM 断言互补。
 - v1.17（2026-09-14 issue #3555）：新增「§14.5 覆盖厚度」——把覆盖体检变成真门禁：C 端 `scripts/xiaobu_coverage.py` 判据收紧（**每个被覆盖的工具必须至少有一条正向用例**，「只有越权/拒绝用例」= 结构性缺失 → 阻塞；「仅 1 条用例」= 厚度不足 → 只报告，尊重 verify-all.sh 的活指标设计意图）+ 新增 B 端对称体检 `scripts/mibao_coverage.py`（复用 eval_case_filter/render_cases 既有纯函数，不复制平行实现）+ 接入 CI pr-check `Case Coverage Gate` job（纯静态零 LLM，本脚本与本地 verify-all.sh 同参数）。
-- v1.18（2026-09-14 实证固化）：新增「§16.6 评测派发与数字留痕」四条踩过的坑——① 手动 `workflow_dispatch` 评测**必须**带 `-f force_eval=true`（否则被静默抑制：步骤全 skipped、artifact 0、整体 success；workflow 注释里的"永不抑制"与实现不符）〔⚠️ **该条已被 v1.20 修正**：现在 dispatch **默认免抑制**，要抑制才需显式 `force_eval=false`——勿照抄本条〕；② `case_ids` 是**全矩阵共享**的，只传一端专属 ID 会让另一条腿立即红（`禁止静默少跑` 守卫 `local_runner.py:4292`）；③ `continue-on-error` 让 `Run <persona>` 步骤"显示 success ≠ 成功"，读结论只看 `判定（completion_verdict）` + artifact；④ **每个计数必须锚定 SHA**（`基线 @<sha> = N → 本 PR = M`），禁止旧基线配新结果造出幽灵 delta。
+- v1.18（2026-09-14 实证固化）：新增「§16.6 评测派发与数字留痕」四条踩过的坑——① 手动 `workflow_dispatch` 评测**必须**带 `-f force_eval=true`（否则被静默抑制：步骤全 skipped、artifact 0、整体 success；workflow 注释里的"永不抑制"与实现不符）〔⚠️ **该条已被 v1.20 修正**：现在 dispatch **默认免抑制**，要抑制才需显式 `force_eval=false`——勿照抄本条〕；② `case_ids` 是**全矩阵共享**的，只传一端专属 ID 会让另一条腿立即红（`local_runner.py` 的「`禁止静默少跑`」守卫 —— **按该守卫文本检索，行号会漂移**）；③ `continue-on-error` 让 `Run <persona>` 步骤"显示 success ≠ 成功"，读结论只看 `判定（completion_verdict）` + artifact；④ **每个计数必须锚定 SHA**（`基线 @<sha> = N → 本 PR = M`），禁止旧基线配新结果造出幽灵 delta。
 - v1.19（2026-09-14 实证修正）：**§2.1 ②`./verify-all.sh gate` 必须在 `git commit` 之后跑** —— 它的弱断言检查按 `git diff --diff-filter=A origin/main...HEAD` 取"新增测试文件"，**未提交时新增集为空 ⇒ 静默空跑并通过**（假绿；实测同一命令 commit 前 ✅ / commit 后 ❌）。正确顺序：先 commit，再跑 ②③④。
 - v1.20（2026-09-15 实证修正，issue #3709）：**修正 §16.6 ①**——`workflow_dispatch` 评测**默认免抑制**（要恢复「被取代即抑制」须**显式**传 `-f force_eval=false`），故 v1.18 那条「手动派发**必须**带 `-f force_eval=true`」已成**假真值**；被抑制时 run 上现在有 `::warning::` 标注 + summary 抬头「本 run 未评测」，**据此不得再把「绿」读成「评测通过」**；自动门禁（workflow_run/schedule）语义不变。并在 §2.2 补「引用式 `Closes` 样例同样会被朴素正则命中」的自检提示（PR body 证据表是同一入口）。
 - v1.21（2026-09-15 实证修正，本次）：**修掉 frontmatter `description` 被 YAML 静默截断**（纯标量在第一个「空白 + `#`」处截断）——实测原文 2666 字符仅解析出 192 字符，v1.12/v1.17/v1.18/v1.19/v1.20 的说明**从未**被 skill 加载器读到。取舍：`description` 收敛为**有意简短的摘要**，**沿革迁入正文本节**（不靠加引号救长文本，避免「可无限追加」的坏习惯复发）；并登记「加载器只读 `name`/`description`，且要求第 1 行是 `---`」。
