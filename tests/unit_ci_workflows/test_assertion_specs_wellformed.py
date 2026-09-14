@@ -92,6 +92,41 @@ class TestAssertionSpecsWellFormed:
                if not str(s.get("tool") or "")]
         assert not bad, "must_succeed 缺 tool：\n  " + "\n  ".join(bad)
 
+    def test_forbidden_tools_have_tool_and_do_not_contradict(self):
+        """`forbidden_tools` 形状 + 自相矛盾检测（issue #3544 收口批）。
+
+        ① 缺 tool 的条目运行时会失败关闭 → 左移到 PR 阶段；
+        ② 同一工具既 `forbidden_tools`（全程禁用）又 `must_succeed`（必须成功）
+        = 永远不可能通过的用例（配置错误）。
+        """
+        bad = []
+        for c in self._cases():
+            forbidden = set()
+            for i, s in enumerate(_specs(c, "forbidden_tools")):
+                tool = str(s.get("tool") or "")
+                if not tool:
+                    bad.append(f"{c['id']}.forbidden_tools[{i}]: 缺 tool（运行时会失败关闭）")
+                    continue
+                forbidden.add(tool)
+            must = {str(s.get("tool") or "") for s in _specs(c, "must_succeed")}
+            for tool in sorted(forbidden & must):
+                bad.append(
+                    f"{c['id']}: {tool} 同时出现在 forbidden_tools 与 must_succeed"
+                    f"—— 该用例永远不可能通过")
+        assert not bad, "forbidden_tools 配置不合法：\n  " + "\n  ".join(bad)
+
+    def test_want_text_specs_have_text_or_any_of(self):
+        """`want_text` 的 dict 形态（轮次/任一生效）必须给出 text 或 any_of（否则静默不检查）。"""
+        bad = []
+        for c in self._cases():
+            for i, w in enumerate(c.get("want_text") or []):
+                if isinstance(w, str):
+                    continue
+                if not isinstance(w, dict) or not (w.get("text") or w.get("any_of")):
+                    bad.append(
+                        f"{c['id']}.want_text[{i}]: {w!r} 既无 text 也无 any_of（会静默不检查）")
+        assert not bad, "want_text 配置不合法：\n  " + "\n  ".join(bad)
+
     def test_forbidden_args_do_not_shadow_required_args(self):
         """同一工具同一字段不得既"必须"又"禁止"（自相矛盾的用例永远不可能通过）。"""
         bad = []

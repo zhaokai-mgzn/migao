@@ -162,6 +162,7 @@ def to_eval_py(cases):
            '    persona: str = ""   # 归属 agent: mibao / xiaobu / ""(双端)，issue #2855',
            '    order_before: List[str] = field(default_factory=list)   # 时序断言 "A before B"（跨轮，acceptance-protocol §3.1）',
            '    forbidden_text: List[str] = field(default_factory=list) # final_text 反模式词，命中即失败（§3.4 幻觉式撤回/报错文案）',
+           '    forbidden_tools: List = field(default_factory=list) # 全程禁用工具断言（任何轮都不得调用；must_succeed 的镜像，issue #3544 收口批）',
             '    want_text: List[str] = field(default_factory=list) # final_text 正向关键词，全缺即失败（§3.4 正反关键词双轨）',
            '    required_args: List[dict] = field(default_factory=list) # 必填参数断言（create 缺 specifications/加工项价格即失败，§3.2）',
     '    forbidden_args: List[dict] = field(default_factory=list) # 禁止参数断言（隔离/越权下限：如物流工具不得接受快递单号，issue #3270）',
@@ -202,6 +203,8 @@ def to_eval_py(cases):
             out.append(f"    order_before={c.get('order_before')!r},")
         if c.get("forbidden_text"):
             out.append(f"    forbidden_text={c.get('forbidden_text')!r},")
+        if c.get("forbidden_tools"):
+            out.append(f"    forbidden_tools={c.get('forbidden_tools')!r},")
         if c.get("want_text"):
             out.append(f"    want_text={c.get('want_text')!r},")
         if c.get("required_args"):
@@ -319,6 +322,11 @@ def to_md(cases):
                 lines.append(f"时序: {ob}")
             for ft in (c.get("forbidden_text") or []):
                 lines.append(f"禁词: {ft}")
+            for ftl in (c.get("forbidden_tools") or []):
+                _ftl_tool = ftl if isinstance(ftl, str) else (ftl or {}).get("tool")
+                _ftl_act = "" if isinstance(ftl, str) else ((ftl or {}).get("action") or "")
+                lines.append(f"全程禁用: {_ftl_tool}({_ftl_act})" if _ftl_act
+                             else f"全程禁用: {_ftl_tool}")
             for wt in (c.get("want_text") or []):
                 lines.append(f"必须: {wt}")
             for ra in (c.get("required_args") or []):

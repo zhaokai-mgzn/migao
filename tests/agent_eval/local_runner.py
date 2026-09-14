@@ -268,6 +268,22 @@ async def _run_pre_clean(token: str, spec: dict) -> str:
             await c.put(f"{ADMIN_API}/api/admin/users/{target.get('id')}/status",
                         headers=h, json={"status": "active"}, timeout=15)
             return f"已恢复「{name}」为 active（防存量消耗）"
+    if _type == "user_memories_clear":
+        # 清掉**上一轮会话**flush 落库的长期记忆（issue #3544 收口批）：
+        # `post_session[user_memories]` 断言的是「用户级长期状态」，共享/复用栈上会被上轮
+        # 残留满足（或反向：上一跑的残留让本跑的"新增"判定失真）→ 评测前先清干净。
+        # 端点已存在（`DELETE /api/chat/memories`，api/chat.py:2018，个保法删除权），
+        # 无需新增 API/DB 直连。
+        agent_type = str(spec.get("agent_type") or "xiaobu")
+        async with httpx.AsyncClient() as c:
+            r = await c.delete(f"{AI_API}/api/chat/memories",
+                               headers=_chat_headers(token),
+                               params={"agent_type": agent_type}, timeout=15)
+            body = _safe_json(r, {}) or {}
+            if r.status_code >= 300 or body.get("success") is False:
+                return (f"清理长期记忆失败（HTTP {r.status_code}）"
+                        f"—— 不计入断言，仅提示 post_session 可能受残留影响")
+            return f"已清理长期记忆（agent_type={agent_type}）"
     if _type == "aftersales_ticket_prepare":
         # 确保有 pending 工单供「关闭工单」case 使用：AS-004 关闭后存量被消耗 →
         # 无 pending 时用真实订单创建一张退款工单（数据治理：存量资源准备）。
@@ -1523,13 +1539,89 @@ def check_want_text(results: list, want_text: list) -> list:
     forbidden_text 只防「说了不该说的」，防不住「该说的没说」——如兜底话术
     必须含「转人工」出口、写操作完成必须声明成果（订单号/成功），
     缺失即回复不完整，与反模式同等违规。
+
+    条目形态（向后兼容：裸字符串 = 现有全程语义）：
+      - `"转人工"`                   → 全程（所有轮 final_text 拼接）必须出现
+      - `{round: 2, text: "记住了"}` → **只在第 2 轮**必须出现（记忆/跨会话用例：否则 R1
+                                       的回显就能把断言满足，等于没判）
+      - `{any_of: ["米白", "浅灰"]}` → 任一词出现即算通过（视觉/措辞天然发散：逐词全中
+                                       会把合格回答判红）
+      - `{round: 3, any_of: [...]}`  → 组合（限定轮次 + 任一命中）
     """
     issues = []
-    all_text = "\n".join(str(r.get("final_text") or "") for r in results)
+    rounds = list(results or [])
     for w in want_text or []:
-        w = str(w)
-        if w not in all_text:
-            issues.append(f"want_text: 全程回复未出现正向关键词「{w}」")
+        spec = {"text": w} if isinstance(w, str) else (w if isinstance(w, dict) else {})
+        rnd = spec.get("round")
+        if rnd is not None:
+            try:
+                idx = int(rnd) - 1
+            except (TypeError, ValueError):
+                issues.append(f"want_text: round 非整数（{rnd!r}）—— 配置错误")
+                continue
+            if idx < 0 or idx >= len(rounds):
+                issues.append(
+                    f"want_text: round={rnd} 超出实际轮数（{len(rounds)}）"
+                    f"—— 断言永不成立，请核对用例轮数")
+                continue
+            hay, scope = str((rounds[idx] or {}).get("final_text") or ""), f"（第 {rnd} 轮）"
+        else:
+            hay = "\n".join(str((r or {}).get("final_text") or "") for r in rounds)
+            scope = "（全程）"
+        if spec.get("any_of"):
+            words = [str(x) for x in (spec.get("any_of") or [])]
+            if not words:
+                issues.append("want_text: any_of 为空 —— 配置错误（会静默不检查）")
+            elif not any(x in hay for x in words):
+                issues.append(f"want_text{scope}: 未出现任一正向关键词 {words}")
+            continue
+        word = str(spec.get("text") or "")
+        if not word:
+            issues.append(f"want_text: 配置缺 text 且无 any_of: {spec!r}（会静默不检查）")
+        elif word not in hay:
+            issues.append(f"want_text{scope}: 未出现正向关键词「{word}」")
+    return issues
+
+
+def check_forbidden_tools(results: list, forbidden_tools: list) -> list:
+    """**全程禁用工具**断言：声明的工具（可限定 action）在**任何一轮都不得被调用**。
+
+    为什么必须补（issue #3544 收口的假绿家族）：既有写法是把「`X 未被调用`」放进
+    `data_checks`（命中计分白名单），但它的语义是「**本轮**没调用」，而计分循环是
+    「任一轮满足即通过」→ **多轮用例恒真**（存量 5 条：CH-002 的
+    `product_manage(action=create) 未被调用`、DF-020~023 的
+    `order_create`/`aftersale_create 未被调用`）。看着在守「不得越权写」，其实什么都没守。
+
+    与 `must_succeed` 严格对称：那个管「必须成功」，本断言管「**不得尝试**」
+    （更严：调用了即违规，即使被确认门禁挡回 —— 用户说「算了，不创建了」时，
+    agent 连写工具都不该发）。
+    条目形态：`- order_create` 或 `- {tool: product_manage, action: create}`。
+    """
+    issues = []
+    for spec in forbidden_tools or []:
+        if isinstance(spec, str):
+            spec = {"tool": spec}
+        if not isinstance(spec, dict):
+            issues.append(f"forbidden_tools: 配置非字符串/字典: {spec!r}")
+            continue
+        tool = str(spec.get("tool") or "")
+        action = str(spec.get("action") or "")
+        if not tool:
+            issues.append(f"forbidden_tools: 配置缺 tool: {spec!r}（该断言会静默跳过）")
+            continue
+        for r in results or []:
+            hit = next(
+                (tc for tc in r.get("tool_calls") or []
+                 if _tool_name_matches(tc.get("name"), tool)
+                 and (not action or str((tc.get("args") or {}).get("action") or "") == action)),
+                None)
+            if hit is None:
+                continue
+            _scope = f"(action={action})" if action else ""
+            issues.append(
+                f"forbidden_tools: {tool}{_scope} 在 R{r.get('__round')} 被调用"
+                f"（全程禁用 —— 调用即违规，即使被门禁挡回）")
+            break
     return issues
 
 
@@ -3879,6 +3971,9 @@ async def run_case(case, token: str, session_id: str) -> dict:
     # ⚠️ 不重置 case_issues：它已承载**跑轮次前**的前提校验结果（多身份，issue #3391）。
     case_issues += check_order_before(results, getattr(case, "order_before", []) or [])
     case_issues += check_forbidden_text(results, getattr(case, "forbidden_text", []) or [])
+    # 全程禁用工具（issue #3544 收口批）：`X 未被调用` 写进 data_checks 是「本轮没调用」+
+    # 计分「任一轮满足即过」→ 多轮恒真；本断言把「不得尝试」变成跨轮机器判定。
+    case_issues += check_forbidden_tools(results, getattr(case, "forbidden_tools", []) or [])
     case_issues += check_want_text(results, getattr(case, "want_text", []) or [])
     case_issues += check_required_args(results, getattr(case, "required_args", []) or [])
     case_issues += check_forbidden_args(results, getattr(case, "forbidden_args", []) or [])
@@ -4654,6 +4749,7 @@ def load_cases_from_yaml(cases_dir: str) -> list:
             order_before=c.get("order_before") or [],
             forbidden_text=c.get("forbidden_text") or [],
             want_text=c.get("want_text") or [],
+            forbidden_tools=c.get("forbidden_tools") or [],
             required_args=c.get("required_args") or [],
             forbidden_args=c.get("forbidden_args") or [],
             must_succeed=c.get("must_succeed") or [],

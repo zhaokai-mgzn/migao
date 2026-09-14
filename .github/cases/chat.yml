@@ -65,11 +65,17 @@ cases:
       - tool: product_manage
       # 第二句含「订单」触发词 → 允许切换出 pending 创建流程
       - tool: order_query
+    # 用户中途说「算了，不创建了」→ **全程**不得发创建写调用（#3544 收口批）：
+    # 原先写在 data_checks 的「product_manage(action=create) 未被调用」是假绿 ——
+    # 「未被调用」的计分语义是**本轮**没调用 + 计分循环「任一轮满足即过」⇒ 2 轮用例恒真
+    # （R1 的 confirm 轮天然没调用就把它满足了）。forbidden_tools 是跨轮判定，调用即违规。
+    forbidden_tools:
+      - tool: product_manage
+        action: create
     data_checks:
-      - "product_manage(action=create) 未被调用"
       - "切换由『订单』域触发词命中，而非字符数"
     skip_reason: ""
-    merge_log: "eval M004 + verification 8.2（原用例「长度>10」与代码不符，已按 ai-chat.escape-hatch 校准）"
+    merge_log: "eval M004 + verification 8.2（原用例「长度>10」与代码不符，已按 ai-chat.escape-hatch 校准）。2026-09-14 校准（#3544 收口批）：data_checks 里恒真的「product_manage(action=create) 未被调用」升级为 forbidden_tools（action 限定，跨轮全程禁用）"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_mibao_advanced_multiturn.py"
