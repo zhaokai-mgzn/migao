@@ -1,0 +1,548 @@
+name: Agent Behavior Eval (行为改动映射用例)
+
+# 设计意图（issue #3502）：把 migao-dev-flow §13.2「改动类型 → 必跑用例」映射表从**人工**
+# 变成 **diff 驱动**的门禁。
+#
+# 为什么需要它：
+#   ① PR 上的 Agent Eval 只有 smoke 档 7 条（跨域抽样，回答的是"没崩"）；
+#      改一行 order_skill.py 时它可能一条订单用例都没跑到；
+#   ② §13 说"改动行为后自动跑映射用例"，却没有任何机制检查 —— 漏跑没有信号。
+#
+# 为什么用**独立栈**（而不是像 agent-eval.yml 那样打共享环境 ai-api.migaozn.com）：
+#   ① 映射用例里含**写用例**（下单/建品/换货工单）—— 打共享环境会污染 dev 数据，
+#      且并发/先后顺序让结果不可复现；独立栈每次 down -v 重建，天然隔离；
+#   ② PR 期间生产可能在滚动部署（502 窗口会让评测假失败，issue #3282），独立栈不受影响；
+#   ③ 起栈/seed 步骤照抄 xiaobu-acceptance.yml（同一套已验证的 DEBUG 本地栈），
+#      不新造第二套环境口径。
+#
+# ⚠️ 与"单条命令跑完全部映射用例"的一处**必要偏差**（有实测依据，不是设计偏好）：
+#   `local_runner --case-ids` 是在 **persona 过滤 + skip 过滤之后**解析 ID 的，
+#   解析不到就 `exit 1`（仓库铁律「禁止静默少跑」）；而 `normal` 档只跑 `tier: normal`
+#   的用例（其余**静默丢掉**）。
+#
+#   ★ 分桶**不是绕过**这个守卫，而是**满足**它：`--case-ids` 解析不到即 exit 1 是 runner
+#     既有的防静默语义（issue #3417：不允许"跑了两条"被当成"该跑的都跑了"），
+#     后人在此看到的应该始终是"要么真跑到、要么显式说不跑"，绝不能改成"过滤掉再继续"。
+#     分桶做的正是后半句：先按用例库的真实可跑集分好桶，再让每个桶的命令 100% 可解析。
+#
+#   §13.2 映射表里的用例并不都是「米宝 + normal + 未 skip」：
+#     · CH-010 是 `persona: xiaobu` 的 C 端用例（米宝跑不了 → 若统一用 mibao 会 exit 1）
+#     · AS-007 / CH-021 / CH-022 在用例库里已 `skip_reason` 非空（任何 persona 都跑不了 → exit 1）
+#     · DF-011 / DF-012 是 `tier: adversarial`（normal 档会**静默少跑**）
+#   故 map job 用**用例库自己的选择函数**（render_cases.load_case_dicts +
+#   eval_case_filter.select_cases_for_persona，两者都是零第三方依赖）把映射结果切成
+#   (persona, tier) 分桶，评测步骤逐桶调用 runner —— 每个桶的命令形状与原设计一致
+#   （`<tier> --cases .github/cases --case-ids <ids> --max-retries 3`）；
+#   不可执行的映射（已 skip）在 PR 评论里**显式披露**，绝不静默丢。
+permissions:
+  contents: read
+  # 发布/更新 PR 评论必需
+  pull-requests: write
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+# 同 PR 新 push 取消旧 run（CI 队列 + 真实 LLM 成本治理，§3.2）：
+# 本 workflow 每次要起一套 docker 栈 + 跑真实 LLM 用例，两个 run 并发纯属双倍烧钱。
+concurrency:
+  group: agent-behavior-eval-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+on:
+  pull_request:
+    # 只在**行为面**路径变化时触发（AI 行为文件的三处真值来源）。
+    # 与 tests/agent_eval/behavior_mapping.py 的 AI_BEHAVIOR_PATH_PREFIXES 同一口径：
+    # 这里决定"workflow 要不要起"，那里决定"跑哪些用例"。
+    paths:
+      - 'backend/ai-agent-service/app/**'
+      - 'tests/agent_eval/**'
+      - '.github/cases/**'
+
+jobs:
+  # ── ① 纯计算 job：diff → 该跑的用例（秒级，不起栈、不烧 LLM）──
+  map:
+    name: 计算行为映射用例（diff → case_ids）
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      case_ids: ${{ steps.map.outputs.case_ids }}
+      run_eval: ${{ steps.map.outputs.run_eval }}
+      buckets: ${{ steps.map.outputs.buckets }}
+      unrunnable: ${{ steps.map.outputs.unrunnable }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # 三点 diff（...）需要 origin/<base> 与 HEAD 的**共同祖先**，
+          # 浅克隆会报 "no merge base"（见 migao-dev-flow §8）
+          fetch-depth: 0
+
+      - name: 计算执行计划（diff → case_ids → persona/tier 分桶）
+        id: map
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          # pipefail：本步骤有管道，不能让最后一条命令的退出码吞掉前面的失败
+          set -euo pipefail
+          if [ -z "$BASE_REF" ]; then
+            echo "::error::缺少 base_ref（本 workflow 仅由 pull_request 触发）"
+            exit 1
+          fi
+          git fetch origin "$BASE_REF" --quiet
+          # 三点 diff = 本 PR 相对 merge-base 的改动（不含 base 分支之后的新提交，
+          # 否则别人的改动会算到本 PR 头上 → 跑一堆无关用例）
+          git diff --name-only "origin/${BASE_REF}...HEAD" > /tmp/changed-files.txt
+          echo "── 变更文件（$(wc -l < /tmp/changed-files.txt) 个）──"
+          cat /tmp/changed-files.txt
+
+          # 映射（behavior_mapping 纯函数）+ 分桶（用例库自己的选择函数）。
+          # 只注入 sys.path，不 pip install：这三个模块都是零第三方依赖。
+          python3 - <<'PY'
+          import os
+          import sys
+
+          sys.path.insert(0, ".github")
+          sys.path.insert(0, "tests/agent_eval")
+          from behavior_mapping import map_changed_files_to_case_ids
+          from render_cases import load_case_dicts
+          from eval_case_filter import case_skip_reason, select_cases_for_persona
+
+          with open("/tmp/changed-files.txt", encoding="utf-8") as f:
+              paths = [line.strip() for line in f]
+
+          ids = map_changed_files_to_case_ids(paths)
+
+          # 与 runner 完全同源的可跑集（--cases .github/cases 的 YAML 装载路径），
+          # 避免"workflow 以为能跑、runner 说解析不到"的漂移
+          case_dicts = load_case_dicts(".github/cases")
+          by_id = {c.get("id", ""): c for c in case_dicts}
+          runnable = {p: {c.get("id", "") for c in select_cases_for_persona(case_dicts, p)}
+                      for p in ("mibao", "xiaobu")}
+
+          buckets = {}
+          unrunnable = []
+          for cid in ids:
+              owners = [p for p in ("mibao", "xiaobu") if cid in runnable[p]]
+              if not owners:
+                  c = by_id.get(cid)
+                  reason = case_skip_reason(c) if c else "用例库中不存在该 ID（映射表漂移）"
+                  unrunnable.append(f"{cid}：{reason or '不属于任一 persona 的可跑集'}")
+                  continue
+              persona = owners[0]  # 双端用例默认走米宝（仓库默认 persona）
+              tier = str((by_id[cid].get("tier") or "normal")).strip().lower()
+              # normal 档只跑 tier: normal；其余档位（adversarial/edge…）走 full
+              # —— full 档在 --case-ids 之后不再按 tier 过滤，是唯一"要几条跑几条"的档
+              suite = "normal" if tier == "normal" else "full"
+              buckets.setdefault((persona, suite), []).append(cid)
+
+          order = [("mibao", "normal"), ("mibao", "full"), ("xiaobu", "normal"), ("xiaobu", "full")]
+          plan = ["|".join([p, s, ",".join(buckets[(p, s)])]) for p, s in order if buckets.get((p, s))]
+
+          def block(name, lines):
+              body = ("\n".join(lines) + "\n") if lines else ""
+              return f"{name}<<__{name.upper()}_EOF__\n{body}__{name.upper()}_EOF__\n"
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as f:
+              f.write(f"case_ids={','.join(ids)}\n")
+              f.write(f"run_eval={'true' if plan else 'false'}\n")
+              f.write(block("buckets", plan))
+              f.write(block("unrunnable", unrunnable))
+
+          print("映射用例:", ",".join(ids) or "（无 AI 行为文件改动）")
+          print("执行计划:", plan or "（无可执行用例）")
+          print("不可执行:", unrunnable or "（无）")
+          PY
+
+      - name: PR 评论（映射计划；评测结果随后更新同一条评论）
+        # 为什么在 map job 就发评论：① 让"这次改了行为、要跑哪几条"在 PR 上**立即可见**
+        # （不必等 5~13 分钟的起栈）；② 全部映射都不可执行时（例如只改了换货 skill →
+        # AS-007 在用例库已 skip），本条评论就是唯一披露渠道 —— 没有它，
+        # 这个 PR 会显示"行为评测通过"，而实际一条都没跑（假绿）。
+        # 评测 job 用同一个 marker 更新这条评论，最终一个 PR 只留一条。
+        if: steps.map.outputs.case_ids != ''
+        uses: actions/github-script@v9
+        env:
+          MAPPED_CASE_IDS: ${{ steps.map.outputs.case_ids }}
+          PLAN: ${{ steps.map.outputs.buckets }}
+          UNRUNNABLE: ${{ steps.map.outputs.unrunnable }}
+          RUN_EVAL: ${{ steps.map.outputs.run_eval }}
+        with:
+          script: |
+            const marker = '<!-- agent-behavior-eval -->'
+            const runUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`
+            const lines = []
+            lines.push(marker)
+            lines.push('## 🧪 行为改动映射用例（diff 驱动）')
+            lines.push('')
+            lines.push(`**触发用例**（本次 diff 按 \`migao-dev-flow\` §13.2 映射表推出）：\`${process.env.MAPPED_CASE_IDS}\``)
+            lines.push('')
+            lines.push('**执行计划**（persona | 档位 | 用例）：')
+            lines.push('')
+            lines.push('```')
+            lines.push(process.env.PLAN || '（无可执行用例）')
+            lines.push('```')
+            if (process.env.UNRUNNABLE && process.env.UNRUNNABLE.trim()) {
+              lines.push('')
+              lines.push('**未执行**（用例库当前状态导致，不是本 PR 的问题）：')
+              lines.push('')
+              lines.push('```')
+              lines.push(process.env.UNRUNNABLE.trim())
+              lines.push('```')
+            }
+            lines.push('')
+            lines.push(process.env.RUN_EVAL === 'true'
+              ? '⏳ 独立栈评测进行中，结果稍后更新到本条评论。'
+              : '⏭️ 本次映射到的用例当前都不可执行 → 不启动评测栈。请按 §14 修订用例后再改行为。')
+            lines.push('')
+            lines.push('---')
+            lines.push(`映射口径见 \`tests/agent_eval/behavior_mapping.py\`（纯函数，可单测）；完整 run：${runUrl}`)
+
+            const body = lines.join('\n')
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            })
+            const prev = comments.find(c => c.body && c.body.includes(marker))
+            if (prev) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner, repo: context.repo.repo, comment_id: prev.id, body,
+              })
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner, repo: context.repo.repo,
+                issue_number: context.issue.number, body,
+              })
+            }
+
+  # ── ② 真评测 job：只在①判定有可执行用例时才起栈 ──
+  behavior-eval:
+    needs: map
+    if: needs.map.outputs.run_eval == 'true'
+    name: 行为映射用例评测（DEBUG 本地栈 + 真实 LLM）
+    runs-on: ubuntu-latest
+    # 与 xiaobu-acceptance 同量级：栈在无 buildx 缓存时回落全量构建（~13min），
+    # 评测本身是多个分桶串行（每桶内并发 6）+ 失败重试
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: backend/ai-agent-service/requirements.txt
+
+      - name: Set up Buildx（镜像层缓存）
+        # 与 xiaobu-acceptance.yml 同款：栈启动墙钟在 3.4~12.9min 间剧烈波动，
+        # Dockerfile 每次 `mvn clean package` + `pip install -r`，没有层缓存就全量重下。
+        # ⚠️ 本 workflow 的 permissions 只有 contents:read + pull-requests:write，
+        # **没有 actions:write** → `--cache-to type=gha` 导出失败（PR 触发取最小权限，
+        # 不为提速放宽）→ build_cached 失败后**回落**到 compose up --build 无缓存路径
+        # （该回落路径已在 xiaobu-acceptance 验证过，栈照样起得来）。
+        uses: docker/setup-buildx-action@v3
+
+      - name: "Export dev RS256 keys for stack"
+        # admin-api 镜像内没有 rsa/private.pem（被 .gitignore 刻意排除），用仓库已入库的
+        # **测试**密钥对以 PEM 内容注入（JwtTokenProvider 支持 PEM 优先于文件路径）。
+        run: |
+          KEY_DIR=backend/admin-api/src/test/resources/rsa
+          # 显式 if 而非 `test ... || { echo ...; exit 1; }`：CI helper 的「有管道但无 pipefail」
+          # 规模守卫（tests/unit_ci_workflows/test_step_exit_code_propagation.py）把 `||` 也按
+          # 管道计数，而这里根本没有管道 —— 与其加一行 no-op 的 `set -o pipefail` 去迎合它，
+          # 不如把 fail-closed 语义写成最直白的形式。
+          if [ ! -f "$KEY_DIR/private.pem" ]; then
+            echo "::error::缺少测试密钥 $KEY_DIR/private.pem"
+            exit 1
+          fi
+          if [ ! -f "$KEY_DIR/public.pem" ]; then
+            echo "::error::缺少测试密钥 $KEY_DIR/public.pem"
+            exit 1
+          fi
+          {
+            echo "JWT_PRIVATE_KEY_PEM<<__PEM_EOF__"
+            cat "$KEY_DIR/private.pem"
+            echo "__PEM_EOF__"
+            echo "JWT_PUBLIC_KEY_PEM<<__PEM_EOF__"
+            cat "$KEY_DIR/public.pem"
+            echo "__PEM_EOF__"
+          } >> "$GITHUB_ENV"
+          # ai-agent 用 JWT_PUBLIC_KEY 校验 admin-api 签发的 RS256 token（config.py 必填）
+          PUB_ONELINE=$(tr -d '\n' < "$KEY_DIR/public.pem")
+          echo "JWT_PUBLIC_KEY=$PUB_ONELINE" >> "$GITHUB_ENV"
+          echo "✅ 已导出 dev RS256 密钥"
+
+      - name: "Start local stack (docker-compose: PG + Redis + admin-api + ai-agent DEBUG)"
+        # 照抄 xiaobu-acceptance.yml 的起栈步骤（同一套已验证的栈），只省略该文件特有的归因注释
+        env:
+          # deploy/docker-compose.yml 里 DEV_SERVICE_TOKEN 是 required 无默认值，缺它连
+          # `docker compose ps/logs` 都会插值失败 —— 用占位串而非真实 secret（起栈不需要它）
+          DEV_SERVICE_TOKEN: ${{ secrets.SMOKE_SERVICE_TOKEN || 'ci-service-token-placeholder' }}
+          PRIMARY_API_KEY: ${{ secrets.DEEPSEEK_API_KEY || 'ci-dummy' }}
+          PRIMARY_MODEL: deepseek-flash
+          DASHVECTOR_API_KEY: ci-dummy
+          DASHVECTOR_ENDPOINT: https://ci-dummy.dashvector.cn-hangzhou.aliyuncs.com
+          DASHVECTOR_COLLECTION: ci
+          DEBUG: 'true'
+        run: |
+          # 每次先 down -v 清卷：postgres 用命名卷持久化，历史 schema 与迁移链不匹配时
+          # 会迁移失败/会话 500。评测要求**全新库**（schema.sql + 迁移链从零确定性重建）。
+          docker compose -f deploy/docker-compose.yml down -v 2>&1 | tail -3 || true
+          echo "── 已清空旧卷（fresh DB）──"
+          # ⚠️ set -o pipefail 必须：bash 默认返回管道最后一条命令（tail）的退出码 →
+          # compose 失败（如 postgres exited 3）会被吞成 **step success**，
+          # 真因被掩盖成"评测连不上"（issue #3270 实证）。
+          set -o pipefail
+          cat > /tmp/compose-images.yml <<'YAML'
+          services:
+            admin-api:
+              image: migao-eval-admin-api
+            ai-agent-service:
+              image: migao-eval-ai-agent-service
+          YAML
+          build_cached() {
+            local name="$1" ctx="$2" df="$3"; shift 3
+            docker buildx build \
+              --cache-from "type=gha,scope=${name}" \
+              --cache-to "type=gha,scope=${name},mode=max" \
+              --build-arg BUILDKIT_INLINE_CACHE=1 \
+              "$@" \
+              -t "migao-eval-${name}" -f "$df" "$ctx" --load
+          }
+          # PIP_INDEX_URL：Dockerfile 默认走阿里云镜像（国内开发快），但 GitHub runner 在
+          # 境外（实测镜像内 pip 632s vs runner 直连 PyPI 23s）→ CI 必须改用 PyPI
+          if build_cached admin-api backend/admin-api backend/admin-api/Dockerfile \
+               > /tmp/buildx-admin.log 2>&1 \
+             && build_cached ai-agent-service backend/ai-agent-service backend/ai-agent-service/Dockerfile \
+                  --build-arg PIP_INDEX_URL=https://pypi.org/simple \
+                  > /tmp/buildx-agent.log 2>&1; then
+            echo "✅ 镜像构建完成（buildx + GHA cache）"
+            docker compose -f deploy/docker-compose.yml -f /tmp/compose-images.yml up -d --wait \
+              --wait-timeout 300 postgres redis admin-api ai-agent-service 2>&1 | tail -20
+          else
+            echo "⚠️ buildx 缓存构建失败（本 workflow 无 actions:write，缓存导出预期失败）→ 回落 compose up --build"
+            tail -10 /tmp/buildx-admin.log 2>/dev/null || true
+            tail -10 /tmp/buildx-agent.log 2>/dev/null || true
+            docker compose -f deploy/docker-compose.yml up -d --build --wait \
+              --wait-timeout 300 postgres redis admin-api ai-agent-service 2>&1 | tail -20
+          fi
+
+      - name: "Seed 评测业务数据（C 端 #3270 + B 端 #3511）"
+        # 照抄 xiaobu-acceptance.yml 的 seed 步骤（同一套已验证口径），一处必要差异：
+        # 该 workflow 一次只跑一个 persona，故按输入**条件**叠加 B 端种子；而本 workflow 的
+        # 分桶可能同时含 mibao 与 xiaobu 桶（例如 guard.py + interact.py 的 PR）→ 条件叠加
+        # 会漏掉 B 端点名数据。两个 seed 都**幂等**（ON CONFLICT DO NOTHING /
+        # WHERE NOT EXISTS），栈又是跑完即弃的独立栈，故这里**无条件叠加**更安全。
+        #
+        # 为什么必须要 B 端种子（#3511 T3.2 实证）：OR-016 的输入点名「2699系列雪尼尔窗帘面料」
+        # → 干净库里 product_search(products=0) → agent 反复搜 4 轮后宣告"库里没有这款商品"
+        # （行为合理但用例判红）；PR-020 点名「刺绣工艺」同理。缺数据会长得像能力回归。
+        env:
+          DEV_SERVICE_TOKEN: diagnostics-only-placeholder
+        run: |
+          docker compose -f deploy/docker-compose.yml exec -T postgres \
+            psql -v ON_ERROR_STOP=1 -U app_user -d ai_customer_service \
+            < tests/agent_eval/fixtures/xiaobu_eval_seed.sql
+          echo "── 叠加 B 端种子（mibao_eval_seed.sql）──"
+          docker compose -f deploy/docker-compose.yml exec -T postgres \
+            psql -v ON_ERROR_STOP=1 -U app_user -d ai_customer_service \
+            < tests/agent_eval/fixtures/mibao_eval_seed.sql
+          echo "── 数据核对 ──"
+          # 标签在 bash 侧拼：SQL 里不用「两竖线」做字符串拼接 —— CI helper 的管道规模守卫
+          # 把两竖线也当管道计数，而 SQL 的连接符不是 shell 管道（本条注释同样避开那两个字
+          # 符，否则守卫会把注释也算成一例）
+          PRODUCTS=$(docker compose -f deploy/docker-compose.yml exec -T postgres \
+            psql -U app_user -d ai_customer_service -tAc \
+            "SELECT count(*) FROM products WHERE tenant_id=1")
+          echo "products=$PRODUCTS"
+
+      - name: Install eval runner deps
+        # local_runner 的模块级第三方依赖只有 httpx（用例 YAML 解析走仓内 yaml_light，纯标准库）
+        run: pip install -q httpx
+
+      - name: Run mapped cases (真实 LLM，独立栈)
+        id: eval
+        env:
+          AI_API_URL: http://localhost:8001
+          ADMIN_API_URL: http://localhost:8080
+          SERVICE_TOKEN: ${{ secrets.SMOKE_SERVICE_TOKEN || 'ci-service-token-placeholder' }}
+          PYTHONUTF8: "1"
+          PYTHONIOENCODING: utf-8
+          # 通过的写用例也要看工具结果 ——「工具被调用」≠「落库成功」（issue #3270 实证）
+          AGENT_EVAL_TRACE_ALL: "1"
+          # 固定节流降到最小：墙钟几乎全在真实 LLM 往返上（与 xiaobu-acceptance 同值）
+          EVAL_ROUND_SLEEP: "0.2"
+          EVAL_CASE_SLEEP: "0.3"
+          # 用例级并发（栈只起一次，别并行建栈——实测并发建栈反而更慢）
+          EVAL_CONCURRENCY: "6"
+          BUCKETS: ${{ needs.map.outputs.buckets }}
+        run: |
+          # pipefail：评测输出要 tee 留档（失败时评论里贴要点），但不能因此吞掉
+          # local_runner 的非零退出码 —— 评测失败必须让本 step 失败
+          set -o pipefail
+          : > /tmp/eval-run.log
+          STATUS=0
+          N=0
+          # 逐桶跑：每个桶 = (persona, tier)，桶内命令形状与 §13 的手工命令一致。
+          # persona 必须与用例库归属一致，否则 runner 直接 exit 1（禁止静默少跑）；
+          # tier 决定档位（normal 只跑 tier: normal 的用例，非 normal 的走 full 档）。
+          while IFS='|' read -r persona suite ids; do
+            [ -n "$ids" ] || continue
+            N=$((N + 1))
+            echo ""
+            echo "── [$N] persona=$persona 档位=$suite 用例=$ids ──"
+            EXTRA=()
+            if [ "$suite" = "normal" ]; then EXTRA=(--max-retries 3); fi
+            # full 档**不按 tier 过滤**（`--case-ids` 之后就是"要几条跑几条"），
+            # 故非 normal 用例（adversarial/edge…）只能走 full —— 走 normal 会被静默过滤掉。
+            # full 档当前不接收 --concurrency/--max-retries（runner 只有 normal/smoke 档传），
+            # 故这类桶为串行、重试不限 —— 通常只有 1~2 条对抗用例，代价可接受。
+            PERSONA="$persona" AGENT_EVAL_SUMMARY_JSON="/tmp/eval-summary-$N.json" \
+              python tests/agent_eval/local_runner.py "$suite" --cases .github/cases \
+                --case-ids "$ids" "${EXTRA[@]}" 2>&1 | tee -a /tmp/eval-run.log || STATUS=1
+          done <<< "$BUCKETS"
+          echo ""
+          echo "── 共执行 $N 个分桶，退出码 $STATUS ──"
+          exit $STATUS
+
+      - name: "Diagnose on failure: containers + DB probe"
+        # 起栈/评测失败时 dump 容器状态与日志（与 xiaobu-acceptance 同款；
+        # 没有它就只能看到"评测连不上"的表象，看不到"栈没起来"的真因）
+        if: failure()
+        env:
+          DEV_SERVICE_TOKEN: diagnostics-only-placeholder
+        run: |
+          # 诊断步骤**故意不 fail**（set +e）：任何 dump 失败都不该掩盖真正的失败原因，
+          # 也不该把 "没日志" 变成第二个红点。不用「两竖线 + true」写法：CI helper 的管道
+          # 规模守卫把两竖线按管道计数（此处并无管道），set +e 表达同一语义且更直白
+          # （注释同样避开那两个字，否则守卫会把注释本身算成一例）。
+          set +e
+          echo "── 容器状态 ──"
+          docker compose -f deploy/docker-compose.yml ps -a
+          for c in postgres redis admin-api ai-agent-service; do
+            echo ""
+            echo "════════ container logs: $c ════════"
+            docker compose -f deploy/docker-compose.yml logs --no-color --tail=80 "$c"
+          done
+          echo ""
+          echo "── DB 关键状态探针 ──"
+          PRODUCTS=$(docker compose -f deploy/docker-compose.yml exec -T postgres \
+            psql -U app_user -d ai_customer_service -tAc \
+            "SELECT count(*) FROM products WHERE tenant_id=1")
+          echo "products=$PRODUCTS"
+
+      - name: PR 评论（触发用例 + 执行计划 + 结果摘要）
+        # if: always()：评测红了正是这条评论最该出现的时候（把"改了行为、跑了哪几条、
+        # 结果如何、失败要点"直接落在 PR 上，不用去翻 CI 日志）。
+        # 与 map job 用同一个 marker → 覆盖那条"计划"评论，一个 PR 只留一条。
+        if: always() && needs.map.outputs.run_eval == 'true'
+        uses: actions/github-script@v9
+        env:
+          MAPPED_CASE_IDS: ${{ needs.map.outputs.case_ids }}
+          PLAN: ${{ needs.map.outputs.buckets }}
+          UNRUNNABLE: ${{ needs.map.outputs.unrunnable }}
+          EVAL_OUTCOME: ${{ steps.eval.outcome }}
+        with:
+          script: |
+            const fs = require('fs')
+            const marker = '<!-- agent-behavior-eval -->'
+            const runUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`
+            const outcome = process.env.EVAL_OUTCOME || 'skipped'
+            const passed = outcome === 'success'
+            const icon = passed ? '✅' : (outcome === 'skipped' ? '⏭️' : '❌')
+
+            // 合并各桶的汇总（每桶一个 eval-summary-<n>.json）
+            const cases = []
+            let total = 0, passedCount = 0, weighted = 0
+            let files = []
+            try {
+              files = fs.readdirSync('/tmp').filter(f => /^eval-summary-\d+\.json$/.test(f)).sort()
+            } catch (e) {
+              files = []
+            }
+            for (const f of files) {
+              try {
+                const s = JSON.parse(fs.readFileSync(`/tmp/${f}`, 'utf8'))
+                total += s.total || 0
+                passedCount += s.passed || 0
+                weighted += (s.avg_score || 0) * (s.total || 0)
+                for (const c of (s.cases || [])) cases.push(c)
+              } catch (e) {
+                console.log(`⚠️ 汇总读取失败 ${f}: ${e.message}`)
+              }
+            }
+
+            const lines = []
+            lines.push(marker)
+            lines.push(`## ${icon} 行为改动映射用例（diff 驱动）`)
+            lines.push('')
+            lines.push(`**触发用例**（本次 diff 按 \`migao-dev-flow\` §13.2 映射表推出）：\`${process.env.MAPPED_CASE_IDS}\``)
+            lines.push('')
+            lines.push('**执行计划**（persona | 档位 | 用例）：')
+            lines.push('')
+            lines.push('```')
+            lines.push(process.env.PLAN || '（无可执行用例）')
+            lines.push('```')
+            if (process.env.UNRUNNABLE && process.env.UNRUNNABLE.trim()) {
+              lines.push('')
+              lines.push('**未执行**（用例库当前状态导致，不是本 PR 的问题）：')
+              lines.push('')
+              lines.push('```')
+              lines.push(process.env.UNRUNNABLE.trim())
+              lines.push('```')
+            }
+            lines.push('')
+            if (total > 0) {
+              lines.push(`**结果**：${passedCount}/${total} 通过（平均分 ${(weighted / total).toFixed(2)}）`)
+              lines.push('')
+              lines.push('| 用例 | 得分 | 分类 |')
+              lines.push('| --- | --- | --- |')
+              for (const c of cases) {
+                lines.push(`| ${c.id} | ${c.score} | ${c.classification || '-'} |`)
+              }
+            } else {
+              lines.push(`**结果**：未产出评测汇总（步骤状态 \`${outcome}\`）—— 大概率是起栈/依赖步骤先失败（见 run 页面的 Diagnose 输出）。`)
+            }
+            if (!passed) {
+              let hints = ''
+              try {
+                hints = fs.readFileSync('/tmp/eval-run.log', 'utf8')
+                  .split('\n')
+                  .filter(l => /❌|失败|FAIL|Error|Traceback/.test(l))
+                  .slice(-15)
+                  .join('\n')
+              } catch (e) {
+                hints = '（无评测日志：起栈/依赖步骤可能已先失败）'
+              }
+              lines.push('')
+              lines.push('<details><summary>失败要点（评测日志尾部）</summary>')
+              lines.push('')
+              lines.push('```')
+              lines.push(hints.slice(0, 3000) || '（日志里没有匹配到失败行）')
+              lines.push('```')
+              lines.push('')
+              lines.push('</details>')
+            }
+            lines.push('')
+            lines.push('---')
+            lines.push(`映射口径见 \`tests/agent_eval/behavior_mapping.py\`（纯函数，可单测）；完整 run：${runUrl}`)
+
+            const body = lines.join('\n')
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            })
+            const prev = comments.find(c => c.body && c.body.includes(marker))
+            if (prev) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner, repo: context.repo.repo, comment_id: prev.id, body,
+              })
+              console.log(`♻️ 已更新既有评论 #${prev.id}`)
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner, repo: context.repo.repo,
+                issue_number: context.issue.number, body,
+              })
+              console.log('💬 已发布映射评测评论')
+            }
