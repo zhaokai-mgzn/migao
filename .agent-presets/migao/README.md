@@ -56,6 +56,27 @@ head -3 "$HOME/.dsh/.agent-presets/migao/skills/migao-dev-flow/SKILL.md"
   （不再依赖个人 `~/.dsh` 里的手抄副本）。
 - 软链指向工作区文件，**合并到 `main` 后自动生效**（拉取即更新，无需重链）。
 
+## ⚠️ 已知限制：从构建产物启动时软链会被静默忽略
+
+**软链布局只在「从源码运行 DSH」时可靠**（如 `pnpm dsh web` 经 `tsx` → 解析到包的 `src/`）。
+**从构建产物启动（包入口 `lib/`，例如 npm 安装的 CLI / desktop 壳 / 直接依赖 `@deepseek-ai/dsh-agent-presets`）
+时，本目录这种「目录软链」会被静默跳过** —— **不报错、不告警**，表现只是「研发模式不见了」。
+
+- 差异在 DSH 的 preset 扫描器（DSH 仓库 `packages/preset/agent-presets/`）：
+  - `src/discovery.ts` **已支持软链** —— `Dirent.isDirectory()` 不跟随软链，故对 `child.isSymbolicLink()`
+    再用 `stat` 判目录（**dangling link 不算 preset**）；注释原文即称这是
+    “the documented layout for a version-controlled preset repo” 场景（2026-09-14 加入）；
+  - 构建产物 `lib/index.js` 的 `scanRoot` 仍只有
+    `if (!child.isDirectory() || !PRESET_ID.test(child.name)) continue;` —— **没有任何软链解析**。
+- 该构建产物**比源码旧**（实测 mtime：`src/discovery.ts` **2026-09-14 18:45** > `lib/index.js` **2026-09-11 22:31**），
+  且该包**没有自己的 build 脚本**（由 DSH 仓库根 `scripts/build.ts` 统一构建，只接受 `--profile`，**无单包选择器**）
+  ⇒ **无法只重建这一个包**。
+- ⇒ **若你走构建产物路径，请先整体重建 DSH**（使 `lib` 含软链修复）；否则表现为
+  **「研发模式不见了，但没有任何报错」** —— 正是我们一直在治的静默失效形态。
+- **⚠️ 证据强度限定（登记为未验证项，勿当实测结论）**：以上是**静态证据**（读 `src`/`lib` 源码 + 包入口
+  `"main": "lib/index.js"` + 文件 mtime 对比），**尚未实际用构建产物启动 DSH 复现**「研发模式无声消失」；
+  本次也**未重建 DSH 的 `lib`**（全仓重建影响面大，且不属于本仓库职责）。**是否重建交由用户裁定。**
+
 ## 纪律
 
 - 这是**团队标准**，不是个人草稿：改动请走 PR + 评审，commit message 写清「为什么改」。
