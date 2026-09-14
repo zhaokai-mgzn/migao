@@ -1,6 +1,6 @@
 package com.migao.admin.service;
 
-// case_ids=[PR-005, PR-019]
+// case_ids=[PR-005, PR-007, PR-019]
 
 import com.migao.admin.dto.*;
 import com.migao.admin.dto.agent.*;
@@ -240,6 +240,56 @@ class AgentProductServiceTest {
             assertThatThrownBy(() -> productService.updateProductForAgent("prod-999", req, 1L))
                     .isInstanceOf(BusinessException.class)
                     .hasMessageContaining("商品不存在");
+        }
+
+        // ── status（上下架）────────────────────────────────────────────────
+        // 生产回归（issue #3560）：product_update 下发 status 而 AgentProductUpdateRequest 无该字段
+        // + Jackson 静默忽略未知字段 + hasUpdate 永不被 status 置位 → 走 hasUpdate=false 分支返回
+        // 商品详情（HTTP 200 + success）→ 米宝回「已下架」而 products.status 未变。
+        // 修复：DTO 收 status → 委托既有 updateProductStatus（状态机唯一入口），不再假成功。
+
+        @Test @DisplayName("status 变更 — 状态真的写到实体（非静默成功）")
+        void statusApplied() {
+            AgentProductUpdateRequest req = new AgentProductUpdateRequest();
+            req.setStatus("off_sale");
+
+            Product product = Product.builder()
+                    .id("prod-001").name("遮光窗帘").tenantId(1L)
+                    .categoryId("cat-001").basePrice(new BigDecimal("99.00"))
+                    .status("on_sale").build();
+            when(productMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(product);
+            when(productMapper.selectById("prod-001")).thenReturn(product);
+            when(productMapper.updateById(any(Product.class))).thenReturn(1);
+
+            productService.updateProductForAgent("prod-001", req, 1L);
+
+            ArgumentCaptor<Product> captor = ArgumentCaptor.forClass(Product.class);
+            verify(productMapper, atLeastOnce()).updateById(captor.capture());
+            assertThat(captor.getAllValues())
+                    .as("status 必须真的落到实体（堵死 hasUpdate=false 静默成功）")
+                    .anySatisfy(p -> assertThat(p.getStatus()).isEqualTo("off_sale"));
+        }
+
+        @Test @DisplayName("防回归 — 只传无法处理的字段不得返回成功（hasUpdate=false 模式）")
+        void unsupportedFieldOnlyMustNotSucceed() {
+            // 商品当前 draft，唯一可流转目标是 under_review/on_sale；off_sale 非法。
+            // 修复前：status 被 DTO 丢弃 → hasUpdate=false → 返回商品详情（HTTP 200 success）= 假成功。
+            // 修复后：状态机拒绝非法流转 → 抛业务错误。不允许「返回成功但零变更」的第三条路径。
+            AgentProductUpdateRequest req = new AgentProductUpdateRequest();
+            req.setStatus("off_sale");
+
+            Product product = Product.builder()
+                    .id("prod-001").name("遮光窗帘").tenantId(1L)
+                    .categoryId("cat-001").basePrice(new BigDecimal("99.00"))
+                    .status("draft").build();
+            when(productMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(product);
+            when(productMapper.selectById("prod-001")).thenReturn(product);
+
+            assertThatThrownBy(() -> productService.updateProductForAgent("prod-001", req, 1L))
+                    .as("只传无法处理的字段必须显式失败，禁止 hasUpdate=false 静默返回成功")
+                    .isInstanceOf(BusinessException.class)
+                    .hasMessageContaining("状态流转无效");
+            verify(productMapper, never()).updateById(any(Product.class));
         }
     }
 

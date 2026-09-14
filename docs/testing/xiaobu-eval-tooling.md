@@ -104,24 +104,42 @@ CU-001 客户 / AS-001 售后工单 / ST-001 设置）——小布工具集里�
 `dashboard_stats`/`finance_api`/`employee_manage` 等，这些用例在小布上要么被合理拒绝
 后判失败，要么根本没验证到任何东西，却计入「C 端评测通过率」。
 
-## 5. 覆盖体检（`scripts/xiaobu_coverage.py`）
+## 5. 覆盖体检（`scripts/xiaobu_coverage.py` / `scripts/mibao_coverage.py`）
 
-回答「哪个 C 端能力没被测」——B 端的 `mibao-verification-cases.md` 是用例清单生成物，
-不回答这个问题。
+回答「哪个能力没被测」——`mibao-verification-cases.md` 只是用例**清单**生成物，
+不回答这个问题。**B/C 两端对称**（issue #3555 补上 B 端；判据同一份实现
+`scripts/case_coverage.py`，不复制平行实现）。
 
 ```bash
-# 人读报告
-backend/ai-agent-service/.venv/bin/python scripts/xiaobu_coverage.py
-# CI 门禁（孤儿用例/空用例集 → exit 1）；已接入 verify-all.sh gate/quick/full
-backend/ai-agent-service/.venv/bin/python scripts/xiaobu_coverage.py --check
+# 人读报告（矩阵 = 补用例任务书）
+python3 scripts/xiaobu_coverage.py            # C 端小布
+python3 scripts/mibao_coverage.py             # B 端米宝
+# 门禁（结构性缺失 → exit 1）；已接入 verify-all.sh gate/quick/full 与 CI Case Coverage Gate
+python3 scripts/xiaobu_coverage.py --check
+python3 scripts/mibao_coverage.py  --check
 # Markdown（供文档引用）
-backend/ai-agent-service/.venv/bin/python scripts/xiaobu_coverage.py --md
+python3 scripts/xiaobu_coverage.py --md && python3 scripts/mibao_coverage.py --md
 ```
 
-输出三部分：① 工具覆盖矩阵（缺口标 ⚠️）② 用例归属（按 tier）③ 孤儿用例
-（声明 `persona: xiaobu` 却断言非小布工具 = 配置错误，门禁拦截）。
-另有**显式豁免**区：有用例但声明了 `skip_reason` 的工具（如 `customer_address_query`
+输出：① 工具覆盖矩阵（缺口标 ⚠️，含正向用例数）② 用例归属（按 tier）
+③ 孤儿用例（期望工具该端没有 = 端点挂错，门禁拦截）④ **薄覆盖清单**
+（缺正向用例 ❌ 阻塞 / 仅 1 条用例 ⚠️ 只报告）。
+另有**显式豁免**区：有用例但声明了 `skip_reason` 的工具（如 C 端 `customer_address_query`
 由 CH-025 覆盖但 skip，改由 pytest 验证）——豁免必须显式声明理由，不得靠「看起来有覆盖」。
+
+### 判据（issue #3555 收紧）
+
+| 判定 | 含义 | 门禁 |
+|---|---|---|
+| 工具 0 用例 | 能力完全没被测 | ❌ 阻塞 |
+| 工具**只有拒绝/不调用式断言**（无正向用例） | 只证明越权防线，没证明能力可用 | ❌ 阻塞 |
+| 用例期望工具该端没有（挂错端） | 该端每轮必挂的固定噪音 | ❌ 阻塞 |
+| 断言了两端注册表都没有的工具 | 拼错/已删除 → 期望永不满足 | ❌ 阻塞 |
+| 工具仅 1 条用例 | **厚度不足**（随迭代收敛的活指标） | ⚠️ 只报告，不阻塞 |
+
+「正向用例」= 正常诉求下断言真实工具被调用（`eval_case_filter.is_positive_case`）；
+判据只认**断言文本**（否定式期望排除），**不认 `tier` 标签** —— 实测 OR-007「取消订单」
+/ CU-005「帮我发货」挂着 `tier: adversarial` 却是正常能力，按标签判会造假红。
 
 > 脚本零第三方依赖（纯逻辑在 `tests/agent_eval/eval_case_filter.py`），
 > `python3` 直接可跑。**为什么拆模块**：`local_runner` 有模块级 `import httpx`，

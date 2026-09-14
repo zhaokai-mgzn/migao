@@ -22,6 +22,52 @@ _AI_CONTEXT_MAX_TURNS = 20          # 快照最多携带轮数
 _AI_CONTEXT_MAX_CHARS_PER_TURN = 500
 _THINK_PATTERN = re.compile(r"<think>[\s\S]*?</think>")
 
+# ── 转人工通知收件人（issue #3553，HIGH：客户求助无门 + 静默失败）────────────
+# ⚠️ 后来者注意（这三条最容易再踩，issue #3553 的根因）：
+# ① admin-api `POST /api/admin/notifications` **按收件人落库，没有广播语义** ——
+#    站内信按 recipientId 分发给当前登录用户（NotificationController.getUnreadCount →
+#    getCurrentUserId()），"发给所有管理员"必须由调用方**逐个收件人**发。
+# ② `recipientRole` / `type` **不在 CreateNotificationRequest 内** → Jackson 静默忽略
+#    （写了也无效，只会让读代码的人误以为它生效），故 payload 不再携带。
+# ③ `channel` 合法值只有 wechat / sms / email / internal（DTO 注释；站内信 = internal），
+#    此前的 `channel="system"` 同样不合法。
+# ④ `recipientId` / `recipientType` 是 DTO 的 @NotBlank 必填字段 —— 缺一即**恒 400**
+#    （曾因此让转人工通知永远发不出去，而失败被降级为 warning 后仍返回成功）。
+# 收件人来源：GET /api/admin/users（AdminUserController；服务令牌 ROLE_SERVICE 绕过
+# employee:list 权限，UserService.getUserPage 默认排除 role=customer）。
+# recipientType 口径与 NotificationService.triggerForTenantAdmins 一致（users 表 = employee）。
+_NOTIFY_RECIPIENT_PAGE_SIZE = 50
+_NOTIFY_RECIPIENT_TYPE = "employee"
+_NOTIFY_CHANNEL = "internal"        # 合法值仅 wechat / sms / email / internal
+_NOTIFY_NO_RECIPIENT = "recipient_not_found"
+
+
+def _build_notify_payload(
+    *,
+    ticket_no: str,
+    handoff_reason: str,
+    customer_id: Optional[str],
+    recipient_id: str,
+) -> Dict[str, Any]:
+    """构造 CreateNotificationRequest 请求体（含全部 @NotBlank 必填字段）。
+
+    issue #3553：此前漏发 recipientId/recipientType（DTO @NotBlank）→ admin-api 恒 400
+    且被静默吞掉；`recipientRole`/`type` 不被 DTO 消费（静默忽略）、`channel="system"`
+    亦非合法渠道值。字段集由测试对 DTO @NotBlank 做契约校验（防再漏字段）。
+    """
+    return {
+        "recipientId": recipient_id,
+        "recipientType": _NOTIFY_RECIPIENT_TYPE,
+        "title": f"客户请求转人工 - {ticket_no}",
+        "content": (
+            f"🔔 客户请求转人工\n"
+            f"工单编号：{ticket_no}\n"
+            f"客户ID：{customer_id}\n"
+            f"原因：{handoff_reason}"
+        ),
+        "channel": _NOTIFY_CHANNEL,
+    }
+
 
 def _clean_ai_context_message(msg: dict) -> Optional[dict]:
     """把 session_messages 行清洗为快照 turn；非 user/assistant 返回 None。
@@ -136,53 +182,102 @@ class HumanHandoffTool(BaseTool):
         context: ToolContext,
         ticket_no: str,
         handoff_reason: str,
-    ) -> None:
-        """通知管理员：有新的转人工工单
+    ) -> Dict[str, Any]:
+        """通知租户 B 端账号：有新的转人工工单
 
-        通过 admin-api 创建系统通知，发送给所有管理员。
-        通知失败仅记录日志，不影响转人工主流程。
+        先解析真实收件人（优先 users.role='admin'，无管理员时回退租户内其他在职 B 端账号），
+        再逐人创建站内信（一人失败不影响其余人）。
 
-        Args:
-            context: Tool 执行上下文
-            ticket_no: 工单编号
-            handoff_reason: 转人工原因
+        issue #3553：此前不带 recipientId/recipientType → 恒 400，且失败只记 warning
+        后仍返回成功 —— 通知永远发不出去而表面无异常。现在把「是否真的送达」返回给
+        调用方，由 execute 决定结果，**不再静默降级**。
+
+        Returns:
+            {"delivered": int, "error": Optional[str]}
+            - delivered > 0：至少一位收件人收到站内信；
+            - delivered == 0：error 为未送达原因（`recipient_not_found` = 租户无在职
+              B 端账号；`recipient_resolution_failed` / 其它 = 解析或投递失败）。
         """
+        client = get_admin_api_client()
         try:
-            client = get_admin_api_client()
-            notify_payload: Dict[str, Any] = {
-                "content": (
-                    f"🔔 客户请求转人工\n"
-                    f"工单编号：{ticket_no}\n"
-                    f"客户ID：{context.user_id}\n"
-                    f"原因：{handoff_reason}"
-                ),
-                "title": f"客户请求转人工 - {ticket_no}",
-                "channel": "system",
-                "recipientRole": "admin",
-                "type": "handoff",
-            }
-            response = await client.post(
-                "/api/admin/notifications",
-                json_data=notify_payload,
+            users_response = await client.get(
+                "/api/admin/users",
+                params={
+                    "page": 1,
+                    "size": _NOTIFY_RECIPIENT_PAGE_SIZE,
+                    "status": "active",
+                },
                 tenant_id=context.tenant_id,
                 user_id=context.user_id,
             )
-            if response.get("success"):
-                logger.info(
-                    f"[human_handoff] Admin notified: ticket_no={ticket_no} | "
-                    f"tenant={context.tenant_id}"
-                )
-            else:
-                error = response.get("error", {}).get("message", "unknown")
-                logger.warning(
-                    f"[human_handoff] Admin notification failed (non-fatal): "
-                    f"ticket_no={ticket_no}, error={error}"
-                )
         except Exception as e:
-            logger.warning(
-                f"[human_handoff] Admin notification exception (non-fatal): "
-                f"ticket_no={ticket_no}, error={type(e).__name__}: {e}"
+            logger.error(
+                f"[human_handoff] 通知收件人解析异常: ticket_no={ticket_no}, "
+                f"error={type(e).__name__}: {e}"
             )
+            return {"delivered": 0, "error": f"recipient_resolution_failed: {type(e).__name__}"}
+
+        if not users_response.get("success"):
+            error = (users_response.get("error") or {}).get("message", "unknown")
+            logger.error(
+                f"[human_handoff] 通知收件人解析失败: ticket_no={ticket_no}, error={error}"
+            )
+            return {"delivered": 0, "error": f"recipient_resolution_failed: {error}"}
+
+        items = (users_response.get("data") or {}).get("items") or []
+        # 优先管理员（与 NotificationService.triggerForTenantAdmins 的 users.role='admin' 口径一致）
+        recipients = [u.get("id") for u in items if u.get("role") == "admin" and u.get("id")]
+        if not recipients:
+            # 无管理员账号时回退到租户内其他在职 B 端账号（接口已排除 role=customer）
+            recipients = [u.get("id") for u in items if u.get("id")]
+        if not recipients:
+            logger.error(
+                f"[human_handoff] 通知无收件人：租户内无在职 B 端账号（员工/管理员），"
+                f"转人工站内信无法投递 | ticket_no={ticket_no}, tenant={context.tenant_id}"
+            )
+            return {"delivered": 0, "error": _NOTIFY_NO_RECIPIENT}
+
+        delivered = 0
+        last_error: Optional[str] = None
+        for recipient_id in recipients:
+            payload = _build_notify_payload(
+                ticket_no=ticket_no,
+                handoff_reason=handoff_reason,
+                customer_id=context.user_id,
+                recipient_id=recipient_id,
+            )
+            try:
+                response = await client.post(
+                    "/api/admin/notifications",
+                    json_data=payload,
+                    tenant_id=context.tenant_id,
+                    user_id=context.user_id,
+                )
+            except Exception as e:
+                last_error = f"{type(e).__name__}: {e}"
+                logger.error(
+                    f"[human_handoff] 转人工通知投递异常: ticket_no={ticket_no}, "
+                    f"recipient={recipient_id}, error={last_error}"
+                )
+                continue
+            if response.get("success"):
+                delivered += 1
+            else:
+                last_error = (response.get("error") or {}).get("message", "unknown")
+                logger.error(
+                    f"[human_handoff] 转人工通知投递失败: ticket_no={ticket_no}, "
+                    f"recipient={recipient_id}, error={last_error}"
+                )
+
+        if delivered:
+            logger.info(
+                f"[human_handoff] Admin notified: ticket_no={ticket_no}, "
+                f"recipients={delivered}/{len(recipients)} | tenant={context.tenant_id}"
+            )
+        return {
+            "delivered": delivered,
+            "error": None if delivered else (last_error or "delivery_failed"),
+        }
 
     async def execute(
         self,
@@ -279,8 +374,8 @@ class HumanHandoffTool(BaseTool):
                 f"tenant={context.tenant_id}, user={context.user_id}"
             )
 
-            # Gap-3 安全加固: 通知管理员
-            await self._notify_admins(context, ticket_no, handoff_reason)
+            # Gap-3 安全加固: 通知管理员（issue #3553：失败不再静默，见下方结果判定）
+            notify = await self._notify_admins(context, ticket_no, handoff_reason)
 
             # GB-01（GB/T 47746-2026）：转人工时点携带 AI 对话上下文快照，
             # 让人工客服无需顾客复述即可了解已沟通内容（非致命，失败留空继续）。
@@ -323,6 +418,50 @@ class HumanHandoffTool(BaseTool):
             data = dict(ticket_data)
             if agent_session_id:
                 data["agentSessionId"] = agent_session_id
+            data["adminNotified"] = notify["delivered"] > 0
+
+            # issue #3553：通知是否真的送达必须体现在结果里 —— 不允许「发失败还报成功」。
+            if notify["delivered"] <= 0:
+                if notify["error"] == _NOTIFY_NO_RECIPIENT:
+                    # 租户内没有在职 B 端账号 → 系统里没有"人"可通知（工单与人工会话仍已创建、
+                    # 客服工作台可见），转人工本身已被受理（success=True），但必须显式可见：
+                    # ERROR 日志 + error/suggestion 让 LLM 与运营都能发现配置缺口。
+                    return ToolResult(
+                        success=True,
+                        data=data,
+                        error="admin_notification_skipped_no_recipient",
+                        message=(
+                            f"已为您转接人工客服！工单编号：{ticket_no}。"
+                            "我们的客服人员会在工作时间内尽快与您联系，感谢您的耐心等待 🙏"
+                        ),
+                        summary=(
+                            f"转人工成功但无通知收件人: 工单{ticket_no}, "
+                            f"租户内无在职 B 端账号"
+                        ),
+                        suggestion=(
+                            "转人工站内信无收件人（租户内无在职 B 端账号）：请先在"
+                            "「设置-员工管理」添加管理员/员工账号并置为在职，否则客服不会收到转人工提醒"
+                        ),
+                        terminal=True,
+                    )
+                return ToolResult(
+                    success=False,
+                    data=data,
+                    error="admin_notification_failed",
+                    message=(
+                        f"已为您登记转人工工单（编号：{ticket_no}），但通知人工客服失败。"
+                        "请直接拨打客服热线联系我们，我们会尽快为您处理 🙏"
+                    ),
+                    summary=(
+                        f"转人工通知未送达: 工单{ticket_no}, error={notify['error']}"
+                    ),
+                    # 明确 suggestion 且禁止重试（human_handoff 非幂等，重试会重复建单）
+                    suggestion=(
+                        f"转人工站内信未送达（管理员不会收到提醒），原因：{notify['error']}。"
+                        "工单已创建，**不要再次调用 human_handoff**（会重复建单）；"
+                        "请告知顾客拨打客服热线，或稍后由运营在通知中心/工单列表兜底跟进"
+                    ),
+                )
 
             return ToolResult(
                 success=True,

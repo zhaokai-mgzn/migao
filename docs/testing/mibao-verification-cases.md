@@ -41,14 +41,15 @@
 ### AS-004. 更新工单状态 - 关闭 🔵
 ```
 你: 查看最近的售后工单
-你: 把第一张未处理的工单关闭
+你: 把第一张未处理的工单关闭，关闭原因写「客户已协商一致」
 你: 确认
 期望: after_sales_manage(action=update_status, status=closed)
 数据: success=true
-数据: closedAt/closeReason 写入
+数据: closedAt/closeReason 写入 —— 机器断言见 db_verify[after_sales_ticket]（落库 status=closed + closedAt/closeReason 非空 + closeReason 与用户点名原因一致）
+落库: after_sales_ticket → expect_status=closed; expect_fields_nonempty=['closedAt', 'closeReason']; expect_close_reason_contains=协商一致
 ```
 真值: aftersales-flow.flow, aftersales-flow.update-guard
-溯源: verification 3.4 独有 ｜ tags: update, status
+溯源: verification 3.4 独有；2026-09-14 校准（#3544）：① 「closedAt/closeReason 写入」原是自然语义、不计分（runner 计分白名单只认 success=true / error.code= / 未被调用）→ 升级为 db_verify[after_sales_ticket] 落库断言（新增核对器，见 tests/agent_eval/local_runner.py）；② 用户点名的关闭原因补进输入（工具 reason 仅 create 必填，用户不说原因则 closeReason 无真值可判）；③ 关闭态字段缺失/状态未落地即判红（fail-closed，不空转通过） ｜ tags: update, status
 
 ### AS-005. 售后处理全流程 - 查单→确认问题→建工单→跟踪 🔵
 ```
@@ -649,7 +650,7 @@
 必填: order_create() 字段 customer_phone, items
 必须成功: order_create
 金额: order_create 「北欧风窗帘」 → unit_price; subtotal; processing_fee; total
-落库: order_phone None → 
+落库: order_phone → source=order_create; expect_phone=13800138000
 ```
 真值: ai-chat.confirm-required, order.flow
 溯源: C 端表单化交互方案 S1（miniapp-multiturn-form-scenarios.md） ｜ tags: multi_turn, form, interactive, order
@@ -861,8 +862,8 @@
 时序: customer_address_query before order_create
 时序: interact[confirm] before order_create
 必须成功: order_create
-落库: order_items None → 
-落库: order_phone None → 
+落库: order_items → source=order_create; expect_products=['遮光窗帘']
+落库: order_phone → source=order_create; expect_phone=13800138000; expect_customer_name=张三; expect_address_contains=2号5幢
 ```
 真值: ai-chat.context-memory
 溯源: issue #2815：C 端长期记忆系统 — 下单自动填充收货信息场景；issue #3360：解 skip + 补可执行断言（原 skip 理由已过期） ｜ tags: memory, xiaobu, address_prefill, order_create
@@ -2178,8 +2179,9 @@
 ```
 你: 创建订单，张三 13800138000 遮光窗帘 3 米
 你: 散剪，2.8米门幅
-你: 不添加加工项，确认下单
-你: 确认下单
+你: [🤖 按上一轮卡片作答]
+你: [🤖 按上一轮卡片作答]
+你: [🤖 按上一轮卡片作答]
 期望: validate_input
 期望: order_create
 数据: validate_input(target_tool=order_create, target_action=create) 必须真正执行必填与类型校验：缺少 customer_name/customer_phone/items 任一 → 校验失败并给出缺失字段列表
@@ -2190,7 +2192,7 @@
 必填: validate_input() 字段 target_tool, target_action
 ```
 真值: order.create-flow
-溯源: 2026-09-08 新增（issue #3029 复盘）：_VALIDATION_RULES[order_create] 平铺结构而 execute 按 tool_rules.get(target_action) 分层读取 → 校验永远空转，手机号/必填空转；修复为 {create: {...}} 分层并对齐 product_manage，补 L2 单测；2026-09-09 校准：补「散剪规格→跳过加工项→确认」三轮（遮光窗帘有散剪/整卷需澄清售卖方式，单轮到不了 validate_input；probe 实证 4 轮走通）；2026-09-14 校准（#3538）：pre_clean 去 price 过滤（关键词去重，原 price 过滤限 100 元、在种子遮光窗帘 ¥168 的独立栈上恒不匹配 = 没去重） ｜ tags: order_create, validate_input, defense
+溯源: 2026-09-08 新增（issue #3029 复盘）：_VALIDATION_RULES[order_create] 平铺结构而 execute 按 tool_rules.get(target_action) 分层读取 → 校验永远空转，手机号/必填空转；修复为 {create: {...}} 分层并对齐 product_manage，补 L2 单测；2026-09-09 校准：补「散剪规格→跳过加工项→确认」三轮（遮光窗帘有散剪/整卷需澄清售卖方式，单轮到不了 validate_input；probe 实证 4 轮走通）；2026-09-14 校准（#3538）：pre_clean 去 price 过滤（关键词去重，原 price 过滤限 100 元、在种子遮光窗帘 ¥168 的独立栈上恒不匹配 = 没去重）。2026-09-14 校准（#3544，REPORT §2.1）：补颜色应答轮——原 4 轮台词从未回答 agent 追问的「颜色」（三个 run 行为签名同构：R-verify/R1 四轮全卡颜色、R2 的 R3/R4 卡颜色），轮次用尽即停在待确认态；R3 改协作答卡轮（choice→首项=米白，无卡发含颜色原文），并补 2 轮收尾答卡余量（R2 实测 R4 只发 confirm 卡、无轮去点 → order_create 永不发生）。expectations / order_before / required_args 保持不动（REPORT §2.1 明确「保持不动」，未放宽） ｜ tags: order_create, validate_input, defense
 
 ### OR-016. 创建订单 confirm 前必须主动询问加工项（商品绑定加工项时） 🔵
 ```
@@ -2264,7 +2266,7 @@
 必须成功: order_create
 金额: order_create 「夏日清风窗帘」 → unit_price; subtotal; total
 金额: order_create 「遮光窗帘」 → unit_price
-落库: order_items None → 
+落库: order_items → source=order_create; expect_products=['夏日清风窗帘', '遮光窗帘']; expect_quantities={'夏日清风窗帘': 3, '遮光窗帘': 2}
 ```
 真值: order.create-flow
 溯源: 2026-09-13 新增（issue #3367）：C 端能力上限用例（多商品/多加工项/逐行金额） ｜ tags: order_create, multi_item, processing_item, ceiling, xiaobu
@@ -2288,7 +2290,7 @@
 时序: interact[confirm] before order_create
 必须成功: order_create
 金额: order_create 「遮光窗帘」 → unit_price; subtotal; total
-落库: order_items None → 
+落库: order_items → source=order_create; expect_products=['遮光窗帘']; expect_quantities={'遮光窗帘': 4}
 ```
 真值: order.create-flow, ai-chat.confirm-required
 溯源: 2026-09-13 新增（issue #3367）：C 端能力上限用例（多轮纠错/状态更新） ｜ tags: order_create, correction, multi_turn, ceiling, xiaobu
@@ -2313,7 +2315,7 @@
 时序: interact[confirm] before order_create
 必须成功: order_create
 金额: order_create 「遮光窗帘」 → unit_price; subtotal; total
-落库: order_items None → 
+落库: order_items → source=order_create; expect_products=['遮光窗帘']; expect_quantities={'遮光窗帘': 3}
 ```
 真值: order.create-flow
 溯源: 2026-09-13 新增（issue #3379）：能力上限用例（打岔后草稿保持 + 流程恢复） ｜ tags: order_create, interruption, context_retention, ceiling, xiaobu
@@ -2343,8 +2345,8 @@
 禁词: 无法代为下单
 必须成功: order_create
 金额: order_create 「遮光窗帘」 → unit_price; subtotal; total
-落库: order_items None → 
-落库: order_phone None → 
+落库: order_items → source=order_create; expect_products=['遮光窗帘']; expect_quantities={'遮光窗帘': 3}
+落库: order_phone → source=order_create; expect_phone=13800138000
 ```
 真值: order.create-flow, ai-chat.confirm-required
 溯源: 2026-09-13 新增（issue #3389）：能力下限用例（缺信息时收集而非拒单 + 能力误宣反模式） ｜ tags: order_create, honesty, capability, xiaobu
@@ -2375,8 +2377,8 @@
 禁词: 无法代为下单
 必须成功: order_create
 金额: order_create 「遮光窗帘」 → unit_price; subtotal; total
-落库: order_items None → 
-落库: order_phone None → 
+落库: order_items → source=order_create; expect_products=['遮光窗帘']; expect_quantities={'遮光窗帘': 3}
+落库: order_phone → source=order_create; expect_phone=13800138000
 ```
 真值: order.create-flow, ai-chat.confirm-required
 溯源: 2026-09-13 新增（issue #3391）：新客路径覆盖（多身份评测 + 无历史地址时的收集能力） ｜ tags: order_create, new_customer, capability, xiaobu
@@ -2405,8 +2407,8 @@
 时序: interact[confirm] before order_create
 必须成功: order_create
 金额: order_create 「遮光窗帘」 → unit_price; subtotal; total
-落库: order_items None → 
-落库: order_phone None → 
+落库: order_items → source=order_create; expect_products=['遮光窗帘']; expect_quantities={'遮光窗帘': 3}
+落库: order_phone → source=order_create; expect_phone=13800138000; expect_customer_name=张三; expect_address_contains=文三路
 ```
 真值: order.create-flow, ai-chat.confirm-required
 溯源: 2026-09-13 新增（issue #3397）：补齐零断言能力（地址预填 + 写前校验） ｜ tags: order_create, prefill, address, xiaobu
@@ -2432,8 +2434,8 @@
 时序: interact[confirm] before order_create
 必须成功: order_create
 金额: order_create 「遮光窗帘」 → unit_price; subtotal; total
-落库: order_items None → 
-落库: order_phone None → 
+落库: order_items → source=order_create; expect_products=['遮光窗帘']; expect_quantities={'遮光窗帘': 3}
+落库: order_phone → source=order_create; expect_phone=13800138000
 ```
 真值: order.create-flow, ai-chat.confirm-required
 溯源: 2026-09-13 新增（issue #3402）：沉淀 C-A1 主路径真因（数量口径 → 产出层反模式断言） ｜ tags: order_create, quantity, ceiling, xiaobu
@@ -2514,7 +2516,7 @@
 ```
 你: 查询打孔加工的计价方式
 你: 新增加工项，计价方式选按个
-你: 名称叫测试加工，分类选打孔加工
+你: 名称叫测试加工，分类选窗帘加工
 你: 计价方式按米，单价 8 元
 你: 确认
 期望: processing_item_query(keyword=打孔)
@@ -2522,9 +2524,11 @@
 数据: processing_item_query 响应条目无 per_meter_quantity（每米数量已回滚移除，issue #3005）
 数据: 加工项计价方式仅 per_meter / per_set / fixed / per_area——per_piece 创建被拒绝（行业加工费按米计价、辅料含在加工费中）
 数据: 商品详情 processingItems 无 custom_per_meter_quantity / perMeterQuantity（商品级密度覆盖已回滚）
+必须成功: processing_item_manage(create_processing_item)
+产出: processing_item_manage → name==测试加工; pricingMethod==per_meter
 ```
 真值: processing-manage.crud, product-sku-stock.create-flow
-溯源: 2026-09-07 改写（issue #3005，回滚 #2986）：行业加工费按米计价、辅料（罗马圈/四爪钩等）含在按米加工费中——per_piece 与「每米数量」密度不符合实际（数量对不上车间工艺、B 端无法对账），已回滚移除；PP-006 由密度配置用例改为计价方式回归断言 ｜ tags: processing_item, pricing
+溯源: 2026-09-07 改写（issue #3005，回滚 #2986）：行业加工费按米计价、辅料（罗马圈/四爪钩等）含在按米加工费中——per_piece 与「每米数量」密度不符合实际（数量对不上车间工艺、B 端无法对账），已回滚移除；PP-006 由密度配置用例改为计价方式回归断言。2026-09-14 校准（#3544，REPORT §2.3）：① 假绿升级——补 must_succeed（canonical 写成功断言，fail-closed）+ output_verify（name/pricingMethod 产出核对），此前只断言「调用过」，工具三次真执行全失败仍判 ✅（真缺口见 #3543）；② 输入「分类选打孔加工」改为种子里真实存在的「分类选窗帘加工」（原写法是加工项名/分类名混淆，agent 只能如实说没有该分类，白耗一轮） ｜ tags: processing_item, pricing
 
 ## processing-order（14 case）
 
@@ -2944,10 +2948,12 @@
 你: [🤖 选第一个选项]
 你: 确认
 期望: sku_update
-数据: sku_update 成功（价格落库）
+数据: sku_update 真成功且价格为 150 元（= 用户确认价）：机器断言见 must_succeed（写成功）+ output_verify（new_price==150）；裸断言「调用过」不算覆盖（#3544 假绿升级）
+必须成功: sku_update
+产出: sku_update → new_price==150
 ```
 真值: product-sku-stock.realtime
-溯源: Round 72 评测覆盖审计：sku_update（SKU 级调价）注册于 product_skill 但无 case 覆盖（盲区）→ 补 SKU 调价场景。2026-09-14 校准（#3518）：输入去「100元的那件」价格点名（独立栈种子 ¥168）。⚠️ 遗留：本 run 该例真实失败点是 `sku_update!SKU不存在`（种子遮光窗帘只有部分规格 SKU）——属**数据层**（种子 SKU 待补），非本 PR 的用例层问题 ｜ tags: sku, write, pricing
+溯源: Round 72 评测覆盖审计：sku_update（SKU 级调价）注册于 product_skill 但无 case 覆盖（盲区）→ 补 SKU 调价场景。2026-09-14 校准（#3518）：输入去「100元的那件」价格点名（独立栈种子 ¥168）。2026-09-14 校准（#3544，REPORT §2.2）：假绿升级——`data_checks` 的自然语义「sku_update 成功（价格落库）」不计分（同 run 两次 sku_update 全失败仍判 ✅）→ 补 must_succeed（canonical 写成功断言）+ output_verify（new_price==150），缺陷未修前本用例由假绿转真红（#3539 修复后转绿）。⚠️ 遗留：本 run 该例真实失败点是 `sku_update!SKU不存在`——根因已由 #3539 定位为**中文标签 vs 枚举字面匹配**（非种子缺口），非本 PR 的用例层问题 ｜ tags: sku, write, pricing
 
 ### PR-024. 小布算料上限 - 定宽布买高 + 对花损耗（窗高超定高上限，必须走定宽分支并告警） 🔵
 ```
@@ -2956,6 +2962,7 @@
 数据: 窗高 2.7m + 卷边 0.3m > 门幅 2.8m → 必须走定宽布（买高）分支，不得套定高公式
 数据: 对花损耗按每幅 +1 个花距：3 幅 × 0.4m = 1.2m，用布 10.2m（非 9.0m）
 数据: 报价总额 = 面料费 + 加工费 + 辅料费 + 安装费（fabric-calc.quote-total），不得凭记忆报价
+产出: curtain_calc → fabric_meters==10.2; formula_used==fixed_width; warning==__nonempty__; fullness==2
 ```
 真值: fabric-calc.fixed-width, fabric-calc.pattern-loss, fabric-calc.quote-total
 溯源: 2026-09-13 新增（issue #3367）：算料报价能力上限（定宽分支 + 对花损耗 + 产出侧断言） ｜ tags: quote, fabric_calc, ceiling, xiaobu

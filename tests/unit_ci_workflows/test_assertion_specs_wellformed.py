@@ -23,7 +23,7 @@ from render_cases import load_case_dicts  # noqa: E402
 
 CASES_DIR = REPO_ROOT / ".github" / "cases"
 
-SUPPORTED_DB_FETCH = {"product_by_name", "order_items", "order_phone"}
+SUPPORTED_DB_FETCH = {"product_by_name", "order_items", "order_phone", "after_sales_ticket"}
 SUPPORTED_POST_SESSION_FETCH = {"user_memories"}
 
 
@@ -83,6 +83,17 @@ class TestAssertionSpecsWellFormed:
                 if fetch == "order_phone" and not s.get("expect_phone"):
                     # 空断言 = 声称核对了落库手机号、其实没核对（issue #3386 同族风险）
                     bad.append(f"{c['id']}.db_verify[{i}]: order_phone 缺 expect_phone（空断言）")
+                if fetch == "after_sales_ticket" and not s.get("expect_status"):
+                    # 同族：没有期望状态 → 核对器无从判定，只会退化成"查了一下"（#3544）
+                    bad.append(
+                        f"{c['id']}.db_verify[{i}]: after_sales_ticket 缺 expect_status"
+                        f"（空断言 —— 运行时会失败关闭）")
+                if fetch == "after_sales_ticket" and not (
+                        s.get("expect_fields_nonempty") or s.get("expect_close_reason_contains")):
+                    # 只断言状态、不核对关闭留痕 = 「关闭」用例最关键的 closedAt/closeReason 又没人查
+                    bad.append(
+                        f"{c['id']}.db_verify[{i}]: after_sales_ticket 既无 expect_fields_nonempty"
+                        f" 也无 expect_close_reason_contains（关闭留痕无人核对）")
             for i, s in enumerate(_specs(c, "post_session")):
                 if s.get("fetch") not in SUPPORTED_POST_SESSION_FETCH:
                     bad.append(f"{c['id']}.post_session[{i}]: 不支持的 fetch={s.get('fetch')!r}")
