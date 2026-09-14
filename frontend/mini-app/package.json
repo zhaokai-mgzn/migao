@@ -9,7 +9,7 @@
     "css": "sass"
   },
   "scripts": {
-    "build:weapp": "taro build --type weapp",
+    "build:weapp": "taro build --type weapp && node e2e/build-stamp.js",
     "dev:weapp": "npm run build:weapp -- --watch",
     "build:swan": "taro build --type swan",
     "dev:swan": "npm run build:swan -- --watch",
