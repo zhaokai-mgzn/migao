@@ -13,7 +13,7 @@
 | 订单状态（DB） | `pending / confirmed / producing / shipped / completed / cancelled` | `OrderService.java` 状态机；**生产中是 producing 不是 processing** |
 | 订单状态（前端展示） | `pending_payment / pending_shipment / shipped / completed / closed / refund` | `types/index.ts` `BackendToFrontendStatus` 映射 |
 | 售后工单状态 | `pending / processing / rejected / resolved / closed` | `AfterSalesTicketService.java` |
-| 商品状态 | `draft / on_sale / off_sale / under_review` | `ProductService.java` |
+| 商品状态 | `draft / on_sale / off_sale / under_review` | `ProductService.java` `STATUS_TRANSITIONS`（4 值状态机，已核实=后端真值）；前端 `types/index.ts ProductStatus` 同 4 值。⚠️ **Agent 侧能力缺口**（issue #3574 复核）：`product_manage` 的 `VALID_PRODUCT_STATUSES`/schema enum 只有 `on_sale / off_sale`（toggle_status 不能设 draft/under_review）→ 按需另开 issue 扩能力，别把台账改成 2 值 |
 | 加工单状态 | `generated / issued / in_processing / completed / cancelled` | `ProcessingOrderService.java` 状态机（issue #3340，1 订单 1 加工单） |
 
 ## 二、关键字段名（前后端 + Agent 三端一致）
