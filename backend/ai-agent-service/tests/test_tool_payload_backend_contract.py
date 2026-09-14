@@ -76,6 +76,29 @@ from pathlib import Path
 # 单一事实源复用：既有跨端契约测试的 Java 字段解析器（同一正则 / 同一缓存 / 同一口径）
 from tests import test_tool_field_name_contract as _sibling_contract
 
+
+def _sibling_receiver_fields_fn():
+    """取 sibling 的 Java 接收字段解析器（容忍其命名演进，但**不允许静默缺失**）。
+
+    `test_tool_field_name_contract.py` 由并行包持续迭代（#3562 已把它从 `_dto_fields`
+    改名为 `_receiver_fields_from_java`）。命名再变时这里**显式报错**，而不是让本门禁
+    悄悄失去 Java 侧解析能力。
+    """
+    for cand in ("_receiver_fields_from_java", "_dto_fields"):
+        fn = getattr(_sibling_contract, cand, None)
+        if callable(fn):
+            return fn
+    raise ImportError(
+        "tests/test_tool_field_name_contract.py 未提供 Java 接收字段解析器"
+        "（期望 _receiver_fields_from_java 或 _dto_fields）——"
+        "本门禁依赖它作为 Java 字段名唯一事实源，请同步适配而不是另写第二份解析器"
+    )
+
+
+def _java_receiver_fields(class_name: str) -> frozenset[str]:
+    """Java 接收类型（请求 DTO / 实体）的实例字段名（复用 sibling 的解析器与口径）。"""
+    return _sibling_receiver_fields_fn()(class_name)
+
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _TOOLS_DIR = Path(__file__).resolve().parent.parent / "app" / "tools"
 _JAVA_MAIN = _REPO_ROOT / "backend" / "admin-api" / "src" / "main" / "java"
@@ -103,18 +126,20 @@ SCOPE_EXPLICIT_PATHS = (
     "/api/admin/finance/transactions",        # finance_api 登记交易
 )
 
-# 无法静态解析 payload 键（动态构造）的调用点：必须显式登记（key = "文件:行"）
+# 无法静态解析 payload 键（动态构造）的调用点：必须显式登记
+# key = "文件|HTTP方法 归一化端点"（不按行号 —— 行号随并行改动漂移会让登记失效）
 DYNAMIC_KEY_SITES: dict[str, str] = {
-    "app/tools/customer_manage.py:305": (
-        "update 走自由字典透传（data 的 key 由 LLM 直供），静态不可解析 → "
-        "由 tests/test_tool_field_name_contract.py 的运行期契约 + customer_manage 字段白名单兜底"
-        "（issue #3551 / PR #3562）"
+    "app/tools/customer_manage.py|PUT /api/admin/customers/{}": (
+        "update 的 data 是自由字典透传（key 由 LLM 直供），静态不可解析 → "
+        "由 tests/test_tool_field_name_contract.py 的运行期契约（WriteContract CU-004）"
+        "+ customer_manage 的字段白名单兜底（issue #3551 / PR #3562）"
     ),
 }
 
-# 带 payload 但路径无法静态渲染（会静默脱离射程）的调用点：必须显式登记（key = "文件:行"）
+# 带 payload 但路径无法静态渲染（会静默脱离射程）的调用点：必须显式登记
+# key = "文件|HTTP方法 <路径表达式>"
 UNATTRIBUTABLE_CALLS: dict[str, str] = {
-    # 例："app/tools/xxx.py:123": "为什么无法归属 + 由谁兜底"
+    # 例："app/tools/xxx.py|POST some_path_var": "为什么无法归属 + 由谁兜底"
 }
 
 # 工具调用指向 admin-api 不存在的端点（404 类跨模块契约缺陷）：
@@ -446,11 +471,13 @@ def _java_endpoints() -> dict[tuple[str, str], tuple[JavaEndpoint, ...]]:
                     nm = re.search(r"\b(?:name|value)\s*=\s*[\"']([^\"']+)[\"']", raw)
                     path_vars.add(nm.group(1) if nm else name)
                 elif base_type not in _NON_POJO_TYPES and base_type[:1].isupper():
-                    # 非注解 POJO 形参：Spring 按 query param 绑定到其字段（如 ProductQueryRequest）
+                    # 非注解 POJO 形参：Spring 按 query param 绑定到其字段（如 ProductQueryRequest）；
+                    # 不是 DTO 命名的类解析不到字段 → 不追加来源（不影响断言）
                     try:
-                        query_fields |= set(_sibling_contract._dto_fields(base_type))
+                        pojo_fields = _java_receiver_fields(base_type)
                     except AssertionError:
-                        pass
+                        pojo_fields = frozenset()
+                    query_fields |= set(pojo_fields)
             map_reads: set[str] = set()
             if body_var:
                 body = _balanced_block(src, brace)
@@ -535,7 +562,7 @@ def _receiving_keys(ep: JavaEndpoint) -> frozenset[str] | None:
         keys |= set(ep.map_reads)
     elif ep.body_type is not None:
         try:
-            keys |= set(_sibling_contract._dto_fields(ep.body_type))
+            keys |= set(_java_receiver_fields(ep.body_type))
         except AssertionError:
             return None
     return frozenset(keys)
@@ -996,7 +1023,7 @@ def test_dynamic_payload_sites_are_registered() -> None:
     unregistered = sorted(
         f"{c.file}:{c.line} {c.method} {c.endpoint} → {[d[0] for d in c.dynamic]}"
         for c in _scoped_calls()
-        if c.dynamic and f"{c.file}:{c.line}" not in DYNAMIC_KEY_SITES
+        if c.dynamic and f"{c.file}|{c.method} {c.endpoint}" not in DYNAMIC_KEY_SITES
     )
     assert not unregistered, (
         "❌ 下列射程内调用点的 payload 键无法静态解析，且未在 DYNAMIC_KEY_SITES 登记理由\n"
@@ -1039,11 +1066,14 @@ def test_sibling_contract_registry_agrees_with_scanner() -> None:
                 f"{contract.endpoint} 在 admin-api controller 里不存在"
             )
             continue
+        declared = getattr(contract, "receiver_type", None) or getattr(
+            contract, "dto_class", None
+        )
         actual = {e.body_type for e in ep if e.body_type}
-        if actual and contract.dto_class not in actual:
+        if actual and declared not in actual:
             problems.append(
                 f"{contract.endpoint} 的 @RequestBody 实为 {sorted(actual)}，"
-                f"但 test_tool_field_name_contract.REGISTRY 登记的是 {contract.dto_class}"
+                f"但 test_tool_field_name_contract.REGISTRY 登记的是 {declared}"
             )
     assert not problems, (
         "❌ 本门禁与 test_tool_field_name_contract.REGISTRY 口径漂移：\n  " + "\n  ".join(problems)
@@ -1088,11 +1118,11 @@ def test_payload_calls_are_attributable_to_an_endpoint() -> None:
             rendered = _path_template(node.args[0])
             if rendered and rendered.startswith("/api"):
                 continue
-            site = f"{rel}:{node.lineno}"
+            site = f"{rel}|{node.func.attr.upper()} {ast.unparse(node.args[0])[:60]}"
             if site in UNATTRIBUTABLE_CALLS:
                 continue
             unattributed.append(
-                f"{site} {node.func.attr.upper()} 路径={ast.unparse(node.args[0])[:60]}"
+                f"{rel}:{node.lineno} {node.func.attr.upper()} 路径={ast.unparse(node.args[0])[:60]}"
             )
     assert not unattributed, (
         "❌ 带 payload 的 admin-api 调用点无法静态归属到端点（会静默脱离本门禁射程）：\n  "

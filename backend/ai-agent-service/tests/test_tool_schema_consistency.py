@@ -1,5 +1,6 @@
 """
 Tool Schema-Payload 一致性自动检测
+# case_ids: UT-001
 
 防止 silent data loss：扫描所有 write tool，检查每个 _create/_update/_adjust
 等写操作方法中，函数参数是否正确映射到 json_data payload。
