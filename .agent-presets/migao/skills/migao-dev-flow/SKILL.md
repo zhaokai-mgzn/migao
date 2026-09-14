@@ -1,7 +1,7 @@
 ---
 name: migao-dev-flow
-version: 1.18.0
-description: MIGAO 项目开发提效流程固化 — 开发、验证、提交、部署的完整规范。改动 MIGAO 代码前必须加载，确保用对工具、跑对检查、避免 UI 回退和 CI 返工。v1.1：修正 Agent Eval 重试命令 + 新增 dependabot PR 处理 SOP + CI/本地环境差异已知坑。 v1.11（2026-09-09 issue #3070 复盘固化）：新增「§15 前端页面级改动的 UI 旅程强制验证」——交互测试断言"结果可见"而非"函数被调用"、页面级改动必须真实浏览器走查（面包屑/样式基准/布局遮挡几何探针/写操作成果物可见）、布局视觉问题不得仅靠 vitest（Tailwind p-* 覆盖 pb-* 类 CSS 级联陷阱实测）。v1.12（2026-09-09 issue #3080 实证）：新增「§15.5 截图视觉确认」——主模型/子代理不支持图片输入（read_image 报 does not declare image input）时，用 workflow 自动路由到 GLM-5.3-Flash 视觉模型（scnet-token-plan）开子代理读图判定，输出作为 UA 层证据，与 DOM 断言互补。v1.17（2026-09-14 issue #3555）：新增「§14.5 覆盖厚度」——把覆盖体检变成真门禁：C 端 `scripts/xiaobu_coverage.py` 判据收紧（**每个被覆盖的工具必须至少有一条正向用例**，「只有越权/拒绝用例」= 结构性缺失 → 阻塞；「仅 1 条用例」= 厚度不足 → 只报告，尊重 verify-all.sh 的活指标设计意图）+ 新增 B 端对称体检 `scripts/mibao_coverage.py`（复用 eval_case_filter/render_cases 既有纯函数，不复制平行实现）+ 接入 CI pr-check `Case Coverage Gate` job（纯静态零 LLM，本脚本与本地 verify-all.sh 同参数）。v1.1.1：修正部署后验证端点。v1.2：新增「分支滞留+切换污染」红线与 git worktree 规范。v1.3（2026-09-04）：新增「多会话并发规范」（一会话一 worktree + 会话锁 + 端口隔离 + 分支卫生）、CI 队列治理（concurrency/paths 门控/agent-eval 按变更触发省真实 LLM token）、验证分级降本。v1.4（2026-09-05）：新增「PR body 必写 Closes #xx」红线（自动关 issue 闭环，杜绝修复后 issue 无人关闭的伪积压）+ 存量 12 个 open issue 中 8 个已修复未关闭的实证教训 + CI pr-issue-link 检查说明 + GitHub 治理自动化（stale 回收/automerge/dependabot ignore 收口）。v1.5（2026-09-06）：新增「§9 本地验证防恶化」——本地 .env 云库泄漏致 pytest 从分钟级恶化到小时级的根因复盘（issue #2957，quick 58min→57s）+ 体检命令 + 六条防复发红线（云库隔离/timeout 兜底/依赖漂移/未 mock 外部调用禁止）。v1.6（2026-09-06）：新增「§10 云资源运维（aliyun CLI 自服务）」——AI 具备阿里云运维权限账号能力（本机 aliyun CLI 已配凭据），可直接自服务 RDS 白名单/实例查询，无需人工控制台操作；固化实例 ID、白名单分组、追加命令与安全边界（保留原 IP 追加而非覆盖）。v1.18（2026-09-14 实证固化）：新增「§16.6 评测派发与数字留痕」四条踩过的坑——① 手动 `workflow_dispatch` 评测**必须**带 `-f force_eval=true`（否则被静默抑制：步骤全 skipped、artifact 0、整体 success；workflow 注释里的"永不抑制"与实现不符）；② `case_ids` 是**全矩阵共享**的，只传一端专属 ID 会让另一条腿立即红（`禁止静默少跑` 守卫 `local_runner.py:4292`）；③ `continue-on-error` 让 `Run <persona>` 步骤"显示 success ≠ 成功"，读结论只看 `判定（completion_verdict）` + artifact；④ **每个计数必须锚定 SHA**（`基线 @<sha> = N → 本 PR = M`），禁止旧基线配新结果造出幽灵 delta。
+version: 1.19.0
+description: MIGAO 项目开发提效流程固化 — 开发、验证、提交、部署的完整规范。改动 MIGAO 代码前必须加载，确保用对工具、跑对检查、避免 UI 回退和 CI 返工。v1.1：修正 Agent Eval 重试命令 + 新增 dependabot PR 处理 SOP + CI/本地环境差异已知坑。 v1.11（2026-09-09 issue #3070 复盘固化）：新增「§15 前端页面级改动的 UI 旅程强制验证」——交互测试断言"结果可见"而非"函数被调用"、页面级改动必须真实浏览器走查（面包屑/样式基准/布局遮挡几何探针/写操作成果物可见）、布局视觉问题不得仅靠 vitest（Tailwind p-* 覆盖 pb-* 类 CSS 级联陷阱实测）。v1.12（2026-09-09 issue #3080 实证）：新增「§15.5 截图视觉确认」——主模型/子代理不支持图片输入（read_image 报 does not declare image input）时，用 workflow 自动路由到 GLM-5.3-Flash 视觉模型（scnet-token-plan）开子代理读图判定，输出作为 UA 层证据，与 DOM 断言互补。v1.17（2026-09-14 issue #3555）：新增「§14.5 覆盖厚度」——把覆盖体检变成真门禁：C 端 `scripts/xiaobu_coverage.py` 判据收紧（**每个被覆盖的工具必须至少有一条正向用例**，「只有越权/拒绝用例」= 结构性缺失 → 阻塞；「仅 1 条用例」= 厚度不足 → 只报告，尊重 verify-all.sh 的活指标设计意图）+ 新增 B 端对称体检 `scripts/mibao_coverage.py`（复用 eval_case_filter/render_cases 既有纯函数，不复制平行实现）+ 接入 CI pr-check `Case Coverage Gate` job（纯静态零 LLM，本脚本与本地 verify-all.sh 同参数）。v1.1.1：修正部署后验证端点。v1.2：新增「分支滞留+切换污染」红线与 git worktree 规范。v1.3（2026-09-04）：新增「多会话并发规范」（一会话一 worktree + 会话锁 + 端口隔离 + 分支卫生）、CI 队列治理（concurrency/paths 门控/agent-eval 按变更触发省真实 LLM token）、验证分级降本。v1.4（2026-09-05）：新增「PR body 必写 Closes #xx」红线（自动关 issue 闭环，杜绝修复后 issue 无人关闭的伪积压）+ 存量 12 个 open issue 中 8 个已修复未关闭的实证教训 + CI pr-issue-link 检查说明 + GitHub 治理自动化（stale 回收/automerge/dependabot ignore 收口）。v1.5（2026-09-06）：新增「§9 本地验证防恶化」——本地 .env 云库泄漏致 pytest 从分钟级恶化到小时级的根因复盘（issue #2957，quick 58min→57s）+ 体检命令 + 六条防复发红线（云库隔离/timeout 兜底/依赖漂移/未 mock 外部调用禁止）。v1.6（2026-09-06）：新增「§10 云资源运维（aliyun CLI 自服务）」——AI 具备阿里云运维权限账号能力（本机 aliyun CLI 已配凭据），可直接自服务 RDS 白名单/实例查询，无需人工控制台操作；固化实例 ID、白名单分组、追加命令与安全边界（保留原 IP 追加而非覆盖）。v1.18（2026-09-14 实证固化）：新增「§16.6 评测派发与数字留痕」四条踩过的坑——① 手动 `workflow_dispatch` 评测**必须**带 `-f force_eval=true`（否则被静默抑制：步骤全 skipped、artifact 0、整体 success；workflow 注释里的"永不抑制"与实现不符）；② `case_ids` 是**全矩阵共享**的，只传一端专属 ID 会让另一条腿立即红（`禁止静默少跑` 守卫 `local_runner.py:4292`）；③ `continue-on-error` 让 `Run <persona>` 步骤"显示 success ≠ 成功"，读结论只看 `判定（completion_verdict）` + artifact；④ **每个计数必须锚定 SHA**（`基线 @<sha> = N → 本 PR = M`），禁止旧基线配新结果造出幽灵 delta。v1.19（2026-09-14 实证修正）：**§2.1 ②`./verify-all.sh gate` 必须在 `git commit` 之后跑** —— 它的弱断言检查按 `git diff --diff-filter=A origin/main...HEAD` 取"新增测试文件"，**未提交时新增集为空 ⇒ 静默空跑并通过**（假绿；实测同一命令 commit 前 ✅ / commit 后 ❌）。正确顺序：先 commit，再跑 ②③④。
 ---
 
 # MIGAO 开发提效流程
@@ -29,6 +29,10 @@ description: MIGAO 项目开发提效流程固化 — 开发、验证、提交�
 ./check-ui-regression.sh
 
 # ② QA gate 预检（本地跑 CI 规则，避免合并前爆 case_ids/缺测）
+# ⚠️ **必须在 `git commit` 之后跑**：它的弱断言检查按
+#    `git diff --diff-filter=A --name-only origin/main...HEAD` 取"新增测试文件"；
+#    **未提交时 HEAD == origin/main ⇒ 新增集为空 ⇒ 该检查静默空跑并通过**（假绿）。
+#    实证 2026-09-14：同一条命令 commit 前 ✅ / commit 后 ❌（`--check-weak` exit=1）。
 ./verify-all.sh gate
 
 # ③ 契约一致性（跨模块改动后）
@@ -40,6 +44,14 @@ description: MIGAO 项目开发提效流程固化 — 开发、验证、提交�
 # 合并前：以 CI 结果为准，不本地重复跑 gate —— CI 已排队跑过一遍，
 # 本地再跑一遍 gate 是纯浪费（token+时间）。本地跑 gate 只在提交前的瞬间用。
 ```
+
+⚠️ **本节标题"提交前必查"与 ② 的实现有冲突，按下述顺序执行**（v1.19 修正，2026-09-14 实证）：
+**先 `git commit`，再跑 ②③④。** 因为 ② 的**弱断言检查依赖已提交的 diff**（`origin/main...HEAD`），
+未提交时它对**新增测试文件**是**空跑并通过**。若你确实想在提交前跑，请明确知道：此时 ② 只对
+"存量规则"（growth gate 的文件分类 / 缺测 / 覆盖体检）有效，**对新增测试的弱断言无效**。
+> 这不是吹毛求疵：本会话中一个包按"提交前"跑 ② 得到 ✅，`git commit` 后同一条命令变 ❌
+> （新增测试里的 `assert x is not None` 被判弱断言），CI 直接红。形态属
+> `migao-acceptance`「空跑」——**绿了但没跑**。同理 `quick` 不受影响（它跑的是真实测试）。
 
 ### 2.2 红线（踩过的高频坑，禁止违反）
 - **禁止 `git add -A` 盲目提交**：工作区长期积压的未提交改动（尤其旧版 UI）会覆盖 main 上已验收的版本。提交前先 `git status` 检查积压，**逐个确认** UI 文件不是旧版。
