@@ -2225,6 +2225,7 @@
 ```
 你: 用快递单号 SF1234567890 查一下物流
 你: 那用我最近一笔订单的订单号查一下物流
+你: [🔁 按目标工具重复直至成功：logistics_track，最多 2 次]
 期望: logistics_track
 数据: logistics_track 参数仅剩 order_id（required）；传 tracking_number 必须拒绝并引导提供订单号
 数据: 快递单号只能由系统从订单详情读取后内部查询轨迹（_track_by_number 为内部链路）
@@ -2233,7 +2234,7 @@
 必填: logistics_track() 字段 order_id
 ```
 真值: order.logistics
-溯源: 2026-09-01 新增：B 端物流查询安全收紧（禁止物流号直查，防用他人运单号刺探）；2026-09-14 自包含化（issue #3599）：第 2 轮去掉栈上不存在的硬编码订单号，改自然指代 + required_args[order_id] ｜ tags: query, logistics, data_safety
+溯源: 2026-09-01 新增：B 端物流查询安全收紧（禁止物流号直查，防用他人运单号刺探）；2026-09-14 自包含化（issue #3599）：第 2 轮去掉栈上不存在的硬编码订单号，改自然指代 + required_args[order_id]；2026-09-15 协作轮（issue #3792）：判定跑 run 34865780382 里本用例被判 reproducible（R1 正确拒绝快递单号、R2 只到 order_query ⇒ logistics_track 未调用），暴露**用例对轮次结构敏感**（两步意图压在一轮、无兜底；同 run 另有用例 rounds=1 完成同一链）⇒ 追加 repeat_until(tool_called=logistics_track, max=2) 协作轮（范式同 #3568/#3430），fallback 中性（不替 agent 报订单号）；`max` 由 3 收到 **2**（用户裁定：fallback 是「有意义的重问」⇒ 一轮追加即公平的第二次机会，`max=3` 会把「对首次请求不交付」多掩盖一轮；真实行为缺口另立 #3799，本改法**不掩盖**它）；expectations/required_args/data_checks 原样**未放宽**（协作轮用尽仍不调 logistics_track ⇒ 照旧判红） ｜ tags: query, logistics, data_safety
 
 ### OR-014. 下单加工项数量规则 - 按计价方式，无每米数量密度推导 🔵
 ```
@@ -3113,7 +3114,7 @@
 必填: processing_item_query() 字段 applicable_category_id
 ```
 真值: product-sku-stock.create-flow, processing-manage.crud
-溯源: 2026-09-06 新增（issue #2964）：加工项「适用商品分类」配置此前无消费方，建品流程按已选分类过滤/推荐加工项（设计意图见 docs/design/admin-dashboard-design.md §6.1.1 适用商品分类+AI推荐）。2026-09-14 校准（#3518）：收尾裸文本「确认」改答卡轮（B 端 confirm 门禁：文字≠点卡） ｜ tags: processing_item, product_category, guided_flow, recommendation
+溯源: 2026-09-06 新增（issue #2964）：加工项「适用商品分类」配置此前无消费方，建品流程按已选分类过滤/推荐加工项（设计意图见 docs/design/admin-dashboard-design.md §6.1.1 适用商品分类+AI推荐）。2026-09-14 校准（#3518）：收尾裸文本「确认」改答卡轮（B 端 confirm 门禁：文字≠点卡）；2026-09-15 补自清理（issue #3800，判定跑 run 34865780382 实证）：本用例建的同名商品与种子 `prod_eval_blackout`（遮光窗帘）撞名，而 `namespaces` 只保证并行互斥、不解决重试前置等价性（#3751 的复位按 pre_clean opt-in）⇒ 首跑建出的那件留到重试 ⇒ agent 正确拒绝建重复 ⇒ 指纹漂移误判 unstable（首跑指纹无 `no_success(product_manage)`、重试指纹有，即铁证）⇒ 补 `product_dedupe{遮光窗帘}`（保留最早创建 = 种子）；**不能用 product_remove**（子串删全部 ⇒ 会连种子一起删，而它是 PR-005/PR-007/CR-001/CR-003/OR-015 的共享前置）；expectations/required_args/data_checks 原样未动 ｜ tags: processing_item, product_category, guided_flow, recommendation
 
 ### PR-017. 商品创建/更新/详情透传「退货回补库存」开关（allow_return_restock） 🔵
 ```

@@ -288,21 +288,80 @@ _PRECLEAN_TYPES = frozenset({
     "employee_remove",         # 员工删除（HR-002 产物清理；#3781 新增）
 })
 
+# ── pre_clean 的**两族语义**（issue #3791；判定跑 34865780382 的 CU-003 假红）──────
+# 为什么必须分族：`_PRECONDITION_NOT_APPLIED`（#3781）的语义是「用例**依赖**的前置不在位」
+# ⇒ 用例带着假前置跑完 ⇒ 结论不可归因于 agent。但**清理型**（remove/delete）的前置语义
+# **相反** —— 它要求的是「该对象**不在**脏状态」：
+#   · 目标本就不存在 ⇒ 前置**已满足**（no-op 即成功）⇒ **不得进结论**（至多 ℹ️）；
+#   · 旧实现把这一格也标成 `_PRECONDITION_NOT_APPLIED` ⇒ **良性 no-op 被判失败**：
+#     实测 run 34865780382 的 CU-003（`customer_tag_remove` 的目标标签不在目录里）被折成
+#     score=0 ⇒ 它又在 `KEY_JOURNEYS_MIBAO` 里 ⇒ 整条 B 端腿 `completion.ok=false`
+#     （`journey_failures=["CU-003"]`）。同一格在 #3781 之前是静默跳过、用例**通过**
+#     （⑤ 的 CU-003 条目 score=1.0）⇒ 这是**过度扩大**（假红），不是修好的洞。
+# 准备型（create/prepare/reactivate/dedupe/断言前置）**不受影响**：未应用**必须**进结论。
+#
+# 新增 type 时必须**显式选族**（L0 不变式锁死）——"目标不存在"算不算问题是由**前置语义**
+# 决定的，不允许默认落到任何一边。
+_PRECLEAN_CLEANUP_TYPES = frozenset({
+    "product_remove",       # 建品残留清理：目标商品不存在 = 没什么可清
+    "customer_tag_remove",  # 客户标签清理：标签不在目录 / 客户没这个标签 = 没什么可清
+    "employee_remove",      # 员工删除（#3788，HR-002「谁造的谁清」）：首跑还没造出重名员工
+                            # ⇒ **良性 no-op**。⚠️ 本任务最容易踩错的一格：把它算成
+                            # "前置未应用"会**复活 HR-002/HR-003 的恒红**
+                            # （`test_eval_preclean_registry.py` 有专项守卫）。
+})
+
 # 配置错误的**稳定前缀**：`_pre_clean_for_case` 据此把它们折进用例结论
 # （形态对齐 `db_verify: 不支持的 fetch 配置` → 签名折叠成 `config_error(db_verify)`）。
 _PRECLEAN_CONFIG_ERR = "pre_clean: 不支持的 type"
 
-# 「前置**未应用/未生效**」的稳定标记（issue #3781）。两族：
+# 「**前置未应用**」的稳定标记（issue #3781，**只对准备型有意义**）。两类：
 #   · `_PRECLEAN_CONFIG_ERR`      —— 夹具层配置错误（type 未知/未实现）⇒ 数据压根没准备；
-#   · `_PRECONDITION_NOT_APPLIED` —— 夹具层**目标状态不存在，清理无从施加**（员工/标签查不到），
-#     即"本该被清掉/复位的那个前置在库里根本没有"。两者都让用例带着**假前置**跑完，
-#     旧实现只打印一行日志（`migao-acceptance`「空跑：绿了但没跑」同族）。
+#   · `_PRECONDITION_NOT_APPLIED` —— 夹具层**该在位的目标状态不存在**（员工/工单查不到）⇒
+#     用例带着**假前置**跑完，旧实现只打印一行日志（`migao-acceptance`「空跑：绿了但没跑」同族）。
 # 处置：折进用例结论（score=0 + 进 summary 的 `failures`，形态对齐
 # `db_verify: 不支持的 fetch 配置` → `config_error(db_verify)`），并在重试边界
 # 复用同一标记表达"第二次尝试的前置与首次不等价"（#3751 标记语义从"复位失败"扩到
 # "前置压根没被应用"）。
+# ⚠️ **清理型不适用本标记**（issue #3791）：目标不存在 = 前置**已满足**，走
+# `_PRECLEAN_NOOP`（可见但不进结论）。判据由 `_classify_preclean_message` **单点**保证。
 _PRECONDITION_NOT_APPLIED = "pre_clean: 前置未应用"
 _PRECLEAN_BAD_MARKERS = (_PRECLEAN_CONFIG_ERR, _PRECONDITION_NOT_APPLIED)
+
+# 清理型「目标本就不存在」的**良性 no-op** 稳定标记（issue #3791）。它**不是**坏标记：
+#   · 不进结论（不在 `_PRECLEAN_BAD_MARKERS` 里）⇒ 良性清理不会被判成失败；
+#   · 但必须**可见**（随 `pre_clean` 字段落盘）：#3781 的初衷是"清理防线有没有真的生效"
+#     不能只靠一行日志 —— 若名字拼错（如 CU-003 的 `VIP2活跃` vs 种子目录的 `VIP2`/`活跃`），
+#     本标记就是"这条用例的清理防线空转"的书面证据（见 issue #3794）。
+_PRECLEAN_NOOP = "pre_clean: 清理型目标不存在（良性 no-op）"
+
+
+def _cleanup_noop_message(spec: dict, detail: str) -> str:
+    """清理型（remove/delete）目标不存在时的**良性 no-op** 文案（单一事实源，纯函数）。
+
+    为什么不复用 `_PRECONDITION_NOT_APPLIED`：那是"用例**依赖**的前置不在位"（夹具层缺口）。
+    清理型的前置是**否定式**的（"该对象不该在脏状态"）—— 目标不存在恰恰**满足**它。
+    ⚠️ 措辞红线（#3751）：良性路径的消息不得含「未复位」/「失败」——`_reset_for_retry`
+    据此判"重试前置与首次不等价"，误判会把结论标成不可归因于 agent。
+    """
+    return (f"{_PRECLEAN_NOOP}: {spec.get('type')} 的目标不存在（{detail}）"
+            f"—— 清理型前置的目标本就不该存在，no-op 即成功 ⇒ 不进结论；"
+            f"若这是**拼错的名字**（如 CU-003 的 `VIP2活跃` vs 种子目录 `VIP2`/`活跃`），"
+            f"说明该用例的清理防线在空转，需登记到 issue（issue #3794）")
+
+
+def _classify_preclean_message(spec: dict, msg: str) -> str:
+    """按**族**归类 `_run_pre_clean_action` 的原始消息（纯函数，单点保证 #3791）。
+
+    · 清理型（`_PRECLEAN_CLEANUP_TYPES`）：目标不存在 = **前置已满足** ⇒ 把误标的
+      `_PRECONDITION_NOT_APPLIED` **降级**成 `_PRECLEAN_NOOP`（不进结论）。放在这里而不是
+      只改调用点，是为了让**将来新增的清理型**不可能重新引入同一种假红。
+    · 其余（准备型 + 配置错误）：**原样返回** ⇒ #3781 的成果不退化（未应用照旧进结论）。
+    """
+    t = str((spec or {}).get("type") or "")
+    if t in _PRECLEAN_CLEANUP_TYPES and str(msg).startswith(_PRECONDITION_NOT_APPLIED):
+        return _cleanup_noop_message(spec, str(msg).split(":", 2)[-1].strip())
+    return msg
 
 
 def namespace_claims(case) -> set:
@@ -440,7 +499,18 @@ async def _eval_remove_users(client, headers, name: str = "", phone: str = "") -
 
 
 async def _run_pre_clean(token: str, spec: dict) -> str:
-    """评测前数据清理（写类 case 自我污染防线，§14.2/CU-003）。
+    """评测前数据清理（写类 case 自我污染防线，§14.2/CU-003）——**唯一对外入口**。
+
+    issue #3791：本入口只做一件事 —— 把动作层的结果按**族**归类
+    （`_classify_preclean_message`）。清理型的"目标不存在"是良性 no-op（不进结论），
+    准备型的"前置未应用"照旧进结论（#3781 不退化）。判据在**一处**，动作实现在
+    `_run_pre_clean_action`（调用方/测试只需要本函数）。
+    """
+    return _classify_preclean_message(spec, await _run_pre_clean_action(token, spec))
+
+
+async def _run_pre_clean_action(token: str, spec: dict) -> str:
+    """一次 pre_clean 动作的**实现体**（原始消息；族归类见 `_run_pre_clean`）。
 
     支持类型：
     - customer_tag_remove: 移除「customer_keyword 匹配的第 customer_index 位客户」
@@ -617,11 +687,14 @@ async def _run_pre_clean(token: str, spec: dict) -> str:
         tag_id = next((t.get("id") for t in tags
                        if isinstance(t, dict) and t.get("name") == spec.get("tag_name")), None)
         if not tag_id:
-            # #3781：标签目录里没有该标签 ⇒ 本次清理**无从施加**（前置未应用）。
-            # 对 CU-003 而言这一格未必隐藏缺陷（用例是"加标签"，标签不在目录里本就无需清），
-            # 但**必须可见**：否则"写类 case 的自我污染防线有没有真的生效"在报告里读不出来。
-            return (f"{_PRECONDITION_NOT_APPLIED}: 标签「{spec.get('tag_name')}」不在标签目录里"
-                    f"（清理无从施加；若用例确实依赖该标签已存在，这就是数据层缺口）")
+            # 标签目录里没有该标签 ⇒ 本次清理**无从施加**。但本类型是**清理型**：
+            # 它要求的前置是「该标签**不在**目标客户身上」—— 目录里没有它 ⇒ 前置**已满足**
+            # ⇒ **良性 no-op，不得进结论**（issue #3791：旧实现标 `_PRECONDITION_NOT_APPLIED`
+            # ⇒ CU-003 被折成 score=0 ⇒ 它在 `KEY_JOURNEYS_MIBAO` 里 ⇒ 压掉整条 B 端腿的 ok）。
+            # 但仍**必须可见**（否则"写类 case 的自我污染防线有没有真的生效"读不出来）：
+            # 名字拼错时本标记就是防线空转的书面证据（CU-003 的 `VIP2活跃` vs 种子目录的
+            # `VIP2`/`活跃`，见 issue #3794）。
+            return _cleanup_noop_message(spec, f"标签「{spec.get('tag_name')}」不在标签目录里")
         if tag_id in (customer.get("tags") or []):
             await c.delete(f"{ADMIN_API}/api/admin/customers/{cid}/tags/{tag_id}",
                            headers=h, timeout=15)
@@ -5573,8 +5646,15 @@ async def run_suite(cases, label: str, classify: bool = True, retry_budget: int 
 
         if CASE_SLEEP:
             await asyncio.sleep(CASE_SLEEP)  # rate limit（可配：EVAL_CASE_SLEEP）
-        # 用例级耗时（含重试与重试前置复位；不含调度器的 pre_clean 独占窗口）——
+        # 用例级**驻留时长**（含重试与重试前置复位；含并行道的**读位排队**；
+        # 不含调度器的 pre_clean 独占窗口与串行道的写位等待）——
         # issue #3761：`cost.cases` 由它聚合而来，慢用例/重试尾巴一眼可见。
+        # ⚠️ 口径（issue #3793，判定跑 34865780382 实证）：这是**从入队到结束的驻留时长**，
+        # **不是**单条用例自身的执行耗时 —— 并行道的读位（`EVAL_CONCURRENCY`）在 `_t0` **之后**
+        # 才获取（`attempt_scope=gate.reader`），故"排队等资源"被算进来了：该 run 里
+        # `PR-015=1511.2s` ≈ 整腿 `wall_clock_s=1513.2s`，`Σcases≈72900s` 是墙钟的 ~48 倍。
+        # 且两条道**口径不对称**：串行道（`_serial_task`）先取 `gate.writer()` 再进本函数
+        # ⇒ 它的独占等待**不计入**。要"单条真实耗时"需另加读数（本 issue 不做）。
         r["duration_s"] = round(time.monotonic() - _t0, 1)
         return r
 
@@ -6027,13 +6107,23 @@ def _cost_block(results: list, elapsed_s: float) -> dict:
 
     字段（全部来自本轮**实测**，不估算、不编造）：
       wall_clock_s   本轮 runner 墙钟秒数（由 main 计时；测试/单跑未注入时为 null）
-      cases          {用例 ID: 耗时秒}（含重试与重试前置复位；由 `_run_one_case` 记）
-      avg_case_s     每条用例平均耗时（无用例时为 null）
-      slowest_cases  最慢 3 条 [(ID, 秒)]，降序 —— 成本归因的入口
+      cases          {用例 ID: **驻留**秒数}（含重试、重试前置复位、**并行道读位排队**；
+                     不含 `pre_clean` 独占窗口与串行道写位等待；由 `_run_one_case` 记）
+      avg_case_s     每条用例平均**驻留**秒数（无用例时为 null）
+      slowest_cases  驻留最久的 3 条 [(ID, 秒)]，降序 —— 成本归因的入口
       retried_cases  发生过重试的用例 ID（重试 = 成本翻倍的直接来源）
       tokens         **恒为 null**：本 runner 只经 HTTP/SSE 调 ai-agent-service，
                      token 用量产生在**服务内部**（服务侧才有 LLM 客户端），runner 侧拿不到
       tokens_note    为什么是 null（不编数字）
+
+    ⚠️ **读法（口径，issue #3793）**：`cases`/`avg_case_s`/`slowest_cases` 是**驻留时长**
+    （入队 → 结束），**不是单条用例的执行耗时** —— 并行道（`EVAL_CONCURRENCY`）的读位在
+    `_t0` 之后才获取 ⇒ **排队等资源的时间被计入**；且两条道不对称（串行道先取写位再计时，
+    故它的独占等待不计入）。判据（判定跑 `34865780382`，B 端 mibao）：`slowest_cases` 首条
+    `PR-015=1511.2s` ≈ `wall_clock_s=1513.2s`，`Σcases≈72900s` ≈ 墙钟的 48 倍，
+    而同 run 里串行的 `HR-002=13.7s` / `PR-005=14.8s` 是小值 —— 即"最慢榜"实际是
+    "**排队最久**榜"，把它读成"这条用例自身最慢/最贵"会误判成本归因。
+    **要单条真实耗时需另加读数（本 issue 不改判定逻辑、也不加字段）。**
     """
     cases = {str(r.get("case_id") or "?"): r.get("duration_s") for r in results
              if r.get("duration_s") is not None}

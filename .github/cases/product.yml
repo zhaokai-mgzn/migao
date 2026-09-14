@@ -736,6 +736,20 @@ cases:
     # 与同名商品的建/删用例自动互斥（否则会出现"同名多件"→ agent 发选择卡 → 目标工具不执行）。
     namespaces:
       - "product_name:遮光窗帘"
+    # 自清理（issue #3800）：本用例**建一件与种子同名**的商品（种子 `prod_eval_blackout`
+    # 也叫「遮光窗帘」，见 fixtures 的 seed），而 `namespaces` 只保证**并行互斥**、
+    # **不解决重试前置等价性** —— #3751 的重试复位按 `pre_clean` **opt-in**，没有它
+    # 就不复位 ⇒ 首跑建出的那件留到重试 ⇒ agent **正确地**拒绝建重复商品
+    # （重试轮 trace 原文：「系统里已经有一款完全一致的「遮光窗帘」了，再建一条会变成重复商品」）
+    # ⇒ 两次尝试前置不同（首跑 1 件 → 重试 2 件）⇒ 指纹漂移 ⇒ 误判 `unstable`。
+    # 判据（run 34865780382 的 flake 台账）：首跑指纹里**没有** `no_success(product_manage)`
+    # （= 首跑真的建出来了）而重试指纹有 ⇒ 两次成因不同，根因就是这一格。
+    # ⚠️ 只能用 `product_dedupe`（**保留最早创建 = 种子**、删掉用例自造的那件）：
+    # `product_remove` 按子串删**全部**命中项 ⇒ 会连种子一起删，而「遮光窗帘」是
+    # PR-005/PR-007/CR-001/CR-003/OR-015 的共享前置（改名空间声明可见）。
+    pre_clean:
+      - type: product_dedupe
+        product_keyword: "遮光窗帘"
 
     expectations:
       - tool: category_manage
@@ -758,7 +772,7 @@ cases:
       - "当前分类无匹配加工项时以文字提示可跳过，不空转强制选择"
       - "最终创建成功且关联加工项数量正确"
     skip_reason: ""
-    merge_log: "2026-09-06 新增（issue #2964）：加工项「适用商品分类」配置此前无消费方，建品流程按已选分类过滤/推荐加工项（设计意图见 docs/design/admin-dashboard-design.md §6.1.1 适用商品分类+AI推荐）。2026-09-14 校准（#3518）：收尾裸文本「确认」改答卡轮（B 端 confirm 门禁：文字≠点卡）"
+    merge_log: "2026-09-06 新增（issue #2964）：加工项「适用商品分类」配置此前无消费方，建品流程按已选分类过滤/推荐加工项（设计意图见 docs/design/admin-dashboard-design.md §6.1.1 适用商品分类+AI推荐）。2026-09-14 校准（#3518）：收尾裸文本「确认」改答卡轮（B 端 confirm 门禁：文字≠点卡）；2026-09-15 补自清理（issue #3800，判定跑 run 34865780382 实证）：本用例建的同名商品与种子 `prod_eval_blackout`（遮光窗帘）撞名，而 `namespaces` 只保证并行互斥、不解决重试前置等价性（#3751 的复位按 pre_clean opt-in）⇒ 首跑建出的那件留到重试 ⇒ agent 正确拒绝建重复 ⇒ 指纹漂移误判 unstable（首跑指纹无 `no_success(product_manage)`、重试指纹有，即铁证）⇒ 补 `product_dedupe{遮光窗帘}`（保留最早创建 = 种子）；**不能用 product_remove**（子串删全部 ⇒ 会连种子一起删，而它是 PR-005/PR-007/CR-001/CR-003/OR-015 的共享前置）；expectations/required_args/data_checks 原样未动"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_processing_item_query.py"

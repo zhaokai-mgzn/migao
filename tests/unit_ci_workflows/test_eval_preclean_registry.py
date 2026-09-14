@@ -19,16 +19,36 @@ return f"未知 pre_clean 类型: {_type}（跳过）"
   （**HR-003 的停用前置根本没复位**，却只有一行日志）；
 - `customer_tag_remove` 的标签不在目录里 ⇒ 旧文案「不存在（跳过清理）」。
 
-## 本文件锁四条
+## 反向的洞（issue #3791，本文件新增）：**过度扩大**同样是缺陷
+
+#3781 把上面那条判据套到了**所有** type 上，但两族的语义**相反**（见
+`runner._PRECLEAN_CLEANUP_TYPES` 的注释）：清理型（remove/delete）的前置是**否定式**的
+（"该对象**不在**脏状态"）⇒ **目标本就不存在 = 前置已满足**（良性 no-op）。
+把它也折进结论的实测代价（判定跑 `34865780382`，SHA `4e5b33db`）：
+
+```
+completion.reason = "必须处理的失败 2 条: OR-013, PR-016；关键旅程失败 1 条: CU-003"
+cases[CU-003] = {"score": 0.0, "classification": "pass",   # ← 行为侧首跑全绿，被夹具层折成 0
+                 "precondition": "PRECONDITION_NOT_APPLIED: 夹具层前置未生效/未应用 …"}
+```
+
+`CU-003 ∈ KEY_JOURNEYS_MIBAO` ⇒ 一条良性 no-op **单独压掉整条 B 端腿的 `ok`**；而同一格在
+#3781 之前是静默跳过、用例 `score=1.0` **通过**（⑤ 的条目）⇒ 这是**假红**，不是修好的洞。
+⚠️ 最容易踩错的一格：`employee_remove`（#3788）也是清理型 —— 首跑还没造出重名员工时它必然
+no-op，把它算成失败会**复活 HR-002/HR-003 的恒红**。
+
+## 本文件锁五条
 
 1. **注册表是单一事实源**：用例库里出现的每个 `pre_clean` type ∈ `runner._PRECLEAN_TYPES`
    （漏实现/拼错 ⇒ CI 直接红，而不是静默少做一件事）；
 2. **配置错误可辨**：未知 type 返回带稳定前缀的**配置错误**，且
    `check_preclean_not_applied` 能把它捞出来（不再只是一行日志）；
-3. **前置未应用 ⇒ 进结论**：折成 case-level 失败原文 + `precondition` 标记
+3. **前置未应用 ⇒ 进结论**（**准备型**）：折成 case-level 失败原文 + `precondition` 标记
    （#3751 标记语义从"复位失败"扩到"前置压根没被应用"）；
 4. **幂等消息不误判**：正常成功路径的消息（含「无需清理」「幂等」）**不得**被判成配置错误
-   —— 否则每个用例都会带着假的"前置未应用"标记。
+   —— 否则每个用例都会带着假的"前置未应用"标记；
+5. **两族分开**（#3791）：每个 type 必须**显式**归入一族；清理型的"目标不存在"走
+   `_PRECLEAN_NOOP`（可见、**不进结论**），准备型的未应用**照旧进结论**。
 
 ## 红证
 
@@ -38,7 +58,11 @@ return f"未知 pre_clean 类型: {_type}（跳过）"
 | ③ 未应用 ⇒ 标记 | `test_not_applied_folds_into_the_case_verdict` 断言原文进 `failed` 且 `precondition` 被写上；删掉折叠逻辑即红 |
 | ④ 幂等不误判 | `test_idempotent_success_messages_are_not_flagged` 用真实成功文案；把判据放宽成 `"跳过" in msg` 即红 |
 | ① 注册表 | `test_every_declared_type_is_registered` —— 往任意用例加一个 `type: foo` 即红 |
+| ⑤ 清理型 no-op 不判失败（#3791） | `test_real_cu003_shape_is_a_benign_noop_end_to_end` —— 走 CU-003 的**真实分支**（假 HTTP 罐装目录）；把该分支改回 `_PRECONDITION_NOT_APPLIED` 即红（见 PR 红证记录） |
+| ⑤ 准备型未应用仍判失败（#3791） | `test_prepare_family_not_applied_still_fails_end_to_end` —— 员工查不到 ⇒ 标记保留 ⇒ KEY_JOURNEY 失败；把 `_classify_preclean_message` 的判据放宽成"所有 type 都降级"即红 |
+| ⑤ employee_remove 留在清理型 | `test_employee_remove_absence_is_benign_not_a_failure` —— 把它移出 `_PRECLEAN_CLEANUP_TYPES` 即红 |
 """
+import json
 import re
 import sys
 import types
@@ -99,10 +123,16 @@ class TestRegistryIsTheSingleSource:
 
         `customer_tag_remove` 走的是**兜底分支**（`if _type != "customer_tag_remove": 报配置错误`
         —— 它排在最后，落到那里即它），故两种形态都算「有实现」。
+
+        ⚠️ 源码切片的锚点是 `_run_pre_clean_action`（**实现体**）而不是 `_run_pre_clean`
+        （issue #3791 之后后者只是"按族归类"的薄入口，切它会切到空壳 ⇒ 本守卫静默空跑，
+        正是本仓库"绿了但没跑"的形态）。
         """
         src = Path(REPO_ROOT / "tests" / "agent_eval" / "local_runner.py").read_text(encoding="utf-8")
-        start = src.index("async def _run_pre_clean(")
+        start = src.index("async def _run_pre_clean_action(")
         body = src[start:src.index("\nasync def ", start + 10)]
+        assert "_type ==" in body, (
+            "源码切片切到了空壳（锚点漂移）——本守卫会静默空跑，必须改锚点")
 
         def _implemented(t: str) -> bool:
             return f'_type == "{t}"' in body or f'_type != "{t}"' in body
@@ -197,3 +227,186 @@ class TestRealCasesUseTheNewTypeMinimally:
         assert h3[0].get("employee_phone") == "13700137000", (
             f"HR-003 的复位没有用手机号精确定位（会命中 HR-002 造的同名「王五」）：{h3}")
         assert re.fullmatch(r"\d{11}", str(h3[0]["employee_phone"]))
+
+
+class TestCreateCasesDeclareTheirOwnCleanup:
+    """写类「创建全局可命名对象」用例必须能**自清理**（issue #3800）。
+
+    为什么单锁一条（PR-016）：`namespaces` 只给**并行互斥**，**不解决重试前置等价性** ——
+    #3751 的重试复位按 `pre_clean` **opt-in**（`_reset_for_retry` 对未声明者返回 None）
+    ⇒ 没有 `pre_clean` 的建品用例，首跑造出的商品会留到重试 ⇒ agent **正确地**拒绝建重复
+    ⇒ 两次前置不同 ⇒ 指纹漂移 ⇒ 误判 `unstable`（本 run 的 PR-016 实红）。
+    """
+
+    def _by_id(self, fname: str) -> dict:
+        import yaml
+        doc = yaml.safe_load((CASES_DIR / fname).read_text(encoding="utf-8"))
+        return {c["id"]: c for c in doc["cases"]}
+
+    def test_pr016_cleans_its_own_seed_colliding_product(self):
+        """PR-016 建的商品与**种子同名**（「遮光窗帘」/ `prod_eval_blackout`）⇒
+        必须用 `product_dedupe`（保留最早创建 = 种子），**不能**用 `product_remove`
+        （子串删全部 ⇒ 会连种子一起删，而它是 5 条用例的共享前置）。"""
+        c = self._by_id("product.yml")["PR-016"]
+        assert "遮光窗帘" in str(c.get("user_inputs") or ""), (
+            "PR-016 的输入变了？本守卫的前提是「它建的商品与种子同名」")
+        pc = c.get("pre_clean") or []
+        assert [s.get("type") for s in pc] == ["product_dedupe"], (
+            f"PR-016 缺自清理 ⇒ 重试前置与首跑不等价（#3800）：{pc}")
+        assert pc[0].get("product_keyword") == "遮光窗帘", pc
+        assert "product_name:遮光窗帘" in (c.get("namespaces") or []), c.get("namespaces")
+
+    def test_pr016_does_not_use_the_destructive_remove(self):
+        """**红证锚点**：`product_remove` 会删**全部**子串命中项（含种子）——
+        对「遮光窗帘」这种共享前置是破坏性的，必须被本守卫挡住。"""
+        assert "product_remove" not in [s.get("type")
+                                        for s in (self._by_id("product.yml")["PR-016"].get("pre_clean") or [])]
+
+
+# ── httpx 替身：零网络、零 LLM 地走**真实分支**（issue #3791 的红证手段）──────────
+# 为什么需要它：本文件的其余用例只能断言**纯函数**（消息 → 是否折叠）。而 #3791 的病灶
+# 长在**分支里**（`customer_tag_remove` 的"标签不在目录"那一格）—— 只测纯函数会漏掉它，
+# 且无法证明"这次确实走到了那一格"（`migao-acceptance` v1.7：重放要给出**前置条件的观测值**，
+# 否则"绿了但路径没被行使"）。故用罐装响应把真实分支跑通，并断言**真的查了目录**。
+class _FakeResp:
+    def __init__(self, payload: bytes = b"{}", status_code: int = 200):
+        # `_safe_json` 读 `.content`（不是 `.json()`），照它的口径造
+        self.content = payload
+        self.status_code = status_code
+
+
+class _FakeAsyncClient:
+    def __init__(self, routes: dict, calls: list):
+        self._routes, self._calls = routes, calls
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc):
+        return False
+
+    def _resp(self, url: str) -> _FakeResp:
+        self._calls.append(url)
+        for key, payload in self._routes.items():
+            if key in url:
+                return _FakeResp(json.dumps(payload).encode("utf-8"))
+        return _FakeResp(b"{}", 404)
+
+    async def get(self, url, **kw):
+        return self._resp(url)
+
+    async def delete(self, url, **kw):
+        return self._resp(url)
+
+    async def put(self, url, **kw):
+        return self._resp(url)
+
+
+class _FakeHttpx:
+    """`httpx` 模块替身：只提供 runner 用到的 `AsyncClient`（零网络）。"""
+
+    def __init__(self, routes: dict):
+        self._routes, self.calls = routes, []
+
+    def AsyncClient(self, *a, **k):          # noqa: N802 —— 与 httpx 同名
+        return _FakeAsyncClient(self._routes, self.calls)
+
+
+def _cat(name: str, payload) -> _FakeHttpx:
+    return _FakeHttpx({name: payload})
+
+
+class TestCleanupFamilyNoopIsNotAFailure:
+    """issue #3791：清理型的"目标不存在"是**良性 no-op**，不得进结论。
+
+    判定跑 `34865780382` 的 CU-003 就是被这一格折成 `score=0` ⇒ 它 ∈ `KEY_JOURNEYS_MIBAO`
+    ⇒ 整条 B 端腿 `completion.ok=false`（而它行为侧 `classification=pass`）。
+    """
+
+    CU003_SPEC = {"type": "customer_tag_remove", "customer_keyword": "张三",
+                  "customer_index": 0, "tag_name": "VIP2活跃"}
+
+    def test_every_type_is_classified_into_exactly_one_family(self):
+        """**根因不变式**：每个注册 type 必须**显式**归族 —— 不允许默认落到任何一边。"""
+        assert isinstance(lr._PRECLEAN_CLEANUP_TYPES, frozenset)
+        assert lr._PRECLEAN_CLEANUP_TYPES <= lr._PRECLEAN_TYPES, (
+            "清理型登记表里有不在总注册表里的 type（`_run_pre_clean` 会走配置错误）："
+            f"{sorted(lr._PRECLEAN_CLEANUP_TYPES - lr._PRECLEAN_TYPES)}")
+        prepare = lr._PRECLEAN_TYPES - lr._PRECLEAN_CLEANUP_TYPES
+        assert prepare, "准备型为空？两族语义就无从区分了（注册表被改坏了）"
+        # 准备型的代表必须留在准备型（降级它 = 掏空 #3781）
+        assert "employee_reactivate" in prepare and "aftersales_ticket_prepare" in prepare
+
+    def test_employee_remove_absence_is_benign_not_a_failure(self):
+        """⚠️ **本任务最容易踩错的一格**：`employee_remove`（#3788）是清理型 ——
+        HR-002 首跑还没造出重名「王五」时，它必然 no-op；把它算成"前置未应用"
+        会**复活 HR-002/HR-003 的恒红**。"""
+        spec = {"type": "employee_remove", "employee_name": "王五",
+                "employee_phone": "13812345678"}
+        assert "employee_remove" in lr._PRECLEAN_CLEANUP_TYPES, (
+            "employee_remove 被移出清理型了 —— 它的 no-op 会开始判失败（HR-002/HR-003 复活）")
+        # ① 现状文案（幂等）本就不进结论
+        assert lr.check_preclean_not_applied(
+            ["无 「王五」（手机号 13812345678） 员工需清理（幂等）"]) == []
+        # ② 即便将来某次实现把它标成"前置未应用"，也必须被降级（单点保证）
+        demoted = lr._classify_preclean_message(
+            spec, f"{lr._PRECONDITION_NOT_APPLIED}: 员工「王五」查询 3 次未命中")
+        assert demoted.startswith(lr._PRECLEAN_NOOP), demoted
+        assert lr.check_preclean_not_applied([demoted]) == []
+
+    def test_real_cu003_shape_is_a_benign_noop_end_to_end(self, monkeypatch):
+        """**红证①**：CU-003 的**真实形态**（标签目录里没有 `VIP2活跃`）走**真实分支**
+        ⇒ 良性 no-op：不进结论、不折 score、CU-003 不再压整腿 `ok`。
+
+        罐装数据取自判定跑的 trace（`customer_manage(tags=2 count=2)` + 种子的
+        `VIP2`/`活跃`）—— 断言里同时证明**目录真被查了**（否则本用例会空跑通过）。
+        """
+        import asyncio
+        fake = _FakeHttpx({
+            "/api/admin/customers": {"data": {"items": [
+                {"id": "cust_eval_zhangsan", "name": "张三", "tags": []}]}},
+            "/api/admin/customer-tags": {"data": [
+                {"id": "tag_eval_vip2", "name": "VIP2"},
+                {"id": "tag_eval_active", "name": "活跃"}]},
+        })
+        monkeypatch.setattr(lr, "httpx", fake)
+        msg = asyncio.run(lr._run_pre_clean("tok", self.CU003_SPEC))
+
+        # 前置条件的观测值：目录**真的被查过**（不是空跑）
+        assert any("customer-tags" in u for u in fake.calls), fake.calls
+        assert msg.startswith(lr._PRECLEAN_NOOP), (
+            f"清理型的目标不存在没有走良性 no-op（#3791 的假红形态）：{msg!r}")
+        # 不进结论 ⇒ 失败身份也不是"前置未应用"
+        assert lr.check_preclean_not_applied([msg]) == [], "良性清理被折进了结论"
+        assert lr._failure_atom(msg, lr._CASE_LEVEL_DETAIL) != "precondition_not_applied(pre_clean)"
+        # 结论层：CU-003 是**关键旅程** ⇒ 它不进结论 = 不再压整腿 ok
+        v = lr.completion_verdict(
+            [{"case_id": "CU-003", "score": 1.0, "classification": "pass"}],
+            lr.KEY_JOURNEYS_MIBAO)
+        assert v["ok"] is True and v["journey_failures"] == [], v
+
+    def test_cleanup_noop_wording_avoids_the_reset_failure_wording(self):
+        """措辞红线（#3751）：良性 no-op 文案不得含「未复位」/「失败」——
+        否则重试边界会把它读成"前置未复位"（`PRECONDITION_NOT_RESTORED`）。"""
+        msg = lr._cleanup_noop_message(self.CU003_SPEC, "标签「VIP2活跃」不在标签目录里")
+        assert "未复位" not in msg and "失败" not in msg, msg
+        assert not msg.startswith(lr._PRECLEAN_BAD_MARKERS), msg
+
+    def test_prepare_family_not_applied_still_fails_end_to_end(self, monkeypatch):
+        """**红证②**：准备型（`employee_reactivate`）查不到目标 ⇒ 标记**保留** ⇒ 折叠 ⇒
+        HR-003 这条 KEY_JOURNEY 判失败。证明本修复**没有**把准备型一起放掉（#3781 不退化）。"""
+        import asyncio
+        spec = {"type": "employee_reactivate", "employee_name": "王五",
+                "employee_phone": "13700137000"}
+        fake = _cat("/api/admin/users", {"data": {"items": []}})
+        monkeypatch.setattr(lr, "httpx", fake)
+        msg = asyncio.run(lr._run_pre_clean("tok", spec))
+
+        assert any("/api/admin/users" in u for u in fake.calls), fake.calls
+        assert msg.startswith(lr._PRECONDITION_NOT_APPLIED), msg
+        assert lr.check_preclean_not_applied([msg]) == [msg], (
+            "准备型未应用没有被折叠 —— #3781 的成果退化了")
+        v = lr.completion_verdict(
+            [{"case_id": "HR-003", "score": 0.0, "classification": "pass"}],
+            lr.KEY_JOURNEYS_MIBAO)
+        assert v["ok"] is False and v["journey_failures"] == ["HR-003"], v

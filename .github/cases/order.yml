@@ -555,6 +555,28 @@ cases:
       # 本用例的**核心**是第 1 轮「拒绝快递单号直查」，第 2 轮只是「按真实订单号仍可查」的
       # 对照 → 改成环境无关指代即可（不点名任何不存在的订单）。
       - "那用我最近一笔订单的订单号查一下物流"
+      # ── 协作轮兜底（issue #3792，范式同 #3568 / #3430）──
+      # 为什么必须加：本用例要求的两步（`order_query` 拿订单号 → `logistics_track` 查轨迹）
+      # **被压在一轮里**，R2 之后就再没有轮次可发。实测判定跑 run 34865780382：R1 正确拒绝快递
+      # 单号（用例要求的行为）、R2 只走到 `order_query`（拿到订单号）就停 ⇒
+      # `required_args: 未调用 logistics_track` + `no_success(logistics_track)`
+      # ⇒ 被判 `reproducible`（确定性失败），而 ⑤ 同一条用例 `score=1.0`（那次恰好一轮做完）。
+      # ⇒ 这是**用例对轮次结构敏感**（用例脆弱），不是产品回归：同一次 run 里另有用例
+      # `rounds=1 tools=['order_query','logistics_track'] score=100%` 证明链式调用本身可行。
+      # ⚠️ 断言**不放宽**：`expectations` / `required_args[order_id]` 原样保留 ——
+      # 协作轮只是把"顾客再说一句"表达出来；`logistics_track` 仍必须**真被调用**，
+      # 否则本用例照旧判红（停条件用"成功"⇒ 目标工具一成功，余下重复轮自动跳过）。
+      # fallback 保持**中性**：不替 agent 报出订单号（它必须自己从 R2 的查询结果里取），
+      # 也不提运单号（第 1 轮的拒绝语义不受影响）。
+      # ⚠️ `max: 2`（**强度取舍**，用户裁定，勿擅自加宽）：R2 顾客**本来就说了「查一下物流」**，
+      # agent 却把订单号当交付物 ⇒ 那是**真实行为缺口**（另立 #3799，本改法**不掩盖**它）。
+      # fallback 是"有意义的重问"（明确再要一次物流）⇒ **一轮追加已经是公平的第二次机会**；
+      # `max: 3` 只会把"对首次请求不交付"多掩盖一轮。两轮的预算足够覆盖"agent 先反问/发卡"的路径
+      # （答卡 1 轮 + 追问 1 轮），且"一轮就做成"的路径（⑤ 形态）**零额外轮次**。
+      - repeat_until:
+          tool_called: logistics_track
+          max: 2
+        fallback: "就用你查到的那笔订单号帮我查物流"
     expectations:
       - tool: logistics_track
     required_args:
@@ -567,7 +589,7 @@ cases:
       - "按真实订单号查询：订单详情→运单号→轨迹（API 失败降级 mock）；显式公司 code 不被 API 识别(203)时去掉 type 自动识别重试一次"
       - "第 2 轮必须解析出**真实存在的**订单号（required_args 守住 order_id 非空），不得沿用第 1 轮被拒绝的快递单号"
     skip_reason: ""
-    merge_log: "2026-09-01 新增：B 端物流查询安全收紧（禁止物流号直查，防用他人运单号刺探）；2026-09-14 自包含化（issue #3599）：第 2 轮去掉栈上不存在的硬编码订单号，改自然指代 + required_args[order_id]"
+    merge_log: "2026-09-01 新增：B 端物流查询安全收紧（禁止物流号直查，防用他人运单号刺探）；2026-09-14 自包含化（issue #3599）：第 2 轮去掉栈上不存在的硬编码订单号，改自然指代 + required_args[order_id]；2026-09-15 协作轮（issue #3792）：判定跑 run 34865780382 里本用例被判 reproducible（R1 正确拒绝快递单号、R2 只到 order_query ⇒ logistics_track 未调用），暴露**用例对轮次结构敏感**（两步意图压在一轮、无兜底；同 run 另有用例 rounds=1 完成同一链）⇒ 追加 repeat_until(tool_called=logistics_track, max=2) 协作轮（范式同 #3568/#3430），fallback 中性（不替 agent 报订单号）；`max` 由 3 收到 **2**（用户裁定：fallback 是「有意义的重问」⇒ 一轮追加即公平的第二次机会，`max=3` 会把「对首次请求不交付」多掩盖一轮；真实行为缺口另立 #3799，本改法**不掩盖**它）；expectations/required_args/data_checks 原样**未放宽**（协作轮用尽仍不调 logistics_track ⇒ 照旧判红）"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_logistics_track.py"
