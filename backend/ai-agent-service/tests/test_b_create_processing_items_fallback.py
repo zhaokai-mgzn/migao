@@ -27,6 +27,7 @@ from langchain_core.messages import HumanMessage, ToolMessage
 
 from app.graph.skills.base_skill import (
     _b_create_processing_items_not_asked,
+    _has_processing_choice_in_turn,
     _plan_b_create_processing_items_rewrite,
 )
 from app.tools.processing_item_query import ProcessingItemQueryTool
@@ -280,3 +281,45 @@ def test_existing_c_side_fallback_does_not_cover_b_create():
             _query_msg(), _user("颜色米白色，货号 TEST-001")]
     assert not _plan_processing_items_rewrite([confirm], msgs), (
         "C 端兜底按 product_detail 取事实源 ⇒ 对 B 端建品形态必然不生效（故本 PR 另立 processing_item_query 事实源）")
+
+
+# ── ⑥ 记账判据：模型**自己**发出的加工项卡也要被识别（记账时机回归锁） ──
+# 背景：调用点原先把「已问过」记账**嵌在改写分支内** ⇒ 模型自己发卡（`_bp_plan` 为 None）时不记账
+# ⇒ 本会话后续轮次的 confirm 卡会被兜底重问一遍（PR-014 data_check「未再次询问加工项」要防的形态）。
+# 记账判据本身复用既有纯函数 `_has_processing_choice_in_turn`（本次之前是**未使用的死代码**）。
+
+def test_has_processing_choice_in_turn_detects_model_emitted_card():
+    """模型自己发的加工项多选卡 → 必须被判为"本轮已问过"（据此记账）。"""
+    card = _result("interact", {"component": "choice", "multiSelect": True,
+                                "title": "测试窗帘 — 选择加工项（可多选，也可跳过）",
+                                "options": [{"label": "纳米圈打孔 ¥8/米",
+                                             "value": "proc_item_pi_a1b2c3d4"}]})
+    assert _has_processing_choice_in_turn([_confirm_card(), card]) is True
+
+
+def test_has_processing_choice_in_turn_ignores_unrelated_or_failed_cards():
+    """非加工项卡、以及失败（未真正下发）的卡都不算"已问过"。"""
+    other = _result("interact", {"component": "choice", "title": "请选择售卖方式",
+                                 "options": [{"label": "散剪", "value": "bulk_cut"}]})
+    failed = _result("interact", {"component": "choice", "title": "选择加工项",
+                                  "options": [{"value": "proc_item_x"}]}, success=False)
+    assert _has_processing_choice_in_turn([_confirm_card(), other, failed]) is False
+
+
+def test_control_marking_inside_rewrite_branch_is_skipped_on_model_card():
+    """承重证明（记账时机的红证）：模型**自己**发加工项卡时，改写计划必然为 None
+    ⇒ 若记账嵌在改写分支内（= main 上的形态），记账**永不执行**；而记账判据此时为真。
+
+    本 PR 把记账改为与改写分支**并列**，正是为了消除这个"模型自己问过、却记不上账"的洞
+    （否则本会话后续轮次的 confirm 卡会被兜底重问一遍 = PR-014 data_check 要防的形态）。
+    """
+    model_card = _result("interact", {"component": "choice", "multiSelect": True,
+                                      "title": "请选择要关联的加工项（可多选，也可跳过）",
+                                      "options": [{"label": "纳米圈打孔 ¥8/米",
+                                                   "value": "proc_item_pi_a1b2c3d4"}]})
+    results = [model_card, _confirm_card()]
+    plan = _plan_b_create_processing_items_rewrite(
+        results, [_user("分类选窗帘"), _query_msg()])
+    assert not plan, "本轮已发过加工项卡 ⇒ 改写计划返回 None（旧嵌套下记账被跳过）"
+    assert _has_processing_choice_in_turn(results) is True, \
+        "记账判据必须为真 ⇒ 应当记账（本 PR 的修法）"
