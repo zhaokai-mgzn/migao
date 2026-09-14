@@ -133,6 +133,27 @@ def test_checker_red_proof_injected_phantom_field():
         ["must_not_exist"], "判据对「后端没有的必填字段」无反应 —— 守卫失效"
 
 
+# ── fail-closed 红证：解析失效必须报错，不得退化成"0 处不一致"静默放行 ──
+
+def test_parsers_fail_closed_on_missing_file(tmp_path):
+    """源文件不存在 → 报错（绝不返回空集合让断言空转通过）。"""
+    with pytest.raises(pytest.fail.Exception):
+        frontend_user_required_fields(path=tmp_path / "not-there.ts")
+
+
+def test_parsers_fail_closed_on_format_drift():
+    """接口/内部类改名、声明格式变化、无可判必填字段 —— 全部必须报错。"""
+    with pytest.raises(pytest.fail.Exception):  # 后端内部类找不到
+        backend_user_info_fields(java_text="public class LoginResponse { }")
+    with pytest.raises(pytest.fail.Exception):  # 后端 UserInfo 里解析不出字段
+        backend_user_info_fields(
+            java_text="public class LoginResponse { public static class UserInfo { } }")
+    with pytest.raises(pytest.fail.Exception):  # 前端接口改名
+        frontend_user_required_fields(ts_text="export interface Account { id: string }")
+    with pytest.raises(pytest.fail.Exception):  # 前端全部字段变成可选 → 必填集为空
+        frontend_user_required_fields(ts_text="export interface User { id?: string }")
+
+
 @pytest.mark.parametrize("label", sorted(USER_TYPE_FILES))
 def test_required_user_fields_exist_in_backend_login_response(label):
     """前端 User 的所有必填字段，后端 LoginResponse.UserInfo 必须真的提供。"""
