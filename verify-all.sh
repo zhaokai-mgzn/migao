@@ -82,12 +82,23 @@ gate_check() {
   [ "$GATE_RC" -eq 0 ] && [ "$BLOCKERS" = "0" ]
 }
 
+# ai-agent 测试选择（2026-09-14，issue #3680）：quick 与 full 共用**同一选择集**。
+# ⚠️ 禁止改回 glob 白名单（旧写法：`tests/unit tests/test_tools_*.py tests/test_graph_*.py
+#    tests/test_intent_router.py`）——那是**失败开放**的：当时 `tests/` 顶层 169 个测试文件，
+#    白名单只匹配 42 个，其余 127 个（~75%）被**静默跳过**（不报错、无提示、退出码 0）。
+#    实证：PR #3674 本地 quick 绿、CI 红在 `tests/test_order_create_quantity_bounds.py`
+#    （#3622 的 L0 静态不变式），本地没有任何一层能看到它。
+#    `tests/` 目录选择是**失败关闭**的（新增顶层文件默认被覆盖）⇒ 缺陷不会复发。
+#    守卫：tests/unit_ci_workflows/test_verify_all_quick_scope.py（L0 静态不变式，必红）。
+#    （上表的文件数会随迭代漂移，守卫锁的是"选择集 = tests/ 目录"这一不变式，不是数字。）
+AI_AGENT_TESTS="tests/ -q --no-cov -n 4"
+
 MODE="${1:-quick}"
 case "$MODE" in
   quick)
     echo "========== MIGAO 快速验证 =========="
     report "admin-api 单测"       bash -c "cd '$ROOT/backend/admin-api' && ./mvnw test -q"
-    report "ai-agent 单测"        bash -c "cd '$ROOT/backend/ai-agent-service' && .venv/bin/python -m pytest tests/unit tests/test_tools_*.py tests/test_graph_*.py tests/test_intent_router.py -q --no-cov"
+    report "ai-agent 单测"        bash -c "cd '$ROOT/backend/ai-agent-service' && .venv/bin/python -m pytest $AI_AGENT_TESTS"
     report "admin-web vitest"     bash -c "cd '$ROOT/frontend/admin-web' && npx vitest run"
     report "admin-web tsc"        bash -c "cd '$ROOT/frontend/admin-web' && npx tsc --noEmit"
     report "QA Growth Gate 预检"  gate_check
@@ -98,7 +109,7 @@ case "$MODE" in
   full)
     echo "========== MIGAO 全量验证 =========="
     report "admin-api 全量"       bash -c "cd '$ROOT/backend/admin-api' && ./mvnw test"
-    report "ai-agent 全量"        bash -c "cd '$ROOT/backend/ai-agent-service' && .venv/bin/python -m pytest tests/ -q --no-cov -n 4"
+    report "ai-agent 全量"        bash -c "cd '$ROOT/backend/ai-agent-service' && .venv/bin/python -m pytest $AI_AGENT_TESTS"
     report "admin-web vitest"     bash -c "cd '$ROOT/frontend/admin-web' && npx vitest run"
     report "admin-web tsc"        bash -c "cd '$ROOT/frontend/admin-web' && npx tsc --noEmit"
     report "QA Growth Gate 预检"  gate_check
@@ -114,7 +125,7 @@ case "$MODE" in
     report "admin-api 全量"       bash -c "cd '$ROOT/backend/admin-api' && ./mvnw test"
     ;;
   agent)
-    report "ai-agent 全量"        bash -c "cd '$ROOT/backend/ai-agent-service' && .venv/bin/python -m pytest tests/ -q --no-cov -n 4"
+    report "ai-agent 全量"        bash -c "cd '$ROOT/backend/ai-agent-service' && .venv/bin/python -m pytest $AI_AGENT_TESTS"
     ;;
   gate)
     report "QA Growth Gate 预检"  gate_check
