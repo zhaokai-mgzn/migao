@@ -33,6 +33,7 @@ from app.graph.pending_validated import extract_pending, is_pending_for, PENDING
 from app.tools.base import ToolContext
 from app.tools.registry import ToolRegistry, set_tool_context, get_tool_context
 from app.utils.log_sanitizer import LogSanitizer
+import app.utils.error_incident as _err_inc
 from app.memory.user_memory import UserMemoryManager
 from app.suggestions.preference_tracker import PreferenceTracker
 from app.core import (
@@ -41,6 +42,7 @@ from app.core import (
     get_breaker,
 )
 from app.llm import LLMFactory, select_model, has_images, call_with_retry, cost_tracker
+from app.llm.retry_policy import _is_retryable
 
 
 # ── LLM 熔断器作用域与超时（issue #3270）──
@@ -68,6 +70,29 @@ def llm_breaker_name(skill_name: str) -> str:
     同一 skill 多次取名字必须稳定（否则每次新建熔断器 → 熔断失效）。
     """
     return f"{LLM_BREAKER_PREFIX}{skill_name or 'unknown'}"
+
+
+# ── 异常吞点的**可归因性**（issue #3805，产品侧）──
+# 背景（判定跑 34873715194 / SHA 30527b73，B 端 OR-014）：R4/R9/R10/R11 四轮逐字返回
+# 同一句兜底、四轮 `tools=-` —— 唯一产生点就是下面 `execute_skill` 的 `except Exception`
+# 兜底。异常被吞成一句**无标识**话术，同一会话连吞 4 次（R9–R11 连续 3 轮），
+# 而产物里查不到异常类型与原因（根因 undetermined）。
+#
+# 归因三项（#3809 建立，issue #3810 起与另两个用户可见落点**共用同一实现**）：
+#   ① 异常身份：`error=<类型>: <str(exc)>` + traceback（`logger.opt(exception=…)`）——
+#      只记 type+str 时，KeyError/AttributeError 这类异常定位不到出错行；
+#   ② 上下文：skill / session / 租户 / 轮次 / HTTP request_id；
+#   ③ `incident=` 短码：同一 (会话 × 异常类型) ⇒ 同一短码
+#      ⇒「连续 N 轮吞同一个异常」的 N 条日志可聚成一个 incident。
+# 实现已收敛到 `app/utils/error_incident.py`（单一实现，跨落点同码），此处 re-export
+# 保持既有引用面（`base_skill.llm_incident_id` / `safe_exc_message` / `_current_request_id`）。
+# 用户可见话术的纪律：C 端/B 端约定兜底话术必须面向低学历用户、**禁英文技术术语与堆栈**，
+# 故类型/消息/短码只落日志与审计。
+EXC_MSG_MAX = _err_inc.EXC_MSG_MAX
+llm_incident_id = _err_inc.llm_incident_id
+safe_exc_message = _err_inc.safe_exc_message
+_current_request_id = _err_inc.current_request_id
+
 
 
 def _strip_think_tags(text: str) -> str:
@@ -833,7 +858,7 @@ def _proc_answer_tokens(items: List[dict]) -> set:
     return toks
 
 
-def _user_already_answered_processing(messages) -> bool:
+def _user_already_answered_processing(messages, source_tool: str = "product_detail") -> bool:
     """顾客**是否已经就加工项作答**（文本形态：说了加工项名 / 明确不要）。
 
     实证（C-A1 重放 9，run 34788143133 的 transcript）：
@@ -843,22 +868,30 @@ def _user_already_answered_processing(messages) -> bool:
     账上为什么没痕迹：`PROC_ITEMS_ASKED_KEY` 只在**发出加工项卡**时记账 ——
     文本问答形态（问在文字里、答在文字里）不在账上，兜底于是把"已答"误判成"漏问"。
 
-    判据（只看**最近一次 product_detail 之后**的用户消息）：
+    判据（只看**最近一次 source_tool 结果之后**的用户消息）：
       · 出现加工项词（全名或其 2 字以上子串）→ 已答；
       · 出现拒绝词（不需要加工/算了…）→ 已答（比 `_last_user_declined_processing`
         只看最近一条更强：顾客拒绝后又说「确认下单」也算答过）。
-    为什么限定"detail 之后"：R1 就说了「要打孔加工」属**需求前置** ——
+    为什么限定"结果之后"：R1 就说了「要打孔加工」属**需求前置** ——
     那时还没看过可选项与单价，confirm 前仍应摆出来（OR-017 依赖这条）。
+
+    `source_tool`（issue #3320）：C 端加工项事实源是 `product_detail`（商品已存在）；
+    B 端**建品**时商品还没建出来，事实源是本会话的 `processing_item_query` 返回。
+    默认值保持 `product_detail` ⇒ C 端行为逐字不变。
     """
     if not messages:
         return False
     last_detail = -1
     for i, msg in enumerate(messages):
-        if isinstance(msg, ToolMessage) and getattr(msg, "name", None) == "product_detail":
+        if isinstance(msg, ToolMessage) and getattr(msg, "name", None) == source_tool:
             last_detail = i
     if last_detail < 0:
         return False
-    tokens = _proc_answer_tokens(_find_last_product_processing_items(messages))
+    if source_tool == "processing_item_query":
+        items = _find_last_query_processing_items(messages)
+    else:
+        items = _find_last_product_processing_items(messages)
+    tokens = _proc_answer_tokens(items)
     for msg in list(messages)[last_detail + 1:]:
         if not isinstance(msg, HumanMessage):
             continue
@@ -998,6 +1031,125 @@ def _plan_processing_items_rewrite(tool_results, messages) -> Optional[tuple]:
 
 
 _MAX_PROC_OPTIONS = 6
+
+
+# ── 模式 C 代码兜底：B 端**建品**漏问加工项（issue #3320，与上面 C 端那条同构）──
+# 为什么另写一条而不是放宽上面那条的 skill 白名单：**数据源不同**。
+#   · C 端（customer_order / customer_aftersales）：商品**已存在**，加工项取自
+#     `product_detail` 返回的 `processing_items`（见 `_find_last_product_processing_items`）；
+#   · B 端建品：商品**还没建出来**，`product_detail` 无从查 —— 唯一的事实源是
+#     本会话真实调用过的 `processing_item_query` 返回（`data.items`）。
+# 触发判据全部是**状态事实**，不看话术关键词、不看 skill 名字白名单：
+#   ① 会话状态 `pending_validated_input`（base_skill 自己在 validate_input 通过时落的账）
+#      → target_tool == "product_manage" 且 target_action == "create"（= 建品在办）；
+#   ② 会话消息里有**成功的** `processing_item_query` 结果且条目非空（真实事实源）；
+#   ③ 本会话该商品尚未问过加工项（`PROC_ITEMS_ASKED_KEY`；防"卡循环"——OR-017 踩过）；
+#   ④ 本轮正要发 confirm 卡（= 跳过加工项询问的形态）；
+#   ⑤ 顾客没拒绝过、也没答过（复用 C 端那两个纯函数，语义一致）。
+# ②不成立（从没查过 / 查回来是空）⇒ **绝不伪造卡**：无事实可依，宁可原样走原流程。
+B_CREATE_PENDING_TOOL = "product_manage"
+B_CREATE_PENDING_ACTION = "create"
+
+
+def _find_last_query_processing_items(messages) -> List[dict]:
+    """会话历史里**最近一次**成功的 `processing_item_query` 返回的加工项列表（B 端事实源）。
+
+    与 `_find_last_product_processing_items` 同族：跨轮（R2 查询、R4 才发卡）
+    时本轮 tool_results 里看不到查询结果，必须回看会话里的 ToolMessage。
+    """
+    if not messages:
+        return []
+    for msg in reversed(messages):
+        if not isinstance(msg, ToolMessage):
+            continue
+        if getattr(msg, "name", None) != "processing_item_query":
+            continue
+        try:
+            payload = json.loads(msg.content or "{}")
+            if not isinstance(payload, dict) or not payload.get("success"):
+                continue
+            items = (payload.get("data") or {}).get("items") or []
+            if items:
+                return items
+        except (ValueError, TypeError, AttributeError):
+            continue
+    return []
+
+
+def _plan_b_create_processing_items_rewrite(tool_results, messages) -> Optional[tuple]:
+    """B 端建品「有真实加工项目录却漏问、直接发 confirm 卡」→ 改写方案（纯函数，可单测）。
+
+    Returns:
+        (confirm 卡在 tool_results 中的下标, 新的 choice 卡 data) 或 None。
+    """
+    confirm_idx = -1
+    for i, (tc, _rs, rd) in enumerate(tool_results):
+        if not rd or not rd.get("success"):
+            continue
+        if tc.get("name") != "interact":
+            continue
+        data = rd.get("data") or {}
+        if data.get("component") == "confirm" and confirm_idx == -1:
+            confirm_idx = i
+        elif data.get("component") == "choice" and _is_processing_items_card(data):
+            return None  # 本轮已经问过加工项
+    if confirm_idx == -1:
+        return None
+    if _last_user_declined_processing(messages):
+        return None  # 用户明确拒绝过，不硬弹
+    if _user_already_answered_processing(messages, source_tool="processing_item_query"):
+        return None  # 已经答过 → 不得重问一遍（B 端事实源是 processing_item_query）
+    items = _find_last_query_processing_items(messages)
+    if not items:
+        return None  # 没有真实加工项事实 ⇒ 绝不伪造卡
+    options = []
+    for it in items[:_MAX_PROC_OPTIONS]:
+        oid = str((it or {}).get("id") or "")
+        if not oid:
+            continue
+        name = str((it or {}).get("name") or "加工项")
+        price = (it or {}).get("unit_price")
+        if price is None:
+            price = (it or {}).get("unitPrice")
+        unit = (it or {}).get("unit") or ""
+        options.append({
+            "label": f"{name} ¥{price}/{unit}" if price is not None else name,
+            "value": f"{_PROC_ITEM_VALUE_PREFIX}{oid}",
+            "unitPrice": price,
+            "pricingMethod": (it or {}).get("pricing_method") or (it or {}).get("pricingMethod"),
+        })
+    if not options:
+        return None
+    return confirm_idx, {
+        "component": "choice",
+        "multiSelect": True,
+        "title": "这款商品支持以下加工项，需要哪些呢？（可多选）",
+        "options": options,
+    }
+
+
+async def _b_create_processing_items_not_asked(session_id: str) -> bool:
+    """建品流程**在办**（状态事实）且本会话尚未问过加工项。异常一律返回 False（不改写）。
+
+    「在办」的判据是 base_skill 自己在 validate_input 通过时落的账
+    （`pending_validated_input`），不是话术、不是 skill 名。
+    建品时商品还没建出来 ⇒ 没有 product_id ⇒ 「已问过」按 `*` 兜底键记账。
+    """
+    if not session_id:
+        return False
+    try:
+        from app.graph.pending_validated import PENDING_KEY
+        from app.memory.session_state_store import SessionStateStore
+        full = await SessionStateStore().load(session_id) or {}
+        pending = full.get(PENDING_KEY) or {}
+        if str(pending.get("target_tool") or "") != B_CREATE_PENDING_TOOL:
+            return False
+        if str(pending.get("target_action") or "") != B_CREATE_PENDING_ACTION:
+            return False
+    except Exception as e:
+        logger.warning(f"[b-create] processing-items 兜底状态读取失败（非致命）: {e}")
+        return False
+    return not await _processing_items_already_asked(session_id, "")
 
 
 def _pending_card_before_last_user(messages) -> bool:
@@ -1721,6 +1873,48 @@ def _registry_has_tool(registry, name: str) -> bool:
         return registry.get_tool(name) is not None
     except Exception:
         return False
+
+
+# ── 订单 → 物流链收口（issue #3799）──────────────────────────────────────────
+# 实证（run 34873715194 的 OR-013 R2，SHA 30527b73）：
+#   顾客「那用我最近一笔订单的订单号查一下物流」→ 模型 `order_query` 拿到真实订单号后
+#   **把订单信息当交付物回复**，`logistics_track` 从未被调用（`tools=['order_query']`），
+#   顾客要的轨迹一个字都没给 —— 推理链只走了一半。同 run 的 OR-005 一轮内走完同一链，
+#   证明工具可用、链本身可行 ⇒ 这是**交付标准**缺失，不是能力缺失。
+# 为什么在代码层收口：提示词/few-shot 只能提高概率（本次是「客户当场看」的场景），
+# 而"顾客要物流 ⇒ 拿到订单号必须继续查轨迹"是**确定性**的交付标准。
+# 判据**全部是事实**，不看顾客话术关键词（禁"含『物流』字样就调工具"式硬绑）：
+#   ① 本轮**意图事实** = 物流查询（路由器已算出的 `intent_result.intent`）；
+#   ② 本 skill 工具集里**真有** `logistics_track`（C 端用小布的 customer_logistics_track，不适用）；
+#   ③ 本回合 `order_query` **成功返回过真实订单号**（`order_nos` 非空——没有订单号时
+#      正确行为是问顾客要订单号，不是硬调）；
+#   ④ 本回合**从未尝试**过 `logistics_track`（模型自己没走完这一步）。
+# 命中后只做一件事：注入一条纠正并让循环继续（**有界一次**），**不代跑工具、不放宽任何守卫**。
+_LOGISTICS_CHAIN_CORRECTIVE = (
+    "【订单→物流链未完成】顾客要的是**物流轨迹**，而你本轮只查到订单号就准备结束回复。"
+    "订单号只是查询轨迹的**入参**，不是交付物 —— 顾客要的「到哪了/什么状态」你还没给。"
+    "本轮**立即**调用 logistics_track(order_id='{order_no}') 查这笔订单的轨迹，"
+    "再把工具返回的状态/轨迹如实回复给顾客。"
+    "若工具返回「该订单尚未发货」「未找到该订单」，**那也是**这条链的有效结果，照实说明即可"
+    "（同样必须真调用工具，不要凭订单状态猜）。禁止只回复订单号或订单信息。"
+)
+
+
+def _logistics_chain_incomplete(
+    *, intent_name: str, registry, order_nos: list, executed_tools) -> bool:
+    """订单→物流链是否**只走了一半**（纯函数，判据全是事实；见上方说明）。"""
+    return bool(
+        intent_name == "logistics_track"
+        and order_nos
+        and "logistics_track" not in (executed_tools or set())
+        and _registry_has_tool(registry, "logistics_track")
+    )
+
+
+def _logistics_chain_corrective(order_nos: list) -> str:
+    """生成链收口纠正文本（用**工具刚返回的真实订单号**举例，不让模型自己猜）。"""
+    return _LOGISTICS_CHAIN_CORRECTIVE.format(
+        order_no=str(order_nos[0]) if order_nos else "")
 
 
 def _order_write_tool_here(registry=None) -> bool:
@@ -3356,6 +3550,11 @@ async def execute_skill(
                     f"| session={session_id} msg={last_user_msg[:24]!r}")
             # 本轮**模型自己执行过**的工具名（供 8.4 收口判重：防双单）
             _executed_tools: set = set()
+            # 本回合 `order_query` 成功返回过的**真实订单号**（订单→物流链收口的判据③，
+            # 只记事实；跨迭代累计，见 issue #3799）
+            _turn_order_nos: list = []
+            # 链收口纠正**有界**：每个回合一经注入即置位，不再二次注入（见下方判据）
+            _logistics_chain_corrected = False
             # 本次 execute_skill 调用（= 顾客的一个回合）**已下发过的卡片组件**：
             # 同一组件每轮只允许一张（issue #3445）。**整轮**生效，跨 LLM 迭代也要认
             # （模型可能在后续迭代"再补一张"）—— 故在循环**外**初始化（放循环里会被每轮重置，
@@ -3364,6 +3563,11 @@ async def execute_skill(
             # 是**合法**的一条消息两个问题（两个组件各有答案面，前端逐张渲染）——
             # 一刀切"只准一张"会把这个正常流程也拦掉。
             _turn_card_components: set = set()
+            # `_llm_error_retried`：**本次 `execute_skill`（= 顾客的一个回合）**是否已因
+            # "瞬时类异常"重试过一次。刻意放**循环外**：预算是"一轮对话一次机会"，
+            # 不是"每个 ReAct 迭代一次" —— 后者在同一故障持续时会把 8 个迭代全烧在重试上，
+            # 最后退化成"轮次耗尽"话术（用户仍得不到任何进展，且白烧 8 次配额）。
+            _llm_error_retried = False
             for iteration in range(max_iterations):
                 logger.info(f"[{skill_name}] Iteration {iteration+1}/{max_iterations} | session={session_id}")
 
@@ -3378,6 +3582,9 @@ async def execute_skill(
                     current_llm = llm_no_thinking or llm_with_tools
 
                 # ── LLM 调用（超时 + 熔断保护）──
+                # 熔断 / 超时 / 轮次耗尽的守卫**不动**（它们各有自己的分支与话术）。
+                # 瞬时类异常的**一次**自动恢复预算由循环外的 `_llm_error_retried` 管
+                # （每回合一次，不随迭代重置）。
                 try:
                     logger.info(f"[{skill_name}][DIAG] LLM calling | iter={iteration+1} msgs={len(full_messages)+len(new_messages)} session={session_id}")
                     llm_breaker = get_breaker(llm_breaker_name(skill_name))
@@ -3404,8 +3611,47 @@ async def execute_skill(
                     final_content = "抱歉，响应超时，请换个方式描述您的需求。"
                     break
                 except Exception as e:
-                    logger.error(f"[{skill_name}][SLS] LLM failed | session={session_id} error={type(e).__name__}: {e}")
-                    final_content = "抱歉，我遇到了一些问题，请稍后重试。"
+                    # ── ① 瞬时类异常：**允许有限次自动恢复**（issue #3810 演示护航）──
+                    # 判据是**事实驱动**的：异常类型是否属"瞬时/可重试"（`_is_retryable`：
+                    # 超时、429/5xx、连接层），以及本回合是否已经重试过 ——
+                    # **不看**兜底话术里有没有关键词（那会把"事实"变成"措辞匹配"）。
+                    # 为什么必须有这一步：#3805 的实测形态正是"同一会话连吞 3 轮同一句兜底"
+                    # （R9–R11）——会话卡在同一个瞬时故障上。对瞬时故障再给**一次**机会，
+                    # 演示现场就能自愈，而不是每一轮都撞同一堵墙。
+                    # 预算：**每回合 1 次**（`_llm_error_retried` 在循环外初始化）——
+                    # 不用"每迭代 1 次"，否则同一故障持续时 8 个迭代全烧在重试上，
+                    # 最后退化成"轮次耗尽"话术（用户仍无进展，还白烧 8 次配额）。
+                    # ⚠️ 不得把失败伪装成成功：重试仍失败时走下面同一条如实兜底。
+                    if _is_retryable(e) and not _llm_error_retried:
+                        _llm_error_retried = True
+                        _retry_incident = llm_incident_id(session_id, type(e).__name__)
+                        logger.opt(exception=e).warning(
+                            f"[{skill_name}][SLS] LLM call 重试（瞬时类异常）"
+                            f" | session={session_id} error={type(e).__name__}: "
+                            f"{safe_exc_message(e)} | incident={_retry_incident} "
+                            f"tenant={state.get('tenant_id')} iter={iteration+1} "
+                            f"req={_current_request_id()}"
+                        )
+                        continue
+                    # ── ② 重试后仍失败 / 不可重试：如实告知"这轮没成功、可以重试" ──
+                    # #3805 的 `抱歉，我遇到了一些问题…` 属于**无信息量通用句**（用户不知道
+                    # 这轮有没有成功、下一步该做什么），且 #3810 要求不得改成"静默成功"。
+                    # 现话术：纯中文 + 说明"这轮没成功" + 给出可执行的下一步，**不出现**
+                    # 异常类型/英文标识/堆栈/字段名（C 端低学历用户约定，见 #3707 族）。
+                    # 复杂度上刻意保持通用：这里区分不了"有部分工具结果"（工具结果落库在
+                    # 失败迭代之后，本点拿不到事实），无事实依据的分支就是过度建设。
+                    # ⚠️ 措辞不得含 CREATION_SKILL_NAMES 流程的成功/取消标记（如"已创建"
+                    #    "已下单"）——否则第 10 步的 pending_skill 判定会把失败的写流程
+                    #    当成"已完成"解锁，那是把失败伪装成成功。
+                    _err_inc.log_exception_audit(
+                        logger=logger,
+                        mark=f"[{skill_name}][SLS] LLM failed",
+                        exc=e,
+                        session_id=session_id,
+                        extra=(f"tenant={state.get('tenant_id')} iter={iteration+1} "
+                               f"req={_current_request_id()}"),
+                    )
+                    final_content = "刚才这轮没成功，请您再说一次，我继续为您办理。"
                     break
 
                 new_messages.append(response)
@@ -3444,6 +3690,31 @@ async def execute_skill(
                             _fix = _TEXT_DENIAL_CORRECTIVE_MIDORDER
                         new_messages.append(SystemMessage(content=_fix))
                         continue
+                    # ── 订单→物流链收口（issue #3799）──
+                    # 模型把「查到订单号」当交付物就收尾 ⇒ 顾客要的轨迹没给（链只走一半）。
+                    # 命中判据全是事实（见 `_logistics_chain_incomplete`），**有界一次**：
+                    # 注入纠正后继续循环让模型自己调 logistics_track；若注入后仍不调，
+                    # 接受本轮结束（不无限注入），但留一条可检索日志便于归因"注入了但模型没跟"。
+                    _chain_incomplete = _logistics_chain_incomplete(
+                        intent_name=intent_name,
+                        registry=skill_registry,
+                        order_nos=_turn_order_nos,
+                        executed_tools=_executed_tools,
+                    )
+                    if _chain_incomplete and not _logistics_chain_corrected:
+                        _logistics_chain_corrected = True
+                        logger.warning(
+                            f"[{skill_name}][logistics-chain] 流程链未走完：本轮 intent={intent_name}、"
+                            f"order_query 已返回 {len(_turn_order_nos)} 个真实订单号、"
+                            f"logistics_track 从未尝试 → 注入纠正并继续本轮 | session={session_id}")
+                        new_messages.append(SystemMessage(
+                            content=_logistics_chain_corrective(_turn_order_nos)))
+                        continue
+                    if _chain_incomplete and _logistics_chain_corrected:
+                        logger.warning(
+                            f"[{skill_name}][logistics-chain] 已注入纠正但模型仍未调用 "
+                            f"logistics_track → 接受本轮结束（不二次注入）| session={session_id} "
+                            f"intent={intent_name} order_nos={len(_turn_order_nos)}")
                     if new_text:
                         final_content = new_text
                     elif not final_content:
@@ -4104,8 +4375,52 @@ async def execute_skill(
                     except Exception as e:
                         logger.warning(f"[{skill_name}] processing-items fallback failed (non-fatal): {e}")
 
+                # ── 模式 C 代码兜底（B 端**建品**同构，issue #3320）──
+                # 上面那条只覆盖 C 端（数据源是 product_detail）；B 端建品时商品还没建出来，
+                # 事实源只有本会话真实调用过的 `processing_item_query` 返回。
+                # 仅当「建品在办 + 有真实加工项 + 未问过」才把 confirm 卡改写为多选卡；
+                # 其余形态（其它 action / 没查过 / 已问过 / 已答过 / 用户拒绝）一律**原样不动**。
+                if skill_name == "product":
+                    try:
+                        _bp_msgs = new_messages + state.get("messages", [])
+                        if await _b_create_processing_items_not_asked(session_id):
+                            _bp_plan = _plan_b_create_processing_items_rewrite(tool_results, _bp_msgs)
+                            if _bp_plan is not None:
+                                _bp_idx, _bp_choice = _bp_plan
+                                _bp_tc, _bp_rs, _bp_rd = tool_results[_bp_idx]
+                                _bp_rd = dict(_bp_rd)
+                                _bp_rd["data"] = _bp_choice
+                                _bp_rd["message"] = (
+                                    f"已展示{_bp_choice['title']}"
+                                    "（代码兜底：建品漏问加工项，confirm 卡改写为多选 choice 卡）")
+                                tool_results[_bp_idx] = (
+                                    _bp_tc, json.dumps(_bp_rd, ensure_ascii=False, default=str), _bp_rd)
+                                logger.info(
+                                    f"[{skill_name}] 建品加工项漏问兜底：confirm 卡改写为 choice 卡 "
+                                    f"(options={len(_bp_choice['options'])}) | session={session_id}")
+                            # 记账：本轮任何一张加工项卡发出去过（改写来的或模型自己发的）→ 记「已问过」
+                            if any(
+                                (rd or {}).get("success")
+                                and str((rd or {}).get("data", {}).get("component") or "") == "choice"
+                                and _is_processing_items_card((rd or {}).get("data") or {})
+                                for _tc, _rs, rd in tool_results
+                            ):
+                                await _mark_processing_items_asked(session_id, "")
+                    except Exception as e:
+                        logger.warning(f"[{skill_name}] b-create processing-items fallback failed (non-fatal): {e}")
+
                 for tool_call, result_str, result_dict in tool_results:
                     tool_name = tool_call["name"]
+                    # 订单→物流链收口（issue #3799）判据③：记账本回合查到的**真实订单号**
+                    # （只读 facts；类型不对就跳过——这条路径不该因为结果形状异常而炸掉主流程）
+                    if tool_name == "order_query" and result_dict.get("success"):
+                        _oq_data = result_dict.get("data")
+                        if isinstance(_oq_data, dict):
+                            for _o in (_oq_data.get("orders") or []):
+                                _no = str((_o or {}).get("order_no") or "").strip() \
+                                    if isinstance(_o, dict) else ""
+                                if _no and _no not in _turn_order_nos:
+                                    _turn_order_nos.append(_no)
                     # 记录 tool 结果到 ContextManager，跨 skill 共享
                     if session_id and result_dict.get("success"):
                         try:

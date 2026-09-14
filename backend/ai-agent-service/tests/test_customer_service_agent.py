@@ -6,6 +6,8 @@ Covers: AgentResponse, AgentContext, BaseAgent, get_agent, reset_agent,
 """
 # case_ids: AG-001, AG-002, AG-003, AG-004, AG-005, AG-006, PR-007
 
+import re
+
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -573,7 +575,17 @@ class TestAstreamChat:
         agent.graph.astream = MagicMock(side_effect=RuntimeError("stream boom"))
         out = await self._collect(agent)
         assert out[-1].type == "error"
-        assert "RuntimeError" in out[-1].content
+        # issue #3810：用户可见文本**不得**含异常类名/内部消息（英文技术术语禁上屏），
+        # 但也不得退化成"无信息量通用句"——必须让顾客知道"这轮没成功、可以重试"。
+        assert "RuntimeError" not in out[-1].content
+        assert "stream boom" not in out[-1].content
+        assert not re.search(r"[A-Za-z]", out[-1].content), (
+            "SSE 错误话术出现英文/技术术语：%r" % out[-1].content
+        )
+        assert "没成功" in out[-1].content and "再说一次" in out[-1].content
+        # 归因改走服务端：类型与 traceback 留在 metadata（前端只渲染 content）
+        assert out[-1].metadata["error_type"] == "RuntimeError"
+        assert "Traceback" in out[-1].metadata["traceback"]
 
 
 class TestResetAgentExcept:

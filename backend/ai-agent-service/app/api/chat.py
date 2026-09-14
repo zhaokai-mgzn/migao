@@ -38,6 +38,7 @@ from app.agents.customer_service_agent import (
 from app.tools import ToolRegistry, get_tool_registry
 from app.tools.base import ToolContext  # __PAGE__ 分页直调工具时构造执行上下文
 from app.utils.auth import get_current_user, UserIdentity
+import app.utils.error_incident as _err_inc
 
 # C 端专属角色（小程序/B2C 用户）：统一折叠为 customer，禁止访问管理类工具。
 # 与 admin-api SecurityConfig 门禁口径一致：customer/agent 不属于商户员工。
@@ -992,9 +993,20 @@ async def _agent_stream_to_sse(
         yield SSEEvent.done(session_id, message_id)
 
     except Exception as e:
-        tb = traceback.format_exc()
-        logger.error(f"[chat/send] Agent stream error: {tb}")
-        yield SSEEvent.error(f"处理失败: {type(e).__name__}: {str(e)}")
+        # issue #3810：SSE error 分支此前把 `处理失败: {类型}: {消息}` 原样推给用户 ——
+        # 英文类名/内部字段/路径直接上屏，违反「面向低学历用户全中文、禁英文技术术语」
+        # 的约定（#3707 族）。用户侧改为纯中文、且**有信息量**（说明这轮没成功、可以重试），
+        # 不是"静默成功"也不是无信息量通用句；技术细节（类型/消息/traceback/会话/轮次/req）
+        # 落日志并复用 #3809 的 `incident` 短码口径（同会话同异常同码，可 grep 聚合）。
+        _err_inc.log_exception_audit(
+            logger=logger,
+            mark="[chat/send] Agent stream error",
+            exc=e,
+            session_id=session_id,
+            extra=(f"tenant={tenant_id} user={user_id} "
+                   f"req={_err_inc.current_request_id()}"),
+        )
+        yield SSEEvent.error("刚才这轮没成功，请您再说一次，我继续为您办理。")
     finally:
         # 仅在尚未发送 done 时补发，避免客户端收到重复 done 事件
         if not _done_sent:
@@ -1517,9 +1529,18 @@ async def send_message(
                 yield event
                 
         except Exception as e:
-            tb = traceback.format_exc()
-            logger.error(f"[chat/send] event_stream error: {tb}")
-            yield SSEEvent.error(f"发生错误: {type(e).__name__}: {str(e)}")
+            # issue #3810 同族扫描命中的第二个终端可见落点（本分支包住整个 SSE 生成器，
+            # 与上面 `_agent_stream_to_sse` 那个兜底互不覆盖）：用户侧同样改纯中文，
+            # 技术细节落日志 + incident 短码；`traceback` 由 loguru 的 exception 字段承载。
+            _err_inc.log_exception_audit(
+                logger=logger,
+                mark="[chat/send] event_stream error",
+                exc=e,
+                session_id=session_id,
+                extra=(f"tenant={tenant_id} user={user_id} "
+                       f"req={_err_inc.current_request_id()}"),
+            )
+            yield SSEEvent.error("刚才这轮没成功，请您再说一次，我继续为您办理。")
     
     return StreamingResponse(
         event_stream(),

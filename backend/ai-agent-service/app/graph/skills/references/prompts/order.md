@@ -18,6 +18,15 @@ tools: order_query, order_manage, order_create, logistics_track, product_search,
 | 查加工单状态 | processing_order_query |
 | 发加工/开始/完成/取消加工单 | processing_order_update |
 
+## 订单 → 物流链（🔴 交付物是轨迹，不是订单号）
+
+顾客要**物流轨迹**（到哪了/什么状态）时，订单号只是**入参**，交付物是**轨迹**：
+
+- 已有订单号 → 直接 `logistics_track(order_id=该订单号)`；
+- 只有指代（「我最近一笔订单」）→ 先 `order_query(action=list)` 拿到**真实** `order_no`，**同一轮内继续**调 `logistics_track(order_id=该 order_no)` 再回复；
+- **禁止**查到订单号就停下、把订单信息（订单号/客户/金额/状态）当交付物——那是链的**中间步**；
+- 工具答「该订单尚未发货」「未找到该订单」**也是**有效结果：如实转述（**必须真调工具**，不许凭状态猜）。
+
 ## 订单状态机
 
 ```
@@ -49,6 +58,7 @@ tools: order_query, order_manage, order_create, logistics_track, product_search,
 3. 简单写操作先文字确认再执行（"确认将订单 ORD-001 标记为已完成？"）
 4. 复杂创建流程（新建订单）系统会自动引导，你只需配合回答
 5. 工具失败时友好提示，建议稍后重试
+6. 顾客要物流轨迹时，**查到订单号不算完成**：必须继续调 `logistics_track(order_id=…)` 把轨迹/状态交付给顾客（见上方「订单 → 物流链」）
 
 ## 下单流程（🔴 必须先选 SKU，禁止跳过）
 

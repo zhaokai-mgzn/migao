@@ -29,6 +29,7 @@ from app.tools import (
     create_default_registry,
     set_tool_context,
 )
+import app.utils.error_incident as _err_inc
 
 
 @dataclass
@@ -438,18 +439,27 @@ class BaseAgent:
             )
             
         except Exception as e:
-            tb = traceback.format_exc()
-            logger.error(
-                f"[astream_chat] Error | agent={self._agent_type} "
-                f"tenant={context.tenant_id} "
-                f"user={context.user_id} session={context.session_id} "
-                f"error={type(e).__name__}: {e}\n"
-                f"traceback={tb[:800]}"
+            # issue #3810：用户可见文本**不得**带 `{异常类型}: {消息}`（英文类名/内部字段/
+            # 路径直接上屏，违反面向低学历用户「全中文、禁英文技术术语」的约定）。
+            # 归因改走日志：类型 + 单行脱敏消息 + traceback + incident 短码（复用 #3809
+            # 口径 ⇒ 同会话同异常同码，可跨落点 grep 聚合）；`metadata` 留类型与 traceback
+            # 供服务端排查——前端只渲染 `content`，**不再**把细节回显给终端。
+            # 话术既不是"静默成功"也不是无信息量通用句：明确"这轮没成功"+"可以重试"。
+            _err_inc.log_exception_audit(
+                logger=logger,
+                mark="[astream_chat] Error",
+                exc=e,
+                session_id=context.session_id,
+                extra=(f"agent={self._agent_type} tenant={context.tenant_id} "
+                       f"user={context.user_id} req={_err_inc.current_request_id()}"),
             )
             yield AgentResponse(
-                content=f"抱歉，遇到问题: {type(e).__name__}: {str(e)}",
+                content="刚才这轮没成功，请您再说一次，我继续为您办理。",
                 type="error",
-                metadata={"error": str(e), "traceback": tb[:500]},
+                metadata={
+                    "error_type": type(e).__name__,
+                    "traceback": traceback.format_exc()[:500],
+                },
             )
     
     async def get_greeting(self, context: AgentContext) -> str:
