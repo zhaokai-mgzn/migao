@@ -16,6 +16,37 @@
 无部署窗口干扰；可注入快模型与并发（当前 `deepseek-flash` + `EVAL_CONCURRENCY=6`）。
 代价：起栈固定成本 ~2-3 min（#3426 GHCR 预构建镜像在压）、干净栈需 seed 补齐业务数据（T3.2 `mibao_eval_seed.sql`）。
 
+### 1.1 种子口径：单一实现 + 每个 persona 一套栈（#3563，2026-09-14 固化）
+
+「标准考场」的前提是**同一个 persona 在任一 workflow 上拿到同一份数据栈**。此前三个
+评测 workflow 各写一份种子规则、且互不相等（`xiaobu-acceptance`/`post-deploy-eval`
+只在 `persona=mibao` 时叠 B 端种子，`agent-behavior-eval` **无条件**叠加），后果是
+**同一用例结论相反**：CH-010 在 `agent-behavior-eval` 上 0%（栈里 `products=4`，
+B 端 `prod_eval_2699` 因 `created_at` 更新而排在首条 → 用例的「第一款」指到了 B 端商品）、
+在 `xiaobu-acceptance` 上 100%（`products=3`，首条是 C 端「北欧风窗帘」）。
+
+**口径（单一真值 = `scripts/eval_stack_seed.sh`，三个 workflow 都调用它）**：
+
+| persona | 栈内种子 | 为什么 |
+|---|---|---|
+| `xiaobu` | **仅** C 端 `xiaobu_eval_seed.sql` | 叠加 B 端会改 `created_at` 排序 → 商品列表（`ORDER BY created_at DESC`）首条漂到 B 端 → C 端选品/「第一款」链路假失败 |
+| `mibao` | C 端 `xiaobu_eval_seed.sql` + B 端 `mibao_eval_seed.sql` | B 端点名数据缺失（2699 商品/刺绣工艺/客户张三/员工王五）会被误判成能力回归（#3496/#3511） |
+
+两条纪律：
+1. **一个栈只服务一个 persona**：`agent-behavior-eval` 已改 persona matrix
+   （每个 persona 一个 job + 独立栈 + 该 persona 的种子），与 `post-deploy-eval`
+   的 matrix 同款「独立 runner + 独立栈 + 独立新库」（#3515）；
+2. **能 L0 拦的不许流到 L2+**：口径漂移由
+   `tests/unit_ci_workflows/test_eval_stack_seed_parity.py` 秒级静态锁拦
+   （workflow 只许调单一源、xiaobu 栈不许含 B 端、同栈不许混 persona、
+   评测旋钮/节流值三路同值），**零 LLM**。
+
+同族 workflow 的旋钮（`EVAL_ROUND_SLEEP` / `EVAL_CASE_SLEEP` / `EVAL_CONCURRENCY` /
+`AGENT_EVAL_TRACE_ALL` / `AGENT_EVAL_FLAKE_LOG`）也由同一组静态锁逐项钉住 ——
+`AGENT_EVAL_FLAKE_LOG` 曾真实漏设（`post-deploy-eval` 上传了永不存在的
+`agent-eval-flakes.json`，`agent-behavior-eval` 既不落盘也不上传）。
+
+
 ## 二、各层用例档位（档位纪律见 migao-dev-flow §16）
 
 | 触发 | 环境 | 档位 | 说明 |

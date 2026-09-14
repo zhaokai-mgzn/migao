@@ -12,8 +12,20 @@ name: Agent Behavior Eval (行为改动映射用例)
 #   ① 映射用例里含**写用例**（下单/建品/换货工单）—— 打共享环境会污染 dev 数据，
 #      且并发/先后顺序让结果不可复现；独立栈每次 down -v 重建，天然隔离；
 #   ② PR 期间生产可能在滚动部署（502 窗口会让评测假失败，issue #3282），独立栈不受影响；
-#   ③ 起栈/seed 步骤照抄 xiaobu-acceptance.yml（同一套已验证的 DEBUG 本地栈），
-#      不新造第二套环境口径。
+#   ③ 起栈步骤照抄 xiaobu-acceptance.yml（同一套已验证的 DEBUG 本地栈），
+#      不新造第二套环境口径；**seed 步骤不再"照抄"而是直接调用单一源**
+#      `scripts/eval_stack_seed.sh`（issue #3563）—— 见下方 ★ 段。
+#
+# ★ 栈口径一致性（issue #3563，2026-09-14）：**每个 persona 一套独立栈**。
+#   病灶（本 workflow 独有）：原实现是"单个 job 顺序跑 mibao 与 xiaobu 两个分桶 +
+#   **无条件**叠加 B 端种子"，于是 xiaobu 分桶跑在 B 端栈上：
+#   `mibao_eval_seed.sql` 后执行（`created_at DEFAULT NOW()`）→ 商品列表默认
+#   `ORDER BY created_at DESC` → B 端 `prod_eval_2699` 恒排第一 → C 端用例 CH-010 的
+#   「第一款」指到 B 端商品 → **CH-010 0%**（run 34805981549，products=4）；
+#   同一用例在 xiaobu-acceptance（仅 C 端种子，products=3）上 **100%**（run 34807824585）。
+#   修法：① seed 规则抽到 `scripts/eval_stack_seed.sh`（三个 workflow 共用同一份）；
+#        ② 本 job 改 **persona matrix** —— 每个 persona 一个 job + 独立栈 + 该 persona 的种子。
+#   静态锁：`tests/unit_ci_workflows/test_eval_stack_seed_parity.py`（L0，秒级零 LLM）。
 #
 # ⚠️ 与"单条命令跑完全部映射用例"的一处**必要偏差**（有实测依据，不是设计偏好）：
 #   `local_runner --case-ids` 是在 **persona 过滤 + skip 过滤之后**解析 ID 的，
@@ -82,6 +94,7 @@ jobs:
       gate_mode: ${{ steps.map.outputs.gate_mode }}
       run_eval: ${{ steps.map.outputs.run_eval }}
       buckets: ${{ steps.map.outputs.buckets }}
+      personas: ${{ steps.map.outputs.personas }}
       unrunnable: ${{ steps.map.outputs.unrunnable }}
     steps:
       - uses: actions/checkout@v7
@@ -111,6 +124,7 @@ jobs:
           # 映射（behavior_mapping 纯函数）+ 分桶（用例库自己的选择函数）。
           # 只注入 sys.path，不 pip install：这三个模块都是零第三方依赖。
           python3 - <<'PY'
+          import json
           import os
           import sys
 
@@ -158,6 +172,16 @@ jobs:
           plan = ["|".join([p, s, ",".join(buckets[(p, s)]), mode])
                   for p, s in order if buckets.get((p, s))]
 
+          # ★ 每个 persona 一个**独立 job + 独立栈**（issue #3563）：
+          #   两端需要的种子集合不同（xiaobu 仅 C 端 / mibao C 端+B 端），
+          #   混在同一套栈上跑必然有一端被错栈污染 —— CH-010 在 behavior-eval 上 0%、
+          #   在 xiaobu-acceptance 上 100%（run 34805981549 vs 34807824585 实测）就是它。
+          #   persona 列表**从分桶派生**（不写死双端）：单 persona 的 PR 仍只起一套栈。
+          personas = []
+          for p, _suite in order:
+              if any(buckets.get((p, s)) for s in ("normal", "full")) and p not in personas:
+                  personas.append(p)
+
           def block(name, lines):
               body = ("\n".join(lines) + "\n") if lines else ""
               return f"{name}<<__{name.upper()}_EOF__\n{body}__{name.upper()}_EOF__\n"
@@ -170,82 +194,109 @@ jobs:
               f.write(f"mapping_source={source}\n")
               f.write(f"gate_mode={mode}\n")
               f.write(f"run_eval={'true' if plan else 'false'}\n")
+              # GitHub matrix 需 JSON：{"persona":["mibao","xiaobu"]}
+              f.write("personas=" + json.dumps({"persona": personas}, separators=(",", ":")) + "\n")
               f.write(block("buckets", plan))
               f.write(block("unrunnable", unrunnable))
 
           print(f"映射用例（来源={source}，门禁={mode}）:", ",".join(ids) or "（无 AI 行为文件改动）")
           print("执行计划:", plan or "（无可执行用例）")
+          print("评测栈（persona matrix）:", personas or "（不跑）")
           print("不可执行:", unrunnable or "（无）")
           PY
 
-      - name: PR 评论（映射计划；评测结果随后更新同一条评论）
+      - name: PR 评论（映射计划；评测结果随后更新各自 persona 的评论）
         # 为什么在 map job 就发评论：① 让"这次改了行为、要跑哪几条"在 PR 上**立即可见**
         # （不必等 5~13 分钟的起栈）；② 全部映射都不可执行时（例如只改了换货 skill →
         # AS-007 在用例库已 skip），本条评论就是唯一披露渠道 —— 没有它，
         # 这个 PR 会显示"行为评测通过"，而实际一条都没跑（假绿）。
-        # 评测 job 用同一个 marker 更新这条评论，最终一个 PR 只留一条。
+        #
+        # ★ **按 persona 各一条评论**（issue #3563）：评测 job 已改为 persona matrix
+        #   （每个 persona 一个 job + 独立栈），两条腿**并行**写 PR 评论。若两者共用同一个
+        #   marker，会互相覆盖（后写的赢）→ 有一端的评测结果从 PR 上消失 = 假绿。
+        #   故 marker 带 persona（`<!-- agent-behavior-eval:mibao -->`），本步骤为每个
+        #   参与评测的 persona 各建一条计划评论，对应的 matrix 腿只更新自己那条。
         if: steps.map.outputs.case_ids != ''
         uses: actions/github-script@v9
         env:
           MAPPED_CASE_IDS: ${{ steps.map.outputs.case_ids }}
           PLAN: ${{ steps.map.outputs.buckets }}
+          PERSONAS: ${{ steps.map.outputs.personas }}
           UNRUNNABLE: ${{ steps.map.outputs.unrunnable }}
           RUN_EVAL: ${{ steps.map.outputs.run_eval }}
           GATE_MODE: ${{ steps.map.outputs.gate_mode }}
         with:
           script: |
-            const marker = '<!-- agent-behavior-eval -->'
             const runUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`
             const netMode = process.env.GATE_MODE === 'report-only'
-            const lines = []
-            lines.push(marker)
-            lines.push('## 🧪 行为改动映射用例（diff 驱动）')
-            lines.push('')
-            lines.push(`**触发用例**（本次 diff 按 \`migao-dev-flow\` §13.2 映射表推出）：\`${process.env.MAPPED_CASE_IDS}\``)
-            lines.push('')
-            lines.push(netMode
-              ? '**映射来源**：无规则命中 → 跑 **兜底网** `DEFAULT_BEHAVIOR_CASES`（用例与本 PR 改动**无因果**，失败**不阻塞**合并）'
-              : '**映射来源**：规则命中（用例与本 PR 改动**有因果**，失败**阻塞**合并）')
-            lines.push('')
-            lines.push('**执行计划**（persona | 档位 | 用例 | 门禁）：')
-            lines.push('')
-            lines.push('```')
-            lines.push(process.env.PLAN || '（无可执行用例）')
-            lines.push('```')
-            lines.push('')
-            lines.push('> `blocking` = 规则命中，失败拦合并；`report-only` = 兜底网，失败只报告')
-            if (process.env.UNRUNNABLE && process.env.UNRUNNABLE.trim()) {
-              lines.push('')
-              lines.push('**未执行**（用例库当前状态导致，不是本 PR 的问题）：')
-              lines.push('')
-              lines.push('```')
-              lines.push(process.env.UNRUNNABLE.trim())
-              lines.push('```')
-            }
-            lines.push('')
-            lines.push(process.env.RUN_EVAL === 'true'
-              ? '⏳ 独立栈评测进行中，结果稍后更新到本条评论。'
-              : '⏭️ 本次映射到的用例当前都不可执行 → 不启动评测栈。请按 §14 修订用例后再改行为。')
-            lines.push('')
-            lines.push('---')
-            lines.push(`映射口径见 \`tests/agent_eval/behavior_mapping.py\`（纯函数，可单测）；完整 run：${runUrl}`)
-
-            const body = lines.join('\n')
             const { data: comments } = await github.rest.issues.listComments({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: context.issue.number,
             })
-            const prev = comments.find(c => c.body && c.body.includes(marker))
-            if (prev) {
-              await github.rest.issues.updateComment({
-                owner: context.repo.owner, repo: context.repo.repo, comment_id: prev.id, body,
-              })
-            } else {
-              await github.rest.issues.createComment({
-                owner: context.repo.owner, repo: context.repo.repo,
-                issue_number: context.issue.number, body,
-              })
+            // 参与评测的 persona（来自 map 的 matrix 输出）；无评测时给一条通用计划评论
+            let personas = []
+            try {
+              personas = (JSON.parse(process.env.PERSONAS || '{}').persona) || []
+            } catch (e) {
+              personas = []
+            }
+            if (personas.length === 0) personas = ['']
+
+            const upsert = async (marker, body) => {
+              const prev = comments.find(c => c.body && c.body.includes(marker))
+              if (prev) {
+                await github.rest.issues.updateComment({
+                  owner: context.repo.owner, repo: context.repo.repo, comment_id: prev.id, body,
+                })
+              } else {
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner, repo: context.repo.repo,
+                  issue_number: context.issue.number, body,
+                })
+              }
+            }
+
+            for (const persona of personas) {
+              const marker = persona ? `<!-- agent-behavior-eval:${persona} -->` : '<!-- agent-behavior-eval -->'
+              const scopedPlan = (process.env.PLAN || '').split('\n')
+                .filter(l => !persona || !l || l.startsWith(`${persona}|`)).join('\n')
+              const lines = []
+              lines.push(marker)
+              lines.push(`## 🧪 行为改动映射用例（diff 驱动）${persona ? ` — persona=\`${persona}\`` : ''}`)
+              lines.push('')
+              lines.push(`**触发用例**（本次 diff 按 \`migao-dev-flow\` §13.2 映射表推出）：\`${process.env.MAPPED_CASE_IDS}\``)
+              lines.push('')
+              lines.push(netMode
+                ? '**映射来源**：无规则命中 → 跑 **兜底网** `DEFAULT_BEHAVIOR_CASES`（用例与本 PR 改动**无因果**，失败**不阻塞**合并）'
+                : '**映射来源**：规则命中（用例与本 PR 改动**有因果**，失败**阻塞**合并）')
+              lines.push('')
+              lines.push('**执行计划**（persona | 档位 | 用例 | 门禁）：')
+              lines.push('')
+              lines.push('```')
+              lines.push(scopedPlan || '（无可执行用例）')
+              lines.push('```')
+              lines.push('')
+              lines.push('> `blocking` = 规则命中，失败拦合并；`report-only` = 兜底网，失败只报告')
+              lines.push('> 每个 persona 一套**独立栈**（issue #3563）：xiaobu 栈只装 C 端种子、'
+                + 'mibao 栈装 C 端+B 端种子 —— 同一 persona 在任一 workflow 上数据栈同构。')
+              if (process.env.UNRUNNABLE && process.env.UNRUNNABLE.trim()) {
+                lines.push('')
+                lines.push('**未执行**（用例库当前状态导致，不是本 PR 的问题）：')
+                lines.push('')
+                lines.push('```')
+                lines.push(process.env.UNRUNNABLE.trim())
+                lines.push('```')
+              }
+              lines.push('')
+              lines.push(process.env.RUN_EVAL === 'true'
+                ? '⏳ 本 persona 的独立栈评测进行中，结果稍后更新到本条评论。'
+                : '⏭️ 本次映射到的用例当前都不可执行 → 不启动评测栈。请按 §14 修订用例后再改行为。')
+              lines.push('')
+              lines.push('---')
+              lines.push(`映射口径见 \`tests/agent_eval/behavior_mapping.py\`（纯函数，可单测）；完整 run：${runUrl}`)
+
+              await upsert(marker, lines.join('\n'))
             }
 
   # ── ② 真评测 job：只在①判定有可执行用例时才起栈 ──
@@ -254,6 +305,14 @@ jobs:
     if: needs.map.outputs.run_eval == 'true'
     name: 行为映射用例评测（DEBUG 本地栈 + 真实 LLM）
     runs-on: ubuntu-latest
+    # ★ persona matrix = **每个 persona 一套独立栈**（issue #3563）：
+    #   两端需要的种子不同（xiaobu 仅 C 端 / mibao C 端+B 端），混栈必然污染一端
+    #   （CH-010 0% vs 100% 的实测根因）。与 post-deploy-eval.yml 的 persona matrix 同款
+    #   「独立 runner + 独立 docker 栈 + 独立新库」（#3515 先例），隔离优先于省一次起栈。
+    #   fail-fast: false —— 一端红不该让另一端的结果消失（另一端往往是唯一的反例证据）。
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.map.outputs.personas) }}
     # 与 xiaobu-acceptance 同量级：栈在无 buildx 缓存时回落全量构建（~13min），
     # 评测本身是多个分桶串行（每桶内并发 6）+ 失败重试
     timeout-minutes: 60
@@ -362,33 +421,27 @@ jobs:
           fi
 
       - name: "Seed 评测业务数据（C 端 #3270 + B 端 #3511）"
-        # 照抄 xiaobu-acceptance.yml 的 seed 步骤（同一套已验证口径），一处必要差异：
-        # 该 workflow 一次只跑一个 persona，故按输入**条件**叠加 B 端种子；而本 workflow 的
-        # 分桶可能同时含 mibao 与 xiaobu 桶（例如 guard.py + interact.py 的 PR）→ 条件叠加
-        # 会漏掉 B 端点名数据。两个 seed 都**幂等**（ON CONFLICT DO NOTHING /
-        # WHERE NOT EXISTS），栈又是跑完即弃的独立栈，故这里**无条件叠加**更安全。
+        # ★ 口径**单一实现**（issue #3563）：只调用 scripts/eval_stack_seed.sh，
+        #   与 xiaobu-acceptance.yml / post-deploy-eval.yml **共用同一份规则**——
+        #   禁止在此内联 fixture 路径。
         #
-        # 为什么必须要 B 端种子（#3511 T3.2 实证）：OR-016 的输入点名「2699系列雪尼尔窗帘面料」
-        # → 干净库里 product_search(products=0) → agent 反复搜 4 轮后宣告"库里没有这款商品"
-        # （行为合理但用例判红）；PR-020 点名「刺绣工艺」同理。缺数据会长得像能力回归。
+        #   历史根因（本步骤正是病灶）：这里曾是"无条件叠加 B 端种子"，理由是本 job 的
+        #   分桶可能同时含 mibao 与 xiaobu（条件叠加会漏 B 端点名数据）。代价是
+        #   **xiaobu 分桶被强行跑在 B 端栈上**：mibao_eval_seed.sql 后执行 →
+        #   created_at 更新 → `ORDER BY created_at DESC` 让 B 端 prod_eval_2699 恒排第一
+        #   → C 端用例的「第一款」指到 B 端商品（无「白色」色号、绑 per_area 刺绣工艺）
+        #   → CH-010 在本 workflow 上 0%（products=4），在 xiaobu-acceptance 上 100%（products=3）。
+        #   修法不是"改条件叠加"（那只是把病灶挪到另一端），而是**按 persona 分栈**：
+        #   上方 matrix 让每个 persona 一个独立 job + 独立栈，本步骤按本腿 persona 注种子。
+        #
+        #   为什么必须要 B 端种子（#3511 T3.2 实证）：OR-016 的输入点名「2699系列雪尼尔窗帘面料」
+        #   → 干净库里 product_search(products=0) → agent 反复搜 4 轮后宣告"库里没有这款商品"
+        #   （行为合理但用例判红）；PR-020 点名「刺绣工艺」同理。缺数据会长得像能力回归。
+        #   静态锁：tests/unit_ci_workflows/test_eval_stack_seed_parity.py（L0）。
         env:
           DEV_SERVICE_TOKEN: diagnostics-only-placeholder
         run: |
-          docker compose -f deploy/docker-compose.yml exec -T postgres \
-            psql -v ON_ERROR_STOP=1 -U app_user -d ai_customer_service \
-            < tests/agent_eval/fixtures/xiaobu_eval_seed.sql
-          echo "── 叠加 B 端种子（mibao_eval_seed.sql）──"
-          docker compose -f deploy/docker-compose.yml exec -T postgres \
-            psql -v ON_ERROR_STOP=1 -U app_user -d ai_customer_service \
-            < tests/agent_eval/fixtures/mibao_eval_seed.sql
-          echo "── 数据核对 ──"
-          # 标签在 bash 侧拼：SQL 里不用「两竖线」做字符串拼接 —— CI helper 的管道规模守卫
-          # 把两竖线也当管道计数，而 SQL 的连接符不是 shell 管道（本条注释同样避开那两个字
-          # 符，否则守卫会把注释也算成一例）
-          PRODUCTS=$(docker compose -f deploy/docker-compose.yml exec -T postgres \
-            psql -U app_user -d ai_customer_service -tAc \
-            "SELECT count(*) FROM products WHERE tenant_id=1")
-          echo "products=$PRODUCTS"
+          bash scripts/eval_stack_seed.sh --persona "${{ matrix.persona }}"
 
       - name: Install eval runner deps
         # local_runner 的模块级第三方依赖只有 httpx（用例 YAML 解析走仓内 yaml_light，纯标准库）
@@ -404,12 +457,18 @@ jobs:
           PYTHONIOENCODING: utf-8
           # 通过的写用例也要看工具结果 ——「工具被调用」≠「落库成功」（issue #3270 实证）
           AGENT_EVAL_TRACE_ALL: "1"
+          # 波动台账（issue #3563 同类漂移排查）：`runner` 只有在设了这个变量时才落盘台账
+          # （local_runner.py:3899），此前本 workflow 与本变量同族的另两个 workflow
+          # 各写一份口径 → 台账在本 workflow（PR 门禁，波动最需要被看见的地方）静默缺失。
+          AGENT_EVAL_FLAKE_LOG: agent-eval-flakes.json
           # 固定节流降到最小：墙钟几乎全在真实 LLM 往返上（与 xiaobu-acceptance 同值）
           EVAL_ROUND_SLEEP: "0.2"
           EVAL_CASE_SLEEP: "0.3"
           # 用例级并发（栈只起一次，别并行建栈——实测并发建栈反而更慢）
           EVAL_CONCURRENCY: "6"
           BUCKETS: ${{ needs.map.outputs.buckets }}
+          # 本腿的 persona（matrix）—— 用于从执行计划里挑出**属于本栈**的桶
+          PERSONA: ${{ matrix.persona }}
         run: |
           # pipefail：评测输出要 tee 留档（失败时评论里贴要点），但不能因此吞掉
           # local_runner 的非零退出码 —— 评测失败必须让本 step 失败
@@ -421,11 +480,18 @@ jobs:
           BLOCK_STATUS=0
           SOFT_STATUS=0
           N=0
+          echo "── 本 job 只跑 persona=$PERSONA 的分桶（每个 persona 一套独立栈，issue #3563）──"
           # 逐桶跑：每个桶 = (persona, tier, 门禁模式)，桶内命令形状与 §13 的手工命令一致。
           # persona 必须与用例库归属一致，否则 runner 直接 exit 1（禁止静默少跑）；
           # tier 决定档位（normal 只跑 tier: normal 的用例，非 normal 的走 full 档）。
+          # ★ 只跑**本栈 persona** 的桶：另一端的桶由它自己的 matrix 腿（独立栈）跑 ——
+          #   在原栈上接着跑另一端的用例，就是"同 person 混栈"（本 issue 的病灶）。
           while IFS='|' read -r persona suite ids mode; do
             [ -n "$ids" ] || continue
+            if [ "$persona" != "$PERSONA" ]; then
+              echo "⏭ 跳过 persona=$persona 的桶（由该 persona 自己的 matrix 腿跑）"
+              continue
+            fi
             N=$((N + 1))
             echo ""
             echo "── [$N] persona=$persona 档位=$suite 门禁=$mode 用例=$ids ──"
@@ -456,6 +522,17 @@ jobs:
           fi
           echo "soft_failures=$SOFT_STATUS" >> "$GITHUB_OUTPUT"
           exit "$BLOCK_STATUS"
+
+      - name: Upload flake ledger（波动台账汇聚，#3505）
+        # issue #3563 同类漂移排查：xiaobu-acceptance / agent-eval / pr-check 都上传台账，
+        # 本 workflow（PR 行为门禁）此前既不落盘也不上传 → 高波动用例治理（§14.3
+        # 双周回顾）看不到 PR 门禁这一路的波动。按 matrix.persona 命名，两条腿不重名。
+        if: always() && hashFiles('agent-eval-flakes.json') != ''
+        uses: actions/upload-artifact@v7
+        with:
+          name: agent-eval-flake-ledger-behavior-${{ matrix.persona }}
+          path: agent-eval-flakes.json
+          retention-days: 30
 
       - name: "Diagnose on failure: containers + DB probe"
         # 起栈/评测失败时 dump 容器状态与日志（与 xiaobu-acceptance 同款；
@@ -496,10 +573,14 @@ jobs:
           EVAL_OUTCOME: ${{ steps.eval.outcome }}
           SOFT_FAILURES: ${{ steps.eval.outputs.soft_failures }}
           GATE_MODE: ${{ needs.map.outputs.gate_mode }}
+          PERSONA: ${{ matrix.persona }}
         with:
           script: |
             const fs = require('fs')
-            const marker = '<!-- agent-behavior-eval -->'
+            // ★ 按 persona 分评论（issue #3563）：本 job 已是 persona matrix，两条腿并行写 PR
+            //   评论；共用同一个 marker 会互相覆盖 → 有一端的结果从 PR 上消失（假绿）。
+            const persona = process.env.PERSONA || ''
+            const marker = persona ? `<!-- agent-behavior-eval:${persona} -->` : '<!-- agent-behavior-eval -->'
             const runUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`
             const outcome = process.env.EVAL_OUTCOME || 'skipped'
             const passed = outcome === 'success'
@@ -507,7 +588,8 @@ jobs:
             const softFail = (process.env.SOFT_FAILURES || '0') !== '0'
             const icon = passed ? (softFail ? '⚠️' : '✅') : (outcome === 'skipped' ? '⏭️' : '❌')
 
-            // 合并各桶的汇总（每桶一个 eval-summary-<n>.json）
+            // 合并本腿各桶的汇总（每桶一个 eval-summary-<n>.json；**本 runner 独占**，
+            // 另一 persona 的腿在另一个 runner 上，故不会互相污染）
             const cases = []
             let total = 0, passedCount = 0, weighted = 0
             let files = []
@@ -530,7 +612,7 @@ jobs:
 
             const lines = []
             lines.push(marker)
-            lines.push(`## ${icon} 行为改动映射用例（diff 驱动）`)
+            lines.push(`## ${icon} 行为改动映射用例（diff 驱动）${persona ? ` — persona=\`${persona}\`` : ''}`)
             lines.push('')
             lines.push(`**触发用例**（本次 diff 按 \`migao-dev-flow\` §13.2 映射表推出）：\`${process.env.MAPPED_CASE_IDS}\``)
             lines.push('')
