@@ -682,7 +682,8 @@ workflow 内红 + PR 评论"（强信号）；**规则命中红 = 改动真的�
    （实测：`case_ids=OR-014,AS-004` 排除 PR-010 ⇒ R1 读到种子值 `price=168.0`，而红时读到 `198.0`）。
    判据：给出**前置条件的观测值**（本例应读到 `price=198.0` 才说明分叉态存在）；
    **未复现时须如实标注**「该次绿不构成判别性验证」，并以**确定性层证据**兜底
-   （本例 `ProductServiceTest#updateProduct_BasePriceSyncsToSkus`：改前 `Wanted but not invoked` → 改后 80 tests 绿）。
+   （本例 `ProductServiceTest#updateProduct_BasePriceSyncsToSkus`，`ProductServiceTest.java:559`；
+   改前 `Wanted but not invoked` → 改后 80 tests 绿，读数为 PR #3746 更正评论记录）。
    形态与判据详见 `migao-acceptance` v1.7「假绿形态：重放未复现缺陷的前置条件」。
 
 ## 17. 并行修复原则（v1.15 新增，2026-09-14 固化）——**发现即并行，合并串行**
