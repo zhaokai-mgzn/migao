@@ -158,6 +158,20 @@ class HumanHandoffTool(BaseTool):
     read_only = False
     destructive = False
     idempotent = False
+    # requires_confirmation **刻意保持 False**（显式豁免，登记于
+    # tests/test_write_tool_confirm_gate_invariant.py::CONFIRM_GATE_EXEMPT_WRITE_TOOLS，
+    # issue #3594 确认门禁分类审计）：
+    # 本工具虽是写操作（建工单/发通知/建人工会话），但**确认发生在上游流程**——
+    #   D1 客户显式请求词命中 → intent_router 短路直转 complaint → 本工具；
+    #   D2 商家 autoHandoffKeywords 命中 → 直转；
+    #   D3 AI 主动建议 → handoff_offer 节点先发建议卡、**用户点卡确认后**才到本工具。
+    # 三条入口都不存在「未确认即转人工」，在工具层再加一道 = 让顾客「求人还要再点一次卡」，
+    # 且直接破坏用例锁定的语义（CH-008/CH-015/UI-010/ST-008）。
+    # 该豁免是既有产品决策：docs/design/xiaobu-ai-handoff-guidance.md（第 25/64/244/264 行）
+    # 明文「D1/D2 直转是产品共识…再加确认是负体验」，并把 requires_confirmation=True
+    # 列为「会改变 CH-008 语义，须单独评审」。
+    # 残留风险（已登记 #3594）：idempotent=False，重复调用产生重复工单 + 重复管理员通知；
+    # 收敛点是幂等/去重（admin-api 或会话级一次性守卫），不是工具层确认门禁。
 
     parameters = {
         "type": "object",

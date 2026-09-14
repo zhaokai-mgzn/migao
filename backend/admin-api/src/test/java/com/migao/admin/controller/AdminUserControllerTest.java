@@ -128,6 +128,35 @@ class AdminUserControllerTest {
 
             verify(userService, times(1)).createUser(any(), any(), any(), any(), any(), any(), any());
         }
+
+        // issue #3605：#3561 只补了 update 侧；本条锁 create 侧（同族漏网面复核结论：create 侧本就读取），
+        // 并把「phone/password/name/roleIds 逐键真的进 Service + roleIds 写 user_roles」变成不变式。
+        @Test
+        @DisplayName("建员工整条 payload（phone/password/name/roleIds）逐键落库")
+        void createUser_bindsEveryKeySentByAgentTool() throws Exception {
+            setAdminUser();
+            Role role = new Role();
+            role.setId("role-manager");
+            role.setCode("manager");
+            when(roleService.getRoleById("role-manager")).thenReturn(role);
+            com.migao.admin.entity.User user = new com.migao.admin.entity.User();
+            user.setId("user-new");
+            when(userService.createUser(any(), any(), any(), any(), any(), any(), any()))
+                    .thenReturn(user);
+
+            // 与 ai-agent `app/tools/employee_manage.py::_create_user` 下发的 payload 逐字一致
+            mockMvc.perform(post("/api/admin/users")
+                            .contentType("application/json")
+                            .content("{\"phone\":\"13900000002\",\"password\":\"init-pass-123\","
+                                    + "\"name\":\"张三\",\"roleIds\":[\"role-manager\"]}"))
+                    .andExpect(status().isOk());
+
+            // 岗位=角色体系（#2969）：roleIds 解析出 role code 后，position 兜底同值
+            verify(userService).createUser(eq("13900000002"), eq("init-pass-123"), eq("张三"),
+                    eq("manager"), eq("manager"), isNull(), eq(1L));
+            // roleIds 必须真的写 user_roles（角色表主键语义，与 update 侧一致）
+            verify(roleService).assignRoleToUser("user-new", "role-manager", 1L);
+        }
     }
 
     // ============ updateUser ============

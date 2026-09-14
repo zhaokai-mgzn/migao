@@ -245,3 +245,66 @@ class TestProductException:
         assert result.success is False
         assert result.error == "tool_execution_failed"
         assert "boom" not in (result.message or "")
+
+
+class TestProductManageSchemaContract:
+    """schema ↔ 后端真实契约对齐（工具审计 A4/B1）。
+
+    背景：`AgentProductCreateRequest` 无 `skus` 字段（下发即丢弃），schema 却声明该参数
+    并诱导 LLM 传；`action` enum 含运行时必拒的死分支 `manage_processing_items`
+    （已拆分为 product_processing_item_manage），且描述只有「操作类型」三字。
+    """
+
+    # AgentProductCreateRequest 的全部字段（Java DTO 单一事实源），payload 键必须落在其中
+    AGENT_CREATE_FIELDS = {
+        "name", "categoryId", "basePrice", "skuCode", "description", "brand", "unit",
+        "pricingType", "stock", "status", "images", "detailImages", "colors",
+        "sellingMethods", "doorWidths", "processingItemIds", "processingItemConfigs",
+        "specifications", "stockDeductionMode", "allowReturnRestock",
+    }
+
+    def test_skus_param_removed_from_schema_and_signature(self, tool):
+        """`skus` 不在后端 DTO 字段里 → 不得继续声明（否则 LLM 按 schema 传、被静默丢弃）"""
+        import inspect
+
+        assert "skus" not in tool.parameters["properties"]
+        assert "skus" not in inspect.signature(ProductManageTool.execute).parameters
+
+    @patch("app.tools.product_manage.get_admin_api_client")
+    async def test_create_payload_keys_are_all_backend_fields(
+        self, mock_get_client, tool, admin_tool_context, mock_client
+    ):
+        """create payload 的每个键都必须是 AgentProductCreateRequest 的字段（无 skus）"""
+        mock_client.post = AsyncMock(return_value={"success": True, "data": {"id": "p-1"}})
+        mock_get_client.return_value = mock_client
+
+        await tool.execute(
+            context=admin_tool_context,
+            action="create",
+            name="窗帘",
+            price=100.0,
+            colors=["米白"],
+            processing_item_configs=[{"processingItemId": "pi-1", "customPrice": 10}],
+        )
+
+        body = mock_client.post.call_args[1]["json_data"]
+        assert "skus" not in body
+        unknown = set(body) - self.AGENT_CREATE_FIELDS
+        assert unknown == set(), f"create payload 含后端 DTO 不认的字段: {unknown}"
+
+    def test_action_enum_subset_of_valid_actions(self, tool):
+        """action enum 不得含运行时必拒分支（`manage_processing_items` 已拆出独立工具）"""
+        from app.tools.product_manage import VALID_ACTIONS
+
+        enum = tool.parameters["properties"]["action"]["enum"]
+        assert set(enum) <= VALID_ACTIONS
+
+    def test_action_description_covers_each_branch(self, tool):
+        """action 描述必须逐个说明分支语义（照 customer_manage.py 的写法）"""
+        action_prop = tool.parameters["properties"]["action"]
+        desc = action_prop["description"]
+        for member in action_prop["enum"]:
+            assert member in desc, f"action 描述缺少分支 {member} 的语义说明"
+        # 不能停留在零信息的「操作类型」占位
+        assert desc.strip() != "操作类型"
+        assert len(desc) >= 40

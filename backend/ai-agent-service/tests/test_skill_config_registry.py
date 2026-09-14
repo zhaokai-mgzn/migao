@@ -1,4 +1,4 @@
-# case_ids: AS-003, CH-012, CH-010, OR-014, OR-017
+# case_ids: AS-003, CH-012, CH-010, OR-014, OR-017, HR-005, ST-003, ST-005, FN-001, DA-004
 """
 SkillConfig + SkillRegistry 单元测试
 
@@ -400,58 +400,295 @@ def test_customer_aftersales_prompt_not_handoff_on_aftersale_requests():
     assert CUSTOMER_AFTERSALES_SKILL_CONFIG.default_persona == "xiaobu"
 
 
-# ────────────── 不变式：确认门禁可达性（CH-012 根因回归） ──────────────
+# ────────────── 不变式：确认门禁可达性（CH-012 根因回归；#3317 全 Skill 放开） ──────────────
+
+# 显式豁免清单（键 = Skill 名，值 = 豁免理由）——**禁止用宽泛 skip 让不变式形同虚设**
+# （先例教训：`test_tool_schema_consistency.py` 的 ALWAYS_SKIP_PARAMS 恰好排除了缺陷字段）。
+# 豁免只允许一种形态：**纯只读 Skill**（0 个需确认写工具 → 永远走不到门禁的补救话术）。
+# 两条测试都会机械校验豁免的"诚实性"：① 理由必须非空；② 被豁免 Skill 当前**确实**用不上
+# 该豁免（它若后来绑上写工具/在 prompt 里承诺确认卡，豁免立即失效 → 测试转红），
+# 防"陈旧豁免"退化成永久后门。
+_CONFIRM_GATE_INTERACT_EXEMPT: dict = {}
+_CONFIRM_CARD_PROMISE_INTERACT_EXEMPT: dict = {}
+
+# 「prompt 承诺确认卡」的措辞标记（发确认卡的唯一手段就是 interact(component=confirm)）
+_CONFIRM_CARD_MARKERS = ("确认卡", "确认卡片", "component=confirm")
+
+# #3317 的 6 处工具绑定（B 端）——逐一锁定为回归锚点
+_ISSUE_3317_BINDINGS = {
+    "staff": ("employee_manage", "role_manage"),
+    "settings": ("settings_manage", "notification_manage"),
+    "data": ("finance_api", "session_manage"),
+}
+
+# 显式豁免台账（键 = Skill 名，值 = 不绑 `interact` 的理由）：**没绑 `interact` 的 Skill 必须
+# 在这里逐条记录在案**，且理由必须成立（只读、prompt 不承诺确认卡）。台账由
+# `test_interact_absent_only_for_recorded_read_only_skills` 机械校验——新 Skill 若漏绑
+# `interact`，测试立刻红并要求"要么补绑、要么在此写理由"，不允许静默漏改。
+_READ_ONLY_INTERACT_SKILLS = {
+    "knowledge": (
+        "B 端知识库：只绑 knowledge_search / processing_item_query（均为只读），"
+        "tool_names 里 0 个需确认写工具，自身 prompt（prompts/knowledge.md 不存在、"
+        "EXAMPLES-knowledge.md）也不承诺确认卡 → 结构上走不到确认门禁的补救话术"
+    ),
+    "customer_knowledge": (
+        "C 端知识库：只绑 knowledge_search（只读），0 个需确认写工具，"
+        "EXAMPLES-customer_knowledge.md 不承诺确认卡 → 同上"
+    ),
+}
+
+
+def _skill_prompt_surface(config) -> str:
+    """Skill **自身**的 prompt 表面（内联 system_prompts + base_skill 按 Skill 注入的文件）。
+
+    `base_skill._build_system_prompt` 的组装层次：`base/identity.md` + `base/principles.md` +
+    共享 `PROMPT-rules.md` + `prompts/{skill}.md` + inline + `EXAMPLES-{skill}.md`。
+    共享层（尤其 PROMPT-rules「破坏性写必须先展示确认卡片」）是**每个 Skill 都注入**的公共
+    铁律，计进来会让只读 Skill 也"承诺"确认卡 → 不变式恒真、形同虚设（本包要防的假绿形态）。
+    故这里只取"按 Skill 区分"的那几层，与 base_skill 的解析保持同一目录来源。
+    """
+    import pathlib
+
+    from app.graph.skills.base_skill import _ref_dir
+
+    ref = pathlib.Path(_ref_dir)
+    parts = list((config.system_prompts or {}).values())
+    for path in (ref / "prompts" / f"{config.name}.md", ref / f"EXAMPLES-{config.name}.md"):
+        if path.exists():
+            parts.append(path.read_text(encoding="utf-8"))
+    return "\n".join(parts)
+
+
+def _confirm_gated_tools(config, tool_registry) -> list:
+    """该 Skill 绑定的「需确认写工具」名称（destructive 或 requires_confirmation）。"""
+    gated = []
+    for name in (config.tool_names or []):
+        tool = tool_registry.get_tool(name)
+        if tool is None:
+            continue
+        if getattr(tool, "destructive", False) or getattr(tool, "requires_confirmation", False):
+            gated.append(name)
+    return gated
+
+
+def _assert_exemptions_are_honest(exempt: dict, granted: list) -> None:
+    """豁免必须带非空理由，且只对"当前确实用不上"的 Skill 生效（防陈旧豁免/宽泛 skip）。"""
+    for name, reason in exempt.items():
+        assert isinstance(reason, str) and reason.strip(), (
+            f"豁免清单里的 {name} 没有写理由 —— 无理由的豁免等于宽泛 skip"
+        )
+        assert name in granted, (
+            f"豁免清单里的 {name} 已不成立（它当前并不需要该豁免）—— 请从清单移除"
+        )
 
 
 def test_confirmed_write_tools_require_interact_in_same_skill():
-    """不变式（C 端）：Skill 绑定了需确认的写工具时，必须同时暴露 `interact`。
+    """不变式（**全 Skill**，2026-09-14 起）：绑定需确认写工具的 Skill 必须暴露 `interact`。
 
     根因（CH-012 退换货实证 2026-09-11）：`base_skill._requires_confirmation` 在拦截
     未确认写操作时，返回 `confirmation_required` 并**要求 LLM 调用
-    `interact(component=confirm)` 展示确认卡片**。而 `customer_aftersales` 的
-    tool_names 里没有 `interact`（`aftersale_create` 却标了
-    `requires_confirmation=True`）—— 门禁给出的补救路径在该 Skill 内**不可达**：
-        ① 写工具 `aftersale_create` 只能依赖上一轮「口头确认」侥幸放行，弹卡确认路径不存在；
+    `interact(component=confirm)` 展示确认卡片**。若该 Skill 的 tool_names 里没有
+    `interact`（而它绑了 `requires_confirmation`/`destructive` 写工具），门禁给出的补救
+    路径在该 Skill 内**不可达**：
+        ① 写工具只能依赖上一轮「口头确认」侥幸放行，弹卡确认路径不存在；
         ② 轮内 LLM 拿到「请调用 interact」的指引却无此工具 → 反复重试/放弃；
         ③ 唯一出口退化为 `human_handoff`（实测 CH-012 tools=['customer_order_query',
            'human_handoff', 'aftersale_query']，0/2 建单）。
     这是「prompt 写了、工具没给」型缺陷，单看 prompt 断言（本文件上一条用例）测不出来。
 
-    作用域刻意限定为 **C 端（persona=xiaobu）**：C 端设计基线是「低学历点选友好」，
-    写操作必须走卡片而非让顾客打字确认。
+    📌 决策记录（2026-09-14 产品裁定，**推翻**下列历史决定）：
+      本用例原作用域刻意限定 C 端（`if "xiaobu" not in config.system_prompts: continue`），
+      并在注释里记下「B 端 staff/settings/data 共 6 处经证据评估后决定**不补** `interact`」
+      （issue #3317：相关 16 条用例无一条断言 interact，补工具会改变 B 端交互形态）。
+      **该决定已被产品裁定推翻**，裁定原话：
+        「我的要求是**写操作应该是安全的**，我们在 **admin-api 层面做了限制**，
+          我希望**交互形态是统一的**。」
+      ⇒ ① **采用 A 路径**：给缺 `interact` 的写入型 Skill 补绑（staff/settings/data，
+            覆盖 #3317 的 6 处工具绑定）；② **禁止 B 路径**（收紧/移除
+            `requires_confirmation`）—— 那会降低写操作安全性，与铁律冲突；写操作的安全边界
+            由 **admin-api 层**承担，agent 侧确认卡属**交互一致性**，不是唯一安全网；
+            ③ B 端与 C 端走**同一套**确认卡机制。
+      故作用域放开到**全 Skill**；豁免只剩"纯只读 Skill"（见 `_CONFIRM_GATE_INTERACT_EXEMPT`，
+      必须逐条写理由）。
 
-    B 端（staff/settings/data 共 6 处）**经证据评估后决定不补 `interact`**（issue #3317）：
-    用例库里涉及这 6 个工具的 16 条用例**没有一条**断言 `interact`（含 smoke 的
-    HR-001/HR-004，它们靠**口头确认**长期通过）→ 补工具等于改变 B 端交互形态，
-    收益不明而回归面覆盖 105 条只能在面向生产的手动评测里验证。
-    改为修真正的缺陷：确认门禁的话术**按本 Skill 是否有 `interact` 分流**
-    （见 test_graph_skills.TestConfirmGateGuidance），不再给出不可执行指令。
+    与门禁话术分支的关系：`base_skill` 的补救话术按「本 Skill 是否绑 `interact`」分流
+    （无 interact → 退化为文本复述，见 test_graph_skills.TestConfirmGateGuidance）。
+    配置层统一后，**该分支的"无 interact"支路对所有已注册 Skill 不可达** —— 本用例即其
+    常量/断言驱动的守护（分支本体在 base_skill.py，属其它包所有权，本包不改；保留它是对
+    "非注册 tool_names 动态子集"的防御性兜底，不再承担已注册 Skill 的话术分流）。
     """
     from app.graph.skills.skill_registry import get_skill_registry
     from app.tools.registry import get_tool_registry
 
     full_registry = get_tool_registry()
+    skills = [c for c in get_skill_registry().get_all() if c.tool_names]
+    exempt_granted: list[str] = []
+    violations: list[str] = []
+    checked = 0
+
+    for config in skills:
+        gated = _confirm_gated_tools(config, full_registry)
+        if config.name in _CONFIRM_GATE_INTERACT_EXEMPT:
+            if not gated:
+                exempt_granted.append(config.name)
+            continue
+        if not gated:
+            continue
+        checked += 1
+        if "interact" not in (config.tool_names or []):
+            violations.append(
+                f"{config.name} 绑定需确认写工具 {'/'.join(gated)} 但未暴露 interact"
+            )
+
+    _assert_exemptions_are_honest(_CONFIRM_GATE_INTERACT_EXEMPT, exempt_granted)
+    # 厚度守卫：防 registry/工具注册解析失效导致不变式空转（假绿）
+    assert checked >= 10, (
+        f"仅检查了 {checked} 个绑定需确认写工具的 Skill —— 解析疑似失效（不变式空转）"
+    )
+    assert not violations, (
+        "以下 Skill 的弹卡确认路径不可达（写工具只能靠口头确认侥幸放行）：\n  "
+        + "\n  ".join(violations)
+    )
+
+
+def test_issue_3317_six_bindings_now_expose_interact():
+    """#3317 的 6 处（staff×2 / settings×2 / data×2）逐一锁定：补绑后交互形态统一。
+
+    同时锁住**禁止的 B 路径**：这 6 个工具的 `requires_confirmation`/`destructive` 安全
+    语义不得被下调（写操作安全由 admin-api 层承担，但 agent 侧门禁本身也是安全网，
+    不得为"话术好写"而摘除）。
+    """
+    from app.graph.skills.skill_registry import get_skill_registry
+    from app.tools.registry import get_tool_registry
+
+    reg = get_skill_registry()
+    tools = get_tool_registry()
+
+    for skill_name, gated_names in _ISSUE_3317_BINDINGS.items():
+        cfg = reg.get_or_raise(skill_name)
+        tool_names = set(cfg.tool_names or [])
+        assert "interact" in tool_names, (
+            f"{skill_name} 未绑 interact —— 门禁「请调用 interact(component=confirm)」"
+            f"对该 Skill 是不可执行指令（#3317）"
+        )
+        for name in gated_names:
+            assert name in tool_names, f"{skill_name} 的既有写工具 {name} 被移除（回归）"
+            tool = tools.get_tool(name)
+            assert tool is not None and (
+                getattr(tool, "destructive", False)
+                or getattr(tool, "requires_confirmation", False)
+            ), (
+                f"{skill_name}.{name} 的需确认标记被下调 —— 禁止 B 路径"
+                f"（安全语义不得为交互话术让路）"
+            )
+
+
+def test_confirm_gate_guidance_takes_card_branch_for_unified_skills():
+    """交互形态统一的**直接**断言：门禁话术对全 Skill 落在「卡片支路」而非「文本兜底」。
+
+    `base_skill` 的补救话术按「本 Skill 的工具子集里有没有 `interact`」分流
+    （`skill_registry.get_tool("interact") is not None`）：
+      绑 → 「请调用 interact(component=confirm) 发确认卡」（可执行，本包统一后的形态）
+      未绑 → 「完整复述 + 口头确认」（文本兜底，交互形态不统一的旧形态）
+    这里用**与 base_skill 完全相同的判据**（`create_skill_registry(cfg.tool_names)`）断言：
+    所有绑了需确认写工具的 Skill 都落在卡片支路 —— 即"分流"不再由运行时探测决定交互形态，
+    而由配置 + 本文件的不变式锁定（分支本体在 base_skill.py，属其它包所有权，本包不改）。
+    """
+    from app.graph.skills.base_skill import create_skill_registry
+    from app.graph.skills.skill_registry import get_skill_registry
+    from app.tools.registry import get_tool_registry
+
+    tools = get_tool_registry()
+    fallback: list[str] = []
+    for config in get_skill_registry().get_all():
+        if not config.tool_names or not _confirm_gated_tools(config, tools):
+            continue
+        subset = create_skill_registry(list(config.tool_names))
+        if subset.get_tool("interact") is None:
+            fallback.append(config.name)
+
+    assert not fallback, (
+        f"以下 Skill 的门禁话术会落到「文本复述 + 口头确认」兜底支路（交互形态不统一）："
+        f"{fallback} —— 补绑 interact 或登记豁免理由"
+    )
+
+
+def test_prompt_promising_confirm_card_requires_interact():
+    """不变式（全 Skill）：Skill 自身 prompt 承诺「确认卡」→ 必须绑 `interact`（承诺=能力）。
+
+    这是 `TestPromptToolPromiseInvariant` 的姊妹条：那条只扫**内联** prompt 里点名的工具，
+    而 B 端的确认卡承诺写在 `references/prompts/{skill}.md`（staff.md「立即调
+    interact(component=confirm) 发确认卡片」/ settings.md「先校验参数 + 确认卡 + 用户确认后
+    执行」/ data.md「结束会话需确认卡」）—— 只查内联 prompt 查不到，**#3317 的 6 处正是从
+    这道缝里漏出去的**（prompt 承诺了、工具集里没有）。故本用例按 Skill 聚合"自身 prompt
+    表面"（内联 + base_skill 注入的 prompts/EXAMPLES 文件）做承诺 ↔ 能力一致性断言。
+    """
+    from app.graph.skills.skill_registry import get_skill_registry
+
+    skills = [c for c in get_skill_registry().get_all() if c.tool_names]
+    promising: list[str] = []
+    exempt_granted: list[str] = []
     violations: list[str] = []
 
-    for config in get_skill_registry().get_all():
-        if "xiaobu" not in (config.system_prompts or {}):
+    for config in skills:
+        surface = _skill_prompt_surface(config)
+        if not any(marker in surface for marker in _CONFIRM_CARD_MARKERS):
             continue
-        tool_names = list(config.tool_names or [])
-        if not tool_names:
+        promising.append(config.name)
+        if config.name in _CONFIRM_CARD_PROMISE_INTERACT_EXEMPT:
+            exempt_granted.append(config.name)
             continue
-        for name in tool_names:
-            tool = full_registry.get_tool(name)
-            if tool is None:
-                continue
-            needs_confirm = getattr(tool, "destructive", False) or getattr(
-                tool, "requires_confirmation", False
+        if "interact" not in (config.tool_names or []):
+            violations.append(
+                f"{config.name} 的 prompt 承诺「确认卡」但工具集没有 interact（承诺不可执行）"
             )
-            if needs_confirm and "interact" not in tool_names:
-                violations.append(f"{config.name} 绑定需确认写工具 {name} 但未暴露 interact")
 
+    _assert_exemptions_are_honest(_CONFIRM_CARD_PROMISE_INTERACT_EXEMPT, exempt_granted)
+    # 厚度守卫：检测标记必须真的扫到承诺，否则不变式空转（假绿）
+    assert len(promising) >= 8, (
+        f"只扫到 {promising} 个承诺确认卡的 Skill —— 检测标记疑似失效（不变式空转）"
+    )
     assert not violations, (
-        "以下 C 端 Skill 的弹卡确认路径不可达（写工具只能靠口头确认侥幸放行）：\n  "
+        "以下 Skill 的 prompt 承诺了确认卡，却给不出下发卡片的工具：\n  "
         + "\n  ".join(violations)
+    )
+
+
+def test_interact_absent_only_for_recorded_read_only_skills():
+    """显式豁免台账：没绑 `interact` 的 Skill 必须逐条记录在案，且理由必须成立。
+
+    作用：把「交互形态统一」落成**可复核的清单**，而不是靠"没人提就没问题"。
+    ① 未记录在 `_READ_ONLY_INTERACT_SKILLS` 却缺 `interact` 的 Skill → 红（要么补绑，要么写理由）；
+    ② 台账里的 Skill 若其实有需确认写工具 / prompt 承诺确认卡 → 红（理由不成立，豁免无效）；
+    ③ 理由为空 → 红（无理由的豁免 = 宽泛 skip，本仓库已有先例教训）。
+    """
+    from app.graph.skills.skill_registry import get_skill_registry
+    from app.tools.registry import get_tool_registry
+
+    tools = get_tool_registry()
+    skills = [c for c in get_skill_registry().get_all() if c.tool_names]
+
+    for name, reason in _READ_ONLY_INTERACT_SKILLS.items():
+        assert isinstance(reason, str) and reason.strip(), f"{name} 的豁免没有写理由"
+        cfg = get_skill_registry().get_or_raise(name)
+        assert "interact" not in (cfg.tool_names or []), (
+            f"{name} 已绑 interact —— 请把它从只读豁免台账移除（豁免已过时）"
+        )
+        assert not _confirm_gated_tools(cfg, tools), (
+            f"{name} 现在绑了需确认写工具 —— 只读豁免不成立，必须补绑 interact"
+        )
+        assert not any(m in _skill_prompt_surface(cfg) for m in _CONFIRM_CARD_MARKERS), (
+            f"{name} 的 prompt 现在承诺确认卡 —— 只读豁免不成立，必须补绑 interact"
+        )
+
+    unrecorded = sorted(
+        c.name for c in skills
+        if "interact" not in (c.tool_names or []) and c.name not in _READ_ONLY_INTERACT_SKILLS
+    )
+    assert not unrecorded, (
+        f"以下 Skill 没绑 interact 却没记录豁免理由：{unrecorded}\n"
+        f"交互形态统一（#3577）：要么补绑 interact，要么在 _READ_ONLY_INTERACT_SKILLS "
+        f"写清「结构上不需要」的理由"
     )
 
 

@@ -181,6 +181,47 @@ CI 原先允许 3 次 → 失败多的跑把分钟数全花在重试上。
 > 这次"每次 CI 全量重建"之所以长期无人察觉，是因为回落路径把构建输出丢掉了 ——
 > 没有可观测性时，"没有收益"和"没有生效"长得一模一样。
 
+### 2.7.1 第四次实测复核（#3587，2026-09-14）：缓存**确实**一条都没有
+
+#3426 的三次实验是在 `xiaobu-acceptance.yml` 上做的。本轮在 **`post-deploy-eval.yml`**
+上复核，结论一致，且这次拿到了**仓库级的硬证据**：
+
+| 证据 | 实测值 | 出处 / 复现命令 |
+|---|---|---|
+| 仓库 Actions 缓存条目（总数） | **232 条** | `gh api "repos/<owner>/<repo>/actions/caches?per_page=100" --jq .total_count` |
+| 其中 buildx / docker / gha 相关 | **0 条**（前 100 条全是 `gitleaks-cache`(94) / `setup-python`(2) / `setup-java`(2) / `node-cache`(2)） | `gh api ... --jq '.actions_caches[].key' \| grep -icE "gha\|buildx\|docker"` → **0** |
+| 仓库可见性（影响 gha 缓存可用性） | **public** | `gh api repos/<owner>/<repo> --jq .visibility` ⇒ 排除"私有仓库 gha 缓存受限"这一常见嫌疑 |
+| 最近一次 post-deploy run 的构建路径 | **回落**（`docker compose up --build`，无缓存） | run 34806843585 日志只有 `── 已清空旧卷（fresh DB）──` → `Container aikf-* Waiting`；**既无** `✅ 镜像构建完成（buildx + GHA cache，未回落）`，**也无** `::warning:: 回落` |
+| 该 run 的栈步骤耗时 | **210s / 209s**（双 persona 各自独立栈，并行） | `gh api .../runs/34806843585/jobs`：`Start local stack` 04:39:32→04:43:02、04:39:37→04:43:06 |
+| 同一 run 的评测步骤耗时 | xiaobu 408s / mibao 505s | 同上（`Run <persona> normal`） |
+
+**两个新增结论**（超出 #3426）：
+
+1. **不只是"缓存没命中"，而是"分支本身没留下任何痕迹"**：该 run 的 `Start local stack`
+   步骤从头到尾**没有打印任何一条**判定信息 —— 既没有成功分支的 CACHED 层数/cache manifest，
+   也没有失败分支的 `::warning::`/错误尾部。也就是说"到底走了哪条路"在日志里**无法判定**
+   （只能靠"日志里没有成功标记"反推）。这与 #3426 的教训同族但更严重：
+   那次是"失败可见性不足"，这次是**两条分支都没有留下可判定的痕迹**。
+   ⇒ 本轮已修：构建前打印预期路径，构建后打印**判定行**（路径/是否回落/失败腿/耗时），
+   两条腿分开判定（`admin-api` 挂了与 `ai-agent` 挂了不再长得一样）。
+2. **失败腿可归因**：原实现用 `A && B` 嵌套，admin-api 失败时 ai-agent **根本不执行**，
+   日志上看不出是哪条腿的锅；现在分开判，判定行直接写出 `失败腿=admin-api,ai-agent`。
+
+**这些证据下的结论与建议**（#3587 ③）：
+
+| 方案 | 预期收益（基于上表） | 代价 / 风险 | 建议 |
+|---|---|---|---|
+| 继续修 `type=gha` 层缓存 | **≈0**（三次实验 + 本轮复核共四次无效；后端"完全没参与"，无可利用错误；仓库是 public ⇒ 已排除"私有仓库 gha 缓存受限"这一嫌疑） | 继续投入排查上游 buildkit 缺陷，收益不确定 | ❌ 停止投入（#3426 已判定） |
+| **GHCR 预构建镜像** | admin-api **与分支无关** → 可长期复用，省掉每次 Maven 打包；ai-agent 依赖源码 → 只省基础层/系统依赖层。栈步骤实测 **210s**，其中构建占大头 ⇒ **乐观估计每次评测省 2-3min（栈 3.5min → ~1min）** | ① 需 `packages: write` + GHCR 登录；② 镜像发布/清理策略（配额、过期）；③ 与"标准考场必须评**被部署的那份代码**"冲突 —— ai-agent 镜像必须按 SHA 构建，不能直接复用（否则评的不是这份代码）；④ 双 persona 矩阵 ×2 份拉取流量 | ⏸ **本包不实现**（改动不小且需要新权限；见下方拆分建议） |
+| **修正 `--cache-from` 指向** | ≈0（当前写法本身没错：scope 已带 workflow 名、`mode=max` 已是最大导出） | —— | ❌ 无修正空间（不是"指错了"，是后端不工作） |
+
+**GHCR 拆分建议（后续包）**：① 先做 admin-api（分支无关，收益确定、风险低）——
+`docker buildx build --cache-to type=registry,ref=ghcr.io/<owner>/migao-eval-cache:admin-api,mode=max`
++ `--cache-from` 同 ref + `docker/login-action` 登录 GHCR，**保留现有回落路径**；
+② 跑 3 次对比栈步骤耗时（本轮新增的判定行已提供现成的对照基线）；
+③ 只有 ① 的收益被实测证实，再评估 ai-agent（它必须按 SHA 构建，收益只可能来自基础层）。
+**不满足这两条前置条件就不要上镜像化** —— 本项目在层缓存上已经付过四次学费。
+
 ## 3. 诊断基建（没有它，上面的归因都做不出来）
 
 | 证据 | 出处 |
@@ -223,8 +264,203 @@ gh api repos/<owner>/<repo>/actions/runs/<id>/jobs \
 gh run view <id> --log | grep "Start local stack" | ...
 ```
 
-守卫（改动若让优化退化会变红）：
+守卫（改动若让退化会变红）：
 `tests/unit_ci_workflows/test_schema_integrity.py`（栈缓存 + PyPI 源 + 审计口径 +
 `TestEvalSpeedKnobs`：三旋钮接线与快速档边界，含"非取证步骤不许挂 fast"的反向守卫）、
 `backend/ai-agent-service/tests/test_acceptance_case_checks.py`（并发有界、读写门独占、
-报告顺序、预算不被并发突破、pre_clean 只独占清理动作）。
+报告顺序、预算不被并发突破、pre_clean 只独占清理动作）、
+`tests/unit_ci_workflows/test_post_deploy_eval_supersede.py`（#3587：抑制判定口径 + 全局槽位 +
+"抑制不得计失败"反向守卫）。
+
+## 6. 结论：为什么**不该**在 PR 层做全量 LLM 评测（#3587）
+
+> 本节是一次性结论，供后人决策时引用。**只给结论与建议，不改任何既有门禁属性**
+> （required 名单与各 workflow 的 blocking 语义保持原样）。
+
+### 6.1 三条实测事实
+
+**事实 1：PR 层的真实 LLM 评测不拦门 —— 它是"信号"，不是"门禁"。**
+分支保护 required_status_checks 只有确定性层那 9 项（`.env`/三模块单测/QA Growth Gate/
+ci-helper/gitleaks/Danger Scan）；LLM 行为层**有意不进 required**
+（`eval-environments.md` §3.1/§3.2 决策记录：真实 LLM 方差会卡死**无关** PR 的合并流水线；
+job 名随 persona 参数化也不适合做 required 名）。
+⇒ 一个改 AI 行为的 PR 目前要付**四层真实 LLM** 的成本：
+
+| # | 层 | 触发 | 环境 | 拦不拦合并 |
+|---|---|---|---|---|
+| 1 | C 端 smoke（persona=xiaobu） | PR（AI 行为文件） | CI 独立栈 | ❌ 信息性 |
+| 2 | 映射用例迭代档（#3502） | PR（AI 行为文件） | CI 独立栈 | 规则命中桶阻塞 / 兜底网只报告 |
+| 3 | xiaobu Acceptance（PR 触发） | PR | CI 独立栈 | ❌ 信息性 |
+| 4 | B 端云冒烟（pr-check） | PR | 云测试环境 | ❌ 信息性 |
+
+**事实 2：并发不只是慢，它让结论变不准（本文件自己就记过两次）。**
+① §2.2：3 job 分片把栈启动从 3.4min 抬到 **12min**，整跑 **19.8min > 串行 15.6min**；
+② 用户侧实测：并发把评测轮次从 8min 抬到 **12min**、**确定性失败从 9 条涨到 13 条**。
+⇒ "并发评测"制造的红灯里，有相当一部分**不是代码的问题**（是环境互抢），
+而假失败会诱发"重跑—再假失败"的二次浪费（§2.4 重试预算正是被这么吃满的）。
+
+**事实 3：栈成本在固定成本里占大头，而 PR 层把它乘了很多倍。**
+栈步骤实测 **210s/腿**（run 34806843585；其中镜像构建占大头且缓存四次实测均未生效，§2.7/§2.7.1）
++ 依赖安装 ~20s。**PR 层每起一次栈就是 3.5 分钟**，而 PR 层的结论**不拦门**（事实 1）。
+本会话实测窗口（2026-09-14 05:18~05:25 UTC）：
+
+| run | workflow | 建 run → 首个 job 起跑 | 结果 |
+|---|---|---|---|
+| 34809133992 | xiaobu-acceptance | **231s（排队）** | 栈 3min → 装依赖 19s → 评测**跑 0 秒即 failure** |
+| 34809196579 / 34809398757 | xiaobu-acceptance | 79s / 48s（排队） | 与 4 个 PR 的其余 workflow run 同时 pending |
+| 34809476067 / 34809506509 | xiaobu-acceptance | 144s / 1s | 同一时刻 **6+ 个 run 排队** |
+
+### 6.2 结论
+
+**PR 层只保留「定向映射用例」（窄、报告制）；完整覆盖交给部署后/批次轮。**
+
+理由（按重要性）：
+1. **信号价值与成本错配**：不拦门的信号不该按拦门的价格买。PR 层要回答的是
+   "这次改动**碰到的**能力有没有坏"（几十条映射用例足够），不是"整个 agent 还行不行"；
+2. **并发制造假失败**：PR 层是并发最密集的地方（多 PR 同时触发），也是最不该承担
+   "不能有假失败"要求的地方 —— 而全量/结论档恰恰需要确定性（事实 2）；
+3. **完整覆盖有更合适的时机**：部署后 / 批次轮（#3503）在**同一份 main 状态**上跑全量，
+   没有"评到一半代码又变了"的问题（#3587 的抑制正是为此），且频率低、可串行（§3.3 全局槽位）；
+4. **栈成本可预测**：PR 层少起一次栈 = 少 3.5min 固定成本 × 每个 PR（事实 3）。
+
+### 6.3 建议的分层清单（现状 → 建议，**含"要不要改门禁属性"**）
+
+| 层 | 档位 | 环境 | 触发 | 建议 | 需要改门禁属性吗 |
+|---|---|---|---|---|---|
+| PR · 确定性 | 三模块单测 / QA Gate / ci-helper / gitleaks / Danger Scan | CI | PR | **保持 required**（本来就快、无方差） | 否 |
+| PR · 行为窄档 | **只跑映射用例（#3502 的规则命中桶）**，兜底网可保留但**显式标注不阻塞** | CI 独立栈 | PR（AI 行为文件） | **收窄**：默认不跑 smoke/Acceptance/云冒烟（或仅在**规则未命中**时才跑其中一层做兜底） | 否（三者本就是信息性） |
+| PR · 冒烟档 | C 端 smoke（7 条） | CI 独立栈 | PR（AI 行为文件） | 降为**按需**（`workflow_dispatch` 或"映射用例全绿但仍想抽检"）；**不**与映射用例并行起两个栈 | 否 |
+| 部署后 | 双 persona **全量** + `completion_verdict` | CI 独立栈 | ai-agent 部署成功（**被取代即抑制**，#3587） | **保持为主拦截**，全局串行（§3.3） | 否 |
+| 批次/夜间 | normal 全量（降频） + adversarial（每周六） | CI 独立栈 | schedule | **保持**（只追踪不阻塞） | 否 |
+| 里程碑/下结论 | 结论档：全量 + 验收剧本 + 双裁判 + `completion_verdict` | CI 独立栈 | 人工/里程碑 | **保持必过** | 否 |
+
+> **本节的边界**：以上是**建议**，落地需要单独的任务包（改 workflow 的触发/档位 =
+> 改门禁矩阵的"自动动作"列，须同步改 `eval-environments.md` §3.1 与 `migao-dev-flow` §16.5）。
+> #3587 只交付了本条结论 + ①②（抑制 + 全局槽位）+ ③（缓存实测结论），
+> **没有**动任何既有门禁的 blocking 属性。
+
+## 7. 思考开关的实测账（issue #3573）：**参数生效**，且默认是「开」
+
+> 为什么记在这里：思考预算是**评测/线上共同的主要成本与延迟杠杆**（一条最简 prompt 的
+> 一次调用就能烧掉 100+ reasoning token / 多 0.5-1s）。此前这条杠杆建立在**一个从未实测过
+> 的假设**上，故单独立账。
+
+### 7.1 待验证的问题（不是"优化"，是"证实/证伪"）
+
+`LLMFactory.create_skill_llm` 的思考开关写法来自 MiniMax-M3 时代
+（`app/llm/factory.py:63-69`）：`enable_thinking=True` 发
+`extra_body={"thinking": {"type": "enabled"}}`，`force_no_think=True` 发
+`{"thinking": {"type": "disabled"}}`；**两个都不传 → 不传 `extra_body`**（`tests/test_llm_factory.py:41` 钉死）。
+
+矛盾证据（仓库内已确证，这是本账的起点）：
+
+- 同一 provider（`api.deepseek.com` / `deepseek-flash`）的**视觉路径**在
+  `tests/test_llm_factory.py:81-82` 明确断言
+  「DeepSeek vision（OpenAI 兼容）不传 MiniMax 专属 thinking extra_body」+
+  `assert "extra_body" not in kwargs`（PR #2547 / commit `f7cd3ba9` 引入）；
+- 而 **skill 路径仍在传**（`factory.py:64/67`）；
+- `factory.py:51` 的注释「不传参时 M3 默认仍开思考」是 MiniMax-M3 时代产物，当前模型是
+  `deepseek-flash`（`app/config.py:41,111-112`）。
+
+`_THINKING_INTENTS` / `_MULTI_TURN_THINKING_INTENTS`（`app/graph/skills/base_skill.py:198-224`）
+与 issue #3153（把 5 个写意图纳入 thinking）的全部收益，都以「该开关真的生效」为前提；
+若为静默 no-op，则 #3153 的收益必须重新归因。
+
+### 7.2 实测结论：**参数生效（不是 no-op，也不是被拒）**
+
+- **run id**：`34809425971`（job `thinking-probe-bootstrap`，2026-09-14 05:30Z，
+  `workflow_dispatch` 触发的 `test/3573-thinking-probe`）
+- **专属入口自证**：`34810173534`（`LLM Thinking Probe` workflow 文件自己跑通，39s，
+  结论同上 `VERDICT=参数生效`）—— 证明该 workflow 合入 main 后 `gh workflow run` 可用
+- **探针**：`backend/ai-agent-service/scripts/probe_thinking_effect.py`
+  （3 次真实调用、prompt 极短、不跑评测用例）
+- **CI 入口**：`.github/workflows/llm-thinking-probe.yml`（仅 `workflow_dispatch`，零常态成本）
+- **机器判定**：`VERDICT=参数生效`（两次独立 run 一致 → 非偶然）
+
+出网请求体（拦 httpx 传输层取得，证明 `extra_body` 未被 langchain 静默丢弃）：
+
+| 变体 | 出网 `thinking` | `max_completion_tokens` |
+|---|---|---|
+| A `enable_thinking=True` | `{"type": "enabled"}` | 384000 |
+| B `force_no_think=True` | `{"type": "disabled"}` | 2048 |
+| C 两者都不传（基线） | **不存在该 key** | 2048 |
+
+响应侧证据（同一 prompt「只回答两个字：好的。不要任何解释。」）：
+
+| 变体 | `reasoning_content` | reasoning tokens | output tokens | 耗时 | content |
+|---|---|---|---|---|---|
+| A enabled | **len=164** | 100 | 102 | 1.33s | `好的` |
+| B disabled | **absent** | （无该字段） | **1** | 0.91s | `好的` |
+| C 基线（不传） | **len=537** | 122 | 124 | 1.55s | `好的` |
+
+三条可判定结论：
+
+1. **参数生效**：A 与 B 在 `reasoning_content` 有无、reasoning token 数、output token 数上
+   全面可分（A 102 输出 token vs B **1** 个）。
+   第二次独立 run（`34810173534`）同样形态（A 44 / reasoning 42 vs B **1**，
+   基线 52 / reasoning 50）—— **`disabled` 侧的 output token 稳定为 1 且 `reasoning_content`
+   恒 absent**，`enabled`/基线侧稳定为「有 reasoning + 数十 output token」，非单次偶然。
+2. **DeepSeek 认这个字段，且不校验**：`thinking` 作为顶层 body key 出网、返回 200、无 400；
+   但响应 `response_metadata` 里**不回显**该字段（`model_name/finish_reason/model_provider` +
+   `system_fingerprint`，无 `thinking`/`reasoning` 回显）→ 判定只能靠**行为差异**，不能靠回显。
+3. **provider 默认是「开」**：C（不传 `extra_body`）照样产出 reasoning_content（len=537，
+   122 reasoning tokens），与 A 同级。
+   ⇒ `factory.py:51` 那句「不传参时默认仍开思考」在当前 provider 上**结论仍然成立**
+   （虽然它是 M3 时代的注释）；但**语义已变**：不是「M3 特有的默认」，而是
+   「DeepSeek 的默认思考行为」。`enable_thinking=False` 才是「什么都不说、放任默认」，
+   `force_no_think=True` 才是**真正关闭**。
+
+对既有结论的影响（明确写清，防误读）：
+
+- ✅ **`_THINKING_INTENTS` / `_MULTI_TURN_THINKING_INTENTS` 的调参在当前 provider 上有效**；
+  #3153 的收益**不需要重新归因**（不是「参数没生效所以收益来自别处」）。
+- ⚠️ 但反过来的推论同样重要：因为**默认就是开**，真正省钱的开关是
+  `force_no_think=True`（关思考），而不是 `enable_thinking=True`（那是显式回到默认）。
+  单条最简 prompt 实测，关思考把 output token 从 102 → **1**（-99%）、耗时 1.33s → 0.91s。
+
+一个**未解释的观察**（诚实标注，不编因果）：`input_tokens` 在开思考时稳定为 40、
+关思考时稳定为 14（两次 run 一致），而探针三次用的是**同一个 prompt**。
+看到的最接近的解释是基线那次 `reasoning_content` 里出现「there's a system instruction
+that says I should think before answering」—— 疑似 provider 在思考模式下会附加思考指令，
+但**本次探针没有取证请求侧 messages，无法证实**。若后续要靠 input token 做成本核算，
+需要单独取证（属独立小包，不影响本账三条结论）。
+
+### 7.3 探针顺带发现的能力缺口（属于后续包，本账只记录）
+
+1. **视觉路径缺该开关**：`factory.py:82-105`（`create_vision_llm`）**不传任何 thinking 参数**
+   → 按 §7.2 结论 3，**每次图片识别都在默认开思考**（拍照找同款/识别面料这类任务，
+   推理 token 纯属浪费）。与 skill 路径一致化的做法：显式传
+   `extra_body={"thinking": {"type": "disabled"}}`（或按任务分级）。
+2. **轻量文本路径的 `disabled` 是有效省钱**：`create_intent_llm` / `create_summary_llm` /
+   `create_suggestion_llm` / `create_registration_review_llm` / `create_briefing_llm`
+   （`factory.py:114/137/206/223/240`）都传 `disabled` —— 实测该参数确实生效，这些路径的
+   省 token 设计**成立**（此前无法证实）。
+3. **写法用的是「未文档化的兼容形态」**：`{"thinking": {"type": ...}}` 是 MiniMax 形态，
+   DeepSeek 官方 Thinking Mode 文档（https://api-docs.deepseek.com/guides/thinking_mode/）
+   记的是 `reasoning_effort`。当前实测**能用**（§7.2），但属于依赖兼容行为；
+   是否迁移到官方文档形态是**独立决策**（涉及全部 5 个轻量路径 + 视觉路径），不在本账范围。
+
+### 7.4 复现方法
+
+```bash
+# CI（唯一能拿到真实凭据的路径）：workflow_dispatch 专用入口，3 次真实调用
+gh workflow run llm-thinking-probe.yml
+gh run watch <run-id>
+gh run view <run-id> --log   # 检索 VERDICT= 与 wire#0 thinking
+```
+
+本地无 `.env`（无 LLM 凭据）时脚本**优雅退出**并打印 `SKIPPED: 本次未发送任何 LLM 调用，
+**不构成任何结论**` —— 不会静默假成功（这是刻意设计：探针最危险的失败模式是"看起来跑过了"）。
+退出码语义：结论（no-op / 生效 / 被拒）**不影响**退出码；只有探针自身没跑成
+（凭据 401/403、网络不可达、服务端 5xx）才非零退出。
+
+### 7.5 后续动作建议（基于本结论）
+
+1. **`_MULTI_TURN_THINKING_INTENTS` 该补齐 5 个写意图** —— 因为参数**确实生效**，
+   多轮写流程（建品/角色/客户/分类/加工项）的迭代 2+ 轮保留思考是**真实可得的收益**，
+   不存在「补了也白补」的情形。
+2. **优先级更高的反而是「关」的一侧**：视觉路径（`create_vision_llm`）缺 `disabled`
+   → 每次识图默认开思考；补上与 skill 路径一致的显式关闭，是**纯赚**的延迟/成本优化。
+3. **不要顺手改 `factory.py` 的行为**：本账是「证实/证伪 + 记录」，行为改动（视觉路径补
+   `disabled`、是否迁移到 `reasoning_effort`）各自独立开包，避免把「实测结论」和
+   「行为变更」混在一个 PR 里（结论可复现，行为变更需要自己的回归）。

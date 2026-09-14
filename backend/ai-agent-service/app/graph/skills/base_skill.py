@@ -2476,6 +2476,9 @@ async def _self_correct_retry(
     这是 Error-Self-Correct Skill 的核心——不依赖 LLM 在多轮对话中
     自己发现和修复，而是在工具层直接做一次自动修正。
 
+    ⚠️ 仅对**幂等**工具生效（issue #3564）：非幂等写工具（建单/建工单/转人工/发通知）
+    失败时自动重放同一调用 = 重复副作用，一律不重试，把失败与 suggestion 交回模型决策。
+
     Returns:
         (result_str, result_dict) 如果重试成功；None 如果不需重试或重试失败。
     """
@@ -2484,6 +2487,33 @@ async def _self_correct_retry(
         return None
 
     error_msg = result_dict.get("message", result_dict.get("error", "执行失败"))
+
+    # ── 非幂等写工具：禁止自动重试（issue #3564）─────────────────────────────
+    # 原判据只有「success=False + suggestion」，**不区分工具幂等性** —— 对
+    # order_create（建单）/ aftersale_create（建工单）/ human_handoff（转人工）/
+    # notification_manage（发通知）这类**非幂等写**，失败时自动重放同一调用就是
+    # **重复副作用**（重复建单/重复转人工）；而工具的 suggestion 常常正是
+    # "参数怎么补"的引导语，会把重试包装得很合理。真实触发面很宽：工具「第一次已
+    # 产生副作用但返回 success=False」（下游超时/响应丢失）时必然重复落库。
+    #
+    # 真值来源（单一真值，不另立清单）：工具自身的 MCP 风格标注 `BaseTool.idempotent`
+    # （app/tools/base.py:86）——它早已是注册表里的既有元数据（get_schema() 就用它拼
+    # `NON_IDEMPOTENT` 标签给 LLM 看），本处只是让**机制层**也消费它：护栏落在 retry
+    # 侧，不靠每个工具在 suggestion 里写"请勿重试"自觉（靠工具自觉 = 下一个新写工具必踩）。
+    # 新写工具"忘了表态"（吃 BaseTool 默认 True）由静态锁拦：
+    # tests/test_tool_idempotent_retry_guard.py::TestIdempotencyClassificationLock。
+    #
+    # fail-safe：取不到标注（非 BaseTool 的替身/新形态工具）一律视为不可重试。
+    # 只读查询与显式 idempotent=True 的写工具（product_update/sku_update 等）**照旧重试**
+    # —— 既有能力不关闭。
+    if not getattr(tool, "idempotent", False):
+        logger.warning(
+            f"[{skill_name}][self-correct] Tool {tool.name} 非幂等写工具，"
+            f"non-idempotent: retry suppressed（自动重试已抑制，失败与 suggestion 交回模型决策）"
+            f" | error={error_msg[:80]} | session={session}"
+        )
+        return None
+
     logger.info(
         f"[{skill_name}][self-correct] Tool {tool.name} failed, attempting auto-correct | "
         f"error={error_msg[:80]} | session={session}"
