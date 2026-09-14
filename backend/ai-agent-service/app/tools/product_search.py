@@ -17,13 +17,14 @@ from typing import Any, Dict, List, Optional
 from loguru import logger
 
 from app.tools.base import BaseTool, ToolContext, ToolResult
+from app.tools.stock_semantics import LOW_STOCK_THRESHOLD, low_stock_phrase
 from app.utils.http_client import get_admin_api_client
 from app.utils.field_mapper import FieldMapper
 
 
 # 库存筛选词表 → 后端 stockBelow 值（ProductQueryRequest.stockBelow；语义 stock ≤ 阈值）
-# LOW_STOCK=100 与后台低库存口径一致（#1396：Dashboard 卡片 / DailyBriefing / admin-web 均为 100）
-LOW_STOCK_THRESHOLD = 100
+# LOW_STOCK 阈值不在此处定义 —— 单点来源 app/tools/stock_semantics.py（issue #3783：
+# 本文件与 inventory_manage 曾各持一套口径，同一句「低库存」会给出 100 / 10 两个数字）
 OUT_OF_STOCK_THRESHOLD = 0
 STOCK_STATUS_TO_STOCK_BELOW: Dict[str, int] = {
     "low_stock": LOW_STOCK_THRESHOLD,
@@ -46,7 +47,7 @@ class ProductSearchTool(BaseTool):
     description = (
         "【触发】用户问'有什么XX''搜XX''找XX商品''有没有XX''XX元左右的商品'或提到商品关键词/分类时调用。"
         "【前置】keyword 可选，缺关键词时列出全部。"
-        "stock_status 支持 low_stock（库存≤100）/out_of_stock（库存≤0）；"
+        "stock_status 支持 low_stock（" + low_stock_phrase() + "）/out_of_stock（库存≤0）；"
         "min_price/max_price（元）为本地过滤（后端不支持价格筛选），只作用于本次返回的 size 条，"
         "需更大范围请调大 size。"
         "【反例】查单个商品详情用 product_detail，查分类用 category_manage(tree)。"
@@ -89,7 +90,8 @@ class ProductSearchTool(BaseTool):
             "stock_status": {
                 "type": "string",
                 "description": (
-                    "库存状态筛选（可选）：low_stock=库存≤100（与后台低库存口径一致）/ "
+                    f"库存状态筛选（可选）：low_stock={low_stock_phrase()}"
+                    "（与后台低库存口径一致）/ "
                     "out_of_stock=库存≤0。对应后端 stockBelow 字段；"
                     "「有货」后端无法表达（stockBelow 只有「≤」语义），请在结果里按 stock 判断"
                 ),
@@ -143,7 +145,7 @@ class ProductSearchTool(BaseTool):
                 success=False,
                 error=f"不支持的库存筛选: {stock_status}",
                 message=f"库存状态仅支持：{', '.join(sorted(STOCK_STATUS_TO_STOCK_BELOW))}",
-                suggestion="请用 low_stock（库存≤100）或 out_of_stock（库存≤0）；「有货」请在结果里按 stock 判断",
+                suggestion=f"请用 low_stock（{low_stock_phrase()}）或 out_of_stock（库存≤0）；「有货」请在结果里按 stock 判断",
             )
         
         try:

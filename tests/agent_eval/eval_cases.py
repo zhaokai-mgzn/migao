@@ -4156,7 +4156,7 @@ _CASE_PR_006 = EvalCase(
     difficulty=Difficulty.NORMAL,
     user_inputs=['看看哪些商品库存不足'],
     expectations=['inventory_manage(action=low_stock_alert) or product_search(stock_status=low_stock)'],
-    data_checks=['报告的低库存商品数 = 该路径工具返回的条数（product_search: data.products/total；inventory_manage: data.count）—— 数值必须有据，不得凭空给数（本 run 实测 4=4）', '阈值口径必须与所用工具一致：product_search 分支 = ≤100（库存≤100，与后台低库存口径一致）；inventory_manage 分支 = threshold（默认 10）', '给出的数字必须能指回该工具返回的明细（不得只给个总数而不列商品）'],
+    data_checks=['报告的低库存商品数 = 该路径工具返回的条数（product_search: data.products/total；inventory_manage: data.count）—— 数值必须有据，不得凭空给数（本 run 实测 4=4）', '阈值口径必须与所用工具一致：product_search 分支 = ≤100（库存≤100，与后台低库存口径一致）；inventory_manage 分支 = threshold（默认 100 —— 与 product_search 同一单点来源 app/tools/stock_semantics.py，见 #3783）', '给出的数字必须能指回该工具返回的明细（不得只给个总数而不列商品）'],
     skip_reason='',
     tags=['inventory', 'alert'],
     persona='',

@@ -188,14 +188,15 @@ cases:
       - "看看哪些商品库存不足"
     # ── 等价路径（issue #3781；真实 run 34856561459 的 PR-006 假红）──
     # 病灶：原用例只认 `inventory_manage(action=low_stock_alert)` **一条实现路径**，
-    # 而"低库存"在产品里有**两条都被文档认可**的工具路径，且两条的阈值**文档口径不同**：
+    # 而"低库存"在产品里有**两条都被文档认可**的工具路径：
     #   · `product_search(stock_status=low_stock)` = **库存≤100**
-    #     （`app/tools/product_search.py:26 LOW_STOCK_THRESHOLD=100`；`:92` 参数文档
+    #     （`app/tools/stock_semantics.py` 的 `LOW_STOCK_THRESHOLD`；工具参数文档
     #      「low_stock=库存≤100（与后台低库存口径一致）」）
-    #   · `inventory_manage(action=low_stock_alert)` 的 `threshold` 参数文档写「默认 10」
-    #     （`app/tools/inventory_manage.py:66` + schema `default: 10`），而
-    #     `_low_stock_alert` 的**形参默认是 100**（同文件 `:359`）—— 三处口径不一致，
-    #     属**产品级语义冲突**，已另开 issue #3783 跟踪（不属评测范围）。
+    #   · `inventory_manage(action=low_stock_alert)` 的 `threshold` —— 历史 schema/文档写
+    #     「默认 10」、`_low_stock_alert` 形参却默认 100（曾三处口径不一致）
+    # ⚠️ 上述**产品级语义冲突已由 issue #3783 收敛**（不属评测范围，已在评测侧消除）：
+    #    两工具共用单点来源 `app/tools/stock_semantics.py`（权威口径 100、上界含），
+    #    `inventory_manage` 的 schema 描述与 `default` 均由该来源生成（不再有第二处数字）。
     # 本 run 实测：agent 走 `product_search`，工具返回 `products=4 total=4`，原文
     # 「📦 库存偏低（≤100 件）的商品共 4 件」—— 被产品文档认可的等价路径，却被判 0%
     # （`inventory_manage(action=low_stock_alert) → unmatched expectation`）。
@@ -248,10 +249,10 @@ cases:
     # ── 数值有据的来源（为什么这里没有额外的机器断言）──
     data_checks:
       - "报告的低库存商品数 = 该路径工具返回的条数（product_search: data.products/total；inventory_manage: data.count）—— 数值必须有据，不得凭空给数（本 run 实测 4=4）"
-      - "阈值口径必须与所用工具一致：product_search 分支 = ≤100（库存≤100，与后台低库存口径一致）；inventory_manage 分支 = threshold（默认 10）"
+      - "阈值口径必须与所用工具一致：product_search 分支 = ≤100（库存≤100，与后台低库存口径一致）；inventory_manage 分支 = threshold（默认 100 —— 与 product_search 同一单点来源 app/tools/stock_semantics.py，见 #3783）"
       - "给出的数字必须能指回该工具返回的明细（不得只给个总数而不列商品）"
     skip_reason: ""
-    merge_log: "verification 2.6 独有。2026-09-15（issue #3781）等价路径校准：原断言 `expectations=['inventory_manage(action=low_stock_alert)']` **过度指定实现路径** —— 真实 run 34856561459 里 agent 走的是 `product_search(stock_status=low_stock)`（产品文档认可：库存≤100，与后台低库存口径一致），回答「库存偏低（≤100 件）的商品共 4 件」且工具返回 `products=4 total=4`（数值有据），却判 0% reproducible。改为接受两条等价路径（**未放宽任何阈值、未删任何断言**：断言内核仍是「低库存这件事被真的查出来了 + 报出的数有据」）。⚠️ 产品级语义冲突「同一个『低库存』在两条工具里是 ≤100 vs ≤10」另开 issue 跟踪（产品问题，非评测问题）：`product_search.py:26 LOW_STOCK_THRESHOLD=100` vs `inventory_manage.py:66` 参数文档「默认 10」+ schema `default: 10`，而 `_low_stock_alert` 形参默认却是 **100**（inventory_manage.py:359）——三处口径不一致，详见该 issue"
+    merge_log: "verification 2.6 独有。2026-09-15（issue #3781）等价路径校准：原断言 `expectations=['inventory_manage(action=low_stock_alert)']` **过度指定实现路径** —— 真实 run 34856561459 里 agent 走的是 `product_search(stock_status=low_stock)`（产品文档认可：库存≤100，与后台低库存口径一致），回答「库存偏低（≤100 件）的商品共 4 件」且工具返回 `products=4 total=4`（数值有据），却判 0% reproducible。改为接受两条等价路径（**未放宽任何阈值、未删任何断言**：断言内核仍是「低库存这件事被真的查出来了 + 报出的数有据」）。⚠️ 产品级语义冲突「同一个『低库存』在两条工具里是 ≤100 vs ≤10」另开 issue 跟踪（产品问题，非评测问题）：`product_search.py:26 LOW_STOCK_THRESHOLD=100` vs `inventory_manage.py:66` 参数文档「默认 10」+ schema `default: 10`，而 `_low_stock_alert` 形参默认却是 **100**（inventory_manage.py:359）——三处口径不一致，详见该 issue ｜ 2026-09-15 跟进（#3783 收敛后）：两工具改用单点来源 `app/tools/stock_semantics.py`（权威口径 100、上界含），schema 描述/default 同源生成，上文所述三处口径已消除；本日志中 `product_search.py:26` / `inventory_manage.py:66` / `:359` 是**当时的行号**，现行锚点为 `stock_semantics.py::LOW_STOCK_THRESHOLD` 与 `low_stock_alert_threshold_schema()`"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_inventory_manage.py"
