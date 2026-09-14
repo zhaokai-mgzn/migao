@@ -115,6 +115,12 @@ _JAVA_MAIN = _REPO_ROOT / "backend" / "admin-api" / "src" / "main" / "java"
 # 工具源码里 payload 的四种形态（app/utils/http_client.py::AdminApiClient 的形参名）
 PAYLOAD_KWARGS = ("json_data", "params", "data")
 
+# payload 之外的合法透传 kwarg（同一 client 形参，非 payload 载体）：
+#   tenant_id / user_id → X-Tenant-Id / X-User-Id 头；timeout → 请求超时；
+#   headers             → extra_headers（`_get_headers` 合并，logistics_track.py 已在用）
+# 单一事实源：扫描器（_tool_calls）与「未知 kwarg」用例共用本常量，避免两处漂移。
+CLIENT_PASSTHROUGH_KWARGS = ("tenant_id", "user_id", "timeout", "headers")
+
 # 静态不可解析 payload 的调用点：必须显式登记「谁在兜底」——禁止自由文本
 # key = "文件|HTTP方法 归一化端点"
 #
@@ -795,7 +801,7 @@ def _tool_calls() -> tuple[ToolCall, ...]:
                     k, d = _resolve_payload_expr(kw.value, scope, node.lineno, funcs_by_name)
                     keys += k
                     dyn += d
-                elif kw.arg is not None and kw.arg not in ("tenant_id", "user_id", "timeout"):
+                elif kw.arg is not None and kw.arg not in CLIENT_PASSTHROUGH_KWARGS:
                     dyn.append((f"未知 kwarg {kw.arg}=（client 不支持 → TypeError）", node.lineno))
             calls.append(
                 ToolCall(
@@ -1114,8 +1120,13 @@ def test_unknown_payload_kwarg_names() -> None:
     """payload 只能走 client 支持的形态（json_data / params / data）。
 
     `json=`（httpx 风格）在自研 `AdminApiClient` 上必然 TypeError（issue #3548 曾恒失败）。
+
+    `headers=` 是**真实支持**的透传参数（`AdminApiClient._request` 的 `headers` →
+    `_get_headers(extra_headers=...)` 合并，`logistics_track.py` 已在用）；此前未列入
+    允许集 → 扫描器把合法调用判成 TypeError（#3686 首次触发）。列入允许集 =
+    对齐 client 真实签名，不放松「未知 kwarg 拦截」本身。
     """
-    allowed = set(PAYLOAD_KWARGS) | {"tenant_id", "user_id", "timeout"}
+    allowed = set(PAYLOAD_KWARGS) | set(CLIENT_PASSTHROUGH_KWARGS)
     bad = []
     for call in _tool_calls():
         for expr, _line in call.dynamic:
