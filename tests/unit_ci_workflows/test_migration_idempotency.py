@@ -1,3 +1,7 @@
+# case_ids: DA-010, API-013
+#   ⚠️ case_ids 必须在文件前 50 行内 —— `.github/growth_gate.py:extract_case_ids()` 只扫前 50 行
+#   （本地实测：本行原放在 docstring 之后第 71 行 → QA Growth Gate 报
+#    「新增测试未声明 case_ids」block。docstring 较长时尤其注意）。
 """
 数据库迁移链幂等性静态不变式（issue #3615）—— **前向防护**（只覆盖新增/未发布迁移）。
 
@@ -68,7 +72,6 @@
 
 L0 层（秒级、零外部依赖）拦住结构性缺陷，不让它流到真实 LLM 评测层去撞（`migao-dev-flow` §16.1）。
 """
-# case_ids: DA-010, API-013
 import re
 from pathlib import Path
 
