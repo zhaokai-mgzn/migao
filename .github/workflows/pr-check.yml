@@ -415,78 +415,16 @@ jobs:
             echo "ℹ️ 无 render_cases.py 或 cases/，跳过生成物新鲜度校验"
           fi
 
-  # ============ Agent Eval smoke — 每次 PR 跑 smoke tier 用例（case-contract §六：100% 通过才合并）============
-  # v1.3 门控（2026-09-04）：真实 LLM 评测有 token 成本，仅当 AI 相关路径有变更才跑。
-  # 纯依赖升级（dependabot）/前端/Java 变更跳过（step 级跳过，job 仍 success 不阻塞 required check）。
-  agent-eval-smoke:
-    name: Agent Eval (smoke tier)
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    if: github.event_name == 'pull_request'
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-
-      - uses: actions/setup-python@v7
-        with:
-          python-version: '3.11'
-
-      - name: Detect AI-related changes
-        id: detect
-        run: |
-          git fetch origin main --quiet
-          CHANGED=$(git diff --name-only origin/main...HEAD)
-          echo "── 变更文件（${#CHANGED} 行）──"
-          echo "$CHANGED" | head -20
-          # AI 相关路径：ai-agent 服务、eval 用例库、真实 E2E。其余（前端/Java/依赖清单）不触发真实 LLM。
-          AI_HITS=$(echo "$CHANGED" | grep -E '^(backend/ai-agent-service/|tests/agent_eval/|\.github/cases/|tests/e2e/real/)' || true)
-          if [ -n "$AI_HITS" ]; then
-            echo "run_eval=true" >> "$GITHUB_OUTPUT"
-            echo "✅ 检测到 AI 相关变更（$(echo "$AI_HITS" | wc -l | tr -d ' ') 个），执行真实 LLM 冒烟评测"
-          else
-            echo "run_eval=false" >> "$GITHUB_OUTPUT"
-            echo "⏭️ 无 AI 相关变更，跳过真实 LLM 冒烟评测（省 token）"
-          fi
-
-      - name: Install deps
-        run: pip install httpx
-
-      - name: Run smoke eval (真实 LLM + 多轮业务流)
-        if: steps.detect.outputs.run_eval == 'true'
-        env:
-          AI_API_URL: https://ai-api.migaozn.com
-          ADMIN_API_URL: https://api.migaozn.com
-          SERVICE_TOKEN: ${{ secrets.SMOKE_SERVICE_TOKEN }}
-          PYTHONUTF8: "1"
-          PYTHONIOENCODING: utf-8
-          AGENT_EVAL_FLAKE_LOG: agent-eval-flakes.json
-        # 波动分类（issue #2890）：runner 内按指纹判定 llm-noise（自动放行+记台账）/
-        # reproducible（禁止 rerun 掩盖）/ unstable / infra。此处整跑重试仅兜底
-        # 运行级故障（传输/超时/5xx）；复现型失败不要人工 rerun，直接看台账签名排查。
-        run: |
-          set +e
-          for attempt in 1 2; do
-            echo "── 冒烟评测 第 ${attempt} 次 ──"
-            python tests/agent_eval/local_runner.py smoke --cases .github/cases
-            rc=$?
-            if [ $rc -eq 0 ]; then
-              echo "✅ 冒烟评测通过（attempt $attempt）"
-              exit 0
-            fi
-            echo "⚠️ 第 ${attempt} 次失败(exit $rc)，$([ $attempt -eq 1 ] && echo '重试...' || echo '两次均失败')"
-          done
-          exit $rc
-
-      - name: Upload agent-eval flake ledger
-        if: always() && hashFiles('agent-eval-flakes.json') != ''
-        uses: actions/upload-artifact@v7
-        with:
-          name: agent-eval-flakes
-          path: agent-eval-flakes.json
-          if-no-files-found: ignore
-
   # ============ Secret 扫描（gitleaks）— 防密钥/凭据提交 ============
+  # ⚠️ 「B 端 smoke 打云测试环境」层已移除（issue #3653，2026-09-15）—— 原 agent-eval-smoke
+  # job 每次 AI 相关 PR 都对 https://ai-api.migaozn.com（**已部署 main**，非 PR 分支）跑
+  # smoke 档真实 LLM。移除理由：
+  #   ① 云环境不含 PR 分支代码 → 评测结果与本 PR 改动**无因果**（与 behavior-eval
+  #      dogfooding 的 CH-010 无因果红同一形态，AD §6.1 事实 1 的第四层）；
+  #   ② B 端行为信号由 agent-behavior-eval 的**映射用例**承担（app/** 命中即跑，
+  #      规则桶或兜底网），完整 B 端覆盖由 post-deploy-eval（双 persona 全量）承担；
+  #   ③ AD §6.3：PR 层默认不跑 smoke/云冒烟；本层是四层冗余里成本最大的单层
+  #      （实测 2.5h 内 smoke 85 次 ≈ 43% 的总评测次数）。
   gitleaks-scan:
     name: Secret Scan (gitleaks)
     runs-on: ubuntu-latest
@@ -558,7 +496,6 @@ jobs:
       - e2e-quality-gate
       - qa-growth-gate
       - case-truth-check
-      - agent-eval-smoke
       - gitleaks-scan
       - danger-scan
     steps:
@@ -589,7 +526,6 @@ jobs:
       - e2e-quality-gate
       - qa-growth-gate
       - case-truth-check
-      - agent-eval-smoke
       - gitleaks-scan
       - danger-scan
     steps:
