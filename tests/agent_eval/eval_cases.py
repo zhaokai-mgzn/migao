@@ -116,15 +116,16 @@ _CASE_AS_004 = EvalCase(
     title='更新工单状态 - 关闭',
     skill=Skill.AFTERSALES,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['查看最近的售后工单', '把第一张未处理的工单关闭', '确认'],
+    user_inputs=['查看最近的售后工单', '把第一张未处理的工单关闭，关闭原因写「客户已协商一致」', '确认'],
     expectations=['after_sales_manage(action=update_status, status=closed)'],
-    data_checks=['success=true', 'closedAt/closeReason 写入'],
+    data_checks=['success=true', 'closedAt/closeReason 写入 —— 机器断言见 db_verify[after_sales_ticket]（落库 status=closed + closedAt/closeReason 非空 + closeReason 与用户点名原因一致）'],
     skip_reason='',
     tags=['update', 'status'],
     persona='',
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+    db_verify=[{'fetch': 'after_sales_ticket', 'expect_status': 'closed', 'expect_fields_nonempty': ['closedAt', 'closeReason'], 'expect_close_reason_contains': '协商一致'}],
     pre_clean=[{'type': 'aftersales_ticket_prepare'}],
 )
 
@@ -3199,7 +3200,7 @@ _CASE_OR_015 = EvalCase(
     title='order_create 写操作前置校验必须真正执行（validate_input 规则分层修复，issue #3029 复盘）',
     skill=Skill.ORDER,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['创建订单，张三 13800138000 遮光窗帘 3 米', '散剪，2.8米门幅', '不添加加工项，确认下单', '确认下单'],
+    user_inputs=['创建订单，张三 13800138000 遮光窗帘 3 米', '散剪，2.8米门幅', {'auto_respond': {'fallback': '米白，不添加加工项，确认下单'}}, {'auto_respond': {'fallback': '确认下单'}}, {'auto_respond': {'fallback': '确认'}}],
     expectations=['validate_input', 'order_create'],
     data_checks=['validate_input(target_tool=order_create, target_action=create) 必须真正执行必填与类型校验：缺少 customer_name/customer_phone/items 任一 → 校验失败并给出缺失字段列表', 'customer_phone 非 11 位手机号（或不以 1 开头）→ 校验失败提示「请输入 11 位中国大陆手机号」', '合法参数（customer_name + 11 位 phone + items 非空列表）→ 校验通过 validated=true', '禁止返回「无需校验（该操作无预定义规则）」跳过（平铺结构 vs 分层读取不匹配的回归防线，sess_7f27137647e14b1e A5 轮实证）'],
     skip_reason='',
@@ -3784,7 +3785,7 @@ _CASE_PP_006 = EvalCase(
     title='加工项计价方式 - 按米/按套/一口价/按面积，无 per_piece 与每米数量',
     skill=Skill.PRODUCT,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['查询打孔加工的计价方式', '新增加工项，计价方式选按个', '名称叫测试加工，分类选打孔加工', '计价方式按米，单价 8 元', '确认'],
+    user_inputs=['查询打孔加工的计价方式', '新增加工项，计价方式选按个', '名称叫测试加工，分类选窗帘加工', '计价方式按米，单价 8 元', '确认'],
     expectations=['processing_item_query(keyword=打孔)', 'processing_item_manage(action=create_processing_item)'],
     data_checks=['processing_item_query 响应条目无 per_meter_quantity（每米数量已回滚移除，issue #3005）', '加工项计价方式仅 per_meter / per_set / fixed / per_area——per_piece 创建被拒绝（行业加工费按米计价、辅料含在加工费中）', '商品详情 processingItems 无 custom_per_meter_quantity / perMeterQuantity（商品级密度覆盖已回滚）'],
     skip_reason='',
@@ -3793,6 +3794,7 @@ _CASE_PP_006 = EvalCase(
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+    output_verify=[{'tool': 'processing_item_manage', 'expect': {'name': '测试加工', 'pricingMethod': 'per_meter'}}],
 )
 
 # ── PR-001 [SMOKE] 商品搜索 - 关键词模糊匹配（源: cases/product.yml）──
@@ -4174,13 +4176,14 @@ _CASE_PR_021 = EvalCase(
     difficulty=Difficulty.NORMAL,
     user_inputs=['把遮光窗帘的米白色散剪规格改成 150 元', {'auto_select': True}, '确认'],
     expectations=['sku_update'],
-    data_checks=['sku_update 成功（价格落库）'],
+    data_checks=['sku_update 真成功且价格为 150 元（= 用户确认价）：机器断言见上方 output_verify（成功调用 fail-closed + new_price==150）；裸断言「调用过」不算覆盖（#3544 假绿升级）'],
     skip_reason='',
     tags=['sku', 'write', 'pricing'],
     persona='',
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+    output_verify=[{'tool': 'sku_update', 'expect': {'new_price': 150}}],
 )
 
 # ── PR-024 [NORMAL] 小布算料上限 - 定宽布买高 + 对花损耗（窗高超定高上限，必须走定宽分支并告警）（源: cases/product.yml）──

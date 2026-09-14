@@ -1778,6 +1778,32 @@ async def _fetch_product_price(token: str, name: str) -> float | None:
     return None
 
 
+def _first_successful_ticket_payload(results: list, tool: str, expect_status: str) -> tuple:
+    """首个**成功**的 `after_sales_manage` 调用里带工单引用的 payload（可选按状态过滤）。
+
+    为什么不能直接用 `_first_successful_data`（issue #3544 / AS-004）：该函数取的是
+    「第一个成功调用」的 payload，而 AS-004 的 R1 是 `list`（payload = {items,total}）
+    → 拿它去核对工单落库会指向一个**根本没有 ticket_id** 的载荷。故按 payload 形状筛：
+    带 ticket_id 且（声明了 expect_status 时）`status` 相符 —— 后者能区分同一工单上的
+    多次状态变更（如先 processing 后 closed），不会核对错那一次。
+    """
+    for r in results or []:
+        for tr in r.get("tool_results") or []:
+            if not _tool_name_matches(tr.get("tool"), tool):
+                continue
+            res = tr.get("result") if isinstance(tr.get("result"), dict) else {}
+            data = res.get("data") if res.get("success") else None
+            if not isinstance(data, dict):
+                continue
+            tid = str(data.get("ticket_id") or data.get("ticketId") or "").strip()
+            if not tid:
+                continue
+            if expect_status and str(data.get("status") or "").strip() != expect_status:
+                continue
+            return r.get("__round"), data
+    return None, {}
+
+
 _KNOWN_AMOUNT_CHECKS = ("unit_price", "subtotal", "total")
 
 
@@ -1961,6 +1987,38 @@ async def _fetch_order_detail(token: str, order_ref: str) -> dict | None:
             rd = await c.get(f"{ADMIN_API}/api/admin/orders/{oid}", headers=h, timeout=15)
             body = _safe_json(rd, None)
             return body if isinstance(body, dict) and body.get("data") else None
+    except Exception:
+        return None
+
+
+async def _fetch_ticket_detail(token: str, ticket_ref: str) -> dict | None:
+    """按售后工单 id（tkt_…/UUID）或工单号（AS-…）查 admin-api 工单详情；查不到返回 None。
+
+    与 `_fetch_order_detail` 同构（两条路径都试）：先按 id 直查
+    （`GET /api/admin/after-sales/{id}`），不成立再按**关键词搜工单号**拿 id 再查详情。
+    只按引用直查会漏（agent 有可能传工单号而非内部 id）。
+    """
+    ref = str(ticket_ref or "").strip()
+    if not ref:
+        return None
+    try:
+        async with httpx.AsyncClient() as c:
+            h = _admin_headers(token)
+            rd = await c.get(f"{ADMIN_API}/api/admin/after-sales/{ref}", headers=h, timeout=15)
+            body = _safe_json(rd, None)
+            if isinstance(body, dict) and body.get("data"):
+                return body["data"]
+            r = await c.get(f"{ADMIN_API}/api/admin/after-sales", headers=h,
+                            params={"keyword": ref, "page": 1, "size": 1}, timeout=15)
+            items = (_safe_json(r, {}) or {}).get("data", {}).get("items", []) or []
+            if not items:
+                return None
+            tid = str(items[0].get("id") or "")
+            if not tid or tid == ref:
+                return None
+            rd = await c.get(f"{ADMIN_API}/api/admin/after-sales/{tid}", headers=h, timeout=15)
+            body = _safe_json(rd, None)
+            return body["data"] if isinstance(body, dict) and body.get("data") else None
     except Exception:
         return None
 
@@ -2672,6 +2730,57 @@ async def check_db_verify(token: str, db_verify: list, results: list | None = No
                         f"db_verify[order_items]: 「{hit}」数量 {by_name[hit]} ≠ 期望 {want_q}"
                         f"（订单明细共 {_line_count} 行: {_lines}）"
                         f"—— 行数与逐行数量能区分「数量值算错」与「重复行累加」")
+            continue
+
+        if fetch == "after_sales_ticket":
+            # 售后工单落库断言（issue #3544 / AS-004 假绿升级）：AS-004 的
+            # `data_checks: "closedAt/closeReason 写入"` 是自然语义、**不计分**
+            # （计分白名单只认 success=true / error.code= / 未被调用，见 run_case）→
+            # 「工单真的关闭了、关闭字段真的落库」从未被机器校验（工具回显 success 即可绿）。
+            # 本核对器走**产出侧**（不绑定实现机制）：从 after_sales_manage 的成功调用取工单
+            # 引用 → 查 admin-api 工单详情 → 断言落库 status 与关闭字段。
+            src = str(spec.get("source") or "after_sales_manage")
+            expect_status = str(spec.get("expect_status") or "").strip()
+            if not expect_status:
+                issues.append(
+                    "db_verify[after_sales_ticket]: 缺 expect_status"
+                    "（拿不到期望值 → 检查会空转通过）")
+                continue
+            _rnd, _data = _first_successful_ticket_payload(results or [], src, expect_status)
+            ticket_ref = str((_data or {}).get("ticket_id")
+                             or (_data or {}).get("ticketId") or "").strip()
+            if not ticket_ref:
+                issues.append(
+                    f"db_verify[after_sales_ticket]: 找不到 {src}(status={expect_status}) 的"
+                    f"成功调用（无工单可核对）—— 判失败而非跳过")
+                continue
+            detail = await _fetch_ticket_detail(token, ticket_ref)
+            if not detail:
+                issues.append(
+                    f"db_verify[after_sales_ticket]: 工单 {ticket_ref} 查不到详情（未落库？）")
+                continue
+            got_status = str(detail.get("status") or "").strip()
+            if got_status != expect_status:
+                issues.append(
+                    f"db_verify[after_sales_ticket]: 工单 {ticket_ref} 落库状态 {got_status!r} "
+                    f"≠ 期望 {expect_status!r} —— 工具回显成功 ≠ 落库成功")
+            _nonempty = spec.get("expect_fields_nonempty") or []
+            if isinstance(_nonempty, str):
+                # yaml_light 不解析 flow 序列：`[closedAt, closeReason]` 会整串进来
+                _nonempty = [t for t in re.split(r"[,\[\]\s]+", _nonempty) if t]
+            for _f in _nonempty:
+                _f = str(_f)
+                if not str(detail.get(_f) or "").strip():
+                    issues.append(
+                        f"db_verify[after_sales_ticket]: 工单 {ticket_ref} 落库字段 {_f} 为空"
+                        f"（关闭态必须写入 closedAt/closeReason；只记 internalNotes 不算关闭留痕）")
+            want_reason = str(spec.get("expect_close_reason_contains") or "").strip()
+            if want_reason and _norm_text(want_reason) not in _norm_text(
+                    str(detail.get("closeReason") or "")):
+                issues.append(
+                    f"db_verify[after_sales_ticket]: 工单 {ticket_ref} 落库 closeReason "
+                    f"{detail.get('closeReason')!r} 不含期望 {want_reason!r} —— "
+                    f"用户点名的关闭原因必须落到 closeReason")
             continue
 
         if fetch != "product_by_name":

@@ -874,10 +874,24 @@ cases:
       - "确认"
     expectations:
       - tool: sku_update
+    # ── 假绿升级（#3544 / REPORT §2.2；同 PP-006 形态）──
+    # 期望里出现工具名只证明「模型想改价」：同 run（34805827043）里两次 sku_update
+    # **都失败**（`sku_update!SKU不存在`，真缺口见 #3539：中文标签 vs 枚举字面匹配），
+    # 用例却判 ✅ 100% —— 原 `data_checks: "sku_update 成功（价格落库）"` 是自然语义、不计分。
+    # 改为产出侧断言（fail-closed）：找不到该工具的**成功**调用 → 判红，
+    # 且核对产出价格 = 用户确认价 150（sku_update 成功返回 data.new_price）。
+    # ⚠️ 未用 `must_succeed`（issue 首选形态）的原因同 PP-006：C 端用例集不变式
+    # `test_must_succeed_tools_are_customer_capabilities` 不按 persona 过滤（潜在 bug），
+    # 会把 B 端工具 sku_update 判为「非 C 端工具」→ CI 红。
+    # 落库层（DB 真实价格==150）当前 runner 的 db_verify 无 SKU 价格 fetch，属能力缺口（见 PR 说明）。
+    output_verify:
+      - tool: sku_update
+        expect:
+          new_price: 150
     data_checks:
-      - "sku_update 成功（价格落库）"
+      - "sku_update 真成功且价格为 150 元（= 用户确认价）：机器断言见上方 output_verify（成功调用 fail-closed + new_price==150）；裸断言「调用过」不算覆盖（#3544 假绿升级）"
     skip_reason: ""
-    merge_log: "Round 72 评测覆盖审计：sku_update（SKU 级调价）注册于 product_skill 但无 case 覆盖（盲区）→ 补 SKU 调价场景。2026-09-14 校准（#3518）：输入去「100元的那件」价格点名（独立栈种子 ¥168）。⚠️ 遗留：本 run 该例真实失败点是 `sku_update!SKU不存在`（种子遮光窗帘只有部分规格 SKU）——属**数据层**（种子 SKU 待补），非本 PR 的用例层问题"
+    merge_log: "Round 72 评测覆盖审计：sku_update（SKU 级调价）注册于 product_skill 但无 case 覆盖（盲区）→ 补 SKU 调价场景。2026-09-14 校准（#3518）：输入去「100元的那件」价格点名（独立栈种子 ¥168）。2026-09-14 校准（#3544，REPORT §2.2）：假绿升级——`data_checks` 的自然语义「sku_update 成功（价格落库）」不计分（同 run 两次 sku_update 全失败仍判 ✅）→ 补 output_verify（成功调用 fail-closed + new_price==150），缺陷未修前本用例由假绿转真红（#3539 修复后转绿）。⚠️ 遗留：本 run 该例真实失败点是 `sku_update!SKU不存在`——根因已由 #3539 定位为**中文标签 vs 枚举字面匹配**（非种子缺口），非本 PR 的用例层问题"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_sku_update.py"
