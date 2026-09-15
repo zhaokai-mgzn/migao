@@ -163,6 +163,41 @@ MAPPING_RULES = [
     # 真正该跑的转人工用例一条没跑。与 `base_skill.py` 的转人工族是**并集**：
     # 入口不同（Tool 本体 vs 守卫判据），故 CH-015 会同时被两条规则锚定（去重后只跑一次）。
     (r"app/tools/human_handoff\.py", ["CH-008", "CH-015"]),
+    # 库存 / 「低库存」口径的承载文件 → PR-006 + PR-018（#3783 收敛包补锚）。
+    # 病灶（与 #3725 的 OR-015 同族，形态=「改了 X，门禁一条 X 的用例都没跑」）：
+    #   ① `MAPPING_RULES` 里**没有任何一条**锚定库存侧工具；② `DEFAULT_BEHAVIOR_CASES`
+    #   也不含 PR-006/PR-018。实测（本包用同一纯函数复算 PR #3831 的变更集
+    #   `inventory_manage.py` / `product_search.py` / `stock_semantics.py`）：
+    #   `mapping_source=default_net`、`case_ids=AS-003,AS-007,CH-010,OR-015,OR-016,OR-017,PR-019`
+    #   ⇒ 改了「低库存」口径，门禁**一条低库存用例都没跑**（兜底网只管主链路、且与改动无因果）。
+    # 三个文件为什么同一条规则：`stock_semantics.py` 是**两工具共用的单点来源**
+    #   （`LOW_STOCK_THRESHOLD` / `low_stock_phrase` / `low_stock_alert_threshold_schema`），
+    #   改它必然同时影响两条工具路径 —— 拆成三条规则只会让「改单点来源」漏掉另一端。
+    # 为什么是这两条（**读过用例真实断言**，不是按关键词猜）：
+    #   · PR-006「低库存预警」= 低库存语义的**唯一**承载用例，其期望是
+    #     `inventory_manage(action=low_stock_alert) or product_search(stock_status=low_stock)`
+    #     —— 覆盖 `inventory_manage` 侧（#3831 的**真实行为变更**：不传 threshold 时
+    #     默认 10→100 就在这条路径上）；
+    #   · PR-018「查一下低库存商品的具体清单」期望 `product_search(stock_status=low_stock)`
+    #     —— 显式钉住 OR 的**另一分支**。**必须**单列：PR-006 是 OR 断言，`product_search`
+    #     单分支回归可被 `inventory_manage` 分支掩盖 ⇒ 只锚 PR-006 会留下一条"看着覆盖了、
+    #     其实掩盖了"的假绿缝。
+    # ⚠️ 为什么**不含** `PR-002`（复核后刻意排除，非凭猜）：它断言的是**另一个枚举值**
+    #   `stock_status: out_of_stock`（库存≤0），`product_search.py` 的 `out_of_stock` 分支
+    #   在 #3831 里**一行未改**（改动只在 `low_stock` 文案/阈值来源），且其 `data_checks`
+    #   是 `data.products.length >= 0`（恒真 = 空断言）⇒ 挂上去只是给每个改库存工具的 PR
+    #   多烧一条**非因果**用例（#3551「假阻塞比没有门禁更糟」的反向形态）。
+    # ⚠️ 刻意**不含** `PR-004`（查库存 query）/ `PR-005`（调整库存 adjust）：它们覆盖的是
+    #   `inventory_manage` 的**另外两条路径**，与本规则的声明覆盖面（低库存口径）不同面。
+    #   这是**已知的、登记在案的边界**（见 `tests/unit_ci_workflows/
+    #   test_behavior_mapping_tool_coverage.py` 的 `DECLARED_TOOL_FILE_COVERAGE`），
+    #   不是"以为覆盖了"：改 query/adjust 路径时本规则不构成覆盖。
+    # persona：PR-006 只在 mibao 可跑、PR-018 双端可跑（workflow 双端用例归 mibao 桶）⇒
+    #   该规则派生出的 persona 矩阵 = `["mibao"]`，**xiaobu 腿不会被启动** —— 不存在
+    #   「另一条腿必然 `exit 1`（禁止静默少跑）」的形态（不变量见上面那个 L0 文件名）。
+    (r"app/tools/stock_semantics\.py|app/tools/product_search\.py"
+     r"|app/tools/inventory_manage\.py",
+     ["PR-006", "PR-018"]),
 ]
 
 # 无规则命中时的默认集（兜底网）：§13.2 各核心域的代表用例 + 曾**不可达**的关键用例。
