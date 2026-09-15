@@ -5465,6 +5465,24 @@ _CASE_UI_040 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── UI-041 [NORMAL] 设置页开关几何完整性 — flex 行内开关按钮 shrink-0（轨道不压缩、圆钮不溢出，issue #3924）（源: cases/ui.yml）──
+_CASE_UI_041 = EvalCase(
+    id='UI-041',
+    legacy_id='',
+    title='设置页开关几何完整性 — flex 行内开关按钮 shrink-0（轨道不压缩、圆钮不溢出，issue #3924）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['企业基础信息 → 基本设置里「启用智能每日经营简报」开关样式异常：白色圆钮溢出蓝色轨道右缘（说明文字长的行里更明显）'],
+    expectations=['direct_reply'],
+    data_checks=['settings/page.tsx 两个开关按钮（启用智能每日经营简报开关 / 启用系统通知开关）类名含 shrink-0：作为 flex justify-between 行子项时不被长说明文字压缩，w-11 轨道保持 44px', 'E2E 几何断言（boundingBox）：开启态圆钮四边完整落在轨道内（右缘 ≤ 轨道右缘 + 0.5px），轨道宽 ≥ 43.5px —— 修复前实测轨道被压至 37.9px、圆钮溢出右缘', '点击简报开关 → PUT /api/admin/briefing/config 携带 enabled 翻转，toast 与真实结果一致（交互链路不回归）'],
+    skip_reason='纯前端布局几何由 Playwright E2E 验证（tests/e2e/specs/settings/toggle-geometry.spec.ts），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ui', 'settings', 'toggle', 'layout'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── UT-001 [NORMAL] 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值（源: cases/utils.yml）──
 _CASE_UT_001 = EvalCase(
     id='UT-001',
@@ -5791,6 +5809,7 @@ ALL_CASES = (
     _CASE_UI_038,
     _CASE_UI_039,
     _CASE_UI_040,
+    _CASE_UI_041,
     _CASE_UT_001,
     _CASE_UT_002,
 )

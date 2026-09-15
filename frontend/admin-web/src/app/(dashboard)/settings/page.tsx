@@ -329,7 +329,7 @@ export default function SettingsPage() {
                           </div>
                           <button
                             aria-label="启用智能每日经营简报开关"
-                            className={`relative w-11 h-6 rounded-full transition-colors ${
+                            className={`relative w-11 h-6 shrink-0 rounded-full transition-colors ${
                               briefingConfig.enabled ? 'bg-primary-600' : 'bg-neutral-300'
                             }`}
                             onClick={async () => {
@@ -478,7 +478,7 @@ export default function SettingsPage() {
                   </div>
                   <button
                     aria-label="启用系统通知开关"
-                    className={`relative w-11 h-6 rounded-full transition-colors ${
+                    className={`relative w-11 h-6 shrink-0 rounded-full transition-colors ${
                       settings.notificationEnabled ? 'bg-primary-600' : 'bg-neutral-300'
                     }`}
                     onClick={handleToggleNotification}

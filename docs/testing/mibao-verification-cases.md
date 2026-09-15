@@ -3397,7 +3397,7 @@
 真值: token-refresh.no-loop
 溯源: 2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421） ｜ tags: token_refresh, auth, no_loop
 
-## ui（39 case）
+## ui（40 case）
 
 ### UI-001. 织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理 🔵
 ```
@@ -3915,6 +3915,18 @@
 真值: frontend-fix.vitest
 溯源: 2026-09-15 新增（issue #3768）：发货单闭环 —— 发货人落库（预填登录人可改 + 后端 userId 兜底；更新不覆盖原经手人）+ 可打印纸质发货单（A4，发货前打 / 发货后补打）+ C 端不泄漏发货人；2026-09-15（#3818）口径裁定：存量发货人纸面显示「-」（原「留空」口径作废；留空只给运单号/物流公司） ｜ tags: ui, order, shipment, print, admin-web
 
+### UI-041. 设置页开关几何完整性 — flex 行内开关按钮 shrink-0（轨道不压缩、圆钮不溢出，issue #3924） 🔵
+```
+你: 企业基础信息 → 基本设置里「启用智能每日经营简报」开关样式异常：白色圆钮溢出蓝色轨道右缘（说明文字长的行里更明显）
+期望: direct_reply
+数据: settings/page.tsx 两个开关按钮（启用智能每日经营简报开关 / 启用系统通知开关）类名含 shrink-0：作为 flex justify-between 行子项时不被长说明文字压缩，w-11 轨道保持 44px
+数据: E2E 几何断言（boundingBox）：开启态圆钮四边完整落在轨道内（右缘 ≤ 轨道右缘 + 0.5px），轨道宽 ≥ 43.5px —— 修复前实测轨道被压至 37.9px、圆钮溢出右缘
+数据: 点击简报开关 → PUT /api/admin/briefing/config 携带 enabled 翻转，toast 与真实结果一致（交互链路不回归）
+跳过: 纯前端布局几何由 Playwright E2E 验证（tests/e2e/specs/settings/toggle-geometry.spec.ts），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: frontend-fix.no-api-change, frontend-fix.e2e
+溯源: 2026-09-15 新增（issue #3924）：设置页开关按钮缺 shrink-0，flex 压缩 44px 轨道而绝对定位圆钮不随缩 → 圆钮溢出轨道（截图同款）；E2E 几何断言红→绿实证 ｜ tags: ui, settings, toggle, layout
+
 ## utils（2 case）
 
 ### UT-001. 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值 🔵
@@ -3944,8 +3956,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：291（活跃 147，跳过 144）
-- tier 分布：smoke 9 / normal 249 / adversarial 33
+- 用例总数：292（活跃 147，跳过 145）
+- tier 分布：smoke 9 / normal 250 / adversarial 33
 - 售后域：9
 - agents：6
 - api：19
@@ -3969,7 +3981,7 @@
 - registry：1
 - 设置域：8
 - token-refresh：4
-- ui：39
+- ui：40
 - utils：2
 
 ### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）
