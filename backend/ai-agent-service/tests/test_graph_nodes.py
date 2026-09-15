@@ -498,6 +498,29 @@ class TestRouteByIntent:
             assert result == "customer_order_skill", f"{msg!r} 未切回下单流程（route={result}）"
             assert state["pending_interact_skill"] == "", f"{msg!r} 未释放报价 skill 的会话锁"
 
+    def test_processing_order_signal_escapes_product_lock(self):
+        """#3921：在办商品锁里用户说「查看加工单数据」→ 必须逃逸到订单域。
+
+        商品域把「加工单」当「加工项」查（PG-017 首跑 0 分 + 证据会话
+        sess_f3c0ee0d2cc342a0）；「加工单」是 order 域信号，会话锁在 product 时
+        提加工单必须切走（到订单域走概念区分口径），不能留在商品域误查加工项目录。
+        """
+        from app.graph.nodes import _SKILL_DOMAIN_KEYWORDS
+        assert "加工单" in _SKILL_DOMAIN_KEYWORDS["order"], (
+            "order 领域关键词缺「加工单」—— 商品锁中提加工单会被当加工项处理"
+        )
+        state = {
+            "pending_interact_skill": "product_skill",
+            "route_decision": {"action": "full_agent"},
+            "intent_result": {"intent": "order_query"},
+            "messages": [HumanMessage(content="查看加工单数据")],
+        }
+        with patch.dict("app.graph.nodes._INTENT_TO_ROUTE",
+                        {"": {"order_query": "order_skill", "general": "general"}}):
+            result = route_by_intent(state)
+        assert result == "order_skill", f"加工单话题未逃逸到订单域（route={result}）"
+        assert state["pending_interact_skill"] == "", "加工单话题未释放商品锁"
+
     def test_own_domain_keyword_does_not_escape_customer_skill(self):
         """C 端 skill 名带 `customer_` 前缀，**自己的领域关键词不得触发 escape hatch**。
 
