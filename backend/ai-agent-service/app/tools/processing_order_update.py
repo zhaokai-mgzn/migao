@@ -38,6 +38,10 @@ class ProcessingOrderUpdateTool(BaseTool):
 
     allowed_roles = ["admin", "tenant_admin", "operator"]
     read_only = False
+    # 已从注册表移除（产品决策 2026-09-15，issue #3917）：agent 暂不接入加工单工具，
+    # 须区分「加工项/加工单」概念并引导后台。类文件保留（tests/test_tools_processing_order_*.
+    # py 直测类），未来恢复接入时：移除 deprecated + 恢复 registry 注册 + 恢复 order skill 工具绑定。
+    deprecated = True
     destructive = True
     idempotent = False
 

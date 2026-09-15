@@ -9,12 +9,13 @@ from app.graph.skills.base_skill import execute_skill
 from app.graph.skills.skill_config import SkillConfig
 
 # 订单 Skill 可用的 Tool 列表
+# ⚠️ 加工单工具（processing_order_generate/query/update）不在此列（产品决策 2026-09-15，
+# issue #3917）：agent 暂不接入加工单工具，须区分「加工项/加工单」概念并引导后台
+# （订单详情-加工单块）。intents 保留（下方）⇒「加工单」问题仍路由到订单 skill，
+# 由 prompts/order.md 的概念区分口径引导，**不得**用加工项查询/目录代替、不得编造加工单数据。
 ORDER_TOOLS = ["order_query", "order_manage", "order_create", "logistics_track", "product_search", "product_detail",
     "validate_input",  # 写操作前置校验
     "interact",        # 交互卡片：多 SKU 规格 choice（prompts/order.md 强制要求）、下单前 confirm、表单 form
-    "processing_order_generate",  # 生成加工单（批量，写操作 confirm）
-    "processing_order_query",     # 加工单查询（只读）
-    "processing_order_update",    # 加工单状态更新（issue/start/complete/cancel，写操作 confirm）
 ]
 
 # 订单 Skill 专用 System Prompt（展示规则，状态机见 references/prompts/order.md）

@@ -393,9 +393,13 @@ def create_default_registry() -> ToolRegistry:
     from app.tools.customer_address_query import CustomerAddressQueryTool
     from app.tools.order_manage import OrderManageTool
     from app.tools.order_create import OrderCreateTool
-    from app.tools.processing_order_generate import ProcessingOrderGenerateTool
-    from app.tools.processing_order_query import ProcessingOrderQueryTool
-    from app.tools.processing_order_update import ProcessingOrderUpdateTool
+    # 加工单工具类保留但不再注册（产品决策 2026-09-15，issue #3917）：
+    # agent 暂不接入 processing_order_* 工具，须区分「加工项/加工单」概念并引导后台；
+    # 工具类文件保留（tests/test_tools_processing_order_*.py 直测类），未来恢复接入时
+    # 取消本行注释即可。
+    # from app.tools.processing_order_generate import ProcessingOrderGenerateTool
+    # from app.tools.processing_order_query import ProcessingOrderQueryTool
+    # from app.tools.processing_order_update import ProcessingOrderUpdateTool
     from app.tools.product_manage import ProductManageTool
     from app.tools.inventory_manage import InventoryManageTool
     from app.tools.processing_item_query import ProcessingItemQueryTool
@@ -434,9 +438,10 @@ def create_default_registry() -> ToolRegistry:
     registry.register(CustomerAddressQueryTool())
     registry.register(OrderManageTool())
     registry.register(OrderCreateTool())
-    registry.register(ProcessingOrderGenerateTool())
-    registry.register(ProcessingOrderQueryTool())
-    registry.register(ProcessingOrderUpdateTool())
+    # 加工单工具不注册（issue #3917，见上方 import 注释）：
+    # registry.register(ProcessingOrderGenerateTool())
+    # registry.register(ProcessingOrderQueryTool())
+    # registry.register(ProcessingOrderUpdateTool())
     registry.register(ProductManageTool())
     registry.register(InventoryManageTool())
     registry.register(ProcessingItemQueryTool())
