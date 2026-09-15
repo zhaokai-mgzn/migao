@@ -2126,10 +2126,38 @@ def _handoff_guard_applies(registry=None, *, order_in_progress: bool = False,
         _registry_has_confirm_write_tool(registry)
 
 
+# ── 确认卡字段的通用兜底（issue #3882）──────────────────────────────────────
+# 控制键：动作指令 / 路由元数据，不是"要执行的内容"，不进卡片回显。
+_CONFIRM_CARD_CONTROL_KEYS = frozenset({
+    "action", "operation", "op", "target_tool", "target_action",
+    "params", "component", "title",
+})
+
+# B 端写参数 → 卡片字段的可读 label（未登记键回退原键名）
+_CONFIRM_FIELD_LABELS = {
+    "product_id": "商品ID",
+    "item_id": "加工项ID",
+    "category_id": "分类ID",
+    "name": "名称",
+    "price": "价格",
+    "status": "状态",
+    "description": "描述",
+    "unit": "单位",
+    "sku_code": "货号",
+    "stock_quantity": "库存",
+    "pricing_method": "计价方式",
+}
+
+
 def confirm_card_fields(args: dict) -> list:
     """从**写调用参数**整理出确认卡字段（只回显、不新增事实）。
 
     单一源：既供门禁话术的"字段骨架"提示，也供代码兜底**真正发卡**（issue #3445）。
+
+    通用兜底（issue #3882）：订单字段提取为空时（B 端写参数如
+    `product_manage.action=toggle_status` / `processing_item_manage.action=delete_item`
+    没有 items/customer_* 键），把 args 中**除控制键之外**的键值对转成字段 ——
+    否则 B 端被拦写操作产空字段 ⇒ `build_confirm_interact_xml` 返回 ""，卡发不出去。
     """
     a = args or {}
     fields = []
@@ -2148,6 +2176,20 @@ def confirm_card_fields(args: dict) -> list:
                        ("customer_address", "地址")):
         if a.get(key):
             fields.append({"label": label, "value": str(a.get(key))})
+    if not fields:
+        # 控制键是动作指令/路由元数据，不是"要执行的内容"，不进卡片回显
+        # （issue #3882：action/operation/op/target_tool/target_action/params/
+        #   component/title 等）；label 优先给可读中文（_CONFIRM_FIELD_LABELS），
+        # 未登记键回退原键名。
+        for key, value in a.items():
+            if key in _CONFIRM_CARD_CONTROL_KEYS or value is None:
+                continue
+            if isinstance(value, (dict, list)):
+                rendered = json.dumps(value, ensure_ascii=False, default=str)
+            else:
+                rendered = str(value)
+            fields.append({"label": _CONFIRM_FIELD_LABELS.get(key, key),
+                           "value": rendered})
     return fields
 
 
@@ -4766,16 +4808,22 @@ async def execute_skill(
                 # 达到 max_iterations — 不暴露 LLM 的半截思考，用友好兜底
                 final_content = "抱歉，处理步骤较多，请稍后重试或换个简单的方式描述需求。"
 
-    # ── 8.3b 代码兜底**补发确认卡**（issue #3445）──
+    # ── 8.3b 代码兜底**补发确认卡**（issue #3445 / #3882）──
     # 实测（CI 三次 `confirmation_required_no_card`）：模型**从没发过确认卡**就直接写单，
     # 被门禁拦回后仍会跳过发卡（话术已给唯一可执行的下一步，3 次复验仍有 2 次命中）。
     # 卡片有两个发射点（`chat.py`）：`interact` 工具结果分支、以及解析回复文本里的
     # `<interact>` 块 ⇒ 这里把卡补进**文本**：顾客因此始终有点卡的入口，而不是
     # "卡在写单被拦、又没有卡可点"。
+    # 覆盖范围（issue #3882）：原实现只对 `skill_name == "customer_order"`（C 端）生效，
+    # B 端 skill（product/general 等）没有兜底 —— 模型同样会跳过发卡，客户侧却无卡可点、
+    # 只能打字。放宽为**所有 skill**（C 端既有行为不回归；`confirmation_required_no_card`
+    # 只可能来自需确认写工具，所有已注册写技能都已绑 interact —— 由
+    # `tests/test_skill_config_registry.py` 的三条不变式机械守护，本文件确认门禁
+    # 话术处的注释有完整说明）。
     # 硬约束（#3414 教训）：**只补卡、不放行写** —— 写仍必须等顾客点卡后由门禁放行；
     # 且仅在"本会话从未出现过确认卡"的形态下补（`card_not_clicked` 说明顾客没点，
     # 那时替他补卡等于替他做决定，不做）。
-    if (_no_card_blocked_args and skill_name == "customer_order"
+    if (_no_card_blocked_args
             and final_content and "<interact>" not in final_content
             # ⚠️ **本轮不许补第二张**（issue #3445 复现）：`interact` 工具路径自己也会发射
             # 交互卡（`chat.py` 的 `tool_name == "interact"` 分支），与"解析文本里的
@@ -4790,8 +4838,13 @@ async def execute_skill(
         _bfields = confirm_card_fields(_no_card_blocked_args)
         if _bfields:
             _bvalue = confirm_value_for_fields(_bfields)
+            # 标题按端适配（issue #3882）：C 端保持既有「请确认订单信息」；
+            # B 端写技能（product/general 等）用通用标题 —— 下架/删加工项弹一张
+            # "订单信息"卡只会让客户更困惑。
+            _btitle = ("请确认订单信息" if skill_name == "customer_order"
+                       else "请确认操作")
             final_content = final_content + "\n" + build_confirm_interact_xml(
-                "请确认订单信息", _bfields, confirm_value=_bvalue)
+                _btitle, _bfields, confirm_value=_bvalue)
             # ⚠️ **必须同时持久化该卡的 confirmValue**（否则卡是"死的"）：门禁放行写操作靠
             # `_is_card_confirm_value(last_user_msg, last_confirm_value)`（见本文件 :3119），
             # 而这个值原本只在 `interact` 工具路径里落库 —— 代码补的卡若不落，
