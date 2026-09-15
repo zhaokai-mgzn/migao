@@ -1,0 +1,594 @@
+{
+  "_comment": "断言可信度门禁的**存量**违规清单（burn-down）。锚定 SHA 见 anchor_sha —— 计数是「该 SHA 上按 taxonomy 判出的存量违规」，**不是**『这些用例永远豁免』。",
+  "_generated_by": "python3 .github/case_trust_gate.py --regen-baseline",
+  "regenerate_command": "python3 .github/case_trust_gate.py --regen-baseline",
+  "_when_to_regen": "① 你**修改/新增**了某个用例条目 → 门禁会告诉你（清单只许缩短）；② 别人合并了用例修复（如 #3832 的 CU-003、#3833 的 PG-013）→ **重跑 ①后重生成**，把已修好的条目从清单里去掉；③ 规则集本身变化（新增/改名规则）→ 必须重生成。",
+  "_scope_note": "「已不再违规 ⇒ 必须移除」这条**只对本次 PR diff 命中的用例生效**（见 case_trust_gate.stale_baseline_entries）—— 否则别人修好一条存量用例，本门禁就会自己判红（假红）并挡住他们的 PR。",
+  "anchor_sha": "82d20090a1a2abe4e432b7894df77476b7fb2399",
+  "case_total": 289,
+  "violation_case_count": 110,
+  "rule_counts": {
+    "CASE-TRUST-EMPTY-ASSERTION": 28,
+    "CASE-TRUST-NO-EFFECT-ASSERTION": 34,
+    "CASE-TRUST-NO-SELF-CLEAN": 43,
+    "CASE-TRUST-PRECLEAN-TARGET-UNRESOLVABLE": 4,
+    "CASE-TRUST-FORBIDDEN-TEXT-SOLE": 7,
+    "CASE-TRUST-SINGLE-LEG-NO-PERSONA": 18
+  },
+  "violations": {
+    "API-012": {
+      "codes": [
+        "CASE-TRUST-EMPTY-ASSERTION"
+      ]
+    },
+    "API-013": {
+      "codes": [
+        "CASE-TRUST-EMPTY-ASSERTION"
+      ]
+    },
+    "API-014": {
+      "codes": [
+        "CASE-TRUST-EMPTY-ASSERTION"
+      ]
+    },
+    "API-015": {
+      "codes": [
+        "CASE-TRUST-EMPTY-ASSERTION"
+      ]
+    },
+    "API-016": {
+      "codes": [
+        "CASE-TRUST-EMPTY-ASSERTION"
+      ]
+    },
+    "API-017": {
+      "codes": [
+        "CASE-TRUST-EMPTY-ASSERTION"
+      ]
+    },
+    "API-019": {
+      "codes": [
+        "CASE-TRUST-EMPTY-ASSERTION"
+      ]
+    },
+    "API-020": {
+      "codes": [
+        "CASE-TRUST-EMPTY-ASSERTION"
+      ]
+    },
+    "API-021": {
+      "codes": [
+        "CASE-TRUST-EMPTY-ASSERTION"
+      ]
+    },
+    "API-022": {
+      "codes": [
+        "CASE-TRUST-SINGLE-LEG-NO-PERSONA"
+      ]
+    },
+    "AS-006": {
+      "codes": [
+        "CASE-TRUST-NO-EFFECT-ASSERTION",
+        "CASE-TRUST-NO-SELF-CLEAN"
+      ]
+    },
+    "AS-009": {
+      "codes": [
+        "CASE-TRUST-FORBIDDEN-TEXT-SOLE"
+      ]
+    },
+    "CH-002": {
+      "codes": [
+        "CASE-TRUST-NO-EFFECT-ASSERTION",
+        "CASE-TRUST-NO-SELF-CLEAN"
+      ]
+    },
+    "CH-005": {
+      "codes": [
+        "CASE-TRUST-NO-EFFECT-ASSERTION",
+        "CASE-TRUST-NO-SELF-CLEAN"
+      ]
+    },
+    "CH-006": {
+      "codes": [
+        "CASE-TRUST-NO-EFFECT-ASSERTION",
+        "CASE-TRUST-NO-SELF-CLEAN"
+      ]
+    },
+    "CH-007": {
+      "codes": [
+        "CASE-TRUST-SINGLE-LEG-NO-PERSONA"
+      ]
+    },
+    "CH-008": {
+      "codes": [
+        "CASE-TRUST-NO-SELF-CLEAN"
+      ]
+    },
+    "CH-009": {
+      "codes": [
+        "CASE-TRUST-EMPTY-ASSERTION"
+      ]
+    },
+    "CH-012": {
+      "codes": [
+        "CASE-TRUST-NO-SELF-CLEAN"
+      ]
+    },
+    "CH-013": {
+      "codes": [
+        "CASE-TRUST-NO-SELF-CLEAN"
+      ]
+    },
+    "CH-015": {
+      "codes": [
+        "CASE-TRUST-NO-SELF-CLEAN"
+      ]
+    },
+    "CH-016": {
+      "codes": [
+        "CASE-TRUST-EMPTY-ASSERTION"
+      ]
+    },
+    "CH-017": {
+      "codes": [
+        "CASE-TRUST-NO-SELF-CLEAN"
+      ]
+    },
+    "CH-018": {
+      "codes": [
+        "CASE-TRUST-SINGLE-LEG-NO-PERSONA"
+      ]
+    },
+    "CH-019": {
+      "codes": [
+        "CASE-TRUST-SINGLE-LEG-NO-PERSONA"
+      ]
+    },
+    "CH-025": {
+      "codes": [
+        "CASE-TRUST-NO-SELF-CLEAN"
+      ]
+    },
+    "CH-033": {
+      "codes": [
+        "CASE-TRUST-FORBIDDEN-TEXT-SOLE"
+      ]
+    },
+    "CR-001": {
+      "codes": [
+        "CASE-TRUST-NO-EFFECT-ASSERTION"
+      ]
+    },
+    "CR-002": {
+      "codes": [
+        "CASE-TRUST-NO-SELF-CLEAN"
+      ]
+    },
+    "CT-002": {
+      "codes": [
+        "CASE-TRUST-NO-EFFECT-ASSERTION",
+        "CASE-TRUST-NO-SELF-CLEAN"
+      ]
+    },
+    "CT-003": {
+      "codes": [
+        "CASE-TRUST-NO-EFFECT-ASSERTION",
+        "CASE-TRUST-NO-SELF-CLEAN"
+      ]
+    },
+    "CU-003": {
+      "codes": [
+        "CASE-TRUST-NO-EFFECT-ASSERTION",
+        "CASE-TRUST-PRECLEAN-TARGET-UNRESOLVABLE"
+      ]
+    },
+    "CU-004": {
+      "codes": [
+        "CASE-TRUST-NO-EFFECT-ASSERTION",
+        "CASE-TRUST-NO-SELF-CLEAN"
+      ]
+    },
+    "CU-005": {
+      "codes": [
+        "CASE-TRUST-NO-EFFECT-ASSERTION",
+        "CASE-TRUST-NO-SELF-CLEAN"
+      ]
+    },
+    "DA-007": {
+      "codes": [
+        "CASE-TRUST-EMPTY-ASSERTION"
+      ]
+    },
+    "DA-008": {
+      "codes": [
+        "CASE-TRUST-EMPTY-ASSERTION"
+      ]
+    },
+    "DA-009": {
+      "codes": [
+        "CASE-TRUST-EMPTY-ASSERTION"
+      ]
+    },
+    "DA-010": {
+      "codes": [
+        "CASE-TRUST-EMPTY-ASSERTION"
+      ]
+    },
+    "DF-002": {
+      "codes": [
+        "CASE-TRUST-SINGLE-LEG-NO-PERSONA"
+      ]
+    },
+    "DF-005": {
+      "codes": [
+        "CASE-TRUST-SINGLE-LEG-NO-PERSONA"
+      ]
+    },
+    "DF-011": {
+      "codes": [
+        "CASE-TRUST-SINGLE-LEG-NO-PERSONA"
+      ]
+    },
+    "DF-012": {
+      "codes": [
+        "CASE-TRUST-SINGLE-LEG-NO-PERSONA"
+      ]
+    },
+    "DF-013": {
+      "codes": [
+        "CASE-TRUST-SINGLE-LEG-NO-PERSONA"
+      ]
+    },
+    "DF-015": {
+      "codes": [
+        "CASE-TRUST-NO-EFFECT-ASSERTION",
+        "CASE-TRUST-NO-SELF-CLEAN",
+        "CASE-TRUST-SINGLE-LEG-NO-PERSONA"
+      ]
+    },
+    "DF-018": {
+      "codes": [
+        "CASE-TRUST-NO-EFFECT-ASSERTION",
+        "CASE-TRUST-NO-SELF-CLEAN"
+      ]
+    },
+    "DF-020": {
+      "codes": [
+        "CASE-TRUST-FORBIDDEN-TEXT-SOLE"
+      ]
+    },
+    "DF-021": {
+      "codes": [
+        "CASE-TRUST-FORBIDDEN-TEXT-SOLE"
+      ]
+    },
+    "DF-022": {
+      "codes": [
+        "CASE-TRUST-FORBIDDEN-TEXT-SOLE"
+      ]
+    },
+    "DF-023": {
+      "codes": [
+        "CASE-TRUST-FORBIDDEN-TEXT-SOLE"
+      ]
+    },
+    "FN-001": {
+      "codes": [
+        "CASE-TRUST-NO-SELF-CLEAN"
+      ]
+    },
+    "HR-002": {
+      "codes": [
+        "CASE-TRUST-NO-EFFECT-ASSERTION"
+      ]
+    },
+    "HR-003": {
+      "codes": [
+        "CASE-TRUST-NO-EFFECT-ASSERTION"
+      ]
+    },
+    "HR-005": {
+      "codes": [
+        "CASE-TRUST-NO-EFFECT-ASSERTION",
+        "CASE-TRUST-NO-SELF-CLEAN"
+      ]
+    },
+    "KN-007": {
+      "codes": [
+        "CASE-TRUST-SINGLE-LEG-NO-PERSONA"
+      ]
+    },
+    "OR-006": {
+      "codes": [
+        "CASE-TRUST-NO-EFFECT-ASSERTION",
+        "CASE-TRUST-NO-SELF-CLEAN"
+      ]
+    },
+    "OR-007": {
+      "codes": [
+        "CASE-TRUST-NO-EFFECT-ASSERTION",
+        "CASE-TRUST-NO-SELF-CLEAN"
+      ]
+    },
+    "OR-008": {
+      "codes": [
+        "CASE-TRUST-NO-EFFECT-ASSERTION",
+        "CASE-TRUST-SINGLE-LEG-NO-PERSONA"
+      ]
+    },
+    "OR-009": {
+      "codes": [
+        "CASE-TRUST-NO-EFFECT-ASSERTION"
+      ]
+    },
+    "OR-010": {
+      "codes": [
+        "CASE-TRUST-NO-EFFECT-ASSERTION",
+        "CASE-TRUST-NO-SELF-CLEAN"
+      ]
+    },
+    "OR-011": {
+      "codes": [
+        "CASE-TRUST-NO-EFFECT-ASSERTION",
+        "CASE-TRUST-NO-SELF-CLEAN"
+      ]
+    },
+    "OR-014": {
+      "codes": [
+        "CASE-TRUST-SINGLE-LEG-NO-PERSONA"
+      ]
+    },
+    "OR-015": {
+      "codes": [
+        "CASE-TRUST-NO-EFFECT-ASSERTION"
+      ]
+    },
+    "OR-016": {
+      "codes": [
+        "CASE-TRUST-NO-EFFECT-ASSERTION",
+        "CASE-TRUST-SINGLE-LEG-NO-PERSONA"
+      ]
+    },
+    "OR-017": {
+      "codes": [
+        "CASE-TRUST-NO-SELF-CLEAN"
+      ]
+    },
+    "OR-018": {
+      "codes": [
+        "CASE-TRUST-NO-SELF-CLEAN"
+      ]
+    },
+    "OR-019": {
+      "codes": [
+        "CASE-TRUST-NO-SELF-CLEAN"
+      ]
+    },
+    "OR-020": {
+      "codes": [
+        "CASE-TRUST-NO-SELF-CLEAN"
+      ]
+    },
+    "OR-021": {
+      "codes": [
+        "CASE-TRUST-NO-SELF-CLEAN"
+      ]
+    },
+    "OR-022": {
+      "codes": [
+        "CASE-TRUST-NO-SELF-CLEAN"
+      ]
+    },
+    "OR-023": {
+      "codes": [
+        "CASE-TRUST-NO-SELF-CLEAN"
+      ]
+    },
+    "OR-024": {
+      "codes": [
+        "CASE-TRUST-NO-SELF-CLEAN"
+      ]
+    },
+    "OR-025": {
+      "codes": [
+        "CASE-TRUST-FORBIDDEN-TEXT-SOLE"
+      ]
+    },
+    "OR-026": {
+      "codes": [
+        "CASE-TRUST-NO-SELF-CLEAN"
+      ]
+    },
+    "OR-028": {
+      "codes": [
+        "CASE-TRUST-NO-SELF-CLEAN"
+      ]
+    },
+    "PG-001": {
+      "codes": [
+        "CASE-TRUST-EMPTY-ASSERTION"
+      ]
+    },
+    "PG-002": {
+      "codes": [
+        "CASE-TRUST-EMPTY-ASSERTION"
+      ]
+    },
+    "PG-003": {
+      "codes": [
+        "CASE-TRUST-EMPTY-ASSERTION"
+      ]
+    },
+    "PG-004": {
+      "codes": [
+        "CASE-TRUST-EMPTY-ASSERTION"
+      ]
+    },
+    "PG-005": {
+      "codes": [
+        "CASE-TRUST-EMPTY-ASSERTION"
+      ]
+    },
+    "PG-006": {
+      "codes": [
+        "CASE-TRUST-EMPTY-ASSERTION"
+      ]
+    },
+    "PG-007": {
+      "codes": [
+        "CASE-TRUST-EMPTY-ASSERTION"
+      ]
+    },
+    "PG-008": {
+      "codes": [
+        "CASE-TRUST-EMPTY-ASSERTION"
+      ]
+    },
+    "PG-009": {
+      "codes": [
+        "CASE-TRUST-EMPTY-ASSERTION"
+      ]
+    },
+    "PG-010": {
+      "codes": [
+        "CASE-TRUST-EMPTY-ASSERTION"
+      ]
+    },
+    "PG-011": {
+      "codes": [
+        "CASE-TRUST-EMPTY-ASSERTION"
+      ]
+    },
+    "PG-012": {
+      "codes": [
+        "CASE-TRUST-EMPTY-ASSERTION"
+      ]
+    },
+    "PG-013": {
+      "codes": [
+        "CASE-TRUST-NO-EFFECT-ASSERTION",
+        "CASE-TRUST-NO-SELF-CLEAN"
+      ]
+    },
+    "PG-014": {
+      "codes": [
+        "CASE-TRUST-EMPTY-ASSERTION"
+      ]
+    },
+    "PG-015": {
+      "codes": [
+        "CASE-TRUST-NO-SELF-CLEAN"
+      ]
+    },
+    "PG-016": {
+      "codes": [
+        "CASE-TRUST-NO-SELF-CLEAN"
+      ]
+    },
+    "PP-001": {
+      "codes": [
+        "CASE-TRUST-NO-EFFECT-ASSERTION"
+      ]
+    },
+    "PP-003": {
+      "codes": [
+        "CASE-TRUST-NO-SELF-CLEAN"
+      ]
+    },
+    "PP-004": {
+      "codes": [
+        "CASE-TRUST-NO-SELF-CLEAN"
+      ]
+    },
+    "PR-001": {
+      "codes": [
+        "CASE-TRUST-SINGLE-LEG-NO-PERSONA"
+      ]
+    },
+    "PR-002": {
+      "codes": [
+        "CASE-TRUST-SINGLE-LEG-NO-PERSONA"
+      ]
+    },
+    "PR-003": {
+      "codes": [
+        "CASE-TRUST-SINGLE-LEG-NO-PERSONA"
+      ]
+    },
+    "PR-005": {
+      "codes": [
+        "CASE-TRUST-NO-EFFECT-ASSERTION"
+      ]
+    },
+    "PR-008": {
+      "codes": [
+        "CASE-TRUST-NO-EFFECT-ASSERTION"
+      ]
+    },
+    "PR-009": {
+      "codes": [
+        "CASE-TRUST-NO-SELF-CLEAN"
+      ]
+    },
+    "PR-010": {
+      "codes": [
+        "CASE-TRUST-NO-EFFECT-ASSERTION"
+      ]
+    },
+    "PR-011": {
+      "codes": [
+        "CASE-TRUST-NO-EFFECT-ASSERTION",
+        "CASE-TRUST-PRECLEAN-TARGET-UNRESOLVABLE"
+      ]
+    },
+    "PR-012": {
+      "codes": [
+        "CASE-TRUST-NO-EFFECT-ASSERTION"
+      ]
+    },
+    "PR-014": {
+      "codes": [
+        "CASE-TRUST-NO-EFFECT-ASSERTION",
+        "CASE-TRUST-PRECLEAN-TARGET-UNRESOLVABLE"
+      ]
+    },
+    "PR-015": {
+      "codes": [
+        "CASE-TRUST-NO-EFFECT-ASSERTION",
+        "CASE-TRUST-PRECLEAN-TARGET-UNRESOLVABLE"
+      ]
+    },
+    "PR-016": {
+      "codes": [
+        "CASE-TRUST-NO-EFFECT-ASSERTION"
+      ]
+    },
+    "PR-018": {
+      "codes": [
+        "CASE-TRUST-SINGLE-LEG-NO-PERSONA"
+      ]
+    },
+    "PR-020": {
+      "codes": [
+        "CASE-TRUST-NO-SELF-CLEAN"
+      ]
+    },
+    "PR-021": {
+      "codes": [
+        "CASE-TRUST-NO-SELF-CLEAN"
+      ]
+    },
+    "ST-003": {
+      "codes": [
+        "CASE-TRUST-NO-EFFECT-ASSERTION",
+        "CASE-TRUST-NO-SELF-CLEAN"
+      ]
+    },
+    "ST-008": {
+      "codes": [
+        "CASE-TRUST-NO-SELF-CLEAN"
+      ]
+    }
+  }
+}
