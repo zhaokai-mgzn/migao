@@ -26,6 +26,10 @@ class ProcessingOrderGenerateTool(BaseTool):
 
     allowed_roles = ["admin", "tenant_admin", "operator"]
     read_only = False
+    # 已从注册表移除（产品决策 2026-09-15，issue #3917）：agent 暂不接入加工单工具，
+    # 须区分「加工项/加工单」概念并引导后台。类文件保留（tests/test_tools_processing_order_*.
+    # py 直测类），未来恢复接入时：移除 deprecated + 恢复 registry 注册 + 恢复 order skill 工具绑定。
+    deprecated = True
     # requires_confirmation=True（issue #3594 写工具确认门禁分类审计）：
     # 本工具是**真实业务写**——批量创建加工单（快照固化五要素）并把订单 confirmed
     # 推进到 producing（加工方据此排产），副作用不可忽略。此前 destructive /

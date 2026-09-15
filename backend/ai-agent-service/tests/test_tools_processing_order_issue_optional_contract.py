@@ -54,7 +54,6 @@ import re
 import sys
 
 from app.tools.processing_order_update import ProcessingOrderUpdateTool
-from app.tools.validate_input import _VALIDATION_RULES
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 PROMPT_PATH = os.path.join(
@@ -136,34 +135,47 @@ def _runner():
 
 # ── ① / ③ 正向：真实 prompt 必须合规 ────────────────────────────────────────
 def test_order_prompt_issue_line_declares_optional_contract():
-    """`order.md` 发加工行必须声明 processor/交期可选 + 含「不得死循环索要」的出路。"""
-    violations = optional_contract_violations(read_prompt())
-    assert violations == [], "发加工行口径违规：\n  - " + "\n  - ".join(violations)
+    """`order.md` 发加工行必须声明 processor/交期可选 + 含「不得死循环索要」的出路。
+
+    ⚠️ 2026-09-15（issue #3917）起，**期望翻转**：加工单工具对 agent 关闭，
+    order.md 的「加工单操作」章节（含发加工行）已整体替换为「加工项 vs 加工单
+    概念区分 + 不接入声明」⇒ 当前正确状态 = **不存在** `processing_order_update`
+    操作行（锚点缺失不再是违规）。恢复接入加工单工具时（registry + order_skill +
+    prompt 三处一起恢复），把本断言改回 `violations == []`（本文件 docstring 与
+    PRE_FIX_ISSUE_LINE 保留旧口径与病灶快照，作为恢复时的检查器凭据）。
+    """
+    text = read_prompt()
+    line = issue_line(text)
+    assert line == "", (
+        "order.md 又出现了发加工操作行（processing_order_update(action=issue）——"
+        "加工单工具对 agent 未开放（issue #3917），概念区分口径下不应存在操作指引；"
+        "若确要恢复接入，请同步恢复 registry 注册 + order_skill 工具绑定，"
+        "并把本断言改回 optional_contract_violations(text) == []"
+    )
+    assert "processing_order_update" not in text, (
+        "order.md 不应再引用 processing_order_update 工具（agent 暂不接入，issue #3917）"
+    )
 
 
 # ── ② 口径一致：prompt 的可选性 == 可强制层的 required ───────────────────────
 def test_optionality_is_consistent_across_enforced_layers():
-    """工具 schema / validate_input / prompt 三处对 processor 与交期的可选性必须同一口径。"""
+    """工具 schema 对 processor 与交期的可选性口径自洽（可强制层的残留契约）。
+
+    ⚠️ 2026-09-15（issue #3917）：加工单工具对 agent 关闭 —— 工具类保留但未注册，
+    `validate_input` 的加工单闸门规则已随注册表移除（死键不变式，见
+    `tests/test_tools_validate_input.py::TestValidationRuleKeysAreLive`）⇒ 本测试只钉
+    **工具类自身 schema**（恢复接入时 validate_input 规则需按 git 历史版本补回并
+    与本 schema 对齐）；prompt 侧由
+    `test_order_prompt_issue_line_declares_optional_contract` 按新口径守护。
+    """
     schema = ProcessingOrderUpdateTool.parameters
     assert schema["required"] == ["id", "action"], (
-        "工具 schema 的 required 变了 ⇒ 请同步 prompt / validate_input / 服务端 DTO，"
+        "工具 schema 的 required 变了 ⇒ 请同步 validate_input / 服务端 DTO，"
         f"不要只改一处（现为 {schema['required']}）"
     )
     for field in ("processor", "expected_delivery_date"):
         assert field in schema["properties"], f"{field} 必须仍在工具参数里（只是可选）"
         assert field not in schema["required"], f"{field} 不应成为工具层必填"
-
-    gate = _VALIDATION_RULES["processing_order_update"]["issue"]
-    assert gate["required"] == ["id"], (
-        f"validate_input 的 issue 闸门 required 变了（现为 {gate['required']}）"
-    )
-    for field in ("processor", "expected_delivery_date"):
-        assert field not in gate["required"], f"{field} 不应成为前置校验必填"
-
-    # prompt 侧必须与上面两层同名同口径
-    assert optional_contract_violations(read_prompt()) == [], (
-        "prompt 声明的可选性与可强制层不一致"
-    )
 
 
 # ── ④ 非空证明：检查器在「改前原文」上必须报违规，且每个分支都能被触发 ─────────

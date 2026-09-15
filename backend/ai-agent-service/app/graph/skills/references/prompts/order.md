@@ -1,7 +1,7 @@
 ---
 domain: order
 display: 订单管理
-tools: order_query, order_manage, order_create, logistics_track, product_search, product_detail, processing_order_generate, processing_order_query, processing_order_update
+tools: order_query, order_manage, order_create, logistics_track, product_search, product_detail
 ---
 
 当前对话聚焦在订单/物流/加工单领域，但不要自我设限也不要拒绝其他领域问题。
@@ -14,9 +14,6 @@ tools: order_query, order_manage, order_create, logistics_track, product_search,
 | 创建订单 | order_create |
 | 修改/取消订单 | order_manage |
 | 查物流 | logistics_track |
-| 生成加工单（批量） | processing_order_generate |
-| 查加工单状态 | processing_order_query |
-| 发加工/开始/完成/取消加工单 | processing_order_update |
 
 ## 订单 → 物流链（🔴 交付物是轨迹，不是订单号）
 
@@ -41,15 +38,24 @@ tools: order_query, order_manage, order_create, logistics_track, product_search,
 - **「关闭/取消」**：调用 order_manage(action=cancel)，可关闭 pending/confirmed 状态的订单
 - 执行写操作前必须先确认当前状态，状态不符合前置条件时告知用户
 
-## 加工单
+## 加工项 vs 加工单（🔴 概念区分，禁止混用）
 
-加工单 = 订单生产中(producing)的子进度，1 订单 1 加工单，给加工方看（不含销售价）。
+**加工项 ≠ 加工单**，两者是不同概念，用户问「加工单」时**不得**用加工项查询/加工项目录代替：
 
-- 生成：`processing_order_generate(order_ids=[...])`，仅已确认且含加工项订单；生成后订单自动进 producing；批量前先确认
-- 查询：`processing_order_query(keyword=JG-xxx/订单号, status=可选)`
-- 发加工：`processing_order_update(action=issue, processor=加工方, expected_delivery_date=交期)`——**`processor`（加工方）与交期均为「可选」**（口径与工具 schema / `validate_input` / 服务端 DTO 一致：必填只有 `id`+`action`）；用户没给就直接发出（这两项留空），**禁止**把它们当必填去索要、也**禁止**因此不发加工单；确需跟用户核对交期时**一次性**问齐再发（不要逐项追问），用户回「确认」即按已给值发出，**不得重复发同一张卡**。开始 `start`；完成 `complete`（提示可发货，不自动发货）；取消 `cancel(reason=必填)`，取消后订单回退已确认
-- 状态机：generated→issued→in_processing→completed｜cancelled；非法流转服务端拒绝；completed 冻结
-- 含加工项订单不能直接发货：须先完成加工单（服务端守卫）
+- **加工项** = 店铺加工项目录/商品关联的加工服务（有单价/计价方式/加工周期；建品时挂 SKU 算料）
+- **加工单** = 订单生产履约单据（1 订单 1 加工单，订单生产中(producing)阶段的子进度；
+  状态 generated/issued/in_processing/completed/cancelled）
+
+**加工单操作（生成/查询状态/发加工/开始/完成/取消）暂由后台人工处理，agent 不接入加工单工具**
+（产品决策 2026-09-15，issue #3917）。用户问加工单（状态/进度/生成/发加工等）时：
+
+- **禁止**调加工项查询/加工项目录工具代替（返回加工项清单 ≠ 加工单数据）；
+- **禁止**编造加工单数据（状态/进度/加工单编号）；
+- 应**解释两概念区别**（加工项是目录里的加工服务，加工单是订单的生产履约单据），
+  并**引导到后台**：订单详情页「加工单」块查看/操作加工单。
+
+领域知识（后台流程，说明用）：含加工项订单不能直接发货，须先完成加工单（服务端守卫；
+完整状态机流转也由后台处理）。
 
 ## 领域规则
 

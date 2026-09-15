@@ -110,14 +110,19 @@ class TestRedEvidenceDanglingActionBlocks:
         assert v == [("T-RED-3", "order_query", "detail", "not_in_enum")], v
 
     def test_must_succeed_and_db_verify_sources_are_covered(self):
-        """`must_succeed` / `db_verify.source` 的 action 同受约束（不漏面）。"""
+        """`must_succeed` / `db_verify.source` 的 action 同受约束（不漏面）。
+
+        ⚠️ 2026-09-15（#3917）：fixture 里的 `processing_order_update` 已从注册表移除
+        （未注册工具由 `dangling_cases` 判据管，不在此函数）→ 改用 `order_manage`
+        （已注册的多 action 工具），断言语义不变。
+        """
         cases = [{"id": "T-RED-4",
                   "must_succeed": [{"tool": "product_manage", "action": "no_such_action"}],
-                  "db_verify": [{"fetch": "processing_order", "source": "processing_order_update",
+                  "db_verify": [{"fetch": "processing_order", "source": "order_manage",
                                  "action": "jump", "checks": ["status==completed"]}]}]
         v = {x[1:] for x in action_binding_violations(cases)}
         assert ("product_manage", "no_such_action", "not_in_enum") in v, v
-        assert ("processing_order_update", "jump", "not_in_enum") in v, v
+        assert ("order_manage", "jump", "not_in_enum") in v, v
 
 
 class TestNoFalsePositives:

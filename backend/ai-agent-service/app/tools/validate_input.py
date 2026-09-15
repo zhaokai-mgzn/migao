@@ -96,33 +96,13 @@ _VALIDATION_RULES: Dict[str, Dict[str, Any]] = {
             "refund_reason": {"type": str, "label": "退款原因（可选）"},
         },
     },
-    "processing_order_generate": {
-        "generate": {
-            "required": ["order_ids"],
-            "order_ids": {"type": list, "label": "订单ID/订单号列表（批量，≤100）"},
-        },
-    },
-    "processing_order_update": {
-        "issue": {
-            "required": ["id"],
-            "id": {"type": str, "min_len": 1, "label": "加工单号/订单号/UUID"},
-            "processor": {"type": str, "label": "加工方（可选）"},
-            "expected_delivery_date": {"type": str, "label": "交期 yyyy-MM-dd（可选，手工填写）"},
-        },
-        "start": {
-            "required": ["id"],
-            "id": {"type": str, "min_len": 1, "label": "加工单号/订单号/UUID"},
-        },
-        "complete": {
-            "required": ["id"],
-            "id": {"type": str, "min_len": 1, "label": "加工单号/订单号/UUID"},
-        },
-        "cancel": {
-            "required": ["id", "reason"],
-            "id": {"type": str, "min_len": 1, "label": "加工单号/订单号/UUID"},
-            "reason": {"type": str, "min_len": 1, "label": "取消原因（必填，联动订单回退）"},
-        },
-    },
+    # ⚠️ 加工单工具的闸门规则已随注册表移除（产品决策 2026-09-15，issue #3917）：
+    # agent 暂不接入 processing_order_*，工具不可达 ⇒ 规则永不命中 = 死键
+    # （test_tools_validate_input 的 L0 不变式会拦）。未来恢复接入时（registry +
+    # order_skill + prompts/order.md 三处一起恢复）把下方两个规则块加回来：
+    #   "processing_order_generate": {"generate": {"required": ["order_ids"], ...}},
+    #   "processing_order_update": {"issue": {required:["id"]...}, "start":..., ...}
+    # （旧规则全文见 git 历史：validate_input.py 在 2026-09-15 前的版本）
     "inventory_manage": {
         "adjust": {
             "required": ["product_id", "adjustment", "reason"],

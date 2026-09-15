@@ -242,12 +242,20 @@ class TestNoUnknownToolNames:
 
     拼错/臆造工具名 = 期望永不满足（假红）或永不校验（假绿），且真实 LLM 评测
     只有在全量复测时才会暴露为"工具等价漂移"。
+
+    ⚠️ `skip_reason` 非空的用例**不参与**本检查（issue #3917 起生效）：被 skip 的
+    用例不会跑，其期望引用未注册工具是**有意的休眠**（PG-013/015/016 引用已从
+    注册表移除的 processing_order_*，工具类保留、恢复接入后启用）—— 若照扫，
+    休眠引用会被判成「拼错/已删除」而恒红；「期望永不满足」只对**真实会跑**的
+    用例构成假红/假绿。
     """
 
     def test_all_expectation_tools_known(self):
         known = _mibao_real_toolset() | set(XIAOBU_TOOLS) | PSEUDO_TOOL_NAMES
         bad = {}
         for c in load_case_dicts(str(CASES_DIR)):
+            if case_skip_reason(c):
+                continue
             unknown = case_expectation_tools(c) - known
             if unknown:
                 bad[c["id"]] = sorted(unknown)

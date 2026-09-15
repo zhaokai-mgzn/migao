@@ -1,4 +1,4 @@
-# case_ids: OR-016, OR-028, AS-007, PR-019, PR-020, CH-010, CU-003, CU-004, HR-001, HR-005, ST-003, ST-005, DA-004, FN-001, PP-002, PP-006, PP-001, PP-003, PG-013, PG-015, PG-016, CH-013, CH-014, CH-015, CH-008
+# case_ids: OR-016, OR-028, AS-007, PR-019, PR-020, CH-010, CU-003, CU-004, HR-001, HR-005, ST-003, ST-005, DA-004, FN-001, PP-002, PP-006, PP-001, PP-003, PG-017, CH-013, CH-014, CH-015, CH-008
 """行为改动 diff → 用例映射单测（tests/agent_eval/behavior_mapping.py，issue #3502）。
 
 被测契约（详见模块 docstring）：
@@ -52,9 +52,11 @@ PROCESSING_ITEM_MANAGE_PATH = "backend/ai-agent-service/app/tools/processing_ite
 PROCESSING_ITEM_QUERY_PATH = "backend/ai-agent-service/app/tools/processing_item_query.py"
 # 商品侧加工项挂载 Tool（与目录 CRUD 是两件事，仍归商品域）
 PRODUCT_PROCESSING_ITEM_PATH = "backend/ai-agent-service/app/tools/product_processing_item_manage.py"
-# 加工单生成（PG-* 域）：PG-013/PG-015/PG-016 是该域唯三可跑的 LLM 用例
+# 加工单概念区分（PG-* 域）：prompts/order.md 与 order_skill.py 是概念区分口径的承载文件
+# （#3917：agent 暂不接入加工单工具；PG-013/015/016 已 skip，工具实现文件不再映射）
+ORDER_PROMPT_PATH = "backend/ai-agent-service/app/graph/skills/references/prompts/order.md"
 PROCESSING_ORDER_GENERATE_PATH = "backend/ai-agent-service/app/tools/processing_order_generate.py"
-# #3658 补锚：PG-015（查询）/ PG-016（状态流转）随 #3568/#3589 落地 → query/update 不再是「零可跑用例」
+# 加工单三工具实现文件（类保留但未注册，#3917）：改动落兜底网（default_net），不再锚用例
 PROCESSING_ORDER_QUERY_PATH = "backend/ai-agent-service/app/tools/processing_order_query.py"
 PROCESSING_ORDER_UPDATE_PATH = "backend/ai-agent-service/app/tools/processing_order_update.py"
 # 守卫代码的共享载体（防御/熔断 + 写操作守卫 + 转人工建议卡守卫），见 TestBaseSkillRules
@@ -76,7 +78,9 @@ class TestRuleHits:
     """每条映射规则都要命中（规则表 = §13.2 的可执行形态，漏一条就漏一类改动）"""
 
     @pytest.mark.parametrize("path, expected", [
-        (ORDER_PATH, ["OR-016", "OR-028"]),
+        # order_skill.py 同时命中「下单引导」规则（OR-016/OR-028）与「加工单概念区分」规则
+        # （PG-017，#3917）→ 并集 + 字典序
+        (ORDER_PATH, ["OR-016", "OR-028", "PG-017"]),
         ("backend/ai-agent-service/app/tools/order_create.py", ["OR-016", "OR-028"]),
         ("backend/ai-agent-service/app/tools/order_query.py", ["OR-016", "OR-028"]),
         (AFTERSALES_PATH, ["AS-007"]),
@@ -95,8 +99,6 @@ class TestRuleHits:
         # #3624 补加工项目录域（此前被商品规则的 `processing_item` 关键词吞掉 → 映射成建品价格用例）
         (PROCESSING_ITEM_MANAGE_PATH, ["PP-002", "PP-006"]),
         (PROCESSING_ITEM_QUERY_PATH, ["PP-002", "PP-006"]),
-        # #3624 补加工单生成（该域唯一可跑的 LLM 用例）
-        (PROCESSING_ORDER_GENERATE_PATH, ["PG-013"]),
         # #3624 补转人工 Tool 本体
         (HUMAN_HANDOFF_PATH, ["CH-008", "CH-015"]),
     ])
@@ -232,25 +234,25 @@ class TestProcessingDomainRules:
         assert bm.map_changed_files_to_case_ids([PRODUCT_PROCESSING_ITEM_PATH]) == [
             "PP-001", "PP-003", "PR-019", "PR-020"]
 
-    def test_processing_order_generate_hits_pg013(self):
-        """加工单生成 → PG-013（PG-001~PG-012/PG-014 全部 skip）。
+    def test_order_prompt_change_maps_to_pg017(self):
+        """改 prompts/order.md（加工项 vs 加工单概念区分口径，#3917）→ PG-017 进强信号集。
 
-        前置数据已就绪：`tests/agent_eval/fixtures/mibao_eval_seed.sql` 为 PG-013 种了
-        `EVAL-MB-ORD-0002`（confirmed + 明细带 processing_info）。
+        与 prompt 规则（CH-003/CH-022）取并集 —— 概念区分口径改动必须真跑概念区分用例。
         """
-        assert bm.map_changed_files_with_source(
-            [PROCESSING_ORDER_GENERATE_PATH]) == (["PG-013"], "rules")
+        assert bm.map_changed_files_with_source([ORDER_PROMPT_PATH]) == (
+            ["CH-003", "CH-022", "PG-017"], "rules")
 
-    @pytest.mark.parametrize("path, expected", [
-        (PROCESSING_ORDER_QUERY_PATH, ["PG-015"]),
-        (PROCESSING_ORDER_UPDATE_PATH, ["PG-016"]),
-    ])
-    def test_processing_order_query_and_update_are_anchored(self, path, expected):
-        """#3658 补锚：PG-015/016 随 #3568/#3589 落地后，query/update 不再是「零可跑用例」——
-        原「刻意不锚」注释的前提（假阻塞）已消失，改这两个 Tool 必须真跑它们各自的用例
-        （PG-015：生成 → 按订单号回查；PG-016：完成加工，output_verify 核到 completed）。
+    def test_processing_order_tool_files_no_longer_anchor_cases(self):
+        """#3917：加工单工具已从注册表与 ORDER_TOOLS 移除（类保留），改工具实现文件
+        **不再**映射 PG-013/015/016（已 skip、对 agent 不可跑，锚了 = 挂不可跑用例 =
+        假阻塞）—— 落兜底网（只报告，不阻塞）。
         """
-        assert bm.map_changed_files_with_source([path]) == (expected, "rules")
+        for path in (PROCESSING_ORDER_GENERATE_PATH,
+                     PROCESSING_ORDER_QUERY_PATH,
+                     PROCESSING_ORDER_UPDATE_PATH):
+            cases, source = bm.map_changed_files_with_source([path])
+            assert source == "default_net", f"{path} 不应再进规则桶（source={source}）"
+            assert cases == bm.DEFAULT_BEHAVIOR_CASES
 
     @pytest.mark.parametrize("path", [
         "backend/ai-agent-service/tests/test_tools_processing_item_manage.py",
@@ -361,7 +363,7 @@ class TestUnionAndDedupe:
     def test_multi_rule_union(self):
         """一个文件同时命中 agent 规则与订单规则 → 两组用例都要跑（并集，不取第一个命中）。"""
         result = bm.map_changed_files_to_case_ids([AGENT_PATH, ORDER_PATH])
-        assert result == ["CH-003", "CH-022", "OR-016", "OR-028"]
+        assert result == ["CH-003", "CH-022", "OR-016", "OR-028", "PG-017"]
 
     def test_multi_file_across_rules_dedupes(self):
         """多个文件命中同一规则 → 用例 ID 只出现一次（去重）。"""
@@ -406,7 +408,7 @@ class TestOrderingStability:
         backward = bm.map_changed_files_to_case_ids([AGENT_PATH, CARD_PATH, ORDER_PATH])
         assert forward == backward
         assert forward == sorted(forward)
-        assert forward == ["CH-003", "CH-010", "CH-019", "CH-022", "OR-016", "OR-028"]
+        assert forward == ["CH-003", "CH-010", "CH-019", "CH-022", "OR-016", "OR-028", "PG-017"]
 
     def test_rule_declaration_order_does_not_leak_into_output(self):
         """结果按用例 ID 字典序（不是 MAPPING_RULES 的声明序）——写死期望值锁住口径。"""
@@ -423,7 +425,8 @@ class TestMappingSource:
     """
 
     def test_rule_hit_reports_rules_source(self):
-        assert bm.map_changed_files_with_source([ORDER_PATH]) == (["OR-016", "OR-028"], "rules")
+        assert bm.map_changed_files_with_source([ORDER_PATH]) == (
+            ["OR-016", "OR-028", "PG-017"], "rules")
 
     def test_default_net_reports_default_source(self):
         cases, source = bm.map_changed_files_with_source(
@@ -441,7 +444,7 @@ class TestMappingSource:
         cases, source = bm.map_changed_files_with_source(
             ["backend/ai-agent-service/app/main.py", ORDER_PATH])
         assert source == "rules"
-        assert cases == ["OR-016", "OR-028"]
+        assert cases == ["OR-016", "OR-028", "PG-017"]
 
     def test_source_api_and_plain_api_agree(self):
         """两个入口的用例集必须完全一致（单一实现，防两套口径漂移）。"""
