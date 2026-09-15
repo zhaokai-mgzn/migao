@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-// case_ids: UI-002
+// case_ids: UI-002, UI-019, UI-030
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import OrderStatusBadge from '@/components/orders/OrderStatusBadge'
@@ -62,6 +62,14 @@ describe('OrderStatusBadge Component', () => {
     render(<OrderStatusBadge status="completed" />)
     const badge = screen.getByText('已完成')
     expect(badge.className).toContain('bg-emerald-50')
+  })
+
+  // issue #3889：producing（生产中）以醒目 amber chip 展示，不再显示「待发货」
+  it('renders producing（生产中）with amber (warning) chip instead of 待发货', () => {
+    render(<OrderStatusBadge status="producing" />)
+    const badge = screen.getByText('生产中')
+    expect(badge.className).toContain('bg-amber-50')
+    expect(screen.queryByText('待发货')).not.toBeInTheDocument()
   })
 
   it('never renders legacy blue/indigo/green/gray color classes', () => {

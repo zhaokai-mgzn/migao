@@ -342,7 +342,8 @@ export default function OrderTable({
 
                   {/* 状态 */}
                   <td className="px-4 py-4 whitespace-nowrap">
-                    <OrderStatusBadge status={normalizeOrderStatus(order.status as string)} />
+                    {/* 传原始后端状态（issue #3889）：producing 由 chip 展示为「生产中」而非归一为待发货 */}
+                    <OrderStatusBadge status={order.status} />
                   </td>
 
                   {/* 备注预览 — #1289: 同时检查 remark 字符串和 remarks[] 数组 */}

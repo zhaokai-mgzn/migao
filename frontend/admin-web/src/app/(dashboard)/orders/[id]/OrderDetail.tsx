@@ -10,8 +10,8 @@ import { orderApi } from '@/lib/api'
 import { useRouteId } from '@/lib/use-route-id'
 import { Button, Loading, Modal } from '@/components/ui'
 import { OrderProgressSteps, CloseOrderModal, LogisticsForm, RefundOrderModal, ProcessingOrderBlock, ShipmentDoc } from '@/components/orders'
-import type { Order, OrderItem, LogisticsFormData } from '@/types'
-import { normalizeOrderStatus } from '@/types'
+import type { Order, OrderItem, LogisticsFormData, ProcessingOrder } from '@/types'
+import { normalizeOrderStatus, displayOrderStatus } from '@/types'
 import { cn } from '@/lib/utils'
 
 // 格式化金额（含千分位+两位小数）
@@ -90,6 +90,9 @@ export default function OrderDetailPage() {
   const [loading, setLoading] = useState(true)
   const [closeModalOpen, setCloseModalOpen] = useState(false)
   const [closeSubmitting, setCloseSubmitting] = useState(false)
+
+  // 加工单（ProcessingOrderBlock 经 onStatusChange 上报；issue #3889 发货入口守卫用）
+  const [processingOrder, setProcessingOrder] = useState<ProcessingOrder | null>(null)
 
   // 确认付款 / 确认收货 / 编辑物流
   const [confirmPaymentOpen, setConfirmPaymentOpen] = useState(false)
@@ -260,6 +263,7 @@ export default function OrderDetailPage() {
       {/* 订单状态区域 */}
       <StatusSection
         order={order}
+        processingOrder={processingOrder}
         countdown={countdown}
         onClose={() => setCloseModalOpen(true)}
         onShip={() => router.push(`/orders/${order.id}/ship`)}
@@ -314,6 +318,7 @@ export default function OrderDetailPage() {
         orderId={order.id}
         orderStatus={order.status}
         hasProcessing={(order.processingItems?.length ?? 0) > 0}
+        onStatusChange={setProcessingOrder}
       />
 
       {/* 纸质发货单（issue #3768）：屏幕上隐藏，仅打印呈现；已发货/已完成可在此补打 */}
@@ -437,6 +442,8 @@ function ConfirmModal({ open, title, message, loading, onClose, onConfirm }: Con
 
 interface StatusSectionProps {
   order: Order
+  /** 加工单（ProcessingOrderBlock 上报；null = 无加工单/未生成/查询失败） */
+  processingOrder: ProcessingOrder | null
   countdown: { h: number; m: number; s: number; expired: boolean }
   onClose: () => void
   onShip: () => void
@@ -450,6 +457,7 @@ interface StatusSectionProps {
 
 function StatusSection({
   order,
+  processingOrder,
   countdown,
   onClose,
   onShip,
@@ -460,6 +468,13 @@ function StatusSection({
   onPrintShipment,
 }: StatusSectionProps) {
   const status = normalizeOrderStatus(order.status as string)
+  const display = displayOrderStatus(order.status as string)
+  // issue #3889：producing（生产中）从 pending_shipment 展示中独立（醒目 chip，见 pending_shipment 分支）
+  const producing = (order.status as string) === 'producing'
+  // 发货入口守卫：含加工项且无「已完成」加工单 → 引导先完成加工单再发货
+  // （与后端 assertProcessingCompletedBeforeShip「countCompleted==0 拦截」口径一致，不依赖 status 字符串）
+  const hasProcessing = (order.processingItems?.length ?? 0) > 0
+  const processingBlocked = hasProcessing && processingOrder?.status !== 'completed'
   // 退款展示不再依赖 'refund' 状态：refundAmount > 0 即视为已退款（订单保持原状态）
   const refunded = (order.refundAmount ?? 0) > 0
 
@@ -512,15 +527,24 @@ function StatusSection({
             receivedAt={order.receivedAt}
           />
           <div className="mt-6 pt-5 border-t border-neutral-100 flex items-center justify-end gap-3">
+            {producing && (
+              <span className="mr-auto inline-flex items-center px-2.5 py-1 rounded-full bg-amber-50 text-amber-600 text-xs font-semibold">
+                {display.label}
+              </span>
+            )}
             {!refunded && (
               <Button variant="secondary" onClick={onRefund}>
                 退款
               </Button>
             )}
-            <Button onClick={onShip} className="gap-1.5">
-              发货
-              <Zap className="w-4 h-4" />
-            </Button>
+            {processingBlocked ? (
+              <span className="text-sm text-amber-600">含加工项订单：先完成加工单再发货</span>
+            ) : (
+              <Button onClick={onShip} className="gap-1.5">
+                发货
+                <Zap className="w-4 h-4" />
+              </Button>
+            )}
           </div>
         </div>
       )}

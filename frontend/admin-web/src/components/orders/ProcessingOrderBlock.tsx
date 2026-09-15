@@ -12,6 +12,8 @@ interface Props {
   orderStatus: string
   /** 订单是否含加工项（由父组件从明细判断） */
   hasProcessing: boolean
+  /** 加工单状态上报（issue #3889）：详情页据此守卫「含加工项且加工单未完成」的发货入口 */
+  onStatusChange?: (po: ProcessingOrder | null) => void
 }
 
 const STEP_ORDER: ProcessingOrder['status'][] = ['generated', 'issued', 'in_processing', 'completed']
@@ -52,7 +54,7 @@ function toPlainText(po: ProcessingOrder): string {
   return lines.join('\n')
 }
 
-export default function ProcessingOrderBlock({ orderId, orderStatus, hasProcessing }: Props) {
+export default function ProcessingOrderBlock({ orderId, orderStatus, hasProcessing, onStatusChange }: Props) {
   const [po, setPo] = useState<ProcessingOrder | null>(null)
   const [notFound, setNotFound] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -67,13 +69,15 @@ export default function ProcessingOrderBlock({ orderId, orderStatus, hasProcessi
       const data = res.data?.data ?? null
       setPo(data)
       setNotFound(!data)
+      onStatusChange?.(data)
     } catch {
       setNotFound(true)
       setPo(null)
+      onStatusChange?.(null)
     } finally {
       setLoading(false)
     }
-  }, [orderId])
+  }, [orderId, onStatusChange])
 
   useEffect(() => {
     if (orderId) load()
@@ -113,6 +117,7 @@ export default function ProcessingOrderBlock({ orderId, orderStatus, hasProcessi
       })
       const data = res.data?.data
       setPo(data ?? po)
+      onStatusChange?.(data ?? po)
       setForm(null)
     } catch {
       setError('操作失败，请确认加工单状态与填写内容')
@@ -142,6 +147,7 @@ export default function ProcessingOrderBlock({ orderId, orderStatus, hasProcessi
       const res = await processingOrderApi.update(po.id, { action })
       const data = res.data?.data
       setPo(data ?? po)
+      onStatusChange?.(data ?? po)
     } catch {
       setError('操作失败，请确认加工单状态')
     } finally {

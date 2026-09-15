@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { ChevronRight, Printer, Zap } from 'lucide-react'
 import { toast } from 'sonner'
 import { toastRequestError } from '@/lib/api-error'
-import { orderApi } from '@/lib/api'
+import { orderApi, processingOrderApi } from '@/lib/api'
 import { useRouteId } from '@/lib/use-route-id'
 import { Button, Loading } from '@/components/ui'
 import { ShipmentDoc } from '@/components/orders'
@@ -21,6 +21,10 @@ const LOGISTICS_COMPANIES = [
   '韵达快递',
   '申通快递',
 ]
+
+// 可发货订单状态（后端枚举：pending/confirmed/producing/shipped/completed/cancelled；
+// producing = 加工单流转后订单进入「生产中」，仍属待发货；'processing' 是历史误写，从不产生）
+const SHIPPABLE_STATUSES = new Set(['pending_shipment', 'confirmed', 'producing'])
 
 function formatAmount(amount?: number): string {
   return `¥${(amount ?? 0).toLocaleString('zh-CN', {
@@ -71,6 +75,12 @@ export default function ShipOrder() {
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
 
+  // 加工单前置守卫（issue #3889）：订单详情接口不下发加工单状态，
+  // 含加工项订单额外查询加工单；无「已完成」加工单时阻断发货表单
+  // （与后端 assertProcessingCompletedBeforeShip「countCompleted==0 拦截」口径一致）。
+  const [processingBlocked, setProcessingBlocked] = useState(false)
+  const [poChecked, setPoChecked] = useState(false)
+
   // 物流表单
   const [shippingMethod, setShippingMethod] = useState<'logistics' | 'none'>('logistics')
   const [logisticsCompany, setLogisticsCompany] = useState(LOGISTICS_COMPANIES[0])
@@ -103,6 +113,41 @@ export default function ShipOrder() {
   useEffect(() => {
     loadOrder()
   }, [loadOrder])
+
+  const shippable = !!order && SHIPPABLE_STATUSES.has(order.status)
+
+  // 加工单状态查询：仅「可发货状态 + 含加工项」的订单需要（其余短路为已检查）
+  useEffect(() => {
+    if (!order || !shippable) {
+      setPoChecked(true)
+      setProcessingBlocked(false)
+      return
+    }
+    const hasProcessing = (order.processingItems?.length ?? 0) > 0
+    if (!hasProcessing) {
+      setPoChecked(true)
+      setProcessingBlocked(false)
+      return
+    }
+    let cancelled = false
+    setPoChecked(false)
+    processingOrderApi
+      .detail(order.id)
+      .then((res) => {
+        if (cancelled) return
+        setProcessingBlocked(res.data?.data?.status !== 'completed')
+        setPoChecked(true)
+      })
+      .catch(() => {
+        if (cancelled) return
+        // 查询失败/无加工单按后端口径保守阻断（countCompleted==0 不可发货）
+        setProcessingBlocked(true)
+        setPoChecked(true)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [order, shippable])
 
   const productGroups = useMemo(() => groupItems(order?.items), [order?.items])
   const processingTotal = useMemo(
@@ -165,13 +210,28 @@ export default function ShipOrder() {
   }
 
   // 状态守卫：仅待发货状态可进入发货页。
-  // 后端状态枚举：pending/confirmed/producing/shipped/completed/cancelled
-  // （producing = 加工单流转后订单进入「生产中」，仍属待发货；'processing' 是历史误写，从不产生）
-  const shippableStatuses = new Set(['pending_shipment', 'confirmed', 'producing'])
-  if (!shippableStatuses.has(order.status)) {
+  if (!SHIPPABLE_STATUSES.has(order.status)) {
     return (
       <div className="p-6 text-center py-12">
         <p className="text-neutral-500 mb-4">当前订单状态不允许发货</p>
+        <Button onClick={() => router.push(`/orders/${order.id}`)}>返回订单详情</Button>
+      </div>
+    )
+  }
+
+  // 加工单前置守卫（issue #3889）：含加工项且加工单未完成 → 明确阻断，不再渲染发货表单
+  const hasProcessing = (order.processingItems?.length ?? 0) > 0
+  if (hasProcessing && !poChecked) {
+    return (
+      <div className="p-6 flex items-center justify-center min-h-[400px]">
+        <Loading size="lg" text="加载订单详情..." />
+      </div>
+    )
+  }
+  if (hasProcessing && processingBlocked) {
+    return (
+      <div className="p-6 text-center py-12">
+        <p className="text-neutral-500 mb-4">该订单含加工项，须先完成加工单后再发货，请返回订单详情处理加工单</p>
         <Button onClick={() => router.push(`/orders/${order.id}`)}>返回订单详情</Button>
       </div>
     )

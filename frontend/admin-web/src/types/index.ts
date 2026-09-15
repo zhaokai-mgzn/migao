@@ -468,6 +468,20 @@ export const OrderStatusColors: Record<OrderStatus, string> = {
   refund: 'error',
 }
 
+// 订单状态展示辅助（issue #3889）：backend producing 与 confirmed 的展示区分。
+// producing（生产中）不再归入 pending_shipment（待发货）展示，避免用户误以为可直接发货。
+// 仅影响展示；OrderStatus 联合类型与 FrontendToBackendStatus（过滤/请求语义）保持不变。
+export interface OrderStatusDisplay {
+  label: string
+  color: string
+}
+
+export function displayOrderStatus(status: string | undefined | null): OrderStatusDisplay {
+  if (status === 'producing') return { label: '生产中', color: 'warning' }
+  const normalized = normalizeOrderStatus(status)
+  return { label: OrderStatusLabels[normalized], color: OrderStatusColors[normalized] }
+}
+
 // 订单状态流转顺序（正常流程）
 export const OrderStatusFlow: OrderStatus[] = ['pending_payment', 'pending_shipment', 'shipped', 'completed']
 
