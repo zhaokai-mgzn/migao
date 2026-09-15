@@ -46,7 +46,7 @@ pytest-cov==6.0.0
 pytest-mock==3.15.1
 pytest-timeout>=2.4.0
 pytest-rerunfailures==16.6
-pytest-xdist==3.6.1  # issue #2957: 本地并行提速（run -n auto）
+pytest-xdist==3.8.0  # issue #2957: 本地并行提速（run -n auto）
 
 # ASR 语音识别
 dashscope>=1.27.3
