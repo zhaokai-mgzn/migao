@@ -2916,7 +2916,7 @@
 ```
 溯源: 2026-09-15 新增（issue #3917）：B 端概念区分用例（加工单工具关闭后的行为守护）。断言组合：expectations=[direct_reply]（该轮零工具调用 —— 目录替代形态必调 processing_item_query，加工单形态必调 processing_order_*）+ forbidden_tools（跨轮全程禁用 4 工具，调用即违规）+ want_text（含「加工单」+「后台/订单详情」引导）+ forbidden_text（R1 轮次作用域 any_of，禁目录特征词）+ success=true（计分）。persona: mibao（B 端专属，缺省会触发另一腿「禁止静默少跑」，#3822）。 ｜ tags: processing_order, llm_behavior, concept_distinction, product_decision
 
-## 商品域（23 case）
+## 商品域（25 case）
 
 ### PR-001. 商品搜索 - 关键词模糊匹配 🟢
 ```
@@ -3251,6 +3251,38 @@
 ```
 真值: product-sku-stock.status-flow
 溯源: 2026-09-15 新增（#3882 复盘，#3886）：sess_f26fda5046f34992 复盘——B 端写操作（下架/删加工项）被确认门禁拦截后 agent 只在文本声称「确认卡已发出」而未调 interact，客户无卡可点；行为修复已合并（#3882：base_skill.py 兜底补发确认卡 + tests/test_b_end_confirm_card_fallback.py），本条为行为评测用例（LLM 真跑验证），核心断言 order_before[interact[confirm] before product_manage]：缺卡/写先于卡即红。以 PR-007 为模板（答卡轮 auto_respond fallback=确认 + pre_clean product_dedupe 遮光窗帘 + truths_ref product-sku-stock.status-flow + 命名空间互斥）。 ｜ tags: write, confirm
+
+### PR-026. 设置商品主图 - product_manage(action=update, images) 成功路径 🔵
+```
+你: 把遮光窗帘的主图设成这张色卡图 [📷 附 1 图]
+你: [🤖 按上一轮卡片作答]
+期望: product_manage(action=update)
+数据: product_manage(action=update) 携带 images（色卡图 URL）且执行成功 —— 商品主图已更新（images 落库）；db_verify[product_by_name] 当前只支持 processingItemConfigs 谓词（local_runner.py），商品 images 字段落库无 fetch，属 runner 能力缺口（如实登记，未掩盖）
+清理: product_dedupe(product_keyword=遮光窗帘)
+必填: product_manage(update) 字段 product_id, images
+必须成功: product_manage(update)
+```
+真值: product-sku-stock.status-flow
+溯源: 2026-09-15 新增（issue #3930/#3931 实证 sess_2efa2071bb1747d8）：设主图成功路径——同回合 agent 先错误路由 product_update(images=…)（无该参数）被静默丢弃 → 「没有要修改的字段」→ 误宣「不支持图片」；19:49 改用 product_manage(action=update, images) 成功。本用例锁定正确路径（expectations/required_args/must_succeed 三层）；db_verify 对商品 images 无 fetch（只支持 processingItemConfigs），效果层由 must_succeed 兜底，落库层缺口已登记 ｜ tags: image, write
+
+### PR-027. 设主图能力不误宣 - 回复不得出现「不包含图片上传/拿不到地址」类能力否定 🔵
+```
+你: 把遮光窗帘的主图设成这张色卡图 [📷 附 1 图]
+你: [🤖 按上一轮卡片作答]
+期望: product_manage(action=update)
+数据: 回复不得出现「不包含图片上传/拿不到可写入的地址/无法设置主图」类能力否定（机器断言见 forbidden_text）；能力误宣守卫（capability_denial_text_hit 商品图片域判据）应拦截并纠正重答，最终走 product_manage(action=update, images=…)（expectations/must_succeed 同上）
+清理: product_dedupe(product_keyword=遮光窗帘)
+禁词: 不包含图片上传
+禁词: 拿不到可写入的地址
+禁词: 拿不到地址
+禁词: 无法设置主图
+禁词: 不能设置主图
+禁词: 不支持修改主图
+禁词: 不支持图片
+必须成功: product_manage(update)
+```
+真值: product-sku-stock.status-flow
+溯源: 2026-09-15 新增（issue #3931，实证 sess_2efa2071bb1747d8 19:46:32 拒绝文本）：「不包含图片上传」「拿不到可写入的地址」必须被守卫命中并纠正——product_manage 有 images/detail_images 参数、能力真实可达；forbidden_text 逐词机器断言（可判定形式），守卫判据与话术见 base_skill.py 的 _PRODUCT_IMAGE_ACTION_WORDS / _product_image_denial_hit / _TEXT_DENIAL_CORRECTIVE_PRODUCT_IMAGE ｜ tags: image, write, capability_denial
 
 ## registry（1 case）
 
@@ -3956,8 +3988,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：292（活跃 147，跳过 145）
-- tier 分布：smoke 9 / normal 250 / adversarial 33
+- 用例总数：294（活跃 149，跳过 145）
+- tier 分布：smoke 9 / normal 252 / adversarial 33
 - 售后域：9
 - agents：6
 - api：19
@@ -3977,7 +4009,7 @@
 - 订单域：27
 - 加工项域：9
 - processing-order：17
-- 商品域：23
+- 商品域：25
 - registry：1
 - 设置域：8
 - token-refresh：4

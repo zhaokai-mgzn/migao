@@ -1647,6 +1647,26 @@ _NON_SELF_SUBJECT_WORDS = ("顾客", "客户", "您", "买家", "用户", "商�
 _CLAUSE_SPLIT_RE = re.compile(r"[。！？；\n，,、]+")
 
 
+# ── 商品图片域的能力自我否定（issue #3931）──────────────────────────────────
+# 生产实证（sess_2efa2071bb1747d8，2026-09-15）：用户「先把这张色卡图设为主图」，
+# agent 拒绝「我这个商品管理入口只能改价格、名称、描述、状态、回补库存开关这些字段，
+# 不包含图片上传……拿不到可写入的地址」—— 而 product_manage(action=update, images=…)
+# 真实可达（同回合 tool_calls 就有 images URL，19:49 改用 product_manage 后成功）。
+# 判据与下单域同构（`capability_denial_text_hit` 的第二条正交判据）：**小句 × 图片锚点 ×
+# 否定形态 × 自我主体**，缺一不可 —— 单看「主图/图片」是中性词（「主图还是空的，建议上传」
+# 不得误报），必须与否定形态 + 自我主体共现。
+# ⚠️ 锚点词表是**能力域锚点**（类目），不是整句白名单：判据仍是结构化的三条共现。
+_PRODUCT_IMAGE_ACTION_WORDS = (
+    "设为主图", "设置主图", "改主图", "换主图", "修改主图", "上传主图",
+    "上传图片", "设置图片", "主图", "图片", "色卡图", "详情图",
+)
+# 订单域语义词干（_INABILITY_STEMS/_ABILITY_WORDS）覆盖不到、但本次生产原文用到的
+# 否定形态（「不包含图片上传」「拿不到可写入的地址」）；判据结构复用
+# `_negation_positions`/`_self_scoped_clause`（否定位置 × 最近主体归属）。
+# 刻意**不含**「没发/没上传/没图片」等中性事实词（「顾客没发图片给我」是客观说明，不得误报）。
+_PRODUCT_IMAGE_EXTRA_NEGATIONS = ("不包含", "拿不到", "传不了", "改不了", "设置不了", "上不了")
+
+
 # ── 「顾客正在下单」+「流程已有真实进展」→ 无信号转人工即放弃流程（issue #3421）──
 # 为什么需要（C-A1 run 34763744203）：原兜底只在**有在办卡片/pending skill** 时拦，
 # 而那一刻顾客已把卡点掉 → 判为"无在办"直接放行，9 轮不下单、转人工收场。
@@ -1930,12 +1950,37 @@ def _scope_misattribution_hit(text: str) -> str:
     return ""
 
 
+def _product_image_denial_hit(text: str) -> str:
+    """商品图片域的能力自我否定（issue #3931）：小句 × 图片锚点 × 否定形态 × 自我主体。
+
+    判据结构复用下单域的 `_negation_positions`/`_self_scoped_clause`（否定位置 ×
+    最近主体归属），否定形态 = 既有语义词干 ∪ `_PRODUCT_IMAGE_EXTRA_NEGATIONS`。
+    返回命中片段或空串（空串 = 不拦截，供「只纠正 AI 真有的能力」的调用方选择）。
+    """
+    for raw_clause in _CLAUSE_SPLIT_RE.split(str(text)):
+        clause = _normalize_clause(raw_clause)
+        if not any(word in clause for word in _PRODUCT_IMAGE_ACTION_WORDS):
+            continue
+        positions = _negation_positions(clause, include_assist=False)
+        for stem in _PRODUCT_IMAGE_EXTRA_NEGATIONS:
+            start = clause.find(stem)
+            while start >= 0:
+                positions.append((start, False))
+                start = clause.find(stem, start + 1)
+        for pos, is_assist in positions:
+            if is_assist or _self_scoped_clause(clause, pos):
+                return raw_clause.strip()[:60]
+    return ""
+
+
 def capability_denial_text_hit(text: str, *, include_assist: bool = False) -> str:
     """回复文本里是否存在"AI 自己做不到 × 下单动作"的能力误宣；返回命中片段或空串。
 
-    两条**正交**的形态判据，命中任一即算（都不是整句白名单）：
+    三条**正交**的形态判据，命中任一即算（都不是整句白名单）：
       · `_negation_positions` 形态：下单动作锚点 × 否定/能力受限（含 `V不了`）；
-      · `_scope_misattribution_hit` 形态：把下单判给别的环节/工作台/人工（OR-014 实证）。
+      · `_scope_misattribution_hit` 形态：把下单判给别的环节/工作台/人工（OR-014 实证）；
+      · `_product_image_denial_hit` 形态（issue #3931）：**商品图片域**锚点 × 否定 ×
+        自我主体 —— 「该入口不支持图片/拿不到可写入的地址」= 同一类能力误宣的另一张脸。
 
     `include_assist=True` 时额外认「协助下单」这类**回避式**（供转人工理由使用：
     理由写"顾客需要协助下单"就是把本该自己做的事推给人工；回复文本里出现"协助下单"
@@ -1951,6 +1996,9 @@ def capability_denial_text_hit(text: str, *, include_assist: bool = False) -> st
         for pos, is_assist in _negation_positions(clause, include_assist):
             if is_assist or _self_scoped_clause(clause, pos):
                 return raw_clause.strip()[:60]
+    hit = _product_image_denial_hit(text)
+    if hit:
+        return hit
     return _scope_misattribution_hit(text)
 
 
@@ -1992,6 +2040,17 @@ _TEXT_DENIAL_CORRECTIVE_BIZ = (
     "请回转人工」这类话术；要素齐了就走 confirm 卡 → `validate_input` → `order_create`"
     "（B 端代客下单不需要顾客短信验证码），缺信息就用一句话问缺的那一项。"
     "只有用户**显式**要求人工、或诉求真的超出能力时才允许引导人工。"
+)
+
+# B 端商品域纠正话术（issue #3931）：与下单域同一条「纠正重答」路径 ——
+# AI 说「该入口不支持图片/拿不到地址」，而 product_manage(action=update, images=…) 真实可达。
+_TEXT_DENIAL_CORRECTIVE_PRODUCT_IMAGE = (
+    "你刚才的回复以「该入口不支持图片/拿不到地址」为由拒绝了用户，但事实相反："
+    "主图/图片更新能力在 `product_manage(action=update, images=…/detail_images=…)` 里，"
+    "**你可以真实设置主图**。请**重新给出回复**：不要再出现「不包含图片上传 / "
+    "拿不到可写入的地址 / 无法设置主图」这类话术；先 `product_detail`/`product_search` "
+    "拿真实商品 UUID，发 `interact(component=confirm)` 确认后立即调用 "
+    "`product_manage(action=update, product_id=<UUID>, images=[色卡图URL])` 执行。"
 )
 
 
@@ -2094,6 +2153,33 @@ def _order_capability_available(registry=None, *, order_in_progress: bool = Fals
     if _order_write_tool_here(registry):
         return True
     return bool(order_in_progress) and _tool_registered_globally(ORDER_WRITE_TOOL)
+
+
+PRODUCT_IMAGE_WRITE_TOOL = "product_manage"
+
+
+def _product_image_capability_available(registry=None) -> bool:
+    """商品主图/图片更新能力是否**可达**（=「该入口不支持图片」这句话是否为**假**）。
+
+    判据取自**工具注册表事实**（issue #3931）：当前 skill 的工具子集里有
+    `product_manage` 且其参数 schema 含 images/detail_images —— 与
+    `_order_capability_available` 同源的事实驱动（不写死 skill 名/工具清单）。
+    """
+    tool = None
+    if registry is not None:
+        try:
+            tool = registry.get_tool(PRODUCT_IMAGE_WRITE_TOOL)
+        except Exception:
+            tool = None
+    if tool is None:
+        return False
+    params = getattr(tool, "parameters", None)
+    if not isinstance(params, dict):
+        return False
+    props = params.get("properties")
+    if not isinstance(props, dict):
+        return False
+    return any(k in props for k in ("images", "detail_images"))
 
 
 def _registry_has_confirm_write_tool(registry=None) -> bool:
@@ -2988,6 +3074,36 @@ def _sanitize_tool_args(tool, tool_args: dict) -> dict:
     return {k: v for k, v in tool_args.items() if k in accepted}
 
 
+# ── 写工具净化不再静默（issue #3930）────────────────────────────────────────
+# 生产实证（sess_2efa2071bb1747d8，2026-09-15）：用户「先把这张色卡图设为主图」，
+# agent 把请求路由到 product_update（它没有 images 参数）→ _sanitize_tool_args 静默丢弃
+# images → 空字段调用 → 「没有要修改的字段」→ 模型外推「该入口不支持图片」→ 编造性否定出站。
+# 修复：写工具丢弃**图片类**未知参数时不再静默 —— 直接失败 + 正确工具指引（不执行），
+# 让模型改走 product_manage(action=update, images=…)。
+# ⚠️ 只对图片类参数生效：非图片类未知参数维持 issue #3361 的静默净化（存量用例依赖，
+# 见 test_graph_skills.py 的 test_unexpected_kwarg_dropped）；只读工具永远静默
+# （查询类模型爱带多余参数，不能因此失败）。
+_IMAGE_DROP_GUIDANCE = {
+    "images": "设置/修改商品主图请用 product_manage(action=update, images=…)",
+    "detail_images": "设置/修改商品详情图请用 product_manage(action=update, detail_images=…)",
+    "main_image": "设置/修改商品主图请用 product_manage(action=update, images=…)",
+}
+
+
+def _dropped_args_guidance(tool, tool_args: dict) -> str:
+    """写工具被丢弃的**图片类**未知参数 → 失败指引文本（空串 = 不拦截）。"""
+    if getattr(tool, "read_only", True):
+        return ""
+    accepted = _accepted_param_names(tool)
+    if accepted is None or not isinstance(tool_args, dict):
+        return ""
+    hit = [k for k in tool_args if k not in accepted and k in _IMAGE_DROP_GUIDANCE]
+    if not hit:
+        return ""
+    return "参数不受支持: " + "；".join(
+        f"{k}: {_IMAGE_DROP_GUIDANCE[k]}" for k in hit)
+
+
 async def _execute_tool_safe(tool, tool_args: dict, tool_context, state: dict) -> tuple:
     """统一 Tool 执行入口 — normalize + cache + execute + error handling.
 
@@ -3004,7 +3120,17 @@ async def _execute_tool_safe(tool, tool_args: dict, tool_context, state: dict) -
             tool_args = {**nested, **{k: v for k, v in tool_args.items() if k != "data"}}
     tool_args = LangChainToolAdapter._normalize_args(tool, tool_args)
     # 幻觉参数净化（见 _sanitize_tool_args 注释：order_create 收到 action → TypeError → 抖动）
+    _raw_args = dict(tool_args)
     tool_args = _sanitize_tool_args(tool, tool_args)
+    # 写工具图片类参数被丢弃 → 不执行，返回失败 + 正确工具指引（issue #3930）：
+    # 静默丢弃会制造「空字段调用 → 没有要修改的字段 → 模型外推该入口不支持图片」的误宣链。
+    _drop_msg = _dropped_args_guidance(tool, _raw_args)
+    if _drop_msg:
+        logger.warning(f"[tool-arg-sanitize] {tool.name} 写工具图片类参数被丢弃 → 拒绝执行: {_drop_msg}")
+        _err_json = json.dumps(
+            {"success": False, "error": _drop_msg, "message": _drop_msg},
+            ensure_ascii=False)
+        return _err_json, {"success": False, "error": _drop_msg}
 
     # 1.5. 自动解析 _ids 参数：LLM 传加工项名称/序号时自动转 UUID
     tool_args = await _auto_resolve_ids(tool, tool_args, state)
@@ -3844,6 +3970,7 @@ async def execute_skill(
                     # 能力误宣（issue #3443）：文本里"我做不了下单"→ 带纠正提示**重答一次**
                     # （只一次，防死循环）。重答走完整循环，故模型可以继续调工具把单下掉。
                     _denial_hit = capability_denial_text_hit(new_text)
+                    _image_denial_hit = _product_image_denial_hit(new_text)
                     # 判据 = **在办下单流程状态 × 工具能力事实**（与 skill 名无关，#3477 根治）：
                     #   · `_has_write_now`：下单写工具就在**本 skill** 手上（注册表事实）；
                     #   · `_order_in_progress`：顾客处于在办下单流程（跨轮状态事实，不靠本轮措辞）。
@@ -3871,6 +3998,19 @@ async def execute_skill(
                         else:
                             _fix = _TEXT_DENIAL_CORRECTIVE_MIDORDER
                         new_messages.append(SystemMessage(content=_fix))
+                        continue
+                    # ── 商品图片域能力误宣（issue #3931）──
+                    # 与下单域同一条「纠正重答」路径：AI 说「该入口不支持图片/拿不到地址」，
+                    # 而 product_manage(action=update, images=…) 在**本 skill 工具子集**里真实可达
+                    # （判据 = `_product_image_denial_hit`（图片域文本）× 注册表事实）。
+                    if (_image_denial_hit and not _denial_corrected
+                            and _product_image_capability_available(skill_registry)):
+                        _denial_corrected = True
+                        logger.warning(
+                            f"[{skill_name}] 拦截商品图片域能力误宣并重答 | session={session_id} "
+                            f"hit={_image_denial_hit!r}")
+                        new_messages.append(SystemMessage(
+                            content=_TEXT_DENIAL_CORRECTIVE_PRODUCT_IMAGE))
                         continue
                     # ── 订单→物流链收口（issue #3799）──
                     # 模型把「查到订单号」当交付物就收尾 ⇒ 顾客要的轨迹没给（链只走一半）。
@@ -4084,6 +4224,21 @@ async def execute_skill(
                         # 无论有没有在办卡都拦 —— 这是**能力否定**，不是顾客诉求。
                         _denial = _capability_denial_reason(args)
                         if _denial and not has_escalation_signal(last_user_msg):
+                            # 能力误宣分域给话术（issue #3931）：商品图片域的理由用商品域纠正话术，
+                            # 否则会把「设主图」诉求错引向 order_create（消息按域区分）。
+                            _reason_img = (_product_image_denial_hit(str(args.get("reason") or ""))
+                                           or _product_image_denial_hit(str(args.get("summary") or "")))
+                            if _reason_img:
+                                logger.warning(
+                                    f"[{skill_name}] 拦截商品图片域能力误宣式转人工 | "
+                                    f"session={session_id} reason={_reason_img!r}")
+                                return (tool_call,
+                                        json.dumps({"success": False,
+                                                    "error": "handoff_blocked_capability_denial",
+                                                    "message": _TEXT_DENIAL_CORRECTIVE_PRODUCT_IMAGE},
+                                                   ensure_ascii=False),
+                                        {"success": False,
+                                         "error": "handoff_blocked_capability_denial"})
                             logger.warning(
                                 f"[{skill_name}] 拦截能力误宣式转人工 | session={session_id} "
                                 f"reason={_denial!r}")
