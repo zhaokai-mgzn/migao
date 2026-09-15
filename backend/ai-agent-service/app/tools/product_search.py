@@ -166,6 +166,11 @@ class ProductSearchTool(BaseTool):
             if stock_status:
                 params["stockBelow"] = STOCK_STATUS_TO_STOCK_BELOW[stock_status]
             # 价格区间：后端无价格字段 → 绝不下发 minPrice/maxPrice，改在下方本地过滤
+            # C 端（顾客）只展示已上架商品（issue #3932）：强制下发后端真实字段 status=on_sale
+            #（ProductQueryRequest.status），由后端先行过滤；下方再做本地纵深过滤
+            #（防后端口径漂移 / 历史数据缺 status 字段）。B 端商户需要看到自己店铺全状态商品 → 不加。
+            if context.role == "customer":
+                params["status"] = "on_sale"
             
             # 调用 admin-api
             client = get_admin_api_client()
@@ -212,6 +217,24 @@ class ProductSearchTool(BaseTool):
                 # total 取「本工具实际验证通过的条数」：既不沿用含越权记录的后端 total，
                 # 也不用 max(0, total - filtered_count) 这类按丢弃数估算的错语义
                 total = len(verified_records)
+
+            # C 端（顾客）上架过滤（issue #3932，纵深防御）：仅保留 status == "on_sale" 的记录，
+            # 非上架（off_sale 下架等）与缺 status 字段的历史数据一律不展示、不计数。
+            # total 语义：后端已按 status=on_sale 过滤（真实字段）→ 零命中时不覆盖后端 total
+            #（保分页口径）；本地确有过滤时取过滤后真实条数（与价格本地过滤同一语义，
+            # 审计 A1 同款口径——本地过滤无法获知全库真实条数）。
+            if context.role == "customer":
+                on_sale_records = [
+                    r for r in verified_records if r.get("status") == "on_sale"
+                ]
+                status_filtered = len(verified_records) - len(on_sale_records)
+                if status_filtered > 0:
+                    logger.warning(
+                        f"[product-search] Customer on_sale filter removed {status_filtered} "
+                        f"records not in on_sale status (tenant={context.tenant_id})"
+                    )
+                    total = len(on_sale_records)
+                verified_records = on_sale_records
 
             # 价格区间本地过滤（后端 ProductQueryRequest 无价格字段）：
             # total 必须是过滤后的真实条数（审计 A1 —— 错语义 total 会让 LLM 报出全量件数）

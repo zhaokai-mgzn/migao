@@ -242,9 +242,9 @@ class TestProductSearchTenantFilter:
             "success": True,
             "data": {
                 "items": [
-                    {"id": "p1", "name": "租户A商品", "tenantId": TENANT_A, "price": 100},
-                    {"id": "p2", "name": "租户B商品", "tenantId": TENANT_B, "price": 200},
-                    {"id": "p3", "name": "租户A商品2", "tenantId": TENANT_A, "price": 150},
+                    {"id": "p1", "name": "租户A商品", "tenantId": TENANT_A, "price": 100, "status": "on_sale"},
+                    {"id": "p2", "name": "租户B商品", "tenantId": TENANT_B, "price": 200, "status": "on_sale"},
+                    {"id": "p3", "name": "租户A商品2", "tenantId": TENANT_A, "price": 150, "status": "on_sale"},
                 ],
                 "total": 3,
             },
@@ -274,8 +274,8 @@ class TestProductSearchTenantFilter:
             "success": True,
             "data": {
                 "items": [
-                    {"id": "p1", "name": "商品1", "tenantId": TENANT_A, "price": 100},
-                    {"id": "p2", "name": "商品2", "tenantId": TENANT_A, "price": 200},
+                    {"id": "p1", "name": "商品1", "tenantId": TENANT_A, "price": 100, "status": "on_sale"},
+                    {"id": "p2", "name": "商品2", "tenantId": TENANT_A, "price": 200, "status": "on_sale"},
                 ],
                 "total": 2,
             },
@@ -331,6 +331,7 @@ class TestProductDetailTenantValidation:
                 "name": "自家商品",
                 "tenantId": TENANT_A,
                 "price": 299,
+                "status": "on_sale",
             },
         })
         mock_get_client.return_value = mock_client

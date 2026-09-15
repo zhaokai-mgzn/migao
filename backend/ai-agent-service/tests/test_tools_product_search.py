@@ -30,7 +30,7 @@ def sample_product_records():
             "images": ["https://img.example.com/1.jpg"],
             "mainImage": "https://img.example.com/1.jpg",
             "stock": 100,
-            "status": "active",
+            "status": "on_sale",
             "categoryId": "cat_001",
             "specifications": {"fabric": "雪尼尔", "width": "2.8m"},
         },
@@ -43,7 +43,7 @@ def sample_product_records():
             "images": ["https://img.example.com/2.jpg"],
             "mainImage": "https://img.example.com/2.jpg",
             "stock": 50,
-            "status": "active",
+            "status": "on_sale",
             "categoryId": "cat_001",
             "specifications": {"fabric": "涤纶", "width": "2.5m"},
         },
@@ -150,9 +150,9 @@ class TestProductSearchSuccess:
             "success": True,
             "data": {
                 "items": [
-                    {"id": "p_low", "name": "低价帘", "basePrice": 80.0, "stock": 5},
-                    {"id": "p_mid", "name": "中价帘", "basePrice": 199.0, "stock": 5},
-                    {"id": "p_high", "name": "高价帘", "basePrice": 299.0, "stock": 5},
+                    {"id": "p_low", "name": "低价帘", "basePrice": 80.0, "stock": 5, "status": "on_sale"},
+                    {"id": "p_mid", "name": "中价帘", "basePrice": 199.0, "stock": 5, "status": "on_sale"},
+                    {"id": "p_high", "name": "高价帘", "basePrice": 299.0, "stock": 5, "status": "on_sale"},
                 ],
                 "total": 3,
             },
@@ -191,8 +191,8 @@ class TestProductSearchSuccess:
             "success": True,
             "data": {
                 "items": [
-                    {"id": "p_low", "name": "低价帘", "basePrice": 80.0, "stock": 5},
-                    {"id": "p_high", "name": "高价帘", "basePrice": 299.0, "stock": 5},
+                    {"id": "p_low", "name": "低价帘", "basePrice": 80.0, "stock": 5, "status": "on_sale"},
+                    {"id": "p_high", "name": "高价帘", "basePrice": 299.0, "stock": 5, "status": "on_sale"},
                 ],
                 "total": 2,
             },

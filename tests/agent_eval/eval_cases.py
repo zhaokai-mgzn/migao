@@ -1660,6 +1660,25 @@ _CASE_CU_006 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── CU-007 [NORMAL] C 端商品搜索只展示已上架商品（下架商品不得出现）（源: cases/customer.yml）──
+_CASE_CU_007 = EvalCase(
+    id='CU-007',
+    legacy_id='',
+    title='C 端商品搜索只展示已上架商品（下架商品不得出现）',
+    skill=Skill.CUSTOMER,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['店里有什么窗帘？'],
+    expectations=['product_search(keyword=窗帘)'],
+    data_checks=['product_search 返回的 products[].status 全部 == \\"on_sale\\"（任一非 on_sale 即违规；工具层按 context.role == \\"customer\\" 过滤）', '回复/卡片不得出现『已下架』『off_sale』等状态披露（forbidden_text 机器断言）', 'product_detail 对非 on_sale 商品按『不存在』处理（不泄露商品名/ID）'],
+    skip_reason='',
+    tags=['c-end', 'product', 'visibility'],
+    persona='xiaobu',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    forbidden_text=['已下架', 'off_sale'],
+)
+
 # ── DA-001 [NORMAL] 经营概览（源: cases/data.yml）──
 _CASE_DA_001 = EvalCase(
     id='DA-001',
@@ -5650,6 +5669,7 @@ ALL_CASES = (
     _CASE_CU_004,
     _CASE_CU_005,
     _CASE_CU_006,
+    _CASE_CU_007,
     _CASE_DA_001,
     _CASE_DA_002,
     _CASE_DA_003,
