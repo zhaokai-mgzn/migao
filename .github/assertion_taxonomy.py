@@ -826,6 +826,23 @@ UNIMPLEMENTED: tuple[dict, ...] = (
         ),
     },
     {
+        "code": "CASE-TRUST-BASELINE-PRUNING-ENFORCEMENT",
+        "title": "「基线清单只许缩短」的**执行**（陈清单条目的机械强制移除）",
+        "why_not": (
+            "**判据**已实装（`case_trust_gate.stale_baseline_entries`：本次 diff 命中且原违规码"
+            "不再命中的项会被报出，并带重生成命令），但**执行只能是告警，不能阻塞** —— "
+            "阻塞会要求用例作者改 `.github/case-trust-baseline.json`，而该文件**不是他们的文件**、"
+            "且可能正被**在飞**的基线重生成改动持有（实证：另一包正在修 CU-003/PG-013，基线文件"
+            "同时被本门禁的 PR 创建/更新）。硬阻塞 = 把「修好用例」的人卡在别人的文件上 = 假红"
+            "（`migao-acceptance`：不能因为「改法写了但没照着改」就把**正确**形态判红）。"
+        ),
+        "needs": (
+            "需要「基线重生成」与「用例修复」解耦的机制（例如基线随 main 自动重生成、"
+            "或把清单条目做成可被多条 PR 各自删除的小文件），静态门禁才有可安全阻塞的目标。"
+            "机制现状照实说：**清单缩短无机械强制，只告警 + 复盘**。"
+        ),
+    },
+    {
         "code": "CASE-TRUST-ALL-CASES-PERSONA-ANNOTATED",
         "title": "**全库**用例都必须标注 persona",
         "why_not": (

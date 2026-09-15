@@ -4,7 +4,7 @@
   "regenerate_command": "python3 .github/case_trust_gate.py --regen-baseline",
   "_when_to_regen": "① 你**修改/新增**了某个用例条目 → 门禁会告诉你（清单只许缩短）；② 别人合并了用例修复（如 #3832 的 CU-003、#3833 的 PG-013）→ **重跑 ①后重生成**，把已修好的条目从清单里去掉；③ 规则集本身变化（新增/改名规则）→ 必须重生成。",
   "_scope_note": "「已不再违规 ⇒ 必须移除」这条**只对本次 PR diff 命中的用例生效**（见 case_trust_gate.stale_baseline_entries）—— 否则别人修好一条存量用例，本门禁就会自己判红（假红）并挡住他们的 PR。",
-  "anchor_sha": "82d20090a1a2abe4e432b7894df77476b7fb2399",
+  "anchor_sha": "5300dae0fafd645c27d749b5a39a9017cf312b5c",
   "case_total": 289,
   "violation_case_count": 110,
   "rule_counts": {

@@ -279,10 +279,17 @@ def render_report(blocking: list[dict], passed: list[dict], stale: list[dict],
                 out.append(f"    怎么改：{v.get('fix') or rule.get('fix', '')}")
     if stale:
         out.append("")
-        out.append(f"❌ 基线清单陈旧 {len(stale)} 条（**阻塞** —— 清单只许缩短）：")
+        out.append(f"⚠️ 基线清单可缩短 {len(stale)} 条（**不阻塞本次** —— 建议随本 PR 一并清理）：")
         for s in stale:
             out.append(f"  · {s['case_id']}（原记 {', '.join(s['removed_codes'])}）")
             out.append(f"    {s['hint']}")
+        out.append("")
+        out.append("  为什么只告警不阻塞：「清单只许缩短」的**判据**已实装（见下 `stale_baseline_entries`），"
+                   "但**执行**必须是告警 —— 要求作者改 `.github/case-trust-baseline.json` 会与"
+                   "**在飞的**基线重生成改动冲突（实证：另一包正在修 CU-003/PG-013，而基线文件同时被"
+                   "本门禁的 PR 创建）。硬阻塞会把「修好用例」的人卡在一个非其所有权的文件上 = 假红"
+                   "（migao-acceptance：不能因「改法写了但没照着改」就把**正确**形态判红）。"
+                   "→ 机制现状照实说：清单缩短靠本告警 + 复盘；**没有**机械强制。")
     if passed:
         out.append("")
         out.append(f"ℹ️ 存量违规放行 {sum(len(p['violations']) for p in passed)} 条"
@@ -299,7 +306,7 @@ def render_report(blocking: list[dict], passed: list[dict], stale: list[dict],
             out.append(f"    为什么不实装：{u['why_not']}")
             out.append(f"    缺什么：{u['needs']}")
     out.append("")
-    out.append("✅ 通过" if not blocking and not stale else "❌ 阻塞（见上）")
+    out.append("✅ 通过" if not blocking else "❌ 阻塞（见上）")
     return "\n".join(out)
 
 
@@ -444,7 +451,8 @@ def main(argv: list[str] | None = None) -> int:
 
     print(render_report(verdict["blocking"], verdict["passed"], stale,
                         changed_ids, list(tax.UNIMPLEMENTED)))
-    return 1 if (verdict["blocking"] or stale) else 0
+    # 退出码只由**新增违规**决定：陈旧基线条目只告警（见 render_report 里的为什么）。
+    return 1 if verdict["blocking"] else 0
 
 
 if __name__ == "__main__":
