@@ -233,7 +233,10 @@ class TestRepoActionLevelJudgement:
     def test_repo_reports_action_gaps_including_known_precedents(self):
         rep = _rep(self.cases)
         pairs = set(rep.action_uncovered)
-        for expected in (("processing_order_update", "issue"),
+        # ⚠️ `processing_order_update` 已于 #3917 从 B 端工具集移除（agent 暂不接入
+        # 加工单工具），不再出现在 action 缺口里 —— 用 `customer_manage` 的未覆盖
+        # action 替代作为「判据生效」的已知先例。
+        for expected in (("customer_manage", "create_tag"),
                          ("processing_item_manage", "create_category"),
                          ("order_manage", "update_status")):
             assert expected in pairs, f"{expected} 未被报出 —— action 级判据没生效"

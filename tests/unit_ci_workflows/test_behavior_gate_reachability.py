@@ -352,9 +352,13 @@ class TestLayeringUnchanged:
         )
 
     def test_rule_hit_still_reports_rules_source(self):
-        """规则命中仍走 rules（阻塞档）——不因本 PR 的补充而改变。"""
+        """规则命中仍走 rules（阻塞档）——不因本 PR 的补充而改变。
+
+        order_skill.py 自 #3917 起同时命中「下单引导」（OR-016/OR-028）与
+        「加工单概念区分」（PG-017）两条规则 → 并集（含 PG-017）。
+        """
         case_ids, source = map_changed_files_with_source([RULES_ANCHOR_SOURCE])
-        assert (case_ids, source) == (["OR-016", "OR-028"], "rules")
+        assert (case_ids, source) == (["OR-016", "OR-028", "PG-017"], "rules")
 
     def test_default_net_diff_still_reports_default_net_source(self):
         """兜底网仍走 default_net（只报告）——且内容与常量逐字一致。"""

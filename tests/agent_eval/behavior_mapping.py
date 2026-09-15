@@ -129,18 +129,14 @@ MAPPING_RULES = [
     # 已按 §14.2 记入归因队列；本门禁现为「报告制」，不会阻塞合并。
     (r"app/tools/processing_item_manage\.py|app/tools/processing_item_query\.py",
      ["PP-002", "PP-006"]),
-    # 加工单生成（PG-*）→ PG-013（「最近有没有已确认、需要加工的订单？」→ 生成加工单 + 确认轮）
-    # —— #3624 补齐。PG-001~PG-012/PG-014 全部 skip（Java 单测验证），PG-013/PG-015/PG-016
-    # 是该域唯三可跑的 LLM 用例，数据前置见 `tests/agent_eval/fixtures/mibao_eval_seed.sql`
-    # （EVAL-MB-ORD-0002，confirmed + 带加工项）。
-    (r"app/tools/processing_order_generate\.py", ["PG-013"]),
-    # 加工单查询（PG-*）→ PG-015（生成 → 按订单号回查状态）—— #3658 补锚。
-    # 前提变化：PG-015 随 #3568/#3589 落地（此前 query 零可跑用例，锚了 = 挂不相关
-    # 用例 = 假阻塞；「刻意不锚」注释与不变量测试随本批同步反转/更新）。
-    (r"app/tools/processing_order_query\.py", ["PG-015"]),
-    # 加工单状态流转（PG-*）→ PG-016（完成加工，output_verify 核到 completed）
-    # —— #3658 补锚，理由同 query。
-    (r"app/tools/processing_order_update\.py", ["PG-016"]),
+    # 加工单概念区分（PG-017，issue #3917）→ 承载文件 = order skill 本体 +
+    # prompts/order.md 的概念区分口径。产品决策（2026-09-15，#3917）：agent 暂不
+    # 接入加工单工具（processing_order_generate/query/update 已从注册表与 ORDER_TOOLS
+    # 移除，工具类文件保留）⇒ 改**工具实现文件**不再映射 PG-013/015/016（它们已
+    # skip_reason 非空、对 agent 不可跑，锚了 = 挂不可跑用例 = 假阻塞），改 order
+    # skill / order prompt（概念区分口径所在）才是本域唯一的行为承载 → PG-017。
+    # 注：order_skill.py 同时命中第一条规则（OR-016/OR-028），并集去重。
+    (r"prompts/order\.md|app/graph/skills/order_skill\.py", ["PG-017"]),
     # 商品侧加工项挂载 Tool（product_processing_item_manage）→ PP-001/PP-003 —— #3658 补充。
     # 覆盖核查结论：PP-001（normal，期望 `product_processing_item_manage(action=add)` +
     # `processing_item_query`）、PP-003（adversarial，confirm 卡 + action=add）**直接行使本工具**；
