@@ -89,7 +89,8 @@ describe('OrderDetail 发货入口守卫', () => {
       expect(screen.getByText(/先完成加工单再发货/)).toBeInTheDocument()
     })
     expect(screen.queryByRole('button', { name: /^发货$/ })).not.toBeInTheDocument()
-    expect(screen.getByText('生产中')).toBeInTheDocument()
+    // issue #3916：producing 订单向导第 2 步显示「生产中」，与 amber chip（#3889）同文案 → 至少 1 处
+    expect(screen.getAllByText('生产中').length).toBeGreaterThanOrEqual(1)
   })
 
   it('含加工项但加工单已完成 → 发货按钮可点（与后端 countCompleted>0 放行口径一致）', async () => {
