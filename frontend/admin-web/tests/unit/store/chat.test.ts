@@ -1,4 +1,4 @@
-// case_ids: CH-001, CH-002, CH-010, PP-001, CH-027, CH-028
+// case_ids: CH-001, CH-002, CH-010, PP-001, CH-027, CH-028, UI-030
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { act } from '@testing-library/react'
 
@@ -1610,6 +1610,76 @@ describe('useChatStore (Zustand chat store) — #571', () => {
       const userMsg = useChatStore.getState().messages[0]
       expect(userMsg.content_type).toBe('mixed')
       expect(userMsg.images).toEqual(['img1.jpg', 'img2.jpg'])
+    })
+
+    // -----------------------------------------------------------------------
+    // Issue #3908: 纯图片消息（无文字）被 store 守卫静默丢弃
+    // MessageInput 对纯图发送调用 sendMessage(' ', imageUrls)——content 为空格占位，
+    // 旧守卫 `!content.trim()` 把它当空文本早退，fetch 从未发起（对照 C 端
+    // chatStore 已支持纯图：守卫为 `!hasText && !hasImages`）。
+    // -----------------------------------------------------------------------
+    it('should send image-only message (content=" " placeholder + images) — no early-return, fetch body has message="" + images', async () => {
+      const mockRead = vi.fn()
+        .mockResolvedValueOnce({ done: true, value: undefined })
+
+      const mockReader = { read: mockRead, cancel: vi.fn(), releaseLock: vi.fn() }
+
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        body: { getReader: () => mockReader },
+      })
+      global.fetch = mockFetch
+
+      await act(async () => {
+        await useChatStore.getState().sendMessage(' ', ['img1.jpg', 'img2.jpg'])
+      })
+
+      // 不早退：fetch 已发起，body 携带 message='' + images
+      expect(mockFetch).toHaveBeenCalledTimes(1)
+      const body = JSON.parse(mockFetch.mock.calls[0][1].body as string)
+      expect(body.message).toBe('')
+      expect(body.images).toEqual(['img1.jpg', 'img2.jpg'])
+
+      // 乐观用户消息照常渲染（mixed 类型 + images）
+      const userMsg = useChatStore.getState().messages[0]
+      expect(userMsg.role).toBe('user')
+      expect(userMsg.content).toBe('')
+      expect(userMsg.content_type).toBe('mixed')
+      expect(userMsg.images).toEqual(['img1.jpg', 'img2.jpg'])
+    })
+
+    it('should send pure text as before — fetch body has message + no images', async () => {
+      const mockRead = vi.fn()
+        .mockResolvedValueOnce({ done: true, value: undefined })
+
+      const mockReader = { read: mockRead, cancel: vi.fn(), releaseLock: vi.fn() }
+
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        body: { getReader: () => mockReader },
+      })
+      global.fetch = mockFetch
+
+      await act(async () => {
+        await useChatStore.getState().sendMessage('hello')
+      })
+
+      expect(mockFetch).toHaveBeenCalledTimes(1)
+      const body = JSON.parse(mockFetch.mock.calls[0][1].body as string)
+      expect(body.message).toBe('hello')
+      expect(body.images).toBeUndefined()
+    })
+
+    it('should still early-return for empty content WITHOUT images — no fetch', async () => {
+      const mockFetch = vi.fn()
+      global.fetch = mockFetch
+
+      await act(async () => {
+        await useChatStore.getState().sendMessage('   ')
+      })
+
+      expect(mockFetch).not.toHaveBeenCalled()
+      expect(useChatStore.getState().isStreaming).toBe(false)
     })
   })
 
