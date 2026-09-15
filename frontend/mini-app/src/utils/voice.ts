@@ -9,7 +9,8 @@
  *   - startRecording()          touchStart 时调用：开始录音（最长 60s）
  *   - stopRecording()           touchEnd 时调用：停止录音，resolve 音频临时路径
  *   - transcribeFile(path)      上传转写，返回 { text, durationMs } 或 null
- *   - stopAndTranscribe()       停止 + 转写一步到位（松开直接发送用）
+ *   - stopAndTranscribe(ms)     停止 + 守卫（<0.8s/<4KB）+ 转写一步到位（松开直接发送用）
+ *   - shouldTranscribeVoice()   录音守卫纯函数（对齐 B 端 admin-web voice-guard #2984）
  *
  * 注意：RecorderManager 仅微信小程序可用；H5 下 getRecorderManager 返回 stub，
  * 必须懒加载 + 能力检测，禁止在模块顶层调用（否则 H5 页面加载即崩溃）。
@@ -152,8 +153,47 @@ export async function transcribeFile(tempFilePath: string): Promise<VoiceResult 
   }
 }
 
-/** 停止录音并转写（松开发送一步到位）。 */
-export async function stopAndTranscribe(): Promise<VoiceResult | null> {
+// ── 语音守卫（对齐 B 端 admin-web voice-guard，issue #2984）──
+
+/** 最短有效录音时长（毫秒）：低于视为误触/空口 */
+export const MIN_RECORDING_MS = 800
+/** 最小有效音频大小（字节）：mp3 静音帧通常 <4KB（后端对 <1KB 文件直接 400 拦截） */
+export const MIN_AUDIO_SIZE = 4 * 1024
+
+/** 判断本次录音是否值得提交转写（时长过短或文件过小 → 无有效声音，不调转写接口） */
+export function shouldTranscribeVoice(recordingMs: number, fileSize: number): boolean {
+  return recordingMs >= MIN_RECORDING_MS && fileSize >= MIN_AUDIO_SIZE
+}
+
+/** 获取本地临时音频文件大小（字节）。拿不到时保守返回 0 → 守卫拦截（fail-closed，对齐后端 <1KB 拦截语义） */
+export function getAudioFileSize(filePath: string): Promise<number> {
+  return new Promise<number>(resolve => {
+    try {
+      Taro.getFileSystemManager().getFileInfo({
+        filePath,
+        success: r => resolve(r.size),
+        fail: () => resolve(0),
+      })
+    } catch {
+      resolve(0)
+    }
+  })
+}
+
+/** stopAndTranscribe 三态结果：blocked=守卫拦截（<0.8s 或 <4KB）/ ok=转写成功 / failed=转写失败（含后端 400/空文本） */
+export type StopTranscribeResult =
+  | { status: 'blocked' }
+  | { status: 'ok'; text: string; durationMs?: number }
+  | { status: 'failed' }
+
+/** 停止录音并转写（松开发送一步到位）。先过语音守卫：<0.8s 或 <4KB 不调转写接口，返回 blocked。 */
+export async function stopAndTranscribe(recordingMs: number): Promise<StopTranscribeResult> {
   const tempFilePath = await stopRecording()
-  return transcribeFile(tempFilePath)
+  const fileSize = await getAudioFileSize(tempFilePath)
+  if (!shouldTranscribeVoice(recordingMs, fileSize)) {
+    return { status: 'blocked' }
+  }
+  const result = await transcribeFile(tempFilePath)
+  if (!result || !result.text) return { status: 'failed' }
+  return { status: 'ok', text: result.text, durationMs: result.durationMs }
 }
