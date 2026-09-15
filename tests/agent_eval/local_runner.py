@@ -1629,30 +1629,81 @@ def confirm_card_content_key(args: dict) -> str:
     return "；".join(sorted(facts))
 
 
+def _confirm_card_excerpt(args: dict, rnd) -> str:
+    """一张 confirm 卡的**原文摘要**（盲审缺陷四：复核可独立完成，不必翻作业日志）。
+
+    附在失败信息里，使「同样的事实 ×N」可逐卡核对 —— 只报轮次/标题却看不到卡内容，
+    复核者无法独立判定（实测 run 34916256903 的 PR-016 红证：trace 里 R5 用户输入
+    已变，判"同样的事实"只能靠猜）。
+    """
+    a = args or {}
+    parts = [f"R{rnd}"]
+    if a.get("title"):
+        parts.append(f"title={a.get('title')}")
+    cv = str(a.get("confirmValue") or "").strip()
+    if cv:
+        parts.append(f"confirmValue={cv[:80]}")
+        return " ".join(parts)
+    fields = []
+    for f in a.get("fields") or []:
+        if isinstance(f, dict):
+            fields.append(f"{f.get('label') or ''}={f.get('value') or ''}")
+    if fields:
+        parts.append("fields=" + "；".join(fields)[:120])
+    else:
+        parts.append("(无 confirmValue/fields —— 事实不可判)")
+    return " ".join(parts)
+
+
 def check_confirm_loop(results: list, limit: int = 3) -> list:
     """确认死循环：**同一批事实**的 confirm 卡累计出现 >= limit 次 → 违规（sess_c1fce183dae24f22）。
 
     正常流程同一批事实的 confirm 卡只出现 1 次；2 次以内容忍（顾客取消后重新确认）；
     >=3 次 = 死循环。**按内容而非标题**计数（issue #3412，见 `confirm_card_content_key`）。
+
+    **「同事实」的判据**（盲审缺陷四要求写清楚）：事实键 = `confirm_card_content_key`
+    —— confirmValue（与字段事实确定性同源，issue #3406），或 fields 的 `label=value`
+    排序集合。两卡事实键相同 = 同一批事实（换措辞/换标题不算新卡）；事实键不同 = 不同事实
+    （OR-019 实证：改数量 3→4 的三张卡标题相同、事实键不同，其中一张是合法重新确认 ⇒
+    不判死循环 —— 这就是 #3412 修掉的按标题计数假红）。
+    **confirmValue 与 fields 皆空（无内容卡）⇒ 退回按标题计数**（历史契约，见
+    `backend/ai-agent-service/tests/test_acceptance_case_checks.py::TestConfirmLoop`
+    「同标题 confirm 卡 >=3 次未收敛」）：无内容的两张卡无法区分事实，**宁可拦下
+    （fail-closed）** —— 但失败信息必须**显式标注「按标题近似」**，不得把无内容卡
+    冒充成「已核实的同样事实」（这正是盲审缺陷四的原文张力：trace 里看不到卡内容时，
+    "同样的事实 ×3"无从复核）。
+
+    失败信息**附上每张卡的原文摘要**（轮次 + 标题 + confirmValue/字段事实，无内容时
+    如实标「无 confirmValue/fields —— 事实不可判」），使计数可独立复核。
     """
     from collections import Counter
     cnt: Counter = Counter()
     rounds: dict = {}
     titles: dict = {}
+    cards: dict = {}          # 事实键 → 每张卡的原文摘要（复核证据）
+    approx: dict = {}         # 事实键 → True = 无内容、按标题近似计数
     for r in results:
         for tc in r.get("tool_calls") or []:
             a = tc.get("args") or {}
             if tc.get("name", "").lower() == "interact" and a.get("component") == "confirm":
-                k = confirm_card_content_key(a) or a.get("title", "(无标题)")
+                k = confirm_card_content_key(a)
+                rnd = r.get("__round")
+                if not k:
+                    # 无内容卡：退回按标题计数（fail-closed），但如实标记为近似
+                    k = a.get("title", "(无标题)")
+                    approx[k] = True
                 cnt[k] += 1
-                rounds.setdefault(k, []).append(r.get("__round"))
+                rounds.setdefault(k, []).append(rnd)
                 titles.setdefault(k, a.get("title", "(无标题)"))
-    # 报错必须带**轮次**（issue #3365 诊断补强）：只说"出现 3 次"时，若打印的轨迹里
-    # 一张 confirm 卡都没有（被拦/失败的 interact 不产生卡事件），报错与证据对不上，
-    # 归因只能靠猜——实测 OR-017 卡在这个盲区整整一轮。
+                cards.setdefault(k, []).append(_confirm_card_excerpt(a, rnd))
+    # 报错必须带**轮次**（issue #3365 诊断补强）与**每张卡的原文摘要**（盲审缺陷四）：
+    # 只说"出现 3 次"时，若打印的轨迹里一张 confirm 卡都没有（被拦/失败的 interact
+    # 不产生卡事件），报错与证据对不上，归因只能靠猜——实测 OR-017 卡在这个盲区一整轮。
     return [
-        f"确认死循环: confirm 卡「{titles.get(k, k)}」**同样的事实**共出现 {c} 次"
-        f"（R{'/R'.join(str(x) for x in rounds.get(k, []))}）未收敛"
+        f"确认死循环: confirm 卡「{titles.get(k, k)}」"
+        f"{'同样的事实' if not approx.get(k) else '同批 confirm 卡（无内容，按标题近似）'}"
+        f"共出现 {c} 次（R{'/R'.join(str(x) for x in rounds.get(k, []))}）未收敛；"
+        f"判据=内容键 {k}；各次卡原文: {' | '.join(cards.get(k, []))}"
         for k, c in cnt.items() if c >= limit
     ]
 
@@ -3078,6 +3129,48 @@ def annotate_cross_run_recurrence(results: list, ledger: list, history: dict) ->
         targets[0]["cross_run_recurrence"] = info
         marked.append({**info, "classification": e.get("classification", "")})
     return marked
+
+
+def flake_reason_with_recurrence(entry: dict, prior: dict | None, history_available: bool) -> str:
+    """放行台账的 reason 必须**从数据生成**（盲审缺陷二）—— 不是读不到数据的模板话。
+
+    旧实现是静态模板（`FLAKE_REASONS["llm-noise"]`）：无论真实 prior_count 是多少，
+    reason 恒写「同一首跑指纹**未在历史 run 复发**（随机波动）」—— 同一证据集里
+    OR-016（prior_count=2）与 PP-001（prior_count=4）的台账都与数据直接矛盾
+    （实测 run 34916256903 的 `agent-eval-flakes.json`）。本函数按真实数据重写：
+
+      · `prior` 非空（prior_count>0）⇒ 写明实际 `prior_count` 与 `prior_runs`，
+        **禁止**出现「未复发」字样（跨 run 复发 ⇒ 不按波动放行）；
+      · `prior` 为空且历史索引**不可得**（本地跑 / 索引取不到）⇒ 标「数据缺失」，
+        不冒充「未复发」—— 没查过就说"没复发"是编数据；
+      · `prior` 为空且历史已查（prior_count=0，首次出现）⇒ 维持「首次出现」措辞
+        （= 放行档语义，允许"未在历史 run 复发"）。
+
+    非 llm-noise 分类（reproducible/unstable/infra/…）不涉及「复发」claim，维持模板。
+    """
+    classification = str(entry.get("classification") or "")
+    base = FLAKE_REASONS.get(classification, classification)
+    if classification != "llm-noise":
+        return base
+    if prior:
+        runs = ", ".join(str(x) for x in (prior.get("prior_runs") or []))
+        return (
+            "首次失败、新 session 重试通过；但同一首跑指纹已在历史 run 复发"
+            f"（prior_count={prior.get('prior_count', 0)}，prior_runs=[{runs}]）"
+            "—— 跨 run 复发，不按波动放行")
+    if not history_available:
+        return ("首次失败、新 session 重试通过；跨 run 复发判定数据缺失"
+                "（历史指纹索引未加载），未做复发判定")
+    return base
+
+
+def rewrite_flake_reasons(ledger: list, history: dict, history_available: bool) -> None:
+    """把台账条目的 reason 重写为**数据驱动**版本（与 `annotate_cross_run_recurrence`
+    同历史口径；本函数必须在台账落盘**之前**调用，见 run_suite 的调用顺序）。
+    """
+    for e in ledger or []:
+        e["reason"] = flake_reason_with_recurrence(
+            e, cross_run_recurrence(e, history), history_available)
 
 
 def cross_case_fingerprint_cases(history: dict) -> dict:
@@ -5975,6 +6068,10 @@ async def run_case(case, token: str, session_id: str) -> dict:
         for _pn in prefer_text_notes:
             print(f"  ↳ {_pn}")
 
+    # 通过用例的断言证据（盲审缺陷三）：在返回处计算一次，随结果进 summary。
+    # 失败用例同样带上（evidence 是审计材料，不因红而缺）。
+    _assertions_fired = _assertions_fired_summary(case, scoring_checks, results, score)
+
     return {
         "case_id": case.id,
         # 形状不兼容的事实随结果落盘（issue #3803）：判定层据此把它从"agent 行为失败"
@@ -6003,6 +6100,11 @@ async def run_case(case, token: str, session_id: str) -> dict:
         "final_session_id": session_id,
         "last_error": results[-1].get("error") if results else None,
         "final_text": results[-1].get("final_text", "")[:200] if results else "",
+        # 盲审缺陷三：通过用例的断言证据 + 假绿候选标记（与 verdict 分开单列，不改 ok）
+        "assertions_fired": _assertions_fired,
+        "unfailable_green": _unfailable_green(
+            score, scoring_checks, _assertions_fired,
+            bool(getattr(case, "order_before", None))),
     }
 
 async def run_suite(cases, label: str, classify: bool = True, retry_budget: int = None,
@@ -6605,6 +6707,10 @@ async def run_suite(cases, label: str, classify: bool = True, retry_budget: int 
             _hist_path = os.environ.get(FLAKE_HISTORY_ENV, "")
             _history = load_flake_history(_hist_path) if _hist_path else {}
             _marked = annotate_cross_run_recurrence(results, flake_ledger, _history)
+            # 台账 reason 从数据生成（盲审缺陷二）：prior_count/prior_runs 必须真实写进
+            # reason，prior_count>0 时禁止"未复发"措辞；历史不可得时标"数据缺失"。
+            # 顺序：在台账落盘（下方 6648 附近）之前调用 —— 改的是即将写入的条目本身。
+            rewrite_flake_reasons(flake_ledger, _history, bool(_hist_path))
             if _marked:
                 print(f"\n🔁 跨 run 复发的系统性缺口（{len(_marked)} 条，**不按波动放行**）"
                       f"—— 同一首跑指纹在历史 run 里已出现过：")
@@ -6805,7 +6911,10 @@ def completion_verdict(results: list, key_journey_ids: tuple = ()) -> dict:
         run 里出现过（`r["cross_run_recurrence"]`）⇒ **不属随机 ⇒ 不放行**，进
         `systemic_recurrence`（跨 run 复发的系统性缺口）。这是**有意的 fail-closed**：
         它会让更多用例变红，正是本单要的效果（PR-016 首跑 0/3 通过却因"重试碰巧过"被
-        放行了三次）。
+        放行了三次）。**fail-closed 对关键旅程里的放行条目同样生效**（盲审缺陷一）：
+        旅程守卫（`cid not in journey_set`）只挡"失败旅程不许当波动放行"，**不**挡
+        "复发条目必须进 systemic"—— 判定循环里 `_is_recurring` 先于旅程守卫检查
+        （实测 run 34916256903：OR-016 因旅程身份逃出所有桶，与本段判据冲突）。
       - **前置未复位**（#3807）：`restore` 里带 `PRECONDITION_NOT_RESTORED` 的用例 ⇒
         共享商品价格处于未知状态 ⇒ 独立进 `restore_failures` 并阻塞（与本用例 score 无关）。
 
@@ -6855,11 +6964,17 @@ def completion_verdict(results: list, key_journey_ids: tuple = ()) -> dict:
             harness_bad.append(cid)
         if r.get("score", 0) >= 1.0:
             # 重试通过的放行条目（score==1.0）在这里被捞出来——见 docstring 的 #3781 说明
-            if r.get("flake_released") and cid not in journey_set:
-                if _is_recurring(r):
-                    systemic.append(cid)
-                else:
-                    flake_released.append(cid)
+            # ⚠️ 跨 run 复发**必须先于**旅程守卫判定（fail-closed 第一，盲审缺陷一）：
+            # 旧断言序「flake_released and cid not in journey_set」让**关键旅程里**的
+            # 放行条目（如 OR-016 ∈ KEY_JOURNEYS_MIBAO）把 `_is_recurring` 短路掉 ⇒
+            # 复发条目从**所有桶**里消失（既不在 systemic 也不在 flake_released）
+            # = 静默放行（实测 run 34916256903：PP-001 拦下、同构的 OR-016 放行）。
+            # 判据（§16.7 结论构成）：凡 `cross_run_recurrence.prior_count>0` 且指纹同型
+            # ⇒ 一律进 systemic，不因"本轮通过/旅程身份/分类 llm-noise"而放行。
+            if _is_recurring(r):
+                systemic.append(cid)
+            elif r.get("flake_released") and cid not in journey_set:
+                flake_released.append(cid)
             continue
         if cid in journey_set:
             journey_fail.append(cid)
@@ -6940,6 +7055,81 @@ def _failure_texts(result: dict) -> list:
     return out
 
 
+# ── 通过用例的断言证据（盲审缺陷三：绿的不可审计性）────────────────────────────
+# 病灶：summary 里通过用例只有 id/score/classification/pre_clean —— 空断言假绿天然
+# **不可见**（#3778 族 + `migao-acceptance`「证据层假绿」：绿了 ≠ 断言真测过）。
+# 本组函数给通过用例也落证据（最便宜、不改变判定），并把「假绿候选」单列标记。
+
+# 效果层字段（与 `.github/assertion_taxonomy.py` 的 `EFFECT_FIELDS` 同源子集）：
+# 本函数族只评估在 `_run_one_case` 里执行的这四层；`post_session` 在会话关闭后
+# 单独评估，不在此列。口径一致性由 taxonomy 模块的既有锁定测试兜底。
+_EFFECT_LAYER_FIELDS = ("must_succeed", "db_verify", "amount_verify", "output_verify")
+
+
+def _scoring_check_is_failable(check: object) -> bool:
+    """该计分断言是否**机器可证伪**（= 真可失败）；存在性/散文 = 不可失败（假绿候选）。
+
+    判据与 `.github/assertion_taxonomy.py` 同口径（行为层 vs 裸工具名）：
+      · 可失败：反向断言（未被调用/not called）、显式预期错误（error.code=）、
+        效果层计分（success=true）、带 args 的 tool(k=v) 值校验、direct_reply（无工具）；
+      · 不可失败（存在性/散文）：裸工具名子串匹配（如 `order_query`）等 ——
+        runner 的 `check_expectation` 对纯工具名只做「出现过」的匹配（#3778：调用了≠成了）。
+    """
+    s = str(check or "")
+    low = s.strip().lower()
+    if "未被调用" in s or "not called" in low:
+        return True
+    if "error.code=" in low or "success=true" in low:
+        return True
+    if "direct_reply" in low:
+        return True
+    if "(" in s and ")" in s:      # tool(k=v) 形态：参数值校验，可证伪
+        return True
+    return False
+
+
+def _assertions_fired_summary(case, scoring_checks: list, results: list, score: float) -> dict:
+    """每条用例的**断言证据摘要**：哪些计分断言命中、是否可失败、效果层是否真触发。
+
+    在 `_run_one_case` 里计算（吃 case 对象与当轮 results），随结果序列化进 summary。
+    通过路径（score>=1.0 ⇒ 所有 case 级检查零 issue）下，声明过的效果层字段即
+    「真触发且通过」；失败路径保守标记 False（不冒充「触发过」）。
+    """
+    fired = []
+    for exp in scoring_checks:
+        passed = any(check_expectation(r, exp)[0] for r in results)
+        fired.append({"check": str(exp)[:120], "failable": _scoring_check_is_failable(exp),
+                      "passed": passed})
+    effect = {}
+    for f in _EFFECT_LAYER_FIELDS:
+        declared = bool(getattr(case, f, None))
+        effect[f] = bool(declared) if score >= 1.0 else False
+    return {"scoring": fired, "effect_layers": effect}
+
+
+def _unfailable_green(score: float, scoring_checks: list, assertions_fired: dict,
+                      has_order_before: bool) -> bool:
+    """通过用例的**假绿候选**标记（与 verdict 分开单列，**不改 ok**）。
+
+    判据：score>=1.0 且没有任何「可失败支撑」——
+      ① 计分断言全为存在性/散文（或无任何计分断言 ⇒ score=1.0 纯构造）；
+      ② 效果层（must_succeed/db_verify/amount_verify/output_verify）均未真触发；
+      ③ 无跨轮行为层（order_before 时序断言，taxonomy 判它算行为层）。
+    其余 case 级字段（forbidden_text/required_args/want_text/…）**不计**支撑
+    （同 taxonomy：required_args 不算行为层证据、forbidden_text 不得单独承载、
+    裸工具名期望也不算行为层证据）。
+    """
+    if score < 1.0:
+        return False
+    if any(_scoring_check_is_failable(c) for c in scoring_checks):
+        return False
+    if any((assertions_fired.get("effect_layers") or {}).values()):
+        return False
+    if has_order_before:
+        return False
+    return True
+
+
 def _summary_case(result: dict, failures: list) -> dict:
     """单个用例的 summary 条目（issue #3708）。
 
@@ -6993,6 +7183,13 @@ def _summary_case(result: dict, failures: list) -> dict:
     # （缺省不带该键，同 failures：通过用例不刷屏，只有真放行的少数条目才带）。
     if result.get("flake_released"):
         entry["flake_released"] = True
+    # 盲审缺陷三：通过用例的**断言证据**（计分断言命中/可失败性 + 效果层触发）与
+    # 假绿候选标记。只有 `_run_one_case` 真实产出的结果才带（缺省不带该键 ——
+    # 合成夹具/旧形态结果保持逐字节不变，见 test_eval_summary_attribution 的回归锚点）。
+    if result.get("assertions_fired"):
+        entry["assertions_fired"] = result["assertions_fired"]
+    if result.get("unfailable_green"):
+        entry["unfailable_green"] = True
     if failures:
         entry["failures"] = failures
     return entry
