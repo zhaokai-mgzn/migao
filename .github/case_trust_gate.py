@@ -32,6 +32,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -122,6 +123,16 @@ def _git_show(rev: str, path: str) -> str | None:
     r = subprocess.run(["git", "-C", str(REPO_ROOT), "show", f"{rev}:{path}"],
                        capture_output=True, text=True)
     return r.stdout if r.returncode == 0 else None
+
+
+def _diff_files(base: str) -> list[str]:
+    """`git diff --name-only <base>...HEAD` 的全部文件（Rule G 用）。"""
+    r = subprocess.run(
+        ["git", "-C", str(REPO_ROOT), "diff", "--name-only", f"{base}...HEAD"],
+        capture_output=True, text=True)
+    if r.returncode != 0:
+        raise RuntimeError(f"git diff 失败（base={base}）：{r.stderr.strip()}")
+    return [ln.strip() for ln in r.stdout.splitlines() if ln.strip()]
 
 
 def changed_case_files(base: str) -> list[str]:
@@ -253,12 +264,133 @@ def stale_baseline_entries(baseline: dict, changed_ids: set[str],
     return stale
 
 
+# 内容缓存：**必须与路径解析缓存分开**。两者键空间与**值类型**都不同
+# （解析缓存 raw→repo 相对路径；内容缓存 repo 相对路径→行列表），
+# 共用一个 dict 会互相污染 —— 实测初版即踩：`git show` 失败后返回 None，
+# 而错误信息里的行数取自被解析结果顶掉的缓存项，报出「只有 32 行」这类**假读数**，
+# 把合法引用误判成「行号越界」（典型的假红，且读数自相矛盾）。
+_ORIGIN_LINES_CACHE: dict[tuple[str, str], list[str] | None] = {}
+
+
+def origin_main_lines(path: str, base: str = "origin/main") -> list[str] | None:
+    """读 `origin/main` 上某文件的全部行（不存在 → None）。带缓存，避免反复起 git 进程。"""
+    key = (base, path)
+    if key in _ORIGIN_LINES_CACHE:
+        return _ORIGIN_LINES_CACHE[key]
+    r = subprocess.run(
+        ["git", "-C", str(REPO_ROOT), "show", f"{base}:{path}"],
+        capture_output=True, text=True)
+    val = r.stdout.splitlines() if r.returncode == 0 else None
+    _ORIGIN_LINES_CACHE[key] = val
+    return val
+
+
+# 规则 G 的**自指豁免**：本门禁自己的实现/测试/红证留档里必然出现「故意不存在的路径」
+# 与「行为用例形态的 path:NNN」—— 那些是**夹具与说明**，不是仓库引用。
+# 不豁免就会自己判自己红（实测：初版 E2E 直接产出 11 条误报）。
+_REF_EXEMPT_FILES: frozenset[str] = frozenset({
+    ".github/case_trust_gate.py",
+    ".github/case-trust-redproof.md",
+    "tests/unit_ci_workflows/test_case_trust_gate.py",
+})
+# 明显不是仓库引用路径的形态（夹具/占位符）—— 只在**无法解析**时才用来降噪
+_PLACEHOLDER_PATH_RE = re.compile(
+    r"^(no/such|a/b\.py|x/y|foo/bar|path/to|\.\.\.|<)", re.IGNORECASE)
+
+
+def _resolve_repo_path(path: str, base: str, cache: dict) -> str | None:
+    """把引用里的路径解析成**仓库相对路径**（解析不到 → None）。
+
+    支持三种写法（仓库里三种都真实存在）：
+      ① 仓库相对全路径：`tests/agent_eval/local_runner.py:2000`；
+      ② **裸文件名**：`local_runner.py:2000`（`aftersales.yml` 的注释就这么写）——
+         按 basename 在仓库里唯一匹配（`git ls-files`）；
+      ③ 带目录但省略前缀：逐个后缀匹配 `git ls-files`。
+    """
+    if path in cache:
+        return cache[path]
+    r = subprocess.run(["git", "-C", str(REPO_ROOT), "ls-files", "--", path],
+                       capture_output=True, text=True)
+    hits = [x for x in r.stdout.splitlines() if x.strip()] if r.returncode == 0 else []
+    resolved = hits[0] if len(hits) == 1 else None
+    if resolved is None and len(hits) > 1:
+        # 多命中：优先精确相对路径，其次唯一的 basename
+        exact = [h for h in hits if h == path]
+        if exact:
+            resolved = exact[0]
+        else:
+            same_base = [h for h in hits if h.endswith("/" + path) or h == path]
+            if len(same_base) == 1:
+                resolved = same_base[0]
+    if resolved is None:
+        base_name = path.rsplit("/", 1)[-1]
+        r2 = subprocess.run(["git", "-C", str(REPO_ROOT), "ls-files", "--", f"*{base_name}"],
+                            capture_output=True, text=True)
+        cands = [x for x in r2.stdout.splitlines() if x.strip()]
+        if len(cands) == 1:
+            resolved = cands[0]
+    cache[path] = resolved
+    return resolved
+
+
+def check_reference_freshness_in_diff(files: list[str], base: str = "origin/main") -> dict:
+    """规则 G：扫本次 diff 新增/修改的 `path:NNN` 引用，核 `origin/main` 是否命中。
+
+    三条降噪纪律（缺任一条都会产出**误报**）：
+      ① **只扫本次新增/改动行**（不把存量过期引用算到本 PR 头上）；
+      ② **豁免门禁自身的实现/测试/红证留档**（那里的「不存在路径」是夹具）；
+      ③ **先去重、再解析路径**（裸文件名按 basename 唯一匹配；`git ls-files` 解析不到的
+         占位符形态直接丢弃，不算引用）。
+    返回 `tax.check_reference_freshness` 的结果，外加 `scanned_files` / `skipped_placeholders`。
+    """
+    cache: dict = {}
+    refs: list[dict] = []
+    scanned: list[str] = []
+    skipped: list[str] = []
+    seen: set[tuple[str, int]] = set()
+    for rel in files:
+        p = REPO_ROOT / rel
+        if not p.exists():
+            continue
+        scanned.append(rel)
+        if rel in _REF_EXEMPT_FILES:
+            continue
+        text = p.read_text(encoding="utf-8")
+        old = _git_show(base, rel) or ""
+        old_lines = set(old.splitlines())
+        for ln in text.splitlines():
+            if ln in old_lines and ln.strip():
+                continue
+            for raw in tax.find_path_line_refs(ln):
+                path = raw["path"]
+                resolved = _resolve_repo_path(path, base, cache)
+                if resolved is None:
+                    # 解析不到：占位符形态直接丢弃（不是仓库引用）；其余保留为阻塞候选
+                    if _PLACEHOLDER_PATH_RE.match(path):
+                        skipped.append(path)
+                        continue
+                    refs.append(raw)
+                    seen.add((path, raw["line"]))
+                    continue
+                key = (resolved, raw["line"])
+                if key in seen:
+                    continue
+                seen.add(key)
+                refs.append({**raw, "path": resolved})
+    res = tax.check_reference_freshness(refs, lambda path: origin_main_lines(path, base))
+    res["scanned_files"] = scanned
+    res["ref_count"] = len(refs)
+    res["skipped_placeholders"] = sorted(set(skipped))
+    return res
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # 输出层
 # ══════════════════════════════════════════════════════════════════════════════
 
 def render_report(blocking: list[dict], passed: list[dict], stale: list[dict],
-                  changed_ids: set[str], unimplemented: list[dict]) -> str:
+                  changed_ids: set[str], unimplemented: list[dict],
+                  refs: dict | None = None) -> str:
     """人类/agent 可读的失败报告 —— **每条都带「怎么改」**。"""
     out: list[str] = []
     out.append("═══ 断言可信度门禁（假红/假绿结构性护栏 A 层，单一判据源 "
@@ -279,10 +411,17 @@ def render_report(blocking: list[dict], passed: list[dict], stale: list[dict],
                 out.append(f"    怎么改：{v.get('fix') or rule.get('fix', '')}")
     if stale:
         out.append("")
-        out.append(f"❌ 基线清单陈旧 {len(stale)} 条（**阻塞** —— 清单只许缩短）：")
+        out.append(f"⚠️ 基线清单可缩短 {len(stale)} 条（**不阻塞本次** —— 建议随本 PR 一并清理）：")
         for s in stale:
             out.append(f"  · {s['case_id']}（原记 {', '.join(s['removed_codes'])}）")
             out.append(f"    {s['hint']}")
+        out.append("")
+        out.append("  为什么只告警不阻塞：「清单只许缩短」的**判据**已实装（见下 `stale_baseline_entries`），"
+                   "但**执行**必须是告警 —— 要求作者改 `.github/case-trust-baseline.json` 会与"
+                   "**在飞的**基线重生成改动冲突（实证：另一包正在修 CU-003/PG-013，而基线文件同时被"
+                   "本门禁的 PR 创建）。硬阻塞会把「修好用例」的人卡在一个非其所有权的文件上 = 假红"
+                   "（migao-acceptance：不能因「改法写了但没照着改」就把**正确**形态判红）。"
+                   "→ 机制现状照实说：清单缩短靠本告警 + 复盘；**没有**机械强制。")
     if passed:
         out.append("")
         out.append(f"ℹ️ 存量违规放行 {sum(len(p['violations']) for p in passed)} 条"
@@ -290,6 +429,15 @@ def render_report(blocking: list[dict], passed: list[dict], stale: list[dict],
         for p in passed:
             codes = "、".join(v["code"] for v in p["violations"])
             out.append(f"  · {p['case_id']}：{codes}")
+    if refs and (refs.get("ref_count") or refs.get("warnings")):
+        warn_refs = refs.get("warnings") or []
+        out.append("")
+        out.append(f"ℹ️ 引用新鲜度（规则 G）：本次新增/改动行里 {refs.get('ref_count', 0)} 处 "
+                   f"`path:NNN` 引用，已核对 `origin/main`"
+                   + (f"；**行号漂移 {len(warn_refs)} 处**（不阻塞，建议换符号锚点）："
+                      if warn_refs else "；无漂移。"))
+        for w in warn_refs:
+            out.append(f"  · `{w['raw']}` 第 {w['line']} 行 — {w['reason']}")
     if unimplemented:
         out.append("")
         out.append(f"⚠️ 未实装规则 {len(unimplemented)} 条（**如实登记**，"
@@ -299,7 +447,7 @@ def render_report(blocking: list[dict], passed: list[dict], stale: list[dict],
             out.append(f"    为什么不实装：{u['why_not']}")
             out.append(f"    缺什么：{u['needs']}")
     out.append("")
-    out.append("✅ 通过" if not blocking and not stale else "❌ 阻塞（见上）")
+    out.append("✅ 通过" if not blocking else "❌ 阻塞（见上）")
     return "\n".join(out)
 
 
@@ -404,6 +552,16 @@ def main(argv: list[str] | None = None) -> int:
             print(f"✅ 未实装清单已落盘：{UNIMPLEMENTED_PATH}（与 taxonomy.UNIMPLEMENTED 同源）")
         return 0
 
+    # 规则 G（引用新鲜度）与用例条目无关，扫**本次全部改动文件**；
+    # 与主判据同口径：只报**本次新增/改动行**里的 `path:NNN`。
+    if args.files:
+        ref_files = list(args.files)
+    else:
+        try:
+            ref_files = _diff_files(args.base)
+        except Exception:
+            ref_files = []
+
     if args.files:
         # --files 语义 = 判这些文件的**全部**条目（本地调试用），故直接按文件过滤
         want_files = {Path(f).name for f in args.files}
@@ -421,8 +579,15 @@ def main(argv: list[str] | None = None) -> int:
             print(f"❌ 取变更文件失败（fail-closed）：{e}", file=sys.stderr)
             return 1
         if not cases_files:
-            print("⏭️ 本次改动未命中任何用例文件（.github/cases/*.yml）—— 未跑"
+            refs = check_reference_freshness_in_diff(ref_files, args.base)
+            print("⏭️ 本次改动未命中任何用例文件（.github/cases/*.yml）—— **用例条目未跑**"
                   "（「没跑」必须长得像「没跑」，不得读成通过）")
+            print(render_report([], [], [], set(), list(tax.UNIMPLEMENTED), refs))
+            if refs["blocking"]:
+                for b in refs["blocking"]:
+                    print(f"❌ [CASE-TRUST-STALE-LINE-REF] `{b['raw']}` — {b['reason']}")
+                    print(f"    怎么改：{tax.RULES_BY_CODE['CASE-TRUST-STALE-LINE-REF']['fix']}")
+                return 1
             return 0
         changed_ids, raw_by_id = collect_changed_ids(cases_files, args.base)
         if not changed_ids:
@@ -441,10 +606,18 @@ def main(argv: list[str] | None = None) -> int:
 
     verdict = classify(judged, baseline)
     stale = stale_baseline_entries(baseline, changed_ids, violations_by_case)
+    refs = check_reference_freshness_in_diff(ref_files, args.base)
 
     print(render_report(verdict["blocking"], verdict["passed"], stale,
-                        changed_ids, list(tax.UNIMPLEMENTED)))
-    return 1 if (verdict["blocking"] or stale) else 0
+                        changed_ids, list(tax.UNIMPLEMENTED), refs))
+    if refs["blocking"]:
+        print("")
+        for b in refs["blocking"]:
+            print(f"❌ [CASE-TRUST-STALE-LINE-REF] `{b['raw']}` — {b['reason']}")
+            print(f"    怎么改：{tax.RULES_BY_CODE['CASE-TRUST-STALE-LINE-REF']['fix']}")
+    # 退出码只由**新增违规**与**确定错误的引用**决定：陈旧基线条目只告警
+    # （见 render_report 里的为什么）。
+    return 1 if (verdict["blocking"] or refs["blocking"]) else 0
 
 
 if __name__ == "__main__":

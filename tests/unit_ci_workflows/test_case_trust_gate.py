@@ -38,6 +38,7 @@ FIXTURES_DIR = REPO_ROOT / "tests" / "agent_eval" / "fixtures"
 GATE = REPO_ROOT / ".github" / "case_trust_gate.py"
 BASELINE = REPO_ROOT / ".github" / "case-trust-baseline.json"
 REDPROOF = REPO_ROOT / ".github" / "case-trust-redproof.md"
+UNIMPLEMENTED = REPO_ROOT / ".github" / "case-trust-unimplemented.json"
 
 
 def _seed_catalog():
@@ -56,10 +57,16 @@ def _seed_catalog():
 def fixture_cu_003() -> dict:
     """CU-003「给客户打标签」—— 物理不可满足（#3832）。
 
-    载荷逐字取自 `.github/cases/customer.yml` 的 CU-003：
+    载荷逐字取自 `.github/cases/customer.yml` 的 CU-003（**报缺陷/未修时的形态**）：
       · expectations: customer_manage(action=add_tag)  ← 写
       · pre_clean[].tag_name = "VIP2活跃"；种子里只有 `VIP2` / `活跃`
+      · pre_clean[].customer_index = 0 —— **按列表位置定位客户**（规则 e 的红证载荷；
+        列表按 `created_at DESC` 排序 ⇒ 重名时点中的是别人中途造的那个客户）
       · 无效果层断言（data_checks 是纯散文，无 `success=true`）
+
+    ⚠️ 上游已在 #3832 修好（`tag_name` 改 `VIP2`、`customer_keyword` 改手机号并去掉
+    `customer_index`）—— 本夹具**刻意保留修前形态**以维持判据的判别力（新形态的回归
+    由 `test_concurrent_fix_shapes_pass` 锁定）。
     """
     return {
         "id": "CU-003",
@@ -277,10 +284,231 @@ class TestKnownDefectFixturesAreBlocked:
             "CASE-TRUST-NO-SELF-CLEAN",
             "CASE-TRUST-PRECLEAN-TARGET-UNRESOLVABLE",
             "CASE-TRUST-FORBIDDEN-TEXT-SOLE",
+            "CASE-TRUST-VOLATILE-LOCATOR",
+            "CASE-TRUST-NO-PRECONDITION-ASSERTION",
             "CASE-TRUST-SINGLE-LEG-NO-PERSONA",
         }
         missing = required - blocked_codes
         assert not missing, f"这些规则从未被任何红证夹具触发（判据可能是空壳）：{sorted(missing)}"
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 一之二、可变键定位 / 前置自断言 / 引用新鲜度（E / F / G 红证）
+# ══════════════════════════════════════════════════════════════════════════════
+
+class TestVolatileLocator:
+    """规则 e：定位被测对象必须用不可变标识（主会话新发现的主机制）。"""
+
+    def test_cu_003_position_locator_is_blocked(self):
+        """红证：`CU-003` 的 `customer_index: 0`（按列表位置定位客户）。"""
+        v = tax.judge_case(fixture_cu_003(), catalog=_seed_catalog())
+        assert "CASE-TRUST-VOLATILE-LOCATOR" in codes(v), (
+            f"按列表位置定位被测对象未被判违规，实际={v}"
+        )
+        hit = [x for x in v if x["code"] == "CASE-TRUST-VOLATILE-LOCATOR"][0]
+        assert "customer_index" in hit["detail"], f"失败信息必须点名具体键：{hit['detail']}"
+        assert "不可变" in hit["fix"], "修复指引必须说明用不可变标识"
+
+    def test_immutable_key_passes(self):
+        """不可变标识（手机号 / order_no / id）⇒ 放行。"""
+        case = {
+            "id": "FAKE-CU-901", "title": "（注入夹具）手机号定位",
+            "expectations": [{"tool": "customer_manage", "args": {"action": "add_tag"}}],
+            "must_succeed": [{"tool": "customer_manage"}],
+            "precondition": "库里存在手机号 13800138000 的客户",
+            "pre_clean": [{"type": "customer_tag_remove",
+                           "customer_keyword": "13800138000", "tag_name": "VIP2"}],
+            "persona": "mibao",
+        }
+        v = tax.judge_case(case, catalog=_seed_catalog())
+        assert "CASE-TRUST-VOLATILE-LOCATOR" not in codes(v), f"不可变标识被误伤：{v}"
+
+    def test_user_input_ordinal_is_not_a_violation(self):
+        """**关键口径**：名字/序号出现在 `user_inputs` 里是**合理**的（被测行为的一部分）。
+
+        若判据扫 `user_inputs`，就会大面积误伤（实测全库序数/auto_select 形态 8+ 条）。
+        """
+        case = {
+            "id": "FAKE-OR-902", "title": "（注入夹具）用户说「第一个」",
+            "user_inputs": ["给张三加VIP2活跃标签", {"auto_select": True}, "确认"],
+            "expectations": [{"tool": "customer_manage", "args": {"action": "add_tag"}}],
+            "must_succeed": [{"tool": "customer_manage"}],
+            "precondition": "库里存在客户张三",
+            "pre_clean": [{"type": "customer_tag_remove",
+                           "customer_keyword": "13800138000", "tag_name": "VIP2"}],
+            "persona": "mibao",
+        }
+        v = tax.judge_case(case, catalog=_seed_catalog())
+        assert "CASE-TRUST-VOLATILE-LOCATOR" not in codes(v), (
+            f"`user_inputs` 里的序号被当违规 —— 这会大面积误伤：{v}"
+        )
+
+    def test_name_key_positions_are_warning_level_only(self):
+        """名字子串/自然键 ⇒ **警告级**（不阻塞），但必须能被识别出来（供清单跟踪）。"""
+        case = {"id": "FAKE-PR-903",
+                "pre_clean": [{"type": "product_dedupe", "product_keyword": "遮光窗帘"}]}
+        pos = tax.name_key_positions(case)
+        assert pos and pos[0][1] == "product_keyword", f"名字键未被识别：{pos}"
+        v = tax.judge_case(case, catalog=_seed_catalog())
+        assert "CASE-TRUST-VOLATILE-LOCATOR" not in codes(v), (
+            "名字键被判阻塞 —— 全库 20 条会一次全红（应降级为警告）"
+        )
+
+
+class TestPreconditionAssertion:
+    """规则 f：多轮/写类用例必须对**自己的前置**给出可判定断言。"""
+
+    def test_pg_013_without_precondition_is_blocked(self):
+        """红证：`PG-013` 首跑后订单转 `producing`，重试前置不成立却表现成「agent 不干活」。"""
+        v = tax.judge_case(fixture_pg_013(), catalog=_seed_catalog())
+        assert "CASE-TRUST-NO-PRECONDITION-ASSERTION" in codes(v), (
+            f"无前置自断言未被判违规，实际={v}"
+        )
+
+    def test_effect_layer_alone_does_not_satisfy_precondition_rule(self):
+        """**防虚增**：只有 `must_succeed` / `db_verify` 不算前置自断言。
+
+        实证：本模块初版把效果层当弱形式接受 ⇒ 「已声明」从 1 条虚增到 37 条，
+        那 36 条**根本没说前置是什么**。虚增 = 判据失去判别力（空壳）。
+        """
+        case = {
+            "id": "FAKE-PR-904", "title": "（注入夹具）只有效果层",
+            "user_inputs": ["把遮光窗帘改成150元", "确认"],
+            "expectations": [{"tool": "sku_update"}],
+            "must_succeed": [{"tool": "sku_update"}],
+            "db_verify": [{"fetch": "product_by_name", "name": "遮光窗帘",
+                           "expect": {"price": 150}}],
+            "pre_clean": [{"type": "product_dedupe", "product_keyword": "遮光窗帘"}],
+            "persona": "mibao",
+        }
+        assert tax.declares_precondition(case)[0] is False, (
+            "效果层被当成前置自断言 —— 判据虚增（空壳）"
+        )
+        v = tax.judge_case(case, catalog=_seed_catalog())
+        assert "CASE-TRUST-NO-PRECONDITION-ASSERTION" in codes(v)
+
+    def test_declared_precondition_passes(self):
+        """声明了前置（两种合法形态）⇒ 放行。"""
+        base = {
+            "id": "FAKE-PR-905", "title": "（注入夹具）已声明前置",
+            "user_inputs": ["把遮光窗帘改成150元", "确认"],
+            "expectations": [{"tool": "sku_update"}],
+            "must_succeed": [{"tool": "sku_update"}],
+            "pre_clean": [{"type": "product_dedupe", "product_keyword": "遮光窗帘"}],
+            "persona": "mibao",
+        }
+        by_field = dict(base, precondition="库里恰有一个「遮光窗帘」商品（价格 168）")
+        assert tax.declares_precondition(by_field)[0] is True
+        assert "CASE-TRUST-NO-PRECONDITION-ASSERTION" not in codes(
+            tax.judge_case(by_field, catalog=_seed_catalog()))
+
+        by_machine_check = dict(base, data_checks=[
+            "前置：product_search(遮光窗帘) 命中 1 条（success=true）"])
+        assert tax.declares_precondition(by_machine_check)[0] is True, (
+            "机器计分型 data_checks 里的前置断言未被认可"
+        )
+        assert "CASE-TRUST-NO-PRECONDITION-ASSERTION" not in codes(
+            tax.judge_case(by_machine_check, catalog=_seed_catalog()))
+
+    def test_prose_precondition_data_check_does_not_count(self):
+        """**纯散文**前置不计分（#3559 同族）⇒ 不算前置自断言。"""
+        case = {
+            "id": "FAKE-PR-906", "title": "（注入夹具）散文前置",
+            "user_inputs": ["把遮光窗帘改成150元", "确认"],
+            "expectations": [{"tool": "sku_update"}],
+            "must_succeed": [{"tool": "sku_update"}],
+            "pre_clean": [{"type": "product_dedupe", "product_keyword": "遮光窗帘"}],
+            "data_checks": ["前置：库里应有「遮光窗帘」商品"],
+            "persona": "mibao",
+        }
+        assert tax.declares_precondition(case)[0] is False, (
+            "纯散文前置被当成前置自断言 —— 它不计分，前置不成立时不会红"
+        )
+
+    def test_single_round_read_case_not_required(self):
+        """单轮只读用例**不强制**（读不改变世界）—— 防无谓摩擦。"""
+        case = {
+            "id": "FAKE-OR-907", "title": "（注入夹具）单轮查询",
+            "user_inputs": ["查订单列表"],
+            "expectations": [{"tool": "order_query"}],
+            "persona": "mibao",
+        }
+        assert tax.needs_precondition_assertion(case) is False
+        assert "CASE-TRUST-NO-PRECONDITION-ASSERTION" not in codes(
+            tax.judge_case(case, catalog=_seed_catalog()))
+
+
+class TestReferenceFreshness:
+    """规则 g：`path:NNN` 行号引用必须对 `origin/main` 命中（#3787 的机器化）。"""
+
+    def test_out_of_range_line_is_blocked(self):
+        """红证：行号越界（该行**不存在**）⇒ 阻塞。"""
+        refs = tax.find_path_line_refs("见 `tests/agent_eval/local_runner.py:999999` 的说明")
+        assert refs and refs[0]["line"] == 999999
+        res = tax.check_reference_freshness(
+            refs, lambda path: ["line"] * 100 if path.endswith("local_runner.py") else None)
+        assert res["blocking"], f"行号越界未被判阻塞：{res}"
+
+    def test_missing_file_is_blocked(self):
+        """红证：引用了一个**不存在**的文件 ⇒ 阻塞。"""
+        refs = tax.find_path_line_refs("见 `no/such/file.py:10` 的实现")
+        res = tax.check_reference_freshness(refs, lambda path: None)
+        assert res["blocking"], f"文件不存在未被判阻塞：{res}"
+
+    def test_symbol_missing_from_whole_file_is_blocked(self):
+        """红证：行号在范围内，但引用的**符号在该文件里完全不存在** ⇒ 阻塞。"""
+        refs = tax.find_path_line_refs("见 `a/b.py:5` 的 `totally_absent_symbol`")
+        res = tax.check_reference_freshness(refs, lambda path: ["x = 1"] * 50)
+        assert res["blocking"], f"符号不存在未被判阻塞：{res}"
+
+    def test_line_drift_is_warning_not_blocking(self):
+        """行号漂移（符号在文件别处）⇒ **警告**（可行动：换符号锚点），不阻塞。"""
+        lines = ["def other() -> None:"] * 10 + ["def _target_symbol() -> None:"] + ["pass"] * 40
+        refs = tax.find_path_line_refs("见 `a/b.py:2` 的 `_target_symbol`")
+        res = tax.check_reference_freshness(refs, lambda path: lines)
+        assert not res["blocking"], f"行号漂移被误判阻塞：{res}"
+        assert res["warnings"], f"行号漂移应报警告：{res}"
+
+    def test_fresh_reference_passes(self):
+        """引用新鲜（符号就在该行附近）⇒ 无阻塞、无警告。"""
+        lines = ["x = 1", "x = 2", "def _target_symbol() -> None:", "    pass"] + ["y"] * 40
+        refs = tax.find_path_line_refs("见 `a/b.py:3` 的 `_target_symbol`")
+        res = tax.check_reference_freshness(refs, lambda path: lines)
+        assert res == {"blocking": [], "warnings": []}, f"新鲜引用被误判：{res}"
+
+    def test_bare_line_number_without_symbol_is_not_blocked(self):
+        """**防误伤**：只写 `path:NNN`（无符号）且行号合法 ⇒ 不阻塞、不警告。
+
+        仓库里大量正当的 `path:NNN`（如 aftersales.yml 引 `local_runner.py:2000`）
+        不能因为「没写符号」被判违规。
+        """
+        refs = tax.find_path_line_refs("取工单引用走 `local_runner.py:2000`（只认 payload 里的 id）")
+        res = tax.check_reference_freshness(refs, lambda path: ["x"] * 5000)
+        assert res == {"blocking": [], "warnings": []}, f"合法裸行号被误判：{res}"
+
+    def test_known_stale_refs_from_3787_are_flagged(self):
+        """红证夹具取自 `#3787` 的**过期指引形态**（§16.5 → 实际在 §16.7）。
+
+        `#3787` 记的 5 处是「文档指向了错误的节号」，形态 = 引用的**符号/锚点在该处不存在**。
+        这里用同形态夹具（引用一个文件里根本不存在的符号）证明判据会红。
+        """
+        refs = tax.find_path_line_refs(
+            "见 `docs/testing/eval-environments.md:86` 的 `nonexistent_anchor_3787`")
+        res = tax.check_reference_freshness(
+            refs, lambda path: ["# 文档"] * 200 if path.endswith(".md") else None)
+        assert res["blocking"], f"#3787 同形态过期引用未被判阻塞：{res}"
+
+    def test_gate_scans_only_new_or_changed_lines(self):
+        """只扫**本次新增/改动行** —— 不把存量过期引用算到本 PR 头上。"""
+        import importlib.util
+        import inspect
+        spec = importlib.util.spec_from_file_location("case_trust_gate", GATE)
+        gate = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(gate)
+        src = inspect.getsource(gate.check_reference_freshness_in_diff)
+        assert "old_lines" in src and "continue" in src, (
+            "规则 G 未做「只扫新增行」过滤 —— 会把存量过期引用算到无关 PR 头上（假红）"
+        )
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -327,8 +555,11 @@ class TestNoFalsePositivesOnCorrectShapes:
             "id": "FAKE-PR-998", "title": "（注入夹具）正确写用例",
             "expectations": [{"tool": "customer_manage", "args": {"action": "add_tag"}}],
             "must_succeed": [{"tool": "customer_manage"}],
-            "pre_clean": [{"type": "customer_tag_remove", "customer_keyword": "张三",
-                           "tag_name": "VIP2"}],
+            # precondition 是规则 f 的正当要求（写/多轮用例必须自断言前置），
+            # 不是「为了变绿而加」—— 缺它不是本夹具的缺陷形态。
+            "precondition": "库里存在手机号 13800138000 的客户，且未挂 VIP2 标签",
+            "pre_clean": [{"type": "customer_tag_remove",
+                           "customer_keyword": "13800138000", "tag_name": "VIP2"}],
             "persona": "mibao",
         }
         v = tax.judge_case(case, catalog=_seed_catalog())
@@ -341,6 +572,7 @@ class TestNoFalsePositivesOnCorrectShapes:
             "expectations": [{"tool": "sku_update"}],
             "must_succeed": [{"tool": "sku_update"}],
             "namespaces": ["product:遮光窗帘"],
+            "precondition": "库里存在「遮光窗帘」商品（评测前置）",
             "persona": "mibao",
         }
         assert tax.self_clean_evidence(case) == "namespaces"
@@ -356,6 +588,7 @@ class TestNoFalsePositivesOnCorrectShapes:
             "expectations": [{"tool": "processing_order_generate"}],
             "must_succeed": [{"tool": "processing_order_generate"}],
             "pre_clean": [{"type": "product_dedupe", "product_keyword": "遮光窗帘"}],
+            "precondition": "库里存在一个已确认且含加工项的订单",
             "forbidden_text": ["无法生成加工单"],
             "persona": "mibao",
         }
@@ -372,6 +605,7 @@ class TestNoFalsePositivesOnCorrectShapes:
             "expectations": [{"tool": "processing_order_generate"}],
             "must_succeed": [{"tool": "processing_order_generate"}],
             "pre_clean": [{"type": "product_dedupe", "product_keyword": "遮光窗帘"}],
+            "precondition": "库里存在一个已确认且含加工项的订单",
             "forbidden_text": [{"text": "无法生成加工单", "rounds": [2, 3]}],
             "persona": "mibao",
         }
@@ -383,6 +617,70 @@ class TestNoFalsePositivesOnCorrectShapes:
         assert tax.forbidden_text_is_round_scoped(raw), "轮次作用域标注未被识别"
         v = tax.judge_case(case, catalog=_seed_catalog(), raw_text=raw)
         assert "CASE-TRUST-FORBIDDEN-TEXT-SOLE" not in codes(v)
+
+    def test_concurrent_fix_shapes_pass(self):
+        """**上游修复形态必须放行**（#3832/#3833 落地后的真实形态，2026-09-15 实测）。
+
+        为什么单列：本门禁先合并会校验另一包的 PR。若判据把**正确修复**判红，
+        就变成「门禁自己成了 blocker」（假红）。故把两个真实修复形态钉成回归用例：
+
+        · `CU-003`（#3832）：`pre_clean.tag_name` 改为种子真有的 `VIP2`（不再悬空）；
+        · `PG-013`（#3833）：① 新增 `pre_clean: [{type: processing_order_reset, order_no: …}]`
+          （复位前置）；② `forbidden_text` 部分条目改为**轮次作用域**形态
+          （`{round: 2, any_of: [...]}`）—— 轮次作用域已落地 ⇒ 规则 c 必须放行。
+        """
+        cat = _seed_catalog()
+        # CU-003 修复形态：标签名对 + pre_clean 在 + 效果层断言在
+        cu003 = {
+            "id": "CU-003", "title": "给客户打标签",
+            "expectations": [{"tool": "customer_manage", "args": {"action": "add_tag"}}],
+            "must_succeed": [{"tool": "customer_manage"}],
+            "precondition": "库里存在手机号 13800138000 的客户",
+            "pre_clean": [{"type": "customer_tag_remove", "customer_keyword": "13800138000",
+                           "tag_name": "VIP2"}],
+            "persona": "mibao",
+        }
+        v = tax.judge_case(cu003, catalog=cat)
+        assert v == [], f"CU-003 的**上游修复形态**被误伤（这会让本门禁挡住 #3832）：{v}"
+
+        # PG-013 修复形态：processing_order_reset 自清理 + 轮次作用域禁令
+        pg013_raw = (
+            '  - id: PG-013\n'
+            '    forbidden_text:\n'
+            '      - "暂不支持"\n'
+            '      - round: 2\n'
+            '        any_of: ["无加工项", "无法生成加工单"]\n'
+        )
+        pg013 = {
+            "id": "PG-013", "title": "米宝加工单 LLM 行为",
+            "expectations": [{"tool": "order_query"}, {"tool": "processing_order_generate"}],
+            "must_succeed": [{"tool": "processing_order_generate"}],
+            "precondition": "库里存在订单 EVAL-MB-ORD-0002（已确认且含加工项）",
+            "pre_clean": [{"type": "processing_order_reset",
+                           "order_no": "EVAL-MB-ORD-0002"}],
+            "forbidden_text": ["暂不支持", {"round": 2, "any_of": ["无加工项"]}],
+            "persona": "mibao",
+        }
+        v = tax.judge_case(pg013, catalog=cat, raw_text=pg013_raw)
+        assert v == [], f"PG-013 的**上游修复形态**被误伤（这会让本门禁挡住 #3833）：{v}"
+
+    def test_unknown_new_preclean_type_is_not_blocked(self):
+        """并发包**新增**的 pre_clean 类型不得被当成「目标不可解析」判红。
+
+        为什么：`processing_order_reset` 这类新类型静态侧尚无映射 —— 那属**未实装**
+        （登记在清单里），不是「用例写错了」。把「实现领先于门禁」判红 = 假红。
+        """
+        case = {
+            "id": "FAKE-PG-900", "title": "（注入夹具）新 pre_clean 类型",
+            "expectations": [{"tool": "processing_order_generate"}],
+            "must_succeed": [{"tool": "processing_order_generate"}],
+            "pre_clean": [{"type": "brand_new_type_shipped_by_another_pr", "x": "y"}],
+            "persona": "mibao",
+        }
+        v = tax.judge_case(case, catalog=_seed_catalog())
+        assert "CASE-TRUST-PRECLEAN-TARGET-UNRESOLVABLE" not in codes(v), (
+            f"新类型被当成目标不可解析判红：{v}"
+        )
 
     def test_marked_single_leg_passes(self):
         """单端用例**已标注** persona ⇒ 不报（规则 d 只要求标注存在）。"""
@@ -432,7 +730,9 @@ class TestDegenerateGuardRails:
             "id": "FAKE-OK", "title": "（注入夹具）好用例",
             "expectations": [{"tool": "customer_manage", "args": {"action": "add_tag"}}],
             "must_succeed": [{"tool": "customer_manage"}],
-            "pre_clean": [{"type": "customer_tag_remove", "tag_name": "VIP2"}],
+            "precondition": "库里存在客户张三（手机号 13800138000）",
+            "pre_clean": [{"type": "customer_tag_remove",
+                           "customer_keyword": "13800138000", "tag_name": "VIP2"}],
             "persona": "mibao",
         }
         cat = _seed_catalog()
@@ -638,9 +938,41 @@ class TestGateShell:
         stale = gate.stale_baseline_entries(baseline, changed_ids={"CU-003"},
                                             violations_by_case={"CU-003": v})
         assert [s["case_id"] for s in stale] == ["CU-003"], (
-            f"原记码不再命中却未要求清理基线：{stale}"
+            f"原记码不再命中却未报「可缩短清单」：{stale}"
         )
         assert stale[0]["removed_codes"] == ["CASE-TRUST-PRECLEAN-TARGET-UNRESOLVABLE"]
+        assert stale[0]["hint"], "可缩短项必须带「怎么改」（指向重生成命令）"
+
+    def test_stale_baseline_entry_does_not_block(self):
+        """**红线（防假红）**：陈旧基线条目只**告警**，不得阻塞 —— 否则会把
+        「修好用例」的人卡在 `.github/case-trust-baseline.json`（非其所有权的文件）上，
+        而该文件可能正被**在飞**的基线重生成改动持有（实证：#3832/#3833 正在修
+        CU-003/PG-013，基线文件同时被本门禁的 PR 创建）。
+
+        判据：报告在「仅有陈旧项、无新增违规」时必须出现**可缩短/不阻塞本次**，
+        且**不得**出现阻塞结论 —— 退出码层面由 `main()` 只按 `blocking` 决定（见上一条）。
+        """
+        gate = self._gate()
+        report = gate.render_report(blocking=[], passed=[], stale=[
+            {"case_id": "PG-013", "removed_codes": ["CASE-TRUST-NO-SELF-CLEAN"],
+             "now_codes": [], "hint": "hint"}],
+            changed_ids={"PG-013"}, unimplemented=[])
+        assert "不阻塞本次" in report, f"陈旧项未标明「不阻塞」：{report[:400]}"
+        assert "可缩短" in report
+        assert "❌ 阻塞" not in report, "仅有陈旧项时报告不得判阻塞"
+        assert "✅ 通过" in report
+
+    def test_unimplemented_manifest_records_baseline_pruning_limitation(self):
+        """机制现状必须照实登记：清单缩短**没有机械强制**（只告警）。
+
+        为什么钉住：`migao-acceptance`「注释漂移 = 假绿来源」—— 若文档/清单声称
+        「清单只许缩短」是**强制**的，而实现只是告警，那就是一句会误导后来者的假真值。
+        """
+        assert UNIMPLEMENTED.exists(), f"未实装清单缺失：{UNIMPLEMENTED}"
+        text = UNIMPLEMENTED.read_text(encoding="utf-8")
+        assert ("不能机械强制" in text or "无机械强制" in text or "只告警" in text), (
+            "未实装清单没有登记「基线缩短无机械强制」—— 会让人误以为它是强制的"
+        )
 
     def test_gate_blocks_unknown_preclean_without_crashing(self):
         """未知 pre_clean type 不得让门禁崩（登记为未实装，不写恒真规则）。"""
