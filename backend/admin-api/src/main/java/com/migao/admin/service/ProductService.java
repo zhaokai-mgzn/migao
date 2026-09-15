@@ -335,6 +335,11 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
         // 处理图片列表
         if (request.getImages() != null && !request.getImages().isEmpty()) {
             product.setImages(request.getImages());
+            // 主图兜底（issue #3884）：未显式指定 mainImage 时，首图即默认主图。
+            // 此前全后端无任何写 products.main_image 的路径，agent 却谎报「主图已设置成功」。
+            if (!StringUtils.hasText(product.getMainImage())) {
+                product.setMainImage(request.getImages().get(0));
+            }
         }
 
         // 详情图列表（JSONB 存储于 products.detail_images）
@@ -395,6 +400,9 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
 
         // 保存原始状态，防止 BeanUtils.copyProperties 绕过状态机
         String originalStatus = product.getStatus();
+        // 保存原始主图（issue #3884）：BeanUtils.copyProperties 会把请求里的 null mainImage 覆写到实体，
+        // 不先记下原值，主图兜底就无法区分「从未设置过」与「已设置过」→ 会误覆盖已设置的主图
+        String originalMainImage = product.getMainImage();
 
         // 更新商品属性（categoryId 已在方法开头归一化：'' → null，不得再漏到实体）
         BeanUtils.copyProperties(request, product);
@@ -405,6 +413,16 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
         // 处理图片列表
         if (request.getImages() != null) {
             product.setImages(request.getImages());
+        }
+
+        // 主图兜底（issue #3884）：mainImage 未显式指定时——已设置过主图则保留原值
+        // （copyProperties 已用请求 null 清掉实体值，需还原），否则传了图片时首图即默认主图
+        if (!StringUtils.hasText(request.getMainImage())) {
+            if (StringUtils.hasText(originalMainImage)) {
+                product.setMainImage(originalMainImage);
+            } else if (request.getImages() != null && !request.getImages().isEmpty()) {
+                product.setMainImage(request.getImages().get(0));
+            }
         }
 
         // 详情图列表（允许传空数组清空）
