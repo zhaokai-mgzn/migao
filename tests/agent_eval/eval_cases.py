@@ -4486,6 +4486,27 @@ _CASE_PR_024 = EvalCase(
     output_verify=[{'tool': 'curtain_calc', 'expect': {'fabric_meters': 10.2, 'formula_used': 'fixed_width', 'warning': '__nonempty__', 'fullness': 2}}],
 )
 
+# ── PR-025 [NORMAL] B端写操作必须先出确认卡再执行（缺卡不发写）（源: cases/product.yml）──
+_CASE_PR_025 = EvalCase(
+    id='PR-025',
+    legacy_id='',
+    title='B端写操作必须先出确认卡再执行（缺卡不发写）',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['把遮光窗帘下架', {'auto_respond': {'fallback': '确认'}}],
+    expectations=['product_manage(action=toggle_status, status=off_sale)'],
+    data_checks=['success=true'],
+    skip_reason='',
+    tags=['write', 'confirm'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    order_before=['interact[confirm] before product_manage'],
+    pre_clean=[{'type': 'product_dedupe', 'product_keyword': '遮光窗帘'}],
+    namespaces=['product_name:遮光窗帘'],
+)
+
 # ── RG-001 [NORMAL] ToolRegistry 注册/查询/执行审计（源: cases/registry.yml）──
 _CASE_RG_001 = EvalCase(
     id='RG-001',
@@ -5695,6 +5716,7 @@ ALL_CASES = (
     _CASE_PR_020,
     _CASE_PR_021,
     _CASE_PR_024,
+    _CASE_PR_025,
     _CASE_RG_001,
     _CASE_ST_001,
     _CASE_ST_002,

@@ -1187,3 +1187,51 @@ cases:
       ci:
         - xiaobu-acceptance.yml
       verifies: []
+
+  - id: PR-025
+    legacy_id: ""
+    title: "B端写操作必须先出确认卡再执行（缺卡不发写）"
+    domains:
+      - product
+    tier: normal
+    tags:
+      - write
+      - confirm
+    truths_ref:
+      - product-sku-stock.status-flow
+    # 形态来源（sess_f26fda5046f34992 复盘，#3886）：B 端写操作（下架/删加工项）被确认门禁
+    # 拦截后，agent 只在文本声称「确认卡已发出」而未调 interact ⇒ 客户无卡可点、写操作卡死。
+    # 行为修复已合并（#3882：base_skill.py 兜底补发确认卡 + tests/test_b_end_confirm_card_fallback.py）。
+    # 本条为行为评测用例（LLM 真跑验证），核心断言 = order_before：确认卡（interact[confirm]）
+    # 必须先于写操作（product_manage）出现——缺卡即红、写先于卡即红。
+    user_inputs:
+      - "把遮光窗帘下架"
+      # 答卡轮（同 PR-007 套路）：有卡回 confirmValue、无卡才发原文「确认」。
+      - auto_respond:
+          fallback: "确认"
+    # 全局命名空间声明（issue #3781）：与 PR-007 同用「遮光窗帘」+ product_dedupe，
+    # 声明同一命名空间自动互斥，消除同栈并行用例互相写同一命名空间造成的非确定性。
+    namespaces:
+      - "product_name:遮光窗帘"
+    expectations:
+      - tool: product_manage
+        args:
+          action: toggle_status
+          status: off_sale
+    # 关键断言（本用例形态，runner check_order_before）：
+    # 全程未调 interact[confirm] ⇒ 缺卡即红；product_manage 早于 interact[confirm] ⇒ 写先于卡即红。
+    order_before:
+      - "interact[confirm] before product_manage"
+    data_checks:
+      - "success=true"
+    pre_clean:
+      - type: product_dedupe
+        product_keyword: "遮光窗帘"
+    skip_reason: ""
+    merge_log: "2026-09-15 新增（#3882 复盘，#3886）：sess_f26fda5046f34992 复盘——B 端写操作（下架/删加工项）被确认门禁拦截后 agent 只在文本声称「确认卡已发出」而未调 interact，客户无卡可点；行为修复已合并（#3882：base_skill.py 兜底补发确认卡 + tests/test_b_end_confirm_card_fallback.py），本条为行为评测用例（LLM 真跑验证），核心断言 order_before[interact[confirm] before product_manage]：缺卡/写先于卡即红。以 PR-007 为模板（答卡轮 auto_respond fallback=确认 + pre_clean product_dedupe 遮光窗帘 + truths_ref product-sku-stock.status-flow + 命名空间互斥）。"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_b_end_confirm_card_fallback.py"
+      ci:
+        - agent-eval.yml
+      verifies: []
