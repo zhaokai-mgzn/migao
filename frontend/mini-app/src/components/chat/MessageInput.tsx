@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect, useRef } from 'react'
 import { View, Text, Textarea, Image } from '@tarojs/components'
 import Taro from '@tarojs/taro'
 import { chooseImages, uploadImages } from '../../utils/imageUpload'
-import { startRecording, stopAndTranscribe, isVoiceSupported } from '../../utils/voice'
+import { startRecording, stopRecording, stopAndTranscribe, isVoiceSupported, MIN_RECORDING_MS } from '../../utils/voice'
 import {
   ICON_AUDIO_LINES,
   ICON_IMAGE_PLUS,
@@ -58,6 +58,7 @@ export default function MessageInput({
   const touchStartYRef = useRef(0)
   const cancellingRef = useRef(false)
   const recordingRef = useRef(false)
+  const startTimeRef = useRef(0)
 
   const canVoice = voiceSupported && !disabled && !isStreaming && !isUploading
   const canAttach = !disabled && !isStreaming && !isUploading
@@ -88,6 +89,7 @@ export default function MessageInput({
       recordingRef.current = true
       cancellingRef.current = false
       touchStartYRef.current = e.touches?.[0]?.clientY ?? 0
+      startTimeRef.current = Date.now()
       setIsRecording(true)
       setIsCancelling(false)
       startRecording()
@@ -115,9 +117,21 @@ export default function MessageInput({
       return
     }
 
+    // 空口/误触守卫（对齐 B 端 #2984 voice-guard）：<0.8s 不发转写，仅停止录音器
+    // （避免录满 60s 阻塞下一次录音），轻提示后复位
+    const recordingMs = Date.now() - startTimeRef.current
+    if (recordingMs < MIN_RECORDING_MS) {
+      void stopRecording().catch(() => {})
+      Taro.showToast({ title: '未检测到声音，已取消转写', icon: 'none' })
+      return
+    }
+
     try {
-      const result = await stopAndTranscribe()
-      if (result && result.text) {
+      const result = await stopAndTranscribe(recordingMs)
+      if (result.status === 'blocked') {
+        // 文件过小（<4KB）等守卫拦截：不发转写，轻提示（UI-007 转写失败文案不受影响）
+        Taro.showToast({ title: '未检测到声音，已取消转写', icon: 'none' })
+      } else if (result.status === 'ok') {
         onSend(result.text)
       } else {
         Taro.showToast({ title: '未听清，请重试', icon: 'none' })

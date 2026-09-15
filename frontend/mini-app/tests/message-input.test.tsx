@@ -18,13 +18,15 @@ import '@testing-library/jest-dom'
 import { render, screen, fireEvent, act } from '@testing-library/react'
 import Taro from '@tarojs/taro'
 import MessageInput from '../src/components/chat/MessageInput'
-import { startRecording, stopAndTranscribe, isVoiceSupported } from '../src/utils/voice'
+import { startRecording, stopRecording, stopAndTranscribe, isVoiceSupported } from '../src/utils/voice'
 import { chooseImages, uploadImages } from '../src/utils/imageUpload'
 
 jest.mock('../src/utils/voice', () => ({
   startRecording: jest.fn(),
+  stopRecording: jest.fn(() => Promise.resolve('/tmp/record.mp3')),
   stopAndTranscribe: jest.fn(),
   isVoiceSupported: jest.fn(() => true),
+  MIN_RECORDING_MS: 800,
 }))
 
 jest.mock('../src/utils/imageUpload', () => ({
@@ -33,6 +35,7 @@ jest.mock('../src/utils/imageUpload', () => ({
 }))
 
 const mockStartRecording = startRecording as jest.Mock
+const mockStopRecording = stopRecording as jest.Mock
 const mockStopAndTranscribe = stopAndTranscribe as jest.Mock
 const mockChoose = chooseImages as jest.Mock
 const mockUpload = uploadImages as jest.Mock
@@ -105,14 +108,25 @@ describe('MessageInput — 单容器（textarea 常驻，无模式切换）', ()
 })
 
 describe('MessageInput — 语音（按住说话，松开直接发送行为保持）', () => {
+  // 语音守卫（<0.8s 不发转写）依赖 Date.now() 差值：fake timers 可在 touchStart/touchEnd
+  // 之间精确推进时间，模拟「正常时长录音」（与 request.test.ts 同款 proven 模式）
+  beforeEach(() => {
+    jest.useFakeTimers()
+  })
+
+  afterEach(() => {
+    jest.useRealTimers()
+  })
+
   it('按住开始录音（录音条出现），松开转写后直接发送文本', async () => {
-    mockStopAndTranscribe.mockResolvedValue({ text: '我要查订单', durationMs: 1200 })
+    mockStopAndTranscribe.mockResolvedValue({ status: 'ok', text: '我要查订单', durationMs: 1200 })
     const { props } = renderInput()
 
     const btn = holdVoice()
     expect(mockStartRecording).toHaveBeenCalledTimes(1)
     expect(screen.getByText('正在说话，松开发送')).toBeInTheDocument()
 
+    jest.advanceTimersByTime(1000) // 正常时长（≥800ms）通过守卫
     await act(async () => {
       fireEvent.touchEnd(btn, { changedTouches: [{ clientY: 200 }] })
     })
@@ -121,6 +135,40 @@ describe('MessageInput — 语音（按住说话，松开直接发送行为保�
     expect(props.onSend).toHaveBeenCalledWith('我要查订单')
     // 录音条随录音结束消失
     expect(screen.queryByText('正在说话，松开发送')).not.toBeInTheDocument()
+  })
+
+  it('短按/误触（<0.8s）：不发转写、toast「未检测到声音，已取消转写」', async () => {
+    const { props } = renderInput()
+
+    const btn = holdVoice()
+    // 不推进时间：touchStart→touchEnd 间隔 ~0ms < 800ms ⇒ 守卫拦截
+    await act(async () => {
+      fireEvent.touchEnd(btn, { changedTouches: [{ clientY: 200 }] })
+    })
+
+    expect(mockStopAndTranscribe).not.toHaveBeenCalled()
+    expect(props.onSend).not.toHaveBeenCalled()
+    // 仍需停止录音器（避免录满 60s 阻塞下一次录音）
+    expect(mockStopRecording).toHaveBeenCalledTimes(1)
+    expect(mockToast).toHaveBeenCalledWith(
+      expect.objectContaining({ title: '未检测到声音，已取消转写' })
+    )
+  })
+
+  it('守卫拦截（文件过小等 stopAndTranscribe 返回 blocked）：不发送、toast「未检测到声音」', async () => {
+    mockStopAndTranscribe.mockResolvedValue({ status: 'blocked' })
+    const { props } = renderInput()
+
+    const btn = holdVoice()
+    jest.advanceTimersByTime(1000) // 时长正常，文件大小守卫仍拦截
+    await act(async () => {
+      fireEvent.touchEnd(btn, { changedTouches: [{ clientY: 200 }] })
+    })
+
+    expect(props.onSend).not.toHaveBeenCalled()
+    expect(mockToast).toHaveBeenCalledWith(
+      expect.objectContaining({ title: '未检测到声音，已取消转写' })
+    )
   })
 
   it('上滑超过阈值：录音条变取消提示，松开不转写不发送', async () => {
@@ -138,11 +186,12 @@ describe('MessageInput — 语音（按住说话，松开直接发送行为保�
     expect(props.onSend).not.toHaveBeenCalled()
   })
 
-  it('转写失败（null）→ toast「未听清」，不发送', async () => {
-    mockStopAndTranscribe.mockResolvedValue(null)
+  it('转写失败（failed）→ toast「未听清」，不发送', async () => {
+    mockStopAndTranscribe.mockResolvedValue({ status: 'failed' })
     const { props } = renderInput()
 
     const btn = holdVoice()
+    jest.advanceTimersByTime(1000)
     await act(async () => {
       fireEvent.touchEnd(btn, { changedTouches: [{ clientY: 200 }] })
     })
