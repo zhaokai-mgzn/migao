@@ -400,7 +400,14 @@ public class ProcessingOrderService {
     public ProcessingOrderResponse getDetail(String rawId, Long tenantId) {
         ProcessingOrder po = resolveProcessingOrder(rawId, tenantId);
         if (po == null) {
-            throw BusinessException.notFound("加工单");
+            // 订单还没有加工单是正常状态（issue #3887）：rawId 若能解析为有效订单（tenant 隔离），
+            // 返回 null → ApiResponse.success(null) → 前端 ProcessingOrderBlock 走
+            // res.data?.data ?? null / setNotFound(!data) 展示「生成加工单」态；
+            // 订单也不存在（真无效 ID）才保持 404。
+            if (resolveOrder(rawId, tenantId) == null) {
+                throw BusinessException.notFound("加工单");
+            }
+            return null;
         }
         return toResponse(po, tenantId);
     }
