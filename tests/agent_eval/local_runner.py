@@ -6976,13 +6976,19 @@ def completion_verdict(results: list, key_journey_ids: tuple = ()) -> dict:
             elif r.get("flake_released") and cid not in journey_set:
                 flake_released.append(cid)
             continue
-        if cid in journey_set:
+        # ⚠️ score<1.0 的**失败路径**同样必须先判复发（盲审缺陷二，判定跑
+        # 34923425338 实证）：OR-014 带 `cross_run_recurrence {prior_runs:
+        # [34916256903], prior_count: 1}`，旧代码此处不查 `_is_recurring` ⇒
+        # 分类 reproducible 走下方 `deterministic` 分支 ⇒ `systemic_recurrence`
+        # 恒漏报该条（本轮因 det 已阻塞而无害，但构成口径不合）。判据与通过
+        # 路径同一句：凡 `prior_count>0` 且指纹同型 ⇒ 一律进 systemic，
+        # 不因"本轮失败/旅程身份/分类非放行"而改桶。
+        if _is_recurring(r):
+            systemic.append(cid)
+        elif cid in journey_set:
             journey_fail.append(cid)
         elif str(r.get("classification") or "") in _COMPLETION_RELEASED_CLASSES:
-            if _is_recurring(r):
-                systemic.append(cid)
-            else:
-                flake_released.append(cid)
+            flake_released.append(cid)
         elif cid in harness_bad:
             pass          # 已单列，不重复计入"必须处理的失败"
         else:
@@ -7108,24 +7114,30 @@ def _assertions_fired_summary(case, scoring_checks: list, results: list, score: 
 
 
 def _unfailable_green(score: float, scoring_checks: list, assertions_fired: dict,
-                      has_order_before: bool) -> bool:
+                      has_order_before: bool = False) -> bool:
     """通过用例的**假绿候选**标记（与 verdict 分开单列，**不改 ok**）。
 
     判据：score>=1.0 且没有任何「可失败支撑」——
       ① 计分断言全为存在性/散文（或无任何计分断言 ⇒ score=1.0 纯构造）；
-      ② 效果层（must_succeed/db_verify/amount_verify/output_verify）均未真触发；
-      ③ 无跨轮行为层（order_before 时序断言，taxonomy 判它算行为层）。
+      ② 效果层（must_succeed/db_verify/amount_verify/output_verify）均未真触发。
     其余 case 级字段（forbidden_text/required_args/want_text/…）**不计**支撑
     （同 taxonomy：required_args 不算行为层证据、forbidden_text 不得单独承载、
     裸工具名期望也不算行为层证据）。
+
+    ⚠️ `has_order_before` **已弃用，判据不再读它**（盲审判据「同 profile 必同
+    标记」，判定跑 34923425338 实证）：`order_before` 时序断言**不进**
+    `assertions_fired` profile ⇒ 若它参与标记，同一 profile（OR-010/OR-015/
+    PG-013 逐字段相同）会得到不同标记 —— OR-015/PG-013 声明了 `order_before`
+    即漏标（`if has_order_before: return False` 分支）。标记因此**只读 profile**
+    （scoring 可失败性 + 效果层触发）。参数保留仅为兼容既有调用、并让红证夹具
+    直陈该漏标机制；taxonomy 把 `order_before` 判为行为层，服务的是
+    `forbidden_text` 禁令规则（不得单独承载）那个问题，与本标记是两回事。
     """
     if score < 1.0:
         return False
     if any(_scoring_check_is_failable(c) for c in scoring_checks):
         return False
     if any((assertions_fired.get("effect_layers") or {}).values()):
-        return False
-    if has_order_before:
         return False
     return True
 
