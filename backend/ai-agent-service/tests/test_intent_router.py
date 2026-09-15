@@ -592,3 +592,35 @@ class TestEntityHint:
         with patch("app.memory.context_manager.get_context_manager", return_value=fake):
             hint = await _build_entity_hint("sess-empty")
         assert hint == ""
+
+
+class TestProductImageRouting:
+    """迭代4（issue #3942）：「设主图」类意图必须 L1 确定性路由到商品域。
+
+    根因（评测 run 34981397684）：KEYWORD_MAP 的 PRODUCT_INQUIRY 缺主图类关键词，
+    「把遮光窗帘的主图设成这张色卡图」L1 无命中 → 降级 L2 分类器（置信 0.4）误分
+    general skill（无 product_manage）→ 主图写能力不可达、守卫事实门正确放行不了
+    → PR-026/027 评测不可满足（生产同句也因模型方差时好时坏 = 路由不稳的隐性缺陷）。
+    """
+
+    @pytest.fixture
+    def matcher(self):
+        return RuleMatcher()
+
+    def test_set_main_image_routes_to_product(self, matcher):
+        for t in [
+            "把遮光窗帘的主图设成这张色卡图",
+            "先把这个商品的主图换掉",
+            "帮我改一下这款窗帘的主图",
+            "上传主图到这款商品",
+            "这款商品的详情图帮我换一张",
+        ]:
+            result = matcher.match(t)
+            assert result.intent == IntentType.PRODUCT_INQUIRY, f"{t!r} -> {result.intent}"
+
+    def test_plain_image_word_does_not_overroute(self, matcher):
+        # 裸「图片」语义太宽（图片澄清/发图识别），刻意不放入关键词表 → 不强行路由商品域
+        for t in ["这张图片里有什么", "我发张图片给你看看"]:
+            result = matcher.match(t)
+            assert result is None or result.intent != IntentType.PRODUCT_INQUIRY, \
+                f"{t!r} -> {result.intent}"
