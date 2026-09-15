@@ -48,24 +48,28 @@ class TranscribeResponse(BaseModel):
 
 
 class _CollectorCallback(RecognitionCallback):
-    """收集 ASR 识别结果"""
+    """收集 ASR 识别结果（按 sentence_id 保留每句最新文本，拼接完整转写）
+
+    缺陷修复（B 端语音「只能识别后半段」）：旧实现只取 sentences[-1]（最后一句），
+    DashScope paraformer-realtime 对带停顿的多句语音会逐句返回，
+    用户说的前半句（如"你好"）被整段丢弃。现按 sentence_id 保留每句最新
+    文本（partial 中间结果被同句后续事件自然覆盖），full_text 拼接全部句子。
+    """
 
     def __init__(self):
-        self.sentences: list[str] = []
+        self._by_sentence: dict[int, str] = {}
 
     def on_event(self, result) -> None:
         sentence = result.get_sentence()
         if sentence and sentence.get("text"):
             text = sentence["text"].strip()
             if text:
-                self.sentences.append(text)
+                self._by_sentence[sentence.get("sentence_id", 0)] = text
 
     @property
     def full_text(self) -> str:
-        """已稳定的完整文本（取最后一个句子作为最终结果）"""
-        if not self.sentences:
-            return ""
-        return self.sentences[-1]
+        """完整文本 = 拼接所有句子的最新结果（dict 保持句子首见顺序）"""
+        return "".join(self._by_sentence.values())
 
 
 def _convert_to_wav(audio_data: bytes, source_format: str) -> bytes:
