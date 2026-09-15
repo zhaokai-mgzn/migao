@@ -379,6 +379,16 @@ job 2  Mini-app e2e static contract preflight
 2. **订单列表在有数据时的行内动作**（查看 / 发货 / 关闭 / 备注 / 确认付款 / 确认收货）：截图只证明了**空表**形态；
 3. **加工项 CRUD 的写路径**（新增 / 编辑 / 删除）：本轮只证明了**列表空态**形态。
 
+> **⚠️ 7.6 追加结论（issue #3912 / fix-shipdoc）**：发货单「订单详情 → 已发货 → 补打」曾为**演示阻塞项**
+> —— #3904（body 级 portal + display:none 隔离）删掉了 ShipmentDoc 的 visibility 恢复规则，而订单详情页
+> `ProcessingOrderBlock` 仍带旧 `@media print { body * { visibility: hidden } }` ⇒ 补打纸面 invisible（空白纸）。
+> 已随 #3912 修复（恢复 `.shipment-print-area, .shipment-print-area * { visibility: visible; }`），
+> 机器级绿证 = 本地 `E2E_MOCK_AUTH=true npx playwright test --project=web e2e/specs/orders/shipment-doc.spec.ts`
+> 改前 1 failed（`unexpected value "hidden"`）→ 改后 4 passed。**演示前人工核验（真后端，约 2 分钟）**：
+> ① 订单列表 → 任一「已发货」订单 → 订单详情；② 点「打印发货单」，在打印预览/真实打印里核对纸面三项：
+> **发货人**（= 落库 shipper_name，非空且为实际发货人）、**运单号**（= 已落库 trackingNo）、**打印媒体隔离**
+> （预览只见发货单纸面，无后台侧边栏/按钮/表单）；③ 确认无第二页空白。仍建议走通后再演。
+
 ### 7.7 与既有 issue 的关系
 
 - 关联 **#3854**（演示证据包）／**#3696**／**#3817**：本节只做**归因细化**，不改它们的结论；
