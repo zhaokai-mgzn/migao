@@ -689,6 +689,23 @@ async def _run_pre_clean(token: str, spec: dict) -> str:
     return _classify_preclean_message(spec, await _run_pre_clean_action(token, spec))
 
 
+async def _list_products_matching(client, token: str, keyword: str, size: int = 20) -> list:
+    """按关键词列商品，并只保留**名字真的含该关键词**的项（issue #3835 抽出的**单一真相源**）。
+
+    为什么必须只有这一份定义：服务端 `GET /api/admin/products?keyword=` 是**模糊匹配**
+    （`product_search` 语义），会带上「星空全遮光窗帘」这类只沾边的名字；而 `product_remove` /
+    `product_dedupe` 要的是"**同名/子串命中**"这个**精确**口径。三处（两个清理动作 +
+    `_probe_product_count` 前置探针）若各写一份"怎么算命中"，就会出现"清理按子串、计数按模糊"
+    的口径漂移 —— 前置断言与清理动作对不上号（`migao-dev-flow` §18 单一真相源）。
+
+    返回原始 item 列表（order 保持服务端顺序）；调用方自行决定保留/删除。
+    """
+    r = await client.get(f"{ADMIN_API}/api/admin/products", headers=_admin_headers(token),
+                         params={"keyword": keyword, "page": 1, "size": size}, timeout=15)
+    items = (_safe_json(r, {}) or {}).get("data", {}).get("items", [])
+    return [p for p in items if keyword in str(p.get("name", ""))]
+
+
 async def _run_pre_clean_action(token: str, spec: dict) -> str:
     """一次 pre_clean 动作的**实现体**（原始消息；族归类见 `_run_pre_clean`）。
 
@@ -715,13 +732,9 @@ async def _run_pre_clean_action(token: str, spec: dict) -> str:
         kw = str(spec.get("product_keyword", ""))
         async with httpx.AsyncClient() as c:
             h = _admin_headers(token)
-            r = await c.get(f"{ADMIN_API}/api/admin/products", headers=h,
-                            params={"keyword": kw, "page": 1, "size": 20}, timeout=15)
-            items = (_safe_json(r, {}) or {}).get("data", {}).get("items", [])
+            items = await _list_products_matching(c, token, kw)
             removed = 0
             for p in items:
-                if kw not in str(p.get("name", "")):
-                    continue
                 pid = p.get("id")
                 await c.put(f"{ADMIN_API}/api/admin/products/{pid}/status", headers=h,
                             json={"status": "off_sale"}, timeout=15)
@@ -737,11 +750,8 @@ async def _run_pre_clean_action(token: str, spec: dict) -> str:
         price = spec.get("price")  # 可选：限定价格
         async with httpx.AsyncClient() as c:
             h = _admin_headers(token)
-            r = await c.get(f"{ADMIN_API}/api/admin/products", headers=h,
-                            params={"keyword": kw, "page": 1, "size": 20}, timeout=15)
-            items = (_safe_json(r, {}) or {}).get("data", {}).get("items", [])
-            matched = [p for p in items if kw in str(p.get("name", ""))
-                       and (price is None or p.get("price") == price)]
+            matched = [p for p in await _list_products_matching(c, token, kw)
+                       if price is None or p.get("price") == price]
             if len(matched) <= 1:
                 return f"「{kw}」无重复（{len(matched)} 件），无需去重"
             # 保留最早创建的（createdAt 最小）——种子商品
@@ -2671,6 +2681,10 @@ _CASE_ATOM_RULES = (
     (re.compile(r"^pre_clean: 前置未应用"), "precondition_not_applied(pre_clean)"),
     (re.compile(r"^PRECONDITION_NOT_APPLIED"), "precondition_not_applied(pre_clean)"),
     (re.compile(r"^PRECONDITION_NOT_RESTORED"), "precondition_not_restored(pre_clean)"),
+    # 声明层前置断言（`precondition: [...]`，issue #3781 / #3835）：与 pre_clean 同族但
+    # **来源不同**（一个是"复位动作没生效"，一个是"运行期观测到靶子漂移"）⇒ 固定 token
+    # 里带 type，使两次尝试的"同一件事"折叠一致（值/号码/商品名不进 token）。
+    (re.compile(r"^precondition\[([A-Za-z0-9_]+)\]"), "precondition_not_applied(declared:{0})"),
     # ③ 参数层：工具 + 键名 = 结构身份（值/轮次/缺失值文案丢弃）
     (re.compile(rf"^required_args\[({_TOOL})\.([^\]]+)\]"), "required_arg({0},{1})"),
     (re.compile(rf"^forbidden_args\[({_TOOL})\.([^\]]+)\]"), "forbidden_arg({0},{1})"),
@@ -4143,12 +4157,27 @@ async def check_debug_user_precondition(token: str, case) -> list:
 # ⚠️ 措辞红线：成功路径的消息**不得含**「未复位」/「失败」（见 `_run_pre_clean` docstring）。
 _PRECONDITION_NO_DRIFT = 0
 
+# ── precondition type 的**唯一真相源**（issue #3835）────────────────────────────
+# 键 = `precondition[].type`；值 = 该 type 的 `source` 是什么（只用于**消息措辞**，
+# 让"哪个靶子坏了"在报告里一眼可读）。
+# ⚠️ **未登记的 type 必须仍然 fail-closed**（`check_precondition_declared` 报 config_error，
+# 不让用例带一个不生效的守卫跑）—— 新增 type 时只加这里 + 在捕获/回读点接上探针，
+# **不得**放宽 `check_precondition_drift` / `check_precondition_declared` 的兜底分支。
+_PRECONDITION_TYPES: dict = {
+    "order_count_for_phone": "手机号名下订单数",
+    "product_count_for_keyword": "名字含该关键词的商品件数",
+}
+
 
 def precondition_capture_shape(specs: list) -> dict:
     """声明的前置断言里**需要取基线**的源（按类型）——纯函数，便于单测与静态守卫。
 
-    当前支持：
+    当前支持（唯一真相源 = `_PRECONDITION_TYPES`）：
       · `order_count_for_phone`：`{"source": "<手机号>"}` → 基线 = 该号码名下订单总数。
+      · `product_count_for_keyword`：`{"source": "<商品名关键词>"}` → 基线 = 名字**含该关键词**
+        的商品件数（口径与 `product_remove`/`product_dedupe` 同一份实现
+        `_list_products_matching`，**不复制第二份"怎么数商品"的定义**）。
+        `source` 字段名对两种类型语义一致 =「我依赖的那个共享资源**的不可变键**」。
     返回 `{type: [source, …]}`（保序去重）。未知类型原样返回 —— 由
     `check_precondition_declared` 静态守卫判"声明了没人实现的类型"（fail-closed）。
     """
@@ -4193,18 +4222,42 @@ async def _probe_phone_order_count(token: str, phone: str) -> int | None:
         return None
 
 
+async def _probe_product_count(token: str, keyword: str) -> int | None:
+    """名字**含该关键词**的商品件数；取不到返回 None（issue #3835）。
+
+    口径与 `product_remove`/`product_dedupe` **共用同一份实现**
+    （`_list_products_matching`：服务端 keyword 模糊匹配 + 客户端 `kw in name` 精确子串）——
+    这样"清理动作删的"与"前置断言数的"必定是同一批对象（§18 单一真相源）。
+    返回 None = 请求/解析异常（**不**当成 0：0 会被读成"商品没了"，是另一种误判）。
+    """
+    if not str(keyword or "").strip():
+        return None
+    try:
+        async with httpx.AsyncClient() as c:
+            return len(await _list_products_matching(c, token, str(keyword), size=50))
+    except Exception:
+        return None
+
+
 def check_precondition_drift(specs: list, before: dict, after: dict) -> list:
-    """运行期前置一致性断言（**纯函数**，issue #3781）——返回断言级问题串。
+    """运行期前置一致性断言（**纯函数**，issue #3781 / #3835）——返回断言级问题串。
 
     `before`/`after` 形态：`{"<type>:<source>": int}`（取不到的源不入字典）。
-    判据：`after - before > max_growth`（默认 `_PRECONDITION_NO_DRIFT = 0`，
-    即"运行期间**不得**新增"）→ 前置漂移。
+    **两条判据**（缺任一条都会让"前置坏了"伪装成"agent 表现不好"）：
+      ① **基线判据**（可选，声明 `expect: <int>` 时生效）：`before != expect` ⇒
+         前置**本就不成立**（例如用例开跑时同名商品已有 2 件 —— 上一跑的残留/别人的
+         运行期污染）。只看漂移会漏掉这一格：基线本来就是坏的，`after - before` 仍为 0。
+      ② **漂移判据**：`after - before > max_growth`（默认 `_PRECONDITION_NO_DRIFT = 0`，
+         即"运行期间**不得**新增"）⇒ 前置被**运行中的并行用例**改写。
     取不到基线/现值时**不报**（那是环境层问题，由 pre_clean 消息与 infra 通道承载；
     在这里报会把"网络抖动"伪装成"前置不成立"，正是本仓库反复踩的归因污染）。
 
     ⚠️ 这是**前置**断言，不是行为断言：它判的是"harness 给的靶子还在不在"，
     与 agent 对错**正交** —— 故消息里显式写出 `capture/after` 两个读数。
+    消息统一以 `precondition[<type>]` 开头 ⇒ 被 `_failure_signature` 折成
+    `precondition_not_applied(declared)`，与行为失败分属不同根因原子。
     """
+
     issues = []
     for s in specs or []:
         if not isinstance(s, dict):
@@ -4215,7 +4268,7 @@ def check_precondition_drift(specs: list, before: dict, after: dict) -> list:
         if not t or not src:
             issues.append(f"precondition: 配置缺 type/source（该断言会静默跳过）: {s!r}")
             continue
-        if t != "order_count_for_phone":
+        if t not in _PRECONDITION_TYPES:
             issues.append(
                 f"precondition: 未知 type {t!r}（该断言会静默跳过）—— "
                 f"请实现后再声明，禁止留一个不生效的守卫")
@@ -4224,16 +4277,32 @@ def check_precondition_drift(specs: list, before: dict, after: dict) -> list:
         b, a = before.get(key), after.get(key)
         if b is None or a is None:
             continue
+        what = _PRECONDITION_TYPES[t]
+        expect = s.get("expect")
+        if expect is not None:
+            try:
+                expect_i = int(expect)
+            except (TypeError, ValueError):
+                issues.append(
+                    f"precondition[{t}]: `expect` 非整数（该断言会静默跳过）: {expect!r}")
+                continue
+            if b != expect_i:
+                issues.append(
+                    f"precondition[{t}]: 前置**本就不成立** —— {what} {src!r} "
+                    f"capture={b}，而用例声明 expect={expect_i}。本次红/绿**不可归因于 "
+                    f"agent 行为**：靶子在被测事件发生**之前**就已经不是用例依赖的那个"
+                    f"（典型来源：上一跑的残留、或别的用例在运行期造了同名副本，#3835）")
+                continue
         try:
             max_growth = int(s.get("max_growth", _PRECONDITION_NO_DRIFT))
         except (TypeError, ValueError):
             max_growth = _PRECONDITION_NO_DRIFT
         if a - b > max_growth:
             issues.append(
-                f"precondition[{t}]: 前置在本次运行期间漂移 —— 手机号 {src} 名下订单 "
+                f"precondition[{t}]: 前置在本次运行期间漂移 —— {what} {src!r} "
                 f"capture={b} → after={a}（允许增长 ≤{max_growth}）。本次红/绿"
                 f"**不可归因于 agent 行为**：并行用例改写了本用例依赖的目标集合"
-                f"（`auto_respond` 选中的可能是别人刚建的订单）")
+                f"（`auto_respond` 选中的可能是别人刚建的对象）")
     return issues
 
 
@@ -4241,7 +4310,7 @@ def check_precondition_declared(specs: list) -> list:
     """声明层静态一致（L0）：声明的 type 必须已有实现（fail-closed，不静默跳过）。"""
     issues = []
     for t in precondition_capture_shape(specs):
-        if t != "order_count_for_phone":
+        if t not in _PRECONDITION_TYPES:
             issues.append(f"precondition: 声明的 type {t!r} 没有实现（断言会静默跳过）")
     return issues
 
@@ -6122,6 +6191,11 @@ async def run_suite(cases, label: str, classify: bool = True, retry_budget: int 
                         _n = await _probe_phone_order_count(token, _src)
                         if _n is not None:
                             _precond_base[f"order_count_for_phone:{_src}"] = _n
+                    for _src in precondition_capture_shape(_precond_specs).get(
+                            "product_count_for_keyword", []):
+                        _n = await _probe_product_count(token, _src)
+                        if _n is not None:
+                            _precond_base[f"product_count_for_keyword:{_src}"] = _n
                     if _precond_base:
                         _precond_base_label = ("capture" if _attempt_no == 1
                                                else f"capture(attempt{_attempt_no})")
@@ -6135,6 +6209,11 @@ async def run_suite(cases, label: str, classify: bool = True, retry_budget: int 
                         _n = await _probe_phone_order_count(token, _src)
                         if _n is not None:
                             _after[f"order_count_for_phone:{_src}"] = _n
+                    for _src in precondition_capture_shape(_precond_specs).get(
+                            "product_count_for_keyword", []):
+                        _n = await _probe_product_count(token, _src)
+                        if _n is not None:
+                            _after[f"product_count_for_keyword:{_src}"] = _n
                     _issues = check_precondition_drift(_precond_specs, _precond_base, _after)
                     if _issues:
                         # 前置不成立 ⇒ 本用例本次尝试的判定**不可归因于 agent**：

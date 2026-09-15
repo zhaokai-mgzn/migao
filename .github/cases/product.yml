@@ -480,7 +480,7 @@ cases:
       - ai-chat.validate-input
     user_inputs:
       - "我要创建一个新商品"
-      - "名称叫夏日清风窗帘，价格 168"
+      - "名称叫E2E引导建品样品帘，价格 168"
       - "分类选窗帘"
       - auto_select: true
       - "颜色有米白和浅灰"
@@ -488,11 +488,21 @@ cases:
       - "需要打孔和韩式折边这两个加工项"
       - "确认创建，没问题"
       - "确认"
-    # 全局命名空间声明（issue #3781）：本用例**往全局商品命名空间里写**该名称，
-    # 与同名商品的建/删用例自动互斥（否则会出现"同名多件"→ agent 发选择卡 → 目标工具不执行）。
+    # ── 商品名必须**用例自有**（issue #3835 的跨用例污染根治，与 PR-016 同口径）──────
+    # 旧输入是「名称叫夏日清风窗帘」，而**种子商品 `prod_eval_summer` 就叫「夏日清风窗帘」**
+    # （`tests/agent_eval/fixtures/xiaobu_eval_seed.sql`）⇒ 运行期造出第二件同名商品，且两处
+    # 防线同时失效：
+    #   ① `namespaces` 对本例**毫无隔离力** —— 隔离是「≥2 条声明同一键才串行」
+    #      （`local_runner.namespace_conflict_groups`），而「夏日清风窗帘」**只有本用例一个
+    #      声明者** ⇒ 争用组不成立 ⇒ 它与 OR-017/OR-018 这些按名读该商品的用例**真并行**
+    #      （「声明了 ⇒ 有隔离」是错觉）；
+    #   ② 旧 `pre_clean` 清的是**另一个名字**（`product_remove{测试窗帘}`）⇒ 本用例自己造的
+    #      那件**从头到尾没人清**。库级实证（run 34908262839 的 admin-api 日志）：
+    #      `23:34:36.113 创建商品成功: id=84d54b12… name=夏日清风窗帘`，该 run **无任何删除**。
+    # 修法（同 #3800 对 PR-008、PR-012 的「用例自有名字」）：换成**本用例独占**的名字 +
+    # 只清理自己这个名字 ⇒ 读者按关键词搜「夏日清风窗帘」永远只命中种子 1 件。
     namespaces:
-      - "product_name:测试窗帘"
-      - "product_name:夏日清风窗帘"
+      - "product_name:E2E引导建品样品帘"
 
     expectations:
       - tool: interact
@@ -508,10 +518,14 @@ cases:
       - "创建的加工项数量 = 2"
       - "全程 AI 主动引导，不等待用户逐项输入"
     pre_clean:
+      # 只清**本用例自己的名字**（issue #3835）：旧值 `product_remove{测试窗帘}` 既没清自己
+      # 造的「夏日清风窗帘」，又因 `product_remove` 是**子串**匹配而连带命中 PR-008 的
+      # 「测试窗帘A」⇒ 一次运行期的破坏性误删（`#3800` 记录的同一坑）。自有名唯一之后，
+      # 这两层风险同时消失。
       - type: product_remove
-        product_keyword: "测试窗帘"
+        product_keyword: "E2E引导建品样品帘"
     skip_reason: ""
-    merge_log: "eval M002 吸收 verification 8.3（缺信息补全 = validate_input 引导）"
+    merge_log: "eval M002 吸收 verification 8.3（缺信息补全 = validate_input 引导）；2026-09-15（issue #3835）改名去种子撞名（同 PR-016 口径）：`名称叫夏日清风窗帘` → `名称叫E2E引导建品样品帘`（种子 `prod_eval_summer` 就叫「夏日清风窗帘」⇒ 运行期造同名副本；且它是**单一声明者** ⇒ 争用组不成立、隔离为零）；`pre_clean: product_remove{测试窗帘}` → 自有名（顺带消除对 PR-008「测试窗帘A」的子串误删）；expectations/data_checks 原样未动"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_mibao_advanced_multiturn.py"
@@ -714,7 +728,7 @@ cases:
       - product-sku-stock.create-flow
       - processing-manage.crud
     user_inputs:
-      - "录入这个商品，名称遮光窗帘，价格 100"
+      - "录入这个商品，名称E2E建品流程样品帘，价格 100"
       - "分类选窗帘"
       - auto_select: true
       - auto_fill:
@@ -733,24 +747,37 @@ cases:
       # 而收尾轮需要保留原文「确认」的兜底语义 → 用 auto_respond 才能两者兼得。
       - auto_respond:
           fallback: "确认"
-    # 全局命名空间声明（issue #3781）：本用例**往全局商品命名空间里写**该名称，
-    # 与同名商品的建/删用例自动互斥（否则会出现"同名多件"→ agent 发选择卡 → 目标工具不执行）。
+    # 全局命名空间声明（issue #3781）：本用例**往全局商品命名空间里写**该名称。
+    # ⚠️ 隔离的判据是「**≥2 条用例声明同一键**才进串行道」
+    # （`local_runner.namespace_conflict_groups` 只收这样的键）⇒ **单一声明者 = 零隔离**。
+    # 旧值 `product_name:遮光窗帘` 之所以"看起来有隔离"，只是因为 PR-005/PR-007/CR-001/
+    # CR-003/OR-015 恰好也声明了它 —— 而**真正按名读它的 PP-001/PR-017/OR-014/OR-016/
+    # OR-017/OR-018… 都没声明**，于是它们与 PR-016 真并行（这就是 issue #3835 的病灶）。
     namespaces:
-      - "product_name:遮光窗帘"
-    # 自清理（issue #3800）：本用例**建一件与种子同名**的商品（种子 `prod_eval_blackout`
-    # 也叫「遮光窗帘」，见 fixtures 的 seed），而 `namespaces` 只保证**并行互斥**、
-    # **不解决重试前置等价性** —— #3751 的重试复位按 `pre_clean` **opt-in**，没有它
-    # 就不复位 ⇒ 首跑建出的那件留到重试 ⇒ agent **正确地**拒绝建重复商品
-    # （重试轮 trace 原文：「系统里已经有一款完全一致的「遮光窗帘」了，再建一条会变成重复商品」）
-    # ⇒ 两次尝试前置不同（首跑 1 件 → 重试 2 件）⇒ 指纹漂移 ⇒ 误判 `unstable`。
-    # 判据（run 34865780382 的 flake 台账）：首跑指纹里**没有** `no_success(product_manage)`
-    # （= 首跑真的建出来了）而重试指纹有 ⇒ 两次成因不同，根因就是这一格。
-    # ⚠️ 只能用 `product_dedupe`（**保留最早创建 = 种子**、删掉用例自造的那件）：
-    # `product_remove` 按子串删**全部**命中项 ⇒ 会连种子一起删，而「遮光窗帘」是
-    # PR-005/PR-007/CR-001/CR-003/OR-015 的共享前置（改名空间声明可见）。
+      - "product_name:E2E建品流程样品帘"
+    # ── 商品名必须**用例自有**（issue #3835 的跨用例污染根治）─────────────────────
+    # 旧输入是「录入这个商品，名称遮光窗帘，价格 100」，而**种子商品 `prod_eval_blackout`
+    # 就叫「遮光窗帘」**（`tests/agent_eval/fixtures/xiaobu_eval_seed.sql`）⇒ 本用例在运行期
+    # 往共享命名空间里造出**第二件同名商品**。库级铁证（判定跑 run 34908262839 的 admin-api
+    # 日志）：`23:37:45.569 创建商品成功: id=d7d3dd98… name=遮光窗帘` →
+    # `23:40:46.327 删除商品成功`；而 PR-016 自己的窗口是 `23:35:40 → 23:37:49`
+    # ⇒ **副本在写方结束后还活了 ≈3 分钟**。该窗口内起跑的 PR-004 / PR-021 / CH-007 /
+    # OR-010 / OR-011 / OR-028 全部 `product_search(products=2)`，首跑失败指纹 `PP-001` /
+    # `PR-017` / `OR-014` 都是「见 2 件同名 → agent **正确地**要求澄清 → 写工具永不执行」。
+    # ⇒ **串行化与 product_dedupe 都修不好这一类**（前者只防重叠、防不住写方结束后的残留；
+    # 后者只在自己起跑前去重、管不了运行中途别人造出来的副本）。只有"写方不去写共享名"能根治。
+    #
+    # 自清理（issue #3800 + #3835）：用例自建对象必须能把前置复位成「**不存在**」。
+    # 旧值 `product_dedupe{遮光窗帘}` 是"保留最早创建（= 种子）"—— 那是**共享名**下唯一安全的
+    # 选择，但代价是它永远留下 1 件、且运行期全程对外可见。自有名之后语义才干净：
+    # `product_remove{自有名}` 在**每次尝试前**把本用例的产物删净 ⇒ 首跑与重试的前置
+    # **都是「不存在」**（`_PRECONDITION_NOT_APPLIED` 对清理型是良性 no-op，
+    # 见 `_PRECLEAN_CLEANUP_TYPES`）。
+    # ⚠️ `product_remove` 是**子串**匹配 ⇒ 自有名必须保证"没有任何其它用例的商品名包含它"
+    # （已由 `tests/unit_ci_workflows/test_eval_product_name_pollution.py` 的静态不变式锁定）。
     pre_clean:
-      - type: product_dedupe
-        product_keyword: "遮光窗帘"
+      - type: product_remove
+        product_keyword: "E2E建品流程样品帘"
 
     expectations:
       - tool: category_manage
@@ -814,6 +841,19 @@ cases:
       # 「哪一件」选择卡，写操作落到不确定的那一件上。
       - type: product_dedupe
         product_keyword: "遮光窗帘"
+    # ── 前置自断言（issue #3835 / `migao-dev-flow` §18.4）────────────────────────
+    # 本用例靠**商品名**定位唯一的写对象：有 2 件同名时 agent **正确地**澄清（判定跑
+    # run 34908262839 首跑原文：「搜索到 **2 个**同名「遮光窗帘」，需要您确认改哪一个」）⇒
+    # `product_update` 永不执行 ⇒ 判红成 `no_success(product_update)`，读起来像
+    # 「agent 不改商品」（同 run 重试 `products=1` 即通过）。
+    # `pre_clean` 只在**自己起跑前**去重，挡不住运行中途由别的用例造出来的副本 ⇒
+    # 必须由 runner 在运行期观测：`expect: 1` 判基线（上一跑残留），`max_growth` 默认 0
+    # 判"被并行用例中途改写"。前置不成立时折成
+    # `precondition_not_applied(declared:product_count_for_keyword)`，与行为失败分属不同根因原子。
+    precondition:
+      - type: product_count_for_keyword
+        source: "遮光窗帘"
+        expect: 1
     expectations:
       - tool: product_update or product_manage
         args:
@@ -881,7 +921,7 @@ cases:
     # 「色卡识别结果」form 卡发晚一轮时，结构化路径整场失效（只剩自包含文本兜底）。
     # 声明在用例级 = 载荷脱离轮次位置（全场任意轮可用）；R2 轮级声明保留（优先级更高）。
     auto_fill:
-      name: "2699系列雪尼尔窗帘面料"
+      name: "E2E色卡建品样品面料"
       price: "23.8"
       colors: "2699-01 米白"
       door_widths: "2.8米"
@@ -901,9 +941,9 @@ cases:
       #    则退回自包含文本。原 R3 文本里的「颜色…门幅…」是**未替换的占位符**（实测 agent 回
       #    「您消息里的『颜色…门幅…』被截断了」）→ 这里补真实字段值。
       - auto_respond:
-          fallback: "商品名称: 2699系列雪尼尔窗帘面料\n单价(元/米): 23.8\n颜色: 2699-01 米白\n门幅: 2.8米\n售卖方式: 散剪\n货号: XNE2699"
+          fallback: "商品名称: E2E色卡建品样品面料\n单价(元/米): 23.8\n颜色: 2699-01 米白\n门幅: 2.8米\n售卖方式: 散剪\n货号: XNE2699"
           form_values:
-            name: "2699系列雪尼尔窗帘面料"
+            name: "E2E色卡建品样品面料"
             price: "23.8"
             colors: "2699-01 米白"
             door_widths: "2.8米"
@@ -920,7 +960,7 @@ cases:
       - repeat_until:
           tool_called: product_manage
           max: 3
-        fallback: "商品名称: 2699系列雪尼尔窗帘面料；单价(元/米): 23.8；颜色: 2699-01 米白；门幅: 2.8米；售卖方式: 散剪；货号: XNE2699；已选加工项：刺绣工艺 ¥30/平方米、韩式波浪折边 ¥12/米；确认创建"
+        fallback: "商品名称: E2E色卡建品样品面料；单价(元/米): 23.8；颜色: 2699-01 米白；门幅: 2.8米；售卖方式: 散剪；货号: XNE2699；已选加工项：刺绣工艺 ¥30/平方米、韩式波浪折边 ¥12/米；确认创建"
     expectations:
       - tool: product_manage
         args:
@@ -931,7 +971,7 @@ cases:
     # 建品用例的核心产出就是这个 create，故回填 canonical 写成功断言（fail-closed）：
     # 一次都没成功 → 判红。**不放宽**任何既有断言（required_args / forbidden_text 原样）。
     # ⚠️ 为什么**不**同时回填 db_verify[product_by_name]（§14.1 点名的另一半）：
-    #   本用例建的商品名 `2699系列雪尼尔窗帘面料` 与评测**种子商品同名同价**
+    #   本用例建的商品名 `E2E色卡建品样品面料` 与评测**种子商品同名同价**
     #   （`tests/agent_eval/fixtures/mibao_eval_seed.sql` 的 `prod_eval_2699`，¥23.80），
     #   而 `_fetch_product_configs`（`local_runner.py:1905-1916`）按 keyword 取**首条** → 区分不了
     #   「本次新建的」与「种子」；种子恒在 ⇒ 该断言**不管本次 create 成没成功都会绿**（比不加更糟：
@@ -953,12 +993,28 @@ cases:
         fields:
           - "specifications"
           - "processing_item_configs.customPrice"
+    # 全局命名空间声明（issue #3781）：本用例**往全局商品命名空间里写**该名称；
+    # 声明的是**本用例独占**的名字（issue #3835）—— 单一声明者不产生争用组，但
+    # 「我写哪个全局资源」必须如实登记（`test_eval_product_name_pollution.py` 按它判所有权）。
+    namespaces:
+      - "product_name:E2E色卡建品样品面料"
+    # ── 商品名必须**用例自有**（issue #3835，同 PR-016/PR-011 口径）─────────────────
+    # 旧值 `E2E色卡建品样品面料` 与**评测种子商品同名同价**（mibao seed 的 `prod_eval_2699`，¥23.80）——
+    # 本用例的 merge_log 早就记过这一格带来的实测危害：「商品名与种子同名同价、
+    # `_fetch_product_configs` 取 keyword 首条**无法区分本次新建与种子**」。
+    # 同一个「同名」还让**按名读它**的用例在运行期看到 2 件 ⇒ `product_search` 返回
+    # products=2（判定跑 run 34908262839 的 PR-019 自身 trace：
+    # `product_manage(product_id=… name=E2E色卡建品样品面料);product_search(products=2 total=2 …)`）。
+    # 换成用例自有名后：① 种子保持唯一；② 本次新建可被关键字**唯一**定位（顺带解掉
+    # merge_log 记的 db_verify 歧义）；③ 读者不受影响（没有任何用例搜这个名字）。
+    #
+    # 自清理：自有名之后 `product_remove{自有名}` 能把前置复位成「**不存在**」
+    # （`product_dedupe` 只会留下 1 件 —— 那是共享名下的无奈选择，见 PR-016 的注解）。
     pre_clean:
-      - type: product_dedupe
-        product_keyword: "2699系列雪尼尔窗帘面料"
-        price: 23.8
+      - type: product_remove
+        product_keyword: "E2E色卡建品样品面料"
     skip_reason: ""
-    merge_log: "2026-09-08 新增（issue #3027）：sess_c1fce183dae24f22 复盘 — AI 预填表单展示了推理属性但 create 未落库（product_attributes 0 行）；加工项只传名称列表 → custom_price 全 NULL → 详情页 ¥0.00/米（单位硬编码）。三端修复：prompt 强制 specifications+processing_item_configs、admin-api finalPrice 回退、admin-web 渲染回退；2026-09-09 校准：补真实色卡图（原纯文本「根据这张图片」无 images，agent 要图走不下去）。2026-09-14 资产重写（#3518）：② 色卡识别结果轮由 `auto_select`（对 form 卡发「第一个」→ 表单从未提交）改为按 formFields 真实 key 回填的 `auto_respond`；③ 原文本占位符「颜色…门幅…」补真实值、加工项「波浪定型」换目录中真实存在的「韩式波浪折边」；④ 收尾改协作答卡轮。2026-09-15 §14.1 回填（issue #3683）：补 `must_succeed:[product_manage(action=create)]`（原仅有 expectations 参数级匹配 + required_args，create 失败仍判过）；db_verify 未加——商品名与种子 `prod_eval_2699` 同名同价、`_fetch_product_configs` 取 keyword 首条无法区分本次新建与种子（见用例内注释）"
+    merge_log: "2026-09-08 新增（issue #3027）：sess_c1fce183dae24f22 复盘 — AI 预填表单展示了推理属性但 create 未落库（product_attributes 0 行）；加工项只传名称列表 → custom_price 全 NULL → 详情页 ¥0.00/米（单位硬编码）。三端修复：prompt 强制 specifications+processing_item_configs、admin-api finalPrice 回退、admin-web 渲染回退；2026-09-09 校准：补真实色卡图（原纯文本「根据这张图片」无 images，agent 要图走不下去）。2026-09-14 资产重写（#3518）：② 色卡识别结果轮由 `auto_select`（对 form 卡发「第一个」→ 表单从未提交）改为按 formFields 真实 key 回填的 `auto_respond`；③ 原文本占位符「颜色…门幅…」补真实值、加工项「波浪定型」换目录中真实存在的「韩式波浪折边」；④ 收尾改协作答卡轮。2026-09-15 §14.1 回填（issue #3683）：补 `must_succeed:[product_manage(action=create)]`（原仅有 expectations 参数级匹配 + required_args，create 失败仍判过）；db_verify 未加——商品名与种子 `prod_eval_2699` 同名同价、`_fetch_product_configs` 取 keyword 首条无法区分本次新建与种子（见用例内注释）；2026-09-15（issue #3835）**改名去种子撞名**：`E2E色卡建品样品面料` → `E2E色卡建品样品面料`（种子 `prod_eval_2699` 就叫前者 ⇒ 运行期造同名副本，读者按名搜会得到 products=2；改名后本次新建可被关键字唯一定位，上述 db_verify 歧义随之解除）、`pre_clean: product_dedupe{E2E色卡建品样品面料, price: 23.8}` → `product_remove{自有名}`、补 `namespaces: product_name:E2E色卡建品样品面料`；断言（expectations/must_succeed/required_args/data_checks/forbidden_text）原样未动"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_prompt_snapshots.py"

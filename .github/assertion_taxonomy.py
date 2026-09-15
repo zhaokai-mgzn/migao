@@ -444,6 +444,53 @@ def self_clean_evidence(case: dict) -> str:
     return ""
 
 
+# ── 「可解析性」规则的**适用域**（issue #3835 实证修正）──────────────────────────
+# 命题「`pre_clean` 的点名目标必须在**种子**里可解析」只在**准备型**前置上成立
+# （"我需要种子里那个对象在位"）。**清理型**前置的语义**相反**：它要删的常常是
+# **用例自己在运行期造出来的对象**，而那个对象**按设计就不在种子里**
+# （`local_runner._PRECLEAN_CLEANUP_TYPES` 明确把"目标不存在"判为**良性 no-op**）。
+# 两类混进同一个判据 ⇒ **正确形态被永远判红**（`migao-dev-flow` §19.1
+# 「基于错误的真相模型写出的护栏 = 永远红」）。
+# 实证：把「与种子同名的建品用例」改成**用例自有名**（#3835 的根治修法）后，
+# `pre_clean: product_remove{自有名}` 必然"不在种子真值里" ⇒ 正确修法反被门禁判红。
+#
+# 豁免**只认"用例自己的声明"**（`namespaces` 的 `<kind>:<值>` 的 `<值>`），不靠猜：
+# 没声明的目标**照样**判红（`CU-003` 的 `VIP2活跃` 不受影响 —— 它声明的是手机号）。
+# 且豁免**只对清理族**生效：准备型（如 `employee_reactivate{employee_name:王五}`）
+# 即便声明了该值也**必须**继续核对种子 —— 否则就是把 HR-003 这类正确用例的护栏拆掉。
+# 与 runner 的一致性由 `tests/unit_ci_workflows/test_eval_product_name_pollution.py`
+# 的 `test_cleanup_type_set_matches_runner_source` 锁定（任一侧改动而另一侧没跟上即红）。
+CLEANUP_PRECLEAN_TYPES: frozenset = frozenset({
+    "product_remove",       # = local_runner._PRECLEAN_CLEANUP_TYPES
+    "customer_tag_remove",
+    "employee_remove",
+})
+
+
+def case_declared_resource_values(case: dict) -> set:
+    """用例**自己声明**的全局资源值（`namespaces` 形态 `<kind>:<值>` 里的 `<值>`）。
+
+    用途见 `CLEANUP_PRECLEAN_TYPES` 的注释：它是"点名目标不在种子里"的**唯一正当豁免源**。
+    """
+    out = set()
+    for k in (case or {}).get("namespaces") or []:
+        s = str(k)
+        if ":" in s:
+            v = s.split(":", 1)[1].strip()
+            if v:
+                out.add(v)
+    return out
+
+
+def is_case_owned_cleanup_target(case: dict, ptype: str, value: str) -> bool:
+    """该 `pre_clean` 目标是否 = **用例自建对象**（清理族 + 目标就在自己的声明里）。
+
+    两个条件都必需：① 类型属**清理族**（准备型不接受本豁免）；② 目标值是**本用例**
+    在 `namespaces` 里声明的资源 ⇒ 那个对象是本用例运行期自己造的，不在种子里是设计。
+    """
+    return str(ptype) in CLEANUP_PRECLEAN_TYPES and str(value) in case_declared_resource_values(case)
+
+
 # `_run_pre_clean` 已实现的类型与各自的**点名目标字段**（真值锚点 = local_runner
 # 的分支；变更时同步此处）。`None` = 该类型没有「点名目标」（无需种子真值解析）。
 KNOWN_PRECLEAN_TARGET_FIELDS: dict[str, str | None] = {
@@ -1208,6 +1255,10 @@ def judge_case(case: dict, *, catalog: dict[str, set[str]] | None = None,
         # ── 规则 b2：pre_clean 目标必须在种子真值里可解析 ──
         if catalog is not None:
             for ptype, field, value in pre_clean_targets(case):
+                # 清理族 + 目标 = 本用例自己声明的资源 ⇒ 该对象是**用例运行期自建的**，
+                # "不在种子里"是设计而非缺陷（详见 `CLEANUP_PRECLEAN_TYPES` 的注释）。
+                if is_case_owned_cleanup_target(case, ptype, value):
+                    continue
                 if not resolve_pre_clean_target(ptype, field, value, catalog):
                     add("CASE-TRUST-PRECLEAN-TARGET-UNRESOLVABLE",
                         f"pre_clean[{ptype}].{field} = {value!r} 在种子真值里解析不到"
