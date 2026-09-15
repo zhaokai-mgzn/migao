@@ -12,12 +12,18 @@ agent 拒绝：「我这个商品管理入口只能改价格、名称、描述�
 """
 # case_ids: PR-017, PR-026, PR-027
 
-from unittest.mock import MagicMock
+import json
+
+from unittest.mock import AsyncMock, MagicMock, patch
+
+from langchain_core.messages import AIMessage, HumanMessage
 
 from app.graph.skills.base_skill import (
-    capability_denial_text_hit,
-    _product_image_denial_hit,
     _product_image_capability_available,
+    _product_image_denial_hit,
+    _TEXT_DENIAL_CORRECTIVE_PRODUCT_IMAGE,
+    capability_denial_text_hit,
+    execute_skill,
 )
 
 
@@ -163,3 +169,170 @@ class TestProductImageDenialCrossClause:
         ]:
             assert capability_denial_text_hit(t) == "", f"中性/越权文本误命中: {t!r}"
             assert _product_image_denial_hit(t) == "", f"图片域判据误命中: {t!r}"
+
+
+def _make_state(**overrides):
+    state = {
+        "messages": [HumanMessage(content="测试消息")],
+        "tenant_id": 1,
+        "user_id": 100,
+        "session_id": "sess_denial_gate",
+        "role": "admin",
+        "intent_result": None,
+        "route_decision": None,
+        "entities": {},
+        "intent_chain": [],
+        "stage": "initial",
+        "cached_answer": None,
+        "final_answer": "",
+        "skill_used": "",
+        "suggestions": [],
+    }
+    state.update(overrides)
+    return state
+
+
+class TestProductImageDenialToolCallGate:
+    """迭代3（issue #3940）：拒绝文本与查询工具调用**同回合**时必须触发纠正重答。
+
+    红证（改前）：`execute_skill` 的图片域误宣检查位于 `if not response.tool_calls:`
+    分支内 —— flash 常把拒绝文本与 product_detail 等查询调用同一条消息生成
+    （PR-026/027 复现 run 34978506935 transcript 实证），守卫从未看到拒绝文本。
+    本测试 mock LLM 首回合 = 拒绝文本 + product_detail 调用，断言纠正话术被注入
+    第二次调用、且流程继续（interact 确认卡被执行）。
+    """
+    import asyncio as _asyncio
+
+    def _drive(self, with_capability: bool):
+        from app.tools.base import ToolResult
+        from app.tools.product_manage import ProductManageTool
+        from app.tools.product_detail import ProductDetailTool
+
+        executed: list = []
+        injected: list = []
+
+        async def fake_execute(tool, args, ctx, state):
+            executed.append(tool.name)
+            if tool.name == "interact":
+                _data = {"component": "confirm", "title": args.get("title"),
+                         "fields": args.get("fields") or [],
+                         "confirmValue": "确认设置主图"}
+                return (json.dumps({"success": True, "data": _data}),
+                        {"success": True, "data": _data})
+            return (json.dumps({"success": True, "data": {}}),
+                    {"success": True, "data": {}})
+
+        class _Store:
+            def __init__(self):
+                self._d = {}
+            async def load(self, sid):
+                return dict(self._d)
+            async def commit(self, sid, full):
+                self._d.clear(); self._d.update(full or {}); return True
+            async def clear(self, sid):
+                return True
+
+        store = _Store()
+        history = [HumanMessage(content="把遮光窗帘的主图设成这张色卡图")]
+
+        # R1：拒绝文本 + 查询工具调用**同回合**（复现 run 34978506935 transcript 形态）
+        r1 = MagicMock(spec=AIMessage)
+        r1.content = "我理解您想换主图，但这里得再跟您明确一次：**换主图这个动作我这边做不了**，当前模块只提供查询类能力。"
+        r1.tool_calls = [{"name": "product_detail",
+                          "args": {"product_id": "prod_eval_blackout"}, "id": "t1"}]
+        # R2：被纠正后发确认卡
+        r2 = MagicMock(spec=AIMessage)
+        r2.content = ""
+        r2.tool_calls = [{"name": "interact",
+                          "args": {"component": "confirm", "title": "确认设置主图",
+                                   "fields": [{"label": "商品", "value": "遮光窗帘"}]},
+                          "id": "t2"}]
+        r3 = MagicMock(spec=AIMessage)
+        r3.content = "好的，已为您发出确认卡片，请点击确认后我立即设置主图。"
+        r3.tool_calls = []
+        side = [r1, r2, r3]
+
+        with patch("app.memory.session_memory.SessionMemory") as mem_cls, \
+             patch("app.memory.session_state_store.SessionStateStore",
+                   side_effect=lambda *a, **k: store), \
+             patch("app.graph.skills.base_skill.get_breaker") as get_breaker, \
+             patch("app.graph.skills.base_skill.get_skill_llm") as get_llm, \
+             patch("app.graph.skills.base_skill.create_skill_registry") as create_reg, \
+             patch("app.graph.skills.base_skill.set_tool_context"), \
+             patch("app.graph.skills.base_skill._execute_tool_safe", fake_execute):
+            registry = MagicMock()
+            registry.get_langchain_tools.return_value = []
+
+            def _get_tool(n):
+                if n == "interact":
+                    from app.tools.interact import InteractTool
+                    return InteractTool()
+                if n == "product_detail":
+                    return ProductDetailTool()
+                if n == "product_manage" and with_capability:
+                    return ProductManageTool()
+                return None
+
+            registry.get_tool.side_effect = _get_tool
+            create_reg.return_value = registry
+            breaker = MagicMock()
+            breaker.call = lambda fn: fn()
+            get_breaker.return_value = breaker
+            llm = MagicMock()
+            llm.bind_tools.return_value = llm
+            llm.ainvoke = AsyncMock(side_effect=side)
+            get_llm.return_value = llm
+            mem_cls.return_value.set_pending_skill = AsyncMock(return_value=True)
+
+            def _capture_injections(fn):
+                async def wrapper(*a, **k):
+                    r = await fn(*a, **k)
+                    for m in (a[0] if a and isinstance(a[0], list) else []):
+                        if getattr(m, "content", None) == _TEXT_DENIAL_CORRECTIVE_PRODUCT_IMAGE:
+                            injected.append(True)
+                    return r
+                return wrapper
+
+            # 包装 ainvoke 以便在第二次调用前捕获注入的纠正话术
+            _orig = llm.ainvoke
+            async def _wrapped(*a, **k):
+                await _orig(*a, **k)
+                msgs = a[0] if a and isinstance(a[0], list) else []
+                if any(getattr(m, "content", None) == _TEXT_DENIAL_CORRECTIVE_PRODUCT_IMAGE
+                       for m in msgs):
+                    injected.append(True)
+            llm.ainvoke = _wrapped
+            # 但 side_effect 已绑定 _orig；直接用 await_args 检查
+            llm.ainvoke = AsyncMock(side_effect=side)
+            get_llm.return_value = llm
+
+            out = self._asyncio.run(execute_skill(
+                state=_make_state(messages=history),
+                skill_name="product",
+                tool_names=["product_detail", "product_manage", "interact"],
+                system_prompt="你是米宝（B 端商品助手）。",
+            ))
+        # 重新取 ainvoke 的调用输入检查纠正话术
+        call_inputs = [c.args[0] for c in llm.ainvoke.await_args_list]
+        return out, executed, call_inputs
+
+    def test_denial_text_with_tool_call_triggers_correction(self):
+        """能力可达（product_manage 带 images）：拒绝文本+查询调用同回合 → 纠正注入。"""
+        out, executed, call_inputs = self._drive(with_capability=True)
+        # 纠正话术必须出现在某次 LLM 调用的输入里
+        assert any(
+            any(getattr(m, "content", "") == _TEXT_DENIAL_CORRECTIVE_PRODUCT_IMAGE
+                for m in msgs)
+            for msgs in call_inputs
+        ), "纠正话术未被注入（守卫未触发 text+tool_calls 同回合的拒绝）"
+        # 流程继续：interact 确认卡被真实执行
+        assert "interact" in executed, f"纠正后流程未推进，executed={executed}"
+
+    def test_no_correction_when_capability_unavailable(self):
+        """能力不可达（注册表无 product_manage）：同文本不得触发纠正（事实门）。"""
+        out, executed, call_inputs = self._drive(with_capability=False)
+        assert not any(
+            any(getattr(m, "content", "") == _TEXT_DENIAL_CORRECTIVE_PRODUCT_IMAGE
+                for m in msgs)
+            for msgs in call_inputs
+        ), "能力不可达时不应注入纠正话术"
