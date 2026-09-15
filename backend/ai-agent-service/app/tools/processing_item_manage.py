@@ -67,6 +67,8 @@ class ProcessingItemManageTool(BaseTool):
         "【触发】写加工：用户说'新增加工项''修改加工''删除加工''加工分类管理''算加工价格'时调用。【前置】list_categories(查分类树,安全)。create/update/delete 需确认。【何时不用】仅查看加工项列表用 processing_item_query，不要混淆。【标注】WRITE|DESTRUCTIVE — list_categories安全,增删改需确认"
         "【铁律】用户说'新增加工项'就是执行指令：调 processing_item_manage(action=create_processing_item, name, category_id, pricing_method)——计价方式仅 per_meter(按米)/per_set(按套)/fixed(一口价)/per_area(按面积)，per_piece(按个)非法必须拒绝并说明（PP-006 实拍：agent 误宣「新增不在功能范围」，实际 create_processing_item 就是新增能力）。"
         "【铁律】用户明确要求写操作（禁用/创建/调整/删除/上下架/重置等）时：先查必要信息拿真实 ID → 展示操作预览 + 确认卡 → 用户确认后立即调用写工具执行，禁止只查询/展示列表就停（HR-003/PP-006/PR-005 实拍：agent 只 list/query 不执行写工具判失败）。"
+        "【铁律】delete_item 是软删除（记录标记 deleted=1，非物理移除）：删除成功后按名称/列表复查查不到该加工项是正常结果（删除已生效），"
+        "禁止误报「删除未生效」或建议用户去后台手动删除；如需恢复告知用户联系管理员（#3885）。"
     )
     allowed_roles = ["admin", "tenant_admin"]
 
@@ -517,7 +519,11 @@ class ProcessingItemManageTool(BaseTool):
         return ToolResult(
             success=True,
             data={"item_id": item_id},
-            message="加工项已删除",
+            message=(
+                f"已删除加工项（ID: {item_id}，软删除）；"
+                "此后按名称/列表查询将查不到该加工项（查不到即删除已生效，属正常结果），"
+                "如需恢复请联系管理员"
+            ),
         )
 
     async def _toggle_item_status(

@@ -1,5 +1,5 @@
 """ProcessingItemManageTool 单元测试 — 加工项/加工分类 CRUD + 价格计算。"""
-# case_ids: PP-002, PP-003, PP-004, PP-006, PP-009
+# case_ids: PP-002, PP-003, PP-004, PP-006, PP-009, PR-017
 import ast
 import inspect
 import re
@@ -413,6 +413,16 @@ class TestProcessingItemDelete:
         result = await tool.execute(context=admin_tool_context, action="delete_item", item_id="pi-1")
         assert result.success is True
         assert mock_client.delete.call_args[0][0] == "/api/admin/processing-items/pi-1"
+        # issue #3885：admin-api 的 ProcessingItem.deleted 是 MyBatis-Plus @TableLogic 软删除
+        # （deleted=1，非物理移除）。成功消息必须传达软删语义，否则 agent 复查时把
+        # 「按名称/列表查不到」误判为「删除未生效」，还会建议用户去后台手动删除。
+        assert "软删除" in result.message, "成功消息必须说明是软删除"
+        assert "查不到" in result.message, "成功消息必须预告复查时查不到属正常"
+
+    def test_description_includes_soft_delete_review_guidance(self, tool):
+        """issue #3885：description 须给复查指引——删除后按名称/列表查询返回空是正常结果。"""
+        assert "软删除" in tool.description, "description 必须点明 delete_item 是软删除"
+        assert "查不到" in tool.description, "description 必须提示复查查不到 = 删除成功（非未生效）"
 
 
 class TestProcessingToggleStatus:
