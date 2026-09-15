@@ -59,6 +59,11 @@ PROCESSING_ORDER_GENERATE_PATH = "backend/ai-agent-service/app/tools/processing_
 # 加工单三工具实现文件（类保留但未注册，#3917）：改动落兜底网（default_net），不再锚用例
 PROCESSING_ORDER_QUERY_PATH = "backend/ai-agent-service/app/tools/processing_order_query.py"
 PROCESSING_ORDER_UPDATE_PATH = "backend/ai-agent-service/app/tools/processing_order_update.py"
+# 路由层（#3921）：rule_matcher.py（加工单/JG-xxx → 订单域规则）与 nodes.py
+# （会话连续性关键词）是概念区分的承载 —— 改路由不改 prompt 时「加工单被归到商品域
+# 当加工项查」的缺陷就复现（PG-017 首跑 0 分实证），必须映射 PG-017。
+RULE_MATCHER_PATH = "backend/ai-agent-service/app/router/rule_matcher.py"
+ROUTING_NODES_PATH = "backend/ai-agent-service/app/graph/nodes.py"
 # 守卫代码的共享载体（防御/熔断 + 写操作守卫 + 转人工建议卡守卫），见 TestBaseSkillRules
 BASE_SKILL_PATH = "backend/ai-agent-service/app/graph/skills/base_skill.py"
 # 转人工 Tool 本体（创建人工会话/工单/通知），见 TestHumanHandoffRules
@@ -241,6 +246,26 @@ class TestProcessingDomainRules:
         """
         assert bm.map_changed_files_with_source([ORDER_PROMPT_PATH]) == (
             ["CH-003", "CH-022", "PG-017"], "rules")
+
+    def test_routing_change_stays_in_report_only_net(self):
+        """#3921：路由层（rule_matcher 加工单/JG 规则、nodes 会话连续性关键词）**不加**规则桶。
+
+        #3725 决策闸门（test_behavior_gate_reachability 同族）：路由文件是高流量共享层，
+        进 blocking 桶 ⇒ 每个改动吃真实 LLM 规则桶（#3551「规则过宽 ⇒ 假阻塞红」）；
+        PG-017 首跑即 0 分，稳定性未达校准门槛。加工单路由的确定性回归由 L0 单测承担
+        （test_rule_matcher.TestProcessingOrderRouting / test_graph_nodes 加工单逃逸），
+        评测守护经 prompts 规则间接触发（改路由必连带改 prompt 场景另计）。
+        """
+        for path in (RULE_MATCHER_PATH, ROUTING_NODES_PATH):
+            cases, source = bm.map_changed_files_with_source([path])
+            assert source == "default_net", f"{path} 不应进规则桶（source={source}）"
+            assert cases == bm.DEFAULT_BEHAVIOR_CASES
+
+    def test_general_prompt_change_maps_to_pg017(self):
+        """#3921：general.md 也补了加工单≠加工项兜底口径 → 改它应触发 PG-017。"""
+        cases = bm.map_changed_files_to_case_ids(
+            ["backend/ai-agent-service/app/graph/skills/references/prompts/general.md"])
+        assert "PG-017" in cases
 
     def test_processing_order_tool_files_no_longer_anchor_cases(self):
         """#3917：加工单工具已从注册表与 ORDER_TOOLS 移除（类保留），改工具实现文件

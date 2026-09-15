@@ -36,7 +36,12 @@ KEYWORD_MAP: dict[IntentType, list[str]] = {
     IntentType.STATISTICS: ["统计", "数据报表"],
     IntentType.FINANCE: ["财务", "资金流水", "收支", "对账", "净收入", "净额", "登记收款", "登记退款", "记一笔", "收款", "进账", "流水", "应收账款", "没对平", "收入支出", "收了多少", "赚了多少", "收了几笔", "收入", "本期收入", "收入退款"],
     IntentType.ORDER_CREATE: ["创建订单", "新建订单", "下单", "开个单", "录单", "确认创建订单"],
-    IntentType.ORDER_QUERY: ["订单", "我的订单", "订单状态", "查订单", "待发货"],
+    IntentType.ORDER_QUERY: ["订单", "我的订单", "订单状态", "查订单", "待发货",
+                         # 加工单（issue #3921，PG-017）：必须确定性路由到订单域——此前无
+                         # 「加工单」关键词 → 降级 L2 被归到商品域（加工项）→ agent 调
+                         # processing_item_query 返回加工项目录（sess_f3c0ee0d2cc342a0）。
+                         # 加工单 ≠ 加工项；订单域的概念区分口径在 prompts/order.md。
+                         "加工单", "加工单号"],
     IntentType.LOGISTICS_TRACK: ["物流", "快递", "到哪了"],
     IntentType.PRODUCT_INQUIRY: ["商品", "产品", "价格", "多少钱", "加工项", "加工项目", "加工费", "创建商品", "新建商品", "上架", "库存", "规格", "色号", "确认创建商品"],
     IntentType.PROCESSING_MANAGE: ["新增加工项", "新增加工项", "新建加工项", "创建加工项", "修改加工", "删除加工", "加工分类管理", "加工项管理"],
@@ -68,6 +73,9 @@ KEYWORD_MAP: dict[IntentType, list[str]] = {
 REGEX_RULES: list[tuple[re.Pattern, IntentType]] = [
     # 订单号格式（要求 ORD 前缀，避免误匹配手机号）
     (re.compile(r"ORD[-\s]?\d{10,20}"), IntentType.ORDER_QUERY),
+    # 加工单号格式（JG 前缀，issue #3921，PG-017）：用户只报加工单号（不带「加工单」三字）
+    # 时也必须落订单域——同「加工单」关键词的确定性路由语义（概念区分在 order_skill）。
+    (re.compile(r"JG[-\s]?\d{6,}"), IntentType.ORDER_QUERY),
     # 商品创建：创建/新建/添加/上架 + 商品名（不包含"订单"/"工单"/"售后"上下文）
     (re.compile(r"(?:创建|新建|添加|上架)(?:一个|新的|个)?(?:商品|产品|窗帘|布料|色卡|抱枕|靠垫|桌布|窗纱|卷帘|百叶|罗马帘|床品|沙发垫|桌旗|遮光)"), IntentType.PRODUCT_INQUIRY),
     # 创建/新建 + 任意商品描述（排除含"订单/工单/售后/员工/账号/角色/权限/分类/通知/会话"的，

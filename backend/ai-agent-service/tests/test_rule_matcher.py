@@ -1,4 +1,4 @@
-# case_ids: MC-010, MC-011, AS-003, AS-004, AS-005, HR-002, DA-004, PR-013, DA-003, PP-002, OR-014, CH-010
+# case_ids: MC-010, MC-011, AS-003, AS-004, AS-005, HR-002, DA-004, PR-013, DA-003, PP-002, OR-014, CH-010, PG-017
 """规则匹配器单元测试（app/router/rule_matcher.py）
 
 覆盖：_extract_text / RuleMatcher.match 关键词优先级 / 正则规则 / 未命中。
@@ -276,6 +276,53 @@ class TestProcessingManageRouting:
         """「查加工项」仍走商品查询（不误伤）。"""
         result = self._match("查一下这个商品的加工项")
         assert result.intent == IntentType.PRODUCT_INQUIRY
+
+
+class TestProcessingOrderRouting:
+    """PG-017（issue #3921）：「加工单」必须确定性路由到订单域（ORDER_QUERY）。
+
+    根因：L1 关键词表只有「加工项/加工项目/加工费」（→ PRODUCT_INQUIRY），**没有
+    「加工单」**——「查看加工单数据」不命中任何规则 → 降级 L2 LLM 分类 → 被归到
+    商品域（加工项）→ agent 调 processing_item_query 返回加工项目录（证据会话
+    sess_f3c0ee0d2cc342a0 + PG-017 首跑 0 分）。修法：加工单/JG-xxx → ORDER_QUERY
+    （订单域），由 order_skill 的概念区分 prompt 引导（agent 暂不接入加工单工具）。
+    """
+
+    def _match(self, message):
+        return RuleMatcher().match(message)
+
+    def test_processing_order_query_routes_order(self):
+        """「查看加工单数据」→ ORDER_QUERY（不再落 L2 被归到商品域）。"""
+        result = self._match("查看加工单数据")
+        assert result is not None
+        assert result.intent == IntentType.ORDER_QUERY
+
+    def test_processing_order_status_routes_order(self):
+        result = self._match("这个订单的加工单什么状态")
+        assert result is not None
+        assert result.intent == IntentType.ORDER_QUERY
+
+    def test_processing_order_no_routes_order(self):
+        result = self._match("加工单号 JG-20260915-0001 查一下")
+        assert result is not None
+        assert result.intent == IntentType.ORDER_QUERY
+
+    def test_jg_serial_alone_routes_order(self):
+        """JG-xxx 加工单号 → ORDER_QUERY（正则兜底，消息不带「加工单」三字时）。"""
+        result = self._match("JG-20260915-0001 现在什么状态")
+        assert result is not None
+        assert result.intent == IntentType.ORDER_QUERY
+
+    def test_processing_item_inquiry_unchanged(self):
+        """回归：加工项查询仍走商品域（不误伤，issue #3921 不得破坏 #3917 的加工项目录查询）。"""
+        result = self._match("查一下有哪些加工项")
+        assert result is not None
+        assert result.intent == IntentType.PRODUCT_INQUIRY
+
+    def test_processing_item_manage_unchanged(self):
+        """回归：加工项管理仍走 PROCESSING_MANAGE（PP-006）。"""
+        result = self._match("新增加工项，计价方式选按个")
+        assert result.intent == IntentType.PROCESSING_MANAGE
 
 
 class TestOrderVerbBeatsQuote:

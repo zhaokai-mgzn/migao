@@ -136,7 +136,14 @@ MAPPING_RULES = [
     # skip_reason 非空、对 agent 不可跑，锚了 = 挂不可跑用例 = 假阻塞），改 order
     # skill / order prompt（概念区分口径所在）才是本域唯一的行为承载 → PG-017。
     # 注：order_skill.py 同时命中第一条规则（OR-016/OR-028），并集去重。
-    (r"prompts/order\.md|app/graph/skills/order_skill\.py", ["PG-017"]),
+    # general.md 亦承载加工单≠加工项兜底口径（#3921，L2 落 general 时防混用）。
+    (r"prompts/order\.md|prompts/general\.md|app/graph/skills/order_skill\.py", ["PG-017"]),
+    # 路由层（rule_matcher.py / nodes.py）**不加**规则桶（#3725 决策闸门 + #3921 复核）：
+    # 路由文件是高流量共享层，进 blocking 桶会让每个改动吃到真实 LLM 规则桶（#3551
+    # 「规则过宽 ⇒ 假阻塞红」）；PG-017 首跑即 0 分，稳定性远未到校准门槛。加工单路由的
+    # 确定性回归由 L0 单测承担（test_rule_matcher.py TestProcessingOrderRouting +
+    # test_graph_nodes.py test_processing_order_signal_escapes_product_lock，#3921），
+    # 概念区分的评测守护经 prompts 规则（本 PR 必改 prompt ⇒ 必触发 PG-017）间接生效。
     # 商品侧加工项挂载 Tool（product_processing_item_manage）→ PP-001/PP-003 —— #3658 补充。
     # 覆盖核查结论：PP-001（normal，期望 `product_processing_item_manage(action=add)` +
     # `processing_item_query`）、PP-003（adversarial，confirm 卡 + action=add）**直接行使本工具**；
