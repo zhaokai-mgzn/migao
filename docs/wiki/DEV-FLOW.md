@@ -105,6 +105,71 @@ CI 里调用**真实 LLM**（生产 `ai-api.migaozn.com` + `SERVICE_TOKEN`）的
 - 其余环节不烧真实 token：`nightly-verification` 是 fixture e2e + smoke p1（HTTP 层）；`xiaobu-acceptance` 是本地 mock 栈；`agent-eval.yml`(normal 47 条) 与 `adversarial` 已降频为手动/每周。
 - **观察指标**：`gh run list --status queued` 排队 >20 即需治理（先清 dependabot 潮，见 §7）。
 
+### 3.3 断言可信度门禁（`Case Trust Gate`，2026-09-15 新增；#3483 T1 扩展格）
+
+**为什么需要这一层**：原有用例侧门禁只有 `Case Contract (truths_ref)`（引用可解析 + 生成物新鲜）、
+`Case Coverage Gate`（覆盖映射）、`QA Growth Gate`（改代码要有测试）—— **没有任何一条校验
+断言本身是否可信**。于是「写了断言」与「断言真能判红」之间没有任何结构性约束，以下缺陷
+**全部被门禁放行进来**（均有实证）：
+
+| 缺陷形态 | 实证 |
+|---|---|
+| 用例**物理不可满足**（让 agent 挂种子里不存在的标签） | `CU-003` → #3832 |
+| 散文禁令**独自承载**关键判据（全程语义、无轮次作用域） | `PG-013` → #3833 |
+| 写类用例**无效果层断言**（「调用了 ≠ 成了」） | 31 条 → #3778 |
+| `data_checks` 缺 `success=true` ⇒ **不计分** = 假绿 | `PR-021` → #3559 |
+| 写类用例**无自清理** ⇒ 重试前置不等价 | #3800 / #3797 |
+| 准备型 `pre_clean` 的未复位/失败路径未纳入折叠 | #3797 |
+
+**机制**（判据的**单一源** = `.github/assertion_taxonomy.py`，纯函数、零第三方依赖）：
+
+| 件 | 作用 |
+|---|---|
+| `.github/assertion_taxonomy.py` | **单一判据源**：写工具/写 action 显式枚举、效果层断言集合、前置等价性判据、persona 规则。静态门禁与后续 runner 侧动态分类器**共用**这一处口径（两处各写一份必漂移） |
+| `.github/case_trust_gate.py` | 门禁外壳：取 `git diff --name-only origin/main...HEAD` 命中的 `cases/*.yml` → 比对 `origin/main` 与 HEAD 的用例块文本 → **只判新增/内容变化的用例条目** → 按基线裁决 |
+| `.github/case-trust-baseline.json` | **存量**违规清单（burn-down，锚定 SHA）。清单内放行，清单外一律阻塞 |
+| `.github/case-trust-unimplemented.json` | **未实装**规则清单（如实登记 + 缺什么），防「写成恒真判断凑数」 |
+| `.github/case-trust-redproof.md` | 红证留档（补前必红 / 补后绿原文），由 L0 守卫锁定防事后改写 |
+| `tests/unit_ci_workflows/test_case_trust_gate.py` | L0 守卫 + 退化守卫（已知缺陷夹具必须被判违规；正确形态不得误伤） |
+
+**六条规则**（逐条带「为什么算缺陷」+ 反例 + 怎么改；失败信息里都有）：
+
+1. `CASE-TRUST-EMPTY-ASSERTION` —— 计分断言数不得为 0（`total_exp == 0` ⇒ `score = 1.0` 恒绿）；
+2. `CASE-TRUST-NO-EFFECT-ASSERTION` —— 写类用例必须 ≥1 条效果层断言
+   （`must_succeed` / `db_verify` / `output_verify` / `amount_verify` / `post_session`，
+   或含 `success=true` 等关键词的机器计分型 `data_checks`）；
+3. `CASE-TRUST-NO-SELF-CLEAN` —— 写类用例必须声明 `pre_clean` 或 `namespaces`
+   （⚠️ `namespaces` 只保证**并行互斥**，**不解决重试前置** ⇒ 记为弱证据）；
+4. `CASE-TRUST-PRECLEAN-TARGET-UNRESOLVABLE` —— `pre_clean` 的点名目标必须能从
+   `tests/agent_eval/fixtures/*.sql` **现算**的真值集合里解析到（`CU-003` 形态）；
+5. `CASE-TRUST-FORBIDDEN-TEXT-SOLE` —— `forbidden_text`（全程语义）不得**单独**承载判据，
+   必须配行为/效果层断言；已**轮次作用域**、或显式声明「禁令即主判据」
+   （该用例块里写 `# forbidden-text-intent: <理由>`）时放行；
+6. `CASE-TRUST-SINGLE-LEG-NO-PERSONA` —— 按工具集可判定为单端的用例必须标注 `persona`
+   （#3822：缺标注的另一条腿必挂，`case_ids` 窄跑还会触发 runner 的「禁止静默少跑」守卫）。
+
+**「只判 diff」与「基线只许缩短」这两条必须同时存在**（否则必然假红或债务僵化）：
+
+- **只判 diff 命中条目** ⇒ 不阻塞存量、不「一次红全库」；
+- **基线只许缩短** ⇒ 本次 diff 命中且**原违规码已不再命中**的项，必须从清单移除
+  （报错指向正确行动：「你修好了，请删条目」，命令 `python3 .github/case_trust_gate.py --regen-baseline`）；
+- ⚠️ **陈旧比对只对本次 diff 涉及的用例生效** —— 否则别人修好一条存量用例
+  （#3832/#3833 正在修 `CU-003`/`PG-013`），本门禁会**自己判红并挡住他们的 PR**。
+
+**本地自查**：
+
+```bash
+python3 .github/case_trust_gate.py                      # PR 口径（diff origin/main...HEAD）
+python3 .github/case_trust_gate.py --files .github/cases/product.yml   # 判该文件全部条目（调试）
+python3 .github/case_trust_gate.py --regen-baseline     # 重生成基线（改动/新增用例后按提示执行）
+python3.11 -m pytest tests/unit_ci_workflows/test_case_trust_gate.py -q # L0 守卫
+```
+
+**未实装项**（见 `.github/case-trust-unimplemented.json`，**不写恒真规则凑数**）：
+未知 `pre_clean.type` 静默跳过（#3797）、`pre_clean` 失败路径未折叠判据（#3797）、
+跨腿窄跑的运行期判定（#3822，属 runner 归因自动化即 #3483 的 T2）、
+**全库** persona 标注（有意不做的宽口径）、纯散文 `data_checks` 的**语义**质量（LLM 审计层）。
+
 ## 4. 部署
 - 合并到 main 自动触发 3 个部署（admin-api/ai-agent/frontend）+ post-deploy 冒烟。
 - **部署后验证（2026-09-01 修正：`/actuator/health` 公网 404 是 nginx 屏蔽的预期行为，勿当成故障）**：
