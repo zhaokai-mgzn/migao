@@ -1395,3 +1395,34 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+  - id: UI-043
+    legacy_id: ""
+    title: "小布选择卡片回传人话 — 点击选项发 label 而非内部编码（proc_item_* 用户看不懂）"
+    domains:
+      - ui
+      - frontend
+    tier: normal
+    tags:
+      - ui
+      - mini-app
+      - choice-card
+      - protocol
+    truths_ref:
+      - frontend-fix.no-api-change
+      - frontend-fix.vitest
+    user_inputs:
+      - "点加工项选择卡片里的「LG工艺 ¥50/件」后，聊天里用户气泡直接发出 proc_item_craft_lg 这种内部编码，顾客看不懂发的是什么"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "ChoiceCard 点击选项回传 opt.label || opt.value（人话，如「LG工艺 ¥50/件」），不得回传内部编码 proc_item_craft_lg —— 与 admin-web InteractiveMessage.tsx 单一事实源及 AI 侧 nodes.py _card_accepts_answer（label/value 均接受）对齐"
+      - "选项缺 label 时回退 value（label || value 协议兜底不回归）"
+      - "提交锁（CH-030）不回归：点选后锁卡，后续点击不再触发 onAction"
+    skip_reason: "纯前端组件行为由 jest 组件测试验证（frontend/mini-app/tests/choice-card.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-15 新增：小布 ChoiceCard 点击选项直发 opt.value（裸编码 proc_item_*），用户实测看不懂；评测 harness 早已按前端协议修为发 label（issue #3365 实证「发内部 id → 模型看不懂选了什么」），但真实小程序组件漏改 → 本次对齐"
+    traces:
+      tests:
+        - "frontend/mini-app/tests/choice-card.test.tsx"
+      ci:
+        - pr-check.yml
+      verifies: []

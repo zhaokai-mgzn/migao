@@ -3442,7 +3442,7 @@
 真值: token-refresh.no-loop
 溯源: 2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421） ｜ tags: token_refresh, auth, no_loop
 
-## ui（40 case）
+## ui（41 case）
 
 ### UI-001. 织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理 🔵
 ```
@@ -3972,6 +3972,18 @@
 真值: frontend-fix.no-api-change, frontend-fix.e2e
 溯源: 2026-09-15 新增（issue #3924）：设置页开关按钮缺 shrink-0，flex 压缩 44px 轨道而绝对定位圆钮不随缩 → 圆钮溢出轨道（截图同款）；E2E 几何断言红→绿实证 ｜ tags: ui, settings, toggle, layout
 
+### UI-043. 小布选择卡片回传人话 — 点击选项发 label 而非内部编码（proc_item_* 用户看不懂） 🔵
+```
+你: 点加工项选择卡片里的「LG工艺 ¥50/件」后，聊天里用户气泡直接发出 proc_item_craft_lg 这种内部编码，顾客看不懂发的是什么
+期望: direct_reply
+数据: ChoiceCard 点击选项回传 opt.label || opt.value（人话，如「LG工艺 ¥50/件」），不得回传内部编码 proc_item_craft_lg —— 与 admin-web InteractiveMessage.tsx 单一事实源及 AI 侧 nodes.py _card_accepts_answer（label/value 均接受）对齐
+数据: 选项缺 label 时回退 value（label || value 协议兜底不回归）
+数据: 提交锁（CH-030）不回归：点选后锁卡，后续点击不再触发 onAction
+跳过: 纯前端组件行为由 jest 组件测试验证（frontend/mini-app/tests/choice-card.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: frontend-fix.no-api-change, frontend-fix.vitest
+溯源: 2026-09-15 新增：小布 ChoiceCard 点击选项直发 opt.value（裸编码 proc_item_*），用户实测看不懂；评测 harness 早已按前端协议修为发 label（issue #3365 实证「发内部 id → 模型看不懂选了什么」），但真实小程序组件漏改 → 本次对齐 ｜ tags: ui, mini-app, choice-card, protocol
+
 ## utils（2 case）
 
 ### UT-001. 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值 🔵
@@ -4001,8 +4013,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：295（活跃 150，跳过 145）
-- tier 分布：smoke 9 / normal 253 / adversarial 33
+- 用例总数：296（活跃 150，跳过 146）
+- tier 分布：smoke 9 / normal 254 / adversarial 33
 - 售后域：9
 - agents：6
 - api：19
@@ -4026,7 +4038,7 @@
 - registry：1
 - 设置域：8
 - token-refresh：4
-- ui：40
+- ui：41
 - utils：2
 
 ### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）

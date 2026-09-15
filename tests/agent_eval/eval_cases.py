@@ -5546,6 +5546,24 @@ _CASE_UI_041 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── UI-043 [NORMAL] 小布选择卡片回传人话 — 点击选项发 label 而非内部编码（proc_item_* 用户看不懂）（源: cases/ui.yml）──
+_CASE_UI_043 = EvalCase(
+    id='UI-043',
+    legacy_id='',
+    title='小布选择卡片回传人话 — 点击选项发 label 而非内部编码（proc_item_* 用户看不懂）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['点加工项选择卡片里的「LG工艺 ¥50/件」后，聊天里用户气泡直接发出 proc_item_craft_lg 这种内部编码，顾客看不懂发的是什么'],
+    expectations=['direct_reply'],
+    data_checks=['ChoiceCard 点击选项回传 opt.label || opt.value（人话，如「LG工艺 ¥50/件」），不得回传内部编码 proc_item_craft_lg —— 与 admin-web InteractiveMessage.tsx 单一事实源及 AI 侧 nodes.py _card_accepts_answer（label/value 均接受）对齐', '选项缺 label 时回退 value（label || value 协议兜底不回归）', '提交锁（CH-030）不回归：点选后锁卡，后续点击不再触发 onAction'],
+    skip_reason='纯前端组件行为由 jest 组件测试验证（frontend/mini-app/tests/choice-card.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ui', 'mini-app', 'choice-card', 'protocol'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── UT-001 [NORMAL] 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值（源: cases/utils.yml）──
 _CASE_UT_001 = EvalCase(
     id='UT-001',
@@ -5876,6 +5894,7 @@ ALL_CASES = (
     _CASE_UI_039,
     _CASE_UI_040,
     _CASE_UI_041,
+    _CASE_UI_043,
     _CASE_UT_001,
     _CASE_UT_002,
 )
