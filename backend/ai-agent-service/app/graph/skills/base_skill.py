@@ -1660,11 +1660,20 @@ _PRODUCT_IMAGE_ACTION_WORDS = (
     "设为主图", "设置主图", "改主图", "换主图", "修改主图", "上传主图",
     "上传图片", "设置图片", "主图", "图片", "色卡图", "详情图",
 )
-# 订单域语义词干（_INABILITY_STEMS/_ABILITY_WORDS）覆盖不到、但本次生产原文用到的
-# 否定形态（「不包含图片上传」「拿不到可写入的地址」）；判据结构复用
-# `_negation_positions`/`_self_scoped_clause`（否定位置 × 最近主体归属）。
+# 否定形态**形态优先**（issue #3936，去 #3934 的枚举词表——「词表是枚举，措辞一换就漏」，
+# 下单域 `_ORDER_UNABLE_RE` 正是因此从枚举改形态、并返工 6 次）：
+#   · `V+不了` / `V+不到` 编译形态（传/改/设/上/换/加/做/拿）——覆盖「传不了/改不了/
+#     设置不了/上不了/拿不到/做不了/换不了…」一族，新动词措辞不再逐词登记；
+#   · `不包含`（生产原文「不包含图片上传」，通用语义词干覆盖不到）；
+#   · `改不动`/`弄不了`（同族口语形态）。
+# 通用性交给既有语义词干（"没有…能力/权限"、"不支持"、"没法"等由
+# `_negation_positions` 的基底判据覆盖），本正则只补词干缺的形态。
 # 刻意**不含**「没发/没上传/没图片」等中性事实词（「顾客没发图片给我」是客观说明，不得误报）。
-_PRODUCT_IMAGE_EXTRA_NEGATIONS = ("不包含", "拿不到", "传不了", "改不了", "设置不了", "上不了")
+_PRODUCT_IMAGE_UNABLE_RE = re.compile(
+    r"(?:传|改|设|上|换|加|做|拿)(?:不了|不到)|不包含|改不动|弄不了|"
+    # ⚠️ 匹配**归一后**形态（_normalize_clause 已把「没有」→「没」）
+    r"没[^，。；\n]{0,10}(?:能力|功能)"
+)
 
 
 # ── 「顾客正在下单」+「流程已有真实进展」→ 无信号转人工即放弃流程（issue #3421）──
@@ -1954,7 +1963,8 @@ def _product_image_denial_hit(text: str) -> str:
     """商品图片域的能力自我否定（issue #3931）：小句 × 图片锚点 × 否定形态 × 自我主体。
 
     判据结构复用下单域的 `_negation_positions`/`_self_scoped_clause`（否定位置 ×
-    最近主体归属），否定形态 = 既有语义词干 ∪ `_PRODUCT_IMAGE_EXTRA_NEGATIONS`。
+    最近主体归属），否定形态 = 既有语义词干 ∪ `_PRODUCT_IMAGE_UNABLE_RE`（形态优先，
+    issue #3936：V+不了/V+不到 编译形态替代 #3934 的枚举词表——词表措辞一换就漏）。
     返回命中片段或空串（空串 = 不拦截，供「只纠正 AI 真有的能力」的调用方选择）。
     """
     for raw_clause in _CLAUSE_SPLIT_RE.split(str(text)):
@@ -1962,11 +1972,9 @@ def _product_image_denial_hit(text: str) -> str:
         if not any(word in clause for word in _PRODUCT_IMAGE_ACTION_WORDS):
             continue
         positions = _negation_positions(clause, include_assist=False)
-        for stem in _PRODUCT_IMAGE_EXTRA_NEGATIONS:
-            start = clause.find(stem)
-            while start >= 0:
-                positions.append((start, False))
-                start = clause.find(stem, start + 1)
+        # 形态化否定（V+不了/V+不到 等）：找全部命中位置并入否定位置集
+        for m in _PRODUCT_IMAGE_UNABLE_RE.finditer(clause):
+            positions.append((m.start(), False))
         for pos, is_assist in positions:
             if is_assist or _self_scoped_clause(clause, pos):
                 return raw_clause.strip()[:60]

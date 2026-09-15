@@ -84,3 +84,42 @@ class TestProductImageCapabilityFactDriven:
         registry = MagicMock()
         registry.get_tool.side_effect = lambda n: tool if n == "product_manage" else None
         assert _product_image_capability_available(registry) is False
+
+
+class TestProductImageDenialMorphology:
+    """形态优先（issue #3936）：V+不了/V+不到 编译形态，而非 #3934 的枚举词表。
+
+    判别性：**新措辞**（非生产原文）也必须命中 —— 证明判据是「形态 × 锚点 × 自我主体」
+    的结构匹配，不是对着 sess_2efa2071bb1747d8 的拒绝原文过拟合。
+    """
+
+    def test_new_phrasing_denials_hit(self):
+        for t in [
+            # V+不了 形态（新动词，未逐词登记过）
+            "图片这个我这边做不了，您去后台改吧",
+            "上传图片这个功能我这边弄不了，只能请您自己操作",
+            # V+不到 形态
+            "我这边换不到可用的图片地址",
+            # 既有语义词干（没有…能力/权限）覆盖的新措辞
+            "图片这个我这边没有对应的上传能力",
+            "我的工具列表里没有图片写入这个功能",
+            # 不包含 + 主图锚点
+            "主图这个功能不包含在我的能力里",
+        ]:
+            assert capability_denial_text_hit(t), f"能力误宣未命中（新措辞）: {t!r}"
+            assert _product_image_denial_hit(t), f"图片域判据未命中（新措辞）: {t!r}"
+
+    def test_neutral_new_phrasings_not_hit(self):
+        """新措辞的防误伤：中性说明 / 非自我否定不得命中。"""
+        for t in [
+            # 客观事实（顾客没发图，非能力否定）
+            "顾客没发图片给我，我这边没有收到任何图片",
+            # 中性建议（不是拒绝）
+            "建议您先上传一张主图，我再帮您设置",
+            # 非自我主体（商品缺图是客观状态）
+            "这个商品没有主图，我帮您查一下详情",
+            # 权限真实受限（删除商品确实无能力）
+            "我没权限删除商品，需要管理员账号操作",
+        ]:
+            assert capability_denial_text_hit(t) == "", f"中性文本误命中: {t!r}"
+            assert _product_image_denial_hit(t) == "", f"图片域判据误命中: {t!r}"
