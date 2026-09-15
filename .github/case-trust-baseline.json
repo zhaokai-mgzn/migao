@@ -4,17 +4,17 @@
   "regenerate_command": "python3 .github/case_trust_gate.py --regen-baseline",
   "_when_to_regen": "① 你**修改/新增**了某个用例条目 → 门禁会告诉你（清单只许缩短）；② 别人合并了用例修复（如 #3832 的 CU-003、#3833 的 PG-013）→ **重跑 ①后重生成**，把已修好的条目从清单里去掉；③ 规则集本身变化（新增/改名规则）→ 必须重生成。",
   "_scope_note": "「已不再违规 ⇒ 必须移除」这条**只对本次 PR diff 命中的用例生效**（见 case_trust_gate.stale_baseline_entries）—— 否则别人修好一条存量用例，本门禁就会自己判红（假红）并挡住他们的 PR。",
-  "anchor_sha": "31ce0e2e766880df5a7010b71395f3bd3b5be5d6",
+  "anchor_sha": "44615b6c9be18d23709a92c0c7e027da259f0836",
   "case_total": 289,
-  "violation_case_count": 143,
+  "violation_case_count": 142,
   "rule_counts": {
     "CASE-TRUST-EMPTY-ASSERTION": 28,
     "CASE-TRUST-NO-EFFECT-ASSERTION": 34,
-    "CASE-TRUST-NO-SELF-CLEAN": 42,
-    "CASE-TRUST-PRECLEAN-TARGET-UNRESOLVABLE": 3,
+    "CASE-TRUST-NO-SELF-CLEAN": 41,
+    "CASE-TRUST-PRECLEAN-TARGET-UNRESOLVABLE": 2,
     "CASE-TRUST-FORBIDDEN-TEXT-SOLE": 7,
     "CASE-TRUST-VOLATILE-LOCATOR": 1,
-    "CASE-TRUST-NO-PRECONDITION-ASSERTION": 106,
+    "CASE-TRUST-NO-PRECONDITION-ASSERTION": 103,
     "CASE-TRUST-STALE-LINE-REF": 0,
     "CASE-TRUST-SINGLE-LEG-NO-PERSONA": 18
   },
@@ -500,7 +500,6 @@
     },
     "OR-014": {
       "codes": [
-        "CASE-TRUST-NO-PRECONDITION-ASSERTION",
         "CASE-TRUST-SINGLE-LEG-NO-PERSONA"
       ]
     },
@@ -661,14 +660,12 @@
     },
     "PG-016": {
       "codes": [
-        "CASE-TRUST-NO-PRECONDITION-ASSERTION",
-        "CASE-TRUST-NO-SELF-CLEAN"
+        "CASE-TRUST-NO-PRECONDITION-ASSERTION"
       ]
     },
     "PP-001": {
       "codes": [
-        "CASE-TRUST-NO-EFFECT-ASSERTION",
-        "CASE-TRUST-NO-PRECONDITION-ASSERTION"
+        "CASE-TRUST-NO-EFFECT-ASSERTION"
       ]
     },
     "PP-003": {
@@ -750,8 +747,7 @@
     "PR-011": {
       "codes": [
         "CASE-TRUST-NO-EFFECT-ASSERTION",
-        "CASE-TRUST-NO-PRECONDITION-ASSERTION",
-        "CASE-TRUST-PRECLEAN-TARGET-UNRESOLVABLE"
+        "CASE-TRUST-NO-PRECONDITION-ASSERTION"
       ]
     },
     "PR-012": {
@@ -777,11 +773,6 @@
     "PR-016": {
       "codes": [
         "CASE-TRUST-NO-EFFECT-ASSERTION",
-        "CASE-TRUST-NO-PRECONDITION-ASSERTION"
-      ]
-    },
-    "PR-017": {
-      "codes": [
         "CASE-TRUST-NO-PRECONDITION-ASSERTION"
       ]
     },

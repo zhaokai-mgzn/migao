@@ -2268,7 +2268,7 @@
 载荷(全场可用): customer_name=张三, customer_phone=13800138000, customer_address=浙江省杭州市西湖区文三路1号1幢101室, color=米白, colorName=米白
 ```
 真值: order.states, order.create-flow, processing-manage.crud
-溯源: 2026-09-07 改写（issue #3005，回滚 #2986）：行业加工费按米计价、辅料（罗马圈/四爪钩等）含在按米加工费中——回滚 per_piece 与「每米数量」密度（数量=ceil(面料米数×密度) 与实际车间工艺不符、数量隐藏导致 B 端无法对账），数量改为按计价方式派生且展示（per_meter=面料米数、per_set/fixed=1）；2026-09-14 校准（#3538）：pre_clean 去 price 过滤（关键词去重，原 price 过滤限 100 元、在种子遮光窗帘 ¥168 的独立栈上恒不匹配 = 没去重） ｜ tags: order_create, processing_item, pricing
+溯源: 2026-09-07 改写（issue #3005，回滚 #2986）：行业加工费按米计价、辅料（罗马圈/四爪钩等）含在按米加工费中——回滚 per_piece 与「每米数量」密度（数量=ceil(面料米数×密度) 与实际车间工艺不符、数量隐藏导致 B 端无法对账），数量改为按计价方式派生且展示（per_meter=面料米数、per_set/fixed=1）；2026-09-14 校准（#3538）：pre_clean 去 price 过滤（关键词去重，原 price 过滤限 100 元、在种子遮光窗帘 ¥168 的独立栈上恒不匹配 = 没去重）；2026-09-15（issue #3835）补 `precondition[product_count_for_keyword: 遮光窗帘, expect: 1]`：本用例按名定位下单对象、`amount_verify` 也按名取接地真值，故「该名字唯一」是可判定的前置 —— 判定跑 run 34908262839 首跑 R1 `product_search(products=2)` + R2 把 PR-016 造的 ¥100 副本选成目标，6 轮被岔路吃掉。声明前置后这类污染折成 `precondition_not_applied(declared:product_count_for_keyword)`，不再伪装成「agent 不下单」；断言（expectations/must_succeed/amount_verify/data_checks）原样未动 ｜ tags: order_create, processing_item, pricing
 
 ### OR-015. order_create 写操作前置校验必须真正执行（validate_input 规则分层修复，issue #3029 复盘） 🔵
 ```
@@ -3025,7 +3025,7 @@
 ### PR-011. 创建商品完整引导流程 - AI 主导收集信息 🔵
 ```
 你: 我要创建一个新商品
-你: 名称叫夏日清风窗帘，价格 168
+你: 名称叫E2E引导建品样品帘，价格 168
 你: 分类选窗帘
 你: [🤖 选第一个选项]
 你: 颜色有米白和浅灰
@@ -3040,10 +3040,10 @@
 数据: 最终创建成功，返回 product_id
 数据: 创建的加工项数量 = 2
 数据: 全程 AI 主动引导，不等待用户逐项输入
-清理: product_remove(product_keyword=测试窗帘)
+清理: product_remove(product_keyword=E2E引导建品样品帘)
 ```
 真值: product-sku-stock.create-flow, product-sku-stock.create-confirm, ai-chat.validate-input
-溯源: eval M002 吸收 verification 8.3（缺信息补全 = validate_input 引导） ｜ tags: multi_turn, guided_flow, full_create, processing_item
+溯源: eval M002 吸收 verification 8.3（缺信息补全 = validate_input 引导）；2026-09-15（issue #3835）改名去种子撞名（同 PR-016 口径）：`名称叫夏日清风窗帘` → `名称叫E2E引导建品样品帘`（种子 `prod_eval_summer` 就叫「夏日清风窗帘」⇒ 运行期造同名副本；且它是**单一声明者** ⇒ 争用组不成立、隔离为零）；`pre_clean: product_remove{测试窗帘}` → 自有名（顺带消除对 PR-008「测试窗帘A」的子串误删）；expectations/data_checks 原样未动 ｜ tags: multi_turn, guided_flow, full_create, processing_item
 
 ### PR-012. 商品创建中途修改 - 用户纠偏 🔵
 ```
@@ -3116,7 +3116,7 @@
 
 ### PR-016. 建品流程 - 分类确认后按适用商品分类过滤/优先推荐加工项 🔵
 ```
-你: 录入这个商品，名称遮光窗帘，价格 100
+你: 录入这个商品，名称E2E建品流程样品帘，价格 100
 你: 分类选窗帘
 你: [🤖 选第一个选项]
 你: [🤖 自动填表]
@@ -3132,7 +3132,7 @@
 数据: 适用分类为空（applicable_product_categories 为空）的加工项仍展示（= 适用所有分类），不因过滤而丢失
 数据: 当前分类无匹配加工项时以文字提示可跳过，不空转强制选择
 数据: 最终创建成功且关联加工项数量正确
-清理: product_dedupe(product_keyword=遮光窗帘)
+清理: product_remove(product_keyword=E2E建品流程样品帘)
 必填: processing_item_query() 字段 applicable_category_id
 ```
 真值: product-sku-stock.create-flow, processing-manage.crud
@@ -3171,15 +3171,15 @@
 数据: create 参数含 specifications（材质/克重/工艺等推理属性，随 specs 落库到 product_attributes，非仅展示）
 数据: create 参数含 processing_item_configs（含 customPrice=加工项默认单价 unit_price、unit=真实单位），禁止只传 processing_item_ids 名称列表
 数据: 商品详情接口 processingItemConfigs 回填 unitPrice/finalPrice（customPrice 空时 finalPrice=unitPrice），前端展示非 ¥0.00 且单位正确
-清理: product_dedupe(product_keyword=2699系列雪尼尔窗帘面料、price=23.8)
+清理: product_remove(product_keyword=E2E色卡建品样品面料)
 禁词: 尚未真正创建
 禁词: 未创建成功
 必填: product_manage(create) 字段 specifications, processing_item_configs.customPrice
 必须成功: product_manage(create)
-载荷(全场可用): name=2699系列雪尼尔窗帘面料, price=23.8, colors=2699-01 米白, door_widths=2.8米, selling_methods=散剪, sku_code=XNE2699
+载荷(全场可用): name=E2E色卡建品样品面料, price=23.8, colors=2699-01 米白, door_widths=2.8米, selling_methods=散剪, sku_code=XNE2699
 ```
 真值: product-sku-stock.low-stock
-溯源: 2026-09-08 新增（issue #3027）：sess_c1fce183dae24f22 复盘 — AI 预填表单展示了推理属性但 create 未落库（product_attributes 0 行）；加工项只传名称列表 → custom_price 全 NULL → 详情页 ¥0.00/米（单位硬编码）。三端修复：prompt 强制 specifications+processing_item_configs、admin-api finalPrice 回退、admin-web 渲染回退；2026-09-09 校准：补真实色卡图（原纯文本「根据这张图片」无 images，agent 要图走不下去）。2026-09-14 资产重写（#3518）：② 色卡识别结果轮由 `auto_select`（对 form 卡发「第一个」→ 表单从未提交）改为按 formFields 真实 key 回填的 `auto_respond`；③ 原文本占位符「颜色…门幅…」补真实值、加工项「波浪定型」换目录中真实存在的「韩式波浪折边」；④ 收尾改协作答卡轮。2026-09-15 §14.1 回填（issue #3683）：补 `must_succeed:[product_manage(action=create)]`（原仅有 expectations 参数级匹配 + required_args，create 失败仍判过）；db_verify 未加——商品名与种子 `prod_eval_2699` 同名同价、`_fetch_product_configs` 取 keyword 首条无法区分本次新建与种子（见用例内注释） ｜ tags: product_create, specifications, processing_item, regression
+溯源: 2026-09-08 新增（issue #3027）：sess_c1fce183dae24f22 复盘 — AI 预填表单展示了推理属性但 create 未落库（product_attributes 0 行）；加工项只传名称列表 → custom_price 全 NULL → 详情页 ¥0.00/米（单位硬编码）。三端修复：prompt 强制 specifications+processing_item_configs、admin-api finalPrice 回退、admin-web 渲染回退；2026-09-09 校准：补真实色卡图（原纯文本「根据这张图片」无 images，agent 要图走不下去）。2026-09-14 资产重写（#3518）：② 色卡识别结果轮由 `auto_select`（对 form 卡发「第一个」→ 表单从未提交）改为按 formFields 真实 key 回填的 `auto_respond`；③ 原文本占位符「颜色…门幅…」补真实值、加工项「波浪定型」换目录中真实存在的「韩式波浪折边」；④ 收尾改协作答卡轮。2026-09-15 §14.1 回填（issue #3683）：补 `must_succeed:[product_manage(action=create)]`（原仅有 expectations 参数级匹配 + required_args，create 失败仍判过）；db_verify 未加——商品名与种子 `prod_eval_2699` 同名同价、`_fetch_product_configs` 取 keyword 首条无法区分本次新建与种子（见用例内注释）；2026-09-15（issue #3835）**改名去种子撞名**：`E2E色卡建品样品面料` → `E2E色卡建品样品面料`（种子 `prod_eval_2699` 就叫前者 ⇒ 运行期造同名副本，读者按名搜会得到 products=2；改名后本次新建可被关键字唯一定位，上述 db_verify 歧义随之解除）、`pre_clean: product_dedupe{E2E色卡建品样品面料, price: 23.8}` → `product_remove{自有名}`、补 `namespaces: product_name:E2E色卡建品样品面料`；断言（expectations/must_succeed/required_args/data_checks/forbidden_text）原样未动 ｜ tags: product_create, specifications, processing_item, regression
 
 ### PR-020. 建品加工项价格落库盯防 — 自定义价须等于用户确认价（BFF 合并回归） 🔵
 ```

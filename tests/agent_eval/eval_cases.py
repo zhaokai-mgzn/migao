@@ -3292,6 +3292,7 @@ _CASE_OR_014 = EvalCase(
     must_succeed=[{'tool': 'order_create'}],
     amount_verify=[{'tool': 'order_create', 'product_name': '遮光窗帘', 'checks': ['unit_price', 'subtotal', 'total']}],
     pre_clean=[{'type': 'product_dedupe', 'product_keyword': '遮光窗帘'}],
+    precondition=[{'type': 'product_count_for_keyword', 'source': '遮光窗帘', 'expect': 1}],
     auto_fill={'customer_name': '张三', 'customer_phone': '13800138000', 'customer_address': '浙江省杭州市西湖区文三路1号1幢101室', 'color': '米白', 'colorName': '米白'},
 )
 
@@ -3897,6 +3898,7 @@ _CASE_PP_001 = EvalCase(
     form_prefill=[],
     forbidden_card_text=[],
     pre_clean=[{'type': 'product_dedupe', 'product_keyword': '遮光窗帘'}],
+    precondition=[{'type': 'product_count_for_keyword', 'source': '遮光窗帘', 'expect': 1}],
 )
 
 # ── PP-002 [NORMAL] 加工项分类列表（源: cases/processing.yml）──
@@ -4254,7 +4256,7 @@ _CASE_PR_011 = EvalCase(
     title='创建商品完整引导流程 - AI 主导收集信息',
     skill=Skill.PRODUCT,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['我要创建一个新商品', '名称叫夏日清风窗帘，价格 168', '分类选窗帘', {'auto_select': True}, '颜色有米白和浅灰', '货号用 SUMMER-BREEZE', '需要打孔和韩式折边这两个加工项', '确认创建，没问题', '确认'],
+    user_inputs=['我要创建一个新商品', '名称叫E2E引导建品样品帘，价格 168', '分类选窗帘', {'auto_select': True}, '颜色有米白和浅灰', '货号用 SUMMER-BREEZE', '需要打孔和韩式折边这两个加工项', '确认创建，没问题', '确认'],
     expectations=['interact(component=choice)', 'processing_item_query', 'validate_input', 'product_manage(action=create)'],
     data_checks=['最终创建成功，返回 product_id', '创建的加工项数量 = 2', '全程 AI 主动引导，不等待用户逐项输入'],
     skip_reason='',
@@ -4263,8 +4265,8 @@ _CASE_PR_011 = EvalCase(
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
-    pre_clean=[{'type': 'product_remove', 'product_keyword': '测试窗帘'}],
-    namespaces=['product_name:测试窗帘', 'product_name:夏日清风窗帘'],
+    pre_clean=[{'type': 'product_remove', 'product_keyword': 'E2E引导建品样品帘'}],
+    namespaces=['product_name:E2E引导建品样品帘'],
 )
 
 # ── PR-012 [NORMAL] 商品创建中途修改 - 用户纠偏（源: cases/product.yml）──
@@ -4349,7 +4351,7 @@ _CASE_PR_016 = EvalCase(
     title='建品流程 - 分类确认后按适用商品分类过滤/优先推荐加工项',
     skill=Skill.PRODUCT,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['录入这个商品，名称遮光窗帘，价格 100', '分类选窗帘', {'auto_select': True}, {'auto_fill': {'colors': '米白色', 'selling_methods': '散剪', 'sku_code': 'TEST-002'}}, '已选加工项：高温定型', '颜色米白色，货号 TEST-002', {'auto_respond': {'fallback': '确认'}}],
+    user_inputs=['录入这个商品，名称E2E建品流程样品帘，价格 100', '分类选窗帘', {'auto_select': True}, {'auto_fill': {'colors': '米白色', 'selling_methods': '散剪', 'sku_code': 'TEST-002'}}, '已选加工项：高温定型', '颜色米白色，货号 TEST-002', {'auto_respond': {'fallback': '确认'}}],
     expectations=['category_manage', 'processing_item_query', 'interact(component=choice, multiSelect=True)', 'validate_input', 'product_manage(action=create)'],
     data_checks=['分类确认后加工项选择器按「适用商品分类」过滤展示（processing_item_query 携带 applicable_category_id，= 已选商品分类 ID）', '适用分类为空（applicable_product_categories 为空）的加工项仍展示（= 适用所有分类），不因过滤而丢失', '当前分类无匹配加工项时以文字提示可跳过，不空转强制选择', '最终创建成功且关联加工项数量正确'],
     skip_reason='',
@@ -4359,8 +4361,8 @@ _CASE_PR_016 = EvalCase(
     form_prefill=[],
     forbidden_card_text=[],
     required_args=[{'tool': 'processing_item_query', 'fields': ['applicable_category_id']}],
-    pre_clean=[{'type': 'product_dedupe', 'product_keyword': '遮光窗帘'}],
-    namespaces=['product_name:遮光窗帘'],
+    pre_clean=[{'type': 'product_remove', 'product_keyword': 'E2E建品流程样品帘'}],
+    namespaces=['product_name:E2E建品流程样品帘'],
 )
 
 # ── PR-017 [NORMAL] 商品创建/更新/详情透传「退货回补库存」开关（allow_return_restock）（源: cases/product.yml）──
@@ -4380,6 +4382,7 @@ _CASE_PR_017 = EvalCase(
     form_prefill=[],
     forbidden_card_text=[],
     pre_clean=[{'type': 'product_dedupe', 'product_keyword': '遮光窗帘'}],
+    precondition=[{'type': 'product_count_for_keyword', 'source': '遮光窗帘', 'expect': 1}],
 )
 
 # ── PR-018 [NORMAL] B端米宝 product_list 卡片引用对齐 — 只渲染回复文本中实际引用的商品（源: cases/product.yml）──
@@ -4407,7 +4410,7 @@ _CASE_PR_019 = EvalCase(
     title='建品规格与加工项价格落库 — 推理属性经 specifications 落库、加工项经 processing_item_configs 携带价格',
     skill=Skill.PRODUCT,
     difficulty=Difficulty.NORMAL,
-    user_inputs=[{'text': '根据这张图片录入商品（色卡图，可识别材质/克重）', 'images': ['https://ai-customer-service-admin-dev.oss-cn-hangzhou.aliyuncs.com/images/2026/09/04/e5a68d1a02f844c6a45846784765a737.jpg']}, {'auto_respond': {'fallback': '商品名称: 2699系列雪尼尔窗帘面料\\n单价(元/米): 23.8\\n颜色: 2699-01 米白\\n门幅: 2.8米\\n售卖方式: 散剪\\n货号: XNE2699', 'form_values': {'name': '2699系列雪尼尔窗帘面料', 'price': '23.8', 'colors': '2699-01 米白', 'door_widths': '2.8米', 'selling_methods': '散剪', 'sku_code': 'XNE2699'}}}, {'auto_respond': {'fallback': '已选加工项：刺绣工艺 ¥30/平方米、韩式波浪折边 ¥12/米'}}, {'repeat_until': {'tool_called': 'product_manage', 'max': 3}, 'fallback': '商品名称: 2699系列雪尼尔窗帘面料；单价(元/米): 23.8；颜色: 2699-01 米白；门幅: 2.8米；售卖方式: 散剪；货号: XNE2699；已选加工项：刺绣工艺 ¥30/平方米、韩式波浪折边 ¥12/米；确认创建'}],
+    user_inputs=[{'text': '根据这张图片录入商品（色卡图，可识别材质/克重）', 'images': ['https://ai-customer-service-admin-dev.oss-cn-hangzhou.aliyuncs.com/images/2026/09/04/e5a68d1a02f844c6a45846784765a737.jpg']}, {'auto_respond': {'fallback': '商品名称: E2E色卡建品样品面料\\n单价(元/米): 23.8\\n颜色: 2699-01 米白\\n门幅: 2.8米\\n售卖方式: 散剪\\n货号: XNE2699', 'form_values': {'name': 'E2E色卡建品样品面料', 'price': '23.8', 'colors': '2699-01 米白', 'door_widths': '2.8米', 'selling_methods': '散剪', 'sku_code': 'XNE2699'}}}, {'auto_respond': {'fallback': '已选加工项：刺绣工艺 ¥30/平方米、韩式波浪折边 ¥12/米'}}, {'repeat_until': {'tool_called': 'product_manage', 'max': 3}, 'fallback': '商品名称: E2E色卡建品样品面料；单价(元/米): 23.8；颜色: 2699-01 米白；门幅: 2.8米；售卖方式: 散剪；货号: XNE2699；已选加工项：刺绣工艺 ¥30/平方米、韩式波浪折边 ¥12/米；确认创建'}],
     expectations=['product_manage(action=create)'],
     data_checks=['create 参数含 specifications（材质/克重/工艺等推理属性，随 specs 落库到 product_attributes，非仅展示）', 'create 参数含 processing_item_configs（含 customPrice=加工项默认单价 unit_price、unit=真实单位），禁止只传 processing_item_ids 名称列表', '商品详情接口 processingItemConfigs 回填 unitPrice/finalPrice（customPrice 空时 finalPrice=unitPrice），前端展示非 ¥0.00 且单位正确'],
     skip_reason='',
@@ -4419,8 +4422,9 @@ _CASE_PR_019 = EvalCase(
     forbidden_text=['尚未真正创建', '未创建成功'],
     required_args=[{'tool': 'product_manage', 'action': 'create', 'fields': ['specifications', 'processing_item_configs.customPrice']}],
     must_succeed=[{'tool': 'product_manage', 'action': 'create'}],
-    pre_clean=[{'type': 'product_dedupe', 'product_keyword': '2699系列雪尼尔窗帘面料', 'price': 23.8}],
-    auto_fill={'name': '2699系列雪尼尔窗帘面料', 'price': '23.8', 'colors': '2699-01 米白', 'door_widths': '2.8米', 'selling_methods': '散剪', 'sku_code': 'XNE2699'},
+    pre_clean=[{'type': 'product_remove', 'product_keyword': 'E2E色卡建品样品面料'}],
+    namespaces=['product_name:E2E色卡建品样品面料'],
+    auto_fill={'name': 'E2E色卡建品样品面料', 'price': '23.8', 'colors': '2699-01 米白', 'door_widths': '2.8米', 'selling_methods': '散剪', 'sku_code': 'XNE2699'},
 )
 
 # ── PR-020 [NORMAL] 建品加工项价格落库盯防 — 自定义价须等于用户确认价（BFF 合并回归）（源: cases/product.yml）──

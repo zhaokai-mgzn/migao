@@ -37,6 +37,20 @@ cases:
       # （= 种子商品，加工项最全），删掉其余副本。
       - type: product_dedupe
         product_keyword: "遮光窗帘"
+    # ── 前置自断言（issue #3835 / `migao-dev-flow` §18.4）────────────────────────
+    # 本用例的**全部语义**都建立在「按名搜「遮光窗帘」只命中 1 件」之上：有 2 件时 agent
+    # **正确地**要求澄清（原文：「搜到两个同名「遮光窗帘」，需要先确认是哪一个」）⇒
+    # `product_processing_item_manage` 永不执行 ⇒ 判红，而红的表现长得像「**agent 不干活**」
+    # （指纹 `no_success(product_processing_item_manage)`）—— 归因全错。
+    # 实证：判定跑 run 34908262839 首跑 `product_search(products=2 total=2)`，
+    # 同一 run 重试 `products=1` 即通过。故把前置**声明出来**，由 runner 在运行期观测：
+    # `expect: 1` 判"基线本就不成立"（上一跑残留），`max_growth` 默认 0 判"被并行用例中途改写"。
+    # 前置不成立时折成 `precondition_not_applied(declared:product_count_for_keyword)`，
+    # 与行为失败分属不同根因原子 —— 不再伪装成 agent 表现不好。
+    precondition:
+      - type: product_count_for_keyword
+        source: "遮光窗帘"
+        expect: 1
     skip_reason: ""
     merge_log: "eval P004 + verification 2.13（查询部分同义）+ 2.14 的查询段；2026-09-14 校准（#3538）：① 输入去「100元的那件」价格点名（独立栈种子只有 ¥168 款，点名不存在的价 → agent 澄清查无此价 → 流程不前进），自包含化同 AS-003（#3511）/CR-001/PR-005/PR-007/PR-021（#3518）先例；② pre_clean 去 price 过滤（关键词去重，原 price 过滤限 100 元、在种子 ¥168 的栈上恒不匹配）"
     traces:

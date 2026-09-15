@@ -236,6 +236,15 @@ class TestCreateCasesDeclareTheirOwnCleanup:
     #3751 的重试复位按 `pre_clean` **opt-in**（`_reset_for_retry` 对未声明者返回 None）
     ⇒ 没有 `pre_clean` 的建品用例，首跑造出的商品会留到重试 ⇒ agent **正确地**拒绝建重复
     ⇒ 两次前置不同 ⇒ 指纹漂移 ⇒ 误判 `unstable`（本 run 的 PR-016 实红）。
+
+    ⚠️ **2026-09-15 口径升级（issue #3835，本类的守卫随之改写）**：`product_dedupe{共享名}`
+    只治"重试前置等价性"，**治不了"运行期副本对外可见"** —— 库级实证（run 34908262839）
+    PR-016 造的「遮光窗帘」副本在它自己结束后仍存活 3 分钟（23:37:45→23:40:46），期间
+    PP-001/PR-017/OR-014 首跑全部看到 `product_search(products=2)` 而判红。故本类的新口径是
+    **"写方不得写共享名"**：自建对象必须用例自有（`product_remove{自有名}` 把前置复位成"不存在"）。
+    改写保留了原守卫的**两条判别力**（"必须有自清理"+"不得对共享名用破坏性 remove"），
+    并把它们从"单锁 PR-016"一般化到"全部建品用例"，见
+    `tests/unit_ci_workflows/test_eval_product_name_pollution.py`。
     """
 
     def _by_id(self, fname: str) -> dict:
@@ -243,24 +252,34 @@ class TestCreateCasesDeclareTheirOwnCleanup:
         doc = yaml.safe_load((CASES_DIR / fname).read_text(encoding="utf-8"))
         return {c["id"]: c for c in doc["cases"]}
 
-    def test_pr016_cleans_its_own_seed_colliding_product(self):
-        """PR-016 建的商品与**种子同名**（「遮光窗帘」/ `prod_eval_blackout`）⇒
-        必须用 `product_dedupe`（保留最早创建 = 种子），**不能**用 `product_remove`
-        （子串删全部 ⇒ 会连种子一起删，而它是 5 条用例的共享前置）。"""
+    def test_pr016_cleans_its_own_case_owned_product(self):
+        """PR-016 的商品名下**必须用例自有**（不再是种子里就有的「遮光窗帘」）⇒
+        清理目标 = 自己的名字、类型 = `product_remove`（把前置复位成"**不存在**"，
+        而 `product_dedupe` 只会留下 1 件、运行期全程对外可见 —— #3835）。"""
         c = self._by_id("product.yml")["PR-016"]
-        assert "遮光窗帘" in str(c.get("user_inputs") or ""), (
-            "PR-016 的输入变了？本守卫的前提是「它建的商品与种子同名」")
+        inputs = str(c.get("user_inputs") or "")
+        assert "遮光窗帘" not in inputs, (
+            "PR-016 又在写种子名「遮光窗帘」了（`prod_eval_blackout` 就叫这个）——"
+            "运行期会造出第二件同名商品，令按名读它的 PP-001/PR-017/OR-014 首跑岔路（#3835）")
+        own = "E2E建品流程样品帘"
+        assert own in inputs, f"PR-016 的商品名不是预期自有名 {own!r}（改名了？同步本守卫）：{inputs!r}"
         pc = c.get("pre_clean") or []
-        assert [s.get("type") for s in pc] == ["product_dedupe"], (
-            f"PR-016 缺自清理 ⇒ 重试前置与首跑不等价（#3800）：{pc}")
-        assert pc[0].get("product_keyword") == "遮光窗帘", pc
-        assert "product_name:遮光窗帘" in (c.get("namespaces") or []), c.get("namespaces")
+        assert [s.get("type") for s in pc] == ["product_remove"], (
+            f"PR-016 缺自清理（或类型退回 dedupe）⇒ 重试前置与首跑不等价（#3800）：{pc}")
+        assert pc[0].get("product_keyword") == own, (
+            f"PR-016 的清理目标必须**正好是它自己造的那个名字**（否则又是「清别人/清不到自己」）：{pc}")
+        assert f"product_name:{own}" in (c.get("namespaces") or []), c.get("namespaces")
 
-    def test_pr016_does_not_use_the_destructive_remove(self):
-        """**红证锚点**：`product_remove` 会删**全部**子串命中项（含种子）——
-        对「遮光窗帘」这种共享前置是破坏性的，必须被本守卫挡住。"""
-        assert "product_remove" not in [s.get("type")
-                                        for s in (self._by_id("product.yml")["PR-016"].get("pre_clean") or [])]
+    def test_pr016_does_not_use_the_destructive_remove_on_a_shared_name(self):
+        """**红证锚点**：`product_remove` 会删**全部**子串命中项 —— 对「遮光窗帘」这种
+        5 条用例共享的种子前置是破坏性的，必须被本守卫挡住（旧形态）。"""
+        pc = self._by_id("product.yml")["PR-016"].get("pre_clean") or []
+        for s in pc:
+            if s.get("type") == "product_remove":
+                kw = str(s.get("product_keyword") or "")
+                assert kw != "遮光窗帘", (
+                    "PR-016 用 product_remove 点掉了共享种子名「遮光窗帘」——"
+                    "子串删全部会连种子一起删（PR-005/PR-007/CR-001/CR-003/OR-015 的共享前置）")
 
 
 # ── httpx 替身：零网络、零 LLM 地走**真实分支**（issue #3791 的红证手段）──────────
