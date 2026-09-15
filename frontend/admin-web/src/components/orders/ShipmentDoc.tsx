@@ -20,6 +20,11 @@ import { cn, formatFullDateTime } from '@/lib/utils'
  *    发货页整页布局，含表单/按钮）高于一页 A4 时按隐藏内容高度分页 → 第 2 页空白。
  *    （注意：`.shipment-print-area` 必须是 portal 容器本身的 class，不能再包一层别的
  *    class/div，否则上面的选择器选不中。）
+ *    **visibility 防御（勿删）**：订单详情页的 `ProcessingOrderBlock` 仍用旧的
+ *    `@media print { body * { visibility: hidden } }` 做打印隔离，会把本单据一起藏成
+ *    invisible（补打纸面空白，issue #3912 回归）；故 print 块内必须显式恢复
+ *    `.shipment-print-area, .shipment-print-area * { visibility: visible; }` ——
+ *    它只影响单据自身可见性，不占版面高度，与 display:none 隔离不冲突。
  * 3. **不得放进 Modal**：`Modal` 面板是 `max-h-full` + 内部 `overflow-y-auto`，
  *    打印只会打出可视区那一屏（多页明细会被裁掉）。故调用方一律渲染在页面级。
  * 4. **每页只挂一份**：`.shipment-print-area` 是全局选择器，挂两份会打印出两套单据。
@@ -81,6 +86,10 @@ export default function ShipmentDoc({ order, logistics, shipperName, className }
             width: 100%;
             font-size: 12px;
           }
+          /* 防御：页面其他组件（如 ProcessingOrderBlock）残留的
+             "body * { visibility: hidden }" 打印隔离会连同本单据一起藏掉
+             （补打纸面 invisible）——必须显式恢复单据自身可见（见文件头第 2 条）。 */
+          .shipment-print-area, .shipment-print-area * { visibility: visible; }
         }
       `}</style>
 
