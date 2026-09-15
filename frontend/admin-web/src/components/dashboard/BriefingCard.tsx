@@ -73,19 +73,35 @@ function ItemRow({ item, tone }: { item: BriefingItem; tone: 'todo' | 'risk' | '
   return inner
 }
 
+/** 环比涨跌方向：↑/+ 与 升/增/涨 → 涨（绿）；↓/- 与 降/减/跌 → 跌（红）；其余（如「持平」）中性。口径与 StatCard 一致。 */
+function changeDirection(change: string): 'up' | 'down' | 'flat' {
+  if (/[↑+]|上升|增长|增加|上涨|提升/.test(change)) return 'up'
+  if (/[↓-]|下降|减少|降低|下跌|回落/.test(change)) return 'down'
+  return 'flat'
+}
+
 function ReviewStrip({ items }: { items: BriefingReviewItem[] }) {
   if (!items || !items.length) return null
   return (
     <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-      {items.map((r, i) => (
-        <div key={i} className="rounded-lg border border-neutral-100 bg-neutral-50/60 px-3 py-2">
-          <p className="text-[11px] text-neutral-400">{r.label}</p>
-          <p className="tnum mt-0.5 text-base font-bold text-neutral-900">
-            {r.value?.toLocaleString('zh-CN')}{r.unit ? <span className="ml-0.5 text-[11px] font-normal text-neutral-400">{r.unit}</span> : null}
-          </p>
-          {r.change && <p className="mt-0.5 text-[11px] text-neutral-400">{r.change}</p>}
-        </div>
-      ))}
+      {items.map((r, i) => {
+        // #3888：回顾区弱化绝对值 —— 有环比时主展示环比（带涨跌色），不再重复绝对值；
+        // 无环比时保留原值兜底（避免丢信息）。label 恒保留，unit 随原值兜底展示。
+        const dir = r.change ? changeDirection(r.change) : 'flat'
+        const tone = dir === 'up' ? 'text-green-600' : dir === 'down' ? 'text-red-600' : 'text-neutral-900'
+        return (
+          <div key={i} className="rounded-lg border border-neutral-100 bg-neutral-50/60 px-3 py-2">
+            <p className="text-[11px] text-neutral-400">{r.label}</p>
+            {r.change ? (
+              <p className={cn('tnum mt-0.5 text-base font-bold', tone)}>{r.change}</p>
+            ) : (
+              <p className="tnum mt-0.5 text-base font-bold text-neutral-900">
+                {r.value?.toLocaleString('zh-CN')}{r.unit ? <span className="ml-0.5 text-[11px] font-normal text-neutral-400">{r.unit}</span> : null}
+              </p>
+            )}
+          </div>
+        )
+      })}
     </div>
   )
 }
