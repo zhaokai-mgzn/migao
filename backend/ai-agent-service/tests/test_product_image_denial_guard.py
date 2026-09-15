@@ -123,3 +123,43 @@ class TestProductImageDenialMorphology:
         ]:
             assert capability_denial_text_hit(t) == "", f"中性文本误命中: {t!r}"
             assert _product_image_denial_hit(t) == "", f"图片域判据误命中: {t!r}"
+
+
+class TestProductImageDenialCrossClause:
+    """迭代2（issue #3938，PR-026/027 评测复现 run 34976473654）：跨小句否定 + 新形态。
+
+    中文话题-评论结构把「图片锚点」与「能力否定」拆到两个小句（「改商品图片属于
+    商品编辑操作，我这边没有这个能力」）——旧判据要求同小句共现即漏。判别性文本
+    直接取自评测真实 LLM 输出（重放证据）。
+    """
+
+    def test_eval_transcript_denials_hit(self):
+        for t in [
+            # 评测 R1 原文：锚点「主图」句1 + 否定「没有…工具」句2（跨小句 + 工具形态）
+            "更换商品主图属于商品管理模块的写操作，我这边没有对应的执行工具，没法直接帮您",
+            # 评测 R1 原文：同小句但「执行不了」（执行不在旧 V+不了 动词前缀表）
+            "设置主图这个操作我这边执行不了",
+            # 评测 R1 原文：锚点「图片」句1 + 否定「没有这个能力」句2（跨小句）
+            "改商品图片属于商品编辑操作，我这边没有这个能力",
+            # 评测 R2 原文变体：跨小句 + 「操作不了」
+            "更换主图这个操作我这边操作不了，只能请您去后台改",
+            # 跨小句 + 「没有…通道」
+            "改图这块属于商品编辑，我这边没有图片上传的通道",
+        ]:
+            assert capability_denial_text_hit(t), f"能力误宣未命中（评测原文）: {t!r}"
+            assert _product_image_denial_hit(t), f"图片域判据未命中（评测原文）: {t!r}"
+
+    def test_cross_clause_false_positives_not_hit(self):
+        """跨小句放宽的假阳性守卫：通用权限否定 + 他处有图片词 → 不得命中。"""
+        for t in [
+            # 图片词在句1，句2是**通用权限**否定（与图片能力无关）→ 不得误报
+            "顾客问主图怎么换，我这边没有权限查看其他租户的数据",
+            # 顾客没发图（事实，非能力否定）
+            "顾客没发图片给我，我这边没有收到任何图片",
+            # 中性建议
+            "主图目前还是空的，建议您先上传一张主图",
+            # 非自我主体
+            "这个商品没有主图，我帮您查一下详情",
+        ]:
+            assert capability_denial_text_hit(t) == "", f"中性/越权文本误命中: {t!r}"
+            assert _product_image_denial_hit(t) == "", f"图片域判据误命中: {t!r}"

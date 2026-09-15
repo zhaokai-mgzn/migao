@@ -1660,19 +1660,23 @@ _PRODUCT_IMAGE_ACTION_WORDS = (
     "设为主图", "设置主图", "改主图", "换主图", "修改主图", "上传主图",
     "上传图片", "设置图片", "主图", "图片", "色卡图", "详情图",
 )
-# 否定形态**形态优先**（issue #3936，去 #3934 的枚举词表——「词表是枚举，措辞一换就漏」，
-# 下单域 `_ORDER_UNABLE_RE` 正是因此从枚举改形态、并返工 6 次）：
-#   · `V+不了` / `V+不到` 编译形态（传/改/设/上/换/加/做/拿）——覆盖「传不了/改不了/
-#     设置不了/上不了/拿不到/做不了/换不了…」一族，新动词措辞不再逐词登记；
-#   · `不包含`（生产原文「不包含图片上传」，通用语义词干覆盖不到）；
-#   · `改不动`/`弄不了`（同族口语形态）。
-# 通用性交给既有语义词干（"没有…能力/权限"、"不支持"、"没法"等由
-# `_negation_positions` 的基底判据覆盖），本正则只补词干缺的形态。
+# 否定形态**形态优先**（issue #3936 迭代1 → #3938 迭代2：PR-026/027 评测复现 run 34976473654）：
+#   · `V+不了`/`V+不到` 编译形态（传/改/设/上/换/加/做/拿/执行/操作/处理）——覆盖
+#     「传不了/改不了/设置不了/上不了/拿不到/做不了/换不了/执行不了/操作不了…」一族，
+#     新动词措辞不再逐词登记（迭代2 补「执行/操作/处理」：评测 R1「设置主图这个操作
+#     我这边执行不了」实证）；
+#   · `不包含`（生产原文「不包含图片上传」）；
+#   · `改不动`/`弄不了`（同族口语形态）；
+#   · `没…(能力|功能|工具|入口|通道|办法|方式)`（迭代2 补 工具/入口/通道/办法/方式：
+#     评测 R1「我这边没有对应的执行工具」实证；`_normalize_clause` 已把「没有」→「没」）。
+# **刻意不含「权限」**：通用权限否定（"没权限查看其他租户"）不得借图片域判据误报
+# （跨小句放宽的假阳性守卫，见 `_product_image_denial_hit`）。
+# 同小句内通用语义词干（"不支持"/"没法"/"没有…权限"等）仍由 `_negation_positions` 基底覆盖。
 # 刻意**不含**「没发/没上传/没图片」等中性事实词（「顾客没发图片给我」是客观说明，不得误报）。
 _PRODUCT_IMAGE_UNABLE_RE = re.compile(
-    r"(?:传|改|设|上|换|加|做|拿)(?:不了|不到)|不包含|改不动|弄不了|"
+    r"(?:传|改|设|上|换|加|做|拿|执行|操作|处理)(?:不了|不到)|不包含|改不动|弄不了|"
     # ⚠️ 匹配**归一后**形态（_normalize_clause 已把「没有」→「没」）
-    r"没[^，。；\n]{0,10}(?:能力|功能)"
+    r"没[^，。；\n]{0,10}(?:能力|功能|工具|入口|通道|办法|方式)"
 )
 
 
@@ -1960,21 +1964,31 @@ def _scope_misattribution_hit(text: str) -> str:
 
 
 def _product_image_denial_hit(text: str) -> str:
-    """商品图片域的能力自我否定（issue #3931）：小句 × 图片锚点 × 否定形态 × 自我主体。
+    """商品图片域的能力自我否定（issue #3931，迭代2 #3938）：小句否定形态 × 自我主体，
+    **锚点按整段判定**（迭代2：PR-026/027 评测复现——中文话题-评论结构把锚点与否定
+    拆到两个小句，如「改商品图片属于商品编辑操作，我这边没有这个能力」）。
 
     判据结构复用下单域的 `_negation_positions`/`_self_scoped_clause`（否定位置 ×
-    最近主体归属），否定形态 = 既有语义词干 ∪ `_PRODUCT_IMAGE_UNABLE_RE`（形态优先，
-    issue #3936：V+不了/V+不到 编译形态替代 #3934 的枚举词表——词表措辞一换就漏）。
+    最近主体归属）：
+      · **同小句锚点**：本小句含图片锚点 → 通用语义词干否定 + 形态化否定都算；
+      · **跨小句**（迭代2）：整段含图片锚点 + 本小句为**图片域能力形态**否定
+        （`_PRODUCT_IMAGE_UNABLE_RE`：没…工具/入口/通道/能力/功能/办法/方式、V+不了/不到、
+        不包含…）——**不含通用权限否定**（防「顾客问主图 + 我这边没权限查别的租户」误报）。
     返回命中片段或空串（空串 = 不拦截，供「只纠正 AI 真有的能力」的调用方选择）。
     """
-    for raw_clause in _CLAUSE_SPLIT_RE.split(str(text)):
+    text = str(text)
+    text_has_anchor = any(w in text for w in _PRODUCT_IMAGE_ACTION_WORDS)
+    if not text_has_anchor:
+        return ""
+    for raw_clause in _CLAUSE_SPLIT_RE.split(text):
         clause = _normalize_clause(raw_clause)
-        if not any(word in clause for word in _PRODUCT_IMAGE_ACTION_WORDS):
-            continue
-        positions = _negation_positions(clause, include_assist=False)
-        # 形态化否定（V+不了/V+不到 等）：找全部命中位置并入否定位置集
-        for m in _PRODUCT_IMAGE_UNABLE_RE.finditer(clause):
-            positions.append((m.start(), False))
+        if any(word in clause for word in _PRODUCT_IMAGE_ACTION_WORDS):
+            positions = _negation_positions(clause, include_assist=False)
+            for m in _PRODUCT_IMAGE_UNABLE_RE.finditer(clause):
+                positions.append((m.start(), False))
+        else:
+            # 跨小句：仅图片域能力形态否定（不含通用权限否定，防假阳性）
+            positions = [(m.start(), False) for m in _PRODUCT_IMAGE_UNABLE_RE.finditer(clause)]
         for pos, is_assist in positions:
             if is_assist or _self_scoped_clause(clause, pos):
                 return raw_clause.strip()[:60]
