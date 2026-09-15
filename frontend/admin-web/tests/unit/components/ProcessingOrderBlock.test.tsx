@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-// case_ids: PG-001, PG-005
+// case_ids: PG-001, PG-005, UI-019, UI-030
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
@@ -97,5 +97,24 @@ describe('ProcessingOrderBlock', () => {
     expect(text).toContain('JG-20260912-0001')
     expect(text).toContain('朝阳加工厂')
     expect(text).toContain('打孔（四爪钩）')
+  })
+
+  // issue #3889：onStatusChange 上报加工单状态（详情页据此守卫发货入口）；查询失败上报 null
+  it('onStatusChange 携带加载到的加工单状态', async () => {
+    const onStatusChange = vi.fn()
+    mockedDetail.mockResolvedValueOnce({ data: { data: poIssued } })
+    render(<ProcessingOrderBlock orderId="order-001" orderStatus="producing" hasProcessing onStatusChange={onStatusChange} />)
+
+    await screen.findByText('JG-20260912-0001')
+    expect(onStatusChange).toHaveBeenCalledWith(expect.objectContaining({ status: 'issued' }))
+  })
+
+  it('onStatusChange 查询失败时上报 null', async () => {
+    const onStatusChange = vi.fn()
+    mockedDetail.mockRejectedValueOnce(new Error('404'))
+    render(<ProcessingOrderBlock orderId="order-001" orderStatus="confirmed" hasProcessing onStatusChange={onStatusChange} />)
+
+    await screen.findByText('生成加工单')
+    expect(onStatusChange).toHaveBeenCalledWith(null)
   })
 })
