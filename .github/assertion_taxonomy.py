@@ -1,0 +1,926 @@
+#!/usr/bin/env python3
+"""断言可信度判据 —— **单一判据源**（假红/假绿结构性护栏 A 层，#3483 T1 扩展格）。
+
+## 为什么需要这个模块
+
+PR Check 的用例侧门禁原本只有 `Case Contract (truths_ref)`（引用可解析 + 生成物新鲜）、
+`Case Coverage Gate`（覆盖映射）、`QA Growth Gate`（改代码要有测试）—— **没有任何一条
+校验断言本身是否可信**。于是「写了断言」与「断言真能判红」之间没有任何结构性约束，
+以下缺陷全部被门禁放行进来（均有实证，见 `RULES` 的 `why` 字段）：
+
+| 形态 | 实证 |
+|---|---|
+| 用例**物理不可满足** | `CU-003` 让 agent 挂种子目录里不存在的标签 `VIP2活跃`（种子只有 `VIP2`/`活跃`）→ #3832 |
+| 散文禁令**独自承载**关键判据 | `PG-013` 首跑功能正确，却因 `forbidden_text`（**全程**语义、无轮次作用域）命中 R1 良性措辞而判红 → #3833 |
+| 写类用例**无效果层断言** | 31 条写用例「调用了 ≠ 成了」→ #3778 |
+| 机器计分关键词**缺失** = 不计分 | `data_checks` 里「sku_update 成功（价格落库）」**没有 `success=true`** ⇒ 该项**不计分** = 假绿 → #3559（`PR-021`） |
+| 写类用例**无自清理** ⇒ 重试前置不等价 | #3800 / #3797 |
+| **写案例无自清理/准备失败路径未纳入折叠** | #3797 |
+
+**为什么必须是单一判据源**（本模块存在的核心理由）：
+静态门禁（`.github/case_trust_gate.py`）与后续的动态分类器（runner 侧归因）**必须共用一处口径**。
+两处各写一份「写工具集合 / 效果层断言集合」，就一定会漂移 —— 届时静态放行、动态判红
+（或反之），门禁的可信度直接归零（形态同 `migao-acceptance`「注释漂移 = 假绿来源」）。
+
+**依赖纪律**：纯函数、零第三方依赖、无副作用（不读文件、不联网、不 import 后端 app 包），
+因此可被 L0 单测（`tests/unit_ci_workflows/`）与 CI job 直接调用 —— CI 的
+`ci workflow helper unit tests` job 只 `pip install pytest pyyaml`（见 pr-check.yml）。
+
+## 与 #3483 的关系
+
+本模块 = **#3483「评测体系根本解」T1「L0 静态不变式层」的扩展格：断言可信度**。
+T1 已有的「case 库静态校验（expectation 引用工具 ∈ persona 工具集）」在
+`tests/unit_ci_workflows/test_assertion_specs_wellformed.py` / `test_xiaobu_case_set.py`；
+本模块补的是**同一层里缺的那一格**（可失败性 / 效果层断言 / 自清理与前置等价 / 散文禁令不得单独承载）。
+
+## 未实装项
+
+见 `.github/case-trust-unimplemented.json`（**如实登记**，不写成恒真判断凑数）。
+"""
+
+from __future__ import annotations
+
+import re
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 一、写工具集合 / 写 action（**精确枚举，禁用宽正则**）
+# ══════════════════════════════════════════════════════════════════════════════
+#
+# 口径来源（真值锚点，不是拍的）：`backend/ai-agent-service/app/tools/base.py` 的
+# `read_only: bool = True`（第 83 行，@82d20090）+ 各工具类里 `read_only = False`
+# 的覆写；`registry.py` 用 `is_write = not tool.read_only` 判写操作审计
+# （按 `is_write = not tool.read_only` 文本检索）。
+#
+# **为什么不用宽正则**：`customer_manage` 既有 `add_tag`（写）又有 `list`/`detail`
+# （读）；`inventory_manage` 既有 `adjust`（写）又有 `query`（读）。一条
+# `.*manage.*` 或 `.*create|update|delete.*` 正则会把 `customer_manage(action=query)`
+# 这种**纯读**误判成写用例 —— 误伤的代价是给正确用例加无谓的断言要求（假红）。
+# 故：**工具级显式枚举 + action 级显式枚举**，二者都写死在下方常量里。
+#
+# `WRITE_TOOLS`：整工具即为写（该类没有 read_only action，任何调用都是写）。
+WRITE_TOOLS: frozenset[str] = frozenset({
+    # read_only = False 且**未**声明 read_only_actions 的工具
+    "aftersale_create",            # WRITE|NON_IDEMPOTENT
+    "human_handoff",               # WRITE|NON_IDEMPOTENT（每次调用创建新工单）
+    "order_create",                # WRITE
+    "order_manage",                # WRITE|DESTRUCTIVE
+    "processing_order_generate",   # WRITE
+    "processing_order_update",     # WRITE|DESTRUCTIVE
+    "product_manage",              # WRITE|DESTRUCTIVE
+    "product_processing_item_manage",  # WRITE|IDEMPOTENT
+    "product_update",              # WRITE|IDEMPOTENT
+    "sku_update",                  # WRITE|IDEMPOTENT
+})
+
+# `WRITE_TOOL_ACTIONS`：工具级 read_only=False，但**只有部分 action 是写**
+# （值 = 该工具的写 action 集合；`read_only_actions` 里的 action 是读，**不算写**）。
+# 真值锚点 = 各工具类的 `read_only_actions`（按该文本检索）
+#   · customer_manage      read_only_actions = {"list","detail","list_tags"}
+#   · after_sales_manage   read_only_actions = {"list","detail"}
+#   · employee_manage      read_only_actions = {"list","detail"}
+#   · finance_api          read_only_actions = frozenset({"get_summary","get_transactions","get_reconciliation"})
+#   · inventory_manage     read_only_actions = {"query","low_stock_alert"}
+#   · notification_manage  read_only_actions = {"list","unread_count"}
+#   · processing_item_manage read_only_actions = {"list_categories","calculate_price"}
+#   · role_manage          read_only_actions = {"list","all","detail","list_permissions"}
+#   · session_manage       read_only_actions = {"list","monitor","detail"}
+#   · settings_manage      read_only_actions = {"get_settings","get_ai_config","login_logs"}
+#   · category_manage      read_only_actions = {"tree"}
+WRITE_TOOL_ACTIONS: dict[str, frozenset[str]] = {
+    "customer_manage": frozenset({
+        "update", "add_tag", "remove_tag", "create_tag", "update_tag", "delete_tag",
+    }),
+    "after_sales_manage": frozenset({"update_status"}),
+    "employee_manage": frozenset({
+        "create", "update", "delete", "reset_password", "toggle_status",
+    }),
+    "finance_api": frozenset({"create_transaction"}),
+    "inventory_manage": frozenset({"adjust"}),
+    "notification_manage": frozenset({
+        "mark_read", "create", "delete", "mark_all_read",
+    }),
+    "processing_item_manage": frozenset({"create", "update", "delete"}),
+    "role_manage": frozenset({"create", "update", "delete", "assign_permissions"}),
+    "session_manage": frozenset({"assign", "end"}),
+    "settings_manage": frozenset({
+        "update_settings", "update_ai_config", "change_password",
+    }),
+    "category_manage": frozenset({"create", "update", "delete"}),
+}
+
+# 安全护栏：集合不得为空（空集合 = 所有写用例都判成读用例 = 门禁静默变空壳）。
+assert WRITE_TOOLS, "WRITE_TOOLS 不得为空 —— 空集会让写用例全部漏判（门禁空壳）"
+assert WRITE_TOOL_ACTIONS, "WRITE_TOOL_ACTIONS 不得为空 —— 同上"
+
+_ALL_WRITE_TOOLS: frozenset[str] = WRITE_TOOLS | frozenset(WRITE_TOOL_ACTIONS)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 二、效果层断言集合 / 非效果层（「调用了 ≠ 成了」）
+# ══════════════════════════════════════════════════════════════════════════════
+
+# 「效果层」= 断言的是**系统状态真的变了**（落库 / 产出 payload / 工具返回 success），
+# 而不是「工具被调用过」。判定来源：`tests/agent_eval/local_runner.py` 里每个断言
+# 检查器的语义（按 `check_must_succeed` / `check_db_verify` / `check_output_verify`
+# / `check_amount_verify` / `check_post_session` 等函数名检索）。
+#
+# ⚠️ 为什么 `required_args` **不属**效果层：它只证明「调用时参数给对了」，
+# 工具返回 `success=false` 照样通过 ⇒ 「调用了 ≠ 成了」（#3778 的原话）。
+EFFECT_FIELDS: tuple[str, ...] = (
+    "must_succeed",     # 写工具必须有**至少一次 success=true**（issue #3361）
+    "db_verify",        # 创建后查 admin-api 断言落库值（issue #3056）
+    "output_verify",    # 工具计算产出 payload 对不对（issue #3367）
+    "amount_verify",    # 金额正确性（单价接地/小计/总额，issue #3365）
+    "post_session",     # 会话关闭后落库断言（user_memories，issue #3357）
+)
+
+EFFECT_FIELD_WHY: dict[str, str] = {
+    "must_succeed": "『调了≠成了』：证明写操作真的 success=true（#3361/#3778）",
+    "db_verify": "落库层真值核对（#3056）：只有它能证伪『工具说成了、库里没有』",
+    "output_verify": "产出侧核对（#3367）：算出来的数对不对",
+    "amount_verify": "金额核对（#3365）：写成功 ≠ 钱算对",
+    "post_session": "会话关闭后的落库事实（#3357）",
+}
+
+# 非效果层（只证明「调用了」或纯散文，**不构成**效果层证据）
+NON_EFFECT_FIELDS: tuple[str, ...] = (
+    "expectations",       # 工具名 / tool(args) 命中 —— 「调用了」
+    "required_args",      # 参数给对了 —— 仍是「调用了」
+    "forbidden_args",     # 越权下限（反向断言）
+    "order_before",       # 时序
+    "forbidden_text",     # 回复文本反模式词（且是**全程**语义，无轮次作用域 —— 见下）
+    "want_text",          # 回复文本正向关键词
+    "forbidden_card_text",  # 卡片文本反模式
+    "form_prefill",       # 卡片预填值
+    "data_checks",        # 见下：机器计分型才算证据，纯散文不算
+)
+
+assert EFFECT_FIELDS, "EFFECT_FIELDS 不得为空 —— 空集会让效果层断言要求恒不满足（门禁空壳）"
+
+# ── 机器计分型 data_checks（**精确复刻 runner 的计分口径**）──
+# 真值锚点：`local_runner.py` 把 data_checks 收进 `scoring_checks` 的判据
+# （按 `scoring_checks = list(case.expectations or [])` 文本检索）：
+#
+#     for dc in (case.data_checks or []):
+#         dcs = str(dc).strip().lower()
+#         if "success=true" in dcs or "error.code=" in dcs or "未被调用" in dc or "not called" in dcs:
+#             scoring_checks.append(str(dc))
+#
+# ⇒ **纯散文 data_checks 不计分**。这正是 `#3559` / `PR-021` 的形态：
+# 「sku_update 成功（价格落库）」**没有 `success=true` 关键词** ⇒ 该条**不计分** ⇒ 假绿。
+# 用例作者以为写了「落库」断言，runner 一个数都没核。
+MACHINE_DATA_CHECK_MARKERS: tuple[str, ...] = (
+    "success=true",
+    "error.code=",
+    "未被调用",
+    "not called",
+)
+
+
+def is_machine_scored_data_check(check: object) -> bool:
+    """该 data_checks 条目是否**计入评分**（runner 口径的精确复刻）。
+
+    ⚠️ 与 runner 的一致性由 `test_case_trust_gate.py` 的
+    `test_machine_scored_marker_matches_runner_source` 锁定 —— 它直接读
+    `local_runner.py` 源码里的同一段判据，任一侧改动而另一侧没跟上即红。
+    """
+    s = str(check)
+    low = s.strip().lower()
+    return (
+        "success=true" in low
+        or "error.code=" in low
+        or "未被调用" in s
+        or "not called" in low
+    )
+
+
+def machine_scored_data_checks(case: dict) -> list[str]:
+    """用例里**计入评分**的 data_checks 条目。"""
+    return [str(dc) for dc in (case.get("data_checks") or [])
+            if is_machine_scored_data_check(dc)]
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 三、可失败性（「不会红的断言 = 空断言」）
+# ══════════════════════════════════════════════════════════════════════════════
+
+def scoring_assertion_count(case: dict) -> int:
+    """**计分**断言条数 —— 精确复刻 runner 的 `total_exp`。
+
+    = len(expectations) + len(机器计分型 data_checks)。
+    为 0 ⇒ 该用例**没有任何断言参与计分**：
+      · `score = passed_expectations / total_exp if total_exp > 0 else 1.0` ⇒ **满分 1.0**；
+      · 唯一还能判红的只有 case 级检查器（最后轮报错守卫 / 跨轮文本断言 / 写工具护栏）。
+    ⇒ 这是「**恒绿**」形态（`migao-acceptance`「空断言（双向）」的恒绿一支）。
+    """
+    return len(case.get("expectations") or []) + len(machine_scored_data_checks(case))
+
+
+def has_effect_assertion(case: dict) -> bool:
+    """是否含**效果层**断言（落库/产出/success —— 而非「调用了」）。"""
+    if any(case.get(f) for f in EFFECT_FIELDS):
+        return True
+    # 机器计分型 data_checks 若是 `success=true` 形态，本身就是效果层证据
+    # （它断言的是工具返回的 success，不是「调用过」）。
+    return any("success=true" in s.lower() for s in machine_scored_data_checks(case))
+
+
+def has_behavior_assertion(case: dict) -> bool:
+    """是否含**行为层**断言（工具调用/时序/效果 —— 与「纯散文禁令」相对）。
+
+    规则 c 用：`forbidden_text` **不得单独承载**关键判据。
+    为什么：`forbidden_text` 是**全程语义**（扫所有轮的 final_text，无轮次作用域），
+    首跑功能正确却可能因**某一轮**的良性措辞命中而判红（#3833 / `PG-013` 实证）。
+    ⇒ 用例必须有**另一条**行为/效果层断言，才不至于「禁令一响、整条用例就等于什么都没测」。
+
+    ⚠️ **`required_args` / `forbidden_args` 不算行为层证据**（这是有意的收紧，说明清楚）：
+    · `required_args` 的失败路径是**条件式**的 —— runner 里「未调用该工具」就直接
+      `continue`（按 `required_args:` 的 `未调用` 文本检索），即**工具从未被调用时它全绿**；
+    · 它断言的也只是「调用时某个字段给对了」，不回答「行为发生了 / 成功了」。
+    ⇒ `PG-013`（有 `required_args` + 8 条 `forbidden_text`）正是「散文禁令 + 条件式参数断言」
+    的组合，**没有**任何断言能证明加工单真的生成了。若把 `required_args` 当行为层证据，
+    就会把这条**已知缺陷形态**判成合规（门禁空壳）。故排除。
+
+    `order_before`（时序）算行为层：它要求 A 在 B 之前**真的发生**，与措辞无关。
+
+    ⚠️ **裸工具名期望也不算行为层证据**：`expectations: [order_query]`（无 args）只证明
+    「该工具被调用过」（runner 里是纯工具名子串匹配）—— 这正是 `PG-013` 的形态
+    （`[order_query, processing_order_generate]` + 8 条 `forbidden_text`），
+    功能对了却因 R1 良性措辞判红时，整条用例**没有任何断言**在证明「加工单真生成了」。
+    带 args 的期望（`sku_update(price=150)` / `{tool:…, args:…}`）算行为层：它断言参数。
+    """
+    if has_effect_assertion(case):
+        return True
+    if case.get("order_before"):
+        return True
+    if machine_scored_data_checks(case):
+        return True
+    # 带 args 的期望才承载「行为」；裸工具名只是「调用过」
+    for exp in case.get("expectations") or []:
+        if isinstance(exp, dict):
+            if exp.get("args"):
+                return True
+            continue
+        if "(" in str(exp):
+            return True
+    return False
+
+
+def uses_forbidden_text(case: dict, raw_text: str | None = None) -> bool:
+    """是否使用 `forbidden_text`（**全程**语义）。"""
+    return bool(case.get("forbidden_text"))
+
+
+# `forbidden_text` 的**轮次作用域**标注（能力由并发包在 runner 侧新增，字段名未定）。
+# 规则 c 必须**允许**「已轮次作用域 + 有行为断言」的形态（否则把正确用法也堵死）。
+# 判定：该用例的原始 YAML 文本里，`forbidden_text` 附近出现轮次作用域标注词。
+_ROUND_SCOPE_MARKERS: tuple[str, ...] = (
+    "rounds=",          # 形如 forbidden_text_rounds / forbidden_text: [{text:..., rounds:[1]}]
+    "round",            # 英文 round 键
+    "轮次",              # 「轮次作用域」
+    "作用域",
+    "仅第",
+    "只在第",
+)
+_FORBIDDEN_TEXT_KEY_RE = re.compile(r"forbidden_text")
+
+
+def forbidden_text_is_round_scoped(raw_text: str | None) -> bool:
+    """该用例的 `forbidden_text` 是否**已声明轮次作用域**（有作用域能力才算）。
+
+    ⚠️ 能力现状：**轮次作用域尚未落地**（并发包在 runner 侧新增）。故本函数返回 False
+    时，规则 c 按「全程语义」处理 —— 此时 `forbidden_text` 必须有行为/效果层断言陪跑。
+    """
+    if not raw_text:
+        return False
+    if not _FORBIDDEN_TEXT_KEY_RE.search(raw_text):
+        return False
+    # 取该用例文本里 forbidden_text 起的一段（到下一个顶层字段或文末）
+    m = _FORBIDDEN_TEXT_KEY_RE.search(raw_text)
+    tail = raw_text[m.start():]
+    stop = re.search(r"\n    [a-z_]+:", tail)
+    seg = tail[: stop.start()] if stop else tail
+    # 作用域标注可能在紧接着的注释块里 —— 一并纳入（字段后 400 字符窗口）
+    window = raw_text[m.start(): m.start() + len(seg) + 400]
+    low = window.lower()
+    return any(mk.lower() in low for mk in _ROUND_SCOPE_MARKERS)
+
+
+# ── 规则 c 的**显式豁免标记**（逃生口；见 `has_forbidden_text_intent` 的为什么）──
+# 为什么需要逃生口：`forbidden_text` 有一类**合法**用法 —— 「禁令本身就是被测行为」，
+# 如 AS-009「C 端售后进度查询：回复不得出现『没有权限/无权限』」（#3477 类**能力自我
+# 否定**）。此时禁令是**主判据且是机制本身**，要求它再配一条效果层断言是**假红风险**的
+# 无谓负担（`migao-acceptance` v1.5：换个判据写法不构成修复；此处正相反 —— **不是**
+# 判据写错，而是这类用例的判据**本就该是禁令**）。
+# 故：作者若**显式声明**「禁令即主判据」，规则 c 降级为**不阻塞**（记入报告）。
+# 声明形态 = 该用例块里的一行注释（不改 schema、不碰 YAML 键，避免与生成物/装载器打架）：
+#     # forbidden-text-intent: <≥10 字的理由>
+_FORBIDDEN_INTENT_RE = re.compile(
+    r"#\s*forbidden-text-intent\s*[:：]\s*(\S.{9,})", re.IGNORECASE)
+
+
+def has_forbidden_text_intent(raw_text: str | None) -> bool:
+    """该用例是否**显式声明**「`forbidden_text` 即主判据」（带 ≥10 字理由）。
+
+    命中 ⇒ 规则 c 不阻塞；**理由仍必须写出来**（写不出理由 = 还没想清楚这条用例在测什么）。
+    用途示例：AS-009 那种「禁令就是被测行为」的守护型用例。
+    """
+    if not raw_text:
+        return False
+    return bool(_FORBIDDEN_INTENT_RE.search(raw_text))
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 四、写用例的识别（工具名 + action 精确判定）
+# ══════════════════════════════════════════════════════════════════════════════
+
+_EXP_TOOL_RE = re.compile(r"^\s*([a-z][a-z0-9_]*)\s*(?:\(|\s|$)")
+
+
+def expectation_tools(case: dict) -> list[tuple[str, dict]]:
+    """从 `expectations` 提取 [(工具名, args)]。
+
+    支持两种形态：
+      · dict：`{tool: sku_update, args: {action: add_tag}}`
+      · 字符串（旧形态 / 生成物）：`customer_manage(action=add_tag) or direct_reply`
+
+    字符串形态下按 ` or ` 拆分支（与 runner 的 `check_expectation` 同语义）。
+    """
+    out: list[tuple[str, dict]] = []
+    for exp in case.get("expectations") or []:
+        if isinstance(exp, dict):
+            tool = str(exp.get("tool") or "").strip()
+            args = exp.get("args") if isinstance(exp.get("args"), dict) else {}
+            if tool:
+                out.append((tool, args))
+            continue
+        for part in str(exp).split(" or "):
+            part = part.strip()
+            if not part:
+                continue
+            m = _EXP_TOOL_RE.match(part)
+            if not m:
+                continue
+            tool = m.group(1)
+            args = {}
+            inner = re.search(r"\(([^)]*)\)", part)
+            if inner:
+                for kv in inner.group(1).split(","):
+                    if "=" in kv:
+                        k, _, v = kv.partition("=")
+                        args[k.strip()] = v.strip()
+            out.append((tool, args))
+    return out
+
+
+def is_write_expectation(tool: str, args: dict | None = None) -> bool:
+    """该 (工具, args) 期望是否**写**操作。
+
+    · 工具在 `WRITE_TOOLS` ⇒ 写；
+    · 工具在 `WRITE_TOOL_ACTIONS` ⇒ 看 `args.action`：
+        - action ∈ 写集合 ⇒ 写；
+        - action ∈ read_only_actions（即不在写集合）⇒ **读**（`customer_manage(action=query)` 这类）；
+        - action 缺失 ⇒ **保守判写**（缺 action 时该工具默认走写路径的可能性更高；
+          宁可多要求一条效果层断言，也不放过一个真的写用例）。
+    · 其余工具 ⇒ 读。
+    """
+    tool = str(tool or "").strip()
+    args = args or {}
+    if tool in WRITE_TOOLS:
+        return True
+    write_actions = WRITE_TOOL_ACTIONS.get(tool)
+    if write_actions is not None:
+        action = str(args.get("action") or "").strip()
+        if not action:
+            return True  # 保守判写（见 docstring）
+        return action in write_actions
+    return False
+
+
+def write_expectations(case: dict) -> list[tuple[str, dict]]:
+    """用例里所有**写**期望。"""
+    return [(t, a) for t, a in expectation_tools(case) if is_write_expectation(t, a)]
+
+
+def is_write_case(case: dict) -> bool:
+    """用例是否**写类用例**（含 ≥1 条写期望）。"""
+    return bool(write_expectations(case))
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 五、前置等价性（自清理 / 命名空间）
+# ══════════════════════════════════════════════════════════════════════════════
+
+# 自清理字段（评测前把上一次跑留下的状态复位，保证重试前置等价）。
+SELF_CLEAN_FIELDS: tuple[str, ...] = ("pre_clean", "namespaces")
+
+# ⚠️ **能力现状（照实登记，勿当有硬保证）**：
+#   · `pre_clean` —— **已落地**（`local_runner._run_pre_clean`，按该函数名检索）。
+#     支持 product_remove / product_dedupe / employee_reactivate /
+#     aftersales_ticket_prepare / customer_tag_remove；**未知类型只打印「（跳过）」**，
+#     即写错 type 名**不会报错**（静默不清理 = 潜在假绿，见 #3797，登记为未实装项）。
+#   · `namespaces` —— **本仓库当前不存在这个 schema 字段**（在 `.github/cases/**` 与
+#     `tests/agent_eval/**` 全库 grep 均为 0 命中）。它由**另一并发包**规划用于
+#     **并行互斥**；`SELF_CLEAN_FIELDS` 预留它以支持「先落地者不互相误伤」。
+#
+# **`namespaces` 与 `pre_clean` 不是一回事**（判据必须区分）：
+#   `namespaces` 只保证**并行互斥**（两条用例不会同时跑），**不解决重试前置**
+#   —— 上一跑留下的数据仍在，重试时前置状态与首跑**不等价**（#3800 的形态）。
+#   故：声明 `namespaces` 时**降级为「命名空间（弱证据）」**，不视为前置等价性成立。
+NAMESPACE_FIELDS: tuple[str, ...] = ("namespaces",)
+
+
+def self_clean_evidence(case: dict) -> str:
+    """返回该用例的自清理证据等级。
+
+    · `"pre_clean"`  —— 强：评测前真的复位（`_run_pre_clean`）。
+    · `"namespaces"` —— **弱**：只保证并行互斥，**不解决重试前置**（见上）。
+    · `""`           —— 无。
+    """
+    if case.get("pre_clean"):
+        return "pre_clean"
+    if case.get("namespaces"):
+        return "namespaces"
+    return ""
+
+
+def pre_clean_targets(case_or_spec: dict) -> list[tuple[str, str, str]]:
+    """从 `pre_clean` 提取「需在种子真值里可解析的目标」=[(类型, 字段, 值)]。
+
+    真值锚点 = `local_runner._run_pre_clean` 的分支（按该函数名检索）：
+      · `customer_tag_remove`     → `tag_name`（精确匹配种子 `customer_tags.name`）
+      · `product_remove`          → `product_keyword`（子串匹配商品名）
+      · `product_dedupe`          → `product_keyword`（子串匹配商品名）
+      · `employee_reactivate`     → `employee_name`（精确匹配员工名）
+      · `aftersales_ticket_prepare` → **无点名目标**（只需存在 pending 工单，不登记）
+      · 未知类型                   → 不登记（**未实装**：未知类型静默跳过 = 潜在假绿，见 #3797）
+    """
+    specs = case_or_spec.get("pre_clean") if isinstance(case_or_spec, dict) else None
+    out: list[tuple[str, str, str]] = []
+    for spec in specs or []:
+        if not isinstance(spec, dict):
+            continue
+        t = str(spec.get("type") or "")
+        if t == "customer_tag_remove":
+            v = str(spec.get("tag_name") or "")
+            if v:
+                out.append((t, "tag_name", v))
+        elif t in ("product_remove", "product_dedupe"):
+            v = str(spec.get("product_keyword") or "")
+            if v:
+                out.append((t, "product_keyword", v))
+        elif t == "employee_reactivate":
+            v = str(spec.get("employee_name") or "")
+            if v:
+                out.append((t, "employee_name", v))
+        # aftersales_ticket_prepare：无点名目标
+        # 未知类型：不登记（登记在 unimplemented）
+    return out
+
+
+# ── 种子真值解析（从 tests/agent_eval/fixtures/*.sql 提取）────────────────────
+# **为什么从 SQL 提取而不是硬编码标签名**：硬编码的清单会与种子漂移，而
+# `CU-003`（#3832）的形态正是「种子改了名、用例没跟上」—— 唯一能结构性地发现它的
+# 办法就是**每次从种子现算真值集**。
+
+_INSERT_HEAD_RE = re.compile(r"INSERT\s+INTO\s+([a-z_][a-z0-9_]*)\s*\(", re.IGNORECASE)
+_NAME_COLUMNS = frozenset({
+    "name", "color_name", "tag_name", "product_name", "employee_name", "title",
+    "nickname",
+})
+_STR_LIT_RE = re.compile(r"'((?:[^']|'')*)'")
+
+
+def _scan_paren_group(text: str, i: int) -> tuple[str, int]:
+    """从 `text[i] == '('` 起，返回 (组内文本, 右括号后一位)。
+
+    **必须按括号配平扫描**，不能用 `\\(([^)]*)\\)`：真实列名列表里有
+    `stock_warning_threshold` 这类长名 + 跨行，用非配平正则会**提前截断**列名列表
+    ⇒ 列位错位 ⇒ 「name 列」指到 color 列 ⇒ 真值集合变成颜色十六进制 ⇒ 门禁静默失效。
+    （实证：本模块初版即踩此坑，`customer_tags` 只解析出 `#faad14`。）
+    """
+    assert text[i] == "(", f"_scan_paren_group 需从 '(' 开始，实际 {text[i]!r}"
+    depth = 0
+    j = i
+    n = len(text)
+    while j < n:
+        if text[j] == "(":
+            depth += 1
+        elif text[j] == ")":
+            depth -= 1
+            if depth == 0:
+                return text[i + 1: j], j + 1
+        j += 1
+    raise ValueError("括号不配平（种子 SQL 损坏或被截断）")
+
+
+def _split_values_tuples(body: str) -> list[list[tuple[int, str]]]:
+    """从 VALUES 体里切出每个元组的 `[(列序号, 字符串值)]`。
+
+    ⚠️ **列序号必须在扫描时算出来**：本函数只收字符串字面量（数字/布尔/`NULL` 不入表），
+    所以「第 k 个字符串」**不等于**「第 k 列」。实证：`customer_tags` 的值
+    `('tag_eval_vip2', 1, 'VIP2', '#faad14', 'manual', …)` 的字符串序列是
+    `['tag_eval_vip2','VIP2','#faad14','manual',…]` —— 若按字符串位序取 `name`
+    （列序号 2）就会拿到 `#faad14`，真值集合变成颜色十六进制 ⇒ 判据静默失效
+    （本模块初版即踩此坑）。故每个 `(...)` 里按**逗号分隔的字段位**计列序号，
+    只把该位是字符串的记下来。
+
+    只收**顶层** `(...)`（`depth == 1`）里的字符串 —— 嵌套函数/`ROW()` 里的字面量不算一列。
+    """
+    tuples: list[list[tuple[int, str]]] = []
+    depth = 0
+    col_idx = 0
+    cur: list[tuple[int, str]] = []
+    i = 0
+    n = len(body)
+    while i < n:
+        ch = body[i]
+        if ch == "'":
+            j = i + 1
+            buf = []
+            while j < n:
+                if body[j] == "'":
+                    if j + 1 < n and body[j + 1] == "'":
+                        buf.append("'")
+                        j += 2
+                        continue
+                    break
+                buf.append(body[j])
+                j += 1
+            if depth == 1:
+                cur.append((col_idx, "".join(buf)))
+            i = j + 1
+            continue
+        if ch == "(":
+            depth += 1
+            if depth == 1:
+                cur = []
+                col_idx = 0
+        elif ch == ")":
+            if depth == 1:
+                tuples.append(cur)
+                cur = []
+            depth -= 1
+        elif ch == "," and depth == 1:
+            col_idx += 1
+        i += 1
+    return tuples
+
+
+def extract_seed_catalog(sql_text: str) -> dict[str, set[str]]:
+    """从种子 SQL 提取 {表名: {列名类真值}}。
+
+    口径（刻意**保守**，宁可少收也不误收）：
+      · 只收 `INSERT INTO <表>(<列...>)` 里**列名**属 `_NAME_COLUMNS` 的位置上的字符串；
+      · 列名列表按**括号配平**扫描（见 `_scan_paren_group` 的实证注释）；
+      · 取值按**逗号分隔的字段位**对齐列名（见 `_split_values_tuples` 的实证注释）；
+      · 两种写法都覆盖：纯 `VALUES (...)` 与 `SELECT ... FROM (VALUES ...) AS v(...)`；
+      · 名列出现多次（如 `product_skus.color_name`）时其值也收 —— 属同族真值，
+        多收无害（判据只查「能否解析到」，不查来源表）。
+
+    **为什么不收所有字符串**：描述文本里出现 `张三` 会让「标签/商品名解析」误判为可解析，
+    门禁直接变成恒真（空壳）。见本模块 header 的「不许放宽成空壳」红线。
+    """
+    catalog: dict[str, set[str]] = {}
+    for m in _INSERT_HEAD_RE.finditer(sql_text):
+        table = m.group(1).lower()
+        try:
+            cols_text, after = _scan_paren_group(sql_text, m.end() - 1)
+        except ValueError:
+            continue
+        # 语句体：到下一个分号（分号不会出现在本仓库种子的字符串字面量里；此处保守）
+        semi = sql_text.find(";", after)
+        body = sql_text[after: semi if semi != -1 else len(sql_text)]
+        cols = [c.strip().split(".")[-1].strip().lower() for c in cols_text.split(",")]
+        name_idx = {i for i, c in enumerate(cols) if c in _NAME_COLUMNS}
+        if not name_idx:
+            continue
+        for tup in _split_values_tuples(body):
+            for idx, value in tup:
+                if idx in name_idx and value.strip():
+                    catalog.setdefault(table, set()).add(value)
+    return catalog
+
+
+def resolve_pre_clean_target(spec_type: str, field: str, value: str,
+                             catalog: dict[str, set[str]]) -> bool:
+    """`pre_clean` 的点名目标能否在种子真值里解析到。
+
+    匹配语义与 runner 对齐：
+      · `tag_name` / `employee_name` → **精确匹配**（runner 按 name 精确查）
+      · `product_keyword`            → **子串匹配**（runner 用 `kw in p.name`）
+    """
+    value = str(value or "")
+    if field == "tag_name":
+        return value in catalog.get("customer_tags", set())
+    if field == "employee_name":
+        return value in catalog.get("sys_users", set()) or value in catalog.get("users", set())
+    if field == "product_keyword":
+        return any(value in name for name in catalog.get("products", set()))
+    return True  # 未知字段：不判（登记为未实装，不写成恒真阻塞）
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 六、persona 规则（单端用例的标注与跨腿窄跑）
+# ══════════════════════════════════════════════════════════════════════════════
+
+# C 端（小布）工具集真值 —— **单一源** = `tests/agent_eval/eval_case_filter.XIAOBU_TOOLS`
+# （该模块零第三方依赖，自身的一致性由 `test_xiaobu_case_set.py::TestXiaobuToolsetTruth`
+#  与后端 `CUSTOMER_*_TOOLS` 锁定）。本模块只做转发，**不复制**一份平行清单
+# （复制 = 双源漂移，正是本模块 header 反对的）。
+try:  # pragma: no cover - 导入失败时降级为「未实装」，不静默恒真
+    import os as _os
+    import sys as _sys
+
+    _EVAL_DIR = _os.path.join(
+        _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))),
+        "tests", "agent_eval")
+    if _EVAL_DIR not in _sys.path:
+        _sys.path.insert(0, _EVAL_DIR)
+    from eval_case_filter import XIAOBU_TOOLS as _XIAOBU_TOOLS  # noqa: E402
+    XIAOBU_TOOLSET_SOURCE = "eval_case_filter.XIAOBU_TOOLS"
+except Exception:  # pragma: no cover
+    _XIAOBU_TOOLS = None
+    XIAOBU_TOOLSET_SOURCE = ""
+
+PERSONA_VALUES: tuple[str, ...] = ("mibao", "xiaobu", "both")
+
+# 禁止静默少跑守卫的**文本锚点**（行号会漂移，引用一律按文本检索）：
+# `tests/agent_eval/local_runner.py` 的「禁止静默少跑」守卫 —— 单端用例若被当
+# `case_ids` 窄跑，另一条腿会 `sys.exit(1)`；**配对不豁免**（#3822，run 34907040543：
+# `OR-013` 只在 mibao 腿 ⇒ xiaobu 腿红）。静态门禁只能要求**标注存在**，
+# 真正的跨腿判定属 T2（runner 归因），见 unimplemented 清单。
+SILENT_SKIP_GUARD_ANCHOR = "禁止静默少跑"
+
+
+def case_persona(case: dict) -> str:
+    """读用例 persona（`""` = 缺省双端）。"""
+    return str(case.get("persona") or "").strip().lower()
+
+
+def is_single_leg_by_toolset(case: dict) -> bool:
+    """**纯静态**判定：该用例是否只能跑单端（期望工具全是小布工具集）。
+
+    ⚠️ 这是**下界**（保守判定）：
+      · expectations 非空 且 工具集 ⊆ XIAOBU_TOOLS ⇒ 只可能是小布用例
+        （米宝工具集与之不相交）；
+      · expectations 为空 ⇒ **无法静态判定**（返回 False，登记为未实装）；
+      · 工具集不 ⊆ XIAOBU_TOOLS ⇒ 双端或米宝端，无法静态判定（返回 False）。
+    """
+    if _XIAOBU_TOOLS is None:
+        return False
+    tools = {t for t, _ in expectation_tools(case) if t}
+    tools = {t for t in tools if t != "direct_reply"}
+    if not tools:
+        return False
+    return tools <= _XIAOBU_TOOLS
+
+
+def missing_persona_annotation(case: dict) -> bool:
+    """单端（按工具集可判定的）用例是否**缺** persona 标注。
+
+    规则 d 的静态部分：要求**标注存在**。跨腿窄跑的禁止（#3822）属 T2，见未实装清单。
+    """
+    if not is_single_leg_by_toolset(case):
+        return False
+    return case_persona(case) not in ("mibao", "xiaobu")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 七、规则表（**门禁与分类器共用的唯一规则源**）
+# ══════════════════════════════════════════════════════════════════════════════
+
+# 每条规则含：code / title / why（形态名 + issue）/ counterexample（现存用例）/
+# implemented（False = **未实装**，绝不写成恒真判断）/ fix（给人和 agent 的修复指引）。
+RULES: tuple[dict, ...] = (
+    {
+        "code": "CASE-TRUST-EMPTY-ASSERTION",
+        "title": "计分断言不得为空（可失败性）",
+        "why": (
+            "空断言（恒绿）：`total_exp == 0` ⇒ `score = 1.0`，用例永远绿。"
+            "见 `migao-acceptance`「假绿 / 假红：断言自身会双向骗人」的空断言（恒绿）支；"
+            "实证 #3559 / PR-021。"
+        ),
+        "counterexample": "PR-021（只有纯散文 data_checks，无 expectations、无 success=true）",
+        "implemented": True,
+        "fix": (
+            "补 ≥1 条**计分**断言：`expectations`（工具名/args），"
+            "或在 data_checks 里写机器可判定形态（必须含 `success=true` / `error.code=` / "
+            "`未被调用` / `not called` —— 纯散文不计分）。"
+        ),
+    },
+    {
+        "code": "CASE-TRUST-NO-EFFECT-ASSERTION",
+        "title": "写类用例必须 ≥1 条效果层断言",
+        "why": (
+            "「调用了 ≠ 成了」（#3778）：`expectations`/`required_args` 只证明调用发生、"
+            "参数给对，工具返回 `success=false` 也照样通过。"
+        ),
+        "counterexample": "PR-021（`sku_update` 只有工具名期望 + 散文 data_checks）",
+        "implemented": True,
+        "fix": (
+            "加 `must_succeed: [{tool: <写工具>}]`（断言至少一次 success=true），"
+            "或 `db_verify`（查落库值）、`output_verify`（核产出 payload）、"
+            "`amount_verify`（核金额）、`post_session`（核会话关闭后落库）。"
+            "**不要**只写散文 data_checks 充当落库断言（那条不计分）。"
+        ),
+    },
+    {
+        "code": "CASE-TRUST-NO-SELF-CLEAN",
+        "title": "写类用例必须声明自清理（前置等价性）",
+        "why": (
+            "写用例不自清理 ⇒ 第二次跑的前置状态与首跑**不等价**（幂等拒绝/重名澄清/"
+            "存量消耗）。实证 #3800（PG-013 重试前置不等价）、#3797（准备型 pre_clean "
+            "未复位路径未纳入折叠）。"
+        ),
+        "counterexample": "PG-013（写 `processing_order_generate`，无 pre_clean）",
+        "implemented": True,
+        "fix": (
+            "声明 `pre_clean`（`customer_tag_remove` / `product_remove` / `product_dedupe` / "
+            "`employee_reactivate` / `aftersales_ticket_prepare`）把目标状态复位；"
+            "或声明 `namespaces`（**弱证据**：只保证并行互斥，不解决重试前置）。"
+        ),
+    },
+    {
+        "code": "CASE-TRUST-PRECLEAN-TARGET-UNRESOLVABLE",
+        "title": "`pre_clean` 的点名目标必须在种子真值里可解析",
+        "why": (
+            "点名一个种子里不存在的对象 ⇒ 用例**物理不可满足**（agent 无论如何都做不到），"
+            "且 pre_clean 静默「无 X 需清理」⇒ 前置状态从未复位。实证 #3832 / #3794："
+            "`CU-003` 让 agent 挂 `VIP2活跃`，而种子只有 `VIP2` / `活跃`。"
+        ),
+        "counterexample": "CU-003（`pre_clean[].tag_name: \"VIP2活跃\"` ∉ 种子 customer_tags）",
+        "implemented": True,
+        "fix": (
+            "改成本用例 persona 对应种子文件里**真实存在**的名字"
+            "（`tests/agent_eval/fixtures/mibao_eval_seed.sql` / `xiaobu_eval_seed.sql`），"
+            "或在种子里补上该对象（补数据层，而不是让用例悬空）。"
+        ),
+    },
+    {
+        "code": "CASE-TRUST-FORBIDDEN-TEXT-SOLE",
+        "title": "`forbidden_text` 不得单独承载关键判据",
+        "why": (
+            "`forbidden_text` 是**全程**语义（扫所有轮的 final_text，**无轮次作用域**）⇒ "
+            "首跑功能正确却可能因**某一轮**的良性措辞而判红（假红）。实证 #3833 / PG-013："
+            "R1 良性措辞命中禁令 → 整条用例红，而业务流程实际走通了。"
+        ),
+        "counterexample": "PG-013（8 条 forbidden_text + 无 must_succeed/expectations 层面的行为断言）",
+        "implemented": True,
+        "fix": (
+            "该用例**同时**要有 ≥1 条行为/效果层断言（`expectations` / `must_succeed` / "
+            "`db_verify` / `output_verify` / 机器计分型 data_checks）；"
+            "或把禁令改成**轮次作用域**形态（轮次作用域能力落地后本规则自动放行）。"
+        ),
+    },
+    {
+        "code": "CASE-TRUST-SINGLE-LEG-NO-PERSONA",
+        "title": "单端用例必须显式标注 persona",
+        "why": (
+            "单端用例缺标注 ⇒ 被另一条腿选中 ⇒ 该腿必挂（假红）；且 `case_ids` 窄跑时"
+            "另一腿「禁止静默少跑」守卫会红，**配对不豁免**（#3822，run 34907040543）。"
+        ),
+        "counterexample": "（存量：按工具集可判定的纯小布用例中，缺 `persona` 标注者见基线清单）",
+        "implemented": True,
+        "fix": "在该用例上加 `persona: xiaobu`（或 `mibao`）。",
+    },
+)
+
+RULES_BY_CODE: dict[str, dict] = {r["code"]: r for r in RULES}
+
+# ── 未实装项（**如实登记**；绝不写成恒真判断凑数）─────────────────────────────
+UNIMPLEMENTED: tuple[dict, ...] = (
+    {
+        "code": "CASE-TRUST-PRECLEAN-UNKNOWN-TYPE",
+        "title": "`pre_clean.type` 未知/拼错 ⇒ 静默跳过（潜在假绿）",
+        "why_not": (
+            "`local_runner._run_pre_clean` 对未知 type 只 `return \"未知 pre_clean 类型: …（跳过）\"`"
+            "（按该文本检索），**不报错** ⇒ 拼错的 type = 一条**没有复位的**写用例，"
+            "而静态侧无法区分「作者有意跳过」与「拼错」（#3797）。"
+        ),
+        "needs": (
+            "runner 侧把未知 type 改成**失败关闭**（或引入显式 `pre_clean: [{type: none, reason: …}]`），"
+            "静态门禁才有可判定的目标。属 T2（runner 归因自动化）。"
+        ),
+    },
+    {
+        "code": "CASE-TRUST-PRECLEAN-FAILURE-FOLD",
+        "title": "`pre_clean` 失败/未复位路径未纳入折叠判据",
+        "why_not": (
+            "`_run_pre_clean` 的返回值（「无「X」商品需清理」/「查询 3 次未命中（跳过）」）"
+            "**不参与用例判定** ⇒ 清理没生效也照跑（#3797 的潜在假绿）。"
+        ),
+        "needs": "runner 侧把 pre_clean 结果进 case_issues（失败即红）。属 T2。",
+    },
+    {
+        "code": "CASE-TRUST-CROSS-LEG-NARROW-RUN",
+        "title": "单端用例在与其他腿共用 `case_ids` 时被选中",
+        "why_not": (
+            "静态只能看到**本 PR 的 diff**，看不到「本次运行会不会用 `case_ids` 窄跑」"
+            "—— 那是**运行期**信息。静态侧只能要求 persona 标注存在"
+            "（`CASE-TRUST-SINGLE-LEG-NO-PERSONA` 已实装）。"
+        ),
+        "needs": (
+            "runner 侧按 persona 校验 `case_ids` 的跨腿完整性（#3822；"
+            "`local_runner.py` 的「禁止静默少跑」守卫按该文本检索）。属 T2。"
+        ),
+    },
+    {
+        "code": "CASE-TRUST-ALL-CASES-PERSONA-ANNOTATED",
+        "title": "**全库**用例都必须标注 persona",
+        "why_not": (
+            "口径过宽会让全部双端用例（存量 200+ 条）立刻违规 —— 但双端用例**本就不该**"
+            "被强制标注（`persona: \"\"` 是合法的「双端」语义）。故只对**按工具集可判定为"
+            "单端**的用例子集实装。"
+        ),
+        "needs": "无需落地（这是**有意不做**的口径，登记以免被误当遗漏）。",
+    },
+    {
+        "code": "CASE-TRUST-PROSE-DATA-CHECK-QUALITY",
+        "title": "纯散文 `data_checks` 的**语义**质量（是否真在测它声称的东西）",
+        "why_not": (
+            "「这条散文断言是不是真的覆盖了业务价值」是**语义**判断，静态无法判定"
+            "（`migao-acceptance`：LLM 只覆盖语义残留）。静态侧只能判定「它**不计分**」"
+            "（`is_machine_scored_data_check`）并据此要求效果层断言。"
+        ),
+        "needs": "LLM 用例语义审计（#3483 的 LLM 复核格），不属静态门禁。",
+    },
+)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 八、裁决入口（**门禁与动态分类器共用的唯一入口**）
+# ══════════════════════════════════════════════════════════════════════════════
+
+def judge_case(case: dict, *, catalog: dict[str, set[str]] | None = None,
+               raw_text: str | None = None) -> list[dict]:
+    """对**单条**用例给出违规列表（纯函数，无副作用）。
+
+    返回 `[{"code", "case_id", "detail", "fix"}]`，空列表 = 无违规。
+    `catalog` 为 None 时跳过「种子可解析」规则（**不**当成通过 —— 由调用方决定是否加载种子；
+    门禁脚本**必须**传 catalog，否则会静默少判一条规则，故门禁里断言 catalog 非空）。
+    """
+    out: list[dict] = []
+    cid = str(case.get("id") or "?")
+
+    def add(code: str, detail: str) -> None:
+        out.append({
+            "code": code,
+            "case_id": cid,
+            "detail": detail,
+            "fix": RULES_BY_CODE[code]["fix"],
+        })
+
+    # ── 规则 a1：可失败性（计分断言非空）──
+    n_scoring = scoring_assertion_count(case)
+    if n_scoring == 0:
+        add("CASE-TRUST-EMPTY-ASSERTION",
+            f"计分断言数 = 0（expectations={len(case.get('expectations') or [])}，"
+            f"机器计分型 data_checks={len(machine_scored_data_checks(case))}）"
+            f"⇒ 恒绿：score 公式 `total_exp > 0 else 1.0` 会给满分")
+
+    # ── 规则 a2：写类用例 ≥1 效果层断言 ──
+    write_exps = write_expectations(case)
+    if write_exps:
+        names = ", ".join(sorted({t for t, _ in write_exps}))
+        if not has_effect_assertion(case):
+            add("CASE-TRUST-NO-EFFECT-ASSERTION",
+                f"含写期望 [{names}] 但无任何效果层断言"
+                f"（效果层字段：{'/'.join(EFFECT_FIELDS)}；"
+                f"机器计分型 data_checks 也认，但必须含 "
+                f"{'/'.join(MACHINE_DATA_CHECK_MARKERS)} 之一）"
+                f"⇒「调用了 ≠ 成了」（#3778）")
+
+        # ── 规则 b：前置等价性（写用例必须声明自清理）──
+        if not self_clean_evidence(case):
+            add("CASE-TRUST-NO-SELF-CLEAN",
+                f"含写期望 [{names}] 但未声明自清理"
+                f"（`pre_clean` 或 `namespaces`）⇒ 重试前置与首跑不等价（#3800）")
+
+        # ── 规则 b2：pre_clean 目标必须在种子真值里可解析 ──
+        if catalog is not None:
+            for ptype, field, value in pre_clean_targets(case):
+                if not resolve_pre_clean_target(ptype, field, value, catalog):
+                    add("CASE-TRUST-PRECLEAN-TARGET-UNRESOLVABLE",
+                        f"pre_clean[{ptype}].{field} = {value!r} 在种子真值里解析不到"
+                        f"（已收表：{sorted(k for k in catalog if catalog[k])}）"
+                        f"⇒ 用例物理不可满足（#3832/#3794）")
+
+    # ── 规则 c：forbidden_text 不得单独承载 ──
+    if uses_forbidden_text(case) and not forbidden_text_is_round_scoped(raw_text):
+        if not has_behavior_assertion(case) and not has_forbidden_text_intent(raw_text):
+            add("CASE-TRUST-FORBIDDEN-TEXT-SOLE",
+                f"使用了 forbidden_text（{len(case.get('forbidden_text') or [])} 条，"
+                f"**全程**语义、无轮次作用域）但无任何行为/效果层断言陪跑"
+                f"⇒ 单轮良性措辞即可判红（假红，#3833/#3800）")
+
+    # ── 规则 d：单端用例必须标注 persona ──
+    if missing_persona_annotation(case):
+        tools = sorted({t for t, _ in expectation_tools(case) if t})
+        add("CASE-TRUST-SINGLE-LEG-NO-PERSONA",
+            f"期望工具 {tools} ⊆ 小布工具集（米宝工具集与之不相交）"
+            f"⇒ 只能跑单端，但 persona 未标注"
+            f"（缺 persona 的另一条腿必挂；`case_ids` 窄跑还会触发"
+            f"「{SILENT_SKIP_GUARD_ANCHOR}」守卫，#3822）")
+
+    return out
