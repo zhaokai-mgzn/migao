@@ -11,6 +11,7 @@ tools: product_search, product_detail, product_manage, inventory_manage, process
 | 搜索商品 | product_search |
 | 商品详情/价格/规格 | product_detail |
 | 改价格/名称 | product_update |
+| 设置/修改主图、详情图/图片 | product_manage(action=update, images/detail_images) |
 | 创建/上下架 | product_manage |
 | 增删加工项 | product_processing_item_manage |
 | 库存 | inventory_manage |
