@@ -73,6 +73,58 @@
 5. **分支卫生**：验证完即 PR，CI 绿即合并，分支存活 < 1-2 天；定期 `git branch --merged origin/main` 全删 + 清理 `origin gone` 的本地分支。
 6. **开工前读契约**：`docs/wiki/CONTRACT-LEDGER.md`（状态枚举/字段名/端点签名）；跨模块改动后跑 `./contract-check.sh`。
 
+### 2.4 预设快照地雷：worktree 的 `.agent-presets/**` 是**创建时刻快照**（v1.8 新增，2026-09-15，issue #3851）
+
+**症状（静默）**：worktree 建好那一刻，`.agent-presets/**` 是**当时**的副本；此后 main 上预设再推进，工作区
+**不会自动跟上** ⇒ 这些文件相对 `origin/main` 就是「改动」（内容在**回退**）⇒ 一条 `git add -A` + push 就提交一个
+**把研发模式回退若干版本**的 PR。而现有门禁（Case Contract / Coverage / QA Growth / Case Trust）**都不看
+`.agent-presets/**` 的版本 ⇒ 不红**。
+
+**实测**（锚定 `origin/main` = `10059c53`，2026-09-15 现取；条数是**时点值**、会漂，命令自证）
+：`migao-wt/` 下含该预设文件的 **38 个**工作区里，**31** 个的 `migao-dev-flow` 版本 ≠ main（1.18.0 ~ 1.28.0），仅 **7** 个同步。
+**本单开工时我自己的 worktree 也在其中**：建完仍是 v1.28.0 + acceptance v1.9.0，而开工期间 main 已推进到
+v1.29.0 + v1.10.0 —— 一个刚建几分钟的 worktree 就落后了整整一版，只能靠人工 `git checkout origin/main -- .agent-presets/` 补上：
+
+```bash
+# 自取现状（不写死条数；macOS 自带 uniq 无 -w，故用 sed+sort 计数）
+git -C <migao 仓库根> worktree list --porcelain | grep '^worktree ' | cut -d' ' -f2- | while read -r wt; do
+  f="$wt/.agent-presets/migao/skills/migao-dev-flow/SKILL.md"; [ -f "$f" ] || continue
+  printf '%s %s\n' "$(sed -n 's/^version: *//p' "$f" | head -1)" "$wt"
+done | sed 's/ .*//' | sort | uniq -c | sort -rn
+```
+
+**三层防线（互补，别只靠一层）**：
+
+| 层 | 位置 | 管什么 |
+|---|---|---|
+| ① **创建路径**（根治） | `scripts/dev-worktree.sh add` | 建完工作区**自动** `git checkout origin/main -- .agent-presets/`；输出刷新了哪些文件与**理由** |
+| ② **提交路径**（增量 fail-closed） | `./scripts/dev-worktree.sh preset-guard`（判定本体 `scripts/agent-presets-guard.py`） | 暂存/工作区的预设**版本下降** ⇒ **非零退出**；**合法升级放行**；同版本内容不同 = **分叉 → 告警** |
+| ③ **机械安全网**（全库/定时对账） | `#3843` 的统一审计 `drift_audit --check` 的「`.agent-presets/**` 版本单调性」守卫 | 存量工作区 + CI 侧对账。**与本单互补**：本单管增量、贴合工作区；审计管全库、定时 |
+
+```bash
+# 提交前自查（版本下降即拒绝提交；升级/相同放行）
+./scripts/dev-worktree.sh preset-guard              # 默认同时看暂存区与工作区
+./scripts/dev-worktree.sh preset-guard --source index   # 只看 `git diff --cached`
+# 命中时的修法（与 issue #3851 记录的人工修法同一形状）
+git checkout origin/main -- .agent-presets/
+```
+
+**存量清理（只出清单，脚本绝不代删）**：判据 = **分支已合入 `origin/main`**（祖先可达，或 `git cherry` 无 `+` 行
+—— squash 合并后 commit 可达性不是判据）+ **工作树干净** + **无活跃会话锁** ⇒ 列「可安全移除」；否则列「需人看」并给原因：
+
+```bash
+./scripts/dev-worktree.sh prune --dry-run    # 必须显式 --dry-run；不带即拒绝执行（exit 2）
+./scripts/dev-worktree.sh rm <分支或路径> --delete-branch   # 人工逐条确认后真删（脚本不代劳）
+```
+
+**禁止手法**：不要用「让 git 忽略这些文件的改动」的索引标记手法（`--skip-worktree` / `--assume-unchanged` 之类）——
+那会把**合法的预设改动**（改研发模式本身）一起吞掉，「眼不见为净」在这里等于把正事也堵死。
+**要改研发模式**：直接在工作区改 + 升 `version:`（`preset-guard` 对升级放行），PR 走正常评审。
+
+> 同族病灶：`migao-dev-flow` §18.2（**活锚** `~/.dsh/.agent-presets/migao` 陈旧 ⇒ 按过期规则干活）、
+> `#3849`（`AGENTS.md` 换链拓扑会指向**落后 136 提交**的主工作区）—— 三者都是「**读的是快照，不是真相源**」。
+> 相关单：`#3843`（返工主机制 A~H 护栏）· `#3846`（断言可信度门禁包实测中发现并拦截此风险）。
+
 ## 3. CI 关卡（合并前会自动跑）
 | 检查 | 作用 | 失败常见原因 |
 |---|---|---|
