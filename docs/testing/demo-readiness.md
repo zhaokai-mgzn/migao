@@ -50,7 +50,8 @@ API 层 8/8 ≠ UI 层可用；**只跑 6 个文件的 E2E gate ≠ 全量 UI �
 | 客户列表 / 客户详情 | **未验证** | 反证：nightly 同 SHA `customer-list` 13 / **6 fail**、`customer-detail` 8 / **6 fail** | 同上 | 演示前手动点开客户列表 + 详情 |
 | 米宝聊天主流程（发消息 / 收回复 / tool 卡片渲染） | **未验证** | 反证：nightly 同 SHA `chat/chat.spec.ts` 8 pass / **12 fail**（含"页面加载后应显示消息输入框和发送按钮"红） | UI 层无机器级证据；**AI 能力本身**另有 API 层证据（见 1.3） | 演示前**必做**：手动发 1 条真实消息，确认输入框/回复/卡片都出来 |
 | 售后工单列表 / 详情 | **未验证** | 反证：nightly 同 SHA `after-sales-list` 16 / **2 fail**、`after-sales-detail` 11 / **1 fail** | 少量红，但不是全绿 | 演示前手动点开售后列表 + 详情 |
-| 设置 / 通知 / 加工项 / 存储 | **未验证** | 反证：`processing` 0 / **40 fail**、`settings` 8 / 14、`notifications` 6 / 12、`oss-dual-bucket` 4 / 6 | 加工项 spec 全红 | 演示若涉及加工单，**手动走一遍** |
+| 设置 / 通知 / 加工项 / 存储 | **未验证** | 反证：`processing` 0 / **40 fail**、`settings` 8 / 14、`notifications` 6 / 12、`oss-dual-bucket` 4 / 6 | 加工项 spec 全红；**菜单结构同步说明**：订单管理组下新增「加工单」菜单项（加工单列表页，`permissionCode=processing:manage`），见下行 | 演示若涉及加工单，**手动走一遍**（或直接演示下行加工单列表页） |
+| 加工单列表页（`processing-orders`，**本包新增**） | **机器级** | ① 已追加进 `Demo Evidence Gate` manifest（`tests/e2e/demo-path-specs.txt` 第 8 个 spec：`orders/processing-orders.spec.ts`，PR 合入后 CI 自动跑）；② 本包本地 fixture 复跑 **12 passed** 两轮（`12 passed (32.3s)` / `12 passed (25.2s)`，执行行见 PR body，SHA `6a55d73b` 起的工作分支） | 状态机按钮的**真后端联动**（真 PATCH 落库 + 订单状态回退联动）不在本层；快照**不含金额**（决策 2 不含销售价，列表无金额列，见 PR body 存疑） | 演示前手动点一次「发加工 / 开始加工 / 加工完成 / 取消」任一操作，确认订单详情页加工单块状态同步 |
 | 登录页 | **证据引用** | 本包实测（2026-09-15）：`https://merchant.migaozn.com/` → **HTTP 307** 跳 `/login`；`/login` → **HTTP 200** | 登录**提交**链路（短信码）没有 e2e 覆盖：`specs/auth/login-sms.spec.ts` / `register.spec.ts` 属 `auth-pages` project，**没有任何 workflow 跑它**（`--project=web` 会 ignore `specs/auth/`） | 演示前用 13800138000 / 万能码 123456 亲手登一次（短信网关仍是 bypass） |
 
 ### 1.3 活环境（当前可用，本包实测）
@@ -146,8 +147,9 @@ job 2  Mini-app e2e static contract preflight
 
 - **文件**：`.github/workflows/demo-evidence.yml`（**新文件**；不改被并发包占用的 `pr-check.yml`）。
 - **job 1 `Demo path specs (admin-web, fixture mode)`**：清单 = `tests/e2e/demo-path-specs.txt`（单一事实源），
-  当前 7 个 spec：`orders/shipment-doc`（UI-040）、`orders/order-create`、`orders/order-lifecycle`、
-  `chat/chat-panel-resize`、`chat/mibao-minimize-layout`、`catalog/categories`、`smoke/pages-render`。
+  当前 8 个 spec：`orders/shipment-doc`（UI-040）、`orders/order-create`、`orders/order-lifecycle`、
+  `chat/chat-panel-resize`、`chat/mibao-minimize-layout`、`catalog/categories`、`smoke/pages-render`、
+  `orders/processing-orders`（加工单列表页，**本包新增**）。
   - 收录三判据（缺一不收）：① 属演示面；② **fixture 模式真能跑绿**（依据 = nightly run `34911052034` 同 SHA 读数 + 本地复跑 + 本 run）；③ **不在** pr-check 那 6 个文件里（不重复占 runner）。
   - **空跑护栏**（`migao-acceptance`「空跑」）：清单为空 / 列出的 spec 不存在 ⇒ 直接 `exit 1`；否则空实参会让 Playwright 跑全量 389 条或静默 0 条还 success。
   - 失败即上传 `tests/test-results/` + `tests/playwright-report/`（trace/截图），不"失败即丢证据"。

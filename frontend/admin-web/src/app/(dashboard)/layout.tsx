@@ -17,6 +17,8 @@ const ROUTE_PERMISSION_MAP: Array<{ prefix: string; code: string }> = [
   { prefix: '/orders', code: 'order:list' },
   { prefix: '/products', code: 'product:list' },
   { prefix: '/categories', code: 'product:category' },
+  // 顺序敏感：必须在 /processing 之前（前缀匹配会先命中 /processing）
+  { prefix: '/processing-orders', code: 'processing:manage' },
   { prefix: '/processing', code: 'processing:manage' },
   { prefix: '/customers', code: 'customer:view' },
   { prefix: '/finance', code: 'finance:view' },

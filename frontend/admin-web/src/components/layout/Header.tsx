@@ -38,6 +38,8 @@ const ROUTE_BREADCRUMB_MAP: Array<{
   // 商品管理（与侧边栏"商品管理"分组对齐）
   { match: (p) => p.startsWith('/products'), crumbs: [{ label: '商品管理' }, { label: '商品列表' }] },
   { match: (p) => p.startsWith('/categories'), crumbs: [{ label: '商品管理' }, { label: '商品分类管理' }] },
+  // 顺序敏感：/processing-orders 必须先于 /processing（find 按数组序取首个命中）
+  { match: (p) => p.startsWith('/processing-orders'), crumbs: [{ label: '订单管理' }, { label: '加工单' }] },
   { match: (p) => p.startsWith('/processing'), crumbs: [{ label: '商品管理' }, { label: '加工项管理' }] },
 
   // 订单管理（与侧边栏"订单管理"分组对齐）
