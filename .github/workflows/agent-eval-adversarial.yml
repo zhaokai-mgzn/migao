@@ -1,6 +1,12 @@
 name: Agent Eval Adversarial (米宝对抗评测)
 permissions:
   contents: read
+  # ⚠️ 失败建 issue 必需（#3834 同类扫描查出）：本 workflow 每周六定时跑，缺此权限时
+  # 失败钩子（issues.create / search.issuesAndPullRequests）静默崩溃 —— 实证
+  # `[Agent Eval] 米宝对抗评测失败` 的 issue 停在 2026-08-29，而其定时 run
+  # 34650006175(09-11) / 33920423644(09-04) 均 failure **零留痕**（#3270/#3497 同款）。
+  # 守卫：tests/unit_ci_workflows/test_workflow_issue_permissions.py
+  issues: write
 
 on:
   workflow_dispatch:
