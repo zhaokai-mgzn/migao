@@ -328,6 +328,78 @@ async def _reset_aftersales_ticket(ticket_no: str) -> str:
     return (f"已复位工单 {ticket_no} → pending（清空 closedAt/closeReason/internalNotes）")
 
 
+# ── 加工单用例的前置复位（issue #3833，`#3800` 同族的新实例）─────────────────────
+# 为什么需要（判定跑 34908262839 的 `PG-013`）：写类用例 `PG-013` 首跑把
+# `EVAL-MB-ORD-0002` 从 `confirmed` 转成 `producing` **并生成一张加工单**
+# （用例 `data_checks` 逐字写着「订单转 producing」），而 `_reset_for_retry` 按
+# `pre_clean` **opt-in** ⇒ 原来没声明 = 重试前不复位 ⇒ 第 2 次尝试的 R1 只看到
+# `orders=1`（首跑 2 笔）、R2 看到「这单的加工单早已生成，无需重复生成」⇒ agent
+# **合理地**不再调 `processing_order_generate` ⇒ 末次必红且两次成因不同
+# ⇒ 误分类 `unstable`。这与 `AS-004`（#3751）同形：现有 HTTP 面上**没有**"把订单
+# 复位回未生产、并撤掉加工单"的通道（`ProcessingOrderController` 只有
+# generate/list/detail/PATCH，无 delete；订单状态机也没有 producing→confirmed 的反向放行）
+# ⇒ 与 seed 走**同一条 DB**（`scripts/eval_stack_seed.sh` 的 psql 之外的 asyncpg 直连）。
+# ⚠️ 红线（#3800 记录过 `product_remove` 连带误删的教训）：复位**只按 `order_no` 精确匹配**
+# 用例点名的那张**专用种子订单**及其加工单，禁止子串/模糊匹配 —— 否则会误伤
+# `EVAL-MB-ORD-0003/0004`（PG-015/PG-016 的专用订单）等共享种子。
+_SEED_PROCESSING_ORDER_NO = "EVAL-MB-ORD-0002"
+
+# 复位到 seed 初始态：订单回 `confirmed`（`fixtures/mibao_eval_seed.sql` 的插入值）
+# + 把本用例为该订单生成的加工单**软删**（`deleted = 1`）—— 走软删是与仓库既有约定一致
+# 的做法，且 `uk_processing_orders_active` 唯一索引只覆盖 `deleted = 0` 的在途状态，
+# 软删后重跑再生成不会撞唯一键。
+_RESET_PROCESSING_ORDER_SQL = """
+UPDATE processing_orders
+   SET deleted = 1, updated_at = NOW()
+ WHERE tenant_id = 1 AND deleted = 0
+   AND order_id = (SELECT id FROM orders WHERE tenant_id = 1 AND order_no = $1)
+RETURNING id
+"""
+
+_RESTORE_ORDER_STATUS_SQL = """
+UPDATE orders
+   SET status = 'confirmed', updated_at = NOW()
+ WHERE tenant_id = 1 AND order_no = $1
+RETURNING id
+"""
+
+
+async def _reset_processing_order(order_no: str) -> str:
+    """把被点名的订单复位回 seed 初始态（`confirmed` + 无在途加工单）；返回人读消息。
+
+    消息形态对齐 `_reset_aftersales_ticket`（#3511 归因）：失败必须能在
+    `eval-summary-*.json` 的 `pre_clean` 字段里读到**为什么**，而不是与"能力缺陷"同形。
+    ⚠️ 措辞红线（#3751）：**成功路径不得含「未复位」/「失败」** —— `_reset_for_retry`
+    据此判"重试前置与首次不等价"，误判会把结论标成不可归因于 agent。
+    """
+    try:
+        import asyncpg  # 延迟导入：本模块的**模块级**第三方依赖仍只有 httpx
+    except ImportError as e:
+        return (f"未复位订单 {order_no}（asyncpg 不可用: {e}）"
+                f"—— 若本用例首跑把该订单转成了 producing，重试前置将与首次不等价")
+    try:
+        conn = await asyncpg.connect(_eval_db_dsn(), timeout=8)
+        try:
+            cleared = await conn.fetch(_RESET_PROCESSING_ORDER_SQL, order_no)
+            row = await conn.fetchrow(_RESTORE_ORDER_STATUS_SQL, order_no)
+            if row is None:
+                # **准备型**的"目标不在位"必须进结论（#3781）：点名的种子订单不在 =
+                # 用例带着**假前置**跑完 ⇒ 折进 case-level 失败，不静默放过。
+                # ⚠️ 与 `_reset_aftersales_ticket` 的同名分支**有意不同**（那条只回
+                # 「未复位：…」，不折进结论）—— 本类型按 #3781 的分族语义走 fail-closed；
+                # 存量那条的差异已在 issue #3833 登记（不在本 PR 顺手改，避免动 AS-004 的判定）。
+                return (f"{_PRECONDITION_NOT_APPLIED}: 库里没有订单 {order_no}"
+                        f"（栈缺 seed？见 fixtures/mibao_eval_seed.sql）"
+                        f"—— 该用例的生成前置**未复位**，结论不可归因于 agent")
+        finally:
+            await conn.close()
+    except Exception as e:
+        return (f"未复位订单 {order_no}（DB 不可达/失败: {type(e).__name__}: {e}）"
+                f"—— 若本用例首跑把该订单转成了 producing，重试前置将与首次不等价")
+    return (f"已复位订单 {order_no} → confirmed"
+            f"（清掉 {len(cleared or [])} 张在途加工单）")
+
+
 # ── pre_clean 支持的类型（**单一事实源**，issue #3781）─────────────────────────
 # 为什么必须有一个显式登记表：`_run_pre_clean` 对未知 type 的旧行为是
 # `return f"未知 pre_clean 类型: {_type}（跳过）"` —— 调用侧只把它当消息打印
@@ -345,6 +417,8 @@ _PRECLEAN_TYPES = frozenset({
     "aftersales_ticket_prepare",   # 工单复位回 seed 初始态
     "employee_reactivate",     # 员工恢复 active（支持 employee_phone 精确定位）
     "employee_remove",         # 员工删除（HR-002 产物清理；#3781 新增）
+    "processing_order_reset",  # 加工单用例自清理：订单复位 confirmed + 清掉本用例生成的加工单
+                               # （issue #3833，PG-013；#3800 扫描判据漏掉的新实例）
 })
 
 # ── pre_clean 的**两族语义**（issue #3791；判定跑 34865780382 的 CU-003 假红）──────
@@ -369,6 +443,10 @@ _PRECLEAN_CLEANUP_TYPES = frozenset({
                             # "前置未应用"会**复活 HR-002/HR-003 的恒红**
                             # （`test_eval_preclean_registry.py` 有专项守卫）。
 })
+# ⚠️ `processing_order_reset`（#3833）**有意不在清理型**里 ⇒ 落进**准备型**：
+# 它要求的是**肯定式**前置（"用例点名的那张种子订单**在**、且是 confirmed 且无加工单"），
+# 与 `aftersales_ticket_prepare` 同族。清单不存在（栈缺 seed）⇒ `_PRECONDITION_NOT_APPLIED`
+# ⇒ 折进用例结论，**不得**静默放过（那正是 #3781 要堵的"带着假前置跑完"）。
 
 # 配置错误的**稳定前缀**：`_pre_clean_for_case` 据此把它们折进用例结论
 # （形态对齐 `db_verify: 不支持的 fetch 配置` → 签名折叠成 `config_error(db_verify)`）。
@@ -421,6 +499,49 @@ def _classify_preclean_message(spec: dict, msg: str) -> str:
     if t in _PRECLEAN_CLEANUP_TYPES and str(msg).startswith(_PRECONDITION_NOT_APPLIED):
         return _cleanup_noop_message(spec, str(msg).split(":", 2)[-1].strip())
     return msg
+
+
+def preclean_specs_for_retry(case) -> list:
+    """**重试前置复位的 opt-in 判据**（纯函数，issue #3751 裁定条件 3；#3833 抽出）。
+
+    为什么抽成函数：这条判据就是"用例要不要在重试前复位"的**唯一真值**——
+    `PG-013` 的假红（判定跑 34908262839）正是「没声明 `pre_clean` ⇒ 不复位 ⇒
+    第 2 次尝试的前置 = 首跑改坏后的状态」。#3800 的扫描表也按同一件事分档。
+
+    ⚠️ 抽出来的副作用是**可测**：`tests/unit_ci_workflows/test_eval_case_asset_truth.py`
+    用它做「改前不等价 / 改后等价」的确定性复算（零 LLM、零栈）。
+    复位动的是**共享数据**，全局复位会伤到别的用例依赖的状态 ⇒ 必须按用例 opt-in。
+    """
+    return list(getattr(case, "pre_clean", None) or [])
+
+
+def unbacked_customer_tag_removals(cases: list, seed_tag_names) -> list:
+    """声明 `customer_tag_remove.tag_name` 但**种子标签目录里没有该标签**的用例（纯函数）。
+
+    为什么必须有一条静态不变式（#3794 的后果① + issue #3832 的复核）：
+    `customer_tag_remove` 按 `tag_name` 在**标签目录**里找 id，找不到就整条清理**空转** ——
+    用例声明的"写类 case 自我污染防线"从未生效，**而报告里只是一条良性 no-op**
+    （#3791 之后甚至不进结论）⇒ 只能靠人逐字读 `pre_clean` 字段才发现。
+    实测两次 run 都命中：`CU-003` 的 `tag_name: "VIP2活跃"` vs 种子目录 `VIP2` / `活跃`。
+
+    ⇒ 把"声明名 ↔ 种子目录"的一致性做成**可静态审计的纯函数**（由
+    `tests/unit_ci_workflows/test_eval_case_asset_truth.py` 的 L0 调用），
+    让"拼错的名字"在合并前就红，而不是等到某次全量跑里偶然被读出来。
+
+    返回人读问题串（空列表 = 全部有据）。
+    """
+    seed = {str(x).strip() for x in (seed_tag_names or []) if str(x).strip()}
+    out = []
+    for c in cases or []:
+        cid = str(getattr(c, "id", "") or "?")
+        for spec in (getattr(c, "pre_clean", None) or []):
+            if not isinstance(spec, dict) or str(spec.get("type") or "") != "customer_tag_remove":
+                continue
+            name = str(spec.get("tag_name") or "").strip()
+            if name and name not in seed:
+                out.append(f"{cid}: pre_clean 的 tag_name={name!r} 不在种子标签目录 "
+                           f"{sorted(seed)} 里 —— 该清理会结构性空转（#3794）")
+    return out
 
 
 def namespace_claims(case) -> set:
@@ -717,6 +838,16 @@ async def _run_pre_clean_action(token: str, spec: dict) -> str:
         # seed 工单缺失 = 栈的 seed 没装（数据层问题），如实报出来（归因可见），不静默兜底。
         ticket_no = str(spec.get("ticket_no") or _SEED_AFTERSALES_TICKET_NO)
         return await _reset_aftersales_ticket(ticket_no)
+    if _type == "processing_order_reset":
+        # 加工单用例的前置复位（issue #3833）：把**用例点名的那张专用种子订单**复位回
+        # seed 初始态（confirmed + 清掉本用例生成的加工单）⇒ 重试前置与首跑等价。
+        # 为什么这是**准备型**而不是清理型：它要求的前置是**肯定式**的
+        # （"点名的订单在、且是 confirmed 且无在途加工单"）—— 订单不存在 = 栈缺 seed
+        # ⇒ 必须走 `_PRECONDITION_NOT_APPLIED` 折进结论，不得静默放过（#3781）。
+        # `order_no` 必填：**不做**任何子串/模糊匹配，唯一默认值是 PG-013 的专用种子订单
+        # （seed 注释：「EVAL-MB-ORD-0002 = PG-013 加工单生成用」）。
+        return await _reset_processing_order(
+            str(spec.get("order_no") or _SEED_PROCESSING_ORDER_NO))
     if _type not in _PRECLEAN_TYPES:
         # 配置错误，**不是**静默跳过（issue #3781）：旧行为 `（跳过）` 只被打印一行，
         # 用例照跑 ⇒ "数据压根没准备"在报告里读不出来。现在走稳定前缀，由
@@ -2197,19 +2328,81 @@ def check_must_fail(results: list, must_fail: list) -> list:
 
 
 def check_forbidden_text(results: list, forbidden_text: list) -> list:
-    """final_text 反模式词：任一轮回复含任一禁词 → 违规（幻觉式撤回/报错文案）。
+    """final_text 反模式词：命中禁词 → 违规（幻觉式撤回/报错文案）。
 
     背景（2026-09-08 验收）：S3 建品 create 成功且 DB 已落库，agent 却因创建后
     即时验证查不到（索引延迟）撤回正确结论、声称"商品尚未真正创建"——工具调用全对
     但用户看到的话是错的（PR-019 用本断言拦截）。
+
+    条目形态（**与 `check_want_text` 同构**；向后兼容：裸字符串 = 原有**全程**语义）：
+      - `"无法生成加工单"`                       → 全程（所有轮 final_text）出现即违规
+      - `{round: 2, text: "无法生成加工单"}`     → **只在第 2 轮**出现才算违规
+      - `{round: 2, any_of: ["无加工项", …]}`   → 第 2 轮出现任一词即违规（多词禁表用这个）
+      - `{any_of: ["暂不支持", …]}`              → 全程，出现任一词即违规
+
+    为什么必须补轮次作用域（issue #3833，判定跑 34908262839 的 `PG-013` 假红）：
+    全程语义把「**问答轮如实陈述**」与「**写操作轮拒绝执行**」判成同一件事 ——
+    PG-013 的 R1（用户问"有没有需要加工的订单"）agent 逐单核对后如实说
+    「⚠️ 20260915030240002 未见加工项，无法生成加工单」（同一轮还说了
+    「✅ 可生成加工单：EVAL-MB-ORD-0002」），被全程禁令判红；而 R3 它**真的生成了**加工单
+    （`processing_order_generate(results=1)`）⇒ 该用例首跑功能上完全正确，唯一红点是断言自身。
+    这是 `migao-acceptance`「假红：断言实现宽于用例意图」的形态 —— 治法是把模糊的全程禁令
+    收紧成「轮次 + 措辞」精确断言，**不是**把禁词删掉（真拒绝必须仍红）。
     """
     issues = []
+    rounds = list(results or [])
+
+    def _all_run_hit(word: str) -> str:
+        """全程语义命中时**原样保留**旧文案（含命中的轮次）—— 归因需要轮次，
+        指纹（`_failure_atom` 只取词）不受影响。"""
+        for r in rounds:
+            if word in str((r or {}).get("final_text") or ""):
+                return f"（R{(r or {}).get('__round')}）"
+        return ""
+
     for w in forbidden_text or []:
-        w = str(w)
-        for r in results:
-            if w in (r.get("final_text") or ""):
-                issues.append(f"forbidden_text: 回复含反模式词「{w}」（R{r.get('__round')}）")
-                break
+        spec = {"text": w} if isinstance(w, str) else (w if isinstance(w, dict) else {})
+        rnd = spec.get("round")
+        if rnd is not None:
+            try:
+                idx = int(rnd) - 1
+            except (TypeError, ValueError):
+                issues.append(f"forbidden_text: round 非整数（{rnd!r}）—— 配置错误")
+                continue
+            if idx < 0 or idx >= len(rounds):
+                # 与 `want_text` 同口径：越界 = 断言永不成立（fail-closed，不静默放过）
+                issues.append(
+                    f"forbidden_text: round={rnd} 超出实际轮数（{len(rounds)}）"
+                    f"—— 断言永不成立，请核对用例轮数")
+                continue
+            hay, scope = str((rounds[idx] or {}).get("final_text") or ""), f"（R{rnd}）"
+        else:
+            hay, scope = None, None
+        if spec.get("any_of"):
+            words = [str(x) for x in (spec.get("any_of") or [])]
+            if not words:
+                issues.append("forbidden_text: any_of 为空 —— 配置错误（会静默不检查）")
+                continue
+            if hay is None:
+                _hits = [(x, _all_run_hit(x)) for x in words]
+                _hit = next(((x, s) for x, s in _hits if s), None)
+                if _hit is not None:
+                    issues.append(f"forbidden_text: 回复含反模式词「{_hit[0]}」{_hit[1]}")
+            else:
+                _hit = next((x for x in words if x in hay), None)
+                if _hit is not None:
+                    issues.append(f"forbidden_text: 回复含反模式词「{_hit}」{scope}")
+            continue
+        word = str(spec.get("text") or "")
+        if not word:
+            issues.append(f"forbidden_text: 配置缺 text 且无 any_of: {spec!r}（会静默不检查）")
+            continue
+        if hay is None:
+            _scope = _all_run_hit(word)
+            if _scope:
+                issues.append(f"forbidden_text: 回复含反模式词「{word}」{_scope}")
+        elif word in hay:
+            issues.append(f"forbidden_text: 回复含反模式词「{word}」{scope}")
     return issues
 
 
@@ -2459,6 +2652,9 @@ _CASE_ATOM_RULES = (
      "config_error(amount_verify)"),
     (re.compile(r"^form_prefill: 配置"), "config_error(form_prefill)"),
     (re.compile(r"^want_text: (?:配置|round)"), "config_error(want_text)"),
+    # 轮次作用域（issue #3833）的配置错误同口径折叠：与 `want_text` 对称。
+    # 「只加不改」—— 旧版 forbidden_text 从不产出这两类消息，故对存量指纹零影响。
+    (re.compile(r"^forbidden_text: (?:配置|round)"), "config_error(forbidden_text)"),
     (re.compile(r"^forbidden_card_text: 空配置"), "config_error(forbidden_card_text)"),
     (re.compile(r"^order_before: 无法解析"), "config_error(order_before)"),
     # 夹具/harness 形状不兼容（issue #3803）：**必须与 agent 行为失败分属不同原子**。
@@ -6241,7 +6437,7 @@ async def run_suite(cases, label: str, classify: bool = True, retry_budget: int 
         `in_writer=True` 表示该任务**已持写位**（串行道 / 无并发门），此时**不得**再取
         `g.writer()`（`ConcurrencyGate.writer` 等 `readers == 0` 且不重入 → 死锁）。
         """
-        if not getattr(c, "pre_clean", None):
+        if not preclean_specs_for_retry(c):
             return None
 
         async def _again():

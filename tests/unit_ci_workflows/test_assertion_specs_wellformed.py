@@ -144,6 +144,20 @@ class TestAssertionSpecsWellFormed:
                         f"{c['id']}.want_text[{i}]: {w!r} 既无 text 也无 any_of（会静默不检查）")
         assert not bad, "want_text 配置不合法：\n  " + "\n  ".join(bad)
 
+    def test_forbidden_text_specs_have_text_or_any_of(self):
+        """`forbidden_text` 的 dict 形态（轮次作用域 / 任一命中）必须给出 text 或 any_of。
+        形态与 `want_text` 的同一格对称（issue #3833：轮次作用域是与 want_text 同构的新能力，
+        空配置必须 **fail-closed**，不得静默不检查）。"""
+        bad = []
+        for c in self._cases():
+            for i, w in enumerate(c.get("forbidden_text") or []):
+                if isinstance(w, str):
+                    continue
+                if not isinstance(w, dict) or not (w.get("text") or w.get("any_of")):
+                    bad.append(
+                        f"{c['id']}.forbidden_text[{i}]: {w!r} 既无 text 也无 any_of（会静默不检查）")
+        assert not bad, "forbidden_text 配置不合法：\n  " + "\n  ".join(bad)
+
     def test_forbidden_args_do_not_shadow_required_args(self):
         """同一工具同一字段不得既"必须"又"禁止"（自相矛盾的用例永远不可能通过）。"""
         bad = []

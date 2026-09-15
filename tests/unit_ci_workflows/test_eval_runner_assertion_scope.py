@@ -1,4 +1,4 @@
-# case_ids: PG-016, PG-015, PP-006, OR-013
+# case_ids: PG-016, PG-015, PP-006, OR-013, PG-013
 """`local_runner` 断言能力的**作用域**契约（issue #3667，确定性层）。
 
 本文件锁住三条**已在真实重放里暴露**的 runner 能力缺口（零 LLM、纯函数，秒级）：
@@ -483,3 +483,108 @@ class TestMultiStepIntentHasACollaborativeTurn:
             results, [{"tool": "logistics_track", "fields": ["order_id"]}]) == []
         # 成功即停机（停条件用"成功"）⇒ 余下的协作轮自动跳过（不白烧轮次）
         assert lr.repeat_stop_met(results, {"tool_called": "logistics_track"}) is True
+
+
+# ── ④ `forbidden_text` 的**轮次作用域**（issue #3833 / PG-013）───────────────────
+# 为什么单开一节：全程语义把「**问答轮如实陈述**」与「**写操作轮拒绝执行**」判成同一件事。
+# 判定跑 `34908262839` 的 PG-013 首跑**功能上完全正确**（R3 真生成加工单），
+# **唯一**红点是 R1 里一句对**另一笔**订单的事实陈述（逐字见下 BENIGN_R1）。
+# 这是 `migao-acceptance`「假红：断言实现宽于用例意图」——治法是把模糊的全程禁令
+# 收紧成「轮次 + 措辞」精确断言，**不是**删禁词（真拒绝必须仍红）。
+class TestForbiddenTextRoundScope:
+    """`forbidden_text` 的 dict 形态（轮次 / any_of）—— 纯函数，零 LLM。"""
+
+    # 判定跑 34908262839 的 PG-013 首跑 R1 **逐字**摘录（ai-agent 日志，
+    # `sess_89d75b96edbe4321`）。注意同一轮里明确说了「✅ 可生成加工单：EVAL-MB-ORD-0002」。
+    BENIGN_R1 = (
+        "📦 已确认（待发货）订单共 2 个，其中 **1 个含加工项**：\n\n"
+        "| 订单号 | 客户 | 商品 | 数量 | 金额 | 加工费 | 下单时间 |\n"
+        "|--------|------|------|------|------|--------|----------|\n\n"
+        "✅ **可生成加工单**：EVAL-MB-ORD-0002（含加工项，已确认待发货，符合生成条件）\n"
+        "⚠️ 20260915030240002 未见加工项，无法生成加工单。\n\n"
+        "需要我帮您把 EVAL-MB-ORD-0002 生成加工单吗？生成后订单会进入「生产中」。")
+    BENIGN_R2 = ("已为您准备好确认卡片，请核对以下信息：\n- **订单号**：EVAL-MB-ORD-0002\n"
+                 "- **客户**：张三")
+    BENIGN_R3 = ("✅ 加工单已生成\n- **加工单号**：JG-20260915-5654\n"
+                 "- **对应订单**：EVAL-MB-ORD-0002")
+
+    # 修复**前**的声明形态（裸字符串 = 全程语义）—— 判定跑 34908262839 的 PG-013 原值。
+    PRE_FIX = ["暂不支持", "功能不存在", "没有这个功能", "无加工项", "生成未成功",
+               "生成失败", "无法生成加工单", "系统判定为"]
+    # 修复**后**的声明形态（全程 5 条 + 写操作轮 R2/R3 三条）—— 与 YAML 单一源一致。
+    POST_FIX = ["暂不支持", "功能不存在", "没有这个功能", "生成未成功", "生成失败",
+                {"round": 2, "any_of": ["无加工项", "无法生成加工单", "系统判定为"]},
+                {"round": 3, "any_of": ["无加工项", "无法生成加工单", "系统判定为"]}]
+    WRITE_ROUND_WORDS = ["无加工项", "无法生成加工单", "系统判定为"]
+
+    @staticmethod
+    def _tx(r1=BENIGN_R1, r2=BENIGN_R2, r3=BENIGN_R3) -> list:
+        return [{"__round": i, "final_text": t}
+                for i, t in enumerate((r1, r2, r3), start=1)]
+
+    def test_pre_fix_declaration_reproduces_the_observed_false_red(self):
+        """**红证①（改前 ⇒ 红）**：喂「R1 良性措辞 + R3 真生成」的 transcript —
+        旧声明（全程语义）逐字复现判定跑 34908262839 的唯一红点。"""
+        got = lr.check_forbidden_text(self._tx(), self.PRE_FIX)
+        assert got == ["forbidden_text: 回复含反模式词「无法生成加工单」（R1）"], (
+            f"没有复现判定跑的首跑红点（本节的判别力前提失效）：{got}")
+
+    def test_post_fix_declaration_does_not_flag_the_benign_qa_round(self):
+        """**红证②（改后 ⇒ 绿）**：同一输入 + 新声明（写操作轮作用域）⇒ 不判红。
+
+        同时证明"该用例的 expectations 已被其它断言覆盖"这件事没被本改动掏空 ——
+        这里只判 `forbidden_text` 这一条，行为面断言（expectations/required_args）
+        在用例资产侧另有守卫（`test_eval_case_asset_truth.py`）。
+        """
+        assert lr.check_forbidden_text(self._tx(), self.POST_FIX) == []
+
+    def test_real_refusal_on_the_write_rounds_is_still_red(self):
+        """**反向守卫（收紧后仍能抓真拒绝）**：R2/R3 回「无法生成加工单」且不生成 ⇒ 仍红。"""
+        tx = self._tx(r2="系统里没有加工单这个入口，无法生成加工单。",
+                      r3="还是无法生成加工单，请联系技术同事。")
+        got = lr.check_forbidden_text(tx, self.POST_FIX)
+        assert got == ["forbidden_text: 回复含反模式词「无法生成加工单」（R2）",
+                       "forbidden_text: 回复含反模式词「无法生成加工单」（R3）"], got
+
+    def test_capability_denial_words_stay_all_run(self):
+        """**不降强度**：5 条能力自我否定/编造失败类措辞**仍是全程** ——
+        R1（问答轮）说出来同样判红（`#3477` 家族：把"自己没做"说成"系统不支持"）。"""
+        for word in ("暂不支持", "功能不存在", "没有这个功能", "生成未成功", "生成失败"):
+            got = lr.check_forbidden_text(self._tx(r1=f"这个能力{word}，我做不了。"),
+                                          self.POST_FIX)
+            assert got == [f"forbidden_text: 回复含反模式词「{word}」（R1）"], (word, got)
+
+    def test_bare_string_still_means_all_run_semantics(self):
+        """**向后兼容**：裸字符串 = 原有全程语义（存量 30+ 条用例的形态不变）。"""
+        assert lr.check_forbidden_text(self._tx(), ["无法生成加工单"]) == [
+            "forbidden_text: 回复含反模式词「无法生成加工单」（R1）"]
+
+    def test_round_out_of_range_is_a_config_error_not_a_silent_green(self):
+        """**fail-closed**：轮次越界（写错轮数）必须报配置错误，不得静默放过。"""
+        got = lr.check_forbidden_text(self._tx(), [{"round": 9, "any_of": ["无法生成加工单"]}])
+        assert got and got[0].startswith("forbidden_text: round=9 超出实际轮数"), got
+        assert lr._failure_atom(got[0], lr._CASE_LEVEL_DETAIL) \
+            == "config_error(forbidden_text)", got[0]
+
+    def test_missing_text_and_any_of_is_a_config_error(self):
+        """空配置（`text` 与 `any_of` 都缺，含 `any_of: []`）⇒ 配置错误，**不静默放过**。
+        形态与 `want_text` 的同一格一致（两处都走"配置缺 text 且无 any_of"）。"""
+        for spec in ({"round": 2}, {"round": 2, "any_of": []}):
+            got = lr.check_forbidden_text(self._tx(), [spec])
+            assert got and got[0].startswith("forbidden_text: 配置缺 text 且无 any_of"), (spec, got)
+            assert lr._failure_atom(got[0], lr._CASE_LEVEL_DETAIL) \
+                == "config_error(forbidden_text)", (spec, got[0])
+
+    def test_all_run_any_of_reports_the_hitting_round(self):
+        """全程 `any_of` 也要报出**命中的那一轮**（归因需要轮次）——
+        R1 用一段**不含**这两个词的文本，才能证明报的是 R2。"""
+        got = lr.check_forbidden_text(
+            self._tx(r1="📦 已确认（待发货）订单共 2 个。", r2="抱歉，这个功能不存在。"),
+            [{"any_of": ["无法生成加工单", "功能不存在"]}])
+        assert got == ["forbidden_text: 回复含反模式词「功能不存在」（R2）"], got
+
+    def test_fingerprint_stays_the_word_only(self):
+        """**指纹兼容**：折叠原子仍只取词（不取轮次）⇒ 存量历史指纹/台账不失配。"""
+        for msg in ("forbidden_text: 回复含反模式词「无加工项」（R2）",
+                    "forbidden_text: 回复含反模式词「无加工项」（R1）"):
+            assert lr._failure_atom(msg, lr._CASE_LEVEL_DETAIL) == "forbidden_text(无加工项)", msg
