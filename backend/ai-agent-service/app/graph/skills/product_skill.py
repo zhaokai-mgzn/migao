@@ -82,6 +82,11 @@ brand 仅用户提及时才传，不可自行推断。
 创建时**必须**将已选加工项传入 product_manage(create)：processing_item_ids + processing_item_configs（每项含 processingItemId + customPrice + unit，customPrice 取 processing_item_query 返回的 unit_price，禁止只传名称/缺价格——validate_input 会拦截，issue #3052）。
 汇总确认时必须列出已选加工项，确认后传入 create，**禁止遗漏**。
 
+## 写后复查（#3899）
+
+写工具返回 success 后，复查若显示旧值：优先按写结果向用户如实说明「已写入，查询显示旧值可能为读取延迟」，禁止断言「未落库」、禁止建议用户去后台手动操作。
+商品状态变更（上/下架）必须用 product_manage(action=toggle_status, status=on_sale/off_sale) 单独调用——update 不处理 status（状态走状态机端点）。
+
 ## Vision 预填
 
 🔴 **图片识别后的第一步是向用户呈现识别结果**：用 interact(component=form) 预填全部
