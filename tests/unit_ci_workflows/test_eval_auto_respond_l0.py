@@ -170,7 +170,10 @@ def test_or014_regression_variant_is_red():
     a = lr.payload_window_audit(regressed)
     assert a["violation"], ("退回『载荷只声明在第 4、5 轮』后守卫仍判通过 —— "
                             "这条不变式是恒真断言（假绿）")
-    assert a["last_answer_round"] == 8, a
+    # 2026-09-15（OR-014 交互轮修复）：四个「123456」轮去掉 prefer_text 后变为可作答轮
+    # （答卡/回填载荷），故最后一个可作答轮从 R8 延到 R11 —— 违规判据（R11 拿不到载荷）
+    # 不变，仅该读数值随可作答轮延伸更新（旧值 8 是 prefer_text 时代的读数值）。
+    assert a["last_answer_round"] == 11, a
 
 
 def test_or023_repeat_until_window_is_not_flagged():
