@@ -194,3 +194,191 @@ job 2  Mini-app e2e static contract preflight
 
 - #3817：本包新增门禁把 UI-040 的 spec **纳进了 PR 门禁**（其处置建议 1），并更正确认了它此前**并非"从未执行"**（见 6.2）。判据 1/2 可对号，判据 3（不纳管才需标注）不适用。
 - #3696（**保持 OPEN**，本包不声称它已解决）：结构性两条已被别的包修掉（证据入库 / 登录前置步骤），但"小程序旅程在 CI 无机器级信号"这条**依然成立且形态上无法消除**（需 macOS 开发者工具）⇒ 本包给的是 UA 级 runbook + 静态契约预检，**不是**机器级旅程证据。关联 issue #3696，不在此关闭它。
+
+---
+
+## 7. 演示页归因结论（把「未验证」拆成「样本陈旧 / 需真后端 / 真回归」）
+
+> **本节编号说明**：任务书原写「§6」，但 §6「事实盘点」已被前包占用；为免两个 §6 并存，本节顺延为 **§7**。**本节不改动 §1.2 既有表格的口径与等级定义**，只在其上做细化归因。
+
+> **一句话口径**：**「未验证」≠「坏的」；但归因之前也绝不能声称 OK。**
+> 本节的产出就是把这个歧义解掉：每条红要么被证明是**测试侧陈旧 / 数据不足**（页面大概率可用），
+> 要么是**需真后端**（fixture 形态下不可验证），要么是**真回归（演示阻塞）**。
+
+### 7.1 判据（先定口径，再逐条套用；本节未中途改口径）
+
+| # | 判据 | 指向 |
+|---|---|---|
+| A | 失败形态是**定位器 / 文案 / 角色 / strict-mode / 子串误匹配**（元素实际存在或断言形式写错），**且同页其它用例通过** | 样本陈旧 |
+| B | 失败是 **waitForSelector / click 超时于 mock 未覆盖的数据**，即页面请求了 spec 没 mock 的端点，或 mock 数据域为空 | 需真后端（含 fixture 数据不足） |
+| C | 失败伴随 **pageerror / 白屏 / 接口 4xx-5xx / `Failed to fetch`**，或**同页几乎所有断言一起红且与选择器无关** | **真回归（演示阻塞）** |
+| D | spec 引用了**已被改名 / 改语义的 DOM 或信封契约**（对组件源码按符号/文本检索可证） | 样本陈旧（可便宜修） |
+
+**辅助判据（本包实际用到，两条都很有判别力）**：
+
+- **E「受控实验」**：同一 run、同一页面、同一 mock，仅**一个变量**不同而结果不同 ⇒ 该变量即根因。
+  （实证：`order-list` 的「按下单日期搜索」绿 vs「按订单号搜索」红，唯一差异是**默认日期窗口**。）
+- **F「截图对照」**：失败截图直接显示页面**已正常渲染**（标题/表头/空态/按钮齐备）⇒ 排除真回归。
+  本包用了 3 张本地复跑产生的失败截图，三张全部显示**页面结构完整**。
+
+### 7.2 复核基准与读数锚点（引用纪律：只给 run id / 命令 / 符号，不写活跃文件裸行号）
+
+| 读数 | 锚点 |
+|---|---|
+| §1.2 原反证读数 | `nightly-verification` run **`34911052034`**，SHA **`82d20090`**，job `E2E fixture specs (full, web project)`：**98 failed / 263 passed / 26 skipped** |
+| 本包复核读数 | `nightly-verification` run **`34915948090`**，SHA **`1eea267a`**（= 复核时点 main），同 job：**98 failed / 265 passed / 26 skipped**（日志 `/tmp/uici.log`） |
+| 复核 SHA 与源码关系 | 两 SHA 之间 `frontend/admin-web/src/**` **零改动** ⇒ 两次读数可直接对比 |
+| 本包本地复跑（SHA `ba0961ba`，macOS + Chrome，`--project=web` fixture 模式，**部分**） | 复现了 `order-list` / `order-detail` / `chat` / `processing` 的**同款红**（逐条 ✓/✘ 与 CI 一致），并产出判据 F 用的失败截图 |
+| 全日志页面级故障扫描 | 对 `pageerror` / `net::ERR` / `ERR_CONNECTION` / `Failed to fetch` / `Uncaught` / `Application error` / `Internal Server Error` **零命中**（另有 6 行形如 `:501:`/`:502:` 的行号被 `\b50[0-9]\b` 误命中，经核为假阳性）⇒ **98 条红里没有一条是「页面级崩溃」形态** |
+| 失败签名分布（`34915948090`） | distinct 失败用例 **98**：`processing` 20 · `order-list` 15 · `product-list` 10 · `order-detail` 7 · `settings` 7 · `chat` 6 · `notifications` 6 · `order-remark-popover` 5 · `order-ship` 4 · `xiaobu-h5` 4 · `customer-detail` 3 · `customer-list` 3 · `oss-dual-bucket` 3 · `roles` 1 · `after-sales-list` 1 · `agent-workspace-sessions` 1 · `product-detail` 1 · `product-edit` 1 |
+
+> **计数单位说明**（不污染 §1.2 口径）：§1.2 记的是 **Playwright 结果行数（含 `--retries=1` 的重试）**；
+> 本节记的是 **distinct 失败用例数**。重试均复现 ⇒ 这些是**确定性红**，不是 flake。
+
+### 7.3 归因结论总表
+
+| 演示面 | 原等级 | 归因后结论 | 依据（判据 + 证据） | 演示建议 |
+|---|---|---|---|---|
+| **加工项（processing）** | 未验证 | **样本陈旧（双因）**；页面可用 | 判据 A/D/F：20/20 全红在同一句 **beforeEach 的标题断言**「加工项配置」，而页面 H1 是**「加工项管理」**（`#3079` 命名统一 `d01e770a` 改的名）；第二因：`/api/admin/categories` **未被 mock** ⇒ `Promise.all` reject ⇒ 列表恒空态。截图实证页面渲染完整（H1 / 四项表头 / 新增按钮 / 空态文案） | 可直接演示；**但请先手动新增 1 条加工项**（CRUD 写路径本轮仍未验证） |
+| **订单列表（order-list）** | 未验证 | **样本陈旧（时间炸弹）**；页面可用 | 判据 A/B/E/F：mock 订单 `createdAt` 固定 `2026-06` / `2026-05`，而页面默认下单时间范围 = **最近一个月**（截图实证 `2026/08/15 – 2026/09/15`）⇒ 全被滤掉 ⇒ 表格「暂无数据」（截图实证）。**受控实验**：同 run 内「按下单日期搜索」（显式填 `2026-06-01`）**绿**，「按订单号搜索」（沿用默认窗口）**红** | 可直接演示（真后端返回的是近月订单，不受此影响）；演示前手动点开确认有行 |
+| **订单详情（order-detail）** | 未验证 | **样本陈旧（3 种断言形态缺陷）**；页面可用 | 判据 A/D/F：`strict mode violation` ×4（订单号 / 商品名 / 加工项名 / 收货信息在 DOM 各 2–3 份 = 屏幕版 + **`ShipmentDoc` 打印联常驻 DOM**）；子串误匹配 ×1（completed 态合法渲染**「打印发货单」**，其 accessible name 含「发货」⇒ `getByRole({name:'发货'})` 默认按子串匹配恒命中）；角色契约 ×2（面包屑是 `<button>` 不是 link）。**截图实证 completed 态只有「退款 + 打印发货单」，页面行为正确** | 可直接演示；进度条 / 打印发货单在截图中均正常 |
+| **米宝聊天主流程（chat）** | 未验证 | **样本陈旧（图标契约过期）**；页面可用 | 判据 A/D：`chat.page.ts` 的发键定位器是 `button:has(svg.lucide-send)`，而 `MessageInput.tsx` 的发键图标是 **`ArrowUp`**（实际类名 `svg.lucide-arrow-up`）⇒ 恒不匹配；**同用例第 1 句 `messageInput` 断言通过** ⇒ 输入框在、页面在，只有发键定位器过期 | 可直接演示；**演示前仍建议手动发 1 条真消息**（见 7.6「仍未证实」） |
+| **售后列表 / 详情** | 未验证 | **样本陈旧（1 条）** + 其余通过 | `after-sales-list` 仅 1 条红（`getByRole('button', {name:/搜索/})` 超时，同页 16/17 过 ⇒ 判据 A）；`after-sales-detail` 本轮 **0 红** | 可演示 |
+| **客户列表 / 详情** | 未验证 | **需真后端 / fixture 数据不足** | `customer-list` 3 条 click 超时（同类按钮文案 / 定位器）；`customer-detail` 3 条是**数据域为空**：标签文本为空串、会话历史 `count()>0` 实得 0、订单卡片 `text=/ORD\d+/` 不存在 ⇒ mock 未提供这些子资源 | 可演示；列表页风险低，详情页的「标签 / 会话历史 / 订单卡片」三块**要手动点开确认** |
+| **设置 / 通知 / 存储** | 未验证 | `settings` 样本陈旧 · `notifications` 样本陈旧 + 数据不足 · `oss-dual-bucket` **测试自身缺陷** | `settings` 7/7 均为 click 超时（判据 A）；`notifications` 有 class 链定位器超时（`.bg-white.border.border-gray-200.rounded-t-lg`）+ 3 条 `count()>0` 实得 0（数据域空）；`oss-dual-bucket` 3 条是 **`page.evaluate` 里 `fetch('/api/...')` 用相对 URL** ⇒ 浏览器报 `Failed to parse URL`，与后端是否存在无关 | 设置页可演示；存储页与通知页**不作为演示主路径** |
+| **商品列表 / 详情 / 编辑** | 未验证 | 列表 = **样本陈旧(8) + 需真后端(2)**；详情 / 编辑各 1 条陈旧 | 判据 A/D：8 条 `getByRole('button',{name:/搜索/})` 超时，页面按钮文案是**「查询」**；2 条库存排序断言 —— 页面把 `sortBy` / `sortOrder` 交**服务端**排序（`#1201`），fixture mock 不实现排序 ⇒ **fixture 形态下不可验证**（判据 B） | 可演示；**演示前手动点开商品列表 / 详情 / 编辑各一次**（沿用 §1.2 建议），并**避免当场演示库存储排序** |
+
+**本节结论汇总**：上述未验证演示面中，**0 个被归为「真回归」**；多数是样本陈旧 / 数据不足，少数含「需真后端」成分。
+⇒ **判定：当前无演示阻塞项（无真回归）。**
+
+### 7.4 四个演示面的失败原文（spec 名 + 断言 + 实际）
+
+> 全部取自 `34915948090` 的 job 日志（`/tmp/uici.log`），与本地复跑结果一致。**每个面给 ≥2 条**。
+> 引用纪律：Playwright 的 test id 原形是 `spec.ts:行:列`；按 dev-flow §16.7「禁写活跃文件裸行号」，
+> 下面**去行号**保留「spec 文件 + 用例标题」符号锚点（完整 test id 见上锚 `@1eea267a` 的 job 日志）。
+
+**① 加工项（processing）— 20/20 红，全部红在同一句 beforeEach（判据 A/D/F）**
+
+```
+✘ e2e/specs/catalog/processing.spec.ts › 加工项配置 › 页面加载 › 应显示页面标题
+  Error: expect(locator).toBeVisible() failed
+  Locator: getByRole('heading', { name: '加工项配置' })
+  Error: element(s) not found
+   → 69 | await page.goto('/processing')
+     71 | await expect(page.getByRole('heading', { name: '加工项配置' })).toBeVisible()   ← 20/20 都死在这一句
+
+✘ e2e/specs/catalog/processing.spec.ts › 加工项配置 › 页面加载 › 应显示所有加工项数据
+  （同上：beforeEach 第 71 行先红）
+```
+**实际**：页面 H1 = 「加工项管理」；且表格为空态「暂无加工项，点击右上角「新增加工项」开始创建」
+（截图 `specs-catalog-processing-加工项配置-页面加载-应显示页面标题-web/test-failed-1.png` 实证：H1 / 四项表头 / 新增按钮齐备）。
+
+**② 订单列表（order-list）— 15/23 红（判据 A/B/E/F）**
+
+```
+✘ e2e/specs/orders/order-list.spec.ts › 订单列表页面 › 按订单号搜索
+  Error: expect(locator).toBeVisible() failed
+  Locator: getByText('YK20260601001')
+  Error: element(s) not found
+   → 243 | await page.locator('input[placeholder="请输入订单ID"]').fill('YK20260601001')
+     247 | await expect(page.getByText('YK20260601001')).toBeVisible()
+
+✘ e2e/specs/orders/order-list.spec.ts › 订单列表页面 › 查看按钮跳转订单详情
+  TimeoutError: locator.click: Timeout 10000ms exceeded.
+  Call log: - waiting for locator('tbody button').filter({ hasText: '查看' }).first()
+```
+**实际**：截图 `…订单列表页面-按订单号搜索-web/test-failed-1.png` 显示：搜索框已填入 `YK20260601001`、
+下单时间默认 **`2026/08/15 – 2026/09/15`**、表体 **「暂无数据」/「共 0 条」**，而表头与 8 个 Tab 全部正常渲染
+⇒ 没有行 ⇒ 也没有行内动作按钮（「查看 / 发货 / 关闭 / 备注 / 确认付款 / 确认收货」6 条同因）。
+**受控实验（判据 E）**：同 run 内 `order-list.spec.ts`「按下单日期搜索」（显式把范围填成 `2026-06-01`）**✓ 绿**。
+
+**③ 订单详情（order-detail）— 7/17 红（判据 A/D/F）**
+
+```
+✘ e2e/specs/orders/order-detail.spec.ts › 订单详情 - 待付款状态 › 基础信息应显示订单编号
+  Error: expect(locator).toBeVisible() failed
+  Locator: getByText('ORD-20250101-0001')
+  Error: strict mode violation: getByText('ORD-20250101-0001') resolved to 3 elements:
+      1) <span class="text-neutral-900 break-all">ORD-20250101-0001</span>              ← 屏幕·基础信息
+      2) <div class="text-center text-xs text-neutral-500 mb-4">ORD-20250101-0001</div> ← 打印联·页眉
+      3) <td class="border border-neutral-400 px-2 py-1.5">ORD-20250101-0001</td>      ← 打印联·明细
+
+✘ e2e/specs/orders/order-detail.spec.ts › 订单详情 - 已完成状态 › 已完成状态不应显示操作按钮
+  Error: expect(locator).toBeHidden() failed
+  Locator:  getByRole('button', { name: '发货' })
+  Expected: hidden
+  Received: visible
+```
+**实际**：截图 `…已完成状态-已完成状态不应显示操作按钮-web/test-failed-1.png` 实证 —— completed 订单页
+**进度条「已付款 → 待发货 → 待收货 → 已完成」全蓝勾 + 动作区只有「退款」「打印发货单」**，没有任何「发货」动作键；
+命中的是 **「打印发货单」**（其 accessible name 含子串「发货」）。
+另：`order-detail.spec.ts` 面包屑断言 `getByRole('link', { name: '订单列表' })` → `element(s) not found`
+（实际是 `<button>`；截图中面包屑「首页 > 订单管理 > 订单列表 > 订单详情」清晰可见）。
+
+**④ 米宝聊天主流程（chat）— 6/14 红（判据 A/D）**
+
+```
+✘ e2e/specs/chat/chat.spec.ts › 聊天 — 基础发送与接收 › 页面加载后应显示消息输入框和发送按钮
+  Error: expect(locator).toBeVisible() failed
+  Locator: locator('button').filter({ has: locator('svg.lucide-send') }).first()
+  Error: element(s) not found
+   → 103 | await expect(chatPage.messageInput).toBeVisible()      ← 这一句【通过】⇒ 输入框在、页面在
+     104 | await expect(chatPage.sendBtn).toBeVisible()           ← 只有发键定位器红
+
+✘ e2e/specs/chat/chat.spec.ts › 聊天 — Tool Calling 渲染 › 订单查询 tool_call 应渲染 order 卡片
+  TimeoutError: locator.click: Timeout 10000ms exceeded.
+  Call log: - waiting for locator('button').filter({ has: locator('svg.lucide-send') }).first()
+   → 219 | await chatPage.sendBtn.click()
+```
+**实际**：`MessageInput.tsx` 的发键图标是 `ArrowUp`（`svg.lucide-arrow-up`），且按钮带 `title="发送"`；
+`svg.lucide-send` 在当前组件里不存在 ⇒ 6 条红（1 条可见性 + 5 条点击）同因。
+
+### 7.5 便宜就修：本包改动与红证
+
+**修了什么**（全部是「让断言对齐当前 DOM / 信封契约」，**未删任何 spec、未加 `test.skip`、未放宽任何断言**；
+`npx playwright test --project=web --list` = **389 tests in 34 files**，与改前一致）：
+
+| 文件 | 改动 | 修掉的失败数 | 改前红（证据） | 改后（证据等级） |
+|---|---|---|---|---|
+| `tests/e2e/pages/chat/chat.page.ts` | `svg.lucide-send` → `svg.lucide-arrow-up`（并注释登记契约） | 6（chat） | 7.4 ④ 的 job 日志原文 | **静态符号核对**：`MessageInput.tsx` 的 import 含 `ArrowUp` 且发键渲染 `<ArrowUp className="w-5 h-5" />` ⇒ 类名必为 `lucide-arrow-up` |
+| `tests/e2e/specs/catalog/processing.spec.ts` | 标题断言 `加工项配置` → `加工项管理`（2 处）；补 `**/api/admin/categories*` mock | 20（processing） | 7.4 ① 的 job 日志原文（20/20 都红在 beforeEach 的同一句标题断言 @1eea267a） | **静态符号核对**：页面 `<h1>` 实文为「加工项管理」；`categoryApi.getCategories()` → `/api/admin/categories`，原 spec 未 mock |
+| `tests/e2e/specs/orders/order-detail.spec.ts` | strict-mode 加 `.first()`（4 处，含随之可达的收货人 / 电话 / 地址 3 处）；面包屑 `role=link` → `role=button`（2 处）；`{name:'发货'}` → `{name:'发货', exact:true}`（1 处） | 7（order-detail） | 7.4 ③ 的 job 日志原文 + **截图** | **静态符号核对 + 截图**：DOM 内确有多份；completed 态动作区实为「退款 + 打印发货单」 |
+| `tests/e2e/specs/orders/order-remark-popover.spec.ts` | 分页信封 `records` / `pageSize` → `items` / `size` | 5（order-remark） | 5 条均为 `waitForSelector('text=YK20260713001') Timeout 10000ms`（无行可等） | **静态符号核对**：`orders/page.tsx` 读 `pageData?.items`；`PageResponse<T>` 字段名是 `items` |
+| `tests/e2e/specs/products/product-list.spec.ts` | `getByRole('button',{name:/搜索/})` → `{name:'查询'}`（8 处） | 8（product-list） | 8 条 `locator.click: Timeout` waiting for `getByRole('button', { name: /搜索/ })` | **静态符号核对**：页面搜索键实文「查询」（`<Search/> 查询`） |
+
+⚠️ **改后绿未重跑**（本包受令不派 Playwright 套件，避免撞评测槽位）⇒ 上表「改后」一律标注为
+**静态符号核对**，**不写成「已绿」**。要升级到机器级绿，需对上述 5 个文件跑一次窄复跑
+（`npx playwright test --project=web --reporter=list <这 5 个文件>`）。
+
+**未修（登记，附推荐修法）**：
+
+| 项 | 为什么没修 | 推荐修法 |
+|---|---|---|
+| `order-list.spec.ts` 时间炸弹（15 条） | 「改小但**非无歧义**」：要同时改 4 条 mock 的 `createdAt` **和**「按下单日期搜索」里的字面日期 `2026-06-01`，改完必须重跑才能确认 | 让 mock 的 `createdAt` 由「今天往前推 N 天」**动态生成**（N 取 1–4 且互不相同），并把日期搜索用例的 `fill()` 改用同一个动态日期串 |
+| `product-list` 库存排序（2 条） | **需真后端**：排序是服务端行为，fixture mock 不实现 ⇒ 在 fixture 层"修"等于放宽语义 | 要么给 mock 实现 `sortBy` / `sortOrder` 排序，要么把这 2 条迁到真后端 e2e 通道 |
+| `oss-dual-bucket`（3 条） | 属**测试自身缺陷**，改法取决于该 spec 意图 | `page.evaluate` 内改用 `${location.origin}/api/...` 或改用 `page.request` |
+| `settings`(7) / `notifications`(6) / `customer-list`(3) / `customer-detail`(3) / `after-sales-list`(1) / `roles`(1) / `order-ship`(4) / `product-detail`(1) / `product-edit`(1) / `agent-workspace-sessions`(1) | 非演示主路径；逐条形态同类（文案 / class 链 / strict-mode），但需按面分别核对文案，属**独立包** | 按 §4 缺口 1 的思路：先按面归因再纳管 |
+| `xiaobu-h5`(4) | 形态问题：该 spec 是**小程序 H5** 的视觉回归，`--project=web` 把它跑在 **admin-web 的 3001 服务器**上 ⇒ 自然找不到 H5 元素 | 从 `--project=web` 的匹配范围里排除（`testIgnore`），让它只由 `playwright.xiaobu.config.ts` 跑 |
+| `chat.page.ts` 的 `stopBtn`（`svg.lucide-stop-circle`） | **同类过期但当前无断言引用**（改它没有红证），刻意保留 + 在此登记 | 组件停止键现为 `Square`（`svg.lucide-square`）；将来启用该定位器时先改它 |
+
+### 7.6 是否存在演示阻塞项
+
+**没有。** 判据有两条，都可复核：
+
+1. **页面级故障扫描为 0**：全日志对 `pageerror` / `net::ERR` / `ERR_CONNECTION` / `Failed to fetch` /
+   `Uncaught` / `Application error` / `Internal Server Error` **零命中** ⇒ 98 条红中无一条是「白屏 / 报错 / 接口 5xx」形态。
+2. **截图对照**：三个演示面的失败截图全部显示**页面结构完整**（订单列表的表头 / 8 Tab / 空态；订单详情的进度条 /
+   基础信息 / 商品信息 / 动作区；加工项页的 H1 / 表头 / 新增按钮）⇒ 失败原因都在**行数据或断言形式**，不在页面本身。
+
+**仍未证实（不得读成"已验证"）**：以下三处本轮**只证明「红的原因不是页面坏」，没有证明「功能正确」**——
+演示前请各手动走一遍（判据写死，无需判断力）：
+
+1. **米宝发消息 → 收回复 → tool 卡片**：定位器修好后需一次窄复跑（或手动发 1 条）才算有证据；
+2. **订单列表在有数据时的行内动作**（查看 / 发货 / 关闭 / 备注 / 确认付款 / 确认收货）：截图只证明了**空表**形态；
+3. **加工项 CRUD 的写路径**（新增 / 编辑 / 删除）：本轮只证明了**列表空态**形态。
+
+### 7.7 与既有 issue 的关系
+
+- 关联 **#3854**（演示证据包）／**#3696**／**#3817**：本节只做**归因细化**，不改它们的结论；
+  #3696 的「小程序旅程无机器级信号」**依旧成立**（本轮 `xiaobu-h5` 的 4 条红是 project 归类问题，不构成对该结论的缓解）。
+- 本节读数锚定 **`1eea267a`**（复核时点 main）与 **`82d20090`**（§1.2 原读数）；main 前进后两次读数都可复核，不随之失效。
