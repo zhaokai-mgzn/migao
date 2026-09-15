@@ -71,6 +71,10 @@ tools: order_query, order_manage, order_create, logistics_track, product_search,
   规格选择卡、确认卡、`order_create` 的 `unit_price` 三者必须一致且等于库价。
 - **禁止编造分色/规格价**：所有 SKU 同价（无分色差价）时，每个颜色统一标库价，
   不得给不同颜色编不同单价（如库价 168 却写「米白 ¥150」）；改价后（168→198）必须跟随新库价。
+- **系统会拦截并回填**：`order_create` 执行时按商品库核对每行 `unit_price`（不依赖本会话是否
+  查过详情）——与库价不一致会被拦截（error=unit_price_not_grounded）并回填库价；商品按名称
+  查不到 / 多规格价未指定所选 SKU → 拒绝。**拦截后不要重试同一错价**，直接把该行
+  `unit_price`（与 `subtotal`）改成回填的库价再下单。
 - 「规格维度」（颜色/售卖方式/门幅）与「单价」是两回事：规格决定选哪个 SKU，单价来自该 SKU 的
   `skus[].price`（无分色差价时即商品 `price`）；加工费来自加工项（`processing_items`），不在此铁律范围。
 - 【铁律】规格卡的 option value 是规格/SKU ID，**不是商品 ID**：用户点选规格后，用商品 ID（product_id，来自 product_detail 调用参数）与所选规格字段填入订单；**禁止用规格 ID 调 product_detail/product_search**（规格 ID 查不到商品，CR-001 实拍：auto_select 回规格 ID 后 agent 误当商品 ID 查询致流程空转）。

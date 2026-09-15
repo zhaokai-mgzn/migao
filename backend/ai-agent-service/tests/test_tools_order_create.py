@@ -34,6 +34,24 @@ def valid_items():
     ]
 
 
+def _with_library(client, price, name="遮光窗帘", pid="p1"):
+    """给 mock client 装上商品库 GET（order_create 单价接地校验用）。
+
+    新增的 `_reject_unit_price_not_grounded` 会在 POST 前按商品名查库价；
+    既有成功路径测试的 mock 只有 .post，必须补 .get（否则服务异常拒绝）。
+    """
+    async def _get(path, params=None, **kwargs):
+        if path.rstrip("/").endswith("/products"):
+            return {"success": True, "data": {"items": [{"id": pid, "name": name}], "total": 1}}
+        return {"success": True, "data": {
+            "id": pid, "name": name, "price": price, "basePrice": price,
+            "skus": [{"id": f"{pid}-1", "skuCode": "SKU-1", "colorName": "米白",
+                      "price": price, "stock": 1}],
+        }}
+    client.get = AsyncMock(side_effect=_get)
+    return client
+
+
 class TestOrderCreateDeclaration:
     """工具元数据声明"""
 
@@ -259,6 +277,7 @@ class TestOrderCreateDuplicateLines:
         with patch.object(tool, "_needs_sms_verification", return_value=False), \
              patch("app.tools.order_create.get_admin_api_client") as gc:
             gc.return_value.post = AsyncMock(return_value={"success": True, "data": {"id": "o1"}})
+            _with_library(gc.return_value, 168.0)
             result = await tool.execute(context=agent_ctx, customer_name="张三",
                                         customer_phone="13800138000", items=items)
         assert "重复" not in (result.error or ""), f"不同规格被误判成重复行: {result.error}"
@@ -268,6 +287,7 @@ class TestOrderCreateDuplicateLines:
         with patch.object(tool, "_needs_sms_verification", return_value=False), \
              patch("app.tools.order_create.get_admin_api_client") as gc:
             gc.return_value.post = AsyncMock(return_value={"success": True, "data": {"id": "o1"}})
+            _with_library(gc.return_value, 99.5)
             result = await tool.execute(context=agent_ctx, customer_name="张三",
                                         customer_phone="13800138000", items=valid_items)
         assert result.success is True
@@ -314,6 +334,7 @@ class TestOrderCreateSuccess:
 
         mock_client = AsyncMock()
         mock_client.post = AsyncMock(return_value={"success": True, "data": {"id": "order-123"}})
+        _with_library(mock_client, 99.5)
         mock_get_client.return_value = mock_client
 
         result = await tool.execute(
@@ -329,6 +350,7 @@ class TestOrderCreateSuccess:
     async def test_agent_success_without_sms(self, mock_get_client, tool, agent_ctx, valid_items):
         mock_client = AsyncMock()
         mock_client.post = AsyncMock(return_value={"success": True, "data": {"id": "order-456"}})
+        _with_library(mock_client, 99.5)
         mock_get_client.return_value = mock_client
 
         result = await tool.execute(
@@ -342,6 +364,7 @@ class TestOrderCreateSuccess:
     async def test_success_uses_order_no_fallback(self, mock_get_client, tool, agent_ctx, valid_items):
         mock_client = AsyncMock()
         mock_client.post = AsyncMock(return_value={"success": True, "data": {"orderNo": "ORD-20260825-0001"}})
+        _with_library(mock_client, 99.5)
         mock_get_client.return_value = mock_client
 
         result = await tool.execute(
@@ -359,6 +382,7 @@ class TestOrderCreatePayload:
     async def test_payload_camelcase_and_passthrough(self, mock_get_client, tool, agent_ctx):
         mock_client = AsyncMock()
         mock_client.post = AsyncMock(return_value={"success": True, "data": {"id": "o1"}})
+        _with_library(mock_client, 50.0, name="窗帘", pid="pid-1")
         mock_get_client.return_value = mock_client
 
         items = [{
@@ -403,6 +427,7 @@ class TestOrderCreateFailure:
     async def test_post_failure(self, mock_get_client, tool, agent_ctx, valid_items):
         mock_client = AsyncMock()
         mock_client.post = AsyncMock(return_value={"success": False, "error": {"message": "库存不足"}})
+        _with_library(mock_client, 99.5)
         mock_get_client.return_value = mock_client
 
         result = await tool.execute(
@@ -416,6 +441,7 @@ class TestOrderCreateFailure:
     async def test_post_exception(self, mock_get_client, tool, agent_ctx, valid_items):
         mock_client = AsyncMock()
         mock_client.post = AsyncMock(side_effect=RuntimeError("boom"))
+        _with_library(mock_client, 99.5)
         mock_get_client.return_value = mock_client
 
         result = await tool.execute(

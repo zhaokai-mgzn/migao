@@ -318,6 +318,24 @@ def _items(**overrides):
     return [base]
 
 
+def _with_library(client, price=168.0, name="遮光窗帘", pid="p1"):
+    """给 mock client 装上商品库 GET（order_create 单价接地校验用）。
+
+    `_reject_unit_price_not_grounded` 会在 POST 前按商品名查库价；既有成功路径测试
+    的 mock 只有 .post，必须补 .get（否则查库失败 → fail-closed 拒绝）。
+    """
+    async def _get(path, params=None, **kwargs):
+        if path.rstrip("/").endswith("/products"):
+            return {"success": True, "data": {"items": [{"id": pid, "name": name}], "total": 1}}
+        return {"success": True, "data": {
+            "id": pid, "name": name, "price": price, "basePrice": price,
+            "skus": [{"id": f"{pid}-1", "skuCode": "SKU-1", "colorName": "米白",
+                      "price": price, "stock": 1}],
+        }}
+    client.get = AsyncMock(side_effect=_get)
+    return client
+
+
 class TestOrderCreateQuantityBounds:
     """数量：必须 ≥ 1（拒绝负数/0/<1），且**允许小数**（2.5 米 / 8.4 ㎡），HTTP 之前拒绝
 
@@ -456,6 +474,7 @@ class TestOrderCreateQuantityBounds:
         mock_client.post = AsyncMock(
             return_value={"success": True, "data": {"id": "ORD-3666", "orderNo": "ORD-3666"}}
         )
+        _with_library(mock_client, 100.0, name="刺绣窗帘", pid="p2")
         mock_get_client.return_value = mock_client
 
         result = await tool.execute(
@@ -491,6 +510,7 @@ class TestOrderCreateQuantityBounds:
         mock_client.post = AsyncMock(
             return_value={"success": True, "data": {"id": "ORD-3682", "orderNo": "ORD-3682"}}
         )
+        _with_library(mock_client, 168.0)
         mock_get_client.return_value = mock_client
 
         result = await tool.execute(
@@ -518,7 +538,7 @@ class TestOrderCreateQuantityBounds:
         若有人把 processingItems 也设成 minimum 1，本测试仍绿（8.4≥1）；真正防误伤的是下一条
         `test_small_per_area_below_one_sqm_still_passes`（0.72 ㎡）。
         """
-        mock_client = _ok_client(mock_get_client)
+        mock_client = _ok_client(mock_get_client, price=23.80, name="2699系列雪尼尔窗帘面料")
         pinfo = {
             "colorName": "2699-03暖米色",
             "sellingMethod": "bulk_cut",
@@ -724,6 +744,8 @@ class TestOrderCreateValidInputsStillPass:
         mock_client.post = AsyncMock(
             return_value={"success": True, "data": {"id": "ORD-3586", "orderNo": "ORD-3586"}}
         )
+        # 单价接地校验：库价 mock 与各参数的 unit_price 对齐（0.5 那档是「最小合法量+小数单价」）
+        _with_library(mock_client, OrderCreateTool._parse_positive_number(unit_price))
         mock_get_client.return_value = mock_client
 
         result = await tool.execute(
@@ -745,6 +767,7 @@ class TestOrderCreateValidInputsStillPass:
         mock_client.post = AsyncMock(
             return_value={"success": True, "data": {"id": "ORD-3586", "orderNo": "ORD-3586"}}
         )
+        _with_library(mock_client, 168.0)
         mock_get_client.return_value = mock_client
 
         result = await tool.execute(
@@ -839,11 +862,12 @@ def _items_with_processing(**processing_info_overrides):
     }]
 
 
-def _ok_client(mock_get_client):
+def _ok_client(mock_get_client, price=168.0, name="遮光窗帘"):
     mock_client = AsyncMock()
     mock_client.post = AsyncMock(
         return_value={"success": True, "data": {"id": "ORD-3622", "orderNo": "ORD-3622"}}
     )
+    _with_library(mock_client, price=price, name=name)
     mock_get_client.return_value = mock_client
     return mock_client
 
