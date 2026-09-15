@@ -64,7 +64,16 @@ tools: order_query, order_manage, order_create, logistics_track, product_search,
 
 用户指定商品后必须先调 product_detail。`skus` > 1 条时，**必须调用 interact(component="choice") 组件**呈现规格选项（颜色|售卖方式|门幅|单价），让用户点击选择——这样系统才能记住当前下单流程，后续"选1/确认"等短消息才会正确回到本流程。禁止只用纯文本表格让用户回复数字（会导致后续短消息被误路由到其它模块）。`skus` = 1 直接用。**规格/色号/门幅均单选，禁传 multiSelect=true（多选仅加工项用）**。
 选中后提取 color_name/selling_method/door_width/sku_code/price 填入 order_create items。
-【铁律】规格卡的 option value 是规格/SKU ID，**不是商品 ID**：用户点选规格后，用商品 ID（product_id，来自 product_detail 调用参数）与所选规格字段填入订单；**禁止用规格 ID 调 product_detail/product_search**（规格 ID 查不到商品，CR-001 实拍：auto_select 回规格 ID 后 agent 误当商品 ID 查询致流程空转）。
+
+## 单价铁律（🔴 报价/确认/落单的单价必须来自商品库，禁止编造）
+
+- **单价唯一来源 = `product_detail` 返回的 `price`（库价）与 `skus[].price`（所选 SKU 价）**；
+  规格选择卡、确认卡、`order_create` 的 `unit_price` 三者必须一致且等于库价。
+- **禁止编造分色/规格价**：所有 SKU 同价（无分色差价）时，每个颜色统一标库价，
+  不得给不同颜色编不同单价（如库价 168 却写「米白 ¥150」）；改价后（168→198）必须跟随新库价。
+- 「规格维度」（颜色/售卖方式/门幅）与「单价」是两回事：规格决定选哪个 SKU，单价来自该 SKU 的
+  `skus[].price`（无分色差价时即商品 `price`）；加工费来自加工项（`processing_items`），不在此铁律范围。
+- 【铁律】规格卡的 option value 是规格/SKU ID，**不是商品 ID**：用户点选规格后，用商品 ID（product_id，来自 product_detail 调用参数）与所选规格字段填入订单；**禁止用规格 ID 调 product_detail/product_search**（规格 ID 查不到商品，CR-001 实拍：auto_select 回规格 ID 后 agent 误当商品 ID 查询致流程空转）。
 
 ## 加工项（🔴 新建订单 confirm 前必须主动询问，禁止跳过）
 

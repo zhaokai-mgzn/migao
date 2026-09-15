@@ -1051,6 +1051,143 @@ B_CREATE_PENDING_TOOL = "product_manage"
 B_CREATE_PENDING_ACTION = "create"
 
 
+# ── 下单「单价接地」校验（issue OR-014，run 34916256903 归因）────────────────
+# 实证：B 端（mibao）下单，规格选择卡呈现「米白 ¥150/米 或 浅灰 ¥168」——商品库
+# （prod_eval_blackout）单价 168.0 且 seed 里 SKU price = base_price（**无分色差价**）
+# ⇒ 米白 150 是 LLM 编造的分色价；用户选「米白｜散剪｜2.8米｜¥150/米」→ order_create
+# 落 unit_price=150.0 → 订单按错价成交（amount_verify[order_create] 抓「150 ≠ 168」）。
+# 既有防线只覆盖 C 端：`customer_order` 的下单接地闸门只要求「查过 product_detail」，
+# **不校验单价一致性**；B 端（order）连查详情的闸门都没有（`skill_name == "customer_order"`
+# 才触发）⇒ 编造的分色价一路落库，评测层 amount_verify 是唯一防线（且只读不回填）。
+# 本函数是**产品层**确定性兜底（零 LLM）：单价必须以商品库为准 ——
+#   · 库中无分色差价（SKU 同价）⇒ 任何分色价 ≠ 库价即拦截（禁止编造分色价）；
+#   · SKU 有独立价 ⇒ 按所选 SKU（processing_info.colorName/skuCode）匹配判；
+#   · 商品库价以 `grounded_product_detail`（本会话最近一次成功的 product_detail）为准，
+#     库价变化（如改价 198）自然跟随 —— **不得写死任何具体金额**。
+_PRICE_TOLERANCE = 0.01
+
+
+def _match_sku_price(grounded: dict, item: dict) -> Optional[float]:
+    """按 item 的规格信息（processing_info.colorName/skuCode）匹配 SKU 库价。
+
+    无 SKU 匹配时返回 None（由调用方决定按商品价兜底还是放行）。"""
+    if not isinstance(grounded, dict):
+        return None
+    skus = grounded.get("skus") or []
+    if not skus:
+        return None
+    pinfo = item.get("processing_info") or {}
+    if not isinstance(pinfo, dict):
+        return None
+    color = str(pinfo.get("colorName") or "").strip()
+    code = str(pinfo.get("skuCode") or "").strip()
+    if not color and not code:
+        return None
+    for sku in skus:
+        if not isinstance(sku, dict):
+            continue
+        if code and str(sku.get("sku_code") or "") == code:
+            return _to_float(sku.get("price"))
+        if color and str(sku.get("color_name") or "") == color:
+            return _to_float(sku.get("price"))
+    return None
+
+
+def _to_float(v) -> Optional[float]:
+    try:
+        if v is None:
+            return None
+        return float(v)
+    except (TypeError, ValueError):
+        return None
+
+
+def unit_price_grounding_error(items: list, grounded_detail) -> Optional[str]:
+    """下单明细单价 vs 商品库价的接地校验（零 LLM 纯函数）。
+
+    Args:
+        items: order_create 的 items 列表（[{product_name, quantity, unit_price,
+               processing_info:{colorName,skuCode}}]）
+        grounded_detail: 本会话最近一次成功 product_detail 的接地快照
+               （{product_id, name, price, skus:[{color_name, sku_code, price}]}）；
+               None/{} 表示未接地（不做单价判定，防误拦）。
+
+    Returns:
+        单价与库价不一致时返回**可行动**的错误描述（含库价，供模型纠正）；
+        一致 / 无法接地 / 商品不匹配 → None。
+
+    判据（事实驱动，区分「规格维度」与「单价」）：
+      · 单价来自库（商品 price 或所选 SKU 的 price）；加工费来自加工项（不入此判据）；
+      · 无分色差价 ⇒ 分色价编造即拦截；有分色差价 ⇒ 按所选 SKU 判（不把规格选择弄坏）。
+    """
+    if not items or not isinstance(grounded_detail, dict):
+        return None
+    g_price = _to_float(grounded_detail.get("price"))
+    g_name = str(grounded_detail.get("name") or "")
+    g_id = str(grounded_detail.get("product_id") or "")
+    if g_price is None:
+        return None  # 库价未知 → 不做金额判定（宁可放行，不误伤）
+    for i, item in enumerate(items):
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("product_name") or "")
+        pid = str(item.get("product_id") or "")
+        # 只核对**能确定是本接地商品**的行（名称或 ID 匹配）
+        if pid and g_id and pid != g_id:
+            continue
+        if name and g_name and name != g_name:
+            continue
+        if not pid and not name:
+            continue
+        up = _to_float(item.get("unit_price"))
+        if up is None:
+            continue
+        sku_price = _match_sku_price(grounded_detail, item)
+        lib_price = sku_price if sku_price is not None else g_price
+        if abs(up - lib_price) <= _PRICE_TOLERANCE:
+            continue
+        color_hint = ""
+        pinfo = item.get("processing_info")
+        if isinstance(pinfo, dict) and str(pinfo.get("colorName") or ""):
+            color_hint = f"（规格 {pinfo.get('colorName')}）"
+        return (
+            f"商品明细第 {i + 1} 项「{name}」单价 {up} ≠ 商品库价 {lib_price}{color_hint} —— "
+            f"单价必须以商品库为准（product_detail 的 price / 所选 SKU 的 skus[].price），"
+            f"**禁止编造分色/规格价**；库中无分色差价时所有颜色同价。"
+            f"请把该行 unit_price 改为 {lib_price}（subtotal 同步 = 数量×单价）后重新下单。"
+        )
+    return None
+
+
+# ── B 端建品「确认-执行」收口的适用判据（issue PR-016，run 34916256903 归因）──
+# 实证：B 端建品（product skill）用户 R7 回传确认卡值（confirmValue 精确匹配），
+# 模型却调 product_search 宣称「✅ 商品已创建成功！」—— product_manage(action=create)
+# **从未执行**（首跑指纹 no_success(product_manage)）；重试轮 R4/R5/R6 三张同事实
+# confirm 卡不收敛（评测 check_confirm_loop 判红）。
+# 根因：8.4「确认-执行代码收口」只对 C 端生效（`_is_customer_role(state)`），
+# B 端建品确认后**没有任何代码兜底** —— 动不动手完全取决于模型自觉。
+# 本判据把 8.4 收口扩展为**也覆盖 B 端建品**：pending（validate_input 通过落库）=
+# product_manage/create + 用户已明确确认（confirmValue 精确匹配或文本确认）⇒ 可收口。
+# 反向守卫（不得把「确认后必执行」写死成「永不确认」）：未确认 / 无 pending /
+# 非 create 流程 ⇒ False，模型仍按原流程（可发**不同**的卡说明缺什么）。
+def _b_create_flow_confirm_eligible(pending: dict | None, confirmed: bool) -> bool:
+    """B 端建品「确认-执行」是否满足代码收口条件（纯函数，可单测）。
+
+    与 `_should_code_close_loop` 的分工：前者管「C 端任意写 + B 端建品」的统一
+    收口判据（pending/确认/未执行三条件）；本函数是**收口的适用域**判据 ——
+    B 端非 customer 角色下，只有「建品 create 在办」这一流程才允许代码代执行。
+    """
+    if not confirmed:
+        return False
+    if not isinstance(pending, dict):
+        return False
+    if str(pending.get("target_tool") or "") != B_CREATE_PENDING_TOOL:
+        return False
+    if str(pending.get("target_action") or "") != B_CREATE_PENDING_ACTION:
+        return False
+    return True
+
+
 def _find_last_query_processing_items(messages) -> List[dict]:
     """会话历史里**最近一次**成功的 `processing_item_query` 返回的加工项列表（B 端事实源）。
 
@@ -3997,7 +4134,9 @@ async def execute_skill(
                     # 并直接下单 → 单价/加工项/金额全不可信，且用例期望的 product_detail 缺失。
                     # prompt 里的「商品详情铁律（confirm 前必须先调 product_detail）」模型不守，
                     # 故加代码闸门：本会话没成功查过商品详情 → 不许下单，并把可执行步骤写进结果。
-                    if tool_name == "order_create" and skill_name == "customer_order" and session_id:
+                    # B 端（order）同守此闸门（run 34916256903 OR-014：B 端也查过详情但编造
+                    # 分色价 150 落单）—— 未接地与单价不接地都是"金额不可信"的同族形态。
+                    if tool_name == "order_create" and skill_name in ("customer_order", "order") and session_id:
                         _grounded = True
                         try:
                             from app.memory.session_state_store import SessionStateStore as _SG
@@ -4005,7 +4144,7 @@ async def execute_skill(
                             _grounded = bool(_sg.get("grounded_product_detail"))
                         except Exception as _ge:
                             logger.debug(f"[{skill_name}] ground gate check failed (non-fatal): {_ge}")
-                        if not _grounded:
+                        if not _grounded and skill_name == "customer_order":
                             logger.warning(
                                 f"[{skill_name}] 下单接地闸门：本会话未查商品详情，拦截 order_create "
                                 f"| session={session_id}"
@@ -4098,6 +4237,31 @@ async def execute_skill(
                                     "禁止凭记忆填价格或加工项。"
                                 ),
                             }, ensure_ascii=False), {"success": False, "error": "product_not_grounded"}
+                        # ── 单价接地校验（issue OR-014，run 34916256903 归因）──
+                        # 已查过商品详情（grounded）但 items 单价 ≠ 库价（含编造的分色价）：
+                        # 查详情 ≠ 金额可信 —— 规格卡上的「米白 ¥150/米」就是查完详情后编的。
+                        # 拦截并回填库价（用 product_detail 结果里的真值，不写死任何金额）。
+                        else:
+                            try:
+                                _pg = await _SG().load(session_id) or {}
+                                _grounded_detail = _pg.get("grounded_product_detail") or {}
+                                _price_err = unit_price_grounding_error(
+                                    (args or {}).get("items") or [], _grounded_detail)
+                                if _price_err:
+                                    logger.warning(
+                                        f"[{skill_name}] 单价接地校验拦截 order_create: {_price_err[:80]}"
+                                        f" | session={session_id}"
+                                    )
+                                    return tool_call, json.dumps({
+                                        "success": False,
+                                        "error": "unit_price_not_grounded",
+                                        "message": f"下单被拦截（单价与商品库不符）：{_price_err}",
+                                    }, ensure_ascii=False), {
+                                        "success": False,
+                                        "error": "unit_price_not_grounded",
+                                    }
+                            except Exception as _pe2:
+                                logger.debug(f"[{skill_name}] 单价接地校验失败（非致命）: {_pe2}")
 
                     # 写操作（destructive 或 requires_confirmation 高风险写）：必须经用户明确确认
                     # （代码层兜底，防间接提示注入驱动未确认写操作，审计 07 P0-L1）
@@ -4312,8 +4476,26 @@ async def execute_skill(
                             from app.memory.session_state_store import SessionStateStore
                             _gs = SessionStateStore()
                             _g = await _gs.load(session_id) or {}
+                            # 接地快照含**库价真值**（price + skus，issue OR-014）：
+                            # 下单单价校验（`unit_price_grounding_error`）以本快照为库价来源 ——
+                            # 只存 product_id 时校验无从比对（编造的分色价 150 对不上任何真值）。
+                            # skus 扁平化只留校验所需键（color_name/sku_code/price），
+                            # 不整包透传（防大 JSON 撑爆 session state）。
+                            _g_data = result_dict.get("data") or {}
+                            _g_skus = []
+                            for _sk in (_g_data.get("skus") or []):
+                                if not isinstance(_sk, dict):
+                                    continue
+                                _g_skus.append({
+                                    "color_name": _sk.get("color_name"),
+                                    "sku_code": _sk.get("sku_code"),
+                                    "price": _sk.get("price"),
+                                })
                             _g["grounded_product_detail"] = {
-                                "product_id": str((result_dict.get("data") or {}).get("id") or ""),
+                                "product_id": str(_g_data.get("id") or ""),
+                                "name": str(_g_data.get("name") or ""),
+                                "price": _g_data.get("price"),
+                                "skus": _g_skus,
                             }
                             await _gs.commit(session_id, _g)
                         except Exception as _e:
@@ -4634,8 +4816,15 @@ async def execute_skill(
     # 这里把收口前移到代码：顾客已明确确认 + 存在已校验待执行写 + 本轮模型没调那个工具
     # → **代码直接执行**（同一条执行路径：同样的确认门禁状态、同样的验证码回填链），
     # 并用工具返回的 message 作为给顾客的回复（说真话，而不是"这就帮您提交"）。
-    # 只对 C 端生效（分端纪律）：B 端写流程各异，待 B 端有分支级回归证据后再评估。
-    if session_id and _is_customer_role(state):
+    # 覆盖范围（2026-09-15 扩展，issue PR-016 / run 34916256903 归因）：
+    #   · C 端（customer 角色）任意确认-执行链（原 8.4 范围）；
+    #   · B 端**建品**（product_manage/create）：B 端此前**没有**任何确认后兜底 ——
+    #     实证 PR-016 首跑：用户 R7 回传确认卡值，模型调 product_search 宣称
+    #     「✅ 商品已创建成功！」而 product_manage 从未执行（no_success 指纹）；
+    #     重试轮 R4/R5/R6 三张同事实 confirm 卡不收敛。B 端其它写流程（update/
+    #     toggle_status 等）仍由既有门禁 + 模型自觉，**不**在本收口范围（分端纪律，
+    #     待各自有分支级回归证据后再评估）。
+    if session_id:
         try:
             from app.memory.session_state_store import SessionStateStore as _S8
             _f8 = await _S8().load(session_id) or {}
@@ -4644,6 +4833,9 @@ async def execute_skill(
             _confirmed8 = (_is_explicit_confirmation(last_user_msg or "")
                            or _is_card_confirm_value(last_user_msg or "", _cv8))
             _target8 = str((_pending8 or {}).get("target_tool") or "")
+            _b_create_ok = _b_create_flow_confirm_eligible(_pending8, _confirmed8)
+            if not (_is_customer_role(state) or _b_create_ok):
+                _pending8 = None  # 不在收口范围（B 端非建品流程）→ 不执行收口
             if _should_code_close_loop(_pending8, _target8, _confirmed8, _executed_tools):
                 _tool8 = skill_registry.get_tool(_target8)
                 if _tool8 is not None:
