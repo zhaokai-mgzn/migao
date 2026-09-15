@@ -3,7 +3,7 @@
 对应 app/tools/product_manage.py 的 create/update/toggle_status 三条 action，
 覆盖正常路径、参数校验、camelCase 字段映射、异常泛化兜底。
 """
-# case_ids: PR-007, PR-008, PR-009
+# case_ids: PR-007, PR-008, PR-009, PR-016
 import pytest
 from unittest.mock import AsyncMock, patch
 
@@ -234,6 +234,72 @@ class TestProductUpdate:
 
         json_data = mock_client.patch.call_args[1]["json_data"]
         assert json_data["categoryId"] == "cat-1"
+
+
+class TestProductUpdateStatusGuard:
+    """issue #3899：update 收到 status 必须显式拒绝并引导走 toggle_status，禁止静默忽略。
+
+    根因：_update_product 参数 schema 声明 status 但实现不映射（json_data 无 status 键；
+    Java updateProduct 也刻意恢复原状态，状态只能走 updateProductStatus 状态机）
+    → LLM 把"下架"放进 update args → update 报 success 但 status 没变
+    → 复查对不上就误判"未生效、去后台手动操作"。
+    修复：status 非空时显式失败（success=False），错误信息引导改用 action=toggle_status。
+    """
+
+    @patch("app.tools.product_manage.get_admin_api_client")
+    async def test_update_with_status_rejected_not_silently_ignored(
+        self, mock_get_client, tool, admin_tool_context, mock_client
+    ):
+        """update 带 status → 显式失败 + 引导 toggle_status，且不发 PATCH（禁止半成功写入）。"""
+        mock_get_client.return_value = mock_client
+
+        result = await tool.execute(
+            context=admin_tool_context,
+            action="update",
+            product_id="p-1",
+            name="新名字",
+            status="off_sale",
+        )
+
+        assert result.success is False, "update 带 status 必须显式失败，禁止报 success 后状态没变"
+        assert "toggle_status" in result.error, "错误必须引导用 action=toggle_status"
+        assert result.message and "未执行" in result.message, "失败消息必须明确状态未变更"
+        mock_client.patch.assert_not_called(), "拒绝时不得发 PATCH（否则字段已写但状态没变 = 半成功写入）"
+
+    @patch("app.tools.product_manage.get_admin_api_client")
+    async def test_update_status_only_rejected(self, mock_get_client, tool, admin_tool_context, mock_client):
+        """只传 status 无其他字段 → 同样显式拒绝，不能静默成功。"""
+        mock_get_client.return_value = mock_client
+
+        result = await tool.execute(
+            context=admin_tool_context, action="update", product_id="p-1", status="on_sale"
+        )
+
+        assert result.success is False
+        assert "toggle_status" in result.error
+        mock_client.patch.assert_not_called()
+
+    def test_description_includes_status_guard_guidance(self, tool):
+        """description 必须点明：状态变更走 toggle_status，update 不处理 status。"""
+        assert "toggle_status" in tool.description
+        assert "update" in tool.description
+
+    def test_description_includes_recheck_guidance(self, tool):
+        """issue #3899：写后复查指引——写成功返回后复查显示旧值要如实说明，禁止断言"未落库"。"""
+        assert "已写入" in tool.description, "description 必须让 agent 按写结果如实说明"
+        assert "读取延迟" in tool.description, "description 必须提示旧值可能为读取延迟"
+        assert "未落库" in tool.description, "description 必须明令禁止断言'未落库'"
+
+
+class TestProductSkillRecheckGuidance:
+    """issue #3899：product_skill 系统提示必须含写后复查指引（同族 #3885 已在 delete_item 修）。"""
+
+    def test_product_system_prompt_includes_recheck_guidance(self):
+        from app.graph.skills.product_skill import PRODUCT_SYSTEM_PROMPT
+
+        assert "已写入" in PRODUCT_SYSTEM_PROMPT
+        assert "读取延迟" in PRODUCT_SYSTEM_PROMPT
+        assert "toggle_status" in PRODUCT_SYSTEM_PROMPT
 
 
 class TestProductToggleStatus:

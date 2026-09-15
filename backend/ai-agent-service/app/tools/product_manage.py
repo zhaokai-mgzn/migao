@@ -35,6 +35,8 @@ class ProductManageTool(BaseTool):
         "【反例】增删商品加工项用 product_processing_item_manage，不要用本工具。"
         "【标注】WRITE|DESTRUCTIVE"
         "【铁律】用户明确要求写操作（禁用/调整/删除/上下架/重置等**单步写**）时：先查必要信息拿真实 ID → 展示操作预览 + 确认卡 → 用户确认后立即调用写工具执行，禁止只查询/展示列表就停（HR-003/PP-006/PR-005 实拍：agent 只 list/query 不执行写工具判失败）。"
+        "【铁律】写工具返回 success 后复查若显示旧值：优先按写结果向用户如实说明「已写入，查询显示旧值可能为读取延迟」，禁止断言「未落库」、禁止建议用户去后台手动操作（#3899）。"
+        "【铁律】状态变更（上/下架）必须用 action=toggle_status 单独调用：update 不处理 status（状态走状态机端点，Java updateProduct 刻意恢复原状态），把 status 放进 update 会被显式拒绝（#3899）。"
         "【create 例外（多步引导，禁止抢跑）】action=create 不是单步写，而是**多步引导流程**："
         "分类确认 → **必须先发加工项多选卡**（processing_item_query(applicable_category_id=已确认商品分类ID) → "
         "interact(component=choice, multiSelect=true)，按适用分类过滤/推荐）→ 货号 → 汇总确认卡 → 用户确认后才执行 create。"
@@ -176,7 +178,7 @@ class ProductManageTool(BaseTool):
                 return await self._update_product(context, product_id, name, category_id,
                     price, description, stock_quantity, brand, images, detail_images,
                     specifications, unit, colors, pricing_type, selling_methods,
-                    door_widths, sku_code)
+                    door_widths, sku_code, status)
             elif action == "toggle_status":
                 return await self._toggle_status(context, product_id, status)
             # manage_processing_items 已拆分为独立 tool: product_processing_item_manage
@@ -263,11 +265,23 @@ class ProductManageTool(BaseTool):
     async def _update_product(self, context, product_id, name, category_id, price,
                                description, stock_quantity, brand, images, detail_images,
                                specifications, unit, colors, pricing_type, selling_methods,
-                               door_widths, sku_code) -> ToolResult:
+                               door_widths, sku_code, status=None) -> ToolResult:
         if not product_id:
             return ToolResult(
                 success=False, error="缺少商品 ID",
                 message="更新商品时必须提供商品 ID（product_id）",
+            )
+
+        # issue #3899：update 不处理 status——Java updateProduct 刻意恢复原状态，状态只能走
+        # PUT /api/admin/products/{id}/status（updateProductStatus 状态机端点，见 _toggle_status）。
+        # 静默忽略会让 LLM 收到 success 但 status 没变 → 复查对不上 → 误报「未生效，去后台手动操作」。
+        # 显式拒绝并引导走 toggle_status，禁止半成功写入。
+        if status is not None:
+            return ToolResult(
+                success=False,
+                error="status 请用 action=toggle_status 单独调用（状态变更走状态机端点，update 不处理 status）",
+                message="商品状态变更未执行：update 不处理 status，请改用 action=toggle_status 单独调用（商品其他字段未受影响）",
+                suggestion="product_manage(action=toggle_status, product_id=<id>, status=on_sale/off_sale)",
             )
 
         # 只传非 None 字段（null = 不修改，Java Agent PATCH 端点自动处理）
