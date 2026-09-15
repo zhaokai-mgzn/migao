@@ -1,4 +1,4 @@
-// case_ids: UI-040
+// case_ids: UI-040, UI-019
 // @vitest-environment jsdom
 
 import { describe, it, expect } from 'vitest'
@@ -14,10 +14,14 @@ import type { Order } from '@/types'
  * 断言的是**纸面内容**：收货信息、商品明细、合计、经手人、运单号（有则印、无则留空）。
  * 发货人栏口径见下方「存量已发货订单的发货人栏口径」（issue #3818 裁定：显示「-」）。
  *
- * 打印隔离（`@media print` 只印单据、不印后台外壳）：jsdom 不解析媒体查询，
- * 因此分两层守 —— ① 本文件用 CSSOM + 级联**仿真**打印媒体，断言单据显形/外壳被隐藏
- * （把 print 块的规则并到样式表末尾后 getComputedStyle 真算）；② 真实
- * `emulateMedia({media:'print'})` 走查见 tests/e2e/specs/orders/shipment-doc.spec.ts
+ * 打印隔离（`@media print` 只印单据、不印后台外壳）：单据经 `createPortal` 渲染到
+ * document.body（body 直接子级），打印时用
+ * `body > *:not(.shipment-print-area) { display: none !important; }` 把整页外壳藏掉 ——
+ * **display:none 不占版面高度**，不会把分页撑出空白第二页
+ * （旧方案 `visibility:hidden` 仍占高度 → 底层页面高于一页 A4 时第 2 页空白，issue #3896）。
+ * jsdom 不解析媒体查询，因此分两层守 —— ① 本文件用 CSSOM + 级联**仿真**打印媒体，
+ * 断言单据显形/外壳被隐藏（把 print 块的规则并到样式表末尾后 getComputedStyle 真算）；
+ * ② 真实 `emulateMedia({media:'print'})` 走查见 tests/e2e/specs/orders/shipment-doc.spec.ts
  * （⚠️ 该 e2e 从未被 CI 执行，issue #3817）。
  */
 
@@ -146,14 +150,14 @@ describe('ShipmentDoc — 发货单纸面内容', () => {
   })
 
   it('发货前无物流（无发货人/无运单号）：不编造，运单号/物流公司留空供手写，且不抛错', () => {
-    const { container } = render(<ShipmentDoc order={buildOrder()} logistics={null} />)
+    render(<ShipmentDoc order={buildOrder()} logistics={null} />)
 
-    // 物流栏位存在但没有值
+    // 物流栏位存在但没有值（单据已 portal 到 body，查 body 全文确认无编造文本）
     expect(screen.getByText('物流公司')).toBeInTheDocument()
     expect(screen.getByText('运单号')).toBeInTheDocument()
     expect(screen.queryByText('undefined')).not.toBeInTheDocument()
     expect(screen.queryByText('null')).not.toBeInTheDocument()
-    expect(container.textContent).not.toContain('internal-service')
+    expect(document.body.textContent).not.toContain('internal-service')
   })
 
   // ===== 存量已发货订单的发货人栏口径（issue #3818 裁定）=====
@@ -195,18 +199,35 @@ describe('ShipmentDoc — 发货单纸面内容', () => {
     expect(shipperCell().textContent).toBe('王五')
   })
 
-  it('内置打印契约：A4 页面尺寸 + print-area 隔离选择器（防"打印出一整页后台外壳"）', () => {
-    const { container } = render(<ShipmentDoc order={buildOrder()} />)
+  // ===== portal 渲染载体（issue #3896：打印隔离的物理前提）=====
+  it('通过 portal 渲染到 document.body（打印时外壳整体隐藏的前提；屏幕态 display:none 不占版面）', () => {
+    render(<ShipmentDoc order={buildOrder()} />)
 
-    const style = container.querySelector('style')?.textContent || ''
+    const doc = document.querySelector('.shipment-print-area') as HTMLElement
+    expect(doc).not.toBeNull()
+    // portal 到 body：单据与页面外壳（body 下其他子树）同级，
+    // 打印时才能用 `body > *:not(.shipment-print-area)` 整体藏掉外壳
+    expect(doc.parentElement).toBe(document.body)
+    // 每页只挂一份（.shipment-print-area 是全局选择器，挂两份会打印两套单据）
+    expect(document.querySelectorAll('.shipment-print-area')).toHaveLength(1)
+    // 屏幕态 display:none（portal 后仍是隐藏的，页面屏幕布局零改动）
+    expect(getComputedStyle(doc).display).toBe('none')
+  })
+
+  it('内置打印契约：A4 页面尺寸 + body 级隔离选择器（防"打印出一整页后台外壳"）', () => {
+    render(<ShipmentDoc order={buildOrder()} />)
+
+    const style = document.querySelector('.shipment-print-area style')?.textContent || ''
     expect(style).toContain('shipment-print-area')
     expect(style).toContain('@page')
     expect(style).toContain('size: A4')
     expect(style).toContain('@media print')
     // 屏幕上隐藏（页面已有屏幕布局，避免重复呈现）
     expect(style).toMatch(/\.shipment-print-area\s*\{\s*display:\s*none/)
-    // 打印时只显示本单据
-    expect(style).toContain('body * { visibility: hidden; }')
+    // 打印时只显示本单据：隐藏 body 下所有非单据直系子级。
+    // display:none 不占版面高度 —— 旧 `visibility:hidden` 会按隐藏内容高度分页，
+    // 底层页面高于一页 A4 时第 2 页空白（issue #3896）。
+    expect(style).toMatch(/body > \*:not\(\.shipment-print-area\)\s*\{\s*display:\s*none\s*!important/)
   })
 
   // ===== 打印隔离：从「CSS 字符串存在」升级为「级联算出来的可见性」（issue #3817 收尾）=====
@@ -215,11 +236,13 @@ describe('ShipmentDoc — 发货单纸面内容', () => {
   //   ① 结构：隔离规则确实写在 @media print 块内；
   //   ② 仿真打印媒体：把 print 块内的规则按原顺序并到同一样式表末尾，让
   //      getComputedStyle 真算一遍「打印时会是什么样」—— 单据显形、非单据兄弟节点
-  //      （侧边栏、确认发货按钮）被隐藏。
+  //      （页面外壳 = body 直接子级）被隐藏。
   // jsdom 不解析媒体查询本身（屏幕态 = 非打印态），故 ② 是等价仿真；真实
   // emulateMedia({media:'print'}) 的浏览器走查见 tests/e2e/specs/orders/shipment-doc.spec.ts
   // （⚠️ 该 spec 不在任何 PR 门禁清单里，亦不在 nightly（schedule 已停）——issue #3817）。
   function mountDocWithShell() {
+    // 外壳包在 RTL 的 container div 里 —— 该 div 是 body 的直接子级，
+    // 对应真实页面里整页应用所在的 body 直系子树（打印时被整体 display:none）
     const { container } = render(
       <div>
         <aside>侧边栏</aside>
@@ -228,9 +251,9 @@ describe('ShipmentDoc — 发货单纸面内容', () => {
       </div>
     )
     return {
-      styleEl: container.querySelector('style') as HTMLStyleElement,
-      doc: container.querySelector('.shipment-print-area') as HTMLElement,
-      shell: container.querySelector('aside') as HTMLElement,
+      styleEl: document.querySelector('.shipment-print-area style') as HTMLStyleElement,
+      doc: document.querySelector('.shipment-print-area') as HTMLElement,
+      shell: container as HTMLElement,
       confirmBtn: screen.getByRole('button', { name: '确认发货' }),
     }
   }
@@ -240,7 +263,8 @@ describe('ShipmentDoc — 发货单纸面内容', () => {
 
     // 屏幕上：单据不参与屏幕布局（页面已有自己的布局，避免重复呈现）
     expect(getComputedStyle(doc).display).toBe('none')
-    expect(getComputedStyle(shell).visibility).toBe('visible')
+    expect(getComputedStyle(shell).display).not.toBe('none')
+    expect(getComputedStyle(confirmBtn).display).not.toBe('none')
 
     // ① 隔离规则必须写在 @media print 里（否则屏幕上就把整个后台外壳藏掉了）——删掉整块即红
     const sheet = styleEl.sheet
@@ -254,22 +278,21 @@ describe('ShipmentDoc — 发货单纸面内容', () => {
     const inner = Array.from(printRule!.cssRules).map((r) => r.cssText).join('\n')
     styleEl.textContent = `${styleEl.textContent}\n${inner}`
 
-    // 非单据节点（侧边栏 / 确认发货按钮）被隐藏
-    // ⇒ 删掉 `body * { visibility: hidden; }` 这一行即红（且能红在具体节点上）
-    expect(getComputedStyle(shell).visibility).toBe('hidden')
-    expect(getComputedStyle(confirmBtn).visibility).toBe('hidden')
+    // 页面外壳（body 直接子级）被隐藏
+    // ⇒ 删掉 `body > *:not(.shipment-print-area) { display: none !important; }` 即红（且红在具体节点上）
+    expect(getComputedStyle(shell).display).toBe('none')
+    // display:none 让整棵外壳子树在打印时都不再呈现（渲染层面整体隐藏；
+    // 不同于 visibility，display 不继承到子节点 computed 值，故只断外壳本身）
 
-    // 单据自身与其内部节点显形
-    // ⇒ 删掉 `.shipment-print-area, .shipment-print-area * { visibility: visible }` 即红
+    // 单据自身显形（display:block 覆盖屏幕态 display:none，同特异性、后声明者胜）
+    // ⇒ 删掉 print 块的 `.shipment-print-area { display: block; }` 即红
     expect(getComputedStyle(doc).visibility).toBe('visible')
     expect(getComputedStyle(doc).display).toBe('block')
     expect(getComputedStyle(screen.getByText('发货单')).visibility).toBe('visible')
 
-    // 纸面锚到左上角（不被外壳挤压/偏移）
-    // ⇒ 删掉 print 块的 position/left/top 即红
-    expect(getComputedStyle(doc).position).toBe('absolute')
-    expect(getComputedStyle(doc).left).toBe('0px')
-    expect(getComputedStyle(doc).top).toBe('0px')
+    // 纸面从页首自然排版（position: static；旧方案 absolute 锚定左上角，
+    // 底层页面高度仍会撑出第二页空白 #3896）⇒ 若回归 position:absolute 即红
+    expect(getComputedStyle(doc).position).toBe('static')
   })
 
   it('A4 纸面尺寸写在 @page 块里（jsdom 里以 CSSOM 断言，不靠字符串匹配）', () => {
