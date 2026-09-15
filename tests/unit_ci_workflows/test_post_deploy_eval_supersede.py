@@ -421,14 +421,16 @@ class TestDispatchSuppressionIsNeverSilent:
         )
         assert "workflow_dispatch" in out, f"未回显事件名（判定不可审计）：\n{out}"
 
-    def test_only_the_event_name_flips_the_decision(self):
-        """红证：**只**把事件名从 workflow_dispatch 换成 workflow_run，其余输入完全相同 ⇒
-        一个照常跑、一个被抑制。这证明「免抑制」确实由这条规则带来，而不是夹具巧合。"""
+    def test_only_the_escape_hatch_flips_the_decision(self):
+        """红证：**只**把 force_eval_input 从空换成 false（事件同为 workflow_dispatch），
+        其余输入完全相同 ⇒ 一个照常跑、一个被抑制。这证明「免抑制」确实由
+        force_eval 输入带来，而不是夹具巧合。（#3925：原 workflow_run 对照已随
+        自动门禁移除——现在唯一"可抑制"的手动路径就是逃生口本身。）"""
         dispatch, _ = run_supersede(SHA_A, SHA_B, event="workflow_dispatch")
-        wf_run, _ = run_supersede(SHA_A, SHA_B, event="workflow_run")
-        assert (dispatch, wf_run) == ("false", "true"), (
-            f"事件名是唯一变量时判定未翻转（dispatch={dispatch}, workflow_run={wf_run}）"
-            " —— 要么 dispatch 仍被抑制，要么自动门禁被判成了免抑制"
+        escape, _ = run_supersede(SHA_A, SHA_B, event="workflow_dispatch", force_input="false")
+        assert (dispatch, escape) == ("false", "true"), (
+            f"force_eval 是唯一变量时判定未翻转（默认={dispatch}, force_eval=false={escape}）"
+            " —— 要么 dispatch 仍被抑制，要么逃生口失效"
         )
 
     def test_dispatch_escape_hatch_preserved(self):
@@ -451,14 +453,26 @@ class TestDispatchSuppressionIsNeverSilent:
                 f"force_eval={raw!r} 的判定应为 superseded={expected}，实得 {superseded}：\n{out}"
             )
 
-    def test_automatic_gates_semantics_unchanged(self):
-        """自动门禁（workflow_run 部署门禁）语义**不得**被 dispatch 默认值波及。"""
-        assert run_supersede(SHA_A, SHA_B, event="workflow_run")[0] == "true", (
-            "部署门禁的「被取代即抑制」被破坏了（连合场景会重复烧双份成本，见 #3587）"
+    def test_dispatch_mode_defaults_to_escape_hatch_semantics(self):
+        """#3925：workflow_run 移除后，脚本默认 MODE=dispatch；dispatch 模式 = 默认
+        免抑制（#3709），仅显式 force_eval=false 回到"被取代即抑制"逃生口。
+
+        红证：同一输入（SHA_A vs SHA_B = 被取代），仅 FORCE_EVAL 不同——
+        dispatch 默认（免抑制）→ 放行；显式 false（逃生口）→ 抑制。
+        """
+        # dispatch 默认免抑制（无 force_input → 脚本按 EVENT_NAME=workflow_dispatch 判免抑制）
+        default, _ = run_supersede(SHA_A, SHA_B, event="workflow_dispatch")
+        assert default == "false", (
+            f"dispatch 默认仍被抑制 → #3709 原样复发（人显式要求的评测静默空转）：\n{default}"
         )
-        assert run_supersede(SHA_A, SHA_A, event="workflow_run")[0] == "false", (
-            "部署门禁在未被取代时也必须照常跑（不得漏评）"
+        # 逃生口：显式 force_eval=false → 回到「被取代即抑制」（EVAL_SHA != main HEAD → skip）
+        escape, _ = run_supersede(SHA_A, SHA_B, event="workflow_dispatch", force_input="false")
+        assert escape == "true", (
+            f"显式 force_eval=false 无法抑制 → 逃生口被砍（省成本的抑制路径消失）：\n{escape}"
         )
+        # 同 SHA（未被取代）时即使 force_eval=false 也不抑制（逃生口不误伤）
+        same, _ = run_supersede(SHA_A, SHA_A, event="workflow_dispatch", force_input="false")
+        assert same == "false", "逃生口把未被取代的评测也抑制了（不得漏评）"
 
     def test_suppression_step_passes_event_name_and_raw_input(self):
         """接线：判定步骤必须把**事件名**与**原始 force_eval 输入**交给脚本。

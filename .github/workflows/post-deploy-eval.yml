@@ -1,26 +1,25 @@
 name: Post-Deploy Eval (部署后全量回归)
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 设计意图（issue #3503 / #3483 T3；#3654 用户裁定改为「diff 定向 + 每 3 天全量」）
+# 设计意图（issue #3503 / #3483 T3；#3654 diff 定向；#3925 用户裁定改为**手动触发**）
 #
-# 1) 为什么"部署后"要跑行为回归（#3654 起：**按改动点定向，不再每次全量**）
+# 1) 为什么要有"全量行为回归"（#3925 起：**部署后不再自动跑，改手动 + 每 3 天定时**）
 #    现状：合并 main → deploy-ai-agent-service 推到 SWAS（**当前即云测试环境**）
 #    → 只跑 smoke-test（health/存活冒烟）。health 只证明"进程活着、端口在听"，
 #    完全证明不了 agent 的行为没退化（工具路由/确认门禁/金额计算/交互卡这些
 #    只认真实多轮 LLM 会话）。PR 门禁的 agent-eval-smoke 只有 7 条、且打的是
-#    共享 dev 环境 —— 合并进 main 的代码与"部署到环境里的镜像"之间没有任何
-#    行为级把关。本 workflow 就是补这一环：**部署一完成，就在独立栈上跑
-#    mibao + xiaobu 两套行为回归 + 完成判定（completion_verdict）**。
-#    #3654（用户裁定，2026-09-14）：部署后**不再每次全量**（全量是 CI 真实 LLM
-#    成本主因之一，近 2.5h ≈ ¥135-295）——
-#      · 部署触发（workflow_run）→ **diff 定向**：`git diff <被评SHA>^ <被评SHA>` 驱动，
-#        eval job 的「定向用例选择」步骤把改动文件映射成受影响 case_ids（复用 #3502
-#        映射表）+ fast（--max-retries 0）；三个保守边界（宽爆炸半径文件 / 无 AI 行为
-#        文件 / 映射表未覆盖的域）**强制回退全量**（宁多跑不少跑）；
+#    共享 dev 环境 —— 合并进 main 的代码与"部署到环境里的镜像"之间没有行为级把关。
+#    本 workflow 就是补这一环：在**独立栈**上跑 mibao + xiaobu 两套行为回归 +
+#    完成判定（completion_verdict）。
+#    #3925（用户裁定，2026-09-15）：**移除部署后自动触发（workflow_run）** ——
+#    部署后评测（即使 #3654 已收窄为 diff 定向）仍是真实 LLM 成本主因（近 2.5h
+#    ≈ ¥135-295）+ 挤占全局评测槽位（eval-stack-global），且每次部署都自动跑
+#    是"无人在场也要付钱"。改为：
+#      · **手动 workflow_dispatch**：需要时（部署后复核 / 里程碑 / 回滚复验 / 随机抽查）
+#        由人显式触发，任意档位（normal 全量 / smoke / adversarial / case_ids 定点）；
 #      · **每 3 天 schedule cron** 跑一次 normal 全量（双 persona），承担宽度覆盖
-#        （定向漏掉的大范围回归），见下方 `on.schedule` 注释；
-#      · 手动 workflow_dispatch 保留任意档位兜底。
-#    门禁判定口径（completion_verdict + 失败建 issue）在定向与全量两种档位下**不变**。
+#        （手动档"没人记得跑"的长期漂移兜底），见下方 `on.schedule` 注释。
+#    判定口径（completion_verdict + 失败建 issue）在手动与定时两种档位下**不变**。
 #
 # 2) 为什么是"生产发布门禁的预演"
 #    生产发布入口 deploy-prod.yml 已就位但生产环境尚未部署（三层里的生产层）。
@@ -28,17 +27,20 @@ name: Post-Deploy Eval (部署后全量回归)
 #    本 workflow 完全同构，只是目标环境不同。故先把**门禁机制**焊死在这里
 #    （触发→独立栈全量→完成判定→失败留痕），生产就绪时把目标环境一换即可，
 #    不需要重新设计门禁（今天不预演，生产上线当天才第一次跑门禁=拿生产赌）。
+#    ⚠️ 手动触发 ≠ 门禁降级：手动档的判定口径与定时档完全一致（completion_verdict
+#    全库跑 + 失败建 issue），只是"何时跑"由人决定（#3925：部署后自动跑的门禁
+#    实际没人盯结论，成本却照付——手动的"跑一次算一次"更诚实）。
 #
 # 3) 为什么两个 persona 用 **matrix 并行 job**（而不是一个 job 里顺序跑两个）
 #    · 并行：B 端（米宝）与 C 端（小布）互不等待，墙钟取两者最大值而非求和
-#      —— 门禁是挂在每次部署后面的，**反馈越快越不容易被绕过**（慢门禁 = 没人看）。
+#      —— 全量回归时间宝贵（手动触发时人就在等），**反馈越快越不容易被跳过**。
 #    · 隔离：matrix 每条腿是**独立 runner + 独立 docker 栈 + 独立新库**，
 #      两个 persona 的种子数据/写用例（建品/下单/改客户）天然不互相污染。
 #      顺序跑同一个栈时，B 端的写用例会改掉 C 端 fixture 依赖的商品/订单状态，
 #      「C 端失败」到底是 C 端退化还是被 B 端踩了，事后无法归因。
 #    · ⚠️ 与 #3417 的教训不冲突：#3417 否掉的是"**为了提速**把同一套栈的用例分片"
 #      （并发建栈把栈启动从 3.4min 抬到 12min，整体更慢）。这里是"**为了隔离**按
-#      persona 分片"，而且只在部署后触发（频率低，不同于 PR 门禁）——翻倍的
+#      persona 分片"，而且只在手动/定时触发（频率低，不同于 PR 门禁）——翻倍的
 #      CI 分钟数换"并行 + 可归因"，这个交换是值的。
 #
 # 4) 为什么用独立栈（"标准考场"）
@@ -72,40 +74,33 @@ permissions:
   actions: write
 
 on:
-  workflow_run:
-    # ⚠️ 这里必须写**workflow 的 name**（deploy-ai-agent-service.yml 顶部
-    #    `name: Build and Deploy ai-agent-service`），**不是文件名**：
-    #    GitHub 的 workflow_run 只用 name 做匹配，写文件名/写错 name 都不会报错，
-    #    而是**永不触发**（静默失效——与 #3497 同类"看不见的失败"）。
-    workflows: ["Build and Deploy ai-agent-service"]
-    types: [completed]
-  # ── 每 3 天全量（#3654，用户裁定 2026-09-14）───────────────────────────────
-  # 背景：部署后评测改「diff 定向」（见 eval job 的 ② 定向用例选择步骤）后，**宽度
-  # 覆盖**由本定时档承担 —— 定向只跑受影响用例，会漏掉「映射表没覆盖的域 / 宽爆炸
-  # 半径之外共享层 / 跨域联动」等大范围回归；每 3 天一次 normal 全量（mibao + xiaobu
-  # 双 persona）把这些兜住。为什么是每 3 天：检测窗口从「每次部署」放宽到最长 3 天
-  # （比每周一次的 7 天窗口短一半以上），成本仍远低于每次部署全量（估算每周 2.3 次
-  # 全量 ≈ ¥41 vs 每次部署双 persona 全量 ≈ ¥300+）。
+  # ── 手动触发为主（#3925，用户裁定 2026-09-15）───────────────────────────────
+  # 背景：原 workflow_run（部署后自动门禁）已被用户裁定**移除** —— 部署后不再自动评测。
+  #   部署后评测 = 独立栈 × 双 persona 真实 LLM 全量回归，是 CI 真实 LLM 成本主因之一；
+  #   每次部署自动跑（即使 #3654 已收窄为 diff 定向）仍频繁烧 token + 挤占全局评测槽位。
+  #   现改为：需要时**手动 workflow_dispatch** 执行全量回归（部署后/里程碑/回滚复验）。
+  #   ⚠️ 每 3 天 schedule 全量**保留**（宽度覆盖兜底，见下）。
+  # ── 每 3 天全量（#3654，用户裁定 2026-09-14；#3925 保留）────────────────────
+  # 背景：手动档只覆盖「有人记得跑」的时刻；**宽度覆盖**由本定时档承担 —— 定期全量
+  # 兜住「合并代码与真实行为之间的长期漂移 / 跨域联动 / 共享层退化」等回归。
+  # 为什么是每 3 天：检测窗口最长 3 天（比每周一次的 7 天窗口短一半以上），
+  # 成本远低于每次部署全量（估算每周 2.3 次全量 ≈ ¥41 vs 每次部署双 persona 全量 ≈ ¥300+）。
   # 时刻选 03:00（UTC）：避开工作日合并/部署高峰与评测流水线排队（eval-stack-global
   # 槽位共享，低流量时刻不容易与 PR 评测撞车）。cron `0 3 */3 * *` = 每 3 天 03:00。
   #
-  # ⚠️ 与 deploy-ai-agent-service.yml 那条 `*/20 * * * *` 合并对账定时**不是一回事**：
-  #   那条定时触发的是 deploy workflow（其结论经 workflow_run 进来），由 eval job 的
-  #   `workflow_run.event != 'schedule'` 防呆挡住；本 `schedule:` 是**本 workflow 自己
-  #   的 cron**，事件名 = schedule，直接跑全量。两者靠事件名区分，防呆不可误删。
+  # ⚠️ deploy-ai-agent-service.yml 那条 `*/20 * * * *` 合并对账定时**与本 workflow 无关**
+  #   （原 workflow_run 防呆已随自动触发一并移除；本 `schedule:` 是本 workflow **自己**的
+  #   cron，事件名 = schedule，直接跑全量）。
   #   schedule 的抑制（main 自上次全量未动即跳过）由「抑制判定」步骤 MODE=schedule 承担。
   schedule:
     - cron: '0 3 */3 * *'
-  # ── 降频输入（#3526）────────────────────────────────────────────────────────
-  # 背景：本 workflow 由 #3515 落地（矩阵并行：mibao/xiaobu 各自独立栈全量）。
-  # 每次 ai-agent 部署成功 → 双栈 × 双 persona **全量真实 LLM** → CI 分钟 + token 成本 ×2。
-  # 自动门禁不能降频（门禁被削弱就形同虚设），但**手动补跑**经常只需要 1-2 条用例的
-  # 快速复验 → 故只对 workflow_dispatch 提供三个旋钮。
+  # ── 手动档输入（#3526）──────────────────────────────────────────────────────
+  # 背景：全量回归改手动后，workflow_dispatch 是**唯一**的"人显式要求评测"入口。
+  # 手动补跑经常只需要 1-2 条用例的快速复验 → 提供三个旋钮（tier/case_ids/purpose）。
   #
-  # ⚠️ 铁律：以下输入**只对 workflow_dispatch 生效**。workflow_run（部署后自动门禁）
-  #    没有 inputs，表达式 `${{ github.event.inputs.tier || 'normal' }}` 天然回落
-  #    normal 全量 —— 门禁的判定口径**不因任何人传参而改变**（这正是选表达式而非
-  #    "读 env 再判断"的原因：不存在"门禁被输入削弱"的代码路径）。
+  # ⚠️ 铁律：以下输入**只对 workflow_dispatch 生效**。schedule（每 3 天全量）没有 inputs，
+  #    表达式 `${{ github.event.inputs.tier || 'normal' }}` 天然回落 normal 全量 ——
+  #    定时档的判定口径**不因任何人传参而改变**（这正是选表达式而非"读 env 再判断"的原因）。
   # ⚠️ **tier 的语义边界（与 ② 同族：会误导的文档真值）**：`local_runner` 按 **difficulty** 选档，
   #    三个档位**互斥**（各自再滤 `skip_reason`）—— 故 `tier=normal` **只**跑 NORMAL 档，
   #    **不含** SMOKE 与 ADVERSARIAL（runner 侧原文：「# 每日回归：normal tier
@@ -116,7 +111,7 @@ on:
   workflow_dispatch:
     inputs:
       tier:
-        description: '评测档位：normal（**只跑 NORMAL 档**全量，默认=自动门禁同款；**不含 SMOKE/ADVERSARIAL**）| smoke（门禁级快档）| adversarial（安全/对抗）。⚠️ 仅手动触发生效，部署后自动门禁恒为 normal 全量'
+        description: '评测档位：normal（**只跑 NORMAL 档**全量，默认=定时档同款；**不含 SMOKE/ADVERSARIAL**）| smoke（门禁级快档）| adversarial（安全/对抗）'
         required: false
         default: normal
         type: choice
@@ -146,7 +141,7 @@ on:
           - '6'
           - '8'
       force_eval:
-        description: '【#3587/#3709】手动触发的默认是 true = **免抑制**（人显式要求"我就要这一条"，回滚复验/补跑）。要恢复"被取代即抑制"请**显式传 false**。⚠️ 只对手动触发生效：自动门禁（部署后 workflow_run / schedule 全量）恒走默认判定，不受本输入影响'
+        description: '【#3587/#3709】手动触发的默认是 true = **免抑制**（人显式要求"我就要这一条"，回滚复验/补跑）。要恢复"被取代即抑制"请**显式传 false**。⚠️ 只对手动触发生效：定时（schedule 全量）恒走默认判定，不受本输入影响'
         required: false
         default: true
         type: boolean
@@ -194,24 +189,14 @@ jobs:
     outputs:
       superseded: ${{ steps.supersede.outputs.superseded }}
     # 90 分钟预算（每条腿）：栈构建（无缓存路径实测 3.4~13min）+ 单 persona
-    # 全量（B 端 ~47 条 / C 端 ~35 条，定向档只跑受影响用例，更快）真实 LLM 往返。
+    # 全量（B 端 ~47 条 / C 端 ~35 条）真实 LLM 往返。
     timeout-minutes: 90
-    # 仅在"真的发生了部署/到了全量时刻"时跑：
-    #   · workflow_dispatch → 手动补跑/验证
-    #   · schedule（#3654 每 3 天全量）→ 本 workflow 自己的 cron
-    #   · workflow_run 结论 success → 部署 job 成功
-    #   · ⚠️ 再加 `workflow_run.event != 'schedule'` 这道闸：deploy-ai-agent-service 有一条
-    #     `*/20 * * * *` 的合并对账定时（issue #2935 补吞掉的 push 触发）。该定时
-    #     在"镜像已存在"时**全部步骤 skip、job 照样 success**（什么都没部署），
-    #     只看 conclusion 会让本 workflow 每 20 分钟白跑一次全量（72 次/天 ×
-    #     2 个 persona，纯烧真实 LLM token + 刷 issue 噪音）。注意：这道闸挡的是
-    #     **deploy workflow 的 schedule**（workflow_run.event == 'schedule'），
-    #     与本 workflow 自己的 schedule（event_name == 'schedule'）不冲突。
+    # 仅在"真的到了全量回归时刻"时跑（#3925：无 workflow_run 自动触发）：
+    #   · workflow_dispatch → 手动补跑/验证/回滚复验（唯一"人显式要求"入口）
+    #   · schedule（#3654 每 3 天全量）→ 本 workflow 自己的 cron（宽度覆盖兜底）
     if: >-
       github.event_name == 'workflow_dispatch'
       || github.event_name == 'schedule'
-      || (github.event.workflow_run.conclusion == 'success'
-          && github.event.workflow_run.event != 'schedule')
 
     strategy:
       # fail-fast: false —— 一条腿红了必须让另一条腿跑完：B/C 两端的结论
@@ -220,13 +205,12 @@ jobs:
       matrix:
         persona: [mibao, xiaobu]
     steps:
-      - name: Checkout（workflow_run 需按被部署的 SHA 取代码）
+      - name: Checkout（手动/定时触发按触发时默认分支 HEAD 取代码）
         uses: actions/checkout@v7
         with:
-          # workflow_run 触发时**默认 ref 是默认分支 HEAD，不是被部署的那个 commit**
-          # → 不显式指定就会拿"现在的 main"去评"刚才部署的镜像"，评错了对象。
-          # workflow_dispatch 时 github.event.workflow_run 为空 → 回落 github.sha。
-          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          # 手动 dispatch：runner 默认在默认分支（main）HEAD 上跑，github.sha 即
+          # 触发时刻的 main HEAD —— 评的就是"我手动要求评的当前状态"，无需覆盖 ref。
+          ref: ${{ github.sha }}
 
       # ══════════════════════════════════════════════════════════════════════════
       # ① 抑制「已被取代的 run」（#3587）—— 放在**最早**（任何真实成本之前）
@@ -251,25 +235,26 @@ jobs:
       #    否则会刷红 + 自动开 issue（把"省成本"变成"制造噪音"）。
       # ⚠️ 各事件的实际抑制行为（**以实现为准**，#3709 更正 —— 此前这里写着
       #    「workflow_dispatch … **永不**抑制」，与实现不符，读者据此漏传逃生口拿到一个绿的空跑）：
-      #    · workflow_run（部署后自动门禁）→ deploy 判据（被取代即抑制）；
       #    · schedule（每 3 天全量）→ schedule 判据（main 未动即抑制）；
       #    · **workflow_dispatch（人显式要求补跑/回滚复验）→ 默认免抑制**（#3709）；
       #      要恢复"被取代即抑制"必须**显式传 `force_eval=false`**（逃生口保留）。
+      #    · （#3925：workflow_run 自动门禁已移除，无 deploy 判据触发方。）
       # ⚠️ 未评测必须**显眼**（#3709 要求 3）：被抑制时下方留档步骤打 `::warning::`
       #    annotation + summary 抬头「本 run 未评测」。**不要**改成 failure ——
-      #    "跳过不算失败"是有意设计（部署门禁不该因省成本刷红），要的是可见，不是变红。
+      #    "跳过不算失败"是有意设计（全量回归不该因省成本刷红），要的是可见，不是变红。
       # ══════════════════════════════════════════════════════════════════════════
-      - name: "抑制判定（#3587/#3654/#3709：SHA 被取代或 main 未动则跳过评测，留链接链）"
+      - name: "抑制判定（#3587/#3654/#3709：main 未动则跳过评测，留链接链）"
         id: supersede
         env:
-          EVAL_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+          EVAL_SHA: ${{ github.sha }}
           REPO: ${{ github.repository }}
           RUN_ID: ${{ github.run_id }}
-          # #3654：schedule（每 3 天全量）走"main 未动即抑制"判据；其余（部署门禁/手动）走 #3587 判据
-          MODE: ${{ github.event_name == 'schedule' && 'schedule' || 'deploy' }}
+          # #3925：无 workflow_run 自动触发 → 无 deploy 判据；schedule（每 3 天全量）
+          # 走"main 未动即抑制"判据；workflow_dispatch 由脚本按事件名默认免抑制。
+          MODE: ${{ github.event_name == 'schedule' && 'schedule' || 'dispatch' }}
           # #3709：把**事件名**与 **force_eval 原始输入值**交给脚本，由脚本决定默认：
           #   · workflow_dispatch → 默认免抑制；显式 force_eval=false 才允许抑制（逃生口）；
-          #   · workflow_run / schedule → 语义不变（它们没有 inputs）。
+          #   · schedule → 语义不变（它没有 inputs）。
           # ⚠️ 这里**故意不再直接注入 FORCE_EVAL**：boolean input 恒有值（默认 true），
           #    直接注入会盖掉脚本的 dispatch 默认 = 本修复被静默回滚。
           # ⚠️ 也不用 `github.event.inputs.force_eval == true` 这类三元写法：boolean input
@@ -296,42 +281,17 @@ jobs:
         if: github.event_name == 'workflow_dispatch' && steps.supersede.outputs.superseded != 'true'
         env:
           MODE: ci
-          EVAL_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+          EVAL_SHA: ${{ github.sha }}
           EVAL_TIER: ${{ github.event.inputs.tier || 'normal' }}
           CASE_IDS: ${{ github.event.inputs.case_ids }}
           PURPOSE: ${{ github.event.inputs.purpose || 'determination' }}
         run: bash .github/scripts/eval_dispatch_guard.sh
 
       # ══════════════════════════════════════════════════════════════════════════
-      # ② 部署 diff 定向（#3654：按改动点跑有限受影响用例，全量兜底）
-      #
-      # 背景（用户裁定 2026-09-14）：部署后全量是 CI 真实 LLM 成本主因之一
-      # （近 2.5h ≈ ¥135-295）。自动门禁不能降频，但可以**收窄到受影响用例**：
-      #   · 用 `git diff <被评SHA>^ <被评SHA> --name-only` 取本次部署的改动文件；
-      #   · `.github/scripts/eval_targeted_cases.py` 把它映射成 case_ids
-      #     （复用 #3502 的 behavior_mapping 映射表 + eval_case_filter 的 persona 过滤，
-      #      与 local_runner 同一口径，零第三方依赖，系统 python3 即可跑）；
-      #   · 三个保守边界**强制回退全量**（宁多跑不少跑，安全优先）：
-      #       ① 宽爆炸半径文件（base_skill / nodes / references / registry / factory
-      #          / app/graph/** —— 共享/行为层，映射不精确，命中即全量）；
-      #       ② 无 AI 行为文件（docs/前端等）—— case_ids 空 → 全量兜底（现状）；
-      #       ③ 有 AI 行为文件但映射表未覆盖（default_net）—— 部署后拦截是硬门禁，
-      #          PR 层「default_net 只报告（无因果）」的语义不适用于这里 → 全量。
-      #   · 规则命中 → 定向 case_ids + fast（--max-retries 0，迭代档语义）；
-      #     某 persona 无对应用例 → 跑本端默认网子集（最窄主链路信号），深度覆盖
-      #     由每 3 天 schedule 全量承担（on.schedule 注释见文件头）。
-      #   · 只对 workflow_run（部署后自动门禁）生效：schedule（每 3 天全量）恒 full，
-      #     workflow_dispatch 由手动 inputs 决定（case_ids 用户自填优先）。
-      # ⚠️ 选择器是省成本层：自身故障一律 fail-open 全量（退出码恒 0，绝不因此漏评）。
+      # （#3925：diff 定向选择器已随 workflow_run 自动触发一并移除 —— 全量回归
+      #   改手动/定时后无「部署后按改动点收窄」的触发方；手动档用 inputs.case_ids
+      #   做定点复验，定时档恒 normal 全量。eval_targeted_cases.py 已删除。）
       # ══════════════════════════════════════════════════════════════════════════
-      - name: "定向用例选择（#3654：diff → case_ids / 全量兜底）"
-        id: target
-        if: github.event_name == 'workflow_run' && steps.supersede.outputs.superseded != 'true'
-        env:
-          EVAL_SHA: ${{ github.event.workflow_run.head_sha }}
-          PERSONA: ${{ matrix.persona }}
-        run: |
-          python3 .github/scripts/eval_targeted_cases.py --sha "$EVAL_SHA" --persona "$PERSONA"
 
       - name: Set up Python 3.11
         uses: actions/setup-python@v7
@@ -539,17 +499,15 @@ jobs:
           python3 .github/scripts/flake_history.py fetch --out flake-history.json --limit 12
 
       - name: Run ${{ matrix.persona }} ${{ github.event.inputs.tier || 'normal' }}（真实 LLM）
-        # ① #3587：这一条是**真实 LLM 成本的大头**，被取代的 run 在此止步。
+        # ① #3587：这一条是**真实 LLM 成本的大头**，被抑制的 run 在此止步。
         if: steps.supersede.outputs.superseded != 'true'
-        # ── 档位来源（#3654 起多了一条「diff 定向」）──
-        #   · workflow_run（部署后自动门禁）→「定向用例选择」步骤给出 mode/case_ids：
-        #     targeted = 只跑受影响用例 + fast（--max-retries 0）；full = normal 全量兜底
-        #     （宽爆炸半径 / 无 AI 行为文件 / 映射表未覆盖 / 选择器异常）。
-        #   · schedule（每 3 天全量）→ 不走定向步骤（其 if 只放行 workflow_run）→ full；
-        #   · workflow_dispatch → 手动 inputs 优先：case_ids 用户自填（留空 = 全量）。
-        # ⚠️ case_ids 收窄后 summary 的 total 只反映这几条 —— 那是"受影响用例"信号，
+        # ── 档位来源（#3925：无 diff 定向，只有手动/定时两档）──
+        #   · workflow_dispatch → 手动 inputs 优先：tier 任选（normal/smoke/adversarial），
+        #     case_ids 用户自填做定点复验（留空 = 按 tier 全库）；
+        #   · schedule（每 3 天全量）→ 恒 normal 全量（无 inputs，表达式回落默认）。
+        # ⚠️ case_ids 收窄后 summary 的 total 只反映这几条 —— 那是"定点复验"信号，
         #    不是"全量结论"；真正放行与否由 completion_verdict + 下方判定步骤说话
-        #    （判定口径在定向/全量两档下**一致**：确定性失败=0 + 关键旅程全过）。
+        #    （判定口径在手动/定时两档下**一致**：确定性失败=0 + 关键旅程全过）。
         #
         # continue-on-error 的理由（不是"为了好看"）：
         #   local_runner 的退出码是 _ci_verdict（**全绿**才算过），而门禁的判定口径是
@@ -567,12 +525,8 @@ jobs:
           PYTHONIOENCODING: utf-8
           # 计时/日志提示用（#3526）：收窄档在日志里可见（留空 = 按档全量）
           CASE_IDS: ${{ github.event.inputs.case_ids }}
-          # ② #3654 diff 定向：部署自动门禁由「定向用例选择」步骤给出
-          #    （schedule/dispatch 下该步骤被跳过 → 空 → 回落全量档）
-          TARGET_MODE: ${{ steps.target.outputs.mode }}
-          TARGET_CASE_IDS: ${{ steps.target.outputs.case_ids }}
           # 用例级并发（单 job 内并行，栈只起一次，issue #3361）
-          # #3526：默认 6 = 原值（自动门禁行为不变），仅手动触发时可调
+          # #3526：默认 6 = 原值（定时档行为不变），仅手动触发时可调
           EVAL_CONCURRENCY: ${{ github.event.inputs.concurrency || '6' }}
           # #3769：用途进 runner（summary 的 run_key.run_mode）—— 遥测据此把
           # 「判定用途全库跑」与「定点复验小跑」分开计数（同一个 total 在两处含义不同）。
@@ -601,22 +555,15 @@ jobs:
           AGENT_EVAL_SUMMARY_JSON: eval-summary-${{ matrix.persona }}.json
         run: |
           TIER="${{ github.event.inputs.tier || 'normal' }}"
-          MODE="${TARGET_MODE:-full}"
           # ⚠️ 本段刻意不用管道（更不用 pipefail 之外的竖线形态）：
           #    tests/unit_ci_workflows/test_step_exit_code_propagation.py 的规模守卫
           #    （判据 = 整段 run 文本含竖线且不含 pipefail）计数全仓顶在上限 ——
           #    本步骤新增一个竖线就会把它顶红，而它守的是**退出码传播**语义，
           #    与本次降频改动无关。故要打印/判断的值直接展开，不引入竖线。
-          echo "── 评测档位: $TIER（persona=${{ matrix.persona }}，mode=${MODE}）──"
-          if [ "$MODE" = "targeted" ] && [ -n "$TARGET_CASE_IDS" ]; then
-            echo "── #3654 diff 定向（fast：--max-retries 0）case_ids=${TARGET_CASE_IDS} ──"
-            python tests/agent_eval/local_runner.py "$TIER" --cases .github/cases \
-              --case-ids "$TARGET_CASE_IDS" --max-retries 0
-          else
-            echo "── 全量档（定向未命中/兜底/schedule/手动补跑）──"
-            python tests/agent_eval/local_runner.py "$TIER" --cases .github/cases \
-              ${{ github.event.inputs.case_ids != '' && format('--case-ids "{0}"', github.event.inputs.case_ids) || '' }}
-          fi
+          echo "── 评测档位: $TIER（persona=${{ matrix.persona }}，手动 case_ids 优先）──"
+          echo "── 全量档（schedule 定时 / 手动补跑；case_ids 留空即全库）──"
+          python tests/agent_eval/local_runner.py "$TIER" --cases .github/cases \
+            ${{ github.event.inputs.case_ids != '' && format('--case-ids "{0}"', github.event.inputs.case_ids) || '' }}
 
       - name: "汇总打印（total/passed/avg_score/completion.ok）"
         # `always()`：前面任何一步红了（栈没起来/评测崩了）也要把已有证据打出来
@@ -705,7 +652,7 @@ jobs:
           echo "## ⏭️ 本 run 未评测（#3709：被抑制，不构成结论）" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "${MSG}" >> "$GITHUB_STEP_SUMMARY"
-          echo "被抑制对象（旧 SHA）: https://github.com/${{ github.repository }}/commit/${{ github.event.workflow_run.head_sha || github.sha }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "被抑制对象（旧 SHA）: https://github.com/${{ github.repository }}/commit/${{ github.sha }}" >> "$GITHUB_STEP_SUMMARY"
           echo "取代它的 run 列表: https://github.com/${{ github.repository }}/actions/workflows/post-deploy-eval.yml?query=branch%3Amain" >> "$GITHUB_STEP_SUMMARY"
           # 遥测（#3769）：**未跑**必须与"真跑"分开计数，且不许像"通过"。
           echo "📊 telemetry: ran=false reason=superseded（未评测，不是通过）"
@@ -733,7 +680,7 @@ jobs:
             echo "${MSG}"
             echo ""
             echo "- 触发事件: \`${{ github.event_name }}\`"
-            echo "- 被评对象 SHA: https://github.com/${{ github.repository }}/commit/${{ github.event.workflow_run.head_sha || github.sha }}"
+            echo "- 被评对象 SHA: https://github.com/${{ github.repository }}/commit/${{ github.sha }}"
             echo "- 同槽位（\`eval-stack-global\`）的 run 列表: https://github.com/${{ github.repository }}/actions/workflows/post-deploy-eval.yml"
             echo ""
             echo "**不判 failure、不建 issue**（取消不是结果，重复留红会让真失败与噪音同形）。"
@@ -921,7 +868,7 @@ jobs:
             echo "本次 run 对应的 SHA 已被更新的 \`main\` 取代（连合场景下只有最后一轮的 main 状态有意义）。"
             echo "**没有**消耗独立栈构建与真实 LLM 成本，**不是**失败（不建 issue）。"
             echo ""
-            echo "- 被抑制的对象（旧 SHA）：https://github.com/${{ github.repository }}/commit/${{ github.event.workflow_run.head_sha || github.sha }}"
+            echo "- 被抑制的对象（旧 SHA）：https://github.com/${{ github.repository }}/commit/${{ github.sha }}"
             echo "- 取代它的 run（结论档在此）：https://github.com/${{ github.repository }}/actions/workflows/post-deploy-eval.yml?query=branch%3Amain"
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -1005,14 +952,10 @@ jobs:
               }
             }
 
-            // 被触发的部署 run（workflow_dispatch 时没有）
-            const deployRun = context.payload.workflow_run
-              ? `\n- 触发的部署 run：https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.payload.workflow_run.id}`
-              : ''
             const body = [
-              '部署（云测试环境 SWAS）完成后自动跑的**独立栈行为回归**失败（真实 LLM，mibao + xiaobu 各自独立栈并行；档位 = 部署 diff 定向 fast 或全量 normal，见本 run 日志「评测档位」行）。',
+              '独立栈行为回归失败（真实 LLM，mibao + xiaobu 各自独立栈并行；档位 = 手动/定时 normal 全量或手动 case_ids 定点，见本 run 日志「评测档位」行）。',
               '',
-              `- 本评测 run：${runUrl}${deployRun}`,
+              `- 本评测 run：${runUrl}`,
               `- eval 聚合结果：${process.env.EVAL_RESULT}（矩阵任一腿红 → failure）`,
               '',
               '## 失败要点',
