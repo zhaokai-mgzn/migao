@@ -715,6 +715,31 @@ def _mask_card_for_customer(data: dict, context) -> dict:
     return out
 
 
+# 收尾守卫（issue #3929）：模型文本声称「点下方卡片/确认卡片」但本轮没发交互载荷
+# 也没调 interact 工具 ⇒ 客户侧无卡可点（生产实证：米宝 flash 频繁只说「请点下方
+# 确认卡片」而不发卡）。命中时把声称片段改写为「回复『确认』」纯文本指引，
+# 只影响落库/后续上下文文本（assistant_content），full_response 原值不动。
+_CARD_CLAIM_RE = re.compile(
+    r"点下方确认卡片|点下方卡片|下方确认卡片|点下方确认|"
+    r"点击确认卡片|点击下方确认|请点确认|请点击确认|确认卡片"
+)
+# #3883：误导性建议「刷新页面/重新进入对话」掩盖"没发卡"真因 → 命中整句剥离
+_CARD_MISLEAD_RE = re.compile(r"（[^）]*(?:刷新页面|重新进入对话)[^）]*）")
+
+
+def _rewrite_card_claims(text: str) -> str:
+    """把「点下方卡片/确认卡片」声称改写为纯文本确认指引，并剥离 #3883 误导建议。
+
+    幂等纯函数（无匹配则原样返回）；由 _agent_stream_to_sse 收尾守卫在
+    「无交互载荷且本轮无 interact 调用」时启用（issue #3929）。
+    """
+    if not text:
+        return text
+    text = _CARD_CLAIM_RE.sub("回复『确认』", text)
+    text = _CARD_MISLEAD_RE.sub("", text).strip()
+    return text
+
+
 async def _agent_stream_to_sse(
     agent: BaseAgent,
     message: Union[str, List[Dict[str, Any]]],
@@ -930,6 +955,28 @@ async def _agent_stream_to_sse(
                     f"[chat/card] Dropped product_list card (no product referenced in final text) | "
                     f"candidates={len(card_data.get('products') or [])}"
                 )
+
+        # 收尾守卫（issue #3929）：文本声称「点下方卡片/确认卡片」但本轮既没
+        # 交互载荷、也没调 interact 工具 ⇒ 客户侧无卡可点。把声称话术改写为
+        # 纯文本确认指引（只影响落库/后续上下文文本，full_response 原值不动，
+        # 见上「只脱敏出站」注释的同款取舍）；#3883 的「刷新页面/重新进入对话」
+        # 误导性建议一并剥离（它掩盖"没发卡"真因）。
+        if (
+            last_interactive_payload is None
+            and not any(tc.get("tool") == "interact" for tc in tool_calls_info)
+            and _CARD_CLAIM_RE.search(assistant_content)
+        ):
+            _rewritten = _rewrite_card_claims(assistant_content)
+            logger.warning(
+                f"[chat/card-claim] 文本声称有确认卡但未发卡，改写为纯文本确认指引 "
+                f"| session={session_id} tenant={tenant_id} "
+                f"| {assistant_content!r} -> {_rewritten!r}"
+            )
+            assistant_content = _rewritten
+            # 直播气泡里的声称话术是**边流式边发**的，收尾改写落库文本时用户已
+            # 看到「请点下方卡片」——追加一条 text 事件（并入同一条消息气泡末尾，
+            # done 之前），让直播侧也有可执行的下一步指引。
+            yield SSEEvent.text("（注：确认卡片未显示，请直接回复「确认」以继续）")
 
         # 保存消息到数据库（带超时保护，避免阻塞 SSE 流关闭）
         message_id = None
