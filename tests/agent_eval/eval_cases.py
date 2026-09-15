@@ -4528,6 +4528,50 @@ _CASE_PR_025 = EvalCase(
     namespaces=['product_name:遮光窗帘'],
 )
 
+# ── PR-026 [NORMAL] 设置商品主图 - product_manage(action=update, images) 成功路径（源: cases/product.yml）──
+_CASE_PR_026 = EvalCase(
+    id='PR-026',
+    legacy_id='',
+    title='设置商品主图 - product_manage(action=update, images) 成功路径',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=[{'text': '把遮光窗帘的主图设成这张色卡图', 'images': ['https://ai-customer-service-admin-dev.oss-cn-hangzhou.aliyuncs.com/images/2026/09/04/e5a68d1a02f844c6a45846784765a737.jpg']}, {'auto_respond': {'fallback': '确认'}}],
+    expectations=['product_manage(action=update)'],
+    data_checks=['product_manage(action=update) 携带 images（色卡图 URL）且执行成功 —— 商品主图已更新（images 落库）；db_verify[product_by_name] 当前只支持 processingItemConfigs 谓词（local_runner.py），商品 images 字段落库无 fetch，属 runner 能力缺口（如实登记，未掩盖）'],
+    skip_reason='',
+    tags=['image', 'write'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    required_args=[{'tool': 'product_manage', 'action': 'update', 'fields': ['product_id', 'images']}],
+    must_succeed=[{'tool': 'product_manage', 'action': 'update'}],
+    pre_clean=[{'type': 'product_dedupe', 'product_keyword': '遮光窗帘'}],
+    namespaces=['product_name:遮光窗帘'],
+)
+
+# ── PR-027 [NORMAL] 设主图能力不误宣 - 回复不得出现「不包含图片上传/拿不到地址」类能力否定（源: cases/product.yml）──
+_CASE_PR_027 = EvalCase(
+    id='PR-027',
+    legacy_id='',
+    title='设主图能力不误宣 - 回复不得出现「不包含图片上传/拿不到地址」类能力否定',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=[{'text': '把遮光窗帘的主图设成这张色卡图', 'images': ['https://ai-customer-service-admin-dev.oss-cn-hangzhou.aliyuncs.com/images/2026/09/04/e5a68d1a02f844c6a45846784765a737.jpg']}, {'auto_respond': {'fallback': '确认'}}],
+    expectations=['product_manage(action=update)'],
+    data_checks=['回复不得出现「不包含图片上传/拿不到可写入的地址/无法设置主图」类能力否定（机器断言见 forbidden_text）；能力误宣守卫（capability_denial_text_hit 商品图片域判据）应拦截并纠正重答，最终走 product_manage(action=update, images=…)（expectations/must_succeed 同上）'],
+    skip_reason='',
+    tags=['image', 'write', 'capability_denial'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    forbidden_text=['不包含图片上传', '拿不到可写入的地址', '拿不到地址', '无法设置主图', '不能设置主图', '不支持修改主图', '不支持图片'],
+    must_succeed=[{'tool': 'product_manage', 'action': 'update'}],
+    pre_clean=[{'type': 'product_dedupe', 'product_keyword': '遮光窗帘'}],
+    namespaces=['product_name:遮光窗帘'],
+)
+
 # ── RG-001 [NORMAL] ToolRegistry 注册/查询/执行审计（源: cases/registry.yml）──
 _CASE_RG_001 = EvalCase(
     id='RG-001',
@@ -5757,6 +5801,8 @@ ALL_CASES = (
     _CASE_PR_021,
     _CASE_PR_024,
     _CASE_PR_025,
+    _CASE_PR_026,
+    _CASE_PR_027,
     _CASE_RG_001,
     _CASE_ST_001,
     _CASE_ST_002,
