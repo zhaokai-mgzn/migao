@@ -44,7 +44,7 @@ API 层 8/8 ≠ UI 层可用；**只跑 6 个文件的 E2E gate ≠ 全量 UI �
 | 页面渲染冒烟（全页面可开） | **机器级** | 同上新门禁：`smoke/pages-render.spec.ts`（4 pass） | 只断言"渲染出来"，不断言业务正确 | — |
 | 米宝聊天输入条 / 最小化布局 | **机器级** | 同上新门禁：`chat/chat-panel-resize.spec.ts`（7 pass）、`chat/mibao-minimize-layout.spec.ts`（1 pass） | **不覆盖发消息/收回复/tool 卡片**（见下方"米宝聊天主流程"= 未验证） | 演示前手动发 1 条消息确认链路 |
 | 首页看板 | **机器级** | `pr-check.yml` job `E2E quality gate`（6 文件清单含 `dashboard/dashboard.spec.ts`，24 tests）；nightly `34911052034` 24 pass / 0 fail | 只跑 fixture 数据 | — |
-| 数据质量 / 契约 / 反占位 / 跨页一致 / 搜索对齐 | **机器级** | `pr-check.yml` 的 `E2E quality gate` 6 文件（另 5 个 quality spec）。⚠️ 该 job 的绿**只代表这 6 个文件**，不代表全量 UI | orders/products/customers/chat/settings 等 28 个 spec 文件**不在任何一个 PR 门禁里**（见 §4 缺口 1） | 不要把"E2E gate 绿"说成"UI 全量可用" |
+| 数据质量 / 契约 / 反占位 / 跨页一致 / 搜索对齐 | **机器级** | `pr-check.yml` 的 `E2E quality gate` 6 文件（另 5 个 quality spec）。⚠️ 该 job 的绿**只代表这 6 个文件**，不代表全量 UI | orders/products/customers/chat/settings 等 **21** 个 spec 文件**不在任何一个 PR 门禁里**（本包新增门禁前是 28/35，见 §4 缺口 1） | 不要把"E2E gate 绿"说成"UI 全量可用" |
 | 商品列表 / 详情 / 编辑 | **未验证** | 反证：nightly `34911052034` 同 SHA 读数 `product-list` 20 pass / **21 fail**、`product-detail` 9/2、`product-edit` 11/2（fixture 模式断言红）。历史活环境旁证（**非当前代码**）：`acceptance/2026-09-14/merchant-ui-smoke/screenshots/08-products-list.png` 等（采集于 09-14 18:59，其后 admin-web 有 3 次改动） | fixture 模式下**大面积红**，未见任何"当前代码 + 当前环境"的机器级通过 | 演示前**手动点开商品列表/详情/编辑**各一次；不要把 `merchant-ui-smoke` 的旧截图当当前状态 |
 | 订单列表 / 订单详情 | **未验证** | 反证：nightly 同 SHA `order-list` 8 / **30 fail**、`order-detail` 10 / **14 fail**、`order-remark-popover` 0 / **10 fail** | 同上；`order-list` 是演示最可能点到的页面 | 演示前手动点开订单列表 + 详情 + 备注浮窗 |
 | 客户列表 / 客户详情 | **未验证** | 反证：nightly 同 SHA `customer-list` 13 / **6 fail**、`customer-detail` 8 / **6 fail** | 同上 | 演示前手动点开客户列表 + 详情 |
@@ -66,7 +66,7 @@ API 层 8/8 ≠ UI 层可用；**只跑 6 个文件的 E2E gate ≠ 全量 UI �
 ## 2. 四条「不许外推」（演示话术红线）
 
 1. **mock 绿 ≠ 活环境绿**：本页所有"机器级"B 端读数都来自 **fixture 模式**（`E2E_MOCK_AUTH=true`，接口被 mock，无后端）。它证明的是"页面结构/交互/打印隔离在给定数据下成立"，**不证明**真实数据链路。
-2. **只跑 6 个文件的 E2E gate ≠ 全量 UI 可用**：`pr-check.yml` 的 `E2E quality gate` 是**显式 6 文件清单**；28 个 spec 文件不在任何 PR 门禁里（§4 缺口 1）。
+2. **只跑 6 个文件的 E2E gate ≠ 全量 UI 可用**：`pr-check.yml` 的 `E2E quality gate` 是**显式 6 文件清单**；即使加上本包新增的 `Demo Evidence Gate`（7 个），**仍有 21 个 spec 文件不在任何 PR 门禁里**（§4 缺口 1）。
 3. **API 层 8/8 ≠ UI 层可用**：活环境 p1 冒烟是**接口层**；UI 层（点击/渲染/卡片）另一层，B 端 UI 目前多数是"未验证"。
 4. **`mini-app CI` 的 success 可能是空跑**：两个 job 都有 diff 门控，非相关变更时**步骤全 skipped 而 workflow success**（实测 run `34912300454`）。读"绿"前先看日志里有没有 `⏭️ …跳过…空跑`。
 
@@ -110,7 +110,7 @@ E2E_COLD_LOGIN=1 npm run test:e2e
 
 | # | 缺口 | 证据 | 影响 | 建议归属 |
 |---|---|---|---|---|
-| 1 | **28 / 35 个 e2e spec 文件不在任何 PR 门禁里** | `pr-check.yml` 只列 6 文件；`mini-app.yml` 只跑 `specs/xiaobu/xiaobu-h5.spec.ts`；其余仅在 `nightly-verification.yml` 的 `--project=web` 全量里跑，而该 workflow 的 `schedule` 自 2026-09-06 被封存（只剩 `workflow_dispatch`） | 改 admin-web 时 orders/products/customers/chat 的回归**不会在 PR 拦下** | 本包已补 7 个 fixture 可跑的演示 spec（§5）；其余需**先修 fixture 红**才能纳管 |
+| 1 | **补齐前 28 / 35 个 e2e spec 文件不在任何 PR 门禁里**（本包新增 `Demo Evidence Gate` 收 7 个后**仍有 21 / 35**） | `pr-check.yml` 只列 6 文件；`mini-app.yml` 只跑 `specs/xiaobu/xiaobu-h5.spec.ts`；`specs/auth/**` 因 `--project=web` 的 `testIgnore` 连全量腿都不跑；其余仅在 `nightly-verification.yml` 的 `--project=web` 全量里跑，而该 workflow 的 `schedule` 自 2026-09-06 被封存（只剩 `workflow_dispatch`） | 改 admin-web 时 orders/products/customers/chat 的回归**不会在 PR 拦下** | 本包已补 7 个 fixture 可跑的演示 spec（§5，含 UI-040）；其余需**先修 fixture 红**才能纳管 |
 | 2 | **全量 `--project=web` 是已知红：98 failed / 263 passed / 26 skipped**（run `34911052034`，SHA `82d20090`） | 同一 run 的 job 日志汇总行 | 不能把全量绿当目标（会变成永久噪音），需按 spec 逐个归因是"需真后端"还是"选择器陈旧" | 独立包（需真后端的 spec 应走"真后端 e2e"通道，或标注 `skip_reason`） |
 | 3 | `specs/auth/**`（`login-sms` / `register`）**没有任何 workflow 跑** | `--project=web` 的 `testIgnore` 含 `specs/auth/`；无任何 workflow 跑 `--project=auth-pages` | 登录/注册旅程无机器级证据 | 独立包（登录是演示第一步，优先级高） |
 | 4 | 小程序 e2e 无法进 CI（形态限制） | `harness.js` 的 `CLI_PATH` 指向 macOS 开发者工具 | 见 §3（UA 级 + 静态预检兜底） | 若要机器级，唯一现实路径是**自托管 macOS runner**（成本/维护另议） |
