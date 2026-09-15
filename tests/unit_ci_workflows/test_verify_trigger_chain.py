@@ -235,6 +235,45 @@ class TestVerifyTriggerChain:
             "可执行脚本里不得出现逐 PR 取数的 `gh pr view`（限流自毁）"
         )
 
+    def test_collect_filters_candidates_by_merged_window(self):
+        """候选收集必须**在收集时就按合并时间窗口过滤**（issue #3811 假红根因）。
+
+        旧版 collect 只取 number（无 mergedAt），窗口过滤推迟到 processing：
+        `gh pr list --state merged --limit N` 默认按**创建时间**倒序取最近 N 个 ——
+        窗口内无新合并 PR 时（合法空窗），取到的 N 个候选全是窗口外旧 PR，
+        processing 按 `mergedAt >= since` 全滤掉 ⇒ NFETCH=0 ⇒ 被 fail-closed
+        误判为「取数链路缺陷」exit 1。实证：run 34945688461 / 34946361347
+        （#3811 持续失败）「候选 5 取到 0」，失败窗口 07:12–08:12Z 内确实无合并
+        （上一次 07:05 #3913，下一次 08:22 #3915）—— 合法空窗被报红。
+        修复：collect 阶段 `gh pr list --json number,mergedAt` + python 按 since 过滤，
+        窗口空 ⇒ 零候选 ⇒ 走「零候选 PR，结束」exit 0。
+        """
+        code = _script_code(_load())
+        assert re.search(r"gh pr list --state merged[\s\S]{0,300}?--json number,mergedAt", code), (
+            "候选收集必须带 mergedAt（`--json number,mergedAt`），否则无法在收集时按窗口过滤"
+        )
+        assert re.search(r"at\s*<\s*since", code), (
+            "候选收集阶段必须有 mergedAt >= since 的窗口过滤（python 过滤行）"
+        )
+        # 窗口空 = 合法空窗：candidates.txt 为空时应走 exit 0，而不是 NFETCH=0 的 exit 1
+        assert re.search(r'零候选 PR，结束[\s\S]{0,120}?exit 0', code), (
+            "零候选必须显式 exit 0（合法空跑）—— 不得把空窗当作缺陷报红"
+        )
+
+    def test_collect_failure_still_fail_closed(self):
+        """取数失败与空窗必须区分：`gh pr list` 返回 0 条 = 限流/权限/网络缺陷，
+        必须 exit 1（fail-closed），不得被「零候选 exit 0」吞成静默成功。"""
+        code = _script_code(_load())
+        assert "candidates_raw.err" in code, (
+            "缺候选收集 stderr 捕获：gh pr list 失败（限流/权限）必须可见"
+        )
+        assert "RAW_COUNT" in code, (
+            "缺取数 0 条 vs 空窗的区分判据（RAW_COUNT）：0 条 = 取数缺陷，非空窗"
+        )
+        assert re.search(r"RAW_COUNT[\s\S]{0,200}?-eq\s*0[\s\S]{0,200}?exit 1", code), (
+            "取数返回 0 条必须 exit 1（缺陷），与「窗口过滤后 0 条 = 空窗 exit 0」分开"
+        )
+
     def test_burst_throttled(self):
         """修复后对账会一次扫出 77 个历史漏触发 PR ⇒ 必须幂等 + 限流，否则修复本身变资源黑洞。
 
