@@ -863,10 +863,16 @@ async def _agent_stream_to_sse(
                                         yield SSEEvent.card(card_type, card_data)
 
                                 # 检查是否来自 interact 工具 → 发送交互式组件事件
+                                # 与 LLM 幻觉 <interact> XML 分支同协议：把载荷写入
+                                # last_interactive_payload，收尾 save_message(interactive=…)
+                                # 才会持久化到 metadata（issue #3883 —— 此前工具路径只 emit
+                                # SSE、不落库，刷新/重开会话卡片消失、interactive_answered
+                                # 只读锁也无从标记）。
                                 if tool_name == "interact" and result_dict.get("success"):
                                     data = result_dict.get("data", {})
                                     component_type = data.get("component", "")
                                     if component_type in ("choice", "confirm", "form"):
+                                        last_interactive_payload = data
                                         yield SSEEvent.interactive(
                                             component_type,
                                             _mask_card_for_customer(data, context))
