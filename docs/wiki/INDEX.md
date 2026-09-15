@@ -18,6 +18,7 @@ LLM 开发时按需加载对应页面 (~50 行/页，按场景索引)：
 | 部署/CI/CD/环境变量 | [Deployment](Deployment.md) |
 | **合规/AI客服新国标 GB/T 47746-2026** | **[gb47746-2026-compliance](gb47746-2026-compliance.md)** |
 | **可观测性/监控/ARMS 接入** | **[Observability](Observability.md)** |
+| **陈旧快照/移动靶的判定与处置（真相源契约）** | **[truth-source-contract](truth-source-contract.md)**（统一审计入口 `python3 scripts/drift_audit.py`） |
 | CI/CD 流水线详情 | [CI-CD](CI-CD.md) |
 | 写测试/了解测试体系 | [Testing](Testing.md) |
 | **测试工程规范（拆分/ignore/脱敏/分层）** | **[test-engineering-standards](../testing/test-engineering-standards.md)** |
