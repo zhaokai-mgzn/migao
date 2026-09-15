@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 评测「被取代即抑制」判定（issue #3587 / #3654 / #3709）。
+# 评测「被取代即抑制」判定（issue #3587 / #3654 / #3709 / #3925）。
 #
 # 为什么单独一个脚本（而不是写死在 workflow 的 run 里）：
 #   ① **可本地复跑**——判定逻辑是纯文本/纯 SHA 比对，不该只能"推上去赌一轮 CI"才验证得了
@@ -7,16 +7,19 @@
 #   ② 单测可以直接调它跑「被取代 / 未被取代」两种演练（tests/unit_ci_workflows/
 #      test_post_deploy_eval_supersede.py），把判定口径钉死在测试里，而不是靠读 YAML 猜。
 #
-# 两种模式的判据（方向**相反**，见各自分支注释）：
-#   · MODE=deploy（部署后门禁，#3587）：本次 run 的 SHA 与**远端** main HEAD 比对，
-#     不等 = 已被更新的 main 取代 → `skip`（在花钱之前抑制，结论由取代它的 run 承担）；
+# 模式的判据（#3925：workflow_run 自动门禁已移除，仅剩手动/定时两档）：
 #   · MODE=schedule（每 3 天全量，#3654）：本次 schedule 的 SHA 与**上一次 schedule
 #     全量**的 SHA 比对，相等 = main 自上次全量以来未变动 → `skip`（同一状态已有结论，
 #     重跑是纯浪费）；不等 = main 前进了 → 跑这一轮全量。
+#   · MODE=dispatch（手动，默认，#3925）：**默认免抑制**（#3709）——人是显式要求评
+#     这一条，按定义不该被"已被取代"误伤；只有显式 `force_eval=false`（逃生口）才
+#     回到"被取代即抑制"判据（本次 SHA vs 远端 main HEAD，不等 → skip）。
+#     （#3925：workflow_run 部署门禁已移除 → 原 MODE=deploy 判据无自动触发方，
+#     仅作为 dispatch 逃生口的显式抑制路径保留在 dispatch 分支内。）
 #   ⚠️ 两种模式一致：**只有 `skip` 会抑制；一切异常都落到 `run`（fail-open）**——
 #     判定逻辑本身绝不能成为"漏评"的来源。
 #
-# ⚠️ 手动 workflow_dispatch 默认**免抑制**（#3709，2026-09-15 修正）：
+# ⚠️ 手动 workflow_dispatch 默认**免抑制**（#3709，2026-09-15 修正；#3925 保留）：
 #   dispatch 是「人显式要求评这一条」（回滚复验/补跑），按定义不该被 deploy 判据
 #   当成"已被取代"。此前它与部署门禁共用 `MODE=deploy` ⇒ 派发与执行之间只要 main
 #   动过就**静默空转**：实测 run 34841093824（`tier=adversarial -f case_ids=DF-011`）
@@ -24,13 +27,13 @@
 #   —— 一条用例都没跑却报绿（而 workflow 注释当时写着"永不抑制"，读者据此漏传逃生口）。
 #   现在：`EVENT_NAME=workflow_dispatch` ⇒ 默认 `FORCE_EVAL=true`；
 #   **要抑制必须显式传 `force_eval=false`**（逃生口保留，省成本路径不消失）。
-#   自动门禁（workflow_run 部署后 / schedule 全量）**不受影响**：它们没有 inputs。
+#   schedule（每 3 天全量）**不受影响**：它没有 inputs，恒走 schedule 判据。
 #
 # 退出码恒为 0：**抑制不是失败**（不得刷红、不得自动开 issue）。
 #
 # 输入（env）：
 #   EVAL_SHA        被评 SHA（必填）
-#   MODE            deploy（默认，#3587 原判据）| schedule（#3654 每 3 天全量判据）
+#   MODE            dispatch（默认，#3925 手动档）| schedule（#3654 每 3 天全量判据）
 #   EVENT_NAME      GITHUB 事件名（#3709）：'workflow_dispatch' ⇒ 默认免抑制
 #   FORCE_EVAL_INPUT  workflow_dispatch 的 force_eval **原始输入值**（#3709）。
 #                   'false'（大小写无关）⇒ 允许抑制；其它/缺省 ⇒ 免抑制。
@@ -58,7 +61,7 @@ MAIN_REMOTE="${MAIN_REMOTE:-https://github.com/${REPO}.git}"
 FORCE_EVAL="${FORCE_EVAL:-}"
 EVENT_NAME="${EVENT_NAME:-}"
 FORCE_EVAL_INPUT="${FORCE_EVAL_INPUT:-}"
-MODE="${MODE:-deploy}"
+MODE="${MODE:-dispatch}"
 LAST_EVAL_SHA="${LAST_EVAL_SHA:-}"
 LAST_EVAL_CMD="${LAST_EVAL_CMD:-}"
 SUPERSEDE_WORKFLOW="post-deploy-eval.yml"
@@ -123,10 +126,12 @@ if [ "$MODE" = "schedule" ]; then
     fi
   fi
 else
-  # ── deploy（部署后门禁，#3587 原判据，保持不变）──
+  # ── dispatch（手动档，#3925：#3587 原 deploy 判据无自动触发方，仅作为
+  #    手动逃生口的显式抑制路径保留）──
+  # 默认免抑制（#3709：人是显式要求评这一条）；只有 force_eval=false（逃生口）
+  # 才回到"被取代即抑制"判据：本次 SHA vs 远端 main HEAD，不等 → skip。
   if [ -z "${MAIN_SHA:-}" ]; then
-    # main HEAD 取自**远端**：workflow_run 的 checkout 显式指向被部署的旧 commit，
-    # 它自己的 origin/main 只是那次 clone 的快照，不代表"现在"。
+    # main HEAD 取自**远端**（当前默认分支 HEAD，与触发时刻的 EVAL_SHA 比对）。
     MAIN_SHA=$(git ls-remote "${MAIN_REMOTE}" "${MAIN_REF}" 2>/dev/null | cut -f1)
   fi
 

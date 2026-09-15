@@ -52,8 +52,8 @@ B 端 `prod_eval_2699` 因 `created_at` 更新而排在首条 → 用例的「�
 | 触发 | 环境 | 档位 | 说明 |
 |---|---|---|---|
 | PR（AI 行为文件改动，**仅 app/** 源文件） | 独立栈 | **映射用例 fast 迭代档**（persona 按命中用例分桶） | #3502 diff 驱动 + #3653 收窄：只跑 §13.2 映射用例（规则命中或兜底网），normal 桶 `--max-retries 0`；**C 端 smoke 不再进 PR 门禁**（#3653 与行为映射档合并去重，降为按需 `workflow_dispatch`）；B 端云冒烟已从 pr-check 移除（评的是已部署 main，与本 PR 无因果） |
-| 部署到云测试环境后 | 独立栈 | **diff 定向（fast）**：`git diff <被评SHA>^ <被评SHA>` → §13.2 映射 case_ids + `--max-retries 0`；**宽爆炸半径文件 / 无 AI 行为文件 / 映射表未覆盖（default_net）→ 强制回退全量 normal** | #3503 起自动触发 + #3654 定向化（用户裁定），失败去重建 issue；判定口径（completion_verdict）两档一致 |
-| 每 3 天（schedule cron `0 3 */3 * *`） | 独立栈 | **normal 全量（mibao + xiaobu）** | #3654 起承担宽度覆盖（定向漏掉的大范围回归）；main 自上次全量未动 → 抑制不白跑 |
+| 手动 `workflow_dispatch`（部署后复核/里程碑/回滚复验） | 独立栈 | **normal 全量**（mibao + xiaobu）或手动选档（smoke/adversarial/case_ids 定点） | #3925 起：部署后自动触发（workflow_run）**已移除**（真实 LLM 成本治理，用户裁定）；需要时手动派发，判定口径（completion_verdict）不变 |
+| 每 3 天（schedule cron `0 3 */3 * *`） | 独立栈 | **normal 全量（mibao + xiaobu）** | #3654 起承担宽度覆盖（长期漂移兜底）；main 自上次全量未动 → 抑制不白跑 |
 | 每周六 | 独立栈 | adversarial | 只追踪不阻塞 |
 | 里程碑 / 下结论前 | 独立栈 | **结论档**：全量 + 验收剧本 + 双 AI 交叉验证（GLM-5.3-Flash 复核）+ `completion_verdict` | 见 acceptance-protocol v1.3 §1.6/§1.7 |
 
@@ -69,7 +69,7 @@ score<1，含 `unstable`）+ 关键旅程全过 + **仅 `llm-noise`** 台账放�
    + 结论档双裁判（主判 + GLM-5.3-Flash 复核）无未裁定分歧；
 2. **运行期**：生产只放 smoke 冒烟 + 抽样复核 + 波动台账，**不做全量**（全量留在标准考场，
    避免污染生产数据、避免长链路成本）；
-3. **回归触发**：生产部署后自动跑"部署后回归"（#3503 的同一机制，目标改为生产）。
+3. **回归触发**：生产发布前后由**人显式派发**全量回归（#3925 起：云测试环境部署后自动触发已移除，改手动 workflow_dispatch；生产门禁沿用同一机制，目标改为生产）。
 
 ### 3.1 已落地的自动门禁（2026-09-14，含 blocking 属性）
 
@@ -78,14 +78,14 @@ score<1，含 `unstable`）+ 关键旅程全过 + **仅 `llm-noise`** 台账放�
 | PR（任意） | 三模块单测 / QA Growth Gate / ci-helper / gitleaks / Danger Scan | ★ **required（硬拦合并）** | pr-check 等 |
 | PR（AI 行为文件，**仅 app/**） | **映射用例 fast 迭代档**（persona 按命中用例分桶派生；规则命中失败 → 报告 + 评论 + 自动开 issue，兜底网失败 → 只报告；**均不拦合并**） | **均为信息性** | `agent-behavior-eval.yml`（#3502/#3523/#3563/#3653） |
 | PR（AI 行为文件） | ~~C 端 smoke + B 端云冒烟~~ —— **已移除**（#3653）：C 端 smoke 降为按需 `workflow_dispatch`（xiaobu-acceptance 不再 pull_request 触发）；B 端云冒烟从 pr-check 移除（评的是已部署 main，与本 PR 无因果） | — | — |
-| 部署（ai-agent 成功） | **双 persona 矩阵行为回归**（各自独立栈/全新库）→ 档位 = **diff 定向 fast**（受影响用例；宽爆炸半径/未覆盖 → 回退全量 normal）→ completion_verdict 判定 → 失败去重建 issue | 部署后拦截 | `post-deploy-eval.yml`（#3503/#3515/#3654） |
-| 每 3 天（本 workflow 的 schedule cron） | 双 persona 矩阵 **normal 全量**（各自独立栈/全新库）→ completion_verdict 判定 → 失败去重建 issue | 部署后拦截（宽度覆盖） | `post-deploy-eval.yml`（#3654） |
+| 手动 `workflow_dispatch`（部署后复核/里程碑/回滚复验） | **双 persona 矩阵行为回归**（各自独立栈/全新库）→ 档位 = 手动选（normal 全量 / smoke / adversarial / case_ids 定点）→ completion_verdict 判定 → 失败去重建 issue | 按需手动 | `post-deploy-eval.yml`（#3503/#3515/#3654/#3925） |
+| 每 3 天（本 workflow 的 schedule cron） | 双 persona 矩阵 **normal 全量**（各自独立栈/全新库）→ completion_verdict 判定 → 失败去重建 issue | 定期拦截（宽度覆盖） | `post-deploy-eval.yml`（#3654/#3925） |
 | 每周六 | adversarial 档 | 信息性 | `xiaobu-acceptance.yml`（schedule） |
 | 里程碑 / 下结论 | 结论档（全量 + 验收剧本 + 双裁判 + completion_verdict） | **结论前置（必过）** | 协议 v1.3 §1.6/§1.7 |
 
 > **⚠️ 最容易误读**：required 只有确定性层那 9 项——LLM 行为层**有意不进 required**
 > （真实 LLM 方差会卡死合并流水线；job 名随 persona 参数化也不适合）。
-> ⇒ 「C 端 smoke 红 ≠ 不能合并」，它是强信号；硬拦截由确定性层 + 部署后全量承担。
+> ⇒ 「C 端 smoke 红 ≠ 不能合并」，它是强信号；硬拦截由确定性层 + 定期/手动全量回归承担。
 
 ### 3.2 决策记录：行为映射门禁**不纳入** required checks
 
@@ -224,49 +224,40 @@ group 名不带 workflow 前缀即**跨 workflow 生效**。
   重跑是纯浪费）；不等 → 跑。查询失败/取值为空一律 fail-open。两种模式共同点：只有
   `skip` 会抑制、一切异常照常跑、skip 不计 failure 且留链接链。
 
-### 3.6 决策记录：部署后评测改「diff 定向 + 宽爆炸半径回退全量」，全量改每 3 天 cron（2026-09-14 用户裁定）
+### 3.6 决策记录：部署后评测改**手动触发** + 每 3 天全量（#3925，2026-09-15 用户裁定）
 
-- **决策**（2026-09-14，用户裁定，方向已定）：`post-deploy-eval.yml` 的**部署后评测
-  不再每次全量**：
-  1. **部署触发（workflow_run）→ diff 定向**：`git diff <被评SHA>^ <被评SHA>` 驱动，
-     复用 #3502 映射表（`tests/agent_eval/behavior_mapping.py`）把改动文件映射成
-     case_ids + fast（`--max-retries 0`），每条 matrix 腿按 persona 过滤后只跑受影响用例；
-  2. **三个保守边界强制回退全量**（宁多跑不少跑，安全优先）：
-     ① **宽爆炸半径文件**（`base_skill.py` / `nodes.py` / `references/**` /
-        `registry.py` / `factory.py` / `app/graph/**` 等共享/行为层）——映射对这些
-        文件**不精确**，命中即全量（**显式硬规则**，不只兜底；清单被 L0 变异守卫锁住）；
-     ② 无 AI 行为文件（docs/前端等）→ case_ids 空 → 全量兜底（现状）；
-     ③ 有 AI 行为文件但映射表未覆盖（default_net）→ 全量 —— 部署后拦截是**硬门禁**
-        （失败去重建 issue），PR 层「default_net 只报告（无因果）」的语义不适用于这里；
-  3. **全量改每 3 天 schedule cron**（`0 3 */3 * *`，03:00 UTC 低流量时刻）：tier 恒
-     normal、双 persona 全量，承担**宽度覆盖**（定向漏掉的大范围回归）；
-     main 自上次全量未动 → 抑制不白跑（`eval_supersede.sh` MODE=schedule）；
-  4. 手动 `workflow_dispatch` 保留任意档位兜底（tier/case_ids/concurrency/force_eval）。
+- **决策**（2026-09-15，用户裁定，方向已定）：`post-deploy-eval.yml` 的**部署后自动触发
+  （workflow_run）移除**，全量回归改**手动 workflow_dispatch**；每 3 天 schedule 全量保留。
+  - 背景：部署后评测（即使 #3654 已收窄为 diff 定向）仍是真实 LLM 成本主因（近 2.5h
+    ≈ ¥135-295）+ 挤占全局评测槽位（eval-stack-global），且每次部署都自动跑是
+    "无人在场也要付钱"（自动跑的实际结论没人盯，#3925 用户裁定：手动的"跑一次算一次"
+    更诚实）。
+  1. **手动 `workflow_dispatch`**：部署后复核 / 里程碑 / 回滚复验 / 随机抽查——人显式
+     触发，档位任选（normal 全量 / smoke / adversarial / case_ids 定点复验）；
+     dispatch 默认**免抑制**（#3709：人显式要求 = 我就要这一条）；显式
+     `force_eval=false` 逃生口保留（回到"被取代即抑制"判据）。
+  2. **每 3 天 schedule cron**（`0 3 */3 * *`，03:00 UTC 低流量时刻）：tier 恒
+     normal、双 persona 全量，承担**宽度覆盖**（手动档"没人记得跑"的长期漂移兜底）；
+     main 自上次全量未动 → 抑制不白跑（`eval_supersede.sh` MODE=schedule）。
+  3. **删除 diff 定向选择器**（`eval_targeted_cases.py` + 其测试）：无 workflow_run
+     触发方后无存在意义（YAGNI；手动定点复验用 inputs.case_ids，定时档恒全量）。
+  4. 判定口径不变（completion_verdict + 失败建 issue）：手动与定时两档一致。
 - **理由**：
-  ① 近 2.5 小时 CI 真实 LLM 成本 ≈ ¥135-295，主因是部署后全量 + PR 层冗余（PR 层
-     去冗余由另一包做）；单次 persona 全量 ≈ ¥15-20（B 端 ~47 条 / C 端 ~35 条真实往返）；
-  ② 每次部署全量的**收益递减**：大多数部署只改个别域，全量里 90% 用例与本次改动无因果；
-     受影响用例定向（fast）把"每次部署"的成本压到 ¥1-3；
-  ③ 「每次部署完整留痕」的旧意图**不再成立**：被抑制/被取代的 run 已证明"留痕的结论
-     描述的不是 main 当前状态"（#3587）；新的完整留痕由「定向 run（本次部署）+ 每 3 天
-     全量（宽度覆盖）+ 失败二分归因（确定性失败=代码问题，按用例 ID 重放）」承担。
-- **为什么不把 default_net 用在部署层**（与 PR 层 #3502 的差异，刻意为之）：
-  PR 层 default_net = **7 条**「无因果」信号（`AS-003 / AS-007 / CH-010 / OR-015 / OR-016 / OR-017 / PR-019`）
-  只报告；**条数与成员以单一事实源 `tests/agent_eval/behavior_mapping.py` 的 `DEFAULT_BEHAVIOR_CASES` 为准**（本文不再各写一份，避免两处漂移 —— 此前写死「4 条」，`#3755` 扩到 7 条后此处过期）；部署后拦截是硬门禁（失败建 issue），
-  映射表没覆盖的域 = 不知道影响面 = 全量（§13.2 盲区，保守边界）。代价是未覆盖域
-  的部署仍烧全量，但「宁多跑不少跑」对**门禁**是对的——省成本由受影响的多数部署承担。
-- **persona 维度**：规则命中的 case_ids 是 persona 专属的（如 OR-016=mibao、
-  AS-007=xiaobu），每条腿按本端可执行集过滤（复用 `select_cases_for_persona`，与
-  local_runner 同口径）；本端无对应用例 → 跑本端默认网子集（最窄主链路信号），
-  深度覆盖由每 3 天全量承担。
-- **成本模型**：定向部署 ¥1-3/次 + 每 3 天全量 ¥15-20/次（≈ 每周 2.3 次全量）——
-  按 20 次合并/周估算 ≈ 20×¥2 + 2.3×¥18 ≈ **¥82/周**（对比原每次部署双 persona 全量
-  ≈ ¥360/周，省 ~77%）；若部署改动落在未覆盖域，该次按全量计（保守边界，模型上界）。
-- **守卫**：`tests/unit_ci_workflows/test_post_deploy_eval_targeted.py`（diff→case_ids
-  纯函数 / 宽爆炸半径强制全量 + 清单变异锁 / 无映射规则回退全量 / schedule→tier 恒
-  normal / CLI 真实用例库接线）+ `test_post_deploy_eval_supersede.py::TestScheduleSuppression`
-  （schedule 抑制判据）。改动后**不触发任何真实评测 run 验证**（静态守卫 + 推演足够，
-  本包是省成本包）。
+  ① 近 2.5 小时 CI 真实 LLM 成本 ≈ ¥135-295；单次 persona 全量 ≈ ¥15-20
+     （B 端 ~47 条 / C 端 ~35 条真实往返）；
+  ② 部署后自动评测的**收益递减**：每次部署都跑（即使定向），而大多数部署只改个别域，
+     且自动跑的结论无人即时消费（部署不因它阻塞）——成本照付、结论滞后；
+  ③ 手动触发把"何时付真实 LLM 成本"交还给人：需要结论才付钱（#3925），
+     与 milestone 结论档（§1.6/§1.7）同构。
+- **persona 维度**：matrix 双 persona（mibao/xiaobu）各自独立栈 + 全新库（#3515 隔离
+  语义不变）；手动 case_ids 定点时按本端可执行集过滤（复用 `select_cases_for_persona`，
+  与 local_runner 同口径）。
+- **成本模型**：手动档"按需付费"（跑一次全量 ¥15-20/persona）+ 每 3 天全量 ¥15-20/次
+  （≈ 每周 2.3 次全量）——按 20 次合并/周估算 ≈ 2.3×¥36 ≈ **¥83/周**（对比原每次部署
+  双 persona 全量 ≈ ¥360/周，省 ~77%；#3925 起自动触发已移除，成本进一步下降）。
+- **守卫**：`tests/unit_ci_workflows/test_post_deploy_eval_supersede.py`（dispatch 默认
+  免抑制 / force_eval=false 逃生口 / schedule 判据 / 槽位 / 审计链；#3925 更新为
+  MODE=dispatch 语义）；`test_workflow_issue_permissions.py`（issues: write 权限）。
 
 ## 四、与米高研发模式的衔接
 
