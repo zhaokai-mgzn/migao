@@ -669,6 +669,199 @@ class OrderCreateTool(BaseTool):
         """
         return context.role == "customer"
 
+    # ── 下单单价「接地」校验：工具级 fail-closed（issue OR-014，判定跑 34923425338）──
+    # 红证：mibao 腿 agent 报「米白 ¥150/米」，order_create(遮光窗帘×3@150) 成功落单，
+    # amount_verify 抓「单价 150 ≠ 商品库 168」。为什么改前拦不住（两处 fail-open 叠加）：
+    #   ① ai-agent 闸门（base_skill 下单接地闸门）：B 端（order skill）**未接地**时
+    #      unit_price_grounding_error(items, {}) 库价未知 → 放行（未接地拦截仅保留 C 端）；
+    #   ② 服务端守卫（OrderService.validateAgentItemUnitPrice）：明细**只有 product_name**、
+    #      无 productId + skuCode/colorName → 解析不到唯一 SKU → fail-open。
+    # 本方法在**调用服务端之前**按商品库解析权威价（不依赖会话接地状态）：
+    #   · 按 product_id / product_name（唯一匹配）查商品详情 → price + skus；
+    #   · 分色差价（SKU 价不唯一）⇒ 必须按 items 的 processing_info.colorName/skuCode
+    #     匹配 SKU；匹配不到 = 配置错误级拒绝；
+    #   · unit_price ≠ 权威价（容差 0.01）⇒ 拦截并回填库价（error=unit_price_not_grounded）；
+    #   · 商品库查不到该商品 / 查询失败 ⇒ 拒绝（fail-closed：拒绝比放行安全，给可行动话术）；
+    #   · 加工项 customPrice / processingItems 属加工费，**不入**本校验域（只核对 unit_price）。
+    _UNIT_PRICE_TOLERANCE = 0.01
+
+    @staticmethod
+    def _library_price_of(detail: dict) -> Optional[float]:
+        """商品详情 → 商品级库价（price/basePrice 兼容 admin-api 两种命名）。"""
+        for key in ("price", "basePrice", "base_price"):
+            v = detail.get(key)
+            if v is not None:
+                try:
+                    return float(v)
+                except (TypeError, ValueError):
+                    continue
+        return None
+
+    @staticmethod
+    def _library_skus_of(detail: dict) -> list:
+        """商品详情 → SKU 扁平快照（color_name/sku_code/price），与接地快照同构。"""
+        skus = []
+        for sk in (detail.get("skus") or []):
+            if not isinstance(sk, dict):
+                continue
+            skus.append({
+                "color_name": str(sk.get("colorName") or sk.get("color_name") or ""),
+                "sku_code": str(sk.get("skuCode") or sk.get("sku_code") or ""),
+                "price": sk.get("price"),
+            })
+        return skus
+
+    async def _reject_unit_price_not_grounded(self, context: ToolContext,
+                                              items: List[Dict[str, Any]]) -> Optional[ToolResult]:
+        """执行前按商品库校验 items 单价（fail-closed，零 LLM 确定性判定）。
+
+        返回拦截 ToolResult（error=unit_price_not_grounded / 配置错误级拒绝），
+        全部行与库价一致（或非本工具校验域的加工项）时返回 None。
+        """
+        # 复用 base_skill 的判据纯函数（含 SKU 匹配与回填话术），工具层只负责
+        # 「从商品库解析权威快照」——同一判据单点，避免两处口径漂移。
+        # 函数级 import：tools 是叶子模块，避免模块加载顺序依赖。
+        from app.graph.skills.base_skill import unit_price_grounding_error
+        from app.graph.skills.base_skill import _match_sku_price
+
+        client = get_admin_api_client()
+        # 同单多行同商品只查一次（grounded 快照按 product_id 或 product_name 缓存）
+        _grounded_cache: Dict[str, dict] = {}
+        for i, item in enumerate(items):
+            if not isinstance(item, dict):
+                continue
+            pid = str(item.get("product_id") or "").strip()
+            name = str(item.get("product_name") or "").strip()
+            if not pid and not name:
+                # 缺商品标识由上方必填/空名校验兜底（此处不重复报错）
+                continue
+            cache_key = pid or name
+            grounded = _grounded_cache.get(cache_key)
+            if grounded is None:
+                grounded, resolve_err = await self._resolve_library_grounded(
+                    context, client, pid, name)
+                if resolve_err is not None:
+                    return resolve_err
+                if grounded is None:
+                    return ToolResult(
+                        success=False,
+                        error="unit_price_not_grounded",
+                        message=(
+                            f"下单被拦截：商品「{name or pid}」在商品库中**查不到库价**，"
+                            "单价无从核对（拒绝比放行安全）。"
+                            "请先用 product_search / product_detail 确认商品存在及其库价，"
+                            "再按库价重新下单。"
+                        ),
+                        suggestion=(
+                            "先调 product_search(keyword=商品名) → product_detail(product_id=…)"
+                            "拿到 price 后，用该价格作为 unit_price 重新下单"
+                        ),
+                    )
+                _grounded_cache[cache_key] = grounded
+            # 分色差价（SKU 价不唯一）⇒ 必须按所选规格匹配 SKU；匹配不到 = 配置错误级拒绝
+            sku_prices = {
+                float(s.get("price")) for s in grounded.get("skus") or []
+                if isinstance(s, dict) and s.get("price") is not None
+            }
+            if len(sku_prices) > 1:
+                pinfo = item.get("processing_info")
+                if not isinstance(pinfo, dict) or not (pinfo.get("colorName") or pinfo.get("skuCode")):
+                    return ToolResult(
+                        success=False,
+                        error="unit_price_not_grounded",
+                        message=(
+                            f"商品明细第 {i + 1} 项「{name}」存在**多个规格价**"
+                            f"（{'/'.join(sorted(f'{p:g}' for p in sku_prices))}），"
+                            "下单必须通过 processing_info.colorName / skuCode 指定所选规格，"
+                            "否则无法确定该行应采用的库价。"
+                        ),
+                        suggestion="按 product_detail 的 skus[].color_name / sku_code 填 processing_info",
+                    )
+                if _match_sku_price(grounded, item) is None:
+                    return ToolResult(
+                        success=False,
+                        error="unit_price_not_grounded",
+                        message=(
+                            f"商品明细第 {i + 1} 项「{name}」所选规格"
+                            f"（{pinfo.get('colorName') or pinfo.get('skuCode')}）"
+                            "在商品库 SKU 中匹配不到 —— 配置错误级拒绝：无法确定该行库价。"
+                        ),
+                        suggestion="用 product_detail 返回的 skus[].color_name / sku_code 重新填写规格",
+                    )
+            # 判据复用：名称/ID 匹配 + SKU 价或商品价 + 容差 + 回填话术
+            err = unit_price_grounding_error([item], grounded)
+            if err:
+                return ToolResult(
+                    success=False,
+                    error="unit_price_not_grounded",
+                    message=f"下单被拦截（单价与商品库不符）：{err}",
+                    suggestion="把 unit_price 改为商品库价（含 subtotal 同步 = 数量 × 单价）后重新下单",
+                )
+        return None
+
+    async def _resolve_library_grounded(self, context: ToolContext, client, pid: str,
+                                        name: str) -> tuple:
+        """从商品库解析接地快照 {product_id, name, price, skus}。
+
+        Returns: (grounded|None, ToolResult|None)
+          - grounded=None, resolve_err=None  ⇒ 商品不存在/无库价（调用方统一话术拒绝）
+          - resolve_err 非 None               ⇒ 名称不唯一 / 查询失败（带具体话术拒绝）
+        """
+        detail = None
+        try:
+            if pid:
+                resp = await client.get(
+                    f"/api/admin/products/{pid}",
+                    tenant_id=context.tenant_id, user_id=context.user_id)
+                if resp.get("success"):
+                    detail = resp.get("data") or {}
+            elif name:
+                resp = await client.get(
+                    "/api/admin/products",
+                    params={"keyword": name, "page": 1, "size": 10},
+                    tenant_id=context.tenant_id, user_id=context.user_id)
+                records = ((resp.get("data") or {}).get("items") or []) if resp.get("success") else []
+                exact = [r for r in records if str(r.get("name") or "") == name]
+                if len(exact) > 1:
+                    return None, ToolResult(
+                        success=False,
+                        error="unit_price_not_grounded",
+                        message=(
+                            f"商品名「{name}」在商品库中**不唯一**（{len(exact)} 条），"
+                            "无法确定库价。请先用 product_search / product_detail "
+                            "确认 product_id 后，在下单 items 中带上 product_id 重试。"
+                        ),
+                    )
+                if len(exact) == 1:
+                    rid = exact[0].get("id")
+                    if rid:
+                        rd = await client.get(
+                            f"/api/admin/products/{rid}",
+                            tenant_id=context.tenant_id, user_id=context.user_id)
+                        if rd.get("success"):
+                            detail = rd.get("data") or {}
+        except Exception as e:
+            return None, ToolResult(
+                success=False,
+                error="unit_price_not_grounded",
+                message=(
+                    "下单被拦截：核对商品库价时服务异常"
+                    f"（{type(e).__name__}），无法确认单价（拒绝比放行安全）。"
+                    "请稍后重试，或先 product_search / product_detail 确认商品与库价。"
+                ),
+            )
+        if not detail:
+            return None, None
+        grounded = {
+            "product_id": str(detail.get("id") or pid or ""),
+            "name": str(detail.get("name") or name or ""),
+            "price": self._library_price_of(detail),
+            "skus": self._library_skus_of(detail),
+        }
+        if grounded["price"] is None and not grounded["skus"]:
+            return None, None
+        return grounded, None
+
     async def execute(
         self,
         context: ToolContext,
@@ -829,6 +1022,18 @@ class OrderCreateTool(BaseTool):
                                 "例如 3 米不要写成三行各 1 米或三行各 3 米"),
                 )
             _dup_key_seen[_sig] = _i
+
+        # ── 单价接地校验（issue OR-014，工具级 fail-closed）──
+        # 判定跑 34923425338（main 7d930e34）B 端 OR-014 红证：agent 报「米白 ¥150/米」、
+        # order_create(遮光窗帘×3@150) 成功落单 —— ai-agent 闸门在 B 端未接地时跳过单价
+        # 校验、服务端守卫对仅商品名的明细 fail-open ⇒ 150 一路落库。此处无论会话接地
+        # 状态如何，都在调用服务端**之前**按商品库解析权威价（product_id/product_name →
+        # price 或所选 SKU 的 skus[].price），不一致 ⇒ 拦截并回填库价；查不到 ⇒ 拒绝。
+        # 位置在全部本地确定性校验（bounds/SMS/dup）之后：网络查询只对**注定要发**的单做，
+        # 不改变既有校验的 fail-fast 语义；错价单在此被拦，不再触达服务端。
+        _price_reject = await self._reject_unit_price_not_grounded(context, items)
+        if _price_reject is not None:
+            return _price_reject
 
         try:
             # 构建请求体（admin-api 使用 camelCase）

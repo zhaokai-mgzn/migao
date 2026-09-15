@@ -1051,19 +1051,22 @@ B_CREATE_PENDING_TOOL = "product_manage"
 B_CREATE_PENDING_ACTION = "create"
 
 
-# ── 下单「单价接地」校验（issue OR-014，run 34916256903 归因）────────────────
+# ── 下单「单价接地」校验（issue OR-014，run 34916256903 / 判定跑 34923425338 归因）──
 # 实证：B 端（mibao）下单，规格选择卡呈现「米白 ¥150/米 或 浅灰 ¥168」——商品库
 # （prod_eval_blackout）单价 168.0 且 seed 里 SKU price = base_price（**无分色差价**）
 # ⇒ 米白 150 是 LLM 编造的分色价；用户选「米白｜散剪｜2.8米｜¥150/米」→ order_create
 # 落 unit_price=150.0 → 订单按错价成交（amount_verify[order_create] 抓「150 ≠ 168」）。
-# 既有防线只覆盖 C 端：`customer_order` 的下单接地闸门只要求「查过 product_detail」，
-# **不校验单价一致性**；B 端（order）连查详情的闸门都没有（`skill_name == "customer_order"`
-# 才触发）⇒ 编造的分色价一路落库，评测层 amount_verify 是唯一防线（且只读不回填）。
 # 本函数是**产品层**确定性兜底（零 LLM）：单价必须以商品库为准 ——
 #   · 库中无分色差价（SKU 同价）⇒ 任何分色价 ≠ 库价即拦截（禁止编造分色价）；
 #   · SKU 有独立价 ⇒ 按所选 SKU（processing_info.colorName/skuCode）匹配判；
 #   · 商品库价以 `grounded_product_detail`（本会话最近一次成功的 product_detail）为准，
 #     库价变化（如改价 198）自然跟随 —— **不得写死任何具体金额**。
+# ⚠️ 本函数依赖会话接地快照：C 端（customer_order）由闸门保证「未查详情不下单」，
+#    而 B 端（order）未接地时快照为空 → 本函数放行（判据见函数 docstring「未接地不做
+#    金额判定」）。B 端这条路径的 fail-closed 兜底在 **order_create 工具层**
+#    （`_reject_unit_price_not_grounded`，判定跑 34923425338 红证）：无论接地状态如何，
+#    执行前直接按商品库解析库价，不一致即拦截回填 —— 本函数与工具层是**两层防线**，
+#    工具层不依赖会话状态（单测见 tests/test_order_create_tool_price_grounding.py）。
 _PRICE_TOLERANCE = 0.01
 
 

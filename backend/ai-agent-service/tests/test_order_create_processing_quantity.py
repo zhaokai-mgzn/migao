@@ -40,6 +40,20 @@ def agent_ctx():
     return ToolContext(tenant_id=1, user_id="agent_001", session_id="s", role="agent")
 
 
+def _with_library(client, price, name="遮光窗帘", pid="p1"):
+    """给 mock client 装上商品库 GET（order_create 单价接地校验用）。"""
+    async def _get(path, params=None, **kwargs):
+        if path.rstrip("/").endswith("/products"):
+            return {"success": True, "data": {"items": [{"id": pid, "name": name}], "total": 1}}
+        return {"success": True, "data": {
+            "id": pid, "name": name, "price": price, "basePrice": price,
+            "skus": [{"id": f"{pid}-1", "skuCode": "SKU-1", "colorName": "米白",
+                      "price": price, "stock": 1}],
+        }}
+    client.get = AsyncMock(side_effect=_get)
+    return client
+
+
 class TestOrderCreateProcessingPassthrough:
     """工具层：processing_info 含加工项，完整透传"""
 
@@ -52,6 +66,7 @@ class TestOrderCreateProcessingPassthrough:
         mock_client.post = AsyncMock(
             return_value={"success": True, "data": {"id": "ORD-014", "orderNo": "ORD-014"}}
         )
+        _with_library(mock_client, 88.0)
         mock_get_client.return_value = mock_client
 
         items = [
@@ -111,6 +126,7 @@ class TestOrderCreateProcessingPassthrough:
         mock_client.post = AsyncMock(
             return_value={"success": True, "data": {"id": "ORD-014b", "orderNo": "ORD-014b"}}
         )
+        _with_library(mock_client, 88.0)
         mock_get_client.return_value = mock_client
 
         items = [
@@ -167,6 +183,7 @@ class TestOrderCreateProcessingPassthrough:
         mock_client.post = AsyncMock(
             return_value={"success": True, "data": {"id": "ORD-3666", "orderNo": "ORD-3666"}}
         )
+        _with_library(mock_client, 100.0, name="刺绣窗帘", pid="p2")
         mock_get_client.return_value = mock_client
 
         items = [

@@ -81,7 +81,8 @@ def test_skill_prompt_length_reasonable(skill):
     2026-09-08 上限 10800→11200：product 确认卡片必须发出、禁止只发文字提示（#3045），达 11131。
     """
     prompt = _build_system_prompt(skill)
-    assert 200 < len(prompt) < 12000, f"{skill}: prompt 长度异常 ({len(prompt)} chars)"
+    # 2026-09-15 上限 12000→13000：order 单价铁律补「系统会拦截并回填」+ EXAMPLES-order.md 反例4（OR-014 判定跑 34923425338 收口，达 12595）
+    assert 200 < len(prompt) < 13000, f"{skill}: prompt 长度异常 ({len(prompt)} chars)"
 
 
 # ============ 领域隔离检查 ============
@@ -239,7 +240,7 @@ def test_snapshot_all_skills():
     # 最大长度快照（防止无限制膨胀）
     expected_max = {
         "product": 12000,  # +800: 澄清话术(#2784)+承诺边界(#2785) + 加工项主动询问增强（issue #2892，达 9985）+ 建品规格/加工项价格规则（#3027，达 10732）+ 确认卡片必须发出（issue #3045，达 11131）+ 库存工具分工铁律（Round 37，达 11318）
-        "order": 12200,  # +800: 加工项数量自动推导（issue #2986）+ confirm 前必须主动询问加工项（issue #3033，达 8836）+ 共享规则确认卡片铁律（issue #3045，达 9133）+ 规格ID≠商品ID 铁律（Round 39，达 9396）+ 加工单域（#3340，达 10005）；+1200（issue #3799）：订单→物流链收口（prompts/order.md 链规则 + EXAMPLES-order.md「同一轮 order_query→logistics_track」正/反例，达 11364）；+600（issue #3873）：单价铁律——报价/确认/落单单价必须来自商品库，禁止编造分色价（达 11967）
+        "order": 12600,  # +800: 加工项数量自动推导（issue #2986）+ confirm 前必须主动询问加工项（issue #3033，达 8836）+ 共享规则确认卡片铁律（issue #3045，达 9133）+ 规格ID≠商品ID 铁律（Round 39，达 9396）+ 加工单域（#3340，达 10005）；+1200（issue #3799）：订单→物流链收口（prompts/order.md 链规则 + EXAMPLES-order.md「同一轮 order_query→logistics_track」正/反例，达 11364）；+600（issue #3873）：单价铁律——报价/确认/落单单价必须来自商品库，禁止编造分色价（达 11967）；+400（OR-014 判定跑 34923425338 收口）：单价铁律补「系统会拦截并回填」+ EXAMPLES-order.md 反例4「库价 168 却写米白 150」（达 12595）
         "aftersales": 8000,  # +1300: 禁英文枚举 + 退货库存规则（issue #2991）+ 换货加工项确认（issue #3033，达 6269）+ 共享规则确认卡片铁律（issue #3045，达 6566）+ 创建/关闭工单执行引导（Round 43，达 7068）
         "customer": 8500,  # +3500: 领域 prompt 补齐打标签流程（CU-003 场景）+ EXAMPLES 补标签示例（Round 33）
         "staff": 8000,    # +3100: 领域 prompt 补齐创建角色流程（HR-005 场景）+ EXAMPLES 补角色创建示例（Round 32）
