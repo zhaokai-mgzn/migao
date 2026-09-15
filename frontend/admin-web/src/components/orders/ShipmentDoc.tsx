@@ -1,5 +1,7 @@
 'use client'
 
+import { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import type { Order, OrderItem, LogisticsInfo } from '@/types'
 import { cn, formatFullDateTime } from '@/lib/utils'
 
@@ -9,16 +11,24 @@ import { cn, formatFullDateTime } from '@/lib/utils'
  * 设计要点（都是踩过的约束，勿随手改）：
  * 1. **屏幕隐藏、打印可见**：发货页/订单详情页已有各自的屏幕布局，再显示一份会重复；
  *    本组件自带 `display:none` + `@media print` 覆盖，保证屏幕上零视觉改动、
- *    打印时**只有**这份文档（`body * { visibility: hidden }` 隔离，与加工单同套路）。
- * 2. **不得放进 Modal**：`Modal` 面板是 `max-h-full` + 内部 `overflow-y-auto`，
+ *    打印时**只有**这份文档。
+ * 2. **portal 到 body + display:none 隔离**（issue #3896：打印出空白第二页）：
+ *    单据经 `createPortal` 渲染为 `document.body` 的直接子级，打印 CSS 用
+ *    `body > *:not(.shipment-print-area) { display: none !important; }` 把整页外壳藏掉 ——
+ *    **display:none 不占版面高度**，分页只按单据自身高度计算；
+ *    旧方案 `body * { visibility: hidden }` 隐藏的元素**仍占高度**，底层页面（订单详情/
+ *    发货页整页布局，含表单/按钮）高于一页 A4 时按隐藏内容高度分页 → 第 2 页空白。
+ *    （注意：`.shipment-print-area` 必须是 portal 容器本身的 class，不能再包一层别的
+ *    class/div，否则上面的选择器选不中。）
+ * 3. **不得放进 Modal**：`Modal` 面板是 `max-h-full` + 内部 `overflow-y-auto`，
  *    打印只会打出可视区那一屏（多页明细会被裁掉）。故调用方一律渲染在页面级。
- * 3. **每页只挂一份**：`.shipment-print-area` 是全局选择器，挂两份会打印出两套单据。
- * 4. 数据全部取自订单本身（明细不可变，见 OrderItemImmutabilityTest/PG-014），
+ * 4. **每页只挂一份**：`.shipment-print-area` 是全局选择器，挂两份会打印出两套单据。
+ * 5. 数据全部取自订单本身（明细不可变，见 OrderItemImmutabilityTest/PG-014），
  *    不需要快照表 —— 这是「发货单不建实体」的依据。
- * 5. 运单号未产生时留空线（纸面手写），不编造。
- * 6. **发货人栏「-」口径**（issue #3818 裁定）：存量已发货订单 `shipper_name` 为 NULL/空
+ * 6. 运单号未产生时留空线（纸面手写），不编造。
+ * 7. **发货人栏「-」口径**（issue #3818 裁定）：存量已发货订单 `shipper_name` 为 NULL/空
  *    （历史上从未采集）→ 纸面发货人栏显示「-」，与 #3768 判据一致；**不得**留白、
- *    不得 undefined/null。与第 5 条区分：留空只给「运单号/物流公司」（发货前手写用）。
+ *    不得 undefined/null。与第 6 条区分：留空只给「运单号/物流公司」（发货前手写用）。
  */
 interface ShipmentDocProps {
   order: Order
@@ -41,6 +51,12 @@ function formatQty(qty?: number): string {
 }
 
 export default function ShipmentDoc({ order, logistics, shipperName, className }: ShipmentDocProps) {
+  // 打印只发生在客户端；SSR/首帧无 document，portal 前先等 mounted（未挂载返回 null）
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => setMounted(true), [])
+
+  if (!mounted) return null
+
   const items = order.items || []
   const processingItems = order.processingItems || []
 
@@ -52,19 +68,16 @@ export default function ShipmentDoc({ order, logistics, shipperName, className }
   const company = (logistics?.logisticsCompany || '').trim()
   const trackingNo = (logistics?.trackingNo || '').trim()
 
-  return (
+  return createPortal(
     <div className={cn('shipment-print-area text-neutral-900', className)}>
       <style>{`
         .shipment-print-area { display: none; }
         @page { size: A4; margin: 12mm; }
         @media print {
-          body * { visibility: hidden; }
-          .shipment-print-area, .shipment-print-area * { visibility: visible; }
+          body > *:not(.shipment-print-area) { display: none !important; }
           .shipment-print-area {
             display: block;
-            position: absolute;
-            left: 0;
-            top: 0;
+            position: static;
             width: 100%;
             font-size: 12px;
           }
@@ -81,8 +94,8 @@ export default function ShipmentDoc({ order, logistics, shipperName, className }
             <DocCell label="下单时间" value={formatFullDateTime(order.createdAt)} />
           </tr>
           <tr>
-            {/* 存量订单 shipper_name 为 NULL/空 ⇒ 纸面显示「-」（#3818 裁定；见文件头第 6 条）。
-                只有这一栏走「-」，运单号/物流公司仍留空供纸面手写（第 5 条） */}
+            {/* 存量订单 shipper_name 为 NULL/空 ⇒ 纸面显示「-」（#3818 裁定；见文件头第 7 条）。
+                只有这一栏走「-」，运单号/物流公司仍留空供纸面手写（第 6 条） */}
             <DocCell label="发货人" value={shipper || '-'} />
             <DocCell label="打印时间" value={formatFullDateTime(new Date().toISOString())} />
           </tr>
@@ -203,7 +216,8 @@ export default function ShipmentDoc({ order, logistics, shipperName, className }
           </tr>
         </tbody>
       </table>
-    </div>
+    </div>,
+    document.body
   )
 }
 
