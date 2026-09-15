@@ -61,6 +61,10 @@ export const menuGroups: MenuGroup[] = [
     children: [
       { key: 'orders', name: '订单列表', icon: 'ClipboardList', path: '/orders', permissionCode: 'order:list' },
       { key: 'after-sales', name: '售后工单', icon: 'ShieldCheck', path: '/after-sales', permissionCode: 'order:refund' },
+      // 加工单列表（issue #3340 加工单状态机）：复用 processing:manage ——
+      // operator 已持有该码且同时具备 processing:view/update（API 权限），
+      // 而 processing:view 的其它角色（客服/销售/财务）无 update，会看到按钮但 403。
+      { key: 'processing-orders', name: '加工单', icon: 'FileText', path: '/processing-orders', permissionCode: 'processing:manage' },
     ],
   },
   // #2969: 客户管理组（客户列表 + 财务对账，财务由独立菜单并入）

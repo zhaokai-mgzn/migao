@@ -587,6 +587,8 @@ export interface ProcessingOrder {
   orderId: string
   orderNo?: string
   customerName?: string
+  /** 客户手机号（列表/详情接口返回，订单详情块未用到） */
+  customerPhone?: string
   processingOrderNo: string
   processor?: string
   expectedDeliveryDate?: string

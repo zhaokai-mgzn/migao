@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Button } from '@/components/ui'
 import { processingOrderApi } from '@/lib/api'
+// 状态文案单一来源：与列表页共用（加工单状态机语义见 lib/processing-order.ts）
+import { PROCESSING_ORDER_STATUS_LABELS as STATUS_TEXT } from '@/lib/processing-order'
 import type { ProcessingOrder, ProcessingOrderItem } from '@/types'
 
 interface Props {
@@ -12,15 +14,7 @@ interface Props {
   hasProcessing: boolean
 }
 
-const STATUS_TEXT: Record<string, string> = {
-  generated: '已生成',
-  issued: '已发加工',
-  in_processing: '加工中',
-  completed: '加工完成',
-  cancelled: '已取消',
-}
-
-const STEP_ORDER = ['generated', 'issued', 'in_processing', 'completed']
+const STEP_ORDER: ProcessingOrder['status'][] = ['generated', 'issued', 'in_processing', 'completed']
 
 function formatAmount(v?: number): string {
   if (v == null) return '—'
