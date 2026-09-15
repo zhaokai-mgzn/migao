@@ -1,0 +1,21 @@
+# 演示路径 E2E 清单（单一事实源）— 由 .github/workflows/demo-path-e2e.yml 消费
+#
+# 收录判据（三条都要满足，缺一不收）：
+#   ① 属于**演示面**（下单 / 发货单 / 订单卡片 / 聊天 / 商品 / 客户 / 首页看板 / 页面渲染）；
+#   ② **fixture 模式（E2E_MOCK_AUTH=true，无后端）真能跑绿** —— 证据：nightly-verification run
+#      34911052034（job `E2E fixture specs (full, web project)`，SHA 82d20090，admin-web 自该
+#      SHA 起零改动）里该 spec 全绿；本包另在本地复核同一清单；
+#   ③ **不在** pr-check.yml 的 `E2E quality gate` 6 文件清单里（不重复跑、不重复占 runner）。
+#
+# 不收的演示 spec（fixture 模式必红，需真后端/真 LLM）见 docs/testing/demo-readiness.md
+# 「缺口登记」——它们不是被忽略，而是**当前无机器级证据**（不许用本清单的绿去代表它们绿）。
+#
+# 格式：一行一个 spec 路径（相对 tests/ 目录），`#` 开头为注释。
+
+e2e/specs/orders/shipment-doc.spec.ts
+e2e/specs/orders/order-create.spec.ts
+e2e/specs/orders/order-lifecycle.spec.ts
+e2e/specs/chat/chat-panel-resize.spec.ts
+e2e/specs/chat/mibao-minimize-layout.spec.ts
+e2e/specs/catalog/categories.spec.ts
+e2e/specs/smoke/pages-render.spec.ts
