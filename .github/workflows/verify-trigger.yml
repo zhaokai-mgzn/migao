@@ -182,15 +182,55 @@ jobs:
           echo "mode=$MODE_NAME"
           echo "mode=$MODE_NAME" >> "$GITHUB_OUTPUT"
           echo "since=$SINCE" >> "$GITHUB_OUTPUT"
-          # 批量取数：一次 list 拿候选号（--limit 依据见文件头）。
+          # 批量取数：一次 list 拿候选号 + 合并时间（--limit 依据见文件头）。
+          # ⚠️ 必须**在收集时就按 mergedAt >= since 过滤窗口**（issue #3811 假红根因）：
+          #    旧版 collect 只取 number（无时间过滤）→ 窗口内无新合并 PR 时（合法空窗），
+          #    取到的最近 LIMIT 个 merged PR 全是窗口外旧 PR → processing 全部滤掉 →
+          #    NFETCH=0 → 被 fail-closed 误判为「取数链路缺陷」报红。
+          #    实证：run 34945688461 / 34946361347（#3811 持续失败）「候选 5 取到 0」，
+          #    失败窗口 07:12–08:12Z 内确实无合并（上一次 07:05 #3913，下一次 08:22 #3915）。
+          #    窗口空 → 零候选 → 走「零候选 PR，结束」exit 0（合法空跑，不报红）。
+          # 取数失败与空窗**必须区分**（防静默失效回潮）：`gh pr list` 返回 0 条 =
+          # 限流/权限/网络缺陷（fail-closed exit 1）；返回 >0 但窗口过滤后 0 = 合法空窗。
           # 不叠 `--search "merged:>=..."`：`--search` 会切换结果排序语义，与 `--limit`
-          # 组合可能静默截断/漏掉目标 PR；时间窗口统一交给 processing step 用
+          # 组合可能静默截断/漏掉目标 PR；时间窗口统一交给下面的 python 用
           # `mergedAt` 精确过滤（同一份 SINCE，避免「收集用一套、处理用另一套」）。
           # `gh pr list --state merged` 默认按创建时间倒序 ≈ 合并倒序，取最近 LIMIT 个
           # 即可覆盖近 HOURS 小时的合并（6h 实测约 20 个，48h 约 135 个，LIMIT 余量充足）。
           gh pr list --state merged --limit "$LIMIT" \
-            --json number --jq '.[].number' | sort -n > /tmp/candidates.txt || true
-          echo "mode=${MODE_NAME} since=${SINCE} limit=${LIMIT}，候选（近 ${HOURS}h 已合并，取最近 ${LIMIT} 个）PR 数：$(wc -l < /tmp/candidates.txt | tr -d ' ')"
+            --json number,mergedAt --jq '.[] | [.number, (.mergedAt // "")] | @tsv' \
+            > /tmp/candidates_raw.tsv 2>/tmp/candidates_raw.err || true
+          if [ -s /tmp/candidates_raw.err ]; then
+            echo "❌ gh pr list 候选收集失败：$(head -2 /tmp/candidates_raw.err | tr '\n' ' ')"
+            echo "collect_failed=true" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+          RAW_COUNT=$(wc -l < /tmp/candidates_raw.tsv | tr -d ' ')
+          if [ "$RAW_COUNT" -eq 0 ]; then
+            echo "❌ gh pr list 候选收集返回 0 条（非空窗：仓库 merged PR 远多于 LIMIT，"
+            echo "   0 条只可能是限流/权限/网络缺陷）—— 取数链路缺陷，不得当空窗静默"
+            echo "collect_failed=true" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+          # 窗口过滤：只保留 mergedAt >= SINCE 的候选（runner 自带 python3，规避 gh --jq
+          # 不支持 --arg/--argjson 的限制；ISO8601 UTC 字符串可直接字典序比较）。
+          python3 - "$SINCE" <<'PYEOF' > /tmp/candidates.txt
+          import sys
+          since = sys.argv[1]
+          n = 0
+          with open('/tmp/candidates_raw.tsv', encoding='utf-8') as f:
+              for line in f:
+                  line = line.strip()
+                  if not line or '\t' not in line:
+                      continue
+                  num, at = line.split('\t', 1)
+                  if since and at and at < since:
+                      continue
+                  n += 1
+                  print(num)
+          print(f'# window candidates {n}', file=sys.stderr)
+          PYEOF
+          echo "mode=${MODE_NAME} since=${SINCE} limit=${LIMIT}，候选（窗口内 ${HOURS}h 已合并，从 ${RAW_COUNT} 条过滤）PR 数：$(wc -l < /tmp/candidates.txt | tr -d ' ')"
 
       - name: 处理候选 PR（贴 VERIFY_TRIGGER + 打标签 + reopen，全部幂等）
         if: env.skip_run != 'true'
