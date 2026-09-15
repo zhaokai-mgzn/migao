@@ -387,12 +387,22 @@ class TestCrossRunRecurrence:
         assert repr(hist) == before
 
     def test_recurrence_only_downgrades_released_entries(self):
-        """只有"会被放行"的条目才谈得上被改判；确定性失败照旧进阻塞桶（不重复计数）。"""
+        """复发条目以 `systemic_recurrence` 呈现（盲审缺陷二口径，判定跑 34923425338 实证）。
+
+        旧契约（本测试曾锁）：score<1.0 + 分类 reproducible 的复发条目进
+        `deterministic_failures` 且 **不进** systemic（"不重复计数"）⇒ OR-014
+        （`cross_run_recurrence {prior_count: 1}`）在 `systemic_recurrence` 里
+        **漏报**，报告的"跨 run 复发"维永远缺该条（本轮因 det 阻塞而无害，但
+        构成口径不合）。新判据（§16.7 结论构成）：凡 `cross_run_recurrence.
+        prior_count>0` 且指纹同型 ⇒ **一律**进 `systemic_recurrence`，不因
+        "本轮失败 / 旅程身份 / 分类非放行"而改桶 —— 失败路径与通过路径同判。
+        `ok` 语义不变：det 与 systemic 都是阻塞桶，改前改后都 False。
+        """
         hist = self._run3_history()
         r = {"case_id": "PR-016", "score": 0.0, "classification": "reproducible"}
         lr.annotate_cross_run_recurrence([r], [_entry("PR-016", PR016_FP, RUN3)], hist)
         v = lr.completion_verdict([r], ())
-        assert v["deterministic_failures"] == ["PR-016"] and v["systemic_recurrence"] == []
+        assert v["systemic_recurrence"] == ["PR-016"] and v["deterministic_failures"] == [], v
         assert v["ok"] is False
 
     def test_fingerprint_key_carries_case_and_signature(self):
