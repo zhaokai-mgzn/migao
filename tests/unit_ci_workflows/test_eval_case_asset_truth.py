@@ -427,3 +427,70 @@ class TestPG013RetryPreconditionIsEquivalent:
         assert db.active_processing(self.ORDER) == [], db.processing
         # 前置条件的观测值：真的查了库（不是空跑）—— `migao-acceptance` v1.7 的要求
         assert db.connections == len(specs) and db.statements, db.statements
+
+
+class TestPG013ForbiddenTextIsRoundScoped:
+    """`PG-013` 的禁用词必须**声明成轮次作用域**（#3833）—— 反向守卫。
+
+    为什么要在**用例资产侧**再锁一遍（机制侧已有 `test_eval_runner_assertion_scope.py`）：
+    机制支持了轮次作用域，但用例仍可能写成全程裸字符串 ⇒ 假红**照旧**。
+    本类锁的是"用例**真的用了**这个能力"，并用**派生注入**证明它有效：
+    把声明的 dict 压平成全程裸串（= 改前语义），R1 的良性原文立刻又红。
+    """
+
+    CAPABILITY_DENIAL = ["暂不支持", "功能不存在", "没有这个功能", "生成未成功", "生成失败"]
+    WRITE_ROUND_WORDS = ["无加工项", "无法生成加工单", "系统判定为"]
+    BENIGN_R1 = (
+        "📦 已确认（待发货）订单共 2 个，其中 **1 个含加工项**：\n"
+        "✅ **可生成加工单**：EVAL-MB-ORD-0002（含加工项，已确认待发货，符合生成条件）\n"
+        "⚠️ 20260915030240002 未见加工项，无法生成加工单。")
+
+    def _declared(self):
+        return _case_yaml("processing-order.yml", "PG-013")["forbidden_text"]
+
+    def test_write_round_words_are_round_scoped_not_bare(self):
+        declared = self._declared()
+        bare = {w for w in declared if isinstance(w, str)}
+        scoped = [w for w in declared if isinstance(w, dict)]
+        for word in self.WRITE_ROUND_WORDS:
+            assert word not in bare, (
+                f"「{word}」仍是**全程**裸串 ⇒ R1 问答轮如实陈述会被判红（#3833 的假红形态）")
+        rounds = {w.get("round"): set(w.get("any_of") or []) for w in scoped}
+        assert set(rounds) == {2, 3}, f"写操作轮（R2 生成请求 / R3 确认）没有全部受限：{rounds}"
+        for rnd, words in rounds.items():
+            assert set(self.WRITE_ROUND_WORDS) <= words, (rnd, words)
+
+    def test_capability_denial_words_stay_all_run(self):
+        """**不降强度**：能力自我否定 / 编造失败类措辞必须仍是全程（任何一轮说出来都错）。"""
+        bare = {w for w in self._declared() if isinstance(w, str)}
+        assert set(self.CAPABILITY_DENIAL) <= bare, (self.CAPABILITY_DENIAL, bare)
+
+    def test_flattening_the_declaration_brings_the_false_red_back(self):
+        """**红证（派生注入）**：把声明的 dict 压平成全程裸串（= 改前语义）⇒
+        R1 的**良性原文**立刻又红 ⇒ 证明轮次作用域是这条用例"不假红"的**充要**条件。"""
+        declared = self._declared()
+        flattened = []
+        for w in declared:
+            if isinstance(w, str):
+                flattened.append(w)
+            else:
+                flattened.extend(w.get("any_of") or [])
+        assert "无法生成加工单" in flattened and {"round": 2, "any_of": self.WRITE_ROUND_WORDS} \
+            not in flattened, "派生注入没有还原成全程语义（红证无判别力）"
+        tx = [{"__round": 1, "final_text": self.BENIGN_R1}, {"__round": 2, "final_text": "…"},
+              {"__round": 3, "final_text": "…"}]
+        # 压平会把同一个词重复登记两次（R2/R3 各一次）⇒ 断言集合而不是列表
+        _got = lr.check_forbidden_text(tx, flattened)
+        assert _got and set(_got) == {
+            "forbidden_text: 回复含反模式词「无法生成加工单」（R1）"}, ("压平后没有复现假红", _got)
+        assert lr.check_forbidden_text(tx, declared) == [], (
+            "按**声明原样**跑良性 transcript 仍判红 ⇒ 用例形态没修好")
+
+    def test_expectations_and_required_args_are_unchanged(self):
+        """`#3833` 的修法**只动 `pre_clean` 与 `forbidden_text`** —— 行为面断言必须原样。"""
+        c = _case_yaml("processing-order.yml", "PG-013")
+        assert c["expectations"] == [{"tool": "order_query"},
+                                     {"tool": "processing_order_generate"}], c["expectations"]
+        assert c["required_args"] == [{"tool": "processing_order_generate",
+                                       "fields": ["order_ids"]}], c["required_args"]
+        assert "order_ids" in str(c["required_args"]), c["required_args"]
