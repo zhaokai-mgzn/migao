@@ -138,6 +138,9 @@ python3.11 -m pytest tests/unit_ci_workflows -q
 | `CASE-TRUST-NO-SELF-CLEAN` | `fixture_pg_013` | 写期望在，`pre_clean`/`namespaces` 都不在 |
 | `CASE-TRUST-PRECLEAN-TARGET-UNRESOLVABLE` | `fixture_cu_003` | `VIP2活跃` ∉ 种子 `customer_tags` |
 | `CASE-TRUST-FORBIDDEN-TEXT-SOLE` | `fixture_pg_013` | 8 条 `forbidden_text` + 无行为/效果层断言 |
+| `CASE-TRUST-VOLATILE-LOCATOR` | `fixture_cu_003` | `pre_clean[].customer_index: 0`（按列表位置定位客户） |
+| `CASE-TRUST-NO-PRECONDITION-ASSERTION` | `fixture_pg_013` | 多轮写用例无 `precondition` / 机器计分型前置断言 |
+| `CASE-TRUST-STALE-LINE-REF` | `TestReferenceFreshness` 的 3 个注入夹具 | 行号越界 / 文件不存在 / 符号在文件里完全找不到 |
 | `CASE-TRUST-SINGLE-LEG-NO-PERSONA` | `fixture_single_leg_unmarked` | `{curtain_calc}` ⊆ 小布工具集但无 `persona` |
 
 ### 绿证 C —— 门禁对**正确形态**保持沉默（防假红）
@@ -146,6 +149,60 @@ python3.11 -m pytest tests/unit_ci_workflows -q
 及 15 个工具的 `read_only_actions`）不被当写；写 + `must_succeed` + 可解析 `pre_clean` 全绿；
 `namespaces` 放行但证据等级降级为「弱」；`forbidden_text` **配行为断言**或**已轮次作用域**
 或**显式声明禁令即主判据**时放行。
+
+### 绿证 F —— E / F / G 三条规则的注入式红证（2026-09-15 主会话追加）
+
+**规则 e（不可变对象引用）** —— `TestVolatileLocator`：
+
+- 红：`fixture_cu_003`（`pre_clean[].customer_index: 0`）⇒ 报
+  `CASE-TRUST-VOLATILE-LOCATOR`，失败信息点名 `customer_index` 并给「换成手机号/order_no/id」的改法；
+- 绿（防误伤）：手机号 `customer_keyword: "13800138000"` 定位 ⇒ 全绿；
+- **关键口径**：序号出现在 `user_inputs`（`auto_select: True` / 「第一个」）**不算违规**
+  —— 那是被测行为的一部分。若判据扫 `user_inputs`，全库 8+ 条序数用例会被误伤。
+- 名字子串（`product_keyword` 等 20 条）⇒ **警告级**（`name_key_positions` 识别但不阻塞），
+  避免一次把 20 条存量全判红挡住所有人。
+
+**规则 f（前置自断言）** —— `TestPreconditionAssertion`：
+
+- 红：`fixture_pg_013`（多轮写用例无前置声明）⇒ 报 `CASE-TRUST-NO-PRECONDITION-ASSERTION`；
+- **防虚增红证**：只加 `must_succeed` + `db_verify` 仍判违规 ——
+  本模块初版把效果层当「弱形式」接受，实测把「已声明」从 **1 条虚增到 37 条**，
+  那 36 条**根本没说前置是什么**（虚增 = 判据失去判别力 = 空壳）；移除后判据恢复判别力；
+- 红：**纯散文** `data_checks: ["前置：库里应有…"]` 不算声明（不计分 ⇒ 前置不成立时不会红，#3559 同族）；
+- 绿：`precondition` 字段 或 **机器计分型**前置 data_checks ⇒ 放行；
+- 绿（防摩擦）：单轮只读用例**不强制**（读不改变世界）。
+
+**规则 g（引用新鲜度）** —— `TestReferenceFreshness`：
+
+- 红：`tests/agent_eval/local_runner.py:999999`（行号越界 ⇒ 该行**不存在**）⇒ 阻塞；
+- 红：`no/such/file.py:10`（文件在 `origin/main` 上不存在）⇒ 阻塞；
+- 红：引用 `a/b.py:5` 的 `totally_absent_symbol`（符号在该文件里**完全找不到**）⇒ 阻塞；
+- **红证夹具取自 `#3787` 的过期指引形态**：`test_known_stale_refs_from_3787_are_flagged`
+  用同形态（引用了某文件里根本不存在的锚点）证明判据会红；
+- 警告（不阻塞）：行号漂移（符号在文件别处）⇒ 报「建议改用符号锚点」；
+- 绿（防误伤）：合法裸行号（无符号、行号在范围内）⇒ 不报 —— 仓库里大量正当
+  `path:NNN`（如 `aftersales.yml` 引 `local_runner.py:2000`）不能被误判；
+- 只扫**本次新增/改动行**（`test_gate_scans_only_new_or_changed_lines`）⇒
+  不把存量过期引用算到无关 PR 头上。
+
+**规则 g 打在真实文件内容上的四态读数**（`tests/agent_eval/local_runner.py` `@origin/main`，7422 行）：
+
+```
+[行号越界]   blocking=1  | 行号越界：`tests/agent_eval/local_runner.py` 在 origin/main 上只有 7422 行，引用第 999999 行
+[符号不存在] blocking=1  | 引用指向的符号 ['totally_absent_symbol_xyz'] 在 `tests/agent_eval/local_runner.py` 里**完全找不到**
+[行号漂移]   blocking=0  warnings=1 | 行号漂移：符号 ['_pre_clean_for_case'] 不在第 10 行附近（该文件里能找到）—— 建议改用符号锚点
+[合法裸行号] blocking=0  warnings=0
+```
+
+**降噪三条纪律（缺任一条都会误报，本包实测）**：
+① 只扫本次新增/改动行；② 豁免门禁自身的实现/测试/红证留档（那里的「不存在路径」是夹具）；
+③ **先解析路径再判定**（裸文件名按 basename 唯一匹配；`git ls-files` 解析不到的占位符直接丢弃）。
+
+> ⚠️ **一个被自己抓到的假红**：`_resolve_repo_path`（路径解析）与 `origin_main_lines`（文件内容）
+> 初版**共用一个 cache dict**，两者值类型不同（str vs list[str]）⇒ 互相污染 ⇒
+> 报出「`local_runner.py` 在 origin/main 上只有 **32 行**」（真实 7422 行）这类**自相矛盾的假读数**，
+> 把合法引用误判成「行号越界」。修复 = **两个独立缓存** + 注释写明为什么必须分开。
+> 这正是本包要治的形态（读数不可信 ⇒ 结论不可信），故留档。
 
 ### 绿证 D —— 退化守卫
 
@@ -159,10 +216,16 @@ python3.11 -m pytest tests/unit_ci_workflows -q
 
 | 项 | 读数 |
 |---|---|
-| 锚定 SHA | `origin/main` = `82d20090a1a2abe4e432b7894df77476b7fb2399` |
+| 锚定 SHA | `origin/main` = `5300dae0fafd645c27d749b5a39a9017cf312b5c` |
 | 用例总数 | 289 |
-| 存量含违规用例 | 110（见 `.github/case-trust-baseline.json`） |
-| L0 守卫 | `tests/unit_ci_workflows` 全绿（本包新增 43 条） |
+| 存量含违规用例 | 143（见 `.github/case-trust-baseline.json`） |
+| 逐规则存量计数 | `NO-PRECONDITION-ASSERTION` 106 / `NO-SELF-CLEAN` 42 / `NO-EFFECT-ASSERTION` 34 / `EMPTY-ASSERTION` 28 / `SINGLE-LEG-NO-PERSONA` 18 / `FORBIDDEN-TEXT-SOLE` 7 / `PRECLEAN-TARGET-UNRESOLVABLE` 3 / `VOLATILE-LOCATOR` 1 / `STALE-LINE-REF` 0 |
+| L0 守卫（本包文件） | `62 passed`（`python3.11 -m pytest tests/unit_ci_workflows/test_case_trust_gate.py -q`） |
 
-> 上述"补前/补后"两段读数**不是同一批测试文件**：补前那 38 条里 10 条因被测件缺失而红
-> （红证 B/C），补后新增了 5 条（文档/清单完整性），故总数由 38 → 43。
+> ⚠️ 锚定 SHA 已由 `82d20090` 前进到 `5300dae0`：期间**并发包合并了 `CU-003`/`PG-013` 的修复**
+> （issue #3832 / #3833）。本表是**重生成后**的读数，与修复前对比可见：
+> `PRECLEAN-TARGET-UNRESOLVABLE` 4 → **3**（`CU-003` 修好）、`NO-SELF-CLEAN` 43 → **42**、
+> 且 `CU-003` 的 `customer_index` 已换成手机号（`VOLATILE-LOCATOR` 存量降到 1）。
+> **`PG-013` 的修后形态已被回归用例锁定**（`test_concurrent_fix_shapes_pass`）：
+> 新增 `pre_clean: [{type: processing_order_reset, order_no: …}]` + `forbidden_text` 部分条目
+> 改为**轮次作用域**（`{round: 2, any_of: [...]}`）⇒ 判据**放行**（不挡住他们的 PR）。

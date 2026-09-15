@@ -444,16 +444,33 @@ def self_clean_evidence(case: dict) -> str:
     return ""
 
 
+# `_run_pre_clean` 已实现的类型与各自的**点名目标字段**（真值锚点 = local_runner
+# 的分支；变更时同步此处）。`None` = 该类型没有「点名目标」（无需种子真值解析）。
+KNOWN_PRECLEAN_TARGET_FIELDS: dict[str, str | None] = {
+    "customer_tag_remove": "tag_name",         # 精确匹配种子 customer_tags.name
+    "product_remove": "product_keyword",       # 子串匹配商品名
+    "product_dedupe": "product_keyword",       # 子串匹配商品名
+    "employee_reactivate": "employee_name",    # 精确匹配员工名
+    "aftersales_ticket_prepare": None,         # 只需存在 pending 工单，不点名
+    "processing_order_reset": None,            # 按 order_no 复位订单/加工单（#3833 修复新增）
+}
+# 声明了 `pre_clean` 但类型不在上表 ⇒ 静态**无法**判定其点名目标（**未实装**，见
+# `UNIMPLEMENTED` 的 CASE-TRUST-PRECLEAN-UNKNOWN-TYPE）。此处只登记、不阻塞 ——
+# 否则会把「并发包刚新增、本模块尚未跟上」的正确类型判红（假红）。
+
+
 def pre_clean_targets(case_or_spec: dict) -> list[tuple[str, str, str]]:
     """从 `pre_clean` 提取「需在种子真值里可解析的目标」=[(类型, 字段, 值)]。
 
-    真值锚点 = `local_runner._run_pre_clean` 的分支（按该函数名检索）：
-      · `customer_tag_remove`     → `tag_name`（精确匹配种子 `customer_tags.name`）
-      · `product_remove`          → `product_keyword`（子串匹配商品名）
-      · `product_dedupe`          → `product_keyword`（子串匹配商品名）
-      · `employee_reactivate`     → `employee_name`（精确匹配员工名）
+    真值锚点 = `local_runner._run_pre_clean` 的分支（按该函数名检索），
+    类型↔字段的映射见 `KNOWN_PRECLEAN_TARGET_FIELDS`：
+      · `customer_tag_remove`       → `tag_name`（精确匹配种子 `customer_tags.name`）
+      · `product_remove`            → `product_keyword`（子串匹配商品名）
+      · `product_dedupe`            → `product_keyword`（子串匹配商品名）
+      · `employee_reactivate`       → `employee_name`（精确匹配员工名）
       · `aftersales_ticket_prepare` → **无点名目标**（只需存在 pending 工单，不登记）
-      · 未知类型                   → 不登记（**未实装**：未知类型静默跳过 = 潜在假绿，见 #3797）
+      · `processing_order_reset`    → **无点名目标**（按订单号复位，不依赖种子名字）
+      · 未知类型                     → 不登记（**未实装**：未知类型静默跳过 = 潜在假绿，见 #3797）
     """
     specs = case_or_spec.get("pre_clean") if isinstance(case_or_spec, dict) else None
     out: list[tuple[str, str, str]] = []
@@ -461,20 +478,14 @@ def pre_clean_targets(case_or_spec: dict) -> list[tuple[str, str, str]]:
         if not isinstance(spec, dict):
             continue
         t = str(spec.get("type") or "")
-        if t == "customer_tag_remove":
-            v = str(spec.get("tag_name") or "")
-            if v:
-                out.append((t, "tag_name", v))
-        elif t in ("product_remove", "product_dedupe"):
-            v = str(spec.get("product_keyword") or "")
-            if v:
-                out.append((t, "product_keyword", v))
-        elif t == "employee_reactivate":
-            v = str(spec.get("employee_name") or "")
-            if v:
-                out.append((t, "employee_name", v))
-        # aftersales_ticket_prepare：无点名目标
-        # 未知类型：不登记（登记在 unimplemented）
+        field = KNOWN_PRECLEAN_TARGET_FIELDS.get(t, "UNKNOWN")
+        if field is None:
+            continue  # 该类型无点名目标（aftersales_ticket_prepare / processing_order_reset）
+        if field == "UNKNOWN":
+            continue  # 未知类型：不登记（登记在 UNIMPLEMENTED）
+        v = str(spec.get(field) or "")
+        if v:
+            out.append((t, field, v))
     return out
 
 
@@ -618,6 +629,230 @@ def resolve_pre_clean_target(spec_type: str, field: str, value: str,
     if field == "product_keyword":
         return any(value in name for name in catalog.get("products", set()))
     return True  # 未知字段：不判（登记为未实装，不写成恒真阻塞）
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 五之二、不可变对象引用（治「按可变键定位被测对象」）
+# ══════════════════════════════════════════════════════════════════════════════
+#
+# **为什么单列**（主会话新发现）：反复修反复测的**主机制**不是断言写法本身，而是
+# 「**读的是快照 / 按可变键定位被测对象**」。写用例自清理解决的是「**世界**被谁改了」，
+# 本规则解决的是「**我改的是哪个对象**」—— 两者互补，缺任一条都不够。
+#
+# **判据范围的口径（必须写清，否则大面积误伤）**：
+#   名字 / 序号出现在 `user_inputs` 里是**合理的**（那是被测行为的一部分 —— 用户就是会说
+#   「第一个」「遮光窗帘」）。**只允许**在「**定位被测对象**」的位置上判违规，即：
+#   `pre_clean[].*`、`db_verify[].*`、`output_verify[].*`、`expectations[].args.*`。
+#   ⇒ 扫 `user_inputs` 的判据是**错的**，本模块不这么做。
+#
+# 严重度分层（`migao-acceptance`：fail-closed 只用在**能确定判错**的判据上）：
+#   · **位置/序号选择器**（`_index` / `_position` 之类）⇒ **阻塞**：它按**列表位置**定位，
+#     而列表顺序是运行时排序（如客户列表 `created_at DESC`）⇒ 别人中途造一条同名记录，
+#     定位就漂到**别的对象**上。不可能有正当用法。
+#   · **名字子串 / 自然键**（`*_keyword` / `*_name` / `tag_name` …）⇒ **警告**：
+#     多数是**种子里的名字**（可解析、当前唯一），属「有风险但当下正确」；
+#     降级为警告并按清单跟踪，避免把 20 条存量用例一次全判红（那会挡住所有人的 PR）。
+INDEX_SELECTOR_RE = re.compile(r"(^|_)(index|position|idx|ordinal)($|_)", re.IGNORECASE)
+NAME_KEY_SELECTOR_RE = re.compile(r"(keyword|_name$|^name$|_no$)", re.IGNORECASE)
+
+# 允许/豁免：`type` 是**选择器类型本身**，不是定位键
+LOCATOR_EXEMPT_KEYS: frozenset[str] = frozenset({"type", "fetch", "source", "expect",
+                                                 "expect_present", "fields", "checks"})
+
+# 「定位被测对象」的位置（用例 dict 形态）
+def locator_positions(case: dict) -> list[tuple[str, str]]:
+    """返回 [(位置, 键名)] —— 只覆盖**定位被测对象**的位置（不含 `user_inputs`）。"""
+    out: list[tuple[str, str]] = []
+    for i, spec in enumerate(case.get("pre_clean") or []):
+        if isinstance(spec, dict):
+            out += [(f"pre_clean[{i}]", k) for k in spec]
+    for field in ("db_verify", "output_verify"):
+        for i, spec in enumerate(case.get(field) or []):
+            if isinstance(spec, dict):
+                out += [(f"{field}[{i}]", k) for k in spec]
+    for i, exp in enumerate(case.get("expectations") or []):
+        if isinstance(exp, dict):
+            for k in (exp.get("args") or {}):
+                out.append((f"expectations[{i}].args", k))
+    return out
+
+
+def index_selector_positions(case: dict) -> list[tuple[str, str]]:
+    """用例里用**列表位置/序号**定位被测对象的位置 ⇒ 阻塞项。"""
+    bad = []
+    for where, key in locator_positions(case):
+        if key in LOCATOR_EXEMPT_KEYS:
+            continue
+        if INDEX_SELECTOR_RE.search(key):
+            bad.append((where, key))
+    return bad
+
+
+def name_key_positions(case: dict) -> list[tuple[str, str]]:
+    """用例里用**名字子串 / 自然键**定位被测对象的位置 ⇒ 警告项（当下正确、有风险）。"""
+    out = []
+    for where, key in locator_positions(case):
+        if key in LOCATOR_EXEMPT_KEYS:
+            continue
+        if INDEX_SELECTOR_RE.search(key):
+            continue  # 已由阻塞项覆盖
+        if NAME_KEY_SELECTOR_RE.search(key):
+            out.append((where, key))
+    return out
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 五之三、前置自断言（治「前置悄悄不成立」）
+# ══════════════════════════════════════════════════════════════════════════════
+#
+# **问题**：用例的前置（「库里恰有一个已确认且含加工项的订单」）若不成立，红的表现是
+# `unmatched expectation` —— 看起来像「**agent 不干活**」，于是归因全错、反复修反复测。
+# 实证：`PG-013` 首跑生成加工单后订单转 `producing`，重试时前置已不成立，但红的表现是
+# `unmatched expectation`；`CU-003` 的「客户数 = 2」同理。
+#
+# **红线**：**不得**为了让用例变绿而删这类断言 —— 它只会让「前置坏了」更早、更准地暴露。
+#
+# 静态侧的口径（必须是**可判定**的，否则写成恒真就是空壳）：
+#   · 写/多轮用例（≥2 轮 user_inputs 或含写期望）必须在**首轮**有前置断言；
+#   · 可判定的声明形态（任一）：
+#       ① `precondition` / `preconditions` 字段（**声明层**，推荐）—— 值为非空字符串/映射；
+#       ② `data_checks` 里含前置关键词（`前置` / `precondition` / `precondition_not_applied`），
+#          **且**该条是**机器计分型**（含 `success=true`/`error.code=`/… 之一）——
+#          纯散文的「前置：…」不计分 ⇒ 前置不成立时**不会红**，等于没断言（#3559 同族）；
+#       ③ `must_succeed` / `db_verify` 至少一条 —— 它们是**效果层**，前置不成立必然失败，
+#          即天然把前置失败暴露出来（弱形式，仅当用例只有一轮时接受）。
+PRECONDITION_KEYWORDS: tuple[str, ...] = (
+    "前置", "precondition", "precondition_not_applied", "前提",
+)
+# runner 侧已有的 fail-closed 路径名（真值锚点：`local_runner` 的
+# `_PRECONDITION_NOT_APPLIED` / `PRECONDITION_NOT_APPLIED`，按该文本检索）
+PRECONDITION_FAILCLOSED_ANCHOR = "PRECONDITION_NOT_APPLIED"
+
+
+def declares_precondition(case: dict) -> tuple[bool, str]:
+    """该用例是否**声明了可判定的前置断言**。返回 (是否声明, 证据说明)。
+
+    **严格口径（只有两种算数）**：
+      ① `precondition` / `preconditions` 声明层字段（推荐，语义最直白）；
+      ② `data_checks` 里含前置关键词**且是机器计分型**（前置不成立时会红）。
+
+    ⚠️ **「有 `must_succeed` / `db_verify`」不满足本规则**（本模块初版曾把它当弱形式接受，
+    实测把「已声明」从 1 条虚增到 37 条 —— 那 36 条只是「工具没成功」，**根本没说前置是
+    什么**，前置悄悄不成立时它同样不会红）。虚增 = 判据失去判别力（空壳），故移除。
+    效果层断言仍是有价值的（由规则 b 管），但**不能替前置自断言**。
+    """
+    for key in ("precondition", "preconditions"):
+        v = case.get(key)
+        if v:
+            return True, f"声明层字段 `{key}`"
+    for dc in (case.get("data_checks") or []):
+        s = str(dc)
+        low = s.lower()
+        if any(k in s or k in low for k in PRECONDITION_KEYWORDS):
+            if is_machine_scored_data_check(dc):
+                return True, "机器计分型 data_checks 里的前置断言"
+    return False, ""
+
+
+def has_weak_precondition_signal(case: dict) -> bool:
+    """仅有**弱前置信号**（效果层断言 / 纯散文前置）：不算声明，但可供分诊参考。"""
+    ok, _ = declares_precondition(case)
+    if ok:
+        return False
+    if case.get("must_succeed") or case.get("db_verify"):
+        return True
+    for dc in (case.get("data_checks") or []):
+        s = str(dc)
+        if any(k in s or k in s.lower() for k in PRECONDITION_KEYWORDS):
+            return True
+    return False
+
+
+def needs_precondition_assertion(case: dict) -> bool:
+    """该用例是否**必须有**前置自断言。
+
+    口径：**多轮**（≥2 轮 user_inputs）**或**含写期望 —— 这两种形态才会「跑一次就改变
+    自己的前置」（写用例污染、多轮用例消耗存量）。单轮只读用例不强制（读不改变世界）。
+    """
+    n_rounds = len(case.get("user_inputs") or [])
+    return n_rounds >= 2 or is_write_case(case)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 五之四、引用新鲜度（`path:NNN` 行号引用）
+# ══════════════════════════════════════════════════════════════════════════════
+#
+# 仓库已有「**不写裸行号**」的纪律（`migao-dev-flow` §16.7 引用纪律：活跃编辑文件的裸行号
+# 会在几分钟内失效），但**没有机器检查** —— `#3787` 记着 5 处过期指引。
+# 本规则把纪律变成可判定：`path:NNN` 里的行号必须对 `origin/main` 的该文件**存在**；
+# 若旁边还写了符号（反引号包裹），则符号应能在该行附近找到（近旁）或**至少在该文件里存在**。
+#
+# 严重度分层：
+#   · 文件不存在 / 行号越界 ⇒ **阻塞**（可确定是错的：该行**不存在**）；
+#   · 行号存在但符号既不在该行附近、也**不在该文件里** ⇒ **阻塞**（引用指向不存在的东西）；
+#   · 行号存在但符号在文件别处（行号漂移）⇒ **警告**（可行动：「换成符号锚点」）。
+PATH_LINE_REF_RE = re.compile(
+    r"(?<![-\w./])((?:[\w.-]+/)*[\w.-]+\.(?:py|yml|yaml|sh|md|java|ts|tsx|js|json|sql|sql))"
+    r":(\d+)")
+BACKTICK_SYMBOL_RE = re.compile(r"`([A-Za-z_][A-Za-z0-9_.]{3,})`")
+
+
+def find_path_line_refs(text: str) -> list[dict]:
+    """扫文本里的 `path:NNN` 引用 → [{"path", "line", "pos", "symbols"}]。
+
+    `symbols` = 该引用**紧随其后**（同一行或下 120 字符内）出现的反引号符号，
+    用于「行号漂移」判定（符号在文件别处 = 行号过期）。
+    """
+    out = []
+    for m in PATH_LINE_REF_RE.finditer(text or ""):
+        tail = (text or "")[m.end(): m.end() + 160]
+        symbols = [s for s in BACKTICK_SYMBOL_RE.findall(tail)
+                   if "." not in s.split("(")[0][:1]]
+        out.append({
+            "path": m.group(1),
+            "line": int(m.group(2)),
+            "pos": m.start(),
+            "symbols": symbols[:3],
+            "raw": m.group(0),
+        })
+    return out
+
+
+def check_reference_freshness(refs: list[dict], read_lines) -> dict:
+    """校验引用新鲜度。
+
+    `read_lines(path)` → 该文件在 `origin/main` 上的**全部行**（list[str]）；
+    文件不存在返回 None（由调用方注入，保持本模块纯函数）。
+    返回 `{"blocking": [...], "warnings": [...]}`。
+    """
+    blocking, warnings = [], []
+    for r in refs:
+        lines = read_lines(r["path"])
+        if lines is None:
+            blocking.append({**r, "reason": f"`{r['path']}` 在 origin/main 上不存在"})
+            continue
+        n = len(lines)
+        if r["line"] < 1 or r["line"] > n:
+            blocking.append({**r, "reason": (
+                f"行号越界：`{r['path']}` 在 origin/main 上只有 {n} 行，引用第 {r['line']} 行"
+            )})
+            continue
+        if not r["symbols"]:
+            continue
+        window = "\n".join(lines[max(0, r["line"] - 4): r["line"] + 3])
+        if any(s in window for s in r["symbols"]):
+            continue
+        whole = "\n".join(lines)
+        if not any(s in whole for s in r["symbols"]):
+            blocking.append({**r, "reason": (
+                f"引用指向的符号 {r['symbols']} 在 `{r['path']}` 里**完全找不到**"
+            )})
+            continue
+        warnings.append({**r, "reason": (
+            f"行号漂移：符号 {r['symbols']} 不在第 {r['line']} 行附近（该文件里能找到）"
+            f" —— 建议改用符号/文本锚点（dev-flow §16.7 引用纪律）"
+        )})
+    return {"blocking": blocking, "warnings": warnings}
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -774,6 +1009,62 @@ RULES: tuple[dict, ...] = (
         ),
     },
     {
+        "code": "CASE-TRUST-VOLATILE-LOCATOR",
+        "title": "定位被测对象必须用不可变标识（不得用列表位置/序号）",
+        "why": (
+            "写用例自清理治「**世界**被谁改了」，本规则治「**我改的是哪个对象**」——"
+            "反复修反复测的**主机制**是「读的是快照 / 按可变键定位被测对象」。"
+            "位置选择器按**列表位置**定位，而列表顺序是运行时排序（如客户列表 "
+            "`created_at DESC`）⇒ 别人中途造一条同名记录，定位就漂到**别的对象**上。"
+            "取证：`CU-003` 的 `customer_index: 0` + `created_at DESC`。"
+        ),
+        "counterexample": "CU-003（`pre_clean[].customer_index: 0`，按位置定位客户）",
+        "implemented": True,
+        "fix": (
+            "把定位键换成**不可变标识**：手机号 / `order_no` / `id` / 用例自建对象的唯一名。"
+            "例：`pre_clean: [{type: customer_tag_remove, customer_keyword: \"13800138000\"}]`"
+            "（手机号唯一且不可变）而不是 `customer_index: 0`。"
+            "⚠️ 注意：名字/序号出现在 `user_inputs` 里是**合理的**（那是被测行为的一部分），"
+            "本规则只看**定位被测对象**的位置（`pre_clean` / `db_verify` / `output_verify` / "
+            "`expectations[].args`）。"
+        ),
+    },
+    {
+        "code": "CASE-TRUST-NO-PRECONDITION-ASSERTION",
+        "title": "多轮/写类用例必须对**自己的前置**给出可判定断言",
+        "why": (
+            "前置悄悄不成立时，红的表现是 `unmatched expectation` —— 看起来像"
+            "「**agent 不干活**」，于是归因全错、反复修反复测。实证：`PG-013` 首跑生成"
+            "加工单后订单转 `producing`，重试时前置已不成立；`CU-003` 的「客户数 = 2」同理。"
+        ),
+        "counterexample": "PG-013（首跑后订单转 producing，重试前置不成立 ⇒ 表现像 agent 不干活）",
+        "implemented": True,
+        "fix": (
+            "声明 `precondition` / `preconditions`（声明层，推荐）；或把前置写成"
+            "**机器计分型** `data_checks`（必须含 `success=true` / `error.code=` 之一 —— "
+            "纯散文的「前置：…」不计分 ⇒ 前置不成立时不会红，等于没断言）；"
+            "⚠️ 只加 `must_succeed` / `db_verify` **不满足本规则** —— 它们只说明「工具没成功」，"
+            "**没说前置是什么**（实测这种弱形式会把「已声明」从 1 条虚增到 37 条）。"
+            f"前置不成立时应走 runner 已有的失败关闭路径"
+            f"（`{PRECONDITION_FAILCLOSED_ANCHOR}`）。"
+            "**红线：不得为了让用例变绿而删这类断言。**"
+        ),
+    },
+    {
+        "code": "CASE-TRUST-STALE-LINE-REF",
+        "title": "`path:NNN` 行号引用必须对 `origin/main` 命中",
+        "why": (
+            "仓库已有「**不写裸行号**」的纪律（`migao-dev-flow` §16.7 引用纪律：活跃编辑"
+            "文件的裸行号会在几分钟内失效），但**没有机器检查** —— `#3787` 记着 5 处过期指引。"
+        ),
+        "counterexample": "（`#3787` 的 5 处过期指引：`§16.5` / 「全库跑」/ 写死条数 / 存量裸行号）",
+        "implemented": True,
+        "fix": (
+            "改用**符号 / 文本锚点**（如「按 `_first_successful_ticket_payload` 函数名检索」），"
+            "或写成 `@<sha>` 限定的行号形式；确实要留行号时，先核 `origin/main` 上该行是否命中所引符号。"
+        ),
+    },
+    {
         "code": "CASE-TRUST-SINGLE-LEG-NO-PERSONA",
         "title": "单端用例必须显式标注 persona",
         "why": (
@@ -823,6 +1114,23 @@ UNIMPLEMENTED: tuple[dict, ...] = (
         "needs": (
             "runner 侧按 persona 校验 `case_ids` 的跨腿完整性（#3822；"
             "`local_runner.py` 的「禁止静默少跑」守卫按该文本检索）。属 T2。"
+        ),
+    },
+    {
+        "code": "CASE-TRUST-BASELINE-PRUNING-ENFORCEMENT",
+        "title": "「基线清单只许缩短」的**执行**（陈清单条目的机械强制移除）",
+        "why_not": (
+            "**判据**已实装（`case_trust_gate.stale_baseline_entries`：本次 diff 命中且原违规码"
+            "不再命中的项会被报出，并带重生成命令），但**执行只能是告警，不能阻塞** —— "
+            "阻塞会要求用例作者改 `.github/case-trust-baseline.json`，而该文件**不是他们的文件**、"
+            "且可能正被**在飞**的基线重生成改动持有（实证：另一包正在修 CU-003/PG-013，基线文件"
+            "同时被本门禁的 PR 创建/更新）。硬阻塞 = 把「修好用例」的人卡在别人的文件上 = 假红"
+            "（`migao-acceptance`：不能因为「改法写了但没照着改」就把**正确**形态判红）。"
+        ),
+        "needs": (
+            "需要「基线重生成」与「用例修复」解耦的机制（例如基线随 main 自动重生成、"
+            "或把清单条目做成可被多条 PR 各自删除的小文件），静态门禁才有可安全阻塞的目标。"
+            "机制现状照实说：**清单缩短无机械强制，只告警 + 复盘**。"
         ),
     },
     {
@@ -913,6 +1221,26 @@ def judge_case(case: dict, *, catalog: dict[str, set[str]] | None = None,
                 f"使用了 forbidden_text（{len(case.get('forbidden_text') or [])} 条，"
                 f"**全程**语义、无轮次作用域）但无任何行为/效果层断言陪跑"
                 f"⇒ 单轮良性措辞即可判红（假红，#3833/#3800）")
+
+    # ── 规则 e：定位被测对象必须用不可变标识（位置/序号选择器 ⇒ 阻塞）──
+    idx_pos = index_selector_positions(case)
+    if idx_pos:
+        detail = "、".join(f"{w}.{k}" for w, k in idx_pos)
+        add("CASE-TRUST-VOLATILE-LOCATOR",
+            f"用**列表位置/序号**定位被测对象：{detail} ⇒ 列表顺序是运行时排序，"
+            f"别人中途造一条同名/同序记录就会定位到**别的对象**上"
+            f"（取证：CU-003 的 customer_index: 0 + 列表 created_at DESC）")
+
+    # ── 规则 f：多轮/写类用例必须对自己的前置给出可判定断言 ──
+    if needs_precondition_assertion(case):
+        ok, how = declares_precondition(case)
+        if not ok:
+            n_rounds = len(case.get("user_inputs") or [])
+            add("CASE-TRUST-NO-PRECONDITION-ASSERTION",
+                f"多轮/写类用例（{n_rounds} 轮"
+                f"{'、含写期望' if is_write_case(case) else ''}）没有任何**可判定**的前置断言"
+                f"⇒ 前置不成立时红的表现像「agent 不干活」"
+                f"（PG-013 重试前置不成立 / CU-003 客户数=2 的形态）")
 
     # ── 规则 d：单端用例必须标注 persona ──
     if missing_persona_annotation(case):

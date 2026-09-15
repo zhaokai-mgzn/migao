@@ -132,7 +132,7 @@ CI 里调用**真实 LLM**（生产 `ai-api.migaozn.com` + `SERVICE_TOKEN`）的
 | `.github/case-trust-redproof.md` | 红证留档（补前必红 / 补后绿原文），由 L0 守卫锁定防事后改写 |
 | `tests/unit_ci_workflows/test_case_trust_gate.py` | L0 守卫 + 退化守卫（已知缺陷夹具必须被判违规；正确形态不得误伤） |
 
-**六条规则**（逐条带「为什么算缺陷」+ 反例 + 怎么改；失败信息里都有）：
+**九条规则**（逐条带「为什么算缺陷」+ 反例 + 怎么改；失败信息里都有）：
 
 1. `CASE-TRUST-EMPTY-ASSERTION` —— 计分断言数不得为 0（`total_exp == 0` ⇒ `score = 1.0` 恒绿）；
 2. `CASE-TRUST-NO-EFFECT-ASSERTION` —— 写类用例必须 ≥1 条效果层断言
@@ -145,7 +145,22 @@ CI 里调用**真实 LLM**（生产 `ai-api.migaozn.com` + `SERVICE_TOKEN`）的
 5. `CASE-TRUST-FORBIDDEN-TEXT-SOLE` —— `forbidden_text`（全程语义）不得**单独**承载判据，
    必须配行为/效果层断言；已**轮次作用域**、或显式声明「禁令即主判据」
    （该用例块里写 `# forbidden-text-intent: <理由>`）时放行；
-6. `CASE-TRUST-SINGLE-LEG-NO-PERSONA` —— 按工具集可判定为单端的用例必须标注 `persona`
+6. `CASE-TRUST-VOLATILE-LOCATOR` —— **定位被测对象必须用不可变标识**
+   （手机号 / `order_no` / `id` / 用例自建对象的唯一名），**不得**用「名字子串 / 序号 / 列表位置」。
+   位置/序号选择器（`_index` 之类）⇒ **阻塞**（列表顺序是运行时排序 ⇒ 定位会漂到别的对象）；
+   名字子串/自然键（`*_keyword` 等）⇒ **警告**（当下正确、有风险，清单跟踪）。
+   ⚠️ 名字/序号出现在 `user_inputs` 里是**合理**的（被测行为的一部分），**不在**本规则范围内。
+   与「写用例必须有自清理」互补：那条治「**世界**被谁改了」，这条治「**我改的是哪个对象**」。
+7. `CASE-TRUST-NO-PRECONDITION-ASSERTION` —— 多轮/写类用例必须对**自己的前置**给出可判定断言
+   （`precondition` 字段，或**机器计分型** `data_checks`）。
+   为什么：前置悄悄不成立时红的表现是 `unmatched expectation` ⇒ 看起来像「agent 不干活」，
+   归因全错（实证 `PG-013` 重试前置不成立 / `CU-003` 客户数=2）。
+   ⚠️ **只加 `must_succeed`/`db_verify` 不算**（它们只说明「工具没成功」，没说前置是什么）。
+   **红线：不得为了让用例变绿而删这类断言。**
+8. `CASE-TRUST-STALE-LINE-REF` —— `path:NNN` 行号引用必须对 `origin/main` 命中
+   （把「不写裸行号」的纪律机器化；#3787 记着 5 处过期指引）。行号越界/文件不存在/
+   符号在文件里完全找不到 ⇒ **阻塞**；行号漂移（符号在别处）⇒ 警告。
+9. `CASE-TRUST-SINGLE-LEG-NO-PERSONA` —— 按工具集可判定为单端的用例必须标注 `persona`
    （#3822：缺标注的另一条腿必挂，`case_ids` 窄跑还会触发 runner 的「禁止静默少跑」守卫）。
 
 **「只判 diff」与「基线只许缩短」这两条必须同时存在**（否则必然假红或债务僵化）：
@@ -166,6 +181,7 @@ python3.11 -m pytest tests/unit_ci_workflows/test_case_trust_gate.py -q # L0 守
 ```
 
 **未实装项**（见 `.github/case-trust-unimplemented.json`，**不写恒真规则凑数**）：
+**基线清单缩短无机械强制**（只告警 —— 阻塞会要求用例作者改非其所有权的基线文件，属假红）、
 未知 `pre_clean.type` 静默跳过（#3797）、`pre_clean` 失败路径未折叠判据（#3797）、
 跨腿窄跑的运行期判定（#3822，属 runner 归因自动化即 #3483 的 T2）、
 **全库** persona 标注（有意不做的宽口径）、纯散文 `data_checks` 的**语义**质量（LLM 审计层）。
