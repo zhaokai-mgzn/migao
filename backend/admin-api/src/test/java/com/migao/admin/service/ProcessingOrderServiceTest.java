@@ -1,5 +1,5 @@
 package com.migao.admin.service;
-// case_ids: PG-001, PG-002, PG-003, PG-004, PG-005, PG-006, PG-007, PG-008, PG-011
+// case_ids: PG-001, PG-002, PG-003, PG-004, PG-005, PG-006, PG-007, PG-008, PG-011, UI-030
 
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
@@ -331,6 +331,54 @@ class ProcessingOrderServiceTest {
     }
 
     // ── PG-007/008 取消 ────────────────────────────────────────────
+
+    // ── issue #3901：发加工交期禁止过去日期 ──────────────────────────
+
+    @Test
+    @DisplayName("issue 传过去交期 → validationError「交付日期不能早于今天」（#3901）")
+    void issueRejectsPastDeliveryDate() {
+        when(processingOrderMapper.selectOne(any())).thenReturn(po("po-1", "generated"));
+
+        ProcessingOrderUpdateRequest issue = new ProcessingOrderUpdateRequest();
+        issue.setAction("issue");
+        issue.setExpectedDeliveryDate(LocalDate.now().minusDays(1));
+
+        assertThatThrownBy(() -> processingOrderService.updateStatus("po-1", issue, TENANT, "u1"))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("交付日期不能早于今天");
+        verify(processingOrderMapper, never()).updateById(any(ProcessingOrder.class));
+    }
+
+    @Test
+    @DisplayName("issue 交期为今天/未来/空 → 正常流转（#3901）")
+    void issueAllowsTodayFutureOrNullDeliveryDate() {
+        when(processingOrderMapper.selectOne(any())).thenReturn(po("po-1", "generated"));
+        when(processingOrderMapper.updateById(any(ProcessingOrder.class))).thenReturn(1);
+        when(orderMapper.selectById("order-001")).thenReturn(confirmedOrder);
+
+        // 今天
+        ProcessingOrderUpdateRequest today = new ProcessingOrderUpdateRequest();
+        today.setAction("issue");
+        today.setExpectedDeliveryDate(LocalDate.now());
+        processingOrderService.updateStatus("po-1", today, TENANT, "u1");
+
+        // 未来
+        ProcessingOrderUpdateRequest future = new ProcessingOrderUpdateRequest();
+        future.setAction("issue");
+        future.setExpectedDeliveryDate(LocalDate.now().plusDays(7));
+        processingOrderService.updateStatus("po-1", future, TENANT, "u1");
+
+        // 空（交期可选）
+        ProcessingOrderUpdateRequest empty = new ProcessingOrderUpdateRequest();
+        empty.setAction("issue");
+        processingOrderService.updateStatus("po-1", empty, TENANT, "u1");
+
+        ArgumentCaptor<ProcessingOrder> captor = ArgumentCaptor.forClass(ProcessingOrder.class);
+        verify(processingOrderMapper, times(3)).updateById(captor.capture());
+        assertThat(captor.getAllValues().get(0).getExpectedDeliveryDate()).isEqualTo(LocalDate.now());
+        assertThat(captor.getAllValues().get(1).getExpectedDeliveryDate()).isEqualTo(LocalDate.now().plusDays(7));
+        assertThat(captor.getAllValues().get(2).getExpectedDeliveryDate()).isNull();
+    }
 
     @Test
     @DisplayName("PG-007 取消（generated）→ 加工单 cancelled + 订单 producing→confirmed 回退")
