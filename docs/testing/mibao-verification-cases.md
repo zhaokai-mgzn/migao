@@ -1079,7 +1079,7 @@
 真值: ai-chat.context-memory, ai-chat.intent-domains, order.states, order.logistics, id-resolve.index
 溯源: eval M007 独有（物流查询是旅程一环，独立用例见 OR-005）。2026-09-14 消除顺序依赖（issue #3568）：① 「看看第一个的详情」→ 点名「遮光窗帘」（推荐列表返回顺序依赖，同 OR-024 #3408）；② 色号「白色」→ 种子真实色号「米白」；③ 收尾裸文本「确认下单/确认」→ 答卡轮（#3518 口径）；④ 补 pre_clean product_dedupe + must_succeed[order_create] ｜ tags: multi_turn, real_scenario, cross_skill, full_journey
 
-## 客户域（6 case）
+## 客户域（7 case）
 
 ### CU-001. 客户列表 🟢
 ```
@@ -1148,6 +1148,19 @@
 ```
 真值: customer-list.profile-creation, auth.mini-program-login
 溯源: 2026-09-07 新增：C 端租户域名路由改造（issue #3011） ｜ tags: c-end, tenant, domain, customer_profile
+
+### CU-007. C 端商品搜索只展示已上架商品（下架商品不得出现） 🔵
+```
+你: 店里有什么窗帘？
+期望: product_search(keyword=窗帘)
+数据: product_search 返回的 products[].status 全部 == \"on_sale\"（任一非 on_sale 即违规；工具层按 context.role == \"customer\" 过滤）
+数据: 回复/卡片不得出现『已下架』『off_sale』等状态披露（forbidden_text 机器断言）
+数据: product_detail 对非 on_sale 商品按『不存在』处理（不泄露商品名/ID）
+禁词: 已下架
+禁词: off_sale
+```
+真值: product-sku-stock.status-flow
+溯源: 2026-09-15 新增（issue #3932）：C 端小布只能展示已上架商品——product_search/product_detail 顾客侧上架过滤（sess_2efa2071bb1747d8 复盘关联） ｜ tags: c-end, product, visibility
 
 ## 数据域（10 case）
 
@@ -3988,8 +4001,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：294（活跃 149，跳过 145）
-- tier 分布：smoke 9 / normal 252 / adversarial 33
+- 用例总数：295（活跃 150，跳过 145）
+- tier 分布：smoke 9 / normal 253 / adversarial 33
 - 售后域：9
 - agents：6
 - api：19
@@ -3997,7 +4010,7 @@
 - 分类域：3
 - 对话边界域：35
 - 跨域：3
-- 客户域：6
+- 客户域：7
 - 数据域：10
 - 防御域：22
 - finance：4

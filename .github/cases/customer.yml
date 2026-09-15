@@ -255,3 +255,41 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+
+  - id: CU-007
+    legacy_id: ""
+    title: "C 端商品搜索只展示已上架商品（下架商品不得出现）"
+    domains:
+      - customer
+      - product
+    tier: normal
+    persona: xiaobu
+    tags:
+      - c-end
+      - product
+      - visibility
+    truths_ref:
+      - product-sku-stock.status-flow
+    user_inputs:
+      - "店里有什么窗帘？"
+    expectations:
+      - tool: product_search
+        args:
+          keyword: 窗帘
+    # 机器可判定（runner 支持 forbidden_text 全程 final_text 断言）：回复/卡片
+    # 不得出现下架状态披露——「已下架」及其英文枚举 off_sale 一律禁止。
+    forbidden_text:
+      - "已下架"
+      - "off_sale"
+    data_checks:
+      - "product_search 返回的 products[].status 全部 == \"on_sale\"（任一非 on_sale 即违规；工具层按 context.role == \"customer\" 过滤）"
+      - "回复/卡片不得出现『已下架』『off_sale』等状态披露（forbidden_text 机器断言）"
+      - "product_detail 对非 on_sale 商品按『不存在』处理（不泄露商品名/ID）"
+    skip_reason: ""
+    merge_log: "2026-09-15 新增（issue #3932）：C 端小布只能展示已上架商品——product_search/product_detail 顾客侧上架过滤（sess_2efa2071bb1747d8 复盘关联）"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_c_end_product_visibility.py"
+      ci:
+        - xiaobu-acceptance.yml
+      verifies: []
