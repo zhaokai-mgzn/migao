@@ -2,7 +2,7 @@
 // case_ids: PG-001, PG-005, UI-019, UI-030
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import ProcessingOrderBlock from '@/components/orders/ProcessingOrderBlock'
 
@@ -18,6 +18,7 @@ import { processingOrderApi } from '@/lib/api'
 
 const mockedDetail = processingOrderApi.detail as unknown as ReturnType<typeof vi.fn>
 const mockedGenerate = processingOrderApi.generate as unknown as ReturnType<typeof vi.fn>
+const mockedUpdate = processingOrderApi.update as unknown as ReturnType<typeof vi.fn>
 
 const poIssued = {
   id: 'po-1',
@@ -41,6 +42,17 @@ const poIssued = {
       processingItems: [{ id: 'p1', name: '打孔', quantity: 2, unit: '米', options: ['四爪钩'] }],
     },
   ],
+}
+
+// 待发加工（generated）状态：展示「发加工」入口
+const poGenerated = { ...poIssued, id: 'po-gen', status: 'generated', processor: undefined, expectedDeliveryDate: undefined }
+
+/** 本地时区今天（yyyy-MM-dd），与组件 min/防御校验同口径（issue #3901） */
+function todayLocal(): string {
+  const d = new Date()
+  const mm = String(d.getMonth() + 1).padStart(2, '0')
+  const dd = String(d.getDate()).padStart(2, '0')
+  return `${d.getFullYear()}-${mm}-${dd}`
 }
 
 describe('ProcessingOrderBlock', () => {
@@ -116,5 +128,54 @@ describe('ProcessingOrderBlock', () => {
 
     await screen.findByText('生成加工单')
     expect(onStatusChange).toHaveBeenCalledWith(null)
+  })
+
+  // ── issue #3901：发加工交期改日期控件且禁止过去日期 ──────────────
+
+  it('发加工表单：交期为 date 控件且 min=今天（#3901）', async () => {
+    mockedDetail.mockResolvedValueOnce({ data: { data: poGenerated } })
+    render(<ProcessingOrderBlock orderId="order-001" orderStatus="producing" hasProcessing />)
+    await userEvent.click(await screen.findByText('发加工'))
+
+    const dateInput = screen.getByPlaceholderText('交期 yyyy-MM-dd')
+    expect(dateInput).toHaveAttribute('type', 'date')
+    expect(dateInput).toHaveAttribute('min', todayLocal())
+  })
+
+  it('发加工：过去交期提交被拦截（setError、不发请求）（#3901）', async () => {
+    mockedDetail.mockResolvedValueOnce({ data: { data: poGenerated } })
+    render(<ProcessingOrderBlock orderId="order-001" orderStatus="producing" hasProcessing />)
+    await userEvent.click(await screen.findByText('发加工'))
+
+    fireEvent.change(screen.getByPlaceholderText('交期 yyyy-MM-dd'), { target: { value: '2020-01-01' } })
+    await userEvent.click(screen.getByText('确认发加工'))
+
+    expect(await screen.findByText('交付日期不能早于今天')).toBeInTheDocument()
+    expect(mockedUpdate).not.toHaveBeenCalled()
+  })
+
+  it('发加工：今天/未来交期放行并提交，结果可见状态更新（#3901）', async () => {
+    mockedDetail.mockResolvedValueOnce({ data: { data: poGenerated } })
+    mockedUpdate.mockResolvedValueOnce({
+      data: { data: { ...poGenerated, status: 'issued', processor: '朝阳加工厂', expectedDeliveryDate: todayLocal() } },
+    })
+    render(<ProcessingOrderBlock orderId="order-001" orderStatus="producing" hasProcessing />)
+    await userEvent.click(await screen.findByText('发加工'))
+
+    fireEvent.change(screen.getByPlaceholderText('加工方（如：朝阳加工厂）'), { target: { value: '朝阳加工厂' } })
+    fireEvent.change(screen.getByPlaceholderText('交期 yyyy-MM-dd'), { target: { value: todayLocal() } })
+    await userEvent.click(screen.getByText('确认发加工'))
+
+    await waitFor(() =>
+      expect(mockedUpdate).toHaveBeenCalledWith('po-gen', {
+        action: 'issue',
+        processor: '朝阳加工厂',
+        expectedDeliveryDate: todayLocal(),
+        reason: undefined,
+      }),
+    )
+    // 结果可见：提交成功后状态时间线/头部渲染「已发加工」，表单收起
+    await waitFor(() => expect(screen.getAllByText('已发加工').length).toBeGreaterThan(0))
+    expect(screen.queryByPlaceholderText('交期 yyyy-MM-dd')).not.toBeInTheDocument()
   })
 })

@@ -23,6 +23,14 @@ function formatAmount(v?: number): string {
   return String(v)
 }
 
+/** 本地时区今天（yyyy-MM-dd）：发加工交期 date 控件 min 与防御校验同口径（issue #3901） */
+function todayLocal(): string {
+  const d = new Date()
+  const mm = String(d.getMonth() + 1).padStart(2, '0')
+  const dd = String(d.getDate()).padStart(2, '0')
+  return `${d.getFullYear()}-${mm}-${dd}`
+}
+
 /** 加工单纯文本（复制给加工方/贴 Excel，一行一加工项） */
 function toPlainText(po: ProcessingOrder): string {
   const lines: string[] = []
@@ -106,6 +114,11 @@ export default function ProcessingOrderBlock({ orderId, orderStatus, hasProcessi
 
   const handleAction = async () => {
     if (!po || !form) return
+    // issue #3901：交期不允许早于今天（date 控件 min 之外的双保险，兜住非控件路径）
+    if (form.action === 'issue' && form.date && form.date < todayLocal()) {
+      setError('交付日期不能早于今天')
+      return
+    }
     setBusy(true)
     setError('')
     try {
@@ -296,6 +309,8 @@ export default function ProcessingOrderBlock({ orderId, orderStatus, hasProcessi
                     />
                     <input
                       className="rounded border border-neutral-300 px-2 py-1 text-sm"
+                      type="date"
+                      min={todayLocal()}
                       placeholder="交期 yyyy-MM-dd"
                       value={form.date ?? ''}
                       onChange={(e) => setForm({ ...form, date: e.target.value })}

@@ -327,6 +327,11 @@ public class ProcessingOrderService {
         OffsetDateTime now = OffsetDateTime.now();
         switch (action) {
             case "issue":
+                // issue #3901：交期不允许早于今天（前端 date 控件之外的兜底，同时覆盖 agent processing_order_update 路径）
+                if (req.getExpectedDeliveryDate() != null
+                        && req.getExpectedDeliveryDate().isBefore(LocalDate.now())) {
+                    throw BusinessException.validationError("交付日期不能早于今天");
+                }
                 upd.setIssuedAt(now);
                 upd.setProcessor(req.getProcessor());
                 upd.setExpectedDeliveryDate(req.getExpectedDeliveryDate());

@@ -1,4 +1,4 @@
-// case_ids: PG-001, PG-005, PG-008
+// case_ids: PG-001, PG-005, PG-008, UI-030
 
 package com.migao.admin.controller;
 
@@ -105,6 +105,20 @@ class ProcessingOrderControllerTest extends BaseControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.status").value("issued"))
                 .andExpect(jsonPath("$.data.processor").value("朝阳加工厂"));
+    }
+
+    @Test
+    @DisplayName("PATCH /{id} — issue 过去交期 → 422 validationError（#3901）")
+    void updateIssuePastDeliveryDateRejected() throws Exception {
+        when(processingOrderService.updateStatus(eq("JG-1"), any(), eq(1L), any()))
+                .thenThrow(new com.migao.admin.exception.BusinessException(
+                        "VALIDATION_ERROR", "交付日期不能早于今天", 422));
+
+        mockMvc.perform(patch("/api/admin/processing-orders/JG-1")
+                        .contentType("application/json")
+                        .content("{\"action\":\"issue\",\"expectedDeliveryDate\":\"2020-01-01\"}"))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.error.message").value("交付日期不能早于今天"));
     }
 
     @Test
