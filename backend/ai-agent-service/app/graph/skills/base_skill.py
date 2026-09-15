@@ -3986,13 +3986,14 @@ async def execute_skill(
 
                 new_messages.append(response)
 
-                # ── 无 tool_calls → LLM 已完成回复 ──
+                # ── 文本级能力误宣检查 ──
+                new_text = _extract_content(response)
+                # 下单域能力误宣（issue #3443）：只在**纯文本回复**检查
+                # （无 tool_calls → LLM 已完成回复；带工具调用的回复文本是过程性旁白）。
                 if not response.tool_calls:
-                    new_text = _extract_content(response)
                     # 能力误宣（issue #3443）：文本里"我做不了下单"→ 带纠正提示**重答一次**
                     # （只一次，防死循环）。重答走完整循环，故模型可以继续调工具把单下掉。
                     _denial_hit = capability_denial_text_hit(new_text)
-                    _image_denial_hit = _product_image_denial_hit(new_text)
                     # 判据 = **在办下单流程状态 × 工具能力事实**（与 skill 名无关，#3477 根治）：
                     #   · `_has_write_now`：下单写工具就在**本 skill** 手上（注册表事实）；
                     #   · `_order_in_progress`：顾客处于在办下单流程（跨轮状态事实，不靠本轮措辞）。
@@ -4020,19 +4021,6 @@ async def execute_skill(
                         else:
                             _fix = _TEXT_DENIAL_CORRECTIVE_MIDORDER
                         new_messages.append(SystemMessage(content=_fix))
-                        continue
-                    # ── 商品图片域能力误宣（issue #3931）──
-                    # 与下单域同一条「纠正重答」路径：AI 说「该入口不支持图片/拿不到地址」，
-                    # 而 product_manage(action=update, images=…) 在**本 skill 工具子集**里真实可达
-                    # （判据 = `_product_image_denial_hit`（图片域文本）× 注册表事实）。
-                    if (_image_denial_hit and not _denial_corrected
-                            and _product_image_capability_available(skill_registry)):
-                        _denial_corrected = True
-                        logger.warning(
-                            f"[{skill_name}] 拦截商品图片域能力误宣并重答 | session={session_id} "
-                            f"hit={_image_denial_hit!r}")
-                        new_messages.append(SystemMessage(
-                            content=_TEXT_DENIAL_CORRECTIVE_PRODUCT_IMAGE))
                         continue
                     # ── 订单→物流链收口（issue #3799）──
                     # 模型把「查到订单号」当交付物就收尾 ⇒ 顾客要的轨迹没给（链只走一半）。
@@ -4064,6 +4052,26 @@ async def execute_skill(
                     elif not final_content:
                         final_content = "抱歉，我暂时无法生成回复，请换个方式描述您的需求。"
                     break
+
+                # ── 商品图片域能力误宣（issue #3931，迭代3 #3940）──
+                # 与下单域同一条「纠正重答」路径：AI 说「该入口不支持图片/拿不到地址」，
+                # 而 product_manage(action=update, images=…) 在**本 skill 工具子集**里真实可达
+                # （判据 = `_product_image_denial_hit`（图片域文本）× 注册表事实）。
+                # ⚠️ 迭代3 关键修正（PR-026/027 复现 run 34978506935）：**不 gate
+                # tool_calls** —— flash 常把拒绝文本与查询工具调用**同回合**生成
+                # （transcript：`text「换主图这个动作我这边做不了」+ product_detail 调用
+                # 同一条消息），旧判据只看纯文本回复 → 守卫从未触发、拒绝原样出站。
+                # 命中即丢弃本轮查询调用、带纠正话术重答（正是期望行为）。
+                _image_denial_hit = _product_image_denial_hit(new_text)
+                if (_image_denial_hit and not _denial_corrected
+                        and _product_image_capability_available(skill_registry)):
+                    _denial_corrected = True
+                    logger.warning(
+                        f"[{skill_name}] 拦截商品图片域能力误宣并重答 | session={session_id} "
+                        f"hit={_image_denial_hit!r}")
+                    new_messages.append(SystemMessage(
+                        content=_TEXT_DENIAL_CORRECTIVE_PRODUCT_IMAGE))
+                    continue
 
                 # ── 执行 Tool 调用（并发）──
                 # 本轮「同轮重复写调用」去重槽（issue #3361）：见下方 _run_one_tool 内的说明。
