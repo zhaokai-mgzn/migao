@@ -1,4 +1,4 @@
-// case_ids: PR-001, PR-002, PR-003, PR-004, PR-005, PR-006, PR-008, PP-006, PR-017, PR-019, PR-021, OR-014
+// case_ids: PR-001, PR-002, PR-003, PR-004, PR-005, PR-006, PR-007, PR-008, PP-006, PR-017, PR-019, PR-020, PR-021, OR-014
 // PP-006（issue #3005，回滚 #2986）：商品-加工项关联只支持价格自定义（custom_price），
 // 「每米数量」密度（custom_per_meter_quantity）已回滚移除，响应无密度字段
 // PR-021（#3539/#3546 同族，#3616）：SKU 匹配口径归一化——调价路径（#3546）与本文件尾部新增的
@@ -606,6 +606,149 @@ class ProductServiceTest {
     }
 
     // ======================== 删除商品测试 ========================
+
+    @Test
+    @DisplayName("创建商品 - 传 images 未传 mainImage 时首图即默认主图（issue #3884 建品形态）")
+    void createProduct_ImagesWithoutMainImage_FirstImageFallsBackAsMainImage() {
+        // Given：agent 建品只传 images、从不传 mainImage（#3884：此前全后端无写 main_image 的路径）
+        ProductCreateRequest request = new ProductCreateRequest();
+        request.setName("主图兜底商品");
+        request.setCategoryId("cat-001");
+        request.setBasePrice(new BigDecimal("99.00"));
+        request.setImages(List.of("https://img.example.com/a.jpg", "https://img.example.com/b.jpg"));
+
+        when(categoryMapper.selectById("cat-001")).thenReturn(testCategory);
+        ArgumentCaptor<Product> captor = ArgumentCaptor.forClass(Product.class);
+        when(productMapper.insert(captor.capture())).thenAnswer(invocation -> {
+            Product p = invocation.getArgument(0);
+            p.setId("prod-mainimg");
+            return 1;
+        });
+        Product savedProduct = Product.builder()
+                .id("prod-mainimg")
+                .name("主图兜底商品")
+                .categoryId("cat-001")
+                .basePrice(new BigDecimal("99.00"))
+                .mainImage("https://img.example.com/a.jpg")
+                .images(List.of("https://img.example.com/a.jpg", "https://img.example.com/b.jpg"))
+                .status("draft")
+                .build();
+        when(productMapper.selectById("prod-mainimg")).thenReturn(savedProduct);
+
+        // When
+        ProductResponse result = productService.createProduct(request, 1L);
+
+        // Then：落库实体与返回响应的主图都等于首图
+        assertThat(captor.getValue().getMainImage()).isEqualTo("https://img.example.com/a.jpg");
+        assertThat(result.getMainImage()).isEqualTo("https://img.example.com/a.jpg");
+    }
+
+    @Test
+    @DisplayName("更新商品 - 原 mainImage 为空且传新 images 未传 mainImage 时首图即默认主图（issue #3884 更新形态）")
+    void updateProduct_NewImagesWithoutMainImage_FirstImageFallsBackAsMainImage() {
+        // Given：库中原主图为空（#3884 的真实形态——历史上无任何写 main_image 的路径）
+        Product stored = Product.builder()
+                .id("prod-001")
+                .tenantId(1L)
+                .name("遮光窗帘")
+                .categoryId("cat-001")
+                .basePrice(new BigDecimal("299.00"))
+                .mainImage(null)
+                .status("on_sale")
+                .build();
+        ProductUpdateRequest request = new ProductUpdateRequest();
+        request.setName("遮光窗帘");
+        request.setCategoryId("cat-001");
+        request.setBasePrice(new BigDecimal("299.00"));
+        request.setImages(List.of("https://img.example.com/new1.jpg", "https://img.example.com/new2.jpg"));
+
+        when(categoryMapper.selectById("cat-001")).thenReturn(testCategory);
+        when(productMapper.updateById(any(Product.class))).thenReturn(1);
+        Product updatedProduct = Product.builder()
+                .id("prod-001")
+                .name("遮光窗帘")
+                .categoryId("cat-001")
+                .basePrice(new BigDecimal("299.00"))
+                .mainImage("https://img.example.com/new1.jpg")
+                .images(List.of("https://img.example.com/new1.jpg", "https://img.example.com/new2.jpg"))
+                .status("on_sale")
+                .build();
+        // selectById 被调用两次：一次 updateProduct 内部验证，一次 getProductById
+        when(productMapper.selectById("prod-001")).thenReturn(stored).thenReturn(updatedProduct);
+
+        // When
+        ProductResponse result = productService.updateProduct("prod-001", request, 1L);
+
+        // Then：落库实体与返回响应的主图都等于新首图
+        ArgumentCaptor<Product> captor = ArgumentCaptor.forClass(Product.class);
+        verify(productMapper).updateById(captor.capture());
+        assertThat(captor.getValue().getMainImage()).isEqualTo("https://img.example.com/new1.jpg");
+        assertThat(result.getMainImage()).isEqualTo("https://img.example.com/new1.jpg");
+    }
+
+    @Test
+    @DisplayName("更新商品 - 已设置过 mainImage 时不覆盖（#3884：仅在为空时补首图）")
+    void updateProduct_ExistingMainImage_NotOverwrittenByFirstImage() {
+        // Given：testProduct 已带 mainImage=https://example.com/img.jpg
+        ProductUpdateRequest request = new ProductUpdateRequest();
+        request.setName("遮光窗帘");
+        request.setCategoryId("cat-001");
+        request.setBasePrice(new BigDecimal("299.00"));
+        request.setImages(List.of("https://img.example.com/new1.jpg"));
+
+        when(categoryMapper.selectById("cat-001")).thenReturn(testCategory);
+        when(productMapper.updateById(any(Product.class))).thenReturn(1);
+        Product updatedProduct = Product.builder()
+                .id("prod-001")
+                .name("遮光窗帘")
+                .categoryId("cat-001")
+                .basePrice(new BigDecimal("299.00"))
+                .mainImage("https://example.com/img.jpg")
+                .status("on_sale")
+                .build();
+        // selectById 被调用两次：一次 updateProduct 内部验证，一次 getProductById
+        when(productMapper.selectById("prod-001")).thenReturn(testProduct).thenReturn(updatedProduct);
+
+        // When
+        productService.updateProduct("prod-001", request, 1L);
+
+        // Then：原主图保留，不被新首图覆盖
+        ArgumentCaptor<Product> captor = ArgumentCaptor.forClass(Product.class);
+        verify(productMapper).updateById(captor.capture());
+        assertThat(captor.getValue().getMainImage()).isEqualTo("https://example.com/img.jpg");
+    }
+
+    @Test
+    @DisplayName("更新商品 - 显式传 mainImage 时以显式值优先（不参与首图兜底）")
+    void updateProduct_ExplicitMainImage_TakesPrecedence() {
+        // Given：请求同时给 mainImage 与 images
+        ProductUpdateRequest request = new ProductUpdateRequest();
+        request.setName("遮光窗帘");
+        request.setCategoryId("cat-001");
+        request.setBasePrice(new BigDecimal("299.00"));
+        request.setMainImage("https://img.example.com/explicit.jpg");
+        request.setImages(List.of("https://img.example.com/new1.jpg"));
+
+        when(categoryMapper.selectById("cat-001")).thenReturn(testCategory);
+        when(productMapper.updateById(any(Product.class))).thenReturn(1);
+        Product updatedProduct = Product.builder()
+                .id("prod-001")
+                .name("遮光窗帘")
+                .categoryId("cat-001")
+                .basePrice(new BigDecimal("299.00"))
+                .mainImage("https://img.example.com/explicit.jpg")
+                .status("on_sale")
+                .build();
+        when(productMapper.selectById("prod-001")).thenReturn(testProduct).thenReturn(updatedProduct);
+
+        // When
+        productService.updateProduct("prod-001", request, 1L);
+
+        // Then：显式 mainImage 胜出
+        ArgumentCaptor<Product> captor = ArgumentCaptor.forClass(Product.class);
+        verify(productMapper).updateById(captor.capture());
+        assertThat(captor.getValue().getMainImage()).isEqualTo("https://img.example.com/explicit.jpg");
+    }
 
     @Test
     @DisplayName("删除商品成功 - off_sale 状态可删")
