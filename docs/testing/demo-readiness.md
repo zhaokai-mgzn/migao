@@ -4,7 +4,8 @@
 > **纪律**：本页每个读数都标了来源（run URL / 文件 / 命令）。**没有来源的"应该没问题"不写进本页。**
 > 本页**不下"演示已验收通过"的结论** —— 交付结论需按 `migao-acceptance` 协议做双 AI 交叉验证，本页只提供证据分级。
 
-生成时间锚点：`origin/main` @ `10059c53`（2026-09-15 08:26 +0800）。
+生成时间锚点：工作分支 = `origin/main` @ `10059c53`（2026-09-15 08:26 +0800）+ 本包 3 个 commit；
+文中所有"实测"读数都锚定到具体 run id / 命令，不随 main 前进而失效（main 已继续前进是正常的）。
 引用纪律：本页不写活跃文件的裸行号（跑完可能已漂移），一律用**符号 / 文本 / run id** 锚定。
 
 ---
@@ -30,7 +31,7 @@ API 层 8/8 ≠ UI 层可用；**只跑 6 个文件的 E2E gate ≠ 全量 UI �
 | 演示面 | 证据等级 | 证据 | 未覆盖的部分 | 演示前建议 |
 |---|---|---|---|---|
 | 小程序 · 对话 / 商品卡 / 下单卡 / 售后 / 转人工（旅程） | **UA 级** | `acceptance/2026-09-14/mini-app-e2e/REPORT.md` + `COLD-RUN.md`（冷环境复跑 38/38，09-14 21:53–21:56；截图 `screenshots-cold-run4/`）。**跑不进 GitHub CI**（需 macOS 微信开发者工具 + 登录 + 开放服务端口），故本轮起由 CI 做静态契约预检（见下两行）+ 人工 runbook §3 | ① 该轮 `dist` 构建指纹对应 **≤09-14 21:05 的 src**，其后 2 次 `frontend/mini-app/src` 改动未覆盖：`4d020423`（User 类型 `tenant_id` 谎报修正）、`5fa2c67d`（输入条单行重设计 #3759）；② **真实微信登录链路**（`Taro.login` → `/api/auth/mini/login`）在模拟器里被后端判 `WECHAT_API_ERROR: code 无效` ⇒ 恒不可自动化验证（环境限制，非产品缺陷）；③ 一张截图已标注**不可引用**（并发窗口，见 `COLD-RUN.md`） | 按 §3 runbook 走一遍（**只需人做启动+截图**，判据已写死）；重点看**输入条**（#3759 后的新形态） |
-| 小程序 · e2e harness 契约（选择器 / storage 注入键） | **机器级（部分）** | 新门禁 `Demo Evidence Gate` job `Mini-app e2e static contract preflight`：`node e2e/preflight-selectors.js`（正向）+ `--redproof`（改名 ⇒ 必红）。本地实测：正向 exit 0；红证 2/2 通过（`硬依赖类名改名` / `storage 键改名` 各 1 处 ⇒ 预检红） | **只证明「harness 依赖的名字还在」**，不渲染、不点按、不调后端 ⇒ **不是旅程证据** | 演示前看一眼该 job 是否绿；它是"人工 e2e 之前"的唯一自动信号 |
+| 小程序 · e2e harness 契约（选择器 / storage 注入键） | **机器级（部分）** | 新门禁 `Demo Evidence Gate` job `Mini-app e2e static contract preflight`（run [`34913343797`](https://github.com/zhaokai-mgzn/migao/actions/runs/34913343797)，详见 §5）：`node e2e/preflight-selectors.js`（正向）+ `--redproof`（改名 ⇒ 必红）。本地与 CI 实测：正向 exit 0；红证 2/2 通过（`硬依赖类名改名` / `storage 键改名` 各 1 处 ⇒ 预检红） | **只证明「harness 依赖的名字还在」**，不渲染、不点按、不调后端 ⇒ **不是旅程证据** | 演示前看一眼该 job 是否绿；它是"人工 e2e 之前"的唯一自动信号 |
 | 小程序 · H5 形态视觉回归（无会话 UX / 新品 / OrderCard） | **机器级** | `mini-app.yml` job `xiaobu H5 visual regression`（`build:h5` + Playwright `playwright.xiaobu.config.ts` 基线比对）。⚠️ 该 job 有 **diff 门控**：非 mini-app 相关变更会**整段跳过却 success**（实测 run `34912300454`：`⏭️ 无 mini-app 相关变更…跳过视觉回归空跑`，job 12 秒"成功"） | 仅 H5 形态 + mock 数据；**不是**小程序真机/模拟器形态 | 演示前若改过 mini-app，确认真跑过（看日志有没有那句 `⏭️`） |
 
 ### 1.2 B 端商家后台（admin-web）
@@ -119,11 +120,35 @@ E2E_COLD_LOGIN=1 npm run test:e2e
 
 ## 5. 本包新增的机器级信号（`Demo Evidence Gate`）
 
+**已跑通的 CI 读数**（run [`34913343797`](https://github.com/zhaokai-mgzn/migao/actions/runs/34913343797)，PR #3855，`pull_request` 事件，两 job 均 `success`）：
+
+```
+job 1  Demo path specs (admin-web, fixture mode)
+  ✅ manifest 有效：7 个 spec
+  Running 43 tests using 4 workers
+  ✓  36 [web] › e2e/specs/orders/shipment-doc.spec.ts:92:7 › 发货单 — 真实浏览器打印旅程（UI-040） › 发货页：发货人预填 + 打印媒体下只印单据、屏幕不重复显示 (6.5s)
+  ✓  38 [web] › e2e/specs/orders/shipment-doc.spec.ts:145:7 › … › 订单详情：已发货可补打，纸面带运单号与已落库发货人 (6.3s)
+  ✓  39 [web] › e2e/specs/orders/shipment-doc.spec.ts:173:7 › … › 发货提交：发货人随 payload 下发（改过的值优先） (3.0s)
+  3 skipped
+  40 passed (1.3m)
+
+job 2  Mini-app e2e static contract preflight
+  [preflight] 硬依赖选择器 2 个：.message-input__icon-btn--send .message-input__textarea
+  [preflight] storage 注入键 4 个：auth-store auth_token auth_user tenant_id
+  [preflight] ℹ️ 只读探针在源码里不存在（不判红，仅登记）：.message-input__hold-btn .message-input__mode-btn
+  ✓ 红证通过：硬依赖类名改名（改动 1 处）⇒ 预检红（exit 1）
+  ✓ 红证通过：storage 键改名（改动 1 处）⇒ 预检红（exit 1）
+  ✅ 红证全部通过（2/2）—— 预检的双向判据都活着
+```
+
+> 本地（macOS）同清单复跑：`38 passed / 2 flaky（分类页 2 条首次失败、重试过）/ 3 skipped`；CI（linux）为 `40 passed / 3 skipped`。
+> 两处读数都记下来：差异本身说明**本地绿不能当成 CI 绿**（反之亦然）。
+
 - **文件**：`.github/workflows/demo-evidence.yml`（**新文件**；不改被并发包占用的 `pr-check.yml`）。
 - **job 1 `Demo path specs (admin-web, fixture mode)`**：清单 = `tests/e2e/demo-path-specs.txt`（单一事实源），
   当前 7 个 spec：`orders/shipment-doc`（UI-040）、`orders/order-create`、`orders/order-lifecycle`、
   `chat/chat-panel-resize`、`chat/mibao-minimize-layout`、`catalog/categories`、`smoke/pages-render`。
-  - 收录三判据（缺一不收）：① 属演示面；② **fixture 模式真能跑绿**（依据 = nightly run `34911052034` 同 SHA 读数 + 本地复跑）；③ **不在** pr-check 那 6 个文件里（不重复占 runner）。
+  - 收录三判据（缺一不收）：① 属演示面；② **fixture 模式真能跑绿**（依据 = nightly run `34911052034` 同 SHA 读数 + 本地复跑 + 本 run）；③ **不在** pr-check 那 6 个文件里（不重复占 runner）。
   - **空跑护栏**（`migao-acceptance`「空跑」）：清单为空 / 列出的 spec 不存在 ⇒ 直接 `exit 1`；否则空实参会让 Playwright 跑全量 389 条或静默 0 条还 success。
   - 失败即上传 `tests/test-results/` + `tests/playwright-report/`（trace/截图），不"失败即丢证据"。
 - **job 2 `Mini-app e2e static contract preflight`**：`frontend/mini-app/e2e/preflight-selectors.js`
