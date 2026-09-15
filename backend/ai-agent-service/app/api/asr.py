@@ -9,20 +9,19 @@ POST /api/chat/transcribe
 
 from __future__ import annotations
 
-import logging
 import subprocess
 import tempfile
+import time
 from pathlib import Path
 from typing import Optional
 
 from dashscope.audio.asr.recognition import Recognition, RecognitionCallback
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from loguru import logger
 from pydantic import BaseModel, Field
 
 from app.utils.auth import get_current_user, UserIdentity
 from app.config import settings
-
-logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["ASR"])
 
@@ -237,13 +236,10 @@ async def transcribe_audio(
     # 语言提示
     language_hints = [language] if language else [settings.ASR_LANGUAGE_HINTS]
 
-    logger.info(
-        f"ASR transcribe: tenant={current_user.tenant_id}, "
-        f"format={audio_format}, size={len(audio_data)} bytes, "
-        f"language={language_hints[0]}"
-    )
-
-    # 调用 ASR（#2984：识别失败/服务不可用 → 友好 4xx/5xx，不向客户端泄漏裸 500）
+    # 调用 ASR（#2984/#3944：识别失败/服务不可用 → 友好 4xx/5xx，不向客户端泄漏裸 500；
+    # 兜底捕获全部 Exception——dashscope 的 InputRequired/InvalidParameter/NetworkError 等
+    # 非 RuntimeError 异常此前直接裸 500）
+    start_ts = time.monotonic()
     try:
         text = await _transcribe_audio(
             audio_data,
@@ -251,8 +247,8 @@ async def transcribe_audio(
             sample_rate=sample_rate,
             language_hints=language_hints,
         )
-    except RuntimeError as e:
-        logger.error(f"ASR failed for tenant {current_user.tenant_id}: {e}")
+    except Exception as e:
+        logger.error(f"ASR failed for tenant {current_user.tenant_id}: {type(e).__name__}: {e}")
         message = str(e)
         if "未识别到语音内容" in message:
             # 静音/无有效语音 → 用户可理解的重试提示（400）
@@ -261,6 +257,13 @@ async def transcribe_audio(
             raise HTTPException(status_code=503, detail="语音识别服务未配置，请联系管理员") from e
         # 上游（DashScope/网络）异常 → 503 表示服务暂时不可用
         raise HTTPException(status_code=503, detail="语音识别服务暂时不可用，请稍后重试") from e
+
+    logger.info(
+        f"ASR transcribe: tenant={current_user.tenant_id}, "
+        f"format={audio_format}, size={len(audio_data)} bytes, "
+        f"language={language_hints[0]}, text_len={len(text)}, "
+        f"elapsed_ms={(time.monotonic() - start_ts) * 1000:.1f}"
+    )
 
     # 估算音频时长（WAV: 字节 / (采样率 * 2字节/采样 * 1声道)）
     duration_ms = len(audio_data) / (sample_rate * 2) * 1000

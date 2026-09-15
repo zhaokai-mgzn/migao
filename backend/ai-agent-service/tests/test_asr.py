@@ -2,6 +2,7 @@
 Tests for app/api/asr.py — ASR voice transcription endpoint
 """
 # case_ids: API-012
+# 映射说明：#3944 新增用例沿用 API-012 域——非 RuntimeError 兜底 503（裸 500 回归防护）+ loguru 日志断言
 import pytest
 from unittest.mock import MagicMock, AsyncMock, patch
 
@@ -215,3 +216,30 @@ class TestTranscribeAudioFriendlyErrors:
         )
         assert resp.text == "帮我查一下订单"
         assert resp.duration_ms > 0
+
+    @patch("app.api.asr._convert_to_wav", return_value=b"fake-wav-16000hz" * 2000)
+    @patch("app.api.asr._transcribe_audio", new_callable=AsyncMock)
+    async def test_non_runtime_error_returns_503_not_500(self, mock_transcribe, mock_convert):
+        """#3944 非 RuntimeError（dashscope InputRequired/InvalidParameter/NetworkError 等）
+        此前裸 500；兜底后返回友好 503「语音识别服务暂时不可用，请稍后重试」，绝不是 500"""
+        from app.api.asr import transcribe_audio
+        from fastapi import HTTPException
+
+        mock_transcribe.side_effect = ValueError("dashscope InvalidParameter: params invalid")
+        with pytest.raises(HTTPException) as exc:
+            await transcribe_audio(
+                audio=_mock_file(b"\x00" * 64 * 1024),
+                current_user=MagicMock(tenant_id=1),
+            )
+        assert exc.value.status_code == 503
+        assert exc.value.status_code != 500
+        assert "暂时不可用" in exc.value.detail
+
+
+class TestAsrLogger:
+    """#3944 日志统一走 loguru（全项目规范）；标准库默认 handler 生产会丢弃 info 日志"""
+
+    def test_logger_is_loguru_singleton(self):
+        from app.api import asr
+        from loguru import logger as loguru_logger
+        assert asr.logger is loguru_logger
