@@ -10,7 +10,7 @@
 | 一（P0） | `completion_verdict` 的 `score>=1.0` 分支里「journey 守卫」先于「跨 run 复发检查」⇒ 关键旅程里的放行条目（OR-016）把 `_is_recurring` 短路掉，从**所有桶**消失 = 静默放行（同证据集里 PP-001 却被拦下） | 凡 `cross_run_recurrence.prior_count>0` 且指纹同型 ⇒ 一律进 `systemic_recurrence`（fail-closed），不因"本轮通过 / 旅程身份 / 分类 llm-noise"放行；prior_count=0 的新失败（首见）不得进 systemic |
 | 二（P0） | 台账 reason 是静态模板「未在历史 run 复发」—— OR-016（prior_count=2）/ PP-001（prior_count=4）的台账与数据直接矛盾 | reason 从数据生成（含实际 `prior_count`/`prior_runs`）；prior>0 禁止「未复发」字样；历史不可得标「数据缺失」 |
 | 三（P1） | 通过用例 summary 只有 id/score/classification/pre_clean —— 空断言假绿不可见 | 每条 case 落 `assertions_fired`（计分断言命中/可失败性 + 效果层触发）；计分断言全为存在性/散文且效果层未触发 ⇒ 标 `unfailable_green`（与 verdict 分开单列，不改 ok） |
-| 四（P1） | `确认死循环` 检测器不附卡原文 ⇒「同样的事实 ×3」无法独立复核；事实不可判时退回按标题计数（#3412 假红形态复活） | 「同事实」判据 = 内容键（confirmValue / fields 集合），标题只展示；失败信息附每张卡的原文摘要；事实不可判的卡用独立键、不计为同事实 |
+| 四（P1） | `确认死循环` 检测器不附卡原文 ⇒「同样的事实 ×3」无法独立复核（PR-016 的 R5 trace 无 interact，复核者只能靠猜）；无内容卡被计数的同时却冒充「已核实的同样事实」 | 「同事实」判据 = 内容键（confirmValue / fields 集合）；失败信息附每张卡的原文摘要 + 判据；无内容卡按标题计数（fail-closed 历史契约）但**显式标注「按标题近似」**，不得冒充已核实事实 |
 
 本文件锁**判定逻辑**（纯函数层），全部离线可跑、零 LLM；「改前红证」用
 独立复写的旧逻辑副本（不复用新实现，否则两边同源、红证失效）。
@@ -272,10 +272,6 @@ class TestPassingCasesCarryAssertionEvidence:
 
 # ── 缺陷四：确认死循环「同事实」判据 + 附原文摘要 ─────────────────────────────
 
-def _legacy_confirm_key(args):
-    """**改造前** `check_confirm_loop` 的事实键（独立复写，红证用）：内容缺失退回标题。"""
-    return lr.confirm_card_content_key(args) or args.get("title", "(无标题)")
-
 
 class TestConfirmLoopSameFactCriterion:
     def test_three_identical_content_cards_still_red(self):
@@ -291,7 +287,11 @@ class TestConfirmLoopSameFactCriterion:
         assert "判据=内容键" in issues[0], issues[0]
 
     def test_three_different_content_cards_no_false_positive(self):
-        """**红证 B**：3 张内容不同的卡（confirmValue 事实不同）⇒ 不得误报。"""
+        """**红证 B**：3 张内容不同的卡（confirmValue 事实不同）⇒ 不得误报。
+
+        改前改后一致不误报（内容键天然区分）；本测试同时锁「不同事实 ≠ 同批事实」
+        判据本身 —— 把卡内容改成相同 ⇒ 本测试必红（防止夹具退化）。
+        """
         cards = [_confirm_round(4, {"component": "confirm", "title": "确认创建商品",
                                     "confirmValue": "加工项=刺绣工艺"}),
                  _confirm_round(5, {"component": "confirm", "title": "确认创建商品",
@@ -299,18 +299,30 @@ class TestConfirmLoopSameFactCriterion:
                  _confirm_round(6, {"component": "confirm", "title": "确认创建商品",
                                     "confirmValue": "加工项=刺绣工艺、高温定型、定型"})]
         assert lr.check_confirm_loop(cards) == [], "不同事实的卡被判成死循环（误报）"
+        # 防退化：内容改为相同 ⇒ 必须判红（否则本用例是空断言）
+        same = [_confirm_round(4, {"component": "confirm", "title": "确认创建商品",
+                                   "confirmValue": "加工项=刺绣工艺"})]
+        assert lr.check_confirm_loop(same + same + same), "内容相同的卡没被判定（夹具退化）"
 
-    def test_legacy_title_fallback_would_false_positive(self):
-        """**改前误报红证**：事实不可判（无 confirmValue/fields）时旧逻辑退回按标题计数 ⇒
-        3 张同标题但事实未知的卡被当成「同样的事实 ×3」；改后独立键、不再冒充同事实。"""
+    def test_title_only_same_title_cards_still_detected_fail_closed(self):
+        """无内容（无 confirmValue/fields）的同标题卡 ×3 ⇒ 仍判死循环（fail-closed 历史契约，
+        `backend/ai-agent-service/tests/test_acceptance_case_checks.py::TestConfirmLoop`
+        「同标题 confirm 卡 >=3 次未收敛」），但失败信息必须**显式标注「按标题近似」**。"""
         cards = [_confirm_round(4, {"component": "confirm", "title": "确认创建商品"}),
                  _confirm_round(5, {"component": "confirm", "title": "确认创建商品"}),
                  _confirm_round(6, {"component": "confirm", "title": "确认创建商品"})]
-        legacy_keys = [_legacy_confirm_key(c["tool_calls"][0]["args"]) for c in cards]
-        assert len(set(legacy_keys)) == 1, (
-            "旧键实现变了 —— 红证要锁的是「标题兜底把不同卡并成同事实」这个旧形态")
-        assert lr.check_confirm_loop(cards) == [], (
-            "事实不可判的卡被当成「同样的事实」（判据不诚实）")
+        issues = lr.check_confirm_loop(cards)
+        assert len(issues) == 1, issues
+        assert "按标题近似" in issues[0], (
+            f"无内容卡的计数没被标注为近似 —— 复核者会把近似当成已核实的同样事实: {issues[0]}")
+        assert "无 confirmValue/fields" in issues[0], issues[0]
+        assert "判据=内容键" in issues[0], issues[0]
+
+    def test_two_title_only_cards_still_tolerated(self):
+        """无内容同标题 2 次仍容忍（< limit），不误报。"""
+        cards = [_confirm_round(1, {"component": "confirm", "title": "确认创建商品"}),
+                 _confirm_round(2, {"component": "confirm", "title": "确认创建商品"})]
+        assert lr.check_confirm_loop(cards) == []
 
     def test_fields_based_key_still_counts(self):
         """无 confirmValue 但 fields 相同 ⇒ 仍按内容键计数（同事实）。"""

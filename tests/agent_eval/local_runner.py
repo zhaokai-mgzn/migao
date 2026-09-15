@@ -1663,21 +1663,25 @@ def check_confirm_loop(results: list, limit: int = 3) -> list:
 
     **「同事实」的判据**（盲审缺陷四要求写清楚）：事实键 = `confirm_card_content_key`
     —— confirmValue（与字段事实确定性同源，issue #3406），或 fields 的 `label=value`
-    排序集合；**标题只作展示，不参与计数**。
-    两卡事实键相同 = 同一批事实（换措辞/换标题不算新卡）；事实键不同 = 不同事实。
-    **confirmValue 与 fields 皆空 ⇒ 事实不可判 ⇒ 该卡用独立键（`内容缺失#<标题>#R<轮次>`），
-    永不计为「同样的事实」** —— 退回按标题计数正是 #3412 修掉的假红形态
-    （OR-019 实证：改数量 3→4 的三张卡标题相同，其中一张是合法重新确认），
-    也是盲审红证 B 要防的误报（不同事实、同标题 ⇒ 不得判「同事实」）。
+    排序集合。两卡事实键相同 = 同一批事实（换措辞/换标题不算新卡）；事实键不同 = 不同事实
+    （OR-019 实证：改数量 3→4 的三张卡标题相同、事实键不同，其中一张是合法重新确认 ⇒
+    不判死循环 —— 这就是 #3412 修掉的按标题计数假红）。
+    **confirmValue 与 fields 皆空（无内容卡）⇒ 退回按标题计数**（历史契约，见
+    `backend/ai-agent-service/tests/test_acceptance_case_checks.py::TestConfirmLoop`
+    「同标题 confirm 卡 >=3 次未收敛」）：无内容的两张卡无法区分事实，**宁可拦下
+    （fail-closed）** —— 但失败信息必须**显式标注「按标题近似」**，不得把无内容卡
+    冒充成「已核实的同样事实」（这正是盲审缺陷四的原文张力：trace 里看不到卡内容时，
+    "同样的事实 ×3"无从复核）。
 
-    失败信息**附上每张卡的原文摘要**（轮次 + 标题 + confirmValue/字段事实），
-    使「同样的事实 ×N」可独立复核。
+    失败信息**附上每张卡的原文摘要**（轮次 + 标题 + confirmValue/字段事实，无内容时
+    如实标「无 confirmValue/fields —— 事实不可判」），使计数可独立复核。
     """
     from collections import Counter
     cnt: Counter = Counter()
     rounds: dict = {}
     titles: dict = {}
     cards: dict = {}          # 事实键 → 每张卡的原文摘要（复核证据）
+    approx: dict = {}         # 事实键 → True = 无内容、按标题近似计数
     for r in results:
         for tc in r.get("tool_calls") or []:
             a = tc.get("args") or {}
@@ -1685,8 +1689,9 @@ def check_confirm_loop(results: list, limit: int = 3) -> list:
                 k = confirm_card_content_key(a)
                 rnd = r.get("__round")
                 if not k:
-                    # 事实不可判：独立键，绝不按标题冒充「同事实」（盲审缺陷四）
-                    k = f"内容缺失#{a.get('title') or '(无标题)'}#R{rnd}"
+                    # 无内容卡：退回按标题计数（fail-closed），但如实标记为近似
+                    k = a.get("title", "(无标题)")
+                    approx[k] = True
                 cnt[k] += 1
                 rounds.setdefault(k, []).append(rnd)
                 titles.setdefault(k, a.get("title", "(无标题)"))
@@ -1695,8 +1700,9 @@ def check_confirm_loop(results: list, limit: int = 3) -> list:
     # 只说"出现 3 次"时，若打印的轨迹里一张 confirm 卡都没有（被拦/失败的 interact
     # 不产生卡事件），报错与证据对不上，归因只能靠猜——实测 OR-017 卡在这个盲区一整轮。
     return [
-        f"确认死循环: confirm 卡「{titles.get(k, k)}」**同样的事实**共出现 {c} 次"
-        f"（R{'/R'.join(str(x) for x in rounds.get(k, []))}）未收敛；"
+        f"确认死循环: confirm 卡「{titles.get(k, k)}」"
+        f"{'同样的事实' if not approx.get(k) else '同批 confirm 卡（无内容，按标题近似）'}"
+        f"共出现 {c} 次（R{'/R'.join(str(x) for x in rounds.get(k, []))}）未收敛；"
         f"判据=内容键 {k}；各次卡原文: {' | '.join(cards.get(k, []))}"
         for k, c in cnt.items() if c >= limit
     ]
