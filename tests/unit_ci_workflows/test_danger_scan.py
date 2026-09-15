@@ -128,6 +128,45 @@ class TestMigrationRules:
         )
         assert any("文件名非法" in b for b in blockers)
 
+    def test_pure_rename_migration_exempt(self):
+        """R100 纯改名（内容 100% 相似）＝后合入者让号（issue #3812）→ 豁免，不 block。
+
+        #3812 场景：两个 V45 撞号，后合入者改名让号（V45__x → V46__x）。git 对纯改名
+        报 status R100（相似度 100%），SQL 内容零变化 —— 线上 schema_migrations 已有
+        旧文件名记录（历史事实不改写），新名首跑为幂等空操作（如 ADD COLUMN IF NOT EXISTS）。
+        此时仍按「迁移不可变」block 会堵死 #3812 的唯一合规修法。
+        """
+        blockers, warnings = analyze(
+            workflow_changes=[], wf_new_secrets={}, deleted_files=[], deploy_files=[],
+            migration_changes=[("R100", f"{self.MIG}/V46__add_order_logistics_shipper_name.sql")],
+            schema_changes=[],
+        )
+        assert not blockers, f"R100 纯改名（让号）不应 block，实得 {blockers}"
+        assert any("改名" in w for w in warnings), "应给出'迁移改名'提示"
+
+    def test_rename_with_content_change_still_blocks(self):
+        """rename 且内容有变化（非 R100）＝修改已发布迁移 → 仍 fail-closed block。
+
+        判据收紧：只有 100% 相似（纯改名）才豁免；内容任何变化（R0xx）都是
+        「改已发布迁移」，不能让让号豁免变成改迁移的口子（§19.1 假绿同族）。
+        """
+        blockers, _ = analyze(
+            workflow_changes=[], wf_new_secrets={}, deleted_files=[], deploy_files=[],
+            migration_changes=[("R062", f"{self.MIG}/V46__add_order_logistics_shipper_name.sql")],
+            schema_changes=[],
+        )
+        assert any("迁移不可变" in b for b in blockers), (
+            f"内容有变化的 rename 必须照旧 block，实得 {blockers}"
+        )
+
+    def test_rename_bad_target_name_blocks(self):
+        """rename 目标文件名非法仍 block（改名让号也得守命名规范）"""
+        blockers, _ = analyze(
+            workflow_changes=[], wf_new_secrets={}, deleted_files=[], deploy_files=[],
+            migration_changes=[("R100", f"{self.MIG}/renamed.sql")], schema_changes=[],
+        )
+        assert any("文件名非法" in b for b in blockers)
+
     def test_schema_change_without_migration_blocks(self):
         blockers, _ = analyze(
             workflow_changes=[], wf_new_secrets={}, deleted_files=[], deploy_files=[],

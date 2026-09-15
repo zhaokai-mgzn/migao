@@ -74,7 +74,7 @@ def analyze(workflow_changes, wf_new_secrets, deleted_files, deploy_files, migra
                 blockers.append(f"新增 workflow 文件 {path} —— 需人工安全审查（workflow 可携带 secrets 执行）")
         elif status == "D":
             blockers.append(f"删除 workflow 文件 {path} —— 需人工确认")
-        elif status in ("M", "R"):
+        elif status[0] in ("M", "R"):
             new_sec = wf_new_secrets.get(path, [])
             real_sec = [l for l in new_sec if "secrets.GITHUB_TOKEN" not in l]
             if real_sec:
@@ -85,6 +85,13 @@ def analyze(workflow_changes, wf_new_secrets, deleted_files, deploy_files, migra
                 warnings.append(f"修改 workflow {path} —— 建议人工复核")
 
     # ---- 迁移不可变（R1）：已发布迁移只增不改；新增迁移命名须 V{n}__desc.sql ----
+    # R100 豁免（issue #3812 让号场景）：git 对「纯改名」报 status R100（相似度 100%）。
+    # 后合入者撞号时按「后合入者让号」约定 rename 到下一个空闲版本号（V45__x → V46__x）：
+    #   · SQL 内容零变化（git 判定相似度 100%）—— 不是「修改已发布迁移」；
+    #   · 线上 schema_migrations 保留旧文件名记录（历史事实不改写），新名首跑为幂等空操作
+    #     （如 ADD COLUMN IF NOT EXISTS），改名安全（MigrationRunner 仅以文件名判已执行）。
+    # 判据收紧（防让号豁免变成改迁移的口子）：只有 status == "R100" 才豁免；
+    # rename 但内容有变化（R0xx）＝修改已发布迁移，照旧 BLOCK（fail-closed，§19.1 同族）。
     new_migrations = [p for s, p in migration_changes if s == "A"]
     for status, path in migration_changes:
         name = path.rsplit("/", 1)[-1]
@@ -92,6 +99,16 @@ def analyze(workflow_changes, wf_new_secrets, deleted_files, deploy_files, migra
             if not MIGRATION_RE.match(name):
                 blockers.append(
                     f"新增迁移文件名非法 {path} —— 必须为 V{{n}}__desc.sql（MigrationRunner 按文件名排序执行）"
+                )
+        elif status == "R100":
+            if not MIGRATION_RE.match(name):
+                blockers.append(
+                    f"迁移改名后文件名非法 {path} —— 必须为 V{{n}}__desc.sql（MigrationRunner 按文件名排序执行）"
+                )
+            else:
+                warnings.append(
+                    f"迁移纯改名（让号）{path} —— R100 内容零变化（issue #3812 后合入者让号），"
+                    f"新名首跑应为幂等空操作；请人工确认"
                 )
         else:
             blockers.append(
@@ -201,7 +218,9 @@ def _git_name_status(scope):
         for line in lines:
             parts = line.split("\t")
             if len(parts) >= 2:
-                result.append((parts[0][0], parts[-1]))
+                # 完整 status（rename 是 R100/R062 等含相似度，A/M/D 为单字符）
+                # 调用方按 status[0] 取大类、按 status == "R100" 判纯改名（issue #3812）
+                result.append((parts[0], parts[-1]))
         return result
     except Exception:
         return []
@@ -211,7 +230,7 @@ def _workflow_new_secrets(paths):
     """对修改的 workflow 提取新增的 secrets 引用行（移动/重排不算新增，issue #2949）"""
     secrets_by_path = {}
     for status, path in paths:
-        if status in ("M", "R"):
+        if status[0] in ("M", "R"):
             try:
                 out = subprocess.run(
                     ["git", "diff", f"{BASE}...HEAD", "--", path],
@@ -232,7 +251,7 @@ def main():
     workflow_paths = _git_name_status(".github/workflows/*.yml")
     all_changes = _git_name_status(".")
     deleted_files = [p for s, p in all_changes if s == "D"]
-    deploy_files = [p for s, p in all_changes if s in ("M", "A", "R") and
+    deploy_files = [p for s, p in all_changes if s[0] in ("M", "A", "R") and
                     (p.startswith("deploy/") or "/deploy/" in p)]
     wf_new_secrets = _workflow_new_secrets(workflow_paths)
     migration_changes = _git_name_status(MIGRATION_DIR + "/*.sql")

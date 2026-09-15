@@ -28,12 +28,12 @@ import static org.assertj.core.api.Assertions.assertThat;
  * 写法沿用同目录 KnowledgeWikiMigrationTest：直接断言迁移 SQL 文本
  * （本仓库用自研 MigrationRunner，无 Flyway checksum 语义，只按文件名记录已执行）。
  */
-@DisplayName("发货人迁移契约（V45 shipper_name 必须 nullable + schema.sql 同步）")
+@DisplayName("发货人迁移契约（V46 shipper_name 必须 nullable + schema.sql 同步）")
 class OrderLogisticsShipperNameMigrationTest {
 
     private static final String MIGRATION_DIR =
             "backend/admin-api/src/main/resources/db/migration";
-    private static final String V45 = MIGRATION_DIR + "/V45__add_order_logistics_shipper_name.sql";
+    private static final String V46 = MIGRATION_DIR + "/V46__add_order_logistics_shipper_name.sql";
     private static final String SCHEMA_SQL = "docs/sql/schema.sql";
 
     private static Path findRepoRoot() {
@@ -56,15 +56,15 @@ class OrderLogisticsShipperNameMigrationTest {
     }
 
     @Test
-    @DisplayName("V45 存在，且 shipper_name 加列语句不带 NOT NULL（存量 NULL 不得让迁移失败）")
-    void v45_shipperNameColumnIsNullable() throws IOException {
+    @DisplayName("V46 存在，且 shipper_name 加列语句不带 NOT NULL（存量 NULL 不得让迁移失败）")
+    void v46_shipperNameColumnIsNullable() throws IOException {
         Path root = findRepoRoot();
         assertThat(root).as("应能定位仓库根目录").isNotNull();
-        assertThat(Files.exists(root.resolve(V45))).as("应存在 V45 发货人迁移文件").isTrue();
+        assertThat(Files.exists(root.resolve(V46))).as("应存在 V46 发货人迁移文件").isTrue();
 
-        String sql = read(V45);
+        String sql = read(V46);
         int at = sql.indexOf("ADD COLUMN IF NOT EXISTS shipper_name");
-        assertThat(at).as("V45 应含 shipper_name 加列语句").isGreaterThanOrEqualTo(0);
+        assertThat(at).as("V46 应含 shipper_name 加列语句").isGreaterThanOrEqualTo(0);
 
         // 只看这条语句本身（到分号为止），避免把文件里别的注释误判进来
         String stmt = sql.substring(at, sql.indexOf(';', at));

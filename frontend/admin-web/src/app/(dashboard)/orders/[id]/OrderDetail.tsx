@@ -522,6 +522,8 @@ function StatusSection({
         <div>
           <OrderProgressSteps
             status={status}
+            // issue #3916：producing（生产中）独立真实状态，向导第 2 步显示「生产中」
+            producing={producing}
             paidAt={order.paidAt}
             shippedAt={order.shippedAt}
             receivedAt={order.receivedAt}
