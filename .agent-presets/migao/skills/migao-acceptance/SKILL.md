@@ -1,6 +1,6 @@
 ---
 name: migao-acceptance
-version: 1.8.0
+version: 1.9.0
 # ⚠️ YAML 纯标量陷阱 + 本仓库取舍（v1.7，2026-09-15，与 migao-dev-flow v1.21 同法）：
 # `description` 是 YAML **纯标量** ⇒ 解析在第一个「空白 + `#`」处**截断**，其余内容**静默丢失**
 # ——「文件里写了」≠「加载器读到了」（与本节「注释漂移 = 假绿来源」同族）。
@@ -341,6 +341,33 @@ CI（`LC_ALL=C`）把它压成 `-`。`tests/unit_ci_workflows/test_gate_uncommit
   引用该 run 的证据（transcript/summary），不必重跑；仅当需要剧本级（点卡/打岔/换窗口）
   证据时才补跑验收剧本。
 
+## 活环境判定的快照一致性（v1.9 新增，2026-09-15 issue #3843 实证）
+
+**病根同族**：向**活环境**（云测试环境 SWAS / 生产）打判定时，若**测量时点**选错（落在部署窗口里），
+那么**红与绿都不可信** —— 与上文「假红形态：基线快照晚于被测事件」是同一个病：
+**读的是快照（重启中的容器），不是被测对象（稳定运行的服务）**，只是取错的东西从"基线"换成了"环境"。
+
+**判据（两条前置，缺任一 ⇒ 该次活环境判定无效，必须重测）**：
+
+1. **断言无部署在飞**才开测：
+   ```bash
+   # 有 in_progress/queued ⇒ 不要测量，等收敛
+   gh run list --workflow=deploy-reconcile.yml --limit 5 --json status,conclusion,createdAt \
+     --jq '.[] | "\(.createdAt) \(.status) \(.conclusion)"'
+   # 部署腿同理：deploy-admin-api.yml / deploy-ai-agent-service.yml / deploy-frontend.yml
+   ```
+2. **记录被测 SHA**：结论里写明被测环境的**部署来源 commit**（与「核算数字必须锚定 SHA」同一纪律，
+   一般口径见 `migao-dev-flow` §16.6 ④ / §17.4）——**没有 SHA 的活环境结论不可复核**。
+
+**实测窗口**：`Deploy Reconcile`（`.github/workflows/deploy-reconcile.yml`，`name: Deploy Reconcile (PR 对账补偿)`）
+在 **PR opened/reopened** 与 `schedule '*/20'` 上对账 **main HEAD**，镜像缺失即 dispatch 部署 ⇒
+容器重建产生 **1~3 分钟**的 **502 / Connection refused** 窗口（纯 docs/tests/cases PR 被其 path filter 跳过，
+但**被测服务自身的改动 PR 一定会触发**）。⇒ 观测到 502 时**先查是否落在该窗口**，再谈产品缺陷；
+一次活环境"502 误判"正是**没记录部署状态**造成的（#3843 H 项实证）。
+
+> **口径单点**：本条**详版在此**；`migao-dev-flow` §18.7 只留一句指针。
+> 同族形态见本节「假红形态：基线快照晚于被测事件」（基线取晚了）；本节治的是**环境测量窗口取错了**。
+
 ## 验收问题的并行分流（migao-dev-flow §17）
 
 验收一次暴露多个问题时，**先冻结清单再并行修复**（发现即并行，合并串行）：
@@ -351,7 +378,7 @@ CI（`LC_ALL=C`）把它压成 `-`。`tests/unit_ci_workflows/test_gate_uncommit
 - 并行度上限：评测型流水线同时 ≤3（runner 竞争 + 真实 LLM 成本）；
 - 合并后按受影响档位重跑验证（静态 → 迭代档 → 全量），并做 §5 的 case 有效性验证。
 
-## 版本沿革（v1.1 → v1.8）
+## 版本沿革（v1.1 → v1.9）
 
 > 本节由 **v1.7** 从 frontmatter `description` **逐字迁入**（条目文本未改，仅加列表符号）。
 > 背景：frontmatter `description` 是 YAML 纯标量，会在第一个「空白 + `#`」处**静默截断** ——
@@ -371,3 +398,5 @@ CI（`LC_ALL=C`）把它压成 `-`。`tests/unit_ci_workflows/test_gate_uncommit
 - v1.7.2（2026-09-14，本次）：把本节引用的**裸行号**改成**稳定引用**（符号/文本锚点优先，行号仅以 `@<sha>` 限定形式保留）—— 实测 `local_runner.py` 的 3 个行号在 **4 分钟**内失效（`@541bacbe` `:4939`/`:4959`/`:5551` → `@c5f07f29` `:5088`/`:5108`/`:5749`）。
 - v1.7.3（2026-09-14，本次）：引用写法统一为「**第 N 行**（可带 `@<sha>`）」，不再写 `path:NNN`（避免被模式扫描误判为残留引用、被读者误当现值）；判据见 `migao-dev-flow` §16.7「引用纪律」。
 - v1.8（2026-09-14 实证，本次）：新增**假红**形态「**测试自行重建被测系统的产物路径**」（#3756/#3724 实证：`verify-all.sh` 的 `slug` 走 `tr -c '[:alnum:]'`，随 locale 变化 ⇒ 早期测试按检查名拼日志路径 → 本机绿、CI 红，失败信息 `in ''` 把真因埋掉；现行正解 = **稳定前缀 + glob**，并在测试里钉 `LC_ALL=C`/`TMPDIR`/`TZ`；脚本侧仍建议 `LC_ALL=C tr` + `cksum` 后缀）。
+- v1.9（2026-09-15 issue #3843 实证，本次）：新增「**活环境判定的快照一致性**」节 —— 向活环境打判定前**必须断言无部署在飞**并**记录被测 SHA**，否则该次判定无效（同族于「基线快照晚于被测事件」，只是取错的东西从"基线"换成"环境"）。实测窗口：`Deploy Reconcile`（PR opened/reopened + `schedule '*/20'` 对账 main HEAD，镜像缺失即 dispatch 部署）⇒ 容器重建 **1~3 分钟** 502 / Connection refused；观测到 502 须**先查部署窗口**再谈产品缺陷（#3843 的 H 项）。
+  口径单点：本条**详版在 acceptance**；`migao-dev-flow` **v1.28 新增 §18「单一真相源与不可变引用」**（读源纪律 / 活锚新鲜度 / 不可变引用 / 前置自断言 / 账本新鲜度 / 环境静默 / 反模式清单） §18.7 只留一句指针 —— 与本技能**同源不重复**：本技能管「断言与证据会不会骗人」，§18 管「读的对象与指的对象是不是同一个」。
