@@ -1,4 +1,4 @@
-# case_ids: OR-016, PR-016, PP-001
+# case_ids: OR-016, PR-016, PP-001, OR-010, OR-015, PG-013
 """结论层可信度修复 —— GLM-5.3-Flash 盲审 4 处缺陷（run 34916256903 @1eea267a）的红证。
 
 盲审结论（权威）：`gh issue view <本单>`；判定跑 `34916256903` 的 artifact
@@ -225,11 +225,14 @@ class TestPassingCasesCarryAssertionEvidence:
         af = lr._assertions_fired_summary(case, [], [], 0.0)
         assert lr._unfailable_green(0.0, [], af, False) is False
 
-    def test_order_before_declared_prevents_the_flag(self):
-        """`order_before` 时序断言（taxonomy 判行为层）⇒ 不算假绿候选。"""
+    def test_order_before_declared_does_not_block_the_flag(self):
+        """`order_before` 不进 `assertions_fired` profile ⇒ 不再阻断 `unfailable_green`
+        （盲审判据「同 profile 必同标记」：OR-015/PG-013 与 OR-010 的 profile 逐字段
+        相同，判定跑 34923425338 实证漏标；标记只读 profile，见
+        `_unfailable_green` docstring 的弃用说明）。"""
         case = self._case(order_before=["order_query before order_create"])
         af = lr._assertions_fired_summary(case, [], [], 1.0)
-        assert lr._unfailable_green(1.0, [], af, True) is False
+        assert lr._unfailable_green(1.0, [], af, True) is True
 
     def test_scoring_check_failable_taxonomy(self):
         """可失败性判据表（与 taxonomy 行为层口径同源）。"""
