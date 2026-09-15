@@ -69,7 +69,7 @@ class TestCreateSkillLLM:
 class TestCreateVariants:
     def test_create_vision_llm(self):
         with patch("app.llm.factory.settings") as mock_settings, \
-             patch("app.llm.factory.ChatOpenAI") as mock_co:
+             patch("app.llm.factory._PassthroughOpenAI") as mock_co:
             mock_settings.VISION_MODEL = "vm"
             mock_settings.VISION_API_KEY = "vk"
             mock_settings.VISION_BASE_URL = "vb"
@@ -196,7 +196,7 @@ class TestVisionLlmApiKeyFallback:
 
     def test_falls_back_to_primary_key_when_vision_key_empty(self):
         with patch("app.llm.factory.settings") as ms, \
-             patch("app.llm.factory.ChatOpenAI") as mock_co:
+             patch("app.llm.factory._PassthroughOpenAI") as mock_co:
             ms.VISION_MODEL = "vm"
             ms.VISION_API_KEY = ""            # 未单独配置视觉 key（常态）
             ms.PRIMARY_API_KEY = "pk"         # 只有主模型 key
@@ -209,7 +209,7 @@ class TestVisionLlmApiKeyFallback:
     def test_explicit_vision_key_takes_priority(self):
         """显式配置了独立视觉 key → 优先用它（不覆盖用户意图）"""
         with patch("app.llm.factory.settings") as ms, \
-             patch("app.llm.factory.ChatOpenAI") as mock_co:
+             patch("app.llm.factory._PassthroughOpenAI") as mock_co:
             ms.VISION_MODEL = "vm"
             ms.VISION_API_KEY = "vk"
             ms.PRIMARY_API_KEY = "pk"
@@ -218,7 +218,7 @@ class TestVisionLlmApiKeyFallback:
 
     def test_base_url_falls_back_to_primary(self):
         with patch("app.llm.factory.settings") as ms, \
-             patch("app.llm.factory.ChatOpenAI") as mock_co:
+             patch("app.llm.factory._PassthroughOpenAI") as mock_co:
             ms.VISION_MODEL = "vm"
             ms.VISION_API_KEY = ""
             ms.PRIMARY_API_KEY = "pk"
