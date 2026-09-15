@@ -47,7 +47,7 @@ tools: order_query, order_manage, order_create, logistics_track, product_search,
 
 - 生成：`processing_order_generate(order_ids=[...])`，仅已确认且含加工项订单；生成后订单自动进 producing；批量前先确认
 - 查询：`processing_order_query(keyword=JG-xxx/订单号, status=可选)`
-- 发加工：`processing_order_update(action=issue, processor=加工方, expected_delivery_date=交期)`；开始 `start`；完成 `complete`（提示可发货，不自动发货）；取消 `cancel(reason=必填)`，取消后订单回退已确认
+- 发加工：`processing_order_update(action=issue, processor=加工方, expected_delivery_date=交期)`——**`processor`（加工方）与交期均为「可选」**（口径与工具 schema / `validate_input` / 服务端 DTO 一致：必填只有 `id`+`action`）；用户没给就直接发出（这两项留空），**禁止**把它们当必填去索要、也**禁止**因此不发加工单；确需跟用户核对交期时**一次性**问齐再发（不要逐项追问），用户回「确认」即按已给值发出，**不得重复发同一张卡**。开始 `start`；完成 `complete`（提示可发货，不自动发货）；取消 `cancel(reason=必填)`，取消后订单回退已确认
 - 状态机：generated→issued→in_processing→completed｜cancelled；非法流转服务端拒绝；completed 冻结
 - 含加工项订单不能直接发货：须先完成加工单（服务端守卫）
 

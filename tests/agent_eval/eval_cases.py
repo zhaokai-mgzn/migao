@@ -3877,6 +3877,7 @@ _CASE_PG_016 = EvalCase(
     required_args=[{'tool': 'processing_order_update', 'fields': ['id']}],
     must_succeed=[{'tool': 'processing_order_update', 'action': 'complete'}],
     output_verify=[{'tool': 'processing_order_update', 'action': 'complete', 'expect': {'action': 'complete'}}],
+    pre_clean=[{'type': 'processing_order_reset', 'order_no': 'EVAL-MB-ORD-0004'}],
 )
 
 # ── PP-001 [NORMAL] 加工项选择 - 分页翻页（源: cases/processing.yml）──
