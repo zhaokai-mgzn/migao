@@ -410,7 +410,7 @@ def test_stale_and_bare_line_refs_red(tmp_path):
         ),
         "order_query.py": "l1\nl2\nl3\n",
     })
-    rc, out, rep = run(repo, "--check", "--only", "ref-freshness")
+    rc, out, rep = run(repo, "--check", "--only", "ref-freshness", "--stale-scope", "none")
     chk = check_of(rep, "ref-freshness")
     details = " || ".join(f["detail"] for f in chk["findings"])
     assert rc == 1, out
@@ -428,7 +428,7 @@ def test_ref_freshness_allows_sha_qualified(tmp_path):
         "docs/wiki/note.md": f"引用：`{_PY}` **第 2 行**，`@d0724892`。\n",
         "order_query.py": "l1\nl2\n",
     })
-    rc, out, rep = run(repo, "--check", "--only", "ref-freshness")
+    rc, out, rep = run(repo, "--check", "--only", "ref-freshness", "--stale-scope", "none")
     assert rc == 0 and check_of(rep, "ref-freshness")["status"] == "ok", out
 
 
@@ -507,7 +507,7 @@ def test_heartbeat_red_when_last_success_nine_days_ago(tmp_path):
                       {"status": "completed", "conclusion": "success",
                        "createdAt": "2026-09-06T02:00:00Z"}],
     }), encoding="utf-8")
-    rc, out, rep = run(repo, "--check", "--only", "heartbeat",
+    rc, out, rep = run(repo, "--check", "--only", "heartbeat", "--stale-scope", "none",
                        "--gh-fixture", str(fixture), "--now", NOW)
     chk = check_of(rep, "heartbeat")
     details = " || ".join(f["detail"] for f in chk["findings"])
@@ -523,7 +523,7 @@ def test_heartbeat_never_succeeded_is_red(tmp_path):
     fixture.write_text(json.dumps({"monthly.yml": [
         {"status": "completed", "conclusion": "failure", "createdAt": "2026-09-01T21:40:35Z"}]}),
         encoding="utf-8")
-    rc, out, rep = run(repo, "--check", "--only", "heartbeat",
+    rc, out, rep = run(repo, "--check", "--only", "heartbeat", "--stale-scope", "none",
                        "--gh-fixture", str(fixture), "--now", NOW)
     details = " ".join(f["detail"] for f in check_of(rep, "heartbeat")["findings"])
     assert rc == 1 and "零成功" in details, out
@@ -597,6 +597,33 @@ def test_baseline_only_shrinks_new_drift_blocks(tmp_path):
     assert rc3 == 1, out3
 
 
+def test_new_drift_out_of_pr_scope_warns_not_blocks(tmp_path):
+    """面外新增漂移**不阻塞本 PR**（假红），但 `--strict-stale`（定时腿）下红。
+
+    实证形态：本 PR 的 CI 被**并行包刚合并进 main** 的 `docs/testing/demo-readiness.md`
+    里 3 处裸行号判红（run 34914147884）—— 报错指向错误的对象，且挡住了无关的 PR。
+    """
+    repo = mk_repo(tmp_path, {
+        SKILL_REL: SKILL_TMPL.format(version="1.28.0"),
+        COPY_REL: COPY_TMPL.format(version="1.3"),
+    })
+    run(repo, "--regen-baseline", "--reason", "首跑基线", "--only", "ref-freshness")
+    # 面外：漂移来自**基线生成之后**才落到 main 的另一个文件（并行包合并的形态）
+    _write(repo, "docs/testing/other.md", f"引用：`{_NOWHERE}:3`\n")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "另一包合并：带来一处漂移")
+    rc, out, rep = run(repo, "--check", "--only", "ref-freshness")
+    assert rc == 0, out
+    assert rep["summary"]["new_drift_out_of_scope"] >= 1, out
+    rc2, out2, _ = run(repo, "--check", "--only", "ref-freshness", "--strict-stale")
+    assert rc2 == 1, out2
+    # 面内：同一个漂移若出在本 PR 改动的文件里 ⇒ 必红
+    _write(repo, COPY_REL, COPY_TMPL.format(version="1.3") + f"\n引用：`{_NOWHERE}:4`\n")
+    rc3, out3, rep3 = run(repo, "--check", "--only", "ref-freshness")
+    assert rc3 == 1, out3
+    assert rep3["summary"]["new_drift"] >= 1, out3
+
+
 def test_regen_baseline_requires_reason(tmp_path):
     """重生成基线必须写理由（PR 里要说明为什么）—— 防"基线当成豁免表随手刷"。"""
     repo = _anchor_repo(tmp_path)
@@ -655,7 +682,9 @@ def test_real_repo_audit_is_green_on_current_tree():
                             "origin/main^{commit}"], capture_output=True, text=True)
     if probe.returncode != 0:
         pytest.skip("当前检出没有 origin/main（浅检出）⇒ 本自证无判定基准，跳过")
-    rc, out, rep = run(REPO_ROOT, "--check", "--stale-scope", "none",
+    # 默认 `--stale-scope diff`：**本 PR 改动面**的新增漂移才阻塞 —— 这样并行包刚合并进
+    # main 的漂移不会把本测试（以及任何无关 PR）判红。
+    rc, out, rep = run(REPO_ROOT, "--check",
                        "--live-anchor", str(REPO_ROOT.parent / "no-such-anchor"),
                        base="origin/main")
     errs = [c["id"] for c in rep["checks"] if c["status"] == "error"]

@@ -1092,13 +1092,17 @@ def compare_baseline(result: CheckResult, base_entries: dict[str, int],
     （只报告），用于纯审计模式。
     """
     now = _counts(result.findings)
-    new, known, paydown, stale = [], [], [], []
+    new, new_out, known, paydown, stale = [], [], [], [], []
     for k, n in sorted(now.items()):
         b = base_entries.get(k, 0)
         if b == 0:
-            new.append((k, n))
+            delta = n
         elif n > b:
-            new.append((k, n - b))
+            delta = n - b
+        else:
+            delta = 0
+        if delta:
+            (new if _in_scope(k, changed) else new_out).append((k, delta))
         elif n == b:
             known.append((k, n))
         else:
@@ -1109,13 +1113,35 @@ def compare_baseline(result: CheckResult, base_entries: dict[str, int],
             stale.append((k, b))
             if changed is not None and _entry_file(k) in changed:
                 stale_blocking.append((k, b))
-    return {"new": new, "known": known, "paydown": paydown,
+    return {"new": new, "new_out_of_scope": new_out, "known": known, "paydown": paydown,
             "stale": stale, "stale_blocking": stale_blocking}
 
 
 def _entry_file(key: str) -> str:
-    """基线条目 key 的首段是文件路径（见各判据的 key 构造）。"""
+    """基线条目 key 的首段（各判据的 key 构造见对应 check）。"""
     return key.split("|")[0]
+
+
+_PATHISH = re.compile(r"[/.]")
+
+
+def _in_scope(key: str, changed: set[str] | None) -> bool:
+    """该条目是否**属本 PR 的改动面**。
+
+    文件型 key（首段像路径）⇒ 看是否在本 PR 改动集里；分量/调度名型 key ⇒ 一律算本 PR 面
+    （它们没有可归因的文件，且变化本身就值得拦）。
+
+    **为什么需要这条**：新增漂移若来自**并行包刚合并进 main 的文件**，把本 PR 判红就是
+    `migao-acceptance` 说的「假红」—— 报错指向错误的对象，还会挡住无关的 PR
+    （同款裁定见 #3846「基线陈旧项降级为告警」）。故：`--check` 只对**本 PR 改动面**
+    的新增漂移 fail-closed；面外的记 ⚠️ 并在**定时腿**（`--strict-stale`）红。
+    """
+    if changed is None:
+        return True
+    first = _entry_file(key)
+    if not _PATHISH.search(first):
+        return True
+    return first in changed
 
 
 def changed_files(a: Audit) -> set[str]:
@@ -1143,7 +1169,8 @@ def run_audit(a: Audit, baseline: dict, only: list[str] | None,
         "unimplemented": UNIMPLEMENTED,
         "summary": {},
     }
-    new_total = known_total = paydown_total = stale_total = stale_block_total = 0
+    new_total = new_out_total = 0
+    known_total = paydown_total = stale_total = stale_block_total = 0
     for c in CHECKS:
         if only and c.id not in only:
             continue
@@ -1171,6 +1198,7 @@ def run_audit(a: Audit, baseline: dict, only: list[str] | None,
             status = "ok"
         res.status = status
         new_total += len(cmp_["new"]) + len(env_res)
+        new_out_total += len(cmp_["new_out_of_scope"])
         known_total += len(cmp_["known"])
         paydown_total += len(cmp_["paydown"])
         stale_total += len(cmp_["stale"])
@@ -1187,6 +1215,8 @@ def run_audit(a: Audit, baseline: dict, only: list[str] | None,
             "error": res.error,
             "notes": res.notes,
             "new_drift": [{"key": k, "delta": n} for k, n in cmp_["new"]],
+            "new_drift_out_of_scope": [{"key": k, "delta": n}
+                                       for k, n in cmp_["new_out_of_scope"]],
             "known_drift": [{"key": k, "count": n} for k, n in cmp_["known"]],
             "paydown": [{"key": k, "delta": n} for k, n in cmp_["paydown"]],
             "stale_baseline_entry": [{"key": k, "count": n} for k, n in cmp_["stale"]],
@@ -1200,11 +1230,12 @@ def run_audit(a: Audit, baseline: dict, only: list[str] | None,
         })
     out["summary"] = {
         "new_drift": new_total,
+        "new_drift_out_of_scope": new_out_total,
         "known_drift": known_total,
         "paydown": paydown_total,
         "stale_baseline_entry": stale_total,
         "stale_baseline_blocking": stale_block_total,
-        "verdict": ("drift" if new_total else
+        "verdict": ("drift" if (new_total or new_out_total) else
                     ("crash" if any(c["status"] == "error" for c in out["checks"]) else
                      ("unknown" if any(c["status"] == "unknown" for c in out["checks"]) else "ok"))),
     }
@@ -1239,7 +1270,11 @@ def render_summary(rep: dict, baseline: dict) -> str:
         if c["error"]:
             L.append(f"     💥 {c['error']}")
         for d in c["new_findings_detail"]:
-            L.append(f"     ❌ 新增漂移：{d}")
+            L.append(f"     ❌ 新增漂移（本 PR 改动面）：{d}")
+        for k in c.get("new_drift_out_of_scope", []):
+            detail = next((f["detail"] for f in c["findings"] if f["key"] == k["key"]), k["key"])
+            L.append(f"     ⚠️ 新增漂移（**面外**，多半来自并行包刚合并的文件；"
+                     f"本 PR 改动面内无新增 ⇒ 不阻塞，定时腿会红）：{detail}")
         for d in c.get("env_findings", []):
             L.append(f"     ❌ 硬漂移（永不进基线 / 不可放行）：{d['detail']}")
         for k in c["known_drift"]:
@@ -1254,10 +1289,10 @@ def render_summary(rep: dict, baseline: dict) -> str:
         for k in c["paydown"]:
             L.append(f"     🧹 可销账：{k['key']} −{k['delta']}（可 `--regen-baseline --reason ...`）")
     L.append("-" * 78)
-    L.append("本次相对基线的增减：新增漂移 %d / 存量放行 %d / 可销账 %d / 基线归零未删 %d"
-             "（其中本次 diff 命中 ⇒ 阻塞 %d）⇒ %s"
-             % (s["new_drift"], s["known_drift"], s["paydown"], s["stale_baseline_entry"],
-                s["stale_baseline_blocking"], s["verdict"].upper()))
+    L.append("本次相对基线的增减：新增漂移 %d（面内，阻塞） / 面外新增 %d（不阻塞，定时腿红） / "
+             "存量放行 %d / 可销账 %d / 基线归零未删 %d（其中本次 diff 命中 ⇒ 阻塞 %d）⇒ %s"
+             % (s["new_drift"], s["new_drift_out_of_scope"], s["known_drift"], s["paydown"],
+                s["stale_baseline_entry"], s["stale_baseline_blocking"], s["verdict"].upper()))
     if rep["unimplemented"]:
         L.append("未实装（**不用恒真判断凑数**）：" + "、".join(u["id"] for u in rep["unimplemented"]))
     L.append("-" * 78)
@@ -1315,7 +1350,9 @@ def main(argv: list[str] | None = None) -> int:
               gh_fixture=Path(args.gh_fixture) if args.gh_fixture else None)
     only = [x.strip() for x in args.only.split(",")] if args.only else None
     # 纯审计（`--regen-baseline` 或默认报告模式）不按 diff 收紧陈旧判定；`--check` 才收紧。
-    changed = changed_files(a) if (args.check or args.stale_scope == "diff") else None
+    # `--stale-scope none` = 不按 PR diff 收紧（纯审计 / 无 PR 上下文的树）；
+    # 默认 `diff` = 只对**本 PR 改动面**的新增漂移 fail-closed（见 `_in_scope`）。
+    changed = changed_files(a) if args.stale_scope == "diff" else None
     rep = run_audit(a, baseline, only, changed)
 
     if args.regen_baseline:
@@ -1371,7 +1408,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if s["new_drift"]:
         return 1
-    if args.strict_stale and s["stale_baseline_entry"]:
+    if args.strict_stale and (s["stale_baseline_entry"] or s["new_drift_out_of_scope"]):
         return 1
     if any(c["status"] == "error" for c in rep["checks"]):
         return 1

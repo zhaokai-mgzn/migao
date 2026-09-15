@@ -3,7 +3,7 @@
   "_entry_key_note": "条目 key 为 `<文件或分量>|<判据内部标识>`，**不含行号** —— 否则改一行就换 key，『只许缩短』会退化成随机红。",
   "_scope_note": "「已不再漂移 ⇒ 必须移除」这条**只对本次 PR diff 命中的文件生效**（见 drift_audit.compare_baseline 的 stale_blocking）—— 否则别人修好一条存量漂移，本门禁就会自己判红（假红）并挡住他们的 PR。口径与 `.github/case_trust_gate.py` 的 stale_baseline_entries 一致。",
   "_when_to_regen": "① 你修好了某条存量漂移（门禁会告诉你，且**只在你 diff 命中的文件上**判红）；② 别人合并了漂移修复 ⇒ 重跑审计后重生成，把已修好的条目删掉；③ 判据集合本身变化（新增/改名）⇒ 必须重生成。",
-  "anchor_sha": "4953e5609b60903f8b668f918b1f71f09c3ae4c9",
+  "anchor_sha": "0f56a7257439877195141f624dc099013e14a516",
   "cases_fingerprint": "cf4c4623acedc269",
   "entries": {
     "generated-freshness": {},
@@ -33,6 +33,9 @@
       ".github/workflows/llm-thinking-probe.yml|e2e-real.yml#47|bare": 1,
       ".github/workflows/pr-check.yml|verify-all.sh#66|bare": 1,
       "docs/testing/acceptance-protocol.md|ProcessingItemService.java#248|bare": 1,
+      "docs/testing/demo-readiness.md|e2e/specs/orders/shipment-doc.spec.ts#145|bare": 1,
+      "docs/testing/demo-readiness.md|e2e/specs/orders/shipment-doc.spec.ts#173|bare": 1,
+      "docs/testing/demo-readiness.md|e2e/specs/orders/shipment-doc.spec.ts#92|bare": 2,
       "docs/testing/eval-environments.md|bare-line|第 86-88 行": 1,
       "docs/testing/eval-pipeline-performance.md|app/config.py#41|bare": 1,
       "docs/testing/eval-pipeline-performance.md|app/graph/skills/base_skill.py#198|bare": 1,
@@ -82,9 +85,9 @@
       "version": 1
     }
   },
-  "generated_at": "2026-09-15T00:39:08.431926+00:00",
+  "generated_at": "2026-09-15T00:44:58.667908+00:00",
   "policy_version": 1,
-  "reason": "锚定 rebase 后的 origin/main；基线 key 去 path:行号 字面量",
+  "reason": "跟随 PR：① 基线 key 去掉 path:行号 字面量（会被 case-trust 门禁规则 G 在 diff 里误判成悬空引用 —— 已在 #3858 的 CI 上实测到）；② 面外新增漂移不阻塞本 PR（并行包合并的漂移不应挡住无关 PR）",
   "regenerate_command": "python3 scripts/drift_audit.py --regen-baseline --reason '<理由>'",
   "schema": "migao.drift-audit-baseline/1"
 }
