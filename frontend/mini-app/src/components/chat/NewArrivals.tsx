@@ -52,10 +52,7 @@ export default function NewArrivals({ onPick }: NewArrivalsProps) {
 
   return (
     <View className='new-arrivals'>
-      <View className='new-arrivals__header'>
-        <Text className='new-arrivals__title'>🔥 新品推荐</Text>
-        <Text className='new-arrivals__hint'>点一下问问小布</Text>
-      </View>
+      <Text className='new-arrivals__title'>🔥 新品推荐 · 点一下问问小布</Text>
       <ScrollView className='new-arrivals__scroll' scrollX enhanced showScrollbar={false}>
         <View className='new-arrivals__row'>
           {products.map((p) => {
