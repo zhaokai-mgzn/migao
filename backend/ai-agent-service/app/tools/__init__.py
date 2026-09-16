@@ -9,13 +9,15 @@ AI 智能客服系统 - Tool 模块
 - 商品管理
 - 库存管理
 - 物流查询
+- 知识卡片检索（本店已发布知识，LLM WIKI 板块）
 - 转人工
 
 所有 Tool 通过 HTTP API 调用 admin-api，不直接操作数据库
 详见文档：docs/TOOL_API_SPEC.md
 
-注意：知识库检索（KnowledgeSearchTool/KnowledgeManageTool）已禁用，
-待 RAG 功能重新上线后恢复。
+知识库域：知识卡片检索（KnowledgeSearchTool）已启用——LLM WIKI 板块替代旧 RAG
+（issue #3051），双端接线（米宝 #3059 / 小布 #3077）；KnowledgeManageTool（写侧）
+不注册——知识管理在 admin-web 后台操作，不经 Agent（见 tools/registry.py）。
 """
 
 # 基础设施
@@ -40,6 +42,7 @@ from app.tools.product_search import ProductSearchTool
 from app.tools.product_detail import ProductDetailTool
 from app.tools.logistics_track import LogisticsTrackTool
 from app.tools.customer_logistics_track import CustomerLogisticsTrackTool
+from app.tools.knowledge_search import KnowledgeSearchTool
 from app.tools.order_query import OrderQueryTool
 from app.tools.customer_order_query import CustomerOrderQueryTool
 from app.tools.order_manage import OrderManageTool
@@ -77,7 +80,7 @@ __all__ = [
     "ProductSearchTool",
     "ProductDetailTool",
     "LogisticsTrackTool",
-    # [RAG 禁用] "KnowledgeSearchTool",
+    "KnowledgeSearchTool",
     "OrderQueryTool",
     "CustomerOrderQueryTool",
     "OrderManageTool",
@@ -89,7 +92,7 @@ __all__ = [
     "RoleManageTool",
     "DashboardStatsTool",
     "AfterSalesManageTool",
-    # [RAG 禁用] "KnowledgeManageTool",
+    # KnowledgeManageTool 不注册：知识管理在 admin-web 后台操作，不经 Agent
     "NotificationManageTool",
     "SettingsManageTool",
     "SessionManageTool",
