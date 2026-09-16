@@ -20,9 +20,31 @@ class ToolContext(BaseModel):
     session_id: Optional[str] = Field(None, description="会话 ID")
     role: str = Field("customer", description="用户角色: customer/admin/agent")
     permissions: list[str] = Field(default_factory=list, description="细粒度权限码列表")
-    
+
+    @property
+    def ticket_source(self) -> str:
+        """本会话调用方的**真实来源**，用于建售后工单时向 admin-api 声明（issue #3686）。
+
+        米宝（B 端）与 小布（C 端）都通过 Service Token 调同一个
+        `POST /api/admin/agent/after-sales`，服务端**无法自行判定**来源（operator 恒为
+        internal-service、body 无 source —— #3605 已删）⇒ 由 ai-agent 侧按本上下文声明，
+        经 `X-Agent-Client` 请求头下发，服务端只接受白名单内的值。
+
+        - C 端（role 折叠为 customer/agent，见 api/chat.py `_to_agent_role`）→ `customer`（顾客发起）
+        - B 端员工 → `agent`（AI 建单）
+
+        与既有 `context.role == "customer"` 口径同源（inventory_manage / aftersale_query /
+        order_query 等已用同一判据区分两端），不新增第二套身份判定。
+        """
+        return "customer" if self.role in CUSTOMER_ONLY_ROLES else "agent"
+
     class Config:
         arbitrary_types_allowed = True
+
+
+# C 端（顾客）角色集合：与 api/chat.py 的 `CUSTOMER_ONLY_ROLES` 同口径
+# （chat.py 是 API 层，tools 层不可反向导入 → 在此声明单一语义源，chat.py 复用本常量）。
+CUSTOMER_ONLY_ROLES = frozenset({"customer", "agent"})
 
 
 class ToolResult(BaseModel):

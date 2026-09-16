@@ -218,7 +218,7 @@ describe('userService API', () => {
         statusCode: 200,
         data: {
           success: true,
-          data: { id: 'u1', nickname: '测试用户', avatar: null, tenant_id: 1 },
+          data: { id: 'u1', nickname: '测试用户', avatar: null, tenantId: 1 },
         },
       })
 
@@ -246,7 +246,7 @@ describe('userService API', () => {
         statusCode: 200,
         data: {
           success: true,
-          data: { id: 'u1', nickname: '新昵称', avatar: 'url', tenant_id: 1 },
+          data: { id: 'u1', nickname: '新昵称', avatar: 'url', tenantId: 1 },
         },
       })
 

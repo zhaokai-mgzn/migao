@@ -1,0 +1,175 @@
+name: Drift Audit (真相源契约)
+
+# ── 这是什么（issue #3843 的 A~H 护栏统一入口）─────────────────────────────────
+# 「反复修、反复测、还有问题」的主机制不是断言写法，而是两件**静默**的事：
+#   ① **陈旧快照**（读的副本 ≠ 被测对象的当前状态）⇒ 修的目标是错的；
+#   ② **移动靶**（用名字/序号/位置定位被测对象）⇒ 测的目标是错的。
+# 两者都不报错。本 workflow 是这两件事的**统一判定入口**（一条命令、一个报告）：
+#   scripts/drift_audit.py —— 契约与判据定义见 `docs/wiki/truth-source-contract.md`。
+#
+# ── 两条腿（缺一层就等于没有）────────────────────────────────────────────────
+#  · PR：`--check` —— **新增**漂移 ⇒ exit 1（fail-closed）；存量漂移打印放行（基线 burn-down）。
+#  · 每日：`--check --strict-stale --fail-on-unknown` —— 债务盘点：基线里"已不再漂移"的条目
+#    要红（否则豁免表会僵化），网络不可达也要红（否则"心跳未知"会变成假绿）。
+#
+# ── 为什么失败时打 `block/merge`（这才是真 fail-closed）────────────────────────
+# 本仓库用 GitHub **native auto-merge**：非 bot/draft/无 `block/merge` 的 PR 在 required
+# 检查全绿后**秒级自动合并**。新增一个非 required 的检查**不会**拦住合并 ——
+# 所以本 job 在审计失败时给 PR 打 `block/merge`（auto-merge 会跳过带该标签的 PR），
+# 并在恢复后摘掉。这样"红"才真的会**停下合并**，而不只是"多一行日志"。
+#
+# ── 边界（照实登记，勿当成"已覆盖"）────────────────────────────────────────
+#  · 运行期护栏（结论绑定 (sha, cases_fingerprint, policy_version, 环境指纹) + 用例前置
+#    自断言 fail-closed）**不在本 workflow**：实装点在 `tests/agent_eval/local_runner.py`，
+#    由另一任务包落地。本审计已产出前三项指纹供那层引用。
+#  · 未实装的判据见 `python3 scripts/drift_audit.py --list-checks` 的 `unimplemented`
+#    （语义级引用命中 / 写死条数 / 章节指向 / 运行期 fencing / namespace 覆盖率 /
+#    同步副本的兑现或撤回）—— **不用恒真判断凑数**。
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+  schedule:
+    # 每日 05:17 CST（UTC+8）= UTC 21:17，避开整点 CI 高峰
+    - cron: '17 21 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+  # 失败时给 PR 打 `block/merge` + 评论修复指引；恢复后摘标签
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: drift-audit-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    name: Drift Audit (真相源契约)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # 需要 `origin/main...HEAD` 的三点 diff（判定"本 PR 新增了什么引用/漂移"）
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install deps
+        run: pip install pyyaml
+
+      - name: 基准分支与新鲜度自证
+        run: |
+          git fetch origin main
+          echo "HEAD          = $(git rev-parse HEAD)"
+          echo "origin/main   = $(git rev-parse origin/main)"
+          echo "落后 origin/main 的提交数 = $(git rev-list --count HEAD..origin/main)"
+
+      - name: 漂移审计
+        id: audit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          MODE_ARGS="--check"
+          if [ "${{ github.event_name }}" = "schedule" ] || [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            # 债务盘点腿：陈旧基线条目也红；网络不可达（心跳未知）也红
+            MODE_ARGS="--check --strict-stale --fail-on-unknown"
+          fi
+          echo "mode: $MODE_ARGS"
+          set +e
+          # 不用管道：把输出落盘再 cat（管道会吞掉退出码，是本仓库已踩过的坑）
+          python3 scripts/drift_audit.py $MODE_ARGS \
+            --base origin/main \
+            --json drift-audit-report.json > /tmp/drift-audit.txt 2>&1
+          RC=$?
+          set -e
+          cat /tmp/drift-audit.txt
+          echo "exit_code=$RC" >> "$GITHUB_OUTPUT"
+          {
+            echo "## 漂移审计（真相源契约）"
+            echo ''
+            echo '```'
+            cat /tmp/drift-audit.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit $RC
+
+      - name: Upload 机器可读报告
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: drift-audit-report
+          path: drift-audit-report.json
+          retention-days: 14
+          if-no-files-found: warn
+
+      # ── fail-closed 的执行闸：auto-merge 会跳过带 `block/merge` 的 PR ──────────
+      - name: 审计失败 ⇒ 打 block/merge + 贴修复指引
+        if: failure() && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          set +e
+          BODY=$(mktemp)
+          {
+            echo "❌ **Drift Audit 未通过 —— 本 PR 引入了新的「陈旧快照 / 移动靶」漂移。**"
+            echo ''
+            echo '```'
+            cat /tmp/drift-audit.txt 2>/dev/null || echo "(报告缺失)"
+            echo '```'
+            echo ''
+            echo "**怎么改**：上面的『怎么改（按判据逐条）』已按判据给出处置；"
+            echo "若确认是**应接受的存量**（不是新增回归）："
+            echo '```'
+            echo "python3 scripts/drift_audit.py --regen-baseline --reason '<你在 PR 里写的理由>'"
+            echo '```'
+            echo "契约（判定方式 + 违反后的处置）：\`docs/wiki/truth-source-contract.md\`；"
+            echo "判据集合：\`python3 scripts/drift_audit.py --list-checks\`。"
+            echo ''
+            echo "（已自动打上 \`block/merge\` 以阻止 auto-merge；修复后本 workflow 会自动摘掉。）"
+          } > "$BODY"
+          gh pr comment "$PR" --body-file "$BODY" || true
+          gh pr edit "$PR" --add-label block/merge || true
+          exit 0
+
+      - name: 审计通过 ⇒ 摘 block/merge
+        if: success() && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          set +e
+          LABELS=$(gh pr view "$PR" --json labels --jq '.labels[].name')
+          echo "$LABELS" | grep -qx 'block/merge' && gh pr edit "$PR" --remove-label block/merge || true
+          exit 0
+
+      - name: 定时腿失败 ⇒ 开/更 issue 留痕（静默即缺陷）
+        if: failure() && github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set +e
+          TITLE="[drift] 真相源契约审计未通过（定时腿）"
+          EXIST=$(gh issue list --state open --search "$TITLE in:title" --json number --jq '.[0].number // empty')
+          BODY=$(mktemp)
+          {
+            echo "定时腿（\`--strict-stale --fail-on-unknown\`）未通过。run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            echo ''
+            echo '```'
+            cat /tmp/drift-audit.txt 2>/dev/null || echo "(报告缺失)"
+            echo '```'
+          } > "$BODY"
+          if [ -n "$EXIST" ]; then
+            gh issue comment "$EXIST" --body-file "$BODY" || true
+          else
+            gh issue create --title "$TITLE" --body-file "$BODY" || true
+          fi
+          exit 0

@@ -1,0 +1,312 @@
+[
+  {
+    "journey": "01-login",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "login → /dashboard，刷新后会话保持",
+      "/tmp/ui-smoke/out5/screenshots/01-login.png"
+    ]
+  },
+  {
+    "journey": "02-dashboard",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "看板渲染数字片段: 44|11|419|12|¥3,955",
+      "/tmp/ui-smoke/out5/screenshots/02-dashboard.png"
+    ]
+  },
+  {
+    "journey": "03-briefing",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "简报页渲染，body 文本长度 225",
+      "/tmp/ui-smoke/out5/screenshots/03-briefing.png"
+    ]
+  },
+  {
+    "journey": "04-agent-workspace-redirect",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "重定向到 /agent-workspace/human-sessions",
+      "/tmp/ui-smoke/out5/screenshots/04-agent-workspace-redirect.png"
+    ]
+  },
+  {
+    "journey": "05-human-sessions",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "在线接待页渲染（ai-agent 未起，空态）— UI-only",
+      "/tmp/ui-smoke/out5/screenshots/05-human-sessions.png"
+    ]
+  },
+  {
+    "journey": "06-agent-sessions",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "会话历史页渲染（ai-agent 未起，空态）— UI-only",
+      "/tmp/ui-smoke/out5/screenshots/06-agent-sessions.png"
+    ]
+  },
+  {
+    "journey": "07-chat",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "对话页输入框可用（ai-agent 未起）— UI-only",
+      "/tmp/ui-smoke/out5/screenshots/07-chat.png"
+    ]
+  },
+  {
+    "journey": "08-products-list",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "商品列表渲染 10 行",
+      "/tmp/ui-smoke/out5/screenshots/08-products-list.png"
+    ]
+  },
+  {
+    "journey": "09-products-new",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "门幅 值/显示分离 ✓([\"|请选择\",\"2.8|2.8米\",\"3.2|3.2米\",\"3.4|3.4米\"]→'2.8') + 建品可见 ✓(冒烟SKU商品1789377558016)",
+      "/tmp/ui-smoke/out5/screenshots/09-products-new.png"
+    ]
+  },
+  {
+    "journey": "10-product-detail",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "商品详情渲染（http://localhost:3001/products/701dec2d2d994da111167c859c7cbf26）",
+      "/tmp/ui-smoke/out5/screenshots/10-product-detail.png"
+    ]
+  },
+  {
+    "journey": "11-product-edit-doorwidth",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "门幅下拉回显: value=2.8, 选项=[\"|请选择\",\"2.8|2.8米\",\"3.2|3.2米\",\"3.4|3.4米\"]",
+      "/tmp/ui-smoke/out5/screenshots/11-product-edit-doorwidth.png"
+    ]
+  },
+  {
+    "journey": "12-processing",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "加工项 新建→列表可见→编辑→删除 完成；启停toggle可见=false",
+      "/tmp/ui-smoke/out5/screenshots/12-processing.png"
+    ]
+  },
+  {
+    "journey": "13-categories",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "分类 新建→可见→行内删除",
+      "/tmp/ui-smoke/out5/screenshots/13-categories.png"
+    ]
+  },
+  {
+    "journey": "14-orders-list",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "订单列表 20 行（无分页按钮或单页）",
+      "/tmp/ui-smoke/out5/screenshots/14-orders-list.png"
+    ]
+  },
+  {
+    "journey": "15-orders-new",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "新建订单提交后跳转 http://localhost:3001/orders/new",
+      "/tmp/ui-smoke/out5/screenshots/15-orders-new.png"
+    ]
+  },
+  {
+    "journey": "16-order-detail-processing-order",
+    "pass": true,
+    "errors": [],
+    "notes": [
+      "加工单未生成前 GET /processing-orders/{orderId} 404 探测（预期，4 条）"
+    ],
+    "evidence": [
+      "加工单生成+流转:  [发加工→ok] [开始加工→ok] [加工完成→ok]; 加工单可见=false",
+      "/tmp/ui-smoke/out5/screenshots/16-order-detail-processing-order.png"
+    ]
+  },
+  {
+    "journey": "17-order-ship",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "发货页表单渲染（4 控件）",
+      "/tmp/ui-smoke/out5/screenshots/17-order-ship.png"
+    ]
+  },
+  {
+    "journey": "18-after-sales-list",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "售后工单列表渲染 20 行",
+      "/tmp/ui-smoke/out5/screenshots/18-after-sales-list.png"
+    ]
+  },
+  {
+    "journey": "19-after-sales-detail",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "/tmp/ui-smoke/out5/screenshots/19-after-sales-detail.png"
+    ]
+  },
+  {
+    "journey": "20-customers-list",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "客户列表 20 行",
+      "/tmp/ui-smoke/out5/screenshots/20-customers-list.png"
+    ]
+  },
+  {
+    "journey": "21-customer-detail",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "/tmp/ui-smoke/out5/screenshots/21-customer-detail.png"
+    ]
+  },
+  {
+    "journey": "22-finance",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "财务对账页渲染",
+      "/tmp/ui-smoke/out5/screenshots/22-finance.png"
+    ]
+  },
+  {
+    "journey": "23-employees",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "员工 新建→可见→改手机号落库=false→删除；空提交校验=false",
+      "/tmp/ui-smoke/out5/screenshots/23-employees.png"
+    ]
+  },
+  {
+    "journey": "24-roles",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "岗位权限页 1 行，权限编辑弹窗可开",
+      "/tmp/ui-smoke/out5/screenshots/24-roles.png"
+    ]
+  },
+  {
+    "journey": "25-settings",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "设置页渲染，Tab 数=1",
+      "/tmp/ui-smoke/out5/screenshots/25-settings.png"
+    ]
+  },
+  {
+    "journey": "26-notifications",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "通知中心渲染，已读操作可用",
+      "/tmp/ui-smoke/out5/screenshots/26-notifications.png"
+    ]
+  },
+  {
+    "journey": "27-corporate-home",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "/ 渲染（2378 字符）",
+      "/tmp/ui-smoke/out5/screenshots/27-corporate-home.png"
+    ]
+  },
+  {
+    "journey": "28-corporate-about",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "/about 渲染（1139 字符）",
+      "/tmp/ui-smoke/out5/screenshots/28-corporate-about.png"
+    ]
+  },
+  {
+    "journey": "29-corporate-contact",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "/contact 渲染（591 字符）",
+      "/tmp/ui-smoke/out5/screenshots/29-corporate-contact.png"
+    ]
+  },
+  {
+    "journey": "30-corporate-services",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "/services 渲染（1100 字符）",
+      "/tmp/ui-smoke/out5/screenshots/30-corporate-services.png"
+    ]
+  },
+  {
+    "journey": "31-register",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "注册页渲染，输入控件=2",
+      "/tmp/ui-smoke/out5/screenshots/31-register.png"
+    ]
+  }
+]

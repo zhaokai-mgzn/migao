@@ -76,9 +76,28 @@ cases:
     truths_ref:
       - customer-list.tag-todo
     user_inputs:
-      - "给张三加VIP2活跃标签"
-      - auto_select: true
-      - "确认"
+      # 2026-09-15 修三处用例真值错误（issue #3832，判定跑 34908262839 的 KEY_JOURNEY 红）：
+      # ① 原输入「给张三加VIP2活跃标签」里的「VIP2活跃」**不是**种子标签目录里的标签
+      #    （`fixtures/mibao_eval_seed.sql` 逐字只有 `VIP2` / `活跃` 两条，见 #3794）⇒ 改成
+      #    目录里真有的 `VIP2`。注意**不能**改成让 agent 建标签：admin-api
+      #    `CustomerService.addTagToCustomer` 对目录外 tagId 直接 notFound、
+      #    `customer_manage._add_tag` 要求 `tag_id`（建标签是另一个 action `create_tag`）
+      #    ⇒「目录外标签由 agent 创建」不是产品行为。
+      # ② 原输入只给姓名「张三」——而 normal 档同栈里 `OR-010`（order.yml）建单时 admin-api
+      #    会按手机号**自动 upsert 客户档案**（`CustomerService` 的 `sourceChannel("order")`
+      #    分支）⇒ 库里多出一个**同名张三**（实测 run 34908262839：07:40:11 落库
+      #    `phone=13812345678`）⇒ 两次尝试的 R1 都是 `customers=2 total=2` ⇒ agent 合理地
+      #    发重名澄清卡、`add_tag` 永不发生。按 #3568 对 CU-004 的同一改法用**手机号唯一指代**
+      #    （`customer_manage.list` keyword 支持手机号；种子客户 `cust_eval_zhangsan` 即
+      #    13800138000，唯一命中）⇒ 对同名残留免疫，用例意图（打标签真落库）不变。
+      - "给张三（手机号 13800138000）加VIP2标签"
+      # 收尾「答卡轮」（#3518/#3568 口径，同 CU-004/PR-005/PR-016）：agent 在收尾轮只发
+      # confirm 卡、**裸文本「确认」不放行写操作**（文字 ≠ 点卡）→ 有卡答卡
+      # （confirm→回 confirmValue），无卡才发 fallback 原文。原写法是裸文本「确认」——
+      # 实测本 run 的重试尝试正是死在这一格：agent 在末轮才发 confirm 卡
+      # （`confirm|…操作=添加标签、标签=VIP2、活跃|…`）而没有第 4 轮答卡。
+      - auto_respond:
+          fallback: "确认"
     expectations:
       - tool: customer_manage
         args:
@@ -86,12 +105,23 @@ cases:
     data_checks:
       - "add_tag 真实落库（customer_profiles.tags JSONB 写入），重复标签幂等跳过"
     pre_clean:
+      # `customer_keyword` 用**手机号**而不是姓名（#3568 口径）：admin-api 客户列表按
+      # `created_at DESC` 排序（`CustomerService.getCustomerPage`），而本类型取的是该列表
+      # 第 `customer_index` 条 ⇒ 重名时 `customer_index: 0` 会命中**最新建的那个张三**
+      # （OR-010 造的），不是种子客户 —— 清理会打在错的人身上。
+      # `tag_name` 必须是种子标签目录里真有的名字，否则本清理**结构性空转**（#3794）。
       - type: customer_tag_remove
-        customer_keyword: "张三"
+        customer_keyword: "13800138000"
         customer_index: 0
-        tag_name: "VIP2活跃"
+        tag_name: "VIP2"
+    # 全局命名空间声明（issue #3781）：与同样争用该客户身份的用例自动互斥
+    # （`customer_phone:13800138000` 被 OR-008/OR-009/OR-016/AS-003/CR-001/CH-010 等声明，
+    # 构成真实争用组）—— 本用例写该客户的 `profiles.tags`，CU-004 改该客户的 phone，
+    # 同窗口并行会互相改掉对方的前置。
+    namespaces:
+      - "customer_phone:13800138000"
     skip_reason: ""
-    merge_log: "verification 4.3 独有；2026-09-09 校准：① truth「tag-todo 空实现」已过时（真实落库）；② 标签名「VIP」生产不存在（实际「VIP2活跃」），改真实标签名；③ 补「选第一个」+「确认」轮（重名澄清 + 标签确认，probe 实证需多轮）。2026-09-10 再校准：agent 重名澄清升级为 choice 交互卡（card 内容 LLM 动态生成），「第一个」文本指代不稳定 → 改 auto_select 自动回第一个选项（runner #3160 支持）"
+    merge_log: "verification 4.3 独有；2026-09-09 校准：① truth「tag-todo 空实现」已过时（真实落库）；② 标签名「VIP」生产不存在（实际「VIP2活跃」），改真实标签名；③ 补「选第一个」+「确认」轮（重名澄清 + 标签确认，probe 实证需多轮）。2026-09-10 再校准：agent 重名澄清升级为 choice 交互卡（card 内容 LLM 动态生成），「第一个」文本指代不稳定 → 改 auto_select 自动回第一个选项（runner #3160 支持）。2026-09-15（issue #3832）修正三处真值错误：① 标签名改种子目录真有的「VIP2」（原「VIP2活跃」不在目录里 ⇒ pre_clean 结构性空转，见 #3794）；② 姓名改手机号唯一指代（OR-010 建单自动 upsert 出同名张三 ⇒ 重名澄清轮不可控、「张三」落点不确定），删掉 auto_select 轮；③ 收尾轮裸文本「确认」→ auto_respond 答卡轮（裸文本不放行写操作）；④ 补 namespaces 进串行道。断言（customer_manage(action=add_tag)）**未改**"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_base.py"
@@ -110,9 +140,20 @@ cases:
     truths_ref:
       - customer-list.partial-update
     user_inputs:
-      - "张三手机号改成 13900001111"
-      - "第一个"
-      - "确认"
+      # 2026-09-14 消除顺序依赖（issue #3568）：原第 1 轮只给姓名「张三」，第 2 轮发**裸文本
+      # 「第一个」**——落点完全由「重名客户列表返回顺序」决定（生产有 3 位张三；独立栈种子
+      # 只有 1 位时该轮又对不上任何卡片）。注意这里**不能**用 `auto_select`：那条路在
+      # 「没有卡片」时仍会发字面量「第一个」（runner resolve_auto_select_turn 的 ③ 档），
+      # 在干净栈上等于对空气说话。
+      # 改用客户列表支持的**手机号关键词**（customer_manage.list keyword 支持手机号）
+      # 做唯一指代 —— 种子客户 `cust_eval_zhangsan` 的手机号即 13800138000，唯一命中，
+      # 无需重名澄清轮。用例意图（部分更新：只改 phone，其余字段不动）不变。
+      - "张三（手机号 13800138000）的手机号改成 13900001111"
+      # 收尾「答卡轮」（#3518/#3568 口径，同 PR-005/PR-016）：agent 在收尾轮只发 confirm 卡、
+      # **裸文本「确认」不放行写操作**（文字 ≠ 点卡）→ 有卡答卡（confirm→回 confirmValue），
+      # 无卡才发 fallback 原文。
+      - auto_respond:
+          fallback: "确认"
     expectations:
       - tool: customer_manage
         args:
@@ -120,7 +161,7 @@ cases:
     data_checks:
       - "仅 phone 被更新，未传字段保持原值"
     skip_reason: ""
-    merge_log: "verification 4.4 独有；2026-09-09 校准：补「选第一个」+「确认」两轮——「张三」生产有 3 位重名，agent 正确发 choice 卡澄清（#3142 修 validate_input 空转后不再幻觉「不支持」），需用户点选+确认后 update；probe 实证完整流程走通（重名澄清→选第一个→确认→update 成功）"
+    merge_log: "verification 4.4 独有；2026-09-09 校准：补「选第一个」+「确认」两轮——「张三」生产有 3 位重名，agent 正确发 choice 卡澄清（#3142 修 validate_input 空转后不再幻觉「不支持」），需用户点选+确认后 update；probe 实证完整流程走通（重名澄清→选第一个→确认→update 成功）。2026-09-14 消除顺序依赖（issue #3568）：裸文本「第一个」→ 手机号唯一指代（重名澄清轮消失，干净栈/生产栈同判；连打三轮的澄清轮次表也随之消失）"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_base.py"
@@ -149,9 +190,19 @@ cases:
       - "他那个窗帘订单"
       - "对，发货吧"
     expectations:
+      # 2026-09-15 校准（issue #3669）：原写 `action: query` —— 而 customer_manage 的
+      # action 枚举真值（`app/tools/customer_manage.py:15 VALID_ACTIONS` 与 schema `enum`
+      # `:79-83`）是 list/detail/update/add_tag/remove_tag/list_tags/create_tag/update_tag/
+      # delete_tag，**没有 query**。参数级匹配（`_arg_mismatch_reason`）下两种结局都不是
+      # 作者的本意：按 schema 调 `list` → 期望永不命中（**假红**）；真调 `query` → 工具返回
+      # 「无效的操作类型: query」（`customer_manage.py:163`）却因参数匹配而过关（**假绿**）。
+      # 本用例语义 =「模糊名称（老王）→ 客户列表关键词搜索定位到真人（王建国）→ 拿到
+      # customer_id」（truths_ref `customer-list.search-fields`），对应 action 正是 `list`
+      # （schema 描述「list 可按 keyword 搜索」；`detail` 反而要求先有 customer_id）——
+      # 故按**真实语义**取 list，而不是降级成裸工具名（那会丢掉「走的是客户搜索路径」的证据）。
       - tool: customer_manage
         args:
-          action: query
+          action: list
       - tool: order_query
       - tool: order_manage
         args:
@@ -161,7 +212,7 @@ cases:
       - "order_id 从 order_query 获得"
       - "发货操作使用正确的 order_id"
     skip_reason: ""
-    merge_log: "eval M011 独有（模糊澄清 + 客户搜索真值）"
+    merge_log: "eval M011 独有（模糊澄清 + 客户搜索真值）；2026-09-15 校准（issue #3669）：expectations 的 customer_manage(action=query) → **list**（该工具枚举无 query，原值级断言永不满足=假红 / 报了错也算过的假绿，见 .github/eval-coverage-baseline.yml 已销账的 action_dangling 条目）"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_mibao_multiturn_intelligence.py"
@@ -203,4 +254,42 @@ cases:
         - "backend/admin-api/src/test/java/com/migao/admin/controller/AuthIntegrationTest.java"
       ci:
         - pr-check.yml
+      verifies: []
+
+  - id: CU-007
+    legacy_id: ""
+    title: "C 端商品搜索只展示已上架商品（下架商品不得出现）"
+    domains:
+      - customer
+      - product
+    tier: normal
+    persona: xiaobu
+    tags:
+      - c-end
+      - product
+      - visibility
+    truths_ref:
+      - product-sku-stock.status-flow
+    user_inputs:
+      - "店里有什么窗帘？"
+    expectations:
+      - tool: product_search
+        args:
+          keyword: 窗帘
+    # 机器可判定（runner 支持 forbidden_text 全程 final_text 断言）：回复/卡片
+    # 不得出现下架状态披露——「已下架」及其英文枚举 off_sale 一律禁止。
+    forbidden_text:
+      - "已下架"
+      - "off_sale"
+    data_checks:
+      - "product_search 返回的 products[].status 全部 == \"on_sale\"（任一非 on_sale 即违规；工具层按 context.role == \"customer\" 过滤）"
+      - "回复/卡片不得出现『已下架』『off_sale』等状态披露（forbidden_text 机器断言）"
+      - "product_detail 对非 on_sale 商品按『不存在』处理（不泄露商品名/ID）"
+    skip_reason: ""
+    merge_log: "2026-09-15 新增（issue #3932）：C 端小布只能展示已上架商品——product_search/product_detail 顾客侧上架过滤（sess_2efa2071bb1747d8 复盘关联）"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_c_end_product_visibility.py"
+      ci:
+        - xiaobu-acceptance.yml
       verifies: []

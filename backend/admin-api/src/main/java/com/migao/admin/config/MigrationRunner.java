@@ -12,19 +12,40 @@ import org.springframework.stereotype.Component;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 /**
  * 极简 DB 迁移器 — 替代 Flyway。
  *
- * 启动时扫描 db/migration/V*__xxx.sql，按文件名排序，
+ * 启动时扫描 db/migration/V*__xxx.sql，按**版本号数值**排序，
  * 跳过已执行的文件，执行新的 migration。
  * 通过 schema_migrations 表追踪执行历史。
  *
  * 所有 SQL 文件必须幂等（IF NOT EXISTS / ON CONFLICT DO NOTHING）。
+ *
+ * ⚠️ 两条硬约束（issue #3270 CI 实证，两者叠加曾让 schema 与代码长期脱节）：
+ *   1. **必须按版本号数值排序**，不能按文件名字典序 —— 字典序下 `V5` 排在 `V40` 之后、
+ *      `V2` 排在 `V19` 之后（本类注释曾误写成「V1 &lt; V2 &lt; … &lt; V30」）。
+ *   2. **单条迁移失败不得中断其余迁移** —— 但"一律只记 ERROR"**并非总是对的**（见下条），
+ *      而让整条链停下会让 V28 之后的 V29–V41 与单数字的 V5–V9 **全部不执行**，
+ *      于是 `orders.actual_amount` 之类的列永远缺失 → admin-api 查询 500 →
+ *      ai-agent 工具「服务暂时不可用」→ 熔断 → 评测被污染。
+ *
+ * ⚠️ **失败分级（issue #3714）**：bootstrap-first 评测栈上，`KNOWN_BENIGN_LEGACY` 里那几条
+ * 已诊断的**历史非幂等**迁移**每次起栈必失败**（目标态已由 `docs/sql/schema.sql` 建出，
+ * 失败真因是"目标已存在"而非"对象缺失"）。旧实现对它们一律打 ERROR +
+ * 「请立即修复并在修复后重跑」—— 一句**必然为假**的行动指令（无物可修、重跑必复现）。
+ * 长期后果是**真失败与永久噪音同形** → 归因层失效（本仓库自认的最大失败模式）。
+ * ⇒ 命中该集合者降级为 INFO、并在汇总行**单独计数**；**未命中的真失败照旧 ERROR + 非零计数**。
+ * 决不静默：只有已诊断的存量降级。该集合与 Python 侧登记表的对应关系由 L0 测试锁死（见其注释）。
  *
  * 使用 ObjectProvider 延迟获取 JdbcTemplate，确保在无 DataSource 的测试
  * 上下文中（如 SecurityConfigTest）不会因缺少 Bean 而启动失败。
@@ -59,23 +80,169 @@ public class MigrationRunner implements CommandLineRunner {
             // 取决于 classpath 扫描（JAR 内 zip 遍历序），曾实测返回逆序——
             // 若依赖该顺序，V29 重建表会在 V30 种子之后执行，导致种子被 DROP 清空。
             Arrays.sort(resources, Comparator.comparing(Resource::getFilename,
-                    Comparator.nullsLast(String::compareTo)));
+                    Comparator.nullsLast(MIGRATION_ORDER)));
             List<String> applied = getAppliedMigrations(jdbc);
 
+            List<String> failed = new ArrayList<>();
             for (Resource r : resources) {
                 String filename = r.getFilename();
                 if (filename == null) continue;
                 if (applied.contains(filename)) continue;
 
                 log.info("🔄 执行迁移: {}", filename);
-                String sql = readResource(r);
-                jdbc.execute(sql);
-                recordMigration(jdbc, filename);
-                log.info("✅ 迁移完成: {}", filename);
+                try {
+                    String sql = readResource(r);
+                    jdbc.execute(sql);
+                    recordMigration(jdbc, filename);
+                    log.info("✅ 迁移完成: {}", filename);
+                } catch (Exception e) {
+                    // 单条失败**只跳过这一条**，继续跑后面的 —— 一条坏迁移不得冻结整个 schema。
+                    // 实测（issue #3270）：V28 失败后整链中断，V29–V41 与 V5–V9 全未执行，
+                    // 于是 orders.actual_amount 等列永远缺失、admin-api 500、
+                    // 评测被熔断污染，而日志里只有一行 ERROR，没人发现。
+                    failed.add(filename);
+                    if (isKnownBenignLegacy(filename)) {
+                        log.info("ℹ️ 迁移失败（已知存量非幂等，目标态已达成，无需修复）: {} — {}",
+                                filename, KNOWN_BENIGN_LEGACY.get(filename));
+                    } else {
+                        log.error("❌ 迁移失败（已跳过，继续执行其余迁移）: {}", filename, e);
+                    }
+                }
             }
+            reportFailures(failed);
         } catch (Exception e) {
             log.error("❌ 迁移失败", e);
             // 不抛异常 — 允许应用继续启动（迁移可能已在 DB 执行过）
+        }
+    }
+
+    /**
+     * 本次失败的汇总行 —— **真失败与已知存量分开计数、分开级别**（issue #3714）。
+     *
+     * ⚠️ 为什么必须分开（本仓库核心痛点是「归因层是最大失败模式」）：bootstrap-first 评测栈
+     * 上这 3 条存量迁移**每次起栈必失败**，若一律打 ERROR + 「请立即修复并在修复后重跑」——
+     * 那是一句**必然为假**的行动指令（无物可修、重跑必复现）→ 告警疲劳 → 真 schema 不一致
+     * 与永久噪音**长得一模一样**，真失败被淹没。
+     *
+     * ⚠️ 决不静默：未知失败照旧 ERROR + 非零计数 + 行动指令；只有**已诊断的存量**降级。
+     */
+    private void reportFailures(List<String> failed) {
+        List<String> benign = failed.stream().filter(MigrationRunner::isKnownBenignLegacy).toList();
+        List<String> real = failed.stream().filter(f -> !isKnownBenignLegacy(f)).toList();
+
+        if (!benign.isEmpty()) {
+            log.info("ℹ️ 本次有 {} 条迁移失败属**已知存量非幂等**（目标态已由 docs/sql/schema.sql 引导"
+                            + "达成，无需修复、重跑亦会复现；见 #3615/#3714）：{}",
+                    benign.size(), benign);
+        }
+        if (!real.isEmpty()) {
+            log.error("❌ 本次有 {} 条迁移失败，schema 可能与代码不一致（请立即修复并在修复后重跑）：{}",
+                    real.size(), real);
+        }
+    }
+
+    // ── 已知良性存量迁移（单一事实源，与 Python 侧同测；见下）──
+
+    /**
+     * 已诊断的**历史非幂等**迁移 → 理由。命中即降级为 INFO 并单独计数，**不**触发
+     * 「请立即修复并在修复后重跑」。
+     *
+     * 为什么这 3 条是良性的（不是「猜」）：bootstrap-first 库由
+     * `docker-entrypoint-initdb.d/001_schema.sql`（即 `docs/sql/schema.sql`）建出**终态**，
+     * 逐条比对确认它已覆盖这 3 条迁移的全部业务对象（`daily_briefings` 表/索引/RLS 策略、
+     * `tenants.briefing_enabled`/`briefing_generate_time`、`knowledge_cards` 终态 + 3 索引），
+     * 失败真因是 `ALTER ... IF EXISTS` **只守卫源对象、不守卫目标**、以及裸 `CREATE POLICY`
+     * （PG 不支持 `CREATE POLICY IF NOT EXISTS`）—— 即「目标已存在」而非「对象缺失」。
+     * 代价仅为噪音 + `schema_migrations` 账本失真（40/42），**无表/列缺失**。
+     *
+     * ⚠️ **单一事实源（#3701 教训：同一判据两份实现 ⇒ 必然漂移）**：本集合的**键集合**必须与
+     * `tests/unit_ci_workflows/test_migration_idempotency.py::LEGACY_UNGUARDED` **完全相等**，
+     * 由该文件的 `TestKnownBenignSetSingleSourceOfTruth`（L0，秒级零依赖）锁死 ——
+     * 多一条 = 真失败被当噪音吞掉；少一条 = 哨兵兜底失效。两边必须**同步增删**。
+     *
+     * ⚠️ **本集合只能变短**：一旦用新迁移补齐（或存量被裁决豁免后修好），
+     * 两边同时销账；陈旧登记由 Python 侧 `test_legacy_registry_matches_reality`（:313 语义）报红。
+     * **新增迁移一律不得进本表**（前向防护：新迁移必须自带幂等守卫）。
+     *
+     * ⚠️ 解析契约（勿改形状）：常量下方那对 `MIGAO_BENIGN_LEGACY_*` 起止标记之间的**字符串字面量**
+     * 会被 L0 测试按 `V{n}__desc.sql` 形态提取为键 ⇒ 键必须写成 `"文件名", "理由"` 成对出现。
+     * 该标记在**全文件内必须恰好各出现一次**（本注释不能写出标记原文，否则计数为 2 → 测试 fail-closed 报红）。
+     */
+    // MIGAO_BENIGN_LEGACY_BEGIN
+    static final Map<String, String> KNOWN_BENIGN_LEGACY = Map.of(
+            "V37__rename_knowledge_entries_to_cards.sql",
+            "表/索引改名目标已存在（ALTER ... IF EXISTS 只守卫源）；终态由 schema.sql 引导达成（见 #3615/#3714）",
+            "V42__reconcile_knowledge_table_name.sql",
+            "索引改名目标已存在（干净 bootstrap 顺序下靠 V37 的 DROP TABLE 连带删源索引而侥幸通过）；终态已达成（见 #3615/#3714）",
+            "V44__create_daily_briefings.sql",
+            "裸 CREATE POLICY，而 schema.sql:1212 已建同名策略 tenant_isolation_daily_briefings（PG 不支持 CREATE POLICY IF NOT EXISTS）；终态已达成（见 #3615/#3714）");
+    // MIGAO_BENIGN_LEGACY_END
+
+    /** 是否为已诊断的存量非幂等迁移（唯一实现点，`reportFailures` 与本类日志共用）。 */
+    static boolean isKnownBenignLegacy(String filename) {
+        return filename != null && KNOWN_BENIGN_LEGACY.containsKey(filename);
+    }
+
+    // ── 版本号排序（单一事实源，测试也用同一比较器）──
+
+    /** V{n}__desc.sql 里的 n；无法解析返回 -1（排到最后，不得静默插队到中间） */
+    private static final Pattern VERSION_RE = Pattern.compile("^V(\\d+)__");
+
+    /**
+     * 迁移执行顺序：按版本号**数值**升序；无法解析版本号的文件**排到最后**
+     * （同段按文件名）。
+     *
+     * ⚠️ 不能直接 `comparingInt(versionOf)`：无法解析时 versionOf 返回 -1，
+     * 会让"垃圾文件名"排到**最前面**（首版即此 bug，被单测 `unparsableNamesSortLast` 抓出）。
+     * 故把 -1 映射为最大值：不可解析的宁可最后跑，也不许插队到中间。
+     */
+    public static final Comparator<String> MIGRATION_ORDER =
+            Comparator.comparingInt(MigrationRunner::sortKey)
+                    .thenComparing(Comparator.nullsLast(String::compareTo));
+
+    /** 排序键：可解析 → 版本号；不可解析 → Integer.MAX_VALUE（排最后） */
+    private static int sortKey(String filename) {
+        int v = versionOf(filename);
+        return v < 0 ? Integer.MAX_VALUE : v;
+    }
+
+    /** 解析迁移文件名里的版本号；无法解析返回 -1 */
+    public static int versionOf(String filename) {
+        if (filename == null) {
+            return -1;
+        }
+        Matcher m = VERSION_RE.matcher(filename);
+        if (!m.find()) {
+            return -1;
+        }
+        try {
+            return Integer.parseInt(m.group(1));
+        } catch (NumberFormatException e) {
+            return -1;
+        }
+    }
+
+    /** 按执行顺序排序（测试用；与 run() 使用同一比较器） */
+    public static List<String> sortMigrationNames(List<String> names) {
+        List<String> copy = new ArrayList<>(names);
+        copy.sort(MIGRATION_ORDER);
+        return copy;
+    }
+
+    /** 列出 classpath 下 db/migration/*.sql 的文件名（测试用） */
+    public static List<String> listMigrationNames() {
+        try {
+            Resource[] resources = new org.springframework.core.io.support.PathMatchingResourcePatternResolver()
+                    .getResources("classpath:db/migration/*.sql");
+            List<String> names = new ArrayList<>();
+            for (Resource r : resources) {
+                if (r.getFilename() != null) {
+                    names.add(r.getFilename());
+                }
+            }
+            return names;
+        } catch (Exception e) {
+            throw new IllegalStateException("无法列举迁移文件", e);
         }
     }
 

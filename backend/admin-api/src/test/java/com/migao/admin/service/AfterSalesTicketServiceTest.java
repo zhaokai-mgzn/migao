@@ -337,6 +337,139 @@ class AfterSalesTicketServiceTest {
         verify(afterSalesTicketMapper).insert(any(AfterSalesTicket.class));
     }
 
+    // issue #3605：ai-agent 侧已删除客户端下发的 `source` 键（AgentAfterSalesCreateRequest 无该字段，
+    // 下发即静默丢弃）。本条证明删除是**无损**的：来源不再由客户端 payload 决定，
+    // 客户端不传 source 时落库仍是 "agent"（3 参重载 = 入口缺省，见下方 #3686 落库断言）。
+    @Test
+    @DisplayName("Agent 入口建单：客户端不传 source → 落库来源仍为 agent（服务端固化）")
+    void createTicketForAgent_PersistsAgentSourceWithoutClientKey() {
+        // given：与 ai-agent `after_sales_manage.py::_create_ticket` 修复后的 payload 同形（无 source）
+        com.migao.admin.dto.agent.AgentAfterSalesCreateRequest request =
+                new com.migao.admin.dto.agent.AgentAfterSalesCreateRequest();
+        request.setOrderId("0f8fad5b-d9cb-469f-a165-70867728950e");
+        request.setTicketType("return");
+        request.setReason("尺寸不符要求退款");
+
+        when(orderMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(testOrder);
+        when(orderMapper.selectById("0f8fad5b-d9cb-469f-a165-70867728950e")).thenReturn(testOrder);
+        when(afterSalesTicketMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
+        when(afterSalesTicketMapper.insert(any(AfterSalesTicket.class))).thenAnswer(invocation -> {
+            AfterSalesTicket t = invocation.getArgument(0);
+            t.setId("ticket-agent");
+            return 1;
+        });
+        when(afterSalesTicketMapper.selectById("ticket-agent")).thenReturn(
+                AfterSalesTicket.builder()
+                        .id("ticket-agent")
+                        .tenantId(1L)
+                        .ticketNo("AS-20250425-0003")
+                        .orderId("0f8fad5b-d9cb-469f-a165-70867728950e")
+                        .customerId("张三")
+                        .ticketType("return")
+                        .status("pending")
+                        .description("尺寸不符要求退款")
+                        .priority("normal")
+                        .source("agent")
+                        .createdAt(OffsetDateTime.now())
+                        .updatedAt(OffsetDateTime.now())
+                        .build());
+
+        // when（source 由 Controller 从 X-Agent-Client 头解析后透传，见 AfterSalesSourceContractTest）
+        afterSalesTicketService.createTicketForAgent(request, 1L, "test-user",
+                AfterSalesTicketService.SOURCE_AGENT);
+
+        // then
+        org.mockito.ArgumentCaptor<AfterSalesTicket> ticketCaptor =
+                org.mockito.ArgumentCaptor.forClass(AfterSalesTicket.class);
+        verify(afterSalesTicketMapper).insert(ticketCaptor.capture());
+        assertThat(ticketCaptor.getValue().getSource()).isEqualTo("agent");
+    }
+
+    // ======================== issue #3686：source 按真实来源落库 ========================
+    // 原实现 :348 无条件 setSource("agent") ⇒ C 端小布顾客工单被误标 agent、DDL DEFAULT 'customer' 成死默认。
+    // 取值集合（不臆造）：customer/agent/merchant —— 前两值代码中已存在（实体注释 + 前端渲染），
+    // merchant = 人工建单（表单入口）。全仓库唯一消费方 AfterSalesDetail.tsx:387。
+
+    /** 客户端显式声明来源时的落库断言（逐值参数化：C 端顾客 / AI 建单 / 人工建单）。 */
+    @org.junit.jupiter.params.ParameterizedTest(name = "source={0} → 落库 {0}")
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"customer", "agent", "merchant"})
+    @DisplayName("建单：按真实来源落库（C 端 customer / AI agent / 人工 merchant）")
+    void createTicket_writesRealSourceToDb(String source) {
+        // given
+        AfterSalesCreateRequest request = buildCreateRequest("return", null);
+        when(orderMapper.selectById("order-001")).thenReturn(testOrder);
+        when(afterSalesTicketMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
+        when(afterSalesTicketMapper.insert(any(AfterSalesTicket.class))).thenAnswer(invocation -> {
+            AfterSalesTicket t = invocation.getArgument(0);
+            t.setId("ticket-src-" + source);
+            return 1;
+        });
+        when(afterSalesTicketMapper.selectById("ticket-src-" + source)).thenReturn(
+                AfterSalesTicket.builder()
+                        .id("ticket-src-" + source)
+                        .tenantId(1L)
+                        .ticketNo("AS-20260914-9001")
+                        .orderId("order-001")
+                        .customerId("张三")
+                        .ticketType("return")
+                        .status("pending")
+                        .description("测试描述")
+                        .priority("normal")
+                        .source(source)
+                        .createdAt(OffsetDateTime.now())
+                        .updatedAt(OffsetDateTime.now())
+                        .build());
+
+        // when
+        afterSalesTicketService.createTicket(request, 1L, "test-user", source);
+
+        // then：落库断言（不是只断言 DTO）
+        org.mockito.ArgumentCaptor<AfterSalesTicket> captor =
+                org.mockito.ArgumentCaptor.forClass(AfterSalesTicket.class);
+        verify(afterSalesTicketMapper).insert(captor.capture());
+        assertThat(captor.getValue().getSource()).isEqualTo(source);
+    }
+
+    /** 空白/未知来源 → 归一化为缺省值 merchant（不落脏值）；服务层缺省 = 人工建单。 */
+    @org.junit.jupiter.params.ParameterizedTest(name = "source=[{0}] → 落库 merchant")
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"", "   ", "partner-x", "customer_svc"})
+    @DisplayName("建单：空白/未知来源归一化为 merchant（不落脏值）")
+    void createTicket_normalizesUnknownSourceToDefault(String rawSource) {
+        // given
+        AfterSalesCreateRequest request = buildCreateRequest("return", null);
+        when(orderMapper.selectById("order-001")).thenReturn(testOrder);
+        when(afterSalesTicketMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
+        when(afterSalesTicketMapper.insert(any(AfterSalesTicket.class))).thenAnswer(invocation -> {
+            AfterSalesTicket t = invocation.getArgument(0);
+            t.setId("ticket-default");
+            return 1;
+        });
+        when(afterSalesTicketMapper.selectById("ticket-default")).thenReturn(
+                AfterSalesTicket.builder()
+                        .id("ticket-default")
+                        .tenantId(1L)
+                        .ticketNo("AS-20260914-9002")
+                        .orderId("order-001")
+                        .customerId("张三")
+                        .ticketType("return")
+                        .status("pending")
+                        .description("测试描述")
+                        .priority("normal")
+                        .source("merchant")
+                        .createdAt(OffsetDateTime.now())
+                        .updatedAt(OffsetDateTime.now())
+                        .build());
+
+        // when
+        afterSalesTicketService.createTicket(request, 1L, "test-user", rawSource);
+
+        // then
+        org.mockito.ArgumentCaptor<AfterSalesTicket> captor =
+                org.mockito.ArgumentCaptor.forClass(AfterSalesTicket.class);
+        verify(afterSalesTicketMapper).insert(captor.capture());
+        assertThat(captor.getValue().getSource()).isEqualTo("merchant");
+    }
+
     @Test
     @DisplayName("创建售后工单失败 - 关联订单不存在")
     void createTicket_OrderNotFound() {
@@ -478,6 +611,47 @@ class AfterSalesTicketServiceTest {
                 "rejected".equals(t.getStatus())
                         && t.getClosedAt() != null
                         && "不符合售后条件".equals(t.getCloseReason())));
+    }
+
+    @Test
+    @DisplayName("更新工单状态 - pending -> closed（产品裁定 #3541：允许直接关闭，含关闭时间/原因）")
+    void updateTicketStatus_PendingToClosed() {
+        // given
+        AfterSalesStatusUpdateRequest request = new AfterSalesStatusUpdateRequest();
+        request.setStatus("closed");
+        request.setRemark("误建工单，线下已处理");
+
+        when(afterSalesTicketMapper.selectById("ticket-001")).thenReturn(testTicket);
+        when(afterSalesTicketMapper.updateById(any(AfterSalesTicket.class))).thenReturn(1);
+
+        // when
+        afterSalesTicketService.updateTicketStatus("ticket-001", request);
+
+        // then: 落库状态为 closed，且写入关闭时间与关闭原因（closeReason = request.remark）
+        verify(afterSalesTicketMapper).updateById(argThat((AfterSalesTicket t) ->
+                "closed".equals(t.getStatus())
+                        && t.getClosedAt() != null
+                        && "误建工单，线下已处理".equals(t.getCloseReason())));
+    }
+
+    @Test
+    @DisplayName("更新工单状态失败 - closed 终态不允许再变更（防放宽 pending 时整体放松校验）")
+    void updateTicketStatus_ClosedStateNoTransition() {
+        // given
+        AfterSalesTicket closedTicket = AfterSalesTicket.builder()
+                .id("ticket-005")
+                .status("closed")
+                .build();
+
+        AfterSalesStatusUpdateRequest request = new AfterSalesStatusUpdateRequest();
+        request.setStatus("processing");
+
+        when(afterSalesTicketMapper.selectById("ticket-005")).thenReturn(closedTicket);
+
+        // when & then
+        assertThatThrownBy(() -> afterSalesTicketService.updateTicketStatus("ticket-005", request))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("不允许");
     }
 
     @Test
@@ -1091,7 +1265,7 @@ class AfterSalesTicketServiceTest {
                 .id("item-" + productId)
                 .orderId("order-001")
                 .productId(productId)
-                .quantity(2)
+                .quantity(BigDecimal.valueOf(2))
                 .build();
     }
 

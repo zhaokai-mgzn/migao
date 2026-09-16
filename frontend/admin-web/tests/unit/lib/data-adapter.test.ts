@@ -9,7 +9,7 @@
  *
  * 这些转换如果出错，数据会静默损坏——后端收到错误值或前端展示错误状态。
  */
-// case_ids: OR-003, OR-004, OR-005
+// case_ids: OR-003, OR-004, OR-005, UI-040
 
 import { describe, it, expect } from 'vitest'
 import {
@@ -241,6 +241,36 @@ describe('buildLogisticsPayload', () => {
     }
     const payload = buildLogisticsPayload(data)
     expect((payload as any).shippingMethod).toBeUndefined()
+  })
+
+  // ---- 发货人（发货单「经手人」，issue #3768 / UI-040）----
+
+  it('透传 shipperName（并去掉首尾空格）', () => {
+    const data: LogisticsFormData = {
+      company: '顺丰速运',
+      trackingNo: 'SF1234567890',
+      shippingMethod: 'logistics',
+      shipperName: '  王五  ',
+    }
+    const payload = buildLogisticsPayload(data)
+    expect(payload.shipperName).toBe('王五')
+  })
+
+  it('shipperName 留空时不下发（由后端按当前登录用户兜底，避免前端塞空串覆盖）', () => {
+    const blank = buildLogisticsPayload({
+      company: '顺丰速运',
+      trackingNo: 'SF1',
+      shippingMethod: 'logistics',
+      shipperName: '   ',
+    })
+    expect(blank.shipperName).toBeUndefined()
+
+    const missing = buildLogisticsPayload({
+      company: '顺丰速运',
+      trackingNo: 'SF1',
+      shippingMethod: 'logistics',
+    })
+    expect(missing.shipperName).toBeUndefined()
   })
 })
 

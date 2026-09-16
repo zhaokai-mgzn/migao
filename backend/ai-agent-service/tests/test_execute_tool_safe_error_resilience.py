@@ -14,6 +14,13 @@
 
 本文件锁定第二层：工具执行抛错时，_execute_tool_safe 必须返回失败结果，
 不得因日志格式化二次抛错而把异常传出去。
+
+⚠️ 2026-09-12 更新（issue #3361）：第一层的"未知 kwarg → TypeError"已被**参数净化**
+取代 —— `_execute_tool_safe` 现在会按工具 execute() 签名丢弃不受支持的参数并打警告
+（CI 实证：[tool-exec] order_create ERROR: got an unexpected keyword argument 'action'
+→ 模型重试两次才成功，是 CH-010/OR-014 抖动的真因）。
+故本文件的**触发方式**改为"工具内部真抛错"（含未配对花括号的 args 仍用于触发日志二次
+格式化的风险点），**断言不变**：必须返回失败结果、不得抛异常。
 """
 import asyncio
 
@@ -22,8 +29,17 @@ from app.tools.interact import InteractTool
 from app.tools.base import ToolContext
 
 
+class _BoomTool(InteractTool):
+    """执行即抛 TypeError 的替身：保留"args 含未配对花括号 → 日志二次格式化"的风险点。"""
+
+    name = "interact"
+
+    async def execute(self, context, **kwargs):  # noqa: D401
+        raise TypeError("InteractTool.execute() boom (模拟工具内部真异常)")
+
+
 def _run_with_unknown_kwarg() -> tuple[str, dict]:
-    """向 InteractTool 传 execute 签名不存在的参数（触发 TypeError 分支）。"""
+    """触发工具**内部**异常（含未配对花括号的 args 仍进入日志格式化路径）。"""
     if hasattr(_execute_tool_safe, "_cache"):
         _execute_tool_safe._cache = {}
 
@@ -45,7 +61,7 @@ def _run_with_unknown_kwarg() -> tuple[str, dict]:
     }
 
     async def _scenario():
-        return await _execute_tool_safe(InteractTool(), args, ctx, state)
+        return await _execute_tool_safe(_BoomTool(), args, ctx, state)
 
     return asyncio.run(_scenario())
 

@@ -7,8 +7,10 @@ C 端"查物流" Tool 单元测试（小布专用 customer_logistics_track）
 3. 指定订单号必须在本人已发货订单中，否则拒绝
 4. 详情 ownership 防御（customerId 不符跳过）；无运单号跳过不编造
 5. 非 customer 角色 / 缺用户标识一律拒绝
+6. **发货人（shipperName）不进顾客可见输出**（issue #3768：B 端发货单要印经手人，
+   但它属于内部作业信息，C 端按白名单字段构造返回时必须丢弃）
 """
-# case_ids: OR-012
+# case_ids: OR-012, UI-040
 
 import pytest
 from unittest.mock import patch, AsyncMock
@@ -86,6 +88,40 @@ class TestCustomerLogisticsTrack:
         mine_call = [c for c in mock_client.get.call_args_list if "orders/mine" in str(c.args[0])]
         assert mine_call, "应调用 /orders/mine"
         assert mine_call[0].kwargs["params"]["status"] == "shipped"
+
+    @patch("app.tools.customer_logistics_track.get_admin_api_client")
+    async def test_does_not_leak_shipper_name(
+        self, mock_get_client, tool, sample_tool_context, mock_settings
+    ):
+        """发货人不得泄漏给顾客（issue #3768 / UI-040）
+
+        后端订单详情 DTO 已带 logistics.shipperName（B 端发货单要印经手人），
+        C 端链路必须按**白名单字段**构造返回把它丢掉 —— 这条是防回归 tripwire：
+        若有人图省事改成直接透传详情 logistics，本用例立刻红。
+        """
+        mock_client = AsyncMock()
+        detail = _detail_response("order_001")
+        detail["data"]["logistics"]["shipperName"] = "王五"
+
+        async def mock_get(url, **kwargs):
+            if "orders/mine" in url:
+                return _mine_response(_shipped_order())
+            if "/api/admin/orders/" in url:
+                return detail
+            return {"success": False}
+
+        mock_client.get = AsyncMock(side_effect=mock_get)
+        mock_get_client.return_value = mock_client
+
+        result = await tool.execute(context=sample_tool_context, action="list")
+
+        assert result.success is True
+        item = result.data["logistics_list"][0]
+        assert "shipperName" not in item
+        assert "shipper_name" not in item
+        assert "王五" not in str(item)
+        assert "王五" not in str(result.message)
+        assert "王五" not in str(result.data.get("logistics"))
 
     @patch("app.tools.customer_logistics_track.get_admin_api_client")
     async def test_no_in_transit_orders(

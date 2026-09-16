@@ -203,11 +203,58 @@ class TestCustomerUpdate:
         mock_get_client.return_value = mock_client
 
         result = await tool.execute(
-            context=admin_tool_context, action="update", customer_id="c1", data={"name": "新名字"})
+            context=admin_tool_context, action="update", customer_id="c1",
+            data={"wechatNickname": "新名字"})
         assert result.success is True
-        assert result.data == {"customer_id": "c1"}
+        assert result.data["customer_id"] == "c1"
         assert mock_client.put.call_args[0][0] == "/api/admin/customers/c1"
-        assert mock_client.put.call_args[1]["json_data"] == {"name": "新名字"}
+        assert mock_client.put.call_args[1]["json_data"] == {"wechatNickname": "新名字"}
+
+    @patch("app.tools.customer_manage.get_admin_api_client")
+    async def test_update_name_lands_on_writable_field(
+            self, mock_get_client, tool, admin_tool_context, mock_client):
+        """姓名必须下发到可写列 wechatNickname（#3551）。
+
+        CustomerProfile 无 name 列 → 下发 {"name": ...} 被 Spring 静默丢弃
+        （HTTP 200、name 不落库）→ 米宝谎报「已更新客户姓名」。修复前本测试红。
+        """
+        mock_client.put = AsyncMock(return_value={"success": True})
+        mock_get_client.return_value = mock_client
+
+        result = await tool.execute(
+            context=admin_tool_context,
+            action="update",
+            customer_id="c1",
+            data={"name": "李四", "phone": "13900001111"},
+        )
+
+        assert result.success is True
+        payload = mock_client.put.call_args[1]["json_data"]
+        assert payload == {"wechatNickname": "李四", "phone": "13900001111"}
+        assert "name" not in payload, "name 不是 CustomerProfile 列，下发即被静默丢弃"
+
+    @patch("app.tools.customer_manage.get_admin_api_client")
+    async def test_update_rejects_unwritable_fields(
+            self, mock_get_client, tool, admin_tool_context, mock_client):
+        """不可写字段必须显式报错，禁止「静默忽略后返回成功」，且不得部分写入（#3551）。"""
+        mock_client.put = AsyncMock(return_value={"success": True})
+        mock_get_client.return_value = mock_client
+
+        result = await tool.execute(
+            context=admin_tool_context, action="update", customer_id="c1",
+            data={"totalOrders": 99})
+        assert result.success is False
+        assert "totalOrders" in result.error
+        assert result.suggestion and "wechatNickname" in result.suggestion
+        mock_client.put.assert_not_called()
+
+        # 混合 payload（可写 + 不可写）整体拒绝，避免「部分写入」造成的假成功
+        mixed = await tool.execute(
+            context=admin_tool_context, action="update", customer_id="c1",
+            data={"phone": "13900001111", "rScore": 5})
+        assert mixed.success is False
+        assert "rScore" in mixed.error
+        mock_client.put.assert_not_called()
 
 
 class TestCustomerTags:

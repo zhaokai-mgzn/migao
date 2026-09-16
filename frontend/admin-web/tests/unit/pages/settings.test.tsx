@@ -21,6 +21,8 @@ vi.mock('lucide-react', () => {
     FileX: stub('file-x'),
     Inbox: stub('inbox'),
     Loader2: stub('loader2'),
+    // issue #3468: 智能每日经营简报图标
+    Newspaper: stub('newspaper'),
   }
 })
 
@@ -40,6 +42,9 @@ const mockUpdateSettings = vi.fn()
 const mockGetAiConfig = vi.fn()
 const mockUpdateAiConfig = vi.fn()
 const mockUploadImage = vi.fn()
+// 智能每日经营简报（issue #3468）：配置读写
+const mockBriefingGetConfig = vi.fn()
+const mockBriefingUpdateConfig = vi.fn()
 
 vi.mock('@/lib/api', () => ({
   settingsApi: {
@@ -50,6 +55,10 @@ vi.mock('@/lib/api', () => ({
   },
   uploadApi: {
     uploadImage: (...args: any[]) => mockUploadImage(...args),
+  },
+  briefingApi: {
+    getConfig: (...args: any[]) => mockBriefingGetConfig(...args),
+    updateConfig: (...args: any[]) => mockBriefingUpdateConfig(...args),
   },
 }))
 
@@ -119,6 +128,18 @@ function mockAiConfigSuccess() {
   })
 }
 
+// 智能每日经营简报（issue #3468）：默认配置（关闭态）
+function mockBriefingConfigSuccess() {
+  mockBriefingGetConfig.mockResolvedValue({
+    data: {
+      data: {
+        enabled: false,
+        generateTime: '06:00',
+      },
+    },
+  })
+}
+
 // #3098: 左侧 tab 导航，切到指定 tab
 async function switchToTab(user: ReturnType<typeof userEvent.setup>, label: string) {
   const tab = screen.getByRole('button', { name: new RegExp(label) })
@@ -130,6 +151,7 @@ describe('SettingsPage — AI 客服设置合并进企业基础信息 (#3081)', 
     vi.clearAllMocks()
     mockApiSuccess()
     mockAiConfigSuccess()
+    mockBriefingConfigSuccess()
     // 默认无 URL tab 参数（默认激活「基本设置」tab）
     mockSearchParams.mockReturnValue(new URLSearchParams())
     // 默认图片尺寸满足最小分辨率（128×128）

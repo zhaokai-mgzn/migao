@@ -1,4 +1,4 @@
-"""yaml_light — 极简 YAML 子集解析器（供二郎神引擎读 tech-stack.yml）。
+"""yaml_light — 极简 YAML 子集解析器（供 QA Growth Gate 引擎读 tech-stack.yml）。
 
 支持: block mapping / block sequence / 标量(字符串/数字/布尔/null/空[]/{})。
 不支持: flow style / 多行字符串 / anchor / tag。足够解析 tech-stack.yml 这类简单结构。
@@ -6,8 +6,35 @@
 """
 
 
+def _strip_inline_comment(s: str) -> str:
+    """去掉**引号外**且前面有空白的行内注释（`"确认"   # 说明` → `"确认"`）。
+
+    为什么必须有（issue #3365 实证）：本解析器原先不处理行内注释 →
+    `fallback: "确认"  # 点确认卡…` 解析出的值是**带引号带注释的整串**
+    （`'"确认"  # 点确认卡…'`），而评测 harness 会把它当**用户消息**发给 agent →
+    协议轮变成乱码文本、流程判断全错：OR-017 实测连发 6 轮加工项卡、order_create 永不发生。
+    标准 YAML 规则：`#` 前有空白即起注释，**除非在引号内**（引号内的 `issue #3270` 必须保留）。
+    """
+    out = []
+    quote = None
+    for i, ch in enumerate(s):
+        if quote:
+            out.append(ch)
+            if ch == quote:
+                quote = None
+            continue
+        if ch in ('"', "'"):
+            quote = ch
+            out.append(ch)
+            continue
+        if ch == "#" and i > 0 and s[i - 1].isspace():
+            break
+        out.append(ch)
+    return "".join(out).rstrip()
+
+
 def _parse_scalar(s):
-    s = s.strip()
+    s = _strip_inline_comment(s).strip()
     if s in ('', '~', 'null', 'Null', 'NULL'):
         return None
     if s in ('true', 'True', 'TRUE'):
@@ -16,6 +43,67 @@ def _parse_scalar(s):
         return False
     if s in ('[]', '{}'):
         return [] if s == '[]' else {}
+    # ⚠️ 保守判据（issue #3367 回归修复）：真值文件用 `- [misc.x] 说明… → 返回 []`，
+    # 这种行**以 [ 开头、以 ] 结尾**，但内部还含 `[`/`]` —— 它不是 flow 序列，是散文。
+    # 首版只管首尾括号，把这类真值行吞成序列 → 真值 ID 丢失 → Case Contract 门禁在 main 上
+    # fail-closed 报红。故：**内部再出现括号就不当序列解析**。
+    _inner = s[1:-1]
+    if s.startswith('[') and s.endswith(']') and not any(c in _inner for c in '[]'):
+        # flow 序列（issue #3367）：`[unit_price, subtotal, total]` 此前被原样当字符串，
+        # 直接坑到金额断言 —— `checks` 收字符串后被按字符迭代 → 检查项全部静默跳过。
+        # 只解析**标量**元素（用例里的形态就这些）；解析不出来时保留原字符串（向后兼容，
+        # 由消费侧失败关闭兜底，不在这里抛异常打断整份用例加载）。
+        inner = s[1:-1].strip()
+        if not inner:
+            return []
+        parts, buf, quote = [], '', ''
+        for ch in inner:
+            if quote:
+                if ch == quote:
+                    quote = ''
+                buf += ch
+                continue
+            if ch in ('"', "'"):
+                quote = ch
+                buf += ch
+                continue
+            if ch == ',':
+                parts.append(buf)
+                buf = ''
+                continue
+            buf += ch
+        parts.append(buf)
+        return [_parse_scalar(p) for p in parts if p.strip() != '']
+    _inner_map = s[1:-1]
+    if s.startswith('{') and s.endswith('}') and not any(c in _inner_map for c in '{}'):
+        # flow 映射：`{夏日清风窗帘: 3}` → dict（expect_quantities 这类配置会用到）
+        inner = s[1:-1].strip()
+        if not inner:
+            return {}
+        out, buf, quote, depth = {}, '', '', 0
+        items = []
+        for ch in inner:
+            if quote:
+                if ch == quote:
+                    quote = ''
+                buf += ch
+                continue
+            if ch in ('"', "'"):
+                quote = ch
+                buf += ch
+                continue
+            if ch == ',' and depth == 0:
+                items.append(buf)
+                buf = ''
+                continue
+            buf += ch
+        items.append(buf)
+        for it in items:
+            if ':' not in it:
+                continue
+            k, v = it.split(':', 1)
+            out[_parse_scalar(k.strip()) if isinstance(_parse_scalar(k.strip()), str) else str(_parse_scalar(k.strip()))] = _parse_scalar(v)
+        return out
     if len(s) >= 2 and s[0] in ('"', "'") and s[-1] == s[0]:
         return s[1:-1]
     try:

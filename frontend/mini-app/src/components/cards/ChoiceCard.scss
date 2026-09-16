@@ -28,7 +28,8 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 12px 14px;
+    padding: 16px 16px;
+    min-height: 88px; // 触控目标 ≥44pt（#3759 输入条同标准；真机实测选项行仅 ~22pt 偏小）
     background: #f7f9fc;
     border-radius: 12px;
     border: 1px solid #eef1f6;

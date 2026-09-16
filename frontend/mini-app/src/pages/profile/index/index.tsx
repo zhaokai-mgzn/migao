@@ -199,7 +199,10 @@ export default function ProfilePage() {
         </View>
         <View className='user-info'>
           <Text className='user-nickname'>{loading ? '加载中…' : user?.nickname || '用户'}</Text>
-          <Text className='user-id'>ID: {user?.id || '--'}</Text>
+          {/* 原「ID: <32 位内部哈希>」行已移除（面向低学历用户可读性）：
+              那一行是**页面上唯一的英文标签**，且取值是内部 UUID（如 374a4cab28df52c361b14549b4888598），
+              对任何用户都不构成可读信息——改中文标签也治不了"值看不懂"。
+              用户身份已由上方的头像 + 昵称 + 手机号（或「绑定手机号」按钮）表达完整。 */}
           {user?.phone ? (
             <Text className='user-phone'>📱 {user.phone.replace(/^(\d{3})\d{4}(\d{4})$/, '$1****$2')}</Text>
           ) : (

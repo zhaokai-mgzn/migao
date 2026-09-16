@@ -11,7 +11,7 @@
 
 真值来源：docs/curtain-fabric-quote-rules.md（行业标准值 + 经验默认值）
 """
-# case_ids: PR-013
+# case_ids: PR-013, PR-024, OR-022
 
 import math
 import pytest
@@ -246,3 +246,19 @@ class TestCurtainCalcPriceGuard:
         assert "预估" in (result.message or "") or "估算" in (result.message or ""), (
             f"报价 message 必须带预估限定: {result.message}"
         )
+
+
+class TestCurtainCalcDescriptionGuard:
+    """工具描述必须写明"顾客直接报米数时不要算料"（issue #3395）。
+
+    为什么守描述而不是只守 prompt：模型决定**要不要调这个工具**时，直接读的是工具描述
+    （`bind_tools` 后的 function description）。实测 run 34748745308：顾客说「买…3 米」，
+    模型按描述里的「需要窗宽/窗高」自行假设了窗宽 3 米、窗高 2.7 米就走了算料。
+    """
+
+    def test_description_warns_against_purchase_meters(self):
+        from app.tools.curtain_calc import CurtainCalcTool
+        desc = CurtainCalcTool.description
+        assert "购买数量" in desc, "描述必须点明「顾客说的米数＝购买数量」"
+        assert "不要" in desc and "调用本工具" in desc, "必须明确写「不要调用本工具」"
+        assert "窗宽" in desc and "窗高" in desc, "必须说明只有窗户尺寸才调用"

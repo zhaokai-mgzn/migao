@@ -468,6 +468,20 @@ export const OrderStatusColors: Record<OrderStatus, string> = {
   refund: 'error',
 }
 
+// 订单状态展示辅助（issue #3889）：backend producing 与 confirmed 的展示区分。
+// producing（生产中）不再归入 pending_shipment（待发货）展示，避免用户误以为可直接发货。
+// 仅影响展示；OrderStatus 联合类型与 FrontendToBackendStatus（过滤/请求语义）保持不变。
+export interface OrderStatusDisplay {
+  label: string
+  color: string
+}
+
+export function displayOrderStatus(status: string | undefined | null): OrderStatusDisplay {
+  if (status === 'producing') return { label: '生产中', color: 'warning' }
+  const normalized = normalizeOrderStatus(status)
+  return { label: OrderStatusLabels[normalized], color: OrderStatusColors[normalized] }
+}
+
 // 订单状态流转顺序（正常流程）
 export const OrderStatusFlow: OrderStatus[] = ['pending_payment', 'pending_shipment', 'shipped', 'completed']
 
@@ -558,10 +572,76 @@ export interface LogisticsTrack {
   status?: string
 }
 
+// 加工单（issue #3340）
+export interface ProcessingItemSnapshot {
+  id?: string
+  name: string
+  unitPrice?: number
+  quantity?: number
+  unit?: string
+  options?: unknown
+}
+
+export interface ProcessingOrderItem {
+  productName?: string
+  sku?: string
+  colorName?: string
+  sellingMethod?: string
+  doorWidth?: string
+  width?: number
+  height?: number
+  quantity?: number
+  unit?: string
+  processingItems?: ProcessingItemSnapshot[]
+  remark?: string
+}
+
+export interface ProcessingOrder {
+  id: string
+  orderId: string
+  orderNo?: string
+  customerName?: string
+  /** 客户手机号（列表/详情接口返回，订单详情块未用到） */
+  customerPhone?: string
+  processingOrderNo: string
+  processor?: string
+  expectedDeliveryDate?: string
+  status: 'generated' | 'issued' | 'in_processing' | 'completed' | 'cancelled'
+  items?: ProcessingOrderItem[]
+  remark?: string
+  templateVersion?: number
+  generatedAt?: string
+  issuedAt?: string
+  inProcessingAt?: string
+  completedAt?: string
+  cancelledAt?: string
+  cancelledReason?: string
+  printCount?: number
+}
+
+export interface ProcessingOrderGenerateResult {
+  orderRef: string
+  success: boolean
+  message?: string
+  processingOrderNo?: string
+}
+
+export interface ProcessingOrderUpdateParams {
+  action: 'issue' | 'start' | 'complete' | 'cancel'
+  processor?: string
+  expectedDeliveryDate?: string
+  reason?: string
+}
+
 // 物流信息
-export interface LogisticsInfo {
-  logisticsCompany?: string
+export interface LogisticsInfo {  logisticsCompany?: string
   trackingNo?: string
+  /**
+   * 发货人（发货单纸面「经手人」，issue #3768）。
+   * 存量已发货订单为 undefined/NULL（历史上从未采集）→ 纸面该栏显示「-」
+   * （#3818 裁定，与 #3768 判据一致；不得留白、不得 undefined/null）。
+   */
+  shipperName?: string
   status?: string
   shippingMethod?: 'logistics' | 'none'  // 物流发货 / 无需物流
   tracks?: LogisticsTrack[]
@@ -658,6 +738,8 @@ export interface LogisticsFormData {
   company: string
   trackingNo: string
   shippingMethod: 'logistics' | 'none'
+  /** 发货人（发货单「经手人」，issue #3768）：默认预填当前登录人姓名，可改成实际发货人 */
+  shipperName?: string
 }
 
 // 关闭订单参数
@@ -849,6 +931,56 @@ export interface ProductRanking {
   qtyDisplay: string
   amountDisplay: string
   dailyChange: number
+}
+
+// ========== 智能每日经营简报（issue #3468）==========
+
+// 简报指标引用（数字回填校验：key/value 均来自聚合快照，禁止 LLM 编造）
+export interface BriefingMetricRef {
+  key: string
+  value: number
+}
+
+// 简报条目（待办/风险/建议通用结构）
+export interface BriefingItem {
+  priority?: string
+  severity?: string
+  title: string
+  reason?: string
+  detail?: string
+  link?: string
+  metrics: BriefingMetricRef[]
+}
+
+// 简报回顾指标
+export interface BriefingReviewItem {
+  label: string
+  value: number
+  unit?: string
+  change?: string
+}
+
+// 简报内容（四区块）
+export interface BriefingContent {
+  summary: string
+  review: BriefingReviewItem[]
+  todo: BriefingItem[]
+  risks: BriefingItem[]
+  suggestions: BriefingItem[]
+}
+
+// 今日简报响应
+export interface TodayBriefingResponse {
+  generated: boolean
+  verifyStatus: string | null
+  content: BriefingContent | null
+  bizDate: string | null
+}
+
+// 简报配置（企业开关 + 生成时刻）
+export interface BriefingConfig {
+  enabled: boolean
+  generateTime: string
 }
 
 // 待处理任务

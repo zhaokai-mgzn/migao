@@ -2,6 +2,12 @@ name: Fixture Re-record
 permissions:
   contents: write
   pull-requests: write
+  # ⚠️ 失败建 issue 必需（#3834 同类扫描查出）：本 workflow 每月 1 日定时跑，缺此权限时
+  # 失败钩子（issues.create / search.issuesAndPullRequests）静默崩溃 —— 实证
+  # run 33562358650（2026-09-01 schedule）failure，而 `[Fixture] 重录失败` 的 issue
+  # **历史 0 条**（#3270/#3497 同款）。守卫：tests/unit_ci_workflows/
+  # test_workflow_issue_permissions.py
+  issues: write
 
 on:
   workflow_dispatch:

@@ -1,0 +1,96 @@
+# 陈旧构建护栏红证 + 指纹判据矩阵 — 2026-09-14
+
+被测代码：frontend/mini-app/e2e/{run.js,lib/harness.js,lib/source-hash.js,build-stamp.js} + package.json(build:weapp)
+判据：① 内容指纹（dist/.build-stamp.json vs 当前 src/+config/ sha256）② mtime 兜底 ③ dist/app.js 缺失
+
+## 0) 正常构建 → 生成指纹，护栏放行
+```
+$ npm run build:weapp
+```
+```
+  Compiled successfully in 3.29s
+
+[build-stamp] ✔ 已写入 dist/.build-stamp.json（源码指纹 fc36841d9431… / 71 个文件 / 2026-09-14T13:05:51.953Z）
+```
+```
+$ node e2e/run.js  # 仅看护栏输出（此处用 assertDistFresh 直调，不启动模拟器）
+```
+```
+guard PASS mode=content-hash 指纹=fc36841d9431… builtAt=2026-09-14T13:05:51.953Z
+```
+
+## 1) 只改 mtime、内容不变（git checkout / touch 场景）→ **放行**（指纹判据的收益：不误报）
+```
+$ touch src/components/chat/MessageInput.tsx && node e2e/run.js(护栏部分)
+```
+```
+guard PASS mode=content-hash（mtime 已变新，指纹未变 → 不误报陈旧）
+```
+
+## 2) 内容真变了（模拟「改了源码没构建」）→ **红**
+```
+$ printf \"\\n// staleness probe\\n\" >> src/components/chat/MessageInput.tsx && node e2e/run.js
+```
+```
+🚀 启动小布小程序 E2E 验收（微信开发者工具模拟器）...
+
+⛔ 陈旧构建护栏拦截（e2e 已中止，未连接模拟器）：
+
+   构建产物与源码不一致（内容指纹）：
+  dist 构建于 2026-09-14T13:05:51.953Z（指纹 fc36841d9431…，71 个文件）
+  当前源码指纹 56e2271ff374…（71 个文件）
+  ⇒ 继续跑等于「用旧构建验证新代码」：旧脚本配旧构建自洽，会跑出一片假绿（2026-09-14 实证 35/36 通过）。
+  请先执行：cd frontend/mini-app && npm run build:weapp
+
+EXIT=1
+```
+
+## 3) 指纹缺失（旧流程/被删）→ mtime 兜底仍能拦住陈旧
+```
+$ rm dist/.build-stamp.json && touch src/components/chat/MessageInput.tsx && node e2e/run.js
+```
+```
+🚀 启动小布小程序 E2E 验收（微信开发者工具模拟器）...
+
+⛔ 陈旧构建护栏拦截（e2e 已中止，未连接模拟器）：
+
+   构建产物陈旧：dist/app.js（2026/9/14 21:05:51）早于源码 src/components/chat/MessageInput.tsx（2026/9/14 21:05:52）。
+  ⇒ 继续跑等于「用旧构建验证新代码」：旧脚本配旧构建自洽，会跑出一片假绿（2026-09-14 实证 35/36 通过）。
+  请先执行：cd frontend/mini-app && npm run build:weapp
+
+EXIT=1
+```
+
+## 4) dist/app.js 缺失 → **红**
+```
+$ mv dist /tmp/dist-bak3 && node e2e/run.js; mv /tmp/dist-bak3 dist
+```
+```
+🚀 启动小布小程序 E2E 验收（微信开发者工具模拟器）...
+
+⛔ 陈旧构建护栏拦截（e2e 已中止，未连接模拟器）：
+
+   未找到构建产物 dist/app.js。
+  ⇒ e2e 必须驱动真实构建产物，不能对着不存在的 dist 跑。
+  请先执行：cd frontend/mini-app && npm run build:weapp
+
+EXIT=1
+```
+
+## 5) 收尾：重新构建（写回指纹）
+```
+$ npm run build:weapp
+```
+```
+
+[build-stamp] ✔ 已写入 dist/.build-stamp.json（源码指纹 fc36841d9431… / 71 个文件 / 2026-09-14T13:05:58.349Z）
+guard PASS mode=content-hash 指纹=fc36841d9431…
+```
+
+## 源码未被改动自证
+```
+$ git diff --stat -- src config
+```
+```
+(空 = 源码无残留改动)
+```

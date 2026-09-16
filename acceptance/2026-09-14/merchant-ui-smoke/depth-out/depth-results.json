@@ -1,0 +1,146 @@
+[
+  {
+    "page": "02-dashboard",
+    "path": "/dashboard",
+    "pass": true,
+    "buttons": 30,
+    "errors": [],
+    "notes": []
+  },
+  {
+    "page": "03-briefing",
+    "path": "/briefing",
+    "pass": true,
+    "buttons": 23,
+    "errors": [],
+    "notes": []
+  },
+  {
+    "page": "05-human-sessions",
+    "path": "/agent-workspace/human-sessions",
+    "pass": true,
+    "buttons": 30,
+    "errors": [],
+    "notes": []
+  },
+  {
+    "page": "06-agent-sessions",
+    "path": "/agent-workspace/sessions",
+    "pass": true,
+    "buttons": 30,
+    "errors": [],
+    "notes": []
+  },
+  {
+    "page": "07-chat",
+    "path": "/chat",
+    "pass": true,
+    "buttons": 30,
+    "errors": [],
+    "notes": []
+  },
+  {
+    "page": "08-products-list",
+    "path": "/products",
+    "pass": true,
+    "buttons": 30,
+    "errors": [],
+    "notes": []
+  },
+  {
+    "page": "09-products-new",
+    "path": "/products/new",
+    "pass": true,
+    "buttons": 30,
+    "errors": [],
+    "notes": []
+  },
+  {
+    "page": "12-processing",
+    "path": "/processing",
+    "pass": true,
+    "buttons": 30,
+    "errors": [],
+    "notes": []
+  },
+  {
+    "page": "13-categories",
+    "path": "/categories",
+    "pass": true,
+    "buttons": 30,
+    "errors": [],
+    "notes": []
+  },
+  {
+    "page": "14-orders-list",
+    "path": "/orders",
+    "pass": true,
+    "buttons": 30,
+    "errors": [],
+    "notes": []
+  },
+  {
+    "page": "15-orders-new",
+    "path": "/orders/new",
+    "pass": true,
+    "buttons": 30,
+    "errors": [],
+    "notes": []
+  },
+  {
+    "page": "18-after-sales-list",
+    "path": "/after-sales",
+    "pass": true,
+    "buttons": 30,
+    "errors": [],
+    "notes": []
+  },
+  {
+    "page": "20-customers-list",
+    "path": "/customers",
+    "pass": true,
+    "buttons": 29,
+    "errors": [],
+    "notes": []
+  },
+  {
+    "page": "22-finance",
+    "path": "/finance",
+    "pass": true,
+    "buttons": 30,
+    "errors": [],
+    "notes": []
+  },
+  {
+    "page": "23-employees",
+    "path": "/employees",
+    "pass": true,
+    "buttons": 30,
+    "errors": [],
+    "notes": []
+  },
+  {
+    "page": "24-roles",
+    "path": "/roles",
+    "pass": true,
+    "buttons": 30,
+    "errors": [],
+    "notes": []
+  },
+  {
+    "page": "25-settings",
+    "path": "/settings",
+    "pass": true,
+    "buttons": 30,
+    "errors": [],
+    "notes": []
+  },
+  {
+    "page": "26-notifications",
+    "path": "/notifications",
+    "pass": true,
+    "buttons": 30,
+    "errors": [],
+    "notes": []
+  }
+]

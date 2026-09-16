@@ -41,3 +41,17 @@ class AgentState(TypedDict):
 
     # 跨轮状态持久化
     pending_interact_skill: str      # 跨轮锁定的 Skill（如 product/order），防止 LLM 分类器误判跳走
+    # 最近一张确认卡（#3557）：答卡轮判据 = 本轮输入逐字等于 last_confirm_value
+    # **且** last_confirm_skill == pending_interact_skill（= 本 skill 自己发的卡）。
+    # 由 _build_initial_state 从 SessionStateStore 恢复；base_skill 发卡时写入。
+    last_confirm_value: str          # 最近一次确认卡的 confirmValue（答卡回传的原文）
+    last_confirm_skill: str          # 下发该卡的 skill 名
+    # 最近一张**任意类型**交互卡（#3557 家族扩展）：confirm 卡的答卡判据在上
+    # （写操作确认门禁也依赖 last_confirm_value，语义不能混）；choice / form 卡的答卡轮
+    # 此前**没有任何判据** → 「已选加工项：…」这类系统自产的答卡值被 L1 规则表当成话题
+    # 切换，清锁后被甩到没有该流程工具的 skill（run 34841029062 OR-015 R4 实证：
+    # 落到 product skill，零工具 + 「我承接的是商品侧的工作」）。
+    # 由 _build_initial_state 恢复；base_skill 的 interact 成功分支写入。
+    last_card: dict                  # 最近一张交互卡的 interactive_data（component/options/…）
+    last_card_skill: str             # 下发该卡的 skill 名
+

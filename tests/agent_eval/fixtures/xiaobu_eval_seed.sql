@@ -37,7 +37,13 @@ VALUES
    1, 999, '高温定型，褶皱持久', '[]'::jsonb, TRUE, 'active', 0)
 ON CONFLICT (id) DO NOTHING;
 
--- ── 3. 商品：遮光窗帘（PR-003 名称查询 / PR-001 关键词搜索）──
+-- ── 3. 商品（PR-003 名称查询 / PR-001 关键词搜索 / OR-017 指名商品下单）──
+-- ⚠️ 商品名必须覆盖用例**点名**的商品：OR-017 的输入是「我想买夏日清风窗帘…」，
+--    库里没有这个商品 → `product_search` 搜不到 → agent 无从下单 → 该用例恒 0 分。
+--    实测 CI：OR-017 `tools=[customer_address_query ×3]`、0 建单 —— 看着像 agent 不会
+--    下单，实为库里没这个东西。**数据层缺口，不是能力缺陷。**
+-- `recommended`：只让「遮光窗帘」进推荐位，避免 CH-010「推荐几款热销窗帘」的
+--    「第一款」在多个推荐商品间变得不确定；夏日清风靠**名称**命中，不靠推荐位。
 INSERT INTO products
   (id, tenant_id, name, category_id, base_price, description, images, detail_images,
    stock, stock_warning_threshold, status, unit, pricing_type, sku_code,
@@ -50,6 +56,10 @@ VALUES
   ('prod_eval_dark_green', 1, '北欧风窗帘', 'cat_eval_curtain', 128.00,
    '北欧简约风格，棉麻质感，适合客厅与书房',
    '[]'::jsonb, '[]'::jsonb, 800, 10, 'on_sale', '米', 'per_meter', 'EVAL-NRD-28',
+   'on_order', 0, 0, TRUE, FALSE),
+  ('prod_eval_summer', 1, '夏日清风窗帘', 'cat_eval_curtain', 158.00,
+   '轻薄透气夏日清风系列，支持散剪 2.8 米门幅与打孔/折边加工',
+   '[]'::jsonb, '[]'::jsonb, 600, 10, 'on_sale', '米', 'per_meter', 'EVAL-SMB-28',
    'on_order', 0, 0, TRUE, FALSE)
 ON CONFLICT (id) DO NOTHING;
 
@@ -59,19 +69,26 @@ SELECT v.tenant_id, v.product_id, v.color_name, v.hex, v.ord
 FROM (VALUES
   (1, 'prod_eval_blackout', '米白', '#F5F0E6', 1),
   (1, 'prod_eval_blackout', '浅灰', '#C8C8C8', 2),
-  (1, 'prod_eval_dark_green', '雾霾蓝', '#8FA3B0', 1)
+  (1, 'prod_eval_dark_green', '雾霾蓝', '#8FA3B0', 1),
+  -- 「白色」给到每个商品：CH-010 顾客说「第一款，白色…」，而"第一款"由商品搜索
+  -- 排序决定（可能落在任一商品上）。若某商品没有白色 → 流程卡在颜色上死循环
+  -- （实测 run 34624202564：agent 选中北欧风窗帘，顾客要白色，来回追问）。
+  (1, 'prod_eval_dark_green', '白色', '#FFFFFF', 2),
+  (1, 'prod_eval_summer', '米白色', '#F7F3E8', 1)
 ) AS v(tenant_id, product_id, color_name, hex, ord)
 WHERE NOT EXISTS (
   SELECT 1 FROM product_colors pc
   WHERE pc.product_id = v.product_id AND pc.color_name = v.color_name
 );
 
-INSERT INTO product_skus (tenant_id, product_id, color_id, selling_method, door_width, price, stock, sku_code)
-SELECT 1, pc.product_id, pc.id, 'bulk_cut', '2.8', p.base_price, 500,
+-- color_name 必须一并写入：ProductSku 实体声明了该列，admin-api 拉 SKU 列表时 SELECT 它
+-- （schema.sql/V41 已补列；不写则返回 null，前端色号显示为空）。
+INSERT INTO product_skus (tenant_id, product_id, color_id, color_name, selling_method, door_width, price, stock, sku_code)
+SELECT 1, pc.product_id, pc.id, pc.color_name, 'bulk_cut', '2.8', p.base_price, 500,
        p.sku_code || '-' || pc.color_name
 FROM product_colors pc
 JOIN products p ON p.id = pc.product_id
-WHERE pc.product_id IN ('prod_eval_blackout', 'prod_eval_dark_green')
+WHERE pc.product_id IN ('prod_eval_blackout', 'prod_eval_dark_green', 'prod_eval_summer')
   AND NOT EXISTS (
     SELECT 1 FROM product_skus s
     WHERE s.product_id = pc.product_id AND s.color_id = pc.id
@@ -85,7 +102,9 @@ FROM (VALUES
   ('prod_eval_blackout', 'pi_eval_punch', 1),
   ('prod_eval_blackout', 'pi_eval_hem', 2),
   ('prod_eval_blackout', 'pi_eval_iron', 3),
-  ('prod_eval_dark_green', 'pi_eval_punch', 1)
+  ('prod_eval_dark_green', 'pi_eval_punch', 1),
+  ('prod_eval_summer', 'pi_eval_punch', 1),
+  ('prod_eval_summer', 'pi_eval_hem', 2)
 ) AS v(pid, piid, ord)
 WHERE NOT EXISTS (
   SELECT 1 FROM product_processing_items x
@@ -117,6 +136,33 @@ INSERT INTO users (id, tenant_id, phone, nickname, role, status, deleted)
 VALUES ('debug_customer_1', 1, '13800138000', '评测顾客', 'customer', 'active', 0)
 ON CONFLICT (id) DO NOTHING;
 
+-- 6.1b 新客（**无任何历史订单**，issue #3391）：C 端「无历史收货信息 → 主动收集」路径。
+--      debug_customer_1 有历史订单 → customer_address_query 恒 has_address=true，
+--      该路径在评测里原本**不可达**（而验收 C-A1 暴露的问题正出在这里）。
+--      评测通过请求头 X-Debug-User: debug_customer_new 切到本身份
+--      （app/utils/auth.py 的 DEBUG-only + debug_ 前缀白名单）。
+INSERT INTO users (id, tenant_id, phone, nickname, role, status, deleted)
+VALUES ('debug_customer_new', 1, '13900139000', '评测新客', 'customer', 'active', 0)
+ON CONFLICT (id) DO NOTHING;
+
+-- 6.1c B 端管理员账号（**转人工通知投递路径可达性**，issue #3553 / CH-008 覆盖缺口）
+--      ⚠️ 不要当脏数据删掉：删除会让 CH-008 的「通知真的送达」重新变成**永不可达**。
+--      为什么必须有：`POST /api/admin/notifications` **按收件人落库、无广播语义**，
+--      `human_handoff._notify_admins` 靠 `GET /api/admin/users?status=active`（默认排除
+--      role=customer，优先 role='admin'）解析收件人。C 端评测栈此前**只有 role='customer'
+--      账号** → 解析不到收件人 → 工具走
+--      `success=True` + `error="admin_notification_skipped_no_recipient"` +
+--      `data.adminNotified=false` 的降级分支 → 「管理员真的收到转人工通知」在评测里
+--      **任何栈都不可达**（CH-008 只能断言「工具调用成功」= 只有一半覆盖）。
+--      本账号（role='admin'，与 NotificationService.triggerForTenantAdmins 口径一致）
+--      让真实投递分支可被机器判定：CH-008 的 `output_verify: adminNotified=true`。
+--      数据隔离影响：本账号**没有任何订单**（C 端订单隔离按 user_id 判定），
+--      也不进 `agent_employees` 员工列表（B 端 employee_manage 按该模型查询）→
+--      不影响 CH-011（跨用户订单拒绝）/ DF-020（冒充管理员）等 C 端隔离用例。
+INSERT INTO users (id, tenant_id, phone, nickname, role, status, deleted)
+VALUES ('debug_admin_eval', 1, '13600136000', '评测管理员', 'admin', 'active', 0)
+ON CONFLICT (id) DO NOTHING;
+
 -- 6.2 历史订单 ×2：一笔已完成（地址预填 + 售后可建单）、一笔已发货（物流查询）
 --     user_id 必须是 debug_customer_1 —— 这是 C 端数据隔离的唯一依据。
 --     ⚠️ created_at **必须显式给值且两笔不同**：`customer_order_query` 按
@@ -129,11 +175,11 @@ INSERT INTO orders
    total_amount, status, payment_status, stock_deducted, follow_status, remark,
    created_at, updated_at, deleted)
 VALUES
-  ('ord_eval_0001', 1, 'EVAL-ORD-0001', 'debug_customer_1', '张三', '13800138000',
+  ('a1b2c3d4-e5f6-4a7b-8c9d-000000000001', 1, 'EVAL-ORD-0001', 'debug_customer_1', '张三', '13800138000',
    '浙江省杭州市西湖区文三路 1 号 1 幢 101 室', 504.00, 'completed', 'paid', TRUE,
    'completed', 'C 端评测 fixture：已完成订单（地址预填 / 售后建单用）',
    TIMESTAMPTZ '2026-08-01 10:00:00+08', TIMESTAMPTZ '2026-08-05 10:00:00+08', 0),
-  ('ord_eval_0002', 1, 'EVAL-ORD-0002', 'debug_customer_1', '张三', '13800138000',
+  ('a1b2c3d4-e5f6-4a7b-8c9d-000000000002', 1, 'EVAL-ORD-0002', 'debug_customer_1', '张三', '13800138000',
    '浙江省杭州市西湖区文三路 1 号 1 幢 101 室', 384.00, 'shipped', 'paid', TRUE,
    'completed', 'C 端评测 fixture：已发货订单（物流查询 / 最近一笔用）',
    TIMESTAMPTZ '2026-09-01 10:00:00+08', TIMESTAMPTZ '2026-09-09 18:00:00+08', 0)
@@ -144,20 +190,20 @@ INSERT INTO order_items
   (id, tenant_id, order_id, product_id, product_name, quantity, unit_price,
    width, height, subtotal, deleted)
 VALUES
-  ('oit_eval_0001', 1, 'ord_eval_0001', 'prod_eval_blackout', '遮光窗帘', 3, 168.00,
+  ('oit_eval_0001', 1, 'a1b2c3d4-e5f6-4a7b-8c9d-000000000001', 'prod_eval_blackout', '遮光窗帘', 3, 168.00,
    3.00, 2.80, 504.00, 0),
-  ('oit_eval_0002', 1, 'ord_eval_0002', 'prod_eval_dark_green', '北欧风窗帘', 3, 128.00,
+  ('oit_eval_0002', 1, 'a1b2c3d4-e5f6-4a7b-8c9d-000000000002', 'prod_eval_dark_green', '北欧风窗帘', 3, 128.00,
    3.00, 2.80, 384.00, 0)
 ON CONFLICT (id) DO NOTHING;
 
 -- 6.4 物流轨迹（已发货订单的物流查询用例数据源）
 INSERT INTO order_logistics
   (id, tenant_id, order_id, logistics_company, tracking_no, status, tracking_info, shipped_at)
-SELECT 'olg_eval_0002', 1, 'ord_eval_0002', '顺丰速运', 'SF1234567890123', 'in_transit',
+SELECT 'olg_eval_0002', 1, 'a1b2c3d4-e5f6-4a7b-8c9d-000000000002', '顺丰速运', 'SF1234567890123', 'in_transit',
        '[{"time":"2026-09-10 09:00","desc":"快件已从杭州中转场发出"}]'::jsonb,
        TIMESTAMPTZ '2026-09-09 18:00:00+08'
 WHERE NOT EXISTS (
-  SELECT 1 FROM order_logistics WHERE order_id = 'ord_eval_0002'
+  SELECT 1 FROM order_logistics WHERE order_id = 'a1b2c3d4-e5f6-4a7b-8c9d-000000000002'
 );
 
 -- ── 数据核对（CI 日志可见，避免"注入了但没生效"静默）──
@@ -165,12 +211,32 @@ DO $$
 DECLARE
   v_orders INTEGER;
   v_items  INTEGER;
+  v_new_orders INTEGER;
+  v_admins INTEGER;
 BEGIN
   SELECT count(*) INTO v_orders FROM orders
    WHERE tenant_id = 1 AND user_id = 'debug_customer_1' AND deleted = 0;
   SELECT count(*) INTO v_items FROM order_items WHERE tenant_id = 1 AND deleted = 0;
-  RAISE NOTICE 'C 端评测 fixture 核对: debug_customer_1 订单=% 明细=%', v_orders, v_items;
+  -- 新客（OR-022 多身份用例）必须**没有**任何订单：有订单就会走 has_address=true 分支，
+  -- 用例"看起来覆盖了新客路径、其实没覆盖"（假绿）。故这里是**断言**，不只是打印。
+  SELECT count(*) INTO v_new_orders FROM orders
+   WHERE tenant_id = 1 AND user_id = 'debug_customer_new' AND deleted = 0;
+  -- 6.1c 的 B 端管理员必须在：缺失时 CH-008「通知真的送达」会静默降级为
+  -- admin_notification_skipped_no_recipient（success=True 但 adminNotified=false）→
+  -- output_verify 断言会红，但根因是**种子缺失**而非能力缺陷。这里先 fail-closed。
+  SELECT count(*) INTO v_admins FROM users
+   WHERE tenant_id = 1 AND role = 'admin' AND status = 'active' AND deleted = 0;
+  RAISE NOTICE 'C 端评测 fixture 核对: debug_customer_1 订单=% 明细=% 新客订单=% B端管理员=%',
+    v_orders, v_items, v_new_orders, v_admins;
   IF v_orders < 2 THEN
     RAISE EXCEPTION 'C 端 fixture 注入失败：debug_customer_1 订单数=% (<2)', v_orders;
+  END IF;
+  IF v_new_orders > 0 THEN
+    RAISE EXCEPTION '新客 fixture 被污染：debug_customer_new 订单数=%（必须为 0，否则 OR-022 假绿）',
+      v_new_orders;
+  END IF;
+  IF v_admins < 1 THEN
+    RAISE EXCEPTION 'C 端 fixture 缺少 B 端管理员账号（role=admin, status=active）：% —— '
+      'CH-008 转人工通知投递分支将不可达（adminNotified 恒 false）', v_admins;
   END IF;
 END $$;

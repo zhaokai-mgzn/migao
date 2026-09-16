@@ -1,5 +1,5 @@
 package com.migao.admin.service;
-// case_ids: HR-002, DF-007, HR-007
+// case_ids: HR-002, DF-007, HR-007, HR-004, UI-040
 
 import com.migao.admin.dto.PageResponse;
 import com.migao.admin.entity.Role;
@@ -9,11 +9,13 @@ import com.migao.admin.exception.BusinessException;
 import com.migao.admin.mapper.RoleMapper;
 import com.migao.admin.mapper.UserMapper;
 import com.migao.admin.mapper.UserRoleMapper;
+import com.migao.admin.security.SecurityUser;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -22,6 +24,8 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 import java.util.List;
 
@@ -407,8 +411,59 @@ class UserServiceTest {
                 });
     }
 
-    // ======================== toggleUserStatus (disable/enable) 测试 ========================
+    // ======================== updateUser 手机号更新（issue #3550） ========================
 
+    @Test
+    @DisplayName("更新用户手机号 - 新号未被占用则落库")
+    void updateUser_ChangePhone_Success() {
+        // given
+        when(userMapper.selectById("user-001")).thenReturn(testUser);
+        when(userMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(null); // 新号未被占用
+        when(userMapper.updateById(any(User.class))).thenReturn(1);
+
+        // when
+        userService.updateUser("user-001", null, null, null, null, null, "13900000002");
+
+        // then
+        assertThat(testUser.getPhone()).isEqualTo("13900000002");
+        verify(userMapper).updateById(any(User.class));
+    }
+
+    @Test
+    @DisplayName("更新用户手机号 - 租户内已被他人占用则报错，不落库")
+    void updateUser_ChangePhone_Conflict() {
+        // given
+        when(userMapper.selectById("user-001")).thenReturn(testUser);
+        when(userMapper.selectOne(any(LambdaQueryWrapper.class)))
+                .thenReturn(User.builder().id("other-user").phone("13900000002").tenantId(1L).build());
+
+        // when & then
+        assertThatThrownBy(() ->
+                userService.updateUser("user-001", null, null, null, null, null, "13900000002"))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("手机号已被注册");
+
+        assertThat(testUser.getPhone()).isEqualTo("13800138000"); // 未改
+        verify(userMapper, never()).updateById(any(User.class));
+    }
+
+    @Test
+    @DisplayName("更新用户手机号 - 与现有号相同/为空则不校验不修改")
+    void updateUser_SameOrBlankPhone_Noop() {
+        // given
+        when(userMapper.selectById("user-001")).thenReturn(testUser);
+        when(userMapper.updateById(any(User.class))).thenReturn(1);
+
+        // when
+        userService.updateUser("user-001", null, null, null, null, null, "13800138000");
+        userService.updateUser("user-001", null, null, null, null, null, "  ");
+
+        // then
+        assertThat(testUser.getPhone()).isEqualTo("13800138000");
+        verify(userMapper, never()).selectOne(any(LambdaQueryWrapper.class));
+    }
+
+    // ======================== toggleUserStatus (disable/enable) 测试 ========================
     @Test
     @DisplayName("禁用用户成功")
     void disableUser_Success() {
@@ -551,5 +606,82 @@ class UserServiceTest {
 
         // then
         assertThat(roles).isEmpty();
+    }
+
+    // ============== resolveCurrentUserDisplayName（发货人兜底，issue #3768 / UI-040）==============
+
+    /**
+     * 被锁住的不变量：**必须用 SecurityUser.userId 查 users 拿姓名，不能取 displayName** ——
+     * displayName 在内部服务调用（agent 代发）时恒为 "internal-service"、在 B 端登录时是
+     * JWT 的 username（手机号），直接取会把发货单「经手人」印成 internal-service。
+     * 故下面 authenticateAs 故意把 username 传成手机号，让「误取 displayName」立刻红。
+     */
+    private void authenticateAs(String userId) {
+        SecurityUser principal = new SecurityUser(
+                userId, 1L, "13800138000", List.of("tenant_admin"), List.of());
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken(principal, null, principal.getAuthorities()));
+    }
+
+    @AfterEach
+    void clearSecurityContextAfterTest() {
+        SecurityContextHolder.clearContext();
+    }
+
+    @Test
+    @DisplayName("当前登录用户姓名 - 有昵称则返回昵称（不是手机号/服务占位名）")
+    void resolveCurrentUserDisplayName_Nickname() {
+        // given
+        authenticateAs("user-001");
+        when(userMapper.selectById("user-001")).thenReturn(testUser); // nickname=测试管理员
+
+        // when / then
+        assertThat(userService.resolveCurrentUserDisplayName()).isEqualTo("测试管理员");
+    }
+
+    @Test
+    @DisplayName("当前登录用户姓名 - 昵称为空退化为手机号")
+    void resolveCurrentUserDisplayName_PhoneFallback() {
+        // given
+        authenticateAs("user-001");
+        testUser.setNickname("   ");
+        when(userMapper.selectById("user-001")).thenReturn(testUser);
+
+        // when / then
+        assertThat(userService.resolveCurrentUserDisplayName()).isEqualTo("13800138000");
+    }
+
+    @Test
+    @DisplayName("当前登录用户姓名 - 无可展示姓名返回 null（打印显示「-」，不编造）")
+    void resolveCurrentUserDisplayName_NoName() {
+        // given
+        authenticateAs("user-001");
+        testUser.setNickname(null);
+        testUser.setPhone(null);
+        when(userMapper.selectById("user-001")).thenReturn(testUser);
+
+        // when / then
+        assertThat(userService.resolveCurrentUserDisplayName()).isNull();
+    }
+
+    @Test
+    @DisplayName("当前登录用户姓名 - 用户查不到（平台管理员/纯服务调用）返回 null 且不抛异常")
+    void resolveCurrentUserDisplayName_UserMissing() {
+        // given
+        authenticateAs("internal-service");
+        when(userMapper.selectById("internal-service")).thenReturn(null);
+
+        // when / then
+        assertThat(userService.resolveCurrentUserDisplayName()).isNull();
+    }
+
+    @Test
+    @DisplayName("当前登录用户姓名 - 未认证返回 null 且不抛异常")
+    void resolveCurrentUserDisplayName_Unauthenticated() {
+        // given
+        SecurityContextHolder.clearContext();
+
+        // when / then
+        assertThat(userService.resolveCurrentUserDisplayName()).isNull();
     }
 }

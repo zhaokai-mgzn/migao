@@ -45,8 +45,8 @@ MIBAO_PRESET_SUGGESTIONS: dict[str, dict[str, list[str]]] = {
     "order_query": {
         "initial":   ["查看今日新订单", "筛选待发货订单", "查看异常订单"],
         "querying":  ["查看该订单物流", "查看客户历史订单", "修改订单状态"],
-        "confirming": ["确认订单信息", "打印发货单", "通知客户发货"],
-        "processing": ["查看关联售后工单", "查看商品库存", "导出订单报表"],
+        "confirming": ["确认订单信息", "生成加工单", "通知客户发货"],
+        "processing": ["查看关联售后工单", "查看加工单状态", "导出订单报表"],
         "completed":  ["查看今日订单汇总", "处理下一订单", "查看经营数据"],
     },
     "order_create": {

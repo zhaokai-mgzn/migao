@@ -416,12 +416,14 @@ def find_weak_asserts(test_file):
     """扫描测试文件的弱断言（不触业务数据的存在性/恒真断言 + 空 pass）。
 
     返回 [{line_no, line, reason}]。弱断言无法证明功能正确，属「凑数」。
+    读文件失败/路径不存在/编码异常 → 抛 ValueError（fail-closed：门禁依赖的
+    扫描不可空转，「路径不可读」绝不允许退化成「0 处弱断言」放行，见 issue #3631）。
     """
     weak = []
     try:
         text = Path(test_file).read_text(encoding="utf-8")
-    except OSError:
-        return weak
+    except (OSError, UnicodeDecodeError) as e:
+        raise ValueError(f"无法读取测试文件 {test_file}（{e.__class__.__name__}）") from e
     for no, line in enumerate(text.split("\n"), 1):
         stripped = line.strip()
         if not stripped:
@@ -480,6 +482,9 @@ def get_changed_files(base="origin/main"):
     旧实现 `git diff --name-only` 在 rename 检测关闭时会把改名文件输出为旧路径（删除）+ 新路径（新增），
     导致 gate 对已改名的 Mapper/实体按旧名查找配套测试 → 误报 BLOCKED（实测 issue #3051 知识卡片改名）。
     用 `--name-status -M` 输出 Rxxx old→new，只保留新路径。
+
+    git diff 失败（base 缺失/非 git 仓库/超时等）→ 返回 None（fail-closed：
+    「扫描不到变更」≠「无变更」——门禁依赖的扫描空转必须显式报错，见 issue #3631）。
     """
     try:
         result = subprocess.run(
@@ -491,6 +496,10 @@ def get_changed_files(base="origin/main"):
                 ["git", "diff", "--name-status", "-M", base, "HEAD"],
                 capture_output=True, text=True, timeout=15,
             )
+        if result.returncode != 0:
+            print(f"::error:: git diff 失败: {(result.stderr or '').strip() or f'git diff {base} 退出码 {result.returncode}'}",
+                  file=sys.stderr)
+            return None
         files = []
         for line in result.stdout.splitlines():
             parts = line.split("\t")
@@ -506,8 +515,8 @@ def get_changed_files(base="origin/main"):
                 files.append(parts[1])
         return files
     except Exception as e:
-        print(f"⚠️ git diff 失败: {e}", file=sys.stderr)
-        return []
+        print(f"::error:: git diff 失败: {e}", file=sys.stderr)
+        return None
 
 
 def get_added_files(base="origin/main"):
@@ -593,7 +602,13 @@ def main(argv=None):
             return 1
         total = 0
         for tf in args.files:
-            weak = find_weak_asserts(tf)
+            try:
+                weak = find_weak_asserts(tf)
+            except ValueError as e:
+                print(f"::error:: {e}", file=sys.stderr)
+                print("❌ --check-weak 扫描失败即门禁失败（fail-closed）："
+                      "文件不存在/不可读/编码异常 ≠ 无弱断言，见 issue #3631", file=sys.stderr)
+                return 1
             print(f"📄 {tf}: {len(weak)} 处弱断言")
             for w in weak:
                 print(f"  L{w['line_no']}: {w['line']}")
@@ -621,6 +636,10 @@ def main(argv=None):
     if not rules:
         print("::warning:: tech-stack.yml 的 modules 为空，覆盖率门禁无规则可执行", file=sys.stderr)
     files = args.files if args.files else get_changed_files(args.base)
+    if files is None:
+        print("::error:: growth_gate 无法获取变更文件清单（fail-closed：扫描失败 ≠ 无变更，见 issue #3631）",
+              file=sys.stderr)
+        return 2
 
     # 仅保留磁盘上存在的文件：git diff --name-only 会把「已删除/改名前的旧路径」也列入，
     # 这些路径无配套测试要求（issue #3051 知识卡片改名 + 旧知识库移除误报修复）。

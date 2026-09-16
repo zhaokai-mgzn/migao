@@ -1,4 +1,4 @@
-// case_ids: API-006, CH-030
+// case_ids: API-006, CH-030, UI-043
 /**
  * ChoiceCard 组件测试（choice 交互组件：选项列表 + 翻页）
  *
@@ -90,5 +90,42 @@ describe('ChoiceCard — 提交锁（CH-030 防重复提交）', () => {
     render(<ChoiceCard data={baseChoice} onAction={onAction} disabled />)
     fireEvent.click(screen.getByText('现代简约'))
     expect(onAction).not.toHaveBeenCalled()
+  })
+})
+
+describe('ChoiceCard — 点击协议回传人话 label（UI-043，对齐 issue #3365 与 admin-web InteractiveMessage 单一事实源）', () => {
+  afterEach(() => {
+    jest.clearAllMocks()
+  })
+
+  const procCard: InteractiveData = {
+    type: 'choice',
+    component: 'choice',
+    title: '请选择需要的加工项（可多选，不需要请点右下角按钮）',
+    options: [
+      { label: '压褶定型 ¥12/米', value: 'proc_item_craft_press' },
+      { label: 'LG工艺 ¥50/件', value: 'proc_item_craft_lg' },
+    ],
+  }
+
+  it('点击选项回传 label（人话），不得发内部编码 value', () => {
+    const onAction = jest.fn()
+    render(<ChoiceCard data={procCard} onAction={onAction} />)
+    fireEvent.click(screen.getByText('LG工艺 ¥50/件'))
+    expect(onAction).toHaveBeenCalledWith('LG工艺 ¥50/件')
+    expect(onAction).not.toHaveBeenCalledWith('proc_item_craft_lg')
+  })
+
+  it('选项缺 label 时回退 value（协议：label || value）', () => {
+    const noLabel: InteractiveData = {
+      type: 'choice',
+      component: 'choice',
+      title: '请选择',
+      options: [{ value: 'fallback_value', label: '' }],
+    }
+    const onAction = jest.fn()
+    const { container } = render(<ChoiceCard data={noLabel} onAction={onAction} />)
+    fireEvent.click(container.querySelector('.choice-card__option') as HTMLElement)
+    expect(onAction).toHaveBeenCalledWith('fallback_value')
   })
 })

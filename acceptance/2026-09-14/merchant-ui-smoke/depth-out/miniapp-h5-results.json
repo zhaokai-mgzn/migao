@@ -1,0 +1,47 @@
+[
+  {
+    "journey": "C1-chat-home",
+    "pass": true,
+    "errors": [],
+    "notes": [
+      "UI-only（agent 响应由本地 stub 提供）：聊天页渲染 + 会话初始化 + 输入框可用"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "C2-chat-send-render",
+    "pass": true,
+    "errors": [],
+    "notes": [
+      "UI-only（stub）：消息已上屏（输入框可见、文本已输入）；agent 回复流依赖真实 LLM，不做端到端判定"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "C3-profile-tab",
+    "pass": true,
+    "errors": [],
+    "notes": [
+      "UI-only（stub）：我的页渲染，菜单项可见"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "C4-login-page",
+    "pass": false,
+    "errors": [
+      "Error: 登录页无输入控件"
+    ],
+    "notes": [],
+    "evidence": []
+  },
+  {
+    "journey": "C5-card-journey-render",
+    "pass": true,
+    "errors": [],
+    "notes": [
+      "UI-only（stub）：聊天容器渲染；ProductCard/QuotationCard/OrderCard 端到端触发由 CI agent 评测承担"
+    ],
+    "evidence": []
+  }
+]

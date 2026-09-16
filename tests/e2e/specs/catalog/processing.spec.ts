@@ -67,13 +67,26 @@ test.describe('加工项配置', () => {
       })
     })
 
+    // 拦截商品分类 API（页面 loadData 的第三个并行请求：categoryApi.getCategories()）
+    // ⚠️ 不 mock 它会真连后端；`Promise.all` 一旦 reject ⇒ setItems 永不执行 ⇒ 表格恒「暂无加工项」，
+    //    于是「应显示所有加工项数据 / 价格 / 计价方式 / 编辑回填」等用例即使标题断言修好也仍然红。
+    await page.route('**/api/admin/categories*', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ code: 200, data: [] }),
+      })
+    })
+
     await page.goto('/processing')
-    await expect(page.getByRole('heading', { name: '加工项配置' })).toBeVisible()
+    // ⚠️ 标题契约：页面 H1 是「加工项管理」（由 #3079「命名统一」把旧名「加工项配置」改掉）。
+    //    断言旧名会让本文件 20/20 全红在 beforeEach 第 71 行——与加工项功能无关。
+    await expect(page.getByRole('heading', { name: '加工项管理' })).toBeVisible()
   })
 
   test.describe('页面加载', () => {
     test('应显示页面标题', async ({ page }) => {
-      await expect(page.getByRole('heading', { name: '加工项配置' })).toBeVisible()
+      await expect(page.getByRole('heading', { name: '加工项管理' })).toBeVisible()
     })
 
     test('应渲染加工项列表表格', async ({ page }) => {

@@ -52,20 +52,64 @@ _VALIDATION_RULES: Dict[str, Dict[str, Any]] = {
         },
     },
     "order_manage": {
+        # 三个此前无规则的 action（issue #3566 核查）：闸门走「该操作无预定义规则」直接
+        # 放行，连 order_id 都不校验——其中 confirm_payment 是**资金动作**。
+        # 真实契约在 Service 分支里（`OrderService.java:1585-1629`），工具统一 PATCH
+        # `/api/admin/agent/orders/{id}`（`order_manage.py:128`）。
+        "update_status": {
+            "required": ["order_id", "status"],
+            "order_id": {"type": str, "min_len": 1, "label": "订单ID或订单号"},
+            # 状态集 = `OrderService.java:79-86` STATUS_TRANSITIONS（key ∪ 目标值），
+            # 非法值/非法流转由 Service 拒（`:507-521`），闸门先拦非法取值
+            "status": {
+                "type": str,
+                "min_len": 1,
+                "label": "订单新状态（pending/confirmed/producing/shipped/completed/cancelled）",
+                "enum": ["pending", "confirmed", "producing", "shipped", "completed", "cancelled"],
+            },
+        },
+        "update_logistics": {
+            "required": ["order_id", "logistics_company", "tracking_number"],
+            "order_id": {"type": str, "min_len": 1, "label": "订单ID或订单号"},
+            "logistics_company": {"type": str, "min_len": 1, "label": "快递公司"},
+            "tracking_number": {"type": str, "min_len": 1, "label": "运单号"},
+        },
+        "confirm_payment": {
+            "required": ["order_id"],
+            "order_id": {"type": str, "min_len": 1, "label": "订单ID或订单号"},
+        },
         "cancel": {
             "required": ["order_id"],
             "order_id": {"type": str, "min_len": 1, "label": "订单ID或订单号"},
+            "cancel_reason": {"type": str, "label": "取消原因（可选）"},
         },
         "refund": {
             "required": ["order_id"],
             "order_id": {"type": str, "min_len": 1, "label": "订单ID或订单号"},
+            # 退款额可选（缺省全额，`OrderService.java:1123`），但显式传 0 必被拒
+            # （`:1125-1135`：负数拒、累计封顶后 <=0 → 「已全额退款，无需重复退款」）
+            "refund_amount": {
+                "type": (int, float),
+                "min": 0.01,
+                "label": "退款金额（元，可选；不传=全额退款）",
+            },
+            "refund_reason": {"type": str, "label": "退款原因（可选）"},
         },
     },
+    # ⚠️ 加工单工具的闸门规则已随注册表移除（产品决策 2026-09-15，issue #3917）：
+    # agent 暂不接入 processing_order_*，工具不可达 ⇒ 规则永不命中 = 死键
+    # （test_tools_validate_input 的 L0 不变式会拦）。未来恢复接入时（registry +
+    # order_skill + prompts/order.md 三处一起恢复）把下方两个规则块加回来：
+    #   "processing_order_generate": {"generate": {"required": ["order_ids"], ...}},
+    #   "processing_order_update": {"issue": {required:["id"]...}, "start":..., ...}
+    # （旧规则全文见 git 历史：validate_input.py 在 2026-09-15 前的版本）
     "inventory_manage": {
         "adjust": {
             "required": ["product_id", "adjustment", "reason"],
             "product_id": {"type": str, "min_len": 1, "label": "商品ID"},
-            "adjustment": {"type": int, "label": "调整数量（正数增加，负数减少，不能为0）"},
+            # nonzero：adjustment=0 被 Service 拒（`ProductService.java:1716-1718`
+            # 「调整量 adjustment 不能为空或 0」）→ 闸门必须同样拦下（issue #3566 核查）
+            "adjustment": {"type": int, "nonzero": True, "label": "调整数量（正数增加，负数减少，不能为0）"},
             "reason": {"type": str, "min_len": 1, "label": "调整原因"},
         },
     },
@@ -116,7 +160,7 @@ _VALIDATION_RULES: Dict[str, Dict[str, Any]] = {
         "update": {
             "required": ["customer_id", "data"],
             "customer_id": {"type": str, "min_len": 1, "label": "客户 UUID"},
-            "data": {"type": dict, "label": "更新数据（可含 phone/name 等字段）"},
+            "data": {"type": dict, "label": "更新数据（可写字段：wechatNickname/phone/gender/region*/vipLevel/customerStatus/agentNotes/tags/customFields）"},
         },
         "add_tag": {
             "required": ["customer_id", "tag_id"],
@@ -135,7 +179,9 @@ _VALIDATION_RULES: Dict[str, Dict[str, Any]] = {
         "create_transaction": {
             "required": ["type", "amount"],
             "type": {"type": str, "label": "收支类型(income/refund)", "enum": ["income", "refund"]},
-            "amount": {"type": (int, float), "min": 0, "label": "金额"},
+            # 契约下限 0.01（`FinanceTransactionCreateRequest.java:21-23` @DecimalMin(0.01)），
+            # 旧规则 min=0 → amount=0 放行后必被 422（issue #3566 核查）
+            "amount": {"type": (int, float), "min": 0.01, "label": "金额（>0，最低 0.01）"},
         },
     },
     "notification_manage": {
@@ -148,22 +194,66 @@ _VALIDATION_RULES: Dict[str, Dict[str, Any]] = {
             "notification_id": {"type": str, "min_len": 1, "label": "通知 ID"},
         },
         "create": {
-            "required": ["title", "content"],
+            # recipient_id 是工具硬必填（`notification_manage.py:392-397`）且契约
+            # `CreateNotificationRequest.java:17-18` @NotBlank → 旧规则漏了它（issue #3566 核查）
+            "required": ["recipient_id", "title", "content"],
+            "recipient_id": {"type": str, "min_len": 1, "label": "接收人用户 ID"},
             "title": {"type": str, "min_len": 1, "label": "通知标题"},
             "content": {"type": str, "min_len": 1, "label": "通知内容"},
         },
     },
     "processing_item_manage": {
+        # 契约对齐（issue #3566）：`ProcessingItemCreateRequest.java:19-43` 必填集为
+        # name(@NotBlank,@Size max=20) / categoryId(@NotBlank) / pricingMethod(@NotBlank)
+        # / unitPrice(@NotNull,@DecimalMin 0.10,@DecimalMax 999.99,@Digits(3,2))；
+        # 合法计价方式枚举见 `ProcessingItemService.java:297-302`（per_piece 非法）。
+        # 闸门校验的是工具对外参数名（`processing_item_manage.py`）：price → unitPrice。
+        # 旧规则只要求 name/category_id → 放行注定 422 的调用（agent 白跑一轮才失败）。
         "create_processing_item": {
-            "required": ["name", "category_id"],
-            "name": {"type": str, "min_len": 1, "label": "加工项名称"},
+            "required": ["name", "category_id", "pricing_method", "price"],
+            "name": {"type": str, "min_len": 1, "max_len": 20, "label": "加工项名称"},
             "category_id": {"type": str, "min_len": 1, "label": "分类 ID"},
+            "pricing_method": {
+                "type": str,
+                "min_len": 1,
+                "label": "计价方式（仅 per_meter/per_set/fixed/per_area；per_piece 按个不支持）",
+                "enum": ["per_meter", "per_set", "fixed", "per_area"],
+            },
+            "price": {
+                "type": (int, float),
+                "min": 0.10,
+                "max": 999.99,
+                "label": "单价（元，0.10~999.99）",
+            },
+            "description": {"type": str, "label": "描述"},
+            "unit": {"type": str, "label": "计量单位"},
         },
+        # 契约侧 `ProcessingItemUpdateRequest.java:19-43` 是全量替换语义（同样 @NotBlank
+        # name/categoryId/pricingMethod + @NotNull unitPrice），但工具 `_update_item()`
+        # 目前只发部分字段（PR #3555 遗留，另一包负责）。此处 required **既不放宽也不提前
+        # 收紧**（收紧会让 update 在工具修好前完全不可用），只对齐字段级约束：非法枚举/
+        # 越界单价在闸门即拒，不必等 422。
         "update_item": {
             "required": ["item_id"],
             "item_id": {"type": str, "min_len": 1, "label": "加工项 ID"},
+            "pricing_method": {
+                "type": str,
+                "label": "计价方式（仅 per_meter/per_set/fixed/per_area；per_piece 按个不支持）",
+                "enum": ["per_meter", "per_set", "fixed", "per_area"],
+            },
+            "price": {
+                "type": (int, float),
+                "min": 0.10,
+                "max": 999.99,
+                "label": "单价（元，0.10~999.99）",
+            },
+            "name": {"type": str, "min_len": 1, "max_len": 20, "label": "加工项名称"},
+            "category_id": {"type": str, "min_len": 1, "label": "分类 ID"},
         },
-        "delete": {
+        # 规则键必须与工具 action 同名：工具 action 是 `delete_item`
+        # （`processing_item_manage.py:17` VALID_ACTIONS），旧键写 `delete` → 永不命中，
+        # 破坏性删除完全不过闸门（issue #3566 核查）
+        "delete_item": {
             "required": ["item_id"],
             "item_id": {"type": str, "min_len": 1, "label": "加工项 ID"},
         },
@@ -192,18 +282,28 @@ _VALIDATION_RULES: Dict[str, Dict[str, Any]] = {
             "new_password": {"type": str, "min_len": 1, "label": "新密码"},
         },
         "update_settings": {
-            "required": ["data"],
-            "data": {"type": dict, "label": "配置更新数据"},
+            # 字段名错修复（issue #3566 核查）：旧规则必填 `data`，但工具没有 data 参数
+            # （`settings_manage.py:69-77` 真实参数 name/industry）→ 合法写路径被闸门
+            # 100% 拦住。此处按工具实参声明；「至少传一个字段」由工具自己兜底
+            # （`settings_manage.py:214` 空 json_data → 明确报错）。
+            "required": [],
+            "name": {"type": str, "min_len": 1, "label": "商户名称"},
+            "industry": {"type": str, "min_len": 1, "label": "所属行业"},
         },
         "update_ai_config": {
-            "required": ["data"],
-            "data": {"type": dict, "label": "AI 配置更新数据"},
+            # 同上：真实参数 greeting_template/business_hours/ai_config（`settings_manage.py:78-90`）
+            "required": [],
+            "greeting_template": {"type": str, "min_len": 1, "label": "AI 问候语模板"},
+            "business_hours": {"type": str, "min_len": 1, "label": "营业时间描述"},
+            "ai_config": {"type": dict, "label": "AI 配置字段（字典）"},
         },
     },
     "sku_update": {
         "update": {
-            "required": ["product_id"],
+            # 工具 schema 硬必填 product_id+price（`sku_update.py:46`）→ 旧规则漏 price
+            "required": ["product_id", "price"],
             "product_id": {"type": str, "min_len": 1, "label": "商品 ID"},
+            "price": {"type": (int, float), "min": 0, "label": "新价格（元）"},
         },
     },
     # CT-002 回归防线：category_manage 写操作此前无规则 → validate_input 返回
@@ -277,7 +377,16 @@ class ValidateInputTool(BaseTool):
     description = (
         "【触发】调用 product_manage、order_create、order_manage 等写操作前，先调用本工具校验参数完整性。【前置】需要 target_tool + target_action + params。校验通过返回 success=true。【反例】不要跳过校验直接调写操作。查询操作不需要校验。【标注】READONLY — 纯本地校验，不调用外部API"
     )
-    allowed_roles = ["admin", "agent", "tenant_admin"]
+    # ⚠️ 必须含 `customer`（C 端小布）：本工具是**纯本地参数校验**（description 自述
+    # READONLY、不调用外部 API），小布的 `customer_aftersales` 绑定它，而 `base_skill`
+    # 的「确认-执行链」依赖它**成功**才持久化「已校验待执行」状态：
+    #     if tool_name == "validate_input" and result_dict.get("success"): → 落 pending
+    # 此前不含 customer → 顾客调用一律 `权限不足` → C 端售后 confirm 永远换不来执行
+    # （CI 实证 run 34620594324：`failed=validate_input!权限不足` → 兜底 human_handoff，
+    #  aftersale_create 整轮 0 次成功）。
+    # 安全性：本工具不读库、不写库、不访问外部服务，只校验调用方自己传来的参数；
+    # 真正的权限门禁在各自写工具的 allowed_roles 上，放开这里不构成越权。
+    allowed_roles = ["admin", "agent", "tenant_admin", "customer"]
 
     parameters = {
         "type": "object",
@@ -368,10 +477,24 @@ class ValidateInputTool(BaseTool):
                 label = rule.get("label", field)
                 issues.append(f"数值过小: {label} ({field}) 最小值为 {min_val}")
 
+            max_val = rule.get("max")
+            if max_val is not None and isinstance(val, (int, float)) and val > max_val:
+                label = rule.get("label", field)
+                issues.append(f"数值过大: {label} ({field}) 最大值为 {max_val}")
+
+            if rule.get("nonzero") and isinstance(val, (int, float)) and val == 0:
+                label = rule.get("label", field)
+                issues.append(f"数值非法: {label} ({field}) 不能为 0")
+
             min_len = rule.get("min_len")
             if min_len is not None and isinstance(val, (str, list)) and len(val) < min_len:
                 label = rule.get("label", field)
                 issues.append(f"长度不足: {label} ({field}) 最少需要 {min_len} 个")
+
+            max_len = rule.get("max_len")
+            if max_len is not None and isinstance(val, (str, list)) and len(val) > max_len:
+                label = rule.get("label", field)
+                issues.append(f"长度超限: {label} ({field}) 最多 {max_len} 个字符")
 
             # 枚举值检查（如工单类型/售卖方式等受限枚举）
             enum_vals = rule.get("enum")
@@ -429,7 +552,7 @@ class ValidateInputTool(BaseTool):
                 if not pcs or not isinstance(pcs, list) or not pcs:
                     issues.append(
                         "选了加工项但未传 processing_item_configs（必须为列表，每项含 "
-                        "{processingItemId, customPrice, unit}；customPrice 取 processing_item_query 返回的 unit_price）"
+                        "{processingItemId, customPrice}；customPrice 取 processing_item_query 返回的 unit_price）"
                     )
                 else:
                     for pc in pcs:
@@ -441,11 +564,65 @@ class ValidateInputTool(BaseTool):
                                 f"processing_item_configs 缺价格 customPrice/unit_price: {str(pc)[:100]}"
                             )
                             break
-                        if not pc.get("unit"):
-                            issues.append(
-                                f"processing_item_configs 缺单位 unit: {str(pc)[:100]}"
-                            )
-                            break
+                        # ⚠️ 不再要求 `unit`（issue #3566 核查）：契约里**没有**这个字段——
+                        # agent 路径 `AgentProductCreateRequest.AgentProcessingItemConfig`
+                        # 只有 processingItemId + customPrice（`AgentProductCreateRequest.java:88-93`），
+                        # 表单路径 `ProcessingItemConfigInput.java:12-22` 同。旧规则逼 LLM
+                        # 编一个接收侧不读的键（Jackson 静默丢弃）=「下发字段接收侧不读」同型缺陷。
+
+        # 7. 下单加工费一致性兜底（issue #3521，与上面 #3052 同一理由：
+        #    prompt 指令会被 LLM 方差漏掉 → validate_input 必须是确定性闸门）。
+        #    服务端 OrderService.sumProcessingFee() 只按 `processingItems[i].unitPrice × quantity`
+        #    计总额（Java 侧 brief.amount 就是这两个字段相乘），**`processingFee` 字段不参与**。
+        #    两者不一致时：顾客在确认卡上看到的总额 ≠ 实际落库/收款金额（钱对不上）。
+        #    实证 CH-010 首跑签名 `总额 311.4 ≠ Σ小计71.4+加工费252.0=323.4`：
+        #      小计 71.4 = 3×23.8，落库 311.4 = 71.4 + 240（明细 30×8），
+        #      而声明的 processingFee = 252（把按面积的项另算成 30×8.4）—— 同一个订单两份数字。
+        #    为什么必须拦在**发确认卡之前**：卡上金额由模型按声明值渲染，落库由服务端按明细重算，
+        #    只有校验阶段能同时纠正两边（prompt 只写"必须相等"，方差下不足以兜住）。
+        #    只拦"声明了合计且与明细不符"；没写 processingItems 明细（老形态）不拦，避免误伤。
+        if target_tool == "order_create":
+            for idx, item in enumerate(params.get("items") or []):
+                if not isinstance(item, dict):
+                    continue
+                pinfo = item.get("processing_info")
+                if not isinstance(pinfo, dict):
+                    continue
+                raw_items = pinfo.get("processingItems")
+                if not isinstance(raw_items, list) or not raw_items:
+                    continue
+                detail_sum = 0.0
+                detail_ok = True
+                parts = []
+                for entry in raw_items:
+                    if not isinstance(entry, dict):
+                        detail_ok = False
+                        break
+                    try:
+                        up = float(entry.get("unitPrice"))
+                        qty = float(entry.get("quantity"))
+                    except (TypeError, ValueError):
+                        detail_ok = False
+                        break
+                    detail_sum += up * qty
+                    parts.append(f"{entry.get('name') or '?'} {up}×{qty}={round(up * qty, 2)}")
+                if not detail_ok:
+                    continue
+                declared = pinfo.get("processingFee")
+                if declared is None:
+                    continue
+                try:
+                    declared_f = float(declared)
+                except (TypeError, ValueError):
+                    continue
+                if abs(declared_f - detail_sum) > 0.01:
+                    issues.append(
+                        f"items[{idx}].processing_info.processingFee={declared_f} 与 "
+                        f"Σ加工项(unitPrice×quantity)={round(detail_sum, 2)} 不一致"
+                        f"（{'、'.join(parts)}）。服务端按明细计总额 → 不一致时顾客在确认卡上"
+                        f"看到的总额 ≠ 实际落库/收款金额（issue #3521）。"
+                        f"请把 processingFee 改成 {round(detail_sum, 2)} 后重新校验。"
+                    )
 
         if issues:
             return ToolResult(

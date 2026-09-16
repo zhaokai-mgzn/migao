@@ -1,5 +1,5 @@
 # tech-stack.yml — migao 结构配置（第一个客户示例）
-# 二郎神引擎通过本文件了解目标项目的技术栈，实现「换客户换技术栈不改代码」。
+# QA Growth Gate 引擎通过本文件了解目标项目的技术栈，实现「换客户换技术栈不改代码」。
 
 version: 1
 
@@ -100,6 +100,11 @@ modules:
       - pattern: 'backend/ai-agent-service/app/knowledge/(.+)\.py'
         tests:
           - 'tests/test_knowledge_{1}.py'
+          - 'tests/test_{1}.py'
+      # 智能每日经营简报（issue #3468）：briefing 由 test_briefing_generator 覆盖
+      - pattern: 'backend/ai-agent-service/app/briefing/(.+)\.py'
+        tests:
+          - 'tests/test_briefing_{1}.py'
           - 'tests/test_{1}.py'
       - pattern: 'backend/ai-agent-service/app/(.+)\.py'
         tests:
