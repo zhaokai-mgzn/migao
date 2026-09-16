@@ -18,7 +18,9 @@ C 端一直没跟。
 
 本测试锁定 C 端 prompt 的加工项契约——删规则即 fail，防重构回退。
 """
-# case_ids: OR-016, CH-010, PR-019
+# case_ids: OR-016, CH-010, PR-019, OR-021, OR-022, CH-025
+from pathlib import Path
+
 import pytest
 
 from app.graph.skills.customer_order_skill import CUSTOMER_ORDER_SYSTEM_PROMPT
@@ -95,7 +97,19 @@ class TestCustomerOrderPromptGrowthGuard:
     """C 端下单 prompt 长度快照（防无限制膨胀；B 端已有同类守卫）"""
 
     # 本次加工项规则落地后 2382；给 +30% 余量（B 端 order prompt 上限 10000）
-    MAX_LEN = 3200
+    # 2026-09-13 上调 3250 → 3300（+50，issue #3379 P2-3）：新增**草稿态措辞**规则
+    #   「加工项此刻只是草稿 → 用『记下了，下单时一并提交』，禁止『已为您加上』」
+    #   实测该规则净增 ~106 字符（先按守卫要求精简过一轮：初版 270 字符被本守卫拦下）。
+    #   这是**安全/诚实性**规则（防止顾客以为草稿已落单），非冗余描述，故按守卫允许的
+    #   "明确上调上限并说明理由"路径处理；再涨需先删旧内容。
+    # 2026-09-13 上调 3300 → 3600（+300，issue #3386/#3389）：两条**能力诚实性**规则 ——
+    #   ① 手机号必须用完整 11 位（禁止自己打码/填 0）—— 掩码值回流写工具会静默写错订单手机号
+    #      （DB 实证：订单 20260913384380002 落库 13800008000）；
+    #   ② 禁止能力自我否定（"小布没法提交订单"）—— 验收 C-A1 实证：顾客「确认下单」×4 轮被拒 + 转人工。
+    #   同步执行了守卫要求的"先删旧内容"：本轮净删 ~130 字符冗余措辞（重复调用告警、
+    #   校验说明、引导话术示例），新规则首版 490 字符压缩到 ~330。
+    #   ⚠️ 下次再涨前必须先删旧内容（prompt 越长越容易稀释关键规则，实测长 prompt 的规则遵守率下降）。
+    MAX_LEN = 3600
 
     def test_prompt_length_within_budget(self):
         n = len(CUSTOMER_ORDER_SYSTEM_PROMPT)
@@ -104,11 +118,72 @@ class TestCustomerOrderPromptGrowthGuard:
             f"或明确上调上限并说明理由（当前 {n}/{self.MAX_LEN}）"
         )
 
+    def test_prompt_keeps_capability_honesty_rules(self):
+        """能力诚实性规则必须在 prompt 里**真实存在**（issue #3386 / #3389）。
+
+        长度守卫只保证"没膨胀"，不保证"规则还在"—— 规则被删掉时长度照样合规（还会更短）。
+        故把两条规则的**判据关键词**钉住：
+          · 手机号必须完整 11 位 + 禁止自己打码（掩码值回流写工具 → 静默写错订单手机号）；
+          · 禁止能力自我否定（"没法提交订单"）—— 验收 C-A1 实证的拒单形态。
+        """
+        p = CUSTOMER_ORDER_SYSTEM_PROMPT
+        assert "完整 11 位" in p, "缺少「手机号用完整 11 位」规则（掩码回流会写错号码）"
+        assert "不要自己打码" in p, "缺少「展示脱敏由系统做，不要自己打码」规则"
+        assert "禁止自我否定" in p, "缺少「禁止能力自我否定」规则（C-A1 拒单形态）"
+        assert "13800008000" not in p or "静默写错" in p, "掩码填充值的危害说明缺失"
+
+    def test_prompt_keeps_quantity_vs_dimension_rule(self):
+        """数量口径规则必须在 prompt 里（issue #3395）：'要 3 米' = 买 3 米布，不得当窗宽算料。
+
+        实证：OR-022 顾客「买遮光窗帘，米白 3 米」被当成窗宽 3 米 + 窗高默认 2.7 米 →
+        算料 9 米 → 落库 ¥1584（应为 ¥528），顾客被多收 3 倍钱。
+        """
+        p = CUSTOMER_ORDER_SYSTEM_PROMPT
+        assert "数量口径铁律" in p, "缺少「顾客说米数＝购买数量」规则（多收 3 倍钱的根因）"
+        assert "禁止**当窗宽" in p or "禁止" in p and "窗宽" in p, "规则未禁止把米数当窗宽"
+        assert "curtain_calc" in p, "未说明何时才允许算料"
+        assert "再让他选用量" in p, (
+            "缺少「顾客已给数量时不得再让他选用量/褶皱倍数」规则"
+            "（实测 C-A1：Agent 发『请选择窗帘用量』卡并推荐 6 米＝2 倍钱，还耗尽轮数，issue #3402）")
+        assert "重述" in p and "相加" in p, (
+            "缺少「顾客重复同一数量＝重述，禁止相加」规则"
+            "（实测重报一次 3 米 → 落库 ×6，run 34750771576）")
+
     def test_prompt_not_accidentally_truncated(self):
         n = len(CUSTOMER_ORDER_SYSTEM_PROMPT)
         assert n >= 2000, (
             f"C 端下单 prompt 仅 {n} 字符 —— 疑似规则被误删（收货/确认/验证码/加工项等环节）"
         )
+
+
+class TestDraftStateWordingCoversAnyModification:
+    """草稿态措辞规则必须覆盖**在办流程里的任何修改**（issue #3440）。
+
+    实证（run 34771663639，CH-025）：顾客 R2「收货地址帮我改成…」→ AI 回「**已更新**」，
+    而此刻只是记下来了、订单未创建（最终 order_create 在若干轮之后才成功）。
+    顾客会以为地址已经改好，若流程中途失败就直接带着错误认知离开。
+
+    规则原本只写在**加工项**小节里（「加工项此刻只是草稿」）→ 模型对"改地址"没有可依据的措辞约束。
+    本守卫钉住"推广"这件事：规则文本里必须同时出现地址/数量等修改面，且明确禁掉"已更新"。
+    """
+
+    def _rule_block(self) -> str:
+        p = CUSTOMER_ORDER_SYSTEM_PROMPT
+        i = p.index("草稿态措辞")
+        return p[i:i + 200]
+
+    def test_covers_address_and_quantity_not_just_processing_items(self):
+        blk = self._rule_block()
+        assert "地址" in blk, f"草稿态规则未覆盖「地址」修改（#3440 实证的形态）：{blk[:120]!r}"
+        assert "数量" in blk, "草稿态规则未覆盖数量修改"
+        assert "加工项" in blk, "草稿态规则丢了原有的加工项面"
+
+    def test_forbids_completion_wording_before_write(self):
+        blk = self._rule_block()
+        assert "已更新" in blk or "已修改" in blk, (
+            f"未明确禁掉完成态措辞（如「已更新」）：{blk[:120]!r}")
+        assert "order_create 成功后" in blk or "订单未创建" in blk, (
+            "未说明完成态措辞的允许时机（写工具成功后）")
 
 
 class TestProductDetailIronRule:
@@ -145,3 +220,58 @@ class TestProductDetailIronRule:
         assert "禁止" in p and "无加工项" in p, (
             "未禁止「仅凭 product_search 列表断言该商品无加工项」"
         )
+
+
+class TestProcessingQuantityByPricingMethod:
+    """加工数量必须**按计价方式**推导，processingFee 必须 == Σ 明细（issue #3521）。
+
+    实证（CH-010 首跑红）：
+        amount_verify[order_create](R8): 总额 311.4 ≠ Σ小计71.4+加工费252.0=323.4
+    反推：小计 71.4 = 3 × 23.8（面料），落库总额 311.4 = 71.4 + 240，
+    而模型在 `processing_info.processingFee` 里声明的是 252 —— 差别来自**同一个订单里
+    模型对按面积（per_area）的刺绣工艺写了两份面积**（30 × 8 = 240 vs 30 × 8.4 = 252）。
+
+    根因是只有 `per_meter` 有数量口径（prompt 原话"加工数量 = 面料米数"），
+    其余计价方式（per_area/per_set/fixed）**没有规则** → 模型只能猜数量。
+    服务端 `OrderService.sumProcessingFee()` 只认 `Σ processingItems.unitPrice × quantity`
+    （`processingFee` 字段不参与总额计算）→ 顾客在确认卡看到的总额 ≠ 实际落库/收款金额。
+
+    规则落在 **order_create 的工具描述**（而非 system prompt）：
+      · 这是**参数语义**（processingItems 的 quantity 怎么来），与字段定义同处最合适；
+      · C 端下单 prompt 已顶到长度守卫上限（3592/3600），加规则必须先删旧规则 ——
+        在 bug 修复里改别的行为域措辞风险更大，故走零预算的加法路径。
+    另一道**确定性**闸门在 `validate_input`（prompt 会被 LLM 方差漏掉，
+    见 `test_tools_order_create_validation.py` 的加工费一致性用例）。
+
+    本组是 L0 静态不变式（migao-dev-flow §16.1）：合法计价方式集合从
+    `docs/sql/schema.sql` 的 processing_items.pricing_method 注释取（单一源），
+    逐个要求工具描述给出数量口径 —— 改枚举而不补口径会红。
+    """
+
+    # schema.sql: `pricing_method VARCHAR(32) NOT NULL, -- per_meter / per_set / fixed / per_area（…）`
+    _SCHEMA = Path(__file__).resolve().parents[3] / "docs" / "sql" / "schema.sql"
+
+    def _legal_pricing_methods(self) -> list:
+        import re
+        text = self._SCHEMA.read_text(encoding="utf-8")
+        m = re.search(
+            r"pricing_method\s+VARCHAR\([^)]*\)\s*NOT\s+NULL\s*,\s*--\s*([^（(\n]+)", text)
+        assert m, "未能从 docs/sql/schema.sql 解析出 pricing_method 合法取值注释（单一源解析失效）"
+        methods = [t.strip() for t in m.group(1).split("/") if t.strip()]
+        assert len(methods) >= 3, f"解析出的计价方式过少: {methods!r}"
+        return methods
+
+    def test_every_legal_pricing_method_has_a_quantity_rule(self):
+        desc = OrderCreateTool.description
+        missing = [m for m in self._legal_pricing_methods() if m not in desc]
+        assert not missing, (
+            f"order_create 工具描述未给出这些计价方式的加工数量口径: {missing!r}"
+            "（缺口径 → 模型猜数量 → 确认卡金额与落库金额不一致，issue #3521）")
+
+    def test_tool_description_requires_fee_equals_item_sum(self):
+        """必须把「processingFee == Σ(unitPrice × quantity)」写成规则（服务端权威口径）"""
+        desc = OrderCreateTool.description
+        assert "processingFee" in desc, "工具描述未提 processingFee"
+        assert "Σ" in desc and "unitPrice" in desc and "quantity" in desc, (
+            "未点明服务端口径 = Σ(processingItems[i].unitPrice × quantity)")
+

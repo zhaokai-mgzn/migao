@@ -31,7 +31,6 @@ FALLBACK_MESSAGES = {
     "dashboard_stats": "数据统计暂时不可用,请稍后再试。",
     "processing_item_query": "加工项查询暂时不可用,请稍后再试。",
     "processing_item_manage": "加工项管理暂时不可用,请稍后再试。",
-    "query_processing_items": "加工项查询暂时不可用,请稍后再试。",
     # ---------- 员工 / 角色 / 设置 / 会话 / 通知 / 快捷回复 ----------
     "employee_manage": "员工管理服务暂时不可用,请稍后再试。",
     "role_manage": "角色管理服务暂时不可用,请稍后再试。",

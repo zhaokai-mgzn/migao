@@ -4,11 +4,21 @@
 
 // ========== 用户相关 ==========
 
+/**
+ * 登录用户 —— **`auth_user` storage 里存的形状就是这个形状**（唯一事实源）。
+ *
+ * 生产者：`POST /api/auth/bmini/login` 响应 `data.user`，由 `bminiLogin` **原样**
+ * `JSON.stringify` 落 storage（`utils/auth.ts`），前端不做任何字段改名/归一化。
+ * ⇒ 字段名必须与后端 `LoginResponse.UserInfo`（admin-api 全库 camelCase）逐字一致；
+ *    **禁止** snake_case 别名（历史缺陷：`tenant_id` 必填但后端从未提供，运行时恒
+ *    `undefined`；B 端另有 camelCase `tenantId` 与之重复声明，已收敛为一处）。
+ * ⇒ e2e 夹具注入 `auth_user` 时必须照此形状，不得"归一化"。
+ * 由 L0 契约守卫 `tests/unit_ci_workflows/test_user_type_contract.py` 锁定。
+ */
 export interface User {
   id: string
   nickname: string
   avatar: string | null
-  tenant_id: number
   /** 企业名（租户公司名，来自企业基础信息设置；C 端导航副标题展示用，UI-016）。
    *  注意：数据源是 admin-api（camelCase JSON），字段名与后端 tenantName 一致 */
   tenantName?: string | null
@@ -20,8 +30,8 @@ export interface User {
   role?: string
   /** 角色列表（后端 roles claim） */
   roles?: string[]
-  /** 租户 ID（B 端登录由后端员工账号定位，camelCase 与后端一致） */
-  tenantId?: number
+  /** 租户 ID（B 端登录由后端员工账号定位，camelCase 与后端一致，登录响应必带） */
+  tenantId: number
   /** 登录渠道标识（bmini/sms/mini_program…） */
   identityType?: string
 }

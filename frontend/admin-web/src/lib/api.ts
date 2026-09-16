@@ -36,6 +36,9 @@ import type {
   OrderStatusUpdateParams,
   LogisticsFormData,
   CloseOrderParams,
+  ProcessingOrder,
+  ProcessingOrderGenerateResult,
+  ProcessingOrderUpdateParams,
   ProductStatus,
   AfterSalesTicket,
   AfterSalesListParams,
@@ -47,6 +50,9 @@ import type {
   ActiveSession,
   PendingTask,
   ProductRanking,
+  TodayBriefingResponse,
+  BriefingConfig,
+  BriefingContent,
   Customer,
   CustomerListParams,
   CustomerDetail,
@@ -300,7 +306,8 @@ export const orderApi = {
   },
   
   // 更新物流信息（发货）
-  // 后端实际只接收 { logisticsCompany, trackingNo }。
+  // 后端接收 { logisticsCompany, trackingNo, shipperName? }；shipperName 留空则后端按当前
+  // 登录用户兜底（发货单「经手人」，issue #3768）。
   updateLogistics: (id: string, data: LogisticsFormData) =>
     request.put<ApiResponse<void>>(`/api/admin/orders/${id}/logistics`, buildLogisticsPayload(data)),
 
@@ -323,6 +330,25 @@ export const orderApi = {
   // 删除订单
   deleteOrder: (id: string) =>
     request.delete<ApiResponse<void>>(`/api/admin/orders/${id}`),
+}
+
+// 加工单 API（issue #3340）
+export const processingOrderApi = {
+  // 批量生成加工单（仅已确认且含加工项订单；联动订单进入 producing）
+  generate: (orderIds: string[]) =>
+    request.post<ApiResponse<ProcessingOrderGenerateResult[]>>('/api/admin/processing-orders/generate', { orderIds }),
+
+  // 加工单列表（keyword=加工单号/订单号，status 可选）
+  list: (params?: { keyword?: string; status?: string }) =>
+    request.get<ApiResponse<ProcessingOrder[]>>('/api/admin/processing-orders', { params }),
+
+  // 加工单详情（id 可为加工单号/订单号/UUID）
+  detail: (id: string) =>
+    request.get<ApiResponse<ProcessingOrder>>(`/api/admin/processing-orders/${id}`),
+
+  // 状态更新：issue(发加工)/start/complete/cancel
+  update: (id: string, data: ProcessingOrderUpdateParams) =>
+    request.patch<ApiResponse<ProcessingOrder>>(`/api/admin/processing-orders/${id}`, data),
 }
 
 // Dashboard API
@@ -605,6 +631,25 @@ export const settingsApi = {
     request.get<ApiResponse<PageResponse<LoginLog>>>('/api/admin/settings/login-logs', { params }),
 }
 
+// 智能每日经营简报 API（issue #3468）
+export const briefingApi = {
+  /** 今日简报（未生成返回 generated=false，前端展示引导空态） */
+  getToday: () =>
+    request.get<ApiResponse<TodayBriefingResponse>>('/api/admin/briefing/today'),
+
+  /** 简报配置（企业开关 + 生成时刻；菜单显隐 = 开关 ∧ 角色权限） */
+  getConfig: () =>
+    request.get<ApiResponse<BriefingConfig>>('/api/admin/briefing/config'),
+
+  /** 更新简报配置（仅 admin；开启瞬间立即生成当日简报，关闭即熔断） */
+  updateConfig: (data: Partial<BriefingConfig>) =>
+    request.put<ApiResponse<BriefingConfig>>('/api/admin/briefing/config', data),
+
+  /** 手动触发当日生成（仅 admin） */
+  generate: () =>
+    request.post<ApiResponse<{ generated: boolean; verifyStatus?: string; reason?: string; content?: BriefingContent }>>('/api/admin/briefing/generate'),
+}
+
 // 员工管理 API
 export const employeeApi = {
   /** #2969 岗位=角色体系：岗位列表来自 roleApi.getAllRoles（含岗位默认权限） */
@@ -830,12 +875,14 @@ const api = {
   knowledge: knowledgeApi,
   afterSales: afterSalesApi,
   order: orderApi,
+  processingOrder: processingOrderApi,
   dashboard: dashboardApi,
   upload: uploadApi,
   file: fileApi,
   chat: chatApi,
   customer: customerApi,
   settings: settingsApi,
+  briefing: briefingApi,
   employee: employeeApi,
   role: roleApi,
   permission: permissionApi,

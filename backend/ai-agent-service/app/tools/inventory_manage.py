@@ -8,6 +8,11 @@ from typing import Optional
 from loguru import logger
 
 from app.tools.base import BaseTool, ToolContext, ToolResult
+from app.tools.stock_semantics import (
+    LOW_STOCK_THRESHOLD,
+    low_stock_alert_threshold_schema,
+    low_stock_phrase,
+)
 from app.utils.http_client import get_admin_api_client
 
 
@@ -61,11 +66,7 @@ class InventoryManageTool(BaseTool):
                 "type": "string",
                 "description": "调整原因（adjust 时必填）",
             },
-            "threshold": {
-                "type": "integer",
-                "description": "库存预警阈值（low_stock_alert 时可选，默认 10）",
-                "default": 10,
-            },
+            "threshold": low_stock_alert_threshold_schema(),
         },
         "required": ["action"],
     }
@@ -77,7 +78,7 @@ class InventoryManageTool(BaseTool):
         product_id: Optional[str] = None,
         adjustment: Optional[int] = None,
         reason: Optional[str] = None,
-        threshold: int = 10,
+        threshold: int = LOW_STOCK_THRESHOLD,
     ) -> ToolResult:
         """执行库存管理操作
         
@@ -356,7 +357,7 @@ class InventoryManageTool(BaseTool):
     async def _low_stock_alert(
         self,
         context: ToolContext,
-        threshold: int = 100,
+        threshold: int = LOW_STOCK_THRESHOLD,
     ) -> ToolResult:
         """低库存预警查询（按颜色+规格维度）
 
@@ -365,7 +366,9 @@ class InventoryManageTool(BaseTool):
 
         Args:
             context: Tool 执行上下文
-            threshold: 库存预警阈值，默认 100
+            threshold: 库存预警阈值，默认取单点来源
+                `app/tools/stock_semantics.py::LOW_STOCK_THRESHOLD`（issue #3783；
+                上界含：后端 SQL 为 `stock <= threshold`）
 
         Returns:
             ToolResult: 低库存 SKU 列表（含颜色、规格维度）
@@ -415,7 +418,7 @@ class InventoryManageTool(BaseTool):
             return ToolResult(
                 success=True,
                 data={"items": [], "threshold": threshold, "count": 0},
-                message=f"没有 SKU 库存低于 {threshold} 的商品，库存状况良好",
+                message=f"没有 SKU {low_stock_phrase(threshold)} 的商品，库存状况良好",
             )
 
         return ToolResult(
@@ -425,5 +428,5 @@ class InventoryManageTool(BaseTool):
                 "threshold": threshold,
                 "count": len(low_stock_items),
             },
-            message=f"发现 {len(low_stock_items)} 个 SKU 库存低于 {threshold}，请按颜色+规格维度及时补货",
+            message=f"发现 {len(low_stock_items)} 个 SKU {low_stock_phrase(threshold)}，请按颜色+规格维度及时补货",
         )

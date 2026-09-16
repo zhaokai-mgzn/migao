@@ -1,4 +1,4 @@
-// case_ids: UI-002, DA-007
+// case_ids: UI-002, DA-007, UI-019, UI-030
 import { describe, it, expect } from 'vitest'
 import {
   chipToneClasses,
@@ -54,7 +54,8 @@ describe('status-chip 语义色 chips', () => {
   it('orderStatusChipFor 兼容后端原生状态（pending/confirmed/producing/cancelled）', () => {
     expect(orderStatusChipFor('pending')).toEqual({ tone: 'warning', label: '待付款' })
     expect(orderStatusChipFor('confirmed')).toEqual({ tone: 'info', label: '待发货' })
-    expect(orderStatusChipFor('producing')).toEqual({ tone: 'info', label: '待发货' })
+    // issue #3889：producing 从 pending_shipment 展示中独立（生产中），列表徽标与详情页同一口径
+    expect(orderStatusChipFor('producing')).toEqual({ tone: 'warning', label: '生产中' })
     expect(orderStatusChipFor('cancelled')).toEqual({ tone: 'neutral', label: '已关闭' })
     expect(orderStatusChipFor('shipped')).toEqual({ tone: 'info', label: '已发货' })
     expect(orderStatusChipFor('completed')).toEqual({ tone: 'success', label: '已完成' })

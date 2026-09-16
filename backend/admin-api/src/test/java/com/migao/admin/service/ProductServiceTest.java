@@ -1,6 +1,8 @@
-// case_ids: PR-001, PR-002, PR-003, PR-004, PR-005, PR-006, PP-006, PR-017, PR-019
+// case_ids: PR-001, PR-002, PR-003, PR-004, PR-005, PR-006, PR-007, PR-008, PP-006, PR-017, PR-019, PR-020, PR-021, OR-014
 // PP-006（issue #3005，回滚 #2986）：商品-加工项关联只支持价格自定义（custom_price），
 // 「每米数量」密度（custom_per_meter_quantity）已回滚移除，响应无密度字段
+// PR-021（#3539/#3546 同族，#3616）：SKU 匹配口径归一化——调价路径（#3546）与本文件尾部新增的
+// 「建品/更新商品」路径（saveColorsAndSkus → matchExistingSku）必须走同一套归一化入口
 
 package com.migao.admin.service;
 
@@ -553,6 +555,38 @@ class ProductServiceTest {
     }
 
     @Test
+    @DisplayName("改价必须同步到 SKU（issue #3743 / OR-014：商品级 198 与 SKU 级 168 分叉）")
+    void updateProduct_BasePriceSyncsToSkus() {
+        // Given：只下发 basePrice，不带 colors/sellingMethods/doorWidths/skus
+        // —— 正是 agent `product_update(price=X)` 的形态（updateProductForAgent 只 set basePrice）
+        ProductUpdateRequest request = new ProductUpdateRequest();
+        request.setName("遮光窗帘");
+        request.setCategoryId("cat-001");
+        request.setBasePrice(new BigDecimal("198.00"));
+
+        when(productMapper.selectById("prod-001")).thenReturn(testProduct);
+        when(categoryMapper.selectById("cat-001")).thenReturn(testCategory);
+        when(productMapper.updateById(any(Product.class))).thenReturn(1);
+
+        // getProductById 内部会再读一次商品（同 updateProduct_Success 的口径）
+        Product updatedProduct = Product.builder()
+                .id("prod-001")
+                .name("遮光窗帘")
+                .categoryId("cat-001")
+                .basePrice(new BigDecimal("198.00"))
+                .build();
+        when(productMapper.selectById("prod-001")).thenReturn(testProduct).thenReturn(updatedProduct);
+
+        // When
+        productService.updateProduct("prod-001", request, 1L);
+
+        // Then：新价必须落到该商品全部 SKU —— 改前这里**从不被调用**（红证）
+        ArgumentCaptor<ProductSku> skuCaptor = ArgumentCaptor.forClass(ProductSku.class);
+        verify(productSkuMapper).update(skuCaptor.capture(), any());
+        assertThat(skuCaptor.getValue().getPrice()).isEqualByComparingTo("198.00");
+    }
+
+    @Test
     @DisplayName("更新商品失败 - 商品不存在")
     void updateProduct_ProductNotFound() {
         // Given
@@ -572,6 +606,149 @@ class ProductServiceTest {
     }
 
     // ======================== 删除商品测试 ========================
+
+    @Test
+    @DisplayName("创建商品 - 传 images 未传 mainImage 时首图即默认主图（issue #3884 建品形态）")
+    void createProduct_ImagesWithoutMainImage_FirstImageFallsBackAsMainImage() {
+        // Given：agent 建品只传 images、从不传 mainImage（#3884：此前全后端无写 main_image 的路径）
+        ProductCreateRequest request = new ProductCreateRequest();
+        request.setName("主图兜底商品");
+        request.setCategoryId("cat-001");
+        request.setBasePrice(new BigDecimal("99.00"));
+        request.setImages(List.of("https://img.example.com/a.jpg", "https://img.example.com/b.jpg"));
+
+        when(categoryMapper.selectById("cat-001")).thenReturn(testCategory);
+        ArgumentCaptor<Product> captor = ArgumentCaptor.forClass(Product.class);
+        when(productMapper.insert(captor.capture())).thenAnswer(invocation -> {
+            Product p = invocation.getArgument(0);
+            p.setId("prod-mainimg");
+            return 1;
+        });
+        Product savedProduct = Product.builder()
+                .id("prod-mainimg")
+                .name("主图兜底商品")
+                .categoryId("cat-001")
+                .basePrice(new BigDecimal("99.00"))
+                .mainImage("https://img.example.com/a.jpg")
+                .images(List.of("https://img.example.com/a.jpg", "https://img.example.com/b.jpg"))
+                .status("draft")
+                .build();
+        when(productMapper.selectById("prod-mainimg")).thenReturn(savedProduct);
+
+        // When
+        ProductResponse result = productService.createProduct(request, 1L);
+
+        // Then：落库实体与返回响应的主图都等于首图
+        assertThat(captor.getValue().getMainImage()).isEqualTo("https://img.example.com/a.jpg");
+        assertThat(result.getMainImage()).isEqualTo("https://img.example.com/a.jpg");
+    }
+
+    @Test
+    @DisplayName("更新商品 - 原 mainImage 为空且传新 images 未传 mainImage 时首图即默认主图（issue #3884 更新形态）")
+    void updateProduct_NewImagesWithoutMainImage_FirstImageFallsBackAsMainImage() {
+        // Given：库中原主图为空（#3884 的真实形态——历史上无任何写 main_image 的路径）
+        Product stored = Product.builder()
+                .id("prod-001")
+                .tenantId(1L)
+                .name("遮光窗帘")
+                .categoryId("cat-001")
+                .basePrice(new BigDecimal("299.00"))
+                .mainImage(null)
+                .status("on_sale")
+                .build();
+        ProductUpdateRequest request = new ProductUpdateRequest();
+        request.setName("遮光窗帘");
+        request.setCategoryId("cat-001");
+        request.setBasePrice(new BigDecimal("299.00"));
+        request.setImages(List.of("https://img.example.com/new1.jpg", "https://img.example.com/new2.jpg"));
+
+        when(categoryMapper.selectById("cat-001")).thenReturn(testCategory);
+        when(productMapper.updateById(any(Product.class))).thenReturn(1);
+        Product updatedProduct = Product.builder()
+                .id("prod-001")
+                .name("遮光窗帘")
+                .categoryId("cat-001")
+                .basePrice(new BigDecimal("299.00"))
+                .mainImage("https://img.example.com/new1.jpg")
+                .images(List.of("https://img.example.com/new1.jpg", "https://img.example.com/new2.jpg"))
+                .status("on_sale")
+                .build();
+        // selectById 被调用两次：一次 updateProduct 内部验证，一次 getProductById
+        when(productMapper.selectById("prod-001")).thenReturn(stored).thenReturn(updatedProduct);
+
+        // When
+        ProductResponse result = productService.updateProduct("prod-001", request, 1L);
+
+        // Then：落库实体与返回响应的主图都等于新首图
+        ArgumentCaptor<Product> captor = ArgumentCaptor.forClass(Product.class);
+        verify(productMapper).updateById(captor.capture());
+        assertThat(captor.getValue().getMainImage()).isEqualTo("https://img.example.com/new1.jpg");
+        assertThat(result.getMainImage()).isEqualTo("https://img.example.com/new1.jpg");
+    }
+
+    @Test
+    @DisplayName("更新商品 - 已设置过 mainImage 时不覆盖（#3884：仅在为空时补首图）")
+    void updateProduct_ExistingMainImage_NotOverwrittenByFirstImage() {
+        // Given：testProduct 已带 mainImage=https://example.com/img.jpg
+        ProductUpdateRequest request = new ProductUpdateRequest();
+        request.setName("遮光窗帘");
+        request.setCategoryId("cat-001");
+        request.setBasePrice(new BigDecimal("299.00"));
+        request.setImages(List.of("https://img.example.com/new1.jpg"));
+
+        when(categoryMapper.selectById("cat-001")).thenReturn(testCategory);
+        when(productMapper.updateById(any(Product.class))).thenReturn(1);
+        Product updatedProduct = Product.builder()
+                .id("prod-001")
+                .name("遮光窗帘")
+                .categoryId("cat-001")
+                .basePrice(new BigDecimal("299.00"))
+                .mainImage("https://example.com/img.jpg")
+                .status("on_sale")
+                .build();
+        // selectById 被调用两次：一次 updateProduct 内部验证，一次 getProductById
+        when(productMapper.selectById("prod-001")).thenReturn(testProduct).thenReturn(updatedProduct);
+
+        // When
+        productService.updateProduct("prod-001", request, 1L);
+
+        // Then：原主图保留，不被新首图覆盖
+        ArgumentCaptor<Product> captor = ArgumentCaptor.forClass(Product.class);
+        verify(productMapper).updateById(captor.capture());
+        assertThat(captor.getValue().getMainImage()).isEqualTo("https://example.com/img.jpg");
+    }
+
+    @Test
+    @DisplayName("更新商品 - 显式传 mainImage 时以显式值优先（不参与首图兜底）")
+    void updateProduct_ExplicitMainImage_TakesPrecedence() {
+        // Given：请求同时给 mainImage 与 images
+        ProductUpdateRequest request = new ProductUpdateRequest();
+        request.setName("遮光窗帘");
+        request.setCategoryId("cat-001");
+        request.setBasePrice(new BigDecimal("299.00"));
+        request.setMainImage("https://img.example.com/explicit.jpg");
+        request.setImages(List.of("https://img.example.com/new1.jpg"));
+
+        when(categoryMapper.selectById("cat-001")).thenReturn(testCategory);
+        when(productMapper.updateById(any(Product.class))).thenReturn(1);
+        Product updatedProduct = Product.builder()
+                .id("prod-001")
+                .name("遮光窗帘")
+                .categoryId("cat-001")
+                .basePrice(new BigDecimal("299.00"))
+                .mainImage("https://img.example.com/explicit.jpg")
+                .status("on_sale")
+                .build();
+        when(productMapper.selectById("prod-001")).thenReturn(testProduct).thenReturn(updatedProduct);
+
+        // When
+        productService.updateProduct("prod-001", request, 1L);
+
+        // Then：显式 mainImage 胜出
+        ArgumentCaptor<Product> captor = ArgumentCaptor.forClass(Product.class);
+        verify(productMapper).updateById(captor.capture());
+        assertThat(captor.getValue().getMainImage()).isEqualTo("https://img.example.com/explicit.jpg");
+    }
 
     @Test
     @DisplayName("删除商品成功 - off_sale 状态可删")
@@ -1489,5 +1666,485 @@ class ProductServiceTest {
         verify(productProcessingItemMapper).insert(captor.capture());
         assertThat(captor.getValue().getProcessingItemId()).isEqualTo("pi-punch");
         assertThat(captor.getValue().getCustomPrice()).isEqualByComparingTo(new BigDecimal("10.00"));
+    }
+
+    // ======================== Agent SKU 调价：中文标签/门幅写法归一化 ========================
+    // issue #3539 / PR-021：agent 与前端按中文业务术语传参（「散剪」「2.8米」），
+    // 而 product_skus 落库的是枚举/数值（bulk_cut、2.8）——字面 eq 必然 0 行命中，
+    // 对外表现为「SKU不存在」（实测 run 34805827043：sku_update 连续两次失败）。
+
+    /** 与 product_colors 里遮光窗帘的既有 SKU 同形：枚举 bulk_cut + 数值门幅 2.8 */
+    private ProductSku evalBlackoutSku() {
+        return ProductSku.builder()
+                .id(2001L).tenantId(1L).productId("prod-001")
+                .colorName("米白").sellingMethod("bulk_cut").doorWidth("2.8")
+                .price(new BigDecimal("168.00")).stock(500).skuCode("EVAL-BLK-28-米白").build();
+    }
+
+    @Test
+    @DisplayName("SKU调价（PR-021）- agent 传中文「散剪」必须命中 bulk_cut 存量行")
+    @SuppressWarnings("unchecked")
+    void updateSkuPrice_ChineseSellingMethodLabel_MatchesEnumStoredRow() {
+        // Given: 库里是枚举 bulk_cut
+        ProductSku sku = evalBlackoutSku();
+        when(productSkuMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(sku));
+        when(productSkuMapper.updateById(any(ProductSku.class))).thenReturn(1);
+
+        // When: agent 按中文业务术语传参（实测轨迹原样）
+        productService.updateSkuPrice("prod-001", "米白", "散剪", "2.8", new BigDecimal("150.00"), 1L);
+
+        // Then: 落库的是该行 + 新价格
+        ArgumentCaptor<ProductSku> skuCaptor = ArgumentCaptor.forClass(ProductSku.class);
+        verify(productSkuMapper).updateById(skuCaptor.capture());
+        assertThat(skuCaptor.getValue().getId()).isEqualTo(2001L);
+        assertThat(skuCaptor.getValue().getPrice()).isEqualByComparingTo(new BigDecimal("150.00"));
+
+        // 且查询条件里是枚举，不是中文标签（复用 translateSellingMethod，无第二套口径）
+        // 注：MP 的 formatParam 是惰性 ISqlSegment，须先触发 SQL 段生成才会物化参数表
+        ArgumentCaptor<LambdaQueryWrapper<ProductSku>> wrapperCaptor =
+                ArgumentCaptor.forClass(LambdaQueryWrapper.class);
+        verify(productSkuMapper).selectList(wrapperCaptor.capture());
+        LambdaQueryWrapper<ProductSku> captured = wrapperCaptor.getValue();
+        captured.getSqlSegment();
+        assertThat(captured.getParamNameValuePairs().values())
+                .anyMatch(v -> "bulk_cut".equals(v))
+                .noneMatch(v -> "散剪".equals(v));
+    }
+
+    @Test
+    @DisplayName("SKU调价（PR-021）- agent 传「2.8米」必须命中存量数值门幅「2.8」行（双侧容错）")
+    void updateSkuPrice_DoorWidthWithUnitSuffix_FallsBackToStoredNumericWidth() {
+        // Given: 精确匹配（door_width = '2.8米'）0 行；放宽门幅后能取到存量行（door_width = '2.8'）
+        ProductSku sku = evalBlackoutSku();
+        when(productSkuMapper.selectList(any(LambdaQueryWrapper.class)))
+                .thenReturn(Collections.emptyList())
+                .thenReturn(List.of(sku));
+        when(productSkuMapper.updateById(any(ProductSku.class))).thenReturn(1);
+
+        // When
+        productService.updateSkuPrice("prod-001", "米白", "散剪", "2.8米", new BigDecimal("150.00"), 1L);
+
+        // Then: 兜底命中并原地改价（不新建行、不改库里的门幅写法）
+        ArgumentCaptor<ProductSku> skuCaptor = ArgumentCaptor.forClass(ProductSku.class);
+        verify(productSkuMapper).updateById(skuCaptor.capture());
+        assertThat(skuCaptor.getValue().getDoorWidth()).isEqualTo("2.8");
+        assertThat(skuCaptor.getValue().getPrice()).isEqualByComparingTo(new BigDecimal("150.00"));
+    }
+
+    @Test
+    @DisplayName("SKU调价 - 门幅精确命中时不再兜底查询（避免无谓第二跳）")
+    void updateSkuPrice_ExactWidthMatch_DoesNotRunFallbackQuery() {
+        // Given
+        ProductSku sku = evalBlackoutSku();
+        when(productSkuMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(sku));
+        when(productSkuMapper.updateById(any(ProductSku.class))).thenReturn(1);
+
+        // When
+        productService.updateSkuPrice("prod-001", "米白", "bulk_cut", "2.8", new BigDecimal("150.00"), 1L);
+
+        // Then
+        verify(productSkuMapper, times(1)).selectList(any(LambdaQueryWrapper.class));
+        verify(productSkuMapper).updateById(any(ProductSku.class));
+    }
+
+    @Test
+    @DisplayName("SKU调价 - 兜底仍无命中时抛 404 且不写库")
+    void updateSkuPrice_NotFound_ThrowsAndNeverWrites() {
+        // Given: 精确 + 兜底都 0 行
+        when(productSkuMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(Collections.emptyList());
+
+        // When & Then: 与线上指纹一致（sku_update!SKU不存在）——message=SKU不存在，suggestion 供 agent 自修复
+        assertThatThrownBy(() ->
+                productService.updateSkuPrice("prod-001", "米白", "散剪", "2.8米", new BigDecimal("150.00"), 1L))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("SKU不存在")
+                .satisfies(ex -> {
+                    BusinessException bex = (BusinessException) ex;
+                    assertThat(bex.getHttpStatus()).isEqualTo(404);
+                    assertThat(bex.getSuggestion()).contains("product_detail");
+                });
+        verify(productSkuMapper, never()).updateById(any(ProductSku.class));
+    }
+
+    // ============ SKU 组合匹配（matchExistingSku）：与调价路径同一套归一化（issue #3616） ============
+    // 同族关系：#3539/#3546 修的是**调价**路径（updateSkuPrice，失败可见=「SKU不存在」）；
+    // 本组盯的是 saveColorsAndSkus → matchExistingSku（建品/更新商品路径的组合匹配），失败**静默**：
+    // 入参写法与库内写法不一致 → 组合判为不同 → 旧行按「缺失」物理删除 + 插入新行
+    // （主键漂移 → 订单 processingInfo 旧 skuId 断链；sales_count/stock 重置）。
+    // 库内两种写法都真实存在：docs/deployment/demo-seed.sql 落 '2.8米'、
+    // tests/agent_eval/fixtures/*_eval_seed.sql 落 '2.8'；toWidthShort() 早已把两者当同一门幅。
+
+    /** 商品更新请求：颜色 × 售卖方式 × 门幅（触发 SKU 重建 → 走 matchExistingSku 组合匹配） */
+    private ProductUpdateRequest skuMatrixUpdate(String sellingMethod, String doorWidth) {
+        ProductUpdateRequest request = new ProductUpdateRequest();
+        request.setName("遮光窗帘");
+        request.setCategoryId("cat-001");
+        ProductColorInput color = new ProductColorInput();
+        color.setColorName("米白");
+        request.setColors(List.of(color));
+        request.setSellingMethods(List.of(sellingMethod));
+        request.setDoorWidths(List.of(doorWidth));
+        return request;
+    }
+
+    /** 库内既有行（颜色主键 42 + 指定售卖方式/门幅写法） */
+    private ProductSku storedSku(Long id, String sellingMethod, String doorWidth) {
+        ProductSku sku = evalBlackoutSku();
+        sku.setId(id);
+        sku.setColorId(42L);
+        sku.setSellingMethod(sellingMethod);
+        sku.setDoorWidth(doorWidth);
+        return sku;
+    }
+
+    /** 商品更新路径通用桩：既有 SKU 同时供 saveColorsAndSkus（组合匹配）与 getProductById（回读） */
+    private void stubUpdateWithStoredSku(ProductSku stored) {
+        when(productMapper.selectById("prod-001")).thenReturn(testProduct);
+        when(categoryMapper.selectById("cat-001")).thenReturn(testCategory);
+        when(productMapper.updateById(any(Product.class))).thenReturn(1);
+        when(productColorMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(
+                ProductColor.builder().id(42L).tenantId(1L).productId("prod-001").colorName("米白").build()));
+        when(productColorMapper.updateById(any(ProductColor.class))).thenReturn(1);
+        when(productSkuMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(stored));
+    }
+
+    /** 命中既有行：就地更新（主键不变）且**不新增、不删除任何 SKU 行** */
+    private void assertSkuRowUpdatedInPlace(Long expectedId) {
+        ArgumentCaptor<ProductSku> captor = ArgumentCaptor.forClass(ProductSku.class);
+        verify(productSkuMapper).updateById(captor.capture());
+        assertThat(captor.getValue().getId()).isEqualTo(expectedId);
+        verify(productSkuMapper, never()).insert(any(ProductSku.class));
+        verify(productSkuMapper, never()).deleteById((java.io.Serializable) any());
+    }
+
+    @Test
+    @DisplayName("SKU组合匹配（#3616）- 入参「2.8米」必须命中库内数值门幅「2.8」行（不删旧行、不建新行）")
+    void matchExistingSku_DoorWidthUnitSuffix_UpdatesStoredRowInPlace() {
+        // Given: 库内是 eval 种子的写法 '2.8'（agent/前端按业务术语传 '2.8米'）
+        stubUpdateWithStoredSku(storedSku(2001L, "bulk_cut", "2.8"));
+        when(productSkuMapper.updateById(any(ProductSku.class))).thenReturn(1);
+
+        // When
+        productService.updateProduct("prod-001", skuMatrixUpdate("bulk_cut", "2.8米"), 1L);
+
+        // Then: 命中既有行（id 2001 原地更新），没有「删旧行 + 建新行」
+        assertSkuRowUpdatedInPlace(2001L);
+    }
+
+    @Test
+    @DisplayName("SKU组合匹配（#3616）- 入参中文「散剪」必须命中库内枚举 bulk_cut 行")
+    void matchExistingSku_ChineseSellingMethodLabel_UpdatesStoredEnumRow() {
+        // Given: 库内是枚举（product_manage 入参也允许中文标签，REST 路径原样透传）
+        stubUpdateWithStoredSku(storedSku(2001L, "bulk_cut", "2.8"));
+        when(productSkuMapper.updateById(any(ProductSku.class))).thenReturn(1);
+
+        // When
+        productService.updateProduct("prod-001", skuMatrixUpdate("散剪", "2.8米"), 1L);
+
+        // Then
+        assertSkuRowUpdatedInPlace(2001L);
+    }
+
+    @Test
+    @DisplayName("SKU组合匹配（#3616）- 库内为中文标签「散剪」时枚举入参仍须命中（归一化必须双侧）")
+    void matchExistingSku_StoredChineseLabel_MatchesEnumInput() {
+        // Given: 反向方向——库内是中文标签（历史数据/早期写入），入参是枚举
+        stubUpdateWithStoredSku(storedSku(2001L, "散剪", "2.8米"));
+        when(productSkuMapper.updateById(any(ProductSku.class))).thenReturn(1);
+
+        // When
+        productService.updateProduct("prod-001", skuMatrixUpdate("bulk_cut", "2.8"), 1L);
+
+        // Then: 只归一化入参不够，必须两侧都归一
+        assertSkuRowUpdatedInPlace(2001L);
+    }
+
+    @Test
+    @DisplayName("SKU组合匹配（#3616）反向断言 - 门幅 2.8 vs 3.2 仍是不同组合（不得归一化过宽）")
+    void matchExistingSku_DifferentDoorWidth_StillCreatesNewCombination() {
+        // Given
+        stubUpdateWithStoredSku(storedSku(2001L, "bulk_cut", "2.8"));
+        when(productSkuMapper.insert(any(ProductSku.class))).thenReturn(1);
+        when(productSkuMapper.deleteById((java.io.Serializable) any())).thenReturn(1);
+
+        // When: 真正不同的门幅
+        productService.updateProduct("prod-001", skuMatrixUpdate("bulk_cut", "3.2米"), 1L);
+
+        // Then: 仍判为不匹配（走既有「插入新组合」语义），绝不能被归一化合并
+        ArgumentCaptor<ProductSku> captor = ArgumentCaptor.forClass(ProductSku.class);
+        verify(productSkuMapper).insert(captor.capture());
+        assertThat(captor.getValue().getDoorWidth()).isEqualTo("3.2米");
+        verify(productSkuMapper).deleteById((java.io.Serializable) 2001L);
+        verify(productSkuMapper, never()).updateById(any(ProductSku.class));
+    }
+
+    @Test
+    @DisplayName("SKU组合匹配（#3616）反向断言 - 售卖方式 bulk_cut vs full_roll 仍是不同组合")
+    void matchExistingSku_DifferentSellingMethod_StillCreatesNewCombination() {
+        // Given
+        stubUpdateWithStoredSku(storedSku(2001L, "bulk_cut", "2.8"));
+        when(productSkuMapper.insert(any(ProductSku.class))).thenReturn(1);
+        when(productSkuMapper.deleteById((java.io.Serializable) any())).thenReturn(1);
+
+        // When
+        productService.updateProduct("prod-001", skuMatrixUpdate("full_roll", "2.8"), 1L);
+
+        // Then
+        ArgumentCaptor<ProductSku> captor = ArgumentCaptor.forClass(ProductSku.class);
+        verify(productSkuMapper).insert(captor.capture());
+        assertThat(captor.getValue().getSellingMethod()).isEqualTo("full_roll");
+        verify(productSkuMapper).deleteById((java.io.Serializable) 2001L);
+        verify(productSkuMapper, never()).updateById(any(ProductSku.class));
+    }
+
+    @Test
+    @DisplayName("SKU匹配口径（#3616）- 调价路径与商品更新路径对同一等价写法判定一致")
+    void skuMatch_Normalization_IsConsistentAcrossPriceAndMatrixPaths() {
+        // Path A：agent sku_update 调价路径（#3539/#3546 已归一）——「散剪」+「2.8米」命中 'bulk_cut'/'2.8'
+        ProductSku stored = storedSku(2001L, "bulk_cut", "2.8");
+        when(productSkuMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(stored));
+        when(productSkuMapper.updateById(any(ProductSku.class))).thenReturn(1);
+        productService.updateSkuPrice("prod-001", "米白", "散剪", "2.8米", new BigDecimal("150.00"), 1L);
+        verify(productSkuMapper).updateById(any(ProductSku.class));
+        assertThat(stored.getPrice()).isEqualByComparingTo(new BigDecimal("150.00"));
+
+        // Path B：商品更新路径（产品矩阵重建）——同一等价写法必须同样命中，而不是删旧行+建新行
+        reset(productSkuMapper);
+        stubUpdateWithStoredSku(storedSku(2001L, "bulk_cut", "2.8"));
+        when(productSkuMapper.updateById(any(ProductSku.class))).thenReturn(1);
+        productService.updateProduct("prod-001", skuMatrixUpdate("散剪", "2.8米"), 1L);
+        assertSkuRowUpdatedInPlace(2001L);
+    }
+
+    @Test
+    @DisplayName("SKU组合匹配（#3616）- 前端矩阵的「同义写法 tempId 条目」不得另建一行（重复行防线）")
+    void matchExistingSku_DuplicateMatrixEntryWithTempId_DoesNotCreateSecondRow() {
+        // Given: 库内 1 行（米白/bulk_cut/2.8）；admin-web SkuMatrix 门幅下拉是 ['2.8米',...]、
+        // sku-utils.matchWidth 只容 legacy '门幅' 前缀 → 同一物理门幅被前端判成新组合，
+        // 生成 id=nextTempId()（负数）的新条目，与带真实 id 的旧条目一起提交。
+        stubUpdateWithStoredSku(storedSku(2001L, "bulk_cut", "2.8"));
+        when(productSkuMapper.updateById(any(ProductSku.class))).thenReturn(1);
+
+        ProductSkuInput withRealId = new ProductSkuInput();
+        withRealId.setId(2001L);
+        withRealId.setColorName("米白");
+        withRealId.setSellingMethod("bulk_cut");
+        withRealId.setDoorWidth("2.8");
+        ProductSkuInput withTempId = new ProductSkuInput();
+        withTempId.setId(-1L);
+        withTempId.setColorName("米白");
+        withTempId.setSellingMethod("bulk_cut");
+        withTempId.setDoorWidth("2.8米");
+        ProductUpdateRequest request = new ProductUpdateRequest();
+        request.setName("遮光窗帘");
+        request.setCategoryId("cat-001");
+        // 与 admin-web 编辑页真实载荷同形：colors + skus 一起提交（不带 sellingMethods/doorWidths 矩阵）
+        ProductColorInput color = new ProductColorInput();
+        color.setColorName("米白");
+        request.setColors(List.of(color));
+        request.setSkus(List.of(withRealId, withTempId));
+
+        // When
+        productService.updateProduct("prod-001", request, 1L);
+
+        // Then: 两条条目都落到同一既有行 → 不新增行、不删除行（修复前 tempId 条目会 insert 第二行，
+        // 旧行因仍被提交而保留 → 同一物理门幅两行，uq_product_skus_combination 按字面键拦不住）
+        verify(productSkuMapper, times(2)).updateById(any(ProductSku.class));
+        verify(productSkuMapper, never()).insert(any(ProductSku.class));
+        verify(productSkuMapper, never()).deleteById((java.io.Serializable) any());
+    }
+
+    // ============ 空分类归一化（#3665，冒烟报告 B1）============
+    // 背景：admin-web 存草稿时 categoryId 初值是 ''（`DEFAULT_FORM.categoryId: ''`），
+    // handleSubmit 用 `...form` 原样透传、buildProductPayload 不清洗 → 后端 validateCategory
+    // 因 StringUtils.hasText('') == false 直接 return（跳过校验），随后 BeanUtils.copyProperties
+    // 把 '' 写进实体 → insert category_id='' → products_category_id_fkey 违例（500）。
+    // 表列本身可空（categories(id) FK，nullable），「草稿可不选分类」是既有契约
+    // （ProductCreateRequest.categoryId 注释「草稿状态允许为空」）→ 最小修法 = 空串归一化为 null。
+
+    @Test
+    @DisplayName("创建商品 - 草稿空分类（''）归一化为 NULL 落库，不再触发 FK 违例")
+    void createProduct_BlankCategoryId_NormalizedToNull() {
+        // Given：前端草稿真实载荷（categoryId 为空串）
+        ProductCreateRequest request = new ProductCreateRequest();
+        request.setName("冒烟草稿商品");
+        request.setCategoryId("");
+        request.setStatus("draft");
+
+        ArgumentCaptor<Product> captor = ArgumentCaptor.forClass(Product.class);
+        when(productMapper.insert(captor.capture())).thenAnswer(invocation -> {
+            Product p = invocation.getArgument(0);
+            p.setId("prod-blank-cat");
+            return 1;
+        });
+        when(productMapper.selectById("prod-blank-cat")).thenReturn(Product.builder()
+                .id("prod-blank-cat").name("冒烟草稿商品").status("draft").categoryId(null).build());
+
+        // When
+        ProductResponse result = productService.createProduct(request, 1L);
+
+        // Then：落库 category_id 为 NULL（而不是 ''），空串不进分类查询
+        assertThat(result).isNotNull();
+        assertThat(captor.getValue().getCategoryId()).isNull();
+        verify(categoryMapper, never()).selectById(any());
+    }
+
+    @Test
+    @DisplayName("创建商品 - 空白分类（'   '）同样归一化为 NULL")
+    void createProduct_WhitespaceCategoryId_NormalizedToNull() {
+        ProductCreateRequest request = new ProductCreateRequest();
+        request.setName("冒烟草稿商品2");
+        request.setCategoryId("   ");
+        request.setStatus("draft");
+
+        ArgumentCaptor<Product> captor = ArgumentCaptor.forClass(Product.class);
+        when(productMapper.insert(captor.capture())).thenAnswer(invocation -> {
+            Product p = invocation.getArgument(0);
+            p.setId("prod-blank-cat-2");
+            return 1;
+        });
+        when(productMapper.selectById("prod-blank-cat-2")).thenReturn(Product.builder()
+                .id("prod-blank-cat-2").name("冒烟草稿商品2").status("draft").build());
+
+        productService.createProduct(request, 1L);
+
+        assertThat(captor.getValue().getCategoryId()).isNull();
+    }
+
+    @Test
+    @DisplayName("更新商品 - 空分类（''）归一化为 NULL 落库（update 路径同口径）")
+    void updateProduct_BlankCategoryId_NormalizedToNull() {
+        // Given
+        ProductUpdateRequest request = new ProductUpdateRequest();
+        request.setName("更新后的商品");
+        request.setCategoryId("");
+        request.setBasePrice(new BigDecimal("399.00"));
+
+        when(productMapper.selectById("prod-001")).thenReturn(testProduct);
+        ArgumentCaptor<Product> captor = ArgumentCaptor.forClass(Product.class);
+        when(productMapper.updateById(captor.capture())).thenReturn(1);
+        when(productMapper.selectById("prod-001"))
+                .thenReturn(testProduct)
+                .thenReturn(Product.builder().id("prod-001").name("更新后的商品")
+                        .basePrice(new BigDecimal("399.00")).build());
+
+        // When
+        productService.updateProduct("prod-001", request, 1L);
+
+        // Then
+        assertThat(captor.getValue().getCategoryId()).isNull();
+        verify(categoryMapper, never()).selectById(any());
+    }
+
+    @Test
+    @DisplayName("创建商品 - 非法分类 id 仍被拒（空串归一化不得削弱分类校验）")
+    void createProduct_InvalidCategoryStillRejected() {
+        ProductCreateRequest request = new ProductCreateRequest();
+        request.setName("非法分类商品");
+        request.setCategoryId("nonexistent-cat");
+
+        when(categoryMapper.selectById("nonexistent-cat")).thenReturn(null);
+
+        assertThatThrownBy(() -> productService.createProduct(request, 1L))
+                .isInstanceOf(BusinessException.class)
+                .hasMessage("分类不存在");
+        verify(productMapper, never()).insert(any(Product.class));
+    }
+
+    @Test
+    @DisplayName("创建商品 - 非草稿空分类仍被拒（'分类ID不能为空'语义不变）")
+    void createProduct_NonDraftBlankCategoryStillRejected() {
+        ProductCreateRequest request = new ProductCreateRequest();
+        request.setName("上架缺分类商品");
+        request.setCategoryId("");
+        request.setStatus("on_sale");
+        request.setBasePrice(new BigDecimal("10.00"));
+
+        assertThatThrownBy(() -> productService.createProduct(request, 1L))
+                .isInstanceOf(BusinessException.class)
+                .hasMessage("分类ID不能为空");
+        verify(productMapper, never()).insert(any(Product.class));
+    }
+
+    @Test
+    @DisplayName("创建商品 - 合法分类 id 原样落库（归一化不得误伤正常值）")
+    void createProduct_ValidCategoryPreserved() {
+        ProductCreateRequest request = new ProductCreateRequest();
+        request.setName("正常分类商品");
+        request.setCategoryId("cat-001");
+        request.setBasePrice(new BigDecimal("199.00"));
+
+        when(categoryMapper.selectById("cat-001")).thenReturn(testCategory);
+        ArgumentCaptor<Product> captor = ArgumentCaptor.forClass(Product.class);
+        when(productMapper.insert(captor.capture())).thenAnswer(invocation -> {
+            Product p = invocation.getArgument(0);
+            p.setId("prod-valid-cat");
+            return 1;
+        });
+        when(productMapper.selectById("prod-valid-cat")).thenReturn(Product.builder()
+                .id("prod-valid-cat").name("正常分类商品").categoryId("cat-001").build());
+
+        productService.createProduct(request, 1L);
+
+        assertThat(captor.getValue().getCategoryId()).isEqualTo("cat-001");
+    }
+
+    @Test
+    @DisplayName("空分类归一化（#3665）静态不变式 - 每条请求→实体拷贝路径都要先过 normalizeBlankToNull")
+    void blankCategoryNormalization_AppliedOnEveryCopyPropertiesPath() throws Exception {
+        // L0 静态不变式（migao-dev-flow §16.1）：BeanUtils.copyProperties(请求, 实体) 是把
+        // categoryId 透传进实体的唯一入口，每个**方法内**的拷贝之前都必须先过
+        // normalizeBlankToNull——防「修一处漏一处」（本缺陷正是 create/update 两条路径同形）。
+        String source = String.join("\n", java.nio.file.Files.readAllLines(productServiceSourceFile()));
+        // 按方法签名切分（含包级/私有方法；注释里的签名不算——只认行首缩进的声明）
+        String[] methods = source.split("(?m)^    (?:public|private|protected|static|@|\\w[\\w<>,\\[\\] .]*\\()");
+        int checked = 0;
+        for (String method : methods) {
+            int copyAt = method.indexOf("BeanUtils.copyProperties(request, product)");
+            if (copyAt < 0) continue;
+            checked++;
+            int guardAt = method.indexOf("normalizeBlankToNull(request.getCategoryId())");
+            String signature = method.lines().findFirst().orElse("?").trim();
+            assertThat(guardAt)
+                    .as("方法 %s 的请求→实体拷贝前未做空分类归一化（normalizeBlankToNull）", signature)
+                    .isGreaterThanOrEqualTo(0);
+            assertThat(guardAt)
+                    .as("方法 %s 的空分类归一化必须在拷贝之前", signature)
+                    .isLessThan(copyAt);
+        }
+        // 回归护栏：拷贝路径消失说明本不变式的探测目标变了，必须同步核对实现
+        assertThat(checked).as("未找到请求→实体拷贝路径，静态不变式失效").isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("SKU匹配口径（#3616）静态不变式 - 售卖方式/门幅的等值比较必须走同一归一化入口")
+    void skuMatch_NoBareEqualityComparison_OnSellingMethodOrDoorWidth() throws Exception {
+        // L0 静态不变式（migao-dev-flow §16.1）：同一概念（售卖方式/门幅）的匹配不得裸比字面值，
+        // 必须过 translateSellingMethod()/normalizeDoorWidth()——防「修一处漏一处」复发。
+        List<String> offenders = java.nio.file.Files.readAllLines(productServiceSourceFile()).stream()
+                .filter(line -> line.contains("Objects.equals("))
+                .filter(line -> (line.contains("getSellingMethod()") && !line.contains("translateSellingMethod("))
+                        || (line.contains("getDoorWidth()") && !line.contains("normalizeDoorWidth(")))
+                .toList();
+        assertThat(offenders)
+                .as("裸 Objects.equals 比较售卖方式/门幅（未过 translateSellingMethod/normalizeDoorWidth）")
+                .isEmpty();
+    }
+
+    /** 定位 ProductService 源码（静态不变式用；兼容从仓库根或模块目录运行 surefire） */
+    private static java.nio.file.Path productServiceSourceFile() {
+        String relative = "src/main/java/com/migao/admin/service/ProductService.java";
+        java.nio.file.Path dir = java.nio.file.Path.of(System.getProperty("user.dir")).toAbsolutePath();
+        while (dir != null) {
+            for (java.nio.file.Path candidate : List.of(
+                    dir.resolve(relative),
+                    dir.resolve("backend/admin-api").resolve(relative))) {
+                if (java.nio.file.Files.exists(candidate)) {
+                    return candidate;
+                }
+            }
+            dir = dir.getParent();
+        }
+        throw new IllegalStateException("找不到 ProductService.java（静态不变式无法校验）");
     }
 }

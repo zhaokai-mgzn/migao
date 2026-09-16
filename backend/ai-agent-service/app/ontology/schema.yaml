@@ -28,6 +28,19 @@ intent_ownership:
     route_key: order
     agents: [mibao, xiaobu]
     description: 物流查询（C 端仅本人已发货订单）
+  # ── 加工单域（issue #3340，仅 B 端米宝可达）──
+  processing_order_generate:
+    route_key: order
+    agents: [mibao]
+    description: 生成加工单（批量，写操作确认闸；联动订单进入 producing）
+  processing_order_query:
+    route_key: order
+    agents: [mibao]
+    description: 加工单查询（只读）
+  processing_order_update:
+    route_key: order
+    agents: [mibao]
+    description: 加工单状态更新（issue/start/complete/cancel，写操作确认闸）
   # ── 售后域 ──
   after_sales:
     route_key: aftersales

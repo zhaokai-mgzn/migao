@@ -16,6 +16,7 @@ from app.utils.auth import verify_service_token
 from app.tools import ToolContext, get_tool_registry
 from app.api.response_models import make_response
 from app.knowledge.distill import distill
+from app.briefing.generator import generate_briefing
 
 router = APIRouter()
 
@@ -35,6 +36,16 @@ class KnowledgeDistillRequest(BaseModel):
     conversation_text: str = Field(..., description="待提炼文本（客服会话 或 店铺资料文档）")
     max_candidates: int = Field(5, ge=1, le=10, description="最多提炼候选数")
     mode: str = Field("conversation", description="提炼模式：conversation（客服问答对）/ document（文档→FAQ 条目）")
+
+
+class BriefingGenerateRequest(BaseModel):
+    """智能每日经营简报生成请求（issue #3468）
+
+    数据安全红线：snapshot 只含聚合指标与脱敏事实（无客户 PII），
+    LLM 只允许引用快照中的数字（metrics 引用由 admin-api 校验层对账）。
+    """
+    tenant_id: int = Field(..., description="租户 ID")
+    snapshot: Dict[str, Any] = Field(..., description="聚合指标快照 {metrics: {key: value}, facts: [...]}")
 
 
 @router.post("/tools/execute")
@@ -160,3 +171,23 @@ async def distill_knowledge(
     )
     candidates = await distill(request.conversation_text, max_candidates=request.max_candidates, mode=request.mode)
     return make_response(True, data={"candidates": candidates})
+
+
+@router.post("/briefing/generate")
+async def generate_daily_briefing(
+    request: BriefingGenerateRequest,
+    authorized: bool = Depends(verify_service_token),
+):
+    """
+    智能每日经营简报生成（issue #3468）
+
+    admin-api 定时任务/手动触发时把聚合指标快照传来（纯数字 + 脱敏事实，无客户 PII），
+    LLM 组织成四区块简报（昨日回顾/今日必办/风险预警/优化建议）。
+    生成失败返回 data.briefing=None（不编造数据，admin-api 落 failed 状态）。
+    """
+    logger.info(
+        f"Briefing generate triggered: tenant_id={request.tenant_id}, "
+        f"snapshot_keys={len(request.snapshot or {})}"
+    )
+    briefing = await generate_briefing(request.snapshot)
+    return make_response(True, data={"briefing": briefing})

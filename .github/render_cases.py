@@ -162,11 +162,23 @@ def to_eval_py(cases):
            '    persona: str = ""   # 归属 agent: mibao / xiaobu / ""(双端)，issue #2855',
            '    order_before: List[str] = field(default_factory=list)   # 时序断言 "A before B"（跨轮，acceptance-protocol §3.1）',
            '    forbidden_text: List[str] = field(default_factory=list) # final_text 反模式词，命中即失败（§3.4 幻觉式撤回/报错文案）',
+           '    forbidden_tools: List = field(default_factory=list) # 全程禁用工具断言（任何轮都不得调用；must_succeed 的镜像，issue #3544 收口批）',
             '    want_text: List[str] = field(default_factory=list) # final_text 正向关键词，全缺即失败（§3.4 正反关键词双轨）',
            '    required_args: List[dict] = field(default_factory=list) # 必填参数断言（create 缺 specifications/加工项价格即失败，§3.2）',
     '    forbidden_args: List[dict] = field(default_factory=list) # 禁止参数断言（隔离/越权下限：如物流工具不得接受快递单号，issue #3270）',
+            '    must_succeed: List[dict] = field(default_factory=list) # 写工具成功断言（至少成功一次；"调了≠成了"，§3.2/issue #3361）',
+            '    must_fail: List[dict] = field(default_factory=list) # 必须失败断言（零成功调用；must_succeed 的镜像，issue #3544 收口批）',
+            '    amount_verify: List[dict] = field(default_factory=list) # 金额正确性断言（单价接地/小计/总额，§3.2/issue #3365）',
             '    db_verify: List[dict] = field(default_factory=list) # 落库层验证（创建后查 admin-api 断言价格=确认价，§3.2/issue #3056）',
+            '    output_verify: List[dict] = field(default_factory=list) # 产出侧断言（工具计算结果 payload，如算料用布量/spec公式，issue #3367）',
             '    pre_clean: List[dict] = field(default_factory=list) # 评测前数据清理（写类 case 自我污染防线）',
+            '    post_session: List[dict] = field(default_factory=list) # 会话关闭后落库断言（user_memories 只在 close 时 flush，issue #3357）',
+           '    debug_user: str = ""   # 多身份评测：以哪个 DEBUG 顾客身份跑（如 debug_customer_new，issue #3391）',
+           '    form_prefill: List[dict] = field(default_factory=list) # form 卡预填断言（老客户收货信息自动带出，issue #3397）',
+           '    forbidden_card_text: List = field(default_factory=list) # 卡片内容反模式（卡里不得出现「用量/倍数」等把金额翻倍的框架，issue #3402）',
+           '    namespaces: List[str] = field(default_factory=list) # 全局命名空间声明（<kind>:<值>，如 customer_phone:13800138000）；两条用例有交集 → 自动串行（issue #3781 并行污染隔离）',
+           '    precondition: List[dict] = field(default_factory=list) # 运行期前置断言（order_count_for_phone：运行期间订单数不得增长；不成立则判「前置不成立」而非行为失败，issue #3781）',
+            '    auto_fill: dict = field(default_factory=dict) # **用例级**表单载荷（全场可用）：让客户信息脱离轮次位置（issue #3804）',
            "", ""]
 
     for c in cases:
@@ -187,20 +199,46 @@ def to_eval_py(cases):
         out.append(f"    skip_reason={_py_repr(c.get('skip_reason', ''))},")
         out.append(f"    tags={c.get('tags') or []!r},")
         out.append(f"    persona={_py_repr(c.get('persona', ''))},")
+        # 多身份评测（issue #3391）：C 端 case 可声明以哪个 debug 用户身份跑
+        out.append(f"    debug_user={_py_repr(c.get('debug_user', ''))},")
+        out.append(f"    form_prefill={_py_repr(c.get('form_prefill') or [])},")
+        out.append(f"    forbidden_card_text={_py_repr(c.get('forbidden_card_text') or [])},")
         if c.get("order_before"):
             out.append(f"    order_before={c.get('order_before')!r},")
         if c.get("forbidden_text"):
             out.append(f"    forbidden_text={c.get('forbidden_text')!r},")
+        if c.get("forbidden_tools"):
+            out.append(f"    forbidden_tools={c.get('forbidden_tools')!r},")
         if c.get("want_text"):
             out.append(f"    want_text={c.get('want_text')!r},")
         if c.get("required_args"):
             out.append(f"    required_args={c.get('required_args')!r},")
         if c.get("forbidden_args"):
             out.append(f"    forbidden_args={c.get('forbidden_args')!r},")
+        if c.get("must_succeed"):
+            out.append(f"    must_succeed={c.get('must_succeed')!r},")
+        if c.get("must_fail"):
+            out.append(f"    must_fail={c.get('must_fail')!r},")
+        if c.get("amount_verify"):
+            out.append(f"    amount_verify={c.get('amount_verify')!r},")
         if c.get("db_verify"):
             out.append(f"    db_verify={c.get('db_verify')!r},")
+        if c.get("output_verify"):
+            out.append(f"    output_verify={c.get('output_verify')!r},")
         if c.get("pre_clean"):
             out.append(f"    pre_clean={c.get('pre_clean')!r},")
+        if c.get("post_session"):
+            out.append(f"    post_session={c.get('post_session')!r},")
+        # 全局命名空间声明 + 运行期前置断言（issue #3781）：只在声明时落字面量，
+        # 未声明的用例走 dataclass 默认（缺省 = 不参与隔离/不设前置，保持既有行为不变）
+        if c.get("namespaces"):
+            out.append(f"    namespaces={c.get('namespaces')!r},")
+        if c.get("precondition"):
+            out.append(f"    precondition={c.get('precondition')!r},")
+        # 用例级表单载荷（issue #3804）：只在声明时落字面量，未声明的用例走 dataclass 默认
+        # （缺省 = 无 case 级载荷，行为与旧版逐字一致）
+        if c.get("auto_fill"):
+            out.append(f"    auto_fill={c.get('auto_fill')!r},")
         out.append(")")
         out.append("")
 
@@ -262,28 +300,111 @@ def to_md(cases):
             lines.append("```")
             for msg in c.get("user_inputs") or []:
                 if isinstance(msg, dict):
-                    # 带图消息：文本 + 图片数（issue #2794）
                     _t = msg.get("text", "")
                     _imgs = msg.get("images") or []
-                    lines.append(f"你: {_t} [📷 附 {len(_imgs)} 图]" if _t else f"你: [📷 纯图片 x{len(_imgs)}]")
+                    # 语义化标注：这些 dict 轮是"协议轮"（harness 自动作答/换会话），
+                    # 不是用户真说了什么——之前一律渲染成「[📷 纯图片 x0]」，
+                    # 读文档的人会把自动作答误读成用户发了空图。
+                    _tags = []
+                    if msg.get("new_session"):
+                        # 跨会话轮（issue #3357）：先关当前会话再开新会话（触发记忆 flush）
+                        _tags.append("🔁 新会话")
+                    if msg.get("auto_respond"):
+                        _tags.append("🤖 按上一轮卡片作答")
+                    if msg.get("auto_select"):
+                        _tags.append("🤖 选第一个选项")
+                    if msg.get("auto_fill"):
+                        _tags.append("🤖 自动填表")
+                    if msg.get("repeat_until"):
+                        # repeat_until 轮也是「协议轮」：harness 每轮按"有卡答卡/被问验证码
+                        # 就供码/否则发 fallback"作答，直到目标工具成功（issue #3538）。
+                        # 此前无 text 且无上述标签 → 渲染成「你: (空)」，casebook 读不出
+                        # 这轮在干什么（OR-021/CH-033/PR-016/PR-021 均此形态）。
+                        _ru = msg["repeat_until"] or {}
+                        _tags.append(
+                            f"🔁 按目标工具重复直至成功：{_ru.get('tool_called', '?')}"
+                            f"，最多 {_ru.get('max', '?')} 次")
+                    if _imgs:
+                        _tags.append(f"📷 附 {len(_imgs)} 图")
+                    suffix = (" [" + " ".join(_tags) + "]") if _tags else ""
+                    lines.append(f"你: {_t}{suffix}" if _t else f"你: {suffix.strip() or '(空)'}")
                 else:
                     lines.append(f"你: {msg}")
             for e in (c.get("expectations") or []):
                 lines.append(f"期望: {exp_to_str(e)}")
             for d in (c.get("data_checks") or []):
                 lines.append(f"数据: {d}")
+            # `pre_clean` 此前**完全不渲染** ⇒ 账本上看不出"写类用例有没有自清理"，
+            # 而这正是 #3794/#3800/#3833 反复踩的那一格（"清理防线空转"只能靠人读
+            # summary JSON 的 `pre_clean` 字段才发现）。补上 ⇒ 前置动作在账本上可见。
+            for pc in (c.get("pre_clean") or []):
+                if isinstance(pc, dict):
+                    _pc_type = str(pc.get("type") or "")
+                    _pc_args = "、".join(f"{k}={v}" for k, v in pc.items() if k != "type")
+                    lines.append(f"清理: {_pc_type}({_pc_args})" if _pc_args else f"清理: {_pc_type}")
+                else:
+                    lines.append(f"清理: {pc}")
             for ob in (c.get("order_before") or []):
                 lines.append(f"时序: {ob}")
             for ft in (c.get("forbidden_text") or []):
-                lines.append(f"禁词: {ft}")
+                # dict 形态（issue #3833 的轮次作用域）必须印清楚，否则账本上只剩
+                # `禁词: {'round': 2, 'any_of': [...]}` —— 读者看不出"哪一轮被禁"，
+                # 而"禁在哪一轮"正是这次收紧的**全部信息量**。
+                # 风格与下方 `全程禁用:` / `必须成功:` 一致。
+                if isinstance(ft, dict):
+                    _ft_scope = f"（第 {ft['round']} 轮）" if ft.get("round") else "（全程）"
+                    _ft_words = ft.get("any_of") or ([ft["text"]] if ft.get("text") else [])
+                    lines.append(f"禁词{_ft_scope}: {'、'.join(str(x) for x in _ft_words)}")
+                else:
+                    lines.append(f"禁词: {ft}")
+            for ftl in (c.get("forbidden_tools") or []):
+                _ftl_tool = ftl if isinstance(ftl, str) else (ftl or {}).get("tool")
+                _ftl_act = "" if isinstance(ftl, str) else ((ftl or {}).get("action") or "")
+                lines.append(f"全程禁用: {_ftl_tool}({_ftl_act})" if _ftl_act
+                             else f"全程禁用: {_ftl_tool}")
             for wt in (c.get("want_text") or []):
                 lines.append(f"必须: {wt}")
             for ra in (c.get("required_args") or []):
                 lines.append(f"必填: {ra.get('tool')}({ra.get('action', '')}) 字段 {', '.join(ra.get('fields') or [])}")
             for fa in (c.get("forbidden_args") or []):
                 lines.append(f"禁参: {fa.get('tool')}({fa.get('action', '')}) 不得含 {', '.join(fa.get('fields') or [])}")
+            for ms in (c.get("must_succeed") or []):
+                _ms_tool = ms if isinstance(ms, str) else ms.get("tool")
+                _ms_act = "" if isinstance(ms, str) else (ms.get("action") or "")
+                lines.append(f"必须成功: {_ms_tool}({_ms_act})" if _ms_act else f"必须成功: {_ms_tool}")
+            for mf in (c.get("must_fail") or []):
+                _mf_tool = mf if isinstance(mf, str) else mf.get("tool")
+                _mf_act = "" if isinstance(mf, str) else (mf.get("action") or "")
+                _mf_head = f"必须失败: {_mf_tool}({_mf_act})" if _mf_act else f"必须失败: {_mf_tool}"
+                # `args` 值级作用域（issue #3689 / #3702）：只印 `工具(action)` 会让人读账本
+                # （mibao-verification-cases.md）**看不到到底在匹配什么值** —— 账本失真。
+                # 风格与同函数的 `必填: … 字段 …` / `禁参: … 不得含 …` 一致（限定词接在同行）。
+                _mf_scope = ", ".join(
+                    f"{k}={v}" for k, v in ((mf.get("args") or {}) if isinstance(mf, dict) else {}).items())
+                lines.append(f"{_mf_head} 值级作用域: {_mf_scope}" if _mf_scope else _mf_head)
+            for av in (c.get("amount_verify") or []):
+                lines.append(f"金额: {av.get('tool', 'order_create')} 「{av.get('product_name', '')}」 → {'; '.join(av.get('checks') or [])}")
             for dv in (c.get("db_verify") or []):
-                lines.append(f"落库: {dv.get('fetch')} {dv.get('name')} → {'; '.join(dv.get('checks') or [])}")
+                # 结构化核对器（无 checks 串，如 after_sales_ticket #3544）也要可读：
+                # 否则 casebook 只剩 "fetch None → "，新断言在文档里完全不可见。
+                _dv_parts = dv.get("checks")
+                if not _dv_parts:
+                    _dv_parts = [f"{k}={v}" for k, v in dv.items() if k != "fetch"]
+                _dv_head = f" {dv['name']}" if dv.get("name") else ""
+                lines.append(f"落库: {dv.get('fetch')}{_dv_head} → {'; '.join(map(str, _dv_parts))}")
+            for ov in (c.get("output_verify") or []):
+                # 产出侧断言（#3544：PP-006/PR-021 假绿升级用的就是它）此前未渲染 → 补齐；
+                # action 一并渲染：多 action 工具的作用域是这条断言的关键信息（漏读会误判）
+                _ov_exp = "; ".join(f"{k}=={v}" for k, v in (ov.get("expect") or {}).items())
+                _ov_act = f"({ov['action']})" if ov.get("action") else ""
+                lines.append(f"产出: {ov.get('tool')}{_ov_act} → {_ov_exp}")
+            for ps in (c.get("post_session") or []):
+                lines.append(f"会话后: {ps.get('fetch')}({ps.get('agent_type', 'xiaobu')}) → {'; '.join(ps.get('checks') or [])}")
+            if c.get("auto_fill"):
+                # 用例级载荷（issue #3804）：读 casebook 的人必须知道"顾客信息全场可用"，
+                # 否则会以为载荷只挂在某几轮（旧形态的位置依赖正是红/绿由发卡时机决定的根因）
+                _af = ", ".join(f"{k}={v}" for k, v in c["auto_fill"].items())
+                lines.append(f"载荷(全场可用): {_af}")
             if c.get("skip_reason"):
                 lines.append(f"跳过: {c['skip_reason']}")
             lines.append("```")

@@ -12,6 +12,19 @@
 > （起服务 → 打开页面 → 逐 Tab/逐按钮走查 → 每个写操作断言"成果物可见"）+ 截图/
 > DOM 几何证据，AI 扮演"商家运营"persona 执行，禁止以"CI E2E + vitest 全绿"替代
 > 浏览器旅程证据。详见 §2.3。
+> **v1.3（2026-09-14 评测根本解固化，#3483）**：补 **评测完成判定**（§1.6）与
+> **复核裁判模型独立性**（§1.7）——完成 ≠ 全量 100% 绿；复核验收默认换不同模型族
+> （GLM-5.3-Flash），防同源偏差。B 端 80 轮差距分析实证：追 LLM 方差到 100% 边际
+> 收益为负，必须用可判定谓词定义"完成"。
+> **v1.4（2026-09-15 假绿/假红治理落地）**：§1.3 下新增 **§1.3.1 红证：断言必须能失败**
+> ——每条断言必须能红（负向夹具 + fail-closed + 声明层静态一致性 + 可归因），真值与被测
+> 行为**无关**的断言 = 空断言；三类形态（假红 / 空断言 / 同轮不精确）全在确定性层可判，
+> 复核模型只负责 UA 与用例语义审计。规则（铁律表述）见 DSH preset 技能 `migao-acceptance` v1.2，
+> 本文件是方法侧单一事实源。
+> **v1.5（2026-09-15 与 preset 对齐，issue #3694）**：**空断言定义补「恒红」一侧**——
+> 空断言 = 真值与被测行为**无关**的断言，**恒绿**（永不红）与**恒红**（期望与真实链路对不上，
+> 永不绿）都是空断言；完成判据随之改为**双向两问**。更正用例引用（#3681 / #3669 是 issue，
+> 对应修复 PR #3684 / #3685）。v1.4 的旧单向措辞（"不会红的断言 = 空断言"）作废。
 
 ---
 
@@ -79,7 +92,7 @@ UA 只扮演了 C 端顾客 persona，B 端商家后台的浏览器操作旅程�
 |---|---|---|---|
 | **L1** | 机器可判：tool+args、error 事件、卡片事件字段、时序 before/after、final_text 正反关键词、金额计算、字段内容（脱敏/数量/状态） | runner 自动 | 断言命中即证据 |
 | **L2** | 半自动语义：候选 grounded（引用真实商品/订单）、上下文延续正确、"不编造" | AI 判，**必须引用 transcript 原文**（轮次 + 原文片段） | 引用缺失 = 判定无效 |
-| **UA** | 用户代理层：话术可懂度、表达是否自然、低学历用户视角体验 | **AI 扮演用户代理判定**：① 声明扮演 persona（如"低学历顾客"）② 判定必须引用原文 ③ 对照可懂度基准（短句/给例子/给出口/不编造）逐条给分 | 视角声明 + 原文引用 + 基准对照，缺一不可 |
+| **UA** | 用户代理层：话术可懂度、表达是否自然、低学历用户视角体验 | **AI 扮演用户代理判定**：① 声明扮演 persona（如"低学历顾客"）② 判定必须引用原文 ③ 对照可懂度基准（短句/给例子/给出口/不编造）逐条给分。**通过线（#3492 双裁判试点校准）**：信息准确 + 给出口 + 不编造即通过；密度/长度/风格列为观察项（不阻塞），禁止为"短句"字面把合格话术判红 | 视角声明 + 原文引用 + 基准对照，缺一不可 |
 
 **降级原则**：能升 L1 的绝不留在 L2；能 L2 的绝不留给 UA。UA 点越少，验收越确定。
 **AI Native 铁律**：全流程零人工执行步骤——UA 不是"留给人判"的档，而是 AI 以用户
@@ -95,6 +108,43 @@ UA 只扮演了 C 端顾客 persona，B 端商家后台的浏览器操作旅程�
 - 断言包含金额/数量/字段结构 → 必须能对 tool_call args / tool_result / 卡片事件做结构断言；
 - 现状 case 里已存在的自然语义 data_checks（如 OR-016/AS-007）→ 视为**未覆盖**，
   直到升级为可执行断言（见 §6 Phase 2 与 §5 沉淀）。
+
+#### 1.3.1 红证：断言必须能失败
+
+一条断言的价值 = 它**能红**。真值与被测行为**无关**的断言是**空断言**——最常见是
+**永远不会红**（花通过率买"看起来测过了"），也有一半是**永远不会绿**（期望与真实链路对不上
+→ 恒不满足，同样什么都没测；实证 DF-011）。
+
+**红证怎么写**（每条断言落库时同时给出）：
+1. **负向夹具**：把被测行为改坏——或喂一条"行为确实是错的"合成轨迹——断言核对器**必须报错**。
+   夹具进 `tests/unit_ci_workflows/`（零 LLM、秒级），与断言实现同 PR。
+2. **"未评估"也算失败**：核对器遇到无法匹配的配置（如声明的 `action` 该工具根本没有）
+   必须**报错关闭（fail-closed）**，而不是静默跳过。静默跳过 = 用一次没被评估的断言换通过率。
+3. **声明层静态一致性**：`must_succeed` / `must_fail` / `expectations` / `repeat_until` 里出现的
+   `action` 必须存在于该工具 schema 的 action 枚举；`db_verify.fetch` 必须是已注册 fetcher；
+   args 键必须存在于该工具 schema。
+4. **可归因**：summary 必须能回答"哪条**断言**、哪一**轮**红的"。
+   只有 `score=0` 而无逐断言判定 = 红了也无从定位（实证：一条 `reproducible` 失败因此长期无法归因）。
+
+**三类已知形态**（2026-09-15 实证，全部确定性、零 LLM 可判）：
+
+| 类 | 形态 | 实证 |
+|---|---|---|
+| **假红** | 断言实现**窄于**用例声明 | 用例声明「文本询问亦可」，runner 文本分支却要求字面「加工项」三字 → 合格行为判红 |
+| **空断言**（双向） | 真值与被测行为**无关** | **恒绿**：散文 `data_checks` 不计分；`db_verify` 按 keyword 取首条 → 被同名种子商品顶替；声明了该工具没有的 `action` → 整条**静默跳过**；同轮取错 payload。**恒红**：期望的工具与**真实链路对不上**（期望 `product_detail`，agent 实际调 `product_search`）→ 恒不满足（实证 DF-011 / PR #3687） |
+| **同轮不精确** | 同名工具的**别的 action** 顶替 | `must_succeed[action=X]` 统计该轮全部同名工具结果 → 别的 action 成功也算过 |
+
+**与 LLM 复核的分工（§1.7）**：红证、声明层一致性、可归因**全在确定性层，与模型无关**；
+只有 UA 判定与**用例语义审计**（"这条断言真在测它声称的东西吗"）需要独立模型。
+**空断言的恒绿一侧在第二个模型眼里同样是绿的** —— 换更强的裁判解决不了前三层，禁止把复核模型当主防线。
+
+**写/改断言时的完成判据**：把被测行为改坏，**它会红吗**？按真实链路喂一遍，**它会绿吗**？
+两问都答不上来 = 这条断言还没写完（只答得上第一问 = 可能恒红）。
+
+> 规则（铁律表述）见 DSH preset 技能 `migao-acceptance`「可执行断言 + 红证」与「假绿 / 假红」节；
+> 本节只定义**方法**与判据。实证来源：`acceptance/2026-09-15/agent-gap-triage/REPORT.md` §0/§3.3
+> （修复先例 issue #3681 / #3669，对应修复 PR #3684 / #3685；另有 PR #3687 为恒红侧实证）；
+> 分层归属见 migao-dev-flow §16.1（L0 零 LLM）。
 
 ### 1.4 证据链与重放
 
@@ -112,6 +162,51 @@ UA 只扮演了 C 端顾客 persona，B 端商家后台的浏览器操作旅程�
   仍不一致 → 标记"待裁定"（由标准定义者裁定，裁定是仲裁不是执行）；
 - 验收者报告"全部通过"时，必须附**抽验证据**（复核验收独立抽样的完整 transcript 原文），
   复核方不需要重跑全部，但必须能基于证据独立复核每条结论。
+
+### 1.6 评测完成判定（#3483 T2，completion_verdict）
+
+> 完成 ≠ 全量 100% 绿。B 端 80 轮差距分析实证：最后 5-10% 失败是 LLM 方差，
+> 追 100% 边际收益为负（三测自述"逐个校准 case 追波动边际收益递减"）。
+
+- runner 输出机器可读完成判定（`tests/agent_eval/local_runner.py::completion_verdict`，
+  日志 + summary JSON `completion` 字段）：
+  - **必须处理的失败 = 0**：除 `llm-noise` 外的一切 score<1 —— reproducible /
+    unstable / error / no-retry-budget / infra / 无分类证据，均属必须处理；
+  - **关键旅程全过**：`KEY_JOURNEYS_MIBAO`（9 条）/ `KEY_JOURNEYS_XIAOBU`（6 条）
+    任何一条 score<1 → 未完成（P0 旅程波动也不放行）；
+  - **已知波动放行**：**只有 `llm-noise`**（首次失败、新 session 重试通过）—— runner
+    记入 flake 台账（条目 `released: true`）后放行但列出；
+  - 空结果 = 未完成（防假绿）。
+- **`unstable` 为什么也阻塞**（口径变更）：它只证明"两次失败不是同一件事"，**没有**
+  证明"其中有一次是对的"。实证 OR-014（run 34841029062）：一次"下单成功但金额错
+  168≠198"、一次"order_create 从未被调用" —— 2/2 都真失败，按"LLM 发散可放行"
+  处置站不住（该 run 的独立审计也判它"不当放行"）。波动放行的前提是**有过一次通过**。
+  同类实证 OR-026（run 34849029334 xiaobu）：一次"order_create 2 次调用无一成功 +
+  无订单落库"、一次"回复称已更新但零写工具成功" —— 该 run 的 `completion.ok=true`
+  **正是建立在这条放行上**。
+- **分类规则（`_classify_attempts`，判"两次是不是同一件事"）**：`pass`（首跑通过）/
+  `llm-noise`（重试通过）/ `infra`（运行级）/ `reproducible`（两次指纹**相同**）/ 
+  **`reproducible`（两次指纹有真子集关系，共有部分非空）** / `unstable`（其余）。
+  > **指纹子集 ⇒ 共有部分稳定复现**（实证 AS-004，run 34849029334）：首败 = 两条
+  > **实质**落库断言（`落库 closeReason 为空` + `closeReason 不含期望值`），次败 =
+  > 这两条 **+** 一条 `after_sales_manage … unmatched expectation`。机械按"指纹不同"
+  > 判发散 ⇒ 真回归被洗成波动、且 `deterministic_failures` **漏计**。这是纯结构判据
+  > （集合包含），不需要语义理解。**注意**：指纹不同 ≠ 必然 `unstable` ——
+  > **指纹**回答"是不是同一件事"，**分类**回答"这条红灯怎么处置"。
+- 用途：结论档/里程碑判定"可不可以下结论"；PR 门禁（`_ci_verdict` 全绿）另行生效。
+- 结论报告（§4.2）的结论栏须引用 completion_verdict 输出作为完成证据。
+
+### 1.7 复核裁判模型独立性（#3483 T5）
+
+- §1.5 的复核验收要求"独立视角、防同谋"；**同族模型共享系统性偏差**（主验收默认
+  DeepSeek 时，复核若同为 DeepSeek 族，独立性打折）——复核验收默认换 **GLM-5.3-Flash**
+  （provider `scnet-token-plan`，settings.yaml 已配置），不同模型族；
+- 机制：workflow 工具开子代理 `agent(prompt, {provider: 'scnet-token-plan',
+  model: 'GLM-5.3-Flash'})`（模型路由机制见 migao-dev-flow §15.5）；复核只拿
+  transcript 证据 + 断言规范，**不看 spec**（§1.5）；
+- 判定铁律不变：每条判定必须引 `R轮次/原文片段`，引用缺失 = 判定无效；
+- 试点校准：首次启用前用 10 条历史 transcript 做双裁判比对（结论一致率 +
+  证据引用完整率）；不一致以证据引用更充分者为准（§1.5）；仍不一致 → 待裁定。
 
 ---
 
@@ -191,8 +286,33 @@ UA 只扮演了 C 端顾客 persona，B 端商家后台的浏览器操作旅程�
 
 - 涉及金额的验收点必须断言**数学关系**：如 `subtotal = 面料小计 + processingFee`、
   `quantity 按计价方式（per_meter=米数 / per_set=1 / per_area=宽×高）`；
+  ⚠️ **作用域限定（2026-09-15，issue #3683/#3672）：以上口径只适用 `order_create` 路径**
+  （agent 把面积算进 `processing_info.processingItems[].quantity`）。
+  `processing_item_manage(action=calculate_price)` 是**另一套契约**：后端自己从
+  `dimensions` 算 `area=宽×高`，再 `unitPrice × area × quantity`
+  （`ProcessingItemService.java:248-254` + `:310-318`）——把「宽×高」写进该端点的 `quantity`
+  会**必然双计**（实测：`dimensions` + `quantity=8` → ¥1920.00；正确 payload → ¥240.00）。
+  该端点用 `width`/`height` 承载面积、`quantity` 作计件数。原表述无限定，已实际把一次
+  per_area 归因引向「传 quantity=8.4 即可修」的错误修法；
 - 数据落库断言：create 类 payload 必须断言完整结构（如 `processing_item_configs` 含
   `customPrice=unit_price`、`unit=真实单位`），禁止只断"工具被调用"。
+- **写工具成功断言（`must_succeed`，issue #3361）**：期望里出现写工具（`order_create` /
+  `aftersale_create` …）**只能证明"模型想写"，证明不了"东西真做出来了"**。CI 实证
+  （run 34686905546）：三个下单用例的 `order_create` 分别返回 `tool_execution_failed` /
+  `confirmation_required` / `tool_not_found`，用例照样判 100%，而 DB 审计里 `orders`
+  一条没新增 —— 报告长相「下单流程正常」，事实「一单没成交」。
+
+  ```yaml
+  must_succeed:
+    - tool: order_create            # 至少真正成功一次
+    - tool: aftersale_create
+      action: create                # 可选：按 args.action 过滤
+  ```
+
+  语义：声明的工具**至少有一次** `success=true`（期间被确认门禁拦下属期望内的安全行为，
+  只要最终成功即通过）；一次都没成功（含从未调用）→ 违规，详情带每轮错误码，
+  「工具层失败」与「模型层漏调」在一行里可区分。**C 端写用例必须声明**（由
+  `tests/unit_ci_workflows/test_xiaobu_case_set.py::TestWriteToolSuccessAssertions` 强制）。
 
 ### 3.3 反模式断言（负向）
 
@@ -216,6 +336,35 @@ UA 只扮演了 C 端顾客 persona，B 端商家后台的浏览器操作旅程�
 
 - 会话关闭（close_idle 时间点 = 最后一条消息时间）、消息持久化完整性、
   刷新后历史含交互卡与最终回复、转人工快照（aiContext）跨会话可见。
+- **关闭后置断言（`post_session`，issue #3357）**：某些数据只在**会话关闭时**才落库
+  —— C 端长期记忆（`user_memories`）就是典型：每轮只把候选累积在 `session_states`，
+  关闭路径 `SessionMemory.close_session → _flush_pending_memories` 才批量落库
+  （issue #2815 会话末聚合）。这类断言**不能在轮内执行**（那时查到的是"抽取还没跑完"的
+  时序假象），必须挂在 case 的 `post_session` 上，由 runner 在会话关闭**之后**执行：
+
+  ```yaml
+  post_session:
+    - fetch: user_memories          # runner 支持的落库源（GET /api/chat/memories）
+      agent_type: xiaobu            # C 端画像（mibao 不产生记忆）
+      checks:
+        - "count>=1"                # 条数比较：count>=N / ==N / <=N
+        - "value_contains:奶油风"    # 值含子串
+        - "has_key:curtain_style"   # 存在该 key
+  ```
+
+  失败按**用例级失败**计（score=0）并走同一套重试/指纹分类——重试路径同样执行该断言，
+  否则"重试通过"会变成假绿。
+- **跨会话轮（`new_session`，issue #3357）**：长期记忆只在**新建会话**组装 prompt 时注入，
+  同会话内看不到（候选要等关闭才落库）——所以"老客户偏好识别"这类能力必须跨会话才能判定。
+  case 的 `user_inputs` 支持协议轮 `{new_session: true, text: "..."}`：发送前先关闭当前
+  会话（触发 flush）再开新会话。**断言词不得出现在该轮文本里**（第 1 轮声明偏好、第 2 轮
+  不再提词而要求按偏好推荐 → 回复出现该词只能来自记忆注入），否则测的是"复读"不是"记忆"。
+- **清理也属于断言链（#3357 教训）**：会话收尾必须打**对的接口**
+  （ai-agent `PUT /api/chat/sessions/{id}/close`）。此前 runner 打到 admin-api 的
+  `agent_sessions`（人工会话表，只有 human_handoff 会写行）→ 恒 404 被静默吞掉 →
+  会话从未关闭、`close_session` 从未执行、记忆从未 flush，而报告全绿。
+  "清理失败静默"本身就是假绿温床：收尾失败必须可见（warning），审计要能对账
+  （DB 审计报 ai-agent `sessions` 残留 + `memories=` 假绿告警）。
 
 ---
 
@@ -275,6 +424,11 @@ R2 ...
 | final_text 无内容断言 | 只判有无 | 正反关键词断言 |
 | 金额无断言 | — | 结构化 args 数学断言钩子 |
 | 无证据落盘 | 只打印摘要 | 输出 transcript artifact（§4.1）+ 验收报告 JSON/MD |
+| **生命周期/关闭后落库无断言** | `db_verify` 只能在轮内查（product_by_name），而记忆等数据**关闭时才落库** | ✅ 已落地（issue #3357）：`post_session` 关闭后置断言（`user_memories`）+ `new_session` 跨会话轮协议，见 §3.6 |
+
+> 注：表中前几项已在 2026-09 陆续落地（interactive 采集、`order_before` 轮次锚定、
+> `want_text/forbidden_text`、`required_args/forbidden_args`、`db_verify`、轮次轨迹
+> `round_trace`）；保留原表作为"差距→升级"的决策记录。
 
 ### 6.2 `acceptance_runner.py` 差距清单
 

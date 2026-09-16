@@ -4,11 +4,23 @@
 
 // ========== 用户相关 ==========
 
+/**
+ * 登录用户 —— **`auth_user` storage 里存的形状就是这个形状**（唯一事实源）。
+ *
+ * 生产者：`POST /api/auth/mini/login` 响应 `data.user`，由 `miniAppLogin` **原样**
+ * `JSON.stringify` 落 storage（`utils/auth.ts`），前端不做任何字段改名/归一化。
+ * ⇒ 字段名必须与后端 `LoginResponse.UserInfo`（admin-api 全库 camelCase）逐字一致；
+ *    **禁止** snake_case 别名（历史缺陷：`tenant_id` 必填但后端从未提供，运行时恒
+ *    `undefined`，e2e 又自行补 `tenant_id` 把缺陷遮住）。
+ * ⇒ e2e 夹具注入 `auth_user` 时必须照此形状，不得"归一化"。
+ * 由 L0 契约守卫 `tests/unit_ci_workflows/test_user_type_contract.py` 锁定。
+ */
 export interface User {
   id: string
   nickname: string
   avatar: string | null
-  tenant_id: number
+  /** 租户 ID（后端 camelCase `tenantId`，登录响应必带） */
+  tenantId: number
   /** 企业名（租户公司名，来自企业基础信息设置；C 端导航副标题展示用，UI-016）。
    *  注意：数据源是 admin-api（camelCase JSON），字段名与后端 tenantName 一致 */
   tenantName?: string | null

@@ -12,6 +12,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -149,6 +150,80 @@ class CustomerServiceTest {
     }
 
     // ======================== 客户详情测试 ========================
+
+    /**
+     * 客户列表 tags 与详情同口径（#3665，冒烟报告 B2）。
+     *
+     * 背景：list 接口把 customer_profiles.tags（JSONB 标签 ID 数组）原样序列化下发，
+     * 而 detail 接口返回解析后的标签对象数组 —— 前端类型契约声明 CustomerTag[]（对象），
+     * 列表页只能靠页内容忍把 ID 反查成对象（空 chip + React key 警告）。
+     * 本用例锁定契约：列表 tags 必须与详情同形态（对象数组，含 id/name），且不得就地污染实体。
+     */
+    @Test
+    @DisplayName("分页查询客户列表 - tags 解析为标签对象数组（与详情同口径，不再是字符串 ID）")
+    void getCustomerPage_TagsResolvedToObjects() {
+        // given: 档案里存的是标签 ID 数组（customer_profiles.tags JSONB 原始形态）
+        testProfile.setTags(List.of("tag-1", "tag-2"));
+        CustomerTag tag1 = CustomerTag.builder().id("tag-1").name("VIP").color("#EF4444").build();
+        CustomerTag tag2 = CustomerTag.builder().id("tag-2").name("定制").color("#48618f").build();
+        CustomerTag unlinked = CustomerTag.builder().id("tag-3").name("未关联").color("#10B981").build();
+
+        Page<CustomerProfile> mockPage = new Page<>(1, 10);
+        mockPage.setRecords(List.of(testProfile));
+        mockPage.setTotal(1);
+
+        when(customerProfileMapper.selectPage(any(Page.class), any(LambdaQueryWrapper.class))).thenReturn(mockPage);
+        when(customerTagMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(tag1, tag2, unlinked));
+
+        // when
+        PageResponse<CustomerProfile> result = customerService.getCustomerPage(1, 10, null, null, null, 1L);
+
+        // then
+        CustomerProfile item = result.getItems().get(0);
+        assertThat(item.getTags())
+                .as("列表 tags 必须是数组（修复前为字符串 ID 数组）")
+                .isInstanceOf(List.class);
+
+        @SuppressWarnings("unchecked")
+        List<CustomerTag> listTags = (List<CustomerTag>) item.getTags();
+        assertThat(listTags)
+                .as("列表 tags 必须解析为标签对象数组（含 id/name），与详情同口径")
+                .hasSize(2)
+                .allSatisfy(tag -> assertThat(tag).isInstanceOf(CustomerTag.class));
+        assertThat(listTags).extracting(CustomerTag::getId).containsExactlyInAnyOrder("tag-1", "tag-2");
+        assertThat(listTags).extracting(CustomerTag::getId).doesNotContain("tag-3");
+        assertThat(listTags).extracting(CustomerTag::getName).containsExactlyInAnyOrder("VIP", "定制");
+        assertThat(listTags).allSatisfy(tag -> assertThat(tag.getName()).isNotBlank());
+
+        // 详情 tags 同形态（与列表同一实现 resolveCustomerTags，不各写一套）
+        testProfile.setTags(List.of("tag-1"));
+        when(customerProfileMapper.selectById("cust-001")).thenReturn(testProfile);
+        Map<String, Object> detail = customerService.getCustomerDetail("cust-001");
+        assertThat(detail.get("tags"))
+                .as("详情 tags 形态必须与列表一致")
+                .isInstanceOf(List.class)
+                .asList()
+                .allSatisfy(t -> assertThat(t).isInstanceOf(CustomerTag.class));
+    }
+
+    @Test
+    @DisplayName("分页查询客户列表 - 无标签客户 tags 为空数组（不返回 null、不报错）")
+    void getCustomerPage_NoTags_ReturnsEmptyList() {
+        // given: 档案 tags 为 null（未打标）
+        testProfile.setTags(null);
+        Page<CustomerProfile> mockPage = new Page<>(1, 10);
+        mockPage.setRecords(List.of(testProfile));
+        mockPage.setTotal(1);
+
+        when(customerProfileMapper.selectPage(any(Page.class), any(LambdaQueryWrapper.class))).thenReturn(mockPage);
+
+        // when
+        PageResponse<CustomerProfile> result = customerService.getCustomerPage(1, 10, null, null, null, 1L);
+
+        // then
+        assertThat(result.getItems().get(0).getTags()).isEqualTo(List.of());
+        verify(customerTagMapper, never()).selectList(any());
+    }
 
     @Test
     @DisplayName("查询客户详情 - 成功")

@@ -11,6 +11,7 @@
 import asyncio
 import json
 import re
+from types import SimpleNamespace
 import time
 import traceback
 from typing import AsyncGenerator, Optional, List, Dict, Any, Union
@@ -37,6 +38,7 @@ from app.agents.customer_service_agent import (
 from app.tools import ToolRegistry, get_tool_registry
 from app.tools.base import ToolContext  # __PAGE__ 分页直调工具时构造执行上下文
 from app.utils.auth import get_current_user, UserIdentity
+import app.utils.error_incident as _err_inc
 
 # C 端专属角色（小程序/B2C 用户）：统一折叠为 customer，禁止访问管理类工具。
 # 与 admin-api SecurityConfig 门禁口径一致：customer/agent 不属于商户员工。
@@ -225,7 +227,13 @@ async def _extract_memories_async(
                 f"agent={agent_type} count={count}"
             )
     except Exception as e:
-        logger.debug(f"[chat/send] Memory accumulation failed (non-fatal): {e}")
+        # warning 而非 debug（issue #3357）：记忆链路断掉时"什么都没发生"，
+        # debug 级日志在默认 INFO 级别下不可见 —— 这正是 user_memories 长期为 0
+        # 却无人发现的原因。失败必须可见。
+        logger.warning(
+            f"[chat/send] Memory accumulation failed (non-fatal) | session={session_id} "
+            f"agent={agent_type} error={type(e).__name__}: {e}"
+        )
 
 def _format_datetime(dt: Any) -> str:
     """格式化日期时间为 ISO 8601 字符串（UTC，以 Z 结尾）"""
@@ -599,12 +607,31 @@ def _strip_interact_xml(text: str) -> str:
     return _INTERACT_XML_RE.sub("", text)
 
 
-def _extract_interact_probable(text: str) -> Optional[Dict[str, Any]]:
-    """从文本中解析首个 <interact>…</interact> 块为 payload；无块/解析失败返回 None"""
+def _parse_interact_block_or_report(
+    text: str, session_id: Optional[str] = None
+) -> Optional[Dict[str, Any]]:
+    """从文本中解析首个 <interact>…</interact> 块为 payload；本来没有块返回 None。
+
+    issue #3959：**「本来没有块」与「有块但解析失败」必须可区分** —— 两者返回值都是 None，
+    但后者意味着模型本想发卡却写残了。此前调用点无法区分，两者都走同一条
+    `_strip_interact_xml` 路径 ⇒ 块被静默剥掉、不发卡、**零日志**（用户侧表现为
+    「该弹的卡没了，只剩文字」，评测侧只能归因成「agent 不干活」）。
+    故解析失败时打一条 warning 留痕；`_parse_interact_xml` 的 fail-closed 语义不变
+    （仍不下发残缺 payload）。
+    """
     m = _INTERACT_XML_RE.search(text)
     if not m:
         return None
-    return _parse_interact_xml(m.group(0))
+    block = m.group(0)
+    payload = _parse_interact_xml(block)
+    if payload is None:
+        # 只留截断片段（防大块刷爆日志），标记 [interact-xml] 便于稳定检索
+        logger.warning(
+            "[interact-xml] 解析失败，剥离前留痕（模型可能本想发卡）| "
+            f"session={session_id} component={_extract_tag_value(block, 'component')} "
+            f"len={len(block)} snippet={block[:120]!r}"
+        )
+    return payload
 
 
 def _filter_products_by_reference(content: str, products: Any) -> List[Dict[str, Any]]:
@@ -640,6 +667,282 @@ def _filter_products_by_reference(content: str, products: Any) -> List[Dict[str,
 
 
 # ============ SSE 流生成器 ============
+
+def _mask_for_customer(text: str, context) -> str:
+    """C 端**出站文本**统一脱敏（issue #3379 P2-2 的真正收敛点）。
+
+    为什么必须在流式桥这一层：C 端回复有**两个生产者** ——
+      · `final_answer`（技能收尾，已在 base_skill 脱敏）；
+      · **`text_before_tools`**（模型调工具前的中间文本，由本文件直接流给顾客）。
+    实测 OR-017 R2（run 34735574206，复现型失败）泄露的正是中间文本那条路径，
+    在收尾处脱敏永远追不上已经流出去的文本。故把脱敏放到**唯一出站口**，
+    覆盖全部文本路径（中间文本 / 收尾文本 / 落库历史）。
+    B 端（商家/客服）不脱敏 —— 客服要照实号码联系顾客。
+    """
+    if str(getattr(context, "role", "") or "").lower() != "customer" or not text:
+        return text
+    try:
+        from app.utils.pii_mask import mask_pii
+        return mask_pii(text)
+    except Exception:
+        return text
+
+
+def _mask_card_for_customer(data: dict, context) -> dict:
+    """**出站**卡片脱敏（issue #3379）：顾客看到的卡片字段脱敏，模型上下文保持原值。
+
+    与工具层脱敏的区别（本轮实测踩到的坑）：
+      · 工具层脱敏 → 污染模型上下文与 `confirmValue`（顾客回传要精确匹配）→ 流程被搞坏；
+      · 出站层脱敏 → 只有顾客看到脱敏值，模型/状态/匹配链全程用真值。
+    只打**可见文本**：title / fields.label|value / formFields.label|value / options.label；
+    `options[].value` 与 `confirmValue` 是协议值，**不动**（回传要靠它们）。
+    """
+    if str(getattr(context, "role", "") or "").lower() != "customer" or not isinstance(data, dict):
+        return data
+    try:
+        from app.utils.pii_mask import mask_pii
+    except Exception:
+        return data
+    out = dict(data)
+    if isinstance(out.get("title"), str):
+        out["title"] = mask_pii(out["title"])
+
+    def _items(items, keys):
+        res = []
+        for it in items or []:
+            if not isinstance(it, dict):
+                res.append(it)
+                continue
+            node = dict(it)
+            for k in keys:
+                if isinstance(node.get(k), str):
+                    node[k] = mask_pii(node[k])
+            res.append(node)
+        return res
+
+    # confirm 卡：fields[].value 是**纯展示**（点击回传的是 confirmValue）→ 可脱敏
+    if isinstance(out.get("fields"), list):
+        out["fields"] = _items(out["fields"], ("label", "value"))
+    # ⚠️ form 卡：**只脱敏 label，绝不碰 value**（issue #3379 关键修正）
+    # 前端提交表单会把所有字段值原样回传 —— 出站脱敏 value 等于让顾客提交回
+    # `138****8000`：CI 实证 `validate_input({"customer_phone": "138****8000", …})`
+    # → **订单会用掩码号码创建**，比"明文回显"严重得多。
+    if isinstance(out.get("formFields"), list):
+        out["formFields"] = _items(out["formFields"], ("label",))
+    if isinstance(out.get("options"), list):
+        out["options"] = _items(out["options"], ("label",))
+    return out
+
+
+# 收尾守卫（issue #3929）：模型文本声称「点下方卡片/确认卡片」但本轮没发交互载荷
+# 也没调 interact 工具 ⇒ 客户侧无卡可点（生产实证：米宝 flash 频繁只说「请点下方
+# 确认卡片」而不发卡）。命中时把声称片段改写为「回复『确认』」纯文本指引，
+# 只影响落库/后续上下文文本（assistant_content），full_response 原值不动。
+#
+# issue #3967（526 个历史会话日志挖掘）补缺口 1：旧正则只覆盖「下方/确认」家族，
+# 实测三条生产措辞**全部漏检**（跨 8 天、三个独立会话逐字）：
+#   · sess_e52cff42c5d144f0「卡片没有确认按钮」——只调 validate_input，没发 interact；
+#   · sess_7f27137647e14b1e「请点击**上方**卡片勾选加工项」/「现在为您调出真正的
+#     加工项选择卡片，请点击选择（可多选）」——两次都没发 interact，**订单未创建**；
+#   · sess_2efa2071bb1747d8「确认卡已发出 👆」（×3）。
+# 对照证据：同会话里真发出卡的回合用户全部点到了 ⇒ 渲染层无问题，问题是**发卡缺失**。
+# 范式：**不做短语穷举**（越补越漏），改为「归一 + 少量语义模式 + 固化实测逐字散文语料」：
+#   ① 归一：方向词（上方/下方/上面…）与空白 → 空，使「上 方 卡 片」不再漏；
+#   ② 模式 A：动作词（点/点击/勾选/选择…）与「卡片/卡」**近距离共现**；
+#   ③ 模式 C：完成态声称（「卡片已发出/已调出」等）；
+#   ④ 保留既有短语（向后兼容，见 _CARD_CLAIM_LEGACY_PHRASES）。
+# 误判代价可控（守卫只在「本轮确实没发卡」时生效，最坏是改写话术），
+# 但**补卡分支严格 gated**（见 _pending_confirm_action / _reissue_confirm_card），
+# 不得凭空造卡。
+_CARD_CLAIM_LEGACY_PHRASES = (
+    "点下方确认卡片", "点下方卡片", "下方确认卡片", "点下方确认",
+    "点击确认卡片", "点击下方确认", "请点确认", "请点击确认", "确认卡片",
+)
+# 归一后（无空白）仍须可判的实测措辞（逐字，防止归一化把判据一起吃掉）
+_CARD_CLAIM_REPRO_PHRASES = (
+    "点击上方卡片", "调出真正的加工项选择卡片", "卡片已发出", "请点击选择",
+)
+# 方向词/虚词：只用于**判据归一**，不参与改写（改写的片段正则见 _CARD_CLAIM_RE）
+_CARD_CLAIM_DIRECTION_WORDS = (
+    "上方", "下方", "上面", "下面", "以上", "以下", "上边的", "下边的",
+    "上边", "下边", "上图", "下图", "上侧", "下侧",
+)
+
+
+def _normalize_card_oriented(text: str) -> str:
+    """判据归一：抹掉方向词与空白，让「请点击上方卡片」与「请点击卡片」同形。
+
+    只服务于**判据**（`_has_card_claim`）；改写用的正则另有一套（保留方向词，
+    因为「点击上方卡片」整体才是可替换的声称片段）。
+    """
+    if not text:
+        return ""
+    for w in _CARD_CLAIM_DIRECTION_WORDS:
+        text = text.replace(w, "")
+    return re.sub(r"\s+", "", text)
+
+
+# 短语族（**归一后**的判据用）：既有短语 + 固化实测措辞（逐字语料）
+_CARD_CLAIM_PHRASES = _CARD_CLAIM_LEGACY_PHRASES + _CARD_CLAIM_REPRO_PHRASES
+# 短语判据：字符间允许空白（「请点下方卡片」/「请 点 下 方 卡 片」同判）
+_CARD_CLAIM_PHRASE_RE = re.compile(
+    "|".join(r"\s*".join(map(re.escape, p)) for p in _CARD_CLAIM_PHRASES))
+# 模式 A：**动作词与「卡片/卡」近距离共现**（缝隙 ≤ _CARD_ACTION_GAP 字，双向）——
+# 覆盖「请点击上方卡片勾选加工项」「请勾选卡片上的加工项」「选择卡片里的选项」。
+# 锚点刻意取**卡片实物**而非「加工项/选项」业务名词：后者会把
+# 「请您选择需要的加工项」这类**合法用户动作话术**误判（实测负例），
+# 而误判代价是改写顾客可见话术（补卡分支另有严格 gating，不会造卡）。
+# 已知边界：全句不含「卡片/卡」、只说「请点击选择（可多选）」的动作话术不命中
+# —— 与「卡片/加工项」同现的实测措辞由固定语料（_CARD_CLAIM_REPRO_PHRASES）兜住。
+_CARD_ACTION_GAP = 8
+_CARD_ACTION_WORDS = ("点击", "点选", "勾选", "选择", "点")
+_CARD_NOUNS = ("卡片", "卡")
+
+
+def _card_action_pattern() -> "re.Pattern[str]":
+    """模式 A 的正则（动作词 ⟷ 卡片实物，窗口 ≤ _CARD_ACTION_GAP 字，双向）。
+
+    动作词表**有意小**（点/点击/点选/勾选/选择）："核对/查看/打开"不算动作指向
+    —— 这正是「负例不得误改」的边界（见 `test_benign_card_mentions_not_detected`）。
+    """
+    nouns = "(?:" + "|".join(_CARD_NOUNS) + ")"
+    actions = "(?:" + "|".join(_CARD_ACTION_WORDS) + ")"
+    # ⚠️ 窗口 = **有界通配**（`[\s\S]{0,N}`），不是量词直接跟在分组后：
+    # `(?:动作){0,8}` 的量词作用在**零宽分组**上 ⇒ 等价于"零个动作词"，
+    # 于是只要句中出现卡片实物就算命中（实测把「选择」也判成命中）。
+    gap = "[\\s\\S]{" + f"0,{_CARD_ACTION_GAP}" + "}"
+    return re.compile(f"(?:{actions}){gap}(?:{nouns})|(?:{nouns}){gap}(?:{actions})")
+
+
+_CARD_ACTION_RE = _card_action_pattern()
+# 模式 C：完成态声称（「卡片已发出/确认卡已调出/已弹出卡片」）—— 无动作词也命中的形态，
+# 但它**自带完成态断言**（已…），故不引入合法提及的误判面。
+_CARD_EMITTED_RE = re.compile(
+    rf"(?:确认)?(?:卡片|卡)(?:已发出|已调出|已弹出|已展示|已生成|已提供|已显示)"
+    rf"|已(?:发出|调出|弹出|展示|生成)(?:一张|了)?(?:确认)?(?:卡片|卡)"
+)
+# 收尾改写用：既有短语（向后兼容、逐字断言）+ 方向词 + 动作词与卡片实物邻接
+_CARD_CLAIM_RE = re.compile(
+    "|".join(map(re.escape, _CARD_CLAIM_LEGACY_PHRASES))
+    + r"|(?:点击|点选|点|勾选|选择)\s*(?:上方|下方|上面|下面|以上|以下)?的?\s*(?:卡片|卡)"
+    + r"|(?:卡片|卡)\s*(?:已发出|已调出|已弹出|已展示|已生成|已提供|已显示)"
+)
+# #3883：误导性建议「刷新页面/重新进入对话」掩盖"没发卡"真因 → 命中整句剥离
+_CARD_MISLEAD_RE = re.compile(r"（[^）]*(?:刷新页面|重新进入对话)[^）]*）")
+
+
+def _has_card_claim(text: str) -> bool:
+    """文本是否在**声称已发卡/请顾客点卡**（判据，不改写）。
+
+    与 `_CARD_CLAIM_RE` 的分工：本函数是**归一后的合成判据**（短语 + 语义模式），
+    供收尾守卫决定是否动作；`_CARD_CLAIM_RE` 只负责定位可替换的声称片段。
+    合法提及「卡片」而无动作指向（「请查看上方结果卡片」「下方列表」）不得命中。
+    """
+    if not text:
+        return False
+    normalized = _normalize_card_oriented(text)
+    return bool(
+        _CARD_CLAIM_PHRASE_RE.search(normalized)
+        or _CARD_ACTION_RE.search(normalized)
+        or _CARD_EMITTED_RE.search(normalized)
+    )
+
+
+def _rewrite_card_claims(text: str) -> str:
+    """把「点下方卡片/点击上方卡片/…」声称改写为纯文本确认指引，并剥离 #3883 误导建议。
+
+    幂等纯函数（无匹配则原样返回）；由 _agent_stream_to_sse 收尾守卫在
+    「无交互载荷且本轮无 interact 调用」时启用（issue #3929）。
+
+    issue #3967：声称片段族扩展到实测漏检措辞（方向词 + 动作词 + 卡片实物）。
+    """
+    if not text:
+        return text
+    text = _CARD_CLAIM_RE.sub("回复『确认』", text)
+    text = _CARD_MISLEAD_RE.sub("", text).strip()
+    return text
+
+
+async def _pending_confirm_action(session_id: str) -> Optional[Dict[str, Any]]:
+    """取会话里「已校验待执行」的写动作（`pending_validated_input`）。
+
+    这是**补卡分支的严格 gating**：没有它就没有可确认的事实 ⇒ 不许造卡
+    （键名/取值口径与 `base_skill` 一致：`target_tool` + `target_action` 双非空）。
+    失败/无会话一律返回 None（fail-closed → 退回只改写）。
+    """
+    if not session_id:
+        return None
+    try:
+        from app.graph.pending_validated import PENDING_KEY
+        from app.memory.session_state_store import SessionStateStore
+        full = await SessionStateStore().load(session_id) or {}
+        pending = full.get(PENDING_KEY) or {}
+        if not isinstance(pending, dict):
+            return None
+        if not (pending.get("target_tool") and pending.get("target_action")):
+            return None
+        return pending
+    except Exception as e:
+        logger.warning(f"[chat/card-claim] 读取待确认动作失败（退回只改写）: {e}")
+        return None
+
+
+async def _reissue_confirm_card(
+    pending: Dict[str, Any], session_id: str, skill_name: str
+) -> Optional[Dict[str, Any]]:
+    """按待确认动作**真补一张确认卡**（issue #3967 缺口 2），返回 interactive 载荷。
+
+    复用 base_skill 的既有机器（不复制平行实现）：
+      `confirm_card_fields`（字段只回显已校验参数）→ `confirm_value_for_fields`
+      （与门禁**同口径**的 confirmValue）→ `build_confirm_interact_xml`（生成 XML）→
+      本文件既有的 `_parse_interact_block_or_report`（走**真解析器**，与模型自称发卡
+      的路径同协议；解析失败同样留痕）。
+
+    两条硬约束：
+      1. **取不到字段就不补**（`fields` 为空 ⇒ `build_confirm_interact_xml` 返回 ""，
+         绝不下发空卡）；
+      2. **必须落 `last_confirm_value`（+ 发卡 skill）**（照 `base_skill` 8.3b 补卡段）——
+         否则顾客点了卡也过不了确认门禁。
+    """
+    import json as _json
+
+    from app.graph.skills.base_skill import (
+        build_confirm_interact_xml,
+        confirm_card_fields,
+        confirm_value_for_fields,
+    )
+
+    fields = confirm_card_fields(pending.get("params") or {})
+    if not fields:
+        return None
+    confirm_value = confirm_value_for_fields(fields)
+    if not confirm_value:
+        return None
+    xml = build_confirm_interact_xml("请确认操作", fields, confirm_value=confirm_value)
+    if not xml:
+        return None
+    payload = _parse_interact_block_or_report(xml, session_id=session_id)
+    if not payload or not payload.get("component"):
+        return None
+    try:
+        from app.memory.session_state_store import SessionStateStore
+        store = SessionStateStore()
+        full = await store.load(session_id) or {}
+        full["last_confirm_value"] = confirm_value
+        # 同处记发卡 skill（#3557）：路由层的答卡轮判据需要"这张卡是谁发的"
+        full["last_confirm_skill"] = skill_name
+        await store.commit(session_id, full)
+    except Exception as e:
+        # 非致命：卡照发（门店/顾客至少有点卡入口），但留痕以便事后归因
+        logger.warning(f"[chat/card-claim] 补发卡的 confirmValue 落库失败（非致命）: {e}")
+    logger.warning(
+        f"[chat/card-claim] 文本声称发卡但本轮无卡 ⇒ 按待确认动作补发确认卡 "
+        f"| session={session_id} tool={pending.get('target_tool')} "
+        f"action={pending.get('target_action')} fields={len(fields)} "
+        f"| payload={_json.dumps(payload, ensure_ascii=False)[:200]}"
+    )
+    return payload
+
 
 async def _agent_stream_to_sse(
     agent: BaseAgent,
@@ -737,14 +1040,20 @@ async def _agent_stream_to_sse(
                             # LLM hallucinated <interact> XML block (issue #3036 / UI-032):
                             # 1) parse to interactive payload and emit SSE interactive event (same protocol as interact tool)
                             # 2) strip XML block from text regardless, prevent raw XML leaking to bubble
-                            xml_payload = _extract_interact_probable(clean)
+                            # issue #3959：解析失败必须留痕（此前「写残的块」被静默剥离 ⇒ 不发卡、零日志）
+                            xml_payload = _parse_interact_block_or_report(clean, session_id=session_id)
                             if xml_payload:
                                 last_interactive_payload = xml_payload
-                                yield SSEEvent.interactive(xml_payload.get("component", ""), xml_payload)
+                                yield SSEEvent.interactive(
+                                    xml_payload.get("component", ""),
+                                    _mask_card_for_customer(xml_payload, context))
                             clean = _strip_interact_xml(clean)
                             if clean:
+                                # ⚠️ 只脱敏**出站**（SSE），`full_response` 保持原值：
+                                # 它是给**模型**看的上下文（下一轮还要用），脱敏会让模型
+                                # 以为顾客号码不完整（run 34736385849 实证：反过来问顾客要号码）。
                                 full_response.append(clean)
-                                yield SSEEvent.text(clean)
+                                yield SSEEvent.text(_mask_for_customer(clean, context))
 
                     elif response.type == "tool_call":
                         # Tool 调用通知（AgentExecutor 内部已处理执行）
@@ -784,11 +1093,19 @@ async def _agent_stream_to_sse(
                                         yield SSEEvent.card(card_type, card_data)
 
                                 # 检查是否来自 interact 工具 → 发送交互式组件事件
+                                # 与 LLM 幻觉 <interact> XML 分支同协议：把载荷写入
+                                # last_interactive_payload，收尾 save_message(interactive=…)
+                                # 才会持久化到 metadata（issue #3883 —— 此前工具路径只 emit
+                                # SSE、不落库，刷新/重开会话卡片消失、interactive_answered
+                                # 只读锁也无从标记）。
                                 if tool_name == "interact" and result_dict.get("success"):
                                     data = result_dict.get("data", {})
                                     component_type = data.get("component", "")
                                     if component_type in ("choice", "confirm", "form"):
-                                        yield SSEEvent.interactive(component_type, data)
+                                        last_interactive_payload = data
+                                        yield SSEEvent.interactive(
+                                            component_type,
+                                            _mask_card_for_customer(data, context))
 
                     elif response.type == "error":
                         # 错误（携带 traceback 诊断信息）
@@ -821,7 +1138,7 @@ async def _agent_stream_to_sse(
                 assistant_content = "我已为您查询了相关信息，请查看上方的结果卡片。如需更多帮助请继续提问。"
             else:
                 assistant_content = "抱歉，我暂时无法生成回复，请稍后重试或联系人工客服。"
-            yield SSEEvent.text(assistant_content)
+            yield SSEEvent.text(_mask_for_customer(assistant_content, context))
 
         # 超时/异常时清除 tool_calls 元数据，避免泄漏到前端
         if timed_out:
@@ -843,6 +1160,48 @@ async def _agent_stream_to_sse(
                     f"[chat/card] Dropped product_list card (no product referenced in final text) | "
                     f"candidates={len(card_data.get('products') or [])}"
                 )
+
+        # 收尾守卫（issue #3929）：文本声称「点下方卡片/确认卡片」但本轮既没
+        # 交互载荷、也没调 interact 工具 ⇒ 客户侧无卡可点。把声称话术改写为
+        # 纯文本确认指引（只影响落库/后续上下文文本，full_response 原值不动，
+        # 见上「只脱敏出站」注释的同款取舍）；#3883 的「刷新页面/重新进入对话」
+        # 误导性建议一并剥离（它掩盖"没发卡"真因）。
+        #
+        # issue #3967（缺口 2）：用户真正要的是「弹出可点击的确认卡」，不是"改写话术"。
+        # 旧行为只有 base_skill 8.3b 的补卡（仅在**写操作被确认门禁拦下**时触发），
+        # 而实测那三次模型**压根没尝试写** ⇒ 门禁没拦 ⇒ 两条机制不组合、接缝无人兜底。
+        # 故在此处补上接缝：命中 + 无卡 + **会话里存在待确认的已校验动作** ⇒ 真补卡
+        # （gating 严格：无待确认动作 / 取不到字段 ⇒ 退回只改写，绝不凭空造卡）。
+        if (
+            last_interactive_payload is None
+            and not any(tc.get("tool") == "interact" for tc in tool_calls_info)
+            and _has_card_claim(assistant_content)
+        ):
+            _pending = await _pending_confirm_action(session_id)
+            _reissued = (
+                await _reissue_confirm_card(_pending, session_id, str(_pending.get(
+                    "target_tool") or ""))
+                if _pending else None
+            )
+            if _reissued:
+                # 置 last_interactive_payload：收尾 save_message(interactive=…) 才会
+                # 持久化到 metadata（issue #3883 —— 否则刷新/重开会话卡片又消失）
+                last_interactive_payload = _reissued
+                yield SSEEvent.interactive(
+                    _reissued.get("component", ""),
+                    _mask_card_for_customer(_reissued, context))
+            else:
+                _rewritten = _rewrite_card_claims(assistant_content)
+                logger.warning(
+                    f"[chat/card-claim] 文本声称有确认卡但未发卡，改写为纯文本确认指引 "
+                    f"| session={session_id} tenant={tenant_id} "
+                    f"| {assistant_content!r} -> {_rewritten!r}"
+                )
+                assistant_content = _rewritten
+                # 直播气泡里的声称话术是**边流式边发**的，收尾改写落库文本时用户已
+                # 看到「请点下方卡片」——追加一条 text 事件（并入同一条消息气泡末尾，
+                # done 之前），让直播侧也有可执行的下一步指引。
+                yield SSEEvent.text("（注：确认卡片未显示，请直接回复「确认」以继续）")
 
         # 保存消息到数据库（带超时保护，避免阻塞 SSE 流关闭）
         message_id = None
@@ -877,7 +1236,12 @@ async def _agent_stream_to_sse(
         ) if isinstance(message, list) else ""
         if assistant_content and user_msg_text:
             try:
-                asyncio.create_task(
+                # 登记在途任务：会话关闭 flush 前会 drain 它们（issue #3357——
+                # 关闭紧跟最后一轮时抽取尚未返回 → 候选为空 → 记忆静默丢失）。
+                # 登记先于下方 done 事件发送，故客户端收到 done 时任务必已登记，
+                # 「done 之后到达的关闭请求」一定能 drain 到它。
+                from app.memory.extraction_tasks import register_extraction_task
+                _mem_task = asyncio.create_task(
                     _extract_memories_async(
                         tenant_id=tenant_id,
                         user_id=user_id,
@@ -887,8 +1251,9 @@ async def _agent_stream_to_sse(
                         agent_type=getattr(agent, "_agent_type", "xiaobu"),
                     )
                 )
+                register_extraction_task(session_id, _mem_task)
             except Exception as mem_err:
-                logger.debug(f"[chat/send] Memory extraction scheduling skipped: {mem_err}")
+                logger.warning(f"[chat/send] Memory extraction scheduling skipped: {mem_err}")
             # 自动生成会话标题（首条回复后）
             try:
                 asyncio.create_task(
@@ -906,9 +1271,20 @@ async def _agent_stream_to_sse(
         yield SSEEvent.done(session_id, message_id)
 
     except Exception as e:
-        tb = traceback.format_exc()
-        logger.error(f"[chat/send] Agent stream error: {tb}")
-        yield SSEEvent.error(f"处理失败: {type(e).__name__}: {str(e)}")
+        # issue #3810：SSE error 分支此前把 `处理失败: {类型}: {消息}` 原样推给用户 ——
+        # 英文类名/内部字段/路径直接上屏，违反「面向低学历用户全中文、禁英文技术术语」
+        # 的约定（#3707 族）。用户侧改为纯中文、且**有信息量**（说明这轮没成功、可以重试），
+        # 不是"静默成功"也不是无信息量通用句；技术细节（类型/消息/traceback/会话/轮次/req）
+        # 落日志并复用 #3809 的 `incident` 短码口径（同会话同异常同码，可 grep 聚合）。
+        _err_inc.log_exception_audit(
+            logger=logger,
+            mark="[chat/send] Agent stream error",
+            exc=e,
+            session_id=session_id,
+            extra=(f"tenant={tenant_id} user={user_id} "
+                   f"req={_err_inc.current_request_id()}"),
+        )
+        yield SSEEvent.error("刚才这轮没成功，请您再说一次，我继续为您办理。")
     finally:
         # 仅在尚未发送 done 时补发，避免客户端收到重复 done 事件
         if not _done_sent:
@@ -1123,7 +1499,12 @@ async def _handle_page_request(
                     if tool_name == "processing_item_query":
                         interactive_payload["multiSelect"] = True
 
-                    yield SSEEvent.interactive("choice", interactive_payload)
+                    # ⚠️ 本函数没有 `context` 参数（首版照抄别处写成 context → NameError →
+                    # 被兜底成"翻页查询失败"，被 test_chat.py 的翻页用例当场抓住）。
+                    # 角色从 current_user 取，经 `_to_agent_role` 归一（与其它调用点同口径）。
+                    _role_ctx = SimpleNamespace(role=_to_agent_role(getattr(current_user, "role", "")))
+                    yield SSEEvent.interactive(
+                        "choice", _mask_card_for_customer(interactive_payload, _role_ctx))
 
             else:
                 yield SSEEvent.error(result.message or "查询失败")
@@ -1426,9 +1807,18 @@ async def send_message(
                 yield event
                 
         except Exception as e:
-            tb = traceback.format_exc()
-            logger.error(f"[chat/send] event_stream error: {tb}")
-            yield SSEEvent.error(f"发生错误: {type(e).__name__}: {str(e)}")
+            # issue #3810 同族扫描命中的第二个终端可见落点（本分支包住整个 SSE 生成器，
+            # 与上面 `_agent_stream_to_sse` 那个兜底互不覆盖）：用户侧同样改纯中文，
+            # 技术细节落日志 + incident 短码；`traceback` 由 loguru 的 exception 字段承载。
+            _err_inc.log_exception_audit(
+                logger=logger,
+                mark="[chat/send] event_stream error",
+                exc=e,
+                session_id=session_id,
+                extra=(f"tenant={tenant_id} user={user_id} "
+                       f"req={_err_inc.current_request_id()}"),
+            )
+            yield SSEEvent.error("刚才这轮没成功，请您再说一次，我继续为您办理。")
     
     return StreamingResponse(
         event_stream(),
@@ -1726,11 +2116,15 @@ async def get_history(
             "id": msg["id"],
             "session_id": msg["session_id"],
             "role": msg["role"],
-            "content": msg["content"],
+            # C 端历史是**展示面**：顾客刷新页面走的就是这里回放（issue #3386）。
+            # 出站脱敏此前只做在 SSE 流上 → 同一份对话「流上脱敏、历史里明文」两种口径。
+            # 落库保持原文（模型下一轮/复核对账都要真号），脱敏只在这一层做。
+            "content": _mask_for_customer(msg["content"], current_user),
             "content_type": msg.get("content_type", "text"),
             "images": msg_images if msg_images else None,
             "tool_calls": msg.get("tool_calls"),
-            "interactive": interactive_data,
+            "interactive": _mask_card_for_customer(interactive_data, current_user)
+            if isinstance(interactive_data, dict) else interactive_data,
             "interactive_answered": interactive_answered,
             "created_at": _format_datetime(msg["created_at"]),
         })

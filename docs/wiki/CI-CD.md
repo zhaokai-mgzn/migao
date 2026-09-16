@@ -4,7 +4,7 @@
 
 | 工作流 | 触发 | 说明 |
 |--------|------|------|
-| `pr-check` | PR → main | 多 job 门禁: 拦截 .env / admin-api 单测 / admin-web tsc+lint+vitest / E2E 质量门禁(4 个 fixture spec) / UI 回退检测 / QA Growth Gate(G1+G5+弱断言) / Case Contract 校验 / agent-eval-smoke(7 条，**v1.3 起按变更触发**) / needs-changes 打标 |
+| `pr-check` | PR → main | 多 job 门禁: 拦截 .env / admin-api 单测 / admin-web tsc+lint+vitest / E2E 质量门禁(4 个 fixture spec) / UI 回退检测 / QA Growth Gate(G1+G5+弱断言) / Case Contract 校验 / needs-changes 打标（**agent-eval-smoke 已于 #3653 移除**：B 端云冒烟评的是已部署 main、与本 PR 无因果；B 端行为信号由 agent-behavior-eval 映射用例承担） |
 | `ai-agent-tests` | PR → main | ai-agent-service 单测全量（排除 integration / e2e-real / 4 个 ignore 文件）；**v1.3 起 job 内门控**：无 ai-agent 相关变更时跳过实际单测（required check 仍报告 success，防 dependabot 空跑） |
 | `deploy-admin-api` | push main `backend/admin-api/**` | 单测 → Maven 构建镜像推 ACR → 云助手触发 SWAS `deploy.sh` → post-deploy 冒烟 |
 | `deploy-ai-agent-service` | push main `backend/ai-agent-service/**` | 单测全量 → 构建镜像推 ACR → 云助手触发 SWAS `deploy.sh` → post-deploy 冒烟 |
@@ -22,8 +22,8 @@
 ## CI 队列治理（v1.3，2026-09-04）
 
 - **concurrency 取消旧 run**：`pr-check`/`ai-agent-tests`/`mini-app` 均加 `concurrency.group`（按 PR 号），同 PR 新 push 自动取消旧 run，防多 commit 并发打满 runner 队列。
-- **变更门控（job 内，不整层 skip）**：`ai-agent-tests`/`mini-app` 的 required job 与 `pr-check` 的 agent-eval-smoke 在 job 内用 `git diff origin/main...HEAD` 检测相关路径；无变更时实际执行 step 跳过（job 仍 success，required check 永不悬空）。**注意：不要改回 workflow 级 `paths` 过滤——required check 会卡在 "Waiting" 永不报告**（见 §3.2 技能说明）。
-- **真实 LLM 成本**：agent-eval-smoke（每次 PR，7 条真实 LLM）仅当 `backend/ai-agent-service/`、`tests/agent_eval/`、`.github/cases/`、`tests/e2e/real/` 有变更才跑；dependabot 纯依赖升级 PR 不再空跑。定时任务（e2e-real 每日 / adversarial 每周）保持低峰频率。
+- **变更门控（job 内，不整层 skip）**：`ai-agent-tests`/`mini-app` 等 required job 在 job 内用 `git diff origin/main...HEAD` 检测相关路径；无变更时实际执行 step 跳过（job 仍 success，required check 永不悬空）。**注意：不要改回 workflow 级 `paths` 过滤——required check 会卡在 "Waiting" 永不报告**（见 §3.2 技能说明）。PR 层真实 LLM 的触发收窄走 `agent-behavior-eval.yml` 的 **workflow 级 `paths` 门**（只认 `backend/ai-agent-service/app/**`，信息性 check，无 required 悬空问题，#3653）。
+- **真实 LLM 成本**：PR 层只跑 `agent-behavior-eval` 的**映射用例 fast 档**（#3653：normal 桶 `--max-retries 0`、persona 按命中用例分桶；原 smoke/xiaobu PR 档/B 端云冒烟三层已移除或降按需）——行为类 PR 从四层真实 LLM 降到一层。定时任务（e2e-real 每日 / adversarial 每周）保持低峰频率。
 - **观察指标**：`gh run list --status queued` 排队 >20 即需治理（先按 DEV-FLOW §7 清 dependabot 潮）。
 
 ## 部署目标（2026-08-14 起：SAE → SWAS；当前 SWAS 为**测试环境**）

@@ -6,9 +6,11 @@ AI 智能客服系统 - 加工项查询 Tool
 - GET /api/admin/processing-items（分页 + keyword/categoryId/status）
 - GET /api/admin/processing-items/{id}
 
-注意：本 Tool 与 query_processing_items 不同：
-- query_processing_items：查询「某商品」关联的加工项及其自定义价格
-- processing_item_query：查询「店铺加工项目录」，支持按名称、分类、状态搜索
+注意（issue #3574）：曾有一个词序双胞胎 `query_processing_items`（查「某商品」关联的加工项），
+它**从未注册进默认 registry**（LLM 看不到）、零用例追溯，已删除；其能力由
+`product_detail`（返回 processing_items）覆盖。教训：schema 描述只取类属性
+`description`（见 `base.get_schema()`），模块 docstring 里的消歧说明 LLM **看不见**——
+消歧/反例必须写进 `description`。
 """
 
 import json
@@ -32,12 +34,16 @@ class ProcessingItemQueryTool(BaseTool):
 
     name = "processing_item_query"
     description = (
-        "查询店铺加工项目录。用于创建流程阶段2（用户已确认名称/价格等基本信息后）。"
-        "支持按 keyword/category_id/status/applicable_category_id 筛选。"
+        "查询店铺加工项目录（店铺维度，与具体商品无关）。"
+        "【触发】用户问'有哪些加工项''加工项列表/分类/单价/计价方式'时；"
+        "或建品流程阶段2（用户已确认名称/价格等基本信息后）。"
+        "【参数】keyword/category_id/status/applicable_category_id 均可选。"
         "applicable_category_id（适用商品分类 ID）：建品流程在用户确认商品分类后传入，"
         "只返回适用于该商品分类的加工项（applicable_product_categories 包含该分类，"
         "或无该配置=适用所有分类）。用户只需列表时传空参数。"
-        "创建/修改/删除加工项用 processing_item_manage。READONLY"
+        "【反例】查某个商品的详情及其关联加工项用 product_detail，不要用本工具；"
+        "创建/修改/删除加工项用 processing_item_manage。"
+        "【标注】READONLY"
     )
 
     parameters = {

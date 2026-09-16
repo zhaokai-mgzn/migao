@@ -34,11 +34,10 @@ check() {
 # KnowledgeDocStatus（知识库同步状态）、售后 AfterSalesStatus（处理中）
 PROC_RESIDUE=$(grep -rn "processing" backend/ai-agent-service/app/tools/order_query.py \
     backend/ai-agent-service/app/tools/order_manage.py \
-    backend/ai-agent-service/app/graph/skills/references/SKILL-order.md \
     backend/ai-agent-service/app/graph/skills/references/prompts/order.md \
     backend/ai-agent-service/app/tools/order_create.py \
     frontend/admin-web/src/types/index.ts 2>/dev/null \
-  | grep -vE "producing|processingFee|processingItems|processingInfo|OrderStatusTab|KnowledgeDocStatus|AfterSalesStatus|processingItem|processing_item|processing_|hasProcessing|'processing'" \
+  | grep -vE "producing|processingFee|processingItems|processingInfo|OrderStatusTab|KnowledgeDocStatus|AfterSalesStatus|processingItem|processing_item|processing_|hasProcessing|'processing'|in_processing" \
   | grep -iE "status|enum|生产|shipped" | head -5)
 if [ -z "$PROC_RESIDUE" ]; then
   check "订单状态词表 producing 一致（无 processing 残留）" 0 ""

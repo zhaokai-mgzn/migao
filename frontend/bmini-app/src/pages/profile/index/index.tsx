@@ -69,9 +69,11 @@ export default function ProfilePage() {
   // 头像首字母
   const initial = user?.nickname?.charAt(0) || '?'
 
-  // 角色展示
+  // 角色展示（面向低学历用户可读性：**未登记的角色一律回退中文**，
+  // 原先 `|| user.role` 会把后端角色码原样印在页面上——如 `warehouse_keeper`，
+  // 这是「页面上出现英文」的同类泄漏。新增角色请登记到下表。）
   const roleLabel = user?.role
-    ? ({ operator: '运营经理', admin: '企业管理员', product_manager: '商品管理员', knowledge_editor: '知识编辑' } as Record<string, string>)[user.role] || user.role
+    ? ({ operator: '运营经理', admin: '企业管理员', product_manager: '商品管理员', knowledge_editor: '知识编辑' } as Record<string, string>)[user.role] || '商家员工'
     : '商家员工'
 
   return (

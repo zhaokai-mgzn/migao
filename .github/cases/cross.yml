@@ -21,10 +21,31 @@ cases:
       - ai-chat.context-memory
     user_inputs:
       - "查一下遮光窗帘"
-      - "用遮光窗帘（100元的那件）给张三创建订单，2件，手机13800138000"
+      # 自包含化（#3518，同 AS-003 先例 #3511）：原输入点名「遮光窗帘（100元的那件）」，
+      # 而评测栈种子只有 ¥168 的那一款（prod_eval_blackout）→ 独立栈实测 agent 回
+      # 「系统里「遮光窗帘」只有这 1 款，售价是 ¥168/米，没有 ¥100 的款式」
+      # （run 34805827043 R2）→ 下单草稿不启动、后续轮次空转（order_create 从未调用）。
+      # 改为不点名价格的问法 —— 用例意图（查商品→下单→跨 Skill 复用 UUID）不变。
+      - "用遮光窗帘给张三创建订单，2件，手机13800138000"
       - auto_select: true
       - "不需要加工项"
       - "确认下单"
+      # 收尾答卡轮（#3544 §2 同款先例；2026-09-15 结论档 run 34841029062 实测）：
+      # B 端写操作受 confirm 门禁约束——文字「确认下单」≠ 点卡，agent 收到后只**发**
+      # 确认卡（R5 实测 tools 含 validate_input + interact(confirm:确认创建订单)），
+      # 轮次用尽即停在待点卡态 → `order_create` 在预算内**不可能**被调用
+      # （失败原文 2 条：`❌ order_create` + `required_args: 未调用 order_create(action=None)`）。
+      # 留 2 轮余量（有卡答卡 / 无卡发原文）；同形：OR-015（#3544 已修）/ OR-008 / AS-003。
+      - auto_respond:
+          fallback: "确认下单"
+      - auto_respond:
+          fallback: "确认"
+    # 全局命名空间声明（issue #3781）：与同样争用该全局资源的用例自动互斥，
+    # 消除「同栈并行用例互相写同一命名空间」造成的非确定性（真实 run 34856561459）。
+    namespaces:
+      - "customer_phone:13800138000"
+      - "product_name:遮光窗帘"
+
     expectations:
       - tool: product_detail
       - tool: order_create
@@ -37,11 +58,13 @@ cases:
       - "order_create items 包含遮光窗帘的 UUID（复用上轮，不重查）"
       - "Context 注入包含 product_ids"
     pre_clean:
+      # 去重只按关键词（#3518）：用例已不再点名价格，`price: 100` 在独立栈（种子 ¥168 款）恒不匹配
+      # → 等于没去重；同名「遮光窗帘」有副本时 agent 会发「哪一件」选择卡。按关键词去重保留
+      # 最早创建的（= 种子商品），删掉其余副本。
       - type: product_dedupe
         product_keyword: "遮光窗帘"
-        price: 100
     skip_reason: ""
-    merge_log: "eval C001 独有"
+    merge_log: "eval C001 独有；2026-09-14 校准（#3518）：① 下单轮去「100元的那件」价格点名（独立栈种子只有 ¥168 款，点名不存在的价 → agent 合理查无此价 → 流程不前进），自包含化同 AS-003 先例（#3511）；② pre_clean 去 price 过滤（关键词去重，原 price: 100 在种子 ¥168 的栈上恒不匹配）。2026-09-15 校准（结论档 run 34841029062 实证）：③ 补 2 轮收尾答卡轮——5 轮预算里末轮恰好是 agent **发**确认卡那一轮，没有轮次去点卡 → order_create 必不执行（断言本身合理，不得放宽），照 OR-015（#3544 §2）先例"
     traces:
       tests:
         - "backend/ai-agent-service/tests/manual/mibao_scenarios.py"
@@ -103,28 +126,69 @@ cases:
       - order.states
       - order.logistics
       - id-resolve.index
+    # 用例级表单载荷（issue #3804）：客户信息原先只声明在 R7/R8，而 R9 仍是可作答轮
+    # ⇒ agent 把客户信息表单发晚一轮（R9）时载荷送不出、`order_create` 永不发生，
+    # 用例必红却写成"agent 没做"。声明在用例级 = 载荷脱离轮次位置。
+    auto_fill:
+      customer_name: "张三"
+      customer_phone: "13800138000"
+      customer_address: "浙江省杭州市西湖区文三路 1 号 1 幢 101 室"
     user_inputs:
       - "你好，我想买窗帘"
       - "有什么遮光好的推荐吗"
-      - "看看第一个的详情"
+      # 2026-09-14 消除顺序依赖（issue #3568）：原「看看第一个的详情」——「推荐」类问法的
+      # 返回顺序由 product_search/推荐位排序决定（种子/目录里遮挡类命中遮光窗帘/北欧风窗帘
+      # 等），后续 R4「就这个」又把不确定对象带进下单（OR-024 #3408 同族）。改为点名
+      # 真实种子商品（遮光窗帘 = prod_eval_blackout），用例意图（跨 skill 上下文复用
+      # product_id → 下单 → 查物流）不变。
+      - "看看遮光窗帘的详情"
       - "就这个，帮我下单，客户张三 13800138000，2件"
-      - "白色的，散剪，2.8米门幅"
+      # 颜色必须落在种子 SKU 上：prod_eval_blackout 的色号是「米白/浅灰」（无「白色」）——
+      # 原「白色的」在干净栈上会把一轮耗在颜色澄清（同 #3518 修 CH-010 色号的口径）。
+      - "米白，散剪，2.8米门幅"
       - "不需要加工项"
-      - "确认下单"
-      - "确认"
+      - auto_respond:
+          fallback: "确认下单"
+          form_values:
+            customer_name: "张三"
+            customer_phone: "13800138000"
+            customer_address: "浙江省杭州市西湖区文三路 1 号 1 幢 101 室"
+      # 尾部留余量轮（同 CH-010/OR-021 口径）：写操作受 confirm 门禁约束，**裸文本「确认」
+      # 不等于点卡** → 用答卡轮（有卡答卡，无卡才发 fallback 原文）。
+      - auto_respond:
+          fallback: "确认"
+          form_values:
+            customer_name: "张三"
+            customer_phone: "13800138000"
+            customer_address: "浙江省杭州市西湖区文三路 1 号 1 幢 101 室"
+      - auto_respond:
+          fallback: "确认"
       - "订单怎么样了，发货了吗"
       - "好的谢谢"
+    pre_clean:
+      # 同 PR-005/#3518 口径：保证「遮光窗帘」在栈里只有一件（否则「就这个」/改价落到
+      # 不确定的那一件上）。保留最早创建的（= 种子）。
+      - type: product_dedupe
+        product_keyword: "遮光窗帘"
+    # 全局命名空间声明（issue #3781）：与同样争用该全局资源的用例自动互斥，
+    # 消除「同栈并行用例互相写同一命名空间」造成的非确定性（真实 run 34856561459）。
+    namespaces:
+      - "customer_phone:13800138000"
+      - "product_name:遮光窗帘"
+
     expectations:
       - tool: product_search
       - tool: product_detail
       - tool: order_create
       - tool: order_query
+    must_succeed:
+      - tool: order_create
     data_checks:
       - "第4步 product_id 来自第2-3步上下文"
       - "订单创建成功并包含 SKU 信息"
       - "第7步自动找到刚创建的订单"
     skip_reason: ""
-    merge_log: "eval M007 独有（物流查询是旅程一环，独立用例见 OR-005）"
+    merge_log: "eval M007 独有（物流查询是旅程一环，独立用例见 OR-005）。2026-09-14 消除顺序依赖（issue #3568）：① 「看看第一个的详情」→ 点名「遮光窗帘」（推荐列表返回顺序依赖，同 OR-024 #3408）；② 色号「白色」→ 种子真实色号「米白」；③ 收尾裸文本「确认下单/确认」→ 答卡轮（#3518 口径）；④ 补 pre_clean product_dedupe + must_succeed[order_create]"
     traces:
       tests:
         - "backend/ai-agent-service/tests/manual/mibao_scenarios.py"

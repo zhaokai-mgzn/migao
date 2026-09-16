@@ -98,6 +98,9 @@ class LogisticsTrackTool(BaseTool):
     description = (
         "【触发】用户问'物流''快递''到哪了''发货了吗''配送''签收'时调用。【前置】必须提供 order_id（真实订单号）。"
         "用户只说'查物流'但没提供订单号时，先问订单号，不要空调。"
+        "【链条】顾客要物流时**交付物是轨迹**：订单号只是入参——你用 order_query 查到订单号后"
+        "**必须继续调用本工具**（order_id=该订单号）把轨迹/状态交付给顾客；"
+        "查到订单号就停下汇报订单信息＝这条链**没做完**。本工具答'尚未发货/未找到'也是有效结果，如实转述。"
         "【铁律】不接受用户提供的快递单号/运单号直接查询——用户给单号时引导其提供订单号，"
         "运单号只能由系统从订单详情中读取。"
         "【反例】查订单详情(金额/商品/客户)用 order_query，不要混淆。【标注】READONLY"
@@ -145,7 +148,9 @@ class LogisticsTrackTool(BaseTool):
                 success=False,
                 error="不支持快递单号查询",
                 message="仅支持通过真实订单号查询物流，请提供订单号",
-                suggestion="请用户提供真实订单号（如 ORD-xxx）后调用本工具，不要用快递单号",
+                suggestion="请用户提供真实订单号（如 ORD-xxx）后调用本工具，不要用快递单号；"
+                           "拿到订单号后**立即**调用 logistics_track(order_id=…) 查轨迹"
+                           "（订单号只是入参，不是交付物）",
             )
         
         if not order_id:
@@ -153,7 +158,8 @@ class LogisticsTrackTool(BaseTool):
                 success=False,
                 error="缺少查询参数",
                 message="请提供订单号",
-                suggestion="用户只说'查物流'时，先询问其订单号再查询",
+                suggestion="用户只说'查物流'时，先询问其订单号再查询；"
+                           "拿到订单号后**立即**调用本工具查轨迹（不要只把订单号回给顾客）",
             )
         
         try:

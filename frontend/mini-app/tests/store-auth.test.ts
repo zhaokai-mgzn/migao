@@ -1,3 +1,4 @@
+// case_ids: API-010
 /**
  * Auth Zustand Store 测试
  *
@@ -58,7 +59,7 @@ describe('authStore', () => {
       const useAuthStore = getAuthStore()
       const { miniAppLogin: mockLogin, getToken: mockGt } = require('../src/utils/auth')
 
-      const mockUser = { id: 'u1', nickname: '测试', avatar: null, tenant_id: 1 }
+      const mockUser = { id: 'u1', nickname: '测试', avatar: null, tenantId: 1 }
       mockLogin.mockResolvedValueOnce({ success: true, user: mockUser })
       mockGt.mockReturnValue('new-token')
 
@@ -106,7 +107,7 @@ describe('authStore', () => {
       const useAuthStore = getAuthStore()
       const { miniAppLogin: mockLogin, getToken: mockGt, logout: mockLogout } = require('../src/utils/auth')
 
-      const mockUser = { id: 'u1', nickname: '测试', avatar: null, tenant_id: 1 }
+      const mockUser = { id: 'u1', nickname: '测试', avatar: null, tenantId: 1 }
       mockLogin.mockResolvedValueOnce({ success: true, user: mockUser })
       mockGt.mockReturnValue('token')
 
@@ -124,7 +125,7 @@ describe('authStore', () => {
   describe('setUser / setToken', () => {
     it('setUser 应更新用户信息', () => {
       const useAuthStore = getAuthStore()
-      const user = { id: 'u2', nickname: '新用户', avatar: 'url', tenant_id: 1 }
+      const user = { id: 'u2', nickname: '新用户', avatar: 'url', tenantId: 1 }
 
       useAuthStore.getState().setUser(user)
 
@@ -188,7 +189,7 @@ describe('authStore', () => {
       const useAuthStore = getAuthStore()
       const { getToken: mockGt, getUser: mockGu, checkTokenValidity: mockCtv } = require('../src/utils/auth')
 
-      const user = { id: 'u1', nickname: '用户', avatar: null, tenant_id: 1 }
+      const user = { id: 'u1', nickname: '用户', avatar: null, tenantId: 1 }
       mockGt.mockReturnValue('valid-token')
       mockGu.mockReturnValue(user)
       mockCtv.mockReturnValue(true)

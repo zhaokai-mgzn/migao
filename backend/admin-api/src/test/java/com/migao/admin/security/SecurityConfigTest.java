@@ -98,6 +98,10 @@ class SecurityConfigTest {
     @MockBean
     private com.migao.admin.service.KnowledgeDistillService knowledgeDistillService;
 
+    // 加工单服务（issue #3340）
+    @MockBean
+    private com.migao.admin.service.ProcessingOrderService processingOrderService;
+
     @MockBean
     private com.migao.admin.service.NotificationService notificationService;
 
@@ -187,6 +191,8 @@ class SecurityConfigTest {
     @MockBean
     private com.migao.admin.mapper.OrderMapper orderMapper;
     @MockBean
+    private com.migao.admin.mapper.ProcessingOrderMapper processingOrderMapper;
+    @MockBean
     private com.migao.admin.mapper.PermissionMapper permissionMapper;
     @MockBean
     private com.migao.admin.mapper.ProcessingCategoryMapper processingCategoryMapper;
@@ -228,6 +234,14 @@ class SecurityConfigTest {
     private com.migao.admin.mapper.RolePermissionMapper rolePermissionMapper;
     @MockBean
     private com.migao.admin.mapper.TenantApplicationMapper tenantApplicationMapper;
+
+    // 智能每日经营简报（issue #3468）：Mapper / Service / ai-agent 客户端
+    @MockBean
+    private com.migao.admin.mapper.DailyBriefingMapper dailyBriefingMapper;
+    @MockBean
+    private com.migao.admin.service.DailyBriefingService dailyBriefingService;
+    @MockBean
+    private com.migao.admin.service.BriefingGenerateClient briefingGenerateClient;
     @MockBean
     private com.migao.admin.mapper.PlatformAdminMapper platformAdminMapper;
     @MockBean

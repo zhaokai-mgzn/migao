@@ -2,12 +2,14 @@
 
 import { useEffect, useState, useCallback, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
-import { ChevronRight, Zap } from 'lucide-react'
+import { ChevronRight, Printer, Zap } from 'lucide-react'
 import { toast } from 'sonner'
 import { toastRequestError } from '@/lib/api-error'
-import { orderApi } from '@/lib/api'
+import { orderApi, processingOrderApi } from '@/lib/api'
 import { useRouteId } from '@/lib/use-route-id'
 import { Button, Loading } from '@/components/ui'
+import { ShipmentDoc } from '@/components/orders'
+import { useAuthStore } from '@/store/auth'
 import type { Order, OrderItem } from '@/types'
 import { cn } from '@/lib/utils'
 
@@ -19,6 +21,10 @@ const LOGISTICS_COMPANIES = [
   '韵达快递',
   '申通快递',
 ]
+
+// 可发货订单状态（后端枚举：pending/confirmed/producing/shipped/completed/cancelled；
+// producing = 加工单流转后订单进入「生产中」，仍属待发货；'processing' 是历史误写，从不产生）
+const SHIPPABLE_STATUSES = new Set(['pending_shipment', 'confirmed', 'producing'])
 
 function formatAmount(amount?: number): string {
   return `¥${(amount ?? 0).toLocaleString('zh-CN', {
@@ -59,14 +65,35 @@ export default function ShipOrder() {
   // useRouteId 已识别 'ship' 后缀，会自动取倒数第 2 段（订单 ID）
   const orderId = useRouteId('id')
 
+  // 发货人默认预填当前登录人姓名（与右上角用户卡片同一条兜底链，但**不**退化为「管理员」
+  // ——那是角色名不是人名，印到纸质发货单上就是伪造经手人）；允许改成实际发货人，
+  // 留空时后端还会用 SecurityUser.userId 再兜一次（issue #3768）。
+  const currentUser = useAuthStore((s) => s.user)
+  const defaultShipperName = currentUser?.name || currentUser?.nickname || currentUser?.username || ''
+
   const [order, setOrder] = useState<Order | null>(null)
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
+
+  // 加工单前置守卫（issue #3889）：订单详情接口不下发加工单状态，
+  // 含加工项订单额外查询加工单；无「已完成」加工单时阻断发货表单
+  // （与后端 assertProcessingCompletedBeforeShip「countCompleted==0 拦截」口径一致）。
+  const [processingBlocked, setProcessingBlocked] = useState(false)
+  const [poChecked, setPoChecked] = useState(false)
 
   // 物流表单
   const [shippingMethod, setShippingMethod] = useState<'logistics' | 'none'>('logistics')
   const [logisticsCompany, setLogisticsCompany] = useState(LOGISTICS_COMPANIES[0])
   const [trackingNo, setTrackingNo] = useState('')
+  const [shipperName, setShipperName] = useState(defaultShipperName)
+  const [shipperTouched, setShipperTouched] = useState(false)
+
+  // 登录用户信息可能晚于首屏到达：仅在用户还没动过该字段时回填，不覆盖手工输入
+  useEffect(() => {
+    if (!shipperTouched && defaultShipperName) {
+      setShipperName(defaultShipperName)
+    }
+  }, [defaultShipperName, shipperTouched])
 
   const loadOrder = useCallback(async () => {
     if (!orderId) return
@@ -87,6 +114,41 @@ export default function ShipOrder() {
     loadOrder()
   }, [loadOrder])
 
+  const shippable = !!order && SHIPPABLE_STATUSES.has(order.status)
+
+  // 加工单状态查询：仅「可发货状态 + 含加工项」的订单需要（其余短路为已检查）
+  useEffect(() => {
+    if (!order || !shippable) {
+      setPoChecked(true)
+      setProcessingBlocked(false)
+      return
+    }
+    const hasProcessing = (order.processingItems?.length ?? 0) > 0
+    if (!hasProcessing) {
+      setPoChecked(true)
+      setProcessingBlocked(false)
+      return
+    }
+    let cancelled = false
+    setPoChecked(false)
+    processingOrderApi
+      .detail(order.id)
+      .then((res) => {
+        if (cancelled) return
+        setProcessingBlocked(res.data?.data?.status !== 'completed')
+        setPoChecked(true)
+      })
+      .catch(() => {
+        if (cancelled) return
+        // 查询失败/无加工单按后端口径保守阻断（countCompleted==0 不可发货）
+        setProcessingBlocked(true)
+        setPoChecked(true)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [order, shippable])
+
   const productGroups = useMemo(() => groupItems(order?.items), [order?.items])
   const processingTotal = useMemo(
     () => (order?.processingItems || []).reduce((sum, p) => sum + (p.amount || 0), 0),
@@ -95,6 +157,10 @@ export default function ShipOrder() {
 
   const handleSubmit = async () => {
     if (!order) return
+    if (!shipperName.trim()) {
+      toast.error('请输入发货人')
+      return
+    }
     if (shippingMethod === 'logistics' && !trackingNo.trim()) {
       toast.error('请输入快递单号')
       return
@@ -105,6 +171,7 @@ export default function ShipOrder() {
         company: shippingMethod === 'logistics' ? logisticsCompany : '',
         trackingNo: shippingMethod === 'logistics' ? trackingNo.trim() : '',
         shippingMethod,
+        shipperName: shipperName.trim(),
       })
       await orderApi.updateOrderStatus(order.id, { status: 'shipped' })
       toast.success('发货成功')
@@ -114,6 +181,10 @@ export default function ShipOrder() {
     } finally {
       setSubmitting(false)
     }
+  }
+
+  const handlePrint = () => {
+    window.print()
   }
 
   const handleCancel = () => {
@@ -138,12 +209,29 @@ export default function ShipOrder() {
     )
   }
 
-  // 状态守卫：仅待发货状态可进入发货页
-  const shippableStatuses = new Set(['pending_shipment', 'confirmed', 'processing'])
-  if (!shippableStatuses.has(order.status)) {
+  // 状态守卫：仅待发货状态可进入发货页。
+  if (!SHIPPABLE_STATUSES.has(order.status)) {
     return (
       <div className="p-6 text-center py-12">
         <p className="text-neutral-500 mb-4">当前订单状态不允许发货</p>
+        <Button onClick={() => router.push(`/orders/${order.id}`)}>返回订单详情</Button>
+      </div>
+    )
+  }
+
+  // 加工单前置守卫（issue #3889）：含加工项且加工单未完成 → 明确阻断，不再渲染发货表单
+  const hasProcessing = (order.processingItems?.length ?? 0) > 0
+  if (hasProcessing && !poChecked) {
+    return (
+      <div className="p-6 flex items-center justify-center min-h-[400px]">
+        <Loading size="lg" text="加载订单详情..." />
+      </div>
+    )
+  }
+  if (hasProcessing && processingBlocked) {
+    return (
+      <div className="p-6 text-center py-12">
+        <p className="text-neutral-500 mb-4">该订单含加工项，须先完成加工单后再发货，请返回订单详情处理加工单</p>
         <Button onClick={() => router.push(`/orders/${order.id}`)}>返回订单详情</Button>
       </div>
     )
@@ -179,6 +267,11 @@ export default function ShipOrder() {
           <h1 className="text-xl font-semibold text-neutral-900">商品发货</h1>
           <Zap className="w-5 h-5 text-amber-500 fill-amber-500" />
         </div>
+        {/* 发货前置动作：先打纸面发货单照着拣货/打包，再回来填运单号确认发货 */}
+        <Button variant="secondary" onClick={handlePrint} className="gap-1.5">
+          <Printer className="w-4 h-4" />
+          打印发货单
+        </Button>
       </div>
       <div className="border-b border-neutral-200 mb-6" />
 
@@ -226,6 +319,27 @@ export default function ShipOrder() {
       <SectionLabel>确认物流</SectionLabel>
       <div className="bg-white rounded-lg border border-neutral-200 shadow-card mb-6">
         <div className="px-6 py-6 space-y-5">
+          {/* 发货人（发货单纸面「经手人」）：默认当前登录人，可改成实际经手人 */}
+          <div className="flex items-center gap-4 text-sm">
+            <span className="text-neutral-700 w-20 shrink-0">
+              <span className="text-red-500 mr-1">*</span>发货人：
+            </span>
+            <input
+              value={shipperName}
+              onChange={(e) => {
+                setShipperName(e.target.value)
+                setShipperTouched(true)
+              }}
+              placeholder="请输入实际发货人姓名"
+              className={cn(
+                'h-9 px-3 rounded border border-neutral-300 bg-white text-sm min-w-[220px]',
+                'placeholder:text-neutral-400',
+                'focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15'
+              )}
+            />
+            <span className="text-xs text-neutral-400">默认当前登录人，按实际经手人修改</span>
+          </div>
+
           {/* 发货方式 */}
           <div className="flex items-center gap-4 text-sm">
             <span className="text-neutral-700 w-20 shrink-0">
@@ -303,6 +417,13 @@ export default function ShipOrder() {
           取消发货
         </Button>
       </div>
+
+      {/*
+        纸质发货单：屏幕上隐藏（display:none），仅 @media print 呈现 ——
+        本页屏幕布局已有商品/收货信息，再显示一份会重复；发货前打印时物流栏留空供手写，
+        发货后如需带运单号/发货人的单据，到订单详情页「打印发货单」补打。
+      */}
+      <ShipmentDoc order={order} shipperName={shipperName} />
     </div>
   )
 }
