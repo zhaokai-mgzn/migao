@@ -35,6 +35,47 @@ def _ensure_list(value: Any, field_name: str) -> Optional[List]:
     return None
 
 
+def _normalize_labeled_items(
+    items: Optional[List], *, label_key: str = "label"
+) -> List[Dict[str, Any]]:
+    """逐项归一 choice 的 option / confirm 的 field，保证每项都有**非空 label**（issue #3962）。
+
+    为什么必须逐项：`form` 分支一直有逐项校验（每个 formField 必须有 key 和 label，
+    否则 fail-closed），choice/confirm 却只查了 `len(...) == 0`。模型把 `options` 传成
+    **字符串数组**（实测 `["LG工艺 ¥50/件","打孔加工"]`）时工具 `success=True` 原样下发，
+    前端 C 端 `ChoiceCard` 渲染 `{opt.label}`、B 端 `InteractiveMessage` 用
+    `opt.label || opt.value` → `undefined` ⇒ 选项行没有文字 = **一张没有按钮的卡**，
+    点击还把 `undefined` 当答复回传。
+
+    规则：
+      · 字符串项 → `{"label": s, "value": s}`（label 即人话，回传人话）；
+      · 缺 label 用 value 补，缺 value 用 label 补（value 是回传标识，缺了会发 undefined）；
+      · label/value 都没有（含纯空白字符串、非 str/dict 项）→ **丢弃**，不猜；
+      · 其余键（如 `description`）原样保留。
+    归一后为空由调用方按**现有**错误返回 fail-closed（本函数不决定错误文案）。
+    """
+    out: List[Dict[str, Any]] = []
+    for item in items or []:
+        if isinstance(item, str):
+            item = {label_key: item, "value": item}
+        if not isinstance(item, dict):
+            logger.warning(f"[interact] 丢弃非法 {label_key} 项（非 str/dict）: {item!r}")
+            continue
+        label = item.get(label_key)
+        value = item.get("value")
+        label = label.strip() if isinstance(label, str) else label
+        value = value.strip() if isinstance(value, str) else value
+        if label in (None, "") and value not in (None, ""):
+            label = value
+        if value in (None, "") and label not in (None, ""):
+            value = label
+        if label in (None, ""):
+            logger.warning(f"[interact] 丢弃无 {label_key} 的项: {item!r}")
+            continue
+        out.append({**item, label_key: label, "value": value})
+    return out
+
+
 def _mask_card_pii(data: dict) -> dict:
     """（保留工具函数，当前**不在工具层调用**；卡片脱敏改在 SSE 出站层做。）
 
@@ -304,6 +345,9 @@ class InteractTool(BaseTool):
                     error="options 必须是数组",
                     message="选项列表格式错误，请重试",
                 )
+            # 逐项归一（issue #3962）：前端按 `opt.label` 渲染 → 缺 label 就是「没有按钮的卡」。
+            # 归一后为空 ⇒ 落到下面的既有校验 fail-closed（不新造错误文案）。
+            options = _normalize_labeled_items(options)
             if len(options) == 0:
                 return ToolResult(
                     success=False,
@@ -348,6 +392,9 @@ class InteractTool(BaseTool):
                     error="fields 必须是数组",
                     message="确认信息格式错误，请重试",
                 )
+            # 逐项归一（issue #3962）：与 choice 同规则 —— 缺 label 的字段行无文字、
+            # 且 confirmValue 会拼出 `=值` 这种空标签（顾客点击必不中）。
+            fields = _normalize_labeled_items(fields)
             if len(fields) == 0:
                 return ToolResult(
                     success=False,

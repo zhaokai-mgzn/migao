@@ -1,5 +1,5 @@
 """InteractTool 单元测试 — 生成交互组件，无 API 调用"""
-# case_ids: PP-001, PR-010
+# case_ids: PP-001, PR-010, CH-019, UI-043
 import pytest
 import json
 from app.tools.interact import InteractTool
@@ -199,6 +199,180 @@ class TestInteractError:
             title="选择",
         )
         assert result.success is False
+
+
+class TestChoiceConfirmItemShapeGuard:
+    """choice 的 options / confirm 的 fields 必须**逐项归一**（issue #3962）。
+
+    根因：`form` 分支有逐项校验（每个 formField 必须有 key 和 label，否则 fail-closed），
+    choice/confirm 只查了 `len(...) == 0` —— 模型把 options 传成**字符串数组**
+    （实测 `["LG工艺 ¥50/件","打孔加工"]`）时工具返回 `success=True` 并原样下发。
+    前端 C 端 `ChoiceCard.tsx` 渲染 `{opt.label}`、B 端 `InteractiveMessage.tsx` 用
+    `opt.label || opt.value` → `undefined` ⇒ **选项行没有文字（一张没有按钮的卡）**，
+    点击还把 `undefined` 当答复回传，流程直接坏掉。
+
+    归一规则（逐项）：
+      · 字符串项 → `{"label": s, "value": s}`（label 即人话，回传人话）；
+      · 缺 label 用 value 补、缺 value 用 label 补（value 是回传标识，缺了就发 undefined）；
+      · label/value 都没有（含纯空白字符串、非 str/dict） → **丢弃**；
+      · 归一后为空 ⇒ 复用**现有**错误返回 fail-closed、**不发卡**。
+    """
+
+    async def test_choice_string_options_normalized(self, tool, sample_tool_context):
+        """issue #3962 复现形态：`options` 是字符串数组 → 必须归一为 label/value 对象。"""
+        result = await tool.execute(
+            context=sample_tool_context,
+            component="choice",
+            title="请选择加工项",
+            options=["LG工艺 ¥50/件", "打孔加工"],
+        )
+        assert result.success is True, result.error
+        assert result.data["options"] == [
+            {"label": "LG工艺 ¥50/件", "value": "LG工艺 ¥50/件"},
+            {"label": "打孔加工", "value": "打孔加工"},
+        ]
+
+    async def test_choice_json_string_options_normalized(self, tool, sample_tool_context):
+        """字符串数组经 JSON 字符串传入（模型真实形态）同样归一。"""
+        result = await tool.execute(
+            context=sample_tool_context,
+            component="choice",
+            title="请选择加工项",
+            options=json.dumps(["LG工艺 ¥50/件", "打孔加工"], ensure_ascii=False),
+        )
+        assert result.success is True, result.error
+        assert result.data["options"] == [
+            {"label": "LG工艺 ¥50/件", "value": "LG工艺 ¥50/件"},
+            {"label": "打孔加工", "value": "打孔加工"},
+        ]
+
+    async def test_choice_partial_keys_normalized(self, tool, sample_tool_context):
+        """只给一半键：缺 label 用 value 补，缺 value 用 label 补。"""
+        result = await tool.execute(
+            context=sample_tool_context,
+            component="choice",
+            title="请选择加工项",
+            options=[{"label": "打孔", "value": "pi_hole"}, {"label": "韩褶"}],
+        )
+        assert result.success is True, result.error
+        assert result.data["options"] == [
+            {"label": "打孔", "value": "pi_hole"},
+            {"label": "韩褶", "value": "韩褶"},
+        ]
+
+    async def test_choice_items_without_label_and_value_dropped(self, tool, sample_tool_context):
+        """无 label 无 value 的项必须丢弃；有效项的**其余键**（如 description）保留。"""
+        result = await tool.execute(
+            context=sample_tool_context,
+            component="choice",
+            title="请选择加工项",
+            options=[
+                {"description": "只有说明，没有 label/value"},
+                "",
+                "   ",
+                123,
+                None,
+                {"label": "打孔", "value": "pi_hole", "description": "免费"},
+            ],
+        )
+        assert result.success is True, result.error
+        assert result.data["options"] == [
+            {"label": "打孔", "value": "pi_hole", "description": "免费"},
+        ]
+
+    async def test_choice_all_items_invalid_fail_closed(self, tool, sample_tool_context):
+        """全部项无效 ⇒ 沿用现有错误返回、**不发卡**（不得发出空白按钮卡）。"""
+        result = await tool.execute(
+            context=sample_tool_context,
+            component="choice",
+            title="请选择加工项",
+            options=[{"description": "只有说明"}, 123, None],
+        )
+        assert result.success is False
+        assert result.error == "choice 组件需要至少一个 option"
+        assert result.data is None, "归一后为空必须 fail-closed，不发卡"
+
+    async def test_confirm_fields_partial_keys_normalized(self, tool, sample_tool_context):
+        """confirm 的 fields 同规则：缺 label 用 value 补、缺 value 用 label 补。"""
+        result = await tool.execute(
+            context=sample_tool_context,
+            component="confirm",
+            title="请确认订单信息",
+            fields=[{"label": "商品名称"}, {"value": "遮光窗帘 3米"}],
+        )
+        assert result.success is True, result.error
+        assert result.data["fields"] == [
+            {"label": "商品名称", "value": "商品名称"},
+            {"label": "遮光窗帘 3米", "value": "遮光窗帘 3米"},
+        ]
+
+    async def test_confirm_string_fields_normalized(self, tool, sample_tool_context):
+        """confirm 的 fields 传字符串数组同样归一（与 choice 同规则）。"""
+        result = await tool.execute(
+            context=sample_tool_context,
+            component="confirm",
+            title="请确认订单信息",
+            fields=["商品名称：遮光窗帘"],
+        )
+        assert result.success is True, result.error
+        assert result.data["fields"] == [
+            {"label": "商品名称：遮光窗帘", "value": "商品名称：遮光窗帘"},
+        ]
+
+    async def test_confirm_value_built_from_normalized_facts(self, tool, sample_tool_context):
+        """`confirmValue` 必须基于**归一后**的字段（否则值里带 None → 顾客点击不中）。"""
+        result = await tool.execute(
+            context=sample_tool_context,
+            component="confirm",
+            title="请确认订单信息",
+            fields=[{"value": "遮光窗帘 3米"}, {"label": "总价"}],
+            confirmValue="确认下单",
+        )
+        assert result.success is True, result.error
+        assert result.data["confirmValue"] == "确认：" + "；".join(sorted([
+            "总价=总价",
+            "遮光窗帘 3米=遮光窗帘 3米",
+        ]))
+
+    async def test_confirm_all_fields_invalid_fail_closed(self, tool, sample_tool_context):
+        """confirm 全部字段无效 ⇒ 沿用现有错误返回、**不发卡**。"""
+        result = await tool.execute(
+            context=sample_tool_context,
+            component="confirm",
+            title="请确认订单信息",
+            fields=[{"description": "只有说明"}],
+        )
+        assert result.success is False
+        assert result.error == "confirm 组件需要至少一个 field"
+        assert result.data is None, "归一后为空必须 fail-closed，不发卡"
+
+
+class TestInteractFormRegression:
+    """form 分支行为**不得**被本次归一改动波及（回归保护）。"""
+
+    async def test_form_missing_label_still_fail_closed(self, tool, sample_tool_context):
+        formFields = [{"key": "name"}]
+        result = await tool.execute(
+            context=sample_tool_context,
+            component="form",
+            title="创建商品",
+            formFields=formFields,
+        )
+        assert result.success is False
+        assert result.error == "每个 formField 必须有 key 和 label"
+        assert result.data is None
+
+    async def test_form_fields_not_reshaped(self, tool, sample_tool_context):
+        """form 分支不做归一：字段原样透传（不会被注入 value 等键）。"""
+        formFields = [{"key": "name", "label": "商品名称", "type": "text", "required": True}]
+        result = await tool.execute(
+            context=sample_tool_context,
+            component="form",
+            title="创建商品",
+            formFields=formFields,
+        )
+        assert result.success is True, result.error
+        assert result.data["formFields"] == formFields
 
 
 class TestCardPiiNotMaskedAtToolLayer:
