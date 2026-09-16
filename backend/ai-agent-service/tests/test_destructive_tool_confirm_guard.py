@@ -95,9 +95,18 @@ class TestRequiresConfirmation:
         assert _requires_confirmation(t, {}, "查一下") is True
 
     def test_plain_write_tool_never_requires(self):
-        # 未标记的普通写工具（无 destructive/requires_confirmation）：维持现状不强制。
-        # 合同/承诺类写工具（order_create/aftersale_create）已单独标记
-        # requires_confirmation=True，见 TestOrderCreateAftersaleCreateRequireConfirmation。
+        """`_requires_confirmation` 的**函数契约**：不带门禁标记的写工具不强制确认。
+
+        ⚠️ 这只描述守卫函数的行为，**不是「普通写工具可以不加门禁」的许可** ——
+        registry 层面已由 `tests/test_write_tool_confirm_gate_invariant.py`
+        （issue #3594，L0 静态不变式）收紧：**每个 `read_only=False` 的工具必须显式表态**
+        （标 `destructive`/`requires_confirmation`，或登记在带理由的豁免清单里），
+        **未表态即红**。故注册表中不存在"无门禁且未登记豁免"的写工具，
+        本用例的 fake tool 只用于隔离测试守卫函数本身。
+
+        合同/承诺类写工具（order_create/aftersale_create）已单独标记
+        requires_confirmation=True，见 TestOrderCreateAftersaleCreateRequireConfirmation。
+        """
         t = self._make_tool(destructive=False)
         assert _requires_confirmation(t, {"action": "delete"}, "删除") is False
 

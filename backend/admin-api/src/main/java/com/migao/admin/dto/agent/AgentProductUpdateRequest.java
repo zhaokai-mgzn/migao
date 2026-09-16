@@ -73,4 +73,14 @@ public class AgentProductUpdateRequest {
 
     /** 是否允许退货回补库存（issue #2991，null = 不修改） */
     private Boolean allowReturnRestock;
+
+    /**
+     * 商品状态（上下架，issue #3560，null = 不修改）。
+     * 值：on_sale（上架）/ off_sale（下架）/ draft / under_review，走状态机校验。
+     *
+     * 回归背景：product_update 一直在请求体里下发 status，但本 DTO 曾无该字段 + service
+     * 从不读取它 → Jackson 静默忽略 → 走 hasUpdate=false 分支返回商品详情（HTTP 200 + success）
+     * → 米宝回「已下架」而 products.status 未变（假成功）。
+     */
+    private String status;
 }

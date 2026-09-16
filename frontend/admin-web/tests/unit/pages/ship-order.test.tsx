@@ -1,5 +1,17 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+// case_ids: UI-040
+
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+
+/**
+ * 发货页（/orders/[id]/ship）— 渲染 + 发货人 + 发货单打印（issue #3768 / UI-040）
+ *
+ * ⚠️ 注意：页面内始终挂着一份**屏幕隐藏的纸质发货单**（`.shipment-print-area`，仅 @media print 显形）。
+ * jsdom 不解析媒体查询 ⇒ 单据内容也在 DOM 里，收货人/商品名会在断言中命中多处。
+ * 涉及与单据重复的文本请用 `getAllByText`（并保留下方注释），不要改回 `getByText` 触发
+ * "Found multiple elements" 而误以为是回归。
+ */
 
 // Mock API
 const mockGetOrder = vi.fn()
@@ -25,8 +37,19 @@ vi.mock('next/link', () => ({
 }))
 
 // Mock sonner
+const mockToastError = vi.fn()
+const mockToastSuccess = vi.fn()
 vi.mock('sonner', () => ({
-  toast: { success: vi.fn(), error: vi.fn() },
+  toast: {
+    success: (...args: any[]) => mockToastSuccess(...args),
+    error: (...args: any[]) => mockToastError(...args),
+  },
+}))
+
+// 当前登录人（发货人默认值来源）：姓名经 name → nickname → username 兜底链解析
+let mockUser: any = { id: 'u-1', name: '王五', nickname: 'wangwu', username: '13700137000' }
+vi.mock('@/store/auth', () => ({
+  useAuthStore: (selector: any) => selector({ user: mockUser }),
 }))
 
 const mockOrder = {
@@ -54,11 +77,22 @@ const mockOrder = {
 import ShipOrder from '@/app/(dashboard)/orders/[id]/ship/ShipOrder'
 
 describe('ShipOrder', () => {
+  let printSpy: ReturnType<typeof vi.fn>
+
   beforeEach(() => {
     vi.clearAllMocks()
+    mockUser = { id: 'u-1', name: '王五', nickname: 'wangwu', username: '13700137000' }
     mockGetOrder.mockResolvedValue({
       data: { data: mockOrder },
     })
+    mockUpdateLogistics.mockResolvedValue({ data: { data: null } })
+    mockUpdateOrderStatus.mockResolvedValue({ data: { data: null } })
+    printSpy = vi.fn()
+    window.print = printSpy as any
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
   })
 
   it('should show loading state initially', () => {
@@ -93,8 +127,10 @@ describe('ShipOrder', () => {
     render(<ShipOrder />)
     await waitFor(() => {
       expect(screen.getByText('确认收货信息')).toBeInTheDocument()
-      expect(screen.getByText('收货信息')).toBeInTheDocument()
-      expect(screen.getByText('李四')).toBeInTheDocument()
+      // 「收货信息」同时是屏幕区块标题与纸质单据区块标题 → 命中多处是预期
+      expect(screen.getAllByText('收货信息').length).toBeGreaterThanOrEqual(1)
+      // 收货人「李四」同时出现在屏幕区块与纸质单据（屏幕隐藏副本）→ 命中多处是预期
+      expect(screen.getAllByText('李四').length).toBeGreaterThanOrEqual(1)
     })
   })
 
@@ -129,5 +165,85 @@ describe('ShipOrder', () => {
     await waitFor(() => {
       expect(screen.getByText('当前订单状态不允许发货')).toBeInTheDocument()
     })
+  })
+
+  // ===== 发货人 + 发货单打印（UI-040）=====
+
+  it('发货人默认预填当前登录人姓名（不是手机号/账号）', async () => {
+    render(<ShipOrder />)
+
+    const input = await screen.findByPlaceholderText('请输入实际发货人姓名')
+    expect(input).toHaveValue('王五')
+  })
+
+  it('登录用户信息晚到：仅回填尚未被手工改过的字段', async () => {
+    mockUser = null
+    const { rerender } = render(<ShipOrder />)
+
+    const input = await screen.findByPlaceholderText('请输入实际发货人姓名')
+    expect(input).toHaveValue('')
+
+    mockUser = { id: 'u-1', name: '王五' }
+    rerender(<ShipOrder />)
+
+    await waitFor(() =>
+      expect(screen.getByPlaceholderText('请输入实际发货人姓名')).toHaveValue('王五')
+    )
+  })
+
+  it('改成实际发货人后确认发货：payload 带 shipperName 且订单流转 shipped', async () => {
+    const user = userEvent.setup()
+    render(<ShipOrder />)
+
+    const shipperInput = await screen.findByPlaceholderText('请输入实际发货人姓名')
+    await user.clear(shipperInput)
+    await user.type(shipperInput, '赵六')
+    await user.type(screen.getByPlaceholderText('请输入快递单号'), 'SF20260915001')
+    await user.click(screen.getByRole('button', { name: /确认发货/ }))
+
+    await waitFor(() => expect(mockUpdateLogistics).toHaveBeenCalledTimes(1))
+    expect(mockUpdateLogistics).toHaveBeenCalledWith(
+      'test-order-456',
+      expect.objectContaining({ trackingNo: 'SF20260915001', shipperName: '赵六' })
+    )
+    await waitFor(() =>
+      expect(mockUpdateOrderStatus).toHaveBeenCalledWith('test-order-456', { status: 'shipped' })
+    )
+  })
+
+  it('发货人清空时拒绝提交（纸质单据不能没有经手人）', async () => {
+    const user = userEvent.setup()
+    render(<ShipOrder />)
+
+    await user.clear(await screen.findByPlaceholderText('请输入实际发货人姓名'))
+    await user.type(screen.getByPlaceholderText('请输入快递单号'), 'SF1')
+    await user.click(screen.getByRole('button', { name: /确认发货/ }))
+
+    await waitFor(() => expect(mockToastError).toHaveBeenCalledWith('请输入发货人'))
+    expect(mockUpdateLogistics).not.toHaveBeenCalled()
+  })
+
+  it('发货前可打印发货单：点击真的触发 window.print', async () => {
+    const user = userEvent.setup()
+    render(<ShipOrder />)
+
+    await user.click(await screen.findByRole('button', { name: /打印发货单/ }))
+
+    expect(printSpy).toHaveBeenCalledTimes(1)
+  })
+
+  it('发货单在 DOM 中就绪（屏幕隐藏、打印显形），内容含订单号/收货人/明细/发货人', async () => {
+    render(<ShipOrder />)
+
+    await screen.findByPlaceholderText('请输入实际发货人姓名')
+
+    const doc = document.querySelector('.shipment-print-area')
+    expect(doc).not.toBeNull()
+    expect(doc!.textContent).toContain('发货单')
+    expect(doc!.textContent).toContain('MG202606002')
+    expect(doc!.textContent).toContain('李四')
+    expect(doc!.textContent).toContain('遮光窗帘')
+    // 发货人 = 当前输入值（尚未保存也要能印在纸面）
+    expect(doc!.textContent).toContain('王五')
   })
 })

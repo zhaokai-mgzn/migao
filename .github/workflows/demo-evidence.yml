@@ -1,0 +1,136 @@
+name: Demo Evidence Gate
+
+# 演示证据门禁 —— 给「用户可见面」补**可红、可复核**的 CI 信号（issue #3844）。
+#
+# 为什么需要独立 workflow（不改 pr-check.yml —— 该文件被并发包占用）：
+#   1. pr-check.yml 的 `E2E quality gate` 只跑 **6 个** quality/dashboard 文件（显式清单），
+#      `tests/e2e/specs/orders/**`、`chat/**`、`catalog/**`、`smoke/**` 都不在其中
+#      ⇒ 发货单（UI-040）/ 下单 / 订单生命周期 / 聊天输入条 等演示关键旅程**没有任何 PR 门禁信号**。
+#   2. nightly-verification.yml 的 `--project=web` 虽会跑到它们，但 ① `schedule` 自 2026-09-06
+#      起被注释封存、只剩 `workflow_dispatch`；② 全量是 98 failed 的已知红（需真后端的 spec 在
+#      mock 模式必红，run 34911052034 实测）⇒ 不能当 PR 信号。
+#
+# 两个 job（各自的证据等级在 docs/testing/demo-readiness.md 里写明）：
+#   · admin-web-demo-path   = **机器级**：fixture 模式（E2E_MOCK_AUTH=true，无后端）真能跑绿的
+#     演示 spec，清单单一事实源 = tests/e2e/demo-path-specs.txt；
+#   · mini-app-e2e-preflight = **机器级（部分）**：小程序 e2e 跑不进 CI（需 macOS 微信开发者工具），
+#     这里只静态校验「harness 硬依赖的选择器 + storage 注入键仍被 src 产出」并跑双向红证。
+#     ⚠️ 它**不是**小程序旅程证据（旅程仍是 UA 级，见 demo-readiness.md 的 runbook）。
+#
+# ⚠️ 不许为了让 job 变绿而：删 spec / 加 test.skip / 放宽断言 / 只跑 1 条冒烟。
+#    转红 = 真实回归信号，请如实保留红并排查（`migao-acceptance`「空跑 / 假绿」）。
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'frontend/admin-web/**'
+      - 'frontend/mini-app/**'
+      - 'tests/e2e/**'
+      - 'tests/playwright.config.ts'
+      - '.github/workflows/demo-evidence.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-demo-evidence-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  admin-web-demo-path:
+    name: Demo path specs (admin-web, fixture mode)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '20'
+
+      - name: Install test deps
+        working-directory: tests
+        run: npm ci
+
+      - name: Install admin-web deps (for Playwright webServer)
+        working-directory: frontend/admin-web
+        run: npm ci
+
+      # 空跑护栏（migao-acceptance「空跑」）：清单为空 / 列出的 spec 不存在时**拒绝执行**。
+      # 否则 `npx playwright test` 收到空实参会跑**全部** spec（389 条，含已知红的），
+      # 或静默跑 0 条却 success —— 两种都不是信号。
+      - name: Guard spec manifest (fail closed, no silent empty run)
+        working-directory: tests
+        run: |
+          set -euo pipefail
+          MANIFEST=e2e/demo-path-specs.txt
+          test -f "$MANIFEST"
+          MISSING=0
+          COUNT=0
+          while IFS= read -r line; do
+            case "$line" in ''|'#'*) continue ;; esac
+            COUNT=$((COUNT + 1))
+            if [ ! -f "$line" ]; then
+              echo "::error::manifest 列出的 spec 不存在：$line"
+              MISSING=1
+            fi
+          done < "$MANIFEST"
+          if [ "$MISSING" != "0" ]; then exit 1; fi
+          if [ "$COUNT" -eq 0 ]; then
+            echo "::error::$MANIFEST 里没有有效 spec —— 拒绝空跑"
+            exit 1
+          fi
+          echo "✅ manifest 有效：$COUNT 个 spec"
+          grep -vE '^[[:space:]]*(#|$)' "$MANIFEST"
+
+      - name: Run demo path specs (fixture-only, mock auth)
+        working-directory: tests
+        env:
+          E2E_MOCK_AUTH: 'true'
+        run: |
+          set -euo pipefail
+          SPECS=$(grep -vE '^[[:space:]]*(#|$)' e2e/demo-path-specs.txt)
+          # shellcheck disable=SC2086
+          npx playwright test --reporter=list --retries=1 --project=web $SPECS
+
+      # 失败即留证据（migao-acceptance v1.4「失败即丢证据」的反面）：
+      # trace/screenshot 来自 playwright.config.ts 的 `trace: on-first-retry` + `screenshot: only-on-failure`。
+      - name: Upload failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: demo-path-e2e-failure
+          path: |
+            tests/test-results/
+            tests/playwright-report/
+          if-no-files-found: warn
+          retention-days: 14
+
+  mini-app-e2e-preflight:
+    name: Mini-app e2e static contract preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '20'
+
+      # 无需 npm ci：脚本只用 node 内置模块（fs/path/os/child_process）
+      - name: Preflight (harness selectors + storage keys still produced by src)
+        working-directory: frontend/mini-app
+        run: node e2e/preflight-selectors.js
+
+      # 红证：改名一个硬依赖类名 / 一个 storage 键 ⇒ 预检**必须红**。
+      # 不跑红证的守卫可能是空断言（本脚本首版实证恒绿），故红证随门禁一起跑。
+      - name: Red proof (renamed class/key must turn the preflight red)
+        working-directory: frontend/mini-app
+        run: node e2e/preflight-selectors.js --redproof

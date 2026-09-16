@@ -1,0 +1,185 @@
+{
+  "orderId": "9e42a0600b06b97f8f47f3c43632f02c",
+  "checks": {
+    "login": {
+      "ok": true,
+      "url": "http://localhost:3001/dashboard"
+    },
+    "styleBaseline": {
+      "h1": {
+        "text": "订单列表",
+        "fontSize": "20px"
+      },
+      "containerPadding": "24px 24px 96px"
+    },
+    "naming": {
+      "breadcrumbs": [
+        "工作台经营看板智能客服在线接待知识库商品管理商品列表加工项管理订单管理订单列表售后工单客户管理客户列表财务对账组织管理员工管理岗位权限企业基础信息通知中心",
+        "订单管理/订单列表99+赵赵凯",
+        "订单管理/订单列表"
+      ],
+      "h1": {
+        "text": "订单详情",
+        "fontSize": "20px"
+      },
+      "poHeadingText": "加工单"
+    },
+    "styleMatch": {
+      "detailH1": {
+        "text": "订单详情",
+        "fontSize": "20px"
+      },
+      "baselineH1": {
+        "text": "订单列表",
+        "fontSize": "20px"
+      },
+      "detailContainerPadding": "24px 24px 96px",
+      "baselineContainerPadding": "24px 24px 96px",
+      "h1FontSizeEqual": true
+    },
+    "geometry": {
+      "fab": {
+        "x": 1360,
+        "y": 820,
+        "w": 56,
+        "h": 56,
+        "bottom": 876,
+        "right": 1416
+      },
+      "viewportH": 900,
+      "pageScrollHeight": 1696,
+      "paddingBottomProbe": {
+        "actionBtns": [
+          {
+            "btn": "复制全部",
+            "rect": {
+              "x": 1247,
+              "y": 935,
+              "w": 82,
+              "h": 32,
+              "bottom": 967,
+              "right": 1329
+            },
+            "overlapsFab": false
+          },
+          {
+            "btn": "打印",
+            "rect": {
+              "x": 1337,
+              "y": 935,
+              "w": 54,
+              "h": 32,
+              "bottom": 967,
+              "right": 1391
+            },
+            "overlapsFab": false
+          },
+          {
+            "btn": "发加工",
+            "rect": {
+              "x": 306,
+              "y": 1196,
+              "w": 66,
+              "h": 32,
+              "bottom": 1228,
+              "right": 372
+            },
+            "overlapsFab": false
+          },
+          {
+            "btn": "取消加工单",
+            "rect": {
+              "x": 380,
+              "y": 1196,
+              "w": 96,
+              "h": 32,
+              "bottom": 1228,
+              "right": 476
+            },
+            "overlapsFab": false
+          }
+        ],
+        "fabBottom": {
+          "x": 1360,
+          "y": 820,
+          "w": 56,
+          "h": 56,
+          "bottom": 876,
+          "right": 1416
+        },
+        "bottomActionBtns": [
+          {
+            "btn": "复制全部",
+            "rect": {
+              "x": 1247,
+              "y": 139,
+              "w": 82,
+              "h": 32,
+              "bottom": 171,
+              "right": 1329
+            },
+            "overlapsFab": false
+          },
+          {
+            "btn": "打印",
+            "rect": {
+              "x": 1337,
+              "y": 139,
+              "w": 54,
+              "h": 32,
+              "bottom": 171,
+              "right": 1391
+            },
+            "overlapsFab": false
+          },
+          {
+            "btn": "发加工",
+            "rect": {
+              "x": 306,
+              "y": 400,
+              "w": 66,
+              "h": 32,
+              "bottom": 432,
+              "right": 372
+            },
+            "overlapsFab": false
+          },
+          {
+            "btn": "取消加工单",
+            "rect": {
+              "x": 380,
+              "y": 400,
+              "w": 96,
+              "h": 32,
+              "bottom": 432,
+              "right": 476
+            },
+            "overlapsFab": false
+          }
+        ]
+      },
+      "clickableProbe": {
+        "hitTag": "H3",
+        "hitIsHeadingOrChild": true
+      }
+    },
+    "writeVisibility": {
+      "before": {
+        "generatedBadge": 2
+      },
+      "after": {
+        "issued": 2,
+        "processor": 1,
+        "copyBtn": 1
+      },
+      "verdict": "PASS"
+    }
+  },
+  "screenshots": [
+    "01-order-detail-top.png",
+    "02-order-detail-full.png",
+    "03-order-detail-scrolled-bottom.png",
+    "04-issue-form.png",
+    "05-after-issue.png"
+  ]
+}

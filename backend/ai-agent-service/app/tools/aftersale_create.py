@@ -243,6 +243,11 @@ class AftersaleCreateTool(BaseTool):
                 json_data=json_data,
                 tenant_id=context.tenant_id,
                 user_id=context.user_id,
+                # 工单真实来源（issue #3686）：本工具只挂在小布（C 端），
+                # context.ticket_source = "customer"（顾客发起）。
+                # 放 header 不放 body —— 来源不由客户端 payload 决定（#3605 已删 body 里的 source），
+                # 服务端只接受白名单值，缺省回退 agent（= 旧行为）。
+                headers={"X-Agent-Client": context.ticket_source},
             )
 
             if not response.get("success"):

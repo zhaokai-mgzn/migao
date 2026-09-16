@@ -12,8 +12,9 @@ import type { User, LoginResult, ApiResponse } from '../types'
 /**
  * 微信小程序登录
  * 1. 调用 Taro.login() 获取微信 code
- * 2. POST /api/auth/mini/login { code, tenant_id }
- * 3. 存储 Token 和用户信息
+ * 2. POST /api/auth/mini/login { code, tenantId }（admin-api camelCase 入参；历史注释误写
+ *    的 `tenant_id` 与响应字段无关，勿据它推字段名）
+ * 3. 存储 Token 和用户信息（`auth_user` 存 `data.user` 原样 JSON —— 形状见 types 的 `User`）
  */
 export async function miniAppLogin(tenantId: number): Promise<LoginResult> {
   try {

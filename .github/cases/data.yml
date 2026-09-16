@@ -232,3 +232,87 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+
+  - id: DA-008
+    legacy_id: ""
+    title: "智能每日经营简报：企业开关熔断（关闭=不生成+菜单隐藏，issue #3468）"
+    domains:
+      - data
+    tier: normal
+    tags:
+      - briefing
+      - toggle
+      - security
+    truths_ref: []
+    user_inputs:
+      - "智能每日经营简报企业开关行为自检"
+    expectations: []
+    data_checks:
+      - "tenants.briefing_enabled 默认 false；开关关闭时 generateForTenant 直接返回 null 且 LLM 调用数为 0（熔断）"
+      - "更新配置开启瞬间立即生成当日简报；关闭后调度跳过该租户（generateDueTenants 内部拦截），已生成历史保留但入口隐藏"
+      - "仅 admin（system:manage）可改开关；变更写操作日志（audit_logs：action=update, resource_type=briefing_config，含开关状态）"
+    skip_reason: "开关熔断由 admin-api 单测验证（DailyBriefingServiceTest$SwitchBreaker + BriefingControllerTest），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-14 新增（issue #3468）：智能每日经营简报 MVP — 企业开关即熔断（数据安全红线 3）"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/DailyBriefingServiceTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/controller/BriefingControllerTest.java"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  - id: DA-009
+    legacy_id: ""
+    title: "智能每日经营简报：数字回填校验（LLM 编造即丢弃，issue #3468）"
+    domains:
+      - data
+    tier: normal
+    tags:
+      - briefing
+      - llm-verify
+      - security
+    truths_ref: []
+    user_inputs:
+      - "智能每日经营简报数字校验行为自检"
+    expectations: []
+    data_checks:
+      - "LLM 输出每条目必须带 metrics 引用（key+value），key 不在聚合快照或 value 与快照不一致 → 条目丢弃（不展示编造数字）"
+      - "全部条目被丢弃 → verify_status=failed，前端展示安全提示而非假数据；部分丢弃 → partial"
+      - "LLM 失败/超时 → 落 failed 记录，不 fallback 昨日数据冒充今日"
+    skip_reason: "数字回填校验由 admin-api 单测验证（DailyBriefingServiceTest$VerifyAndFilter）+ ai-agent 单测（test_briefing_generator.py），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-14 新增（issue #3468）：智能每日经营简报 MVP — 数字回填校验层（数据安全红线 4）"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/DailyBriefingServiceTest.java"
+        - "backend/ai-agent-service/tests/test_briefing_generator.py"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  - id: DA-010
+    legacy_id: ""
+    title: "智能每日经营简报：PII 不进 prompt + RLS 隔离（issue #3468）"
+    domains:
+      - data
+    tier: normal
+    tags:
+      - briefing
+      - privacy
+      - security
+    truths_ref: []
+    user_inputs:
+      - "智能每日经营简报数据安全自检"
+    expectations: []
+    data_checks:
+      - "聚合快照只含数字指标 + 脱敏事实（订单数/工单数），不含客户手机号/姓名/地址/会话原文（快照 JSON 断言无 PII 字段）"
+      - "daily_briefings 表含 tenant_id + RLS 策略 tenant_isolation_daily_briefings（fail-closed 兜底；应用层 TenantLineInnerInterceptor 注入 tenant_id 为主，RLS 为纵深防御）"
+      - "简报展示层脱敏别名「客户A/B」，点击查看真名复用客户详情 RBAC（customers:view），无权限角色点击不可见真名"
+    skip_reason: "PII 隔离由 admin-api 单测（DailyBriefingServiceTest$Aggregation）+ migration 契约验证；RLS 由 V44 迁移/SchemaMigrationTest 验证，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-14 新增（issue #3468）：智能每日经营简报 MVP — 数据安全红线 1/2（PII 不进 prompt + RLS 租户隔离）"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/DailyBriefingServiceTest.java"
+        - "backend/admin-api/src/main/resources/db/migration/V44__create_daily_briefings.sql"
+      ci:
+        - pr-check.yml
+      verifies: []

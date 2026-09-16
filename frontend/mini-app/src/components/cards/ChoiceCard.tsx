@@ -51,7 +51,9 @@ export default function ChoiceCard({ data, onAction, disabled }: ChoiceCardProps
             onClick={() => {
               if (locked) return
               setSubmitted(true)
-              onAction(opt.value)
+              // 点击协议（issue #3365 对齐 admin-web InteractiveMessage 单一事实源）：
+              // 回传人话 label；AI 侧 _card_accepts_answer 同样接受 label/value（nodes.py）
+              onAction(opt.label || opt.value)
             }}
             hoverClass={locked ? undefined : 'choice-card__option--hover'}
           >

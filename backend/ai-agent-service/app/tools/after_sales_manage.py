@@ -26,6 +26,9 @@ VALID_TICKET_TYPES = {"refund", "exchange", "repair", "complaint", "other"}
 # 工单状态
 VALID_TICKET_STATUSES = {"pending", "processing", "resolved", "rejected", "closed"}
 
+# 终态且必须留痕（原因）的状态：admin-api 只在 remark 非空时写 closeReason
+CLOSE_STATUSES = {"closed", "rejected"}
+
 
 class AfterSalesManageTool(BaseTool):
     """售后工单管理 Tool
@@ -44,6 +47,8 @@ class AfterSalesManageTool(BaseTool):
         "创建/查询售后工单。用户说退货/退款/换货/投诉时，先 order_query 确认订单，"
         "然后直接调此工具创建工单，不要只查订单就停住。"
         "create 必填: ticket_type(退款/换货/维修/投诉/其他) + order_id + reason。"
+        "update_status: 关闭(closed)/拒绝(rejected)必须带 reason（写入关闭留痕 closeReason，"
+        "缺原因会被本工具拒绝——先问用户原因再调用）。"
         "可选: refund_amount, priority, images。仅查工单用 list/detail action。WRITE"
     )
     allowed_roles = ["admin", "agent", "tenant_admin", "operator"]
@@ -81,7 +86,12 @@ class AfterSalesManageTool(BaseTool):
             },
             "reason": {
                 "type": "string",
-                "description": "原因说明(create 时必填,如'客户反馈尺寸不符要求退款')",
+                "description": (
+                    "原因说明。create 时必填(如'客户反馈尺寸不符要求退款')；"
+                    "update_status 置为 closed(关闭)/rejected(拒绝) 时**同样必填**"
+                    "——原因会写入工单的关闭留痕 closeReason，缺原因本工具会拒绝"
+                    "（关闭态不可再流转，事后无法补记）"
+                ),
             },
             "description": {
                 "type": "string",
@@ -324,11 +334,13 @@ class AfterSalesManageTool(BaseTool):
             )
 
         # 对抗编程：reason → description 字段映射 + 透传所有可选字段
+        # `source` 不下发（issue #3605）：AgentAfterSalesCreateRequest 无该字段（下发即静默丢弃），
+        # 且来源由服务端固化（AfterSalesTicketService.createTicket 内 ticket.setSource("agent")，
+        # 表单入口与 Agent BFF 入口都经过它）——客户端指定来源既无效也多余。
         json_data: Dict[str, Any] = {
             "orderId": order_id,
             "ticketType": ticket_type,
             "description": description if description else reason,  # Java API 用 description
-            "source": "agent",
         }
         if images:
             json_data["images"] = images
@@ -343,6 +355,9 @@ class AfterSalesManageTool(BaseTool):
             json_data=json_data,
             tenant_id=context.tenant_id,
             user_id=context.user_id,
+            # 工单真实来源（issue #3686）：本工具是米宝（B 端）管理工具，
+            # context.ticket_source = "agent"（AI 建单）。放 header 不放 body（同 #3605 取舍）。
+            headers={"X-Agent-Client": context.ticket_source},
         )
 
         if not response.get("success"):
@@ -398,9 +413,32 @@ class AfterSalesManageTool(BaseTool):
                 message=f"不支持的状态值,可选:{valid_labels}",
             )
 
+        # 关闭/拒绝必须带原因（issue #3744 / AS-004）：admin-api 仅在 remark 非空时写
+        # closeReason（AfterSalesTicketService#updateTicketStatus）⇒ 不带原因关单 =
+        # 「关闭留痕缺失」（closedAt 有、closeReason 空），而 closed/rejected 是**终态**、
+        # 不可事后补记。不能靠提示词赌模型一定会传 reason（本工具曾把 reason 声明成
+        # 「create 时必填」→ 模型在 update_status 时压根不带），故在此失败关闭并给出
+        # 可执行指引（同 #3365 接地闸门的代码兜底口径：同源缺陷不靠提示词赌）。
+        if status in CLOSE_STATUSES and not reason:
+            status_label = TICKET_STATUS_LABELS.get(status, status)
+            return ToolResult(
+                success=False,
+                error=f"缺少{status_label}原因",
+                message=(
+                    f"把工单置为「{status_label}」时必须说明原因：原因会写入工单的关闭留痕"
+                    "（closeReason），缺原因则关闭记录不完整；且「已关闭/已拒绝」是终态，"
+                    "事后无法补记。请先向用户确认原因，再带 reason 重新调用本工具。"
+                ),
+                suggestion=f"先问用户「为什么{status_label}这张工单」，拿到原因后带 reason 重试",
+            )
+
+        # 对抗编程：reason → remark 字段映射。
+        # AfterSalesStatusUpdateRequest 只声明 status/remark，Java 侧用 remark 写入
+        # closeReason（closed/rejected 时）+ internalNotes；发 reason 会被 Spring
+        # 静默丢弃（HTTP 200 但 closeReason 恒为空，issue #3540 / AS-004）。
         json_data: Dict[str, Any] = {"status": status}
         if reason:
-            json_data["reason"] = reason
+            json_data["remark"] = reason
 
         client = get_admin_api_client()
         response = await client.put(

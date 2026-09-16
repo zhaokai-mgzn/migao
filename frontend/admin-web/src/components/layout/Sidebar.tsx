@@ -14,6 +14,7 @@ import {
   ChevronRight,
   ChevronDown,
   ClipboardList,
+  FileText,
   Users,
   ShieldCheck,
   Building2,
@@ -28,6 +29,7 @@ import {
   Monitor,
   FolderTree,
   Calculator,
+  Newspaper,
 } from 'lucide-react'
 import { useAuthStore } from '@/store/auth'
 import { cn } from '@/lib/utils'
@@ -35,6 +37,7 @@ import Logo from '@/components/ui/Logo'
 // #3002: 菜单配置单源化 —— menuGroups/standaloneItems 移至 @/config/menu，
 // 与岗位权限弹窗共用，保证「权限分配」展示的菜单与真实侧边栏一致
 import { menuGroups, standaloneItems, type MenuItem, type MenuGroup } from '@/config/menu'
+import { briefingApi } from '@/lib/api'
 
 // 图标映射
 const iconMap: Record<string, LucideIcon> = {
@@ -45,6 +48,7 @@ const iconMap: Record<string, LucideIcon> = {
   Settings,
   Bell,
   ClipboardList,
+  FileText,
   Users,
   ShieldCheck,
   Building2,
@@ -58,6 +62,7 @@ const iconMap: Record<string, LucideIcon> = {
   Monitor,
   FolderTree,
   Calculator,
+  Newspaper,
 }
 
 interface SidebarProps {
@@ -82,6 +87,14 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
     () => Object.fromEntries(menuGroups.map(g => [g.key, true]))
   )
 
+  // 智能每日经营简报企业开关（issue #3468）：开关关闭 → 菜单隐藏（红线 3）
+  const [briefingEnabled, setBriefingEnabled] = useState(false)
+  useEffect(() => {
+    briefingApi.getConfig()
+      .then((res) => setBriefingEnabled(!!res.data.data?.enabled))
+      .catch(() => setBriefingEnabled(false))
+  }, [])
+
   const toggleGroup = (key: string) => {
     setExpandedGroups(prev => ({ ...prev, [key]: !prev[key] }))
   }
@@ -100,6 +113,8 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
     items.filter(item => {
       // adminOnly 保留作为额外防线
       if (item.adminOnly && !user?.roles?.includes('admin')) return false
+      // 简报菜单 = 企业开关 ∧ 角色权限（双条件）
+      if (item.briefingToggle && !briefingEnabled) return false
       return hasPermission(item.permissionCode)
     })
 

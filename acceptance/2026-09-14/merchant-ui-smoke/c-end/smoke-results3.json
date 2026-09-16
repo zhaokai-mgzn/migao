@@ -1,0 +1,56 @@
+[
+  {
+    "journey": "C6-cloud-quote-calc",
+    "pass": true,
+    "errors": [],
+    "notes": [
+      "端到端（云真实 LLM + SSE）：报价金额/方案已渲染；数据以云为准"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "C7-cloud-product-cards",
+    "pass": true,
+    "errors": [],
+    "notes": [
+      "端到端（云 LLM）：商品卡片渲染"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "C8-cloud-order-two-step",
+    "pass": true,
+    "errors": [],
+    "notes": [
+      "端到端（云 LLM）：下单链路（结果见截图）"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "C9-cloud-my-orders",
+    "pass": true,
+    "errors": [],
+    "notes": [
+      "端到端（云 LLM）：订单查询渲染"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "C10-cloud-human-handoff",
+    "pass": true,
+    "errors": [],
+    "notes": [
+      "端到端（云 LLM）：转人工出口渲染"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "C11-cloud-profile",
+    "pass": true,
+    "errors": [],
+    "notes": [
+      "端到端（云数据）：我的页渲染"
+    ],
+    "evidence": []
+  }
+]

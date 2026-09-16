@@ -186,7 +186,7 @@ test.describe('商品列表页面', () => {
 
   test('按商品ID搜索', async ({ page }) => {
     await page.fill('input[placeholder="请输入商品ID"]', 'p001')
-    await page.getByRole('button', { name: /搜索/ }).click()
+    await page.getByRole('button', { name: '查询' }).click()
     await page.waitForTimeout(500)
 
     await expect(page.getByText('p001')).toBeVisible()
@@ -195,7 +195,7 @@ test.describe('商品列表页面', () => {
 
   test('按商品标题搜索', async ({ page }) => {
     await page.fill('input[placeholder="请输入商品标题"]', '遮光')
-    await page.getByRole('button', { name: /搜索/ }).click()
+    await page.getByRole('button', { name: '查询' }).click()
     await page.waitForTimeout(500)
 
     await expect(page.getByText('北欧简约遮光窗帘 灰色系列')).toBeVisible()
@@ -208,7 +208,7 @@ test.describe('商品列表页面', () => {
     const skuInputs = page.locator('input[placeholder="请输入商品ID"]')
     // 第一个是商品ID，第二个是商品货号
     await skuInputs.nth(1).fill('CL-WH')
-    await page.getByRole('button', { name: /搜索/ }).click()
+    await page.getByRole('button', { name: '查询' }).click()
     await page.waitForTimeout(500)
 
     await expect(page.getByText('CL-WH-002')).toBeVisible()
@@ -216,7 +216,7 @@ test.describe('商品列表页面', () => {
 
   test('按状态筛选', async ({ page }) => {
     await page.locator('select').first().selectOption('on_sale')
-    await page.getByRole('button', { name: /搜索/ }).click()
+    await page.getByRole('button', { name: '查询' }).click()
     await page.waitForTimeout(500)
 
     await expect(page.getByText('p001')).toBeVisible()
@@ -229,7 +229,7 @@ test.describe('商品列表页面', () => {
     await dateInputs.first().fill('2026-05-18')
     await dateInputs.last().fill('2026-05-20')
 
-    await page.getByRole('button', { name: /搜索/ }).click()
+    await page.getByRole('button', { name: '查询' }).click()
     await page.waitForTimeout(500)
 
     // 日期范围内的商品应出现
@@ -265,7 +265,7 @@ test.describe('商品列表页面', () => {
 
   test('搜索后 URL 同步查询参数', async ({ page }) => {
     await page.fill('input[placeholder="请输入商品标题"]', '遮光')
-    await page.getByRole('button', { name: /搜索/ }).click()
+    await page.getByRole('button', { name: '查询' }).click()
     await page.waitForTimeout(500)
 
     // URL 应包含 name 参数
@@ -290,7 +290,7 @@ test.describe('商品列表页面', () => {
     })
 
     await page.fill('input[placeholder="请输入商品标题"]', '窗帘')
-    await page.getByRole('button', { name: /搜索/ }).click()
+    await page.getByRole('button', { name: '查询' }).click()
     await page.waitForTimeout(500)
 
     expect(capturedUrl).toContain('name=')
@@ -298,7 +298,7 @@ test.describe('商品列表页面', () => {
 
   test('重置后 URL 恢复为 /products', async ({ page }) => {
     await page.fill('input[placeholder="请输入商品标题"]', '遮光')
-    await page.getByRole('button', { name: /搜索/ }).click()
+    await page.getByRole('button', { name: '查询' }).click()
     await page.waitForTimeout(300)
 
     await page.getByRole('button', { name: /重置/ }).click()

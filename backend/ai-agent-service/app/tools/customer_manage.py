@@ -4,7 +4,7 @@ AI 智能客服系统 - 客户管理 Tool
 管理客户档案，支持查询客户列表、客户详情、更新档案、管理客户标签。
 """
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 from loguru import logger
 
 from app.tools.base import BaseTool, ToolContext, ToolResult
@@ -13,6 +13,40 @@ from app.utils.http_client import get_admin_api_client
 
 # 操作类型
 VALID_ACTIONS = {"list", "detail", "update", "add_tag", "remove_tag", "list_tags", "create_tag", "update_tag", "delete_tag"}
+
+# 客户档案可写字段（单一事实源 = admin-api CustomerProfile 列 ∩ CustomerService.updateCustomer
+# 的非空拷贝白名单）。写路径只允许下发这些 key，其余一律显式报错——禁止原样透传后由 admin-api
+# 静默丢弃（Spring 默认 FAIL_ON_UNKNOWN_PROPERTIES=false → HTTP 200 但数据不落库 = 假成功，issue #3551）。
+# 跨端字段契约由 tests/test_tool_field_name_contract.py 静态解析 CustomerProfile.java 兜底。
+WRITABLE_FIELDS = frozenset({
+    "wechatNickname", "phone", "gender",
+    "regionProvince", "regionCity", "regionDistrict",
+    "vipLevel", "customerStatus", "agentNotes", "tags", "customFields",
+})
+
+# 姓名别名 → canonical 列名：客户实体无 name/nickname/realName 列，姓名存 wechatNickname
+# （读路径 _list_customers/_detail_customer 已按同序回退，写路径必须对齐，否则静默丢弃 = 谎报成功）。
+NAME_ALIAS_TO_CANONICAL = {"name": "wechatNickname", "nickname": "wechatNickname", "realName": "wechatNickname"}
+
+
+def normalize_update_data(data: Dict[str, Any]) -> Tuple[Dict[str, Any], List[str]]:
+    """把 update 的 data 归一化为 CustomerProfile 真实列名 payload。
+
+    返回 (payload, rejected)；rejected 非空时调用方必须显式报错且**不得发起写请求**
+    （既不静默忽略、也不部分写入——两者都会让用户看到假成功）。
+    """
+    payload: Dict[str, Any] = {}
+    rejected: List[str] = []
+    for key, value in data.items():
+        canonical = NAME_ALIAS_TO_CANONICAL.get(key, key)
+        if canonical not in WRITABLE_FIELDS:
+            rejected.append(key)
+            continue
+        # 显式 wechatNickname 优先于姓名别名（两者同时出现时以 canonical 为准）
+        if canonical == "wechatNickname" and key != "wechatNickname" and "wechatNickname" in payload:
+            continue
+        payload[canonical] = value
+    return payload, sorted(rejected)
 
 
 class CustomerManageTool(BaseTool):
@@ -75,7 +109,13 @@ class CustomerManageTool(BaseTool):
             },
             "data": {
                 "type": "object",
-                "description": "更新数据（update 时必填），如 {\"name\": \"...\", \"phone\": \"...\"}",
+                "description": (
+                    "更新数据（update 时必填），key 必须是客户档案真实可写字段："
+                    "wechatNickname（客户姓名）/ phone / gender / regionProvince / regionCity / "
+                    "regionDistrict / vipLevel / customerStatus / agentNotes（备注）/ tags / customFields。"
+                    "客户实体没有 name 列，严禁下发 name/nickname/realName（工具会翻成 wechatNickname）；"
+                    "其它字段一律报错不落库"
+                ),
             },
             "tag_id": {
                 "type": "string",
@@ -301,10 +341,23 @@ class CustomerManageTool(BaseTool):
                 message="更新客户档案时必须提供更新数据（data）",
             )
 
+        # 归一化为实体真实列名 + 白名单校验：不可写字段显式报错，绝不静默忽略/部分写入（#3551）
+        payload, rejected = normalize_update_data(data)
+        if rejected:
+            return ToolResult(
+                success=False,
+                error=f"不支持的更新字段: {'、'.join(rejected)}",
+                message=f"客户档案未做任何修改：{'、'.join(rejected)} 不是可更新字段",
+                suggestion=(
+                    f"客户档案可更新字段：{'、'.join(sorted(WRITABLE_FIELDS))}"
+                    "（客户姓名字段名为 wechatNickname）"
+                ),
+            )
+
         client = get_admin_api_client()
         response = await client.put(
             f"/api/admin/customers/{customer_id}",
-            json_data=data,
+            json_data=payload,
             tenant_id=context.tenant_id,
             user_id=context.user_id,
         )
@@ -317,12 +370,16 @@ class CustomerManageTool(BaseTool):
                 message=f"客户档案更新失败：{error_msg}",
             )
 
-        logger.info(f"[customer-manage] Updated customer_id={customer_id} | tenant={context.tenant_id}")
+        updated_fields = sorted(payload.keys())
+        logger.info(
+            f"[customer-manage] Updated customer_id={customer_id} fields={updated_fields} "
+            f"| tenant={context.tenant_id}"
+        )
 
         return ToolResult(
             success=True,
-            data={"customer_id": customer_id},
-            message="客户档案已更新",
+            data={"customer_id": customer_id, "updated_fields": updated_fields},
+            message=f"客户档案已更新：{'、'.join(updated_fields)}",
         )
 
     async def _add_tag(

@@ -83,16 +83,19 @@ async function mockOrderApis(page: import('@playwright/test').Page) {
       filtered = filtered.filter(o => o.status === status)
     }
 
+    // ⚠️ 信封契约：分页字段名是 `items`（`PageResponse<T>`，见 admin-web `types/index.ts`
+    //    与 `orders/page.tsx` 的 `pageData?.items`）。旧写法 `records` / `pageSize` 已被页面
+    //    弃用 ⇒ 列表恒为空 ⇒ 本文件 5 条用例全红在「等订单号出现」（2026-09-15 归因）。
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({
         code: 0,
         data: {
-          records: filtered,
+          items: filtered,
           total: filtered.length,
           page: 1,
-          pageSize: 20,
+          size: 20,
         },
       }),
     })

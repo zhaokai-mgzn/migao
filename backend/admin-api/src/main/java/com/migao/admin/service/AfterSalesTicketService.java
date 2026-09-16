@@ -50,12 +50,58 @@ public class AfterSalesTicketService extends ServiceImpl<AfterSalesTicketMapper,
     private final ObjectMapper objectMapper;
     private final NotificationService notificationService;
 
+    // ======================== 工单来源（issue #3686） ========================
+    // `source` = 工单的**真实来源**。取值集合取自代码既有事实，勿臆造第四个值：
+    //   · SOURCE_CUSTOMER —— 代码既有：实体注释 `customer / agent`、前端 AfterSalesDetail.tsx 渲染分支
+    //   · SOURCE_AGENT    —— 同上（既有唯一硬编码值）
+    //   · SOURCE_MERCHANT —— 本 issue 补：人工（后台表单）建单。前端同步补渲染分支
+    // 消费方只有前端工单详情一处（已 grep 全仓库：无报表/统计/导出按 source 取值分组）。
+    /** 顾客发起（C 端小布 / 顾客自助） */
+    public static final String SOURCE_CUSTOMER = "customer";
+    /** AI 建单（米宝等 Agent 工具） */
+    public static final String SOURCE_AGENT = "agent";
+    /** 人工建单（admin-web 后台表单） */
+    public static final String SOURCE_MERCHANT = "merchant";
+
+    /** 来源白名单（未知/空白值一律归一化为入口缺省值，不落脏值） */
+    private static final Set<String> VALID_SOURCES = Set.of(SOURCE_CUSTOMER, SOURCE_AGENT, SOURCE_MERCHANT);
+
+    /**
+     * 归一化工单来源：大小写无关匹配白名单，命中即用；空白或未知值 → 入口缺省值
+     * （缺省也是白名单值，保证落库永不出现未定义取值）。
+     *
+     * @param source       调用方声明的来源（可空）
+     * @param entryDefault 入口缺省来源（Agent BFF 入口用 {@link #SOURCE_AGENT}，表单入口用
+     *                     {@link #SOURCE_MERCHANT}）——「服务端无法判定真实来源」时的保守回退
+     * @return 白名单内的来源值
+     */
+    public static String resolveSource(String source, String entryDefault) {
+        String fallback = VALID_SOURCES.contains(entryDefault) ? entryDefault : SOURCE_AGENT;
+        if (!StringUtils.hasText(source)) {
+            return fallback;
+        }
+        String normalized = source.trim().toLowerCase(Locale.ROOT);
+        if (VALID_SOURCES.contains(normalized)) {
+            return normalized;
+        }
+        log.warn("工单来源取值不在白名单 {} 内，回退入口缺省值 {}（调用方需收口）: {}", VALID_SOURCES, fallback, source);
+        return fallback;
+    }
+
+    /** 归一到默认来源（人工建单）。 */
+    private static String resolveSource(String source) {
+        return resolveSource(source, SOURCE_MERCHANT);
+    }
+
     /**
      * 合法的状态流转定义
      * key: 当前状态, value: 允许流转到的目标状态集合
+     *
+     * pending -> closed：产品裁定允许未处理工单直接关闭（误建/线下已处理的工单，
+     * 无需先经过并不存在的「处理中」阶段），见 issue #3541。
      */
     private static final Map<String, Set<String>> STATUS_TRANSITIONS = Map.of(
-            "pending", Set.of("processing", "rejected"),
+            "pending", Set.of("processing", "rejected", "closed"),
             "processing", Set.of("resolved", "closed"),
             "resolved", Set.of(),
             "rejected", Set.of(),
@@ -263,7 +309,10 @@ public class AfterSalesTicketService extends ServiceImpl<AfterSalesTicketMapper,
     }
 
     /**
-     * 创建售后工单
+     * 创建售后工单（来源取缺省 {@link #SOURCE_MERCHANT}）
+     *
+     * <p>保留 3 参重载以兼容既有调用方与测试；**新代码请用
+     * {@link #createTicket(AfterSalesCreateRequest, Long, String, String)} 显式传来源**。
      *
      * @param request  创建请求
      * @param tenantId 租户ID
@@ -271,6 +320,27 @@ public class AfterSalesTicketService extends ServiceImpl<AfterSalesTicketMapper,
      */
     @Transactional(rollbackFor = Exception.class)
     public AfterSalesDetailResponse createTicket(AfterSalesCreateRequest request, Long tenantId, String operator) {
+        return createTicket(request, tenantId, operator, SOURCE_MERCHANT);
+    }
+
+    /**
+     * 创建售后工单
+     *
+     * <p>issue #3686：`source` 表示工单的**真实来源**，不再无条件硬编码（原实现恒写 "agent"，
+     * 导致 C 端小布顾客工单被误标 agent、DDL `DEFAULT 'customer'` 成死默认）。
+     * 取值集合（代码中已存在，勿臆造第四个值）：{@link #SOURCE_CUSTOMER} / {@link #SOURCE_AGENT}
+     * / {@link #SOURCE_MERCHANT}。唯一消费方是前端工单详情
+     * （`AfterSalesDetail.tsx` 按其渲染 客户提交 / 客服创建 / 商家创建）。
+     *
+     * @param request  创建请求
+     * @param tenantId 租户ID
+     * @param operator 操作人
+     * @param source   真实来源（customer/agent/merchant）；空白或未知值 → 归一化为 {@link #SOURCE_MERCHANT}
+     * @return 工单详情响应
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public AfterSalesDetailResponse createTicket(AfterSalesCreateRequest request, Long tenantId, String operator,
+                                                 String source) {
         // 投诉类工单可无关联订单（转人工/服务投诉场景）；其余类型必须关联订单
         boolean isComplaint = "complaint".equals(request.getTicketType());
         Order order = null;
@@ -342,7 +412,7 @@ public class AfterSalesTicketService extends ServiceImpl<AfterSalesTicketMapper,
         ticket.setTicketType(request.getTicketType());
         ticket.setStatus("pending");
         ticket.setDescription(request.getDescription());
-        ticket.setSource("agent");
+        ticket.setSource(resolveSource(source));
         ticket.setPriority(request.getPriority() != null ? request.getPriority() : "normal");
         ticket.setRefundAmount(request.getRefundAmount());
 
@@ -377,7 +447,8 @@ public class AfterSalesTicketService extends ServiceImpl<AfterSalesTicketMapper,
 
     /**
      * 更新工单状态
-     * 遵循状态流转规则：pending -> processing/rejected, processing -> resolved/closed
+     * 遵循状态流转规则：pending -> processing/rejected/closed, processing -> resolved/closed
+     * （resolved/rejected/closed 为终态，不允许再变更；pending -> closed 见 #3541）
      *
      * @param id      工单ID
      * @param request 状态更新请求
@@ -829,7 +900,7 @@ public class AfterSalesTicketService extends ServiceImpl<AfterSalesTicketMapper,
     @Transactional(rollbackFor = Exception.class)
     public AfterSalesDetailResponse createTicketForAgent(
             com.migao.admin.dto.agent.AgentAfterSalesCreateRequest request,
-            Long tenantId, String operator) {
+            Long tenantId, String operator, String source) {
 
         // 解析 orderId（支持 ORD-xxx → UUID）
         String resolvedOrderId = request.getOrderId();
@@ -868,6 +939,6 @@ public class AfterSalesTicketService extends ServiceImpl<AfterSalesTicketMapper,
                 StringUtils.hasText(request.getPriority()) ? request.getPriority() : "normal");
         createReq.setRefundAmount(request.getRefundAmount());
 
-        return createTicket(createReq, tenantId, operator);
+        return createTicket(createReq, tenantId, operator, source);
     }
 }

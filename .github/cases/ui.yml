@@ -219,7 +219,7 @@ cases:
 
   - id: UI-007
     legacy_id: ""
-    title: "小布 C 端输入条 - 单容器双语义（textarea 常驻 + 右下按住说话松开发送）"
+    title: "小布 C 端输入条 - 单容器语音优先（textarea 常驻 + 带文字标签的宽胶囊「按住 说话」松开发送）"
     domains:
       - ui
       - frontend
@@ -232,16 +232,19 @@ cases:
     truths_ref:
       - frontend-fix.xiaobu-voice-holdtalk
     user_inputs:
-      - "小布 C 端（小程序/H5 同源）输入条重构为单容器布局：textarea 常驻（placeholder「发消息或按住说话」），右下动作组为 [添图][按住说话]，有草稿时语音键位变为发送；上滑取消录音"
+      - "小布 C 端（小程序/H5 同源）输入条为单容器语音优先布局：textarea 常驻（语音优先 placeholder「按住说话，也可以打字」），空草稿时右侧主键是带文字标签的宽胶囊「按住 说话」，有草稿时该键位变为发送；上滑取消录音；首访给一条一次性可关闭的语音引导"
     expectations:
       - tool: direct_reply
     data_checks:
-      - "mini-app MessageInput 单容器：textarea 常驻渲染（无键盘/语音模式切换键），placeholder 含「发消息或按住说话」"
+      - "mini-app MessageInput 单容器：textarea 常驻渲染（无键盘/语音模式切换键，已退役的 hold-btn/mode-btn/btn 类名不得复用），语音可用时 placeholder 为「按住说话，也可以打字」，语音不可用（H5）时回落纯键盘措辞且不显示语音入口"
+      - "语音优先形态：空草稿主键是带可见文字标签「按住 说话」的宽胶囊（图标 + 文字 + 按钮底齐备，触控区仍为 88px/44pt），有草稿变为发送圆键、流式中变为停止键；单行时加图键/输入框/主键同行垂直居中（真实几何由模拟器探针取证）"
+      - "一次性语音引导：首访展示即落已读标记（storage key voice_hint_seen）故只出现一次，可点关闭键立即消失，语音不可用时不展示；不因用户打字而提示改用语音"
       - "按住语音键（touchStart）调用 startRecording，松开（touchEnd）调用 stopAndTranscribe → 转写文本直接 onSend（行为保持不变）；上滑超过阈值取消不发送"
+      - "空口/误触录音（<0.8s 或 <4KB）不发转写请求，toast「未检测到声音，已取消转写」；转写失败仍 toast「未听清，请重试」不发送（对齐 B 端 #2984 voice-guard 语义）"
       - "添图入口统一：选图进草稿（预览可删），无按住模式下直接发图旁路；空文本有图点发送 → 纯图消息（UI-013 协议不变）"
       - "自适应动作键：草稿为空显示语音键，有草稿变为发送，流式中变为停止；流式/无会话时禁止录音；转写失败 toast「未听清，请重试」不发送"
     skip_reason: "纯前端 C 端输入交互由 mini-app jest 单测验证（message-input.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟；xiaobu H5 E2E 基建在 WIP 分支（main 未落）"
-    merge_log: "2026-09-06 修订：输入条单容器重构（删模式切换键、textarea 常驻、语音改右下按住键、添图统一草稿语义），「松开直接发送」行为保持不变（issue #2952）；2026-08-31 新增：小布 C 端语音输入（按住说话/松开发送/键盘切换，参考瑞幸 C 端设计）"
+    merge_log: "2026-09-15 修订（C 端语音守卫对齐 B 端 #2984）：空口/误触录音（<0.8s 或 <4KB）不发转写请求、toast「未检测到声音，已取消转写」（issue #3945）；2026-09-14 修订（语音优先）：placeholder 改「按住说话，也可以打字」（H5 回落「打字告诉我您想找什么」）、空态主键由裸波形图标升级为带文字标签的宽胶囊「按住 说话」、新增首访一次性可关闭引导（voice_hint_seen）；单容器/无模式切换/松开直接发送等行为断言不变（issue #3741）；2026-09-06 修订：输入条单容器重构（删模式切换键、textarea 常驻、语音改右下按住键、添图统一草稿语义），「松开直接发送」行为保持不变（issue #2952）；2026-08-31 新增：小布 C 端语音输入（按住说话/松开发送/键盘切换，参考瑞幸 C 端设计）"
     traces:
       tests:
         - "frontend/mini-app/tests/message-input.test.tsx"
@@ -1311,6 +1314,144 @@ cases:
       tests:
         - "frontend/admin-web/tests/unit/pages/knowledge.test.tsx"
         - "backend/admin-api/src/test/java/com/migao/admin/service/KnowledgeCardServiceTest.java"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  - id: UI-040
+    legacy_id: ""
+    title: "发货单：发货人落库（预填当前登录人可改）+ 可打印纸质单据（发货前打 / 发货后补打）（#3768）"
+    domains:
+      - ui
+      - frontend
+      - order
+    tier: normal
+    tags:
+      - ui
+      - order
+      - shipment
+      - print
+      - admin-web
+    truths_ref:
+      - frontend-fix.vitest
+    user_inputs:
+      - "发货时要拿着一张单据照单拣货/打包，纸面还要留经手人（发货人）；但系统里发货只填了承运商+运单号，既没有可打印的发货单，也没有任何发货人留痕"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "发货页新增「发货人」输入：默认预填当前登录人姓名（name→nickname→username 兜底链，但**不**退化为「管理员」这类角色名），允许改成实际经手人；清空则拒绝提交（toast「请输入发货人」）"
+      - "确认发货 payload 携带 shipperName（trim 后非空才下发）；后端 PUT /api/admin/orders/{id}/logistics 落库 order_logistics.shipper_name，传空时用 SecurityUser.userId 查 users.nickname 兜底（agent order_manage(update_logistics) 路径同口径——order_manage 透传 X-User-Id）"
+      - "更新已有物流时**仅**在显式传入非空才覆盖发货人：改运单号/纠错不等于换经手人；存量订单（shipper_name 为 NULL）不为历史数据猜经手人"
+      - "order_logistics.shipper_name 必须 nullable：存量已发货订单历史上无此数据，纸面「发货人」栏显示「-」（#3818 裁定，不得留白、不得 undefined/null），不得回填假值（否则迁移失败或纸面出现伪造经手人）"
+      - "新增可打印「发货单」（ShipmentDoc）：A4（@page size: A4）+ body visibility 隔离；纸面含 订单号/下单时间/收货人/电话/地址/商品明细（品名·货号·颜色·规格·数量·单价·金额）/合计（总数量+总金额）/加工项与加工费合计/备注/发货人（存量空值显示「-」）/物流公司·运单号（发货前留空供手写，发货后带出）"
+      - "入口两处：发货页（发货前打印，发货人取当前输入值，未保存也印）+ 订单详情页 shipped/completed 状态「打印发货单」（补打——发货页有状态守卫，shipped 后进不去）；待付款等未发货状态不显示该入口"
+      - "发货单渲染在页面级，**不得**放进 Modal（Modal 为 max-h-full + 内部 overflow-y-auto，打印只会打出可视一屏、多页明细被裁）；每页只挂一份（.shipment-print-area 为全局选择器，挂两份会打印出两套单据）"
+      - "不向 C 端顾客泄漏发货人：customer_logistics_track 按白名单字段构造返回（order_id/order_no/tracking_number/company/status/status_text/latest/traces），响应中不含 shipperName"
+    skip_reason: "纯前端 UI + 后端字段落库，由 vitest 单测（ShipmentDoc/ship-order/order-detail/data-adapter）与 MockMvc/Service 单测（OrderControllerTest/AgentOrderServiceTest/UserServiceTest）验证；非 LLM 行为（agent 工具参数未变，发货人由后端按 X-User-Id 兜底），不进入 agent-eval 冒烟"
+    merge_log: "2026-09-15 新增（issue #3768）：发货单闭环 —— 发货人落库（预填登录人可改 + 后端 userId 兜底；更新不覆盖原经手人）+ 可打印纸质发货单（A4，发货前打 / 发货后补打）+ C 端不泄漏发货人；2026-09-15（#3818）口径裁定：存量发货人纸面显示「-」（原「留空」口径作废；留空只给运单号/物流公司）"
+    traces:
+      tests:
+        - "frontend/admin-web/tests/unit/components/ShipmentDoc.test.tsx"
+        - "frontend/admin-web/tests/unit/components/LogisticsForm.test.tsx"
+        - "frontend/admin-web/tests/unit/pages/ship-order.test.tsx"
+        - "tests/e2e/specs/orders/shipment-doc.spec.ts"
+        - "frontend/admin-web/tests/unit/pages/order-detail.test.tsx"
+        - "frontend/admin-web/tests/unit/lib/data-adapter.test.ts"
+        - "backend/admin-api/src/test/java/com/migao/admin/controller/OrderControllerTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/AgentOrderServiceTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/UserServiceTest.java"
+        - "backend/ai-agent-service/tests/test_tools_customer_logistics_track.py"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  - id: UI-041
+    legacy_id: ""
+    title: "设置页开关几何完整性 — flex 行内开关按钮 shrink-0（轨道不压缩、圆钮不溢出，issue #3924）"
+    domains:
+      - ui
+      - frontend
+    tier: normal
+    tags:
+      - ui
+      - settings
+      - toggle
+      - layout
+    truths_ref:
+      - frontend-fix.no-api-change
+      - frontend-fix.e2e
+    user_inputs:
+      - "企业基础信息 → 基本设置里「启用智能每日经营简报」开关样式异常：白色圆钮溢出蓝色轨道右缘（说明文字长的行里更明显）"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "settings/page.tsx 两个开关按钮（启用智能每日经营简报开关 / 启用系统通知开关）类名含 shrink-0：作为 flex justify-between 行子项时不被长说明文字压缩，w-11 轨道保持 44px"
+      - "E2E 几何断言（boundingBox）：开启态圆钮四边完整落在轨道内（右缘 ≤ 轨道右缘 + 0.5px），轨道宽 ≥ 43.5px —— 修复前实测轨道被压至 37.9px、圆钮溢出右缘"
+      - "点击简报开关 → PUT /api/admin/briefing/config 携带 enabled 翻转，toast 与真实结果一致（交互链路不回归）"
+    skip_reason: "纯前端布局几何由 Playwright E2E 验证（tests/e2e/specs/settings/toggle-geometry.spec.ts），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-15 新增（issue #3924）：设置页开关按钮缺 shrink-0，flex 压缩 44px 轨道而绝对定位圆钮不随缩 → 圆钮溢出轨道（截图同款）；E2E 几何断言红→绿实证"
+    traces:
+      tests:
+        - "tests/e2e/specs/settings/toggle-geometry.spec.ts"
+      ci:
+        - pr-check.yml
+      verifies: []
+  - id: UI-043
+    legacy_id: ""
+    title: "小布选择卡片回传人话 — 点击选项发 label 而非内部编码（proc_item_* 用户看不懂）"
+    domains:
+      - ui
+      - frontend
+    tier: normal
+    tags:
+      - ui
+      - mini-app
+      - choice-card
+      - protocol
+    truths_ref:
+      - frontend-fix.no-api-change
+      - frontend-fix.vitest
+    user_inputs:
+      - "点加工项选择卡片里的「LG工艺 ¥50/件」后，聊天里用户气泡直接发出 proc_item_craft_lg 这种内部编码，顾客看不懂发的是什么"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "ChoiceCard 点击选项回传 opt.label || opt.value（人话，如「LG工艺 ¥50/件」），不得回传内部编码 proc_item_craft_lg —— 与 admin-web InteractiveMessage.tsx 单一事实源及 AI 侧 nodes.py _card_accepts_answer（label/value 均接受）对齐"
+      - "选项缺 label 时回退 value（label || value 协议兜底不回归）"
+      - "提交锁（CH-030）不回归：点选后锁卡，后续点击不再触发 onAction"
+    skip_reason: "纯前端组件行为由 jest 组件测试验证（frontend/mini-app/tests/choice-card.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-15 新增：小布 ChoiceCard 点击选项直发 opt.value（裸编码 proc_item_*），用户实测看不懂；评测 harness 早已按前端协议修为发 label（issue #3365 实证「发内部 id → 模型看不懂选了什么」），但真实小程序组件漏改 → 本次对齐"
+    traces:
+      tests:
+        - "frontend/mini-app/tests/choice-card.test.tsx"
+      ci:
+        - pr-check.yml
+      verifies: []
+  - id: UI-042
+    legacy_id: ""
+    title: "C 端助手消息富文本渲染 — markdown 粗体/列表渲染为样式而非裸符号（真机实测反馈）"
+    domains:
+      - ui
+      - frontend
+    tier: normal
+    tags:
+      - ui
+      - chat
+      - rich-text
+    truths_ref:
+      - frontend-fix.no-api-change
+    user_inputs:
+      - "真机预览实测：小布回复含 **9231 遮光窗帘**、**几米** 等 markdown 加粗符与 - 列表，气泡里原样显示星号与短横线"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "src/utils/richText.ts parseRichText：成对 **x** 解析为 bold 段，未闭合 ** 原样保留（流式安全），单个 * 不误吞；- 开头行解析为 bullet 行"
+      - "MessageBubble 气泡文本区按行渲染：bullet 行带圆点缩进，bold 段走加粗样式类，空行保留段落间距"
+    skip_reason: "纯前端渲染由工具单测验证（frontend/mini-app/tests/rich-text.test.ts），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-15 新增（真机 walkthrough 实测反馈）：C 端气泡无 markdown 处理，LLM 回复的 **粗体**/列表裸奔；新增轻量 richText 解析 + 气泡按行渲染"
+    traces:
+      tests:
+        - "frontend/mini-app/tests/rich-text.test.ts"
       ci:
         - pr-check.yml
       verifies: []

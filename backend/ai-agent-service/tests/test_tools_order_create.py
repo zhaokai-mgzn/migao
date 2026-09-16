@@ -1,5 +1,5 @@
 """OrderCreateTool 单元测试 — 创建订单（SMS 安全 + 参数校验 + camelCase 透传）"""
-# case_ids: OR-008, OR-009, OR-010
+# case_ids: OR-008, OR-009, OR-010, OR-022
 import pytest
 from unittest.mock import AsyncMock, patch
 
@@ -32,6 +32,24 @@ def valid_items():
             "subtotal": 199.0,
         }
     ]
+
+
+def _with_library(client, price, name="遮光窗帘", pid="p1"):
+    """给 mock client 装上商品库 GET（order_create 单价接地校验用）。
+
+    新增的 `_reject_unit_price_not_grounded` 会在 POST 前按商品名查库价；
+    既有成功路径测试的 mock 只有 .post，必须补 .get（否则服务异常拒绝）。
+    """
+    async def _get(path, params=None, **kwargs):
+        if path.rstrip("/").endswith("/products"):
+            return {"success": True, "data": {"items": [{"id": pid, "name": name}], "total": 1}}
+        return {"success": True, "data": {
+            "id": pid, "name": name, "price": price, "basePrice": price,
+            "skus": [{"id": f"{pid}-1", "skuCode": "SKU-1", "colorName": "米白",
+                      "price": price, "stock": 1}],
+        }}
+    client.get = AsyncMock(side_effect=_get)
+    return client
 
 
 class TestOrderCreateDeclaration:
@@ -219,6 +237,62 @@ class TestOrderCreateValidation:
         assert "第 1 项缺少 subtotal" in result.error
 
 
+class TestOrderCreateDuplicateLines:
+    """同一张单里**完全相同的商品行**必须 fail-closed（issue #3392，DB 实证）。
+
+    实证（run 34747025719）：新客用例 OR-022 期望 3 米（168×3 + 打孔 8×3 = ¥528），
+    落库却是 **¥1584**（9×168 + 9×8）与 **¥1056**（6×168 + 6×8）—— 数量按确认轮次
+    累加（3 → 6 → 9），顾客被多收 2~3 倍的钱，且全链路无告警。
+    `db_verify[order_items]` 按商品名**汇总**行数量才看见这个 9；单行数量看起来都正常，
+    正是"重复行"最容易漏掉的形态 —— 故在工具层用"完全相同的行"判据 fail-closed。
+    """
+
+    async def test_exact_duplicate_lines_rejected(self, tool, agent_ctx):
+        items = [
+            {"product_name": "遮光窗帘", "quantity": 3, "unit_price": 168.0, "subtotal": 504.0},
+            {"product_name": "遮光窗帘", "quantity": 3, "unit_price": 168.0, "subtotal": 504.0},
+        ]
+        result = await tool.execute(context=agent_ctx, customer_name="张三",
+                                    customer_phone="13800138000", items=items)
+        assert result.success is False, "完全相同的两行必须拦下（否则顾客被重复计费）"
+        assert "重复" in result.error
+        assert "合并" in result.message, "必须告诉模型怎么改（合并成一行、数量取合计）"
+
+    async def test_three_duplicate_lines_rejected(self, tool, agent_ctx):
+        """实测形态：三轮确认后三行各 3 米 → 顾客实付 ¥1584。"""
+        row = {"product_name": "遮光窗帘", "quantity": 3, "unit_price": 168.0, "subtotal": 504.0}
+        result = await tool.execute(context=agent_ctx, customer_name="张三",
+                                    customer_phone="13800138000", items=[dict(row) for _ in range(3)])
+        assert result.success is False
+        assert "重复" in result.error
+
+    async def test_same_product_different_spec_allowed(self, tool, agent_ctx, valid_items):
+        """同商品**不同规格**（单价/尺寸不同）是合法多行 —— 不得误伤。"""
+        items = [
+            {"product_name": "遮光窗帘", "quantity": 3, "unit_price": 168.0, "subtotal": 504.0,
+             "width": 3.0},
+            {"product_name": "遮光窗帘", "quantity": 2, "unit_price": 168.0, "subtotal": 336.0,
+             "width": 2.0},
+        ]
+        with patch.object(tool, "_needs_sms_verification", return_value=False), \
+             patch("app.tools.order_create.get_admin_api_client") as gc:
+            gc.return_value.post = AsyncMock(return_value={"success": True, "data": {"id": "o1"}})
+            _with_library(gc.return_value, 168.0)
+            result = await tool.execute(context=agent_ctx, customer_name="张三",
+                                        customer_phone="13800138000", items=items)
+        assert "重复" not in (result.error or ""), f"不同规格被误判成重复行: {result.error}"
+
+    async def test_single_line_untouched(self, tool, agent_ctx, valid_items):
+        """正常单行订单不受影响（守卫不能拦成"永远下不了单"）。"""
+        with patch.object(tool, "_needs_sms_verification", return_value=False), \
+             patch("app.tools.order_create.get_admin_api_client") as gc:
+            gc.return_value.post = AsyncMock(return_value={"success": True, "data": {"id": "o1"}})
+            _with_library(gc.return_value, 99.5)
+            result = await tool.execute(context=agent_ctx, customer_name="张三",
+                                        customer_phone="13800138000", items=valid_items)
+        assert result.success is True
+
+
 class TestOrderCreateSmsFlow:
     """customer 角色 SMS 验证流程（#518 安全）"""
 
@@ -260,6 +334,7 @@ class TestOrderCreateSuccess:
 
         mock_client = AsyncMock()
         mock_client.post = AsyncMock(return_value={"success": True, "data": {"id": "order-123"}})
+        _with_library(mock_client, 99.5)
         mock_get_client.return_value = mock_client
 
         result = await tool.execute(
@@ -275,6 +350,7 @@ class TestOrderCreateSuccess:
     async def test_agent_success_without_sms(self, mock_get_client, tool, agent_ctx, valid_items):
         mock_client = AsyncMock()
         mock_client.post = AsyncMock(return_value={"success": True, "data": {"id": "order-456"}})
+        _with_library(mock_client, 99.5)
         mock_get_client.return_value = mock_client
 
         result = await tool.execute(
@@ -288,6 +364,7 @@ class TestOrderCreateSuccess:
     async def test_success_uses_order_no_fallback(self, mock_get_client, tool, agent_ctx, valid_items):
         mock_client = AsyncMock()
         mock_client.post = AsyncMock(return_value={"success": True, "data": {"orderNo": "ORD-20260825-0001"}})
+        _with_library(mock_client, 99.5)
         mock_get_client.return_value = mock_client
 
         result = await tool.execute(
@@ -305,6 +382,7 @@ class TestOrderCreatePayload:
     async def test_payload_camelcase_and_passthrough(self, mock_get_client, tool, agent_ctx):
         mock_client = AsyncMock()
         mock_client.post = AsyncMock(return_value={"success": True, "data": {"id": "o1"}})
+        _with_library(mock_client, 50.0, name="窗帘", pid="pid-1")
         mock_get_client.return_value = mock_client
 
         items = [{
@@ -349,6 +427,7 @@ class TestOrderCreateFailure:
     async def test_post_failure(self, mock_get_client, tool, agent_ctx, valid_items):
         mock_client = AsyncMock()
         mock_client.post = AsyncMock(return_value={"success": False, "error": {"message": "库存不足"}})
+        _with_library(mock_client, 99.5)
         mock_get_client.return_value = mock_client
 
         result = await tool.execute(
@@ -362,6 +441,7 @@ class TestOrderCreateFailure:
     async def test_post_exception(self, mock_get_client, tool, agent_ctx, valid_items):
         mock_client = AsyncMock()
         mock_client.post = AsyncMock(side_effect=RuntimeError("boom"))
+        _with_library(mock_client, 99.5)
         mock_get_client.return_value = mock_client
 
         result = await tool.execute(

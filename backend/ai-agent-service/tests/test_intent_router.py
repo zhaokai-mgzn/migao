@@ -386,7 +386,13 @@ class TestIntentRouter:
 
     @pytest.mark.asyncio
     async def test_route_falls_to_classifier(self, router):
-        """规则未命中时走分类器"""
+        """规则未命中时走分类器。
+
+        ⚠️ 2026-09-13 用例文本更新（issue #3364）：原文本「最近有什么新款窗帘推荐」在本提交
+        之前**确实**规则未命中，但 C 端口语型商品浏览已补进 L1（否则 E2E「订单→商品话题切换」
+        永远调不出商品工具）→ 该文本现在会走 L1（source="rule"）。本用例要测的是
+        **L1 未命中 → L2 兜底**，故换一条无商品类名词、无交易动词的中性文本。
+        """
         with patch.object(
             router.intent_classifier, "classify",
             new_callable=AsyncMock,
@@ -396,7 +402,7 @@ class TestIntentRouter:
                 source="classifier",
             ),
         ):
-            decision = await router.route("最近有什么新款窗帘推荐")
+            decision = await router.route("帮我看看有没有合适的")
             assert decision.intent_result.source == "classifier"
             assert decision.intent_result.intent == IntentType.PRODUCT_INQUIRY
 
@@ -545,12 +551,18 @@ class TestIntentRouterPendingSkill:
 
     @pytest.mark.asyncio
     async def test_pending_skill_exactly_five_chars_skips_llm(self):
-        """pending_skill + 5字消息(边界) → 跳过 LLM"""
+        """pending_skill + 5字消息(边界) → 跳过 LLM（快捷路径的本意）。
+
+        L1 优先（#3476）后：「继续查订单」含「查订单」→ 按 L1 给 order_query
+        （source=rule_short），不再是合成意图 plan_rewrite —— 但两者都**不调 LLM**，
+        快捷路径的语义不变（省 LLM 调用、防止点卡值被误分类）。
+        """
         from app.graph.nodes import intent_router_node
         state = self._make_state("order", "继续查订单")  # exactly 5 chars
 
         result = await intent_router_node(state)
-        assert result["intent_result"]["source"] == "plan_rewrite"
+        assert result["intent_result"]["intent"] == "order_query", result
+        assert result["intent_result"]["source"] == "rule_short", result
 
 
 class TestEntityHint:
@@ -580,3 +592,35 @@ class TestEntityHint:
         with patch("app.memory.context_manager.get_context_manager", return_value=fake):
             hint = await _build_entity_hint("sess-empty")
         assert hint == ""
+
+
+class TestProductImageRouting:
+    """迭代4（issue #3942）：「设主图」类意图必须 L1 确定性路由到商品域。
+
+    根因（评测 run 34981397684）：KEYWORD_MAP 的 PRODUCT_INQUIRY 缺主图类关键词，
+    「把遮光窗帘的主图设成这张色卡图」L1 无命中 → 降级 L2 分类器（置信 0.4）误分
+    general skill（无 product_manage）→ 主图写能力不可达、守卫事实门正确放行不了
+    → PR-026/027 评测不可满足（生产同句也因模型方差时好时坏 = 路由不稳的隐性缺陷）。
+    """
+
+    @pytest.fixture
+    def matcher(self):
+        return RuleMatcher()
+
+    def test_set_main_image_routes_to_product(self, matcher):
+        for t in [
+            "把遮光窗帘的主图设成这张色卡图",
+            "先把这个商品的主图换掉",
+            "帮我改一下这款窗帘的主图",
+            "上传主图到这款商品",
+            "这款商品的详情图帮我换一张",
+        ]:
+            result = matcher.match(t)
+            assert result.intent == IntentType.PRODUCT_INQUIRY, f"{t!r} -> {result.intent}"
+
+    def test_plain_image_word_does_not_overroute(self, matcher):
+        # 裸「图片」语义太宽（图片澄清/发图识别），刻意不放入关键词表 → 不强行路由商品域
+        for t in ["这张图片里有什么", "我发张图片给你看看"]:
+            result = matcher.match(t)
+            assert result is None or result.intent != IntentType.PRODUCT_INQUIRY, \
+                f"{t!r} -> {result.intent}"

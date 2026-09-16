@@ -2,7 +2,7 @@
  * OrderTable 组件测试
  * 覆盖：基本渲染、采购商品列、采购明细列、加工项计费、空状态、加载状态
  */
-// case_ids: UI-002, UI-020
+// case_ids: UI-002, UI-020, UI-019, UI-030
 import { render, screen } from '@testing-library/react'
 import { describe, it, expect, vi } from 'vitest'
 import OrderTable from '@/components/orders/OrderTable'
@@ -63,6 +63,18 @@ describe('OrderTable', () => {
     const names = screen.getAllByText('窗帘')
     expect(names.length).toBeGreaterThanOrEqual(1)
     expect(screen.getByText(/货号/)).toBeTruthy()
+  })
+
+  // issue #3889：producing（生产中）不再以「待发货」展示，避免用户误以为可直接发货
+  it('producing 订单状态徽标展示「生产中」而非「待发货」', () => {
+    render(
+      <OrderTable
+        {...defaultProps}
+        orders={[{ ...mockOrder, status: 'producing' as unknown as OrderStatus }]}
+      />
+    )
+    expect(screen.getByText('生产中')).toBeTruthy()
+    expect(screen.queryByText('待发货')).toBeNull()
   })
 
   it('应显示采购明细（名称/单价×数量=金额）', () => {

@@ -1,4 +1,4 @@
-# case_ids: MC-010, MC-011, AS-003, AS-004, AS-005, HR-002, DA-004, PR-013, DA-003, PP-002
+# case_ids: MC-010, MC-011, AS-003, AS-004, AS-005, HR-002, DA-004, PR-013, DA-003, PP-002, OR-014, CH-010, PG-017
 """规则匹配器单元测试（app/router/rule_matcher.py）
 
 覆盖：_extract_text / RuleMatcher.match 关键词优先级 / 正则规则 / 未命中。
@@ -276,3 +276,91 @@ class TestProcessingManageRouting:
         """「查加工项」仍走商品查询（不误伤）。"""
         result = self._match("查一下这个商品的加工项")
         assert result.intent == IntentType.PRODUCT_INQUIRY
+
+
+class TestProcessingOrderRouting:
+    """PG-017（issue #3921）：「加工单」必须确定性路由到订单域（ORDER_QUERY）。
+
+    根因：L1 关键词表只有「加工项/加工项目/加工费」（→ PRODUCT_INQUIRY），**没有
+    「加工单」**——「查看加工单数据」不命中任何规则 → 降级 L2 LLM 分类 → 被归到
+    商品域（加工项）→ agent 调 processing_item_query 返回加工项目录（证据会话
+    sess_f3c0ee0d2cc342a0 + PG-017 首跑 0 分）。修法：加工单/JG-xxx → ORDER_QUERY
+    （订单域），由 order_skill 的概念区分 prompt 引导（agent 暂不接入加工单工具）。
+    """
+
+    def _match(self, message):
+        return RuleMatcher().match(message)
+
+    def test_processing_order_query_routes_order(self):
+        """「查看加工单数据」→ ORDER_QUERY（不再落 L2 被归到商品域）。"""
+        result = self._match("查看加工单数据")
+        assert result is not None
+        assert result.intent == IntentType.ORDER_QUERY
+
+    def test_processing_order_status_routes_order(self):
+        result = self._match("这个订单的加工单什么状态")
+        assert result is not None
+        assert result.intent == IntentType.ORDER_QUERY
+
+    def test_processing_order_no_routes_order(self):
+        result = self._match("加工单号 JG-20260915-0001 查一下")
+        assert result is not None
+        assert result.intent == IntentType.ORDER_QUERY
+
+    def test_jg_serial_alone_routes_order(self):
+        """JG-xxx 加工单号 → ORDER_QUERY（正则兜底，消息不带「加工单」三字时）。"""
+        result = self._match("JG-20260915-0001 现在什么状态")
+        assert result is not None
+        assert result.intent == IntentType.ORDER_QUERY
+
+    def test_processing_item_inquiry_unchanged(self):
+        """回归：加工项查询仍走商品域（不误伤，issue #3921 不得破坏 #3917 的加工项目录查询）。"""
+        result = self._match("查一下有哪些加工项")
+        assert result is not None
+        assert result.intent == IntentType.PRODUCT_INQUIRY
+
+    def test_processing_item_manage_unchanged(self):
+        """回归：加工项管理仍走 PROCESSING_MANAGE（PP-006）。"""
+        result = self._match("新增加工项，计价方式选按个")
+        assert result.intent == IntentType.PROCESSING_MANAGE
+
+
+class TestOrderVerbBeatsQuote:
+    """显式交易动词优先于"尺寸+算料"（issue #3365，OR-014 根因之二）。
+
+    实证：OR-014 的「帮我下单，遮光窗帘 3 米，要打孔加工」同时命中算料模式
+    （`\d+米?.{0,10}(打孔…)`）→ 被路由到 **customer_quote**，而该 skill **没有 order_create**
+    → 模型无法下单，只能在收货表单/转人工之间空转（同一用例不同跑表现漂移）。
+    语义：顾客说了"下单/买/订"，交易动作比算料权威 —— 算料只是手段。
+    """
+
+    def _intent(self, msg):
+        r = RuleMatcher().match(msg)
+        return r.intent if r else None
+
+    def test_order_verb_wins_over_quote_dimension(self):
+        assert self._intent("帮我下单，遮光窗帘 3 米，要打孔加工") == IntentType.ORDER_CREATE
+
+    def test_quote_still_wins_without_order_verb(self):
+        """回归：纯算料诉求（无交易动词）仍走报价"""
+        assert self._intent("3米窗 2倍褶皱 多少钱") == IntentType.QUOTE
+
+    def test_other_order_verbs(self):
+        for msg in ("我要买遮光窗帘 3 米", "帮我买 2 米面料", "创建订单"):
+            assert self._intent(msg) == IntentType.ORDER_CREATE, msg
+
+
+class TestCustomerProductBrowsePhrasing:
+    """C 端口语型商品浏览 → product_inquiry（issue #3364，E2E 实测红）。"""
+
+    def _intent(self, msg):
+        r = RuleMatcher().match(msg)
+        return r.intent if r else None
+
+    def test_colloquial_browse(self):
+        for msg in ("有什么遮光窗帘推荐", "看看这款面料", "有没有雪尼尔面料"):
+            assert self._intent(msg) == IntentType.PRODUCT_INQUIRY, msg
+
+    def test_order_instruction_with_product_noun_not_browse(self):
+        """反向：下单指令含商品名词但无浏览句式 → 必须走 ORDER_CREATE（不是商品咨询）。"""
+        assert self._intent("帮我下单，遮光窗帘 3 米，要打孔加工") == IntentType.ORDER_CREATE

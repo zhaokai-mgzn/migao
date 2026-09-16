@@ -85,7 +85,9 @@ test.describe('订单详情 - 待付款状态', () => {
 
   test('应显示页面标题和面包屑', async ({ page }) => {
     await expect(page.getByRole('heading', { name: '订单详情' })).toBeVisible()
-    await expect(page.getByRole('link', { name: '订单列表' }).first()).toBeVisible()
+    // ⚠️ 角色契约：面包屑项渲染的是 <button>（OrderDetail.tsx 的面包屑用 router.push），
+    //    不是 <a>/link ⇒ 断言 role=link 恒空（2026-09-15 归因，截图实证面包屑可见）。
+    await expect(page.getByRole('button', { name: '订单列表' }).first()).toBeVisible()
   })
 
   test('待付款应显示"待买家付款"', async ({ page }) => {
@@ -103,24 +105,29 @@ test.describe('订单详情 - 待付款状态', () => {
 
   test('基础信息应显示订单编号', async ({ page }) => {
     await expect(page.getByText('订单编号')).toBeVisible()
-    await expect(page.getByText('ORD-20250101-0001')).toBeVisible()
+    // ⚠️ strict-mode：订单号在 DOM 内出现 3 处（基础信息 / 打印联页眉 / 打印联明细）⇒ 必须 .first()
+    await expect(page.getByText('ORD-20250101-0001').first()).toBeVisible()
   })
 
   test('商品信息表格应显示商品名和金额', async ({ page }) => {
     await expect(page.getByText('商品信息')).toBeVisible()
-    await expect(page.getByText('天鹅绒遮光窗帘')).toBeVisible()
+    // ⚠️ strict-mode：商品名同时出现在屏幕表格与打印联明细（同一 DOM，打印联屏幕不可见但仍匹配）
+    await expect(page.getByText('天鹅绒遮光窗帘').first()).toBeVisible()
     await expect(page.getByText('订单实收款')).toBeVisible()
   })
 
   test('加工项表格应显示加工项名称和金额', async ({ page }) => {
-    await expect(page.getByText('韩式打褶定型')).toBeVisible()
+    // ⚠️ strict-mode：加工项名同样有「屏幕版 + 打印联」两份
+    await expect(page.getByText('韩式打褶定型').first()).toBeVisible()
   })
 
   test('收货信息应显示收货人、电话、地址', async ({ page }) => {
-    await expect(page.getByText('收货信息')).toBeVisible()
-    await expect(page.getByText('张三')).toBeVisible()
-    await expect(page.getByText('13800138000')).toBeVisible()
-    await expect(page.getByText('浙江省杭州市西湖区文三路100号')).toBeVisible()
+    // ⚠️ strict-mode：「收货信息」有区块标题（h2）与打印联小节标题两份
+    await expect(page.getByText('收货信息').first()).toBeVisible()
+    // ⚠️ strict-mode：收货人/电话/地址同样有「屏幕版 + ShipmentDoc 打印联」两份（ShipmentDoc 常驻 DOM）
+    await expect(page.getByText('张三').first()).toBeVisible()
+    await expect(page.getByText('13800138000').first()).toBeVisible()
+    await expect(page.getByText('浙江省杭州市西湖区文三路100号').first()).toBeVisible()
   })
 
   test('点击关闭订单应弹出确认对话框', async ({ page }) => {
@@ -214,11 +221,13 @@ test.describe('订单详情 - 已完成状态', () => {
 
   test('已完成状态不应显示操作按钮', async ({ page }) => {
     await expect(page.getByRole('button', { name: '关闭订单' })).toBeHidden()
-    await expect(page.getByRole('button', { name: '发货' })).toBeHidden()
+    // ⚠️ 子串误匹配：completed 态合法渲染「打印发货单」，其 accessible name 含「发货」⇒
+    //    { name: '发货' } 默认按子串匹配 ⇒ 恒命中该按钮。用 exact 收窄到真正的「发货」动作键。
+    await expect(page.getByRole('button', { name: '发货', exact: true })).toBeHidden()
   })
 
   test('面包屑应可点击返回订单列表', async ({ page }) => {
-    await page.getByRole('link', { name: '订单列表' }).first().click()
+    await page.getByRole('button', { name: '订单列表' }).first().click()
     await page.waitForURL(/\/orders/)
   })
 })

@@ -18,6 +18,8 @@ import com.migao.admin.mapper.OrderLogisticsMapper;
 import com.migao.admin.mapper.OrderMapper;
 import com.migao.admin.mapper.ProductMapper;
 import com.migao.admin.mapper.ProductSkuMapper;
+import com.migao.admin.mapper.ProcessingOrderMapper;
+import com.migao.admin.entity.ProcessingOrder;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
@@ -63,6 +65,9 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
     private final FinanceTransactionMapper financeTransactionMapper;
     private final ObjectMapper objectMapper;
     private final NotificationService notificationService;
+    private final ProcessingOrderMapper processingOrderMapper;
+    /** 发货人兜底解析（issue #3768）：当前登录用户姓名 */
+    private final UserService userService;
 
     /**
      * 订单号序列号（线程安全）
@@ -335,7 +340,7 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
                             // amount = unitPrice * quantity（兜底：subtotal）
                             BigDecimal itemAmount = BigDecimal.ZERO;
                             if (item.getUnitPrice() != null && item.getQuantity() != null) {
-                                itemAmount = item.getUnitPrice().multiply(BigDecimal.valueOf(item.getQuantity()));
+                                itemAmount = item.getUnitPrice().multiply(item.getQuantity());
                             } else if (item.getSubtotal() != null) {
                                 itemAmount = item.getSubtotal();
                             }
@@ -401,13 +406,45 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
      */
     @Transactional(rollbackFor = Exception.class)
     public OrderDetailResponse createOrder(OrderCreateRequest request, Long tenantId) {
+        // ── 资金/库存完整性闸门（issue #3622 / #3682）：数量 ≥ 1，单价 > 0 ──
+        // issue #3666：数量已放宽为 BigDecimal（DECIMAL(10,2)），per_area 的合法数量就是小数
+        // （门幅 2.8m × 3m = 8.4 ㎡）——但不能因此放行 <1。
+        // issue #3682：下限从「> 0」收紧为「≥ 1」——`items[].quantity` 直接驱动库存/销量，
+        // 而下面 `validateStockSufficientForRequest`/`deductSkuStock` 对 quantity 取整数部分
+        // （`:1051` `intValue()` 库存校验 / `:1408` `deductStock` / `:1409` `increaseSalesCount`）：
+        // 0.5 → `needed = 0` 校验**恒通过**、`deductStock(0)` **不减库存**、销量 **+0**
+        // → **订单成交但库存/销量零变动，且全程无告警**（账实不符）。
+        // 旧实现（quantity 为 Integer + agent 工具层拒绝非整数）在下单前就挡回 0.5 并给可行动
+        // 提示，故 <1 是 #3666 放宽后**新可达**的静默漏扣。裁定（#3682 方案 A）：下限 = 1，
+        // 与 admin-web 表单页 `min={1}` 及 ai-agent 工具层同口径；≥1 的小数仍合法（保真落库）。
+        // 为什么必须在 Service 层显式判定（而不是只靠 DTO 注解）：
+        //   ① Agent 路径 `createOrderForAgent`（下方 BFF 段）是**手工 new `OrderCreateRequest`**
+        //      再调用本方法 —— 程序化构造的 Bean **不经过 Bean Validation**，注解对它无效；
+        //   ② 本方法是三条路径（表单 / Agent / 未来程序化调用）的**唯一共享入口**，判在这里才无死角。
+        // 不判的后果：负数量 → `unitPrice × 负数` 算出**负金额**落库；库存前置校验
+        // （下方 validateStockSufficientForRequest）判据「需求量 ≤ 库存」对**负需求恒真**
+        // → **超卖防线被绕过**；0 < 数量 < 1 → 库存/销量零扣减（本条 issue #3682）。
+        for (int i = 0; i < request.getItems().size(); i++) {
+            OrderCreateRequest.OrderItemRequest itemRequest = request.getItems().get(i);
+            if (itemRequest.getQuantity() == null
+                    || itemRequest.getQuantity().compareTo(BigDecimal.ONE) < 0) {
+                throw BusinessException.validationError(
+                        String.format("商品明细第 %d 项的数量不能小于 1", i + 1));
+            }
+            if (itemRequest.getUnitPrice() == null
+                    || itemRequest.getUnitPrice().compareTo(BigDecimal.ZERO) <= 0) {
+                throw BusinessException.validationError(
+                        String.format("商品明细第 %d 项的单价必须大于 0", i + 1));
+            }
+        }
+
         // 计算总金额（后端独立计算：unitPrice * quantity + 加工费，不依赖前端 subtotal 防止不一致）
         BigDecimal totalAmount = BigDecimal.ZERO;
         for (OrderCreateRequest.OrderItemRequest itemRequest : request.getItems()) {
             // 商品金额 = 单价 × 数量
             BigDecimal itemAmount = BigDecimal.ZERO;
             if (itemRequest.getUnitPrice() != null && itemRequest.getQuantity() != null) {
-                itemAmount = itemRequest.getUnitPrice().multiply(BigDecimal.valueOf(itemRequest.getQuantity()));
+                itemAmount = itemRequest.getUnitPrice().multiply(itemRequest.getQuantity());
             }
             // 加工费（从 processingInfo 中解析）
             BigDecimal processingFee = sumProcessingFee(itemRequest.getProcessingInfo());
@@ -515,6 +552,12 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
             String targetLabel = ORDER_STATUS_LABELS.getOrDefault(status, status);
             throw BusinessException.validationError(
                     String.format("订单状态不允许从 [%s] 变更为 [%s]", currentLabel, targetLabel));
+        }
+
+        // 加工单联动守卫（issue #3340）：含加工项订单必须完成加工单后才能发货，
+        // 防止加工环节被 confirmed→shipped 直跳绕过
+        if ("shipped".equals(status)) {
+            assertProcessingCompletedBeforeShip(order);
         }
 
         // 统一走带库存/销量副作用的路径，避免与 confirmPayment/cancelOrder 逻辑不一致
@@ -700,6 +743,7 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
             logisticsInfo.setTrackingNo(logistics.getTrackingNo());
             logisticsInfo.setStatus(logistics.getStatus());
             logisticsInfo.setTrackingInfo(logistics.getTrackingInfo());
+            logisticsInfo.setShipperName(logistics.getShipperName());
             logisticsInfo.setShippedAt(logistics.getShippedAt());
             logisticsInfo.setDeliveredAt(logistics.getDeliveredAt());
             response.setLogistics(logisticsInfo);
@@ -709,16 +753,70 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
     }
 
     /**
+     * 加工单联动守卫（issue #3340）：订单含加工项且无已完成加工单时禁止发货。
+     * 有加工项订单必须走 producing（生成加工单）→ 加工完成 → shipped，防止加工环节被绕过。
+     */
+    private void assertProcessingCompletedBeforeShip(Order order) {
+        // 必须走 BaseMapper 加载（见 loadOrderItems）：自定义 @Select 不经过 JacksonTypeHandler，
+        // processing_info 会以 JSON 字符串返回 → 加工项解析恒为空 → 守卫静默失效
+        // （issue #3340 验收实战：真实对话生成加工单被判「无加工项」）
+        List<OrderItem> items = loadOrderItems(order.getId(), order.getTenantId());
+        boolean hasProcessing = items.stream()
+                .anyMatch(item -> !extractProcessingItems(item.getProcessingInfo()).isEmpty());
+        if (hasProcessing
+                && processingOrderMapper.countCompletedByOrderId(order.getId(), order.getTenantId()) == 0) {
+            throw BusinessException.validationError(
+                    "订单含加工项，须先完成加工单后再发货（可在订单详情或让米宝生成/更新加工单）");
+        }
+    }
+
+    /**
+     * 加载订单明细（走 BaseMapper，确保 processing_info 经 JacksonTypeHandler 反序列化为 Map）。
+     * 与 getOrderById 的既有约定一致（见查询明细处的注释）。
+     */
+    private List<OrderItem> loadOrderItems(String orderId, Long tenantId) {
+        List<OrderItem> items = orderItemMapper.selectList(new LambdaQueryWrapper<OrderItem>()
+                .eq(OrderItem::getOrderId, orderId)
+                .eq(OrderItem::getTenantId, tenantId)
+                .eq(OrderItem::getDeleted, 0));
+        return items != null ? items : Collections.emptyList();
+    }
+
+    /**
+     * 加工单取消联动（issue #3340）：订单 producing → confirmed 回退。
+     * 仅状态回退，无库存副作用（confirmed→producing 本身也无库存副作用）。
+     */
+    public void revertProducingToConfirmed(String orderId, String reason) {
+        int rows = transitionStatusAtomic(orderId, "producing", "confirmed", reason);
+        if (rows == 0) {
+            throw new BusinessException("ORDER_STATUS_CONFLICT", "订单状态已并发变更，请刷新后重试", 409);
+        }
+    }
+
+    /**
      * 从订单明细的 processingInfo（JSON）中解析加工项列表。
      * processingInfo 格式来自前端创建订单时写入：
      * { "processingFee": <number>, "processingItems": [ { id,name,unitPrice,quantity,unit } ] , ... }
      * 解析失败/缺字段时返回空列表，确保不影响订单查询主流程。
+     *
+     * issue #3340 验收实战：processingInfo 可能是 JSON **字符串**（自定义 @Select 查询不经过
+     * JacksonTypeHandler），此处做兼容解析，避免"有加工项却被判无加工项"。
      */
     @SuppressWarnings("unchecked")
     private List<OrderDetailResponse.ProcessingItemBrief> extractProcessingItems(Object processingInfo) {
-        if (!(processingInfo instanceof Map)) {
+        Object normalized = processingInfo;
+        if (normalized instanceof String s && !s.isBlank()) {
+            try {
+                normalized = objectMapper.readValue(s, Map.class);
+            } catch (Exception e) {
+                log.warn("processingInfo JSON 字符串解析失败: {}", e.getMessage());
+                return Collections.emptyList();
+            }
+        }
+        if (!(normalized instanceof Map)) {
             return Collections.emptyList();
         }
+        processingInfo = normalized;
         try {
             Map<String, Object> info = (Map<String, Object>) processingInfo;
             Object raw = info.get("processingItems");
@@ -739,11 +837,14 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
                 brief.setName(name != null ? String.valueOf(name) : null);
                 BigDecimal unitPrice = toBigDecimal(entry.get("unitPrice"));
                 brief.setUnitPrice(unitPrice);
-                Integer quantity = toInteger(entry.get("quantity"));
+                // issue #3666：必须走十进制解析——旧 toInteger() 把 per_area 的 8.4 截断成 8，
+                // 详情/列表按截断值重算加工费（30×8=240.00）与外层落库 processingFee（252.00）
+                // 自相矛盾。
+                BigDecimal quantity = toBigDecimal(entry.get("quantity"));
                 brief.setQuantity(quantity);
                 BigDecimal amount = BigDecimal.ZERO;
                 if (unitPrice != null && quantity != null) {
-                    amount = unitPrice.multiply(BigDecimal.valueOf(quantity));
+                    amount = unitPrice.multiply(quantity);
                 }
                 brief.setAmount(amount);
                 result.add(brief);
@@ -776,16 +877,6 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         }
     }
 
-    private Integer toInteger(Object value) {
-        if (value == null) return null;
-        if (value instanceof Number) return ((Number) value).intValue();
-        try {
-            return Integer.valueOf(String.valueOf(value));
-        } catch (NumberFormatException e) {
-            return null;
-        }
-    }
-
     /**
      * 计算/解析订单明细小计：优先使用请求中的 subtotal，若为 null 则回退 unitPrice * quantity。
      * 避免前端未传 subtotal 时 totalAmount 被记录为 0 的问题。
@@ -795,7 +886,7 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
             return itemRequest.getSubtotal();
         }
         if (itemRequest.getUnitPrice() != null && itemRequest.getQuantity() != null) {
-            return itemRequest.getUnitPrice().multiply(BigDecimal.valueOf(itemRequest.getQuantity()));
+            return itemRequest.getUnitPrice().multiply(itemRequest.getQuantity());
         }
         return BigDecimal.ZERO;
     }
@@ -808,7 +899,7 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         BeanUtils.copyProperties(item, response);
         // 计算 amount = unitPrice * quantity（优先），否则回退 subtotal
         if (item.getUnitPrice() != null && item.getQuantity() != null) {
-            response.setAmount(item.getUnitPrice().multiply(BigDecimal.valueOf(item.getQuantity())));
+            response.setAmount(item.getUnitPrice().multiply(item.getQuantity()));
         } else {
             response.setAmount(item.getSubtotal());
         }
@@ -966,11 +1057,14 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
             }
             ProductSku sku = productSkuMapper.selectById(skuId);
             int stock = sku != null && sku.getStock() != null ? sku.getStock() : 0;
-            if (stock < item.getQuantity()) {
+            // issue #3666：数量为 BigDecimal，库存是整数列 → 按整数部分比较（与原 Integer
+            // 语义一致；小数数量（米数/面积）以整数件库存校验，不引入新的舍入规则）
+            int needed = item.getQuantity().intValue();
+            if (stock < needed) {
                 throw BusinessException.validationError(
                         String.format("商品「%s」库存不足：需要 %d 件，当前仅剩 %d 件，请先补货后再%s",
                                 item.getProductName() != null ? item.getProductName() : skuId,
-                                item.getQuantity(), stock, actionLabel));
+                                needed, stock, actionLabel));
             }
         }
     }
@@ -995,6 +1089,25 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         }
         if (closeReason != null && !closeReason.isBlank() && closeReason.length() > 500) {
             throw BusinessException.validationError("关闭原因不能超过 500 个字符");
+        }
+
+        // 加工单联动（issue #3340）：未发加工 → 自动作废加工单；已发加工及以上 → 拦截，须先处理加工单
+        ProcessingOrder activePo = processingOrderMapper.selectActiveByOrderId(order.getId(), order.getTenantId());
+        if (activePo != null) {
+            if ("generated".equals(activePo.getStatus())) {
+                ProcessingOrder poUpd = ProcessingOrder.builder()
+                        .id(activePo.getId())
+                        .status("cancelled")
+                        .cancelledAt(OffsetDateTime.now())
+                        .cancelledReason("订单取消，加工单自动作废")
+                        .build();
+                processingOrderMapper.updateById(poUpd);
+                log.info("订单取消联动作废加工单: po={}, orderId={}", activePo.getProcessingOrderNo(), order.getId());
+            } else {
+                throw BusinessException.validationError(String.format(
+                        "订单已发加工（加工单 %s 状态：%s），请先在订单详情或让米宝处理加工单后再取消订单",
+                        activePo.getProcessingOrderNo(), activePo.getStatus()));
+            }
         }
 
         // 原子状态流转（以读取到的 previousStatus 为条件，防止并发重复恢复库存）
@@ -1262,14 +1375,16 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         if (order == null) return;
 
         // 按 productId 聚合数量和金额
-        Map<String, Integer> productQtyMap = new java.util.HashMap<>();
+        // issue #3666：数量放宽为 BigDecimal，聚合也用 BigDecimal（不引入 double/float）；
+        // 销量列是整数 → 仅在写库前取整数部分。
+        Map<String, BigDecimal> productQtyMap = new java.util.HashMap<>();
         Map<String, BigDecimal> productAmountMap = new java.util.HashMap<>();
 
         for (OrderItem item : items) {
             if (item.getProductId() == null) continue;
-            int qty = item.getQuantity() != null ? item.getQuantity() : 0;
+            BigDecimal qty = item.getQuantity() != null ? item.getQuantity() : BigDecimal.ZERO;
             BigDecimal amount = item.getSubtotal() != null ? item.getSubtotal() : BigDecimal.ZERO;
-            productQtyMap.merge(item.getProductId(), qty, Integer::sum);
+            productQtyMap.merge(item.getProductId(), qty, BigDecimal::add);
             productAmountMap.merge(item.getProductId(), amount, BigDecimal::add);
 
             // SKU级库存调整：从 processingInfo 中匹配 SKU
@@ -1281,9 +1396,9 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         }
 
         // 商品级调整
-        for (Map.Entry<String, Integer> entry : productQtyMap.entrySet()) {
+        for (Map.Entry<String, BigDecimal> entry : productQtyMap.entrySet()) {
             String productId = entry.getKey();
-            int totalQty = entry.getValue();
+            int totalQty = entry.getValue().intValue();
             BigDecimal totalAmount = productAmountMap.getOrDefault(productId, BigDecimal.ZERO);
             if (isDeduct) {
                 productMapper.increaseSales(productId, totalQty, totalAmount);
@@ -1300,8 +1415,9 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
     private void deductSkuStock(OrderItem item) {
         Long skuId = matchSkuId(item);
         if (skuId != null && item.getQuantity() != null) {
-            productSkuMapper.deductStock(skuId, item.getQuantity());
-            productSkuMapper.increaseSalesCount(skuId, item.getQuantity());
+            // issue #3666：库存/销量列是整数，取整数部分（与库存校验同一口径）
+            productSkuMapper.deductStock(skuId, item.getQuantity().intValue());
+            productSkuMapper.increaseSalesCount(skuId, item.getQuantity().intValue());
         }
     }
 
@@ -1311,14 +1427,24 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
     private void restoreSkuStock(OrderItem item) {
         Long skuId = matchSkuId(item);
         if (skuId != null && item.getQuantity() != null) {
-            productSkuMapper.restoreStock(skuId, item.getQuantity());
-            productSkuMapper.decreaseSalesCount(skuId, item.getQuantity());
+            // issue #3666：库存/销量列是整数，取整数部分（与库存校验同一口径）
+            productSkuMapper.restoreStock(skuId, item.getQuantity().intValue());
+            productSkuMapper.decreaseSalesCount(skuId, item.getQuantity().intValue());
         }
     }
 
     /**
      * 根据 OrderItem 的 processingInfo 匹配对应的 SKU ID
      * processingInfo 格式: { "colorId": N, "sellingMethod": "...", "doorWidth": "...", "skuId": N, ... }
+     *
+     * <p>口径统一（issue #3621）：processingInfo 由 agent / 前端写入，售卖方式是中文标签
+     * （{@code 散剪}）、门幅带单位（{@code 2.8米}），而库内是枚举（{@code bulk_cut}）
+     * 与裸数值（{@code 2.8}）。旧回退分支字面 {@code eq} 必然 0 行命中，而两个调用点都是
+     * {@code if (skuId != null)} —— 静默跳过 → 取消订单不回补库存、销量不记（账实不符）。
+     * 现：① 复用 {@link SkuNotation} 同一套归一化口径（不新增第二套映射）；
+     * ② 陈旧 skuId 先校验存在性，不存在则回退组合匹配（防主键漂移后 update 命中 0 行的静默失败）；
+     * ③ 明细**带 SKU 标识但匹配不到**时不再静默，留 WARN（含后果说明）。
+     * 明细完全不带 SKU 规格信息时保持既有设计（无 SKU 级库存调整），不告警。
      */
     @SuppressWarnings("unchecked")
     private Long matchSkuId(OrderItem item) {
@@ -1328,44 +1454,91 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         if (processingInfo instanceof Map) {
             Map<String, Object> info = (Map<String, Object>) processingInfo;
 
-            // 优先使用 skuId（如果前端传了）
             Object skuIdObj = info.get("skuId");
+            Object colorIdObj = info.get("colorId");
+            Object sellingMethod = info.get("sellingMethod");
+            Object doorWidth = info.get("doorWidth");
+
+            // 明细不带任何 SKU 规格信息 → 无 SKU 级库存调整（与 validateStockSufficientForItems 注释一致）
+            if (skuIdObj == null && colorIdObj == null && sellingMethod == null && doorWidth == null) {
+                return null;
+            }
+
+            // 优先使用 skuId（如果前端传了）；先校验存在性 —— 主键漂移（agent 重建路径可能
+            // 「删旧行 + 插新行」）后拿着陈旧 id 直接返回，会让扣减/回补 update 命中 0 行且完全静默
             if (skuIdObj != null) {
                 try {
-                    return Long.valueOf(skuIdObj.toString());
+                    Long skuId = Long.valueOf(skuIdObj.toString());
+                    if (productSkuMapper.selectById(skuId) != null) {
+                        return skuId;
+                    }
+                    log.warn("matchSkuId: processingInfo.skuId 在库中已不存在（主键漂移），改走组合回退, orderId={}, productId={}, skuId={}",
+                            item.getOrderId(), item.getProductId(), skuId);
                 } catch (NumberFormatException e) {
                     log.warn("matchSkuId: skuId 格式错误, orderId={}, productId={}, skuId={}",
                             item.getOrderId(), item.getProductId(), skuIdObj);
                 }
             }
 
-            // 回退：通过 colorId + sellingMethod + doorWidth 匹配
-            Object colorIdObj = info.get("colorId");
-            Object sellingMethod = info.get("sellingMethod");
-            Object doorWidth = info.get("doorWidth");
-
-            if (colorIdObj != null && sellingMethod != null && doorWidth != null) {
-                try {
-                    Long colorId = Long.valueOf(colorIdObj.toString());
-                    LambdaQueryWrapper<ProductSku> wrapper = new LambdaQueryWrapper<ProductSku>()
-                            .eq(ProductSku::getProductId, item.getProductId())
-                            .eq(ProductSku::getColorId, colorId)
-                            .eq(ProductSku::getSellingMethod, sellingMethod.toString())
-                            .eq(ProductSku::getDoorWidth, doorWidth.toString());
-                    ProductSku sku = productSkuMapper.selectOne(wrapper);
-                    if (sku != null) {
-                        return sku.getId();
-                    }
-                } catch (NumberFormatException e) {
-                    log.warn("matchSkuId: colorId 格式错误, orderId={}, productId={}, colorId={}",
-                            item.getOrderId(), item.getProductId(), colorIdObj);
+            // 回退：通过 colorId + sellingMethod + doorWidth 匹配（与建品/调价同一套归一化口径）
+            if (colorIdObj == null || sellingMethod == null || doorWidth == null) {
+                log.warn("matchSkuId: 明细带 SKU 标识但组合字段不全（需 colorId+sellingMethod+doorWidth），无法定位 SKU → 该明细库存不回补、销量不记, orderId={}, productId={}, colorId={}, sellingMethod={}, doorWidth={}",
+                        item.getOrderId(), item.getProductId(), colorIdObj, sellingMethod, doorWidth);
+                return null;
+            }
+            try {
+                Long colorId = Long.valueOf(colorIdObj.toString());
+                ProductSku sku = findSkuByCombination(item.getProductId(), colorId,
+                        sellingMethod.toString(), doorWidth.toString());
+                if (sku == null) {
+                    log.warn("matchSkuId: 按组合（含门幅/售卖方式归一化）未匹配到 SKU → 该明细库存不回补、销量不记, orderId={}, productId={}, colorId={}, sellingMethod={}, doorWidth={}",
+                            item.getOrderId(), item.getProductId(), colorId, sellingMethod, doorWidth);
+                    return null;
                 }
+                return sku.getId();
+            } catch (NumberFormatException e) {
+                log.warn("matchSkuId: colorId 格式错误, orderId={}, productId={}, colorId={}",
+                        item.getOrderId(), item.getProductId(), colorIdObj);
             }
         }
         return null;
     }
 
     // ======================== Agent BFF 方法 ========================
+
+    /**
+     * 组合回退匹配：商品 + 颜色 + 售卖方式（归一化后）定位候选，门幅在 Java 侧按
+     * {@link SkuNotation#sameDoorWidth} 双侧归一化比较（库内 {@code 2.8} 与明细
+     * {@code 2.8米} / {@code 门幅2.8米} 视为同一物理门幅；{@code 2.8} vs {@code 3.2} 不等）。
+     *
+     * <p>只归一化<b>匹配比较</b>，不回写库内值（与 #3546 调价路径同一处理）。同一组合命中
+     * 多行时取第一条并告警，便于发现历史重复行。
+     *
+     * @return 命中的 SKU；未命中返回 null（调用方负责告警，不再静默跳过）
+     */
+    private ProductSku findSkuByCombination(String productId, Long colorId,
+                                            String sellingMethod, String doorWidth) {
+        List<ProductSku> candidates = productSkuMapper.selectList(
+                new LambdaQueryWrapper<ProductSku>()
+                        .eq(ProductSku::getProductId, productId)
+                        .eq(ProductSku::getColorId, colorId)
+                        .eq(ProductSku::getSellingMethod, SkuNotation.normalizeSellingMethod(sellingMethod)));
+        ProductSku found = null;
+        int hits = 0;
+        for (ProductSku candidate : candidates) {
+            if (SkuNotation.sameDoorWidth(candidate.getDoorWidth(), doorWidth)) {
+                if (found == null) {
+                    found = candidate;
+                }
+                hits++;
+            }
+        }
+        if (hits > 1) {
+            log.warn("matchSkuId: 归一化后同一组合命中多行 SKU（库内可能存在同门幅重复行），取第一条: productId={}, colorId={}, sellingMethod={}, doorWidth={}, hits={}",
+                    productId, colorId, sellingMethod, doorWidth, hits);
+        }
+        return found;
+    }
 
     /**
      * Agent 专用创建订单。
@@ -1411,7 +1584,7 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
             itemReq.setUnitPrice(item.getUnitPrice());
             // subtotal 服务端强制重算（对抗 LLM 编造）
             if (item.getQuantity() != null && item.getUnitPrice() != null) {
-                itemReq.setSubtotal(item.getUnitPrice().multiply(BigDecimal.valueOf(item.getQuantity())));
+                itemReq.setSubtotal(item.getUnitPrice().multiply(item.getQuantity()));
             } else if (item.getSubtotal() != null) {
                 itemReq.setSubtotal(item.getSubtotal());
             }
@@ -1537,7 +1710,7 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
                     throw BusinessException.validationError("trackingNumber 不能为空");
                 }
                 upsertLogistics(resolvedId, request.getLogisticsCompany().trim(),
-                        request.getTrackingNumber().trim());
+                        request.getTrackingNumber().trim(), null);
                 // 发货语义：记录物流后将订单流转为 shipped（与契约 order_manage(update_logistics) 可发货一致）
                 shipOrderIfApplicable(resolvedId);
                 yield getOrderById(resolvedId);
@@ -1548,9 +1721,30 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
     }
 
     /**
-     * 更新/创建订单物流信息：存在最新物流记录则更新，否则新建（status=in_transit）。
+     * 发货人取值（issue #3768）：显式传入优先，否则用当前登录用户姓名兜底。
+     *
+     * <p>两条发货路径共用同一口径 —— B 端 {@code PUT /api/admin/orders/{id}/logistics}
+     * （前端发货页预填当前登录人、可改成实际发货人）与 agent
+     * {@code order_manage(action=update_logistics)}（透传 {@code X-User-Id}）。
+     *
+     * @param provided 请求显式提供的发货人，可为空
+     * @return 发货人姓名；都取不到时返回 null（打印/展示显示「-」）
      */
-    private void upsertLogistics(String orderId, String logisticsCompany, String trackingNo) {
+    public String resolveShipperName(String provided) {
+        if (StringUtils.hasText(provided)) {
+            return provided.trim();
+        }
+        return userService.resolveCurrentUserDisplayName();
+    }
+
+    /**
+     * 更新/创建订单物流信息：存在最新物流记录则更新，否则新建（status=in_transit）。
+     *
+     * <p>发货人（issue #3768）语义：新建时取 {@code resolveShipperName(provided)}；
+     * 更新时**仅**在显式传入非空时覆盖 —— 后续改运单号/纠错不等于换发货人，
+     * 也不能因为「别人来改单号」就把经手人改成那个人，更不能为存量历史数据猜一个经手人。
+     */
+    private void upsertLogistics(String orderId, String logisticsCompany, String trackingNo, String shipperName) {
         List<OrderLogistics> existing = orderLogisticsMapper.selectByOrderId(orderId, TenantContext.getTenantId());
         if (existing == null || existing.isEmpty()) {
             OrderLogistics logistics = OrderLogistics.builder()
@@ -1558,15 +1752,22 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
                     .orderId(orderId)
                     .logisticsCompany(logisticsCompany)
                     .trackingNo(trackingNo)
+                    .shipperName(resolveShipperName(shipperName))
                     .status("in_transit")
                     .shippedAt(OffsetDateTime.now())
                     .build();
             orderLogisticsMapper.insert(logistics);
-            log.info("创建物流信息成功: orderId={}, trackingNo={}", orderId, trackingNo);
+            log.info("创建物流信息成功: orderId={}, trackingNo={}, shipper={}",
+                    orderId, trackingNo, logistics.getShipperName());
         } else {
             OrderLogistics latest = existing.get(0);
             latest.setLogisticsCompany(logisticsCompany);
             latest.setTrackingNo(trackingNo);
+            // 仅显式传入才覆盖：兜底值属于「新建时的经手人」，不能用它改写已记录的发货人
+            // （否则改一次运单号/agent 补一次单号就会把经手人换成当次操作人）
+            if (StringUtils.hasText(shipperName)) {
+                latest.setShipperName(shipperName.trim());
+            }
             if (latest.getStatus() == null) {
                 latest.setStatus("in_transit");
             }
@@ -1586,6 +1787,9 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         }
         String currentStatus = order.getStatus();
         if ("confirmed".equals(currentStatus) || "producing".equals(currentStatus)) {
+            // P1 修复（验收复核 #3345）：与 updateOrderStatus 路径同一守卫——含加工项订单
+            // 须有 completed 加工单才能发货，防止 agent 发货路径绕过加工环节
+            assertProcessingCompletedBeforeShip(order);
             int rows = transitionStatusAtomic(orderId, currentStatus, "shipped", null);
             if (rows == 0) {
                 throw BusinessException.validationError("订单状态已并发变更，请刷新后重试");

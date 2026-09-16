@@ -1,4 +1,4 @@
-import { normalizeOrderStatus, type AfterSalesStatus, type OrderStatus } from '@/types'
+import { displayOrderStatus, normalizeOrderStatus, type AfterSalesStatus, type OrderStatus } from '@/types'
 
 /**
  * 语义色 chips 的 Tailwind tone 类（织物质感 token，issue #2539 子任务 D）。
@@ -45,6 +45,11 @@ const UNKNOWN_CHIP: StatusChip = { tone: 'neutral', label: '暂无数据' }
  */
 export function orderStatusChipFor(status: string | null | undefined): StatusChip {
   if (!status) return UNKNOWN_CHIP
+  // issue #3889：producing（生产中）从 pending_shipment 展示中独立出来，
+  // 列表徽标与详情页同一展示口径（displayOrderStatus）；其余沿用归一化 chip 映射
+  if (status === 'producing') {
+    return { tone: 'warning', label: displayOrderStatus(status).label }
+  }
   const normalized = normalizeOrderStatus(status)
   if (normalized in orderStatusChip) {
     return orderStatusChip[normalized as OrderStatus]

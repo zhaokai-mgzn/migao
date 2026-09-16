@@ -48,6 +48,8 @@
 .form-card__input {
   width: 100%;
   box-sizing: border-box;
+  height: 88px; // 44pt 输入/触控高度（真机反馈：原仅 padding 撑高，iOS 原生 input 行高小于文字行盒 → 文字上下被截）
+  line-height: 1.5;
   border: 1px solid #d8dee6;
   border-radius: 10px;
   padding: 14px 16px;
@@ -57,6 +59,7 @@
 }
 
 .form-card__input--textarea {
+  height: auto;
   min-height: 88px;
   line-height: 1.5;
 }

@@ -552,6 +552,8 @@ public class RegistrationService {
                 {"新增商品", "product:create", "product", "create", "新增/编辑/上下架商品"},
                 {"商品分类", "product:category", "product", "category", "管理商品分类"},
                 {"加工管理", "processing:manage", "processing", "manage", "管理加工项"},
+                {"加工单查看", "processing:view", "processing-order", "view", "查看加工单"},
+                {"加工单操作", "processing:update", "processing-order", "update", "生成/发加工/取消加工单"},
                 {"知识库管理", "knowledge:manage", "knowledge", "manage", "管理知识库"},
                 {"订单列表", "order:list", "order", "list", "查看订单列表"},
                 {"订单详情", "order:detail", "order", "detail", "查看订单详情"},
@@ -584,15 +586,19 @@ public class RegistrationService {
         // 销售=看板/商品/订单查看/客户；财务=看板/订单查看/财务。
         attachDefaultPermissions(tenantId, adminRole, permissionByCode.keySet(), permissionByCode);
         attachDefaultPermissions(tenantId, csRole, List.of(
-                "dashboard:view", "order:list", "order:detail", "customer:view", "agent:session"), permissionByCode);
+                "dashboard:view", "order:list", "order:detail", "customer:view", "agent:session",
+                "processing:view"), permissionByCode);
         attachDefaultPermissions(tenantId, operatorRole, List.of(
                 "dashboard:view", "order:list", "order:detail", "order:refund",
                 "product:list", "product:create", "product:category", "processing:manage",
+                "processing:view", "processing:update",
                 "customer:view", "finance:view", "agent:session", "employee:list"), permissionByCode);
         attachDefaultPermissions(tenantId, salesRole, List.of(
-                "dashboard:view", "product:list", "order:list", "order:detail", "customer:view"), permissionByCode);
+                "dashboard:view", "product:list", "order:list", "order:detail", "customer:view",
+                "processing:view"), permissionByCode);
         attachDefaultPermissions(tenantId, financeRole, List.of(
-                "dashboard:view", "order:list", "order:detail", "finance:view"), permissionByCode);
+                "dashboard:view", "order:list", "order:detail", "finance:view",
+                "processing:view"), permissionByCode);
 
         log.info("新租户默认岗位和权限初始化完成: tenantId={}, roles=5, permissions={}", tenantId, defaultPermissions.length);
     }

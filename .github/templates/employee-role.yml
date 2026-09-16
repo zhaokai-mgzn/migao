@@ -8,6 +8,7 @@ business_truths:
   - [employee-role.permissions] permissions 为 User.permissions 个人菜单权限 JSON 数组；"全权限折叠为全部权限"是前端渲染逻辑，后端不折叠、不返回 "*"
   - [employee-role.admin-role-star] admin 角色后端计算权限为 ["*"]（全部权限）；operator/product_manager/knowledge_editor 有硬编码权限码映射
   - [employee-role.write-require-admin] 员工增删改（POST/PUT/DELETE /api/admin/users/*）需当前用户为 admin 角色（requireAdmin）
+  - [employee-role.update-field-consumption] 更新员工 PUT /api/admin/users/{id} 接收 name/avatar/phone/role/roleIds/position/permissions 七个字段（issue #3550）：roleIds 按 createUser 同语义取首个角色表主键经 getRoleById 解析 code（显式 role 优先；两者都没传时按 position 解析岗位角色）；phone 变更写 users.phone 并按租户内唯一校验（同号/空白视为不修改）。修复前 updateUser 无 phone/roleIds 读取点 → Jackson 静默忽略 → HTTP 200 + success=true 的假成功（库里 role/user_roles/phone 均未变）
   - [employee-role.api-auth] /api/admin/** 由 Spring Security 限定 hasAnyRole(ADMIN, SUPER_ADMIN, SERVICE)，普通 customer/agent 无法访问；@RequirePermission 注解为预留、当前未被使用
   - [employee-role.tenant-isolation] 租户隔离：MyBatis TenantLineInnerInterceptor 按 JWT tenantId 自动注入 tenant_id 过滤（tenants/tenant_applications/platform_admins 豁免；super_admin 即 tenantId=-1 跳过过滤）
   - [employee-role.role-crud] 角色 CRUD：GET/POST /api/admin/roles、GET /api/admin/roles/all、GET/PUT/DELETE /api/admin/roles/{id}；删除角色前校验无用户使用，否则 422
@@ -33,6 +34,8 @@ reviewer_asserts:
     expect: items 中 position 为空时其值等于 role
   - API: POST /api/admin/users
     expect: 需 admin 角色；成功 HTTP 200 返回新用户且 passwordHash 为 null
+  - API: PUT /api/admin/users/{id}
+    expect: 需 admin 角色；body 带 phone 时更新 users.phone（同租户内重复号码 → 422 VALIDATION_ERROR 且不落库）；body 带 roleIds 时按角色表主键解析 code 写入 user.role，并与 user_roles 联动；未传 role/roleIds 时按 position 解析岗位角色（issue #3550）
   - API: PUT /api/admin/users/{id}/status
     expect: status=disabled 禁用、status=active 启用；非 admin 调用返回 403
   - API: GET /api/admin/roles?page=1&size=100
@@ -51,3 +54,5 @@ common_pitfalls:
   - 同手机号可跨租户存在多条（SMS 登录取 updated_at DESC LIMIT 1）——DB 内部事实，verify 不直连库校验
   - 混淆「岗位默认权限」与「员工实际权限」：岗位 role_permissions 只是创建员工时的默认模板，员工最终权限=保存勾选快照（快照式）
   - 创建员工 payload 误带 role 字段（#2907 前端去角色化契约：岗位下拉选岗位，payload 只带 position+permissions）
+  - 更新员工下发 phone/roleIds 只看 HTTP 200 就判成功（#3550：接收侧曾不读这两个字段，200 + success=true 但 zero change，必须核对落库值）
+  - 手机号变更漏租户内唯一校验（同号在租户内出现两条 → SMS 登录取 updated_at DESC LIMIT 1 命中的是不确定的那条）

@@ -134,9 +134,9 @@ public class OrderDetailResponse {
         private String skuCode;
 
         /**
-         * 数量
+         * 数量（口径按计价方式：per_meter=米数 / per_set=1 / per_area=宽×高㎡，可为小数）
          */
-        private Integer quantity;
+        private BigDecimal quantity;
 
         /**
          * 单价
@@ -196,9 +196,9 @@ public class OrderDetailResponse {
         private BigDecimal unitPrice;
 
         /**
-         * 数量
+         * 数量（口径按计价方式：per_meter=米数 / per_set=1 / per_area=宽×高㎡，可为小数）
          */
-        private Integer quantity;
+        private BigDecimal quantity;
 
         /**
          * 金额 = unitPrice * quantity
@@ -217,6 +217,13 @@ public class OrderDetailResponse {
         private String logisticsCompany;
 
         private String trackingNo;
+
+        /**
+         * 发货人姓名（发货单纸面「经手人」，issue #3768）。
+         * ⚠️ 仅供 B 端发货单/订单详情展示；**不得**透传给 C 端顾客——
+         * C 端物流链路（customer_logistics_track）按白名单字段构造返回，不读取本字段。
+         */
+        private String shipperName;
 
         private String status;
 

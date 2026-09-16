@@ -139,8 +139,19 @@ cases:
     truths_ref:
       - product-sku-stock.realtime
     user_inputs:
-      - "调整遮光窗帘（100元的那件）的库存，出库10件，备注样品寄出"
-      - "确认"
+      # 自包含化（#3518）：原输入点名「遮光窗帘（100元的那件）」，独立栈种子只有 ¥168 那一款
+      # （prod_eval_blackout）→ 实测 agent 回「只搜到一件「遮光窗帘」，价格是 168 元，不是 100 元」
+      # （run 34805827043），把一轮消耗在澄清价格上、`inventory_manage(adjust)` 从未调用。
+      - "调整遮光窗帘的库存，出库10件，备注样品寄出"
+      # 收尾「答卡轮」（#3518，同 PR-016）：本 run 里 agent 在收尾轮只发 confirm 卡、文本「确认」
+      # 没有放行写操作 → 有卡答卡（confirm→回 confirmValue），无卡才发原文「确认」。
+      - auto_respond:
+          fallback: "确认"
+    # 全局命名空间声明（issue #3781）：与同样争用该全局资源的用例自动互斥，
+    # 消除「同栈并行用例互相写同一命名空间」造成的非确定性（真实 run 34856561459）。
+    namespaces:
+      - "product_name:遮光窗帘"
+
     expectations:
       - tool: inventory_manage
         args:
@@ -148,11 +159,13 @@ cases:
     data_checks:
       - "返回新库存数量"
     pre_clean:
+      # 去重只按关键词（#3518）：用例已不再点名价格，`price: 100` 过滤器在独立栈（种子 ¥168）
+      # 恒不匹配、等于没去重 → 同名「遮光窗帘」重复时 agent 会发「哪一件」选择卡。
+      # 按关键词去重保留最早创建的（= 种子），删掉其余副本。
       - type: product_dedupe
         product_keyword: "遮光窗帘"
-        price: 100
     skip_reason: ""
-    merge_log: "verification 2.5 独有（adjust 详细真值未确认，见映射表 5.1）"
+    merge_log: "verification 2.5 独有（adjust 详细真值未确认，见映射表 5.1）。2026-09-14 校准（#3518）：① 输入去「100元的那件」价格点名（独立栈种子 ¥168）；② 收尾改答卡轮；③ pre_clean 去 price 过滤（关键词去重）"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_inventory_manage.py"
@@ -173,14 +186,73 @@ cases:
       - product-sku-stock.low-stock
     user_inputs:
       - "看看哪些商品库存不足"
+    # ── 等价路径（issue #3781；真实 run 34856561459 的 PR-006 假红）──
+    # 病灶：原用例只认 `inventory_manage(action=low_stock_alert)` **一条实现路径**，
+    # 而"低库存"在产品里有**两条都被文档认可**的工具路径：
+    #   · `product_search(stock_status=low_stock)` = **库存≤100**
+    #     （`app/tools/stock_semantics.py` 的 `LOW_STOCK_THRESHOLD`；工具参数文档
+    #      「low_stock=库存≤100（与后台低库存口径一致）」）
+    #   · `inventory_manage(action=low_stock_alert)` 的 `threshold` —— 历史 schema/文档写
+    #     「默认 10」、`_low_stock_alert` 形参却默认 100（曾三处口径不一致）
+    # ⚠️ 上述**产品级语义冲突已由 issue #3783 收敛**（不属评测范围，已在评测侧消除）：
+    #    两工具共用单点来源 `app/tools/stock_semantics.py`（权威口径 100、上界含），
+    #    `inventory_manage` 的 schema 描述与 `default` 均由该来源生成（不再有第二处数字）。
+    # 本 run 实测：agent 走 `product_search`，工具返回 `products=4 total=4`，原文
+    # 「📦 库存偏低（≤100 件）的商品共 4 件」—— 被产品文档认可的等价路径，却被判 0%
+    # （`inventory_manage(action=low_stock_alert) → unmatched expectation`）。
+    #
+    # 修法（**零阈值放宽、零断言删除**）：**一条 OR 声明** = 「用其中任一工具按各自的
+    # 口径字段查出低库存」。`_check_expectation` 原生支持 `A or B`（AS-003 的
+    # `after_sales_manage or aftersale_create` 即同形）；`_arg_mismatch_reason` 的
+    # 判据是"OR 任一分支持有该键**且值相等**"⇒ `stock_status=low_stock` 只对
+    # `product_search` 分支生效、`action=low_stock_alert` 只对 `inventory_manage` 分支生效。
+    #
+    # ⚠️ **不能**写成两条独立声明：runner **逐条**计分（`score = 通过条数/声明条数`，
+    # 见 `run_case` 的 `passed_expectations/total_exp`），一次运行只可能走一条路径
+    # ⇒ 两条独立声明的用例**恒为 50%**（本包实测复现）。
+    # ⚠️ **不能**用 `must_succeed` 给两条路径各写一条：它也是**合取**（每条都必须成功、
+    # 无 OR 语义）⇒ 同样的恒红（本包第一版踩过，负向夹具照出）。
+    # ⇒ 一次运行"只用一条路径"这件事由**语义**保证（agent 回答一个问题不会两条都调）；
+    #   若将来要**机器强制**，需要 runner 支持"OR 断言组"或"args 级 OR"，属 runner 包范围，
+    #   已登记在 #3781（不能为了这条用一个恰好能跑通的近似写法冒充强制）。
+    # ⚠️ **已知的等价路径不完整（如实登记，未掩盖）**：`must_succeed` 声明的是
+    #   `product_search`（本 run 实测走通的那条），故若某次运行改为走
+    #   `inventory_manage(low_stock_alert)`，`expectations` 会过（OR 分支）而
+    #   `must_succeed` 会红 —— 该次红**不是** agent 做错，而是**断言层尚不支持
+    #   "任一路径真成功"（OR 成功组）**。本包**无法离线判定**下次 run 走哪条
+    #   （需真实 LLM），故不猜：如实写在这里 + PR body 的「存疑项」+ #3781 登记。
+    #   若下次全量 run 显示 agent 稳定走 `product_search`（= 本声明正确），无需改动；
+    #   若它改走 `inventory_manage`，正解是补 runner 的 OR 成功组能力（runner 包），
+    #   **不是**把这条 `must_succeed` 删掉（删掉即回到"调了≠成了"的假绿）。
+    # ⚠️ **每条 OR 分支必须带自己的 args**（写成一条 `tool+args` 会变成"两个键都要"：
+    # `_arg_mismatch_reason` 按**单一** args 字典逐键校验，`product_search` 没有 `action`
+    # 字段 ⇒ `missing arg 'action'` ⇒ 两条路径全红）。故此处用 runner 的
+    # `tool(k=v)` 文本形态，每条分支各自的键集（与 AS-003 的
+    # `after_sales_manage or aftersale_create(order_id=复用上轮 UUID)` 同形）。
     expectations:
-      - tool: inventory_manage
-        args:
-          action: low_stock_alert
+      - "inventory_manage(action=low_stock_alert) or product_search(stock_status=low_stock)"
+    # 「调了」≠「成了」（#3361 同族）：`check_expectation` **不读 `success`** ——
+    # 实测把「工具返回 500」喂进去，`product_search` 分支仍判 True。故独立补一层
+    # "真有**一次成功**"的断言（`must_succeed` 只按工具名过滤、不读 args，正好与 OR
+    # 声明互补：OR 声明承担"哪条路径 + 关键值"，它承担"路径真的成功了"）。
+    # 声明两条会因合取语义导致恒红，故取一条；**该条必须与用 args.action 的 OR 分支解耦**：
+    # `product_search` 无 `action` 字段，若声明 `action=low_stock_alert` 则永远匹配不到它。
+    must_succeed:
+      - tool: product_search
+    # ⚠️ **此处刻意不声明 `required_args[product_search.stock_status]`**：`required_args`
+    # 同样是**合取**（每条都必须满足），而 `inventory_manage` 分支**没有** `stock_status`
+    # 字段 ⇒ 加了它，走 `inventory_manage` 的那次运行会因"未调用 product_search"判红 ——
+    # 正是本用例要消除的"过度指定"，只是换了个字段（本包实测照出）。
+    # ⇒ payload 层的键**在场**由 OR 声明的分支键集承担（`stock_status`/`action` 各自必须在
+    #   **对应分支**的调用里在场且值相等，见 `_arg_mismatch_reason`）；"值真的传对了"由
+    #   负向夹具照红（见 PR body 红证表：改错口径值 / 漏带键 / 工具失败 三种都判红）。
+    # ── 数值有据的来源（为什么这里没有额外的机器断言）──
     data_checks:
-      - "每项库存 <= 100"
+      - "报告的低库存商品数 = 该路径工具返回的条数（product_search: data.products/total；inventory_manage: data.count）—— 数值必须有据，不得凭空给数（本 run 实测 4=4）"
+      - "阈值口径必须与所用工具一致：product_search 分支 = ≤100（库存≤100，与后台低库存口径一致）；inventory_manage 分支 = threshold（默认 100 —— 与 product_search 同一单点来源 app/tools/stock_semantics.py，见 #3783）"
+      - "给出的数字必须能指回该工具返回的明细（不得只给个总数而不列商品）"
     skip_reason: ""
-    merge_log: "verification 2.6 独有"
+    merge_log: "verification 2.6 独有。2026-09-15（issue #3781）等价路径校准：原断言 `expectations=['inventory_manage(action=low_stock_alert)']` **过度指定实现路径** —— 真实 run 34856561459 里 agent 走的是 `product_search(stock_status=low_stock)`（产品文档认可：库存≤100，与后台低库存口径一致），回答「库存偏低（≤100 件）的商品共 4 件」且工具返回 `products=4 total=4`（数值有据），却判 0% reproducible。改为接受两条等价路径（**未放宽任何阈值、未删任何断言**：断言内核仍是「低库存这件事被真的查出来了 + 报出的数有据」）。⚠️ 产品级语义冲突「同一个『低库存』在两条工具里是 ≤100 vs ≤10」另开 issue 跟踪（产品问题，非评测问题）：`product_search.py:26 LOW_STOCK_THRESHOLD=100` vs `inventory_manage.py:66` 参数文档「默认 10」+ schema `default: 10`，而 `_low_stock_alert` 形参默认却是 **100**（inventory_manage.py:359）——三处口径不一致，详见该 issue ｜ 2026-09-15 跟进（#3783 收敛后）：两工具改用单点来源 `app/tools/stock_semantics.py`（权威口径 100、上界含），schema 描述/default 同源生成，上文所述三处口径已消除；本日志中 `product_search.py:26` / `inventory_manage.py:66` / `:359` 是**当时的行号**，现行锚点为 `stock_semantics.py::LOW_STOCK_THRESHOLD` 与 `low_stock_alert_threshold_schema()`"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_inventory_manage.py"
@@ -200,23 +272,52 @@ cases:
     truths_ref:
       - product-sku-stock.status-flow
     user_inputs:
-      - "把遮光窗帘（100元的那件）下架"
-      - "确认"
+      # 自包含化（#3518）：原输入点名「遮光窗帘（100元的那件）」→ 实测 agent 回「没找到 100 元的那件」
+      # （run 34805827043 R1）→ 一轮消耗在澄清、`product_manage(toggle_status)` 从未发生。
+      - "把遮光窗帘下架"
+      # 收尾「答卡轮」（#3518）：本 run 两处裸文本「确认」都被 agent 挡回（「您没有在确认卡片上点确认」）
+      # → 有卡答卡（confirm→回 confirmValue），无卡才发原文「确认」。
+      - auto_respond:
+          fallback: "确认"
       - "再把它上架"
-      - "确认"
+      # 「上架」段用同一形态 + 一轮余量：确认卡常在收尾轮才下发（同 PR-020 的实测形态），
+      # 单轮答卡吃不到那张卡。
+      - auto_respond:
+          fallback: "确认"
+      - auto_respond:
+          fallback: "确认"
+    # 全局命名空间声明（issue #3781）：与同样争用该全局资源的用例自动互斥，
+    # 消除「同栈并行用例互相写同一命名空间」造成的非确定性（真实 run 34856561459）。
+    namespaces:
+      - "product_name:遮光窗帘"
+
     expectations:
       - tool: product_manage
         args:
           action: toggle_status
           status: on_sale
+    # ── 假绿升级（#3557 / 归因报告 §2.6 A5）──
+    # 「期望里出现过工具名」只证明模型**想**下架/上架，判不出"卡答了但没执行"
+    # （run 34808115143：R2 起零工具调用，仍判 50%）。`success=true` 属计分白名单，
+    # 但对**哪个 action 成功**无判别力 → 升 must_succeed（canonical 写成功，fail-closed）
+    # + required_args（调用必须带全 product_id/status，防"空调用"顶过）。
+    must_succeed:
+      - tool: product_manage
+        action: toggle_status
+    required_args:
+      - tool: product_manage
+        action: toggle_status
+        fields:
+          - product_id
+          - status
     data_checks:
       - "success=true"
     pre_clean:
+      # 去重只按关键词（#3518）：用例已不再点名价格（独立栈种子 ¥168），`price: 100` 恒不匹配。
       - type: product_dedupe
         product_keyword: "遮光窗帘"
-        price: 100
     skip_reason: ""
-    merge_log: "verification 2.7 独有；2026-09-10 校准：评测商品均已 on_sale，「上架」无操作对象 → 改自包含状态流转（下架→上架），验证完整流转且每次从 on_sale 起跑"
+    merge_log: "verification 2.7 独有；2026-09-10 校准：评测商品均已 on_sale，「上架」无操作对象 → 改自包含状态流转（下架→上架），验证完整流转且每次从 on_sale 起跑。2026-09-14 校准（#3518）：① 输入去「100元的那件」价格点名（独立栈种子 ¥168）；② 两处裸文本「确认」改答卡轮（+1 余量轮）；③ pre_clean 去 price 过滤。2026-09-14 校准（#3557）：假绿升级——升 must_succeed(toggle_status) + required_args(product_id/status)；根因修复见 app/graph/nodes.py 的答卡轮豁免（答卡轮不再被卡值里的跨域词路由到 order skill）"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_product_search.py"
@@ -243,6 +344,11 @@ cases:
       - "货号用 TEST-CURTAIN-A"
       - "确认创建"
       - "确认创建测试窗帘A"
+    # 全局命名空间声明（issue #3781）：本用例**往全局商品命名空间里写**该名称，
+    # 与同名商品的建/删用例自动互斥（否则会出现"同名多件"→ agent 发选择卡 → 目标工具不执行）。
+    namespaces:
+      - "product_name:测试窗帘A"
+
     expectations:
       - tool: product_manage
         args:
@@ -310,13 +416,28 @@ cases:
       - id-resolve.no-fabricate
       - product-sku-stock.status-flow
     user_inputs:
-      - "搜索窗帘"
-      - "看看第一个的详情"
+      # 2026-09-14 消除顺序依赖（issue #3568）：原为泛化「搜索窗帘」+「看看第一个的详情」——
+      # 「窗帘」在种子/目录里命中多款（遮光窗帘/北欧风窗帘/夏日清风窗帘/2699 面料…），
+      # 「第一个」由 **product_search 返回顺序**决定 → 后续所有轮（改价/加加工项/复核）
+      # 都挂在这个不确定对象上：同一份代码在排序不同的栈上会操作不同商品（OR-024 先例
+      # #3408/#3409 的同族缺陷）。改为**点名真实存在的种子商品**（遮光窗帘 =
+      # prod_eval_blackout，见 xiaobu_eval_seed.sql），用例意图（多轮 UUID 复用 /
+      # 不重查 / 写操作确认闸）完全不变。
+      - "搜索遮光窗帘"
+      - "看看遮光窗帘的详情"
       - "把价格改成 198"
       - "确认"
-      - "给它加上S钩安装"
+      # 「S钩安装」在目录里**不存在**（种子/目录只有 纳米圈打孔 / 韩式波浪折边 / 高温定型 /
+      # 刺绣工艺）→ agent 反复搜不到（行为合理）→ 该轮恒不推进（§13.5「点名不存在对象」）。
+      # 换成种子商品已绑定的真实加工项（prod_eval_blackout ↔ pi_eval_hem）。
+      - "给它加上韩式波浪折边"
       - "确认"
       - "再看看这个商品的详情确认一下"
+    pre_clean:
+      # 同 PR-005/#3518 口径：按关键词去重，保证「遮光窗帘」在栈里只有一件（否则
+      # agent 发「哪一件」选择卡，且改价会落到不确定的那一件上）。保留最早创建的（= 种子）。
+      - type: product_dedupe
+        product_keyword: "遮光窗帘"
     expectations:
       - tool: product_search
       - tool: product_detail
@@ -334,7 +455,7 @@ cases:
       - "第4轮 product_id 来自第2轮结果"
       - "全程未重新 product_search 查同一个商品"
     skip_reason: ""
-    merge_log: "eval M001 独有（多轮 ID 复用，覆盖 2.3+2.8 的多轮形态）；2026-09-03 Phase 2 适配：product_update/product_processing_item_manage 均 requires_confirmation，写操作轮后补『确认』（与 OR-010 模式一致）"
+    merge_log: "eval M001 独有（多轮 ID 复用，覆盖 2.3+2.8 的多轮形态）；2026-09-03 Phase 2 适配：product_update/product_processing_item_manage 均 requires_confirmation，写操作轮后补『确认』（与 OR-010 模式一致）。2026-09-14 消除顺序依赖（issue #3568）：① 泛化「搜索窗帘」+「第一个」→ 点名「遮光窗帘」（返回顺序依赖，同 OR-024 #3408 先例）；②「S钩安装」目录不存在 → 换真实存在且已绑定的「韩式波浪折边」；③ 补 pre_clean product_dedupe（同 PR-005 #3518 口径）"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_mibao_multiturn_intelligence.py"
@@ -359,7 +480,7 @@ cases:
       - ai-chat.validate-input
     user_inputs:
       - "我要创建一个新商品"
-      - "名称叫夏日清风窗帘，价格 168"
+      - "名称叫E2E引导建品样品帘，价格 168"
       - "分类选窗帘"
       - auto_select: true
       - "颜色有米白和浅灰"
@@ -367,6 +488,22 @@ cases:
       - "需要打孔和韩式折边这两个加工项"
       - "确认创建，没问题"
       - "确认"
+    # ── 商品名必须**用例自有**（issue #3835 的跨用例污染根治，与 PR-016 同口径）──────
+    # 旧输入是「名称叫夏日清风窗帘」，而**种子商品 `prod_eval_summer` 就叫「夏日清风窗帘」**
+    # （`tests/agent_eval/fixtures/xiaobu_eval_seed.sql`）⇒ 运行期造出第二件同名商品，且两处
+    # 防线同时失效：
+    #   ① `namespaces` 对本例**毫无隔离力** —— 隔离是「≥2 条声明同一键才串行」
+    #      （`local_runner.namespace_conflict_groups`），而「夏日清风窗帘」**只有本用例一个
+    #      声明者** ⇒ 争用组不成立 ⇒ 它与 OR-017/OR-018 这些按名读该商品的用例**真并行**
+    #      （「声明了 ⇒ 有隔离」是错觉）；
+    #   ② 旧 `pre_clean` 清的是**另一个名字**（`product_remove{测试窗帘}`）⇒ 本用例自己造的
+    #      那件**从头到尾没人清**。库级实证（run 34908262839 的 admin-api 日志）：
+    #      `23:34:36.113 创建商品成功: id=84d54b12… name=夏日清风窗帘`，该 run **无任何删除**。
+    # 修法（同 #3800 对 PR-008、PR-012 的「用例自有名字」）：换成**本用例独占**的名字 +
+    # 只清理自己这个名字 ⇒ 读者按关键词搜「夏日清风窗帘」永远只命中种子 1 件。
+    namespaces:
+      - "product_name:E2E引导建品样品帘"
+
     expectations:
       - tool: interact
         args:
@@ -381,10 +518,14 @@ cases:
       - "创建的加工项数量 = 2"
       - "全程 AI 主动引导，不等待用户逐项输入"
     pre_clean:
+      # 只清**本用例自己的名字**（issue #3835）：旧值 `product_remove{测试窗帘}` 既没清自己
+      # 造的「夏日清风窗帘」，又因 `product_remove` 是**子串**匹配而连带命中 PR-008 的
+      # 「测试窗帘A」⇒ 一次运行期的破坏性误删（`#3800` 记录的同一坑）。自有名唯一之后，
+      # 这两层风险同时消失。
       - type: product_remove
-        product_keyword: "测试窗帘"
+        product_keyword: "E2E引导建品样品帘"
     skip_reason: ""
-    merge_log: "eval M002 吸收 verification 8.3（缺信息补全 = validate_input 引导）"
+    merge_log: "eval M002 吸收 verification 8.3（缺信息补全 = validate_input 引导）；2026-09-15（issue #3835）改名去种子撞名（同 PR-016 口径）：`名称叫夏日清风窗帘` → `名称叫E2E引导建品样品帘`（种子 `prod_eval_summer` 就叫「夏日清风窗帘」⇒ 运行期造同名副本；且它是**单一声明者** ⇒ 争用组不成立、隔离为零）；`pre_clean: product_remove{测试窗帘}` → 自有名（顺带消除对 PR-008「测试窗帘A」的子串误删）；expectations/data_checks 原样未动"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_mibao_advanced_multiturn.py"
@@ -413,6 +554,11 @@ cases:
       - "颜色白色，货号 TEST-001"
       - "不需要加工项"
       - "确认创建"
+    # 全局命名空间声明（issue #3781）：本用例**往全局商品命名空间里写**该名称，
+    # 与同名商品的建/删用例自动互斥（否则会出现"同名多件"→ agent 发选择卡 → 目标工具不执行）。
+    namespaces:
+      - "product_name:测试窗帘"
+
     expectations:
       - tool: product_manage
         args:
@@ -437,11 +583,16 @@ cases:
     title: "窗帘算料报价 - 褶皱倍数与用布量计算"
     domains:
       - product
-    tier: smoke
+    tier: normal
+    # 归位（issue #3367 覆盖盘点）：本条断言 `curtain_calc` —— 算料报价是**小布专属**
+    # 能力（米宝工具集里没有该工具），却被写成不带 persona 的 B 端档位并 `skip_reason`
+    # 挂起 → **C 端这个核心能力在评测里 0 覆盖**（只有单测覆盖公式，没有真实 LLM 链路证据）。
+    # 故补 persona: xiaobu 让它进 C 端可执行集，并撤掉 skip_reason。
+    persona: xiaobu
     tags:
       - quote
       - fabric_calc
-      - smoke
+      - xiaobu
     truths_ref:
       - fabric-calc.fullness-default
       - fabric-calc.fixed-height
@@ -456,7 +607,8 @@ cases:
     data_checks:
       - "data.fabric_meters > 0"
       - "data.total > 0"
-    skip_reason: "算料报价为小布（C 端）专属功能，米宝（B 端）Agent Eval smoke 评测无 curtain_calc 工具；由 test_curtain_calc.py 单测 + POC 集成测试覆盖"
+    # 原 skip_reason（"B 端无 curtain_calc 工具"）已失效：本用例改挂 C 端（persona: xiaobu），
+    # C 端 customer_quote skill 正是提供 curtain_calc 的地方。
     merge_log: "POC 小布增强新增（算料报价 skill）"
     traces:
       tests:
@@ -576,7 +728,7 @@ cases:
       - product-sku-stock.create-flow
       - processing-manage.crud
     user_inputs:
-      - "录入这个商品，名称遮光窗帘，价格 100"
+      - "录入这个商品，名称E2E建品流程样品帘，价格 100"
       - "分类选窗帘"
       - auto_select: true
       - auto_fill:
@@ -585,7 +737,48 @@ cases:
           sku_code: "TEST-002"
       - "已选加工项：高温定型"
       - "颜色米白色，货号 TEST-002"
-      - "确认"
+      # 收尾 = 「答卡轮」（#3518）：B 端写工具受 confirm 门禁约束 —— **发文字「确认」≠ 点确认卡**，
+      # 收尾发裸文本时 agent 会停在卡上（回「请核对上方确认卡片…点确认我就执行」）→ product_manage 不执行。
+      # `auto_respond`：有卡答卡（confirm→回卡片 confirmValue，= 前端点击协议；choice→首项；
+      # form→按声明值回填），无卡才发原文「确认」（同 CU-003 / OR-014 先例）。
+      # ⚠️ 不用 `auto_select`：它**不支持 fallback 字段**（run_case 只把 results + case_form_values
+      # 传进 resolve_auto_select_turn，见 local_runner.py）。两者都能答 confirm/choice 卡，
+      # 但 auto_select 在没有待答卡时会发字面量「第一个」（对不上任何卡片），
+      # 而收尾轮需要保留原文「确认」的兜底语义 → 用 auto_respond 才能两者兼得。
+      - auto_respond:
+          fallback: "确认"
+    # 全局命名空间声明（issue #3781）：本用例**往全局商品命名空间里写**该名称。
+    # ⚠️ 隔离的判据是「**≥2 条用例声明同一键**才进串行道」
+    # （`local_runner.namespace_conflict_groups` 只收这样的键）⇒ **单一声明者 = 零隔离**。
+    # 旧值 `product_name:遮光窗帘` 之所以"看起来有隔离"，只是因为 PR-005/PR-007/CR-001/
+    # CR-003/OR-015 恰好也声明了它 —— 而**真正按名读它的 PP-001/PR-017/OR-014/OR-016/
+    # OR-017/OR-018… 都没声明**，于是它们与 PR-016 真并行（这就是 issue #3835 的病灶）。
+    namespaces:
+      - "product_name:E2E建品流程样品帘"
+    # ── 商品名必须**用例自有**（issue #3835 的跨用例污染根治）─────────────────────
+    # 旧输入是「录入这个商品，名称遮光窗帘，价格 100」，而**种子商品 `prod_eval_blackout`
+    # 就叫「遮光窗帘」**（`tests/agent_eval/fixtures/xiaobu_eval_seed.sql`）⇒ 本用例在运行期
+    # 往共享命名空间里造出**第二件同名商品**。库级铁证（判定跑 run 34908262839 的 admin-api
+    # 日志）：`23:37:45.569 创建商品成功: id=d7d3dd98… name=遮光窗帘` →
+    # `23:40:46.327 删除商品成功`；而 PR-016 自己的窗口是 `23:35:40 → 23:37:49`
+    # ⇒ **副本在写方结束后还活了 ≈3 分钟**。该窗口内起跑的 PR-004 / PR-021 / CH-007 /
+    # OR-010 / OR-011 / OR-028 全部 `product_search(products=2)`，首跑失败指纹 `PP-001` /
+    # `PR-017` / `OR-014` 都是「见 2 件同名 → agent **正确地**要求澄清 → 写工具永不执行」。
+    # ⇒ **串行化与 product_dedupe 都修不好这一类**（前者只防重叠、防不住写方结束后的残留；
+    # 后者只在自己起跑前去重、管不了运行中途别人造出来的副本）。只有"写方不去写共享名"能根治。
+    #
+    # 自清理（issue #3800 + #3835）：用例自建对象必须能把前置复位成「**不存在**」。
+    # 旧值 `product_dedupe{遮光窗帘}` 是"保留最早创建（= 种子）"—— 那是**共享名**下唯一安全的
+    # 选择，但代价是它永远留下 1 件、且运行期全程对外可见。自有名之后语义才干净：
+    # `product_remove{自有名}` 在**每次尝试前**把本用例的产物删净 ⇒ 首跑与重试的前置
+    # **都是「不存在」**（`_PRECONDITION_NOT_APPLIED` 对清理型是良性 no-op，
+    # 见 `_PRECLEAN_CLEANUP_TYPES`）。
+    # ⚠️ `product_remove` 是**子串**匹配 ⇒ 自有名必须保证"没有任何其它用例的商品名包含它"
+    # （已由 `tests/unit_ci_workflows/test_eval_product_name_pollution.py` 的静态不变式锁定）。
+    pre_clean:
+      - type: product_remove
+        product_keyword: "E2E建品流程样品帘"
+
     expectations:
       - tool: category_manage
       - tool: processing_item_query
@@ -607,7 +800,7 @@ cases:
       - "当前分类无匹配加工项时以文字提示可跳过，不空转强制选择"
       - "最终创建成功且关联加工项数量正确"
     skip_reason: ""
-    merge_log: "2026-09-06 新增（issue #2964）：加工项「适用商品分类」配置此前无消费方，建品流程按已选分类过滤/推荐加工项（设计意图见 docs/design/admin-dashboard-design.md §6.1.1 适用商品分类+AI推荐）"
+    merge_log: "2026-09-06 新增（issue #2964）：加工项「适用商品分类」配置此前无消费方，建品流程按已选分类过滤/推荐加工项（设计意图见 docs/design/admin-dashboard-design.md §6.1.1 适用商品分类+AI推荐）。2026-09-14 校准（#3518）：收尾裸文本「确认」改答卡轮（B 端 confirm 门禁：文字≠点卡）；2026-09-15 补自清理（issue #3800，判定跑 run 34865780382 实证）：本用例建的同名商品与种子 `prod_eval_blackout`（遮光窗帘）撞名，而 `namespaces` 只保证并行互斥、不解决重试前置等价性（#3751 的复位按 pre_clean opt-in）⇒ 首跑建出的那件留到重试 ⇒ agent 正确拒绝建重复 ⇒ 指纹漂移误判 unstable（首跑指纹无 `no_success(product_manage)`、重试指纹有，即铁证）⇒ 补 `product_dedupe{遮光窗帘}`（保留最早创建 = 种子）；**不能用 product_remove**（子串删全部 ⇒ 会连种子一起删，而它是 PR-005/PR-007/CR-001/CR-003/OR-015 的共享前置）；expectations/required_args/data_checks 原样未动"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_processing_item_query.py"
@@ -631,9 +824,36 @@ cases:
       - product-sku-stock.realtime
       - aftersales-flow.return-restock-switch
     user_inputs:
-      - "把「遮光窗帘（100元的那件）」设置成退货后可以回补库存"
-      - auto_select: true
-      - "确认"
+      # 2026-09-14 消除顺序依赖 / stale 点名归一（issue #3568，同 PR-010/PR-005 #3518 口径）：
+      # 原输入点名「遮光窗帘（**100元**的那件）」—— 评测栈种子（xiaobu_eval_seed.sql）的
+      # 遮光窗帘是 **¥168**（prod_eval_blackout），没有 100 元那件 → agent 合理地澄清
+      # 「只搜到一件遮光窗帘，价格是 168 元，不是 100 元」（run 34805827043 实测）
+      # → 白耗一轮且写工具可能到不了。去掉价格限定（点唯一商品名），用例意图不变。
+      - "把遮光窗帘设置成退货后可以回补库存"
+      # 收尾「答卡轮」（#3518 口径，同 PR-005/PR-016）：**裸文本「确认」不放行写操作**
+      # （文字 ≠ 点卡）→ 有卡答卡（confirm→回 confirmValue；choice→首项），无卡才发原文。
+      # 原 `auto_select: true` 在没有 choice 卡时会退化成发字面量「第一个」（对不上卡片）。
+      - auto_respond:
+          fallback: "确认"
+    pre_clean:
+      # 去重只按关键词（同 #3538/#3518）：原 `price` 限定在种子 ¥168 的栈上恒不匹配
+      # （`matched<=1` → 直接返回「无需去重」= **没去重**）；同名副本存在时 agent 会发
+      # 「哪一件」选择卡，写操作落到不确定的那一件上。
+      - type: product_dedupe
+        product_keyword: "遮光窗帘"
+    # ── 前置自断言（issue #3835 / `migao-dev-flow` §18.4）────────────────────────
+    # 本用例靠**商品名**定位唯一的写对象：有 2 件同名时 agent **正确地**澄清（判定跑
+    # run 34908262839 首跑原文：「搜索到 **2 个**同名「遮光窗帘」，需要您确认改哪一个」）⇒
+    # `product_update` 永不执行 ⇒ 判红成 `no_success(product_update)`，读起来像
+    # 「agent 不改商品」（同 run 重试 `products=1` 即通过）。
+    # `pre_clean` 只在**自己起跑前**去重，挡不住运行中途由别的用例造出来的副本 ⇒
+    # 必须由 runner 在运行期观测：`expect: 1` 判基线（上一跑残留），`max_growth` 默认 0
+    # 判"被并行用例中途改写"。前置不成立时折成
+    # `precondition_not_applied(declared:product_count_for_keyword)`，与行为失败分属不同根因原子。
+    precondition:
+      - type: product_count_for_keyword
+        source: "遮光窗帘"
+        expect: 1
     expectations:
       - tool: product_update or product_manage
         args:
@@ -642,7 +862,7 @@ cases:
       - "商品详情/列表返回 allowReturnRestock（默认 false，开启后为 true）"
       - "售后工单 refund/return 完结时按商品开关决定是否回补 SKU 库存"
     skip_reason: ""
-    merge_log: "issue #2991 新增：窗帘行业定制退货不可再售，商品级开关控制售后完结是否回补库存"
+    merge_log: "issue #2991 新增：窗帘行业定制退货不可再售，商品级开关控制售后完结是否回补库存。2026-09-14 归一（issue #3568）：① 输入去「（100元的那件）」stale 价格点名（种子遮光窗帘 ¥168，实测 agent 合理澄清白耗一轮，同 #3538/#3518）；② 收尾 `auto_select: true` → `auto_respond` 答卡轮（无卡时 auto_select 会发对不上卡片的字面量「第一个」）；③ 补 pre_clean product_dedupe（只按关键词，不带 price 限定）"
     traces:
       tests:
         - "backend/admin-api/src/test/java/com/migao/admin/service/ProductServiceTest.java"
@@ -696,18 +916,70 @@ cases:
       - regression
     truths_ref:
       - product-sku-stock.low-stock
+    # 用例级表单载荷（issue #3804）：色卡识别结果的 6 个 canonical 字段原先只声明在 R2
+    # 一轮（结构化回填窗口 W=1），而 R4 的 repeat_until 轮也是可作答轮 —— agent 把
+    # 「色卡识别结果」form 卡发晚一轮时，结构化路径整场失效（只剩自包含文本兜底）。
+    # 声明在用例级 = 载荷脱离轮次位置（全场任意轮可用）；R2 轮级声明保留（优先级更高）。
+    auto_fill:
+      name: "E2E色卡建品样品面料"
+      price: "23.8"
+      colors: "2699-01 米白"
+      door_widths: "2.8米"
+      selling_methods: "散剪"
+      sku_code: "XNE2699"
     user_inputs:
       - text: "根据这张图片录入商品（色卡图，可识别材质/克重）"
         images:
           - "https://ai-customer-service-admin-dev.oss-cn-hangzhou.aliyuncs.com/images/2026/09/04/e5a68d1a02f844c6a45846784765a737.jpg"
-      - auto_select: true
-      - "商品名称: 2699系列雪尼尔窗帘面料\n单价(元/米): 23.8\n颜色…门幅…"
-      - "已选加工项：刺绣工艺 ¥30/平方米、波浪定型 ¥8/米"
-      - "确认创建"
+      # ── 2026-09-14 资产重写（#3518，run 34805827043 逐轮归因）──
+      # ② 色卡识别结果轮：待答的是 **form 卡**（title「新建商品 — 常青藤色卡识别结果（请确认/修改）」
+      #    formFields=6）。原为 `auto_select: true` → 无 choice 卡时发字面量「第一个」→ 实测 agent
+      #    回「上一轮的表单我没收到提交内容」，识别到的名称/单价从未进草稿（后续轮次全部空转）。
+      #    改为按 formFields 的**真实 key** 回填（canonical 字段：name/price/colors/selling_methods/
+      #    door_widths/sku_code —— 见 app/graph/skills/product_skill.py「Vision 预填」与
+      #    references/EXAMPLES-product.md 示例 2）；若这一轮待答的不是 form 卡、或字段 key 对不上，
+      #    则退回自包含文本。原 R3 文本里的「颜色…门幅…」是**未替换的占位符**（实测 agent 回
+      #    「您消息里的『颜色…门幅…』被截断了」）→ 这里补真实字段值。
+      - auto_respond:
+          fallback: "商品名称: E2E色卡建品样品面料\n单价(元/米): 23.8\n颜色: 2699-01 米白\n门幅: 2.8米\n售卖方式: 散剪\n货号: XNE2699"
+          form_values:
+            name: "E2E色卡建品样品面料"
+            price: "23.8"
+            colors: "2699-01 米白"
+            door_widths: "2.8米"
+            selling_methods: "散剪"
+            sku_code: "XNE2699"
+      # ③ 加工项轮：有 choice 卡就点首项，否则说明已选。加工项必须是**目录里真实存在的**
+      #    （独立栈种子目录：刺绣工艺 ¥30/平方米、高温定型 ¥10/米、纳米圈打孔 ¥8/米、韩式波浪折边 ¥12/米）——
+      #    原文本的「波浪定型 ¥8/米」目录中不存在（实测 agent 回「加工项目录里没有完全同名的项」）。
+      - auto_respond:
+          fallback: "已选加工项：刺绣工艺 ¥30/平方米、韩式波浪折边 ¥12/米"
+      # ④ 收尾协作轮：有卡答卡（confirm→回 confirmValue，= 前端点击协议），无卡发原文；
+      #    `product_manage` 一旦成功即停轮（被门禁挡回不算成功 → 不会提前停；同 OR-021/CH-033 先例）。
+      #    fallback 做成**自包含**：若模型仍以文本追问缺项，这一轮能把规格+加工项+确认一次补齐。
+      - repeat_until:
+          tool_called: product_manage
+          max: 3
+        fallback: "商品名称: E2E色卡建品样品面料；单价(元/米): 23.8；颜色: 2699-01 米白；门幅: 2.8米；售卖方式: 散剪；货号: XNE2699；已选加工项：刺绣工艺 ¥30/平方米、韩式波浪折边 ¥12/米；确认创建"
     expectations:
       - tool: product_manage
         args:
           action: create
+    # ── §14.1 回填（2026-09-15，issue #3683）：写工具「调了 ≠ 成了」──
+    # expectations 的参数级匹配 + required_args 只能证明「**发**了 create 且参数齐全」，
+    # **create 失败 / 被 confirm 门禁拦下时本用例仍会判通过**（调用名照样出现在 tool_calls 里）。
+    # 建品用例的核心产出就是这个 create，故回填 canonical 写成功断言（fail-closed）：
+    # 一次都没成功 → 判红。**不放宽**任何既有断言（required_args / forbidden_text 原样）。
+    # ⚠️ 为什么**不**同时回填 db_verify[product_by_name]（§14.1 点名的另一半）：
+    #   本用例建的商品名 `E2E色卡建品样品面料` 与评测**种子商品同名同价**
+    #   （`tests/agent_eval/fixtures/mibao_eval_seed.sql` 的 `prod_eval_2699`，¥23.80），
+    #   而 `_fetch_product_configs`（`local_runner.py:1905-1916`）按 keyword 取**首条** → 区分不了
+    #   「本次新建的」与「种子」；种子恒在 ⇒ 该断言**不管本次 create 成没成功都会绿**（比不加更糟：
+    #   看起来有覆盖）。PR-020 能加是因为它的商品名在库里唯一。**待补 runner 能力**：db_verify
+    #   支持按「本次成功 create 返回的 product_id」回读（见 issue #3683）。
+    must_succeed:
+      - tool: product_manage
+        action: create
     data_checks:
       - "create 参数含 specifications（材质/克重/工艺等推理属性，随 specs 落库到 product_attributes，非仅展示）"
       - "create 参数含 processing_item_configs（含 customPrice=加工项默认单价 unit_price、unit=真实单位），禁止只传 processing_item_ids 名称列表"
@@ -721,12 +993,28 @@ cases:
         fields:
           - "specifications"
           - "processing_item_configs.customPrice"
+    # 全局命名空间声明（issue #3781）：本用例**往全局商品命名空间里写**该名称；
+    # 声明的是**本用例独占**的名字（issue #3835）—— 单一声明者不产生争用组，但
+    # 「我写哪个全局资源」必须如实登记（`test_eval_product_name_pollution.py` 按它判所有权）。
+    namespaces:
+      - "product_name:E2E色卡建品样品面料"
+    # ── 商品名必须**用例自有**（issue #3835，同 PR-016/PR-011 口径）─────────────────
+    # 旧值 `E2E色卡建品样品面料` 与**评测种子商品同名同价**（mibao seed 的 `prod_eval_2699`，¥23.80）——
+    # 本用例的 merge_log 早就记过这一格带来的实测危害：「商品名与种子同名同价、
+    # `_fetch_product_configs` 取 keyword 首条**无法区分本次新建与种子**」。
+    # 同一个「同名」还让**按名读它**的用例在运行期看到 2 件 ⇒ `product_search` 返回
+    # products=2（判定跑 run 34908262839 的 PR-019 自身 trace：
+    # `product_manage(product_id=… name=E2E色卡建品样品面料);product_search(products=2 total=2 …)`）。
+    # 换成用例自有名后：① 种子保持唯一；② 本次新建可被关键字**唯一**定位（顺带解掉
+    # merge_log 记的 db_verify 歧义）；③ 读者不受影响（没有任何用例搜这个名字）。
+    #
+    # 自清理：自有名之后 `product_remove{自有名}` 能把前置复位成「**不存在**」
+    # （`product_dedupe` 只会留下 1 件 —— 那是共享名下的无奈选择，见 PR-016 的注解）。
     pre_clean:
-      - type: product_dedupe
-        product_keyword: "2699系列雪尼尔窗帘面料"
-        price: 23.8
+      - type: product_remove
+        product_keyword: "E2E色卡建品样品面料"
     skip_reason: ""
-    merge_log: "2026-09-08 新增（issue #3027）：sess_c1fce183dae24f22 复盘 — AI 预填表单展示了推理属性但 create 未落库（product_attributes 0 行）；加工项只传名称列表 → custom_price 全 NULL → 详情页 ¥0.00/米（单位硬编码）。三端修复：prompt 强制 specifications+processing_item_configs、admin-api finalPrice 回退、admin-web 渲染回退；2026-09-09 校准：补真实色卡图（原纯文本「根据这张图片」无 images，agent 要图走不下去）"
+    merge_log: "2026-09-08 新增（issue #3027）：sess_c1fce183dae24f22 复盘 — AI 预填表单展示了推理属性但 create 未落库（product_attributes 0 行）；加工项只传名称列表 → custom_price 全 NULL → 详情页 ¥0.00/米（单位硬编码）。三端修复：prompt 强制 specifications+processing_item_configs、admin-api finalPrice 回退、admin-web 渲染回退；2026-09-09 校准：补真实色卡图（原纯文本「根据这张图片」无 images，agent 要图走不下去）。2026-09-14 资产重写（#3518）：② 色卡识别结果轮由 `auto_select`（对 form 卡发「第一个」→ 表单从未提交）改为按 formFields 真实 key 回填的 `auto_respond`；③ 原文本占位符「颜色…门幅…」补真实值、加工项「波浪定型」换目录中真实存在的「韩式波浪折边」；④ 收尾改协作答卡轮。2026-09-15 §14.1 回填（issue #3683）：补 `must_succeed:[product_manage(action=create)]`（原仅有 expectations 参数级匹配 + required_args，create 失败仍判过）；db_verify 未加——商品名与种子 `prod_eval_2699` 同名同价、`_fetch_product_configs` 取 keyword 首条无法区分本次新建与种子（见用例内注释）；2026-09-15（issue #3835）**改名去种子撞名**：`E2E色卡建品样品面料` → `E2E色卡建品样品面料`（种子 `prod_eval_2699` 就叫前者 ⇒ 运行期造同名副本，读者按名搜会得到 products=2；改名后本次新建可被关键字唯一定位，上述 db_verify 歧义随之解除）、`pre_clean: product_dedupe{E2E色卡建品样品面料, price: 23.8}` → `product_remove{自有名}`、补 `namespaces: product_name:E2E色卡建品样品面料`；断言（expectations/must_succeed/required_args/data_checks/forbidden_text）原样未动"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_prompt_snapshots.py"
@@ -757,8 +1045,21 @@ cases:
     user_inputs:
       - "创建一个窗帘商品，名称：盯防加工项价格0908，单价：88元/米，分类：窗帘布艺，颜色：浅灰"
       - "商品名称: 盯防加工项价格0908\n单价(元/米): 88\n分类: 窗帘布艺\n颜色: 浅灰\n售卖方式: 散剪\n门幅: 2.8米\n货号: DF-0908"
-      - "已选加工项：刺绣工艺（价格自定义为45元/平方米）、波浪定型"
-      - "确认创建"
+      # 加工项换目录中真实存在的一项（#3518）：原「波浪定型」在独立栈种子目录里不存在
+      # （目录：刺绣工艺 ¥30/平方米、高温定型 ¥10/米、纳米圈打孔 ¥8/米、韩式波浪折边 ¥12/米），
+      # 实测 agent 回「您说的「波浪定型」在加工项目录里没有完全同名的项」→ 白耗一轮。
+      # 自定义价仍挂在「刺绣工艺 ¥45/平方米」上（db_verify 断言的就是它）。
+      - "已选加工项：刺绣工艺（价格自定义为45元/平方米）、韩式波浪折边"
+      # 收尾 = 「协作轮」（#3518）：裸文本「确认创建」过不了 B 端 confirm 门禁（文字 ≠ 点确认卡）；
+      # 且实测确认卡是在**收尾轮才下发**的（run 34805827043 R4：agent 收到「确认创建」后才
+      # interact(confirm)，confirmValue=确认：分类=窗帘布艺；加工项①=刺绣工艺 ¥45/平方米…），
+      # 单发一轮答卡仍会剩一张没人答的卡 → 给余量：有卡答卡（confirm→回 confirmValue），
+      # 无卡发原文；product_manage 一旦成功调用立即停轮（被门禁挡回不算成功，
+      # 故不会提前停；同 OR-021 / CH-033 的 repeat_until 先例）。
+      - repeat_until:
+          tool_called: product_manage
+          max: 3
+        fallback: "确认创建"
     expectations:
       - tool: product_manage
         args:
@@ -772,8 +1073,16 @@ cases:
         checks:
           - "processingItemConfigs.all.finalPrice>0"
           - "processingItemConfigs.刺绣工艺.finalPrice==45"
+    # ── §14.1 回填（2026-09-15，issue #3683）：补「本次 create 真的成功了」──
+    # 本用例的 db_verify 按**名字**回读落库值（名字唯一，故可作为产物侧断言），但它回答的是
+    # 「库里有没有这么一件」——**同一栈上前几轮评测残留的同名商品也能满足它** ⇒「本次 create
+    # 没成功」仍可能判绿（数据库层断言不绑定「本次调用」）。must_succeed 读的是**本场**
+    # tool_result.success（按 action=create 过滤），与 db_verify 互补，缺一不可。
+    must_succeed:
+      - tool: product_manage
+        action: create
     skip_reason: ""
-    merge_log: "2026-09-08 新增（issue #3056 复盘）：建品自定义加工价曾被 BFF create 的 ids 分支静默丢弃（45→30，读回退掩盖后复发）。required_args 只查 create args 层，本 case 用 db_verify 查落库层（finalPrice=确认价），args+落库双保险"
+    merge_log: "2026-09-08 新增（issue #3056 复盘）：建品自定义加工价曾被 BFF create 的 ids 分支静默丢弃（45→30，读回退掩盖后复发）。required_args 只查 create args 层，本 case 用 db_verify 查落库层（finalPrice=确认价），args+落库双保险。2026-09-14 校准（#3518）：① 收尾裸文本「确认创建」改协作答卡轮（confirm 门禁：文字≠点卡；确认卡常在收尾轮才下发，需余量轮）；② 加工项「波浪定型」换目录中真实存在的「韩式波浪折边」。2026-09-15 §14.1 回填（issue #3683）：补 `must_succeed:[product_manage(action=create)]` —— db_verify 的落库断言可能被残留同名商品满足，「本次写真的成功了」此前无断言"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_acceptance_case_checks.py"
@@ -795,18 +1104,248 @@ cases:
     truths_ref:
       - product-sku-stock.realtime
     user_inputs:
-      - "把遮光窗帘（100元的那件）的米白色散剪规格改成 150 元"
+      # 自包含化（#3518）：原输入点名「遮光窗帘（100元的那件）」，独立栈种子只有 ¥168 款
+      # （run 34805827043 R1 agent 主动纠偏「¥168，不是 100 元」，一轮被消耗在澄清价格上）。
+      - "把遮光窗帘的米白色散剪规格改成 150 元"
       - auto_select: true
       - "确认"
     expectations:
       - tool: sku_update
+    # ── 假绿升级（#3544 / REPORT §2.2；同 PP-006 形态）──
+    # 期望里出现工具名只证明「模型想改价」：同 run（34805827043）里两次 sku_update
+    # **都失败**（`sku_update!SKU不存在`，真缺口见 #3539：中文标签 vs 枚举字面匹配），
+    # 用例却判 ✅ 100% —— 原 `data_checks: "sku_update 成功（价格落库）"` 是自然语义、不计分。
+    # ① must_succeed = canonical 写成功断言（fail-closed：一次都没成功 → 判红）；
+    # ② output_verify = 产出侧值核对（成功返回的 new_price 必须 = 用户确认价 150）。
+    # 落库层（DB 真实价格==150）当前 runner 的 db_verify 无 SKU 价格 fetch，属能力缺口（见 PR 说明）。
+    must_succeed:
+      - tool: sku_update
+    output_verify:
+      - tool: sku_update
+        expect:
+          new_price: 150
     data_checks:
-      - "sku_update 成功（价格落库）"
+      - "sku_update 真成功且价格为 150 元（= 用户确认价）：机器断言见 must_succeed（写成功）+ output_verify（new_price==150）；裸断言「调用过」不算覆盖（#3544 假绿升级）"
     skip_reason: ""
-    merge_log: "Round 72 评测覆盖审计：sku_update（SKU 级调价）注册于 product_skill 但无 case 覆盖（盲区）→ 补 SKU 调价场景"
+    merge_log: "Round 72 评测覆盖审计：sku_update（SKU 级调价）注册于 product_skill 但无 case 覆盖（盲区）→ 补 SKU 调价场景。2026-09-14 校准（#3518）：输入去「100元的那件」价格点名（独立栈种子 ¥168）。2026-09-14 校准（#3544，REPORT §2.2）：假绿升级——`data_checks` 的自然语义「sku_update 成功（价格落库）」不计分（同 run 两次 sku_update 全失败仍判 ✅）→ 补 must_succeed（canonical 写成功断言）+ output_verify（new_price==150），缺陷未修前本用例由假绿转真红（#3539 修复后转绿）。⚠️ 遗留：本 run 该例真实失败点是 `sku_update!SKU不存在`——根因已由 #3539 定位为**中文标签 vs 枚举字面匹配**（非种子缺口），非本 PR 的用例层问题"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_sku_update.py"
+      ci:
+        - agent-eval.yml
+      verifies: []
+  - id: PR-024
+    legacy_id: ""
+    title: "小布算料上限 - 定宽布买高 + 对花损耗（窗高超定高上限，必须走定宽分支并告警）"
+    domains:
+      - product
+      - quote
+    tier: normal
+    persona: xiaobu
+    tags:
+      - quote
+      - fabric_calc
+      - ceiling
+      - xiaobu
+    truths_ref:
+      - fabric-calc.fixed-width
+      - fabric-calc.pattern-loss
+      - fabric-calc.quote-total
+    # ── 能力上限用例（issue #3367）──
+    # 现有 PR-013 只覆盖**定高布**（M=(W+0.3)×N，一行乘法）。真实业务里更常见的是
+    # **窗高超定高上限 → 必须改走定宽布（买高）** 的分支，且大花型面料要给**对花损耗**。
+    # 期望值**独立由业务真值推导**（不是抄实现）：
+    #   幅数 P = ceil((3+0.3)×2 / 2.8) = ceil(2.357) = 3      [fabric-calc.fixed-width]
+    #   用布 M = P × (2.7 + 0.3) = 3 × 3.0 = 9.0
+    #   对花 M = P × (2.7 + 0.3 + 0.4) = 3 × 3.4 = **10.2**    [fabric-calc.pattern-loss]
+    # 断言用本轮新增的 output_verify（产出侧）：此前只能断言"调了 curtain_calc"，
+    # **算出来的数对不对在评测里完全不可见** —— 算料报价的价值恰恰全在那个数上。
+    user_inputs:
+      - "帮我算一下：窗宽 3 米、窗高 2.7 米，2 倍褶皱，门幅 2.8 米，需要对花（花距 40 厘米），用 98 元一米的布，要多少布、多少钱？"
+    expectations:
+      - tool: curtain_calc
+        args:
+          window_width: 3
+          window_height: 2.7
+    output_verify:
+      - tool: curtain_calc
+        expect:
+          fabric_meters: 10.2          # 定宽买高 + 对花（每幅 +0.4m 花距）
+          formula_used: fixed_width    # 窗高 2.7+0.3 > 门幅 2.8 → 必须走定宽分支
+          warning: __nonempty__        # 超定高上限必须告警（真值明确要求）
+          fullness: 2
+    data_checks:
+      - "窗高 2.7m + 卷边 0.3m > 门幅 2.8m → 必须走定宽布（买高）分支，不得套定高公式"
+      - "对花损耗按每幅 +1 个花距：3 幅 × 0.4m = 1.2m，用布 10.2m（非 9.0m）"
+      - "报价总额 = 面料费 + 加工费 + 辅料费 + 安装费（fabric-calc.quote-total），不得凭记忆报价"
+    skip_reason: ""
+    merge_log: "2026-09-13 新增（issue #3367）：算料报价能力上限（定宽分支 + 对花损耗 + 产出侧断言）"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_curtain_calc.py"
+        - "backend/ai-agent-service/tests/test_acceptance_case_checks.py"
+      ci:
+        - xiaobu-acceptance.yml
+      verifies: []
+
+  - id: PR-025
+    legacy_id: ""
+    title: "B端写操作必须先出确认卡再执行（缺卡不发写）"
+    domains:
+      - product
+    tier: normal
+    tags:
+      - write
+      - confirm
+    truths_ref:
+      - product-sku-stock.status-flow
+    # 形态来源（sess_f26fda5046f34992 复盘，#3886）：B 端写操作（下架/删加工项）被确认门禁
+    # 拦截后，agent 只在文本声称「确认卡已发出」而未调 interact ⇒ 客户无卡可点、写操作卡死。
+    # 行为修复已合并（#3882：base_skill.py 兜底补发确认卡 + tests/test_b_end_confirm_card_fallback.py）。
+    # 本条为行为评测用例（LLM 真跑验证），核心断言 = order_before：确认卡（interact[confirm]）
+    # 必须先于写操作（product_manage）出现——缺卡即红、写先于卡即红。
+    user_inputs:
+      - "把遮光窗帘下架"
+      # 答卡轮（同 PR-007 套路）：有卡回 confirmValue、无卡才发原文「确认」。
+      - auto_respond:
+          fallback: "确认"
+    # 全局命名空间声明（issue #3781）：与 PR-007 同用「遮光窗帘」+ product_dedupe，
+    # 声明同一命名空间自动互斥，消除同栈并行用例互相写同一命名空间造成的非确定性。
+    namespaces:
+      - "product_name:遮光窗帘"
+    expectations:
+      - tool: product_manage
+        args:
+          action: toggle_status
+          status: off_sale
+    # 关键断言（本用例形态，runner check_order_before）：
+    # 全程未调 interact[confirm] ⇒ 缺卡即红；product_manage 早于 interact[confirm] ⇒ 写先于卡即红。
+    order_before:
+      - "interact[confirm] before product_manage"
+    data_checks:
+      - "success=true"
+    pre_clean:
+      - type: product_dedupe
+        product_keyword: "遮光窗帘"
+    skip_reason: ""
+    merge_log: "2026-09-15 新增（#3882 复盘，#3886）：sess_f26fda5046f34992 复盘——B 端写操作（下架/删加工项）被确认门禁拦截后 agent 只在文本声称「确认卡已发出」而未调 interact，客户无卡可点；行为修复已合并（#3882：base_skill.py 兜底补发确认卡 + tests/test_b_end_confirm_card_fallback.py），本条为行为评测用例（LLM 真跑验证），核心断言 order_before[interact[confirm] before product_manage]：缺卡/写先于卡即红。以 PR-007 为模板（答卡轮 auto_respond fallback=确认 + pre_clean product_dedupe 遮光窗帘 + truths_ref product-sku-stock.status-flow + 命名空间互斥）。"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_b_end_confirm_card_fallback.py"
+      ci:
+        - agent-eval.yml
+      verifies: []
+
+  - id: PR-026
+    legacy_id: ""
+    title: "设置商品主图 - product_manage(action=update, images) 成功路径"
+    domains:
+      - product
+    tier: normal
+    tags:
+      - image
+      - write
+    truths_ref:
+      - product-sku-stock.status-flow
+    # ── 设主图成功路径（issue #3930/#3931 实证 sess_2efa2071bb1747d8，2026-09-15）──
+    # 生产实证：用户「先把这张色卡图设为主图」，agent 错误路由到 product_update(images=[色卡URL])
+    # （该工具无 images 参数）→ 静默丢弃 → 「没有要修改的字段」→ 误宣「该入口不支持图片」；
+    # 19:49 改用 product_manage(action=update, images=[2 个 URL]) + 确认卡后成功。
+    # 本用例锁定**正确路径**：路由到 product_manage(action=update) 且携带 images。
+    # ⚠️ 商品名点名「遮光窗帘」（prod_eval_blackout，mibao 栈种子）——会话从零开始，
+    # 必须点名才有写对象；images 用现成色卡图 URL（PR-019 同款，真实可达的静态资源）。
+    user_inputs:
+      - text: "把遮光窗帘的主图设成这张色卡图"
+        images:
+          - "https://ai-customer-service-admin-dev.oss-cn-hangzhou.aliyuncs.com/images/2026/09/04/e5a68d1a02f844c6a45846784765a737.jpg"
+      # 收尾「答卡轮」（#3518 口径，同 PR-005/PR-017）：B 端写工具受 confirm 门禁约束，
+      # 裸文本「确认」不放行写操作 → 有卡答卡（confirm→回 confirmValue），无卡才发原文。
+      - auto_respond:
+          fallback: "确认"
+    namespaces:
+      - "product_name:遮光窗帘"
+    expectations:
+      - tool: product_manage
+        args:
+          action: update
+    # 调用必须带全 product_id + images（防"空调用"顶过；images 在场 = 「非空」的机器形态）
+    required_args:
+      - tool: product_manage
+        action: update
+        fields:
+          - product_id
+          - images
+    # canonical 写成功断言（fail-closed：一次都没成功 → 判红，防「调了 ≠ 成了」）
+    must_succeed:
+      - tool: product_manage
+        action: update
+    data_checks:
+      - "product_manage(action=update) 携带 images（色卡图 URL）且执行成功 —— 商品主图已更新（images 落库）；db_verify[product_by_name] 当前只支持 processingItemConfigs 谓词（local_runner.py），商品 images 字段落库无 fetch，属 runner 能力缺口（如实登记，未掩盖）"
+    pre_clean:
+      - type: product_dedupe
+        product_keyword: "遮光窗帘"
+    skip_reason: ""
+    merge_log: "2026-09-15 新增（issue #3930/#3931 实证 sess_2efa2071bb1747d8）：设主图成功路径——同回合 agent 先错误路由 product_update(images=…)（无该参数）被静默丢弃 → 「没有要修改的字段」→ 误宣「不支持图片」；19:49 改用 product_manage(action=update, images) 成功。本用例锁定正确路径（expectations/required_args/must_succeed 三层）；db_verify 对商品 images 无 fetch（只支持 processingItemConfigs），效果层由 must_succeed 兜底，落库层缺口已登记"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_sanitize_write_tool_guidance.py"
+        - "backend/ai-agent-service/tests/test_product_image_denial_guard.py"
+      ci:
+        - agent-eval.yml
+      verifies: []
+
+  - id: PR-027
+    legacy_id: ""
+    title: "设主图能力不误宣 - 回复不得出现「不包含图片上传/拿不到地址」类能力否定"
+    domains:
+      - product
+    tier: normal
+    tags:
+      - image
+      - write
+      - capability_denial
+    truths_ref:
+      - product-sku-stock.status-flow
+    # ── 主图能力不误宣（issue #3931，实证 sess_2efa2071bb1747d8 19:46:32 拒绝原文）──
+    # 原文：「我这个商品管理入口只能改价格、名称、描述、状态、回补库存开关这些字段，
+    # 不包含图片上传……您上传的这张色卡图我这边拿不到可写入的地址，所以没法代劳」——
+    # 而 product_manage 有 images/detail_images 参数，能力真实可达（19:49 成功后证）。
+    # 守卫（capability_denial_text_hit 商品图片域判据）应拦截并纠正重答，最终走
+    # product_manage(action=update, images=…)；回复文本不得出现能力否定（forbidden_text
+    # 逐词机器断言，可判定形式——非自然语义 data_checks）。
+    user_inputs:
+      - text: "把遮光窗帘的主图设成这张色卡图"
+        images:
+          - "https://ai-customer-service-admin-dev.oss-cn-hangzhou.aliyuncs.com/images/2026/09/04/e5a68d1a02f844c6a45846784765a737.jpg"
+      - auto_respond:
+          fallback: "确认"
+    namespaces:
+      - "product_name:遮光窗帘"
+    expectations:
+      - tool: product_manage
+        args:
+          action: update
+    forbidden_text:
+      - "不包含图片上传"
+      - "拿不到可写入的地址"
+      - "拿不到地址"
+      - "无法设置主图"
+      - "不能设置主图"
+      - "不支持修改主图"
+      - "不支持图片"
+    data_checks:
+      - "回复不得出现「不包含图片上传/拿不到可写入的地址/无法设置主图」类能力否定（机器断言见 forbidden_text）；能力误宣守卫（capability_denial_text_hit 商品图片域判据）应拦截并纠正重答，最终走 product_manage(action=update, images=…)（expectations/must_succeed 同上）"
+    must_succeed:
+      - tool: product_manage
+        action: update
+    pre_clean:
+      - type: product_dedupe
+        product_keyword: "遮光窗帘"
+    skip_reason: ""
+    merge_log: "2026-09-15 新增（issue #3931，实证 sess_2efa2071bb1747d8 19:46:32 拒绝文本）：「不包含图片上传」「拿不到可写入的地址」必须被守卫命中并纠正——product_manage 有 images/detail_images 参数、能力真实可达；forbidden_text 逐词机器断言（可判定形式），守卫判据与话术见 base_skill.py 的 _PRODUCT_IMAGE_ACTION_WORDS / _product_image_denial_hit / _TEXT_DENIAL_CORRECTIVE_PRODUCT_IMAGE"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_product_image_denial_guard.py"
       ci:
         - agent-eval.yml
       verifies: []

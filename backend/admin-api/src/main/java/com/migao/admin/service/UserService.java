@@ -8,11 +8,14 @@ import com.migao.admin.exception.BusinessException;
 import com.migao.admin.mapper.RoleMapper;
 import com.migao.admin.mapper.UserMapper;
 import com.migao.admin.mapper.UserRoleMapper;
+import com.migao.admin.security.SecurityUser;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
@@ -94,6 +97,38 @@ public class UserService implements UserDetailsService {
             throw BusinessException.notFound("用户");
         }
         return user;
+    }
+
+    /**
+     * 当前登录用户的展示姓名（操作人留痕用，如发货单「发货人」，issue #3768）。
+     *
+     * <p>用 {@link SecurityUser#getUserId()} 查 users.nickname —— <b>不能</b>直接取
+     * {@code SecurityUser.displayName}：内部服务调用（agent 代发）时它恒为
+     * "internal-service"，B 端登录时它是 JWT 的 username（通常是手机号），都不是「姓名」。
+     *
+     * <p>真实操作人由两条路径共同保证：B 端 JWT（subject = users.id）、ai-agent 透传的
+     * {@code X-User-Id}（{@code ServiceTokenFilter} 落到 {@code SecurityUser.userId}）。
+     *
+     * @return 姓名（昵称优先，退化为手机号）；解析不到（未认证 / 平台管理员 / 用户不存在）
+     *         返回 null —— 这是尽力而为的展示字段，不抛异常打断发货主流程
+     */
+    public String resolveCurrentUserDisplayName() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || !(auth.getPrincipal() instanceof SecurityUser securityUser)) {
+            return null;
+        }
+        String userId = securityUser.getUserId();
+        if (!StringUtils.hasText(userId)) {
+            return null;
+        }
+        User user = userMapper.selectById(userId);
+        if (user == null) {
+            return null;
+        }
+        if (StringUtils.hasText(user.getNickname())) {
+            return user.getNickname();
+        }
+        return StringUtils.hasText(user.getPhone()) ? user.getPhone() : null;
     }
 
     /**
@@ -297,11 +332,19 @@ public class UserService implements UserDetailsService {
     }
 
     /**
-     * 更新用户基本信息（兼容签名，不修改岗位）
+     * 更新用户基本信息（兼容签名，不修改岗位/手机号）
      */
     @Transactional(rollbackFor = Exception.class)
     public User updateUser(String userId, String nickname, String avatar, String role, String permissions) {
-        return updateUser(userId, nickname, avatar, role, null, permissions);
+        return updateUser(userId, nickname, avatar, role, null, permissions, null);
+    }
+
+    /**
+     * 更新用户基本信息（兼容签名，不修改手机号）
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public User updateUser(String userId, String nickname, String avatar, String role, String position, String permissions) {
+        return updateUser(userId, nickname, avatar, role, position, permissions, null);
     }
 
     /**
@@ -313,10 +356,14 @@ public class UserService implements UserDetailsService {
      * @param role     角色
      * @param position 岗位（null 表示不修改；岗位=角色体系 #2969，编辑切岗位时随角色联动）
      * @param permissions 菜单权限码 JSON（如 ["orders.list","products.create"]），null 表示不修改
+     * @param phone    手机号（null/空白/与原值相同 表示不修改；变更时校验租户内唯一。
+     *                 issue #3550：ai-agent 员工管理与 admin-web 员工编辑都下发 phone，
+     *                 原先被静默忽略 → 200 假成功）
      * @return 更新后的用户
      */
     @Transactional(rollbackFor = Exception.class)
-    public User updateUser(String userId, String nickname, String avatar, String role, String position, String permissions) {
+    public User updateUser(String userId, String nickname, String avatar, String role, String position,
+                           String permissions, String phone) {
         // 安全校验：禁止商户侧分配系统保留角色/通配权限（审计 07 P0-2）
         assertAssignableRoleAndPermissions(role, permissions);
 
@@ -330,6 +377,18 @@ public class UserService implements UserDetailsService {
         }
         if (position != null) {
             user.setPosition(position);
+        }
+        // 手机号变更（issue #3550）：与创建口径一致，校验租户内唯一
+        if (StringUtils.hasText(phone) && !phone.equals(user.getPhone())) {
+            LambdaQueryWrapper<User> phoneWrapper = new LambdaQueryWrapper<>();
+            phoneWrapper.eq(User::getPhone, phone)
+                    .eq(User::getTenantId, user.getTenantId())
+                    .eq(User::getDeleted, 0);
+            User existing = userMapper.selectOne(phoneWrapper);
+            if (existing != null && !existing.getId().equals(userId)) {
+                throw BusinessException.validationError("手机号已被注册: " + phone);
+            }
+            user.setPhone(phone);
         }
         if (StringUtils.hasText(role) && !role.equals(user.getRole())) {
             user.setRole(role);

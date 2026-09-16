@@ -29,18 +29,35 @@ public class AgentAfterSalesController {
     private final AfterSalesTicketService afterSalesTicketService;
 
     /**
+     * 内部调用方声明工单真实来源的请求头（issue #3686）。
+     *
+     * <p>服务端在本端点**无法自行判定**真实来源：三个 Agent 建单工具
+     * （小布 `aftersale_create` / 米宝 `after_sales_manage` / 转人工 `human_handoff`）
+     * 打的是同一个 URL、同一组 header，且都以 Service Token 认证 ⇒
+     * `getCurrentOperator()` 恒为 `internal-service`、body 无 source（#3605 已删）。
+     * 故由**内部调用方**声明，服务端只在值属于白名单时采纳，缺省/未知一律回退
+     * {@code agent}（= 既有行为，向后兼容未升级的调用方）。
+     */
+    private static final String CLIENT_HEADER = "X-Agent-Client";
+
+    /**
      * Agent 专用创建售后工单。
      * POST /api/admin/agent/after-sales
      */
     @PostMapping
-    public ApiResponse<AfterSalesDetailResponse> createTicket(@RequestBody AgentAfterSalesCreateRequest request) {
+    public ApiResponse<AfterSalesDetailResponse> createTicket(
+            @RequestBody AgentAfterSalesCreateRequest request,
+            @RequestHeader(value = CLIENT_HEADER, required = false) String clientSource) {
         Long tenantId = TenantContext.getTenantId();
         String operator = getCurrentOperator();
-        log.info("[Agent] 创建售后工单: orderId={}, type={}, tenantId={}",
-                request.getOrderId(), request.getTicketType(), tenantId);
+        // 未知/缺省 → agent（既有行为）：只有内部调用方显式声明才改变来源语义
+        String source = AfterSalesTicketService.resolveSource(
+                clientSource, AfterSalesTicketService.SOURCE_AGENT);
+        log.info("[Agent] 创建售后工单: orderId={}, type={}, tenantId={}, source={}",
+                request.getOrderId(), request.getTicketType(), tenantId, source);
         try {
             AfterSalesDetailResponse result =
-                    afterSalesTicketService.createTicketForAgent(request, tenantId, operator);
+                    afterSalesTicketService.createTicketForAgent(request, tenantId, operator, source);
             return ApiResponse.success(result);
         } catch (Exception e) {
             log.warn("[Agent] 创建售后工单失败: {}", e.getMessage());

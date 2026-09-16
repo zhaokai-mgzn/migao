@@ -284,4 +284,202 @@ class OrderControllerTest extends BaseControllerTest {
             verifyNoInteractions(orderService);
         }
     }
+
+    // ==================== POST /api/admin/orders 数量下限（issue #3682） ====================
+
+    /**
+     * 表单路径的**订单数量下限**（issue #3682 方案 A：下限 = 1）。
+     *
+     * <p>为什么表单路径也要拦：`items[].quantity` 直接驱动服务端库存/销量，而
+     * `OrderService` 对 `BigDecimal quantity` 取整数部分（`:1051` 库存校验 / `:1408`
+     * `deductStock` / `:1409` `increaseSalesCount`）——数量 0.5 → `needed=0` 校验恒通过、
+     * `deductStock(0)` 不减库存、销量 +0，**订单成交但库存/销量零变动且无告警**。</p>
+     *
+     * <p>表单页虽有 `min={1}`，但该页面**没有 `&lt;form&gt;` 元素**（提交按钮是
+     * `Button onClick={handleSubmit}`），原生 `min` 不参与校验，页面 JS 判据是
+     * `quantity &lt;= 0` → 0.5 在表单路径同样可达。故服务端下限是这条路径的唯一硬拦。</p>
+     */
+    @Nested
+    @DisplayName("POST /api/admin/orders — 数量下限 1（#3682）")
+    class QuantityLowerBound {
+
+        private String bodyWithQuantity(String quantity, String subtotal) {
+            return String.format("""
+                    {"customerName":"张三","customerPhone":"13800138000","items":[{"productId":"prod-001","productName":"窗帘","quantity":%s,"unitPrice":100,"subtotal":%s}]}
+                    """, quantity, subtotal);
+        }
+
+        @Test
+        @DisplayName("quantity=0.5 → 422「数量不能小于 1」（0.5 会被库存/销量按 0 件计 → 静默漏扣）")
+        void subOneQuantityRejected() throws Exception {
+            mockMvc.perform(post(BASE).contentType(MediaType.APPLICATION_JSON)
+                            .content(bodyWithQuantity("0.5", "50")))
+                    .andExpect(status().isUnprocessableEntity())
+                    .andExpect(jsonPath("$.success").value(false))
+                    .andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
+                    .andExpect(jsonPath("$.error.details[0].field").value("items[0].quantity"))
+                    .andExpect(jsonPath("$.error.details[0].message").value("数量不能小于 1"));
+
+            verifyNoInteractions(orderService);
+        }
+
+        @Test
+        @DisplayName("quantity=0 → 422（0 元明细与 <1 同口径）")
+        void zeroQuantityRejected() throws Exception {
+            // 小计用正值：否则 subtotal 的 @Positive 也会失败，字段错误顺序不确定 → 断言不稳
+            mockMvc.perform(post(BASE).contentType(MediaType.APPLICATION_JSON)
+                            .content(bodyWithQuantity("0", "100")))
+                    .andExpect(status().isUnprocessableEntity())
+                    .andExpect(jsonPath("$.error.details[0].field").value("items[0].quantity"))
+                    .andExpect(jsonPath("$.error.details[0].message").value("数量不能小于 1"));
+
+            verifyNoInteractions(orderService);
+        }
+
+        @Test
+        @DisplayName("quantity=1 → 200（下限值本身必须放行）")
+        void minimumQuantityOnePasses() throws Exception {
+            when(orderService.createOrder(any(OrderCreateRequest.class), eq(TEST_TENANT_ID)))
+                    .thenReturn(buildOrder(ORDER_ID, "pending"));
+
+            mockMvc.perform(post(BASE).contentType(MediaType.APPLICATION_JSON)
+                            .content(bodyWithQuantity("1", "100")))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.success").value(true));
+
+            verify(orderService).createOrder(any(OrderCreateRequest.class), eq(TEST_TENANT_ID));
+        }
+
+        @Test
+        @DisplayName("quantity=3 → 200（整数数量不误伤）")
+        void integerQuantityPasses() throws Exception {
+            when(orderService.createOrder(any(OrderCreateRequest.class), eq(TEST_TENANT_ID)))
+                    .thenReturn(buildOrder(ORDER_ID, "pending"));
+
+            mockMvc.perform(post(BASE).contentType(MediaType.APPLICATION_JSON)
+                            .content(bodyWithQuantity("3", "300")))
+                    .andExpect(status().isOk());
+
+            verify(orderService).createOrder(any(OrderCreateRequest.class), eq(TEST_TENANT_ID));
+        }
+
+        @Test
+        @DisplayName("quantity=8.4 → 200（OR-028 小数数量 ≥1 不误伤，仍走 DECIMAL 口径）")
+        void decimalQuantityPasses() throws Exception {
+            when(orderService.createOrder(any(OrderCreateRequest.class), eq(TEST_TENANT_ID)))
+                    .thenReturn(buildOrder(ORDER_ID, "pending"));
+
+            mockMvc.perform(post(BASE).contentType(MediaType.APPLICATION_JSON)
+                            .content(bodyWithQuantity("8.4", "840")))
+                    .andExpect(status().isOk());
+
+            verify(orderService).createOrder(any(OrderCreateRequest.class), eq(TEST_TENANT_ID));
+        }
+    }
+
+    // ==================== PUT /api/admin/orders/{id}/logistics ====================
+
+    @Nested
+    @DisplayName("PUT /api/admin/orders/{id}/logistics — 更新物流 + 发货人（issue #3768 / UI-040）")
+    class UpdateLogistics {
+
+        private OrderDetailResponse orderWithStatus(String status) {
+            return buildOrder(ORDER_ID, status);
+        }
+
+        private String logisticsBody(String company, String trackingNo, String shipperName) {
+            StringBuilder sb = new StringBuilder("{\"logisticsCompany\":\"").append(company)
+                    .append("\",\"trackingNo\":\"").append(trackingNo).append("\"");
+            if (shipperName != null) {
+                sb.append(",\"shipperName\":\"").append(shipperName).append("\"");
+            }
+            return sb.append("}").toString();
+        }
+
+        @Test
+        @DisplayName("新建物流：显式传入发货人 → 原样落库")
+        void createsLogisticsWithExplicitShipper() throws Exception {
+            when(orderService.getOrderById(ORDER_ID)).thenReturn(orderWithStatus("confirmed"));
+            when(orderLogisticsService.getByOrderId(ORDER_ID)).thenReturn(List.of());
+            when(orderService.resolveShipperName("王五")).thenReturn("王五");
+
+            mockMvc.perform(put(BASE + "/" + ORDER_ID + "/logistics")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(logisticsBody("顺丰速运", "SF20260915001", "王五")))
+                    .andExpect(status().isOk());
+
+            verify(orderLogisticsService).save(org.mockito.ArgumentMatchers.<OrderLogistics>argThat(l ->
+                    "SF20260915001".equals(l.getTrackingNo()) && "王五".equals(l.getShipperName())));
+        }
+
+        @Test
+        @DisplayName("新建物流：未传发货人 → 用后端兜底（当前登录用户姓名）")
+        void createsLogisticsWithFallbackShipper() throws Exception {
+            when(orderService.getOrderById(ORDER_ID)).thenReturn(orderWithStatus("producing"));
+            when(orderLogisticsService.getByOrderId(ORDER_ID)).thenReturn(List.of());
+            when(orderService.resolveShipperName(null)).thenReturn("李四");
+
+            mockMvc.perform(put(BASE + "/" + ORDER_ID + "/logistics")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(logisticsBody("中通快递", "ZT20260915002", null)))
+                    .andExpect(status().isOk());
+
+            verify(orderLogisticsService).save(org.mockito.ArgumentMatchers.<OrderLogistics>argThat(l ->
+                    "李四".equals(l.getShipperName())));
+        }
+
+        @Test
+        @DisplayName("已有物流：未传发货人 → 保留原发货人（改运单号 ≠ 换经手人）")
+        void keepsExistingShipperWhenNotProvided() throws Exception {
+            OrderLogistics existing = OrderLogistics.builder()
+                    .id("log-001").orderId(ORDER_ID).tenantId(TEST_TENANT_ID)
+                    .logisticsCompany("顺丰速运").trackingNo("SFOLD")
+                    .shipperName("李四").status("in_transit").build();
+
+            when(orderService.getOrderById(ORDER_ID)).thenReturn(orderWithStatus("shipped"));
+            when(orderLogisticsService.getByOrderId(ORDER_ID)).thenReturn(List.of(existing));
+
+            mockMvc.perform(put(BASE + "/" + ORDER_ID + "/logistics")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(logisticsBody("德邦快递", "DB20260915003", null)))
+                    .andExpect(status().isOk());
+
+            verify(orderLogisticsService).updateById(org.mockito.ArgumentMatchers.<OrderLogistics>argThat(l ->
+                    "DB20260915003".equals(l.getTrackingNo()) && "李四".equals(l.getShipperName())));
+        }
+
+        @Test
+        @DisplayName("已有物流：显式传入发货人 → 覆盖（存量订单可人工纠正）")
+        void overwritesShipperWhenExplicitlyProvided() throws Exception {
+            OrderLogistics legacy = OrderLogistics.builder()
+                    .id("log-002").orderId(ORDER_ID).tenantId(TEST_TENANT_ID)
+                    .logisticsCompany("顺丰速运").trackingNo("SFOLD")
+                    .status("in_transit").build(); // 存量：shipperName = null
+
+            when(orderService.getOrderById(ORDER_ID)).thenReturn(orderWithStatus("shipped"));
+            when(orderLogisticsService.getByOrderId(ORDER_ID)).thenReturn(List.of(legacy));
+            when(orderService.resolveShipperName("赵六")).thenReturn("赵六");
+
+            mockMvc.perform(put(BASE + "/" + ORDER_ID + "/logistics")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(logisticsBody("顺丰速运", "SF20260915004", "赵六")))
+                    .andExpect(status().isOk());
+
+            verify(orderLogisticsService).updateById(org.mockito.ArgumentMatchers.<OrderLogistics>argThat(l ->
+                    "赵六".equals(l.getShipperName())));
+        }
+
+        @Test
+        @DisplayName("状态守卫：待付款订单拒绝更新物流")
+        void rejectsNonShippableStatus() throws Exception {
+            when(orderService.getOrderById(ORDER_ID)).thenReturn(orderWithStatus("pending"));
+
+            mockMvc.perform(put(BASE + "/" + ORDER_ID + "/logistics")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(logisticsBody("顺丰速运", "SF20260915005", "王五")))
+                    .andExpect(status().isUnprocessableEntity());
+
+            verify(orderLogisticsService, never()).save(any(OrderLogistics.class));
+        }
+    }
 }
