@@ -4,6 +4,7 @@ package com.migao.admin.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.migao.admin.config.TenantContext;
 import com.migao.admin.entity.DailyBriefing;
 import com.migao.admin.entity.Tenant;
 import com.migao.admin.mapper.*;
@@ -12,17 +13,24 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.ValueOperations;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.*;
@@ -60,6 +68,10 @@ class DailyBriefingServiceTest {
     private ProductService productService;
     @Mock
     private BriefingGenerateClient briefingGenerateClient;
+    @Mock
+    private StringRedisTemplate redisTemplate;
+    @Mock
+    private ValueOperations<String, String> valueOperations;
     @Spy
     private ObjectMapper objectMapper = new ObjectMapper();
 
@@ -100,6 +112,10 @@ class DailyBriefingServiceTest {
     void setUp() {
         // 聚合快照默认 stub
         stubAggregations();
+        // 分布式生成锁（issue #3957）：默认视为获取成功，既有生成用例语义不变；
+        // 锁被占用 / Redis 异常场景在 GenerateFlow 内单独覆写。
+        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.setIfAbsent(anyString(), anyString(), anyLong(), any())).thenReturn(true);
     }
 
     @Nested
@@ -368,6 +384,168 @@ class DailyBriefingServiceTest {
             DailyBriefing result = service.generateForTenant(1L);
 
             assertThat(result.getVerifyStatus()).isEqualTo("failed");
+        }
+
+        @Test
+        @DisplayName("集群并发：锁被另一实例持有 → 跳过生成且不调 LLM（issue #3957）")
+        void clusterLockHeldSkipsGeneration() {
+            when(tenantMapper.selectById(1L)).thenReturn(enabledTenant());
+            when(valueOperations.setIfAbsent(anyString(), anyString(), anyLong(), any())).thenReturn(false);
+
+            DailyBriefing result = service.generateForTenant(1L);
+
+            assertThat(result).isNull();
+            verify(briefingGenerateClient, never()).generate(anyLong(), anyMap());
+            verify(dailyBriefingMapper, never()).insert(any(DailyBriefing.class));
+        }
+
+        @Test
+        @DisplayName("集群并发：锁 key 含租户+业务日期；获取成功则生成并释放锁（issue #3957）")
+        void clusterLockAcquiredGeneratesAndReleases() throws Exception {
+            when(tenantMapper.selectById(1L)).thenReturn(enabledTenant());
+            when(valueOperations.setIfAbsent(anyString(), anyString(), anyLong(), any())).thenReturn(true);
+            when(dailyBriefingMapper.selectOne(any())).thenReturn(null);
+            String llmOutput = """
+                    {
+                      "summary": "昨日订单 5 单，经营平稳",
+                      "todo": [{"priority": "high", "title": "10 个订单待发货", "metrics": [{"key": "pending_ship_orders", "value": 10}]}],
+                      "risks": [],
+                      "suggestions": []
+                    }
+                    """;
+            JsonNode parsed = objectMapper.readTree(llmOutput);
+            when(briefingGenerateClient.generate(eq(1L), anyMap())).thenReturn(parsed);
+
+            DailyBriefing result = service.generateForTenant(1L);
+
+            assertThat(result).isNotNull();
+            assertThat(result.getVerifyStatus()).isEqualTo("verified");
+            // 锁 key = 租户 + 业务日期（Asia/Shanghai），跨实例互斥粒度 = 租户×天
+            ArgumentCaptor<String> keyCaptor = ArgumentCaptor.forClass(String.class);
+            verify(valueOperations).setIfAbsent(keyCaptor.capture(), eq("1"),
+                    eq(DailyBriefingService.BRIEFING_LOCK_TTL_SECONDS), eq(TimeUnit.SECONDS));
+            assertThat(keyCaptor.getValue())
+                    .isEqualTo("briefing:gen:1:" + LocalDate.now(DailyBriefingService.CST));
+            verify(redisTemplate).delete(anyString());
+            verify(dailyBriefingMapper).insert(any(DailyBriefing.class));
+        }
+
+        @Test
+        @DisplayName("Redis 不可用 → fail-open 仍生成，不阻断简报（DB 唯一键兜底，issue #3957）")
+        void clusterLockRedisDownFailsOpen() throws Exception {
+            when(tenantMapper.selectById(1L)).thenReturn(enabledTenant());
+            when(valueOperations.setIfAbsent(anyString(), anyString(), anyLong(), any()))
+                    .thenThrow(new RuntimeException("redis down"));
+            when(dailyBriefingMapper.selectOne(any())).thenReturn(null);
+            String llmOutput = """
+                    {
+                      "summary": "昨日订单 5 单，经营平稳",
+                      "todo": [{"priority": "high", "title": "10 个订单待发货", "metrics": [{"key": "pending_ship_orders", "value": 10}]}],
+                      "risks": [],
+                      "suggestions": []
+                    }
+                    """;
+            JsonNode parsed = objectMapper.readTree(llmOutput);
+            when(briefingGenerateClient.generate(eq(1L), anyMap())).thenReturn(parsed);
+
+            DailyBriefing result = service.generateForTenant(1L);
+
+            assertThat(result).isNotNull();
+            assertThat(result.getVerifyStatus()).isEqualTo("verified");
+            verify(dailyBriefingMapper).insert(any(DailyBriefing.class));
+        }
+
+        @Test
+        @DisplayName("有事务上下文时：锁延迟到事务提交后释放（防先放锁后提交窗口，issue #3957）")
+        void clusterLockReleasedAfterTransactionCommit() throws Exception {
+            when(tenantMapper.selectById(1L)).thenReturn(enabledTenant());
+            when(valueOperations.setIfAbsent(anyString(), anyString(), anyLong(), any())).thenReturn(true);
+            when(dailyBriefingMapper.selectOne(any())).thenReturn(null);
+            String llmOutput = """
+                    {
+                      "summary": "昨日订单 5 单，经营平稳",
+                      "todo": [{"priority": "high", "title": "10 个订单待发货", "metrics": [{"key": "pending_ship_orders", "value": 10}]}],
+                      "risks": [],
+                      "suggestions": []
+                    }
+                    """;
+            JsonNode parsed = objectMapper.readTree(llmOutput);
+            when(briefingGenerateClient.generate(eq(1L), anyMap())).thenReturn(parsed);
+
+            TransactionSynchronizationManager.initSynchronization();
+            try {
+                DailyBriefing result = service.generateForTenant(1L);
+
+                assertThat(result).isNotNull();
+                assertThat(result.getVerifyStatus()).isEqualTo("verified");
+                // 事务未提交 → 锁必须仍持有（否则另一实例会读不到记录而重复生成）
+                verify(redisTemplate, never()).delete(anyString());
+                // 模拟事务提交完成 → 注册的回调释放锁
+                TransactionSynchronizationManager.getSynchronizations()
+                        .forEach(s -> s.afterCompletion(TransactionSynchronization.STATUS_COMMITTED));
+                verify(redisTemplate).delete(anyString());
+            } finally {
+                TransactionSynchronizationManager.clear();
+            }
+        }
+    }
+
+    @Nested
+    @DisplayName("定时调度（generateDueTenants，issue #3957）")
+    class SchedulerFlow {
+
+        @Test
+        @DisplayName("调度线程无 JWT：daily_briefings 查询必须发生在 TenantContext 设置之后")
+        void schedulerSetsTenantContextBeforeBriefingQuery() throws Exception {
+            // 生产实证：scheduling-1 线程对 daily_briefings 的幂等预检在无 TenantContext 时
+            // 被 TenantLineInnerInterceptor 拒绝（MybatisPlusConfig:84 抛
+            // "Tenant context not initialized"）→ 每轮调度整体夭折、简报永不生成。
+            // 用同一契约模拟拦截器：任何 daily_briefings 查询发生时 TenantContext 必须已注入租户。
+            // 生成时刻用 00:00 保证「已到时刻」，测试不依赖墙钟（防每天 00:00–06:00 假红）。
+            TenantContext.clear();
+            Tenant dueTenant = Tenant.builder().id(1L).briefingEnabled(true).briefingGenerateTime("00:00").build();
+            when(tenantMapper.selectList(any())).thenReturn(List.of(dueTenant));
+            when(tenantMapper.selectById(1L)).thenReturn(dueTenant);
+            when(dailyBriefingMapper.selectOne(any())).thenAnswer(inv -> {
+                assertThat(TenantContext.getTenantId())
+                        .as("调度路径查询 daily_briefings 前必须已设置 TenantContext")
+                        .isEqualTo(1L);
+                return null;
+            });
+            String llmOutput = """
+                    {
+                      "summary": "昨日订单 5 单，经营平稳",
+                      "todo": [{"priority": "high", "title": "10 个订单待发货", "metrics": [{"key": "pending_ship_orders", "value": 10}]}],
+                      "risks": [],
+                      "suggestions": []
+                    }
+                    """;
+            JsonNode parsed = objectMapper.readTree(llmOutput);
+            when(briefingGenerateClient.generate(eq(1L), anyMap())).thenReturn(parsed);
+
+            int generated = service.generateDueTenants();
+
+            assertThat(generated).isEqualTo(1);
+            verify(dailyBriefingMapper).insert(any(DailyBriefing.class));
+        }
+
+        @Test
+        @DisplayName("当日已生成 → 调度跳过，不重复调 LLM")
+        void schedulerSkipsWhenAlreadyGenerated() {
+            TenantContext.clear();
+            Tenant dueTenant = Tenant.builder().id(1L).briefingEnabled(true).briefingGenerateTime("00:00").build();
+            when(tenantMapper.selectList(any())).thenReturn(List.of(dueTenant));
+            when(dailyBriefingMapper.selectOne(any())).thenAnswer(inv -> {
+                assertThat(TenantContext.getTenantId())
+                        .as("调度路径幂等预检也必须带 TenantContext")
+                        .isEqualTo(1L);
+                return DailyBriefing.builder().tenantId(1L).verifyStatus("verified").build();
+            });
+
+            int generated = service.generateDueTenants();
+
+            assertThat(generated).isZero();
+            verify(briefingGenerateClient, never()).generate(anyLong(), anyMap());
         }
     }
 
