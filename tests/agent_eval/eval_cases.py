@@ -1173,15 +1173,17 @@ _CASE_CH_019 = EvalCase(
     title='B 端米宝交互卡可用 - 建品/下单/售后/客户写操作可发 interact 卡片（issue #2777 G6）',
     skill=Skill.MULTI_TURN,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['米宝（B 端商家）创建商品选加工项/分类时应能下发 interact(choice) 卡片', '米宝写操作（建品/下单/售后改状态/客户删除）被 confirm 守卫拦截后应能调用 interact(confirm) 展示确认卡'],
+    user_inputs=['创建一个窗帘，名称 CH019交互卡测试窗帘，价格168，分类选窗帘', {'auto_respond': {'fallback': '窗帘布艺'}}, {'auto_respond': {'fallback': '确认创建'}}, '帮客户张三（手机号 13800138000）下一单：遮光窗帘 3 米，要打孔加工', {'auto_respond': {'fallback': '确认下单'}}, '把客户张三（手机号 13800138000）的「VIP2」标签去掉', {'auto_respond': {'fallback': '确认'}}, '把工单 AS-20260914-9001 关闭，关闭原因写「客户已协商一致」'],
     expectations=['interact'],
-    data_checks=['B 端 product/order/aftersales/customer skill 的 tool_names 均绑定 interact（G6 契约测试）', 'product_skill.py/prompts/order.md 要求 interact 的指令与工具绑定一致，无 tool_not_found 退化', '前端 admin-web store 完整透传 confirmValue/cancelValue/pageMeta（confirm 卡回传上下文值而非死值）'],
+    data_checks=['【静态契约 ▪ 单测承重，非本用例】B 端 product/order/aftersales/customer skill 的 tool_names 均绑定 interact（G6 契约）—— 断言在 traces.tests[0] 的 test_all_write_skills_bind_interact_via_confirm_guard，**不由本次 LLM 跑证明静态事实**', '【静态契约 ▪ 单测承重，非本用例】product_skill.py / prompts/order.md 里要求 interact 的指令与工具绑定一致、无 tool_not_found 退化 —— 同上（test_prompt_required_interact_tools_are_bound）', '【静态契约 ▪ 前端单测承重，非本用例】admin-web store 完整透传 confirmValue/cancelValue/pageMeta（confirm 卡回传上下文值而非死值）—— 断言在 traces.tests[1]', '【本用例的行为面】真实写操作触发语下，四类链路**任一条**下发了交互卡（= expectations）；四类链路各自的完整正确性由专项用例承重：建品 PR-008 / 下单 OR-014 / 客户标签 CU-003 / 售后改状态 AS-004'],
     skip_reason='',
     tags=['interactive', 'confirmation'],
-    persona='',
+    persona='mibao',
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+    pre_clean=[{'type': 'product_remove', 'product_keyword': 'CH019交互卡测试窗帘'}],
+    namespaces=['customer_phone:13800138000', 'product_name:CH019交互卡测试窗帘'],
 )
 
 # ── CH-020 [NORMAL] C 端随手发图意图不明 - 先给候选意图卡，不默认直接搜相似（低学历场景）（源: cases/chat.yml）──

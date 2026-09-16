@@ -830,22 +830,81 @@ cases:
       - product
       - order
     tier: normal
+    # persona 标 mibao（#3961）：本用例的触发语与断言全落在 B 端写操作链路上（建品/下单/
+    # 售后/客户），而 C 端小布没有 product_manage / after_sales_manage / customer_manage
+    # 等管理端工具 —— 显式标注后它不再进入 C 端可选集，杜绝「跑在错误 Agent 上还计分」
+    # （静态侧同时消掉 CASE-TRUST-SINGLE-LEG-NO-PERSONA 的跨腿泄漏隐患：#3266 的
+    #  `is_customer_facing_case` 语义过滤今天已把它挡在 C 端之外，但那是**语义**判据，
+    #  一旦调整，这份强 B 端语料就会漏进 C 端腿而必挂）。
+    persona: mibao
     tags:
       - interactive
       - confirmation
     truths_ref:
       - ai-chat.confirm-required
+    # ── 语料形态修复（issue #3961）：能力问答 → 真实行为触发语 ──────────────────────
+    # 原 user_inputs 是**能力问答**（「…应能下发 interact 卡片」）：对一句元问题这样回答
+    # 本身是**合理**的，故它天生无法驱动行为 —— 实测 run 35049558042 两轮零工具调用
+    # （tools=[]，回复「✅ 可以，这正是创建商品的标配流程…」）被判 deterministic_failures。
+    # 这类语料要么永远红、要么靠偶然通过，**污染整轮判定信号**（#3955 里「必须处理的失败
+    # 1 条」就是它）。改为逐类写操作的**真实触发语**（形态分别取自 PR-008 建品 /
+    # OR-014 下单 / CU-003 客户标签 / AS-004 售后改状态），保留原有四类覆盖面。
+    #
+    # 断言口径（与语料对齐）：本用例只主张**能力面** ——「B 端写操作链路上真的能下发交互卡」。
+    # `expectations: tool: interact` 由 runner 的 `_interactive_satisfies` 判定：interact
+    # 工具调用与 SSE interactive 事件**任一**命中即成立，四类触发语**任一轮**命中即过。
+    # 各链路的**完整正确性**（写成功/落库/字段值）**不由本用例承重**，归属见 data_checks。
     user_inputs:
-      - "米宝（B 端商家）创建商品选加工项/分类时应能下发 interact(choice) 卡片"
-      - "米宝写操作（建品/下单/售后改状态/客户删除）被 confirm 守卫拦截后应能调用 interact(confirm) 展示确认卡"
+      # ① 建品（product_skill）：分类 choice 卡 → 写前 confirm 卡
+      - "创建一个窗帘，名称 CH019交互卡测试窗帘，价格168，分类选窗帘"
+      - auto_respond:
+          fallback: "窗帘布艺"
+      - auto_respond:
+          fallback: "确认创建"
+      # ② 下单（order_skill）：写前 confirm 卡
+      - "帮客户张三（手机号 13800138000）下一单：遮光窗帘 3 米，要打孔加工"
+      - auto_respond:
+          fallback: "确认下单"
+      # ③ 客户写操作：写前 confirm 卡
+      # 原语料的「客户删除」在此落成「客户标签移除」——B 端 customer_manage **没有**
+      # delete-customer action（其 destructive 语义覆盖「删除客户/标签」，见工具 describe），
+      # 标签移除是该工具面上真实存在且 destructive 的客户写操作（只动张三的标签关联，
+      # 不动标签目录本身，故不会伤到 CU-003 的标签前置）。
+      - "把客户张三（手机号 13800138000）的「VIP2」标签去掉"
+      - auto_respond:
+          fallback: "确认"
+      # ④ 售后改状态（aftersales_skill）：写前 confirm 卡
+      # ⚠️ 末轮**有意不答卡**（后面不再跟 auto_respond）：本用例断言的是「写操作被 confirm
+      #    守卫拦截后能下发确认卡」，卡出现即证成（`_interactive_satisfies` 只看事件，不看
+      #    写是否执行）。不答题是为了**不真的关闭 AS-20260914-9001** —— 该工单归 AS-004
+      #    所有（pending→closed 是它的前置），而评测库**没有 ticket 维度的命名空间键**，
+      #    单边声明 `namespaces` 只会得到「看起来有隔离」的零隔离（#3835 的结论）⇒ 只能从
+      #    **写侧**避免竞争：「写方别去写共享对象」。
+      - "把工单 AS-20260914-9001 关闭，关闭原因写「客户已协商一致」"
+    # 全局命名空间声明（issue #3781）：本用例往「张三 / 13800138000」这个全局资源里写
+    # （② 建单、③ 去标签），与同样争用它的 10 条用例（AS-003/AS-005/OR-016/CU-003…）
+    # 自动互斥，消除并行改写前置造成的非确定性。
+    namespaces:
+      - "customer_phone:13800138000"
+      - "product_name:CH019交互卡测试窗帘"
+    # 自清理（#3800）：① 的商品是本用例自建的**自有名** ⇒ 重试前置须复位成「不存在」
+    # （`product_remove` 按子串删；`product_dedupe` 只留 1 件，不构成「不存在」）。
+    # 目标名同时声明在 namespaces 里 ⇒ 属「用例自建对象」，静态判据按该豁免放行
+    # （`is_case_owned_cleanup_target`）。
+    pre_clean:
+      - type: product_remove
+        product_keyword: "CH019交互卡测试窗帘"
     expectations:
       - tool: interact
+    # data_checks 与语料对齐：原来三条**全是静态契约散文**（不计分、也不该靠 LLM 跑来证），
+    # 逐条标明「由哪个测试承重」；行为面只保留一条，并写明四类链路各自的专项用例归属。
     data_checks:
-      - "B 端 product/order/aftersales/customer skill 的 tool_names 均绑定 interact（G6 契约测试）"
-      - "product_skill.py/prompts/order.md 要求 interact 的指令与工具绑定一致，无 tool_not_found 退化"
-      - "前端 admin-web store 完整透传 confirmValue/cancelValue/pageMeta（confirm 卡回传上下文值而非死值）"
+      - "【静态契约 ▪ 单测承重，非本用例】B 端 product/order/aftersales/customer skill 的 tool_names 均绑定 interact（G6 契约）—— 断言在 traces.tests[0] 的 test_all_write_skills_bind_interact_via_confirm_guard，**不由本次 LLM 跑证明静态事实**"
+      - "【静态契约 ▪ 单测承重，非本用例】product_skill.py / prompts/order.md 里要求 interact 的指令与工具绑定一致、无 tool_not_found 退化 —— 同上（test_prompt_required_interact_tools_are_bound）"
+      - "【静态契约 ▪ 前端单测承重，非本用例】admin-web store 完整透传 confirmValue/cancelValue/pageMeta（confirm 卡回传上下文值而非死值）—— 断言在 traces.tests[1]"
+      - "【本用例的行为面】真实写操作触发语下，四类链路**任一条**下发了交互卡（= expectations）；四类链路各自的完整正确性由专项用例承重：建品 PR-008 / 下单 OR-014 / 客户标签 CU-003 / 售后改状态 AS-004"
     skip_reason: ""
-    merge_log: "issue #2777：G6 interact 绑定 B 端 + admin-web store 字段透传修复"
+    merge_log: "issue #2777：G6 interact 绑定 B 端 + admin-web store 字段透传修复。2026-09-16（#3961）语料形态修复：user_inputs 由**能力问答**改为四类写操作的真实触发语（原语料两轮零工具调用 = 假红，污染整轮 completion 判定，见 #3955），四类覆盖面保留；expectations 不变（tool: interact）；data_checks 改为显式标注静态契约由单测/前端单测承重、行为面只留「任一链路下发交互卡」；补 persona: mibao（B 端专属，消除跨腿隐患）；补 namespaces（张三/13800138000 与 10 条用例互斥）；补 pre_clean product_remove（自建商品名重试前置复位）；④ 售后改状态轮有意不答卡，避免与 AS-004 争用 seed 工单；生成物已重渲染"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_skill_routing_integrity.py"
