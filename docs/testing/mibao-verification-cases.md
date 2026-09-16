@@ -773,15 +773,23 @@
 
 ### CH-019. B 端米宝交互卡可用 - 建品/下单/售后/客户写操作可发 interact 卡片（issue #2777 G6） 🔵
 ```
-你: 米宝（B 端商家）创建商品选加工项/分类时应能下发 interact(choice) 卡片
-你: 米宝写操作（建品/下单/售后改状态/客户删除）被 confirm 守卫拦截后应能调用 interact(confirm) 展示确认卡
+你: 创建一个窗帘，名称 CH019交互卡测试窗帘，价格168，分类选窗帘
+你: [🤖 按上一轮卡片作答]
+你: [🤖 按上一轮卡片作答]
+你: 帮客户张三（手机号 13800138000）下一单：遮光窗帘 3 米，要打孔加工
+你: [🤖 按上一轮卡片作答]
+你: 把客户张三（手机号 13800138000）的「VIP2」标签去掉
+你: [🤖 按上一轮卡片作答]
+你: 把工单 AS-20260914-9001 关闭，关闭原因写「客户已协商一致」
 期望: interact
-数据: B 端 product/order/aftersales/customer skill 的 tool_names 均绑定 interact（G6 契约测试）
-数据: product_skill.py/prompts/order.md 要求 interact 的指令与工具绑定一致，无 tool_not_found 退化
-数据: 前端 admin-web store 完整透传 confirmValue/cancelValue/pageMeta（confirm 卡回传上下文值而非死值）
+数据: 【静态契约 ▪ 单测承重，非本用例】B 端 product/order/aftersales/customer skill 的 tool_names 均绑定 interact（G6 契约）—— 断言在 traces.tests[0] 的 test_all_write_skills_bind_interact_via_confirm_guard，**不由本次 LLM 跑证明静态事实**
+数据: 【静态契约 ▪ 单测承重，非本用例】product_skill.py / prompts/order.md 里要求 interact 的指令与工具绑定一致、无 tool_not_found 退化 —— 同上（test_prompt_required_interact_tools_are_bound）
+数据: 【静态契约 ▪ 前端单测承重，非本用例】admin-web store 完整透传 confirmValue/cancelValue/pageMeta（confirm 卡回传上下文值而非死值）—— 断言在 traces.tests[1]
+数据: 【本用例的行为面】真实写操作触发语下，四类链路**任一条**下发了交互卡（= expectations）；四类链路各自的完整正确性由专项用例承重：建品 PR-008 / 下单 OR-014 / 客户标签 CU-003 / 售后改状态 AS-004
+清理: product_remove(product_keyword=CH019交互卡测试窗帘)
 ```
 真值: ai-chat.confirm-required
-溯源: issue #2777：G6 interact 绑定 B 端 + admin-web store 字段透传修复 ｜ tags: interactive, confirmation
+溯源: issue #2777：G6 interact 绑定 B 端 + admin-web store 字段透传修复。2026-09-16（#3961）语料形态修复：user_inputs 由**能力问答**改为四类写操作的真实触发语（原语料两轮零工具调用 = 假红，污染整轮 completion 判定，见 #3955），四类覆盖面保留；expectations 不变（tool: interact）；data_checks 改为显式标注静态契约由单测/前端单测承重、行为面只留「任一链路下发交互卡」；补 persona: mibao（B 端专属，消除跨腿隐患）；补 namespaces（张三/13800138000 与 10 条用例互斥）；补 pre_clean product_remove（自建商品名重试前置复位）；④ 售后改状态轮有意不答卡，避免与 AS-004 争用 seed 工单；生成物已重渲染 ｜ tags: interactive, confirmation
 
 ### CH-020. C 端随手发图意图不明 - 先给候选意图卡，不默认直接搜相似（低学历场景） 🔵
 ```
