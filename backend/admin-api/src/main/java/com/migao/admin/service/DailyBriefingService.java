@@ -11,8 +11,11 @@ import com.migao.admin.exception.BusinessException;
 import com.migao.admin.mapper.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
@@ -26,6 +29,7 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 /**
  * 智能每日经营简报服务（issue #3468，设计文档 docs/design/daily-briefing-design.md v0.2）
@@ -52,6 +56,7 @@ public class DailyBriefingService {
     private final ProductService productService;
     private final BriefingGenerateClient briefingGenerateClient;
     private final ObjectMapper objectMapper;
+    private final StringRedisTemplate redisTemplate;
 
     /** 数字对账容差：metrics value 与快照值之差绝对值 ≤ 容差即视为一致（浮点/舍入） */
     private static final double METRIC_TOLERANCE = 0.001;
@@ -62,6 +67,13 @@ public class DailyBriefingService {
      */
     static final ZoneId CST = ZoneId.of("Asia/Shanghai");
     private static final ZoneOffset CST_OFFSET = ZoneOffset.ofHours(8);
+
+    /**
+     * 分布式生成锁 TTL（秒，issue #3957）：覆盖一次完整 LLM 生成耗时；
+     * 实例崩溃后锁自动到期放行，DB 唯一键 (tenant_id, biz_date) 兜底防重复记录。
+     * 包级可见，供同包测试断言锁 TTL 与实现同源。
+     */
+    static final long BRIEFING_LOCK_TTL_SECONDS = 600L;
 
     // ==================== 企业开关（红线 3）====================
 
@@ -137,6 +149,10 @@ public class DailyBriefingService {
     /**
      * 为租户生成当日简报（定时任务/手动触发/开启瞬间共用）。
      * 开关关闭 → 直接返回 null（熔断）；生成失败 → 落 failed 记录（不展示假数据）。
+     *
+     * 分布式集群安全（issue #3957）：多实例同时调度/手动触发时，同一租户同一天
+     * 只允许一个实例执行生成——Redis SET NX EX 锁（key=租户×业务日期）；
+     * DB 唯一键 (tenant_id, biz_date) 兜底，Redis 不可用 fail-open 放行不阻断简报。
      */
     @Transactional
     public DailyBriefing generateForTenant(Long tenantId) {
@@ -151,6 +167,26 @@ public class DailyBriefingService {
             return null;
         }
 
+        String lockKey = "briefing:gen:" + tenantId + ":" + LocalDate.now(CST);
+        boolean locked = tryAcquireGenerationLock(lockKey);
+        if (!locked) {
+            log.info("简报生成跳过：另一实例正在生成或当日已生成 tenantId={}", tenantId);
+            return null;
+        }
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            // 锁的生命周期须盖过受保护写入（daily_briefings insert 随事务提交）：
+            // 事务提交/回滚完成后再释放锁，否则「先放锁、后提交」窗口内另一实例
+            // 读不到记录会重复生成（issue #3957 集群互斥语义）。
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCompletion(int status) {
+                    releaseGenerationLock(lockKey);
+                }
+            });
+        } else {
+            // 无事务上下文（单测等）→ 立即释放，DB 唯一键兜底
+            releaseGenerationLock(lockKey);
+        }
         // 定时任务线程无 JWT Filter，聚合 SQL / 落库依赖 TenantContext 注入租户
         // （TenantLineInnerInterceptor 从 TenantContext 取 tenant_id），须显式设置。
         Long previousTenantId = TenantContext.getTenantId();
@@ -163,6 +199,26 @@ public class DailyBriefingService {
             } else {
                 TenantContext.clear();
             }
+        }
+    }
+
+    /** 获取当日生成锁（SET NX EX）。Redis 不可用 → fail-open 返回 true（DB 唯一键兜底）。 */
+    private boolean tryAcquireGenerationLock(String lockKey) {
+        try {
+            return Boolean.TRUE.equals(redisTemplate.opsForValue()
+                    .setIfAbsent(lockKey, "1", BRIEFING_LOCK_TTL_SECONDS, TimeUnit.SECONDS));
+        } catch (Exception e) {
+            log.warn("简报生成锁不可用（Redis 异常），fail-open 放行: {}", e.getMessage());
+            return true;
+        }
+    }
+
+    /** 释放生成锁。Redis 异常仅告警（TTL 兜底自动放行）。 */
+    private void releaseGenerationLock(String lockKey) {
+        try {
+            redisTemplate.delete(lockKey);
+        } catch (Exception e) {
+            log.warn("简报生成锁释放失败（Redis 异常，TTL 兜底）: {}", e.getMessage());
         }
     }
 
@@ -474,16 +530,30 @@ public class DailyBriefingService {
             if (now.isBefore(generateTime)) {
                 continue;
             }
-            if (getBriefingByDate(tenant.getId(), today) != null) {
-                continue;   // 当日已生成
-            }
+            // 调度线程无 JWT Filter，幂等预检也查租户隔离表 daily_briefings：
+            // TenantLineInnerInterceptor 在无 TenantContext 时抛
+            // "Tenant context not initialized"（issue #3957，生产每轮调度整体夭折），
+            // 须与 generateForTenant 一样显式设置租户上下文（内层再设同值为幂等 no-op）。
+            Long previousTenantId = TenantContext.getTenantId();
+            TenantContext.setTenantId(tenant.getId());
             try {
-                DailyBriefing briefing = generateForTenant(tenant.getId());
-                if (briefing != null && !"failed".equals(briefing.getVerifyStatus())) {
-                    generated++;
+                if (getBriefingByDate(tenant.getId(), today) != null) {
+                    continue;   // 当日已生成
                 }
-            } catch (Exception e) {
-                log.error("定时生成简报失败 tenantId={}: {}", tenant.getId(), e.getMessage());
+                try {
+                    DailyBriefing briefing = generateForTenant(tenant.getId());
+                    if (briefing != null && !"failed".equals(briefing.getVerifyStatus())) {
+                        generated++;
+                    }
+                } catch (Exception e) {
+                    log.error("定时生成简报失败 tenantId={}: {}", tenant.getId(), e.getMessage());
+                }
+            } finally {
+                if (previousTenantId != null) {
+                    TenantContext.setTenantId(previousTenantId);
+                } else {
+                    TenantContext.clear();
+                }
             }
         }
         return generated;
