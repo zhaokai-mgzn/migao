@@ -3,10 +3,10 @@ Tests for app/api/*.py — coverage gap issue #581
 Covers: chat (helpers), sse (SSEEvent/SSEStreamBuilder),
          upload (_sniff_image_type/_validate_image_file), internal (Pydantic models)
 """
-# case_ids: CH-001, API-004, CH-010, CH-011, CH-012, OR-017, CH-032
+# case_ids: CH-001, API-004, CH-010, CH-011, CH-012, OR-017, CH-032, CH-019
 import json
 import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 from datetime import datetime, timezone
 
 
@@ -214,6 +214,333 @@ class TestInteractXmlParseFailureIsObservable:
         chunks, marks = self._stream("您好，请问有什么可以帮您？")
         assert marks == [], "[interact-xml] 留痕只应来自「有块但解析失败」"
         assert "请问有什么可以帮您" in "".join(chunks), "无块时文本照旧下发"
+
+
+# ═══════════════════════════════════════
+# chat.py — 收尾守卫升级（issue #3929 缺口修补 / #3967）
+# ═══════════════════════════════════════
+
+# 实测漏检措辞（逐字取自三个独立产品会话；见 #3967 的挖掘报告）
+#   sess_e52cff42c5d144f0：只调 validate_input，没发 interact(confirm)
+#   sess_7f27137647e14b1e：「请点击上方卡片勾选加工项」→ 两次都没调 interact，订单未创建
+#   sess_2efa2071bb1747d8：「确认卡已发出 👆」+「现在为您调出真正的加工项选择卡片」
+CLAIM_ABOVE = "请点击上方卡片勾选加工项"
+CLAIM_SUMMON = "现在为您调出真正的加工项选择卡片，请点击选择（可多选）"
+CLAIM_EMITTED = "确认卡已发出 👆"
+# 负例：提及「卡片」但**没有动作指向**的合法文本必须原样保留
+#   —— 含方向词 + 卡片（「请查看上方结果卡片」「下方列表」）与纯解释性文字
+BENIGN_TEXTS = (
+    "好的，已为您查询到相关信息，请查看上方结果卡片。",
+    "下方列表里列出了全部加工项，您可以慢慢看。",
+    "确认设置后我立即为您处理。",
+    "您好，很高兴为您服务。",
+    "每一件商品都会显示一张卡片，里面有价格和图片。",
+    "对话框里可以直接输入您想问的问题。",
+)
+# 会话状态里「已校验待执行」的写动作（validate_input 通过后由 base_skill 落库）
+PENDING_WRITE = {
+    "target_tool": "order_create",
+    "target_action": "create",
+    "params": {"customer_name": "张三", "customer_phone": "13800138000",
+               "items": [{"product_name": "遮光窗帘", "quantity": 3}]},
+}
+
+
+def _pending_state():
+    from app.graph.pending_validated import PENDING_KEY
+    return {PENDING_KEY: dict(PENDING_WRITE)}
+
+
+def _claim_ctx(role="admin"):
+    from app.agents.customer_service_agent import AgentContext
+    return AgentContext(user_id="u1", tenant_id=1, session_id="sess-3967",
+                        role=role, identity_type=role)
+
+
+class _FakeStore:
+    """SessionStateStore 替身（内存 state，与 test_b_end_confirm_card_fallback 同形）。"""
+
+    def __init__(self, shared):
+        self._shared = shared
+        self.commits = []
+
+    async def load(self, sid):
+        return dict(self._shared)
+
+    async def commit(self, sid, full):
+        self.commits.append(dict(full or {}))
+        self._shared.clear()
+        self._shared.update(full or {})
+        return True
+
+
+class _FakeMemory:
+    """SessionMemory 替身：只记 save_message 的入参。"""
+
+    def __init__(self):
+        self.saved = []
+
+    async def add_message(self, **kw):
+        return None
+
+    async def save_message(self, **kw):
+        self.saved.append(kw)
+        return "msg-3967"
+
+    async def save(self, *a, **kw):
+        return None
+
+
+def _claim_stream(content, *, role="admin", store_state=None):
+    """驱动真 SSE 桥跑一轮「模型只输出文本、没调 interact」，返回
+    (SSE chunks, SessionMemory 替身, SessionStateStore 替身, [chat/card-claim] 留痕)。"""
+    import asyncio
+    from loguru import logger
+    from app.agents.customer_service_agent import AgentResponse
+    from app.api.chat import _agent_stream_to_sse
+
+    records = []
+    sink_id = logger.add(lambda m: records.append(m.record), level="WARNING")
+    shared = {} if store_state is None else store_state
+    store = _FakeStore(shared)
+    mem = _FakeMemory()
+
+    class _Agent:
+        _agent_type = "xiaobu"
+
+        async def astream_chat(self, message, context, chat_history):
+            yield AgentResponse(type="text", content=content)
+
+    async def _collect():
+        return [c async for c in _agent_stream_to_sse(
+            _Agent(), "你好", _claim_ctx(role), [], MagicMock(), mem,
+            "sess-3967", 1, "u1")]
+
+    try:
+        with patch("app.api.chat._extract_memories_async", new=AsyncMock()), \
+             patch("app.api.chat._generate_title_async", new=AsyncMock()), \
+             patch("app.memory.session_state_store.SessionStateStore",
+                   side_effect=lambda *a, **k: store):
+            chunks = asyncio.run(_collect())
+    finally:
+        logger.remove(sink_id)
+    return chunks, mem, store, [r for r in records if "[chat/card-claim]" in str(r["message"])]
+
+
+class TestCardClaimWordingCoverage:
+    """缺口 1：检测覆盖面（实测措辞族不得漏检；合法提及不得误改）。
+
+    旧正则只覆盖「下方/确认」家族，实测三条生产措辞**全部漏检** ——
+    守卫不触发 ⇒ 不改写、不补卡，顾客侧「看不到下方卡片」（#3967）。
+    """
+
+    def test_repro_wording_now_detected_after_normalization(self):
+        """归一（方向词/空白）+ 语义模式后，实测措辞必须命中。"""
+        from app.api.chat import _has_card_claim
+
+        cases = [
+            CLAIM_ABOVE,                                        # 请点击上方卡片勾选加工项
+            CLAIM_SUMMON,                                       # 现在为您调出真正的加工项选择卡片
+            "现在为您调出真正的加工项选择卡片，请点击选择（可多选）",   # 同上（原样）
+            CLAIM_EMITTED,                                      # 确认卡已发出 👆
+            "请点击上方的卡片勾选加工项",                            # 夹了「的」
+            "请点击卡片上方的按钮勾选加工项",                        # 方向词 + 空隙
+            "请 点 击 上 方 卡 片 勾 选 加 工 项",                    # 字符间空白（归一）
+            "请点下方确认卡片",                                    # 向后兼容：既有短语
+        ]
+        for text in cases:
+            assert _has_card_claim(text), f"实测/既有措辞漏检: {text!r}"
+
+    def test_legacy_phrases_still_detected(self):
+        """向后兼容：#3929 已覆盖的「下方/确认」短语不得回归。"""
+        from app.api.chat import _CARD_CLAIM_RE, _has_card_claim
+
+        for text in ("确认无误请点下方确认卡片，我立即创建。",
+                     "确认无误请点下方卡片，我立即写入。",
+                     "请点确认。",
+                     "请点击确认卡片。"):
+            assert _CARD_CLAIM_RE.search(text), f"既有正则回归: {text!r}"
+            assert _has_card_claim(text), f"合成判据漏检既有短语: {text!r}"
+        # 实测漏检措辞在**改写正则**上也不得漏（否则只"判得出来"却改不掉）
+        from app.api.chat import _rewrite_card_claims
+        assert _rewrite_card_claims("请点击上方卡片勾选加工项") != "请点击上方卡片勾选加工项"
+        assert _rewrite_card_claims("确认卡已发出 👆") != "确认卡已发出 👆"
+
+    def test_benign_card_mentions_not_detected(self):
+        """负例：提及「卡片」但无动作指向 ⇒ 不得命中（避免误改合法话术）。"""
+        from app.api.chat import _has_card_claim
+
+        for text in BENIGN_TEXTS:
+            assert not _has_card_claim(text), f"合法文本被误判: {text!r}"
+
+    def test_user_action_wording_not_detected(self):
+        """负例：动作句 + 用户侧操作，不指向卡片 ⇒ 不得命中。"""
+        from app.api.chat import _has_card_claim
+
+        for text in ("好的，请您选择需要的加工项，我这就安排。",
+                     "请确认收货地址，确认后我立即创建订单。"):
+            assert not _has_card_claim(text), f"用户动作话术被误判: {text!r}"
+
+    def test_benign_text_not_rewritten(self):
+        """负例落到改写函数：合法文本必须逐字返回（幂等纯函数不受影响）。"""
+        from app.api.chat import _rewrite_card_claims
+        from tests.test_chat_card_claim_guard import CLAIM_CREATE
+
+        for text in BENIGN_TEXTS:
+            assert _rewrite_card_claims(text) == text, text
+        # 非空返回：下游（收尾守卫）会剥离 #3883 误导句后 strip
+        assert _rewrite_card_claims(CLAIM_CREATE) == "确认无误请回复『确认』，我立即创建。"
+
+    def test_repro_wording_rewritten_to_text_guide(self):
+        """命中后改写为唯一可执行的下一步（不再指路到不存在的卡）。"""
+        from app.api.chat import _rewrite_card_claims
+
+        out = _rewrite_card_claims(CLAIM_SUMMON)
+        assert "回复『确认』" in out, out
+        assert "卡片" not in out, out
+        out2 = _rewrite_card_claims(CLAIM_ABOVE)
+        assert "回复『确认』" in out2 and "卡片" not in out2, out2
+        out3 = _rewrite_card_claims(CLAIM_EMITTED)
+        assert "回复『确认』" in out3 and "卡片" not in out3, out3
+
+
+class TestCardClaimGuardReissuesCard:
+    """缺口 2：命中 + 有待确认动作 ⇒ 真的补卡（而不是只改写话术）。
+
+    三次实测里模型**压根没尝试写**，门禁（`confirmation_required_no_card`）
+    从没拦下 ⇒ base_skill 8.3b 的补卡分支不触发，接缝处无人兜底。
+    """
+
+    def test_claim_without_pending_action_only_rewrites(self):
+        """命中但会话状态**没有**待确认动作 ⇒ 行为与现状一致（只改写 + 直播提示，不造卡）。"""
+        chunks, mem, store, marks = _claim_stream(CLAIM_SUMMON)
+        out = "".join(chunks)
+
+        assert "event: interactive" not in out, "无待确认动作时不得凭空造卡"
+        assert store.commits == [], "无待确认动作时不得写会话状态"
+        assert len(marks) == 1, f"漏留痕: {[str(m['message']) for m in marks]}"
+        assert "改写为纯文本确认指引" in str(marks[0]["message"])
+        saved = mem.saved[0]
+        assert saved["interactive"] is None
+        assert "回复『确认』" in saved["content"], saved["content"]
+        assert "卡片" not in saved["content"], saved["content"]
+        assert any("确认卡片未显示" in c for c in chunks), "直播侧仍须给可执行下一步"
+
+    def test_claim_with_pending_action_emits_real_card(self):
+        """命中 + `pending_validated_input` 有待确认动作 ⇒ 真的下发 interactive 载荷。"""
+        import json
+        chunks, mem, store, marks = _claim_stream(CLAIM_SUMMON,
+                                                  store_state=_pending_state())
+        out = "".join(chunks)
+
+        assert "event: interactive" in out, f"有待确认动作必须真发卡: {out[:400]}"
+        assert "遮光窗帘" in out and "张三" in out, "卡片必须回显已校验参数"
+        # 卡片语料经真解析器落成载荷并持久化（#3883：不落库刷新后卡又消失）
+        payload = mem.saved[0]["interactive"]
+        assert payload and payload["component"] == "confirm", payload
+        assert payload["fields"], payload
+        assert mem.saved[0]["interactive"] is not None
+        # 直播提示不得出现（卡真的到了，不能再让顾客「直接回复确认」代替点卡）
+        assert not any("确认卡片未显示" in c for c in chunks)
+        # 留痕：稳定检索标记 + 指明走的是补卡分支
+        assert len(marks) == 1, [str(m["message"]) for m in marks]
+        msg = str(marks[0]["message"])
+        assert "[chat/card-claim]" in msg and "sess-3967" in msg
+        assert "补发" in msg or "补卡" in msg, msg
+        # 落 last_confirm_value + 发卡 skill（否则顾客点了卡也过不了确认门禁）
+        assert store.commits, "补卡必须落会话状态（确认门禁靠它比对）"
+        committed = store.commits[-1]
+        assert str(committed.get("last_confirm_value") or ""), committed
+        assert committed.get("last_confirm_value") == payload.get("confirmValue")
+        assert committed.get("last_confirm_skill") == "order_create"
+        # 载荷口径与门禁一致（confirm_value_for_fields 同源）
+        from app.graph.skills.base_skill import confirm_value_for_fields
+        assert payload["confirmValue"] == confirm_value_for_fields(payload["fields"])
+
+    def test_pending_action_without_claim_emits_no_card(self):
+        """gating 负例：有待确认动作但模型**没声称**发卡 ⇒ 不得补卡（不凭空造卡）。"""
+        chunks, mem, store, marks = _claim_stream("您好，请问有什么可以帮您？",
+                                                  store_state=_pending_state())
+        out = "".join(chunks)
+        assert "event: interactive" not in out, "无声称时不得补卡"
+        assert store.commits == []
+        assert marks == []
+
+    def test_customer_card_masked_but_confirm_value_intact(self):
+        """出站脱敏不变式：顾客侧卡片手机号脱敏，confirmValue（协议值）保持真值。
+
+        `confirmValue` 是**协议值**（点击后回传、门禁按它比对）⇒ 出站不得脱敏
+        （见 `_mask_card_for_customer` 的文档字符串），故断言按**事件内部结构**判，
+        不能笼统地"整条 SSE 不含手机号"。
+        """
+        chunks, mem, store, marks = _claim_stream(CLAIM_ABOVE, role="customer",
+                                                  store_state=_pending_state())
+        line = next((c for c in chunks if c.startswith("event: interactive")), "")
+        assert line, "有待确认动作必须真发卡"
+        payload = json.loads(line.split("data: ", 1)[1].strip())
+        phone = [f for f in payload["fields"] if f["label"] == "手机号"]
+        assert phone and phone[0]["value"] == "138****8000", payload["fields"]
+        assert "13800138000" not in json.dumps(payload["fields"], ensure_ascii=False)
+        assert "13800138000" in payload["confirmValue"], "协议值不得脱敏（回传靠它匹配）"
+        # 落库载荷同样是真值（模型上下文/门禁匹配链全程用真值）
+        saved = mem.saved[0]["interactive"]
+        assert any(f["value"] == "13800138000" for f in saved["fields"]), saved["fields"]
+
+    def test_pending_action_without_fields_falls_back_to_rewrite(self):
+        """取不到字段（params 为空）⇒ 退回现有行为，绝不造空卡。"""
+        from app.graph.pending_validated import PENDING_KEY
+        chunks, mem, store, marks = _claim_stream(
+            CLAIM_SUMMON,
+            store_state={PENDING_KEY: {"target_tool": "order_create",
+                                       "target_action": "create", "params": {}}})
+        out = "".join(chunks)
+        assert "event: interactive" not in out, "空字段不得造空卡"
+        assert store.commits == []
+        assert "回复『确认』" in mem.saved[0]["content"], mem.saved[0]["content"]
+        assert len(marks) == 1 and "改写" in str(marks[0]["message"])
+
+    def test_store_failure_does_not_break_stream(self):
+        """落库失败 ⇒ 非致命：卡照发、留痕，流程不炸。"""
+        from app.graph.pending_validated import PENDING_KEY
+        store_state = {PENDING_KEY: dict(PENDING_WRITE)}
+
+        class _BrokenStore(_FakeStore):
+            async def commit(self, sid, full):
+                raise RuntimeError("db down")
+
+        chunks, mem, store, marks = None, None, None, None
+        import asyncio
+        from loguru import logger
+        from app.agents.customer_service_agent import AgentResponse
+        from app.api.chat import _agent_stream_to_sse
+        records = []
+        sink_id = logger.add(lambda m: records.append(m.record), level="WARNING")
+        _store = _BrokenStore(store_state)
+        _mem = _FakeMemory()
+
+        class _Agent:
+            _agent_type = "xiaobu"
+
+            async def astream_chat(self, message, context, chat_history):
+                yield AgentResponse(type="text", content=CLAIM_SUMMON)
+
+        async def _collect():
+            return [c async for c in _agent_stream_to_sse(
+                _Agent(), "你好", _claim_ctx(), [], MagicMock(), _mem,
+                "sess-3967", 1, "u1")]
+
+        try:
+            with patch("app.api.chat._extract_memories_async", new=AsyncMock()), \
+                 patch("app.api.chat._generate_title_async", new=AsyncMock()), \
+                 patch("app.memory.session_state_store.SessionStateStore",
+                       side_effect=lambda *a, **k: _store):
+                chunks = asyncio.run(_collect())
+        finally:
+            logger.remove(sink_id)
+        out = "".join(chunks)
+        assert "event: done" in out, "落库失败不得中断 SSE 流"
+        assert "event: interactive" in out, "卡本身照发（落库失败非致命）"
+        assert _mem.saved, "消息照旧落库"
 
 
 # ═══════════════════════════════════════

@@ -738,25 +738,210 @@ def _mask_card_for_customer(data: dict, context) -> dict:
 # 也没调 interact 工具 ⇒ 客户侧无卡可点（生产实证：米宝 flash 频繁只说「请点下方
 # 确认卡片」而不发卡）。命中时把声称片段改写为「回复『确认』」纯文本指引，
 # 只影响落库/后续上下文文本（assistant_content），full_response 原值不动。
+#
+# issue #3967（526 个历史会话日志挖掘）补缺口 1：旧正则只覆盖「下方/确认」家族，
+# 实测三条生产措辞**全部漏检**（跨 8 天、三个独立会话逐字）：
+#   · sess_e52cff42c5d144f0「卡片没有确认按钮」——只调 validate_input，没发 interact；
+#   · sess_7f27137647e14b1e「请点击**上方**卡片勾选加工项」/「现在为您调出真正的
+#     加工项选择卡片，请点击选择（可多选）」——两次都没发 interact，**订单未创建**；
+#   · sess_2efa2071bb1747d8「确认卡已发出 👆」（×3）。
+# 对照证据：同会话里真发出卡的回合用户全部点到了 ⇒ 渲染层无问题，问题是**发卡缺失**。
+# 范式：**不做短语穷举**（越补越漏），改为「归一 + 少量语义模式 + 固化实测逐字散文语料」：
+#   ① 归一：方向词（上方/下方/上面…）与空白 → 空，使「上 方 卡 片」不再漏；
+#   ② 模式 A：动作词（点/点击/勾选/选择…）与「卡片/卡」**近距离共现**；
+#   ③ 模式 C：完成态声称（「卡片已发出/已调出」等）；
+#   ④ 保留既有短语（向后兼容，见 _CARD_CLAIM_LEGACY_PHRASES）。
+# 误判代价可控（守卫只在「本轮确实没发卡」时生效，最坏是改写话术），
+# 但**补卡分支严格 gated**（见 _pending_confirm_action / _reissue_confirm_card），
+# 不得凭空造卡。
+_CARD_CLAIM_LEGACY_PHRASES = (
+    "点下方确认卡片", "点下方卡片", "下方确认卡片", "点下方确认",
+    "点击确认卡片", "点击下方确认", "请点确认", "请点击确认", "确认卡片",
+)
+# 归一后（无空白）仍须可判的实测措辞（逐字，防止归一化把判据一起吃掉）
+_CARD_CLAIM_REPRO_PHRASES = (
+    "点击上方卡片", "调出真正的加工项选择卡片", "卡片已发出", "请点击选择",
+)
+# 方向词/虚词：只用于**判据归一**，不参与改写（改写的片段正则见 _CARD_CLAIM_RE）
+_CARD_CLAIM_DIRECTION_WORDS = (
+    "上方", "下方", "上面", "下面", "以上", "以下", "上边的", "下边的",
+    "上边", "下边", "上图", "下图", "上侧", "下侧",
+)
+
+
+def _normalize_card_oriented(text: str) -> str:
+    """判据归一：抹掉方向词与空白，让「请点击上方卡片」与「请点击卡片」同形。
+
+    只服务于**判据**（`_has_card_claim`）；改写用的正则另有一套（保留方向词，
+    因为「点击上方卡片」整体才是可替换的声称片段）。
+    """
+    if not text:
+        return ""
+    for w in _CARD_CLAIM_DIRECTION_WORDS:
+        text = text.replace(w, "")
+    return re.sub(r"\s+", "", text)
+
+
+# 短语族（**归一后**的判据用）：既有短语 + 固化实测措辞（逐字语料）
+_CARD_CLAIM_PHRASES = _CARD_CLAIM_LEGACY_PHRASES + _CARD_CLAIM_REPRO_PHRASES
+# 短语判据：字符间允许空白（「请点下方卡片」/「请 点 下 方 卡 片」同判）
+_CARD_CLAIM_PHRASE_RE = re.compile(
+    "|".join(r"\s*".join(map(re.escape, p)) for p in _CARD_CLAIM_PHRASES))
+# 模式 A：**动作词与「卡片/卡」近距离共现**（缝隙 ≤ _CARD_ACTION_GAP 字，双向）——
+# 覆盖「请点击上方卡片勾选加工项」「请勾选卡片上的加工项」「选择卡片里的选项」。
+# 锚点刻意取**卡片实物**而非「加工项/选项」业务名词：后者会把
+# 「请您选择需要的加工项」这类**合法用户动作话术**误判（实测负例），
+# 而误判代价是改写顾客可见话术（补卡分支另有严格 gating，不会造卡）。
+# 已知边界：全句不含「卡片/卡」、只说「请点击选择（可多选）」的动作话术不命中
+# —— 与「卡片/加工项」同现的实测措辞由固定语料（_CARD_CLAIM_REPRO_PHRASES）兜住。
+_CARD_ACTION_GAP = 8
+_CARD_ACTION_WORDS = ("点击", "点选", "勾选", "选择", "点")
+_CARD_NOUNS = ("卡片", "卡")
+
+
+def _card_action_pattern() -> "re.Pattern[str]":
+    """模式 A 的正则（动作词 ⟷ 卡片实物，窗口 ≤ _CARD_ACTION_GAP 字，双向）。
+
+    动作词表**有意小**（点/点击/点选/勾选/选择）："核对/查看/打开"不算动作指向
+    —— 这正是「负例不得误改」的边界（见 `test_benign_card_mentions_not_detected`）。
+    """
+    nouns = "(?:" + "|".join(_CARD_NOUNS) + ")"
+    actions = "(?:" + "|".join(_CARD_ACTION_WORDS) + ")"
+    # ⚠️ 窗口 = **有界通配**（`[\s\S]{0,N}`），不是量词直接跟在分组后：
+    # `(?:动作){0,8}` 的量词作用在**零宽分组**上 ⇒ 等价于"零个动作词"，
+    # 于是只要句中出现卡片实物就算命中（实测把「选择」也判成命中）。
+    gap = "[\\s\\S]{" + f"0,{_CARD_ACTION_GAP}" + "}"
+    return re.compile(f"(?:{actions}){gap}(?:{nouns})|(?:{nouns}){gap}(?:{actions})")
+
+
+_CARD_ACTION_RE = _card_action_pattern()
+# 模式 C：完成态声称（「卡片已发出/确认卡已调出/已弹出卡片」）—— 无动作词也命中的形态，
+# 但它**自带完成态断言**（已…），故不引入合法提及的误判面。
+_CARD_EMITTED_RE = re.compile(
+    rf"(?:确认)?(?:卡片|卡)(?:已发出|已调出|已弹出|已展示|已生成|已提供|已显示)"
+    rf"|已(?:发出|调出|弹出|展示|生成)(?:一张|了)?(?:确认)?(?:卡片|卡)"
+)
+# 收尾改写用：既有短语（向后兼容、逐字断言）+ 方向词 + 动作词与卡片实物邻接
 _CARD_CLAIM_RE = re.compile(
-    r"点下方确认卡片|点下方卡片|下方确认卡片|点下方确认|"
-    r"点击确认卡片|点击下方确认|请点确认|请点击确认|确认卡片"
+    "|".join(map(re.escape, _CARD_CLAIM_LEGACY_PHRASES))
+    + r"|(?:点击|点选|点|勾选|选择)\s*(?:上方|下方|上面|下面|以上|以下)?的?\s*(?:卡片|卡)"
+    + r"|(?:卡片|卡)\s*(?:已发出|已调出|已弹出|已展示|已生成|已提供|已显示)"
 )
 # #3883：误导性建议「刷新页面/重新进入对话」掩盖"没发卡"真因 → 命中整句剥离
 _CARD_MISLEAD_RE = re.compile(r"（[^）]*(?:刷新页面|重新进入对话)[^）]*）")
 
 
+def _has_card_claim(text: str) -> bool:
+    """文本是否在**声称已发卡/请顾客点卡**（判据，不改写）。
+
+    与 `_CARD_CLAIM_RE` 的分工：本函数是**归一后的合成判据**（短语 + 语义模式），
+    供收尾守卫决定是否动作；`_CARD_CLAIM_RE` 只负责定位可替换的声称片段。
+    合法提及「卡片」而无动作指向（「请查看上方结果卡片」「下方列表」）不得命中。
+    """
+    if not text:
+        return False
+    normalized = _normalize_card_oriented(text)
+    return bool(
+        _CARD_CLAIM_PHRASE_RE.search(normalized)
+        or _CARD_ACTION_RE.search(normalized)
+        or _CARD_EMITTED_RE.search(normalized)
+    )
+
+
 def _rewrite_card_claims(text: str) -> str:
-    """把「点下方卡片/确认卡片」声称改写为纯文本确认指引，并剥离 #3883 误导建议。
+    """把「点下方卡片/点击上方卡片/…」声称改写为纯文本确认指引，并剥离 #3883 误导建议。
 
     幂等纯函数（无匹配则原样返回）；由 _agent_stream_to_sse 收尾守卫在
     「无交互载荷且本轮无 interact 调用」时启用（issue #3929）。
+
+    issue #3967：声称片段族扩展到实测漏检措辞（方向词 + 动作词 + 卡片实物）。
     """
     if not text:
         return text
     text = _CARD_CLAIM_RE.sub("回复『确认』", text)
     text = _CARD_MISLEAD_RE.sub("", text).strip()
     return text
+
+
+async def _pending_confirm_action(session_id: str) -> Optional[Dict[str, Any]]:
+    """取会话里「已校验待执行」的写动作（`pending_validated_input`）。
+
+    这是**补卡分支的严格 gating**：没有它就没有可确认的事实 ⇒ 不许造卡
+    （键名/取值口径与 `base_skill` 一致：`target_tool` + `target_action` 双非空）。
+    失败/无会话一律返回 None（fail-closed → 退回只改写）。
+    """
+    if not session_id:
+        return None
+    try:
+        from app.graph.pending_validated import PENDING_KEY
+        from app.memory.session_state_store import SessionStateStore
+        full = await SessionStateStore().load(session_id) or {}
+        pending = full.get(PENDING_KEY) or {}
+        if not isinstance(pending, dict):
+            return None
+        if not (pending.get("target_tool") and pending.get("target_action")):
+            return None
+        return pending
+    except Exception as e:
+        logger.warning(f"[chat/card-claim] 读取待确认动作失败（退回只改写）: {e}")
+        return None
+
+
+async def _reissue_confirm_card(
+    pending: Dict[str, Any], session_id: str, skill_name: str
+) -> Optional[Dict[str, Any]]:
+    """按待确认动作**真补一张确认卡**（issue #3967 缺口 2），返回 interactive 载荷。
+
+    复用 base_skill 的既有机器（不复制平行实现）：
+      `confirm_card_fields`（字段只回显已校验参数）→ `confirm_value_for_fields`
+      （与门禁**同口径**的 confirmValue）→ `build_confirm_interact_xml`（生成 XML）→
+      本文件既有的 `_parse_interact_block_or_report`（走**真解析器**，与模型自称发卡
+      的路径同协议；解析失败同样留痕）。
+
+    两条硬约束：
+      1. **取不到字段就不补**（`fields` 为空 ⇒ `build_confirm_interact_xml` 返回 ""，
+         绝不下发空卡）；
+      2. **必须落 `last_confirm_value`（+ 发卡 skill）**（照 `base_skill` 8.3b 补卡段）——
+         否则顾客点了卡也过不了确认门禁。
+    """
+    import json as _json
+
+    from app.graph.skills.base_skill import (
+        build_confirm_interact_xml,
+        confirm_card_fields,
+        confirm_value_for_fields,
+    )
+
+    fields = confirm_card_fields(pending.get("params") or {})
+    if not fields:
+        return None
+    confirm_value = confirm_value_for_fields(fields)
+    if not confirm_value:
+        return None
+    xml = build_confirm_interact_xml("请确认操作", fields, confirm_value=confirm_value)
+    if not xml:
+        return None
+    payload = _parse_interact_block_or_report(xml, session_id=session_id)
+    if not payload or not payload.get("component"):
+        return None
+    try:
+        from app.memory.session_state_store import SessionStateStore
+        store = SessionStateStore()
+        full = await store.load(session_id) or {}
+        full["last_confirm_value"] = confirm_value
+        # 同处记发卡 skill（#3557）：路由层的答卡轮判据需要"这张卡是谁发的"
+        full["last_confirm_skill"] = skill_name
+        await store.commit(session_id, full)
+    except Exception as e:
+        # 非致命：卡照发（门店/顾客至少有点卡入口），但留痕以便事后归因
+        logger.warning(f"[chat/card-claim] 补发卡的 confirmValue 落库失败（非致命）: {e}")
+    logger.warning(
+        f"[chat/card-claim] 文本声称发卡但本轮无卡 ⇒ 按待确认动作补发确认卡 "
+        f"| session={session_id} tool={pending.get('target_tool')} "
+        f"action={pending.get('target_action')} fields={len(fields)} "
+        f"| payload={_json.dumps(payload, ensure_ascii=False)[:200]}"
+    )
+    return payload
 
 
 async def _agent_stream_to_sse(
@@ -981,22 +1166,42 @@ async def _agent_stream_to_sse(
         # 纯文本确认指引（只影响落库/后续上下文文本，full_response 原值不动，
         # 见上「只脱敏出站」注释的同款取舍）；#3883 的「刷新页面/重新进入对话」
         # 误导性建议一并剥离（它掩盖"没发卡"真因）。
+        #
+        # issue #3967（缺口 2）：用户真正要的是「弹出可点击的确认卡」，不是"改写话术"。
+        # 旧行为只有 base_skill 8.3b 的补卡（仅在**写操作被确认门禁拦下**时触发），
+        # 而实测那三次模型**压根没尝试写** ⇒ 门禁没拦 ⇒ 两条机制不组合、接缝无人兜底。
+        # 故在此处补上接缝：命中 + 无卡 + **会话里存在待确认的已校验动作** ⇒ 真补卡
+        # （gating 严格：无待确认动作 / 取不到字段 ⇒ 退回只改写，绝不凭空造卡）。
         if (
             last_interactive_payload is None
             and not any(tc.get("tool") == "interact" for tc in tool_calls_info)
-            and _CARD_CLAIM_RE.search(assistant_content)
+            and _has_card_claim(assistant_content)
         ):
-            _rewritten = _rewrite_card_claims(assistant_content)
-            logger.warning(
-                f"[chat/card-claim] 文本声称有确认卡但未发卡，改写为纯文本确认指引 "
-                f"| session={session_id} tenant={tenant_id} "
-                f"| {assistant_content!r} -> {_rewritten!r}"
+            _pending = await _pending_confirm_action(session_id)
+            _reissued = (
+                await _reissue_confirm_card(_pending, session_id, str(_pending.get(
+                    "target_tool") or ""))
+                if _pending else None
             )
-            assistant_content = _rewritten
-            # 直播气泡里的声称话术是**边流式边发**的，收尾改写落库文本时用户已
-            # 看到「请点下方卡片」——追加一条 text 事件（并入同一条消息气泡末尾，
-            # done 之前），让直播侧也有可执行的下一步指引。
-            yield SSEEvent.text("（注：确认卡片未显示，请直接回复「确认」以继续）")
+            if _reissued:
+                # 置 last_interactive_payload：收尾 save_message(interactive=…) 才会
+                # 持久化到 metadata（issue #3883 —— 否则刷新/重开会话卡片又消失）
+                last_interactive_payload = _reissued
+                yield SSEEvent.interactive(
+                    _reissued.get("component", ""),
+                    _mask_card_for_customer(_reissued, context))
+            else:
+                _rewritten = _rewrite_card_claims(assistant_content)
+                logger.warning(
+                    f"[chat/card-claim] 文本声称有确认卡但未发卡，改写为纯文本确认指引 "
+                    f"| session={session_id} tenant={tenant_id} "
+                    f"| {assistant_content!r} -> {_rewritten!r}"
+                )
+                assistant_content = _rewritten
+                # 直播气泡里的声称话术是**边流式边发**的，收尾改写落库文本时用户已
+                # 看到「请点下方卡片」——追加一条 text 事件（并入同一条消息气泡末尾，
+                # done 之前），让直播侧也有可执行的下一步指引。
+                yield SSEEvent.text("（注：确认卡片未显示，请直接回复「确认」以继续）")
 
         # 保存消息到数据库（带超时保护，避免阻塞 SSE 流关闭）
         message_id = None
