@@ -19,6 +19,7 @@ class ProductUpdateTool(BaseTool):
         "支持设置「退货是否回补库存」（allow_return_restock：true=退货后回补库存/可再售，"
         "false=定制商品退货不回补）。"
         "【反例】增删加工项用 product_processing_item_manage，单独 SKU 调价本工具不支持。"
+        "【反例】设置/修改商品主图、详情图/图片必须用 product_manage(action=update, images=…/detail_images=…)，本工具不支持图片字段。"
         "【标注】WRITE|IDEMPOTENT"
     )
     allowed_roles = ["admin", "tenant_admin"]
@@ -37,7 +38,11 @@ class ProductUpdateTool(BaseTool):
             "price": {"type": "number", "description": "新价格（可选）"},
             "name": {"type": "string", "description": "新名称（可选）"},
             "description": {"type": "string", "description": "新描述（可选）"},
-            "status": {"type": "string", "enum": ["on_sale", "off_sale"], "description": "上下架（可选）"},
+            "status": {
+                "type": "string",
+                "enum": ["on_sale", "off_sale"],
+                "description": "上下架 status=on_sale（上架）/ off_sale（下架）。null 不修改",
+            },
             "allow_return_restock": {
                 "type": "boolean",
                 "description": "退货后是否回补库存（可选，issue #2991）：true=退货回补/可再售，false=定制商品退货不回补。null 不修改",

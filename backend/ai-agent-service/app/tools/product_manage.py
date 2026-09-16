@@ -1,9 +1,16 @@
 """
 AI 智能客服系统 - 商品管理 Tool
 
-创建、更新、上下架商品，管理加工项。
+创建、更新、上下架商品（加工项增删已拆分为 product_processing_item_manage）。
 Agent BFF: create/update 走 /api/admin/agent/products, toggle_status 走原端点。
 ID 解析、默认值填充、字段规范化由 Java Agent 端点负责。
+
+⚠️ 后端契约：create 的 payload 键必须 ∈ `dto/agent/AgentProductCreateRequest` 字段
+（name/categoryId/basePrice/skuCode/description/brand/unit/pricingType/stock/status/
+images/detailImages/colors/sellingMethods/doorWidths/processingItemIds/
+processingItemConfigs/specifications/stockDeductionMode/allowReturnRestock）——
+Spring 静默忽略未知字段，下发 DTO 没有的键 = 无声丢数据 + 工具报成功（工具审计 A4：
+`skus` 因此被删）。
 """
 
 from typing import Any, Dict, Optional
@@ -27,7 +34,14 @@ class ProductManageTool(BaseTool):
         "toggle_status 需 product_id+status(on_sale/off_sale)。"
         "【反例】增删商品加工项用 product_processing_item_manage，不要用本工具。"
         "【标注】WRITE|DESTRUCTIVE"
-        "【铁律】用户明确要求写操作（禁用/创建/调整/删除/上下架/重置等）时：先查必要信息拿真实 ID → 展示操作预览 + 确认卡 → 用户确认后立即调用写工具执行，禁止只查询/展示列表就停（HR-003/PP-006/PR-005 实拍：agent 只 list/query 不执行写工具判失败）。"
+        "【铁律】用户明确要求写操作（禁用/调整/删除/上下架/重置等**单步写**）时：先查必要信息拿真实 ID → 展示操作预览 + 确认卡 → 用户确认后立即调用写工具执行，禁止只查询/展示列表就停（HR-003/PP-006/PR-005 实拍：agent 只 list/query 不执行写工具判失败）。"
+        "【铁律】写工具返回 success 后复查若显示旧值：优先按写结果向用户如实说明「已写入，查询显示旧值可能为读取延迟」，禁止断言「未落库」、禁止建议用户去后台手动操作（#3899）。"
+        "【铁律】状态变更（上/下架）必须用 action=toggle_status 单独调用：update 不处理 status（状态走状态机端点，Java updateProduct 刻意恢复原状态），把 status 放进 update 会被显式拒绝（#3899）。"
+        "【create 例外（多步引导，禁止抢跑）】action=create 不是单步写，而是**多步引导流程**："
+        "分类确认 → **必须先发加工项多选卡**（processing_item_query(applicable_category_id=已确认商品分类ID) → "
+        "interact(component=choice, multiSelect=true)，按适用分类过滤/推荐）→ 货号 → 汇总确认卡 → 用户确认后才执行 create。"
+        "**禁止跳过加工项询问直接发汇总确认卡**（PR-014 实拍：跳过 ⇒ 加工项多选卡未下发 ⇒ 判失败）。"
+        "仅当用户本轮明确说「不需要加工项」才可跳过该步。"
     )
 
     allowed_roles = ["admin", "agent", "tenant_admin", "operator"]
@@ -40,8 +54,10 @@ class ProductManageTool(BaseTool):
         "properties": {
             "action": {
                 "type": "string",
-                "enum": ["create", "update", "toggle_status", "manage_processing_items"],
-                "description": "操作类型",
+                # enum 必须 ⊆ VALID_ACTIONS（:16）：manage_processing_items 已拆分为独立工具，
+                # 留在 enum 里会让 LLM 选到运行时必拒的死分支（工具审计 B1）
+                "enum": ["create", "update", "toggle_status"],
+                "description": "操作类型：create（创建商品，必填 name+price）/ update（修改已有商品字段，必传 product_id 且只传要改的字段）/ toggle_status（上架或下架，必传 product_id+status(on_sale/off_sale)）",
             },
             "product_id": {
                 "type": "string",
@@ -62,7 +78,14 @@ class ProductManageTool(BaseTool):
             "status": {
                 "type": "string",
                 "enum": ["on_sale", "off_sale"],
-                "description": "商品状态",
+                # ⚠️ 这是**有意的权限边界，不是缺口**（issue #3686，有意为之请勿"补齐"）：
+                # 后端 ProductService.STATUS_TRANSITIONS 有 4 值（draft/under_review/on_sale/off_sale），
+                # 但 Agent 只负责**上下架**；草稿创建与送审（draft → under_review → on_sale）
+                # 是 admin-web 后台的商品运营流程，需人工编辑资料并承担审核语义。
+                # 给 Agent 放开这两值 = 让对话直接跳过审核门禁（越权），违反最小权限。
+                # 若确实需要 Agent 送审，须先补权限设计 + 审核责任归属，再改本枚举。
+                "description": "商品状态：仅 on_sale(上架) / off_sale(下架)。"
+                               "草稿(draft)与送审(under_review)是后台人工流程，Agent 无权限——这是有意的权限边界",
             },
             "colors": {
                 "type": "array", "items": {"type": "string"},
@@ -101,15 +124,7 @@ class ProductManageTool(BaseTool):
                 "type": "boolean",
                 "description": "退货后是否回补库存（可选，create 时使用，issue #2991）：true=退货回补/可再售，false=定制商品退货不回补。缺省 false",
             },
-            # manage_processing_items 专用参数
-            "processing_item_action": {
-                "type": "string", "enum": ["add", "remove"],
-                "description": "加工项操作类型。manage_processing_items 时必填",
-            },
-            "skus": {
-                "type": "array", "items": {"type": "object"},
-                "description": "SKU数组。系统自动生成，一般不需要手动传",
-            },
+            # manage_processing_items 专用参数已随该 action 移除（拆分为 product_processing_item_manage）
         },
         "required": ["action"],
     }
@@ -135,10 +150,8 @@ class ProductManageTool(BaseTool):
         selling_methods: Optional[list] = None,
         door_widths: Optional[list] = None,
         sku_code: Optional[str] = None,
-        skus: Optional[list] = None,
         processing_item_configs: Optional[list] = None,
         pricing_type: Optional[str] = None,
-        processing_item_action: Optional[str] = None,
         allow_return_restock: Optional[bool] = None,
     ) -> ToolResult:
         if not self.check_permission(context):
@@ -159,13 +172,13 @@ class ProductManageTool(BaseTool):
                 return await self._create_product(context, name, category_id, price,
                     description, stock_quantity, processing_item_ids, brand, images,
                     detail_images, specifications, unit, colors, selling_methods,
-                    door_widths, sku_code, skus, processing_item_configs, pricing_type,
+                    door_widths, sku_code, processing_item_configs, pricing_type,
                     status, allow_return_restock)
             elif action == "update":
                 return await self._update_product(context, product_id, name, category_id,
                     price, description, stock_quantity, brand, images, detail_images,
                     specifications, unit, colors, pricing_type, selling_methods,
-                    door_widths, sku_code)
+                    door_widths, sku_code, status)
             elif action == "toggle_status":
                 return await self._toggle_status(context, product_id, status)
             # manage_processing_items 已拆分为独立 tool: product_processing_item_manage
@@ -185,7 +198,7 @@ class ProductManageTool(BaseTool):
     async def _create_product(self, context, name, category_id, price, description,
                                stock_quantity, processing_item_ids, brand, images,
                                detail_images, specifications, unit, colors,
-                               selling_methods, door_widths, sku_code, skus,
+                               selling_methods, door_widths, sku_code,
                                processing_item_configs, pricing_type, status,
                                allow_return_restock=None) -> ToolResult:
         if not name:
@@ -195,7 +208,8 @@ class ProductManageTool(BaseTool):
             )
 
         json_data: Dict[str, Any] = {"name": name}
-        if category_id: json_data["categoryId"] = category_id
+        # 空分类不下发（#3665 冒烟 B1）：'' 会让后端 category_id 违 FK；用 strip 兼容纯空白
+        if category_id and category_id.strip(): json_data["categoryId"] = category_id
         if price is not None: json_data["basePrice"] = price
         if description: json_data["description"] = description
         if stock_quantity is not None: json_data["stock"] = int(stock_quantity)
@@ -207,7 +221,6 @@ class ProductManageTool(BaseTool):
         if colors: json_data["colors"] = colors
         if selling_methods: json_data["sellingMethods"] = selling_methods
         if door_widths: json_data["doorWidths"] = door_widths
-        if skus: json_data["skus"] = skus
         if sku_code: json_data["skuCode"] = sku_code
         if specifications: json_data["specifications"] = specifications
         if unit: json_data["unit"] = unit
@@ -252,17 +265,31 @@ class ProductManageTool(BaseTool):
     async def _update_product(self, context, product_id, name, category_id, price,
                                description, stock_quantity, brand, images, detail_images,
                                specifications, unit, colors, pricing_type, selling_methods,
-                               door_widths, sku_code) -> ToolResult:
+                               door_widths, sku_code, status=None) -> ToolResult:
         if not product_id:
             return ToolResult(
                 success=False, error="缺少商品 ID",
                 message="更新商品时必须提供商品 ID（product_id）",
             )
 
+        # issue #3899：update 不处理 status——Java updateProduct 刻意恢复原状态，状态只能走
+        # PUT /api/admin/products/{id}/status（updateProductStatus 状态机端点，见 _toggle_status）。
+        # 静默忽略会让 LLM 收到 success 但 status 没变 → 复查对不上 → 误报「未生效，去后台手动操作」。
+        # 显式拒绝并引导走 toggle_status，禁止半成功写入。
+        if status is not None:
+            return ToolResult(
+                success=False,
+                error="status 请用 action=toggle_status 单独调用（状态变更走状态机端点，update 不处理 status）",
+                message="商品状态变更未执行：update 不处理 status，请改用 action=toggle_status 单独调用（商品其他字段未受影响）",
+                suggestion="product_manage(action=toggle_status, product_id=<id>, status=on_sale/off_sale)",
+            )
+
         # 只传非 None 字段（null = 不修改，Java Agent PATCH 端点自动处理）
         json_data: Dict[str, Any] = {}
         if name is not None: json_data["name"] = name
-        if category_id is not None: json_data["categoryId"] = category_id
+        # 空分类不下发（#3665 冒烟 B1）：与 create 真值判断同口径——'' 会被后端
+        # resolveCategoryId('') → null → 422「无法找到匹配的分类」，纯空白同理
+        if category_id is not None and category_id.strip(): json_data["categoryId"] = category_id
         if price is not None: json_data["basePrice"] = price
         if description is not None: json_data["description"] = description
         if stock_quantity is not None: json_data["stock"] = int(stock_quantity)

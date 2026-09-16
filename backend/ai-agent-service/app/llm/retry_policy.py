@@ -16,6 +16,8 @@ import logging
 import random
 from typing import Awaitable, Callable, Optional, TypeVar
 
+import httpx
+
 from app.config import settings
 
 
@@ -81,6 +83,15 @@ def _is_retryable(exc: BaseException) -> bool:
 
     # 网络瞬时错误：连接 / DNS / socket
     if isinstance(exc, (ConnectionError, OSError)):
+        return True
+
+    # SDK 传输层错误（issue #3810 同族扫描，2026-09-16）：`openai.APIConnectionError` /
+    # `APITimeoutError` 都是 `httpx.TransportError` 的子类，而 `TransportError` **不是**
+    # `OSError`（httpx 0.28 实测 MRO：TransportError → RequestError → HTTPError → Exception）
+    # ⇒ 此前"供应商连接中断/读超时"这类最典型的**瞬时**错误被判成不可重试，直接进兜底。
+    # 这正是 #3805 里"同一会话连续 3 轮同一句兜底"最可能的形态之一（根因仍未定），
+    # 放宽到传输层是收敛的：非传输层的未知异常仍按"不重试"处理。
+    if isinstance(exc, httpx.TransportError):
         return True
 
     return False

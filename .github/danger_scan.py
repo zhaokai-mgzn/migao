@@ -74,7 +74,7 @@ def analyze(workflow_changes, wf_new_secrets, deleted_files, deploy_files, migra
                 blockers.append(f"新增 workflow 文件 {path} —— 需人工安全审查（workflow 可携带 secrets 执行）")
         elif status == "D":
             blockers.append(f"删除 workflow 文件 {path} —— 需人工确认")
-        elif status in ("M", "R"):
+        elif status[0] in ("M", "R"):
             new_sec = wf_new_secrets.get(path, [])
             real_sec = [l for l in new_sec if "secrets.GITHUB_TOKEN" not in l]
             if real_sec:
@@ -85,6 +85,13 @@ def analyze(workflow_changes, wf_new_secrets, deleted_files, deploy_files, migra
                 warnings.append(f"修改 workflow {path} —— 建议人工复核")
 
     # ---- 迁移不可变（R1）：已发布迁移只增不改；新增迁移命名须 V{n}__desc.sql ----
+    # R100 豁免（issue #3812 让号场景）：git 对「纯改名」报 status R100（相似度 100%）。
+    # 后合入者撞号时按「后合入者让号」约定 rename 到下一个空闲版本号（V45__x → V46__x）：
+    #   · SQL 内容零变化（git 判定相似度 100%）—— 不是「修改已发布迁移」；
+    #   · 线上 schema_migrations 保留旧文件名记录（历史事实不改写），新名首跑为幂等空操作
+    #     （如 ADD COLUMN IF NOT EXISTS），改名安全（MigrationRunner 仅以文件名判已执行）。
+    # 判据收紧（防让号豁免变成改迁移的口子）：只有 status == "R100" 才豁免；
+    # rename 但内容有变化（R0xx）＝修改已发布迁移，照旧 BLOCK（fail-closed，§19.1 同族）。
     new_migrations = [p for s, p in migration_changes if s == "A"]
     for status, path in migration_changes:
         name = path.rsplit("/", 1)[-1]
@@ -93,6 +100,16 @@ def analyze(workflow_changes, wf_new_secrets, deleted_files, deploy_files, migra
                 blockers.append(
                     f"新增迁移文件名非法 {path} —— 必须为 V{{n}}__desc.sql（MigrationRunner 按文件名排序执行）"
                 )
+        elif status == "R100":
+            if not MIGRATION_RE.match(name):
+                blockers.append(
+                    f"迁移改名后文件名非法 {path} —— 必须为 V{{n}}__desc.sql（MigrationRunner 按文件名排序执行）"
+                )
+            else:
+                warnings.append(
+                    f"迁移纯改名（让号）{path} —— R100 内容零变化（issue #3812 后合入者让号），"
+                    f"新名首跑应为幂等空操作；请人工确认"
+                )
         else:
             blockers.append(
                 f"已发布迁移被修改/删除 {path} —— 迁移不可变（MigrationRunner 按序执行，"
@@ -100,24 +117,53 @@ def analyze(workflow_changes, wf_new_secrets, deleted_files, deploy_files, migra
             )
 
     # ---- DDL 与迁移同步（R2）：改表结构参考必须伴随迁移 ----
-    # 豁免：schema.sql 只**补齐**迁移链已创建的表（bootstrap 对齐），而非新增/修改
-    # 表结构 —— 此时**不应**新建迁移（迁移链才是 schema 事实源，再建迁移是反向漂移）。
-    # 判定：diff 里新增的 CREATE TABLE 表名全部能在现有迁移文件中找到定义。
-    # 背景（issue #3270 三次踩坑）：schema.sql 与迁移链双源漂移，补表对齐是修复而非变更。
+    # 豁免 A（comment_only）：schema 文件只改**注释/文档**（新增行里没有任何 DDL 语句）。
+    #   背景（issue #3270 实证假 blocker）：给 schema_full.sql 加废弃标注（纯注释）也被判
+    #   「改了表结构未加迁移」—— 规则本意是「结构变更需迁移」，注释不改变结构。
+    #   判定前剥掉行尾 `--` 注释，避免注释里提到 CREATE TABLE 被误当成 DDL。
+    # 豁免 B（bootstrap_alignment）：schema.sql 只**补齐**迁移链已创建的表（bootstrap 对齐），
+    #   而非新增/修改表结构 —— 此时**不应**新建迁移（迁移链才是 schema 事实源，再建迁移是反向漂移）。
+    #   判定：diff 里新增的 CREATE TABLE 表名全部能在现有迁移文件中找到定义。
+    #   背景（issue #3270 三次踩坑）：schema.sql 与迁移链双源漂移，补表对齐是修复而非变更。
+    _ddl_re = re.compile(
+        r"\b(?:CREATE|ALTER|DROP|RENAME)\s+(?:TABLE|COLUMN|INDEX|CONSTRAINT|VIEW|SEQUENCE|TYPE)\b",
+        re.I,
+    )
+    comment_only = False
     bootstrap_alignment = False
     if schema_changes and not new_migrations:
         added_tables = set()
+        added_ddl_lines = []
+        # fail-closed：diff 拿不到（BASE 错/非 git 仓库/无变更）时**不得**据此判定
+        # "只是注释" —— 否则门禁会被静默绕过（安全门禁的失效方向必须是"报错"而非"放行"）。
+        diff_ok = True
+        added_line_seen = False
         for f in schema_changes:
+            diff = ""
             try:
-                diff = subprocess.run(
+                proc = subprocess.run(
                     ["git", "diff", BASE, "--", f],
-                    capture_output=True, text=True, check=False).stdout
+                    capture_output=True, text=True, check=False)
+                if proc.returncode == 0:
+                    diff = proc.stdout
+                else:
+                    diff_ok = False
             except Exception:
-                diff = ""
-            for m in re.finditer(
-                    r"^\+CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?([A-Za-z0-9_.]+)",
-                    diff, re.M | re.I):
-                added_tables.add(m.group(1).lower())
+                diff_ok = False
+            for line in diff.splitlines():
+                if not line.startswith("+") or line.startswith("+++"):
+                    continue  # 只看新增行（`+++` 是文件头）
+                added_line_seen = True
+                body = re.sub(r"--.*$", "", line[1:])  # 剥行尾注释再判定
+                if _ddl_re.search(body):
+                    added_ddl_lines.append(body.strip())
+                m = re.match(
+                    r"CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?([A-Za-z0-9_.]+)",
+                    body.strip(), re.I)
+                if m:
+                    added_tables.add(m.group(1).lower())
+        # 只有「diff 读取成功 + 确实看到新增行 + 无任何 DDL」才认定纯注释改动
+        comment_only = diff_ok and added_line_seen and not added_ddl_lines
         if added_tables:
             try:
                 mig_files = subprocess.run(
@@ -137,10 +183,14 @@ def analyze(workflow_changes, wf_new_secrets, deleted_files, deploy_files, migra
             if added_tables and added_tables <= known:
                 bootstrap_alignment = True
 
-    if schema_changes and not new_migrations and not bootstrap_alignment:
+    if schema_changes and not new_migrations and not bootstrap_alignment and not comment_only:
         blockers.append(
             f"修改了表结构参考 {SCHEMA_FILES[0]}/{SCHEMA_FILES[1]} 但未新增迁移文件 —— "
             f"请新增 {MIGRATION_DIR}/V{{n}}__xxx.sql 并保证幂等（IF NOT EXISTS / ADD COLUMN IF NOT EXISTS）"
+        )
+    elif comment_only:
+        warnings.append(
+            "schema 文件仅改动注释/文档（新增行无 DDL）—— 非结构变更，无需迁移"
         )
     elif bootstrap_alignment:
         warnings.append(
@@ -168,7 +218,9 @@ def _git_name_status(scope):
         for line in lines:
             parts = line.split("\t")
             if len(parts) >= 2:
-                result.append((parts[0][0], parts[-1]))
+                # 完整 status（rename 是 R100/R062 等含相似度，A/M/D 为单字符）
+                # 调用方按 status[0] 取大类、按 status == "R100" 判纯改名（issue #3812）
+                result.append((parts[0], parts[-1]))
         return result
     except Exception:
         return []
@@ -178,7 +230,7 @@ def _workflow_new_secrets(paths):
     """对修改的 workflow 提取新增的 secrets 引用行（移动/重排不算新增，issue #2949）"""
     secrets_by_path = {}
     for status, path in paths:
-        if status in ("M", "R"):
+        if status[0] in ("M", "R"):
             try:
                 out = subprocess.run(
                     ["git", "diff", f"{BASE}...HEAD", "--", path],
@@ -199,7 +251,7 @@ def main():
     workflow_paths = _git_name_status(".github/workflows/*.yml")
     all_changes = _git_name_status(".")
     deleted_files = [p for s, p in all_changes if s == "D"]
-    deploy_files = [p for s, p in all_changes if s in ("M", "A", "R") and
+    deploy_files = [p for s, p in all_changes if s[0] in ("M", "A", "R") and
                     (p.startswith("deploy/") or "/deploy/" in p)]
     wf_new_secrets = _workflow_new_secrets(workflow_paths)
     migration_changes = _git_name_status(MIGRATION_DIR + "/*.sql")

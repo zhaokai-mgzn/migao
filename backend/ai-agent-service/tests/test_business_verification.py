@@ -16,7 +16,7 @@ AI Agent Service - 业务验证综合测试
 - 使用 mock 替代 Admin API、DashScope LLM 等外部依赖
 - 参考 tests/test_e2e_chat_flow.py 与 tests/conftest.py 的现有模式
 """
-# case_ids: CH-005, CH-006, API-001, OR-012
+# case_ids: CH-005, CH-006, API-001, OR-012, PP-006
 
 import json
 import time
@@ -903,6 +903,10 @@ class TestEnumAlignment:
           "calculate_price"}),
         ("processing_item_manage", "status",
          {"active", "inactive"}),
+        # issue #3543：pricing_method 是 admin-api @NotBlank 必填项，枚举必须与
+        # ProcessingItemService.validatePricingMethod 严格一致（#3005 回滚后无 per_piece）
+        ("processing_item_manage", "pricing_method",
+         {"per_meter", "per_set", "fixed", "per_area"}),
     ])
     def test_tool_enum_field_alignment(self, fresh_registry, tool_name, field, expected):
         """参数化验证：Tool.parameters.properties[field].enum 与 admin-api 定义严格对齐
@@ -910,7 +914,7 @@ class TestEnumAlignment:
         涵盖：
         - notification_manage 的 action / channel / status
         - after_sales_manage 的 action / ticket_type / status
-        - processing_item_manage 的 action / status
+        - processing_item_manage 的 action / status / pricing_method
         （#3081 已移除 quick_reply_manage）
         任何 enum 不对齐都会导致 LLM 生成被 admin-api 拒收的参数。
         """

@@ -1,5 +1,5 @@
 package com.migao.admin.service;
-// case_ids: OR-006, FN-001, OR-001
+// case_ids: OR-006, FN-001, OR-001, PG-003, PG-009, PG-010
 
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.migao.admin.config.TenantContext;
@@ -9,6 +9,7 @@ import com.migao.admin.entity.OrderItem;
 import com.migao.admin.entity.OrderLogistics;
 import com.migao.admin.entity.FinanceTransaction;
 import com.migao.admin.entity.ProductSku;
+import com.migao.admin.entity.ProcessingOrder;
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.mapper.FinanceTransactionMapper;
 import com.migao.admin.mapper.OrderItemMapper;
@@ -16,6 +17,7 @@ import com.migao.admin.mapper.OrderLogisticsMapper;
 import com.migao.admin.mapper.OrderMapper;
 import com.migao.admin.mapper.ProductMapper;
 import com.migao.admin.mapper.ProductSkuMapper;
+import com.migao.admin.mapper.ProcessingOrderMapper;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
@@ -36,7 +38,9 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -71,11 +75,14 @@ class OrderServiceTest {
     @Mock
     private FinanceTransactionMapper financeTransactionMapper;
 
-    @Mock
-    private ObjectMapper objectMapper;
+    @org.mockito.Spy
+    private ObjectMapper objectMapper = new ObjectMapper();
 
     @Mock
     private NotificationService notificationService;
+
+    @Mock
+    private ProcessingOrderMapper processingOrderMapper;
 
     private Order testOrder;
     private OrderItem testOrderItem;
@@ -89,6 +96,9 @@ class OrderServiceTest {
         MapperBuilderAssistant assistant = new MapperBuilderAssistant(conf, "");
         TableInfoHelper.initTableInfo(assistant, Order.class);
         TableInfoHelper.initTableInfo(assistant, OrderItem.class);
+        // issue #3621：matchSkuId 组合回退用 LambdaQueryWrapper<ProductSku>，
+        // 断言 wrapper 查询条件（归一化后的枚举）需要 lambda 缓存
+        TableInfoHelper.initTableInfo(assistant, ProductSku.class);
 
         testOrder = Order.builder()
                 .id("order-001")
@@ -108,7 +118,7 @@ class OrderServiceTest {
                 .orderId("order-001")
                 .productId("prod-001")
                 .productName("蜂巢帘")
-                .quantity(2)
+                .quantity(BigDecimal.valueOf(2))
                 .unitPrice(new BigDecimal("299.50"))
                 .subtotal(new BigDecimal("599.00"))
                 .build();
@@ -295,7 +305,7 @@ class OrderServiceTest {
         OrderCreateRequest.OrderItemRequest itemReq = new OrderCreateRequest.OrderItemRequest();
         itemReq.setProductId("prod-001");
         itemReq.setProductName("蜂巢帘");
-        itemReq.setQuantity(2);
+        itemReq.setQuantity(BigDecimal.valueOf(2));
         itemReq.setUnitPrice(new BigDecimal("299.50"));
         itemReq.setSubtotal(new BigDecimal("599.00"));
 
@@ -345,14 +355,14 @@ class OrderServiceTest {
         OrderCreateRequest.OrderItemRequest item1 = new OrderCreateRequest.OrderItemRequest();
         item1.setProductId("prod-001");
         item1.setProductName("蜂巢帘");
-        item1.setQuantity(1);
+        item1.setQuantity(BigDecimal.valueOf(1));
         item1.setUnitPrice(new BigDecimal("299.00"));
         item1.setSubtotal(new BigDecimal("299.00"));
 
         OrderCreateRequest.OrderItemRequest item2 = new OrderCreateRequest.OrderItemRequest();
         item2.setProductId("prod-002");
         item2.setProductName("百叶帘");
-        item2.setQuantity(1);
+        item2.setQuantity(BigDecimal.valueOf(1));
         item2.setUnitPrice(new BigDecimal("199.00"));
         item2.setSubtotal(new BigDecimal("199.00"));
 
@@ -394,7 +404,7 @@ class OrderServiceTest {
         OrderCreateRequest.OrderItemRequest itemReq = new OrderCreateRequest.OrderItemRequest();
         itemReq.setProductId("prod-001");
         itemReq.setProductName("蜂巢帘");
-        itemReq.setQuantity(2);
+        itemReq.setQuantity(BigDecimal.valueOf(2));
         itemReq.setUnitPrice(new BigDecimal("299.50"));
         itemReq.setSubtotal(new BigDecimal("599.00"));
         itemReq.setProcessingInfo(Map.of("skuId", 100L));
@@ -422,7 +432,7 @@ class OrderServiceTest {
         OrderCreateRequest.OrderItemRequest itemReq = new OrderCreateRequest.OrderItemRequest();
         itemReq.setProductId("prod-001");
         itemReq.setProductName("蜂巢帘");
-        itemReq.setQuantity(2);
+        itemReq.setQuantity(BigDecimal.valueOf(2));
         itemReq.setUnitPrice(new BigDecimal("299.50"));
         itemReq.setSubtotal(new BigDecimal("599.00"));
         itemReq.setProcessingInfo(Map.of("skuId", 100L));
@@ -467,7 +477,7 @@ class OrderServiceTest {
         OrderCreateRequest.OrderItemRequest itemReq = new OrderCreateRequest.OrderItemRequest();
         itemReq.setProductId("prod-001");
         itemReq.setProductName("蜂巢帘");
-        itemReq.setQuantity(2);
+        itemReq.setQuantity(BigDecimal.valueOf(2));
         itemReq.setUnitPrice(new BigDecimal("299.50"));
         itemReq.setSubtotal(new BigDecimal("599.00"));
 
@@ -667,7 +677,7 @@ class OrderServiceTest {
         OrderCreateRequest.OrderItemRequest itemReq = new OrderCreateRequest.OrderItemRequest();
         itemReq.setProductId("prod-001");
         itemReq.setProductName("蜂巢帘");
-        itemReq.setQuantity(1);
+        itemReq.setQuantity(BigDecimal.valueOf(1));
         itemReq.setUnitPrice(new BigDecimal("100.00"));
         itemReq.setSubtotal(new BigDecimal("100.00"));
 
@@ -1021,7 +1031,7 @@ class OrderServiceTest {
         OrderCreateRequest.OrderItemRequest itemReq = new OrderCreateRequest.OrderItemRequest();
         itemReq.setProductId("prod-001");
         itemReq.setProductName("蜂巢帘");
-        itemReq.setQuantity(2);
+        itemReq.setQuantity(BigDecimal.valueOf(2));
         itemReq.setUnitPrice(new BigDecimal("299.50"));
         itemReq.setSubtotal(new BigDecimal("599.00"));
 
@@ -1072,7 +1082,7 @@ class OrderServiceTest {
         OrderCreateRequest.OrderItemRequest itemReq = new OrderCreateRequest.OrderItemRequest();
         itemReq.setProductId("prod-001");
         itemReq.setProductName("蜂巢帘");
-        itemReq.setQuantity(2);
+        itemReq.setQuantity(BigDecimal.valueOf(2));
         itemReq.setUnitPrice(new BigDecimal("299.50"));
         itemReq.setSubtotal(new BigDecimal("599.00"));
 
@@ -1168,7 +1178,7 @@ class OrderServiceTest {
         OrderCreateRequest.OrderItemRequest itemReq = new OrderCreateRequest.OrderItemRequest();
         itemReq.setProductId("prod-001");
         itemReq.setProductName("蜂巢帘");
-        itemReq.setQuantity(2);
+        itemReq.setQuantity(BigDecimal.valueOf(2));
         itemReq.setUnitPrice(new BigDecimal("299.50"));
         itemReq.setSubtotal(new BigDecimal("599.00"));
 
@@ -1224,7 +1234,7 @@ class OrderServiceTest {
         OrderCreateRequest.OrderItemRequest itemReq = new OrderCreateRequest.OrderItemRequest();
         itemReq.setProductId("prod-001");
         itemReq.setProductName("蜂巢帘");
-        itemReq.setQuantity(2);
+        itemReq.setQuantity(BigDecimal.valueOf(2));
         itemReq.setUnitPrice(new BigDecimal("299.50"));
         itemReq.setSubtotal(new BigDecimal("599.00"));
 
@@ -1364,15 +1374,17 @@ class OrderServiceTest {
     // ======================== 超卖校验测试 ========================
 
     private OrderItem buildItemWithSku(Long skuId, int quantity) {
+        // issue #3666：OrderItem.quantity 放宽为 BigDecimal（mock 侧保持 int 入参，便于既有断言）
+        BigDecimal qty = BigDecimal.valueOf(quantity);
         return OrderItem.builder()
                 .id("item-sku-" + skuId)
                 .tenantId(1L)
                 .orderId("order-001")
                 .productId("prod-001")
                 .productName("蜂巢帘")
-                .quantity(quantity)
+                .quantity(qty)
                 .unitPrice(new BigDecimal("299.50"))
-                .subtotal(new BigDecimal("299.50").multiply(BigDecimal.valueOf(quantity)))
+                .subtotal(new BigDecimal("299.50").multiply(qty))
                 .processingInfo(Map.of("skuId", skuId))
                 .build();
     }
@@ -1525,7 +1537,7 @@ class OrderServiceTest {
         OrderCreateRequest.OrderItemRequest itemReq = new OrderCreateRequest.OrderItemRequest();
         itemReq.setProductId("prod-001");
         itemReq.setProductName("蜂巢帘");
-        itemReq.setQuantity(2);
+        itemReq.setQuantity(BigDecimal.valueOf(2));
         itemReq.setUnitPrice(new BigDecimal("299.50"));
         itemReq.setSubtotal(new BigDecimal("599.00"));
 
@@ -1572,7 +1584,7 @@ class OrderServiceTest {
         OrderCreateRequest.OrderItemRequest itemReq = new OrderCreateRequest.OrderItemRequest();
         itemReq.setProductId("prod-001");
         itemReq.setProductName("蜂巢帘");
-        itemReq.setQuantity(1);
+        itemReq.setQuantity(BigDecimal.valueOf(1));
         itemReq.setUnitPrice(new BigDecimal("299.50"));
         itemReq.setSubtotal(new BigDecimal("299.50"));
 
@@ -1631,5 +1643,339 @@ class OrderServiceTest {
 
         // then
         verify(notificationService).triggerByEvent(eq(1L), eq("order_status_changed"), any());
+    }
+
+    // ================================================================
+    // 加工单联动（issue #3340，case_ids: PG-003/PG-009/PG-010）
+    // ================================================================
+
+    private Map<String, Object> processingInfoMap() {
+        Map<String, Object> info = new LinkedHashMap<>();
+        info.put("processingFee", 6.0);
+        List<Map<String, Object>> procs = new ArrayList<>();
+        Map<String, Object> p = new LinkedHashMap<>();
+        p.put("id", "p1");
+        p.put("name", "打孔");
+        p.put("unitPrice", 3.0);
+        p.put("quantity", 2);
+        procs.add(p);
+        info.put("processingItems", procs);
+        return info;
+    }
+
+    @Test
+    @DisplayName("验收实战回归：processingInfo 为 JSON 字符串时守卫仍生效（不得静默放行）")
+    void shippedRejectedWhenProcessingInfoIsJsonString() {
+        testOrder.setStatus("confirmed");
+        testOrderItem.setProcessingInfo("{\"processingItems\":[{\"id\":\"p1\",\"name\":\"打孔\"}]}");
+        when(orderMapper.selectById("order-001")).thenReturn(testOrder);
+        when(orderItemMapper.selectList(any())).thenReturn(List.of(testOrderItem));
+        when(processingOrderMapper.countCompletedByOrderId("order-001", 1L)).thenReturn(0L);
+
+        assertThatThrownBy(() -> orderService.updateOrderStatus("order-001", "shipped"))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("须先完成加工单");
+    }
+
+    @Test
+    @DisplayName("PG-009 含加工项订单无 completed 加工单 → shipped 被拒（防绕过加工）")
+    void shippedRejectedWithoutCompletedProcessingOrder() {
+        testOrder.setStatus("confirmed");
+        testOrderItem.setProcessingInfo(processingInfoMap());
+        when(orderMapper.selectById("order-001")).thenReturn(testOrder);
+        when(orderItemMapper.selectList(any())).thenReturn(List.of(testOrderItem));
+        when(processingOrderMapper.countCompletedByOrderId("order-001", 1L)).thenReturn(0L);
+
+        assertThatThrownBy(() -> orderService.updateOrderStatus("order-001", "shipped"))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("须先完成加工单");
+        verify(orderMapper, never()).update(any(), any());
+    }
+
+    @Test
+    @DisplayName("PG-009 含加工项订单有 completed 加工单 → 可 shipped")
+    void shippedAllowedWithCompletedProcessingOrder() {
+        testOrder.setStatus("confirmed");
+        testOrderItem.setProcessingInfo(processingInfoMap());
+        when(orderMapper.selectById("order-001")).thenReturn(testOrder);
+        when(orderItemMapper.selectList(any())).thenReturn(List.of(testOrderItem));
+        when(processingOrderMapper.countCompletedByOrderId("order-001", 1L)).thenReturn(1L);
+        when(orderMapper.update(any(), any())).thenReturn(1);
+
+        orderService.updateOrderStatus("order-001", "shipped");
+
+        verify(orderMapper).update(any(), any());
+    }
+
+    @Test
+    @DisplayName("PG-003 无加工项订单 confirmed→shipped 直跳仍合法")
+    void shippedAllowedWithoutProcessingItems() {
+        testOrder.setStatus("confirmed");
+        testOrderItem.setProcessingInfo(new LinkedHashMap<>());
+        when(orderMapper.selectById("order-001")).thenReturn(testOrder);
+        when(orderItemMapper.selectList(any())).thenReturn(List.of(testOrderItem));
+        when(orderMapper.update(any(), any())).thenReturn(1);
+
+        orderService.updateOrderStatus("order-001", "shipped");
+
+        verify(orderMapper).update(any(), any());
+    }
+
+    @Test
+    @DisplayName("PG-010 订单取消：加工单 generated → 自动作废 + 订单正常取消")
+    void cancelOrderAutoCancelsGeneratedProcessingOrder() {
+        testOrder.setStatus("pending");
+        ProcessingOrder po = ProcessingOrder.builder()
+                .id("po-1").tenantId(1L).orderId("order-001")
+                .processingOrderNo("JG-1").status("generated").build();
+        when(orderMapper.selectById("order-001")).thenReturn(testOrder);
+        when(processingOrderMapper.selectActiveByOrderId("order-001", 1L)).thenReturn(po);
+        when(orderMapper.update(any(), any())).thenReturn(1);
+
+        orderService.cancelOrder("order-001", "客户不要了");
+
+        ArgumentCaptor<ProcessingOrder> captor = ArgumentCaptor.forClass(ProcessingOrder.class);
+        verify(processingOrderMapper).updateById(captor.capture());
+        assertThat(captor.getValue().getStatus()).isEqualTo("cancelled");
+        assertThat(captor.getValue().getCancelledReason()).contains("自动作废");
+    }
+
+    @Test
+    @DisplayName("PG-010 订单取消：加工单 issued 及以上 → 拦截")
+    void cancelOrderBlockedWhenProcessingIssued() {
+        testOrder.setStatus("producing");
+        ProcessingOrder po = ProcessingOrder.builder()
+                .id("po-1").tenantId(1L).orderId("order-001")
+                .processingOrderNo("JG-1").status("issued").build();
+        when(orderMapper.selectById("order-001")).thenReturn(testOrder);
+        when(processingOrderMapper.selectActiveByOrderId("order-001", 1L)).thenReturn(po);
+
+        assertThatThrownBy(() -> orderService.cancelOrder("order-001", "客户不要了"))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("已发加工");
+        verify(processingOrderMapper, never()).updateById(any(ProcessingOrder.class));
+    }
+
+    @Test
+    @DisplayName("PG-007 回退方法：producing→confirmed 原子流转（加工单取消联动用）")
+    void revertProducingToConfirmed() {
+        when(orderMapper.update(any(), any())).thenReturn(1);
+        orderService.revertProducingToConfirmed("order-001", "加工单取消回退");
+        verify(orderMapper).update(any(), any());
+
+        when(orderMapper.update(any(), any())).thenReturn(0);
+        assertThatThrownBy(() -> orderService.revertProducingToConfirmed("order-001", "加工单取消回退"))
+                .isInstanceOf(BusinessException.class);
+    }
+
+    // ================================================================
+    // 门幅 / 售卖方式口径统一 — matchSkuId 回退分支（issue #3621）
+    // ================================================================
+    // 背景：processingInfo 由 agent/前端写入，售卖方式是中文标签（散剪/整卷）、门幅带单位
+    // （2.8米，见 ai-agent order_create schema）；product_skus 落库的是枚举 bulk_cut + 裸数值 2.8。
+    // 旧回退分支字面 eq → 0 行命中 → restoreSkuStock/deductSkuStock 的 `if (skuId != null)`
+    // 静默跳过 → 取消订单不回补库存、销量不记（账实不符，无告警）。现与主线共用一套归一化口径，
+    // 且未命中时留 WARN（不静默）。反向断言：真正不同的门幅/售卖方式仍不得匹配（防归一化过宽）。
+
+    private static final Long COMBO_SKU_ID = 3001L;
+
+    /** agent/前端写入 processingInfo 的真实形态：colorId + 中文售卖方式 + 带单位门幅 */
+    private OrderItem buildItemWithCombination(String sellingMethod, String doorWidth) {
+        Map<String, Object> info = new LinkedHashMap<>();
+        info.put("colorId", 11L);
+        info.put("colorName", "米白");
+        info.put("sellingMethod", sellingMethod);
+        info.put("doorWidth", doorWidth);
+        return OrderItem.builder()
+                .id("item-combo")
+                .tenantId(1L)
+                .orderId("order-001")
+                .productId("prod-001")
+                .productName("蜂巢帘")
+                .quantity(BigDecimal.valueOf(2))
+                .unitPrice(new BigDecimal("299.50"))
+                .subtotal(new BigDecimal("599.00"))
+                .processingInfo(info)
+                .build();
+    }
+
+    /** 库内既有 SKU：枚举 bulk_cut + 门幅写法可指定（种子是 2.8，agent 建品落库的是 2.8米） */
+    private ProductSku storedSku(String sellingMethod, String doorWidth) {
+        return ProductSku.builder()
+                .id(COMBO_SKU_ID)
+                .tenantId(1L)
+                .productId("prod-001")
+                .colorId(11L)
+                .colorName("米白")
+                .sellingMethod(sellingMethod)
+                .doorWidth(doorWidth)
+                .price(new BigDecimal("168.00"))
+                .stock(10)
+                .salesCount(5)
+                .build();
+    }
+
+    private ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> attachOrderLogAppender() {
+        ch.qos.logback.classic.Logger logger =
+                (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(OrderService.class);
+        ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> appender =
+                new ch.qos.logback.core.read.ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        return appender;
+    }
+
+    private void detachOrderLogAppender(
+            ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> appender) {
+        ch.qos.logback.classic.Logger logger =
+                (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(OrderService.class);
+        logger.detachAppender(appender);
+    }
+
+    @Test
+    @DisplayName("#3621 取消订单回补：中文售卖方式「散剪」+ 带单位门幅「2.8米」必须命中库内 bulk_cut/2.8 行")
+    void cancelOrder_restoresStockForChineseMethodAndUnitWidth() {
+        // given: 订单明细是 agent 写入形态（散剪 / 2.8米），库内是 bulk_cut / 2.8
+        testOrder.setStatus("confirmed");
+        OrderItem item = buildItemWithCombination("散剪", "2.8米");
+        when(orderMapper.selectById("order-001")).thenReturn(testOrder);
+        when(orderMapper.update(any(), any())).thenReturn(1);
+        when(orderItemMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(item));
+        when(productSkuMapper.selectList(any(LambdaQueryWrapper.class)))
+                .thenReturn(List.of(storedSku("bulk_cut", "2.8")));
+
+        // when
+        orderService.cancelOrder("order-001", "客户不要了");
+
+        // then: 库存回补 + 销量减记落到既有 SKU 行（不再静默跳过）
+        verify(productSkuMapper).restoreStock(COMBO_SKU_ID, 2);
+        verify(productSkuMapper).decreaseSalesCount(COMBO_SKU_ID, 2);
+    }
+
+    @Test
+    @DisplayName("#3621 取消订单回补：库内带单位写法（2.8米）+ 明细裸数值（2.8）同样必须命中")
+    void cancelOrder_restoresStockWhenStoredWidthHasUnit() {
+        testOrder.setStatus("confirmed");
+        OrderItem item = buildItemWithCombination("散剪", "2.8");
+        when(orderMapper.selectById("order-001")).thenReturn(testOrder);
+        when(orderMapper.update(any(), any())).thenReturn(1);
+        when(orderItemMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(item));
+        when(productSkuMapper.selectList(any(LambdaQueryWrapper.class)))
+                .thenReturn(List.of(storedSku("bulk_cut", "2.8米")));
+
+        orderService.cancelOrder("order-001", "客户不要了");
+
+        verify(productSkuMapper).restoreStock(COMBO_SKU_ID, 2);
+    }
+
+    @Test
+    @DisplayName("#3621 确认支付扣减：中文售卖方式 + 带单位门幅同样必须命中（扣减侧同一口径）")
+    void confirmPayment_deductsStockForChineseMethodAndUnitWidth() {
+        testOrder.setStatus("pending");
+        OrderItem item = buildItemWithCombination("散剪", "2.8米");
+        ProductSku sku = storedSku("bulk_cut", "2.8");
+
+        when(orderMapper.selectById("order-001")).thenReturn(testOrder);
+        when(orderMapper.update(any(), any())).thenReturn(1);
+        when(orderItemMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(item));
+        when(productSkuMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(sku));
+        when(productSkuMapper.selectById(COMBO_SKU_ID)).thenReturn(sku);
+
+        orderService.confirmPayment("order-001");
+
+        verify(productSkuMapper).deductStock(COMBO_SKU_ID, 2);
+        verify(productSkuMapper).increaseSalesCount(COMBO_SKU_ID, 2);
+    }
+
+    @Test
+    @DisplayName("#3621 反向断言：真正不同的门幅（2.8米 vs 库内 3.2）不得匹配，且必须留 WARN（不静默）")
+    void cancelOrder_doesNotRestoreStockWhenDoorWidthDiffers() {
+        testOrder.setStatus("confirmed");
+        OrderItem item = buildItemWithCombination("散剪", "2.8米");
+        when(orderMapper.selectById("order-001")).thenReturn(testOrder);
+        when(orderMapper.update(any(), any())).thenReturn(1);
+        when(orderItemMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(item));
+        when(productSkuMapper.selectList(any(LambdaQueryWrapper.class)))
+                .thenReturn(List.of(storedSku("bulk_cut", "3.2")));
+
+        ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> appender =
+                attachOrderLogAppender();
+        try {
+            orderService.cancelOrder("order-001", "客户不要了");
+
+            // 不同门幅不得被归一化合并
+            verify(productSkuMapper, never()).restoreStock(anyLong(), anyInt());
+            verify(productSkuMapper, never()).decreaseSalesCount(anyLong(), anyInt());
+            // 且不静默：必须留下可观测告警（说明后果）
+            assertThat(appender.list).anyMatch(e ->
+                    e.getLevel() == ch.qos.logback.classic.Level.WARN
+                            && e.getFormattedMessage().contains("未匹配到 SKU")
+                            && e.getFormattedMessage().contains("不回补"));
+        } finally {
+            detachOrderLogAppender(appender);
+        }
+    }
+
+    @Test
+    @DisplayName("#3621 反向断言：不同售卖方式（整卷 vs 库内散剪）即便门幅相同也不得匹配")
+    void cancelOrder_doesNotRestoreStockWhenSellingMethodDiffers() {
+        testOrder.setStatus("confirmed");
+        OrderItem item = buildItemWithCombination("整卷", "2.8米");
+        when(orderMapper.selectById("order-001")).thenReturn(testOrder);
+        when(orderMapper.update(any(), any())).thenReturn(1);
+        when(orderItemMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(item));
+        // 模拟 SQL 按归一化后的枚举过滤：明细是「整卷」→ 查 full_roll，库内只有 bulk_cut 行 → 0 候选
+        when(productSkuMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
+
+        ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> appender =
+                attachOrderLogAppender();
+        try {
+            orderService.cancelOrder("order-001", "客户不要了");
+
+            // 不同售卖方式不得被归一化合并（不得回补到 bulk_cut 行）
+            verify(productSkuMapper, never()).restoreStock(anyLong(), anyInt());
+            // 且查询条件里是归一化后的枚举，不是中文标签（无第二套映射口径）
+            ArgumentCaptor<LambdaQueryWrapper<ProductSku>> wrapperCaptor =
+                    ArgumentCaptor.forClass(LambdaQueryWrapper.class);
+            verify(productSkuMapper).selectList(wrapperCaptor.capture());
+            LambdaQueryWrapper<ProductSku> captured = wrapperCaptor.getValue();
+            captured.getSqlSegment(); // MP 的 formatParam 是惰性 ISqlSegment，须先触发 SQL 段生成
+            assertThat(captured.getParamNameValuePairs().values())
+                    .anyMatch(v -> "full_roll".equals(v))
+                    .noneMatch(v -> "整卷".equals(v));
+            // 未命中不静默
+            assertThat(appender.list).anyMatch(e ->
+                    e.getLevel() == ch.qos.logback.classic.Level.WARN
+                            && e.getFormattedMessage().contains("未匹配到 SKU"));
+        } finally {
+            detachOrderLogAppender(appender);
+        }
+    }
+
+    @Test
+    @DisplayName("#3621 skuId 主键漂移（陈旧 id）→ 不得静默命中 0 行，应回退组合匹配到现有行")
+    void cancelOrder_fallsBackToCombinationWhenSkuIdIsStale() {
+        testOrder.setStatus("confirmed");
+        // 明细里 skuId=999 已被 agent 重建路径「删旧行+插新行」废弃（库内查不到）
+        Map<String, Object> info = new LinkedHashMap<>();
+        info.put("skuId", 999L);
+        info.put("colorId", 11L);
+        info.put("sellingMethod", "散剪");
+        info.put("doorWidth", "2.8米");
+        OrderItem item = buildItemWithCombination("散剪", "2.8米");
+        item.setProcessingInfo(info);
+
+        when(orderMapper.selectById("order-001")).thenReturn(testOrder);
+        when(orderMapper.update(any(), any())).thenReturn(1);
+        when(orderItemMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(item));
+        when(productSkuMapper.selectById(999L)).thenReturn(null);
+        when(productSkuMapper.selectList(any(LambdaQueryWrapper.class)))
+                .thenReturn(List.of(storedSku("bulk_cut", "2.8")));
+
+        orderService.cancelOrder("order-001", "客户不要了");
+
+        // 回退到组合匹配的现有行，而不是拿陈旧 id 去 update（命中 0 行的静默失败）
+        verify(productSkuMapper).restoreStock(COMBO_SKU_ID, 2);
+        verify(productSkuMapper, never()).restoreStock(eq(999L), anyInt());
     }
 }

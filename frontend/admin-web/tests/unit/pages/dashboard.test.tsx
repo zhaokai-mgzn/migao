@@ -19,6 +19,8 @@ const mockGetStats = vi.fn()
 const mockGetOrderTrend = vi.fn()
 const mockGetRecentOrders = vi.fn()
 const mockGetProductRanking = vi.fn()
+// 智能每日经营简报（issue #3468）：企业开关接口（默认关闭）
+const mockBriefingGetConfig = vi.fn()
 
 vi.mock('@/lib/api', () => ({
   dashboardApi: {
@@ -26,6 +28,9 @@ vi.mock('@/lib/api', () => ({
     getOrderTrend: (...args: any[]) => mockGetOrderTrend(...args),
     getRecentOrders: (...args: any[]) => mockGetRecentOrders(...args),
     getProductRanking: (...args: any[]) => mockGetProductRanking(...args),
+  },
+  briefingApi: {
+    getConfig: (...args: any[]) => mockBriefingGetConfig(...args),
   },
 }))
 
@@ -86,6 +91,10 @@ function mockApiSuccess() {
       })
     }
     return Promise.resolve({ data: { data: 0 } })
+  })
+  // 智能每日经营简报（issue #3468）：默认关闭（不渲染简报卡，不影响看板主体）
+  mockBriefingGetConfig.mockResolvedValue({
+    data: { data: { enabled: false, generateTime: '06:00' } },
   })
 }
 

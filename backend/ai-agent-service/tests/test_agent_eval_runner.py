@@ -5,7 +5,12 @@
 发图轮报错时，前面轮次可能已命中 success=true / tool 等 expectation，
 旧逻辑把用例计为通过（假验收 —— 线上 sess_806703a2dcca4059 图片崩溃正是此类）。
 """
-# case_ids: CH-021, CH-026, OR-001, PR-001, DA-002, PP-003, PP-004, AS-001, AS-002, CU-003
+# case_ids: CH-021, CH-024, CH-026, OR-001, PR-001, DA-002, PP-003, PP-004, AS-001, AS-002, CU-003, PR-016
+#
+# 2026-09-15 新增（评测归因：run 34856561459 B 端 5 条失败）：
+#   · TestRequiredArgsAnyCallSatisfies —— PR-016 的 required_args 是**假红**（只看首次调用）；
+#   · TestBoolLiteralTolerance / TestInteractiveCardArgAssertion —— 归因线索「multiSelect 大小写」
+#     被独立证伪（容差本已存在），顺手把「卡片 multiSelect 声明被静默忽略」的弱断言钉死。
 import importlib.util
 from pathlib import Path
 
@@ -88,6 +93,74 @@ class TestFailureSignature:
         a = {"failed": [], "last_error": "AttributeError: 'list' object ..."}
         b = {"failed": [], "last_error": "KeyError: 'x'"}
         assert lr._failure_signature(a) != lr._failure_signature(b)
+
+
+class TestFirstAttemptEvidence:
+    """「首跑失败、重试通过」必须留下**逐轮证据**，而不只是指纹（issue #3367）。
+
+    指纹回答"是什么"（如 must_succeed: order_create 从未被调用），轨迹回答"停在哪一轮"。
+    实测 CH-010 首跑失败连续多跑都只有指纹 → 知道没调写工具，却不知道卡在哪一步，
+    无法定位（#3367 就是为此单开的）。
+    """
+
+    def _r(self, score=0.0, **kw):
+        base = {"score": score, "rounds": 8, "tool_calls": ["interact", "product_detail"],
+                "round_trace": [{"round": 1, "user": "推荐几款热销窗帘", "tools": ["product_search"]},
+                                {"round": 2, "user": "确认下单", "tools": ["interact"]}],
+                "failed": [("must_succeed: order_create 从未被调用", "case-level check")],
+                "last_error": None}
+        base.update(kw)
+        return base
+
+    def test_includes_issues_rounds_and_trace(self):
+        text = lr.format_first_attempt_evidence(self._r())
+        assert text, "首跑失败却没有留下任何证据"
+        assert "首跑" in text
+        assert "must_succeed" in text, "缺失败断言 → 只有形状没有原因"
+        assert "R1" in text and "R2" in text, "缺逐轮轨迹 → 无法判断停在哪一轮"
+        assert "确认下单" in text, "轨迹里应带该轮实际发出的用户消息（协议轮答复是关键证据）"
+
+    def test_empty_for_passing_attempt(self):
+        assert lr.format_first_attempt_evidence(self._r(score=1.0)) == "", \
+            "通过的那次不该产出'首跑失败证据'（避免误导）"
+
+    def test_empty_for_missing_result(self):
+        assert lr.format_first_attempt_evidence({}) == ""
+        assert lr.format_first_attempt_evidence(None) == ""
+
+    def test_survives_trace_without_rounds(self):
+        text = lr.format_first_attempt_evidence(self._r(rounds=0, round_trace=[]))
+        assert text, "即使没有轨迹，也应留下断言与轮数（不能让证据函数自己崩掉）"
+
+
+class TestFlakeLedgerEntry:
+    """台账条目必须自带**两次尝试**的指纹（issue #3365）。
+
+    台账是「为什么放行这条红灯」的唯一长期证据。只记第二次（通过那次）的指纹时，
+    `llm-noise` 就等于"无证据的波动" —— 实测 OR-017 连续 3 跑都是「首跑失败、重试通过」，
+    每次都因为没有首跑指纹而无法归因（这一轮的真因就是这么挖出来的）。
+    """
+
+    def _r(self, score, failed=None, last_error=None):
+        return {"score": score, "failed": failed or [], "last_error": last_error}
+
+    def test_llm_noise_entry_keeps_first_attempt_signature(self):
+        first = self._r(0.0, [("确认死循环: confirm 卡出现 4 次", "case-level check")])
+        second = self._r(1.0)
+        e = lr.build_flake_entry("OR-017", "下单加工项闭环", "llm-noise", first, second, "run1", "abc123")
+        assert e["first_attempt_signature"], "llm-noise 台账丢了首跑指纹 → 归因无证据"
+        assert "确认死循环" in e["first_attempt_signature"]
+        assert e["signature"] == "" or "确认死循环" not in e["signature"], "第二项指纹应来自通过那次（为空）"
+
+    def test_reproducible_entry_has_same_signatures(self):
+        f = [("tool: order_create", "unmatched")]
+        e = lr.build_flake_entry("OR-014", "t", "reproducible", self._r(0.5, f), self._r(0.0, f), "r", "s")
+        assert e["signature"] == e["first_attempt_signature"] != ""
+        assert "确定性" in e["reason"]
+
+    def test_every_classification_has_reason(self):
+        for c in ("llm-noise", "reproducible", "unstable", "infra", "no-retry-budget"):
+            assert lr.FLAKE_REASONS.get(c), f"{c} 缺 reason 文案"
 
 
 class TestClassifyAttempts:
@@ -276,7 +349,7 @@ class TestRunCaseDataChecksScoring:
         )
 
     async def _run(self, case, error=None):
-        async def fake_send(token, session_id, message, images=None):
+        async def fake_send(token, session_id, message, images=None, **kwargs):
             return {
                 "user_message": message,
                 "images": images or [],
@@ -340,7 +413,7 @@ class TestWantTextAssertion:
         import asyncio
         import unittest.mock as mock
 
-        async def fake_send(token, session_id, message, images=None):
+        async def fake_send(token, session_id, message, images=None, **kwargs):
             return {
                 "user_message": message,
                 "images": images or [],
@@ -611,11 +684,35 @@ class TestRequiredArgsDeepPath:
 class TestPreCleanProductRemove:
     """_run_pre_clean product_remove：建品残留商品清理（下架→删除，防全量重名）"""
 
-    def test_product_remove_unknown_type_skips(self):
-        import asyncio, unittest.mock as mock
-        async def run():
-            return await lr._run_pre_clean("tok", {"type": "bogus"})
-        assert asyncio.run(run()) == "未知 pre_clean 类型: bogus（跳过）"
+    def test_unknown_type_is_a_config_error_not_a_silent_skip(self):
+        """未知 `pre_clean` 类型 = **可辨配置错误**（issue #3781），不再静默跳过。
+
+        ## 为什么改（旧行为是假绿温床）
+
+        旧实现 `return f"未知 pre_clean 类型: {_type}（跳过）"`，调用侧
+        （`_pre_clean_for_case`）只把它当一行消息打印（`🧹 pre_clean: …`）——
+        **数据压根没准备，用例照跑**，其红/绿还会被读成"agent 能力缺陷"
+        （`migao-acceptance`「空跑：绿了但没跑」同族）。在**新增一个 type** 时最危险：
+        新 type 没被 runner 认出来就静默退回成"什么都没做"。
+
+        现行为：返回带 `_PRECLEAN_CONFIG_ERR` 稳定前缀的配置错误 ⇒ 被
+        `check_preclean_not_applied` 折进**用例结论**（score=0 + 进 summary 的 failures），
+        并在重试边界复用 #3751 的"前置未复位"标记（语义扩到"前置压根没被应用"）。
+
+        ## 红证（本文件这一条即对照）
+
+        把实现改回 `f"未知 pre_clean 类型: {_type}（跳过）"` ⇒ 本断言必红；
+        把 `check_preclean_not_applied` 的判据放宽成"含『跳过』" ⇒
+        `test_eval_preclean_registry.py::test_idempotent_success_messages_are_not_flagged` 红。
+        """
+        import asyncio
+        msg = asyncio.run(lr._run_pre_clean("tok", {"type": "bogus"}))
+        assert msg.startswith(lr._PRECLEAN_CONFIG_ERR), msg
+        assert "'bogus'" in msg and "未执行" in msg, msg
+        # 必须能被折叠器捞出来（否则"可辨"只是文案，进不了结论）
+        assert lr.check_preclean_not_applied([msg]) == [msg]
+        # 且措辞不得含「未复位」/「失败」以外的歧义 —— 重试边界按稳定前缀判，逐一核对
+        assert any(msg.startswith(m) for m in lr._PRECLEAN_BAD_MARKERS)
 
     def test_product_remove_no_items(self):
         import asyncio, unittest.mock as mock
@@ -660,14 +757,171 @@ class TestAutoFillForm:
 
 
 class TestEndSession:
-    """_end_session：评测会话清理（协议 §2.2，防 waiting 残留）"""
+    """_end_session：评测会话清理（协议 §2.2，防 waiting 残留）
 
-    def test_end_session_silent_on_failure(self):
+    issue #3357：清理**不抛异常**（关闭主流程优先），但**必须可见**（打 warning）——
+    旧实现打错接口（admin-api agent_sessions，人工会话表）恒 404 且被静默吞掉，
+    结果评测会话从未关闭、记忆从未 flush，而报告全绿。静默 = 假绿温床。
+    """
+
+    def test_end_session_does_not_raise_on_failure(self, capsys):
         import asyncio, unittest.mock as mock
-        async def fake_post(url, headers=None, timeout=None):
+        async def fake_put(url, headers=None, timeout=None):
+            raise RuntimeError("connection failed")
+        async def fake_post(url, headers=None, json=None, timeout=None):
             raise RuntimeError("connection failed")
         async def run():
             with mock.patch.object(lr.httpx, "AsyncClient") as m_cls:
-                m_cls.return_value.__aenter__.return_value.post = fake_post
+                client = m_cls.return_value.__aenter__.return_value
+                client.put = fake_put
+                client.post = fake_post
                 await lr._end_session("tok", "sid-1")
         asyncio.run(run())  # 不应抛异常
+        assert "会话关闭异常" in capsys.readouterr().out, "清理失败必须可见（不许静默）"
+
+    def test_end_session_targets_ai_agent_close(self):
+        """回归防线：必须打 ai-agent 的 close（记忆 flush 唯一入口），不是人工会话表。"""
+        import asyncio, unittest.mock as mock
+        urls = []
+
+        class _Resp:
+            status_code = 200
+            content = b"{}"
+
+        class _Client:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *a):
+                return False
+
+            async def put(self, url, headers=None, timeout=None):
+                urls.append(("PUT", url))
+                return _Resp()
+
+            async def post(self, url, headers=None, json=None, timeout=None):
+                urls.append(("POST", url))
+                return _Resp()
+
+        with mock.patch.object(lr.httpx, "AsyncClient", _Client):
+            asyncio.run(lr._end_session("tok", "sid-9"))
+        assert urls[0] == ("PUT", f"{lr.AI_API}/api/chat/sessions/sid-9/close")
+
+
+class TestRequiredArgsAnyCallSatisfies:
+    """required_args 的调用选择器语义：**"存在一次满足的调用"**，而非"只看第一次调用"。
+
+    归因来源（run 34856561459，B 端 normal 档，PR-016）：
+        ❌ required_args[processing_item_query.applicable_category_id](R1): 缺失或为空: applicable_category_id
+    该 run 的 PR-016 轨迹里 `processing_item_query` 被调用多次（R1 拉目录 / R5 按分类过滤 /
+    R6 复述），而断言只看了 **R1** 那一次。用例 data_checks 记录的口径是
+    「processing_item_query **携带** applicable_category_id」（= 至少一次携带），
+    故"只看首次"把用例断言**收窄**了：只要 agent 的第一次目录拉取发生在分类确认之前
+    （真实流程里就是如此：先拉目录/分类，再按已选分类过滤），断言**恒红** ——
+    失败与「加工项有没有按分类过滤」这个被测行为无关，属 runner 断言缺陷（假红）。
+    """
+
+    def _results(self, first_call_args, later_call_args):
+        return [
+            {"__round": 1, "tool_calls": [{"name": "processing_item_query", "args": first_call_args}]},
+            {"__round": 5, "tool_calls": [{"name": "processing_item_query", "args": later_call_args}]},
+        ]
+
+    def _req(self):
+        return [{"tool": "processing_item_query", "fields": ["applicable_category_id"]}]
+
+    def test_later_call_satisfies(self):
+        """首次调用无 applicable_category_id、后续调用有 → 必须通过（run 34856561459 实形）。"""
+        results = self._results({"action": "list"}, {"action": "list", "applicable_category_id": "cat_eval_curtain"})
+        assert lr.check_required_args(results, self._req()) == []
+
+    def test_no_call_satisfies_still_fails(self):
+        """任何一次调用都没有该字段 → 必须仍然红（防把断言改松成空断言）。"""
+        results = self._results({"action": "list"}, {"action": "list"})
+        issues = lr.check_required_args(results, self._req())
+        assert len(issues) == 1
+        assert "applicable_category_id" in issues[0]
+
+    def test_single_call_case_still_fails(self):
+        """只有一次调用且缺字段 → 必须仍然红（PP-005 形态：单轮分类筛选）。"""
+        results = [{"__round": 1, "tool_calls": [{"name": "processing_item_query", "args": {}}]}]
+        assert len(lr.check_required_args(results, self._req())) == 1
+
+    def test_single_call_satisfied_unchanged(self):
+        """单次调用满足字段 → 通过（行为不变基线）。"""
+        results = [{"__round": 1, "tool_calls": [
+            {"name": "processing_item_query", "args": {"applicable_category_id": "cat_eval_curtain"}}]}]
+        assert lr.check_required_args(results, self._req()) == []
+
+
+class TestBoolLiteralTolerance:
+    """期望里的布尔字面量容差：YAML `multiSelect: true` 经 render_cases 渲染成
+    Python `True`，而 agent 调用/卡片透传的是 JSON 布尔 `true`。
+
+    归因来源（run 34856561459，B 端 PR-016）：
+        ❌ interact(component=choice, multiSelect=True) → unmatched expectation
+    独立验证结论：**`True` vs `true` 不是本次失败原因**（`_interactive_satisfies`
+    只校验 component，工具调用路径的 `str(True)==str(True)` 也能自比相等）。
+    但该容差本身缺失：`multiSelect=True` 与 `multiSelect=true` 两种写法在
+    「卡片带 multiSelect=JSON true」时行为不一致 —— 属断言可满足性缺陷，一并钉死，
+    免得下一个人再按"大小写不匹配"排查（本 run 的归因线索 #2 即此误判）。
+    """
+
+    def test_python_bool_matches_json_bool(self):
+        for exp in ("True", "true"):
+            assert lr._scalar_value_matches(exp, "true") is True, exp
+            assert lr._scalar_value_matches(exp, "True") is True, exp
+        for exp in ("False", "false"):
+            assert lr._scalar_value_matches(exp, "false") is True, exp
+
+    def test_bool_still_mismatches_opposite_value(self):
+        assert lr._scalar_value_matches("true", "false") is False
+        assert lr._scalar_value_matches("True", "false") is False
+        # 非布尔字面量不得被容差吞掉
+        assert lr._scalar_value_matches("true", "yes") is False
+
+
+class TestInteractiveCardArgAssertion:
+    """`interact(component=choice, multiSelect=true)` 的 args 必须真的被校验。
+
+    基线行为（保持）：卡片以 SSE interactive 事件下发（无 tool_call）时，用事件
+    payload 的 component 满足期望（issue #3270，防 CH-013 假失败）。
+    缺口：事件里有 `multiSelect` 时，期望声明的 `multiSelect=true` 被**静默忽略** ——
+    卡片是真单选的（multiSelect 缺省 false）也算过，即声明的断言不成立（弱断言）。
+    """
+
+    EXPECT = "interact(component=choice, multiSelect=True)"
+
+    def _res(self, iv, tc=()):
+        return {"tool_calls": list(tc), "interactive": list(iv),
+                "__all_tool_names": [t["name"] for t in tc], "final_text": "", "error": None}
+
+    def test_card_without_multiselect_still_passes_component_only(self):
+        """基线不回归：只发 choice 卡（payload 无 multiSelect）仍满足 component=choice。"""
+        ok, _ = lr.check_expectation(self._res([{"component": "choice"}]), self.EXPECT)
+        assert ok
+
+    def test_card_declaring_single_select_fails(self):
+        """卡片显式声明 multiSelect=false → 期望 multiSelect=true 不得通过。"""
+        ok, detail = lr.check_expectation(
+            self._res([{"component": "choice", "multiSelect": False}]), self.EXPECT)
+        assert not ok, detail
+
+    def test_card_declaring_multi_select_passes(self):
+        ok, _ = lr.check_expectation(
+            self._res([{"component": "choice", "multiSelect": True}]), self.EXPECT)
+        assert ok
+
+    def test_tool_call_path_bool_tolerance(self):
+        """工具调用路径：args 里 JSON true 满足期望 True（大小写容差）。"""
+        ok, detail = lr.check_expectation(
+            self._res([], [{"name": "interact", "args": {"component": "choice", "multiSelect": True}}]),
+            self.EXPECT)
+        assert ok, detail
+
+    def test_multiple_cards_any_hit_passes(self):
+        """同轮多张同组件卡：一张声明单选、一张声明多选 → 多选那张命中即过（旧行为不放严）。"""
+        ok, detail = lr.check_expectation(
+            self._res([{"component": "choice", "multiSelect": False},
+                       {"component": "choice", "multiSelect": True}]), self.EXPECT)
+        assert ok, detail

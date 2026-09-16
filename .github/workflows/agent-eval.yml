@@ -1,6 +1,7 @@
 name: Agent Eval (米宝能力评测)
 permissions:
   contents: read
+  issues: write  # 失败建 issue 必需（#3497，修复 #3270 同款次生 bug：缺此权限失败通知静默）
 
 on:
   # 2026-08-29：取消每日 normal 定时评测（成本高、信号为 LLM 波动为主，按需手动触发即可）。
@@ -26,6 +27,11 @@ jobs:
       - name: Install deps
         run: pip install httpx
 
+      # ⚠️ 不能像 C 端那样分片（issue #3361）：本 workflow 打的是**共享环境**
+      # （ai-api.migaozn.com / api.migaozn.com），而 normal 档含建品/下单/改客户等
+      # 写用例 —— N 片并发 = N 个 job 同时写同一套共享数据，既互相污染（用例假失败）
+      # 又加速污染 dev 库。要分片必须先有**每次跑完即销毁的隔离栈**（C 端那样
+      # docker-compose 起 PG/admin-api/ai-agent），属基建改造，不在本提交内做。
       - name: Run normal eval (真实 LLM 回归，按需)
         env:
           AI_API_URL: https://ai-api.migaozn.com
@@ -33,7 +39,18 @@ jobs:
           SERVICE_TOKEN: ${{ secrets.SMOKE_SERVICE_TOKEN }}
           PYTHONUTF8: "1"
           PYTHONIOENCODING: utf-8
+          # 波动台账（#3505 汇聚）：flake ledger 落盘 + artifact 上传，供高波动用例
+          # 治理（§14.3）跨 run 汇总；否则台账随 runner 销毁、只能翻日志。
+          AGENT_EVAL_FLAKE_LOG: agent-eval-flakes.json
         run: python tests/agent_eval/local_runner.py normal --cases .github/cases
+
+      - name: Upload flake ledger（波动台账汇聚，#3505）
+        if: always() && hashFiles('agent-eval-flakes.json') != ''
+        uses: actions/upload-artifact@v7
+        with:
+          name: agent-eval-flake-ledger
+          path: agent-eval-flakes.json
+          retention-days: 30
 
       - name: Create Issue on failure (dedup guard)
         if: failure()

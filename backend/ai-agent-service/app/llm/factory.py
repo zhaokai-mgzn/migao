@@ -13,6 +13,7 @@ from langchain_openai import ChatOpenAI
 from langchain_deepseek import ChatDeepSeek
 
 from app.config import settings
+from app.llm.message_payload import ReasoningPassthroughChatModel
 
 # ===== 唯一配置读取点（从 settings 读一次，全局共享）=====
 LLM_BASE_URL: str = settings.LLM_BASE_URL
@@ -21,11 +22,31 @@ LLM_API_KEY: str = settings.LLM_API_KEY
 # === 向后兼容别名（测试/旧代码）===
 DASHSCOPE_BASE_URL = LLM_BASE_URL
 
+#: 本仓库全部模型实例的**唯一**组合处：混入类（`ReasoningPassthroughChatModel`）
+#: 排在**第一位**才会接管请求体组装（单一来源见 `app/llm/message_payload.py`）。
+#:
+#: ⚠️ `ChatDeepSeek` 是 `ChatOpenAI` 的**子类**，故不能写成
+#: `(混入, ChatOpenAI, ChatDeepSeek)` —— C3 线性化会让 `ChatDeepSeek` 自己的
+#: `_get_request_payload`（内含 `thinking` 等模型专属段）**永远不被调用**；
+#: 必须把 `ChatDeepSeek` 放在 `ChatOpenAI` 之前，让它继承 `ChatOpenAI` 的那份实现
+#: 恰好是混入后的版本。该顺序由 `tests/test_message_payload_reasoning.py` 钉死。
+_PassthroughDeepSeek = type(
+    "_PassthroughDeepSeek",
+    (ReasoningPassthroughChatModel, ChatDeepSeek, ChatOpenAI),
+    {},
+)
+_PassthroughOpenAI = type(
+    "_PassthroughOpenAI",
+    (ReasoningPassthroughChatModel, ChatOpenAI),
+    {},
+)
+
+
 # CI 环境检测：ci-dummy key 时用 ChatOpenAI（避免 mock 问题），否则用 ChatDeepSeek
 def _new_chat_model(**kwargs):
     if LLM_API_KEY == "ci-dummy":
-        return ChatOpenAI(**kwargs)
-    return ChatDeepSeek(**kwargs)
+        return _PassthroughOpenAI(**kwargs)
+    return _PassthroughDeepSeek(**kwargs)
 
 
 class LLMFactory:
@@ -87,7 +108,17 @@ class LLMFactory:
         # `OpenAIError: Missing credentials` → 图片能力（拍照找同款/识别面料）不可用。
         # CI 实证：CH-026「澄清卡后发图」因缺凭据失败。
         # 语义：显式配置的独立视觉 key 优先；未配置则兜底主模型 key/base_url。
-        return ChatOpenAI(
+        # 显式关闭思考（探针实证 #3573 / PR #3579，run 34809425971）：deepseek-flash
+        # 缺省=开思考——基线不传 extra_body 照样产出 reasoning_content（len=537/122 tokens）。
+        # 视觉识别（拍照找同款/识面料）是轻量任务，无需深度思考 ⇒ 显式 thinking=disabled，
+        # 与 skill 路径 create_skill_llm(force_no_think=True)（本文件 :63-64）语义一致；
+        # 实测关思考 output 102→1 token（-99%）、耗时 1.55s→0.91s，且 content 输出不变。
+        # 透传性：DeepSeek 认该顶层 body key 且不校验（200、无 400），
+        # ChatOpenAI（OpenAI 兼容客户端）与 ChatDeepSeek 均按 extra_body 原样出网。
+        # 走 `_PassthroughOpenAI`（而非裸 ChatOpenAI）：本实例同样会拿到含历史
+        # assistant(tool_calls) 的会话历史（视觉路径 iter 2+ 亦然），必须经**同一**单一来源
+        # 回传 reasoning_content —— 否则同一条 400 换个入口复发（issue #3852）。
+        return _PassthroughOpenAI(
             model=model,
             api_key=settings.VISION_API_KEY or settings.PRIMARY_API_KEY,
             base_url=settings.VISION_BASE_URL or settings.PRIMARY_BASE_URL,
@@ -95,6 +126,7 @@ class LLMFactory:
             streaming=True,
             max_completion_tokens=16384,
             request_timeout=60,
+            extra_body={"thinking": {"type": "disabled"}},
         )
 
     @staticmethod
@@ -203,6 +235,23 @@ class LLMFactory:
             base_url=LLM_BASE_URL,
             temperature=0,
             max_completion_tokens=800,
+            extra_body={"thinking": {"type": "disabled"}},
+        )
+
+    @staticmethod
+    def create_briefing_llm() -> ChatOpenAI:
+        """创建智能每日经营简报生成 LLM（issue #3468）
+
+        - temperature=0  确定性输出，便于 JSON 解析与数字对账
+        - max_completion_tokens=1200  四区块简报（摘要+回顾+待办+风险+建议）
+        - thinking=disabled  关闭深度思考，降低延迟与成本
+        """
+        return _new_chat_model(
+            model=settings.INTENT_MODEL,
+            api_key=LLM_API_KEY,
+            base_url=LLM_BASE_URL,
+            temperature=0,
+            max_completion_tokens=1200,
             extra_body={"thinking": {"type": "disabled"}},
         )
 

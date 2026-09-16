@@ -1,0 +1,173 @@
+# 商家后端（admin-web）全面功能冒烟报告 — 2026-09-14
+
+- **任务**：issue #3660 — 今日约 50 PR 合入 main 后，对商家后端全部页面做集成层功能冒烟（真浏览器 + 真后端 + 商家 persona）
+- **执行人**：DSH 验证 worker（session 80fdf306 子代理）
+- **时间**：2026-09-14 16:00 ~ 17:30
+- **栈**：admin-api(:8090, SMS bypass) + admin-web(:3001, API→:8090) + ai-agent(:8001, DEBUG 测试模式) + 云 dev DB/Redis（公网 IP 已在 RDS dev_local 白名单）
+- **账号**：13800138000（赵凯 / user_admin_001 / admin / 词元通达）+ 万能码 123456（SMS bypass）
+- **方法**：Playwright（chromium）逐页走查 31 旅程；DOM 断言（§15.6 选择器优先级）+ 写操作结果可见（§15.1）+ 每页截图 + console/page error 全程监听；关键截图经 GLM-5.3-Flash 多模态视觉复核（§15.5）
+- **可复跑**：`scripts/ui_smoke_merchant.sh`（一键起栈→31 旅程→停栈；spec 见 `scripts/ui-smoke-merchant/spec.mjs`）
+
+## 结论
+
+**31/31 旅程全部通过（pass）**，console/page error 全程 0 残留（2 处预期豁免见 §4）。
+
+冒烟发现并修复 **3 个前端 UI 问题**（本 PR 附带，均经修复后重走验证）：
+1. **订单列表 React key 警告**（OrderTable 采购明细 `key={item.id}`，而列表接口不下发 item.id → 恒 undefined → console error）— 已修复
+2. **客户列表标签渲染空 chip + React key 警告**（列表接口 tags 为字符串 ID 数组，前端按对象取值）— 已修复
+3. **发货页状态守卫缺 `producing`**（含不存在的 `processing`）→ 加工单流转后订单进入「生产中」即被发货页拦截「当前订单状态不允许发货」— 已修复
+
+归因待派 **2 个后端/契约问题**（见 §5），另有 P2 观察项若干（不阻塞）。
+
+## 旅程明细（31/31 ✅）
+
+| # | 旅程 | 结果 | 证据/要点 |
+|---|------|------|-----------|
+| 01 | 登录（SMS 万能码 + 会话保持） | ✅ | 登录→/dashboard；刷新后会话保持；截图 `01-login.png` |
+| 02 | 经营看板 | ✅ | 统计卡片渲染、数字非空（`smoke-run5.log`） |
+| 03 | 每日经营简报 | ✅ | 简报页渲染 + 生成按钮可用（V44 daily_briefings） |
+| 04 | /agent-workspace 重定向 | ✅ | 自动跳 /agent-workspace/human-sessions |
+| 05 | 在线接待 | ✅ | 会话列表渲染（ai-agent 已起，真实数据） |
+| 06 | 智能体会话历史 | ✅ | 列表渲染 0 error |
+| 07 | 对话页 | ✅ | 输入框可用、会话渲染 |
+| 08 | 商品列表 | ✅ | 485 商品渲染、分页/筛选可用 |
+| 09 | 新建商品（SKU 矩阵） | ✅ | **门幅值/显示分离验证（#3641）**：下拉选项 `2.8|2.8米`（value=canonical），选中后表单值='2.8'，无第二种写法；真实建品（草稿+分类）→ 列表可见 |
+| 10 | 商品详情 | ✅ | 列表行「查看」→ 详情渲染 |
+| 11 | 编辑商品（门幅回显） | ✅ | **门幅口径必查（#3641）**：既有商品（doorWidth='2.8米'）回显下拉 value='2.8'、显示 '2.8米'，无空白、无第二种写法；截图 `11-product-edit-doorwidth.png` |
+| 12 | 加工项管理 | ✅ | **新建（pricingMethod=per_meter + unitPrice 15.5）→ 列表可见 → 编辑（改名部分更新）→ 删除**（#3555/#3591 unitPrice 语义走查通过） |
+| 13 | 商品分类 | ✅ | 新建→可见→行内删除 |
+| 14 | 订单列表 | ✅ | 分页「下一页」可用（React key 警告已随修复消除） |
+| 15 | 新建订单（UI 旅程） | ✅ | 选商品弹窗搜索「遮光窗帘」→ 提交 → 订单创建成功 |
+| 16 | 订单详情 + 加工单 | ✅ | **加工单生成确认门禁 UI 侧验证**：确认收款（闸门弹窗）→「生成加工单」→ 加工单块出现（JG-20260914-9984 已生成）→ 发加工→开始加工→加工完成 全流程落库（DB 实证 status=completed）；`requires_confirmation=True`（ai-agent `processing_order_generate.py:40`）静态证据 |
+| 17 | 发货页 | ✅ | **修复验证**：producing 订单可进入发货表单（修复前被守卫拦截） |
+| 18 | 售后工单列表 | ✅ | 52 工单渲染 |
+| 19 | 售后详情（关闭原因） | ✅ | **#3541 语义**：pending→接受处理→关闭工单（填写原因）→ 刷新后关闭原因回显（落库实证：截图 19-after-sales-detail.png 显示「已关闭」+ 原因） |
+| 20 | 客户列表 | ✅ | wechatNickname 显示正常、无空名/报错（#3562；标签修复后无空 chip） |
+| 21 | 客户详情 | ✅ | 详情渲染、编辑入口可用 |
+| 22 | 财务对账 | ✅ | 渲染正常 |
+| 23 | 员工管理 | ✅ | **新建（name/phone/岗位/权限）→ 列表可见（phone/roleIds 真实显示 #3561）→ 编辑改手机号 → 落库验证 → 删除**；HR-008 语义走查通过 |
+| 24 | 岗位权限 | ✅ | 岗位列表 + 权限编辑弹窗可开（#2969/#3561） |
+| 25 | 企业基础信息 | ✅ | 基本信息保存 + 修改密码表单 + 通知设置 Tab 可用（#3583） |
+| 26 | 通知中心 | ✅ | 列表渲染 + 已读操作 |
+| 27 | 官网首页 | ✅ | 渲染正常 |
+| 28 | 官网 About | ✅ | 渲染正常 |
+| 29 | 官网 Contact | ✅ | 渲染正常 |
+| 30 | 官网 Services | ✅ | 渲染正常 |
+| 31 | 注册页 | ✅ | 渲染 + 表单控件存在 |
+
+## 发现并已修复的 UI 问题（本 PR）
+
+| # | 问题 | 证据 | 修复 | 验证 |
+|---|------|------|------|------|
+| F1 | 订单列表 `OrderTable` 采购明细 `key={item.id}`，但**列表接口不下发 item.id**（#2916 已知）→ React key 警告（console error） | 冒烟 run1 `14-orders-list`：`Warning: Each child in a list should have a unique "key" prop... OrderTable`；API 实证 `order.items[].id = None` | `OrderTable.tsx` key 兜底：`item.id ?? ${order.id}-item-${idx}` | run5 14-orders-list ✅ 0 error |
+| F2 | 客户列表 tags 列按对象取 `tag.id/tag.name`，但**列表接口返回字符串 ID 数组**（详情接口才是对象）→ key 警告 + 空 chip 显示 | 冒烟 run1 `20-customers-list`：`Warning... Table`；API 实证 `tags=["821556a8..."]` | `customers/page.tsx` getTags 容忍 string，渲染层用页内 tag 字典解析为对象 | run5 20/21 ✅ 0 error、标签 chip 正常 |
+| F3 | **发货页状态守卫 `['pending_shipment','confirmed','processing']` 不含 `producing`**（且 `processing` 是不存在的状态）→ 加工单流转后订单进入 producing，发货页报「当前订单状态不允许发货」 | 冒烟 run2 `17-order-ship`：订单已是 producing（加工单 completed）但发货页无表单；`ShipOrder.tsx:142` | 守卫改为 `['pending_shipment','confirmed','producing']` | run5 17-order-ship ✅ 表单渲染 |
+
+## 归因待派的后端/契约问题（不在本包修复）
+
+| # | 问题 | 证据 | 归因 | 建议 |
+|---|------|------|------|------|
+| B1 | **商品草稿无分类保存 → 500**（`products_category_id_fkey` 违例）。前端草稿校验不要求分类（`!isDraft` 才校验 categoryId），后端 category_id 非空 FK → 插入 500 | 冒烟 run3 `09-products-new`：`保存商品失败 (draft): ... status 500`；admin-api 日志 `insert or update on table "products" violates foreign key constraint "products_category_id_fkey"` | **后端契约缺口**（ProductController/ProductService：草稿态应允许空分类或默认分类；或前端草稿也要求选分类——需产品裁定） | 二选一：① ProductCreateRequest 草稿态 categoryId 可空（表列改 nullable 或落默认分类）；② 前端草稿必填分类。冒烟走查用「选分类后存草稿」的正常路径通过 |
+| B2 | **客户列表 tags 与详情 tags 形态不一致**：列表返回字符串 ID 数组（`profile.tags` 原样），详情返回标签对象数组。前端类型契约声明 `CustomerTag[]`（对象） | 冒烟 API 实证：list `tags=["821556a87113296f8a8c9579c2064d58"]` vs detail `tags=[{id,name,color,...}]`；`CustomerService.getCustomerDetail` 解析、list 原样返回 | **后端契约不一致**（CustomerService 列表序列化应同详情解析；本包已在**前端**做容忍修复，根因仍建议后端统一） | CustomerController.getCustomers 的 tags 改为按 id 解析为对象（与详情同口径） |
+
+## P2 观察项（不阻塞，记录备查）
+
+- **新建订单页面包屑显示「订单列表」**：`/orders/new` 页面标题「新增订单」，面包屑为「订单管理 / 订单列表」（父级语义），GLM 视觉复核标注「疑为父级面包屑设计，不构成缺陷」——如需精确可改面包屑为「订单管理 / 新增订单」。
+- **加工单未生成时** `GET /api/admin/processing-orders/{orderId}` 返回 404（组件 catch→notFound→展示生成按钮），浏览器 console 出现 404 资源错误（预期探测行为，代码显式处理；已按预期豁免并记 note，见 run5 `16-order` 注）。
+- **settings 页修改密码**：Tab 存在、密码表单渲染（#3583 闸门）；走查未实际提交改密（避免改动管理员凭据），仅验证表单可用。
+- ai-agent 本地以 `DEBUG=true` 测试模式运行（本地冒烟专用，JWT 签名不校验）——**生产环境严禁**，仅本机临时栈。
+
+## 视觉复核（§15.5，GLM-5.3-Flash 多模态）
+
+10 张关键截图（dashboard/products-new/商品编辑门幅/加工项/订单列表/订单详情加工单块/售后详情/员工/新建订单/设置）逐项判定：**全部正常**——无白屏、无破版、无重叠遮挡、无分页被 FAB 压住；1 张（09-products-new）视觉模型未收到图像内容，退化为程序化像素统计（68.9% 近白典型值、无全宽空白带），结论正常（如实标注）。订单详情截图因页面下滚截断头部（截图时机问题，非缺陷）。详见 workflow 输出（10/10 PASS）。
+
+## 证据位置
+
+- 截图：`acceptance/2026-09-14/merchant-ui-smoke/screenshots/*.png`（31 张）
+- 汇总：`acceptance/2026-09-14/merchant-ui-smoke/smoke-summary.md` / `smoke-results.json`
+- 完整运行日志：`acceptance/2026-09-14/merchant-ui-smoke/smoke-run5.log`
+- 可复跑：`scripts/ui_smoke_merchant.sh` + `scripts/ui-smoke-merchant/spec.mjs`
+
+## 数据卫生
+
+冒烟产生的测试数据（冒烟* 商品/订单/加工单/员工/分类/加工项）已全部从云 dev 库清理；SMS 限流键已清除；本地服务已停。**发现并复现问题的 DB 证据**：加工单 JG-20260914-9984（completed 全流程落库实证，清理前截图留证）。
+
+---
+
+# 附录 A：深度层（父会话追加，2026-09-14 晚）
+
+## A1 按钮粗扫（②）：18/18 页全绿
+
+对 18 个 dashboard 页逐一枚举可见可交互控件（button/a/form 控件，每页 ≤30）逐个点击，断言「无 console/page error + 页面不崩 + 弹窗可关/导航可回退」。**结果 18/18 全绿**（完整日志 `depth-out/sweep-run.log`）：商品列表/新建/加工项/分类/订单列表/新建订单/售后/客户/财务/员工/岗位/设置/通知/看板/简报/在线接待/会话/对话 全部控件点击无坏死。
+
+## A2 单据状态机显式全边表（③）：19/19 ✅
+
+| # | 检查项 | 结果 | 证据 |
+|---|--------|------|------|
+| 1 | 订单: 创建 pending | ✅ | API 建单 |
+| 2 | 订单: pending→completed 非法直跳被拒（#3583 闸门） | ✅ | 400 validation |
+| 3 | 订单: pending→confirmed（确认收款） | ✅ | 200 + 收款流水落库 |
+| 4 | 订单: confirmed 重复收款被拒 | ✅ | 400 validation（仅 pending 可收） |
+| 5 | 加工单: confirmed→generated（生成） | ✅ | GenerateResult.success |
+| 6 | 加工单: generated→completed 非法迁移被拒（PG-006 教训） | ✅ | 400「加工单状态不允许从 [已生成] 变更为 [加工完成]」 |
+| 7 | 加工单: generated→in_processing 非法迁移被拒 | ✅ | 400 |
+| 8 | 加工单: generated→issued（发加工） | ✅ | status=issued |
+| 9 | 加工单: issued→in_processing（开始加工） | ✅ | status=in_processing |
+| 10 | 加工单: in_processing→completed（加工完成） | ✅ | status=completed（DB 实证） |
+| 11 | 加工单: completed→cancel 非法迁移被拒 | ✅ | 400（终态） |
+| 12 | 加工单: 空 orderIds 生成被拒 | ✅ | 400 |
+| 13 | 售后: 创建 pending 工单 | ✅ | |
+| 14 | 售后: pending→processing | ✅ | |
+| 15 | 售后: processing→closed（原因必填落库） | ✅ | DB 回读 closeReason 与 UI 一致 |
+| 16 | 售后: closed→processing 非法迁移被拒 | ✅ | 400（终态） |
+| 17 | 售后: pending→closed 直接关闭允许（#3541 裁定） | ✅ | |
+| 18 | 联动4: 商品下架→上架（on_sale↔off_sale） | ✅ | DB 回读 status=on_sale |
+| 19 | 联动3: 员工改手机号/岗位（HR-008） | ✅ | DB 回读 phone/position 落库 |
+
+## A3 跨单据联动场景（④）：8/8 ✅（UI + DB 双断言）
+
+场景 1（建品→下单→收款→加工单→完成，**带颜色**，DB 回读实证）：
+
+| 断言 | 结果 | 证据（DB） |
+|------|------|-----------|
+| 建单（商品+SKU门幅2.8米+加工项锁边） | ✅ | order 创建 |
+| 确认收款（pending→confirmed） | ✅ | finance_transactions income ¥31.30 |
+| **SKU 库存扣减 100→98** | ✅ | product_skus.stock |
+| **SKU 销量 +2** | ✅ | product_skus.sales_count |
+| 商品级销量 +2（stock 以 SKU 级为准） | ✅ | products.sales_count |
+| 加工单生成 + 全流程 completed | ✅ | processing_orders.status=completed |
+| 订单状态推进 producing | ✅ | orders.status=producing |
+
+场景 2（售后 closed 原因落库）：**closeReason = UI 填写值（逐字一致）+ closedAt 非空** ✅
+场景 3（员工改手机号/岗位）：**users.phone / users.position 更新值落库** ✅
+场景 4（商品上下架）：**products.status 回读 on_sale** ✅
+场景 5（客户 wechatNickname）：见旅程 20/21（列表/详情无空名、无报错；改名链路 UI 走查通过）——命名一致性为后端契约项 B2 关联观察。
+
+> 注：不追求的深度（表单校验分支/异常流/权限矩阵）如实标注不在本次冒烟范围；本深度层聚焦「状态机全边合法遍历 + 非法迁移拒绝 + 跨单据数据联动落库」。
+
+## A4 阶段 2（C 端小程序）最终结果
+
+**形态说明**：DevTools 调试端口驱动真实小程序为最终目标，但自动化 WS 端口（设置→安全设置→服务端口）本次无法开启（21161 为 IDE server 端口而非自动化端口；CLI/AppleScript 均无法代开）→ 按父会话裁定走 **H5 兜底 + 直连云**，全部形态如实标注。DevTools/真机可用的前置（DevTools 已登录、真实 AppID、weapp 已构建、真机预览二维码已生成）均已就绪，端口一开即可跑。
+
+### C 端旅程结果（10 条）
+
+| # | 旅程 | 结果 | 形态 |
+|---|------|------|------|
+| C1 | 首页（对话 tab 欢迎语/快捷入口/新品推荐/输入框） | ✅ | UI-only（本地 stub，与 CI xiaobu-h5-visual 同法） |
+| C2 | 消息发送上屏 | ✅ | UI-only（stub；真实回复流由 C6-C10 端到端覆盖） |
+| C3 | 我的页渲染 | ✅ | UI-only（stub） |
+| C4 | 登录页 | ⚠️ 无法验证 | H5 形态无登录页（登录=微信链路专属）；真实链路需 DevTools/真机，自动化端口未开 → 记录「无法验证+原因」，不伪造 |
+| C5 | 卡片容器/聊天骨架 | ✅ | UI-only（stub） |
+| C6 | **窗帘计算器 + 报价单**（3m×2.7m 客厅窗帘） | ✅ **端到端** | **云 ai-agent 真实 LLM + SSE**：金额/方案真实渲染（2倍褶皱 6m 布，合计 ¥250.8；经济 ¥166.8/推荐 ¥250.8/精致 ¥340.8 三方案 + 可调整项），数据以云为准 |
+| C7 | 商品卡片（搜索/推荐） | ✅ 端到端 | 云真实 LLM：2699系列雪尼尔窗帘面料 ¥23.80 去下单卡片渲染 |
+| C8 | 下单两步流（商品+加工项→确认） | ✅ 端到端 | 云真实 LLM：下单意图→确认卡片链路（结果见截图） |
+| C9 | 我的订单（查询） | ✅ 端到端 | 云真实 LLM + 云数据 |
+| C10 | 转人工客服（human_handoff 出口） | ✅ 端到端 | 云真实 LLM：转人工出口渲染 |
+| C11 | 我的页（订单/售后/设置入口） | ✅ 端到端 | 云真实数据 |
+
+> **身份口径（如实标注）**：C6-C11 端到端以**云商家 JWT**（13800138000/万能码，云 SMS 登录）驱动——C 端微信顾客身份（debug_customer_1 等）需微信 code2session（DevTools/真机），本次自动化端口未开故不可达；UI 为真实 C 端小程序 H5 产物，卡片/交互链路与顾客侧同构。记忆推荐（跨会话）痕迹在云会话上下文内已自然体现（C6 报价后 C8 下单引用同款式），未做独立断言语义断言——如实标注范围。
+> **凭据红线**：本机已配置真实微信凭据（AppID/Secret 不打印、不提交、不写入本报告）；云 token 仅本地冒烟使用未外泄。
+
+**C 端旅程清单（DevTools/真机形态，供端口开启后复用）**：① 首页 ② 商品搜索/列表 ③ 窗帘计算器 ④ 报价单 ⑤ 下单两步流 ⑥ 我的订单 ⑦ 售后 ⑧ 转人工 ⑨ 我的（记忆推荐）⑩ 个人设置。
+
+证据：`c-end/*.png`（9 张端到端截图）+ `c-end/cloud-direct-results.json` + 报价文本证据 `c-end/quote-evidence.png`。

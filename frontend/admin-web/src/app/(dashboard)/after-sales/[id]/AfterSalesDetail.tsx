@@ -29,10 +29,25 @@ import {
 import dayjs from 'dayjs'
 import { cn } from '@/lib/utils'
 
+// 工单来源中文标签（issue #3686）：后端 source 表示工单**真实来源**
+// customer=顾客发起 / agent=AI 建单 / merchant=人工建单。
+// 取值集合与 AfterSalesTicketService 的 SOURCE_* 常量一一对应；
+// 新增取值时必须同步此处，否则详情页会静默显示 '-'。
+const TICKET_SOURCE_LABELS: Record<string, string> = {
+  customer: '客户提交',
+  agent: '客服创建',
+  merchant: '商家创建',
+}
+
 // 状态操作配置：根据当前状态决定可用操作
+// 注意：这里必须与后端 AfterSalesTicketService.STATUS_TRANSITIONS 保持一致，
+// 否则会出现「后端允许但界面走不到」的断链（issue #3541/#3576：pending → closed 已由
+// 后端放开，前端却只在 processing 提供「关闭工单」）。
 const statusActions: Record<AfterSalesStatus, { label: string; targetStatus: AfterSalesStatus; variant?: 'danger' | 'secondary' }[]> = {
   pending: [
     { label: '接受处理', targetStatus: 'processing' },
+    // 误建/线下已处理的工单允许直接关闭（#3541 裁定）；形态与 processing 的关闭项一致（同 label / 同 variant + 同确认弹窗收集 remark 作为关闭原因）
+    { label: '关闭工单', targetStatus: 'closed', variant: 'secondary' },
     { label: '拒绝', targetStatus: 'rejected', variant: 'danger' },
   ],
   processing: [
@@ -384,7 +399,7 @@ export default function AfterSalesDetailPage() {
                 <div className="flex justify-between text-sm">
                   <span className="text-neutral-500">来源</span>
                   <span className="text-neutral-700">
-                    {ticket.source === 'customer' ? '客户提交' : ticket.source === 'agent' ? '客服创建' : '-'}
+                    {TICKET_SOURCE_LABELS[ticket.source ?? ''] ?? '-'}
                   </span>
                 </div>
                 {ticket.handlerName && (

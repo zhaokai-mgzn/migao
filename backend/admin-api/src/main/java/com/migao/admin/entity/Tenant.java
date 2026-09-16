@@ -44,6 +44,12 @@ public class Tenant {
     /** 通知邮箱 */
     private String notificationEmail;
 
+    /** 智能每日经营简报开关（默认 false，关闭=不生成+菜单隐藏+LLM 熔断，issue #3468） */
+    private Boolean briefingEnabled;
+
+    /** 简报每日生成时刻 HH:mm（默认 06:00，租户可自定义） */
+    private String briefingGenerateTime;
+
     @TableField(typeHandler = com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler.class)
     private Object authConfig;
 

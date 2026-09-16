@@ -182,6 +182,7 @@ vi.mock('lucide-react', () => ({
   Monitor: iconStub('monitor'),
   FolderTree: iconStub('folder-tree'),
   Zap: iconStub('zap'),
+  Printer: iconStub('printer'),
   Calculator: iconStub('calculator'),
   AlertTriangle: iconStub('alert-triangle'),
   ArrowRight: iconStub('arrow-right'),
@@ -250,4 +251,8 @@ vi.mock('lucide-react', () => ({
   // UI-021/UI-022/UI-023: 浮窗缩放把手新增图标
   Expand: iconStub('expand'),
   MoveDiagonal: iconStub('move-diagonal'),
+  // issue #3468: 智能每日经营简报新增图标
+  Newspaper: iconStub('newspaper'),
+  Lightbulb: iconStub('lightbulb'),
+  ListTodo: iconStub('list-todo'),
 }))

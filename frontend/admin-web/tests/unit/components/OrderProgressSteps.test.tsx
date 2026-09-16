@@ -45,6 +45,28 @@ describe('OrderProgressSteps', () => {
     })
   })
 
+  describe('producing（生产中）status（issue #3916）', () => {
+    it('shows step 2 label 生产中 when producing is true', () => {
+      render(<OrderProgressSteps status="pending_shipment" producing />)
+      expect(screen.getByText('生产中')).toBeInTheDocument()
+      expect(screen.queryByText('待发货')).not.toBeInTheDocument()
+    })
+
+    it('shows step 1 completed with check, step 2 current when producing', () => {
+      render(<OrderProgressSteps status="pending_shipment" producing />)
+      const checks = screen.getAllByTestId('icon-check')
+      expect(checks.length).toBe(1)
+      // Step 2 num should still be visible (current)
+      expect(screen.getByText('2')).toBeInTheDocument()
+    })
+
+    it('shows step 2 label 待发货 when producing is not set', () => {
+      render(<OrderProgressSteps status="pending_shipment" />)
+      expect(screen.getByText('待发货')).toBeInTheDocument()
+      expect(screen.queryByText('生产中')).not.toBeInTheDocument()
+    })
+  })
+
   describe('shipped status', () => {
     it('shows steps 1-2 completed, step 3 current', () => {
       render(<OrderProgressSteps status="shipped" />)
@@ -101,6 +123,21 @@ describe('OrderProgressSteps', () => {
         />
       )
       // Both step 1 (completed) and step 2 (current) use paidAt, so time appears twice
+      const expected = fmt(paidAt)
+      const times = screen.getAllByText(expected)
+      expect(times.length).toBe(2)
+    })
+
+    it('keeps paidAt time on step 1 and step 2 when producing（与现状一致）', () => {
+      const paidAt = '2025-06-15T08:30:00Z'
+      render(
+        <OrderProgressSteps
+          status="pending_shipment"
+          producing
+          paidAt={paidAt}
+        />
+      )
+      // producing 只改步骤 2 标签，时间仍与 pending_shipment 一致（step1/step2 均显示 paidAt）
       const expected = fmt(paidAt)
       const times = screen.getAllByText(expected)
       expect(times.length).toBe(2)

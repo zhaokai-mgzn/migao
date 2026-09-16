@@ -7,7 +7,7 @@ import { toast } from 'sonner'
 import { Button, Select } from '@/components/ui'
 import type { ProductColor, ProductSku, SellingMethod } from '@/types'
 import { SellingMethodLabels } from '@/types'
-import { rebuildSkus, nextTempId } from '@/lib/sku-utils'
+import { rebuildSkus, nextTempId, DOOR_WIDTH_OPTIONS, doorWidthSelectOptions, normalizeDoorWidth, formatDoorWidth, sameDoorWidth } from '@/lib/sku-utils'
 
 interface SkuMatrixProps {
   value: {
@@ -35,7 +35,8 @@ const SELLING_METHOD_OPTIONS: { value: SellingMethod; label: string }[] = [
   { value: 'full_roll', label: '整卷' },
 ]
 
-const DOOR_WIDTH_OPTIONS = ['2.8米', '3.2米', '3.4米']
+// 门幅选项（值 canonical 裸数值 / 显示带单位）见 @/lib/sku-utils 的 DOOR_WIDTH_OPTIONS
+// （issue #3621：值/显示分离，避免选项值 '2.8米' 与库内 '2.8' 口径不一致）
 
 const COLOR_NAME_MAX = 30
 const MAX_COLORS = 200
@@ -242,12 +243,14 @@ export default function SkuMatrix({ value, onChange, errors }: SkuMatrixProps) {
       })
       return
     }
-    if (doorWidths.some((w, i) => i !== idx && w === v)) {
+    // issue #3621：同一物理门幅只允许一个组合 —— 已存在 '2.8' 时不得再加 '2.8米'
+    if (doorWidths.some((w, i) => i !== idx && sameDoorWidth(w, v))) {
       toast.warning('当前规格尺寸已经添加过了哦')
       return
     }
     const next = [...doorWidths]
-    next[idx] = v
+    // 写入侧口径统一：落表单的是 canonical 裸数值（与库内 product_skus.door_width 一致）
+    next[idx] = normalizeDoorWidth(v) || v
     onChange({
       ...value,
       doorWidths: next,
@@ -274,7 +277,14 @@ export default function SkuMatrix({ value, onChange, errors }: SkuMatrixProps) {
     [doorWidths]
   )
 
-  // 与表格渲染共用同一匹配逻辑（优先 colorId，兜底 colorName）
+  // 规格尺寸下拉选项：值 canonical（与库内一致）+ 显示带单位；同一物理门幅只一个 entry
+  // （含历史写法 '2.8米'/'门幅2.8米' 的回显兜底，issue #3621）
+  const widthSelectOptions = useMemo(
+    () => doorWidthSelectOptions(doorWidths),
+    [doorWidths]
+  )
+
+  // 与表格渲染共用同一匹配逻辑（优先 colorId，兜底 colorName + 门幅双侧归一化）
   const findSku = (
     color: ProductColor,
     method: SellingMethod,
@@ -286,7 +296,7 @@ export default function SkuMatrix({ value, onChange, errors }: SkuMatrixProps) {
       return (
         (idMatch || (s.colorId == null && nameMatch)) &&
         s.sellingMethod === method &&
-        s.doorWidth === width
+        sameDoorWidth(s.doorWidth, width)
       )
     })
 
@@ -320,7 +330,7 @@ export default function SkuMatrix({ value, onChange, errors }: SkuMatrixProps) {
       const nameMatch = s.colorName === colorName
       if ((idMatch || (s.colorId == null && nameMatch)) &&
         s.sellingMethod === method &&
-        s.doorWidth === width) {
+        sameDoorWidth(s.doorWidth, width)) {
         return { ...s, [field]: val }
       }
       return s
@@ -349,7 +359,7 @@ export default function SkuMatrix({ value, onChange, errors }: SkuMatrixProps) {
       if (batchScope === 'all') return true
       if (batchScope === 'color') return String(s.colorId) === batchTarget
       if (batchScope === 'method') return s.sellingMethod === batchTarget
-      if (batchScope === 'width') return s.doorWidth === batchTarget
+      if (batchScope === 'width') return sameDoorWidth(s.doorWidth, batchTarget)
       return false
     }
     if (batchScope !== 'all' && !batchTarget) {
@@ -382,7 +392,10 @@ export default function SkuMatrix({ value, onChange, errors }: SkuMatrixProps) {
         label: SellingMethodLabels[m],
       }))
     if (batchScope === 'width')
-      return validDoorWidths.map((w) => ({ value: w, label: w }))
+      return validDoorWidths.map((w) => ({
+        value: normalizeDoorWidth(w) || w,
+        label: formatDoorWidth(w),
+      }))
     return []
   }, [batchScope, colors, validSellingMethods, validDoorWidths])
 
@@ -556,11 +569,14 @@ export default function SkuMatrix({ value, onChange, errors }: SkuMatrixProps) {
           <div key={`dw-${idx}`} className="flex items-center gap-2">
             <div className="w-44">
               <Select
+                aria-label="规格尺寸"
                 options={[
                   { value: '', label: '请选择' },
-                  ...DOOR_WIDTH_OPTIONS.map((o) => ({ value: o, label: o })),
+                  ...widthSelectOptions,
                 ]}
-                value={w || ''}
+                // 值 = canonical 裸数值（与库内一致）；显示文案由 label 带单位 →
+                // 同一 Select 不会出现「2.8」与「2.8米」两种写法（issue #3621）
+                value={normalizeDoorWidth(w)}
                 onChange={(e) => handleChangeDoorWidth(idx, e.target.value)}
               />
             </div>
@@ -752,7 +768,7 @@ export default function SkuMatrix({ value, onChange, errors }: SkuMatrixProps) {
                             </td>
                           )}
                           <td className="px-3 py-2 border-r border-neutral-100 text-neutral-700">
-                            {width}
+                            {formatDoorWidth(width)}
                           </td>
                           <td className="px-3 py-2 border-r border-neutral-100">
                             <input

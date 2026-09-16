@@ -389,7 +389,9 @@ export const useChatStore = create<ChatState>()((set, get) => ({
   sendMessage: async (content: string, images?: string[]) => {
     const { currentSessionId, isStreaming, sessions } = get()
     // 只挡当前会话正在回复；其他会话的并发流不受影响（issue #2906）
-    if (!currentSessionId || isStreaming || !content.trim()) return
+    // 纯图片消息（无文字）可发送：MessageInput 对纯图发送传 content=' ' 占位
+    // （对照 C 端 chatStore：`!hasText && !hasImages` 才早退，issue #3908）
+    if (!currentSessionId || isStreaming || (!content.trim() && (!images || images.length === 0))) return
 
     // 拒绝向已关闭会话发送消息
     const currentSession = sessions.find(s => s.session_id === currentSessionId)

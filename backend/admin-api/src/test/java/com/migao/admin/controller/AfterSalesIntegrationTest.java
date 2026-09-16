@@ -1,3 +1,4 @@
+// case_ids: AS-001, AS-002, AS-004
 package com.migao.admin.controller;
 
 import com.migao.admin.config.GlobalExceptionHandler;
@@ -104,7 +105,7 @@ class AfterSalesIntegrationTest {
         AfterSalesDetailResponse response = buildTicketDetail("ticket-001", "AS20250425001", "pending");
         response.setRefundAmount(new BigDecimal("1500.00"));
 
-        when(afterSalesTicketService.createTicket(any(AfterSalesCreateRequest.class), eq(1L), anyString()))
+        when(afterSalesTicketService.createTicket(any(AfterSalesCreateRequest.class), eq(1L), anyString(), anyString()))
                 .thenReturn(response);
 
         // When & Then
@@ -119,7 +120,7 @@ class AfterSalesIntegrationTest {
                 .andExpect(jsonPath("$.data.ticketType").value("return"))
                 .andExpect(jsonPath("$.data.customerName").value("张三"));
 
-        verify(afterSalesTicketService).createTicket(any(AfterSalesCreateRequest.class), eq(1L), anyString());
+        verify(afterSalesTicketService).createTicket(any(AfterSalesCreateRequest.class), eq(1L), anyString(), anyString());
     }
 
     // ======================== 查询工单列表 ========================

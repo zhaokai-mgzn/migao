@@ -117,6 +117,20 @@ class ProductDetailTool(BaseTool):
                     error="商品不存在",
                     message="抱歉，未找到该商品",
                 )
+
+            # C 端（顾客）只能查看已上架商品（issue #3932）：下架/未上架商品一律按
+            # 「不存在」处理（与 NOT_FOUND/空 data 同款措辞），不输出商品名、不透露
+            # 下架商品的存在。B 端商户保持现状（能看到自己店铺全状态商品）。
+            if context.role == "customer" and data.get("status") != "on_sale":
+                logger.info(
+                    f"[product-detail] Customer blocked non-on_sale product: "
+                    f"id={product_id} status={data.get('status')} tenant={context.tenant_id}"
+                )
+                return ToolResult(
+                    success=False,
+                    error="商品不存在",
+                    message="抱歉，未找到该商品",
+                )
             
             # 格式化商品详情
             product = self._format_product(data)

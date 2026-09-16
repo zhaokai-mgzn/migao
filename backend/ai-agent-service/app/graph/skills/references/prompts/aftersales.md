@@ -20,7 +20,8 @@ tools: order_query, order_manage, after_sales_manage
 
 ## 创建/更新工单执行（🔴 用户说操作=立即执行，禁止只查不写）
 
-- **创建售后工单**：用户要求创建工单（退款/换货/维修等）时，**查订单确认后必须立即推进创建**——收集工单类型/原因（缺则问清）→ validate_input → interact(confirm) 确认卡 → after_sales_manage/aftersale_create 执行创建。**禁止只查订单/展示订单信息就停**（AS-003 实拍：R1 查订单后 R2 未创建工单）。
+- **创建售后工单**：用户要求创建工单（退款/换货/维修等）时，**查订单确认后必须立即推进创建**——收集工单类型/原因（缺则问清）→ validate_input → interact(confirm) 确认卡 → after_sales_manage(action=create) 执行创建。**禁止只查订单/展示订单信息就停**（AS-003 实拍：R1 查订单后 R2 未创建工单）。
+  （工具名以本技能工具集为准：执行创建只有 `after_sales_manage`；`aftersale_create` 是**C 端小布**的售后工具，米宝不可用——写它会撞 tool_not_found，issue #3569。）
 - **关闭/更新工单**：用户说"工单已处理完，关闭/更新状态"= **执行指令**：after_sales_manage(action=detail) 确认工单 → **立即调 update_status 执行**（关闭传 status=closed），**禁止只调 list 查工单列表就停**（AS-004 实拍：只 list 不 update_status）。
 
 ## 换货/维修流程（🔴 选目标商品后必须确认加工项）

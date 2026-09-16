@@ -1,0 +1,33 @@
+[
+  {
+    "journey": "C8-cloud-order-flow",
+    "pass": true,
+    "errors": [],
+    "notes": [
+      "端到端（云 LLM）：下单意图已发，等待订单确认卡片；结果见截图与文本"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "C9-cloud-my-orders",
+    "pass": false,
+    "errors": [
+      "SSE 错误: {message: 网络请求失败}"
+    ],
+    "notes": [
+      "端到端（云 LLM）：订单查询；结果见截图"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "C10-cloud-human-handoff",
+    "pass": false,
+    "errors": [
+      "SSE 错误: {message: 网络请求失败}"
+    ],
+    "notes": [
+      "端到端（云 LLM）：转人工意图；结果见截图"
+    ],
+    "evidence": []
+  }
+]

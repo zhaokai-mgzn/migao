@@ -41,7 +41,7 @@ class OrderQueryTool(BaseTool):
     
     name = "order_query"
     description = (
-        "【触发】查具体订单：用户说'查订单''我的订单''ORD-单号''待发货''某客户订单'时调用。【前置】action: list(翻页)/statistics(汇总)/follow_status_stats(跟进统计)。【参数】list 支持 keyword(关键词)/order_id(订单号)/receiver(收货人姓名或手机号)/status/start_date/end_date。【何时不用】经营看板的趋势/分布/概览用 dashboard_stats。查物流用 logistics_track。修改用 order_manage。【标注】READONLY — 查具体订单，经营分析用 dashboard_stats"
+        "【触发】查具体订单：用户说'查订单''我的订单''ORD-单号''待发货''某客户订单'时调用。【前置】action: list(翻页)/statistics(汇总)/follow_status_stats(跟进统计)。【参数】list 支持 keyword(关键词)/order_id(订单号)/receiver(收货人姓名或手机号)/status/start_date/end_date。【何时不用】经营看板的趋势/分布/概览用 dashboard_stats。查物流用 logistics_track。修改用 order_manage。【链条】若顾客要的是**物流轨迹**，本工具只是第 1 步：拿到结果里的**真实 order_no** 后**必须继续**调用 logistics_track(order_id=该 order_no) 查轨迹再回复——订单号是入参不是交付物，查到订单号就停下汇报订单信息＝没做完。【标注】READONLY — 查具体订单，经营分析用 dashboard_stats"
     )
     # 含 operator：admin-api 员工角色（RoleService operator 有 order:list/detail 权限码，
     # 角色码漂移修复 POC-2761 D 项）。customer 保留（C 端本人订单查询）。
@@ -410,7 +410,9 @@ class OrderQueryTool(BaseTool):
                 # amount 兜底计算
                 if amount is None and unit_price is not None and quantity is not None:
                     try:
-                        amount = float(unit_price) * int(quantity)
+                        # issue #3666：quantity 可为小数（per_meter 米数 / per_area 面积），
+                        # int() 会把 8.4 截断成 8 → 展示金额与落库金额不一致
+                        amount = float(unit_price) * float(quantity)
                     except (ValueError, TypeError):
                         amount = 0
 

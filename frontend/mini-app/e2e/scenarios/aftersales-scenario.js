@@ -75,8 +75,9 @@ async function run(mp) {
     rep.step('售后咨询快捷卡片', false, '快捷操作未出现')
   }
 
-  await capture(mp, SCENARIO, '02-final.png')
-  shot('02-final.png')
+  // 终态补拍（#3761）：实测本轮 `02-final.png` 与 `01-aftersales-reply.png` **逐字节相同**
+  // （同场景内两次抓取之间无任何交互）⇒ 绿路径下重拍是纯浪费；失败时自动补抓（证据不减）。
+  await rep.captureFinal(mp, SCENARIO, '02-final.png')
   return rep.result()
 }
 

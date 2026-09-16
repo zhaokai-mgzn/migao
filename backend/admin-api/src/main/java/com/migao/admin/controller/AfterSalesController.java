@@ -65,13 +65,18 @@ public class AfterSalesController {
      * 创建售后工单
      *
      * POST /api/admin/after-sales
+     *
+     * issue #3686：该 URL 的唯一调用方是 admin-web 工单页（frontend/admin-web/src/lib/api.ts ←
+     * after-sales/page.tsx），即后台**人工建单** ⇒ 真实来源 {@code merchant}
+     * （原实现恒写 "agent"，把人工建单与顾客工单都标成 Agent）。
      */
     @PostMapping
     public ApiResponse<AfterSalesDetailResponse> createTicket(@Valid @RequestBody AfterSalesCreateRequest request) {
         log.info("创建售后工单: orderId={}, ticketType={}", request.getOrderId(), request.getTicketType());
         Long tenantId = TenantContext.getTenantId();
         String operator = getCurrentOperator();
-        AfterSalesDetailResponse ticket = afterSalesTicketService.createTicket(request, tenantId, operator);
+        AfterSalesDetailResponse ticket = afterSalesTicketService.createTicket(
+                request, tenantId, operator, AfterSalesTicketService.SOURCE_MERCHANT);
         return ApiResponse.success(ticket);
     }
 

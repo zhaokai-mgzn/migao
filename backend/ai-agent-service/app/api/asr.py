@@ -9,20 +9,19 @@ POST /api/chat/transcribe
 
 from __future__ import annotations
 
-import logging
 import subprocess
 import tempfile
+import time
 from pathlib import Path
 from typing import Optional
 
 from dashscope.audio.asr.recognition import Recognition, RecognitionCallback
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from loguru import logger
 from pydantic import BaseModel, Field
 
 from app.utils.auth import get_current_user, UserIdentity
 from app.config import settings
-
-logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["ASR"])
 
@@ -49,24 +48,28 @@ class TranscribeResponse(BaseModel):
 
 
 class _CollectorCallback(RecognitionCallback):
-    """收集 ASR 识别结果"""
+    """收集 ASR 识别结果（按 sentence_id 保留每句最新文本，拼接完整转写）
+
+    缺陷修复（B 端语音「只能识别后半段」）：旧实现只取 sentences[-1]（最后一句），
+    DashScope paraformer-realtime 对带停顿的多句语音会逐句返回，
+    用户说的前半句（如"你好"）被整段丢弃。现按 sentence_id 保留每句最新
+    文本（partial 中间结果被同句后续事件自然覆盖），full_text 拼接全部句子。
+    """
 
     def __init__(self):
-        self.sentences: list[str] = []
+        self._by_sentence: dict[int, str] = {}
 
     def on_event(self, result) -> None:
         sentence = result.get_sentence()
         if sentence and sentence.get("text"):
             text = sentence["text"].strip()
             if text:
-                self.sentences.append(text)
+                self._by_sentence[sentence.get("sentence_id", 0)] = text
 
     @property
     def full_text(self) -> str:
-        """已稳定的完整文本（取最后一个句子作为最终结果）"""
-        if not self.sentences:
-            return ""
-        return self.sentences[-1]
+        """完整文本 = 拼接所有句子的最新结果（dict 保持句子首见顺序）"""
+        return "".join(self._by_sentence.values())
 
 
 def _convert_to_wav(audio_data: bytes, source_format: str) -> bytes:
@@ -237,13 +240,10 @@ async def transcribe_audio(
     # 语言提示
     language_hints = [language] if language else [settings.ASR_LANGUAGE_HINTS]
 
-    logger.info(
-        f"ASR transcribe: tenant={current_user.tenant_id}, "
-        f"format={audio_format}, size={len(audio_data)} bytes, "
-        f"language={language_hints[0]}"
-    )
-
-    # 调用 ASR（#2984：识别失败/服务不可用 → 友好 4xx/5xx，不向客户端泄漏裸 500）
+    # 调用 ASR（#2984/#3944：识别失败/服务不可用 → 友好 4xx/5xx，不向客户端泄漏裸 500；
+    # 兜底捕获全部 Exception——dashscope 的 InputRequired/InvalidParameter/NetworkError 等
+    # 非 RuntimeError 异常此前直接裸 500）
+    start_ts = time.monotonic()
     try:
         text = await _transcribe_audio(
             audio_data,
@@ -251,8 +251,8 @@ async def transcribe_audio(
             sample_rate=sample_rate,
             language_hints=language_hints,
         )
-    except RuntimeError as e:
-        logger.error(f"ASR failed for tenant {current_user.tenant_id}: {e}")
+    except Exception as e:
+        logger.error(f"ASR failed for tenant {current_user.tenant_id}: {type(e).__name__}: {e}")
         message = str(e)
         if "未识别到语音内容" in message:
             # 静音/无有效语音 → 用户可理解的重试提示（400）
@@ -261,6 +261,13 @@ async def transcribe_audio(
             raise HTTPException(status_code=503, detail="语音识别服务未配置，请联系管理员") from e
         # 上游（DashScope/网络）异常 → 503 表示服务暂时不可用
         raise HTTPException(status_code=503, detail="语音识别服务暂时不可用，请稍后重试") from e
+
+    logger.info(
+        f"ASR transcribe: tenant={current_user.tenant_id}, "
+        f"format={audio_format}, size={len(audio_data)} bytes, "
+        f"language={language_hints[0]}, text_len={len(text)}, "
+        f"elapsed_ms={(time.monotonic() - start_ts) * 1000:.1f}"
+    )
 
     # 估算音频时长（WAV: 字节 / (采样率 * 2字节/采样 * 1声道)）
     duration_ms = len(audio_data) / (sample_rate * 2) * 1000

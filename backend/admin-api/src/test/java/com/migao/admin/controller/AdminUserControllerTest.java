@@ -1,8 +1,9 @@
-// case_ids: HR-001, HR-002, HR-003
+// case_ids: HR-001, HR-002, HR-003, HR-004
 package com.migao.admin.controller;
 
 import com.migao.admin.config.TenantContext;
 import com.migao.admin.config.GlobalExceptionHandler;
+import com.migao.admin.entity.Role;
 import com.migao.admin.security.SecurityUser;
 import com.migao.admin.service.RoleService;
 import com.migao.admin.service.UserService;
@@ -28,6 +29,8 @@ import java.util.List;
 import java.util.Map;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -124,6 +127,130 @@ class AdminUserControllerTest {
                     .andExpect(status().isOk());
 
             verify(userService, times(1)).createUser(any(), any(), any(), any(), any(), any(), any());
+        }
+
+        // issue #3605：#3561 只补了 update 侧；本条锁 create 侧（同族漏网面复核结论：create 侧本就读取），
+        // 并把「phone/password/name/roleIds 逐键真的进 Service + roleIds 写 user_roles」变成不变式。
+        @Test
+        @DisplayName("建员工整条 payload（phone/password/name/roleIds）逐键落库")
+        void createUser_bindsEveryKeySentByAgentTool() throws Exception {
+            setAdminUser();
+            Role role = new Role();
+            role.setId("role-manager");
+            role.setCode("manager");
+            when(roleService.getRoleById("role-manager")).thenReturn(role);
+            com.migao.admin.entity.User user = new com.migao.admin.entity.User();
+            user.setId("user-new");
+            when(userService.createUser(any(), any(), any(), any(), any(), any(), any()))
+                    .thenReturn(user);
+
+            // 与 ai-agent `app/tools/employee_manage.py::_create_user` 下发的 payload 逐字一致
+            mockMvc.perform(post("/api/admin/users")
+                            .contentType("application/json")
+                            .content("{\"phone\":\"13900000002\",\"password\":\"init-pass-123\","
+                                    + "\"name\":\"张三\",\"roleIds\":[\"role-manager\"]}"))
+                    .andExpect(status().isOk());
+
+            // 岗位=角色体系（#2969）：roleIds 解析出 role code 后，position 兜底同值
+            verify(userService).createUser(eq("13900000002"), eq("init-pass-123"), eq("张三"),
+                    eq("manager"), eq("manager"), isNull(), eq(1L));
+            // roleIds 必须真的写 user_roles（角色表主键语义，与 update 侧一致）
+            verify(roleService).assignRoleToUser("user-new", "role-manager", 1L);
+        }
+    }
+
+    // ============ updateUser ============
+
+    /**
+     * 回归防线（issue #3550）：ai-agent 的 employee_manage 与 admin-web 员工编辑都下发
+     * `phone` / `roleIds`，但 updateUser 原先只读 name/avatar/role/position/password/permissions
+     * → 两个字段被 Jackson 静默忽略 → HTTP 200 + 「更新成功」= 假成功（库里角色/手机号未变）。
+     */
+    @Nested
+    @DisplayName("PUT /{id} (updateUser)")
+    class UpdateUser {
+
+        private com.migao.admin.entity.User existingUser() {
+            com.migao.admin.entity.User u = new com.migao.admin.entity.User();
+            u.setId("user-1");
+            u.setTenantId(1L);
+            u.setNickname("张三");
+            u.setRole("operator");
+            return u;
+        }
+
+        private Role roleWithCode(String code) {
+            Role role = new Role();
+            role.setId("role-" + code);
+            role.setCode(code);
+            return role;
+        }
+
+        @Test
+        @DisplayName("下发 phone → 手机号进入更新实参（不再被静默丢弃）")
+        void phoneIsForwardedToUpdate() throws Exception {
+            setAdminUser();
+            when(userService.updateUser(any(), any(), any(), any(), any(), any(), any()))
+                    .thenReturn(existingUser());
+
+            mockMvc.perform(put("/api/admin/users/user-1")
+                            .contentType("application/json")
+                            .content("{\"name\":\"张三\",\"phone\":\"13900000002\"}"))
+                    .andExpect(status().isOk());
+
+            verify(userService).updateUser(eq("user-1"), eq("张三"), nullable(String.class), nullable(String.class),
+                    nullable(String.class), nullable(String.class), eq("13900000002"));
+        }
+
+        @Test
+        @DisplayName("下发 roleIds（角色表主键）→ 解析为角色 code 并进入更新实参")
+        void roleIdsIsResolvedToRoleCode() throws Exception {
+            setAdminUser();
+            when(roleService.getRoleById("role-manager")).thenReturn(roleWithCode("manager"));
+            when(userService.updateUser(any(), any(), any(), any(), any(), any(), any()))
+                    .thenReturn(existingUser());
+
+            mockMvc.perform(put("/api/admin/users/user-1")
+                            .contentType("application/json")
+                            .content("{\"roleIds\":[\"role-manager\"]}"))
+                    .andExpect(status().isOk());
+
+            verify(userService).updateUser(eq("user-1"), nullable(String.class), nullable(String.class), eq("manager"),
+                    nullable(String.class), nullable(String.class), nullable(String.class));
+        }
+
+        @Test
+        @DisplayName("未显式传 role/roleIds 时仍按 position 解析岗位角色（#2969 不回归）")
+        void positionFallbackStillWorksWhenNoRoleProvided() throws Exception {
+            setAdminUser();
+            when(roleService.getRoleByPosition("客服主管", 1L)).thenReturn(roleWithCode("manager"));
+            when(userService.updateUser(any(), any(), any(), any(), any(), any(), any()))
+                    .thenReturn(existingUser());
+
+            mockMvc.perform(put("/api/admin/users/user-1")
+                            .contentType("application/json")
+                            .content("{\"position\":\"客服主管\"}"))
+                    .andExpect(status().isOk());
+
+            verify(userService).updateUser(eq("user-1"), nullable(String.class), nullable(String.class), eq("manager"),
+                    eq("客服主管"), nullable(String.class), nullable(String.class));
+        }
+
+        @Test
+        @DisplayName("显式 role 优先于 roleIds（与 createUser 口径一致）")
+        void explicitRoleWinsOverRoleIds() throws Exception {
+            setAdminUser();
+            when(userService.updateUser(any(), any(), any(), any(), any(), any(), any()))
+                    .thenReturn(existingUser());
+
+            mockMvc.perform(put("/api/admin/users/user-1")
+                            .contentType("application/json")
+                            .content("{\"role\":\"admin\",\"roleIds\":[\"role-manager\"]}"))
+                    .andExpect(status().isOk());
+
+            verify(userService).updateUser(eq("user-1"), nullable(String.class), nullable(String.class), eq("admin"),
+                    nullable(String.class), nullable(String.class), nullable(String.class));
+            verify(roleService, never()).getRoleById(any());
         }
     }
 

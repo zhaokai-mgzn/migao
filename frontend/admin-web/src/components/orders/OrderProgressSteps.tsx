@@ -7,6 +7,8 @@ import { cn } from '@/lib/utils'
 
 interface OrderProgressStepsProps {
   status: OrderStatus
+  /** issue #3916：producing（生产中）订单的步骤 2 标签显示「生产中」而非「待发货」 */
+  producing?: boolean
   paidAt?: string
   shippedAt?: string
   receivedAt?: string
@@ -50,6 +52,7 @@ function fmt(time?: string): string | undefined {
 
 export default function OrderProgressSteps({
   status,
+  producing = false,
   paidAt,
   shippedAt,
   receivedAt,
@@ -58,7 +61,9 @@ export default function OrderProgressSteps({
 
   const steps: StepDef[] = [
     { index: 1, label: '已付款', time: fmt(paidAt) },
-    { index: 2, label: '待发货', time: fmt(paidAt) },
+    // issue #3916：producing（生产中）是独立真实状态（confirmed→producing→shipped），
+    // 步骤 2 标签随之区分；getStepStates 不变（producing 归一后仍走 pending_shipment 档）
+    { index: 2, label: producing ? '生产中' : '待发货', time: fmt(paidAt) },
     { index: 3, label: '待收货', time: fmt(shippedAt) },
     { index: 4, label: '已完成', time: fmt(receivedAt) },
   ]
