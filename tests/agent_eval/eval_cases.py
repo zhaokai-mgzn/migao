@@ -5564,6 +5564,24 @@ _CASE_UI_043 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── UI-042 [NORMAL] C 端助手消息富文本渲染 — markdown 粗体/列表渲染为样式而非裸符号（真机实测反馈）（源: cases/ui.yml）──
+_CASE_UI_042 = EvalCase(
+    id='UI-042',
+    legacy_id='',
+    title='C 端助手消息富文本渲染 — markdown 粗体/列表渲染为样式而非裸符号（真机实测反馈）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['真机预览实测：小布回复含 **9231 遮光窗帘**、**几米** 等 markdown 加粗符与 - 列表，气泡里原样显示星号与短横线'],
+    expectations=['direct_reply'],
+    data_checks=['src/utils/richText.ts parseRichText：成对 **x** 解析为 bold 段，未闭合 ** 原样保留（流式安全），单个 * 不误吞；- 开头行解析为 bullet 行', 'MessageBubble 气泡文本区按行渲染：bullet 行带圆点缩进，bold 段走加粗样式类，空行保留段落间距'],
+    skip_reason='纯前端渲染由工具单测验证（frontend/mini-app/tests/rich-text.test.ts），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ui', 'chat', 'rich-text'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── UT-001 [NORMAL] 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值（源: cases/utils.yml）──
 _CASE_UT_001 = EvalCase(
     id='UT-001',
@@ -5895,6 +5913,7 @@ ALL_CASES = (
     _CASE_UI_040,
     _CASE_UI_041,
     _CASE_UI_043,
+    _CASE_UI_042,
     _CASE_UT_001,
     _CASE_UT_002,
 )

@@ -3442,7 +3442,7 @@
 真值: token-refresh.no-loop
 溯源: 2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421） ｜ tags: token_refresh, auth, no_loop
 
-## ui（41 case）
+## ui（42 case）
 
 ### UI-001. 织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理 🔵
 ```
@@ -3985,6 +3985,17 @@
 真值: frontend-fix.no-api-change, frontend-fix.vitest
 溯源: 2026-09-15 新增：小布 ChoiceCard 点击选项直发 opt.value（裸编码 proc_item_*），用户实测看不懂；评测 harness 早已按前端协议修为发 label（issue #3365 实证「发内部 id → 模型看不懂选了什么」），但真实小程序组件漏改 → 本次对齐 ｜ tags: ui, mini-app, choice-card, protocol
 
+### UI-042. C 端助手消息富文本渲染 — markdown 粗体/列表渲染为样式而非裸符号（真机实测反馈） 🔵
+```
+你: 真机预览实测：小布回复含 **9231 遮光窗帘**、**几米** 等 markdown 加粗符与 - 列表，气泡里原样显示星号与短横线
+期望: direct_reply
+数据: src/utils/richText.ts parseRichText：成对 **x** 解析为 bold 段，未闭合 ** 原样保留（流式安全），单个 * 不误吞；- 开头行解析为 bullet 行
+数据: MessageBubble 气泡文本区按行渲染：bullet 行带圆点缩进，bold 段走加粗样式类，空行保留段落间距
+跳过: 纯前端渲染由工具单测验证（frontend/mini-app/tests/rich-text.test.ts），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: frontend-fix.no-api-change
+溯源: 2026-09-15 新增（真机 walkthrough 实测反馈）：C 端气泡无 markdown 处理，LLM 回复的 **粗体**/列表裸奔；新增轻量 richText 解析 + 气泡按行渲染 ｜ tags: ui, chat, rich-text
+
 ## utils（2 case）
 
 ### UT-001. 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值 🔵
@@ -4014,8 +4025,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：296（活跃 150，跳过 146）
-- tier 分布：smoke 9 / normal 254 / adversarial 33
+- 用例总数：297（活跃 150，跳过 147）
+- tier 分布：smoke 9 / normal 255 / adversarial 33
 - 售后域：9
 - agents：6
 - api：19
@@ -4039,7 +4050,7 @@
 - registry：1
 - 设置域：8
 - token-refresh：4
-- ui：41
+- ui：42
 - utils：2
 
 ### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）
