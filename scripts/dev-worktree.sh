@@ -12,6 +12,7 @@
 #   ./scripts/dev-worktree.sh list                  # 列出所有工作区 + 会话锁状态
 #   ./scripts/dev-worktree.sh lock                  # 查看/清理会话锁（多会话并发时先查锁）
 #   ./scripts/dev-worktree.sh rm <分支|路径> [--delete-branch]  # 移除工作区（可选连带删分支）
+#   ./scripts/dev-worktree.sh rebase <分支|路径>    # 丢弃预设快照差异 → rebase origin/main → 重新刷新预设（issue #3972）
 #   ./scripts/dev-worktree.sh preset-guard [--source both|index|worktree]  # 提交路径守卫（版本下降即非零退出）
 #   ./scripts/dev-worktree.sh prune --dry-run       # worktree 存量体检（只打印清单，不删除）
 #
@@ -25,6 +26,10 @@
 #      **合法升级放行**（改研发模式本身不能被堵死），同版本内容不同 = 分叉 → 告警；
 #   ③ 机械安全网（别处，互补）：#3843 的统一审计 `drift_audit --check` 将加
 #      「`.agent-presets/**` 版本单调性」守卫（全库/定时对账；本脚本管增量/贴合工作区）。
+#   v1.9（issue #3972）：刷新后工作区相对**本分支 HEAD** 就是「改动」，`git rebase origin/main`
+#   会被 git 拒绝（未跟踪快照挡 checkout / 已跟踪但版本旧= unstaged changes）⇒ 新增 `rebase`
+#   子命令：丢弃预设快照差异 → rebase → 重新刷新（只丢弃与 origin/main 一致的纯刷新产物，
+#   内容不一致即停手，避免丢掉别人正在改的研发模式）。
 #   也不用「让 git 忽略这些文件的改动」那类手法（索引标记 / 本地忽略）：那会把**合法的预设改动**
 #   （改研发模式本身）一起吞掉 —— 「眼不见为净」在这里等于把正事也堵死。
 #   详见 docs/wiki/DEV-FLOW.md「预设快照地雷」节（落地单 #3859，事实单 #3851）。
@@ -66,7 +71,8 @@ mkdir -p "$LOCK_DIR"
 
 usage() {
   # head 上限需覆盖「用法」块 + v1.8 的预设地雷说明（加新条目时同步上调，否则 --help 会截断）
-  sed -n 's/^# \{0,1\}//p' "$0" | sed -n '/^dev-worktree.sh/,/^===/p' | head -40
+  # v1.9（issue #3972）：用法块 +1 行（rebase 子命令）⇒ 上限同步 +2
+  sed -n 's/^# \{0,1\}//p' "$0" | sed -n '/^dev-worktree.sh/,/^===/p' | head -42
   exit 1
 }
 
@@ -170,6 +176,78 @@ refresh_presets() {
   echo "   你自己要改研发模式：直接在工作区改 + 升 version（提交前跑 preset-guard，升级放行）。"
 }
 
+# ── 预设快照 × rebase 的冲突处置（v1.9，issue #3972）───────────────────────────
+# refresh_presets 把 .agent-presets/** 对齐到 origin/main 后，工作区相对**本分支 HEAD**
+# 就出现了改动，于是 `git rebase origin/main` 会被 git 拒绝。实测两种形态：
+#   · 本分支 HEAD **未跟踪**该路径（旧分支，早于预设入库）⇒ checkout 把快照留在**索引**里
+#     （staged new files）→ 「untracked working tree files would be overwritten by checkout」；
+#   · 本分支 HEAD 跟踪但版本较旧 ⇒ 刷新后相对 HEAD 变成**已修改** → 「cannot rebase: You have unstaged changes」。
+# 两者都不是开发者的活（预设是主干资产），故处置 = **丢弃预设差异 → rebase → 重新刷新**。
+# 刻意不用「本地忽略 / 索引标记」手法（见文件头 v1.8 说明：那会把合法的预设改动一起吞掉）。
+# 安全护栏：只丢弃**与 origin/main 完全一致**的快照（= 纯刷新产物）；一旦不一致，
+# 视为开发者自己的研发模式改动 ⇒ 停手，交人工处置（不静默丢别人的活）。
+discard_preset_snapshot() {
+  local wt="$1"
+  local drifted=0 f h1 h2
+  if git -C "$wt" ls-tree -r --name-only HEAD -- .agent-presets/ 2>/dev/null | grep -q .; then
+    git -C "$wt" diff --quiet origin/main -- .agent-presets/ 2>/dev/null || drifted=1
+  else
+    # 未跟踪**与已暂存**文件都不进常规 `git diff` 比较（陷阱形态正是"已暂存"）
+    # ⇒ 逐文件比 blob 哈希：工作区实际内容 + 索引内容，两侧都要与 origin/main 一致
+    while IFS= read -r f; do
+      [ -n "$f" ] || continue
+      h2="$(git -C "$wt" rev-parse "origin/main:$f" 2>/dev/null || echo '!')"
+      if [ -f "$wt/$f" ]; then
+        h1="$(git -C "$wt" hash-object "$wt/$f" 2>/dev/null || echo '?')"
+        [ "$h1" = "$h2" ] || drifted=1
+      fi
+      h3="$(git -C "$wt" rev-parse ":$f" 2>/dev/null || echo '!')"
+      if [ "$h3" != "!" ] && [ "$h3" != "$h2" ]; then drifted=1; fi
+    done < <(git -C "$wt" ls-files --cached --others --exclude-standard -- .agent-presets/ 2>/dev/null || true)
+  fi
+  if [ "$drifted" = "1" ]; then
+    echo "❌ .agent-presets/** 与 origin/main 不一致 —— 可能是你自己的研发模式改动，拒绝自动丢弃。"
+    echo "   人工处置（确认可弃后再执行）："
+    echo "     已跟踪：git -C ${wt} checkout origin/main -- .agent-presets/"
+    echo "     未跟踪：rm -rf ${wt}/.agent-presets   # 旧分支；rebase 到含该路径的 main 后会由 main 带出"
+    return 1
+  fi
+  if git -C "$wt" ls-tree -r --name-only HEAD -- .agent-presets/ 2>/dev/null | grep -q .; then
+    git -C "$wt" checkout -q HEAD -- .agent-presets/
+  else
+    git -C "$wt" rm -r -q --cached --ignore-unmatch -- .agent-presets/ 2>/dev/null || true
+    rm -rf "${wt}/.agent-presets"
+  fi
+}
+
+cmd_rebase() {
+  [ $# -ge 1 ] || usage
+  local target="$1"
+  local path="" branch="" line
+  if [ -d "$target" ]; then
+    path="$target"
+    branch="$(wt_branch_of "$path" || true)"
+  else
+    line="$(git -C "$REPO_ROOT" worktree list --porcelain | grep -B2 "^branch refs/heads/$target$" | grep '^worktree' | head -1 || true)"
+    [ -z "$line" ] && { echo "❌ 找不到 worktree：${target}"; exit 1; }
+    path="${line#worktree }"
+    branch="$target"
+  fi
+  [ -n "$path" ] || { echo "❌ 无法解析工作区路径：${target}"; exit 1; }
+
+  echo "🔄 rebase origin/main：${path}（分支 ${branch:-detached}）"
+  discard_preset_snapshot "$path"
+  if ! git -C "$path" rebase origin/main; then
+    echo "❌ rebase 未完成（上面是 git 原始输出）。冲突需你自行解决，然后："
+    echo "   git -C ${path} rebase --continue    # 或 --abort 放弃"
+    echo "   ./scripts/dev-worktree.sh rebase ${branch:-<分支>}   # 完成后重新刷新预设"
+    exit 1
+  fi
+  refresh_presets "$path"
+  echo
+  echo "✅ rebase 完成：$(git -C "$path" log -1 --format='%h %s')"
+}
+
 cmd_add() {
   [ $# -ge 1 ] || usage
   local branch="$1"
@@ -238,6 +316,9 @@ cmd_add() {
   [ -f "$REPO_ROOT/package.json" ] && echo "      npm ci"
   [ -d "$REPO_ROOT/frontend/mini-app" ] && echo "      cd frontend/mini-app && npm ci"
   echo "   ⚠️  build 产物（dist/）不入库，worktree 之间互不影响。"
+  echo "   ⚠️  本工作区已刷新 .agent-presets/**（相对本分支 HEAD 即「改动」）——要 rebase 请用："
+  echo "      ./scripts/dev-worktree.sh rebase ${branch}"
+  echo "      （该子命令会先丢弃预设快照差异再 rebase，否则 git 会以「本地改动会被覆盖」拒绝；issue #3972）"
 }
 
 cmd_list() {
@@ -308,6 +389,7 @@ case "${1:-}" in
   add)  shift; cmd_add "$@" ;;
   list) cmd_list ;;
   rm)   shift; cmd_rm "$@" ;;
+  rebase) shift; cmd_rebase "$@" ;;
   preset-guard)
     # v1.8（issue #3851）：提交路径 fail-closed 守卫 —— 判定 .agent-presets/** 是否构成版本下降。
     # 判定逻辑在 scripts/agent-presets-guard.py（可独立单测，含红证）。
