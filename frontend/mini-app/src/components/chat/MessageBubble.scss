@@ -54,6 +54,32 @@
     white-space: pre-wrap;
   }
 
+  // UI-042：富文本按行渲染（**粗体** / - 列表）
+  &__line {
+    display: block;
+    min-height: 1.5em;
+
+    &--empty {
+      min-height: 0.75em;
+    }
+
+    &--bullet {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+
+      &::before {
+        content: '•';
+        flex-shrink: 0;
+        line-height: 1.5em;
+      }
+    }
+  }
+
+  &__text-strong {
+    font-weight: 600;
+  }
+
   // 流式光标
   &__cursor {
     display: inline;

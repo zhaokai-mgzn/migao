@@ -68,6 +68,29 @@
 - `toHaveScreenshot` 报 "A snapshot doesn't exist ...-linux.png" → 基线按平台查找（mac→darwin / CI→linux），**双平台基线都要提交**；linux 基线用 CI `--update-snapshots` 生成或从失败 actual 截图采纳。
 - 定位白屏三步：① spec 加 `page.on('pageerror')`/`console` 打印重跑 ② 下载 `xiaobu-visual-diffs` artifact（trace.zip + 截图，像素分析判纯白）③ 对比本地构建产物。
 
+## DSH「米高研发」研发模式消失（agent-preset/not-found）
+
+**症状**：DSH 里「米高研发」preset 消失；新建/恢复会话报 `agent-preset/not-found`；**无任何报错**（静默失效）。
+
+**根因（2026-09-16 事故）**：`~/.dsh/.agent-presets/migao` 是指向 preset 活锚的**软链接**。
+一次 AI 会话的清理命令 `rm -rf migao-loop migao-preset-live migao-agent-presets …` 把**软链目标**
+（当时的活锚 `~/ai native/migao-preset-live/`）**硬删**了 ⇒ 软链悬空 ⇒ DSH 扫描器按
+「dangling link is not a preset」跳过 ⇒ 研发模式消失。**会话与数据未丢**（最新会话 JSONL 完好）。
+
+**修复（重指软链到权威源；当前内容与 origin/main 一致）**：
+```bash
+ln -sfn "$HOME/ai native/migao/.agent-presets/migao" "$HOME/.dsh/.agent-presets/migao"
+readlink "$HOME/.dsh/.agent-presets/migao"     # 必须解析到真实存在的目录（不能悬空）
+cat "$HOME/.dsh/.agent-presets/migao/preset.yml" >/dev/null && echo "preset 可读"
+```
+
+**规避铁律（任何会话 / 清理脚本通用）**：
+- `~/.dsh/.agent-presets/migao` 是**软链接**：`rm -rf <软链>`、`rm -rf <软链>/`、删其**目标目录**都会弄坏它。
+- 执行任何清理（`rm -rf` / `git clean` / worktree prune / 脚本清理）**之前**：
+  `readlink "$HOME/.dsh/.agent-presets/migao"`，把解析出的目标（及父目录）**排除在外**。
+- 本机 preset 布局 / 换链 / 健康检查见 [`.agent-presets/migao/README.md`](../../.agent-presets/migao/README.md)
+  「本机 live 锚点与运维铁律」；改 preset 内容 = 仓库 PR（AGENTS.md「开发环境准备」）。
+
 ## SWAS 部署
 
 **健康检查失败**

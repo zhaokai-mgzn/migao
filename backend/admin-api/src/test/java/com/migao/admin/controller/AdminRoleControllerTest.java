@@ -144,6 +144,35 @@ class AdminRoleControllerTest {
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.success").value(true));
         }
+
+        // issue #3605：跨模块 payload 契约门禁曾报告「建角色整条 payload 无人接收」。
+        // 逐键复核为误报；本用例把「四个键都真的进 Service」变成机器可验证的不变式
+        // （Map body 少读一个键时 Spring 不报错 → 静默丢字段 + 200 假成功）。
+        @Test
+        @DisplayName("建角色整条 payload（name/code/description/permissionIds）逐键进 Service")
+        void createRole_bindsEveryKeySentByAgentTool() throws Exception {
+            Role role = new Role();
+            role.setId("3");
+            role.setName("库管");
+            when(roleService.createRole(anyString(), anyString(), anyString(), anyLong(), any()))
+                    .thenReturn(role);
+
+            // 与 ai-agent `app/tools/role_manage.py::_create_role` 下发的 payload 逐字一致
+            Map<String, Object> body = Map.of(
+                    "name", "库管",
+                    "code", "stock_keeper",
+                    "description", "负责商品管理",
+                    "permissionIds", List.of("perm-1", "perm-2"));
+
+            mockMvc.perform(post("/api/admin/roles")
+                            .contentType("application/json")
+                            .content(objectMapper.writeValueAsString(body)))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.success").value(true));
+
+            verify(roleService).createRole("库管", "stock_keeper", "负责商品管理", 1L,
+                    List.of("perm-1", "perm-2"));
+        }
     }
 
     @Nested

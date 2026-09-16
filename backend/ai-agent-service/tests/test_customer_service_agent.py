@@ -4,7 +4,9 @@ Covers: AgentResponse, AgentContext, BaseAgent, get_agent, reset_agent,
          _extract_msg_content, backward compat aliases, and the async
          methods (_build_initial_state / achat / astream_chat).
 """
-# case_ids: AG-001, AG-002, AG-003, AG-004, AG-005, AG-006
+# case_ids: AG-001, AG-002, AG-003, AG-004, AG-005, AG-006, PR-007
+
+import re
 
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -340,16 +342,29 @@ class TestBuildInitialState:
 
     @pytest.mark.asyncio
     async def test_returns_15_keys(self):
-        """_build_initial_state 返回 15 个键（原 18 精简到 13，新增 permissions/tenant_name 权限与品牌字段）"""
+        """_build_initial_state 返回 19 个键（15 + #3557 的确认卡两字段 + 答卡轮通用两字段：
+
+        `last_confirm_value` / `last_confirm_skill` —— confirm 卡答卡轮判据（#3557）；
+        `last_card` / `last_card_skill` —— **任意卡型**答卡轮判据（choice / form）。
+        后者是 run 34841029062 OR-015 R4 的根因缺口：加工项多选卡的答卡值
+        「已选加工项：纳米圈打孔 · ¥9.5/米」含 L1 商品域关键词「加工项」→ 无通用卡记录时
+        答卡轮不被识别 → L1 域逃逸清锁 → 落到 product skill（无 order_create）零工具拒答。
+        """
         agent = _bare_agent()
-        with patch("app.memory.session_memory.SessionMemory") as mock_sm:
+        with patch("app.memory.session_memory.SessionMemory") as mock_sm, \
+                patch("app.memory.session_state_store.SessionStateStore") as mock_store:
             mem = mock_sm.return_value
             mem.get_plan_state = AsyncMock(return_value=None)
             mem.get_pending_skill = AsyncMock(return_value="")
+            mock_store.return_value.load = AsyncMock(return_value=None)
             state = await agent._build_initial_state(
                 [HumanMessage(content="hi")], self._ctx()
             )
-        assert len(state) == 15
+        assert len(state) == 19
+        assert state["last_confirm_value"] == ""
+        assert state["last_confirm_skill"] == ""
+        assert state["last_card"] == {}
+        assert state["last_card_skill"] == ""
         assert state["messages"][0].content == "hi"
         assert state["agent_type"] == "xiaobu"
         assert state["tenant_id"] == 1
@@ -362,6 +377,69 @@ class TestBuildInitialState:
         assert "entities" not in state
         assert "recent_entities" not in state
         assert "cached_answer" not in state
+
+    @pytest.mark.asyncio
+    async def test_restores_last_confirm_card_state(self):
+        """#3557：最近一张确认卡（confirmValue + 发卡 skill）必须恢复到初始状态。
+
+        路由层要在**意图重判之前**判"本轮是不是点卡确认轮"，而这两个值原本只在
+        写工具门禁处（base_skill）读 —— 答卡轮被路由走偏后根本到不了门禁。
+        """
+        agent = _bare_agent()
+        with patch("app.memory.session_memory.SessionMemory") as mock_sm, \
+                patch("app.memory.session_state_store.SessionStateStore") as mock_store:
+            mem = mock_sm.return_value
+            mem.get_plan_state = AsyncMock(return_value=None)
+            mem.get_pending_skill = AsyncMock(return_value="product")
+            mock_store.return_value.load = AsyncMock(return_value={
+                "pending_skill": "product",
+                "last_confirm_value": "确认：商品名称=遮光窗帘；操作=下架",
+                "last_confirm_skill": "product",
+            })
+            state = await agent._build_initial_state(
+                [HumanMessage(content="确认：商品名称=遮光窗帘；操作=下架")], self._ctx()
+            )
+        assert state["pending_interact_skill"] == "product"
+        assert state["last_confirm_value"] == "确认：商品名称=遮光窗帘；操作=下架"
+        assert state["last_confirm_skill"] == "product"
+
+    @pytest.mark.asyncio
+    async def test_restores_last_card_state(self):
+        """答卡轮**通用**卡记录（choice / form）必须恢复到初始状态（#3557 家族扩展）。
+
+        缺这条恢复链 = choice 卡答卡轮无从识别 → L1 域逃逸清锁 → 会话被甩到没有该流程
+        工具的 skill（run 34841029062 OR-015 R4 实测：order 流程落到 product skill，
+        零工具 + 「我承接的是商品侧的工作」）。
+        """
+        from app.graph.nodes import _is_card_answer_round
+
+        card = {
+            "component": "choice",
+            "title": "是否需要加工项？（可多选，不需要请点「不需要加工项」）",
+            "options": [{"label": "纳米圈打孔 · ¥9.5/米", "value": "proc_item_pi_eval_punch"}],
+            "multiSelect": True,
+            "multiSelectSubmitPrefix": "已选加工项：",
+            "multiSelectSkipLabel": "不需要加工项",
+        }
+        answer = "已选加工项：纳米圈打孔 · ¥9.5/米"
+        agent = _bare_agent()
+        with patch("app.memory.session_memory.SessionMemory") as mock_sm, \
+                patch("app.memory.session_state_store.SessionStateStore") as mock_store:
+            mem = mock_sm.return_value
+            mem.get_plan_state = AsyncMock(return_value=None)
+            mem.get_pending_skill = AsyncMock(return_value="order")
+            mock_store.return_value.load = AsyncMock(return_value={
+                "pending_skill": "order",
+                "last_card": card,
+                "last_card_skill": "order",
+            })
+            state = await agent._build_initial_state(
+                [HumanMessage(content=answer)], self._ctx()
+            )
+        assert state["last_card"] == card
+        assert state["last_card_skill"] == "order"
+        # 恢复出来的状态直接喂路由判据 → 认得出这是本 skill 那张卡的答卡
+        assert _is_card_answer_round({**state, "pending_interact_skill": "order"}) is True
 
 
 class TestAchat:
@@ -497,7 +575,17 @@ class TestAstreamChat:
         agent.graph.astream = MagicMock(side_effect=RuntimeError("stream boom"))
         out = await self._collect(agent)
         assert out[-1].type == "error"
-        assert "RuntimeError" in out[-1].content
+        # issue #3810：用户可见文本**不得**含异常类名/内部消息（英文技术术语禁上屏），
+        # 但也不得退化成"无信息量通用句"——必须让顾客知道"这轮没成功、可以重试"。
+        assert "RuntimeError" not in out[-1].content
+        assert "stream boom" not in out[-1].content
+        assert not re.search(r"[A-Za-z]", out[-1].content), (
+            "SSE 错误话术出现英文/技术术语：%r" % out[-1].content
+        )
+        assert "没成功" in out[-1].content and "再说一次" in out[-1].content
+        # 归因改走服务端：类型与 traceback 留在 metadata（前端只渲染 content）
+        assert out[-1].metadata["error_type"] == "RuntimeError"
+        assert "Traceback" in out[-1].metadata["traceback"]
 
 
 class TestResetAgentExcept:

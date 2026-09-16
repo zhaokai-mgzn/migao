@@ -300,13 +300,27 @@ class TestFollowUpSuggestionGenerator:
         expected = generator._get_preset("logistics_track", "xiaobu", "initial")
         assert result == expected
 
+    def _gen_with_key(self, key: str = "test-key"):
+        """构造**确定会走动态分支**的生成器。
+
+        为什么必须显式注入 `LLM_API_KEY`（本轮实测踩到）：生成器读的是
+        `self._api_key = LLM_API_KEY`（**模块级常量**，import 时就取了 env），
+        而用例只 patch 了 `settings.DASHSCOPE_API_KEY` —— 本机（未设该 env）跑时
+        `_should_use_dynamic` 直接返回 False，两条"动态生成"用例静默改走预设兜底：
+          · `test_generate_dynamic_success` → 断言失败（真红，暴露了问题）；
+          · `test_generate_dynamic_timeout_fallback` → **假绿** —— 它自称验证"超时降级"，
+            实际动态分支压根没进，LLM 一次都没被调用。
+        故这里注入 env 等价物，并在各用例里断言"动态分支确实进了"（`ainvoke` 被 await）。
+        """
+        with patch("app.suggestions.follow_up.settings") as mock_settings, \
+             patch("app.suggestions.follow_up.LLM_API_KEY", key):
+            mock_settings.INTENT_MODEL = "qwen3.6-flash"
+            return FollowUpSuggestionGenerator()
+
     @pytest.mark.asyncio
     async def test_generate_dynamic_success(self):
         """动态生成成功"""
-        with patch("app.suggestions.follow_up.settings") as mock_settings:
-            mock_settings.DASHSCOPE_API_KEY = "test-key"
-            mock_settings.INTENT_MODEL = "qwen3.6-flash"
-            gen = FollowUpSuggestionGenerator()
+        gen = self._gen_with_key()
 
         mock_response = MagicMock()
         mock_response.content = '["确认收货", "联系快递客服", "查看其他订单物流"]'
@@ -327,16 +341,14 @@ class TestFollowUpSuggestionGenerator:
                 agent_type="xiaobu",
             )
             assert result == ["确认收货", "联系快递客服", "查看其他订单物流"]
+            mock_llm.ainvoke.assert_awaited_once()   # 前提：真的走了动态分支
 
     @pytest.mark.asyncio
     async def test_generate_dynamic_timeout_fallback(self):
         """动态生成超时 → 返回预设模板"""
         import httpx
 
-        with patch("app.suggestions.follow_up.settings") as mock_settings:
-            mock_settings.DASHSCOPE_API_KEY = "test-key"
-            mock_settings.INTENT_MODEL = "qwen3.6-flash"
-            gen = FollowUpSuggestionGenerator()
+        gen = self._gen_with_key()
 
         mock_llm = MagicMock()
         mock_llm.ainvoke = AsyncMock(side_effect=httpx.TimeoutException("timeout"))
@@ -353,6 +365,8 @@ class TestFollowUpSuggestionGenerator:
             )
             expected = gen._get_preset("logistics_track", "xiaobu", "initial")
             assert result == expected
+            # 前提断言（防假绿）：没进动态分支时，这条用例验证不到"超时降级"
+            mock_llm.ainvoke.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_generate_exception_fallback(self, generator):

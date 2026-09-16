@@ -30,7 +30,7 @@ def sample_product_records():
             "images": ["https://img.example.com/1.jpg"],
             "mainImage": "https://img.example.com/1.jpg",
             "stock": 100,
-            "status": "active",
+            "status": "on_sale",
             "categoryId": "cat_001",
             "specifications": {"fabric": "雪尼尔", "width": "2.8m"},
         },
@@ -43,7 +43,7 @@ def sample_product_records():
             "images": ["https://img.example.com/2.jpg"],
             "mainImage": "https://img.example.com/2.jpg",
             "stock": 50,
-            "status": "active",
+            "status": "on_sale",
             "categoryId": "cat_001",
             "specifications": {"fabric": "涤纶", "width": "2.5m"},
         },
@@ -136,16 +136,25 @@ class TestProductSearchSuccess:
                call_kwargs[1].get("params", {}).get("categoryId") == "cat_001"
 
     @patch("app.tools.product_search.get_admin_api_client")
-    async def test_product_search_with_price_range(
-        self, mock_get_client, tool, sample_tool_context, sample_product_records
+    async def test_product_search_price_range_is_local_filter_not_backend_param(
+        self, mock_get_client, tool, sample_tool_context
     ):
-        """带价格区间搜索"""
+        """价格区间：后端 ProductQueryRequest 无价格字段 → 禁止下发，改本地过滤
+
+        Red（修复前）：下发 params["minPrice"]/["maxPrice"]（后端静默忽略）→ 返回全量 →
+        LLM 把全量叙述成「已筛选出 100-200 元」= 幻觉式筛选（工具审计 A1）。
+        Green（修复后）：不下发后端不认的键；本地按价格过滤；total = 过滤后真实条数。
+        """
         mock_client = AsyncMock()
         mock_client.get = AsyncMock(return_value={
             "success": True,
             "data": {
-                "items": sample_product_records[:1],
-                "total": 1,
+                "items": [
+                    {"id": "p_low", "name": "低价帘", "basePrice": 80.0, "stock": 5, "status": "on_sale"},
+                    {"id": "p_mid", "name": "中价帘", "basePrice": 199.0, "stock": 5, "status": "on_sale"},
+                    {"id": "p_high", "name": "高价帘", "basePrice": 299.0, "stock": 5, "status": "on_sale"},
+                ],
+                "total": 3,
             },
         })
         mock_get_client.return_value = mock_client
@@ -153,15 +162,130 @@ class TestProductSearchSuccess:
         result = await tool.execute(
             context=sample_tool_context,
             keyword="窗帘",
-            min_price=200.0,
-            max_price=500.0,
+            min_price=100.0,
+            max_price=200.0,
         )
 
         assert result.success is True
         call_kwargs = mock_client.get.call_args
         params = call_kwargs.kwargs.get("params") or call_kwargs[1].get("params", {})
-        assert params.get("minPrice") == 200.0
-        assert params.get("maxPrice") == 500.0
+        # 后端 ProductQueryRequest 无 minPrice/maxPrice（Spring 静默忽略）→ 一个都不许下发
+        assert "minPrice" not in params
+        assert "maxPrice" not in params
+        # 本地过滤：只有 199 落在 100-200
+        assert [p["id"] for p in result.data["products"]] == ["p_mid"]
+        # total 必须是过滤后的真实条数，不能沿用后端全量 total=3
+        assert result.data["total"] == 1
+        assert "1" in result.message and "价格" in result.message
+
+    @patch("app.tools.product_search.get_admin_api_client")
+    async def test_product_search_price_filter_no_match_reports_scope(
+        self, mock_get_client, tool, sample_tool_context
+    ):
+        """价格区间本地过滤零命中：必须说明是价格区间没筛到，不能报「没有找到与'窗帘'相关的商品」
+
+        Red（修复前）：过滤未生效 → 返回全量商品（products == [] 断言失败）。
+        """
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value={
+            "success": True,
+            "data": {
+                "items": [
+                    {"id": "p_low", "name": "低价帘", "basePrice": 80.0, "stock": 5, "status": "on_sale"},
+                    {"id": "p_high", "name": "高价帘", "basePrice": 299.0, "stock": 5, "status": "on_sale"},
+                ],
+                "total": 2,
+            },
+        })
+        mock_get_client.return_value = mock_client
+
+        result = await tool.execute(
+            context=sample_tool_context,
+            keyword="窗帘",
+            min_price=100.0,
+            max_price=200.0,
+        )
+
+        assert result.success is True
+        assert result.data["products"] == []
+        assert result.data["total"] == 0
+        # 商品是存在的，只是不在价格区间 → 措辞要说清是价格区间没筛到
+        assert "价格" in result.message
+
+    @patch("app.tools.product_search.get_admin_api_client")
+    async def test_product_search_stock_status_maps_to_backend_stock_below(
+        self, mock_get_client, tool, sample_tool_context, sample_product_records
+    ):
+        """库存筛选：后端真实字段是 stockBelow，不是 stockStatus（工具审计 A1）
+
+        Red（修复前）：下发 params["stockStatus"]=low_stock（后端不认 → 返回全量）。
+        """
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value={
+            "success": True,
+            "data": {"items": sample_product_records, "total": 2},
+        })
+        mock_get_client.return_value = mock_client
+
+        result = await tool.execute(
+            context=sample_tool_context,
+            keyword="窗帘",
+            stock_status="low_stock",
+        )
+
+        assert result.success is True
+        call_kwargs = mock_client.get.call_args
+        params = call_kwargs.kwargs.get("params") or call_kwargs[1].get("params", {})
+        # 与后台低库存口径一致（#1396：Dashboard/DailyBriefing/admin-web 均为 100）
+        assert params.get("stockBelow") == 100
+        assert "stockStatus" not in params
+
+    @patch("app.tools.product_search.get_admin_api_client")
+    async def test_product_search_out_of_stock_maps_to_stock_below_zero(
+        self, mock_get_client, tool, sample_tool_context, sample_product_records
+    ):
+        """缺货筛选：stockBelow=0（后端 stock <= 0）"""
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value={
+            "success": True,
+            "data": {"items": sample_product_records, "total": 2},
+        })
+        mock_get_client.return_value = mock_client
+
+        result = await tool.execute(
+            context=sample_tool_context,
+            keyword="窗帘",
+            stock_status="out_of_stock",
+        )
+
+        assert result.success is True
+        call_kwargs = mock_client.get.call_args
+        params = call_kwargs.kwargs.get("params") or call_kwargs[1].get("params", {})
+        assert params.get("stockBelow") == 0
+
+    @patch("app.tools.product_search.get_admin_api_client")
+    async def test_product_search_rejects_stock_status_backend_cannot_express(
+        self, mock_get_client, tool, sample_tool_context
+    ):
+        """in_stock 后端无法表达（stockBelow 只有 <= 语义）→ 必须明确拒绝，不下发死字段
+
+        Red（修复前）：下发 stockStatus=in_stock → success=True（静默返回全量）。
+        """
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value={
+            "success": True, "data": {"items": [], "total": 0},
+        })
+        mock_get_client.return_value = mock_client
+
+        result = await tool.execute(
+            context=sample_tool_context,
+            keyword="窗帘",
+            stock_status="in_stock",
+        )
+
+        assert result.success is False
+        assert mock_client.get.call_count == 0
+        assert "low_stock" in result.message or "low_stock" in (result.suggestion or "")
 
 
 class TestProductSearchEmpty:

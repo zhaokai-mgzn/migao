@@ -69,6 +69,18 @@ class TestIsRetryable:
     def test_os_error_retryable(self):
         assert _is_retryable(OSError("socket")) is True
 
+    def test_httpx_transport_error_retryable(self):
+        """SDK 连接层错误是"事实上的瞬时类"（issue #3810 同族扫描，2026-09-16）。
+
+        `httpx.TransportError` **不是** `OSError`（httpx 0.28 实测 MRO：
+        TransportError → RequestError → HTTPError → Exception），旧实现把它判成
+        "不可重试" ⇒ 供应商连接中断/读超时直接进兜底（#3805 连续 3 轮同一句的最可能形态之一）。
+        """
+        import httpx
+
+        assert _is_retryable(httpx.ConnectError("connection refused")) is True
+        assert _is_retryable(httpx.ReadTimeout("read timed out")) is True
+
     def test_circuit_breaker_open_not_retryable(self):
         exc = type("CircuitBreakerOpenError", (Exception,), {})()
         assert _is_retryable(exc) is False

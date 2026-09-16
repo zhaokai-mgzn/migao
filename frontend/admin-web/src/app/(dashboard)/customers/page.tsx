@@ -62,9 +62,10 @@ const getVipLevelNum = (v: number | string | null | undefined): number => {
   return m ? Number(m[1]) : 0
 }
 
-// 标签数组：后端可能返回 null / 非数组 JSON
-const getTags = (c: Customer): CustomerTag[] => {
-  if (Array.isArray(c.tags)) return c.tags as CustomerTag[]
+// 标签数组：后端可能返回 null / 非数组 JSON；列表接口返回标签 ID 字符串数组（#3660 冒烟发现），
+// 类型上容忍 string | CustomerTag 混合，渲染层统一解析
+const getTags = (c: Customer): Array<string | CustomerTag> => {
+  if (Array.isArray(c.tags)) return c.tags as Array<string | CustomerTag>
   return []
 }
 
@@ -273,7 +274,14 @@ export default function CustomersPage() {
       title: '标签',
       width: '200px',
       render: (record) => {
-        const tagList = getTags(record)
+        // 列表接口 tags 为标签 ID 字符串数组（详情接口才是对象数组）——统一解析为标签对象，
+        // 避免 key={undefined} 的 React 警告与空 chip（冒烟 #3660 发现）
+        const tagList = getTags(record).map((t) => {
+          if (typeof t === 'string') {
+            return tags.find((tag) => tag.id === t) || { id: t, name: '', color: '' }
+          }
+          return t
+        })
         return (
           <div className="flex flex-wrap gap-1">
             {tagList.length === 0 && <span className="text-xs text-neutral-400">-</span>}

@@ -35,11 +35,11 @@ class SkuUpdateTool(BaseTool):
             },
             "selling_method": {
                 "type": "string",
-                "description": "售卖方式：散剪(bulk_cut) 或 整卷(full_roll)。可选",
+                "description": "售卖方式，从 product_detail skus[].selling_method 原值获取：bulk_cut(散剪) 或 full_roll(整卷)。可选",
             },
             "door_width": {
                 "type": "string",
-                "description": "门幅，如'2.8米'。可选",
+                "description": "门幅，从 product_detail skus[].door_width 原值获取（如'2.8'）。可选（服务端兼容'2.8米'写法）",
             },
             "price": {"type": "number", "description": "新价格（元）"},
         },

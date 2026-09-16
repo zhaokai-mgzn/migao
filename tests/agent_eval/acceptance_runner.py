@@ -17,11 +17,32 @@
      "rounds": [{"text": "", "images": ["https://..."]}, {"text": "确认", "images": []}]}
 """
 import asyncio
+import importlib.util
 import json
 import os
 import sys
+import time
+from pathlib import Path
 
 import httpx
+
+
+def _load_local_runner():
+    """复用 local_runner 的**前端点卡协议**（choice_card_answer 等）。
+
+    为什么要复用而不是各写一份：卡片作答协议（单选发 label / 多选发 `前缀+labels` /
+    confirm 发 confirmValue）是前端 `InteractiveMessage.tsx` 的语义，已被 local_runner
+    实现并校准过。验收 runner 若自带一份，两份必然随迭代漂移 —— 而"harness 答错卡"
+    正是本项目反复踩过的坑（OR-017 死循环）。
+    """
+    path = Path(__file__).resolve().parent / "local_runner.py"
+    spec = importlib.util.spec_from_file_location("migao_local_runner_for_acceptance", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+_LR = _load_local_runner()
 
 AI_API = os.environ.get("AI_API_URL", "https://ai-api.migaozn.com")
 ADMIN_API = os.environ.get("ADMIN_API_URL", "https://api.migaozn.com")
@@ -109,9 +130,253 @@ def _fmt_interactive(i: dict) -> str:
     return f"  🃏 [{comp}] {title}"
 
 
-async def run_scenario(sc: dict, token: str) -> dict:
-    """跑一个场景（多轮），返回完整记录"""
-    # 新建会话（线上偶发失败重试 2 次）
+SUPPORTED_CHECK_TYPES = {
+    "tool_called", "tool_not_called", "no_error", "card_shown",
+    "ai_text_contains", "ai_text_not_contains",
+}
+
+
+def _round_scope(rounds: list, ref: str) -> list:
+    """按 `ref: R3` 取轮次；`*`/缺省 = 全轮。轮次锚定是协议点名的必需项 ——
+    「任意一轮命中即过」会让"顺序错/该轮没做"看起来正常。"""
+    ref = str(ref or "*").strip().upper()
+    if ref in ("", "*", "ALL"):
+        return list(rounds or [])
+    m = ref.lstrip("R")
+    if not m.isdigit():
+        return list(rounds or [])
+    want = int(m)
+    return [r for r in (rounds or []) if r.get("round") == want]
+
+
+def evaluate_checks(checks: list, rounds: list) -> list:
+    """执行 L1/L2 断言，返回违规列表 [{check, level, detail}]。
+
+    UA（体验类）条目**不在这里判**（协议铁律 4：由 AI 用户代理判定），
+    由 `ua_items()` 单独列出交给 AI 判定。
+    """
+    issues = []
+    for chk in checks or []:
+        if not isinstance(chk, dict):
+            issues.append({"check": chk, "level": "L1", "detail": f"配置非字典: {chk!r}"})
+            continue
+        level = str(chk.get("level") or "L1").upper()
+        if level == "UA":
+            continue
+        ctype = str(chk.get("type") or "")
+        expect = str(chk.get("expect") or "")
+        scope = _round_scope(rounds, chk.get("ref"))
+        if ctype not in SUPPORTED_CHECK_TYPES:
+            issues.append({"check": chk, "level": level,
+                           "detail": f"不支持的断言类型 {ctype!r}（不得静默跳过）"})
+            continue
+        if not scope:
+            issues.append({"check": chk, "level": level,
+                           "detail": f"ref={chk.get('ref')!r} 没有对应轮次（锚点写错？）"})
+            continue
+
+        if ctype == "no_error":
+            bad = [r for r in scope if r.get("error")]
+            if bad:
+                issues.append({"check": chk, "level": level,
+                               "detail": f"R{bad[0]['round']} 出现错误: {str(bad[0]['error'])[:120]}"})
+            continue
+
+        if ctype in ("tool_called", "tool_not_called"):
+            hits = [(r["round"], t.get("name")) for r in scope for t in (r.get("tools") or [])
+                    if expect and expect in str(t.get("name") or "")]
+            if ctype == "tool_called" and not hits:
+                issues.append({"check": chk, "level": level,
+                               "detail": f"期望调用 {expect}，实际未调用（轮次 {[r['round'] for r in scope]}）"})
+            if ctype == "tool_not_called" and hits:
+                issues.append({"check": chk, "level": level,
+                               "detail": f"{expect} 被调用了（R{hits[0][0]}）—— 不允许发生"})
+            continue
+
+        if ctype == "card_shown":
+            hits = [r["round"] for r in scope
+                    for iv in (r.get("interactive") or [])
+                    if expect and expect in str(iv.get("type") or iv.get("component") or "")]
+            if not hits:
+                issues.append({"check": chk, "level": level,
+                               "detail": f"期望出现 {expect} 卡片，实际没有"})
+            continue
+
+        texts = [str(r.get("ai_text") or "") for r in scope]
+        joined = "\n".join(texts)
+        if ctype == "ai_text_contains" and expect not in joined:
+            issues.append({"check": chk, "level": level,
+                           "detail": f"回复未出现「{expect}」（轮次 {[r['round'] for r in scope]}）"})
+        if ctype == "ai_text_not_contains" and expect in joined:
+            hit = next(r["round"] for r in scope if expect in str(r.get("ai_text") or ""))
+            issues.append({"check": chk, "level": level,
+                           "detail": f"R{hit} 回复出现禁词「{expect}」"})
+    return issues
+
+
+def ua_items(checks: list) -> list:
+    """列出待 AI 用户代理判定的 UA 条目（协议铁律 4：禁止写"待人工"，也禁止机器假装判过）。"""
+    return [c for c in (checks or [])
+            if isinstance(c, dict) and str(c.get("level") or "").upper() == "UA"]
+
+
+# 验证码供给（issue #3431）：C-A1 的剧本里**没有验证码轮**，而小布下单要码
+# （「为了您的账户安全，创建订单前需要验证手机号。请输入短信验证码」）——
+# 于是剧本能否走完，取决于"模型这一跑恰好没要求验证码"：实测同一剧本两次结果不同
+# （run 34766277197 L1=0 通过 / run 34767663158 order_create 未调用 → L1=1）。
+# 真实顾客被要求验证码时会**把码发过去**；剧本必须能表达这件事，否则"验收通过"带运气成分。
+_CODE_HINTS = ("验证码", "校验码", "短信码", "动态码")
+DEFAULT_SMS_CODE = os.environ.get("SMS_BYPASS_CODE") or "123456"
+
+
+def needs_code(rounds: list) -> bool:
+    """agent 是否正在索要验证码（文字索要，或上一轮写调用**因缺码失败**）。
+
+    两条判据与评测侧 `needs_verification_code` 同源（issue #3430 实证）：
+    agent 会**重发同一张确认卡**、而写调用在后台因缺码失败 —— 只看文字会漏这种形态。
+    """
+    if not rounds:
+        return False
+    last = rounds[-1] or {}
+    if any(h in str(last.get("ai_text") or "") for h in _CODE_HINTS):
+        return True
+    for tr in (last.get("tool_results") or []):
+        res = (tr or {}).get("result") if isinstance((tr or {}).get("result"), dict) else {}
+        if not res or res.get("success"):
+            continue
+        blob = f"{res.get('error') or ''} {res.get('message') or ''}"
+        if any(h in blob for h in _CODE_HINTS) or "短信" in blob:
+            return True
+    return False
+
+
+def resolve_action(rd: dict, rounds: list, default_code: str = DEFAULT_SMS_CODE) -> str:
+    """把剧本动作翻译成本轮实际要发的消息。
+
+    支持 `{"click": "first_option"|"confirm"}`（点卡，按前端协议作答），
+    取不到卡时用 `fallback` 文本（真实顾客遇到没卡就说话）。
+
+    **验证码优先于答卡**（issue #3431）：agent 索要验证码（或写调用因缺码失败）时，
+    顾客会把码发过去 —— 若仍按"有卡答卡"处理，agent 重发确认卡 + 后台写调用缺码，
+    剧本会一轮轮点卡、**码永远送不出去**、整场卡死（评测侧踩过同一个坑，见 #3430）。
+    """
+    if "click" not in rd:
+        explicit = str(rd.get("text") or "")
+        if explicit:
+            return explicit
+        # 无显式文本的轮（如只有 fallback 的收尾轮）：agent 在要码就供码，否则留空
+        if needs_code(rounds):
+            return str(rd.get("code") or default_code)
+        return ""
+    last = (rounds or [{}])[-1] if rounds else {}
+    cards = last.get("interactive") or []
+    by_comp = {}
+    for iv in cards:
+        by_comp.setdefault(str(iv.get("type") or iv.get("component") or ""), iv)
+    kind = str(rd.get("click") or "")
+    if kind == "auto":
+        # ① 明确在要码 → 供码（优先于答卡：码不供就只能原地打转，见上面 docstring）
+        if needs_code(rounds):
+            return str(rd.get("code") or default_code)
+        # ② 有什么卡答什么卡（优先级与评测 harness 一致：confirm > choice > form）
+        # —— 剧本不能依赖"卡一定按我写的顺序出现"：卡的顺序随模型变化，
+        # 固定 click 会把**剧本错位**报成**产品问题**（本 session C-A1 实测）。
+        if "confirm" in by_comp:
+            val = str(by_comp["confirm"].get("confirmValue") or "").strip()
+            if val:
+                return val
+        if "choice" in by_comp:
+            answer = _LR.choice_card_answer(by_comp["choice"])
+            if answer:
+                return answer
+        if "form" in by_comp:
+            values = {}
+            for f in (by_comp["form"].get("formFields") or []):
+                key = str((f or {}).get("key") or "")
+                if not key:
+                    continue
+                val = (f or {}).get("value")
+                values[key] = "" if val is None else val
+            if values:
+                return "__FORM__|" + json.dumps(values, ensure_ascii=False)
+        return str(rd.get("fallback") or rd.get("text") or "")
+    if kind == "confirm" and "confirm" in by_comp:
+        val = str(by_comp["confirm"].get("confirmValue") or "").strip()
+        if val:
+            return val
+    if kind in ("first_option", "choice") and "choice" in by_comp:
+        card = by_comp["choice"]
+        answer = _LR.choice_card_answer(card)
+        if answer:
+            return answer
+    return str(rd.get("fallback") or rd.get("text") or "")
+
+
+def tool_called_in(rounds: list, tool: str) -> bool:
+    """该工具是否已被成功/已调用过（供 `repeat_until` 的达成判定）。"""
+    if not tool:
+        return False
+    return any(
+        tool in str(t.get("name") or "")
+        for r in (rounds or [])
+        for t in (r.get("tools") or [])
+    )
+
+
+def repeat_wanted(rd: dict, rounds: list) -> tuple:
+    """`repeat_until` 判定 → (是否继续重复, 还要几轮 / max)。
+
+    协议动机（issue #3379 剧本方差）：剧本轮数固定，而 agent 卡序与轮数随模型变化 ——
+    实测 C-A1 有时 8 轮内走不到下单，同代码同剧本交替出现红/绿。
+    把"轮数"从**剧本假设**变成**产品事实**：目标未达成 → 继续合作；达成 → 停。
+    """
+    spec = (rd or {}).get("repeat_until")
+    if not isinstance(spec, dict):
+        return False, 0
+    max_n = int(spec.get("max") or 5)
+    want = str(spec.get("tool_called") or "")
+    return (not tool_called_in(rounds, want)), max_n
+
+
+def wants_new_session(rd: dict) -> bool:
+    """`{"session": "new"}` = 顾客换个窗口/新开会话回来（验收剧本必需的真实动作）。"""
+    return str((rd or {}).get("session") or "").strip().lower() == "new"
+
+
+def build_report(sc: dict, checks: list, issues: list, sha: str, date: str) -> str:
+    """按协议 §4.2 生成报告骨架（五项齐全；UA 判定由 AI 用户代理填写）。"""
+    ua = ua_items(checks)
+    lines = [
+        f"# 验收报告 {sc.get('id')} {sc.get('title')} {date} sha={sha}",
+        "## 结论",
+        "- 待填（L1/L2 机器结论 + UA 用户代理判定汇总后给出）",
+        "## 验收矩阵",
+        "| 场景 | L1 | L2 | UA | 结果 | 证据引用 |",
+        "|---|---|---|---|---|---|",
+        f"| {sc.get('id')} | {'见下' if checks else '-'} | {'见下' if checks else '-'} "
+        f"| {len(ua)} 条待判 | {'待判' if not issues else '有违规'} | |",
+        "## 问题清单",
+    ]
+    if issues:
+        lines.append("| # | 级别 | 问题 | 证据（轮次/原文） | 对应 case | 修复 PR |")
+        lines.append("|---|---|---|---|---|---|")
+        for i, it in enumerate(issues, 1):
+            lines.append(f"| {i} | P1 | {it['detail']} | {it['check']} | | |")
+    else:
+        lines.append("（L1/L2 无违规）")
+    lines += [
+        "## 复核验收抽验（独立 AI 视角，零人工）",
+        "| 抽验项 | 证据位置 | 复核结论 | 与主验收一致性 |",
+        "|---|---|---|---|",
+        "## 沉淀记录",
+        "| 问题 | 新增/修改 case | case 有效性验证（旧失败重放 fail / 修复重放 pass） |",
+        "|---|---|---|",
+    ]
+    return "\n".join(lines)
+
+
+async def _new_session(token: str) -> str:
+    """新建会话（线上偶发失败重试 2 次）"""
     session_id = None
     for attempt in range(3):
         try:
@@ -125,58 +390,187 @@ async def run_scenario(sc: dict, token: str) -> dict:
             if attempt == 2:
                 raise
             await asyncio.sleep(1.0)
+    return session_id
+
+
+async def _close_session(token: str, session_id: str) -> None:
+    """关闭会话（协议 §2.2 生命周期：换窗口前必须把旧会话关掉，否则它留在系统里
+    既是脏数据、也让"关闭后才落库"的数据（记忆）无从验证）。失败只告警不中断。"""
+    if not session_id:
+        return
+    try:
+        async with httpx.AsyncClient() as c:
+            await c.put(f"{AI_API}/api/chat/sessions/{session_id}/close",
+                        headers=_headers(token), timeout=15)
+    except Exception as e:
+        print(f"  ⚠️ 会话关闭失败 {session_id}: {type(e).__name__}: {e}")
+
+
+async def run_scenario(sc: dict, token: str) -> dict:
+    """跑一个场景（多轮），返回完整记录。
+
+    支持剧本的真实动作：
+      · `{"click": "first_option"|"confirm"}` → 按前端协议点卡（取不到卡用 fallback 文本）
+      · `{"session": "new"}` → 关掉当前会话、新开一个（顾客换个窗口回来）
+    """
+    session_id = await _new_session(token)
+    sessions = [session_id]
 
     rounds = []
-    for i, rd in enumerate(sc.get("rounds", [])):
-        text = rd.get("text", "")
-        images = rd.get("images") or []
-        res = await send(session_id, token, text, images)
-        rounds.append({
-            "round": i + 1,
-            "user_text": text,
-            "user_images": len(images),
-            "ai_text": res["text"],
-            "tools": res["tool_calls"],
-            "interactive": res["interactive"],
-            "error": res["error"],
-        })
-        await asyncio.sleep(0.6)
+    _spec = list(sc.get("rounds", []))
+    # 剧本级验证码（issue #3431）：真实顾客被要求验证码就会发过去；剧本不写则用
+    # 环境变量 SMS_BYPASS_CODE（与 dev/CI 栈同源），默认 123456。
+    _code = str(sc.get("code") or DEFAULT_SMS_CODE)
+    i = 0
+    while i < len(_spec):
+        rd = _spec[i]
+        if wants_new_session(rd):
+            await _close_session(token, session_id)
+            session_id = await _new_session(token)
+            sessions.append(session_id)
+        # repeat_until（issue #3379）：目标未达成就继续以"协作型顾客"的方式答卡，
+        # 达成立即停；走满 max 也停（缺口交由剧本断言如实报出，绝不无限循环）。
+        keep_going, budget = repeat_wanted(rd, rounds)
+        # 墙钟上限（issue #3379）：`max` 只限**轮数**，但单轮可能极慢（模型长思考/SSE 卡住）
+        # —— 首版实测把验收步骤拖到 13min+ 仍未结束（CI 上被迫取消两次）。
+        # 轮数与时间**双上限**，任一到达即停，缺口交由断言如实报出。
+        _deadline_ts = time.monotonic() + float(os.environ.get("ACCEPTANCE_REPEAT_BUDGET_S", "240"))
+        repeat = 0
+        while True:
+            text = resolve_action(rd, rounds, default_code=_code)
+            images = rd.get("images") or []
+            res = await send(session_id, token, text, images)
+            rounds.append({
+                "round": len(rounds) + 1,
+                "session": session_id,
+                "user_text": text,
+                "user_images": len(images),
+                "ai_text": res["text"],
+                "tools": res["tool_calls"],
+                "interactive": res["interactive"],
+                # 供 needs_code 判定"写调用因缺码失败"（issue #3431）
+                "tool_results": res.get("tool_results") or [],
+                "error": res["error"],
+                "spec_index": i,
+            })
+            await asyncio.sleep(0.6)
+            if not keep_going:
+                break
+            repeat += 1
+            if tool_called_in(rounds, str((rd.get("repeat_until") or {}).get("tool_called") or "")):
+                break
+            if repeat >= budget:
+                print(f"  ⏹ repeat_until 达轮数上限 max={budget}（目标未达成，交断言报出）", flush=True)
+                break
+            if time.monotonic() >= _deadline_ts:
+                print(f"  ⏹ repeat_until 达墙钟上限 "
+                      f"{os.environ.get('ACCEPTANCE_REPEAT_BUDGET_S', '240')}s（目标未达成）",
+                      flush=True)
+                break
+        i += 1
 
     return {"id": sc["id"], "title": sc["title"], "domain": sc.get("domain", ""),
-            "rounds": rounds}
+            "scenario": {"checks": sc.get("checks") or []},
+            "sessions": sessions, "rounds": rounds}
+
+
+def _tool_digest(tr: dict) -> dict:
+    """把一次工具调用的结果压成**可核验的事实**（订单号/金额/状态/条数）。
+
+    为什么要它（复核 AI 在重放 2 主动声明的证据限制）：transcript 里此前只有工具**名**，
+    于是「订单号/金额/成功与否」类结论无法从证据核验 —— UA（体验层）判定与复核 AI
+    只能拿回复原文互证，等于体验层的证据缺一半。`evidence.json` 里本来就有全量载荷，
+    这里只把**顾客可感知**的字段摘出来进 transcript（不落 PII 全量）。
+    """
+    tr = tr if isinstance(tr, dict) else {}
+    res = tr.get("result") if isinstance(tr.get("result"), dict) else {}
+    data = res.get("data") if isinstance(res.get("data"), dict) else {}
+    out: dict = {"tool": str(tr.get("tool") or ""), "ok": bool(res.get("success"))}
+    if not res.get("success"):
+        out["error"] = str(res.get("error") or "")[:60]
+        return out
+    for k in ("id", "orderNo", "order_no", "totalAmount", "total_amount",
+              "actual_amount", "status", "quantity"):
+        v = data.get(k)
+        if v not in (None, "", [], {}):
+            out[k] = v if isinstance(v, (int, float, bool)) else str(v)[:40]
+    for k in ("orders", "items", "products", "logistics_list"):
+        v = data.get(k)
+        if isinstance(v, list):
+            out[f"{k}_n"] = len(v)
+    return out
 
 
 def render(scenario_result: dict) -> str:
     """渲染成可读验收记录（供人工评估）"""
     lines = []
     lines.append(f"## {scenario_result['id']} [{scenario_result['domain']}] {scenario_result['title']}")
+    prev_session = None
     for rd in scenario_result["rounds"]:
         img = f" [📷x{rd['user_images']}]" if rd["user_images"] else ""
+        sid = rd.get("session")
+        if sid and sid != prev_session:
+            lines.append(f"\n> 🪟 会话: {sid}" + ("（换窗口：新会话）" if prev_session else ""))
+            prev_session = sid
         lines.append(f"\n**R{rd['round']} 用户**: {rd['user_text'] or '(纯图片)'}{img}")
         for i in rd["interactive"]:
             lines.append(_fmt_interactive(i))
         for t in rd["tools"]:
             lines.append(_fmt_tool(t))
+        # 结果载荷摘要（复核 AI 的证据缺口）：让"订单号/金额/成了没有"可从证据核验
+        for d in [_tool_digest(t) for t in (rd.get("tool_results") or [])]:
+            _facts = ", ".join(f"{k}={v}" for k, v in d.items() if k not in ("tool", "ok"))
+            if d.get("ok"):
+                lines.append(f"  📄 {d.get('tool')} → {_facts or 'ok'}")
+            else:
+                lines.append(f"  📄 {d.get('tool')} → ❌ {d.get('error') or 'failed'}")
         if rd["ai_text"]:
-            lines.append(f"  💬 {rd['ai_text'][:300]}")
+            # 协议 §4.1：**任何一轮的 AI 原文不得省略** —— 截断会让"话术很长但没给出口"
+            # 这类体验问题在证据里消失（UA 判定必须能读到全文）
+            lines.append(f"  💬 {rd['ai_text']}")
         if rd["error"]:
-            lines.append(f"  ⚠️ error: {rd['error'][:150]}")
+            lines.append(f"  ⚠️ error: {rd['error']}")
     return "\n".join(lines)
 
 
 async def main():
     if len(sys.argv) < 2:
-        print("用法: PERSONA=mibao|xiaobu python3 acceptance_runner.py <场景json>")
+        print("用法: PERSONA=mibao|xiaobu python3 acceptance_runner.py <场景json> [输出目录]")
         sys.exit(1)
     with open(sys.argv[1], encoding="utf-8") as f:
         scenarios = json.load(f)
+    out_dir = Path(sys.argv[2]) if len(sys.argv) > 2 else None
+    date = os.environ.get("ACCEPTANCE_DATE", "local")
+    sha = os.environ.get("GITHUB_SHA", "local")[:8]
     token = await login()
-    print(f"PERSONA={PERSONA} | token={'真实登录' if token else 'X-Debug-Role'}")
+    print(f"PERSONA={PERSONA} | token={'真实登录' if token else 'X-Debug-Role'}", flush=True)
+    all_issues = []
     for sc in scenarios:
         print("\n" + "=" * 70)
+        print(f"▶ 开始场景 {sc.get('id')}（{len(sc.get('rounds') or [])} 段）", flush=True)
         result = await run_scenario(sc, token)
+        issues = evaluate_checks(sc.get("checks") or [], result["rounds"])
+        result["issues"] = issues
+        result["ua_pending"] = ua_items(sc.get("checks") or [])
         print(render(result))
+        print(f"\nL1/L2 违规 {len(issues)} 条；UA 待 AI 用户代理判定 {len(result['ua_pending'])} 条")
+        for it in issues:
+            print(f"  ❌ [{it['level']}] {it['detail']}")
+        all_issues += issues
+        if out_dir:
+            # 协议 §4.1：acceptance/<日期>/<剧本ID>/<场景ID>.transcript.md（AI 原文不得省略）
+            d = out_dir
+            d.mkdir(parents=True, exist_ok=True)
+            (d / f"{result['id']}.transcript.md").write_text(render(result) + "\n", encoding="utf-8")
+            (d / f"{result['id']}.evidence.json").write_text(
+                json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
+            (d / f"{result['id']}.report.md").write_text(
+                build_report(sc, sc.get("checks") or [], issues, sha, date) + "\n", encoding="utf-8")
         print("=" * 70)
+    if out_dir:
+        print(f"\n产物已写入 {out_dir}")
+    print(f"\n总计 L1/L2 违规 {len(all_issues)} 条")
+    sys.exit(1 if all_issues else 0)
 
 
 if __name__ == "__main__":

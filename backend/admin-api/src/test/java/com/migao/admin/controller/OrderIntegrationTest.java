@@ -84,7 +84,7 @@ class OrderIntegrationTest {
         item.setId("item-001");
         item.setProductId("prod-001");
         item.setProductName("遮光窗帘");
-        item.setQuantity(2);
+        item.setQuantity(BigDecimal.valueOf(2));
         item.setUnitPrice(new BigDecimal("500.00"));
         item.setWidth(new BigDecimal("2.5"));
         item.setHeight(new BigDecimal("2.8"));
@@ -104,7 +104,7 @@ class OrderIntegrationTest {
         OrderCreateRequest.OrderItemRequest item = new OrderCreateRequest.OrderItemRequest();
         item.setProductId("prod-001");
         item.setProductName("遮光窗帘");
-        item.setQuantity(2);
+        item.setQuantity(BigDecimal.valueOf(2));
         item.setUnitPrice(new BigDecimal("500.00"));
         item.setWidth(new BigDecimal("2.5"));
         item.setHeight(new BigDecimal("2.8"));

@@ -1,0 +1,20 @@
+[
+  {
+    "journey": "C6-cloud-quote-flow",
+    "pass": true,
+    "errors": [],
+    "notes": [
+      "端到端（云 ai-agent 真实 LLM + C 端 UI）：消息已发，等待回复卡片；结果见截图"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "C7-cloud-product-flow",
+    "pass": true,
+    "errors": [],
+    "notes": [
+      "端到端（云 LLM）：商品推荐回复；结果见截图"
+    ],
+    "evidence": []
+  }
+]

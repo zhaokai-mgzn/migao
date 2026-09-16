@@ -23,9 +23,14 @@ export default function ToolResultCard({ card }: ToolResultCardProps) {
     case 'order':
       return <OrderCard data={card.data} />
     default:
+      // 未知卡片类型：不回显内部 type（避免把内部类型名泄漏给商家用户），
+      // 给出可理解的通用占位（与 C 端「消息内容暂不支持预览」同族口径，issue #3960）
       return (
-        <div className="bg-neutral-50 border border-neutral-200 rounded-lg p-3 text-xs text-neutral-500">
-          <span className="font-medium">未知卡片类型:</span> {card.type}
+        <div
+          data-testid="tool-result-card-unsupported"
+          className="bg-neutral-50 border border-neutral-200 rounded-lg p-3 text-xs text-neutral-500"
+        >
+          📎 消息内容暂不支持预览
         </div>
       )
   }

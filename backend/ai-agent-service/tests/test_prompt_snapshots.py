@@ -1,3 +1,4 @@
+# case_ids: PG-012, PR-013, PR-024, KN-001, KN-002, OR-013
 """
 防线 2: Prompt 黄金快照测试
 
@@ -9,7 +10,8 @@
 
 改动 references/ 下的 Prompt 文件后运行此测试即可发现意外变更。
 """
-# case_ids: MC-003, MC-010, CH-003, CH-018, PR-019
+
+import os as _os
 
 import pytest
 
@@ -52,6 +54,24 @@ def test_skill_has_principles(skill):
 
 
 @pytest.mark.parametrize("skill", MIBAO_SKILLS)
+def test_global_rules_forbid_english_in_user_facing_replies(skill):
+    """全局规则必须要求「面向用户一律中文」，且覆盖**技术术语（SKU/ID）**而不只是英文枚举。
+
+    为什么锁这条：用户（顾客尤其低学历用户、以及商家员工）看不懂英文单词。
+    规则原先只禁「英文枚举」（pending/refund），实测仍漏出 `SKU`（小布 1 次 / 米宝 3 次）
+    与 `ID`（米宝 1 次）——见 2026-09-14 结论档 run 34841029062 的回复文本。
+    ⚠️ 本断言同时防「把规则改回只禁枚举」的回退：只留 ① 会让 ② 类泄漏重新发生。
+    """
+    prompt = _build_system_prompt(skill)
+    assert "面向用户一律中文" in prompt, f"{skill}: 缺少「面向用户一律中文」语言铁律"
+    # ② 类（技术术语）必须被点名，否则模型不知道 SKU/ID 也算「英文」
+    assert "SKU" in prompt, f"{skill}: 语言规则未点名 SKU（技术术语会漏给用户）"
+    assert "UUID" in prompt, f"{skill}: 语言规则未点名 UUID/ID 一类标识"
+    # ① 类（英文枚举）不得被删掉
+    assert "pending" in prompt or "refund" in prompt, f"{skill}: 英文枚举禁令被删除"
+
+
+@pytest.mark.parametrize("skill", MIBAO_SKILLS)
 def test_skill_prompt_length_reasonable(skill):
     """Prompt 长度在合理范围（200-11200 字符）
 
@@ -61,7 +81,8 @@ def test_skill_prompt_length_reasonable(skill):
     2026-09-08 上限 10800→11200：product 确认卡片必须发出、禁止只发文字提示（#3045），达 11131。
     """
     prompt = _build_system_prompt(skill)
-    assert 200 < len(prompt) < 12000, f"{skill}: prompt 长度异常 ({len(prompt)} chars)"
+    # 2026-09-15 上限 12000→13000：order 单价铁律补「系统会拦截并回填」+ EXAMPLES-order.md 反例4（OR-014 判定跑 34923425338 收口，达 12595）
+    assert 200 < len(prompt) < 13000, f"{skill}: prompt 长度异常 ({len(prompt)} chars)"
 
 
 # ============ 领域隔离检查 ============
@@ -207,6 +228,7 @@ def test_snapshot_all_skills():
         "settings": 600,
         "data": 500,
         "general": 700,
+        "knowledge": 3000,   # 有 EXAMPLES（issue #3569 补：knowledge 域此前不在任何厚度门禁里）
     }
     for skill, min_len in expected_min.items():
         prompt = _build_system_prompt(skill)
@@ -217,14 +239,15 @@ def test_snapshot_all_skills():
 
     # 最大长度快照（防止无限制膨胀）
     expected_max = {
-        "product": 12000,  # +800: 澄清话术(#2784)+承诺边界(#2785) + 加工项主动询问增强（issue #2892，达 9985）+ 建品规格/加工项价格规则（#3027，达 10732）+ 确认卡片必须发出（issue #3045，达 11131）+ 库存工具分工铁律（Round 37，达 11318）
-        "order": 10000,   # +800: 加工项数量自动推导（issue #2986）+ confirm 前必须主动询问加工项（issue #3033，达 8836）+ 共享规则确认卡片铁律（issue #3045，达 9133）+ 规格ID≠商品ID 铁律（Round 39，达 9396）
+        "product": 12400,  # +800: 澄清话术(#2784)+承诺边界(#2785) + 加工项主动询问增强（issue #2892，达 9985）+ 建品规格/加工项价格规则（#3027，达 10732）+ 确认卡片必须发出（issue #3045，达 11131）+ 库存工具分工铁律（Round 37，达 11318）+ 120（issue #3930/#3931）：product_update 描述补「主图/详情图走 product_manage」反例 + product.md 主图/详情图映射行（达 12019）+ 379（issue #3936）：product.md 补「禁止以工具不支持/没有能力为由拒绝写操作」通用铁律（达 12398）
+        "order": 12600,  # +800: 加工项数量自动推导（issue #2986）+ confirm 前必须主动询问加工项（issue #3033，达 8836）+ 共享规则确认卡片铁律（issue #3045，达 9133）+ 规格ID≠商品ID 铁律（Round 39，达 9396）+ 加工单域（#3340，达 10005）；+1200（issue #3799）：订单→物流链收口（prompts/order.md 链规则 + EXAMPLES-order.md「同一轮 order_query→logistics_track」正/反例，达 11364）；+600（issue #3873）：单价铁律——报价/确认/落单单价必须来自商品库，禁止编造分色价（达 11967）；+400（OR-014 判定跑 34923425338 收口）：单价铁律补「系统会拦截并回填」+ EXAMPLES-order.md 反例4「库价 168 却写米白 150」（达 12595）；-233（issue #3917，达 12362）：加工单章节由「工具操作指引」（生成/查询/发加工/start/complete/cancel）整体替换为「加工项 vs 加工单概念区分 + 不接入声明」——删 frontmatter/工具使用表 3 个 processing_order 工具行，新增概念定义/禁止代替/引导后台口径；+76（issue #3921，达 12438）：补「问加工单不调用任何工具（含订单查询/加工项查询）——调任何查询工具都拿不到加工单，只会答非所问」
         "aftersales": 8000,  # +1300: 禁英文枚举 + 退货库存规则（issue #2991）+ 换货加工项确认（issue #3033，达 6269）+ 共享规则确认卡片铁律（issue #3045，达 6566）+ 创建/关闭工单执行引导（Round 43，达 7068）
         "customer": 8500,  # +3500: 领域 prompt 补齐打标签流程（CU-003 场景）+ EXAMPLES 补标签示例（Round 33）
         "staff": 8000,    # +3100: 领域 prompt 补齐创建角色流程（HR-005 场景）+ EXAMPLES 补角色创建示例（Round 32）
         "settings": 6500, # +1600: 领域 prompt 补齐配置/通知流程（Round 34）
         "data": 6500,     # +1700: 领域 prompt 补齐看板/会话流程（Round 34）
-        "general": 5800,  # +600: Phase 2 (#2789) 澄清卡引导（choice 候选示例）达 5465
+        "general": 6400,  # +600: Phase 2 (#2789) 澄清卡引导（choice 候选示例）达 5465；+200: 兜底库存查询改真实工具（issue #3569，达 5827）；+200: 面向用户一律中文（扩到 SKU/ID 等技术术语，达 6079）；+207（issue #3921）：加工单≠加工项兜底口径——问加工单不调 processing_item_query、解释概念并引导后台（达 6286）
+        "knowledge": 7000,  # issue #3569：knowledge 域（B 端知识问答）补入厚度门禁，达 5032
     }
     for skill, max_len in expected_max.items():
         prompt = _build_system_prompt(skill)
@@ -317,3 +340,116 @@ def test_customer_general_image_clarify_not_default_search():
     assert "不要默认直接搜相似" in CUSTOMER_GENERAL_SYSTEM_PROMPT, (
         "customer_general 图片段仍默认直接搜相似（应意图明确才搜）"
     )
+
+
+# ============ C 端（小布）Prompt 厚度门禁（issue #3569） ============
+#
+# 为什么 C 端需要单独一套门禁：
+# 1) 上面 `test_snapshot_all_skills` 只列 8 个 B 端 skill，且调用
+#    `_build_system_prompt(skill)` **不传 inline_prompt**；而 C 端 6 个域
+#    （customer_order/customer_product/customer_quote/customer_aftersales/
+#    customer_knowledge/customer_general）的领域规则**大量写在
+#    `{SKILL}_SYSTEM_PROMPT`（L4 内联）里**、`references/prompts/{skill}.md`（L3）多为空
+#    → 只测 references 层等于对 C 端结构性不可见，C 端可无限变薄而 CI 全绿。
+# 2) `_read_cached`（base_skill.py:512-524）在文件缺失时**静默返回 ""** → 删掉一个
+#    `EXAMPLES-{skill}.md` 不会有任何报错，只是 prompt 悄悄变薄（"无声变薄"的机制根源）。
+#    故这里额外显式断言 EXAMPLES 文件存在且非空、且组装结果里真的有 few-shot 段。
+#
+# 快照值取自 2026-09-14 实测（issue #3569）。每项 4 个数字，分别守不同的"变薄"路径：
+#   (EXAMPLES 最小字符, 内联 prompt 最小字符, 组装后最小字符, 组装后最大字符)
+#   - EXAMPLES 最小 → 文件被删/清空/截成残片（L5 无声消失）
+#   - 内联最小     → `{SKILL}_SYSTEM_PROMPT` 被删空/大幅删减（C 端规则主载体在 L4）
+#   - 组装后最小   → L3（prompts/{skill}.md）或上两层被削
+#   - 组装后最大   → 重复拼接、失控膨胀
+# 只抓"整层消失/大幅删减"；单条规则的丢失由本文件的关键词断言（如"候选意图卡"）兜住。
+# 失败时判断：故意增删内容 → 更新对应数字；意外变更 → 查 references/ 与 skill 内联是否被误改。
+CUSTOMER_SKILL_LENGTH_SNAPSHOT = {
+    # 域                    EXAMPLES≥  内联≥   组装≥     组装≤
+    "customer_order":      (1000,     3200,   7500,     10500),
+    "customer_product":    (800,       800,   4900,     7000),
+    "customer_quote":      (1500,      900,   7500,     11000),
+    "customer_aftersales": (1400,     1400,   5700,     9000),
+    "customer_knowledge":  (1000,      700,   6400,     8800),
+    "customer_general":    (600,       900,   4900,     7000),
+}
+
+_EXAMPLES_DIR = _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))),
+                              "app", "graph", "skills", "references")
+
+
+def _customer_inline_prompt(skill: str) -> str:
+    """该 skill 运行时真正注入的内联 prompt（L4 = `SkillConfig.system_prompts[persona]`）。
+
+    运行时调用点 base_skill.py:2663 即 `_build_system_prompt(skill_name, inline_prompt=system_prompt)`。
+    """
+    from app.graph.skills.skill_registry import get_skill_registry
+
+    cfg = get_skill_registry().get_or_raise(skill)
+    inline = (cfg.system_prompts or {}).get(cfg.default_persona, "")
+    assert inline, f"{skill}: SkillConfig.system_prompts[{cfg.default_persona}] 为空（C 端规则主要在这层）"
+    return inline
+
+
+def _customer_prompt(skill: str) -> str:
+    """按**运行时口径**组装 C 端 prompt：显式传入内联 prompt（L4）。
+
+    这一点是关键：`test_snapshot_all_skills` 调 `_build_system_prompt(skill)` 不传内联，
+    对"规则主要写在内联里"的 C 端结构性不可见。
+    """
+    return _build_system_prompt(skill, inline_prompt=_customer_inline_prompt(skill))
+
+
+@pytest.mark.parametrize("skill", sorted(CUSTOMER_SKILL_LENGTH_SNAPSHOT))
+def test_customer_prompt_has_fewshot_examples(skill):
+    """C 端每个域必须有非空 `EXAMPLES-{skill}.md`（L5），且真的拼进了 prompt。
+
+    L5 位于 prompt 最末（衰减最小、行为影响最大）。文件缺失时 `_read_cached`
+    （base_skill.py:512-524）静默返回 ""，连"## Few-shot 参考示例"标题都不会出现，
+    却没有任何红灯 —— 这是"无声变薄"的机制根源。
+    """
+    path = _os.path.join(_EXAMPLES_DIR, "EXAMPLES-" + skill + ".md")
+    assert _os.path.exists(path), (
+        f"{skill}: 缺少 {path} —— C 端 few-shot 是行为影响最大的一层，不允许缺（issue #3569）"
+    )
+    with open(path, "r", encoding="utf-8") as f:
+        content = f.read().strip()
+    min_chars = CUSTOMER_SKILL_LENGTH_SNAPSHOT[skill][0]
+    assert len(content) >= min_chars, (
+        f"{skill}: EXAMPLES 只有 {len(content)} 字符 < {min_chars} —— 被清空/截断？"
+    )
+    assert "## Few-shot 参考示例" in _customer_prompt(skill), (
+        f"{skill}: 组装后的 prompt 没有 few-shot 段 —— EXAMPLES 未被加载"
+    )
+
+
+@pytest.mark.parametrize("skill", sorted(CUSTOMER_SKILL_LENGTH_SNAPSHOT))
+def test_customer_inline_prompt_thickness(skill):
+    """C 端内联 prompt（L4）不得被删减 —— C 端 6 个域都没有 L3，规则 100% 压在这层。"""
+    inline = _customer_inline_prompt(skill)
+    min_chars = CUSTOMER_SKILL_LENGTH_SNAPSHOT[skill][1]
+    assert len(inline) >= min_chars, (
+        f"{skill}: 内联 prompt 只有 {len(inline)} 字符 < {min_chars} —— "
+        f"C 端领域规则主要在这层，被删减等于能力静默降级"
+    )
+
+
+@pytest.mark.parametrize("skill", sorted(CUSTOMER_SKILL_LENGTH_SNAPSHOT))
+def test_customer_prompt_length_snapshot(skill):
+    """C 端组装后长度（含内联 prompt）必须在区间内 —— 防无声变薄与失控膨胀。"""
+    _, _, min_len, max_len = CUSTOMER_SKILL_LENGTH_SNAPSHOT[skill]
+    prompt = _customer_prompt(skill)
+    assert len(prompt) >= min_len, (
+        f"{skill}: C 端 prompt 长度 {len(prompt)} < {min_len}。"
+        f"检查 prompts/{skill}.md（L3）/ EXAMPLES-{skill}.md（L5）/ 内联 prompt 是否被削。"
+    )
+    assert len(prompt) <= max_len, (
+        f"{skill}: C 端 prompt 长度 {len(prompt)} > {max_len}（可能重复拼接），"
+        f"确认后更新 CUSTOMER_SKILL_LENGTH_SNAPSHOT。"
+    )
+    # 90% 预警（与 B 端快照同口径）：别一加就顶格
+    if len(prompt) > max_len * 0.9:
+        import warnings
+        warnings.warn(
+            f"⚠️  {skill}: C 端 prompt 长度 {len(prompt)}/{max_len} "
+            f"({len(prompt)*100//max_len}%) — 接近上限，新内容需精简"
+        )

@@ -1,4 +1,4 @@
-// case_ids: CH-001, CH-002, CH-003, UI-006, PP-001, PR-010, UI-030, UI-031, UI-032
+// case_ids: CH-001, CH-002, CH-003, UI-006, UI-017, PP-001, PR-010, UI-030, UI-031, UI-032
 /**
  * components/chat 覆盖率补全 — Issue #567
  *
@@ -1265,14 +1265,32 @@ describe('ToolResultCard', () => {
     expect(screen.getByText(/ORD-001/)).toBeInTheDocument()
   })
 
-  it('shows fallback for unknown card type', () => {
+  it('shows a generic placeholder for unknown card type without leaking the internal type', () => {
+    // issue #3960：修复前此分支渲染「未知卡片类型: unknown_type」——既把内部类型名泄漏给
+    // 商家用户，又是个没有任何可点内容的灰盒。现改为通用占位（与 C 端同族口径）。
     const card = {
       type: 'unknown_type' as any,
       data: {},
     }
     render(<ToolResultCard card={card} />)
-    expect(screen.getByText(/未知卡片类型/)).toBeInTheDocument()
-    expect(screen.getByText('unknown_type')).toBeInTheDocument()
+    expect(screen.getByTestId('tool-result-card-unsupported')).toBeInTheDocument()
+    expect(screen.getByText(/消息内容暂不支持预览/)).toBeInTheDocument()
+    expect(screen.queryByText(/未知卡片类型/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/unknown_type/)).not.toBeInTheDocument()
+  })
+
+  it('renders quotation card type with the graceful placeholder (backend emits it; C-end renders it)', () => {
+    // issue #3960 的真实形态：后端 _detect_card_type 会下发 quotation（curtain_calc），
+    // B 端此前无该 case ⇒ 落到 default 灰盒。当前口径下 quotation 对 B 端米宝不可达
+    // （curtain_calc 为 C 端专属工具），故此处只钉「优雅降级」：不泄漏内部类型名。
+    // 若日后为 B 端补上报价单卡真实渲染，本用例应改为断言真实卡片。
+    const card = {
+      type: 'quotation' as any,
+      data: { total: 1280 },
+    }
+    render(<ToolResultCard card={card} />)
+    expect(screen.getByTestId('tool-result-card-unsupported')).toBeInTheDocument()
+    expect(screen.queryByText(/quotation/)).not.toBeInTheDocument()
   })
 })
 

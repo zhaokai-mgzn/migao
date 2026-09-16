@@ -28,7 +28,7 @@ def sample_product_data():
         "basePrice": 299.0,
         "originalPrice": 399.0,
         "stock": 100,
-        "status": "active",
+        "status": "on_sale",
         "categoryId": "cat_001",
         "categoryName": "遮光窗帘",
         "images": ["https://img.example.com/1.jpg", "https://img.example.com/2.jpg"],

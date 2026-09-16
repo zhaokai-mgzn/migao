@@ -1,15 +1,15 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { Building2, Bot, Bell, Save } from 'lucide-react'
+import { Building2, Bot, Bell, Save, Newspaper } from 'lucide-react'
 import Image from 'next/image'
 import { useSearchParams } from 'next/navigation'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui'
-import { settingsApi, uploadApi } from '@/lib/api'
+import { settingsApi, uploadApi, briefingApi } from '@/lib/api'
 import { readImageDimensions } from '@/lib/image-dimensions'
 import { useAuthStore } from '@/store/auth'
-import type { SystemSettings, AiConfig } from '@/types'
+import type { SystemSettings, AiConfig, BriefingConfig } from '@/types'
 
 // #3081: 原「AI 客服配置」独立页面（/chat/config）合并进企业基础信息，
 // 区块命名「AI 客服设置」——配置顾客在对话中看到的 AI 客服助手（小布）的名称与欢迎语。
@@ -53,6 +53,31 @@ export default function SettingsPage() {
   const [loadingAiConfig, setLoadingAiConfig] = useState(false)
   const [savingAiConfig, setSavingAiConfig] = useState(false)
 
+  // ============ 智能每日经营简报（issue #3468）============
+  const [briefingConfig, setBriefingConfig] = useState<BriefingConfig>({
+    enabled: false,
+    generateTime: '06:00',
+  })
+  const [loadingBriefing, setLoadingBriefing] = useState(false)
+
+  // 加载简报配置
+  const loadBriefingConfig = useCallback(async () => {
+    setLoadingBriefing(true)
+    try {
+      const res = await briefingApi.getConfig()
+      if (res.data.data) {
+        setBriefingConfig({
+          enabled: !!res.data.data.enabled,
+          generateTime: res.data.data.generateTime || '06:00',
+        })
+      }
+    } catch {
+      // 简报配置读取失败保持默认（关闭态），不阻塞设置页
+    } finally {
+      setLoadingBriefing(false)
+    }
+  }, [])
+
   // 加载企业信息
   const loadSettings = useCallback(async () => {
     setLoadingSettings(true)
@@ -92,7 +117,8 @@ export default function SettingsPage() {
   useEffect(() => {
     loadSettings()
     loadAiConfig()
-  }, [loadSettings, loadAiConfig])
+    loadBriefingConfig()
+  }, [loadSettings, loadAiConfig, loadBriefingConfig])
 
   const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -276,6 +302,104 @@ export default function SettingsPage() {
                     </div>
                   </div>
 
+                  {/* 智能每日经营简报（issue #3468，企业开关） */}
+                  <div className="border-t border-neutral-100 pt-6">
+                    <div className="flex items-start gap-3 mb-4">
+                      <div className="w-9 h-9 rounded-lg bg-primary-50 flex items-center justify-center flex-shrink-0">
+                        <Newspaper className="w-5 h-5 text-primary-600" />
+                      </div>
+                      <div>
+                        <h3 className="text-base font-semibold text-neutral-900">智能每日经营简报</h3>
+                        <p className="text-sm text-neutral-500 mt-0.5">
+                          AI 每天清晨自动整理「昨日回顾 · 今日必办 · 风险预警 · 优化建议」，辅助管理者决策
+                        </p>
+                      </div>
+                    </div>
+                    {loadingBriefing ? (
+                      <div className="text-sm text-neutral-500 py-4 text-center">加载中...</div>
+                    ) : (
+                      <div className="space-y-4">
+                        {/* 企业开关（即时保存） */}
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <div className="text-sm font-medium text-neutral-700">启用智能每日经营简报</div>
+                            <div className="text-xs text-neutral-500">
+                              开启后：立即生成今日简报、此后每日定时生成、侧边栏显示「每日简报」入口；关闭后：停止生成、入口隐藏（历史保留）
+                            </div>
+                          </div>
+                          <button
+                            aria-label="启用智能每日经营简报开关"
+                            className={`relative w-11 h-6 shrink-0 rounded-full transition-colors ${
+                              briefingConfig.enabled ? 'bg-primary-600' : 'bg-neutral-300'
+                            }`}
+                            onClick={async () => {
+                              const next = !briefingConfig.enabled
+                              const prev = briefingConfig
+                              setBriefingConfig({ ...prev, enabled: next })
+                              try {
+                                const res = await briefingApi.updateConfig({ enabled: next })
+                                // P2-4: toast 与真实结果一致 —— 开启后今日简报可能生成失败
+                                // （LLM 不可用等），不无条件宣称「已生成」
+                                const cfg = res.data.data
+                                setBriefingConfig({
+                                  enabled: !!cfg?.enabled,
+                                  generateTime: cfg?.generateTime || '06:00',
+                                })
+                                toast.success(next
+                                  ? '已开启智能每日经营简报，今日简报将尽快生成'
+                                  : '已关闭智能每日经营简报')
+                              } catch {
+                                setBriefingConfig(prev)
+                                toast.error('保存失败')
+                              }
+                            }}
+                          >
+                            <span
+                              className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform shadow ${
+                                briefingConfig.enabled ? 'translate-x-5' : 'translate-x-0'
+                              }`}
+                            />
+                          </button>
+                        </div>
+
+                        {/* 生成时刻（即时保存） */}
+                        <div className="flex items-center justify-between gap-4">
+                          <div>
+                            <div className="text-sm font-medium text-neutral-700">每日生成时刻</div>
+                            <div className="text-xs text-neutral-500">默认 06:00，按企业需要调整（24 小时制 HH:mm）</div>
+                          </div>
+                          <input
+                            aria-label="简报每日生成时刻"
+                            type="time"
+                            value={briefingConfig.generateTime}
+                            disabled={!briefingConfig.enabled}
+                            onChange={(e) => setBriefingConfig({ ...briefingConfig, generateTime: e.target.value })}
+                            onBlur={async () => {
+                              const time = briefingConfig.generateTime
+                              if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) {
+                                toast.error('生成时刻格式不正确，应为 HH:mm')
+                                await loadBriefingConfig()
+                                return
+                              }
+                              try {
+                                await briefingApi.updateConfig({ generateTime: time })
+                                toast.success('简报生成时刻已更新')
+                              } catch {
+                                toast.error('保存失败')
+                                await loadBriefingConfig()
+                              }
+                            }}
+                            className="h-9 px-3 rounded border border-neutral-300 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 disabled:bg-neutral-50 disabled:text-neutral-400"
+                          />
+                        </div>
+
+                        <p className="text-[11px] leading-relaxed text-neutral-400">
+                          数据安全：简报仅使用经营聚合数据，客户隐私信息不会进入 AI 生成环节；所有数字与经营数据源核对一致后才展示。
+                        </p>
+                      </div>
+                    )}
+                  </div>
+
                   <div className="pt-4">
                     <Button onClick={handleSaveSettings} loading={savingSettings}>
                       <Save className="w-4 h-4 mr-1.5" />
@@ -354,7 +478,7 @@ export default function SettingsPage() {
                   </div>
                   <button
                     aria-label="启用系统通知开关"
-                    className={`relative w-11 h-6 rounded-full transition-colors ${
+                    className={`relative w-11 h-6 shrink-0 rounded-full transition-colors ${
                       settings.notificationEnabled ? 'bg-primary-600' : 'bg-neutral-300'
                     }`}
                     onClick={handleToggleNotification}

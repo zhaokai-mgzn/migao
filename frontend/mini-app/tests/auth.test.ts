@@ -58,7 +58,7 @@ describe('auth utils', () => {
     })
 
     it('应解析 JSON 字符串并返回用户对象', () => {
-      const user = { id: 'u1', nickname: '测试用户', avatar: null, tenant_id: 1 }
+      const user = { id: 'u1', nickname: '测试用户', avatar: null, tenantId: 1 }
       Taro.setStorageSync(STORAGE_KEYS.USER, JSON.stringify(user))
       expect(getUser()).toEqual(user)
     })
@@ -150,7 +150,7 @@ describe('auth utils', () => {
 
   describe('miniAppLogin', () => {
     it('登录成功应存储 Token 和用户信息', async () => {
-      const mockUser = { id: 'u1', nickname: '用户1', avatar: null, tenant_id: 1 }
+      const mockUser = { id: 'u1', nickname: '用户1', avatar: null, tenantId: 1 }
       mockPost.mockResolvedValueOnce({
         success: true,
         data: { accessToken: 'jwt-token-abc', user: mockUser },

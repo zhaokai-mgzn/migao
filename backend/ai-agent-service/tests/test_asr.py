@@ -2,6 +2,7 @@
 Tests for app/api/asr.py — ASR voice transcription endpoint
 """
 # case_ids: API-012
+# 映射说明：#3944 新增用例沿用 API-012 域——非 RuntimeError 兜底 503（裸 500 回归防护）+ loguru 日志断言
 import pytest
 from unittest.mock import MagicMock, AsyncMock, patch
 
@@ -60,12 +61,15 @@ class TestCollectorCallback:
         cb = _CollectorCallback()
         assert cb.full_text == ""
 
-    def test_full_text_returns_last_sentence(self):
+    def test_full_text_joins_all_sentences(self):
+        """缺陷修复后行为（旧行为只回最后一句 = B 端「只能识别后半段」根因）"""
         from app.api.asr import _CollectorCallback
         cb = _CollectorCallback()
-        cb.sentences.append("你好")
-        cb.sentences.append("帮我查订单")
-        assert cb.full_text == "帮我查订单"
+        self._emit(cb, [
+            {"text": "你好", "sid": 0},
+            {"text": "帮我查订单", "sid": 1},
+        ])
+        assert cb.full_text == "你好帮我查订单"
 
     def test_on_event_skips_empty(self):
         from app.api.asr import _CollectorCallback
@@ -82,6 +86,38 @@ class TestCollectorCallback:
         mock_result.get_sentence.return_value = {"text": "   "}
         cb.on_event(mock_result)
         assert cb.full_text == ""
+
+    @staticmethod
+    def _emit(cb, events):
+        """按 DashScope 流式事件序列喂入收集器（partial 中间结果 + final 句）"""
+        for ev in events:
+            mock_result = MagicMock()
+            mock_result.get_sentence.return_value = {
+                "text": ev["text"],
+                "sentence_id": ev.get("sid", 0),
+                **ev.get("meta", {}),
+            }
+            cb.on_event(mock_result)
+
+    def test_multi_sentence_full_text_keeps_all_sentences(self):
+        """缺陷实证（B 端语音「只能识别后半段」）：两句录音只回最后一句。
+
+        DashScope paraformer-realtime 对带停顿的多句语音会逐句返回，
+        收集器若只取最后一条事件，用户说的前半句（如"你好"）整段丢失。
+        同句 partial 中间结果（"你"→"你好"）应被该句最终结果覆盖而非拼接。
+        """
+        from app.api.asr import _CollectorCallback
+        cb = _CollectorCallback()
+        self._emit(cb, [
+            {"text": "你", "sid": 0},
+            {"text": "你好", "sid": 0},
+            {"text": "你好。", "sid": 0},
+            {"text": "帮", "sid": 1},
+            {"text": "帮我查", "sid": 1},
+            {"text": "帮我查一下订", "sid": 1},
+            {"text": "帮我查一下订单", "sid": 1},
+        ])
+        assert cb.full_text == "你好。帮我查一下订单"
 
 
 class TestTranscribeResponse:
@@ -215,3 +251,30 @@ class TestTranscribeAudioFriendlyErrors:
         )
         assert resp.text == "帮我查一下订单"
         assert resp.duration_ms > 0
+
+    @patch("app.api.asr._convert_to_wav", return_value=b"fake-wav-16000hz" * 2000)
+    @patch("app.api.asr._transcribe_audio", new_callable=AsyncMock)
+    async def test_non_runtime_error_returns_503_not_500(self, mock_transcribe, mock_convert):
+        """#3944 非 RuntimeError（dashscope InputRequired/InvalidParameter/NetworkError 等）
+        此前裸 500；兜底后返回友好 503「语音识别服务暂时不可用，请稍后重试」，绝不是 500"""
+        from app.api.asr import transcribe_audio
+        from fastapi import HTTPException
+
+        mock_transcribe.side_effect = ValueError("dashscope InvalidParameter: params invalid")
+        with pytest.raises(HTTPException) as exc:
+            await transcribe_audio(
+                audio=_mock_file(b"\x00" * 64 * 1024),
+                current_user=MagicMock(tenant_id=1),
+            )
+        assert exc.value.status_code == 503
+        assert exc.value.status_code != 500
+        assert "暂时不可用" in exc.value.detail
+
+
+class TestAsrLogger:
+    """#3944 日志统一走 loguru（全项目规范）；标准库默认 handler 生产会丢弃 info 日志"""
+
+    def test_logger_is_loguru_singleton(self):
+        from app.api import asr
+        from loguru import logger as loguru_logger
+        assert asr.logger is loguru_logger

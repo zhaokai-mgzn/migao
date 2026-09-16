@@ -25,8 +25,9 @@ SQL schema 完整性守卫（issue #3270）。
 
 本测试用静态分析等价覆盖上述 5 类，提交即可拦住，无需起库。
 """
-# case_ids: MC-012, CH-010
+# case_ids: MC-012, CH-010, OR-017, CH-024
 import re
+import sys
 from pathlib import Path
 
 SCHEMA = Path(__file__).parent.parent.parent / "docs" / "sql" / "schema.sql"
@@ -40,6 +41,26 @@ _NON_TABLE = {"select", "where", "set", "values", "only", "if", "exists", "table
 
 def _strip_comments(sql: str) -> str:
     return "\n".join(l for l in sql.split("\n") if not l.lstrip().startswith("--"))
+
+
+# 证据类步骤（路由 dump / DB 审计）的 `if:` 允许的唯一放行条件（issue #3417 提速）。
+# 语义：**默认永远跑**（失败轮次与成功轮次都要留证据），仅 `fast=true` 的迭代 run 跳过。
+# 只认这一个开关 —— 别的 gate（tier/shard/分支）会让证据在正式 run 里静默消失，
+# 那正是「报告说创建成功、库里没有」查不出来的一类问题（acceptance-protocol §2.2）。
+_EVIDENCE_FAST_SKIP = "github.event.inputs.fast != 'true'"
+
+
+def assert_always_unless_fast(step, label: str) -> None:
+    cond = (step or {}).get("if") or ""
+    assert "always()" in cond, (
+        f"{label} 必须 if: always() —— 成功轮次同样要留证据（基线/改进要能对比）"
+    )
+    extra = cond.replace("always()", "").replace("&&", " ").strip()
+    if extra:
+        assert extra == _EVIDENCE_FAST_SKIP, (
+            f"{label} 的 if 只允许额外叠加 fast 跳过开关（{_EVIDENCE_FAST_SKIP}），"
+            f"实际为 {cond!r} —— 别的 gate 会让证据在正式 run 里静默消失"
+        )
 
 
 def _created_tables(body: str):
@@ -180,6 +201,7 @@ class TestNoStrayStatementsOnDroppedTables:
 
 COMPOSE = Path(__file__).parent.parent.parent / "deploy" / "docker-compose.yml"
 WORKFLOWS_DIR = Path(__file__).parent.parent.parent / ".github" / "workflows"
+REPO_ROOT = Path(__file__).parent.parent.parent
 
 
 class TestPostgresHealthcheckMatchesDatabase:
@@ -455,6 +477,17 @@ FIXTURE = (Path(__file__).parent.parent.parent
            / "tests" / "agent_eval" / "fixtures" / "xiaobu_eval_seed.sql")
 
 
+def _strip_sql_comments(sql: str) -> str:
+    """剥掉 SQL 注释，只留可执行代码。
+
+    ⚠️ 为什么必须剥：fixture 的注释里**大量引用商品名/用例输入**（这正是文档价值所在），
+    于是裸 `assert "夏日清风窗帘" in sql` 会被**注释**满足 —— 把商品改名后测试照样通过
+    （变异测试 M2 实测假绿）。与「断言匹配到注释里的 pipefail」是同一类错误。
+    """
+    sql = re.sub(r"/\*[\s\S]*?\*/", "", sql)
+    return "\n".join(re.sub(r"--.*$", "", line) for line in sql.splitlines())
+
+
 class TestXiaobuEvalFixture:
     """C 端评测业务数据 fixture 契约（issue #3270）。
 
@@ -519,16 +552,37 @@ class TestXiaobuEvalFixture:
         )
 
     def test_workflow_references_fixture_path(self):
+        """fixture 路径 + fail-fast 必须存在于**种子单一源**里（issue #3563）。
+
+        issue #3563 起 workflow 侧不再内联 fixture 路径（那正是"三处各写一份规则"的
+        病灶形态），改为调用 `scripts/eval_stack_seed.sh`。本测试的**原意**（"workflow
+        真的会装这套 fixture、且失败即 fail"）不变，只是取证点从 workflow 步骤体下移到
+        单一源：由 `test_eval_stack_seed_parity.py` 锁定"workflow 确实调用了它"，
+        本测试锁定"单一源确实注这套 fixture 且 fail-fast"—— 两者合起来与原断言等价
+        （不降门禁强度）。
+        """
         import yaml
         wf = WORKFLOWS_DIR / "xiaobu-acceptance.yml"
         d = yaml.safe_load(wf.read_text(encoding="utf-8")) or {}
         step = next((s_ for s_ in d["jobs"]["xiaobu-acceptance"]["steps"]
                      if "Seed" in (s_.get("name") or "")), {})
         body = step.get("run") or ""
-        assert "tests/agent_eval/fixtures/xiaobu_eval_seed.sql" in body, (
-            "workflow 未引用 fixture 文件路径"
+        assert "scripts/eval_stack_seed.sh" in body, (
+            "workflow 未调用种子单一源 scripts/eval_stack_seed.sh（issue #3563："
+            "禁止在 workflow 里内联种子规则）"
         )
-        assert "ON_ERROR_STOP=1" in body, "注入步骤应 fail-fast（ON_ERROR_STOP=1）"
+        script = Path(__file__).parent.parent.parent / "scripts" / "eval_stack_seed.sh"
+        assert script.is_file(), "种子单一源脚本缺失"
+        script_text = script.read_text(encoding="utf-8")
+        assert "tests/agent_eval/fixtures" in script_text, (
+            "单一源未引用 fixture 目录（若改名为多行/变量拼接，请同步本断言的取证方式）"
+        )
+        assert "xiaobu_eval_seed.sql" in script_text, "单一源未引用 C 端 fixture"
+        assert "ON_ERROR_STOP=1" in script_text, "注入必须 fail-fast（ON_ERROR_STOP=1）"
+        # 注入必须落到 compose 的 postgres 服务（同原断言的语义）
+        assert "docker compose" in script_text and "exec -T postgres" in script_text, (
+            "单一源未通过 docker compose exec postgres 注入"
+        )
 
 
 class TestXiaobuFixtureCustomerOrders:
@@ -549,18 +603,18 @@ class TestXiaobuFixtureCustomerOrders:
                / "app" / "utils" / "auth.py")
 
     def _sql(self) -> str:
-        return FIXTURE.read_text(encoding="utf-8")
+        """fixture 的**可执行代码**（剥注释）——注释里引用了商品名/用例，裸 in 会被注释满足"""
+        return _strip_sql_comments(FIXTURE.read_text(encoding="utf-8"))
 
     def _auth_customer_user_id(self) -> str:
         """从 auth.py 读出 DEBUG customer 身份注入的 user_id（单一事实源）"""
         src = self.AUTH_PY.read_text(encoding="utf-8")
-        # debug_role == "customer" 分支内的 user_id="..."
-        m = re.search(
-            r'debug_role\s*==\s*"customer"[\s\S]{0,400}?user_id\s*=\s*"([^"]+)"',
-            src,
-        )
+        # issue #3391：默认身份提为具名常量 `DEBUG_CUSTOMER_USER_ID`（多身份覆盖后，
+        # 分支内不再是内联字面量）。本 job 只装 pytest+pyyaml，不能 import 该模块，
+        # 故仍按源码解析 —— 常量名即契约，改名字会在此处报错并强制同步。
+        m = re.search(r'^DEBUG_CUSTOMER_USER_ID\s*=\s*"([^"]+)"', src, re.M)
         assert m, (
-            "未能在 auth.py 中定位 DEBUG customer 的 user_id —— "
+            "未能在 auth.py 中定位 DEBUG customer 的 user_id 常量 —— "
             "注入逻辑已变更，需同步本测试与 fixture"
         )
         return m.group(1)
@@ -628,11 +682,12 @@ class TestXiaobuFixtureCustomerOrders:
             )
 
     def _order_value_tuples(self) -> list:
-        """把 orders VALUES 列表切成一条订单一个元组（按 `('ord_eval_` 边界切）"""
+        """把 orders VALUES 列表切成一条订单一个元组（按每条订单元组的起始边界切）"""
         block = self._orders_stmt()
         values = block.split("VALUES", 1)[-1]
-        parts = re.split(r"(?=\('ord_eval_)", values)
-        return [p for p in parts if p.strip().startswith("('ord_eval_")]
+        # 订单主键是 UUID 形态（见 fixture：与生产一致，后端按 ^[0-9a-fA-F-]{20,}$ 判 UUID）
+        parts = re.split(r"(?=\('a1b2c3d4-)", values)
+        return [p for p in parts if p.strip().startswith("('a1b2c3d4-")]
 
     def test_fixture_orders_have_distinct_created_at(self):
         """created_at 必须显式给值且**每笔不同**
@@ -778,10 +833,7 @@ class TestRouteTraceDumpStep:
         )
 
     def test_step_is_always_run(self):
-        step = self._step()
-        assert step.get("if") == "always()", (
-            "路由轨迹步骤必须 if: always() —— 基线/改进的**成功**run 同样需要留痕对比"
-        )
+        assert_always_unless_fast(self._step(), "路由轨迹步骤")
 
     def test_step_comes_after_eval(self):
         steps = self._wf()["jobs"]["xiaobu-acceptance"]["steps"]
@@ -801,3 +853,1021 @@ class TestRouteTraceDumpStep:
         assert (step.get("env") or {}).get("DEV_SERVICE_TOKEN"), (
             "缺 DEV_SERVICE_TOKEN → docker compose logs 插值失败 → dump 为空"
         )
+
+
+class TestFallbackCardLogWhitelist:
+    """「代码兜底补发确认卡」的日志行必须在 CI 的 dump 白名单里（issue #3445）。
+
+    为什么：这条日志是**补卡真的发生过**的唯一正面证据（`round_trace` 只看得到
+    "顾客收到几张卡"，看不出是模型发的还是代码补的）。而它在容器日志里，
+    CI 只 dump 白名单里的行 —— 白名单漏了它，就永远只能靠"猜补卡有没有触发"
+    （#3445 的"正面隔离"卡在这里整整两轮）。
+    """
+
+    def _wf(self) -> dict:
+        import yaml
+        wf = WORKFLOWS_DIR / "xiaobu-acceptance.yml"
+        return yaml.safe_load(wf.read_text(encoding="utf-8")) or {}
+
+    def _step(self):
+        """「写工具失败原因」白名单在**路由轨迹 dump**这一步里（同一容器日志、多个 echo 段）。"""
+        steps = self._wf()["jobs"]["xiaobu-acceptance"]["steps"]
+        for s_ in steps:
+            if "逐轮路由轨迹" in (s_.get("name") or ""):
+                return s_
+        return None
+
+    def test_step_exists(self):
+        assert self._step() is not None, "workflow 缺少「Dump C 端逐轮路由轨迹」步骤"
+
+    def test_step_is_always_run(self):
+        assert_always_unless_fast(self._step(), "写工具失败原因 dump 步骤")
+
+    def test_step_greps_fallback_card_marker(self):
+        body = (self._step() or {}).get("run") or ""
+        for kw in ("代码兜底补发确认卡", "卡下发计数"):
+            assert kw in body, (
+                f"dump 白名单缺 {kw!r} → 补卡/发卡次数在 CI 里无正面证据（issue #3445）")
+
+    def test_step_greps_sms_code_marker(self):
+        """验证码真值链的正面证据同样要在白名单里（issue #3434）。
+
+        `代码补齐`/`代码纠正` 是"顾客给过的码被用上了"的唯一正面证据 ——
+        没有它，"模型自造验证码"只能靠失败指纹间接推断（首跑失败即此形）。
+        """
+        body = (self._step() or {}).get("run") or ""
+        for kw in ("代码补齐", "代码纠正"):
+            assert kw in body, (
+                f"dump 白名单缺 {kw!r} → 验证码真值链在 CI 里无正面证据（issue #3434）")
+
+    def test_marker_actually_logged_by_skill(self):
+        """白名单里的标记必须**真的**由代码打出来（防白名单写错字）。"""
+        src = (REPO_ROOT / "backend" / "ai-agent-service" / "app" / "graph" / "skills"
+               / "base_skill.py").read_text(encoding="utf-8")
+        for kw in ("代码兜底补发确认卡", "卡下发计数", "代码{_why}", "代码{_why8}"):
+            assert kw in src, f"base_skill 里已经没有 {kw!r} 这条日志了"
+
+
+class TestNamedProductsAreSeeded:
+    """用例**点名**的商品必须在 fixture 里（否则该用例恒 0 分，且看着像能力缺陷）。
+
+    先例（OR-017，issue #3316）：输入是「我想买夏日清风窗帘，米白色，3米…」，
+    而 fixture 只有「遮光窗帘/北欧风窗帘」→ `product_search` 搜不到 → agent 无从下单 →
+    CI 报告 `tools=[customer_address_query ×3]`、0 建单。**报告的长相是「agent 不会
+    下单」，真因是「库里没这个东西」** —— 数据层缺口被误读成能力缺陷，
+    正是 `migao-acceptance` 五层归因要防的事。
+
+    本测试把「用例点名商品 → fixture 必须有」变成可执行约束：新增用例若点名了
+    新商品，这里会失败并强迫你二选一 —— 注入 fixture，或声明为泛指（GENERIC）。
+    """
+
+    # 泛指 / 非商品库查询的候选（token → 理由）。不在 fixture 里也无需注入。
+    GENERIC = {
+        "你们窗帘": "口语泛指质量投诉，不指向具体商品（CH-013）",
+        "有什么窗帘": "泛指求推荐，靠 fixture 里的推荐位/列表回答（CH-017）",
+        "推荐几款热销窗帘": "泛指求推荐，靠 recommended=TRUE 商品回答（CH-010）",
+        "雪尼尔面料": "知识问答走 knowledge_search，非商品库查询（KN-001/KN-008）",
+        "几款窗帘": "泛指求推荐（未点名任何商品），靠 fixture 推荐位/列表回答（CH-024）",
+        "星空梦幻窗帘": "**故意不存在**的商品名 —— DF-022 的对抗场景就是『搜不到』，"
+                        "断言是『不得凭空下单』；注入 fixture 反而会破坏该用例语义",
+    }
+    # 候选提取：≥2 个中/英/数字字符 + 窗帘/面料/布艺 结尾
+    CANDIDATE_RE = r"[\u4e00-\u9fa5A-Za-z0-9]{2,10}(?:窗帘|面料|布艺)"
+    # 候选里的动词前缀（"搜一下遮光窗帘" → "遮光窗帘"）：否则提取出的是整句而非商品名
+    # ⚠️ 长词必须排在短词前（正则择先匹配）：`搜索` 要在 `搜` 前，`我想买` 要在 `我想` 前
+    VERB_PREFIX_RE = (
+        r"^(?:帮我|给我|我想买|我想|我要|搜索|搜一下|搜下|查一下|查下|搜|查|看看|看|推荐|要|买|选了?)+"
+    )
+
+    def _candidates_by_case(self) -> dict:
+        import glob
+        import yaml
+        root = Path(__file__).parent.parent.parent
+        cases = []
+        for f in glob.glob(str(root / ".github" / "cases" / "*.yml")):
+            d = yaml.safe_load(Path(f).read_text(encoding="utf-8")) or {}
+            cases.extend(d.get("cases") or [])
+
+        # 复用生产过滤逻辑（与评测跑的是同一套选择口径），避免测试自造口径漂移
+        sys.path.insert(0, str(root / ".github"))
+        sys.path.insert(0, str(root / "tests" / "agent_eval"))
+        try:
+            from eval_case_filter import select_cases_for_persona
+        finally:
+            pass
+        selected = select_cases_for_persona(cases, "xiaobu")
+
+        out = {}
+        for c in selected:
+            names = set()
+            for ui in (c.get("user_inputs") or []):
+                text = ui if isinstance(ui, str) else str(ui)
+                for raw in re.findall(self.CANDIDATE_RE, text):
+                    names.add(re.sub(self.VERB_PREFIX_RE, "", raw))
+            names.discard("")
+            if names:
+                out[c["id"]] = sorted(names)
+        return out
+
+    def test_selected_case_set_is_non_trivial(self):
+        """自检：过滤逻辑真的选出了用例（否则本类测试空转 = 假绿）"""
+        cands = self._candidates_by_case()
+        assert len(cands) >= 5, (
+            f"仅解析出 {len(cands)} 条带商品候选的 C 端用例 —— 过滤/解析疑似失效"
+        )
+
+    def _is_generic(self, token: str) -> bool:
+        """token 是否属泛指/非商品库查询。
+
+        用**双向包含**匹配：动词剥离后 token 可能变成 GENERIC 键的子串
+        （"推荐几款热销窗帘" → "几款热销窗帘"），裸相等会漏判而误报。
+        """
+        return any(g in token or token in g for g in self.GENERIC)
+
+    def test_named_products_exist_in_fixture(self):
+        sql = _strip_sql_comments(FIXTURE.read_text(encoding="utf-8"))
+        missing = []
+        for cid, names in self._candidates_by_case().items():
+            for n in names:
+                if self._is_generic(n):
+                    continue
+                if n not in sql:
+                    missing.append(f"{cid} 点名商品 {n!r} 不在 fixture")
+        assert not missing, (
+            "以下用例点名的商品未注入 fixture → 该用例必然 0 分（且会被误读为能力缺陷）：\n  "
+            + "\n  ".join(missing)
+            + "\n修复：在 tests/agent_eval/fixtures/xiaobu_eval_seed.sql 注入该商品"
+              "（含颜色/SKU/加工项关联），或确认属泛指后加入 GENERIC。"
+        )
+
+    def test_OR017_product_is_seeded_with_processing(self):
+        """OR-017 专项：夏日清风窗帘 + 米白色 + 散剪 2.8 + 加工项关联都要有
+
+        （该用例断言 `product_detail` → `interact(choice, multiSelect)` → `order_create`，
+          缺任一环都跑不通。）
+        """
+        sql = _strip_sql_comments(FIXTURE.read_text(encoding="utf-8"))
+        assert "夏日清风窗帘" in sql
+        assert "米白色" in sql
+        assert "prod_eval_summer" in sql
+        # 加工项关联必须带上该商品（否则 product_detail 里没有加工项可问）
+        link = re.search(r"INSERT\s+INTO\s+product_processing_items[\s\S]*?;", sql, re.I)
+        assert link and "prod_eval_summer" in link.group(0), (
+            "product_processing_items 未关联夏日清风窗帘 → 加工项环节无数据"
+        )
+
+    def test_only_one_recommended_product(self):
+        """推荐位只能有一个商品：CH-010「推荐几款热销窗帘」→「第一款」依赖列表顺序，
+        多个推荐商品会让"第一款"不确定 → 用例抖动。
+
+        解析方式：products 的最后一个字段是 `recommended`（紧跟 `has_processing`），
+        故取每条 VALUES 元组末尾的 `, <bool>, <bool>)`，后一个即 recommended。
+        """
+        sql = _strip_sql_comments(FIXTURE.read_text(encoding="utf-8"))
+        block = re.search(r"INSERT\s+INTO\s+products[\s\S]*?;", sql, re.I)
+        assert block, "未找到 products 种子语句"
+        flags = re.findall(r",\s*(TRUE|FALSE)\s*,\s*(TRUE|FALSE)\s*\)", block.group(0))
+        assert len(flags) >= 3, (
+            f"仅解析出 {len(flags)} 条商品元组 —— 解析疑似失效（本测试会空转假绿）"
+        )
+        recommended = [rec for _, rec in flags if rec == "TRUE"]
+        assert len(recommended) == 1, (
+            f"fixture 中 recommended=TRUE 的商品有 {len(recommended)} 个（应恰好 1 个）—— "
+            "多个会让 CH-010 的『第一款』不确定"
+        )
+
+
+class TestSchemaFullDeprecation:
+    """`docs/sql/schema_full.sql` 必须保持「已废弃」标注，直到它真正与迁移链对齐。
+
+    背景（2026-09-11 实测逐表比对）：该文件是 2026-05-30 的快照，此后未跟进，
+    **两个方向都失真** —— 缺 6 张新表，且仍会创建 4 张已被 V36 等迁移 DROP 的表
+    （`knowledge_documents` / `knowledge_sync_history` / `rag_chunks` /
+    `quick_reply_templates`）。拿它建库不是"旧一点"，是**错的**。
+
+    风险面：外部 runbook / 审计仍可能引用这个路径（故未直接删除），
+    若头部没有显著废弃标注，读者会以为它是权威全量脚本。
+    """
+
+    FULL = Path(__file__).parent.parent.parent / "docs" / "sql" / "schema_full.sql"
+    CANONICAL = Path(__file__).parent.parent.parent / "docs" / "sql" / "schema.sql"
+
+    @staticmethod
+    def _tables(p: Path) -> set:
+        src = _strip_sql_comments(p.read_text(encoding="utf-8"))
+        return {m.lower() for m in
+                re.findall(r"CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?[\"`]?(\w+)", src, re.I)}
+
+    def test_deprecation_banner_present_while_drift_persists(self):
+        """有漂移 → 必须有废弃标注；无漂移 → 标注必须撤掉（防标注本身过期）"""
+        full_sql = self.FULL.read_text(encoding="utf-8")
+        drift = self._tables(self.CANONICAL) ^ self._tables(self.FULL)
+        has_banner = "已废弃" in full_sql and "DEPRECATED" in full_sql
+
+        if drift:
+            assert has_banner, (
+                f"schema_full.sql 与 schema.sql 仍有 {len(drift)} 张表漂移 "
+                f"{sorted(drift)[:6]}，但文件头部没有废弃标注 —— "
+                "读者会把它当成权威全量脚本。"
+            )
+            assert "docs/sql/schema.sql" in full_sql, (
+                "废弃标注必须明确指向正确入口 docs/sql/schema.sql"
+            )
+        else:
+            assert not has_banner, (
+                "schema_full.sql 已与 schema.sql 对齐（无漂移），"
+                "请撤掉废弃标注（否则标注本身变成错误信息）"
+            )
+
+    def test_drift_is_documented_in_banner(self):
+        """标注里点名的缺失表必须与实际漂移一致（防写了但写错）"""
+        full_sql = self.FULL.read_text(encoding="utf-8")
+        missing = self._tables(self.CANONICAL) - self._tables(self.FULL)
+        if not missing:
+            return  # 已对齐情形由上一条用例负责
+        header = full_sql[:2000]
+        undocumented = [t for t in sorted(missing) if t not in header]
+        assert not undocumented, (
+            f"以下缺失表未在废弃标注里列出：{undocumented} —— 标注与事实不符"
+        )
+
+
+def _column_name_of_ddl_line(line: str):
+    """从 `CREATE TABLE` 体内的一行解析列名；非列定义返回 None。
+
+    ⚠️ 不能用"首词是关键字就跳过"的写法：`key` 既是 SQL 关键字又是合法列名
+    （`user_memories.key VARCHAR(128)`）。首版即因此把该列判为"不存在"，
+    产生假缺口。判据改为：**第二个词必须是类型名**，而 `PRIMARY KEY (...)` /
+    `UNIQUE (...)` / `CONSTRAINT ...` 的第二个词是 `KEY`/`(` 这类，自然被排除。
+    """
+    m = re.match(r'\s*"?(\w+)"?\s+(\w+)', line)
+    if not m:
+        return None
+    name, second = m.group(1).lower(), m.group(2).upper()
+    if second in {"KEY", "CONSTRAINT", "INDEX", "CHECK", "UNIQUE", "PRIMARY",
+                  "FOREIGN", "EXCLUDE", "LIKE", "AS"}:
+        return None
+    return name
+
+
+class TestSchemaCoversMigrationChainColumns:
+    """`schema.sql` 必须覆盖**迁移链**的全部表与列（issue #3270 实测根因）
+
+    CI 实证（run 34617597854，postgres 日志原文）：C 端验收栈的库由
+    `docs/sql/schema.sql` 经 docker-entrypoint-initdb.d 建立，而 **Flyway 不在该栈运行**
+    → 只存在于迁移链的列**建库后并不存在** →
+
+        column "actual_amount" does not exist      (orders，来自 V5/V14)
+        column "position" does not exist           (users，来自 docs/sql/migrations)
+        ... → admin-api 查询 500 → ai-agent 工具拿到 "服务暂时不可用"(CIRCUIT_OPEN)
+        → 熔断器打开 → 后续同类工具调用**全部失败** → 整轮评测被污染
+
+    现象是「agent 不会下单/不会建售后单」，真因是**后端 500 + 熔断**（基础设施层）。
+    本测试把「bootstrap 必须与迁移链终态一致」变成可执行约束。
+    """
+
+    MIGRATION_DIRS = [
+        Path(__file__).parent.parent.parent / "backend" / "admin-api" / "src" / "main" / "resources" / "db" / "migration",
+        Path(__file__).parent.parent.parent / "docs" / "sql" / "migrations",
+    ]
+
+    # schema.sql 里以 `key` 这类 SQL 关键字命名的列，解析时需特判（否则被当约束跳过）
+    _NON_COLUMN = {"primary", "unique", "constraint", "foreign", "check", "key", "exclude"}
+
+    @classmethod
+    def _schema_columns(cls) -> dict:
+        src = _strip_sql_comments(SCHEMA.read_text(encoding="utf-8"))
+        tables: dict = {}
+        for m in re.finditer(
+                r"CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?\"?(\w+)\"?\s*\(([\s\S]*?)\n\)\s*;",
+                src, re.I):
+            name, body = m.group(1).lower(), m.group(2)
+            cols = set()
+            for line in body.splitlines():
+                col = _column_name_of_ddl_line(line)
+                if col:
+                    cols.add(col)
+            tables[name] = cols
+        for m in re.finditer(
+                r"ALTER\s+TABLE\s+(?:IF\s+EXISTS\s+)?\"?(\w+)\"?[\s\S]*?;", src, re.I):
+            t = m.group(1).lower()
+            for cm in re.finditer(
+                    r"ADD\s+COLUMN\s+(?:IF\s+NOT\s+EXISTS\s+)?\"?(\w+)\"?", m.group(0), re.I):
+                tables.setdefault(t, set()).add(cm.group(1).lower())
+        return tables
+
+    @classmethod
+    def _migration_requirements(cls) -> tuple:
+        """从两条迁移链提取 (表 -> 列) 要求"""
+        need: dict = {}
+        superseded: set = set()  # 被后续迁移改名/删除的表（非终态要求）
+        for d in cls.MIGRATION_DIRS:
+            if not d.is_dir():
+                continue
+            for f in sorted(d.glob("*.sql")):
+                src = _strip_sql_comments(f.read_text(encoding="utf-8"))
+                for m in re.finditer(
+                        r"CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?\"?(\w+)\"?\s*\(([\s\S]*?)\n\)\s*;",
+                        src, re.I):
+                    t, body = m.group(1).lower(), m.group(2)
+                    need.setdefault(t, set())
+                    for line in body.splitlines():
+                        col = _column_name_of_ddl_line(line)
+                        if col:
+                            need[t].add(col)
+                for m in re.finditer(
+                        r"ALTER\s+TABLE\s+(?:IF\s+EXISTS\s+)?\"?(\w+)\"?([\s\S]*?);", src, re.I):
+                    t = m.group(1).lower()
+                    for cm in re.finditer(
+                            r"ADD\s+COLUMN\s+(?:IF\s+NOT\s+EXISTS\s+)?\"?(\w+)\"?", m.group(2), re.I):
+                        need.setdefault(t, set()).add(cm.group(1).lower())
+                    # 重命名（如 V37 把 knowledge_entries 改名为 knowledge_cards）：
+                    # 旧表名不是"终态要求"，必须剔除，否则产生假缺口。
+                    if re.search(r"RENAME\s+TO\s+", m.group(2), re.I):
+                        superseded.add(t)
+                for m in re.finditer(r"DROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?\"?(\w+)\"?", src, re.I):
+                    superseded.add(m.group(1).lower())
+        for t in superseded:
+            need.pop(t, None)
+        return need
+
+    def test_requirements_are_non_trivial(self):
+        """自检：确实解析出要求（否则本类测试空转 = 假绿）"""
+        need = self._migration_requirements()
+        total = sum(len(v) for v in need.values())
+        # 阈值只为"解析没坏"兜底：实测两条链约 23 表 / 130+ 列（已剔除被改名/删除的表）。
+        # 取宽松下界，避免正常增删迁移就误报。
+        assert len(need) >= 15 and total >= 100, (
+            f"迁移链解析结果过少（表 {len(need)} / 列 {total}）—— 解析疑似失效"
+        )
+
+    def test_schema_covers_migration_chain(self):
+        schema = self._schema_columns()
+        missing_tables, missing_cols = [], []
+        for table, cols in self._migration_requirements().items():
+            if table not in schema:
+                missing_tables.append(table)
+                continue
+            for c in sorted(cols - schema[table]):
+                missing_cols.append(f"{table}.{c}")
+        assert not missing_tables, (
+            "schema.sql 缺少迁移链已建的表（bootstrap 不完整 → 建库后 admin-api 查询 500）：\n  "
+            + "\n  ".join(sorted(missing_tables))
+        )
+        assert not missing_cols, (
+            "schema.sql 缺少迁移链已加的列（bootstrap 不完整 → 建库后 admin-api 查询 500 "
+            "→ 工具返回「服务暂时不可用」→ 熔断 → 评测被污染）：\n  "
+            + "\n  ".join(missing_cols)
+            + "\n修复：在 schema.sql 的「bootstrap 对齐」段补 ALTER TABLE ... ADD COLUMN IF NOT EXISTS，"
+              "并同步新增迁移（迁移链是结构变更事实源）。"
+        )
+
+
+class TestSchemaCoversEntityColumns:
+    """`schema.sql` 必须覆盖 **Java 实体声明**的表与列（迁移链守卫的互补项）
+
+    为什么还需要这一层：有些列**两条 SQL 链都没有**，只在 Java 实体里声明 ——
+    生产库里存在（否则线上同类查询也 500），但 bootstrap 建出来的库没有：
+
+        product_skus.color_name   ← ProductSku.colorName（admin-api 拉 SKU 列表 SELECT 它）
+        orders.close_reason       ← Order.closeReason（docs/sql/013 有，迁移链没有）
+        tenant_ai_configs.bot_name← TenantAiConfig.botName（docs/sql/009 有）
+        user_memories（整表）      ← UserMemory 实体
+
+    CI 实证：`column "color_name" does not exist` → 商品详情接口 500 → 工具返回
+    「服务暂时不可用」→ 熔断 → **整轮 C 端评测被污染**。
+    迁移链守卫查不到这类列（它们不在任何迁移里），故必须按实体再查一遍。
+    """
+
+    ENTITY_DIR = (Path(__file__).parent.parent.parent / "backend" / "admin-api"
+                  / "src" / "main" / "java" / "com" / "migao" / "admin" / "entity")
+
+    # 非列字段（MyBatis-Plus 约定 / Java 常量）
+    _SKIP_FIELDS = {"serialVersionUID"}
+
+    @staticmethod
+    def _snake(name: str) -> str:
+        return re.sub(r"(?<!^)(?=[A-Z])", "_", name).lower()
+
+    @classmethod
+    def _entities(cls) -> dict:
+        """{表名: {列名: 'Entity.java#field'}}"""
+        out: dict = {}
+        for f in sorted(cls.ENTITY_DIR.glob("*.java")):
+            src = f.read_text(encoding="utf-8")
+            tm = re.search(r'@TableName\(\s*(?:value\s*=\s*)?"(\w+)"', src)
+            if not tm:
+                continue
+            table = tm.group(1).lower()
+            # 去掉 @TableField(exist = false) 标注的字段（非表列）
+            cleaned = re.sub(
+                r"@TableField\([^)]*exist\s*=\s*false[^)]*\)[\s\S]{0,120}?;", "", src)
+            cols = out.setdefault(table, {})
+            for fm in re.finditer(
+                    r'(?:@TableField\(\s*(?:value\s*=\s*)?"(\w+)"[^)]*\)\s*)?'
+                    r"private\s+[\w<>,\[\]\. ]+\s+(\w+)\s*;", cleaned):
+                explicit, field = fm.group(1), fm.group(2)
+                if field in cls._SKIP_FIELDS:
+                    continue
+                col = explicit.lower() if explicit else cls._snake(field)
+                cols.setdefault(col, f"{f.name}#{field}")
+        return out
+
+    def test_entity_parse_is_non_trivial(self):
+        """自检：确实解析出实体与列（否则本类测试空转 = 假绿）"""
+        ents = self._entities()
+        total = sum(len(v) for v in ents.values())
+        assert len(ents) >= 20 and total >= 200, (
+            f"实体解析结果过少（表 {len(ents)} / 列 {total}）—— 解析疑似失效"
+        )
+
+    def test_schema_covers_entity_columns(self):
+        schema = TestSchemaCoversMigrationChainColumns._schema_columns()
+        missing_tables, missing_cols = [], []
+        for table, cols in self._entities().items():
+            if table not in schema:
+                missing_tables.append(table)
+                continue
+            for c, origin in sorted(cols.items()):
+                if c not in schema[table]:
+                    missing_cols.append(f"{table}.{c}  ({origin})")
+        assert not missing_tables, (
+            "schema.sql 缺少 Java 实体声明的表（建库后相关接口必然 500）：\n  "
+            + "\n  ".join(sorted(missing_tables))
+        )
+        assert not missing_cols, (
+            "schema.sql 缺少 Java 实体声明的列 —— 建库后该接口 500 → ai-agent 工具返回"
+            "「服务暂时不可用」→ 熔断 → 评测被污染：\n  "
+            + "\n  ".join(missing_cols)
+            + "\n修复：在 schema.sql 的「bootstrap 对齐」段补 ALTER TABLE ... ADD COLUMN "
+              "IF NOT EXISTS，**并新增迁移**（迁移链是结构变更事实源）。"
+        )
+
+
+class TestEvalArtifactAuditStep:
+    """workflow 必须审计 Eval 期间 agent **实际落库**的产物（acceptance-protocol §2.2）
+
+    为什么：round_trace 证明「工具被调用了」，但不证明「数据真的落库了」。
+    §2.2（2026-09-08 复盘）要求复核 AI 留下的会话/工单/订单 —— 报告说"创建成功"、
+    库里没有（或相反）都是翻车样本。CI 评测的库是**每次销毁的临时库**，所以
+    复核必须在销毁前以 workflow 步骤自动化：dump agent_sessions / orders /
+    after_sales_tickets / user_memories，与报告的 tool_calls 对得上才算闭环。
+    """
+
+    def _wf(self) -> dict:
+        import yaml
+        return yaml.safe_load((WORKFLOWS_DIR / "xiaobu-acceptance.yml").read_text(encoding="utf-8")) or {}
+
+    def _step(self):
+        steps = self._wf()["jobs"]["xiaobu-acceptance"]["steps"]
+        return next((s_ for s_ in steps if "DB 审计" in (s_.get("name") or "")), None)
+
+    def test_step_exists_after_eval_with_always(self):
+        steps = self._wf()["jobs"]["xiaobu-acceptance"]["steps"]
+        names = [s_.get("name") or "" for s_ in steps]
+        i_audit = next((i for i, n in enumerate(names) if "DB 审计" in n), -1)
+        i_eval = next((i for i, n in enumerate(names) if "local_runner" in n), -1)
+        assert 0 <= i_eval < i_audit, (
+            f"审计步骤必须在评测之后（i_eval={i_eval}, i_audit={i_audit}）"
+        )
+        assert_always_unless_fast(self._step(), "DB 审计步骤")
+
+    def test_step_covers_all_write_artifacts(self):
+        body = self._step().get("run") or ""
+        for table in ("agent_sessions", "orders", "after_sales_tickets", "user_memories"):
+            assert table in body, f"审计未覆盖表 {table}"
+        # C 端评测会话在 ai-agent 的 sessions 表（`agent_sessions` 是人工会话表，
+        # 只有 human_handoff 会写）——旧审计把两张表混为一谈，会话残留看不见（#3357）
+        assert "FROM sessions" in body, "审计未统计 ai-agent 会话表 sessions"
+        assert "status='active'" in body, "审计未统计未关闭残留会话（清理失效无人发现）"
+        assert "ticket_type='complaint'" in body, "未单独统计转人工工单（CH-008/013/015 对账）"
+        assert (self._step().get("env") or {}).get("DEV_SERVICE_TOKEN"), (
+            "缺 DEV_SERVICE_TOKEN → compose 插值失败 → 审计为空"
+        )
+
+    def test_e2e_step_runs_even_when_eval_fails(self):
+        """E2E 步骤必须 `always()`（issue #3364：评测红 → E2E skip → E2E 红无人知）。
+
+        实证：main run 34684474262 评测 17/17 通过而 E2E failure；此后每次评测失败
+        E2E 都被 skip —— 两个红灯互相掩盖，E2E 的缺陷长期不可见。
+        """
+        steps = self._wf()["jobs"]["xiaobu-acceptance"]["steps"]
+        e2e = next((s_ for s_ in steps if "real E2E" in (s_.get("name") or "")), None)
+        assert e2e is not None, "workflow 缺少 real E2E 步骤"
+        cond = e2e.get("if") or ""
+        assert "always()" in cond, f"E2E 步骤缺少 always()（评测失败时会被 skip）: if={cond!r}"
+
+    def test_stack_step_uses_layer_cache_with_fallback(self):
+        """栈步骤必须带镜像层缓存 + 失败回落（issue #3361）。
+
+        实测同一 workflow、同样单 job，栈启动在 3.4min ~ 12.9min 之间剧烈波动 ——
+        Dockerfile 每跑都 `mvn clean package` / `pip install -r`，没有层缓存就每次全量
+        重下依赖与基础镜像，Docker Hub 限流一来就 12min。这是整跑墙钟最大且最不稳的一块。
+        同时必须**失败回落**到 `--build`：缓存/registry 问题不该把评测挡在门外。
+        """
+        import yaml
+        wf = yaml.safe_load((WORKFLOWS_DIR / "xiaobu-acceptance.yml").read_text(encoding="utf-8"))
+        steps = wf["jobs"]["xiaobu-acceptance"]["steps"]
+        names = [s_.get("name") or "" for s_ in steps]
+        assert any("Buildx" in n for n in names), "缺少 Buildx 步骤（GHA 层缓存必需）"
+        body = next((s_.get("run") or "" for s_ in steps if "Start local stack" in (s_.get("name") or "")), "")
+        assert "cache-from" in body and "type=gha" in body, "镜像构建未用 GHA 层缓存"
+        # PIP_INDEX_URL：Dockerfile 默认阿里云（国内快），GitHub runner 在境外 ——
+        # 实测镜像内 pip 走阿里云 632s（~160 kB/s），同机默认 PyPI 装同一份仅 23s。
+        # 栈步骤 13.1min 里 10.5min 就是这一项，必须显式改用 PyPI。
+        assert "pypi.org/simple" in body, (
+            "CI 未把 PIP_INDEX_URL 切到 PyPI —— 镜像内 pip 会走阿里云，栈启动多花 ~10min"
+        )
+        assert "--no-build" not in body or "up -d --wait" in body, "compose 起栈方式异常"
+        assert "回落" in body, "缺少缓存构建失败时的回落路径"
+
+    def test_audit_prints_order_amounts(self):
+        """审计必须带订单金额（issue #3361）：金额是 C 端最硬的正确性证据。
+
+        只有金额能回答「下单成了，且钱算对了吗」。实测 OR-014 在没查商品详情的情况下
+        发出的确认卡写着「遮光窗帘3米+打孔加工，合计¥95.4」（该商品真实单价 ¥168/米），
+        无金额审计时这种「钱算错但工具调用成功」在报告里看着一切正常。
+        """
+        body = self._step().get("run") or ""
+        assert "total_amount" in body, "审计未输出订单金额（金额错误无法发现）"
+
+    def test_eval_creates_and_closes_ai_agent_sessions(self):
+        """对照：评测每用例在 ai-agent 建会话，且收尾必须**关闭它**（issue #3357）。
+
+        旧断言只查 `api/chat/sessions`（创建），于是"关闭打到了另一张表的接口、
+        会话从未关闭、记忆候选从未 flush"这一整条链路断了却无人发现。现在把
+        关闭接口也锁进契约：必须是 ai-agent 的 close（记忆 flush 的唯一入口）。
+        """
+        src = (Path(__file__).parent.parent.parent / "tests" / "agent_eval" / "local_runner.py").read_text(encoding="utf-8")
+        assert "api/chat/sessions" in src, "runner 未创建会话（审计目标落空）"
+        assert "/api/chat/sessions/{session_id}/close" in src, (
+            "runner 未通过 ai-agent 关闭接口收尾 —— 记忆候选不会 flush，会话残留"
+        )
+
+
+class TestFalseGreenGuardInAudit:
+    """审计必须把「写用例通过但 DB 无产物」显式标成假绿风险（调了 ≠ 成了）
+
+    run 34678939564 实证：17/17 全绿但 orders 无新增 —— order_create 被确认门禁拦
+    （confirmValue >24 字）或被 API 拒，用例却因「工具被调用」判通过。审计若只
+    dump 数据、不对账，人还是要逐行自己看才能发现 —— 本测试要求审计里带对账告警。
+    """
+
+    def _wf(self) -> dict:
+        import yaml
+        return yaml.safe_load((WORKFLOWS_DIR / "xiaobu-acceptance.yml").read_text(encoding="utf-8")) or {}
+
+    def _audit_body(self) -> str:
+        steps = self._wf()["jobs"]["xiaobu-acceptance"]["steps"]
+        step = next((s_ for s_ in steps if "DB 审计" in (s_.get("name") or "")), {})
+        return step.get("run") or ""
+
+    def test_audit_warns_when_orders_not_landed(self):
+        body = self._audit_body()
+        assert "假绿风险" in body, "审计缺少假绿告警文案"
+        assert "orders=" in body and "ORDERS" in body, "未统计订单数并据此告警"
+        # 分片后"全局应有 N 条订单"不再成立：告警必须**按本片是否真的跑了写用例**判断，
+        # 否则没有写用例的片会因 orders<=2 被误报假绿（issue #3361 分片基建）
+        assert "WRITE_CASES" in body and "order_write_cases" in body, (
+            "审计未读本片运行汇总（order_write_cases）—— 分片下会误报假绿"
+        )
+
+    def test_audit_warning_is_shard_scoped(self):
+        body = self._audit_body()
+        assert "$WRITE_CASES" in body, "告警条件未使用本片写用例数"
+        assert "本片" in body, "告警文案未标明这是本片（分片）结论"
+
+    def test_audit_warns_when_memories_not_landed(self):
+        """CH-024 通过但 user_memories 为空 = 记忆链断（或断言失效）→ 必须告警。"""
+        body = self._audit_body()
+        assert "memories=" in body and "MEMORIES" in body, "未统计记忆条数并据此告警"
+        assert "CH-024" in body, "记忆告警未点名跨会话记忆用例"
+
+    def test_eval_emits_all_traces(self):
+        """写用例成败必须可见：通过用例的轨迹也要打（否则写工具结果藏在暗处）"""
+        steps = self._wf()["jobs"]["xiaobu-acceptance"]["steps"]
+        step = next((s_ for s_ in steps if "local_runner" in (s_.get("name") or "")), {})
+        assert (step.get("env") or {}).get("AGENT_EVAL_TRACE_ALL") == "1", (
+            "未开启全量轨迹 —— 通过的写用例的工具结果（如 order_create 被拒）看不见"
+        )
+
+    def test_write_failure_dump_keeps_input_recovery_markers(self):
+        """写工具 dump 必须保留「缺参恢复回路」日志标记（issue #3365）。
+
+        为什么单列一条守卫：2026-09-13 那次 18/18 里 OR-017 的轨迹呈
+        `order_create → interact → order_create`（看着像"守卫救回来了"），但 dump 的
+        grep 没包含这几个标记 → **无法证实**是守卫触发还是模型自己走对。
+        归因能力是靠日志标记撑起来的，丢了标记就只能靠猜。
+        """
+        steps = self._wf()["jobs"]["xiaobu-acceptance"]["steps"]
+        step = next((s_ for s_ in steps if "写工具失败原因" in (s_.get("name") or "")
+                     or "写工具失败原因" in (s_.get("run") or "")), {})
+        body = step.get("run") or ""
+        assert body, "找不到写工具失败原因 dump 步骤"
+        # 只看**可执行的 grep 行**：首版断言扫了整个 run 文本，结果被我自己写的注释救活
+        # （注释里同样写着这几个词 → 删掉 grep 里的标记，测试照样绿 = 假守卫，已实证）。
+        grep_lines = "\n".join(ln for ln in body.splitlines() if "grep -E" in ln)
+        assert grep_lines, "写工具 dump 步骤里找不到 grep -E 命令"
+        for kw in ("拦截缺参等待期", "缺参记账", "缺参已补齐", "write-input-recovery"):
+            assert kw in grep_lines, f"写工具 dump 的 grep 丢了缺参恢复标记 {kw!r} → 归因只能靠猜"
+
+
+class TestFixtureOrderIdsAreUuidShaped:
+    """fixture 的订单主键必须是 **UUID 形态**（与生产一致）
+
+    实证（run 34684474262，CH-012）：`aftersale_create` 报
+    「无法找到订单：ord_eval_0002。请确认订单号正确后重试。」—— 用例判通过（工具被调用）
+    但工单没落库，DB 审计里 8 张工单全是 complaint、无 refund。
+
+    根因（admin-api `AfterSalesTicketService.createTicketForAgent`）：
+    orderId 的解析是二分启发式 —— 形如 `^[0-9a-fA-F-]{20,}$` 当 **UUID** 直查主键，
+    否则当 **订单号** 查 order_no。fixture 此前用 `ord_eval_0002` 这种短 id：
+    既非 UUID 形态（且含非 hex 字符），于是被当成订单号 → 查不到 → 404。
+    **生产订单主键是 UUID**，故 fixture 必须同形，否则评测链路与生产不一致（假失败）。
+    """
+
+    # 与 admin-api 的判据保持一致（单一事实源：AfterSalesTicketService.createTicketForAgent）
+    UUID_HEURISTIC = re.compile(r"^[0-9a-fA-F-]{20,}$")
+
+    def _order_ids(self) -> list:
+        sql = _strip_sql_comments(FIXTURE.read_text(encoding="utf-8"))
+        stmt = re.search(r"INSERT\s+INTO\s+orders\b[\s\S]*?;", sql, re.I)
+        assert stmt, "未找到 orders 种子语句"
+        return re.findall(r"\(\s*'([0-9a-zA-Z_\-]+)'\s*,\s*1\s*,\s*'EVAL-ORD-", stmt.group(0))
+
+    def test_order_ids_satisfy_backend_uuid_heuristic(self):
+        ids = self._order_ids()
+        assert len(ids) >= 2, f"仅解析出 {len(ids)} 个订单主键 —— 解析疑似失效"
+        bad = [i for i in ids if not self.UUID_HEURISTIC.match(i)]
+        assert not bad, (
+            f"以下订单主键不满足后端 UUID 判据 {self.UUID_HEURISTIC.pattern}：{bad}\n"
+            "后果：agent 传该 id 时被当成订单号去查 order_no → 404「无法找到订单」→ "
+            "售后工单不落库（而用例因『工具被调用』假绿）。"
+        )
+
+    def test_item_and_logistics_reference_the_same_ids(self):
+        """订单明细/物流的 order_id 外键必须指向同一批 UUID 主键"""
+        sql = _strip_sql_comments(FIXTURE.read_text(encoding="utf-8"))
+        ids = set(self._order_ids())
+        referenced = set(re.findall(r"'(a1b2c3d4-[0-9a-f\-]+)'", sql)) - ids
+        assert not referenced, f"明细/物流引用了不属于订单主键集合的 id：{referenced}"
+
+
+class TestEvalSpeedKnobs:
+    """评测提速三旋钮 + 快速档边界的 wiring（issue #3417）
+
+    背景：C 端 normal 档一次 ≈11 分钟（30 条真实 LLM × 并发 3），迭代时"改一行等一刻钟"。
+    三个旋钮各有明确的**适用边界**，边界本身必须被测试钉住，否则提速会悄悄变成降级：
+      - `concurrency`：只调并发，语义不变 → 可随时用（含下结论）。
+      - `case_ids`   ：只跑指定用例 → 迭代用；**解析不到必须报错**（少跑≠通过）。
+      - `fast`       ：不重试 + 跳过取证步骤 → **只用于迭代，下结论前必须跑完整档**。
+    最危险的是 fast：若它顺手把「验收剧本」（L1/L2 门禁）也跳过，就会得到
+    "跑得快且全绿"的假象 —— 本类专门钉住"fast 只能跳过取证，不能跳过判定"。
+    """
+
+    EVIDENCE_STEPS = ("real E2E", "路由", "DB 审计")
+    # 允许被 fast 跳过的**全部**步骤关键字（取证 + 失败通知）。
+    # 失败通知也在内：迭代档的红是预期工作状态，不该开"每日全量验收失败"issue（#3417）。
+    FAST_SKIPPABLE = EVIDENCE_STEPS + ("Create Issue",)
+
+    def _wf(self) -> dict:
+        import yaml
+        wf = WORKFLOWS_DIR / "xiaobu-acceptance.yml"
+        return yaml.safe_load(wf.read_text(encoding="utf-8")) or {}
+
+    def _steps(self):
+        return self._wf()["jobs"]["xiaobu-acceptance"]["steps"]
+
+    def _inputs(self):
+        # pyyaml 按 YAML 1.1 把 `on:` 解析成布尔 True（与 line 767 同一处理）
+        wf = self._wf()
+        triggers = wf.get("on") or wf.get(True) or {}
+        assert "workflow_dispatch" in triggers, "workflow 缺 workflow_dispatch"
+        return triggers["workflow_dispatch"]["inputs"]
+
+    def _named(self, *keywords):
+        out = []
+        for s_ in self._steps():
+            name = s_.get("name") or ""
+            if any(k in name for k in keywords):
+                out.append(s_)
+        return out
+
+    def _eval_step(self):
+        steps = [s_ for s_ in self._steps() if "local_runner" in (s_.get("name") or "")]
+        assert len(steps) == 1, f"评测步骤应唯一，实际 {len(steps)} 个"
+        return steps[0]
+
+    # ---- 旋钮本身存在且默认值安全 ----
+
+    def test_inputs_declared_with_safe_defaults(self):
+        inputs = self._inputs()
+        for key in ("case_ids", "concurrency", "fast"):
+            assert key in inputs, f"workflow_dispatch 缺少输入 {key}"
+        assert inputs["case_ids"]["default"] == "", "case_ids 默认必须为空（=全量）"
+        assert inputs["concurrency"]["default"] == "6", (
+            "并发默认 6（实测 3 时评测档 663s）"
+        )
+        assert inputs["fast"]["default"] is False, (
+            "fast 默认必须 false —— 默认档不能是『跳过取证』的档"
+        )
+
+    def test_fast_documented_as_iteration_only(self):
+        desc = self._inputs()["fast"]["description"]
+        assert "下结论" in desc or "完整" in desc, (
+            f"fast 的描述必须写明只用于迭代、下结论要跑完整档，实际：{desc!r}"
+        )
+
+    # ---- 并发旋钮真的接到 runner 上 ----
+
+    def test_concurrency_wired_into_env(self):
+        env = self._eval_step().get("env") or {}
+        assert "EVAL_CONCURRENCY" in env, "评测步骤缺 EVAL_CONCURRENCY"
+        assert "concurrency" in str(env["EVAL_CONCURRENCY"]), (
+            f"EVAL_CONCURRENCY 未接 workflow 输入：{env['EVAL_CONCURRENCY']!r}"
+        )
+
+    # ---- case_ids 旋钮真的接到 runner 上 ----
+
+    def test_case_ids_wired_into_command(self):
+        body = self._eval_step().get("run") or ""
+        assert "--case-ids" in body, "评测步骤未把 --case-ids 传给 local_runner"
+        assert "case_ids" in body, "--case-ids 需要接 workflow 输入而不是写死"
+
+    def test_fast_disables_retries_but_full_keeps_three(self):
+        body = self._eval_step().get("run") or ""
+        # 注意：注释里也会出现 --max-retries（"3：每条失败用例至多重试"），
+        # 所以要找**真的命令行那一处**（后面跟 ${{ }} 表达式）
+        exprs = re.findall(r"--max-retries\s+(\$\{\{[^}]*\}\})", body)
+        assert exprs, "评测步骤缺带表达式的 --max-retries"
+        expr = exprs[-1]
+        assert "fast" in expr and "'0'" in expr and "'3'" in expr, (
+            f"--max-retries 未按 fast 切换（fast=0，完整=3）：{expr!r} —— "
+            "重试是抗噪手段，完整档必须保留"
+        )
+
+    def test_timing_is_echoed(self):
+        body = self._eval_step().get("run") or ""
+        assert "评测档耗时" in body, "评测步骤应回显评测档耗时（持续提速需要可见的基线）"
+
+    # ---- 快速档边界：只能跳过取证，不能跳过判定 ----
+
+    def test_evidence_steps_skip_only_in_fast_mode(self):
+        found = {k: [] for k in self.EVIDENCE_STEPS}
+        for s_ in self._steps():
+            name = s_.get("name") or ""
+            for k in self.EVIDENCE_STEPS:
+                if k in name:
+                    found[k].append(s_)
+        for k, steps in found.items():
+            assert steps, f"未找到取证步骤（关键字 {k}）—— 关键字变了？请同步本测试"
+            for s_ in steps:
+                cond = s_.get("if") or ""
+                assert "fast" in cond, (
+                    f"取证步骤「{s_.get('name')}」未按 fast 跳过（if={cond!r}）"
+                )
+
+    def test_acceptance_scenarios_never_skipped_by_fast(self):
+        """核心安全性质：fast 不能把验收剧本（L1/L2 门禁）一起跳过。
+
+        取证步骤缺了顶多是"证据少"，判定步骤缺了就是"没验收却报全绿"。"""
+        steps = self._named("验收剧本")
+        assert steps, "未找到验收剧本步骤"
+        for s_ in steps:
+            cond = s_.get("if") or ""
+            assert "fast" not in cond, (
+                f"验收剧本步骤不得被 fast 跳过（if={cond!r}）—— "
+                "快速档可以少留证据，但不能不判定"
+            )
+
+    def test_acceptance_scenarios_still_run_when_eval_fails(self):
+        """验收剧本必须 `always()`（与 E2E 同理，issue #3364）。
+
+        若写成 `success()`：评测一红，验收剧本就 skip —— 而后者是**独立**判定源
+        （点卡/打岔/换窗口），两者互相掩盖后，"评测挂了但体验没事"永远看不见。
+
+        persona 例外（#3483 T3.1）：mibao 复用本通道但 C 端旅程剧本（C-A1/A2/A3）
+        不适配 B 端（B 端剧本 T3.2 补），故允许附加 `persona != 'mibao'` 条件——
+        但**不许挂 fast/success**（speed 轴红线不变：独立判定源不能被 gate 掉）。
+        """
+        steps = self._named("验收剧本")
+        assert steps, "未找到验收剧本步骤"
+        for s_ in steps:
+            cond = s_.get("if") or ""
+            assert "always()" in cond, (
+                f"验收剧本步骤必须 if: always()（实际 {cond!r}）—— "
+                "评测失败时它更要跑，否则唯一独立判定源也没了"
+            )
+            extra = " ".join(cond.replace("always()", "").replace("&&", " ").split())
+            allowed = ("", "matrix.shard == 0",
+                       "matrix.shard == 0 github.event.inputs.persona != 'mibao'")
+            assert extra in allowed, (
+                f"验收剧本只允许 shard==0 与 persona!=mibao 两个附加条件，实际 {cond!r}"
+            )
+
+    def test_fast_skip_list_is_exhaustive(self):
+        """反向守卫：除取证步骤外，其它步骤都不许挂 fast 条件。
+
+        防止将来有人为了"跑得更快"把闸门（依赖安装/栈健康检查/判定）也标上 fast。"""
+        offenders = []
+        for s_ in self._steps():
+            name = s_.get("name") or ""
+            cond = s_.get("if") or ""
+            if "fast" not in cond:
+                continue
+            if not any(k in name for k in self.FAST_SKIPPABLE):
+                offenders.append(name or cond)
+        assert not offenders, (
+            f"以下非取证步骤被 fast 跳过，会让快速档失去判定力：{offenders}"
+        )
+
+    def test_iteration_runs_do_not_file_acceptance_issue(self):
+        """fast / 收窄档不得开「小布 C 端验收失败」issue（issue #3417）。
+
+        这张 issue 的语义是**每日全量验收**结论。若迭代档照建：标题不含分支 →
+        分支迭代失败会与主干验收失败共用同一 issue 线程（去重按标题，直接往主干 issue
+        追加评论）；而且拿 2 条用例的失败开全量验收 issue 是过度断言。
+        """
+        steps = self._named("Create Issue")
+        assert steps, "未找到失败建 issue 步骤（关键字变了？请同步本测试）"
+        for s_ in steps:
+            cond = s_.get("if") or ""
+            assert "failure()" in cond, f"建 issue 步骤必须以 failure() 为前提：{cond!r}"
+            assert "fast" in cond, (
+                f"迭代快速档仍会开验收 issue（if={cond!r}）—— 迭代的红是工作状态，不是验收结论"
+            )
+            assert "case_ids" in cond, (
+                f"收窄档仍会开验收 issue（if={cond!r}）—— 局部失败不能开全量验收 issue"
+            )
+
+    def test_full_runs_still_file_issue(self):
+        """反向守卫：完整档必须照旧建 issue —— 提速不能顺手把告警也关掉。"""
+        steps = self._named("Create Issue")
+        for s_ in steps:
+            cond = s_.get("if") or ""
+            for required in ("failure()", "matrix.shard == 0"):
+                assert required in cond, (
+                    f"完整档建 issue 条件被削弱（缺 {required}）：{cond!r}"
+                )
+
+    def test_helper_rejects_foreign_gates(self):
+        """自证 helper 有效（否则上面几条可能是恒真断言 —— 本仓库出现过的假绿家族）"""
+        ok = {"if": f"always() && {_EVIDENCE_FAST_SKIP}"}
+        assert_always_unless_fast(ok, "dummy")
+        assert_always_unless_fast({"if": "always()"}, "dummy")
+        for bad in ("success()", "always() && matrix.shard == 0",
+                    "always() && github.event.inputs.tier == 'normal'", ""):
+            try:
+                assert_always_unless_fast({"if": bad}, "dummy")
+            except AssertionError:
+                continue
+            raise AssertionError(f"helper 未拦住非法条件 {bad!r} —— 断言形同虚设")
+
+
+class TestAcceptanceEvidenceUpload:
+    """验收证据必须**成功轮次也上传**（协议 §4.1；issue #3421 复盘中实证）
+
+    实证（run 34766277197，绿 run）：`gh run download` 报 "no valid artifacts found" ——
+    因为唯一的 artifact 上传步骤是 `if: failure()`。后果有两层：
+
+      ① 协议 §4.1 明确要求 transcript 可下载留档、"不能只留在日志里"，绿 run 却什么都没留；
+      ② UA（体验类）条目按协议由 **AI 用户代理**判定，而判定必须引证据 ——
+         证据拿不到，体验层判定就只能靠日志文本硬凑，等于被架空。
+    """
+
+    def _wf(self) -> dict:
+        import yaml
+        return yaml.safe_load(
+            (WORKFLOWS_DIR / "xiaobu-acceptance.yml").read_text(encoding="utf-8")) or {}
+
+    def _steps(self):
+        return self._wf()["jobs"]["xiaobu-acceptance"]["steps"]
+
+    def _evidence_uploads(self):
+        return [s_ for s_ in self._steps()
+                if (s_.get("uses") or "").startswith("actions/upload-artifact")
+                and "acceptance/ci-" in str((s_.get("with") or {}).get("path") or "")]
+
+    def test_ac_evidence_upload_exists(self):
+        ups = self._evidence_uploads()
+        assert ups, "找不到上传验收证据（acceptance/ci-<run_id>/）的步骤"
+
+    def test_ac_evidence_uploaded_even_when_green(self):
+        ups = self._evidence_uploads()
+        always = [s_ for s_ in ups if "always()" in (s_.get("if") or "")]
+        assert always, (
+            "验收证据只在 `if: failure()` 时上传 —— 绿 run 拿不到 transcript，"
+            "UA（体验类）判定没有证据可引（run 34766277197 实测 no valid artifacts）"
+        )
+
+    def test_ac_evidence_step_is_shard0_only(self):
+        """验收剧本只在 0 号片跑，上传也跟着限 0 号片（否则 1..N 片上传空目录刷告警）"""
+        for s_ in self._evidence_uploads():
+            cond = s_.get("if") or ""
+            if "always()" in cond:
+                assert "matrix.shard == 0" in cond, (
+                    f"证据上传未限定 0 号片：{cond!r}"
+                )
+
+    def test_ac_evidence_upload_does_not_gate_on_fast(self):
+        """`fast` 只能跳过**取证步骤**，但验收证据上传不算判定 —— 且它不该被 fast 影响，
+        否则迭代档与完整档的证据可得性不一致（而 fast 档同样产出 acceptance 目录）。"""
+        for s_ in self._evidence_uploads():
+            assert "fast" not in (s_.get("if") or ""), (
+                "验收证据上传不应被 fast 跳过"
+            )
+
+
+class TestBuildxCacheIsWired:
+    """buildx 的 GHA 缓存必须**真的能写入**且失败**可见**（issue #3426）
+
+    实证（本轮）：
+      · 仓库 172 条 Actions 缓存里**全是** setup-node/python/java 的，**没有一条 buildx/gha**；
+      · 栈步骤里 CACHED 层数 **0**、重建 **43** 层，pip 每次全量装（requirements.txt 未变）；
+      → `--cache-to type=gha` 从未生效，而 workflow 的回落路径把失败**静默**吞掉了，
+        于是"每次全量重建"长期无人察觉（镜像构建 128–172s）。
+    """
+
+    def _wf(self) -> str:
+        return (WORKFLOWS_DIR / "xiaobu-acceptance.yml").read_text(encoding="utf-8")
+
+    def test_cache_write_permission_declared(self):
+        """GHA 缓存写入需要 `actions: write` —— 缺了它导出失败（且会被回落掩盖）。"""
+        import yaml
+        wf = yaml.safe_load(self._wf())
+        perms = wf.get("permissions") or {}
+        assert perms.get("actions") == "write", (
+            f"workflow permissions 缺 actions: write（当前 {perms}）—— "
+            "buildx `--cache-to type=gha` 会导出失败，导致每次 CI 全量重建（issue #3426）")
+
+    def test_buildx_output_is_captured(self):
+        """buildx 输出必须留档：否则"为什么没缓存"只能靠反推。"""
+        src = self._wf()
+        assert "> /tmp/buildx-admin.log 2>&1" in src and "> /tmp/buildx-agent.log 2>&1" in src, (
+            "buildx 构建输出未被留档 —— 回落时无从归因（issue #3426）")
+
+    def test_fallback_surfaces_buildx_error(self):
+        """回落分支必须打印 buildx 输出尾部（失败出声，不静默）。"""
+        src = self._wf()
+        i = src.index("回落 docker compose up --build")
+        tail = src[i:i + 600]
+        assert "buildx-admin.log" in tail and "tail" in tail, (
+            "回落分支没有打印 buildx 错误尾部 —— 失败仍被静默吞掉（issue #3426）")
+
+    def test_success_branch_reports_cache_activity(self):
+        """成功分支要打印缓存活动（有没有 cache manifest 行 = 缓存到底有没有生效）。"""
+        src = self._wf()
+        i = src.index("镜像构建完成（buildx + GHA cache）")
+        assert "cache manifest" in src[i:i + 700], (
+            "成功分支未报告 cache manifest —— \"缓存生效了吗\"无法从日志判断")
+
+
+class TestBuildxCacheIsWired:
+    """buildx 的 GHA 缓存必须**真的能写入**且失败**可见**（issue #3426）
+
+    实证：
+      · 仓库 173 条 Actions 缓存里**全是** setup-node/python/java 的，**没有一条 buildx/gha**；
+      · 栈步骤里 CACHED 层数 **0**、重建 **43** 层，pip 每次全量装（requirements.txt 未变）；
+      · 加 `actions: write` 后**仍然** 0 条，且 buildx 输出里**连缓存 manifest 行都没有**
+        （"后端没参与构建"，不是"导出失败"）—— 归因靠的就是下面这些输出。
+      → `--cache-to type=gha` 从未生效，而 workflow 的回落路径把失败**静默**吞掉了，
+        于是"每次全量重建"长期无人察觉（镜像构建 128–172s）。
+    """
+
+    def _wf(self) -> str:
+        return (WORKFLOWS_DIR / "xiaobu-acceptance.yml").read_text(encoding="utf-8")
+
+    def test_cache_write_permission_declared(self):
+        """GHA 缓存写入需要 `actions: write` —— 缺了它导出失败（且会被回落掩盖）。"""
+        import yaml
+        wf = yaml.safe_load(self._wf())
+        perms = wf.get("permissions") or {}
+        assert perms.get("actions") == "write", (
+            f"workflow permissions 缺 actions: write（当前 {perms}）—— "
+            "buildx `--cache-to type=gha` 会导出失败，导致每次 CI 全量重建（issue #3426）")
+
+    def test_buildx_output_is_captured(self):
+        """buildx 输出必须留档：否则"为什么没缓存"只能靠反推。"""
+        src = self._wf()
+        assert "> /tmp/buildx-admin.log 2>&1" in src and "> /tmp/buildx-agent.log 2>&1" in src, (
+            "buildx 构建输出未被留档 —— 回落时无从归因（issue #3426）")
+
+    def test_fallback_surfaces_buildx_error(self):
+        """回落分支必须打印 buildx 输出尾部（失败出声，不静默）。"""
+        src = self._wf()
+        i = src.index("回落 docker compose up --build")
+        tail = src[i:i + 600]
+        assert "buildx-admin.log" in tail and "tail" in tail, (
+            "回落分支没有打印 buildx 错误尾部 —— 失败仍被静默吞掉（issue #3426）")
+
+    def test_success_branch_reports_cache_activity(self):
+        """成功分支要打印缓存活动与 buildx 警告（有没有 cache manifest 行 = 缓存是否生效；
+        导出失败常以 warning 出现且不影响退出码 —— 两者都必须可见）。"""
+        src = self._wf()
+        i = src.index("镜像构建完成（buildx + GHA cache）")
+        # 窗口取到"回落分支"为止（成功分支的完整内容），而不是固定字符数 ——
+        # 首版用 1200 字符，没覆盖到警告打印那段，报了假红。
+        j = src.index("回落 docker compose up --build", i)
+        window = src[i:j]
+        assert "cache manifest" in window, "成功分支未报告 cache manifest"
+        assert "warn|error" in window, "成功分支未打印 buildx 警告/错误（归因必需）"

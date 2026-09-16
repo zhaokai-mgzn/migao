@@ -1,7 +1,29 @@
 -- ================================================================
+-- ⚠️⚠️ 已废弃（DEPRECATED）—— 请勿用于新建库 / 重建环境 ⚠️⚠️
+-- ================================================================
+-- 本文件是 **2026-05-30 的一次性快照**，此后未随迁移链更新，**两个方向都已失真**
+-- （2026-09-11 实测，逐表比对 docs/sql/schema.sql）：
+--
+--   本文件缺失（schema.sql 已有，共 9 张）：
+--     daily_briefings, finance_transactions, knowledge_candidates, knowledge_cards,
+--     processing_orders, role_permissions, session_states,
+--     user_suggestion_prefs, user_memories
+--   本文件仍会创建，但**早已被迁移 DROP**（共 4 张）：
+--     knowledge_documents, knowledge_sync_history, rag_chunks,   ← V36 迁移 DROP
+--     quick_reply_templates
+--
+-- 即：拿它建库会**同时**缺表和多出已废弃的表 —— 不是"旧一点"，是错的。
+--
+-- ✅ 正确入口（单一事实源）：
+--   - 新建库：`docs/sql/schema.sql`（bootstrap，与迁移链对齐，CI 起栈用的就是它）
+--   - 结构变更：`backend/admin-api/src/main/resources/db/migration/V{n}__*.sql`
+--     并同步 `schema.sql`（跨源漂移守卫见 tests/unit_ci_workflows/test_schema_integrity.py）
+--
+-- 保留本文件仅为历史归档（外部 runbook / 审计可能引用路径，故未直接删除）。
+-- ================================================================
 -- 米高智能商家管理系统 - 全量建表脚本 (PostgreSQL 14+)
 -- ================================================================
--- 生成时间: 2026-05-30
+-- 生成时间: 2026-05-30（快照，已冻结）
 -- 用途: 在全新 PostgreSQL 数据库上一次性执行，创建全部表结构、索引、
 --       RLS 策略及必要种子数据
 -- 执行方式: psql -U <user> -d <database> -f schema_full.sql
@@ -403,7 +425,9 @@ CREATE TABLE IF NOT EXISTS order_items (
     order_id VARCHAR(36) NOT NULL REFERENCES orders(id),
     product_id VARCHAR(36),
     product_name VARCHAR(200),
-    quantity INTEGER DEFAULT 1,
+    -- 数量（口径按计价方式：per_meter=米数 / per_set=1 / per_area=宽×高㎡，可为小数）
+    -- issue #3666：由 INTEGER 放宽为 DECIMAL(10,2)，避免 per_area 小数面积（如 8.4 ㎡）被截断少收
+    quantity DECIMAL(10,2) DEFAULT 1,
     unit_price DECIMAL(12,2),
     width DECIMAL(8,2),
     height DECIMAL(8,2),
@@ -599,6 +623,9 @@ CREATE TABLE IF NOT EXISTS after_sales_tickets (
     customer_id VARCHAR(64),
     ticket_type VARCHAR(32) NOT NULL,
     status VARCHAR(32) DEFAULT 'pending',
+    -- 工单真实来源：customer=顾客发起 / agent=AI 建单 / merchant=人工建单。
+    -- 服务端各建单路径均显式写值（AfterSalesTicketService.SOURCE_*，#3686）⇒ 本默认不可达，
+    -- 仅作原始 SQL 插单的防御性兜底（勿删：DROP DEFAULT 需 Flyway 迁移，收益不抵成本）。
     source VARCHAR(32) DEFAULT 'customer',
     priority VARCHAR(16) DEFAULT 'normal',
     handler_id VARCHAR(64) REFERENCES agent_employees(id),

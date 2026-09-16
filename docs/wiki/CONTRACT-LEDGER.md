@@ -13,7 +13,9 @@
 | 订单状态（DB） | `pending / confirmed / producing / shipped / completed / cancelled` | `OrderService.java` 状态机；**生产中是 producing 不是 processing** |
 | 订单状态（前端展示） | `pending_payment / pending_shipment / shipped / completed / closed / refund` | `types/index.ts` `BackendToFrontendStatus` 映射 |
 | 售后工单状态 | `pending / processing / rejected / resolved / closed` | `AfterSalesTicketService.java` |
-| 商品状态 | `draft / on_sale / off_sale / under_review` | `ProductService.java` |
+| 商品状态 | `draft / on_sale / off_sale / under_review` | `ProductService.java` `STATUS_TRANSITIONS`（4 值状态机，已核实=后端真值）；前端 `types/index.ts ProductStatus` 同 4 值。**Agent 侧只放开 `on_sale / off_sale`（2 值）—— 有意的权限边界，非能力缺口、不扩枚举，见第九节 #3686** |
+| 售后工单来源 | `customer / agent / merchant` | `AfterSalesTicketService.SOURCE_*`（`VALID_SOURCES` 白名单）。语义 = 工单**真实来源**：customer=顾客发起 / agent=AI 建单 / merchant=人工建单。写入路径见第八节（#3686） |
+| 加工单状态 | `generated / issued / in_processing / completed / cancelled` | `ProcessingOrderService.java` 状态机（issue #3340，1 订单 1 加工单） |
 
 ## 二、关键字段名（前后端 + Agent 三端一致）
 
@@ -24,6 +26,9 @@
 | 物流公司 | `logisticsCompany` | `logisticsCompany` | `logisticsCompany`（读响应） | 勿用 company |
 | 运单号 | `trackingNo` | `trackingNo` | `trackingNumber` | Agent 发 update_logistics 用 trackingNumber |
 | 下单用户ID | `userId`（Order/OrderCreateRequest/AgentOrderCreateRequest，来自 X-User-Id 透传） | — | `context.user_id`（customer_order_query 强制注入） | **C 端数据隔离字段**（V20260901）；B 端查询用 B 端 order_query，C 端用小布专用 customer_order_query |
+| 加工单号 | `processingOrderNo` | `processingOrderNo` | `processingOrderNo`（读响应） | 生成格式 `JG-YYYYMMDD-XXXX`，DB 唯一（issue #3340） |
+| 加工单状态 | `status`（generated/issued/in_processing/completed/cancelled） | `status`（同枚举） | `status`（同枚举） | 中文映射 `PO_STATUS_TEXT`（processing_order_query.py） |
+| **订单明细数量** | `quantity` **`BigDecimal`**（OrderCreateRequest.OrderItemRequest / AgentOrderCreateRequest.AgentOrderItem / OrderItem / OrderDetailResponse / OrderListResponse）——DB `order_items.quantity DECIMAL(10,2)`（V45） | `quantity: number`（decimal 安全） | `items[].quantity` JSON Schema `"type": "number"`（可为小数） | **口径按计价方式**：per_meter=米数 / per_set=1 / per_area=宽×高（㎡）；**可为小数**（如 2.8×3=8.4 ㎡），三端一律**不得取整/截断**（issue #3666，原 Integer/INTEGER 会少收钱）。JSON 传整数 3 仍反序列化为 BigDecimal("3") |
 
 ## 三、端点签名（勿自造）
 
@@ -36,6 +41,10 @@
 | **C 端我的订单** | `GET /api/admin/agent/orders/mine?page&size&status` | **强制按 X-User-Id 过滤 + 手机号兜底**：`user_id=本人 OR (user_id IS NULL AND customer_phone=本人已绑定手机号)`（商户代录/历史订单据此归属；未绑手机号则仅 user_id 直配） |
 | **小程序绑定手机号** | `POST /api/auth/mini/bind-phone` body `{code}`（JWT 认证） | code = `open-type="getPhoneNumber"` 授权动态令牌；后端换号 → 写 `users.phone` → 回填名下 `user_id IS NULL AND customer_phone=该号` 的订单（V23 运行时化） |
 | **B 端员工小程序登录** | `POST /api/auth/bmini/login` body `{code, phoneCode?}`（issue #2977） | code = wx.login() 凭证；phoneCode = `open-type="getPhoneNumber"` 授权动态令牌（**首次必传**）。语义与 C 端相反：openid 无绑定 → 换号跨租户匹配员工（role∉customer/agent）→ 绑定 `user_identities(bmini_app + appId=wechat.bmini.appid)` → 签发含 permissions 的员工 JWT；**匹配不到即拒绝、绝不自动建号**（BM-003） |
+| **加工单生成** | `POST /api/admin/processing-orders/generate` body `{orderIds:[]}`（issue #3340） | 仅已确认且含加工项订单；幂等（已有活跃加工单拒绝）；联动订单 confirmed→producing；权限 `processing:update` |
+| **加工单列表/详情** | `GET /api/admin/processing-orders?keyword&status` / `GET /api/admin/processing-orders/{id}` | id 可为加工单号/订单号/UUID；租户隔离 fail-closed；权限 `processing:view` |
+| **加工单状态更新** | `PATCH /api/admin/processing-orders/{id}` body `{action, processor?, expectedDeliveryDate?, reason?}` | action ∈ {issue, start, complete, cancel}；cancel 必填 reason；issued+ 取消需人工确认；completed 冻结；权限 `processing:update` |
+| **加工单-订单联动守卫** | 订单发货守卫 + 取消联动（`OrderService`） | 含加工项订单须有 completed 加工单才能 shipped；订单取消时加工单 generated→自动作废、issued+→拦截 |
 | **C 端我的售后** | `GET /api/admin/agent/after-sales/mine?page&size` | **强制按 X-User-Id 反查用户订单 → 只返回这些订单上的工单**（数据隔离强制点；勿用 `GET /api/admin/after-sales?customerId=`——该参数不存在且工单 customer_id 存的是客户姓名） |
 | **C 端我的物流** | `GET /api/admin/agent/orders/mine?status=shipped` → 逐单 `GET /api/admin/orders/{id}` 取 `logistics` | 小布专用 `customer_logistics_track`：只查本人**已发货(在途)**订单；**两端一律拒绝用户提供快递单号直查**（运单号仅由系统从订单详情读取） |
 | **转人工建人工会话** | `POST /api/admin/agent-sessions`（ai-agent human_handoff 调用） | 字段 `aiSessionId/customerId/reason` + **GB-01 新增** `aiContextSummary`（≤500 字）+ `aiContextMessages`（≤20 条 `{role: user\|assistant, content, contentType?, createdAt?}`，每条 ≤500 字）；管理端详情 `GET /api/admin/agent-sessions/{id}` 响应含 `aiContextSummary`/`aiContext`；**顾客端** `GET /api/customer/agent-sessions/by-ai/{aiSessionId}` **不含** aiContext 且过滤 isInternal 消息（GB/T 47746-2026 对齐，issue #2776） |
@@ -74,6 +83,7 @@ grep -rn "字段名" backend/admin-api/src frontend/admin-web/src backend/ai-age
 | 计价方式 | `pricingMethod`（ProcessingItem/Response/Create/Update，枚举 per_meter/per_set/fixed/per_area） | `PricingMethod` 同枚举 | `pricing_method`（tool 透传） | per_piece 创建/更新被 validatePricingMethod 拒绝 |
 | 数量规则 | per_meter → 数量=面料米数；per_set/fixed → 1；per_area → 面积 | 同（deriveProcessingQty） | 同（order prompt） | B 端下单展示「名称+数量+金额」供对账，无数量输入框 |
 | 价格计算入参 | `quantity`（PriceCalculateRequest，per_meter 传面料米数） | — | `quantity` | fabricMeters 字段已删除，无密度推导 |
+| 数量类型（issue #3666） | `BigDecimal`（ProcessingItem/订单明细/订单列表/详情 DTO） | `number` | `number` | 全部为十进制、**禁止取整**；服务端 `OrderService.extractProcessingItems()` 走 `toBigDecimal()`（旧 `toInteger()` 把 per_area 8.4 截断成 8 → 列表/详情加工费与外层落库金额自相矛盾） |
 
 ## 七、LLM WIKI 知识板块契约（issue #3051，2026-09-08 起）
 
@@ -93,3 +103,33 @@ grep -rn "字段名" backend/admin-api/src frontend/admin-web/src backend/ai-age
 | 模板套用 | `POST /api/admin/knowledge/templates/{templateId}/apply` | 复制为租户卡片（sourceType=template/sourceRef=templateId/status=published），按 (tenant_id,title) 去重，返回 {created,skipped} |
 | 候选队列 | `GET /api/admin/knowledge/candidates` + `POST /{id}/adopt` / `adopt-edited` / `reject` | 待确认队列闭环：候选读+写路径齐全；采纳转卡片 published（来源继承），拒绝记 status_note |
 | 待确认计数 | `GET /api/admin/knowledge/candidates/pending-count` | 前端红点 |
+
+## 八、售后工单来源写入契约（issue #3686，2026-09-14）
+
+`after_sales_tickets.source` = 工单**真实来源**（`customer` 顾客发起 / `agent` AI 建单 /
+`merchant` 人工建单）。此前服务端在 `AfterSalesTicketService.createTicket` 内**无条件**
+`setSource("agent")` ⇒ C 端小布顾客工单被误标 agent、DDL `DEFAULT 'customer'` 成死默认。
+
+| 建单入口 | 端点 | 来源取值来源 | 落库值 |
+|---|---|---|---|
+| admin-web 后台表单 | `POST /api/admin/after-sales` | 该 URL 唯一调用方是 admin-web 工单页（`api.ts` ← `after-sales/page.tsx`）⇒ 绑定常量 | `merchant` |
+| 小布（C 端）`aftersale_create` | `POST /api/admin/agent/after-sales` | ai-agent 侧 `ToolContext.ticket_source` = `customer`（role 折叠） | `customer` |
+| 米宝（B 端）`after_sales_manage` | 同上 | 同上 = `agent` | `agent` |
+| 转人工 `human_handoff` | 同上 | 同上；该工具 `check_permission` 只放 C 端角色 ⇒ 恒 `customer` | `customer` |
+| 评测 seed SQL（`tests/agent_eval/fixtures/*.sql`） | 直插 | 显式列出 `source` 列 | 由 seed 指定 |
+
+**服务端无法自行判定 Agent 侧来源**（3 个工具打同一 URL、同一组 header、均 Service Token
+认证 ⇒ `getCurrentOperator()` 恒 `internal-service`、body 无 `source`）⇒ 由内部调用方经
+**请求头 `X-Agent-Client`** 声明，服务端只接受白名单值，缺省/未知一律回退 `agent`
+（= 既有行为，向后兼容）。**不放 body**：来源不由客户端 payload 决定（#3605 取舍，且避开
+payload 契约门禁射程）。
+
+DDL `source VARCHAR(32) DEFAULT 'customer'` 现状：服务端各路径均显式写值 ⇒ 该默认**不可达**
+（死默认），保留作防御性兜底（原始 SQL 插单）并已加注释；`DROP DEFAULT` 会触发 Flyway
+迁移，不划算 —— 如确需清理另开 issue。
+
+## 九、有意的三端差异（登记真实意图，避免被当成缺口"补齐"）
+
+| 差异 | 值域 | 裁定与理由 |
+|---|---|---|
+| 商品状态（agent `product_manage`） | 后端/前端 4 值 `draft/on_sale/off_sale/under_review`；**Agent 2 值 `on_sale/off_sale`** | **有意的权限边界（#3686 裁定，不扩枚举）**：Agent 只负责上下架；新建草稿、`draft→under_review→on_sale` 送审是 admin-web 后台的商品运营流程（需人工编辑资料并承担审核语义）。给 Agent 放开这两值 = 对话可跳过审核门禁（越权），违反最小权限。真值同时写在 `product_manage.py` 的 `status` 字段 description 内。**需要 Agent 送审时必须先补权限设计 + 审核责任归属，再改枚举** |
