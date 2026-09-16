@@ -26,8 +26,11 @@ export class ChatPage extends BasePage {
     this.sessionSearchInput = page.locator('input[placeholder="搜索会话..."]')
     this.messageList = page.locator('.flex-1.overflow-y-auto').first()
     this.messageInput = page.locator('textarea[placeholder*="输入消息"]')
-    // 页面可能存在多个 send 按钮（如 FloatingAssistant），用 .first() 选 MessageInput 中的
-    this.sendBtn = page.locator('button').filter({ has: page.locator('svg.lucide-send') }).first()
+    // 页面可能存在多个 send 按钮（如 FloatingAssistant），用 .first() 选 MessageInput 中的。
+    // ⚠️ 图标契约：MessageInput.tsx 的发键图标是 lucide 的 `ArrowUp`（不是 `Send`），
+    //    类名随之为 `svg.lucide-arrow-up`；写成 `lucide-send` 会恒不匹配（2026-09-15 归因。
+    //    按钮另有 `title="发送"`，若再漂移优先改用 getByRole('button', { name: '发送' })）。
+    this.sendBtn = page.locator('button').filter({ has: page.locator('svg.lucide-arrow-up') }).first()
     this.stopBtn = page.locator('button').filter({ has: page.locator('svg.lucide-stop-circle') })
     this.imageUploadBtn = page.locator('button').filter({ has: page.locator('svg.lucide-image-plus') })
     this.inputZone = page.getByRole('region', { name: '消息输入区' })

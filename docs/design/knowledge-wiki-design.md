@@ -61,7 +61,7 @@ LLM WIKI **完全替代**旧知识库：以下组件整体移除，不留并存�
 | 前端测试 | `frontend/admin-web/tests/unit/pages/knowledge.test.tsx` | 重写为知识卡片页测试 |
 | 后端测试 | `KnowledgeControllerTest`（文档端点 IDOR） | 删除，由 `KnowledgeCardControllerTest` 覆盖 |
 | 冒烟测试 | `ControllerSmokeTest` 中知识库端点断言 | 改为知识卡片端点断言 |
-| Agent | `registry.py` 知识工具禁用注释 / `SKILL-customer_knowledge.md` RAG 优先描述 | 改为知识卡片检索工具 + 知识卡片优先描述（Phase 7） |
+| Agent | `registry.py` 知识工具禁用注释 / `customer_knowledge_skill.py` RAG 优先描述 | 改为知识卡片检索工具 + 知识卡片优先描述（Phase 7） |
 | 用例 | `API-008`（RAG 降级）/ `API-011`（同步历史）→ 已过时 | 从 `.github/cases/api.yml` 删除或标注 removed，重渲染生成物 |
 | 文档 | README 知识库(RAG) 说明、`docs/wiki/Home.md`、`AI-Agent.md` RAG Pipeline 节、`api-reference.md` §5.5、`rag-architecture.md`、`Database.md` 知识库行、`mibao-verification-cases.md` | 按现状改写为知识卡片模型描述；`rag-architecture.md` 归档为历史 |
 | 种子数据 | `knowledge_base/*.md`（Markdown 文档形态） | 结构化迁移为 `resources/knowledge-templates/curtain/template.json`（Phase 3，32 条），原 md 删除 |

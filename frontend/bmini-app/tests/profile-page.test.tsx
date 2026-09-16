@@ -34,7 +34,7 @@ const mockClearMessages = jest.fn()
 
 jest.mock('../src/store/authStore', () => ({
   useAuthStore: jest.fn(() => ({
-    user: { id: 'u1', nickname: '运营小王', avatar: null, tenant_id: 1, role: 'operator', tenantName: '词元通达' },
+    user: { id: 'u1', nickname: '运营小王', avatar: null, tenantId: 1, role: 'operator', tenantName: '词元通达' },
     isLoggedIn: true,
     logout: mockLogout,
   })),
@@ -59,7 +59,7 @@ describe('ProfilePage', () => {
     jest.clearAllMocks()
     // 重置 mock 到已登录状态（B 端员工）
     ;(useAuthStore as unknown as jest.Mock).mockReturnValue({
-      user: { id: 'u1', nickname: '运营小王', avatar: null, tenant_id: 1, role: 'operator', tenantName: '词元通达' },
+      user: { id: 'u1', nickname: '运营小王', avatar: null, tenantId: 1, role: 'operator', tenantName: '词元通达' },
       isLoggedIn: true,
       logout: mockLogout,
     })
@@ -73,6 +73,18 @@ describe('ProfilePage', () => {
   it('应显示角色标签（operator → 运营经理）', () => {
     render(<ProfilePage />)
     expect(screen.getByText('运营经理')).toBeTruthy()
+  })
+
+  it('未登记的角色码不得原样显示（回退中文，防英文泄漏）', () => {
+    ;(useAuthStore as unknown as jest.Mock).mockReturnValue({
+      user: { id: 'u1', nickname: '运营小王', avatar: null, tenantId: 1, role: 'warehouse_keeper', tenantName: '词元通达' },
+      isLoggedIn: true,
+      logout: mockLogout,
+    })
+    render(<ProfilePage />)
+    // 原先 `|| user.role` 会把后端角色码原样印在页面上 → 用户看不懂的英文
+    expect(screen.getByText('商家员工')).toBeTruthy()
+    expect(screen.queryByText('warehouse_keeper')).toBeNull()
   })
 
   it('应显示租户名', () => {

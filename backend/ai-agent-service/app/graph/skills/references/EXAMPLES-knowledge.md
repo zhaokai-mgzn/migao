@@ -1,6 +1,12 @@
 # Knowledge Skill — Few-shot 示例
 
-> ⚠️ RAG 知识库当前禁用。knowledge_search 工具未注册。启用 RAG 后取消此注释。
+> 工具现状（2026-09-14 校正，勿再回退为「RAG 禁用」旧描述）：
+> - **`knowledge_search` 可用且必须优先调用**——检索本店已发布**知识卡片**（`app/tools/registry.py`
+>   无条件注册；知识单元已卡片化，旧 RAG 检索下线，issue #3051/#3077）。下方示例即为真实轨迹。
+> - **`processing_item_query` 可用**：knowledge_search 未命中加工计价类问题时，用它查店铺加工项目录。
+> - **`knowledge_manage` 不可用**（注册处被 `[RAG 禁用]` 注释，`registry.py:411/:466`）——知识卡片
+>   的创建/更新/删除在 admin-web「知识卡片」页面操作，不在 Agent 内。
+> （旧版本此行曾写「RAG 知识库当前禁用。knowledge_search 工具未注册」，与本文件示例自相矛盾。）
 
 ## ✅ 正确示例
 

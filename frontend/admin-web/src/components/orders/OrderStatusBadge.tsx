@@ -1,11 +1,11 @@
 'use client'
 
-import type { OrderStatus } from '@/types'
 import StatusBadge from '@/components/ui/StatusBadge'
 import { chipToneClasses, orderStatusChipFor } from '@/lib/status-chip'
 
 interface OrderStatusBadgeProps {
-  status: OrderStatus
+  /** 原始状态值（后端枚举或前端枚举均可，chip 内统一归一/区分） */
+  status: string
   className?: string
   onClick?: () => void
 }

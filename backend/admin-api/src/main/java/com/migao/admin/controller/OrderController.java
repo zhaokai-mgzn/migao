@@ -279,6 +279,9 @@ public class OrderController {
 
         String logisticsCompany = body.get("logisticsCompany");
         String trackingNo = body.get("trackingNo");
+        // 发货人（issue #3768）：显式传入优先，否则取当前登录用户姓名兜底
+        String providedShipper = body.get("shipperName");
+        String shipperName = orderService.resolveShipperName(providedShipper);
 
         // 查询现有物流记录
         java.util.List<OrderLogistics> existing = orderLogisticsService.getByOrderId(id);
@@ -287,6 +290,10 @@ public class OrderController {
             OrderLogistics logistics = existing.get(0);
             if (logisticsCompany != null) logistics.setLogisticsCompany(logisticsCompany);
             if (trackingNo != null) logistics.setTrackingNo(trackingNo);
+            // 仅显式传入才覆盖：改运单号/纠错 ≠ 换发货人，也不为存量历史订单猜经手人
+            if (org.springframework.util.StringUtils.hasText(providedShipper)) {
+                logistics.setShipperName(shipperName);
+            }
             orderLogisticsService.updateById(logistics);
         } else {
             // 创建新的物流记录
@@ -295,6 +302,7 @@ public class OrderController {
                     .orderId(id)
                     .logisticsCompany(logisticsCompany)
                     .trackingNo(trackingNo)
+                    .shipperName(shipperName)
                     .status("in_transit")
                     .build();
             orderLogisticsService.save(logistics);

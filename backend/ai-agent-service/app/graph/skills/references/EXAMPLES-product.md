@@ -4,10 +4,9 @@
 
 用户: "帮我创建一个遮光窗帘，50 元一米"
 
-### 轮次 1 — 收集基本信息
+### 轮次 1 — 收集基本信息 + 分类选择
 ```
-→ category_manage(action="tree")   // 获取分类树
-→ processing_item_query()          // 获取可关联加工项
+→ category_manage(action="tree")   // 获取分类树（分类 ID 是加工项过滤的前提）
 → interact(
     component="form",
     title="新建商品 — 基本信息",
@@ -21,12 +20,14 @@
   )
 → 💬 "遮光窗帘已查到分类可选。货号可从色卡提取或按品牌首字母生成。"
 ```
+🔴 分类未确认前不要查加工项（没有分类 ID ⇒ 传不了 `applicable_category_id`）。
 
-### 轮次 2 — 用户回填 + 加工项选择
+### 轮次 2 — 分类确认 + 回填 → 加工项选择
 ```
-用户回填 form: name="遮光窗帘", price=50, selling_methods=["散剪","整卷"], door_widths=["2.8米"], sku_code="ZG-001"
+用户点选分类卡「窗帘」（= 已确认分类 ID，如 cat_curtain）+ 回填 form:
+  name="遮光窗帘", price=50, selling_methods=["散剪","整卷"], door_widths=["2.8米"], sku_code="ZG-001"
 → 💬 "基本信息已收到。请选择该商品要关联的加工项（可多选，也可回复'不需要'跳过）："
-→ processing_item_query()  // 获取真实加工项目录（含 pageMeta）
+→ processing_item_query(applicable_category_id="cat_curtain")  // 🔴 必须带已确认分类 ID：按「适用商品分类」过滤（issue #2964）
 → interact(
     component="choice",
     title="请选择加工项（第1/2页）",
@@ -35,7 +36,7 @@
       {label:"2. S钩安装 ¥5/米", value:"pi_i9j0k1l2m3n4o5p6"},
       {label:"3. 韩式褶加工 ¥12/米", value:"pi_q7r8s9t0u1v2w3x4"}
     ],
-    pageMeta: {current:1, total:2, totalCount:16, tool:"processing_item_query", params:'{"page":1,"size":10}'},  // 🔴 必须透传，前端自动翻页
+    pageMeta: {current:1, total:2, totalCount:16, tool:"processing_item_query", params:'{"applicable_category_id":"cat_curtain","page":1,"size":10}'},  // 🔴 必须透传（含 applicable_category_id，翻页不丢），前端自动翻页
     multiSelect: true  // 🔴 必须传：支持连续点选多个加工项（issue #2894）
   )
 → 用户点击勾选序号 1 和 3（本地勾选，不发消息）→ 点「完成选择」按钮

@@ -1,8 +1,8 @@
 # MIGAO 开发提效流程（固化版）
 
-> 本文档是 DSH 技能 `migao-dev-flow`（`migao/.agents/skills/migao-dev-flow/SKILL.md`）的仓库同步副本，供团队共享阅读。
-> **修改流程规范时，两份文件需同步更新**（DSH 技能是机器本地、不进 git；本文档是版本化副本）。
-> 当前版本：v1.3（2026-09-04）——新增多会话并发规范（一会话一 worktree + 会话锁 + 端口隔离 + 分支卫生）、CI 队列治理（concurrency/paths 门控/agent-eval 按变更触发省真实 LLM token）、验证分级降本。
+> 本文档是 DSH 技能 `migao-dev-flow`（**权威源：`.agent-presets/migao/skills/migao-dev-flow/SKILL.md`**，随代码评审/入库）的仓库同步副本，供团队共享阅读。
+> **流程口径以技能为准**：改流程规范**先改技能**，再同步本页；两份不一致时按技能执行（历史路径 `migao/.agents/skills/...` 已废弃）。
+> 当前版本：v1.3（2026-09-04）——新增多会话并发规范（一会话一 worktree + 会话锁 + 端口隔离 + 分支卫生）、CI 队列治理（concurrency/paths 门控/agent-eval 按变更触发省真实 LLM token）、验证分级降本。（§2.1 另经 2026-09-14 v1.19 修正，见该节。）
 > 内容源自历史全链路复盘（RETROSPECTIVE，未入库）的 P0/P1 改进，经实战固化。
 
 ## 1. 三把工具（开发自查用）
@@ -17,10 +17,10 @@
 
 ## 2. 提交流程（防 UI 回退 / 防 CI 返工）
 
-### 2.1 提交前必查（按序）— 验证分级（2026-09-04 固化，省本地重复计算）
+### 2.1 提交前必查（按序）— 验证分级（2026-09-04 固化；**2026-09-14 v1.19 修正：先 commit，再跑 ②③④**）
 ```bash
 # 每次改动后：./verify-all.sh quick（~3-5 分钟）即可覆盖常规回归
-# 提交前必查（按序）：
+# 提交前必查（按序）—— ⚠️ 顺序修正：**先 `git commit`，再跑 ②③④**
 # ① UI 回退检测（最重要！防工作区旧 UI 覆盖验收版）
 ./check-ui-regression.sh
 
@@ -36,6 +36,19 @@
 # 合并前：以 CI 结果为准，不本地重复跑 gate —— CI 已排队跑过一遍，
 # 本地再跑一遍 gate 是纯浪费（token+时间）。本地跑 gate 只在提交前的瞬间用。
 ```
+
+⚠️ **为什么必须"先 commit"**（2026-09-14 实证，issue #3724）：`gate` 取「新增测试文件」的方式是
+`git diff --diff-filter=A … origin/main...HEAD`，**只含已提交内容**。未提交时 `HEAD == origin/main`
+⇒ 集合恒为空 ⇒ 旧实现打印「无变更…跳过」并 `return 0`（**✅ 假绿**）——实证：同一条命令
+`git commit` 前 ✅ / `commit` 后 ❌（新增测试里的存在性断言命中 `_WEAK_PATTERNS`），CI 直接红。
+修复后（#3724）：
+
+- **弱断言检查已改成同时看工作区**（已提交新增 ∪ 工作区新增/未跟踪测试文件）⇒ 提交前跑也**真的会扫**，
+  命中即报 `file:line`；
+- 「**缺测 / case_ids 追溯**」仍按已提交 diff 扫描 ⇒ 有未提交改动时预检会打 `::warning::`
+  （已抬到**控制台可见**）**点名这块范围未覆盖**并提示 commit；
+- **仅"未提交"不会让 `gate` 失败**（`quick` 在第一次 commit 之前跑是正当工作流，只因"没提交"就红是假红），
+  但此时控制台的 ✅ **不等于"全部检查已覆盖"** —— 想让预检覆盖全部范围，就先 commit 再跑。
 
 ### 2.2 红线（踩过的高频坑，禁止违反）
 - **禁止 `git add -A` 盲目提交**：工作区长期积压的未提交改动（尤其旧版 UI）会覆盖 main 上已验收的版本。提交前先 `git status` 检查积压，**逐个确认** UI 文件不是旧版。
@@ -59,6 +72,58 @@
 4. **主工作区只读**：主仓库（migao/）只做 `fetch/rebase/merge` 与 PR 管理，**不在主工作区直接改文件**（防止未提交改动静默携带）。
 5. **分支卫生**：验证完即 PR，CI 绿即合并，分支存活 < 1-2 天；定期 `git branch --merged origin/main` 全删 + 清理 `origin gone` 的本地分支。
 6. **开工前读契约**：`docs/wiki/CONTRACT-LEDGER.md`（状态枚举/字段名/端点签名）；跨模块改动后跑 `./contract-check.sh`。
+
+### 2.4 预设快照地雷：worktree 的 `.agent-presets/**` 是**创建时刻快照**（v1.8 新增，2026-09-15，issue #3851）
+
+**症状（静默）**：worktree 建好那一刻，`.agent-presets/**` 是**当时**的副本；此后 main 上预设再推进，工作区
+**不会自动跟上** ⇒ 这些文件相对 `origin/main` 就是「改动」（内容在**回退**）⇒ 一条 `git add -A` + push 就提交一个
+**把研发模式回退若干版本**的 PR。而现有门禁（Case Contract / Coverage / QA Growth / Case Trust）**都不看
+`.agent-presets/**` 的版本 ⇒ 不红**。
+
+**实测**（锚定 `origin/main` = `10059c53`，2026-09-15 现取；条数是**时点值**、会漂，命令自证）
+：`migao-wt/` 下含该预设文件的 **38 个**工作区里，**31** 个的 `migao-dev-flow` 版本 ≠ main（1.18.0 ~ 1.28.0），仅 **7** 个同步。
+**本单开工时我自己的 worktree 也在其中**：建完仍是 v1.28.0 + acceptance v1.9.0，而开工期间 main 已推进到
+v1.29.0 + v1.10.0 —— 一个刚建几分钟的 worktree 就落后了整整一版，只能靠人工 `git checkout origin/main -- .agent-presets/` 补上：
+
+```bash
+# 自取现状（不写死条数；macOS 自带 uniq 无 -w，故用 sed+sort 计数）
+git -C <migao 仓库根> worktree list --porcelain | grep '^worktree ' | cut -d' ' -f2- | while read -r wt; do
+  f="$wt/.agent-presets/migao/skills/migao-dev-flow/SKILL.md"; [ -f "$f" ] || continue
+  printf '%s %s\n' "$(sed -n 's/^version: *//p' "$f" | head -1)" "$wt"
+done | sed 's/ .*//' | sort | uniq -c | sort -rn
+```
+
+**三层防线（互补，别只靠一层）**：
+
+| 层 | 位置 | 管什么 |
+|---|---|---|
+| ① **创建路径**（根治） | `scripts/dev-worktree.sh add` | 建完工作区**自动** `git checkout origin/main -- .agent-presets/`；输出刷新了哪些文件与**理由** |
+| ② **提交路径**（增量 fail-closed） | `./scripts/dev-worktree.sh preset-guard`（判定本体 `scripts/agent-presets-guard.py`） | 暂存/工作区的预设**版本下降** ⇒ **非零退出**；**合法升级放行**；同版本内容不同 = **分叉 → 告警** |
+| ③ **机械安全网**（全库/定时对账） | `#3843` 的统一审计 `drift_audit --check` 的「`.agent-presets/**` 版本单调性」守卫 | 存量工作区 + CI 侧对账。**与本单互补**：本单管增量、贴合工作区；审计管全库、定时 |
+
+```bash
+# 提交前自查（版本下降即拒绝提交；升级/相同放行）
+./scripts/dev-worktree.sh preset-guard              # 默认同时看暂存区与工作区
+./scripts/dev-worktree.sh preset-guard --source index   # 只看 `git diff --cached`
+# 命中时的修法（与 issue #3851 记录的人工修法同一形状）
+git checkout origin/main -- .agent-presets/
+```
+
+**存量清理（只出清单，脚本绝不代删）**：判据 = **分支已合入 `origin/main`**（祖先可达，或 `git cherry` 无 `+` 行
+—— squash 合并后 commit 可达性不是判据）+ **工作树干净** + **无活跃会话锁** ⇒ 列「可安全移除」；否则列「需人看」并给原因：
+
+```bash
+./scripts/dev-worktree.sh prune --dry-run    # 必须显式 --dry-run；不带即拒绝执行（exit 2）
+./scripts/dev-worktree.sh rm <分支或路径> --delete-branch   # 人工逐条确认后真删（脚本不代劳）
+```
+
+**禁止手法**：不要用「让 git 忽略这些文件的改动」的索引标记手法（`--skip-worktree` / `--assume-unchanged` 之类）——
+那会把**合法的预设改动**（改研发模式本身）一起吞掉，「眼不见为净」在这里等于把正事也堵死。
+**要改研发模式**：直接在工作区改 + 升 `version:`（`preset-guard` 对升级放行），PR 走正常评审。
+
+> 同族病灶：`migao-dev-flow` §18.2（**活锚** `~/.dsh/.agent-presets/migao` 陈旧 ⇒ 按过期规则干活）、
+> `#3849`（`AGENTS.md` 换链拓扑会指向**落后 136 提交**的主工作区）—— 三者都是「**读的是快照，不是真相源**」。
+> 相关单：`#3843`（返工主机制 A~H 护栏）· `#3846`（断言可信度门禁包实测中发现并拦截此风险）。
 
 ## 3. CI 关卡（合并前会自动跑）
 | 检查 | 作用 | 失败常见原因 |
@@ -91,6 +156,87 @@ CI 里调用**真实 LLM**（生产 `ai-api.migaozn.com` + `SERVICE_TOKEN`）的
 
 - 其余环节不烧真实 token：`nightly-verification` 是 fixture e2e + smoke p1（HTTP 层）；`xiaobu-acceptance` 是本地 mock 栈；`agent-eval.yml`(normal 47 条) 与 `adversarial` 已降频为手动/每周。
 - **观察指标**：`gh run list --status queued` 排队 >20 即需治理（先清 dependabot 潮，见 §7）。
+
+### 3.3 断言可信度门禁（`Case Trust Gate`，2026-09-15 新增；#3483 T1 扩展格）
+
+**为什么需要这一层**：原有用例侧门禁只有 `Case Contract (truths_ref)`（引用可解析 + 生成物新鲜）、
+`Case Coverage Gate`（覆盖映射）、`QA Growth Gate`（改代码要有测试）—— **没有任何一条校验
+断言本身是否可信**。于是「写了断言」与「断言真能判红」之间没有任何结构性约束，以下缺陷
+**全部被门禁放行进来**（均有实证）：
+
+| 缺陷形态 | 实证 |
+|---|---|
+| 用例**物理不可满足**（让 agent 挂种子里不存在的标签） | `CU-003` → #3832 |
+| 散文禁令**独自承载**关键判据（全程语义、无轮次作用域） | `PG-013` → #3833 |
+| 写类用例**无效果层断言**（「调用了 ≠ 成了」） | 31 条 → #3778 |
+| `data_checks` 缺 `success=true` ⇒ **不计分** = 假绿 | `PR-021` → #3559 |
+| 写类用例**无自清理** ⇒ 重试前置不等价 | #3800 / #3797 |
+| 准备型 `pre_clean` 的未复位/失败路径未纳入折叠 | #3797 |
+
+**机制**（判据的**单一源** = `.github/assertion_taxonomy.py`，纯函数、零第三方依赖）：
+
+| 件 | 作用 |
+|---|---|
+| `.github/assertion_taxonomy.py` | **单一判据源**：写工具/写 action 显式枚举、效果层断言集合、前置等价性判据、persona 规则。静态门禁与后续 runner 侧动态分类器**共用**这一处口径（两处各写一份必漂移） |
+| `.github/case_trust_gate.py` | 门禁外壳：取 `git diff --name-only origin/main...HEAD` 命中的 `cases/*.yml` → 比对 `origin/main` 与 HEAD 的用例块文本 → **只判新增/内容变化的用例条目** → 按基线裁决 |
+| `.github/case-trust-baseline.json` | **存量**违规清单（burn-down，锚定 SHA）。清单内放行，清单外一律阻塞 |
+| `.github/case-trust-unimplemented.json` | **未实装**规则清单（如实登记 + 缺什么），防「写成恒真判断凑数」 |
+| `.github/case-trust-redproof.md` | 红证留档（补前必红 / 补后绿原文），由 L0 守卫锁定防事后改写 |
+| `tests/unit_ci_workflows/test_case_trust_gate.py` | L0 守卫 + 退化守卫（已知缺陷夹具必须被判违规；正确形态不得误伤） |
+
+**九条规则**（逐条带「为什么算缺陷」+ 反例 + 怎么改；失败信息里都有）：
+
+1. `CASE-TRUST-EMPTY-ASSERTION` —— 计分断言数不得为 0（`total_exp == 0` ⇒ `score = 1.0` 恒绿）；
+2. `CASE-TRUST-NO-EFFECT-ASSERTION` —— 写类用例必须 ≥1 条效果层断言
+   （`must_succeed` / `db_verify` / `output_verify` / `amount_verify` / `post_session`，
+   或含 `success=true` 等关键词的机器计分型 `data_checks`）；
+3. `CASE-TRUST-NO-SELF-CLEAN` —— 写类用例必须声明 `pre_clean` 或 `namespaces`
+   （⚠️ `namespaces` 只保证**并行互斥**，**不解决重试前置** ⇒ 记为弱证据）；
+4. `CASE-TRUST-PRECLEAN-TARGET-UNRESOLVABLE` —— `pre_clean` 的点名目标必须能从
+   `tests/agent_eval/fixtures/*.sql` **现算**的真值集合里解析到（`CU-003` 形态）；
+5. `CASE-TRUST-FORBIDDEN-TEXT-SOLE` —— `forbidden_text`（全程语义）不得**单独**承载判据，
+   必须配行为/效果层断言；已**轮次作用域**、或显式声明「禁令即主判据」
+   （该用例块里写 `# forbidden-text-intent: <理由>`）时放行；
+6. `CASE-TRUST-VOLATILE-LOCATOR` —— **定位被测对象必须用不可变标识**
+   （手机号 / `order_no` / `id` / 用例自建对象的唯一名），**不得**用「名字子串 / 序号 / 列表位置」。
+   位置/序号选择器（`_index` 之类）⇒ **阻塞**（列表顺序是运行时排序 ⇒ 定位会漂到别的对象）；
+   名字子串/自然键（`*_keyword` 等）⇒ **警告**（当下正确、有风险，清单跟踪）。
+   ⚠️ 名字/序号出现在 `user_inputs` 里是**合理**的（被测行为的一部分），**不在**本规则范围内。
+   与「写用例必须有自清理」互补：那条治「**世界**被谁改了」，这条治「**我改的是哪个对象**」。
+7. `CASE-TRUST-NO-PRECONDITION-ASSERTION` —— 多轮/写类用例必须对**自己的前置**给出可判定断言
+   （`precondition` 字段，或**机器计分型** `data_checks`）。
+   为什么：前置悄悄不成立时红的表现是 `unmatched expectation` ⇒ 看起来像「agent 不干活」，
+   归因全错（实证 `PG-013` 重试前置不成立 / `CU-003` 客户数=2）。
+   ⚠️ **只加 `must_succeed`/`db_verify` 不算**（它们只说明「工具没成功」，没说前置是什么）。
+   **红线：不得为了让用例变绿而删这类断言。**
+8. `CASE-TRUST-STALE-LINE-REF` —— `path:NNN` 行号引用必须对 `origin/main` 命中
+   （把「不写裸行号」的纪律机器化；#3787 记着 5 处过期指引）。行号越界/文件不存在/
+   符号在文件里完全找不到 ⇒ **阻塞**；行号漂移（符号在别处）⇒ 警告。
+9. `CASE-TRUST-SINGLE-LEG-NO-PERSONA` —— 按工具集可判定为单端的用例必须标注 `persona`
+   （#3822：缺标注的另一条腿必挂，`case_ids` 窄跑还会触发 runner 的「禁止静默少跑」守卫）。
+
+**「只判 diff」与「基线只许缩短」这两条必须同时存在**（否则必然假红或债务僵化）：
+
+- **只判 diff 命中条目** ⇒ 不阻塞存量、不「一次红全库」；
+- **基线只许缩短** ⇒ 本次 diff 命中且**原违规码已不再命中**的项，必须从清单移除
+  （报错指向正确行动：「你修好了，请删条目」，命令 `python3 .github/case_trust_gate.py --regen-baseline`）；
+- ⚠️ **陈旧比对只对本次 diff 涉及的用例生效** —— 否则别人修好一条存量用例
+  （#3832/#3833 正在修 `CU-003`/`PG-013`），本门禁会**自己判红并挡住他们的 PR**。
+
+**本地自查**：
+
+```bash
+python3 .github/case_trust_gate.py                      # PR 口径（diff origin/main...HEAD）
+python3 .github/case_trust_gate.py --files .github/cases/product.yml   # 判该文件全部条目（调试）
+python3 .github/case_trust_gate.py --regen-baseline     # 重生成基线（改动/新增用例后按提示执行）
+python3.11 -m pytest tests/unit_ci_workflows/test_case_trust_gate.py -q # L0 守卫
+```
+
+**未实装项**（见 `.github/case-trust-unimplemented.json`，**不写恒真规则凑数**）：
+**基线清单缩短无机械强制**（只告警 —— 阻塞会要求用例作者改非其所有权的基线文件，属假红）、
+未知 `pre_clean.type` 静默跳过（#3797）、`pre_clean` 失败路径未折叠判据（#3797）、
+跨腿窄跑的运行期判定（#3822，属 runner 归因自动化即 #3483 的 T2）、
+**全库** persona 标注（有意不做的宽口径）、纯散文 `data_checks` 的**语义**质量（LLM 审计层）。
 
 ## 4. 部署
 - 合并到 main 自动触发 3 个部署（admin-api/ai-agent/frontend）+ post-deploy 冒烟。

@@ -37,15 +37,18 @@ export function buildProductPayload(
  * 转换规则：
  * - company → logisticsCompany（前端用 company，后端用 logisticsCompany）
  * - trackingNo 透传
+ * - shipperName 透传（发货单「经手人」，issue #3768）；留空则不下发，由后端按当前登录用户兜底
  * - shippingMethod 不下发（后端不需要）
  */
 export function buildLogisticsPayload(data: LogisticsFormData): {
   logisticsCompany: string
   trackingNo: string
+  shipperName?: string
 } {
   return {
     logisticsCompany: data.company,
     trackingNo: data.trackingNo,
+    shipperName: data.shipperName?.trim() || undefined,
   }
 }
 

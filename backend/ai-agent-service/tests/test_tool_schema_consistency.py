@@ -1,5 +1,6 @@
 """
 Tool Schema-Payload 一致性自动检测
+# case_ids: UT-001
 
 防止 silent data loss：扫描所有 write tool，检查每个 _create/_update/_adjust
 等写操作方法中，函数参数是否正确映射到 json_data payload。
@@ -27,16 +28,20 @@ READ_ONLY = {
     "logistics_track.py", "dashboard_stats.py",
 }
 
+# issue #3570：原先把 human_handoff.py 放进 SKIP → 该文件的写方法参数/ payload 一致性
+# 天生不可见；它含写操作（建工单/建会话/发通知），必须扫描。
 SKIP = READ_ONLY | {
-    "human_handoff.py", "interact.py", "validate_input.py", "langchain_adapter.py",
+    "interact.py", "validate_input.py", "langchain_adapter.py",
     "__init__.py", "base.py", "registry.py",
 }
 
 # 总是出现在签名中但不需要进 payload 的参数
+# （issue #3570：原先把 "status" 也放在这里 → product_update 下发 status 而 DTO 无该字段
+#   的缺陷被显式排除；status 是真实业务内容字段，必须要求它落到 payload）
 ALWAYS_SKIP_PARAMS = {"self", "context", "page", "size", "keyword",
                        "notification_id", "ticket_id", "user_id", "item_id",
                        "role_id", "reply_id", "customer_id", "tag_id",
-                       "order_id", "threshold", "action", "status", "channel",
+                       "order_id", "threshold", "action", "channel",
                        "source_channel", "vip_level", "processing_item_id",
                        "quantity", "id", "resource_id", "type", "feature",
                        "target", "metadata", "kwargs_args", "kwargs"}

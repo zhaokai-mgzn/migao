@@ -72,7 +72,10 @@ async function setupMocks(page: import('@playwright/test').Page) {
     const b64 = (s: string) => btoa(unescape(encodeURIComponent(s)))
     const fakeJwt = `${b64('{"alg":"none","typ":"JWT"}' as any)}.${b64('{"userId":"u-visual"}' as any)}.sig`
     localStorage.setItem('auth_token', JSON.stringify({ data: fakeJwt }))
-    localStorage.setItem('auth_user', JSON.stringify({ data: JSON.stringify({ id: 'u-visual', nickname: '视觉测试', avatar: null, tenant_id: 1, tenantName: '米高窗帘' }) }))
+    // auth_user 的形状 = 后端登录响应 data.user 的 JSON 原样（camelCase，见 mini-app
+    // src/types 的 `User`）：租户 ID 键名是 `tenantId`，生产从不产生 `tenant_id`
+    // （下一行的 `tenant_id` 是 Taro storage 键，与 user 对象字段无关，勿混同）
+    localStorage.setItem('auth_user', JSON.stringify({ data: JSON.stringify({ id: 'u-visual', nickname: '视觉测试', avatar: null, tenantId: 1, tenantName: '米高窗帘' }) }))
     localStorage.setItem('tenant_id', JSON.stringify({ data: '1' }))
   })
 

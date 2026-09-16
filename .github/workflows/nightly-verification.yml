@@ -1,6 +1,13 @@
 name: Nightly Verification (p1 smoke + fixture e2e)
 permissions:
   contents: read
+  # ⚠️ 失败建 issue 必需（#3834）：缺它时失败钩子（github.rest.issues.create /
+  # createComment / search.issuesAndPullRequests）报
+  # `HttpError: Resource not accessible by integration` **自己崩溃** → 双 job 连红 9 天
+  # 零 issue 留痕（run 34909768102）。同款先例 #3270 首发 / #3497 一次复发。
+  # 守卫：tests/unit_ci_workflows/test_workflow_issue_permissions.py
+  # （凡调 issue 写 API 的 workflow 必须声明对应 scope，防第三次点修）
+  issues: write
 
 on:
   # 2026-09-06 暂停定时调度（issue #2957）：最近 nightly 多次 failure 且自动开 issue 制造噪音，

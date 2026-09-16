@@ -59,7 +59,7 @@ describe('auth utils', () => {
     })
 
     it('应解析 JSON 字符串并返回用户对象', () => {
-      const user = { id: 'u1', nickname: '测试用户', avatar: null, tenant_id: 1 }
+      const user = { id: 'u1', nickname: '测试用户', avatar: null, tenantId: 1 }
       Taro.setStorageSync(STORAGE_KEYS.USER, JSON.stringify(user))
       expect(getUser()).toEqual(user)
     })
@@ -151,7 +151,7 @@ describe('auth utils', () => {
 
   describe('miniAppLogin', () => {
     it('登录成功应存储 Token 和用户信息', async () => {
-      const mockUser = { id: 'u1', nickname: '用户1', avatar: null, tenant_id: 1 }
+      const mockUser = { id: 'u1', nickname: '用户1', avatar: null, tenantId: 1 }
       mockPost.mockResolvedValueOnce({
         success: true,
         data: { accessToken: 'jwt-token-abc', user: mockUser },
@@ -201,7 +201,7 @@ describe('auth utils', () => {
   // ========== B 端员工小程序登录（issue #2977） ==========
 
   describe('bminiLogin', () => {
-    const mockEmpUser = { id: 'emp-1', nickname: '运营小王', avatar: null, tenant_id: 1, role: 'operator', tenantId: 1, tenantName: '词元通达' }
+    const mockEmpUser = { id: 'emp-1', nickname: '运营小王', avatar: null, role: 'operator', tenantId: 1, tenantName: '词元通达' }
 
     it('首次登录（带 phoneCode）成功应存储 Token/用户/租户 (BM-001)', async () => {
       mockPost.mockResolvedValueOnce({

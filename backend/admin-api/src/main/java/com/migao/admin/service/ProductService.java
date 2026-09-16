@@ -315,13 +315,19 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
      */
     @Transactional(rollbackFor = Exception.class)
     public ProductResponse createProduct(ProductCreateRequest request, Long tenantId) {
+        // 空分类归一化（#3665 冒烟 B1）：前端草稿发的是 ''（DEFAULT_FORM.categoryId）而非缺省 null。
+        // 若原样透传：validateCategory 因 hasText('')==false 跳过校验 → BeanUtils 把 '' 写进实体
+        // → insert category_id='' → products_category_id_fkey 违例（500）。表列可空、草稿允许
+        // 不选分类（ProductCreateRequest.categoryId 注释）→ 空串一律归一化为 NULL。
+        request.setCategoryId(normalizeBlankToNull(request.getCategoryId()));
+
         // 根据目标状态校验必填字段（draft 状态放宽）
         validateRequiredForStatus(request.getStatus(), request.getCategoryId(), request.getBasePrice());
 
         // 校验分类是否存在
         validateCategory(request.getCategoryId());
 
-        // 创建商品实体
+        // 创建商品实体（categoryId 已在方法开头归一化：'' → null，不得再漏到实体）
         Product product = new Product();
         BeanUtils.copyProperties(request, product);
         product.setTenantId(tenantId);
@@ -329,6 +335,11 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
         // 处理图片列表
         if (request.getImages() != null && !request.getImages().isEmpty()) {
             product.setImages(request.getImages());
+            // 主图兜底（issue #3884）：未显式指定 mainImage 时，首图即默认主图。
+            // 此前全后端无任何写 products.main_image 的路径，agent 却谎报「主图已设置成功」。
+            if (!StringUtils.hasText(product.getMainImage())) {
+                product.setMainImage(request.getImages().get(0));
+            }
         }
 
         // 详情图列表（JSONB 存储于 products.detail_images）
@@ -378,6 +389,9 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
             throw BusinessException.notFound("商品");
         }
 
+        // 空分类归一化（#3665 冒烟 B1，与 createProduct 同口径）：'' 不得写进实体，否则 FK 违例
+        request.setCategoryId(normalizeBlankToNull(request.getCategoryId()));
+
         // 根据目标状态校验必填字段（draft 状态放宽）
         validateRequiredForStatus(request.getStatus(), request.getCategoryId(), request.getBasePrice());
 
@@ -386,8 +400,11 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
 
         // 保存原始状态，防止 BeanUtils.copyProperties 绕过状态机
         String originalStatus = product.getStatus();
+        // 保存原始主图（issue #3884）：BeanUtils.copyProperties 会把请求里的 null mainImage 覆写到实体，
+        // 不先记下原值，主图兜底就无法区分「从未设置过」与「已设置过」→ 会误覆盖已设置的主图
+        String originalMainImage = product.getMainImage();
 
-        // 更新商品属性
+        // 更新商品属性（categoryId 已在方法开头归一化：'' → null，不得再漏到实体）
         BeanUtils.copyProperties(request, product);
         product.setId(id);
         // 恢复状态：状态变更必须通过 updateProductStatus 接口（含状态机校验）
@@ -396,6 +413,16 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
         // 处理图片列表
         if (request.getImages() != null) {
             product.setImages(request.getImages());
+        }
+
+        // 主图兜底（issue #3884）：mainImage 未显式指定时——已设置过主图则保留原值
+        // （copyProperties 已用请求 null 清掉实体值，需还原），否则传了图片时首图即默认主图
+        if (!StringUtils.hasText(request.getMainImage())) {
+            if (StringUtils.hasText(originalMainImage)) {
+                product.setMainImage(originalMainImage);
+            } else if (request.getImages() != null && !request.getImages().isEmpty()) {
+                product.setMainImage(request.getImages().get(0));
+            }
         }
 
         // 详情图列表（允许传空数组清空）
@@ -421,6 +448,24 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
                     request.getSellingMethods(), request.getDoorWidths(),
                     skuPrice, skuStock,
                     request.getSkus());
+        } else if (request.getBasePrice() != null) {
+            // 改价必须落到 SKU（issue #3743 / OR-014）：只给 basePrice、不给
+            // colors/sellingMethods/doorWidths/skus 的部分更新（agent 的
+            // `product_update(price=X)` 走的就是这条：updateProductForAgent 只 set basePrice）
+            // 上面那个分支不成立 ⇒ `saveColorsAndSkus` 里唯一会把 basePrice 写进 SKU 的
+            // `sku.setPrice(basePrice)` 从不执行 ⇒ product_skus.price 停留在旧价。
+            //
+            // 后果是**客户可见的错价**：商品库出现「商品级 basePrice ≠ SKU 级 price」两个价，
+            // 而 agent 下单的**权威价**正是 SKU 级（OrderService 取价校验取 ProductSku.price）
+            // ⇒ 米宝按旧 SKU 价报价并成交，商户刚改的价对 AI 报价无效。
+            //
+            // 显式带 `skus`（前端表单逐 SKU 定价）时走上面的分支、SKU 级价优先，本分支不参与。
+            ProductSku priceSync = new ProductSku();
+            priceSync.setPrice(request.getBasePrice());
+            productSkuMapper.update(priceSync, new LambdaQueryWrapper<ProductSku>()
+                    .eq(ProductSku::getProductId, id)
+                    .eq(ProductSku::getTenantId, tenantId));
+            log.info("商品改价已同步到 SKU: id={}, price={}", id, request.getBasePrice());
         }
 
         // 更新商品属性：仅当请求中明确提交 brand 或 specifications 时才重写，避免误清空
@@ -653,6 +698,15 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
     /**
      * 在现有 SKU 中匹配输入：
      * 1. 优先按真实 DB id（前端表单携带）；2. 其次按组合（colorId/colorName + sellingMethod + doorWidth，Agent 按名称重建路径）。
+     *
+     * <p>组合匹配的**归一化口径**（issue #3616，同族 #3539/#3546）：售卖方式用中文标签（「散剪」）
+     * 还是英文枚举（bulk_cut）、门幅写「2.8米」还是「2.8」，库内两种写法都真实存在
+     * （demo-seed 落 '2.8米'、eval 种子落 '2.8'；{@link #toWidthShort(String)} 早已把两者当同一门幅）。
+     * 字面 {@code Objects.equals} 会把**同一组合**判为不同 → 旧行被当成「缺失」物理删除 + 插入新行
+     * （主键漂移 → 订单 processingInfo 里旧 skuId 断链，正是本方法上方注释要防的），且失败静默无报错。
+     * 故这里复用**与调价路径同一套**归一化入口：{@link #translateSellingMethod(String)} +
+     * {@link #normalizeDoorWidth(String)}（双侧归一，库内在哪一侧是哪种写法都能命中），
+     * 不新增第二套映射、不新增/删除 SKU 行。
      */
     private ProductSku matchExistingSku(Map<Long, ProductSku> skuById, List<ProductSku> existingSkus,
                                         ProductSkuInput input, Long resolvedColorId) {
@@ -667,8 +721,10 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
                     || (StringUtils.hasText(input.getColorName())
                         && input.getColorName().equals(s.getColorName()));
             if (colorMatches
-                    && java.util.Objects.equals(input.getSellingMethod(), s.getSellingMethod())
-                    && java.util.Objects.equals(input.getDoorWidth(), s.getDoorWidth())) {
+                    && java.util.Objects.equals(translateSellingMethod(input.getSellingMethod()),
+                                                translateSellingMethod(s.getSellingMethod()))
+                    && java.util.Objects.equals(normalizeDoorWidth(input.getDoorWidth()),
+                                                normalizeDoorWidth(s.getDoorWidth()))) {
                 return s;
             }
         }
@@ -906,13 +962,24 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
         if (product == null) {
             throw BusinessException.notFound("商品");
         }
+        applyStatusTransition(product, status);
+        productMapper.updateById(product);
 
-        String currentStatus = product.getStatus();
+        log.info("更新商品状态成功: id={}, status={}", id, status);
+    }
+
+    /**
+     * 状态流转校验（不写库、不改实体）——违反状态机时抛业务错误。
+     *
+     * 状态机唯一入口，供 @see #updateProductStatus（表单端点）与
+     * @see #updateProductForAgent（Agent 更新端点）共用，避免两处各写一套流转规则。
+     * 单独抽出是为了让调用方能「先校验后落库」：非法流转在任何写入之前失败。
+     */
+    private void validateStatusTransition(String currentStatus, String status) {
         if (currentStatus == null) {
             currentStatus = "draft";
         }
 
-        // 状态流转校验
         List<String> allowedTransitions = STATUS_TRANSITIONS.get(currentStatus);
         if (allowedTransitions == null || !allowedTransitions.contains(status)) {
             String currentLabel = PRODUCT_STATUS_LABELS.getOrDefault(currentStatus, currentStatus);
@@ -925,13 +992,16 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
                             currentLabel, targetLabel,
                             allowedLabels.isEmpty() ? "无" : String.join("/", allowedLabels)));
         }
+    }
 
+    /**
+     * 状态流转校验并就地落到实体（不写库，由调用方统一持久化）。
+     */
+    private void applyStatusTransition(Product product, String status) {
+        validateStatusTransition(product.getStatus(), status);
         product.setStatus(status);
         product.setEditedBy(getCurrentUsername());
         product.setEditedAt(OffsetDateTime.now());
-        productMapper.updateById(product);
-
-        log.info("更新商品状态成功: id={}, {} -> {}", id, currentStatus, status);
     }
 
     /**
@@ -1382,6 +1452,21 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
     }
 
     /**
+     * 空分类归一化（#3665 冒烟 B1）：空串/纯空白一律归一化为 null。
+     *
+     * 背景：admin-web 存草稿时 categoryId 初值是 ''（`DEFAULT_FORM.categoryId: ''`），
+     * `handleSubmit` 用 `...form` 原样透传，`buildProductPayload` 不清洗 → 后端
+     * validateCategory 因 hasText('')==false 跳过校验，BeanUtils.copyProperties 把 ''
+     * 写进实体 → insert/update category_id='' → products_category_id_fkey 违例（500）。
+     * 产品契约是「草稿可不选分类」（products.category_id 列本就可空；见
+     * ProductCreateRequest.categoryId 注释），故服务端统一以 null 表达"未选分类"，
+     * 覆盖所有调用方（admin-web / agent BFF）。
+     */
+    private static String normalizeBlankToNull(String value) {
+        return StringUtils.hasText(value) ? value : null;
+    }
+
+    /**
      * 根据目标状态校验必填字段：draft 状态允许留空，其他状态需严格校验。
      */
     private void validateRequiredForStatus(String status, String categoryId, java.math.BigDecimal basePrice) {
@@ -1677,6 +1762,13 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
         }
         if (request.getDoorWidths() != null) { updateReq.setDoorWidths(request.getDoorWidths()); hasUpdate = true; }
 
+        // status 也是有效更新：只传 status 时不能落进下面的 !hasUpdate 分支（那正是本 issue 的假成功路径）。
+        // 这里先做状态机校验（不写库）：非法流转必须在任何写入之前失败，不留部分写入。
+        if (request.getStatus() != null) {
+            validateStatusTransition(product.getStatus(), request.getStatus());
+            hasUpdate = true;
+        }
+
         // 不传 processingItemConfigs，保留现有关联
         updateReq.setProcessingItemConfigs(null);
 
@@ -1684,7 +1776,27 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
             return getProductById(id, tenantId);
         }
 
-        return updateProduct(id, updateReq, tenantId);
+        ProductResponse response = updateProduct(id, updateReq, tenantId);
+
+        // status（上下架）：委托状态机唯一入口 applyStatusTransition（issue #3560）。
+        // 回归背景：product_update 一直在请求体里下发 status，但本 DTO 曾无该字段 + 本方法从不读取它
+        // → Jackson 静默忽略 → hasUpdate 保持 false → 上一行 !hasUpdate 分支返回商品详情
+        // （HTTP 200 + success）→ 米宝回「已下架」而 products.status 未变。与 stock 同型的"假成功"。
+        //
+        // 为什么放在 updateProduct 之后：updateProduct 内部刻意 `product.setStatus(originalStatus)`
+        // （注释「状态变更必须通过 updateProductStatus 接口（含状态机校验）」）——它靠 BeanUtils
+        // 拷贝请求到实体，而 ProductUpdateRequest 也有 status 字段，会绕过状态机。故状态只能由本方法
+        // 在商品更新完成后单独落库；非法流转抛错时整方法 @Transactional 回滚，不留部分写入。
+        if (request.getStatus() != null) {
+            Product latest = productMapper.selectById(id);
+            if (latest == null) {
+                throw BusinessException.notFound("商品");
+            }
+            applyStatusTransition(latest, request.getStatus());
+            productMapper.updateById(latest);
+        }
+
+        return response;
     }
 
     /**
@@ -1854,21 +1966,22 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
      */
     /**
      * 更新单个 SKU 的价格。按颜色/售卖方式/门幅匹配。
+     *
+     * <p>归一化（issue #3539）：agent / 前端按**中文业务术语**传参（「散剪」「整卷」「2.8米」），
+     * 而 product_skus 落库的是枚举/数值（bulk_cut、full_roll、2.8）——直接字面 eq 必然 0 行命中，
+     * 对外表现为「SKU不存在」（实测 run 34805827043：PR-021 的 sku_update 连续两次失败，
+     * 自修复只把门幅「2.8米」修成「2.8」，售卖方式的中文标签一直没救回来）。
+     *
+     * <p>故：① 售卖方式复用建品路径同一个 {@link #translateSellingMethod(String)}
+     * （不新增第二套映射表）；② 门幅先按原值精确匹配，未命中再按「去掉 米/m 后缀」双侧归一化兜底
+     * —— 库内两种写法都真实存在（种子 SKU 是 '2.8'，agent 建品落库的是 '2.8米'），
+     * 只做输入侧去后缀会反向打不到后者。
      */
     public void updateSkuPrice(String productId, String color, String sellingMethod,
                                 String doorWidth, java.math.BigDecimal price, Long tenantId) {
-        LambdaQueryWrapper<ProductSku> w = new LambdaQueryWrapper<ProductSku>()
-                .eq(ProductSku::getProductId, productId)
-                .eq(ProductSku::getTenantId, tenantId);
-        if (org.springframework.util.StringUtils.hasText(color))
-            w.eq(ProductSku::getColorName, color);
-        if (org.springframework.util.StringUtils.hasText(sellingMethod))
-            w.eq(ProductSku::getSellingMethod, sellingMethod);
-        if (org.springframework.util.StringUtils.hasText(doorWidth))
-            w.eq(ProductSku::getDoorWidth, doorWidth);
-
-        // 多结果时取第一个匹配并给提示（常见于不填门幅时同名颜色+散剪有多个门幅）
-        java.util.List<ProductSku> candidates = productSkuMapper.selectList(w.last("LIMIT 2"));
+        String normalizedMethod = translateSellingMethod(sellingMethod);
+        java.util.List<ProductSku> candidates =
+                selectSkuCandidatesForPriceUpdate(productId, color, normalizedMethod, doorWidth, tenantId);
         if (candidates.isEmpty()) {
             throw BusinessException.notFound("SKU",
                     "未找到匹配的 SKU。请用 product_detail 查看可用 SKU 后重试");
@@ -1882,6 +1995,56 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
         productSkuMapper.updateById(sku);
         log.info("SKU价格已更新: product={}, color={}, method={}, width={}, price={}",
                 productId, color, sellingMethod, doorWidth, price);
+    }
+
+    /**
+     * SKU 调价候选匹配：门幅精确匹配优先；未命中时放宽门幅条件、在 Java 侧做「去 米/m 后缀」
+     * 双侧归一化比较（不改写库内值，也不新增 SKU 行）。
+     * 返回最多 2 条，供调用方「取第一个 + 多命中告警」（常见于不填门幅时同名颜色+散剪有多个门幅）。
+     */
+    private java.util.List<ProductSku> selectSkuCandidatesForPriceUpdate(String productId, String color,
+                                                                        String sellingMethod, String doorWidth,
+                                                                        Long tenantId) {
+        java.util.List<ProductSku> exact = productSkuMapper.selectList(
+                skuPriceUpdateScope(productId, color, sellingMethod, tenantId)
+                        .eq(StringUtils.hasText(doorWidth), ProductSku::getDoorWidth, doorWidth)
+                        .last("LIMIT 2"));
+        if (!exact.isEmpty() || !StringUtils.hasText(doorWidth)) {
+            return exact;
+        }
+        String targetWidth = normalizeDoorWidth(doorWidth);
+        return productSkuMapper.selectList(
+                        skuPriceUpdateScope(productId, color, sellingMethod, tenantId))
+                .stream()
+                .filter(s -> targetWidth.equals(normalizeDoorWidth(s.getDoorWidth())))
+                .limit(2)
+                .collect(java.util.stream.Collectors.toList());
+    }
+
+    /** 调价定位范围：商品 + 租户（拦截器之外显式带租户）+ 可选的颜色/售卖方式 */
+    private LambdaQueryWrapper<ProductSku> skuPriceUpdateScope(String productId, String color,
+                                                               String sellingMethod, Long tenantId) {
+        return new LambdaQueryWrapper<ProductSku>()
+                .eq(ProductSku::getProductId, productId)
+                .eq(ProductSku::getTenantId, tenantId)
+                .eq(StringUtils.hasText(color), ProductSku::getColorName, color)
+                .eq(StringUtils.hasText(sellingMethod), ProductSku::getSellingMethod, sellingMethod);
+    }
+
+    /**
+     * 门幅归一化：「2.8米」「2.8m」「2.8 M」→「2.8」。
+     * 仅用于匹配比较，<b>不回写库</b>（库内保持原写法，避免 SKU 编码/前端展示口径漂移）。
+     * 与 {@link #toWidthShort(String)} 同源假设：门幅的语义是数字，「2.8米」与「2.8」等价。
+     *
+     * <p><b>单一入口</b>（issue #3616）：调价路径 {@link #selectSkuCandidatesForPriceUpdate} 与
+     * 建品/更新商品路径 {@link #matchExistingSku} 都必须走本方法，禁止裸比字面值
+     * （有静态不变式测试锁定，见 ProductServiceTest#skuMatch_NoBareEqualityComparison_OnSellingMethodOrDoorWidth）。
+     */
+    private static String normalizeDoorWidth(String rawDoorWidth) {
+        if (rawDoorWidth == null) {
+            return null;
+        }
+        return rawDoorWidth.trim().replaceAll("(?i)\\s*[米m]$", "").trim();
     }
 
     /**
@@ -2087,7 +2250,11 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
     }
 
     /**
-     * 售卖方式中文 → 英文
+     * 售卖方式中文 → 英文（幂等：英文原样透传）。
+     *
+     * <p><b>单一入口</b>（issue #3616）：建品/更新商品的入参翻译、调价路径的查询条件
+     * （{@link #updateSkuPrice}）、以及组合匹配 {@link #matchExistingSku} 的双侧比较，
+     * 全部复用本方法，禁止另建第二套映射。
      */
     private String translateSellingMethod(String raw) {
         if (raw == null) return null;

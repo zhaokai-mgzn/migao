@@ -175,6 +175,70 @@ jobs:
           ./check-ui-regression.sh --head
         shell: bash
 
+  # ============ 用例覆盖体检门禁 — 纯静态 YAML 分析，零 LLM，秒级（issue #3555）============
+  # 为什么单独成 job（而不是塞进 qa-growth-gate）：qa-growth-gate 判的是"改了代码有没有
+  # 对应测试"，本 job 判的是"评测用例库**覆盖到了哪些能力**"—— 两者失败时的可操作清单不同
+  # （前者=补测试，后者=补 case），分开成 job 才能各自给出可操作输出、各自可观测。
+  # 判据全部在 scripts/case_coverage.py（与 verify-all.sh 同一脚本、同一参数 → 不会本地绿 CI 红）：
+  #   结构性缺失（阻塞）：工具 0 用例 / 只有拒绝式断言而**没有任何正向用例** / 用例挂错端 /
+  #                        断言了两端都没有的工具 / 端用例集为空；
+  #   厚度不足（只报告不阻塞）：某工具仅 1 条用例 —— 缺口数是随迭代收敛的活指标，
+  #                        不做硬编码阈值门禁（verify-all.sh:66-68 的既有设计意图）。
+  # 确定性层（无 LLM 方差）→ 可安全作为 required 候选。
+  case-coverage-gate:
+    name: Case Coverage Gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+
+      # 两个体检共用同一份判据模块（scripts/case_coverage.py），只有 persona 不同。
+      # 输出写临时文件（step summary 与失败打印复用），自然语言报告只打一遍。
+      - name: Case coverage check (xiaobu + mibao)
+        env:
+          PERSONAS: "xiaobu mibao"
+        run: |
+          set -uo pipefail
+          rc=0
+          for persona in $PERSONAS; do
+            out="$RUNNER_TEMP/coverage-$persona.txt"
+            {
+              echo "===== $persona 覆盖体检 ====="
+              python3 "scripts/${persona}_coverage.py" --check || rc=1
+            } > "$out" 2>&1
+            cat "$out"
+            {
+              echo "### $persona 覆盖体检"
+              echo ''
+              echo '```'
+              cat "$out"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          done
+          exit $rc
+
+      - name: Print actionable list on failure
+        if: failure()
+        run: |
+          set -uo pipefail
+          echo "::error::覆盖体检未通过 —— 下面是可操作清单（缺用例的工具 / 端点错配）"
+          cat "$RUNNER_TEMP/coverage-xiaobu.txt" "$RUNNER_TEMP/coverage-mibao.txt"
+
+      # 阻塞检查：失败时打标签，与 qa-growth-gate 同一处置（提示补用例，而不是改判据）
+      - name: Label PR on failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          echo "❌ Case Coverage Gate 未通过：评测用例库存在能力覆盖缺口（缺正向用例 / 零覆盖 / 用例挂错端）。"
+          echo "补用例见 migao-dev-flow §14.5；判据实现见 scripts/case_coverage.py。"
+          gh pr edit "$PR_NUMBER" --add-label "review/needs-changes" 2>/dev/null || true
+
   # ============ QA Growth Gate — 事前测试覆盖门禁（block 模式）============
   qa-growth-gate:
     name: QA Growth Gate
@@ -351,13 +415,35 @@ jobs:
             echo "ℹ️ 无 render_cases.py 或 cases/，跳过生成物新鲜度校验"
           fi
 
-  # ============ Agent Eval smoke — 每次 PR 跑 smoke tier 用例（case-contract §六：100% 通过才合并）============
-  # v1.3 门控（2026-09-04）：真实 LLM 评测有 token 成本，仅当 AI 相关路径有变更才跑。
-  # 纯依赖升级（dependabot）/前端/Java 变更跳过（step 级跳过，job 仍 success 不阻塞 required check）。
-  agent-eval-smoke:
-    name: Agent Eval (smoke tier)
+  # ============ 断言可信度门禁（假红/假绿结构性护栏 A 层，#3483 T1 扩展格）============
+  #
+  # 为什么需要这一层：原有用例侧门禁只有 `Case Contract (truths_ref)`（引用可解析 +
+  # 生成物新鲜）、`Case Coverage Gate`（覆盖映射）、`QA Growth Gate`（改代码要有测试）
+  # —— **没有任何一条校验断言本身是否可信**。于是「写了断言」与「断言真能判红」之间
+  # 没有任何结构性约束，以下缺陷全部被门禁放行进来（均有实证）：
+  #   · CU-003 让 agent 挂种子目录里**不存在**的标签 ⇒ 用例物理不可满足（#3832）；
+  #   · PG-013 首跑功能正确，却因 `forbidden_text`（**全程**语义、无轮次作用域）
+  #     命中 R1 良性措辞而判红；且写类用例无自清理 ⇒ 重试前置不等价（#3833 / #3800）；
+  #   · `data_checks` 里「sku_update 成功（价格落库）」**没有 `success=true`** ⇒
+  #     该项**不计分** = 假绿（#3559 / PR-021）；
+  #   · 31 条写用例无效果层断言（「调用了 ≠ 成了」，#3778）；
+  #   · 准备型 `pre_clean` 的「未复位/失败」路径未纳入折叠判据（#3797）。
+  #
+  # 判据的**单一源** = `.github/assertion_taxonomy.py`（纯函数、零依赖）—— 静态门禁与
+  # 后续 runner 侧动态分类器共用一处口径，禁止两处各写一份（会漂移）。
+  #
+  # 判定范围 = **只判被本次改动/新增的用例条目**（存量在基线清单
+  # `.github/case-trust-baseline.json` 里放行）⇒ 不会「一次红全库」，也不阻塞存量。
+  # 基线只许缩短：本次 diff 命中且原违规码已不再命中的项，必须从清单移除（防债务僵化）。
+  # 「已不再违规 ⇒ 必须移除」**只对本次 diff 命中的用例生效** —— 否则别人修好一条存量
+  # 用例（#3832/#3833 正在修 CU-003/PG-013），本门禁就会自己判红并挡住他们的 PR。
+  #
+  # fail-closed：种子真值取不到 / 基线缺失 / 判据加载失败 ⇒ 直接红（不静默跳过）。
+  # 未实装项如实登记在 `.github/case-trust-unimplemented.json`（**不写恒真规则凑数**）。
+  case-trust-gate:
+    name: Case Trust Gate (断言可信度)
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 3
     if: github.event_name == 'pull_request'
     steps:
       - uses: actions/checkout@v7
@@ -368,61 +454,30 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Detect AI-related changes
-        id: detect
+      - name: Judge changed case entries (fail-closed)
         run: |
-          git fetch origin main --quiet
-          CHANGED=$(git diff --name-only origin/main...HEAD)
-          echo "── 变更文件（${#CHANGED} 行）──"
-          echo "$CHANGED" | head -20
-          # AI 相关路径：ai-agent 服务、eval 用例库、真实 E2E。其余（前端/Java/依赖清单）不触发真实 LLM。
-          AI_HITS=$(echo "$CHANGED" | grep -E '^(backend/ai-agent-service/|tests/agent_eval/|\.github/cases/|tests/e2e/real/)' || true)
-          if [ -n "$AI_HITS" ]; then
-            echo "run_eval=true" >> "$GITHUB_OUTPUT"
-            echo "✅ 检测到 AI 相关变更（$(echo "$AI_HITS" | wc -l | tr -d ' ') 个），执行真实 LLM 冒烟评测"
-          else
-            echo "run_eval=false" >> "$GITHUB_OUTPUT"
-            echo "⏭️ 无 AI 相关变更，跳过真实 LLM 冒烟评测（省 token）"
-          fi
+          # 只判 `origin/main...HEAD` 命中的用例条目；存量违规按基线放行。
+          # 纯静态、零第三方依赖、零 LLM（不烧 token、不占评测槽位）。
+          python3 .github/case_trust_gate.py --base origin/main
 
-      - name: Install deps
-        run: pip install httpx
-
-      - name: Run smoke eval (真实 LLM + 多轮业务流)
-        if: steps.detect.outputs.run_eval == 'true'
-        env:
-          AI_API_URL: https://ai-api.migaozn.com
-          ADMIN_API_URL: https://api.migaozn.com
-          SERVICE_TOKEN: ${{ secrets.SMOKE_SERVICE_TOKEN }}
-          PYTHONUTF8: "1"
-          PYTHONIOENCODING: utf-8
-          AGENT_EVAL_FLAKE_LOG: agent-eval-flakes.json
-        # 波动分类（issue #2890）：runner 内按指纹判定 llm-noise（自动放行+记台账）/
-        # reproducible（禁止 rerun 掩盖）/ unstable / infra。此处整跑重试仅兜底
-        # 运行级故障（传输/超时/5xx）；复现型失败不要人工 rerun，直接看台账签名排查。
+      - name: L0 degenerate guards (判据不得是空壳)
         run: |
-          set +e
-          for attempt in 1 2; do
-            echo "── 冒烟评测 第 ${attempt} 次 ──"
-            python tests/agent_eval/local_runner.py smoke --cases .github/cases
-            rc=$?
-            if [ $rc -eq 0 ]; then
-              echo "✅ 冒烟评测通过（attempt $attempt）"
-              exit 0
-            fi
-            echo "⚠️ 第 ${attempt} 次失败(exit $rc)，$([ $attempt -eq 1 ] && echo '重试...' || echo '两次均失败')"
-          done
-          exit $rc
-
-      - name: Upload agent-eval flake ledger
-        if: always() && hashFiles('agent-eval-flakes.json') != ''
-        uses: actions/upload-artifact@v4
-        with:
-          name: agent-eval-flakes
-          path: agent-eval-flakes.json
-          if-no-files-found: ignore
+          # 判据自身的红证与退化守卫：写工具集合/效果层集合非空、判据不恒真/恒假、
+          # 机器计分口径与 local_runner 同源、基线不得包含「已不再命中」的项。
+          pip install -q pytest
+          python3 -m pytest tests/unit_ci_workflows/test_case_trust_gate.py -q \
+            --tb=short -p no:cacheprovider
 
   # ============ Secret 扫描（gitleaks）— 防密钥/凭据提交 ============
+  # ⚠️ 「B 端 smoke 打云测试环境」层已移除（issue #3653，2026-09-15）—— 原 agent-eval-smoke
+  # job 每次 AI 相关 PR 都对 https://ai-api.migaozn.com（**已部署 main**，非 PR 分支）跑
+  # smoke 档真实 LLM。移除理由：
+  #   ① 云环境不含 PR 分支代码 → 评测结果与本 PR 改动**无因果**（与 behavior-eval
+  #      dogfooding 的 CH-010 无因果红同一形态，AD §6.1 事实 1 的第四层）；
+  #   ② B 端行为信号由 agent-behavior-eval 的**映射用例**承担（app/** 命中即跑，
+  #      规则桶或兜底网），完整 B 端覆盖由 post-deploy-eval（双 persona 全量）承担；
+  #   ③ AD §6.3：PR 层默认不跑 smoke/云冒烟；本层是四层冗余里成本最大的单层
+  #      （实测 2.5h 内 smoke 85 次 ≈ 43% 的总评测次数）。
   gitleaks-scan:
     name: Secret Scan (gitleaks)
     runs-on: ubuntu-latest
@@ -494,7 +549,6 @@ jobs:
       - e2e-quality-gate
       - qa-growth-gate
       - case-truth-check
-      - agent-eval-smoke
       - gitleaks-scan
       - danger-scan
     steps:
@@ -525,7 +579,6 @@ jobs:
       - e2e-quality-gate
       - qa-growth-gate
       - case-truth-check
-      - agent-eval-smoke
       - gitleaks-scan
       - danger-scan
     steps:

@@ -1,0 +1,68 @@
+name: LLM Thinking Probe (思考开关实证探针)
+
+# 一次性实证入口（issue #3573）：实测 LLMFactory 的 enable_thinking / force_no_think
+# 在真实 provider（deepseek-flash）上到底生效 / 静默 no-op / 被拒。
+#
+# ⚠️ 触发面刻意只有 workflow_dispatch —— 这是**一次性探针**，不是常态门禁：
+#    挂 push/pull_request/schedule 会引入零收益的真实 LLM 成本与 CI 队列占用。
+#    详见 migao-dev-flow §3.2（真实 LLM 成本治理）。
+#
+# 成本护栏由脚本自身保证：固定 3 次调用、prompt 极短、不跑任何评测用例
+# （见 backend/ai-agent-service/scripts/probe_thinking_effect.py docstring）。
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  probe:
+    name: probe thinking effect (deepseek-flash)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: backend/ai-agent-service/requirements.txt
+
+      - name: Install dependencies
+        working-directory: backend/ai-agent-service
+        run: pip install -r requirements.txt -q
+
+      # 凭据名与注入方式照抄既有 workflow（e2e-real.yml:47-50 / ai-agent-tests.yml:73-76 /
+      # deploy-ai-agent-service.yml:99-105）——不新造 secret 名。
+      - name: Run thinking probe (3 real calls)
+        working-directory: backend/ai-agent-service
+        env:
+          PRIMARY_API_KEY: ${{ secrets.DEEPSEEK_API_KEY || 'ci-dummy' }}
+          PRIMARY_BASE_URL: https://api.deepseek.com
+          PRIMARY_MODEL: deepseek-flash
+          VISION_API_KEY: ${{ secrets.DEEPSEEK_API_KEY || 'ci-dummy' }}
+          VISION_BASE_URL: https://api.deepseek.com/v1
+          VISION_MODEL: deepseek-flash
+        run: |
+          # TEE_VERDICT 同时落文件（供 artifact 长期留存）与 stdout（供 run 日志检索）。
+          # ⚠️ 不得用管道：`python … | tee …` 的退出码是 tee 的（恒 0）→ 探针失败
+          # 会被吞成 step success（先例见 xiaobu-acceptance.yml 的 pipefail 复盘）。
+          TEE_VERDICT=/tmp/llm-thinking-probe-verdict.txt
+          export TEE_VERDICT
+          python scripts/probe_thinking_effect.py
+
+      # 结论落 artifact：run 日志会被 GC，判定证据（VERDICT + 原始 dump）需长期可查，
+      # 供 docs/testing/ 的结论节引用 run id + 片段。
+      - name: Upload probe verdict
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: llm-thinking-probe-verdict
+          retention-days: 90
+          path: /tmp/llm-thinking-probe-verdict.txt

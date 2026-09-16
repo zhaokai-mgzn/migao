@@ -43,6 +43,9 @@ class AgentOrderServiceTest {
     @Mock(lenient = true) private com.migao.admin.mapper.ProductSkuMapper productSkuMapper;
     @Mock(lenient = true) private com.fasterxml.jackson.databind.ObjectMapper objectMapper;
     @Mock(lenient = true) private FinanceTransactionMapper financeTransactionMapper;
+    @Mock(lenient = true) private ProcessingOrderMapper processingOrderMapper;
+    /** 发货人兜底（issue #3768）：agent 无独立身份 → 取当前登录用户姓名 */
+    @Mock(lenient = true) private UserService userService;
 
     private Order testOrder;
 
@@ -70,7 +73,7 @@ class AgentOrderServiceTest {
             req.setCustomerName("张三");
             req.setCustomerPhone("13800001111");
             AgentOrderCreateRequest.AgentOrderItem item = new AgentOrderCreateRequest.AgentOrderItem();
-            item.setProductName("窗帘"); item.setQuantity(2);
+            item.setProductName("窗帘"); item.setQuantity(BigDecimal.valueOf(2));
             item.setUnitPrice(new BigDecimal("150"));
             req.setItems(List.of(item));
 
@@ -125,7 +128,7 @@ class AgentOrderServiceTest {
             item.setProductName("遮光窗帘"); item.setProductId("p-001");
             item.setSkuCode(skuCode); item.setColorName(colorName);
             item.setProcessingInfo(processingInfo);
-            item.setQuantity(2); item.setUnitPrice(unitPrice);
+            item.setQuantity(BigDecimal.valueOf(2)); item.setUnitPrice(unitPrice);
             req.setItems(List.of(item));
             return req;
         }
@@ -205,6 +208,206 @@ class AgentOrderServiceTest {
             OrderDetailResponse result = orderService.createOrderForAgent(req, 1L);
             assertThat(result).isNotNull();
         }
+
+        // ============ 参数范围闸门（issue #3622：负数量/负单价不得落库） ============
+        //
+        // 为什么必须在 Service 层也判一次：createOrderForAgent **手工 new OrderCreateRequest**
+        // 再转交 createOrder() —— 程序化构造的 Bean **不经过 Bean Validation**，所以
+        // `OrderCreateRequest`/`AgentOrderItem` 上的 @Positive「只加注解」是拦不住它的。
+        // 控制器层由 AgentOrderCreateValidationTest 锁（422），本组锁服务层显式判定（调用方绕过 HTTP 也能拦住）。
+
+        private AgentOrderCreateRequest buildQtyReq(BigDecimal quantity, BigDecimal unitPrice) {
+            AgentOrderCreateRequest req = new AgentOrderCreateRequest();
+            req.setCustomerName("张三");
+            req.setCustomerPhone("13800001111");
+            AgentOrderCreateRequest.AgentOrderItem item = new AgentOrderCreateRequest.AgentOrderItem();
+            item.setProductName("遮光窗帘");
+            item.setQuantity(quantity);
+            item.setUnitPrice(unitPrice);
+            req.setItems(List.of(item));
+            return req;
+        }
+
+        @Test
+        @DisplayName("负数量 → 拒绝（不 insert 订单：负金额会污染总额，负需求还绕过库存校验）")
+        void negativeQuantityRejected() {
+            AgentOrderCreateRequest req = buildQtyReq(BigDecimal.valueOf(-3), new BigDecimal("168"));
+
+            assertThatThrownBy(() -> orderService.createOrderForAgent(req, 1L))
+                    .isInstanceOf(BusinessException.class)
+                    .hasMessageContaining("数量");
+
+            verify(orderMapper, never()).insert(any(Order.class));
+        }
+
+        @Test
+        @DisplayName("0 数量 → 拒绝（0 元明细）")
+        void zeroQuantityRejected() {
+            AgentOrderCreateRequest req = buildQtyReq(BigDecimal.valueOf(0), new BigDecimal("168"));
+
+            assertThatThrownBy(() -> orderService.createOrderForAgent(req, 1L))
+                    .isInstanceOf(BusinessException.class)
+                    .hasMessageContaining("数量");
+
+            verify(orderMapper, never()).insert(any(Order.class));
+        }
+
+        @Test
+        @DisplayName("负单价 → 拒绝（负单价 × 数量 = 负金额）")
+        void negativeUnitPriceRejected() {
+            AgentOrderCreateRequest req = buildQtyReq(BigDecimal.valueOf(3), new BigDecimal("-168"));
+
+            assertThatThrownBy(() -> orderService.createOrderForAgent(req, 1L))
+                    .isInstanceOf(BusinessException.class)
+                    .hasMessageContaining("单价");
+
+            verify(orderMapper, never()).insert(any(Order.class));
+        }
+
+        @Test
+        @DisplayName("0 单价 → 拒绝")
+        void zeroUnitPriceRejected() {
+            AgentOrderCreateRequest req = buildQtyReq(BigDecimal.valueOf(3), BigDecimal.ZERO);
+
+            assertThatThrownBy(() -> orderService.createOrderForAgent(req, 1L))
+                    .isInstanceOf(BusinessException.class)
+                    .hasMessageContaining("单价");
+
+            verify(orderMapper, never()).insert(any(Order.class));
+        }
+
+        @Test
+        @DisplayName("合法数量/单价 → 仍可下单（防过严：闸门不是「永远下不了单」）")
+        void legalQuantityAndPriceStillPass() {
+            AgentOrderCreateRequest req = buildQtyReq(BigDecimal.valueOf(3), new BigDecimal("168"));
+            mockOrderInsert();
+
+            OrderDetailResponse result = orderService.createOrderForAgent(req, 1L);
+
+            assertThat(result).isNotNull();
+            verify(orderMapper).insert(any(Order.class));
+        }
+    }
+
+    @Nested
+    @DisplayName("createOrder 共享入口的参数闸门（#3622：程序化调用同样拦住）")
+    class CreateOrderSharedGuard {
+
+        private OrderCreateRequest buildReq(BigDecimal quantity, BigDecimal unitPrice) {
+            OrderCreateRequest req = new OrderCreateRequest();
+            req.setCustomerName("张三");
+            req.setCustomerPhone("13800001111");
+            OrderCreateRequest.OrderItemRequest item = new OrderCreateRequest.OrderItemRequest();
+            item.setProductName("遮光窗帘");
+            item.setQuantity(quantity);
+            item.setUnitPrice(unitPrice);
+            item.setSubtotal(unitPrice == null ? null
+                    : unitPrice.multiply(quantity == null ? BigDecimal.ZERO : quantity));
+            req.setItems(List.of(item));
+            return req;
+        }
+
+        @Test
+        @DisplayName("createOrder（绕过 @Valid 的程序化调用）负数量 → 拒绝且不落库")
+        void negativeQuantityRejectedInSharedEntry() {
+            OrderCreateRequest req = buildReq(BigDecimal.valueOf(-2), new BigDecimal("100"));
+
+            assertThatThrownBy(() -> orderService.createOrder(req, 1L))
+                    .isInstanceOf(BusinessException.class)
+                    .hasMessageContaining("数量");
+
+            verify(orderMapper, never()).insert(any(Order.class));
+        }
+
+        @Test
+        @DisplayName("createOrder 负单价 → 拒绝且不落库")
+        void negativeUnitPriceRejectedInSharedEntry() {
+            OrderCreateRequest req = buildReq(BigDecimal.valueOf(2), new BigDecimal("-100"));
+
+            assertThatThrownBy(() -> orderService.createOrder(req, 1L))
+                    .isInstanceOf(BusinessException.class)
+                    .hasMessageContaining("单价");
+
+            verify(orderMapper, never()).insert(any(Order.class));
+        }
+
+        @Test
+        @DisplayName("createOrder 合法值 → 照旧成功（防过严）")
+        void legalValuesStillPassInSharedEntry() {
+            OrderCreateRequest req = buildReq(BigDecimal.valueOf(2), new BigDecimal("100"));
+            mockOrderInsert2();
+
+            OrderDetailResponse result = orderService.createOrder(req, 1L);
+
+            assertThat(result).isNotNull();
+            verify(orderMapper).insert(any(Order.class));
+        }
+
+        // ── 数量下限 1（issue #3682）：<1 会被库存/销量按 0 件计 → 静默漏扣 ──
+        //
+        // 为什么 Service 层必须有：本类是「程序化调用」的唯一防线 ——
+        // `createOrderForAgent` 手工 new `OrderCreateRequest` 转交 `createOrder()`，
+        // 不过 Bean Validation（@DecimalMin 对它无效），故实体判据在 Service 里。
+
+        @Test
+        @DisplayName("createOrder 数量 0.5 → 拒绝且不落库（#3682：intValue()->0 → 不扣库存、销量 +0）")
+        void subOneQuantityRejectedInSharedEntry() {
+            OrderCreateRequest req = buildReq(new BigDecimal("0.5"), new BigDecimal("100"));
+
+            assertThatThrownBy(() -> orderService.createOrder(req, 1L))
+                    .isInstanceOf(BusinessException.class)
+                    .hasMessageContaining("数量")
+                    .hasMessageContaining("1");
+
+            verify(orderMapper, never()).insert(any(Order.class));
+        }
+
+        @Test
+        @DisplayName("createOrder Agent 路径数量 0.5 → 拒绝（createOrderForAgent 同样受影响）")
+        void subOneQuantityRejectedOnAgentPath() {
+            AgentOrderCreateRequest req = new AgentOrderCreateRequest();
+            req.setCustomerName("张三");
+            req.setCustomerPhone("13800001111");
+            AgentOrderCreateRequest.AgentOrderItem item = new AgentOrderCreateRequest.AgentOrderItem();
+            item.setProductName("遮光窗帘");
+            item.setQuantity(new BigDecimal("0.5"));
+            item.setUnitPrice(new BigDecimal("168"));
+            req.setItems(List.of(item));
+
+            assertThatThrownBy(() -> orderService.createOrderForAgent(req, 1L))
+                    .isInstanceOf(BusinessException.class)
+                    .hasMessageContaining("数量");
+
+            verify(orderMapper, never()).insert(any(Order.class));
+        }
+
+        @Test
+        @DisplayName("createOrder 数量 1 与 8.4 → 照旧成功（下限不误伤整数与小数，OR-028 口径）")
+        void minimumAndDecimalQuantityStillPassInSharedEntry() {
+            OrderCreateRequest req = buildReq(new BigDecimal("1"), new BigDecimal("100"));
+            mockOrderInsert2();
+            assertThat(orderService.createOrder(req, 1L)).as("数量 1 = 下限值，必须放行").isNotNull();
+            verify(orderMapper).insert(any(Order.class));
+
+            OrderCreateRequest decimalReq = buildReq(new BigDecimal("8.4"), new BigDecimal("100"));
+            mockOrderInsert2();
+            assertThat(orderService.createOrder(decimalReq, 1L))
+                    .as("数量 8.4（per_area 面积）≥1，必须放行").isNotNull();
+            verify(orderMapper, times(2)).insert(any(Order.class));
+        }
+
+        private void mockOrderInsert2() {
+            when(orderMapper.insert(any(Order.class))).thenAnswer(inv -> {
+                Order o = inv.getArgument(0);
+                o.setId("order-new");
+                return 1;
+            });
+            when(orderMapper.selectById("order-new")).thenReturn(
+                    Order.builder().id("order-new").orderNo("ORD-new")
+                            .customerName("张三").status("pending")
+                            .totalAmount(new BigDecimal("200.00")).build());
+            when(orderItemMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
+        }
     }
 
     @Nested
@@ -238,6 +441,8 @@ class AgentOrderServiceTest {
         @DisplayName("无物流记录时新建物流并将 confirmed 订单流转为 shipped")
         void createsLogisticsAndShips() {
             AgentOrderUpdateRequest req = buildRequest("顺丰", "SF1234567890");
+            // 发货人兜底：agent 透传的 X-User-Id → users.nickname
+            when(userService.resolveCurrentUserDisplayName()).thenReturn("李四");
 
             when(orderMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(testOrder); // resolve UUID
             when(orderLogisticsMapper.selectByOrderId(eq("order-uuid-001"), any())).thenReturn(List.of()); // 无物流 → 新建
@@ -245,14 +450,16 @@ class AgentOrderServiceTest {
             when(orderMapper.selectById("order-uuid-001")).thenReturn(testOrder); // 发货联动 + 详情
             when(orderMapper.update(any(), any())).thenReturn(1); // confirmed → shipped 原子流转
             when(orderItemMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
+            when(orderItemMapper.selectByOrderId(any(), any())).thenReturn(List.of()); // 加工单守卫：无加工项
 
             // when
             OrderDetailResponse result = (OrderDetailResponse)
                     orderService.updateOrderForAgent("order-uuid-001", req, 1L);
 
-            // then: 创建物流记录 + 状态流转 shipped
+            // then: 创建物流记录（含发货人兜底）+ 状态流转 shipped
             verify(orderLogisticsMapper).insert(org.mockito.ArgumentMatchers.<OrderLogistics>argThat(l ->
-                    "顺丰".equals(l.getLogisticsCompany()) && "SF1234567890".equals(l.getTrackingNo())));
+                    "顺丰".equals(l.getLogisticsCompany()) && "SF1234567890".equals(l.getTrackingNo())
+                            && "李四".equals(l.getShipperName())));
             verify(orderMapper).update(any(), any());
             assertThat(result).isNotNull();
         }
@@ -261,10 +468,14 @@ class AgentOrderServiceTest {
         @DisplayName("已有物流记录时更新物流信息")
         void updatesExistingLogistics() {
             AgentOrderUpdateRequest req = buildRequest("中通", "ZT123456");
+            // 关键判别力：当前操作人**有名字**。若实现用「兜底值」去覆盖已记录的发货人，
+            // 这里就会把「李四」改成「王五」→ 断言红。（不 stub 的话兜底恒为 null，
+            // 缺陷实现也能"看起来对"——那是无判别力的假绿）
+            when(userService.resolveCurrentUserDisplayName()).thenReturn("王五");
 
             OrderLogistics existing = OrderLogistics.builder()
                     .id("log-001").orderId("order-uuid-001").tenantId(1L)
-                    .logisticsCompany("顺丰").trackingNo("SFOLD").status("in_transit").build();
+                    .logisticsCompany("顺丰").trackingNo("SFOLD").shipperName("李四").status("in_transit").build();
 
             when(orderMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(testOrder);
             when(orderLogisticsMapper.selectByOrderId(eq("order-uuid-001"), any())).thenReturn(List.of(existing));
@@ -272,13 +483,44 @@ class AgentOrderServiceTest {
             when(orderMapper.selectById("order-uuid-001")).thenReturn(testOrder);
             when(orderMapper.update(any(), any())).thenReturn(1);
             when(orderItemMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
+            when(orderItemMapper.selectByOrderId(any(), any())).thenReturn(List.of()); // 加工单守卫：无加工项
 
             // when
             orderService.updateOrderForAgent("order-uuid-001", req, 1L);
 
-            // then: 更新最新物流记录
+            // then: 更新最新物流记录，且**不覆盖**已记录的发货人
+            // （改运单号/纠错 ≠ 换发货人；agent 本次操作人不该顶替首发的经手人）
             verify(orderLogisticsMapper).updateById(org.mockito.ArgumentMatchers.<OrderLogistics>argThat(l ->
-                    "中通".equals(l.getLogisticsCompany()) && "ZT123456".equals(l.getTrackingNo())));
+                    "中通".equals(l.getLogisticsCompany()) && "ZT123456".equals(l.getTrackingNo())
+                            && "李四".equals(l.getShipperName())));
+        }
+
+        @Test
+        @DisplayName("存量订单（发货人为空）改运单号：不为历史数据猜经手人")
+        void doesNotGuessShipperForLegacyRecord() {
+            AgentOrderUpdateRequest req = buildRequest("中通", "ZT123456");
+            // 关键判别力：当前操作人**有名字** —— 缺陷实现会把「王五」写进历史订单，
+            // 于是纸面上出现一个从未发过这批货的经手人
+            when(userService.resolveCurrentUserDisplayName()).thenReturn("王五");
+
+            OrderLogistics legacy = OrderLogistics.builder()
+                    .id("log-002").orderId("order-uuid-001").tenantId(1L)
+                    .logisticsCompany("顺丰").trackingNo("SFOLD").status("in_transit").build(); // shipperName = null
+
+            when(orderMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(testOrder);
+            when(orderLogisticsMapper.selectByOrderId(eq("order-uuid-001"), any())).thenReturn(List.of(legacy));
+            when(orderLogisticsMapper.updateById(any(OrderLogistics.class))).thenReturn(1);
+            when(orderMapper.selectById("order-uuid-001")).thenReturn(testOrder);
+            when(orderMapper.update(any(), any())).thenReturn(1);
+            when(orderItemMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
+            when(orderItemMapper.selectByOrderId(any(), any())).thenReturn(List.of());
+
+            // when
+            orderService.updateOrderForAgent("order-uuid-001", req, 1L);
+
+            // then: 发货人保持 null（宁可空白显示「-」，也不把当次操作人写成历史经手人）
+            verify(orderLogisticsMapper).updateById(org.mockito.ArgumentMatchers.<OrderLogistics>argThat(l ->
+                    l.getShipperName() == null));
         }
 
         @Test
@@ -293,12 +535,39 @@ class AgentOrderServiceTest {
             when(orderMapper.selectById("order-uuid-001")).thenReturn(testOrder);
             when(orderMapper.update(any(), any())).thenReturn(1);
             when(orderItemMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
+            when(orderItemMapper.selectByOrderId(any(), any())).thenReturn(List.of()); // 加工单守卫：无加工项
 
             // when
             orderService.updateOrderForAgent("order-uuid-001", req, 1L);
 
             // then: 发生状态流转（producing → shipped）
             verify(orderMapper).update(any(), any());
+        }
+
+        @Test
+        @DisplayName("P1 复核修复（PG-009）：含加工项订单经 agent 发货路径无 completed 加工单 → 拒绝")
+        void shipsRejectedViaAgentPathWithoutCompletedProcessingOrder() {
+            AgentOrderUpdateRequest req = buildRequest("顺丰", "SF001");
+            testOrder.setStatus("producing");
+            when(orderMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(testOrder);
+            when(orderMapper.selectById("order-uuid-001")).thenReturn(testOrder);
+            when(orderLogisticsMapper.selectByOrderId(eq("order-uuid-001"), any())).thenReturn(List.of());
+            when(orderLogisticsMapper.insert(any(OrderLogistics.class))).thenReturn(1);
+            // 含加工项 + 无 completed 加工单
+            com.migao.admin.entity.OrderItem item = com.migao.admin.entity.OrderItem.builder()
+                    .id("item-1").orderId("order-uuid-001").productName("布艺遮光帘A")
+                    .processingInfo(Map.of("processingItems", List.of(Map.of("id", "p1", "name", "打孔"))))
+                    .build();
+            when(orderItemMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(item));
+            when(processingOrderMapper.countCompletedByOrderId("order-uuid-001", 1L)).thenReturn(0L);
+
+            // when
+            assertThatThrownBy(() -> orderService.updateOrderForAgent("order-uuid-001", req, 1L))
+                    .isInstanceOf(BusinessException.class)
+                    .hasMessageContaining("须先完成加工单");
+
+            // then: 未发生 shipped 流转
+            verify(orderMapper, never()).update(any(), any());
         }
 
         @Test

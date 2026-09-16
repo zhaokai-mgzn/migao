@@ -12,6 +12,22 @@
 #   ./scripts/dev-worktree.sh list                  # 列出所有工作区 + 会话锁状态
 #   ./scripts/dev-worktree.sh lock                  # 查看/清理会话锁（多会话并发时先查锁）
 #   ./scripts/dev-worktree.sh rm <分支|路径> [--delete-branch]  # 移除工作区（可选连带删分支）
+#   ./scripts/dev-worktree.sh preset-guard [--source both|index|worktree]  # 提交路径守卫（版本下降即非零退出）
+#   ./scripts/dev-worktree.sh prune --dry-run       # worktree 存量体检（只打印清单，不删除）
+#
+# 预设快照地雷与两层防线（v1.8，2026-09-15 新增，issue #3851）：
+#   worktree 的 `.agent-presets/**` 是**创建时刻快照**；此后 main 上预设再推进，
+#   工作区不会自动跟上 ⇒ 这些文件相对 origin/main 就是「改动」（内容在**回退**），
+#   一条 `git add -A` + push 就提交一个把研发模式回退若干版本的 PR，
+#   而 **CI 不看 `.agent-presets/**` 的版本 ⇒ 不红**（静默）。
+#   ① 创建路径（本脚本）：`add` 建完工作区后**自动**把 `.agent-presets/**` 刷新到 origin/main；
+#   ② 提交路径（本脚本 preset-guard）：判定暂存/工作区是否构成**版本下降**，命中即 fail-closed；
+#      **合法升级放行**（改研发模式本身不能被堵死），同版本内容不同 = 分叉 → 告警；
+#   ③ 机械安全网（别处，互补）：#3843 的统一审计 `drift_audit --check` 将加
+#      「`.agent-presets/**` 版本单调性」守卫（全库/定时对账；本脚本管增量/贴合工作区）。
+#   也不用「让 git 忽略这些文件的改动」那类手法（索引标记 / 本地忽略）：那会把**合法的预设改动**
+#   （改研发模式本身）一起吞掉 —— 「眼不见为净」在这里等于把正事也堵死。
+#   详见 docs/wiki/DEV-FLOW.md「预设快照地雷」节（落地单 #3859，事实单 #3851）。
 #
 # 会话锁（v1.3，2026-09-04 新增）：
 #   多 DSH 会话并行开发防踩脚 —— add 时自动在 $REPO_ROOT/.git/sessions/ 登记会话锁
@@ -49,7 +65,8 @@ LOCK_DIR="$REPO_ROOT/.git/sessions"
 mkdir -p "$LOCK_DIR"
 
 usage() {
-  sed -n 's/^# \{0,1\}//p' "$0" | sed -n '/^dev-worktree.sh/,/^===/p' | head -20
+  # head 上限需覆盖「用法」块 + v1.8 的预设地雷说明（加新条目时同步上调，否则 --help 会截断）
+  sed -n 's/^# \{0,1\}//p' "$0" | sed -n '/^dev-worktree.sh/,/^===/p' | head -40
   exit 1
 }
 
@@ -117,10 +134,54 @@ lock_prune() {
   echo "已清理 ${pruned} 个失效锁"
 }
 
+# ── 预设快照刷新（v1.8，issue #3851）：worktree 的 .agent-presets/** 是创建时刻快照 ──
+# 建完工作区后立刻把 .agent-presets/** 对齐 origin/main，使其**开局就不是「相对 main 的改动」**。
+# 若你自己确实要改研发模式：在工作区里改即可（本函数只在 `add` 那一刻跑一次，不覆盖你的后续改动）。
+# 刷新方式用 `checkout origin/main -- .agent-presets/`（与 issue #3851 记录的人工修法同一形状），
+# 不用「让 git 忽略这些文件改动」的索引标记手法 —— 那会把合法的预设改动一起吞掉（见文件头说明）。
+refresh_presets() {
+  local wt="$1"
+  echo
+  echo "🔄 预设快照刷新（.agent-presets/** → origin/main）..."
+  if [ ! -d "${wt}" ]; then
+    echo "❌ 跳不过去：工作区目录不存在（${wt}）—— 预设未刷新，**不要**在这种情况下提交 .agent-presets/**"
+    return 1
+  fi
+  if ! git -C "$wt" rev-parse --verify --quiet origin/main >/dev/null; then
+    echo "⚠️  跳过：本仓库无 origin/main 引用 —— 无法刷新，请自行核对 .agent-presets/** 版本。"
+    return 0
+  fi
+  if ! git -C "$wt" fetch --quiet origin main 2>/dev/null; then
+    echo "⚠️  fetch origin main 失败（离线/无权限？）—— 下面按**本地已知的** origin/main 刷新。"
+  fi
+  # 列出将要被刷新的文件（`head` 兜底：`grep -c` 无匹配会 exit 1 且 set -e 会中止）
+  local changed
+  changed="$(git -C "$wt" ls-files --others --exclude-standard -- .agent-presets/ 2>/dev/null | head -20 || true)"
+  if [ -n "${changed}" ]; then
+    echo "   ↑ 以下文件是创建时刻的未跟踪快照（相对 origin/main 即「改动」）："
+    echo "${changed}" | sed 's/^/     /'
+  fi
+  git -C "$wt" checkout origin/main -- .agent-presets/
+  local n
+  n="$(git -C "$wt" ls-tree -r --name-only origin/main -- .agent-presets/ | wc -l | tr -d ' ')"
+  echo "✅ 已把 .agent-presets/**（${n} 个文件）刷新到 origin/main —— 开局即不是「相对 main 的改动」。"
+  echo "   理由：worktree 的 .agent-presets/** 是**创建时刻快照**，main 推进后不自动跟上；"
+  echo "         不刷新则一条 \`git add -A\` 就会把研发模式**静默回退**（CI 不看预设版本 ⇒ 不红）。"
+  echo "   你自己要改研发模式：直接在工作区改 + 升 version（提交前跑 preset-guard，升级放行）。"
+}
+
 cmd_add() {
   [ $# -ge 1 ] || usage
   local branch="$1"
   local path="${2:-$WT_BASE/$(slug "$branch")}"
+  # 相对路径归一化为绝对路径（v1.8）：脚本可能从**任一工作区**被调用（$ROOT ≠ 调用者 cwd），
+  # 而之后要用 `git -C "$path"` 刷新预设。若按**调用者 cwd** 解析，路径会落到
+  # `<某工作区>/../migao-wt/...`（实测造出 `migao-wt/migao-wt/...` 这种双层目录）⇒ 刷新刷错地方。
+  # 既有语义（`git -C "$REPO_ROOT" status` 等）也是**相对主仓库根**，故此处与之一致。
+  case "${path}" in
+    /*) : ;;
+    *)  path="${REPO_ROOT}/${path}" ;;
+  esac
 
   # 会话锁检查（v1.3）：同一分支已有活跃会话锁 → 拒绝重复建工作区（防多会话踩脚）
   if lock_alive "$branch" && [ "${FORCE_LOCK:-0}" != "1" ]; then
@@ -166,6 +227,10 @@ cmd_add() {
     git -C "$REPO_ROOT" worktree add --track -b "$branch" "$path" "origin/$branch"
   fi
   lock_register "$branch" "$path"
+
+  # v1.8（issue #3851）：建完立刻把预设快照对齐 origin/main（否则 `git add -A` 会静默回退研发模式）
+  refresh_presets "$path"
+
   echo
   echo "✅ 工作区就绪：${path}（分支 ${branch}）"
   echo "   ⚠️  worktree 是独立目录，首次使用需自行安装依赖："
@@ -243,6 +308,34 @@ case "${1:-}" in
   add)  shift; cmd_add "$@" ;;
   list) cmd_list ;;
   rm)   shift; cmd_rm "$@" ;;
+  preset-guard)
+    # v1.8（issue #3851）：提交路径 fail-closed 守卫 —— 判定 .agent-presets/** 是否构成版本下降。
+    # 判定逻辑在 scripts/agent-presets-guard.py（可独立单测，含红证）。
+    shift
+    PY="$(command -v python3.11 || command -v python3 || true)"
+    if [ -z "${PY}" ]; then
+      echo "❌ 找不到 python3 —— 无法判定 .agent-presets/** 版本单调性（fail-closed）："
+      echo "   worktree 的 .agent-presets/** 是创建时刻快照，未判定前不得提交它。"
+      echo "   兜底修法：git checkout origin/main -- .agent-presets/"
+      exit 1
+    fi
+    guard="${ROOT}/scripts/agent-presets-guard.py"
+    [ -f "${guard}" ] || { echo "❌ 守卫脚本缺失：${guard}"; exit 1; }
+    # ⚠️ 必须用 $ROOT（**本工作区**根），**不能**用 $REPO_ROOT（主仓库根）：
+    # 提交路径读的是「本次要提交的那个工作区的索引」。用主仓库根会读到**另一个仓库的索引**
+    # ⇒ 本工作区的降级在索引侧看不见 ⇒ 判据「绿了但没跑」（正是本单要防的形态；实测踩过一次）。
+    exec "${PY}" "${guard}" --repo "$ROOT" check "$@"
+    ;;
+  prune)
+    # v1.8（issue #3851）：存量体检 —— **只打印清单，绝不删除**
+    shift
+    PY="$(command -v python3.11 || command -v python3 || true)"
+    [ -n "${PY}" ] || { echo "❌ 找不到 python3 —— 无法体检 worktree 存量"; exit 2; }
+    guard="${ROOT}/scripts/agent-presets-guard.py"
+    [ -f "${guard}" ] || { echo "❌ 守卫脚本缺失：${guard}"; exit 1; }
+    # 存量体检看的是**全部工作区**（common git dir 权威），故用 $REPO_ROOT
+    exec "${PY}" "${guard}" --repo "$REPO_ROOT" prune "$@"
+    ;;
   lock)
     shift
     case "${1:-}" in

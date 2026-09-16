@@ -11,6 +11,8 @@ export interface MenuItem {
   path: string
   adminOnly?: boolean
   permissionCode?: string
+  /** 企业开关控制显隐（智能每日经营简报：开关 ∧ 角色，issue #3468） */
+  briefingToggle?: boolean
 }
 
 export interface MenuGroup {
@@ -28,6 +30,8 @@ export const menuGroups: MenuGroup[] = [
     icon: 'LayoutDashboard',
     children: [
       { key: 'dashboard', name: '经营看板', icon: 'BarChart3', path: '/dashboard' },
+      // 智能每日经营简报：企业开关开启才显示（sidebar 按 briefingEnabled 过滤，红线 3）
+      { key: 'briefing', name: '每日简报', icon: 'Newspaper', path: '/briefing', permissionCode: 'dashboard:view', briefingToggle: true },
     ],
   },
   // UI-005/UI-011: 智能客服大类（#3094 米宝·在线对话 菜单入口已移除，智能体对话经右下角 FAB；均不可见时整组隐藏）
@@ -56,6 +60,10 @@ export const menuGroups: MenuGroup[] = [
     icon: 'ShoppingCart',
     children: [
       { key: 'orders', name: '订单列表', icon: 'ClipboardList', path: '/orders', permissionCode: 'order:list' },
+      // 加工单列表（issue #3340 加工单状态机）：用户要求置于订单列表正下方；复用 processing:manage ——
+      // operator 已持有该码且同时具备 processing:view/update（API 权限），
+      // 而 processing:view 的其它角色（客服/销售/财务）无 update，会看到按钮但 403。
+      { key: 'processing-orders', name: '加工单', icon: 'FileText', path: '/processing-orders', permissionCode: 'processing:manage' },
       { key: 'after-sales', name: '售后工单', icon: 'ShieldCheck', path: '/after-sales', permissionCode: 'order:refund' },
     ],
   },

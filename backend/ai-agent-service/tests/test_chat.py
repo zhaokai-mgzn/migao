@@ -5,7 +5,7 @@
 _convert_history_to_agent_format 多模态、suggestion-feedback、quick-actions、
 send_message 会话校验与 __PAGE__ 协议守卫、_agent_stream_to_sse 事件序列。
 """
-# case_ids: API-001, API-002, API-003, API-004, API-005, OR-012, UI-031, UI-032
+# case_ids: API-001, API-002, API-003, API-004, API-005, OR-012, UI-031, UI-032, CH-010, CH-011
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -529,6 +529,70 @@ class TestGetHistory:
         out = result["data"]["messages"][0]
         assert out["interactive"] == interactive_payload
         assert out["interactive_answered"] is True
+
+
+class TestGetHistoryMasking:
+    """C 端 `/history` 是**展示面**：顾客看得到的手机号必须脱敏（issue #3386）。
+
+    为什么必须有这条：出站脱敏此前只做在 SSE 流上，而小程序**刷新页面**走的是
+    `/history` 回放 —— 流上看不到明文、历史里却是明文（同一份对话两种口径）。
+    同时落库必须保原文：脱敏若做在写入侧/记忆层，模型下一轮拿到 `138****8000`
+    会把 `****` 填成 `0` 建单（issue #3386 DB 实证：订单落库 13800008000）。
+    正确分界：**库里原文，读给顾客时脱敏；读给客服（B 端）不脱敏**。
+    """
+
+    def _msg(self, content="您的收货信息：张三 · 13800138000", role="assistant"):
+        return {
+            "id": "m1", "session_id": "sess_1", "role": role, "content": content,
+            "content_type": "text", "created_at": "2026-06-20T10:00:00Z",
+            "metadata": None,
+        }
+
+    @patch("app.api.chat.SessionMemory")
+    @pytest.mark.asyncio
+    async def test_customer_history_masks_phone(self, MockSM):
+        MockSM.return_value = _memory(get_session=_session(), get_history=[self._msg()])
+        result = await get_history("sess_1", current_user=_user(role="customer"))
+        content = result["data"]["messages"][0]["content"]
+        assert "13800138000" not in content, f"顾客历史泄露完整手机号: {content!r}"
+        assert "138****8000" in content, f"应脱敏为 138****8000，实际: {content!r}"
+
+    @patch("app.api.chat.SessionMemory")
+    @pytest.mark.asyncio
+    async def test_staff_history_keeps_phone(self, MockSM):
+        """B 端不脱敏：客服要打电话给顾客，脱敏会破坏运营。"""
+        MockSM.return_value = _memory(get_session=_session(), get_history=[self._msg()])
+        result = await get_history("sess_1", current_user=_user(role="admin"))
+        content = result["data"]["messages"][0]["content"]
+        assert "13800138000" in content, f"B 端历史不应脱敏，实际: {content!r}"
+
+    @patch("app.api.chat.SessionMemory")
+    @pytest.mark.asyncio
+    async def test_customer_history_card_fields_masked(self, MockSM):
+        """历史回放的**卡片字段**同样脱敏（卡片也是顾客看得到的展示面）。"""
+        payload = {"component": "confirm", "title": "确认订单",
+                   "fields": [{"label": "收货手机号", "value": "13800138000"}]}
+        msg = {
+            "id": "m3", "session_id": "sess_1", "role": "assistant",
+            "content": "请确认订单信息", "content_type": "text",
+            "created_at": "2026-06-20T10:00:00Z",
+            "metadata": {"interactive": payload},
+        }
+        MockSM.return_value = _memory(get_session=_session(), get_history=[msg])
+        result = await get_history("sess_1", current_user=_user(role="customer"))
+        got = result["data"]["messages"][0]["interactive"]["fields"][0]["value"]
+        assert got == "138****8000", f"历史卡片字段应脱敏，实际: {got!r}"
+
+    @patch("app.api.chat.SessionMemory")
+    @pytest.mark.asyncio
+    async def test_customer_history_keeps_order_no_and_code(self, MockSM):
+        """非手机号的 11 位数字不得误伤（订单号/验证码）。"""
+        MockSM.return_value = _memory(
+            get_session=_session(),
+            get_history=[self._msg("订单号 20260913027050006，验证码 123456")])
+        result = await get_history("sess_1", current_user=_user(role="customer"))
+        content = result["data"]["messages"][0]["content"]
+        assert "20260913027050006" in content and "123456" in content, content
 
 
 # ═══════════════════════════════════════════════

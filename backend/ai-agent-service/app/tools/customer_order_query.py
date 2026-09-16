@@ -214,7 +214,9 @@ class CustomerOrderQueryTool(BaseTool):
                 amount = item.get("amount") or item.get("subtotal")
                 if amount is None and unit_price is not None and quantity is not None:
                     try:
-                        amount = float(unit_price) * int(quantity)
+                        # issue #3666：quantity 可为小数（per_meter 米数 / per_area 面积），
+                        # int() 会把 8.4 截断成 8 → 展示金额与落库金额不一致
+                        amount = float(unit_price) * float(quantity)
                     except (ValueError, TypeError):
                         amount = 0
                 items.append({
