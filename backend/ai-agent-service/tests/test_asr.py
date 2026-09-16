@@ -61,12 +61,15 @@ class TestCollectorCallback:
         cb = _CollectorCallback()
         assert cb.full_text == ""
 
-    def test_full_text_returns_last_sentence(self):
+    def test_full_text_joins_all_sentences(self):
+        """缺陷修复后行为（旧行为只回最后一句 = B 端「只能识别后半段」根因）"""
         from app.api.asr import _CollectorCallback
         cb = _CollectorCallback()
-        cb.sentences.append("你好")
-        cb.sentences.append("帮我查订单")
-        assert cb.full_text == "帮我查订单"
+        self._emit(cb, [
+            {"text": "你好", "sid": 0},
+            {"text": "帮我查订单", "sid": 1},
+        ])
+        assert cb.full_text == "你好帮我查订单"
 
     def test_on_event_skips_empty(self):
         from app.api.asr import _CollectorCallback
@@ -83,6 +86,38 @@ class TestCollectorCallback:
         mock_result.get_sentence.return_value = {"text": "   "}
         cb.on_event(mock_result)
         assert cb.full_text == ""
+
+    @staticmethod
+    def _emit(cb, events):
+        """按 DashScope 流式事件序列喂入收集器（partial 中间结果 + final 句）"""
+        for ev in events:
+            mock_result = MagicMock()
+            mock_result.get_sentence.return_value = {
+                "text": ev["text"],
+                "sentence_id": ev.get("sid", 0),
+                **ev.get("meta", {}),
+            }
+            cb.on_event(mock_result)
+
+    def test_multi_sentence_full_text_keeps_all_sentences(self):
+        """缺陷实证（B 端语音「只能识别后半段」）：两句录音只回最后一句。
+
+        DashScope paraformer-realtime 对带停顿的多句语音会逐句返回，
+        收集器若只取最后一条事件，用户说的前半句（如"你好"）整段丢失。
+        同句 partial 中间结果（"你"→"你好"）应被该句最终结果覆盖而非拼接。
+        """
+        from app.api.asr import _CollectorCallback
+        cb = _CollectorCallback()
+        self._emit(cb, [
+            {"text": "你", "sid": 0},
+            {"text": "你好", "sid": 0},
+            {"text": "你好。", "sid": 0},
+            {"text": "帮", "sid": 1},
+            {"text": "帮我查", "sid": 1},
+            {"text": "帮我查一下订", "sid": 1},
+            {"text": "帮我查一下订单", "sid": 1},
+        ])
+        assert cb.full_text == "你好。帮我查一下订单"
 
 
 class TestTranscribeResponse:
