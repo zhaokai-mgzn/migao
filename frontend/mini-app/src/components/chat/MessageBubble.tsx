@@ -12,6 +12,7 @@ import ConfirmCard from '../cards/ConfirmCard'
 import ChoiceCard from '../cards/ChoiceCard'
 import FormCard from '../cards/FormCard'
 import SuggestionChips from './SuggestionChips'
+import { parseRichText } from '../../utils/richText'
 import './MessageBubble.scss'
 
 interface MessageBubbleProps {
@@ -203,6 +204,9 @@ export default function MessageBubble({ message, onInteract }: MessageBubbleProp
     [content],
   )
 
+  // UI-042：富文本按行解析（**粗体** / - 列表），流式安全（未闭合 ** 原样保留）
+  const richLines = useMemo(() => parseRichText(cleanContent), [cleanContent])
+
   const handlePreviewImage = useCallback((current: string) => {
     if (images?.length) {
       Taro.previewImage({ current, urls: images })
@@ -237,10 +241,25 @@ export default function MessageBubble({ message, onInteract }: MessageBubbleProp
         {/* 文本内容（纯图消息 content 为空时不渲染空文本区；tool_call 有 content 时也显示） */}
         {content && (
           <View className='message-bubble__content'>
-            <Text className='message-bubble__text'>
-              {cleanContent}
-              {isStreaming && <Text className='message-bubble__cursor'>|</Text>}
-            </Text>
+            {richLines.map((line, li) => (
+              <View
+                key={li}
+                className={`message-bubble__line${line.bullet ? ' message-bubble__line--bullet' : ''}${line.segments.length === 1 && line.segments[0].text === '' ? ' message-bubble__line--empty' : ''}`}
+              >
+                {line.segments.map((seg, si) =>
+                  seg.bold ? (
+                    <Text key={si} className='message-bubble__text message-bubble__text-strong'>
+                      {seg.text}
+                    </Text>
+                  ) : (
+                    <Text key={si} className='message-bubble__text'>
+                      {seg.text}
+                    </Text>
+                  ),
+                )}
+              </View>
+            ))}
+            {isStreaming && <Text className='message-bubble__cursor'>|</Text>}
           </View>
         )}
 
