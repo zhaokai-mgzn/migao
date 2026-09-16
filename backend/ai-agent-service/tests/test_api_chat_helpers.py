@@ -3,7 +3,7 @@ Tests for app/api/*.py — coverage gap issue #581
 Covers: chat (helpers), sse (SSEEvent/SSEStreamBuilder),
          upload (_sniff_image_type/_validate_image_file), internal (Pydantic models)
 """
-# case_ids: CH-001, API-004, CH-010, CH-011, CH-012, OR-017
+# case_ids: CH-001, API-004, CH-010, CH-011, CH-012, OR-017, CH-032
 import json
 import pytest
 from unittest.mock import MagicMock, patch
@@ -113,6 +113,107 @@ class TestDetectCardType:
     def test_unknown_tool(self):
         from app.api.chat import _detect_card_type
         assert _detect_card_type("some_unknown_tool", {}) is None
+
+
+class TestInteractXmlParseFailureIsObservable:
+    """畸形 `<interact>` 块必须留痕，不得静默剥离（issue #3959 / case CH-032）。
+
+    缺陷形态：文本里「**有** `<interact>` 块但解析失败」（`_parse_interact_xml` fail-closed
+    返回 None）与「本来就没有块」在调用点**不可区分** —— 两者都走 `_strip_interact_xml`。
+    于是模型本想发卡但写残时：块被静默剥掉、不发卡、**零日志**。用户侧表现为
+    「该弹的卡没了，只剩文字」，评测侧只能归因成「agent 不干活」。
+    本类从**真 SSE 桥**（`_agent_stream_to_sse`）出发钉住留痕与「合法块/无块」两条不变路径。
+    """
+
+    # choice 缺 <option> ⇒ `_parse_interact_xml` fail-closed 返回 None（正确语义，不改）
+    MALFORMED = ("<interact><component>choice</component><title>请选择</title></interact>")
+    VALID = ("<interact><component>choice</component><title>请选择</title><options>"
+             "<option><label>遮光窗帘</label><value>遮光窗帘</value></option>"
+             "</options></interact>")
+    SESSION_ID = "sess-3959"
+
+    def _stream(self, content):
+        """驱动真 SSE 桥（假 agent 只负责 yield 文本），返回 (SSE chunks, [interact-xml] 留痕)"""
+        import asyncio
+        from loguru import logger
+        from app.agents.customer_service_agent import AgentContext, AgentResponse
+        from app.api.chat import _agent_stream_to_sse
+
+        records = []
+        sink_id = logger.add(lambda m: records.append(m.record), level="WARNING")
+
+        class _Agent:
+            async def astream_chat(self, message, context, chat_history):
+                yield AgentResponse(type="text", content=content)
+
+        class _Mem:
+            async def add_message(self, **kw):
+                return None
+
+            async def save_message(self, **kw):
+                return None
+
+            async def save(self, *a, **kw):
+                return None
+
+        ctx = AgentContext(tenant_id=1, user_id="u1", session_id=self.SESSION_ID,
+                           role="customer", identity_type="customer")
+
+        async def _collect():
+            return [chunk async for chunk in _agent_stream_to_sse(
+                _Agent(), "你好", ctx, [], MagicMock(), _Mem(), self.SESSION_ID, 1, "u1")]
+
+        try:
+            chunks = asyncio.run(_collect())
+        finally:
+            logger.remove(sink_id)
+        return chunks, [r for r in records if "[interact-xml]" in str(r["message"])]
+
+    def test_malformed_block_is_reported_not_silently_dropped(self):
+        chunks, marks = self._stream(self.MALFORMED)
+        assert len(marks) == 1, (
+            "畸形 <interact> 块被静默剥离了 —— 必须留一条 warning 才可观测（issue #3959）："
+            f"{[str(m['message']) for m in marks]}")
+        msg = str(marks[0]["message"])
+        assert marks[0]["level"].name == "WARNING", f"留痕级别应为 WARNING: {marks[0]['level']}"
+        assert "[interact-xml]" in msg, f"留痕需带稳定检索标记 [interact-xml]: {msg!r}"
+        assert self.SESSION_ID in msg, f"留痕必须能定位会话: {msg!r}"
+        assert "choice" in msg, f"留痕应含块的 component 片段: {msg!r}"
+        assert len(msg) < 600, f"留痕必须是截断片段，不得把整块打进日志: {len(msg)} 字符"
+        # 行为不变：fail-closed 不发残缺卡，原文也不泄漏到气泡
+        out = "".join(chunks)
+        assert "event: interactive" not in out, "畸形块不得下发残缺 payload"
+        assert "<interact>" not in out, "XML 伪代码块仍须剥离"
+
+    def test_huge_malformed_block_report_is_truncated(self):
+        from loguru import logger
+        from app.api.chat import _parse_interact_block_or_report
+
+        huge = ("<interact><component>form</component>"
+                + "<field><label>字段</label></field>" * 500 + "</interact>")
+        records = []
+        sink_id = logger.add(lambda m: records.append(m.record), level="WARNING")
+        try:
+            payload = _parse_interact_block_or_report(huge, session_id=self.SESSION_ID)
+        finally:
+            logger.remove(sink_id)
+        assert not payload, "畸形块必须 fail-closed（不下发残缺 payload）"
+        msg = str(records[0]["message"]) if records else ""
+        assert len(records) == 1, "畸形块漏报（无块与解析失败必须可区分）"
+        assert "form" in msg and self.SESSION_ID in msg
+        assert len(msg) < 600, f"大块也必须截断: {len(msg)} 字符"
+
+    def test_valid_block_still_emits_card_without_report(self):
+        chunks, marks = self._stream(self.VALID)
+        out = "".join(chunks)
+        assert "event: interactive" in out, "合法块照旧发卡（本次修复不得改动该路径）"
+        assert "遮光窗帘" in out, f"卡片内容应下发: {out[:200]}"
+        assert marks == [], f"合法块不得产生留痕: {[str(m['message']) for m in marks]}"
+
+    def test_absent_block_is_silent(self):
+        chunks, marks = self._stream("您好，请问有什么可以帮您？")
+        assert marks == [], "[interact-xml] 留痕只应来自「有块但解析失败」"
+        assert "请问有什么可以帮您" in "".join(chunks), "无块时文本照旧下发"
 
 
 # ═══════════════════════════════════════

@@ -607,12 +607,31 @@ def _strip_interact_xml(text: str) -> str:
     return _INTERACT_XML_RE.sub("", text)
 
 
-def _extract_interact_probable(text: str) -> Optional[Dict[str, Any]]:
-    """从文本中解析首个 <interact>…</interact> 块为 payload；无块/解析失败返回 None"""
+def _parse_interact_block_or_report(
+    text: str, session_id: Optional[str] = None
+) -> Optional[Dict[str, Any]]:
+    """从文本中解析首个 <interact>…</interact> 块为 payload；本来没有块返回 None。
+
+    issue #3959：**「本来没有块」与「有块但解析失败」必须可区分** —— 两者返回值都是 None，
+    但后者意味着模型本想发卡却写残了。此前调用点无法区分，两者都走同一条
+    `_strip_interact_xml` 路径 ⇒ 块被静默剥掉、不发卡、**零日志**（用户侧表现为
+    「该弹的卡没了，只剩文字」，评测侧只能归因成「agent 不干活」）。
+    故解析失败时打一条 warning 留痕；`_parse_interact_xml` 的 fail-closed 语义不变
+    （仍不下发残缺 payload）。
+    """
     m = _INTERACT_XML_RE.search(text)
     if not m:
         return None
-    return _parse_interact_xml(m.group(0))
+    block = m.group(0)
+    payload = _parse_interact_xml(block)
+    if payload is None:
+        # 只留截断片段（防大块刷爆日志），标记 [interact-xml] 便于稳定检索
+        logger.warning(
+            "[interact-xml] 解析失败，剥离前留痕（模型可能本想发卡）| "
+            f"session={session_id} component={_extract_tag_value(block, 'component')} "
+            f"len={len(block)} snippet={block[:120]!r}"
+        )
+    return payload
 
 
 def _filter_products_by_reference(content: str, products: Any) -> List[Dict[str, Any]]:
@@ -836,7 +855,8 @@ async def _agent_stream_to_sse(
                             # LLM hallucinated <interact> XML block (issue #3036 / UI-032):
                             # 1) parse to interactive payload and emit SSE interactive event (same protocol as interact tool)
                             # 2) strip XML block from text regardless, prevent raw XML leaking to bubble
-                            xml_payload = _extract_interact_probable(clean)
+                            # issue #3959：解析失败必须留痕（此前「写残的块」被静默剥离 ⇒ 不发卡、零日志）
+                            xml_payload = _parse_interact_block_or_report(clean, session_id=session_id)
                             if xml_payload:
                                 last_interactive_payload = xml_payload
                                 yield SSEEvent.interactive(
