@@ -25,7 +25,8 @@ HTTP 200 + 数据静默丢失 + 工具回报「客户档案已更新：craftMode
 无默认值：漏填即报错，不是静默跳过），并断言 payload key ∈ 该服务方法真正落库的字段集合。
 
 规则（新增/修改写工具时必须满足）：
-  工具写请求 body 的每个 key，都必须能在目标的 Java **接收类型**中解析到同名字段；
+  工具写请求 body 的每个 key，都必须能在目标的 Java **接收类型**中解析到同名字段
+  （「接收类型字段」= 本类 ∪ `extends` 链上各级父类的字段，issue #4166）；
   **且该 key 必须属于目标服务方法真正落库的字段集合**（见 ②）；
   业务内容值必须落到该类型已声明字段上（禁止「多发一个别名字段」凑数，避免双写分叉）。
   改字段名时两端一起改（Java 类型 / 工具 payload），只改一端本测试即红。
@@ -90,41 +91,121 @@ def _balanced_brace_block(src: str, open_idx: int) -> str:
     return src[open_idx:]
 
 
-def _source_of_receiver_type(class_name: str) -> str | None:
-    """定位接收类型的源码：优先同名文件，其次**内部类**（无独立文件）。
+def _source_of_receiver_type(class_name: str, java_root: Path = _JAVA_MAIN) -> str | None:
+    """定位接收类型的源码（**含类声明头**）：优先同名文件，其次**内部类**（无独立文件）。
 
     内部类形态真实存在：`SettingsController.java:323` 的
     `public static class ChangePasswordRequest` 就是 `PUT /api/admin/settings/password`
     的 `@RequestBody` 类型 —— 只按文件名找会解析不到（跨模块门禁曾因此报「接收类型无法解析」）。
+    返回文本包含 `class X extends Y {` 的声明头：继承解析要从头部读 `extends`
+    （只返回 `{...}` 类体会让父类静默消失 = 解析器退化成「无父类」）。
     """
-    matches = sorted(_JAVA_MAIN.rglob(f"{class_name}.java"))
+    matches = sorted(java_root.rglob(f"{class_name}.java"))
     if matches:
         return matches[0].read_text(encoding="utf-8")
     pat = re.compile(rf"\b(?:class|record)\s+{re.escape(class_name)}\b[^{{;]*\{{")
-    for path in sorted(_JAVA_MAIN.rglob("*.java")):
+    for path in sorted(java_root.rglob("*.java")):
         src = path.read_text(encoding="utf-8")
         m = pat.search(src)
         if m:
-            return _balanced_brace_block(src, src.index("{", m.start()))
+            brace = src.index("{", m.start())
+            return src[m.start() : brace] + _balanced_brace_block(src, brace)
     return None
 
 
+def _superclass_of(src: str, class_name: str) -> str | None:
+    """取类声明里 `extends` 的父类名（无 `extends` / `record` → None）。
+
+    只看类**声明头**（类名 → 类体 `{`），并先吃掉类自身的类型参数表：
+    `class Repo<T extends Base> extends Impl` 的超类是 `Impl`，类型参数上界 `Base` 不是父类
+    （吃错了会把无关类型的字段并进来 = 门禁被放宽）。
+    """
+    m = re.search(
+        rf"\bclass\s+{re.escape(class_name)}\s*(?:<[^{{;]*?>)?\s*([^{{]*?)\{{", src, re.DOTALL
+    )
+    if not m:
+        return None
+    head = m.group(1).split("implements", 1)[0]  # 超类子句在 implements 之前
+    em = re.search(r"\bextends\s+([\w.]+)", head)
+    return em.group(1) if em else None
+
+
+# java.lang 由编译器**隐式导入**（裸名父类不会出现在 import 里），故这几个语言级根类
+# 可以在「仓库内无源码 + 无 import」的情况下合法出现。**这不是本仓库的类清单** ——
+# com.migao 的父类一律按 Java 源码树解析（禁止在此登记任何本仓库类型）。
+_IMPLICIT_JAVA_LANG_PARENTS = frozenset(
+    {"Object", "Throwable", "Exception", "RuntimeException", "Error"}
+)
+
+
+def _is_external_parent(child_src: str, parent: str) -> bool:
+    """父类是否来自仓库外（JDK / 第三方）—— 仓库外父类没有本仓库字段可并，链条就此终止。
+
+    判据只用 Java 源码里**读得到的来源声明**（不维护第二份类型清单）：
+    ① 全限定名且非 `com.migao`（`extends java.util.AbstractMap`）；
+    ② 显式 `import <非 com.migao 包>.<Parent>;`；
+    ③ 上述「java.lang 隐式导入」的语言级根类（`extends Object`，源码里没有 import 可依据）。
+    三条都判不出 ⇒ 视为「本仓库类型被改名/删除/移出」→ 调用方**响亮报错**（禁止静默降级）。
+    """
+    if "." in parent and not parent.startswith("com.migao"):
+        return True
+    simple = parent.rsplit(".", 1)[-1]
+    if re.search(
+        rf"^\s*import\s+(?!com\.migao)[\w.]*\.{re.escape(simple)}\s*;", child_src, re.MULTILINE
+    ):
+        return True
+    return simple in _IMPLICIT_JAVA_LANG_PARENTS
+
+
 @lru_cache(maxsize=None)
-def _receiver_fields_from_java(class_name: str) -> frozenset[str]:
+def _receiver_fields_from_java(
+    class_name: str, java_root: Path = _JAVA_MAIN
+) -> frozenset[str]:
     """解析 admin-api 接收类型（请求 DTO / 实体 / 内部类）的实例字段名。
 
-    单一事实源 = Java 源码，不维护第二份清单。
+    单一事实源 = Java 源码，不维护第二份清单。**字段 = 本类 ∪ `extends` 链上各级父类**
+    （issue #4166）：父类字段同样是 Jackson 可绑定字段 —— #4162 把 `AgentOrderCreateRequest`
+    收敛成 `extends OrderCreateRequest`（自身只剩 `clientRequestId`）后，只读子类源码的解析器
+    把父类的 `customerName`/`items`/… 全判成「接收端读不到」→ 门禁假红（运行期并无数据丢失）。
+    只剩子类字段 = 断言实现窄于它声称的契约（"接收端可读键"在 Java 语义里含继承字段）。
+
+    继承链**有界且防环**：每一跳都必须是**不同的**可解析类，重复出现即环 ⇒ 显式报错
+    （不会挂死）；父类解析不到时，仓库外类型（`_is_external_parent`）终止链条，其余
+    按本文件既有口径**响亮报错**（改名/删除静默降级 = 父类字段凭空消失，本判据就再也
+    咬不住「父类字段被删」这类真缺陷）。
+
+    `java_root` 只为夹具注入（负控在临时 Java 树上行使同一份生产判据），生产路径用默认值。
     """
-    if not _JAVA_MAIN.is_dir():
-        pytest.skip(f"admin-api Java 源码不存在（{_JAVA_MAIN}），无法校验跨服务字段契约")
-    src = _source_of_receiver_type(class_name)
-    assert src is not None, (
-        f"未找到接收类型 {class_name}（既无 {class_name}.java，也无同名内部类）——"
-        f"REGISTRY 登记的契约类已改名/删除；请同步更新 {__file__} 的 REGISTRY"
-    )
-    fields = frozenset(_FIELD_RE.findall(src))
-    assert fields, f"{class_name} 未解析到任何字段（正则需适配；来源源码片段如下）：\n{src[:400]}"
-    return fields
+    if not java_root.is_dir():
+        pytest.skip(f"admin-api Java 源码不存在（{java_root}），无法校验跨服务字段契约")
+    fields: set[str] = set()
+    seen: list[str] = []
+    current: str | None = class_name
+    child_src = ""
+    while current is not None:
+        assert current not in seen, (
+            f"{class_name} 的 extends 链成环：{' → '.join([*seen, current])} —— "
+            f"Java 不允许循环继承；继承解析必须在此终止（否则门禁挂死）"
+        )
+        seen.append(current)
+        src = _source_of_receiver_type(current, java_root)
+        if src is None:
+            assert len(seen) > 1, (
+                f"未找到接收类型 {class_name}（既无 {class_name}.java，也无同名内部类）——"
+                f"REGISTRY 登记的契约类已改名/删除；请同步更新 {__file__} 的 REGISTRY"
+            )
+            assert _is_external_parent(child_src, current), (
+                f"{class_name} 的父类 {current} 在仓库 Java 源码树里找不到，且源码里没有任何"
+                f"「仓库外来源」声明（FQN / 非 com.migao import / java.lang 根类）——"
+                f"父类疑似改名/删除/移出仓库。静默忽略会让继承字段凭空少算（与上面"
+                f"「接收类型找不到」同口径，禁止静默降级）；继承链：{' → '.join(seen)}"
+            )
+            break
+        fields |= set(_FIELD_RE.findall(src))
+        child_src = src
+        current = _superclass_of(src, current)
+    assert fields, f"{class_name} 未解析到任何字段（正则需适配；来源源码片段如下）：\n{child_src[:400]}"
+    return frozenset(fields)
 
 
 # 「接收端可读键来源」注册表：新增来源时在此登记 resolver，未登记的来源在测试里会**显式报错**
@@ -484,3 +565,194 @@ def test_persist_parser_ignores_commented_out_setters():
     written = _null_copy_setters_from_body(stripped)
     assert written == {"phone"}, f"注释掉的 setter 不得计入落库集合，实际 {sorted(written)}"
     assert "setCraftMode" not in stripped
+
+
+# ==================== ③ 继承解析（`extends` 链）的牙口（issue #4166） ====================
+#
+# 「接收端可读键」在 Java 语义里含**继承字段**（Jackson 照常绑定父类字段），解析器必须跟随
+# `extends` —— 但跟随一旦写宽（无条件并集 / 认错父类 / 环上死循环），门禁就会被**静默放宽**，
+# 比假红更糟。下面五条用**注入式夹具**（临时 Java 源码树）行使**同一份生产判据**
+# （`_receiver_fields_from_java` 的 `java_root` 参数），各自都有一个能让它变红的注入方向。
+
+
+def _java_fixture_tree(root: Path, files: Mapping[str, str]) -> Path:
+    """在临时目录铺一棵最小 Java 源码树（夹具注入点：解析器按 `java_root` 读它）。"""
+    for name, src in files.items():
+        path = root / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(src, encoding="utf-8")
+    return root
+
+
+def _child_fixture(order_create_body: str) -> dict[str, str]:
+    """`#4162` 那对类型的最小复刻：子类只声明 `clientRequestId`，其余字段在父类。"""
+    return {
+        "com/migao/admin/dto/OrderCreateRequest.java": (
+            "package com.migao.admin.dto;\n"
+            "public class OrderCreateRequest {\n"
+            f"{order_create_body}"
+            "}\n"
+        ),
+        "com/migao/admin/dto/agent/AgentOrderCreateRequest.java": (
+            "package com.migao.admin.dto.agent;\n"
+            "import com.migao.admin.dto.OrderCreateRequest;\n"
+            "public class AgentOrderCreateRequest extends OrderCreateRequest {\n"
+            "    private String clientRequestId;\n"
+            "}\n"
+        ),
+    }
+
+
+_CHILD = "AgentOrderCreateRequest"
+_PARENT_FIELDS = (
+    "    private String customerName;\n"
+    "    private String customerPhone;\n"
+    "    private String remark;\n"
+)
+
+
+def test_parser_follows_extends_chain(tmp_path):
+    """负控①：`extends` 真的被跟随 —— 键从父类搬到子类，解析结果**逐字不变**（并集）。
+
+    红的方向（修复前 #4166 的真身）：只读子类源码 ⇒ 父类字段读不到。
+    """
+    both_in_parent = _receiver_fields_from_java(
+        _CHILD, _java_fixture_tree(tmp_path / "a", _child_fixture(_PARENT_FIELDS))
+    )
+    assert both_in_parent == {"clientRequestId", "customerName", "customerPhone", "remark"}, (
+        f"父类字段必须并入接收端可读键，实际 {sorted(both_in_parent)}"
+    )
+
+    # 「把键从父类搬到子类」：父/子哪个位置声明都算已声明 ⇒ 结果集不变
+    moved = _receiver_fields_from_java(
+        _CHILD,
+        _java_fixture_tree(
+            tmp_path / "b",
+            _child_fixture(_PARENT_FIELDS.replace("    private String customerName;\n", ""))
+            | {
+                "com/migao/admin/dto/agent/AgentOrderCreateRequest.java": (
+                    "package com.migao.admin.dto.agent;\n"
+                    "import com.migao.admin.dto.OrderCreateRequest;\n"
+                    "public class AgentOrderCreateRequest extends OrderCreateRequest {\n"
+                    "    private String clientRequestId;\n"
+                    "    private String customerName;\n"
+                    "}\n"
+                )
+            },
+        ),
+    )
+    assert moved == both_in_parent, (
+        f"键从父类搬到子类后结果集必须不变（继承是并集），实际 {sorted(moved)}"
+    )
+
+
+def test_type_parameter_bound_is_not_mistaken_for_a_parent(tmp_path):
+    """类自身的 `<T extends Y>` 不得被当成父类：认错会**把无关类型的字段并进来**（门禁被放宽）。
+
+    红的方向：解析类声明头时不吃掉类型参数表 ⇒ `Generic` 并进 `Bound` 的字段、漏掉真父类 `Impl`。
+    """
+    root = _java_fixture_tree(
+        tmp_path,
+        {
+            "Bound.java": "public class Bound {\n    private String boundOnly;\n}\n",
+            "Impl.java": "public class Impl {\n    private String implOnly;\n}\n",
+            "Generic.java": "public class Generic<T extends Bound> extends Impl {\n"
+            "    private String own;\n}\n",
+            "BoundOnly.java": "public class BoundOnly<T extends Bound> {\n    private String own;\n}\n",
+        },
+    )
+    assert _receiver_fields_from_java("Generic", root) == {"own", "implOnly"}, (
+        "`class Generic<T extends Bound> extends Impl` 的父类是 Impl，类型参数上界 Bound 不是父类"
+    )
+    assert _receiver_fields_from_java("BoundOnly", root) == {"own"}, (
+        "没有 extends 的泛型类不得凭空多出类型参数上界的字段"
+    )
+
+
+def test_deleting_a_parent_field_turns_the_gate_red(tmp_path):
+    """负控②（关键）：父类**真删字段** ⇒ 该键必须从可读集合里消失、门禁重新判红。
+
+    这是「没有把继承解析写成恒绿」的判据：payload ⊆ 接收端可读键（与
+    `test_tool_payload_backend_contract._violations` 同一条集合判据）在删字段后必须不成立。
+    若继承解析退化成「一律放行」（父类解析失败也照收 / 认错父类）本用例立即红。
+    """
+    root = _java_fixture_tree(tmp_path, _child_fixture(_PARENT_FIELDS))
+    payload = {"clientRequestId", "customerName", "customerPhone", "remark"}
+
+    declared = _receiver_fields_from_java(_CHILD, root)
+    assert payload <= declared, f"夹具基线本就该绿，缺 {sorted(payload - declared)}"
+
+    # 注入删除：父类源码里去掉 `private String customerName;`
+    parent_without_name = _PARENT_FIELDS.replace("    private String customerName;\n", "")
+    (root / "com/migao/admin/dto/OrderCreateRequest.java").write_text(
+        "package com.migao.admin.dto;\n"
+        "public class OrderCreateRequest {\n"
+        + parent_without_name
+        + "}\n",
+        encoding="utf-8",
+    )
+    _receiver_fields_from_java.cache_clear()  # 同一 (类名, root) 已缓存 → 甩掉才能读到新源码
+    declared_after = _receiver_fields_from_java(_CHILD, root)
+
+    assert declared_after == declared - {"customerName"}, (
+        f"父类删字段后必须少掉该键，实际 {sorted(declared_after)}"
+    )
+    assert sorted(payload - declared_after) == ["customerName"], (
+        "父类字段被删必须让「payload ⊆ 接收端可读键」重新判红（否则继承解析把门禁放宽了）"
+    )
+
+
+@pytest.mark.timeout(10)
+def test_cyclic_extends_raises_instead_of_hanging(tmp_path):
+    """负控③：自引用 / 成环的 `extends` 必须**显式报错**，不得挂死。
+
+    去掉环检测后本用例红：自引用会无限递归（RecursionError）而不是 AssertionError；
+    `@pytest.mark.timeout(10)` 是硬兜底 —— 解析退化成无界循环时 10s 超时红，
+    而不是拖到全局 `--timeout=120`。
+    """
+    self_ref = _java_fixture_tree(
+        tmp_path / "self", {"Loop.java": "public class Loop extends Loop {\n    private String a;\n}\n"}
+    )
+    with pytest.raises(AssertionError, match="成环"):
+        _receiver_fields_from_java("Loop", self_ref)
+
+    ring = _java_fixture_tree(
+        tmp_path / "ring",
+        {
+            "A.java": "public class A extends B {\n    private String a;\n}\n",
+            "B.java": "public class B extends A {\n    private String b;\n}\n",
+        },
+    )
+    with pytest.raises(AssertionError, match="A → B → A"):
+        _receiver_fields_from_java("A", ring)
+
+
+def test_unresolvable_parent_is_loud_unless_it_is_repo_external(tmp_path):
+    """父类解析不到的两种语义（issue #4166 第 3 条）：仓库外 ⇒ 无字段可并；疑似改名 ⇒ 响亮报错。
+
+    - 仓库外（JDK / 第三方）有**源码里的来源声明**可依据（FQN / 非 com.migao import /
+      java.lang 隐式根类）⇒ 只收本类字段；
+    - 本仓库类型的改名/删除**没有任何来源声明**可依据 ⇒ 报错。静默按「无父类」放行
+      会让父类字段凭空少算（负控② 那类真缺陷就再也咬不住）。
+    """
+    external = _java_fixture_tree(
+        tmp_path / "external",
+        {
+            "Fqn.java": "public class Fqn extends java.util.AbstractMap<String, String> {\n"
+            "    private String own;\n}\n",
+            "Root.java": "public class Root extends Object {\n    private String own;\n}\n",
+            "ThirdParty.java": "import org.springframework.web.filter.OncePerRequestFilter;\n"
+            "public class ThirdParty extends OncePerRequestFilter {\n    private String own;\n}\n",
+        },
+    )
+    for name in ("Fqn", "Root", "ThirdParty"):
+        assert _receiver_fields_from_java(name, external) == {"own"}, (
+            f"{name} 的父类在仓库外 ⇒ 没有本仓库字段可并，只收本类字段"
+        )
+
+    renamed = _java_fixture_tree(
+        tmp_path / "renamed",
+        {"Child.java": "public class Child extends BaseEntity {\n    private String own;\n}\n"},
+    )
+    with pytest.raises(AssertionError, match="BaseEntity"):
+        _receiver_fields_from_java("Child", renamed)
