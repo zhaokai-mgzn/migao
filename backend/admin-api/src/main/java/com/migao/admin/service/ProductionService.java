@@ -43,7 +43,8 @@ import java.util.UUID;
  * 真值源：docs/curtain-production-rules.md §2 工序库 / §4 计件 / §5 扫码报工闭环；
  * 确定性核心语义与 ai-agent-service app/production/{routing,piecework}.py（M4-G-1，issue #3993）一致：
  * 报工三态 normal/rework/scrap —— 返工/报废既不累加进度也不计件；
- * 必完工序（is_must_finish）全绿（done_qty ≥ qty）→ 订单 producing → completed。
+ * 必完工序（is_must_finish）全绿（done_qty ≥ qty）→ **加工单置 completed**（issue #4117：
+ * 订单留在 producing，见 {@link #report} 的完工语义 —— 写订单 completed 会让发货链断掉）。
  */
 @Slf4j
 @Service
@@ -224,7 +225,7 @@ public class ProductionService {
 
     /**
      * 扫码报工：落报工明细（三态）→ 正常报工累加 done_qty 并置 done
-     * → 必完工序全绿则订单 producing → completed（原子条件更新，不覆盖已发货/已完成）。
+     * → 必完工序全绿则**加工单**置 completed（订单状态不动，见方法内注释）。
      */
     @Transactional(rollbackFor = Exception.class)
     public Map<String, Object> report(String orderId, String operationId,
@@ -284,18 +285,20 @@ public class ProductionService {
                     .build());
         }
 
-        boolean orderCompleted = false;
+        boolean productionCompleted = false;
         if (advances && isMustFinishAllDone(po.getId(), tenantId)) {
-            // 订单状态机（OrderService.STATUS_TRANSITIONS）不设 producing→completed，故此处用
-            // 带前置条件的原子更新：只在订单仍为 producing 时推进，已完成/已发货订单不被覆盖。
-            int rows = orderMapper.update(null, new UpdateWrapper<Order>()
-                    .eq("id", order.getId())
-                    .eq("status", "producing")
-                    .set("status", "completed")
-                    .set("updated_at", OffsetDateTime.now()));
-            orderCompleted = rows > 0;
-            if (orderCompleted) {
-                log.info("必完工序全绿，订单自动完工: orderNo={}, po={}", order.getOrderNo(), po.getProcessingOrderNo());
+            // 完工 = **加工单**置 completed（issue #4117），**不是**订单状态推进：
+            // ① 订单状态机（OrderService.STATUS_TRANSITIONS）不设 producing→completed，
+            //    且 completed 是终态（无任何后继）⇒ 旧实现用裸 UpdateWrapper 直写订单 completed，
+            //    会让含加工项订单**既发不了货也回不去**；
+            // ② 发货守卫（OrderService.assertProcessingCompletedBeforeShip）读的正是**加工单**
+            //    status='completed'（processingOrderMapper.countCompletedByOrderId），
+            //    而 shipOrderIfApplicable 只在订单为 confirmed/producing 时流转
+            //    ⇒ 加工单置 completed、订单留在 producing，发货链才通。
+            int rows = processingOrderMapper.markCompletedIfActive(po.getId(), tenantId, OffsetDateTime.now());
+            productionCompleted = rows > 0;
+            if (productionCompleted) {
+                log.info("必完工序全绿，加工单完工: orderNo={}, po={}", order.getOrderNo(), po.getProcessingOrderNo());
             }
         }
 
@@ -303,7 +306,8 @@ public class ProductionService {
         result.put("operation_id", op.getId());
         result.put("done_qty", doneQty);
         result.put("status", status);
-        result.put("order_completed", orderCompleted);
+        // 键名为**冻结契约**（bmini 扫工页 productionService.ts 消费），语义 = 加工单完工（生产完成）
+        result.put("order_completed", productionCompleted);
         return result;
     }
 

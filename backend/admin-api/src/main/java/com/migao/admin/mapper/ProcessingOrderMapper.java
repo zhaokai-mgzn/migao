@@ -5,7 +5,9 @@ import com.migao.admin.entity.ProcessingOrder;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
+import org.apache.ibatis.annotations.Update;
 
+import java.time.OffsetDateTime;
 import java.util.List;
 
 /**
@@ -37,4 +39,24 @@ public interface ProcessingOrderMapper extends BaseMapper<ProcessingOrder> {
     @Select("SELECT COUNT(1) FROM processing_orders WHERE order_id = #{orderId} AND tenant_id = #{tenantId} " +
             "AND deleted = 0 AND status = 'completed'")
     long countCompletedByOrderId(@Param("orderId") String orderId, @Param("tenantId") Long tenantId);
+
+    /**
+     * 把**活跃**加工单原子置 completed —— 生产报工「完工」的唯一写路径（issue #4117）。
+     *
+     * 生产完工 = **加工单**加工完成，**不是**订单状态推进：订单状态机
+     * （OrderService.STATUS_TRANSITIONS）不设 producing→completed，且 completed 是终态
+     * ⇒ 旧实现用裸 UpdateWrapper 直写订单 completed，会让含加工项订单**既发不了货也回不去**
+     * （发货守卫读的正是本表 {@link #countCompletedByOrderId}，而 shipOrderIfApplicable
+     * 只在订单 confirmed/producing 时流转）⇒ 把加工单置 completed、订单留在 producing，
+     * 发货链才通。
+     *
+     * 条件 = 活跃集（与 {@link #selectActiveByOrderId} 同口径，排除 cancelled）：
+     * 并发取消的加工单不会被复活；已是 completed 时不覆盖首次完工时间（重复报工幂等）。
+     */
+    @Update("UPDATE processing_orders SET status = 'completed', " +
+            "completed_at = COALESCE(completed_at, #{completedAt}), updated_at = #{completedAt} " +
+            "WHERE id = #{id} AND tenant_id = #{tenantId} AND deleted = 0 " +
+            "AND status IN ('generated','issued','in_processing','completed')")
+    int markCompletedIfActive(@Param("id") String id, @Param("tenantId") Long tenantId,
+                              @Param("completedAt") OffsetDateTime completedAt);
 }

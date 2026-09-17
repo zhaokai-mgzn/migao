@@ -33,7 +33,7 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.matchesPattern;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -253,7 +253,7 @@ class ProductionControllerTest {
     // ══════════════════════════ 报工 ══════════════════════════
 
     @Test
-    @DisplayName("正常报工 → done_qty 累加 + status=done + 必完全绿 → 订单自动 completed")
+    @DisplayName("正常报工 → done_qty 累加 + status=done + 必完全绿 → 加工单 completed（订单状态不动）")
     void reportNormalCompletesOrderWhenMustFinishAllDone() throws Exception {
         when(orderMapper.selectById(ORDER_ID)).thenReturn(order("producing"));
         when(processingOrderMapper.selectActiveByOrderId(ORDER_ID, TENANT)).thenReturn(processingOrder("tok123"));
@@ -264,7 +264,8 @@ class ProductionControllerTest {
         // 报工后回查：必完工序已 done_qty=1 ≥ qty=1
         when(positionOperationMapper.selectList(any())).thenReturn(List.of(
                 op("op-2", 2, "外帘装袋", "1.00", true, "done", "1.00")));
-        when(orderMapper.update(isNull(), any())).thenReturn(1);
+        // 完工 = 加工单置 completed（issue #4117；订单状态不动）
+        when(processingOrderMapper.markCompletedIfActive(eq(PO_ID), eq(TENANT), any())).thenReturn(1);
 
         mockMvc.perform(post("/api/admin/production/orders/" + ORDER_ID + "/operations/op-2/report")
                         .contentType("application/json")
@@ -283,10 +284,12 @@ class ProductionControllerTest {
         assertThat(logCaptor.getValue().getQualifiedQty()).isEqualByComparingTo("1.00");
         assertThat(logCaptor.getValue().getWorkerName()).isEqualTo("蒋雪云");
         assertThat(logCaptor.getValue().getOperationName()).isEqualTo("外帘装袋");
+        // 生产侧不得改写订单状态（否则 completed 终态会让订单既发不了货也回不去，#4117）
+        verify(orderMapper, never()).update(any(), any());
     }
 
     @Test
-    @DisplayName("必完工序未全绿 → 订单不完工（order_completed=false）")
+    @DisplayName("必完工序未全绿 → 不完工（order_completed=false，加工单不置 completed）")
     void reportKeepsOrderProducingWhenMustFinishNotAllDone() throws Exception {
         when(orderMapper.selectById(ORDER_ID)).thenReturn(order("producing"));
         when(processingOrderMapper.selectActiveByOrderId(ORDER_ID, TENANT)).thenReturn(processingOrder("tok123"));
@@ -304,11 +307,11 @@ class ProductionControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.order_completed").value(false));
 
-        verify(orderMapper, never()).update(isNull(), any());
+        verify(orderMapper, never()).update(any(), any());
     }
 
     @Test
-    @DisplayName("返工报工 → 不累加 done_qty、不置 done、订单不完工")
+    @DisplayName("返工报工 → 不累加 done_qty、不置 done、不完工")
     void reportReworkDoesNotAccumulate() throws Exception {
         when(orderMapper.selectById(ORDER_ID)).thenReturn(order("producing"));
         when(processingOrderMapper.selectActiveByOrderId(ORDER_ID, TENANT)).thenReturn(processingOrder("tok123"));
@@ -326,7 +329,7 @@ class ProductionControllerTest {
                 .andExpect(jsonPath("$.data.order_completed").value(false));
 
         verify(positionOperationMapper, never()).updateById(any(ProcessingPositionOperation.class));
-        verify(orderMapper, never()).update(isNull(), any());
+        verify(orderMapper, never()).update(any(), any());
     }
 
     @Test
