@@ -379,6 +379,8 @@ def create_default_registry() -> ToolRegistry:
     - session_manage: 客服会话管理
     - category_manage: 商品分类管理
     - processing_item_manage: 加工项管理
+    - production_progress_query: 生产进度查询（双端只读，issue #3996；按 persona 绑定见 skills/*_TOOLS）
+    - piecework_query: 计件查询（仅 B 端，issue #3996；不对顾客开放）
     
     Returns:
         ToolRegistry: 配置好的注册器
@@ -424,6 +426,8 @@ def create_default_registry() -> ToolRegistry:
     from app.tools.interact import InteractTool  # noqa: F401 保留以备将来使用
     from app.tools.validate_input import ValidateInputTool
     from app.tools.curtain_calc import CurtainCalcTool
+    from app.tools.production_progress_query import ProductionProgressQueryTool
+    from app.tools.piecework_query import PieceworkQueryTool
 
     registry = ToolRegistry()
     
@@ -468,6 +472,11 @@ def create_default_registry() -> ToolRegistry:
     registry.register(InteractTool())
     registry.register(ValidateInputTool())
     registry.register(CurtainCalcTool())
+    # 生产进度 / 计件（issue #3996，M4-I）：消费 M4-G-2 冻结契约端点。
+    # 注册表只决定「工具存在」；可达性由 persona 的 skill 工具集决定
+    # （生产进度：小布 customer_order + 米宝 order；计件：仅米宝 order/staff，不对顾客开放）。
+    registry.register(ProductionProgressQueryTool())
+    registry.register(PieceworkQueryTool())
 
     logger.info(f"Default registry created with {len(registry)} tools")
     return registry

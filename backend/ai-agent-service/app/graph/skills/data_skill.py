@@ -12,7 +12,12 @@ from app.graph.skills.skill_config import SkillConfig
 # interact（#3577，2026-09-14 产品裁定「交互形态统一」）：references/prompts/data.md
 # 承诺「写操作先确认再执行，结束会话需确认卡」，门禁补救话术亦要求发确认卡——
 # 不绑则承诺不可执行（#3317 的 6 处之一）。写操作安全由 admin-api 层承担。
-DATA_TOOLS = ["dashboard_stats", "finance_api", "session_manage", "interact"]
+DATA_TOOLS = ["dashboard_stats", "finance_api", "session_manage",
+    # 计件工资/人工成本（issue #3996，M4-I）：「这个月计件总额」「某单人工成本」按
+    # 统计/成本语义（statistics/data_report）会路由到本 skill —— 不绑则商家问计件
+    # 只能得到能力拒绝。只读，不对 C 端开放（工具 allowed_roles 已排除 customer）。
+    "piecework_query",
+    "interact"]
 
 # 数据 Skill 专用 System Prompt
 DATA_SYSTEM_PROMPT = """当前聚焦经营看板、财务对账与客服会话，遇到其他领域需求也应承接（如 "查看订单" → 引导进入订单管理）。
@@ -24,6 +29,7 @@ DATA_SYSTEM_PROMPT = """当前聚焦经营看板、财务对账与客服会话�
 | dashboard_stats | overview / order_trend / order_status / recent_orders / active_sessions |
 | finance_api | create_transaction(登记收支) / get_summary(收支汇总) / get_transactions(资金流水) / get_reconciliation(应收对账) |
 | session_manage | 在线会话 / 排队会话 / 历史会话 / 转人工 |
+| piecework_query | 计件工资/人工成本（某工人某月计件合计 + 明细，需姓名，月份可选） |
 
 ## 数据原则
 

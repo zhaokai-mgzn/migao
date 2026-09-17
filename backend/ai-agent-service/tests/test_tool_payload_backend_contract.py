@@ -170,6 +170,11 @@ UNATTRIBUTABLE_CALLS: dict[str, str] = {
 # key = (工具文件相对路径, HTTP 方法, 归一化端点)
 ENDPOINT_ALLOWLIST: dict[tuple[str, str, str], dict[str, str]] = {
     # 当前为空：processing_item_manage 的 PUT /processing-items/{}/status（404）已由 #3591 改用真实端点
+    #
+    # 销账留档（issue #3996，2026-09-17）：生产进度/计件两工具（#3996）按 #3995 冻结契约编码时，
+    # 这两个 agent 生产端点**尚未合入** ⇒ 曾**临时**登记两条条目（路径见对应工具文件与
+    # `AgentProductionController`）。#3995（M4-G-2，PR #3998）合入控制器、端点到齐后，两条条目已按
+    # 「白名单修好即销账」纪律**删除**（test_endpoint_allowlist_entries_are_current 不再命中陈旧条目）。
 }
 
 # ── 白名单：存量缺陷工作清单（每条必须带 reason + owner + issue）─────────────

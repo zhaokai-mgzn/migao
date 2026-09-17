@@ -7,7 +7,7 @@ customer_order_query / customer_logistics_track 等仅注册于小布 customer_*
 修复：cases/*.yml 支持 persona 字段（mibao/xiaobu/""双端），render 透传 +
 local_runner 按 persona 过滤（mibao 跳过 xiaobu 专属，反之亦然）。
 """
-# case_ids: OR-022, CH-008, CH-012, CH-013, CH-014, CH-015, CH-017, CH-024, OR-012, ST-008, CH-030, CH-031, CH-032, AS-008, OR-017, PR-013, OR-018, OR-019, PR-024, CH-033, OR-020, OR-021, CH-011, CH-034, CH-035, CH-036, CH-037, CH-038, OR-026, UI-045
+# case_ids: OR-022, CH-008, CH-012, CH-013, CH-014, CH-015, CH-017, CH-024, OR-012, ST-008, CH-030, CH-031, CH-032, AS-008, OR-017, PR-013, OR-018, OR-019, PR-024, CH-033, OR-020, OR-021, CH-011, CH-034, CH-035, CH-036, CH-037, CH-038, OR-026, UI-045, CH-039
 import sys
 from pathlib import Path
 
@@ -27,7 +27,7 @@ CASES_DIR = REPO_ROOT / ".github" / "cases"
 # DF-020/021/022：**C 端原生对抗用例**（issue #3367）—— 越权/注入/空结果不得下单。
 # 为什么另写而不复用 DF-006/007/008：那三条的断言是 B 端机制形状（期望 product_search /
 # validate_input / 批量删改 confirm），C 端"正确拒绝且不调工具"会被它们判红（首跑 6/12 实证）。
-XIAOBU_ONLY = {"CH-008", "CH-010", "CH-012", "CH-013", "CH-014", "CH-015", "CH-017", "OR-012", "ST-008", "CH-030", "CH-031", "CH-032", "KN-001", "KN-002", "KN-008", "AS-008", "OR-017", "CH-024", "PR-013", "DF-020", "DF-021", "DF-022", "DF-023", "OR-018", "OR-019", "PR-024", "CH-033", "OR-020", "OR-021", "OR-022", "OR-023", "OR-024", "CH-025", "CH-011", "OR-025", "AS-009", "CH-034", "CH-035", "CH-036", "CH-037", "CH-038", "OR-026", "CU-007", "UI-045"}  # CH-024：C 端长期记忆端到端（issue #3357 起不再 skip）
+XIAOBU_ONLY = {"CH-008", "CH-010", "CH-012", "CH-013", "CH-014", "CH-015", "CH-017", "OR-012", "ST-008", "CH-030", "CH-031", "CH-032", "KN-001", "KN-002", "KN-008", "AS-008", "OR-017", "CH-024", "PR-013", "DF-020", "DF-021", "DF-022", "DF-023", "OR-018", "OR-019", "PR-024", "CH-033", "OR-020", "OR-021", "OR-022", "OR-023", "OR-024", "CH-025", "CH-011", "OR-025", "AS-009", "CH-034", "CH-035", "CH-036", "CH-037", "CH-038", "OR-026", "CU-007", "UI-045", "CH-039"}  # CH-024：C 端长期记忆端到端（issue #3357 起不再 skip）
 # CU-007（#3932）：C 端商品搜索只展示已上架商品——小布专属可见性用例（B 端无对应场景）。
 # CH-025：下单地址预填可修改（issue #3360 起不再 skip）
 # CH-011：跨用户订单查询拒绝（#3483 T1）——期望 customer_order_query 为小布专属，
@@ -36,6 +36,9 @@ XIAOBU_ONLY = {"CH-008", "CH-010", "CH-012", "CH-013", "CH-014", "CH-015", "CH-0
 # CH-034（vision 正向能力）/ CH-035（长期记忆跨会话）/ OR-026（写前校验拒绝半）：
 # issue #3558 C 端薄覆盖补齐 —— 三条均 persona: xiaobu（C 端专属能力，B 端无对应工具/场景）。
 # UI-045（issue #3997）：顾客端生产进度卡 —— C 端专属可视化（工人端扫码报工走 BM-006，B 端无此卡）。
+# CH-039（#3996，M4-I）：顾客查生产进度 → production_progress_query（小布专属能力面；
+# 断言该工具 ⇒ 其工具集真值必须含它，见 tests/unit_ci_workflows/test_xiaobu_case_set.py
+# 的 TestXiaobuToolsetTruth 与 eval_case_filter.XIAOBU_TOOLS）。
 
 
 def _all_cases():
