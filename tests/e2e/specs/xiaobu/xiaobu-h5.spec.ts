@@ -18,10 +18,12 @@
  * ⇒ 移除本 spec 对「新品推荐/遮光窗帘」的断言与 /chat/products/new-arrivals mock，
  *    并新增「快捷入口六格可见 + 商品推荐卡不得出现」的负向断言。
  *
- * 2026-09-18 同步 #4016 P14 卡型收敛：C 端 `renderCard` 裁掉**后端永不产出**的
- * `payment` / `production_progress` / `knowledge(_result)` 死分支与 3 对别名
- * ⇒ 收到这些卡型时落「消息内容暂不支持预览」占位。本 spec 新增一条常驻断言锁该真值
- *   （issue #4003 的教训：**砍卡片必须同批同步视觉 spec**，否则 spec 与实现分叉持续红）。
+ * 2026-09-18 同步 #4016 P14 卡型收敛（两个零发射点卡型**结论不同**，别混为一谈）：
+ * · `payment` —— 工具层无数据源 ⇒ 缺触发机制，**维持裁剪** ⇒ 收到它落「消息内容暂不支持预览」占位；
+ * · `production_progress` —— `production_progress_query` 工具存在且返回的正是卡载荷 ⇒ 属**接线漏一行**，
+ *   用户 2026-09-18 裁定「**补发射点**」⇒ 后端补映射、三端恢复渲染分支，本 spec 断言它**真渲染**。
+ * · 3 对别名 + `knowledge(_result)` 维持裁剪。
+ * （issue #4003 的教训：**砍卡片必须同批同步视觉 spec**，否则 spec 与实现分叉持续红。）
  *   ⚠️ 刻意**不新增截图基线**：新基线需 darwin + linux 双平台产物（见 migao-dev-flow §8 坑表），
  *   而本改动不触碰既有基线的画面（空态/订单卡），故用 DOM 断言锁行为、复用既有基线。
  */
@@ -60,10 +62,23 @@ const MOCK_ORDER_CARD = {
   },
 }
 
-/** 已裁剪卡型 mock（后端**零发射点**，前端分支已按 #4016 P14 移除 ⇒ 应落占位） */
+/** **维持裁剪**的卡型 mock（`payment`：工具层无数据源 ⇒ 缺触发机制，无发射点） */
 const MOCK_TRIMMED_CARD = {
   type: 'payment',
   data: { order_no: 'ORD-20260601-001', amount: 299.5, payee_name: '亿家纺织' },
+}
+
+/** 生产进度卡 mock（#4016 P14「补发射点」后真可达 ⇒ 应**真渲染**） */
+const MOCK_PRODUCTION_PROGRESS_CARD = {
+  type: 'production_progress',
+  data: {
+    order_no: 'CSO260915-02615',
+    status: 'producing',
+    progress_percent: 40,
+    current_operation: '韩褶',
+    pending_operations: ['韩褶', '定型', '打包'],
+    expected_delivery_date: '2026-09-25',
+  },
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -214,7 +229,7 @@ test.describe('小布 H5 视觉回归', () => {
     })
   })
 
-  test('已裁剪卡型落可理解占位（#4016 P14：后端零发射点，前端不再声称可达）', async ({ page }) => {
+  test('已裁剪卡型落可理解占位（#4016 P14：payment 工具层无数据源，维持裁剪）', async ({ page }) => {
     await setupMocks(page)
     const latestDone = page.waitForResponse(
       (r) => r.url().includes('/api/chat/sessions/latest') && r.status() === 200,
@@ -262,5 +277,56 @@ test.describe('小布 H5 视觉回归', () => {
     // 且**不得**出现该卡型的内容/内部类型名（既不渲染卡、也不泄漏 type）
     await expect(page.getByText('亿家纺织')).toHaveCount(0)
     await expect(page.getByText(/payment/)).toHaveCount(0)
+  })
+
+  test('生产进度卡真渲染（#4016 P14「补发射点」：后端已能下发，C 端不再落占位）', async ({ page }) => {
+    await setupMocks(page)
+    const latestDone = page.waitForResponse(
+      (r) => r.url().includes('/api/chat/sessions/latest') && r.status() === 200,
+    )
+    await page.goto('/#/pages/chat/index/index')
+    await latestDone
+    await expect(page.locator('.chat-page__navbar-name')).toBeVisible()
+
+    const input = page.locator('input, textarea').first()
+    await expect(input).toBeEnabled({ timeout: 10_000 })
+
+    await page.route('**/api/chat/send', async (route) => {
+      if (route.request().method() === 'OPTIONS') {
+        await route.fulfill({
+          status: 204,
+          headers: {
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Headers': 'Content-Type, X-Client-Type, Authorization',
+            'Access-Control-Allow-Methods': 'POST, OPTIONS',
+          },
+        })
+        return
+      }
+      const body = [
+        `event: card\ndata: ${JSON.stringify(MOCK_PRODUCTION_PROGRESS_CARD)}\n`,
+        `event: done\ndata: ${JSON.stringify({ session_id: 'sess-vr-001', message_id: 'm3' })}\n`,
+      ].join('\n')
+      await route.fulfill({
+        status: 200,
+        contentType: 'text/event-stream',
+        headers: {
+          'Content-Type': 'text/event-stream',
+          'Cache-Control': 'no-cache',
+          'Access-Control-Allow-Origin': '*',
+        },
+        body,
+      })
+    })
+
+    await input.fill('我的订单做到哪道工序了')
+    await input.press('Enter')
+
+    // **真渲染**：进度/当前工序/预计交付可见，且**不再**落占位
+    await expect(page.getByText('生产进度')).toBeVisible()
+    await expect(page.getByText('40%')).toBeVisible()
+    await expect(page.getByText('当前工序：韩褶')).toBeVisible()
+    await expect(page.getByText('预计交付 2026-09-25')).toBeVisible()
+    await expect(page.getByText('📎 消息内容暂不支持预览')).toHaveCount(0)
   })
 })
