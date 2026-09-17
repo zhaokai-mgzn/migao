@@ -90,18 +90,26 @@ def _is_round_error_target(t: ast.AST) -> bool:
 
 
 def round_error_assignments(tree: ast.AST) -> list[tuple[int, set[str]]]:
-    """runner 里每次 `result["error"] = …` → [(行号, 该赋值所处 if 守卫的 token 集)]。
+    """runner 里每次 `result["error"] = …` → [(行号, 该赋值所处**分支守卫**的 token 集)]。
 
-    取反分支（`else`）按**同一守卫**记账：本判据要拦的是「换了一条事件分支」
-    （如从 tool_result 里赋值），不是「取反写法」，故不做极性区分（已在模块 docstring 登记）。
+    守卫语义按 AST 精确取：`if` 的 **body** 记自己的 test；`orelse` 只继承祖先
+    （elif 链里下一个分支是 `orelse` 里的**另一个 If 节点**，由它自己带上 test）。
+
+    ⚠️ 为什么 `orelse` **不**继承自己的 test（本判据的实现细节，已用样本锁住）：
+    若按「body+orelse 同守卫」记账，`if current_event == "error": … else: result["error"] = …`
+    的 **else 分支**会继承 test 里的 `error` 一词 ⇒ **在"不是 error 分支"的地方赋值也通过**
+    （实测：union 写法对 `test_runner_else_branch_…` 的变异样本静默放过；精确写法判红）。
+    本判据存在的意义就是把取值面钉死，故必须按「分支」而不是「祖先里出现过什么」记账。
     """
     found: list[tuple[int, set[str]]] = []
 
     def walk(node: ast.AST, guards: tuple[frozenset, ...]) -> None:
         if isinstance(node, ast.If):
             toks = frozenset(_guard_tokens(node.test))
-            for st in list(node.body) + list(node.orelse):
+            for st in node.body:
                 walk(st, guards + (toks,))
+            for st in node.orelse:
+                walk(st, guards)
             return
         if isinstance(node, ast.Assign):
             if any(_is_round_error_target(t) for t in node.targets):
@@ -130,8 +138,9 @@ def round_error_path_violations(tree: ast.AST) -> list[str]:
         if not ({"current_event", "error"} <= toks):
             bad.append(
                 f"local_runner.py 第 {lineno} 行的 `result[\"error\"]` 赋值不在 "
-                f"`event: error` 分支内（守卫 token={sorted(toks)}）—— 轮级 error 的取值面变了，"
-                "`error.code=` 声明的可达性必须重算（若新面可达，扩 `reachable_payload_tokens`）")
+                f"`event: error` 分支内（分支守卫 token={sorted(toks)}）—— 轮级 error 的取值面变了，"
+                "`error.code=` 声明的可达性必须重算（若新面可达，扩 `reachable_payload_tokens`；"
+                "若只是改了写法（如取反分支），把该形态加进本判据）")
     return bad
 
 
@@ -404,6 +413,46 @@ class TestJudgeIsNotVacuous:
         )
         bad = round_error_path_violations(mutated)
         assert len(bad) == 1 and "event: error" in bad[0], bad
+
+    def test_runner_path_mutation_inside_real_elif_chain_is_caught(self):
+        """红证 ②′：在 runner **真实的 elif 链**形状里把赋值挪到 `tool_result` 分支
+        （样本逐字复刻 `send_message` 的链形状）⇒ 判据必红，且点名 tool_result。"""
+        mutated = ast.parse(
+            "async def send_message():\n"
+            "    result = {'error': None}\n"
+            "    async for line in resp:\n"
+            "        if line.startswith('event:'):\n"
+            "            current_event = line[6:].strip()\n"
+            "        elif line.startswith('data:'):\n"
+            "            payload = json.loads(data_str)\n"
+            "            if current_event == 'text':\n"
+            "                result['final_text'] += payload.get('content', '')\n"
+            "            elif current_event == 'tool_result':\n"
+            "                result['tool_results'].append(payload)\n"
+            "                result['error'] = str(payload)\n"
+            "            elif current_event == 'error':\n"
+            "                pass\n"
+        )
+        bad = round_error_path_violations(mutated)
+        assert len(bad) == 1, bad
+        assert "tool_result" in bad[0], bad
+
+    def test_runner_else_branch_of_error_check_is_caught(self):
+        """红证 ②″：赋值落在 `if current_event == 'error': … else: …` 的 **else** 分支 ⇒
+        必红。**这条样本是"守卫必须按分支记账"的判据**：若把 orelse 也按 same-test 记账
+        （本判据初版写法），else 分支会继承 `error` 一词 ⇒ 该样本被静默放过（已实测）。"""
+        mutated = ast.parse(
+            "async def send_message():\n"
+            "    result = {'error': None}\n"
+            "    async for line in resp:\n"
+            "        if current_event == 'error':\n"
+            "            result['error'] = str(payload)\n"
+            "        else:\n"
+            "            result['error'] = str(payload.get('result'))\n"
+        )
+        bad = round_error_path_violations(mutated)
+        assert len(bad) == 1, bad
+        assert "第 7 行" in bad[0], bad
 
     def test_runner_path_premise_loss_is_caught(self):
         """红证 ③：runner 里不再有该赋值（被重构）⇒ 判据的**前提消失**也要红。"""
