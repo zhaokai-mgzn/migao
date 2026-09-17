@@ -23,13 +23,17 @@ result_dict = {
 
 后果（实测，全部**读源**得到）：
 
-| 字段 | 生产端赋值 | 消费端 | 实际状态 |
+| 字段 | 生产端赋值 | 消费端 | 落地时的实际状态 |
 |---|---|---|---|
-| `terminal` | **4 处**赋 `True`（`order_create` / `aftersale_create` / `human_handoff`×2） | `base_skill.py` 的 `result_dict.get("terminal")` | **恒为 `None`** ⇒ `ContextManager.reset_domain()` **永不触发**（4 处赋值全是空转） |
-| `summary` | 各工具自行填写（docstring 明确要求） | **全仓 0 处读 `result.summary`/`result_dict["summary"]`** | **死契约**（LLM 友好摘要从未进入 LLM 上下文） |
+| `terminal` | **4 处**赋 `True`（`order_create` / `aftersale_create` / `human_handoff`×2） | `base_skill.py` 的 `result_dict.get("terminal")` | 曾是**恒为 `None`** ⇒ `ContextManager.reset_domain()` **永不触发**（4 处赋值全是空转）；**已由 #4018（P4 包）修复** |
+| `summary` | 各工具自行填写（docstring 明确要求） | **全仓 0 处读 `result.summary`/`result_dict["summary"]`** | 曾是**死契约**（LLM 友好摘要从未进入上下文）；**已由 #4018 补进出口** |
 
 `grep terminal tests/` = **0** ⇒ 没有任何测试能发现这件事：这正是「声明了字段但无人消费」
-的静默形态（fail-closed 的另一面）。**当前红**（两条都是存量真违规）。
+的静默形态（fail-closed 的另一面）。
+
+> **落地记录（锚定）**：本守卫落地时（`origin/main` @ `c0be8e35`）两条**都是红的**；
+> #4018 合入后（`origin/main` @ `67db87ae`）两条**转绿** —— 本文件**不是**为红而红，
+> 它锁的是「声明 ⇒ 传递 ⇒ 消费」这条链下一次断裂时**立刻红**（例如下一个新字段只被声明）。
 
 ## 本文件锁的三条不变式（每条都有反例输入）
 
@@ -292,7 +296,11 @@ class TestFieldCrossingDetectorIsNotVacuous:
         反例输入：让出口缺一个文件头没记录的字段 ⇒ 必红。
         """
         missing = set(_missing_fields(declared_tool_result_fields(), executor_result_dict_keys()))
-        documented = {"terminal", "summary"}  # ← 与本文件「病灶形状」表逐字对应；修好后改成 set()
+        # ← 与文件头「病灶形状」表逐字对应。
+        # 2026-09-17（rebase 到 #4018 之后）：`terminal`/`summary` 已由 P4 包补进出口
+        # （`base_skill.py` 的 result_dict 现含 summary + terminal）⇒ 缺口清空，
+        # 本行按「修好了就改这一行」的设计改为 `set()`。
+        documented: set[str] = set()
         assert missing == documented, (
             f"执行出口的缺口集合与文件头红证记录不一致：\n"
             f"  实测 = {sorted(missing) or '（已全部传递）'}\n"
