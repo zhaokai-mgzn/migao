@@ -22,10 +22,16 @@
 
 | 实体类 | 声明式槽位（写死字面量出现的地方） | 存在性要求 |
 |---|---|---|
-| 商品名 | `namespaces:product_name:` / `pre_clean.product_keyword` / `precondition[product_count_for_keyword].source` / `expectations.args.product_id` / `product_search.keyword` / `db_verify.expect_products[]` / `db_verify.name` / `amount_verify.product_name` | 必须在 `products.name`，或由该用例自建 |
-| 加工项名 | `processing_item_query.keyword` / `product_processing_item_manage.item_ids[]` / `output_verify.expect.name` / `db_verify.checks[processingItemConfigs.X]` | 必须在 `processing_items.name`，或由该用例创建 |
+| 商品名 | `namespaces:product_name:` / `pre_clean[product_dedupe/product_remove].product_keyword` / `precondition[product_count_for_keyword].source` / `expectations[product_detail/product_update].product_id` / `expectations[product_search].keyword` / `db_verify[fetch=order_items].expect_products[]` / `db_verify[fetch=product_by_name].name` / `amount_verify.product_name` | 必须在 `products.name`，或由该用例自建 |
+| 加工项名 | `expectations[processing_item_query].keyword` / `expectations[product_processing_item_manage].item_ids[]` / `output_verify[processing_item_manage].expect.name` / `db_verify[fetch=product_by_name].checks[processingItemConfigs.X]` | 必须在 `processing_items.name`，或由该用例创建 |
 | 规格/色名 | 控制轮 `form_values.color`/`colorName` / `auto_fill.colors` | 必须在 `product_colors.color_name`（规范化 + 包含匹配），建品用例除外 |
-| 客户 | `namespaces:customer_phone:` / `pre_clean.customer_keyword` | 必须在 `customer_profiles`（姓名或手机号），除非用例显式声明它必须失败 |
+| 客户 | `namespaces:customer_phone:` / `pre_clean[customer_tag_remove].customer_keyword` | 必须在 `customer_profiles`（姓名或手机号），除非用例显式声明它必须失败 |
+
+**每个"泛用键"都必须由锚点定类**（`db_verify.fetch` 的取数类型 / `output_verify` 的工具 /
+`pre_clean` 的类型），**不能凭键名判类**：`db_verify.name` 跨域复用 —— `HR-009/HR-010` 的
+`{"fetch": "employee", "name": "李四"}` 是**员工姓名**，凭"键叫 `name`"就去商品真值集里查
+= **假红**（断言实现宽于用例声明；PR #4135 的真红即此形态）。锚点表见 `declared_mentions`
+上方的常量，误伤/漏判两侧都有判据（`TestSlotAnchors`）。
 
 **栈口径不重建**：一个用例点名的商品必须在**它真的会跑的那套栈**上存在 —— 种子文件集合
 复用单一源 `scripts/eval_stack_seed.sh --persona <p> --dry-run`（#3563 已把"哪个 persona 装
@@ -285,11 +291,35 @@ def _stringify_inputs(case: dict) -> str:
                      for t in (case.get("user_inputs") or []))
 
 
-def declared_mentions(case: dict) -> list:
-    """该用例**结构性声明**的实体字面量（单一表：槽位 → 类 + 匹配模式）。
+# ── 槽位锚点：**结构性判别依据**（取数类型 / 工具 / 前置类型），**不是键名字面** ──────
+# 为什么每个"泛用键"都必须有锚点（2026-09 实证，PR #4135 的真红）：
+#   `db_verify[].name` / `output_verify[].expect.name` 这类键名**跨域复用** ——
+#   `HR-009/HR-010` 的 `{"fetch": "employee", "name": "李四"}` 是**员工姓名**，
+#   凭"键叫 name"就去商品真值集里查 ⇒ **假红**（断言实现宽于用例声明）。
+#   判据必须落在"这条取数到底读的是什么对象"上：`db_verify.fetch` 就是那个声明
+#   （`product_by_name` = 商品；`employee`/`employee_absent` = 员工域，本轮范围外）。
+DB_FETCH_PRODUCT = "product_by_name"      # 按名回读商品（`name` → products.name）
+DB_FETCH_ORDER_ITEMS = "order_items"      # 回读订单明细（商品名在 expect_products[]）
+TOOLS_ADDRESSING_PRODUCT = ("product_detail", "product_update")  # 用 product_id 指代商品
+TOOL_PROCESSING_MANAGE = "processing_item_manage"                # expect.name → 加工项
+TOOL_PRODUCT_PROCESSING = "product_processing_item_manage"       # item_ids[] → 加工项
+TOOL_PROCESSING_QUERY = "processing_item_query"                  # keyword → 加工项
+TOOL_PRODUCT_SEARCH = "product_search"                           # keyword → 商品
+PRECLEAN_PRODUCT_TYPES = ("product_dedupe", "product_remove")    # product_keyword → 商品
+PRECLEAN_CUSTOMER_TYPES = ("customer_tag_remove",)               # customer_keyword → 客户
+PRECONDITION_PRODUCT_TYPE = "product_count_for_keyword"          # source → 商品
+#: 明确**不在**本轮范围（布尔值只用于"显式跳过"，避免"扫到一半才发现"）：
+NAMESPACE_EMPLOYEE_PREFIXES = ("employee_name:", "employee_phone:")
 
-    只取"机器可消费"的键：`data_checks` / `merge_log` / `title` 等散文字段**一律不读**
-    （R5：判据不建在措辞上；`TestProseIsNotASource` 把这一点做成可失败判据）。
+
+def declared_mentions(case: dict) -> list:
+    """该用例**结构性声明**的实体字面量 → `[(实体类, 字面量, 槽位, 匹配模式)]`。
+
+    两条纪律：
+    ① 只取"机器可消费"的键 —— `data_checks` / `merge_log` / `title` 等散文字段**一律不读**
+       （R5：判据不建在措辞上；`TestProseIsNotASource` 把这一点做成可失败判据）；
+    ② **泛用键必须由锚点决定类**（见上方常量）：`db_verify.name` 只在
+       `fetch == product_by_name` 时才是商品名，否则它可能是员工/客户/工单域的字段。
     """
     out = []                                     # [(class, literal, slot, mode)]
 
@@ -303,54 +333,76 @@ def declared_mentions(case: dict) -> list:
             add("product", s[len("product_name:"):], "namespaces[product_name:]")
         elif s.startswith("customer_phone:"):
             add("customer", s[len("customer_phone:"):], "namespaces[customer_phone:]")
-        # employee_name/employee_phone：本轮范围外（显式跳过，见 docstring「未实装」③）
+        elif s.startswith(NAMESPACE_EMPLOYEE_PREFIXES):
+            continue                              # 员工域：本轮范围外（docstring「未实装」③）
 
     for spec in case.get("pre_clean") or []:
-        if isinstance(spec, dict):
+        if not isinstance(spec, dict):
+            continue
+        if spec.get("type") in PRECLEAN_PRODUCT_TYPES:
             # 搜索关键字语义（按关键词定位对象）⇒ 允许部分指代
-            add("product", spec.get("product_keyword"), "pre_clean.product_keyword", "lookup")
-            add("customer", spec.get("customer_keyword"), "pre_clean.customer_keyword")
+            add("product", spec.get("product_keyword"),
+                f"pre_clean[{spec.get('type')}].product_keyword", "lookup")
+        if spec.get("type") in PRECLEAN_CUSTOMER_TYPES:
+            add("customer", spec.get("customer_keyword"),
+                f"pre_clean[{spec.get('type')}].customer_keyword")
 
     for spec in case.get("precondition") or []:
-        if isinstance(spec, dict) and spec.get("type") == "product_count_for_keyword":
-            add("product", spec.get("source"), "precondition[product_count_for_keyword].source",
-                "lookup")
+        if isinstance(spec, dict) and spec.get("type") == PRECONDITION_PRODUCT_TYPE:
+            add("product", spec.get("source"),
+                f"precondition[{PRECONDITION_PRODUCT_TYPE}].source", "lookup")
 
     for spec in case.get("expectations") or []:
         if not isinstance(spec, dict):
             continue
         tool, args = str(spec.get("tool") or ""), spec.get("args")
         args = args if isinstance(args, dict) else {}
-        pid = args.get("product_id")
-        if isinstance(pid, str) and not pid.startswith("复用"):
-            add("product", pid, f"expectations[{tool}].product_id")
+        if tool in TOOLS_ADDRESSING_PRODUCT:      # 锚点 = 工具（该工具只操作商品）
+            pid = args.get("product_id")
+            if isinstance(pid, str) and not pid.startswith("复用"):
+                add("product", pid, f"expectations[{tool}].product_id")
+            elif isinstance(pid, str) and pid.startswith("复用"):
+                pass                              # 「复用上轮 UUID」：非名字面量
         kw = args.get("keyword")
-        if tool == "product_search":
-            add("product", kw, "expectations[product_search].keyword", "lookup")
-        elif tool == "processing_item_query":
-            add("processing_item", kw, "expectations[processing_item_query].keyword", "lookup")
-        for key in ("item_ids", "item_names"):
-            for v in args.get(key) or []:
-                add("processing_item", v, f"expectations[{tool}].{key}[]", "lookup")
+        if tool == TOOL_PRODUCT_SEARCH:
+            add("product", kw, f"expectations[{TOOL_PRODUCT_SEARCH}].keyword", "lookup")
+        elif tool == TOOL_PROCESSING_QUERY:
+            add("processing_item", kw, f"expectations[{TOOL_PROCESSING_QUERY}].keyword", "lookup")
+        if tool == TOOL_PRODUCT_PROCESSING:       # 锚点 = 工具（item_ids 指向加工项）
+            for key in ("item_ids", "item_names"):
+                for v in args.get(key) or []:
+                    add("processing_item", v, f"expectations[{tool}].{key}[]", "lookup")
 
     for spec in case.get("db_verify") or []:
         if not isinstance(spec, dict):
             continue
-        for nm in spec.get("expect_products") or []:
-            add("product", nm, "db_verify.expect_products[]")
-        add("product", spec.get("name"), "db_verify.name")
-        for chk in spec.get("checks") or []:
-            m = re.search(r"processingItemConfigs\.([^.]+)\.", str(chk))
-            if m and m.group(1) != "all":        # `all` 是通配选择器，不是加工项名
-                add("processing_item", m.group(1), "db_verify.checks[processingItemConfigs.X]")
+        fetch = str(spec.get("fetch") or "")
+        if fetch == DB_FETCH_ORDER_ITEMS:         # 锚点 = 取数类型（订单明细里的商品名）
+            for nm in spec.get("expect_products") or []:
+                add("product", nm, f"db_verify[fetch={fetch}].expect_products[]")
+        elif fetch == DB_FETCH_PRODUCT:           # 锚点 = 取数类型（按名回读商品）
+            add("product", spec.get("name"), f"db_verify[fetch={fetch}].name")
+            for chk in spec.get("checks") or []:
+                m = re.search(r"processingItemConfigs\.([^.]+)\.", str(chk))
+                if m and m.group(1) != "all":     # `all` 是通配选择器，不是加工项名
+                    add("processing_item", m.group(1),
+                        f"db_verify[fetch={fetch}].checks[processingItemConfigs.X]")
+        # 其余 fetch（employee / employee_absent / order_phone / after_sales_ticket）
+        # 属员工/客户/工单域：**不判**（本轮四类之外；`db_verify.name` 不是商品名的证据）
 
     for spec in case.get("amount_verify") or []:
         if isinstance(spec, dict):
             add("product", spec.get("product_name"), "amount_verify.product_name")
 
     for spec in case.get("output_verify") or []:
-        if isinstance(spec, dict) and isinstance(spec.get("expect"), dict):
-            add("processing_item", spec["expect"].get("name"), "output_verify.expect.name")
+        if not isinstance(spec, dict) or not isinstance(spec.get("expect"), dict):
+            continue
+        # 锚点 = 工具：只有加工项工具的 `expect.name` 才是**加工项名**
+        #（跨域同形键：`expect.name` 也可能是员工/商品/客户的名字 —— 实测 `HR-*` 域
+        #  的 `db_verify.name` 即为此形态，凭键名判类 = 假红）
+        if str(spec.get("tool") or "") == TOOL_PROCESSING_MANAGE:
+            add("processing_item", spec["expect"].get("name"),
+                f"output_verify[{TOOL_PROCESSING_MANAGE}].expect.name")
 
     for spec in [case.get("auto_fill")] + \
             [(t.get("auto_respond") or {}).get("form_values") for t in _input_dicts(case)] + \
@@ -432,10 +484,12 @@ def exemption_reason(case: dict, cls: str, literal: str, slot: str) -> str:
                   if m[0] == "product" and m[1] == literal and not m[2].startswith("namespaces[")]
         if slot.startswith("namespaces[") and _creates(case, "product_manage") and not others:
             return SELF_MADE          # 建品用例仅在 namespaces 声明的自有名（PR-012 形态）
-        if slot == "db_verify.name" and _creates(case, "product_manage"):
+        if slot.startswith("db_verify[") and slot.endswith("].name") \
+                and _creates(case, "product_manage"):
             return SELF_MADE          # 建品后按名回读**本案例造的产物**
     if cls == "processing_item":
-        if slot == "output_verify.expect.name" and _creates(case, "processing_item_manage"):
+        if slot.startswith(f"output_verify[{TOOL_PROCESSING_MANAGE}]") \
+                and _creates(case, TOOL_PROCESSING_MANAGE):
             return SELF_MADE          # 建加工项用例：该名字是本案产物（PP-006 形态）
     if cls == "color" and _creates(case, "product_manage"):
         return SELF_MADE              # 建品用例的颜色由本案定义（PR-019 形态）
@@ -663,6 +717,92 @@ class TestInjectionRedProofs:
                       precondition=[])
         assert [b["literal"] for b in unbacked_mentions([stolen])] == ["幻影窗帘"], \
             unbacked_mentions([stolen])
+
+
+class TestSlotAnchors:
+    """泛用键必须由**锚点**（取数类型 / 工具 / 前置类型）定类 —— 防跨域假红。
+
+    实证（PR #4135 的真红，`HR-009/HR-010`）：`db_verify: {"fetch": "employee", "name": "李四"}`
+    是**员工姓名**；判据若凭"键叫 `name`"就去 `products.name` 里查 ⇒ 把两条合法用例判红。
+    本类两侧都钉：① 跨域不得误伤（含"改前形态会误报"的注入式红证）；
+    ② 锚点不得把**真阳性**一起废掉（`fetch: product_by_name` 里点名不存在的商品仍必须报红）。
+    """
+
+    EMPLOYEE_TOOLS = ("employee_manage", "role_manage")   # 员工域工具（不携带商品身份）
+
+    @staticmethod
+    def _case(cid: str) -> dict:
+        return next(c for c in _all_cases() if c["id"] == cid)
+
+    def test_employee_db_verify_names_are_not_products(self):
+        """真实用例：`HR-009/HR-010` 的 `db_verify.name='李四'` 不得被当成商品名。"""
+        for cid in ("HR-009", "HR-010"):
+            case = self._case(cid)
+            declared = [m for m in declared_mentions(case)
+                        if m[0] in ("product", "processing_item", "color")]
+            assert declared == [], (cid, declared)
+            assert unbacked_mentions([case]) == [], cid
+
+    def test_unanchored_name_key_would_be_a_false_positive(self):
+        """**注入式红证（改前形态）**：无条件把 `db_verify.name` 当商品 ⇒ `李四` 必被误报。
+
+        这条证明上一测试不是"恒绿"：锚点一旦退回"凭键名判类"，同一判据立刻产出假红。
+        """
+        case = self._case("HR-009")
+        unanchored = [("product", s.get("name"), "db_verify.name", "identity")
+                      for s in case["db_verify"]]
+        truth = truth_for_case(case)["product"]
+        missed = [lit for _, lit, _, mode in unanchored if not resolves(lit, mode, truth)]
+        assert missed == ["李四"], f"改前形态没复现误报（红证无判别力）：{missed}"
+
+    def test_employee_domain_cases_declare_no_product_mentions(self):
+        """全库扫一遍：只操作**员工域工具**的用例，一个商品/加工项/色名类点名都不该抽出。"""
+        leaks = []
+        for case in _all_cases():
+            tools = {str(e.get("tool")) for e in case.get("expectations") or []
+                     if isinstance(e, dict)}
+            if tools and tools <= set(self.EMPLOYEE_TOOLS):
+                leaks += [(case["id"], m) for m in declared_mentions(case)
+                          if m[0] in ("product", "processing_item", "color")]
+        assert leaks == [], f"员工域用例被抽出了商品域点名（跨域假红）：{leaks}"
+
+    def test_product_by_name_fetch_still_judges(self):
+        """**锚点没有废掉真阳性**：`fetch: product_by_name` 里点名不存在的实体 ⇒ 仍必报红。"""
+        case = {
+            "id": "INJ-ANCHOR", "persona": "mibao",
+            "user_inputs": ["把 幻影窗帘 改个价", "加工项 穿杆孔加工 也要改"],
+            "expectations": [{"tool": "product_update", "args": {"price": "198"}}],
+            "db_verify": [{"fetch": "product_by_name", "name": "幻影窗帘",
+                           "checks": ["processingItemConfigs.all.finalPrice>0",
+                                      "processingItemConfigs.穿杆孔加工.finalPrice>0"]}],
+        }
+        got = {(b["class"], b["literal"]) for b in unbacked_mentions([case])}
+        assert got == {("product", "幻影窗帘"), ("processing_item", "穿杆孔加工")}, got
+
+    def test_order_items_fetch_still_judges(self):
+        """另一条锚点同样不失真阳性：`fetch: order_items` 的 `expect_products[]`。"""
+        case = {
+            "id": "INJ-ITEMS", "persona": "xiaobu",
+            "user_inputs": ["我买的是 幻影窗帘 3 米"],
+            "expectations": [{"tool": "order_create"}],
+            "db_verify": [{"fetch": "order_items", "source": "order_create",
+                           "expect_products": ["幻影窗帘"]}],
+        }
+        assert [b["literal"] for b in unbacked_mentions([case])] == ["幻影窗帘"]
+
+    def test_other_fetch_types_are_out_of_scope(self):
+        """`employee` / `employee_absent` / `order_phone` / `after_sales_ticket` 取数**不判**。"""
+        for fetch, spec in (("employee_absent", {"name": "李四", "phone": "13800009999"}),
+                            ("employee", {"name": "李四", "expect_fields": {"phone": "1"}}),
+                            ("order_phone", {"expect_phone": "13800138000"}),
+                            ("after_sales_ticket", {"expect_status": "closed"})):
+            case = {"id": f"OK-{fetch}", "persona": "mibao",
+                    "user_inputs": ["帮我开个客服账号，姓名李四，手机号 13800009999"],
+                    "expectations": [{"tool": "employee_manage",
+                                      "args": {"action": "create"}}],
+                    "db_verify": [dict(spec, fetch=fetch)]}
+            assert declared_mentions(case) == [], (fetch, declared_mentions(case))
+            assert unbacked_mentions([case]) == [], fetch
 
 
 class TestNegativeExamples:
