@@ -1,48 +1,57 @@
 {
   "_comment": "断言可信度护栏的**未实装项**（如实登记）。红线：判据在现有机制下无法判定时，**不得**写成恒真判断凑数 —— 登记在此，写明缺什么。",
   "_source": ".github/assertion_taxonomy.py 的 UNIMPLEMENTED",
+  "_constraints": "**每条登记必须带 `issue`（正整数追踪号）/ `expires`（YYYY-MM-DD）/ `how_to_verify`（怎么算已实装的可执行判据/命令）/ `hit_probe`（僵尸判据）。**四条判据都可红（判据本体 = assertion_taxonomy.judge_unimplemented，门禁壳 = case_trust_gate.judge_unimplemented_manifest）：① 缺任一字段 ⇒ 红（指名缺哪个）；② `expires` 已过 ⇒ 红（到期未实装**不许静默续期**）；③ `issue` 指向的单已 CLOSED（或编号不存在）⇒ 红（借口不能过期不销：实装了就该撤登记，没实装就该开新单）；④ **僵尸登记** ⇒ 红（`hit_probe` 探不到存活证据 = 登记所述口径已不成立，留着会被读成「还没做」）。`why_not`/`needs` 只是理由与缺口，**不构成约束**。",
   "unimplemented": [
-    {
-      "code": "CASE-TRUST-PRECLEAN-UNKNOWN-TYPE",
-      "title": "`pre_clean.type` 未知/拼错 ⇒ 静默跳过（潜在假绿）",
-      "why_not": "`local_runner._run_pre_clean` 对未知 type 只 `return \"未知 pre_clean 类型: …（跳过）\"`（按该文本检索），**不报错** ⇒ 拼错的 type = 一条**没有复位的**写用例，而静态侧无法区分「作者有意跳过」与「拼错」（#3797）。",
-      "needs": "runner 侧把未知 type 改成**失败关闭**（或引入显式 `pre_clean: [{type: none, reason: …}]`），静态门禁才有可判定的目标。属 T2（runner 归因自动化）。"
-    },
-    {
-      "code": "CASE-TRUST-PRECLEAN-FAILURE-FOLD",
-      "title": "`pre_clean` 失败/未复位路径未纳入折叠判据",
-      "why_not": "`_run_pre_clean` 的返回值（「无「X」商品需清理」/「查询 3 次未命中（跳过）」）**不参与用例判定** ⇒ 清理没生效也照跑（#3797 的潜在假绿）。",
-      "needs": "runner 侧把 pre_clean 结果进 case_issues（失败即红）。属 T2。"
-    },
     {
       "code": "CASE-TRUST-CROSS-LEG-NARROW-RUN",
       "title": "单端用例在与其他腿共用 `case_ids` 时被选中",
       "why_not": "静态只能看到**本 PR 的 diff**，看不到「本次运行会不会用 `case_ids` 窄跑」—— 那是**运行期**信息。静态侧只能要求 persona 标注存在（`CASE-TRUST-SINGLE-LEG-NO-PERSONA` 已实装）。",
-      "needs": "runner 侧按 persona 校验 `case_ids` 的跨腿完整性（#3822；`local_runner.py` 的「禁止静默少跑」守卫按该文本检索）。属 T2。"
+      "needs": "runner 侧按 persona 校验 `case_ids` 的跨腿完整性（#3822；`local_runner.py` 的「禁止静默少跑」守卫按该文本检索）。属 T2。",
+      "issue": 3822,
+      "expires": "2027-01-31",
+      "how_to_verify": "runner 的「禁止静默少跑」守卫**按 persona 校验 `case_ids` 的跨腿完整性**（单端用例被另一腿选中时不再产生误导性红/自动评论）⇒ 撤登记。核验：单腿派发（`xiaobu-acceptance.yml` 的 `persona` 输入）+ `case_ids` 含一条单端用例 ID，另一腿**不再**判红；或该守卫源码里出现按 persona 过滤 `case_ids` 的分支（按「禁止静默少跑」文本检索）。",
+      "hit_probe": "single_leg_persona"
     },
     {
       "code": "CASE-TRUST-BURN-DOWN-SCOPE-CASE-TOUCHING-ONLY",
       "title": "burn-down 预算的「每 PR 最低消减」**默认只对改用例的 PR 生效**",
       "why_not": "#4031 已实装全量对账（陈旧条目阻塞）+ 到期清零（全局生效），但**每-PR 最低消减**的口径默认 `scope=case_touching_prs`：字面口径（**每个** PR，含不改用例的）会让全仓每个 PR 都必须改 `.github/cases/**` + 清单才能合并 —— 与「先把清单清干净再翻 required，避免阻塞所有人」的顺序铁律自相矛盾，且会把 Java 单测 PR 也卡在用例库上（= 假红）。口径是**数据**（`burn_down.scope`），改为 `all_prs` 即字面口径。",
-      "needs": "要先让「清单条目可被多条 PR 各自删除的小文件化 / 自动重生成」落地，每-PR 口径才有可安全阻塞的目标（同族于 drift_audit 的全量对账，见下一条 ⇒ **#4045**）。"
+      "needs": "要先让「清单条目可被多条 PR 各自删除的小文件化 / 自动重生成」落地，每-PR 口径才有可安全阻塞的目标（同族于 drift_audit 的全量对账，见下一条 ⇒ **#4045**）。",
+      "issue": 4155,
+      "expires": "2027-03-31",
+      "how_to_verify": "前置（豁免清单小文件化 / 可自动重生成）落地 ⇒ 把 `.github/case-trust-baseline.json`的 `burn_down.scope` 改成 `all_prs` 并撤本登记。核验命令：`python3 -c \"import json;print(json.load(open('.github/case-trust-baseline.json'))['burn_down']['scope'])\"` 输出 `all_prs` = 已实装。",
+      "hit_probe": "burn_down_scope_case_touching"
     },
     {
       "code": "DRIFT-AUDIT-STALE-DIFF-SCOPED",
       "title": "`scripts/drift_audit.py` 的同款「陈旧即红」仍是 diff 命中口径（未同步 #4031）",
       "why_not": "同族缺陷的**第二实例**：`drift_audit.compare_baseline` 的 `stale_blocking` 只在本次 diff 命中该条目时才阻塞（源码注释自称「沿用 `.github/case_trust_gate.py` 的`stale_baseline_entries` 口径」）⇒ #4031 把 case_trust_gate 改成全量对账后，两者**口径已分叉**，该脚本仍会留下永久豁免（它的基线是 `entries` 计数形态，需独立改造）。",
-      "needs": "按 #4031 同款改造 drift_audit 的 compare_baseline（全量对账 + burn-down 预算）并补红证；**已开独立 issue 登记：`#4045`**（不属 #4031 的文件所有权，避免与在飞包冲突；同 issue 含 `pr-check.yml` 注释块口径同步 —— 需 `workflow` scope）。"
+      "needs": "按 #4031 同款改造 drift_audit 的 compare_baseline（全量对账 + burn-down 预算）并补红证；**已开独立 issue 登记：`#4045`**（不属 #4031 的文件所有权，避免与在飞包冲突；同 issue 含 `pr-check.yml` 注释块口径同步 —— 需 `workflow` scope）。",
+      "issue": 4045,
+      "expires": "2026-12-31",
+      "how_to_verify": "`scripts/drift_audit.py` 的 `compare_baseline` **复用** `.github/case_trust_gate.py`的 `reconcile_baseline`（不再自实现 diff 命中口径的陈旧判据）⇒ 撤本登记。核验：`grep -c reconcile_baseline scripts/drift_audit.py` ≥ 1（当前 = 0）；撤登记判据 = `hit_probe` 探不到存活证据（即该 grep 命中）。",
+      "hit_probe": "drift_audit_diff_scoped_stale"
     },
     {
       "code": "CASE-TRUST-ALL-CASES-PERSONA-ANNOTATED",
       "title": "**全库**用例都必须标注 persona",
       "why_not": "口径过宽会让全部双端用例（存量 200+ 条）立刻违规 —— 但双端用例**本就不该**被强制标注（`persona: \"\"` 是合法的「双端」语义）。故只对**按工具集可判定为单端**的用例子集实装。",
-      "needs": "无需落地（这是**有意不做**的口径，登记以免被误当遗漏）。"
+      "needs": "无需落地（这是**有意不做**的口径，登记以免被误当遗漏）。",
+      "issue": 4155,
+      "expires": "2027-06-30",
+      "how_to_verify": "persona 语义变更（例如引入显式 `persona: both` 双端标注）⇒ 全库标注成为**可判定且不产生假红**的口径，撤本登记并按新口径实装；或双端用例归零⇒ 子集口径 == 全库口径，本登记自动成僵尸。核验命令：`python3 -c \"import sys;sys.path.insert(0,'.github');from render_cases import load_case_dicts;print(sum(1 for c in load_case_dicts('.github/cases') if not str(c.get('persona') or '').strip()))\"`（当前 246 > 0 = 口径仍成立）。",
+      "hit_probe": "dual_leg_no_persona"
     },
     {
       "code": "CASE-TRUST-PROSE-DATA-CHECK-QUALITY",
       "title": "纯散文 `data_checks` 的**语义**质量（是否真在测它声称的东西）",
       "why_not": "「这条散文断言是不是真的覆盖了业务价值」是**语义**判断，静态无法判定（`migao-acceptance`：LLM 只覆盖语义残留）。静态侧只能判定「它**不计分**」（`is_machine_scored_data_check`）并据此要求效果层断言。",
-      "needs": "LLM 用例语义审计（#3483 的 LLM 复核格），不属静态门禁。"
+      "needs": "LLM 用例语义审计（#3483 的 LLM 复核格），不属静态门禁。",
+      "issue": 3483,
+      "expires": "2027-03-31",
+      "how_to_verify": "出现**可执行**的用例语义复核（`#3483` 的 LLM 复核格：逐条判定散文 `data_checks`是否真在测它声称的东西，且结论落盘可复查）⇒ 静态侧不再是「无法判定」⇒ 撤本登记。核验：存在按用例 ID 产出语义复核结论的脚本/用例，且 `python3 .github/case_trust_gate.py` 的未实装清单里不再需要这一条。",
+      "hit_probe": "prose_data_check"
     }
   ]
 }

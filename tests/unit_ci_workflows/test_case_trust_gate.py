@@ -809,10 +809,22 @@ class TestDegenerateGuardRails:
         assert tax._XIAOBU_TOOLS, "小布工具集未加载 ⇒ 规则 d 静默失效"
 
     def test_unimplemented_entries_carry_reason_and_need(self):
-        """未实装项必须写明**缺什么**（不得留空凑数）。"""
+        """未实装项必须写明**缺什么**（不得留空凑数），且必须带**可执行约束**四字段。
+
+        本次收紧：只有 `why_not` + `needs` 时，「未实装」可以**永久**当借口
+        （无追踪号、无到期日、无「怎么算已实装」⇒ 没有任何东西会因此变红）。
+        判据本体 = `tax.judge_unimplemented`；逐条红证见 `TestUnimplementedRegistrations`。
+        """
         assert tax.UNIMPLEMENTED, "未实装清单为空 —— 若确实全部落地，请显式说明"
         for item in tax.UNIMPLEMENTED:
             assert item.get("why_not") and item.get("needs"), f"未实装项缺理由/缺口：{item}"
+            missing = [f for f in tax.UNIMPLEMENTED_REQUIRED_FIELDS
+                       if item.get(f) in (None, "", [], {})]
+            assert not missing, f"未实装项 {item.get('code')} 缺必填字段：{missing}"
+            assert item.get("hit_probe") in tax.UNIMPLEMENTED_HIT_PROBES, (
+                f"未实装项 {item.get('code')} 的 hit_probe 未注册（无判据的登记 = 僵尸登记）："
+                f"{item.get('hit_probe')!r}"
+            )
 
     def test_no_rule_is_registered_as_always_true(self):
         """**红线**：规则表里不得出现「恒真」实装（凑数的空壳规则）。"""
@@ -1093,7 +1105,9 @@ def _gate_module():
 
 
 # 预算配置夹具：与 `.github/case-trust-baseline.json` 的 `burn_down` 同形（日期是注入用的）
-CFG = {"per_pr_min": 1, "metric": "entries_or_codes", "scope": "case_touching_prs",
+# `metric=entries` = **本次收紧后的现行口径**（只认整条销账）；旧口径 `entries_or_codes`
+# 只在「改前/改后对照」的用例里显式构造。
+CFG = {"per_pr_min": 1, "metric": "entries", "scope": "case_touching_prs",
        "priority_prefixes": ["OR-"], "priority_deadline": "2026-10-31",
        "deadline": "2026-12-31"}
 
@@ -1131,19 +1145,51 @@ class TestBurnDownBudget:
         assert not v["blocking"], v["reasons"]
         assert any("已清零" in n for n in v["notes"]), v["notes"]
 
-    def test_budget_passes_on_code_level_narrowing(self):
-        """`metric=entries_or_codes`：**收窄一条**（条目数不变、码数 -1）也算消了一条豁免。
+    def test_budget_blocks_on_code_level_narrowing_that_old_metric_allowed(self):
+        """**本次收紧的改前/改后对照（红证）**：`metric` 由 `entries_or_codes` → `entries`。
 
-        为什么认这个口径：豁免面 = `(用例, 规则)` 对；`PG-013` 修掉 `NO-EFFECT` 后该豁免
-        真实消失，只是条目还在（另一条码仍在违规）。只认条目数会让这种真实消减不计分。
+        形态：一条多码条目**收窄**（删掉其中一个码，条目本身还在）——
+        这是「为绿而绿」的确切形态：豁免面（该用例仍命中违规码）**没有真的变小**，
+        只是账面小了一格。
+
+        · 旧口径 `entries_or_codes` = `max(净缩条目, 净缩码)` ⇒ 净缩码 1 ⇒ **过门禁**（改前绿）；
+        · 新口径 `entries` ⇒ 净缩条目 0 ⇒ **红**（改后红），且失败文案必须点名
+          「收窄不算」与「必须整条销账」。
+
+        ⚠️ 两侧传**同一份 cfg**，否则会同时命中「配置只许收紧」那条判据，红的原因就
+        不是本用例要证的口径差异了（R2：判据要能分辨自己红在哪）。
         """
         g = _gate_module()
         base = _bd_baseline(2, codes_per_entry=2, cfg=CFG)
         cur = _bd_baseline(2, codes_per_entry=2, cfg=CFG)
-        cur["violations"]["C000"]["codes"] = ["CODE-0"]
-        v = g.burn_down_verdict(base, cur, "2026-09-18", case_files_touched=True)
+        cur["violations"]["C000"]["codes"] = ["CODE-0"]  # 只删一个码 = 收窄，不是销账
+
+        old_cfg = {**CFG, "metric": "entries_or_codes"}
+        old = g.burn_down_verdict(_bd_baseline(2, codes_per_entry=2, cfg=old_cfg),
+                                  copy.deepcopy(cur) | {"burn_down": old_cfg},
+                                  "2026-09-18", case_files_touched=True)
+        assert not old["blocking"], (
+            f"夹具前提：旧口径下「收窄一个码」应当过门禁（这才是被收紧的形态）：{old['reasons']}"
+        )
+
+        new = g.burn_down_verdict(base, cur, "2026-09-18", case_files_touched=True)
+        assert new["blocking"], (
+            f"metric=entries 下「只收窄一个码」未被拦 —— 口径没收紧：{new}"
+        )
+        assert any("预算未达标" in r and "收窄不算" in r for r in new["reasons"]), new["reasons"]
+        assert new["net"]["entries"] == [2, 2] and new["net"]["codes"] == [4, 3], new["net"]
+
+    def test_budget_passes_when_a_whole_entry_is_retired(self):
+        """负例（R2）：**整条销账**（该用例不再命中任何码 ⇒ 条目消失）必须算达标。
+
+        否则 `metric=entries` 会变成「永远不会绿的判据」—— 收紧口径 ≠ 拦掉合法输入。
+        """
+        g = _gate_module()
+        v = g.burn_down_verdict(_bd_baseline(3, codes_per_entry=2, cfg=CFG),
+                                _bd_baseline(2, codes_per_entry=2, cfg=CFG),
+                                "2026-09-18", case_files_touched=True)
         assert not v["blocking"], v["reasons"]
-        assert v["net"]["entries"] == [2, 2] and v["net"]["codes"] == [4, 3], v["net"]
+        assert v["net"]["entries"] == [3, 2] and v["net"]["codes"] == [6, 4], v["net"]
 
     def test_budget_skips_prs_that_touch_no_case_file_but_says_so(self):
         """默认口径 `scope=case_touching_prs`：不改用例的 PR 不承担每-PR 消减，但必须**说出来**。"""
@@ -1262,6 +1308,544 @@ class TestGateScriptEndToEnd:
         assert "全量对账" in r.stdout and "--prune-baseline" in r.stdout, (
             f"stdout={r.stdout[-1500:]}\nstderr={r.stderr[-800:]}"
         )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 五之三、`metric` 只许收紧（本次收紧：entries_or_codes → entries）
+# ══════════════════════════════════════════════════════════════════════════════
+
+class TestMetricOnlyTightens:
+    """`burn_down.metric` 的「只许收紧」+ 数据面锁。
+
+    病灶：`burn_down_verdict` 原实现**只**校验 `per_pr_min` / 到期日 / 优先前缀 ——
+    `metric` 维度根本没校验 ⇒ 别人可以把 `entries` **放宽回** `entries_or_codes`
+    而不被拦（= 悄悄把门槛降回去，且是一条**不会红的判据**）。
+    这里用**注入式红证**（把 base 配置改成更松 ⇒ 必须红）把这条补上。
+    """
+
+    def test_metric_cannot_be_relaxed_to_entries_or_codes(self):
+        """注入式红证：base 的 metric=entries，当前改成 entries_or_codes ⇒ **必须红**。"""
+        g = _gate_module()
+        base = _bd_baseline(3, cfg=CFG)                      # CFG.metric = entries
+        cur = _bd_baseline(3, cfg={**CFG, "metric": "entries_or_codes"})
+        v = g.burn_down_verdict(base, cur, "2026-09-18", case_files_touched=True)
+        assert v["blocking"], f"metric 被放宽回宽松档却未拦（门槛可被悄悄降回去）：{v}"
+        assert any("metric" in r and "放宽" in r for r in v["reasons"]), v["reasons"]
+
+    def test_metric_cannot_be_relaxed_to_codes(self):
+        """中间档同样不许回退（`codes` < `entries`）。"""
+        g = _gate_module()
+        v = g.burn_down_verdict(_bd_baseline(3, cfg=CFG),
+                                _bd_baseline(3, cfg={**CFG, "metric": "codes"}),
+                                "2026-09-18", case_files_touched=True)
+        assert v["blocking"], f"metric 由 entries 放宽为 codes 未拦：{v}"
+
+    def test_deleting_metric_field_is_relaxation(self):
+        """删掉 `metric` 字段 = 回落宽松默认档 ⇒ 同样算放宽（不许靠删字段回退）。"""
+        g = _gate_module()
+        cur_cfg = {k: v for k, v in CFG.items() if k != "metric"}
+        v = g.burn_down_verdict(_bd_baseline(3, cfg=CFG), _bd_baseline(3, cfg=cur_cfg),
+                                "2026-09-18", case_files_touched=True)
+        assert v["blocking"], f"删掉 metric 字段未拦（回落到宽松默认档）：{v}"
+
+    def test_unknown_metric_is_fail_closed(self):
+        """未知/拼错的口径 ⇒ 阻塞（旧实现 `dict.get(metric, max(...))` 会静默降级成最宽松）。"""
+        g = _gate_module()
+        v = g.burn_down_verdict(_bd_baseline(3, cfg={**CFG, "metric": "ENTRIES"}),
+                                _bd_baseline(3, cfg={**CFG, "metric": "ENTRIES"}),
+                                "2026-09-18", case_files_touched=True)
+        assert v["blocking"], f"未知口径未 fail-closed（写错一个字母就降门槛）：{v}"
+        assert any("不是已知口径" in r for r in v["reasons"]), v["reasons"]
+
+    def test_tightening_metric_is_allowed(self):
+        """负例（R2）：把 metric 从宽松档**收紧**（entries_or_codes → entries）不得拦。"""
+        g = _gate_module()
+        v = g.burn_down_verdict(_bd_baseline(3, cfg={**CFG, "metric": "entries_or_codes"}),
+                                _bd_baseline(3, cfg=CFG),
+                                "2026-09-18", case_files_touched=True)
+        assert not any("放宽" in r for r in v["reasons"]), (
+            f"收紧口径被当成放宽（假红）：{v['reasons']}"
+        )
+
+    def test_live_baseline_declares_the_strict_metric(self):
+        """数据面锁：生效清单必须写 `metric: entries`（防有人把口径悄悄改回宽松档）。"""
+        data = json.loads(BASELINE.read_text(encoding="utf-8"))
+        metric = data["burn_down"]["metric"]
+        assert metric == "entries", (
+            f"生效清单的口径是 {metric!r} —— 本次收紧要求 `entries`（只认整条销账）；"
+            f"放宽回 `entries_or_codes` 会让「删一个码」重新算达标"
+        )
+
+    def test_report_shows_metric_in_the_headline(self):
+        """报告必须打印生效口径（否则「按哪档判的」在报告里读不出来）。"""
+        g = _gate_module()
+        v = g.burn_down_verdict(_bd_baseline(2, cfg=CFG), _bd_baseline(2, cfg=CFG),
+                                "2026-09-18", case_files_touched=True)
+        text = g.render_report([], [], [], set(), [], budget=v)
+        assert "metric=entries" in text, text[:400]
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 五之四、未实装登记的**可执行约束**（本次收紧：字段 / 到期 / 僵尸 / 追踪单 CLOSED）
+# ══════════════════════════════════════════════════════════════════════════════
+
+class TestUnimplementedRegistrations:
+    """四条判据都要能红（R5），每条配负例（R2），且「取不到」必须长得像「取不到」。
+
+    病灶：`case-trust-unimplemented.json` 原来只有 `code/title/why_not/needs` ——
+    **没有追踪号、没有到期日、没有「怎么算已实装」** ⇒ 「未实装」可以**永久**当借口。
+    """
+
+    def _g(self):
+        return _gate_module()
+
+    def _cases(self):
+        return self._g().load_cases_from_dir()
+
+    def _ctx(self, baseline=None):
+        g = self._g()
+        bl = baseline if baseline is not None else json.loads(
+            BASELINE.read_text(encoding="utf-8"))
+        return g.unimplemented_probe_context(self._cases(), bl)
+
+    def _live_entries(self):
+        return json.loads(UNIMPLEMENTED.read_text(encoding="utf-8"))["unimplemented"]
+
+    # ── 负例：现行清单必须全绿（main 不许被自己的收紧判红）──────────────────
+    def test_live_manifest_passes_all_judgements(self):
+        v = tax.judge_unimplemented(self._live_entries(), today="2026-09-18",
+                                    probe_context=self._ctx())
+        assert v == [], f"现行未实装登记被判违规（收紧把 main 弄红了）：{v}"
+        g = self._g()
+        guard = g.judge_unimplemented_manifest(UNIMPLEMENTED, today="2026-09-18",
+                                              cases=self._cases(),
+                                              baseline=json.loads(
+                                                  BASELINE.read_text(encoding="utf-8")),
+                                              issue_check=False)
+        assert not guard["blocking"], guard
+        assert guard["sync"] == [], guard["sync"]
+
+    # ── 红证 ①：缺任一字段 ⇒ 红，并指名缺哪个 ────────────────────────────────
+    def test_missing_field_names_the_missing_field(self):
+        entries = copy.deepcopy(self._live_entries())
+        del entries[0]["issue"]
+        v = tax.judge_unimplemented(entries, today="2026-09-18", probe_context=self._ctx())
+        codes_hit = {x["code"] for x in v}
+        assert tax.UNIMPLEMENTED_VIOLATION_CODES["MISSING_FIELD"]["code"] in codes_hit, v
+        assert any("issue" in x["detail"] for x in v), (
+            f"缺字段的报错必须**指名**缺哪个：{v}"
+        )
+        # 而**完整**的那几条不得被连坐（判据要能分辨自己红在哪）
+        assert {x["entry"] for x in v} == {entries[0]["code"]}, v
+
+    def test_blank_how_to_verify_is_a_missing_field(self):
+        entries = copy.deepcopy(self._live_entries())
+        entries[0]["how_to_verify"] = "   "  # 空串/空白 = 没写（不许用空值凑数）
+        v = tax.judge_unimplemented(entries, today="2026-09-18", probe_context=self._ctx())
+        assert any(x["code"] == tax.UNIMPLEMENTED_VIOLATION_CODES["MISSING_FIELD"]["code"]
+                   and "how_to_verify" in x["detail"] for x in v), v
+
+    def test_issue_must_be_a_positive_int(self):
+        for bad in ("4045", 0, -3, True):
+            entries = copy.deepcopy(self._live_entries())
+            entries[0]["issue"] = bad
+            v = tax.judge_unimplemented(entries, today="2026-09-18",
+                                        probe_context=self._ctx())
+            assert any(x["code"] == tax.UNIMPLEMENTED_VIOLATION_CODES["MISSING_FIELD"]["code"]
+                       and "issue" in x["detail"] for x in v), (bad, v)
+
+    # ── 红证 ②：expires 已过 ⇒ 红（非法/缺失按已到期处理）────────────────────
+    def test_expired_registration_blocks(self):
+        entries = copy.deepcopy(self._live_entries())
+        entries[0]["expires"] = "2026-09-17"  # 昨天
+        v = tax.judge_unimplemented(entries, today="2026-09-18", probe_context=self._ctx())
+        assert any(x["code"] == tax.UNIMPLEMENTED_VIOLATION_CODES["EXPIRED"]["code"]
+                   for x in v), f"到期未实装未判红（可以静默续期）：{v}"
+        # 负例（R2）：到期日 = 今天之后 ⇒ 不得判红
+        entries[0]["expires"] = "2026-09-19"
+        v2 = tax.judge_unimplemented(entries, today="2026-09-18", probe_context=self._ctx())
+        assert not any(x["code"] == tax.UNIMPLEMENTED_VIOLATION_CODES["EXPIRED"]["code"]
+                       for x in v2), v2
+
+    def test_malformed_expires_is_treated_as_expired(self):
+        entries = copy.deepcopy(self._live_entries())
+        entries[0]["expires"] = "下个月"  # 乱码 = 按已到期（fail-closed）
+        v = tax.judge_unimplemented(entries, today="2026-09-18", probe_context=self._ctx())
+        assert any(x["code"] == tax.UNIMPLEMENTED_VIOLATION_CODES["EXPIRED"]["code"]
+                   for x in v), v
+        assert tax.iso_date_or_expired("2026-13-45") == "0000-00-00"
+
+    # ── 红证 ③：追踪单已 CLOSED ⇒ 红（网络格，注入 fetcher）──────────────────
+    def test_closed_issue_blocks(self):
+        g = self._g()
+        entries = copy.deepcopy(self._live_entries())
+        closed_no = entries[0]["issue"]
+        res = g.check_unimplemented_issues(entries, fetcher=lambda n: (True, "closed")
+                                           if n == closed_no else (True, "open"))
+        assert [c["entry"] for c in res["closed"]] == [entries[0]["code"]], res
+        assert res["unverifiable"] == [], res
+        # 端到端（不碰网络）：把 fetcher 注入到外壳 → blocking
+        guard = g.judge_unimplemented_manifest(
+            UNIMPLEMENTED, today="2026-09-18", cases=self._cases(),
+            baseline=json.loads(BASELINE.read_text(encoding="utf-8")),
+            fetcher=lambda n: (True, "closed") if n == closed_no else (True, "open"))
+        assert guard["blocking"], "追踪单已 CLOSED 却未阻塞（借口可以过期不销）"
+
+    def test_missing_issue_number_is_blocking_too(self):
+        """编号不存在（404 笔误）= 假借口 ⇒ 阻塞（否则 `issue: 1` 就能买永久豁免）。"""
+        g = self._g()
+        res = g.check_unimplemented_issues(self._live_entries(),
+                                          fetcher=lambda n: (True, "missing"))
+        assert len(res["closed"]) == len(self._live_entries()), res
+
+    def test_unverifiable_issue_state_is_printed_not_passed(self):
+        """三态照实读：取不到 ⇒ `unverifiable` + 报告打印「⏭️ 未跑判定 … 不是「通过」」。
+
+        **不**因此判红（网络抖动/匿名限额不该制造假红），但**也不静默** ——
+        断开网络就能绕过这条判据的口子，由「到期即红」「僵尸即红」两条零网络判据兜住。
+        """
+        g = self._g()
+        guard = g.judge_unimplemented_manifest(
+            UNIMPLEMENTED, today="2026-09-18", cases=self._cases(),
+            baseline=json.loads(BASELINE.read_text(encoding="utf-8")),
+            fetcher=lambda n: (False, "gh 未接线（夹具）"))
+        assert not guard["blocking"], guard
+        assert len(guard["unverifiable"]) == len(self._live_entries()), guard
+        text = g.render_report([], [], [], set(), guard["entries"], unimpl_guard=guard)
+        assert "⏭️ 未跑判定" in text and "不是「通过」" in text, text[-1200:]
+
+    # ── 红证 ④：僵尸登记 ⇒ 红 ───────────────────────────────────────────────
+    def test_zombie_registration_blocks(self):
+        """口径已被修好/绕开 ⇒ 登记必须撤：探不到存活证据即红（否则永久留在清单里）。"""
+        g = self._g()
+        empty_ctx = g.unimplemented_probe_context([], {})   # 空用例库 + 空清单
+        # drift 那条的口径在**别处**（`scripts/drift_audit.py`）⇒ 用「已复用统一对账」的
+        # 源码文本把它一并置为不成立（否则本用例只证了 4/5 条探针会红）
+        empty_ctx["drift_audit_source"] = "from case_trust_gate import reconcile_baseline"
+        v = tax.judge_unimplemented(self._live_entries(), today="2026-09-18",
+                                    probe_context=empty_ctx)
+        zombies = [x for x in v if x["code"] == tax.UNIMPLEMENTED_VIOLATION_CODES["ZOMBIE"]["code"]]
+        assert len(zombies) == len(self._live_entries()), (
+            f"口径全不成立时仍不判僵尸：{v}"
+        )
+        assert all("探不到任何存活证据" in x["detail"] for x in zombies), zombies
+
+    def test_unregistered_probe_is_a_zombie(self):
+        """`hit_probe` 未注册 ⇒ 僵尸（不许用「探针永远为真」凑数）。"""
+        entries = copy.deepcopy(self._live_entries())
+        entries[0]["hit_probe"] = "always_true_please"
+        v = tax.judge_unimplemented(entries, today="2026-09-18", probe_context=self._ctx())
+        assert any(x["code"] == tax.UNIMPLEMENTED_VIOLATION_CODES["ZOMBIE"]["code"]
+                   and "未注册" in x["detail"] for x in v), v
+
+    def test_every_registered_probe_can_go_empty(self):
+        """退化守卫：每条探针**在使用它的登记上**都必须能变空（否则判据不会红）。"""
+        g = self._g()
+        ctx_zombie = g.unimplemented_probe_context([], {})   # 空用例库 + 空清单
+        ctx_zombie["drift_audit_source"] = "from case_trust_gate import reconcile_baseline"
+        for item in tax.UNIMPLEMENTED:
+            probe = tax.UNIMPLEMENTED_HIT_PROBES[item["hit_probe"]]
+            assert probe(ctx_zombie) == [], (
+                f"探针 {item['hit_probe']} 在「口径不成立」的上下文里仍非空 ⇒ 它不会红"
+            )
+            assert probe(self._ctx()) != [], (
+                f"探针 {item['hit_probe']} 在现行库上为空 ⇒ 现行登记是僵尸（收紧会误红 main）"
+            )
+        # drift 探针在**读不到源码**时必须按存活处理（不许把「读不到」读成「已实装」）
+        assert tax.UNIMPLEMENTED_HIT_PROBES["drift_audit_diff_scoped_stale"](
+            {"cases": [], "baseline": {}, "drift_audit_source": None}), (
+            "读不到 drift_audit 源码时被判成僵尸 ⇒ 会凭空判红别人的包（假红）"
+        )
+
+    def test_manifest_must_match_taxonomy(self):
+        """登记清单必须与 `tax.UNIMPLEMENTED` **同源**（判据读的与人读的是一份）。"""
+        g = self._g()
+        entries = copy.deepcopy(self._live_entries())
+        entries.append({**entries[0], "code": "FAKE-CODE-FOR-RED-PROOF"})
+        issues = g.unimplemented_sync_issues(entries, tax.UNIMPLEMENTED)
+        assert issues, "清单比 taxonomy 多一条却不同源报错 ⇒ 两处口径可静默分叉"
+        assert "FAKE-CODE-FOR-RED-PROOF" in issues[0], issues
+
+    def test_live_manifest_is_in_sync_with_taxonomy(self):
+        """负例（R2）：现行两处必须同源（否则本包自己就先红了）。"""
+        g = self._g()
+        assert g.unimplemented_sync_issues(self._live_entries(), tax.UNIMPLEMENTED) == []
+
+    # ── 端到端：真跑脚本、真退出码（函数级绿 ≠ CI 绿）────────────────────────
+    def test_script_exits_1_on_missing_field_and_on_expired(self, tmp_path):
+        live = json.loads(UNIMPLEMENTED.read_text(encoding="utf-8"))
+        for i, (name, mutate, needle) in enumerate((
+            ("缺 issue", lambda e: e.pop("issue"), "issue"),
+            ("已到期", lambda e: e.update({"expires": "2026-09-17"}), "到期"),
+        )):
+            data = copy.deepcopy(live)
+            mutate(data["unimplemented"][0])
+            tmp = tmp_path / f"unimpl-{i}.json"
+            tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+            r = subprocess.run([sys.executable, str(GATE), "--base", "HEAD",
+                                "--unimplemented", str(tmp), "--no-issue-check"],
+                               capture_output=True, text=True, cwd=str(REPO_ROOT))
+            assert r.returncode == 1, (
+                f"「{name}」未让脚本 exit 1（假绿）：\nstdout={r.stdout[-1500:]}"
+            )
+            assert needle in r.stdout, f"「{name}」的报错未指名：\n{r.stdout[-1500:]}"
+        # 负例（R2）：原样清单 ⇒ 必须 exit 0（收紧不得把现行登记判红）
+        ok = subprocess.run([sys.executable, str(GATE), "--base", "HEAD",
+                             "--unimplemented", str(UNIMPLEMENTED), "--no-issue-check"],
+                            capture_output=True, text=True, cwd=str(REPO_ROOT))
+        assert ok.returncode == 0, f"现行登记被判红：\n{ok.stdout[-2000:]}"
+
+    def test_report_lists_the_contract_for_each_registration(self):
+        """报告必须打印追踪单/到期/探针/存活证据（否则「为什么说它活着」无据可查）。"""
+        g = self._g()
+        guard = g.judge_unimplemented_manifest(
+            UNIMPLEMENTED, today="2026-09-18", cases=self._cases(),
+            baseline=json.loads(BASELINE.read_text(encoding="utf-8")), issue_check=False)
+        text = g.render_report([], [], [], set(), guard["entries"], unimpl_guard=guard)
+        for item in guard["entries"]:
+            assert f"追踪单 #{item['issue']}" in text, text[-1500:]
+            assert f"到期 {item['expires']}" in text, text[-1500:]
+            assert f"僵尸判据 {item['hit_probe']}" in text, text[-1500:]
+            assert "存活证据" in text and "怎么算已实装" in text, text[-1500:]
+        # 「跑了」也要长得像「跑了」：核过 N 条全 OPEN 必须打印（否则与「压根没跑」同形）
+        guard2 = g.judge_unimplemented_manifest(
+            UNIMPLEMENTED, today="2026-09-18", cases=self._cases(),
+            baseline=json.loads(BASELINE.read_text(encoding="utf-8")),
+            fetcher=lambda n: (True, "open"))
+        text2 = g.render_report([], [], [], set(), guard2["entries"], unimpl_guard=guard2)
+        assert "追踪单状态已核" in text2 and "全部 **OPEN**" in text2, text2[-1200:]
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 五之五、对账基准与被测对象对齐（本次纠偏：没碰受管面的 PR 不背别人的 prune）
+# ══════════════════════════════════════════════════════════════════════════════
+
+class TestReconcileBaseAlignment:
+    """实测病灶（2026-09-18）：纯文档 PR 因 main 侧别人的 prune 被判「基线增长」= 假红。
+
+    复现（`docs/4041-archive`，`--base origin/main`，分支零用例/零清单改动）：
+
+    ```
+    ❌ burn-down 预算（生效配置读 base(origin/main)）：…
+       本次净变化：条目 135→135（+0），违规码 214→215（+1）
+      · 基线**增长**了 … ⇒ 新增豁免（R4）
+    ```
+
+    判据与被测对象不对齐：分支里那份 215 码的清单是**它的分叉点状态**（一个字节没改），
+    214 是 main 侧别人的 prune 结果。规则 = **未触碰受管面 ⇒ 基准取分叉点**；
+    **触碰了 ⇒ 一律按 `origin/main` 比**（一个字不松）；生效**配置**永远取 `origin/main`。
+    """
+
+    def _g(self):
+        return _gate_module()
+
+    def test_touching_managed_surface_keeps_origin_main_baseline(self):
+        """触碰用例库 / 豁免清单 ⇒ 基准仍是 `origin/main`（不许借此放宽）。"""
+        g = self._g()
+        main_base = {"violations": {"A": {"codes": ["X"]}}, "burn_down": CFG}
+        for touched in ({"cases_dir": [".github/cases/x.yml"], "case_yml": [], "baseline": []},
+                        {"cases_dir": [], "case_yml": [], "baseline":
+                         [".github/case-trust-baseline.json"]}):
+            base, name, note = g.select_reconcile_base("origin/main", touched, main_base)
+            assert base is main_base, (touched, name, note)
+            assert name == "base(origin/main)", name
+            assert "触碰了受管面" in note, note
+
+    def test_untouched_pr_compares_against_the_fork_point(self):
+        """**红证 C②（改前红 / 改后绿）**：main 侧 prune 过清单，而本 PR 一个字节没改。
+
+        · 改前：基准 = `origin/main`（被 prune 到更短）⇒ 分支那份「更大」⇒
+          net 为负 ⇒ 报「基线**增长**了 ⇒ 新增豁免（R4）」⇒ 假红；
+        · 改后：基准 = 分叉点那份（与分支自己的清单一致）⇒ net 0 ⇒ 不红。
+        """
+        g = self._g()
+        fork = _bd_baseline(4, cfg=CFG)                       # 分叉点时 4 条
+        branch = copy.deepcopy(fork)                          # 本 PR 没碰过它（照抄）
+        pruned_main = _bd_baseline(3, cfg=CFG)                # main 侧别人 prune 掉 1 条
+
+        before = g.burn_down_verdict(pruned_main, branch, "2026-09-18",
+                                     case_files_touched=False)
+        assert before["blocking"], (
+            f"夹具前提：旧口径（基准=origin/main）应当因 main 侧 prune 判红（这才是假红）：{before}"
+        )
+        assert any("增长" in r for r in before["reasons"]), before["reasons"]
+
+        after = g.burn_down_verdict(fork, branch, "2026-09-18", case_files_touched=False,
+                                    config_baseline=pruned_main,     # 配置仍读 origin/main
+                                    count_base="merge-base(deadbeef)")
+        assert not after["blocking"], f"纠偏后仍判红（假红未修）：{after['reasons']}"
+        assert after["net"]["entries"] == [4, 4] and after["net"]["codes"] == [4, 4], after["net"]
+        assert after["source"] == "base(origin/main)", (
+            f"生效配置必须仍读 origin/main（否则陈旧分支被按旧口径放行）：{after['source']}"
+        )
+
+    def test_fork_point_selection_uses_merge_base_when_untouched(self):
+        """未触碰受管面 ⇒ 真的去读 `merge-base` 那份清单（不是嘴上说说）。"""
+        g = self._g()
+        base, name, note = g.select_reconcile_base(
+            "HEAD", {"cases_dir": [], "case_yml": [], "baseline": []}, {"violations": {}})
+        assert name.startswith("merge-base("), name
+        assert "未触碰受管面" in note, note
+        assert isinstance(base, dict) and base.get("violations"), (
+            "分叉点清单没读到（返回了空/None ⇒ 判据会在空账本上静默通过）"
+        )
+
+    def test_merge_base_unavailable_falls_back_to_strict_and_says_so(self):
+        """浅克隆取不到 merge-base ⇒ **退回严格口径**并说明（fail-closed，不偷偷放宽）。"""
+        g = self._g()
+        main_base = {"violations": {"A": {"codes": ["X"]}}, "burn_down": CFG}
+        real = g.merge_base
+        g.merge_base = lambda ref: None
+        try:
+            base, name, note = g.select_reconcile_base(
+                "origin/main", {"cases_dir": [], "case_yml": [], "baseline": []}, main_base)
+        finally:
+            g.merge_base = real
+        assert base is main_base and name == "base(origin/main)", (name, note)
+        assert "取不到" in note and "fail-closed" in note, note
+
+    def test_deleting_an_entry_still_blocks_when_managed_surface_touched(self):
+        """**红证 C①（证明没放宽）**：删掉清单里「仍在违规」的条目 ⇒ 触碰受管面 ⇒ 照旧红。
+
+        这条是纠偏的**边界证明**：想靠删条目偷偷新增豁免，就必须动豁免清单
+        ⇒ 一定落在「触碰受管面」那一侧 ⇒ 基准仍是 `origin/main` ⇒ `dropped` 照样阻塞。
+        """
+        g = self._g()
+        v = tax.judge_case(fixture_pg_013(), catalog=_seed_catalog())
+        assert codes(v), "夹具前提：PG-013 当下确有违规码"
+        main_base = {"violations": {"PG-013": {"codes": sorted(codes(v))}}}
+        base, name, _ = g.select_reconcile_base(
+            "origin/main",
+            {"cases_dir": [], "case_yml": [],
+             "baseline": [".github/case-trust-baseline.json"]},   # 本 PR 删了条目 ⇒ 触碰
+            main_base)
+        assert name == "base(origin/main)"
+        recon = g.reconcile_baseline({"violations": {}}, {"PG-013": v}, base)
+        assert [d["case_id"] for d in recon["dropped"]] == ["PG-013"], recon
+        assert recon["blocking"], "删掉仍在违规的条目未被阻塞（新增豁免无门禁）"
+
+    def test_stale_and_unregistered_are_independent_of_the_base(self):
+        """`stale` / `unregistered` **与基准无关**（只用分支自己那份 + 全库重算）⇒ 不因纠偏放松。
+
+        三者分工：`stale`=记了却不再命中；`unregistered`=判出却没人记；`dropped`=记了却被删。
+        前两条与「基准是谁」无关 ⇒ 纠偏只影响 `dropped`，而后者对「没改过清单的 PR」
+        本来就**不可能**成立（它没法删掉自己没碰过的条目）。
+        """
+        g = self._g()
+        v = tax.judge_case(fixture_pg_013(), catalog=_seed_catalog())
+        baseline = {"violations": {"PG-013": {"codes": ["CASE-TRUST-NOT-A-REAL-CODE"]}}}
+        recon = g.reconcile_baseline(baseline, {"PG-013": v}, None)
+        assert recon["stale"], "陈旧条目（记的码不再命中）未被报出"
+        assert recon["unregistered"], "全库判出但清单没有的码未被报出"
+        assert recon["blocking"], "两条与基准无关的判据必须阻塞"
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 五之六、派生读数（rule_counts / violation_case_count / case_total）必须**可修好**
+# ══════════════════════════════════════════════════════════════════════════════
+
+class TestDerivedReadings:
+    """实测缺陷：`账本不自洽` 的报错指引指向 `--prune-baseline`，而它**修不好** ——
+    旧实现在「无条目可删」时直接早退（不重算派生读数）⇒ 门禁照旧红，
+    报错把人引到死路（排查 2 轮才发现该用 `--regen-baseline`）。
+
+    修法：① 报错指向真能修好的入口；② `--prune-baseline` 在只删不加通道内**同时重算派生读数**；
+    ③ 重算若会增长 ⇒ **拒绝写回**（fail-closed）。
+    """
+
+    def _g(self):
+        return _gate_module()
+
+    def _corrupt_in_memory(self) -> dict:
+        data = json.loads(BASELINE.read_text(encoding="utf-8"))
+        rc = dict(data["rule_counts"])
+        code = next(k for k, n in rc.items() if n > 0)
+        rc[code] = rc[code] + 1                     # 只改派生读数，**不动事实**
+        data["rule_counts"] = rc
+        return data
+
+    def test_integrity_blocks_on_stale_rule_counts(self):
+        """红证 D①：派生读数与事实不一致 ⇒ **阻塞**（现状已红，这里锁住它不会退化）。"""
+        g = self._g()
+        recon = g.reconcile_baseline(self._corrupt_in_memory(), {})
+        assert any("rule_counts 与 violations 不一致" in m for m in recon["integrity"]), recon
+        assert recon["blocking"], "派生读数撒谎未阻塞（假读数）"
+
+    def test_integrity_hint_points_to_a_command_that_fixes_it(self):
+        """指引必须指向**能修好**的入口，并给出兜底（否则报错把人引到死路）。"""
+        g = self._g()
+        msg = g.reconcile_baseline(self._corrupt_in_memory(), {})["integrity"][0]
+        assert g.PRUNE_COMMAND in msg, msg
+        assert "会同时重算派生读数" in msg, msg
+        assert g.REGEN_COMMAND in msg, msg
+
+    def test_prune_recomputes_derived_readings_end_to_end(self, tmp_path):
+        """红证 D②：真跑 `--prune-baseline` ⇒ **修好且不增长**（事实不变、读数归位）。"""
+        tmp = tmp_path / "baseline.json"
+        before = self._corrupt_in_memory()
+        tmp.write_text(json.dumps(before, ensure_ascii=False, indent=2), encoding="utf-8")
+        gate = [sys.executable, str(GATE), "--base", "HEAD", "--baseline", str(tmp),
+                "--no-issue-check"]
+        red = subprocess.run(gate, capture_output=True, text=True, cwd=str(REPO_ROOT))
+        assert red.returncode == 1, f"派生读数漂移未判红：\n{red.stdout[-1200:]}"
+        assert "账本不自洽" in red.stdout, red.stdout[-1200:]
+
+        fixed = subprocess.run([*gate, "--prune-baseline"], capture_output=True, text=True,
+                               cwd=str(REPO_ROOT))
+        assert fixed.returncode == 0, f"修复入口自己失败了：\n{fixed.stdout}\n{fixed.stderr}"
+        assert "已重算派生读数" in fixed.stdout, fixed.stdout
+        after = json.loads(tmp.read_text(encoding="utf-8"))
+        assert after["violations"] == before["violations"], (
+            "事实（violations）被改动了 —— 重算派生读数不得改变事实"
+        )
+        assert after["rule_counts"] == json.loads(
+            BASELINE.read_text(encoding="utf-8"))["rule_counts"], "派生读数没归位"
+        # ② 的加强版（用户裁定）：**逐键 diff 必须只落在三个纯派生字段上** ——
+        # 口径（burn_down）与账本锚点（anchor_sha）**一个字都不许动**。
+        assert after["burn_down"] == before["burn_down"], (
+            f"重算派生读数夹带了口径变化：{before['burn_down']} → {after['burn_down']}"
+        )
+        assert after["anchor_sha"] == before["anchor_sha"], (
+            f"重算派生读数夹带了锚点前移（{before['anchor_sha']} → {after['anchor_sha']}）"
+            "—— 锚点前移是独立的语义变化，必须由 --regen-baseline 显式完成并打印"
+        )
+        changed_keys = {k for k in set(before) | set(after) if before.get(k) != after.get(k)}
+        assert changed_keys <= {"rule_counts", "violation_case_count", "case_total"}, (
+            f"写回的键超出「纯派生字段」范围：{sorted(changed_keys)}"
+        )
+        assert "未改动 `burn_down` 与 `anchor_sha`" in fixed.stdout, fixed.stdout
+        green = subprocess.run(gate, capture_output=True, text=True, cwd=str(REPO_ROOT))
+        assert green.returncode == 0, f"修好后门禁仍红：\n{green.stdout[-1200:]}"
+
+    def test_prune_refuses_to_write_when_recompute_would_grow(self):
+        """红证 D③：重算若**会增长** ⇒ 拒绝写回（fail-closed；不许静默改变事实）。
+
+        为什么用纯函数注入而不是端到端：`render_pruned_baseline` 只保留「既记了、现在仍命中」
+        的码 ⇒ **构造上**不会增长。既然端到端造不出增长，就必须把守卫本身做成可注入的
+        纯函数并单独证红 —— 否则这条守卫就是「基于口头保证的护栏」。
+        """
+        g = self._g()
+        old = {"violations": {"A": {"codes": ["X"]}}, "case_total": 316}
+        grown = {"violations": {"A": {"codes": ["X"]}, "B": {"codes": ["Y"]}}, "case_total": 316}
+        assert g.derived_growth_guard(old, grown), "重算引入增长却未拒绝"
+        assert g.derived_growth_guard(
+            old, {"violations": {"A": {"codes": ["X", "Z"]}}, "case_total": 316}), "码数增长未被拒绝"
+        assert g.derived_growth_guard(
+            old, {"violations": {"A": {"codes": ["X"]}}, "case_total": 300}), (
+            "case_total 变小（= 用例被删）未被拒绝"
+        )
+        # ③ 夹带语义变化同样必须拒绝：口径被改 / 锚点被推进（都不是「重算读数」）
+        assert g.derived_growth_guard(
+            {**old, "anchor_sha": "aaa"}, {**old, "anchor_sha": "bbb"}), (
+            "anchor_sha 被推进却未拒绝（锚点前移会夹带在 chore 提交里悄悄发生）"
+        )
+        assert g.derived_growth_guard(
+            {**old, "burn_down": {"per_pr_min": 1}}, {**old, "burn_down": {"per_pr_min": 0}}), (
+            "burn_down 被改动却未拒绝"
+        )
+        # 负例（R2）：同量或收缩 ⇒ 不拦
+        assert not g.derived_growth_guard(old, old)
+        assert not g.derived_growth_guard(old, {"violations": {}, "case_total": 316})
 
 
 # ══════════════════════════════════════════════════════════════════════════════
