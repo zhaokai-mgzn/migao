@@ -65,36 +65,8 @@ exemptions:
   - pattern: "backend/ai-agent-service/app/suggestions/preference_tracker.py"
     reason: "移除 quick_reply 意图标签：已有 tests/test_preference_tracker.py + test_preference_injection.py 覆盖 INTENT_LABELS 映射。gate 模板要求 tests/test_suggestions/preference_tracker.py 命名不符"
 
-  # ── 历史分支 UI 重设计组件（#2575 随分支部署，非本次自洽性修复改动）──
-  - pattern: "frontend/admin-web/src/components/chat/CustomerPanel.tsx"
-    reason: "历史分支 UI 重设计组件（chat/dashboard/ui），本次 PR 未改其逻辑，随分支统一部署"
-  - pattern: "frontend/admin-web/src/components/chat/InteractiveMessage.tsx"
-    reason: "历史分支 UI 重设计组件（chat/dashboard/ui），本次 PR 未改其逻辑，随分支统一部署"
-  - pattern: "frontend/admin-web/src/components/chat/KnowledgeCard.tsx"
-    reason: "历史分支 UI 重设计组件（chat/dashboard/ui），本次 PR 未改其逻辑，随分支统一部署"
-  - pattern: "frontend/admin-web/src/components/chat/LogisticsCard.tsx"
-    reason: "历史分支 UI 重设计组件（chat/dashboard/ui），本次 PR 未改其逻辑，随分支统一部署"
-  - pattern: "frontend/admin-web/src/components/chat/QuickActions.tsx"
-    reason: "历史分支 UI 重设计组件（chat/dashboard/ui），本次 PR 未改其逻辑，随分支统一部署"
-  - pattern: "frontend/admin-web/src/components/chat/ToolResultCard.tsx"
-    reason: "历史分支 UI 重设计组件（chat/dashboard/ui），本次 PR 未改其逻辑，随分支统一部署"
-  - pattern: "frontend/admin-web/src/components/chat/WelcomePanel.tsx"
-    reason: "历史分支 UI 重设计组件（chat/dashboard/ui），本次 PR 未改其逻辑，随分支统一部署"
-  - pattern: "frontend/admin-web/src/components/dashboard/OrderStatusChart.tsx"
-    reason: "历史分支 UI 重设计组件（chat/dashboard/ui），本次 PR 未改其逻辑，随分支统一部署"
-  - pattern: "frontend/admin-web/src/components/dashboard/StatCard.tsx"
-    reason: "历史分支 UI 重设计组件（chat/dashboard/ui），本次 PR 未改其逻辑，随分支统一部署"
-  - pattern: "frontend/admin-web/src/components/dashboard/TrendChart.tsx"
-    reason: "历史分支 UI 重设计组件（chat/dashboard/ui），本次 PR 未改其逻辑，随分支统一部署"
-  - pattern: "frontend/admin-web/src/components/providers/AuthProvider.tsx"
-    reason: "历史分支 UI 重设计组件（chat/dashboard/ui），本次 PR 未改其逻辑，随分支统一部署"
-  - pattern: "frontend/admin-web/src/components/ui/Badge.tsx"
-    reason: "历史分支 UI 重设计组件（chat/dashboard/ui），本次 PR 未改其逻辑，随分支统一部署"
-  - pattern: "frontend/admin-web/src/components/ui/Card.tsx"
-    reason: "历史分支 UI 重设计组件（chat/dashboard/ui），本次 PR 未改其逻辑，随分支统一部署"
-  - pattern: "frontend/admin-web/src/components/ui/EmptyState.tsx"
-    reason: "历史分支 UI 重设计组件（chat/dashboard/ui），本次 PR 未改其逻辑，随分支统一部署"
-  - pattern: "frontend/admin-web/src/components/ui/FileUpload.tsx"
-    reason: "历史分支 UI 重设计组件（chat/dashboard/ui），本次 PR 未改其逻辑，随分支统一部署"
-  - pattern: "frontend/admin-web/src/components/ui/Loading.tsx"
-    reason: "历史分支 UI 重设计组件（chat/dashboard/ui），本次 PR 未改其逻辑，随分支统一部署"
+  # ── 历史分支 UI 重设计组件 break-glass（#2575）——2026-09-18 用户裁定：**整块 19 条删除** ──
+  # 被删范围（reason 统一为「#2575 随分支部署，本次未改其逻辑」）：chat 9 / dashboard 3 / ui 5 /
+  # providers 1 / ops 1。一次性授权从未过期 = 永久门票，不许留 —— 这些组件此后**按正常规则受检**：
+  # 改动即需配套 `frontend/admin-web/tests/unit/components/<Name>.test.ts(x)`，否则 QA Growth Gate 阻塞。
+  # （session-insight.ts 豁免随 main 的 24 条清理一并删除，本行仅保留裁定说明）
