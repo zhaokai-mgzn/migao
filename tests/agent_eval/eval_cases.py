@@ -4868,6 +4868,7 @@ _CASE_PR_021 = EvalCase(
     must_succeed=[{'tool': 'sku_update'}],
     output_verify=[{'tool': 'sku_update', 'expect': {'new_price': 150}}],
     post_clean=[{'type': 'sku_price_restore', 'product_keyword': '遮光窗帘', 'color_name': '米白', 'selling_method': 'bulk_cut', 'door_width': '2.8', 'price': 168}],
+    precondition=[{'type': 'product_count_for_keyword', 'source': '遮光窗帘', 'expect': 1}],
 )
 
 # ── PR-024 [NORMAL] 小布算料上限 - 定宽布买高 + 对花损耗（窗高超定高上限，必须走定宽分支并告警）（源: cases/product.yml）──

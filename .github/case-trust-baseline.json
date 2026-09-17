@@ -703,7 +703,6 @@
     },
     "PR-021": {
       "codes": [
-        "CASE-TRUST-NO-PRECONDITION-ASSERTION",
         "CASE-TRUST-NO-SELF-CLEAN"
       ]
     },

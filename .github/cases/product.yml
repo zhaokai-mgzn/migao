@@ -1262,6 +1262,16 @@ cases:
           new_price: 150
     data_checks:
       - "sku_update 真成功且价格为 150 元（= 用户确认价）：机器断言见 must_succeed（写成功）+ output_verify（new_price==150）；裸断言「调用过」不算覆盖（#3544 假绿升级）"
+    # ── 前置自断言（§18.4；同 PR-007/PR-025 的先例）──────────────────────────────
+    # 本用例**按名**定位共享夹具（"遮光窗帘"），且 `post_clean` 的复位也按名定位 ⇒
+    # 「该名字唯一」是它依赖的前置：有 2 件同名时 agent 会（正确地）要求澄清、
+    # `sku_update` 从不执行，判红成 `no_success(sku_update)`，读起来像「agent 不改价」。
+    # 前置不成立时折成 `precondition_not_applied(declared:product_count_for_keyword)`，
+    # 与行为失败分属不同根因原子（不再伪装成能力缺陷）。
+    precondition:
+      - type: product_count_for_keyword
+        source: "遮光窗帘"
+        expect: 1
     skip_reason: ""
     # ── 复位共享夹具（issue #4075 的**机制半边**：`post_clean`）──
     # 本用例改的是**共享夹具** `prod_eval_blackout`（种子「遮光窗帘」）的
