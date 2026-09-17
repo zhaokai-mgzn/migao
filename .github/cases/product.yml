@@ -342,8 +342,21 @@ cases:
       - "窗帘布艺"
       - "颜色选白色和灰色"
       - "货号用 TEST-CURTAIN-A"
-      - "确认创建"
-      - "确认创建测试窗帘A"
+      # ── 收尾两轮改**答卡轮**（issue #4042，run 35243351675 @67db87ae 归因）──
+      # 实测轨迹：R1 → agent 发 choice 卡（选分类）；R2「窗帘布艺」被认成分类 ✓，agent 随即发
+      # **加工项多选卡**；R3「颜色选白色和灰色」/ R4「货号用 TEST-CURTAIN-A」/ R5「确认创建」
+      # 三轮都是**文本**、答不上那张卡 ⇒ agent 只能反复重申「加工项还没确认，这一步不能省」；
+      # R6 才发出 confirm 卡（「确认创建商品（加工项为空，将不关联任何加工项）」）而**轮次已尽**
+      # ⇒ 卡无人点、`product_manage(action=create)` 永不执行（首跑指纹 `no_success(product_manage)`）。
+      # 静态文本对不上 LLM 动态生成的卡片列表 —— 与 OR-014/CH-010 同款（#3518 已记同一坑：
+      # 「发文字『确认』≠ 点确认卡」）。改成 `repeat_until` 协作轮（既有范式，issue #3430）：
+      # 有卡答卡（choice→首项 / 多选→「已选加工项：<首项>」= 前端点击协议、confirm→confirmValue），
+      # 目标工具已成功即跳过余轮；无卡才发 fallback（保留原「确认创建测试窗帘A」= agent 生成的
+      # confirmValue 文本兜底）。断言（expectations / must_succeed / output_verify）不受影响。
+      - repeat_until:
+          tool_called: product_manage
+          max: 3
+        fallback: "确认创建测试窗帘A"
     # 全局命名空间声明（issue #3781）：本用例**往全局商品命名空间里写**该名称，
     # 与同名商品的建/删用例自动互斥（否则会出现"同名多件"→ agent 发选择卡 → 目标工具不执行）。
     namespaces:
@@ -357,10 +370,39 @@ cases:
       - tool: interact
         args:
           component: choice
+    # ── 效果层下沉（issue #4042，LLM 红例 run 35243351675 首跑指纹
+    # `no_success(product_manage)`）──
+    # 改前本用例**零效果层断言**：唯一的产出侧痕迹是
+    # `data_checks: - "data.product_id.length > 0"` —— 它既不含机器计分关键词
+    # （`success=true` / `error.code=` / `未被调用` / `not called`）⇒ **不计分**，
+    # 又是散文（`data.product_id` 是哪次调用的 payload 无从判定）⇒ 「工具被调用过」就等于满分，
+    # 「商品真的建出来了没有」在评测里不可见（`unfailable_green` 形态）。
+    must_succeed:
+      - tool: product_manage
+        action: create
+    # 产出侧：成功调用的 payload 必须带非空 product_id（= 服务端真的建出了对象）。
+    # ⚠️ 落库层（名字/价格回读）当前 runner 的 `db_verify` 只支持
+    # `processingItemConfigs` 谓词（PR-019/PR-020 那两条），商品名/价格无 fetch ——
+    # 属能力缺口，如实登记，不假装覆盖。
+    output_verify:
+      - tool: product_manage
+        action: create
+        expect:
+          product_id: __nonempty__
+    # 自清理 + 前置自断言（#3800 / §18.4）：本用例**往全局商品命名空间里写**，
+    # 首跑残留会让重试的前置与首跑不等价（agent 正确地拒建重复 ⇒ 指纹漂移误判）。
+    # 自建名（`测试窗帘A` 全库仅本用例使用）⇒ `product_remove` 子串删除安全。
+    pre_clean:
+      - type: product_remove
+        product_keyword: "测试窗帘A"
+    precondition:
+      - type: product_count_for_keyword
+        source: "测试窗帘A"
+        expect: 0
     data_checks:
-      - "data.product_id.length > 0"
+      - "商品真的被创建（机器断言见 must_succeed[product_manage(action=create)] + output_verify 的 product_id 非空）；原 `data.product_id.length > 0` 不计分（无 success=true/error.code=/未被调用 关键词）⇒ 已弃用"
     skip_reason: ""
-    merge_log: "eval P003 + verification 2.9（同义，取 eval 版）；2026-09-09 校准：补「窗帘布艺」点分类卡轮 + 末轮回传 confirmValue「确认创建测试窗帘A」（agent 实际生成，含商品名上下文；原脚本末轮『确认创建』被 agent 理解成『发确认卡』而非『点确认卡回传』，product_manage 永不执行）"
+    merge_log: "eval P003 + verification 2.9（同义，取 eval 版）；2026-09-09 校准：补「窗帘布艺」点分类卡轮 + 末轮回传 confirmValue「确认创建测试窗帘A」（agent 实际生成，含商品名上下文；原脚本末轮『确认创建』被 agent 理解成『发确认卡』而非『点确认卡回传』，product_manage 永不执行）；2026-09-18 下沉（issue #4042）：补 must_succeed[product_manage(action=create)] + output_verify(product_id 非空)，并把不计分的散文 `data.product_id.length > 0` 弃用；补 pre_clean[product_remove 自有名] + precondition[product_count_for_keyword expect=0]（前置自断言，清掉 CASE-TRUST-NO-EFFECT-ASSERTION / CASE-TRUST-NO-PRECONDITION-ASSERTION 两条存量违规）；2026-09-18 **轮次形状修正**（issue #4042 归因）：末两轮静态文本（「确认创建」/「确认创建测试窗帘A」）答不上 agent 动态生成的**加工项多选卡**，R5/R6 全被该卡吃掉 ⇒ confirm 卡在最后一轮才发出、无人点击 ⇒ 建品永不执行（`no_success(product_manage)`，与 OR-014/CH-010 同款 #3518 坑）⇒ 末两轮改为 `repeat_until(tool_called=product_manage, max=3)` 协作轮（有卡答卡 / 无卡发原 confirmValue 文本），断言原样未动"
     traces:
       tests:
         - "backend/ai-agent-service/tests/manual/mibao_scenarios.py"
@@ -794,13 +836,29 @@ cases:
       - tool: processing_item_query
         fields:
           - applicable_category_id
+    # ── 效果层下沉（issue #4042，LLM 红例 run 35243351675 / 35071344830 首跑指纹
+    # `no_success(product_manage)`）──
+    # 改前本用例**零效果层断言**：`data_checks` 四条全是自然语义散文（不计分），
+    # 其中「最终创建成功且关联加工项数量正确」在 runner 里**没有任何一条机器判据** ——
+    # 建品失败（工具从未成功）时用例照旧能满分。
+    must_succeed:
+      - tool: product_manage
+        action: create
+    # ⚠️ 落库层（关联加工项数量）**未在此声明**：`db_verify[product_by_name]` 现只支持
+    # `processingItemConfigs.<名>.<字段><op><值>` 谓词，且「关联了哪几项」取决于 agent
+    # 当轮选择 —— 直接断言会引入新的行为口径（本轮只做"建成功"这一条无争议的效果层下沉）。
+    # 该能力缺口如实登记，不假装覆盖。
+    precondition:
+      - type: product_count_for_keyword
+        source: "E2E建品流程样品帘"
+        expect: 0
     data_checks:
       - "分类确认后加工项选择器按「适用商品分类」过滤展示（processing_item_query 携带 applicable_category_id，= 已选商品分类 ID）"
       - "适用分类为空（applicable_product_categories 为空）的加工项仍展示（= 适用所有分类），不因过滤而丢失"
       - "当前分类无匹配加工项时以文字提示可跳过，不空转强制选择"
-      - "最终创建成功且关联加工项数量正确"
+      - "最终创建成功：机器断言见 must_succeed[product_manage(action=create)]（写成功）；「关联加工项数量正确」本轮**仍无机器判据**（db_verify 只支持 processingItemConfigs 谓词），已在 merge_log 登记为能力缺口"
     skip_reason: ""
-    merge_log: "2026-09-06 新增（issue #2964）：加工项「适用商品分类」配置此前无消费方，建品流程按已选分类过滤/推荐加工项（设计意图见 docs/design/admin-dashboard-design.md §6.1.1 适用商品分类+AI推荐）。2026-09-14 校准（#3518）：收尾裸文本「确认」改答卡轮（B 端 confirm 门禁：文字≠点卡）；2026-09-15 补自清理（issue #3800，判定跑 run 34865780382 实证）：本用例建的同名商品与种子 `prod_eval_blackout`（遮光窗帘）撞名，而 `namespaces` 只保证并行互斥、不解决重试前置等价性（#3751 的复位按 pre_clean opt-in）⇒ 首跑建出的那件留到重试 ⇒ agent 正确拒绝建重复 ⇒ 指纹漂移误判 unstable（首跑指纹无 `no_success(product_manage)`、重试指纹有，即铁证）⇒ 补 `product_dedupe{遮光窗帘}`（保留最早创建 = 种子）；**不能用 product_remove**（子串删全部 ⇒ 会连种子一起删，而它是 PR-005/PR-007/CR-001/CR-003/OR-015 的共享前置）；expectations/required_args/data_checks 原样未动"
+    merge_log: "2026-09-06 新增（issue #2964）：加工项「适用商品分类」配置此前无消费方，建品流程按已选分类过滤/推荐加工项（设计意图见 docs/design/admin-dashboard-design.md §6.1.1 适用商品分类+AI推荐）。2026-09-14 校准（#3518）：收尾裸文本「确认」改答卡轮（B 端 confirm 门禁：文字≠点卡）；2026-09-15 补自清理（issue #3800，判定跑 run 34865780382 实证）：本用例建的同名商品与种子 `prod_eval_blackout`（遮光窗帘）撞名，而 `namespaces` 只保证并行互斥、不解决重试前置等价性（#3751 的复位按 pre_clean opt-in）⇒ 首跑建出的那件留到重试 ⇒ agent 正确拒绝建重复 ⇒ 指纹漂移误判 unstable（首跑指纹无 `no_success(product_manage)`、重试指纹有，即铁证）⇒ 补 `product_dedupe{遮光窗帘}`（保留最早创建 = 种子）；**不能用 product_remove**（子串删全部 ⇒ 会连种子一起删，而它是 PR-005/PR-007/CR-001/CR-003/OR-015 的共享前置）；expectations/required_args/data_checks 原样未动；2026-09-17（issue #3835）输入商品名改为**用例自有**（`E2E建品流程样品帘`）+ `pre_clean[product_remove 自有名]`（根治跨用例同名污染）；2026-09-18 下沉（issue #4042）：补 must_succeed[product_manage(action=create)] + precondition[product_count_for_keyword expect=0]（清掉 CASE-TRUST-NO-EFFECT-ASSERTION / CASE-TRUST-NO-PRECONDITION-ASSERTION 两条存量违规）；「关联加工项数量正确」仍无机器判据（db_verify 只支持 processingItemConfigs 谓词），如实登记为能力缺口"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_processing_item_query.py"
@@ -1260,8 +1318,21 @@ cases:
           - "https://ai-customer-service-admin-dev.oss-cn-hangzhou.aliyuncs.com/images/2026/09/04/e5a68d1a02f844c6a45846784765a737.jpg"
       # 收尾「答卡轮」（#3518 口径，同 PR-005/PR-017）：B 端写工具受 confirm 门禁约束，
       # 裸文本「确认」不放行写操作 → 有卡答卡（confirm→回 confirmValue），无卡才发原文。
-      - auto_respond:
-          fallback: "确认"
+      #
+      # ⚠️ 2026-09-18 修正（issue #4042，LLM 红例 run 35243351675 @67db87ae 首跑指纹
+      # `no_success(product_manage)`）：**单张答卡轮不够**。实测流程是
+      # R1「设成这张色卡图」→ agent 先发 **choice 卡**（「要设成哪种图？」：主图/详情图/…）
+      # → R2 的 `auto_respond` 被**这张 choice 卡**吃掉 → agent 在同轮发出 **confirm 卡**
+      # → 轮次表已用尽 ⇒ 确认卡**无人作答** ⇒ `product_manage(action=update)` 永不执行。
+      # 用例结构上不可满足（与 #4015「罐头输入与夹具事实矛盾」同族，只是这次的矛盾在
+      # **轮次预算**而不是数据真值）：合格 agent 走对路径也必红，且归因写成"agent 不执行写操作"。
+      # 修法按既有 `repeat_until` 范式（issue #3430，同 OR-016/OR-021/OR-029）：
+      # 目标工具已成功 ⇒ 余下轮次直接跳过；否则**有卡答卡**（choice→首项 / confirm→confirmValue），
+      # 无卡才发 fallback「确认」—— 覆盖"agent 先问哪种图"与"agent 直接发确认卡"两种路径。
+      - repeat_until:
+          tool_called: product_manage
+          max: 3
+        fallback: "确认"
     namespaces:
       - "product_name:遮光窗帘"
     expectations:
@@ -1284,8 +1355,17 @@ cases:
     pre_clean:
       - type: product_dedupe
         product_keyword: "遮光窗帘"
+    # 前置自断言（§18.4 / CASE-TRUST-NO-PRECONDITION-ASSERTION）：本用例的写对象是**共享夹具**
+    # `prod_eval_blackout`（按名定位），所以「该名字唯一」就是它依赖的前置 —— 出现第二件同名商品时
+    # agent 可能改到**别的对象**上，而红的表现会是 `unmatched expectation`（看起来像「agent 不干活」）。
+    # `product_dedupe`（pre_clean，先于 capture 执行）保证捕获时恰为 1（保留最早创建 = 种子），
+    # 故 `expect: 1` 可满足；漂移判据（默认 `max_growth: 0`）让「运行期被别人造出副本」显式化。
+    precondition:
+      - type: product_count_for_keyword
+        source: "遮光窗帘"
+        expect: 1
     skip_reason: ""
-    merge_log: "2026-09-15 新增（issue #3930/#3931 实证 sess_2efa2071bb1747d8）：设主图成功路径——同回合 agent 先错误路由 product_update(images=…)（无该参数）被静默丢弃 → 「没有要修改的字段」→ 误宣「不支持图片」；19:49 改用 product_manage(action=update, images) 成功。本用例锁定正确路径（expectations/required_args/must_succeed 三层）；db_verify 对商品 images 无 fetch（只支持 processingItemConfigs），效果层由 must_succeed 兜底，落库层缺口已登记"
+    merge_log: "2026-09-15 新增（issue #3930/#3931 实证 sess_2efa2071bb1747d8）：设主图成功路径——同回合 agent 先错误路由 product_update(images=…)（无该参数）被静默丢弃 → 「没有要修改的字段」→ 误宣「不支持图片」；19:49 改用 product_manage(action=update, images) 成功。本用例锁定正确路径（expectations/required_args/must_succeed 三层）；db_verify 对商品 images 无 fetch（只支持 processingItemConfigs），效果层由 must_succeed 兜底，落库层缺口已登记；2026-09-18 轮次预算修正（issue #4042）：收尾单张 `auto_respond` 轮被 R1 后的 **choice 卡**（「要设成哪种图？」）吃掉 ⇒ 同轮发出的 confirm 卡无人作答 ⇒ 用例**结构上不可满足**（合格 agent 也必红，首跑指纹 `no_success(product_manage)`）⇒ 改为 `repeat_until(tool_called=product_manage, max=3)` 协作轮（有卡答卡：choice→首项 / confirm→confirmValue；目标工具成功即跳过余轮）。断言（expectations / required_args / must_succeed）原样未动"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_sanitize_write_tool_guidance.py"

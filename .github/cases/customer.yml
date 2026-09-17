@@ -334,7 +334,7 @@ cases:
       - "物流类型区分 express（快递）与 logistics（物流/专线，如四季安）——POC 客户更多选物流"
       - "工艺画像与常用物流在客户详情（GET /api/admin/customers/{id}）中返回，供报价协商（M3-F）读取"
     skip_reason: ""
-    merge_log: "2026-09-17 新增（issue #3984）：M2-D 客户工艺画像与常用物流存储覆盖登记。2026-09-17（issue #4007，run 35233821582 CU-008 reproducible）：原版是**写类**期望（customer_manage(action=update)）而输入场景是查询口径 → agent 不会调 update → 期望永不满足（恒红形态）。改读类：输入改「看看客户张三的工艺偏好和常用物流」+ 期望 action=detail（读）+ must_succeed；写路径明确交回单测契约（test_tool_field_name_contract.py，case_ids 含 CU-008）"
+    merge_log: "2026-09-17 新增（issue #3984）：M2-D 客户工艺画像与常用物流存储覆盖登记。2026-09-17（issue #4007，run 35233821582 CU-008 reproducible）：原版是**写类**期望（customer_manage(action=update)）而输入场景是查询口径 → agent 不会调 update → 期望永不满足（恒红形态）。改读类：输入改「看看客户张三的工艺偏好和常用物流」+ 期望 action=detail（读）+ must_succeed；写路径明确交回单测契约（test_tool_field_name_contract.py，case_ids 含 CU-008）；2026-09-18 下沉复核（issue #4042，LLM 红例 run 35243351675 @67db87ae）：本条**已有**确定性断言（`expectations: customer_manage(action=detail)` + `must_succeed`），确定性层确实拦住并判红（首跑指纹 `no_success(customer_manage)`，2 次 run 复发）⇒ 属**产品行为缺陷**（问「客户工艺偏好/常用物流设置」时 agent 走了 order_query/logistics_track 答订单物流，没走客户档案），已另开单跟踪；断言形态不动"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tool_field_name_contract.py"

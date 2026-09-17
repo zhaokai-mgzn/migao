@@ -3224,13 +3224,14 @@ _CASE_OR_002 = EvalCase(
     difficulty=Difficulty.NORMAL,
     user_inputs=['查看待发货的订单'],
     expectations=['order_query(action=list, status=confirmed)'],
-    data_checks=['data.orders.length >= 0'],
+    data_checks=['订单列表查询必须真的返回数据（机器断言见 output_verify：orders 非空；空列表 / 未成功调用 ⇒ 判红）—— 原 `data.orders.length >= 0` 恒真且不计分，已弃用'],
     skip_reason='',
     tags=['query', 'filter'],
     persona='',
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+    output_verify=[{'tool': 'order_query', 'action': 'list', 'expect': {'orders': '__nonempty__'}}],
 )
 
 # ── OR-003 [NORMAL] 订单统计（源: cases/order.yml）──
@@ -3763,7 +3764,7 @@ _CASE_OR_029 = EvalCase(
     title='B 端「先查商品再录订单」链路 - 确认卡点击后 order_create 必须真实执行（不得 Tool not found / 空头承诺）',
     skill=Skill.ORDER,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['录订单 张三（13800138000）｜ 2699系列雪尼尔窗帘面料 · 2699-03暖米色 · 散剪 · 2.8米 · 10 米 ｜ 加工项：纳米圈打孔、韩式波浪折边、高温定型', '1. 2699系列雪尼尔窗帘面料｜¥23.8/米｜库存 1000', '{"auto_select": true}', '{"repeat_until": {"tool_called": "order_create", "max": 8}, "fallback": "确认下单", "form_values": {"customer_name": "张三", "customer_phone": "13800138000", "customer_address": "浙江省杭州市西湖区文三路1号1幢101室", "color": "2699-03暖米色", "colorName": "2699-03暖米色"}}'],
+    user_inputs=['录订单 张三（13800138000）｜ 2699系列雪尼尔窗帘面料 · 2699-03暖米色 · 散剪 · 2.8米 · 10 米 ｜ 加工项：纳米圈打孔、韩式波浪折边、高温定型', '1. 2699系列雪尼尔窗帘面料｜¥23.8/米｜库存 1000', {'auto_select': True}, {'repeat_until': {'tool_called': 'order_create', 'max': 8}, 'fallback': '确认下单', 'code': '123456', 'form_values': {'customer_name': '张三', 'customer_phone': '13800138000', 'customer_address': '浙江省杭州市西湖区文三路1号1幢101室', 'color': '2699-03暖米色', 'colorName': '2699-03暖米色'}}],
     expectations=['product_search', 'interact(component=choice)', 'product_detail', 'validate_input', 'interact(component=confirm)', 'order_create'],
     data_checks=['确认卡点击（confirmValue 逐字回传）后，order_create 必须**真实执行并落库**——不得出现 Tool not found / 空头承诺「请稍候，我这就提交」而订单永不创建', 'order_create 的 customer_phone=13800138000、items 数量=10 米、unit_price=23.8（与商品库价一致）、加工项纳米圈打孔 ¥8/米 + 韩式波浪折边 ¥12/米 + 高温定型 ¥10/米（均取自 seed 加工项目录）'],
     skip_reason='',
@@ -4473,16 +4474,20 @@ _CASE_PR_008 = EvalCase(
     title='创建商品 - 完整流程',
     skill=Skill.PRODUCT,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['创建一个窗帘，名称测试窗帘A，价格168，分类选窗帘', '窗帘布艺', '颜色选白色和灰色', '货号用 TEST-CURTAIN-A', '确认创建', '确认创建测试窗帘A'],
+    user_inputs=['创建一个窗帘，名称测试窗帘A，价格168，分类选窗帘', '窗帘布艺', '颜色选白色和灰色', '货号用 TEST-CURTAIN-A', {'repeat_until': {'tool_called': 'product_manage', 'max': 3}, 'fallback': '确认创建测试窗帘A'}],
     expectations=['product_manage(action=create)', 'validate_input', 'interact(component=choice)'],
-    data_checks=['data.product_id.length > 0'],
+    data_checks=['商品真的被创建（机器断言见 must_succeed[product_manage(action=create)] + output_verify 的 product_id 非空）；原 `data.product_id.length > 0` 不计分（无 success=true/error.code=/未被调用 关键词）⇒ 已弃用'],
     skip_reason='',
     tags=['create', 'full_flow'],
     persona='',
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+    must_succeed=[{'tool': 'product_manage', 'action': 'create'}],
+    output_verify=[{'tool': 'product_manage', 'action': 'create', 'expect': {'product_id': '__nonempty__'}}],
+    pre_clean=[{'type': 'product_remove', 'product_keyword': '测试窗帘A'}],
     namespaces=['product_name:测试窗帘A'],
+    precondition=[{'type': 'product_count_for_keyword', 'source': '测试窗帘A', 'expect': 0}],
 )
 
 # ── PR-009 [ADVERSARIAL] 商品更新 - 名称解析 ID（源: cases/product.yml）──
@@ -4626,7 +4631,7 @@ _CASE_PR_016 = EvalCase(
     difficulty=Difficulty.NORMAL,
     user_inputs=['录入这个商品，名称E2E建品流程样品帘，价格 100', '分类选窗帘', {'auto_select': True}, {'auto_fill': {'colors': '米白色', 'selling_methods': '散剪', 'sku_code': 'TEST-002'}}, '已选加工项：高温定型', '颜色米白色，货号 TEST-002', {'auto_respond': {'fallback': '确认'}}],
     expectations=['category_manage', 'processing_item_query', 'interact(component=choice, multiSelect=True)', 'validate_input', 'product_manage(action=create)'],
-    data_checks=['分类确认后加工项选择器按「适用商品分类」过滤展示（processing_item_query 携带 applicable_category_id，= 已选商品分类 ID）', '适用分类为空（applicable_product_categories 为空）的加工项仍展示（= 适用所有分类），不因过滤而丢失', '当前分类无匹配加工项时以文字提示可跳过，不空转强制选择', '最终创建成功且关联加工项数量正确'],
+    data_checks=['分类确认后加工项选择器按「适用商品分类」过滤展示（processing_item_query 携带 applicable_category_id，= 已选商品分类 ID）', '适用分类为空（applicable_product_categories 为空）的加工项仍展示（= 适用所有分类），不因过滤而丢失', '当前分类无匹配加工项时以文字提示可跳过，不空转强制选择', '最终创建成功：机器断言见 must_succeed[product_manage(action=create)]（写成功）；「关联加工项数量正确」本轮**仍无机器判据**（db_verify 只支持 processingItemConfigs 谓词），已在 merge_log 登记为能力缺口'],
     skip_reason='',
     tags=['processing_item', 'product_category', 'guided_flow', 'recommendation'],
     persona='',
@@ -4634,8 +4639,10 @@ _CASE_PR_016 = EvalCase(
     form_prefill=[],
     forbidden_card_text=[],
     required_args=[{'tool': 'processing_item_query', 'fields': ['applicable_category_id']}],
+    must_succeed=[{'tool': 'product_manage', 'action': 'create'}],
     pre_clean=[{'type': 'product_remove', 'product_keyword': 'E2E建品流程样品帘'}],
     namespaces=['product_name:E2E建品流程样品帘'],
+    precondition=[{'type': 'product_count_for_keyword', 'source': 'E2E建品流程样品帘', 'expect': 0}],
 )
 
 # ── PR-017 [NORMAL] 商品创建/更新/详情透传「退货回补库存」开关（allow_return_restock）（源: cases/product.yml）──
@@ -4787,7 +4794,7 @@ _CASE_PR_026 = EvalCase(
     title='设置商品主图 - product_manage(action=update, images) 成功路径',
     skill=Skill.PRODUCT,
     difficulty=Difficulty.NORMAL,
-    user_inputs=[{'text': '把遮光窗帘的主图设成这张色卡图', 'images': ['https://ai-customer-service-admin-dev.oss-cn-hangzhou.aliyuncs.com/images/2026/09/04/e5a68d1a02f844c6a45846784765a737.jpg']}, {'auto_respond': {'fallback': '确认'}}],
+    user_inputs=[{'text': '把遮光窗帘的主图设成这张色卡图', 'images': ['https://ai-customer-service-admin-dev.oss-cn-hangzhou.aliyuncs.com/images/2026/09/04/e5a68d1a02f844c6a45846784765a737.jpg']}, {'repeat_until': {'tool_called': 'product_manage', 'max': 3}, 'fallback': '确认'}],
     expectations=['product_manage(action=update)'],
     data_checks=['product_manage(action=update) 携带 images（色卡图 URL）且执行成功 —— 商品主图已更新（images 落库）；db_verify[product_by_name] 当前只支持 processingItemConfigs 谓词（local_runner.py），商品 images 字段落库无 fetch，属 runner 能力缺口（如实登记，未掩盖）'],
     skip_reason='',
@@ -4800,6 +4807,7 @@ _CASE_PR_026 = EvalCase(
     must_succeed=[{'tool': 'product_manage', 'action': 'update'}],
     pre_clean=[{'type': 'product_dedupe', 'product_keyword': '遮光窗帘'}],
     namespaces=['product_name:遮光窗帘'],
+    precondition=[{'type': 'product_count_for_keyword', 'source': '遮光窗帘', 'expect': 1}],
 )
 
 # ── PR-027 [NORMAL] 设主图能力不误宣 - 回复不得出现「不包含图片上传/拿不到地址」类能力否定（源: cases/product.yml）──
