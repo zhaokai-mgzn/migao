@@ -33,11 +33,35 @@ cases:
     expectations:
       - tool: product_detail
       - tool: product_search
+    # ── 「不存在的商品不得查出结果」的机器判据（issue #4099）：工具级「零成功调用」──
+    # 为什么**不是**原先那条 `error.code` 断言（恒不可满足 ⇒ 永久红，把本用例 score 上限钉在 2/3）：
+    #   ① 取值路径对不上：runner 的 error-code 断言只读**轮级** SSE error
+    #      （`check_expectation` 取 `result.get("error")`），而该字段**只在** `event: error`
+    #      （异常路径）被赋值（`send_message` 的 SSE 解析分支）；工具失败走 `event: tool_result`
+    #      ⇒ 真值恒为 None。真跑实证：adversarial run 34650006175（main @7f2665ab）逐字
+    #      「expected error not_found but got None」；
+    #   ② 取值面即便扩到工具级也取不到该值：`product_detail` 的 NOT_FOUND 分支返回的 error
+    #      文本是「商品不存在」（`app/tools/product_detail.py`），不含 NOT_FOUND 字样。
+    # 替代判据可判红：`product_detail` 一旦**成功**（= 不存在的商品被查出来了 / 工具坏了）即判红、
+    # score 归零；而「工具正常返回但 data 为空」在 product_detail 里走 success=false 分支
+    # ⇒ 不会把合法行为判红（R2）。
+    # 判别力边界（照实登记，不当成已覆盖）：本断言是**工具级全程**口径 —— 若 agent 走完引导链后
+    #   改用**另一个真实商品 id** 取详情来展示候选，那条调用确实成功，也会判红。取舍：本用例要守的
+    #   真值是「空结果不得被吞掉」，而 runner 的 `must_fail` **无轮次作用域**、`expectation` 也无
+    #   取值级否定形态 ⇒ 只能取工具级。值级口径（`args: {product_id: …}`）要求用例先用罐头输入
+    #   钉死那个不存在的 id（会改用例输入），且 agent 换个 id 就静默不匹配（另一个方向的假绿面）
+    #   —— 两者都超出本包触点（#4099 只修「这条不可满足的计分项」）。
+    must_fail:
+      - tool: product_detail
     data_checks:
-      - "error.code=NOT_FOUND"
-      - "suggestion 非空且包含 product_search"
+      # 散文、**不计分**（runner 只把含机器计分标记的 data_checks 计入评分 —— 本文件刻意**不写**
+      # 那些标记：写进去会让散文被当成机器计分项，同族假绿面见 PR-008 的 `data_checks`）。
+      - "（散文、**不计分**）suggestion 需非空且含 product_search：真实链路 product_detail 的 NOT_FOUND 分支返回「该商品 ID 在库中不存在，请改用 product_search 按商品名搜索，并把候选结果给用户确认」，确实含 product_search；但 runner **没有**「核 suggestion 内容」的能力（`check_expectation` 的 suggestion 分支只判「本轮有 error」，等于没核）⇒ 只作语义记录，**不冒充**已被断言。"
+      # ⚠️ 上一句里的 `suggestion` 一词**同时**是 `_last_round_error_verdict` 的「用例显式预期错误」
+      #    标记（expectations/data_checks 含 error 码或 suggestion 时，最后轮 SSE error 不判失败）
+      #    —— 保留是**有意**的：本用例前提就是「查不到」，删掉它会新增一个与 #4099 无关的判红面。
     skip_reason: ""
-    merge_log: "eval E001 + verification 8.1（同义）"
+    merge_log: "eval E001 + verification 8.1（同义）；2026-09-18 #4099：删掉恒不可满足的 `error.code` 断言（只读轮级 SSE error，工具失败走 tool_result，真值恒 None）+ 原 suggestion 条目改为「散文、不计分」，真值改由 must_fail[product_detail] 承载（可判红：查出来即红）"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_product_detail.py"

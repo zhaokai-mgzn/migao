@@ -854,13 +854,14 @@ _CASE_CH_001 = EvalCase(
     difficulty=Difficulty.ADVERSARIAL,
     user_inputs=['查看不存在的商品详情'],
     expectations=['product_detail', 'product_search'],
-    data_checks=['error.code=NOT_FOUND', 'suggestion 非空且包含 product_search'],
+    data_checks=['（散文、**不计分**）suggestion 需非空且含 product_search：真实链路 product_detail 的 NOT_FOUND 分支返回「该商品 ID 在库中不存在，请改用 product_search 按商品名搜索，并把候选结果给用户确认」，确实含 product_search；但 runner **没有**「核 suggestion 内容」的能力（`check_expectation` 的 suggestion 分支只判「本轮有 error」，等于没核）⇒ 只作语义记录，**不冒充**已被断言。'],
     skip_reason='',
     tags=['error', 'suggestion', 'adversarial'],
     persona='mibao',
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+    must_fail=[{'tool': 'product_detail'}],
 )
 
 # ── CH-002 [ADVERSARIAL] 创建中途取消（escape hatch - 域关键词触发）（源: cases/chat.yml）──
