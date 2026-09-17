@@ -5,6 +5,7 @@ AI 智能客服系统 - Tool 注册器
 支持通过 contextvars 注入 ToolContext，让 LangChain Tool 能够调用实际的业务逻辑。
 """
 
+import asyncio
 import json
 import time
 import contextvars
@@ -14,7 +15,7 @@ from pydantic import BaseModel, Field, create_model
 
 from app.tools.base import BaseTool, ToolContext, ToolResult
 from app.tools.langchain_adapter import LangChainToolAdapter
-from app.utils.http_client import AdminApiClient
+from app.utils.http_client import AdminApiClient, get_admin_api_client
 from app.utils.log_sanitizer import LogSanitizer
 
 # 全局 ToolContext，用于在 LangChain Tool 执行时传递上下文
@@ -31,6 +32,86 @@ def set_tool_context(context: ToolContext) -> None:
 def get_tool_context() -> Optional[ToolContext]:
     """获取当前请求的 Tool 执行上下文"""
     return _current_tool_context.get()
+
+
+# ── 写操作审计落库（issue #4039）────────────────────────────────────────────
+# 为什么走 HTTP 而不是直连 DB：本仓架构契约 = 工具层一律经 admin-api 访问数据
+# （ai-agent-service 不持有 DB 凭据/租户会话上下文），审计表 audit_logs 在 admin-api 侧。
+# 端点路径以**字面量**写在调用点（`tests/test_tool_payload_backend_contract.py` 的
+# 「payload 调用点必须静态归属到端点」门禁要求可静态渲染，常量会让调用点脱离射程）。
+# audit_logs.resource_type：把「AI 工具写操作」与人工表单审计（product/order/briefing_config 等）区分开
+_WRITE_AUDIT_RESOURCE_TYPE = "agent_tool"
+# 审计上报的硬上限（秒）：http_client 默认 25s ⇒ admin-api 挂住会把写路径一起拖住。
+# fail-open 只有在**有界**时才有意义：宁可丢一行审计，也不能让商户等 25s 才下完单。
+_WRITE_AUDIT_TIMEOUT_S = 3.0
+
+
+def desensitize_params(params: Dict[str, Any]) -> Dict[str, str]:
+    """参数脱敏（PII 纪律**单点实现**）：只保留字段名与类型占位，绝不带真实值。
+
+    手机号/地址/姓名等真实值一旦进日志或 `audit_logs.action_details`，就是不可撤销的
+    PII 泄露（多租户 SaaS 的合规问题）。故这里是唯一实现，调用方不得各写一份。
+    """
+    return {k: f"<{type(v).__name__}>" for k, v in (params or {}).items()}
+
+
+async def audit_write_tool(
+    tool_name: str,
+    context: ToolContext,
+    params: Dict[str, Any],
+    success: bool,
+    duration_ms: float,
+) -> bool:
+    """把一次写工具调用落进 admin-api 的 audit_logs（成功/失败/异常都必须留痕）。
+
+    Args:
+        tool_name: 工具名 → `audit_logs.action`
+        context: 执行上下文；`tenant_id`/`user_id` 经请求头透传（**不放 body**：
+            服务端以认证上下文为准，body 无从伪造身份）
+        params: **原始**参数 —— 本函数内部脱敏，调用方无从漏脱敏
+        success: 执行是否成功（`success=false` 同样落库：尝试过但失败也要可追溯）
+        duration_ms: 耗时（毫秒）
+
+    Returns:
+        bool: 是否落库成功。False ⇒ 已打 `[AUDIT] PERSIST_FAILED` 警告（可观测），
+        但**不阻断**业务写操作 —— 审计不是业务护栏，端点故障时宁可丢审计行也不能让
+        商户下不了单（fail-open；若产品要求 fail-closed 需另行裁定）。
+    """
+    try:
+        client = get_admin_api_client()
+        resp = await asyncio.wait_for(
+            client.post(
+                "/api/admin/agent/audit-logs",
+                json_data={
+                    "action": tool_name,
+                    "resourceType": _WRITE_AUDIT_RESOURCE_TYPE,
+                    "actionDetails": {
+                        "params": desensitize_params(params),
+                        "success": success,
+                        "durationMs": round(duration_ms, 1),
+                        "role": context.role,
+                        "sessionId": context.session_id,
+                    },
+                },
+                tenant_id=context.tenant_id,
+                user_id=context.user_id,
+            ),
+            timeout=_WRITE_AUDIT_TIMEOUT_S,
+        )
+        if not (isinstance(resp, dict) and resp.get("success") is True):
+            raise RuntimeError(f"audit endpoint rejected: {resp}")
+        return True
+    except Exception as e:
+        # ⚠️ 本 except 自身绝不能再抛（fail-open 的最后一道）：`context` 可能是 None
+        # （既有单测 `_execute_tool_safe(tool, args, None, state)` 就是这种形态），
+        # 直接取属性会让「审计失败」升级成「工具执行失败」。
+        logger.warning(
+            f"[AUDIT] PERSIST_FAILED tool={tool_name} "
+            f"tenant={getattr(context, 'tenant_id', None)} "
+            f"user={getattr(context, 'user_id', None)} error={type(e).__name__}: {e} | "
+            f"suggestion=检查 admin-api 存活与 POST /api/admin/agent/audit-logs 的 Service Token/租户上下文"
+        )
+        return False
 
 
 class ToolRegistry:
@@ -279,7 +360,7 @@ class ToolRegistry:
         # 参数脱敏：仅记录结构化字段名，不记录值（避免 phone/address/name 等 PII 入日志）
         is_write = not tool.read_only
         if is_write:
-            safe_params = {k: f"<{type(v).__name__}>" for k, v in kwargs.items()}
+            safe_params = desensitize_params(kwargs)
             logger.info(
                 f"[AUDIT] WRITE tool={name} "
                 f"tenant={context.tenant_id} user={context.user_id} "
@@ -287,9 +368,9 @@ class ToolRegistry:
                 f"params={json.dumps(safe_params, ensure_ascii=False)}"
             )
 
+        start = time.time()
         try:
             logger.info(f"[tool-registry] Executing: {name} | tenant={context.tenant_id}")
-            start = time.time()
             result = await tool.execute(context, **kwargs)
             duration_ms = (time.time() - start) * 1000
             status = "OK" if result.success else "FAIL"
@@ -299,6 +380,8 @@ class ToolRegistry:
                     f"tenant={context.tenant_id} user={context.user_id} "
                     f"success={result.success} duration={duration_ms:.1f}ms"
                 )
+                # 落库（issue #4039）：此前审计只进 loguru ⇒ audit_logs 0 行、写操作不可追溯
+                await audit_write_tool(name, context, kwargs, result.success, duration_ms)
             else:
                 logger.info(f"[tool-registry] Completed: {name} | success={result.success} duration={duration_ms:.1f}ms | tenant={context.tenant_id}")
             return result
@@ -308,6 +391,9 @@ class ToolRegistry:
                 f"[tool-registry] Failed: {name} | tenant={context.tenant_id} error={type(e).__name__}: {e}",
                 exc_info=True,
             )
+            if is_write:
+                # 异常路径同样留痕（否则「尝试过但失败」不可追溯）
+                await audit_write_tool(name, context, kwargs, False, (time.time() - start) * 1000)
             # 返回泛化错误，不暴露内部细节
             return ToolResult(
                 success=False,
