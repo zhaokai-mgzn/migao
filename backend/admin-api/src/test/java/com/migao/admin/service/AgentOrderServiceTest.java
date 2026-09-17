@@ -157,16 +157,24 @@ class AgentOrderServiceTest {
         }
 
         @Test
-        @DisplayName("取价校验：skuCode 可解析且单价一致 → 成功（M3）")
+        @DisplayName("取价校验：skuCode 可解析且单价一致 → 成功（M3；#4090 后库存校验也真的跑，故 SKU 必须有库存）")
         void priceMatchBySkuCode() {
             AgentOrderCreateRequest req = buildPriceReq("SKU-001", null, new BigDecimal("150"), null);
-            when(productSkuMapper.selectList(any(LambdaQueryWrapper.class)))
-                    .thenReturn(List.of(ProductSku.builder().id(1L).price(new BigDecimal("150")).build()));
+            // issue #4090：processingInfo 声明了 skuCode（SKU 身份）⇒ 服务端**真的**会定位到 SKU
+            // 并执行库存校验 —— mock 的 SKU 行必须带库存，否则「0 库存被拒」才是正确行为（不是回归）；
+            // 定位到的 SKU 在库存校验里走 selectById，故一并 stub。
+            ProductSku sku = ProductSku.builder()
+                    .id(1L).productId("p-001").skuCode("SKU-001")
+                    .price(new BigDecimal("150")).stock(10)
+                    .build();
+            when(productSkuMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(sku));
+            when(productSkuMapper.selectById(1L)).thenReturn(sku);
             mockOrderInsert();
 
             OrderDetailResponse result = orderService.createOrderForAgent(req, 1L);
             assertThat(result).isNotNull();
-            verify(productSkuMapper).selectList(any(LambdaQueryWrapper.class));
+            // 取价校验 + 库存键族匹配各查一次（同一 processingInfo 键族）
+            verify(productSkuMapper, atLeastOnce()).selectList(any(LambdaQueryWrapper.class));
         }
 
         @Test
@@ -174,13 +182,21 @@ class AgentOrderServiceTest {
         void priceMatchFromProcessingInfo() {
             AgentOrderCreateRequest req = buildPriceReq(null, null, new BigDecimal("150"),
                     Map.of("colorName", "白色"));
-            when(productSkuMapper.selectList(any(LambdaQueryWrapper.class)))
-                    .thenReturn(List.of(ProductSku.builder().id(1L).price(new BigDecimal("150")).build()));
+            // issue #4090：声明了 SKU 身份的明细现在**真的**会定位到 SKU ⇒ 库存校验会真的执行，
+            // mock 的 SKU 行必须与声明一致且**有库存**（0 库存被拒才是正确行为，不是回归）；
+            // 而定位到的 SKU 在库存校验里走 selectById，故一并 stub。
+            ProductSku sku = ProductSku.builder()
+                    .id(1L).productId("p-001").colorName("白色")
+                    .price(new BigDecimal("150")).stock(10)
+                    .build();
+            when(productSkuMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(sku));
+            when(productSkuMapper.selectById(1L)).thenReturn(sku);
             mockOrderInsert();
 
             OrderDetailResponse result = orderService.createOrderForAgent(req, 1L);
             assertThat(result).isNotNull();
-            verify(productSkuMapper).selectList(any(LambdaQueryWrapper.class));
+            // 取价校验 + 库存匹配各查一次（同一键族，两次都读 processingInfo）
+            verify(productSkuMapper, atLeastOnce()).selectList(any(LambdaQueryWrapper.class));
         }
 
         @Test
@@ -197,28 +213,39 @@ class AgentOrderServiceTest {
         }
 
         @Test
-        @DisplayName("取价校验：SKU 无法解析 → 不拦截（防误伤）")
-        void priceUnresolvableSkips() {
+        @DisplayName("取价校验：SKU 无法解析 → 取价仍不拦截（fail-open 不变），但库存路径必须显式拒绝（#4090）")
+        void priceUnresolvableSkipsThenStockPathRejects() {
             AgentOrderCreateRequest req = buildPriceReq("SKU-NOPE", null, new BigDecimal("999"), null);
             when(productSkuMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
-            mockOrderInsert();
 
-            OrderDetailResponse result = orderService.createOrderForAgent(req, 1L);
-            assertThat(result).isNotNull();
+            // 行为变更（issue #4090，**不是放宽而是收紧**）：明细声明了 SKU 身份（skuCode=SKU-NOPE）
+            // 却在库中定位不到 ⇒ 库存路径 **fail-closed 显式拒绝**（修前是静默跳过：订单成交但
+            // 库存不动、销量不涨、台账无行）。取价校验的 fail-open（防误伤）语义保持不变 ——
+            // 拒绝话术来自库存判据，不是「单价与系统价格不一致」。
+            assertThatThrownBy(() -> orderService.createOrderForAgent(req, 1L))
+                    .isInstanceOf(BusinessException.class)
+                    .hasMessageContaining("无法定位到 SKU")
+                    .hasMessageContaining("skuCode=SKU-NOPE")
+                    .hasMessageNotContaining("单价与系统价格不一致");
+            verify(orderMapper, never()).insert(any(Order.class));
         }
 
         @Test
-        @DisplayName("取价校验：SKU 歧义（命中多条）→ 不拦截")
-        void priceAmbiguousSkips() {
+        @DisplayName("取价校验：SKU 歧义（命中多条）→ 取价仍不拦截，但库存无法唯一定位必须显式拒绝（#4090）")
+        void priceAmbiguousSkipsThenStockPathRejects() {
             AgentOrderCreateRequest req = buildPriceReq(null, "白色", new BigDecimal("150"), null);
             when(productSkuMapper.selectList(any(LambdaQueryWrapper.class)))
                     .thenReturn(List.of(
                             ProductSku.builder().id(1L).price(new BigDecimal("150")).build(),
                             ProductSku.builder().id(2L).price(new BigDecimal("180")).build()));
-            mockOrderInsert();
 
-            OrderDetailResponse result = orderService.createOrderForAgent(req, 1L);
-            assertThat(result).isNotNull();
+            // 行为变更（issue #4090）：命中多行 ⇒ 无法唯一确定该扣哪个 SKU ⇒ 显式拒绝，
+            // 而不是「取第一条」或「静默跳过」（任取一条会扣错 SKU 的库存，比拒绝更糟）。
+            assertThatThrownBy(() -> orderService.createOrderForAgent(req, 1L))
+                    .isInstanceOf(BusinessException.class)
+                    .hasMessageContaining("无法定位到 SKU")
+                    .hasMessageContaining("colorName=白色");
+            verify(orderMapper, never()).insert(any(Order.class));
         }
 
         // ============ 参数范围闸门（issue #3622：负数量/负单价不得落库） ============

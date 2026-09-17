@@ -1012,11 +1012,11 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
     }
 
     /**
-     * 校验订单明细对应的 SKU 库存是否充足（按 processingInfo 匹配 SKU）。
-     * 无匹配 SKU 的明细不校验（对应无 SKU 扣减）。
+     * 校验订单明细对应的 SKU 库存是否充足（按 processingInfo 匹配 SKU，判据见 {@link #matchSkuId}）。
+     * 未声明 SKU 身份的明细不校验（对应无 SKU 扣减）；声明了身份却定位不到 ⇒ 显式拒绝。
      *
      * @param order       订单（已落库，明细从 order_item 表加载）
-     * @throws BusinessException 库存不足时抛出业务异常
+     * @throws BusinessException 库存不足、或规格无法定位到 SKU 时抛出业务异常
      */
     private void validateStockSufficient(Order order) {
         if (order == null || order.getId() == null) {
@@ -1051,19 +1051,22 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
     }
 
     /**
-     * 核心库存校验：遍历明细，按 processingInfo 匹配 SKU 并校验库存充足。
-     * 无匹配 SKU 的明细不校验（对应无 SKU 扣减，与确认支付/扣减语义一致）。
+     * 核心库存校验：遍历明细，按 processingInfo 匹配 SKU（单一判据 {@link #matchSkuId}）并校验库存充足。
+     * 未声明 SKU 身份的明细不校验（对应无 SKU 扣减，与确认支付/扣减语义一致）；
+     * 声明了身份却定位不到 ⇒ 显式拒绝（fail-closed，issue #4090）。
      *
      * @param items      订单明细（已落库的 OrderItem 或下单请求构造的草稿明细均可）
      * @param actionLabel 动作文案（如「下单」/「确认支付」），用于错误提示
-     * @throws BusinessException 库存不足时抛出业务异常
+     * @throws BusinessException 库存不足、或规格无法定位到 SKU 时抛出业务异常
      */
     private void validateStockSufficientForItems(List<OrderItem> items, String actionLabel) {
         if (items == null) {
             return;
         }
         for (OrderItem item : items) {
-            Long skuId = matchSkuId(item);
+            // 单一判据（issue #4090）：null 的唯一含义 = 该明细未声明 SKU 身份（合法，无 SKU 级库存）；
+            // 声明了身份却定位不到 ⇒ matchSkuId 直接抛（可行动话术），不在这里静默 continue
+            Long skuId = matchSkuId(item, actionLabel);
             if (skuId == null || item.getQuantity() == null) {
                 continue;
             }
@@ -1428,11 +1431,14 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
     }
 
     /**
-     * 从 OrderItem 的 processingInfo 中匹配 SKU 并扣减库存（issue #4137：并落订单腿台账行）
+     * 从 OrderItem 的 processingInfo 中匹配 SKU 并扣减库存（issue #4137：并落订单腿台账行）。
+     *
+     * <p>判据见 {@link #matchSkuId}：{@code null} 只可能是「未声明 SKU 身份」；
+     * 声明了却定位不到会直接抛，不会静默跳过（issue #4090）——即「库存/销量/台账三者同生共死」。</p>
      */
     @SuppressWarnings("unchecked")
     private void deductSkuStock(OrderItem item, Order order, String ledgerReason) {
-        Long skuId = matchSkuId(item);
+        Long skuId = matchSkuId(item, "确认支付");
         if (skuId != null && item.getQuantity() != null) {
             // 台账：变更前快照（只记真实变化，故快照必须取在写库之前）
             Map<Long, ProductSku> stockBefore = snapshotForLedger(ledgerReason, item.getProductId());
@@ -1444,10 +1450,12 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
     }
 
     /**
-     * 从 OrderItem 的 processingInfo 中匹配 SKU 并恢复库存（issue #4137：并落订单腿台账行）
+     * 从 OrderItem 的 processingInfo 中匹配 SKU 并恢复库存（issue #4137：并落订单腿台账行）。
+     *
+     * <p>与扣减侧同一判据 {@link #matchSkuId}（issue #4090）。</p>
      */
     private void restoreSkuStock(OrderItem item, Order order, String ledgerReason) {
-        Long skuId = matchSkuId(item);
+        Long skuId = matchSkuId(item, "取消回补");
         if (skuId != null && item.getQuantity() != null) {
             Map<Long, ProductSku> stockBefore = snapshotForLedger(ledgerReason, item.getProductId());
             // issue #3666：库存/销量列是整数，取整数部分（与库存校验同一口径）
@@ -1481,74 +1489,179 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
     }
 
     /**
-     * 根据 OrderItem 的 processingInfo 匹配对应的 SKU ID
-     * processingInfo 格式: { "colorId": N, "sellingMethod": "...", "doorWidth": "...", "skuId": N, ... }
+     * 库存路径的<b>单一判据</b>（issue #4090）：该明细是否声明了 SKU 身份、能否定位到 SKU。
      *
-     * <p>口径统一（issue #3621）：processingInfo 由 agent / 前端写入，售卖方式是中文标签
-     * （{@code 散剪}）、门幅带单位（{@code 2.8米}），而库内是枚举（{@code bulk_cut}）
-     * 与裸数值（{@code 2.8}）。旧回退分支字面 {@code eq} 必然 0 行命中，而两个调用点都是
-     * {@code if (skuId != null)} —— 静默跳过 → 取消订单不回补库存、销量不记（账实不符）。
-     * 现：① 复用 {@link SkuNotation} 同一套归一化口径（不新增第二套映射）；
-     * ② 陈旧 skuId 先校验存在性，不存在则回退组合匹配（防主键漂移后 update 命中 0 行的静默失败）；
-     * ③ 明细**带 SKU 标识但匹配不到**时不再静默，留 WARN（含后果说明）。
-     * 明细完全不带 SKU 规格信息时保持既有设计（无 SKU 级库存调整），不告警。
+     * <p>processingInfo 键族：{@code { "skuId": N, "skuCode": "...", "colorId": N,
+     * "colorName": "...", "sellingMethod": "...", "doorWidth": "...", ... }}。
+     * <b>三种结果，只有一种允许「不做 SKU 级库存调整」</b>：</p>
+     * <ul>
+     *   <li>{@code null} —— 明细<b>没有声明 SKU 身份键</b>（{@code skuId/skuCode/colorId/colorName}
+     *       全空）：该明细没有「选了哪个 SKU」的语义（只带加工项 / 售卖方式 / 门幅也是本仓合法形态，
+     *       见 {@code OrderQuantityDecimalTest} 的真实 fixture），故不做 SKU 级库存调整
+     *       （商品级销量照记）。这是<b>唯一</b>合法的跳过 —— 库存校验 / 扣减 / 销量 / 回补四处
+     *       都只按这一条判据分支，不再各写一套「有没有规格」的判断；</li>
+     *   <li>{@code skuId} —— 唯一定位到 SKU（四处都按它走）；</li>
+     *   <li>{@link BusinessException} —— 声明了 SKU 身份却<b>定位不到</b>：显式失败 + 可行动
+     *       suggestion（声明了哪些键、该补什么），<b>不再静默跳过</b>。</li>
+     * </ul>
+     *
+     * <p><b>为什么「定位不到」必须显式失败（issue #4090 实证）</b>：库存校验 / 扣减 / 销量三处
+     * 都写成 {@code if (skuId != null)}，而匹配原先只认 <b>ID 族</b>（{@code skuId}，或
+     * {@code colorId+sellingMethod+doorWidth}）；唯一生产者 ai-agent（{@code order_create}）
+     * 只能产出<b>字符串族</b>（{@code skuCode/colorName/sellingMethod/doorWidth} ——
+     * {@code product_detail._format_skus} 既不给 {@code color_id} 也不给 {@code skuId}）
+     * ⇒ 键族不相交 ⇒ 三处同时静默跳过：顾客下单成功、SKU 库存不动、销量不涨、无任何失败
+     * （可超卖、账实不符、线上不可归因）。修法两步：① 判定**能读字符串族**
+     * （{@code product_skus.sku_code / color_name} 就是同一行上的原值）；② 仍然定位不到时
+     * **显式拒绝**而不是放行。</p>
+     *
+     * <p>口径统一（issue #3621 沿用）：售卖方式中文标签（{@code 散剪}）与带单位门幅
+     * （{@code 2.8米}）用 {@link SkuNotation} 同一套归一化比较，只归一化<b>匹配比较</b>、
+     * 不回写库内值；陈旧 {@code skuId} 先校验存在性，不存在则回退键族匹配（防主键漂移后
+     * update 命中 0 行的静默失败）。</p>
+     *
+     * @param actionLabel 动作文案（「下单」/「确认支付」/「取消回补」），用于错误提示
      */
     @SuppressWarnings("unchecked")
-    private Long matchSkuId(OrderItem item) {
+    private Long matchSkuId(OrderItem item, String actionLabel) {
         if (item.getProductId() == null) return null;
 
         Object processingInfo = item.getProcessingInfo();
-        if (processingInfo instanceof Map) {
-            Map<String, Object> info = (Map<String, Object>) processingInfo;
+        if (!(processingInfo instanceof Map)) return null;
+        Map<String, Object> info = (Map<String, Object>) processingInfo;
 
-            Object skuIdObj = info.get("skuId");
-            Object colorIdObj = info.get("colorId");
-            Object sellingMethod = info.get("sellingMethod");
-            Object doorWidth = info.get("doorWidth");
+        Long skuId = toSkuKey(info.get("skuId"), "skuId", item);
+        String skuCode = toSkuText(info.get("skuCode"));
+        Long colorId = toSkuKey(info.get("colorId"), "colorId", item);
+        String colorName = toSkuText(info.get("colorName"));
+        String sellingMethod = toSkuText(info.get("sellingMethod"));
+        String doorWidth = toSkuText(info.get("doorWidth"));
 
-            // 明细不带任何 SKU 规格信息 → 无 SKU 级库存调整（与 validateStockSufficientForItems 注释一致）
-            if (skuIdObj == null && colorIdObj == null && sellingMethod == null && doorWidth == null) {
-                return null;
+        // 未声明任何 SKU 身份键 → 无 SKU 级库存调整（唯一合法的跳过）
+        if (skuId == null && skuCode == null && colorId == null && colorName == null) {
+            return null;
+        }
+
+        // ① skuId 直查（ID 族最精确）：存在性 + 归属同商品 —— 主键漂移（agent 重建路径可能
+        //    「删旧行 + 插新行」）后拿着陈旧 id 直接返回，会让扣减/回补 update 命中 0 行且完全静默
+        if (skuId != null) {
+            ProductSku byId = productSkuMapper.selectById(skuId);
+            if (byId != null && belongsToProduct(byId, item.getProductId())) {
+                return byId.getId();
             }
+            log.warn("matchSkuId: processingInfo.skuId 不可用（库中不存在或不属于该商品），改走键族回退, action={}, orderId={}, productId={}, skuId={}",
+                    actionLabel, item.getOrderId(), item.getProductId(), skuId);
+        }
 
-            // 优先使用 skuId（如果前端传了）；先校验存在性 —— 主键漂移（agent 重建路径可能
-            // 「删旧行 + 插新行」）后拿着陈旧 id 直接返回，会让扣减/回补 update 命中 0 行且完全静默
-            if (skuIdObj != null) {
-                try {
-                    Long skuId = Long.valueOf(skuIdObj.toString());
-                    if (productSkuMapper.selectById(skuId) != null) {
-                        return skuId;
-                    }
-                    log.warn("matchSkuId: processingInfo.skuId 在库中已不存在（主键漂移），改走组合回退, orderId={}, productId={}, skuId={}",
-                            item.getOrderId(), item.getProductId(), skuId);
-                } catch (NumberFormatException e) {
-                    log.warn("matchSkuId: skuId 格式错误, orderId={}, productId={}, skuId={}",
-                            item.getOrderId(), item.getProductId(), skuIdObj);
-                }
-            }
-
-            // 回退：通过 colorId + sellingMethod + doorWidth 匹配（与建品/调价同一套归一化口径）
-            if (colorIdObj == null || sellingMethod == null || doorWidth == null) {
-                log.warn("matchSkuId: 明细带 SKU 标识但组合字段不全（需 colorId+sellingMethod+doorWidth），无法定位 SKU → 该明细库存不回补、销量不记, orderId={}, productId={}, colorId={}, sellingMethod={}, doorWidth={}",
-                        item.getOrderId(), item.getProductId(), colorIdObj, sellingMethod, doorWidth);
-                return null;
-            }
-            try {
-                Long colorId = Long.valueOf(colorIdObj.toString());
-                ProductSku sku = findSkuByCombination(item.getProductId(), colorId,
-                        sellingMethod.toString(), doorWidth.toString());
-                if (sku == null) {
-                    log.warn("matchSkuId: 按组合（含门幅/售卖方式归一化）未匹配到 SKU → 该明细库存不回补、销量不记, orderId={}, productId={}, colorId={}, sellingMethod={}, doorWidth={}",
-                            item.getOrderId(), item.getProductId(), colorId, sellingMethod, doorWidth);
-                    return null;
-                }
-                return sku.getId();
-            } catch (NumberFormatException e) {
-                log.warn("matchSkuId: colorId 格式错误, orderId={}, productId={}, colorId={}",
-                        item.getOrderId(), item.getProductId(), colorIdObj);
+        // ② ID 族组合回退（#3621 既有口径，不动）：colorId + 售卖方式 + 门幅
+        if (colorId != null && sellingMethod != null && doorWidth != null) {
+            ProductSku byCombination = findSkuByCombination(item.getProductId(), colorId,
+                    sellingMethod, doorWidth);
+            if (byCombination != null) {
+                return byCombination.getId();
             }
         }
-        return null;
+
+        // ③ 字符串族（issue #4090 新增）：skuCode / colorName(+colorId) + 已声明属性键 ——
+        //    唯一生产者 ai-agent 只能产出这一族，此前它必然落进 ④（静默跳过）
+        ProductSku byKeyFamily = findSkuByKeyFamily(item.getProductId(), skuCode, colorId, colorName,
+                sellingMethod, doorWidth);
+        if (byKeyFamily != null) {
+            return byKeyFamily.getId();
+        }
+
+        // ④ 声明了 SKU 身份却定位不到（含命中多行无法唯一确定）⇒ 显式失败，可行动 suggestion
+        log.warn("matchSkuId: 声明了 SKU 身份但键族定位不到（未命中或多行歧义）→ 显式拒绝该动作（不静默跳过）, action={}, orderId={}, productId={}, {}",
+                actionLabel, item.getOrderId(), item.getProductId(),
+                describeDeclaredSpec(skuCode, colorId, colorName, sellingMethod, doorWidth));
+        throw BusinessException.validationError(String.format(
+                "商品「%s」的本次规格无法定位到 SKU（%s）：已声明 %s。"
+                        + "无法确定该行对应哪个 SKU，故**拒绝**而不是放行（放行会造成「订单成交但库存不动、销量不涨」）。"
+                        + "请用 product_detail 返回的 skus[] 原值核对规格（sku_code / color_name / selling_method / door_width），"
+                        + "或直接传 skuId（skus[].id）后重试。",
+                item.getProductName() != null ? item.getProductName() : item.getProductId(),
+                actionLabel,
+                describeDeclaredSpec(skuCode, colorId, colorName, sellingMethod, doorWidth)));
+    }
+
+    /**
+     * 字符串族定位（issue #4090）：{@code skuCode} 精确匹配；{@code colorName/colorId} +
+     * 已声明的售卖方式（归一化）/门幅（双侧归一化）组合匹配。
+     *
+     * <p>命中必须<b>唯一</b>：多行命中意味着「规格不足以唯一确定 SKU」（如只给了颜色、该颜色下
+     * 有多个门幅），此时返回 null 交由调用方显式拒绝 —— 任取一条会扣错 SKU 的库存，比拒绝更糟。</p>
+     *
+     * @return 唯一命中的 SKU；0 行或多行命中返回 null（调用方负责告警与拒绝）
+     */
+    private ProductSku findSkuByKeyFamily(String productId, String skuCode, Long colorId, String colorName,
+                                          String sellingMethod, String doorWidth) {
+        if (skuCode == null && colorId == null && colorName == null) {
+            return null;
+        }
+        LambdaQueryWrapper<ProductSku> wrapper = new LambdaQueryWrapper<ProductSku>()
+                .eq(ProductSku::getProductId, productId)
+                .eq(skuCode != null, ProductSku::getSkuCode, skuCode)
+                .eq(colorId != null, ProductSku::getColorId, colorId)
+                .eq(colorName != null, ProductSku::getColorName, colorName)
+                .eq(sellingMethod != null, ProductSku::getSellingMethod,
+                        SkuNotation.normalizeSellingMethod(sellingMethod))
+                .orderByAsc(ProductSku::getId);
+        List<ProductSku> rows = productSkuMapper.selectList(wrapper);
+
+        ProductSku found = null;
+        int hits = 0;
+        for (ProductSku row : rows == null ? List.<ProductSku>of() : rows) {
+            // 门幅双侧归一化比较（库内 2.8 与明细 2.8米 同一物理门幅；2.8 vs 3.2 不等）
+            if (doorWidth != null && !SkuNotation.sameDoorWidth(row.getDoorWidth(), doorWidth)) {
+                continue;
+            }
+            if (found == null) {
+                found = row;
+            }
+            hits++;
+        }
+        if (hits > 1) {
+            log.warn("matchSkuId: 规格不足以唯一定位 SKU（{} 行命中）→ 交由调用方显式拒绝, productId={}, skuCode={}, colorId={}, colorName={}, sellingMethod={}, doorWidth={}",
+                    hits, productId, skuCode, colorId, colorName, sellingMethod, doorWidth);
+            return null;
+        }
+        return found;
+    }
+
+    /** 该 SKU 是否属于本明细的商品（库内 product_id 为空的历史行不据此排除）。 */
+    private boolean belongsToProduct(ProductSku sku, String productId) {
+        return sku.getProductId() == null || sku.getProductId().equals(productId);
+    }
+
+    /** 规格键取值：非空文本去首尾空白；空串/空白视为未声明。 */
+    private String toSkuText(Object raw) {
+        if (raw == null) return null;
+        String text = raw.toString().trim();
+        return text.isEmpty() ? null : text;
+    }
+
+    /** 规格键取值：数字键（skuId/colorId）解析失败时留 WARN 并视为未声明（不静默）。 */
+    private Long toSkuKey(Object raw, String key, OrderItem item) {
+        if (raw == null) return null;
+        try {
+            return Long.valueOf(raw.toString().trim());
+        } catch (NumberFormatException e) {
+            log.warn("matchSkuId: {} 格式错误（非数字，视为未声明）, orderId={}, productId={}, value={}",
+                    key, item.getOrderId(), item.getProductId(), raw);
+            return null;
+        }
+    }
+
+    /** 已声明的规格键描述（错误话术/告警用：说清「缺哪个键、该补什么」的依据）。 */
+    private String describeDeclaredSpec(String skuCode, Long colorId, String colorName,
+                                        String sellingMethod, String doorWidth) {
+        List<String> parts = new ArrayList<>();
+        if (skuCode != null) parts.add("skuCode=" + skuCode);
+        if (colorId != null) parts.add("colorId=" + colorId);
+        if (colorName != null) parts.add("colorName=" + colorName);
+        if (sellingMethod != null) parts.add("sellingMethod=" + sellingMethod);
+        if (doorWidth != null) parts.add("doorWidth=" + doorWidth);
+        return String.join(", ", parts);
     }
 
     // ======================== Agent BFF 方法 ========================
