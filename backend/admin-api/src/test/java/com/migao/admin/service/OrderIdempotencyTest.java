@@ -5,6 +5,7 @@ package com.migao.admin.service;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
+import com.migao.admin.dto.OrderCreateRequest;
 import com.migao.admin.dto.OrderDetailResponse;
 import com.migao.admin.dto.agent.AgentOrderCreateRequest;
 import com.migao.admin.entity.Order;
@@ -216,10 +217,12 @@ class OrderIdempotencyTest {
         req.setCustomerName("张三");
         req.setCustomerPhone("13800001111");
         req.setClientRequestId(clientRequestId);
-        AgentOrderCreateRequest.AgentOrderItem item = new AgentOrderCreateRequest.AgentOrderItem();
+        OrderCreateRequest.OrderItemRequest item = new OrderCreateRequest.OrderItemRequest();
         item.setProductName("遮光窗帘");
         item.setQuantity(BigDecimal.valueOf(2));
         item.setUnitPrice(new BigDecimal("150"));
+        // subtotal 必填（issue #4089 收敛：共享类型 @NotNull；本用例锁幂等语义，给它一个自洽值）
+        item.setSubtotal(new BigDecimal("300.00"));
         req.setItems(List.of(item));
         return req;
     }

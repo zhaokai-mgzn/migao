@@ -39,13 +39,12 @@ public class AgentOrderController {
     /**
      * Agent 专用创建订单。
      * POST /api/admin/agent/orders
-     * subtotal 服务端按 quantity × unitPrice 强制重算。
      *
-     * `@Valid`（issue #3622）：让 `AgentOrderCreateRequest.AgentOrderItem` 上的
-     * `@NotNull/@Positive` **真的执行** —— 修复前该端点无 `@Valid`，负数量/负单价一路落库
-     * （负金额 + 库存校验对负需求恒真 → 超卖防线被绕过）。校验失败由
-     * `GlobalExceptionHandler` 统一返回 422 VALIDATION_ERROR（与表单路径
-     * `/api/admin/orders` 同口径）；Service 层另有显式判定兜住绕过 HTTP 的调用方。
+     * <p>`@Valid`（issue #3622，收敛于 #4089）：请求类型 {@link AgentOrderCreateRequest} 是表单路径
+     * {@code OrderCreateRequest} 的**子类型**（只多一个幂等键），故两条路径共用同一组 Bean Validation
+     * 约束与同一条文案 —— 这里是真的执行点，Service 不再手工 {@code new} 一个 DTO 再判一遍
+     * （那正是「校验双写」）。校验失败由 {@code GlobalExceptionHandler} 统一返回 422
+     * VALIDATION_ERROR（与表单路径 `/api/admin/orders` 同口径）。</p>
      *
      * <p>幂等键（issue #4037）：请求头 {@code X-Client-Request-Id} 透传到
      * {@link AgentOrderCreateRequest#getClientRequestId()}，由
