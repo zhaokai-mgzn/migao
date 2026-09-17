@@ -13,7 +13,7 @@
 
 | ID | 形态 | 后果（为什么静默） | 当前状态 |
 |---|---|---|---|
-| **F5** | dict 字面量**重复键**（P2 开发中亲自踩到：`employee_manage` 出现两个键，后者**吃掉**前者，**零报错**） | Python 语义就是「后者胜」⇒ 被吃掉的规则块**人间蒸发**，闸门对那批 action 退化成「无规则」（A4 前=假绿放行，A4 后=fail-closed 拒绝合法调用）。**运行时 dict 看不出来**（键只有一个），只有 **AST** 能看见 | 当前**无**重复键（已修）⇒ 守卫绿；注入重复键必红 |
+| **F5** | dict 字面量**重复键**（P2 开发中亲自踩到：`employee_manage` 出现两个键，后者**吃掉**前者，**零报错**） | Python 语义就是「后者胜」⇒ 被吃掉的规则块**人间蒸发**，闸门对那批 action 退化成「无规则」（A4 前=假绿放行，A4 后=fail-closed 拒绝合法调用）。**运行时 dict 看不出来**（键只有一个），只有 **AST** 能看见。判据按 **AST 结构同一性**认键 ⇒ 字符串键（`"employee_manage"`）与枚举成员键（`INTENT_TOOL_MAP` 的 `IntentType.ORDER_QUERY`）一并覆盖 | 当前**无**重复键（已修）⇒ 守卫绿；注入重复键必红 |
 | **F6** | 缺全域不变式「注册表里每个写 action 必须有规则」 | P2 把 A4 的写路径缺口补全后**没有留下任何门**：下次新增写工具/写 action 又忘补规则 ⇒ 要么假绿（旧语义）要么拦住合法调用，**没有任何测试会红** | 当前**绿**（P2 补齐 + 本文件把「无参写 action」显式验成 fail-closed） |
 | **F8** | `required` 与**工具 schema** 之间无一致性检查 | 规则写错字段名（schema 里不存在）⇒ 闸门永远要求一个模型给不出的参数；规则**漏**掉工具 schema 的必填 ⇒ 闸门放行注定 422 的调用。两种都**照样返回 `validated=True`** | 当前**绿**（逐条核对过，见 `test_rule_fields_exist_in_tool_schema` / `test_tool_required_fields_are_gated`） |
 
@@ -114,14 +114,23 @@ def validation_rules_literal() -> ast.Dict:
 # ──────────────────────────────────────────────────────────────────────────────
 
 
+def _key_label(key_node: ast.expr) -> str:
+    """重复键的可读标签：常量字符串直接给值，其余给源码文本（如 `IntentType.ORDER_QUERY`）。"""
+    if isinstance(key_node, ast.Constant) and isinstance(key_node.value, str):
+        return key_node.value
+    return ast.unparse(key_node)
+
+
 def duplicate_literal_keys(node: ast.AST) -> list[tuple[int, str]]:
-    """递归找出字典**字面量**里的重复常量键 ⇒ `[(行号, key), …]`（按行号排序）。
+    """递归找出字典**字面量**里的重复键 ⇒ `[(行号, key), …]`（按行号排序）。
 
     行号 = **重复出现的那一次**（第二次及以后）所在行 —— 直接指向要删/要合并的那一行，
     而不是字典字面量的起始行（后者在多行规则块里指不到地方）。
 
-    只认常量**字符串**键：`**spread`（AST 里 key 为 `None`）与计算键（如 `f(k)`）
-    静态判不了「是否重复」，**不参与**本文的判据（也不误报）—— 那类遮蔽是另一个信号。
+    键的「相同」按 **AST 结构同一性**判（`ast.dump`），因此覆盖三类字面量键：
+    字符串常量（`"employee_manage"`）、枚举成员（`IntentType.ORDER_QUERY` —— `INTENT_TOOL_MAP`
+    就是这么写的，同样会被 Python 静默折叠）、以及可辨识的表达式。
+    **`**spread`（AST 里 key 为 `None`）不是键**，不参与判据（也不误报）。
     """
     dups: list[tuple[int, str]] = []
     for sub in ast.walk(node):
@@ -129,11 +138,12 @@ def duplicate_literal_keys(node: ast.AST) -> list[tuple[int, str]]:
             continue
         seen: set[str] = set()
         for key_node in sub.keys:
-            if not (isinstance(key_node, ast.Constant) and isinstance(key_node.value, str)):
+            if key_node is None:  # `**spread`：不是键
                 continue
-            if key_node.value in seen:
-                dups.append((key_node.lineno, key_node.value))
-            seen.add(key_node.value)
+            identity = ast.dump(key_node)
+            if identity in seen:
+                dups.append((key_node.lineno, _key_label(key_node)))
+            seen.add(identity)
     return sorted(dups)
 
 
@@ -220,14 +230,30 @@ class TestDuplicateKeyDetectorIsNotVacuous:
         )
 
     def test_detector_stays_quiet_on_unique_keys_and_spreads(self):
-        """负例：键唯一 + `**spread` + 计算键 ⇒ **必须不报**（防恒红，R2）。"""
+        """负例：键唯一 + `**spread` + 计算键各自唯一 ⇒ **必须不报**（防恒红，R2）。"""
         src = (
             'BASE = {}\n'
-            f'{RULES_NAME} = {{**BASE, "a": {{**BASE, "x": {{"type": str}}}}, f("k"): 1}}'
+            f'{RULES_NAME} = {{**BASE, "a": {{**BASE, "x": {{"type": str}}}}, f("k"): 1, f("j"): 2}}'
         )
         assert duplicate_literal_keys(ast.parse(src)) == [], (
-            "检测器对**合法**字面量误红（展开/计算键不是重复键）"
+            "检测器对**合法**字面量误红（展开/两个不同的计算键都不是重复键）"
         )
+
+    def test_detector_catches_an_enum_member_key_duplicate(self):
+        """枚举成员键（`INTENT_TOOL_MAP` 的形态）同样会被 Python 静默折叠 ⇒ 必须报出。
+
+        这一类最容易被忽略：键不是字符串而是 `IntentType.X`，肉眼更像「不同写法」，
+        但 AST 结构同一 ⇒ 同一键 ⇒ 后者胜。`app/router/intent_config.py` 的
+        `INTENT_TOOL_MAP` 是现存实例（当前无重复，本用例把它纳入判据面）。
+        """
+        src = (
+            'INTENT_TOOL_MAP = {\n'
+            '    IntentType.ORDER_QUERY: ["order_query"],\n'
+            '    IntentType.LOGISTICS_TRACK: ["logistics_track"],\n'
+            '    IntentType.ORDER_QUERY: ["order_query", "order_manage"],\n'
+            '}'
+        )
+        assert duplicate_literal_keys(ast.parse(src)) == [(4, "IntentType.ORDER_QUERY")]
 
 
 # ──────────────────────────────────────────────────────────────────────────────
