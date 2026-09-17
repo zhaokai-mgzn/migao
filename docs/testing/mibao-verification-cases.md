@@ -2841,7 +2841,7 @@
 真值: ai-chat.intent-tool-map
 溯源: 2026-09-17 新增（issue #3993）：M4-G-1 生产模块确定性核心覆盖登记，单测覆盖 ｜ tags: processing, production, piecework
 
-## processing-order（17 case）
+## processing-order（18 case）
 
 ### PG-001. 生成加工单 - 已确认含加工项订单 → 加工单生成 + 订单进入 producing 🔵
 ```
@@ -3034,6 +3034,19 @@
 必须: {'any_of': ['后台', '订单详情']}
 ```
 溯源: 2026-09-15 新增（issue #3917）：B 端概念区分用例（加工单工具关闭后的行为守护）。断言组合：expectations=[direct_reply]（该轮零工具调用 —— 目录替代形态必调 processing_item_query，加工单形态必调 processing_order_*）+ forbidden_tools（跨轮全程禁用 4 工具，调用即违规）+ want_text（含「加工单」+「后台/订单详情」引导）+ forbidden_text（R1 轮次作用域 any_of，禁目录特征词）+ success=true（计分）。persona: mibao（B 端专属，缺省会触发另一腿「禁止静默少跑」，#3822）。 ｜ tags: processing_order, llm_behavior, concept_distinction, product_decision
+
+### PG-018. 生产报工闭环——扫码报工→进度推进→必完工序自动完工→计件 🔵
+```
+数据: success=true
+数据: 实例化：POST /api/admin/production/orders/{orderId}/instantiate 按部位写入 processing_position_operations（seq/应做数量 qty/快照单价 unit_price/系数 factor/必完标记 is_must_finish），并把 32 位 qr_token 落库到 processing_orders.qr_token；重复实例化复用同一 token（已打印二维码不失效）且旧实例软删（deleted=1）
+数据: 报工三态：POST /api/admin/production/orders/{orderId}/operations/{operationId}/report 落 production_work_logs（报工人/工序名快照/报工数量/合格数量/work_type）；仅 work_type=normal 且 qualified_qty>0 才累加 done_qty 并置 status=done，rework 返工 / scrap 报废既不累加进度也不计件
+数据: 必完完工：全部 is_must_finish 工序满足 done_qty ≥ qty 时，订单 status producing → completed（条件原子更新，order_completed=true）；订单已非 producing 时更新 0 行、order_completed=false，必完工序未全绿不完工
+数据: 计件：GET /api/admin/production/orders/{orderId}/piecework = Σ(合格数量 × 单价 × 系数)，排除返工/报废；单工序一人制（per_worker 按报工人归集、per_operation 按工序归集）
+数据: 租户隔离与软删：订单/工序实例/报工记录均按 tenant_id + deleted=0 过滤；跨租户订单或不属于该订单加工单的工序 → 404，且不落报工明细
+数据: Agent 冻结契约（并行包消费）：GET /api/admin/agent/production/progress?order_no= 返回键集固定 {order_no,status,status_text,progress_percent,current_operation,pending_operations,total_operations,done_operations,expected_delivery_date}；GET /piecework?worker_name=&period=YYYY-MM 返回 {worker_name,period,total,details:[{operation,qty,amount}]}（缺键/改名即红）
+跳过: 后端契约用例（写路径无 LLM 环节，不进 agent-eval 冒烟）：断言全部由 Java 单测执行 —— ProductionControllerTest / AgentProductionControllerTest（MockMvc，含返回键集冻结断言）/ ProductionServiceTest（服务层语义）/ Mapper 契约测试（实体 ↔ V49 迁移 ↔ docs/sql/schema.sql 三源收敛）/ ProductionReportingMigrationTest（迁移与 qr_token 索引）
+```
+溯源: 2026-09-17 新增（issue #3995，M4-G-2）：生产报工后端落地 —— V49 迁移（production_operations / production_routings / processing_position_operations / production_work_logs + processing_orders.qr_token）、ProductionService（实例化/扫码报工/必完自动完工/计件/进度）、ProductionController 与 AgentProductionController（冻结契约）。语义与 M4-G-1 确定性核心（app/production/{routing,piecework}.py，issue #3993）同口径：报工三态、必完工序全绿判定、计件排除返工/报废。 ｜ tags: processing-order, production-reporting, piecework, scan-report
 
 ## 商品域（25 case）
 
@@ -4169,8 +4182,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：307（活跃 153，跳过 154）
-- tier 分布：smoke 9 / normal 265 / adversarial 33
+- 用例总数：308（活跃 153，跳过 155）
+- tier 分布：smoke 9 / normal 266 / adversarial 33
 - 售后域：9
 - agents：6
 - api：19
@@ -4189,7 +4202,7 @@
 - ontology：4
 - 订单域：28
 - 加工项域：10
-- processing-order：17
+- processing-order：18
 - 商品域：25
 - registry：1
 - 设置域：9
@@ -4241,6 +4254,7 @@
 - PG-015: 米宝加工单 LLM 行为：查询加工单（生成 → 按订单号回查状态）
 - PG-016: 米宝加工单 LLM 行为：更新加工单状态（完成加工，产出核到 completed）
 - PG-017: 米宝加工单概念区分：用户问加工单 → 不调加工项/加工单工具，解释概念并引导后台（#3917）
+- PG-018: 生产报工闭环——扫码报工→进度推进→必完工序自动完工→计件
 - PP-007: 米宝加工项 LLM 行为：只改单价不清空其它字段（部分更新语义）
 - PP-008: 米宝加工项 LLM 行为：停用加工项（toggle_item_status → inactive）
 - PP-009: 米宝加工项 LLM 行为：per_area 按面积算价（calculate_price 下发 dimensions，不双计）
