@@ -22,7 +22,6 @@ import re
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
 from app.tools.base import BaseTool, ToolContext, ToolResult
@@ -300,8 +299,6 @@ class TestProcessingDeclineVocabulary:
         """行为面：顾客只说「不用」⇒ confirm 卡**不得**被改写成加工项卡（不重问）。"""
         from app.graph.skills.base_skill import _plan_processing_items_rewrite
 
-        items = [{"id": "pi1", "name": "打孔", "unitPrice": 8.0, "unit": "米",
-                  "pricingMethod": "per_meter"}]
         confirm = ({"name": "interact", "args": {}, "id": "x"},
                    '{"success": true, "data": {"component": "confirm", "fields": []}}',
                    {"success": True, "data": {"component": "confirm", "fields": []}})
