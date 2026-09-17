@@ -1,3 +1,4 @@
+// case_ids: RG-001
 package com.migao.admin.service;
 
 import com.migao.admin.dto.PageResponse;
@@ -8,6 +9,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -19,7 +21,10 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
 /**
- * AuditLogService 单元测试
+ * AuditLogService 单元测试。
+ *
+ * 字段语义（issue #4071 裁定 ①）：{@code action} = 动作**动词**，
+ * 工具名另置 {@code tool_name}（迁移 V52）—— 本文件锁定该映射真的落到实体上。
  */
 @ExtendWith(MockitoExtension.class)
 @DisplayName("AuditLogService 审计日志服务测试")
@@ -37,10 +42,27 @@ class AuditLogServiceTest {
         when(auditLogMapper.insert(any(AuditLog.class))).thenReturn(1);
 
         auditLogService.recordLog(1L, "user-1", "admin",
-                "login", "user", "user-1", "管理员",
+                "login", "user", null, "user-1", "管理员",
                 "details", "127.0.0.1", "Mozilla/5.0");
 
         verify(auditLogMapper).insert(any(AuditLog.class));
+    }
+
+    @Test
+    @DisplayName("recordLog — action 落动词、toolName 落工具名（两者分列，不混）")
+    void recordLog_keepsActionAndToolNameSeparate() {
+        when(auditLogMapper.insert(any(AuditLog.class))).thenReturn(1);
+
+        auditLogService.recordLog(1L, "u-1", null,
+                "update_status", "agent_tool", "order_manage", null, null,
+                null, null, null);
+
+        ArgumentCaptor<AuditLog> captor = ArgumentCaptor.forClass(AuditLog.class);
+        verify(auditLogMapper).insert(captor.capture());
+        AuditLog row = captor.getValue();
+        assertThat(row.getAction()).isEqualTo("update_status");
+        assertThat(row.getToolName()).isEqualTo("order_manage");
+        assertThat(row.getAction()).isNotEqualTo(row.getToolName());
     }
 
     @Test
@@ -49,7 +71,7 @@ class AuditLogServiceTest {
         when(auditLogMapper.insert(any(AuditLog.class))).thenReturn(1);
 
         auditLogService.recordLog(1L, "user-1", "admin",
-                "update", "product", "prod-1", "商品A");
+                "update", "product", null, "prod-1", "商品A");
 
         verify(auditLogMapper).insert(any(AuditLog.class));
     }

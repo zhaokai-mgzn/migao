@@ -33,8 +33,10 @@ public class AuditLogService extends ServiceImpl<AuditLogMapper, AuditLog> {
      * @param tenantId     租户ID
      * @param userId       操作人ID
      * @param userName     操作人名称
-     * @param action       操作类型（create/update/delete/login/logout/assign等）
-     * @param resourceType 资源类型（product/order/ticket/ai_config/employee等）
+     * @param action       动作**动词**（create/update/delete/login/logout/assign/confirm_payment等；
+     *                     issue #4071 裁定 ①：**不含工具名**）
+     * @param resourceType 资源类型（product/order/ticket/ai_config/employee/agent_tool等）
+     * @param toolName     AI 工具名（仅 resourceType=agent_tool 有值；人工审计传 null）
      * @param resourceId   资源ID
      * @param resourceName 资源名称
      * @param details      操作详情
@@ -42,7 +44,7 @@ public class AuditLogService extends ServiceImpl<AuditLogMapper, AuditLog> {
      * @param userAgent    User-Agent
      */
     public void recordLog(Long tenantId, String userId, String userName,
-                          String action, String resourceType, String resourceId,
+                          String action, String resourceType, String toolName, String resourceId,
                           String resourceName, Object details,
                           String ipAddress, String userAgent) {
         AuditLog auditLog = AuditLog.builder()
@@ -51,6 +53,7 @@ public class AuditLogService extends ServiceImpl<AuditLogMapper, AuditLog> {
                 .userName(userName)
                 .action(action)
                 .resourceType(resourceType)
+                .toolName(toolName)
                 .resourceId(resourceId)
                 .resourceName(resourceName)
                 .actionDetails(details)
@@ -59,7 +62,8 @@ public class AuditLogService extends ServiceImpl<AuditLogMapper, AuditLog> {
                 .build();
 
         auditLogMapper.insert(auditLog);
-        log.debug("记录审计日志: action={}, resourceType={}, resourceId={}", action, resourceType, resourceId);
+        log.debug("记录审计日志: action={}, resourceType={}, toolName={}, resourceId={}",
+                action, resourceType, toolName, resourceId);
     }
 
     /**
@@ -67,11 +71,11 @@ public class AuditLogService extends ServiceImpl<AuditLogMapper, AuditLog> {
      */
     @Async
     public void recordLogAsync(Long tenantId, String userId, String userName,
-                               String action, String resourceType, String resourceId,
+                               String action, String resourceType, String toolName, String resourceId,
                                String resourceName, Object details,
                                String ipAddress, String userAgent) {
         try {
-            recordLog(tenantId, userId, userName, action, resourceType,
+            recordLog(tenantId, userId, userName, action, resourceType, toolName,
                     resourceId, resourceName, details, ipAddress, userAgent);
         } catch (Exception e) {
             log.error("异步记录审计日志失败: action={}, resourceType={}, resourceId={}",
@@ -85,15 +89,16 @@ public class AuditLogService extends ServiceImpl<AuditLogMapper, AuditLog> {
      * @param tenantId     租户ID
      * @param userId       操作人ID
      * @param userName     操作人名称
-     * @param action       操作类型
+     * @param action       动作**动词**
      * @param resourceType 资源类型
+     * @param toolName     AI 工具名（人工审计传 null）
      * @param resourceId   资源ID
      * @param resourceName 资源名称
      */
     public void recordLog(Long tenantId, String userId, String userName,
-                          String action, String resourceType,
+                          String action, String resourceType, String toolName,
                           String resourceId, String resourceName) {
-        recordLog(tenantId, userId, userName, action, resourceType,
+        recordLog(tenantId, userId, userName, action, resourceType, toolName,
                 resourceId, resourceName, null, null, null);
     }
 

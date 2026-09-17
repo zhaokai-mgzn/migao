@@ -75,7 +75,57 @@ def get_tool_scope() -> Optional[frozenset]:
 _WRITE_AUDIT_RESOURCE_TYPE = "agent_tool"
 # 审计上报的硬上限（秒）：http_client 默认 25s ⇒ admin-api 挂住会把写路径一起拖住。
 # fail-open 只有在**有界**时才有意义：宁可丢一行审计，也不能让商户等 25s 才下完单。
+# ⚠️ 口径由 issue #4071 裁定为**保持有界 fail-open**（不做 fail-closed：后者会新增一条业务写
+# 失败面，且与「审计是旁路」的既有口径冲突）。本常量即「有界」的可判定判据（红证见
+# tests/test_write_audit_action_semantics.py）。
 _WRITE_AUDIT_TIMEOUT_S = 3.0
+
+# ── `audit_logs.action` 的语义 = **动词**（issue #4071 裁定 ①）────────────────
+# 现状病灶：`action` 里放**工具名** + `resource_type='agent_tool'` ⇒ **同一列两种语义**，
+# 查询/报表侧必须知道「action 的含义取决于 resource_type」这条隐式规则 ——
+# 正是本仓库反复批判的「同一概念两个来源」形态。
+# 收敛后：`action` 只放动作（create/update/delete/toggle_status/confirm_payment…），
+# 工具名另置 `audit_logs.tool_name`（迁移 V52）。
+#
+# 动作来源两档（**顺序固定**，不得颠倒）：
+#   ① 工具调用的 `action` 参数 —— 权威（它就是本次调用的动作语义）；
+#   ② 无 `action` 参数的工具 ⇒ 查下表兜底。**禁止用工具名当动词**（本条的全部分量所在）。
+# 下表是**显式映射**：工具集里 read_only=False 且无 `action` 参数的工具必须逐条在此登记，
+# 漏登记 ⇒ tests/test_write_audit_action_semantics.py 红（该测试按源码解析工具集，与实现单一源比对）。
+_NO_ACTION_PARAM_TOOL_ACTION: Dict[str, str] = {
+    # 单一动作工具（自身即「做什么」）
+    "order_create": "create",
+    "aftersale_create": "create",
+    "product_update": "update",
+    "sku_update": "update",
+    # human_handoff 建的是**投诉工单**（description：「自动创建投诉工单 → 通知管理员」）
+    "human_handoff": "create",
+    # processing_order_generate 语义是「批量生成加工单」（description【语义】），
+    # 不是 create —— 与 processing_item_manage 的 create_processing_item 区分开
+    "processing_order_generate": "generate",
+}
+
+
+# 派生不出动作时的 `action` 落库哨兵（**不是**工具名，也不是合法动词）——只为不违反 NOT NULL。
+_UNMAPPED_ACTION_SENTINEL = "(unmapped)"
+
+
+def derive_audit_action(tool_name: str, params: Optional[Dict[str, Any]]) -> Optional[str]:
+    """派生本次写调用的**动作动词**（`audit_logs.action`，issue #4071 裁定 ①）。
+
+    ① 工具调用的 `action` 参数优先（如 order_manage 的 confirm_payment / employee_manage 的
+       toggle_status）—— 它就是动作语义本身；
+    ② 无 `action` 参数的工具查 `_NO_ACTION_PARAM_TOOL_ACTION`。
+
+    两档都取不到 ⇒ 返回 `None`（**绝不回退成工具名**：那正是本函数要消灭的形态）。
+    调用方 `audit_write_tool` 对该形态打 `[AUDIT] ACTION_UNMAPPED`（可观测），
+    `action` 落哨兵值以免违反 `audit_logs.action NOT NULL`；
+    「哪个工具漏登记」由 `tests/test_write_audit_action_semantics.py` 在 L0 层拦下。
+    """
+    raw = (params or {}).get("action")
+    if isinstance(raw, str) and raw.strip():
+        return raw.strip()
+    return _NO_ACTION_PARAM_TOOL_ACTION.get(tool_name)
 
 
 def desensitize_params(params: Dict[str, Any]) -> Dict[str, str]:
@@ -97,27 +147,45 @@ async def audit_write_tool(
     """把一次写工具调用落进 admin-api 的 audit_logs（成功/失败/异常都必须留痕）。
 
     Args:
-        tool_name: 工具名 → `audit_logs.action`
+        tool_name: 工具名 → `audit_logs.tool_name`（**不再**进 `action`，issue #4071 裁定 ①）
         context: 执行上下文；`tenant_id`/`user_id` 经请求头透传（**不放 body**：
             服务端以认证上下文为准，body 无从伪造身份）
-        params: **原始**参数 —— 本函数内部脱敏，调用方无从漏脱敏
+        params: **原始**参数 —— 本函数内部脱敏，调用方无从漏脱敏；
+            同时是动作派生的输入（`params["action"]` 优先，见 `derive_audit_action`）
         success: 执行是否成功（`success=false` 同样落库：尝试过但失败也要可追溯）
         duration_ms: 耗时（毫秒）
 
     Returns:
         bool: 是否落库成功。False ⇒ 已打 `[AUDIT] PERSIST_FAILED` 警告（可观测），
         但**不阻断**业务写操作 —— 审计不是业务护栏，端点故障时宁可丢审计行也不能让
-        商户下不了单（fail-open；若产品要求 fail-closed 需另行裁定）。
+        商户下不了单。口径由 issue #4071 裁定为**有界 fail-open**（3s 硬上限，
+        `_WRITE_AUDIT_TIMEOUT_S`），**不做 fail-closed**。
     """
+    action = derive_audit_action(tool_name, params)
+    if action is None:
+        # 不猜、不用工具名兜底：显式留痕 + 落哨兵，让「漏登记」自己现形
+        action = _UNMAPPED_ACTION_SENTINEL
+        logger.warning(
+            f"[AUDIT] ACTION_UNMAPPED tool={tool_name} —— 该工具无 `action` 参数且未登记"
+            f" `_NO_ACTION_PARAM_TOOL_ACTION`；action 落哨兵 {_UNMAPPED_ACTION_SENTINEL}。"
+            f"修复：在 registry._NO_ACTION_PARAM_TOOL_ACTION 补该工具的动词"
+        )
     try:
         client = get_admin_api_client()
         resp = await asyncio.wait_for(
             client.post(
                 "/api/admin/agent/audit-logs",
                 json_data={
-                    "action": tool_name,
+                    "action": action,
+                    "toolName": tool_name,
                     "resourceType": _WRITE_AUDIT_RESOURCE_TYPE,
                     "actionDetails": {
+                        # ⚠️ 重复 `action` 是**有意**的：`action` 列在迁移 V52 里被回填为
+                        # 「动词」，而回填只能从 `action_details->>'action'` 派生 ——
+                        # 新行带上它，回填规则才对**新行**同样成立（否则 V52 的注释
+                        # 「新写入方已直接写 action」与回填语句的射程不一致）。
+                        # 唯一事实源仍是 `derive_audit_action` 的返回值（上方 action 变量）。
+                        "action": action,
                         "params": desensitize_params(params),
                         "success": success,
                         "durationMs": round(duration_ms, 1),

@@ -38,6 +38,10 @@ public class AgentAuditLogController {
 
     /**
      * POST /api/admin/agent/audit-logs —— 写工具调用结果落库（成功/失败/异常都上报）。
+     *
+     * <p>字段落位（issue #4071 裁定 ①）：{@code action} = 动作**动词** → {@code audit_logs.action}，
+     * {@code toolName} = 工具名 → {@code audit_logs.tool_name}（迁移 V52）。
+     * 此前工具名塞在 {@code action} 里靠 {@code resourceType} 反推语义 —— 那是同一列两种语义。</p>
      */
     @PostMapping
     public ApiResponse<Map<String, Object>> record(@Valid @RequestBody AgentAuditLogRequest request) {
@@ -46,8 +50,11 @@ public class AgentAuditLogController {
         // 同步落库（不用 recordLogAsync）：调用方（ai-agent）据此确认「审计已落」，
         // 异步会让上报成功而表里没行（取证缺口原地复发）
         auditLogService.recordLog(tenantId, userId, null, request.getAction(),
-                request.getResourceType(), null, null, request.getActionDetails(), null, null);
-        return ApiResponse.success(Map.of("action", request.getAction()));
+                request.getResourceType(), request.getToolName(), null, null,
+                request.getActionDetails(), null, null);
+        return ApiResponse.success(Map.of(
+                "action", request.getAction(),
+                "toolName", String.valueOf(request.getToolName())));
     }
 
     /** 从 SecurityContext 提取当前真实用户 ID（ServiceTokenFilter 已透传 X-User-Id） */

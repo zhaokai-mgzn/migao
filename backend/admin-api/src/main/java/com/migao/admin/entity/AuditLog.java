@@ -28,11 +28,17 @@ public class AuditLog {
 
     private String userName;
 
-    /** create / update / delete / login / logout / assign etc. */
+    /** 动作**动词**：create / update / delete / toggle_status / confirm_payment etc.（issue #4071 裁定 ①） */
     private String action;
 
-    /** product / order / ticket / ai_config / employee etc. */
+    /** product / order / ticket / ai_config / employee / agent_tool etc. */
     private String resourceType;
+
+    /**
+     * AI 工具名（如 order_create / product_manage）；仅 {@code resourceType='agent_tool'} 有值。
+     * 迁移 V52 新增：此前工具名塞在 {@link #action} 里，同一列两种语义（issue #4071）。
+     */
+    private String toolName;
 
     private String resourceId;
 

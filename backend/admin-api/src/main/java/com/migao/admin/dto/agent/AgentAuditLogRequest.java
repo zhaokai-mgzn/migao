@@ -11,21 +11,32 @@ import java.util.Map;
  * <p>身份（tenant_id / user_id）**不在本 DTO 内**：一律取自认证上下文
  * （Service Token 经 X-Tenant-Id/X-User-Id 透传后写入 SecurityUser），
  * 以免 body 伪造他人身份写入审计行。</p>
+ *
+ * <p>字段语义（issue #4071 裁定 ① 收敛）：{@code action} = **动词**
+ * （create/update/delete/toggle_status/confirm_payment…），{@code toolName} = 工具名。
+ * 此前工具名塞在 {@code action} 里、靠 {@code resourceType} 反推语义 ——
+ * 那是「同一列两种语义」，查询侧必须知道隐式规则。迁移 V52 已把两者分列。</p>
  */
 @Data
 public class AgentAuditLogRequest {
 
-    /** 工具名（如 order_create / product_manage）→ audit_logs.action */
+    /** 动作**动词**（create/update/delete/toggle_status/confirm_payment…）→ audit_logs.action */
     @NotBlank(message = "action 不能为空")
     private String action;
+
+    /**
+     * 工具名（如 order_create / product_manage）→ audit_logs.tool_name。
+     * 可选：人工表单审计没有工具名（本端点只服务 ai-agent，故正常都有）。
+     */
+    private String toolName;
 
     /** 资源类型（固定 agent_tool：区分 AI 工具写操作与人工表单审计） */
     private String resourceType;
 
     /**
      * 审计详情 → audit_logs.action_details（JSONB）。
-     * 约定键：params（**已脱敏**：字段名 → 类型占位 `<str>`/`<int>`）、success、
-     * durationMs、role、sessionId（表无 session_id 列，暂落此处）。
+     * 约定键：action（动词副本，供 V52 回填派生）、params（**已脱敏**：字段名 → 类型占位
+     * `<str>`/`<int>`）、success、durationMs、role、sessionId（表无 session_id 列，暂落此处）。
      */
     private Map<String, Object> actionDetails;
 }
