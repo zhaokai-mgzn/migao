@@ -162,10 +162,21 @@ CI 里调用**真实 LLM**（生产 `ai-api.migaozn.com` + `SERVICE_TOKEN`）的
 
 | 环节 | 触发 | 规模 | 治理 |
 |---|---|---|---|
-| **Agent Eval (smoke)** | **每次 PR**（已加门控） | smoke tier ~7 条真实 LLM 多轮 | **已加 changed-files 门控**：仅当 `backend/ai-agent-service/`、`tests/agent_eval/`、`.github/cases/`、`tests/e2e/real/` 有变更才跑；dependabot/前端/Java 纯依赖升级 PR 跳过（skipped 不阻塞 required check）→ 单次 dependabot 潮可省 150+ 次 LLM 调用 |
+| ~~**Agent Eval (smoke)**（pr-check 的 `agent-eval-smoke` job）~~ | ~~每次 PR~~ | ~~smoke tier ~7 条~~ | ⚠️ **已移除**（issue #3653，2026-09-15）：它评的是**已部署 main**（`ai-api.migaozn.com`），与本 PR 改动**无因果**，却是四层冗余里最贵的一层（实测 2.5h 内 85 次 ≈ 43% 的评测次数） |
 | E2E Real | 每日 00:00 定时 | 135+ integration 真实 LLM | 频率已合理（低峰回归），保持 |
 
-- 其余环节不烧真实 token：`nightly-verification` 是 fixture e2e + smoke p1（HTTP 层）；`xiaobu-acceptance` 是本地 mock 栈；`agent-eval.yml`(normal 47 条) 与 `adversarial` 已降频为手动/每周。
+- ⚠️ **PR 层的真实 LLM = 0 次**（2026-09-17 用户裁定 2′/4′，承载 issue #4034）：
+  `agent-behavior-eval.yml` 的评测 job 已**整体删除**，PR 上只留**零 LLM 的映射信号**
+  （diff → §13.2 用例集 + 可复制派发命令）。判定用途走**单一入口** `post-deploy-eval.yml`
+  （每 3 天 normal 全量 + 手动 `workflow_dispatch`）；定时档（3 天 normal / 每周 adversarial ×2）**全部保留**。
+- 其余环节不烧真实 token：`nightly-verification` 是 fixture e2e + smoke p1（HTTP 层）；
+  `agent-eval.yml`(normal 47 条) 与 `adversarial` 已降频为手动/每周（对抗档为**定时保留**）；
+  `xiaobu-acceptance` 除定时对抗档外均为手动，且它是**单腿窄跑**入口（`persona` 输入）。
+- **LLM 红例的闭环**（裁定 4′）：必须下沉为 ≥1 条确定性断言（`must_succeed`/`db_verify`/
+  `amount_verify`/`output_verify`/L0 不变式）；账本 = `.github/llm-finding-ledger.json`，
+  机械检查 = `python3 .github/llm_sink_check.py --selftest | --issue N | --all`
+  （用法与"未机械化"登记见 `docs/testing/llm-finding-sinking.md`）。
+
 - **观察指标**：`gh run list --status queued` 排队 >20 即需治理（先清 dependabot 潮，见 §7）。
 
 ### 3.3 断言可信度门禁（`Case Trust Gate`，2026-09-15 新增；#3483 T1 扩展格）
@@ -189,8 +200,8 @@ CI 里调用**真实 LLM**（生产 `ai-api.migaozn.com` + `SERVICE_TOKEN`）的
 | 件 | 作用 |
 |---|---|
 | `.github/assertion_taxonomy.py` | **单一判据源**：写工具/写 action 显式枚举、效果层断言集合、前置等价性判据、persona 规则。静态门禁与后续 runner 侧动态分类器**共用**这一处口径（两处各写一份必漂移） |
-| `.github/case_trust_gate.py` | 门禁外壳：取 `git diff --name-only origin/main...HEAD` 命中的 `cases/*.yml` → 比对 `origin/main` 与 HEAD 的用例块文本 → **只判新增/内容变化的用例条目** → 按基线裁决 |
-| `.github/case-trust-baseline.json` | **存量**违规清单（burn-down，锚定 SHA）。清单内放行，清单外一律阻塞 |
+| `.github/case_trust_gate.py` | 门禁外壳：① 取 `git diff --name-only origin/main...HEAD` 命中的 `cases/*.yml` → 比对 `origin/main` 与 HEAD 的用例块文本 → **只判新增/内容变化的用例条目** → 按基线裁决；② 对**全库**做**全量对账**（见下）；③ **burn-down 预算**裁决 |
+| `.github/case-trust-baseline.json` | **存量**违规清单（burn-down，锚定 SHA）+ `burn_down` 预算块。清单内放行，清单外一律阻塞；**清单是活账本**：记了却不再违规 ⇒ 阻塞，仍在违规却被删 ⇒ 阻塞 |
 | `.github/case-trust-unimplemented.json` | **未实装**规则清单（如实登记 + 缺什么），防「写成恒真判断凑数」 |
 | `.github/case-trust-redproof.md` | 红证留档（补前必红 / 补后绿原文），由 L0 守卫锁定防事后改写 |
 | `tests/unit_ci_workflows/test_case_trust_gate.py` | L0 守卫 + 退化守卫（已知缺陷夹具必须被判违规；正确形态不得误伤） |
@@ -226,25 +237,33 @@ CI 里调用**真实 LLM**（生产 `ai-api.migaozn.com` + `SERVICE_TOKEN`）的
 9. `CASE-TRUST-SINGLE-LEG-NO-PERSONA` —— 按工具集可判定为单端的用例必须标注 `persona`
    （#3822：缺标注的另一条腿必挂，`case_ids` 窄跑还会触发 runner 的「禁止静默少跑」守卫）。
 
-**「只判 diff」与「基线只许缩短」这两条必须同时存在**（否则必然假红或债务僵化）：
+**三层判定必须同时存在**（缺任一层就必然假红或债务僵化）：
 
-- **只判 diff 命中条目** ⇒ 不阻塞存量、不「一次红全库」；
-- **基线只许缩短** ⇒ 本次 diff 命中且**原违规码已不再命中**的项，必须从清单移除
-  （报错指向正确行动：「你修好了，请删条目」，命令 `python3 .github/case_trust_gate.py --regen-baseline`）；
-- ⚠️ **陈旧比对只对本次 diff 涉及的用例生效** —— 否则别人修好一条存量用例
-  （#3832/#3833 正在修 `CU-003`/`PG-013`），本门禁会**自己判红并挡住他们的 PR**。
+1. **只判 diff 命中条目** ⇒ 不阻塞存量、不「一次红全库」（新增违规的口子）；
+2. **全量对账**（#4031 / #4009 裁定 1）⇒ 豁免清单必须与**全库**重算逐条一致，**不限 diff 命中**：
+   - 记了却**不再违规** ⇒ **阻塞**，必须移除/收窄（旧口径只对 diff 命中项生效 ⇒ 只要没人再碰那条用例，
+     它记的陈旧码就永远躺着 = **永久豁免**；实测：建账 110 → 加规则涨到 143 → **净缩 1 条后冻结**）；
+   - `origin/main` 记着、现在**仍违规**却被**删掉** ⇒ **阻塞**（删条目 = 偷偷新增豁免，R4）；
+   - 修法是机械的：`--prune-baseline`（**只删不加**）；`--regen-baseline`（重建）默认**拒绝增长**；
+3. **burn-down 预算**（配置在基线文件的 `burn_down` 块，**生效口径读 `origin/main` 那一份**）：
+   每（改用例的）PR 至少净缩 `per_pr_min` 条 + `OR-*` 优先档到期 + 全清单 `deadline` 清零；
+   **只许缩短**（清单增长 = 新增豁免 ⇒ 红）。
 
 **本地自查**：
 
 ```bash
-python3 .github/case_trust_gate.py                      # PR 口径（diff origin/main...HEAD）
+python3 .github/case_trust_gate.py                      # PR 口径（diff origin/main...HEAD + 全量对账 + 预算）
 python3 .github/case_trust_gate.py --files .github/cases/product.yml   # 判该文件全部条目（调试）
-python3 .github/case_trust_gate.py --regen-baseline     # 重生成基线（改动/新增用例后按提示执行）
+python3 .github/case_trust_gate.py --prune-baseline     # 清掉「已不再命中」的码/条目（只删不加）
+python3 .github/case_trust_gate.py --regen-baseline     # 全量重建（口径变化时；默认拒绝增长）
+python3 .github/case_trust_gate.py --today 2027-01-01   # 预算到期判定的确定性红证
 python3.11 -m pytest tests/unit_ci_workflows/test_case_trust_gate.py -q # L0 守卫
 ```
 
 **未实装项**（见 `.github/case-trust-unimplemented.json`，**不写恒真规则凑数**）：
-**基线清单缩短无机械强制**（只告警 —— 阻塞会要求用例作者改非其所有权的基线文件，属假红）、
+每-PR 最低消减的**字面口径**（`scope=all_prs`，默认 `case_touching_prs` —— 见该文件登记的理由）、
+**未登记违规只报告不阻塞**（规则集变化/新用例带来的新码，需先清零才可 fail-closed）、
+`scripts/drift_audit.py` 的同款陈旧口径未同步（`DRIFT-AUDIT-STALE-DIFF-SCOPED`）、
 未知 `pre_clean.type` 静默跳过（#3797）、`pre_clean` 失败路径未折叠判据（#3797）、
 跨腿窄跑的运行期判定（#3822，属 runner 归因自动化即 #3483 的 T2）、
 **全库** persona 标注（有意不做的宽口径）、纯散文 `data_checks` 的**语义**质量（LLM 审计层）。

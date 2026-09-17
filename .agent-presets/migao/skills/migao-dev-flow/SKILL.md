@@ -1,6 +1,6 @@
 ---
 name: migao-dev-flow
-version: 1.30.1
+version: 1.31.0
 # ⚠️ YAML 纯标量陷阱 + 本仓库取舍（v1.21，2026-09-15 实证）：
 # `description` 是 YAML **纯标量** ⇒ 解析在第一个「空白 + `#`」处**截断**（`#` 起被当成注释起始），
 # 其余内容**静默丢失** —— 「文件里写了」≠「加载器读到了」（与「注释漂移 = 假绿来源」同族，但更隐蔽）。
@@ -371,6 +371,16 @@ cd /Users/guangzhen.zk/ai native/migao
 - 缺有效性验证 = 未闭环（协议 acceptance-protocol §5），禁止以"已修复"结论收尾；
 - 自然语义 data_checks 不算覆盖（协议 §1.3 铁律）。
 
+**★ LLM 红例的同类红线（裁定 4′，2026-09-17；承载 issue #4034）**：由**真实 LLM 评测**发现的红例
+（自动开的 `[Post-Deploy]` / `[Xiaobu]` / `[Agent Eval]` 一族）**必须下沉**为 ≥1 条**确定性断言**
+（`must_succeed` / `db_verify` / `amount_verify` / `output_verify` / L0 不变式），否则**不算闭环**；
+红例的处理结果记入 `.github/llm-finding-ledger.json`（用例侧还要在 `merge_log` 回填 `issue #N`），
+**未下沉必须显式登记**（`status: unsunk` + reason + follow_up）。
+机械检查（**别靠记性**）：`python3 .github/llm_sink_check.py --issue <红例 issue 号>`
+（`0` = 已下沉且断言非空 / `1` = 未登记或空壳 / `3` = 无法判定）。
+为什么这条特别要紧：PR 层真实 LLM 已停跑（裁定 2′）⇒ **确定性层是唯一的拦截面**，
+红例不下沉 = 同一缺陷下次照样溜过 PR。详版：`docs/testing/llm-finding-sinking.md`。
+
 ### 13.4 与验收协议的关系
 
 体检用例（§13.2）是 L1 层；「下验收通过结论」前的完整验收（剧本/L1-L2-UA/证据链/
@@ -640,7 +650,7 @@ completion_verdict ✅ + 双裁判无未裁定分歧；运行期只 smoke/抽样
 |---|---|---|---|
 | PR（任意改动） | 三模块单测 / QA Growth Gate / ci workflow helper / 静态不变式 | ★ **required（硬门禁）** | pr-check |
 | PR 改 AI 行为文件 | ~~C 端 smoke（persona=xiaobu）+ B 端 smoke（pr-check，打云测试环境）~~ **该层已移除**（issue #3653，2026-09-15；`pr-check.yml` 内有登记）—— PR 层只保留下一行的定向映射用例 | —（已移除） | #3504 → #3653 |
-| PR 改 AI 行为文件 | **映射用例迭代档**（diff → §13.2 用例集，独立栈跑 + PR 评论）——**分层（2026-09-14 用户裁定，口径以 workflow 注释为准）**：`rules`（规则命中，**与本改动有因果**）= **强信号**：失败 → 报告 + PR 评论 + **自动开 issue**，但 **`不拦合并`**；`default_net`（兜底网，**与本改动无因果**）= 失败**只报告、不开 issue** | 两者**均非 required**（真拦截由确定性 required 层 + 部署后全量承担） | #3502 / #3653 |
+| PR 改 AI 行为文件 | **零 LLM 的映射信号**（diff → §13.2 用例集 + 打印"要跑就派发单一入口"的命令）——⚠️ **PR 层真实 LLM 已停跑**（2026-09-17 用户裁定 2′/4′，承载 issue #4034）：原「映射用例迭代档」（独立栈跑 + PR 评论 + 规则命中失败自动开 issue）的**评测 job 已整体删除**，不是加 `if` 关掉 | **不产生任何评测结论**（连评测都不跑）；代价（PR 阶段无 LLM 行为信号）用户已知并接受 | #3502 / #3653 → #4034 |
 | 合并 → 部署到 SWAS 成功 | **部署后全量回归**（独立栈 mibao+xiaobu，matrix 并行）→ 失败去重建 issue | 部署后拦截 | #3503 |
 | 每周六 | adversarial 档（只追踪不阻塞） | 信息性 | #3367 |
 | 里程碑/下结论 | 结论档（全量 + 验收剧本 + 双裁判 + completion_verdict） | **结论前置（必过）** | §16.4 |
@@ -648,18 +658,20 @@ completion_verdict ✅ + 双裁判无未裁定分歧；运行期只 smoke/抽样
 **⚠️ 最容易误读的一条**：分支保护的 required_status_checks 只有确定性层那 9 项
 （`.env`/三模块单测/QA Gate/ci-helper/gitleaks/Danger Scan）——**LLM 行为层不进 required
 是有意设计**（真实 LLM 方差会卡死合并流水线；job 名还随 persona 参数化）。
-⇒ **映射用例门禁红 ≠ 不能合并**，而是「立刻拿到行为信号，据此决定」（其分层口径与证据见
-`agent-behavior-eval.yml` 头部注释 `@c5f07f29` `:51-58`，2026-09-14 用户裁定「按建议来」）；
-硬拦截由确定性层（required）+ 部署后全量（#3503）承担。禁止把 LLM 档改成 required（历史决策，勿翻案）。
+⇒ **映射信号红 ≠ 不能合并**（PR 上只剩零 LLM 的映射，没有"红"可言）；
+硬拦截由确定性层（required）+ 定期/手动全量（`post-deploy-eval`，每 3 天档 + 手动档）承担。
+禁止把 LLM 档改成 required（历史决策，勿翻案）。
 
-**📌 决策记录（2026-09-14，用户确认）**：**行为映射门禁（agent-behavior-eval）同样不纳入
-required**，理由与上同（方差 + persona 参数化 check 名）。它的拦截力是"规则命中用例失败 →
-workflow 内红 + PR 评论"（强信号）；**规则命中红 = 改动真的影响了行为，必须先看产物再决定，
-不得当作可忽略**。若将来要纳入 required，必须先把"确定性部分"与"LLM 部分"拆开，
-**禁止裸加 required**。
+**📌 决策记录（2026-09-14 用户确认 → 2026-09-17 裁定 2′/4′ 覆盖）**：**行为映射门禁
+（agent-behavior-eval）不纳入 required**（理由：方差 + persona 参数化 check 名）。
+⚠️ 该门禁的**评测部分已停跑**（issue #4034）：PR 上只剩零 LLM 的映射信号；拦截交给确定性层。
+⇒ 阅后动作变了：**PR 上不再有"规则命中强信号"可看**；取而代之的是裁定 4′ 要求的
+**「LLM 发现 → 确定性下沉」**（红例必须落成 ≥1 条确定性断言，台账 + 机械检查见
+`docs/testing/llm-finding-sinking.md`；`python3 .github/llm_sink_check.py --issue N`）。
+**未下沉的红例必须显式登记**（`status: unsunk` + reason + follow_up），不得静默放行。
 
 **队友约定**：这些门禁是**自动**的，不要重复人工跑同一档；PR 红了先看门禁产物
-（映射用例评论 / summary json / flake 台账 artifact），再决定重跑或修复。
+（映射信号评论 / summary json / flake 台账 artifact），再决定重跑或修复。
 波动台账现上传 artifact（`agent-eval-flake-ledger*`，30 天）——高波动用例治理
 （§14.3 双周回顾）从这里取数，不再翻 run 日志。
 
@@ -754,7 +766,7 @@ workflow 内红 + PR 评论"（强信号）；**规则命中红 = 改动真的�
 
 | 要回答的问题 | 用什么 | **不要**用什么 |
 |---|---|---|
-| 这条改动**影响行为吗**？（PR 阶段） | **PR 定向映射用例**（`agent-behavior-eval.yml`：diff → §13.2 用例集，`rules` / `default_net` 分层 + fast 迭代档） | 不为单条改动派**全量**（全量属部署后 / 批次轮） |
+| 这条改动**影响行为吗**？（PR 阶段） | **PR 上的映射信号**（`agent-behavior-eval.yml` 的 `map` job：diff → §13.2 用例集 + 打印派发命令）——⚠️ **零 LLM**：它只告诉你"波及哪些用例"，**不产生评测结论**。要真结论 ⇒ 手动派发 `post-deploy-eval`（`case_ids` + `purpose=debug`，**非判定用途**） | 不为单条改动派**全量**（全量属部署后 / 批次轮）；**不要在 PR 上期待 LLM 结论**（裁定 2′/4′：PR 层真实 LLM 已停跑，#4034） |
 | **这几条 case 修好了吗**？ | **合并后的一次全量档**（`tier=normal`，不带 `case_ids`，跑全库 ⇒ 天然覆盖「缺陷由另一条用例制造」的前置条件，§17.4 ③） | 不用窄重放当结论（除非全量覆盖不到该用例）；用窄重放**必须回答**「本次运行复现了缺陷的前置条件吗」（`migao-acceptance` v1.7） |
 | **能不能放行**（里程碑）？ | **全量档 + `completion_verdict` + 独立盲审**（§16.4 结论档） | 不拿单次窄重放的绿当结论；不拿**被抑制 / cancelled / 空跑**的 run 当结论 |
 
@@ -1546,3 +1558,17 @@ dispatch 部署 ⇒ 容器重建产生 **1~3 分钟**的 502 窗口；一次活�
   （`insteadOf` 让同一仓库出现 `https://github.com/…` / `ssh://git@ssh.github.com:443/…` 两种写法 ⇒
   真活锚被**静默跳过**）、以及只比对象级「锚点检出里有没有基线提交」（锚点**还没 fetch** 时被判「不同历史」
   ⇒ 落后**不红** —— 而这恰恰是本单要治的形态）。
+- v1.31（2026-09-17 **issue #4034（P13）落地口径入册**，本次）：把「**关闭 PR 层真实 LLM**（裁定 2′）+
+  **LLM 发现 → 确定性下沉**（裁定 4′）」写进技能，并**改判三条已失效的口径**：
+  ① §16.5 门禁矩阵的「PR 改 AI 行为文件 → 映射用例迭代档（独立栈跑 + PR 评论 + 规则命中失败自动开 issue）」
+     **已停跑** —— `agent-behavior-eval.yml` 的评测 job **整体删除**，PR 上只留**零 LLM 的映射信号**
+     （diff → §13.2 用例集 + 打印"要跑就派发单一入口"的命令）；代价（PR 阶段无 LLM 行为信号）用户已知并接受；
+  ② 同表「映射用例门禁红 ≠ 不能合并」一段随之改判（PR 上不再有"红"可言），并写明**真正的拦截面现在是确定性层**；
+  ③ §16.7 的门禁矩阵行同步（PR 阶段要真结论 ⇒ 手动派发 `post-deploy-eval` + `purpose=debug`，非判定用途）；
+  ④ **§13.3 新增 LLM 红例红线**：LLM 红例必须下沉为 ≥1 条确定性断言（`must_succeed`/`db_verify`/
+     `amount_verify`/`output_verify`/L0 不变式），否则不算闭环；台账 = `.github/llm-finding-ledger.json`，
+     机械检查 = `python3 .github/llm_sink_check.py --issue N`（0/1/3 三态），未下沉必须显式登记
+     （`unsunk` + reason + follow_up）。**定时档全部保留**（3 天 normal / 每周 adversarial ×2）——
+     裁定要砍的是 **PR / 合并 / 迭代**触发，不是定时档；防回退锁 =
+     `tests/unit_ci_workflows/test_behavior_eval_pr_thin.py`（PR 零 LLM + 自动 LLM 触发白名单）。
+  详版：`docs/testing/llm-finding-sinking.md` + `docs/testing/eval-environments.md` §3.7。

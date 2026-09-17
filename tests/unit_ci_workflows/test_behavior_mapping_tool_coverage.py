@@ -33,7 +33,11 @@
    本包锚定的用例是 `PR-006`（**只在 mibao 可跑**）+ `PR-018`（双端可跑 → workflow 归 mibao 桶）
    ⇒ 派生 persona 矩阵 = `["mibao"]`，**xiaobu 腿根本不会被启动** ——
    这是"按命中的用例分桶派生 persona"（`#3653`）的既有语义，不是绕过守卫。
-   前提（workflow 仍按 persona 分桶 + matrix 消费派生结果）由
+   ⚠️ **2026-09-17 前提变更**（用户裁定 2′/4′，issue #4034）：PR 层**不再启动任何腿**
+   （`behavior-eval` job 整体删除，PR 上零真实 LLM）⇒ 上面这条"会启动的腿"的判定时机
+   从 **PR 自动**移到**派发时**（判定用途走单一入口 `post-deploy-eval`；单腿窄跑走
+   `xiaobu-acceptance.yml` 的 `persona` 输入，手动）。前提的**新形态**（map 仍按 persona
+   分桶 + PR 评论仍按 persona 分条呈现，不把单腿结果说成双端结论）由
    `TestWorkflowPersonaBucketingPremise` 锁住：premise 一变，本判据必须重新审视。
 
 ## 红证（不靠"补规则前的历史"，而是注入式 —— 与被测真值解耦，永远有效）
@@ -389,11 +393,22 @@ class TestDeclaredCoverageIsActuallyDispatched:
 
 
 class TestWorkflowPersonaBucketingPremise:
-    """premise 守卫：上面那条"persona 相容"结论**依赖 workflow 的既有分桶语义**。
+    """premise 守卫：上面那条「persona 相容」结论**依赖 workflow 的既有分桶语义**。
 
-    workflow 一旦改成"把映射并集无差别喂给两条腿"（`#3822` 的朴素修法），
-    `PR-006` 就会让 xiaobu 腿 `exit 1` —— 那时本包的规则需要重新设计（或改为登记缺口）。
-    故把 premise 钉在这里：premise 变 ⇒ 本文件红 ⇒ 必须重新审视。
+    ⚠️ **premise 已于 2026-09-17 变更**（用户裁定 2′/4′，issue #4034）：原第二条判据
+    （`behavior-eval` 的 matrix 消费 `needs.map.outputs.personas`）的**被测 job 已整体删除**
+    —— PR 上不再启动任何腿，"matrix 是否消费派生 persona"在 PR 路径上已无对象
+    （PR 层零 LLM 的机械锁见 `tests/unit_ci_workflows/test_behavior_eval_pr_thin.py`）。
+    但本文件的结论**仍依赖两件活着的事**，故判据随之改挂在新前提上（不是删断言了事）：
+
+      ① map job 仍**按 persona 分桶**（`test_map_step_buckets_per_persona`，原样保留）——
+         它是 `PR-006` 落 mibao 桶这一结论的来源；
+      ② PR 评论仍**按 persona 分条**呈现（评论脚本按 `persona + '|'` 过滤执行计划）——
+         否则单腿的映射集会被读成「双端都覆盖了」（`#3822` 同族的假绿形态）。
+
+    单腿窄跑的**新落点**：`xiaobu-acceptance.yml` 的 `persona` 输入（手动，`#3822` 的
+    单腿入口）；判定用途走单一入口 `post-deploy-eval`（一次覆盖两条腿，`#3769`）。
+    premise 变 ⇒ 本文件红 ⇒ 必须重新审视。
     """
 
     def test_map_step_buckets_per_persona(self):
@@ -405,13 +420,36 @@ class TestWorkflowPersonaBucketingPremise:
                 "本文件的 persona 相容性断言（test_no_started_leg_would_exit_1…）必须重新设计。"
             )
 
-    def test_eval_matrix_consumes_derived_personas(self):
+    def test_pr_comment_preserves_per_persona_split(self):
+        """PR 评论必须**按 persona 分条**呈现执行计划（单腿结果不得被呈成双端结论）。
+
+        这条替代了原 `test_eval_matrix_consumes_derived_personas`（被测 job 已删除）：
+        现在 PR 上唯一的输出就是这条评论，而它必须仍保持「一条腿一条评论 + 只贴本腿的桶」，
+        否则读者会把「只映射到 mibao 的用例」当成"两端都跑了"。
+        反向变异：去掉带 persona 的 marker、或把整份 plan 不分 persona 地贴出去 ⇒ 红。
+        """
         wf = yaml.safe_load(BEHAVIOR_EVAL_WORKFLOW.read_text(encoding="utf-8")) or {}
-        be = (wf.get("jobs") or {}).get("behavior-eval") or {}
-        matrix_expr = str((be.get("strategy") or {}).get("matrix") or "")
-        assert "needs.map.outputs.personas" in matrix_expr and "fromJSON" in matrix_expr, (
-            f"behavior-eval 的 matrix 未消费 map 派生的 personas（{matrix_expr!r}）—— "
-            "写死双端会让 PR-006 必然弄红 xiaobu 腿（#3822 形态），本包结论失效"
+        scripts = "\n".join(
+            str((s.get("with") or {}).get("script") or "")
+            for job in (wf.get("jobs") or {}).values()
+            for s in (job.get("steps") or [])
+        )
+        assert "for (const persona of personas)" in scripts, (
+            "PR 评论不再逐个 persona 分条发布（评论脚本里找不到 `for (const persona of personas)`）"
+            "—— 分条的判据就是它：一条腿一条评论，各带自己的 marker"
+        )
+        assert "agent-behavior-eval:${persona}" in scripts, (
+            "评论 marker 丢掉了 persona 维度 —— 两条评论会互相覆盖（后写的赢），"
+            "有一端的映射结论从 PR 上消失 = 假绿"
+        )
+        # 执行计划必须按 `persona|` 前缀过滤（两处：展示用的 scopedPlan + 派发命令用的 planLines）
+        assert "${persona}|" in scripts and "l.startsWith(persona + '|')" in scripts, (
+            "评论未按 `persona|` 前缀过滤执行计划 —— 一端读者会看到别端的桶，"
+            "把「单腿命中」读成「双端覆盖」（#3822 同族的假绿形态）"
+        )
+        # 分条的前提是 plan 行的形状仍是 `persona|suite|ids|mode`（map 侧的定义）
+        assert '"|".join([p, s,' in _map_step_script(), (
+            "map 侧的执行计划不再是 `persona|档位|用例|门禁` 形状 —— 评论的分条过滤失去判据"
         )
 
 

@@ -229,3 +229,117 @@ python3.11 -m pytest tests/unit_ci_workflows -q
 > **`PG-013` 的修后形态已被回归用例锁定**（`test_concurrent_fix_shapes_pass`）：
 > 新增 `pre_clean: [{type: processing_order_reset, order_no: …}]` + `forbidden_text` 部分条目
 > 改为**轮次作用域**（`{round: 2, any_of: [...]}`）⇒ 判据**放行**（不挡住他们的 PR）。
+
+---
+
+# 第二轮（#4031）：全量对账 + burn-down 预算的**收紧**红证
+
+> 被测改动：`stale_baseline_entries`（**只对本次 diff 命中的用例**生效，且只告警）
+> ⇒ `reconcile_baseline`（**全库**对账，双向阻塞）+ `burn_down_verdict`（预算）。
+> 口径来源：#4009 裁定 1（用户裁定，2026-09-17）。
+> 全部输出都在一个 **`origin/main` 的独立 worktree**（`git worktree add --detach … origin/main`）里跑，
+> 只替换被测件本身，**不动主工作区**；人工制造的那步用完即弃（刻意不提交）。
+
+## RED-PROOF-BEFORE —— 旧口径「不报」（exit 0）
+
+仓库状态 = `origin/main` = `4cf56f0b`（清单 142 条；门禁件为旧版）。
+**真实漂移**已经存在（`CH-019`/`PG-013`/`PG-015` 各有一条码因并发修复而不再命中），
+但旧口径的判定范围是 `changed_ids ∩ 清单`，而本次 diff **没碰任何用例文件** ⇒ 连判都不判：
+
+```bash
+$ python3 .github/case_trust_gate.py --base origin/main
+⏭️ 本次改动未命中任何用例文件（.github/cases/*.yml）—— **用例条目未跑**（「没跑」必须长得像「没跑」，不得读成通过）
+…
+✅ 通过
+$ echo $?
+0
+```
+
+**人工制造一版**（更贴近硬约束的原话「人为让某条清单条目不再违规」）：
+在 `tests/agent_eval/fixtures/mibao_eval_seed.sql` 的 `products` 里补一件名字含
+`测试窗帘` 的商品（= 该规则 `fix` 里写的「在种子里补上该对象（补数据层）」正解），
+使 `PR-014`/`PR-015` 的 `pre_clean[].product_keyword` **变得可解析**。
+**用例文件一行未动** ⇒ 旧口径连「未跑」的提示都只针对用例文件，**仍然 exit 0**：
+
+```bash
+$ python3 .github/case_trust_gate.py --base origin/main   # 旧门禁 + 已补种子的工作区
+⏭️ 本次改动未命中任何用例文件（.github/cases/*.yml）—— **用例条目未跑** …
+✅ 通过
+$ echo $?
+0
+```
+
+## GREEN-PROOF-AFTER（同一次收紧后）⇒ 同一状态**必须报红**
+
+### 红证 1 —— 同一份清单 + 只替换门禁件 ⇒ exit 1（真实漂移 3 条）
+
+```bash
+$ cp <worktree>/.github/case_trust_gate.py .github/case_trust_gate.py   # 只换门禁件
+$ python3 .github/case_trust_gate.py --base origin/main
+全量对账范围：**全库 312 条用例**重算（判出违规 145 条，豁免清单 142 条 —— 不限本次 diff 命中，#4031）
+❌ 豁免清单**已不再违规** 3 条（**阻塞** —— 全量对账：「清单只许缩短」的执行，#4031）：
+  · CH-019（应移除 CASE-TRUST-SINGLE-LEG-NO-PERSONA；该条目收窄）
+  · PG-013（应移除 CASE-TRUST-NO-EFFECT-ASSERTION；该条目收窄）
+  · PG-015（应移除 CASE-TRUST-NO-SELF-CLEAN；该条目收窄）
+❌ 阻塞（见上）
+$ echo $?
+1
+```
+
+### 红证 2 —— 人工制造版 ⇒ exit 1（5 条，多出的两条正是人为让它们「不再违规」的）
+
+```bash
+$ python3 .github/case_trust_gate.py --base origin/main   # 同上，但工作区已补种子
+❌ 豁免清单**已不再违规** 5 条（**阻塞** …）：
+  · CH-019 …  · PG-013 …  · PG-015 …
+  · PR-014（应移除 CASE-TRUST-PRECLEAN-TARGET-UNRESOLVABLE；该条目收窄）
+  · PR-015（应移除 CASE-TRUST-PRECLEAN-TARGET-UNRESOLVABLE；该条目收窄）
+$ echo $?
+1
+```
+
+⇒ **改前不报 / 改后报**成立，且报的是**正确的行动**（`--prune-baseline`，只删不加）。
+
+### 绿证 —— 机械修复后复跑（`--prune-baseline`）
+
+```bash
+$ python3 .github/case_trust_gate.py --prune-baseline
+✅ 已按全量对账收窄清单：3 条被改动（**只删不加**）
+  · CH-019：移除 CASE-TRUST-SINGLE-LEG-NO-PERSONA（收窄）
+  · PG-013：移除 CASE-TRUST-NO-EFFECT-ASSERTION（收窄）
+  · PG-015：移除 CASE-TRUST-NO-SELF-CLEAN（收窄）
+   条目 142 → 142；违规码 230 → 227
+$ python3 .github/case_trust_gate.py --base origin/main ; echo $?
+✅ 通过
+0
+```
+
+> 与 #4031 的正式改动**逐字一致**：同一命令在主工作区跑出的 `violations` 与这里 diff 为空
+> （`--prune-baseline` 是确定性的，不依赖 worktree）。
+
+## burn-down 预算的红证（三条判据 + 一个负例）
+
+底座 = 已对账的清单提交为 `B`，再在其上造「改用例但不消减」的提交：
+
+| # | 场景 | 命令 | 结果 |
+|---|---|---|---|
+| 1 | **每 PR 最低消减**未达标（改用例的 PR，净缩 0） | `… --base B` | `exit 1`；`burn-down 预算未达标：本次净消减 0 条（metric=entries_or_codes）< 每 PR 最低 1 条（条目 142→142，违规码 227→227）…**先清 OR-**（现剩 22 条）` |
+| 2 | **`OR-*` 优先档到期** | `… --base B --today 2026-11-01` | `exit 1`；`` `OR-` 优先档已到期（2026-10-31 ≤ 2026-11-01，先清 OR-*）：清单里仍有 22 条 —— OR-006、OR-007… `` |
+| 3 | **到期清零** | `… --base B --today 2027-01-01` | `exit 1`；`burn-down **到期清零**未达成（2026-12-31 ≤ 2027-01-01）：清单里仍有 142 条（违规码 227 条）必须清零` |
+| 4 | **负例（R2）**：真修（种子补数据）**且**清单同步收窄 | `… --base B` | `exit 0`；`本次净变化：条目 142→142（+0），违规码 227→225（-2）` ⇒ 预算达标、不误伤正确形态 |
+
+另有两条**反向**红证（防「删条目 = 缩短」的偷跑）——见 L0 守卫
+`test_full_reconciliation_blocks_entry_dropped_while_still_violating`：
+`origin/main` 记着、现在仍违规却被删掉的条目 ⇒ `dropped` 阻塞；
+而删掉「已不再违规」的条目 ⇒ **不**判（负例，避免假红）。
+
+## 读数（第二轮，锚定 SHA）
+
+| 项 | 读数 |
+|---|---|
+| 锚定 SHA | `origin/main` = `4cf56f0b`（#4031 分支基于它） |
+| 全库用例 / 判出违规 | 312 条 / 145 条（`reconcile_baseline.judged_cases` / `violating_cases`） |
+| 豁免清单 | 142 条 / 违规码 227（对账前 230 —— `--prune-baseline` 收窄 3 条） |
+| 陈旧条目（全量对账） | **3 条**（`CH-019`/`PG-013`/`PG-015`）⇒ 已在本 PR 清掉；`OR-*` 0 条 |
+| 未登记违规（只报告） | 3 条（`PR-025`/`PR-026`/`PR-027`）—— 已登记为未实装缺口 |
+| L0 守卫（本包文件） | `76 passed`（`python3.11 -m pytest tests/unit_ci_workflows/test_case_trust_gate.py -q`） |

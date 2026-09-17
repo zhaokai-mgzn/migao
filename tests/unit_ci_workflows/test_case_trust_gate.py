@@ -24,6 +24,7 @@ PR 门禁外壳。两者若只被「真实用例库」间接覆盖，就有典�
 # case_ids: CU-003, PG-013, PR-021, CH-009, CH-016, OR-012, CH-011
 import copy
 import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -925,38 +926,73 @@ class TestGateShell:
         assert blocked_codes, "基线覆盖部分违规码时，其余违规码未阻塞"
         assert one_code not in blocked_codes, "已被基线覆盖的码不应重复阻塞"
 
-    def test_gate_requires_baseline_pruning_only_for_diff_cases(self):
-        """「已不再违规 ⇒ 必须移除」**只对本次 diff 涉及的用例**生效。
+    def test_full_reconciliation_prunes_entries_outside_the_diff(self):
+        """**全量对账**（#4031）：判定范围不再限于「本次 diff 命中的用例」。
 
-        为什么要这么窄：另一包正在修 CU-003/PG-013（#3832/#3833）。若对**全库**做
-        陈旧比对，别人一修好，本门禁就会自己判红（假红），还会挡住他们的 PR。
+        旧口径的病（#4009 裁定 1）：`stale_baseline_entries` 只看 `changed_ids ∩ 清单`，
+        于是**只要没人再碰那条用例**，它记的陈旧违规码就永远躺着 = **永久豁免**
+        （实测：清单建账 110 → 加规则涨到 143 → **净缩 1 条后冻结**；
+        本轮实测存量陈旧码 3 条：`CH-019` / `PG-013` / `PG-015`）。
+
+        红证形态：清单里**两条**都已「不再违规」，而本次 diff 只命中其中一条 ——
+        旧口径只报 1 条（另一条永久豁免），新口径必须把**两条都**报出并阻塞。
         """
         gate = self._gate()
         baseline = {"violations": {"CU-003": {"codes": ["CASE-TRUST-NO-SELF-CLEAN"]},
-                                  "PG-013": {"codes": ["CASE-TRUST-FORBIDDEN-TEXT-SOLE"]}}}
-        # PG-013 被本次 PR 改了、且已不违规 ⇒ 必须要求从基线移除
-        stale = gate.stale_baseline_entries(baseline, changed_ids={"PG-013"},
-                                            violations_by_case={})
-        assert [s["case_id"] for s in stale] == ["PG-013"], (
-            f"diff 内已不再违规的项未被要求移除：{stale}"
+                                  "PG-013": {"codes": ["CASE-TRUST-NO-EFFECT-ASSERTION"]}}}
+        changed_ids = {"CU-003"}  # 本次 diff 只命中 CU-003（PG-013 谁都没碰）
+        # 旧口径的**判定范围**（#4031 前；这里显式复刻 3 行旧语义以证明差异 ——
+        # 复刻的是范围，不是判据：判据仍只有 `.github/assertion_taxonomy.py` 一处）
+        old_scope = sorted(changed_ids & set(baseline["violations"]))
+        assert old_scope == ["CU-003"], "夹具前提：旧口径只能看到 diff 命中那条"
+        recon = gate.reconcile_baseline(baseline, {"CU-003": []})
+        ids = [s["case_id"] for s in recon["stale"]]
+        assert ids == ["CU-003", "PG-013"], (
+            f"未对**全库**条目做陈旧比对（diff 外那条会变成永久豁免）：{ids}"
         )
-        assert stale[0]["hint"], "陈旧项必须带「怎么改」（指向重生成命令）"
-        # CU-003 **不在**本次 diff 里（别人在修）⇒ 不得要求移除（避免误伤他人 PR）
-        assert "CU-003" not in [s["case_id"] for s in stale], (
-            "对不属本次 diff 的用例做了陈旧比对 —— 别人修好用例后门禁会自己判红"
+        assert len(ids) > len(old_scope), "全量对账没比旧口径多看到任何东西 = 改动没落地"
+        assert recon["blocking"], (
+            "陈旧条目必须**阻塞**（#4031 的核心）—— 只告警就还是一条不会红的判据（R5）"
+        )
+        assert gate.PRUNE_COMMAND in recon["stale"][0]["hint"], (
+            "陈旧项必须带「怎么改」（指向只删不加的 `--prune-baseline`）"
+        )
+
+    def test_full_reconciliation_blocks_entry_dropped_while_still_violating(self):
+        """反向对账（R4）：`origin/main` 记着、现在**仍违规**却被删掉的条目 ⇒ 阻塞。
+
+        为什么必须有这一条：burn-down 预算在施压让人删条目 ⇒ 没有反向对账，
+        「清单只许缩短」会退化成「随便删都算缩短」= 偷偷新增豁免。
+        """
+        gate = self._gate()
+        base = {"violations": {"PG-013": {"codes": ["CASE-TRUST-NO-PRECONDITION-ASSERTION"]}}}
+        v = tax.judge_case(fixture_pg_013(), catalog=_seed_catalog())
+        assert "CASE-TRUST-NO-PRECONDITION-ASSERTION" in codes(v), "夹具前提：该码仍命中"
+        # 本 PR 把这条**仍在违规**的条目删了（清单确实变短了，但那是新增豁免）
+        recon = gate.reconcile_baseline({"violations": {}}, {"PG-013": v}, base_baseline=base)
+        assert [d["case_id"] for d in recon["dropped"]] == ["PG-013"], (
+            f"删掉仍在违规的条目未被判红（= 新增豁免无门禁）：{recon['dropped']}"
+        )
+        assert recon["blocking"], "偷偷新增豁免必须阻塞"
+        # 负例（R2）：删掉「已不再违规」的条目是**正确**行为，不得判成 dropped
+        # （动态挑一个夹具当前确实不命中的码，避免与规则演进脱节）
+        unused = next(r["code"] for r in tax.RULES if r["code"] not in codes(v))
+        base2 = {"violations": {"PG-013": {"codes": [unused]}}}
+        recon2 = gate.reconcile_baseline({"violations": {}}, {"PG-013": v}, base_baseline=base2)
+        assert not recon2["dropped"], (
+            f"已修好的条目被删是正确行为，不得判成新增豁免（假红）：{recon2['dropped']}"
         )
 
     def test_gate_does_not_prune_when_case_still_hits_recorded_code(self):
-        """本次 diff 命中、且基线记的码仍命中 ⇒ 不走「陈旧移除」（未记录的新码由 classify 阻塞）。"""
+        """基线记的码仍命中 ⇒ 不走「陈旧移除」（未记录的新码由 classify 阻塞）。"""
         gate = self._gate()
-        # PG-013 夹具当下同时报 NO-EFFECT 与 NO-SELF-CLEAN；基线只记了后者
-        baseline = {"violations": {"PG-013": {"codes": ["CASE-TRUST-NO-SELF-CLEAN"]}}}
+        # PG-013 夹具当下同时报 NO-EFFECT 与 NO-PRECONDITION；基线只记了后者
+        baseline = {"violations": {"PG-013": {"codes": ["CASE-TRUST-NO-PRECONDITION-ASSERTION"]}}}
         v = tax.judge_case(fixture_pg_013(), catalog=_seed_catalog())
-        assert "CASE-TRUST-NO-SELF-CLEAN" in codes(v), "夹具前提：应命中 NO-SELF-CLEAN"
-        stale = gate.stale_baseline_entries(baseline, changed_ids={"PG-013"},
-                                            violations_by_case={"PG-013": v})
-        assert stale == [], f"仍命中原记码的用例被当成陈旧项：{stale}"
-        # 而未记录的 NO-EFFECT 必须由 classify 阻塞
+        assert "CASE-TRUST-NO-PRECONDITION-ASSERTION" in codes(v), "夹具前提：应命中该码"
+        recon = gate.reconcile_baseline(baseline, {"PG-013": v})
+        assert recon["stale"] == [], f"仍命中原记码的用例被当成陈旧项：{recon['stale']}"
+        # 而未记录的 NO-EFFECT 必须由 classify 阻塞（新增违规的口子不许松）
         verdict = gate.classify([{"case_id": "PG-013", "violations": v}], baseline=baseline)
         blocked = {x["code"] for b in verdict["blocking"] for x in b["violations"]}
         assert "CASE-TRUST-NO-EFFECT-ASSERTION" in blocked, (
@@ -964,7 +1000,7 @@ class TestGateShell:
         )
 
     def test_gate_prunes_when_recorded_code_no_longer_hits(self):
-        """「修好一条、又犯另一条」⇒ 原记码不再命中 ⇒ 必须重生成基线（清单只许缩短）。
+        """「修好一条、又犯另一条」⇒ 原记码不再命中 ⇒ 必须收窄该条（清单只许缩短）。
 
         形态取自并发包修 CU-003 的可能结果：标签名改对了（PRECLEAN 码消失），
         但仍缺效果层断言（NO-EFFECT 是新码）—— 基线条目陈旧 + 新码阻塞，两者都要报。
@@ -972,49 +1008,52 @@ class TestGateShell:
         gate = self._gate()
         baseline = {"violations": {"CU-003": {
             "codes": ["CASE-TRUST-PRECLEAN-TARGET-UNRESOLVABLE"]}}}
-        v = tax.judge_case(fixture_cu_003(), catalog=_seed_catalog())
-        # 先确认夹具当下确实还报 PRECLEAN 码；把标签名改对后再判
+        # 把标签名改对后再判（夹具当下确实还报 PRECLEAN 码）
         fixed = copy.deepcopy(fixture_cu_003())
         fixed["pre_clean"][0]["tag_name"] = "VIP2"
         v = tax.judge_case(fixed, catalog=_seed_catalog())
         assert "CASE-TRUST-PRECLEAN-TARGET-UNRESOLVABLE" not in codes(v)
-        stale = gate.stale_baseline_entries(baseline, changed_ids={"CU-003"},
-                                            violations_by_case={"CU-003": v})
-        assert [s["case_id"] for s in stale] == ["CU-003"], (
-            f"原记码不再命中却未报「可缩短清单」：{stale}"
+        recon = gate.reconcile_baseline(baseline, {"CU-003": v})
+        assert [s["case_id"] for s in recon["stale"]] == ["CU-003"], (
+            f"原记码不再命中却未报「清单可缩短」：{recon['stale']}"
         )
-        assert stale[0]["removed_codes"] == ["CASE-TRUST-PRECLEAN-TARGET-UNRESOLVABLE"]
-        assert stale[0]["hint"], "可缩短项必须带「怎么改」（指向重生成命令）"
+        assert recon["stale"][0]["removed_codes"] == ["CASE-TRUST-PRECLEAN-TARGET-UNRESOLVABLE"]
+        assert recon["blocking"], "陈旧条目必须阻塞（#4031）"
 
-    def test_stale_baseline_entry_does_not_block(self):
-        """**红线（防假红）**：陈旧基线条目只**告警**，不得阻塞 —— 否则会把
-        「修好用例」的人卡在 `.github/case-trust-baseline.json`（非其所有权的文件）上，
-        而该文件可能正被**在飞**的基线重生成改动持有（实证：#3832/#3833 正在修
-        CU-003/PG-013，基线文件同时被本门禁的 PR 创建）。
+    def test_stale_baseline_entry_blocks_and_report_says_so(self):
+        """**#4031 的口径反转**：陈旧基线条目从「只告警」改为**阻塞**。
 
-        判据：报告在「仅有陈旧项、无新增违规」时必须出现**可缩短/不阻塞本次**，
-        且**不得**出现阻塞结论 —— 退出码层面由 `main()` 只按 `blocking` 决定（见上一条）。
+        旧口径的理由（当时的实证：#3832/#3833 在修 CU-003/PG-013，基线文件同时在飞）是
+        「别把修好用例的人卡在别人的文件上」。裁定 1 判定该退让的代价更大 ——
+        它正是**永久豁免**的来源（没人再碰那条用例 ⇒ 永远不会被要求移除）。
+        为此本包同时给出**机械修复**（`--prune-baseline`，只删不加）与**反向对账**
+        （删掉仍在违规的条目同样阻塞），使「只许缩短」两侧都闭合。
         """
         gate = self._gate()
         report = gate.render_report(blocking=[], passed=[], stale=[
-            {"case_id": "PG-013", "removed_codes": ["CASE-TRUST-NO-SELF-CLEAN"],
+            {"case_id": "PG-013", "removed_codes": ["CASE-TRUST-NO-EFFECT-ASSERTION"],
              "now_codes": [], "hint": "hint"}],
-            changed_ids={"PG-013"}, unimplemented=[])
-        assert "不阻塞本次" in report, f"陈旧项未标明「不阻塞」：{report[:400]}"
-        assert "可缩短" in report
-        assert "❌ 阻塞" not in report, "仅有陈旧项时报告不得判阻塞"
-        assert "✅ 通过" in report
+            changed_ids=set(), unimplemented=[])
+        assert "❌ 阻塞" in report, f"陈旧项未判阻塞：{report[:400]}"
+        assert "✅ 通过" not in report
+        assert "全量对账" in report or "只许缩短" in report, "报告未说明这是全量对账的结论"
 
-    def test_unimplemented_manifest_records_baseline_pruning_limitation(self):
-        """机制现状必须照实登记：清单缩短**没有机械强制**（只告警）。
+    def test_unimplemented_manifest_registers_the_remaining_burn_down_gaps(self):
+        """机制现状必须**照实登记**（不许把「写进技能」当「有门禁」，也不许倒过来）。
 
-        为什么钉住：`migao-acceptance`「注释漂移 = 假绿来源」—— 若文档/清单声称
-        「清单只许缩短」是**强制**的，而实现只是告警，那就是一句会误导后来者的假真值。
+        #4031 落地后，原来那条「清单缩短无机械强制，只告警」的登记已成**假真值** ⇒
+        必须换成真实残留缺口：每-PR 口径的 scope、未登记违规不阻塞、drift_audit 未同步。
+        同时**不得**再留着「只告警」这类与实现相反的措辞（`migao-acceptance`：
+        注释漂移 = 假绿来源）。
         """
         assert UNIMPLEMENTED.exists(), f"未实装清单缺失：{UNIMPLEMENTED}"
         text = UNIMPLEMENTED.read_text(encoding="utf-8")
-        assert ("不能机械强制" in text or "无机械强制" in text or "只告警" in text), (
-            "未实装清单没有登记「基线缩短无机械强制」—— 会让人误以为它是强制的"
+        for needle in ("CASE-TRUST-BURN-DOWN-SCOPE-CASE-TOUCHING-ONLY",
+                       "CASE-TRUST-UNREGISTERED-VIOLATION-NOT-BLOCKING",
+                       "DRIFT-AUDIT-STALE-DIFF-SCOPED"):
+            assert needle in text, f"未实装清单缺了 #4031 后的真实残留缺口登记：{needle}"
+        assert "CASE-TRUST-BASELINE-PRUNING-ENFORCEMENT" not in text, (
+            "旧的「无机械强制，只告警」登记未撤 —— 与实现相反，是假真值"
         )
 
     def test_gate_blocks_unknown_preclean_without_crashing(self):
@@ -1033,6 +1072,191 @@ class TestGateShell:
         )
         assert "CASE-TRUST-NO-SELF-CLEAN" not in codes(v), (
             "声明了 pre_clean（哪怕类型未知）仍被判无自清理"
+        )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 五之二、burn-down 预算与全量对账的端到端红证（#4031 交付 2 / 3）
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _gate_module():
+    """按路径加载门禁模块（它是脚本不是包）。"""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("case_trust_gate", GATE)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+# 预算配置夹具：与 `.github/case-trust-baseline.json` 的 `burn_down` 同形（日期是注入用的）
+CFG = {"per_pr_min": 1, "metric": "entries_or_codes", "scope": "case_touching_prs",
+       "priority_prefixes": ["OR-"], "priority_deadline": "2026-10-31",
+       "deadline": "2026-12-31"}
+
+
+def _bd_baseline(entries: int, codes_per_entry: int = 1, cfg: dict | None = None,
+                 prefix: str = "") -> dict:
+    """合成一份清单（`entries` 条，每条 `codes_per_entry` 个码）—— 只喂预算裁决，不碰真库。"""
+    v = {f"{prefix}C{i:03d}": {"codes": [f"CODE-{j}" for j in range(codes_per_entry)]}
+         for i in range(entries)}
+    out: dict = {"violations": v}
+    if cfg is not None:
+        out["burn_down"] = cfg
+    return out
+
+
+class TestBurnDownBudget:
+    """burn-down 预算（#4009 裁定 1 第三条 / #4031 交付 3）。
+
+    「每 PR 至少消 N 条 + 到期清零 + 先清 OR-*」三条**都必须能红**（R5：不会红的判据 = 空断言），
+    且每条配一个负例（R2：不许拦掉本来合法的输入）。
+    """
+
+    def test_budget_blocks_when_nothing_was_burned(self):
+        g = _gate_module()
+        v = g.burn_down_verdict(_bd_baseline(3, cfg=CFG), _bd_baseline(3, cfg=CFG),
+                                "2026-09-18", case_files_touched=True)
+        assert v["blocking"], f"一条没消却不红 —— 预算形同虚设：{v}"
+        assert any("预算未达标" in r for r in v["reasons"]), v["reasons"]
+
+    def test_budget_passes_when_nothing_is_left(self):
+        """负例（R2）：清单已清零 ⇒ 每-PR 最低消减不得再拦（否则成了永远不会绿的判据）。"""
+        g = _gate_module()
+        v = g.burn_down_verdict(_bd_baseline(1, cfg=CFG), _bd_baseline(0, cfg=CFG),
+                                "2026-09-18", case_files_touched=True)
+        assert not v["blocking"], v["reasons"]
+        assert any("已清零" in n for n in v["notes"]), v["notes"]
+
+    def test_budget_passes_on_code_level_narrowing(self):
+        """`metric=entries_or_codes`：**收窄一条**（条目数不变、码数 -1）也算消了一条豁免。
+
+        为什么认这个口径：豁免面 = `(用例, 规则)` 对；`PG-013` 修掉 `NO-EFFECT` 后该豁免
+        真实消失，只是条目还在（另一条码仍在违规）。只认条目数会让这种真实消减不计分。
+        """
+        g = _gate_module()
+        base = _bd_baseline(2, codes_per_entry=2, cfg=CFG)
+        cur = _bd_baseline(2, codes_per_entry=2, cfg=CFG)
+        cur["violations"]["C000"]["codes"] = ["CODE-0"]
+        v = g.burn_down_verdict(base, cur, "2026-09-18", case_files_touched=True)
+        assert not v["blocking"], v["reasons"]
+        assert v["net"]["entries"] == [2, 2] and v["net"]["codes"] == [4, 3], v["net"]
+
+    def test_budget_skips_prs_that_touch_no_case_file_but_says_so(self):
+        """默认口径 `scope=case_touching_prs`：不改用例的 PR 不承担每-PR 消减，但必须**说出来**。"""
+        g = _gate_module()
+        v = g.burn_down_verdict(_bd_baseline(3, cfg=CFG), _bd_baseline(3, cfg=CFG),
+                                "2026-09-18", case_files_touched=False)
+        assert not v["blocking"], v["reasons"]
+        assert any("不适用" in n for n in v["notes"]), (
+            f"跳过了却不说明 —— 「没跑」必须长得像「没跑」：{v['notes']}"
+        )
+
+    def test_budget_all_prs_scope_is_available_and_blocks(self):
+        """字面口径（每个 PR）是**数据开关**，不是空话：`scope=all_prs` 时同样红。"""
+        g = _gate_module()
+        cfg = {**CFG, "scope": "all_prs"}
+        v = g.burn_down_verdict(_bd_baseline(3, cfg=cfg), _bd_baseline(3, cfg=cfg),
+                                "2026-09-18", case_files_touched=False)
+        assert v["blocking"], f"all_prs 口径未生效：{v}"
+
+    def test_budget_blocks_baseline_growth(self):
+        """R4：清单**增长**（= 新增豁免）必须红 —— 否则「加 10 条、消 1 条」也算达标。"""
+        g = _gate_module()
+        v = g.burn_down_verdict(_bd_baseline(2, cfg=CFG), _bd_baseline(4, cfg=CFG),
+                                "2026-09-18", case_files_touched=False)
+        assert v["blocking"], f"清单增长未判红（R4 失守）：{v}"
+        assert any("增长" in r for r in v["reasons"]), v["reasons"]
+
+    def test_priority_deadline_forces_or_entries_first(self):
+        """先清 `OR-*`：优先档到期后清单里不得再有 `OR-*` 条目（且报告把它们排在最前）。"""
+        g = _gate_module()
+        cur = _bd_baseline(2, cfg=CFG, prefix="OR-")
+        late = g.burn_down_verdict(_bd_baseline(3, cfg=CFG), cur, "2026-11-01",
+                                   case_files_touched=False)
+        assert late["blocking"], f"OR-* 优先档到期未判红：{late}"
+        assert any("OR-" in r and "到期" in r for r in late["reasons"]), late["reasons"]
+        assert late["priority_remaining"] == ["OR-C000", "OR-C001"], late["priority_remaining"]
+        # 负例（R2）：还没到期 ⇒ 不得因 OR-* 判红
+        early = g.burn_down_verdict(_bd_baseline(3, cfg=CFG), cur, "2026-10-30",
+                                    case_files_touched=False)
+        assert not early["blocking"], f"未到期就判红（假红）：{early['reasons']}"
+
+    def test_deadline_zero_out(self):
+        """到期清零：`deadline` 之后清单必须为空（有任何条目即红）；清零后不得再红。"""
+        g = _gate_module()
+        late = g.burn_down_verdict(_bd_baseline(2, cfg=CFG), _bd_baseline(1, cfg=CFG),
+                                   "2026-12-31", case_files_touched=False)
+        assert late["blocking"], f"到期未清零未判红：{late}"
+        assert any("到期清零" in r for r in late["reasons"]), late["reasons"]
+        done = g.burn_down_verdict(_bd_baseline(2, cfg=CFG), _bd_baseline(0, cfg=CFG),
+                                   "2027-06-01", case_files_touched=False)
+        assert not done["blocking"], f"已清零仍判红（假红）：{done['reasons']}"
+
+    def test_budget_config_cannot_be_weakened(self):
+        """预算**只许收紧**：per_pr_min 降低 / 到期日推后 / 优先前缀去掉 / 整块删除 ⇒ 都红。"""
+        g = _gate_module()
+        variants = {
+            "per_pr_min 降低": {**CFG, "per_pr_min": 0},
+            "deadline 推后": {**CFG, "deadline": "2027-12-31"},
+            "priority_deadline 推后": {**CFG, "priority_deadline": "2027-01-31"},
+            "优先前缀去掉": {**CFG, "priority_prefixes": []},
+            "整块删除": None,
+        }
+        for name, cfg in variants.items():
+            cur = _bd_baseline(2, cfg=cfg) if cfg is not None else _bd_baseline(2)
+            v = g.burn_down_verdict(_bd_baseline(2, cfg=CFG), cur, "2026-09-18",
+                                    case_files_touched=False)
+            assert v["blocking"], f"「{name}」未被拦（预算可被自证式放宽）：{v}"
+
+    def test_effective_config_comes_from_base_not_from_this_pr(self):
+        """生效配置读 `origin/main` 那一份 ⇒ 本 PR 挪到期日改不动**本次**判定。"""
+        g = _gate_module()
+        base = _bd_baseline(2, cfg={**CFG, "deadline": "2026-09-30"})  # 已过期
+        cur = _bd_baseline(2, cfg={**CFG, "deadline": "2099-12-31"})  # 本 PR 想推后
+        v = g.burn_down_verdict(base, cur, "2026-10-05", case_files_touched=False)
+        assert v["source"] == "base(origin/main)", v["source"]
+        assert v["config"]["deadline"] == "2026-09-30", (
+            f"生效配置来自本 PR 清单（可自证式放宽）：{v['config']}"
+        )
+        assert v["blocking"], f"base 的到期日已过却未判红：{v}"
+
+    def test_budget_inactive_is_visible_not_silent(self):
+        """两侧都没有 `burn_down` 块 ⇒ 未激活，但必须**打印出来**（不静默）。"""
+        g = _gate_module()
+        v = g.burn_down_verdict(_bd_baseline(2), _bd_baseline(2), "2026-09-18", True)
+        assert not v["active"] and not v["blocking"]
+        assert any("未激活" in n for n in v["notes"]), v["notes"]
+
+
+class TestGateScriptEndToEnd:
+    """端到端红证：真跑脚本、真退出码（函数级绿 ≠ CI 绿）。"""
+
+    def test_script_exits_1_on_stale_entry_outside_the_diff(self, tmp_path):
+        """把一条**已不再命中**的码写回清单副本 ⇒ 脚本必须 exit 1 并给出 prune 命令。
+
+        这条同时是「改前不报 / 改后报」的可执行形态：该码所在用例**不在本次 diff 里**
+        （本 PR 不改 `.github/cases/*.yml`），旧口径连判都不判（直接「未跑」+ exit 0）。
+
+        ⚠️ **基准用 `HEAD` 而不是 `origin/main`**（首轮 CI 红的根因，实测）：
+        跑本文件的 `ci workflow helper unit tests` job 是 `actions/checkout@v7` **默认浅克隆**
+        （没有 `fetch-depth: 0`）⇒ `origin/main` **不存在** ⇒ 门禁在 `changed_case_files` 处
+        fail-closed `exit 1`（stdout 为空）⇒ 断言「必须报出陈旧项」失败。
+        本用例要证的是**账本对账**（与 diff 基准是谁无关），用 `HEAD` 既等价又不依赖浅克隆；
+        真要判 `origin/main` 的那个 job（`case-trust-gate`）自己带 `fetch-depth: 0`。
+        """
+        data = json.loads(BASELINE.read_text(encoding="utf-8"))
+        entry = data["violations"]["PG-013"]
+        entry["codes"] = sorted(set(entry["codes"]) | {"CASE-TRUST-NO-EFFECT-ASSERTION"})
+        tmp = tmp_path / "baseline.json"
+        tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        r = subprocess.run([sys.executable, str(GATE), "--base", "HEAD",
+                            "--baseline", str(tmp)],
+                           capture_output=True, text=True, cwd=str(REPO_ROOT))
+        assert r.returncode == 1, (
+            f"陈旧条目未让脚本 exit 1（假绿）：\nstdout={r.stdout[-1500:]}\nstderr={r.stderr[-800:]}"
+        )
+        assert "全量对账" in r.stdout and "--prune-baseline" in r.stdout, (
+            f"stdout={r.stdout[-1500:]}\nstderr={r.stderr[-800:]}"
         )
 
 
