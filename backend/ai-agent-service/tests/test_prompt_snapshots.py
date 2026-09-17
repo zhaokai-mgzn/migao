@@ -16,12 +16,28 @@ import re
 
 import pytest
 
-from app.graph.skills.base_skill import _build_system_prompt, _PROMPT_CACHE
+from app.graph.skills.base_skill import (
+    _CAPABILITY_INDEX_MARKER, _build_system_prompt, _PROMPT_CACHE,
+)
 
 
 def _clear_cache():
     """清除缓存，确保每次测试重新读取"""
     _PROMPT_CACHE.clear()
+
+
+def _without_capability_index(prompt: str) -> str:
+    """去掉 #4125 的**能力索引**层（域隔离判据的判据面）。
+
+    为什么：索引是**跨域地图**，按设计就会点名其它域的**写工具**（"域 → 该域可执行的写工具"）
+    —— 它既不是 order 的领域规则、也不是 product 的领域规则，把它算进"域规则污染"会让
+    「域隔离」判据（`test_*_prompt_no_*_contamination`）从"判域规则"退化成"判有没有地图"。
+    索引自身的内容一致性由 `tests/test_capability_index_prompt.py` 逐域机械比对锁定。
+    """
+    if _CAPABILITY_INDEX_MARKER not in prompt:
+        return prompt
+    head, _, tail = prompt.partition(_CAPABILITY_INDEX_MARKER)
+    return head + tail.split("\n\n", 1)[-1] if "\n\n" in tail else head
 
 
 @pytest.fixture(autouse=True)
@@ -100,18 +116,20 @@ def test_skill_prompt_length_reasonable(skill):
 
 
 # ============ 领域隔离检查 ============
+# ⚠️ 下面两条判的是**域规则**的隔离（域 prompt / EXAMPLES / 内联），故先剥掉 #4125 的
+#    能力索引层（它按设计点名其它域的写工具，见 `_without_capability_index` 说明）。
 
 def test_product_prompt_no_order_contamination():
     """product 的 Prompt 不应包含 order 的专属规则"""
-    prompt = _build_system_prompt("product")
+    prompt = _without_capability_index(_build_system_prompt("product"))
     # order-only rules
     assert "售后工单的创建、查询、流转" not in prompt
     assert "转人工提示" not in prompt
 
 
 def test_order_prompt_no_product_contamination():
-    """order 的 Prompt 不应包含 product 特有的工具和规则"""
-    prompt = _build_system_prompt("order")
+    """order 的 **域规则** 不应包含 product 特有的工具和规则（#4125 起：索引层不算判据面）"""
+    prompt = _without_capability_index(_build_system_prompt("order"))
     # product-only tools（公共 principles 中可能提及通用概念但不包含具体用法）
     assert "inventory_manage" not in prompt
     assert "category_manage" not in prompt
@@ -290,6 +308,12 @@ def test_snapshot_all_skills():
         )
 
     # 最大长度快照（防止无限制膨胀）
+    # 2026-09-18（issue #4125「能力索引」层）：下表各项 **+600 字符**（索引块实测 587 字符，
+    #   取整留 13 字符余量；B 端 9 个域共用同一块，C 端 6 个域共用 232 字符的小块故未触顶）。
+    #   复算命令（实测值，别照抄本注释）：
+    #     cd backend/ai-agent-service && PYTHONPATH=. .venv/bin/python -c \
+    #       "from app.graph.skills.base_skill import _build_system_prompt as b; \
+    #        print({s: len(b(s)) for s in ('order','product','aftersales','customer','staff','settings','data','general','knowledge')})"
     expected_max = {
         "product": 12700,  # +800: 澄清话术(#2784)+承诺边界(#2785) + 加工项主动询问增强（issue #2892，达 9985）+ 建品规格/加工项价格规则（#3027，达 10732）+ 确认卡片必须发出（issue #3045，达 11131）+ 库存工具分工铁律（Round 37，达 11318）+ 120（issue #3930/#3931）：product_update 描述补「主图/详情图走 product_manage」反例 + product.md 主图/详情图映射行（达 12019）+ 379（issue #3936）：product.md 补「禁止以工具不支持/没有能力为由拒绝写操作」通用铁律（达 12398）；+300（issue #4107 F7）：共享层 `base/principles.md` 的权限归因规则补后半——「系统**确实**报权限拒绝时必须如实说明缺哪项能力 + 不得重试 + 给开通路径」（+168 字符，达 12562）
         "order": 14000,  # …（沿革见下行原注，此处只追加本单）；+800（issue #4454）：补「术语映射（商家说法 ↔ 内部参数，下单采集必用）」段 —— 部位（布帘/纱帘/帘头）+ 工艺（韩褶/打孔/穿杆/平幔/四爪钩→韩褶）两维度口语说法 → 内部值，逐条对齐真值源 `docs/curtain-production-rules.md` §8（单一真值源，守卫见 `tests/test_issue_4454_craft_glossary.py`）；同时按惯例 trim `单价铁律`/`加工项`/`加工单`/`下单流程` 的冗余措辞（**未删任何规则**），trim 后**实测 13779**（命令自证：本文件即判据）。沿革（issue #4196 止）：+800: 加工项数量自动推导（issue #2986）+ confirm 前必须主动询问加工项（issue #3033，达 8836）+ 共享规则确认卡片铁律（issue #3045，达 9133）+ 规格ID≠商品ID 铁律（Round 39，达 9396）+ 加工单域（#3340，达 10005）；+1200（issue #3799）：订单→物流链收口（prompts/order.md 链规则 + EXAMPLES-order.md「同一轮 order_query→logistics_track」正/反例，达 11364）；+600（issue #3873）：单价铁律——报价/确认/落单单价必须来自商品库，禁止编造分色价（达 11967）；+400（OR-014 判定跑 34923425338 收口）：单价铁律补「系统会拦截并回填」+ EXAMPLES-order.md 反例4「库价 168 却写米白 150」（达 12595）；-233（issue #3917，达 12362）：加工单章节由「工具操作指引」（生成/查询/发加工/start/complete/cancel）整体替换为「加工项 vs 加工单概念区分 + 不接入声明」；+76（issue #3921，达 12438）：补「问加工单不调用任何工具（含订单查询/加工项查询）」；+200（issue #4107 F7）：共享层 `base/principles.md` 权限归因规则补后半（达 12602）；+389（issue #4196，达 **12991**）：**反转 -233 与 +76 两笔过期处方**——加工单章节恢复操作指引（frontmatter 工具行 + 工具使用表 3 行 + 生成/查询/发加工/状态机/发货守卫），概念区分以**一条防混淆守则**保留（加工项≠加工单、不得用 processing_item_query 冒充、不得编造加工单号/状态）；#3921 那条「不调用任何工具」已成假真值故删除（留着会把模型往错处推）。先 trim 再评估抬上限：删过期处方 + 去跨层口径括注与冗余措辞 + 守则压 3 行后**实测 12991 < 硬上限 13000**，故本次只上调本 per-skill 预算（12800→13000），**硬上限不动**（命令自证：本文件即判据）
@@ -331,26 +355,34 @@ def test_customer_aftersales_fewshot_guides_aftersale_create():
     prompt = _build_system_prompt("customer_aftersales")
     # few-shot 已注入
     assert "Few-shot 参考示例" in prompt, "customer_aftersales 缺少 few-shot 注入"
+    _head, _sep, fewshot = prompt.partition("Few-shot 参考示例")
+    assert fewshot, "few-shot 段落为空 —— 判据会空跑（fail-closed）"
     # 核心引导：换货/退货应 aftersale_create
-    assert "aftersale_create" in prompt, "few-shot 未包含 aftersale_create 引导"
+    # 🔴 判据面收窄（issue #4125）：`aftersale_create` 这类**工具名**按设计也会出现在
+    #    **能力索引层**（抬头/域行）⇒ 直接断言 `in prompt` 会退化成「不管 few-shot 丢没丢都恒真」的
+    #    **空判据**（`migao-dev-flow` §19.1）。故 **few-shot 类**断言一律断在 few-shot 切片上。
+    #    ⚠️ **不得**借此放宽退场面判据：`human_handoff` 是否泄漏**必须**在**全量 prompt** 上判
+    #    （能力索引层同样不许出现它）—— 见下。**只收窄判据面，未放宽**：few-shot 真丢这些内容时本用例仍必红。
+    assert "aftersale_create" in fewshot, "few-shot 未包含 aftersale_create 引导"
     # 换货场景仍在（下行断言依赖它）
-    assert "换货" in prompt, "few-shot 缺少换货场景"
+    assert "换货" in fewshot, "few-shot 缺少换货场景"
     # 反例仍在（教学价值不得因退场而丢）：推给人工被明确标为错误
-    assert "错误" in prompt and "需要人工客服处理哦" in prompt, (
+    assert "错误" in fewshot and "需要人工客服处理哦" in fewshot, (
         "few-shot 丢了「推给人工 = 错误」的反例 —— 退场后这仍是高频失败形态"
     )
-    # 退场面：prompt 里**不得**出现退场工具名（否则模型会承诺"已为您转接"）
+    # 退场面（human_handoff 已整体退场）：**全量 prompt** 里不得出现退场工具名
+    # —— 断在切片上会漏掉「能力索引层泄漏」这条新增路径，故此处刻意用 `prompt`。
     assert "human_handoff" not in prompt, (
         "customer_aftersales prompt 里出现了已退场工具名 —— 模型会被导向一个按不动的出口"
     )
-    # 假承诺禁令在（退场后新增的必需规则）
+    # 假承诺禁令在（退场后新增的必需规则；属共享原则层 ⇒ 全量判）
     assert "禁止" in prompt and "已为您转接人工客服" in prompt, (
         "prompt 缺少「禁止假承诺转接」的显式禁令"
     )
     # 已发货订单可售后（状态门禁：confirmed/producing/shipped/completed 均可建退换货）
     # —— 真实闭环回归：AI 看到"已发货"误判不能售后而推给人工
-    assert "已发货" in prompt, "few-shot 未说明已发货订单可申请售后"
-    assert "尺寸买大了" in prompt, "few-shot 缺少已发货换货示例"
+    assert "已发货" in fewshot, "few-shot 未说明已发货订单可申请售后"
+    assert "尺寸买大了" in fewshot, "few-shot 缺少已发货换货示例"
 
 
 def test_customer_aftersales_prompt_loaded_with_identity():

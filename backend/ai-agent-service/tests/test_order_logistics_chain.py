@@ -93,13 +93,37 @@ def _order_query_result(order_nos):
     }
 
 
+def _legacy_registry_without_family_share(tool_names):
+    """**反向守卫专用**的域构造：只注册声明的工具，**不经** #4125 的家族只读共享。
+
+    为什么需要它（issue #4125）：只读工具跨域共享后，**B 端任一域都带 `logistics_track`**
+    （它是 B 端只读工具，家族共享必然并入）⇒「有 `order_query` 却没有 `logistics_track`」的域
+    在**生产里已不可构造**，而"缺该工具 ⇒ 不得触发纠正"这条反向守卫仍必须可判。
+    判据本体一个字没改：谁把 `_logistics_chain_incomplete` 的 `_registry_has_tool` 那一项删掉，
+    用本夹具的用例照样红（这正是它存在的意义）。生产路径仍只走 `create_skill_registry`。
+    """
+    from app.tools.registry import ToolRegistry, get_tool_registry, set_tool_scope
+
+    reg = ToolRegistry()
+    full = get_tool_registry()
+    for name in tool_names:
+        tool = full.get_tool(name)
+        if tool:
+            reg.register(tool)
+    set_tool_scope(reg.get_tool_names())
+    return reg
+
+
 def _run_chain(replies, *, intent="logistics_track", tool_names=("order_query", "logistics_track"),
                order_nos=(REAL_ORDER_NO,), skill_name="order", role="agent",
-               agent_type="mibao"):
+               agent_type="mibao", family_share=True):
     """用 scripted LLM 驱动**真实** `execute_skill`，返回执行过的事实。
 
     工具不真跑（`_execute_tool_safe` 换成记账假实现），但**注册表用真实工具实例** ——
     链收口判据读的正是 `registry.get_tool("logistics_track")` 这一事实，mock 掉会失真。
+
+    `family_share=False` ⇒ 用 `_legacy_registry_without_family_share`（pre-#4125 形态的域），
+    仅供"缺该工具的域"这条反向守卫使用。
     """
     executed = []          # [(tool_name, args)]
     injected = []          # 实际被注入的 SystemMessage 文本
@@ -132,7 +156,9 @@ def _run_chain(replies, *, intent="logistics_track", tool_names=("order_query", 
          patch("app.graph.skills.base_skill.create_skill_registry") as create_reg, \
          patch("app.graph.skills.base_skill.set_tool_context"), \
          patch("app.graph.skills.base_skill._execute_tool_safe", fake_execute):
-        create_reg.return_value = create_skill_registry(list(tool_names))
+        create_reg.return_value = (
+            create_skill_registry(list(tool_names)) if family_share
+            else _legacy_registry_without_family_share(list(tool_names)))
         # 只读迭代可能换用"关思考"的 LLM 实例（同一模型）：统一回我们这条 scripted stub，
         # 否则第 2+ 次迭代的回复不来自脚本、测试变成"在测 mock"。
         llm_factory.create_skill_llm.return_value = llm
@@ -290,12 +316,19 @@ class TestChainGateReverseGuards:
         assert [n for n, _ in executed] == ["logistics_track"]
 
     def test_not_triggered_when_skill_lacks_logistics_tool(self):
-        """本 skill 工具集里没有 logistics_track（如 C 端小布用小布的物流工具）⇒ 不触发。"""
+        """本 skill 工具集里没有 logistics_track（如 C 端小布用小布的物流工具）⇒ 不触发。
+
+        #4125 起：B 端任一域都共享到 `logistics_track`，故"缺该工具的域"按 pre-#4125 形态
+        **直接构造**（`family_share=False`）；判据本体未动 —— 缺工具就不得触发。
+        """
+        pre = _legacy_registry_without_family_share(["order_query"])
+        assert "logistics_track" not in pre.get_tool_names(), (
+            "夹具没造成『缺 logistics_track 的域』—— 反向守卫会空跑（fail-closed）")
         replies = [
             _ai(tool_calls=[_tc("order_query", {"action": "list"}, "c1")]),
             _ai(RED_REPLY),
         ]
-        _, llm, _, injected = _run_chain(replies, tool_names=("order_query",))
+        _, llm, _, injected = _run_chain(replies, tool_names=("order_query",), family_share=False)
         assert injected == [] and llm.ainvoke.await_count == 2
 
     def test_pure_predicate_conditions(self):
@@ -306,6 +339,10 @@ class TestChainGateReverseGuards:
         """
         predicate = base_skill._logistics_chain_incomplete
         registry = create_skill_registry(["order_query", "logistics_track"])
+        # 「缺该工具的域」这一行（#4125 起生产工厂造不出来了，见 `_legacy_registry_without_family_share`）
+        lacks_tool = _legacy_registry_without_family_share(["order_query"])
+        assert "logistics_track" not in lacks_tool.get_tool_names(), (
+            "夹具没造成『缺 logistics_track 的域』—— 该行变成同形重复（判据空跑）")
         assert predicate(
             intent_name="logistics_track", registry=registry,
             order_nos=[REAL_ORDER_NO], executed_tools={"order_query"}) is True
@@ -316,7 +353,7 @@ class TestChainGateReverseGuards:
                  order_nos=[], executed_tools={"order_query"}),
             dict(intent_name="logistics_track", registry=registry,
                  order_nos=[REAL_ORDER_NO], executed_tools={"logistics_track"}),
-            dict(intent_name="logistics_track", registry=create_skill_registry(["order_query"]),
+            dict(intent_name="logistics_track", registry=lacks_tool,
                  order_nos=[REAL_ORDER_NO], executed_tools={"order_query"}),
         ):
             assert predicate(**kw) is False, f"过度纠正风险：{kw}"
