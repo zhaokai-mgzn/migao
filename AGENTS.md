@@ -37,27 +37,44 @@ Java admin-api + Python ai-agent-service + Next.js admin-web + Taro mini-app。
 「米高研发」= DSH agent preset（`preset.yml` + `agent.cordis.yml` + `migao-dev-flow` / `migao-acceptance`
 两个技能），**权威源就是本仓库 [`.agent-presets/migao/`](.agent-presets/migao/README.md)** —— 随代码一起评审、一起回溯。
 DSH 从 root `~/.dsh/.agent-presets/`（`USER_PRESET_DIR = '.agent-presets'`）发现 preset，
-因此把它软链到本仓库该路径即可获得同一份研发模式：
+因此把它软链到本仓库该路径即可获得同一份研发模式。
+**⚠️ 锚点必须指向「专职只读镜像」，不是任何会被开发/会被清理的工作区**（`#3849`/`#4026`）：
 
 **⚠️ 顺序铁律：先合并含 `.agent-presets/migao/` 的 PR，再执行换链** —— 仓库尚无该路径时换链会让 DSH 当场失效。
 
 ```bash
-# 在已克隆（且已含该路径）的 migao 仓库根目录执行
-ls .agent-presets/migao/preset.yml     # ① 先确认仓库里已有该路径
+# ① 建**专职只读镜像**（独立克隆；本机约定路径 $HOME/migao-preset-anchor —— 长期保留、勿删）
+MIRROR="$HOME/migao-preset-anchor"
+git clone --no-checkout <本仓库 URL> "$MIRROR"
+git -C "$MIRROR" checkout --detach origin/main
+ls "$MIRROR/.agent-presets/migao/preset.yml"     # 镜像里已有该路径才继续
 
 # ② 摘掉旧目录 / 旧软链（若是实体目录，先备份而不是直接删）
 mv "$HOME/.dsh/.agent-presets/migao" "$HOME/.dsh/.agent-presets/migao.bak-$(date +%Y%m%d-%H%M%S)" 2>/dev/null || true
 
 # ③ 换链：-s 建软链 / -f 覆盖已存在项 / -n 不跟随已存在的软链目录
-ln -sfn "$PWD/.agent-presets/migao" "$HOME/.dsh/.agent-presets/migao"
+ln -sfn "$MIRROR/.agent-presets/migao" "$HOME/.dsh/.agent-presets/migao"
 
 # ④ 校验：应能读到 preset 元数据与技能
 cat "$HOME/.dsh/.agent-presets/migao/preset.yml"
 head -3 "$HOME/.dsh/.agent-presets/migao/skills/migao-dev-flow/SKILL.md"
+
+# ⑤ 每天/每次开工：自检（红就停）+ 自愈（把镜像刷到 origin/main）
+./scripts/preset-anchor-check.sh       # 落后/悬空/内容不同 ⇒ 非零退出
+./scripts/preset-anchor-refresh.sh     # 刷新镜像并复检（改预设的 PR 合并后必跑一次）
 ```
 
-- **换机 / 新队友**：`git clone` 本仓库 → 在仓库根跑上面 ②~④，即获得同一份研发模式（不再依赖个人 `~/.dsh` 手抄副本）。
-- **改研发模式 = 提 PR**：改 `.agent-presets/migao/**` 走正常 PR 流程（评审 + 回溯）；软链指向工作区文件，合并/拉取后自动生效。
+- **为什么锚点不能指向工作区**（两条实测，别把锚点当"另一个工作区"）：
+  ① 工作区会**落后 main**：实测活锚曾指向落后 `origin/main` **42 个提交**的主工作区 —— 内容当时恰好一致
+  （无害），但**下一次改预设的改进就到不了加载点**，后续所有会话按旧模式干活且**无任何东西变红**（`#4026`）；
+  ② 工作区会被**清理/切分支**：实测一条 `rm -rf … migao-preset-live …` 把当时的软链目标硬删了 ⇒
+  软链悬空 ⇒ **DSH 静默加载不到研发模式**（不报错，只是"模式不见了"，`#3956`）。
+  `migao-wt/*` 的 worktree 属 `dev-worktree.sh rm/prune` 的清理半径，**同样不能当锚点**。
+  ⇒ 任何清理命令执行**之前**先 `readlink "$HOME/.dsh/.agent-presets/migao"`，把解析出的目标及其父目录排除在外。
+- **换机 / 新队友**：`git clone` 本仓库 → 跑上面 ①~④（独立克隆镜像 + 换链），即获得同一份研发模式
+  （不再依赖个人 `~/.dsh` 手抄副本 —— 手抄副本没有跟随机制，必然腐烂）。
+- **改研发模式 = 提 PR**：改 `.agent-presets/migao/**` 走正常 PR 流程（评审 + 回溯）。
+  ⚠️ **合并后活锚不会自动跟上**：跑一次 `./scripts/preset-anchor-refresh.sh`（否则下次会话读到的仍是旧模式）。
 - 历史独立仓库 `zhaokai-mgzn/migao-agent-presets` 现为**历史 / 镜像，以本仓库为准**；其远程去留（保留/归档/删除）**待用户裁定**，裁定前不动它。详见 [`.agent-presets/migao/README.md`](.agent-presets/migao/README.md)。
 
 ## 环境
