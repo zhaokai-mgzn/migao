@@ -1,4 +1,4 @@
-# case_ids: HR-009, HR-010
+# case_ids: HR-002, HR-009, HR-010
 """评测可控权限（`X-Debug-Permissions`）的**前置自断言**：判据 = **服务端探针**（issue #4150）。
 
 ## 病灶（issue #4150，验证于 `origin/main`）
@@ -509,6 +509,114 @@ class TestEmployeeRemoveReportsDeleteFailure:
         assert "删除" in msg and "幂等" not in msg, (
             f"删除失败被当成良性 no-op（静默跳过）：{msg!r}")
         assert "13800009999" in msg, f"失败消息没点名对象：{msg!r}"
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 五·三、`employee_count_for_phone` 前置（HR-002 创建前提；issue #4189 burn-down 缴费）
+# ══════════════════════════════════════════════════════════════════════════════
+
+class TestEmployeeCountPrecondition:
+    """`employee_count_for_phone` 的 runner 侧判据（与 `order_count_for_phone` 同构）。
+
+    用途（HR-002，issue #4189）：创建员工的前提 = 手机号 `13812345678` 名下**没有**既有
+    员工（残留会撞唯一校验 ⇒ agent 合理澄清 ⇒ 恒红且归因全错）。`expect: 0` 判基线
+    （开跑有残留 ⇒ 前置本就不成立 ⇒ 红），`max_growth: 1` 容忍本用例自己造的那一个、
+    并行用例再造同名 ⇒ 漂移判红。定位口径与 `employee_remove` 同一份（`_norm_phone`）。
+    """
+
+    SPEC = [{"type": "employee_count_for_phone", "source": "13812345678",
+             "expect": 0, "max_growth": 1}]
+
+    def test_declared_type_is_implemented(self):
+        lr = _runner()
+        assert lr.check_precondition_declared(self.SPEC) == []
+
+    def test_clean_baseline_is_green(self):
+        """基线 = 0（目标可创建）且本用例只造 1 个 ⇒ 绿。"""
+        lr = _runner()
+        assert lr.check_precondition_drift(
+            self.SPEC, {"employee_count_for_phone:13812345678": 0},
+            {"employee_count_for_phone:13812345678": 1}) == []
+
+    def test_residue_baseline_is_red(self):
+        """**红证**：开跑时已有残留（count=1）⇒ 前置本就不成立 ⇒ 红（判别性承重）。"""
+        lr = _runner()
+        issues = lr.check_precondition_drift(
+            self.SPEC, {"employee_count_for_phone:13812345678": 1},
+            {"employee_count_for_phone:13812345678": 1})
+        assert issues and "本就不成立" in issues[0], issues
+        assert issues[0].startswith("precondition[employee_count_for_phone]"), issues[0]
+
+    def test_parallel_pollution_is_red(self):
+        """**红证**：运行中被并行用例再造一个同名（0 → 2）⇒ 超出 max_growth=1 ⇒ 漂移判红。"""
+        lr = _runner()
+        issues = lr.check_precondition_drift(
+            self.SPEC, {"employee_count_for_phone:13812345678": 0},
+            {"employee_count_for_phone:13812345678": 2})
+        assert issues and "漂移" in issues[0], issues
+
+    def test_unreadable_probe_does_not_fake_a_verdict(self):
+        """取不到读数时**不报**（网络抖动 ≠ 前置不成立）—— 与既有类型同口径。"""
+        lr = _runner()
+        assert lr.check_precondition_drift(self.SPEC, {}, {}) == []
+
+    def test_probe_fail_closed_on_http_failure(self, monkeypatch):
+        """取数失败 ⇒ None（**不得读成 0** —— 0 会被当成"目标可创建"，假绿形态）。"""
+        lr = _runner()
+
+        class _Resp:
+            status_code = 500
+            content = b""
+
+        class _Client:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *a):
+                return False
+
+            async def get(self, *a, **k):
+                return _Resp()
+
+        monkeypatch.setattr(lr.httpx, "AsyncClient", lambda *a, **k: _Client())
+        assert asyncio.run(lr._probe_employee_count("tok", "13812345678")) is None
+
+    def test_probe_counts_matching_rows(self, monkeypatch):
+        """探针按手机号**数字归一**精确计数（与 `_eval_find_users` 同一份定位口径）。"""
+        import json
+        lr = _runner()
+
+        class _Resp:
+            def __init__(self, payload):
+                self.status_code = 200
+                self.content = json.dumps(payload).encode()
+
+        class _Client:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *a):
+                return False
+
+            async def get(self, *a, **k):
+                return _Resp({"data": {"items": [
+                    {"id": "u1", "name": "王五", "phone": "13812345678"},
+                    {"id": "u2", "name": "王五", "phone": "138 0013 8000"},
+                ], "total": 2}})
+
+        monkeypatch.setattr(lr.httpx, "AsyncClient", lambda *a, **k: _Client())
+        assert asyncio.run(lr._probe_employee_count("tok", "13812345678")) == 1
+        assert asyncio.run(lr._probe_employee_count("tok", "13800138000")) == 1
+        assert asyncio.run(lr._probe_employee_count("tok", "")) is None
+
+    def test_hr002_declares_the_precondition(self):
+        """真实用例 HR-002 必须声明该前置（burn-down 缴费的落点）。"""
+        c = _cases()["HR-002"]
+        pre = [s for s in (c.get("precondition") or [])
+               if isinstance(s, dict) and s.get("type") == "employee_count_for_phone"]
+        assert pre, f"HR-002 未声明 employee_count_for_phone 前置：{c.get('precondition')}"
+        assert pre[0].get("source") == "13812345678", pre
+        assert pre[0].get("expect") == 0, pre
 
 
 # ══════════════════════════════════════════════════════════════════════════════

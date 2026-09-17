@@ -1772,7 +1772,7 @@
 必须成功: employee_manage(create)
 ```
 真值: employee-role.write-require-admin
-溯源: verification 5.2 独有；2026-09-09 校准：① 补「确认」点确认卡轮（agent 第一轮先查角色→validate→发确认卡，需确认后才 create）；② R1 补密码（execute._create_user 要求 password 必填，原 user_inputs 无密码，agent 确认后才发现缺密码反复追问——契约已修，case 同步补密码）。2026-09-15（issue #3781）：补 `namespaces` 声明 + `pre_clean[employee_remove]` —— 本用例造出的第二个「王五」是 HR-003（KEY_JOURNEY）**恒红**的根因（真实 run 34856561459，两次独立审计共同确认的用例资产缺陷）；2026-09-18（issue #4150 的 burn-down 缴费 —— 本 PR 改了 cases/*.yml ⇒ 每 PR 至少净缩 1 条存量违规）：补 `must_succeed[employee_manage(action=create)]` 效果层断言（门禁 a2 条 / #3778「调用了 ≠ 成了」），原 `data_checks` 的「收集确认后创建成功」是**不计分**的自然语义（acceptance-protocol §1.3）⇒ 该用例此前只有「调用了」级断言。断言只增不减。 ｜ tags: create
+溯源: verification 5.2 独有；2026-09-09 校准：① 补「确认」点确认卡轮（agent 第一轮先查角色→validate→发确认卡，需确认后才 create）；② R1 补密码（execute._create_user 要求 password 必填，原 user_inputs 无密码，agent 确认后才发现缺密码反复追问——契约已修，case 同步补密码）。2026-09-15（issue #3781）：补 `namespaces` 声明 + `pre_clean[employee_remove]` —— 本用例造出的第二个「王五」是 HR-003（KEY_JOURNEY）**恒红**的根因（真实 run 34856561459，两次独立审计共同确认的用例资产缺陷）；2026-09-18（issue #4150 的 burn-down 缴费 —— 本 PR 改了 cases/*.yml ⇒ 每 PR 至少净缩 1 条存量违规）：补 `must_succeed[employee_manage(action=create)]` 效果层断言（门禁 a2 条 / #3778「调用了 ≠ 成了」），原 `data_checks` 的「收集确认后创建成功」是**不计分**的自然语义（acceptance-protocol §1.3）⇒ 该用例此前只有「调用了」级断言。断言只增不减。2026-09-19（issue #4189 的 burn-down 缴费 —— 本用例命中的唯一一条存量违规是 CASE-TRUST-NO-PRECONDITION-ASSERTION）：补 `precondition[employee_count_for_phone: 13812345678, expect: 0, max_growth: 1]` —— 创建前提 = 该号码名下无既有员工（残留撞唯一校验 ⇒ 恒红且归因全错）；`expect: 0` 判基线、`max_growth: 1` 容忍本用例自己造的那一个（自建目标先例：chat.yml #4099）；定位口径与 `pre_clean[employee_remove]` 同一份（`_norm_phone`）。断言（user_inputs / expectations / must_succeed / pre_clean / namespaces）原样未动、无放宽。 ｜ tags: create
 
 ### HR-003. 禁用员工账号 🔵
 ```

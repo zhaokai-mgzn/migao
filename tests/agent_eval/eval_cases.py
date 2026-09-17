@@ -2528,6 +2528,7 @@ _CASE_HR_002 = EvalCase(
     must_succeed=[{'tool': 'employee_manage', 'action': 'create'}],
     pre_clean=[{'type': 'employee_remove', 'employee_name': '王五', 'employee_phone': '13812345678'}],
     namespaces=['employee_name:王五', 'employee_phone:13812345678'],
+    precondition=[{'type': 'employee_count_for_phone', 'source': '13812345678', 'expect': 0, 'max_growth': 1}],
 )
 
 # ── HR-003 [NORMAL] 禁用员工账号（源: cases/hr.yml）──
