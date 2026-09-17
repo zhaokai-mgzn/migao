@@ -619,8 +619,12 @@ def test_confirm_gate_guidance_takes_card_branch_for_unified_skills():
     这里用**与 base_skill 完全相同的判据**（`create_skill_registry(cfg.tool_names)`）断言：
     所有绑了需确认写工具的 Skill 都落在卡片支路 —— 即"分流"不再由运行时探测决定交互形态，
     而由配置 + 本文件的不变式锁定（分支本体在 base_skill.py，属其它包所有权，本包不改）。
+
+    ⚠️ 2026-09-18（#4125 只读工具跨域共享）：`interact` 是只读工具，共享后**任何**域的
+    registry 都带它 ⇒ 上面那条 registry 探针会退化成恒真的**空判据**。判据面因此落在
+    **配置事实** `cfg.tool_names` 上（与拆分前逐字等价：改前 registry 正是配置派生的）。
+    强度不变：某 Skill 的 `tool_names` 丢掉 `interact` 时本用例照样红。
     """
-    from app.graph.skills.base_skill import create_skill_registry
     from app.graph.skills.skill_registry import get_skill_registry
     from app.tools.registry import get_tool_registry
 
@@ -629,8 +633,7 @@ def test_confirm_gate_guidance_takes_card_branch_for_unified_skills():
     for config in get_skill_registry().get_all():
         if not config.tool_names or not _confirm_gated_tools(config, tools):
             continue
-        subset = create_skill_registry(list(config.tool_names))
-        if subset.get_tool("interact") is None:
+        if "interact" not in config.tool_names:
             fallback.append(config.name)
 
     assert not fallback, (

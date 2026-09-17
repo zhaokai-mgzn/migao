@@ -388,17 +388,131 @@ def build_tool_context(state: AgentState) -> ToolContext:
     )
 
 
+# ── 能力可见面（issue #4125，关联 #4123 第二刀）────────────────────────────────
+# 病灶：域切分**读写同权** —— `create_skill_registry(cfg.tool_names)` 只放该 skill 声明的工具，
+# 于是「查订单」在商品域里也不可执行：模型每轮只见 1~12 个工具，**没有任何东西告诉它
+# 其余能力存在、归谁**，被域闸门拒（`cross_skill_target`）后也不知道该去哪儿。
+#
+# 修法 = **非对称切分**（两处落点共用一份事实）：
+#   ① `create_skill_registry`：**写工具**（`read_only=False`）仍按域收紧 —— #4017 的 126 处
+#      **写**死角判据不许放松；**只读工具**（`BaseTool.read_only is True`）全域可见/可执行。
+#   ② `_build_system_prompt`：静态「能力索引」（域 → 该域可执行的写工具，事实 derive）。
+#
+# 为什么按 **persona 家族**而不是"全局并只读"：`xiaobu`（C 端顾客）与 `mibao`（B 端商家）的
+# 可达集是**硬边界** —— 实测**只被 B 端绑定**的只读工具 5 个（`dashboard_stats` /
+# `logistics_track` / `order_query` / `piecework_query` / `processing_item_query`）⇒ 全局并入
+# 等于 C 端当场看见 B 端工具（越权面）。家族由 `SkillConfig.system_prompts` 的 key **derive**
+# （不写死任何 skill 名 / persona 字面量），且**歧义即 fail-closed 不并**。
+#
+# 判据：`tests/test_readonly_cross_domain_sharing.py`（执行域/校验域一致 + persona 边界）
+#       `tests/test_capability_index_prompt.py`（索引与 `SkillConfig.tool_names` 逐域机械比对）
+_CAPABILITY_INDEX_MARKER = "【能力索引】"
+_CAPABILITY_INDEX_HEADER = (
+    _CAPABILITY_INDEX_MARKER
+    + "只读工具（查询/详情/统计类）在**所有流程**内都可直接调用，无需切换流程；"
+    "写操作只能在下表所属流程内执行（跨流程写会失败）—— 需要别的流程办理时，"
+    "按提示引导用户到对应流程或转人工："
+)
+
+
+def _all_skill_configs() -> List[Any]:
+    """全部 SkillConfig。**函数内**延迟导入：`skills/*_skill.py` 依赖本模块，
+    模块顶层 import `skill_registry` 会形成循环（调用期取值同时也保住 patch 接缝）。"""
+    from app.graph.skills.skill_registry import get_skill_registry
+
+    return list(get_skill_registry().get_all())
+
+
+def _skill_config(skill_name: str) -> Optional[Any]:
+    """按名取 SkillConfig（延迟导入，理由同上）；未注册 → None（调用方决定降级）。"""
+    from app.graph.skills.skill_registry import get_skill_registry
+
+    return get_skill_registry().get(skill_name)
+
+
+def _read_only_tool_names() -> frozenset:
+    """注册表事实：`read_only is True` 的工具名（**唯一口径**，不用源码正则近似）。"""
+    from app.tools.registry import get_tool_registry
+
+    return frozenset(
+        t.name for t in get_tool_registry().get_all_tools()
+        if getattr(t, "read_only", False)
+    )
+
+
+def _family_personas(tool_names: List[str]) -> frozenset:
+    """请求的工具集**能被哪些 persona 家族解释** —— 逐工具取"绑定它的 skill 的 persona"再取交集。
+
+    交集恰好唯一 ⇒ 家族成立（该域的只读工具可共享）；歧义（>1）或任一工具无人绑定（=∅）
+    ⇒ **空集 = 不放宽**（fail-closed：宁可少共享，也不把一端工具泄给另一端）。
+    """
+    cfgs = _all_skill_configs()
+    personas: Optional[set] = None
+    for name in tool_names:
+        owners = {
+            persona
+            for cfg in cfgs if name in (cfg.tool_names or [])
+            for persona in (cfg.system_prompts or {})
+        }
+        personas = owners if personas is None else (personas & owners)
+    return frozenset(personas or ())
+
+
+def _family_read_only_tool_names(tool_names: List[str]) -> List[str]:
+    """**同一 persona 家族**里的全部只读工具名（现算；家族不唯一 ⇒ `[]` = 不放宽）。"""
+    personas = _family_personas(tool_names)
+    if len(personas) != 1:
+        return []
+    read_only = _read_only_tool_names()
+    names: set = set()
+    for cfg in _all_skill_configs():
+        if personas & set(cfg.system_prompts or {}):
+            names.update(t for t in (cfg.tool_names or []) if t in read_only)
+    return sorted(names)
+
+
+def _capability_index(skill_name: str) -> str:
+    """静态能力索引（**给模型看的小地图**，不是给用户说的文本，见 `_CAPABILITY_INDEX_HEADER`）。
+
+    内容 = `域 → 该域可执行的写工具`，一行一个；只读工具不逐条列举（它们已在抬头里表述为
+    所有流程可用 —— 逐条列会白烧每轮预算）。**全部从 SkillConfig/注册表事实 derive**，
+    不写死任何 skill 名 / 工具名（本仓对"白名单复发"有专门守卫）。
+    """
+    cfg = _skill_config(skill_name)
+    if cfg is None:
+        logger.warning(
+            f"[base_skill] 能力索引跳过：skill '{skill_name}' 不在注册表（无从 derive 事实）")
+        return ""
+    personas = set(cfg.system_prompts or {})
+    if not personas:
+        return ""
+    read_only = _read_only_tool_names()
+    lines = []
+    for other in sorted(_all_skill_configs(), key=lambda c: c.name):
+        if not (personas & set(other.system_prompts or {})):
+            continue
+        writes = [t for t in (other.tool_names or []) if t not in read_only]
+        if writes:
+            lines.append("- " + other.name + ": " + " ".join(writes))
+    if not lines:
+        return ""
+    return _CAPABILITY_INDEX_HEADER + "\n" + "\n".join(lines)
+
+
 def create_skill_registry(tool_names: List[str]) -> ToolRegistry:
     """创建仅包含指定 Tool 的 Registry 子集
 
     从全局单例 ToolRegistry 中引用 Tool 实例（不重复创建），
-    避免每次 Skill 执行都实例化全部 21 个 Tool。
+    避免每次 Skill 执行都实例化全部 Tool。
+
+    **非对称切分**（issue #4125）：入参声明的工具之外，再并入**同一 persona 家族**的
+    只读工具（写工具仍按域收紧，见模块内 #4125 说明）。
 
     Args:
-        tool_names: 需要的 Tool 名称列表
+        tool_names: 需要的 Tool 名称列表（该 skill 声明的工具集）
 
     Returns:
-        ToolRegistry: 包含指定 Tool 子集的注册器
+        ToolRegistry: 包含指定 Tool 子集 + 家族只读工具的注册器
     """
     from app.tools.registry import get_tool_registry
 
@@ -411,6 +525,15 @@ def create_skill_registry(tool_names: List[str]) -> ToolRegistry:
             skill_registry.register(tool)
         else:
             logger.warning(f"[base_skill] Tool '{name}' not found in global registry")
+
+    # 只读工具跨域共享（#4125）：并入后**同一份并集**登记执行域（下面 set_tool_scope 用的就是
+    # `skill_registry.get_tool_names()`）—— 校验域与执行域必须逐名一致，**不能一边并一边不并**
+    # （#4017 的不变式：否则 validate_input 放行、模型却 `Tool not found` → 空头承诺、订单不落库）。
+    for name in _family_read_only_tool_names(tool_names):
+        if skill_registry.get_tool(name) is None:
+            tool = full_registry.get_tool(name)
+            if tool:
+                skill_registry.register(tool)
 
     # A5（issue #4017）：把**本轮可执行工具集**登记为执行域事实（`validate_input` 执行期
     # 据此拒绝域外目标）。为什么不新造一套域判定：这里返回的 registry **就是**执行域本身 ——
@@ -598,6 +721,8 @@ def _build_system_prompt(skill_name: str, inline_prompt: str = "") -> str:
     层级（从底到顶）：
       1. base/identity.md     — 公共身份描述（所有 Skill 共享）
       2. base/principles.md   — 公共行为准则（所有 Skill 共享）
+      2.5 PROMPT-rules.md     — 公共 Prompt 规则（所有 Skill 共享）
+      2.6 能力索引            — 域 → 该域可执行的写工具（**事实 derive**，见 #4125）
       3. prompts/{skill}.md   — 领域规则 + 工具说明（按 Skill）
       4. inline_prompt        — 调用方传入的额外指令（可选，用于覆盖/追加）
       5. EXAMPLES-{skill}.md  — few-shot 示例（按 Skill）
@@ -631,6 +756,16 @@ def _build_system_prompt(skill_name: str, inline_prompt: str = "") -> str:
     prompt_rules = _read_cached(_os.path.join(_ref_dir, prompt_rules_rel), required=True)
     if prompt_rules:
         parts.append(prompt_rules)
+
+    # Layer 2.6: 能力索引（issue #4125）—— 静态小地图，域 → 该域可执行的写工具。
+    # 位置在**公共规则之后、领域 prompt 之前**：它是"全局地形"，供领域规则之上去理解
+    # 「本流程能做什么、别的流程归谁」；不放到末尾是为了不被 few-shot 长文淹没。
+    # ⚠️ 这是**给模型看**的（system prompt），不是给用户说的 —— 用户可见路径不得复用
+    # `_capability_index`（`references/base/principles.md` 第 21 行禁止回复里出现工具名/字段名）；
+    # 该边界由 `tests/test_capability_index_prompt.py` 的静态扫描 + 植入负例锁定。
+    capability_index = _capability_index(skill_name)
+    if capability_index:
+        parts.append(capability_index)
 
     # Layer 3: 领域 Prompt
     domain = _read_cached(_os.path.join(_ref_dir, "prompts", f"{skill_name}.md"))

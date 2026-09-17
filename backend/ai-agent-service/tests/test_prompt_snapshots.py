@@ -15,12 +15,28 @@ import os as _os
 
 import pytest
 
-from app.graph.skills.base_skill import _build_system_prompt, _PROMPT_CACHE
+from app.graph.skills.base_skill import (
+    _CAPABILITY_INDEX_MARKER, _build_system_prompt, _PROMPT_CACHE,
+)
 
 
 def _clear_cache():
     """清除缓存，确保每次测试重新读取"""
     _PROMPT_CACHE.clear()
+
+
+def _without_capability_index(prompt: str) -> str:
+    """去掉 #4125 的**能力索引**层（域隔离判据的判据面）。
+
+    为什么：索引是**跨域地图**，按设计就会点名其它域的**写工具**（"域 → 该域可执行的写工具"）
+    —— 它既不是 order 的领域规则、也不是 product 的领域规则，把它算进"域规则污染"会让
+    「域隔离」判据（`test_*_prompt_no_*_contamination`）从"判域规则"退化成"判有没有地图"。
+    索引自身的内容一致性由 `tests/test_capability_index_prompt.py` 逐域机械比对锁定。
+    """
+    if _CAPABILITY_INDEX_MARKER not in prompt:
+        return prompt
+    head, _, tail = prompt.partition(_CAPABILITY_INDEX_MARKER)
+    return head + tail.split("\n\n", 1)[-1] if "\n\n" in tail else head
 
 
 @pytest.fixture(autouse=True)
@@ -82,22 +98,26 @@ def test_skill_prompt_length_reasonable(skill):
     """
     prompt = _build_system_prompt(skill)
     # 2026-09-15 上限 12000→13000：order 单价铁律补「系统会拦截并回填」+ EXAMPLES-order.md 反例4（OR-014 判定跑 34923425338 收口，达 12595）
-    assert 200 < len(prompt) < 13000, f"{skill}: prompt 长度异常 ({len(prompt)} chars)"
+    # 2026-09-18 上限 13000→13600（#4125 能力索引层，实测 +587 字符/块，取整 +600）：
+    #   order 13191 / product 13151 均为索引所致；复算命令见 test_snapshot_all_skills 的注释。
+    assert 200 < len(prompt) < 13600, f"{skill}: prompt 长度异常 ({len(prompt)} chars)"
 
 
 # ============ 领域隔离检查 ============
+# ⚠️ 下面两条判的是**域规则**的隔离（域 prompt / EXAMPLES / 内联），故先剥掉 #4125 的
+#    能力索引层（它按设计点名其它域的写工具，见 `_without_capability_index` 说明）。
 
 def test_product_prompt_no_order_contamination():
     """product 的 Prompt 不应包含 order 的专属规则"""
-    prompt = _build_system_prompt("product")
+    prompt = _without_capability_index(_build_system_prompt("product"))
     # order-only rules
     assert "售后工单的创建、查询、流转" not in prompt
     assert "转人工提示" not in prompt
 
 
 def test_order_prompt_no_product_contamination():
-    """order 的 Prompt 不应包含 product 特有的工具和规则"""
-    prompt = _build_system_prompt("order")
+    """order 的 **域规则** 不应包含 product 特有的工具和规则（#4125 起：索引层不算判据面）"""
+    prompt = _without_capability_index(_build_system_prompt("order"))
     # product-only tools（公共 principles 中可能提及通用概念但不包含具体用法）
     assert "inventory_manage" not in prompt
     assert "category_manage" not in prompt
@@ -238,15 +258,21 @@ def test_snapshot_all_skills():
         )
 
     # 最大长度快照（防止无限制膨胀）
+    # 2026-09-18（issue #4125「能力索引」层）：下表各项 **+600 字符**（索引块实测 587 字符，
+    #   取整留 13 字符余量；B 端 9 个域共用同一块，C 端 6 个域共用 232 字符的小块故未触顶）。
+    #   复算命令（实测值，别照抄本注释）：
+    #     cd backend/ai-agent-service && PYTHONPATH=. .venv/bin/python -c \
+    #       "from app.graph.skills.base_skill import _build_system_prompt as b; \
+    #        print({s: len(b(s)) for s in ('order','product','aftersales','customer','staff','settings','data','general','knowledge')})"
     expected_max = {
-        "product": 12700,  # +800: 澄清话术(#2784)+承诺边界(#2785) + 加工项主动询问增强（issue #2892，达 9985）+ 建品规格/加工项价格规则（#3027，达 10732）+ 确认卡片必须发出（issue #3045，达 11131）+ 库存工具分工铁律（Round 37，达 11318）+ 120（issue #3930/#3931）：product_update 描述补「主图/详情图走 product_manage」反例 + product.md 主图/详情图映射行（达 12019）+ 379（issue #3936）：product.md 补「禁止以工具不支持/没有能力为由拒绝写操作」通用铁律（达 12398）；+300（issue #4107 F7）：共享层 `base/principles.md` 的权限归因规则补后半——「系统**确实**报权限拒绝时必须如实说明缺哪项能力 + 不得重试 + 给开通路径」（+168 字符，达 12562）
-        "order": 12800,  # +800: 加工项数量自动推导（issue #2986）+ confirm 前必须主动询问加工项（issue #3033，达 8836）+ 共享规则确认卡片铁律（issue #3045，达 9133）+ 规格ID≠商品ID 铁律（Round 39，达 9396）+ 加工单域（#3340，达 10005）；+1200（issue #3799）：订单→物流链收口（prompts/order.md 链规则 + EXAMPLES-order.md「同一轮 order_query→logistics_track」正/反例，达 11364）；+600（issue #3873）：单价铁律——报价/确认/落单单价必须来自商品库，禁止编造分色价（达 11967）；+400（OR-014 判定跑 34923425338 收口）：单价铁律补「系统会拦截并回填」+ EXAMPLES-order.md 反例4「库价 168 却写米白 150」（达 12595）；-233（issue #3917，达 12362）：加工单章节由「工具操作指引」（生成/查询/发加工/start/complete/cancel）整体替换为「加工项 vs 加工单概念区分 + 不接入声明」——删 frontmatter/工具使用表 3 个 processing_order 工具行，新增概念定义/禁止代替/引导后台口径；+76（issue #3921，达 12438）：补「问加工单不调用任何工具（含订单查询/加工项查询）——调任何查询工具都拿不到加工单，只会答非所问」；+200（issue #4107 F7）：共享层 `base/principles.md` 权限归因规则补后半（达 12602）
-        "aftersales": 8000,  # +1300: 禁英文枚举 + 退货库存规则（issue #2991）+ 换货加工项确认（issue #3033，达 6269）+ 共享规则确认卡片铁律（issue #3045，达 6566）+ 创建/关闭工单执行引导（Round 43，达 7068）
-        "customer": 8500,  # +3500: 领域 prompt 补齐打标签流程（CU-003 场景）+ EXAMPLES 补标签示例（Round 33）
-        "staff": 8000,    # +3100: 领域 prompt 补齐创建角色流程（HR-005 场景）+ EXAMPLES 补角色创建示例（Round 32）
-        "settings": 6500, # +1600: 领域 prompt 补齐配置/通知流程（Round 34）
-        "data": 6800,     # +1700: 领域 prompt 补齐看板/会话流程（Round 34）；+300（issue #4107 F7）：共享层 `base/principles.md` 权限归因规则补后半（达 6660）
-        "general": 6600,  # +600: Phase 2 (#2789) 澄清卡引导（choice 候选示例）达 5465；+200: 兜底库存查询改真实工具（issue #3569，达 5827）；+200: 面向用户一律中文（扩到 SKU/ID 等技术术语，达 6079）；+207（issue #3921）：加工单≠加工项兜底口径——问加工单不调 processing_item_query、解释概念并引导后台（达 6286）；+200（issue #4107 F7）：同上共享层权限归因规则补后半（达 6450）
+        "product": 13300,  # +800: 澄清话术(#2784)+承诺边界(#2785) + 加工项主动询问增强（issue #2892，达 9985）+ 建品规格/加工项价格规则（#3027，达 10732）+ 确认卡片必须发出（issue #3045，达 11131）+ 库存工具分工铁律（Round 37，达 11318）+ 120（issue #3930/#3931）：product_update 描述补「主图/详情图走 product_manage」反例 + product.md 主图/详情图映射行（达 12019）+ 379（issue #3936）：product.md 补「禁止以工具不支持/没有能力为由拒绝写操作」通用铁律（达 12398）；+300（issue #4107 F7）：共享层 `base/principles.md` 的权限归因规则补后半——「系统**确实**报权限拒绝时必须如实说明缺哪项能力 + 不得重试 + 给开通路径」（+168 字符，达 12562）；+600（#4125 能力索引层，实测 587）
+        "order": 13400,  # +800: 加工项数量自动推导（issue #2986）+ confirm 前必须主动询问加工项（issue #3033，达 8836）+ 共享规则确认卡片铁律（issue #3045，达 9133）+ 规格ID≠商品ID 铁律（Round 39，达 9396）+ 加工单域（#3340，达 10005）；+1200（issue #3799）：订单→物流链收口（prompts/order.md 链规则 + EXAMPLES-order.md「同一轮 order_query→logistics_track」正/反例，达 11364）；+600（issue #3873）：单价铁律——报价/确认/落单单价必须来自商品库，禁止编造分色价（达 11967）；+400（OR-014 判定跑 34923425338 收口）：单价铁律补「系统会拦截并回填」+ EXAMPLES-order.md 反例4「库价 168 却写米白 150」（达 12595）；-233（issue #3917，达 12362）：加工单章节由「工具操作指引」（生成/查询/发加工/start/complete/cancel）整体替换为「加工项 vs 加工单概念区分 + 不接入声明」——删 frontmatter/工具使用表 3 个 processing_order 工具行，新增概念定义/禁止代替/引导后台口径；+76（issue #3921，达 12438）：补「问加工单不调用任何工具（含订单查询/加工项查询）——调任何查询工具都拿不到加工单，只会答非所问」；+200（issue #4107 F7）：共享层 `base/principles.md` 权限归因规则补后半（达 12602）；+600（#4125 能力索引层，实测 587）
+        "aftersales": 8600,  # +1300: 禁英文枚举 + 退货库存规则（issue #2991）+ 换货加工项确认（issue #3033，达 6269）+ 共享规则确认卡片铁律（issue #3045，达 6566）+ 创建/关闭工单执行引导（Round 43，达 7068）；+600（#4125 能力索引层，实测 587）
+        "customer": 9100,  # +3500: 领域 prompt 补齐打标签流程（CU-003 场景）+ EXAMPLES 补标签示例（Round 33）；+600（#4125 能力索引层，实测 587）
+        "staff": 8600,    # +3100: 领域 prompt 补齐创建角色流程（HR-005 场景）+ EXAMPLES 补角色创建示例（Round 32）；+600（#4125 能力索引层，实测 587）
+        "settings": 7100, # +1600: 领域 prompt 补齐配置/通知流程（Round 34）；+600（#4125 能力索引层，实测 587）
+        "data": 7400,     # +1700: 领域 prompt 补齐看板/会话流程（Round 34）；+300（issue #4107 F7）：共享层 `base/principles.md` 权限归因规则补后半（达 6660）；+600（#4125 能力索引层，实测 587）
+        "general": 7200,  # +600: Phase 2 (#2789) 澄清卡引导（choice 候选示例）达 5465；+200: 兜底库存查询改真实工具（issue #3569，达 5827）；+200: 面向用户一律中文（扩到 SKU/ID 等技术术语，达 6079）；+207（issue #3921）：加工单≠加工项兜底口径——问加工单不调 processing_item_query、解释概念并引导后台（达 6286）；+200（issue #4107 F7）：同上共享层权限归因规则补后半（达 6450）；+600（#4125 能力索引层，实测 587）
         "knowledge": 7000,  # issue #3569：knowledge 域（B 端知识问答）补入厚度门禁，达 5032
     }
     for skill, max_len in expected_max.items():
@@ -268,20 +294,29 @@ def test_snapshot_all_skills():
 
 def test_customer_aftersales_fewshot_guides_aftersale_create():
     """小布售后必须注入 C 端 few-shot：明确换货/退货诉求 → aftersale_create，
-    而非误走 human_handoff（真实闭环回归：两次新会话 AI 均转人工建 complaint 工单）。"""
-    prompt = _build_system_prompt("customer_aftersales")
+    而非误走 human_handoff（真实闭环回归：两次新会话 AI 均转人工建 complaint 工单）。
+
+    ⚠️ 判据面 = **Few-shot 层**（`_without_capability_index` 之后按 "Few-shot 参考示例" 切开）：
+    本用例点名断言的是"few-shot 里有没有这两把工具"，而 #4125 的能力索引层按设计会在抬头/域行
+    里出现工具名（C 端索引含 `aftersale_create`/`human_handoff`）—— 不切开的话，这两条会变成
+    「不管 few-shot 丢没丢都恒真」的**空判据**（`migao-dev-flow` §19.1）。**只收窄判据面，未放宽**：
+    few-shot 真丢这两把工具时本用例仍必红。
+    """
+    prompt = _without_capability_index(_build_system_prompt("customer_aftersales"))
     # few-shot 已注入
     assert "Few-shot 参考示例" in prompt, "customer_aftersales 缺少 few-shot 注入"
+    _head, _sep, fewshot = prompt.partition("Few-shot 参考示例")
+    assert fewshot, "few-shot 段落为空 —— 判据会空跑（fail-closed）"
     # 核心引导：换货/退货应 aftersale_create
-    assert "aftersale_create" in prompt, "few-shot 未包含 aftersale_create 引导"
+    assert "aftersale_create" in fewshot, "few-shot 未包含 aftersale_create 引导"
     # 转人工边界明确（禁止把换货/退货转人工）
-    assert "转人工" in prompt and "换货" in prompt
+    assert "转人工" in fewshot and "换货" in fewshot
     # 反例存在（错误示例指明换货走 human_handoff 是错误）
-    assert "human_handoff" in prompt
+    assert "human_handoff" in fewshot
     # 已发货订单可售后（状态门禁：confirmed/producing/shipped/completed 均可建退换货）
     # —— 真实闭环回归：AI 看到"已发货"误判不能售后而转人工
-    assert "已发货" in prompt, "few-shot 未说明已发货订单可申请售后"
-    assert "尺寸买大了" in prompt, "few-shot 缺少已发货换货示例"
+    assert "已发货" in fewshot, "few-shot 未说明已发货订单可申请售后"
+    assert "尺寸买大了" in fewshot, "few-shot 缺少已发货换货示例"
 
 
 def test_customer_aftersales_prompt_loaded_with_identity():
