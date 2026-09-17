@@ -3790,10 +3790,10 @@
 数据: 空态（MessageList 无消息时）不再渲染 NewArrivals 商品卡片（无商品图/名横滑区）
 数据: 空态保留品牌头+欢迎语+快捷入口（QuickActions 6 格）
 数据: 推荐能力由「推荐热门商品」快捷入口以对话形式承载，商品推荐问答不回归
-跳过: 纯前端空态由 mini-app jest 单测验证（quick-actions.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟
+跳过: 纯前端空态由 mini-app jest 单测验证（quick-actions.test.tsx）+ H5 视觉回归（xiaobu-h5.spec.ts），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: frontend-fix.xiaobu-quick-actions
-溯源: 2026-09-17 新增：产品决策——空态不再铺商品图/名，推荐改为快捷对话入口 ｜ tags: mini-app, chat-entry, empty-state
+溯源: 2026-09-17 新增：产品决策——空态不再铺商品图/名，推荐改为快捷对话入口；同日补 H5 视觉回归 spec 同步（issue #4003：spec 仍断言已删除的新品推荐 → 持续红，已改为六格+负向断言并更新截图基线） ｜ tags: mini-app, chat-entry, empty-state
 
 ### UI-015. 我的页移除「账号信息」占位入口（功能开发中占位不进 POC 演示） 🔵
 ```
