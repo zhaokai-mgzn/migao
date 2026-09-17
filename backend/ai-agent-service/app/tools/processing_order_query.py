@@ -64,7 +64,11 @@ class ProcessingOrderQueryTool(BaseTool):
         status: Optional[str] = None,
     ) -> ToolResult:
         if not self.check_permission(context):
-            return ToolResult(success=False, error="权限不足", message="您没有权限查询加工单")
+            return ToolResult(success=False,
+                error="权限不足",
+                message="您没有权限查询加工单",
+                suggestion="请改用订单查询（order_query）向用户提供订单信息；如需查看加工单请先确认当前账号权限",
+            )
 
         try:
             client = get_admin_api_client()
@@ -90,7 +94,11 @@ class ProcessingOrderQueryTool(BaseTool):
         if not response.get("success"):
             error_info = response.get("error", {})
             error_msg = error_info.get("message", "查询失败") if isinstance(error_info, dict) else str(error_info)
-            return ToolResult(success=False, error=error_msg, message=f"加工单查询失败：{error_msg}")
+            return ToolResult(success=False,
+                error=error_msg,
+                message=f"加工单查询失败：{error_msg}",
+                suggestion="请稍后重试；若持续失败，请改为不带状态筛选查询，或请用户联系管理员核对加工单数据",
+            )
 
         data = response.get("data") or []
         if not data:

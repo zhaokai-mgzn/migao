@@ -118,6 +118,7 @@ class RoleManageTool(BaseTool):
                 success=False,
                 error=f"无效的操作类型: {action}",
                 message=f"不支持的操作类型，可选：{', '.join(sorted(VALID_ACTIONS))}",
+                suggestion="请从工具说明里的可选操作类型中选一个后重试，不要自行改用其它 action",
             )
 
         try:
@@ -250,6 +251,7 @@ class RoleManageTool(BaseTool):
                 success=False,
                 error="缺少角色 ID",
                 message="查询角色详情时必须提供角色 ID（role_id）",
+                suggestion="缺少 role_id，请先用 role_manage 的 list 操作取到角色 ID 后重试",
             )
 
         client = get_admin_api_client()
@@ -291,12 +293,14 @@ class RoleManageTool(BaseTool):
                 success=False,
                 error="缺少角色名称",
                 message="创建角色时必须提供角色名称（name）",
+                suggestion="缺少角色名称 name，请向用户询问角色名称后重试",
             )
         if not code:
             return ToolResult(
                 success=False,
                 error="缺少角色编码",
                 message="创建角色时必须提供角色编码（code）",
+                suggestion="缺少角色编码 code，请向用户确认角色编码（英文标识）后重试",
             )
 
         json_data: Dict[str, Any] = {
@@ -322,6 +326,7 @@ class RoleManageTool(BaseTool):
                 success=False,
                 error=error_msg,
                 message=f"创建角色失败：{error_msg}",
+                suggestion="请先用 role_manage 的 list 操作确认角色名称或编码未被占用，再换一个后重试",
             )
 
         data = response.get("data", {})
@@ -347,6 +352,7 @@ class RoleManageTool(BaseTool):
                 success=False,
                 error="缺少角色 ID",
                 message="更新角色时必须提供角色 ID（role_id）",
+                suggestion="缺少 role_id，请先用 role_manage 的 list 操作取到角色 ID 后重试",
             )
 
         json_data: Dict[str, Any] = {}
@@ -362,6 +368,7 @@ class RoleManageTool(BaseTool):
                 success=False,
                 error="缺少更新内容",
                 message="更新角色时必须提供至少一个字段（name/description/permission_ids）",
+                suggestion="缺少更新内容，请让用户给出要修改的字段（名称/描述/权限）后重试",
             )
 
         client = get_admin_api_client()
@@ -378,6 +385,7 @@ class RoleManageTool(BaseTool):
                 success=False,
                 error=error_msg,
                 message=f"更新角色失败：{error_msg}",
+                suggestion="请先用 role_manage 的 detail 操作确认该角色属于当前租户、且未被停用后再重试",
             )
 
         logger.info(f"[role-manage] Updated role_id={role_id} | tenant={context.tenant_id}")
@@ -399,6 +407,7 @@ class RoleManageTool(BaseTool):
                 success=False,
                 error="缺少角色 ID",
                 message="删除角色时必须提供角色 ID（role_id）",
+                suggestion="缺少 role_id，请先用 role_manage 的 list 操作取到角色 ID 后重试",
             )
 
         client = get_admin_api_client()
@@ -414,6 +423,7 @@ class RoleManageTool(BaseTool):
                 success=False,
                 error=error_msg,
                 message=f"删除角色失败：{error_msg}",
+                suggestion="请先用 employee_manage 的 list 操作确认没有员工在用该角色（内置角色不可删），再重试",
             )
 
         logger.info(f"[role-manage] Deleted role_id={role_id} | tenant={context.tenant_id}")

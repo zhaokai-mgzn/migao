@@ -165,6 +165,7 @@ class ProductManageTool(BaseTool):
             return ToolResult(
                 success=False, error=f"无效的操作类型: {action}",
                 message=f"不支持的操作类型，可选：{', '.join(VALID_ACTIONS)}",
+                suggestion="请从工具说明里的可选操作类型中选一个后重试，不要自行改用其它 action",
             )
 
         try:
@@ -183,7 +184,10 @@ class ProductManageTool(BaseTool):
                 return await self._toggle_status(context, product_id, status)
             # manage_processing_items 已拆分为独立 tool: product_processing_item_manage
             else:
-                return ToolResult(success=False, error=f"未知操作: {action}")
+                return ToolResult(success=False,
+                    error=f"未知操作: {action}",
+                    suggestion="操作类型不在支持范围内，请从工具说明的可选 action 中重新选择一个后重试",
+                )
 
         except Exception as e:
             logger.error(f"Product manage error: action={action}, error={e}", exc_info=True)
@@ -205,6 +209,7 @@ class ProductManageTool(BaseTool):
             return ToolResult(
                 success=False, error="缺少商品名称",
                 message="创建商品时必须提供商品名称（name）",
+                suggestion="缺少商品名称 name，请向用户询问商品名称后重试",
             )
 
         json_data: Dict[str, Any] = {"name": name}
@@ -270,6 +275,7 @@ class ProductManageTool(BaseTool):
             return ToolResult(
                 success=False, error="缺少商品 ID",
                 message="更新商品时必须提供商品 ID（product_id）",
+                suggestion="缺少 product_id，请先用 product_search 查到该商品后重试",
             )
 
         # issue #3899：update 不处理 status——Java updateProduct 刻意恢复原状态，状态只能走
@@ -308,6 +314,7 @@ class ProductManageTool(BaseTool):
             return ToolResult(
                 success=False, error="没有需要更新的字段",
                 message="请至少提供一个需要更新的字段",
+                suggestion="没有需要更新的字段，请向用户确认要修改哪一项（价格/库存/名称/状态等）后重试",
             )
 
         logger.info(f"[product_manage] Agent PATCH update: id={product_id}, fields={list(json_data.keys())}")
@@ -321,6 +328,7 @@ class ProductManageTool(BaseTool):
             return ToolResult(
                 success=False, error=error_msg,
                 message=f"更新商品失败：{error_msg}",
+                suggestion="请先用 product_detail 读取该商品当前信息，核对字段后重新提交更新",
             )
 
         logger.info(f"Product updated via Agent: id={product_id}, fields={list(json_data.keys())}")
@@ -334,11 +342,16 @@ class ProductManageTool(BaseTool):
 
     async def _toggle_status(self, context, product_id, status) -> ToolResult:
         if not product_id:
-            return ToolResult(success=False, error="缺少商品 ID", message="请提供商品 ID（product_id）")
+            return ToolResult(success=False,
+                error="缺少商品 ID",
+                message="请提供商品 ID（product_id）",
+                suggestion="商品状态只支持错误提示中列出的取值，请按用户意图改传其中之一后重试",
+            )
         if not status or status not in VALID_PRODUCT_STATUSES:
             return ToolResult(
                 success=False, error=f"无效的商品状态: {status}",
                 message=f"请提供有效的状态值：{', '.join(VALID_PRODUCT_STATUSES)}",
+                suggestion="缺少 product_id，请先用 product_search 查到该商品后重试",
             )
 
         client = get_admin_api_client()
@@ -349,7 +362,11 @@ class ProductManageTool(BaseTool):
 
         if not response.get("success"):
             error_msg = response.get("error", {}).get("message", "操作失败")
-            return ToolResult(success=False, error=error_msg, message=f"商品状态更新失败：{error_msg}")
+            return ToolResult(success=False,
+                error=error_msg,
+                message=f"商品状态更新失败：{error_msg}",
+                suggestion="请先用 product_detail 确认该商品当前状态（下架商品不可直接改状态），再重新提交",
+            )
 
         status_text = "上架" if status == "on_sale" else "下架"
         logger.info(f"Product status toggled: id={product_id}, status={status}")

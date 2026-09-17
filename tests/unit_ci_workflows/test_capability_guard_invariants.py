@@ -25,10 +25,16 @@ import ast
 import re
 from pathlib import Path
 
+import pytest
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 BASE_SKILL = (REPO_ROOT / "backend" / "ai-agent-service" / "app" / "graph"
               / "skills" / "base_skill.py")
 SKILLS_DIR = REPO_ROOT / "backend" / "ai-agent-service" / "app" / "graph" / "skills"
+# 搬迁家族（issue #4049）：`execute_skill` 的 1699 行按职责搬进了 `execution/`，
+# **守卫接线**随之搬走（判据函数本身留在 `base_skill.py`）。任何"只扫 base_skill.py"
+# 的文本/AST 判据都会在搬迁后**变成空跑但仍全绿**（§19.1「判据自己选择沉默」）。
+EXECUTION_DIR = SKILLS_DIR / "execution"
 
 # 能力可达性 / 转人工守卫的**判据函数**（判据必须全在这里，禁止再内联回 execute_skill）
 GUARD_PREDICATES = (
@@ -53,6 +59,28 @@ def _skill_names() -> set:
         names |= set(_SKILL_DECL_RE.findall(path.read_text(encoding="utf-8")))
     assert names, "未能从 skill 模块解析出任何 skill 名 —— 不变式失去意义（解析器需随声明格式更新）"
     return names
+
+
+def _family_paths(execution_dir: Path = EXECUTION_DIR) -> list:
+    """搬迁家族的文件清单：`base_skill.py` + `execution/*.py`。
+
+    fail-closed：目录/文件缺失、或实现文件不足 3 个（三段实现），一律**报错** ——
+    不允许"扫不到就通过"（那正是本函数要消灭的空判据形态）。
+    """
+    assert BASE_SKILL.is_file(), f"被扫目标不存在：{BASE_SKILL}（fail-closed，不静默跳过）"
+    assert execution_dir.is_dir(), f"拆分后的实现目录不存在：{execution_dir}（fail-closed）"
+    exec_files = sorted(execution_dir.glob("*.py"))
+    assert len(exec_files) >= 3, (
+        f"{execution_dir} 下的实现文件不足 3 个（实得 {[p.name for p in exec_files]}）"
+        f"—— 家族扫描会静默漏掉搬走的守卫接线"
+    )
+    return [BASE_SKILL] + exec_files
+
+
+def _family_sources(execution_dir: Path = EXECUTION_DIR) -> list:
+    """[(路径, AST)] —— 逐文件解析（保留各自行号，报错信息才指得准）。"""
+    return [(p, ast.parse(p.read_text(encoding="utf-8"), filename=str(p)))
+            for p in _family_paths(execution_dir)]
 
 
 def _module() -> ast.Module:
@@ -187,18 +215,23 @@ def _handoff_guard_tests(tree: ast.Module) -> list:
 
 
 def test_handoff_guard_wiring_uses_fact_driven_predicate():
-    """human_handoff 守卫的**适用性**必须走 `_handoff_guard_applies(...)`，不得再是 skill 名元组。"""
-    tree = _module()
-    tests = _handoff_guard_tests(tree)
-    assert tests, "未定位到 human_handoff 守卫的接线（结构变了 → 本不变式需同步更新）"
-    blob = " ".join(ast.unparse(t) for t in tests)
+    """human_handoff 守卫的**适用性**必须走 `_handoff_guard_applies(...)`，不得再是 skill 名元组。
+
+    ⚠️ 扫**搬迁家族**（issue #4049）：该接线已随第 7 节搬进 `execution/react_turn.py`，
+    只扫 `base_skill.py` 会让本不变式变成**空判据**（`_handoff_guard_tests` 返回空集，
+    而 `assert tests` 正是为此设的红线）。
+    """
+    located = [(path, test) for path, tree in _family_sources()
+               for test in _handoff_guard_tests(tree)]
+    assert located, "未定位到 human_handoff 守卫的接线（结构变了 → 本不变式需同步更新）"
+    blob = " ".join(ast.unparse(t) for _, t in located)
     assert "_handoff_guard_applies" in blob, (
         "human_handoff 守卫的适用性判据不再是事实驱动函数（疑似退回 `skill_name in (...)`）"
     )
     names = _skill_names()
     offenders = []
-    for test in tests:
-        offenders += _skill_name_literals([test], names)
+    for path, test in located:
+        offenders += [f"{path.name} {h}" for h in _skill_name_literals([test], names)]
         # 旧形态：`skill_name in ("customer_order", ...)` —— 左值 skill_name、右值是字面量集合
         for node in ast.walk(test):
             if isinstance(node, ast.Compare) and isinstance(node.left, ast.Name) \
@@ -207,17 +240,36 @@ def test_handoff_guard_wiring_uses_fact_driven_predicate():
                     if isinstance(op, (ast.In, ast.NotIn)) and isinstance(
                             comp, (ast.Tuple, ast.List, ast.Set)):
                         offenders.append(
-                            f"L{node.lineno}: skill_name in <字面量集合> —— 白名单复发形态")
+                            f"{path.name} L{node.lineno}: skill_name in <字面量集合> —— 白名单复发形态")
     assert not offenders, (
         "转人工守卫的接线又出现 skill 名字面量白名单（#3477 机制 2）：\n" + "\n".join(offenders)
     )
 
 
+def test_handoff_locator_goes_red_when_the_wiring_disappears():
+    """负例锁：接线消失时**定位器真的返回空集**（否则 `assert located` 是永远真的空判据）。"""
+    orphan = ast.parse("def f(skill_name):\n    if skill_name in ('a',):\n        pass\n")
+    assert _handoff_guard_tests(orphan) == [], (
+        "接线缺失时定位器仍能命中 —— 上面的 `assert located` 成了空判据"
+    )
+
+
+def test_family_scan_is_fail_closed_on_missing_regions(tmp_path):
+    """负例锁：实现文件不足 3 个 ⇒ 家族扫描**报错**（不许"扫不到就通过"）。"""
+    fake = tmp_path / "execution"
+    fake.mkdir()
+    (fake / "react_turn.py").write_text("x = 1\n", encoding="utf-8")
+    with pytest.raises(AssertionError, match="不足 3 个"):
+        _family_paths(fake)
+
+
 def test_text_denial_wiring_uses_fact_driven_predicate():
-    """文本级能力误宣纠正的**适用性**必须走 `_order_capability_available(...)`。"""
-    tree = _module()
-    calls = {n.func.id for n in ast.walk(tree) if isinstance(n, ast.Call)
-             and isinstance(n.func, ast.Name)}
+    """文本级能力误宣纠正的**适用性**必须走 `_order_capability_available(...)`。
+
+    ⚠️ 扫**搬迁家族**（issue #4049）：调用点已随第 7 节搬进 `execution/react_turn.py`。
+    """
+    calls = {n.func.id for _, tree in _family_sources() for n in ast.walk(tree)
+             if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)}
     assert "_order_capability_available" in calls, (
         "文本级纠正不再走事实驱动判据（旧形态：`_has_order_write_tool(skill_name, registry)`）"
     )

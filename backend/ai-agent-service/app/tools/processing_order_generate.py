@@ -59,7 +59,11 @@ class ProcessingOrderGenerateTool(BaseTool):
 
     async def execute(self, context: ToolContext, order_ids: List[str]) -> ToolResult:
         if not self.check_permission(context):
-            return ToolResult(success=False, error="权限不足", message="您没有权限生成加工单")
+            return ToolResult(success=False,
+                error="权限不足",
+                message="您没有权限生成加工单",
+                suggestion="请改用只读查询（processing_order_query）向用户展示加工单；如需生成请先确认当前账号权限",
+            )
 
         if not order_ids or not isinstance(order_ids, list) or len(order_ids) == 0:
             return ToolResult(
@@ -71,6 +75,7 @@ class ProcessingOrderGenerateTool(BaseTool):
             return ToolResult(
                 success=False, error="批量超限",
                 message="单次最多生成 100 个加工单，请分批操作",
+                suggestion="单次最多 100 个订单，请按用户指定的范围分批生成（先处理前 100 个）",
             )
 
         try:

@@ -21,6 +21,7 @@ C 端场景影响：查订单 / 下单 / 问知识 全部返回同一句兜底�
 # case_ids: DF-011, DF-012
 import asyncio
 import inspect
+from pathlib import Path
 
 import pytest
 
@@ -29,6 +30,41 @@ from app.core.circuit_breaker import (
     get_breaker,
     reset_breakers,
 )
+
+# ── 跟随式扫描：LLM 调用面的**搬迁家族**（issue #4049）──────────────────────────
+# `base_skill.execute_skill` 的 1699 行按职责搬进了 `app/graph/skills/execution/`，
+# 其中就包含 LLM 调用与熔断器取名的现场。任何"只扫 `base_skill.py`"的文本判据
+# 都会在搬迁后**变成空跑但仍全绿**（§19.1「判据自己选择沉默」）⇒ 判据改为扫家族。
+_SKILLS_DIR = Path(__file__).resolve().parents[2] / "app" / "graph" / "skills"
+_BASE_SKILL_PY = _SKILLS_DIR / "base_skill.py"
+_EXECUTION_DIR = _SKILLS_DIR / "execution"
+
+
+def _skill_family_sources(execution_dir: Path = _EXECUTION_DIR) -> dict:
+    """`base_skill.py` + `execution/*.py` 的源码（键=路径，值=全文）。
+
+    fail-closed：文件/目录缺失、或家族里的实现文件不足 3 个（三段实现），一律**报错** ——
+    不允许"扫不到就通过"（那正是本函数要消灭的空判据形态）。
+    """
+    if not _BASE_SKILL_PY.is_file():
+        raise AssertionError(f"被扫目标不存在：{_BASE_SKILL_PY}（fail-closed，不静默跳过）")
+    if not execution_dir.is_dir():
+        raise AssertionError(f"拆分后的实现目录不存在：{execution_dir}（fail-closed）")
+    exec_files = sorted(execution_dir.glob("*.py"))
+    if len(exec_files) < 3:
+        raise AssertionError(
+            f"{execution_dir} 下的实现文件不足 3 个（实得 {[p.name for p in exec_files]}）"
+            f"—— 家族扫描会静默漏掉搬走的 LLM 调用现场"
+        )
+    sources = {str(_BASE_SKILL_PY): _BASE_SKILL_PY.read_text(encoding="utf-8")}
+    for path in exec_files:
+        sources[str(path)] = path.read_text(encoding="utf-8")
+    return sources
+
+
+def _forbidden_literal_hits(literal: str, sources: dict) -> list:
+    """家族里含 `literal` 的文件清单（空 = 判据通过）。抽成纯函数是为了能喂负例。"""
+    return sorted(path for path, src in sources.items() if literal in src)
 
 
 @pytest.fixture(autouse=True)
@@ -62,13 +98,16 @@ class TestLLMBreakerScope:
         assert llm_breaker_name("customer_order").startswith("llm:")
 
     def test_legacy_global_name_no_longer_used(self):
-        """遗留的全局常量 LLM_BREAKER 不得再被用作熔断器名（防回归）"""
-        import app.graph.skills.base_skill as bs
+        """遗留的全局常量 LLM_BREAKER 不得再被用作熔断器名（防回归）。
 
+        ⚠️ 扫**搬迁家族**（`base_skill.py` + `execution/*.py`）而不是单文件：取熔断器的
+        现场（`get_breaker(llm_breaker_name(...))`）已随第 7 节搬进 `execution/react_turn.py`，
+        只扫 `base_skill.py` 会让这条判据变成**永远绿的空判据**（issue #4049）。
+        """
         # 若保留该常量，必须不再参与 get_breaker 调用
-        src = inspect.getsource(bs)
-        assert "get_breaker(LLM_BREAKER)" not in src, (
-            "仍有 get_breaker(LLM_BREAKER) 调用 —— 全局单一熔断器回归"
+        hits = _forbidden_literal_hits("get_breaker(LLM_BREAKER)", _skill_family_sources())
+        assert hits == [], (
+            f"仍有 get_breaker(LLM_BREAKER) 调用 —— 全局单一熔断器回归：{hits}"
         )
 
     @pytest.mark.asyncio
@@ -124,13 +163,56 @@ class TestLLMTimeoutConfigurable:
         )
 
     def test_no_hardcoded_timeout_literal(self):
-        """源码中不得再出现 wait_for(..., timeout=60.0) 字面量"""
-        import app.graph.skills.base_skill as bs
+        """源码中不得再出现 wait_for(..., timeout=60.0) 字面量。
 
-        src = inspect.getsource(bs)
-        assert "timeout=60.0" not in src, (
-            "仍有硬编码 timeout=60.0 —— 应改用 LLM_CALL_TIMEOUT_S"
+        ⚠️ 扫**搬迁家族**：`asyncio.wait_for(..., timeout=LLM_CALL_TIMEOUT_S)` 的现场已随
+        0~6 节（Vision 调用）与第 7 节（循环内调用）搬进 `execution/`，只扫 `base_skill.py`
+        会让这条判据变成**永远绿的空判据**（issue #4049）—— 而它防的正是"把超时写死回去"。
+        """
+        hits = _forbidden_literal_hits("timeout=60.0", _skill_family_sources())
+        assert hits == [], (
+            f"仍有硬编码 timeout=60.0 —— 应改用 LLM_CALL_TIMEOUT_S：{hits}"
         )
+
+
+class TestFamilyScanIsNotVacuous:
+    """负例（§19.1）：跟随式扫描**真的会红**，不是"永远绿"的空判据。
+
+    本包把 1699 行搬进 `execution/` 后，"只扫 `base_skill.py`"的判据会静默变成空跑 ——
+    故这里钉住三件事：① 家族真的覆盖到搬走的实现文件；② 判据在**植入违规**时必报；
+    ③ 家族扫描缺文件时 fail-closed 报错（而不是"扫不到就通过"）。
+    """
+
+    def test_family_covers_the_split_regions(self):
+        sources = _skill_family_sources()
+        exec_paths = sorted(p for p in sources if "execution" in p)
+        assert len(exec_paths) >= 3, (
+            f"家族扫描没覆盖拆出去的实现文件（实得 {exec_paths}）⇒ 判据会空跑"
+        )
+
+    def test_predicate_goes_red_on_a_planted_violation(self, tmp_path):
+        """把含 `timeout=60.0` 的**临时文件**塞进被扫目录 ⇒ 判据必报（真负例）。"""
+        fake_exec = tmp_path / "execution"
+        fake_exec.mkdir()
+        (fake_exec / "react_turn.py").write_text("x = 1\n", encoding="utf-8")
+        (fake_exec / "prepare_turn.py").write_text("y = 2\n", encoding="utf-8")
+        (fake_exec / "finalize_turn.py").write_text("z = 3\n", encoding="utf-8")
+        planted = fake_exec / "react_turn.py"
+        planted.write_text(
+            "async def f():\n    return await asyncio.wait_for(g(), timeout=60.0)\n",
+            encoding="utf-8")
+        hits = _forbidden_literal_hits("timeout=60.0", _skill_family_sources(fake_exec))
+        assert hits == [str(planted)], (
+            f"植入违规后判据仍不报 —— 这是空判据：{hits}"
+        )
+
+    def test_family_scan_fails_closed_on_missing_regions(self, tmp_path):
+        """实现文件不足 3 个 ⇒ 报错（不允许"扫不到就通过"）。"""
+        fake_exec = tmp_path / "execution"
+        fake_exec.mkdir()
+        (fake_exec / "prepare_turn.py").write_text("x = 1\n", encoding="utf-8")
+        with pytest.raises(AssertionError, match="不足 3 个"):
+            _skill_family_sources(fake_exec)
 
 
 class TestRegisteredSkillsGetDistinctBreakers:

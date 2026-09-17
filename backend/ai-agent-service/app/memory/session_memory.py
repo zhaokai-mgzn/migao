@@ -173,6 +173,7 @@ class SessionMemory:
         content_type: str = "text",
         extra_metadata: Optional[Dict[str, Any]] = None,
         interactive: Optional[Dict[str, Any]] = None,
+        tool_results: Optional[List[dict]] = None,
     ) -> str:
         """
         保存消息到 session_messages 表
@@ -187,6 +188,9 @@ class SessionMemory:
             extra_metadata: 额外的 metadata 字段（如 images 等）
             interactive: 交互组件载荷（choice/confirm/form，存 metadata.interactive，
                 用于历史回放渲染只读/可交互变体，issue #3036）
+            tool_results: 工具**执行结果**元信息（工具名 / 成败 / 错误码，存
+                metadata.tool_results，与 metadata.tool_calls 逐项对齐；默认 None =
+                不写该键，向后兼容，issue #4052）
             
         Returns:
             str: 消息 ID
@@ -199,6 +203,10 @@ class SessionMemory:
         meta_dict = {}
         if tool_calls:
             meta_dict["tool_calls"] = tool_calls
+        # 工具执行结果元信息（issue #4052）：与 tool_calls 逐项对齐，
+        # 让会话记录能区分「调了工具」与「工具成了」（此前只记 tool_calls）
+        if tool_results:
+            meta_dict["tool_results"] = tool_results
         # 交互组件载荷落库：历史回放按 interactive_answered 渲染只读/可交互变体（issue #3036）
         if interactive:
             meta_dict["interactive"] = interactive

@@ -65,7 +65,10 @@ class SkuUpdateTool(BaseTool):
             )
 
         if not product_id or ".." in str(product_id):
-            return ToolResult(success=False, error="Invalid product_id")
+            return ToolResult(success=False,
+                error="Invalid product_id",
+                suggestion="product_id 缺失或格式不合法，请先用 product_search 查到该商品后重试",
+            )
 
         client = get_admin_api_client()
         body: dict = {"price": price}

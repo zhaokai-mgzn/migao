@@ -1,0 +1,5 @@
+{
+  "enforced": true,
+  "entries": [],
+  "note": "空基线是目标形态：app/tools/*.py 的 ToolResult(success=False) 全部带非空 suggestion（issue #4050）。基线只许缩短（R4）。"
+}

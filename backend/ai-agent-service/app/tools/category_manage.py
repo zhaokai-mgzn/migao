@@ -83,6 +83,7 @@ class CategoryManageTool(BaseTool):
                 success=False,
                 error=f"无效的操作类型: {action}",
                 message=f"不支持的操作类型，可选：{', '.join(VALID_ACTIONS)}",
+                suggestion="请从工具说明里的可选操作类型中选一个后重试，不要自行改用其它 action",
             )
 
         try:
@@ -128,6 +129,7 @@ class CategoryManageTool(BaseTool):
                 success=False,
                 error=error_msg,
                 message=f"获取分类树失败：{error_msg}",
+                suggestion="请稍后重试；若持续失败，请让用户联系管理员核对分类数据",
             )
 
         tree = response.get("data", [])
@@ -151,6 +153,7 @@ class CategoryManageTool(BaseTool):
                 success=False,
                 error="缺少分类名称",
                 message="创建分类时必须提供 name",
+                suggestion="缺少分类名称 name，请向用户询问分类名称后重试",
             )
 
         json_data: Dict[str, Any] = {"name": name}
@@ -174,6 +177,7 @@ class CategoryManageTool(BaseTool):
                 success=False,
                 error=error_msg,
                 message=f"创建分类失败：{error_msg}",
+                suggestion="请先用 category_manage 的 tree 操作确认是否已有同名分类，再改用更新或换一个名称",
             )
 
         return ToolResult(
@@ -194,12 +198,14 @@ class CategoryManageTool(BaseTool):
                 success=False,
                 error="缺少分类 ID",
                 message="更新分类时必须提供 category_id",
+                suggestion="缺少分类 ID category_id，请先用 category_manage 的 tree 操作取到分类后重试",
             )
         if not name:
             return ToolResult(
                 success=False,
                 error="缺少分类名称",
                 message="更新分类时必须提供 name",
+                suggestion="缺少分类名称 name，请向用户询问新的分类名称后重试",
             )
 
         logger.info(
@@ -221,6 +227,7 @@ class CategoryManageTool(BaseTool):
                 success=False,
                 error=error_msg,
                 message=f"更新分类失败：{error_msg}",
+                suggestion="请先用 category_manage 的 tree 操作确认该分类仍在，再重新执行更新",
             )
 
         return ToolResult(
@@ -236,6 +243,7 @@ class CategoryManageTool(BaseTool):
                 success=False,
                 error="缺少分类 ID",
                 message="删除分类时必须提供 category_id",
+                suggestion="缺少分类 ID category_id，请先用 category_manage 的 tree 操作取到分类后重试",
             )
 
         logger.info(f"[category-manage] Delete: category_id={category_id} | tenant={context.tenant_id}")
@@ -253,6 +261,7 @@ class CategoryManageTool(BaseTool):
                 success=False,
                 error=error_msg,
                 message=f"删除分类失败：{error_msg}",
+                suggestion="请先用 category_manage 的 tree 操作确认该分类下已无商品，再重新执行删除",
             )
 
         return ToolResult(
