@@ -41,6 +41,31 @@ os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
 from app.tools.base import ToolContext  # noqa: E402  (必须在环境变量注入之后)
 
 
+@pytest.fixture(autouse=True)
+def _isolate_tool_scope():
+    """用例级隔离：把「当前 skill 执行域」复位（issue #4017 / A5）。
+
+    被隔离的事实：`app.tools.registry._current_tool_scope` —— `base_skill.create_skill_registry`
+    在**每个 skill 回合**登记本轮可执行工具集，`validate_input` 执行期据此拒绝域外目标。
+    它是**任务内**事实（与 `_current_tool_context` 同族），而 pytest 里同一个进程/上下文
+    会跑完所有用例 ⇒ 某条用例（或某条**同步**用例）调了真的 `create_skill_registry` 之后，
+    这个值会**跨用例残留**，让后续"直调工具、用裸 ToolContext"的用例看到本不属于它的域
+    （实测：残留 `{"order_create","human_handoff"}` 会把 `validate_input(product_manage)` 判成
+    域外 ⇒ 55 条既有用例变红 —— 那是**测试污染**，不是产品缺陷）。
+
+    ⚠️ 本 fixture **不放宽任何产品断言**：它只把两个用例之间共享的进程级状态复位（每个用例
+    自己会登记自己需要的域）；域闸门本身仍由 `tests/test_skill_tool_reachability.py` 的
+    逐条断言（含 126 处死角与注入式红证）覆盖。生产路径不存在这条残留：每个 skill 回合都
+    会重新登记，而非 skill 的工具执行（`api/chat.py` / `api/internal.py` 直调全局注册表）
+    是**另一个请求任务**（各自独立的 context 副本）。
+    """
+    from app.tools.registry import set_tool_scope
+
+    set_tool_scope(None)
+    yield
+    set_tool_scope(None)
+
+
 # ========== 测试用 JWT 密钥对（仅用于测试） ==========
 
 # 使用 HS256 对称算法简化测试

@@ -30,8 +30,11 @@ from loguru import logger
 from app.config import settings
 from app.graph.state import AgentState
 from app.graph.pending_validated import extract_pending, is_pending_for, PENDING_KEY
-from app.tools.base import NON_RETRYABLE_ERROR_CODES, ToolContext
-from app.tools.registry import ToolRegistry, set_tool_context, get_tool_context, audit_write_tool
+from app.tools.base import NON_RETRYABLE_ERROR_CODES, ToolContext, ToolResult
+from app.tools.registry import (
+    ToolRegistry, set_tool_context, get_tool_context, set_tool_scope, get_tool_scope,
+    audit_write_tool,
+)
 from app.utils.log_sanitizer import LogSanitizer
 import app.utils.error_incident as _err_inc
 from app.memory.user_memory import UserMemoryManager
@@ -409,6 +412,13 @@ def create_skill_registry(tool_names: List[str]) -> ToolRegistry:
         else:
             logger.warning(f"[base_skill] Tool '{name}' not found in global registry")
 
+    # A5（issue #4017）：把**本轮可执行工具集**登记为执行域事实（`validate_input` 执行期
+    # 据此拒绝域外目标）。为什么不新造一套域判定：这里返回的 registry **就是**执行域本身 ——
+    # `prepare_turn` 随后用同一个对象 `get_langchain_tools()` 绑定给模型（"你有哪些工具"），
+    # 而 skill 外工具名在该 registry 里一律 `get_tool() is None` → `Tool not found`。
+    # 登记的是**实际注册成功**的名单（不是入参 `tool_names`）：全局注册表缺失的工具不会
+    # 出现在模型可见工具集里，也就不该被当成"域内可执行"。
+    set_tool_scope(skill_registry.get_tool_names())
     return skill_registry
 
 
@@ -1441,29 +1451,17 @@ def resolve_sms_code(known_code, given_code) -> tuple[str, str]:
 # 修法与 handoff_blocked_inflight 同族：跨轮记账 + 不放行注定失败的调用 + 禁止重发同一张卡。
 WRITE_INPUT_ERROR_KEY = "last_write_input_error"
 
-# 工具错误原文 → 缺的参数名。只登记**能从顾客单条消息可靠识别**的参数（保守）。
-WRITE_INPUT_ERROR_PARAMS: dict = {
-    "缺少短信验证码": "sms_code",
-    "验证码格式无效": "sms_code",
-    "验证码错误或已过期": "sms_code",
-    "缺少商品明细": "items",
-}
-
+# 「缺哪个参数」从**结构化字段** `ToolResult.missing_params` 来（issue #4080 T3）。
+# 这里曾有一张「中文错误原文 → 参数名」的子串表 + `missing_input_param()`（`key in text`）：
+# 它的唯一生产者是 `app/tools/order_create.py` 的 4 个失败点，而**错误文案改一个字**
+# （"缺少"→"未提供"）判据就静默失效、且不会有任何东西变红（R5 明令禁止的形态）。
+# 现在：生产者直接带 `missing_params`（+ `base.BaseTool.validate_args` 的契约失败也带），
+# 消费端（本文件 2 处 + `execution/react_turn.py` 1 处）只读结构化字段 —— 表**删除**，
+# 基线 4 条 → 0（R4：只许缩短，不得扩容）。
 _INPUT_PARAM_LABELS: dict = {
     "sms_code": "短信验证码（4-6 位数字）",
     "items": "商品明细（名称、数量、单价）",
 }
-
-
-def missing_input_param(error: str) -> str:
-    """工具错误原文 → 所缺参数名；不是「缺参」类失败时返回空串。"""
-    text = str(error or "")
-    if not text:
-        return ""
-    for key, param in WRITE_INPUT_ERROR_PARAMS.items():
-        if key in text:
-            return param
-    return ""
 
 
 def user_supplied_param(param: str, user_msg: str) -> bool:
@@ -2821,7 +2819,9 @@ async def _write_input_recovery_block(tool_name: str, args: dict, tool_call: dic
     flag = full.get(WRITE_INPUT_ERROR_KEY)
     if not isinstance(flag, dict):
         return None
-    param = flag.get("param") or missing_input_param(flag.get("error", ""))
+    # 结构化优先（issue #4080 T3）：`param` 由记账方从 `missing_params` 写入；
+    # 非法/缺失的 flag 一律当作「无欠参」放行（fail-open，不静默锁死工具）。
+    param = flag.get("param") or ""
     if not param:
         return None
     if user_supplied_param(param, last_user_msg):
@@ -2924,7 +2924,9 @@ async def _inject_write_input_recovery(system_prompt: str, state: dict,
         flag = full.get(WRITE_INPUT_ERROR_KEY)
         if not isinstance(flag, dict):
             return system_prompt
-        param = flag.get("param") or missing_input_param(flag.get("error", ""))
+        # 结构化优先（issue #4080 T3）：`param` 由记账方从 `missing_params` 写入；
+        # 非法/缺失的 flag 一律当作「无欠参」放行（fail-open，不静默锁死工具）。
+        param = flag.get("param") or ""
         if not param:
             return system_prompt
         if user_supplied_param(param, last_user_msg):
@@ -2948,6 +2950,98 @@ async def _inject_write_input_recovery(system_prompt: str, state: dict,
         )
     except Exception as e:
         logger.warning(f"[write-input-recovery] 注入失败（非致命）: {e}")
+        return system_prompt
+
+
+# ── B 端权限范围注入（issue #4107 / 父单 #4103 的 F8）──────────────────────────
+# 权限码 → 产品能力名：**权威源是 admin-api 的权限目录**（两张 code→name 表：
+# `RegistrationService.initializeDefaultRolesAndPermissions` 的 `defaultPermissions`
+# = 全量 18 条；`PermissionService.ensureFullPermissionCatalog` = 其中 16 条子集）。
+# 这里只是**只读镜像**（名称逐字取自 Java 表，不改写、不润色），漂移由
+# `tests/test_permission_scope_injection.py` 的目录守卫机械核对：缺标签 / 标签多余 /
+# 名称不一致**都红**（并有"处方码"负例证明它会红）。目录外的码（租户自定义权限）
+# **不编名字**，原样回显码本身（详见 `_inject_permission_scope`）。
+PERMISSION_LABELS = {
+    "dashboard:view": "仪表板查看",
+    "product:manage": "商品管理",
+    "product:list": "商品列表",
+    "product:create": "新增商品",
+    "product:category": "商品分类",
+    "processing:manage": "加工管理",
+    "processing:view": "加工单查看",
+    "processing:update": "加工单操作",
+    "knowledge:manage": "知识库管理",
+    "order:list": "订单列表",
+    "order:detail": "订单详情",
+    "order:refund": "订单退款",
+    "customer:view": "客户管理",
+    "finance:view": "财务对账",
+    "agent:session": "会话监控",
+    "employee:list": "员工列表",
+    "employee:create": "新增员工",
+    "system:manage": "系统管理",
+}
+
+#: 注入块最多列出的权限码条数（prompt 预算：超出只给计数，不把 prompt 撑成权限清单）
+_MAX_SCOPE_CODES = 20
+
+
+def _inject_permission_scope(system_prompt: str, state: AgentState) -> str:
+    """B 端（米宝）**权限范围**注入（issue #4107 / 父单 #4103 的 F8）。
+
+    让模型知道「本会话人是谁、能做什么」，从而：越权请求不尝试、权限拒绝不重试、
+    如实说明缺哪项能力并给开通路径（对应 principles.md 的权限归因规则两半）。
+
+    - 仅 B 端（`agent_type == "mibao"`）且权限码非空、非 admin 通配（`"*"`）时注入；
+      C 端（xiaobu）/ 空权限 / 通配权限 ⇒ **原样返回同一个对象**（逐字节不变，C 端零回归）
+    - 能力名取自 `PERMISSION_LABELS`（admin-api 权限目录的只读镜像）；目录外的码原样回显，
+      **绝不补造名字**（自造码会把模型引向不存在的越权能力）
+    - 码做换行消毒 + 50 字截断（与 `identity_prefix` 同口径）——否则被篡改的 claim 能在
+      prompt 里伪造出注入块之外的行
+    - 任何异常不抛（fire-and-forget 语义，与 `_inject_user_memories` 一致）
+    """
+    try:
+        if state.get("agent_type") != "mibao":
+            return system_prompt
+        raw_perms = state.get("permissions")
+        # 形状守卫：只有**码列表**才有范围可言。裸字符串（如 "order:list"）逐字符迭代会注入
+        # 一串单字符"码"（比不注入更糟）⇒ 非列表一律按"没有可说的范围"处理。
+        if not isinstance(raw_perms, (list, tuple)):
+            return system_prompt
+        codes = [
+            c.replace("\n", " ").replace("\r", " ").strip()[:50]
+            for c in raw_perms
+            if isinstance(c, str) and c.strip()
+        ]
+        # admin 通配（`["*"]`）= 无范围可言；注入反而会让模型误以为"只有这些能力"
+        if not codes or "*" in codes:
+            return system_prompt
+        ordered: List[str] = []
+        for c in codes:                      # 去重且保序（会话顺序 = 用户习惯顺序）
+            if c not in ordered:
+                ordered.append(c)
+        shown = ordered[:_MAX_SCOPE_CODES]
+        caps = "、".join(
+            f"{PERMISSION_LABELS[c]}({c})" if c in PERMISSION_LABELS else c
+            for c in shown
+        )
+        if len(ordered) > _MAX_SCOPE_CODES:
+            caps += f"…（共 {len(ordered)} 项）"
+        role = str(state.get("role") or "").replace("\n", " ").replace("\r", " ").strip()[:50]
+        logger.info(
+            f"[permission-scope] 注入 B 端权限范围 role={role or '未知'} codes={len(ordered)}"
+        )
+        return (
+            "【权限范围】当前会话人的角色：" + (role or "未知") + "\n"
+            "- 可用能力（仅限以下，超出即无权）：" + caps + "\n"
+            "- 超出范围的请求：不要调用工具尝试，也不要反复重试被拒绝的调用"
+            "（换参数同样不会成功，权限拒绝是该请求的终态）——必须如实告知用户其账号缺少哪项能力，"
+            "并指引其联系管理员在「角色管理」或「员工管理」中开通该权限\n"
+            "【权限范围结束】\n\n"
+            + system_prompt
+        )
+    except Exception as e:
+        logger.warning(f"[permission-scope] 注入失败（非致命）: {e}")
         return system_prompt
 
 
@@ -3056,6 +3150,7 @@ async def _execute_tool_safe(tool, tool_args: dict, tool_context, state: dict) -
         # admin-api 错误码（issue #4106 F6 带出 / #4109 消费）：`_self_correct_retry`
         # 用它判定「授权类失败不得重试」。异常/超时出口留空 = 可重试（fail-safe 见该函数）。
         "error_code": None,
+        "missing_params": [],
     }
 
     # 写工具图片类参数被丢弃 → 不执行，返回失败 + 正确工具指引（issue #3930）：
@@ -3069,10 +3164,39 @@ async def _execute_tool_safe(tool, tool_args: dict, tool_context, state: dict) -
     # 1.5. 自动解析 _ids 参数：LLM 传加工项名称/序号时自动转 UUID
     tool_args = await _auto_resolve_ids(tool, tool_args, state)
 
+    # ── 1.6 入参契约校验（issue #4080 T2）──
+    # 工具**自己声明的** `parameters` 必须在这里被真的消费：缺显式 required / 类型不可解析 /
+    # 枚举越界 ⇒ **不执行本体**，直接回结构化失败（error + 可执行 suggestion + missing_params），
+    # 由 react_turn 的 `_self_correct_retry` 自愈链接手（它第二行就是"没有 suggestion 就短路"）。
+    # 为什么放在共享执行入口：判据**不逐工具手写**（R1）—— react_turn 与 finalize_turn 都走这里。
+    # fail-open：没有 `parameters` 的鸭子类型替身 `getattr` 取不到 ⇒ 不校验（不静默拦合法调用）；
+    # **只认 `ToolResult` 实例**：`MagicMock` 工具（并发/隔离测试里大量使用）的属性访问会自动
+    # 变出 Mock 对象，`is not None` 判据会把它们当成"契约失败"而误拦（实测：15 个隔离用例红）。
+    _args_contract_check = getattr(tool, "validate_args", None)
+    if callable(_args_contract_check):
+        _contract_failure = _args_contract_check(tool_args)
+        if isinstance(_contract_failure, ToolResult):
+            # 填**共用出口字典**（#4057 T4 的单点出口）—— 不另造字典，否则异常出口会缺字段
+            result_dict["error"] = _contract_failure.error
+            result_dict["message"] = _contract_failure.message
+            result_dict["suggestion"] = getattr(_contract_failure, "suggestion", None) or ""
+            result_dict["missing_params"] = list(
+                getattr(_contract_failure, "missing_params", None) or [])
+            return json.dumps(result_dict, ensure_ascii=False), result_dict
+
     session_id = state.get("session_id", "")
     tenant_id = str(state.get("tenant_id", ""))
     tool_name = tool.name
-    cache_key = f"{tenant_id}:{tool_name}:{json.dumps(tool_args, sort_keys=True, default=str)}"
+    # 缓存键必须覆盖**结果依赖的全部事实**（issue #4079 / A5）：`validate_input` 的结论依赖
+    # 「当前 skill 执行域」（域内 → success；域外 → `cross_skill_target`）⇒ 键里必须带域。
+    # 不带就是**跨域串味**：同租户 60s 内 A 域的成功结论会被 B 域命中（B 域根本执行不了那个
+    # 工具）⇒ A5 的死角从缓存里被放回来（"校验通过 → 确认卡 → Tool not found"）。
+    # 域外结论本身不进缓存（下面只存 success），所以受影响的正是上面这条危险方向。
+    _scope_key = ",".join(sorted(get_tool_scope() or ()))
+    cache_key = (
+        f"{tenant_id}:{_scope_key}:{tool_name}:"
+        f"{json.dumps(tool_args, sort_keys=True, default=str)}"
+    )
 
     # 2. 缓存检查（带 asyncio.Lock 防止并发竞态）
     # ⚠️ 仅缓存只读工具：写操作（read_only=False）绝不允许缓存，
@@ -3149,6 +3273,7 @@ async def _execute_tool_safe(tool, tool_args: dict, tool_context, state: dict) -
         terminal=bool(getattr(result, "terminal", False)),
         # 授权类失败的判定依据（#4109）：由 `admin_api_failure` 从 admin-api 响应填充。
         error_code=getattr(result, "error_code", None),
+        missing_params=list(getattr(result, "missing_params", None) or []),
     )
     result_str = json.dumps(result_dict, ensure_ascii=False, default=str)
 

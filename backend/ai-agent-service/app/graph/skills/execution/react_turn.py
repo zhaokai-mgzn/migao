@@ -32,10 +32,11 @@ from app.graph.skills.base_skill import (
     _order_write_tool_here, _pending_card_before_last_user, _plan_b_create_processing_items_rewrite, _plan_processing_items_rewrite,
     _processing_items_already_asked, _product_image_capability_available, _product_image_denial_hit, _quantity_choice_block,
     _relock_order_skill, _remember_known_value, _remember_raw_phones, _remember_sms_code,
+    _registry_has_confirm_write_tool, _registry_has_tool,
     _requires_confirmation, _self_correct_retry, _stall_has_progress, _stored_sms_code,
     _track_llm_cost, _write_input_recovery_block, capability_denial_text_hit, card_fingerprint,
     extract_pending, extract_product_keyword, extract_sms_code, is_pending_for,
-    llm_breaker_name, llm_incident_id, missing_input_param, raw_phones_in,
+    llm_breaker_name, llm_incident_id, raw_phones_in,
     resolve_sms_code, safe_exc_message, unit_price_grounding_error,
 )
 from app.graph.pending_validated import VALIDATION_FAILURE_KEY
@@ -707,7 +708,13 @@ async def react_turn(
                     # 故加代码闸门：本会话没成功查过商品详情 → 不许下单，并把可执行步骤写进结果。
                     # B 端（order）同守此闸门（run 34916256903 OR-014：B 端也查过详情但编造
                     # 分色价 150 落单）—— 未接地与单价不接地都是"金额不可信"的同族形态。
-                    if tool_name == "order_create" and skill_name in ("customer_order", "order") and session_id:
+                    #
+                    # 适用性判据（issue #4079 S4）：旧实现是字面量白名单
+                    # `skill_name in ("customer_order", "order")`（新增 skill 会被判成"不适用"）
+                    # ⇒ 改读**事实**：本 skill 工具子集里有没有下单写工具（`_order_write_tool_here`）。
+                    # 等价性：能到这里的前提就是 `skill_registry.get_tool("order_create")` 非空
+                    # （见上方 tool 解析）⇒ 判据此刻恒真，保留只为把"覆盖哪些 skill"写在事实上。
+                    if tool_name == "order_create" and _order_write_tool_here(skill_registry) and session_id:
                         _grounded = True
                         try:
                             from app.memory.session_state_store import SessionStateStore as _SG
@@ -715,7 +722,10 @@ async def react_turn(
                             _grounded = bool(_sg.get("grounded_product_detail"))
                         except Exception as _ge:
                             logger.debug(f"[{skill_name}] ground gate check failed (non-fatal): {_ge}")
-                        if not _grounded and skill_name == "customer_order":
+                        # 内层分支只给 **C 端（顾客本人）**：B 端店员代客下单的接地由上面
+                        # 单价校验兜（`skill_name == "customer_order"` 的旧字面量 → 端判据
+                        # `_is_customer_role(state)`，同一事实、同一个函数里既有守卫在用）。
+                        if not _grounded and _is_customer_role(state):
                             logger.warning(
                                 f"[{skill_name}] 下单接地闸门：本会话未查商品详情，拦截 order_create "
                                 f"| session={session_id}"
@@ -1097,7 +1107,14 @@ async def react_turn(
                 # ── 模式 C 代码兜底：加工项漏问 → confirm 卡改写为加工项 choice 卡（OR-017）──
                 # 仅作用于 C 端下单/售后写流程：这些 Skill 的商品详情含加工项数据、
                 # 且业务铁律要求 confirm 前必须先问。B 端流程不动。
-                if skill_name in ("customer_order", "customer_aftersales"):
+                #
+                # 适用性判据（issue #4079 S4）：旧实现是字面量白名单
+                # `skill_name in ("customer_order", "customer_aftersales")` ⇒ 换两个事实的合取：
+                # `_is_customer_role(state)`（C 端顾客）× `_registry_has_confirm_write_tool(...)`
+                # （本 skill 有需确认写工具 = **业务办理型写流程**，判据取工具属性、与确认门禁同源）。
+                # 等价性（实测 @2f55a8b3）：C 端含需确认写工具的恰好是这两个 skill；B 端非顾客
+                # 角色 ⇒ 依旧不动（分端纪律保持）。将来新的 C 端写流程 skill 自动纳入。
+                if _is_customer_role(state) and _registry_has_confirm_write_tool(skill_registry):
                     try:
                         _proc_msgs = new_messages + state.get("messages", [])
                         _proc_pid = _last_product_id(_proc_msgs)
@@ -1133,7 +1150,13 @@ async def react_turn(
                 # 事实源只有本会话真实调用过的 `processing_item_query` 返回。
                 # 仅当「建品在办 + 有真实加工项 + 未问过」才把 confirm 卡改写为多选卡；
                 # 其余形态（其它 action / 没查过 / 已问过 / 已答过 / 用户拒绝）一律**原样不动**。
-                if skill_name == "product":
+                #
+                # 适用性判据（issue #4079 S4）：旧实现 `skill_name == "product"` 是字面量
+                # 白名单 ⇒ 换成**事实**：本 skill 工具子集里有没有建品写工具
+                #（`product_manage`，与下面 `_plan_b_create_processing_items_rewrite` 读的
+                # confirm 卡同为建品动作）。等价性（实测 @2f55a8b3）：全 15 个 skill 里
+                # 绑了 `product_manage` 的只有 `product` —— 与旧白名单同一集合。
+                if _registry_has_tool(skill_registry, "product_manage"):
                     try:
                         _bp_msgs = new_messages + state.get("messages", [])
                         if await _b_create_processing_items_not_asked(session_id):
@@ -1232,15 +1255,21 @@ async def react_turn(
                     # 清除只认**同一把工具**成功：product_search 之类只读工具成功不能清账，
                     # 否则欠参标记被顺手抹掉、下一轮又回到"重发卡 + 重复调用"的老路。
                     if session_id and tool_name != "validate_input":
-                        _param = "" if result_dict.get("success") else missing_input_param(
-                            result_dict.get("error") or "")
+                        # 缺参**只认结构化字段**（issue #4080 T3）：生产者有两处 ——
+                        # ① 工具自己的失败面（`order_create` 的 4 个点带 `missing_params`）；
+                        # ② 契约层（`BaseTool.validate_args` 拦住缺必填/类型/枚举时也带）。
+                        # 此前这里靠**中文错误原文子串匹配**反推（`missing_input_param`），
+                        # 错误文案一改判据就静默失效。
+                        # 只记账「判得出顾客已补齐」的参数（否则永久锁死该工具）——
+                        # 过滤合并进列表推导，与原先的"先记后清"等价且少一次赋值。
+                        _param = next(
+                            (p for p in (result_dict.get("missing_params") or [])
+                             if p in RECOGNIZABLE_INPUT_PARAMS), "")
                         try:
                             from app.memory.session_state_store import SessionStateStore as _S5
                             _s5 = _S5()
                             _f5 = await _s5.load(session_id) or {}
                             _prev5 = _f5.get(WRITE_INPUT_ERROR_KEY) or {}
-                            if _param and _param not in RECOGNIZABLE_INPUT_PARAMS:
-                                _param = ""   # 判不出"已补齐"的参数不记账（否则永久锁死该工具）
                             if _param:
                                 _f5[WRITE_INPUT_ERROR_KEY] = {
                                     "tool": tool_name,

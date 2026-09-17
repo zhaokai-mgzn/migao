@@ -210,3 +210,164 @@ class TestOrderWriteToolNotFoundRecovery:
         assert result.get("pending_interact_skill") != "product", (
             "graph 状态 pending_interact_skill 被轮末覆盖回 product"
         )
+
+
+class TestCrossSkillValidateInputIsRejected:
+    """A5（#4079 / #4017）：**域外**目标的 `validate_input` 必须被拒 —— 不落待执行、不发卡。
+
+    线上实证 #3976（sess_202d55d49a254a10）：B 端 `product` skill 内
+    `validate_input(order_create)` **通过**（校验只看全局规则表，不看当前 skill 工具集）
+    → 落 `pending_validated_input` → 模型据「已校验待执行」发确认卡 → 点卡后
+    `[product] Tool not found: order_create` → 最终回复「请稍候，我这就提交」而 orders 表无新行。
+
+    本类断言修复后**这条链在第一环就断**：域外目标 ⇒ `cross_skill_target` ⇒ `success=False`
+    ⇒ `react_turn` 的 `tool_name == "validate_input" and result_dict.get("success")`
+    不成立 ⇒ **不落** `pending_validated_input`（model 也就拿不到"已校验待执行"的授权）。
+
+    对照（R2）：域**内**目标的同类调用必须照旧 → `success=True` **且真的落 pending**
+    （证明确认-执行链没有被这次修复误伤）。
+    """
+
+    _PARAMS = {"customer_name": "赵凯", "customer_phone": "13456000919",
+               "items": [{"product_id": "p_001", "quantity": 1}]}
+
+    def _validate_input_call(self):
+        r = MagicMock(spec=AIMessage)
+        r.content = ""
+        r.tool_calls = [{
+            "name": "validate_input",
+            "args": {"target_tool": "order_create", "target_action": "create",
+                     "params": dict(self._PARAMS)},
+            "id": "tc_validate_input",
+        }]
+        return r
+
+    def _final_text_msg(self):
+        r = MagicMock(spec=AIMessage)
+        r.content = "好的，我为您核对一下。"
+        r.tool_calls = []
+        return r
+
+    def _env(self):
+        """mock LLM/breaker/会话；**不** mock `create_skill_registry`（要真实执行域）。"""
+        mock_breaker = MagicMock()
+
+        async def _passthrough(fn):
+            return await fn()
+
+        mock_breaker.call = _passthrough
+
+        mock_llm = MagicMock()
+        mock_llm.bind_tools.return_value = mock_llm
+        mock_llm.ainvoke = AsyncMock(
+            side_effect=[self._validate_input_call(), self._final_text_msg()])
+
+        mock_no_think = MagicMock()
+        mock_no_think.bind_tools.return_value = mock_no_think
+        mock_no_think.ainvoke = AsyncMock(return_value=self._final_text_msg())
+
+        fake_mem = MagicMock()
+        fake_mem.set_pending_skill = AsyncMock(return_value=True)
+        fake_mem.get_pending_skill = AsyncMock(return_value=None)
+        fake_mem.get_vision_analysis = AsyncMock(return_value="")
+        fake_mem.get_plan_state = AsyncMock(return_value="")
+        fake_mem.get_last_confirm_value = AsyncMock(return_value="")
+
+        return {"breaker": mock_breaker, "llm": mock_llm,
+                "no_think": mock_no_think, "mem": fake_mem}
+
+    def _tool_result_payloads(self, result) -> list:
+        out = []
+        for m in result["messages"]:
+            if isinstance(m, ToolMessage) and isinstance(m.content, str) \
+                    and m.content.startswith("{"):
+                try:
+                    out.append(json.loads(m.content))
+                except json.JSONDecodeError:
+                    continue
+        return out
+
+    @patch("app.graph.skills.base_skill.get_skill_llm")
+    @patch("app.graph.skills.base_skill.set_tool_context")
+    @patch("app.graph.skills.base_skill.get_breaker")
+    @patch("app.graph.skills.base_skill.LLMFactory")
+    @patch("app.memory.session_memory.SessionMemory")
+    async def test_out_of_domain_validate_input_is_rejected_without_pending(
+        self, mock_mem_cls, mock_llm_factory, mock_get_breaker,
+        mock_set_ctx, mock_get_llm
+    ):
+        """`product` 域（无 order_create）内校验 order_create ⇒ 拒 + 无 pending + 无确认卡。"""
+        env = self._env()
+        mock_get_breaker.return_value = env["breaker"]
+        mock_get_llm.return_value = env["llm"]
+        mock_llm_factory.create_skill_llm.return_value = env["no_think"]
+        mock_mem_cls.return_value = env["mem"]
+
+        state = _make_state()
+        sid = state["session_id"]
+        _FakeGroundedStore._states[sid] = {}   # 清掉预置事实：本用例只关心本轮的落账
+
+        result = await execute_skill(
+            state=state,
+            skill_name="product",
+            # product skill 的真实工具集形态（含 validate_input；**不含** order_create）
+            tool_names=["validate_input", "product_manage", "product_search"],
+            system_prompt="你是商品助手",
+        )
+
+        payloads = self._tool_result_payloads(result)
+        assert payloads, "validate_input 应当真的被执行过（否则本用例是空跑）"
+        vi = [p for p in payloads if p.get("error") == "cross_skill_target"]
+        assert vi, (
+            f"域外目标未被拒（#3976 的第一环）：{payloads}"
+        )
+        assert str(vi[0].get("suggestion") or "").strip(), (
+            "fail-closed 分支没有 suggestion（R5：_self_correct_retry 靠它启动）"
+        )
+
+        stored = _FakeGroundedStore._states.get(sid) or {}
+        assert not stored.get("pending_validated_input"), (
+            f"域外校验失败却落了「已校验待执行」⇒ 模型会据此发确认卡、点卡后 Tool not found"
+            f"（#3976 的后果链）：{stored.get('pending_validated_input')}"
+        )
+        assert "<interact>" not in (result.get("final_answer") or ""), (
+            "域外校验失败仍补发了确认卡（空头承诺形态）"
+        )
+
+    @patch("app.graph.skills.base_skill.get_skill_llm")
+    @patch("app.graph.skills.base_skill.set_tool_context")
+    @patch("app.graph.skills.base_skill.get_breaker")
+    @patch("app.graph.skills.base_skill.LLMFactory")
+    @patch("app.memory.session_memory.SessionMemory")
+    async def test_in_domain_validate_input_still_persists_pending(
+        self, mock_mem_cls, mock_llm_factory, mock_get_breaker,
+        mock_set_ctx, mock_get_llm
+    ):
+        """**R2 阴性负例**：域**内**（`order` skill 含 order_create）→ 照旧通过并落 pending。"""
+        env = self._env()
+        mock_get_breaker.return_value = env["breaker"]
+        mock_get_llm.return_value = env["llm"]
+        mock_llm_factory.create_skill_llm.return_value = env["no_think"]
+        mock_mem_cls.return_value = env["mem"]
+
+        state = _make_state(pending_interact_skill="order")
+        sid = state["session_id"]
+        _FakeGroundedStore._states[sid] = {}
+
+        result = await execute_skill(
+            state=state,
+            skill_name="order",
+            tool_names=["validate_input", "order_create", "order_manage", "order_query"],
+            system_prompt="你是订单助手",
+        )
+
+        payloads = self._tool_result_payloads(result)
+        assert payloads, "validate_input 应当真的被执行过（否则本用例是空跑）"
+        assert payloads[0].get("success") is True, (
+            f"域内目标的合法校验被误伤（R2）：{payloads[0]}"
+        )
+        stored = _FakeGroundedStore._states.get(sid) or {}
+        assert (stored.get("pending_validated_input") or {}).get("target_tool") == "order_create", (
+            f"域内校验通过后**没有**落「已校验待执行」⇒ 确认-执行链被这次修复误伤："
+            f"{stored.get('pending_validated_input')}"
+        )

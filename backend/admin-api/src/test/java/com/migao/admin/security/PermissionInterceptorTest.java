@@ -1,6 +1,7 @@
 // case_ids: DF-007
 package com.migao.admin.security;
 
+import com.migao.admin.exception.PermissionDeniedException;
 import com.migao.admin.service.RoleService;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.junit.jupiter.api.BeforeEach;
@@ -131,6 +132,29 @@ class PermissionInterceptorTest {
                 .isInstanceOf(AccessDeniedException.class)
                 .hasMessageContaining("权限不足");
 
+        verify(joinPoint, never()).proceed();
+    }
+
+    @Test
+    @DisplayName("权限码结构化存活 - 拒绝异常为 PermissionDeniedException 且携带 requiredPermission（issue #4105 F1）")
+    void userMissingPermission_throwsPermissionDeniedCarryingCode() throws Throwable {
+        // 背景：旧实现抛裸 AccessDeniedException，权限码只活在 message 字符串里，
+        // 下游（GlobalExceptionHandler）只能解析文本；此处断言权限码是**结构化字段**。
+        SecurityUser securityUser = new SecurityUser("user-002", 1L, "viewer",
+                List.of("viewer"), List.of(new SimpleGrantedAuthority("ROLE_VIEWER")));
+        when(authentication.isAuthenticated()).thenReturn(true);
+        when(authentication.getPrincipal()).thenReturn(securityUser);
+        SecurityContext context = SecurityContextHolder.getContext();
+        context.setAuthentication(authentication);
+        when(roleService.getUserPermissions("user-002"))
+                .thenReturn(List.of("dashboard:view"));
+
+        Throwable thrown = catchThrowable(() -> interceptor.doIntercept(joinPoint, requirePermission));
+
+        assertThat(thrown).isInstanceOf(PermissionDeniedException.class);
+        assertThat(((PermissionDeniedException) thrown).getRequiredPermission())
+                .isEqualTo("product:manage");
+        assertThat(thrown).hasMessageContaining("product:manage");
         verify(joinPoint, never()).proceed();
     }
 

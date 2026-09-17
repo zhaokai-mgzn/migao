@@ -1,7 +1,9 @@
-// case_ids: OR-001, DF-002, DF-014
+// case_ids: OR-001, DF-002, DF-014, DF-017
 package com.migao.admin.security;
 
 import com.migao.admin.config.TenantContext;
+import com.migao.admin.entity.User;
+import com.migao.admin.mapper.UserMapper;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -13,6 +15,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
+import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -29,9 +32,13 @@ import static org.mockito.Mockito.*;
  * - 有效/无效 Service Token 的处理
  * - Secret 未配置 / X-Tenant-Id 解析 / shouldNotFilter 路径匹配
  * - SecurityContext 设置 / TenantContext 清理
+ * - X-User-Id 命中同租户商户员工时不再挂 service 旁路（issue #4105 F2）
  */
 @ExtendWith(MockitoExtension.class)
 class ServiceTokenFilterTest {
+
+    @Mock
+    private UserMapper userMapper;
 
     @InjectMocks
     private ServiceTokenFilter filter;
@@ -102,6 +109,207 @@ class ServiceTokenFilterTest {
         // 关键：userId 必须是真实用户而非 internal-service 占位
         assertThat(user.getUserId()).isEqualTo("customer-007");
         assertThat(user.getTenantId()).isEqualTo(5L);
+    }
+
+    // ======================== X-User-Id 商户员工判定（issue #4105 F2）========================
+    // 背景：ai-agent 调用 admin-api **始终**带 X-Service-Token，本过滤器此前一律挂 "service" 身份，
+    // 于是 PermissionInterceptor.hasBypassRole() 与 SecurityConfig.adminApiAuthorizationManager()
+    // 双双直接放行 ⇒ /api/admin/**（含全部写接口）零细粒度授权。
+    // 目标：X-User-Id 命中**同租户商户员工**时挂该用户真实角色（不再挂 service），
+    // 细粒度授权交 PermissionInterceptor + roleService.getUserPermissions(realUserId)。
+    // 其余四种情形（无 X-User-Id / C 端角色 / 跨租户 / 查不到）必须与今日行为**逐字节一致**。
+
+    @Test
+    @DisplayName("X-User-Id 命中同租户商户员工 — 挂真实角色，service 旁路消失（负向控制）")
+    void merchantStaffXUserId_realRolesWithoutServiceBypass() throws ServletException, IOException {
+        when(request.getHeader(HEADER_NAME)).thenReturn(SECRET);
+        when(request.getHeader("X-Tenant-Id")).thenReturn("5");
+        when(request.getHeader("X-User-Id")).thenReturn("staff-001");
+        when(userMapper.selectById("staff-001")).thenReturn(staff("staff-001", 5L, "operator", "active"));
+
+        filter.doFilterInternal(request, response, filterChain);
+
+        verify(filterChain).doFilter(request, response);
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        SecurityUser user = (SecurityUser) auth.getPrincipal();
+        assertThat(user.getUserId()).isEqualTo("staff-001");
+        assertThat(user.getTenantId()).isEqualTo(5L);
+        assertThat(user.getRoles()).containsExactly("operator");
+        // 承重判据：旁路角色必须消失，否则 PermissionInterceptor 仍然整段跳过权限查询
+        assertThat(auth.getAuthorities()).extracting("authority")
+                .contains("ROLE_OPERATOR")
+                .doesNotContain("ROLE_SERVICE", "ROLE_INTERNAL");
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest(name = "X-User-Id 角色 {0} — 保持既有 service 透传")
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"customer", "agent"})
+    @DisplayName("X-User-Id 命中 C 端角色（customer/agent）— 行为与今日逐字节一致（零回归）")
+    void cEndXUserId_keepsLegacyServiceIdentity(String role) throws ServletException, IOException {
+        when(request.getHeader(HEADER_NAME)).thenReturn(SECRET);
+        when(request.getHeader("X-Tenant-Id")).thenReturn("5");
+        when(request.getHeader("X-User-Id")).thenReturn("c-user-007");
+        when(userMapper.selectById("c-user-007")).thenReturn(staff("c-user-007", 5L, role, "active"));
+
+        filter.doFilterInternal(request, response, filterChain);
+
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        SecurityUser user = (SecurityUser) auth.getPrincipal();
+        // 真实 userId 仍透传（C 端数据隔离依据），身份仍是内部服务 ⇒ C 端端点照旧可用
+        assertThat(user.getUserId()).isEqualTo("c-user-007");
+        assertThat(user.getRoles()).containsExactly("service");
+        assertThat(auth.getAuthorities()).extracting("authority")
+                .containsExactlyInAnyOrder("ROLE_SERVICE", "ROLE_INTERNAL");
+    }
+
+    @Test
+    @DisplayName("无 X-User-Id — 不查库、行为与今日逐字节一致（零回归）")
+    void noXUserId_keepsLegacyServiceIdentityAndSkipsLookup() throws ServletException, IOException {
+        when(request.getHeader(HEADER_NAME)).thenReturn(SECRET);
+        when(request.getHeader("X-Tenant-Id")).thenReturn("5");
+        when(request.getHeader("X-User-Id")).thenReturn(null);
+
+        filter.doFilterInternal(request, response, filterChain);
+
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        SecurityUser user = (SecurityUser) auth.getPrincipal();
+        assertThat(user.getUserId()).isEqualTo("internal-service");
+        assertThat(auth.getAuthorities()).extracting("authority")
+                .containsExactlyInAnyOrder("ROLE_SERVICE", "ROLE_INTERNAL");
+        verifyNoInteractions(userMapper);
+    }
+
+    @Test
+    @DisplayName("X-User-Id 命中**跨租户**商户员工 — 不认作本租户员工，保持今日行为（零回归）")
+    void crossTenantStaffXUserId_keepsLegacyServiceIdentity() throws ServletException, IOException {
+        when(request.getHeader(HEADER_NAME)).thenReturn(SECRET);
+        when(request.getHeader("X-Tenant-Id")).thenReturn("5");
+        when(request.getHeader("X-User-Id")).thenReturn("staff-other-tenant");
+        when(userMapper.selectById("staff-other-tenant"))
+                .thenReturn(staff("staff-other-tenant", 99L, "operator", "active"));
+
+        filter.doFilterInternal(request, response, filterChain);
+
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        assertThat(((SecurityUser) auth.getPrincipal()).getRoles()).containsExactly("service");
+        assertThat(auth.getAuthorities()).extracting("authority")
+                .containsExactlyInAnyOrder("ROLE_SERVICE", "ROLE_INTERNAL");
+    }
+
+    @Test
+    @DisplayName("X-User-Id 查不到用户 — 保持今日行为（零回归）")
+    void unresolvableXUserId_keepsLegacyServiceIdentity() throws ServletException, IOException {
+        when(request.getHeader(HEADER_NAME)).thenReturn(SECRET);
+        when(request.getHeader("X-Tenant-Id")).thenReturn("5");
+        when(request.getHeader("X-User-Id")).thenReturn("ghost-user");
+        when(userMapper.selectById("ghost-user")).thenReturn(null);
+
+        filter.doFilterInternal(request, response, filterChain);
+
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        assertThat(((SecurityUser) auth.getPrincipal()).getRoles()).containsExactly("service");
+        assertThat(auth.getAuthorities()).extracting("authority")
+                .containsExactlyInAnyOrder("ROLE_SERVICE", "ROLE_INTERNAL");
+    }
+
+    @Test
+    @DisplayName("X-User-Id 命中非 active 商户员工 — 不认作员工，保持今日行为（零回归）")
+    void inactiveStaffXUserId_keepsLegacyServiceIdentity() throws ServletException, IOException {
+        when(request.getHeader(HEADER_NAME)).thenReturn(SECRET);
+        when(request.getHeader("X-Tenant-Id")).thenReturn("5");
+        when(request.getHeader("X-User-Id")).thenReturn("staff-disabled");
+        when(userMapper.selectById("staff-disabled"))
+                .thenReturn(staff("staff-disabled", 5L, "operator", "disabled"));
+
+        filter.doFilterInternal(request, response, filterChain);
+
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        assertThat(((SecurityUser) auth.getPrincipal()).getRoles()).containsExactly("service");
+        assertThat(auth.getAuthorities()).extracting("authority")
+                .containsExactlyInAnyOrder("ROLE_SERVICE", "ROLE_INTERNAL");
+    }
+
+    @Test
+    @DisplayName("X-User-Id 命中无角色用户 — 不认作员工，保持今日行为（零回归）")
+    void rolelessXUserId_keepsLegacyServiceIdentity() throws ServletException, IOException {
+        when(request.getHeader(HEADER_NAME)).thenReturn(SECRET);
+        when(request.getHeader("X-Tenant-Id")).thenReturn("5");
+        when(request.getHeader("X-User-Id")).thenReturn("user-no-role");
+        when(userMapper.selectById("user-no-role")).thenReturn(staff("user-no-role", 5L, null, "active"));
+
+        filter.doFilterInternal(request, response, filterChain);
+
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        assertThat(((SecurityUser) auth.getPrincipal()).getRoles()).containsExactly("service");
+        assertThat(auth.getAuthorities()).extracting("authority")
+                .containsExactlyInAnyOrder("ROLE_SERVICE", "ROLE_INTERNAL");
+    }
+
+    @Test
+    @DisplayName("商户员工查库抛异常 — 回退内部服务身份（不 500、不提权给不可信方）+ 记 ERROR 留痕")
+    void staffLookupThrows_fallsBackToServiceIdentityWithErrorLog() throws ServletException, IOException {
+        when(request.getHeader(HEADER_NAME)).thenReturn(SECRET);
+        when(request.getHeader("X-Tenant-Id")).thenReturn("5");
+        when(request.getHeader("X-User-Id")).thenReturn("staff-boom");
+        when(userMapper.selectById("staff-boom")).thenThrow(new RuntimeException("db down"));
+
+        ch.qos.logback.classic.Logger filterLogger =
+                (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(ServiceTokenFilter.class);
+        ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> appender =
+                new ch.qos.logback.core.read.ListAppender<>();
+        appender.start();
+        filterLogger.addAppender(appender);
+        try {
+            filter.doFilterInternal(request, response, filterChain);
+
+            // 决策（issue #4105）：调用方已持有可信 SERVICE_TOKEN，查库失败时回退今日行为，
+            // 但**必须**留 ERROR 痕迹，避免「查失败」与「查不到」无从区分。
+            assertThat(appender.list).anySatisfy(event -> {
+                assertThat(event.getLevel()).isEqualTo(ch.qos.logback.classic.Level.ERROR);
+                assertThat(event.getFormattedMessage()).contains("staff-boom");
+            });
+            Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+            assertThat(((SecurityUser) auth.getPrincipal()).getRoles()).containsExactly("service");
+            assertThat(auth.getAuthorities()).extracting("authority")
+                    .containsExactlyInAnyOrder("ROLE_SERVICE", "ROLE_INTERNAL");
+            verify(filterChain).doFilter(request, response);
+        } finally {
+            filterLogger.detachAppender(appender);
+        }
+    }
+
+    @Test
+    @DisplayName("查库判定必须在 TenantContext 就绪之后 — 否则租户插件抛错被 fallback 吞掉（修复静默失效）")
+    void merchantStaffLookup_runsAfterTenantContextIsSet() throws ServletException, IOException {
+        // 为什么断言「查库那一刻的 TenantContext」：真实 UserMapper 是 MyBatis-Plus 代理，
+        // users **不在** MybatisPlusConfig.IGNORE_TENANT_TABLES 内 ⇒ TenantLineHandler.getTenantId()
+        // 在 TenantContext 为空时抛 "Tenant context not initialized - possible unauthenticated access"。
+        // 该异常会被 resolveMerchantStaff 的 catch 吞成 fallback ⇒ 只留一条 ERROR 日志、
+        // F2 在**生产**完全失效，而 mock UserMapper 的单测/E2E 全绿 —— 典型静默失效形态。
+        when(request.getHeader(HEADER_NAME)).thenReturn(SECRET);
+        when(request.getHeader("X-Tenant-Id")).thenReturn("5");
+        when(request.getHeader("X-User-Id")).thenReturn("staff-001");
+        java.util.List<Long> tenantSeenByMapper = new java.util.ArrayList<>();
+        when(userMapper.selectById("staff-001")).thenAnswer(invocation -> {
+            tenantSeenByMapper.add(TenantContext.getTenantId());
+            return staff("staff-001", 5L, "operator", "active");
+        });
+
+        filter.doFilterInternal(request, response, filterChain);
+
+        assertThat(tenantSeenByMapper).containsExactly(5L);
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        assertThat(auth.getAuthorities()).extracting("authority").contains("ROLE_OPERATOR");
+        assertThat(TenantContext.getTenantId()).isNull();
+    }
+
+    private static User staff(String id, Long tenantId, String role, String status) {
+        return User.builder()
+                .id(id)
+                .tenantId(tenantId)
+                .role(role)
+                .status(status)
+                .deleted(0)
+                .build();
     }
 
     @Test
