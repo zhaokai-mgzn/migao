@@ -159,9 +159,28 @@
     },
     {
       "issue": 4093,
-      "status": "unsunk",
-      "reason": "run 35251175156 的失败集中，5 条已由 #4042 的下沉覆盖（CU-008/OR-014/PR-008/PR-026/OR-029 均带效果层断言，见台账 issue=4042 条目），但 **OR-016（no_success(order_create)||order_before_missing(interact[choice:processing_items])）与 PR-018（no_success(product_search)，C 端 agent 对低库存清单的**合理拒绝**）没有任何确定性断言**（has_effect_assertion 均为 false；OR-016 在 case-trust 基线里记 CASE-TRUST-NO-EFFECT-ASSERTION）⇒ 未下沉，不得按「其余已下沉」读成闭环",
-      "follow_up": 4110
+      "status": "sunk",
+      "sinks": [
+        {
+          "kind": "case_assertion",
+          "cases": [
+            "OR-016"
+          ],
+          "fields": [
+            "must_succeed"
+          ]
+        },
+        {
+          "kind": "case_assertion",
+          "cases": [
+            "PR-018"
+          ],
+          "fields": [
+            "must_succeed"
+          ]
+        }
+      ],
+      "evidence": "run 35251175156 失败集里最后两条「无任何确定性断言」的用例逐条下沉（原 unsunk 登记的 reason 所指正是这两条）；PR 见本条目所在分支（分支名 feat/4110-sink-or016-pr018，跟踪单 #4110）—— 本单按用户指令**未开 PR**，PR 号由集成方开 PR 时回填。① **OR-016**（首跑指纹 `no_success(order_create) || order_before_missing(interact[choice:processing_items])`）—— 前半个指纹此前**无任何断言可判红**：`expectations[order_create]` 只证明「被调用过」（runner 的 `check_expectation` 不读 `success`），三条 `data_checks` 是自然语义、不进 scoring_checks ⇒ 补效果层 `must_succeed[{tool: order_create}]`（fail-closed：一次都没成功即判红）；同时补 `persona: mibao`（清掉 `CASE-TRUST-SINGLE-LEG-NO-PERSONA`：本条是 B 端店员代客下单 —— `eval_case_filter.is_customer_facing_case` 的 docstring 逐字点名本用例、`tests/agent_eval/fixtures/mibao_eval_seed.sql` 第 1 节标题写着「2699 系列雪尼尔窗帘面料（**OR-016 点名**）」，而 `xiaobu_eval_seed.sql` 里该名商品 0 件）；`precondition[product_count_for_keyword ... expect=1]` 系 #4082 批次已加，本单只按 seed 真值复核（mibao seed 该名商品恰 1 件）。② **PR-018**（首跑指纹 `no_success(product_search)`）—— 该指纹的成因是**用例挂错了腿**（「低库存」是商家后台口径，C 端小布拒绝作答是**正确行为**）⇒ 补 `persona: mibao`（title / `tags: [mibao]` / `app/api/chat.py::_filter_products_by_reference` 的实现注释三处均写 B 端米宝），并补读场景的效果层断言 `must_succeed[{tool: product_search}]`（证明这次查询真的成功返回；**刻意不要求非空**：两份 fixture 里**没有一件低库存商品** —— 阈值 `LOW_STOCK_THRESHOLD = 100` 而商品级 stock=1000/1000/800/600、SKU 级一律 500 ⇒ 空结果时工具仍返回 `success=true`。「要求非空」会变成依赖运行期世界状态的恒红判据）。两条用例的 `merge_log` 均回填 `#4093`（`--selftest` 逐用例核）；`.github/case-trust-baseline.json` 随 `python3 .github/case_trust_gate.py --prune-baseline` **整条删除**这两个条目（条目 137→135、违规码 219→216，门禁打印「本次净变化：条目 -2，违规码 -3」）。机械复核：`python3 .github/llm_sink_check.py --issue 4093` 与 `--selftest` 均返回 **0**。"
     }
   ],
   "unimplemented": [

@@ -973,6 +973,18 @@ cases:
     domains:
       - product
     tier: normal
+    # ── persona（issue #4093 的 PR-018 条目 → 跟踪单 #4110）──
+    # 本条断言的正是 **B 端米宝**的卡片行为，四处独立证据都指向 B 端：
+    #   · 本用例 `title`「B端米宝 product_list 卡片引用对齐」+ `tags: [mibao]`；
+    #   · 实现注释逐字点名 —— `app/api/chat.py::_filter_products_by_reference`
+    #     「背景（issue #3009 / **case PR-018**）：**B 端米宝**「低库存清单」等分析型查询里…」；
+    #   · 「低库存」是**商家后台口径**（`LOW_STOCK_THRESHOLD = 100`，
+    #     `product_search` 以 `stockBelow` 下发）—— C 端顾客查不到也不该查这个视角；
+    #   · 同域对位用例 PR-006（低库存预警）也是 B 端口径。
+    # 缺标注的后果（首跑指纹实证）：工具集 ⊆ `XIAOBU_TOOLS` ⇒ 被静态判为单端且**被 C 端腿选中**，
+    # 而小布拒绝这种后台查询是**正确行为** ⇒ 用例恒红（`no_success(product_search)`），
+    # 红的是**用例挂错了腿**，不是 agent 能力缺口。
+    persona: mibao
     tags:
       - card
       - reference_alignment
@@ -985,12 +997,31 @@ cases:
       - tool: product_search
         args:
           stock_status: low_stock
+    # ── 效果层断言（issue #4093 的 PR-018 条目 → 跟踪单 #4110）──
+    # 读场景用 `must_succeed` 证明这次查询**真的成功返回**（「调用了 ≠ 成了」：#3361 实测
+    # `check_expectation` 不读 `success`，工具返回 500 也照样通过）—— 同工具同款声明先例 =
+    # 本文件 PR-006（`must_succeed: [product_search]`，同样是低库存查询）。
+    # ⚠️ **刻意不要求非空**（可满足性按 seed 真值核过，不是"恒红空判据"）：
+    #   评测栈种子里**没有一件低库存商品** —— 阈值 `LOW_STOCK_THRESHOLD = 100`
+    #   （`app/tools/stock_semantics.py`，SKU 级 `stock ≤ 100`），而两份 seed 里
+    #   商品级 stock = 1000/1000/800/600、SKU 级 stock 一律 **500**
+    #   （读数 @8e03e5b3：两份 fixture 的 `INSERT INTO products` / `INSERT INTO product_skus`
+    #   语句 —— `xiaobu_eval_seed.sql` 第 54/58/62/87 行、`mibao_eval_seed.sql` 第 32/49 行；
+    #   行号仅供定位，判据以「值 > 100」为准）
+    #   ⇒ 两处都 > 100。空结果时工具仍返回 `success=True`
+    #   （`product_search.py` 的 `if not products:` 分支，data={"products": [], "total": 0}）
+    #   ⇒ 本断言在种子态下可满足。
+    #   反过来"要求非空"会变成**世界状态依赖**的假绿/恒红：PR-006 实测那次 `products=4`
+    #   来自**运行期**别的用例建品的产物（`ProductService` 建 SKU 未指定库存时 `stock=100`，
+    #   恰在阈值上）—— 不是可依赖的种子真值。
+    must_succeed:
+      - tool: product_search
     data_checks:
       - "米宝（agent_type=mibao）回复中：product_list 卡片仅包含文本实际引用的商品（按商品名/ID 匹配），未被引用的商品不渲染"
       - "文本未引用任何商品时不下发 product_list 卡片（宁可无卡，不误导）"
       - "小布（agent_type=xiaobu）保持现状：product_search 结果全量渲染卡片（货架浏览体验不回退）"
     skip_reason: ""
-    merge_log: "2026-09-07 新增（issue #3009）：sess_66c12e3cf3a14ee0 低库存清单场景，LLM 文本正确筛出 5 件低库存商品，但下方渲染了 2 页×10 张原始返回商品卡，文本与卡片两层皮。方案 B：mibao 延迟到文本生成后按引用过滤再发卡"
+    merge_log: "2026-09-07 新增（issue #3009）：sess_66c12e3cf3a14ee0 低库存清单场景，LLM 文本正确筛出 5 件低库存商品，但下方渲染了 2 页×10 张原始返回商品卡，文本与卡片两层皮。方案 B：mibao 延迟到文本生成后按引用过滤再发卡；2026-09-18 下沉补齐（issue #4093 的 PR-018 条目 → 跟踪单 #4110，首跑指纹 `no_success(product_search)`）：本单只补**单端标注** `persona: mibao`（title/tags/实现注释三处均写 B 端米宝，见 `app/api/chat.py::_filter_products_by_reference` 的「背景（issue #3009 / case PR-018）」；缺标注 ⇒ 被 C 端腿选中，而小布拒绝商家后台口径的「低库存」是**正确行为** ⇒ 恒红）+ **效果层断言** `must_succeed[product_search]`（读场景证明查询真成功；种子里无低库存商品 ⇒ 按 seed 真值**不要求非空**，空结果仍 success=true）；title/expectations/data_checks **原样未动**"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_card_reference_alignment.py"

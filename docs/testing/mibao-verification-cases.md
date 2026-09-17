@@ -2469,9 +2469,10 @@
 清理: product_dedupe(product_keyword=2699系列雪尼尔窗帘面料、price=23.8)
 时序: interact[choice:processing_items] before interact[confirm]
 时序: interact[choice:processing_items] before order_create
+必须成功: order_create
 ```
 真值: order.create-flow
-溯源: 2026-09-08 新增（issue #3033 复盘 sess_7f27137647e14b1e）：A5 confirm 卡在加工项询问前弹出、金额 ¥238 不含加工费，用户质问后才补 A6；order.md 加工项段从被动式改主动式 + EXAMPLES 例 2 补加工项环节；2026-09-18 补前置自断言（#4082 的「改用例 PR」burn-down 硬门禁要求净缩 ≥1 条；先例 = #4091 给 OR-015 补的同款）：precondition[product_count_for_keyword「2699系列雪尼尔窗帘面料」expect=1]（按名定位下单对象，pre_clean 已按同关键词去重 ⇒ 捕获时恰为 1）；expectations/data_checks/order_before/pre_clean **原样未动**（未放宽、未删任何断言） ｜ tags: order_create, processing_item, guided_flow
+溯源: 2026-09-08 新增（issue #3033 复盘 sess_7f27137647e14b1e）：A5 confirm 卡在加工项询问前弹出、金额 ¥238 不含加工费，用户质问后才补 A6；order.md 加工项段从被动式改主动式 + EXAMPLES 例 2 补加工项环节；2026-09-18 补前置自断言（#4082 的「改用例 PR」burn-down 硬门禁要求净缩 ≥1 条；先例 = #4091 给 OR-015 补的同款）：precondition[product_count_for_keyword「2699系列雪尼尔窗帘面料」expect=1]（按名定位下单对象，pre_clean 已按同关键词去重 ⇒ 捕获时恰为 1）；expectations/data_checks/order_before/pre_clean **原样未动**（未放宽、未删任何断言）；2026-09-18 下沉补齐（issue #4093 的 OR-016 条目 → 跟踪单 #4110，首跑指纹 `no_success(order_create) || order_before_missing(interact[choice:processing_items])`）：本单只补**效果层断言** `must_succeed[order_create]`（前半指纹此前无任何断言可判红）+ `persona: mibao`（清除 `CASE-TRUST-SINGLE-LEG-NO-PERSONA`；证据 = `eval_case_filter.is_customer_facing_case` docstring 点名本用例为店员代客下单语义 + `mibao_eval_seed.sql` 第 1 节「OR-016 点名」，且 C 端 seed 里该商品 0 件），precondition 系 #4082 批次已加、本次仅按 seed 真值复核 `expect=1`（mibao seed 该名商品恰 1 件）—— **断言只增不减** ｜ tags: order_create, processing_item, guided_flow
 
 ### OR-017. C 端自助下单加工项闭环 - 必须查详情→主动询问→加工费落单（不凭列表错报无加工项） 🔵
 ```
@@ -3445,9 +3446,10 @@
 数据: 米宝（agent_type=mibao）回复中：product_list 卡片仅包含文本实际引用的商品（按商品名/ID 匹配），未被引用的商品不渲染
 数据: 文本未引用任何商品时不下发 product_list 卡片（宁可无卡，不误导）
 数据: 小布（agent_type=xiaobu）保持现状：product_search 结果全量渲染卡片（货架浏览体验不回退）
+必须成功: product_search
 ```
 真值: product-sku-stock.low-stock
-溯源: 2026-09-07 新增（issue #3009）：sess_66c12e3cf3a14ee0 低库存清单场景，LLM 文本正确筛出 5 件低库存商品，但下方渲染了 2 页×10 张原始返回商品卡，文本与卡片两层皮。方案 B：mibao 延迟到文本生成后按引用过滤再发卡 ｜ tags: card, reference_alignment, mibao
+溯源: 2026-09-07 新增（issue #3009）：sess_66c12e3cf3a14ee0 低库存清单场景，LLM 文本正确筛出 5 件低库存商品，但下方渲染了 2 页×10 张原始返回商品卡，文本与卡片两层皮。方案 B：mibao 延迟到文本生成后按引用过滤再发卡；2026-09-18 下沉补齐（issue #4093 的 PR-018 条目 → 跟踪单 #4110，首跑指纹 `no_success(product_search)`）：本单只补**单端标注** `persona: mibao`（title/tags/实现注释三处均写 B 端米宝，见 `app/api/chat.py::_filter_products_by_reference` 的「背景（issue #3009 / case PR-018）」；缺标注 ⇒ 被 C 端腿选中，而小布拒绝商家后台口径的「低库存」是**正确行为** ⇒ 恒红）+ **效果层断言** `must_succeed[product_search]`（读场景证明查询真成功；种子里无低库存商品 ⇒ 按 seed 真值**不要求非空**，空结果仍 success=true）；title/expectations/data_checks **原样未动** ｜ tags: card, reference_alignment, mibao
 
 ### PR-019. 建品规格与加工项价格落库 — 推理属性经 specifications 落库、加工项经 processing_item_configs 携带价格 🔵
 ```
