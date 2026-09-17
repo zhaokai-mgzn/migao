@@ -3569,7 +3569,7 @@
 真值: ai-chat.tool-classes, ai-chat.permission-layers
 溯源: 2026-08-25 新增：ai-agent-service tools-mixed-part2 覆盖率补全（issue #2426） ｜ tags: registry, tool_execute, audit
 
-## 设置域（9 case）
+## 设置域（10 case）
 
 ### ST-001. 系统设置 - 读取 🔵
 ```
@@ -3629,7 +3629,7 @@
 跳过: 纯配置函数行为由 pytest 单测（tests/test_tenant_config.py）验证：is_auto_handoff_trigger / is_after_hours 是纯函数，其入参 config（TenantAiConfig）无法经 agent-eval 设置，非 LLM 行为，不进入 C 端评测（issue #3270 断言层归因：原 user_inputs 是断言描述而非顾客对话）
 ```
 真值: settings-manage.ai-config, settings-manage.immediate-effect
-溯源: POC 机器人设置集成新增；2026-09-11 标 skip —— 原输入为配置描述、断言为纯函数级，agent-eval 无法设置 config（issue #3270） ｜ tags: ai_config, handoff
+溯源: POC 机器人设置集成新增；2026-09-11 标 skip —— 原输入为配置描述、断言为纯函数级，agent-eval 无法设置 config（issue #3270）；2026-09-18（issue #4085）：补 `precondition` 声明层字段（原本前置只活在 skip_reason 散文里 ⇒ CASE-TRUST-NO-PRECONDITION-ASSERTION 存量违规），语义与 skip 状态未变 ｜ tags: ai_config, handoff
 
 ### ST-009. 系统通知总开关 - 租户关闭后自动站内信停止发送（#3003） 🔵
 ```
@@ -3658,14 +3658,29 @@
 ```
 你: 我支付这笔订单，怎么付款
 期望: direct_reply or order_query
-数据: C 端支付页展示收款码（/chat/payment-qrcodes 精简字段 image_url/payee_name）+ 应付金额 + 微信/支付宝切换
+数据: C 端收款码卡（卡型 `payment`）的**发射点**：C 端只读工具 `payment_qrcode_query`（无参，按租户取商家自己的收款码）返回的 data 即卡载荷 —— 含 `payment_qrcodes` 键（wechat/alipay 子对象含精简字段 image_url/payee_name），卡片渲染微信/支付宝切换与收款方（#4085 第 1 项）
+数据: 「应付金额」**只在载荷带 amount 时**展示（对话内收款码查询无订单上下文 ⇒ 不带 amount，卡片不显示金额行）；金额行由组件测试 frontend/mini-app/tests/payment-card.test.tsx 覆盖
 数据: 页面注明「款项直接支付给商家」（平台不经手资金，二清规避）
 数据: 商家设置端 PUT /api/admin/settings/payment-qrcodes/{type} upsert（wechat/alipay 各一张，非法类型拒绝）—— 由 SettingsControllerTest MockMvc 覆盖
-数据: 无收款码时展示降级提示（PaymentCard 空态）
+数据: 无收款码时展示降级提示（PaymentCard 空态「商家暂未设置收款码，请联系客服获取收款方式」）—— 触发条件 = 工具 success=true 且 `payment_qrcodes` 为空对象（空是合法答案，不是失败）
 数据: 答付款问题前先定位订单（order_query / C 端 customer_order_query）属合格路径；direct_reply 直答亦合格（OR 形态）
 ```
 真值: settings-manage.ai-config
-溯源: 2026-09-17 新增（issue #3990）：M3-F 企业收款二维码——C 端展示行为覆盖（persona 双端）；写路径由 MockMvc 单测覆盖。2026-09-17（issue #4007，run 35233821582 ST-011 reproducible）：期望由裸 `direct_reply` 放宽为 `direct_reply or order_query` —— 实测 mibao 腿 R1 先 order_query（查这笔待付款订单）再答付款指引，行为合理却被「期望无工具调用」判红（期望过严）；OR 形态同时保留直接答分支（小布腿 runner 侧 order_query→customer_order_query 同义映射） ｜ tags: settings, payment
+溯源: 2026-09-17 新增（issue #3990）：M3-F 企业收款二维码——C 端展示行为覆盖（persona 双端）；写路径由 MockMvc 单测覆盖。2026-09-17（issue #4007，run 35233821582 ST-011 reproducible）：期望由裸 `direct_reply` 放宽为 `direct_reply or order_query` —— 实测 mibao 腿 R1 先 order_query（查这笔待付款订单）再答付款指引，行为合理却被「期望无工具调用」判红（期望过严）；OR 形态同时保留直接答分支（小布腿 runner 侧 order_query→customer_order_query 同义映射）。2026-09-18（issue #4085 第 1 项）：修正两条与实现**相反**的 data_checks（「C 端渲染 PaymentCard」在 #4016 P14 裁掉渲染分支后已不成立）—— 改为写明真实发射点（payment_qrcode_query → 卡型 payment）、载荷来源与空态触发条件；机器可判覆盖另立 ST-012（本用例含 B 端 order_query 期望，不进小布腿用例集，无法承担该工具的工具级覆盖） ｜ tags: settings, payment
+
+### ST-012. 小布答顾客问付款/收款码 —— 收款二维码工具可达 + 支付卡发射点（issue #4085 第 1 项） 🔵
+```
+你: 我想付款，收款码在哪里？
+期望: payment_qrcode_query
+数据: 顾客问付款/收款码 → C 端只读工具 `payment_qrcode_query` 被调用且 success=true（must_succeed 机器断言；只要求「工具名出现过」不算）
+数据: 工具 data 即支付卡载荷：含 `payment_qrcodes` 键（子对象字段 image_url / payee_name / payment_type）—— 载荷形状合法即可，**不要求内容非空**
+数据: ⚠️ 可满足性真值（本用例刻意不要求非空内容）：评测栈种子 tests/agent_eval/fixtures/xiaobu_eval_seed.sql、mibao_eval_seed.sql 与 docs/deployment/demo-seed.sql 里 `tenant_payment_qrcodes` **零行**（按表名检索实测）⇒ 该租户未配收款码，工具返回 success=true + 空 `payment_qrcodes` 是**合法答案**；要求非空即造恒红。非空内容/空态提示由后端单测 tests/test_payment_qrcode_query.py（工具面：字段归一/缺图跳过/无码空态）与 tests/test_payment_card_emission.py（发射链与可达性）、前端 frontend/mini-app/tests/payment-card.test.tsx 覆盖
+数据: 工具失败（admin-api 异常/权限不足）时必须带 suggestion 并如实告知，禁止编造收款码或收款方名称
+数据: 卡片发射：工具 success=true 且 data 非空 ⇒ chat.py `_detect_card_type` 下发卡型 `payment`（同一轮 SSE card 事件），前端渲染 PaymentCard（有码→收款码；无码→空态提示）
+必须成功: payment_qrcode_query
+```
+真值: ai-chat.tool-classes, settings-manage.ai-config
+溯源: 2026-09-18 新增（issue #4085 第 1 项）：用户 2026-09-18 裁定「建触发机制」——新增 C 端只读工具 payment_qrcode_query（数据源复用 GET /api/admin/agent/payment-qrcodes，不新造数据源）→ _detect_card_type 映射 payment → 恢复 mini-app 渲染分支 → 放行「渲染端 ⊆ 后端可产出」L0 契约守卫。本用例提供该工具的工具级正向覆盖（Case Coverage Gate 的 uncovered/missing_positive 缺口由此关闭）。 ｜ tags: xiaobu, payment, settings
 
 ## token-refresh（4 case）
 
@@ -4323,8 +4338,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：316（活跃 160，跳过 156）
-- tier 分布：smoke 10 / normal 273 / adversarial 33
+- 用例总数：317（活跃 161，跳过 156）
+- tier 分布：smoke 10 / normal 274 / adversarial 33
 - 售后域：9
 - agents：6
 - api：19
@@ -4346,7 +4361,7 @@
 - processing-order：18
 - 商品域：25
 - registry：1
-- 设置域：9
+- 设置域：10
 - token-refresh：4
 - ui：44
 - utils：2

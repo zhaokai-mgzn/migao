@@ -11,6 +11,10 @@ ontology 契约校验脚本（issue #2821 延续切片 A）— contract-check.sh
 
 用法：python3 scripts/check_ontology_contract.py
 退出码：0=一致；1=发现违规
+
+CI 接线（issue #4058）：workflow 侧未显式接线（`.github/workflows/**` 需 workflow scope），
+改由既有 CI 会跑的 `tests/unit_ci_workflows/` 守卫测试覆盖同一份逻辑
+（`test_ontology_contract_gate.py` 直接调本脚本并断言 exit 0）。
 """
 import os
 import sys
@@ -68,12 +72,18 @@ def _agent_route_keys(registry, config) -> set:
     return keys
 
 
-def main() -> int:
+def run_audit() -> tuple:
+    """跑一次归属契约审计（单一口径，供 CLI 与守卫测试共用）。
+
+    Returns:
+        (exit_code, lines)：exit_code 0=一致 / 1=违规或 schema 加载失败；
+        lines = 完整输出行（含每项违规明细，**不截断**——issue #4058：
+        contract-check.sh 曾把明细行过滤掉 ⇒ 门禁红却指不出是谁）。
+    """
     try:
         ontology = load_ontology()
     except OntologySchemaError as e:
-        print(f"❌ 本体 schema 加载失败: {e}")
-        return 1
+        return 1, [f"❌ 本体 schema 加载失败: {e}"]
 
     from app.agents.agents.mibao import MIBAO_CONFIG  # noqa: E402
     from app.agents.agents.xiaobu import XIAOBU_CONFIG  # noqa: E402
@@ -95,16 +105,24 @@ def main() -> int:
     )
 
     registered = sorted(ontology.intent_ownership or {})
-    print(f"ℹ️  schema 已登记业务 intent: {len(registered)} 个")
+    lines = [f"ℹ️  schema 已登记业务 intent: {len(registered)} 个"]
     for agent, mapping in agent_intent_maps.items():
-        print(f"ℹ️  {agent} 真实可达 intent: {len(mapping)} 个 | route_keys: {sorted(agent_route_keys[agent])}")
+        lines.append(
+            f"ℹ️  {agent} 真实可达 intent: {len(mapping)} 个 "
+            f"| route_keys: {sorted(agent_route_keys[agent])}"
+        )
     if violations:
-        print(f"❌ intent 归属契约违规 {len(violations)} 项:")
-        for v in violations:
-            print(f"   - {v}")
-        return 1
-    print("✅ intent 归属契约一致（全量严查：双端视图对齐 schema）")
-    return 0
+        lines.append(f"❌ intent 归属契约违规 {len(violations)} 项:")
+        lines.extend(f"   - {v}" for v in violations)  # 每项完整明细
+        return 1, lines
+    lines.append("✅ intent 归属契约一致（全量严查：双端视图对齐 schema）")
+    return 0, lines
+
+
+def main() -> int:
+    code, lines = run_audit()
+    print("\n".join(lines))
+    return code
 
 
 if __name__ == "__main__":

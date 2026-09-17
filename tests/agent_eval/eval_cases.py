@@ -5067,6 +5067,7 @@ _CASE_ST_008 = EvalCase(
     form_prefill=[],
     forbidden_card_text=[],
     must_succeed=[{'tool': 'human_handoff'}],
+    precondition='租户 AI 配置就位：autoHandoffKeywords=[找老板,我要投诉]、afterHoursMode=auto_reply 且当前为非营业时间（TenantAiConfig；agent-eval 栈无法设置 ⇒ 本用例 skip，行为由 tests/test_tenant_config.py 的 is_auto_handoff_trigger / is_after_hours 纯函数单测覆盖）',
 )
 
 # ── ST-009 [NORMAL] 系统通知总开关 - 租户关闭后自动站内信停止发送（#3003）（源: cases/settings.yml）──
@@ -5114,13 +5115,32 @@ _CASE_ST_011 = EvalCase(
     difficulty=Difficulty.NORMAL,
     user_inputs=['我支付这笔订单，怎么付款'],
     expectations=['direct_reply or order_query'],
-    data_checks=['C 端支付页展示收款码（/chat/payment-qrcodes 精简字段 image_url/payee_name）+ 应付金额 + 微信/支付宝切换', '页面注明「款项直接支付给商家」（平台不经手资金，二清规避）', '商家设置端 PUT /api/admin/settings/payment-qrcodes/{type} upsert（wechat/alipay 各一张，非法类型拒绝）—— 由 SettingsControllerTest MockMvc 覆盖', '无收款码时展示降级提示（PaymentCard 空态）', '答付款问题前先定位订单（order_query / C 端 customer_order_query）属合格路径；direct_reply 直答亦合格（OR 形态）'],
+    data_checks=['C 端收款码卡（卡型 `payment`）的**发射点**：C 端只读工具 `payment_qrcode_query`（无参，按租户取商家自己的收款码）返回的 data 即卡载荷 —— 含 `payment_qrcodes` 键（wechat/alipay 子对象含精简字段 image_url/payee_name），卡片渲染微信/支付宝切换与收款方（#4085 第 1 项）', '「应付金额」**只在载荷带 amount 时**展示（对话内收款码查询无订单上下文 ⇒ 不带 amount，卡片不显示金额行）；金额行由组件测试 frontend/mini-app/tests/payment-card.test.tsx 覆盖', '页面注明「款项直接支付给商家」（平台不经手资金，二清规避）', '商家设置端 PUT /api/admin/settings/payment-qrcodes/{type} upsert（wechat/alipay 各一张，非法类型拒绝）—— 由 SettingsControllerTest MockMvc 覆盖', '无收款码时展示降级提示（PaymentCard 空态「商家暂未设置收款码，请联系客服获取收款方式」）—— 触发条件 = 工具 success=true 且 `payment_qrcodes` 为空对象（空是合法答案，不是失败）', '答付款问题前先定位订单（order_query / C 端 customer_order_query）属合格路径；direct_reply 直答亦合格（OR 形态）'],
     skip_reason='',
     tags=['settings', 'payment'],
     persona='',
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+)
+
+# ── ST-012 [NORMAL] 小布答顾客问付款/收款码 —— 收款二维码工具可达 + 支付卡发射点（issue #4085 第 1 项）（源: cases/settings.yml）──
+_CASE_ST_012 = EvalCase(
+    id='ST-012',
+    legacy_id='',
+    title='小布答顾客问付款/收款码 —— 收款二维码工具可达 + 支付卡发射点（issue #4085 第 1 项）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['我想付款，收款码在哪里？'],
+    expectations=['payment_qrcode_query'],
+    data_checks=['顾客问付款/收款码 → C 端只读工具 `payment_qrcode_query` 被调用且 success=true（must_succeed 机器断言；只要求「工具名出现过」不算）', '工具 data 即支付卡载荷：含 `payment_qrcodes` 键（子对象字段 image_url / payee_name / payment_type）—— 载荷形状合法即可，**不要求内容非空**', '⚠️ 可满足性真值（本用例刻意不要求非空内容）：评测栈种子 tests/agent_eval/fixtures/xiaobu_eval_seed.sql、mibao_eval_seed.sql 与 docs/deployment/demo-seed.sql 里 `tenant_payment_qrcodes` **零行**（按表名检索实测）⇒ 该租户未配收款码，工具返回 success=true + 空 `payment_qrcodes` 是**合法答案**；要求非空即造恒红。非空内容/空态提示由后端单测 tests/test_payment_qrcode_query.py（工具面：字段归一/缺图跳过/无码空态）与 tests/test_payment_card_emission.py（发射链与可达性）、前端 frontend/mini-app/tests/payment-card.test.tsx 覆盖', '工具失败（admin-api 异常/权限不足）时必须带 suggestion 并如实告知，禁止编造收款码或收款方名称', '卡片发射：工具 success=true 且 data 非空 ⇒ chat.py `_detect_card_type` 下发卡型 `payment`（同一轮 SSE card 事件），前端渲染 PaymentCard（有码→收款码；无码→空态提示）'],
+    skip_reason='',
+    tags=['xiaobu', 'payment', 'settings'],
+    persona='xiaobu',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    must_succeed=[{'tool': 'payment_qrcode_query'}],
 )
 
 # ── TR-001 [NORMAL] refresh-success — 401 自动刷新并重放原请求（源: cases/token-refresh.yml）──
@@ -6290,6 +6310,7 @@ ALL_CASES = (
     _CASE_ST_009,
     _CASE_ST_010,
     _CASE_ST_011,
+    _CASE_ST_012,
     _CASE_TR_001,
     _CASE_TR_002,
     _CASE_TR_003,

@@ -589,6 +589,7 @@ def create_default_registry() -> ToolRegistry:
     from app.tools.curtain_calc import CurtainCalcTool
     from app.tools.production_progress_query import ProductionProgressQueryTool
     from app.tools.piecework_query import PieceworkQueryTool
+    from app.tools.payment_qrcode_query import PaymentQrcodeQueryTool
 
     registry = ToolRegistry()
     
@@ -638,6 +639,10 @@ def create_default_registry() -> ToolRegistry:
     # （生产进度：小布 customer_order + 米宝 order；计件：仅米宝 order/staff，不对顾客开放）。
     registry.register(ProductionProgressQueryTool())
     registry.register(PieceworkQueryTool())
+    # 收款二维码查询（issue #4085 第 1 项，M3-F-3/#3990 的发射点）：只读、C 端专属
+    # （allowed_roles=["customer"]），可达性仍由 persona 的 skill 工具集决定
+    # （小布 customer_order；商家设置端走 SettingsController，不经 Agent）。
+    registry.register(PaymentQrcodeQueryTool())
 
     logger.info(f"Default registry created with {len(registry)} tools")
     return registry

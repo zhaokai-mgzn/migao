@@ -17,6 +17,12 @@ CUSTOMER_ORDER_TOOLS = [
     # 为什么不复用 customer_order_query：订单状态只说「生产中」，说不出**卡在哪道工序**；
     # C 端工具集（= XIAOBU_TOOLS 真值源）未绑它时，用例 CH-039 与覆盖门禁会判「挂错端」。
     "production_progress_query",
+    # 收款二维码（issue #4085 第 1 项，M3-F-3/#3990 的发射点）：顾客问「怎么付款/收款码/
+    # 扫码支付」时调 payment_qrcode_query（无参，按当前租户取商家自己的收款码），
+    # 其返回的 data 即 payment 卡载荷（payment_qrcodes 键，见该工具 execute 返回段）→ chat.py 下发卡片。
+    # 为什么不复用其它工具：订单类工具只说金额/状态，说不出「扫哪个码付给谁」；
+    # 若只注册不绑定，模型永远调不到（skill 工具集是唯一暴露点）⇒ 卡片仍是零发射点。
+    "payment_qrcode_query",
     "customer_logistics_track",
     "customer_address_query",
     # ── 商品检索/详情：**下单流程的必需项**（issue #3365）──
