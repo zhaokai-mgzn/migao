@@ -1203,7 +1203,8 @@ _CASE_CH_019 = EvalCase(
     form_prefill=[],
     forbidden_card_text=[],
     pre_clean=[{'type': 'product_remove', 'product_keyword': 'CH019交互卡测试窗帘'}],
-    namespaces=['customer_phone:13800138000', 'product_name:CH019交互卡测试窗帘'],
+    namespaces=['customer_phone:13800138000', 'product_name:CH019交互卡测试窗帘', 'product_name:遮光窗帘'],
+    precondition=[{'type': 'product_count_for_keyword', 'source': '遮光窗帘', 'expect': 1}],
 )
 
 # ── CH-020 [NORMAL] C 端随手发图意图不明 - 先给候选意图卡，不默认直接搜相似（低学历场景）（源: cases/chat.yml）──

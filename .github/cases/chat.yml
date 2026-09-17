@@ -927,6 +927,12 @@ cases:
     namespaces:
       - "customer_phone:13800138000"
       - "product_name:CH019交互卡测试窗帘"
+      # 依赖资源也进命名空间（issue #3781 的声明式隔离）：下面的前置断言把
+      # 「名字含『遮光窗帘』的商品件数 == 1」钉成可判定真值，而 PR-021 一类用例会**创建**
+      # 同名副本（product.yml 记录过旧输入「名称遮光窗帘，价格 100」）⇒ 并行跑时基线与
+      # 漂移两格都会被别人改写。声明后与争用它/写它的用例自动分道
+      # （先例：OR-015 / OR-030 / OR-031 / PR-025~027 / CR-003）。
+      - "product_name:遮光窗帘"
     # 自清理（#3800）：① 的商品是本用例自建的**自有名** ⇒ 重试前置须复位成「不存在」
     # （`product_remove` 按子串删；`product_dedupe` 只留 1 件，不构成「不存在」）。
     # 目标名同时声明在 namespaces 里 ⇒ 属「用例自建对象」，静态判据按该豁免放行
@@ -934,6 +940,28 @@ cases:
     pre_clean:
       - type: product_remove
         product_keyword: "CH019交互卡测试窗帘"
+    # ── 前置自断言（#4099：本用例原先缺这一格 ⇒ CASE-TRUST-NO-PRECONDITION-ASSERTION）──
+    # 为什么是「遮光窗帘 件数 == 1」：④ 轮的触发语是「帮客户张三（13800138000）下一单：
+    # **遮光窗帘** 3 米，要打孔加工」——按**名字**定位下单对象，故「该名字在种子栈里唯一」
+    # 就是它真正依赖的可判定前置。前置悄悄不成立时，红的表现会像「agent 不下单/不发卡」
+    # （归因错人），这正是本规则要拦的形态。
+    # 真值取证：`xiaobu_eval_seed.sql` 的 `prod_eval_blackout`（遮光窗帘 ¥168）是两个 seed 里
+    # **唯一**一个名字含该词的商品；`mibao_eval_seed.sql` 只加 `prod_eval_2699`
+    # （2699系列雪尼尔窗帘面料，不含该词），且评测栈按 xiaobu→mibao 顺序加载两份 seed
+    # （顺序由 `test_eval_stack_seed_parity.py` 锁住）⇒ 合并后件数恒为 1；另有 11 条在用用例
+    # 声明同一真值（OR-009/014/015/030/031、PR-017/025/026/027、PP-001、CR-003）。
+    # 为什么**不**声明 `order_count_for_phone: 13800138000`：本用例**自己就会给该号码建单**
+    # （④ 轮确认后 order_create 落库）⇒ `after - before = +1 > max_growth(默认 0)` ⇒ 漂移判据
+    # 必然判红 —— 那是「硬写一条注定红的守卫」，不如声明真正只读的那份依赖。
+    # 能力边界（照实登记，不冒充已覆盖）：本用例还依赖「客户张三（13800138000）存在」与
+    # 「工单 AS-20260914-9001 存在」，但 `_PRECONDITION_TYPES` 只登记了三种类型
+    # （order_count_for_phone / product_count_for_keyword / debug_permissions_effective），
+    # 客户与工单两个维度**没有**可声明类型 ⇒ 那两个依赖仍无自断言（不写会静默空转的假声明；
+    # 工单侧的争用已由「④ 轮有意不答卡」从写侧规避，见上方语料注释）。
+    precondition:
+      - type: product_count_for_keyword
+        source: "遮光窗帘"
+        expect: 1
     expectations:
       - tool: interact
     # data_checks 与语料对齐：原来三条**全是静态契约散文**（不计分、也不该靠 LLM 跑来证），
@@ -944,7 +972,7 @@ cases:
       - "【静态契约 ▪ 前端单测承重，非本用例】admin-web store 完整透传 confirmValue/cancelValue/pageMeta（confirm 卡回传上下文值而非死值）—— 断言在 traces.tests[1]"
       - "【本用例的行为面】真实写操作触发语下，四类链路**任一条**下发了交互卡（= expectations）；四类链路各自的完整正确性由专项用例承重：建品 PR-008 / 下单 OR-014 / 客户标签 CU-003 / 售后改状态 AS-004"
     skip_reason: ""
-    merge_log: "issue #2777：G6 interact 绑定 B 端 + admin-web store 字段透传修复。2026-09-16（#3961）语料形态修复：user_inputs 由**能力问答**改为四类写操作的真实触发语（原语料两轮零工具调用 = 假红，污染整轮 completion 判定，见 #3955），四类覆盖面保留；expectations 不变（tool: interact）；data_checks 改为显式标注静态契约由单测/前端单测承重、行为面只留「任一链路下发交互卡」；补 persona: mibao（B 端专属，消除跨腿隐患）；补 namespaces（张三/13800138000 与 10 条用例互斥）；补 pre_clean product_remove（自建商品名重试前置复位）；④ 售后改状态轮有意不答卡，避免与 AS-004 争用 seed 工单；生成物已重渲染"
+    merge_log: "issue #2777：G6 interact 绑定 B 端 + admin-web store 字段透传修复。2026-09-16（#3961）语料形态修复：user_inputs 由**能力问答**改为四类写操作的真实触发语（原语料两轮零工具调用 = 假红，污染整轮 completion 判定，见 #3955），四类覆盖面保留；expectations 不变（tool: interact）；data_checks 改为显式标注静态契约由单测/前端单测承重、行为面只留「任一链路下发交互卡」；补 persona: mibao（B 端专属，消除跨腿隐患）；补 namespaces（张三/13800138000 与 10 条用例互斥）；补 pre_clean product_remove（自建商品名重试前置复位）；④ 售后改状态轮有意不答卡，避免与 AS-004 争用 seed 工单；生成物已重渲染。2026-09-18 #4099（burn-down，metric 收紧为 entries ⇒ 必须整条销账）：补 `precondition[product_count_for_keyword: 遮光窗帘, expect: 1]`（④ 轮按名字下单 ⇒ 该名字唯一是它真正依赖且**只读**的前置；不选 order_count_for_phone，因本用例自己会建单、漂移判据必然判红）+ namespaces 补 `product_name:遮光窗帘`（护住该前置的基线/漂移两格）；客户/工单两个维度无可声明类型，如实登记为未覆盖；断言（user_inputs/expectations/data_checks/pre_clean）原样未动"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_skill_routing_integrity.py"
