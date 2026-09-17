@@ -49,7 +49,8 @@ issue #4106 F6 之后，admin-api 失败分支统一改道 `app/tools/base.py::a
   静态不可判其运行期非空性，**刻意放行**（实测 `product_manage.py` 该形态已带非空
   fallback，判红即假红）。这是「不适用域」，不是「遗漏」——登记在此，不塞进基线。
 - **`success=True` 的调用点**：`suggestion` 不是必需（成功路径无需引导修复）。
-- **`tests/**` 下的构造**：只扫本体源码（`app/tools/*.py`），测试夹具不在此列。
+- **`tests/**` 下的构造**：只扫本体源码（`app/tools/*.py` + `app/core/fallback.py`），
+  测试夹具不在此列。
 - **阴性负例（不该被拦）**：`success=True`、`success` 为变量、非 `ToolResult` 的调用、
   带 fallback 的变量建议，在 `TestSuggestionDetectorIsNotVacuous` 里各有显式负例
   —— 守卫不得误伤它们（R2）。
@@ -59,6 +60,19 @@ issue #4106 F6 之后，admin-api 失败分支统一改道 `app/tools/base.py::a
 要锁的正是「**工具侧失败面**」这个结构：正则数 `ToolResult(success=False` 会把
 多行调用、注释里的示例、字符串里的片段一起算进来（实测口径差 3 处）。
 AST 口径与 issue #4050 的复算脚本**逐字一致**，读数可互相校验。
+
+## 扫描面扩展（issue #4068）：`app/core/fallback.py`
+
+#4050 的扫描面原本只有 `app/tools/*.py`，于是**域外的同类实例**（降级路径
+`app/core/fallback.py::get_fallback_result`）不在判据面内 —— 它产出的
+`ToolResult(success=False)` 没有 `suggestion`，而这条路径正是**熔断开路 / LLM 调用失败**
+时唯一交给模型的东西（`_self_correct_retry` 的第二行 `if not suggestion: return None`
+让它永远进不了自愈）⇒ 模型只能原地重放或对用户说一句「服务暂时不可用」。
+现在扫描面 = `app/tools/*.py` **+** `app/core/fallback.py`（`guarded_source_files()`，
+**fail-closed**：扩展文件不存在 ⇒ 直接报错，不得静默退回窄面）。
+**判据是双层的**（只锁一层会留下缺口）：① 静态层 —— 该文件的失败面必须有 `suggestion=`；
+② 运行期层 —— `TestFallbackPathCarriesASuggestion` 真的**跑一遍降级路径**，
+对每条降级文案（含未登记工具的兜底文案）断言产出的 `ToolResult.suggestion` 非空。
 """
 
 import ast
@@ -67,6 +81,7 @@ from pathlib import Path
 
 SERVICE_DIR = Path(__file__).resolve().parents[1]
 TOOLS_DIR = SERVICE_DIR / "app" / "tools"
+FALLBACK_PY = SERVICE_DIR / "app" / "core" / "fallback.py"
 BASELINE_PATH = SERVICE_DIR.parents[1] / ".github" / "tool-suggestion-baseline.json"
 
 REQUIRED_KWARG = "suggestion"
@@ -160,10 +175,32 @@ def tool_source_files() -> list[Path]:
     return sorted(TOOLS_DIR.glob("*.py"))
 
 
+#: **域外但同类**的失败面源（issue #4068）：降级路径唯一的产出点。
+#: 为什么必须显式列出而不是 `app/**` 全扫：#4050 的口径是「工具侧失败面」，
+#: 全扫会把路由/映射里的构造一起算进来（判据面失控）；而这一条是**实测确认**的
+#: 同类实例（熔断/超时降级 ⇒ 模型拿到的唯一结果），故按**具名清单**纳入，
+#: 新增同类源时它必须一起长（清单本身就是「适用域」的登记）。
+EXTRA_GUARDED_SOURCES: tuple[Path, ...] = (FALLBACK_PY,)
+
+
+def guarded_source_files() -> list[Path]:
+    """判据实际扫描的源码清单 = 工具目录 + 具名域外源（**fail-closed**）。
+
+    任一具名源不存在（改名/搬目录）⇒ 抛错。**不得**静默退回「只有工具目录」的窄面：
+    那正是 #4068 的病灶形态（扫描面比真值窄，缺口永远不红）。
+    """
+    missing = [str(p) for p in EXTRA_GUARDED_SOURCES if not p.exists()]
+    assert not missing, (
+        f"具名扫描源不存在：{missing} —— 扫描面已失效（fail-closed：不得静默退回窄面，"
+        f"否则域外同类缺口永远不红，即 issue #4068 的病灶本身）"
+    )
+    return sorted(tool_source_files() + list(EXTRA_GUARDED_SOURCES))
+
+
 def live_violations() -> list[str]:
     """当前本体源码里的缺口，形如 `"文件名:行号"`（升序）。"""
     violations: list[str] = []
-    for path in tool_source_files():
+    for path in guarded_source_files():
         for lineno in failure_sites_missing_suggestion(path.read_text(encoding="utf-8")):
             violations.append(f"{path.name}:{lineno}")
     return sorted(violations)
@@ -176,7 +213,7 @@ def total_failure_sites() -> int:
     用于「守卫不得空转」的自证（分母被静默缩小 = 空断言）。
     """
     total = 0
-    for path in tool_source_files():
+    for path in guarded_source_files():
         tree = ast.parse(path.read_text(encoding="utf-8"))
         for node in ast.walk(tree):
             name = _callee_name(node)
@@ -238,8 +275,15 @@ class TestNoFailureSiteIsMissingASuggestion:
         """守卫不得空转：本体里必须解析出足量失败面，否则解析口径已经失效（fail-closed）。"""
         total = total_failure_sites()
         assert total >= 300, (
-            f"`app/tools/*.py` 只解析出 {total} 个 `ToolResult(success=False, …)` 调用点 "
-            "—— 解析口径已失效（守卫会空转通过）。请核对 `app/tools/` 是否被移动/重命名。"
+            f"`app/tools/*.py` + `app/core/fallback.py` 只解析出 {total} 个 "
+            "`ToolResult(success=False, …)` 调用点 —— 解析口径已失效（守卫会空转通过）。"
+            "请核对 `app/tools/` 是否被移动/重命名。"
+        )
+        # 域外源必须真的进了分母（#4068：扫描面比真值窄 = 缺口永远不红）
+        guarded = guarded_source_files()
+        assert FALLBACK_PY in guarded and set(tool_source_files()) <= set(guarded), (
+            f"`app/core/fallback.py` 不在判据面内（{len(guarded)} 个源）—— "
+            "扫描面扩展被静默退回，即 issue #4068 的病灶本身"
         )
 
     def test_baseline_shrinks_or_accepts_the_past_but_never_grows(self):
@@ -354,6 +398,93 @@ class TestSuggestionDetectorIsNotVacuous:
         files = tool_source_files()
         assert len(files) >= 30, f"`{TOOLS_DIR}` 只找到 {len(files)} 个 .py —— 真相源消失（fail-closed）"
         assert (TOOLS_DIR / "base.py").exists(), "`app/tools/base.py` 不见了（fail-closed）"
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# ②′ 降级路径（`app/core/fallback.py`）的**运行期**判据 —— issue #4068
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+def strip_suggestion_kwarg(source: str, func_name: str) -> str:
+    """把 `func_name` 里 `ToolResult(...)` 的 `suggestion=` 关键字实参**摘掉**（AST 手术）。
+
+    用途 = **红证夹具**：证明「去掉降级 suggestion ⇒ 判据必红」。用 AST 而不是字符串
+    替换：`suggestion=` 是**多行 f-string**，按行/按文本切会切坏源码（那是「判据建在语料上」
+    的同族错误，见 `validate_input` 守卫文件头）。找不到目标 ⇒ 抛错（fail-closed）。
+    """
+    tree = ast.parse(source)
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) or node.name != func_name:
+            continue
+        for call in (n for n in ast.walk(node) if isinstance(n, ast.Call)):
+            if _callee_name(call) != "ToolResult":
+                continue
+            call.keywords = [kw for kw in call.keywords if kw.arg != REQUIRED_KWARG]
+            return ast.unparse(tree)
+    raise AssertionError(f"源码里找不到 `{func_name}` 的 `ToolResult(...)` 调用（红证夹具失效）")
+
+
+class TestFallbackPathCarriesASuggestion:
+    """**降级路径的失败面必须带 `suggestion`**（issue #4068，域外同类实例）。
+
+    为什么锁**运行期**而不只是静态层：降级结果是熔断开路 / LLM 调用失败时模型拿到的
+    **唯一**东西（`_self_correct_retry` 的 `if not suggestion: return None` 只看运行期取值）。
+    静态层只保证「某处写了 `suggestion=`」，运行期层才回答「模型真拿到的那份里有没有」。
+
+    **适用域声明**：本判据只锁「**有没有**」（结构：非空），**不锁「写得好不好」** ——
+    判据建在文案关键词上会被一次正常改写判红（R2 假红），且 `#4050` 的同类守卫
+    （193 处失败面）就是同一口径。内容可执行性是**评审**事项，要求在
+    `app/core/fallback.py::get_fallback_result` 的注释里写明（禁重放 / 禁臆造 /
+    如实告知 + 给替代路径），不在机器判据里复述。
+    """
+
+    def test_every_declared_fallback_message_yields_a_suggestion(self):
+        """**判据本体**：每条降级文案（含未登记工具的兜底文案）产出的结果都带非空建议。
+
+        反例输入（红证 ①）：把 `get_fallback_result` 的 `suggestion=` 拿掉 ⇒ 本用例必红
+        （同一处注入由 `test_stripping_the_real_source_reds_both_layers` 实际执行）。
+        """
+        from app.core.fallback import FALLBACK_MESSAGES, get_fallback_result
+
+        checked: list[str] = []
+        for tool_name in sorted(FALLBACK_MESSAGES) + ["no_such_tool_at_all"]:
+            result = get_fallback_result(tool_name, reason="circuit_breaker_open")
+            checked.append(tool_name)
+            assert result.success is False, f"{tool_name} 的降级结果必须是 success=False"
+            assert (result.suggestion or "").strip(), (
+                f"`{tool_name}` 的降级 ToolResult 没有 suggestion —— 模型只能凭 "
+                f"`{result.error}` 猜下一步（原地重放 / 只说一句「服务暂时不可用」）。"
+                f"修法：见 `app/core/fallback.py::get_fallback_result` 的 `suggestion=`"
+            )
+        assert len(checked) >= 20, f"只检查了 {len(checked)} 条降级文案 —— 判据会空转（fail-closed）"
+
+    def test_stripping_the_real_source_reds_both_layers(self):
+        """**:red_circle: 红证 ①**：真实降级源去掉 `suggestion=` ⇒ **静态层与运行期层都必须红**。
+
+        夹具用**真实源**（不是手写样例）：手写样例只能证明「检测器对样例敏感」，
+        证明不了「对被测的那份源码敏感」—— 后者才是本判据的适用域。
+        """
+        stripped = strip_suggestion_kwarg(
+            FALLBACK_PY.read_text(encoding="utf-8"), "get_fallback_result"
+        )
+        assert failure_sites_missing_suggestion(stripped), (
+            "静态层对「真实降级源没有 suggestion」不敏感（空判据）"
+        )
+        ns: dict = {}
+        exec(compile(stripped, "<fallback-stripped>", "exec"), ns)  # noqa: S102 - 红证夹具
+        assert not (ns["get_fallback_result"]("order_query", reason="timeout").suggestion or "").strip(), (
+            "运行期层对「降级结果没有 suggestion」不敏感（空判据）"
+        )
+
+    def test_unmodified_fallback_source_is_not_reported(self):
+        """**:white_check_mark: 负例 ②**：未改动的降级源（带 suggestion）⇒ 两层都**不得**报。"""
+        source = FALLBACK_PY.read_text(encoding="utf-8")
+        assert failure_sites_missing_suggestion(source) == [], (
+            "合法降级（已带 suggestion）被静态层误红"
+        )
+        assert not [v for v in live_violations() if v.startswith("fallback.py:")], (
+            "合法降级被全量判据误红（R2：不得拦掉原本合法的输入）"
+        )
 
 
 # ──────────────────────────────────────────────────────────────────────────────

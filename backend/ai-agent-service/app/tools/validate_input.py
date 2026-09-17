@@ -235,6 +235,23 @@ _VALIDATION_RULES: Dict[str, Dict[str, Any]] = {
     # ⚠️ required 一律按**工具实现的真实必填**声明（不是照抄契约 DTO）：声明比实现更严
     # = 合法调用被闸门拦（#3566 的 `settings_manage.update_settings` 就是这么坏掉的）。
     "notification_manage": {
+        # issue #4047：`read_all`（全部标为已读，admin-api `PUT /read-all`）是**已声明可写的
+        # action**（`notification_manage.py` 的 VALID_ACTIONS 含它；`read_only_actions` 只声明了
+        # list/unread_count），但此前**没有规则** ⇒ 闸门落进「无规则」fail-closed 分支：
+        # **合法写路径被拦**（模型读到「校验没有执行」）。这与 #3566 把
+        # `settings_manage.update_settings` 拦死是同一种坏法 —— 名字像读、实际是写，
+        # 一旦"看起来不需要校验"就不登记，闸门就只能整条拒掉。
+        # 分派只传 context（`notification_manage.py` 第 244-245 行 `self._read_all(context)`）
+        # ⇒ **零业务参数**，故 `required: []` 就是它的完整真值：不是"漏了必填"，
+        # 而是"没有必填可漏"（与 `settings_manage.update_settings`/`update_ai_config` 同形）。
+        # 为什么显式声明而不是"不登记、靠运行时 fail-closed 兜底"：两者在 `base_skill` 的
+        # 确认-执行链上**后果相反** —— `{required: []}` 是**真跑过**校验（返回 validated=True，
+        # 链继续）；"没有规则"是**没跑**（返回 fail-closed，链断）。前者是「无参即合法」的
+        # 诚实声明，后者是「闸门漏一格」—— 已登记可写的 action 不该有这种格子
+        # （不变式见 `tests/test_validation_rules_invariants.py` 的 F6）。
+        "read_all": {
+            "required": [],
+        },
         "mark_read": {
             "required": ["notification_id"],
             "notification_id": {"type": str, "min_len": 1, "label": "通知 ID"},

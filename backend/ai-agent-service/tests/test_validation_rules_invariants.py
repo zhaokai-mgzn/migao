@@ -14,7 +14,7 @@
 | ID | 形态 | 后果（为什么静默） | 当前状态 |
 |---|---|---|---|
 | **F5** | dict 字面量**重复键**（P2 开发中亲自踩到：`employee_manage` 出现两个键，后者**吃掉**前者，**零报错**） | Python 语义就是「后者胜」⇒ 被吃掉的规则块**人间蒸发**，闸门对那批 action 退化成「无规则」（A4 前=假绿放行，A4 后=fail-closed 拒绝合法调用）。**运行时 dict 看不出来**（键只有一个），只有 **AST** 能看见。判据按 **AST 结构同一性**认键 ⇒ 字符串键（`"employee_manage"`）与枚举成员键（`INTENT_TOOL_MAP` 的 `IntentType.ORDER_QUERY`）一并覆盖 | 当前**无**重复键（已修）⇒ 守卫绿；注入重复键必红 |
-| **F6** | 缺全域不变式「注册表里每个写 action 必须有规则」 | P2 把 A4 的写路径缺口补全后**没有留下任何门**：下次新增写工具/写 action 又忘补规则 ⇒ 要么假绿（旧语义）要么拦住合法调用，**没有任何测试会红** | 当前**绿**（P2 补齐 + 本文件把「无参写 action」显式验成 fail-closed） |
+| **F6** | 缺全域不变式「注册表里每个写 action 必须有规则」 | P2 把 A4 的写路径缺口补全后**没有留下任何门**：下次新增写工具/写 action 又忘补规则 ⇒ 要么假绿（旧语义）要么拦住合法调用，**没有任何测试会红** | 当前**绿**（P2 补齐 + issue #4047 把「无参写 action」也收进"必须有规则"） |
 | **F8** | `required` 与**工具 schema** 之间无一致性检查 | 规则写错字段名（schema 里不存在）⇒ 闸门永远要求一个模型给不出的参数；规则**漏**掉工具 schema 的必填 ⇒ 闸门放行注定 422 的调用。两种都**照样返回 `validated=True`** | 当前**绿**（逐条核对过，见 `test_rule_fields_exist_in_tool_schema` / `test_tool_required_fields_are_gated`） |
 
 **F5 为什么必须用 AST**：`_VALIDATION_RULES` 是模块级字面量，Python 在**编译期**就把
@@ -27,9 +27,10 @@
 |---|---|---|
 | `test_no_duplicate_keys_in_validation_rules` | 在 `_VALIDATION_RULES` 顶层或任一工具块内复制一个键（如再加一个 `"employee_manage"`） | `pytest tests/test_validation_rules_invariants.py -q` |
 | `test_no_duplicate_dict_keys_across_app` | 任意 `app/**/*.py` 的字典字面量里出现重复常量键 | 同上 |
-| `test_every_write_action_is_deterministically_gated` | 从 `_VALIDATION_RULES` 删掉任一**参数化**写 action（如 `employee_manage.update` / `finance_api.create_transaction`） | 同上 |
-| `test_rule_less_write_action_fails_closed` | 把 `validate_input.execute` 的「无规则」分支改回 A4 前的 `success=True, skipped=True` | 同上 |
+| `test_every_write_action_is_deterministically_gated` | 从 `_VALIDATION_RULES` 删掉任一写 action 的条目（含**无参**的 `notification_manage.read_all` —— 见 `test_deleting_a_write_action_rule_turns_f6_red`，它在**真实注册表**上执行这次注入） | 同上 |
+| `test_rule_less_action_fails_closed` | 把 `validate_input.execute` 的「无规则」分支改回 A4 前的 `success=True, skipped=True`（输入取工具自述的只读 action，该分支在运行期真实可达） | 同上 |
 | `test_single_action_write_tools_are_gated` | 删掉 `sku_update` / `product_update` / `order_create` / `aftersale_create` 的整条规则 | 同上 |
+| `test_registered_read_all_is_not_blocked` | 把 `read_all` 的规则改回缺条目（合法无参写调用被 fail-closed 拦）或把规则写成 `required: ["x"]` | 同上 |
 | `test_rule_fields_exist_in_tool_schema` | 把某条规则的 `required` 改成 schema 里不存在的字段（如 `order_manage.cancel` 的 `order_id` → `order_idd`） | 同上 |
 | `test_tool_required_fields_are_gated` | 从某条规则里删掉工具 schema 的必填（如 `sku_update.update` 的 `price`） | 同上 |
 
@@ -44,7 +45,7 @@
 | 工具 | 注册表中 `read_only=False` 的**全部**写工具 | 只读工具（`read_only=True`）：无写副作用 ⇒ 闸门不做要求 |
 | action | 多动作写工具的 `action` 枚举 − `read_only_actions`（工具自述的只读 action） | 单动作写工具的「隐含 action 名」不做字符串猜测（见下） |
 | 单动作写工具 | `schema.required` 非空者 ⇒ 规则表必须有条目（`order_create`/`aftersale_create`/`product_update`/`sku_update`） | `schema.required` 为空者（`human_handoff`：无参数契约、A4 已定为 fail-closed 拒绝）⇒ **登记打印**，不判红 |
-| 无参写 action | 无规则**但** AST 证明其分派只传 `context`（`notification_manage.read_all`）⇒ 必须**运行时验证 fail-closed**（拒 + 带 suggestion，不得假绿） | 不要求为它补一条「什么都不校验」的规则 —— A4 已把「没跑就是没跑」定为诚实语义（`{required: []}` 会让闸门退回假绿） |
+| 无参写 action | **同样必须有规则**（issue #4047 收紧）：正确写法是显式 `{"required": []}`（`read_all` 已补，与 `settings_manage.update_settings` 同形）⇒ 运行期**真跑过**校验、合法调用不被拦（`test_registered_read_all_is_not_blocked`） | 不再有「无参 ⇒ 可以没有规则」这一档。**「没有规则」≠「无需校验」**：前者让 `validate_input` 走 fail-closed 分支（合法写路径被拦，即 #3566 把 `settings_manage.update_settings` 拦死的同型坏法） |
 | 方向 | 规则 → 工具 schema（字段存在性）与工具 schema → 规则（必填覆盖） | 「规则比工具 schema **更严**是否有业务理由」不判（`settings_manage.update_settings` 的 `required: []` 是合法形态） |
 
 ## 为什么 F6 的域要按「可证明无参」而不是「名字像读操作」来划
@@ -58,6 +59,14 @@
 
 **fail-closed 方向**：分派分支找不到、调用带 `**kwargs` 透传、或工具源码不可解析
 ⇒ 一律视为**参数化**（必须有规则）。即「判不出来」永远不会退化成「无需规则」。
+
+## `param_less` 字段现在的用途（issue #4047 之后，**不再是豁免**）
+
+抽取「该 action 零业务参数」这件事仍然保留（`dispatch_params` 的 AST 读法），但它
+**不再换豁免** —— 只用来把违规信息说准：无参写 action 缺规则时，出口是**显式补
+`{"required": []}`**（声明"无参即合法"），而不是"因为无参所以可以没有规则"。这条区分是
+F6 从 issue #4047 起唯一的口径（此前那一档「无参 ⇒ 可以没有规则 ⇒ 由运行时 fail-closed
+兜底」已撤销：它把「闸门漏一格」写成了合法终态，而运行期后果是**合法写路径被拦**）。
 """
 
 import ast
@@ -271,6 +280,8 @@ class WriteActionView:
         gated: 规则表是否覆盖它（多动作看该 action 的键；单动作看该工具是否有条目）。
         param_less: `True` 仅当 **AST 证明**该 action 的分派只传 `context`；
                     `False`/`None` 一律按「参数化」处理（fail-closed）。
+                    ⚠️ issue #4047 起它**不再是豁免**，只用来把违规信息说准
+                    （无参 ⇒ 出口是补 `{"required": []}`）。
         schema_required: 工具 schema 的必填参数（原样）。
     """
 
@@ -282,26 +293,38 @@ class WriteActionView:
 
 
 def coverage_violations(views: list[WriteActionView]) -> list[str]:
-    """**F6 判据内核**（纯函数）：返回「没有被闸门确定性处理」的写 action 清单。
+    """**F6 判据内核**（纯函数）：返回「**已登记可写**却没有校验规则」的清单。
 
-    判定（两态，不是「有规则才算过」）：
+    判定（issue #4047 收紧后**只有一态**：有规则才算过）：
 
-    * 多动作写工具（`action` 非空）：
-        - 有规则 ⇒ 过（规则形状由 F8 与 `test_tools_validate_input` 的 L0 守卫继续约束）；
-        - 无规则但 `param_less is True` ⇒ 过 **（诚实态：闸门对无参 action 只能 fail-closed，
-          由 `test_rule_less_write_action_fails_closed` 运行时**验证**，不是默认放行）**；
-        - 其余 ⇒ **违规**（参数化写 action 没有规则 = A4 的病灶面）。
-    * 单动作写工具（`action is None`）：`schema_required` 非空 ⇒ 规则表必须有条目，否则违规。
+    * 多动作写工具（`action` 非空）：`_VALIDATION_RULES` 里**必须有**该 action 的条目。
+      缺 ⇒ **违规**，**无论它是不是无参 action** —— 无参写 action 的正确写法是显式声明
+      `{"required": []}`（与 `settings_manage.update_settings` / `update_ai_config` 同形），
+      不是「没有规则」。两者在 `base_skill` 的确认-执行链上**后果相反**：
+        - `{"required": []}` ⇒ 校验**真跑过**（`validated=True`）⇒ 合法写路径继续；
+        - 「没有规则」⇒ 走「该操作无校验规则」fail-closed 分支 ⇒ **合法写路径被闸门拦死**
+          （#3566 的 `settings_manage.update_settings` 就是这么坏掉的）。
+      issue #4047 之前这里对无参 action 留了豁免（"交运行时 fail-closed 兜底"），
+      那等于把「闸门漏一格」写成合法终态 —— 已撤销。
+    * 单动作写工具（`action is None`）：`schema_required` 非空 ⇒ 规则表必须有条目，否则违规
+      （隐含 action 名只存在于规则表自身，故不猜名字，见文件头）。
     """
     violations: list[str] = []
     for view in views:
         if view.action is not None:
-            if view.gated or view.param_less is True:
+            if view.gated:
                 continue
-            violations.append(
-                f"{view.tool}.{view.action} 是**参数化写 action**但没有校验规则"
-                f"（param_less={view.param_less!r} ⇒ 无法证明无需校验）"
-            )
+            if view.param_less is True:
+                violations.append(
+                    f"{view.tool}.{view.action} 是**已登记可写的 action**（AST 已证明它零业务参数）"
+                    f"但规则表里没有条目 —— 出口是显式声明 {{\"required\": []}}，"
+                    f"不是「没有规则」（后者让合法写调用被 fail-closed 拦住）"
+                )
+            else:
+                violations.append(
+                    f"{view.tool}.{view.action} 是**参数化写 action**但没有校验规则"
+                    f"（param_less={view.param_less!r} ⇒ 无法证明无需校验）"
+                )
         elif view.schema_required and not view.gated:
             violations.append(
                 f"{view.tool} 是参数化单动作写工具（schema.required={list(view.schema_required)}）"
@@ -313,15 +336,18 @@ def coverage_violations(views: list[WriteActionView]) -> list[str]:
 def coverage_registrations(views: list[WriteActionView]) -> list[str]:
     """**登记（不判红）**清单 —— 让「域外/合法化」的写 action **可见**，不是静默丢弃。
 
-    两类：① 无参写 action 且无规则（诚实态 = fail-closed，由运行时用例验证）；
-    ② 单动作写工具且 `schema.required` 为空（如 `human_handoff`：无参数契约，
-    A4 已把「无规则 ⇒ 明确拒绝 + suggestion」定为期望行为）。
+    只剩一类：单动作写工具且 `schema.required` 为空（如 `human_handoff`：无参数契约，
+    口径为「无必填 ⇒ 无规则可校验」，由运行期 fail-closed 兜底）。这一类之所以不判红：
+    **单动作工具的隐含 action 名无从代码派生**（只存在于规则表自身），F6 不猜名字
+    （见文件头），故它的域只能按「schema 有没有必填」划。
+
+    issue #4047 之前这里还有一类「多动作工具的无参写 action 无规则」—— 已撤销：
+    多动作工具的 action 名是**代码真值**（schema 的 `action` 枚举），没有"猜不出来"的问题，
+    所以它必须判红。
     """
     notes: list[str] = []
     for view in views:
-        if view.action is not None and not view.gated and view.param_less is True:
-            notes.append(f"{view.tool}.{view.action}：无参写 action 无规则 ⇒ 闸门必须 fail-closed")
-        elif view.action is None and not view.schema_required:
+        if view.action is None and not view.schema_required:
             notes.append(f"{view.tool}：单动作写工具且无 schema 必填 ⇒ 无规则（登记，不判红）")
     return notes
 
@@ -459,15 +485,17 @@ def _registry_write_action_views() -> list[WriteActionView]:
 
 
 def test_every_write_action_is_deterministically_gated():
-    """**F6 核心不变式**：注册表里每个写 action 必须被闸门**确定性地**处理过一次。
+    """**F6 核心不变式**：注册表里**每个已登记可写的 action 都必须有校验规则**。
 
-    「确定性处理」两态（见 `coverage_violations`）：① 规则表里有它；② 无参写 action
-    ⇒ 闸门 fail-closed 拒绝（由 `test_rule_less_write_action_fails_closed` **运行时**验证）。
-    两态之外的任何写 action（参数化却无规则）都在本用例判红 —— 它防的是
-    「下次新增写工具/写 action 又忘补规则」这个**静默重现**（A4 的病灶没有留门）。
+    只有一态（issue #4047 收紧，见 `coverage_violations`）：`_VALIDATION_RULES` 里有条目
+    ⇒ 过；没有 ⇒ **判红**（无论参数化与否）。它防的是「下次新增写工具/写 action 又忘补规则」
+    这个**静默重现**：旧语义下是 `skipped=True` 假绿，A4 之后是 fail-closed 拦死合法调用 ——
+    两种都不会自己变红。
 
-    反例输入（红证 F6）：删掉任一参数化写 action 的规则（如 `employee_manage.update`、
-    `finance_api.create_transaction`、`settings_manage.change_password`）⇒ 必红。
+    反例输入（红证 F6）：删掉任一写 action 的规则（`employee_manage.update` /
+    `finance_api.create_transaction` / `settings_manage.change_password` / **无参的
+    `notification_manage.read_all`**）⇒ 必红。`read_all` 那次注入在**真实注册表**上
+    由 `test_deleting_a_write_action_rule_turns_f6_red` 实际执行（不是手写样例）。
     """
     views = _registry_write_action_views()
     violations = coverage_violations(views)
@@ -477,49 +505,130 @@ def test_every_write_action_is_deterministically_gated():
         f"登记（不判红）{coverage_registrations(views)}"
     )
     assert violations == [], (
-        "以下写 action **没有被闸门确定性处理**（既无规则、又不能证明无参）：\n  "
+        "以下**已登记可写的 action 没有校验规则**：\n  "
         + "\n  ".join(violations)
-        + "\n→ 旧语义下这是 `skipped=True` 假绿（模型读到「校验通过」继续执行写工具，"
-          "还会落「已校验待执行」）；新语义下合法调用被 fail-closed 拦住。两种都不可接受。"
-        "\n→ 修法：在 `_VALIDATION_RULES` 里补该 action 的规则（口径见 `_VALIDATION_RULES` 注释："
-          "`required` 按**工具实现真实必填**声明）。"
+        + "\n→ 治理口径（issue #4047）：已登记可写 ⇒ 必须有规则。无参写 action 的出口是"
+          "**显式声明 `{\"required\": []}`**（与 `settings_manage.update_settings` 同形），"
+          "不是「没有规则」—— 后者会被 fail-closed 分支拦死合法调用。"
+        "\n→ 修法：在 `_VALIDATION_RULES` 里补该 action 的规则（`required` 按**工具实现"
+          "真实必填**声明；零业务参数就写 `[]`）。"
     )
 
 
-async def test_rule_less_write_action_fails_closed(admin_tool_context):
-    """**F6 分支②的运行时验证**：无规则的写 action 必须被闸门**明确拒绝**，不得假绿。
+def test_deleting_a_write_action_rule_turns_f6_red():
+    """**:red_circle: 红证 ③**：把 `read_all` 的规则从**真实注册表 + 真实规则表**上删掉 ⇒ F6 必红。
 
-    「无参写 action 可以没有规则」这条**合法化**不是靠文档声称，而是靠本用例**跑一遍**
-    `validate_input` 来兑现：`success=False` + `data` 里没有 `skipped`/`validated` +
-    `suggestion` 非空（R5：fail-closed 分支必须带可行动下一步，`_self_correct_retry` 靠它启动）。
+    为什么不用手写样例：手写样例只能证明「判据对样例敏感」，证明不了「对**被测的那份
+    真相源**敏感」。本用例拿真实工具集（`get_tool_registry()`）+ 真实规则表的**副本**
+    （删掉一个键）跑同一条判据内核，注入的就是 issue #4047 的那个键。
+    同时**负例 ④**：不删的真值 ⇒ 判据必须不报（防恒红）。
+
+    （运行期那一半——「删掉规则 ⇒ 合法 read_all 被 fail-closed 拦住」——由
+    `test_registered_read_all_is_not_blocked` 的反例方向覆盖：把规则删掉，它必红。
+    此处**不再造第二套运行期注入机制**：红证要证明的是本判据对真值敏感，
+    而 monkeypatch 式注入是另一个实现，留着就是第二份口径。）
+    """
+    import copy
+
+    from app.tools.registry import get_tool_registry
+    from app.tools.validate_input import _VALIDATION_RULES
+
+    tools = list(get_tool_registry().get_all_tools())
+
+    def _violations_for(table: dict) -> list[str]:
+        return [
+            v for v in coverage_violations(write_action_views(tools, table))
+            if v.startswith("notification_manage.read_all ")
+        ]
+
+    assert _violations_for(_VALIDATION_RULES) == [], (
+        "负例 ④：`read_all` **有规则**（真值）却被判红 —— 判据误伤合法输入（R2）"
+    )
+
+    injected = copy.deepcopy(_VALIDATION_RULES)
+    del injected["notification_manage"]["read_all"]
+    violations = _violations_for(injected)
+    print(f"\n[#4047 红证 ③] 删掉 read_all 规则后的判据输出：{violations}")
+    assert violations, (
+        "红证 ③：删掉 `notification_manage.read_all` 的规则后 F6 **没有报** —— "
+        "「已登记可写的 action 必须有规则」这条判据是空的（#4047 会静默复发）"
+    )
+
+
+async def test_registered_read_all_is_not_blocked(admin_tool_context):
+    """**:white_check_mark: 负例 ④（运行期）**：合法的 `read_all` 调用**不得被闸门拦**。
+
+    issue #4047 的验收要求就是这一条：补规则之前，`validate_input(target_tool=
+    "notification_manage", target_action="read_all")` 落到「无规则」fail-closed 分支
+    （`success=False` + 「校验**没有执行**」）⇒ 合法的「全部标为已读」写路径被拦。
+    补上 `{"required": []}` 之后必须**真跑过**校验：`success=True` + `validated=True`
+    + 无 `issues`/`skipped`（= 不是"跳过了"，是"没有必填可漏"）。
+    """
+    from app.tools.validate_input import ValidateInputTool
+
+    tool = ValidateInputTool()
+    result = await tool.execute(
+        context=admin_tool_context, target_tool="notification_manage",
+        target_action="read_all", params={"action": "read_all"},
+    )
+    print(f"\n[#4047] read_all 闸门真实返回：success={result.success}, data={result.data!r}")
+    assert result.success is True, (
+        f"合法的 read_all 调用被闸门拦住（#4047 要修的正是这个）："
+        f"error={result.error!r}, message={result.message!r}, data={result.data!r}"
+    )
+    assert (result.data or {}).get("validated") is True, (
+        f"read_all 没有真跑过校验（validated 不为 True）：{result.data!r}"
+    )
+    assert not (result.data or {}).get("skipped"), (
+        f"read_all 走了「跳过」语义（= 假绿形态）：{result.data!r}"
+    )
+    assert not (result.data or {}).get("issues"), f"read_all 被报出校验问题：{result.data!r}"
+
+
+async def test_rule_less_action_fails_closed(admin_tool_context):
+    """**无规则分支的运行时验证**：闸门遇到规则表里没有的 action 必须**明确拒绝**，不得假绿。
+
+    输入取**工具自述的只读 action**（`read_only_actions`，如 `notification_manage` 的
+    `list`/`unread_count`）：它们在规则表里**本来就没有**条目（只读无需校验），
+    所以这是该分支在运行期**真实可达**的路径 —— 不是为凑判据造的样例。
+    （issue #4047 之前本用例的输入是「无规则的多动作写 action」；收紧后那种 action
+    已被 F6 判红、注册表里**不存在**了，继续用它会让本用例空跑 —— §19.1「空判据」。）
+
+    `success=False` + `data` 里没有 `skipped`/`validated` + `suggestion` 非空
+    （R5：fail-closed 分支必须带可行动下一步，`_self_correct_retry` 靠它启动）。
 
     反例输入（红证）：把 `validate_input.execute` 的「无规则」分支改回 A4 前的
     `ToolResult(success=True, data={"validated": True, "skipped": True})` ⇒ 必红。
     """
+    from app.tools.registry import get_tool_registry
     from app.tools.validate_input import ValidateInputTool
 
-    views = _registry_write_action_views()
-    rule_less = [v for v in views if v.action is not None and not v.gated]
     tool = ValidateInputTool()
+    probes: list[tuple[str, str]] = []
+    for t in sorted(get_tool_registry().get_all_tools(), key=lambda x: x.name):
+        for action in sorted(getattr(t, "read_only_actions", None) or ()):
+            probes.append((t.name, action))
+    assert probes, "注册表里解析出 0 个只读 action —— 探针来源消失（fail-closed，本用例会空跑）"
+
     checked: list[str] = []
-    for view in rule_less:
+    for tool_name, action in probes:
         result = await tool.execute(
-            context=admin_tool_context, target_tool=view.tool,
-            target_action=view.action, params={"action": view.action},
+            context=admin_tool_context, target_tool=tool_name,
+            target_action=action, params={"action": action},
         )
-        checked.append(f"{view.tool}.{view.action}")
+        checked.append(f"{tool_name}.{action}")
         assert result.success is False, (
-            f"{view.tool}.{view.action} 没有规则却返回 `success=True` —— 这就是 A4 的假绿形态"
+            f"{tool_name}.{action} 没有规则却返回 `success=True` —— 这就是 A4 的假绿形态"
             f"（模型会据此直接执行写工具）：{result.data!r}"
         )
         assert not (result.data or {}).get("validated"), (
-            f"{view.tool}.{view.action} 校验**没有跑**却回了 validated=True：{result.data!r}"
+            f"{tool_name}.{action} 校验**没有跑**却回了 validated=True：{result.data!r}"
         )
         assert result.suggestion, (
-            f"{view.tool}.{view.action} 的 fail-closed 分支没有 suggestion —— "
+            f"{tool_name}.{action} 的 fail-closed 分支没有 suggestion —— "
             f"模型只能原地重试同一组参数（R5）"
         )
-    print(f"\n[F6] 无规则写 action 的 fail-closed 运行时验证：{checked or '（无：全部写 action 都有规则）'}")
+    print(f"\n[F6] 无规则 action 的 fail-closed 运行时验证：{checked}")
 
 
 def test_single_action_write_tools_are_gated():
@@ -552,7 +661,7 @@ def test_write_action_coverage_matrix_is_visible():
     """**可见性断言**（§18.5「账本里看不出来的字段 = 缺陷的盲区」）：域外项必须被打印出来。
 
     本用例锁两件事：① 注册表里**每个**写工具都在矩阵里出现过（不得有工具静默缺席）；
-    ② 登记清单（无参写 action / 无必填单动作写工具）每次 CI 都打印，
+    ② 登记清单（无 schema 必填的单动作写工具）每次 CI 都打印，
     让「为什么它没有规则」是**可读的事实**，而不是要靠人去反推的沉默。
     """
     from app.tools.registry import get_tool_registry
@@ -586,12 +695,32 @@ class TestWriteActionCoverageDetectorIsNotVacuous:
             self._view("brand_new_manage", "archive", gated=False, param_less=None),
         ]), "判据把**无法判定**当成「无需规则」（fail-closed 方向被破坏）"
 
-    def test_detector_stays_quiet_when_gated_or_proven_param_less(self):
-        """负例：有规则 ⇒ 不报；无规则但**已证明无参** ⇒ 不报（防恒红，R2）。"""
+    def test_detector_stays_quiet_when_gated(self):
+        """**负例（R2）**：有规则 ⇒ 不报（防恒红）。
+
+        为什么这条必须留着：收紧判据（#4047）最容易的过头是「把有规则的也报出来」——
+        那样守卫会永远红，谁也不会再看它。
+        """
         assert coverage_violations([
             self._view("order_manage", "cancel", gated=True, param_less=False),
-            self._view("notification_manage", "read_all", gated=False, param_less=True),
+            self._view("sku_update", None, gated=True, required=("product_id", "price")),
         ]) == []
+
+    def test_detector_reports_an_ungated_param_less_action(self):
+        """**红证（#4047 的形态）**：无参写 action 无规则 ⇒ **必须报出**（旧口径把它放行）。
+
+        注入的是 `read_all` 的形状（`param_less=True` + 无规则）：issue #4047 之前这一格
+        被当成合法终态，于是合法写调用被 fail-closed 拦住而没有任何测试会红。
+        """
+        violations = coverage_violations([
+            self._view("notification_manage", "read_all", gated=False, param_less=True),
+        ])
+        assert violations, (
+            "判据放行了「无参写 action 无规则」—— #4047 的缺口会静默复发"
+        )
+        assert "required" in violations[0], (
+            f"违规信息没有指出出口（显式 `{{\"required\": []}}`）：{violations[0]!r}"
+        )
 
     def test_detector_reports_a_parameterised_single_action_tool_without_rules(self):
         """单动作写工具：schema 要求参数却无规则 ⇒ 报出；无必填（human_handoff 形态）⇒ 登记不报。"""
