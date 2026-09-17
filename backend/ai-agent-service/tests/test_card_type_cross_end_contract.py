@@ -35,6 +35,23 @@
 另加一条全局判据：`_detect_card_type` 的值域必须 ⊆ 全部渲染端 case 的并集
 （任何卡型至少有一端能渲染 —— 不许存在「谁都渲染不了」的卡型）。
 
+## 反向契约（issue #4016 P14 追加）：渲染端 case 集合 ⊆ 后端可产出卡型集合
+
+上面那条是**正向**（后端能发 ⇒ 前端要能渲染）；本文件另加**反向**（前端有 case ⇒ 后端真会发）。
+反向缺口的形态 = 「前端声称支持某卡型、后端**永远不发**」⇒ 该分支是**死 UI**，
+但它**不会自己变红**：多一个永不命中的 `case` 而已，测试照绿、CI 照绿。
+
+`#3960` 当时的口径是「**保留分支 + 用测试标注**，不顺手删除」（反向缺口无用户可见缺陷，
+且 `knowledge` 分支未来接上卡片事件即可复用）。`#4016` **收紧了该口径**：审计实测
+前端 11 个卡型名里有 **6 个**后端永不产出（`product_recommend` / `logistics_track` /
+`knowledge_result` / `knowledge` / `payment` / `production_progress`，其中 `payment` /
+`production_progress` 是**刚交付**却零发射点的功能），别名与死分支让「实际语义只有 5 个」
+的真相被 11 个名字掩盖、并且**没有任何东西会红**。故本包把该接缝升级为**硬判据**
+（`test_renderer_case_sets_are_subset_of_backend_card_types`），裁剪后转绿。
+
+> 口径演进的判据落点：正向判据护「发得出、渲染不了」，反向判据护「渲染得了、发不出」。
+> 两者都读同一份源码真值提取器（不加第二份口径），红证见文末「常驻判别性检验」。
+
 ## 真值来源（刻意不靠「扫注释猜」）
 
 1. **后端卡型**：对**真实函数** `_detect_card_type` 求值，工具名取自**工具注册表**、
@@ -57,6 +74,12 @@
 - **构造红**：对「故意构造的、不在渲染集合里的卡型」断言必被每个渲染端判违规；
   对「故意构造的、无渲染端登记的 persona」断言必被判违规。
 - **回放红**：把 B 端 `default` 还原成修复前的实现文本，泄漏判据必须能认出（证判据非空）。
+- **反向真实红（#4016 裁剪前实测）**：`test_renderer_case_sets_are_subset_of_backend_card_types`
+  报出三个渲染端的孤儿分支 —— C 端 `['knowledge', 'knowledge_result', 'logistics_track',
+  'payment', 'product_recommend', 'production_progress']`、B 端移动同族（少 `payment` /
+  `production_progress`）、B 端桌面 `['knowledge']`。
+- **反向变异红**：把某个卡型从 `_CARD_TOOL_ANCHORS`/映射里去掉后，判据必须报出对应孤儿
+  （证明「裁剪后转绿」不是判据恒真）。
 """
 from __future__ import annotations
 
@@ -327,31 +350,82 @@ class TestCrossEndCardTypeContract:
             )
 
 
-class TestUnreachableRendererBranches:
-    """**保留但用测试标注**的反向缺口：渲染端有分支、后端**从不下发**该卡型。
+def orphan_renderer_branches(
+    renderer_types: dict[str, set[str]], producible: set[str]
+) -> dict[str, list[str]]:
+    """**反向**判据（纯函数，可用构造输入做判别性检验）。
 
-    处置口径（issue #3960，最小做法）：**保留分支 + 用测试标注**，不顺手删除 ——
-    反向缺口不会造成用户可见缺陷（多一个永不命中的 case 而已），
-    而删除属于「顺手大改」（且 `knowledge` 是 B 端知识卡片检索的实际能力，
-    未来接上 `knowledge` 卡片事件即可复用该分支）。
-    真值：`SSEEvent.card` 全仓只有 `app/api/chat.py` 经 `_detect_card_type` 调用
-    （`app/api/sse.py` 只提供工厂），故「后端卡型集合」就是唯一产出面。
+    入参 `renderer_types`：渲染端名 → 该端卡型 switch 的 case 集合；
+    `producible`：后端 `_detect_card_type` 在**注册表里的工具**上真能返回的卡型集合。
+    返回 `{渲染端名: 后端永不下发的卡型}`；全空 = 反向契约成立。
+    （真值取自**注册表**而非 `_detect_card_type` 的函数体：写进函数却没有任何工具能触发
+    的映射同样是死路径 —— 那正是 `production_progress` 的缺失形态。）
+    """
+    return {
+        name: sorted(types - producible)
+        for name, types in renderer_types.items()
+        if types - producible
+    }
+
+
+class TestNoOrphanRendererBranches:
+    """**反向**契约（issue #4016 P14）：渲染端 case 集合 ⊆ 后端可产出卡型集合。
+
+    它取代了 `#3960` 的「保留分支 + 逐条标注」口径（原因见模块 docstring「反向契约」节）：
+    标注只能记录**一条**已知缺口，且不留神就会与源码脱节；硬判据覆盖**全部**渲染端，
+    且随源码自动前进 —— 谁再加一个后端永不产出的 `case`，这里立刻红。
     """
 
-    def test_admin_web_knowledge_branch_is_currently_unreachable(self):
-        """B 端桌面 `case 'knowledge'` 目前是死分支：后端从不把 `knowledge` 作为卡型下发。
+    def test_renderer_case_sets_are_subset_of_backend_card_types(self):
+        renderer_types = _current_renderer_types()
+        producible = set(_all_backend_card_tools().values())
+        violations = orphan_renderer_branches(renderer_types, producible)
+        assert violations == {}, (
+            "前端有渲染分支、后端**永不下发**的卡型（死 UI：能力在代码里、路径不存在）："
+            + "；".join(f"{end} 多出 {orphans}" for end, orphans in violations.items())
+            + f"｜后端可产出集合={sorted(producible)}"
+        )
 
-        若哪天后端开始下发 `knowledge`，本用例会红 —— 那正是提醒：确认三端都接到了该卡型
-        （`test_persona_reachable_card_types_are_renderable_on_its_ends` 会同时给出结论）。
+    def test_orphan_criterion_is_non_vacuous(self):
+        """防空跑：两侧都必须非空，否则上面的子集断言会**真空通过**。"""
+        producible = set(_all_backend_card_tools().values())
+        assert producible, "后端可产出卡型集合为空 —— 反向判据退化成空断言"
+        for end, types in _current_renderer_types().items():
+            assert types, f"渲染端 {end} 提取到 0 个 case —— 提取器坏了（反向判据会真空通过）"
+
+    def test_orphan_reported_when_a_backend_mapping_is_removed(self):
+        """变异红证：把一个卡型从后端可产出集合里**去掉**，判据必须报出该孤儿分支。
+
+        这是「裁剪后转绿」的判别性检验 —— 若判据恒真，这条会绿着骗人。
         """
-        assert "knowledge" not in _all_backend_card_tools().values(), (
-            "后端已开始下发 knowledge 卡型 —— 请确认各渲染端分支与数据形态，并更新本标注"
+        renderer_types = _current_renderer_types()
+        producible = set(_all_backend_card_tools().values())
+        victim = sorted(producible & set().union(*renderer_types.values()))
+        assert victim, "后端可产出集合与渲染端集合无交集 —— 变异实验无法构造"
+        trimmed = producible - {victim[0]}
+
+        violations = orphan_renderer_branches(renderer_types, trimmed)
+        assert violations, f"去掉 {victim[0]} 后判据仍未报违规 ⇒ 反向断言是空断言"
+        for end, orphans in violations.items():
+            if victim[0] in renderer_types.get(end, set()):
+                assert victim[0] in orphans, f"{end} 未报出被移除的卡型：{orphans}"
+
+    def test_fabricated_renderer_case_is_flagged(self):
+        """构造红证：故意构造一个后端永不产出的 case，断言必被判为孤儿。
+
+        刻意**只喂构造输入**（不掺当前源码真值）：当前真值里的存量孤儿会让等值断言
+        在修复前假红、修复后真绿 —— 那种「判据自己会随被测对象变化」的红证不是判别性检验。
+        """
+        fabricated = "__fabricated_orphan_card__"
+        violations = orphan_renderer_branches(
+            {"__fabricated_end__": {"product_list", fabricated}},
+            set(_all_backend_card_tools().values()),
         )
-        assert "knowledge" in _renderer_card_types(RENDERERS["B端桌面 admin-web ToolResultCard"]), (
-            "B 端桌面的 knowledge 分支已被删除 —— 若为有意清理，请同步删除本标注用例"
+        assert violations == {"__fabricated_end__": [fabricated]}, (
+            f"构造的孤儿分支未被报出 ⇒ 反向判据恒真（空断言）。实际 violations={violations}"
         )
 
-    """红证：证明上面的判据**真的会红**（常驻判别性检验，不是一次性人工验证）。"""
+    """红证：证明**正向**判据也真的会红（常驻判别性检验，不是一次性人工验证）。"""
 
     def test_violation_reported_when_a_renderer_case_is_deleted(self):
         """变异红证：文本删掉 C 端 `case 'quotation':` 后，xiaobu 可达性判据必须报出 quotation。"""
