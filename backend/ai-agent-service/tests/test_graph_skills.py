@@ -4405,10 +4405,20 @@ class TestConfirmClosureCodeSide:
         assert len(seen["calls"]) == 1
         assert "验证码" in (res.get("final_answer") or ""), res.get("final_answer")
 
-    def test_bend_role_not_closed_by_code(self):
-        """B 端不受此收口影响（分端纪律：B 端流程各异，先只在 C 端收口）。"""
+    def test_bend_role_order_create_is_closed_by_code(self):
+        """issue #3976：B 端（admin）订单确认后**同样**代码收口执行 order_create。
+
+        旧红证（PR-016 时代）断言「B 端不受此收口影响」——那是建品收口落地前的
+        分端纪律；本次以线上实证 sess_202d55d49a254a10（B 端确认后空头承诺「请稍候，
+        我这就提交」、order_create 从未执行、订单永不落库）把 B 端 order_create/create
+        纳入收口域（B 端 admin/agent 下单无需 sms_code，order_create.py 安全规则，
+        收口安全性成立）。反向保护（**未确认**不收口）见
+        test_order_price_grounding.py::test_b_order_not_confirmed_no_closure。
+        """
         _res, seen, _f = self._run("确认下单", "好的~", role="admin")
-        assert seen["calls"] == [], "B 端被 C 端收口逻辑影响"
+        assert len(seen["calls"]) == 1, (
+            "B 端订单确认后模型不动手 → 代码必须收口执行 order_create（issue #3976）"
+        )
 
 
 class TestFalseCancelGuard:

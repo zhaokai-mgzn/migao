@@ -2088,7 +2088,7 @@
 真值: ai-chat.context-memory
 溯源: 2026-09-04 新增：issue #2821 延续切片 C（vision 分析落槽 + base_skill 接线） ｜ tags: ontology, vision, context_memory, grounding, base_skill
 
-## 订单域（27 case）
+## 订单域（28 case）
 
 ### OR-001. 订单列表查询 🟢
 ```
@@ -2606,6 +2606,27 @@
 ```
 真值: order.create-flow
 溯源: 2026-09-14 首跑校准（issue #3666）：固定 2 轮轮次表在 B 端多步下单流程上必然跑不完（agent 只到 product_detail/interact，order_create 未发生 → 假失败），改为 repeat_until(tool_called=order_create, max=8) 协作轮（同 OR-026/OR-021 先例）；2026-09-14 新增（issue #3666）：订单数量语义放宽为 DECIMAL(10,2) 的端到端金额回归网——此前 per_area 小数面积（8.4 ㎡）会被 Integer 截断成 8 ㎡ 少收 12.00 元，且 OrderService 的 toInteger() 会让列表/详情加工费与外层金额自相矛盾 ｜ tags: order_create, processing_item, per_area, decimal_quantity
+
+### OR-029. B 端「先查商品再录订单」链路 - 确认卡点击后 order_create 必须真实执行（不得 Tool not found / 空头承诺） 🔵
+```
+你: 录订单 赵凯（13456000919）｜ 2699系列雪尼尔窗帘面料 · 2699-06 蓝灰色 · 散剪 · 2.8米 · 10 米 ｜ 加工项：韩式波浪折边、穿杆孔加工、包边处理
+你: 1. 2699系列雪尼尔窗帘面料｜¥23.8/米｜库存 9599
+你: 已有客户
+你: 确认：加工项=韩式波浪折边 ¥12/米、穿杆孔加工 ¥4/米、包边处理 ¥10/米（按 10 米计约 ¥260）；商品=2699系列雪尼尔窗帘面料；客户=赵凯（13456000919）· 已有客户；数量=10 米；规格=2699-06 蓝灰色 · 散剪 · 2.8米；面料单价=¥23.8/米（面料小计 ¥238）；预估合计=约 ¥498（以系统结算为准）
+期望: product_search
+期望: interact(component=choice)
+期望: product_detail
+期望: validate_input
+期望: interact(component=confirm)
+期望: order_create
+数据: 确认卡点击（confirmValue 逐字回传）后，order_create 必须**真实执行并落库**——不得出现 Tool not found / 空头承诺「请稍候，我这就提交」而订单永不创建
+数据: order_create 的 customer_phone=13456000919、items 数量=10 米、unit_price=23.8（与商品库价一致）、加工项韩式波浪折边/穿杆孔加工/包边处理
+清理: product_dedupe(product_keyword=2699系列雪尼尔窗帘面料、price=23.8)
+时序: interact[choice] before product_detail
+时序: interact[confirm] before order_create
+```
+真值: order.create-flow
+溯源: 2026-09-17 新增（issue #3976，线上实证 sess_202d55d49a254a10）：首条消息同时含商品细节与下单指令 → 意图路由判 product_inquiry → 整条 validate/confirm 链在 product skill 内完成，确认卡点击后模型调 order_create 撞 Tool not found（product 注册表无此工具）→ 空头承诺 + 订单永不落库。修复（route_by_intent 答卡轮归属 skill 迁移 + tool_not_found 兜底 relock + 8.4 收口扩展 B 端 order_create + metadata 假证据修复）后，确认轮应路由到 order skill 真实下单 ｜ tags: order_create, cross_skill, guided_flow
 
 ## 加工项域（9 case）
 
@@ -4033,8 +4054,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：297（活跃 150，跳过 147）
-- tier 分布：smoke 9 / normal 255 / adversarial 33
+- 用例总数：298（活跃 151，跳过 147）
+- tier 分布：smoke 9 / normal 256 / adversarial 33
 - 售后域：9
 - agents：6
 - api：19
@@ -4051,7 +4072,7 @@
 - misc：15
 - onboarding：5
 - ontology：4
-- 订单域：27
+- 订单域：28
 - 加工项域：9
 - processing-order：17
 - 商品域：25

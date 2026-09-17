@@ -1225,3 +1225,80 @@ class TestMemoryIntegrityAcrossGraphAndBoundary:
             "落库 assistant 消息被脱敏 → 模型下一轮读残缺值填 0 建单（issue #3386）")
         assert "138****8000" not in history, f"落库必须是原文: {history[:160]!r}"
 
+
+
+class TestToolNotFoundNotRecordedInMetadata:
+    """issue #3976 P4：未成功执行的 tool_call（tool_not_found）不得写进消息 metadata。
+
+    B 端实证（sess_202d55d49a254a10）：product skill 内确认后模型调 order_create
+    → Tool not found（工具未注册，**从未执行**），但 `_agent_stream_to_sse` 的
+    `tool_calls_info` 仍把它写进 assistant 消息 metadata.tool_calls ——
+    评测/回放按 metadata 断言「调用了 order_create」会被**假绿**骗过
+    （订单实际从未落库，见 issue #3976 证据）。
+    """
+
+    def _stream_with_events(self, events):
+        import asyncio
+        from app.agents.customer_service_agent import AgentResponse  # noqa: F401 (type hints)
+        from app.api.chat import _agent_stream_to_sse
+
+        mem = _FakeMemory()
+        shared = {"pending_validated_input": dict(PENDING_WRITE)}
+        store = _FakeStore(shared)
+
+        class _Agent:
+            _agent_type = "mibao"
+
+            async def astream_chat(self, message, context, chat_history):
+                for ev in events:
+                    yield ev
+
+        async def _collect():
+            return [c async for c in _agent_stream_to_sse(
+                _Agent(), "确认下单", _claim_ctx("admin"), [], MagicMock(), mem,
+                "sess-3976", 1, "u1")]
+
+        with patch("app.api.chat._extract_memories_async", new=AsyncMock()), \
+             patch("app.api.chat._generate_title_async", new=AsyncMock()), \
+             patch("app.memory.session_state_store.SessionStateStore",
+                   side_effect=lambda *a, **k: store):
+            asyncio.run(_collect())
+        return mem
+
+    def test_tool_not_found_call_excluded_from_metadata(self):
+        """tool_not_found 的调用（未执行）不得出现在 metadata.tool_calls。"""
+        from app.agents.customer_service_agent import AgentResponse
+        mem = self._stream_with_events([
+            AgentResponse(type="tool_call", content="", tool_calls=[
+                {"tool": "order_create",
+                 "tool_input": {"action": "create", "customer_name": "赵凯",
+                                "customer_phone": "13456000919"}}]),
+            AgentResponse(type="tool_result", content="", tool_calls=[
+                {"tool": "order_create",
+                 "result": {"success": False, "error": "tool_not_found",
+                            "message": "工具 order_create 不可用"}}]),
+            AgentResponse(type="text", content="已转到订单流程为您落单。"),
+        ])
+        assert mem.saved, "应保存 assistant 消息"
+        tool_calls_meta = mem.saved[-1].get("tool_calls")
+        assert not tool_calls_meta, (
+            f"未执行的 tool_not_found 调用不得写进 metadata.tool_calls —— "
+            f"实得: {tool_calls_meta}"
+        )
+
+    def test_successful_call_still_recorded_in_metadata(self):
+        """对照：**成功执行**的调用照常记录（元数据语义 = 真实执行的工具）。"""
+        from app.agents.customer_service_agent import AgentResponse
+        mem = self._stream_with_events([
+            AgentResponse(type="tool_call", content="", tool_calls=[
+                {"tool": "product_detail",
+                 "tool_input": {"product_id": "b4e420cf7819b83f974a325332620b32"}}]),
+            AgentResponse(type="tool_result", content="", tool_calls=[
+                {"tool": "product_detail",
+                 "result": {"success": True, "data": {"name": "2699系列雪尼尔窗帘面料"}}}]),
+            AgentResponse(type="text", content="已为您查到该商品。"),
+        ])
+        tool_calls_meta = mem.saved[-1].get("tool_calls") or []
+        assert any(tc.get("tool") == "product_detail" for tc in tool_calls_meta), (
+            f"成功执行的调用必须保留在 metadata.tool_calls，实得: {tool_calls_meta}"
+        )

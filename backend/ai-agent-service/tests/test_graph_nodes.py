@@ -814,3 +814,80 @@ class TestEscapeHatchHonoursRuleIntent:
         # 这两条由上面的 L1 高置信放行覆盖（不需要进词表）。
         assert "价格" not in product_kw and "库存" not in product_kw
 
+
+class TestCardConfirmRoundFlowOwnerMigration:
+    """issue #3976：答卡轮 + 已校验待执行写目标归属**其他 skill** → 本轮路由到归属 skill。
+
+    B 端实证（sess_202d55d49a254a10）：用户在 product skill 内完成
+    `validate_input(target_tool=order_create)` 与确认卡，点卡后答卡轮豁免把会话
+    **留在 product** —— 但 product 的注册表没有 `order_create` → LLM 按执行提示
+    调用即 `Tool not found: order_create` → 订单永不落库、最终空头承诺「请稍候，
+    我这就提交」。
+
+    修复（本测试锁死）：答卡轮命中时，若 state 携带 `pending_validated_input`
+    且其 `target_tool` 的归属 skill（注册表事实，见 `_flow_owner_skill`）≠ 当前
+    pending skill → 路由到归属 skill（B 端 `order` / C 端 `customer_order`），
+    本轮即可真实执行写工具。
+
+    与 #3557 防回归（`test_card_confirm_round_keeps_own_skill_intent`）的分界：
+    判据是 **pending_validated_input 是否存在**（系统状态事实），不是卡值内容
+    —— PR-007 商品上下架卡（无 pending 写目标）仍留在本 skill。
+    """
+
+    # 与线上实证同形态：confirm 卡由系统自产、用户逐字回传（答卡轮判据）。
+    CONFIRM = (
+        "确认：加工项=韩式波浪折边 ¥12/米、穿杆孔加工 ¥4/米、包边处理 ¥10/米"
+        "（按 10 米计约 ¥260）；商品=2699系列雪尼尔窗帘面料；客户=赵凯"
+        "（13456000919）· 已有客户；数量=10 米；规格=2699-06 蓝灰色 · 散剪 · 2.8米；"
+        "面料单价=¥23.8/米（面料小计 ¥238）；预估合计=约 ¥498（以系统结算为准）"
+    )
+
+    def _state(self, **overrides):
+        state = {
+            "pending_interact_skill": "product",
+            "last_confirm_skill": "product",
+            "last_confirm_value": self.CONFIRM,
+            "session_id": "sess_t3976",
+            "agent_type": "mibao",
+            "role": "admin",
+            "pending_validated_input": {
+                "target_tool": "order_create",
+                "target_action": "create",
+                "params": {
+                    "customer_name": "赵凯",
+                    "customer_phone": "13456000919",
+                    "items": [{"product_name": "2699系列雪尼尔窗帘面料",
+                               "quantity": 10, "unit_price": 23.8, "subtotal": 238}],
+                },
+            },
+            "messages": [HumanMessage(content=self.CONFIRM)],
+        }
+        state.update(overrides)
+        return state
+
+    def test_confirm_round_migrates_to_order_skill_when_owner_differs(self):
+        """B 端：pending 写目标归属 order（≠ product）→ 答卡轮路由到 order。"""
+        assert route_by_intent(self._state()) == "order", (
+            "答卡轮仍留在 product —— order_create 不在 product 注册表，"
+            "确认后执行必然 Tool not found（issue #3976 实证）"
+        )
+
+    def test_confirm_round_keeps_skill_when_no_pending_write(self):
+        """防回归（#3557）：无待执行写（如 PR-007 商品上下架卡）→ 留在本 skill。"""
+        state = self._state()
+        state.pop("pending_validated_input")
+        assert route_by_intent(state) == "product"
+
+    def test_confirm_round_keeps_skill_when_owner_equals_current(self):
+        """写目标归属 == 当前 skill → 不迁移（order 内确认 order_create 卡）。"""
+        state = self._state(pending_interact_skill="order",
+                            last_confirm_skill="order")
+        assert route_by_intent(state) == "order"
+
+    def test_xiaobu_confirm_round_migrates_to_customer_order(self):
+        """C 端（xiaobu）：归属 skill 为 customer_order（persona 可达集事实）。"""
+        state = self._state(agent_type="xiaobu", role="customer",
+                            pending_interact_skill="customer_product",
+                            last_confirm_skill="customer_product")
+        assert route_by_intent(state) == "customer_order"
+

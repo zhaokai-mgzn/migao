@@ -1173,22 +1173,30 @@ def unit_price_grounding_error(items: list, grounded_detail) -> Optional[str]:
 # product_manage/create + 用户已明确确认（confirmValue 精确匹配或文本确认）⇒ 可收口。
 # 反向守卫（不得把「确认后必执行」写死成「永不确认」）：未确认 / 无 pending /
 # 非 create 流程 ⇒ False，模型仍按原流程（可发**不同**的卡说明缺什么）。
+# issue #3976（2026-09-17）再扩展：B 端**下单**（order_create/create）同样纳入收口 ——
+# 线上实证 sess_202d55d49a254a10：确认卡点击后模型空头承诺「请稍候，我这就提交」、
+# order_create 从未执行、订单永不落库。B 端 admin/agent 角色下单无需 sms_code
+# （order_create.py 安全规则），收口安全性成立；8.4 的 sms_code 链对 B 端无码
+# 场景自然跳过（resolve_sms_code 无已知真值 → 不改入参）。
 def _b_create_flow_confirm_eligible(pending: dict | None, confirmed: bool) -> bool:
-    """B 端建品「确认-执行」是否满足代码收口条件（纯函数，可单测）。
+    """B 端「确认-执行」是否满足代码收口条件（纯函数，可单测）。
 
-    与 `_should_code_close_loop` 的分工：前者管「C 端任意写 + B 端建品」的统一
+    与 `_should_code_close_loop` 的分工：前者管「C 端任意写 + B 端建品/下单」的统一
     收口判据（pending/确认/未执行三条件）；本函数是**收口的适用域**判据 ——
-    B 端非 customer 角色下，只有「建品 create 在办」这一流程才允许代码代执行。
+    B 端非 customer 角色下，只有「建品 create（product_manage）或下单 create
+    （order_create）在办」这一流程才允许代码代执行。
     """
     if not confirmed:
         return False
     if not isinstance(pending, dict):
         return False
-    if str(pending.get("target_tool") or "") != B_CREATE_PENDING_TOOL:
-        return False
-    if str(pending.get("target_action") or "") != B_CREATE_PENDING_ACTION:
-        return False
-    return True
+    tool = str(pending.get("target_tool") or "")
+    action = str(pending.get("target_action") or "")
+    if tool == B_CREATE_PENDING_TOOL and action == B_CREATE_PENDING_ACTION:
+        return True
+    if tool == ORDER_WRITE_TOOL and action == B_CREATE_PENDING_ACTION:
+        return True
+    return False
 
 
 def _find_last_query_processing_items(messages) -> List[dict]:
@@ -3594,6 +3602,11 @@ async def execute_skill(
 
     # ── 1. 上下文 & 工具准备 ──
     from app.memory.session_memory import SessionMemory  # noqa: F811 — 函数内多处使用
+    # issue #3976：本轮是否发生过「订单写工具跨 skill 缺失」的 relock —— 必须在
+    # ReAct 循环外初始化（循环内赋值使该变量成为闭包 cell；若 LLM 首轮即返回文本、
+    # 循环体从未执行，第 10 步访问未绑定 cell 会抛
+    # `cannot access local variable ... where it is not associated with a value`）。
+    _relocked_this_round: bool = False
     tool_context = build_tool_context(state)
     set_tool_context(tool_context)
     skill_registry = create_skill_registry(tool_names)
@@ -4077,6 +4090,8 @@ async def execute_skill(
                 # 本轮「同轮重复写调用」去重槽（issue #3361）：见下方 _run_one_tool 内的说明。
                 # 每轮重置：去重范围严格限定在**同一次 LLM 回复**内，绝不跨轮/跨时间窗。
                 _turn_write_slots: dict = {}
+                # issue #3976：每轮重置 relock 标记（跨轮语义见函数体顶部初始化）。
+                _relocked_this_round = False
 
                 async def _run_one_tool(tool_call: dict, allow_card: bool = True):
                     """执行单个 tool，返回 (tool_call, result_str, result_dict)。
@@ -4092,6 +4107,7 @@ async def execute_skill(
                     # 同理 `_write_ok`（issue #3750）：不加 nonlocal 只会创建一个**新局部**，
                     # 收尾 8.6 永远读到 False ⇒ "本轮写成功了"判不出来，成功回执也可能被归一。
                     nonlocal _write_ok
+                    nonlocal _relocked_this_round
                     tool_name = tool_call["name"]
                     args = tool_call.get("args", {})
                     # ── C 端同一组件每轮只允许**一张**卡（issue #3445，OR-023 实证）──
@@ -4195,6 +4211,28 @@ async def execute_skill(
                     tool = skill_registry.get_tool(tool_name)
                     if tool is None:
                         logger.warning(f"[{skill_name}] Tool not found: {tool_name} | session={session_id}")
+                        # ── 订单写工具跨 skill 缺失的恢复（issue #3976，P2）──
+                        # 实证（sess_202d55d49a254a10）：product skill 内完成
+                        # validate_input(order_create)+确认卡后，模型按执行提示调
+                        # order_create → 本 skill 注册表没有 → tool_not_found →
+                        # 旧逻辑只回失败，模型随后空头承诺「请稍候，我这就提交」、
+                        # 订单永不落库。与转人工守卫（见下 :4300/:4328 同族）一致：
+                        # 订单在办时 relock 到归属 skill（含确认卡归属迁移），
+                        # 下一轮即走下单流程；话术给出**可执行**下一步（不得空头承诺）。
+                        if tool_name == ORDER_WRITE_TOOL and await _order_flow_in_progress(
+                                session_id, state, last_user_msg):
+                            _relocked_this_round = True
+                            await _relock_order_skill(session_id, state, migrate_card_owner=True)
+                            _recover_msg = (
+                                "订单流程已切换到订单模块，请再回复「继续」，我马上为您提交。"
+                                if not _is_customer_role(state)
+                                else "您的订单已确认，请再回复「继续」，我马上为您提交。")
+                            return (tool_call,
+                                    json.dumps({"success": False,
+                                                "error": "tool_not_found_relocked",
+                                                "message": _recover_msg},
+                                               ensure_ascii=False),
+                                    {"success": False, "error": "tool_not_found_relocked"})
                         return tool_call, json.dumps({"success": False, "error": "tool_not_found", "message": f"工具 {tool_name} 不可用"}, ensure_ascii=False), {"success": False}
                     # 数量口径产出层守卫（issue #3402）：顾客已报数量时不得给"用量/褶皱倍数"选项
                     _blocked_q = await _quantity_choice_block(
@@ -5183,7 +5221,20 @@ async def execute_skill(
         else:
             result["pending_interact_skill"] = skill_name
             try:
-                await SessionMemory().set_pending_skill(session_id, skill_name)
+                # issue #3976（P3）：轮内 `_relock_order_skill` 已把 pending_skill
+                # 迁到订单归属 skill 时，轮末**不得覆盖回本轮 skill** —— 否则恢复
+                # 路径失效、下一轮短消息快捷路由仍走无写工具的 skill（DB 实证
+                # sess_202d55d49a254a10：relock 写入 order 后被轮末 commit 覆盖回
+                # product）。只在「本轮发生过 relock」时读回保留，不改变其它轮次语义。
+                if _relocked_this_round:
+                    _relocked_to = await SessionMemory().get_pending_skill(session_id) or ""
+                    if _relocked_to:
+                        result["pending_interact_skill"] = _relocked_to
+                        skill_name = _relocked_to
+                        logger.info(
+                            f"[{skill_name}] 轮末保留 relock 的 pending_skill"
+                            f" → {_relocked_to} | session={session_id}")
+                await SessionMemory().set_pending_skill(session_id, result["pending_interact_skill"])
             except Exception as e:
                 logger.warning(f"[{skill_name}] Failed to persist pending_skill | session={session_id} error={e}")
 

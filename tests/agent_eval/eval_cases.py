@@ -3602,6 +3602,27 @@ _CASE_OR_028 = EvalCase(
     db_verify=[{'fetch': 'order_items', 'source': 'order_create', 'expect_products': ['2699系列雪尼尔窗帘面料'], 'expect_quantities': {'2699系列雪尼尔窗帘面料': 3}}],
 )
 
+# ── OR-029 [NORMAL] B 端「先查商品再录订单」链路 - 确认卡点击后 order_create 必须真实执行（不得 Tool not found / 空头承诺）（源: cases/order.yml）──
+_CASE_OR_029 = EvalCase(
+    id='OR-029',
+    legacy_id='',
+    title='B 端「先查商品再录订单」链路 - 确认卡点击后 order_create 必须真实执行（不得 Tool not found / 空头承诺）',
+    skill=Skill.ORDER,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['录订单 赵凯（13456000919）｜ 2699系列雪尼尔窗帘面料 · 2699-06 蓝灰色 · 散剪 · 2.8米 · 10 米 ｜ 加工项：韩式波浪折边、穿杆孔加工、包边处理', '1. 2699系列雪尼尔窗帘面料｜¥23.8/米｜库存 9599', '已有客户', '确认：加工项=韩式波浪折边 ¥12/米、穿杆孔加工 ¥4/米、包边处理 ¥10/米（按 10 米计约 ¥260）；商品=2699系列雪尼尔窗帘面料；客户=赵凯（13456000919）· 已有客户；数量=10 米；规格=2699-06 蓝灰色 · 散剪 · 2.8米；面料单价=¥23.8/米（面料小计 ¥238）；预估合计=约 ¥498（以系统结算为准）'],
+    expectations=['product_search', 'interact(component=choice)', 'product_detail', 'validate_input', 'interact(component=confirm)', 'order_create'],
+    data_checks=['确认卡点击（confirmValue 逐字回传）后，order_create 必须**真实执行并落库**——不得出现 Tool not found / 空头承诺「请稍候，我这就提交」而订单永不创建', 'order_create 的 customer_phone=13456000919、items 数量=10 米、unit_price=23.8（与商品库价一致）、加工项韩式波浪折边/穿杆孔加工/包边处理'],
+    skip_reason='',
+    tags=['order_create', 'cross_skill', 'guided_flow'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    order_before=['interact[choice] before product_detail', 'interact[confirm] before order_create'],
+    pre_clean=[{'type': 'product_dedupe', 'product_keyword': '2699系列雪尼尔窗帘面料', 'price': 23.8}],
+    namespaces=['customer_phone:13456000919', 'product_name:2699系列雪尼尔窗帘面料'],
+)
+
 # ── PG-001 [NORMAL] 生成加工单 - 已确认含加工项订单 → 加工单生成 + 订单进入 producing（源: cases/processing-order.yml）──
 _CASE_PG_001 = EvalCase(
     id='PG-001',
@@ -5810,6 +5831,7 @@ ALL_CASES = (
     _CASE_OR_025,
     _CASE_OR_026,
     _CASE_OR_028,
+    _CASE_OR_029,
     _CASE_PG_001,
     _CASE_PG_002,
     _CASE_PG_003,

@@ -1893,3 +1893,57 @@ cases:
       ci:
         - agent-eval.yml
       verifies: []
+
+  - id: OR-029
+    legacy_id: ""
+    title: "B 端「先查商品再录订单」链路 - 确认卡点击后 order_create 必须真实执行（不得 Tool not found / 空头承诺）"
+    domains:
+      - order
+      - chat
+    tier: normal
+    tags:
+      - order_create
+      - cross_skill
+      - guided_flow
+    truths_ref:
+      - order.create-flow
+    user_inputs:
+      - "录订单 赵凯（13456000919）｜ 2699系列雪尼尔窗帘面料 · 2699-06 蓝灰色 · 散剪 · 2.8米 · 10 米 ｜ 加工项：韩式波浪折边、穿杆孔加工、包边处理"
+      - "1. 2699系列雪尼尔窗帘面料｜¥23.8/米｜库存 9599"
+      - "已有客户"
+      - "确认：加工项=韩式波浪折边 ¥12/米、穿杆孔加工 ¥4/米、包边处理 ¥10/米（按 10 米计约 ¥260）；商品=2699系列雪尼尔窗帘面料；客户=赵凯（13456000919）· 已有客户；数量=10 米；规格=2699-06 蓝灰色 · 散剪 · 2.8米；面料单价=¥23.8/米（面料小计 ¥238）；预估合计=约 ¥498（以系统结算为准）"
+    namespaces:
+      - "customer_phone:13456000919"
+      - "product_name:2699系列雪尼尔窗帘面料"
+    expectations:
+      - tool: product_search
+      - tool: interact
+        args:
+          component: choice
+      - tool: product_detail
+      - tool: validate_input
+      - tool: interact
+        args:
+          component: confirm
+      - tool: order_create
+    data_checks:
+      - "确认卡点击（confirmValue 逐字回传）后，order_create 必须**真实执行并落库**——不得出现 Tool not found / 空头承诺「请稍候，我这就提交」而订单永不创建"
+      - "order_create 的 customer_phone=13456000919、items 数量=10 米、unit_price=23.8（与商品库价一致）、加工项韩式波浪折边/穿杆孔加工/包边处理"
+    order_before:
+      - "interact[choice] before product_detail"
+      - "interact[confirm] before order_create"
+    pre_clean:
+      - type: product_dedupe
+        product_keyword: "2699系列雪尼尔窗帘面料"
+        price: 23.8
+    skip_reason: ""
+    merge_log: "2026-09-17 新增（issue #3976，线上实证 sess_202d55d49a254a10）：首条消息同时含商品细节与下单指令 → 意图路由判 product_inquiry → 整条 validate/confirm 链在 product skill 内完成，确认卡点击后模型调 order_create 撞 Tool not found（product 注册表无此工具）→ 空头承诺 + 订单永不落库。修复（route_by_intent 答卡轮归属 skill 迁移 + tool_not_found 兜底 relock + 8.4 收口扩展 B 端 order_create + metadata 假证据修复）后，确认轮应路由到 order skill 真实下单"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_graph_nodes.py"
+        - "backend/ai-agent-service/tests/test_order_cross_skill_tool_not_found.py"
+        - "backend/ai-agent-service/tests/test_api_chat_helpers.py"
+        - "backend/ai-agent-service/tests/test_order_price_grounding.py"
+      ci:
+        - agent-eval.yml
+      verifies: []
