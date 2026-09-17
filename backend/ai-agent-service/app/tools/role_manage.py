@@ -7,7 +7,7 @@ AI 智能客服系统 - 角色与权限管理 Tool
 from typing import Any, Dict, List, Optional
 from loguru import logger
 
-from app.tools.base import BaseTool, ToolContext, ToolResult
+from app.tools.base import admin_api_failure, BaseTool, ToolContext, ToolResult
 from app.utils.http_client import get_admin_api_client
 
 
@@ -34,7 +34,10 @@ class RoleManageTool(BaseTool):
     description = (
         "【触发】用户问'角色''权限''管理员''有哪些角色''创建角色''分配权限'时调用。【前置】list/all 可查询。create/update 需要 name + permission_ids。delete 需二次确认。【反例】管理员工账号用 employee_manage。查系统配置用 settings_manage。【标注】WRITE|DESTRUCTIVE — 删除角色/修改权限需二次确认"
     )
-    allowed_roles = ["admin", "tenant_admin"]
+    # 权限码（admin-api 目录）：AdminRoleController 类级 `@RequirePermission("system:manage")`。
+    # 该码在目录里只有 admin（RoleService 第 301 行「不含 system:manage —— 归 admin 专属（越权守卫）」）
+    # ⇒ 实际放行面不变，只是不再靠角色名硬编码。
+    required_permissions = ["system:manage"]
 
     read_only = False
     destructive = True   # 可删除角色、修改权限
@@ -178,8 +181,7 @@ class RoleManageTool(BaseTool):
 
         if not response.get("success"):
             error_msg = response.get("error", {}).get("message", "查询失败")
-            return ToolResult(
-                success=False,
+            return admin_api_failure(response,
                 error=error_msg,
                 message="角色列表查询失败，请稍后重试",
                 suggestion="请稍后重试，如持续失败请联系技术支持",
@@ -224,8 +226,7 @@ class RoleManageTool(BaseTool):
 
         if not response.get("success"):
             error_msg = response.get("error", {}).get("message", "查询失败")
-            return ToolResult(
-                success=False,
+            return admin_api_failure(response,
                 error=error_msg,
                 message="获取角色列表失败",
                 suggestion="请检查输入参数是否正确，或稍后重试",
@@ -263,8 +264,7 @@ class RoleManageTool(BaseTool):
 
         if not response.get("success"):
             error_msg = response.get("error", {}).get("message", "查询失败")
-            return ToolResult(
-                success=False,
+            return admin_api_failure(response,
                 error=error_msg,
                 message="角色详情查询失败",
                 suggestion="请检查输入参数是否正确，或稍后重试",
@@ -322,8 +322,7 @@ class RoleManageTool(BaseTool):
 
         if not response.get("success"):
             error_msg = response.get("error", {}).get("message", "创建失败")
-            return ToolResult(
-                success=False,
+            return admin_api_failure(response,
                 error=error_msg,
                 message=f"创建角色失败：{error_msg}",
                 suggestion="请先用 role_manage 的 list 操作确认角色名称或编码未被占用，再换一个后重试",
@@ -381,8 +380,7 @@ class RoleManageTool(BaseTool):
 
         if not response.get("success"):
             error_msg = response.get("error", {}).get("message", "更新失败")
-            return ToolResult(
-                success=False,
+            return admin_api_failure(response,
                 error=error_msg,
                 message=f"更新角色失败：{error_msg}",
                 suggestion="请先用 role_manage 的 detail 操作确认该角色属于当前租户、且未被停用后再重试",
@@ -419,8 +417,7 @@ class RoleManageTool(BaseTool):
 
         if not response.get("success"):
             error_msg = response.get("error", {}).get("message", "删除失败")
-            return ToolResult(
-                success=False,
+            return admin_api_failure(response,
                 error=error_msg,
                 message=f"删除角色失败：{error_msg}",
                 suggestion="请先用 employee_manage 的 list 操作确认没有员工在用该角色（内置角色不可删），再重试",
@@ -445,8 +442,7 @@ class RoleManageTool(BaseTool):
 
         if not response.get("success"):
             error_msg = response.get("error", {}).get("message", "查询失败")
-            return ToolResult(
-                success=False,
+            return admin_api_failure(response,
                 error=error_msg,
                 message="权限列表查询失败",
                 suggestion="请检查输入参数是否正确，或稍后重试",

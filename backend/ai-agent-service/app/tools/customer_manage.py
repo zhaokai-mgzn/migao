@@ -7,7 +7,7 @@ AI 智能客服系统 - 客户管理 Tool
 from typing import Any, Dict, List, Optional, Tuple
 from loguru import logger
 
-from app.tools.base import BaseTool, ToolContext, ToolResult
+from app.tools.base import admin_api_failure, BaseTool, ToolContext, ToolResult
 from app.utils.http_client import get_admin_api_client
 
 
@@ -68,7 +68,9 @@ class CustomerManageTool(BaseTool):
     description = (
         "【触发】用户问'客户''顾客''VIP''客户档案''客户标签''给XX打标签''查XX电话'时调用。【前置】支持 action: list/detail/update/add_tag/remove_tag/list_tags/create_tag/update_tag/delete_tag。list 可按 keyword 搜索。detail 需要 customer_id。写操作需确认。【反例】查客户的历史订单用 order_query(customer_phone=XX)，不要用本工具。【标注】WRITE(update/add_tag/remove_tag) — 删除标签/合并客户需二次确认"
     )
-    allowed_roles = ["admin", "agent", "tenant_admin", "operator"]
+    # 权限码（admin-api 目录）：CustomerController 类级 `@RequirePermission("customer:view")`
+    # （客户读/写/标签同码）。
+    required_permissions = ["customer:view"]
 
     read_only = False
     destructive = True   # 可删除客户/标签
@@ -237,8 +239,7 @@ class CustomerManageTool(BaseTool):
 
         if not response.get("success"):
             error_msg = response.get("error", {}).get("message", "查询失败")
-            return ToolResult(
-                success=False,
+            return admin_api_failure(response,
                 error=error_msg,
                 message="客户列表查询失败，请稍后重试",
                 suggestion="请稍后重试，如持续失败请联系技术支持",
@@ -305,8 +306,7 @@ class CustomerManageTool(BaseTool):
 
         if not response.get("success"):
             error_msg = response.get("error", {}).get("message", "查询失败")
-            return ToolResult(
-                success=False,
+            return admin_api_failure(response,
                 error=error_msg,
                 message="客户详情查询失败",
                 suggestion="请检查输入参数是否正确，或稍后重试",
@@ -370,8 +370,7 @@ class CustomerManageTool(BaseTool):
 
         if not response.get("success"):
             error_msg = response.get("error", {}).get("message", "更新失败")
-            return ToolResult(
-                success=False,
+            return admin_api_failure(response,
                 error=error_msg,
                 message=f"客户档案更新失败：{error_msg}",
                 suggestion="请先用 customer_manage 的 detail 操作读取当前档案，核对字段后再重试；不要改成其它客户",
@@ -420,8 +419,7 @@ class CustomerManageTool(BaseTool):
 
         if not response.get("success"):
             error_msg = response.get("error", {}).get("message", "操作失败")
-            return ToolResult(
-                success=False,
+            return admin_api_failure(response,
                 error=error_msg,
                 message=f"添加标签失败：{error_msg}",
                 suggestion="请先用 customer_manage 的 list_tags 操作确认标签仍在，再重新执行添加标签",
@@ -466,8 +464,7 @@ class CustomerManageTool(BaseTool):
 
         if not response.get("success"):
             error_msg = response.get("error", {}).get("message", "操作失败")
-            return ToolResult(
-                success=False,
+            return admin_api_failure(response,
                 error=error_msg,
                 message=f"移除标签失败：{error_msg}",
                 suggestion="请先用 customer_manage 的 detail 操作确认该客户确实带有此标签，再重新执行移除",
@@ -492,8 +489,7 @@ class CustomerManageTool(BaseTool):
 
         if not response.get("success"):
             error_msg = response.get("error", {}).get("message", "查询失败")
-            return ToolResult(
-                success=False,
+            return admin_api_failure(response,
                 error=error_msg,
                 message="标签列表查询失败",
                 suggestion="请检查输入参数是否正确，或稍后重试",
@@ -537,8 +533,7 @@ class CustomerManageTool(BaseTool):
 
         if not response.get("success"):
             error_msg = response.get("error", {}).get("message", "创建失败")
-            return ToolResult(
-                success=False,
+            return admin_api_failure(response,
                 error=error_msg,
                 message=f"创建标签失败：{error_msg}",
                 suggestion="请先用 customer_manage 的 list_tags 操作确认是否已有同名标签，再改用 update_tag 或换一个名称",
@@ -593,8 +588,7 @@ class CustomerManageTool(BaseTool):
 
         if not response.get("success"):
             error_msg = response.get("error", {}).get("message", "更新失败")
-            return ToolResult(
-                success=False,
+            return admin_api_failure(response,
                 error=error_msg,
                 message=f"更新标签失败：{error_msg}",
                 suggestion="请先用 customer_manage 的 list_tags 操作确认标签仍在，再重新执行更新",
@@ -631,8 +625,7 @@ class CustomerManageTool(BaseTool):
 
         if not response.get("success"):
             error_msg = response.get("error", {}).get("message", "删除失败")
-            return ToolResult(
-                success=False,
+            return admin_api_failure(response,
                 error=error_msg,
                 message=f"删除标签失败：{error_msg}",
                 suggestion="请先用 customer_manage 的 list_tags 操作确认该标签未被其它客户占用，再重新执行删除",

@@ -419,11 +419,21 @@ class TestToolRegistryCompleteness:
 
     @pytest.mark.parametrize("tool_name", sorted(B_END_ONLY_TOOLS))
     def test_b_end_tool_excludes_customer_role(self, fresh_registry, tool_name):
-        """[Unit] B 端管理 Tool 不允许 customer 角色调用"""
+        """[Unit] B 端管理 Tool 不允许 customer 角色调用。
+
+        判据是**实际门禁**而不是配置清单（#4106 收紧）：B 端工具改由 admin-api 权限码
+        （`required_permissions`）+ C 端硬闸把关，`allowed_roles` 对它们不再生效 ——
+        继续断言「白名单里没有 customer」会退化成假绿（清单没变而门禁已换）。
+        这里直接给 customer 一个**通配权限**，证明即便满权限也过不了两端隔离。
+        """
         tool = fresh_registry.get_tool(tool_name)
         assert tool is not None, f"Tool {tool_name} 未注册"
-        assert "customer" not in tool.allowed_roles, (
-            f"B 端 Tool {tool_name} 不应允许 customer 角色"
+        customer_ctx = ToolContext(
+            tenant_id=1, user_id="c1", session_id="s",
+            role="customer", permissions=["*"],
+        )
+        assert tool.check_permission(customer_ctx) is False, (
+            f"B 端 Tool {tool_name} 不得对 customer 放行（即便权限集合为通配）"
         )
 
     @pytest.mark.parametrize("tool_name", sorted(C_END_TOOLS))

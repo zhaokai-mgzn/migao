@@ -10,7 +10,7 @@ AI 智能客服系统 - C端售后创建 Tool (小布专用)
 from typing import Optional, Dict, Any
 from loguru import logger
 
-from app.tools.base import BaseTool, ToolContext, ToolResult
+from app.tools.base import admin_api_failure, BaseTool, ToolContext, ToolResult
 from app.utils.enum_labels import TICKET_TYPE_LABELS
 from app.tools.order_create import CLIENT_REQUEST_ID_HEADER, _request_window_id
 from app.utils.http_client import get_admin_api_client
@@ -258,8 +258,7 @@ class AftersaleCreateTool(BaseTool):
 
             if not response.get("success"):
                 error_msg = response.get("error", {}).get("message", "创建失败")
-                return ToolResult(
-                    success=False,
+                return admin_api_failure(response,
                     error=error_msg,
                     message=f"创建售后工单失败：{error_msg}",
                     suggestion=("请先核实订单号是否正确；若刚刚也提交过一次售后，"

@@ -21,9 +21,17 @@ from app.tools.base import ToolContext
 CLIENT_HEADER = "X-Agent-Client"
 
 
-def _ctx(role: str) -> ToolContext:
-    """显式构造上下文：role 是来源判定的唯一输入（C 端折叠为 customer，B 端为员工角色码）"""
-    return ToolContext(tenant_id=1, user_id="user_001", session_id="sess_test_001", role=role)
+def _ctx(role: str, permissions=("*",)) -> ToolContext:
+    """显式构造上下文：role 是来源判定的唯一输入（C 端折叠为 customer，B 端为员工角色码）。
+
+    `permissions` 是**工具层细粒度门禁**的输入（#4106 F3：按 JWT `permissions` claim
+    判定，不再按角色名硬编码）；商户侧默认给通配 `*`，与 `admin` 在 admin-api 的实际
+    claim 一致（`RoleService.getUserPermissions` 特判）。
+    """
+    return ToolContext(
+        tenant_id=1, user_id="user_001", session_id="sess_test_001",
+        role=role, permissions=list(permissions),
+    )
 
 
 class TestTicketSourceDerivation:

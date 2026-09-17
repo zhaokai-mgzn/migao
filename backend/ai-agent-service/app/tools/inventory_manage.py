@@ -7,7 +7,7 @@ AI 智能客服系统 - 库存管理 Tool
 from typing import Optional
 from loguru import logger
 
-from app.tools.base import BaseTool, ToolContext, ToolResult
+from app.tools.base import admin_api_failure, BaseTool, ToolContext, ToolResult
 from app.tools.stock_semantics import (
     LOW_STOCK_THRESHOLD,
     NO_SKU_SOURCE,
@@ -181,15 +181,13 @@ class InventoryManageTool(BaseTool):
             error_msg = response.get("error", {}).get("message", "查询失败")
             
             if error_code == "NOT_FOUND" or "不存在" in error_msg:
-                return ToolResult(
-                    success=False,
+                return admin_api_failure(response,
                     error="商品不存在",
                     message="未找到该商品，请检查商品 ID",
                     suggestion="请检查ID是否正确，或尝试其他搜索条件",
                 )
             
-            return ToolResult(
-                success=False,
+            return admin_api_failure(response,
                 error=error_msg,
                 message="查询库存失败，请稍后重试",
                 suggestion="请稍后重试，如持续失败请联系技术支持",
@@ -299,8 +297,7 @@ class InventoryManageTool(BaseTool):
         
         if not query_response.get("success"):
             error_msg = query_response.get("error", {}).get("message", "查询失败")
-            return ToolResult(
-                success=False,
+            return admin_api_failure(query_response,
                 error=error_msg,
                 message="无法获取当前库存信息",
                 suggestion="请先用 product_search 确认该商品仍在架且商品 ID 正确，再重新执行调整",
@@ -345,8 +342,7 @@ class InventoryManageTool(BaseTool):
 
         if not response.get("success"):
             error_msg = response.get("error", {}).get("message", "更新失败")
-            return ToolResult(
-                success=False,
+            return admin_api_failure(response,
                 error=error_msg,
                 message=f"库存调整失败：{error_msg}",
                 suggestion="请确认商品存在且库存充足后重试；如持续失败请联系技术支持",
@@ -419,8 +415,7 @@ class InventoryManageTool(BaseTool):
 
         if not response.get("success"):
             error_msg = response.get("error", {}).get("message", "查询失败")
-            return ToolResult(
-                success=False,
+            return admin_api_failure(response,
                 error=error_msg,
                 message="低库存预警查询失败，请稍后重试",
                 suggestion="请稍后重试，如持续失败请联系技术支持",

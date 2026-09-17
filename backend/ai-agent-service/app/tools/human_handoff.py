@@ -11,7 +11,7 @@ from typing import Optional, Dict, Any
 import re
 from loguru import logger
 
-from app.tools.base import BaseTool, ToolContext, ToolResult
+from app.tools.base import admin_api_failure, BaseTool, ToolContext, ToolResult
 from app.tools.order_create import CLIENT_REQUEST_ID_HEADER, _request_window_id
 from app.utils.http_client import get_admin_api_client
 
@@ -383,8 +383,7 @@ class HumanHandoffTool(BaseTool):
 
             if not response.get("success"):
                 error_msg = response.get("error", {}).get("message", "创建工单失败")
-                return ToolResult(
-                    success=False,
+                return admin_api_failure(response,
                     error=error_msg,
                     message=f"转人工失败：{error_msg}",
                     suggestion=("请先核实转人工工单是否已经建好（不要重复调用）；"

@@ -22,7 +22,12 @@ def tool():
 
 @pytest.fixture
 def context():
-    return ToolContext(tenant_id=1, user_id="admin_001", session_id="sess", role="admin")
+    """商户管理员上下文：`admin` 在 admin-api 里恒为通配 `["*"]`（#4106 F3：
+    工具层细粒度门禁按 JWT `permissions` claim 判定）。"""
+    return ToolContext(
+        tenant_id=1, user_id="admin_001", session_id="sess",
+        role="admin", permissions=["*"],
+    )
 
 
 class TestSecurityMetadata:
@@ -32,8 +37,16 @@ class TestSecurityMetadata:
         assert tool.read_only is False
         assert tool.requires_confirmation is True, "商品加工项关联修改属写操作，必须要求用户确认"
 
-    def test_allowed_roles_are_admin_only(self, tool):
-        assert set(tool.allowed_roles) == {"admin", "tenant_admin"}
+    def test_required_permissions_are_the_processing_code(self, tool):
+        """商品加工项关联 = 加工项管理 ⇒ `processing:manage`（#4106 F4）。
+
+        此前写死 `["admin","tenant_admin"]` ⇒ 目录里同样持 `processing:manage` 的
+        `operator` / `product_manager` 被判「权限不足」（假拒绝）。判据从角色白名单
+        换成权限码 + C 端硬闸，映射见 tests/test_tool_permission_codes.py。
+        """
+        assert tool.required_permissions == ["processing:manage"]
+        customer_ctx = ToolContext(tenant_id=1, user_id="c1", session_id="s", role="customer")
+        assert tool.check_permission(customer_ctx) is False, "C 端顾客必须被拒"
 
 
 class TestExecute:
@@ -78,9 +91,24 @@ class TestExecute:
 
     def test_permission_check(self, tool):
         customer_ctx = ToolContext(tenant_id=1, user_id="c1", session_id="s", role="customer")
-        admin_ctx = ToolContext(tenant_id=1, user_id="admin_1", session_id="s", role="admin")
+        admin_ctx = ToolContext(
+            tenant_id=1, user_id="admin_1", session_id="s", role="admin", permissions=["*"],
+        )
+        operator_ctx = ToolContext(
+            tenant_id=1, user_id="op_1", session_id="s",
+            role="operator", permissions=["processing:manage"],
+        )
         assert tool.check_permission(customer_ctx) is False
         assert tool.check_permission(admin_ctx) is True
+        assert tool.check_permission(operator_ctx) is True, "operator 持 processing:manage，不得再被判权限不足"
+
+    def test_role_without_the_code_is_denied(self, tool):
+        """负向：真实商户角色但不持 `processing:manage` ⇒ 拒绝。"""
+        ctx = ToolContext(
+            tenant_id=1, user_id="fin_1", session_id="s",
+            role="finance", permissions=["finance:view", "order:list"],
+        )
+        assert tool.check_permission(ctx) is False
 
     @pytest.mark.asyncio
     async def test_denied_role_rejected_before_any_call(self, tool):

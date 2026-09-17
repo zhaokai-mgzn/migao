@@ -133,3 +133,70 @@ DDL `source VARCHAR(32) DEFAULT 'customer'` 现状：服务端各路径均显式
 | 差异 | 值域 | 裁定与理由 |
 |---|---|---|
 | 商品状态（agent `product_manage`） | 后端/前端 4 值 `draft/on_sale/off_sale/under_review`；**Agent 2 值 `on_sale/off_sale`** | **有意的权限边界（#3686 裁定，不扩枚举）**：Agent 只负责上下架；新建草稿、`draft→under_review→on_sale` 送审是 admin-web 后台的商品运营流程（需人工编辑资料并承担审核语义）。给 Agent 放开这两值 = 对话可跳过审核门禁（越权），违反最小权限。真值同时写在 `product_manage.py` 的 `status` 字段 description 内。**需要 Agent 送审时必须先补权限设计 + 审核责任归属，再改枚举** |
+
+## 十、工具层权限码与失败映射契约（issue #4106）
+
+`[ai-chat.permission-layers]` 契约（「角色检查 + 细粒度权限」）此前**只是声明**：
+38 个工具类里只有 1 个声明了 `required_permissions`，其余 37 个纯靠手写
+`allowed_roles` 角色码白名单 ⇒ 与 admin-api 权限目录漂移后**持有权限码的员工被工具判
+「权限不足」**（假拒绝）。本单把实现改成契约说的样子，并把失败映射收成一个入口。
+
+### 10.1 两层权限的真值（`app/tools/base.py::BaseTool.check_permission`）
+
+| 层 | 何时生效 | 判据 | 单一真值源 |
+|---|---|---|---|
+| 细粒度层（**权威**） | 工具声明了 `required_permissions` | JWT `permissions` claim（`*` = 全权限；`admin` 恒为 `["*"]`） | admin-api 权限目录（18 码） |
+| C 端硬闸（两端隔离不变式） | 同上 | `context.role ∈ CUSTOMER_ONLY_ROLES` ⇒ 一律拒绝（生产不可达，纵深防御） | `app/tools/base.py::CUSTOMER_ONLY_ROLES` |
+| 角色层（粗筛） | 工具**未**声明权限码 | `allowed_roles` | 各工具类体（C 端工具 / 无目录码工具） |
+
+**声明了权限码的工具不得再声明 `allowed_roles`**（它已不生效 = 假门禁），由
+`tests/test_tool_permission_codes.py` 静态锁定。
+
+工具 → 权限码映射（端点取各 controller 的 `@RequirePermission`；**写操作取写码**，
+避免只读持有者拿到写权限）：
+
+| 工具 | 权限码 | 出处 |
+|---|---|---|
+| `after_sales_manage` | `order:refund` | `AfterSalesController` / `AgentAfterSalesController` |
+| `category_manage` | `product:category` | `CategoryController` |
+| `customer_manage` | `customer:view` | `CustomerController` |
+| `dashboard_stats` | `dashboard:view` | `DashboardController` |
+| `employee_manage` | `employee:list` / `employee:create` | `AdminUserController`（写操作按 action 二次校验） |
+| `finance_api` | `finance:view` | `FinanceController` |
+| `order_manage` | `order:list` | `AgentOrderController` / `OrderController` |
+| `piecework_query` | `order:list` | `AgentProductionController` / `ProductionController` |
+| `processing_item_manage` | `processing:manage` | `ProcessingItemController` / `ProcessingCategoryController` |
+| `processing_order_generate` | `processing:update` | `ProcessingOrderController` |
+| `processing_order_query` | `processing:view` | 同上（**查看**码） |
+| `processing_order_update` | `processing:update` | 同上（写取写码） |
+| `product_manage` | `product:create` | `ProductController` 的 POST/PUT/DELETE |
+| `product_processing_item_manage` | `processing:manage` | `ProcessingItemController` |
+| `product_update` | `product:create` | 商品写取写码 |
+| `role_manage` | `system:manage` | `AdminRoleController` |
+| `session_manage` | `agent:session` | `AgentSessionController` |
+| `settings_manage` | `system:manage` | `SettingsController` |
+| `sku_update` | `product:create` | 商品写取写码 |
+
+**仍由角色层把关**（目录里没有对应码）：`notification_manage`（`NotificationController`
+全类无 `@RequirePermission`）。C 端双端工具（`product_search`/`order_query`/`product_detail`/
+`inventory_manage`/`order_create`/`curtain_calc`/`interact`/`validate_input`/`knowledge_search` 等）
+不加码 —— C 端 JWT 没有权限码，加码会让 C 端全量失效。
+
+### 10.2 跨包契约（**名字不得改**）
+
+```python
+from app.tools.base import NON_RETRYABLE_ERROR_CODES  # frozenset，停重试的判据
+# {"PERMISSION_DENIED", "FORBIDDEN", "AUTH_REQUIRED", "AUTH_FAILED", "UNAUTHORIZED"}
+from app.tools.base import ToolResult  # ToolResult.error_code: Optional[str]
+```
+
+- `NON_RETRYABLE_ERROR_CODES` = admin-api 实际产出的授权/认证类码（逐个有出处：
+  `GlobalExceptionHandler` 的 `PERMISSION_DENIED`/`AUTH_REQUIRED`、`SecurityConfig` 的
+  `FORBIDDEN`/`UNAUTHORIZED`、`BusinessException` 的 `AUTH_FAILED`）。**刻意不含**
+  `TENANT_INVALID`（租户配置问题，不是「当前账号缺权限」）。消费方式：`code in NON_RETRYABLE_ERROR_CODES`。
+- `ToolResult.error_code` = 服务端 `error.code` 原值（拿不到则空，不臆造）。
+- 失败映射单一入口：`app/tools/base.py::admin_api_failure(response, error=…, message=…, suggestion=…)`
+  —— 授权类失败产出**可执行**建议（说明是权限限制、**不要重试**、指向管理后台授权路径，
+  并保留服务端给的 `requiredPermission`）；其它失败**优先保留服务端 `suggestion`**，
+  调用方文案仅作兜底。`app/tools/*.py` 里每个 admin-api 失败分支都必须走它
+  （由 `tests/test_admin_api_failure_mapping.py` 的 L0 静态锁强制）。
