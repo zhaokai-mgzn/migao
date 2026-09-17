@@ -1782,8 +1782,10 @@ class OrderServiceTest {
     // 背景：processingInfo 由 agent/前端写入，售卖方式是中文标签（散剪/整卷）、门幅带单位
     // （2.8米，见 ai-agent order_create schema）；product_skus 落库的是枚举 bulk_cut + 裸数值 2.8。
     // 旧回退分支字面 eq → 0 行命中 → restoreSkuStock/deductSkuStock 的 `if (skuId != null)`
-    // 静默跳过 → 取消订单不回补库存、销量不记（账实不符，无告警）。现与主线共用一套归一化口径，
-    // 且未命中时留 WARN（不静默）。反向断言：真正不同的门幅/售卖方式仍不得匹配（防归一化过宽）。
+    // 静默跳过 → 取消订单不回补库存、销量不记（账实不符，无告警）—— issue #3621 改为共用一套归一化口径。
+    // issue #4090 进一步收紧：命中不到不再只是 WARN，而是**显式拒绝**（fail-closed）——
+    // 「声明了 SKU 身份却定位不到」既不能静默跳过，也不能任取一条（会扣错 SKU 的库存）。
+    // 反向断言：真正不同的门幅/售卖方式仍不得匹配（防归一化过宽），且必须留 WARN + 可行动话术。
 
     private static final Long COMBO_SKU_ID = 3001L;
 
@@ -1896,7 +1898,7 @@ class OrderServiceTest {
     }
 
     @Test
-    @DisplayName("#3621 反向断言：真正不同的门幅（2.8米 vs 库内 3.2）不得匹配，且必须留 WARN（不静默）")
+    @DisplayName("#3621 + #4090 反向断言：真正不同的门幅（2.8米 vs 库内 3.2）不得匹配 —— 且必须显式拒绝（不静默跳过）")
     void cancelOrder_doesNotRestoreStockWhenDoorWidthDiffers() {
         testOrder.setStatus("confirmed");
         OrderItem item = buildItemWithCombination("散剪", "2.8米");
@@ -1909,23 +1911,27 @@ class OrderServiceTest {
         ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> appender =
                 attachOrderLogAppender();
         try {
-            orderService.cancelOrder("order-001", "客户不要了");
+            // issue #4090：声明了 SKU 身份却定位不到 ⇒ 显式失败（修前是 WARN + 静默跳过）
+            assertThatThrownBy(() -> orderService.cancelOrder("order-001", "客户不要了"))
+                    .isInstanceOf(BusinessException.class)
+                    .hasMessageContaining("无法定位到 SKU")
+                    .hasMessageContaining("doorWidth=2.8米");
 
-            // 不同门幅不得被归一化合并
+            // 不同门幅不得被归一化合并（不得回补到 3.2 行，也不得减记销量）
             verify(productSkuMapper, never()).restoreStock(anyLong(), anyInt());
             verify(productSkuMapper, never()).decreaseSalesCount(anyLong(), anyInt());
-            // 且不静默：必须留下可观测告警（说明后果）
+            // 且不静默：WARN 说明后果 + 拒绝理由（未命中/歧义）
             assertThat(appender.list).anyMatch(e ->
                     e.getLevel() == ch.qos.logback.classic.Level.WARN
-                            && e.getFormattedMessage().contains("未匹配到 SKU")
-                            && e.getFormattedMessage().contains("不回补"));
+                            && e.getFormattedMessage().contains("键族定位不到")
+                            && e.getFormattedMessage().contains("显式拒绝"));
         } finally {
             detachOrderLogAppender(appender);
         }
     }
 
     @Test
-    @DisplayName("#3621 反向断言：不同售卖方式（整卷 vs 库内散剪）即便门幅相同也不得匹配")
+    @DisplayName("#3621 + #4090 反向断言：不同售卖方式（整卷 vs 库内散剪）即便门幅相同也不得匹配 —— 且必须显式拒绝")
     void cancelOrder_doesNotRestoreStockWhenSellingMethodDiffers() {
         testOrder.setStatus("confirmed");
         OrderItem item = buildItemWithCombination("整卷", "2.8米");
@@ -1938,23 +1944,32 @@ class OrderServiceTest {
         ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> appender =
                 attachOrderLogAppender();
         try {
-            orderService.cancelOrder("order-001", "客户不要了");
+            // issue #4090：声明了 SKU 身份却定位不到 ⇒ 显式失败（修前是 WARN + 静默跳过）
+            assertThatThrownBy(() -> orderService.cancelOrder("order-001", "客户不要了"))
+                    .isInstanceOf(BusinessException.class)
+                    .hasMessageContaining("无法定位到 SKU")
+                    .hasMessageContaining("sellingMethod=整卷");
 
             // 不同售卖方式不得被归一化合并（不得回补到 bulk_cut 行）
             verify(productSkuMapper, never()).restoreStock(anyLong(), anyInt());
+            verify(productSkuMapper, never()).decreaseSalesCount(anyLong(), anyInt());
             // 且查询条件里是归一化后的枚举，不是中文标签（无第二套映射口径）
             ArgumentCaptor<LambdaQueryWrapper<ProductSku>> wrapperCaptor =
                     ArgumentCaptor.forClass(LambdaQueryWrapper.class);
-            verify(productSkuMapper).selectList(wrapperCaptor.capture());
-            LambdaQueryWrapper<ProductSku> captured = wrapperCaptor.getValue();
-            captured.getSqlSegment(); // MP 的 formatParam 是惰性 ISqlSegment，须先触发 SQL 段生成
-            assertThat(captured.getParamNameValuePairs().values())
+            verify(productSkuMapper, atLeastOnce()).selectList(wrapperCaptor.capture());
+            List<String> queryParams = new ArrayList<>();
+            for (LambdaQueryWrapper<ProductSku> captured : wrapperCaptor.getAllValues()) {
+                captured.getSqlSegment(); // MP 的 formatParam 是惰性 ISqlSegment，须先触发 SQL 段生成
+                captured.getParamNameValuePairs().values()
+                        .forEach(v -> queryParams.add(String.valueOf(v)));
+            }
+            assertThat(queryParams)
                     .anyMatch(v -> "full_roll".equals(v))
                     .noneMatch(v -> "整卷".equals(v));
             // 未命中不静默
             assertThat(appender.list).anyMatch(e ->
                     e.getLevel() == ch.qos.logback.classic.Level.WARN
-                            && e.getFormattedMessage().contains("未匹配到 SKU"));
+                            && e.getFormattedMessage().contains("键族定位不到"));
         } finally {
             detachOrderLogAppender(appender);
         }

@@ -204,14 +204,22 @@ class OrderCreateTool(BaseTool):
         # 指定规格，而 schema 只声明 4 个必填、描述也没说 ⇒ LLM 无从知道 ⇒ 死锁
         # （OR-014 首跑 13 次 order_create 无一成功，连正确库价 @168 也被拒）。
         "【规格必填】商品有**多个不同 SKU 价**（分色/规格差价）时，items[i].processing_info "
-        "必须带 colorName 或 skuCode（取 product_detail 的 skus[].color_name / sku_code）；"
+        "必须带 skuId，或 colorName/skuCode（取 product_detail 的 skus[].id / color_name / sku_code）；"
+        # 规格键族契约（issue #4090）：服务端库存匹配读的就是这几个键 —— 供应商（本工具）必须
+        # 声明模型**真能拿到**的键，且键族要与服务端一致（否则库存校验/扣减/销量会被拒绝或走偏）。
+        "**规格键族**：服务端按 skuId → skuCode → colorId+sellingMethod+doorWidth → "
+        "colorName+sellingMethod+doorWidth 定位 SKU（库存校验/扣减/销量都按它走）。"
+        "优先传 skuId（product_detail 的 skus[].id，最精确）；用 skuCode/colorName 时必须与 "
+        "skus[] 原值逐字一致，并**同时给 sellingMethod 与 doorWidth** —— "
+        "只给颜色（或规格与库内对不上、命中多行）会因无法唯一定位 SKU 被拒绝（issue #4090）。"
+        "**不要臆造规格键**（尤其 colorId：product_detail 不返回该字段，填错会让下单被拒）。"
         "单价必须落在商品库价集合内（商品 price 或某个 SKU 价），编造价一律拦截。"
         "【单价铁律】items[i].unit_price **必须等于商品库价**（product_detail 的 price，"
         "或所选 SKU 的 skus[].price；库中无分色差价时所有颜色同价）——"
         "禁止编造分色/规格价（如库价 168 却报「米白 150」），"
         "报价/确认卡/落单三者单价必须一致；系统会在调用前按库价校验，不一致会被拦截并回填库价。"
         "【不议价】agent 路径不允许偏离商品库价；顾客要议价/优惠时不要改单价，请引导走后台。"
-        "售卖方式/门幅/颜色等规格信息放入 items[i].processing_info（字段：sellingMethod/doorWidth/colorName），"
+        "售卖方式/门幅/颜色等规格信息放入 items[i].processing_info（字段：skuId/skuCode/colorName/sellingMethod/doorWidth），"
         "不要平铺在 items 顶层（平铺会被丢弃）。"
         "【铁律·加工项】product_detail 返回的加工项（processing_items）非空时，**必须先调用 "
         "interact(component=choice, multiSelect=true) 主动询问顾客要不要加工项**（列出名称与单价），"
@@ -235,6 +243,7 @@ class OrderCreateTool(BaseTool):
         "**processingFee 必须等于 Σ(processingItems[i].unitPrice × quantity)**（容差 0.01）——"
         "服务端只按这个明细口径计总额，两处不一致时顾客在确认卡上看到的总额 ≠ 实际落库/收款金额。"
         "【反例】跳过 SKU 选择直接下单；把 sellingMethod/doorWidth 平铺进 items；"
+        "臆造规格键（如自己编 colorId/skuId）或只给颜色不给门幅就下单（服务端无法定位 SKU ⇒ 拒绝）；"
         "凭 product_search 列表断言'该商品无加工项'（列表本就查不到，必须查详情）。修改订单用 order_manage。WRITE"
     )
     allowed_roles = ["admin", "agent", "tenant_admin", "customer"]
@@ -320,11 +329,13 @@ class OrderCreateTool(BaseTool):
                         },
                         "processing_info": {
                             "type": "object",
-                            "description": "商品销售信息（选了颜色/门幅后必填）：colorId(颜色ID，字符串，来自商品详情)、colorName(颜色名称)、sellingMethod(售卖方式: bulk_cut散剪/full_roll整卷)、doorWidth(门幅如2.8米)、skuCode(SKU编码)、processingItems(加工项列表)、processingFee(加工费合计)。"
-                                           "⚠️商品有**多个不同 SKU 价**时 colorName 或 skuCode **必填**（取 product_detail 的 skus[]）——"
-                                           "缺规格则无法确定该行库价、下单会被拒绝（issue #4011）",
+                            "description": "商品销售信息（选了颜色/门幅后必填）：skuId(SKU主键，来自商品详情 skus[].id，**首选键**)、skuCode(SKU编码)、colorName(颜色名称)、sellingMethod(售卖方式: bulk_cut散剪/full_roll整卷)、doorWidth(门幅如2.8米)、processingItems(加工项列表)、processingFee(加工费合计)。"
+                                           "服务端按 skuId → skuCode → colorId+sellingMethod+doorWidth → colorName+sellingMethod+doorWidth 定位 SKU（库存校验/扣减/销量都按它走）；"
+                                           "⚠️商品有**多个不同 SKU 价**时 skuId 或 colorName/skuCode **必填**（取 product_detail 的 skus[]）——"
+                                           "缺规格则无法确定该行库价、下单会被拒绝（issue #4011）；规格与库内原值对不上或无法唯一定位（只给颜色、命中多行）同样会被拒绝（issue #4090）。",
                             "properties": {
-                                "colorId": {"type": "string", "description": "颜色ID（字符串，来自商品详情）"},
+                                "skuId": {"type": "string", "description": "SKU 主键（取 product_detail skus[].id 原值）——**首选规格键**：服务端按它唯一定位 SKU，不依赖名称/门幅的书写归一化"},
+                                "colorId": {"type": "string", "description": "颜色ID（**product_detail 不返回该字段**：Agent 路径不要臆造；需要 ID 族请用 skuId）"},
                                 "colorName": {"type": "string", "minLength": 1,
                                               "description": "颜色名称（取 product_detail skus[].color_name 原值）。商品有多个不同 SKU 价时必填"},
                                 "sellingMethod": {
