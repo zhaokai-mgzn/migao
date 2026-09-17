@@ -88,7 +88,7 @@ from pathlib import Path
 
 import pytest
 
-from app.api.chat import _detect_card_type
+from app.api.chat import _card_payload, _detect_card_type
 from app.graph.skills.skill_registry import get_skill_registry
 from app.tools.registry import get_tool_registry
 
@@ -366,6 +366,76 @@ def orphan_renderer_branches(
         for name, types in renderer_types.items()
         if types - producible
     }
+
+
+# 前端路由字面量：agent 侧**不得**出现（两端路由不同 ⇒ 只能由各端自己拼）
+_ROUTE_LITERAL_RE = re.compile(r"""["'`]/?(?:products|orders)/""")
+_URL_FIELD_KEYS = ("href", "url", "link", "linkUrl", "jumpUrl")
+
+
+class TestAgentSideCarriesNoRoutes:
+    """L0：href 必须**事实驱动**且**由各端生成**（issue #4016 P14 第四节三条硬约束）。
+
+    约束 1「两端路由不同（admin-web `/products/{id}`、`/orders/{id}`；mini-app 是 Taro 路由
+    且当前零链接能力）⇒ agent 侧只给 `product_id`/`order_no` 这类不可变标识，
+    **不得在 agent 侧写死 href**」与约束 3「href 只能由工具结果真值映射生成，**不得由模型编造**」
+    都需要常驻机械判据 —— 否则「agent 悄悄拼了个路由」或「卡载荷里带上了模型给的 URL」
+    都不会有任何东西变红（与 #3970「声称发卡但没发」同族的静默失效）。
+    """
+
+    def test_no_frontend_route_literals_in_agent_card_path(self):
+        """agent 侧（chat.py）不得出现前端路由字面量 `/products/`、`/orders/`。"""
+        source = _read(REPO_ROOT / "backend" / "ai-agent-service" / "app" / "api" / "chat.py")
+        hits = [
+            f"第 {no} 行：{line.strip()}"
+            for no, line in enumerate(source.split("\n"), 1)
+            if _ROUTE_LITERAL_RE.search(line)
+        ]
+        assert hits == [], (
+            "agent 侧写死了前端路由（路由必须由各端自己拼，否则 C 端会拿到 B 端路径）："
+            + "；".join(hits)
+        )
+
+    def test_route_literal_detector_recognises_a_planted_route(self):
+        """红证（变异）：把路由字面量喂给判据必须被认出 —— 证上面那条不是空断言。"""
+        planted = 'card["href"] = f"/products/{pid}"'
+        assert _ROUTE_LITERAL_RE.search(planted), "路由判据认不出植入的路由字面量（空断言）"
+
+    def test_card_payload_carries_no_url_fields(self):
+        """卡载荷**不得**新增 href/url/link 型字段：真值标识由工具结果携带，路由各端自拼。
+
+        载荷里出现 URL 字段 ⇒ 前端可能直接采信它 ⇒ 模型编造的链接变成可点链接
+        （约束 3）。本判据对真实 `_card_payload` 求值（非清单副本）。
+        """
+        payload_type, payload = _card_payload(
+            "product_search",
+            {"success": True, "data": {"products": [{"id": "p-1", "name": "窗帘A"}]}},
+        )
+        assert payload_type == "product_list" and payload, "前置：该输入必须产出商品卡载荷"
+
+        offenders = sorted(k for k in payload if k.lower() in _URL_FIELD_KEYS)
+        offenders += sorted(
+            f"products[].{k}"
+            for p in (payload.get("products") or [])
+            if isinstance(p, dict)
+            for k in p
+            if k.lower() in _URL_FIELD_KEYS
+        )
+        assert offenders == [], (
+            f"卡载荷出现了 URL 型字段（href 必须事实驱动、由各端生成）：{offenders}"
+        )
+
+    def test_url_field_detector_recognises_a_planted_url_field(self):
+        """红证（构造）：载荷里植入 `href` 必须被判据认出（防空断言）。"""
+        planted = {"products": [{"id": "p-1", "href": "/products/p-1"}]}
+        offenders = sorted(
+            f"products[].{k}"
+            for p in (planted.get("products") or [])
+            if isinstance(p, dict)
+            for k in p
+            if k.lower() in _URL_FIELD_KEYS
+        )
+        assert offenders == ["products[].href"], f"URL 字段判据认不出植入字段：{offenders}"
 
 
 class TestNoOrphanRendererBranches:

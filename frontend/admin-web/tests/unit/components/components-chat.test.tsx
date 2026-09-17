@@ -1298,6 +1298,37 @@ describe('ToolResultCard', () => {
 })
 
 // ═══════════════════════════════════════════════════
+// 卡内超链接（#4016 P14 ④）
+// ═══════════════════════════════════════════════════
+
+// ⚠️ 本文件把 `@/components/chat/ProductCard` 整体 mock 掉了（见文件顶部 vi.mock），
+// 故**商品卡超链接**的真值断言在 `tests/unit/components/ProductCard.test.tsx`
+// （真实组件、不递归子目录）。这里只覆盖 ToolResultCard 内联的 OrderCard/OrderRow
+// —— 它是就地定义的真实实现，未被 mock。
+describe('ToolResultCard 订单卡超链接（本端生成路由）', () => {
+  const hrefs = (c: HTMLElement) =>
+    Array.from(c.querySelectorAll('a')).map((a) => a.getAttribute('href'))
+
+  it('order 卡链接 /orders/{id}（id 取自 tool 结果真值；两端路由不同故各端自拼）', () => {
+    const card = {
+      type: 'order' as const,
+      data: { order: { id: 'o-9', orderNo: 'ORD-009', status: 'confirmed' } },
+    }
+    const { container } = render(<ToolResultCard card={card} />)
+    expect(hrefs(container)).toEqual(['/orders/o-9'])
+  })
+
+  it('负例（R2）：订单没有 id 时不生成链接 —— 不得凭空造路由', () => {
+    const card = {
+      type: 'order' as const,
+      data: { order: { orderNo: 'ORD-010', status: 'confirmed' } },
+    }
+    const { container } = render(<ToolResultCard card={card} />)
+    expect(hrefs(container)).toEqual([])
+  })
+})
+
+// ═══════════════════════════════════════════════════
 // LogisticsCard
 // ═══════════════════════════════════════════════════
 
