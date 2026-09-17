@@ -736,7 +736,7 @@ def test_customer_aftersales_exposes_order_lookup_and_interact():
 
 
 def test_customer_skills_only_bind_tools_customer_role_can_use():
-    """不变式（C 端）：小布 Skill 绑定的工具，`customer` 角色必须都能用。
+    """不变式（**全 Skill 存在性** + **C 端可用性**，issue #4012 去掉 persona 过滤）。
 
     根因（CH-012/OR-014/OR-017/CH-010 实测 2026-09-11，run 34620594324）：
     `ValidateInputTool.allowed_roles = ["admin","agent","tenant_admin"]` —— **不含 customer**
@@ -752,7 +752,23 @@ def test_customer_skills_only_bind_tools_customer_role_can_use():
 
     与本文件上一条 `interact` 不变式同族：**「Skill 绑了，但角色用不了」= 死能力**。
     绑了却用不了的工具既浪费工具位（挤占 LLM 的注意力），又让流程在关键节点静默失败。
-    本用例把「绑定的工具对本人可用」升级为全 C 端不变式。
+
+    ## 作用域修正（issue #4012，2026-09-17）
+
+    本用例此前有 `if "xiaobu" not in config.system_prompts: continue` —— 于是 **B 端 7 个
+    Skill 完全没有「引用的工具是否存在」的断言**，而**跨 skill 工具不可达（A5）恰恰是
+    本故障面**：#3976（sess_202d55d49a254a10）就是 B 端 `product` skill 里
+    `validate_input(order_create)` + 确认卡 → `[product] Tool not found: order_create`
+    → 空头承诺、订单永不落库。
+
+    **去掉过滤**后按「两类判据 × 各自适用域」重排（R1：每道门都要写清适用域）：
+
+    | 判据 | 适用域 | 理由 |
+    |---|---|---|
+    | ① 绑定工具**必须已注册** | **全部** Skill（含 B 端 7 个） | 「注册表里没有这个名字」对任何 persona 都是**结构性**缺陷，与角色权限无关 —— 这正是原过滤挡掉的缺口 |
+    | ② 绑定工具**对本人可用** | 仅含 `xiaobu` 的 Skill | B 端员工角色码来自 admin-api 自定义角色，用 `role="customer"` 去判 B 端是**错误真值模型**（会造出永远红的假判据，§19.1） |
+
+    红证（B 端缺口，此前**不红**）：让 `order_skill` 引用一个不存在的工具名 ⇒ 判据 ① 必红。
     """
     from app.graph.skills.skill_registry import get_skill_registry
     from app.tools.base import ToolContext
@@ -766,24 +782,40 @@ def test_customer_skills_only_bind_tools_customer_role_can_use():
 
     violations: list = []
     checked = 0
+    checked_c_end = 0
+    checked_b_end = 0
     for config in skill_registry.get_all():
-        if "xiaobu" not in (config.system_prompts or {}):
-            continue
+        is_c_end = "xiaobu" in (config.system_prompts or {})
         for name in (config.tool_names or []):
             tool = tool_registry.get_tool(name)
             if tool is None:
-                violations.append(f"{config.name} 绑定了未注册工具 {name}")
+                # ① 结构判据：**无 persona 过滤**（B 端同样必须引用存在的工具）
+                violations.append(
+                    f"{config.name}（{'C' if is_c_end else 'B'} 端）绑定了未注册工具 {name}"
+                )
                 continue
             checked += 1
-            if not tool.check_permission(customer_ctx):
-                violations.append(
-                    f"{config.name} 绑定 {name}，但 allowed_roles={list(tool.allowed_roles)} "
-                    f"不含 customer → 顾客调用必返回「权限不足」"
-                )
+            if is_c_end:
+                # ② 可用性判据：仅 C 端（见作用域表）
+                checked_c_end += 1
+                if not tool.check_permission(customer_ctx):
+                    violations.append(
+                        f"{config.name} 绑定 {name}，但 allowed_roles={list(tool.allowed_roles)} "
+                        f"不含 customer → 顾客调用必返回「权限不足」"
+                    )
+            else:
+                checked_b_end += 1
 
+    # 厚度守卫（防 registry/工具解析失效导致不变式空转 = 假绿）
     assert checked >= 10, f"仅检查了 {checked} 个工具绑定 —— 解析疑似失效（测试会空转）"
+    # B 端覆盖厚度守卫（#4012）：去掉 persona 过滤后，B 端必须**真的**被检查到
+    assert checked_b_end >= 30, (
+        f"B 端 skill 只检查了 {checked_b_end} 个工具绑定（应 ≥30）—— "
+        f"persona 过滤疑似复活，B 端 7 个 Skill 又会脱离「引用的工具是否存在」的断言（#4012 缺口）"
+    )
+    assert checked_c_end >= 10, f"C 端 skill 只检查了 {checked_c_end} 个工具绑定 —— 解析疑似失效"
     assert not violations, (
-        "以下 C 端 Skill 绑定了顾客**用不了**的工具（死能力，流程会在关键节点静默失败）：\n  "
+        "以下 Skill 的绑定有缺陷（未注册工具 = 结构性死绑定；C 端用不了 = 死能力）：\n  "
         + "\n  ".join(violations)
     )
 
