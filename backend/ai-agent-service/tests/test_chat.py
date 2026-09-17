@@ -531,6 +531,42 @@ class TestGetHistory:
         assert out["interactive_answered"] is True
 
 
+    @patch("app.api.chat.SessionMemory")
+    @pytest.mark.asyncio
+    async def test_history_returns_card_types(self, MockSM):
+        """get_history 返回展示卡卡型（#4016 A15，与 interactive 对称的**消费**侧）。
+
+        没有这一侧，`metadata.cards` 就是只写不读的空字段（R5「声明无消费」）——
+        统计口径要求它既能被库上 SQL 圈出（`metadata ? 'cards'`），也能随历史读出来。
+        """
+        msg = {
+            "id": "m3", "session_id": "sess_1", "role": "assistant",
+            "content": "已为您查询", "content_type": "text",
+            "created_at": "2026-06-20T10:00:00Z",
+            "metadata": {"cards": ["order", "logistics"]},
+        }
+        m = _memory(get_session=_session(), get_history=[msg])
+        MockSM.return_value = m
+        result = await get_history("sess_1", current_user=_user())
+        assert result["success"] is True
+        assert result["data"]["messages"][0]["cards"] == ["order", "logistics"]
+
+    @patch("app.api.chat.SessionMemory")
+    @pytest.mark.asyncio
+    async def test_history_without_cards_returns_none(self, MockSM):
+        """负例（R2）：无卡历史轮次回传 None，不得伪造空列表/占位值。"""
+        msg = {
+            "id": "m4", "session_id": "sess_1", "role": "assistant",
+            "content": "纯文本回复", "content_type": "text",
+            "created_at": "2026-06-20T10:00:00Z",
+            "metadata": {},
+        }
+        m = _memory(get_session=_session(), get_history=[msg])
+        MockSM.return_value = m
+        result = await get_history("sess_1", current_user=_user())
+        assert result["data"]["messages"][0]["cards"] is None
+
+
 class TestGetHistoryMasking:
     """C 端 `/history` 是**展示面**：顾客看得到的手机号必须脱敏（issue #3386）。
 

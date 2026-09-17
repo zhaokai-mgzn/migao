@@ -940,6 +940,10 @@ async def _agent_stream_to_sse(
     tool_calls_info = []
     # LLM hallucinated <interact> XML block payload (issue #3036 / UI-032)
     last_interactive_payload = None
+    # 本轮**真实发出**的卡型（去重、保序）→ 收尾 save_message(extra_metadata=…) 落
+    # metadata.cards（issue #4016 A15）：展示卡此前完全不落库，导致「哪种卡被真实使用」
+    # 无法统计、裁剪只能靠猜。与 interactive 同形：只在真发卡时写，无卡轮次不写键。
+    emitted_card_types: List[str] = []
     _done_sent = False
     # B 端引用对齐（issue #3009 / case PR-018）：mibao 的 product_list 卡片
     # 延迟到文本生成后按引用过滤再发，避免「文本说 5 件、卡片列 20 件」两层皮
@@ -1072,6 +1076,10 @@ async def _agent_stream_to_sse(
                                             f"type={card_type} data_keys={list(card_data.keys()) if isinstance(card_data, dict) else 'N/A'}"
                                         )
                                         yield SSEEvent.card(card_type, card_data)
+                                        # 登记**真实发出**的卡型（A15 用量统计；放在 yield 之后
+                                        # 使「落库 = 真发出」在代码顺序上也成立）
+                                        if card_type not in emitted_card_types:
+                                            emitted_card_types.append(card_type)
 
                                 # 检查是否来自 interact 工具 → 发送交互式组件事件
                                 # 与 LLM 幻觉 <interact> XML 分支同协议：把载荷写入
@@ -1136,6 +1144,10 @@ async def _agent_stream_to_sse(
                     f"kept={len(kept)} total={len(card_data.get('products') or [])}"
                 )
                 yield SSEEvent.card("product_list", filtered_data)
+                # 只记**真发出**的：被引用对齐丢弃的 pending 卡不算一次使用
+                # （否则用量统计被「发了又被丢掉」的卡虚高，#4016 A15 口径）
+                if "product_list" not in emitted_card_types:
+                    emitted_card_types.append("product_list")
             else:
                 logger.info(
                     f"[chat/card] Dropped product_list card (no product referenced in final text) | "
@@ -1202,6 +1214,8 @@ async def _agent_stream_to_sse(
                     content=assistant_content,
                     tool_calls=tool_calls_info if tool_calls_info else None,
                     interactive=last_interactive_payload if last_interactive_payload else None,
+                    # 展示卡卡型落库（#4016 A15）：无卡轮次不写键，与 interactive 同形
+                    extra_metadata={"cards": emitted_card_types} if emitted_card_types else None,
                     tenant_id=tenant_id,
                 ),
                 timeout=10.0,
@@ -1401,6 +1415,8 @@ async def _handle_page_request(
     )
 
     async def _page_stream():
+        # 本轮真实发出的卡型 → 落 metadata.cards（#4016 A15，与主流式路径同口径）
+        page_card_types: List[str] = []
         try:
             # 保存用户的翻页消息
             await session_memory.save_message(
@@ -1438,6 +1454,8 @@ async def _handle_page_request(
                 card_type, card_data = _card_payload(tool_name, {"success": True, "data": tool_data})
                 if card_type:
                     yield SSEEvent.card(card_type, card_data)
+                    if card_type not in page_card_types:
+                        page_card_types.append(card_type)
 
                 # 构建新一页的选项列表，触发交互组件
                 page = params.get("page", 1)
@@ -1509,6 +1527,7 @@ async def _handle_page_request(
                     session_id=session_id, role="assistant",
                     content=f"已展示第{params.get('page', '?')}页结果",
                     tenant_id=tenant_id,
+                    extra_metadata={"cards": page_card_types} if page_card_types else None,
                 ),
                 timeout=10.0,
             )
@@ -2090,14 +2109,19 @@ async def get_history(
         # interactive payload + answered flag passthrough (issue #3036 / UI-031)
         interactive_data = None
         interactive_answered = False
+        # 展示卡卡型回传（#4016 A15）：与 interactive 对称 —— 落库的卡型要能**读出来**
+        # 才不是只写不读的空字段（`metadata ? 'cards'` 亦可直接在库上做用量统计）。
+        card_types = None
         if isinstance(metadata, dict):
             interactive_data = metadata.get("interactive")
             interactive_answered = metadata.get("interactive_answered", False) is True
+            card_types = metadata.get("cards")
         elif isinstance(metadata, str):
             try:
                 meta_parsed = json.loads(metadata)
                 interactive_data = meta_parsed.get("interactive")
                 interactive_answered = meta_parsed.get("interactive_answered", False) is True
+                card_types = meta_parsed.get("cards")
             except (json.JSONDecodeError, TypeError):
                 pass
 
@@ -2115,6 +2139,9 @@ async def get_history(
             "interactive": _mask_card_for_customer(interactive_data, current_user)
             if isinstance(interactive_data, dict) else interactive_data,
             "interactive_answered": interactive_answered,
+            # 卡型列表（落库值原样回传；空/缺失 → None，前端按「无卡」处理）
+            "cards": card_types if isinstance(card_types, list) else None,
+            # 卡型列表（落库值原样回传；空/缺失 → None，前端按「无卡」处理）
             "created_at": _format_datetime(msg["created_at"]),
         })
     
