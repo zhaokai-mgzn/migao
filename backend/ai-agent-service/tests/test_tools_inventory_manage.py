@@ -40,7 +40,7 @@ class TestInventoryAdjust:
         """
         mock_client = AsyncMock()
         mock_client.get = AsyncMock(return_value={
-            "success": True, "data": {"name": "窗帘-欧式", "stock": 100}
+            "success": True, "data": {"name": "窗帘-欧式", "stock": 100, "skus": [{"stock": 100}]}
         })
         mock_client.patch = AsyncMock(return_value={
             "success": True, "data": {"name": "窗帘-欧式", "stock": 150}
@@ -63,10 +63,10 @@ class TestInventoryAdjust:
         """端点返回 success 但读回库存与预期不符 → 必须报失败（杜绝假成功）"""
         mock_client = AsyncMock()
         mock_client.get = AsyncMock(return_value={
-            "success": True, "data": {"name": "窗帘-欧式", "stock": 100}
+            "success": True, "data": {"name": "窗帘-欧式", "stock": 100, "skus": [{"stock": 100}]}
         })
         mock_client.patch = AsyncMock(return_value={
-            "success": True, "data": {"name": "窗帘-欧式", "stock": 100}  # 未被更新
+            "success": True, "data": {"name": "窗帘-欧式", "stock": 100, "skus": [{"stock": 100}]}  # 未被更新
         })
         mock_get_client.return_value = mock_client
         result = await tool.execute(
@@ -79,7 +79,7 @@ class TestInventoryAdjust:
     async def test_adjust_endpoint_error_fails_closed(self, mock_get_client, tool, admin_tool_context):
         mock_client = AsyncMock()
         mock_client.get = AsyncMock(return_value={
-            "success": True, "data": {"stock": 100}
+            "success": True, "data": {"stock": 100, "skus": [{"stock": 100}]}
         })
         mock_client.patch = AsyncMock(return_value={"success": False, "error": {"message": "库存不足"}})
         mock_get_client.return_value = mock_client
@@ -87,6 +87,53 @@ class TestInventoryAdjust:
             context=admin_tool_context, action="adjust",
             product_id="prod-1", adjustment=50, reason="盘点调整")
         assert result.success is False
+
+
+class TestInventoryStockAuthority:
+    """库存数字的唯一权威 = SKU 级（issue #4038）—— query/adjust 不得直读商品级 stock。
+
+    红证（改前 @ origin/main）：`_query` 用 `data.get("stock", 0)` 直读后端商品级聚合、
+    `_adjust_inventory` 用 `product_data.get("stock", 0)` 取当前库存。
+    实测 DB 里 311/497 个商品该列与 SKU 汇总不一致（有 SKU 的商品 299/351 恒为 0）。
+    """
+
+    @patch("app.tools.inventory_manage.get_admin_api_client")
+    async def test_query_stock_follows_sku_authority(self, mock_get_client, tool, admin_tool_context):
+        """后端商品级 `stock=0`（误导），SKU 合计 9599 ⇒ query 必须报 9599。"""
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value={
+            "success": True,
+            "data": {
+                "name": "2699系列雪尼尔窗帘面料",
+                "stock": 0,  # 商品级（非权威）
+                "status": "on_sale",
+                "skus": [{"stock": 9000}, {"stock": 599}],
+            },
+        })
+        mock_get_client.return_value = mock_client
+
+        result = await tool.execute(context=admin_tool_context, action="query", product_id="prod-2699")
+
+        assert result.success is True
+        assert result.data["stock"] == 9599
+        assert result.data["stock_source"] == "sku_sum"
+
+    @patch("app.tools.inventory_manage.get_admin_api_client")
+    async def test_query_no_sku_reports_unknown_not_zero(self, mock_get_client, tool, admin_tool_context):
+        """无 SKU 记录 ⇒ `stock=None`（无法确认），不得谎报 0（会被读成「没货」）。"""
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value={
+            "success": True,
+            "data": {"name": "未维护规格的帘", "stock": 0, "status": "on_sale", "skus": []},
+        })
+        mock_get_client.return_value = mock_client
+
+        result = await tool.execute(context=admin_tool_context, action="query", product_id="prod-nosku")
+
+        assert result.success is True
+        assert result.data["stock"] is None
+        assert result.data["stock_source"] == "no_sku"
+        assert "尚未维护 SKU" in result.message
 
 
 class TestLowStockAlert:
@@ -142,7 +189,7 @@ class TestInventoryQueryValidation:
     async def test_query_success_with_stock(self, mock_get_client, tool, admin_tool_context):
         mock_client = AsyncMock()
         mock_client.get = AsyncMock(return_value={
-            "success": True, "data": {"name": "窗帘", "stock": 88, "status": "on_sale"},
+            "success": True, "data": {"name": "窗帘", "stock": 88, "status": "on_sale", "skus": [{"stock": 88}]},
         })
         mock_get_client.return_value = mock_client
         result = await tool.execute(context=admin_tool_context, action="query", product_id="p1")
@@ -173,7 +220,7 @@ class TestInventoryAdjustValidation:
     async def test_adjust_insufficient_stock(self, mock_get_client, tool, admin_tool_context):
         """new_stock < 0 → 库存不足"""
         mock_client = AsyncMock()
-        mock_client.get = AsyncMock(return_value={"success": True, "data": {"name": "窗帘", "stock": 5}})
+        mock_client.get = AsyncMock(return_value={"success": True, "data": {"name": "窗帘", "stock": 5, "skus": [{"stock": 5}]}})
         mock_get_client.return_value = mock_client
         result = await tool.execute(context=admin_tool_context, action="adjust", product_id="p1", adjustment=-10, reason="出库")
         assert result.success is False

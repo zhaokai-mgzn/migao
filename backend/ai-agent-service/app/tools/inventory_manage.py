@@ -10,8 +10,11 @@ from loguru import logger
 from app.tools.base import BaseTool, ToolContext, ToolResult
 from app.tools.stock_semantics import (
     LOW_STOCK_THRESHOLD,
+    NO_SKU_SOURCE,
     low_stock_alert_threshold_schema,
     low_stock_phrase,
+    no_sku_stock_note,
+    product_stock_summary,
 )
 from app.utils.http_client import get_admin_api_client
 
@@ -205,24 +208,40 @@ class InventoryManageTool(BaseTool):
                 suggestion="请检查ID是否正确，或尝试其他搜索条件",
             )
         
-        stock = data.get("stock", 0)
+        stock = product_stock_summary(data.get("skus"))
         product_name = data.get("name", "")
         
         logger.info(
-            f"Inventory query: product_id={product_id}, stock={stock}, "
-            f"tenant={context.tenant_id}"
+            f"Inventory query: product_id={product_id}, stock={stock['stock']}, "
+            f"source={stock['stock_source']}, tenant={context.tenant_id}"
         )
+
+        if stock["stock_source"] == NO_SKU_SOURCE:
+            # 无 SKU 记录 ⇒ 不谎报 0（issue #4038：0 会被读成「没货」）
+            return ToolResult(
+                success=True,
+                data={
+                    "product_id": product_id,
+                    "product_name": product_name,
+                    "stock": None,
+                    "stock_source": NO_SKU_SOURCE,
+                    "status": data.get("status"),
+                },
+                message=no_sku_stock_note(product_name),
+                suggestion="请在商品详情维护 SKU（颜色/售卖方式/门幅）后重试",
+            )
         
         return ToolResult(
             success=True,
             data={
                 "product_id": product_id,
                 "product_name": product_name,
-                "stock": stock,
+                "stock": stock["stock"],
+                "stock_source": stock["stock_source"],
                 "status": data.get("status"),
             },
-            message=f"商品【{product_name}】当前库存：{stock}",
-            summary=f"库存查询: {product_name}, 库存{stock}件",
+            message=f"商品【{product_name}】当前库存：{stock['stock']}",
+            summary=f"库存查询: {product_name}, 库存{stock['stock']}件",
         )
     
     async def _adjust_inventory(
@@ -281,8 +300,17 @@ class InventoryManageTool(BaseTool):
             )
         
         product_data = query_response.get("data", {})
-        current_stock = product_data.get("stock", 0)
         product_name = product_data.get("name", "")
+        # 当前库存同样按唯一权威（SKU 级）取值（issue #4038），不用商品级列、不兜底 0
+        current = product_stock_summary(product_data.get("skus"))
+        if current["stock_source"] == NO_SKU_SOURCE:
+            return ToolResult(
+                success=False,
+                error="无 SKU 记录",
+                message=no_sku_stock_note(product_name),
+                suggestion="请先在商品详情维护 SKU（颜色/售卖方式/门幅）后再调整库存",
+            )
+        current_stock = current["stock"]
         new_stock = current_stock + adjustment
         
         if new_stock < 0:
