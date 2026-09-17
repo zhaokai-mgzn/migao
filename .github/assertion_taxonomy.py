@@ -41,6 +41,7 @@ T1 已有的「case 库静态校验（expectation 引用工具 ∈ persona 工�
 from __future__ import annotations
 
 import re
+from datetime import date
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 一、写工具集合 / 写 action（**精确枚举，禁用宽正则**）
@@ -503,9 +504,14 @@ KNOWN_PRECLEAN_TARGET_FIELDS: dict[str, str | None] = {
     "aftersales_ticket_prepare": None,         # 只需存在 pending 工单，不点名
     "processing_order_reset": None,            # 按 order_no 复位订单/加工单（#3833 修复新增）
 }
-# 声明了 `pre_clean` 但类型不在上表 ⇒ 静态**无法**判定其点名目标（**未实装**，见
-# `UNIMPLEMENTED` 的 CASE-TRUST-PRECLEAN-UNKNOWN-TYPE）。此处只登记、不阻塞 ——
-# 否则会把「并发包刚新增、本模块尚未跟上」的正确类型判红（假红）。
+# 声明了 `pre_clean` 但类型不在上表 ⇒ 静态**无法**判定其点名目标 ⇒ 不登记（**不是**缺陷的
+# 借口：真值锚点 = `runner._PRECLEAN_TYPES`，两边**必须同步**）。
+# ⚠️ **已发现的漂移**：`employee_remove`（runner 已实装、目标字段 `employee_name`）与
+# `user_memories_clear` 不在上表 ⇒ HR-002 / HR-009 / HR-010 的 pre_clean 目标**未被**
+# `CASE-TRUST-PRECLEAN-TARGET-UNRESOLVABLE` 核对（= 一条没登记的豁免面）。
+# 本模块的文件所有权不含该表（本次只同步 `UNIMPLEMENTED`）⇒ 不在本次改，登记见 #4161。
+# 历史备注：这里曾指向 `UNIMPLEMENTED` 的 `CASE-TRUST-PRECLEAN-UNKNOWN-TYPE`，
+# 该登记**已撤**（runner 侧早已 fail-closed，见 `UNIMPLEMENTED` 上方的「已撤登记」）。
 
 
 def pre_clean_targets(case_or_spec: dict) -> list[tuple[str, str, str]]:
@@ -519,7 +525,8 @@ def pre_clean_targets(case_or_spec: dict) -> list[tuple[str, str, str]]:
       · `employee_reactivate`       → `employee_name`（精确匹配员工名）
       · `aftersales_ticket_prepare` → **无点名目标**（只需存在 pending 工单，不登记）
       · `processing_order_reset`    → **无点名目标**（按订单号复位，不依赖种子名字）
-      · 未知类型                     → 不登记（**未实装**：未知类型静默跳过 = 潜在假绿，见 #3797）
+      · 未知类型                     → 不登记（真值 = `runner._PRECLEAN_TYPES`；表未同步的
+                                       `employee_remove` 漂移见上方 ⚠️ 与 #4161）
     """
     specs = case_or_spec.get("pre_clean") if isinstance(case_or_spec, dict) else None
     out: list[tuple[str, str, str]] = []
@@ -531,7 +538,7 @@ def pre_clean_targets(case_or_spec: dict) -> list[tuple[str, str, str]]:
         if field is None:
             continue  # 该类型无点名目标（aftersales_ticket_prepare / processing_order_reset）
         if field == "UNKNOWN":
-            continue  # 未知类型：不登记（登记在 UNIMPLEMENTED）
+            continue  # 未知类型：不登记（真值 = runner._PRECLEAN_TYPES，同步漂移见 #4161）
         v = str(spec.get(field) or "")
         if v:
             out.append((t, field, v))
@@ -1131,29 +1138,21 @@ RULES: tuple[dict, ...] = (
 RULES_BY_CODE: dict[str, dict] = {r["code"]: r for r in RULES}
 
 # ── 未实装项（**如实登记**；绝不写成恒真判断凑数）─────────────────────────────
+# 🔒 **可执行约束**（本次收紧）：每条登记**必须**带 `issue`（正整数追踪号）/ `expires`
+# （YYYY-MM-DD）/ `how_to_verify`（**怎么算已实装**的可执行判据）/ `hit_probe`（僵尸判据）。
+# 四条判据都可红（判据本体 = `judge_unimplemented()`；红证 = `tests/unit_ci_workflows/
+# test_case_trust_gate.py`）：① 缺字段（指名缺哪个）② `expires` 已过 ③ `issue` 已 CLOSED
+# （网络格，由门禁判）④ **僵尸**（登记所述口径已不成立）。为什么必须有：只有
+# `why_not` + `needs` 时，「未实装」可以**永久**当借口 —— 没有任何东西会因此变红。
+# 🗑️ **已撤登记（已实装，不许再登记回来）**：
+#   · `CASE-TRUST-PRECLEAN-UNKNOWN-TYPE` / `CASE-TRUST-PRECLEAN-FAILURE-FOLD`
+#     —— 两条的 `why_not` 都声称「runner 静默跳过 / 返回值不参与用例判定」，而 runner 侧
+#     早已 fail-closed：`_PRECLEAN_TYPES` 是单一真值（未知 type ⇒ `_PRECLEAN_CONFIG_ERR`），
+#     `check_preclean_not_applied` 按**稳定前缀**把它折进用例结论（#3781），清理型的
+#     「目标不存在」按 #3791 走良性 no-op（可见、不进结论）；L0 五条判据 + 逐条红证锁在
+#     `tests/unit_ci_workflows/test_eval_preclean_registry.py`。
+#     留着 = 与实现相反的**假真值**（`migao-acceptance`：注释漂移是假绿来源）。
 UNIMPLEMENTED: tuple[dict, ...] = (
-    {
-        "code": "CASE-TRUST-PRECLEAN-UNKNOWN-TYPE",
-        "title": "`pre_clean.type` 未知/拼错 ⇒ 静默跳过（潜在假绿）",
-        "why_not": (
-            "`local_runner._run_pre_clean` 对未知 type 只 `return \"未知 pre_clean 类型: …（跳过）\"`"
-            "（按该文本检索），**不报错** ⇒ 拼错的 type = 一条**没有复位的**写用例，"
-            "而静态侧无法区分「作者有意跳过」与「拼错」（#3797）。"
-        ),
-        "needs": (
-            "runner 侧把未知 type 改成**失败关闭**（或引入显式 `pre_clean: [{type: none, reason: …}]`），"
-            "静态门禁才有可判定的目标。属 T2（runner 归因自动化）。"
-        ),
-    },
-    {
-        "code": "CASE-TRUST-PRECLEAN-FAILURE-FOLD",
-        "title": "`pre_clean` 失败/未复位路径未纳入折叠判据",
-        "why_not": (
-            "`_run_pre_clean` 的返回值（「无「X」商品需清理」/「查询 3 次未命中（跳过）」）"
-            "**不参与用例判定** ⇒ 清理没生效也照跑（#3797 的潜在假绿）。"
-        ),
-        "needs": "runner 侧把 pre_clean 结果进 case_issues（失败即红）。属 T2。",
-    },
     {
         "code": "CASE-TRUST-CROSS-LEG-NARROW-RUN",
         "title": "单端用例在与其他腿共用 `case_ids` 时被选中",
@@ -1166,6 +1165,17 @@ UNIMPLEMENTED: tuple[dict, ...] = (
             "runner 侧按 persona 校验 `case_ids` 的跨腿完整性（#3822；"
             "`local_runner.py` 的「禁止静默少跑」守卫按该文本检索）。属 T2。"
         ),
+        # ── 收紧后的必填四字段（见本元组上方的「可执行约束」）──
+        "issue": 3822,
+        "expires": "2027-01-31",
+        "how_to_verify": (
+            "runner 的「禁止静默少跑」守卫**按 persona 校验 `case_ids` 的跨腿完整性**"
+            "（单端用例被另一腿选中时不再产生误导性红/自动评论）⇒ 撤登记。"
+            "核验：单腿派发（`xiaobu-acceptance.yml` 的 `persona` 输入）+ `case_ids` 含一条"
+            "单端用例 ID，另一腿**不再**判红；或该守卫源码里出现按 persona 过滤 `case_ids` 的分支"
+            "（按「禁止静默少跑」文本检索）。"
+        ),
+        "hit_probe": "single_leg_persona",
     },
     {
         "code": "CASE-TRUST-BURN-DOWN-SCOPE-CASE-TOUCHING-ONLY",
@@ -1181,6 +1191,18 @@ UNIMPLEMENTED: tuple[dict, ...] = (
             "要先让「清单条目可被多条 PR 各自删除的小文件化 / 自动重生成」落地，"
             "每-PR 口径才有可安全阻塞的目标（同族于 drift_audit 的全量对账，见下一条 ⇒ **#4045**）。"
         ),
+        # ── 收紧后的必填四字段（见本元组上方的「可执行约束」）──
+        # 本项属**口径型**登记（不是代码缺口）：追踪单 #4155 同时承载它与
+        # `CASE-TRUST-ALL-CASES-PERSONA-ANNOTATED` 的复核触发器。
+        "issue": 4155,
+        "expires": "2027-03-31",
+        "how_to_verify": (
+            "前置（豁免清单小文件化 / 可自动重生成）落地 ⇒ 把 `.github/case-trust-baseline.json`"
+            "的 `burn_down.scope` 改成 `all_prs` 并撤本登记。"
+            "核验命令：`python3 -c \"import json;print(json.load(open("
+            "'.github/case-trust-baseline.json'))['burn_down']['scope'])\"` 输出 `all_prs` = 已实装。"
+        ),
+        "hit_probe": "burn_down_scope_case_touching",
     },
     {
         "code": "DRIFT-AUDIT-STALE-DIFF-SCOPED",
@@ -1195,6 +1217,16 @@ UNIMPLEMENTED: tuple[dict, ...] = (
             "按 #4031 同款改造 drift_audit 的 compare_baseline（全量对账 + burn-down 预算）"
             "并补红证；**已开独立 issue 登记：`#4045`**（不属 #4031 的文件所有权，避免与在飞包冲突；同 issue 含 `pr-check.yml` 注释块口径同步 —— 需 `workflow` scope）。"
         ),
+        # ── 收紧后的必填四字段（见本元组上方的「可执行约束」）──
+        "issue": 4045,
+        "expires": "2026-12-31",
+        "how_to_verify": (
+            "`scripts/drift_audit.py` 的 `compare_baseline` **复用** `.github/case_trust_gate.py`"
+            "的 `reconcile_baseline`（不再自实现 diff 命中口径的陈旧判据）⇒ 撤本登记。"
+            "核验：`grep -c reconcile_baseline scripts/drift_audit.py` ≥ 1（当前 = 0）；"
+            "撤登记判据 = `hit_probe` 探不到存活证据（即该 grep 命中）。"
+        ),
+        "hit_probe": "drift_audit_diff_scoped_stale",
     },
     {
         "code": "CASE-TRUST-ALL-CASES-PERSONA-ANNOTATED",
@@ -1205,6 +1237,21 @@ UNIMPLEMENTED: tuple[dict, ...] = (
             "单端**的用例子集实装。"
         ),
         "needs": "无需落地（这是**有意不做**的口径，登记以免被误当遗漏）。",
+        # ── 收紧后的必填四字段（见本元组上方的「可执行约束」）──
+        # **口径型**登记：不是「要做没做」，而是「**有意更窄**」——但「有意」不等于
+        # 「永久」：到期/追踪单 CLOSED 都必须重新裁定一次（不许静默续期）。
+        "issue": 4155,
+        "expires": "2027-06-30",
+        "how_to_verify": (
+            "persona 语义变更（例如引入显式 `persona: both` 双端标注）⇒ 全库标注成为"
+            "**可判定且不产生假红**的口径，撤本登记并按新口径实装；或双端用例归零"
+            "⇒ 子集口径 == 全库口径，本登记自动成僵尸。"
+            "核验命令：`python3 -c \"import sys;sys.path.insert(0,'.github');"
+            "from render_cases import load_case_dicts;"
+            "print(sum(1 for c in load_case_dicts('.github/cases') "
+            "if not str(c.get('persona') or '').strip()))\"`（当前 246 > 0 = 口径仍成立）。"
+        ),
+        "hit_probe": "dual_leg_no_persona",
     },
     {
         "code": "CASE-TRUST-PROSE-DATA-CHECK-QUALITY",
@@ -1215,8 +1262,252 @@ UNIMPLEMENTED: tuple[dict, ...] = (
             "（`is_machine_scored_data_check`）并据此要求效果层断言。"
         ),
         "needs": "LLM 用例语义审计（#3483 的 LLM 复核格），不属静态门禁。",
+        # ── 收紧后的必填四字段（见本元组上方的「可执行约束」）──
+        "issue": 3483,
+        "expires": "2027-03-31",
+        "how_to_verify": (
+            "出现**可执行**的用例语义复核（`#3483` 的 LLM 复核格：逐条判定散文 `data_checks`"
+            "是否真在测它声称的东西，且结论落盘可复查）⇒ 静态侧不再是「无法判定」"
+            "⇒ 撤本登记。核验：存在按用例 ID 产出语义复核结论的脚本/用例，"
+            "且 `python3 .github/case_trust_gate.py` 的未实装清单里不再需要这一条。"
+        ),
+        "hit_probe": "prose_data_check",
     },
 )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 七之二、未实装登记的**可执行约束**（本次收紧）：字段 / 到期 / 僵尸
+# ══════════════════════════════════════════════════════════════════════════════
+#
+# 为什么单开这一节（病灶）：`UNIMPLEMENTED` 原来只有 `why_not` + `needs` 两个自由文本字段
+# ⇒「未实装」可以**永久**当借口：没有任何追踪号、没有到期日、没有「怎么算已实装」，
+# 于是**没有任何东西会因此变红**（`migao-acceptance`：不会红的判据 = 空断言）。
+# 现在四条都可红，且**判据只有这一处**（门禁只做「取数 → 调用 → 报错」）：
+#
+#   ① `MISSING_FIELD`：缺任一必填字段（**指名**缺哪个；`issue` 非正整数也算）⇒ 红
+#   ② `EXPIRED`     ：`expires` 已过（非法/缺失的日期按**已到期**处理 = fail-closed）⇒ 红
+#   ③ `ZOMBIE`      ：登记所述口径已不成立（`hit_probe` 探不到存活证据）⇒ 红
+#      —— 僵尸判据为什么必须有：口径被修好/被绕开后，登记会**永久**留在清单里，
+#      读者会以为「这条还没做」（与实现相反的假真值）。
+#   ④ `ISSUE_CLOSED`：网络格（`issue` 指向的追踪单已 CLOSED）⇒ 红；由门禁判，
+#      文案与修法仍在本节单点（判据文本与实现同源，避免两处漂移）。
+#
+# **依赖纪律**：本节全部为纯函数（不读文件、不联网）—— 门禁把 IO（读用例库、
+# 读 `scripts/drift_audit.py` 源码、查 issue 状态）取好后**注入**给这里。
+
+UNIMPLEMENTED_REQUIRED_FIELDS: tuple[str, ...] = (
+    "code", "title", "why_not", "needs", "issue", "expires", "how_to_verify", "hit_probe",
+)
+
+# ⚠️ 这组码**不放进 `RULES`**：那是「逐用例」判据表（基线清单按 `case_id` 记账、
+# `rule_counts` 逐码计数），而本组判据的对象是**登记条目**本身（没有 case_id）。
+# 混进去会让基线出现无法解释的条目 ⇒ 两处口径都失真。
+UNIMPLEMENTED_VIOLATION_CODES: dict[str, dict[str, str]] = {
+    "MISSING_FIELD": {
+        "code": "CASE-TRUST-UNIMPL-MISSING-FIELD",
+        "title": "未实装登记缺必填字段（issue / expires / how_to_verify / hit_probe …）",
+        "fix": (
+            "补齐报告里点名的那一项：`issue`（正整数追踪号 —— 该单 CLOSED 即红）、"
+            "`expires`（`YYYY-MM-DD`；过期即红，**不许静默续期**）、"
+            "`how_to_verify`（**怎么算已实装**的可执行判据/命令，不是散文感想）、"
+            "`hit_probe`（僵尸判据，取自 `UNIMPLEMENTED_HIT_PROBES` 的键）。"
+        ),
+    },
+    "EXPIRED": {
+        "code": "CASE-TRUST-UNIMPL-EXPIRED",
+        "title": "未实装登记已到期（`expires` ≤ 今天）",
+        "fix": (
+            "到期不是自动失效、也不是自动续期：**要么撤登记**（已实装 —— 这是首选，"
+            "并说明在哪落地），**要么**在追踪单上给出新的事实（为什么还不能做）后"
+            "把 `expires` 往后挪，让这次推迟**在 PR diff 里可见**。"
+            "日期写成非法/缺失同样按已到期处理（fail-closed）。"
+        ),
+    },
+    "ZOMBIE": {
+        "code": "CASE-TRUST-UNIMPL-ZOMBIE",
+        "title": "僵尸登记：登记所述口径已不成立（hit_probe 探不到存活证据）",
+        "fix": (
+            "先核 `hit_probe` 的读数（门禁会打印存活证据）：口径**已不成立** ⇒ **撤登记**"
+            "（信息别丢：把「已由谁在哪落地」写进本次 PR 说明）；口径仍在、但探针写错了 ⇒ "
+            "改 `hit_probe` 指向真正能表达该口径的探针（不许写成恒真探针 —— 那就是复活"
+            "「永久借口」）。"
+        ),
+    },
+    "ISSUE_CLOSED": {
+        "code": "CASE-TRUST-UNIMPL-ISSUE-CLOSED",
+        "title": "`issue` 指向的追踪单已 CLOSED（借口不能过期不销）",
+        "fix": (
+            "追踪单 CLOSED 有两个出口：**实装了 ⇒ 撤登记**（首选）；**没实装 ⇒ 开新单**"
+            "并把 `issue` 指向它（并把 `expires` 重新设成合理未来日期）。"
+            "**不许**让一条已关闭的单继续当永久借口。"
+        ),
+    },
+}
+
+_ISO_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def iso_date_or_expired(v) -> str:
+    """规范化 `expires`：非法/缺失 ⇒ `0000-00-00`（**按已到期处理**，fail-closed）。
+
+    与 `case_trust_gate._date` 同口径、**同样 fail-closed**：任何一侧放宽，
+    「写个乱码当到期日」就能变成永久续期。
+    """
+    s = str(v or "").strip()
+    if not _ISO_DATE_RE.match(s):
+        return "0000-00-00"
+    try:
+        date.fromisoformat(s)
+    except ValueError:
+        return "0000-00-00"
+    return s
+
+
+# ── 僵尸判据（`hit_probe`）：探针 = 「这条登记所述的口径**还在不在**」──────────────
+# 统一形状：`probe(probe_context) -> list[str]`，**返回存活证据**（空列表 = 僵尸）。
+# ⚠️ 探针必须能真的变空（否则它自己就是一条不会红的判据）—— 每条都有对应红证，
+# 见 `tests/unit_ci_workflows/test_case_trust_gate.py::TestUnimplementedRegistrations`。
+# 探针是**纯函数**：所需的一切（用例库、生效清单、`drift_audit` 源码文本）由门禁注入
+# `probe_context`，本模块不读文件、不联网。
+
+def _ctx_cases(ctx: dict) -> list[dict]:
+    return list(ctx.get("cases") or [])
+
+
+def _probe_single_leg_persona(ctx: dict) -> list[str]:
+    """口径 =「单端用例被另一腿选中」：只要还有**显式标注了 persona 的单端用例**，就还成立。"""
+    return sorted({str(c.get("id") or "?") for c in _ctx_cases(ctx)
+                   if str(c.get("persona") or "").strip()})
+
+
+def _probe_burn_down_scope_case_touching(ctx: dict) -> list[str]:
+    """口径 = `burn_down.scope == case_touching_prs`（生效清单那一份，数据即判据）。"""
+    scope = str(((ctx.get("baseline") or {}).get("burn_down") or {}).get("scope") or "")
+    return [f"burn_down.scope={scope}"] if scope == "case_touching_prs" else []
+
+
+def _probe_drift_audit_diff_scoped_stale(ctx: dict) -> list[str]:
+    """口径 = `scripts/drift_audit.py` **自实现** diff 命中口径的陈旧判据（未复用统一对账）。
+
+    源码文本由门禁注入（本模块不读文件）。复用统一对账后探针为空 ⇒ 该登记成僵尸
+    ⇒ 强制撤登记（**实装了就不许再挂着「未实装」**）。
+    """
+    src = ctx.get("drift_audit_source")
+    if src is None:
+        return ["scripts/drift_audit.py（源码未取到 —— 按存活处理，避免把读不到文件误判成已实装）"]
+    return [] if "reconcile_baseline" in str(src) else [
+        "scripts/drift_audit.py: compare_baseline 仍自实现 diff 命中口径的陈旧判据"]
+
+
+def _probe_dual_leg_no_persona(ctx: dict) -> list[str]:
+    """口径 =「双端用例不该被强制标注」：只要还有 `persona` 为空的用例，该口径就有对象。"""
+    return sorted({str(c.get("id") or "?") for c in _ctx_cases(ctx)
+                   if not str(c.get("persona") or "").strip()})
+
+
+def _probe_prose_data_check(ctx: dict) -> list[str]:
+    """口径 =「散文 `data_checks` 的语义质量静态判不了」：只要还有**不计分**的散文断言就成立。"""
+    out: set[str] = set()
+    for c in _ctx_cases(ctx):
+        for d in (c.get("data_checks") or []):
+            if not is_machine_scored_data_check(d):
+                out.add(str(c.get("id") or "?"))
+    return sorted(out)
+
+
+UNIMPLEMENTED_HIT_PROBES: dict[str, object] = {
+    "single_leg_persona": _probe_single_leg_persona,
+    "burn_down_scope_case_touching": _probe_burn_down_scope_case_touching,
+    "drift_audit_diff_scoped_stale": _probe_drift_audit_diff_scoped_stale,
+    "dual_leg_no_persona": _probe_dual_leg_no_persona,
+    "prose_data_check": _probe_prose_data_check,
+}
+
+
+def unimplemented_evidence(entries, probe_context: dict | None = None) -> dict[str, list[str]]:
+    """每条登记的**存活证据**（= 僵尸判据的正面读数）→ `{code: [证据…]}`。
+
+    空列表 = 僵尸。**未注册的探针名 ⇒ 空**（无判据的登记按僵尸处理，fail-closed）。
+    报告必须把它打印出来（否则「为什么说它活着」没有可复查的读数）。
+    """
+    ctx = probe_context or {}
+    out: dict[str, list[str]] = {}
+    for item in entries or []:
+        name = str((item or {}).get("hit_probe") or "")
+        probe = UNIMPLEMENTED_HIT_PROBES.get(name)
+        if probe is None:
+            out[str(item.get("code") or "?")] = []
+            continue
+        try:
+            out[str(item.get("code") or "?")] = list(probe(ctx))  # type: ignore[operator]
+        except Exception:
+            # 探针自身炸了 = 判据不可用 ⇒ 按**僵尸**处理（fail-closed，绝不静默成活）
+            out[str(item.get("code") or "?")] = []
+    return out
+
+
+def _field_missing(v) -> bool:
+    """字段是否**等于没写**（`None` / 空容器 / 空白串都算 —— 不许用空值凑数）。"""
+    if v is None or v == [] or v == {}:
+        return True
+    return isinstance(v, str) and not v.strip()
+
+
+def judge_unimplemented(entries, *, today: str,
+                        probe_context: dict | None = None) -> list[dict]:
+    """未实装登记的**可执行约束**裁决（纯函数）→ `[{"code","entry","detail","fix"}]`。
+
+    三条可静态判定的判据（第 ④ 条 `ISSUE_CLOSED` 需网络，由门禁单独判）：
+      ① 缺必填字段（`UNIMPLEMENTED_REQUIRED_FIELDS`，**指名**缺哪个）；
+      ② `expires` 已过（非法/缺失按已到期处理）；
+      ③ 僵尸（`hit_probe` 未注册，或探不到存活证据）。
+
+    `today` 必须由调用方注入（可确定性红证），**不得**在判据里取系统时间。
+    """
+    evidence = unimplemented_evidence(entries, probe_context)
+    out: list[dict] = []
+    for item in entries or []:
+        item = item or {}
+        code = str(item.get("code") or "?")
+        entry_name = code
+
+        def add(kind: str, detail: str) -> None:
+            spec = UNIMPLEMENTED_VIOLATION_CODES[kind]
+            out.append({"code": spec["code"], "entry": entry_name,
+                        "detail": detail, "fix": spec["fix"]})
+
+        missing = [f for f in UNIMPLEMENTED_REQUIRED_FIELDS
+                   if _field_missing(item.get(f))]
+        if missing:
+            add("MISSING_FIELD",
+                f"登记 {code} 缺必填字段：{('、'.join(missing))} —— "
+                f"（`why_not`/`needs` 只是理由与缺口，**不是**约束；"
+                f"没有追踪号/到期日/实装判据 = 可以永久当借口）")
+        issue = item.get("issue")
+        if not missing or "issue" not in missing:
+            # `True` 是 `int` 的子类 ⇒ 显式排除布尔（`issue: true` 不是追踪号）
+            if isinstance(issue, bool) or not isinstance(issue, int) or issue <= 0:
+                add("MISSING_FIELD",
+                    f"登记 {code} 的 `issue` 必须是**正整数追踪号**（实际 {issue!r}）——"
+                    f"否则「已 CLOSED 即红」这条判据失去目标（指向不存在的单 = 假借口）")
+        exp = iso_date_or_expired(item.get("expires"))
+        if exp <= str(today):
+            add("EXPIRED",
+                f"登记 {code} 已到期：`expires`={item.get('expires')!r}（规范化后 {exp}）"
+                f" ≤ 今天 {today} —— 到期未实装**不许静默续期**：撤登记，或改追踪单后"
+                f"把 `expires` 挪到合理未来日期（推迟要在 diff 里可见）")
+        probe_name = str(item.get("hit_probe") or "")
+        if probe_name not in UNIMPLEMENTED_HIT_PROBES:
+            add("ZOMBIE",
+                f"登记 {code} 的 `hit_probe`={probe_name!r} 未注册（可用："
+                f"{sorted(UNIMPLEMENTED_HIT_PROBES)}）—— **无判据的登记 = 僵尸登记**，"
+                f"不许用「探针永远为真」凑数")
+        elif not evidence.get(code):
+            add("ZOMBIE",
+                f"登记 {code} 所述口径**已不成立**（`hit_probe`={probe_name!r} 探不到任何"
+                f"存活证据）—— 口径被修好/被绕开后，登记会永久留在清单里被读成「还没做」")
+    return out
 
 
 # ══════════════════════════════════════════════════════════════════════════════
