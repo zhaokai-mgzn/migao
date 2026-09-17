@@ -64,7 +64,8 @@ DISPOSITIONS = {
     ("_end_session", "put", 1):
         "已校验：status_code >= 400 打印告警；失败只影响记忆 flush、不改用例结论",
     ("_eval_remove_users", "delete", 1):
-        "已校验：status_code < 300 才计入 removed",
+        "已校验：status_code < 300 计入 removed，>= 300 计 failed 并大声报出"
+        "（issue #4189「清理失败 LOUD」；旧实现静默跳过 ⇒ 残留与'本就没有'同形）",
     ("_run_pre_clean_action", "put", 1):
         "未校验（product_remove 下架商品）：同类扫描登记，见本文件 docstring「为什么本轮不顺手改」"
         "（issue #3807 的类，独立单处理）",

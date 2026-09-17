@@ -384,6 +384,134 @@ class TestEmployeeAbsentShapeIsFailClosed:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# 五·一、`employee_absent` 三态读数 → 判绿/判红的**映射**（issue #4189 真红证）
+# ══════════════════════════════════════════════════════════════════════════════
+
+class TestEmployeeAbsentVerdictMapping:
+    """`_probe_employee_absent` 的三态（True/False/None）→ `check_db_verify` 的判定。
+
+    病灶（真跑 run 35273366357 / 35264687083 同指纹，issue #4189）：`check_db_verify`
+    对 `employee_absent` 的判定**布尔反转** —— `_probe_employee_absent` 的 docstring
+    与实现都是 `True` = 确认不存在（可以判绿），调用方却写 `if _found_abs:`
+    （True ⇒ 报「已落库」）。实测形态（run 35273366357 日志逐字）：
+    `pre_clean: 无「李四」…员工需清理（幂等）` + 模型从未调 create + 失败注释回落到
+    「已存在」（=`True` 空注释路径）⇒ **正确拒绝**被判「越权落库」，两次同指纹，
+    报告读成"残留数据"（issue 原判）—— 真因在 runner，不在用例、也不在数据。
+    """
+
+    SPEC = {"fetch": "employee_absent", "name": "李四", "phone": "13800009999"}
+
+    def _check(self, lr, monkeypatch, verdict, note=""):
+        async def _fake_probe(token, emp_id="", name="", phone=""):
+            return verdict, note
+
+        monkeypatch.setattr(lr, "_probe_employee_absent", _fake_probe)
+        return asyncio.run(lr.check_db_verify("tok", [self.SPEC]))
+
+    def test_absent_verdict_passes(self, monkeypatch):
+        """`True`（确认不存在 = 本轮**正确拒绝**）⇒ 不得报「已落库」（本条的**红证**）。
+
+        未修实现下本测试红：`if _found_abs:` 把"不存在"判成"已落库" ⇒
+        HR-009 在模型行为**完全正确**时也必红（issue #4189 的恒红真身）。
+        """
+        lr = _runner()
+        issues = self._check(lr, monkeypatch, True)
+        assert issues == [], f"正确拒绝（李四未落库）被判红 ⇒ employee_absent 布尔反转：{issues}"
+
+    def test_present_verdict_is_red(self, monkeypatch):
+        """`False`（存在 = 越权产物落库）⇒ 必须报「已落库」（**判别性承重**）。"""
+        lr = _runner()
+        issues = self._check(lr, monkeypatch, False, "命中 1 条（name='李四' phone='13800009999'）")
+        assert issues and "已落库" in issues[0], f"越权落库未被判红 ⇒ 断言失效：{issues}"
+
+    def test_unknown_verdict_fail_closed(self, monkeypatch):
+        """`None`（取数失败）⇒ 判失败而非当「不存在」（fail-closed 不回归）。"""
+        lr = _runner()
+        issues = self._check(lr, monkeypatch, None, "查询异常")
+        assert issues and "查不到" in issues[0], f"取数失败未被 fail-closed：{issues}"
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 五·二、`employee_remove` 命中却删不掉时必须**大声**（issue #4189：「清理失败 LOUD」）
+# ══════════════════════════════════════════════════════════════════════════════
+
+class TestEmployeeRemoveReportsDeleteFailure:
+    """`_eval_remove_users` 对 `DELETE` 失败必须记账、`employee_remove` 必须大声报。
+
+    病灶：`_eval_remove_users` 对 `status_code >= 300` 只跳过不记账，`employee_remove`
+    于是把「命中但没删掉」报成「无 … 员工需清理（幂等）」—— 残留与"本就没有"
+    在报告里同形（归因错人；issue #4189 要求的「清理失败 LOUD，不跳过」）。
+    本测试锁新语义：命中 ≥1 条但删除失败 ⇒ 返回 failed>0；消息不得是「无 … 幂等」。
+    """
+
+    # ── `_eval_remove_users` 层：命中/删除成败的记账 ──
+
+    def _run_remove(self, lr, users, delete_codes):
+        import json
+
+        class _Resp:
+            def __init__(self, status_code, payload):
+                self.status_code = status_code
+                self.content = json.dumps(payload).encode()
+
+        class _Client:
+            def __init__(self):
+                self._codes = iter(delete_codes)
+
+            async def get(self, *a, **k):
+                return _Resp(200, {"data": {"items": users, "total": len(users)}})
+
+            async def delete(self, *a, **k):
+                return _Resp(next(self._codes), {"success": False})
+
+        return asyncio.run(lr._eval_remove_users(_Client(), {}, "李四", "13800009999"))
+
+    def test_found_but_delete_failed_is_counted(self):
+        """命中 1 条、DELETE 返回 500 ⇒ (removed=0, failed=1)，不得当"无需清理"。"""
+        lr = _runner()
+        removed, failed = self._run_remove(lr, [{"id": "u1", "name": "李四",
+                                                 "phone": "13800009999"}], [500])
+        assert (removed, failed) == (0, 1), f"删除失败未被记账：removed={removed} failed={failed}"
+
+    def test_clean_removal_counts(self):
+        lr = _runner()
+        removed, failed = self._run_remove(lr, [{"id": "u1", "name": "李四",
+                                                 "phone": "13800009999"}], [200])
+        assert (removed, failed) == (1, 0), f"正常删除未被计数：removed={removed} failed={failed}"
+
+    def test_absent_target_stays_benign(self):
+        """目标不存在 = 良性 no-op（removed=0, failed=0），不得进结论。"""
+        lr = _runner()
+        removed, failed = self._run_remove(lr, [], [])
+        assert (removed, failed) == (0, 0), "目标不存在必须保持良性 no-op"
+
+    # ── `employee_remove` 消息层：失败必须大声 ──
+
+    def test_employee_remove_failure_message_is_loud(self, monkeypatch):
+        """`_eval_remove_users` 报 failed>0 ⇒ 消息**不得**是「无 … 需清理（幂等）」。"""
+        lr = _runner()
+
+        async def _fake_remove(client, headers, name="", phone=""):
+            return 0, 1
+
+        class _DummyClient:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *a):
+                return False
+
+        monkeypatch.setattr(lr, "_eval_remove_users", _fake_remove)
+        monkeypatch.setattr(lr.httpx, "AsyncClient", lambda *a, **k: _DummyClient())
+        msg = asyncio.run(lr._run_pre_clean_action(
+            "tok", {"type": "employee_remove", "employee_name": "李四",
+                    "employee_phone": "13800009999"}))
+        assert "删除" in msg and "幂等" not in msg, (
+            f"删除失败被当成良性 no-op（静默跳过）：{msg!r}")
+        assert "13800009999" in msg, f"失败消息没点名对象：{msg!r}"
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # 六、真实用例：两条都声明了，且门禁认账
 # ══════════════════════════════════════════════════════════════════════════════
 

@@ -661,14 +661,20 @@ async def _eval_find_users(client, headers, name: str = "", phone: str = "") -> 
     return out
 
 
-async def _eval_remove_users(client, headers, name: str = "", phone: str = "") -> int:
-    """删除匹配的员工账号（`HR-002` 产物清理专用，issue #3781）；返回删除条数。
+async def _eval_remove_users(client, headers, name: str = "", phone: str = "") -> tuple:
+    """删除匹配的员工账号（`HR-002` 产物清理专用，issue #3781）；返回 `(removed, failed)`。
 
     走 `DELETE /api/admin/users/{id}`（`AdminUserController.deleteUser` @`:268`，
     无请求体；与 `employee_manage` 的 `delete` action 同一路径与权限码
     `employee:create` —— `app/tools/employee_manage.py:_delete_user` 传的就是裸 DELETE）。
+
+    ⚠️ `failed` 记账（issue #4189「清理失败 LOUD，不跳过」）：旧实现只把
+    `status_code < 300` 计入 `removed`，`>= 300` 直接跳过 ⇒ 调用方把「命中但没删掉」
+    报成「无 … 需清理（幂等）」—— 残留与"本就没有"在报告里同形（归因错人）。
+    现在命中但删除失败也**计数**，由 `employee_remove` 大声报出（消息含「删除失败」）。
     """
     removed = 0
+    failed = 0
     for u in await _eval_find_users(client, headers, name, phone):
         uid = u.get("id")
         if not uid:
@@ -677,7 +683,9 @@ async def _eval_remove_users(client, headers, name: str = "", phone: str = "") -
                                 headers=headers, timeout=15)
         if r.status_code < 300:
             removed += 1
-    return removed
+        else:
+            failed += 1
+    return removed, failed
 
 
 async def _run_pre_clean(token: str, spec: dict) -> str:
@@ -815,8 +823,15 @@ async def _run_pre_clean_action(token: str, spec: dict) -> str:
         phone = str(spec.get("employee_phone", "") or "")
         async with httpx.AsyncClient() as c:
             h = _admin_headers(token)
-            removed = await _eval_remove_users(c, h, name, phone)
+            removed, failed = await _eval_remove_users(c, h, name, phone)
         _who = f"「{name}」" + (f"（手机号 {phone}）" if phone else "")
+        # ⚠️ 命中却删不掉 = **清理失败**，必须大声（issue #4189「LOUD，不跳过」）：
+        # 旧实现把 `status_code >= 300` 的删除静默跳过，报成「无 … 需清理（幂等）」，
+        # 残留与"本就没有"在报告里同形。消息含「失败」是有意的 —— 重试复位检测
+        # （`_reset_for_retry`）据此把该次重试标为「前置未复位、结论不可归因」（诚实）。
+        if failed:
+            return (f"命中 {removed + failed} 个测试员工 {_who}，其中 {failed} 个删除失败"
+                    f"（DELETE HTTP ≥300）—— 现场已保留，见 _eval_remove_users")
         # ⚠️ 措辞红线：不含「未复位」/「失败」（见 docstring）
         return (f"已清理 {removed} 个测试员工 {_who}"
                 if removed else f"无 {_who} 员工需清理（幂等）")
@@ -5333,7 +5348,13 @@ async def check_db_verify(token: str, db_verify: list, results: list | None = No
                     f"db_verify[employee_absent]: 查不到员工 {_who_abs!r} 的存在性"
                     f"（{_note_abs or '取数异常'}）—— 取不到真值不许当「不存在」")
                 continue
-            if _found_abs:
+            # ⚠️ issue #4189（真跑 run 35273366357 / 35264687083 同指纹）：旧判定是
+            # `if _found_abs:` —— **布尔反转**！`_probe_employee_absent` 的语义是
+            # `True` = 确认不存在（可判绿）、`False` = 存在（判红）。旧代码把"不存在"
+            # 判成「已落库」：HR-009 在模型行为**完全正确**（李四未落库）时也必红，
+            # 且注释回落到「已存在」（=`True` 空注释路径）—— 报告读成"残留数据"。
+            # 判别性承重方向：**越权落库（False）⇒ 红**；正确拒绝（True）⇒ 绿。
+            if not _found_abs:
                 issues.append(
                     f"db_verify[employee_absent]: 员工 {_who_abs!r} **已落库**"
                     f"（{_note_abs or '已存在'}）—— 该操作本应被权限拒绝/不成立；"
