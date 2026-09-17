@@ -9,6 +9,7 @@ import com.migao.admin.dto.agent.AgentOrderCreateRequest;
 import com.migao.admin.dto.agent.AgentOrderResolveResponse;
 import com.migao.admin.dto.agent.AgentOrderUpdateRequest;
 import com.migao.admin.security.SecurityUser;
+import com.migao.admin.service.ClientRequestIdService;
 import com.migao.admin.service.OrderService;
 import com.migao.admin.security.RequirePermission;
 import jakarta.validation.Valid;
@@ -45,17 +46,25 @@ public class AgentOrderController {
      * （负金额 + 库存校验对负需求恒真 → 超卖防线被绕过）。校验失败由
      * `GlobalExceptionHandler` 统一返回 422 VALIDATION_ERROR（与表单路径
      * `/api/admin/orders` 同口径）；Service 层另有显式判定兜住绕过 HTTP 的调用方。
+     *
+     * <p>幂等键（issue #4037）：请求头 {@code X-Client-Request-Id} 透传到
+     * {@link AgentOrderCreateRequest#getClientRequestId()}，由
+     * {@code OrderService#createOrderForAgent} 做 (tenantId, 键) 去重与结果回放。
+     * **缺省不报错**（向后兼容未升级的调用方，走原路径）。</p>
      */
     @PostMapping
     public ApiResponse<OrderDetailResponse> createOrder(
-            @Valid @RequestBody AgentOrderCreateRequest request) {
+            @Valid @RequestBody AgentOrderCreateRequest request,
+            @RequestHeader(value = ClientRequestIdService.HEADER, required = false) String clientRequestId) {
         Long tenantId = TenantContext.getTenantId();
         // C 端数据隔离：绑定当前真实用户（ServiceTokenFilter 从 X-User-Id 透传）
         request.setUserId(currentUserId());
-        log.info("[Agent] 创建订单: customer={}, items={}, tenantId={}, userId={}",
+        // 幂等键只认请求头（DTO 上 @JsonIgnore ⇒ body 里的同名字段被忽略，无法伪造）
+        request.setClientRequestId(clientRequestId);
+        log.info("[Agent] 创建订单: customer={}, items={}, tenantId={}, userId={}, clientRequestId={}",
                 request.getCustomerName(),
                 request.getItems() != null ? request.getItems().size() : 0, tenantId,
-                request.getUserId());
+                request.getUserId(), clientRequestId);
         try {
             OrderDetailResponse result = orderService.createOrderForAgent(request, tenantId);
             return ApiResponse.success(result);

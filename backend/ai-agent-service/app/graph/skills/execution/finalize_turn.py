@@ -29,6 +29,8 @@ async def finalize_turn(
     new_messages: List[Any],
     final_content: str,
     _no_card_blocked_args,
+    _no_card_blocked_tool,
+    _no_card_blocked_facts,
     _write_ok: bool,
     _relocked_this_round: bool,
     _executed_tools,
@@ -101,6 +103,12 @@ async def finalize_turn(
                 _bfull["last_confirm_value"] = _bvalue
                 # 同处记发卡 skill（#3557）：路由层的答卡轮判据需要"这张卡是谁发的"
                 _bfull["last_confirm_skill"] = skill_name
+                # 卡是**代码**补的（顾客点的就是它）⇒ 同处记下被拦调用的金额事实（F22）：
+                # 否则补的卡"只能点、无从核对"（issue #4037）。
+                if _no_card_blocked_tool:
+                    _bfull["confirmed_write_tool"] = _no_card_blocked_tool
+                if _no_card_blocked_facts:
+                    _bfull[_base.CONFIRMED_ORDER_FACTS_KEY] = _no_card_blocked_facts
                 await _bstore.commit(session_id, _bfull)
             except Exception as _be:
                 logger.warning(f"[{skill_name}] 补发卡的 confirmValue 落库失败（非致命）: {_be}")

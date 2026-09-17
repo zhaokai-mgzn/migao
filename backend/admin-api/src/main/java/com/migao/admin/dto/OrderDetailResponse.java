@@ -1,5 +1,7 @@
 package com.migao.admin.dto;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import lombok.Data;
 
 import java.math.BigDecimal;
@@ -8,9 +10,27 @@ import java.util.List;
 
 /**
  * 订单详情响应 DTO
+ *
+ * <p>{@code @JsonIgnoreProperties(ignoreUnknown = true)}（issue #4037）：幂等回放时服务端
+ * 会在快照 JSON 里带上 {@code replayed: true} 标记（见 {@code ClientRequestIdService.replay}），
+ * 这里**显式**声明"多出来的键不影响反序列化"，不依赖 Spring Boot 默认值 ——
+ * 免得哪天默认被收紧后回放路径**静默变 500**。</p>
  */
 @Data
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class OrderDetailResponse {
+
+    /**
+     * 幂等回放标记（issue #4037）：{@code true} = 本次响应来自「同键回放」，
+     * 服务端**没有**新建记录；首次执行时不出现该键（{@code NON_NULL}）。
+     *
+     * <p>为什么必须是**真字段**而不是"在快照 JSON 里塞一个键"：Jackson 反序列化时
+     * 未声明的键会被丢弃（本类还显式声明了 {@code ignoreUnknown=true}）⇒ 标记会被**静默丢掉**，
+     * 响应里永远不会出现它，而调用方（ai-agent）就分不出「首次执行」与「同键回放」，
+     * 会把一次重试播报成两笔订单（观察性缺陷）。</p>
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    private Boolean replayed;
 
     /**
      * 订单ID
@@ -106,6 +126,7 @@ public class OrderDetailResponse {
      * 更新时间
      */
     private OffsetDateTime updatedAt;
+
 
     /**
      * 订单明细响应 DTO

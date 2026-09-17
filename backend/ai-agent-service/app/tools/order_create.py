@@ -13,6 +13,9 @@ import json
 import math
 import os
 import re
+import time
+import uuid
+from functools import lru_cache
 from typing import Any, Dict, List, Optional
 from loguru import logger
 
@@ -45,6 +48,139 @@ _PRICING_METHODS = ("per_meter", "per_set", "fixed", "per_area")
 SMS_BYPASS_CODE = os.getenv("SMS_BYPASS_CODE", "")
 
 
+# ══ 非幂等写的幂等键（issue #4037 / F19）══════════════════════════════════
+# 事实：HTTP 客户端超时 **25s**（`AdminApiClient(timeout=25.0)`）< 工具超时 **30s**
+# （`_execute_tool_safe`）⇒「**订单已落库但客户端报失败**」窗口客观存在；而失败话术原文
+# 写着「确认后**重试**」⇒ LLM 重试 = 重复下单 = 直接资金损失。
+# 幂等键 = 「同一个**逻辑写请求**在**同一个重试窗**内取值相同」：服务端按
+# `(tenant_id, clientRequestId)` 去重并回放首次结果；跨窗换新值 ⇒ 顾客真的想再下一单时
+# 不会被当成重试吞掉（R2）。刻意**不做**"按内容哈希永久去重"——那会把合法复购
+# （同一款窗帘做两个房间）永久拒掉，等于用一个更糟的缺陷换一个缺陷。
+_IDEMPOTENCY_WINDOW_SECONDS = 600.0
+CLIENT_REQUEST_ID_HEADER = "X-Client-Request-Id"
+
+
+@lru_cache(maxsize=8)
+def _window_id(window: int) -> str:
+    """某个重试窗的幂等键（缓存键是**窗口号** ⇒ 同窗内取值相同、跨窗自动换新）。
+
+    ⚠️ 缓存键必须是窗口号：写成 `@lru_cache` 无参函数会把**首次**算出的窗口号永久冻结
+    （lru_cache 的键是"调用参数"，不是返回值）⇒ 幂等键永不轮换 ⇒ 顾客的合法复购
+    在进程生命周期内全被当成重试吞掉（本地实测并已由单测钉住）。
+    """
+    return f"{window}-{uuid.uuid4().hex[:12]}"
+
+
+def _request_window_id() -> str:
+    """当前重试窗的幂等键。
+
+    进程级足够：重试发生在同一次工具调用/同一个 agent 进程内（超时 25~30s ⇒ 秒级），
+    而"落库了但报失败"的重试必然紧随首次调用；跨进程/跨副本的重试由服务端侧兜底。
+    """
+    return _window_id(int(time.time() // _IDEMPOTENCY_WINDOW_SECONDS))
+
+
+# ══ 确认卡↔落库一致性（issue #4037 / F22）—— 纯函数，零 LLM、零 IO ══════════
+# 线上实证：顾客点确认卡看到 ¥498（10 米/3 加工项），落库 ¥133.80（1 米/2 加工项+优惠）。
+# 根因不是"某处算错"，而是**卡上的事实与写工具参数是两份独立产物**（fields 与 items
+# 都由模型自由书写，中间只有 prompt 的口头约定）—— 全系统无一处校验两者一致。
+# 修法：顾客确认那一刻把金额事实快照进会话状态（`confirmed_order_facts`），本工具在
+# **调用服务端之前**重算并与快照比对，不一致 ⇒ 拦截（fail-closed + 可行动话术）。
+# 事实只取驱动金额与库存的**规范值**：手机号 + 每行 名称/数量/单价/加工费。
+#   · 不取 subtotal/total：服务端本就按 `quantity×unitPrice`(+加工明细)重算
+#     （`createOrderForAgent`），纳入比对只会制造假红；
+#   · 不取地址/备注/尺寸：确认后补这些是**正常流程**，纳入比对 = 把合法输入拦掉（R2）；
+#   · 加工费按服务端口径（Σ unitPrice×quantity），不信模型声明的 processingFee。
+def _entry_processing_fee(entry: Any) -> float:
+    """单行加工费（服务端口径）：Σ processingItems[].unitPrice × quantity。"""
+    pinfo = entry.get("processing_info") if isinstance(entry, dict) else None
+    if not isinstance(pinfo, dict):
+        return 0.0
+    raw_items = pinfo.get("processingItems")
+    if not isinstance(raw_items, list):
+        return 0.0
+    total = 0.0
+    for it in raw_items:
+        if not isinstance(it, dict):
+            continue
+        up = OrderCreateTool._parse_positive_number(it.get("unitPrice"))
+        qty = OrderCreateTool._parse_positive_number(it.get("quantity"))
+        if up is not None and qty is not None:
+            total += up * qty
+    return round(total, 2)
+
+
+def order_facts_of(payload: Any) -> str:
+    """订单 payload → 一致性事实串（确认卡投影与本工具共用**同一口径**）。
+
+    同一份订单**永远得到同一个串**（JSON sort_keys + 数值归一到 2 位小数），
+    因此"写法差异"（168 / "168.00" / 168.0）不会被误判为不一致。
+    无 items ⇒ 返回 ""（无从核对，调用方据此跳过）。
+    """
+    if not isinstance(payload, dict):
+        return ""
+    items = payload.get("items")
+    if not isinstance(items, list):
+        return ""
+    lines = []
+    for it in items:
+        if not isinstance(it, dict):
+            continue
+        qty = OrderCreateTool._parse_positive_number(it.get("quantity"))
+        price = OrderCreateTool._parse_positive_number(it.get("unit_price"))
+        fee = _entry_processing_fee(it)
+        lines.append({
+            "name": str(it.get("product_name") or it.get("name") or "").strip(),
+            "qty": round(qty, 2) if qty is not None else None,
+            "price": round(price, 2) if price is not None else None,
+            # 小计 = 数量×单价（服务端落库口径的**派生值**，不读模型声明的 subtotal）
+            "subtotal": round((qty or 0) * (price or 0), 2),
+            "fee": fee,
+        })
+    if not lines:
+        return ""
+    return json.dumps({
+        "phone": str(payload.get("customer_phone") or "").strip(),
+        "items": lines,
+        "total": round(sum((l["subtotal"] or 0) + (l["fee"] or 0) for l in lines), 2),
+    }, ensure_ascii=False, sort_keys=True)
+
+
+def order_confirmation_mismatch(payload: Any, confirmed_facts: Any) -> str:
+    """落库前核对：**顾客确认过的事实** vs **本次真正要执行的事实**。
+
+    Returns:
+        str: 不一致时的可行动描述；一致 / 无从核对（快照为空）时返回 ""（放行）。
+
+    fail-closed 边界（刻意保守，避免把合法输入拦掉）：
+      · 没记过确认快照（老会话 / 非确认路径）⇒ 放行 —— 本函数**只比对"确认过什么"**，
+        不替代确认门禁（门禁在 base_skill，各自职责不重叠）；
+      · 确认快照里没有 items（写工具不是下单，或快照只有手机号）⇒ 放行。
+    """
+    confirmed = str(confirmed_facts or "").strip()
+    if not confirmed:
+        return ""
+    actual = order_facts_of(payload)
+    if not actual:
+        return ""
+    try:
+        prior_items = json.loads(confirmed).get("items") or []
+    except (ValueError, TypeError, AttributeError):
+        return ""  # 快照形态不认识 ⇒ 不臆断（拒绝比放行安全的前提是"读得懂"，读不懂就不猜）
+    if not prior_items:
+        return ""
+    if actual == confirmed:
+        return ""
+    return (
+        f"下单被拦截：本次要执行的订单明细与**顾客确认卡上的明细不一致**。"
+        f"顾客确认的是 {confirmed}，本次要落库的是 {actual}。"
+        f"确认过的数量/单价/加工项/手机号一旦变化，顾客点过的确认即失效"
+        f"（线上实证：卡上 ¥498（10 米/3 加工项）落库成 ¥133.80（1 米/2 加工项））。"
+        f"请把明细改回顾客确认过的值；确实要改，就**重新发一张确认卡**让顾客再确认一次，"
+        f"不要直接落库。"
+    )
+
+
 class OrderCreateTool(BaseTool):
     """订单创建 Tool
 
@@ -74,6 +210,7 @@ class OrderCreateTool(BaseTool):
         "或所选 SKU 的 skus[].price；库中无分色差价时所有颜色同价）——"
         "禁止编造分色/规格价（如库价 168 却报「米白 150」），"
         "报价/确认卡/落单三者单价必须一致；系统会在调用前按库价校验，不一致会被拦截并回填库价。"
+        "【不议价】agent 路径不允许偏离商品库价；顾客要议价/优惠时不要改单价，请引导走后台。"
         "售卖方式/门幅/颜色等规格信息放入 items[i].processing_info（字段：sellingMethod/doorWidth/colorName），"
         "不要平铺在 items 顶层（平铺会被丢弃）。"
         "【铁律·加工项】product_detail 返回的加工项（processing_items）非空时，**必须先调用 "
@@ -671,6 +808,22 @@ class OrderCreateTool(BaseTool):
             logger.error(f"[sms_store] Redis error: {type(e).__name__}: {e}", exc_info=True)
             return False
 
+    # ── 确认卡↔落库一致性（issue #4037 / F22）────────────────────────────────
+    # 今日线上实证：顾客点确认卡看到 **¥498（10 米/2.8 米/3 加工项）**，落库却是
+    # **¥133.80（1 米/3.2 米/2 加工项 + 优惠 ¥5）**。根因不是"某处算错"，
+    # 而是**卡上的事实与写工具参数是两份独立产物**：`interact(confirm, fields=…)`
+    # 的 fields 由模型自由书写，`order_create` 的 items 也由模型自由书写，
+    # 两者之间只有 prompt 里的口头约定 —— **全系统无一处校验两者一致**。
+    # 修法（确定性层，零 LLM）：顾客确认那一刻把金额事实快照进会话状态
+    # （`confirmed_order_facts`），本工具在**调用服务端之前**重算并与快照比对。
+    #
+    # 事实只取**驱动金额与库存的规范值**：手机号 + 每行 名称/数量/单价/加工费。
+    # 为什么不取 subtotal/total：服务端**本来就按 quantity×unitPrice（+加工明细）重算**
+    # （`OrderService.createOrderForAgent` 强制重算 subtotal），把重算值也塞进比对
+    # 只会制造假红；金额对不对由服务端与 `amount_verify` 负责，本守护负责的是
+    # **"顾客确认的那份明细 = 真正要执行的那份明细"**（这是落库前最后的确定性关口）。
+    # 为什么不比对地址/备注/尺寸等非金额字段：确认后补收货地址/验证码/门幅是**正常流程**，
+    # 让它们参与比对 = 把合法输入拦掉（R2 反例，OR-014 单价闸门踩过的坑）。
     def _needs_sms_verification(self, context: ToolContext) -> bool:
         """判断是否需要 SMS 验证
 
@@ -853,7 +1006,7 @@ class OrderCreateTool(BaseTool):
                         message=(
                             f"商品名「{name}」在商品库中**不唯一**（{len(exact)} 条），"
                             "无法确定库价。请先用 product_search / product_detail "
-                            "确认 product_id 后，在下单 items 中带上 product_id 重试。"
+                            "确认 product_id 后，在下单 items 中带上 product_id 再下单。"
                         ),
                         suggestion="同名商品在库中不唯一，请先用 product_search 让用户确认具体是哪一款，再用该商品下单",
                     )
@@ -872,7 +1025,8 @@ class OrderCreateTool(BaseTool):
                 message=(
                     "下单被拦截：核对商品库价时服务异常"
                     f"（{type(e).__name__}），无法确认单价（拒绝比放行安全）。"
-                    "请稍后重试，或先 product_search / product_detail 确认商品与库价。"
+                    "请先 product_search / product_detail 确认商品与库价，"
+                    "再核实这笔订单是否已经建好（不要盲目重复下单）。"
                 ),
                 suggestion="请稍后重试；重试前先用 product_search / product_detail 确认商品与库价，不要凭记忆填单价下单",
             )
@@ -1117,6 +1271,10 @@ class OrderCreateTool(BaseTool):
                 json_data=json_data,
                 tenant_id=context.tenant_id,
                 user_id=context.user_id,
+                # 幂等键（issue #4037 / F19）：服务端按 (tenant_id, clientRequestId) 去重。
+                # 同一重试窗内取值相同 ⇒ 「落库了但报失败」后模型重试 ⇒ **只落一单**
+                # （服务端回放首次结果，见 admin-api `ClientRequestIdService`）。
+                headers={CLIENT_REQUEST_ID_HEADER: _request_window_id()},
             )
 
             if not response.get("success"):
@@ -1130,6 +1288,24 @@ class OrderCreateTool(BaseTool):
 
             order_data = response.get("data", {})
             order_id = order_data.get("id") or order_data.get("orderNo") or ""
+            # 顾客/客服认的是**订单号**（ORD-xxx），播报优先用它（内部 UUID 只作兜底）
+            order_ref = order_data.get("orderNo") or order_id
+
+            # 回放（同键去重命中）：这次并没有新建订单，顾客看到的仍是**同一张单**
+            # —— 必须显式说清，否则模型会把重试播报成"又下了一单"（一单说成两单）。
+            if order_data.get("replayed"):
+                logger.info(
+                    f"[order-create] 幂等回放（同 clientRequestId）：order_id={order_id} "
+                    f"| tenant={context.tenant_id}"
+                )
+                return ToolResult(
+                    success=True,
+                    data=order_data,
+                    message=(f"这笔订单**此前已经创建成功**（订单号：{order_ref}，客户：{customer_name}），"
+                             f"刚刚的重复提交已被系统拦下，**没有重复下单**。"),
+                    summary=f"订单已存在（幂等回放）: 订单号{order_ref}, 客户{customer_name}",
+                    terminal=True,
+                )
 
             logger.info(
                 f"Order created: order_id={order_id}, customer={customer_name}, "
@@ -1153,6 +1329,9 @@ class OrderCreateTool(BaseTool):
             return ToolResult(
                 success=False,
                 error="tool_execution_failed",
-                message="创建订单失败，请稍后重试",
-                suggestion="请检查商品信息和客户信息是否完整，确认后重试",
+                # 话术去「重试」（issue #4037 / F19 同一风险面）：HTTP 超时 25s < 工具超时 30s
+                # ⇒ 这一次失败**可能已经落库了**，让模型重试等于让它重复下单。
+                message=("创建订单没有成功返回。**先不要重复下单** —— 请先核实这笔订单是否已经建好。"),
+                suggestion=("先调 order_query(action=list, customer_phone=客户手机号) 核实是否已建单："
+                            "已存在就把订单号告知顾客；确实没有，再按原明细重新下单"),
             )

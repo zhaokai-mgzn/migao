@@ -71,6 +71,8 @@ async def react_turn(
     _denial_corrected: bool,
     _stall_corrected: bool,
     _no_card_blocked_args,
+    _no_card_blocked_tool,
+    _no_card_blocked_facts,
     _write_ok: bool,
     _relocked_this_round: bool,
 ) -> dict:
@@ -96,6 +98,10 @@ async def react_turn(
     call_with_retry = _base.call_with_retry
     get_breaker = _base.get_breaker
     logger = _base.logger
+    # 确认卡↔落库一致性判据（issue #4037 / F22）：与上面同一条纪律 —— **调用期**取，
+    # 别改成模块顶层 import（否则 patch 静默失效，本仓最忌讳的「判据自己选择沉默」）。
+    _confirmed_facts_reject = _base._confirmed_facts_reject
+    confirmed_order_facts_of = _base.confirmed_order_facts_of
     # ── 7. ReAct 循环 ──
     if not is_multimodal or (is_multimodal and vision_analysis):
         # 取消检测（生产回归修复：原实现纯关键词子串匹配，
@@ -355,6 +361,9 @@ async def react_turn(
                     # `execute_skill` 的局部变量 —— 不加 `nonlocal` 会创建一个**新局部**，
                     # 收尾的"补发确认卡"永远读不到（首版即此错，被新增用例当场抓住）。
                     nonlocal _no_card_blocked_args
+                    # 同族（issue #4037 / F22）：被拦工具名与其金额事实，与 args **同处**置位
+                    nonlocal _no_card_blocked_tool
+                    nonlocal _no_card_blocked_facts
                     # 同理 `_write_ok`（issue #3750）：不加 nonlocal 只会创建一个**新局部**，
                     # 收尾 8.6 永远读到 False ⇒ "本轮写成功了"判不出来，成功回执也可能被归一。
                     nonlocal _write_ok
@@ -821,6 +830,41 @@ async def react_turn(
                                 )
                         except Exception as _e3:
                             logger.warning(f"[{skill_name}] confirmed_write_tool check failed (non-fatal): {_e3}")
+                    # ── 确认卡↔落库一致性守护（issue #4037 / F22）──
+                    # 在确认门禁**之后**：门禁管"有没有确认过"，本守护管"确认过什么 vs
+                    # 要执行什么"（放行条件一字未动）。理由与判据见 _confirmed_facts_reject。
+                    if ((_card_confirmed or _write_was_confirmed)
+                            and _requires_confirmation(tool, args, last_user_msg)):
+                        _facts_reject = None
+                        try:
+                            from app.memory.session_state_store import SessionStateStore as _S10
+                            _f10 = await _S10().load(session_id) or {}
+                            _facts_reject = _confirmed_facts_reject(tool_name, args, _f10)
+                        except Exception as _e10:
+                            logger.warning(
+                                f"[{skill_name}] 确认事实核对失败（非致命）: {_e10}")
+                        if _facts_reject:
+                            logger.warning(
+                                f"[{skill_name}] 拦截「确认事实已变」的下单 {tool_name} "
+                                f"| session={session_id} {_facts_reject[:120]}"
+                            )
+                            return tool_call, json.dumps({
+                                "success": False,
+                                "error": "order_confirmation_mismatch",
+                                "message": (
+                                    "下单被拦截：本次要执行的明细与**顾客确认过的那一份**不一致。"
+                                    "顾客确认后明细（数量/单价/加工项/手机号）一旦变化，"
+                                    "那张确认卡的确认即失效。"
+                                ),
+                                "suggestion": (
+                                    "把 items 改回顾客确认过的值；确实要改，就**重新发一张"
+                                    "确认卡**（interact component=confirm）让顾客再点一次，"
+                                    "不要直接落库。"
+                                ),
+                            }, ensure_ascii=False), {
+                                "success": False,
+                                "error": "order_confirmation_mismatch",
+                            }
                     if _requires_confirmation(tool, args, last_user_msg) and not _card_confirmed and not _write_was_confirmed:
                         logger.warning(
                             f"[{skill_name}] 拦截未确认的写操作 {tool_name} | session={session_id} "
@@ -905,6 +949,10 @@ async def react_turn(
                             # 收尾时由代码把确认卡 XML 追加到回复文本（发射点在 chat.py 解析
                             # `<interact>` 块），顾客因此始终有点卡的入口。
                             _no_card_blocked_args = dict(args or {})
+                            # 同处固定"被拦工具 + 金额事实"（F22）：收尾补卡要落这两样，
+                            # 而 read args 会被后续迭代覆盖（并发下读到别的调用）。
+                            _no_card_blocked_tool = tool_name
+                            _no_card_blocked_facts = confirmed_order_facts_of(tool_name, args or {})
                         return tool_call, json.dumps(
                             {"success": False, "error": _err3, "message": msg},
                             ensure_ascii=False,
@@ -1307,6 +1355,8 @@ async def react_turn(
         "final_content": final_content,
         "new_messages": new_messages,
         "_no_card_blocked_args": _no_card_blocked_args,
+        "_no_card_blocked_tool": _no_card_blocked_tool,
+        "_no_card_blocked_facts": _no_card_blocked_facts,
         "_write_ok": _write_ok,
         "_relocked_this_round": _relocked_this_round,
         "PENDING_KEY": _carry_pending_key,

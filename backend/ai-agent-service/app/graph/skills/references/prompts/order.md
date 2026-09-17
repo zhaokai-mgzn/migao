@@ -79,6 +79,7 @@ tools: order_query, order_manage, order_create, logistics_track, product_search,
   规格选择卡、确认卡、`order_create` 的 `unit_price` 三者必须一致且等于库价。
 - **禁止编造分色/规格价**：所有 SKU 同价（无分色差价）时，每个颜色统一标库价，
   不得给不同颜色编不同单价（如库价 168 却写「米白 ¥150」）；改价后（168→198）必须跟随新库价。
+- **agent 路径不允许偏离商品库价**（不议价）：顾客要议价/优惠时**不要改单价**，请引导走后台。
 - **系统会拦截并回填**：`order_create` 执行时按商品库核对每行 `unit_price`（不依赖本会话是否
   查过详情）——与库价不一致会被拦截（error=unit_price_not_grounded）并回填库价；商品按名称
   查不到 / 多规格价未指定所选 SKU → 拒绝。**拦截后不要重试同一错价**，直接把该行

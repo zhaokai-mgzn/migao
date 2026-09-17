@@ -12,6 +12,7 @@ from loguru import logger
 
 from app.tools.base import BaseTool, ToolContext, ToolResult
 from app.utils.enum_labels import TICKET_TYPE_LABELS
+from app.tools.order_create import CLIENT_REQUEST_ID_HEADER, _request_window_id
 from app.utils.http_client import get_admin_api_client
 
 
@@ -133,7 +134,7 @@ class AftersaleCreateTool(BaseTool):
                 f"[aftersale_create] Ownership check error: order_id={order_id}, "
                 f"error={type(e).__name__}: {e}"
             )
-            return False, f"验证订单所有权时出错，请稍后重试"
+            return False, "验证订单所有权时出错"
 
     async def execute(
         self,
@@ -247,7 +248,12 @@ class AftersaleCreateTool(BaseTool):
                 # context.ticket_source = "customer"（顾客发起）。
                 # 放 header 不放 body —— 来源不由客户端 payload 决定（#3605 已删 body 里的 source），
                 # 服务端只接受白名单值，缺省回退 agent（= 旧行为）。
-                headers={"X-Agent-Client": context.ticket_source},
+                headers={
+                    "X-Agent-Client": context.ticket_source,
+                    # 幂等键（issue #4037 / F19）：同一重试窗内取值相同 ⇒ 服务端去重，
+                    # 「已建单但客户端报失败」后重试**只落一张工单**。
+                    CLIENT_REQUEST_ID_HEADER: _request_window_id(),
+                },
             )
 
             if not response.get("success"):
@@ -256,7 +262,8 @@ class AftersaleCreateTool(BaseTool):
                     success=False,
                     error=error_msg,
                     message=f"创建售后工单失败：{error_msg}",
-                    suggestion="请检查订单号是否正确，或稍后重试",
+                    suggestion=("请先核实订单号是否正确；若刚刚也提交过一次售后，"
+                                "请先用 aftersale_query 查一下是否已建单，不要重复提交"),
                 )
 
             ticket_data = response.get("data", {})
@@ -290,6 +297,9 @@ class AftersaleCreateTool(BaseTool):
             return ToolResult(
                 success=False,
                 error="tool_execution_failed",
-                message="创建售后工单失败，请稍后重试",
-                suggestion="请检查信息是否完整，确认后重试。如持续失败请联系客服",
+                # 话术去「重试」（issue #4037 / F19）：HTTP 超时 25s < 工具超时 30s
+                # ⇒ 这次失败**可能已经建单**，让模型重试等于重复建单。
+                message="创建售后工单没有成功返回。**先不要重复提交** —— 请先核实工单是否已经建好。",
+                suggestion=("先用 aftersale_query 核实该订单下是否已有这张工单："
+                            "已有就把工单号告知顾客；确实没有，再按原信息重新提交"),
             )
