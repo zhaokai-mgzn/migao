@@ -123,12 +123,6 @@
         "CASE-TRUST-NO-SELF-CLEAN"
       ]
     },
-    "CH-005": {
-      "codes": [
-        "CASE-TRUST-NO-EFFECT-ASSERTION",
-        "CASE-TRUST-NO-PRECONDITION-ASSERTION"
-      ]
-    },
     "CH-006": {
       "codes": [
         "CASE-TRUST-NO-EFFECT-ASSERTION",

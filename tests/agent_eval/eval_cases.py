@@ -935,8 +935,10 @@ _CASE_CH_005 = EvalCase(
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+    must_succeed=[{'tool': 'product_manage', 'args': {'action': 'create'}}],
     pre_clean=[{'type': 'product_remove', 'product_keyword': '星夜'}],
     namespaces=['product_name:星夜'],
+    precondition=[{'type': 'product_count_for_keyword', 'source': '星夜', 'expect': 0}],
 )
 
 # ── CH-006 [ADVERSARIAL] 对抗性 - 10 轮密集对话后精确操作（源: cases/chat.yml）──

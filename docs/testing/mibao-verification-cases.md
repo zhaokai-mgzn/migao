@@ -580,9 +580,10 @@
 数据: 创建的 name=星夜, price=299
 数据: 打岔前后上下文未丢失
 清理: product_remove(product_keyword=星夜)
+必须成功: product_manage
 ```
 真值: ai-chat.context-memory, ai-chat.escape-hatch
-溯源: eval M009 独有；2026-09-18（skip 豁免收紧跟随）：补 namespaces[product_name:星夜] + pre_clean[product_remove 自有名] 声明自清理（清掉 CASE-TRUST-NO-SELF-CLEAN 存量违规一条，burn-down）；expectations / data_checks / user_inputs 原样未动 ｜ tags: multi_turn, interruption, context_persistence, adversarial
+溯源: eval M009 独有；2026-09-18（skip 豁免收紧跟随）：补 namespaces[product_name:星夜] + pre_clean[product_remove 自有名] 声明自清理，并补 must_succeed[product_manage(action=create)]（效果层 —— 原 data_checks『创建的 name=星夜, price=299』**不计分**）+ precondition[product_count_for_keyword 星夜 expect=0]（前置自断言）；三条一起把 CASE-TRUST-NO-SELF-CLEAN / NO-EFFECT-ASSERTION / NO-PRECONDITION-ASSERTION 清零（整条销账，burn-down）；expectations / user_inputs / data_checks 原样未动 ｜ tags: multi_turn, interruption, context_persistence, adversarial
 
 ### CH-006. 对抗性 - 10 轮密集对话后精确操作 🔴
 ```
