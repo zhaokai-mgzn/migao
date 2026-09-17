@@ -13,8 +13,10 @@
 #   ./scripts/dev-worktree.sh lock                  # 查看/清理会话锁（多会话并发时先查锁）
 #   ./scripts/dev-worktree.sh rm <分支|路径> [--delete-branch]  # 移除工作区（可选连带删分支）
 #   ./scripts/dev-worktree.sh rebase <分支|路径>    # 丢弃预设快照差异 → rebase origin/main → 重新刷新预设（issue #3972）
-#   ./scripts/dev-worktree.sh preset-guard [--source both|index|worktree]  # 提交路径守卫（版本下降即非零退出）
+#   ./scripts/dev-worktree.sh preset-guard [--source both|index|worktree]  # 提交路径守卫（版本下降 / 活锚落后即非零退出）
 #   ./scripts/dev-worktree.sh prune --dry-run       # worktree 存量体检（只打印清单，不删除）
+#   ./scripts/preset-anchor-check.sh                # 活锚新鲜度自检（红就停；开工第一件事）
+#   ./scripts/preset-anchor-refresh.sh              # 活锚自愈：只读镜像 → origin/main（自检转绿）
 #
 # 预设快照地雷与两层防线（v1.8，2026-09-15 新增，issue #3851）：
 #   worktree 的 `.agent-presets/**` 是**创建时刻快照**；此后 main 上预设再推进，
@@ -33,6 +35,18 @@
 #   也不用「让 git 忽略这些文件的改动」那类手法（索引标记 / 本地忽略）：那会把**合法的预设改动**
 #   （改研发模式本身）一起吞掉 —— 「眼不见为净」在这里等于把正事也堵死。
 #   详见 docs/wiki/DEV-FLOW.md「预设快照地雷」节（落地单 #3859，事实单 #3851）。
+#
+# 地雷 B：内容全对，但**到不了加载点**（v1.10，2026-09-17 新增，issue #4026）：
+#   `preset-guard` 原先只判「仓库里的 `.agent-presets/**` 有没有版本下降」——**查不出活锚落后**。
+#   实测活锚（`~/.dsh/.agent-presets/migao` 软链）曾指向一个落后 `origin/main` **42 个提交**的主工作区：
+#   内容当时恰好一致（无害），但只要下一次有人改预设并合并，改进就**永远到不了加载点**
+#   ⇒ 后续所有会话读到的仍是旧模式（「迭代了但模式没进化」的确切机制）。
+#   v1.10 起：`preset-guard`（判定本体 `scripts/agent-presets-guard.py`）同时判**活锚新鲜度**
+#   （内容逐字节 + 检出 sha；落后/悬空/内容不同 ⇒ 非零退出），并给出同步命令：
+#     ./scripts/preset-anchor-check.sh      # 只判（开工第一件事；红就停）
+#     ./scripts/preset-anchor-refresh.sh    # 判 + 自愈（把**专职只读镜像**刷到 origin/main）
+#   活锚目标必须是**独立克隆**（不是任何会被开发的 worktree —— 那在 rm/prune 清理半径内，
+#   被删即软链悬空、DSH 静默加载不到研发模式，issue #3956 实证）；见根 AGENTS.md「开发环境准备」。
 #
 # 会话锁（v1.3，2026-09-04 新增）：
 #   多 DSH 会话并行开发防踩脚 —— add 时自动在 $REPO_ROOT/.git/sessions/ 登记会话锁
@@ -72,7 +86,8 @@ mkdir -p "$LOCK_DIR"
 usage() {
   # head 上限需覆盖「用法」块 + v1.8 的预设地雷说明（加新条目时同步上调，否则 --help 会截断）
   # v1.9（issue #3972）：用法块 +1 行（rebase 子命令）⇒ 上限同步 +2
-  sed -n 's/^# \{0,1\}//p' "$0" | sed -n '/^dev-worktree.sh/,/^===/p' | head -42
+  # v1.10（issue #4026）：用法块 +2 行（活锚自检/自愈脚本）⇒ 上限再 +2
+  sed -n 's/^# \{0,1\}//p' "$0" | sed -n '/^dev-worktree.sh/,/^===/p' | head -46
   exit 1
 }
 
@@ -392,6 +407,8 @@ case "${1:-}" in
   rebase) shift; cmd_rebase "$@" ;;
   preset-guard)
     # v1.8（issue #3851）：提交路径 fail-closed 守卫 —— 判定 .agent-presets/** 是否构成版本下降。
+    # v1.10（issue #4026）：同一守卫同时判**活锚新鲜度**（内容 + sha；落后/悬空即非零退出）
+    #   —— 「仓库内容全对但改进到不了加载点」也是静默失效的一种，光看仓库内容查不出来。
     # 判定逻辑在 scripts/agent-presets-guard.py（可独立单测，含红证）。
     shift
     PY="$(command -v python3.11 || command -v python3 || true)"

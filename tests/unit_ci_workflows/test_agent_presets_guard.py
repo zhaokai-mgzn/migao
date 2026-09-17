@@ -17,7 +17,9 @@ mock 掉 git 等于把被测对象换成替身，红证会变成假绿（§18「
 from __future__ import annotations
 
 import importlib.util
+import io
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -27,7 +29,10 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 GUARD = REPO_ROOT / "scripts" / "agent-presets-guard.py"
 DEV_WORKTREE = REPO_ROOT / "scripts" / "dev-worktree.sh"
+CHECK_SH = REPO_ROOT / "scripts" / "preset-anchor-check.sh"
+REFRESH_SH = REPO_ROOT / "scripts" / "preset-anchor-refresh.sh"
 SKILL_REL = ".agent-presets/migao/skills/migao-dev-flow/SKILL.md"
+PRESET_YML_REL = ".agent-presets/migao/preset.yml"
 
 SKILL_TMPL = """---
 name: migao-dev-flow
@@ -463,3 +468,372 @@ def test_guard_script_itself_states_the_third_layer(monkeypatch=None):
 
     assert "#3843" in text
     assert "drift_audit" in text
+
+
+# ── ⑤ 活锚新鲜度（地雷 B，issue #4026）────────────────────────────────────────
+# 守的是「内容全对，但**到不了加载点**」：活锚落后 main 时，下一次改预设的改进**永远进不来**，
+# 而**没有任何东西会因此变红**（实测活锚曾指向落后 42 个提交的主工作区）。
+# 夹具一律是**三个真 git 仓库**（origin / baseline / mirror），不 mock —— 判据本体就是 git 语义。
+
+
+def _init_repo(path: Path) -> None:
+    path.mkdir(parents=True, exist_ok=True)
+    _git(path, "init", "-q", "-b", "main")
+    _git(path, "config", "user.email", "fixture@example.com")
+    _git(path, "config", "user.name", "fixture")
+
+
+def _seed_preset(repo: Path, version: str, filler: int = 1) -> None:
+    _write_skill(repo, version, filler=filler)
+    (repo / PRESET_YML_REL).write_text("name: migao\n", encoding="utf-8")
+
+
+@pytest.fixture()
+def anchor_env(tmp_path: Path) -> dict:
+    """三仓夹具：`origin`（裸仓 = 权威 main）+ `baseline`（= 你的工作区，已 fetch）+ `mirror`（活锚镜像）。
+
+    历史形状刻意对齐 #4026 的两种落后形态：
+      c1 = preset **v1.28.0** → c2 = preset **v1.29.0** → c3 = **与预设无关**的改动。
+    ⇒ mirror 结账在 `c2`：**内容与 main 完全相同、sha 落后 1**（隐蔽形态，正是本单病灶）；
+      结账在 `c1`：内容与版本都落后（显性形态）。
+    """
+    origin = tmp_path / "origin.git"
+    _git(tmp_path, "init", "-q", "--bare", "-b", "main", str(origin))
+
+    seed = tmp_path / "seed"
+    _init_repo(seed)
+    _seed_preset(seed, "1.28.0")
+    _git(seed, "add", "-A")
+    _git(seed, "commit", "-q", "-m", "c1 v1.28.0")
+    c1 = _git(seed, "rev-parse", "HEAD").stdout.strip()
+    _git(seed, "remote", "add", "origin", str(origin))
+    _git(seed, "push", "-q", "origin", "main")
+
+    _seed_preset(seed, "1.29.0", filler=2)
+    _git(seed, "add", "-A")
+    _git(seed, "commit", "-q", "-m", "c2 v1.29.0")
+    c2 = _git(seed, "rev-parse", "HEAD").stdout.strip()
+    (seed / "unrelated.txt").write_text("与预设无关的改动\n", encoding="utf-8")
+    _git(seed, "add", "-A")
+    _git(seed, "commit", "-q", "-m", "c3 与预设无关")
+    c3 = _git(seed, "rev-parse", "HEAD").stdout.strip()
+    _git(seed, "push", "-q", "origin", "main")
+
+    baseline = tmp_path / "baseline"
+    _git(tmp_path, "clone", "-q", str(origin), str(baseline))      # 已 fetch：origin/main = c3
+    mirror = tmp_path / "mirror"
+    _git(tmp_path, "clone", "-q", str(origin), str(mirror))
+    _git(mirror, "checkout", "-q", "--detach", c3)
+    return {"origin": origin, "seed": seed, "baseline": baseline, "mirror": mirror,
+            "c1": c1, "c2": c2, "c3": c3}
+
+
+def _anchor_of(env: dict, which: str = "mirror") -> str:
+    return str(env[which] / ".agent-presets/migao")
+
+
+def _check_env(env: dict) -> dict:
+    """给脚本用的环境：镜像 + 活锚都指到夹具（避免读到本机真实活锚）。
+    `check` 脚本**总是显式**传 `--anchor`，故「同历史」这条豁免不适用 —— 夹具自洽。"""
+    return {
+        **os.environ,
+        "MIGAO_PRESET_MIRROR": str(env["mirror"]),
+        "MIGAO_PRESET_LIVE": _anchor_of(env),
+    }
+
+
+def test_anchor_content_behind_is_red(anchor_env: dict):
+    """红证（显性形态）：活锚检出停在 v1.28.0、基线已 v1.29.0 ⇒ 必须非零退出并给同步命令。"""
+    _git(anchor_env["mirror"], "checkout", "-q", "--detach", anchor_env["c1"])
+
+    proc = _run_guard(anchor_env["baseline"], "anchor", "--anchor", _anchor_of(anchor_env))
+
+    assert proc.returncode != 0, proc.stdout
+    assert "活锚内容与 origin/main 不一致" in proc.stdout
+    assert "活锚=1.28.0 基线=1.29.0" in proc.stdout
+    assert "先同步再动手" in proc.stdout
+    assert "preset-anchor-refresh.sh" in proc.stdout
+
+
+def test_anchor_content_equal_but_sha_behind_is_red(anchor_env: dict):
+    """红证（**隐蔽形态**，本单病灶本体）：内容与 main **逐字节相同**、只是 sha 落后 1 个提交。
+
+    此刻无害，但「下一次有人改预设，改进就到不了加载点」—— 只比版本号/只比内容的判据**查不出它**，
+    所以这条断言是这套判据存在的理由（判据不会红 = 空判据）。
+    """
+    _git(anchor_env["mirror"], "checkout", "-q", "--detach", anchor_env["c2"])
+
+    proc = _run_guard(anchor_env["baseline"], "anchor", "--anchor", _anchor_of(anchor_env))
+
+    assert proc.returncode != 0, proc.stdout
+    assert "落后 1 个提交" in proc.stdout
+    assert "内容当前恰好一致" in proc.stdout
+    assert "活锚=1.29.0 基线=1.29.0" in proc.stdout
+
+
+def test_anchor_fresh_is_green(anchor_env: dict):
+    """不许误伤：活锚就在基线 tip 上 ⇒ 绿，且必须把「比了什么」说清楚（可自证）。"""
+    proc = _run_guard(anchor_env["baseline"], "anchor", "--anchor", _anchor_of(anchor_env))
+
+    assert proc.returncode == 0, proc.stdout
+    assert "✅ 活锚新鲜" in proc.stdout
+    assert "逐字节一致" in proc.stdout
+    assert "与基线同一提交" in proc.stdout
+    assert "❌" not in proc.stdout
+
+
+def test_dangling_anchor_is_red(anchor_env: dict, tmp_path: Path):
+    """红证：悬空软链（#3956 的静默失效形态）⇒ 红，且必须说清后果与修法。"""
+    dangling = tmp_path / "dangling"
+    dangling.symlink_to(tmp_path / "does-not-exist")
+
+    proc = _run_guard(anchor_env["baseline"], "anchor", "--anchor", str(dangling))
+
+    assert proc.returncode != 0, proc.stdout
+    assert "悬空" in proc.stdout
+    assert "静默" in proc.stdout
+    assert "3956" in proc.stdout
+
+
+def test_absent_anchor_is_skipped_not_passed(anchor_env: dict, tmp_path: Path):
+    """三态：本机没接线（CI / 容器 / 新队友未接线）⇒ `⏭️ 未跑判定`，**不得**说成「通过」。
+
+    红了才是误伤：没有活锚要维持新鲜。但措辞必须让人读得出「这次没判」。
+    """
+    proc = _run_guard(anchor_env["baseline"], "anchor", "--anchor", str(tmp_path / "nope"))
+
+    assert proc.returncode == 0, proc.stdout
+    assert "未跑判定" in proc.stdout
+    assert "未接线" in proc.stdout
+    assert "✅" not in proc.stdout
+
+
+def test_handcopied_anchor_is_judged_by_content(anchor_env: dict, tmp_path: Path):
+    """手抄副本（**不是 git 检出**）：判不了 sha，但内容照样要判 —— 旧的 ⇒ 红；一致 ⇒ 绿 + 形态警告。"""
+    stale = tmp_path / "handcopy-old"
+    _git(anchor_env["mirror"], "checkout", "-q", "--detach", anchor_env["c1"])
+    shutil.copytree(anchor_env["mirror"] / ".agent-presets/migao", stale)   # 无 .git 的纯目录
+
+    bad = _run_guard(anchor_env["baseline"], "anchor", "--anchor", str(stale))
+
+    assert bad.returncode != 0, bad.stdout
+    assert "不是 git 检出" in bad.stdout
+    assert "活锚内容与 origin/main 不一致" in bad.stdout
+
+    _git(anchor_env["mirror"], "checkout", "-q", "--detach", anchor_env["c3"])
+    fresh = tmp_path / "handcopy-new"
+    shutil.copytree(anchor_env["mirror"] / ".agent-presets/migao", fresh)
+
+    ok = _run_guard(anchor_env["baseline"], "anchor", "--anchor", str(fresh))
+
+    assert ok.returncode == 0, ok.stdout
+    assert "不是 git 检出" in ok.stdout        # 形态警告仍在（没有跟随机制）
+    assert "✅ 活锚新鲜" in ok.stdout
+
+
+def test_unrelated_history_is_skipped_but_explicit_anchor_is_judged(anchor_env: dict, tmp_path: Path):
+    """同历史豁免（**防假绿也要防假红**）：
+
+    默认活锚只在「活锚检出里存在基线那个提交」时才判落后 —— 否则拿无关仓库的 `main` 量活锚
+    会污染所有夹具仓库（判据变成环境噪声）；而**显式 `--anchor` 一律判定**（你明确要比）。
+    ⚠️ 判据**不能比 URL 字符串**：本机实测同一仓库有 `https://github.com/…` 与
+    `ssh://git@ssh.github.com:443/…` 两种写法（`insteadOf` 重写）⇒ 按 URL 比会把真活锚静默跳过。
+    """
+    other = tmp_path / "other"
+    _init_repo(other)
+    _seed_preset(other, "9.9.9")
+    _git(other, "add", "-A")
+    _git(other, "commit", "-q", "-m", "别的仓库，另一份历史")
+
+    implicit = io.StringIO()
+    rc_implicit = GUARD_MODULE.judge_anchor(
+        "origin/main", anchor_env["baseline"], other / ".agent-presets/migao",
+        explicit=False, out=implicit,
+    )
+
+    assert rc_implicit == 0, implicit.getvalue()
+    assert "未跑判定" in implicit.getvalue()
+    assert "同一份历史" in implicit.getvalue()
+
+    explicit = io.StringIO()
+    rc_explicit = GUARD_MODULE.judge_anchor(
+        "origin/main", anchor_env["baseline"], other / ".agent-presets/migao",
+        explicit=True, out=explicit,
+    )
+
+    assert rc_explicit == 1, explicit.getvalue()
+    assert "活锚内容与 origin/main 不一致" in explicit.getvalue()
+
+
+def test_unloadable_frontmatter_is_red_even_when_content_matches(anchor_env: dict):
+    """红证：**内容与 main 一致**但技能加载不了（第 1 行不是 `---`）⇒ 红。
+
+    这是「文件里写了 ≠ 加载器读到了」的形态（本批刚踩过：新节被插进 frontmatter 注释块内部
+    ⇒ `description` 被静默切掉）。夹具刻意让**基线自己**就带坏 frontmatter，使「内容不同」这条
+    红因不可能命中 —— 唯一红因只能是**可加载性**（否则这条断言会被别的红因顶替 = 空断言）。
+    """
+    seed, baseline, mirror = anchor_env["seed"], anchor_env["baseline"], anchor_env["mirror"]
+    (seed / SKILL_REL).write_text("# 没有 frontmatter\n\n正文\n", encoding="utf-8")
+    _git(seed, "add", "-A")
+    _git(seed, "commit", "-q", "-m", "c4 frontmatter 坏掉")
+    _git(seed, "push", "-q", "origin", "main")
+    _git(baseline, "fetch", "-q", "origin", "main")
+    _git(mirror, "fetch", "-q", "origin", "main")
+    _git(mirror, "checkout", "-q", "--detach", "origin/main")
+
+    proc = _run_guard(baseline, "anchor", "--anchor", _anchor_of(anchor_env))
+
+    assert proc.returncode != 0, proc.stdout
+    assert "第 1 行不是" in proc.stdout
+    assert "整个技能被加载器忽略" in proc.stdout
+    assert "活锚内容与 origin/main 不一致" not in proc.stdout   # 内容其实一致，红因只有一条
+
+
+def test_plain_scalar_with_inline_hash_warns_but_passes(anchor_env: dict):
+    """YAML 纯标量陷阱：`description` 里出现「空白 + `#`」⇒ 静默截断 ⇒ **告警**（不非零退出）。
+
+    截断不致命（技能仍能加载），但「文件里写了、加载器读不到」必须被看见 —— 故这里是 warn 不是 red。
+    """
+    seed, baseline, mirror = anchor_env["seed"], anchor_env["baseline"], anchor_env["mirror"]
+    _write_skill(seed, "1.29.0", filler=2)
+    text = (seed / SKILL_REL).read_text(encoding="utf-8").replace(
+        "description: 夹具技能", "description: 夹具技能 # 这后面会被 YAML 当成注释",
+    )
+    (seed / SKILL_REL).write_text(text, encoding="utf-8")
+    _git(seed, "add", "-A")
+    _git(seed, "commit", "-q", "-m", "c5 纯标量行内 #")
+    _git(seed, "push", "-q", "origin", "main")
+    _git(baseline, "fetch", "-q", "origin", "main")
+    _git(mirror, "fetch", "-q", "origin", "main")
+    _git(mirror, "checkout", "-q", "--detach", "origin/main")
+
+    proc = _run_guard(baseline, "anchor", "--anchor", _anchor_of(anchor_env))
+
+    assert proc.returncode == 0, proc.stdout
+    assert "静默截断" in proc.stdout
+    assert "活锚新鲜" in proc.stdout
+
+
+def test_real_presets_frontmatter_is_loadable():
+    """守**真资产**：仓库里两个技能的 frontmatter 必须能被加载器读到（0 问题）。
+
+    这条会红在「有人把新节插进 frontmatter 注释块 / 写坏 `description`」上 —— 而那正是本批踩过的形态。
+    """
+    skills = sorted((REPO_ROOT / ".agent-presets/migao/skills").glob("*/SKILL.md"))
+    assert skills, "预设目录里找不到任何技能（判据会空跑，不许静默通过）"
+    for skill in skills:
+        assert GUARD_MODULE._frontmatter_problems(skill) == [], f"{skill} 的 frontmatter 有问题"
+
+
+def test_check_reports_anchor_verdict(anchor_env: dict):
+    """接线：`check`（= `dev-worktree.sh preset-guard` 的判定本体）必须**带上活锚判定**并影响退出码。"""
+    _git(anchor_env["mirror"], "checkout", "-q", "--detach", anchor_env["c1"])
+
+    bad = _run_guard(anchor_env["baseline"], "check", "--ref", "origin/main",
+                     "--source", "worktree", "--anchor", _anchor_of(anchor_env))
+
+    assert bad.returncode != 0, bad.stdout
+    assert "活锚新鲜度" in bad.stdout
+    assert "活锚内容与 origin/main 不一致" in bad.stdout
+
+    _git(anchor_env["mirror"], "checkout", "-q", "--detach", anchor_env["c3"])
+
+    ok = _run_guard(anchor_env["baseline"], "check", "--ref", "origin/main",
+                    "--source", "worktree", "--anchor", _anchor_of(anchor_env))
+
+    assert ok.returncode == 0, ok.stdout
+    assert "✅ 活锚新鲜" in ok.stdout
+
+
+def test_check_default_anchor_never_blocks_unrelated_repos(anchor_env: dict):
+    """回归：默认活锚（本机 `~/.dsh/…`）与夹具仓库**不同历史** ⇒ 必须 `⏭️`，不得判红。
+
+    否则本机活锚的状态会污染所有夹具/别的仓库（含既有单测），判据变成环境噪声 ⇒ 迟早被 `|| true` 掉。
+    """
+    proc = _run_guard(anchor_env["baseline"], "check", "--ref", "origin/main", "--source", "worktree")
+
+    assert proc.returncode == 0, proc.stdout
+    assert "活锚新鲜度" in proc.stdout
+    assert "⏭️" in proc.stdout
+
+
+def test_refresh_script_turns_red_green_end_to_end(anchor_env: dict):
+    """端到端（真脚本、真仓库、无网络）：落后 ⇒ 自检红 → 跑刷新脚本 → 镜像跟上 → 自检转绿。"""
+    _git(anchor_env["mirror"], "checkout", "-q", "--detach", anchor_env["c1"])
+    env = _check_env(anchor_env)
+    check_cmd = ["bash", str(CHECK_SH), "--anchor", _anchor_of(anchor_env), "--repo", str(anchor_env["baseline"])]
+
+    before = subprocess.run(check_cmd, capture_output=True, text=True, env=env)
+    assert before.returncode == 1, before.stdout + before.stderr
+    assert "先同步再动手" in before.stdout
+
+    refresh = subprocess.run(
+        ["bash", str(REFRESH_SH), "--mirror", str(anchor_env["mirror"]), "--repo", str(anchor_env["baseline"])],
+        capture_output=True, text=True, env=env,
+    )
+
+    assert refresh.returncode == 0, refresh.stdout + refresh.stderr
+    assert "镜像已跟随 origin/main" in refresh.stdout
+    assert "活锚自愈完成" in refresh.stdout
+    assert _git(anchor_env["mirror"], "rev-parse", "HEAD").stdout.strip() == anchor_env["c3"]
+
+    after = subprocess.run(check_cmd, capture_output=True, text=True, env=env)
+    assert after.returncode == 0, after.stdout
+    assert "✅ 活锚新鲜" in after.stdout
+
+
+def test_refresh_refuses_worktree_as_mirror(anchor_env: dict, tmp_path: Path):
+    """红证（#3956 教训固化成判据）：镜像**不是独立克隆**（是某仓库的 worktree）⇒ 拒绝刷新。
+
+    worktree 在 `dev-worktree.sh rm` / `git worktree prune` 的清理半径内 —— 当活锚会被删没，
+    软链悬空 ⇒ DSH 静默加载不到研发模式。故这里必须**拒**，且拒绝发生在任何写操作之前。
+    """
+    linked = tmp_path / "linked-wt"
+    _git(anchor_env["seed"], "worktree", "add", "-q", "-b", "fix/linked", str(linked))
+    head_before = _git(linked, "rev-parse", "HEAD").stdout.strip()
+
+    proc = subprocess.run(
+        ["bash", str(REFRESH_SH), "--mirror", str(linked), "--no-check"],
+        capture_output=True, text=True, env=_check_env(anchor_env),
+    )
+
+    assert proc.returncode == 1, proc.stdout + proc.stderr
+    assert "不是**独立克隆**" in proc.stdout
+    assert "3956" in proc.stdout
+    assert _git(linked, "rev-parse", "HEAD").stdout.strip() == head_before
+
+
+def test_refresh_refuses_in_place_edits(anchor_env: dict):
+    """红证（fail-closed）：镜像是「只读」的 —— 有**已跟踪文件的本地改动** ⇒ 拒绝刷新，不静默覆盖。
+
+    就地编辑 =「藏在软链目标里的第三份副本」：它直接生效，却没有 PR、没有评审、没有 diff 提醒。
+    """
+    (anchor_env["mirror"] / PRESET_YML_REL).write_text("name: 手改\n", encoding="utf-8")
+    head_before = _git(anchor_env["mirror"], "rev-parse", "HEAD").stdout.strip()
+
+    proc = subprocess.run(
+        ["bash", str(REFRESH_SH), "--mirror", str(anchor_env["mirror"]), "--no-check"],
+        capture_output=True, text=True, env=_check_env(anchor_env),
+    )
+
+    assert proc.returncode == 1, proc.stdout + proc.stderr
+    assert "已跟踪文件的本地改动" in proc.stdout
+    assert _git(anchor_env["mirror"], "rev-parse", "HEAD").stdout.strip() == head_before
+
+
+def test_anchor_scripts_are_syntax_clean_and_zero_dep():
+    """两个入口脚本必须 `bash -n` 过、且**零第三方依赖**（只用 bash/git/python3 标准库）。"""
+    for script in (CHECK_SH, REFRESH_SH):
+        assert script.is_file(), f"入口脚本缺失：{script}"
+        proc = subprocess.run(["bash", "-n", str(script)], capture_output=True, text=True)
+        assert proc.returncode == 0, f"{script} 语法错误：{proc.stderr}"
+        assert os.access(script, os.X_OK), f"{script} 不可执行"
+
+
+def test_dev_worktree_points_at_the_anchor_scripts():
+    """接线：`dev-worktree.sh` 的说明必须指向活锚自检/刷新脚本（否则读者只知道内容单调性那一半）。"""
+    source = DEV_WORKTREE.read_text(encoding="utf-8")
+
+    assert "preset-anchor-check.sh" in source
+    assert "preset-anchor-refresh.sh" in source
+    assert "活锚" in source
