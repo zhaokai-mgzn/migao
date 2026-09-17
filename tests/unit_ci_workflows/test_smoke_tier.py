@@ -6,7 +6,7 @@ Test eval-case smoke tier membership (issue #2786).
 修复：将两者从 smoke 降级至 normal（每日回归仍覆盖，但不再阻塞 PR 门禁）。
 本测试锁定 smoke 集合，防止漂移用例被误改回 smoke。
 """
-# case_ids: OR-010, PR-010
+# case_ids: OR-010, PR-010, OR-031
 import sys
 from pathlib import Path
 
@@ -21,7 +21,18 @@ CASES_DIR = REPO_ROOT / ".github" / "cases"
 DRIFT_PATHS = ["OR-010", "PR-010"]
 
 # 降级后 smoke 集合（9 → 7）：全部为稳定单轮/双轮查询类用例
-EXPECTED_SMOKE = {"AS-001", "CU-001", "HR-001", "HR-004", "OR-001", "PR-001", "PR-003", "KN-001", "KN-003"}  # KN-001/003：双端知识问答冒烟（issue #3059）
+EXPECTED_SMOKE = {"AS-001", "CU-001", "HR-001", "HR-004", "OR-001", "PR-001", "PR-003", "KN-001", "KN-003",
+                  "OR-031"}  # KN-001/003：双端知识问答冒烟（issue #3059）
+# ── OR-031 于 2026-09-18 加入 smoke（用户裁定 2 / F17，issue #4095）──
+# ⚠️ 编号说明：本用例原拟 OR-030，该号已被同批「#4082 用例库维护」包**先合并**占用
+#    （B 端校验失败后禁止写，tier=normal）⇒ 本用例改号 **OR-031**（编号撞车按"先合并者胜"）。
+# 裁定原话：「给 smoke 档加下单用例（订单域现只有 OR-001 只读查询）」。
+# 加它之前本档 9 条**全是只读**，下单主链路（校验→确认卡→落库）在冒烟档零覆盖。
+# 取舍已按冒烟档的成本口径做过（不是把 normal 档的多轮下单用例直接搬过来）：
+#   · persona=mibao（代客下单免短信验证码 ⇒ 链路最短）；
+#   · 一句话给全 + `repeat_until` 协作轮（目标工具成功即停）⇒ 实跑单条 **33.1s**
+#     （run 35255192969：total=1 passed=1，must_succeed/db_verify 均真触发）；
+#   · 本测试是**冻结守卫**：下次再动 smoke 集合必须同样显式改这里 + 写明理由。
 # ── OR-012 / AS-008 于 2026-09-13 由 smoke 提为 normal（issue #3367 覆盖审计）──
 # 原判断（issue #3266）是"升 smoke 以补 C 端覆盖缺口"，但 smoke 档对 C 端**根本没人跑**：
 #   · pr-check 的 agent-eval-smoke 打的是共享 B 端环境、未设 PERSONA（默认米宝）
