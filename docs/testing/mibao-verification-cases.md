@@ -3472,7 +3472,7 @@
 真值: token-refresh.no-loop
 溯源: 2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421） ｜ tags: token_refresh, auth, no_loop
 
-## ui（42 case）
+## ui（43 case）
 
 ### UI-001. 织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理 🔵
 ```
@@ -3647,18 +3647,31 @@
 真值: frontend-fix.no-api-change, frontend-fix.vitest
 溯源: 2026-09-02 新增：POC 演示修复 — 拍照找布场景顾客发纯图会被 chatStore 静默拦截（chatStore.ts `!content.trim()` 守卫），须文字同行才发得出 ｜ tags: mini-app, chat-input, image, vision
 
-### UI-014. 小布聊天主页快捷入口新增「算料报价」全宽主入口（POC 算料闭环直达） 🔵
+### UI-014. 小布聊天主页快捷入口六格化 - 算料报价与推荐热门商品并列（取消全宽） 🔵
 ```
-你: 顾客打开小布聊天主页，快捷入口区应有一个醒目的「算料报价」入口可直达算料报价链路
+你: 顾客打开小布聊天主页，快捷入口区六个入口等权排列：算料报价/推荐热门商品/查订单/找产品/售后咨询/查物流
 期望: direct_reply
-数据: QuickActions 渲染 5 个入口：算料报价/查订单/找产品/售后咨询/查物流（无「退换货」「转人工」文案残留）
-数据: 「算料报价」是首项且带 wide 全宽样式（2 列网格中 grid-column 1/-1 跨整行），视觉突出
+数据: QuickActions 渲染 6 个入口：算料报价/推荐热门商品/查订单/找产品/售后咨询/查物流（无「退换货」「转人工」文案残留）
+数据: 「算料报价」为首项但不再带 wide 全宽样式（与其余入口等权，2 列网格 3 行）
 数据: 点击「算料报价」发送算料 prompt（含 quote 路由关键词：用料/报价），直达 curtain_calc 算料报价链路
-数据: 其余 4 入口行为不回归（查订单/找产品/售后咨询/查物流 prompt 不变）
+数据: 点击「推荐热门商品」发送推荐 prompt，进入商品推荐问答
+数据: 其余入口行为不回归（查订单/找产品/售后咨询/查物流 prompt 不变）
 跳过: 纯前端入口由 mini-app jest 单测验证（quick-actions.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: frontend-fix.xiaobu-quick-actions
-溯源: 2026-09-04 新增：POC 演示增强 — 算料报价是演示第 2 幕核心动作，此前仅靠顾客手打话术，加全宽快捷入口一键直达 ｜ tags: mini-app, quick-actions, quote
+溯源: 2026-09-04 新增 POC 全宽主入口；2026-09-17 修订：产品决策六格化，算料报价取消全宽与推荐热门商品并列 ｜ tags: mini-app, quick-actions, quote
+
+### UI-044. 小布聊天主页空态移除商品推荐卡（NewArrivals），推荐改由快捷对话入口承载 🔵
+```
+你: 顾客打开小布聊天主页空态：不再展示热销商品图片与名称，仅保留品牌欢迎语与快捷对话入口
+期望: direct_reply
+数据: 空态（MessageList 无消息时）不再渲染 NewArrivals 商品卡片（无商品图/名横滑区）
+数据: 空态保留品牌头+欢迎语+快捷入口（QuickActions 6 格）
+数据: 推荐能力由「推荐热门商品」快捷入口以对话形式承载，商品推荐问答不回归
+跳过: 纯前端空态由 mini-app jest 单测验证（quick-actions.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: frontend-fix.xiaobu-quick-actions
+溯源: 2026-09-17 新增：产品决策——空态不再铺商品图/名，推荐改为快捷对话入口 ｜ tags: mini-app, chat-entry, empty-state
 
 ### UI-015. 我的页移除「账号信息」占位入口（功能开发中占位不进 POC 演示） 🔵
 ```
@@ -4055,8 +4068,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：298（活跃 151，跳过 147）
-- tier 分布：smoke 9 / normal 256 / adversarial 33
+- 用例总数：299（活跃 151，跳过 148）
+- tier 分布：smoke 9 / normal 257 / adversarial 33
 - 售后域：9
 - agents：6
 - api：19
@@ -4080,7 +4093,7 @@
 - registry：1
 - 设置域：8
 - token-refresh：4
-- ui：42
+- ui：43
 - utils：2
 
 ### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）

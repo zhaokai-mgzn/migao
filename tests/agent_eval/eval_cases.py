@@ -5085,18 +5085,36 @@ _CASE_UI_013 = EvalCase(
     forbidden_card_text=[],
 )
 
-# ── UI-014 [NORMAL] 小布聊天主页快捷入口新增「算料报价」全宽主入口（POC 算料闭环直达）（源: cases/ui.yml）──
+# ── UI-014 [NORMAL] 小布聊天主页快捷入口六格化 - 算料报价与推荐热门商品并列（取消全宽）（源: cases/ui.yml）──
 _CASE_UI_014 = EvalCase(
     id='UI-014',
     legacy_id='',
-    title='小布聊天主页快捷入口新增「算料报价」全宽主入口（POC 算料闭环直达）',
+    title='小布聊天主页快捷入口六格化 - 算料报价与推荐热门商品并列（取消全宽）',
     skill=Skill.GENERAL,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['顾客打开小布聊天主页，快捷入口区应有一个醒目的「算料报价」入口可直达算料报价链路'],
+    user_inputs=['顾客打开小布聊天主页，快捷入口区六个入口等权排列：算料报价/推荐热门商品/查订单/找产品/售后咨询/查物流'],
     expectations=['direct_reply'],
-    data_checks=['QuickActions 渲染 5 个入口：算料报价/查订单/找产品/售后咨询/查物流（无「退换货」「转人工」文案残留）', '「算料报价」是首项且带 wide 全宽样式（2 列网格中 grid-column 1/-1 跨整行），视觉突出', '点击「算料报价」发送算料 prompt（含 quote 路由关键词：用料/报价），直达 curtain_calc 算料报价链路', '其余 4 入口行为不回归（查订单/找产品/售后咨询/查物流 prompt 不变）'],
+    data_checks=['QuickActions 渲染 6 个入口：算料报价/推荐热门商品/查订单/找产品/售后咨询/查物流（无「退换货」「转人工」文案残留）', '「算料报价」为首项但不再带 wide 全宽样式（与其余入口等权，2 列网格 3 行）', '点击「算料报价」发送算料 prompt（含 quote 路由关键词：用料/报价），直达 curtain_calc 算料报价链路', '点击「推荐热门商品」发送推荐 prompt，进入商品推荐问答', '其余入口行为不回归（查订单/找产品/售后咨询/查物流 prompt 不变）'],
     skip_reason='纯前端入口由 mini-app jest 单测验证（quick-actions.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟',
     tags=['mini-app', 'quick-actions', 'quote'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── UI-044 [NORMAL] 小布聊天主页空态移除商品推荐卡（NewArrivals），推荐改由快捷对话入口承载（源: cases/ui.yml）──
+_CASE_UI_044 = EvalCase(
+    id='UI-044',
+    legacy_id='',
+    title='小布聊天主页空态移除商品推荐卡（NewArrivals），推荐改由快捷对话入口承载',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['顾客打开小布聊天主页空态：不再展示热销商品图片与名称，仅保留品牌欢迎语与快捷对话入口'],
+    expectations=['direct_reply'],
+    data_checks=['空态（MessageList 无消息时）不再渲染 NewArrivals 商品卡片（无商品图/名横滑区）', '空态保留品牌头+欢迎语+快捷入口（QuickActions 6 格）', '推荐能力由「推荐热门商品」快捷入口以对话形式承载，商品推荐问答不回归'],
+    skip_reason='纯前端空态由 mini-app jest 单测验证（quick-actions.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['mini-app', 'chat-entry', 'empty-state'],
     persona='',
     debug_user='',
     form_prefill=[],
@@ -5912,6 +5930,7 @@ ALL_CASES = (
     _CASE_UI_012,
     _CASE_UI_013,
     _CASE_UI_014,
+    _CASE_UI_044,
     _CASE_UI_015,
     _CASE_UI_016,
     _CASE_UI_017,
