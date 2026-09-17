@@ -3492,6 +3492,7 @@ _CASE_OR_015 = EvalCase(
     must_succeed=[{'tool': 'order_create'}],
     pre_clean=[{'type': 'product_dedupe', 'product_keyword': '遮光窗帘'}],
     namespaces=['customer_phone:13800138000', 'product_name:遮光窗帘'],
+    precondition=[{'type': 'product_count_for_keyword', 'source': '遮光窗帘', 'expect': 1}],
 )
 
 # ── OR-016 [NORMAL] 创建订单 confirm 前必须主动询问加工项（商品绑定加工项时）（源: cases/order.yml）──
@@ -4343,13 +4344,14 @@ _CASE_PR_001 = EvalCase(
     difficulty=Difficulty.SMOKE,
     user_inputs=['搜索遮光窗帘'],
     expectations=['product_search(keyword=遮光窗帘)'],
-    data_checks=['data.products.length > 0'],
+    data_checks=['搜索必须真的返回商品（机器断言见 output_verify：products 非空）—— 原 `data.products.length > 0` 不计分，已弃用'],
     skip_reason='',
     tags=['search', 'smoke'],
     persona='',
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+    output_verify=[{'tool': 'product_search', 'expect': {'products': '__nonempty__'}}],
 )
 
 # ── PR-002 [NORMAL] 商品搜索 - 按库存状态筛选（源: cases/product.yml）──
@@ -4361,13 +4363,14 @@ _CASE_PR_002 = EvalCase(
     difficulty=Difficulty.NORMAL,
     user_inputs=['有哪些缺货的商品'],
     expectations=['product_search(stock_status=out_of_stock)'],
-    data_checks=['data.products.length >= 0'],
+    data_checks=['「缺货商品」查询必须真的按库存过滤（机器断言见 output_verify：total == 0，= 种子无库存≤0 商品的可判定事实；过滤被忽略 ⇒ total>0 ⇒ 判红）—— 原 `data.products.length >= 0` 恒真且不计分，已弃用'],
     skip_reason='',
     tags=['search', 'filter'],
     persona='',
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+    output_verify=[{'tool': 'product_search', 'expect': {'total': 0}}],
 )
 
 # ── PR-003 [SMOKE] 商品详情 - 通过名称查询（ID 解析）（源: cases/product.yml）──
@@ -4773,7 +4776,7 @@ _CASE_PR_025 = EvalCase(
     title='B端写操作必须先出确认卡再执行（缺卡不发写）',
     skill=Skill.PRODUCT,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['把遮光窗帘下架', {'auto_respond': {'fallback': '确认'}}],
+    user_inputs=['把遮光窗帘下架', {'auto_respond': {'fallback': '确认'}}, '把它重新上架', {'auto_respond': {'fallback': '确认'}}, {'auto_respond': {'fallback': '确认'}}],
     expectations=['product_manage(action=toggle_status, status=off_sale)'],
     data_checks=['success=true'],
     skip_reason='',
@@ -4785,6 +4788,7 @@ _CASE_PR_025 = EvalCase(
     order_before=['interact[confirm] before product_manage'],
     pre_clean=[{'type': 'product_dedupe', 'product_keyword': '遮光窗帘'}],
     namespaces=['product_name:遮光窗帘'],
+    precondition=[{'type': 'product_count_for_keyword', 'source': '遮光窗帘', 'expect': 1}],
 )
 
 # ── PR-026 [NORMAL] 设置商品主图 - product_manage(action=update, images) 成功路径（源: cases/product.yml）──
@@ -4830,6 +4834,7 @@ _CASE_PR_027 = EvalCase(
     must_succeed=[{'tool': 'product_manage', 'action': 'update'}],
     pre_clean=[{'type': 'product_dedupe', 'product_keyword': '遮光窗帘'}],
     namespaces=['product_name:遮光窗帘'],
+    precondition=[{'type': 'product_count_for_keyword', 'source': '遮光窗帘', 'expect': 1}],
 )
 
 # ── RG-001 [NORMAL] ToolRegistry 注册/查询/执行审计（源: cases/registry.yml）──

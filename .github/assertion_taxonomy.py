@@ -1181,20 +1181,6 @@ UNIMPLEMENTED: tuple[dict, ...] = (
         ),
     },
     {
-        "code": "CASE-TRUST-UNREGISTERED-VIOLATION-NOT-BLOCKING",
-        "title": "全库判出的**未登记**违规只报告、不阻塞",
-        "why_not": (
-            "#4031 的全量对账阻塞两个方向：① 记了却不再违规；② `origin/main` 记了、仍违规"
-            "却被删掉。**未登记方向**（规则集变化 / 新用例带来的新码，且不在本次 diff 命中的"
-            "用例上）目前只报告：若改成阻塞，任何规则新增都会让全仓 PR 立刻变红，"
-            "在「全库未登记数 = 0」达成前不具备可安全阻塞的前提（实测存量 3 条：PR-025/026/027）。"
-        ),
-        "needs": (
-            "先把未登记数清到 0（逐条修掉或按 R4 开独立 issue），再把「未登记即阻塞」设为 fail-closed；"
-            "**已开独立 issue 登记：`#4046`**（存量 3 条：PR-025/026/027）；同批登记见 `.github/case-trust-baseline.json` 的 `burn_down` 与 #4031 的 PR 说明。"
-        ),
-    },
-    {
         "code": "DRIFT-AUDIT-STALE-DIFF-SCOPED",
         "title": "`scripts/drift_audit.py` 的同款「陈旧即红」仍是 diff 命中口径（未同步 #4031）",
         "why_not": (

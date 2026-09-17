@@ -2417,7 +2417,7 @@
 必须成功: order_create
 ```
 真值: order.create-flow
-溯源: 2026-09-08 新增（issue #3029 复盘）：_VALIDATION_RULES[order_create] 平铺结构而 execute 按 tool_rules.get(target_action) 分层读取 → 校验永远空转，手机号/必填空转；修复为 {create: {...}} 分层并对齐 product_manage，补 L2 单测；2026-09-09 校准：补「散剪规格→跳过加工项→确认」三轮（遮光窗帘有散剪/整卷需澄清售卖方式，单轮到不了 validate_input；probe 实证 4 轮走通）；2026-09-14 校准（#3538）：pre_clean 去 price 过滤（关键词去重，原 price 过滤限 100 元、在种子遮光窗帘 ¥168 的独立栈上恒不匹配 = 没去重）。2026-09-14 校准（#3544，REPORT §2.1）：补颜色应答轮——原 4 轮台词从未回答 agent 追问的「颜色」（三个 run 行为签名同构：R-verify/R1 四轮全卡颜色、R2 的 R3/R4 卡颜色），轮次用尽即停在待确认态；R3 改协作答卡轮（choice→首项=米白，无卡发含颜色原文），并补 2 轮收尾答卡余量（R2 实测 R4 只发 confirm 卡、无轮去点 → order_create 永不发生）。expectations / order_before / required_args 保持不动（REPORT §2.1 明确「保持不动」，未放宽）；2026-09-17 校准（issue #4014 B3）：补效果层断言 must_succeed[order_create]（本用例守护校验链，此前无人证明链路真的走到了写成功；order_before/required_args 均只覆盖「调用顺序/参数齐全」）；expectations / order_before / required_args / data_checks 保持不动 ｜ tags: order_create, validate_input, defense
+溯源: 2026-09-08 新增（issue #3029 复盘）：_VALIDATION_RULES[order_create] 平铺结构而 execute 按 tool_rules.get(target_action) 分层读取 → 校验永远空转，手机号/必填空转；修复为 {create: {...}} 分层并对齐 product_manage，补 L2 单测；2026-09-09 校准：补「散剪规格→跳过加工项→确认」三轮（遮光窗帘有散剪/整卷需澄清售卖方式，单轮到不了 validate_input；probe 实证 4 轮走通）；2026-09-14 校准（#3538）：pre_clean 去 price 过滤（关键词去重，原 price 过滤限 100 元、在种子遮光窗帘 ¥168 的独立栈上恒不匹配 = 没去重）。2026-09-14 校准（#3544，REPORT §2.1）：补颜色应答轮——原 4 轮台词从未回答 agent 追问的「颜色」（三个 run 行为签名同构：R-verify/R1 四轮全卡颜色、R2 的 R3/R4 卡颜色），轮次用尽即停在待确认态；R3 改协作答卡轮（choice→首项=米白，无卡发含颜色原文），并补 2 轮收尾答卡余量（R2 实测 R4 只发 confirm 卡、无轮去点 → order_create 永不发生）。expectations / order_before / required_args 保持不动（REPORT §2.1 明确「保持不动」，未放宽）；2026-09-17 校准（issue #4014 B3）：补效果层断言 must_succeed[order_create]（本用例守护校验链，此前无人证明链路真的走到了写成功；order_before/required_args 均只覆盖「调用顺序/参数齐全」）；expectations / order_before / required_args / data_checks 保持不动；2026-09-18 补前置自断言（issue #4046 的 OR-* 优先档 burn-down）：precondition[product_count_for_keyword 遮光窗帘 expect=1]（同 OR-014/OR-029；断言原样未动） ｜ tags: order_create, validate_input, defense
 
 ### OR-016. 创建订单 confirm 前必须主动询问加工项（商品绑定加工项时） 🔵
 ```
@@ -3116,19 +3116,21 @@
 ```
 你: 搜索遮光窗帘
 期望: product_search(keyword=遮光窗帘)
-数据: data.products.length > 0
+数据: 搜索必须真的返回商品（机器断言见 output_verify：products 非空）—— 原 `data.products.length > 0` 不计分，已弃用
+产出: product_search → products==__nonempty__
 ```
 真值: product-sku-stock.status-flow
-溯源: eval P001 + verification 2.1（同义，取 eval 版） ｜ tags: search, smoke
+溯源: eval P001 + verification 2.1（同义，取 eval 版）；2026-09-18 下沉（issue #4025 F16）：纯散文 `data.products.length > 0` 不计分（无机器计分关键词）⇒ output_verify(product_search 的 products 非空) ｜ tags: search, smoke
 
 ### PR-002. 商品搜索 - 按库存状态筛选 🔵
 ```
 你: 有哪些缺货的商品
 期望: product_search(stock_status=out_of_stock)
-数据: data.products.length >= 0
+数据: 「缺货商品」查询必须真的按库存过滤（机器断言见 output_verify：total == 0，= 种子无库存≤0 商品的可判定事实；过滤被忽略 ⇒ total>0 ⇒ 判红）—— 原 `data.products.length >= 0` 恒真且不计分，已弃用
+产出: product_search → total==0
 ```
 真值: product-sku-stock.low-stock
-溯源: verification 2.2 独有 ｜ tags: search, filter
+溯源: verification 2.2 独有；2026-09-18 下沉（issue #4025 F16）：原 `data.products.length >= 0` 恒真且不计分（OR-002 同族）⇒ 升级为 output_verify(total == 0)——本用例产物侧真值本就是「空」，故断言的是**过滤器生效**而非「非空」（避免把恒真换成恒红） ｜ tags: search, filter
 
 ### PR-003. 商品详情 - 通过名称查询（ID 解析） 🟢
 ```
@@ -3441,13 +3443,16 @@
 ```
 你: 把遮光窗帘下架
 你: [🤖 按上一轮卡片作答]
+你: 把它重新上架
+你: [🤖 按上一轮卡片作答]
+你: [🤖 按上一轮卡片作答]
 期望: product_manage(action=toggle_status, status=off_sale)
 数据: success=true
 清理: product_dedupe(product_keyword=遮光窗帘)
 时序: interact[confirm] before product_manage
 ```
 真值: product-sku-stock.status-flow
-溯源: 2026-09-15 新增（#3882 复盘，#3886）：sess_f26fda5046f34992 复盘——B 端写操作（下架/删加工项）被确认门禁拦截后 agent 只在文本声称「确认卡已发出」而未调 interact，客户无卡可点；行为修复已合并（#3882：base_skill.py 兜底补发确认卡 + tests/test_b_end_confirm_card_fallback.py），本条为行为评测用例（LLM 真跑验证），核心断言 order_before[interact[confirm] before product_manage]：缺卡/写先于卡即红。以 PR-007 为模板（答卡轮 auto_respond fallback=确认 + pre_clean product_dedupe 遮光窗帘 + truths_ref product-sku-stock.status-flow + 命名空间互斥）。 ｜ tags: write, confirm
+溯源: 2026-09-15 新增（#3882 复盘，#3886）：sess_f26fda5046f34992 复盘——B 端写操作（下架/删加工项）被确认门禁拦截后 agent 只在文本声称「确认卡已发出」而未调 interact，客户无卡可点；行为修复已合并（#3882：base_skill.py 兜底补发确认卡 + tests/test_b_end_confirm_card_fallback.py），本条为行为评测用例（LLM 真跑验证），核心断言 order_before[interact[confirm] before product_manage]：缺卡/写先于卡即红。以 PR-007 为模板（答卡轮 auto_respond fallback=确认 + pre_clean product_dedupe 遮光窗帘 + truths_ref product-sku-stock.status-flow + 命名空间互斥）。2026-09-18 补复位轮 + 前置自断言（issue #4075 用例侧 / #4046）：下架后新增「重新上架」答卡轮（同 PR-007），让共享夹具在用例结束时归零（此前残留 off_sale 会污染同栈按名检索的用例）；并补 precondition[product_count_for_keyword expect=1]。**断言（expectations / order_before / data_checks）原样未动** ｜ tags: write, confirm
 
 ### PR-026. 设置商品主图 - product_manage(action=update, images) 成功路径 🔵
 ```
@@ -3479,7 +3484,7 @@
 必须成功: product_manage(update)
 ```
 真值: product-sku-stock.status-flow
-溯源: 2026-09-15 新增（issue #3931，实证 sess_2efa2071bb1747d8 19:46:32 拒绝文本）：「不包含图片上传」「拿不到可写入的地址」必须被守卫命中并纠正——product_manage 有 images/detail_images 参数、能力真实可达；forbidden_text 逐词机器断言（可判定形式），守卫判据与话术见 base_skill.py 的 _PRODUCT_IMAGE_ACTION_WORDS / _product_image_denial_hit / _TEXT_DENIAL_CORRECTIVE_PRODUCT_IMAGE ｜ tags: image, write, capability_denial
+溯源: 2026-09-15 新增（issue #3931，实证 sess_2efa2071bb1747d8 19:46:32 拒绝文本）：「不包含图片上传」「拿不到可写入的地址」必须被守卫命中并纠正——product_manage 有 images/detail_images 参数、能力真实可达；forbidden_text 逐词机器断言（可判定形式），守卫判据与话术见 base_skill.py 的 _PRODUCT_IMAGE_ACTION_WORDS / _product_image_denial_hit / _TEXT_DENIAL_CORRECTIVE_PRODUCT_IMAGE。2026-09-18 补前置自断言（issue #4046）：precondition[product_count_for_keyword expect=1]（断言原样未动） ｜ tags: image, write, capability_denial
 
 ## registry（1 case）
 

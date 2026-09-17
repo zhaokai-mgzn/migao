@@ -894,8 +894,16 @@ cases:
       # 按关键词去重保留最早创建的（= 种子商品，加工项最全），删掉其余副本（同 #3518 先例）。
       - type: product_dedupe
         product_keyword: "遮光窗帘"
+    # 前置自断言（§18.4，同 OR-014/OR-029 先例）：本用例按名定位下单对象，
+    # 故「该名字唯一」是它依赖的可判定前置（`product_dedupe` 先于 capture ⇒ 捕获时恰为 1）。
+    # 出副本时折成 `PRECONDITION_NOT_APPLIED`，不再伪装成「agent 不下单」
+    # （issue #3835 的形态：PR-016 曾造出同名副本 → 目标工具永不执行）。
+    precondition:
+      - type: product_count_for_keyword
+        source: "遮光窗帘"
+        expect: 1
     skip_reason: ""
-    merge_log: "2026-09-08 新增（issue #3029 复盘）：_VALIDATION_RULES[order_create] 平铺结构而 execute 按 tool_rules.get(target_action) 分层读取 → 校验永远空转，手机号/必填空转；修复为 {create: {...}} 分层并对齐 product_manage，补 L2 单测；2026-09-09 校准：补「散剪规格→跳过加工项→确认」三轮（遮光窗帘有散剪/整卷需澄清售卖方式，单轮到不了 validate_input；probe 实证 4 轮走通）；2026-09-14 校准（#3538）：pre_clean 去 price 过滤（关键词去重，原 price 过滤限 100 元、在种子遮光窗帘 ¥168 的独立栈上恒不匹配 = 没去重）。2026-09-14 校准（#3544，REPORT §2.1）：补颜色应答轮——原 4 轮台词从未回答 agent 追问的「颜色」（三个 run 行为签名同构：R-verify/R1 四轮全卡颜色、R2 的 R3/R4 卡颜色），轮次用尽即停在待确认态；R3 改协作答卡轮（choice→首项=米白，无卡发含颜色原文），并补 2 轮收尾答卡余量（R2 实测 R4 只发 confirm 卡、无轮去点 → order_create 永不发生）。expectations / order_before / required_args 保持不动（REPORT §2.1 明确「保持不动」，未放宽）；2026-09-17 校准（issue #4014 B3）：补效果层断言 must_succeed[order_create]（本用例守护校验链，此前无人证明链路真的走到了写成功；order_before/required_args 均只覆盖「调用顺序/参数齐全」）；expectations / order_before / required_args / data_checks 保持不动"
+    merge_log: "2026-09-08 新增（issue #3029 复盘）：_VALIDATION_RULES[order_create] 平铺结构而 execute 按 tool_rules.get(target_action) 分层读取 → 校验永远空转，手机号/必填空转；修复为 {create: {...}} 分层并对齐 product_manage，补 L2 单测；2026-09-09 校准：补「散剪规格→跳过加工项→确认」三轮（遮光窗帘有散剪/整卷需澄清售卖方式，单轮到不了 validate_input；probe 实证 4 轮走通）；2026-09-14 校准（#3538）：pre_clean 去 price 过滤（关键词去重，原 price 过滤限 100 元、在种子遮光窗帘 ¥168 的独立栈上恒不匹配 = 没去重）。2026-09-14 校准（#3544，REPORT §2.1）：补颜色应答轮——原 4 轮台词从未回答 agent 追问的「颜色」（三个 run 行为签名同构：R-verify/R1 四轮全卡颜色、R2 的 R3/R4 卡颜色），轮次用尽即停在待确认态；R3 改协作答卡轮（choice→首项=米白，无卡发含颜色原文），并补 2 轮收尾答卡余量（R2 实测 R4 只发 confirm 卡、无轮去点 → order_create 永不发生）。expectations / order_before / required_args 保持不动（REPORT §2.1 明确「保持不动」，未放宽）；2026-09-17 校准（issue #4014 B3）：补效果层断言 must_succeed[order_create]（本用例守护校验链，此前无人证明链路真的走到了写成功；order_before/required_args 均只覆盖「调用顺序/参数齐全」）；expectations / order_before / required_args / data_checks 保持不动；2026-09-18 补前置自断言（issue #4046 的 OR-* 优先档 burn-down）：precondition[product_count_for_keyword 遮光窗帘 expect=1]（同 OR-014/OR-029；断言原样未动）"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_validate_input.py"
