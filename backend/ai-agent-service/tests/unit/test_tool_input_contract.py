@@ -324,3 +324,105 @@ class TestLegalCallsStillExecute:
 
         assert result["success"] is True
         assert tool.seen == [{"action": "update"}]
+# ──────────────────────────────────────────────────────────────────────────────
+# T3：缺参必须走**结构化字段**，不得再靠中文错误原文子串匹配
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+class _MissingParamTool(BaseTool):
+    """返回带结构化缺参的失败结果（模拟工具侧生产者）。"""
+
+    name = "missing_param_probe"
+    description = "缺参探针"
+    read_only = False
+    idempotent = True
+    parameters = {"type": "object", "properties": {"code": {"type": "string"}}}
+
+    async def execute(self, context, **kwargs):
+        return ToolResult(success=False, error="验证码错误或已过期", message="码不对",
+                          suggestion="请重新获取验证码", missing_params=["sms_code"])
+
+
+class TestMissingParamsAreStructured:
+    """R5：**不得靠中文措辞语料**承载判据 —— 缺参走结构化字段。"""
+
+    def test_tool_result_declares_missing_params(self):
+        """字段必须**真的声明**（`extra="allow"` 会把没声明的关键字静默吞掉 = 假绿）。"""
+        assert "missing_params" in ToolResult.model_fields, (
+            "`ToolResult` 未声明 `missing_params` —— `Config.extra='allow'` 会静默吞掉它"
+        )
+
+    def test_execution_exit_carries_missing_params(self):
+        """传递 ⇒ 消费链：结构化字段必须穿过执行出口（`result_dict`）。"""
+        result = _run(_MissingParamTool(), {"code": "000000"})
+
+        assert result["missing_params"] == ["sms_code"], (
+            f"执行出口没有把结构化缺参带出来：{result}"
+        )
+
+    def test_chinese_error_text_table_is_gone(self):
+        """R4：中文子串表**删除**（基线 4 条 → 0）—— 只许缩短，不得扩容。"""
+        from app.graph.skills import base_skill
+
+        assert not hasattr(base_skill, "WRITE_INPUT_ERROR_PARAMS"), (
+            "中文错误原文 → 参数名 的子串表仍然存在（改一个字判据就静默失效）"
+        )
+        assert not hasattr(base_skill, "missing_input_param"), (
+            "`missing_input_param()`（`key in text` 子串匹配）仍然存在"
+        )
+
+    @pytest.mark.parametrize("role,kwargs,expected_error", [
+        # `items` 形参无默认值 ⇒ 走「缺少商品明细」失败面必须显式传 `None`
+        ("customer", {"customer_name": "张三", "customer_phone": "13800138000",
+                      "items": None}, "缺少商品明细"),
+        ("customer", {"customer_name": "张三", "customer_phone": "13800138000",
+                      "items": [{"product_name": "x", "quantity": 1,
+                                 "unit_price": 1, "subtotal": 1}]}, "缺少短信验证码"),
+    ])
+    def test_order_create_failure_sites_carry_the_param(self, role, kwargs, expected_error):
+        """`order_create` 的失败点**直接带上**结构化缺参（生产者侧，issue #4080 T3）。"""
+        tool = OrderCreateTool()
+        ctx = ToolContext(tenant_id=1, user_id="u-test", role=role, session_id="s-test")
+
+        result = asyncio.run(tool.execute(ctx, **kwargs))
+
+        assert result.error == expected_error
+        assert result.missing_params == (["items"] if expected_error == "缺少商品明细" else ["sms_code"])
+
+    def test_order_create_bad_code_format_carries_the_param(self):
+        tool = OrderCreateTool()
+        ctx = ToolContext(tenant_id=1, user_id="u-test", role="customer", session_id="s-test")
+
+        result = asyncio.run(tool.execute(
+            ctx, customer_name="张三", customer_phone="13800138000",
+            items=[{"product_name": "x", "quantity": 1, "unit_price": 1, "subtotal": 1}],
+            sms_code="abc"))
+
+        assert result.error == "验证码格式无效"
+        assert result.missing_params == ["sms_code"]
+
+    def test_order_create_expired_code_carries_the_param(self):
+        """验证码错误/过期同样必须结构化（此前靠「验证码错误或已过期」这条中文串反推）。"""
+        tool = OrderCreateTool()
+        ctx = ToolContext(tenant_id=1, user_id="u-test", role="customer", session_id="s-test")
+
+        with patch.object(OrderCreateTool, "_verify_sms_code",
+                          new=AsyncMock(return_value=False)):
+            result = asyncio.run(tool.execute(
+                ctx, customer_name="张三", customer_phone="13800138000",
+                items=[{"product_name": "x", "quantity": 1, "unit_price": 1, "subtotal": 1}],
+                sms_code="123456"))
+
+        assert result.error == "验证码错误或已过期"
+        assert result.missing_params == ["sms_code"]
+
+    def test_backend_role_failure_has_no_missing_sms_code(self):
+        """R2：B 端（admin）不需要 sms_code —— 失败面不得凭空报「缺 sms_code」。"""
+        tool = OrderCreateTool()
+        ctx = ToolContext(tenant_id=1, user_id="u-test", role="admin", session_id="s-test")
+
+        result = asyncio.run(tool.execute(
+            ctx, customer_name="张三", customer_phone="13800138000", items=None))
+
+        assert result.error == "缺少商品明细"
+        assert result.missing_params == ["items"]
