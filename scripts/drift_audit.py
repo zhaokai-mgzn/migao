@@ -1630,9 +1630,15 @@ def build_baseline(rep: dict, reason: str) -> dict:
         "cases_fingerprint": rep["cases_fingerprint"],
         "reason": reason,
         # 默认预算：每 PR ≥1 条净缩（`--base` 那一份生效；本 PR 写进清单的这份是**给后续 PR** 的）
-        "burn_down": {"per_pr_min": 1, "metric": "entries_or_codes",
-                      # 取值必须落在 `case_trust_gate.burn_down_verdict` 认识的那两个里
-                      # （`all_prs` / `case_touching_prs`）；语义见上面的 `_burn_down_note`。
+        "burn_down": {"per_pr_min": 1, "metric": "entries",
+                      # ⚠️ `metric` / `scope` 的**取值与语义都归 `case_trust_gate`**
+                      # （本脚本不定义、也不改写；`burn_down_verdict` 对未知口径 fail-closed）：
+                      # · `metric=entries` = 只认**整条销账**（该条目真的从清单消失）。
+                      #   本门禁的基线条目是 `{key: 计数}`，计数 >1 的条目在中转形态里被摊成
+                      #   多条码 ⇒ `codes` 口径下"收窄"就能过门禁，正是 #4180 收紧掉的口径；
+                      # · `scope=case_touching_prs` = 本 PR **动了判据面**（基线文件本身 /
+                      #   引入新的存量条目）；取值必须落在 gate 认识的那两个里，语义见
+                      #   上面的 `_burn_down_note`。
                       "scope": "case_touching_prs"},
         "entries": entries,
     }

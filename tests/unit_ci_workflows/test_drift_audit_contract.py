@@ -886,6 +886,57 @@ def test_baseline_entry_keys_have_no_line_numbers(tmp_path):
         f"② 改一行就换 key，『只许缩短』会退化成随机红")
 
 
+def test_regen_recomputes_entries_but_never_touches_burn_down_or_anchor(tmp_path):
+    """红证（#4180 的「只许收紧」同款）：`--regen-baseline` **只重算派生读数**，
+    **不动 `burn_down` 与 `anchor_sha`**。
+
+    为什么这条必须独立可红：`--regen-baseline` 是**唯一**的机械修复入口（本门禁的
+    陈旧/被删/预算三条判据都指向它），而它同时握着两个「自证式放宽」的口子：
+    · `burn_down` 是整个**豁免面收敛速度**的门槛 —— 重生成时顺手把 `per_pr_min` 调小、
+      把 `metric` 放松、或把整个块删掉，就等于**用修法入口给自己开后门**（判据本体在
+      `burn_down_verdict` 的「只许收紧」里，但那条只在 `--base` 有配置时才比对）；
+    · `anchor_sha` 是「这份清单是在哪个 SHA 上算出来的」——它一变，读者会以为清单刚重算过。
+
+    夹具同时覆盖两件事：① 换入一处**新**漂移 ⇒ `entries` 必须跟着变（**真的重算了**，
+    防"什么都没做也断言没变"的空断言）；② `burn_down` 与 `anchor_sha` 逐字节不变。
+    """
+    repo = mk_repo(tmp_path, {
+        SKILL_REL: SKILL_TMPL.format(version="1.28.0"),
+        COPY_REL: COPY_TMPL.format(version="1.3"),
+    }, surface_seed=True)
+    only = ("--only", "sync-copy,ref-freshness")
+    run(repo, "--check", *only, "--regen-baseline", "--reason", "首跑基线")
+    bp = repo / "scripts" / "drift_audit_baseline.json"
+    before = json.loads(bp.read_text(encoding="utf-8"))
+    assert before["burn_down"]["per_pr_min"] >= 1, f"夹具前提：预算得有配置：{before}"
+    # ⚠️ 把 `anchor_sha` 改成一个**可观测的错误值**，再让重生成把它算回来：
+    # 否则两侧都是 `rep["base"]` ⇒ 这条断言**恒真**（实测：变异 `anchor_sha` 的写法
+    # 时用例照样绿 = 空断言）。改错值 + 断言复原 = 真判据。
+    stale_anchor = "0" * 40
+    base_file = json.loads(bp.read_text(encoding="utf-8"))
+    base_file["anchor_sha"] = stale_anchor
+    bp.write_text(json.dumps(base_file, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+                  encoding="utf-8")
+    # 换入一处**新**漂移（旧的那条 version 差异修好）⇒ 重生成必然改写 entries
+    _write(repo, COPY_REL, COPY_TMPL.format(version="1.28") + f"\n引用：`{_NOWHERE}:3`\n")
+    rc, out, _ = run(repo, "--check", *only, "--regen-baseline", "--reason", "销账 + 记新漂移")
+    assert rc == 0, out
+    after = json.loads(bp.read_text(encoding="utf-8"))
+    assert after["entries"] != before["entries"], (
+        f"重生成后 entries 一字未变 ⇒ 本用例证明不了「重算过」，是**空断言**：{after['entries']}")
+    assert after["burn_down"] == before["burn_down"], (
+        f"重生成**动了预算配置** ⇒ 用修法入口给自己开后门（只许收紧失守）："
+        f"{before['burn_down']} → {after['burn_down']}")
+    assert after["anchor_sha"] != stale_anchor, (
+        "重生成**没把 `anchor_sha` 算回来**（它停在被写坏的值上）⇒ 清单自称的基准 SHA 是假的")
+    assert after["anchor_sha"] == before["anchor_sha"], (
+        f"重生成把 `anchor_sha` 推到了别处 ⇒ 读者会以为清单是在另一个 SHA 上算的："
+        f"{before['anchor_sha']} → {after['anchor_sha']}")
+    # 未受管面/预算相关的说明字段也一并保留（它们是「这份清单是什么」的一部分）
+    for k in ("regenerate_command", "schema", "policy_version"):
+        assert after[k] == before[k], f"重生成改写了 {k}：{before[k]!r} → {after[k]!r}"
+
+
 def test_real_repo_audit_is_green_on_current_tree():
     """本 PR 自身的自证：在当前树上 `--check` 必须绿（存量放行、无新增漂移）。
 

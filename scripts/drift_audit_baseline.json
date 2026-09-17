@@ -4,13 +4,13 @@
   "_entry_key_note": "条目 key 为 `<文件或分量>|<判据内部标识>`，**不含行号** —— 否则改一行就换 key，『只许缩短』会退化成随机红。",
   "_scope_note": "「已不再漂移 ⇒ 必须移除」是**全量对账**（#4045）：清单里任何条目都必须在**全库重算**里仍然真的漂移，**不再限于本次 diff 命中的文件**；反向同样成立 ——`origin/main` 记着、现在仍漂移却被删掉的条目会**阻塞**（删条目 = 偷偷缩短）。判据本体在 `.github/case_trust_gate.py` 的 `reconcile_baseline`（本脚本 import 复用，不复制第二套口径）。",
   "_when_to_regen": "① 你修好了某条存量漂移（门禁会告诉你：**全量对账**，不再限于你 diff 命中的文件）；② 别人合并了漂移修复 ⇒ 重跑审计后重生成，把已修好的条目删掉；③ 判据集合本身变化（新增/改名）⇒ 必须重生成。",
-  "anchor_sha": "9fbeca74303148d02338842f9d98699aec7d8a33",
+  "anchor_sha": "d98067648c0284695e16c69bf6b66834c6581e48",
   "burn_down": {
-    "metric": "entries_or_codes",
+    "metric": "entries",
     "per_pr_min": 1,
     "scope": "case_touching_prs"
   },
-  "cases_fingerprint": "e97cca81df4e9627",
+  "cases_fingerprint": "7665abdef7472683",
   "entries": {
     "generated-freshness": {},
     "heartbeat": {
@@ -90,9 +90,9 @@
       "version": 1
     }
   },
-  "generated_at": "2026-09-17T19:42:30.850799+00:00",
+  "generated_at": "2026-09-17T21:08:17.792246+00:00",
   "policy_version": 1,
-  "reason": "issue #4045：陈旧即红改为全量对账 + burn-down 预算（复用 case_trust_gate 判据）；删除已不再漂移的存量条目",
+  "reason": "issue #4045：陈旧即红改为全量对账 + burn-down 预算（复用 case_trust_gate 判据，metric 跟随 #4180 收紧为 entries）；删除已不再漂移的存量条目",
   "regenerate_command": "python3 scripts/drift_audit.py --regen-baseline --reason '<理由>'",
   "schema": "migao.drift-audit-baseline/1"
 }
