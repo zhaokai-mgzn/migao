@@ -11,7 +11,7 @@ from typing import Optional, Dict, Any
 import re
 from loguru import logger
 
-from app.tools.base import BaseTool, ToolContext, ToolResult
+from app.tools.base import admin_api_failure, BaseTool, ToolContext, ToolResult
 from app.utils.http_client import get_admin_api_client
 
 # ── GB/T 47746-2026 转人工上下文同步（issue #2776）────────────────────
@@ -377,8 +377,7 @@ class HumanHandoffTool(BaseTool):
 
             if not response.get("success"):
                 error_msg = response.get("error", {}).get("message", "创建工单失败")
-                return ToolResult(
-                    success=False,
+                return admin_api_failure(response,
                     error=error_msg,
                     message=f"转人工失败：{error_msg}",
                     suggestion="请稍后重试转人工，或直接拨打客服热线联系人工客服",

@@ -7,7 +7,7 @@ AI 智能客服系统 - 加工单查询 Tool（issue #3340）
 from typing import Any, Dict, List, Optional
 from loguru import logger
 
-from app.tools.base import BaseTool, ToolContext, ToolResult
+from app.tools.base import admin_api_failure, BaseTool, ToolContext, ToolResult
 from app.utils.http_client import get_admin_api_client
 
 
@@ -32,7 +32,10 @@ class ProcessingOrderQueryTool(BaseTool):
         "【标注】READ — 只读查询"
     )
 
-    allowed_roles = ["admin", "agent", "tenant_admin", "operator", "customer_service", "knowledge_editor"]
+    # 权限码（admin-api 目录）：加工单**查看** = `processing:view`
+    # （ProcessingOrderController 的 `GET /{id}`；目录里 customer_service/sales/finance/operator 持有）。
+    # 旧白名单里的 knowledge_editor 在目录里只有 dashboard:view + product:list ⇒ 不再放行（收窄）。
+    required_permissions = ["processing:view"]
     read_only = True
     # 已从注册表移除（产品决策 2026-09-15，issue #3917）：agent 暂不接入加工单工具，
     # 须区分「加工项/加工单」概念并引导后台。类文件保留（tests/test_tools_processing_order_*.
@@ -94,8 +97,7 @@ class ProcessingOrderQueryTool(BaseTool):
         if not response.get("success"):
             error_info = response.get("error", {})
             error_msg = error_info.get("message", "查询失败") if isinstance(error_info, dict) else str(error_info)
-            return ToolResult(success=False,
-                error=error_msg,
+            return admin_api_failure(response, error=error_msg,
                 message=f"加工单查询失败：{error_msg}",
                 suggestion="请稍后重试；若持续失败，请改为不带状态筛选查询，或请用户联系管理员核对加工单数据",
             )

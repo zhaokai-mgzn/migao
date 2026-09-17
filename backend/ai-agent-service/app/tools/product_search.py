@@ -16,7 +16,7 @@ stockStatus。Spring 默认忽略未知字段（FAIL_ON_UNKNOWN_PROPERTIES=false
 from typing import Any, Dict, List, Optional
 from loguru import logger
 
-from app.tools.base import BaseTool, ToolContext, ToolResult
+from app.tools.base import admin_api_failure, BaseTool, ToolContext, ToolResult
 from app.tools.stock_semantics import LOW_STOCK_THRESHOLD, low_stock_phrase
 from app.utils.http_client import get_admin_api_client
 from app.utils.field_mapper import FieldMapper
@@ -184,8 +184,7 @@ class ProductSearchTool(BaseTool):
             # 解析响应
             if not response.get("success"):
                 error_msg = response.get("error", {}).get("message", "搜索失败")
-                return ToolResult(
-                    success=False,
+                return admin_api_failure(response,
                     error=error_msg,
                     message="商品搜索失败，请稍后重试",
                     suggestion="请稍后重试，或尝试更精确的关键词",

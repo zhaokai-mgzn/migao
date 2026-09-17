@@ -8,7 +8,7 @@ AI 智能客服系统 - 加工项管理 Tool
 from typing import Any, Dict, Optional
 from loguru import logger
 
-from app.tools.base import BaseTool, ToolContext, ToolResult
+from app.tools.base import admin_api_failure, BaseTool, ToolContext, ToolResult
 from app.utils.http_client import get_admin_api_client
 
 
@@ -70,7 +70,10 @@ class ProcessingItemManageTool(BaseTool):
         "【铁律】delete_item 是软删除（记录标记 deleted=1，非物理移除）：删除成功后按名称/列表复查查不到该加工项是正常结果（删除已生效），"
         "禁止误报「删除未生效」或建议用户去后台手动删除；如需恢复告知用户联系管理员（#3885）。"
     )
-    allowed_roles = ["admin", "tenant_admin"]
+    # 权限码（admin-api 目录）：ProcessingItemController / ProcessingCategoryController 类级
+    # `@RequirePermission("processing:manage")`。
+    # 此前写死 ["admin","tenant_admin"] ⇒ operator / product_manager 持码却被判「权限不足」（#4106 F4）。
+    required_permissions = ["processing:manage"]
 
     read_only = False
     destructive = True   # 可删除加工项/分类
@@ -335,8 +338,7 @@ class ProcessingItemManageTool(BaseTool):
 
         if not response.get("success"):
             error_msg = response.get("error", {}).get("message", "创建失败")
-            return ToolResult(
-                success=False,
+            return admin_api_failure(response,
                 error=error_msg,
                 message=f"创建加工项失败：{error_msg}",
                 suggestion="请先用 processing_item_manage 的 list 操作确认是否已有同名加工项，再改用更新或换一个名称",
@@ -366,8 +368,7 @@ class ProcessingItemManageTool(BaseTool):
         )
         if not detail_response.get("success"):
             error_msg = detail_response.get("error", {}).get("message", "查询失败")
-            return ToolResult(
-                success=False,
+            return admin_api_failure(detail_response,
                 error=error_msg,
                 message=f"{fail_prefix}：读取加工项详情失败——{error_msg}",
                 suggestion="请确认 item_id 是否正确（可先用 processing_item_query 查询加工项）",
@@ -405,8 +406,7 @@ class ProcessingItemManageTool(BaseTool):
 
         if not response.get("success"):
             error_msg = response.get("error", {}).get("message", "更新失败")
-            return ToolResult(
-                success=False,
+            return admin_api_failure(response,
                 error=error_msg,
                 message=f"{fail_prefix}：{error_msg}",
                 suggestion="请先读取该加工项详情，核对必填字段（名称/分类/计价方式/单价）是否齐全后再重试",
@@ -519,8 +519,7 @@ class ProcessingItemManageTool(BaseTool):
 
         if not response.get("success"):
             error_msg = response.get("error", {}).get("message", "删除失败")
-            return ToolResult(
-                success=False,
+            return admin_api_failure(response,
                 error=error_msg,
                 message=f"删除加工项失败：{error_msg}",
                 suggestion="请先用 processing_item_query 确认该加工项存在、且未被订单或商品引用后再重新执行删除",
@@ -587,8 +586,7 @@ class ProcessingItemManageTool(BaseTool):
 
         if not response.get("success"):
             error_msg = response.get("error", {}).get("message", "查询失败")
-            return ToolResult(
-                success=False,
+            return admin_api_failure(response,
                 error=error_msg,
                 message=f"获取加工分类列表失败：{error_msg}",
                 suggestion="请稍后重试；若持续失败，请改用 processing_item_query 按分类名查询，或请用户联系管理员核对加工分类配置",
@@ -633,8 +631,7 @@ class ProcessingItemManageTool(BaseTool):
 
         if not response.get("success"):
             error_msg = response.get("error", {}).get("message", "创建失败")
-            return ToolResult(
-                success=False,
+            return admin_api_failure(response,
                 error=error_msg,
                 message=f"创建加工分类失败：{error_msg}",
                 suggestion="请先用 processing_item_manage 的 list_categories 操作确认是否已有同名分类，再改用更新或换一个名称",
@@ -688,8 +685,7 @@ class ProcessingItemManageTool(BaseTool):
 
         if not response.get("success"):
             error_msg = response.get("error", {}).get("message", "更新失败")
-            return ToolResult(
-                success=False,
+            return admin_api_failure(response,
                 error=error_msg,
                 message=f"更新加工分类失败：{error_msg}",
                 suggestion="请先用 processing_item_manage 的 list_categories 操作确认该分类仍在，再重新执行更新",
@@ -725,8 +721,7 @@ class ProcessingItemManageTool(BaseTool):
 
         if not response.get("success"):
             error_msg = response.get("error", {}).get("message", "删除失败")
-            return ToolResult(
-                success=False,
+            return admin_api_failure(response,
                 error=error_msg,
                 message=f"删除加工分类失败：{error_msg}",
                 suggestion="请先用 processing_item_manage 的 list 操作确认该分类下已无加工项，再重新执行删除",
@@ -809,8 +804,7 @@ class ProcessingItemManageTool(BaseTool):
 
         if not response.get("success"):
             error_msg = response.get("error", {}).get("message", "计算失败")
-            return ToolResult(
-                success=False,
+            return admin_api_failure(response,
                 error=error_msg,
                 message=f"计算加工价格失败：{error_msg}",
                 suggestion="请先用 processing_item_query 核对计价方式与参数（按面积需宽×高、按米需长度）后再重试",

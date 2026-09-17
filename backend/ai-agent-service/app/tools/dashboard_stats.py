@@ -7,7 +7,7 @@ AI 智能客服系统 - 数据看板 Tool
 from typing import Any, Dict, Optional
 from loguru import logger
 
-from app.tools.base import BaseTool, ToolContext, ToolResult
+from app.tools.base import admin_api_failure, BaseTool, ToolContext, ToolResult
 from app.utils.http_client import get_admin_api_client
 
 
@@ -40,7 +40,9 @@ class DashboardStatsTool(BaseTool):
     description = (
         "【触发】用户说'今天生意''经营看板''数据概览''订单趋势''状态分布''最近X条订单''活跃会话''哪个卖得好''卖得最好''销量排行''看看数据'时，优先用本工具而非 order_query。【何时用】任何看板/趋势/分布/概览类查询。【何时不用】查某个具体订单（用 order_query）、查客服会话详情（用 session_manage）。【前置】action: overview(今日概览)/order_trend(趋势,需days)/order_status(状态分布)/recent_orders(最近,需limit)/active_sessions(活跃,需limit)/product_ranking(商品销量排行,period=day近7天|month近30天,需limit)。days默认7,limit默认5。【标注】READONLY — 经营分析专用，不查具体记录"
     )
-    allowed_roles = ["admin", "agent", "tenant_admin", "operator"]
+    # 权限码（admin-api 目录）：DashboardController 类级 `@RequirePermission("dashboard:view")`。
+    # 目录里 6 个商户角色都持此码 ⇒ 不再按角色名硬编码（#4106 F4）。
+    required_permissions = ["dashboard:view"]
 
     parameters = {
         "type": "object",
@@ -173,8 +175,7 @@ class DashboardStatsTool(BaseTool):
 
         if not response.get("success"):
             error_msg = response.get("error", {}).get("message", "查询失败")
-            return ToolResult(
-                success=False,
+            return admin_api_failure(response,
                 error=error_msg,
                 message="统计概览查询失败，请稍后重试",
                 suggestion="请稍后重试，如持续失败请联系技术支持",
@@ -211,8 +212,7 @@ class DashboardStatsTool(BaseTool):
 
         if not response.get("success"):
             error_msg = response.get("error", {}).get("message", "查询失败")
-            return ToolResult(
-                success=False,
+            return admin_api_failure(response,
                 error=error_msg,
                 message="订单趋势查询失败，请稍后重试",
                 suggestion="请稍后重试，如持续失败请联系技术支持",
@@ -249,8 +249,7 @@ class DashboardStatsTool(BaseTool):
 
         if not response.get("success"):
             error_msg = response.get("error", {}).get("message", "查询失败")
-            return ToolResult(
-                success=False,
+            return admin_api_failure(response,
                 error=error_msg,
                 message="订单状态分布查询失败，请稍后重试",
                 suggestion="请稍后重试，如持续失败请联系技术支持",
@@ -291,8 +290,7 @@ class DashboardStatsTool(BaseTool):
 
         if not response.get("success"):
             error_msg = response.get("error", {}).get("message", "查询失败")
-            return ToolResult(
-                success=False,
+            return admin_api_failure(response,
                 error=error_msg,
                 message="最近订单查询失败，请稍后重试",
                 suggestion="请稍后重试，如持续失败请联系技术支持",
@@ -327,8 +325,7 @@ class DashboardStatsTool(BaseTool):
 
         if not response.get("success"):
             error_msg = response.get("error", {}).get("message", "查询失败")
-            return ToolResult(
-                success=False,
+            return admin_api_failure(response,
                 error=error_msg,
                 message="活跃会话查询失败，请稍后重试",
                 suggestion="请稍后重试，如持续失败请联系技术支持",
@@ -367,8 +364,7 @@ class DashboardStatsTool(BaseTool):
 
         if not response.get("success"):
             error_msg = response.get("error", {}).get("message", "查询失败")
-            return ToolResult(
-                success=False,
+            return admin_api_failure(response,
                 error=error_msg,
                 message="商品销量排行查询失败，请稍后重试",
                 suggestion="请稍后重试，如持续失败请联系技术支持",

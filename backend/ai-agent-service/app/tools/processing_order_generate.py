@@ -8,7 +8,7 @@ AI 智能客服系统 - 加工单生成 Tool（issue #3340）
 from typing import Any, Dict, List, Optional
 from loguru import logger
 
-from app.tools.base import BaseTool, ToolContext, ToolResult
+from app.tools.base import admin_api_failure, BaseTool, ToolContext, ToolResult
 from app.utils.http_client import get_admin_api_client
 
 
@@ -24,7 +24,9 @@ class ProcessingOrderGenerateTool(BaseTool):
         "【标注】WRITE — 批量生成前必须列出订单清单并二次确认"
     )
 
-    allowed_roles = ["admin", "tenant_admin", "operator"]
+    # 权限码（admin-api 目录）：ProcessingOrderController 类级
+    # `@RequirePermission("processing:update")`（生成/发加工/取消加工单）。
+    required_permissions = ["processing:update"]
     read_only = False
     # 已从注册表移除（产品决策 2026-09-15，issue #3917）：agent 暂不接入加工单工具，
     # 须区分「加工项/加工单」概念并引导后台。类文件保留（tests/test_tools_processing_order_*.
@@ -97,8 +99,8 @@ class ProcessingOrderGenerateTool(BaseTool):
         if not response.get("success"):
             error_info = response.get("error", {})
             error_msg = error_info.get("message", "生成加工单失败") if isinstance(error_info, dict) else str(error_info)
-            return ToolResult(
-                success=False, error=error_msg,
+            return admin_api_failure(response,
+                error=error_msg,
                 message=f"生成加工单失败：{error_msg}",
                 suggestion="请确认订单已确认且含加工项；已有加工单的订单不可重复生成",
             )

@@ -30,7 +30,7 @@ from loguru import logger
 from app.config import settings
 from app.graph.state import AgentState
 from app.graph.pending_validated import extract_pending, is_pending_for, PENDING_KEY
-from app.tools.base import ToolContext
+from app.tools.base import NON_RETRYABLE_ERROR_CODES, ToolContext
 from app.tools.registry import ToolRegistry, set_tool_context, get_tool_context, audit_write_tool
 from app.utils.log_sanitizer import LogSanitizer
 import app.utils.error_incident as _err_inc
@@ -3053,6 +3053,9 @@ async def _execute_tool_safe(tool, tool_args: dict, tool_context, state: dict) -
         "summary": "",
         "suggestion": "",
         "terminal": False,
+        # admin-api 错误码（issue #4106 F6 带出 / #4109 消费）：`_self_correct_retry`
+        # 用它判定「授权类失败不得重试」。异常/超时出口留空 = 可重试（fail-safe 见该函数）。
+        "error_code": None,
     }
 
     # 写工具图片类参数被丢弃 → 不执行，返回失败 + 正确工具指引（issue #3930）：
@@ -3144,6 +3147,8 @@ async def _execute_tool_safe(tool, tool_args: dict, tool_context, state: dict) -
         summary=getattr(result, "summary", None) or "",
         suggestion=getattr(result, "suggestion", None) or "",
         terminal=bool(getattr(result, "terminal", False)),
+        # 授权类失败的判定依据（#4109）：由 `admin_api_failure` 从 admin-api 响应填充。
+        error_code=getattr(result, "error_code", None),
     )
     result_str = json.dumps(result_dict, ensure_ascii=False, default=str)
 
@@ -3183,6 +3188,30 @@ async def _self_correct_retry(
         return None
 
     error_msg = result_dict.get("message", result_dict.get("error", "执行失败"))
+
+    # ── 授权类失败：禁止自动重试（issue #4109）───────────────────────────────
+    # 权限拒绝（PERMISSION_DENIED / FORBIDDEN / 401 系列）拿**同一身份、同一权限**再调一次
+    # **永远不可能成功** —— 自动重试只是把同一次拒绝又买了一遍；更糟的是重试入口会调
+    # `suggestion_llm` 按「参数怎么补」改写失败，让模型把权限问题当参数问题（与
+    # `admin_api_failure` 写给权限拒绝的「不要重试」建议直接打架）⇒ 用户等来的仍是「稍后重试」。
+    #
+    # 真值来源（单一真值，不另立清单）：`app/tools/base.py::NON_RETRYABLE_ERROR_CODES`
+    # —— 与工具层 `admin_api_failure` 用的是同一个常量，也由 retry 侧消费（跨包契约，
+    # 名字见 CONTRACT-LEDGER 第十节）。护栏落在**机制层**，不靠每个工具在 suggestion 里
+    # 写"请勿重试"自觉（同 #3564 的取舍：靠工具自觉 = 下一个新工具必踩）。
+    #
+    # fail-safe（**显式声明**，不允许静默滑向任何一极）：`error_code` 缺失/为空 ⇒ 视为
+    # **可重试**（= 既有行为不变）。理由：缺码的失败面很宽（超时 / 异常兜底 / 未走
+    # `admin_api_failure` 的老路径），一律判成不可重试等于**关掉既有自修复能力**；
+    # 而授权拒绝**一定有码**（工具层在授权分支无条件填码），故缺码不会漏判授权拒绝。
+    # 该语义由 tests/test_tool_permission_retry_guard.py::TestRetryableFailuresStillRetry 锁住。
+    if result_dict.get("error_code") in NON_RETRYABLE_ERROR_CODES:
+        logger.warning(
+            f"[{skill_name}][self-correct] Tool {tool.name} 授权类失败，"
+            f"non-retryable: retry suppressed（自动重试已抑制，失败与 suggestion 交回模型决策）"
+            f" | error_code={result_dict.get('error_code')} | error={error_msg[:80]} | session={session}"
+        )
+        return None
 
     # ── 非幂等写工具：禁止自动重试（issue #3564）─────────────────────────────
     # 原判据只有「success=False + suggestion」，**不区分工具幂等性** —— 对

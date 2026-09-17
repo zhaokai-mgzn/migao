@@ -11,7 +11,7 @@ AI 智能客服系统 - 财务对账 Tool
 from typing import Any, Dict, Optional
 from loguru import logger
 
-from app.tools.base import BaseTool, ToolContext, ToolResult
+from app.tools.base import admin_api_failure, BaseTool, ToolContext, ToolResult
 from app.utils.http_client import get_admin_api_client
 
 
@@ -35,7 +35,9 @@ class FinanceApiTool(BaseTool):
     description = (
         "【触发】用户说'登记收款''登记退款''记一笔账''资金流水''收支''对账''净额''收入''进账''收了多少''赚了多少'时调用。【何时用】任何资金/财务/对账类查询或登记。【何时不用】查订单金额（用 order_query）、看经营看板（用 dashboard_stats）。【前置】action: create_transaction(登记收支,需type+amount)/get_summary(收支汇总)/get_transactions(资金流水)/get_reconciliation(应收对账)。【标注】create_transaction 为 WRITE — 登记前需确认"
     )
-    allowed_roles = ["admin", "tenant_admin", "operation_manager"]
+    # 权限码（admin-api 目录）：FinanceController 类级 `@RequirePermission("finance:view")`。
+    # 旧白名单里的 `operation_manager` 在 admin-api 里根本不存在（角色码漂移）。
+    required_permissions = ["finance:view"]
 
     read_only = False
     requires_confirmation = True  # 审计 07 P0-L1: 高风险非 destructive 写操作需用户确认
@@ -210,8 +212,7 @@ class FinanceApiTool(BaseTool):
 
         if not response.get("success"):
             error_msg = response.get("error", {}).get("message", "登记失败")
-            return ToolResult(
-                success=False,
+            return admin_api_failure(response,
                 error=error_msg,
                 message="收支登记失败",
                 suggestion="请检查参数后重试，或联系技术支持",
@@ -249,8 +250,7 @@ class FinanceApiTool(BaseTool):
 
         if not response.get("success"):
             error_msg = response.get("error", {}).get("message", "查询失败")
-            return ToolResult(
-                success=False,
+            return admin_api_failure(response,
                 error=error_msg,
                 message="收支汇总查询失败",
                 suggestion="请稍后重试，如持续失败请联系技术支持",
@@ -295,8 +295,7 @@ class FinanceApiTool(BaseTool):
 
         if not response.get("success"):
             error_msg = response.get("error", {}).get("message", "查询失败")
-            return ToolResult(
-                success=False,
+            return admin_api_failure(response,
                 error=error_msg,
                 message="资金流水查询失败",
                 suggestion="请稍后重试，如持续失败请联系技术支持",
@@ -339,8 +338,7 @@ class FinanceApiTool(BaseTool):
 
         if not response.get("success"):
             error_msg = response.get("error", {}).get("message", "查询失败")
-            return ToolResult(
-                success=False,
+            return admin_api_failure(response,
                 error=error_msg,
                 message="应收对账查询失败",
                 suggestion="请稍后重试，如持续失败请联系技术支持",

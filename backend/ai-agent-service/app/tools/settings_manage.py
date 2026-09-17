@@ -7,7 +7,7 @@ AI 智能客服系统 - 系统设置管理 Tool
 from typing import Any, Dict, Optional
 from loguru import logger
 
-from app.tools.base import BaseTool, ToolContext, ToolResult
+from app.tools.base import admin_api_failure, BaseTool, ToolContext, ToolResult
 from app.utils.http_client import get_admin_api_client
 
 
@@ -38,7 +38,9 @@ class SettingsManageTool(BaseTool):
         "【触发】用户问'系统设置''配置''AI配置''模型''问候语''改密码''登录日志'时调用。【前置】get_settings/get_ai_config/login_logs 是查询。update_settings/update_ai_config/change_password 需确认。【反例】通知管理用 notification_manage。【标注】WRITE|DESTRUCTIVE — 修改全局配置/密码需二次确认"
         "【铁律】用户明确要求写操作（禁用/创建/调整/删除/上下架/重置等）时：先查必要信息拿真实 ID → 展示操作预览 + 确认卡 → 用户确认后立即调用写工具执行，禁止只查询/展示列表就停（HR-003/PP-006/PR-005 实拍：agent 只 list/query 不执行写工具判失败）。"
     )
-    allowed_roles = ["admin", "tenant_admin"]
+    # 权限码（admin-api 目录）：SettingsController 类级 `@RequirePermission("system:manage")`。
+    # 该码在目录里只有 admin ⇒ 实际放行面不变，只是不再靠角色名硬编码。
+    required_permissions = ["system:manage"]
 
     read_only = False
     destructive = True   # 可修改关键系统配置/AI配置/密码
@@ -183,8 +185,7 @@ class SettingsManageTool(BaseTool):
 
         if not response.get("success"):
             error_msg = response.get("error", {}).get("message", "查询失败")
-            return ToolResult(
-                success=False,
+            return admin_api_failure(response,
                 error=error_msg,
                 message=f"获取系统设置失败：{error_msg}",
                 suggestion="请稍后重试；若持续失败，请让用户通过商户后台「系统设置」页查看，或联系平台管理员",
@@ -231,8 +232,7 @@ class SettingsManageTool(BaseTool):
 
         if not response.get("success"):
             error_msg = response.get("error", {}).get("message", "更新失败")
-            return ToolResult(
-                success=False,
+            return admin_api_failure(response,
                 error=error_msg,
                 message=f"更新系统设置失败：{error_msg}",
                 suggestion="请先用 settings_manage 的 get 操作读取当前设置，核对字段后再重试",
@@ -262,8 +262,7 @@ class SettingsManageTool(BaseTool):
 
         if not response.get("success"):
             error_msg = response.get("error", {}).get("message", "查询失败")
-            return ToolResult(
-                success=False,
+            return admin_api_failure(response,
                 error=error_msg,
                 message=f"获取AI配置失败：{error_msg}",
                 suggestion="请稍后重试；若持续失败，请让用户通过商户后台「AI 配置」页查看，或联系平台管理员",
@@ -314,8 +313,7 @@ class SettingsManageTool(BaseTool):
 
         if not response.get("success"):
             error_msg = response.get("error", {}).get("message", "更新失败")
-            return ToolResult(
-                success=False,
+            return admin_api_failure(response,
                 error=error_msg,
                 message=f"更新AI配置失败：{error_msg}",
                 suggestion="请先用 settings_manage 的 get_ai_config 操作读取当前 AI 配置，核对后再重试",
@@ -375,8 +373,7 @@ class SettingsManageTool(BaseTool):
 
         if not response.get("success"):
             error_msg = response.get("error", {}).get("message", "修改失败")
-            return ToolResult(
-                success=False,
+            return admin_api_failure(response,
                 error=error_msg,
                 message=f"修改密码失败：{error_msg}",
                 suggestion="请让用户确认旧密码是否正确；若用户已忘记密码，请引导其走找回密码流程或联系管理员",
@@ -409,8 +406,7 @@ class SettingsManageTool(BaseTool):
 
         if not response.get("success"):
             error_msg = response.get("error", {}).get("message", "查询失败")
-            return ToolResult(
-                success=False,
+            return admin_api_failure(response,
                 error=error_msg,
                 message=f"查询登录日志失败：{error_msg}",
                 suggestion="请稍后重试；若持续失败，请缩小时间范围或请用户联系管理员核对登录日志数据",

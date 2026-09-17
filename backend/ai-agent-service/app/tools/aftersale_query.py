@@ -7,7 +7,7 @@ AI 智能客服系统 - C端售后查询 Tool (小布专用)
 from typing import Optional, Dict, Any
 from loguru import logger
 
-from app.tools.base import BaseTool, ToolContext, ToolResult
+from app.tools.base import admin_api_failure, BaseTool, ToolContext, ToolResult
 from app.utils.enum_labels import TICKET_STATUS_LABELS, attach_ticket_labels
 from app.utils.http_client import get_admin_api_client
 
@@ -160,8 +160,7 @@ class AftersaleQueryTool(BaseTool):
 
         if not response.get("success"):
             error_msg = response.get("error", {}).get("message", "查询失败")
-            return ToolResult(
-                success=False,
+            return admin_api_failure(response,
                 error=error_msg,
                 message=f"查询售后工单失败: {error_msg}",
                 suggestion="请稍后重试；若持续失败，请改为按工单号精确查询，或请用户联系管理员核对工单数据",
@@ -244,8 +243,7 @@ class AftersaleQueryTool(BaseTool):
 
         if not response.get("success"):
             error_msg = response.get("error", {}).get("message", "查询失败")
-            return ToolResult(
-                success=False,
+            return admin_api_failure(response,
                 error=error_msg,
                 message=f"查询工单详情失败: {error_msg}",
                 suggestion="请让用户确认工单号是否正确，必要时先用 aftersale_query 的 list 操作查到该工单再查详情",

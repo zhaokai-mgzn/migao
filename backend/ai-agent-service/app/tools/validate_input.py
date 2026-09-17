@@ -445,7 +445,8 @@ class ValidateInputTool(BaseTool):
     # （CI 实证 run 34620594324：`failed=validate_input!权限不足` → 兜底 human_handoff，
     #  aftersale_create 整轮 0 次成功）。
     # 安全性：本工具不读库、不写库、不访问外部服务，只校验调用方自己传来的参数；
-    # 真正的权限门禁在各自写工具的 allowed_roles 上，放开这里不构成越权。
+    # 真正的权限门禁在各自写工具的 required_permissions（admin-api 权限码，见
+    # `app/tools/base.py::check_permission`）上，放开这里不构成越权。
     allowed_roles = ["admin", "agent", "tenant_admin", "customer"]
 
     parameters = {

@@ -3,7 +3,7 @@
 from typing import Any, Dict, Optional
 from loguru import logger
 
-from app.tools.base import BaseTool, ToolContext, ToolResult
+from app.tools.base import admin_api_failure, BaseTool, ToolContext, ToolResult
 from app.utils.http_client import get_admin_api_client
 
 
@@ -22,7 +22,10 @@ class ProductUpdateTool(BaseTool):
         "【反例】设置/修改商品主图、详情图/图片必须用 product_manage(action=update, images=…/detail_images=…)，本工具不支持图片字段。"
         "【标注】WRITE|IDEMPOTENT"
     )
-    allowed_roles = ["admin", "tenant_admin"]
+    # 权限码（admin-api 目录）：商品写取写码 `product:create`（ProductController 的 PUT/PATCH）。
+    # 该 agent 端点自身只挂类级读码 `product:list` —— 按读码放行会让只读持有者拿到写权限。
+    # 此前写死 ["admin","tenant_admin"] ⇒ operator / product_manager 持码却被判「权限不足」（#4106 F4）。
+    required_permissions = ["product:create"]
     read_only = False
     requires_confirmation = True  # 审计 07 P0-L1: 高风险非 destructive 写操作需用户确认
     destructive = False
@@ -101,7 +104,7 @@ class ProductUpdateTool(BaseTool):
         if not response.get("success"):
             err = response.get("error", {})
             msg = err.get("message", "更新失败") if isinstance(err, dict) else str(err)
-            return ToolResult(success=False, error=msg, message=f"更新失败: {msg}",
+            return admin_api_failure(response, error=msg, message=f"更新失败: {msg}",
                             suggestion="请确认商品名称或ID正确，或先调用 product_search 查询")
 
         return ToolResult(success=True, data=response.get("data", {}),

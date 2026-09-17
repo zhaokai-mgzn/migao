@@ -16,7 +16,7 @@ Spring 静默忽略未知字段，下发 DTO 没有的键 = 无声丢数据 + �
 from typing import Any, Dict, Optional
 from loguru import logger
 
-from app.tools.base import BaseTool, ToolContext, ToolResult
+from app.tools.base import admin_api_failure, BaseTool, ToolContext, ToolResult
 from app.utils.http_client import get_admin_api_client
 
 
@@ -44,7 +44,9 @@ class ProductManageTool(BaseTool):
         "仅当用户本轮明确说「不需要加工项」才可跳过该步。"
     )
 
-    allowed_roles = ["admin", "agent", "tenant_admin", "operator"]
+    # 权限码（admin-api 目录）：商品写（create/update/toggle_status）取写码 `product:create`
+    # （ProductController 的 POST/PUT/DELETE 都是 product:create）。
+    required_permissions = ["product:create"]
     read_only = False
     destructive = True
     idempotent = False
@@ -244,8 +246,8 @@ class ProductManageTool(BaseTool):
             error_info = response.get("error", {})
             error_msg = error_info.get("message", "创建失败") if isinstance(error_info, dict) else str(error_info)
             suggestion = response.get("suggestion", "")
-            return ToolResult(
-                success=False, error=error_msg,
+            return admin_api_failure(response,
+                error=error_msg,
                 message=f"创建商品失败：{error_msg}",
                 suggestion=suggestion or "请检查必填字段是否完整",
             )
@@ -325,8 +327,8 @@ class ProductManageTool(BaseTool):
         if not response.get("success"):
             error_info = response.get("error", {})
             error_msg = error_info.get("message", "更新失败") if isinstance(error_info, dict) else str(error_info)
-            return ToolResult(
-                success=False, error=error_msg,
+            return admin_api_failure(response,
+                error=error_msg,
                 message=f"更新商品失败：{error_msg}",
                 suggestion="请先用 product_detail 读取该商品当前信息，核对字段后重新提交更新",
             )
@@ -362,8 +364,7 @@ class ProductManageTool(BaseTool):
 
         if not response.get("success"):
             error_msg = response.get("error", {}).get("message", "操作失败")
-            return ToolResult(success=False,
-                error=error_msg,
+            return admin_api_failure(response, error=error_msg,
                 message=f"商品状态更新失败：{error_msg}",
                 suggestion="请先用 product_detail 确认该商品当前状态（下架商品不可直接改状态），再重新提交",
             )
