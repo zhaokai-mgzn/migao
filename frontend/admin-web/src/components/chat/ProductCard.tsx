@@ -2,6 +2,7 @@
 
 import { ShoppingBag } from 'lucide-react'
 import Image from 'next/image'
+import Link from 'next/link'
 import { resolveImageUrl } from '@/lib/utils'
 
 interface ProductCardProps {
@@ -16,8 +17,10 @@ export default function ProductCard({ data }: ProductCardProps) {
   const images = (product.images as string[]) || []
   const specs = (product.specifications as Record<string, string>) || {}
   const description = (product.description as string) || ''
+  // 商品不可变标识（agent 侧只下发 id，路由由**本端**生成，见 #4016 P14 第四节）
+  const productId = product.id ? String(product.id) : ''
 
-  return (
+  const content = (
     <div className="bg-white border border-neutral-200 rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-shadow">
       <div className="flex gap-3 p-3">
         {/* 商品图片 */}
@@ -67,4 +70,20 @@ export default function ProductCard({ data }: ProductCardProps) {
       </div>
     </div>
   )
+
+  // 有商品 id 时整卡可点跳转商品详情（#4016 P14 ④：会话里的商品清单此前完全不可点，
+  // 用户只能手打商品名）。⚠️ href **只**由工具结果真值 `product.id` 拼出 ——
+  // 卡数据里任何 href/url/link 字段一律不采信（模型不得编造链接）。
+  if (productId) {
+    return (
+      <Link
+        href={`/products/${productId}`}
+        className="block hover:opacity-90 transition-opacity"
+        title={`查看商品 ${name}`}
+      >
+        {content}
+      </Link>
+    )
+  }
+  return content
 }

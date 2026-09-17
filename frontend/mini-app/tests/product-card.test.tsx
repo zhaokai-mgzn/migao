@@ -80,3 +80,25 @@ describe('ProductCard — 下单防连点锁（issue #3040 收尾）', () => {
     expect(onOrder).toHaveBeenCalledTimes(1)
   })
 })
+
+describe('ProductCard — 内部 ID 不外显 / 无链路（#4016 P14 第四节约束）', () => {
+  it('C 端商品卡不渲染任何超链接（本端无商品详情页 ⇒ 没有目的地）', () => {
+    // 两端路由不同：admin-web 有 /products/{id}，mini-app 只有 chat/auth/profile 三个页面
+    // （`app.config.ts` 实证）⇒ C 端**没有**可跳转目的地。硬造 href 会落到 404，
+    // 属「声称有链接但打不开」（#3970 同族）。故本端锁「无链接」真值；
+    // 待产品补 C 端商品详情页后再放开（已登记 follow-up）。
+    const { container } = render(<ProductCard data={{ id: 'p-001', name: '遮光窗帘', price: 199 }} />)
+    expect(container.querySelectorAll('a')).toHaveLength(0)
+  })
+
+  it('内部 ID（product_id/id）不进可见文案 —— 脱敏只覆盖可见文本', () => {
+    // 约束 2：`_mask_card_for_customer` 只脱敏**可见文本**（title/fields/options.label），
+    // 明确不动协议值 ⇒ 一旦把内部 ID 渲染成文案，顾客就会看到内部 ID。
+    const { container } = render(
+      <ProductCard data={{ id: 'p-internal-42', product_id: 'p-internal-42', name: '窗帘B', price: 200 }} />,
+    )
+    const text = container.textContent || ''
+    expect(text).not.toContain('p-internal-42')
+    expect(text).not.toContain('product_id')
+  })
+})

@@ -1291,7 +1291,11 @@ export interface ChatMessage {
 export type SSEEventType = 'message_start' | 'text_delta' | 'text' | 'tool_start' | 'tool_call' | 'tool_result' | 'card' | 'loading' | 'message_end' | 'error' | 'message' | 'done' | 'suggestions' | 'interactive'
 
 // 卡片类型
-export type CardType = 'product_list' | 'product_detail' | 'logistics' | 'order' | 'knowledge'
+// 卡型联合 = 后端 `_detect_card_type` **真实可产出**的集合（#4016 P14 收敛对齐）：
+// - 新增 `production_progress`：用户 2026-09-18 裁定「补发射点」，该工具返回的正是卡载荷
+// - 移除 `knowledge`：后端从不下发该卡型（ToolResultCard 死分支已同批删除）
+// 契约守卫：backend/ai-agent-service/tests/test_card_type_cross_end_contract.py（双向）
+export type CardType = 'product_list' | 'product_detail' | 'logistics' | 'order' | 'production_progress'
 
 // 卡片数据
 export interface ChatCard {

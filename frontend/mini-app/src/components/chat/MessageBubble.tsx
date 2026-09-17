@@ -5,10 +5,8 @@ import type { Message, CardData, InteractiveData } from '../../types'
 import ProductCard from '../cards/ProductCard'
 import ProductFormList from '../cards/ProductFormList'
 import LogisticsCard from '../cards/LogisticsCard'
-import KnowledgeCard from '../cards/KnowledgeCard'
 import OrderCard from '../cards/OrderCard'
 import QuotationCard from '../cards/QuotationCard'
-import PaymentCard from '../cards/PaymentCard'
 import ProductionProgressCard from '../cards/ProductionProgressCard'
 import ConfirmCard from '../cards/ConfirmCard'
 import ChoiceCard from '../cards/ChoiceCard'
@@ -51,9 +49,9 @@ function renderCard(card: CardData, idx: number, onInteract?: (value: string) =>
   const { type, data } = card
 
   switch (type) {
-    case 'product_list':
-    case 'product_recommend': {
-      // data 可能是单个商品或商品列表
+    case 'product_list': {
+      // data 可能是单个商品或商品列表（后端 `_detect_card_type` 只下发 product_list；
+      // 旧别名 `product_recommend` 于 #4016 P14 裁剪 —— 后端从无该卡型的发射点）
       const products = Array.isArray(data?.products) ? data.products : (Array.isArray(data) ? data : [data])
       // 多商品 → 瑞幸式商品表单列表（紧凑行 + 可点规格 + 去下单）
       if (products.length > 1) {
@@ -89,23 +87,9 @@ function renderCard(card: CardData, idx: number, onInteract?: (value: string) =>
       )
     }
 
-    case 'logistics':
-    case 'logistics_track': {
+    case 'logistics': {
       const logistics = data?.logistics || data
       return <LogisticsCard key={`card-${idx}`} data={logistics} />
-    }
-
-    case 'knowledge_result':
-    case 'knowledge': {
-      // data 可能包含多条知识结果
-      const chunks = data?.chunks || (Array.isArray(data) ? data : [data])
-      return (
-        <View key={`card-${idx}`} className='message-bubble__card-group'>
-          {chunks.map((chunk: any, cIdx: number) => (
-            <KnowledgeCard key={`knowledge-${cIdx}`} data={chunk} />
-          ))}
-        </View>
-      )
     }
 
     case 'order': {
@@ -124,13 +108,10 @@ function renderCard(card: CardData, idx: number, onInteract?: (value: string) =>
       )
     }
 
-    case 'payment': {
-      // 收款二维码卡片（扫码直接付给商家，issue #3990）
-      return <PaymentCard key={`card-${idx}`} data={data} />
-    }
-
     case 'production_progress': {
-      // 顾客端生产进度卡（加工单进度/当前工序/交期，issue #3997）
+      // 生产进度卡（M4-G-3 / issue #3997）。issue #4016 P14：用户 2026-09-18 裁定
+      // 走「补发射点」—— 此前只有卡片没有发射点（组件永不渲染），后端已补
+      // `production_progress_query → production_progress` 映射。
       return <ProductionProgressCard key={`card-${idx}`} data={data} />
     }
 
