@@ -78,10 +78,14 @@ def _graph_imports(path: Path) -> list[tuple[int, str]]:
 
 
 def tools_layer_graph_imports(tools_dir: Path = TOOLS_DIR) -> list[str]:
-    """`app/tools/**` 里对 `app.graph.*` 的 import 清单（`文件:行 → 模块`）。"""
+    """`app/tools/**` 里对 `app.graph.*` 的 import 清单（`文件 第 N 行 → 模块`）。
+
+    行号一律写成「第 N 行」而不是 `path:NNN`（后者会被引用新鲜度扫描误判为指向真实文件的
+    残留引用 —— `migao-dev-flow` v1.24.1 口径）。
+    """
     hits: list[str] = []
     for path in sorted(tools_dir.rglob("*.py")):
-        hits += [f"{path.name}:{lineno} → {mod}" for lineno, mod in _graph_imports(path)]
+        hits += [f"{path.name} 第 {lineno} 行 → {mod}" for lineno, mod in _graph_imports(path)]
     return hits
 
 
@@ -224,7 +228,7 @@ class TestLayerSeamDetectorIsNotVacuous:
             "    return unit_price_grounding_error\n",
             encoding="utf-8")
         assert tools_layer_graph_imports(tmp_path) == [
-            "fake_tool.py:2 → app.graph.skills.base_skill"
+            "fake_tool.py 第 2 行 → app.graph.skills.base_skill"
         ], "植入反向 import 后判据仍不报 —— 这是空判据"
 
     def test_detector_stays_quiet_on_a_neutral_import(self, tmp_path):
