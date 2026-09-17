@@ -512,7 +512,7 @@
 真值: category-manage.delete, category-manage.delete-destructive, ai-chat.confirm-required
 溯源: verification 2.12 独有（二次确认行为在测试中未确认，见 category-manage.yml 缺口注释） ｜ tags: delete, destructive, confirm
 
-## 对话边界域（36 case）
+## 对话边界域（37 case）
 
 ### CH-001. 空结果 + suggestion 引导修复 🔴
 ```
@@ -1037,6 +1037,19 @@
 ```
 真值: ai-chat.intent-domains
 溯源: 2026-09-17 新增（issue #3986）：M3-E 窗帘下单澄清清单引擎覆盖登记，单测覆盖 ｜ tags: xiaobu, clarification, curtain
+
+### CH-036. 窗帘算料引擎确定性逻辑 - 折数法/工艺档位/红线/按货号汇总（单测覆盖，非 LLM 行为） 🔵
+```
+你: 我客厅 4.64 米宽，帮我算一下韩褶窗帘要多少布
+期望: direct_reply
+数据: 韩褶折数法算料：用料 = 0.25×折数 + 余量（单开 0.2 / 对开四开 0.3）—— 换算唯一性由单测保证
+数据: 倍数 < 1.5 拒绝报价（行业美学下限红线）
+数据: 开数不可整除自动取最近可行折数并告警（33 折双开 → 34 折）
+数据: 按货号-色号汇总用料（2698-11 跨部位合计 28.0 米）—— 采购/套裁视图
+跳过: 算料引擎是确定性纯计算（curtain_calc），由单元测试全量覆盖（test_curtain_calc.py），非 LLM 行为，不进入 agent-eval 冒烟（同 UI 类用例惯例）
+```
+真值: ai-chat.intent-tool-map
+溯源: 2026-09-17 新增（issue #3982）：M2-C 算料引擎折数法/档位/红线/汇总的覆盖登记，单测覆盖 ｜ tags: xiaobu, quote, curtain-calc
 
 ## 跨域（3 case）
 
@@ -4093,14 +4106,14 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：301（活跃 152，跳过 149）
-- tier 分布：smoke 9 / normal 259 / adversarial 33
+- 用例总数：302（活跃 152，跳过 150）
+- tier 分布：smoke 9 / normal 260 / adversarial 33
 - 售后域：9
 - agents：6
 - api：19
 - bmini：5
 - 分类域：3
-- 对话边界域：36
+- 对话边界域：37
 - 跨域：3
 - 客户域：8
 - 数据域：10
