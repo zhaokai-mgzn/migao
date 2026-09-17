@@ -259,20 +259,27 @@ cases:
       - payment
     truths_ref:
       - settings-manage.ai-config
-    # ── 覆盖说明（issue #3990，M3-F-2/F-3）──
+    # ── 覆盖说明（issue #3990，M3-F-2/F-3；2026-09-17 issue #4007 期望放宽）──
     # 用户 2026-09-17 新增要求：企业设置支付宝/微信收款二维码，C 端支付页展示扫码支付。
     # 平台不经手资金（二清规避）：二维码是商家自己的收款码，页面须注明「款项直接支付给商家」。
     # ⚠️ 写路径（PUT /api/admin/settings/payment-qrcodes/{type}，system:manage）由确定性单测覆盖
     #    （SettingsControllerTest MockMvc + TenantPaymentQrcodeMapperTest），本用例承担**展示/合规**行为覆盖：
     #    C 端支付页 /chat/payment-qrcodes 返回精简字段并渲染 PaymentCard（读类，满足断言可信度门禁）。
+    # ⚠️ 期望为 `direct_reply or order_query`（不是裸 direct_reply）：客人/商家问「我支付这笔订单怎么付款」
+    #    时，**先查这笔待付款单再给收款码指引**是真实合理行为（run 35233821582 本用例 mibao 腿
+    #    R1 实测即 order_query → 旧期望「无工具调用」判红 = 期望过严/假红）。OR 形态两条路径都放行：
+    #    · 直接答（无工具调用 + 有 final_text）；
+    #    · 或先 order_query（小布腿由 runner 的 check_expectation 同义映射为 customer_order_query）。
+    #    保留计分断言（非空期望），不放宽成空断言。
     user_inputs:
       - "我支付这笔订单，怎么付款"
     expectations:
-      - tool: direct_reply
+      - tool: direct_reply or order_query
     data_checks:
       - "C 端支付页展示收款码（/chat/payment-qrcodes 精简字段 image_url/payee_name）+ 应付金额 + 微信/支付宝切换"
       - "页面注明「款项直接支付给商家」（平台不经手资金，二清规避）"
       - "商家设置端 PUT /api/admin/settings/payment-qrcodes/{type} upsert（wechat/alipay 各一张，非法类型拒绝）—— 由 SettingsControllerTest MockMvc 覆盖"
       - "无收款码时展示降级提示（PaymentCard 空态）"
+      - "答付款问题前先定位订单（order_query / C 端 customer_order_query）属合格路径；direct_reply 直答亦合格（OR 形态）"
     skip_reason: ""
-    merge_log: "2026-09-17 新增（issue #3990）：M3-F 企业收款二维码——C 端展示行为覆盖（persona 双端）；写路径由 MockMvc 单测覆盖"
+    merge_log: "2026-09-17 新增（issue #3990）：M3-F 企业收款二维码——C 端展示行为覆盖（persona 双端）；写路径由 MockMvc 单测覆盖。2026-09-17（issue #4007，run 35233821582 ST-011 reproducible）：期望由裸 `direct_reply` 放宽为 `direct_reply or order_query` —— 实测 mibao 腿 R1 先 order_query（查这笔待付款订单）再答付款指引，行为合理却被「期望无工具调用」判红（期望过严）；OR 形态同时保留直接答分支（小布腿 runner 侧 order_query→customer_order_query 同义映射）"

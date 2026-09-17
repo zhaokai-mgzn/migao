@@ -1,4 +1,4 @@
-// case_ids: PG-018
+// case_ids: PG-018, CH-039, CH-040
 package com.migao.admin.service;
 
 import com.baomidou.mybatisplus.core.conditions.Wrapper;
@@ -216,6 +216,46 @@ class ProductionServiceTest {
         assertThat(result.get("progress_percent")).isEqualTo(100);
         assertThat(result.get("current_operation")).isEqualTo("");
         assertThat((List<?>) result.get("pending_operations")).isEmpty();
+    }
+
+    // ── 生产进度查询的订单解析（issue #4007：progress 与 report 同口径，不得只认 order_no）──
+    //
+    // 病灶（run 35233821582 的 CH-039/CH-040）：米宝/小布拿到的是**内部 order_id** 或
+    // 用户点名的不存在形态时，`progress` 只按 `order_no` 查 ⇒ 明明有单却 404 ⇒
+    // 工具层 `no_success(production_progress_query)`。修复 = 复用 `resolveOrder`
+    // （order_id → order_no → qr_token，与 #4006 的报工链路同一口径）。
+
+    @Test
+    @DisplayName("订单进度：按内部 order_id 命中（不再只认 order_no）")
+    void progressResolvesByInternalOrderId() {
+        // setUp 已把 selectById(ORDER_ID) 指向该订单；positionOperationMapper.selectList → null ⇒ 空工序
+        Map<String, Object> result = service.progress(ORDER_ID, TENANT);
+
+        assertThat(result.get("order_no")).isEqualTo("ORD-20260917-001");
+        assertThat(result.get("status")).isEqualTo("producing");
+        assertThat(result.get("progress_percent")).isEqualTo(0);
+    }
+
+    @Test
+    @DisplayName("订单进度：按订单号 order_no 命中（手输单号口径保持）")
+    void progressResolvesByOrderNo() {
+        when(orderMapper.selectById("ORD-20260917-001")).thenReturn(null);
+        when(orderMapper.selectOne(any())).thenReturn(order("producing"));
+
+        Map<String, Object> result = service.progress("ORD-20260917-001", TENANT);
+
+        assertThat(result.get("order_no")).isEqualTo("ORD-20260917-001");
+    }
+
+    @Test
+    @DisplayName("订单进度：三形态都不命中 → notFound（不静默返回空进度）")
+    void progressUnknownKeyNotFound() {
+        when(orderMapper.selectById("nope")).thenReturn(null);
+        when(orderMapper.selectOne(any())).thenReturn(null);
+        when(processingOrderMapper.selectOne(any())).thenReturn(null);
+
+        assertThatThrownBy(() -> service.progress("nope", TENANT))
+                .hasMessageContaining("订单");
     }
 
     // ── 订单解析三形态（issue #4005：打印二维码内容 qr_token 必须可用于报工/查询）──

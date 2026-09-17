@@ -177,19 +177,16 @@ public class ProductionService {
      * 米宝生产进度（冻结契约，并行包消费）：{order_no, status, status_text, progress_percent,
      * current_operation, pending_operations, total_operations, done_operations, expected_delivery_date}。
      * 无加工单/无实例时为「未开始」态而不是错误态（current_operation 为空串，交期为 null）。
+     *
+     * 订单解析与报工链路同口径（issue #4007）：复用 {@link #resolveOrder} 的
+     * order_id → order_no → qr_token 三形态，**不得只认 order_no** —— agent 侧拿到的是
+     * 内部 order_id（CH-039/CH-040 的 `no_success(production_progress_query)` 病灶）。
      */
     public Map<String, Object> progress(String orderNo, Long tenantId) {
         if (!StringUtils.hasText(orderNo)) {
             throw BusinessException.validationError("order_no 不能为空");
         }
-        Order order = orderMapper.selectOne(new LambdaQueryWrapper<Order>()
-                .eq(Order::getTenantId, tenantId)
-                .eq(Order::getOrderNo, orderNo.trim())
-                .eq(Order::getDeleted, 0)
-                .last("LIMIT 1"));
-        if (order == null) {
-            throw BusinessException.notFound("订单");
-        }
+        Order order = resolveOrder(orderNo.trim(), tenantId);
         ProcessingOrder po = processingOrderMapper.selectActiveByOrderId(order.getId(), tenantId);
         List<ProcessingPositionOperation> operations = po == null
                 ? List.of()
