@@ -29,6 +29,31 @@ DEBUG_CUSTOMER_USER_ID = "debug_customer_1"
 # 白名单而非"任意字符串"：DEBUG 误配时不得变成任意用户伪装后门。
 _DEBUG_USER_ID_RE = re.compile(r"debug_[a-z0-9_]{1,32}")
 
+# 评测可控**权限**（issue #4108 / 父 #4103 Pkg D）：`X-Debug-Permissions` 的字段白名单。
+# 为什么需要：B 端评测恒以 `X-Debug-Role: mibao` 跑，本分支给的是 `permissions=["*"]`
+# ⇒ **权限拒绝路径在评测里不可达** —— 而「越权时不自旋、如实说明并给开通路径」正是
+# #4103 要修的行为，没有该头就只能停在确定性层、拿不到 LLM 层证据。
+# 安全约束（与 P0-3 / `_DEBUG_USER_ID_RE` 同源，逐条对应）：
+#   · 生产不可达：只在 `settings.DEBUG` + `X-Debug-Role`（且非 customer）分支内读取；
+#   · **不接受 `*`**（字符集里没有它）—— 否则"限制权限"的头反而成了通配提权；
+#   · 锚定 + 有界长度（段 1~32 / 码 1~3 段 / 整串 ≤255）⇒ 拒绝空白、空元素、注入与无界输入；
+#   · 非法值**整串回落** `["*"]` 并告警，绝不部分应用（半截列表 = 静默的权限语义漂移）。
+_DEBUG_PERMISSION_CODE_RE = re.compile(r"[a-z][a-z0-9_]{0,31}(?::[a-z][a-z0-9_]{0,31}){0,2}")
+
+
+def _debug_permissions_override(raw: str) -> Optional[list[str]]:
+    """解析 `X-Debug-Permissions`（逗号分隔权限码）→ 码列表；非法/为空 → None（回落 `["*"]`）。"""
+    if not raw:
+        return None
+    if len(raw) > 255 or not all(
+        _DEBUG_PERMISSION_CODE_RE.fullmatch(code) for code in raw.split(",")
+    ):
+        logger.warning(
+            f"忽略非法 X-Debug-Permissions={raw[:80]!r}（仅接受逗号分隔的权限码白名单，"
+            f"禁止 * 与空白/空元素）—— 回落默认通配权限")
+        return None
+    return raw.split(",")
+
 
 class UserRole(str, Enum):
     """用户角色枚举
@@ -337,7 +362,11 @@ async def get_current_user(
                     # agent 行为正确却无法执行（环境缺陷被误读为能力缺陷）。
                     # 仅 DEBUG + 显式 X-Debug-Role 分支可达（生产 DEBUG=false 永不进入，
                     # 且"无 header 即 401"的 fail-closed 语义不变）。
-                    permissions=["*"],
+                    # 缺省仍为通配 —— **存量评测全部依赖这一条**（未声明该头的用例逐字不变）。
+                    # 不做 `.strip()`：带空白的值必须**回落**而非被悄悄修好（见白名单注释）。
+                    permissions=_debug_permissions_override(
+                        request.headers.get("X-Debug-Permissions", "")
+                    ) or ["*"],
                 )
             request.state.user = default_user
             return default_user

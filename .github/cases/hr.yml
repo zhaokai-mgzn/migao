@@ -335,3 +335,151 @@ cases:
       ci:
         - agent-eval.yml
       verifies: []
+
+  - id: HR-009
+    legacy_id: ""
+    title: "越权创建员工（仅 employee:list）- 不得自旋重复失败调用，须如实说明缺哪项权限并给开通路径"
+    domains:
+      - hr
+      - chat
+    tier: normal
+    # persona 标 mibao（issue #4108）：场景是 B 端商户**员工账号**动作 + 受限员工身份
+    # （`X-Debug-Permissions` 只在「DEBUG + 非 customer 调试身份」分支生效）；
+    # C 端顾客既无 employee_manage 工具，也无"员工权限"这一概念。
+    persona: mibao
+    tags:
+      - permission
+      - denial
+      - auth
+      - regression
+    truths_ref:
+      - ai-chat.permission-layers
+      - employee-role.write-require-admin
+    # ── 本用例的存在理由（issue #4108 / 父 #4103 Pkg D）──
+    # B 端评测此前恒以 `X-Debug-Role: mibao` 跑，服务端 DEBUG 分支给的是
+    # `permissions=["*"]` ⇒ **权限拒绝路径在评测里不可达**：本次要修的行为
+    # （越权时不自旋、如实说明、给开通路径）拿不到任何 LLM 层证据。
+    # 本用例用 `debug_permissions` 以受限员工身份跑（同 `X-Debug-User` 的多身份先例 #3391）。
+    #
+    # 身份口径（可机械核对的真值，非叙事）：`employee:list` 是**只读**权限码 →
+    # `EmployeeManageTool.check_permission` 的粗筛（`required_permissions =
+    # ["employee:list", "employee:create"]`）**通过**，随后工具内的 action 级细粒度校验
+    # （`create` 需 `employee:create`）**拒绝** ⇒ 拒绝发生在**工具层**、
+    # 且回复不得声称"做不了/不支持"（#3571 / #3782 的复发形态，见
+    # `tests/test_capability_denial_guard.py`）。
+    debug_permissions: "employee:list"
+    user_inputs:
+      - "帮我开个客服账号，姓名李四，手机号 13800009999，密码 Test123456"
+      - "那我要怎么才能开通这个权限？"
+    expectations:
+      # `expectations` 不命中 = 零成功调用也算合格：故**必须**要求它至少尝试过一次，
+      # 否则"压根没调"与"越权被挡后如实说明"在报告里同形。
+      - tool: employee_manage
+        args:
+          action: create
+    # 业务**不得发生**（跨轮机器判定）：本用例的身份没有 employee:create ⇒
+    # 任何一次 create **成功**都是越权落库（最坏形态）。
+    # ⚠️ 这一条是「未修实现」的判别性断言：未修时服务端给通配 `["*"]` ⇒ create 成功 ⇒ 本用例红。
+    must_fail:
+      - tool: employee_manage
+        action: create
+    # 全程禁用其它领域的写工具（issue #3544 收口批：写进 data_checks 的「未被调用」
+    # 是「本轮没调用」+ 计分任一轮满足即过 ⇒ 多轮恒真；本字段是跨轮判定）。
+    forbidden_tools:
+      - order_manage
+      - product_manage
+    # 反模式词（§3.4 双轨；条目形态见 check_forbidden_text）：
+    # ① 「功能不存在/不支持」——把**权限缺失**说成**能力不具备**（本仓库已复发 4 次：
+    #    #3389/#3477/#3443/#3476，判据是「在办状态 × 工具能力事实」）；
+    # ② 「请稍后重试」——权限拒绝是**确定性**的，重试不解决（敷衍话术）；
+    # ③ 「无法创建」——只可能是它自己的错误结论：该动作对**有权限的员工**完全可行
+    #    （同一请求的正向对照见 HR-010）。
+    forbidden_text:
+      - any_of:
+          - "暂不支持"
+          - "功能暂未开放"
+          - "系统不支持"
+          - "还没有这个功能"
+          - "请稍后重试"
+          - "无法创建"
+    # 正向关键词（§3.4 双轨的另一轨）：只说"做不了"不够，必须给**开通路径**。
+    # ⚠️ 库里已用的正向词是「管理员」「权限」，此处用 `开通`（同一语义族但不重复用词），
+    # 并诚实标注它的效力边界：它证明"给了路径"，**不**证明官方措辞。
+    want_text:
+      - any_of:
+          - "开通"
+    data_checks:
+      # ⚠️ 以下为自然语义描述，**不计分**（acceptance-protocol §1.3 铁律）。机器可判部分由
+      # 上面的 expectations / must_fail / forbidden_tools / forbidden_text / want_text 承担。
+      - "同一失败的 create 调用不得跨轮重复（自旋）：本仓库 runner 目前**没有**跨轮重复调用断言，故该条只能靠 LLM 层人工/盲审读报告 —— 如实登记，不假装已机器判定"
+      - "回复须点明是**账号权限**不足（而非功能不存在），并指向管理员在「角色管理/员工管理」为其开通 employee:create"
+      - "不得出现「请稍后重试」这类对确定性拒绝无效的敷衍话术"
+    skip_reason: ""
+    merge_log: "2026-09-18 新增（issue #4108 / 父 #4103 Pkg D）：让权限拒绝路径在评测中可达。断言口径：expectations 要求至少尝试一次 create（防'压根没调'与'如实说明'同形）+ must_fail 断言 create 一次都不得成功（**未修实现的判别性断言**：通配权限下 create 会成功 ⇒ 红）+ forbidden_text 三条反模式（功能不存在/稍后重试/无法创建）+ want_text 要求给出开通路径。身份靠服务端 DEBUG-only 的 X-Debug-Permissions（严格白名单、拒绝 *、生产不可达），harness 侧由 case 字段 debug_permissions 透传（仅非空时下发）。⚠️ 已知能力缺口：「同一失败调用不得重复」无 runner 断言，见 data_checks 首条。"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_auth.py"
+        - "backend/ai-agent-service/tests/test_tools_employee_manage.py"
+      ci:
+        - agent-eval.yml
+      verifies: []
+
+  - id: HR-010
+    legacy_id: ""
+    title: "有能力时不得误拒（正向对照）- 持 employee:create 时同一请求必须真的执行"
+    domains:
+      - hr
+    tier: normal
+    # persona 标 mibao（issue #4108）：同 HR-009（B 端员工账号动作 + 受限员工身份）。
+    persona: mibao
+    tags:
+      - permission
+      - create
+      - positive-control
+    truths_ref:
+      - ai-chat.permission-layers
+      - employee-role.write-require-admin
+    # ── 正向对照（issue #4108 / 父 #4103 Pkg D 判据「有能力时不得误拒」）──
+    # HR-009 是**拒绝半**；本条是**允许半**。两者请求逐字同构、差异只有权限码：
+    #   HR-009: debug_permissions="employee:list" → create 必须被拒（不得自旋/不得谎称不支持）
+    #   HR-010: debug_permissions="employee:create" → 同一请求必须**真的执行**
+    # 没有本条，"一律拒绝"的过度拦截实现也能让 HR-009 全绿（假安全），
+    # 而过度拦截正是本包给评测加权限头的**最可能副作用**（#4106 铺开 required_permissions 后
+    # 尤其如此：误配权限码会让所有 B 端写用例集体'权限不足'）。
+    debug_permissions: "employee:create"
+    user_inputs:
+      # 与 HR-009 同构（姓名/手机号/密码齐全 ⇒ 无需澄清即可执行）；姓名/手机号与 HR-002、
+      # HD-003 均不同，避免目标不唯一（§13.5 点名陷阱）。
+      - "帮我开个客服账号，姓名李四，手机号 13800009999，密码 Test123456"
+      # 收尾 = 答卡轮（§13.5 铁律 / #3518）：employee_manage 是 destructive 写工具，
+      # 受 confirm 门禁约束 → 文本「确认」既是门禁确认词，也覆盖模型自发 confirm 卡的路径
+      # （auto_respond 回卡片的 confirmValue）。
+      - "确认"
+    expectations:
+      - tool: employee_manage
+        args:
+          action: create
+    must_succeed:
+      - tool: employee_manage
+        action: create
+    namespaces:
+      - "employee_name:李四"
+      - "employee_phone:13800009999"
+    pre_clean:
+      - type: employee_remove
+        employee_name: "李四"
+        employee_phone: "13800009999"
+    data_checks:
+      # ⚠️ 自然语义，**不计分**：机器可判部分 = expectations（action 值级）+ must_succeed
+      # （写真的成功，§3.2「调了≠成了」）。
+      - "持 employee:create 的员工请求同一动作时，agent 必须走完创建（不得以权限为由拒绝）"
+      - "创建结果须回执给用户（账号已开/密码等），不得只展示查询结果就停（HR-003/PP-006/PR-005 同族）"
+    skip_reason: ""
+    merge_log: "2026-09-18 新增（issue #4108 / 父 #4103 Pkg D）：「有能力时不得误拒」的正向对照。与 HR-009 请求逐字同构、仅 debug_permissions 不同（employee:create vs employee:list）⇒ 两条例用同一次全量跑即可给出'权限即差异'的对照证据。断言：expectations（action=create 值级）+ must_succeed（写真的成功）。幂等靠 pre_clean[employee_remove] + namespaces 声明（与任何写同名员工的用例自动串行，#3781 并行污染隔离）。"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_tools_employee_manage.py"
+        - "backend/admin-api/src/test/java/com/migao/admin/controller/AdminUserControllerTest.java"
+      ci:
+        - agent-eval.yml
+      verifies: []

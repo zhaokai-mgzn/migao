@@ -9,7 +9,7 @@
   属「工具调用全对、用户看到的话是错的」类缺陷，PR-019 用本断言拦截。
 - interactive 事件采集：send_message 捕获 SSE interactive 事件（卡片证据）。
 """
-# case_ids: OR-016, AS-007, PR-019, CH-010, CH-024, OR-021, OR-022, PR-024, CH-025, AS-004, PP-006, PR-021, HR-003, DF-020, DF-021, DF-022, DF-023, OR-026
+# case_ids: OR-016, AS-007, PR-019, CH-010, CH-024, OR-021, OR-022, PR-024, CH-025, AS-004, PP-006, PR-021, HR-003, HR-009, HR-010, DF-020, DF-021, DF-022, DF-023, OR-026
 import asyncio
 from types import SimpleNamespace
 import importlib.util
@@ -1573,7 +1573,8 @@ class TestForbiddenCardTextWiring:
     def _run(self, title, spec):
         import unittest.mock as mock
 
-        async def fake_send(token, session_id, message, images=None, debug_user=""):
+        async def fake_send(token, session_id, message, images=None, debug_user="",
+                              debug_permissions=""):
             return {"user_message": message, "images": images or [],
                     "tool_calls": [{"name": "interact", "args": {}}],
                     "tool_results": [],
@@ -1666,7 +1667,8 @@ class TestFormPrefillWiring:
     def _run(self, reply_form_value, spec):
         import unittest.mock as mock
 
-        async def fake_send(token, session_id, message, images=None, debug_user=""):
+        async def fake_send(token, session_id, message, images=None, debug_user="",
+                              debug_permissions=""):
             return {"user_message": message, "images": images or [],
                     "tool_calls": [{"name": "interact", "args": {}}],
                     "tool_results": [],
@@ -4696,14 +4698,16 @@ class TestDebugUserWiring:
         import unittest.mock as mock
         seen = {}
 
-        async def fake_send(token, session_id, message, images=None, debug_user=""):
+        async def fake_send(token, session_id, message, images=None, debug_user="",
+                              debug_permissions=""):
             seen["debug_user"] = debug_user
             return {"user_message": message, "images": images or [],
                     "tool_calls": [{"name": "product_search", "args": {}}],
                     "tool_results": [], "interactive": [], "final_text": "好的",
                     "error": None, "streamed": False, "done": True}
 
-        async def fake_session(token, prefer_new=True, debug_user=""):
+        async def fake_session(token, prefer_new=True, debug_user="",
+                                  debug_permissions=""):
             seen["session_debug_user"] = debug_user
             return "sess_x"
 
@@ -4713,6 +4717,141 @@ class TestDebugUserWiring:
             asyncio.run(lr.run_case(self._case("debug_customer_new"), "tok", "sess_y"))
         assert seen.get("debug_user") == "debug_customer_new", (
             "run_case 没把 case.debug_user 传给 send_message → 身份覆盖失效（假绿）")
+
+
+class TestDebugPermissionsWiring:
+    """评测可控权限（issue #4108）：用例声明的 `debug_permissions` 必须真的进请求头。
+
+    为什么必须查接线（与 `TestDebugUserWiring` 同因，M68/M122 教训）：只测
+    `_chat_headers()` 发现不了"run_case 忘了把 case.debug_permissions 传下去" ——
+    那样用例仍以通配 `["*"]` 跑，**越权用例静默变成"有权限时的成功路径"**：
+    断言全绿，考的却不是本用例要考的行为。
+
+    ⚠️ 反向守卫同样重要：未声明的用例必须**不下发**该头（服务端 `["*"]`）——
+    存量全量评测都建立在"缺省不改行为"上（`_case_debug_permissions` 的缺省约定）。
+    """
+
+    def _case(self, debug_permissions):
+        return lr.EvalCase(
+            id="PERM-TEST", legacy_id="", title="t", skill=lr.Skill.GENERAL,
+            difficulty=lr.Difficulty.NORMAL, user_inputs=["开个账号"],
+            expectations=["tool: employee_manage"], data_checks=[],
+            persona="mibao", debug_permissions=debug_permissions,
+        )
+
+    def test_headers_include_debug_permissions_for_b_end(self):
+        import unittest.mock as mock
+        with mock.patch.object(lr, "PERSONA", "mibao"), \
+             mock.patch.object(lr, "SERVICE_TOKEN", "svc"):
+            h = lr._chat_headers("", "", "employee:list")
+        assert h.get("X-Debug-Role") == "mibao"
+        assert h.get("X-Debug-Permissions") == "employee:list"
+
+    def test_headers_omit_debug_permissions_when_unset(self):
+        import unittest.mock as mock
+        with mock.patch.object(lr, "PERSONA", "mibao"), \
+             mock.patch.object(lr, "SERVICE_TOKEN", "svc"):
+            h = lr._chat_headers("", "", "")
+        assert "X-Debug-Permissions" not in h, (
+            "未声明权限的用例不该带该头 —— 服务端必须仍给通配权限（存量行为不变）")
+
+    def test_undeclared_case_keeps_empty_default(self):
+        """缺省约定：未声明 `debug_permissions` 的用例恒为 `""`（不误继承、不隐式生效）。"""
+        case = lr.EvalCase(
+            id="PERM-DEFAULT", legacy_id="", title="t", skill=lr.Skill.GENERAL,
+            difficulty=lr.Difficulty.NORMAL, user_inputs=["x"],
+            expectations=[], data_checks=[], persona="mibao",
+        )
+        assert case.debug_permissions == ""
+        assert lr._case_debug_permissions(case) == ""
+        import unittest.mock as mock
+        with mock.patch.object(lr, "PERSONA", "mibao"), \
+             mock.patch.object(lr, "SERVICE_TOKEN", "svc"):
+            assert "X-Debug-Permissions" not in lr._chat_headers(
+                "", lr._case_debug_user(case), lr._case_debug_permissions(case))
+
+    def test_run_case_passes_debug_permissions_to_send_and_session(self):
+        """run_case 必须把权限透传给**每一轮**请求（接线证据，而非仅函数级）。"""
+        import unittest.mock as mock
+        seen = {}
+
+        async def fake_send(token, session_id, message, images=None, debug_user="",
+                            debug_permissions=""):
+            seen["debug_permissions"] = debug_permissions
+            return {"user_message": message, "images": images or [],
+                    "tool_calls": [{"name": "employee_manage", "args": {}}],
+                    "tool_results": [], "interactive": [], "final_text": "好的",
+                    "error": None, "streamed": False, "done": True}
+
+        # ⚠️ 刻意**不** patch `get_or_create_session`：本用例的轮次都是纯文本，
+        # run_case 内不建会话（会话由 run_suite 建立）；会话相关的两处透传由
+        # `test_new_session_turn_carries_debug_permissions` /
+        # `test_close_and_verify_session_carries_debug_permissions` 分别守住。
+        with mock.patch.object(lr, "send_message", new=fake_send), \
+             mock.patch.object(lr, "PERSONA", "mibao"):
+            asyncio.run(lr.run_case(self._case("employee:list"), "tok", "sess_y"))
+        assert seen.get("debug_permissions") == "employee:list", (
+            "run_case 没把 case.debug_permissions 传给 send_message → 越权用例仍以通配跑（假绿）")
+
+    def test_new_session_turn_carries_debug_permissions(self):
+        """`new_session` 轮会**在 run_case 内**重建会话 —— 那条路径也必须带权限。
+
+        为什么单列（#3392 同款形态）：会话属主身份与轮次身份不一致 ⇒ close 403 ⇒
+        记忆候选不 flush；而"身份"这一维已经有先例证明**只在部分调用点透传**是最容易漏的。
+        """
+        import unittest.mock as mock
+        seen = {}
+
+        async def fake_send(token, session_id, message, images=None, debug_user="",
+                            debug_permissions=""):
+            seen.setdefault("sends", []).append(debug_permissions)
+            return {"user_message": message, "images": images or [], "tool_calls": [],
+                    "tool_results": [], "interactive": [], "final_text": "好",
+                    "error": None, "streamed": False, "done": True}
+
+        async def fake_session(token, prefer_new=True, debug_user="",
+                               debug_permissions=""):
+            seen["session"] = debug_permissions
+            return "sess_new"
+
+        async def fake_end(token, session_id, debug_user="", debug_permissions=""):
+            seen["end"] = debug_permissions
+
+        case = self._case("employee:list")
+        case.user_inputs = [{"new_session": True, "text": "接着刚才的说"}]
+        with mock.patch.object(lr, "send_message", new=fake_send), \
+             mock.patch.object(lr, "get_or_create_session", new=fake_session), \
+             mock.patch.object(lr, "_end_session", new=fake_end), \
+             mock.patch.object(lr, "PERSONA", "mibao"):
+            asyncio.run(lr.run_case(case, "tok", "sess_y"))
+        assert seen.get("session") == "employee:list", (
+            "跨会话轮重建会话时丢了 debug_permissions → 新会话属主身份与用例声明不一致")
+        assert seen.get("end") == "employee:list", (
+            "跨会话轮关闭旧会话时丢了 debug_permissions → close 403（#3392 同款）")
+        assert seen.get("sends") == ["employee:list"], seen.get("sends")
+
+    def test_close_and_verify_session_carries_debug_permissions(self):
+        """会话收尾（`_close_and_verify_session`）须同样带权限（属主一致性的第二处）。"""
+        import unittest.mock as mock
+        seen = {}
+
+        async def fake_end(token, session_id, debug_user="", debug_permissions=""):
+            seen["end"] = debug_permissions
+
+        with mock.patch.object(lr, "_end_session", new=fake_end):
+            asyncio.run(lr._close_and_verify_session(
+                self._case("employee:list"), "tok",
+                {"final_session_id": "sess_z"}, "sess_z"))
+        assert seen.get("end") == "employee:list", (
+            "_close_and_verify_session 丢了 debug_permissions → 会话关闭身份不一致")
+
+    def test_loader_maps_debug_permissions_from_yaml(self):
+        """**CI 走的 YAML 装载路径**必须映射 debug_permissions（#3391 首版就是这里漏了）。"""
+        import pathlib as _pl
+        src = _pl.Path(lr.__file__).read_text(encoding="utf-8")
+        assert 'debug_permissions=c.get("debug_permissions"' in src, (
+            "local_runner 的 YAML→EvalCase 装载器漏了 debug_permissions —— "
+            "CI（--cases .github/cases）会用通配权限跑，越权用例假绿")
 
 
 class TestDebugUserPrecondition:
@@ -4781,7 +4920,8 @@ class TestDebugUserPrecondition:
         """
         import unittest.mock as mock
 
-        async def fake_send(token, session_id, message, images=None, debug_user=""):
+        async def fake_send(token, session_id, message, images=None, debug_user="",
+                              debug_permissions=""):
             return {"user_message": message, "images": images or [],
                     "tool_calls": [{"name": "product_search", "args": {}}],
                     "tool_results": [], "interactive": [], "final_text": "好的",
@@ -4855,6 +4995,9 @@ class TestAssertionVocabularyIsMappedByLoader:
         "pre_clean": ('    pre_clean:\n      - action: reset\n', None),
         "post_session": ('    post_session:\n      - fetch: user_memories\n', None),
         "debug_user": ('    debug_user: "debug_customer_new"\n', "debug_customer_new"),
+        # 评测可控权限（issue #4108）：漏映射 = 越权用例仍以通配权限跑 ⇒ 声明形同虚设、
+        # 用例"绿"但考的其实是"有权限时的成功路径"（本类记载的第五次同款假绿）。
+        "debug_permissions": ('    debug_permissions: "employee:list"\n', "employee:list"),
         "form_prefill": ('    form_prefill:\n      - field: customer_phone\n        expect: "13800138000"\n', None),
         "forbidden_card_text": ('    forbidden_card_text:\n      - "用量"\n', ["用量"]),
         # 并行污染隔离 + 运行期前置断言（issue #3781）：两者都必须经 CI 的 YAML 装载路径

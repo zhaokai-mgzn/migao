@@ -174,6 +174,7 @@ def to_eval_py(cases):
             '    pre_clean: List[dict] = field(default_factory=list) # 评测前数据清理（写类 case 自我污染防线）',
             '    post_session: List[dict] = field(default_factory=list) # 会话关闭后落库断言（user_memories 只在 close 时 flush，issue #3357）',
            '    debug_user: str = ""   # 多身份评测：以哪个 DEBUG 顾客身份跑（如 debug_customer_new，issue #3391）',
+           '    debug_permissions: str = ""   # 评测可控权限（B 端）：逗号分隔权限码，非空才下发 X-Debug-Permissions（issue #4108）',
            '    form_prefill: List[dict] = field(default_factory=list) # form 卡预填断言（老客户收货信息自动带出，issue #3397）',
            '    forbidden_card_text: List = field(default_factory=list) # 卡片内容反模式（卡里不得出现「用量/倍数」等把金额翻倍的框架，issue #3402）',
            '    namespaces: List[str] = field(default_factory=list) # 全局命名空间声明（<kind>:<值>，如 customer_phone:13800138000）；两条用例有交集 → 自动串行（issue #3781 并行污染隔离）',
@@ -201,6 +202,11 @@ def to_eval_py(cases):
         out.append(f"    persona={_py_repr(c.get('persona', ''))},")
         # 多身份评测（issue #3391）：C 端 case 可声明以哪个 debug 用户身份跑
         out.append(f"    debug_user={_py_repr(c.get('debug_user', ''))},")
+        # 评测可控权限（issue #4108）：只在**声明时**落字面量 —— 未声明的用例走 dataclass
+        # 默认（`""` = 不下发该头 = 服务端仍给通配权限），生成物里逐字不含该行，
+        # "缺省不改变既有行为"这条在 diff 上可读（同 namespaces/auto_fill 的约定）。
+        if c.get("debug_permissions"):
+            out.append(f"    debug_permissions={_py_repr(c.get('debug_permissions'))},")
         out.append(f"    form_prefill={_py_repr(c.get('form_prefill') or [])},")
         out.append(f"    forbidden_card_text={_py_repr(c.get('forbidden_card_text') or [])},")
         if c.get("order_before"):
