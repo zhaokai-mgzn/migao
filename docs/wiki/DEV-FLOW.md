@@ -162,10 +162,21 @@ CI 里调用**真实 LLM**（生产 `ai-api.migaozn.com` + `SERVICE_TOKEN`）的
 
 | 环节 | 触发 | 规模 | 治理 |
 |---|---|---|---|
-| **Agent Eval (smoke)** | **每次 PR**（已加门控） | smoke tier ~7 条真实 LLM 多轮 | **已加 changed-files 门控**：仅当 `backend/ai-agent-service/`、`tests/agent_eval/`、`.github/cases/`、`tests/e2e/real/` 有变更才跑；dependabot/前端/Java 纯依赖升级 PR 跳过（skipped 不阻塞 required check）→ 单次 dependabot 潮可省 150+ 次 LLM 调用 |
+| ~~**Agent Eval (smoke)**（pr-check 的 `agent-eval-smoke` job）~~ | ~~每次 PR~~ | ~~smoke tier ~7 条~~ | ⚠️ **已移除**（issue #3653，2026-09-15）：它评的是**已部署 main**（`ai-api.migaozn.com`），与本 PR 改动**无因果**，却是四层冗余里最贵的一层（实测 2.5h 内 85 次 ≈ 43% 的评测次数） |
 | E2E Real | 每日 00:00 定时 | 135+ integration 真实 LLM | 频率已合理（低峰回归），保持 |
 
-- 其余环节不烧真实 token：`nightly-verification` 是 fixture e2e + smoke p1（HTTP 层）；`xiaobu-acceptance` 是本地 mock 栈；`agent-eval.yml`(normal 47 条) 与 `adversarial` 已降频为手动/每周。
+- ⚠️ **PR 层的真实 LLM = 0 次**（2026-09-17 用户裁定 2′/4′，承载 issue #4034）：
+  `agent-behavior-eval.yml` 的评测 job 已**整体删除**，PR 上只留**零 LLM 的映射信号**
+  （diff → §13.2 用例集 + 可复制派发命令）。判定用途走**单一入口** `post-deploy-eval.yml`
+  （每 3 天 normal 全量 + 手动 `workflow_dispatch`）；定时档（3 天 normal / 每周 adversarial ×2）**全部保留**。
+- 其余环节不烧真实 token：`nightly-verification` 是 fixture e2e + smoke p1（HTTP 层）；
+  `agent-eval.yml`(normal 47 条) 与 `adversarial` 已降频为手动/每周（对抗档为**定时保留**）；
+  `xiaobu-acceptance` 除定时对抗档外均为手动，且它是**单腿窄跑**入口（`persona` 输入）。
+- **LLM 红例的闭环**（裁定 4′）：必须下沉为 ≥1 条确定性断言（`must_succeed`/`db_verify`/
+  `amount_verify`/`output_verify`/L0 不变式）；账本 = `.github/llm-finding-ledger.json`，
+  机械检查 = `python3 .github/llm_sink_check.py --selftest | --issue N | --all`
+  （用法与"未机械化"登记见 `docs/testing/llm-finding-sinking.md`）。
+
 - **观察指标**：`gh run list --status queued` 排队 >20 即需治理（先清 dependabot 潮，见 §7）。
 
 ### 3.3 断言可信度门禁（`Case Trust Gate`，2026-09-15 新增；#3483 T1 扩展格）

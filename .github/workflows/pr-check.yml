@@ -468,6 +468,49 @@ jobs:
           python3 -m pytest tests/unit_ci_workflows/test_case_trust_gate.py -q \
             --tb=short -p no:cacheprovider
 
+  # ============ LLM 红例 → 确定性下沉台账（纯静态、零 LLM、零网络）============
+  # 为什么需要它（用户裁定 4′，承载 issue #4034 ← #4009）：
+  #   PR 层的真实 LLM 已停跑（裁定 2′）⇒ LLM **只负责发现**（低频、非自动），
+  #   **拦截全部交给确定性层**。于是"发现→下沉"这条链必须自己有账本 + 机械检查，
+  #   否则它就是**散文**：红例被修在 LLM 波形里、没人把它固化成确定性断言，
+  #   下一次同一缺陷照样溜过 PR（`migao-acceptance`「空断言 / 假绿」同族）。
+  #
+  # 判据（**本 job 只跑离线档**，因为 PR token 的网络/权限不可靠）：
+  #   · `--selftest`：台账 schema + **每条 sunk 的断言非空壳**（用例存在、声明的效果层
+  #     字段至少一个非空、`has_effect_assertion` 为真、`merge_log` 回填 `#<issue>`）
+  #     + **每条 unsunk 显式登记**（reason + follow_up 必填）。非零退出 = 红。
+  #   · L0 退化守卫：判据不得是空壳（效果层字段集合与 `.github/assertion_taxonomy.py`
+  #     **同一对象**、注入式变异样本必须被判红）。
+  #   ⚠️ **未实装/边界**（如实登记，不写成恒真判据）：新红例的**自动入账**没做（建 issue
+  #   时不会自动写台账占位）；GitHub issue 侧的回填核验需要 `gh` + 网络 ⇒ 只在本地/agent
+  #   跑 `--issue N --check-backfill` / `--all`，**核不了就返回 3（无法判定）而不是通过**。
+  #   完整登记见 `.github/llm-finding-ledger.json` 的 `unimplemented` 与脚本头部。
+  llm-sink-ledger:
+    name: LLM Sink Ledger (红例→确定性下沉)
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+
+      - name: Ledger selftest (fail-closed, offline)
+        run: |
+          # 零第三方依赖（用例库走 render_cases 的 yaml_light）、零 LLM、零网络。
+          # 只判**台账自洽**：任何"声称已下沉但断言是空壳 / 未登记的红例"都直接红。
+          python3 .github/llm_sink_check.py --selftest
+
+      - name: L0 degenerate guards (判据不得是空壳)
+        run: |
+          # 判据自身的红证：注入"断言空壳 / 用例不存在 / 回填缺失 / unsunk 缺 reason"
+          # 的变异样本必须被判红；效果层字段集合必须与 assertion_taxonomy 同源。
+          pip install -q pytest pyyaml
+          python3 -m pytest tests/unit_ci_workflows/test_llm_finding_sink.py -q \
+            --tb=short -p no:cacheprovider
+
   # ============ Secret 扫描（gitleaks）— 防密钥/凭据提交 ============
   # ⚠️ 「B 端 smoke 打云测试环境」层已移除（issue #3653，2026-09-15）—— 原 agent-eval-smoke
   # job 每次 AI 相关 PR 都对 https://ai-api.migaozn.com（**已部署 main**，非 PR 分支）跑

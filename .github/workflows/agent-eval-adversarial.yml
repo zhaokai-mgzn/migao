@@ -9,6 +9,13 @@ permissions:
   issues: write
 
 on:
+  # ★ 触发口径（2026-09-17 用户裁定 2′/4′，承载 issue #4034）：**before == after，本次未改**。
+  #   本 workflow 的自动触发只有"每周六对抗档"这一个**定时**，没有 PR / 合并 / 迭代触发
+  #   —— 裁定明确「定时跑保留」，故**不动它**（删掉 = 白丢对抗覆盖）。
+  #   真实 LLM 的**判定用途**唯一入口 = `post-deploy-eval.yml`（档位矩阵见该文件头部）；
+  #   本 workflow 是**定时专项工具**（只追踪不阻塞）。
+  #   防回退：`tests/unit_ci_workflows/test_behavior_eval_pr_thin.py` 的白名单锁死
+  #   "自动 LLM 触发集合"，**新增**任何自动触发（含给本文件加 PR/push）都会直接红。
   workflow_dispatch:
   schedule:
     # 每周六 03:00 CST（UTC+8）= 周五 19:00 UTC，低峰期跑对抗 tier

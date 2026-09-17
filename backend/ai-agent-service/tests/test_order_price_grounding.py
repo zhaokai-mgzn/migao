@@ -314,14 +314,16 @@ def test_b_order_confirmed_but_model_idles_closes_to_execute():
     """
     pending = {
         "target_tool": "order_create", "target_action": "create",
-        "params": {"customer_name": "赵凯", "customer_phone": "13456000919",
+        "params": {"customer_name": "张三", "customer_phone": "13800138000",
                    "items": [{"product_name": "2699系列雪尼尔窗帘面料",
                               "quantity": 10, "unit_price": 23.8, "subtotal": 238}]},
     }
+    # confirmValue 逐字对齐 `.github/cases/order.yml` 的 OR-029 罐头输入（issue #4015 夹具对齐后）。
     confirm_value = (
-        "确认：客户=赵凯（13456000919）· 已有客户；商品=2699系列雪尼尔窗帘面料；数量=10 米；"
-        "规格=2699-06 蓝灰色 · 散剪 · 2.8米；面料单价=¥23.8/米（面料小计 ¥238）；"
-        "预估合计=约 ¥498（以系统结算为准）"
+        "确认：加工项=纳米圈打孔 ¥8/米、韩式波浪折边 ¥12/米、高温定型 ¥10/米（按 10 米计 ¥300）；"
+        "商品=2699系列雪尼尔窗帘面料；客户=张三（13800138000）· 已有客户；数量=10 米；"
+        "规格=2699-03暖米色 · 散剪 · 2.8米；面料单价=¥23.8/米（面料小计 ¥238）；"
+        "预估合计=约 ¥538（以系统结算为准）"
     )
     _res, seen, _full = _run_b_create_closure(
         confirm_value,
@@ -339,7 +341,7 @@ def test_b_order_not_confirmed_no_closure():
     """反向守卫（issue #3976）：B 端下单**未确认** → 不得代执行 order_create。"""
     pending = {
         "target_tool": "order_create", "target_action": "create",
-        "params": {"customer_name": "赵凯", "customer_phone": "13456000919",
+        "params": {"customer_name": "张三", "customer_phone": "13800138000",
                    "items": [{"product_name": "2699系列雪尼尔窗帘面料",
                               "quantity": 10, "unit_price": 23.8, "subtotal": 238}]},
     }

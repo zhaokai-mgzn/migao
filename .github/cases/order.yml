@@ -403,6 +403,13 @@ cases:
     # 消除「同栈并行用例互相写同一命名空间」造成的非确定性（真实 run 34856561459）。
     namespaces:
       - "customer_phone:13800138000"
+    # 前置自断言（同 OR-014 的 #3835 先例；本 PR 为过 #4048 引入的 burn-down 硬门禁补齐）：
+    # 本用例按**名字**选品（「要遮光窗帘」），故「该名字在种子栈里唯一」是可判定的前置 ——
+    # 别人造出同名副本时折成 precondition_not_applied，不再伪装成「agent 不会下单」。
+    precondition:
+      - type: product_count_for_keyword
+        source: "遮光窗帘"
+        expect: 1
 
     expectations:
       - tool: product_detail
@@ -428,7 +435,7 @@ cases:
       - "order_create items[0].doorWidth = 2.8米"
       - "order_create items[0].colorName 包含 '白色'"
     skip_reason: ""
-    merge_log: "eval M005 独有（多轮引导细节），与 OR-008 互补不合并；2026-09-09 校准：① interact 组件期望 sku_table 全库不存在（agent 从始发 choice），改为 choice；② 补「跳过加工项→点确认卡」两轮（真实流程需 7 轮，原 5 轮预设过严，agent 正确要求点卡不默认跳过）；2026-09-17 校准（issue #4014 B3）：补效果层断言 must_succeed[order_create]（此前只有裸工具名期望 =「调用过」，工具 success=false 照样判 100%）；user_inputs / expectations / required_args / data_checks 原样未动"
+    merge_log: "eval M005 独有（多轮引导细节），与 OR-008 互补不合并；2026-09-09 校准：① interact 组件期望 sku_table 全库不存在（agent 从始发 choice），改为 choice；② 补「跳过加工项→点确认卡」两轮（真实流程需 7 轮，原 5 轮预设过严，agent 正确要求点卡不默认跳过）；2026-09-17 校准（issue #4014 B3）：补效果层断言 must_succeed[order_create]（此前只有裸工具名期望 =「调用过」，工具 success=false 照样判 100%）；user_inputs / expectations / required_args / data_checks 原样未动。2026-09-18 补前置自断言（burn-down 预算，随 OR-029 夹具对齐 PR 一并做）：`precondition[product_count_for_keyword: 遮光窗帘, expect: 1]` —— 本用例按**名字**选品（「要遮光窗帘」），「该名字在种子栈里唯一」是可判定的前置（同 OR-014 #3835 先例）；横跨三份文件的一次性所有权放宽见该 PR 说明。断言（user_inputs / expectations / required_args / must_succeed / data_checks）原样未动"
     traces:
       tests:
         - "backend/ai-agent-service/tests/manual/mibao_scenarios.py"
@@ -1962,13 +1969,24 @@ cases:
       - guided_flow
     truths_ref:
       - order.create-flow
+    # 罐头输入**逐项**对齐 tests/agent_eval/fixtures/mibao_eval_seed.sql 的 seed 真值
+    # （issue #4015，seed blob 8007ed8ded0571a5）：规格 / 库存 / 加工项名目与单价 / 已存在客户
+    # 全部取自 seed，替代原先与夹具矛盾、物理不可满足的三项：
+    #   · 规格：seed 该商品只有 2699-03暖米色 与 2699-01本白（无 2699-06 蓝灰色）
+    #   · 库存：seed 商品级 stock=1000、SKU 级 stock=500（无 9599）
+    #   · 加工项：目录只有 纳米圈打孔 ¥8/米、韩式波浪折边 ¥12/米、高温定型 ¥10/米、
+    #     刺绣工艺 ¥30/平方米（无「穿杆孔加工」「包边处理」）
+    #   · 客户：seed 唯一客户 = 张三 / 13800138000（旧值「赵凯 13456000919」不在 seed，
+    #     而输入自称「已有客户」⇒ 合格 agent 必然停在澄清，「物理上走不完」）
+    # 金额自洽（与 case_trust 的金额一致口径无关，仅供人工核对）：
+    #   加工费 = (8+12+10) × 10 米 = ¥300；面料小计 = 23.8 × 10 = ¥238；预估合计 ≈ ¥538。
     user_inputs:
-      - "录订单 赵凯（13456000919）｜ 2699系列雪尼尔窗帘面料 · 2699-06 蓝灰色 · 散剪 · 2.8米 · 10 米 ｜ 加工项：韩式波浪折边、穿杆孔加工、包边处理"
-      - "1. 2699系列雪尼尔窗帘面料｜¥23.8/米｜库存 9599"
-      - "已有客户"
-      - "确认：加工项=韩式波浪折边 ¥12/米、穿杆孔加工 ¥4/米、包边处理 ¥10/米（按 10 米计约 ¥260）；商品=2699系列雪尼尔窗帘面料；客户=赵凯（13456000919）· 已有客户；数量=10 米；规格=2699-06 蓝灰色 · 散剪 · 2.8米；面料单价=¥23.8/米（面料小计 ¥238）；预估合计=约 ¥498（以系统结算为准）"
+      - "录订单 张三（13800138000）｜ 2699系列雪尼尔窗帘面料 · 2699-03暖米色 · 散剪 · 2.8米 · 10 米 ｜ 加工项：纳米圈打孔、韩式波浪折边、高温定型"
+      - "1. 2699系列雪尼尔窗帘面料｜¥23.8/米｜库存 1000"
+      - '{"auto_select": true}'
+      - '{"repeat_until": {"tool_called": "order_create", "max": 8}, "fallback": "确认下单", "form_values": {"customer_name": "张三", "customer_phone": "13800138000", "customer_address": "浙江省杭州市西湖区文三路1号1幢101室", "color": "2699-03暖米色", "colorName": "2699-03暖米色"}}'
     namespaces:
-      - "customer_phone:13456000919"
+      - "customer_phone:13800138000"
       - "product_name:2699系列雪尼尔窗帘面料"
     expectations:
       - tool: product_search
@@ -1989,7 +2007,7 @@ cases:
         expect: 1
     data_checks:
       - "确认卡点击（confirmValue 逐字回传）后，order_create 必须**真实执行并落库**——不得出现 Tool not found / 空头承诺「请稍候，我这就提交」而订单永不创建"
-      - "order_create 的 customer_phone=13456000919、items 数量=10 米、unit_price=23.8（与商品库价一致）、加工项韩式波浪折边/穿杆孔加工/包边处理"
+      - "order_create 的 customer_phone=13800138000、items 数量=10 米、unit_price=23.8（与商品库价一致）、加工项纳米圈打孔 ¥8/米 + 韩式波浪折边 ¥12/米 + 高温定型 ¥10/米（均取自 seed 加工项目录）"
     order_before:
       - "interact[choice] before product_detail"
       - "interact[confirm] before order_create"
@@ -1998,7 +2016,7 @@ cases:
         product_keyword: "2699系列雪尼尔窗帘面料"
         price: 23.8
     skip_reason: ""
-    merge_log: "2026-09-17 新增（issue #3976，线上实证 sess_202d55d49a254a10）：首条消息同时含商品细节与下单指令 → 意图路由判 product_inquiry → 整条 validate/confirm 链在 product skill 内完成，确认卡点击后模型调 order_create 撞 Tool not found（product 注册表无此工具）→ 空头承诺 + 订单永不落库。修复（route_by_intent 答卡轮归属 skill 迁移 + tool_not_found 兜底 relock + 8.4 收口扩展 B 端 order_create + metadata 假证据修复）后，确认轮应路由到 order skill 真实下单。2026-09-17 CI 门禁校准：B 端专属用例补 persona: mibao（C 端缺 sms_code 轮且 fixture 无该商品）、补 must_succeed[order_create]（效果层断言）与 precondition[product_count_for_keyword]（同名商品唯一前置，同 OR-008/OR-006 #3835 先例）"
+    merge_log: "2026-09-17 新增（issue #3976，线上实证 sess_202d55d49a254a10）：首条消息同时含商品细节与下单指令 → 意图路由判 product_inquiry → 整条 validate/confirm 链在 product skill 内完成，确认卡点击后模型调 order_create 撞 Tool not found（product 注册表无此工具）→ 空头承诺 + 订单永不落库。修复（route_by_intent 答卡轮归属 skill 迁移 + tool_not_found 兜底 relock + 8.4 收口扩展 B 端 order_create + metadata 假证据修复）后，确认轮应路由到 order skill 真实下单。2026-09-17 CI 门禁校准：B 端专属用例补 persona: mibao（C 端缺 sms_code 轮且 fixture 无该商品）、补 must_succeed[order_create]（效果层断言）与 precondition[product_count_for_keyword]（同名商品唯一前置，同 OR-008/OR-006 #3835 先例）。2026-09-17 夹具对齐（issue #4015，run 35233821582 @54e8fe9d 归因）：罐头输入与 tests/agent_eval/fixtures/mibao_eval_seed.sql 事实矛盾（规格 2699-06 蓝灰色 / 库存 9599 / 加工项 穿杆孔加工 ¥4/米 与 包边处理 ¥10/米 三项在 seed 里 0 命中；自称「已有客户」的赵凯 13456000919 亦不在 seed）⇒ 合格 agent 如实指出「对不上」并停在澄清，链路物理上走不完（恒红）。逐项改为 seed 真值（2699-03暖米色 / 库存 1000 / 纳米圈打孔 ¥8+韩式波浪折边 ¥12+高温定型 ¥10 / 张三 13800138000），并把后两轮改成 auto_select + repeat_until(tool_called=order_create) 协作轮（同 OR-016/OR-021 先例：卡内容由 LLM 动态生成，静态轮次表对不上就卡死）——断言（expectations / must_succeed / order_before / precondition）一律不放宽"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_graph_nodes.py"
