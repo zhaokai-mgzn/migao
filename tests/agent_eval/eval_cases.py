@@ -2661,6 +2661,9 @@ _CASE_HR_009 = EvalCase(
     forbidden_tools=['order_manage', 'product_manage'],
     want_text=[{'any_of': ['开通']}],
     must_fail=[{'tool': 'employee_manage', 'action': 'create'}],
+    db_verify=[{'fetch': 'employee_absent', 'name': '李四', 'phone': '13800009999'}],
+    pre_clean=[{'type': 'employee_remove', 'employee_name': '李四', 'employee_phone': '13800009999'}],
+    precondition=[{'type': 'debug_permissions_effective', 'source': 'employee:list'}],
 )
 
 # ── HR-010 [NORMAL] 有能力时不得误拒（正向对照）- 持 employee:create 时同一请求必须真的执行（源: cases/hr.yml）──
@@ -2681,8 +2684,10 @@ _CASE_HR_010 = EvalCase(
     form_prefill=[],
     forbidden_card_text=[],
     must_succeed=[{'tool': 'employee_manage', 'action': 'create'}],
+    db_verify=[{'fetch': 'employee', 'name': '李四', 'expect_fields': {'phone': '13800009999'}}],
     pre_clean=[{'type': 'employee_remove', 'employee_name': '李四', 'employee_phone': '13800009999'}],
     namespaces=['employee_name:李四', 'employee_phone:13800009999'],
+    precondition=[{'type': 'debug_permissions_effective', 'source': 'employee:create'}],
 )
 
 # ── KN-001 [SMOKE] 小布知识问答 - 面料问题先检索本店知识卡片（query 必填）（源: cases/knowledge.yml）──
@@ -3474,6 +3479,8 @@ _CASE_OR_012 = EvalCase(
     form_prefill=[],
     forbidden_card_text=[],
     forbidden_args=[{'tool': 'customer_logistics_track', 'fields': ['tracking_number']}],
+    namespaces=['customer_phone:13800138000'],
+    precondition=[{'type': 'order_count_for_phone', 'source': '13800138000'}],
 )
 
 # ── OR-013 [NORMAL] B 端物流查询 - 仅支持真实订单号，拒绝快递单号直查（源: cases/order.yml）──

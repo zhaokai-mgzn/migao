@@ -1841,14 +1841,16 @@
 数据: 同一失败的 create 调用不得跨轮重复（自旋）：本仓库 runner 目前**没有**跨轮重复调用断言，故该条只能靠 LLM 层人工/盲审读报告 —— 如实登记，不假装已机器判定
 数据: 回复须点明是**账号权限**不足（而非功能不存在），并指向管理员在「角色管理/员工管理」为其开通 employee:create
 数据: 不得出现「请稍后重试」这类对确定性拒绝无效的敷衍话术
+清理: employee_remove(employee_name=李四、employee_phone=13800009999)
 禁词（全程）: 暂不支持、功能暂未开放、系统不支持、还没有这个功能、请稍后重试、无法创建
 全程禁用: order_manage
 全程禁用: product_manage
 必须: {'any_of': ['开通']}
 必须失败: employee_manage(create)
+落库: employee_absent 李四 → name=李四; phone=13800009999
 ```
 真值: ai-chat.permission-layers, employee-role.write-require-admin
-溯源: 2026-09-18 新增（issue #4108 / 父 #4103 Pkg D）：让权限拒绝路径在评测中可达。断言口径：expectations 要求至少尝试一次 create（防'压根没调'与'如实说明'同形）+ must_fail 断言 create 一次都不得成功（**未修实现的判别性断言**：通配权限下 create 会成功 ⇒ 红）+ forbidden_text 三条反模式（功能不存在/稍后重试/无法创建）+ want_text 要求给出开通路径。身份靠服务端 DEBUG-only 的 X-Debug-Permissions（严格白名单、拒绝 *、生产不可达），harness 侧由 case 字段 debug_permissions 透传（仅非空时下发）。⚠️ 已知能力缺口：「同一失败调用不得重复」无 runner 断言，见 data_checks 首条。 ｜ tags: permission, denial, auth, regression
+溯源: 2026-09-18 新增（issue #4108 / 父 #4103 Pkg D）：让权限拒绝路径在评测中可达。断言口径：expectations 要求至少尝试一次 create（防'压根没调'与'如实说明'同形）+ must_fail 断言 create 一次都不得成功（**未修实现的判别性断言**：通配权限下 create 会成功 ⇒ 红）+ forbidden_text 三条反模式（功能不存在/稍后重试/无法创建）+ want_text 要求给出开通路径。身份靠服务端 DEBUG-only 的 X-Debug-Permissions（严格白名单、拒绝 *、生产不可达），harness 侧由 case 字段 debug_permissions 透传（仅非空时下发）。⚠️ 已知能力缺口：「同一失败调用不得重复」无 runner 断言，见 data_checks 首条；2026-09-18 第二轮（CI run 35259795549 的 Case Trust Gate 4 条阻塞）：补 ① `precondition[debug_permissions_effective source=employee:list]`（门禁 f 条 —— 声明的权限范围必须真的生效，否则服务端静默回落通配 `*`，用例考的不是它声称的行为）；② `db_verify[employee_absent]` 负效果断言（门禁 a2 条 —— 被拒绝的写，效果层真值是「该员工不得落库」；`must_fail` 只覆盖「没有一次成功调用」，门禁静默失效时脏数据会真的落库）；③ `pre_clean[employee_remove]`（门禁 b 条 —— 期望路径不造东西，但门禁失效那一格会造，清理保证重试前置等价 + 让 employee_absent 不因残留而持续红）。断言口径不变、无放宽。 ｜ tags: permission, denial, auth, regression
 
 ### HR-010. 有能力时不得误拒（正向对照）- 持 employee:create 时同一请求必须真的执行 🔵
 ```
@@ -1859,9 +1861,10 @@
 数据: 创建结果须回执给用户（账号已开/密码等），不得只展示查询结果就停（HR-003/PP-006/PR-005 同族）
 清理: employee_remove(employee_name=李四、employee_phone=13800009999)
 必须成功: employee_manage(create)
+落库: employee 李四 → name=李四; expect_fields={'phone': '13800009999'}
 ```
 真值: ai-chat.permission-layers, employee-role.write-require-admin
-溯源: 2026-09-18 新增（issue #4108 / 父 #4103 Pkg D）：「有能力时不得误拒」的正向对照。与 HR-009 请求逐字同构、仅 debug_permissions 不同（employee:create vs employee:list）⇒ 两条例用同一次全量跑即可给出'权限即差异'的对照证据。断言：expectations（action=create 值级）+ must_succeed（写真的成功）。幂等靠 pre_clean[employee_remove] + namespaces 声明（与任何写同名员工的用例自动串行，#3781 并行污染隔离）。 ｜ tags: permission, create, positive-control
+溯源: 2026-09-18 新增（issue #4108 / 父 #4103 Pkg D）：「有能力时不得误拒」的正向对照。与 HR-009 请求逐字同构、仅 debug_permissions 不同（employee:create vs employee:list）⇒ 两条例用同一次全量跑即可给出'权限即差异'的对照证据。断言：expectations（action=create 值级）+ must_succeed（写真的成功）。幂等靠 pre_clean[employee_remove] + namespaces 声明（与任何写同名员工的用例自动串行，#3781 并行污染隔离）；2026-09-18 第二轮（同 CI run）：补 `precondition[debug_permissions_effective source=employee:create]`（门禁 f 条 —— 该码没生效则「正向对照」退化，生效成别的码则误拒而像 agent 不干活）+ `db_verify[employee]` 正向落库断言（读落库行，拦 #3550 的「200 假成功」）。断言口径不变、无放宽。 ｜ tags: permission, create, positive-control
 
 ## knowledge（7 case）
 
@@ -2385,7 +2388,7 @@
 禁参: customer_logistics_track() 不得含 tracking_number
 ```
 真值: order.logistics
-溯源: 2026-09-01 新增：C 端查物流入口（转人工→查物流）后端能力，与 B 端 logistics_track 物理隔离 ｜ tags: query, logistics, data_safety
+溯源: 2026-09-01 新增：C 端查物流入口（转人工→查物流）后端能力，与 B 端 logistics_track 物理隔离。2026-09-18 补前置自断言 + namespaces（issue #4108 的 CI run 35259795549 burn-down：改用例文件的 PR 必须净缩 ≥1 条存量违规，先清 OR-*；本用例命中的唯一一条是 CASE-TRUST-NO-PRECONDITION-ASSERTION）：`namespaces[customer_phone:13800138000]` + `precondition[order_count_for_phone:13800138000]`（不写 expect —— 该基线随栈组成变化，写死会制造假红）。**断言（user_inputs / expectations / forbidden_args / data_checks）原样未动，无放宽、无删减。** ｜ tags: query, logistics, data_safety
 
 ### OR-013. B 端物流查询 - 仅支持真实订单号，拒绝快递单号直查 🔵
 ```

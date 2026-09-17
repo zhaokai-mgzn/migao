@@ -368,6 +368,31 @@ cases:
     # 且回复不得声称"做不了/不支持"（#3571 / #3782 的复发形态，见
     # `tests/test_capability_denial_guard.py`）。
     debug_permissions: "employee:list"
+    # 自清理（门禁 b 条，issue #4108 的 CI run 35259795549）：**期望路径**什么都不会造出来，
+    # 但这条清理不是装饰 —— 它治的正是"门禁失效"那一格：那时 `create` 会**真的成功**
+    # （脏员工落库），下一跑的前置就与首跑不等价（重名 ⇒ agent 合理地要求澄清 ⇒ 恒红），
+    # 且本用例的 `db_verify[employee_absent]` 会因上一跑残留而**持续红**（无法区分
+    # "本轮越权"与"上轮残留"）。`employee_remove` 是清理族（目标不存在 = 良性 no-op）。
+    pre_clean:
+      - type: employee_remove
+        employee_name: "李四"
+        employee_phone: "13800009999"
+    # 前置自断言（门禁 f 条）：**本会话真的以受限权限跑**。
+    # 为什么不是形式主义：`X-Debug-Permissions` 生效需同时满足「DEBUG=true ∧
+    # `X-Debug-Role` 非 customer ∧ 值过白名单」，任一条不成立（头名拼错 / 值含空格 /
+    # 角色写成 customer / 栈里 DEBUG=false）服务端就**静默回落通配 `*`** ——
+    # 那时"越权被拒"变成"有权限所以成功"，报告上却只表现为 `unmatched expectation`
+    # （看起来像 agent 不干活）。`source` 与上面的 `debug_permissions` **同源**。
+    precondition:
+      - type: debug_permissions_effective
+        source: "employee:list"
+    # 负效果断言（门禁 a2 条）：被拒绝的写操作，其效果层真值是**负向**的 ——
+    # 该员工**不得落库**。`must_fail` 只说"没有一次成功调用"；万一权限门禁静默失效
+    # （回落通配、或 `check_permission` 被改坏），脏数据会真的落库，只有读落库真身能证伪。
+    db_verify:
+      - fetch: employee_absent
+        name: "李四"
+        phone: "13800009999"
     user_inputs:
       - "帮我开个客服账号，姓名李四，手机号 13800009999，密码 Test123456"
       - "那我要怎么才能开通这个权限？"
@@ -379,7 +404,7 @@ cases:
           action: create
     # 业务**不得发生**（跨轮机器判定）：本用例的身份没有 employee:create ⇒
     # 任何一次 create **成功**都是越权落库（最坏形态）。
-    # ⚠️ 这一条是「未修实现」的判别性断言：未修时服务端给通配 `["*"]` ⇒ create 成功 ⇒ 本用例红。
+    # ⚠️ 这一条是「未修实现」的判别性断言：未修时服务端给通配 `*` ⇒ create 成功 ⇒ 本用例红。
     must_fail:
       - tool: employee_manage
         action: create
@@ -415,7 +440,7 @@ cases:
       - "回复须点明是**账号权限**不足（而非功能不存在），并指向管理员在「角色管理/员工管理」为其开通 employee:create"
       - "不得出现「请稍后重试」这类对确定性拒绝无效的敷衍话术"
     skip_reason: ""
-    merge_log: "2026-09-18 新增（issue #4108 / 父 #4103 Pkg D）：让权限拒绝路径在评测中可达。断言口径：expectations 要求至少尝试一次 create（防'压根没调'与'如实说明'同形）+ must_fail 断言 create 一次都不得成功（**未修实现的判别性断言**：通配权限下 create 会成功 ⇒ 红）+ forbidden_text 三条反模式（功能不存在/稍后重试/无法创建）+ want_text 要求给出开通路径。身份靠服务端 DEBUG-only 的 X-Debug-Permissions（严格白名单、拒绝 *、生产不可达），harness 侧由 case 字段 debug_permissions 透传（仅非空时下发）。⚠️ 已知能力缺口：「同一失败调用不得重复」无 runner 断言，见 data_checks 首条。"
+    merge_log: "2026-09-18 新增（issue #4108 / 父 #4103 Pkg D）：让权限拒绝路径在评测中可达。断言口径：expectations 要求至少尝试一次 create（防'压根没调'与'如实说明'同形）+ must_fail 断言 create 一次都不得成功（**未修实现的判别性断言**：通配权限下 create 会成功 ⇒ 红）+ forbidden_text 三条反模式（功能不存在/稍后重试/无法创建）+ want_text 要求给出开通路径。身份靠服务端 DEBUG-only 的 X-Debug-Permissions（严格白名单、拒绝 *、生产不可达），harness 侧由 case 字段 debug_permissions 透传（仅非空时下发）。⚠️ 已知能力缺口：「同一失败调用不得重复」无 runner 断言，见 data_checks 首条；2026-09-18 第二轮（CI run 35259795549 的 Case Trust Gate 4 条阻塞）：补 ① `precondition[debug_permissions_effective source=employee:list]`（门禁 f 条 —— 声明的权限范围必须真的生效，否则服务端静默回落通配 `*`，用例考的不是它声称的行为）；② `db_verify[employee_absent]` 负效果断言（门禁 a2 条 —— 被拒绝的写，效果层真值是「该员工不得落库」；`must_fail` 只覆盖「没有一次成功调用」，门禁静默失效时脏数据会真的落库）；③ `pre_clean[employee_remove]`（门禁 b 条 —— 期望路径不造东西，但门禁失效那一格会造，清理保证重试前置等价 + 让 employee_absent 不因残留而持续红）。断言口径不变、无放宽。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_auth.py"
@@ -469,13 +494,27 @@ cases:
       - type: employee_remove
         employee_name: "李四"
         employee_phone: "13800009999"
+    # 前置自断言（门禁 f 条，issue #4108 的 CI run 35259795549）：**本会话真的以
+    # `employee:create` 跑**。这是"正向对照"的成立前提 —— 若该码没生效（回落通配），
+    # 本条就退化成"有权限时的成功路径"（而它要证明的恰恰是"**只有**该码也放行"）；
+    # 若生效成了别的码（比如把 create 写成 list），它会**误拒**而看起来像 agent 不干活。
+    precondition:
+      - type: debug_permissions_effective
+        source: "employee:create"
+    # 正向落库断言（效果层）：`must_succeed` 只证明工具回 success=true，本核对器读**落库行**
+    # ——#3550 的真身正是"HTTP 200 + success=true 而库里没变"（下发对 + 调用成功 + 库里没有）。
+    db_verify:
+      - fetch: employee
+        name: "李四"
+        expect_fields:
+          phone: "13800009999"
     data_checks:
       # ⚠️ 自然语义，**不计分**：机器可判部分 = expectations（action 值级）+ must_succeed
       # （写真的成功，§3.2「调了≠成了」）。
       - "持 employee:create 的员工请求同一动作时，agent 必须走完创建（不得以权限为由拒绝）"
       - "创建结果须回执给用户（账号已开/密码等），不得只展示查询结果就停（HR-003/PP-006/PR-005 同族）"
     skip_reason: ""
-    merge_log: "2026-09-18 新增（issue #4108 / 父 #4103 Pkg D）：「有能力时不得误拒」的正向对照。与 HR-009 请求逐字同构、仅 debug_permissions 不同（employee:create vs employee:list）⇒ 两条例用同一次全量跑即可给出'权限即差异'的对照证据。断言：expectations（action=create 值级）+ must_succeed（写真的成功）。幂等靠 pre_clean[employee_remove] + namespaces 声明（与任何写同名员工的用例自动串行，#3781 并行污染隔离）。"
+    merge_log: "2026-09-18 新增（issue #4108 / 父 #4103 Pkg D）：「有能力时不得误拒」的正向对照。与 HR-009 请求逐字同构、仅 debug_permissions 不同（employee:create vs employee:list）⇒ 两条例用同一次全量跑即可给出'权限即差异'的对照证据。断言：expectations（action=create 值级）+ must_succeed（写真的成功）。幂等靠 pre_clean[employee_remove] + namespaces 声明（与任何写同名员工的用例自动串行，#3781 并行污染隔离）；2026-09-18 第二轮（同 CI run）：补 `precondition[debug_permissions_effective source=employee:create]`（门禁 f 条 —— 该码没生效则「正向对照」退化，生效成别的码则误拒而像 agent 不干活）+ `db_verify[employee]` 正向落库断言（读落库行，拦 #3550 的「200 假成功」）。断言口径不变、无放宽。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_employee_manage.py"

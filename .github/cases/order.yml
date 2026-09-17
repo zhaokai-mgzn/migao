@@ -581,6 +581,25 @@ cases:
       - "查一下单号 SF1234567890 的物流"
     expectations:
       - tool: customer_logistics_track
+    # 前置自断言 + 命名空间（burn-down，issue #4108 的 CI run 35259795549 要求每 PR 净缩 ≥1）。
+    # 本用例的**真前置**是「手机号 13800138000 名下订单集合稳定」——两轮都在这个集合里取值
+    # （R1 查"我的已发货订单"，R2 试快递单号直查后被引导回订单）。而**同栈并行**的建单用例
+    # （OR-016 / CR-001 / CH-010 / OR-008 / OR-009 / OR-015 / CR-003）都在同一个手机号下建单
+    # ⇒ 运行期间集合会变，R1 的"已发货订单"可能读到并行用例刚建的订单 ——
+    # 那时红的表现是 `unmatched expectation`，看起来像「agent 不会查物流」（归因全错，
+    # 同 AS-003 / PG-013 / CU-003 的形态）。
+    # 治法与 AS-003 同款（先例，不另立口径）：
+    #   ① `namespaces` → 与同手机号的建单用例**自动互斥**（不再同窗口）；
+    #   ② `precondition[order_count_for_phone]` → 运行期间该号码订单数一旦增长即判
+    #      **前置不成立**（不是行为失败），并在 summary 留 `capture → after` 两个读数。
+    # ⚠️ 刻意**不**声明 `expect: <N>`：该基线随栈组成而变（本栈含 B 端种子 + 并行建单，
+    # 不是一个可写死的常量），写错会制造**假红**（前置本就不成立）—— 与 OR-014/OR-025 的
+    # 「按名唯一」不同，那一格的真值确实恒为 1。
+    namespaces:
+      - "customer_phone:13800138000"
+    precondition:
+      - type: order_count_for_phone
+        source: "13800138000"
     forbidden_args:
       - tool: customer_logistics_track
         fields:
@@ -591,7 +610,7 @@ cases:
       - "传其他用户/非在途订单号 → 拒绝；无在途订单 → 提示暂无"
       - "customer_logistics_track 命中 logistics 卡片（logistics_list 非空）"
     skip_reason: ""
-    merge_log: "2026-09-01 新增：C 端查物流入口（转人工→查物流）后端能力，与 B 端 logistics_track 物理隔离"
+    merge_log: "2026-09-01 新增：C 端查物流入口（转人工→查物流）后端能力，与 B 端 logistics_track 物理隔离。2026-09-18 补前置自断言 + namespaces（issue #4108 的 CI run 35259795549 burn-down：改用例文件的 PR 必须净缩 ≥1 条存量违规，先清 OR-*；本用例命中的唯一一条是 CASE-TRUST-NO-PRECONDITION-ASSERTION）：`namespaces[customer_phone:13800138000]` + `precondition[order_count_for_phone:13800138000]`（不写 expect —— 该基线随栈组成变化，写死会制造假红）。**断言（user_inputs / expectations / forbidden_args / data_checks）原样未动，无放宽、无删减。**"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_customer_logistics_track.py"

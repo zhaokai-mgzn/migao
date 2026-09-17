@@ -4394,6 +4394,11 @@ _PRECONDITION_NO_DRIFT = 0
 _PRECONDITION_TYPES: dict = {
     "order_count_for_phone": "手机号名下订单数",
     "product_count_for_keyword": "名字含该关键词的商品件数",
+    # 评测可控权限（issue #4108）：`source` = 用例声明的 `debug_permissions`（逗号分隔权限码）。
+    # 判据**不是**"数一个共享字面量有没有漂移"，而是"**本用例的权限范围是否真的生效**"——
+    # 见 `check_debug_permissions_effective`。`source` 语义与上两条一致 =「我依赖的那个
+    # 不可变键」；此处那个键就是用例自己声明的权限码串（渲染器与用例**同源**）。
+    "debug_permissions_effective": "本用例声明的 DEBUG 权限范围是否真的生效",
 }
 
 
@@ -4534,12 +4539,86 @@ def check_precondition_drift(specs: list, before: dict, after: dict) -> list:
     return issues
 
 
+async def _probe_employee_absent(token: str, emp_id: str = "", name: str = "",
+                                 phone: str = "") -> tuple:
+    """该员工/用户是否**不存在**（负效果断言的取数基元，issue #4108）→ (bool | None, 说明)。
+
+    · `True`  = 确认不存在（可以判绿）；
+    · `False` = 存在（命中即越权产物 ⇒ 调用方判红）；
+    · `None`  = **取数失败**（HTTP 异常/非 2xx）—— 调用方必须判失败，**不得**读成"不存在"：
+      `_safe_json` 对非 JSON/瞬断按空结果降级，把"查不到"当"没有"会让这条断言在网络抖动时
+      **静默变绿**（本仓库「环境层问题伪装成业务结论」的既有形态）。
+    · `False` 的判定用**双条件**（name ∧ phone，二者都给了就都要满足）：复用
+      `_eval_find_users`（`employee_remove` / `employee_reactivate` 的同一份
+      「怎么定位员工」定义），**不另立第二份口径**；只给一个键时按该键匹配。
+    """
+    _want_name = str(name or "").strip() or str(emp_id or "").strip()
+    _want_phone = str(phone or "").strip()
+    if not _want_name and not _want_phone:
+        return None, "缺 id/name/phone（定位不到对象）"
+    try:
+        async with httpx.AsyncClient() as c:
+            if emp_id:
+                r = await c.get(f"{ADMIN_API}/api/admin/users/{emp_id}",
+                                headers=_admin_headers(token), timeout=15)
+                if r.status_code >= 400:
+                    return None, f"GET /api/admin/users/{emp_id} HTTP {r.status_code}"
+                body = _safe_json(r, None)
+                data = (body or {}).get("data") if isinstance(body, dict) else None
+                if isinstance(data, dict) and data:
+                    return False, f"id={emp_id} 命中"
+            hits = await _eval_find_users(c, _admin_headers(token),
+                                          name=str(name or ""), phone=_want_phone)
+            if hits:
+                return False, f"命中 {len(hits)} 条（name={name!r} phone={phone!r}）"
+            return True, ""
+    except Exception as e:                                       # noqa: BLE001
+        return None, f"查询异常 {type(e).__name__}: {e}"
+
+
 def check_precondition_declared(specs: list) -> list:
     """声明层静态一致（L0）：声明的 type 必须已有实现（fail-closed，不静默跳过）。"""
     issues = []
     for t in precondition_capture_shape(specs):
         if t not in _PRECONDITION_TYPES:
             issues.append(f"precondition: 声明的 type {t!r} 没有实现（断言会静默跳过）")
+    return issues
+
+
+# ── 评测可控权限的**前置自断言**（issue #4108；CI run 35259795549 的
+#    `CASE-TRUST-NO-PRECONDITION-ASSERTION` × 2）────────────────────────────────
+# 为什么必须有：`X-Debug-Permissions` 的生效条件是「DEBUG=true ∧ `X-Debug-Role` 非 customer
+# ∧ 值过白名单」。任一条不成立（头名拼错 / 值含空格 / 角色写成 customer / 栈里 DEBUG=false）
+# ⇒ 服务端**静默回落通配 `["*"]`**（`app/utils/auth.py::_debug_permissions_override`）
+# ⇒ HR-009 的「越权被拒」变成「有权限所以成功」，而报告上只表现为
+# `unmatched expectation`（**看起来像 agent 不干活**）—— 归因全错，正是 PG-013/CU-003 的形态。
+#
+# 判据必须是**否定式**的（"回落形态一律红"），而不是"等于声明值即绿"：
+# 空值 / 含 `*` / 任一非法码都会让服务端整串回落 ⇒ 生效范围**不可能是**声明值 ⇒ 必红。
+def check_debug_permissions_effective(specs: list, effective: str) -> list:
+    """核对「用例声明的权限范围」是否真的生效（纯函数）。
+
+    `effective` = 该用例声明的 `debug_permissions`（**值与渲染器同源**，见
+    `_case_debug_permissions`）；未声明（空）时不适用 —— 由调用方跳过。
+    """
+    issues = []
+    for s in specs or []:
+        if not isinstance(s, dict) or s.get("type") != "debug_permissions_effective":
+            continue
+        src = str(s.get("source") or "")
+        if not src:
+            issues.append(
+                "precondition[debug_permissions_effective]: 缺 source（声明了权限范围却没说"
+                "是哪个范围 —— 断言会静默跳过）")
+            continue
+        if effective != src:
+            issues.append(
+                f"precondition[debug_permissions_effective]: 本会话**未以声明的权限范围**跑 —— "
+                f"用例声明 {src!r}，实际生效 {effective!r}。"
+                f"本用例考的是「该权限范围下的行为」，范围不符时它的红/绿**不可归因于被测行为**。"
+                f"核对：`X-Debug-Permissions` 是否真的下发（`_case_debug_permissions` → "
+                f"`_chat_headers`）+ 服务端是否回落通配（`*`/空白/空元素/非法码一律回落 `[\"*\"]`）"
+                f"+ 栈是否为 DEBUG=true")
     return issues
 
 
@@ -5090,6 +5169,38 @@ async def check_db_verify(token: str, db_verify: list, results: list | None = No
                     issues.append(
                         f"db_verify[employee]: 落库 {_k} 实际 {_got!r} ≠ 期望 {_want!r} "
                         f"（员工 {_emp_ref!r}）—— 下发对 + 调用成功 + 库里没变 = 静默忽略")
+            continue
+
+        if fetch == "employee_absent":
+            # **负效果**断言（issue #4108）：该员工/用户**不得存在**。
+            # 为什么必须有：权限被拒的写用例，其效果层真值是**负向**的（"什么都没落库"）。
+            # `must_fail` 只覆盖"没有一次成功调用"；若权限门禁**静默失效**
+            # （`X-Debug-Permissions` 被回落成通配、或某天 `check_permission` 被改坏），
+            # `create` 会成功 ⇒ 必须有一层读**落库真身**的断言把它判红（#3778「调用了 ≠ 成了」
+            # 的反面：**没调用也可能已经成了**，只有落库层能证伪）。
+            _abs_name = str(spec.get("name") or "").strip()
+            _abs_phone = str(spec.get("phone") or "").strip()
+            _abs_id = str(spec.get("id") or "").strip()
+            if not (_abs_id or _abs_name or _abs_phone):
+                issues.append(
+                    "db_verify[employee_absent]: 缺 id/name/phone（定位不到对象 ⇒ 断言永远绿 = 空断言）")
+                continue
+            _who_abs = _abs_id or _abs_name or _abs_phone
+            _found_abs, _note_abs = await _probe_employee_absent(
+                token, emp_id=_abs_id, name=_abs_name, phone=_abs_phone)
+            if _found_abs is None:
+                # ⚠️ **查询失败 ≠ 不存在**（本仓库反复踩的「环境层问题伪装成业务结论」）：
+                # `_safe_json` 对非 JSON/瞬断按空字典降级 ⇒ 若把"查不到"直接读成"没有"，
+                # 这条断言会在网络抖动时**静默变绿**（假绿）。故取数异常判失败而非跳过。
+                issues.append(
+                    f"db_verify[employee_absent]: 查不到员工 {_who_abs!r} 的存在性"
+                    f"（{_note_abs or '取数异常'}）—— 取不到真值不许当「不存在」")
+                continue
+            if _found_abs:
+                issues.append(
+                    f"db_verify[employee_absent]: 员工 {_who_abs!r} **已落库**"
+                    f"（{_note_abs or '已存在'}）—— 该操作本应被权限拒绝/不成立；"
+                    f"落库即越权产物（脏数据），判失败而非跳过")
             continue
 
         if fetch == "after_sales_ticket":
@@ -5982,6 +6093,13 @@ async def run_case(case, token: str, session_id: str) -> dict:
     # 前置断言的**声明层**一致性（issue #3781，L0/零 LLM）：声明了没实现的 type
     # ⇒ 断言会静默跳过（"看起来有覆盖"），fail-closed 报出来。
     case_issues += check_precondition_declared(getattr(case, "precondition", None) or [])
+    # 评测可控权限的**前置自断言**（issue #4108）：声明的权限范围必须真的生效 ——
+    # 否则服务端静默回落通配 `["*"]`，用例考的不是它声称的行为（归因全错）。
+    # 纯函数、零 HTTP：`effective` 取自用例自己的声明（与 `_chat_headers` 下发值同源）。
+    case_issues += check_debug_permissions_effective(
+        getattr(case, "precondition", None) or [],
+        _case_debug_permissions(case),
+    ) if _case_debug_permissions(case) else []
     # 控制轮的**声明形态**（issue #4042）：写成 JSON 字符串 ⇒ 静默退化成纯文本轮（fail-closed 报出来）
     case_issues += check_control_turns_declared(getattr(case, "user_inputs", None) or [])
 
