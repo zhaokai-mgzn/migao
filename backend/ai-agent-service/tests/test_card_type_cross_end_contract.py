@@ -8,7 +8,8 @@
 
 - C 端 `frontend/mini-app/src/components/chat/MessageBubble.tsx::renderCard` 实现 9 种，含 `quotation` → 齐全；
 - B 端移动 `frontend/bmini-app/src/components/chat/MessageBubble.tsx::renderCard` 与 C 端同族 → 齐全；
-- B 端桌面 `frontend/admin-web/src/components/chat/ToolResultCard.tsx` 只实现 5 种、**不含 `quotation`**，
+- B 端桌面 `frontend/admin-web/src/components/chat/ToolResultCard.tsx` 当时只实现 5 种、**不含 `quotation`**
+  （现为 6 种：新增 `production_progress`，见下「反向契约」节），
   且 `default` 分支把内部类型名回显成「未知卡片类型: quotation」灰盒 ——
   既**没有任何按钮**（不可理解、不可点击），又把**内部类型名泄漏**给商家用户。
 
@@ -43,11 +44,17 @@
 
 `#3960` 当时的口径是「**保留分支 + 用测试标注**，不顺手删除」（反向缺口无用户可见缺陷，
 且 `knowledge` 分支未来接上卡片事件即可复用）。`#4016` **收紧了该口径**：审计实测
-前端 11 个卡型名里有 **6 个**后端永不产出（`product_recommend` / `logistics_track` /
-`knowledge_result` / `knowledge` / `payment` / `production_progress`，其中 `payment` /
-`production_progress` 是**刚交付**却零发射点的功能），别名与死分支让「实际语义只有 5 个」
-的真相被 11 个名字掩盖、并且**没有任何东西会红**。故本包把该接缝升级为**硬判据**
-（`test_renderer_case_sets_are_subset_of_backend_card_types`），裁剪后转绿。
+前端 11 个卡型名里有 **6 个**后端永不产出，别名与死分支让「实际语义只有 5 个」的真相
+被 11 个名字掩盖、并且**没有任何东西会红**。故本包把该接缝升级为**硬判据**
+（`test_renderer_case_sets_are_subset_of_backend_card_types`）。
+
+**两个零发射点卡型的处置不同（照实登记）**：
+- `payment` —— 工具层**没有任何数据源**（收款码走独立 REST、由卡片自取）⇒ 缺的是**触发机制**，
+  按产品裁定**维持裁剪**（另开单）；
+- `production_progress` —— `production_progress_query` 工具**存在且返回的正是卡载荷**
+  ⇒ 属**接线漏一行**，用户 2026-09-18 裁定走「**补发射点**」：`_detect_card_type` 补映射后
+  该卡型进入**可产出集合（5 → 6）**，三端渲染分支同步恢复（该工具同时绑在两个 persona 的
+  Skill 上 ⇒ 正向判据要求 C 端 + B 端移动 + B 端桌面**三端都能渲染**，实测缺任一端即报红）。
 
 > 口径演进的判据落点：正向判据护「发得出、渲染不了」，反向判据护「渲染得了、发不出」。
 > 两者都读同一份源码真值提取器（不加第二份口径），红证见文末「常驻判别性检验」。
@@ -74,10 +81,11 @@
 - **构造红**：对「故意构造的、不在渲染集合里的卡型」断言必被每个渲染端判违规；
   对「故意构造的、无渲染端登记的 persona」断言必被判违规。
 - **回放红**：把 B 端 `default` 还原成修复前的实现文本，泄漏判据必须能认出（证判据非空）。
-- **反向真实红（#4016 裁剪前实测）**：`test_renderer_case_sets_are_subset_of_backend_card_types`
-  报出三个渲染端的孤儿分支 —— C 端 `['knowledge', 'knowledge_result', 'logistics_track',
+- **反向真实红（#4016 裁剪前实测，历史事实）**：`test_renderer_case_sets_are_subset_of_backend_card_types`
+  当时报出三个渲染端的孤儿分支 —— C 端 `['knowledge', 'knowledge_result', 'logistics_track',
   'payment', 'product_recommend', 'production_progress']`、B 端移动同族（少 `payment` /
-  `production_progress`）、B 端桌面 `['knowledge']`。
+  `production_progress`）、B 端桌面 `['knowledge']`。除 `production_progress` 外均维持裁剪；
+  `production_progress` 已由「补发射点」转为**可产出 + 三端可渲染**（见上节）。
 - **反向变异红**：把某个卡型从 `_CARD_TOOL_ANCHORS`/映射里去掉后，判据必须报出对应孤儿
   （证明「裁剪后转绿」不是判据恒真）。
 """
@@ -118,6 +126,8 @@ _CARD_TOOL_ANCHORS = {
     "logistics_track": "logistics",
     "order_query": "order",
     "curtain_calc": "quotation",
+    # #4016 P14「补发射点」（用户 2026-09-18 裁定）：该工具返回的 data 正是卡载荷
+    "production_progress_query": "production_progress",
 }
 
 # 交互组件（renderInteractive 的 switch）——不得被算作卡型
@@ -359,7 +369,7 @@ def orphan_renderer_branches(
     `producible`：后端 `_detect_card_type` 在**注册表里的工具**上真能返回的卡型集合。
     返回 `{渲染端名: 后端永不下发的卡型}`；全空 = 反向契约成立。
     （真值取自**注册表**而非 `_detect_card_type` 的函数体：写进函数却没有任何工具能触发
-    的映射同样是死路径 —— 那正是 `production_progress` 的缺失形态。）
+    的映射同样是死路径 —— `production_progress` 曾是该形态的实例，现已按裁定补上映射。）
     """
     return {
         name: sorted(types - producible)

@@ -399,6 +399,12 @@ def _detect_card_type(tool_name: str, result: Dict[str, Any]) -> Optional[str]:
         return "order"
     elif tool_name == "curtain_calc":
         return "quotation"
+    elif tool_name == "production_progress_query":
+        # 生产进度卡（M4-G-3 / issue #3997 已交付的顾客端卡片）。
+        # issue #4016 P14：此前**只有卡片、没有发射点** ⇒ 组件永不渲染
+        # （「交付物在 main ≠ 能力可达」）。用户 2026-09-18 裁定走「补发射点」：该工具返回的
+        # `data` 正是卡载荷（progress_percent / current_operation / expected_delivery_date / positions）。
+        return "production_progress"
     return None
 
 
@@ -449,6 +455,15 @@ def _should_send_card(tool_name: str, result: Dict[str, Any]) -> bool:
     if tool_name == "curtain_calc":
         data = result.get("data", {})
         return data.get("total") is not None
+
+    # 生产进度有结果时发送进度卡（issue #4016 P14 补发射点）
+    # 判据 = **工具契约事实**：`production_progress_query` 成功时保证 `data` 是非空 dict
+    # （空 dict 走 success=False/NOT_FOUND 分支，见该工具第 145 行），且**无加工单也 success=true**
+    # （0%/空工序是合法结果）⇒ 不能用「有工序」当判据，否则「暂无生产进度」空态永远看不到卡
+    # （UI-045 明写「空态（无工序）显示『暂无生产进度』，不显示假进度、不空白」）。
+    if tool_name == "production_progress_query":
+        data = result.get("data", {})
+        return isinstance(data, dict) and len(data) > 0
 
     return False
 

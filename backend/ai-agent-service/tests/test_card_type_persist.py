@@ -101,6 +101,20 @@ def _persisted_cards(sm):
 ORDER = {"id": "o-1", "orderNo": "ORD-001", "status": "confirmed", "totalAmount": 128.0}
 LOGISTICS = {"tracking_number": "SF1234567890", "status": "运输中"}
 
+# 生产进度卡载荷：`production_progress_query` 成功时返回的正是这个形状
+# （progress_percent / current_operation / expected_delivery_date，见该工具第 171 行）
+PRODUCTION_PROGRESS = {
+    "order_id": "CSO260915-02615",
+    "order_no": "CSO260915-02615",
+    "status": "producing",
+    "progress_percent": 40,
+    "current_operation": "韩褶",
+    "pending_operations": ["韩褶", "定型", "打包"],
+    "expected_delivery_date": "2026-09-25",
+}
+# 无加工单的**合法**返回（success=true、0%/空工序）—— UI-045 要求此时仍展示卡（「暂无生产进度」）
+PRODUCTION_PROGRESS_EMPTY = {"order_no": "EVAL-ORD-0002", "progress_percent": 0, "positions": []}
+
 
 class TestCardTypePersisted:
     @pytest.mark.asyncio
@@ -139,6 +153,52 @@ class TestCardTypePersisted:
         ])
         assert _emitted_card_types(events) == ["product_list", "product_list"]
         assert _persisted_cards(sm) == ["product_list"]
+
+    @pytest.mark.asyncio
+    async def test_production_progress_card_emitted_and_persisted(self):
+        """**端到端那一格**（#4016 P14 用户 2026-09-18 裁定「补发射点」）：
+
+        工具结果 → 真的发出 `event: card`（type=production_progress）→ 真的落进
+        `metadata.cards`。证明的是「能力**可达**」，不是「后端函数能返回一个字符串」——
+        后者正是本单的病根（卡片交付在 main、组件永不渲染）。
+        """
+        events, sm = await _collect(
+            [_tool_result("production_progress_query", PRODUCTION_PROGRESS)]
+        )
+        assert _emitted_card_types(events) == ["production_progress"], (
+            "工具结果没有发出生产进度卡 ⇒ 发射点没接上（组件仍然永不渲染）"
+        )
+        # 载荷就是工具返回的 data（事实驱动，无中间改写）
+        card_payload = json.loads(
+            next(e.split("data: ", 1)[1] for e in events if e.startswith("event: card"))
+        )
+        assert card_payload["type"] == "production_progress"
+        assert card_payload["data"]["progress_percent"] == 40
+        assert _persisted_cards(sm) == ["production_progress"], (
+            "该卡型未落 metadata.cards ⇒ 用量统计仍看不到它"
+        )
+
+    @pytest.mark.asyncio
+    async def test_production_progress_empty_state_still_sends_card(self):
+        """空态也要发卡（R2 负例）：无加工单是**合法**结果，卡里显示「暂无生产进度」。
+
+        判据不能用「有工序」——`production_progress_query` 对无加工单的订单**同样 success=true**
+        （0%/空工序）。若按「有工序」判据，UI-045 的空态要求（不空白、不显示假进度）永远看不到卡。
+        """
+        events, sm = await _collect(
+            [_tool_result("production_progress_query", PRODUCTION_PROGRESS_EMPTY)]
+        )
+        assert _emitted_card_types(events) == ["production_progress"]
+        assert _persisted_cards(sm) == ["production_progress"]
+
+    @pytest.mark.asyncio
+    async def test_failed_production_progress_sends_no_card(self):
+        """失败不发卡（R2 负例）：success=False 时既无卡事件、也无 cards 记录（无假进度）。"""
+        events, sm = await _collect(
+            [_tool_result("production_progress_query", {}, success=False)]
+        )
+        assert _emitted_card_types(events) == []
+        assert _persisted_cards(sm) is None
 
     @pytest.mark.asyncio
     async def test_dropped_reference_aligned_card_is_not_counted(self):
