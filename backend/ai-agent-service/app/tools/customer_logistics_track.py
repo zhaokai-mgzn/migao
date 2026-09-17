@@ -110,6 +110,7 @@ class CustomerLogisticsTrackTool(BaseTool):
                 success=False,
                 error=f"无效的操作类型: {action}",
                 message="不支持的操作类型，可选：list",
+                suggestion="本工具只支持 list 操作，请改为查询该顾客的物流列表，不要传入其它 action",
             )
 
         # 铁律 1：拒绝快递单号直查（无论 LLM 通过哪个参数传入）

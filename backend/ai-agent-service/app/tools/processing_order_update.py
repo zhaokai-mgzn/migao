@@ -83,7 +83,11 @@ class ProcessingOrderUpdateTool(BaseTool):
         reason: Optional[str] = None,
     ) -> ToolResult:
         if not self.check_permission(context):
-            return ToolResult(success=False, error="权限不足", message="您没有权限更新加工单")
+            return ToolResult(success=False,
+                error="权限不足",
+                message="您没有权限更新加工单",
+                suggestion="请改用只读查询（processing_order_query）向用户展示加工单；如需修改请先确认当前账号权限",
+            )
 
         if action not in VALID_ACTIONS:
             return ToolResult(

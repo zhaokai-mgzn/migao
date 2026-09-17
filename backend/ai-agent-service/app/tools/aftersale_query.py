@@ -164,6 +164,7 @@ class AftersaleQueryTool(BaseTool):
                 success=False,
                 error=error_msg,
                 message=f"查询售后工单失败: {error_msg}",
+                suggestion="请稍后重试；若持续失败，请改为按工单号精确查询，或请用户联系管理员核对工单数据",
             )
 
         data = response.get("data", {})
@@ -247,6 +248,7 @@ class AftersaleQueryTool(BaseTool):
                 success=False,
                 error=error_msg,
                 message=f"查询工单详情失败: {error_msg}",
+                suggestion="请让用户确认工单号是否正确，必要时先用 aftersale_query 的 list 操作查到该工单再查详情",
             )
 
         data = response.get("data", {})

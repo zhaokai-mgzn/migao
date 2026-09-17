@@ -106,6 +106,7 @@ class CustomerOrderQueryTool(BaseTool):
                 success=False,
                 error=f"无效的操作类型: {action}",
                 message="不支持的操作类型，可选：list",
+                suggestion="本工具只支持 list 操作，请改用只读查询（如需下单请转下单技能），不要传入其它 action",
             )
 
         # 分页参数强制 int（LLM 可能传字符串）

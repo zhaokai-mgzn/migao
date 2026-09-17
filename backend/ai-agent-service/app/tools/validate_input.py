@@ -475,13 +475,17 @@ class ValidateInputTool(BaseTool):
         params: Optional[Dict[str, Any]] = None,
     ) -> ToolResult:
         if not self.check_permission(context):
-            return ToolResult(success=False, error="权限不足")
+            return ToolResult(success=False,
+                error="权限不足",
+                suggestion="请改用当前账号有权限的操作，或请用户联系管理员开通权限后再校验",
+            )
 
         if not params:
             return ToolResult(
                 success=False,
                 error="缺少参数",
                 message="请提供要校验的参数",
+                suggestion="缺少待校验参数 params，请把要校验的字段与取值放进 params 后重试",
             )
 
         tool_rules = _VALIDATION_RULES.get(target_tool)

@@ -331,6 +331,32 @@ class TestBaseSkillRules:
         assert bm.map_changed_files_with_source([BASE_SKILL_PATH]) == (
             ["CH-013", "CH-014", "CH-015", "DF-011", "DF-012"], "rules")
 
+    @pytest.mark.parametrize("path", [
+        # issue #4049：execute_skill 的三段实现搬到了 execution/ —— 转人工守卫判据与写门禁链
+        # 随之搬走。若规则只锚 base_skill.py，改这三个文件会**一条 CH-* 都不跑**（假绿）。
+        "backend/ai-agent-service/app/graph/skills/execution/prepare_turn.py",
+        "backend/ai-agent-service/app/graph/skills/execution/react_turn.py",
+        "backend/ai-agent-service/app/graph/skills/execution/finalize_turn.py",
+    ])
+    def test_split_regions_map_to_handoff_cases(self, path):
+        """搬迁家族必须与 base_skill.py **同等**锚定转人工族（扩正则，不是放行）。"""
+        cases, source = bm.map_changed_files_with_source([path])
+        assert source == "rules", f"{path} 落到了 {source} —— 搬迁后守卫面漏跑用例"
+        assert {"CH-013", "CH-014", "CH-015"} <= set(cases), (
+            f"{path} 未映射到转人工族：{cases}"
+        )
+
+    def test_split_regions_exist_and_are_not_caught_by_the_old_narrow_rule(self):
+        """反向：新正则确实**比原来宽**（否则上面那条是假绿）。"""
+        import re
+
+        old = r"app/graph/skills/base_skill\.py"
+        new = [p for p, _ in bm.MAPPING_RULES if "execution" in p]
+        assert new, "MAPPING_RULES 里没有覆盖 execution/*.py 的规则"
+        region = "backend/ai-agent-service/app/graph/skills/execution/react_turn.py"
+        assert re.search(old, region) is None, "旧正则本不该命中 —— 负例夹具失效"
+        assert any(re.search(p, region) for p in new), "新规则没覆盖搬迁模块"
+
     @pytest.mark.parametrize("path, expected_source", [
         ("backend/ai-agent-service/tests/test_base_skill.py", "none"),
         ("backend/ai-agent-service/tests/test_base_skill_guard.py", "none"),

@@ -30,6 +30,8 @@ import re
 import sys
 from pathlib import Path
 
+import pytest
+
 SCHEMA = Path(__file__).parent.parent.parent / "docs" / "sql" / "schema.sql"
 
 # 允许被引用但不由本文件创建的表（运行时扩展/外部扩展；当前为空）
@@ -202,6 +204,29 @@ class TestNoStrayStatementsOnDroppedTables:
 COMPOSE = Path(__file__).parent.parent.parent / "deploy" / "docker-compose.yml"
 WORKFLOWS_DIR = Path(__file__).parent.parent.parent / ".github" / "workflows"
 REPO_ROOT = Path(__file__).parent.parent.parent
+
+# 搬迁家族（issue #4049）：`execute_skill` 的 1699 行按职责搬进了 `execution/`，
+# 其中就包含本文件要核的日志现场。任何"只扫 base_skill.py"的文本判据都会在搬迁后
+# **变成空跑但仍全绿**（§19.1「判据自己选择沉默」）。
+_SKILLS_DIR = (REPO_ROOT / "backend" / "ai-agent-service" / "app" / "graph" / "skills")
+_BASE_SKILL_PY = _SKILLS_DIR / "base_skill.py"
+_EXECUTION_DIR = _SKILLS_DIR / "execution"
+
+
+def _skill_family_paths(execution_dir: Path = _EXECUTION_DIR) -> list:
+    """`base_skill.py` + `execution/*.py`（fail-closed：缺失或不足 3 个实现文件即报错）。"""
+    assert _BASE_SKILL_PY.is_file(), f"被扫目标不存在：{_BASE_SKILL_PY}（fail-closed）"
+    assert execution_dir.is_dir(), f"拆分后的实现目录不存在：{execution_dir}（fail-closed）"
+    exec_files = sorted(execution_dir.glob("*.py"))
+    assert len(exec_files) >= 3, (
+        f"{execution_dir} 下的实现文件不足 3 个（实得 {[p.name for p in exec_files]}）"
+        f"—— 家族扫描会静默漏掉搬走的日志现场"
+    )
+    return [_BASE_SKILL_PY] + exec_files
+
+
+def _skill_family_text(execution_dir: Path = _EXECUTION_DIR) -> str:
+    return "\n".join(p.read_text(encoding="utf-8") for p in _skill_family_paths(execution_dir))
 
 
 class TestPostgresHealthcheckMatchesDatabase:
@@ -901,11 +926,32 @@ class TestFallbackCardLogWhitelist:
                 f"dump 白名单缺 {kw!r} → 验证码真值链在 CI 里无正面证据（issue #3434）")
 
     def test_marker_actually_logged_by_skill(self):
-        """白名单里的标记必须**真的**由代码打出来（防白名单写错字）。"""
-        src = (REPO_ROOT / "backend" / "ai-agent-service" / "app" / "graph" / "skills"
-               / "base_skill.py").read_text(encoding="utf-8")
+        """白名单里的标记必须**真的**由代码打出来（防白名单写错字）。
+
+        ⚠️ 扫**搬迁家族**（issue #4049）：`代码兜底补发确认卡` 那条日志已随 8.3b 搬进
+        `execution/finalize_turn.py`，`代码{_why8}`（确认收口）在 8.4 同处 —— 只扫
+        `base_skill.py` 会让本判据**变成空跑但仍全绿**，而它防的正是"白名单里写着一个
+        谁也不打的标记"（§19.1「判据自己选择沉默」）。
+        **白名单本身不动**（只改"去哪儿找这条日志"）。
+        """
+        src = _skill_family_text()
         for kw in ("代码兜底补发确认卡", "卡下发计数", "代码{_why}", "代码{_why8}"):
-            assert kw in src, f"base_skill 里已经没有 {kw!r} 这条日志了"
+            assert kw in src, f"搬迁家族里已经没有 {kw!r} 这条日志了"
+
+    def test_family_source_scan_is_not_vacuous(self, tmp_path):
+        """负例锁：家族扫描**真的会红/会假**（否则上面那条是永远真的空判据）。"""
+        src = _skill_family_text()
+        assert len(_skill_family_paths()) >= 4, (
+            f"家族覆盖不足（应含 base_skill.py + ≥3 个实现文件）：{_skill_family_paths()}"
+        )
+        ghost = "这条标记肯定不存在_负例夹具_9f3a"
+        assert ghost not in src, f"不存在的标记被判为存在 ⇒ `in src` 判据恒真：{ghost!r}"
+
+        fake = tmp_path / "execution"
+        fake.mkdir()
+        (fake / "finalize_turn.py").write_text("x = 1\n", encoding="utf-8")
+        with pytest.raises(AssertionError, match="不足 3 个"):
+            _skill_family_paths(fake)
 
 
 class TestNamedProductsAreSeeded:

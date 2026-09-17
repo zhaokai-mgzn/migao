@@ -231,6 +231,7 @@ class NotificationManageTool(BaseTool):
                 success=False,
                 error=f"无效的操作类型: {action}",
                 message=f"不支持的操作类型，可选：{', '.join(VALID_ACTIONS)}",
+                suggestion="请从工具说明里的可选操作类型中选一个后重试，不要自行改用其它 action",
             )
 
         try:
@@ -281,6 +282,7 @@ class NotificationManageTool(BaseTool):
                     success=False,
                     error=f"无效的通知状态: {status}",
                     message=f"不支持的状态筛选，可选：{', '.join(VALID_STATUSES)}",
+                    suggestion="请改用合法状态筛选（见错误提示中的可选值）后重试，不要自行传其它状态",
                 )
             # 映射为 admin-api 实际状态值（unread → sent）
             params["status"] = STATUS_TO_API.get(status, status)
@@ -290,6 +292,7 @@ class NotificationManageTool(BaseTool):
                     success=False,
                     error=f"无效的通知渠道: {channel}",
                     message=f"不支持的通知渠道，可选：{', '.join(VALID_CHANNELS)}",
+                    suggestion="请改用合法通知渠道（见错误提示中的可选值）后重试，不要自行传其它渠道",
                 )
             # 映射为 admin-api 实际渠道值（system → internal）
             params["channel"] = CHANNEL_TO_API.get(channel, channel)
@@ -308,6 +311,7 @@ class NotificationManageTool(BaseTool):
                 success=False,
                 error=error_msg,
                 message=f"查询通知列表失败：{error_msg}",
+                suggestion="请稍后重试；若持续失败，请改为不带筛选条件查询，或请用户联系管理员核对通知数据",
             )
 
         data = response.get("data", {})
@@ -343,6 +347,7 @@ class NotificationManageTool(BaseTool):
                 success=False,
                 error=error_msg,
                 message=f"获取未读数失败：{error_msg}",
+                suggestion="请稍后重试；若持续失败，请改用 list 操作查询未读通知条数，或请用户稍后再看",
             )
 
         data = response.get("data", {})
@@ -369,6 +374,7 @@ class NotificationManageTool(BaseTool):
                 success=False,
                 error="缺少通知 ID",
                 message="标记已读时必须提供通知 ID（notification_id）",
+                suggestion="缺少 notification_id，请先用 notification_manage 的 list 操作取到通知 ID 后重试",
             )
 
         client = get_admin_api_client()
@@ -384,6 +390,7 @@ class NotificationManageTool(BaseTool):
                 success=False,
                 error=error_msg,
                 message=f"标记已读失败：{error_msg}",
+                suggestion="请先用 notification_manage 的 list 操作确认该通知存在且未读，再重新执行标记已读",
             )
 
         logger.info(
@@ -414,6 +421,7 @@ class NotificationManageTool(BaseTool):
                 success=False,
                 error=error_msg,
                 message=f"全部标记已读失败：{error_msg}",
+                suggestion="请稍后重试；若持续失败，请提示用户逐条标记已读，或请用户联系管理员核对通知服务",
             )
 
         logger.info(
@@ -437,6 +445,7 @@ class NotificationManageTool(BaseTool):
                 success=False,
                 error="缺少通知 ID",
                 message="删除通知时必须提供通知 ID（notification_id）",
+                suggestion="缺少 notification_id，请先用 notification_manage 的 list 操作取到通知 ID 后重试",
             )
 
         client = get_admin_api_client()
@@ -452,6 +461,7 @@ class NotificationManageTool(BaseTool):
                 success=False,
                 error=error_msg,
                 message=f"删除通知失败：{error_msg}",
+                suggestion="请先用 notification_manage 的 list 操作确认该通知仍在（已删除的不可重复删），再重试",
             )
 
         logger.info(
@@ -490,6 +500,7 @@ class NotificationManageTool(BaseTool):
                 success=False,
                 error="缺少接收人 ID",
                 message="创建通知时必须提供接收人用户 ID（recipient_id）",
+                suggestion="缺少 recipient_id，请先用 employee_manage 的 list 操作查到在职员工后再重试",
             )
 
         if not title:
@@ -497,6 +508,7 @@ class NotificationManageTool(BaseTool):
                 success=False,
                 error="缺少通知标题",
                 message="创建通知时必须提供通知标题（title）",
+                suggestion="缺少通知标题 title，请向用户询问要发送的通知标题后重试",
             )
 
         if not content:
@@ -504,6 +516,7 @@ class NotificationManageTool(BaseTool):
                 success=False,
                 error="缺少通知内容",
                 message="创建通知时必须提供通知内容（content）",
+                suggestion="缺少通知内容 content，请向用户询问要发送的通知内容后重试",
             )
 
         if channel and channel not in VALID_CHANNELS:
@@ -511,6 +524,7 @@ class NotificationManageTool(BaseTool):
                 success=False,
                 error=f"无效的通知渠道: {channel}",
                 message=f"不支持的通知渠道，可选：{', '.join(VALID_CHANNELS)}",
+                suggestion="请改用合法通知渠道（见错误提示中的可选值）后重试，不要自行改写渠道名",
             )
 
         recipients, resolve_error = await _resolve_tenant_recipients(context)
