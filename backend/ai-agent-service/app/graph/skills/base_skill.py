@@ -1754,7 +1754,8 @@ def _flow_owner_skill(state: dict | None = None,
 
 
 async def _relock_order_skill(session_id: str | None, state: dict | None = None,
-                              migrate_card_owner: bool = False) -> None:
+                              migrate_card_owner: bool = False,
+                              tool_name: str = ORDER_WRITE_TOOL) -> str:
     """顾客在办下单但当前轮在别的 skill → 把会话**锁回下单流程**（issue #3477）。
 
     为什么必要（C-A1 run 34791767013 实证）：会话被 choice 卡锁在 `customer_product`，
@@ -1764,6 +1765,14 @@ async def _relock_order_skill(session_id: str | None, state: dict | None = None,
     流程，订单才能真的落下（这是恢复路径，不是口头承诺）。目标由 `_flow_owner_skill` 从
     注册表事实 derive（不再写死 C 端节点名）。
 
+    `tool_name`（issue #4124）：本轮回锁要让**哪个**工具在下一轮可达（默认下单写工具 ⇒
+    既有调用点语义不变）。域闸门拒域外目标（`cross_skill_target`）时，回锁目标必须是
+    **被拒的那个工具**的归属流程 —— 谁拥有它由注册表事实回答；否则"回锁了但目标仍不可达"，
+    等于把 #3976 的空头承诺换个位置重演。
+
+    Returns: 实际回锁到的 skill 名；**未回锁/解析不出/写失败 ⇒ `""`**（既有调用点忽略返回值，
+    语义不变；`_route_cross_skill_target` 据此判断"能不能对模型宣称已切流程"）。
+
     `migrate_card_owner=True`：把**在办确认卡的归属标记**随流程一起迁移（#3571 族，OR-014 实证）。
     为什么必须：下一轮的"答卡轮豁免"要求 `last_card_skill == pending_interact_skill` ——
     卡是在**漂错的那个 skill**里发的，只回锁流程而不迁移卡归属，用户点这张卡时又会被判成
@@ -1772,19 +1781,20 @@ async def _relock_order_skill(session_id: str | None, state: dict | None = None,
     发卡 skill 自己的流程，不跟着订单流程走。
     """
     if not session_id:
-        return
-    owner = _flow_owner_skill(state)
+        return ""
+    owner = _flow_owner_skill(state, tool_name)
     if not owner:
-        logger.warning("[base_skill] 未能从注册表解析下单流程归属 skill → 跳过回锁（非致命）")
-        return
+        logger.warning(
+            f"[base_skill] 未能从注册表解析 {tool_name} 的归属 skill → 跳过回锁（非致命）")
+        return ""
     try:
         from app.memory.session_memory import SessionMemory
         await SessionMemory().set_pending_skill(session_id, owner)
     except Exception as e:
-        logger.warning(f"[base_skill] 锁回下单流程失败（非致命）: {e}")
-        return
+        logger.warning(f"[base_skill] 锁回归属流程失败（非致命）: {e}")
+        return ""
     if not migrate_card_owner:
-        return
+        return owner
     try:
         from app.memory.session_state_store import SessionStateStore
         store = SessionStateStore()
@@ -1799,6 +1809,55 @@ async def _relock_order_skill(session_id: str | None, state: dict | None = None,
                 f"[base_skill] 在办确认卡的归属随流程迁移 → {owner} | session={session_id}")
     except Exception as e:
         logger.warning(f"[base_skill] 迁移在办卡归属失败（非致命）: {e}")
+    return owner
+
+
+async def _route_cross_skill_target(session_id: str | None, state: dict | None,
+                                    tool_name: str, skill_name: str = "") -> str:
+    """消化域闸门判决 `cross_skill_target`：回锁归属流程 + 返回**可执行**的下一步（issue #4124）。
+
+    病灶（#4123 的 artifact 原文）：`product` 流程（12 个工具）内
+    `validate_input(order_manage)` 被判 `cross_skill_target` 后，skills 层**零消费**
+    （`grep -rn "cross_skill_target" app/graph/skills/` 只命中一处注释）⇒ 模型只拿到劝导语
+    「请把会话切到具备该工具的流程后再执行」，而它**没有切换原语** ⇒ 整条链路被放弃
+    （AS-003 期望的 `after_sales_manage` 从未被调用）。这里把判决接上**已有的恢复原语**：
+    归属从注册表事实 derive（`_flow_owner_skill`，不写死 skill 名）→ `_relock_order_skill`
+    回锁（含在办确认卡归属迁移 —— AS-003 正是"已发过确认卡"的形态）→ 一次说清
+    「本会话已切到哪 / 下一轮什么可用 / **本轮**该做什么」。
+
+    指引**刻意不承诺本轮执行**：本轮 `bind_tools` 已定，目标工具本轮不可调用
+    （写成"本轮可用"就是 #3976 的空头承诺）。
+    也**刻意不把 `human_handoff` 写成下一步**：本工具集里它常常可达（`order`/`aftersales`/
+    `general` 都声明了它），但"可达 ≠ 该处方" —— 把可恢复的流程改成转人工是更坏的失败形态；
+    模型仍可自行判断（写闸门被拦时的话术里也照旧给出转人工出口）。
+
+    Returns: 给模型的指引全文；下列 fail-safe 分支**不改任何状态、返回 `""`**（调用方退回
+    既有 suggestion）：无 session / 目标为空 / persona 不可达 / 归属解析不出 /
+    归属 == 当前流程（回锁到原地 = 没切 ⇒ 不得对模型宣称"已切到"）。
+    为什么必须 fail-safe（`_flow_owner_skill` docstring 的教训）：回锁目标必须真的在该
+    persona 的图里 —— 指错图/指原地，"恢复了能力"的那一步自己先把会话打坏（比不修更糟）。
+    """
+    if not session_id or not tool_name:
+        return ""
+    owner = _flow_owner_skill(state, tool_name)
+    if not owner or owner == skill_name:
+        logger.warning(
+            f"[base_skill] cross_skill_target 无法回锁（不改会话状态）: target={tool_name} "
+            f"owner={owner or '<解析不出>'} current={skill_name or '<未知>'} | session={session_id}")
+        return ""
+    if not await _relock_order_skill(session_id, state, migrate_card_owner=True,
+                                     tool_name=tool_name):
+        return ""
+    logger.warning(
+        f"[base_skill] cross_skill_target 已回锁归属流程: {skill_name or '<未知>'} → {owner} "
+        f"(target={tool_name}) | session={session_id}")
+    return (
+        f"`{tool_name}` 不属于**本轮**流程可执行的工具（域闸门判定：跨流程目标），校验未执行。"
+        f"**本会话已切到归属流程 `{owner}`：下一轮 `{tool_name}` 即可执行**。"
+        f"本轮请**不要再调用** `{tool_name}`，也**不要再发同一张确认卡**"
+        f"（本轮工具集已定，点了同样执行不了）；请向用户说明情况，"
+        f"并请他再说一次「确认」（或复述要继续办理的事）——下一轮即可办结。"
+    )
 
 
 async def _load_session_facts(session_id: str | None) -> dict:
