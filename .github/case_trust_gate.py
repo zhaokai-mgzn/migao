@@ -384,6 +384,7 @@ def load_base_baseline(base: str) -> dict | None:
 def reconcile_baseline(baseline: dict, violations_by_case: dict[str, list[dict]],
                        base_baseline: dict | None = None,
                        judged_cases: int | None = None,
+                       baseline_rel: str | None = None,
                        prune_command: str | None = None,
                        regen_command: str | None = None) -> dict:
     """**全量对账**（#4031）：豁免清单必须与**全库**判定逐条一致，**不限 diff 命中**。
@@ -409,12 +410,22 @@ def reconcile_baseline(baseline: dict, violations_by_case: dict[str, list[dict]]
     ⚠️ **判定输入必须与 `--regen-baseline` 同源**（`judge_all(cases, catalog)`，**不传**
     `raw_text`）：基线的码是那条路径算出来的，用另一条路径（diff 路径会传 `raw_text`，
     轮次作用域的 `forbidden_text` 会少报码）对账就会凭空产出「陈旧项」= 假红。
+
+    🔗 **复用（单一真相源）**：`scripts/drift_audit.py` 的 `compare_baseline` **也调本函数**
+    （#4045）—— 它把 `{条目: 计数}` 形态的基线摊平成 `violations_by_case` 再喂进来，自己
+    不复制第二套「陈旧/被删」判据。为此本函数接受三个**只影响提示文案/命令**的可选参数
+    （`baseline_rel` / `prune_command` / `regen_command`，默认值 = case-trust 自己的口径，
+    **判据一字不改**）；两个门禁的 `stale` / `dropped` / `blocking` 一致性由
+    `test_drift_audit_contract.py` 的 `test_reconcile_conclusion_comes_from_the_single_source`
+    逐例锁住。
     """
     recorded = {cid: _recorded_codes(e)
                 for cid, e in (baseline.get("violations") or {}).items()}
     now = {cid: {v["code"] for v in vs} for cid, vs in violations_by_case.items() if vs}
-    # 两个「修法命令」的**可注入**形态（默认 = 本门禁自己的命令；drift_audit 那侧传自己的
-    # —— 报错必须指向**能修好它的那个入口**，指错入口比不指更贵）。
+    # 三个「口径/修法」的**可注入**形态（默认 = 本门禁自己的口径；drift_audit 那侧传自己的
+    # —— 报错必须指向**能修好它的那个入口**，指错入口比不指更贵；清单名同理，指错文件
+    # 会让人去改一份与本 PR 无关的账本）。
+    baseline_rel = baseline_rel or str(BASELINE_PATH.relative_to(REPO_ROOT))
     prune_cmd = prune_command or PRUNE_COMMAND
     regen_cmd = regen_command or REGEN_COMMAND
 
@@ -429,7 +440,7 @@ def reconcile_baseline(baseline: dict, violations_by_case: dict[str, list[dict]]
             "now_codes": sorted(now.get(cid, set())),
             "hint": (
                 f"{cid} 记的码已不再命中（{'、'.join(gone)}）—— 请从 "
-                f"{BASELINE_PATH.relative_to(REPO_ROOT)} 移除（**全量对账**：不再限于本次 diff "
+                f"{baseline_rel} 移除（**全量对账**：不再限于本次 diff "
                 f"命中，任何条目都必须仍然真的违规）。命令：{prune_cmd}"
             ),
         })
@@ -564,11 +575,11 @@ def burn_down_verdict(base_baseline: dict | None, baseline: dict, today: str,
     ⚠️ 本函数原先**只**校验前三个维度 —— `metric` 没校验就是一条**不会红的判据**，
     等于把收紧后的门槛又留了个「改成宽松就回退」的后门（本次补上 + 注入式红证）。
 
-    ## 参数语义（`label` / `hint_extra` / `config_baseline`）
+    ## 参数语义（`label` / `hint_extra` / `config_baseline` / `count_base`）
 
     🔗 **复用（单一真相源）**：`scripts/drift_audit.py` 的 burn-down 预算**也调本函数**
     （#4045）—— 它把 `{条目: 计数}` 摊平成同形清单后传 `case_files_touched=<本 PR 改了
-    自己的基线/判据面>`。三个可选参数只改**文案措辞**与**计数基准**，判据数字一字不改：
+    自己的基线/判据面>`。这些可选参数只改**文案措辞**与**计数基准**，判据数字一字不改：
     · `label` = 计入口径的名字（drift_audit 用「判据面」）；
     · `hint_extra` = 该门禁自己的修法提示（默认空 = case-trust 原样，提示语见
       `case-trust-baseline.json` 的 `burn_down._how_to`）；

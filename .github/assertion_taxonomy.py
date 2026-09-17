@@ -1152,6 +1152,14 @@ RULES_BY_CODE: dict[str, dict] = {r["code"]: r for r in RULES}
 #     「目标不存在」按 #3791 走良性 no-op（可见、不进结论）；L0 五条判据 + 逐条红证锁在
 #     `tests/unit_ci_workflows/test_eval_preclean_registry.py`。
 #     留着 = 与实现相反的**假真值**（`migao-acceptance`：注释漂移是假绿来源）。
+#   · `DRIFT-AUDIT-STALE-DIFF-SCOPED` —— `scripts/drift_audit.py` 的 `compare_baseline`
+#     已改为**全量对账**并 **import 复用** `.github/case_trust_gate.py` 的
+#     `reconcile_baseline` / `burn_down_verdict`（#4045：陈旧条目**不限 diff 命中**一律阻塞 +
+#     反向对账「仍违规却被删」+ burn-down 预算），源码注释里那句「沿用 `stale_baseline_entries`
+#     口径」的**假真值**已一并删掉 ⇒ 该登记所述口径**已不成立**。
+#     ⚠️ 僵尸判据 `_probe_drift_audit_diff_scoped_stale` 与其注册项**保留**（它现在探不到证据 =
+#     正是「已实装」的读数，按探针名检索即可复核），因此本项**不在**下方 `UNIMPLEMENTED` 里
+#     —— 留着就是「实装了还挂着未实装」的假真值。
 UNIMPLEMENTED: tuple[dict, ...] = (
     {
         "code": "CASE-TRUST-CROSS-LEG-NARROW-RUN",
@@ -1189,7 +1197,8 @@ UNIMPLEMENTED: tuple[dict, ...] = (
         ),
         "needs": (
             "要先让「清单条目可被多条 PR 各自删除的小文件化 / 自动重生成」落地，"
-            "每-PR 口径才有可安全阻塞的目标（同族于 drift_audit 的全量对账，见下一条 ⇒ **#4045**）。"
+            "每-PR 口径才有可安全阻塞的目标（drift_audit 侧的同族改造已于 **#4045** 落地："
+            "那边同样是 `scope=case_touching_prs` 的数据口径）。"
         ),
         # ── 收紧后的必填四字段（见本元组上方的「可执行约束」）──
         # 本项属**口径型**登记（不是代码缺口）：追踪单 #4155 同时承载它与
@@ -1203,30 +1212,6 @@ UNIMPLEMENTED: tuple[dict, ...] = (
             "'.github/case-trust-baseline.json'))['burn_down']['scope'])\"` 输出 `all_prs` = 已实装。"
         ),
         "hit_probe": "burn_down_scope_case_touching",
-    },
-    {
-        "code": "DRIFT-AUDIT-STALE-DIFF-SCOPED",
-        "title": "`scripts/drift_audit.py` 的同款「陈旧即红」仍是 diff 命中口径（未同步 #4031）",
-        "why_not": (
-            "同族缺陷的**第二实例**：`drift_audit.compare_baseline` 的 `stale_blocking` 只在"
-            "本次 diff 命中该条目时才阻塞（源码注释自称「沿用 `.github/case_trust_gate.py` 的"
-            "`stale_baseline_entries` 口径」）⇒ #4031 把 case_trust_gate 改成全量对账后，两者**口径已分叉**，"
-            "该脚本仍会留下永久豁免（它的基线是 `entries` 计数形态，需独立改造）。"
-        ),
-        "needs": (
-            "按 #4031 同款改造 drift_audit 的 compare_baseline（全量对账 + burn-down 预算）"
-            "并补红证；**已开独立 issue 登记：`#4045`**（不属 #4031 的文件所有权，避免与在飞包冲突；同 issue 含 `pr-check.yml` 注释块口径同步 —— 需 `workflow` scope）。"
-        ),
-        # ── 收紧后的必填四字段（见本元组上方的「可执行约束」）──
-        "issue": 4045,
-        "expires": "2026-12-31",
-        "how_to_verify": (
-            "`scripts/drift_audit.py` 的 `compare_baseline` **复用** `.github/case_trust_gate.py`"
-            "的 `reconcile_baseline`（不再自实现 diff 命中口径的陈旧判据）⇒ 撤本登记。"
-            "核验：`grep -c reconcile_baseline scripts/drift_audit.py` ≥ 1（当前 = 0）；"
-            "撤登记判据 = `hit_probe` 探不到存活证据（即该 grep 命中）。"
-        ),
-        "hit_probe": "drift_audit_diff_scoped_stale",
     },
     {
         "code": "CASE-TRUST-ALL-CASES-PERSONA-ANNOTATED",

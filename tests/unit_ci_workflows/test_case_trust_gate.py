@@ -1054,14 +1054,13 @@ class TestGateShell:
         """机制现状必须**照实登记**（不许把「写进技能」当「有门禁」，也不许倒过来）。
 
         #4031 落地后，原来那条「清单缩短无机械强制，只告警」的登记已成**假真值** ⇒
-        必须换成真实残留缺口：每-PR 口径的 scope、未登记违规不阻塞、drift_audit 未同步。
+        必须换成真实残留缺口：每-PR 口径的 scope（未登记违规已 fail-closed、drift_audit 已同步）。
         同时**不得**再留着「只告警」这类与实现相反的措辞（`migao-acceptance`：
         注释漂移 = 假绿来源）。
         """
         assert UNIMPLEMENTED.exists(), f"未实装清单缺失：{UNIMPLEMENTED}"
         text = UNIMPLEMENTED.read_text(encoding="utf-8")
-        for needle in ("CASE-TRUST-BURN-DOWN-SCOPE-CASE-TOUCHING-ONLY",
-                       "DRIFT-AUDIT-STALE-DIFF-SCOPED"):
+        for needle in ("CASE-TRUST-BURN-DOWN-SCOPE-CASE-TOUCHING-ONLY",):
             assert needle in text, f"未实装清单缺了 #4031 后的真实残留缺口登记：{needle}"
         assert "CASE-TRUST-BASELINE-PRUNING-ENFORCEMENT" not in text, (
             "旧的「无机械强制，只告警」登记未撤 —— 与实现相反，是假真值"
@@ -1070,6 +1069,17 @@ class TestGateShell:
         # （留着就是与实现相反的假真值：读者会以为「未登记违规只报告」）。
         assert "CASE-TRUST-UNREGISTERED-VIOLATION-NOT-BLOCKING" not in text, (
             "「未登记违规只报告」的未实装登记未撤 —— 该口径已 fail-closed（#4046）"
+        )
+        # #4045 已落地（drift_audit 改为全量对账 + burn-down 预算，判据 **import 复用** 本门禁的
+        # `reconcile_baseline` / `burn_down_verdict`）⇒ 该条**不得**再留在未实装清单里
+        # （留着就是与实现相反的假真值）。两份清单（JSON + `assertion_taxonomy`）必须同源。
+        assert "DRIFT-AUDIT-STALE-DIFF-SCOPED" not in text, (
+            "「drift_audit 仍是 diff 命中口径」的未实装登记未撤 —— 该口径已全量对账（#4045）"
+        )
+        assert not [u for u in tax.UNIMPLEMENTED if str(u["code"]).startswith("DRIFT-AUDIT-")], (
+            f"`assertion_taxonomy.UNIMPLEMENTED` 里仍留着 drift_audit 的未实装登记："
+            f"{[u['code'] for u in tax.UNIMPLEMENTED]} —— 与 `.github/case-trust-unimplemented.json` "
+            f"必须同源（#4045 落地后撤登记）"
         )
 
     def test_gate_blocks_unknown_preclean_without_crashing(self):
