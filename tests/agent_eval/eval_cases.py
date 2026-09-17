@@ -3205,13 +3205,14 @@ _CASE_OR_001 = EvalCase(
     difficulty=Difficulty.SMOKE,
     user_inputs=['查看最近的订单'],
     expectations=['order_query(action=list)'],
-    data_checks=['data.orders.length >= 0'],
+    data_checks=[],
     skip_reason='',
     tags=['query', 'smoke'],
     persona='',
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+    output_verify=[{'tool': 'order_query', 'action': 'list', 'expect': {'orders': '__nonempty__'}}],
 )
 
 # ── OR-002 [NORMAL] 订单查询 - 按状态筛选（源: cases/order.yml）──
@@ -3361,6 +3362,7 @@ _CASE_OR_009 = EvalCase(
     form_prefill=[],
     forbidden_card_text=[],
     required_args=[{'tool': 'order_create', 'fields': ['items[].processing_info.sellingMethod', 'items[].processing_info.doorWidth', 'items[].processing_info.colorName']}],
+    must_succeed=[{'tool': 'order_create'}],
     namespaces=['customer_phone:13800138000'],
 )
 
@@ -3382,6 +3384,7 @@ _CASE_OR_010 = EvalCase(
     forbidden_card_text=[],
     want_text=['订单号'],
     required_args=[{'tool': 'order_create', 'fields': ['customer_phone', 'items']}],
+    must_succeed=[{'tool': 'order_create'}],
 )
 
 # ── OR-011 [NORMAL] AI 下单闭环 - 算料报价→确认→SMS→订单创建（源: cases/order.yml）──
@@ -3401,6 +3404,8 @@ _CASE_OR_011 = EvalCase(
     form_prefill=[],
     forbidden_card_text=[],
     required_args=[{'tool': 'order_create', 'fields': ['customer_phone', 'items']}],
+    must_succeed=[{'tool': 'order_create'}],
+    db_verify=[{'fetch': 'order_items', 'source': 'order_create', 'expect_products': ['遮光窗帘'], 'expect_quantities': {'遮光窗帘': 2}}, {'fetch': 'order_phone', 'source': 'order_create', 'expect_phone': '13800138000'}],
 )
 
 # ── OR-012 [NORMAL] C 端物流查询 - 仅限本人已发货订单 + 拒绝快递单号直查（源: cases/order.yml）──
@@ -3482,6 +3487,7 @@ _CASE_OR_015 = EvalCase(
     forbidden_card_text=[],
     order_before=['validate_input before order_create'],
     required_args=[{'tool': 'validate_input', 'fields': ['target_tool', 'target_action']}],
+    must_succeed=[{'tool': 'order_create'}],
     pre_clean=[{'type': 'product_dedupe', 'product_keyword': '遮光窗帘'}],
     namespaces=['customer_phone:13800138000', 'product_name:遮光窗帘'],
 )
