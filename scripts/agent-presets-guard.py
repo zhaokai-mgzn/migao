@@ -287,27 +287,56 @@ def check_source(ref: str, source: str, cwd: Path, out=sys.stdout, seen: dict | 
 # 三态照实区分：`⏭️ 未跑判定`（没接线 / 不同源）≠ `✅ 通过`（见文件头表格）。
 
 def _remote_url(repo: Path) -> str:
-    """origin 的**生效** URL（`remote get-url` 会应用 insteadOf 重写；`config --get` 只给原始值）。"""
+    """origin 的**生效** URL（`remote get-url` 会应用 insteadOf 重写；`config --get` 只给原始值）。
+
+    本机实测：配置里写的是 `https://github.com/…`，`remote get-url` 给的是
+    `ssh://git@ssh.github.com:443/…`（全局 `url.<ssh>.insteadOf` 重写）—— 判上游必须看生效值。
+    """
     proc = git("-C", str(repo), "remote", "get-url", "origin", check=False)
     return proc.stdout.strip() if proc.returncode == 0 else ""
 
 
-def _same_history(ref: str, cwd: Path, anchor_repo: Path) -> tuple[bool, str]:
-    """活锚检出与基线是否**同一份历史**（决定「活锚落后」这条判据能不能比）。
+def _norm_remote(url: str) -> str:
+    """把 origin URL 归一成 `host/path`（够判「同一上游」，不是通用 URL 解析器）。
 
-    ⚠️ **不能比 URL 字符串**：本机实测同一仓库有两种写法 —— 配置里是
-    `https://github.com/…`，而 `url.ssh://git@ssh.github.com:443/.insteadOf` 把它重写成
-    `ssh://…`。按 URL 比 ⇒ 同一仓库被判「不同源」⇒ 判据被**静默跳过**（正是本单要治的
-    「绿了但没跑」）。故改用**对象级**判据：活锚检出里有没有基线 ref 的那个提交。
+    覆盖 `scheme://user@host:port/path`、`user@host:path`（scp 形式）与结尾 `.git` / `/` 差异。
     """
-    ref_sha = git("rev-parse", ref, cwd=cwd, check=False).stdout.strip()
-    if not ref_sha:
-        return False, f"读不到基线 ref：{ref}"
+    u = url.strip()
+    if not u:
+        return ""
+    u = re.sub(r"^[A-Za-z][A-Za-z0-9+.-]*://", "", u)      # scheme://
+    u = re.sub(r"^[^/@]*@", "", u)                          # user@
+    u = re.sub(r"^([^/:]+):(?!\d+/)(?=[^/])", r"\1/", u)    # scp 形式 host:path → host/path
+    u = re.sub(r":\d+/", "/", u)                            # :port/
+    u = u.rstrip("/")
+    if u.endswith(".git"):
+        u = u[:-4]
+    return u.lower()
+
+
+def _same_upstream(ref: str, cwd: Path, anchor_repo: Path) -> tuple[bool, str]:
+    """活锚检出与基线是否**同一上游**（决定「活锚落后」这条判据能不能比）。
+
+    默认活锚只在同一上游时才判 —— 否则拿无关仓库的 `main` 量活锚，夹具/别的产品仓库全部误红。
+    **主判据 = 生效 origin URL（归一后相等）**，对象级「有没有基线提交」只作退路：
+
+    ⚠️ 实测踩过两次（两次都是同族假绿，判据自己选择沉默）：
+    ① 比 `git config --get` 的**原始** URL ⇒ 本机 `insteadOf` 让同一仓库出现两种写法
+       （`https://github.com/…` vs `ssh://git@ssh.github.com:443/…`）⇒ 真活锚被**静默跳过**；
+    ② 只比对象级「锚点检出里有没有基线那个提交」⇒ 锚点**还没 fetch** 到基线新提交时被判
+       「不同历史」⇒ 落后**不红**；而这恰恰是本单要治的形态（main 刚前进、锚点还没跟上）。
+    """
     if anchor_repo.resolve() == cwd.resolve():
         return True, "活锚就在本仓库检出内"
-    if git("-C", str(anchor_repo), "cat-file", "-e", f"{ref_sha}^{{commit}}", check=False).returncode == 0:
+    a, b = _norm_remote(_remote_url(anchor_repo)), _norm_remote(_remote_url(cwd))
+    if a and a == b:
+        return True, f"活锚检出与本仓库同一上游（{a}）"
+    ref_sha = git("rev-parse", ref, cwd=cwd, check=False).stdout.strip()
+    if ref_sha and git("-C", str(anchor_repo), "cat-file", "-e", f"{ref_sha}^{{commit}}",
+                       check=False).returncode == 0:
         return True, f"活锚检出拥有基线提交 {ref_sha[:12]}（同一份历史）"
-    return False, f"活锚检出里没有基线提交 {ref_sha[:12]}（不是同一份历史：可能是别的仓库 / 未 fetch）"
+    return False, (f"活锚检出与本仓库不是同一上游（origin={a or '—'} vs {b or '—'}）"
+                   "—— 拿无关仓库的 main 量活锚没有意义")
 
 
 def _anchor_checkout(anchor: Path) -> tuple[Path | None, str | None]:
@@ -460,12 +489,15 @@ def judge_anchor(ref: str, cwd: Path, anchor: Path, explicit: bool = False, out=
     if top is None:
         print("   ⚠️ 活锚不是 git 检出（判不了 sha/落后）—— 形态上属**手抄副本**：没有跟随机制", file=out)
     else:
-        if not explicit:
-            same, why = _same_history(ref, cwd, top)
+        if explicit:
+            print("   判定依据：显式 `--anchor` ⇒ 一律判定", file=out)
+        else:
+            same, why = _same_upstream(ref, cwd, top)
             if not same:
                 print(f"   ⏭️ 未跑判定：{why}", file=out)
                 print(f"      （活锚检出 origin={_remote_url(top) or '—'}；本仓库 origin={_remote_url(cwd) or '—'}）", file=out)
                 return 0
+            print(f"   判定依据：{why}", file=out)
         state = _lag_state(ref, cwd, sha)
         lag_txt = {
             "same": "与基线同一提交",

@@ -632,12 +632,13 @@ def test_handcopied_anchor_is_judged_by_content(anchor_env: dict, tmp_path: Path
 
 
 def test_unrelated_history_is_skipped_but_explicit_anchor_is_judged(anchor_env: dict, tmp_path: Path):
-    """同历史豁免（**防假绿也要防假红**）：
+    """同上游豁免（**防假绿也要防假红**）：
 
-    默认活锚只在「活锚检出里存在基线那个提交」时才判落后 —— 否则拿无关仓库的 `main` 量活锚
-    会污染所有夹具仓库（判据变成环境噪声）；而**显式 `--anchor` 一律判定**（你明确要比）。
-    ⚠️ 判据**不能比 URL 字符串**：本机实测同一仓库有 `https://github.com/…` 与
-    `ssh://git@ssh.github.com:443/…` 两种写法（`insteadOf` 重写）⇒ 按 URL 比会把真活锚静默跳过。
+    默认活锚只在「与基线同一上游」时才判落后 —— 否则拿无关仓库的 `main` 量活锚会污染所有
+    夹具仓库（判据变成环境噪声，迟早被 `|| true` 掉）；而**显式 `--anchor` 一律判定**（你明确要比）。
+    ⚠️ 判上游**不能比 `git config --get` 的原始 URL**：本机实测同一仓库有
+    `https://github.com/…` 与 `ssh://git@ssh.github.com:443/…` 两种写法（`insteadOf` 重写）
+    ⇒ 那样比会把真活锚静默跳过。判据用**生效 URL 归一**（+ 对象级退路），见 `_same_upstream`。
     """
     other = tmp_path / "other"
     _init_repo(other)
@@ -653,7 +654,8 @@ def test_unrelated_history_is_skipped_but_explicit_anchor_is_judged(anchor_env: 
 
     assert rc_implicit == 0, implicit.getvalue()
     assert "未跑判定" in implicit.getvalue()
-    assert "同一份历史" in implicit.getvalue()
+    assert "不是同一上游" in implicit.getvalue()
+    assert "origin=" in implicit.getvalue()      # 两个 URL 都要打出来（可自证为什么跳过）
 
     explicit = io.StringIO()
     rc_explicit = GUARD_MODULE.judge_anchor(
@@ -663,6 +665,26 @@ def test_unrelated_history_is_skipped_but_explicit_anchor_is_judged(anchor_env: 
 
     assert rc_explicit == 1, explicit.getvalue()
     assert "活锚内容与 origin/main 不一致" in explicit.getvalue()
+
+
+def test_default_anchor_is_judged_even_when_mirror_has_not_fetched(anchor_env: dict):
+    """回归（本轮实测踩到，属**假绿**）：锚点检出**还没 fetch** 到基线新提交时，若判据要求
+    「锚点检出里必须有基线那个提交」，就会判成「不同历史」⇒ **静默跳过** ⇒ 落后不红。
+
+    而这恰恰是本单要治的形态：main 刚前进（预设 PR 合并）、锚点还没跟上 —— 判据必须判、必须红。
+    """
+    _git(anchor_env["mirror"], "checkout", "-q", "--detach", anchor_env["c1"])
+    out = io.StringIO()
+
+    rc = GUARD_MODULE.judge_anchor(
+        "origin/main", anchor_env["baseline"], anchor_env["mirror"] / ".agent-presets/migao",
+        explicit=False, out=out,
+    )
+
+    assert rc == 1, out.getvalue()
+    assert "同一上游" in out.getvalue()
+    assert "落后" in out.getvalue()
+    assert "未跑判定" not in out.getvalue()
 
 
 def test_unloadable_frontmatter_is_red_even_when_content_matches(anchor_env: dict):
