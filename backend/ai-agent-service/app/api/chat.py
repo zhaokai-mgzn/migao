@@ -938,6 +938,19 @@ async def _agent_stream_to_sse(
     """
     full_response = []
     tool_calls_info = []
+    # 工具**执行结果**元信息（issue #4052，源自 #4043 C 组第 1 条）：与 `tool_calls_info`
+    # **逐项对齐** —— `tool_results[i]` 说的是 `tool_calls_info[i]` 这次调用「成没成」。
+    # 此前结果只在 SSE 里发给前端、从不落库 ⇒ 会话记录（metadata）分不出「调了 order_create」
+    # 与「order_create 真落库了」，事后取证/回放只能看到「调用了谁」（#3361/#3778 的假绿面）。
+    # 只落元信息三键（工具名 / 成败 / 错误码）：**不放** `result.data` 载荷与用户 PII
+    # （metadata 会进历史回放），`error` 文本先过既有脱敏层 `_mask_for_customer`。
+    tool_results_info: List[Dict[str, Any]] = []
+    # 同名工具一回合可调多次 ⇒ 模型发起的调用按到达顺序**进队**，结果按同序**出队配对**
+    # （生产端 `customer_service_agent.astream_chat` 按 ToolMessage 顺序补发 tool_result）。
+    # 队列元素 = `tool_calls_info` 里的同一条记录（同一对象）。
+    # 代码收口执行（base_skill 8.4，模型**没**发起调用而由代码执行，issue #3410/#3976）
+    # 只有结果、没有 tool_call ⇒ 出队为空，结果照样落库，且不会挤掉别的调用的配对位。
+    _pending_calls: Dict[str, List[dict]] = {}
     # LLM hallucinated <interact> XML block payload (issue #3036 / UI-032)
     last_interactive_payload = None
     _done_sent = False
@@ -1035,6 +1048,9 @@ async def _agent_stream_to_sse(
                                     "tool": tool_name,
                                     "args": tool_input,
                                 })
+                                # 进配对队列（同一对象）：结果到达时按 FIFO 出队
+                                _pending_calls.setdefault(tool_name, []).append(
+                                    tool_calls_info[-1])
                                 yield SSEEvent.tool_call(tool_name, tool_input)
 
                     elif response.type == "tool_result":
@@ -1049,11 +1065,29 @@ async def _agent_stream_to_sse(
                                 # （B 端实证 sess_202d55d49a254a10：最终消息 metadata 记录
                                 # 了从未执行的 order_create，而订单实际未落库）。
                                 _res_error = result_dict.get("error") if isinstance(result_dict, dict) else ""
+                                # 本次结果配对的调用 = 同名调用队列的队首（无则说明是代码收口执行）
+                                _queue = _pending_calls.get(tool_name) or []
+                                _paired_call = _queue.pop(0) if _queue else None
                                 if _res_error == "tool_not_found":
-                                    for _i in range(len(tool_calls_info) - 1, -1, -1):
-                                        if tool_calls_info[_i].get("tool") == tool_name:
-                                            tool_calls_info.pop(_i)
-                                            break
+                                    # issue #4052：未执行的调用同样**不得**记成「执行结果」
+                                    # （工具没执行，哪来的执行结果）；且剔除的是**与本次结果
+                                    # 配对的那一次**同名调用（按到达顺序，不是最后一条）——
+                                    # 否则同名多次调用时 tool_results 会与 tool_calls 错位，
+                                    # 把「成了」配到那条**从未执行**的调用上。
+                                    if _paired_call is not None:
+                                        tool_calls_info.remove(_paired_call)
+                                else:
+                                    # issue #4052：执行过的调用 ⇒ 落「成没成」元信息。
+                                    # success 只有**明确真值**才算 True（字段缺失/假值 ⇒ False）：
+                                    # 宁可少报成功，不把「说不清」记成「成了」。
+                                    _err_text = (_mask_for_customer(_res_error, context)
+                                                 if isinstance(_res_error, str) else "")
+                                    tool_results_info.append({
+                                        "tool": tool_name,
+                                        "success": bool(result_dict.get("success"))
+                                        if isinstance(result_dict, dict) else False,
+                                        "error": _err_text or None,
+                                    })
                                 yield SSEEvent.tool_result(tool_name, result_dict)
 
                                 # 检查是否需要发送卡片（order 卡片自动归一化载荷）
@@ -1122,8 +1156,11 @@ async def _agent_stream_to_sse(
             yield SSEEvent.text(_mask_for_customer(assistant_content, context))
 
         # 超时/异常时清除 tool_calls 元数据，避免泄漏到前端
+        # （#4052：tool_results 与 tool_calls **逐项对齐**，必须一起清 ——
+        #   否则落库的结果条数多于调用条数，对齐关系失效）
         if timed_out:
             tool_calls_info = []
+            tool_results_info = []
 
         # B 端引用对齐（issue #3009 / case PR-018）：文本生成后按引用过滤补发卡片。
         # 只有被 LLM 文本实际引用的商品才渲染；未引用任何商品 → 不发卡（宁可无卡，不误导）
@@ -1201,6 +1238,8 @@ async def _agent_stream_to_sse(
                     role="assistant",
                     content=assistant_content,
                     tool_calls=tool_calls_info if tool_calls_info else None,
+                    # 工具执行结果元信息（issue #4052）：与 tool_calls 逐项对齐
+                    tool_results=tool_results_info if tool_results_info else None,
                     interactive=last_interactive_payload if last_interactive_payload else None,
                     tenant_id=tenant_id,
                 ),

@@ -128,13 +128,17 @@ class InMemorySessionStore:
             )
         return result
 
-    async def save_message(self, session_id, role, content, tool_calls=None, tenant_id=None, content_type="text", extra_metadata=None, interactive=None):
+    async def save_message(self, session_id, role, content, tool_calls=None, tenant_id=None, content_type="text", extra_metadata=None, interactive=None, tool_results=None):
         self._msg_counter += 1
         mid = f"msg_{self._msg_counter:06d}"
         now = datetime.utcnow()
         meta = {}
         if tool_calls:
             meta["tool_calls"] = tool_calls
+        # 与 SessionMemory.save_message 同签名（issue #4052 新增 tool_results）：
+        # 替身签名落后 ⇒ 真实调用抛 TypeError 被 SSE 桥吞掉 ⇒ assistant 消息静默不落库
+        if tool_results:
+            meta["tool_results"] = tool_results
         if interactive:
             meta["interactive"] = interactive
             meta["interactive_answered"] = False
