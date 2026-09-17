@@ -158,7 +158,11 @@ MAPPING_RULES = [
     # ⚠️ 明确**不含** OR-016：该用例当前自相矛盾（`user_inputs[1]` 裸文本 vs `order_before`
     # 时序断言，另一包校准中），挂上去会让每个改 base_skill.py 的 PR 吃到规则命中红
     # （仓库级红，与 #3551 的 DF-011 假阻塞同型）—— 待校准合入后再补。
-    (r"app/graph/skills/base_skill\.py", ["CH-013", "CH-014", "CH-015"]),
+    # 覆盖范围**扩到搬迁家族**（issue #4049）：`execute_skill` 的 1699 行按职责搬进了
+    # `app/graph/skills/execution/`，转人工守卫判据（不满情绪→建议 interact 卡→用户确认后
+    # 转人工…）与写门禁链都随之搬走 ⇒ 只锚 `base_skill.py` 会让「改了守卫却一条 CH-* 都不跑」
+    # （§19.1「判据自己选择沉默」）。故按**家族**锚定（扩正则，不是删规则、也不是放行）。
+    (r"app/graph/skills/(?:base_skill|execution/[a-z_]+)\.py", ["CH-013", "CH-014", "CH-015"]),
     # 转人工 Tool 本体 `human_handoff.py` → CH-008（建人工会话，客服工作台可见）/ CH-015
     # （显式「转人工」不经建议卡直接转）—— #3624 追加（写工具确认门禁包 #3606 交回）。
     # 为什么必须补：改这个文件此前落兜底网，而它"看起来命中规则"其实只是**测试文件名**
