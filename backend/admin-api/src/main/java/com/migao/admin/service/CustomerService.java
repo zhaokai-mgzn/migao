@@ -35,6 +35,12 @@ public class CustomerService extends ServiceImpl<CustomerProfileMapper, Customer
     private final SessionMapper sessionMapper;
     private final SessionMessageMapper sessionMessageMapper;
 
+    /**
+     * craft_mode 允许值（单一事实源 = V47 迁移的列注释 / {@link CustomerProfile#getCraftMode()} javadoc）。
+     * 非法值一律显式拒绝：静默落库会让「工艺画像」在下游算料/报价时按未知模式运行（issue #4115）。
+     */
+    private static final Set<String> CRAFT_MODES = Set.of("standard", "economy", "self_quoted");
+
     // ==================== 客户列表与详情 ====================
 
     /**
@@ -334,10 +340,45 @@ public class CustomerService extends ServiceImpl<CustomerProfileMapper, Customer
         if (profile.getCustomFields() != null) {
             existing.setCustomFields(profile.getCustomFields());
         }
+        // --- 工艺画像与常用物流（issue #4115：这 4 列曾是「工具可写 + 服务层静默丢弃」的缺口）---
+        // craftMode 是枚举列（VARCHAR(16)，无 DB CHECK），非法值必须在写入前显式拒绝：
+        // 静默存进未知模式 = 下游算料/报价按未知模式运行，且工具会谎报「已更新」。
+        if (StringUtils.hasText(profile.getCraftMode())) {
+            existing.setCraftMode(requireValidCraftMode(profile.getCraftMode()));
+        }
+        if (profile.getCraftProfile() != null) {
+            existing.setCraftProfile(profile.getCraftProfile());
+        }
+        if (StringUtils.hasText(profile.getDefaultLogisticsType())) {
+            existing.setDefaultLogisticsType(profile.getDefaultLogisticsType());
+        }
+        if (StringUtils.hasText(profile.getDefaultLogisticsCompany())) {
+            existing.setDefaultLogisticsCompany(profile.getDefaultLogisticsCompany());
+        }
 
         customerProfileMapper.updateById(existing);
         log.info("更新客户档案成功: id={}", customerId);
         return existing;
+    }
+
+    /**
+     * 校验工艺画像模式（craftMode）。
+     *
+     * @param craftMode 待写入的模式值
+     * @return 合法值原样返回
+     * @throws BusinessException 非法值 → HTTP 400 + VALIDATION_ERROR + LLM 可执行的修复建议
+     *                           （不得静默吞掉，也不得落库存未知模式；issue #4115）
+     */
+    private static String requireValidCraftMode(String craftMode) {
+        if (!CRAFT_MODES.contains(craftMode)) {
+            throw new BusinessException(
+                    "VALIDATION_ERROR",
+                    "无效的 craftMode（工艺画像模式）: " + craftMode,
+                    400,
+                    "craftMode 只能是 standard（跟随企业固定工艺）/ economy（主动省料）/ "
+                            + "self_quoted（自报用料）之一；请改用合法值后重试，其余字段不受影响");
+        }
+        return craftMode;
     }
 
     // ==================== 客户标签管理 ====================

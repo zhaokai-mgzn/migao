@@ -14,8 +14,19 @@ mock 客户端 + 静态解析 Java 源码 —— 拦「工具下发的字段名�
   两例的共同机制：Spring Boot 默认 ObjectMapper 忽略未知属性
   （FAIL_ON_UNKNOWN_PROPERTIES=false）→ 请求 200、部分字段落库、信息静默丢失、无任何报错。
 
+② 服务层（本文件 v2 新增，issue #4115）：字段名 ⊆ 接收类型**还不够** ——
+「字段名对得上、但服务层不落库」是同族的第二形态，且更隐蔽：
+issue #4115 的 `CustomerService.updateCustomer` 用**非空拷贝白名单**逐个 `setXxx`，
+`craftMode/craftProfile/defaultLogisticsType/defaultLogisticsCompany` 既在实体里声明、
+又被工具列入可写字段并下发，**却不在白名单里** ⇒ `updateById(existing)` 落下旧值 ⇒
+HTTP 200 + 数据静默丢失 + 工具回报「客户档案已更新：craftMode」。
+只校验「key ⊆ 接收类型字段」抓不到它（**四个断言全绿，数据全丢**）。
+故本文件现在**每条写契约都必须声明「服务层怎么算落库」**（`persist_source` + `persist_target`，
+无默认值：漏填即报错，不是静默跳过），并断言 payload key ∈ 该服务方法真正落库的字段集合。
+
 规则（新增/修改写工具时必须满足）：
   工具写请求 body 的每个 key，都必须能在目标的 Java **接收类型**中解析到同名字段；
+  **且该 key 必须属于目标服务方法真正落库的字段集合**（见 ②）；
   业务内容值必须落到该类型已声明字段上（禁止「多发一个别名字段」凑数，避免双写分叉）。
   改字段名时两端一起改（Java 类型 / 工具 payload），只改一端本测试即红。
 
@@ -28,6 +39,10 @@ mock 客户端 + 静态解析 Java 源码 —— 拦「工具下发的字段名�
      （Java 源码是「接收端可读键」的单一事实源，不维护第二份字段清单）；
    - **接收端可读键来源**：`receiver_key_source`（当前仅 `java-source`：静态解析
      `backend/admin-api/.../{receiver_type}.java` 的实例字段）；
+   - **服务层落库判据（必填）**：`persist_source` ∈ `PERSIST_KEY_SOURCES`
+     + `persist_target` = `"<ServiceClass>#<method>"`（该端点的服务实现方法）。
+     这两项**无默认值**：新增写契约必须显式回答「服务层凭什么算落库」，
+     漏填 ⇒ 查表失败显式报错；
    - **未映射键白名单**：`unmapped_key_allowlist` = {键: "理由（归属）"}，默认空。
      只有接收端确实尚未声明、但业务上合法的键才登记，并写清理由与归属人；
      空挂/过期的白名单会被本文件判红（逃逸口必须真实且最小）；
@@ -44,7 +59,7 @@ import re
 from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
-from typing import Mapping
+from typing import Any, Mapping
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -119,6 +134,119 @@ RECEIVER_KEY_SOURCES = {
 }
 
 
+# ==================== ② 服务层「真正落库」判据（issue #4115） ====================
+#
+# 缺陷形态：payload key 在接收类型里声明得好好的，**服务层却不把它写进落库实体** ⇒
+# HTTP 200 + 无异常 + 数据丢失 + 工具谎报成功。只解析接收类型（上面那层）永远抓不到。
+# 因此新增第二层：**解析服务实现方法体内「落库实体上的 setter」**（单一事实源仍是 Java 源码）。
+
+# Java 注释必须先剥掉：否则「注释掉一行 setXxx」仍会被正则命中 ⇒ 判据变成不会红的空断言
+# （本文件的红证之一就是注释掉那 4 行后必须变红）。
+_BLOCK_COMMENT_RE = re.compile(r"/\*.*?\*/", re.DOTALL)
+_LINE_COMMENT_RE = re.compile(r"(?<!:)//[^\n]*")
+
+
+def _strip_java_comments(src: str) -> str:
+    """剥掉 Java 行注释/块注释（`://` 保护的 URL 不会被误剥）。
+
+    必须剥：`// existing.setCraftMode(...)` 若仍被当作「写入」，本层判据就永远不会红。
+    """
+    return _LINE_COMMENT_RE.sub("", _BLOCK_COMMENT_RE.sub("", src))
+
+
+def _service_method_body(target: str) -> str:
+    """取 `"<ServiceClass>#<method>"` 指定的**方法体**源码（含剥注释）。
+
+    解析不到一律显式报错（改名/删除后必须来更新 REGISTRY，禁止静默跳过）。
+    """
+    class_name, _, method = target.partition("#")
+    assert class_name and method, (
+        f"persist_target 格式应为 '<ServiceClass>#<method>'，实际 {target!r}"
+    )
+    src = _source_of_receiver_type(class_name)
+    assert src is not None, (
+        f"未找到服务类 {class_name}（persist_target={target!r}）——"
+        f"REGISTRY 登记的服务类已改名/删除；请同步更新 {__file__}"
+    )
+    src = _strip_java_comments(src)
+    decl = re.search(
+        rf"(?:public|protected|private)[^\n(]*\b{re.escape(method)}\s*\([^)]*\)\s*\{{", src
+    )
+    assert decl, (
+        f"{class_name} 未找到方法声明 {method}(...)（persist_target={target!r}）—— "
+        f"方法已改名/移动；请同步更新本文件的 REGISTRY"
+    )
+    return _balanced_brace_block(src, src.index("{", decl.start()))
+
+
+def _null_copy_setters_from_body(body: str) -> frozenset[str]:
+    """从（已剥注释的）方法体取「落库实体上的 setter 属性名」集合。
+
+    锚点是 `updateById(<实体变量>)` 的那个实体变量 —— 只有写在它身上的 `setXxx`
+    才会随该次更新落库；服务方法里的其它 setter（分页对象、wrapper 等）不计入。
+    抽成纯函数：`test_persist_parser_ignores_commented_out_setters` 直接行使它
+    （测试跑的是**生产判据本身**，不是测试里另抄一份正则）。
+    """
+    entity_vars = re.findall(r"\.updateById\(\s*(\w+)\s*\)", body)
+    assert entity_vars, (
+        "方法体内未找到 `updateById(<实体变量>)` —— 该服务方法不落库或落库方式已变，"
+        "本判据无法判定落库集合（禁静默放行）：请改用其它 persist_source 或修正 persist_target"
+    )
+    keys: set[str] = set()
+    for var in dict.fromkeys(entity_vars):
+        keys |= {_decap(p) for p in re.findall(rf"\b{re.escape(var)}\.set(\w+)\s*\(", body)}
+    return frozenset(keys)
+
+
+def _persisted_keys_via_null_copy(target: str) -> frozenset[str]:
+    """**效果级**判据：属性是否经「落库实体的 setter」写入（见 `_null_copy_setters_from_body`）。"""
+    keys = _null_copy_setters_from_body(_service_method_body(target))
+    assert keys, (
+        f"{target} 解析到落库实体但没有 `setXxx(` —— 解析器需适配"
+        f"（否则本判据会把全部字段判红）"
+    )
+    return keys
+
+
+def _persisted_keys_via_request_read(target: str) -> frozenset[str]:
+    """**必要条件级**判据（弱于 null-copy）：属性是否被服务方法读取（`<形参>.getXxx()`）。
+
+    用于「条件写入 + 字段改名」的路径（如实测 AS-004：请求字段 `remark` 经分支写进
+    `closeReason`/`internalNotes`，无法用「字段名 = 实体 setter」的集合表达）。
+    它只能证明字段**被消费**（不再被整份丢弃），不证明无条件落库 ——
+    新登记域优先用 `java-service-null-copy`。
+    """
+    body = _service_method_body(target)
+    return frozenset(_decap(p) for p in re.findall(r"\b\w+\.get([A-Z]\w*)\s*\(\s*\)", body))
+
+
+# 「服务层落库判据来源」注册表（与接收端同口径：未登记来源显式报错，禁止静默跳过）
+PERSIST_KEY_SOURCES = {
+    "java-service-null-copy": _persisted_keys_via_null_copy,
+    "java-service-request-read": _persisted_keys_via_request_read,
+}
+
+
+def find_unpersisted_keys(
+    payload: Mapping[str, Any], persisted: frozenset[str], allowlisted: set[str]
+) -> list[str]:
+    """payload 里「接收类型已声明、但服务层不会落库」的键（本文件的核心判据）。
+
+    抽成纯函数是为了让「判据不能空转」可被单测直接行使（见
+    `test_persist_judgement_has_teeth`）：若它退化成恒返回空集，那条测试立即红。
+    """
+    return sorted(set(payload) - set(persisted) - allowlisted)
+
+
+def _decap(bean_name: str) -> str:
+    """JavaBean 访问器名 → 属性名（`setCraftMode`/`getCraftMode` → `craftMode`）。
+
+    契约比对的是 JSON 属性名（工具 payload 的 key），而源码里出现的是 `set<Prop>`/`get<Prop>`，
+    不还原首字母大小写就会把 `Phone` 与 `phone` 当成两个键（判据会误报全红）。
+    """
+    return bean_name[:1].lower() + bean_name[1:]
+
+
 @dataclass(frozen=True)
 class WriteContract:
     """一条「工具调用点 → admin-api 写端点」的字段契约登记（字段含义见文件头步骤 1）。"""
@@ -129,6 +257,10 @@ class WriteContract:
     endpoint: str             # 期望的 admin-api 路径（工具调用点）
     receiver_type: str        # 接收端 Java 类型（请求 DTO 或实体）
     content_value: str        # 必须落到「接收端已声明字段」上的业务内容值
+    # 服务层落库判据：来源 + `"<ServiceClass>#<method>"`。
+    # **无默认值** —— 新增写契约必须显式回答「服务层凭什么算落库」（漏填 = 报错，不是跳过）。
+    persist_source: str
+    persist_target: str
     receiver_key_source: str = "java-source"   # 接收端可读键来源（见 RECEIVER_KEY_SOURCES）
     # 未映射键 → 「理由（归属）」：仅当接收端尚未声明该键、且业务上确属合法时登记
     unmapped_key_allowlist: Mapping[str, str] = field(default_factory=dict)
@@ -137,6 +269,8 @@ class WriteContract:
 REGISTRY: tuple[WriteContract, ...] = (
     # AS-004「更新工单状态 - 关闭」：关闭原因必须经 `remark` 下发
     # （Java 侧 `updateTicketStatus` 用 request.getRemark() 写入 closeReason）——issue #3540
+    # 落库判据用 request-read：该路径是**条件写入 + 字段改名**（remark → closeReason/internalNotes），
+    # 「字段名 = 实体 setter」的集合表达不出来（口径见 _persisted_keys_via_request_read）。
     WriteContract(
         tool_module="app.tools.after_sales_manage",
         tool_kwargs={
@@ -149,6 +283,8 @@ REGISTRY: tuple[WriteContract, ...] = (
         endpoint="/api/admin/after-sales/t1/status",
         receiver_type="AfterSalesStatusUpdateRequest",
         content_value="客户取消订单",
+        persist_source="java-service-request-read",
+        persist_target="AfterSalesTicketService#updateTicketStatus",
     ),
     # CU-004「更新客户资料」：姓名必须经 `wechatNickname` 下发
     # （`CustomerProfile` 无 `name` 列 → 下发 `name` 被静默丢弃 = 米宝谎报「已更新客户姓名」，issue #3551）
@@ -163,9 +299,13 @@ REGISTRY: tuple[WriteContract, ...] = (
         endpoint="/api/admin/customers/c1",
         receiver_type="CustomerProfile",
         content_value="李四",
+        persist_source="java-service-null-copy",
+        persist_target="CustomerService#updateCustomer",
     ),
     # M2-D「更新客户工艺画像与常用物流」（issue #3984，V47）：
     # craftMode/craftProfile/defaultLogisticsType/defaultLogisticsCompany 为 CustomerProfile 新列。
+    # **issue #4115**：这 4 列此前「实体已声明 + 工具可写 + 服务层拷贝白名单漏了」⇒
+    # 下发即静默丢弃 + 工具谎报成功；本契约的服务层判据就是把它钉死的（修前本用例必须红）。
     WriteContract(
         tool_module="app.tools.customer_manage",
         tool_kwargs={
@@ -182,6 +322,8 @@ REGISTRY: tuple[WriteContract, ...] = (
         endpoint="/api/admin/customers/c1",
         receiver_type="CustomerProfile",
         content_value="economy",
+        persist_source="java-service-null-copy",
+        persist_target="CustomerService#updateCustomer",
     ),
 )
 
@@ -205,11 +347,13 @@ def _tool_instance(module_name: str) -> BaseTool:
     "contract", REGISTRY, ids=lambda c: f"{c.tool_module.split('.')[-1]}:{c.tool_kwargs['action']}"
 )
 async def test_write_payload_keys_declared_in_api_dto(contract, admin_tool_context):
-    """工具写请求 body 的字段名 ⊆ 接收类型字段名，且业务内容落在已声明字段上。
+    """工具写请求 body 的字段名 ⊆ 接收类型字段名 **且** ⊆ 服务层真正落库的字段集合。
 
     修复前（issue #3540）：payload={"status","reason"}，DTO 字段={"status","remark"} → `reason` 丢失；
-    修复前（issue #3551）：payload={"name"}，`CustomerProfile` 无 `name` → 姓名丢失。
-    两例都是 HTTP 200 + 数据不落库，本测试红。
+    修复前（issue #3551）：payload={"name"}，`CustomerProfile` 无 `name` → 姓名丢失；
+    修复前（issue #4115）：payload 的 4 个 key **全部**能对上 `CustomerProfile` 字段，
+    但 `CustomerService.updateCustomer` 的非空拷贝白名单里没有它们 ⇒ 同样 200 + 静默丢失。
+    三例都是 HTTP 200 + 数据不落库 + 调用方以为成功，本测试红。
     """
     tool = _tool_instance(contract.tool_module)
     client = AsyncMock()
@@ -254,6 +398,23 @@ async def test_write_payload_keys_declared_in_api_dto(contract, admin_tool_conte
         f"请在 REGISTRY 的 unmapped_key_allowlist 登记「理由（归属）」"
     )
 
+    # ② 服务层：字段名对得上还不够 —— 该键必须真的被服务实现写进落库实体（issue #4115）
+    persist_resolver = PERSIST_KEY_SOURCES.get(contract.persist_source)
+    assert persist_resolver, (
+        f"未实现的服务层落库判据来源 {contract.persist_source!r}"
+        f"（已登记：{sorted(PERSIST_KEY_SOURCES)}）—— 未登记来源必须显式报错，禁止静默跳过"
+    )
+    persisted = persist_resolver(contract.persist_target)
+    not_persisted = find_unpersisted_keys(payload, persisted, allowlisted)
+    assert not not_persisted, (
+        f"{contract.tool_module} action={contract.tool_kwargs['action']} 下发字段 {not_persisted} "
+        f"虽在 {contract.receiver_type} 中声明，但 {contract.persist_target} **不会把它们写进落库实体**"
+        f"（该服务方法真正落库的字段：{sorted(persisted)}）"
+        f" → HTTP 200 + 数据静默丢失 + 工具回报「已更新」（issue #4115 的缺陷形态）。"
+        f"治法：把字段纳入服务层的非空拷贝白名单（保持既有「null 不覆盖」语义），"
+        f"或改工具侧不下发该键 —— 不要靠「工具说写了」当作落库证据"
+    )
+
     carriers = sorted(
         k for k, v in payload.items() if v == contract.content_value and k in declared
     )
@@ -272,3 +433,54 @@ def test_receiver_parser_is_not_vacuous():
     fields = _receiver_fields_from_java("CustomerProfile")
     assert "wechatNickname" in fields
     assert "name" not in fields, "CustomerProfile 没有 name 列，解析器/断言口径已漂移"
+
+
+# ==================== ② 判据自身的牙口（不能空转 / 不会静默失效） ====================
+
+
+def test_persist_judgement_has_teeth():
+    """判据必须咬得住「接收类型已声明、服务层不落库」的字段（issue #4115 的固化红例）。
+
+    红证②的文件化形态：`lifecycleStage` 是 `CustomerProfile` 已声明列（第一层判据放行），
+    但不在 `CustomerService.updateCustomer` 的拷贝白名单里（第二层判据必须判红）——
+    若 `find_unpersisted_keys` 某天退化成恒返回空集，本用例立即红（不会静默变空断言）。
+    """
+    declared = _receiver_fields_from_java("CustomerProfile")
+    assert "lifecycleStage" in declared, (
+        "样例字段必须是被接收类型**已声明**的列 —— 否则它只能证明第一层判据，"
+        "证明不了「扩了第二层判据」的价值（本用例的存在意义）"
+    )
+
+    persisted = _persisted_keys_via_null_copy("CustomerService#updateCustomer")
+    payload = {"lifecycleStage": "mature", "phone": "13900001111"}
+
+    # 第一层判据对它是绿的（字段名确实对得上 ⇒ 旧口径抓不到 = #4115 缺陷形态）
+    assert set(payload) <= set(declared)
+    # 第二层判据必须红，且点名到字段
+    not_persisted = find_unpersisted_keys(payload, persisted, set())
+    assert not_persisted == ["lifecycleStage"], (
+        f"「接口已声明但服务层不落库」的字段必须被判红，实际 {not_persisted}；"
+        f"服务层落库集合={sorted(persisted)}"
+    )
+
+
+def test_persist_parser_ignores_commented_out_setters():
+    """注释掉的 `setXxx` 不得算作落库（否则「注释掉 4 行 setXxx」的红证会假绿）。
+
+    用合成源码行使解析器（真源码在 #4115 的红证里被实际注释过）：
+    只写 `setPhone` 的行计入，被 `//` 注释掉的 `setCraftMode` 行不计入。
+    """
+    snippet = (
+        "class Demo {\n"
+        "    public void updateCustomer(String id, Profile profile) {\n"
+        "        Profile existing = mapper.selectById(id);\n"
+        "        existing.setPhone(profile.getPhone());\n"
+        "        // existing.setCraftMode(profile.getCraftMode());\n"
+        "        mapper.updateById(existing);\n"
+        "    }\n"
+        "}\n"
+    )
+    stripped = _strip_java_comments(snippet)
+    written = _null_copy_setters_from_body(stripped)
+    assert written == {"phone"}, f"注释掉的 setter 不得计入落库集合，实际 {sorted(written)}"
+    assert "setCraftMode" not in stripped

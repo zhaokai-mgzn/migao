@@ -3,12 +3,12 @@
 覆盖 list 脱敏/分页、detail/update 参数校验、标签增删、标签库 CRUD，
 以及 destructive 工具只读 action 的确认豁免（DF-008）。
 """
-# case_ids: DF-008, CU-001, CU-002, CU-003, CU-004
+# case_ids: DF-008, CU-001, CU-002, CU-003, CU-004, CU-008
 import pytest
 from unittest.mock import AsyncMock, patch
 
 from app.graph.skills.base_skill import _requires_confirmation
-from app.tools.customer_manage import CustomerManageTool, VALID_ACTIONS
+from app.tools.customer_manage import CRAFT_MODES, CustomerManageTool, VALID_ACTIONS
 
 
 @pytest.fixture
@@ -255,6 +255,55 @@ class TestCustomerUpdate:
         assert mixed.success is False
         assert "rScore" in mixed.error
         mock_client.put.assert_not_called()
+
+    @patch("app.tools.customer_manage.get_admin_api_client")
+    async def test_update_rejects_invalid_craft_mode(
+            self, mock_get_client, tool, admin_tool_context, mock_client):
+        """非法 craftMode 必须被拒且错误可行动（#4115）。
+
+        craft_mode 是枚举列（standard/economy/self_quoted，V47）：非法值服务端会 400 拒绝，
+        工具不得把它下发（更不得谎报「已更新」），且提示必须列出全部合法值供 LLM 自修复。
+        """
+        mock_client.put = AsyncMock(return_value={"success": True})
+        mock_get_client.return_value = mock_client
+
+        result = await tool.execute(
+            context=admin_tool_context, action="update", customer_id="c1",
+            data={"craftMode": "xxx", "phone": "13900001111"})
+
+        assert result.success is False
+        assert "craftMode" in result.error and "xxx" in result.error
+        assert result.suggestion
+        assert all(mode in result.suggestion for mode in CRAFT_MODES)
+        # 非法枚举不得发起写请求（防服务端 400 + 部分成功假象）
+        mock_client.put.assert_not_called()
+
+    @patch("app.tools.customer_manage.get_admin_api_client")
+    async def test_update_accepts_valid_craft_mode(
+            self, mock_get_client, tool, admin_tool_context, mock_client):
+        """合法 craftMode（含工艺画像/常用物流）必须原样下发，不被本层改写或拦截（#4115）。"""
+        mock_client.put = AsyncMock(return_value={"success": True})
+        mock_get_client.return_value = mock_client
+
+        result = await tool.execute(
+            context=admin_tool_context, action="update", customer_id="c1",
+            data={
+                "craftMode": "self_quoted",
+                "craftProfile": {"openCount": 2},
+                "defaultLogisticsType": "logistics",
+                "defaultLogisticsCompany": "四季安",
+            })
+
+        assert result.success is True
+        assert mock_client.put.call_args[1]["json_data"] == {
+            "craftMode": "self_quoted",
+            "craftProfile": {"openCount": 2},
+            "defaultLogisticsType": "logistics",
+            "defaultLogisticsCompany": "四季安",
+        }
+        assert sorted(result.data["updated_fields"]) == [
+            "craftMode", "craftProfile", "defaultLogisticsCompany", "defaultLogisticsType",
+        ]
 
 
 class TestCustomerTags:
