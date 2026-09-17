@@ -1177,7 +1177,7 @@ UNIMPLEMENTED: tuple[dict, ...] = (
         ),
         "needs": (
             "要先让「清单条目可被多条 PR 各自删除的小文件化 / 自动重生成」落地，"
-            "每-PR 口径才有可安全阻塞的目标（同族于 drift_audit 的全量对账，见下一条）。"
+            "每-PR 口径才有可安全阻塞的目标（同族于 drift_audit 的全量对账，见下一条 ⇒ **#4045**）。"
         ),
     },
     {
@@ -1191,7 +1191,7 @@ UNIMPLEMENTED: tuple[dict, ...] = (
         ),
         "needs": (
             "先把未登记数清到 0（逐条修掉或按 R4 开独立 issue），再把「未登记即阻塞」设为 fail-closed；"
-            "同批登记见 `.github/case-trust-baseline.json` 的 `burn_down` 与 #4031 的 PR 说明。"
+            "**已开独立 issue 登记：`#4046`**（存量 3 条：PR-025/026/027）；同批登记见 `.github/case-trust-baseline.json` 的 `burn_down` 与 #4031 的 PR 说明。"
         ),
     },
     {
@@ -1205,7 +1205,7 @@ UNIMPLEMENTED: tuple[dict, ...] = (
         ),
         "needs": (
             "按 #4031 同款改造 drift_audit 的 compare_baseline（全量对账 + burn-down 预算）"
-            "并补红证；已开独立 issue 登记（不属 #4031 的文件所有权，避免与在飞包冲突）。"
+            "并补红证；**已开独立 issue 登记：`#4045`**（不属 #4031 的文件所有权，避免与在飞包冲突；同 issue 含 `pr-check.yml` 注释块口径同步 —— 需 `workflow` scope）。"
         ),
     },
     {
