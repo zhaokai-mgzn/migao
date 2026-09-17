@@ -4707,6 +4707,7 @@ _CASE_PR_014 = EvalCase(
     form_prefill=[],
     forbidden_card_text=[],
     pre_clean=[{'type': 'product_remove', 'product_keyword': '测试窗帘'}],
+    namespaces=['product_name:测试窗帘'],
 )
 
 # ── PR-015 [NORMAL] 加工项多选翻页 - 翻页后继续选择并一次性提交（源: cases/product.yml）──
@@ -4726,6 +4727,7 @@ _CASE_PR_015 = EvalCase(
     form_prefill=[],
     forbidden_card_text=[],
     pre_clean=[{'type': 'product_remove', 'product_keyword': '测试窗帘'}],
+    namespaces=['product_name:测试窗帘'],
 )
 
 # ── PR-016 [NORMAL] 建品流程 - 分类确认后按适用商品分类过滤/优先推荐加工项（源: cases/product.yml）──

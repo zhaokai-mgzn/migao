@@ -3375,7 +3375,7 @@
 清理: product_remove(product_keyword=测试窗帘)
 ```
 真值: product-sku-stock.create-flow, ai-chat.validate-input
-溯源: 2026-09-05 交互验证机制行为层新增（issue #2896 复盘）：前端 choice 多选「完成选择」按钮一次性提交『已选加工项：A、B』格式，需真实 LLM 验证解析全部名称 + 不二次询问。2026-09-10 校准：分类选择升级为 choice 卡（文本无法驱动）→ 加 auto_select 自动点分类卡第一个选项（#3160）+ 补加工项确认轮 ｜ tags: multi_turn, guided_flow, processing_item, multi_select
+溯源: 2026-09-05 交互验证机制行为层新增（issue #2896 复盘）：前端 choice 多选「完成选择」按钮一次性提交『已选加工项：A、B』格式，需真实 LLM 验证解析全部名称 + 不二次询问。2026-09-10 校准：分类选择升级为 choice 卡（文本无法驱动）→ 加 auto_select 自动点分类卡第一个选项（#3160）+ 补加工项确认轮。2026-09-18（issue #4120）：补 namespaces[product_name:测试窗帘]（用例自建同名商品的全局声明 ⇒ 与 PR-012 自动串行）+ 消除存量 CASE-TRUST-PRECLEAN-TARGET-UNRESOLVABLE（pre_clean 点名目标不在种子真值；实为用例自有资源，缺声明）。断言原样未动 ｜ tags: multi_turn, guided_flow, processing_item, multi_select
 
 ### PR-015. 加工项多选翻页 - 翻页后继续选择并一次性提交 🔵
 ```
@@ -3396,7 +3396,7 @@
 清理: product_remove(product_keyword=测试窗帘)
 ```
 真值: product-sku-stock.create-flow
-溯源: 2026-09-05 交互验证机制行为层新增（issue #2896 复盘）：翻页后 multiSelect/pagination 契约保持 ｜ tags: multi_turn, processing_item, pagination, multi_select
+溯源: 2026-09-05 交互验证机制行为层新增（issue #2896 复盘）：翻页后 multiSelect/pagination 契约保持。2026-09-18（issue #4120）：补 namespaces[product_name:测试窗帘]（用例自建同名商品的全局声明 ⇒ 与 PR-012 自动串行）+ 消除存量 CASE-TRUST-PRECLEAN-TARGET-UNRESOLVABLE（pre_clean 点名目标不在种子真值；实为用例自有资源，缺声明）。断言原样未动 ｜ tags: multi_turn, processing_item, pagination, multi_select
 
 ### PR-016. 建品流程 - 分类确认后按适用商品分类过滤/优先推荐加工项 🔵
 ```
