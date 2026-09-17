@@ -1236,17 +1236,28 @@ class TestGateScriptEndToEnd:
 
         这条同时是「改前不报 / 改后报」的可执行形态：该码所在用例**不在本次 diff 里**
         （本 PR 不改 `.github/cases/*.yml`），旧口径连判都不判（直接「未跑」+ exit 0）。
+
+        ⚠️ **基准用 `HEAD` 而不是 `origin/main`**（首轮 CI 红的根因，实测）：
+        跑本文件的 `ci workflow helper unit tests` job 是 `actions/checkout@v7` **默认浅克隆**
+        （没有 `fetch-depth: 0`）⇒ `origin/main` **不存在** ⇒ 门禁在 `changed_case_files` 处
+        fail-closed `exit 1`（stdout 为空）⇒ 断言「必须报出陈旧项」失败。
+        本用例要证的是**账本对账**（与 diff 基准是谁无关），用 `HEAD` 既等价又不依赖浅克隆；
+        真要判 `origin/main` 的那个 job（`case-trust-gate`）自己带 `fetch-depth: 0`。
         """
         data = json.loads(BASELINE.read_text(encoding="utf-8"))
         entry = data["violations"]["PG-013"]
         entry["codes"] = sorted(set(entry["codes"]) | {"CASE-TRUST-NO-EFFECT-ASSERTION"})
         tmp = tmp_path / "baseline.json"
         tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-        r = subprocess.run([sys.executable, str(GATE), "--base", "origin/main",
+        r = subprocess.run([sys.executable, str(GATE), "--base", "HEAD",
                             "--baseline", str(tmp)],
                            capture_output=True, text=True, cwd=str(REPO_ROOT))
-        assert r.returncode == 1, f"陈旧条目未让脚本 exit 1（假绿）：\n{r.stdout[-2000:]}"
-        assert "全量对账" in r.stdout and "--prune-baseline" in r.stdout, r.stdout[-2000:]
+        assert r.returncode == 1, (
+            f"陈旧条目未让脚本 exit 1（假绿）：\nstdout={r.stdout[-1500:]}\nstderr={r.stderr[-800:]}"
+        )
+        assert "全量对账" in r.stdout and "--prune-baseline" in r.stdout, (
+            f"stdout={r.stdout[-1500:]}\nstderr={r.stderr[-800:]}"
+        )
 
 
 # ══════════════════════════════════════════════════════════════════════════════
