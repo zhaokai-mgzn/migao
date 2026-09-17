@@ -4,7 +4,6 @@ import Link from 'next/link'
 import type { ChatCard } from '@/types'
 import ProductCard from './ProductCard'
 import LogisticsCard from './LogisticsCard'
-import KnowledgeCard from './KnowledgeCard'
 
 interface ToolResultCardProps {
   card: ChatCard
@@ -18,8 +17,6 @@ export default function ToolResultCard({ card }: ToolResultCardProps) {
       return <ProductCard data={card.data} />
     case 'logistics':
       return <LogisticsCard data={card.data} />
-    case 'knowledge':
-      return <KnowledgeCard data={card.data} />
     case 'order':
       return <OrderCard data={card.data} />
     default:

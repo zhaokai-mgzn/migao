@@ -1191,13 +1191,16 @@ describe('ToolResultCard', () => {
     expect(screen.getByText(/SF1234567890/)).toBeInTheDocument()
   })
 
-  it('renders knowledge card', () => {
+  it('renders unsupported placeholder for knowledge (backend never emits it, #4016)', () => {
+    // 裁剪前这里断言 knowledge-card 渲染成功 —— 后端 `_detect_card_type` 从不下发
+    // knowledge 卡型 ⇒ 死 UI。现锁新真值：走可理解占位且不泄漏内部类型名。
     const card = {
       type: 'knowledge' as const,
       data: { title: '布艺清洗指南', content: '...' },
     }
     render(<ToolResultCard card={card} />)
-    expect(screen.getByTestId('knowledge-card')).toBeInTheDocument()
+    expect(screen.queryByTestId('knowledge-card')).not.toBeInTheDocument()
+    expect(screen.getByTestId('tool-result-card-unsupported')).toBeInTheDocument()
   })
 
   it('renders order card with status badge', () => {

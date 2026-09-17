@@ -87,7 +87,10 @@ describe('ProductionProgressCard（顾客端生产进度卡）', () => {
     expect(text).not.toContain('worker')
   })
 
-  it('经 MessageBubble 的 production_progress 卡分支渲染（接线验证）', () => {
+  it('后端无 production_progress 发射点 ⇒ 落可理解占位，不再声称可达（#4016 P14）', () => {
+    // 旧断言名是「接线验证」，但它只验证了 renderCard 有分支、**没验证后端会下发**
+    // —— `_detect_card_type` 无 `production_progress_query` 映射 ⇒ 组件永不渲染。
+    // 这正是「交付物在 main ≠ 能力可达」的假接线验证形态（#4016）。现锁裁剪后的真值。
     render(
       <MessageBubble
         message={{
@@ -101,8 +104,8 @@ describe('ProductionProgressCard（顾客端生产进度卡）', () => {
       />,
     )
 
-    expect(screen.getByText('40%')).toBeTruthy()
-    expect(screen.getByText('当前工序：韩褶')).toBeTruthy()
+    expect(screen.queryByText('40%')).toBeNull()
+    expect(screen.getByText('📎 消息内容暂不支持预览')).toBeTruthy()
   })
 
   it('兼容米宝精简进度载荷（progress_percent/current_operation/pending_operations/expected_delivery_date）', () => {
