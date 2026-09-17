@@ -3674,7 +3674,7 @@
 期望: payment_qrcode_query
 数据: 顾客问付款/收款码 → C 端只读工具 `payment_qrcode_query` 被调用且 success=true（must_succeed 机器断言；只要求「工具名出现过」不算）
 数据: 工具 data 即支付卡载荷：含 `payment_qrcodes` 键（子对象字段 image_url / payee_name / payment_type）—— 载荷形状合法即可，**不要求内容非空**
-数据: ⚠️ 可满足性真值（本用例刻意不要求非空内容）：评测栈种子 tests/agent_eval/fixtures/xiaobu_eval_seed.sql、mibao_eval_seed.sql 与 docs/deployment/demo-seed.sql 里 `tenant_payment_qrcodes` **零行**（按表名检索实测）⇒ 该租户未配收款码，工具返回 success=true + 空 `payment_qrcodes` 是**合法答案**；要求非空即造恒红。非空内容/空态提示由后端单测 tests/test_payment_card_emission.py 与前端 frontend/mini-app/tests/payment-card.test.tsx 覆盖
+数据: ⚠️ 可满足性真值（本用例刻意不要求非空内容）：评测栈种子 tests/agent_eval/fixtures/xiaobu_eval_seed.sql、mibao_eval_seed.sql 与 docs/deployment/demo-seed.sql 里 `tenant_payment_qrcodes` **零行**（按表名检索实测）⇒ 该租户未配收款码，工具返回 success=true + 空 `payment_qrcodes` 是**合法答案**；要求非空即造恒红。非空内容/空态提示由后端单测 tests/test_payment_qrcode_query.py（工具面：字段归一/缺图跳过/无码空态）与 tests/test_payment_card_emission.py（发射链与可达性）、前端 frontend/mini-app/tests/payment-card.test.tsx 覆盖
 数据: 工具失败（admin-api 异常/权限不足）时必须带 suggestion 并如实告知，禁止编造收款码或收款方名称
 数据: 卡片发射：工具 success=true 且 data 非空 ⇒ chat.py `_detect_card_type` 下发卡型 `payment`（同一轮 SSE card 事件），前端渲染 PaymentCard（有码→收款码；无码→空态提示）
 必须成功: payment_qrcode_query
