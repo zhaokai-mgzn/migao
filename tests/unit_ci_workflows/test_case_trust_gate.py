@@ -31,6 +31,8 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / ".github"))
+# 工具集真值（零第三方依赖，与覆盖体检共用；见 TestDegenerateGuardRails 的 A13 不变式）
+sys.path.insert(0, str(REPO_ROOT / "tests" / "agent_eval"))
 
 import assertion_taxonomy as tax  # noqa: E402
 
@@ -89,20 +91,26 @@ def fixture_pg_013() -> dict:
 
     载荷取自 `.github/cases/processing-order.yml` 的 PG-013 **报缺陷当时的形态**
     （2026-09-12 新增版本）：
-      · expectations 只有工具名（order_query / processing_order_generate）→ **无效果层断言**
+      · expectations 只有工具名 → **无效果层断言**
       · forbidden_text 8 条（**全程**语义，无轮次作用域）
-      · 无 pre_clean（写了 processing_order_generate 却不复位）
+      · 无 pre_clean（写了却不清）
 
     ⚠️ 与「当下 main 上的 PG-013」的差异（**刻意保留旧形态**，否则判据失去判别力）：
     main 后来给该用例补了 `order_before`（时序断言，属行为层证据 ⇒ 规则 c 已不再命中）。
     本夹具保留**缺陷当时**的字段集，用来证明「规则 c 对**该形态**会红」；
     当下 PG-013 仍违规的两条（NO-EFFECT / NO-SELF-CLEAN）由基线清单承载。
+
+    ⚠️ 工具已**重新锚定**（#4010/A13）：原载荷用的是 `processing_order_generate`，
+    该工具已于 #3917 从注册表与 skill 绑定下线 ⇒ 在 `WRITE_TOOLS` 移除它之后（这正是
+    A13 的修复），夹具不再是「写用例」，本夹具承载的三条规则同时失去判别力。
+    换用在册写工具 `order_manage`（同为订单域 WRITE|DESTRUCTIVE），**缺陷形态不变**
+    （只证明「调用了」+ 全程禁令 + 无自清理 + 无前置自断言）。
     """
     return {
         "id": "PG-013",
         "title": "米宝加工单 LLM 行为：查询含加工项订单 → 生成加工单（真实对话）",
-        "expectations": [{"tool": "order_query"}, {"tool": "processing_order_generate"}],
-        "required_args": [{"tool": "processing_order_generate", "fields": ["order_ids"]}],
+        "expectations": [{"tool": "order_query"}, {"tool": "order_manage"}],
+        "required_args": [{"tool": "order_manage", "fields": ["order_no"]}],
         "forbidden_text": [
             "暂不支持", "功能不存在", "没有这个功能", "无加工项",
             "生成未成功", "生成失败", "无法生成加工单", "系统判定为",
@@ -192,6 +200,12 @@ def codes(violations) -> set:
     return {v["code"] for v in violations}
 
 
+# ⚠️ 本文件所有夹具里代表「在册写工具」的工具一律用 `order_manage`（#4010/A13）：
+# 原用的 `processing_order_generate` 已于 #3917 从注册表与 skill 绑定下线 —— 在
+# `WRITE_TOOLS` 移除它（A13 的修复）之后，用它当写工具的夹具会**静默失去判别力**
+# （「写用例」相关规则不再命中，负例断言变成恒真）。
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # 一、注入式红证：已知缺陷夹具必须被判违规
 # ══════════════════════════════════════════════════════════════════════════════
@@ -224,7 +238,7 @@ class TestKnownDefectFixturesAreBlocked:
         )
 
     def test_pg_013_write_case_without_self_clean(self):
-        """#3800：写了 processing_order_generate 却没有 pre_clean ⇒ 重试前置不等价。"""
+        """#3800：写了写类工具却没有 pre_clean ⇒ 重试前置不等价。"""
         v = tax.judge_case(fixture_pg_013(), catalog=_seed_catalog())
         assert "CASE-TRUST-NO-SELF-CLEAN" in codes(v), (
             f"PG-013 写用例缺自清理未被判违规，实际={v}"
@@ -585,8 +599,8 @@ class TestNoFalsePositivesOnCorrectShapes:
         """`forbidden_text` + 行为断言 ⇒ 允许（**不得**写成「凡用 forbidden_text 一律阻塞」）。"""
         case = {
             "id": "FAKE-PR-996", "title": "（注入夹具）禁令 + 效果层断言",
-            "expectations": [{"tool": "processing_order_generate"}],
-            "must_succeed": [{"tool": "processing_order_generate"}],
+            "expectations": [{"tool": "order_manage"}],
+            "must_succeed": [{"tool": "order_manage"}],
             "pre_clean": [{"type": "product_dedupe", "product_keyword": "遮光窗帘"}],
             "precondition": "库里存在一个已确认且含加工项的订单",
             "forbidden_text": ["无法生成加工单"],
@@ -602,8 +616,8 @@ class TestNoFalsePositivesOnCorrectShapes:
         """已**轮次作用域**的禁令 ⇒ 允许（并发包在 runner 侧新增的能力）。"""
         case = {
             "id": "FAKE-PR-995", "title": "（注入夹具）轮次作用域禁令",
-            "expectations": [{"tool": "processing_order_generate"}],
-            "must_succeed": [{"tool": "processing_order_generate"}],
+            "expectations": [{"tool": "order_manage"}],
+            "must_succeed": [{"tool": "order_manage"}],
             "pre_clean": [{"type": "product_dedupe", "product_keyword": "遮光窗帘"}],
             "precondition": "库里存在一个已确认且含加工项的订单",
             "forbidden_text": [{"text": "无法生成加工单", "rounds": [2, 3]}],
@@ -653,8 +667,8 @@ class TestNoFalsePositivesOnCorrectShapes:
         )
         pg013 = {
             "id": "PG-013", "title": "米宝加工单 LLM 行为",
-            "expectations": [{"tool": "order_query"}, {"tool": "processing_order_generate"}],
-            "must_succeed": [{"tool": "processing_order_generate"}],
+            "expectations": [{"tool": "order_query"}, {"tool": "order_manage"}],
+            "must_succeed": [{"tool": "order_manage"}],
             "precondition": "库里存在订单 EVAL-MB-ORD-0002（已确认且含加工项）",
             "pre_clean": [{"type": "processing_order_reset",
                            "order_no": "EVAL-MB-ORD-0002"}],
@@ -672,8 +686,8 @@ class TestNoFalsePositivesOnCorrectShapes:
         """
         case = {
             "id": "FAKE-PG-900", "title": "（注入夹具）新 pre_clean 类型",
-            "expectations": [{"tool": "processing_order_generate"}],
-            "must_succeed": [{"tool": "processing_order_generate"}],
+            "expectations": [{"tool": "order_manage"}],
+            "must_succeed": [{"tool": "order_manage"}],
             "pre_clean": [{"type": "brand_new_type_shipped_by_another_pr", "x": "y"}],
             "persona": "mibao",
         }
@@ -711,6 +725,35 @@ class TestDegenerateGuardRails:
         assert tax.WRITE_TOOLS, "写工具集合为空 ⇒ 所有写用例漏判（门禁空壳）"
         assert tax.WRITE_TOOL_ACTIONS, "写 action 集合为空 ⇒ 同上"
         assert len(tax.WRITE_TOOLS) >= 5, f"写工具集合疑似被削：{sorted(tax.WRITE_TOOLS)}"
+
+    def test_write_tool_sets_only_name_reachable_tools(self):
+        """**不变式**：写工具集合里的工具必须**真实可达**（issue #4010 / A13）。
+
+        病根：`WRITE_TOOLS` 是**手写枚举**（本模块 header 解释过为什么必须显式枚举、
+        不能用宽正则），但它与「工具是否还在」是两个各自维护的清单 ⇒ 工具下线后
+        分类表照旧保留 ⇒ 出现**幽灵写工具**。实证：`processing_order_generate` /
+        `processing_order_update` 已于 #3917 从注册表与 skill 绑定移除，本表仍列着。
+
+        为什么是静默失效：`WRITE_TOOLS` 只被 `judge_case` 用来判「该用例是不是写用例」——
+        多一个永不出现的工具名，既不会报错也不会让任何用例变红，只是把判据从
+        「工具真实可达」悄悄变成「曾经可达」。**本表是判据源，不是历史档案。**
+
+        真值来源：`tests/agent_eval/eval_case_filter.py`（零第三方依赖，CI helper job
+        与覆盖体检共用）—— `mibao_real_toolset()` 解析米宝 skill 源码的 `*_TOOLS`，
+        `XIAOBU_TOOLS` 是小布侧真值，二者并集 = `scripts/case_coverage.py::registered_tools()`
+        的「两端注册表并集」，也是**用例能断言到的工具全集**。不复制清单（复制 = 双源漂移）。
+        """
+        from eval_case_filter import XIAOBU_TOOLS, mibao_real_toolset  # noqa: PLC0415
+
+        reachable = set(mibao_real_toolset()) | set(XIAOBU_TOOLS)
+        # 上界守卫：解析失效（源码改名/正则漂移）时不得退化成「空集 ⇒ 恒真」
+        assert len(reachable) >= 30, f"工具集只解析出 {len(reachable)} 个，判据疑似空转"
+        ghosts = sorted(set(tax.WRITE_TOOLS) - reachable)
+        assert not ghosts, (
+            f"WRITE_TOOLS 里这些工具已不可达（下线/改名后未从分类表移除）：{ghosts}"
+        )
+        ghost_actions = sorted(set(tax.WRITE_TOOL_ACTIONS) - reachable)
+        assert not ghost_actions, f"WRITE_TOOL_ACTIONS 里这些工具已不可达：{ghost_actions}"
 
     def test_effect_field_set_non_empty(self):
         assert tax.EFFECT_FIELDS, "效果层集合为空 ⇒ 效果层要求恒不满足（恒红）"

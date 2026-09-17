@@ -85,6 +85,89 @@ class TestRequest:
         assert get_breaker("admin_api:GET:/api/x").failure_count == 0
 
     @pytest.mark.asyncio
+    async def test_4xx_passes_through_server_failure_details(self):
+        """4xx 响应体必须**整份透传**（issue #4010 / A3）。
+
+        修前只回 `{"success","error","data"}` 三个键 ⇒ 服务端给的 `suggestion` /
+        `warnings` 全被丢弃，`product_manage.py` 读 `response["suggestion"]` 是死代码，
+        `base_skill._self_correct_retry`（判据 = `result_dict["suggestion"]` 非空）
+        对**一半失败面**永不启动。
+        """
+        from app.core.circuit_breaker import reset_breakers
+
+        reset_breakers()
+        client = AdminApiClient(base_url=_BASE, service_token="tok")
+        client._client = AsyncMock()
+        client._client.is_closed = False
+        client._client.request = AsyncMock(
+            return_value=_response(400, {
+                "success": False,
+                "error": {"code": "PRODUCT_NAME_DUPLICATE", "message": "商品名已存在",
+                          "details": [{"field": "name", "reason": "duplicate"}]},
+                "suggestion": "换一个商品名后重试",
+                "warnings": ["skuCode 已自动生成"],
+            })
+        )
+
+        result = await client._request("POST", "/api/admin/agent/products")
+
+        assert result["success"] is False
+        assert result["suggestion"] == "换一个商品名后重试"
+        assert result["warnings"] == ["skuCode 已自动生成"]
+        assert result["error"]["code"] == "PRODUCT_NAME_DUPLICATE"
+        assert result["error"]["details"] == [{"field": "name", "reason": "duplicate"}]
+
+    @pytest.mark.asyncio
+    async def test_4xx_server_success_flag_cannot_override_failure(self):
+        """负例①：**失败语义不得被服务端 payload 反转** —— 4xx 一律 `success=False`。
+
+        透传是「补字段」，不是「让服务端说了算」：即使 4xx 体里带 `success: true`
+        或 `data`，也必须被强制为失败（回归保护，防 `{**body}` 写反覆盖顺序）。
+        """
+        from app.core.circuit_breaker import get_breaker, reset_breakers
+
+        reset_breakers()
+        client = AdminApiClient(base_url=_BASE, service_token="tok")
+        client._client = AsyncMock()
+        client._client.is_closed = False
+        client._client.request = AsyncMock(
+            return_value=_response(422, {
+                "success": True, "data": {"id": 9},
+                "error": {"code": "VALIDATION", "message": "参数不合法"},
+            })
+        )
+
+        result = await client._request("POST", "/api/admin/agent/products")
+
+        assert result["success"] is False
+        assert result["data"] is None
+        assert result["error"]["code"] == "VALIDATION"
+        assert get_breaker("admin_api:POST:/api/admin/agent/products").failure_count == 0
+
+    @pytest.mark.asyncio
+    async def test_4xx_without_suggestion_keeps_legacy_keys(self):
+        """负例②：服务端**没给** `suggestion` 时不得凭空造一个（不许新增静默失效形态）。
+
+        只补透传字段，不新增失败分支 —— 调用方原来的 `.get(..., 默认)` 兜底照旧生效。
+        """
+        from app.core.circuit_breaker import reset_breakers
+
+        reset_breakers()
+        client = AdminApiClient(base_url=_BASE, service_token="tok")
+        client._client = AsyncMock()
+        client._client.is_closed = False
+        client._client.request = AsyncMock(
+            return_value=_response(403, {"error": {"code": "FORBIDDEN", "message": "无权访问"}})
+        )
+
+        result = await client._request("GET", "/api/x")
+
+        assert result["success"] is False
+        assert result["data"] is None
+        assert "suggestion" not in result
+        assert result["error"] == {"code": "FORBIDDEN", "message": "无权访问"}
+
+    @pytest.mark.asyncio
     async def test_2xx_success_returns_data(self):
         from app.core.circuit_breaker import reset_breakers
 

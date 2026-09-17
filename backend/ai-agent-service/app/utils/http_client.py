@@ -159,15 +159,16 @@ class AdminApiClient:
                 json=json_data,
                 headers=request_headers,
             )
-            # 4xx = 客户端/业务错误（404/422/400等），不是服务故障，不应触发熔断
+            # 4xx = 客户端/业务错误（404/422/400等），不是服务故障，不应触发熔断。
+            # 响应体**整份透传**（suggestion/warnings/error.code|details），只强制失败语义。
+            # 为什么（#4010/A3）：`_self_correct_retry` 的启动判据是 `result["suggestion"]`
+            # 非空，只回三键 = 服务端给的修复建议整份丢弃 ⇒ 自修复对一半失败面永不启动。
+            # `error` 缺省仍为 `{}`（既有三键契约，调用方有 `resp["error"]` 直取）。
             status = int(response.status_code)
             if 400 <= status < 500:
                 result: Dict[str, Any] = response.json()
-                return {
-                    "success": False,
-                    "error": result.get("error", {}),
-                    "data": None,
-                }
+                return {**result, "success": False, "data": None,
+                        "error": result.get("error", {})}
             response.raise_for_status()
             result: Dict[str, Any] = response.json()
 

@@ -5,6 +5,7 @@
 """
 # case_ids: PR-007, PR-008, PR-009, PR-016
 import pytest
+import httpx
 from unittest.mock import AsyncMock, patch
 
 from app.tools.product_manage import ProductManageTool
@@ -96,6 +97,94 @@ class TestProductCreate:
         assert result.error == "商品名重复"
         assert "创建商品失败" in result.message
         assert result.suggestion == "换一个名字"
+
+    @patch("app.tools.product_manage.get_admin_api_client")
+    async def test_create_4xx_suggestion_reaches_tool_result(
+        self, mock_get_client, tool, admin_tool_context
+    ):
+        """**端到端**：admin-api 400 + 服务端 `suggestion` ⇒ `ToolResult.suggestion` 必须是它。
+
+        上一行 `test_create_failure_passthrough` 直接喂 dict 给工具（绕过 `http_client`），
+        所以它对 A3（4xx 分支丢字段）**不构成覆盖** —— 这正是缺陷能长期存活的原因。
+        本用例用**真 `AdminApiClient`**（只 mock 底层 httpx 响应），走
+        `http_client._request` 的 4xx 分支。修前 `suggestion` 被丢弃 ⇒ 落到工具兜底文案
+        「请检查必填字段是否完整」⇒ 断言可判红（断言**值**，不是断言"非空"：兜底文案
+        本身非空，写"非空"就是不会红的空断言）。
+        """
+        from app.utils.http_client import AdminApiClient
+
+        real_client = AdminApiClient(base_url="http://admin-api.test", service_token="tok")
+        real_client._client = AsyncMock()
+        real_client._client.is_closed = False
+        real_client._client.request = AsyncMock(
+            return_value=httpx.Response(
+                400,
+                request=httpx.Request("POST", "http://admin-api.test/api/admin/agent/products"),
+                json={"success": False,
+                      "error": {"code": "PRODUCT_NAME_DUPLICATE", "message": "商品名已存在"},
+                      "suggestion": "换一个商品名后重试"},
+            )
+        )
+        mock_get_client.return_value = real_client
+
+        result = await tool.execute(context=admin_tool_context, action="create", name="窗帘")
+
+        assert result.success is False
+        assert result.error == "商品名已存在"
+        assert result.suggestion == "换一个商品名后重试"
+
+    @patch("app.tools.product_manage.get_admin_api_client")
+    async def test_create_4xx_without_suggestion_keeps_default_wording(
+        self, mock_get_client, tool, admin_tool_context
+    ):
+        """负例：服务端 400 **没带** `suggestion` 时，失败话术与 fallback 不得回归。"""
+        from app.utils.http_client import AdminApiClient
+
+        real_client = AdminApiClient(base_url="http://admin-api.test", service_token="tok")
+        real_client._client = AsyncMock()
+        real_client._client.is_closed = False
+        real_client._client.request = AsyncMock(
+            return_value=httpx.Response(
+                422,
+                request=httpx.Request("POST", "http://admin-api.test/api/admin/agent/products"),
+                json={"success": False, "error": {"code": "VALIDATION", "message": "参数不合法"}},
+            )
+        )
+        mock_get_client.return_value = real_client
+
+        result = await tool.execute(context=admin_tool_context, action="create", name="窗帘")
+
+        assert result.success is False
+        assert result.error == "参数不合法"
+        assert result.message == "创建商品失败：参数不合法"
+        assert result.suggestion == "请检查必填字段是否完整"
+
+    @patch("app.tools.product_manage.get_admin_api_client")
+    async def test_create_2xx_unchanged_by_passthrough(
+        self, mock_get_client, tool, admin_tool_context
+    ):
+        """负例（R2）：原本合法的**成功**响应仍必须原样返回 —— 透传只动失败分支。"""
+        from app.utils.http_client import AdminApiClient
+
+        real_client = AdminApiClient(base_url="http://admin-api.test", service_token="tok")
+        real_client._client = AsyncMock()
+        real_client._client.is_closed = False
+        real_client._client.request = AsyncMock(
+            return_value=httpx.Response(
+                200,
+                request=httpx.Request("POST", "http://admin-api.test/api/admin/agent/products"),
+                json={"success": True, "data": {"id": "p-9"},
+                      "warnings": ["skuCode 已存在，系统自动重新生成"]},
+            )
+        )
+        mock_get_client.return_value = real_client
+
+        result = await tool.execute(context=admin_tool_context, action="create", name="窗帘")
+
+        assert result.success is True
+        assert result.data == {"product_id": "p-9", "name": "窗帘"}
+        assert result.suggestion is None
+        assert "skuCode 已存在" in result.message
 
     @patch("app.tools.product_manage.get_admin_api_client")
     async def test_create_allow_return_restock_transmitted(self, mock_get_client, tool, admin_tool_context, mock_client):

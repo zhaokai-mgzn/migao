@@ -34,6 +34,9 @@ def _extract_text(content: Union[str, list, None]) -> str:
 
 
 # 每个意图的描述（用于动态构建分类器 Prompt）
+# ⚠️ **键集必须与 `IntentType` 值集相等**（不变式测试 tests/test_intent_classifier.py
+# ::TestIntentDescriptionSync）：缺键会让该意图在 `agent_intents=None` 时整条不出现在提示里、
+# 在 `agent_intents` 给定时退化成裸英文 token。
 _INTENT_DESCRIPTIONS: dict[str, str] = {
     # 公共
     "greeting": "打招呼、问候（如'你好''在吗'）",
@@ -42,12 +45,14 @@ _INTENT_DESCRIPTIONS: dict[str, str] = {
     'general': '以上都不匹配的其他问题',
     # 订单域
     'order_query': '查询订单状态、订单信息',
+    'order_create': '代客下单、创建订单',
     'logistics_track': '查询物流、快递进度',
     'after_sales': '退货、退款、换货、售后服务（仅咨询政策）',
     'after_sales_create': '创建/受理/流转/处理/关闭售后工单等售后工单管理场景',
     'complaint': '投诉、举报、不满',
     # 商品域
     'product_inquiry': '商品咨询、价格查询、产品推荐、加工项查询',
+    'quote': '窗帘算料报价、按窗宽窗高与面料单价算钱（C 端小布）',
     'category_manage': '商品分类的查询/创建/更名/启用停用/删除/排序',
     'processing_manage': '加工项的创建/更新/上下架/删除/调价等管理操作（不含单纯查询）',
     # 客户关系域
@@ -66,6 +71,7 @@ _INTENT_DESCRIPTIONS: dict[str, str] = {
     'dashboard': '查看经营/运营看板、总览页、实时指标',
     'statistics': '查询某个具体统计指标（今日销量、转化率、在线人数等）',
     'data_report': '查看/导出经营报表、Top 排行、趋势分析',
+    'finance': '财务收支、资金流水、对账等财务数据查询',
     'session_manage': '客服会话列表/详情/关闭/转接/接接人工等会话管理操作',
     # 知识库域
     'knowledge_faq': '面料知识、保养方法、安装指南等问答',
@@ -164,10 +170,6 @@ def _build_classifier_prompt_cached(intent_key: tuple) -> str:
     """
     agent_intents = list(intent_key) if intent_key else None
     return _build_classifier_prompt(agent_intents)
-
-
-# 向后兼容：默认完整 Prompt（全部意图）
-CLASSIFIER_SYSTEM_PROMPT = _build_classifier_prompt(None)
 
 
 class IntentClassifier:

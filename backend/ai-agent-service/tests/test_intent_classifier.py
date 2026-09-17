@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from app.router.intent_classifier import (
     _extract_text,
     _build_classifier_prompt,
+    _INTENT_DESCRIPTIONS,
     IntentClassifier,
 )
 from app.router.intent_config import IntentType
@@ -78,6 +79,47 @@ class TestBuildClassifierPrompt:
         assert trend_rule_lines, "缺少「订单趋势归数据域」消歧规则"
         joined = " ".join(trend_rule_lines)
         assert "dashboard_stats" in joined or "数据域" in joined or "统计" in joined
+
+
+class TestIntentDescriptionSync:
+    """**不变式**：`_INTENT_DESCRIPTIONS` 必须与 `IntentType` 枚举同步（issue #4010 / A8）。
+
+    为什么是机制层而不是补三条描述：分类器提示的两条构建路径都以描述表为准 ——
+    `agent_intents=None` 时 `intents_to_show = list(_INTENT_DESCRIPTIONS.keys())`（**没有
+    描述的意图根本不出现在提示里**，分类器永远选不中它），`agent_intents` 给定时
+    `_INTENT_DESCRIPTIONS.get(intent, intent)` 退化成裸英文 token（`- quote: quote`）。
+    两种退化都**不会报错**、也不会让任何既有测试变红 —— 只能靠不变式守住。
+
+    适用域：`_INTENT_DESCRIPTIONS` 的键集 ↔ `IntentType` 的值集。
+    不适用域（**有意保留**）：`agent_intents` 运行时传入 skill 声明的枚举外意图
+    （如 order_skill 曾声明的 `processing_order_generate`）仍走 `get(intent, intent)`
+    兜底 —— 见 `TestBuildClassifierPrompt.test_unknown_intent_desc_falls_back_to_name`。
+    """
+
+    def test_every_enum_value_has_description(self):
+        missing = sorted({i.value for i in IntentType} - set(_INTENT_DESCRIPTIONS))
+        assert not missing, (
+            f"这些 IntentType 取值没有描述（分类器提示会退化成裸英文 token / 整条不出现）：{missing}"
+        )
+
+    def test_no_description_outlives_its_enum_value(self):
+        """反向同步：枚举删了成员却留下描述 = 提示里出现模型永远返回不了的死意图。"""
+        dead = sorted(set(_INTENT_DESCRIPTIONS) - {i.value for i in IntentType})
+        assert not dead, f"这些描述键已不在 IntentType 中（死意图，必须一并删除）：{dead}"
+
+    def test_prompt_never_renders_bare_token_for_enum_intents(self):
+        """用户可见症状的回归锚点：提示里不得出现 `- <intent>: <intent>` 这种裸 token。
+
+        按**每个**枚举值单独构建提示（模拟各 skill 声明的意图子集，如
+        customer_quote_skill 的 `["quote"]`、data_skill 的 `finance`）。
+        枚举外意图（本测试不覆盖）的兜底形态见 TestBuildClassifierPrompt。
+        """
+        bare = []
+        for intent in IntentType:
+            prompt = _build_classifier_prompt([intent.value])
+            if f"- {intent.value}: {intent.value}" in prompt:
+                bare.append(intent.value)
+        assert not bare, f"分类器提示里这些意图退化成裸英文 token：{bare}"
 
 
 class TestParseResponse:
