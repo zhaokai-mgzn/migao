@@ -1,7 +1,30 @@
 name: Agent Behavior Eval (行为改动映射用例)
 
+# ══════════════════════════════════════════════════════════════════════════════
+# ★★ 触发口径（2026-09-17 用户裁定 2′/4′，承载 issue #4034）：**本 workflow 在 PR 上零真实 LLM** ★★
+#
+#   before（至 2026-09-17）:  pull_request → ① map job（diff→case_ids，零 LLM）
+#                                        ② behavior-eval job（独立栈 + **真实 LLM**，fast 档，报告制）
+#   after （本 PR）        :  pull_request → **只剩 ① map job**（纯静态、零 LLM、秒级）
+#                            `behavior-eval` job **整体删除**（不是加 `if` 关掉 —— 关掉会留下
+#                            永不执行的死 job，形态同 §19.2「声明无消费」）。
+#
+#   为什么删：PR 层 LLM 信号**不拦合并**（§16.5：LLM 行为层不进 required），却要为每个行为 PR
+#     付真实 token + 挤占全局评测槽位。用户裁定：**LLM 负责发现（低频、非自动），确定性层负责
+#     拦截（每 PR、免费）**。
+#   ✅ **代价已知并接受**（用户原话）：PR 阶段**不再有 LLM 行为信号**。
+#      **禁止**用别的方式把它补回来（例如在此恢复自动跑、或在别处新增自动 LLM 触发）
+#      —— 这正是本裁定的全部要点：省钱。
+#   ✅ **零 LLM 的映射信号保留**：map job 仍给 PR「本次 diff 波及哪些用例 + 各属哪个 persona/档位」，
+#      并打印「要跑就派发单一入口」的可复制命令（见 PR 评论步骤）。成本 0、不占评测槽位。
+#   ★ 单一入口 = `post-deploy-eval.yml`（判定用途唯一入口，#3769；定时 3 天 + 手动 dispatch）；
+#      停用清单与**档位矩阵**见该文件头部「真实 LLM 评测：单一入口 + 档位矩阵」段。
+#   ★ 机械锁（防回退，`tests/unit_ci_workflows/test_behavior_eval_pr_thin.py`）：
+#      PR 路径上的 `local_runner.py` 调用数 = 0；全仓**自动**真实 LLM 触发集合 = 白名单（见该文件）。
+# ══════════════════════════════════════════════════════════════════════════════
+#
 # 设计意图（issue #3502）：把 migao-dev-flow §13.2「改动类型 → 必跑用例」映射表从**人工**
-# 变成 **diff 驱动**的门禁。
+# 变成 **diff 驱动**的**信号**（历史沿革：曾同时是 PR 门禁，该部分已按上述裁定停用）。
 #
 # 为什么需要它：
 #   ① PR 上的 Agent Eval 只有 smoke 档 7 条（跨域抽样，回答的是"没崩"）；
@@ -51,77 +74,55 @@ name: Agent Behavior Eval (行为改动映射用例)
 #   issue #3653；非 normal 档走 full 桶不传重试参数）；
 #   不可执行的映射（已 skip）在 PR 评论里**显式披露**，绝不静默丢。
 #
-# ★ 门禁分层（2026-09-14 dogfooding 首跑复盘 → 同日用户裁定后**再降一级**）：
-#   `rules`（改动确实落在该行为域）= **强信号**，失败 → **报告 + PR 评论 + 自动开 issue**，
-#     **不拦合并**（**2026-09-14 用户裁定"按建议来"**，决策记录见
-#     docs/testing/eval-environments.md §3.3；理由：① 规则按路径正则匹配产出过**假阻塞红**；
-#     ② PR 层 LLM 评测不构成合并门禁，阻塞只带来"先证伪才能继续"的摩擦；
-#     ③ 真拦截由确定性 required 层 + 部署后全量承担）；
-#   `default_net`（无规则命中时的网）= 与本 PR 改动**无因果** → 失败**只报告**、**不开 issue**
-#     —— 兜底网不取消（无规则命中时静默跳过 = 把漏测伪装成"无需测试"），只是不升级为 issue。
-#   首跑实证（这条规则命中为何不可信）：本门禁在自己的 PR 上跑（diff 只改了
-#   tests/agent_eval/behavior_mapping.py …）→ 无规则命中 → 走兜底网 → 兜底网里的 CH-010
-#   （小布下单表单化交互）红了（`amount_verify: 总额 311.4 ≠ Σ小计71.4+加工费252.0=323.4`）。
-#   runner 自己的语义（`unstable` 分类 + 关键旅程不放行）**不改**：分层只决定"是否升级为
-#   issue / 是否拦合并"，不改变评测怎么判；偶发波动照 §3.1 走 re-run。
-#
-# ★ PR 层去冗余（issue #3653，2026-09-15 用户裁定）：PR 层只保留**定向映射用例**，
-#   **完整覆盖交给部署后/批次轮**（AD：docs/testing/eval-pipeline-performance.md §6.2）：
-#   1. **只跑规则命中的用例**（无规则命中时兜底网照旧，report-only）—— 不跑 smoke/
-#      Acceptance/云冒烟任何其它档（那些层已在 xiaobu-acceptance / pr-check 移除或降按需）；
-#   2. **fast 迭代档**（§16.2：收窄 + fast = 1-3 分钟）：normal 桶一律 `--max-retries 0`
-#      （失败按首跑结果计入、不重试、不取证；完整档/结论档由部署后全量轮承担）；
-#      唯一例外是**非 normal 档映射用例**（DF-011/DF-012 adversarial）走 full 桶串行
-#      —— runner 的 full 档不接收 --max-retries（禁改 tests/agent_eval，见下），
-#      且 1-2 条代价可接受，每周六 adversarial 档 + 部署后全量共同兜底；
-#   3. **persona 按命中的用例分桶选**：只跑命中所及 persona 的腿，**不允许无差别双 persona**
-#      （personas 从分桶派生，见 map job；命中集横跨双端才双腿都跑）；
-#   4. **paths 前置门**只认 `backend/ai-agent-service/app/**`（行为源文件）。
-#   实测成本基线（本会话 2.5h）：197 次真实 LLM 评测 ≈ ¥135-295 —— 本 PR 后
-#   行为类 PR 只付「行为映射 fast 档」一层，其余三层（C 端 smoke / B 端云冒烟 /
-#   xiaobu PR 档）不再触发。
+# ── 已停用的 PR 门禁语义（保留沿革，防后人照抄回来）──────────────────────────
+# ★ 2026-09-14~09-17 期间本 workflow 曾是 PR 门禁（issue #3653 的「PR 层去冗余」形态）：
+#   `rules` 命中 = 强信号（报告 + PR 评论 + 自动开 issue，**不拦合并**）；`default_net` = 只报告；
+#   PR 档 = fast 迭代档（normal 桶 `--max-retries 0`、persona 按命中用例分桶、非 normal 档走 full 桶）；
+#   paths 前置门只认行为源文件（**这条保留**，见 `on.pull_request.paths`）。
+#   ⚠️ 以上**除 paths 外全部随 `behavior-eval` job 一并停用**（裁定 2′/4′）：不再有 PR 层评测，
+#   也就不再有"规则命中失败 → 开 issue"这条链 —— LLM 红例的发现改由**单一入口**的低频跑承担
+#   （`post-deploy-eval` / `xiaobu-acceptance` / `agent-eval-adversarial`，各自带失败建 issue 去重守卫）。
+#   停用前的成本实测基线（2026-09-15，2.5h）：197 次真实 LLM 评测 ≈ ¥135-295 ⇒ PR 层这一档
+#   **归零**（本 workflow 在 PR 上的 LLM 调用数 = 0，由 L0 锁死）。
+#   为什么 `default_net` 兜底网**不**搬到这里继续跑：它是真实 LLM 调用，"无因果也无成本"不再成立
+#   （裁定要点就是省钱）；兜底网的覆盖由单一入口的定时档承担，且 **map job 仍会把它列出来**通知人。
 permissions:
   contents: read
-  # 发布/更新 PR 评论必需
+  # 发布/更新 PR 评论必需（`issues.createComment`/`updateComment` 打在 **PR** 上 ——
+  # GitHub 对 PR 评论只要求 PR 写权限）。守卫：tests/unit_ci_workflows/test_workflow_issue_permissions.py
   pull-requests: write
-  # ⚠️ 规则命中失败自动开 issue 必需（#3497 实证：permissions 一旦显式声明，未列出的
-  # scope 全部归零 —— 缺 issues: write 时 issues.create 会 HttpError **静默崩溃**，
-  # 表现是"评测红了却没有任何人知道"）
-  issues: write
+  # ⚠️ `issues: write` 已随 `behavior-eval` job 删除（裁定 2′/4′）：本 workflow 不再
+  # 调 `issues.create(`，保留它就是「声明无消费」的死权限（§19.1 形态）。若将来重新加回
+  # 任何建 issue 的步骤，**必须同时**把 `issues: write` 补回来（#3497：缺它时
+  # github-script 会 HttpError **静默崩溃**，表现是"红了却没有任何人知道"）。
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
-# ── 评测并发槽位：仓库级共享（issue #3563，2026-09-14 用户裁定）───────────────
-# 修前：`group` 按 PR 号/ref 分组 → **跨 PR 无约束**，与同族的两条评测
-#   （xiaobu-acceptance / post-deploy-eval）各占各的槽 → 实测 13 个 in-progress 里有 6 条
-#   是评测型 job（各自一套 docker 栈 + 真实 LLM），queued 60 个 run，**required 检查被饿死**
-#   （9 个 PR 全 BLOCKED）。
-# 修后（**两层语义**，与 xiaobu-acceptance.yml 的落地方式一致，见 AD 的 #3587 / 本文档 §3.3）：
-#   · **文件级** group 仍是"按 PR" → 同 PR 新 push 即时取消被取代的 run（省栈省 token，PR 迭代必需）；
-#   · **job 级** group 才是共享槽位 `eval-stack-global-${{ matrix.persona }}` ——
-#     真正会起栈的 job 进入全局槽位，保证仓库内同一时刻每个 persona 只有一套评测栈在跑。
-#   ⚠️ 为什么不把文件级 group 直接换成共享槽位：那样"新 push"就必须**排在**旧 run 后面，
-#     既丢了 PR 迭代性，又让被取代的旧 run 有机会跑完整套栈 —— 最坏组合（AD 的 #3587 实测论证）。
-#
-# ★ `cancel-in-progress: false`（job 级）：**故意不 cancel 正在跑的那条**
-#   （评测 job 的产物就是结论本身，cancel 掉 = 那个 PR 永远拿不到该信号；同 #3526 论证）。
-#   ⚠️ 副作用（有意取舍，§3.3 详述）：GitHub 是"一个 group 同时 1 running + 1 pending"，
-#   新 run 进来会**取消旧的 pending** ⇒ 突发期部分 PR/腿拿到 `cancelled` 而非"排队后跑"；
-#   这些评测是**信息性**（不 required，§16.5）：cancel 不阻塞合并，行为信号由部署后全量轮承担。
+# ── 文件级并发：按 PR 取消被取代的映射 run（issue #3563 的**文件级**语义保留）──────
+# 现仅剩 map job（纯静态、秒级），但仍值得保留"按 PR + cancel-in-progress"：
+#   同一 PR 连推多次时，被取代的映射 run 立刻作废（省 runner 分钟数），
+#   且 PR 上只会留下最新一次映射结论（旧结论消失 = 不会误导读者）。
+# ★ **job 级共享槽位 `eval-stack-global-<persona>` 已随 `behavior-eval` job 一并删除**：
+#   本 workflow 不再起 docker 栈、不再调真实 LLM ⇒ 不再占用评测槽位（槽位语义现在是
+#   "谁真起栈谁进"，见 docs/testing/eval-environments.md §3.3 的单一说明）。
 concurrency:
   group: agent-behavior-eval-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 on:
+  # ⚠️ 本 workflow 的**唯一**触发就是 PR，且 PR 上**只跑 map job（零 LLM）**。
+  #    不加 workflow_dispatch / schedule：真评测走**单一入口** `post-deploy-eval.yml`
+  #    （判定用途唯一入口，#3769）——**不新增第二个人工/自动 LLM 入口**。
   pull_request:
     # ★ paths 前置门（issue #3653）：只认 **agent 本体行为源文件**（与
     #   tests/agent_eval/behavior_mapping.py 的 BEHAVIOR_SOURCE_PREFIXES 同一口径 =
-    #   §13.2 映射表的源路径）—— 纯 cases/评测基建/文档/前端 PR **不再触发行为评测**：
+    #   §13.2 映射表的源路径）—— 纯 cases/评测基建/文档/前端 PR **不触发映射计算**：
     #   那些改动由确定性层兜底（tests/unit_ci_workflows L0 静态测试 / Case Contract /
-    #   覆盖门禁），完整行为覆盖由部署后全量轮（post-deploy-eval）承担。
+    #   覆盖门禁），完整行为覆盖由单一入口的定时档承担。
     #   ⚠️ 本 workflow 是**信息性**（不进 required，§16.5），paths 收窄不会让
-    #   required check 悬空；workflow 自身的改动由 L0 静态测试锁定，无需自我触发。
+    #   required check 悬空；workflow 自身的改动由 L0 静态测试锁定，无需自我触发
+    #   （`tests/unit_ci_workflows/test_behavior_eval_pr_thin.py` 逐条锁 paths + 零 LLM）。
     paths:
       - 'backend/ai-agent-service/app/**'
 
@@ -270,36 +271,35 @@ jobs:
           print("不可执行:", unrunnable or "（无）")
           PY
 
-      - name: 评测并发槽位说明（防「排队/取消」被误读成「停滞/坏了」）
-        # 在**抢槽位之前**跑（map job 不占评测槽）→ 一定会输出。记进 run summary，
-        # 让 UI 上就能看出"这条评测是被并发槽位排队/取代"，而不是"CI 卡住了/这 PR 有问题"。
-        # issue #3563 显式要求「被取消可区分、可解释」（本会话已发生过把排队误判为停滞）。
+      - name: 本 workflow 的边界说明（PR 层零 LLM；真评测在单一入口）
+        # 写在 run summary：让 UI 上就能回答"为什么这个 PR 没有行为评测结论" ——
+        # **不是 CI 卡住了/坏了**，而是裁定 2′/4′（issue #4034）把 PR 层真实 LLM 停了。
+        # 「没跑」必须长得像「没跑」（§16.7 禁空跑 ③）：本步骤**不产生**任何评测结论。
         run: |
           {
-            echo "## 🧵 评测并发槽位"
+            echo "## 🧭 本 workflow 的边界（PR 层零真实 LLM）"
             echo ""
-            echo "- 本 workflow 与 \`xiaobu-acceptance\` / \`post-deploy-eval\` **共用** group：\`eval-stack-global\`"
-            echo "- 语义：一个 group 同时 **1 running + 1 pending**；新 run 进入已有 pending 的 group 时，"
-            echo "  **旧的 pending 会被取消**（GitHub 固有语义，\`cancel-in-progress: false\` 不阻止这一条）"
-            echo "- 因此："
-            echo "  1. **排队**：下面的评测 job 会在 group 里等前一条评测跑完（评测单条 5~15min，不是卡住）"
-            echo "  2. **被取消**：若期间有更新的评测 run 进来，本 run 可能被标成 \`cancelled\`；"
-            echo "     这**不代表代码有问题**，行为信号由**部署后全量轮**（post-deploy-eval，双 persona 全量）承担"
-            echo "- 本 workflow 的检查是**信息性**（不 required，§16.5）：取消不阻塞合并"
-            echo ""
-            echo "本 run：PR=\`${{ github.event.pull_request.number || '(非 PR)' }}\` ref=\`${{ github.ref_name }}\`"
+            echo "- 本 workflow 在 PR 上只做**映射**（diff → case_ids，零 LLM、秒级、不占评测槽位）。"
+            echo "- **本 run 没有任何 LLM 评测结论**；判定用途的评测走**单一入口**："
+            echo "  \`post-deploy-eval.yml\`（定时 3 天 normal 全量 + 手动 \`workflow_dispatch\`）。"
+            echo "- 要在此 PR 上跑映射出的用例：用下面 PR 评论里给出的**可复制命令**（\`purpose=debug\`，非判定用途）。"
+            echo "- 并发槽位语义（\`eval-stack-global\`）与本 workflow **无关**：本 workflow 不起栈、不烧 token。"
           } >> "$GITHUB_STEP_SUMMARY"
-          echo "── 评测并发槽位：group=eval-stack-global（1 running + 1 pending；更新的 run 会取代 pending）──"
+          echo "── 本 workflow：PR 层零 LLM（映射 only）；评测入口 = post-deploy-eval ──"
 
-      - name: PR 评论（映射计划；评测结果随后更新各自 persona 的评论）
-        # 为什么在 map job 就发评论：① 让"这次改了行为、要跑哪几条"在 PR 上**立即可见**
-        # （不必等 5~13 分钟的起栈）；② 全部映射都不可执行时（`skip_reason` 非空，
-        # 或该端工具集选不中 —— 如改换货 skill 映射出 `AS-007`，其 `skip_reason` 为空
-        # 但小布端选不中、而本轮只跑小布腿），本条评论就是唯一披露渠道 —— 没有它，
-        # 这个 PR 会显示"行为评测通过"，而实际一条都没跑（假绿）。
+      - name: PR 评论（映射计划 + 「要跑就派发单一入口」命令）
+        # 为什么在 map job 就发评论：① 让"这次改了行为、要跑哪几条"在 PR 上**立即可见**；
+        # ② 全部映射都不可执行时（`skip_reason` 非空，或该端工具集选不中 —— 如改换货 skill
+        # 映射出 `AS-007`，其 `skip_reason` 为空但小布端选不中），本条评论就是唯一披露渠道
+        # —— 没有它，这个 PR 会显示"没有信号"，而读者不知道"是没跑还是没得跑"（§16.7 ③）。
         #
-        # ★ **按 persona 各一条评论**（issue #3563）：评测 job 已改为 persona matrix
-        #   （每个 persona 一个 job + 独立栈），两条腿**并行**写 PR 评论。若两者共用同一个
+        # ★ **本评论是唯一输出**（裁定 2′/4′ 后）：不再有"评测结果稍后更新"的第二步，
+        #   所以本评论必须自己说清：**LLM 没跑**（不是跑了通过）+ **要跑的命令**。
+        #
+        # ★ **按 persona 各一条评论**（issue #3563）：map 的 personas 输出决定分桶。
+        #   （历史上两条 matrix 腿并行写评论；job 已删，保留按 persona 分条以免读者
+        #    把某一端的映射当成全量结论。）
+        #
         #   marker，会互相覆盖（后写的赢）→ 有一端的评测结果从 PR 上消失 = 假绿。
         #   故 marker 带 persona（`<!-- agent-behavior-eval:mibao -->`），本步骤为每个
         #   参与评测的 persona 各建一条计划评论，对应的 matrix 腿只更新自己那条。
@@ -356,9 +356,9 @@ jobs:
               lines.push(`**触发用例**（本次 diff 按 \`migao-dev-flow\` §13.2 映射表推出）：\`${process.env.MAPPED_CASE_IDS}\``)
               lines.push('')
               lines.push(netMode
-                ? '**映射来源**：无规则命中 → 跑 **兜底网** `DEFAULT_BEHAVIOR_CASES`（用例与本 PR 改动**无因果**，失败**只报告**、不建 issue）'
-                : '**映射来源**：**规则命中**（用例与本 PR 改动**有因果** → 失败是**强信号**，必须人工/AI 判断；'
-                  + '**不拦合并**，失败会**自动开 issue** 追踪 —— 2026-09-14 用户裁定，见 §3.3 决策记录）')
+                ? '**映射来源**：无规则命中 → **兜底网** `DEFAULT_BEHAVIOR_CASES`（用例与本 PR 改动**无因果**，参考为主）'
+                : '**映射来源**：**规则命中**（用例与本 PR 改动**有因果** → 若评测判红是**强信号**，'
+                  + '必须人工/AI 判断；2026-09-14 用户裁定的「不拦合并」语义不变）')
               lines.push('')
               if (!netMode && process.env.RULE_HITS && process.env.RULE_HITS.trim()) {
                 lines.push('**命中的规则**（哪个文件 → 哪条规则 → 哪些用例）：')
@@ -374,15 +374,37 @@ jobs:
               lines.push(scopedPlan || '（无可执行用例）')
               lines.push('```')
               lines.push('')
-              lines.push('> `blocking` = 规则命中（**强信号**，失败不拦合并但会开 issue）；'
-                + '`report-only` = 兜底网（无因果，失败只报告，不开 issue）')
-              lines.push('> 每个 persona 一套**独立栈**（issue #3563）：xiaobu 栈只装 C 端种子、'
-                + 'mibao 栈装 C 端+B 端种子 —— 同一 persona 在任一 workflow 上数据栈同构。')
-              lines.push('> 每个 persona 一套**独立栈**（issue #3563）：xiaobu 栈只装 C 端种子、'
-                + 'mibao 栈装 C 端+B 端种子 —— 同一 persona 在任一 workflow 上数据栈同构。')
-              lines.push('> PR 层 = **fast 迭代档**（issue #3653）：normal 桶 \`--max-retries 0\`'
-                + '（失败按首跑结果计入、不重试）；非 normal 档用例（如 DF-011/DF-012）'
-                + '走 full 桶串行（runner full 档不接收重试参数）。完整档/结论档由部署后全量轮承担。')
+              lines.push('> `blocking` = 规则命中（**强信号**：与本 PR 行为改动有因果，需人工/AI 判断）；'
+                + '`report-only` = 兜底网（无因果，参考为主）')
+              lines.push('> ⚠️ **本次 PR 上没有跑任何真实 LLM**（裁定 2′/4′，issue #4034）：'
+                + '本 workflow 在 PR 上只做映射。**不要**把本评论读成"评测通过"。')
+              // ★ 「要跑就派发单一入口」的可复制命令（本评论是唯一输出，必须自带可执行路径）：
+              //   档位从桶名派生（normal 桶 → tier=normal；full 桶 → 用例自身为非 normal 档，
+              //   如 DF-011/DF-012 = adversarial —— 档位必须与用例 tier 一致，否则 runner
+              //   的「禁止静默少跑」会直接 exit 1，不会静默跳过）。
+              const planLines = (process.env.PLAN || '').split('\n')
+                .filter(l => l && (!persona || l.startsWith(persona + '|')))
+              const cmds = []
+              for (const pl of planLines) {
+                const parts = pl.split('|')
+                if (parts.length < 3) continue
+                const suite = parts[1]
+                const ids = parts[2]
+                const tier = suite === 'normal' ? 'normal' : 'adversarial'
+                cmds.push(`gh workflow run post-deploy-eval.yml -f tier=${tier} -f case_ids=${ids} -f purpose=debug`)
+              }
+              if (cmds.length) {
+                lines.push('')
+                lines.push('**要跑这些用例**（单一入口 = `post-deploy-eval.yml`，手动档；'
+                  + '`purpose=debug` = 定点复现，**不构成判定结论**）：')
+                lines.push('')
+                lines.push('```bash')
+                for (const c of cmds) lines.push(c)
+                lines.push('```')
+                lines.push('> 单端专属用例（如 CH-010）**不要**用单一入口跑：它一次覆盖两条腿，'
+                  + '另一腿解析不到该 ID 会按 runner 的「禁止静默少跑」判红（§16.7 / #3822）'
+                  + '——单腿窄跑改用 `xiaobu-acceptance.yml` 的 `persona` 输入（手动）。')
+              }
               if (process.env.UNRUNNABLE && process.env.UNRUNNABLE.trim()) {
                 lines.push('')
                 lines.push('**未执行**（用例库当前状态导致，不是本 PR 的问题）：')
@@ -393,598 +415,12 @@ jobs:
               }
               lines.push('')
               lines.push(process.env.RUN_EVAL === 'true'
-                ? '⏳ 本 persona 的独立栈评测进行中，结果稍后更新到本条评论。'
-                : '⏭️ 本次映射到的用例当前都不可执行 → 不启动评测栈。请按 §14 修订用例后再改行为。')
+                ? '⏭️ **本 workflow 不跑 LLM**（裁定 2′/4′）：上面的映射用例**尚未执行**，'
+                  + '需要结论请用上面的命令派发单一入口（或等它的定时档）。'
+                : '⏭️ 本次映射到的用例当前都不可执行 → 无可派发内容。请按 §14 修订用例后再改行为。')
               lines.push('')
               lines.push('---')
               lines.push(`映射口径见 \`tests/agent_eval/behavior_mapping.py\`（纯函数，可单测）；完整 run：${runUrl}`)
 
               await upsert(marker, lines.join('\n'))
-            }
-
-  # ── ② 真评测 job：只在①判定有可执行用例时才起栈 ──
-  behavior-eval:
-    needs: map
-    if: needs.map.outputs.run_eval == 'true'
-    name: 行为映射用例评测（DEBUG 本地栈 + 真实 LLM）
-    runs-on: ubuntu-latest
-    # ★ persona matrix = **每个 persona 一套独立栈**（issue #3563）：
-    #   两端需要的种子不同（xiaobu 仅 C 端 / mibao C 端+B 端），混栈必然污染一端
-    #   （CH-010 0% vs 100% 的实测根因）。与 post-deploy-eval.yml 的 persona matrix 同款
-    #   「独立 runner + 独立 docker 栈 + 独立新库」（#3515 先例），隔离优先于省一次起栈。
-    #   fail-fast: false —— 一端红不该让另一端的结果消失（另一端往往是唯一的反例证据）。
-    strategy:
-      fail-fast: false
-      matrix: ${{ fromJSON(needs.map.outputs.personas) }}
-    # ★ **job 级**共享槽位（与 xiaobu-acceptance 同款两层语义，见文件头 concurrency 段）：
-    #   文件级 group 管"同 PR 新 push 取消被取代的 run"（省栈省 token）；
-    #   job 级 group 才管"仓库内同一时刻只有一套评测栈在构建/运行"。
-    #   group 带 `-${{ matrix.persona }}`：两条腿是**两套独立栈**，本就要并行；
-    #   若不带后缀，新 run 的 mibao 腿会把旧 run 的 pending xiaobu 腿挤掉 ⇒ 丢掉一整个 persona 的结论。
-    concurrency:
-      group: eval-stack-global-${{ matrix.persona }}
-      cancel-in-progress: false
-    # 与 xiaobu-acceptance 同量级：栈在无 buildx 缓存时回落全量构建（~13min），
-    # 评测本身是多个分桶串行（每桶内并发 6）+ 失败重试
-    timeout-minutes: 60
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Set up Python 3.11
-        uses: actions/setup-python@v7
-        with:
-          python-version: '3.11'
-          cache: pip
-          cache-dependency-path: backend/ai-agent-service/requirements.txt
-
-      - name: Set up Buildx（镜像层缓存）
-        # 与 xiaobu-acceptance.yml 同款：栈启动墙钟在 3.4~12.9min 间剧烈波动，
-        # Dockerfile 每次 `mvn clean package` + `pip install -r`，没有层缓存就全量重下。
-        # ⚠️ 本 workflow 的 permissions 只有 contents:read + pull-requests:write，
-        # **没有 actions:write** → `--cache-to type=gha` 导出失败（PR 触发取最小权限，
-        # 不为提速放宽）→ build_cached 失败后**回落**到 compose up --build 无缓存路径
-        # （该回落路径已在 xiaobu-acceptance 验证过，栈照样起得来）。
-        uses: docker/setup-buildx-action@v3
-
-      - name: "Export dev RS256 keys for stack"
-        # admin-api 镜像内没有 rsa/private.pem（被 .gitignore 刻意排除），用仓库已入库的
-        # **测试**密钥对以 PEM 内容注入（JwtTokenProvider 支持 PEM 优先于文件路径）。
-        run: |
-          KEY_DIR=backend/admin-api/src/test/resources/rsa
-          # 显式 if 而非 `test ... || { echo ...; exit 1; }`：CI helper 的「有管道但无 pipefail」
-          # 规模守卫（tests/unit_ci_workflows/test_step_exit_code_propagation.py）把 `||` 也按
-          # 管道计数，而这里根本没有管道 —— 与其加一行 no-op 的 `set -o pipefail` 去迎合它，
-          # 不如把 fail-closed 语义写成最直白的形式。
-          if [ ! -f "$KEY_DIR/private.pem" ]; then
-            echo "::error::缺少测试密钥 $KEY_DIR/private.pem"
-            exit 1
-          fi
-          if [ ! -f "$KEY_DIR/public.pem" ]; then
-            echo "::error::缺少测试密钥 $KEY_DIR/public.pem"
-            exit 1
-          fi
-          {
-            echo "JWT_PRIVATE_KEY_PEM<<__PEM_EOF__"
-            cat "$KEY_DIR/private.pem"
-            echo "__PEM_EOF__"
-            echo "JWT_PUBLIC_KEY_PEM<<__PEM_EOF__"
-            cat "$KEY_DIR/public.pem"
-            echo "__PEM_EOF__"
-          } >> "$GITHUB_ENV"
-          # ai-agent 用 JWT_PUBLIC_KEY 校验 admin-api 签发的 RS256 token（config.py 必填）
-          PUB_ONELINE=$(tr -d '\n' < "$KEY_DIR/public.pem")
-          echo "JWT_PUBLIC_KEY=$PUB_ONELINE" >> "$GITHUB_ENV"
-          echo "✅ 已导出 dev RS256 密钥"
-
-      - name: "Start local stack (docker-compose: PG + Redis + admin-api + ai-agent DEBUG)"
-        # 照抄 xiaobu-acceptance.yml 的起栈步骤（同一套已验证的栈），只省略该文件特有的归因注释
-        env:
-          # deploy/docker-compose.yml 里 DEV_SERVICE_TOKEN 是 required 无默认值，缺它连
-          # `docker compose ps/logs` 都会插值失败 —— 用占位串而非真实 secret（起栈不需要它）
-          DEV_SERVICE_TOKEN: ${{ secrets.SMOKE_SERVICE_TOKEN || 'ci-service-token-placeholder' }}
-          PRIMARY_API_KEY: ${{ secrets.DEEPSEEK_API_KEY || 'ci-dummy' }}
-          PRIMARY_MODEL: deepseek-flash
-          DASHVECTOR_API_KEY: ci-dummy
-          DASHVECTOR_ENDPOINT: https://ci-dummy.dashvector.cn-hangzhou.aliyuncs.com
-          DASHVECTOR_COLLECTION: ci
-          DEBUG: 'true'
-        run: |
-          # 每次先 down -v 清卷：postgres 用命名卷持久化，历史 schema 与迁移链不匹配时
-          # 会迁移失败/会话 500。评测要求**全新库**（schema.sql + 迁移链从零确定性重建）。
-          docker compose -f deploy/docker-compose.yml down -v 2>&1 | tail -3 || true
-          echo "── 已清空旧卷（fresh DB）──"
-          # ⚠️ set -o pipefail 必须：bash 默认返回管道最后一条命令（tail）的退出码 →
-          # compose 失败（如 postgres exited 3）会被吞成 **step success**，
-          # 真因被掩盖成"评测连不上"（issue #3270 实证）。
-          set -o pipefail
-          cat > /tmp/compose-images.yml <<'YAML'
-          services:
-            admin-api:
-              image: migao-eval-admin-api
-            ai-agent-service:
-              image: migao-eval-ai-agent-service
-          YAML
-          build_cached() {
-            local name="$1" ctx="$2" df="$3"; shift 3
-            docker buildx build \
-              --cache-from "type=gha,scope=${name}" \
-              --cache-to "type=gha,scope=${name},mode=max" \
-              --build-arg BUILDKIT_INLINE_CACHE=1 \
-              "$@" \
-              -t "migao-eval-${name}" -f "$df" "$ctx" --load
-          }
-          # PIP_INDEX_URL：Dockerfile 默认走阿里云镜像（国内开发快），但 GitHub runner 在
-          # 境外（实测镜像内 pip 632s vs runner 直连 PyPI 23s）→ CI 必须改用 PyPI
-          if build_cached admin-api backend/admin-api backend/admin-api/Dockerfile \
-               > /tmp/buildx-admin.log 2>&1 \
-             && build_cached ai-agent-service backend/ai-agent-service backend/ai-agent-service/Dockerfile \
-                  --build-arg PIP_INDEX_URL=https://pypi.org/simple \
-                  > /tmp/buildx-agent.log 2>&1; then
-            echo "✅ 镜像构建完成（buildx + GHA cache）"
-            docker compose -f deploy/docker-compose.yml -f /tmp/compose-images.yml up -d --wait \
-              --wait-timeout 300 postgres redis admin-api ai-agent-service 2>&1 | tail -20
-          else
-            echo "⚠️ buildx 缓存构建失败（本 workflow 无 actions:write，缓存导出预期失败）→ 回落 compose up --build"
-            tail -10 /tmp/buildx-admin.log 2>/dev/null || true
-            tail -10 /tmp/buildx-agent.log 2>/dev/null || true
-            docker compose -f deploy/docker-compose.yml up -d --build --wait \
-              --wait-timeout 300 postgres redis admin-api ai-agent-service 2>&1 | tail -20
-          fi
-
-      - name: "Seed 评测业务数据（C 端 #3270 + B 端 #3511）"
-        # ★ 口径**单一实现**（issue #3563）：只调用 scripts/eval_stack_seed.sh，
-        #   与 xiaobu-acceptance.yml / post-deploy-eval.yml **共用同一份规则**——
-        #   禁止在此内联 fixture 路径。
-        #
-        #   历史根因（本步骤正是病灶）：这里曾是"无条件叠加 B 端种子"，理由是本 job 的
-        #   分桶可能同时含 mibao 与 xiaobu（条件叠加会漏 B 端点名数据）。代价是
-        #   **xiaobu 分桶被强行跑在 B 端栈上**：mibao_eval_seed.sql 后执行 →
-        #   created_at 更新 → `ORDER BY created_at DESC` 让 B 端 prod_eval_2699 恒排第一
-        #   → C 端用例的「第一款」指到 B 端商品（无「白色」色号、绑 per_area 刺绣工艺）
-        #   → CH-010 在本 workflow 上 0%（products=4），在 xiaobu-acceptance 上 100%（products=3）。
-        #   修法不是"改条件叠加"（那只是把病灶挪到另一端），而是**按 persona 分栈**：
-        #   上方 matrix 让每个 persona 一个独立 job + 独立栈，本步骤按本腿 persona 注种子。
-        #
-        #   为什么必须要 B 端种子（#3511 T3.2 实证）：OR-016 的输入点名「2699系列雪尼尔窗帘面料」
-        #   → 干净库里 product_search(products=0) → agent 反复搜 4 轮后宣告"库里没有这款商品"
-        #   （行为合理但用例判红）；PR-020 点名「刺绣工艺」同理。缺数据会长得像能力回归。
-        #   静态锁：tests/unit_ci_workflows/test_eval_stack_seed_parity.py（L0）。
-        env:
-          DEV_SERVICE_TOKEN: diagnostics-only-placeholder
-        run: |
-          bash scripts/eval_stack_seed.sh --persona "${{ matrix.persona }}"
-
-      - name: Install eval runner deps
-        # local_runner 的模块级第三方依赖只有 httpx（用例 YAML 解析走仓内 yaml_light，纯标准库）
-        run: pip install -q httpx
-
-      - name: Run mapped cases (真实 LLM，独立栈)
-        id: eval
-        env:
-          AI_API_URL: http://localhost:8001
-          ADMIN_API_URL: http://localhost:8080
-          SERVICE_TOKEN: ${{ secrets.SMOKE_SERVICE_TOKEN || 'ci-service-token-placeholder' }}
-          PYTHONUTF8: "1"
-          PYTHONIOENCODING: utf-8
-          # 通过的写用例也要看工具结果 ——「工具被调用」≠「落库成功」（issue #3270 实证）
-          AGENT_EVAL_TRACE_ALL: "1"
-          # 波动台账（issue #3563 同类漂移排查）：`runner` 只有在设了这个变量时才落盘台账
-          # （`local_runner.py` 里按 `AGENT_EVAL_FLAKE_LOG` 环境变量检索 ——
-          #  旧注释写的裸行号会漂移，不再给），此前本 workflow 与本变量同族的另两个 workflow
-          # 各写一份口径 → 台账在本 workflow（PR 门禁，波动最需要被看见的地方）静默缺失。
-          AGENT_EVAL_FLAKE_LOG: agent-eval-flakes.json
-          # 固定节流降到最小：墙钟几乎全在真实 LLM 往返上（与 xiaobu-acceptance 同值）
-          EVAL_ROUND_SLEEP: "0.2"
-          EVAL_CASE_SLEEP: "0.3"
-          # 用例级并发（栈只起一次，别并行建栈——实测并发建栈反而更慢）
-          EVAL_CONCURRENCY: "6"
-          BUCKETS: ${{ needs.map.outputs.buckets }}
-          # 本腿的 persona（matrix）—— 用于从执行计划里挑出**属于本栈**的桶
-          PERSONA: ${{ matrix.persona }}
-        run: |
-          # pipefail：评测输出要 tee 留档（失败时评论里贴要点）
-          set -o pipefail
-          : > /tmp/eval-run.log
-          # 两个退出码分开记（门禁分层，见文件头 ★ 段）：
-          #   BLOCK_STATUS：规则命中桶 —— 与本 PR 改动有因果，失败是**强信号**
-          #                 （2026-09-14 起**不再红**：降为「报告 + PR 评论 + 自动开 issue」，
-          #                  见 docs/testing/eval-environments.md §3.3 决策记录）
-          #   SOFT_STATUS ：兜底网桶 —— 无规则命中，与本 PR 改动无因果 → 只报告（照旧，不建 issue）
-          BLOCK_STATUS=0
-          SOFT_STATUS=0
-          N=0
-          echo "── 本 job 只跑 persona=$PERSONA 的分桶（每个 persona 一套独立栈，issue #3563）──"
-          # 逐桶跑：每个桶 = (persona, tier, 门禁模式)，桶内命令形状与 §13 的手工命令一致。
-          # persona 必须与用例库归属一致，否则 runner 直接 exit 1（禁止静默少跑）；
-          # tier 决定档位（normal 只跑 tier: normal 的用例，非 normal 的走 full 档）。
-          # ★ 只跑**本栈 persona** 的桶：另一端的桶由它自己的 matrix 腿（独立栈）跑 ——
-          #   在原栈上接着跑另一端的用例，就是"同 person 混栈"（本 issue 的病灶）。
-          while IFS='|' read -r persona suite ids mode; do
-            [ -n "$ids" ] || continue
-            if [ "$persona" != "$PERSONA" ]; then
-              echo "⏭ 跳过 persona=$persona 的桶（由该 persona 自己的 matrix 腿跑）"
-              continue
-            fi
-            N=$((N + 1))
-            echo ""
-            echo "── [$N] persona=$persona 档位=$suite 门禁=$mode 用例=$ids ──"
-            EXTRA=()
-            # ★ PR 层 = L2 迭代档（§16.2 收窄 + fast = 1-3 分钟，issue #3653）：
-            #   normal 桶一律 **fast**：--max-retries 0 = 失败按首跑结果计入
-            #   （标签 no-retry-budget），**不重试**。这是"省真实 LLM 成本"的核心一刀
-            #   （实测 197 次 → 行为类 PR 只付这一层）；完整档/结论档由部署后全量轮承担。
-            if [ "$suite" = "normal" ]; then EXTRA=(--max-retries 0); fi
-            # 非 normal 档（adversarial/edge…）照旧走 full 桶 —— runner 的 full 档
-            # **不接收 --max-retries/--concurrency**（禁改 tests/agent_eval），无法开 fast：
-            # 串行 + 重试不限，但通常只有 1~2 条对抗映射用例（DF-011/DF-012），代价可接受；
-            # 完整 adversarial 面由每周六档 + 部署后全量兜底。若命中集全为非 normal 档
-            # 且不想等串行，可对 PR 评论按 §3.1 处理（信息性，不拦合并）。
-            # full 档**不按 tier 过滤**（`--case-ids` 之后就是"要几条跑几条"），
-            # 故非 normal 用例（adversarial/edge…）只能走 full —— 走 normal 会被静默过滤掉。
-            # full 档当前不接收 --concurrency/--max-retries（runner 只有 normal/smoke 档传），
-            # 故这类桶为串行、重试不限 —— 通常只有 1~2 条对抗用例，代价可接受。
-            if PERSONA="$persona" AGENT_EVAL_SUMMARY_JSON="/tmp/eval-summary-$N.json" \
-                 python tests/agent_eval/local_runner.py "$suite" --cases .github/cases \
-                   --case-ids "$ids" "${EXTRA[@]}" 2>&1 | tee -a /tmp/eval-run.log; then
-              echo "✅ [$N] 通过"
-            elif [ "$mode" = "blocking" ]; then
-              echo "❌ [$N] 失败（规则命中：**强信号，必须看**；不拦合并 → 自动开 issue 追踪）"
-              BLOCK_STATUS=1
-            else
-              # 兜底网失败：与本 PR 改动无因果 → 只报告（不建 issue、不红），照旧
-              echo "⚠️ [$N] 失败（门禁=report-only：兜底网，不阻塞，只在 PR 评论标注）"
-              SOFT_STATUS=1
-            fi
-          done <<< "$BUCKETS"
-          echo ""
-          # ── 门禁降级（2026-09-14 用户裁定，§3.3 决策记录）────────────────────
-          # 规则命中失败**不再让 workflow 变红**，改为「报告 + PR 评论 + 自动开 issue」。
-          # 为什么：① 它产出过**假阻塞红**（规则按路径正则匹配，测试文件名含 `guard` 就命中
-          # 防御规则 → 把一个改 finance 工具的 PR 判成命中 DF-011/DF-012）；
-          # ② PR 层 LLM 评测本身**不构成合并门禁**（§16.5：真拦截由确定性 required 层 +
-          # 部署后全量承担），阻塞只带来「必须先证伪才能继续」的摩擦。
-          # ⚠️ 不弱化信号：仍写 step summary + `::warning::` + PR 评论 + **自动开 issue**；
-          #    裁决留给下一次真实规则命中时核验。
-          RULE_FAILED=""
-          if [ "$BLOCK_STATUS" -ne 0 ]; then
-            RULE_FAILED="1"
-            echo "::warning::规则命中用例失败（**强信号**：与本 PR 行为改动有因果）——不拦合并，已开 issue 追踪，见 PR 评论"
-          fi
-          {
-            echo "## 🧪 行为映射用例评测结果（persona=${PERSONA}）"
-            echo ""
-            echo "- 本栈实际执行分桶数：$N"
-            echo "- 规则命中桶失败：$([ "$RULE_FAILED" = "1" ] && echo '**是（强信号，不拦合并）**' || echo '否')"
-            echo "- 兜底网桶失败：$([ "$SOFT_STATUS" -ne 0 ] && echo '是（无因果，仅报告）' || echo '否')"
-            echo "- 门禁语义：**信息性**（§16.5：LLM 行为层不进 required）；真拦截由确定性 required 层 + 部署后全量承担"
-          } >> "$GITHUB_STEP_SUMMARY"
-          echo "── 共执行 $N 个分桶：规则命中桶=$BLOCK_STATUS / 兜底网桶=$SOFT_STATUS ──"
-          if [ "$SOFT_STATUS" -ne 0 ] && [ "$RULE_FAILED" = "" ]; then
-            echo "::warning::兜底网用例失败（不阻塞合并）：默认集与本 PR 改动无因果，详见 PR 评论"
-          fi
-          echo "soft_failures=$SOFT_STATUS" >> "$GITHUB_OUTPUT"
-          echo "rule_failed=$RULE_FAILED" >> "$GITHUB_OUTPUT"
-          # ★ 恒 exit 0：规则命中失败降级为报告（脚本本身出错另有其退出码，
-          #   由 set -e/pipefail 兜住 —— 不要用 `|| true` 掩盖 infra 故障）。
-          exit 0
-
-      - name: Create Issue on rule-matched failure (dedup guard)
-        # ★ 「报告 + 高可见」的落点（2026-09-14 用户裁定）：规则命中用例失败 → 自动开 issue。
-        # 去重范式照 post-deploy-eval.yml：先在同标题 open issue 里搜，命中则**追加评论**不重复建。
-        # 标题含**用例 ID + PR 号**（用户要求）：同一条 PR 的多次推送汇到一条 issue 线程。
-        # **兜底网失败不开 issue**（无因果，只报告）—— 两者必须可区分。
-        if: always() && steps.eval.outputs.rule_failed == '1'
-        uses: actions/github-script@v9
-        env:
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          PR_TITLE: ${{ github.event.pull_request.title }}
-          MAPPED_CASE_IDS: ${{ needs.map.outputs.case_ids }}
-          RULE_HITS: ${{ needs.map.outputs.rule_hits }}
-          PERSONA: ${{ matrix.persona }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        with:
-          script: |
-            const fs = require('fs')
-            const pr = process.env.PR_NUMBER || '(非 PR)'
-            const title = `[行为映射门禁] 规则命中用例失败 — PR #${pr}（${process.env.MAPPED_CASE_IDS || '未知用例'}）`
-
-            // 失败要点：读本腿的机器可读汇总（local_runner 写在 /tmp）
-            const points = []
-            let files = []
-            try {
-              files = fs.readdirSync('/tmp').filter(f => /^eval-summary-\d+\.json$/.test(f)).sort()
-            } catch (e) { files = [] }
-            for (const f of files) {
-              try {
-                const s = JSON.parse(fs.readFileSync(`/tmp/${f}`, 'utf8'))
-                const bad = (s.cases || []).filter(x => (x.score || 0) < 1)
-                points.push(`- 桶 ${f}：total=${s.total} passed=${s.passed} avg_score=${Number(s.avg_score || 0).toFixed(3)}`)
-                if (bad.length) {
-                  points.push(`  - 未通过：${bad.map(x => `${x.id}(${x.classification || 'unclassified'}, score=${x.score})`).join(', ')}`)
-                }
-              } catch (e) {
-                points.push(`- 桶 ${f}：汇总解析失败（${e.message}）`)
-              }
-            }
-            if (points.length === 0) {
-              points.push('- 未取到机器可读汇总（评测在产出汇总前失败 → 属环境/栈问题，非用例失败）')
-            }
-
-            const body = [
-              `PR #${pr}（${process.env.PR_TITLE || ''}）的 **Agent Behavior Eval（行为映射用例）** 里，`,
-              '**规则命中**的用例失败。按 2026-09-14 用户裁定，本门禁为**信息性**：',
-              '**不拦合并**，但失败是**强信号**（改动与本 PR 行为域有因果）—— 请务必看完下面的证据再决定。',
-              '',
-              `- 评测 run：${process.env.RUN_URL}`,
-              `- persona：\`${process.env.PERSONA || '(未知)'}\`（每个 persona 一套独立栈）`,
-              `- 映射来源：**规则命中**（非兜底网）`,
-              `- 对应用例：\`${process.env.MAPPED_CASE_IDS || ''}\``,
-              '',
-              '## 命中的规则（哪个文件 → 哪条规则 → 哪些用例）',
-              '```',
-              (process.env.RULE_HITS || '（未取到规则命中明细）').trim(),
-              '```',
-              '',
-              '## 失败要点',
-              ...points,
-              '',
-              '## 门禁语义（为什么这条 issue 存在却不拦合并）',
-              '- PR 层 LLM 评测**不构成合并门禁**（§16.5：LLM 行为层有意不进 required，方差会卡死流水线）；',
-              '- 真拦截由**确定性 required 层** + **部署后全量**（post-deploy-eval，双 persona 全量）承担；',
-              '- 规则命中失败也可能是**规则误命中**（按路径正则匹配）—— 先核对上面的「命中的规则」明细；',
-              '- 兜底网（无规则命中时的网）失败**不会**开这条 issue（无因果，只在 PR 评论标注）。',
-            ].join('\n')
-
-            const q = `repo:${context.repo.owner}/${context.repo.repo} is:issue is:open in:title "${title}"`
-            const { data: search } = await github.rest.search.issuesAndPullRequests({ q })
-            if (search.total_count > 0) {
-              const existing = search.items[0]
-              console.log(`⏭️ 已存在同标题 open issue #${existing.number}，仅追加评论`)
-              await github.rest.issues.createComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: existing.number,
-                body: `同标题再次失败（新增 run）：${process.env.RUN_URL}\n\n${points.join('\n')}`,
-              })
-            } else {
-              await github.rest.issues.create({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                title,
-                body,
-                labels: ['bug', 'role/qa'],
-              })
-            }
-
-      - name: Upload flake ledger（波动台账汇聚，#3505）
-        # issue #3563 同类漂移排查：xiaobu-acceptance / agent-eval / pr-check 都上传台账，
-        # 本 workflow（PR 行为门禁）此前既不落盘也不上传 → 高波动用例治理（§14.3
-        # 双周回顾）看不到 PR 门禁这一路的波动。按 matrix.persona 命名，两条腿不重名。
-        if: always() && hashFiles('agent-eval-flakes.json') != ''
-        uses: actions/upload-artifact@v7
-        with:
-          name: agent-eval-flake-ledger-behavior-${{ matrix.persona }}
-          path: agent-eval-flakes.json
-          retention-days: 30
-
-      - name: "Diagnose on failure: containers + DB probe"
-        # 起栈/评测失败时 dump 容器状态与日志（与 xiaobu-acceptance 同款；
-        # 没有它就只能看到"评测连不上"的表象，看不到"栈没起来"的真因）
-        if: failure()
-        env:
-          DEV_SERVICE_TOKEN: diagnostics-only-placeholder
-        run: |
-          # 诊断步骤**故意不 fail**（set +e）：任何 dump 失败都不该掩盖真正的失败原因，
-          # 也不该把 "没日志" 变成第二个红点。不用「两竖线 + true」写法：CI helper 的管道
-          # 规模守卫把两竖线按管道计数（此处并无管道），set +e 表达同一语义且更直白
-          # （注释同样避开那两个字，否则守卫会把注释本身算成一例）。
-          set +e
-          echo "── 容器状态 ──"
-          docker compose -f deploy/docker-compose.yml ps -a
-          # 按**用例窗口**取容器日志（issue #3805 病灶 1）：本 workflow 是多桶串接（每桶一份
-          # /tmp/eval-summary-<桶>.json），固定行数取到的是 dump 那一刻的日志 —— 先跑完的
-          # 桶的失败窗口早已过去。runner 把 `⏱ <case> start=` 锚点写进了 summary
-          # 的 started_at/finished_at，这里逐桶按窗口切片（取不到窗口再回落固定 tail）。
-          WINDOWS_ANY=0
-          for f in /tmp/eval-summary-*.json; do
-            [ -f "$f" ] || continue
-            if bash .github/scripts/eval_log_windows.sh "$f" --failed > /tmp/win-$$.txt 2>/dev/null; then
-              WINDOWS_ANY=1
-              echo ""
-              echo "════════ 失败用例窗口（来自 $f）════════"
-              cat /tmp/win-$$.txt
-              # ⚠️ 内层命令一律 `< /dev/null`：它跑在 `while read` 的循环体里，一旦
-              #    有命令去读 stdin，就会**静默吃掉**循环剩余输入（只处理第一条窗口 =
-              #    证据静默截断，与本 issue 的立意正相反）。tabs 由 IFS 指定，不受影响。
-
-              while IFS="$(printf '\t')" read -r W_SINCE W_UNTIL W_CASE; do
-                [ -n "$W_SINCE" ] || continue
-                echo "════════ [$W_CASE] ai-agent-service: $W_SINCE → $W_UNTIL ════════"
-                docker compose -f deploy/docker-compose.yml logs --no-color \
-                  --since "$W_SINCE" --until "$W_UNTIL" ai-agent-service < /dev/null
-                echo "════════ [$W_CASE] admin-api: $W_SINCE → $W_UNTIL ════════"
-                docker compose -f deploy/docker-compose.yml logs --no-color \
-                  --since "$W_SINCE" --until "$W_UNTIL" admin-api < /dev/null
-              done < /tmp/win-$$.txt
-            fi
-          done
-          if [ "$WINDOWS_ANY" = "0" ]; then
-            echo "⚠️ 无失败用例窗口（桶汇总缺失/无窗口字段）→ 回落固定 tail（证据可能不含失败窗口）"
-            for c in postgres redis admin-api ai-agent-service; do
-              echo ""
-              echo "════════ container logs: $c ════════"
-              docker compose -f deploy/docker-compose.yml logs --no-color --tail=80 "$c"
-            done
-          fi
-          echo ""
-          echo "── DB 关键状态探针 ──"
-          PRODUCTS=$(docker compose -f deploy/docker-compose.yml exec -T postgres \
-            psql -U app_user -d ai_customer_service -tAc \
-            "SELECT count(*) FROM products WHERE tenant_id=1")
-          echo "products=$PRODUCTS"
-
-      - name: PR 评论（触发用例 + 执行计划 + 结果摘要）
-        # if: always()：评测失败正是这条评论最该出现的时候（把"改了行为、跑了哪几条、
-        # 结果如何、失败要点"直接落在 PR 上，不用去翻 CI 日志）。
-        # 与 map job 用同一个 persona marker → 覆盖该 persona 那条"计划"评论
-        # （**每个 persona 一条**，矩阵两腿并行写各自的，不互相覆盖，issue #3563）。
-        if: always() && needs.map.outputs.run_eval == 'true'
-        uses: actions/github-script@v9
-        env:
-          MAPPED_CASE_IDS: ${{ needs.map.outputs.case_ids }}
-          PLAN: ${{ needs.map.outputs.buckets }}
-          UNRUNNABLE: ${{ needs.map.outputs.unrunnable }}
-          EVAL_OUTCOME: ${{ steps.eval.outcome }}
-          SOFT_FAILURES: ${{ steps.eval.outputs.soft_failures }}
-          GATE_MODE: ${{ needs.map.outputs.gate_mode }}
-          PERSONA: ${{ matrix.persona }}
-        with:
-          script: |
-            const fs = require('fs')
-            // ★ 按 persona 分评论（issue #3563）：本 job 已是 persona matrix，两条腿并行写 PR
-            //   评论；共用同一个 marker 会互相覆盖 → 有一端的结果从 PR 上消失（假绿）。
-            const persona = process.env.PERSONA || ''
-            const marker = persona ? `<!-- agent-behavior-eval:${persona} -->` : '<!-- agent-behavior-eval -->'
-            const runUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`
-            const outcome = process.env.EVAL_OUTCOME || 'skipped'
-            const passed = outcome === 'success'
-            // 兜底网失败不阻塞 → 步骤结果是 success，但评论不能显示成"全绿"（假绿防线）
-            const softFail = (process.env.SOFT_FAILURES || '0') !== '0'
-            // ★ 规则命中失败的判据（2026-09-14 用户裁定后**不再看步骤结果**）：
-            //   步骤恒 exit 0（降级为报告），故"红/绿"取自**用例层面**的失败集合，
-            //   而不是 outcome —— 否则规则命中失败会被显示成"✅ 通过"（**假绿**，比假红更坏）。
-            //   ⚠️ 必须在下面的汇总循环**之后**才算（`cases` 那时才有值）。
-            const ruleMode = process.env.GATE_MODE !== 'report-only'
-
-            // 合并本腿各桶的汇总（每桶一个 eval-summary-<n>.json；**本 runner 独占**，
-            // 另一 persona 的腿在另一个 runner 上，故不会互相污染）
-            const cases = []
-            let total = 0, passedCount = 0, weighted = 0
-            let files = []
-            try {
-              files = fs.readdirSync('/tmp').filter(f => /^eval-summary-\d+\.json$/.test(f)).sort()
-            } catch (e) {
-              files = []
-            }
-            for (const f of files) {
-              try {
-                const s = JSON.parse(fs.readFileSync(`/tmp/${f}`, 'utf8'))
-                total += s.total || 0
-                passedCount += s.passed || 0
-                weighted += (s.avg_score || 0) * (s.total || 0)
-                for (const c of (s.cases || [])) cases.push(c)
-              } catch (e) {
-                console.log(`⚠️ 汇总读取失败 ${f}: ${e.message}`)
-              }
-            }
-
-            // ★ 判据就位后（`cases` 已填）才算规则命中失败 + 图标：
-            //   步骤恒 exit 0，"通过"不能只看 outcome（否则规则命中失败显示成 ✅ = 假绿）。
-            const failedIds = cases.filter(c => (c.score || 0) < 1).map(c => c.id)
-            const ruleFail = ruleMode && failedIds.length > 0
-            const icon = ruleFail ? '🚨' : (softFail ? '⚠️' : (passed ? '✅' : (outcome === 'skipped' ? '⏭️' : '❌')))
-
-            const lines = []
-            lines.push(marker)
-            lines.push(`## ${icon} 行为改动映射用例（diff 驱动）${persona ? ` — persona=\`${persona}\`` : ''}`)
-            lines.push('')
-            lines.push(`**触发用例**（本次 diff 按 \`migao-dev-flow\` §13.2 映射表推出）：\`${process.env.MAPPED_CASE_IDS}\``)
-            lines.push('')
-            lines.push(`**门禁判定**：${ruleFail
-              ? `🚨 **规则命中的用例未过**（**强信号，必须人工/AI 判断**）—— `
-                + '**本门禁不拦合并**（2026-09-14 用户裁定，§3.3 决策记录），'
-                + '已**自动开 issue** 追踪；真拦截由确定性 required 层 + 部署后全量承担。'
-              : (passed
-                  ? (softFail
-                      ? '✅ 规则命中用例全过；**兜底网失败不报告为阻塞**（见下）'
-                      : '✅ 通过')
-                  : `❌ 评测步骤未正常结束（outcome=\`${outcome}\`）—— 多为起栈/依赖失败，看 Diagnose 输出`)}`)
-            lines.push('')
-            lines.push('**执行计划**（persona | 档位 | 用例 | 门禁）：')
-            lines.push('')
-            lines.push('```')
-            lines.push(process.env.PLAN || '（无可执行用例）')
-            lines.push('```')
-            lines.push('')
-            lines.push('> `blocking` = 规则命中（**强信号**，失败不拦合并 + 开 issue）；'
-              + '`report-only` = 兜底网（无因果，失败只报告）')
-            lines.push('> PR 层 = **fast 迭代档**（issue #3653）：normal 桶 `--max-retries 0`'
-              + '（失败按首跑结果计入、不重试）；非 normal 档用例走 full 桶串行。'
-              + '完整档/结论档由部署后全量轮承担。')
-            if (ruleFail && process.env.RULE_HITS && process.env.RULE_HITS.trim()) {
-              lines.push('')
-              lines.push('**命中的规则**（哪个文件 → 哪条规则 → 哪些用例）：')
-              lines.push('')
-              lines.push('```')
-              lines.push(process.env.RULE_HITS.trim())
-              lines.push('```')
-            }
-            if (softFail) {
-              const failedSoft = cases.filter(c => (c.score || 0) < 1).map(c => c.id).join('、')
-              lines.push('')
-              lines.push(`⚠️ **兜底网（不阻塞、不建 issue）**：${failedSoft || '默认集用例'} 失败，与本 PR 改动**无因果**`
-                + '（本次 diff 无规则命中，兜底网只是"映射表没覆盖时的网"）—— 已在用例库/issue 侧跟踪，不拦合并。')
-            }
-            if (process.env.UNRUNNABLE && process.env.UNRUNNABLE.trim()) {
-              lines.push('')
-              lines.push('**未执行**（用例库当前状态导致，不是本 PR 的问题）：')
-              lines.push('')
-              lines.push('```')
-              lines.push(process.env.UNRUNNABLE.trim())
-              lines.push('```')
-            }
-            lines.push('')
-            if (total > 0) {
-              lines.push(`**结果**：${passedCount}/${total} 通过（平均分 ${(weighted / total).toFixed(2)}）`)
-              lines.push('')
-              lines.push('| 用例 | 得分 | 分类 |')
-              lines.push('| --- | --- | --- |')
-              for (const c of cases) {
-                lines.push(`| ${c.id} | ${c.score} | ${c.classification || '-'} |`)
-              }
-            } else {
-              lines.push(`**结果**：未产出评测汇总（步骤状态 \`${outcome}\`）—— 大概率是起栈/依赖步骤先失败（见 run 页面的 Diagnose 输出）。`)
-            }
-            if (ruleFail || softFail || !passed) {
-              let hints = ''
-              try {
-                hints = fs.readFileSync('/tmp/eval-run.log', 'utf8')
-                  .split('\n')
-                  .filter(l => /❌|失败|FAIL|Error|Traceback/.test(l))
-                  .slice(-15)
-                  .join('\n')
-              } catch (e) {
-                hints = '（无评测日志：起栈/依赖步骤可能已先失败）'
-              }
-              lines.push('')
-              lines.push('<details><summary>失败要点（评测日志尾部）</summary>')
-              lines.push('')
-              lines.push('```')
-              lines.push(hints.slice(0, 3000) || '（日志里没有匹配到失败行）')
-              lines.push('```')
-              lines.push('')
-              lines.push('</details>')
-            }
-            lines.push('')
-            lines.push('---')
-            lines.push(`映射口径见 \`tests/agent_eval/behavior_mapping.py\`（纯函数，可单测）；完整 run：${runUrl}`)
-
-            const body = lines.join('\n')
-            const { data: comments } = await github.rest.issues.listComments({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.issue.number,
-            })
-            const prev = comments.find(c => c.body && c.body.includes(marker))
-            if (prev) {
-              await github.rest.issues.updateComment({
-                owner: context.repo.owner, repo: context.repo.repo, comment_id: prev.id, body,
-              })
-              console.log(`♻️ 已更新既有评论 #${prev.id}`)
-            } else {
-              await github.rest.issues.createComment({
-                owner: context.repo.owner, repo: context.repo.repo,
-                issue_number: context.issue.number, body,
-              })
-              console.log('💬 已发布映射评测评论')
             }

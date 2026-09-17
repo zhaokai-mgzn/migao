@@ -22,8 +22,8 @@
 ## CI 队列治理（v1.3，2026-09-04）
 
 - **concurrency 取消旧 run**：`pr-check`/`ai-agent-tests`/`mini-app` 均加 `concurrency.group`（按 PR 号），同 PR 新 push 自动取消旧 run，防多 commit 并发打满 runner 队列。
-- **变更门控（job 内，不整层 skip）**：`ai-agent-tests`/`mini-app` 等 required job 在 job 内用 `git diff origin/main...HEAD` 检测相关路径；无变更时实际执行 step 跳过（job 仍 success，required check 永不悬空）。**注意：不要改回 workflow 级 `paths` 过滤——required check 会卡在 "Waiting" 永不报告**（见 §3.2 技能说明）。PR 层真实 LLM 的触发收窄走 `agent-behavior-eval.yml` 的 **workflow 级 `paths` 门**（只认 `backend/ai-agent-service/app/**`，信息性 check，无 required 悬空问题，#3653）。
-- **真实 LLM 成本**：PR 层只跑 `agent-behavior-eval` 的**映射用例 fast 档**（#3653：normal 桶 `--max-retries 0`、persona 按命中用例分桶；原 smoke/xiaobu PR 档/B 端云冒烟三层已移除或降按需）——行为类 PR 从四层真实 LLM 降到一层。定时任务（e2e-real 每日 / adversarial 每周）保持低峰频率。
+- **变更门控（job 内，不整层 skip）**：`ai-agent-tests`/`mini-app` 等 required job 在 job 内用 `git diff origin/main...HEAD` 检测相关路径；无变更时实际执行 step 跳过（job 仍 success，required check 永不悬空）。**注意：不要改回 workflow 级 `paths` 过滤——required check 会卡在 "Waiting" 永不报告**（见 §3.2 技能说明）。`agent-behavior-eval.yml` 的 **workflow 级 `paths` 门**（只认 `backend/ai-agent-service/app/**`）现在只门控**零 LLM 的映射 job**（信息性 check，无 required 悬空问题，#3653/#4034）。
+- **真实 LLM 成本**：**PR 层 = 0 次真实 LLM**（2026-09-17 用户裁定 2′/4′，承载 issue #4034：`agent-behavior-eval` 的评测 job 已整体删除，只留零 LLM 的**映射信号** + 派发命令）。判定走**单一入口** `post-deploy-eval`（每 3 天 normal 全量 + 手动 dispatch）；定时档（3 天 normal / 每周 adversarial ×2）**全部保留**——「收敛」不等于删定时档。LLM 红例的闭环改由**确定性下沉台账**承接（`.github/llm-finding-ledger.json` + `llm_sink_check.py`，见 `docs/testing/llm-finding-sinking.md`）。
 - **观察指标**：`gh run list --status queued` 排队 >20 即需治理（先按 DEV-FLOW §7 清 dependabot 潮）。
 
 ## 部署目标（2026-08-14 起：SAE → SWAS；当前 SWAS 为**测试环境**）
