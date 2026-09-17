@@ -798,10 +798,12 @@ def _ensure_processing_items_multiselect(tool_name: str, args: dict) -> dict:
 # tests/agent_eval/local_runner.py 的断言语义一致）
 _PROC_ITEM_VALUE_PREFIX = "proc_item_"
 
-# 用户明确拒绝加工项的短句（命中则跳过兜底 —— 顾客说"不需要"时不得硬弹卡）
+# 用户明确拒绝加工项的短句（命中则跳过兜底 —— 顾客说"不需要"/"不用"时不得硬弹卡）。
+# 「不用」是 4 个 prompt 承诺的**裸词**（「说"不用"才跳过」，issue #4013 A11），
+# 且已包含「不用加工」「不用了」两种更具体写法 ⇒ 后两者不再单列（词表只许收敛）。
 _PROC_DECLINE_MARKERS = (
-    "不需要加工", "不用加工", "不要加工", "不加工", "不加加工",
-    "不需要了", "不用了", "算了", "不加了",
+    "不需要加工", "不要加工", "不加工", "不加加工",
+    "不需要了", "不用", "算了", "不加了",
 )
 
 
@@ -3219,12 +3221,17 @@ async def _execute_tool_safe(tool, tool_args: dict, tool_context, state: dict) -
         return err, {"success": False, "error": "tool_execution_failed"}
 
     # 4. 格式化结果
+    # `ToolResult` **声明的字段必须全部带进 result_dict**（issue #4013 A2：此前漏传
+    # terminal/summary ⇒ 消费点 `result_dict.get("terminal")` 恒 None ⇒ reset_domain
+    # 永不触发 = 死契约）。判据：tests/test_terminal_tool_and_prompt_contract.py。
     result_dict = {
         "success": result.success,
         "data": result.data,
         "error": result.error,
         "message": result.message,
+        "summary": getattr(result, "summary", None) or "",
         "suggestion": getattr(result, "suggestion", None) or "",
+        "terminal": bool(getattr(result, "terminal", False)),
     }
     result_str = json.dumps(result_dict, ensure_ascii=False, default=str)
 

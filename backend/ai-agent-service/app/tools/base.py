@@ -42,8 +42,10 @@ class ToolContext(BaseModel):
         arbitrary_types_allowed = True
 
 
-# C 端（顾客）角色集合：与 api/chat.py 的 `CUSTOMER_ONLY_ROLES` 同口径
-# （chat.py 是 API 层，tools 层不可反向导入 → 在此声明单一语义源，chat.py 复用本常量）。
+# C 端（顾客）角色集合 —— **单点定义**（`api/chat.py` 直接 import 本常量，不再各自声明
+# 一份：同值不同对象的两份口径会各自漂移，而注释却声称"chat.py 复用"，见 #4013 A10）。
+# 统一折叠为 customer，禁止访问管理类工具；与 admin-api SecurityConfig 门禁口径一致：
+# customer/agent 不属于商户员工。
 CUSTOMER_ONLY_ROLES = frozenset({"customer", "agent"})
 
 
