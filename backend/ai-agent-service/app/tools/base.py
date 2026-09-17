@@ -4,12 +4,171 @@ AI 智能客服系统 - Tool 基础设施
 提供 Tool 基类和上下文定义，所有 Tool 必须继承 BaseTool。
 """
 
+# 前向引用：`admin_api_failure` 在 `ToolResult` 之前定义（常量与映射点放在文件头部，
+# 便于「单一映射点」一眼可见），返回注解因此延迟求值。
+from __future__ import annotations
+
+import re
 from abc import ABC, abstractmethod
 import re
 from typing import Annotated, Any, Dict, List, Optional
 from pydantic import BaseModel, Field, create_model
 from pydantic.functional_validators import BeforeValidator
 from loguru import logger
+
+
+# ── 授权/认证类错误码（admin-api 实际产出的字面量，逐个有出处）──────────────────
+#
+# **跨包契约**：另一个包会 `from app.tools.base import NON_RETRYABLE_ERROR_CODES`
+# 来停止对「权限拒绝」的自动重试。名字与语义都不得随意变更。
+#
+# 口径 = 「换多少次参数都不可能成功」的 401/403：身份/授权问题，不是参数问题。
+#   PERMISSION_DENIED  GlobalExceptionHandler 第 117 行 / BusinessException.permissionDenied()
+#   FORBIDDEN          SecurityConfig 第 179 行（accessDeniedHandler，裸 JSON 直写）
+#   AUTH_REQUIRED      GlobalExceptionHandler 第 98 行（AuthenticationException）
+#   AUTH_FAILED        BusinessException.authFailed()
+#   UNAUTHORIZED       SecurityConfig 第 172 行（authenticationEntryPoint）+ UserController
+# 刻意**不含** TENANT_INVALID（BusinessException 第 116 行，401）：那是租户配置问题，
+# 不是「当前账号缺权限」，交给调用方的默认文案更诚实。
+NON_RETRYABLE_ERROR_CODES = frozenset({
+    "PERMISSION_DENIED", "FORBIDDEN", "AUTH_REQUIRED", "AUTH_FAILED", "UNAUTHORIZED",
+})
+
+#: admin-api 在异常 message 里携带缺失权限码的形态（`PermissionInterceptor` 第 107 行）
+_REQUIRED_PERMISSION_RE = re.compile(r"需要权限[:：]?\s*([A-Za-z][A-Za-z0-9_:]*)")
+
+
+def _clean(value: Any) -> Optional[str]:
+    """非空字符串化的取值：空串 / 纯空白 / 非字符串一律视为「没给」。"""
+    if not isinstance(value, str):
+        return None
+    stripped = value.strip()
+    return stripped or None
+
+
+def _first_code(value: Any) -> Optional[str]:
+    """`requiredPermission` 可能是字符串或字符串数组 —— 取第一个非空码。"""
+    if isinstance(value, str):
+        return _clean(value)
+    if isinstance(value, (list, tuple)):
+        for item in value:
+            code = _clean(item)
+            if code:
+                return code
+    return None
+
+
+def _required_permission(response: Dict[str, Any]) -> Optional[str]:
+    """从失败响应里取「服务端说缺哪个权限码」（拿不到就返回 None，不臆造）。
+
+    形状纪律（不猜，逐个有出处）：
+
+    1. `error.details[{"field": "requiredPermission", "message": "<code>"}]`
+       —— admin-api #4105/#4112 之后的**结构化真值**
+       （`PermissionDeniedResponse.of()` 之 `ErrorDetail`）。
+    2. `error.requiredPermission` / `error.requiredPermissions` / 顶层 `requiredPermission`
+       —— `http_client` 对 4xx 整份透传（顶层字段也一起带过来），故平铺形态一并认。
+    3. 兜底：异常 message 里的 `需要权限: <code>`（`PermissionInterceptor` 的原文）。
+    """
+    error = response.get("error")
+    error = error if isinstance(error, dict) else {}
+    for raw in (
+        _detail_required_permission(error.get("details")),
+        error.get("requiredPermission"),
+        error.get("requiredPermissions"),
+        response.get("requiredPermission"),
+    ):
+        code = _first_code(raw)
+        if code:
+            return code
+    matched = _REQUIRED_PERMISSION_RE.search(_clean(error.get("message")) or "")
+    return matched.group(1) if matched else None
+
+
+def _detail_required_permission(details: Any) -> Optional[str]:
+    """`error.details` 里 `field == "requiredPermission"` 那条的 `message`（即缺失的权限码）。"""
+    if not isinstance(details, (list, tuple)):
+        return None
+    for item in details:
+        if isinstance(item, dict) and item.get("field") == "requiredPermission":
+            return _first_code(item.get("message"))
+    return None
+
+
+def _denial_suggestion(required_permission: Optional[str]) -> str:
+    """授权失败给模型的**可执行**建议（不是「稍后重试」套话）。
+
+    必须同时说清三件事，否则模型只会原地重试或胡编参数：
+    ① 这是权限限制、不是参数问题；② **不要重试**；③ 去哪开通（管理后台的授权路径）。
+    """
+    missing = f"「{required_permission}」" if required_permission else "执行该操作所需的"
+    return (
+        "这是权限限制（不是参数问题）：请不要重试，也不要换参数重试。"
+        f"当前账号缺少{missing}权限，请如实告知用户，并指引其联系管理员在管理后台"
+        "（「员工管理 → 编辑员工 → 权限」或「角色管理 → 岗位权限」）为该账号开通后，"
+        "再由用户重新发起本次操作。"
+    )
+
+
+def admin_api_failure(
+    response: Dict[str, Any],
+    *,
+    error: Optional[str] = None,
+    message: Optional[str] = None,
+    suggestion: Optional[str] = None,
+    data: Optional[Dict[str, Any]] = None,
+) -> ToolResult:
+    """**admin-api 失败响应 → `ToolResult` 的唯一映射点**（issue #4106 F6）。
+
+    `app/utils/http_client.py` 对 4xx 已整份透传响应体（`error.code`/`error.message`/
+    顶层 `suggestion` 都在），但工具侧过去会把它们丢掉、统一换成「请稍后重试」套话
+    ⇒ **授权失败被当成参数问题**：模型反复重试同一调用，用户被告知「稍后重试」而不是
+    「你的账号没有这个权限、去哪里开通」。
+
+    映射规则：
+
+    - `error.code ∈ NON_RETRYABLE_ERROR_CODES` ⇒ 建议一律换成可执行的权限指引
+      （说明是权限限制、不要重试、指向管理后台授权路径），并保留服务端给的缺失权限码。
+      **调用方的 `suggestion` 在这一支被刻意忽略** —— 它正是要被顶掉的套话。
+    - 其它失败 ⇒ 服务端非空的 `suggestion` 优先，其次才是调用方给的默认文案；
+      `message` / `error` 同理（调用方给了就用调用方的，因为它通常已拼上服务端 message）。
+    - `error_code` 始终带上服务端的码（拿不到则留空，不臆造）。
+
+    Args:
+        response: `AdminApiClient` 返回的失败响应（含 `error` / `suggestion`）。
+        error: 调用方给出的错误串（缺省回落到服务端 `error.message`）。
+        message: 调用方给出的用户可见文案（缺省回落到服务端 `error.message`）。
+        suggestion: 调用方给出的**兜底**建议（服务端给了建议时不用它）。
+        data: 失败时仍要给模型的**结构化事实**（如 `{"notificationSent": False}`）；
+            缺省为 None（绝大多数失败没有可回传的数据）。
+
+    Returns:
+        ToolResult: `success=False` 的失败结果，带 `error_code`。
+    """
+    payload = response if isinstance(response, dict) else {}
+    error_info = payload.get("error")
+    error_info = error_info if isinstance(error_info, dict) else {}
+    code = _clean(error_info.get("code"))
+    service_message = _clean(error_info.get("message"))
+
+    if code in NON_RETRYABLE_ERROR_CODES:
+        return ToolResult(
+            success=False,
+            data=data,
+            error=error or service_message or "权限不足",
+            message=message or service_message or "您没有权限执行该操作",
+            suggestion=_denial_suggestion(_required_permission(payload)),
+            error_code=code,
+        )
+
+    return ToolResult(
+        success=False,
+        data=data,
+        error=error or service_message or "操作失败",
+        message=message or service_message or "操作失败",
+        suggestion=_clean(payload.get("suggestion")) or suggestion,
+        error_code=code,
+    )
 
 
 class ToolContext(BaseModel):
@@ -65,6 +224,10 @@ class ToolResult(BaseModel):
     message: Optional[str] = Field(None, description="提示消息（给用户看的）")
     summary: Optional[str] = Field(None, description="LLM友好摘要（每个tool自行填写）")
     suggestion: Optional[str] = Field(None, description="失败时的修复建议（给LLM看，帮助引导用户）")
+    # admin-api 的 `error.code`（如 PERMISSION_DENIED / NOT_FOUND / VALIDATION_ERROR）。
+    # **跨包契约**：另一个包按 `result.error_code in NON_RETRYABLE_ERROR_CODES` 决定是否
+    # 抑制自动重试（issue #4106 F6）。新增字段默认空 ⇒ 对既有构造调用向后兼容。
+    error_code: Optional[str] = Field(None, description="admin-api 错误码（失败时由 admin_api_failure 填充）")
     # terminal=True 表示该工具执行是一个「事务终态」：下单成功/售后创建成功/转人工成功等。
     # 触发 ContextManager.reset_domain()——清空当前域会话级状态（草稿/待确认/实体），
     # 避免旧状态污染下一轮对话（替代脆弱的字符串匹配清理，见 xiaobu-c-end-redesign.md §4.2 T2）。
@@ -241,8 +404,15 @@ class BaseTool(ABC):
 
     # 权限控制
     require_auth: bool = True
+    # 角色白名单 —— **只在未声明 required_permissions 时生效**（见 check_permission）。
+    # 声明了权限码的工具不得再声明它：那是第二份会漂移、且实际不生效的假门禁
+    # （issue #4106 F3/F4；由 tests/test_tool_permission_codes.py 静态锁定）。
     allowed_roles: list[str] = ["customer", "admin", "agent", "tenant_admin"]
-    required_permissions: list[str] = []  # 细粒度权限码（空列表 = 不限制）
+    # 细粒度权限码（**权威层**）：非空 ⇒ 由 JWT permissions claim 决定访问，
+    # 空列表 ⇒ 回落到 allowed_roles 粗筛。码取自 admin-api 权限目录
+    # （`RegistrationService.initializeDefaultRolesAndPermissions` 的 18 码），
+    # 端点对应关系取各 controller 的 `@RequirePermission`。
+    required_permissions: list[str] = []
     
     def __init__(self):
         """初始化 Tool"""
@@ -265,35 +435,51 @@ class BaseTool(ABC):
         pass
     
     def check_permission(self, context: ToolContext) -> bool:
-        """检查权限
+        """检查权限 —— 与 `[ai-chat.permission-layers]` 契约一致的两层检查。
 
-        两层检查：
-        1. 角色检查：context.role 必须在 allowed_roles 中
-        2. 细粒度权限检查（如果设置了 required_permissions）：
-           context.permissions 必须包含至少一个 required_permissions 中的权限码
+        1. **细粒度层（权威）**：声明了 `required_permissions` 的工具，由 JWT
+           `permissions` claim 决定（`*` = 全权限）。**逐工具的角色白名单在这一层不参与** ——
+           按角色码硬编码放行正是 #4106 F3/F4 的病根：`allowed_roles` 是手写清单，
+           而 admin-api 的权限目录会演进（「角色管理」还能建任意自定义角色码），
+           两者必然漂移 ⇒ 持有权限码的员工被工具判「权限不足」（假拒绝），
+           模型随后无法向用户解释任何东西。这一层唯一保留的角色判断是
+           **C 端硬闸**（`CUSTOMER_ONLY_ROLES`，两端隔离不变式，见下）。
+        2. **角色层（粗筛）**：仅在**未声明权限码**时生效 —— C 端顾客工具
+           （C 端 JWT 没有权限码，加码会让 C 端全量失效）与目录里没有对应码的
+           通用工具（如 `notification_manage`：`NotificationController` 全类无
+           `@RequirePermission`）。这一层是**真正需要**的，不是历史包袱。
 
         Args:
             context: Tool 执行上下文
 
         Returns:
             bool: 是否有权限执行
+
+        Note:
+            决策依据是 JWT 里的 `permissions` claim；生产环境里 `admin` 恒为 `["*"]`
+            （`RoleService.getUserPermissions` 特判），C 端 `customer`/`agent` 恒为空。
+            `tenant_admin` 在 admin-api 里**不存在**（无角色行、无权限映射），
+            故不再被工具层放行 —— 修掉的正是这条跨服务口径断裂。
         """
         if not self.require_auth:
             return True
 
-        # 角色检查（现有逻辑）
-        if context.role not in self.allowed_roles:
-            return False
-
-        # 细粒度权限检查（新增）
+        # 细粒度层（权威）：权限码说了算，角色白名单不参与
         if self.required_permissions:
-            # admin 通配符：permissions 中包含 "*" 表示全权限
-            if "*" in context.permissions:
-                return True
-            if not any(p in context.permissions for p in self.required_permissions):
+            # C 端硬闸（**两端隔离不变式**，不是第二套授权表）：`customer`/`agent` 永不执行
+            # 商户管理类工具。C 端 JWT 本就没有权限码（`UserIdentity.permissions` 默认空、
+            # `RoleService` 对 customer/agent 返回空集）⇒ 生产不可达，这里是纵深防御；
+            # 沿用既有单点常量 `CUSTOMER_ONLY_ROLES`，不新增任何角色清单。
+            # 既有守卫先例：tests/test_tools_base.py 的「customer + `*` 通配 → 拒绝」。
+            if context.role in CUSTOMER_ONLY_ROLES:
                 return False
+            permissions = context.permissions or []
+            if "*" in permissions:
+                return True
+            return any(p in permissions for p in self.required_permissions)
 
-        return True
+        # 角色层（粗筛）：只给「没有目录权限码」的工具用
+        return context.role in self.allowed_roles
     
     def get_schema(self) -> Dict[str, Any]:
         """获取 LangChain/OpenAI 兼容的 function schema

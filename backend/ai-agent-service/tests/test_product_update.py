@@ -29,6 +29,16 @@ AGENT_PRODUCT_UPDATE_DTO = (
 )
 
 
+#: 商户管理员 JWT 的权限码（`admin` 在 admin-api 里恒为通配 `["*"]`）。
+#: #4106 F3：工具层细粒度门禁按 JWT `permissions` claim 判定，夹具必须带上权限码。
+ADMIN_PERMISSIONS = ["*"]
+
+
+def _admin_ctx(user_id: str = "u1") -> ToolContext:
+    """商户管理员上下文（有权限改商品）"""
+    return ToolContext(tenant_id=1, user_id=user_id, role="admin", permissions=list(ADMIN_PERMISSIONS))
+
+
 @pytest.fixture
 def tool():
     return ProductUpdateTool()
@@ -38,7 +48,7 @@ class TestProductUpdateRequestField:
     @pytest.mark.asyncio
     async def test_price_sent_as_base_price(self, tool):
         """改价请求体必须用 basePrice 字段（对齐 admin-api AgentProductUpdateRequest）"""
-        ctx = ToolContext(tenant_id=1, user_id="u1", role="admin")
+        ctx = _admin_ctx()
         patched = AsyncMock(return_value={"success": True, "data": {}})
         with patch("app.tools.product_update.get_admin_api_client") as m:
             m.return_value.patch = patched
@@ -53,7 +63,7 @@ class TestProductUpdateRequestField:
     @pytest.mark.asyncio
     async def test_other_fields_untouched_when_only_price(self, tool):
         """只改价时请求体不得携带其他字段（传什么改什么）"""
-        ctx = ToolContext(tenant_id=1, user_id="u1", role="admin")
+        ctx = _admin_ctx()
         patched = AsyncMock(return_value={"success": True, "data": {}})
         with patch("app.tools.product_update.get_admin_api_client") as m:
             m.return_value.patch = patched
@@ -81,7 +91,7 @@ class TestAllowReturnRestock:
 
     @pytest.mark.asyncio
     async def test_allow_return_restock_transmitted_as_allowReturnRestock(self, tool):
-        ctx = ToolContext(tenant_id=1, user_id="u1", role="admin")
+        ctx = _admin_ctx()
         patched = AsyncMock(return_value={"success": True, "data": {}})
         with patch("app.tools.product_update.get_admin_api_client") as m:
             m.return_value.patch = patched
@@ -94,7 +104,7 @@ class TestAllowReturnRestock:
     @pytest.mark.asyncio
     async def test_allow_return_restock_false_transmitted(self, tool):
         """显式关闭（false）也须透传（null=不修改，false=明确关闭）。"""
-        ctx = ToolContext(tenant_id=1, user_id="u1", role="admin")
+        ctx = _admin_ctx()
         patched = AsyncMock(return_value={"success": True, "data": {}})
         with patch("app.tools.product_update.get_admin_api_client") as m:
             m.return_value.patch = patched
@@ -163,7 +173,7 @@ class TestStatusContractWithAdminApiDto:
     @pytest.mark.asyncio
     async def test_status_transmitted_in_request_body(self, tool):
         """execute(status=...) 必须把 status 放进 PATCH 请求体（且不额外塞字段）。"""
-        ctx = ToolContext(tenant_id=1, user_id="u1", role="admin")
+        ctx = _admin_ctx()
         patched = AsyncMock(return_value={"success": True, "data": {}})
         with patch("app.tools.product_update.get_admin_api_client") as m:
             m.return_value.patch = patched

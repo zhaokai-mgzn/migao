@@ -9,7 +9,7 @@ cancel（取消，必填原因；generated 取消联动订单回退已确认）�
 from typing import Any, Dict, Optional
 from loguru import logger
 
-from app.tools.base import BaseTool, ToolContext, ToolResult
+from app.tools.base import admin_api_failure, BaseTool, ToolContext, ToolResult
 from app.utils.http_client import get_admin_api_client
 
 
@@ -36,7 +36,9 @@ class ProcessingOrderUpdateTool(BaseTool):
         "【标注】WRITE|DESTRUCTIVE — cancel 会联动订单回退，必须二次确认"
     )
 
-    allowed_roles = ["admin", "tenant_admin", "operator"]
+    # 权限码（admin-api 目录）：加工单**写**（issue/start/complete/cancel）取写码 `processing:update`
+    # （该类端点的 `PATCH /{id}` 只挂了读码 `processing:view`；按读码放行会让只读持有者拿到写权限）。
+    required_permissions = ["processing:update"]
     read_only = False
     # 已从注册表移除（产品决策 2026-09-15，issue #3917）：agent 暂不接入加工单工具，
     # 须区分「加工项/加工单」概念并引导后台。类文件保留（tests/test_tools_processing_order_*.
@@ -136,8 +138,8 @@ class ProcessingOrderUpdateTool(BaseTool):
         if not response.get("success"):
             error_info = response.get("error", {})
             error_msg = error_info.get("message", "操作失败") if isinstance(error_info, dict) else str(error_info)
-            return ToolResult(
-                success=False, error=error_msg,
+            return admin_api_failure(response,
+                error=error_msg,
                 message=f"加工单操作失败：{error_msg}",
                 suggestion="请确认加工单号正确且当前状态允许该操作",
             )

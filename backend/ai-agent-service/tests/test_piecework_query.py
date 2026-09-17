@@ -33,10 +33,19 @@ def tool():
     return PieceworkQueryTool()
 
 
+#: 商户员工 JWT 的 `permissions` claim（#4106 F3：工具层细粒度门禁按权限码判定）。
+#: 计件端点 `/api/admin/agent/production/piecework` 的 `@RequirePermission("order:list")`
+#: （AgentProductionController 类级）⇒ 运营岗持码。
+SELLER_PERMISSIONS = ["order:list"]
+
+
 @pytest.fixture
 def seller_context():
-    """B 端商户员工（米宝）上下文"""
-    return ToolContext(tenant_id=1, user_id="agent_001", session_id="sess_pw_1", role="agent")
+    """B 端商户员工（米宝）上下文 —— 持 `order:list`（计件端点的权限码）"""
+    return ToolContext(
+        tenant_id=1, user_id="agent_001", session_id="sess_pw_1",
+        role="operator", permissions=list(SELLER_PERMISSIONS),
+    )
 
 
 @pytest.fixture
@@ -55,9 +64,14 @@ class TestMetadataContract:
         assert tool.idempotent is True
 
     def test_b_end_only_roles(self, tool):
-        """工人工资/人工成本只对商户侧开放，customer 必须不可见"""
-        assert tool.allowed_roles == ["admin", "tenant_admin", "agent"]
-        assert "customer" not in tool.allowed_roles
+        """工人工资/人工成本只对**持码的商户员工**开放，C 端必须不可见。
+
+        #4106 后判据不再是角色白名单（会与 admin-api 目录漂移），而是权限码 +
+        C 端硬闸。
+        """
+        assert tool.required_permissions == ["order:list"], "计件端点 = AgentProductionController 的 order:list"
+        customer = ToolContext(tenant_id=1, user_id="c1", session_id="s", role="customer")
+        assert tool.check_permission(customer) is False, "C 端顾客必须被拒（工人工资不对顾客开放）"
 
     def test_description_carries_trigger_prereq_counterexample(self, tool):
         desc = tool.description
@@ -181,6 +195,18 @@ class TestPermission:
         assert result.suggestion
 
     def test_seller_roles_allowed(self, tool):
-        for role in ("admin", "tenant_admin", "agent"):
-            ctx = ToolContext(tenant_id=1, user_id="u_001", session_id="s", role=role)
-            assert tool.check_permission(ctx) is True, f"{role} 应可查计件"
+        """持 `order:list` 的商户角色（含 admin 通配）应可查计件。"""
+        for role in ("admin", "operator", "customer_service", "sales", "finance"):
+            perms = ["*"] if role == "admin" else list(SELLER_PERMISSIONS)
+            ctx = ToolContext(
+                tenant_id=1, user_id="u_001", session_id="s", role=role, permissions=perms,
+            )
+            assert tool.check_permission(ctx) is True, f"{role} 持 order:list，应可查计件"
+
+    def test_role_without_the_code_is_denied(self, tool):
+        """负向：真实商户角色但不持 `order:list` ⇒ 拒绝。"""
+        ctx = ToolContext(
+            tenant_id=1, user_id="u_002", session_id="s",
+            role="product_manager", permissions=["product:list"],
+        )
+        assert tool.check_permission(ctx) is False

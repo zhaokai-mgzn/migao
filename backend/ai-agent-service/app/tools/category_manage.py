@@ -7,7 +7,7 @@ AI 智能客服系统 - 商品分类管理 Tool
 from typing import Any, Dict, Optional
 from loguru import logger
 
-from app.tools.base import BaseTool, ToolContext, ToolResult
+from app.tools.base import admin_api_failure, BaseTool, ToolContext, ToolResult
 from app.utils.http_client import get_admin_api_client
 
 
@@ -33,7 +33,9 @@ class CategoryManageTool(BaseTool):
         "每个分类的 id（长字符串如 88b6c50fbc...）直接用作 product_manage 的 category_id 参数。"
         "tree 是只读安全的。create 只需 name，无需指定父分类。【标注】tree=READONLY, create/delete=DESTRUCTIVE"
     )
-    allowed_roles = ["admin", "tenant_admin"]
+    # 权限码（admin-api 目录）：CategoryController 类级 `@RequirePermission("product:category")`。
+    # 此前写死 ["admin","tenant_admin"] ⇒ operator / product_manager 持码却被判「权限不足」（#4106 F4）。
+    required_permissions = ["product:category"]
 
     read_only = False
     destructive = True   # 可删除分类
@@ -125,8 +127,7 @@ class CategoryManageTool(BaseTool):
 
         if not response.get("success"):
             error_msg = response.get("error", {}).get("message", "查询失败")
-            return ToolResult(
-                success=False,
+            return admin_api_failure(response,
                 error=error_msg,
                 message=f"获取分类树失败：{error_msg}",
                 suggestion="请稍后重试；若持续失败，请让用户联系管理员核对分类数据",
@@ -173,8 +174,7 @@ class CategoryManageTool(BaseTool):
 
         if not response.get("success"):
             error_msg = response.get("error", {}).get("message", "创建失败")
-            return ToolResult(
-                success=False,
+            return admin_api_failure(response,
                 error=error_msg,
                 message=f"创建分类失败：{error_msg}",
                 suggestion="请先用 category_manage 的 tree 操作确认是否已有同名分类，再改用更新或换一个名称",
@@ -223,8 +223,7 @@ class CategoryManageTool(BaseTool):
 
         if not response.get("success"):
             error_msg = response.get("error", {}).get("message", "更新失败")
-            return ToolResult(
-                success=False,
+            return admin_api_failure(response,
                 error=error_msg,
                 message=f"更新分类失败：{error_msg}",
                 suggestion="请先用 category_manage 的 tree 操作确认该分类仍在，再重新执行更新",
@@ -257,8 +256,7 @@ class CategoryManageTool(BaseTool):
 
         if not response.get("success"):
             error_msg = response.get("error", {}).get("message", "删除失败")
-            return ToolResult(
-                success=False,
+            return admin_api_failure(response,
                 error=error_msg,
                 message=f"删除分类失败：{error_msg}",
                 suggestion="请先用 category_manage 的 tree 操作确认该分类下已无商品，再重新执行删除",

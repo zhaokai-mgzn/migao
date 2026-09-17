@@ -8,7 +8,7 @@ ID 解析、ORD-xxx→UUID 转换由 Java Agent 端点负责。
 from typing import Any, Dict, Optional
 from loguru import logger
 
-from app.tools.base import BaseTool, ToolContext, ToolResult
+from app.tools.base import admin_api_failure, BaseTool, ToolContext, ToolResult
 from app.utils.http_client import get_admin_api_client
 
 
@@ -26,7 +26,9 @@ class OrderManageTool(BaseTool):
         "【标注】WRITE|DESTRUCTIVE — 取消/退款前必须二次确认"
     )
 
-    allowed_roles = ["admin", "agent", "tenant_admin", "operator"]
+    # 权限码（admin-api 目录）：AgentOrderController / OrderController 类级
+    # `@RequirePermission("order:list")`（订单状态/物流/取消/备注都挂 order:list；退款单独 order:refund）。
+    required_permissions = ["order:list"]
     read_only = False
     destructive = True
     idempotent = False
@@ -147,8 +149,8 @@ class OrderManageTool(BaseTool):
         if not response.get("success"):
             error_info = response.get("error", {})
             error_msg = error_info.get("message", "操作失败") if isinstance(error_info, dict) else str(error_info)
-            return ToolResult(
-                success=False, error=error_msg,
+            return admin_api_failure(response,
+                error=error_msg,
                 message=f"订单操作失败：{error_msg}",
                 suggestion="请确认订单号/UUID 正确，或刷新订单列表获取最新的订单信息",
             )

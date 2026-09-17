@@ -13,7 +13,7 @@ AI 智能客服系统 - C 端收货地址查询 Tool（小布专用，issue #281
 from typing import Any, Dict, Optional
 from loguru import logger
 
-from app.tools.base import BaseTool, ToolContext, ToolResult
+from app.tools.base import admin_api_failure, BaseTool, ToolContext, ToolResult
 from app.utils.http_client import get_admin_api_client
 from app.utils.log_sanitizer import LogSanitizer
 
@@ -75,8 +75,7 @@ class CustomerAddressQueryTool(BaseTool):
                     f"[customer-address-query] Query rejected | tenant={context.tenant_id} "
                     f"error={error_msg}"
                 )
-                return ToolResult(
-                    success=False,
+                return admin_api_failure(response,
                     error=error_msg,
                     message="收货地址查询失败，请直接告诉我您的收货信息",
                     suggestion="直接询问顾客收货人/手机号/地址后继续下单流程",

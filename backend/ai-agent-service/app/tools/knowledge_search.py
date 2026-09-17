@@ -8,7 +8,7 @@ AI 智能客服系统 - 知识卡片检索 Tool（LLM WIKI 板块 P7，issue #30
 from typing import Any, Dict, List, Optional
 from loguru import logger
 
-from app.tools.base import BaseTool, ToolContext, ToolResult
+from app.tools.base import admin_api_failure, BaseTool, ToolContext, ToolResult
 from app.utils.http_client import get_admin_api_client
 
 
@@ -95,8 +95,7 @@ class KnowledgeSearchTool(BaseTool):
 
             if not response.get("success"):
                 error_msg = response.get("error", {}).get("message", "检索失败")
-                return ToolResult(
-                    success=False,
+                return admin_api_failure(response,
                     error=error_msg,
                     message="知识检索失败，请稍后重试",
                     suggestion="请稍后重试；若持续失败，请改用通用行业知识谨慎回答并注明是通用建议，不要伪称本店规则",

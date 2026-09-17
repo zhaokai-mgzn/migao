@@ -16,7 +16,7 @@ import re
 from typing import Any, Dict, List, Optional
 from loguru import logger
 
-from app.tools.base import BaseTool, ToolContext, ToolResult
+from app.tools.base import admin_api_failure, BaseTool, ToolContext, ToolResult
 from app.utils.http_client import get_admin_api_client
 from app.utils.redis_client import RedisClient
 
@@ -1133,8 +1133,7 @@ class OrderCreateTool(BaseTool):
 
             if not response.get("success"):
                 error_msg = response.get("error", {}).get("message", "创建失败")
-                return ToolResult(
-                    success=False,
+                return admin_api_failure(response,
                     error=error_msg,
                     message=f"创建订单失败：{error_msg}",
                     suggestion="请先用 product_detail 确认商品在架与库价、并核对数量，再重新提交下单",

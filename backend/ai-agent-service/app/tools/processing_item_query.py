@@ -17,7 +17,7 @@ import json
 from typing import Any, Dict, List, Optional
 from loguru import logger
 
-from app.tools.base import BaseTool, ToolContext, ToolResult
+from app.tools.base import admin_api_failure, BaseTool, ToolContext, ToolResult
 from app.utils.http_client import get_admin_api_client
 
 
@@ -139,8 +139,7 @@ class ProcessingItemQueryTool(BaseTool):
                 )
                 if not response.get("success"):
                     error_msg = response.get("error", {}).get("message", "查询失败")
-                    return ToolResult(
-                        success=False,
+                    return admin_api_failure(response,
                         error=error_msg,
                         message=f"查询加工项详情失败：{error_msg}",
                         suggestion="请让用户确认加工项名称或 ID 是否正确，再改用 processing_item_query 的 list 操作按名称搜索",
@@ -180,8 +179,7 @@ class ProcessingItemQueryTool(BaseTool):
 
             if not response.get("success"):
                 error_msg = response.get("error", {}).get("message", "查询失败")
-                return ToolResult(
-                    success=False,
+                return admin_api_failure(response,
                     error=error_msg,
                     message=f"查询加工项列表失败：{error_msg}",
                     suggestion="请稍后重试；若持续失败，请改为按名称关键字查询，或请用户联系管理员核对加工项配置",

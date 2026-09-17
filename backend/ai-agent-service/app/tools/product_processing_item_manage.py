@@ -8,7 +8,7 @@ AI 智能客服系统 — 商品加工项关联管理 Tool（从 product_manage 
 from typing import Any, Optional
 from loguru import logger
 
-from app.tools.base import BaseTool, ToolContext, ToolResult
+from app.tools.base import admin_api_failure, BaseTool, ToolContext, ToolResult
 from app.utils.http_client import get_admin_api_client
 
 
@@ -25,7 +25,10 @@ class ProductProcessingItemManageTool(BaseTool):
         "【前置】product_id/item_ids 支持名称/UUID/序号自动解析。不要先调 processing_item_query。"
         "【标注】WRITE|IDEMPOTENT — 幂等操作，重复执行不会出错"
     )
-    allowed_roles = ["admin", "tenant_admin"]
+    # 权限码（admin-api 目录）：加工项管理 = `processing:manage`
+    # （ProcessingItemController 类级；本工具改的是商品的加工项集合）。
+    # 此前写死 ["admin","tenant_admin"] ⇒ operator / product_manager 持码却被判「权限不足」（#4106 F4）。
+    required_permissions = ["processing:manage"]
 
     read_only = False
     requires_confirmation = True  # 审计 07 P0-L1: 高风险非 destructive 写操作需用户确认
@@ -124,8 +127,8 @@ class ProductProcessingItemManageTool(BaseTool):
         if not response.get("success"):
             error_info = response.get("error", {})
             error_msg = error_info.get("message", "操作失败") if isinstance(error_info, dict) else str(error_info)
-            return ToolResult(
-                success=False, error=error_msg,
+            return admin_api_failure(response,
+                error=error_msg,
                 message=f"加工项{action}失败：{error_msg}",
                 suggestion="请先用 product_detail 确认该商品与加工项配置，核对 item_ids 后重新提交",
             )
