@@ -237,6 +237,19 @@ class SecurityConfigTest {
     @MockBean
     private com.migao.admin.mapper.TenantApplicationMapper tenantApplicationMapper;
 
+    // 生产报工（issue #3995，V49）：新增的 Mapper / Service 同样没有 sqlSessionFactory，
+    // 必须在此 mock，否则整个上下文起不来（安全用例连坐失败）。
+    @MockBean
+    private com.migao.admin.mapper.ProductionOperationMapper productionOperationMapper;
+    @MockBean
+    private com.migao.admin.mapper.ProductionRoutingMapper productionRoutingMapper;
+    @MockBean
+    private com.migao.admin.mapper.ProcessingPositionOperationMapper processingPositionOperationMapper;
+    @MockBean
+    private com.migao.admin.mapper.ProductionWorkLogMapper productionWorkLogMapper;
+    @MockBean
+    private com.migao.admin.service.ProductionService productionService;
+
     // 智能每日经营简报（issue #3468）：Mapper / Service / ai-agent 客户端
     @MockBean
     private com.migao.admin.mapper.DailyBriefingMapper dailyBriefingMapper;
