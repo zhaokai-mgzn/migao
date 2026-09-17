@@ -30,7 +30,12 @@ from loguru import logger
 from app.config import settings
 from app.graph.state import AgentState
 from app.graph.pending_validated import extract_pending, is_pending_for, PENDING_KEY
-from app.tools.base import NON_RETRYABLE_ERROR_CODES, ToolContext, ToolResult
+from app.tools.base import (
+    NON_RETRYABLE_ERROR_CODES,
+    PERMISSION_DENIED_CODE,
+    ToolContext,
+    ToolResult,
+)
 from app.tools.registry import (
     ToolRegistry, set_tool_context, get_tool_context, set_tool_scope, get_tool_scope,
     audit_write_tool,
@@ -3112,8 +3117,12 @@ _MAX_SCOPE_CODES = 20
 def _inject_permission_scope(system_prompt: str, state: AgentState) -> str:
     """B 端（米宝）**权限范围**注入（issue #4107 / 父单 #4103 的 F8）。
 
-    让模型知道「本会话人是谁、能做什么」，从而：越权请求不尝试、权限拒绝不重试、
+    让模型知道「本会话人是谁、已开通哪些权限码」，从而：权限拒绝不重试、
     如实说明缺哪项能力并给开通路径（对应 principles.md 的权限归因规则两半）。
+
+    ⚠️ 注入的是「**已开通能力**」而不是「能力全集」（issue #4147 G6）：无权限码的工具
+    （按角色开放的那批，如 `order_query` / `product_search`）不在清单里但用户**确实能用**
+    ⇒ 文案必须明说"清单外≠无权、照常调用工具"，否则模型会对用户本身就有能力造成假拒绝。
 
     - 仅 B 端（`agent_type == "mibao"`）且权限码非空、非 admin 通配（`"*"`）时注入；
       C 端（xiaobu）/ 空权限 / 通配权限 ⇒ **原样返回同一个对象**（逐字节不变，C 端零回归）
@@ -3156,9 +3165,17 @@ def _inject_permission_scope(system_prompt: str, state: AgentState) -> str:
         )
         return (
             "【权限范围】当前会话人的角色：" + (role or "未知") + "\n"
-            "- 可用能力（仅限以下，超出即无权）：" + caps + "\n"
-            "- 超出范围的请求：不要调用工具尝试，也不要反复重试被拒绝的调用"
-            "（换参数同样不会成功，权限拒绝是该请求的终态）——必须如实告知用户其账号缺少哪项能力，"
+            "- 已开通能力（权限码）：" + caps + "\n"
+            # ⚠️ 措辞纪律（issue #4147 G6）：**不得**写成「仅限以下，超出即无权」+
+            # 「不要调用工具尝试」。权限码只覆盖**声明了 required_permissions 的工具**，
+            # 而 `order_query` / `product_search` / `knowledge_search` / `notification_manage`
+            # 等 B 端工具**只按角色开放**（没有权限码）—— 原文案会让模型把"清单里没有"
+            # 当成"没有这个能力"，对用户本身就有能力造成**新的假拒绝**（正是本单要治的
+            # 那类错误的镜像）。清单只说明"已开通哪些码"，不构成能力全集。
+            "- 清单外≠无权：部分工具按角色开放、不要求权限码 —— 清单外的请求请照常调用工具，"
+            "以工具返回的结果为准\n"
+            "- 工具**确实**返回权限拒绝时（权限拒绝是该请求的终态）：不要反复重试被拒绝的调用"
+            "（换参数同样不会成功）——必须如实告知用户其账号缺少哪项能力，"
             "并指引其联系管理员在「角色管理」或「员工管理」中开通该权限\n"
             "【权限范围结束】\n\n"
             + system_prompt
@@ -3276,6 +3293,25 @@ async def _execute_tool_safe(tool, tool_args: dict, tool_context, state: dict) -
         "missing_params": [],
     }
 
+    # ── 工具层权限拒绝：码由**共享判据**盖章（issue #4147 G2）────────────────────
+    # 病灶：工具层 `check_permission` 的拒绝从不带 `error_code`（41 处手写
+    # `ToolResult(success=False, error="权限不足")`）⇒ #4122 的非重试闸门
+    # （`error_code in NON_RETRYABLE_ERROR_CODES`）对它**恒不触发**：幂等工具仍被
+    # `_self_correct_retry` 拿去做「参数改写重放」（拿同一身份同一权限再调一次永远不可能成功）。
+    #
+    # 为什么判据在这里、而不去逐个改 41 处：① 其中 3 个文件属其它包持有，
+    # 逐点手改必然漏 —— 而漏掉的那一处就是闸门的静默缺口；② 判据是**机械的**
+    # （工具级门禁说「不」+ 它交付了失败 ⇒ 这次失败的性质就是权限拒绝），
+    # 与工具**怎么措辞**无关 —— 文案有跨端型（「该查询仅限顾客本人使用」）与
+    # 权限型（「请联系管理员获取…权限」）两种，拿文案当判据会静默失效（§19.1）。
+    # 工具自己的文案**原样保留**（跨端指引比统一文案更有用），这里只补机器可读的码。
+    # 门禁之外的拒绝点（action 级 / 归属级）不走这条判据，由 L0 静态锁
+    # （tests/test_tool_denial_semantics.py）要求它们自己走 `permission_denied(...)`。
+    _gate_check = getattr(tool, "check_permission", None)
+    # `is False` 而非 falsy：替身（MagicMock）的属性访问会自动变出 Mock，falsy 判据会把
+    # 它们当成"拒绝"（同 `validate_args` 只认 ToolResult 实例的既有取舍）。
+    _gate_denied = callable(_gate_check) and _gate_check(tool_context) is False
+
     # 写工具图片类参数被丢弃 → 不执行，返回失败 + 正确工具指引（issue #3930）：
     # 静默丢弃会制造「空字段调用 → 没有要修改的字段 → 模型外推该入口不支持图片」的误宣链。
     _drop_msg = _dropped_args_guidance(tool, _raw_args)
@@ -3386,6 +3422,19 @@ async def _execute_tool_safe(tool, tool_args: dict, tool_context, state: dict) -
     # `ToolResult` **声明的字段必须全部带进 result_dict**（issue #4013 A2：此前漏传
     # terminal/summary ⇒ 消费点 `result_dict.get("terminal")` 恒 None ⇒ reset_domain
     # 永不触发 = 死契约）。判据：tests/test_terminal_tool_and_prompt_contract.py。
+    # 工具层权限拒绝的码（issue #4147 G2，判据见上方 `_gate_denied`）：工具自己给了码
+    # （admin-api 映射点）就用它的；没给而门禁已判否 ⇒ 补 `PERMISSION_DENIED`。
+    # 只在**真的执行过**的那条出口盖章：入参契约失败（缺参/类型/枚举）不在范围内 ——
+    # 那是"要模型补参数"的失败，盖章会把补参的引导一并顶掉（真无权限时下一次调用
+    # 会拿到带码的拒绝）。
+    _error_code = getattr(result, "error_code", None)
+    if not _error_code and _gate_denied and not result.success:
+        _error_code = PERMISSION_DENIED_CODE
+        logger.info(
+            f"[tool-exec] {tool_name} 工具级权限门禁拒绝 ⇒ 交付结果补 "
+            f"error_code={PERMISSION_DENIED_CODE}（抑制自修复重放）"
+        )
+
     result_dict.update(
         success=result.success,
         data=result.data,
@@ -3395,7 +3444,7 @@ async def _execute_tool_safe(tool, tool_args: dict, tool_context, state: dict) -
         suggestion=getattr(result, "suggestion", None) or "",
         terminal=bool(getattr(result, "terminal", False)),
         # 授权类失败的判定依据（#4109）：由 `admin_api_failure` 从 admin-api 响应填充。
-        error_code=getattr(result, "error_code", None),
+        error_code=_error_code,
         missing_params=list(getattr(result, "missing_params", None) or []),
     )
     result_str = json.dumps(result_dict, ensure_ascii=False, default=str)
@@ -3408,6 +3457,26 @@ async def _execute_tool_safe(tool, tool_args: dict, tool_context, state: dict) -
                 _execute_tool_safe._cache.pop(next(iter(_execute_tool_safe._cache)))
 
     return result_str, result_dict
+
+
+def _failure_text(result_dict: dict, default: str = "执行失败") -> str:
+    """工具失败结果的**None 安全**文本取值（issue #4147 G1a）。
+
+    为什么不能用 `result_dict.get("message", result_dict.get("error", "执行失败"))`：
+    `.get` 的默认值只在**键缺席**时生效 —— 而 `_execute_tool_safe` 的出口字典**恒定包含**
+    `message` 键（`ToolResult.message` 缺省就是 `None`）⇒ 键存在、值为 `None` 时
+    该表达式返回 `None`，随后的 `error_msg[:80]` 直接
+    `TypeError: 'NoneType' object is not subscriptable`。
+
+    为什么判据必须落在**消费方**（而不是逐个工具去补 message）：任何工具都可能不给
+    `message`（`ToolResult` 把它声明为 `Optional`，含糊的失败面很宽），靠"每个工具都规矩"
+    = 下一个新工具必踩。这里的口径：**非空字符串才算给了**，否则依次回落到 `error` → 默认文案。
+    """
+    for key in ("message", "error"):
+        value = result_dict.get(key)
+        if isinstance(value, str) and value.strip():
+            return value
+    return default
 
 
 async def _self_correct_retry(
@@ -3435,7 +3504,10 @@ async def _self_correct_retry(
     if not suggestion:
         return None
 
-    error_msg = result_dict.get("message", result_dict.get("error", "执行失败"))
+    # None 安全取值（issue #4147 G1a）：`message` 键**存在但值为 None** 时，
+    # `.get(..., 默认值)` 不生效 ⇒ 下面的 `error_msg[:80]` 会抛 TypeError，
+    # 而这几行在 try **之外** ⇒ 异常穿透、整轮对话被打断（真实身份实测）。
+    error_msg = _failure_text(result_dict)
 
     # ── 授权类失败：禁止自动重试（issue #4109）───────────────────────────────
     # 权限拒绝（PERMISSION_DENIED / FORBIDDEN / 401 系列）拿**同一身份、同一权限**再调一次
@@ -3535,7 +3607,7 @@ async def _self_correct_retry(
         else:
             logger.warning(
                 f"[{skill_name}][self-correct] ❌ Auto-correct still failed: "
-                f"{corrected_result_dict.get('message', corrected_result_dict.get('error', 'unknown'))[:80]}"
+                f"{_failure_text(corrected_result_dict, 'unknown')[:80]}"
             )
             return None
 

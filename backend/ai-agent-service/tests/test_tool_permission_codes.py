@@ -295,10 +295,14 @@ class TestDeclaredCodesMatchReviewedMapping:
 
     def test_b_side_tools_without_a_catalog_code_are_registered(self):
         """无目录码的 B 端工具必须显式登记（新增即红，防「忘了加码」静默退回角色白名单）。"""
+        # `"*"` = 角色层不适用（双端都能用，issue #4147 G1b）⇒ 不是「B 端-only 工具」。
+        # 这一类由 tests/test_tool_denial_semantics.py 单独锁（只允许纯本地校验类工具声明，
+        # 当前唯一 = validate_input），登记的严格性没有丢。
         unregistered = sorted(
             t.name for t in registry_tools().values()
             if t.name not in TOOL_PERMISSION_CODES
             and "customer" not in t.allowed_roles
+            and "*" not in t.allowed_roles
             and t.name not in ROLE_GATED_B_SIDE_TOOLS
         )
         assert unregistered == [], (

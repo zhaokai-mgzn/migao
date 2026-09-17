@@ -7,7 +7,13 @@ AI 智能客服系统 - 库存管理 Tool
 from typing import Optional
 from loguru import logger
 
-from app.tools.base import admin_api_failure, BaseTool, ToolContext, ToolResult
+from app.tools.base import (
+    admin_api_failure,
+    BaseTool,
+    ToolContext,
+    ToolResult,
+    permission_denied,
+)
 from app.tools.stock_semantics import (
     LOW_STOCK_THRESHOLD,
     NO_SKU_SOURCE,
@@ -105,11 +111,9 @@ class InventoryManageTool(BaseTool):
                 suggestion="请联系管理员获取执行库存管理操作权限",
             )
         
-        # customer 角色仅允许 query 操作
+        # customer 角色仅允许 query 操作（动作级拒绝 ⇒ 走共享构造点带码，issue #4147 G2）
         if context.role == "customer" and action != "query":
-            return ToolResult(
-                success=False,
-                error="权限不足",
+            return permission_denied(
                 message="抱歉，库存调整和低库存预警功能仅限管理员和客服使用。如需查询商品库存，请告诉我商品名称或 ID。",
                 suggestion="顾客端只能查询库存，请改用 query 操作；如需调整库存请转人工或由管理员操作",
             )

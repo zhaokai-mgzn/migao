@@ -49,8 +49,14 @@ class TestBaseTool:
         assert tool.check_permission(ctx) is True
 
     def test_check_permission_denied(self):
-        from app.tools.validate_input import ValidateInputTool
-        tool = ValidateInputTool()
+        """角色/权限不匹配 ⇒ 拒绝。
+
+        ⚠️ 夹具自 2026-09-18 起换成 `EmployeeManageTool`（issue #4147 G1b）：`validate_input`
+        是**纯本地校验**、双端都要用，其角色门禁已改为「角色层不适用」（`allowed_roles=["*"]`）
+        —— 继续拿它当拒绝夹具会让这条用例失去意义（它现在对任何角色都放行）。
+        """
+        from app.tools.employee_manage import EmployeeManageTool
+        tool = EmployeeManageTool()
         ctx = ToolContext(tenant_id=1, user_id="u1", role="guest")
         assert tool.check_permission(ctx) is False
 

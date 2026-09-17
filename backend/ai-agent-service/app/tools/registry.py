@@ -13,7 +13,7 @@ from typing import Dict, List, Optional, Any, Type
 from loguru import logger
 from pydantic import BaseModel, Field, create_model
 
-from app.tools.base import BaseTool, ToolContext, ToolResult
+from app.tools.base import BaseTool, ToolContext, ToolResult, permission_denied
 from app.tools.langchain_adapter import LangChainToolAdapter
 from app.utils.http_client import AdminApiClient, get_admin_api_client
 from app.utils.log_sanitizer import LogSanitizer
@@ -413,11 +413,12 @@ class ToolRegistry:
                 suggestion="该工具名不在可用工具列表中，请从当前技能可用的工具里重新选择，不要臆造工具名",
             )
         
-        # 权限检查
+        # 权限检查 —— 拒绝走**共享构造点**（issue #4147 G2）：改前这里不带 `error_code`
+        # ⇒ `_self_correct_retry` 的非重试闸门读不到码，幂等工具被拿去做参数改写重放。
+        # 文案逐字保留（`.github/cases/registry.yml` 登记了「权限不足→Permission denied」）。
         if not tool.check_permission(context):
             logger.info(f"[tool-registry] Permission denied: {name} | tenant={context.tenant_id} role={context.role if hasattr(context, 'role') else 'unknown'}")
-            return ToolResult(
-                success=False,
+            return permission_denied(
                 error="Permission denied",
                 message="您没有权限使用该功能",
                 suggestion="当前账号无该工具权限，请改用只读查询或请用户联系管理员开通权限",

@@ -7,7 +7,13 @@ AI 智能客服系统 - C端售后查询 Tool (小布专用)
 from typing import Optional, Dict, Any
 from loguru import logger
 
-from app.tools.base import admin_api_failure, BaseTool, ToolContext, ToolResult
+from app.tools.base import (
+    admin_api_failure,
+    BaseTool,
+    ToolContext,
+    ToolResult,
+    permission_denied,
+)
 from app.utils.enum_labels import TICKET_STATUS_LABELS, attach_ticket_labels
 from app.utils.http_client import get_admin_api_client
 
@@ -278,9 +284,9 @@ class AftersaleQueryTool(BaseTool):
                 f"ticket_id={ticket_id}, response customer_id={resp_customer_id}, "
                 f"expected={context.user_id}"
             )
-            return ToolResult(
-                success=False,
-                error="权限不足",
+            # 归属级拒绝（不是本人工单）⇒ 走共享构造点带码（issue #4147 G2）：
+            # 换参数重试不可能成功，消费点必须读到不可重试码。
+            return permission_denied(
                 message="该工单不属于您，无法查看",
                 suggestion="请从您的工单列表中选择一个工单查看详情",
             )
