@@ -15,7 +15,7 @@ from typing import Any, Dict, Optional
 
 from loguru import logger
 
-from app.tools.base import BaseTool, ToolContext, ToolResult
+from app.tools.base import BaseTool, ToolContext, ToolResult, admin_api_failure
 from app.utils.http_client import get_admin_api_client
 
 # 统计月份形态：YYYY-MM（脏参数不发起调用，避免后端 500 与错误归因）
@@ -138,6 +138,10 @@ class PieceworkQueryTool(BaseTool):
             )
 
         if not isinstance(response, dict) or not response.get("success"):
+            # **必须走共享映射点**（issue #4149 G4）：这一支的 `Or` 形态曾被 L0 锁漏掉
+            # （旧判据只认 `not X.get("success")` / `is False`），于是 403 响应在这里被
+            # 就地降级成「请稍后重试」——`error_code` 丢失 ⇒ 授权失败还会被自修复重试
+            # 再来一遍（拿同一身份调一次永远不可能成功的接口）。
             error_info = response.get("error", {}) if isinstance(response, dict) else {}
             error_msg = (
                 error_info.get("message", "查询失败")
@@ -146,8 +150,8 @@ class PieceworkQueryTool(BaseTool):
             logger.info(
                 f"[piecework-query] Rejected | tenant={context.tenant_id} error={error_msg}"
             )
-            return ToolResult(
-                success=False,
+            return admin_api_failure(
+                response,
                 error=error_msg,
                 message="查询计件失败，请稍后重试",
                 suggestion=(
