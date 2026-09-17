@@ -66,6 +66,10 @@ class ProcessingOrderDetailNoProcOrderTest extends BaseControllerTest {
     @Mock
     private com.migao.admin.service.ProductionService productionService;
 
+    // issue #4116 切库：工序来源改读工序库（ProductionOperationQueryService）；本测试不生成加工单，mock 掉
+    @Mock
+    private com.migao.admin.service.ProductionOperationQueryService productionOperationQueryService;
+
     @Spy
     private ObjectMapper objectMapper = new ObjectMapper();
 
@@ -83,7 +87,7 @@ class ProcessingOrderDetailNoProcOrderTest extends BaseControllerTest {
 
         processingOrderService = new ProcessingOrderService(
                 processingOrderMapper, orderMapper, orderItemMapper, processingItemMapper, orderService, objectMapper,
-                productionService);
+                productionService, productionOperationQueryService);
         controller = new ProcessingOrderController(processingOrderService);
         mockMvc = buildMockMvc(controller);
     }

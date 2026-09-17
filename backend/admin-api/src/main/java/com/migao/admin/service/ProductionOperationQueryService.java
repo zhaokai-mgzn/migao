@@ -14,6 +14,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * 工序库 / 工艺路线**只读**消费者（issue #4116 P0-2）。
@@ -23,9 +24,14 @@ import java.util.Map;
  * 本类补上「可查询/可展示」这一半：读 V54 种子（`app/production/routing.py` 的 30 道工序
  * + 6 条 部位×工艺 路线）并按展示口径整形。</p>
  *
- * <p><b>只读边界（本包明确不做）</b>：不提供工序库的增删改端点 —— 商家自定义工序/调价/停用
- * 属配置面，会牵动「生成加工单即自动实例化」的来源切换（见 #4116 报告的「未做」节）。
- * 本类**只有** SELECT，端点也只有 GET。</p>
+ * <p><b>只读边界（本类明确不做）</b>：不提供工序库的增删改端点 —— 商家自定义工序/调价/停用
+ * 属配置面。本类**只有** SELECT，端点也只有 GET。</p>
+ *
+ * <p><b>{@link #findRouting} 是「生成加工单即实例化」的工序来源</b>（issue #4116 用户裁定「现在就切」，
+ * 2026-09-18）：工序实例的 seq/工序名/分组/单位/单价/必完标记**全部**来自本类读到的库行，
+ * 加工项目录自此刻起**不再是**工序真值源。库中查不到路线/查不到路线引用的工序时，
+ * 调用方（{@code ProcessingOrderService}）**fail-closed 中止生成**，不回退加工项目录 ——
+ * 回退等于让这次切换变成装饰性的（旧路径还在 ⇒ 库为空也没人发现）。</p>
  *
  * <p><b>为什么不复用加工单侧的 {@code getOperations}</b>：那个是「某加工单**已经实例化**的工序树」，
  * 读 {@code processing_position_operations}；本类读的是**库**（工序目录 + 路线模板），
@@ -81,25 +87,8 @@ public class ProductionOperationQueryService {
      *         unit_price, is_must_finish, is_start_marker}]}]}
      */
     public Map<String, Object> routings(Long tenantId) {
-        List<ProductionRouting> routings = productionRoutingMapper.selectList(
-                new LambdaQueryWrapper<ProductionRouting>()
-                        .eq(ProductionRouting::getTenantId, tenantId)
-                        .eq(ProductionRouting::getDeleted, 0)
-                        .eq(ProductionRouting::getStatus, "active")
-                        .orderByAsc(ProductionRouting::getCurtainType)
-                        .orderByAsc(ProductionRouting::getCraft));
-        List<ProductionRouting> rows = routings == null ? List.of() : routings;
-
-        Map<String, ProductionOperation> catalogByName = new LinkedHashMap<>();
-        List<ProductionOperation> catalogRows = productionOperationMapper.selectList(
-                new LambdaQueryWrapper<ProductionOperation>()
-                        .eq(ProductionOperation::getTenantId, tenantId)
-                        .eq(ProductionOperation::getDeleted, 0));
-        if (catalogRows != null) {
-            for (ProductionOperation op : catalogRows) {
-                catalogByName.put(op.getName(), op);
-            }
-        }
+        List<ProductionRouting> rows = activeRoutings(tenantId);
+        Map<String, ProductionOperation> catalogByName = catalogByName(tenantId);
 
         List<Map<String, Object>> items = new ArrayList<>();
         for (ProductionRouting routing : rows) {
@@ -121,6 +110,90 @@ public class ProductionOperationQueryService {
         result.put("total", items.size());
         result.put("routings", items);
         return result;
+    }
+
+    /**
+     * **实例化用**路线解析（issue #4116 切库，本方法是工序实例的唯一工序来源）。
+     *
+     * <p>与 {@link #routings}（展示口径，容错）的分工：本方法把「容错」显式化 —— 容错**只**做到
+     * 「报出缺了什么」，不做到「替调用方猜」（缺失的工序不静默换默认值，而是登记进
+     * {@code missing_operations} 让调用方 fail-closed）。</p>
+     *
+     * @return {@code {curtain_type, craft, operation_count, missing_operations, operations:[{seq,
+     *         operation, group, unit, unit_price, is_must_finish, is_start_marker}]}}；
+     *         **未命中该 部位×工艺 ⇒ null**（不抛：兜底到默认路线是调用方的策略，不是库的语义）
+     */
+    public Map<String, Object> findRouting(Long tenantId, String curtainType, String craft) {
+        ProductionRouting hit = null;
+        for (ProductionRouting routing : activeRoutings(tenantId)) {
+            if (Objects.equals(routing.getCurtainType(), curtainType)
+                    && Objects.equals(routing.getCraft(), craft)) {
+                hit = routing;
+                break;
+            }
+        }
+        if (hit == null) {
+            return null;
+        }
+
+        Map<String, ProductionOperation> catalogByName = catalogByName(tenantId);
+        List<Map<String, Object>> steps = new ArrayList<>();
+        List<String> missing = new ArrayList<>();
+        int seq = 1;
+        for (String operationName : operationNames(hit.getOperations())) {
+            ProductionOperation op = catalogByName.get(operationName);
+            if (op == null) {
+                missing.add(operationName);
+            }
+            steps.add(stepView(seq++, operationName, op));
+        }
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("curtain_type", hit.getCurtainType());
+        result.put("craft", hit.getCraft());
+        result.put("operation_count", steps.size());
+        result.put("missing_operations", missing);
+        result.put("operations", steps);
+        return result;
+    }
+
+    /**
+     * 库中现有的路线键（`部位×工艺`，展示顺序 = 部位→工艺）。
+     * 失败提示要**可行动**就必须能说出"库里有的是什么"，而不是只说"没找到"。
+     */
+    public List<String> routingKeys(Long tenantId) {
+        List<String> keys = new ArrayList<>();
+        for (ProductionRouting routing : activeRoutings(tenantId)) {
+            keys.add(routing.getCurtainType() + "×" + routing.getCraft());
+        }
+        return keys;
+    }
+
+    /** 活跃路线（tenant_id + deleted=0 + status=active；条件压在 SQL 里而非内存过滤）。 */
+    private List<ProductionRouting> activeRoutings(Long tenantId) {
+        List<ProductionRouting> routings = productionRoutingMapper.selectList(
+                new LambdaQueryWrapper<ProductionRouting>()
+                        .eq(ProductionRouting::getTenantId, tenantId)
+                        .eq(ProductionRouting::getDeleted, 0)
+                        .eq(ProductionRouting::getStatus, "active")
+                        .orderByAsc(ProductionRouting::getCurtainType)
+                        .orderByAsc(ProductionRouting::getCraft));
+        return routings == null ? List.of() : routings;
+    }
+
+    /** 工序库行按名索引（不含 status 过滤：路线引用了停用/历史工序时要能**指名报缺**，而不是当它不存在）。 */
+    private Map<String, ProductionOperation> catalogByName(Long tenantId) {
+        Map<String, ProductionOperation> byName = new LinkedHashMap<>();
+        List<ProductionOperation> rows = productionOperationMapper.selectList(
+                new LambdaQueryWrapper<ProductionOperation>()
+                        .eq(ProductionOperation::getTenantId, tenantId)
+                        .eq(ProductionOperation::getDeleted, 0));
+        if (rows != null) {
+            for (ProductionOperation op : rows) {
+                byName.put(op.getName(), op);
+            }
+        }
+        return byName;
     }
 
     /**

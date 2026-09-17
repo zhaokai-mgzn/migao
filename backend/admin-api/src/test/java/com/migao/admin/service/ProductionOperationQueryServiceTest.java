@@ -208,4 +208,103 @@ class ProductionOperationQueryServiceTest {
         verify(productionRoutingMapper, org.mockito.Mockito.never()).insert(any(ProductionRouting.class));
         verify(productionRoutingMapper, org.mockito.Mockito.never()).deleteById(any(String.class));
     }
+
+    // ── findRouting / routingKeys：实例化的工序来源（issue #4116 切库）────────
+
+    @Test
+    @DisplayName("findRouting 命中：seq 从 1 起、顺序 = 路线数组顺序，单位/单价/必完标记逐字取库")
+    void findRoutingResolvesStepsVerbatimFromLibrary() {
+        when(productionRoutingMapper.selectList(any())).thenReturn(List.of(
+                routing("rt-v54-01", "布帘", "韩褶", List.of("精裁-布", "韩褶-布", "外帘装袋"))));
+        when(productionOperationMapper.selectList(any())).thenReturn(List.of(
+                op("op-v54-01", "精裁-布", "裁剪", "布帘", "米", "0.40", false, true, 1),
+                op("op-v54-07", "韩褶-布", "车位", "布帘", "折", "0.40", false, false, 7),
+                op("op-v54-25", "外帘装袋", "后道", "外帘", "套", "1.00", true, false, 25)));
+
+        Map<String, Object> route = service().findRouting(TENANT, "布帘", "韩褶");
+
+        assertThat(route).isNotNull();
+        assertThat(route.get("curtain_type")).isEqualTo("布帘");
+        assertThat(route.get("craft")).isEqualTo("韩褶");
+        assertThat(route.get("operation_count")).isEqualTo(3);
+        assertThat((List<?>) route.get("missing_operations")).isEmpty();
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> steps = (List<Map<String, Object>>) route.get("operations");
+        assertThat(steps).extracting(s -> s.get("operation")).containsExactly("精裁-布", "韩褶-布", "外帘装袋");
+        assertThat(steps).extracting(s -> s.get("seq")).containsExactly(1, 2, 3);
+        assertThat(steps.get(1).get("unit")).isEqualTo("折");
+        assertThat((BigDecimal) steps.get(1).get("unit_price")).isEqualByComparingTo("0.40");
+        assertThat(steps.get(2).get("is_must_finish")).isEqualTo(true);
+        assertThat(steps.get(0).get("is_start_marker")).isEqualTo(true);
+    }
+
+    @Test
+    @DisplayName("findRouting 未命中：返回 null（兜底到默认路线是调用方的策略，不是库的语义）")
+    void findRoutingReturnsNullWhenAbsent() {
+        when(productionRoutingMapper.selectList(any())).thenReturn(List.of(
+                routing("rt-v54-05", "纱帘", "韩褶", List.of("精裁-纱"))));
+
+        assertThat(service().findRouting(TENANT, "帘头", "平幔")).isNull();
+    }
+
+    @Test
+    @DisplayName("findRouting 缺工序：不静默补默认值，而是指名登记进 missing_operations（由调用方 fail-closed）")
+    void findRoutingReportsMissingOperationsInsteadOfGuessing() {
+        when(productionRoutingMapper.selectList(any())).thenReturn(List.of(
+                routing("rt-x", "布帘", "韩褶", List.of("精裁-布", "幽灵工序", "外帘发货"))));
+        when(productionOperationMapper.selectList(any())).thenReturn(List.of(
+                op("op-v54-01", "精裁-布", "裁剪", "布帘", "米", "0.40", false, true, 1),
+                op("op-v54-27", "外帘发货", "后道", "外帘", "套", "1.00", false, false, 27)));
+
+        Map<String, Object> route = service().findRouting(TENANT, "布帘", "韩褶");
+
+        assertThat(route).isNotNull();
+        assertThat(String.valueOf(route.get("missing_operations"))).isEqualTo("[幽灵工序]");
+        // 序号仍按路线位次（缺工序不跳号 —— 跳号会让实例与路线错位）
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> steps = (List<Map<String, Object>>) route.get("operations");
+        assertThat(steps).extracting(s -> s.get("seq")).containsExactly(1, 2, 3);
+        assertThat(steps.get(1).get("unit")).isNull();
+        assertThat(steps.get(2).get("unit")).isEqualTo("套");
+    }
+
+    @Test
+    @DisplayName("findRouting 空路线（脏数据 / 运营清空）：operations 为空且不抛（由调用方 fail-closed）")
+    void findRoutingWithEmptyRouteIsNotAnError() {
+        when(productionRoutingMapper.selectList(any())).thenReturn(List.of(
+                routing("rt-empty", "布帘", "韩褶", List.of())));
+
+        Map<String, Object> route = service().findRouting(TENANT, "布帘", "韩褶");
+
+        assertThat(route).isNotNull();
+        assertThat(route.get("operation_count")).isEqualTo(0);
+        assertThat((List<?>) route.get("missing_operations")).isEmpty();
+    }
+
+    @Test
+    @DisplayName("routingKeys：列出库中现有路线键（部位→工艺序），失败提示据此做到可行动")
+    void routingKeysListAvailableRoutes() {
+        when(productionRoutingMapper.selectList(any())).thenReturn(List.of(
+                routing("rt-v54-01", "布帘", "韩褶", List.of("精裁-布")),
+                routing("rt-v54-02", "布帘", "打孔", List.of("精裁-布")),
+                routing("rt-v54-05", "纱帘", "韩褶", List.of("精裁-纱"))));
+
+        assertThat(service().routingKeys(TENANT)).containsExactly("布帘×韩褶", "布帘×打孔", "纱帘×韩褶");
+    }
+
+    @Test
+    @DisplayName("只读边界：findRouting / routingKeys 同样只走 SELECT")
+    void findRoutingIsReadOnly() {
+        when(productionRoutingMapper.selectList(any())).thenReturn(List.of());
+        when(productionOperationMapper.selectList(any())).thenReturn(List.of());
+
+        service().findRouting(TENANT, "布帘", "韩褶");
+        service().routingKeys(TENANT);
+
+        verify(productionOperationMapper, org.mockito.Mockito.never()).insert(any(ProductionOperation.class));
+        verify(productionOperationMapper, org.mockito.Mockito.never()).updateById(any(ProductionOperation.class));
+        verify(productionRoutingMapper, org.mockito.Mockito.never()).insert(any(ProductionRouting.class));
+        verify(productionRoutingMapper, org.mockito.Mockito.never()).updateById(any(ProductionRouting.class));
+    }
 }
