@@ -546,7 +546,7 @@ cases:
       - "应做数量=算料引擎输出（韩褶-布=折数 48、米工序=用料 12.3、套工序=1）—— 报工只确认不心算"
       - "计件 = Σ(合格数量 × 单价 × 特殊选项系数)：一分二 ×1.7；返工/报废不计件；单工序一人制（无计件人数分摊）"
       - "完工判定：必完工序（外帘装袋，打包前置）合格量满应做数量 → 订单自动生产完成"
-    skip_reason: "生产确定性核心是纯函数（app/production/），由单元测试全量覆盖（tests/test_production/），非 LLM 行为，不进入 agent-eval 冒烟（同 CH-036/037/038 惯例）"
+    skip_reason: "[backend-contract] 生产确定性核心是纯函数（app/production/），由单元测试全量覆盖（tests/test_production/），非 LLM 行为，不进入 agent-eval 冒烟（同 CH-036/037/038 惯例）"
     merge_log: "2026-09-17 新增（issue #3993）：M4-G-1 生产模块确定性核心覆盖登记，单测覆盖"
     traces:
       tests:
@@ -596,7 +596,7 @@ cases:
       - "任务卡二维码内容 = qr_token（svg title = token）；qr_token 缺失时给占位提示而不是空码"
       - "任务卡工序清单逐行渲染工序名 / 应做数量+单位 + 每行一个手工勾选位，并说明工人扫码后在小程序报工"
       - "无工序 / 无计件 / 接口失败均渲染空态或错误提示 + 重试，不白屏"
-    skip_reason: "前端渲染行为（admin-web 组件/页面），由 vitest 单测全量覆盖（tests/unit/components/{ProductionProgressTable,PieceworkTable,TaskCardPrint}.test.tsx、tests/unit/pages/processing-orders-production.test.tsx、tests/unit/lib/use-route-id.test.ts），非 LLM 行为，不进入 agent-eval 冒烟（同 PP-010 惯例）"
+    skip_reason: "[backend-contract] 前端渲染行为（admin-web 组件/页面），由 vitest 单测全量覆盖（tests/unit/components/{ProductionProgressTable,PieceworkTable,TaskCardPrint}.test.tsx、tests/unit/pages/processing-orders-production.test.tsx、tests/unit/lib/use-route-id.test.ts），非 LLM 行为，不进入 agent-eval 冒烟（同 PP-010 惯例）"
     merge_log: "2026-09-17 新增（issue #4000）：M4-H 按需单据渲染 —— 加工单生产明细页 + 可打印任务卡（含二维码）+ 计件汇总的前端覆盖登记；消费 main 已合并的生产端点（GET production/orders/{orderId}/operations、/piecework）"
     traces:
       tests:

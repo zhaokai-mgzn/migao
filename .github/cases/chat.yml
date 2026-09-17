@@ -191,8 +191,17 @@ cases:
     data_checks:
       - "创建的 name=星夜, price=299"
       - "打岔前后上下文未丢失"
+    # 自清理（#3800 / CASE-TRUST-NO-SELF-CLEAN burn-down）：本用例**自建**商品「星夜」
+    # （全库仅本条使用），重试时若不复位 ⇒ 前置与首跑不等价（同名重创/重名澄清）。
+    # `namespaces` 是"自有名"的声明（清理族按它豁免种子可解析性，#3835），
+    # 与 `pre_clean` 配对使用；判据见 .github/assertion_taxonomy.py。
+    namespaces:
+      - "product_name:星夜"
+    pre_clean:
+      - type: product_remove
+        product_keyword: "星夜"
     skip_reason: ""
-    merge_log: "eval M009 独有"
+    merge_log: "eval M009 独有；2026-09-18（skip 豁免收紧跟随）：补 namespaces[product_name:星夜] + pre_clean[product_remove 自有名] 声明自清理（清掉 CASE-TRUST-NO-SELF-CLEAN 存量违规一条，burn-down）；expectations / data_checks / user_inputs 原样未动"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_mibao_multiturn_intelligence.py"
@@ -878,7 +887,7 @@ cases:
       - "意图不明确（纯图/口语短句）时：先给出 2-4 个候选意图（找同款/识别面料/算料/查订单/建品），不直接执行写操作"
       - "候选意图用简短大白话列出，可用 interact(choice) 卡片点选"
       - "已识别字段不重复反问，不编造图片中不存在的信息"
-    skip_reason: "纯图澄清注入由 pytest 单测验证（test_graph_skills.py::TestVisionClarifyGuide，mock LLM 断言 system prompt），agent-eval runner 当前无发图能力，不进入 agent-eval 冒烟"
+    skip_reason: "[backend-contract] 纯图澄清注入由 pytest 单测验证（test_graph_skills.py::TestVisionClarifyGuide，mock LLM 断言 system prompt），agent-eval runner 当前无发图能力，不进入 agent-eval 冒烟"
     merge_log: "issue #2777 Phase 1：VISION_CLARIFY_GUIDE + base_skill 多模态注入（澄清能力强化）"
     traces:
       tests:
@@ -1028,7 +1037,7 @@ cases:
       - "customer_product/customer_general 图片段含『候选意图卡』与『不要默认直接搜相似』引导（prompt 契约测试）"
       - "顾客意图明确（『找类似的』『推荐』）→ 直接 product_search，不发卡"
       - "仅发图/意图不明 → interact(choice) 候选卡（2-4 项可点选），点选后再动作"
-    skip_reason: "图片消息由 pytest 覆盖（test_prompt_snapshots 契约断言），agent-eval runner 当前无发图能力，不进入 agent-eval 冒烟"
+    skip_reason: "[backend-contract] 图片消息由 pytest 覆盖（test_prompt_snapshots 契约断言），agent-eval runner 当前无发图能力，不进入 agent-eval 冒烟"
     merge_log: "issue #2789 Phase 2：C 端图片澄清候选引导（customer_product/customer_general 图片段升级）"
     traces:
       tests:
@@ -1093,7 +1102,7 @@ cases:
       - "连续澄清 ≥ MAX_CLARIFY_ROUNDS(2) 轮后，不再以『您想做什么』追问——改给具体示例（查订单/搜商品/算料话术）+ **继续受理的下一步**（2026-09-19 退场改造：原「转人工出口」已不存在，兜底话术改为「直接把想问的原话发我」；判据见 backend/ai-agent-service/tests/test_clarify_guard.py）"
       - "用户给出实质意图/点选澄清卡 → 澄清计数清零，正常流程恢复"
       - "存储异常降级不阻断主流程"
-    skip_reason: "轮次护栏为代码层纯逻辑，由 pytest 单测覆盖（test_clarify_guard.py 17 例含端到端序列），不进入 agent-eval 冒烟"
+    skip_reason: "[backend-contract] 轮次护栏为代码层纯逻辑，由 pytest 单测覆盖（test_clarify_guard.py 17 例含端到端序列），不进入 agent-eval 冒烟"
     merge_log: "issue #2796：澄清轮次护栏（clarify_guard.apply_clarify_guard 挂 intent_router_node）"
     traces:
       tests:
@@ -1127,7 +1136,7 @@ cases:
       - "澄清候选引用命中的真实商品（名称+价格），如『店里的雪尼尔遮光窗帘 ¥88/米』"
       - "检索无命中 → 如实说『店里暂时没搜到一样的』，不凭空编造商品名/价格"
       - "关键词提取纯函数（clarify_grounded.extract_search_keywords）由 pytest 单测覆盖"
-    skip_reason: "图片消息由 pytest 覆盖（TestVisionGroundedGuide + test_clarify_grounded），agent-eval runner 无稳定发图环境，不进入 agent-eval 冒烟"
+    skip_reason: "[backend-contract] 图片消息由 pytest 覆盖（TestVisionGroundedGuide + test_clarify_grounded），agent-eval runner 无稳定发图环境，不进入 agent-eval 冒烟"
     merge_log: "issue #2799：Phase 2c 轻量版 grounded（关键词提取纯函数 + VISION_CLARIFY_GUIDE 检索引导）"
     traces:
       tests:
@@ -1302,7 +1311,7 @@ cases:
       - "开关 SUGGESTION_PREFERENCE_ENABLED=False（默认）→ _inject_user_preferences 直接返回原 prompt（零行为变化，不调 tracker）"
       - "开启且 xiaobu 有偏好意图 → <user_preferences> 消毒块前置注入 system prompt（标签 XML 转义）+ [preference-inject] 日志"
       - "mibao 不注入 / 缺 tenant+user / 无偏好 / tracker 异常 → 原样返回不破坏主流程"
-    skip_reason: "偏好注入为纯函数接线，由 pytest 单测验证（tests/test_preference_injection.py），不进入 agent-eval 冒烟"
+    skip_reason: "[backend-contract] 偏好注入为纯函数接线，由 pytest 单测验证（tests/test_preference_injection.py），不进入 agent-eval 冒烟"
     merge_log: "2026-09-07 新增：issue #2997 闭环缺口 A 类 — 偏好读取接线（flag 门控）"
     traces:
       tests:
@@ -1361,7 +1370,7 @@ cases:
       - "切回后流结束，最终回复内容出现在该会话消息列表中"
     data_checks:
       - "前端单测验证（无需真实 LLM）：发消息→切 B→切回 A→断言占位恢复→流结束断言回复可见"
-    skip_reason: "前端 UI 状态修复，不进入 agent-eval 冒烟"
+    skip_reason: "[backend-contract] 前端 UI 状态修复，不进入 agent-eval 冒烟"
     merge_log: "issue #2901：admin-web chat store 的 isStreaming/messages 为全局单例，切会话使在途 SSE 增量写空、assistant 消息仅在流结束入库 → 切回无等待动画且回复丢失。修复：liveMessage 按会话持有在途流，selectSession 重挂占位，流结束落视图/由历史权威路径接管。truths_ref 置空：纯前端 UI 状态用例，真值库（ai-chat.*）为后端 agent 行为，无对应真值（标缺口）。"
     traces:
       tests:
@@ -1392,7 +1401,7 @@ cases:
       - "左侧会话列表对该会话显示「正在回复」等待动效（streams 指示）"
     data_checks:
       - "前端单测验证（无需真实 LLM）：A 流挂起→切 B→B 发送→双流增量→A 完成→B 完成→两会话终态可见"
-    skip_reason: "前端 UI 状态能力，不进入 agent-eval 冒烟"
+    skip_reason: "[backend-contract] 前端 UI 状态能力，不进入 agent-eval 冒烟"
     merge_log: "issue #2906：#2901 修复（liveMessage 单缓冲）仍假设全局单并发流。重构为 messageStore（每会话快照）+ streams（每会话在途流）+ withView 投影（messages/isStreaming 兼容）：sendMessage 只挡当前会话、SSE 按归属流写入、stopStreaming 只停当前、轮换迁移流与快照、SessionList 显示每会话等待动效。truths_ref 置空：纯前端状态用例，真值库为后端 agent 行为，无对应真值（标缺口）。"
     traces:
       tests:
@@ -1425,7 +1434,7 @@ cases:
       - "历史回放（getSessionMessages 透传 interactive_answered）后已答卡片保持只读不可点"
       - "翻页等同答复：#3037 后端 __PAGE__ 路径已 mark_last_interactive_answered，前端翻页后旧页卡片不再可交互"
       - "下单入口按钮防连点（issue #3040 收尾）：ProductFormList 去下单 / QuotationCard 确认下单 / ProductCard 下单按钮点击后本地锁（第二次点击不触发 onOrder/onConfirm/onInteract），按钮置灰（--locked）"
-    skip_reason: "纯前端行为由 jest 单测（confirm-card/choice-card/form-card/quotation-card/product-card/product-form-list/chatStore）验证，非 LLM 行为，不进入 agent-eval 冒烟"
+    skip_reason: "[backend-contract] 纯前端行为由 jest 单测（confirm-card/choice-card/form-card/quotation-card/product-card/product-form-list/chatStore）验证，非 LLM 行为，不进入 agent-eval 冒烟"
     merge_log: "2026-09-08 新增：C 端交互组件提交锁与只读变体（issue #3038）；2026-09-08 补：下单入口按钮防连点锁（issue #3040）"
     traces:
       tests:
@@ -1462,7 +1471,7 @@ cases:
       - "frontend/mini-app 与 frontend/bmini-app 的 getSessionMessages 映射返回 message 包含 interactive（原样）与 interactiveAnswered（由 interactive_answered 转换）"
       - "loadMessages 落库后交互组件不消失：未答交互历史回放后仍可点击"
       - "detectPendingInteraction 能力对齐：历史回放后未答交互可被识别（模型透传 interactive 字段）"
-    skip_reason: "纯前端映射由 jest 单测（chatService/chatStore）验证，非 LLM 行为，不进入 agent-eval 冒烟"
+    skip_reason: "[backend-contract] 纯前端映射由 jest 单测（chatService/chatStore）验证，非 LLM 行为，不进入 agent-eval 冒烟"
     merge_log: "2026-09-08 新增：C 端交互组件历史回放透传（issue #3038）"
     traces:
       tests:
@@ -1493,7 +1502,7 @@ cases:
       - "frontend/mini-app 与 frontend/bmini-app 的 MessageBubble 渲染交互组件前检查 isStreaming（流式中不渲染交互组件，避免闪烁与误点）"
       - "MessageBubble 文本内容剥离 <interact>…</interact> 与 ```tool_call 伪代码块（与 admin-web cleanContent 对齐）"
       - "正常路径（SSE interactive 事件）不回退：choice/confirm/form 仍渲染为对应交互组件"
-    skip_reason: "纯前端渲染由 jest 单测（message-bubble）验证，非 LLM 行为，不进入 agent-eval 冒烟"
+    skip_reason: "[backend-contract] 纯前端渲染由 jest 单测（message-bubble）验证，非 LLM 行为，不进入 agent-eval 冒烟"
     merge_log: "2026-09-08 新增：C 端交互组件流式门控 + XML 兜底剥离（issue #3038）"
     traces:
       tests:
@@ -1729,7 +1738,7 @@ cases:
       - "默认三层合成：客户记忆 > 商家配置 > 行业标准（布帘默认定型/纱帘默认不定型、≤2.2m 单开/>2.2m 双开）"
       - "矛盾拦截：4.6m 单开→建议双开、折数不可整除自动调整、倍数<1.5 拒绝、打孔不按折数"
       - "每轮追问 ≤3 项；超过 3 轮转复尺/人工"
-    skip_reason: "澄清清单引擎是确定性纯函数（app/clarification/curtain_checklist.py），由单元测试全量覆盖（backend/ai-agent-service/tests/test_clarification/test_curtain_checklist.py，18 项），非 LLM 行为，不进入 agent-eval 冒烟（同 CH-036 惯例）"
+    skip_reason: "[backend-contract] 澄清清单引擎是确定性纯函数（app/clarification/curtain_checklist.py），由单元测试全量覆盖（backend/ai-agent-service/tests/test_clarification/test_curtain_checklist.py，18 项），非 LLM 行为，不进入 agent-eval 冒烟（同 CH-036 惯例）"
     merge_log: "2026-09-17 新增（issue #3986）：M3-E 窗帘下单澄清清单引擎覆盖登记，单测覆盖。2026-09-18（issue #4120）**证据链修复**：原 traces.tests 指向不存在的 tests/test_curtain_checklist.py，且测试文件名为 curtain_checklist.py（不匹配 python_files = test_*.py）⇒ **永不被 pytest 收集**、18 个 def test_ 一个都没跑过 ⇒ 本条用例的机器证据为**零**而没有任何东西会变红。修法：文件改名 test_curtain_checklist.py（pytest tests/ -q 实测 18 passed）+ traces.tests 指向真实路径；并新增 L0 守卫 tests/unit_ci_workflows/test_eval_evidence_chain.py 锁死「traces 引用必须存在」与「以单测覆盖为由 skip 的文件必须真被收集」（同批修掉存量 11 条幽灵 traces.tests + 7 条幽灵 traces.ci）；断言未动"
     traces:
       tests:
@@ -1769,7 +1778,7 @@ cases:
       - "倍数 < 1.5 拒绝报价（行业美学下限红线）"
       - "开数不可整除自动取最近可行折数并告警（33 折双开 → 34 折）"
       - "按货号-色号汇总用料（2698-11 跨部位合计 28.0 米）—— 采购/套裁视图"
-    skip_reason: "算料引擎是确定性纯计算（curtain_calc），由单元测试全量覆盖（test_curtain_calc.py），非 LLM 行为，不进入 agent-eval 冒烟（同 UI 类用例惯例）"
+    skip_reason: "[backend-contract] 算料引擎是确定性纯计算（curtain_calc），由单元测试全量覆盖（test_curtain_calc.py），非 LLM 行为，不进入 agent-eval 冒烟（同 UI 类用例惯例）"
     merge_log: "2026-09-17 新增（issue #3982）：M2-C 算料引擎折数法/档位/红线/汇总的覆盖登记，单测覆盖"
     traces:
       tests:
@@ -1806,7 +1815,7 @@ cases:
       - "客户自报折数/用料：pleat_count + source=customer_quoted 反算校验（48 折双开 → 12.3 米）"
       - "开数余量：单开 +0.2 / 对开四开 +0.3；对开折数必须偶数"
       - "顾客自报 ≠ 成交价：最终档位由商家确认，来源标记供对账（M3-F 商家裁定）"
-    skip_reason: "报价协商内核是确定性纯计算（curtain_calc 折数法/档位），由单测覆盖，非 LLM 行为，不进入 agent-eval 冒烟（同 CH-036/037 惯例）"
+    skip_reason: "[backend-contract] 报价协商内核是确定性纯计算（curtain_calc 折数法/档位），由单测覆盖，非 LLM 行为，不进入 agent-eval 冒烟（同 CH-036/037 惯例）"
     merge_log: "2026-09-17 新增（issue #3990）：M3-F 报价协商确定性内核覆盖登记，单测覆盖"
     traces:
       tests:

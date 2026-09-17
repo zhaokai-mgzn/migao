@@ -46,6 +46,15 @@
   会被 diff 看见的**动作，与仓里其它基线同一信任模型。
 - **`eval_case_filter` 之外的其它剔除路径**：本文件只判"写法与账本"，不判 runner 是否
   真的用 `skip_reason` 过滤（那是 runner 的行为，由 runner 侧测试承担）。
+- **生成物账本里看不到 `skip_issue` / `skip_expires`**：`render_cases.py` 只渲染
+  `skip_reason` 与 `traces` 之外的少量字段 ⇒ casebook md / `eval_cases.py` 里**没有**
+  这两个追踪字段（`migao-dev-flow` §18.5「账本里看不出来的字段 = 缺陷的盲区」）。
+  本判据直接读 `.github/cases/*.yml`，不受该盲区影响；账本侧的补齐属 `render_cases.py`
+  的所有权（该文件有在飞分支），**本 PR 未做**，如实登记。
+- **同一用例块里重复声明 `skip_reason`**：轻量装载器（`yaml_light`）是"后键覆盖"，
+  故**最后一个**声明才是真值（实测存量仅 `OR-031` 一块有此形态，其前半段 `merge_log/traces/
+  pre_clean/skip_reason` 被后半段静默覆盖）。本判据读**装载后的 dict**，与
+  `eval_case_filter` / runner 的运行期真值**同源**；重复声明本身的清理不属本判据。
 """
 from __future__ import annotations
 
@@ -337,12 +346,22 @@ class TestLiveLibrary:
         assert covered == set(SKIP_CATEGORIES)
 
     def test_pending_entries_are_recorded_with_what_is_missing(self):
-        """pending 不是"免死金牌"：每条都要写清**缺什么**（否则就是无信息豁免）。"""
+        """pending 不是"免死金牌"：每条都要写清**缺什么**，且类别要么判定、要么**显式**记未定。
+
+        `undecided: true` 是**一等状态**（不是沉默）：判不准的存量必须自报"判不准 + 为什么"，
+        否则 pending 就成了"不写类别也能豁免"的后门。
+        """
         baseline = load_baseline()
         for cid, rec in baseline["pending_classification"].items():
             assert isinstance(rec, dict), cid
             assert str(rec.get("missing") or "").strip(), f"{cid} 未登记缺什么"
-            assert str(rec.get("category") or "").strip(), f"{cid} 未登记（判定的）类别"
+            cat = str(rec.get("category") or "").strip()
+            if rec.get("undecided") is True:
+                assert not cat, f"{cid} 标了 undecided 却又写了类别 {cat!r}（自相矛盾）"
+                continue
+            assert cat in SKIP_CATEGORIES, (
+                f"{cid} 的类别 {cat!r} 既不在判据常量表里，也没标 `undecided: true`"
+            )
 
 
 # ══════════════════════════════════════════════════════════════════════════════

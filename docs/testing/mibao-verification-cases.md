@@ -137,7 +137,7 @@
 数据: AgentResponse 默认 type=text、tool_calls=None、metadata=None；type 枚举 text/tool_call/tool_result/suggestions/error
 数据: _extract_msg_content 移除 <think>...</think>（含多行），content 为 list 时仅拼接 type==text 的 text 块
 数据: AgentContext.to_dict 返回 6 字段；to_tool_context 透传 tenant_id/user_id/session_id/role
-跳过: dataclass/纯函数由 pytest 单测验证（tests/test_customer_service_agent.py），非 LLM 行为，不进入 agent-eval 冒烟
+跳过: [backend-contract] dataclass/纯函数由 pytest 单测验证（tests/test_customer_service_agent.py），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: ai-chat.agent-response, ai-chat.extract-msg-content, ai-chat.agent-context
 溯源: 2026-08-25 新增：ai-agent-service agents-customer_service_agent 覆盖率补全（issue #2429） ｜ tags: agents, data_contract, message_extraction
@@ -148,7 +148,7 @@
 期望: direct_reply
 数据: __init__ 调 get_agent_config+build_agent_graph；tool_registry=None→create_default_registry()，非 None→用传入实例
 数据: _convert_history user 普通→HumanMessage；mixed+images→多模态 content list；assistant→AIMessage；其他 role 忽略
-跳过: 组装/纯函数由 pytest 单测验证（tests/test_customer_service_agent.py），非 LLM 行为，不进入 agent-eval 冒烟
+跳过: [backend-contract] 组装/纯函数由 pytest 单测验证（tests/test_customer_service_agent.py），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: ai-chat.base-agent-init, ai-chat.convert-history
 溯源: 2026-08-25 新增：ai-agent-service agents-customer_service_agent 覆盖率补全（issue #2429） ｜ tags: agents, history, multimodal
@@ -160,7 +160,7 @@
 数据: plan state 存在 skill_name 非空→pending_interact_skill=skill_name；否则读 get_pending_skill
 数据: SessionMemory 异常→warning 且 pending_interact_skill=''，不向上抛
 数据: 返回完整 18 键 state dict（messages/agent_type/tenant_id/user_id/user_name/session_id/role/.../pending_interact_skill）
-跳过: 异步状态构造由 pytest 单测验证（tests/test_customer_service_agent.py），非 LLM 行为，不进入 agent-eval 冒烟
+跳过: [backend-contract] 异步状态构造由 pytest 单测验证（tests/test_customer_service_agent.py），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: ai-chat.initial-state-plan, ai-chat.initial-state-18keys
 溯源: 2026-08-25 新增：ai-agent-service agents-customer_service_agent 覆盖率补全（issue #2429） ｜ tags: agents, state, plan_routing
@@ -171,7 +171,7 @@
 期望: direct_reply
 数据: graph.ainvoke 返回 final_answer→AgentResponse(type=text, content=final_answer)
 数据: 抛异常→AgentResponse(type=error, content 含'稍后重试')
-跳过: 异步对话由 pytest 单测验证（tests/test_customer_service_agent.py），非 LLM 行为，不进入 agent-eval 冒烟
+跳过: [backend-contract] 异步对话由 pytest 单测验证（tests/test_customer_service_agent.py），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: ai-chat.achat
 溯源: 2026-08-25 新增：ai-agent-service agents-customer_service_agent 覆盖率补全（issue #2429） ｜ tags: agents, chat, error_fallback
@@ -183,7 +183,7 @@
 数据: AIMessage.tool_calls 先 yield tool_calls 前文本，再逐条 yield type=tool_call
 数据: ToolMessage 经 json.loads 解析（失败降级 {data: str(content)}），图执行完统一 yield type=tool_result
 数据: final_answer 有新内容→yield type=text；suggestions 非空→yield type=suggestions；异常→yield type=error（含异常类名）
-跳过: 异步流式对话由 pytest 单测验证（tests/test_customer_service_agent.py），非 LLM 行为，不进入 agent-eval 冒烟
+跳过: [backend-contract] 异步流式对话由 pytest 单测验证（tests/test_customer_service_agent.py），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: ai-chat.astream-tool-calls, ai-chat.astream-tool-result, ai-chat.astream-text-suggestion
 溯源: 2026-08-25 新增：ai-agent-service agents-customer_service_agent 覆盖率补全（issue #2429） ｜ tags: agents, streaming, tool_result
@@ -195,7 +195,7 @@
 数据: get_greeting 优先 get_direct_reply('greeting') 回退 config.greeting
 数据: get_agent 同 agent_type 二次调用返回同一实例，不同 agent_type 返回不同实例；reset_agent 后重建并调 reset_agent_intents_cache
 数据: CustomerServiceAgent→xiaobu / WorkAssistantAgent→mibao 别名映射
-跳过: 工厂/单例/别名由 pytest 单测验证（tests/test_customer_service_agent.py），非 LLM 行为，不进入 agent-eval 冒烟
+跳过: [backend-contract] 工厂/单例/别名由 pytest 单测验证（tests/test_customer_service_agent.py），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: ai-chat.agent-factory
 溯源: 2026-08-25 新增：ai-agent-service agents-customer_service_agent 覆盖率补全（issue #2429） ｜ tags: agents, factory, alias
@@ -209,7 +209,7 @@
 数据: close/reopen/delete/history 对不存在会话返回 404 SESSION_NOT_FOUND
 数据: 跨租户或非所有者访问返回 403 PERMISSION_DENIED
 数据: close 幂等（已 closed 仍 success 且不调 close_session）；reopen 仅 closed→active
-跳过: 会话端点由 pytest 单测验证（tests/test_chat.py），非 LLM 行为，不进入 agent-eval 冒烟
+跳过: [backend-contract] 会话端点由 pytest 单测验证（tests/test_chat.py），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: api.session-lifecycle, api.session-validation, api.format-datetime
 溯源: 2026-08-25 新增：ai-agent-service api 覆盖率补全（issue #2428） ｜ tags: api, session_lifecycle, tenant_isolation
@@ -221,7 +221,7 @@
 数据: _should_send_card 仅 success 且对应字段非空（products/product/tracking_number/order/orders/items）才 True
 数据: _detect_card_type 映射 product_search→product_list 等四类
 数据: _convert_history_to_agent_format 剥离 assistant <think>、透传 content_type、metadata 含 images 时过滤非法 URL
-跳过: 纯函数由 pytest 单测验证（tests/test_chat.py），非 LLM 行为，不进入 agent-eval 冒烟
+跳过: [backend-contract] 纯函数由 pytest 单测验证（tests/test_chat.py），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: api.card-detection, api.convert-history
 溯源: 2026-08-25 新增：ai-agent-service api 覆盖率补全（issue #2428） ｜ tags: api, card, history, multimodal
@@ -233,7 +233,7 @@
 数据: 白名单工具（order_query 等）直接执行并返回 tool_call/tool_result
 数据: 非白名单工具 → SSE error '不支持该操作的分页查询'
 数据: split/json 解析失败 → SSE error '翻页请求格式错误'
-跳过: 分页协议由 pytest 单测验证（tests/test_chat.py），非 LLM 行为，不进入 agent-eval 冒烟
+跳过: [backend-contract] 分页协议由 pytest 单测验证（tests/test_chat.py），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: api.page-protocol
 溯源: 2026-08-25 新增：ai-agent-service api 覆盖率补全（issue #2428） ｜ tags: api, page_protocol, guard
@@ -244,7 +244,7 @@
 期望: direct_reply
 数据: >3 张 → SSE error；URL 非 https:// 或 /api/files 开头 → SSE error
 数据: images 存在时 content_type=mixed 并逐图构造 image_url（_rewrite_image_url CDN→OSS）
-跳过: 图片校验由 pytest 单测验证（tests/test_chat.py），非 LLM 行为，不进入 agent-eval 冒烟
+跳过: [backend-contract] 图片校验由 pytest 单测验证（tests/test_chat.py），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: api.image-validation
 溯源: 2026-08-25 新增：ai-agent-service api 覆盖率补全（issue #2428） ｜ tags: api, image_guard, multimodal
@@ -256,7 +256,7 @@
 数据: loading→text/tool_call/tool_result/card/interactive→done 序列；空文本降级兜底文案
 数据: suggestion-feedback 返回 {ok:true}；_infer_intent_from_text 关键词按具体词优先匹配，空/无匹配返回 ''/general
 数据: _get_user_nickname Redis 命中直返、未命中查 DB、异常静默返回 None
-跳过: SSE 流/助手函数由 pytest 单测验证（tests/test_chat.py），非 LLM 行为，不进入 agent-eval 冒烟
+跳过: [backend-contract] SSE 流/助手函数由 pytest 单测验证（tests/test_chat.py），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: api.agent-stream-sse, api.suggestion-intent, api.user-nickname
 溯源: 2026-08-25 新增：ai-agent-service api 覆盖率补全（issue #2428） ｜ tags: api, sse_stream, suggestion
@@ -268,7 +268,7 @@
 数据: 10 种事件统一 'event: <type>\\ndata: <json>\\n\\n'，heartbeat 为 ': heartbeat\\n\\n'
 数据: error 无 code 时 data 仅含 message；interactive payload 含 type + 展开 data
 数据: SSEStreamBuilder 链式 add_*、build() 拼接、__iter__ 迭代
-跳过: SSE 帧格式由 pytest 单测验证（tests/test_sse.py），非 LLM 行为，不进入 agent-eval 冒烟
+跳过: [backend-contract] SSE 帧格式由 pytest 单测验证（tests/test_sse.py），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: api.sse-frame, api.sse-error-interactive
 溯源: 2026-08-25 新增：ai-agent-service api 覆盖率补全（issue #2428） ｜ tags: api, sse_format
@@ -279,7 +279,7 @@
 期望: direct_reply
 数据: 工具不存在 404 TOOL_NOT_FOUND；非 read_only 工具 403 WRITE_TOOL_FORBIDDEN
 数据: 只读工具成功返回 {success,data,error,message}；执行异常 500 INTERNAL_ERROR
-跳过: 内部接口守卫由 pytest 单测验证（tests/test_internal.py），非 LLM 行为，不进入 agent-eval 冒烟
+跳过: [backend-contract] 内部接口守卫由 pytest 单测验证（tests/test_internal.py），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: api.tool-execute-guard
 溯源: 2026-08-25 新增：ai-agent-service api 覆盖率补全（issue #2428） ｜ tags: api, internal, tool_guard
@@ -291,7 +291,7 @@
 数据: >3 张 400 TOO_MANY_FILES、空文件 400 NO_FILE；MIME/扩展名白名单拒绝；>5MB 400 FILE_TOO_LARGE
 数据: magic number 嗅探与声明类型不符 400 FILE_CONTENT_MISMATCH
 数据: 按 tenant_id 隔离目录 chat/{tenant_id} 转发；HTTPStatusError→502 UPLOAD_PROXY_ERROR、RequestError→502 UPLOAD_SERVICE_UNAVAILABLE
-跳过: 上传校验/代理由 pytest 单测验证（tests/test_upload.py），非 LLM 行为，不进入 agent-eval 冒烟
+跳过: [backend-contract] 上传校验/代理由 pytest 单测验证（tests/test_upload.py），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: api.upload-validation, api.upload-magic-proxy
 溯源: 2026-08-25 新增：ai-agent-service api 覆盖率补全（issue #2428） ｜ tags: api, upload, file_guard
@@ -313,7 +313,7 @@
 数据: V35 迁移创建 knowledge_cards：tenant_id/title/category/industry/source_type/source_ref/question/answer/keywords/apply_products/variables/status(draft|pending_review|published|archived)/version/review_note/created_by/reviewed_by/reviewed_at 全字段
 数据: KnowledgeCard 实体字段与列名一一映射（MyBatis-Plus），Mapper 继承 BaseMapper（租户隔离由拦截器注入）
 数据: docs/sql/schema.sql 全量 schema 同步包含 knowledge_cards（防文档-代码漂移 P0-3）
-跳过: 数据模型由 Mapper/迁移契约测试验证（KnowledgeCardMapperTest/KnowledgeWikiMigrationTest），非 LLM 行为，不进入 agent-eval 冒烟
+跳过: [backend-contract] 数据模型由 Mapper/迁移契约测试验证（KnowledgeCardMapperTest/KnowledgeWikiMigrationTest），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 溯源: 2026-09-08 新增（issue #3051 企业级 LLM WIKI 板块 P1）：RAG 文档模型升级为知识卡片模型，知识单元从 chunk 变为结构化知识卡片 ｜ tags: api, knowledge, wiki, data-model
 
@@ -323,7 +323,7 @@
 数据: V35 迁移创建 knowledge_candidates：tenant_id/source_type(conversation|document|product|config)/source_ref/suggested_title/suggested_answer/suggested_category/suggested_keywords/confidence/evidence/status(pending|adopted|edited|rejected)/status_note/reviewed_by/reviewed_at 全字段
 数据: KnowledgeCandidate 实体字段与列名一一映射（MyBatis-Plus），Mapper 继承 BaseMapper
 数据: docs/sql/schema.sql 全量 schema 同步包含 knowledge_candidates（防文档-代码漂移 P0-3）
-跳过: 数据模型由 Mapper/迁移契约测试验证（KnowledgeCandidateMapperTest/KnowledgeWikiMigrationTest），非 LLM 行为，不进入 agent-eval 冒烟
+跳过: [backend-contract] 数据模型由 Mapper/迁移契约测试验证（KnowledgeCandidateMapperTest/KnowledgeWikiMigrationTest），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 溯源: 2026-09-08 新增（issue #3051 企业级 LLM WIKI 板块 P1）：AI 只产生候选、发布权在商家，提炼流统一进待采纳队列 ｜ tags: api, knowledge, wiki, data-model
 
@@ -335,7 +335,7 @@
 数据: POST /{id}/publish：draft/pending_review → published（记录 reviewedAt）；archived 可重新发布回 published（归档非终点，#3108）
 数据: POST /{id}/archive：published → archived；DELETE /{id} 逻辑删除；全部按 tenant 隔离
 数据: GET /api/admin/knowledge/entries 分页：keyword/category/sourceType/status 筛选，updated_at 倒序
-跳过: 知识卡片 CRUD/状态机由 MockMvc + Service 单测验证（KnowledgeCardControllerTest/KnowledgeCardServiceTest），非 LLM 行为，不进入 agent-eval 冒烟
+跳过: [backend-contract] 知识卡片 CRUD/状态机由 MockMvc + Service 单测验证（KnowledgeCardControllerTest/KnowledgeCardServiceTest），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 溯源: 2026-09-08 新增（issue #3051 LLM WIKI 板块 P2）：知识卡片模型 CRUD + 状态机闭环（draft→published→archived 每状态有 API 动作）；2026-09-09 #3108 修订：archived 可重新发布回 published（归档非终点） ｜ tags: api, knowledge, wiki, entries
 
@@ -345,7 +345,7 @@
 数据: GET /api/admin/knowledge/entries/search?query=&productId=&category= 仅返回本租户 status=published 知识卡片（draft/pending_review/archived 不返回）
 数据: 关键词命中 title/keywords/question/answer（租户内 LIKE，.or() 必须嵌套在 eq 内防跨租户泄露——审计 07 P1-6）
 数据: 跨租户知识卡片在任何查询下不可见（显式 eq tenant_id，复测 P1-6 回归）
-跳过: 知识卡片检索由 MockMvc + Service 单测验证（KnowledgeCardControllerTest/KnowledgeCardServiceTest），非 LLM 行为，不进入 agent-eval 冒烟
+跳过: [backend-contract] 知识卡片检索由 MockMvc + Service 单测验证（KnowledgeCardControllerTest/KnowledgeCardServiceTest），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 溯源: 2026-09-08 新增（issue #3051 LLM WIKI 板块 P2）：检索链路 = 结构化过滤 + 关键词匹配，不引入向量库；含 P1-6 租户隔离回归 ｜ tags: api, knowledge, wiki, search
 
@@ -356,7 +356,7 @@
 数据: POST /api/admin/knowledge/templates/{templateId}/apply 将模板知识卡片复制到本租户：sourceType=template、sourceRef=templateId、status=published
 数据: 按 (tenant_id, title) 去重：重复标题跳过不重复插入，返回 {created, skipped} 统计
 数据: 套用跨租户无影响：仅当前租户可见（租户隔离拦截器）
-跳过: 模板套用由 MockMvc + Service 单测验证（KnowledgeTemplateControllerTest/KnowledgeTemplateServiceTest），非 LLM 行为，不进入 agent-eval 冒烟
+跳过: [backend-contract] 模板套用由 MockMvc + Service 单测验证（KnowledgeTemplateControllerTest/KnowledgeTemplateServiceTest），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 溯源: 2026-09-08 新增（issue #3051 LLM WIKI 板块 P3）：行业模板体系——种子 Markdown 结构化迁移为 knowledge-templates/curtain/template.json（32 条），模板=平台资产，一键套用复制为租户词条 ｜ tags: api, knowledge, wiki, template
 
@@ -367,7 +367,7 @@
 数据: POST /{id}/adopt 采纳：候选 → 知识卡片（status=published，sourceType/sourceRef 继承候选来源），候选置 adopted；立即可被检索
 数据: POST /{id}/adopt-edited 编辑后采纳：人工修订标题/回答覆盖（标题回答必填），候选置 edited
 数据: POST /{id}/reject 拒绝：候选置 rejected + status_note 记录原因，不产生卡片；跨租户一律 404
-跳过: 队列读写路径由 MockMvc + Service 单测验证（KnowledgeCandidateControllerTest/KnowledgeCandidateServiceTest），非 LLM 行为，不进入 agent-eval 冒烟
+跳过: [backend-contract] 队列读写路径由 MockMvc + Service 单测验证（KnowledgeCandidateControllerTest/KnowledgeCandidateServiceTest），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 溯源: 2026-09-08 新增（issue #3051 LLM WIKI 板块 P5）：待确认队列闭环——不重复 knowledge_sync_history 零读写事故，读写路径齐全；AI 只产生候选，发布权在商家 ｜ tags: api, knowledge, wiki, candidates
 
@@ -380,7 +380,7 @@
 数据: POST /api/admin/knowledge/distill/conversations?hours=24 保留（管理端对账入口，语义同自动触发：仅人工会话），返回 {sessions, candidates, created, skipped}
 数据: ai-agent 内部 POST /internal/knowledge/distill（Service Token）：会话文本 → LLM 提炼 JSON 候选数组（title/answer/category/keywords/confidence/evidence），解析失败/异常降级返回空候选（不阻断）
 数据: 候选写入 knowledge_candidates：sourceType=conversation、sourceRef=会话ID、status=pending；同名知识卡片或同名待确认候选已存在 → 跳过（去重）；单会话上限 5 条、单条 200 字截断
-跳过: 提炼逻辑由 ai-agent 单测（test_knowledge_distill.py）+ admin-api Service 测试（KnowledgeDistillServiceTest/KnowledgeDistillControllerTest）验证，LLM 行为 mock，不进入 agent-eval 冒烟
+跳过: [backend-contract] 提炼逻辑由 ai-agent 单测（test_knowledge_distill.py）+ admin-api Service 测试（KnowledgeDistillServiceTest/KnowledgeDistillControllerTest）验证，LLM 行为 mock，不进入 agent-eval 冒烟
 ```
 溯源: 2026-09-08 新增（issue #3051 LLM WIKI 板块 P5b）：闭环三检索-会话飞轮——人工客服会话是 SME 唯一稳定知识原料；2026-09-09 更新（issue #3090）：范围收窄为人工会话（employeeId 非空）+ 会话结束自动异步提炼 + 防重复检查，移除手动触发 ｜ tags: api, knowledge, wiki, distill
 
@@ -391,7 +391,7 @@
 数据: 候选写入 knowledge_candidates：sourceType=document、sourceRef=文档标题、status=pending；同名卡片/待确认候选已存在 → 跳过
 数据: 文档内容 <50 字 → 422 中文提示；超长内容截断至 8000 字；提炼失败降级空候选
 数据: 原文仅作 evidence 保留，不参与运行时检索（文档→提炼，非文档→切块检索）
-跳过: 文档提炼复用 KnowledgeDistillService/Controller 单测（已扩展文档用例），非 LLM 行为，不进入 agent-eval 冒烟
+跳过: [backend-contract] 文档提炼复用 KnowledgeDistillService/Controller 单测（已扩展文档用例），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 溯源: 2026-09-08 新增（issue #3051 LLM WIKI 板块 P6）：L4 文档提炼——文档是 SME 的补充知识源，提炼为候选后由商家确认，与会话提炼共用待确认队列闭环 ｜ tags: api, knowledge, wiki, distill, document
 
@@ -403,7 +403,7 @@
 数据: knowledge_search 调 GET /api/admin/knowledge/cards/search（query/category），命中返回 ≤3 条卡片（title/answer≤500 字/category/sourceType），hit=true
 数据: 未命中 hit=false → LLM 通用知识兜底 + 通用建议免责；检索接口不可用 → 降级同兜底（不阻断回答）
 数据: query 必填（空拒绝）；权限不足拒绝；租户隔离由 admin-api 强制（工具侧无跨租户入口）
-跳过: 工具行为由 ai-agent 单测验证（test_tools_knowledge_search.py + test_customer_knowledge_simplified.py），LLM 行为 mock，不进入 agent-eval 冒烟
+跳过: [backend-contract] 工具行为由 ai-agent 单测验证（test_tools_knowledge_search.py + test_customer_knowledge_simplified.py），LLM 行为 mock，不进入 agent-eval 冒烟
 ```
 溯源: 2026-09-08 新增（issue #3051 LLM WIKI 板块 P7）：Agent 检索链路——词条检索（结构化+关键词，无向量库）替代 RAG，两级策略落地（卡片优先→通用兜底） ｜ tags: api, knowledge, wiki, tool, agent
 
@@ -416,7 +416,7 @@
 数据: DashScope 未识别到语音内容（静音）→ 400「未识别到语音内容，请靠近麦克风重新录音」
 数据: ASR 上游不可用 → 503「语音识别服务暂时不可用，请稍后重试」
 数据: 正常音频 → 200：text/language/duration_ms 齐全
-跳过: 函数级容错由 ai-agent 单测（test_asr.py TestTranscribeAudioFriendlyErrors）验证，非 LLM 行为，不进入 agent-eval 冒烟
+跳过: [backend-contract] 函数级容错由 ai-agent 单测（test_asr.py TestTranscribeAudioFriendlyErrors）验证，非 LLM 行为，不进入 agent-eval 冒烟
 ```
 溯源: 2026-09-07 新增：#2984 语音空录音体验优化（生产实证：无声音停止 → 空/极小 webm → 后端裸 500 → 前端 Failed to fetch） ｜ tags: asr, voice, error-handling
 
@@ -429,7 +429,7 @@
 数据: 首次登录成功返回 accessToken + user（identityType=bmini）
 数据: user_identities 新增记录：identityType=bmini_app + appId=B端appid + openid + userId=员工
 数据: 签发的 JWT 含 roles + permissions（与 loginBySms 同源，工具级鉴权可用）
-跳过: 纯后端单测契约（AuthService.bminiLogin），非 LLM 行为，不进入 agent-eval 冒烟
+跳过: [backend-contract] 纯后端单测契约（AuthService.bminiLogin），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: auth-sms.bypass
 溯源: issue #2977 B 端手机版登录设计新增 ｜ tags: bmini, login, bind
@@ -440,7 +440,7 @@
 期望: direct_reply
 数据: 已有绑定时不调用 getPhoneNumber（无需 phoneCode）
 数据: 返回同一员工账号的 accessToken + user
-跳过: 纯后端单测契约（AuthService.bminiLogin），非 LLM 行为，不进入 agent-eval 冒烟
+跳过: [backend-contract] 纯后端单测契约（AuthService.bminiLogin），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: auth-sms.bypass
 溯源: issue #2977 B 端手机版登录设计新增 ｜ tags: bmini, login, rebind
@@ -452,7 +452,7 @@
 数据: 业务错误：手机号未匹配员工账号（不得建号、不得返回 token）
 数据: 不向 users / user_identities 写入任何新记录
 数据: 仅匹配到 customer 角色账号时同样拒绝（员工专属门禁）
-跳过: 纯后端单测契约（AuthService.bminiLogin），非 LLM 行为，不进入 agent-eval 冒烟
+跳过: [backend-contract] 纯后端单测契约（AuthService.bminiLogin），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: auth-sms.bypass
 溯源: issue #2977 B 端手机版登录设计新增 ｜ tags: bmini, login, defense
@@ -464,7 +464,7 @@
 数据: 非 skipAuth 请求头含 Authorization: Bearer <token>
 数据: 401 响应清除本地 Token 并跳转登录页
 数据: timeout/fail 类错误按指数退避重试（MAX_RETRIES 次）
-跳过: 纯前端单元测试（bmini-app tests/request.test.ts），非 LLM 行为，不进入 agent-eval 冒烟
+跳过: [backend-contract] 纯前端单元测试（bmini-app tests/request.test.ts），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: auth-sms.bypass
 溯源: issue #2977 B 端手机版基建（复制自 mini-app） ｜ tags: bmini, request
@@ -476,7 +476,7 @@
 数据: bminiLoginAction 成功 → isLoggedIn=true + token/user 落 storage
 数据: logout 清空 token/user/isLoggedIn（含 storage 持久化清理）
 数据: initialize 有效 token 恢复登录态；过期 token 自动 logout
-跳过: 纯前端单元测试（bmini-app tests/store-auth.test.ts），非 LLM 行为，不进入 agent-eval 冒烟
+跳过: [backend-contract] 纯前端单元测试（bmini-app tests/store-auth.test.ts），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: auth-sms.bypass
 溯源: issue #2977 B 端手机版基建（复制自 mini-app） ｜ tags: bmini, store, auth
@@ -488,7 +488,7 @@
 数据: 二维码容错解析 order_id：裸单号 / migao://production/<id> / 带 query 的 URL 三种形态可解析，非法输入返回 null 且不发请求
 数据: 报工请求体逐字为冻结契约字段（worker_id/worker_name/qty/qualified_qty/work_type=normal），qty 默认=该工序应做数量
 数据: 报工失败（success=false）展示后端 message 且不清空工序列表；order_completed=true → 页面显示「✅ 订单生产完成」
-跳过: 纯前端单元测试（bmini-app tests/production-page.test.tsx + production-qr.test.ts），非 LLM 行为，不进入 agent-eval 冒烟
+跳过: [backend-contract] 纯前端单元测试（bmini-app tests/production-page.test.tsx + production-qr.test.ts），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: frontend-fix.no-api-change
 溯源: 2026-09-17 新增（issue #3997 M4-G-3）：消费 M4-G-2 冻结契约 GET/POST /api/admin/production/orders/{orderId}/operations[/{operationId}/report]；truths_ref 用 frontend-fix.no-api-change（本包不改后端 API；生产/扫码域暂无专属真值 key） ｜ tags: bmini, production, qr-report
@@ -579,9 +579,10 @@
 期望: product_manage(action=create)
 数据: 创建的 name=星夜, price=299
 数据: 打岔前后上下文未丢失
+清理: product_remove(product_keyword=星夜)
 ```
 真值: ai-chat.context-memory, ai-chat.escape-hatch
-溯源: eval M009 独有 ｜ tags: multi_turn, interruption, context_persistence, adversarial
+溯源: eval M009 独有；2026-09-18（skip 豁免收紧跟随）：补 namespaces[product_name:星夜] + pre_clean[product_remove 自有名] 声明自清理（清掉 CASE-TRUST-NO-SELF-CLEAN 存量违规一条，burn-down）；expectations / data_checks / user_inputs 原样未动 ｜ tags: multi_turn, interruption, context_persistence, adversarial
 
 ### CH-006. 对抗性 - 10 轮密集对话后精确操作 🔴
 ```
@@ -788,7 +789,7 @@
 数据: 意图不明确（纯图/口语短句）时：先给出 2-4 个候选意图（找同款/识别面料/算料/查订单/建品），不直接执行写操作
 数据: 候选意图用简短大白话列出，可用 interact(choice) 卡片点选
 数据: 已识别字段不重复反问，不编造图片中不存在的信息
-跳过: 纯图澄清注入由 pytest 单测验证（test_graph_skills.py::TestVisionClarifyGuide，mock LLM 断言 system prompt），agent-eval runner 当前无发图能力，不进入 agent-eval 冒烟
+跳过: [backend-contract] 纯图澄清注入由 pytest 单测验证（test_graph_skills.py::TestVisionClarifyGuide，mock LLM 断言 system prompt），agent-eval runner 当前无发图能力，不进入 agent-eval 冒烟
 ```
 真值: ai-chat.route-actions
 溯源: issue #2777 Phase 1：VISION_CLARIFY_GUIDE + base_skill 多模态注入（澄清能力强化） ｜ tags: clarification, multimodal, image
@@ -820,7 +821,7 @@
 数据: customer_product/customer_general 图片段含『候选意图卡』与『不要默认直接搜相似』引导（prompt 契约测试）
 数据: 顾客意图明确（『找类似的』『推荐』）→ 直接 product_search，不发卡
 数据: 仅发图/意图不明 → interact(choice) 候选卡（2-4 项可点选），点选后再动作
-跳过: 图片消息由 pytest 覆盖（test_prompt_snapshots 契约断言），agent-eval runner 当前无发图能力，不进入 agent-eval 冒烟
+跳过: [backend-contract] 图片消息由 pytest 覆盖（test_prompt_snapshots 契约断言），agent-eval runner 当前无发图能力，不进入 agent-eval 冒烟
 ```
 真值: ai-chat.route-actions
 溯源: issue #2789 Phase 2：C 端图片澄清候选引导（customer_product/customer_general 图片段升级） ｜ tags: clarification, multimodal, image
@@ -848,7 +849,7 @@
 数据: 连续澄清 ≥ MAX_CLARIFY_ROUNDS(2) 轮后，不再以『您想做什么』追问——改给具体示例（查订单/搜商品/算料话术）+ **继续受理的下一步**（2026-09-19 退场改造：原「转人工出口」已不存在，兜底话术改为「直接把想问的原话发我」；判据见 backend/ai-agent-service/tests/test_clarify_guard.py）
 数据: 用户给出实质意图/点选澄清卡 → 澄清计数清零，正常流程恢复
 数据: 存储异常降级不阻断主流程
-跳过: 轮次护栏为代码层纯逻辑，由 pytest 单测覆盖（test_clarify_guard.py 17 例含端到端序列），不进入 agent-eval 冒烟
+跳过: [backend-contract] 轮次护栏为代码层纯逻辑，由 pytest 单测覆盖（test_clarify_guard.py 17 例含端到端序列），不进入 agent-eval 冒烟
 ```
 真值: ai-chat.route-actions
 溯源: issue #2796：澄清轮次护栏（clarify_guard.apply_clarify_guard 挂 intent_router_node） ｜ tags: clarification, round_guard
@@ -861,7 +862,7 @@
 数据: 澄清候选引用命中的真实商品（名称+价格），如『店里的雪尼尔遮光窗帘 ¥88/米』
 数据: 检索无命中 → 如实说『店里暂时没搜到一样的』，不凭空编造商品名/价格
 数据: 关键词提取纯函数（clarify_grounded.extract_search_keywords）由 pytest 单测覆盖
-跳过: 图片消息由 pytest 覆盖（TestVisionGroundedGuide + test_clarify_grounded），agent-eval runner 无稳定发图环境，不进入 agent-eval 冒烟
+跳过: [backend-contract] 图片消息由 pytest 覆盖（TestVisionGroundedGuide + test_clarify_grounded），agent-eval runner 无稳定发图环境，不进入 agent-eval 冒烟
 ```
 真值: ai-chat.route-actions
 溯源: issue #2799：Phase 2c 轻量版 grounded（关键词提取纯函数 + VISION_CLARIFY_GUIDE 检索引导） ｜ tags: clarification, multimodal, image, grounded
@@ -915,7 +916,7 @@
 数据: 开关 SUGGESTION_PREFERENCE_ENABLED=False（默认）→ _inject_user_preferences 直接返回原 prompt（零行为变化，不调 tracker）
 数据: 开启且 xiaobu 有偏好意图 → <user_preferences> 消毒块前置注入 system prompt（标签 XML 转义）+ [preference-inject] 日志
 数据: mibao 不注入 / 缺 tenant+user / 无偏好 / tracker 异常 → 原样返回不破坏主流程
-跳过: 偏好注入为纯函数接线，由 pytest 单测验证（tests/test_preference_injection.py），不进入 agent-eval 冒烟
+跳过: [backend-contract] 偏好注入为纯函数接线，由 pytest 单测验证（tests/test_preference_injection.py），不进入 agent-eval 冒烟
 ```
 真值: misc.followup-generate-dynamic
 溯源: 2026-09-07 新增：issue #2997 闭环缺口 A 类 — 偏好读取接线（flag 门控） ｜ tags: suggestions, xiaobu, personalization, preference
@@ -939,7 +940,7 @@
 期望: 切回原会话时在途 AI 占位（isStreaming）恢复，等待动画重新可见（前端 store 单测断言）
 期望: 切回后流结束，最终回复内容出现在该会话消息列表中
 数据: 前端单测验证（无需真实 LLM）：发消息→切 B→切回 A→断言占位恢复→流结束断言回复可见
-跳过: 前端 UI 状态修复，不进入 agent-eval 冒烟
+跳过: [backend-contract] 前端 UI 状态修复，不进入 agent-eval 冒烟
 ```
 真值: ⚠️ 缺口（见对应模板 ⚠️ 注释）
 溯源: issue #2901：admin-web chat store 的 isStreaming/messages 为全局单例，切会话使在途 SSE 增量写空、assistant 消息仅在流结束入库 → 切回无等待动画且回复丢失。修复：liveMessage 按会话持有在途流，selectSession 重挂占位，流结束落视图/由历史权威路径接管。truths_ref 置空：纯前端 UI 状态用例，真值库（ai-chat.*）为后端 agent 行为，无对应真值（标缺口）。 ｜ tags: streaming, sse, multi_session, frontend
@@ -953,7 +954,7 @@
 期望: stopStreaming 只停当前会话的流，另一会话流不受影响
 期望: 左侧会话列表对该会话显示「正在回复」等待动效（streams 指示）
 数据: 前端单测验证（无需真实 LLM）：A 流挂起→切 B→B 发送→双流增量→A 完成→B 完成→两会话终态可见
-跳过: 前端 UI 状态能力，不进入 agent-eval 冒烟
+跳过: [backend-contract] 前端 UI 状态能力，不进入 agent-eval 冒烟
 ```
 真值: ⚠️ 缺口（见对应模板 ⚠️ 注释）
 溯源: issue #2906：#2901 修复（liveMessage 单缓冲）仍假设全局单并发流。重构为 messageStore（每会话快照）+ streams（每会话在途流）+ withView 投影（messages/isStreaming 兼容）：sendMessage 只挡当前会话、SSE 按归属流写入、stopStreaming 只停当前、轮换迁移流与快照、SessionList 显示每会话等待动效。truths_ref 置空：纯前端状态用例，真值库为后端 agent 行为，无对应真值（标缺口）。 ｜ tags: streaming, sse, multi_session, concurrency, frontend
@@ -967,7 +968,7 @@
 数据: 历史回放（getSessionMessages 透传 interactive_answered）后已答卡片保持只读不可点
 数据: 翻页等同答复：#3037 后端 __PAGE__ 路径已 mark_last_interactive_answered，前端翻页后旧页卡片不再可交互
 数据: 下单入口按钮防连点（issue #3040 收尾）：ProductFormList 去下单 / QuotationCard 确认下单 / ProductCard 下单按钮点击后本地锁（第二次点击不触发 onOrder/onConfirm/onInteract），按钮置灰（--locked）
-跳过: 纯前端行为由 jest 单测（confirm-card/choice-card/form-card/quotation-card/product-card/product-form-list/chatStore）验证，非 LLM 行为，不进入 agent-eval 冒烟
+跳过: [backend-contract] 纯前端行为由 jest 单测（confirm-card/choice-card/form-card/quotation-card/product-card/product-form-list/chatStore）验证，非 LLM 行为，不进入 agent-eval 冒烟
 ```
 溯源: 2026-09-08 新增：C 端交互组件提交锁与只读变体（issue #3038）；2026-09-08 补：下单入口按钮防连点锁（issue #3040） ｜ tags: interactive, submit-lock, customer-end, freeze
 
@@ -978,7 +979,7 @@
 数据: frontend/mini-app 与 frontend/bmini-app 的 getSessionMessages 映射返回 message 包含 interactive（原样）与 interactiveAnswered（由 interactive_answered 转换）
 数据: loadMessages 落库后交互组件不消失：未答交互历史回放后仍可点击
 数据: detectPendingInteraction 能力对齐：历史回放后未答交互可被识别（模型透传 interactive 字段）
-跳过: 纯前端映射由 jest 单测（chatService/chatStore）验证，非 LLM 行为，不进入 agent-eval 冒烟
+跳过: [backend-contract] 纯前端映射由 jest 单测（chatService/chatStore）验证，非 LLM 行为，不进入 agent-eval 冒烟
 ```
 溯源: 2026-09-08 新增：C 端交互组件历史回放透传（issue #3038） ｜ tags: interactive, history, persistence, customer-end, freeze
 
@@ -989,7 +990,7 @@
 数据: frontend/mini-app 与 frontend/bmini-app 的 MessageBubble 渲染交互组件前检查 isStreaming（流式中不渲染交互组件，避免闪烁与误点）
 数据: MessageBubble 文本内容剥离 <interact>…</interact> 与 ```tool_call 伪代码块（与 admin-web cleanContent 对齐）
 数据: 正常路径（SSE interactive 事件）不回退：choice/confirm/form 仍渲染为对应交互组件
-跳过: 纯前端渲染由 jest 单测（message-bubble）验证，非 LLM 行为，不进入 agent-eval 冒烟
+跳过: [backend-contract] 纯前端渲染由 jest 单测（message-bubble）验证，非 LLM 行为，不进入 agent-eval 冒烟
 ```
 溯源: 2026-09-08 新增：C 端交互组件流式门控 + XML 兜底剥离（issue #3038） ｜ tags: interactive, streaming, sanitize, customer-end, freeze
 
@@ -1055,7 +1056,7 @@
 数据: 默认三层合成：客户记忆 > 商家配置 > 行业标准（布帘默认定型/纱帘默认不定型、≤2.2m 单开/>2.2m 双开）
 数据: 矛盾拦截：4.6m 单开→建议双开、折数不可整除自动调整、倍数<1.5 拒绝、打孔不按折数
 数据: 每轮追问 ≤3 项；超过 3 轮转复尺/人工
-跳过: 澄清清单引擎是确定性纯函数（app/clarification/curtain_checklist.py），由单元测试全量覆盖（backend/ai-agent-service/tests/test_clarification/test_curtain_checklist.py，18 项），非 LLM 行为，不进入 agent-eval 冒烟（同 CH-036 惯例）
+跳过: [backend-contract] 澄清清单引擎是确定性纯函数（app/clarification/curtain_checklist.py），由单元测试全量覆盖（backend/ai-agent-service/tests/test_clarification/test_curtain_checklist.py，18 项），非 LLM 行为，不进入 agent-eval 冒烟（同 CH-036 惯例）
 ```
 真值: ai-chat.intent-domains
 溯源: 2026-09-17 新增（issue #3986）：M3-E 窗帘下单澄清清单引擎覆盖登记，单测覆盖。2026-09-18（issue #4120）**证据链修复**：原 traces.tests 指向不存在的 tests/test_curtain_checklist.py，且测试文件名为 curtain_checklist.py（不匹配 python_files = test_*.py）⇒ **永不被 pytest 收集**、18 个 def test_ 一个都没跑过 ⇒ 本条用例的机器证据为**零**而没有任何东西会变红。修法：文件改名 test_curtain_checklist.py（pytest tests/ -q 实测 18 passed）+ traces.tests 指向真实路径；并新增 L0 守卫 tests/unit_ci_workflows/test_eval_evidence_chain.py 锁死「traces 引用必须存在」与「以单测覆盖为由 skip 的文件必须真被收集」（同批修掉存量 11 条幽灵 traces.tests + 7 条幽灵 traces.ci）；断言未动 ｜ tags: xiaobu, clarification, curtain
@@ -1068,7 +1069,7 @@
 数据: 倍数 < 1.5 拒绝报价（行业美学下限红线）
 数据: 开数不可整除自动取最近可行折数并告警（33 折双开 → 34 折）
 数据: 按货号-色号汇总用料（2698-11 跨部位合计 28.0 米）—— 采购/套裁视图
-跳过: 算料引擎是确定性纯计算（curtain_calc），由单元测试全量覆盖（test_curtain_calc.py），非 LLM 行为，不进入 agent-eval 冒烟（同 UI 类用例惯例）
+跳过: [backend-contract] 算料引擎是确定性纯计算（curtain_calc），由单元测试全量覆盖（test_curtain_calc.py），非 LLM 行为，不进入 agent-eval 冒烟（同 UI 类用例惯例）
 ```
 真值: ai-chat.intent-tool-map
 溯源: 2026-09-17 新增（issue #3982）：M2-C 算料引擎折数法/档位/红线/汇总的覆盖登记，单测覆盖 ｜ tags: xiaobu, quote, curtain-calc
@@ -1081,7 +1082,7 @@
 数据: 客户自报折数/用料：pleat_count + source=customer_quoted 反算校验（48 折双开 → 12.3 米）
 数据: 开数余量：单开 +0.2 / 对开四开 +0.3；对开折数必须偶数
 数据: 顾客自报 ≠ 成交价：最终档位由商家确认，来源标记供对账（M3-F 商家裁定）
-跳过: 报价协商内核是确定性纯计算（curtain_calc 折数法/档位），由单测覆盖，非 LLM 行为，不进入 agent-eval 冒烟（同 CH-036/037 惯例）
+跳过: [backend-contract] 报价协商内核是确定性纯计算（curtain_calc 折数法/档位），由单测覆盖，非 LLM 行为，不进入 agent-eval 冒烟（同 CH-036/037 惯例）
 ```
 真值: ai-chat.intent-tool-map
 溯源: 2026-09-17 新增（issue #3990）：M3-F 报价协商确定性内核覆盖登记，单测覆盖 ｜ tags: xiaobu, quote, negotiation
@@ -1330,7 +1331,7 @@
 数据: 销售额趋势/迷你图使用真实 amount 数据，无 23.8 假乘数
 数据: 经营数据 4 卡自洽：客单价 = 今日销售额 ÷ 今日订单数
 数据: 涨跌语义色：上涨=绿色（好事）、下跌=红色（需关注）
-跳过: UI 页面改版：由 vitest 单测 + Playwright 多视口 E2E + 页面验收（page_accept）验证，不进入 agent-eval 冒烟
+跳过: [backend-contract] UI 页面改版：由 vitest 单测 + Playwright 多视口 E2E + 页面验收（page_accept）验证，不进入 agent-eval 冒烟
 ```
 真值: dashboard-ui.tokens, dashboard-ui.insight-bar, dashboard-ui.no-truncate, dashboard-ui.axis-sampling, dashboard-ui.status-chips, dashboard-ui.no-overflow
 溯源: 2026-08-25 新增：#2532 经营看板织物质感改版（样板页）；2026-08-31 更新：PD 精简改版（洞察条一句话解读 + 客单价卡 + 绿涨红跌 + 修复 23.8 假数据） ｜ tags: dashboard, ui-redesign, visual
@@ -1344,7 +1345,7 @@
 数据: 返回按 productId 聚合的销量排行（rank/productName/salesQty/salesAmount），ToolResult.data 为 dict 契约（list 响应包裹为 items）
 数据: 摘要含榜首商品名（如「本月销量排行: N个商品，榜首「星空全遮光窗帘」」）
 数据: 权限：admin/agent/tenant_admin/operator 可查；customer 拒绝（不越权）
-跳过: 非 LLM 行为：转发实现与权限由 ai-agent 单测验证（test_tools_dashboard_stats.py），不进入 agent-eval 冒烟
+跳过: [backend-contract] 非 LLM 行为：转发实现与权限由 ai-agent 单测验证（test_tools_dashboard_stats.py），不进入 agent-eval 冒烟
 ```
 真值: ai-chat.permission-layers
 溯源: 2026-09-02 新增：POC 演示审查 E 项 — 米宝问数「哪个花色卖得最好」无工具支撑（dashboard_stats 无 TopN）；按订单数据实际粒度实现商品维度排行（order_items 无颜色字段，花色排行需 schema 变更后置） ｜ tags: dashboard, ranking, product
@@ -1357,7 +1358,7 @@
 数据: 排行表头列名「环比」+ title 标注周期口径（较上一统计周期），不标注「较昨日」；「成交量」列 title 标注近7天，与今日订单数时间口径显式区分
 数据: 修复后生产谱号：米白色遮光窗帘 356件/▲187.1% 的虚假涨跌不再出现（356 件全部来自 pending 测试单）
 数据: #2989 幽灵行治理：selectProductRanking/selectPrevPeriodQuantities 排除 product_id 为 NULL/空的明细，不聚合展示不存在的商品（生产实证曾出现「遮光窗帘」54 件无 productId 的假排行行）
-跳过: SQL 口径由 admin-api 单测（OrderItemMapperTest）文本断言验证；UI 文案由 vitest（dashboard.test.tsx）验证；不进入 agent-eval 冒烟
+跳过: [backend-contract] SQL 口径由 admin-api 单测（OrderItemMapperTest）文本断言验证；UI 文案由 vitest（dashboard.test.tsx）验证；不进入 agent-eval 冒烟
 ```
 真值: dashboard-ui.ranking-caliber
 溯源: 2026-09-07 新增：#2984 经营看板排行数据自洽治理 — 生产实证今日订单 0 但排行显示 356 件+▲187.1%（实为近7天 pending 测试单累计 × 7天环比，被 UI「日涨/较昨日」标注误导）；2026-09-07 补：#2989 幽灵商品行治理（product_id 为 NULL 明细不进排行） ｜ tags: dashboard, ranking, ui, data-quality
@@ -1368,7 +1369,7 @@
 数据: tenants.briefing_enabled 默认 false；开关关闭时 generateForTenant 直接返回 null 且 LLM 调用数为 0（熔断）
 数据: 更新配置开启瞬间立即生成当日简报；关闭后调度跳过该租户（generateDueTenants 内部拦截），已生成历史保留但入口隐藏
 数据: 仅 admin（system:manage）可改开关；变更写操作日志（audit_logs：action=update, resource_type=briefing_config，含开关状态）
-跳过: 开关熔断由 admin-api 单测验证（DailyBriefingServiceTest$SwitchBreaker + BriefingControllerTest），非 LLM 行为，不进入 agent-eval 冒烟
+跳过: [backend-contract] 开关熔断由 admin-api 单测验证（DailyBriefingServiceTest$SwitchBreaker + BriefingControllerTest），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 溯源: 2026-09-14 新增（issue #3468）：智能每日经营简报 MVP — 企业开关即熔断（数据安全红线 3） ｜ tags: briefing, toggle, security
 
@@ -1378,7 +1379,7 @@
 数据: LLM 输出每条目必须带 metrics 引用（key+value），key 不在聚合快照或 value 与快照不一致 → 条目丢弃（不展示编造数字）
 数据: 全部条目被丢弃 → verify_status=failed，前端展示安全提示而非假数据；部分丢弃 → partial
 数据: LLM 失败/超时 → 落 failed 记录，不 fallback 昨日数据冒充今日
-跳过: 数字回填校验由 admin-api 单测验证（DailyBriefingServiceTest$VerifyAndFilter）+ ai-agent 单测（test_briefing_generator.py），非 LLM 行为，不进入 agent-eval 冒烟
+跳过: [backend-contract] 数字回填校验由 admin-api 单测验证（DailyBriefingServiceTest$VerifyAndFilter）+ ai-agent 单测（test_briefing_generator.py），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 溯源: 2026-09-14 新增（issue #3468）：智能每日经营简报 MVP — 数字回填校验层（数据安全红线 4） ｜ tags: briefing, llm-verify, security
 
@@ -1388,7 +1389,7 @@
 数据: 聚合快照只含数字指标 + 脱敏事实（订单数/工单数），不含客户手机号/姓名/地址/会话原文（快照 JSON 断言无 PII 字段）
 数据: daily_briefings 表含 tenant_id + RLS 策略 tenant_isolation_daily_briefings（fail-closed 兜底；应用层 TenantLineInnerInterceptor 注入 tenant_id 为主，RLS 为纵深防御）
 数据: 简报展示层脱敏别名「客户A/B」，点击查看真名复用客户详情 RBAC（customers:view），无权限角色点击不可见真名
-跳过: PII 隔离由 admin-api 单测（DailyBriefingServiceTest$Aggregation）+ migration 契约验证；RLS 由 V44 迁移/SchemaMigrationTest 验证，非 LLM 行为，不进入 agent-eval 冒烟
+跳过: [backend-contract] PII 隔离由 admin-api 单测（DailyBriefingServiceTest$Aggregation）+ migration 契约验证；RLS 由 V44 迁移/SchemaMigrationTest 验证，非 LLM 行为，不进入 agent-eval 冒烟
 ```
 溯源: 2026-09-14 新增（issue #3468）：智能每日经营简报 MVP — 数据安全红线 1/2（PII 不进 prompt + RLS 租户隔离） ｜ tags: briefing, privacy, security
 
@@ -1946,7 +1947,7 @@
 期望: direct_reply
 数据: _parse_extraction_result 纯 JSON 数组直接 json.loads 返回；带说明文字时 re 提取 [...] 再解析；非 JSON/非 list → 返回 []
 数据: extract_memories_from_turn 在 user_message<4 且 assistant_reply<20 时直接返回 [] 且不调 LLM
-跳过: 纯函数由 pytest 单测验证（tests/test_memory_extractor.py），非 LLM 行为，不进入 agent-eval 冒烟
+跳过: [backend-contract] 纯函数由 pytest 单测验证（tests/test_memory_extractor.py），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: misc.parse-extraction-result, misc.extract-short-turn
 溯源: 2026-08-25 新增：ai-agent-service misc-part2 覆盖率补全（issue #2424） ｜ tags: memory, extractor, parse
@@ -1957,7 +1958,7 @@
 期望: direct_reply
 数据: extract_memories_from_turn prompt 截断 500 字符；LLM ainvoke 后逐条补 context（已有 context 不覆盖）；LLM 异常 → warning 返回 []
 数据: extract_and_save 无记忆返回 0；有记忆 batch_upsert 返回保存条数；batch_upsert 异常 → error 返回 0
-跳过: 依赖注入 mock 的 async 方法由 pytest 单测验证（tests/test_memory_extractor.py），非 LLM 行为，不进入 agent-eval 冒烟
+跳过: [backend-contract] 依赖注入 mock 的 async 方法由 pytest 单测验证（tests/test_memory_extractor.py），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: misc.extract-llm-flow, misc.extract-and-save
 溯源: 2026-08-25 新增：ai-agent-service misc-part2 覆盖率补全（issue #2424） ｜ tags: memory, extractor, save
@@ -1968,7 +1969,7 @@
 期望: direct_reply
 数据: _extract_text None→''、str 原样、list 仅拼接 type=='text' 的 text 块（空格 join）、其他类型 str(content)
 数据: _build_classifier_prompt agent_intents=None 用全部意图；给定列表确保 general 兜底追加；未知意图 desc 回退 intent 名；消歧规则只展示当前意图相关
-跳过: 纯函数由 pytest 单测验证（tests/test_intent_classifier.py），非 LLM 行为，不进入 agent-eval 冒烟
+跳过: [backend-contract] 纯函数由 pytest 单测验证（tests/test_intent_classifier.py），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: misc.classifier-extract-text, misc.classifier-build-prompt
 溯源: 2026-08-25 新增：ai-agent-service misc-part2 覆盖率补全（issue #2424） ｜ tags: intent, classifier, prompt
@@ -1979,7 +1980,7 @@
 期望: direct_reply
 数据: _parse_response 空 content→general(0.5)；剥离 ```json；直接 loads；兜底 re 提取第一个 {...}；intent 非法→general；confidence 夹取 [0,1]；解析异常→default
 数据: classify 正常返回 source=classifier；成本追踪 usage_metadata 优先、response_metadata 兜底；整体异常 → general(0.5, source=default, matched_keywords=[])
-跳过: 依赖注入 mock 的 async 方法由 pytest 单测验证（tests/test_intent_classifier.py），非 LLM 行为，不进入 agent-eval 冒烟
+跳过: [backend-contract] 依赖注入 mock 的 async 方法由 pytest 单测验证（tests/test_intent_classifier.py），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: misc.classifier-classify, misc.classifier-parse-response, misc.classifier-fallback
 溯源: 2026-08-25 新增：ai-agent-service misc-part2 覆盖率补全（issue #2424） ｜ tags: intent, classifier, fallback
@@ -1990,7 +1991,7 @@
 期望: direct_reply
 数据: MIBAO/XIAOBU 预设覆盖高频意图且每意图多 stage；farewell 空 dict 表示不推荐
 数据: _get_preset agent_type 选米宝/小布预设与兜底；未知 intent → general；farewell → []；stage fallback 链 stage→querying→initial→第一个非空 stage→defaults
-跳过: 纯函数由 pytest 单测验证（tests/test_follow_up_suggestions.py），非 LLM 行为，不进入 agent-eval 冒烟
+跳过: [backend-contract] 纯函数由 pytest 单测验证（tests/test_follow_up_suggestions.py），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: misc.followup-presets, misc.followup-get-preset
 溯源: 2026-08-25 新增：ai-agent-service misc-part2 覆盖率补全（issue #2424） ｜ tags: suggestions, preset, fallback
@@ -2002,7 +2003,7 @@
 数据: _should_use_dynamic 无 API key→False、answer<20→False、实体关键词→True、answer>100→True、否则 _has_specific_entities 正则检测
 数据: _parse_suggestions_from_response JSON 数组（全 str）→前 3 条；带文本 re 提取→前 3 条；失败→None；_sanitize_prompt_value 花括号→全角/换行制表→空格/截断
 数据: generate 动态命中→截断 3 条 strategy=dynamic；动态失败/超时/异常→fallback preset；_generate_dynamic 角色白名单（未知/空→'员工'）；httpx.TimeoutException→None
-跳过: 依赖注入 mock 的 async 方法由 pytest 单测验证（tests/test_follow_up_suggestions.py），非 LLM 行为，不进入 agent-eval 冒烟
+跳过: [backend-contract] 依赖注入 mock 的 async 方法由 pytest 单测验证（tests/test_follow_up_suggestions.py），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: misc.followup-should-dynamic, misc.followup-parse-sanitize, misc.followup-generate, misc.followup-generate-dynamic
 溯源: 2026-08-25 新增：ai-agent-service misc-part2 覆盖率补全（issue #2424） ｜ tags: suggestions, dynamic, sanitize
@@ -2014,7 +2015,7 @@
 数据: Settings 默认值（APP_NAME/APP_VERSION/DEBUG/API_PREFIX/HOST/PORT 及 LLM 路由/成本/重试参数）正确
 数据: LLM_API_KEY/BASE_URL/MODEL 取 PRIMARY_* 优先 VISION_* 兜底（原 MINIMAX_* 语义）；DASHSCOPE_* property+setter 读写 PRIMARY/VISION 字段
 数据: validate_production_secrets 非 DEBUG 且缺 JWT_PUBLIC_KEY/SERVICE_TOKEN → ValueError；DEBUG=true 绕过；齐全通过
-跳过: 配置/纯函数由 pytest 单测验证（tests/test_config.py），非 LLM 行为，不进入 agent-eval 冒烟
+跳过: [backend-contract] 配置/纯函数由 pytest 单测验证（tests/test_config.py），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: misc.config-defaults, misc.config-compat, misc.config-validate-secrets
 溯源: 2026-08-25 新增：ai-agent-service misc-part2 覆盖率补全（issue #2424） ｜ tags: config, settings, validation
@@ -2026,7 +2027,7 @@
 数据: _new_chat_model LLM_API_KEY=='ci-dummy' → ChatOpenAI，否则 ChatDeepSeek
 数据: create_skill_llm temperature=0.7/streaming/max_completion_tokens=2048/request_timeout=60；force_no_think→disabled；enable_thinking→enabled+384000
 数据: create_vision_llm/intent/summary/suggestion 参数正确；invoke_text_safe 清洗 image_url 仅保留 text，Human 空文本→'[图片]'，返回 response.content.strip()
-跳过: 工厂/纯函数由 pytest 单测验证（tests/test_llm_factory.py），非 LLM 行为，不进入 agent-eval 冒烟
+跳过: [backend-contract] 工厂/纯函数由 pytest 单测验证（tests/test_llm_factory.py），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: misc.factory-new-chat-model, misc.factory-skill-llm, misc.factory-variants, misc.factory-invoke-text-safe
 溯源: 2026-08-25 新增：ai-agent-service misc-part2 覆盖率补全（issue #2424） ｜ tags: llm, factory, multimodal
@@ -2038,7 +2039,7 @@
 数据: create_app 返回 FastAPI，/health 返回 status=healthy+service+version；CORS 白名单 + DEBUG 追加开发源；api_router 挂 API_PREFIX
 数据: lifespan 启动 init_db/init_redis（非 DEBUG 异常 re-raise，DEBUG 仅 log）；后台 _session_auto_close_loop；关闭 cancel + close_redis + close_db
 数据: _session_auto_close_loop 每 300s 扫描 close_idle_sessions(240min)，每天 cleanup_closed_sessions(90d)；CancelledError re-raise
-跳过: 依赖注入 mock 由 pytest 单测验证（tests/test_main.py），非 LLM 行为，不进入 agent-eval 冒烟
+跳过: [backend-contract] 依赖注入 mock 由 pytest 单测验证（tests/test_main.py），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: misc.main-create-app, misc.main-lifespan, misc.main-auto-close-loop
 溯源: 2026-08-25 新增：ai-agent-service misc-part2 覆盖率补全（issue #2424） ｜ tags: app, main, lifespan
@@ -2049,7 +2050,7 @@
 期望: direct_reply
 数据: _extract_text None→''/str 原样/list 仅拼 type=='text'/其他 str(content)；match 空文本/空白→None
 数据: 关键词优先级 capabilities 长短语→farewell→订单统计/订单数据(order_query)→KEYWORD_MAP；greeting 仅 ≤10 字符才 1.0，长消息含问候词跳过
-跳过: 纯函数由 pytest 单测验证（tests/test_rule_matcher.py），非 LLM 行为，不进入 agent-eval 冒烟
+跳过: [backend-contract] 纯函数由 pytest 单测验证（tests/test_rule_matcher.py），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: misc.rule-extract-text, misc.rule-match-priority
 溯源: 2026-08-25 新增：ai-agent-service misc-part2 覆盖率补全（issue #2424） ｜ tags: rule_matcher, intent, priority
@@ -2060,7 +2061,7 @@
 期望: direct_reply
 数据: 关键词命中 confidence=0.95 source='rule' matched_keywords；REGEX_RULES 命中 0.9 source='rule'（ORD-* 订单号、创建商品正则排除订单/工单/售后）
 数据: 均未命中返回 None
-跳过: 纯函数由 pytest 单测验证（tests/test_rule_matcher.py），非 LLM 行为，不进入 agent-eval 冒烟
+跳过: [backend-contract] 纯函数由 pytest 单测验证（tests/test_rule_matcher.py），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: misc.rule-regex
 溯源: 2026-08-25 新增：ai-agent-service misc-part2 覆盖率补全（issue #2424） ｜ tags: rule_matcher, regex, fallback
@@ -2071,7 +2072,7 @@
 期望: direct_reply
 数据: CI workflow 的 Create Issue step 必须先 search 同标题 open issue：已存在 → 仅评论追加 run 链接；不存在 → 才 issues.create
 数据: 守卫与创建逻辑同属一个 github-script step，避免 failure 时重复 issue 堆积
-跳过: CI workflow 结构由 pytest 单测验证（tests/unit_ci_workflows/test_issue_dedup_guard.py），非 LLM 行为，不进入 agent-eval 冒烟
+跳过: [backend-contract] CI workflow 结构由 pytest 单测验证（tests/unit_ci_workflows/test_issue_dedup_guard.py），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 溯源: 2026-09-02 新增：CI 自动失败报告去重守卫（issue #2746） ｜ tags: ci, issue-dedup, nightly
 
@@ -2083,7 +2084,7 @@
 数据: C 端受控词表 CEND_MEMORY_KEYS：LLM 返回的 key 不在词表内 → 丢弃；词表含 curtain_style/curtain_color/window_size/budget 等画像字段
 数据: _filter_pii 变体拦截：key 词根匹配（phone/mobile/address/name/contact/wechat/id_card/idcard 等 40+ 变体）而非精确黑名单；value 含手机号/邮箱 → 丢弃
 数据: context 字段去 PII：不再写原始 user_message 明文（或做脱敏），避免手机号/地址落库
-跳过: 纯函数/依赖注入 mock 由 pytest 单测验证（tests/test_memory_extractor.py），非 LLM 行为，不进入 agent-eval 冒烟
+跳过: [backend-contract] 纯函数/依赖注入 mock 由 pytest 单测验证（tests/test_memory_extractor.py），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: misc.parse-extraction-result, misc.extract-llm-flow
 溯源: issue #2815：C 端长期记忆系统 — extractor 质量改造 ｜ tags: memory, extractor, pii, agent_split
@@ -2095,7 +2096,7 @@
 数据: upsert/batch_upsert 写入 agent_type（xiaobu/mibao）；get_important_memories/format_for_prompt 支持按 agent_type 过滤
 数据: format_for_prompt 输出消毒：XML 标签转义（<>&）、值长度截断、strip 控制字符 → 防跨会话持久化注入（审计 07 P1-L9）
 数据: 消毒后注入仅对 xiaobu 生效（agent_type 分流，CH-024 关联）
-跳过: 依赖注入 mock 的 async 方法由 pytest 单测验证（tests/test_user_memory.py），非 LLM 行为，不进入 agent-eval 冒烟
+跳过: [backend-contract] 依赖注入 mock 的 async 方法由 pytest 单测验证（tests/test_user_memory.py），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: misc.extract-and-save
 溯源: issue #2815：C 端长期记忆系统 — user_memory agent_type + 消毒 ｜ tags: memory, user_memory, sanitize
@@ -2108,7 +2109,7 @@
 数据: DELETE /memories 调 delete_all(tenant, user, agent_type='xiaobu')，返回删除条数
 数据: 跨租户/跨用户不可访问（仅查当前登录用户自己的记忆）
 数据: 异常时返回空列表/0 条，不抛 500
-跳过: 依赖注入 mock 由 pytest 单测验证（tests/test_memories_api.py），非 LLM 行为，不进入 agent-eval 冒烟
+跳过: [backend-contract] 依赖注入 mock 由 pytest 单测验证（tests/test_memories_api.py），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: misc.extract-and-save
 溯源: issue #2815：C 端长期记忆系统 — 合规 API（个保法查询权/删除权） ｜ tags: memory, compliance, privacy
@@ -2122,7 +2123,7 @@
 数据: 响应 status=approved 且 applicationId 非空，同步自动创建租户(active)+企业管理员(admin)+默认角色权限
 数据: tenant_applications 落 review_source=ai / risk_flags / review_summary / reviewed_by=ai
 数据: ai-agent 内部端点 POST /api/internal/registration/review 规则层无违规 + LLM approve → approve；LLM 不可用且规则层通过 → review_source=system 放行
-跳过: 由 admin-api 单测（RegistrationServiceTest/ControllerTest/ReviewClientTest）+ ai-agent 单测（test_registration_review.py）+ 前端单测（register.test.tsx）验证，非 LLM 冒烟
+跳过: [backend-contract] 由 admin-api 单测（RegistrationServiceTest/ControllerTest/ReviewClientTest）+ ai-agent 单测（test_registration_review.py）+ 前端单测（register.test.tsx）验证，非 LLM 冒烟
 ```
 真值: registration-approval.submit, registration-approval.ai-approve, registration-approval.review-meta, registration-approval.status-enums
 溯源: 2026-08-30 新增：AI 自动入驻改造（人工审批页废弃） ｜ tags: onboarding, ai_review, auto_approve
@@ -2134,7 +2135,7 @@
 数据: 规则层命中敏感词/注入/格式违规 → 直接驳回（review_source=rule，不调用 LLM 防刷成本）
 数据: LLM 识别法律风险（decision=reject 或 high 风险）→ 驳回（review_source=ai），响应 rejectReason 非空
 数据: 驳回不创建租户/管理员，申请置 rejected
-跳过: 由 admin-api + ai-agent 单测验证（规则层/LLM 层/决策合成），非 LLM 冒烟
+跳过: [backend-contract] 由 admin-api + ai-agent 单测验证（规则层/LLM 层/决策合成），非 LLM 冒烟
 ```
 真值: registration-approval.ai-reject, registration-approval.status-enums
 溯源: 2026-08-30 新增：AI 自动入驻改造 ｜ tags: onboarding, ai_review, auto_reject, compliance
@@ -2148,7 +2149,7 @@
 数据: 每手机号每日提交上限 3、每 IP 每小时上限 5（Redis 计数）→ 超限 422
 数据: 蜜罐字段 website 被填充 → 不落库不调 AI，静默返回 pending 占位
 数据: AI 甄别服务不可达 → fail-closed 系统繁忙驳回（review_source=system），绝不放行
-跳过: 由 RegistrationServiceTest + register.test.tsx（蜜罐隐藏字段）+ ai-agent 单测验证，非 LLM 冒烟
+跳过: [backend-contract] 由 RegistrationServiceTest + register.test.tsx（蜜罐隐藏字段）+ ai-agent 单测验证，非 LLM 冒烟
 ```
 真值: registration-approval.dup-guard, registration-approval.ai-degrade
 溯源: 2026-08-30 新增：AI 自动入驻改造 ｜ tags: onboarding, anti_abuse, rate_limit, honeypot, dedup
@@ -2160,7 +2161,7 @@
 数据: ops.migaozn.com 域名分支/入驻审批菜单/审批页面/中间件前缀已移除（前端无 /registrations 页面）
 数据: 超管兜底接口保留：GET/PUT /api/super-admin/registrations* 仅 API 应急，无前端入口
 数据: 主页与入驻页文案改为 AI 秒审（不再出现 1-3 个工作日人工审核）
-跳过: 由前端单测验证（corporate-home/app-routes/components-other/register），非 LLM 冒烟
+跳过: [backend-contract] 由前端单测验证（corporate-home/app-routes/components-other/register），非 LLM 冒烟
 ```
 真值: registration-approval.super-admin-prefix
 溯源: 2026-08-30 新增：AI 自动入驻改造（人工审批页废弃） ｜ tags: onboarding, ops_page_removed, super_admin_api
@@ -2174,7 +2175,7 @@
 数据: corporate-home page.tsx 含 GB/T 47746-2026 区块（标准号、4 能力点、免责小字）
 数据: 文案不含「认证/通过检测/备案」误导词
 数据: corporate-home.test.tsx 断言标准号与能力点渲染（无快照/无新 icon）
-跳过: 由前端单测验证（corporate-home.test.tsx），非 LLM 冒烟
+跳过: [backend-contract] 由前端单测验证（corporate-home.test.tsx），非 LLM 冒烟
 ```
 真值: frontend-fix.vitest, frontend-fix.tsc, frontend-fix.no-api-change
 溯源: 2026-09-03 新增：GB/T 47746-2026 合规官网宣称（issue #2787） ｜ tags: homepage, compliance, gb47746
@@ -2191,7 +2192,7 @@
 数据: 售后工单状态枚举 == [pending, processing, rejected, resolved, closed]；商品状态枚举 == [draft, on_sale, off_sale, under_review]
 数据: 扩展对象状态枚举与代码真值一致：员工 == [online, offline, busy]（AgentEmployeeService 错误消息）、加工项/分类 == [active, inactive]（DTO 注释）、知识文档 == [processed, processing, failed]（admin-web KnowledgeDocStatus）
 数据: 非法状态值（如 processing 混入订单枚举）加载校验必须拒绝并给出明确错误
-跳过: 本体模块为纯数据结构契约，由 pytest 单测验证（backend/ai-agent-service/tests/test_ontology_schema.py），非 LLM 行为，不进入 agent-eval 冒烟
+跳过: [backend-contract] 本体模块为纯数据结构契约，由 pytest 单测验证（backend/ai-agent-service/tests/test_ontology_schema.py），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: ai-chat.context-memory
 溯源: 2026-09-04 新增：issue #2821 本体模块切片 1（schema + loader + 校验）；延续切片 B 扩展四对象 ｜ tags: ontology, schema, enum_alignment
@@ -2204,7 +2205,7 @@
 数据: build_context 注入的上下文包含 vision 候选实体（图片关联对象有召回保障）
 数据: 重复写入同一候选去重；非法 entity_type 拒绝
 数据: 实体槽与 _extract_entities 的工具结果提取共存（vision 与工具结果互不覆盖）
-跳过: 上下文记忆为纯数据结构契约，由 pytest 单测验证（backend/ai-agent-service/tests/test_ontology_vision_grounding.py），非 LLM 行为，不进入 agent-eval 冒烟
+跳过: [backend-contract] 上下文记忆为纯数据结构契约，由 pytest 单测验证（backend/ai-agent-service/tests/test_ontology_vision_grounding.py），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: ai-chat.context-memory
 溯源: 2026-09-04 新增：issue #2821 切片 2（vision 候选实体 → 上下文实体槽） ｜ tags: ontology, vision, context_memory, grounding
@@ -2217,7 +2218,7 @@
 数据: 契约校验 v2：schema 声明某 agent 可达的 intent 必须在该 agent 映射中存在（防假声明）；mibao route_key 严格一致（B 端是约定事实源，xiaobu 兜底覆盖不计漂移）；任一 agent 映射有但 schema 未登记 → 违规；声明可达的 route_key 必须在该 agent 真实可达集合中
 数据: xiaobu 专属 intent（quote/knowledge_manage）在 mibao 映射缺失是正常的，不得误报（knowledge_faq 现为双端可达）
 数据: 缺失/漂移返回违规清单（不抛异常，由调用方决定阻断）
-跳过: 契约校验为纯数据结构逻辑，由 pytest 单测验证（backend/ai-agent-service/tests/test_ontology_contract.py），非 LLM 行为，不进入 agent-eval 冒烟
+跳过: [backend-contract] 契约校验为纯数据结构逻辑，由 pytest 单测验证（backend/ai-agent-service/tests/test_ontology_contract.py），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: ai-chat.context-memory
 溯源: 2026-09-04 更新：切片 A 全量登记 27 intent + 契约校验 v2（按 agent 核对，get_all_skill_names 口径） ｜ tags: ontology, intent_ownership, contract, dual_agent
@@ -2229,7 +2230,7 @@
 数据: record_vision_analysis 写入后 build_context 注入包含 vision 分析文本（截断 800 字符）
 数据: 重复写入覆盖旧文本（最新图片分析优先）；空文本/无 session 不落槽
 数据: base_skill vision 分支分析成功后调用 record_vision_analysis（与 set_vision_analysis 并列，异常降级不破坏主流程）
-跳过: 上下文记忆为纯数据结构契约，由 pytest 单测验证（backend/ai-agent-service/tests/test_ontology_vision_grounding.py），非 LLM 行为，不进入 agent-eval 冒烟
+跳过: [backend-contract] 上下文记忆为纯数据结构契约，由 pytest 单测验证（backend/ai-agent-service/tests/test_ontology_vision_grounding.py），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: ai-chat.context-memory
 溯源: 2026-09-04 新增：issue #2821 延续切片 C（vision 分析落槽 + base_skill 接线） ｜ tags: ontology, vision, context_memory, grounding, base_skill
@@ -2961,7 +2962,7 @@
 数据: 应做数量=算料引擎输出（韩褶-布=折数 48、米工序=用料 12.3、套工序=1）—— 报工只确认不心算
 数据: 计件 = Σ(合格数量 × 单价 × 特殊选项系数)：一分二 ×1.7；返工/报废不计件；单工序一人制（无计件人数分摊）
 数据: 完工判定：必完工序（外帘装袋，打包前置）合格量满应做数量 → 订单自动生产完成
-跳过: 生产确定性核心是纯函数（app/production/），由单元测试全量覆盖（tests/test_production/），非 LLM 行为，不进入 agent-eval 冒烟（同 CH-036/037/038 惯例）
+跳过: [backend-contract] 生产确定性核心是纯函数（app/production/），由单元测试全量覆盖（tests/test_production/），非 LLM 行为，不进入 agent-eval 冒烟（同 CH-036/037/038 惯例）
 ```
 真值: ai-chat.intent-tool-map
 溯源: 2026-09-17 新增（issue #3993）：M4-G-1 生产模块确定性核心覆盖登记，单测覆盖 ｜ tags: processing, production, piecework
@@ -2977,7 +2978,7 @@
 数据: 任务卡二维码内容 = qr_token（svg title = token）；qr_token 缺失时给占位提示而不是空码
 数据: 任务卡工序清单逐行渲染工序名 / 应做数量+单位 + 每行一个手工勾选位，并说明工人扫码后在小程序报工
 数据: 无工序 / 无计件 / 接口失败均渲染空态或错误提示 + 重试，不白屏
-跳过: 前端渲染行为（admin-web 组件/页面），由 vitest 单测全量覆盖（tests/unit/components/{ProductionProgressTable,PieceworkTable,TaskCardPrint}.test.tsx、tests/unit/pages/processing-orders-production.test.tsx、tests/unit/lib/use-route-id.test.ts），非 LLM 行为，不进入 agent-eval 冒烟（同 PP-010 惯例）
+跳过: [backend-contract] 前端渲染行为（admin-web 组件/页面），由 vitest 单测全量覆盖（tests/unit/components/{ProductionProgressTable,PieceworkTable,TaskCardPrint}.test.tsx、tests/unit/pages/processing-orders-production.test.tsx、tests/unit/lib/use-route-id.test.ts），非 LLM 行为，不进入 agent-eval 冒烟（同 PP-010 惯例）
 ```
 真值: processing-manage.crud
 溯源: 2026-09-17 新增（issue #4000）：M4-H 按需单据渲染 —— 加工单生产明细页 + 可打印任务卡（含二维码）+ 计件汇总的前端覆盖登记；消费 main 已合并的生产端点（GET production/orders/{orderId}/operations、/piecework） ｜ tags: processing, production, admin_web, print_task_card, qrcode
@@ -2990,14 +2991,14 @@
 数据: 快照加工项含 options（生成时从加工项目录补齐，下单时未落库）
 数据: 快照不含销售价（决策 2：加工单给加工方只看加工费）
 数据: 联动：订单 confirmed → producing（orderService.updateOrderStatus 调用）
-跳过: 由 ProcessingOrderServiceTest 验证（generate 成功路径 + 快照 options/无价格断言）
+跳过: [backend-contract] 由 ProcessingOrderServiceTest 验证（generate 成功路径 + 快照 options/无价格断言）
 ```
 溯源: 2026-09-12 新增（issue #3340） ｜ tags: processing-order, generate, linkage
 
 ### PG-002. 生成加工单 - 幂等：同一订单已有活跃加工单 → 拒绝重复生成 🔵
 ```
 数据: 已有非取消态加工单时重复生成 → 校验错误，拒绝（DB partial unique index 兜底）
-跳过: 由 ProcessingOrderServiceTest 验证
+跳过: [backend-contract] 由 ProcessingOrderServiceTest 验证
 ```
 溯源: 2026-09-12 新增（issue #3340） ｜ tags: processing-order, idempotent
 
@@ -3005,14 +3006,14 @@
 ```
 数据: 订单无加工项（processing_info 空）→ 拒绝生成加工单
 数据: 无加工项订单 confirmed→shipped 直跳仍合法（不被守卫拦截）
-跳过: 由 ProcessingOrderServiceTest + OrderServiceTest 验证
+跳过: [backend-contract] 由 ProcessingOrderServiceTest + OrderServiceTest 验证
 ```
 溯源: 2026-09-12 新增（issue #3340） ｜ tags: processing-order, conditional
 
 ### PG-004. 生成加工单 - 未确认订单拒绝（pending/已取消不允许） 🔵
 ```
 数据: pending（未付款）订单生成加工单 → 校验错误
-跳过: 由 ProcessingOrderServiceTest 验证
+跳过: [backend-contract] 由 ProcessingOrderServiceTest 验证
 ```
 溯源: 2026-09-12 新增（issue #3340） ｜ tags: processing-order, guard
 
@@ -3020,28 +3021,28 @@
 ```
 数据: issue（发加工，可填加工方/交期）→ issued；start → in_processing；complete → completed
 数据: complete 后订单保持 producing（不自动 shipped，发货需物流单号）
-跳过: 由 ProcessingOrderServiceTest 验证
+跳过: [backend-contract] 由 ProcessingOrderServiceTest 验证
 ```
 溯源: 2026-09-12 新增（issue #3340） ｜ tags: processing-order, state-machine
 
 ### PG-006. 加工单状态机 - 非法迁移拒绝（如 generated→completed、completed 冻结） 🔵
 ```
 数据: 非法流转（generated→completed / completed 上任何变更）→ 校验错误
-跳过: 由 ProcessingOrderServiceTest 验证
+跳过: [backend-contract] 由 ProcessingOrderServiceTest 验证
 ```
 溯源: 2026-09-12 新增（issue #3340） ｜ tags: processing-order, state-machine
 
 ### PG-007. 加工单取消联动 - generated 取消 → 订单 producing→confirmed 回退 🔵
 ```
 数据: 取消加工单（必填原因）→ cancelled + 订单 producing→confirmed 回退（重新可生成）
-跳过: 由 ProcessingOrderServiceTest 验证
+跳过: [backend-contract] 由 ProcessingOrderServiceTest 验证
 ```
 溯源: 2026-09-12 新增（issue #3340） ｜ tags: processing-order, linkage, cancel
 
 ### PG-008. 加工单取消 - issued 及以上必须填原因（人工确认语义） 🔵
 ```
 数据: cancel 不填原因 → 校验错误
-跳过: 由 ProcessingOrderServiceTest 验证
+跳过: [backend-contract] 由 ProcessingOrderServiceTest 验证
 ```
 溯源: 2026-09-12 新增（issue #3340） ｜ tags: processing-order, guard
 
@@ -3051,7 +3052,7 @@
 数据: 含加工项订单经 agent 发货路径（update_logistics→shipOrderIfApplicable）无 completed 加工单 → 同样校验错误（验收复核 P1 修复，2026-09-12）
 数据: 含加工项订单有 completed 加工单 → 可 shipped
 数据: 机器判据（未被调用）：countCompletedByOrderId=0 时 updateOrderStatus(shipped) 抛校验错误「须先完成加工单」且 orderMapper.update 未被调用（订单状态未被写）；countCompletedByOrderId=1 时放行、orderMapper.update 被调用（落 shipped）—— 由 OrderServiceTest 的 verify(never)/verify 与异常消息断言，非散文
-跳过: 由 OrderServiceTest + AgentOrderServiceTest 验证
+跳过: [backend-contract] 由 OrderServiceTest + AgentOrderServiceTest 验证
 ```
 溯源: 2026-09-12 新增（issue #3340）；2026-09-18（#4117 关联）：补一条机器计分型 data_check —— 原三条均为纯散文，计分断言数 = 0（expectations 空 + 无机器计分型 data_check）⇒ 恒绿形态（CASE-TRUST-EMPTY-ASSERTION）；改写为机器可判形态，断言语义**未放宽**（仍是「无 completed 加工单 → 拦截；有 → 放行」两条）。 ｜ tags: processing-order, guard, shipped
 
@@ -3059,14 +3060,14 @@
 ```
 数据: 取消订单时加工单为 generated → 加工单自动 cancelled（原因：订单取消自动作废）+ 订单正常取消
 数据: 取消订单时加工单 issued 及以上 → 校验错误拦截（须先处理加工单）
-跳过: 由 OrderServiceTest 验证
+跳过: [backend-contract] 由 OrderServiceTest 验证
 ```
 溯源: 2026-09-12 新增（issue #3340） ｜ tags: processing-order, linkage, cancel
 
 ### PG-011. 租户隔离 - 跨租户加工单不可查询/不可解析 🔵
 ```
 数据: B 租户查询 A 租户加工单 → notFound（resolve 条件含 tenant_id）
-跳过: 由 ProcessingOrderServiceTest 验证
+跳过: [backend-contract] 由 ProcessingOrderServiceTest 验证
 ```
 溯源: 2026-09-12 新增（issue #3340） ｜ tags: processing-order, tenant-isolation
 
@@ -3075,7 +3076,7 @@
 数据: schema.yaml intent_ownership 登记 processing_order_generate/query/update（route_key=order，agents=[mibao]）
 数据: check_intent_ownership 双端视图对齐：mibao 映射含三 intent，xiaobu 不含
 数据: order skill prompt（references/prompts/order.md）含加工单工具使用规则（快照快照校验：快照长度上限）
-跳过: 由 test_ontology_contract.py + test_prompt_snapshots.py 验证（契约层，非 LLM 行为）
+跳过: [backend-contract] 由 test_ontology_contract.py + test_prompt_snapshots.py 验证（契约层，非 LLM 行为）
 ```
 溯源: 2026-09-12 新增（issue #3340） ｜ tags: processing-order, intent-routing, contract
 
@@ -3109,7 +3110,7 @@
 数据: AgentOrderUpdateRequest 字段集固定为 {action,status,logisticsCompany,trackingNumber,cancelReason,refundAmount,refundReason}，不含 items 类字段
 数据: 订单明细唯一写入点：创建时 insert；整单删除仅限 pending（此时不可能存在加工单）
 数据: 约束失效即失败：若将来引入明细编辑入口，本用例失败 → 必须同步启用发货守卫覆盖校验（#3352 选项 B）
-跳过: 由 OrderItemImmutabilityTest（反射 tripwire，无 Spring 上下文）验证
+跳过: [backend-contract] 由 OrderItemImmutabilityTest（反射 tripwire，无 Spring 上下文）验证
 ```
 溯源: 2026-09-12 新增（#3352 决策 C）：加工项创建后不可改 → 加工单快照不会与订单漂移 ｜ tags: processing-order, invariant, decision
 
@@ -3190,7 +3191,7 @@
 数据: 租户隔离与软删：订单/工序实例/报工记录均按 tenant_id + deleted=0 过滤；跨租户订单或不属于该订单加工单的工序 → 404，且不落报工明细
 数据: 订单解析三形态（issue #4005）：GET/报工/计件的 {orderId} 路径参数支持 ① 内部 order_id ② 订单号 order_no（手输纸质单号）③ 加工单 qr_token（M4-H 打印任务卡二维码的取值来源）——三级都不中才 404；租户隔离/deleted 过滤逐级保持（证据：ProductionServiceTest 3 项 + ProductionControllerTest「路径参数=qr_token」1 项）
 数据: Agent 冻结契约（并行包消费）：GET /api/admin/agent/production/progress?order_no= 返回键集固定 {order_no,status,status_text,progress_percent,current_operation,pending_operations,total_operations,done_operations,expected_delivery_date}；GET /piecework?worker_name=&period=YYYY-MM 返回 {worker_name,period,total,details:[{operation,qty,amount}]}（缺键/改名即红）
-跳过: 后端契约用例（写路径无 LLM 环节，不进 agent-eval 冒烟）：断言全部由 Java 单测执行 —— ProductionControllerTest / AgentProductionControllerTest（MockMvc，含返回键集冻结断言）/ ProductionServiceTest（服务层语义）/ Mapper 契约测试（实体 ↔ V49 迁移 ↔ docs/sql/schema.sql 三源收敛）/ ProductionReportingMigrationTest（迁移与 qr_token 索引）
+跳过: [backend-contract] 后端契约用例（写路径无 LLM 环节，不进 agent-eval 冒烟）：断言全部由 Java 单测执行 —— ProductionControllerTest / AgentProductionControllerTest（MockMvc，含返回键集冻结断言）/ ProductionServiceTest（服务层语义）/ Mapper 契约测试（实体 ↔ V49 迁移 ↔ docs/sql/schema.sql 三源收敛）/ ProductionReportingMigrationTest（迁移与 qr_token 索引）
 ```
 溯源: 2026-09-17 新增（issue #3995，M4-G-2）：生产报工后端落地 —— V49 迁移（production_operations / production_routings / processing_position_operations / production_work_logs + processing_orders.qr_token）、ProductionService（实例化/扫码报工/必完自动完工/计件/进度）、ProductionController 与 AgentProductionController（冻结契约）。语义与 M4-G-1 确定性核心（app/production/{routing,piecework}.py，issue #3993）同口径：报工三态、必完工序全绿判定、计件排除返工/报废。2026-09-18（issue #4117，P0 修语义）：原第 3 条 data_check 把**缺陷**写成期望（「订单 status producing → completed」，而 OrderService.STATUS_TRANSITIONS 里该迁移非法、completed 是终态）⇒ 改为「完工 = 加工单置 completed（订单保持 producing）」+ 新增「完工→发货贯通」判据；修复 = ProductionService.report 走 ProcessingOrderMapper.markCompletedIfActive（活跃态原子更新），禁止生产侧直写订单状态。2026-09-18（issue #4116 剩余两半，P0-3 + P0-2）：新增「§5 四项防呆」（重复报工幂等/越站顺序门禁/数量上限拒绝/非本部位 fail-closed + CAS 原子推进 + 前端 in-flight 锁）与「工序库/工艺路线种子与只读消费者」（V54 种子 + operations-catalog/routings 端点 + 三源收敛守卫）两条 data_check；同包修掉 `_qty_for` 的契约漂移（读 `meters` 而引擎真产出是 `fabric_meters` ⇒ 米类工序应做数量恒 0），判据 = 用**引擎真产出**喂 instance_operations（tests/test_production/test_routing.py）。未做（如实登记）：生成加工单的工序来源切换、以及「每部位末道工序 is_must_finish=true」改读库 —— 待裁定。 ｜ tags: processing-order, production-reporting, piecework, scan-report
 
@@ -3580,7 +3581,7 @@
 数据: register 重复名覆盖并 warning；unregister/get_tool/get_all_tools/get_tool_names/has_tool/clear 语义正确
 数据: get_tools_description 空注册器返回「暂无可用工具」；get_tool_registry 单例 + reset_tool_registry 重置
 数据: execute_tool 工具不存在→未知工具、权限不足→Permission denied、写操作（not read_only）记 [AUDIT] 日志且参数脱敏（仅记类型不记值）、执行异常→泛化 tool_execution_failed
-跳过: 注册器/执行审计由 pytest 单测验证（tests/test_tools_registry.py），非 LLM 行为，不进入 agent-eval 冒烟
+跳过: [backend-contract] 注册器/执行审计由 pytest 单测验证（tests/test_tools_registry.py），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: ai-chat.tool-classes, ai-chat.permission-layers
 溯源: 2026-08-25 新增：ai-agent-service tools-mixed-part2 覆盖率补全（issue #2426） ｜ tags: registry, tool_execute, audit
@@ -3641,7 +3642,7 @@
 数据: （确定性层）is_auto_handoff_trigger('我要找老板', config) == true
 数据: （确定性层）is_after_hours(config, 非营业时间) == true
 数据: （确定性层）非营业时间降级不创建工单、返回 afterHoursMessage（实现在工具类内，随退场改为工具直测覆盖）
-跳过: 纯配置函数行为由 pytest 单测（tests/test_tenant_config.py）验证：is_auto_handoff_trigger / is_after_hours 是纯函数，其入参 config（TenantAiConfig）无法经 agent-eval 设置，非 LLM 行为，不进入 C 端评测（issue #3270 断言层归因：原 user_inputs 是断言描述而非顾客对话）；2026-09-19 追加：转人工工具退场 ⇒ 原 human_handoff 断言不再有意义，降级分支改由工具直测覆盖
+跳过: [backend-contract] 纯配置函数行为由 pytest 单测（tests/test_tenant_config.py）验证：is_auto_handoff_trigger / is_after_hours 是纯函数，其入参 config（TenantAiConfig）无法经 agent-eval 设置，非 LLM 行为，不进入 C 端评测（issue #3270 断言层归因：原 user_inputs 是断言描述而非顾客对话）；2026-09-19 追加：转人工工具退场 ⇒ 原 human_handoff 断言不再有意义，降级分支改由工具直测覆盖
 ```
 真值: settings-manage.ai-config, settings-manage.immediate-effect
 溯源: POC 机器人设置集成新增；2026-09-11 标 skip —— 原输入为配置描述、断言为纯函数级，agent-eval 无法设置 config（issue #3270）；2026-09-18（issue #4085）：补 `precondition` 声明层字段（原本前置只活在 skip_reason 散文里 ⇒ CASE-TRUST-NO-PRECONDITION-ASSERTION 存量违规），语义与 skip 状态未变；2026-09-19 **退场改造**（用户裁定）：移除 human_handoff 的 expectations/must_succeed（不可满足），保留 D2 路由命中 + 非营业时间降级两条事实并改指确定性层 ｜ tags: ai_config, handoff
@@ -3653,7 +3654,7 @@
 数据: tenants.notification_enabled=false 的租户：triggerByEvent（order_created / after_sales_created / order_status_changed / after_sales_status_changed）与 triggerForTenantAdmins 直接跳过，不再产生新的自动站内信；历史通知保留
 数据: 开关字段为 null（存量租户）默认视为开启，行为不变；triggerByEvent 命中规则仍正常落库
 数据: 前端企业基础设置「启用系统通知」描述与实际一致：控制订单、客服等重要事件站内通知的发送；关闭后不再产生新的站内通知（历史通知保留），不再写「当前为站内通知开关」含糊文案
-跳过: 开关接线为 Java 单测验证（NotificationServiceTest）+ 前端文案 vitest，非 LLM 工具行为，不进入 agent-eval 冒烟
+跳过: [backend-contract] 开关接线为 Java 单测验证（NotificationServiceTest）+ 前端文案 vitest，非 LLM 工具行为，不进入 agent-eval 冒烟
 ```
 真值: settings-notification.master-switch
 溯源: 2026-09-07 新增：企业基础设置「启用系统通知」从死开关接线为租户级自动站内信总开关（issue #3003） ｜ tags: notification, switch, setting
@@ -3664,7 +3665,7 @@
 期望: direct_reply
 数据: 企业基础信息页仅展示基本设置（品牌设置 + 通知设置），移除 tab 切换栏；「修改密码」「登录日志」tab 及区块不再渲染（登录日志无记录、修改密码未来由短信验证码登录取代；后端/Agent 接口保留，待短信码登录落地后再评估移除）
 数据: 页面副标题不再提「账号安全与登录审计」
-跳过: 纯前端 UI 隐藏由 vitest 验证（settings.test.tsx ST-010），非 LLM 工具行为，不进入 agent-eval 冒烟
+跳过: [backend-contract] 纯前端 UI 隐藏由 vitest 验证（settings.test.tsx ST-010），非 LLM 工具行为，不进入 agent-eval 冒烟
 ```
 真值: settings-page.basic-only
 溯源: 2026-09-07 新增：企业基础信息隐藏登录日志/修改密码入口（issue #3006） ｜ tags: setting, ui, tab
@@ -3705,7 +3706,7 @@
 期望: direct_reply
 数据: refreshAccessToken() 被调用一次；原请求 headers.Authorization 更新为 Bearer <newToken>
 数据: 原请求 _retry=true；通过注入的 axiosInstance 重放原请求并返回其结果
-跳过: 依赖注入 mock 的单元测试验证（frontend/admin-web/tests/unit/lib/token-refresh-manager.test.ts），非 LLM 行为，不进入 agent-eval 冒烟
+跳过: [backend-contract] 依赖注入 mock 的单元测试验证（frontend/admin-web/tests/unit/lib/token-refresh-manager.test.ts），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: token-refresh.refresh-success
 溯源: 2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421） ｜ tags: token_refresh, auth, retry
@@ -3716,7 +3717,7 @@
 期望: direct_reply
 数据: refreshAccessToken() 仅调用一次；刷新中后续请求入 failedQueue 挂起
 数据: 刷新成功后队列请求以同一新 token resolve，且刷新结束后 isRefreshing=false、queueLength=0
-跳过: 依赖注入 mock 的单元测试验证（frontend/admin-web/tests/unit/lib/token-refresh-manager.test.ts），非 LLM 行为，不进入 agent-eval 冒烟
+跳过: [backend-contract] 依赖注入 mock 的单元测试验证（frontend/admin-web/tests/unit/lib/token-refresh-manager.test.ts），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: token-refresh.single-flight
 溯源: 2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421） ｜ tags: token_refresh, concurrency, single_flight
@@ -3727,7 +3728,7 @@
 期望: direct_reply
 数据: refreshAccessToken 返回 null 或抛异常 → 全部挂起请求 reject、clearAuth() 被调用
 数据: window.location.href 置为 /login；原请求 Promise.reject（null 分支带 'Token refresh failed'，异常分支透传原错误）
-跳过: 依赖注入 mock 的单元测试验证（frontend/admin-web/tests/unit/lib/token-refresh-manager.test.ts），非 LLM 行为，不进入 agent-eval 冒烟
+跳过: [backend-contract] 依赖注入 mock 的单元测试验证（frontend/admin-web/tests/unit/lib/token-refresh-manager.test.ts），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: token-refresh.refresh-failed
 溯源: 2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421） ｜ tags: token_refresh, auth, logout
@@ -3738,7 +3739,7 @@
 期望: direct_reply
 数据: URL 含 /api/auth/refresh 或 /api/auth/admin/login → reject('Authentication failed')
 数据: refreshAccessToken 不被调用；clearAuth() 被调用、window.location.href 置为 /login
-跳过: 依赖注入 mock 的单元测试验证（frontend/admin-web/tests/unit/lib/token-refresh-manager.test.ts），非 LLM 行为，不进入 agent-eval 冒烟
+跳过: [backend-contract] 依赖注入 mock 的单元测试验证（frontend/admin-web/tests/unit/lib/token-refresh-manager.test.ts），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: token-refresh.no-loop
 溯源: 2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421） ｜ tags: token_refresh, auth, no_loop
@@ -3753,7 +3754,7 @@
 数据: tailwind.config.ts theme.extend.colors.accent[500] = '#c06a3e'
 数据: tailwind.config.ts theme.extend.colors.neutral[50] = '#faf7f2'
 数据: frontend/admin-web/src/**/*.{ts,tsx} 扫描 '#3b82f6'（大小写不敏感）计数 = 0
-跳过: 纯前端设计 token 由 vitest 单测验证（tests/unit/tailwind.config.test.ts），非 LLM 行为，不进入 agent-eval 冒烟
+跳过: [backend-contract] 纯前端设计 token 由 vitest 单测验证（tests/unit/tailwind.config.test.ts），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: frontend-fix.ui-token
 溯源: 2026-08-25 新增：经营看板织物质感重设计子任务 A（issue #2534） ｜ tags: ui, token, tailwind
@@ -3765,7 +3766,7 @@
 数据: OrderStatusBadge shipped 含 bg-primary-50 且不含 bg-indigo-50
 数据: OrderStatusBadge closed 含 bg-neutral-100 且不含 bg-gray-50
 数据: OrderTable 采购明细列 items=[] 与采购商品列无 firstItem 渲染「暂无数据」
-跳过: 纯前端 UI chips/空态由 vitest 单测验证（status-chip/OrderStatusBadge/OrderTable/RecentOrders/after-sales），非 LLM 行为，不进入 agent-eval 冒烟
+跳过: [backend-contract] 纯前端 UI chips/空态由 vitest 单测验证（status-chip/OrderStatusBadge/OrderTable/RecentOrders/after-sales），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: frontend-fix.status-chip, frontend-fix.empty-state
 溯源: 2026-08-25 新增：经营看板织物质感重设计子任务 D（issue #2539） ｜ tags: ui, status-chip, empty-state
@@ -3778,7 +3779,7 @@
 数据: 含加工占比 = processingCount / pendingCount，pendingCount<=0 时渲染 0% 而非 NaN/Infinity/undefined
 数据: 一句话中的数值全部来自 props（由页面 API 返回值派生），组件内无硬编码固定数值
 数据: 洞察条置于经营看板顶部（先于待处理区块渲染）
-跳过: 纯前端组件由 vitest 单测验证（TodayOverviewBar.test.tsx + dashboard.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟
+跳过: [backend-contract] 纯前端组件由 vitest 单测验证（TodayOverviewBar.test.tsx + dashboard.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: dashboard-jump.overview, dashboard-jump.processing-shipment, dashboard-jump.low-stock, dashboard-jump.real-data
 溯源: 2026-08-25 新增：经营看板织物质感重设计子任务 C（issue #2538）；2026-08-31 更新：洞察条改为一句话经营解读（PD 精简改版） ｜ tags: ui, dashboard, insight, token
@@ -3791,7 +3792,7 @@
 数据: 商品销量排行「环比」列有可见口径说明（不依赖 hover title）：表头 title 写明「本期(近7天) vs 上一统计周期(前7天)」，表下渲染「环比 = 本期销量（近7天）对比上一期（前7天）的涨跌幅」（#3000：大部分用户不理解环比概念，需讲明比较周期）
 数据: 订单趋势图 x 轴刻度按 sampleTickIndices 降采样，1280 宽度下标签数 ≤ 7 且不密集重叠
 数据: dashboard 页面在 1440×900 与 1280×800 两视口无水平/垂直截断或溢出
-跳过: 纯前端密度/布局治理由 vitest 单测验证（axis-sampling.test.ts + dashboard.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟
+跳过: [backend-contract] 纯前端密度/布局治理由 vitest 单测验证（axis-sampling.test.ts + dashboard.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: frontend-fix.dashboard-no-truncate, frontend-fix.axis-sampling, frontend-fix.dashboard-no-overflow
 溯源: 2026-08-25 新增：经营看板织物质感重设计子任务 B（issue #2537）；2026-09-07 补：#3000 环比说明可见化——表头 title 写明具体比较周期（本期近7天 vs 上一统计周期前7天），排行表下方新增可见口径说明，用户无需理解「环比」术语 ｜ tags: ui, dashboard, density, axis-sampling
@@ -3807,7 +3808,7 @@
 数据: 链接路径：在线接待 href=/agent-workspace/human-sessions（#3081 起无 /chat/config 链接）
 数据: 权限过滤不回归：无 agent:session → 隐藏「在线接待」；无 knowledge:manage → 隐藏「知识库」；均无 → 「智能客服」整组隐藏
 数据: 「在线接待」菜单项不再出现旧名「人工客服」（#3109 菜单改名，页面标题/Header 面包屑/权限分配弹窗同步为新名；C 端顾客侧『人工客服』来源标识与转人工文案不变）
-跳过: 纯前端侧边栏菜单/图标/文案由 vitest 单测验证（sidebar/settings/Header.test），非 LLM 行为，不进入 agent-eval 冒烟
+跳过: [backend-contract] 纯前端侧边栏菜单/图标/文案由 vitest 单测验证（sidebar/settings/Header.test），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: frontend-fix.sidebar-smart-cs-group, frontend-fix.cs-menu-icons, frontend-fix.cs-menu-rename, frontend-fix.cs-menu-permission
 溯源: 2026-08-30 新增：侧边栏智能客服大类分组与菜单图标渲染（issue #2670）；2026-09-09 #3081：AI 客服配置菜单移除、合并进企业基础信息；2026-09-09 #3094：米宝·在线对话 菜单入口移除，智能体对话入口收敛到右下角 FAB；2026-09-09 #3109：菜单改名「在线接待」（页面标题/面包屑/权限弹窗同步，C 端文案不动） ｜ tags: ui, sidebar, menu, icon
@@ -3820,7 +3821,7 @@
 数据: 已结束会话行保留灰化 + 「已结束」徽标 + 重新打开按钮；活跃会话行保留「结束会话」菜单；空态统一「暂无会话」，搜索空态「没有匹配的会话」
 数据: 查看已结束会话时聊天区顶部显示「会话已结束」banner + 「继续此会话」按钮；点击调用 reopenSession 并聚焦输入框，banner 消失
 数据: 会话管理工作台统计条文案统一为「活跃/已结束/共」（无「已关闭」残留）
-跳过: 纯前端会话列表/续聊交互由 vitest 单测 + E2E 点击链路验证，非 LLM 行为，不进入 agent-eval 冒烟
+跳过: [backend-contract] 纯前端会话列表/续聊交互由 vitest 单测 + E2E 点击链路验证，非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: frontend-fix.session-list-single-filter, frontend-fix.session-reopen-banner
 溯源: 2026-08-31 新增：会话管理状态 tab 与筛选控件移除，单列表 + 续聊 banner（参考 DSH 会话模型评审结论） ｜ tags: ui, session-list, reopen
@@ -3836,7 +3837,7 @@
 数据: 空口/误触录音（<0.8s 或 <4KB）不发转写请求，toast「未检测到声音，已取消转写」；转写失败仍 toast「未听清，请重试」不发送（对齐 B 端 #2984 voice-guard 语义）
 数据: 添图入口统一：选图进草稿（预览可删），无按住模式下直接发图旁路；空文本有图点发送 → 纯图消息（UI-013 协议不变）
 数据: 自适应动作键：草稿为空显示语音键，有草稿变为发送，流式中变为停止；流式/无会话时禁止录音；转写失败 toast「未听清，请重试」不发送
-跳过: 纯前端 C 端输入交互由 mini-app jest 单测验证（message-input.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟；xiaobu H5 E2E 基建在 WIP 分支（main 未落）
+跳过: [backend-contract] 纯前端 C 端输入交互由 mini-app jest 单测验证（message-input.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟；xiaobu H5 E2E 基建在 WIP 分支（main 未落）
 ```
 真值: frontend-fix.xiaobu-voice-holdtalk
 溯源: 2026-09-15 修订（C 端语音守卫对齐 B 端 #2984）：空口/误触录音（<0.8s 或 <4KB）不发转写请求、toast「未检测到声音，已取消转写」（issue #3945）；2026-09-14 修订（语音优先）：placeholder 改「按住说话，也可以打字」（H5 回落「打字告诉我您想找什么」）、空态主键由裸波形图标升级为带文字标签的宽胶囊「按住 说话」、新增首访一次性可关闭引导（voice_hint_seen）；单容器/无模式切换/松开直接发送等行为断言不变（issue #3741）；2026-09-06 修订：输入条单容器重构（删模式切换键、textarea 常驻、语音改右下按住键、添图统一草稿语义），「松开直接发送」行为保持不变（issue #2952）；2026-08-31 新增：小布 C 端语音输入（按住说话/松开发送/键盘切换，参考瑞幸 C 端设计） ｜ tags: mini-app, voice-input, hold-to-talk
@@ -3849,7 +3850,7 @@
 数据: 再点展开 → 完整 w-64 列表恢复（新建对话/搜索/右键菜单功能全部保留）
 数据: 折叠偏好写入 localStorage（key chat.session-list.collapsed），刷新/重挂后恢复折叠态
 数据: 折叠动画为 Tailwind width transition + overflow-hidden（参考 DSH slide+crossfade 的简洁等价）
-跳过: 纯前端会话列表折叠交互由 vitest 单测 + E2E 点击链路验证，非 LLM 行为，不进入 agent-eval 冒烟
+跳过: [backend-contract] 纯前端会话列表折叠交互由 vitest 单测 + E2E 点击链路验证，非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: frontend-fix.session-list-collapse
 溯源: 2026-08-31 新增：会话列表折叠/展开窄 rail（参考 DSH sidebar 折叠交互，Issue #2691） ｜ tags: ui, session-list, collapse, rail
@@ -3861,7 +3862,7 @@
 数据: 输入区（aria-label「消息输入区」）绑定 onDragOver/onDragLeave/onDrop；拖拽悬停时显示「松开上传图片」高亮提示
 数据: drop 图片文件 → 调用 chatApi.uploadChatImages 并出现预览缩略图；拖拽非图片文件 toast「不支持的文件类型」、超 5MB toast「超过 5MB 限制」、超过 3 张 toast「最多上传 3 张图片」
 数据: 会话已关闭/流式中/上传中拖拽不生效；拖拽上传与点击上传共用 handleFiles 校验逻辑
-跳过: 纯前端聊天输入拖拽交互由 vitest 单测 + E2E 点击链路验证，非 LLM 行为，不进入 agent-eval 冒烟
+跳过: [backend-contract] 纯前端聊天输入拖拽交互由 vitest 单测 + E2E 点击链路验证，非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: frontend-fix.chat-input-drag-drop
 溯源: 2026-08-31 新增：米宝输入框拖拽图片附件上传（drag & drop 复用 uploadChatImages 链路） ｜ tags: ui, chat-input, drag-drop, image-upload
@@ -3874,7 +3875,7 @@
 数据: 点击「查物流」发送物流查询 prompt（如「帮我查一下物流」），进入 C 端仅查本人已发货订单物流的链路
 数据: 点击「售后咨询」发送售后 prompt（如「我想咨询售后问题」），进入售后工单快捷对话
 数据: 「转人工」入口移除 + 转人工能力退场（2026-09-19 用户裁定）后，输入「转人工」关键词不再导向任何转人工能力：AI 如实告知系统无人工转接通道并继续服务（机器断言见 CH-015 的 forbidden_text）
-跳过: 纯前端入口改版由 mini-app jest 单测 + xiaobu E2E 验证，非 LLM 行为，不进入 agent-eval 冒烟
+跳过: [backend-contract] 纯前端入口改版由 mini-app jest 单测 + xiaobu E2E 验证，非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: frontend-fix.xiaobu-quick-actions
 溯源: 2026-09-01 新增：小布快捷入口改版（转人工→查物流、退换货→售后咨询，弱化退换货引导）；2026-09-19 **退场同步**（用户裁定）：第 4 条 data_check 由「输入『转人工』仍可触发 human_handoff（能力不退化）」改为「不再导向转人工能力，AI 如实告知」——原断言的前提（该能力应保留）正是本次裁定取消的东西 ｜ tags: mini-app, quick-actions, chat-entry
@@ -3887,7 +3888,7 @@
 数据: 「米宝 · 在线对话」不再作为侧边栏菜单项渲染（mibao-chat 菜单配置与 MessageCircle 图标注册删除）；/chat 页面路由保留（ActiveSessions「查看全部」/深链/Header 面包屑不回归）
 数据: 权限过滤：agent:session 控制「在线接待」可见；无 agent:session → 隐藏「在线接待」，仅保留知识库（knowledge:manage）
 数据: 「智能客服」组子菜单均不可见时整组隐藏（不回归 UI-005 行为）
-跳过: 纯前端侧边栏菜单由 vitest 单测验证（sidebar.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟
+跳过: [backend-contract] 纯前端侧边栏菜单由 vitest 单测验证（sidebar.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: frontend-fix.sidebar-smart-cs-group, frontend-fix.cs-menu-icons, frontend-fix.cs-menu-permission
 溯源: 2026-09-02 新增：POC 演示入口修复 — 侧边栏智能客服组加米宝在线对话 /chat 菜单项（米宝入口原仅 FAB/直输 /chat，老板演示找不到）；2026-09-09 #3081：移除 AI 客服配置子菜单；2026-09-09 #3094：米宝·在线对话 菜单入口移除，智能体对话入口统一收敛到右下角 FAB（/chat 路由保留） ｜ tags: ui, sidebar, mibao, chat-entry
@@ -3900,7 +3901,7 @@
 数据: 点击「刷新」保持当前搜索条件/分页重新调用列表接口（GET /api/admin/orders），列表数据更新
 数据: 列表加载中（loading=true）时刷新按钮禁用（disabled），避免并发请求
 数据: 刷新失败 toast「加载订单失败」，页面不崩溃
-跳过: 纯前端交互由 E2E 验证（tests/e2e/specs/orders/order-list.spec.ts），非 LLM 行为，不进入 agent-eval 冒烟
+跳过: [backend-contract] 纯前端交互由 E2E 验证（tests/e2e/specs/orders/order-list.spec.ts），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: frontend-fix.no-api-change, frontend-fix.vitest, frontend-fix.e2e
 溯源: 2026-09-02 新增：POC 演示修复 — 订单列表无自动轮询/刷新入口，顾客下单后老板看不到新单（原需手动切 tab/F5） ｜ tags: ui, orders, list, refresh
@@ -3913,7 +3914,7 @@
 数据: MessageBubble 对纯图消息（content 空 + images 有）不渲染空文本区，仅渲染图片缩略图
 数据: 空文本且无图片仍被拦截（不发送），行为不回归
 数据: 转人工态（handedOff+agentSessionId）纯图消息静默忽略（人工会话仅文本通道，不向客服发空文本）
-跳过: 纯前端发送层由 mini-app jest 单测验证（store-chat.test.ts / message-bubble.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟
+跳过: [backend-contract] 纯前端发送层由 mini-app jest 单测验证（store-chat.test.ts / message-bubble.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: frontend-fix.no-api-change, frontend-fix.vitest
 溯源: 2026-09-02 新增：POC 演示修复 — 拍照找布场景顾客发纯图会被 chatStore 静默拦截（chatStore.ts `!content.trim()` 守卫），须文字同行才发得出 ｜ tags: mini-app, chat-input, image, vision
@@ -3927,7 +3928,7 @@
 数据: 点击「算料报价」发送算料 prompt（含 quote 路由关键词：用料/报价），直达 curtain_calc 算料报价链路
 数据: 点击「推荐热门商品」发送推荐 prompt，进入商品推荐问答
 数据: 其余入口行为不回归（查订单/找产品/售后咨询/查物流 prompt 不变）
-跳过: 纯前端入口由 mini-app jest 单测验证（quick-actions.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟
+跳过: [backend-contract] 纯前端入口由 mini-app jest 单测验证（quick-actions.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: frontend-fix.xiaobu-quick-actions
 溯源: 2026-09-04 新增 POC 全宽主入口；2026-09-17 修订：产品决策六格化，算料报价取消全宽与推荐热门商品并列 ｜ tags: mini-app, quick-actions, quote
@@ -3939,7 +3940,7 @@
 数据: 空态（MessageList 无消息时）不再渲染 NewArrivals 商品卡片（无商品图/名横滑区）
 数据: 空态保留品牌头+欢迎语+快捷入口（QuickActions 6 格）
 数据: 推荐能力由「推荐热门商品」快捷入口以对话形式承载，商品推荐问答不回归
-跳过: 纯前端空态由 mini-app jest 单测验证（quick-actions.test.tsx）+ H5 视觉回归（xiaobu-h5.spec.ts），非 LLM 行为，不进入 agent-eval 冒烟
+跳过: [backend-contract] 纯前端空态由 mini-app jest 单测验证（quick-actions.test.tsx）+ H5 视觉回归（xiaobu-h5.spec.ts），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: frontend-fix.xiaobu-quick-actions
 溯源: 2026-09-17 新增：产品决策——空态不再铺商品图/名，推荐改为快捷对话入口；同日补 H5 视觉回归 spec 同步（issue #4003：spec 仍断言已删除的新品推荐 → 持续红，已改为六格+负向断言并更新截图基线） ｜ tags: mini-app, chat-entry, empty-state
@@ -3950,7 +3951,7 @@
 期望: direct_reply
 数据: 设置列表无「账号信息」占位入口（页面顶部已有用户信息，占位菜单冗余）
 数据: 「关于我们」「隐私协议」「退出登录」等真实入口保留，不回归
-跳过: 纯前端 UI 由 mini-app jest 单测验证（profile-page.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟
+跳过: [backend-contract] 纯前端 UI 由 mini-app jest 单测验证（profile-page.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: frontend-fix.no-api-change
 溯源: 2026-09-04 新增：POC 演示清理 — 老板现场点「账号信息」会看到「功能开发中」toast，露馅，先移除占位 ｜ tags: mini-app, profile
@@ -3962,7 +3963,7 @@
 数据: 导航副标题由 buildBrandSubtitle(user.tenantName) 生成：有租户名 → 「{企业名} · 智能购物助手」
 数据: 租户名为空/未登录 → 仅「智能购物助手」，不硬编码默认企业名
 数据: User 类型含 tenantName（camelCase，对齐 admin-api mini/login 返回）
-跳过: 纯前端文案由 mini-app jest 单测验证（brand.test.ts），非 LLM 行为，不进入 agent-eval 冒烟
+跳过: [backend-contract] 纯前端文案由 mini-app jest 单测验证（brand.test.ts），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: frontend-fix.no-api-change
 溯源: 2026-09-04 新增：品牌硬编码修复 — 导航副标题原写死「米高窗帘」，多租户下串台 ｜ tags: mini-app, brand
@@ -3973,7 +3974,7 @@
 期望: direct_reply
 数据: MessageBubble 不渲染 tool_calls/toolCall 指示器（数据仍保留供转人工等逻辑判定）
 数据: 未知卡片类型占位不暴露内部 type（显示「消息内容暂不支持预览」）
-跳过: 纯前端渲染由 mini-app jest 单测验证（message-bubble.test.tsx），非 LLM 行为
+跳过: [backend-contract] 纯前端渲染由 mini-app jest 单测验证（message-bubble.test.tsx），非 LLM 行为
 ```
 真值: frontend-fix.no-api-change
 溯源: 2026-09-04 新增：工具执行过程对客户不可见（issue #2857） ｜ tags: mini-app, chat
@@ -3985,7 +3986,7 @@
 数据: admin-api mini/login 与 /api/admin/user/info 返回 botName（camelCase，对齐 User 类型）
 数据: 思考中文案 = 「{botName}正在思考...」；空态 = 「你好，我是{botName}」；导航名 = buildBotName(botName)
 数据: botName 为空/未登录 → 兜底「小布」（buildBotName 默认值）
-跳过: 纯前端文案由 mini-app jest 单测验证（brand.test.ts + message-list），非 LLM 行为
+跳过: [backend-contract] 纯前端文案由 mini-app jest 单测验证（brand.test.ts + message-list），非 LLM 行为
 ```
 真值: frontend-fix.no-api-change
 溯源: 2026-09-04 新增：智能客服名称去硬编码 — 思考中/空态/导航名原写死「AI/小布」（issue #2857） ｜ tags: mini-app, brand
@@ -3998,7 +3999,7 @@
 数据: processingInfo 无 processingFee 字段时，按 processingInfo.processingItems 的 amount/subtotal 求和兜底展示加工费
 数据: 含加工项订单逐项展示加工项明细行：名称 × 单价元/米 × 数量米 = 金额元（数据源 item.processingInfo.processingItems）
 数据: 不含加工项订单不出现「+ 加工费0元」等误导信息
-跳过: 纯前端列表展示由 vitest 单测验证（OrderTable.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟
+跳过: [backend-contract] 纯前端列表展示由 vitest 单测验证（OrderTable.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: frontend-fix.no-api-change
 溯源: 2026-09-05 新增：订单列表采购明细漏加工项计费修复（issue #2916） ｜ tags: ui, orders, list, processing-fee
@@ -4016,7 +4017,7 @@
 数据: 办理结果 = extractLedgerRows：订单行带状态/金额/客户，有 orderId 时点击跳订单详情，其余点击发送追问；跨来源去重
 数据: 接下来可以问 = collectSuggestions 取最近 assistant 消息的 suggestions，点击即发送
 数据: 删除：处理进度工具时间线、业务域 ×N 计数、裸编号便签；会话标识弱化保留（调试用）
-跳过: 纯前端重构由 vitest 单测（session-insight.test.ts + SessionInsight.test.tsx）+ e2e 抽屉链路验证，非 LLM 行为，不进入 agent-eval 冒烟
+跳过: [backend-contract] 纯前端重构由 vitest 单测（session-insight.test.ts + SessionInsight.test.tsx）+ e2e 抽屉链路验证，非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: frontend-fix.no-api-change
 溯源: 2026-09-05 新增：米宝「洞察」重构为「会话简报」— 工具语言转业务信息（issue #2897）；2026-09-xx 更新：/chat 工作台 docked 默认右侧展开可缩回、FAB 保持 overlay 现状（issue #3018） ｜ tags: ui, admin-web, chat, insight
@@ -4028,7 +4029,7 @@
 数据: MibaoChatPanel 顶部/底部手柄高度 h-2→h-3.5、右侧手柄宽度 w-2→w-3.5（抓取区域加大）
 数据: MAX_HEIGHT_RATIO / MAX_WIDTH_RATIO = 1：缩放手柄可把面板拖到视口 100%（innerHeight/innerWidth），不留边距空白
 数据: 保留原有最小尺寸边界（MIN_HEIGHT=300 / MIN_WIDTH=480）与 localStorage 持久化
-跳过: 纯前端 React 组件/单测验证（MibaoChatPanel.test.tsx + useResizableHeight/Width.test.ts），非 LLM 行为
+跳过: [backend-contract] 纯前端 React 组件/单测验证（MibaoChatPanel.test.tsx + useResizableHeight/Width.test.ts），非 LLM 行为
 ```
 真值: frontend-fix.no-api-change
 溯源: 2026-09-05 新增：大面板缩放手柄加大 + 缩放上限 100% 不留白（issue #2918） ｜ tags: ui, admin-web, floating-assistant, resize
@@ -4040,7 +4041,7 @@
 数据: MibaoChatPanel 渲染右下角把手 testid=chat-panel-resize-handle-corner，光标 nwse-resize，aria-label「拖拽调整大小（斜向缩放）」
 数据: 斜向拖拽时宽度=起始宽度+dx、高度=起始高度+dy 同步更新（useResizableHeight.setHeight / useResizableWidth.setWidth 新 API，夹在 min/max 内）
 数据: 松开后宽/高持久化到 mibao_chat_panel_height / mibao_chat_panel_width
-跳过: 纯前端 React 组件/单测验证（MibaoChatPanel.test.tsx），非 LLM 行为
+跳过: [backend-contract] 纯前端 React 组件/单测验证（MibaoChatPanel.test.tsx），非 LLM 行为
 ```
 真值: frontend-fix.no-api-change
 溯源: 2026-09-05 新增：大面板右下角斜向缩放把手（issue #2918） ｜ tags: ui, admin-web, floating-assistant, resize
@@ -4053,7 +4054,7 @@
 数据: 默认位置贴右下角：右侧 16px 边距、底部贴齐视口（top = innerHeight - 高，无底部预留空间 #3106）
 数据: 底部把手（testid=float-minimized-resize-bottom）拖拽调整高度、右下角把手（float-minimized-resize-corner，nwse-resize）斜向同时调整宽高；尺寸持久化 mibao_minimized_size
 数据: 移动拖拽按当前浮窗尺寸钳制（0 ≤ x ≤ iw-w、0 ≤ y ≤ ih-h）；读取存储位置/尺寸时越界自动钳回视口
-跳过: 纯前端 React 组件/单测验证（floating-assistant.test.tsx），非 LLM 行为
+跳过: [backend-contract] 纯前端 React 组件/单测验证（floating-assistant.test.tsx），非 LLM 行为
 ```
 真值: frontend-fix.no-api-change
 溯源: 2026-09-05 新增：最小化浮窗高度自适应 + 缩放把手 + 越界钳制（issue #2918）；2026-09-09 #3106：默认位置贴底（去掉 -80 底部预留空间） ｜ tags: ui, admin-web, floating-assistant, minimized-window
@@ -4065,7 +4066,7 @@
 数据: request.ts 响应拦截器 toast 后端具体错误（success:false 业务错误 / HTTP 错误 / 网络错误 / 登录已过期）后，给错误对象打已提示标记（api-error.ts 的 markErrorToastShown / isErrorToastShown，Symbol.for 稳定键，frozen 对象不抛错）
 数据: 页面 catch 统一走 toastRequestError(e, fallback, {id?})：拦截器已提示 → 不再重复弹 fallback；传入 loading toast id 且已提示时先 dismiss（订单列表页「操作中…」不滞留）；未标记错误（客户端校验等本地错误）→ 弹 fallback
 数据: 订单域页面（订单详情/订单列表/发货/新建订单）请求失败 catch 不再重复 toast 通用错误；客户端校验类提示（如「请输入快递单号」「请完善订单信息」）保留不变，不回归
-跳过: 纯前端错误提示行为由 vitest 单测验证（api-error/request/order-detail 三套），toast 链路由 request 拦截器单测覆盖，非 LLM 行为，不进入 agent-eval 冒烟
+跳过: [backend-contract] 纯前端错误提示行为由 vitest 单测验证（api-error/request/order-detail 三套），toast 链路由 request 拦截器单测覆盖，非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: frontend-fix.no-api-change, frontend-fix.vitest, frontend-fix.e2e
 溯源: 2026-09-05 新增：拦截器与页面 catch 双重 toast 导致错误提示重复弹出（issue #2923），订单域落地去重模式，其余模块批量清理留后续 issue ｜ tags: ui, admin-web, toast, error-handling
@@ -4078,7 +4079,7 @@
 数据: 录音中：placeholder 保持「输入消息…」短句不被录音文案占用；容器内显示录音状态条「正在录音 {m:ss} · 点击停止，Esc 取消」（红点脉冲）；转写中提示「转写中...」不变；Esc 取消 / 右键取消行为不变（B 端转写追加进输入框，D1 既定差异不改）
 数据: 图片预览缩略图渲染在「消息输入区」容器内顶部；删除角标常显且带 aria-label「删除图片」；上传中添图键置灰（disabled）但不换图标（仍 ImagePlus），上传进度提示在预览块
 数据: #2984 语音容错：空口语/误触录音（<0.8s 或 <4KB）停止不发转写请求，提示「未检测到声音，已取消转写」；转写失败文案友好化（网络失败/裸 500 转中文提示，不透出 Failed to fetch）
-跳过: 纯前端输入条视觉/图标/状态呈现由 vitest 单测验证，非 LLM 行为，不进入 agent-eval 冒烟
+跳过: [backend-contract] 纯前端输入条视觉/图标/状态呈现由 vitest 单测验证，非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: frontend-fix.no-api-change, frontend-fix.vitest
 溯源: 2026-09-06 新增：B/C 端输入条统一重设计（issue #2952，设计文档 docs/design/agent-input-bar-unified-design.md §4.2/§4.4）；2026-09-07 补：#2984 空录音不发转写 + 错误文案友好化（voice-guard） ｜ tags: ui, chat-input, admin-web, design-system
@@ -4089,7 +4090,7 @@
 期望: direct_reply
 数据: 列表表格新增「适用商品分类」列：展示已勾选分类的名称（分类树 ID→名称 映射，多选逗号分隔/多标签）；applicableProductCategories 为空展示「适用所有分类」
 数据: 列数据来自列表接口已返回的 applicableProductCategories 字段，无新增后端字段
-跳过: 纯前端列表列展示由 vitest 单测验证，非 LLM 行为，不进入 agent-eval 冒烟
+跳过: [backend-contract] 纯前端列表列展示由 vitest 单测验证，非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: frontend-fix.no-api-change, frontend-fix.vitest
 溯源: 2026-09-06 新增（issue #2964）：加工项「适用商品分类」关联数据此前列表页不可见 ｜ tags: ui, processing, admin-web, list
@@ -4103,7 +4104,7 @@
 数据: 创建/编辑员工：岗位改为下拉选择（岗位=角色体系，来自 /api/admin/roles/all），选岗位自动把该岗位默认权限（role_permissions codes）预填进权限树；仍可手动增删；编辑切岗位则重置为新岗位默认
 数据: 员工权限快照式（#2969）：提交时携带 position+permissions（permissions=最终勾选），不携带 role 字段（#2907 契约），后端按岗位名解析角色
 数据: 岗位权限弹窗「权限分配」按真实侧边栏菜单同构渲染（#3002）：分组名=菜单组（智能客服/商品管理/订单管理/客户管理/组织管理），勾选项=菜单项名（在线接待/知识库/商品列表/加工项管理/订单列表/售后工单/客户列表/财务对账/员工管理/岗位权限/企业基础信息；#3094 米宝·在线对话 菜单已移除；#3109 起菜单名「在线接待」），勾选即授予对应权限码（roles 保存权限 ID，前端做码→ID 映射）；非菜单操作权限（仪表板查看/新增商品/商品分类/订单详情/新增员工/商品管理旧码）单独一节「操作权限」；旧口径不再出现（英文 resourceType 组头 / 会话监控 / 快捷回复 / AI 客服配置 / 系统管理等旧名）；保存契约不变（permissionIds = 权限 ID）
-跳过: 岗位权限/菜单重构/选岗位带权限均由 vitest 单测 + E2E 点击链路验证，非 LLM 行为，不进入 agent-eval 冒烟
+跳过: [backend-contract] 岗位权限/菜单重构/选岗位带权限均由 vitest 单测 + E2E 点击链路验证，非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: frontend-fix.position-permission-rename, frontend-fix.sidebar-seven-groups, frontend-fix.employee-position-default-permissions
 溯源: 2026-09-06 新增：岗位权限体系改造（issue #2969）；2026-09-07 补：#3002 权限弹窗菜单同构渲染——复用侧边栏 menuGroups/standaloneItems 单源（@/config/menu），弹窗分组/名称与真实侧边栏一致，操作权限单独一节，修复原按 resourceType 英文码分组 + 旧权限名的口径漂移 ｜ tags: ui, sidebar, menu, role, position, employee
@@ -4117,7 +4118,7 @@
 数据: useResizableWidth/useResizableHeight 挂载时把超过视口的残留 px 钳制到视口上限，窗口 resize 持续钳制；视口变大不放大刻意缩小的浮窗（保留浮窗能力）
 数据: 右下角斜向把手未发生拖动的 mouseup 不持久化（单击误触不再把 100% 流式宽度冻结成 px）
 数据: 既有拖拽缩放/持久化行为不回退（UI-021/UI-022）
-跳过: 纯前端 React 组件/hook 行为，由 vitest 单测（MibaoChatPanel.test.tsx + useResizableWidth/Height.test.ts）+ E2E 双击复位与角把手防误触链路验证，非 LLM 行为，不进入 agent-eval 冒烟
+跳过: [backend-contract] 纯前端 React 组件/hook 行为，由 vitest 单测（MibaoChatPanel.test.tsx + useResizableWidth/Height.test.ts）+ E2E 双击复位与角把手防误触链路验证，非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: frontend-fix.no-api-change
 溯源: 2026-09-08 新增：面板缩放防冻结 + 双击恢复默认（issue #3021） ｜ tags: ui, admin-web, chat, resize
@@ -4132,7 +4133,7 @@
 数据: InteractiveMessage ChoiceCard/ConfirmCard/FormCard 在 disabled=true 时不可点击且视觉置灰（opacity/disabled 属性），点击不触发 sendMessage
 数据: 锁的单一事实源为消息级 interactiveAnswered（来自 store 透传/历史回放），非组件本地 useState：FAB 关闭重开（ChatArea 卸载重挂载）后已答卡片仍保持只读不可点
 数据: FAB 浮窗（FloatingAssistant）与 /chat 工作台共用 MessageList/InteractiveMessage 链路，两入口渲染决策一致
-跳过: 纯前端渲染决策由 vitest 单测（components-chat.test.tsx + interactive-render 单测）验证，非 LLM 行为，不进入 agent-eval 冒烟
+跳过: [backend-contract] 纯前端渲染决策由 vitest 单测（components-chat.test.tsx + interactive-render 单测）验证，非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: frontend-fix.no-api-change
 溯源: 2026-09-08 新增：米宝交互组件渲染三态固化（issue #3036） ｜ tags: ui, admin-web, chat, interactive, render-freeze
@@ -4145,7 +4146,7 @@
 数据: admin-web store selectSession 历史映射透传 interactive 与 interactiveAnswered（不再丢弃），历史回放后交互组件按 UI-030 三态渲染（已答 → 只读变体，未答 → 仍可交互）
 数据: detectPendingInteraction 在历史回放后仍能检测未答交互（interactive 随历史返回）
 数据: 卡片信息（fields/options/formFields）不回退：历史回放的只读变体仍展示完整字段内容
-跳过: 前后端契约由 vitest（interactive-contract.test.ts / components-chat.test.tsx）+ ai-agent 单测（get_history 返回 interactive）验证，非 LLM 行为，不进入 agent-eval 冒烟
+跳过: [backend-contract] 前后端契约由 vitest（interactive-contract.test.ts / components-chat.test.tsx）+ ai-agent 单测（get_history 返回 interactive）验证，非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: frontend-fix.no-api-change
 溯源: 2026-09-08 新增：米宝交互组件历史回放透传（issue #3036） ｜ tags: ui, admin-web, chat, interactive, history, persistence
@@ -4158,7 +4159,7 @@
 数据: 解析失败或字段缺失时兜底剥离 XML 块（不展示原始 XML），SSE 不再下发残缺 payload
 数据: admin-web AIMessageContent.cleanContent 增加 <interact>…</interact> 剥离正则（与 ```tool_call 剥离同处），历史消息若有残留 XML 也不展示
 数据: 正常 interact 工具路径（SSE interactive 事件）不回退：choice/confirm/form 仍渲染为对应交互组件
-跳过: 后端 XML 解析/剥离由 ai-agent 单测（test_chat.py XML 用例）验证，前端兜底由 vitest（components-chat.test.tsx cleanContent）验证，非 LLM 行为，不进入 agent-eval 冒烟
+跳过: [backend-contract] 后端 XML 解析/剥离由 ai-agent 单测（test_chat.py XML 用例）验证，前端兜底由 vitest（components-chat.test.tsx cleanContent）验证，非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: frontend-fix.no-api-change
 溯源: 2026-09-08 新增：LLM 幻觉 <interact> XML 伪代码块剥离/解析（issue #3036） ｜ tags: ui, chat, interactive, xml, sanitize
@@ -4172,7 +4173,7 @@
 数据: dashboard 布局底部预留米宝浮动按钮（FAB）空间（main pb-24 + 内容卡片 min-h 联动），内容不足一屏时底部锚定元素（分页等）不被右下角浮动按钮遮挡、可正常点击
 数据: 行业模板一键套用后：跳转「知识卡片」Tab、重置筛选并刷新列表，套用出的卡片（published）立即可见且可编辑（打开编辑弹窗回填标题）
 数据: 待确认候选「采纳」后：跳转「知识卡片」Tab 并刷新列表，已发布卡片立即可见可编辑
-跳过: 纯前端样式/交互由 vitest 单测验证，非 LLM 行为，不进入 agent-eval 冒烟
+跳过: [backend-contract] 纯前端样式/交互由 vitest 单测验证，非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: frontend-fix.no-api-change, frontend-fix.vitest
 溯源: 2026-09-09 新增（issue #3070）：知识库页 UI 修复 — 面包屑对齐/样式统一/分页遮挡/模板套用与候选采纳结果可见性 ｜ tags: ui, knowledge, breadcrumb, pagination, admin-web
@@ -4186,7 +4187,7 @@
 数据: 套用确认后：跳转「知识卡片」Tab 并自动按来源=模板筛选（getCards 带 sourceType=template），列表仅显示模板来源卡片（批量成果可核对可编辑）
 数据: 「知识卡片」Tab 筛选区常驻「来源」下拉（全部来源/模板/会话提炼/文档提炼/人工——商品派生/加工项派生能力已移除且存量数据已清理（#3083/#3085/#3087），来源定义「一眼看懂」），用户可随时按来源定位卡片
 数据: 待确认/行业模板两处 Tab 副文案补充去向说明，与 toast 口径一致
-跳过: 纯前端交互由 vitest 单测验证，非 LLM 行为，不进入 agent-eval 冒烟
+跳过: [backend-contract] 纯前端交互由 vitest 单测验证，非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: frontend-fix.no-api-change, frontend-fix.vitest
 溯源: 2026-09-09 新增（issue #3080）：知识库采纳/套用成果去向提示 — toast 带去向 + 采纳高亮 + 套用确认弹窗 + 来源筛选定位 ｜ tags: ui, knowledge, feedback-loop, locate, admin-web
@@ -4198,7 +4199,7 @@
 数据: 来源筛选下拉选项 = 全部来源/模板/会话提炼/文档提炼/人工（SOURCE_FILTER_OPTIONS 排除 product/config 两个已移除的派生来源）
 数据: 来源徽标（列表列）：仅 模板/会话提炼/文档提炼/人工 四种；product/config 已从类型枚举与渲染中移除（存量数据已清理，无归档卡）
 数据: 来源定义全部自解释：模板/会话提炼/文档提炼/人工，无模糊词与已移除的派生来源
-跳过: 纯前端文案/交互由 vitest 单测验证，非 LLM 行为，不进入 agent-eval 冒烟
+跳过: [backend-contract] 纯前端文案/交互由 vitest 单测验证，非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: frontend-fix.no-api-change, frontend-fix.vitest
 溯源: 2026-09-09 新增（issue #3083）：知识库来源定义清晰化 — config→加工项派生、商品派生选项移除；2026-09-09 更新（issue #3085）：加工项派生移除，筛选仅剩活跃来源 ｜ tags: ui, knowledge, source-clarity, admin-web
@@ -4213,7 +4214,7 @@
 数据: 通知设置 tab（#3103/#3119）：仅系统通知总开关（启用系统通知，控制订单/客服等重要事件自动站内信；关闭后不再产生新站内信、历史保留）；开关点击即时保存（乐观更新+失败回滚，调用 /api/admin/settings），无独立保存按钮（开关类配置即时生效）；已移除通知邮箱输入框——notification_email 为僵尸字段（站内信无需邮箱、后端无邮件消费逻辑），SystemSettings 类型同步移除该字段
 数据: 快捷回复 UI 全部移除：quickReplyApi 与 QuickReply 类型删除，页面不再出现「快捷回复」tab/新建回复/模板列表
 数据: 权限联动（岗位权限页由 menuGroups 单源渲染）：权限分配弹窗与操作权限节均不再出现「AI 客服配置」「快捷回复」；agent:quickreply 权限码从后端权限目录与岗位默认权限移除；后端 /api/admin/quick-replies 接口与 quick_reply_manage 工具随功能下线
-跳过: 纯前端页面/菜单/权限联动由 vitest 单测验证（settings/Sidebar/Header/roles.test），非 LLM 行为，不进入 agent-eval 冒烟
+跳过: [backend-contract] 纯前端页面/菜单/权限联动由 vitest 单测验证（settings/Sidebar/Header/roles.test），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: frontend-fix.no-api-change, frontend-fix.vitest
 溯源: 2026-09-09 新增（issue #3081）：快捷回复功能全栈下线 + AI 客服配置合并进企业基础信息；2026-09-09 #3098：企业基础信息页恢复左侧 tab 导航布局（基本设置/AI 客服设置/通知设置）；2026-09-09 #3103：通知设置移除邮箱输入框（僵尸字段清理）；2026-09-09 #3119：通知开关改为即时保存、移除「保存通知设置」按钮；保存按钮统一命名「保存」（与全站惯例自洽） ｜ tags: ui, sidebar, settings, admin-web, permission
@@ -4227,7 +4228,7 @@
 数据: fetchUserInfo 解包 /api/auth/me 的 { user, roles, permissions, menus } 包装结构：顶层 nickname/username/position/tenantName/tenantLogo 可读，roles/permissions/menus 保留（侧边栏过滤依赖）——修复右上角恒显「管理员」与侧边栏企业名/Logo 静默失效的根因
 数据: 「企业基础信息」保存成功后立即 fetchUserInfo 刷新，侧边栏企业名/Logo 即时同步（无需刷新页面）；toast「侧边栏将同步展示」与实际行为一致
 数据: 后端 /api/auth/me 与 /api/admin/user/info 的 user 内层返回 position（岗位，User 实体字段）
-跳过: 纯前端交互 + 后端 DTO 由 vitest 单测与 MockMvc 集成测试验证（Header/auth store/settings/AuthIntegrationTest），非 LLM 行为，不进入 agent-eval 冒烟
+跳过: [backend-contract] 纯前端交互 + 后端 DTO 由 vitest 单测与 MockMvc 集成测试验证（Header/auth store/settings/AuthIntegrationTest），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: frontend-fix.no-api-change, frontend-fix.vitest
 溯源: 2026-09-09 新增（issue #3099）：右上角用户信息卡片优化 — 点击展开 + 姓名默认展示 + 卡片信息丰富（手机号/岗位/所属企业）+ fetchUserInfo 解包修复 + 保存企业信息后即时刷新 ｜ tags: ui, header, user-card, admin-web, settings
@@ -4240,7 +4241,7 @@
 数据: 弹窗支持按 姓名/手机号 关键词搜索（Enter/搜索按钮触发 getCustomers 携带 keyword）；客户行展示 姓名（wechatNickname 优先）+ 手机号 + 省市区 + 来源渠道
 数据: 选中客户后自动回填：收货人姓名=客户昵称、手机号=phone、收货地址=省市区拼接（regionProvince regionCity regionDistrict），仍可手动修改
 数据: 保留手动兜底：未命中客户/关闭弹窗后可直接手填收货信息提交订单；订单提交契约不变（OrderCreateRequest 无 customerId，不引入跨端契约改动）
-跳过: 纯前端页面交互由 vitest 单测验证（orders-new.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟
+跳过: [backend-contract] 纯前端页面交互由 vitest 单测验证（orders-new.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: frontend-fix.no-api-change, frontend-fix.vitest
 溯源: 2026-09-09 新增（issue #3102）：新增订单表单选择已有客户自动回填收货信息（前端快捷回填，不动后端契约） ｜ tags: ui, orders, customer, order-create, admin-web
@@ -4253,7 +4254,7 @@
 数据: 「重新发布」成功 toast 文案为「知识卡片已重新发布」（区别于普通发布的「知识卡片已发布」）
 数据: 操作列新增「查看」按钮（所有状态卡片可见）：点击打开只读详情弹窗「知识卡片详情」，展示 标题/分类/常见问法/标准回答/关键词 + 来源/状态/版本/更新时间 元信息；无「保存」按钮、字段不可编辑（与「编辑」弹窗分离，看内容不动数据）
 数据: 知识库页副标题不再出现「LLM WIKI」字样，改为通俗文案（如「AI 客服知识库 — 发布后的知识卡片将优先用于 AI 客服回答顾客问题」）
-跳过: 纯前端交互 + 状态机 UI 由 vitest 单测验证（knowledge.test.tsx），后端状态机放开由 KnowledgeCardServiceTest 验证（API-015），非 LLM 行为，不进入 agent-eval 冒烟
+跳过: [backend-contract] 纯前端交互 + 状态机 UI 由 vitest 单测验证（knowledge.test.tsx），后端状态机放开由 KnowledgeCardServiceTest 验证（API-015），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: frontend-fix.no-api-change, frontend-fix.vitest
 溯源: 2026-09-09 新增（issue #3108）：归档非终点——已归档卡片可一键重新发布恢复 AI 检索；新增只读「查看」弹窗；副标题去 LLM WIKI 通俗化 ｜ tags: ui, knowledge, status-machine, read-only-view, admin-web
@@ -4270,7 +4271,7 @@
 数据: 入口两处：发货页（发货前打印，发货人取当前输入值，未保存也印）+ 订单详情页 shipped/completed 状态「打印发货单」（补打——发货页有状态守卫，shipped 后进不去）；待付款等未发货状态不显示该入口
 数据: 发货单渲染在页面级，**不得**放进 Modal（Modal 为 max-h-full + 内部 overflow-y-auto，打印只会打出可视一屏、多页明细被裁）；每页只挂一份（.shipment-print-area 为全局选择器，挂两份会打印出两套单据）
 数据: 不向 C 端顾客泄漏发货人：customer_logistics_track 按白名单字段构造返回（order_id/order_no/tracking_number/company/status/status_text/latest/traces），响应中不含 shipperName
-跳过: 纯前端 UI + 后端字段落库，由 vitest 单测（ShipmentDoc/ship-order/order-detail/data-adapter）与 MockMvc/Service 单测（OrderControllerTest/AgentOrderServiceTest/UserServiceTest）验证；非 LLM 行为（agent 工具参数未变，发货人由后端按 X-User-Id 兜底），不进入 agent-eval 冒烟
+跳过: [backend-contract] 纯前端 UI + 后端字段落库，由 vitest 单测（ShipmentDoc/ship-order/order-detail/data-adapter）与 MockMvc/Service 单测（OrderControllerTest/AgentOrderServiceTest/UserServiceTest）验证；非 LLM 行为（agent 工具参数未变，发货人由后端按 X-User-Id 兜底），不进入 agent-eval 冒烟
 ```
 真值: frontend-fix.vitest
 溯源: 2026-09-15 新增（issue #3768）：发货单闭环 —— 发货人落库（预填登录人可改 + 后端 userId 兜底；更新不覆盖原经手人）+ 可打印纸质发货单（A4，发货前打 / 发货后补打）+ C 端不泄漏发货人；2026-09-15（#3818）口径裁定：存量发货人纸面显示「-」（原「留空」口径作废；留空只给运单号/物流公司） ｜ tags: ui, order, shipment, print, admin-web
@@ -4282,7 +4283,7 @@
 数据: settings/page.tsx 两个开关按钮（启用智能每日经营简报开关 / 启用系统通知开关）类名含 shrink-0：作为 flex justify-between 行子项时不被长说明文字压缩，w-11 轨道保持 44px
 数据: E2E 几何断言（boundingBox）：开启态圆钮四边完整落在轨道内（右缘 ≤ 轨道右缘 + 0.5px），轨道宽 ≥ 43.5px —— 修复前实测轨道被压至 37.9px、圆钮溢出右缘
 数据: 点击简报开关 → PUT /api/admin/briefing/config 携带 enabled 翻转，toast 与真实结果一致（交互链路不回归）
-跳过: 纯前端布局几何由 Playwright E2E 验证（tests/e2e/specs/settings/toggle-geometry.spec.ts），非 LLM 行为，不进入 agent-eval 冒烟
+跳过: [backend-contract] 纯前端布局几何由 Playwright E2E 验证（tests/e2e/specs/settings/toggle-geometry.spec.ts），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: frontend-fix.no-api-change, frontend-fix.e2e
 溯源: 2026-09-15 新增（issue #3924）：设置页开关按钮缺 shrink-0，flex 压缩 44px 轨道而绝对定位圆钮不随缩 → 圆钮溢出轨道（截图同款）；E2E 几何断言红→绿实证 ｜ tags: ui, settings, toggle, layout
@@ -4294,7 +4295,7 @@
 数据: ChoiceCard 点击选项回传 opt.label || opt.value（人话，如「LG工艺 ¥50/件」），不得回传内部编码 proc_item_craft_lg —— 与 admin-web InteractiveMessage.tsx 单一事实源及 AI 侧 nodes.py _card_accepts_answer（label/value 均接受）对齐
 数据: 选项缺 label 时回退 value（label || value 协议兜底不回归）
 数据: 提交锁（CH-030）不回归：点选后锁卡，后续点击不再触发 onAction
-跳过: 纯前端组件行为由 jest 组件测试验证（frontend/mini-app/tests/choice-card.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟
+跳过: [backend-contract] 纯前端组件行为由 jest 组件测试验证（frontend/mini-app/tests/choice-card.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: frontend-fix.no-api-change, frontend-fix.vitest
 溯源: 2026-09-15 新增：小布 ChoiceCard 点击选项直发 opt.value（裸编码 proc_item_*），用户实测看不懂；评测 harness 早已按前端协议修为发 label（issue #3365 实证「发内部 id → 模型看不懂选了什么」），但真实小程序组件漏改 → 本次对齐 ｜ tags: ui, mini-app, choice-card, protocol
@@ -4305,7 +4306,7 @@
 期望: direct_reply
 数据: src/utils/richText.ts parseRichText：成对 **x** 解析为 bold 段，未闭合 ** 原样保留（流式安全），单个 * 不误吞；- 开头行解析为 bullet 行
 数据: MessageBubble 气泡文本区按行渲染：bullet 行带圆点缩进，bold 段走加粗样式类，空行保留段落间距
-跳过: 纯前端渲染由工具单测验证（frontend/mini-app/tests/rich-text.test.ts），非 LLM 行为，不进入 agent-eval 冒烟
+跳过: [backend-contract] 纯前端渲染由工具单测验证（frontend/mini-app/tests/rich-text.test.ts），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: frontend-fix.no-api-change
 溯源: 2026-09-15 新增（真机 walkthrough 实测反馈）：C 端气泡无 markdown 处理，LLM 回复的 **粗体**/列表裸奔；新增轻量 richText 解析 + 气泡按行渲染 ｜ tags: ui, chat, rich-text
@@ -4319,7 +4320,7 @@
 数据: 兼容两种载荷（M4-G-2 实装字段）：工序树 {positions[].operations[], progress:{total,done,percent}, expected_delivery_at} 与米宝精简进度 {progress_percent, current_operation, pending_operations[], total_operations, done_operations, expected_delivery_date}
 数据: 不泄露内部信息：工人姓名 / 计件单价 / 成本 / qr_token 不出现在卡片文案（内部计件与对外加工费两套账分离）
 数据: MessageBubble 的 cardData.type='production_progress' 渲染该卡（未知卡片占位分支不被命中）
-跳过: 纯前端组件渲染由 jest 单测验证（frontend/mini-app/tests/production-progress-card.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟
+跳过: [backend-contract] 纯前端组件渲染由 jest 单测验证（frontend/mini-app/tests/production-progress-card.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: frontend-fix.no-api-change
 溯源: 2026-09-17 新增（issue #3997 M4-G-3）：顾客端生产进度可视化 —— 消费生产报工契约的读侧；persona: xiaobu（C 端专属卡片） ｜ tags: ui, mini-app, production-progress, card
@@ -4333,7 +4334,7 @@
 数据: java_to_python 把 basePrice→price / mainImage→main_image / categoryId→category_id，未知字段原样保留
 数据: python_to_java 反向还原，自定义 mapping 生效
 数据: get_price 兼容 price/basePrice（含 price=0 的 `or` 链语义）；get_main_image 兼容 mainImage/main_image/images[0]；get_category_id 兼容 categoryId/category_id
-跳过: 纯函数字段映射由 pytest 单测验证（tests/test_utils_field_mapper.py），非 LLM 行为，不进入 agent-eval 冒烟
+跳过: [backend-contract] 纯函数字段映射由 pytest 单测验证（tests/test_utils_field_mapper.py），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: utils.field-map, utils.field-map-accessors
 溯源: 2026-08-25 新增：ai-agent-service utils 覆盖率补全（issue #2430） ｜ tags: utils, field_mapping, data_contract
@@ -4344,7 +4345,7 @@
 期望: direct_reply
 数据: get_db_session 正常路径 commit、异常路径 rollback 后向上抛、finally close
 数据: init_db SELECT 1 探活失败向上 raise；close_db dispose 连接池
-跳过: DB 会话生命周期由 pytest 单测验证（tests/test_utils_database.py），非 LLM 行为，不进入 agent-eval 冒烟
+跳过: [backend-contract] DB 会话生命周期由 pytest 单测验证（tests/test_utils_database.py），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: utils.db-session, utils.db-lifecycle
 溯源: 2026-08-25 新增：ai-agent-service utils 覆盖率补全（issue #2430） ｜ tags: utils, database, session_lifecycle

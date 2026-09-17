@@ -154,7 +154,7 @@ cases:
       - "销售额趋势/迷你图使用真实 amount 数据，无 23.8 假乘数"
       - "经营数据 4 卡自洽：客单价 = 今日销售额 ÷ 今日订单数"
       - "涨跌语义色：上涨=绿色（好事）、下跌=红色（需关注）"
-    skip_reason: "UI 页面改版：由 vitest 单测 + Playwright 多视口 E2E + 页面验收（page_accept）验证，不进入 agent-eval 冒烟"
+    skip_reason: "[backend-contract] UI 页面改版：由 vitest 单测 + Playwright 多视口 E2E + 页面验收（page_accept）验证，不进入 agent-eval 冒烟"
     merge_log: "2026-08-25 新增：#2532 经营看板织物质感改版（样板页）；2026-08-31 更新：PD 精简改版（洞察条一句话解读 + 客单价卡 + 绿涨红跌 + 修复 23.8 假数据）"
     traces:
       tests:
@@ -192,7 +192,7 @@ cases:
       - "返回按 productId 聚合的销量排行（rank/productName/salesQty/salesAmount），ToolResult.data 为 dict 契约（list 响应包裹为 items）"
       - "摘要含榜首商品名（如「本月销量排行: N个商品，榜首「星空全遮光窗帘」」）"
       - "权限：admin/agent/tenant_admin/operator 可查；customer 拒绝（不越权）"
-    skip_reason: "非 LLM 行为：转发实现与权限由 ai-agent 单测验证（test_tools_dashboard_stats.py），不进入 agent-eval 冒烟"
+    skip_reason: "[backend-contract] 非 LLM 行为：转发实现与权限由 ai-agent 单测验证（test_tools_dashboard_stats.py），不进入 agent-eval 冒烟"
     merge_log: "2026-09-02 新增：POC 演示审查 E 项 — 米宝问数「哪个花色卖得最好」无工具支撑（dashboard_stats 无 TopN）；按订单数据实际粒度实现商品维度排行（order_items 无颜色字段，花色排行需 schema 变更后置）"
     traces:
       tests:
@@ -223,7 +223,7 @@ cases:
       - "排行表头列名「环比」+ title 标注周期口径（较上一统计周期），不标注「较昨日」；「成交量」列 title 标注近7天，与今日订单数时间口径显式区分"
       - "修复后生产谱号：米白色遮光窗帘 356件/▲187.1% 的虚假涨跌不再出现（356 件全部来自 pending 测试单）"
       - "#2989 幽灵行治理：selectProductRanking/selectPrevPeriodQuantities 排除 product_id 为 NULL/空的明细，不聚合展示不存在的商品（生产实证曾出现「遮光窗帘」54 件无 productId 的假排行行）"
-    skip_reason: "SQL 口径由 admin-api 单测（OrderItemMapperTest）文本断言验证；UI 文案由 vitest（dashboard.test.tsx）验证；不进入 agent-eval 冒烟"
+    skip_reason: "[backend-contract] SQL 口径由 admin-api 单测（OrderItemMapperTest）文本断言验证；UI 文案由 vitest（dashboard.test.tsx）验证；不进入 agent-eval 冒烟"
     merge_log: "2026-09-07 新增：#2984 经营看板排行数据自洽治理 — 生产实证今日订单 0 但排行显示 356 件+▲187.1%（实为近7天 pending 测试单累计 × 7天环比，被 UI「日涨/较昨日」标注误导）；2026-09-07 补：#2989 幽灵商品行治理（product_id 为 NULL 明细不进排行）"
     traces:
       tests:
@@ -251,7 +251,7 @@ cases:
       - "tenants.briefing_enabled 默认 false；开关关闭时 generateForTenant 直接返回 null 且 LLM 调用数为 0（熔断）"
       - "更新配置开启瞬间立即生成当日简报；关闭后调度跳过该租户（generateDueTenants 内部拦截），已生成历史保留但入口隐藏"
       - "仅 admin（system:manage）可改开关；变更写操作日志（audit_logs：action=update, resource_type=briefing_config，含开关状态）"
-    skip_reason: "开关熔断由 admin-api 单测验证（DailyBriefingServiceTest$SwitchBreaker + BriefingControllerTest），非 LLM 行为，不进入 agent-eval 冒烟"
+    skip_reason: "[backend-contract] 开关熔断由 admin-api 单测验证（DailyBriefingServiceTest$SwitchBreaker + BriefingControllerTest），非 LLM 行为，不进入 agent-eval 冒烟"
     merge_log: "2026-09-14 新增（issue #3468）：智能每日经营简报 MVP — 企业开关即熔断（数据安全红线 3）"
     traces:
       tests:
@@ -279,7 +279,7 @@ cases:
       - "LLM 输出每条目必须带 metrics 引用（key+value），key 不在聚合快照或 value 与快照不一致 → 条目丢弃（不展示编造数字）"
       - "全部条目被丢弃 → verify_status=failed，前端展示安全提示而非假数据；部分丢弃 → partial"
       - "LLM 失败/超时 → 落 failed 记录，不 fallback 昨日数据冒充今日"
-    skip_reason: "数字回填校验由 admin-api 单测验证（DailyBriefingServiceTest$VerifyAndFilter）+ ai-agent 单测（test_briefing_generator.py），非 LLM 行为，不进入 agent-eval 冒烟"
+    skip_reason: "[backend-contract] 数字回填校验由 admin-api 单测验证（DailyBriefingServiceTest$VerifyAndFilter）+ ai-agent 单测（test_briefing_generator.py），非 LLM 行为，不进入 agent-eval 冒烟"
     merge_log: "2026-09-14 新增（issue #3468）：智能每日经营简报 MVP — 数字回填校验层（数据安全红线 4）"
     traces:
       tests:
@@ -307,7 +307,7 @@ cases:
       - "聚合快照只含数字指标 + 脱敏事实（订单数/工单数），不含客户手机号/姓名/地址/会话原文（快照 JSON 断言无 PII 字段）"
       - "daily_briefings 表含 tenant_id + RLS 策略 tenant_isolation_daily_briefings（fail-closed 兜底；应用层 TenantLineInnerInterceptor 注入 tenant_id 为主，RLS 为纵深防御）"
       - "简报展示层脱敏别名「客户A/B」，点击查看真名复用客户详情 RBAC（customers:view），无权限角色点击不可见真名"
-    skip_reason: "PII 隔离由 admin-api 单测（DailyBriefingServiceTest$Aggregation）+ migration 契约验证；RLS 由 V44 迁移/SchemaMigrationTest 验证，非 LLM 行为，不进入 agent-eval 冒烟"
+    skip_reason: "[backend-contract] PII 隔离由 admin-api 单测（DailyBriefingServiceTest$Aggregation）+ migration 契约验证；RLS 由 V44 迁移/SchemaMigrationTest 验证，非 LLM 行为，不进入 agent-eval 冒烟"
     merge_log: "2026-09-14 新增（issue #3468）：智能每日经营简报 MVP — 数据安全红线 1/2（PII 不进 prompt + RLS 租户隔离）"
     traces:
       tests:

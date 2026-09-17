@@ -29,7 +29,7 @@ cases:
       - "AgentResponse 默认 type=text、tool_calls=None、metadata=None；type 枚举 text/tool_call/tool_result/suggestions/error"
       - "_extract_msg_content 移除 <think>...</think>（含多行），content 为 list 时仅拼接 type==text 的 text 块"
       - "AgentContext.to_dict 返回 6 字段；to_tool_context 透传 tenant_id/user_id/session_id/role"
-    skip_reason: "dataclass/纯函数由 pytest 单测验证（tests/test_customer_service_agent.py），非 LLM 行为，不进入 agent-eval 冒烟"
+    skip_reason: "[backend-contract] dataclass/纯函数由 pytest 单测验证（tests/test_customer_service_agent.py），非 LLM 行为，不进入 agent-eval 冒烟"
     merge_log: "2026-08-25 新增：ai-agent-service agents-customer_service_agent 覆盖率补全（issue #2429）"
     traces:
       tests:
@@ -59,7 +59,7 @@ cases:
     data_checks:
       - "__init__ 调 get_agent_config+build_agent_graph；tool_registry=None→create_default_registry()，非 None→用传入实例"
       - "_convert_history user 普通→HumanMessage；mixed+images→多模态 content list；assistant→AIMessage；其他 role 忽略"
-    skip_reason: "组装/纯函数由 pytest 单测验证（tests/test_customer_service_agent.py），非 LLM 行为，不进入 agent-eval 冒烟"
+    skip_reason: "[backend-contract] 组装/纯函数由 pytest 单测验证（tests/test_customer_service_agent.py），非 LLM 行为，不进入 agent-eval 冒烟"
     merge_log: "2026-08-25 新增：ai-agent-service agents-customer_service_agent 覆盖率补全（issue #2429）"
     traces:
       tests:
@@ -90,7 +90,7 @@ cases:
       - "plan state 存在 skill_name 非空→pending_interact_skill=skill_name；否则读 get_pending_skill"
       - "SessionMemory 异常→warning 且 pending_interact_skill=''，不向上抛"
       - "返回完整 18 键 state dict（messages/agent_type/tenant_id/user_id/user_name/session_id/role/.../pending_interact_skill）"
-    skip_reason: "异步状态构造由 pytest 单测验证（tests/test_customer_service_agent.py），非 LLM 行为，不进入 agent-eval 冒烟"
+    skip_reason: "[backend-contract] 异步状态构造由 pytest 单测验证（tests/test_customer_service_agent.py），非 LLM 行为，不进入 agent-eval 冒烟"
     merge_log: "2026-08-25 新增：ai-agent-service agents-customer_service_agent 覆盖率补全（issue #2429）"
     traces:
       tests:
@@ -119,7 +119,7 @@ cases:
     data_checks:
       - "graph.ainvoke 返回 final_answer→AgentResponse(type=text, content=final_answer)"
       - "抛异常→AgentResponse(type=error, content 含'稍后重试')"
-    skip_reason: "异步对话由 pytest 单测验证（tests/test_customer_service_agent.py），非 LLM 行为，不进入 agent-eval 冒烟"
+    skip_reason: "[backend-contract] 异步对话由 pytest 单测验证（tests/test_customer_service_agent.py），非 LLM 行为，不进入 agent-eval 冒烟"
     merge_log: "2026-08-25 新增：ai-agent-service agents-customer_service_agent 覆盖率补全（issue #2429）"
     traces:
       tests:
@@ -151,7 +151,7 @@ cases:
       - "AIMessage.tool_calls 先 yield tool_calls 前文本，再逐条 yield type=tool_call"
       - "ToolMessage 经 json.loads 解析（失败降级 {data: str(content)}），图执行完统一 yield type=tool_result"
       - "final_answer 有新内容→yield type=text；suggestions 非空→yield type=suggestions；异常→yield type=error（含异常类名）"
-    skip_reason: "异步流式对话由 pytest 单测验证（tests/test_customer_service_agent.py），非 LLM 行为，不进入 agent-eval 冒烟"
+    skip_reason: "[backend-contract] 异步流式对话由 pytest 单测验证（tests/test_customer_service_agent.py），非 LLM 行为，不进入 agent-eval 冒烟"
     merge_log: "2026-08-25 新增：ai-agent-service agents-customer_service_agent 覆盖率补全（issue #2429）"
     traces:
       tests:
@@ -181,7 +181,7 @@ cases:
       - "get_greeting 优先 get_direct_reply('greeting') 回退 config.greeting"
       - "get_agent 同 agent_type 二次调用返回同一实例，不同 agent_type 返回不同实例；reset_agent 后重建并调 reset_agent_intents_cache"
       - "CustomerServiceAgent→xiaobu / WorkAssistantAgent→mibao 别名映射"
-    skip_reason: "工厂/单例/别名由 pytest 单测验证（tests/test_customer_service_agent.py），非 LLM 行为，不进入 agent-eval 冒烟"
+    skip_reason: "[backend-contract] 工厂/单例/别名由 pytest 单测验证（tests/test_customer_service_agent.py），非 LLM 行为，不进入 agent-eval 冒烟"
     merge_log: "2026-08-25 新增：ai-agent-service agents-customer_service_agent 覆盖率补全（issue #2429）"
     traces:
       tests:
