@@ -218,8 +218,11 @@ class TestArgsSchemaIsGeneratedFromParameters:
     def test_get_args_schema_generates_a_pydantic_model(self):
         schema_cls = OrderCreateTool()._get_args_schema()
 
-        assert schema_cls is not None, "`_get_args_schema()` 仍是 `return None`（T2 未落地）"
+        # 改前 `_get_args_schema()` 字面 `return None` ⇒ 这一行就是红证（AttributeError）
         json_schema = schema_cls.model_json_schema()
+        assert schema_cls.__name__ == "OrderCreateArgs", (
+            f"schema 模型名不符（生成了别的东西？）：{schema_cls.__name__}"
+        )
         assert set(json_schema.get("required", [])) == {"customer_name", "customer_phone", "items"}
         assert "sms_code" in json_schema["properties"]
 
