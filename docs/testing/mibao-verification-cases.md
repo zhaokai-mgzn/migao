@@ -2725,7 +2725,7 @@
 真值: order.create-flow
 溯源: 2026-09-17 新增（issue #3976，线上实证 sess_202d55d49a254a10）：首条消息同时含商品细节与下单指令 → 意图路由判 product_inquiry → 整条 validate/confirm 链在 product skill 内完成，确认卡点击后模型调 order_create 撞 Tool not found（product 注册表无此工具）→ 空头承诺 + 订单永不落库。修复（route_by_intent 答卡轮归属 skill 迁移 + tool_not_found 兜底 relock + 8.4 收口扩展 B 端 order_create + metadata 假证据修复）后，确认轮应路由到 order skill 真实下单。2026-09-17 CI 门禁校准：B 端专属用例补 persona: mibao（C 端缺 sms_code 轮且 fixture 无该商品）、补 must_succeed[order_create]（效果层断言）与 precondition[product_count_for_keyword]（同名商品唯一前置，同 OR-008/OR-006 #3835 先例） ｜ tags: order_create, cross_skill, guided_flow
 
-## 加工项域（10 case）
+## 加工项域（11 case）
 
 ### PP-001. 加工项选择 - 分页翻页 🔵
 ```
@@ -2873,6 +2873,22 @@
 ```
 真值: ai-chat.intent-tool-map
 溯源: 2026-09-17 新增（issue #3993）：M4-G-1 生产模块确定性核心覆盖登记，单测覆盖 ｜ tags: processing, production, piecework
+
+### PP-011. 加工单生产明细与任务卡渲染（工序进度/二维码/计件） 🔵
+```
+你: 打开加工单生产明细，看工序进度和计件汇总，打印任务卡给工人扫码
+期望: direct_reply
+数据: 工序进度表按部位分组渲染，行内给出「工序名 / 分组 / 应做数量+单位 / 单价 / 状态（待做|已完成）/ 已完成数量」
+数据: 必完工序（is_must_finish）加「必完」标记；非必完工序不得出现该标记
+数据: 进度条读 progress.percent 且与「已完成 done/total 道工序」文案一致（50% ⇒ 1/2）
+数据: 计件汇总渲染 total（¥ 两位小数）+ per_operation 明细；per_worker 非空时展示分人金额
+数据: 任务卡二维码内容 = qr_token（svg title = token）；qr_token 缺失时给占位提示而不是空码
+数据: 任务卡工序清单逐行渲染工序名 / 应做数量+单位 + 每行一个手工勾选位，并说明工人扫码后在小程序报工
+数据: 无工序 / 无计件 / 接口失败均渲染空态或错误提示 + 重试，不白屏
+跳过: 前端渲染行为（admin-web 组件/页面），由 vitest 单测全量覆盖（tests/unit/components/{ProductionProgressTable,PieceworkTable,TaskCardPrint}.test.tsx、tests/unit/pages/processing-orders-production.test.tsx、tests/unit/lib/use-route-id.test.ts），非 LLM 行为，不进入 agent-eval 冒烟（同 PP-010 惯例）
+```
+真值: processing-manage.crud
+溯源: 2026-09-17 新增（issue #4000）：M4-H 按需单据渲染 —— 加工单生产明细页 + 可打印任务卡（含二维码）+ 计件汇总的前端覆盖登记；消费 main 已合并的生产端点（GET production/orders/{orderId}/operations、/piecework） ｜ tags: processing, production, admin_web, print_task_card, qrcode
 
 ## processing-order（18 case）
 
@@ -4216,8 +4232,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：311（活跃 156，跳过 155）
-- tier 分布：smoke 9 / normal 269 / adversarial 33
+- 用例总数：312（活跃 156，跳过 156）
+- tier 分布：smoke 9 / normal 270 / adversarial 33
 - 售后域：9
 - agents：6
 - api：19
@@ -4235,7 +4251,7 @@
 - onboarding：5
 - ontology：4
 - 订单域：28
-- 加工项域：10
+- 加工项域：11
 - processing-order：18
 - 商品域：25
 - registry：1

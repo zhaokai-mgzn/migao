@@ -10,9 +10,10 @@ import { useParams } from 'next/navigation'
  *
  * 路由形如 /products/{id}/、/orders/{id}/、/products/{id}/edit/ 等：
  * - 默认取过滤后路径段的倒数第一段；
- * - 若该段是已知后缀（如 'edit'），则向前回退一段。
+ * - 若该段是已知后缀（如 'edit' / 'ship' / 'production'），则向前回退一段。
+ *   `production` = /processing-orders/{id}/production（加工单生产明细，issue #4000）。
  */
-const KNOWN_SUFFIX_SEGMENTS = new Set(['edit', 'new', 'create', 'ship'])
+const KNOWN_SUFFIX_SEGMENTS = new Set(['edit', 'new', 'create', 'ship', 'production'])
 
 function extractIdFromPathname(pathname: string): string {
   const segments = pathname.split('/').filter(Boolean)

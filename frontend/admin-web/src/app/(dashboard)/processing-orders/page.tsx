@@ -309,6 +309,14 @@ export default function ProcessingOrdersPage() {
                         <Button variant="secondary" size="sm" onClick={() => handleView(po)}>
                           查看
                         </Button>
+                        {/* 生产明细（issue #4000）：工序进度 + 计件汇总 + 可打印任务卡（含二维码） */}
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => router.push(`/processing-orders/${po.processingOrderNo}/production`)}
+                        >
+                          生产明细
+                        </Button>
                         {actions.includes('issue') && (
                           <Button size="sm" disabled={busy} onClick={() => openActionModal(po, 'issue')}>
                             {PROCESSING_ORDER_ACTION_LABELS.issue}

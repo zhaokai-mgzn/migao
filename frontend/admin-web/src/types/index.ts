@@ -633,6 +633,65 @@ export interface ProcessingOrderUpdateParams {
   reason?: string
 }
 
+// ── 生产报工（issue #4000，M4-H；后端 ProductionController 返回 Map ⇒ 键为 snake_case）──
+
+/** 工序实例（加工单 × 部位 × 工序；应做数量由算料引擎给出，报工只确认） */
+export interface ProductionOperation {
+  id: string
+  seq?: number
+  operation: string
+  /** 工序分组：裁剪 / 车位 / 后道 / 其他 */
+  group?: string | null
+  /** 单位：米/套/件/个/折 */
+  unit?: string | null
+  /** 应做数量 */
+  qty?: number
+  unit_price?: number
+  /** 特殊选项计件系数 */
+  factor?: number
+  /** 必完工序：完成才可打包（完工门槛） */
+  is_must_finish?: boolean
+  /** 标记生产开始的首工序 */
+  is_start_marker?: boolean
+  /** pending 待做 / done 已完成 */
+  status?: string | null
+  done_qty?: number
+}
+
+/** 按部位（布帘/纱帘/帘头…）分组的工序实例 */
+export interface ProductionPosition {
+  position_name?: string | null
+  operations?: ProductionOperation[]
+}
+
+export interface ProductionProgress {
+  total?: number
+  done?: number
+  percent?: number
+}
+
+/** GET /api/admin/production/orders/{orderId}/operations */
+export interface ProductionOperations {
+  order_id?: string
+  /** 加工单二维码 token（工人扫码进小程序报工） */
+  qr_token?: string | null
+  positions?: ProductionPosition[]
+  progress?: ProductionProgress
+}
+
+export interface PieceworkOperationAmount {
+  operation: string
+  amount: number
+}
+
+/** GET /api/admin/production/orders/{orderId}/piecework（内部计件，与对外加工费两套账分离） */
+export interface PieceworkSummary {
+  total?: number
+  /** 分人金额：工人姓名 → 金额 */
+  per_worker?: Record<string, number>
+  per_operation?: PieceworkOperationAmount[]
+}
+
 // 物流信息
 export interface LogisticsInfo {  logisticsCompany?: string
   trackingNo?: string
