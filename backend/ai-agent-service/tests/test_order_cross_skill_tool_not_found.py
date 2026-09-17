@@ -58,7 +58,8 @@ class _FakeGroundedStore:
     _states: dict = {}
 
     def __init__(self, *a, **k):
-        pass
+        # 与 SessionStateStore 构造签名兼容（patch side_effect 不传参）
+        self._noop = True
 
     async def load(self, session_id: str) -> dict:
         return dict(_FakeGroundedStore._states.setdefault(
