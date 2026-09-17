@@ -453,3 +453,84 @@ def test_customer_prompt_length_snapshot(skill):
             f"⚠️  {skill}: C 端 prompt 长度 {len(prompt)}/{max_len} "
             f"({len(prompt)*100//max_len}%) — 接近上限，新内容需精简"
         )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 基础规则层 fail-loud（issue #4057 S5）
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+class TestRequiredReferenceFilesFailLoud:
+    """`identity.md` / `principles.md` / `PROMPT-rules.md` 缺失 ⇒ **不得静默返回 ""**。
+
+    改前：`_read_cached` 对缺失/读失败一律 `_PROMPT_CACHE[path] = ""` 并返回 "" ⇒
+    三个**基础规则层**文件缺失时整层公共规则静默消失（System Prompt 少一整层、
+    模型行为漂移），而没有任何东西变红。
+    改后：必需文件（`required=True`）缺失/为空 ⇒ error 级日志 + 抛
+    `RequiredPromptMissingError`（fail-loud）；可选域文件（`prompts/<skill>.md` /
+    `EXAMPLES-*.md`）仍返回 ""（这些层可缺席是合法形态）。
+
+    静态侧（文件在磁盘上存在）由 L0 用例
+    `tests/unit_ci_workflows/test_ai_agent_prompt_reference_guard.py` 锁。
+    """
+
+    def test_missing_required_file_raises_instead_of_returning_empty(self, tmp_path):
+        """红证：必需文件不存在 ⇒ 抛错（改前返回 ""，本用例必红）。"""
+        from app.graph.skills.base_skill import _read_cached, RequiredPromptMissingError
+
+        missing = tmp_path / "base" / "identity.md"
+        with pytest.raises(RequiredPromptMissingError):
+            _read_cached(str(missing), required=True)
+
+    def test_empty_required_file_also_raises(self, tmp_path):
+        """必需文件存在但为空 ⇒ 内容上仍是「整层消失」，同样不得静默。"""
+        from app.graph.skills.base_skill import _read_cached, RequiredPromptMissingError
+
+        empty = tmp_path / "PROMPT-rules.md"
+        empty.write_text("   \n", encoding="utf-8")
+        with pytest.raises(RequiredPromptMissingError):
+            _read_cached(str(empty), required=True)
+
+    def test_required_path_cached_as_optional_is_still_loud(self, tmp_path):
+        """负例边界：先按可选读到 ""（进缓存），再按必需读 ⇒ 仍必须响亮失败。
+
+        否则「谁先读」会决定判据是否生效 —— 这正是静默形态本身。
+        """
+        from app.graph.skills.base_skill import _read_cached, RequiredPromptMissingError
+
+        missing = tmp_path / "base" / "principles.md"
+        assert _read_cached(str(missing)) == ""          # 可选通道：合法形态
+        with pytest.raises(RequiredPromptMissingError):
+            _read_cached(str(missing), required=True)
+
+    def test_optional_domain_files_still_return_empty(self, tmp_path):
+        """可选层（`prompts/<skill>.md`）缺席是**合法形态** —— 不得被 fail-loud 误伤。"""
+        from app.graph.skills.base_skill import _read_cached
+
+        assert _read_cached(str(tmp_path / "prompts" / "no_such_skill.md")) == ""
+
+    def test_build_system_prompt_raises_when_a_base_layer_is_gone(self, tmp_path, monkeypatch):
+        """端到端：基础层文件缺失 ⇒ `_build_system_prompt` 响亮失败（不产出"少一层"的 prompt）。"""
+        import app.graph.skills.base_skill as base_skill
+
+        (tmp_path / "base").mkdir()
+        (tmp_path / "base" / "identity.md").write_text("身份", encoding="utf-8")
+        # principles.md / PROMPT-rules.md 故意不给
+        monkeypatch.setattr(base_skill, "_ref_dir", str(tmp_path))
+        _PROMPT_CACHE.clear()
+        with pytest.raises(base_skill.RequiredPromptMissingError):
+            _build_system_prompt("order")
+
+    def test_build_system_prompt_succeeds_when_all_base_layers_exist(self, tmp_path, monkeypatch):
+        """负例（防恒红）：三层齐备 ⇒ 必须正常组装且真的拼进了三层内容。"""
+        import app.graph.skills.base_skill as base_skill
+
+        (tmp_path / "base").mkdir()
+        (tmp_path / "base" / "identity.md").write_text("身份层内容", encoding="utf-8")
+        (tmp_path / "base" / "principles.md").write_text("准则层内容", encoding="utf-8")
+        (tmp_path / "PROMPT-rules.md").write_text("共享规则层内容", encoding="utf-8")
+        monkeypatch.setattr(base_skill, "_ref_dir", str(tmp_path))
+        _PROMPT_CACHE.clear()
+        prompt = _build_system_prompt("order")   # 域文件缺席 ⇒ 可选层跳过，不报错
+        for layer in ("身份层内容", "准则层内容", "共享规则层内容"):
+            assert layer in prompt, f"基础层 {layer} 未被拼进 prompt"

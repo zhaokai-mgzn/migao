@@ -455,6 +455,17 @@ import os as _os
 _ref_dir = _os.path.join(_os.path.dirname(__file__), "references")
 _PROMPT_CACHE: dict = {}
 
+# **基础规则层**（必需，相对 `_ref_dir`）：每个 Skill 都注入的公共层 —— 缺失即「整层规则
+# 静默消失」（issue #4057 S5）。故这三个文件走 `_read_cached(..., required=True)`：缺失/为空
+# 时 **error 级日志 + 抛 `RequiredPromptMissingError`**，不得像可选层那样返回 ""。
+# 磁盘存在性由 L0 用例 `tests/unit_ci_workflows/test_ai_agent_prompt_reference_guard.py` 锁
+# （删文件 ⇒ CI 红），本处的清单必须与它逐字一致。
+_REQUIRED_PROMPT_FILES = (
+    "base/identity.md",     # Layer 1 公共身份
+    "base/principles.md",   # Layer 2 公共行为准则
+    "PROMPT-rules.md",      # Layer 2.5 共享 Prompt 规则（Certainty Tagging / P&E / 确认卡铁律）
+)
+
 # ────────────────────── Vision 图片意图澄清引导（Phase 1, issue #2777）──────────────────────
 # 背景：目标用户可能是初中/高中文化、不熟悉与 AI 沟通（随手发图、带口语短句/不带文字）。
 # 图片可能与商户已有信息（商品库/面料/订单/客户）关联，但意图多样（找同款/查订单/建品/售后）。
@@ -534,19 +545,41 @@ def _usable_vision_analysis(text: str) -> str:
     return "" if _is_degraded_vision_analysis(text) else text
 
 
-def _read_cached(path: str) -> str:
-    """读取文件内容，带缓存。文件不存在时返回 ''。"""
+class RequiredPromptMissingError(RuntimeError):
+    """必需的基础规则层 Prompt 文件缺失/为空（issue #4057 S5：fail-loud）。"""
+
+
+def _read_cached(path: str, required: bool = False) -> str:
+    """读取文件内容，带缓存。
+
+    `required=False` —— **可选层**（`prompts/<skill>.md`、`EXAMPLES-*.md`）：文件不存在是
+    **合法形态**（该层不注入），静默返回 ""。
+
+    `required=True` —— **基础规则层**（`_REQUIRED_PROMPT_FILES`）：缺失/不可读/为空
+    **不得**静默返回 ""（那会让整层公共规则消失而没有任何东西变红）⇒ error 级日志 +
+    抛 `RequiredPromptMissingError`。
+    """
     if path in _PROMPT_CACHE:
-        return _PROMPT_CACHE[path]
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            _PROMPT_CACHE[path] = f.read().strip()
-    except FileNotFoundError:
-        _PROMPT_CACHE[path] = ""
-    except Exception as e:
-        logger.warning(f"Failed to load prompt file '{path}': {e}")
-        _PROMPT_CACHE[path] = ""
-    return _PROMPT_CACHE[path]
+        text = _PROMPT_CACHE[path]
+    else:
+        text = ""
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                text = f.read().strip()
+            _PROMPT_CACHE[path] = text
+        except FileNotFoundError:
+            if not required:
+                _PROMPT_CACHE[path] = ""   # 可选层缺席 = 合法形态
+        except Exception as e:
+            logger.warning(f"Failed to load prompt file '{path}': {e}")
+            if not required:
+                _PROMPT_CACHE[path] = ""
+    if required and not text:
+        logger.error(f"[prompt-ref] REQUIRED 基础规则文件缺失/为空: {path}")
+        raise RequiredPromptMissingError(
+            f"必需的基础 Prompt 文件缺失或为空：{path} —— 基础规则层不得静默消失"
+            f"（issue #4057 S5）")
+    return text
 
 
 def _build_system_prompt(skill_name: str, inline_prompt: str = "") -> str:
@@ -562,22 +595,30 @@ def _build_system_prompt(skill_name: str, inline_prompt: str = "") -> str:
     所有文件均为可选，不存在时静默跳过。
     缓存到 _PROMPT_CACHE 避免每次请求读文件。
 
+    ⚠️ 例外（issue #4057 S5）：Layer 1/2/2.5 属**基础规则层**（`_REQUIRED_PROMPT_FILES`），
+    缺失/为空时**不静默**（error 日志 + `RequiredPromptMissingError`）—— 它们缺席等于
+    每个 Skill 都少一整层公共规则。Layer 3/5（`prompts/<skill>.md`、`EXAMPLES-*.md`）
+    仍可缺席（返回 ""）。
+
     Returns:
         组装好的完整 System Prompt 字符串
+
+    Raises:
+        RequiredPromptMissingError: 任一基础规则层文件缺失/不可读/为空。
     """
     parts = []
 
-    # Layer 1+2: 公共基础（身份 + 原则）
-    identity = _read_cached(_os.path.join(_ref_dir, "base", "identity.md"))
+    # Layer 1+2+2.5: 公共基础（身份 + 原则 + 共享 Prompt 规则）—— **必需层**，缺失即响亮失败
+    identity_rel, principles_rel, prompt_rules_rel = _REQUIRED_PROMPT_FILES
+    identity = _read_cached(_os.path.join(_ref_dir, identity_rel), required=True)
     if identity:
         parts.append(identity)
 
-    principles = _read_cached(_os.path.join(_ref_dir, "base", "principles.md"))
+    principles = _read_cached(_os.path.join(_ref_dir, principles_rel), required=True)
     if principles:
         parts.append(principles)
 
-    # Layer 2.5: 共享 Prompt 规则（Certainty Tagging / P&E / Verification）
-    prompt_rules = _read_cached(_os.path.join(_ref_dir, "PROMPT-rules.md"))
+    prompt_rules = _read_cached(_os.path.join(_ref_dir, prompt_rules_rel), required=True)
     if prompt_rules:
         parts.append(prompt_rules)
 
@@ -1053,150 +1094,25 @@ B_CREATE_PENDING_TOOL = "product_manage"
 B_CREATE_PENDING_ACTION = "create"
 
 
-# ── 下单「单价接地」校验（issue OR-014，run 34916256903 / 判定跑 34923425338 归因）──
-# 实证：B 端（mibao）下单，规格选择卡呈现「米白 ¥150/米 或 浅灰 ¥168」——商品库
-# （prod_eval_blackout）单价 168.0 且 seed 里 SKU price = base_price（**无分色差价**）
-# ⇒ 米白 150 是 LLM 编造的分色价；用户选「米白｜散剪｜2.8米｜¥150/米」→ order_create
-# 落 unit_price=150.0 → 订单按错价成交（amount_verify[order_create] 抓「150 ≠ 168」）。
-# 本函数是**产品层**确定性兜底（零 LLM）：单价必须以商品库为准 ——
-#   · 库中无分色差价（SKU 同价）⇒ 任何分色价 ≠ 库价即拦截（禁止编造分色价）；
-#   · SKU 有独立价 ⇒ 按所选 SKU（processing_info.colorName/skuCode）匹配判；
-#   · 商品库价以 `grounded_product_detail`（本会话最近一次成功的 product_detail）为准，
-#     库价变化（如改价 198）自然跟随 —— **不得写死任何具体金额**。
-# ⚠️ 本函数依赖会话接地快照：C 端（customer_order）由闸门保证「未查详情不下单」，
-#    而 B 端（order）未接地时快照为空 → 本函数放行（判据见函数 docstring「未接地不做
-#    金额判定」）。B 端这条路径的 fail-closed 兜底在 **order_create 工具层**
-#    （`_reject_unit_price_not_grounded`，判定跑 34923425338 红证）：无论接地状态如何，
-#    执行前直接按商品库解析库价，不一致即拦截回填 —— 本函数与工具层是**两层防线**，
-#    工具层不依赖会话状态（单测见 tests/test_order_create_tool_price_grounding.py）。
-_PRICE_TOLERANCE = 0.01
-
-
-def _match_sku_price(grounded: dict, item: dict) -> Optional[float]:
-    """按 item 的规格信息（processing_info.colorName/skuCode）匹配 SKU 库价。
-
-    无 SKU 匹配时返回 None（由调用方决定按商品价兜底还是放行）。"""
-    if not isinstance(grounded, dict):
-        return None
-    skus = grounded.get("skus") or []
-    if not skus:
-        return None
-    pinfo = item.get("processing_info") or {}
-    if not isinstance(pinfo, dict):
-        return None
-    color = str(pinfo.get("colorName") or "").strip()
-    code = str(pinfo.get("skuCode") or "").strip()
-    if not color and not code:
-        return None
-    for sku in skus:
-        if not isinstance(sku, dict):
-            continue
-        if code and str(sku.get("sku_code") or "") == code:
-            return _to_float(sku.get("price"))
-        if color and str(sku.get("color_name") or "") == color:
-            return _to_float(sku.get("price"))
-    return None
-
-
-def _to_float(v) -> Optional[float]:
-    try:
-        if v is None:
-            return None
-        return float(v)
-    except (TypeError, ValueError):
-        return None
-
-
-def _library_unit_price_grounded(grounded: dict, unit_price) -> bool:
-    """`unit_price` 是否存在于商品库（商品级 price 或任一 SKU 价），容差同 `_PRICE_TOLERANCE`。
-
-    issue #4011：改前工具层闸门在「商品有多个不同 SKU 价、item 未指定规格」时直接
-    fail-closed，把「规格无从唯一确定」误判成「单价编造」，连正确库价（@168）也拒
-    ⇒ OR-014 首跑 13 次 order_create 无一成功。本判据只回答「这个价是否来自商品库」：
-    是 ⇒ 不是编造（规格维度交服务端 `validateAgentItemUnitPrice` 按 SKU 复核 / 人工确认）；
-    否 ⇒ 编造价，照旧拦截并回填（#3875/#3879 原意图不变）。
-    """
-    if not isinstance(grounded, dict):
-        return False
-    want = _to_float(unit_price)
-    if want is None:
-        return False
-    candidates = [_to_float(grounded.get("price"))]
-    for sku in grounded.get("skus") or []:
-        if isinstance(sku, dict):
-            candidates.append(_to_float(sku.get("price")))
-    return any(c is not None and abs(want - c) <= _PRICE_TOLERANCE for c in candidates)
-
-
-def unit_price_grounding_error(items: list, grounded_detail) -> Optional[str]:
-    """下单明细单价 vs 商品库价的接地校验（零 LLM 纯函数）。
-
-    Args:
-        items: order_create 的 items 列表（[{product_name, quantity, unit_price,
-               processing_info:{colorName,skuCode}}]）
-        grounded_detail: 本会话最近一次成功 product_detail 的接地快照
-               （{product_id, name, price, skus:[{color_name, sku_code, price}]}）；
-               None/{} 表示未接地（不做单价判定，防误拦）。
-
-    Returns:
-        单价与库价不一致时返回**可行动**的错误描述（含库价，供模型纠正）；
-        一致 / 无法接地 / 商品不匹配 → None。
-
-    判据（事实驱动，区分「规格维度」与「单价」）：
-      · 单价来自库（商品 price 或所选 SKU 的 price）；加工费来自加工项（不入此判据）；
-      · 无分色差价 ⇒ 分色价编造即拦截；有分色差价 ⇒ 按所选 SKU 判（不把规格选择弄坏）；
-      · **未声明规格**的行：单价只要存在于商品库（商品 price 或任一 SKU 价）就不判死
-        （issue #4011：改前按商品级价兜底会把其它 SKU 的真实价判成编造 ⇒ 死锁）；
-        不在库价集合内才是编造 ⇒ 拦截并回填。
-    """
-    if not items or not isinstance(grounded_detail, dict):
-        return None
-    g_price = _to_float(grounded_detail.get("price"))
-    g_name = str(grounded_detail.get("name") or "")
-    g_id = str(grounded_detail.get("product_id") or "")
-    if g_price is None:
-        return None  # 库价未知 → 不做金额判定（宁可放行，不误伤）
-    for i, item in enumerate(items):
-        if not isinstance(item, dict):
-            continue
-        name = str(item.get("product_name") or "")
-        pid = str(item.get("product_id") or "")
-        # 只核对**能确定是本接地商品**的行（名称或 ID 匹配）
-        if pid and g_id and pid != g_id:
-            continue
-        if name and g_name and name != g_name:
-            continue
-        if not pid and not name:
-            continue
-        up = _to_float(item.get("unit_price"))
-        if up is None:
-            continue
-        sku_price = _match_sku_price(grounded_detail, item)
-        lib_price = sku_price if sku_price is not None else g_price
-        if abs(up - lib_price) <= _PRICE_TOLERANCE:
-            continue
-        # 「未声明规格」的行不该被按商品级价兜底判死（issue #4011）：
-        # 没有规格标识时 lib_price 退化成商品级 price，会把**确实来自商品库其它 SKU** 的价
-        # （如分色价商品 米白100/香槟金130 报 130）判成“编造” —— 这正是 OR-014 首跑
-        # 13 次 order_create 无一成功的死锁形态（连正确库价也被拒）。
-        # 边界收紧为「该价是否存在于商品库」：存在 ⇒ 不是编造（规格维度交服务端按 SKU 复核 /
-        # 人工确认）；不存在 ⇒ 编造价，照旧拦截并回填（#3875/#3879 原意图不变）。
-        # ⚠️ 声明了规格却匹配不到 SKU 的行**不走**此豁免（保持既有兜底判据）。
-        pinfo = item.get("processing_info")
-        has_spec = isinstance(pinfo, dict) and bool(
-            pinfo.get("colorName") or pinfo.get("skuCode"))
-        if not has_spec and _library_unit_price_grounded(grounded_detail, up):
-            continue
-        color_hint = ""
-        if isinstance(pinfo, dict) and str(pinfo.get("colorName") or ""):
-            color_hint = f"（规格 {pinfo.get('colorName')}）"
-        return (
-            f"商品明细第 {i + 1} 项「{name}」单价 {up} ≠ 商品库价 {lib_price}{color_hint} —— "
-            f"单价必须以商品库为准（product_detail 的 price / 所选 SKU 的 skus[].price），"
-            f"**禁止编造分色/规格价**；库中无分色差价时所有颜色同价。"
-            f"请把该行 unit_price 改为 {lib_price}（subtotal 同步 = 数量×单价）后重新下单。"
-        )
-    return None
+# ── 下单「单价接地」校验（issue OR-014；**已搬到中性模块**，issue #4057 S7）──
+# 三个判据函数（`unit_price_grounding_error` / `_match_sku_price` /
+# `_library_unit_price_grounded`）及其私有依赖（`_PRICE_TOLERANCE` / `_to_float`）
+# 定义在 `app/utils/sku_price.py` —— 工具层（`app/tools/order_create.py`）也要用同一判据，
+# 若留在本模块就成了「叶子模块反向 import 上层 skill 私有符号」。此处**再导出**同名符号：
+#   · `execution/react_turn.py` 顶层 `from app.graph.skills.base_skill import …,
+#     unit_price_grounding_error, …` 依赖它；
+#   · `tests/test_order_price_grounding.py` 等既有用例也从这里取。
+# ⚠️ 判据/守卫见 `tests/test_utils_sku_price.py`（同一对象、非两份拷贝）。
+# ⚠️ patch 接缝：这些名字目前**没有**测试用 `patch.object(base_skill, …)` 打桩；若将来要打桩，
+#    注意 `react_turn.py` 是**模块顶层** from-import（绑定冻结）⇒ 打桩不会影响它（见
+#    `execution/prepare_turn.py` 顶部注释的解法）。
+from app.utils.sku_price import (  # noqa: F401  (re-export: 兼容既有 import 路径)
+    _PRICE_TOLERANCE,
+    _library_unit_price_grounded,
+    _match_sku_price,
+    _to_float,
+    unit_price_grounding_error,
+)
 
 
 # ── B 端建品「确认-执行」收口的适用判据（issue PR-016，run 34916256903 归因）──
@@ -3121,15 +3037,31 @@ async def _execute_tool_safe(tool, tool_args: dict, tool_context, state: dict) -
     # 幻觉参数净化（见 _sanitize_tool_args 注释：order_create 收到 action → TypeError → 抖动）
     _raw_args = dict(tool_args)
     tool_args = _sanitize_tool_args(tool, tool_args)
+
+    # 1.1 出口字典**单点构造**（issue #4057 T4）：`ToolResult` 声明的字段全在这一个字面量里，
+    # 全部 5 条出口（参数丢弃 / 缓存命中 / 超时 / 异常 / 正常）**共用**它 —— 异常出口只覆盖
+    # error/message，不得再各自手写 `{"success": False, "error": …}`（那会让
+    # message/summary/suggestion/terminal/data 在某条出口缺席 = 消费点恒 None，而契约守卫
+    # `tests/test_contract_wiring.py` 改前只看正常出口那一个字面量 ⇒ 静默违反）。
+    # ⚠️ 异常出口**不补 suggestion**：`_self_correct_retry` 以 suggestion 为触发条件，
+    #    补它会改变重试行为（属 T1/T3 范围）。
+    result_dict = {
+        "success": False,
+        "data": None,
+        "error": None,
+        "message": None,
+        "summary": "",
+        "suggestion": "",
+        "terminal": False,
+    }
+
     # 写工具图片类参数被丢弃 → 不执行，返回失败 + 正确工具指引（issue #3930）：
     # 静默丢弃会制造「空字段调用 → 没有要修改的字段 → 模型外推该入口不支持图片」的误宣链。
     _drop_msg = _dropped_args_guidance(tool, _raw_args)
     if _drop_msg:
         logger.warning(f"[tool-arg-sanitize] {tool.name} 写工具图片类参数被丢弃 → 拒绝执行: {_drop_msg}")
-        _err_json = json.dumps(
-            {"success": False, "error": _drop_msg, "message": _drop_msg},
-            ensure_ascii=False)
-        return _err_json, {"success": False, "error": _drop_msg}
+        result_dict["error"] = result_dict["message"] = _drop_msg
+        return json.dumps(result_dict, ensure_ascii=False), result_dict
 
     # 1.5. 自动解析 _ids 参数：LLM 传加工项名称/序号时自动转 UUID
     tool_args = await _auto_resolve_ids(tool, tool_args, state)
@@ -3174,8 +3106,9 @@ async def _execute_tool_safe(tool, tool_args: dict, tool_context, state: dict) -
             tool_name,
             json.dumps(LogSanitizer.sanitize_tree(tool_args), ensure_ascii=False, default=str)[:300],
         )
-        err = json.dumps({"success": False, "error": "timeout", "message": "工具执行超时"}, ensure_ascii=False)
-        return err, {"success": False, "error": "timeout"}
+        result_dict["error"] = "timeout"
+        result_dict["message"] = "工具执行超时"
+        return json.dumps(result_dict, ensure_ascii=False), result_dict
     except Exception as e:
         # 生产回归（sess_fba38395ed094a9d）：此前用 f-string 把 args JSON 拼进消息文本，
         # loguru 因 exc_info=True 触发 message.format()，JSON 里的未配对花括号（如截断的
@@ -3189,10 +3122,9 @@ async def _execute_tool_safe(tool, tool_args: dict, tool_context, state: dict) -
             json.dumps(LogSanitizer.sanitize_tree(tool_args), ensure_ascii=False, default=str)[:500],
             exc_info=True,
         )
-        err = json.dumps({"success": False, "error": "tool_execution_failed",
-                          "message": f"工具 {tool_name} 执行失败，请检查参数格式后重试"},
-                         ensure_ascii=False)
-        return err, {"success": False, "error": "tool_execution_failed"}
+        result_dict["error"] = "tool_execution_failed"
+        result_dict["message"] = f"工具 {tool_name} 执行失败，请检查参数格式后重试"
+        return json.dumps(result_dict, ensure_ascii=False), result_dict
     finally:
         if _audit_write:
             await audit_write_tool(
@@ -3200,19 +3132,19 @@ async def _execute_tool_safe(tool, tool_args: dict, tool_context, state: dict) -
                 (time.time() - _audit_t0) * 1000,
             )
 
-    # 4. 格式化结果
+    # 4. 格式化结果（同一个出口字典，按成功分支填入 `ToolResult` 的真实字段）
     # `ToolResult` **声明的字段必须全部带进 result_dict**（issue #4013 A2：此前漏传
     # terminal/summary ⇒ 消费点 `result_dict.get("terminal")` 恒 None ⇒ reset_domain
     # 永不触发 = 死契约）。判据：tests/test_terminal_tool_and_prompt_contract.py。
-    result_dict = {
-        "success": result.success,
-        "data": result.data,
-        "error": result.error,
-        "message": result.message,
-        "summary": getattr(result, "summary", None) or "",
-        "suggestion": getattr(result, "suggestion", None) or "",
-        "terminal": bool(getattr(result, "terminal", False)),
-    }
+    result_dict.update(
+        success=result.success,
+        data=result.data,
+        error=result.error,
+        message=result.message,
+        summary=getattr(result, "summary", None) or "",
+        suggestion=getattr(result, "suggestion", None) or "",
+        terminal=bool(getattr(result, "terminal", False)),
+    )
     result_str = json.dumps(result_dict, ensure_ascii=False, default=str)
 
     # 5. 缓存（带锁）— 仅只读工具
