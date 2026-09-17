@@ -472,6 +472,94 @@ class SecurityConfigTest {
                 .build();
     }
 
+    // ======================== Agent 订单退款：action 级细粒度鉴权（issue #4148）========================
+    // 背景：`AgentOrderController` 是**类级** `@RequirePermission("order:list")`，而它的统一 PATCH
+    // 端点一个入口覆盖 status/logistics/payment/cancel/**refund** ⇒ 仅持 order:list 的商户员工
+    // （内置岗位里 customer_service/sales/finance 都没有 order:refund）能让米宝执行退款；
+    // 表单路径 `OrderController` 的退款路由用的是 order:refund，两条路径口径不一致。
+    // 目标：退款仍走同一条链（ServiceTokenFilter 解析真实员工 → 权限判定），但**退款这一个 action**
+    // 额外要求 order:refund；其余 action 保持 order:list 不变（不收窄）。
+
+    @Test
+    @DisplayName("Agent 退款 - 商户员工仅持 order:list ⇒ 403（缺失权限码 + 可执行 suggestion），且退款从未下发服务层")
+    void agentRefund_merchantStaffWithoutRefundPermission_deniedWithActionableBody() throws Exception {
+        when(userMapper.selectById("staff-cs")).thenReturn(staffUser("staff-cs", 1L, "customer_service", "active"));
+        // order:list 是**真实的类级码** —— 它必须照旧放行到业务层，否则本用例测的不是退款那道门
+        when(roleService.getUserPermissions("staff-cs")).thenReturn(List.of("order:list"));
+
+        mockMvc.perform(patch("/api/admin/agent/orders/ORD-20260101-0001")
+                        .header("X-Service-Token", SERVICE_SECRET)
+                        .header("X-Tenant-Id", "1")
+                        .header("X-User-Id", "staff-cs")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"action\":\"refund\",\"refundAmount\":299.0,\"refundReason\":\"质量问题\"}"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.error.code").value("PERMISSION_DENIED"))
+                // 缺的必须是 order:refund（若 403 来自类级 order:list，这里会变成 order:list ⇒ 本用例红）
+                .andExpect(jsonPath("$.error.details[0].field").value("requiredPermission"))
+                .andExpect(jsonPath("$.error.details[0].message").value("order:refund"))
+                .andExpect(jsonPath("$.suggestion").value(containsString("order:refund")))
+                .andExpect(jsonPath("$.suggestion").value(containsString("不要重复调用同一工具")));
+
+        // 承重判据（负向控制）：退款**一次都不许**进服务层 —— 缺此断言时，
+        // 「返回 403 但订单已被退款」这种最坏形态会照样绿。
+        verify(orderService, never()).updateOrderForAgent(anyString(), any(), any());
+    }
+
+    @Test
+    @DisplayName("Agent 退款 - 商户员工持有 order:refund ⇒ 200（正向对照：未过度收窄）")
+    void agentRefund_merchantStaffWithRefundPermission_allowed() throws Exception {
+        when(userMapper.selectById("staff-op")).thenReturn(staffUser("staff-op", 1L, "operator", "active"));
+        when(roleService.getUserPermissions("staff-op")).thenReturn(List.of("order:list", "order:refund"));
+        when(orderService.updateOrderForAgent(anyString(), any(), any()))
+                .thenReturn(new com.migao.admin.dto.OrderDetailResponse());
+
+        mockMvc.perform(patch("/api/admin/agent/orders/ORD-20260101-0001")
+                        .header("X-Service-Token", SERVICE_SECRET)
+                        .header("X-Tenant-Id", "1")
+                        .header("X-User-Id", "staff-op")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"action\":\"refund\",\"refundAmount\":299.0}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true));
+
+        verify(orderService).updateOrderForAgent(anyString(), any(), any());
+    }
+
+    @Test
+    @DisplayName("Agent 改单 - 同一位仅持 order:list 的员工执行 update_status 照旧 200（其余 action 不收窄）")
+    void agentUpdateStatus_merchantStaffWithoutRefundPermission_stillAllowed() throws Exception {
+        when(userMapper.selectById("staff-cs")).thenReturn(staffUser("staff-cs", 1L, "customer_service", "active"));
+        when(roleService.getUserPermissions("staff-cs")).thenReturn(List.of("order:list"));
+        when(orderService.updateOrderForAgent(anyString(), any(), any()))
+                .thenReturn(new com.migao.admin.dto.OrderDetailResponse());
+
+        mockMvc.perform(patch("/api/admin/agent/orders/ORD-20260101-0001")
+                        .header("X-Service-Token", SERVICE_SECRET)
+                        .header("X-Tenant-Id", "1")
+                        .header("X-User-Id", "staff-cs")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"action\":\"update_status\",\"status\":\"confirmed\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true));
+    }
+
+    @Test
+    @DisplayName("Agent 退款 - 纯内部服务调用（无 X-User-Id）保持既有旁路 ⇒ 200（零回归）")
+    void agentRefund_internalServiceCall_keepsBypass() throws Exception {
+        when(orderService.updateOrderForAgent(anyString(), any(), any()))
+                .thenReturn(new com.migao.admin.dto.OrderDetailResponse());
+
+        mockMvc.perform(patch("/api/admin/agent/orders/ORD-20260101-0001")
+                        .header("X-Service-Token", SERVICE_SECRET)
+                        .header("X-Tenant-Id", "1")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"action\":\"refund\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true));
+    }
+
     // ======================== 商户员工角色门禁测试 ========================
     // 背景：此前 /api/admin/** 仅放行 ADMIN/SUPER_ADMIN/SERVICE，导致 operator 等
     // 商户员工角色登录后访问任何管理接口一律 403（验收 P1「角色权限真实生效」）。

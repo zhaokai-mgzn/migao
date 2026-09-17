@@ -8,11 +8,19 @@ ID 解析、ORD-xxx→UUID 转换由 Java Agent 端点负责。
 from typing import Any, Dict, Optional
 from loguru import logger
 
-from app.tools.base import admin_api_failure, BaseTool, ToolContext, ToolResult
+from app.tools.base import (
+    admin_api_failure, BaseTool, ToolContext, ToolResult, _denial_suggestion,
+)
 from app.utils.http_client import get_admin_api_client
 
 
 VALID_ACTIONS = {"update_status", "update_logistics", "cancel", "confirm_payment", "refund"}
+
+#: action → **额外**需要的权限码（单点映射，与 admin-api 各端点的 `@RequirePermission` 对齐）。
+#: 只登记「与其余 action 不同」的那一个：退款是财务动作，表单路径 `OrderController` 用
+#: `order:refund`；米宝的 BFF 统一 PATCH 是**类级** `order:list` ⇒ 不在工具层按 action 复检，
+#: 仅持 `order:list` 的商户员工（`customer_service`/`sales`/`finance`）就能借米宝越权退款（#4148）。
+ACTION_PERMISSIONS = {"refund": "order:refund"}
 
 
 class OrderManageTool(BaseTool):
@@ -26,8 +34,9 @@ class OrderManageTool(BaseTool):
         "【标注】WRITE|DESTRUCTIVE — 取消/退款前必须二次确认"
     )
 
-    # 权限码（admin-api 目录）：AgentOrderController / OrderController 类级
-    # `@RequirePermission("order:list")`（订单状态/物流/取消/备注都挂 order:list；退款单独 order:refund）。
+    # 权限码（admin-api 目录）：AgentOrderController 类级 `@RequirePermission("order:list")`
+    # （状态/物流/取消都挂 order:list）⇒ 粗筛码取 order:list；**退款单独 order:refund**，
+    # 由 execute 里的 `ACTION_PERMISSIONS` 复检（与 OrderController 的退款路由同码）。
     required_permissions = ["order:list"]
     read_only = False
     destructive = True
@@ -76,6 +85,18 @@ class OrderManageTool(BaseTool):
                 error="权限不足",
                 message="您没有权限执行订单管理操作",
                 suggestion="请改用只读查询（order_query）向用户提供订单信息；如需改单请先确认当前账号权限",
+            )
+
+        # 细粒度复检（与 employee_manage 同款两段式：粗筛 + action 级细粒度）——
+        # 粗筛只看 order:list，而**退款**要 order:refund。建议文案复用 base 的权限拒绝措辞
+        # （单一来源：说清缺哪个码 + 不要重试 + 管理后台开通路径），不另写一套话术。
+        required = ACTION_PERMISSIONS.get(action, "order:list")
+        if "*" not in (context.permissions or []) and required not in (context.permissions or []):
+            return ToolResult(success=False,
+                error="权限不足",
+                message=f"您没有权限执行该订单操作（缺少权限：{required}）",
+                suggestion=_denial_suggestion(required),
+                error_code="PERMISSION_DENIED",
             )
 
         if action not in VALID_ACTIONS:
