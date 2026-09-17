@@ -17,7 +17,9 @@ VALID_ACTIONS = {"list", "detail", "update", "add_tag", "remove_tag", "list_tags
 # 客户档案可写字段（单一事实源 = admin-api CustomerProfile 列 ∩ CustomerService.updateCustomer
 # 的非空拷贝白名单）。写路径只允许下发这些 key，其余一律显式报错——禁止原样透传后由 admin-api
 # 静默丢弃（Spring 默认 FAIL_ON_UNKNOWN_PROPERTIES=false → HTTP 200 但数据不落库 = 假成功，issue #3551）。
-# 跨端字段契约由 tests/test_tool_field_name_contract.py 静态解析 CustomerProfile.java 兜底。
+# 跨端字段契约由 tests/test_tool_field_name_contract.py 强制：既解析 CustomerProfile.java 的列，
+# 也解析 CustomerService.updateCustomer 的非空拷贝白名单 —— 即上面「交集」这条口径现在是**被判据强制的**
+# （issue #4115 之前只校验前者：4 个新列两边都「对得上」，却照样静默丢弃 + 谎报成功）。
 WRITABLE_FIELDS = frozenset({
     "wechatNickname", "phone", "gender",
     "regionProvince", "regionCity", "regionDistrict",
@@ -29,6 +31,11 @@ WRITABLE_FIELDS = frozenset({
 # 姓名别名 → canonical 列名：客户实体无 name/nickname/realName 列，姓名存 wechatNickname
 # （读路径 _list_customers/_detail_customer 已按同序回退，写路径必须对齐，否则静默丢弃 = 谎报成功）。
 NAME_ALIAS_TO_CANONICAL = {"name": "wechatNickname", "nickname": "wechatNickname", "realName": "wechatNickname"}
+
+# craftMode 允许值（单一事实源 = V47 迁移的列注释 / CustomerProfile#craftMode javadoc；
+# admin-api CustomerService.requireValidCraftMode 是同口径的服务端兜底，非法值 400 + suggestion）。
+# 本层提前拦下：省一轮注定失败的写请求，并给出比「更新失败」更可行动的提示（issue #4115）。
+CRAFT_MODES = frozenset({"standard", "economy", "self_quoted"})
 
 
 def normalize_update_data(data: Dict[str, Any]) -> Tuple[Dict[str, Any], List[str]]:
@@ -357,6 +364,20 @@ class CustomerManageTool(BaseTool):
                 suggestion=(
                     f"客户档案可更新字段：{'、'.join(sorted(WRITABLE_FIELDS))}"
                     "（客户姓名字段名为 wechatNickname）"
+                ),
+            )
+
+        # craftMode 是枚举列：非法值服务端会 400 拒绝（#4115），本层提前拦下并给出可行动提示
+        # （不发起注定失败的写请求，也不让用户看到「更新失败」这种无信息量的回执）
+        craft_mode = payload.get("craftMode")
+        if craft_mode is not None and craft_mode not in CRAFT_MODES:
+            return ToolResult(
+                success=False,
+                error=f"无效的 craftMode: {craft_mode}",
+                message=f"客户档案未做任何修改：craftMode={craft_mode!r} 不是合法值",
+                suggestion=(
+                    "craftMode 只能是 standard（跟随企业固定工艺）/ economy（主动省料）/ "
+                    "self_quoted（自报用料）之一；请改用合法值重试，其余字段可同时提交"
                 ),
             )
 
