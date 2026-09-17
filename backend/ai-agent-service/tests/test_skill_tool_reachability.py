@@ -66,14 +66,18 @@
 
 | 判据 | 形态 | 当前 |
 |---|---|---|
-| A5 跨 skill 可达性 | **存量账本**（`A5_GAP_BASELINE`，锚 `c0be8e35`，126 条 / 8 skill；**只许缩短 + 新增阻塞**） | 账本内**绿**；销账跟踪 **#4017** |
+| A5 跨 skill 可达性（**静态矩阵**） | **存量账本**（`A5_GAP_BASELINE`，锚 `c0be8e35`，126 条 / 8 skill；**只许缩短 + 新增阻塞**） | 账本内**绿**（skill 仍未绑那些工具 ⇒ 矩阵条目不会因机制修复而消失） |
+| A5 越界拦截（**运行时机制**） | **严格，无基线**（`test_every_registered_gap_is_rejected_at_runtime`：账本里每一处死角逐条断言被 `cross_skill_target` 拦下） | **绿**（#4017 机制修复落地后） |
 | A10 单点化三条 | **严格，无基线**（命中的是必须修的真违规） | **绿**（#4018 合入后单点化已生效；落地当时为红 —— 见下方锚定记录） |
 
-> ⚠️ A5 走账本的**唯一**理由：`ai-agent-service unit tests` 是**必需检查**，而 A5 的机制修复
-> 不在本批范围（126 处调用面的结构性改动，见 `migao-dev-flow` §17）。
-> 账本**不是永久豁免**：条目一旦在真值中不再命中，守卫打印 `SHOULD SHRINK` 要求移除；
-> 新 skill / 新写工具引入的死角**不在账本里 ⇒ 直接红**。
-> A10 三条**不走账本** —— 它们由同批的 #4013 修复，不存在「长期放行」的理由。
+> ⚠️ **语义调整记录（issue #4079，2026-09-18）**：A5 原来只有**静态矩阵 + 账本放行** ——
+> 账本里的 126 条是"**登记了但拦不住**"的存量债务。机制修复（`validate_input` 执行期比对
+> 校验域与执行域，`target_tool ∉ 当前 skill 可执行集` ⇒ `success=False,
+> error="cross_skill_target"`）+ 本文件新增的**运行时逐条断言**之后：
+>   · 账本**不删不扩**（它是"这些 skill 还没绑那些工具"的**事实登记**，不是放行许可）；
+>   · 每条登记的死角**必须被运行时拦下**（新用例逐条断言，含 injection 负例与域内负例）；
+>   · 新 skill / 新写工具引入的死角**不在账本里 ⇒ 直接红**（原判据保留）。
+> ⇒ 强度**只升不降**：改前=「记录并放行」，改后=「记录 + 逐条必须被拦」。
 """
 
 import ast
@@ -204,12 +208,15 @@ def cross_skill_gap_matrix(skills, tools, validation_targets) -> dict[str, froze
 # A5 存量账本（**锚定 SHA + 逐条逐名**，只许缩短；新增阻塞）
 # ──────────────────────────────────────────────────────────────────────────────
 #
-# ⚠️ 这不是「永久豁免」，是**已被登记的存量债务**：
+# ⚠️ 这不是「永久豁免」，是**已被登记的存量事实**：
 #   · 锚定：`origin/main` @ **c0be8e35**（本账本落地时的实测真值，逐条可复算）；
 #   · 合计：**126** 条 / **8** 个绑了 `validate_input` 的 skill；
+#   · **语义（issue #4079 调整后）**：账本 = 「这些 skill 还没绑那些写工具」的**事实登记**，
+#     **不是放行许可** —— 机制修复后每一处死角都由 `validate_input` 的域闸门在**运行时拦下**
+#     （`test_every_registered_gap_is_rejected_at_runtime` 逐条断言）；
 #   · 账本只许缩短 —— 条目在真值中不再命中时，守卫会打印 `SHOULD SHRINK` 要求移除；
 #   · 新 skill / 新写工具引入的死角**不在账本里 ⇒ 直接红**（`test_no_skill_validates_…` 的 fail 分支）；
-#   · 销账跟踪：**#4017**（A5 机制修复：126 处矩阵 + 线上实证 #3976 + 修法候选 ×3）。
+#   · 销账跟踪：**#4017**（机制修复 —— 已由 #4079 落地：域比对 + 越界拦截）。
 #
 # 复算命令（把下面的集合与真值 diff 出来）：
 #   backend/ai-agent-service/.venv/bin/python -m pytest \
@@ -307,13 +314,16 @@ def test_no_skill_validates_a_write_tool_it_cannot_execute():
     """**A5 核心不变式（存量账本 + 新增阻塞）**：绑了 `validate_input` 的 skill，
     不得校验自己执行不了的写工具 —— **存量按 `A5_GAP_BASELINE` 放行，新增即红**。
 
-    ## 为什么是「存量账本」而不是裸红（集成裁定 · issue #4012 的硬约束修订）
+    本用例只判**静态矩阵的增量**（"有没有新的死角"）。**死角逐条被拦**由下面
+    `test_every_registered_gap_is_rejected_at_runtime` 断言（#4079 机制修复后新增）——
+    两条分工：这条防**新增**，那条证**存量已被拦**。
+
+    ## 为什么保留账本（而不是把 126 条判红）
 
     `ai-agent-service unit tests` 是**必需检查**（`branches/main/protection` 的 `contexts` 含它）。
-    裸红 ⇒ 本 PR 无法合并（auto-merge 只在全绿后 squash），而 A5 的**机制修复不在本批范围**
-    （`migao-dev-flow` §17：它是与 126 处调用面耦合的结构性改动）。
-    ⇒ 按本仓既有约定（`case-trust-baseline.json` 同族）登记**存量账本**，
-    让「守卫能红」这个优点与「带着红合进必需检查」这个事故分开。
+    126 处死角的**根因**是"19 个写工具各只被 1~2 个 skill 绑定"的架构事实，不是个别 skill 漏绑；
+    把它们判红只会挡住所有人的 PR，而**运行时早已被域闸门拦下**（#4079 之后）。
+    ⇒ 账本保留为**事实登记**（防新增），拦截强度由运行时断言承担。
 
     ## 账本的语义（**不是永久豁免**，三条硬约束）
 
@@ -325,9 +335,10 @@ def test_no_skill_validates_a_write_tool_it_cannot_execute():
 
     ## 修复 issue（回填）
 
-    **#4017** —— A5 机制修复（含 126 处死角矩阵、线上实证 #3976、
-    修法候选 ×3〔泛化 #3976 的 relock 做法 / validate_input 域判据 / 绑定侧白名单〕、
-    适用域声明 + 负例要求）。账本随 #4017 的修复**逐条销账**。
+    **#4017**（机制修复，由 **#4079** 落地）—— `validate_input` 执行期读当前 skill 的可执行
+    工具集，`target_tool ∉ 该集合` ⇒ `success=False, error="cross_skill_target"` + suggestion。
+    账本的 126 条**不再靠"放行"活着**：`test_every_registered_gap_is_rejected_at_runtime`
+    逐条断言它们被拦下（强度只升不降）。
 
     反例输入（红证 ①）：把 `order_create` 从 `order_skill.ORDER_TOOLS` 注释掉
     ⇒ `order` 的缺口集**不再是账本里的那 16 个**（多出 `order_create`）⇒ 必红。
@@ -493,6 +504,237 @@ def test_cross_skill_gap_scope_declaration():
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+# A5 机制（issue #4079 / #4017）：校验域 vs **执行域** —— 越界必须被拦
+# ──────────────────────────────────────────────────────────────────────────────
+#
+# 事实链（三条，缺一条下面任何断言都可能是空跑）：
+#   ① skill 回合的可执行工具集 = `create_skill_registry(cfg.tool_names)` 造出的 registry
+#      （`prepare_turn` 用**同一个对象** `get_langchain_tools()` 绑定给模型）；
+#   ② 该工厂把它登记进 `app.tools.registry` 的执行域（ContextVar，`get_tool_scope()`）；
+#   ③ `ValidateInputTool.execute` 执行期读 ②，`target_tool ∉ 域` ⇒ `cross_skill_target`。
+
+
+def validation_rule_actions() -> dict[str, str]:
+    """`{target_tool: 一个**已登记**的 action}` —— 域比对的前置（action 无规则会走更早的分支）。
+
+    AST 取真值（不是正则扫源码）：与 `validation_rule_targets()` 同一份解析口径。
+    """
+    rules = _find_assignment(_module_ast(VALIDATE_INPUT_PY), "_VALIDATION_RULES")
+    assert isinstance(rules, ast.Dict), "_VALIDATION_RULES 不再是字典字面量 —— 请同步本守卫"
+    out: dict[str, str] = {}
+    for key, value in zip(rules.keys, rules.values):
+        if not (isinstance(key, ast.Constant) and isinstance(key.value, str)):
+            continue
+        assert isinstance(value, ast.Dict), f"{key.value} 的规则不是字典字面量 —— 解析失效"
+        actions = [a.value for a in value.keys
+                   if isinstance(a, ast.Constant) and isinstance(a.value, str)]
+        assert actions, f"{key.value} 没有解析出任何 action —— 守卫会空转（fail-closed）"
+        out[key.value] = actions[0]
+    assert out, "_VALIDATION_RULES 解析为空 —— 守卫会空转（fail-closed）"
+    return out
+
+
+#: 域外目标用的最小参数：非空即可（域比对在字段校验**之前**，见 `validate_input.execute`）
+_PROBE_PARAMS = {"probe": 1}
+#: 域内目标用**合法**参数（R2 负例要证明"没拦掉原本合法的调用"，必须能真通过校验）
+_VALID_ORDER_PARAMS = {
+    "customer_name": "张三",
+    "customer_phone": "13800138000",
+    "items": [{"product_id": "p1", "quantity": 1}],
+}
+
+
+def _admin_ctx():
+    from app.tools.base import ToolContext
+    return ToolContext(tenant_id=1, user_id="u_guard", session_id="sess_guard", role="admin")
+
+
+async def test_every_registered_gap_is_rejected_at_runtime():
+    """**A5 机制不变式（越界必须被拦）**：账本登记的每一处死角，运行时都必须被拒。
+
+    判据（对**活真值**逐条算，不依赖账本的"放行"语义）：
+
+      · 对每个绑了 `validate_input` 的 skill：用生产同一工厂
+        `create_skill_registry(cfg.tool_names)` 登记执行域；
+      · 对 `_VALIDATION_RULES` 的**每个**目标工具：
+          - 目标 ∉ 该 skill 工具集 ⇒ `success is False` 且 `error == "cross_skill_target"` + suggestion；
+          - 目标 ∈ 该 skill 工具集 ⇒ **不得**被域闸门拒（`error != "cross_skill_target"`）。
+
+    强度（R4）：改前账本里的 126 条只是"**登记并放行**"（静态矩阵），现在**逐条断言被拦**。
+    fail-closed（防"扫不到就通过"）：账本里的每个 skill 必须在活注册表里存在（幽灵即红）；
+    且断言实际比对次数 == `绑 validate_input 的 skill 数 × 目标数`（**没有静默跳过**）。
+    """
+    from app.graph.skills.skill_registry import get_skill_registry
+    from app.graph.skills.base_skill import create_skill_registry
+    from app.tools.base import ToolContext  # noqa: F401  （保持与 `_admin_ctx` 同源）
+    from app.tools.registry import get_tool_scope
+    from app.tools.validate_input import ValidateInputTool
+
+    skills = list(get_skill_registry().get_all())
+    assert skills, "skill 注册表为空 —— 判据会空转（fail-closed）"
+    live_names = {cfg.name for cfg in skills}
+    ghosts = sorted(set(A5_GAP_BASELINE) - live_names)
+    assert not ghosts, (
+        f"账本里的 skill 在活注册表里不存在：{ghosts} —— 账本指向幽灵（判据会静默失去对象）"
+    )
+
+    targets = validation_rule_actions()
+    tool = ValidateInputTool()
+    ctx = _admin_ctx()
+
+    checked = 0
+    blocked = 0
+    failures: list[str] = []
+    for cfg in skills:
+        own = set(cfg.tool_names or [])
+        if "validate_input" not in own:
+            continue  # 适用域之外（反方向缺口只登记，见 scope declaration 用例）
+        create_skill_registry(list(cfg.tool_names))  # 生产同一工厂 → 登记执行域
+        assert get_tool_scope() is not None, (
+            f"{cfg.name}：工厂没有登记执行域 —— 域闸门会静默失效（#4079 的事实链断在第 ② 环）"
+        )
+        for target, action in sorted(targets.items()):
+            checked += 1
+            params = _VALID_ORDER_PARAMS if target == "order_create" else _PROBE_PARAMS
+            res = await tool.execute(ctx, target_tool=target, target_action=action, params=params)
+            if target in own:
+                if res.error == "cross_skill_target":
+                    failures.append(
+                        f"{cfg.name} **域内**目标 {target} 被域闸门误拒（R2 误伤合法调用）"
+                    )
+                continue
+            blocked += 1
+            if res.success or res.error != "cross_skill_target":
+                failures.append(
+                    f"{cfg.name} 的域外目标 {target} 没被拦下：success={res.success} error={res.error!r}"
+                    f" ⇒ 「能校验但执行不了」的死角又回来了（后果链见 #3976）"
+                )
+            elif not (res.suggestion or "").strip():
+                failures.append(f"{cfg.name} 的域外目标 {target} 被拒但**没有 suggestion**（R5）")
+
+    expect = sum(1 for cfg in skills if "validate_input" in set(cfg.tool_names or [])) * len(targets)
+    assert checked == expect, (
+        f"实际比对 {checked} 次，应为 {expect} 次 —— 有静默跳过（判据不得「扫不到就通过」）"
+    )
+    assert blocked > 0, (
+        "活真值里一处域外死角都没有 ⇒ 本判据变成空跑；请确认账本/A5_GAP_BASELINE 是否已过期"
+    )
+    print(f"\n[A5 运行时域闸门] 比对 {checked} 对，其中域外 {blocked} 处（账本登记 "
+          f"{sum(len(v) for v in A5_GAP_BASELINE.values())} 条）全部被拦下")
+    assert not failures, "A5 域闸门未按预期工作：\n  " + "\n  ".join(failures)
+
+
+async def test_cross_skill_gate_rejects_out_of_domain_and_passes_in_domain():
+    """**注入式红证 + R2 阴性负例**（判据必须能红、也必须不误红）。
+
+    夹具与被测真值解耦（用工厂造域，不依赖具体 skill 的绑定现状）：
+
+      ① **#3976 形状**：`product` 域（工具集含 `product_manage`、不含 `order_create`）
+         里校验 `order_create` ⇒ **必须** `cross_skill_target` + suggestion；
+      ② **R2 域内**：`order` 域（含 `order_create`）里校验同一个目标 ⇒ **success=True**
+         （参数是合法下单参数 ⇒ 校验路径一字不改）；
+      ③ **空域 fail-closed**：`create_skill_registry([])`（登记了空域）⇒ 任何目标都拒；
+      ④ **非 skill 回合**：`set_tool_scope(None)` ⇒ 无域可比对，行为回到改前
+         （`validate_input(order_create)` 照常通过）—— `api/chat.py` / 内测直调的既有语义；
+      ⑤ **红证（可执行形态）**：同一组参数，**仅域不同** ⇒ 判定翻转（③/① vs ④），
+         证明"改前的 success=True"确实是被这道闸门改写的。
+
+    改前必红：①③ 在 #4079 之前得到 `success=True`（机制缺失）⇒ 本用例当场红。
+    """
+    from app.graph.skills.base_skill import create_skill_registry
+    from app.tools.registry import set_tool_scope
+    from app.tools.validate_input import ValidateInputTool
+
+    tool = ValidateInputTool()
+    ctx = _admin_ctx()
+
+    # ① #3976 形状：product 域内校验 order_create
+    create_skill_registry(["validate_input", "product_manage", "product_detail"])
+    r1 = await tool.execute(ctx, target_tool="order_create", target_action="create",
+                            params=_VALID_ORDER_PARAMS)
+    assert r1.success is False and r1.error == "cross_skill_target", (
+        f"域外目标没被拦下（#3976 的空头承诺形态）：success={r1.success} error={r1.error!r}"
+    )
+    assert (r1.suggestion or "").strip(), "fail-closed 分支必须带 suggestion（R5：_self_correct_retry 靠它启动）"
+    assert r1.data.get("cross_skill_target") == "order_create"
+
+    # ② R2：域内目标照常通过（合法调用不得被误伤）
+    create_skill_registry(["validate_input", "order_create", "order_manage"])
+    r2 = await tool.execute(ctx, target_tool="order_create", target_action="create",
+                            params=_VALID_ORDER_PARAMS)
+    assert r2.success is True and r2.data.get("validated") is True, (
+        f"域内目标的合法校验被误伤：success={r2.success} error={r2.error!r}"
+    )
+
+    # ③ 空域：登记了空集 ⇒ 任何目标都执行不了 ⇒ fail-closed 全拒
+    create_skill_registry([])
+    r3 = await tool.execute(ctx, target_tool="order_create", target_action="create",
+                            params=_VALID_ORDER_PARAMS)
+    assert r3.success is False and r3.error == "cross_skill_target", (
+        f"空域未 fail-closed：success={r3.success} error={r3.error!r}"
+    )
+
+    # ④ 非 skill 回合（无域）：无"当前 skill 域"可比对 ⇒ 行为与改前一致
+    set_tool_scope(None)
+    r4 = await tool.execute(ctx, target_tool="order_create", target_action="create",
+                            params=_VALID_ORDER_PARAMS)
+    assert r4.success is True, (
+        f"无域（直调全局注册表/单测直调）路径被误拦：success={r4.success} error={r4.error!r}"
+    )
+    # ⑤ 判定翻转由**域**决定：①/③ 与 ④ 的入参完全相同，结论相反
+    assert (r1.success, r3.success, r4.success) == (False, False, True)
+
+
+async def test_read_only_target_and_out_of_table_names_keep_old_semantics():
+    """R2 阴性负例：只读目标 / 表外工具名**不进入**域闸门（既有错误语义一字不改）。
+
+    `validate_input` 的域比对放在规则查表**之后**：表外工具名（拼错/未注册/只读工具）
+    仍走「未知的工具」分支 —— 这是改前的语义，也是"只读目标不受影响"的判据。
+    """
+    from app.graph.skills.base_skill import create_skill_registry
+    from app.tools.validate_input import ValidateInputTool
+
+    tool = ValidateInputTool()
+    ctx = _admin_ctx()
+    # 域里只有 product_manage（不含只读的 product_search）
+    create_skill_registry(["validate_input", "product_manage"])
+
+    res = await tool.execute(ctx, target_tool="product_search", target_action="search",
+                             params={"keyword": "窗帘"})
+    assert res.success is False, "表外/只读目标本就不该通过（既有语义）"
+    assert res.error != "cross_skill_target", (
+        f"只读目标被域闸门接管：error={res.error!r} —— 适用域被越界（会给出误导性建议）"
+    )
+    assert "未知" in (res.error or "") or "未知" in (res.message or ""), (
+        f"表外目标应保留「未知的工具」语义，实得 error={res.error!r} message={res.message!r}"
+    )
+
+
+def test_tool_scope_is_registered_by_the_skill_registry_factory():
+    """**事实链判据（防整个域闸门静默失效）**：工厂登记的执行域 == 它造出的工具子集。
+
+    没有这一条，上面两条运行时断言都可能在"域没被登记（`get_tool_scope() is None`）"时
+    **静默变成空跑**（无域 ⇒ 不比对 ⇒ 全绿），正是本仓最忌讳的「判据自己选择沉默」。
+    """
+    from app.graph.skills.base_skill import create_skill_registry
+    from app.tools.registry import get_tool_scope, set_tool_scope
+
+    reg = create_skill_registry(["validate_input", "order_create", "tool_that_is_not_registered"])
+    scope = get_tool_scope()
+    assert scope is not None, "`create_skill_registry` 没有登记执行域 —— 域闸门会静默失效"
+    assert scope == frozenset(reg.get_tool_names()), (
+        f"登记的执行域 {sorted(scope)} != registry 实际工具集 {sorted(reg.get_tool_names())}"
+    )
+    assert scope == frozenset({"validate_input", "order_create"}), (
+        "登记进域的名字必须与**实际注册成功**的工具一致（不存在于全局注册表的工具"
+        "模型也调不到，不得算作域内可执行）"
+    )
+    # 复位（用例隔离另有 conftest autouse fixture 兜底；此处显式复位便于单独跑本文件）
+    set_tool_scope(None)
+    assert get_tool_scope() is None
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # A10：CUSTOMER_ONLY_ROLES 单点化不变式
 # ──────────────────────────────────────────────────────────────────────────────
 
@@ -636,3 +878,37 @@ def test_customer_only_roles_import_direction_claim_is_true():
         "→ 二选一：① 真单点化（chat.py import tools 层常量）；"
         "② 撤回 `base.py` 那句 claim，并如实登记两份定义的同步责任。"
     )
+
+async def test_cached_validation_success_does_not_leak_across_domains():
+    """R2/R4 邻接：只读工具缓存**不得跨域串味**（否则 A5 死角从缓存里被放回来）。
+
+    形态（同租户、同参数、60s 内）：A 域（含 `order_create`）的 `validate_input` 成功结论
+    若被 B 域（不含它）命中 ⇒ B 域拿到"校验通过" ⇒ 落 pending → 确认卡 → 点卡后
+    `Tool not found`（就是 #3976 的后果链，只是经由缓存复活）。
+    ⇒ 缓存键必须覆盖结果依赖的**全部事实**（含执行域）。
+    """
+    from app.graph.skills.base_skill import _execute_tool_safe, create_skill_registry
+    from app.tools.registry import set_tool_scope
+    from app.tools.validate_input import ValidateInputTool
+
+    tool = ValidateInputTool()
+    ctx = _admin_ctx()
+    state = {"session_id": ctx.session_id, "tenant_id": ctx.tenant_id}
+    args = {"target_tool": "order_create", "target_action": "create",
+            "params": dict(_VALID_ORDER_PARAMS)}
+
+    # 清模块级缓存（与 tests/test_tool_write_not_cached.py 同口径：防跨用例污染）
+    cache = getattr(_execute_tool_safe, "_cache", None)
+    if cache is not None:
+        cache.clear()
+
+    create_skill_registry(["validate_input", "order_create", "order_manage"])
+    _s1, d1 = await _execute_tool_safe(tool, dict(args), ctx, state)
+    assert d1["success"] is True, f"A 域（含目标工具）应当校验通过：{d1}"
+
+    create_skill_registry(["validate_input", "product_manage", "product_search"])
+    _s2, d2 = await _execute_tool_safe(tool, dict(args), ctx, state)
+    assert d2.get("error") == "cross_skill_target", (
+        f"B 域命中了 A 域的缓存结论 ⇒ 跨域串味，A5 死角复活（#3976 的后果链）：{d2}"
+    )
+    set_tool_scope(None)
