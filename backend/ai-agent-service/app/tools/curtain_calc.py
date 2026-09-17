@@ -6,6 +6,10 @@ AI 智能客服系统 - 窗帘算料报价 Tool
 
 真值来源：docs/curtain-fabric-quote-rules.md（行业标准值 + 经验默认值）。
 
+计价口径（issue #4118，以 #3005 为准）：加工费**按面料米数打包**计，罗马圈/四爪钩/S 钩等辅料成本
+已含在按米单价里（如「打孔式 8 元/米」即含圈含工）⇒ **辅料数量不得由米数推导**（无「每米 N 个」密度）。
+顾客显式要单独买辅料（如单独买罗马圈）时走 `accessories` **显式入参**，数量/单价必须由调用方给出。
+
 核心公式：
 - 定高布（买宽）：M = (W + 0.3) × N    （W=窗宽, N=褶皱倍数, 0.3=左右各15cm覆盖余量）
 - 定宽布（买高）：P = ceil((W+0.3)×N/G)，M = P × (H + 0.3)   （G=门幅, H=窗高, 0.3=上下卷边）
@@ -17,7 +21,7 @@ AI 智能客服系统 - 窗帘算料报价 Tool
 from __future__ import annotations
 
 import math
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from loguru import logger
 
@@ -47,8 +51,9 @@ ROMAN_SIDE = 0.2        # 罗马帘：包边余量
 ROD_EXTENSION = 0.4     # 罗马杆两端各伸出 15~20cm，合计 0.3~0.4
 
 # ── 辅料/安装默认单价（【默】经验默认，商家可配置）──
-ROMAN_RING_PRICE = 1.5        # 罗马圈 元/个（每米布约 6 个）
-ROMAN_RING_PER_METER = 6      # 每米布罗马圈个数
+# ⚠️ 此处**不再有**「罗马圈 元/个」+「每米布 N 个」两个常量（issue #4118，口径以 #3005 为准）：
+# 加工费按米打包已含圈，**由米数推导圈数 = 双算**（同一单既收 8 元/米又单列 60 元圈费）。
+# 顾客显式要单独买圈 ⇒ 走 build_quote(accessories=[...]) 显式入参（数量由调用方给出）。
 EYELET_TAPE_PRICE = 8.0       # 孔带 元/米
 ROD_PRICE = 25.0              # 罗马杆 元/米
 TIEBACK_PRICE = 15.0          # 绑带 元/对
@@ -70,6 +75,60 @@ DEFAULT_CRAFT_TIERS: Dict[str, Dict[str, Any]] = {
 def margin_for_open_count(open_count: int = 1) -> float:
     """打开方式开数 → 侧边余量（米）：单开 0.2 / 多开 0.3"""
     return MARGIN_SINGLE if open_count <= 1 else MARGIN_MULTI
+
+
+def explicit_accessories(
+    accessories: Optional[List[Dict[str, Any]]] = None,
+) -> tuple[List[Dict[str, Any]], float]:
+    """顾客**显式**选定的辅料 → (报价明细行, 合计金额)。
+
+    口径（issue #4118，以 #3005 为准）：辅料**只认显式入参** —— 数量、单价必须由调用方给出；
+    **不得**由面料米数推导（「每米布 6 个圈」这种密度已随 #3005 回滚，见
+    docs/curtain-fabric-quote-rules.md §5：加工费按米打包、圈的成本已含在按米单价里）。
+
+    这正是「允许偏离 vs 编造/推导」的分界（同 #4011 口径纪律）：顾客说「再单独买 40 个圈」
+    ⇒ 如实计入；顾客没说 ⇒ 一个都不加，也不替他按米数推算。
+
+    Args:
+        accessories: [{"name": "罗马圈", "quantity": 40, "unit_price": 1.5, "unit": "个"}, ...]
+                     （unit 可选，默认「个」）
+
+    Returns:
+        (明细行 list, 合计金额)
+
+    Raises:
+        ValueError: 缺名称 / 缺数量或单价 / 数量非正 / 单价为负（fail-closed：
+                    既不猜默认值，也不静默丢弃顾客的显式选择）。
+    """
+    rows: List[Dict[str, Any]] = []
+    total = 0.0
+    for idx, item in enumerate(accessories or [], start=1):
+        if not isinstance(item, dict):
+            raise ValueError(f"第 {idx} 项辅料格式不对：应为对象（含 name/quantity/unit_price）")
+        name = str(item.get("name") or "").strip()
+        if not name:
+            raise ValueError(f"第 {idx} 项辅料缺少名称（name）")
+        try:
+            quantity = float(item["quantity"])
+            unit_price = float(item["unit_price"])
+        except (KeyError, TypeError, ValueError):
+            raise ValueError(
+                f"辅料「{name}」必须同时给出 quantity（数量）与 unit_price（单价）——"
+                "辅料数量由顾客显式给出，系统不按面料米数推导"
+            ) from None
+        if quantity <= 0:
+            raise ValueError(f"辅料「{name}」数量须大于 0（收到 {quantity}）")
+        if unit_price < 0:
+            raise ValueError(f"辅料「{name}」单价不能为负（收到 {unit_price}）")
+        unit = str(item.get("unit") or "个")
+        cost = quantity * unit_price
+        rows.append({
+            "name": name,
+            "detail": f"{quantity:g}{unit} × ¥{unit_price:g}/{unit}",
+            "cost": round(cost, 2),
+        })
+        total += cost
+    return rows, total
 
 
 def derive_pleat_count(width: float, fullness: float, open_count: int = 1) -> tuple[int, str]:
@@ -202,6 +261,7 @@ def build_quote(
     pleat_count: Optional[int] = None,
     source: str = "formula",
     craft_tier: Optional[str] = None,
+    accessories: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     """构建完整报价单。
 
@@ -218,6 +278,8 @@ def build_quote(
         pleat_count: 折数（韩褶折数法；给定时按 0.25×折数+余量 算料，issue #3982）
         source: 折数/用料取值来源（formula / manual / customer_quoted）
         craft_tier: 工艺档位（standard / economy；与 pleat_count 二选一）
+        accessories: **顾客显式**要单独买的辅料（如罗马圈）：[{"name","quantity","unit_price"}...]。
+                     不给 ⇒ 一个都不加（**不按米数推导**，issue #4118 / #3005）
 
     Returns:
         报价字典：fabric_meters / fabric_cost / processing_cost / accessory_cost /
@@ -276,24 +338,25 @@ def build_quote(
     processing_price = DEFAULT_PROCESSING_PRICE.get(mounting, 0.0)
     processing_cost = meters * processing_price
 
-    # 辅料费（打孔帘：罗马圈 + 孔带 + 罗马杆 + 绑带）
+    # 辅料费（打孔帘默认：孔带 + 罗马杆 + 绑带 —— 罗马圈**不在**默认项里，见下方口径）
     rod_length = window_width + ROD_EXTENSION
-    accessory_breakdown = []
+    accessory_breakdown: List[Dict[str, Any]] = []
     accessory_cost = 0.0
 
     if mounting == "eyelet":
-        ring_count = round(meters * ROMAN_RING_PER_METER)
-        ring_cost = ring_count * ROMAN_RING_PRICE
         tape_cost = meters * EYELET_TAPE_PRICE
         rod_cost = rod_length * ROD_PRICE
-        tieback_cost = TIEBACK_PRICE
         accessory_breakdown = [
-            {"name": "罗马圈", "detail": f"{ring_count}个 × ¥{ROMAN_RING_PRICE}/个", "cost": round(ring_cost, 2)},
             {"name": "孔带", "detail": f"{meters:.2f}米 × ¥{EYELET_TAPE_PRICE}/米", "cost": round(tape_cost, 2)},
             {"name": "罗马杆", "detail": f"{rod_length:.2f}米 × ¥{ROD_PRICE}/米", "cost": round(rod_cost, 2)},
-            {"name": "绑带", "detail": "1对", "cost": tieback_cost},
+            {"name": "绑带", "detail": "1对", "cost": TIEBACK_PRICE},
         ]
-        accessory_cost = ring_cost + tape_cost + rod_cost + tieback_cost
+        accessory_cost = tape_cost + rod_cost + TIEBACK_PRICE
+
+    # 顾客**显式**声明的辅料（如单独买罗马圈）：只按给定数量/单价计入，绝不从米数推导（#4118/#3005）
+    extra_rows, extra_cost = explicit_accessories(accessories)
+    accessory_breakdown.extend(extra_rows)
+    accessory_cost += extra_cost
 
     # 安装费（按杆长）
     install_cost = rod_length * INSTALL_PRICE
@@ -344,6 +407,7 @@ def calculate_multi_position(positions: List[Dict[str, Any]]) -> Dict[str, Any]:
             pleat_count=p.get("pleat_count"),
             source=p.get("source", "formula"),
             craft_tier=p.get("craft_tier"),
+            accessories=p.get("accessories"),
         )
         q["fabric_code"] = p.get("fabric_code") or "未指定"
         results.append(q)
@@ -373,6 +437,9 @@ class CurtainCalcTool(BaseTool):
         "开数传 open_count（1/2/4），对开折数须偶数、四开能被 4 整除。"
         "取值来源传 source（formula/manual/customer_quoted）——客户自报的用料必须标记，"
         "与商家确认的档位分开（商家裁定后以确认值为准）。"
+        "【辅料口径】加工费按面料米数打包、罗马圈/四爪钩等辅料成本已含在按米单价里，"
+        "**不要**按米数替顾客推算辅料个数；顾客**显式**要单独买某项辅料（如「再单独买 40 个罗马圈」）"
+        "时才传 accessories（数量/单价按顾客所说明说）。"
         "【反例】查面料价格/库存用 product_detail，不要用它算料；下单用 order_create。"
         "【反例·重要】顾客**直接说了要买多少米布**（如「要 3 米」「买 3 米布」「3 米，散剪」）时，"
         "那已经是**购买数量**，**不要**调用本工具 —— 把米数当窗宽再乘褶皱倍数会算出 3 倍布量、"
@@ -440,6 +507,26 @@ class CurtainCalcTool(BaseTool):
                 "description": "工艺档位：standard 标准工艺（默认，倍数 2.0）/ economy 经济工艺（倍数 1.8，省料）。顾客要省钱或自报用料时用 economy 档对比；与 pleat_count 二选一",
                 "enum": ["standard", "economy"],
             },
+            "accessories": {
+                "type": "array",
+                "description": (
+                    "顾客**显式**要求单独购买的辅料（如罗马圈）——每项 "
+                    '{"name":"罗马圈","quantity":40,"unit_price":1.5}（unit 可选，默认「个」）。'
+                    "【红线】数量必须来自顾客明说；**不要**按面料米数替他推导个数"
+                    "（加工费按米打包、圈的成本已含在按米单价里，见 docs/curtain-fabric-quote-rules.md §5）。"
+                    "顾客没提单独买辅料 ⇒ 不要传本参数"
+                ),
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string", "description": "辅料名称，如「罗马圈」"},
+                        "quantity": {"type": "number", "description": "数量（顾客明说，如 40）"},
+                        "unit_price": {"type": "number", "description": "单价（元/单位，如 1.5）"},
+                        "unit": {"type": "string", "description": "单位，默认「个」（如 米/对/个）"},
+                    },
+                    "required": ["name", "quantity", "unit_price"],
+                },
+            },
         },
         "required": ["window_width", "window_height"],
     }
@@ -459,6 +546,7 @@ class CurtainCalcTool(BaseTool):
         pleat_count: Optional[int] = None,
         source: str = "formula",
         craft_tier: Optional[str] = None,
+        accessories: Optional[List[Dict[str, Any]]] = None,
     ) -> ToolResult:
         """执行算料报价"""
         if not self.check_permission(context):
@@ -516,6 +604,7 @@ class CurtainCalcTool(BaseTool):
                 pleat_count=int(pleat_count) if pleat_count is not None else None,
                 source=source,
                 craft_tier=craft_tier,
+                accessories=accessories,
             )
 
             logger.info(
@@ -536,6 +625,19 @@ class CurtainCalcTool(BaseTool):
                 message=(
                     f"算料完成：共需面料 {quote['fabric_meters']} 米，总价 ¥{quote['total']}"
                     "（以上为 AI 按您提供尺寸的预估报价，最终以实际测量/确认为准）"
+                ),
+            )
+        except ValueError as e:
+            # 参数类拒绝（显式辅料不合法 / 褶皱倍数低于红线）→ 把原因回给模型让它自纠，
+            # 不与「算料失败」混成一个笼统错误（fail-closed：不猜默认值、不静默丢弃）
+            logger.warning(f"[curtain-calc] rejected: {e}")
+            return ToolResult(
+                success=False,
+                error="参数不合法",
+                message=str(e),
+                suggestion=(
+                    "请核对该参数后重试；辅料（如罗马圈）必须由顾客显式给出数量与单价，"
+                    "不得按面料米数推导"
                 ),
             )
         except Exception as e:
