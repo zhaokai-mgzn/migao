@@ -25,8 +25,17 @@ from pathlib import Path
 
 # ── 规则编译（数据 → 可执行规则）──
 
-def compile_rules(modules, test_commands=None):
-    """把 tech-stack.yml 的 modules 编译为 [(regex, tests, language, cwd, service)]。"""
+def compile_rules(modules, test_commands=None, errors=None):
+    """把 tech-stack.yml 的 modules 编译为 [(regex, tests, language, cwd, service)]。
+
+    `errors`：可选列表；把**被丢弃**的规则（pattern 为空 / 正则非法）登记进去。
+    为什么（fail-closed，本次收紧）：旧实现用裸 `continue` 静默丢弃，规则源的一部分
+    于是**悄悄消失** —— 对应文件随即落进 `unmatched`（既非 block 也非 warn，
+    控制台只显示「ℹ️ 未识别，跳过」）⇒ 缺测门禁对它们**完全失效**，而**没有任何东西变红**。
+    规则源退化必须报错，不得降级成「这些文件没有规则」（同族：issue #3631 的
+    「扫描失败 ≠ 无变更」、danger_scan 的取证 fail-closed）。
+    `errors` 为 None 时保持旧签名可用（纯函数调用方不受影响）。
+    """
     tc = test_commands or {}
     rules = []
     for mod in modules or []:
@@ -36,10 +45,14 @@ def compile_rules(modules, test_commands=None):
         for pat in mod.get("patterns") or []:
             pattern = pat.get("pattern", "")
             if not pattern:
+                if errors is not None:
+                    errors.append(f"service={service or '?'}: 空 pattern（该 rules 条目被丢弃）")
                 continue
             try:
                 compiled = re.compile(pattern)
-            except re.error:
+            except re.error as e:
+                if errors is not None:
+                    errors.append(f"service={service or '?'}: 正则非法 {pattern!r}（{e}）—— 该条规则被丢弃")
                 continue
             rules.append({
                 "regex": compiled,
@@ -657,9 +670,26 @@ def main(argv=None):
     test_commands = tech.get("test_commands") or {}
     exemptions = ex.get("exemptions") or []
 
-    rules = compile_rules(modules, test_commands)
+    rule_errors: list = []
+    rules = compile_rules(modules, test_commands, rule_errors)
+    # fail-closed（本次收紧）：规则源**退化**必须报错，不得静默降级。
+    # 病根：`rules` 为空（modules 被清空 / pattern 全非法）时，每个变更文件都落进
+    # `classify_file` 的 `unmatched` 分支 —— 而 `unmatched` 既不是 blocker 也不是 warning
+    # ⇒ `blocker_count = 0` ⇒ CI 的 `Fail on blocking violations` 不触发、`verify-all.sh gate`
+    # 打 ✅。**编辑 `.github/tech-stack.yml` 本身不需要任何测试**（它 unmatched），
+    # 所以「把 modules 清空」是一条现实的、不用改代码就能关掉整条缺测门禁的路
+    # （2026-09-17 实测：`modules: []` ⇒ 真源码文件显示「ℹ️ 未识别，跳过」+ ✅ 全部通过）。
+    if rule_errors:
+        print(f"::error:: tech-stack.yml 有 {len(rule_errors)} 条规则无法编译 ⇒ 这些规则对应的"
+              f"文件会静默落进 unmatched（缺测门禁失效）。规则源退化必须 fail-closed：", file=sys.stderr)
+        for e in rule_errors:
+            print(f"  · {e}", file=sys.stderr)
+        return 2
     if not rules:
-        print("::warning:: tech-stack.yml 的 modules 为空，覆盖率门禁无规则可执行", file=sys.stderr)
+        print("::error:: tech-stack.yml 的 modules 为空（无任何可执行规则）⇒ 全部变更文件都会落进"
+              " unmatched（既非 block 也非 warn）⇒ 缺测门禁整条失效。规则源退化必须 fail-closed："
+              "要么恢复 modules，要么本门禁不成立（见 issue #3631 同族口径）。", file=sys.stderr)
+        return 2
     files = args.files if args.files else get_changed_files(args.base)
     if files is None:
         print("::error:: growth_gate 无法获取变更文件清单（fail-closed：扫描失败 ≠ 无变更，见 issue #3631）",

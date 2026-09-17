@@ -102,8 +102,24 @@ def _make_repo(tmp_path) -> Path:
     shutil.copy(VERIFY_ALL, repo / "verify-all.sh")
     shutil.copy(GROWTH_GATE, repo / ".github" / "growth_gate.py")
     shutil.copy(YAML_LIGHT, repo / ".github" / "yaml_light.py")
-    # 桩规则源：无模块规则（本守卫只关心「空集是否静默放行」，不测缺测分类）
-    (repo / ".github" / "tech-stack.yml").write_text("modules: []\ntest_commands: {}\n")
+    # 桩规则源：**一条无害规则**（不再用 `modules: []`）。
+    # ⚠️ 2026-09-17 语义更新：growth_gate 现在把「规则源退化」当 **fail-closed**
+    # （`modules` 为空 / 正则非法 ⇒ exit 2，见 `.github/growth_gate.py` 的
+    # `rule_errors` 与 `not rules` 分支）—— 旧桩图省事写的 `modules: []` 如今**本身就意味着
+    # 「整条缺测门禁失效」**，于是场景⑤（无未提交改动时不得变红）会被这个桩自己打红。
+    # 本守卫关心的是「未提交感知」，不是缺测分类（原文即如此声明），故换成一条真规则：
+    # 它匹配不到本文件各场景改动的任何文件（README.md / tests/test_weak_sample.py）
+    # ⇒ 分类结果与旧桩逐字一致（unmatched），守卫强度不变。
+    (repo / ".github" / "tech-stack.yml").write_text(
+        "modules:\n"
+        "  - service: stub\n"
+        "    language: python\n"
+        "    patterns:\n"
+        "      - pattern: 'stub/(.+)\\.py'\n"
+        "        tests: ['tests/test_{1}.py']\n"
+        "test_commands: {}\n",
+        encoding="utf-8",
+    )
     (repo / ".github" / "qa-exemptions.yml").write_text("exemptions: []\n")
     # 桩覆盖体检：`--check` 恒通过（判据在 scripts/*_coverage.py，与本缺陷无关）
     for persona in ("xiaobu", "mibao"):

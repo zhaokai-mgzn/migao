@@ -6,56 +6,31 @@
 # - 纯文案修正 / 字段名对齐 / 类型定义修正（不改变交互逻辑）
 # - 已有其他测试覆盖的存量页面微调
 # - CI/配置/文档变更不在此列表（QA gate 不扫描这些路径）
+#
+# ⚠️ **条目必须"在做实事"**（2026-09-17 收紧，守卫见
+# `tests/unit_ci_workflows/test_qa_exemptions_liveness.py`）：一条 pattern 只有在
+# 「它盖住的文件**本来会**被判缺测」时才允许留在表里。两类死条目一律删除且不得再进：
+#   · **僵尸**：pattern 匹配不到任何现存文件（文件/目录已删）—— 留着等于给同名文件的
+#     未来重建预埋一张免检券；
+#   · **冗余**：盖住的文件走 `tech-stack.yml` 规则本来就是 `pass` / `auto_pass` ——
+#     该条**零作用**，只会在配套测试被删/改名后**静默**把缺测门禁重新撑开。
+# 本轮据此清掉 24 条（2 僵尸 + 22 冗余），53 → 29；复算命令：
+#   python3 -m pytest tests/unit_ci_workflows/test_qa_exemptions_liveness.py -q
+# **减少能免检的面才是收紧**：不要用"加一条豁免"来让门禁变绿；也不要靠新增字段/子表
+# 把判定做成"更复杂的白名单"。
 
 exemptions:
   - pattern: "frontend/admin-web/src/types/*"
     reason: "类型定义变更不包含运行时逻辑，由 tsc 编译检查保障"
 
-  - pattern: "frontend/admin-web/tests/*"
-    reason: "测试文件自身变更不需要额外测试覆盖"
-
-  - pattern: "frontend/admin-web/src/app/*/orders/*/OrderDetail.tsx"
-    reason: "存量页面字段名对齐 — 已有 order-detail E2E 覆盖。shell case glob 中 ()[] 均为特殊字符，必须用 * 替代 Next.js 路由组 (dashboard) 和动态段 [id]"
-
   - pattern: "backend/admin-api/src/main/resources/*.yml"
     reason: "Spring Boot 配置文件变更，纯配置无 Java 逻辑，无需单测"
-
-
-
 
   - pattern: "frontend/admin-web/src/components/ai-assistant/FloatingAssistant.tsx"
     reason: "会话管理重构：已有 tests/unit/floating-assistant.test.tsx（4 tests PASS），新增 validateAndLoad 逻辑在现有测试框架下覆盖"
 
-  - pattern: "frontend/admin-web/src/store/chat.ts"
-    reason: "删除 auto-close 逻辑 + 新增 persistSessionId：已有 tests/unit/store/chat.test.ts（63 tests PASS），测试已更新匹配新行为"
-
-  - pattern: "backend/ai-agent-service/app/graph/skills/product_skill.py"
-    reason: "Prompt 文案修正（1行）：严禁编造色号→诚实告知。无逻辑变更，不改变控制流"
-
-  - pattern: "backend/ai-agent-service/app/tools/product_manage.py"
-    reason: "错误处理加固：_resolve_category_id 失败返回 None + suggestion。逻辑变更小，由已有 test_tools_product_detail/test_tools_validate_input 间接覆盖"
-
   - pattern: "backend/ai-agent-service/app/tools/__init__.py"
     reason: "Tool 模块 re-export（纯 import + __all__，无运行时逻辑）；新增 CustomerOrderQueryTool 由 tests/test_tools_customer_order_query.py 直接覆盖"
-
-  - pattern: "backend/ai-agent-service/app/api/chat.py"
-    reason: "删除 close_other_active_sessions 调用（3处）：纯删除代码，不引入新逻辑。已有 test_session_memory 覆盖底层函数"
-
-  - pattern: "backend/ai-agent-service/app/utils/http_client.py"
-    reason: "4xx 返回 error dict 不抛异常：防御性加固，已有 unit/test_circuit_breaker 覆盖熔断器正确行为"
-
-  - pattern: "backend/ai-agent-service/app/main.py"
-    reason: "新增后台定时任务启动：基础设施代码，通过服务健康检查验证"
-
-
-
-
-
-  - pattern: "backend/admin-api/src/main/java/com/migao/admin/service/ProductService.java"
-    reason: "安全加固：selectById → tenant-scoped selectOne（IDOR 修复），无新业务逻辑"
-
-  - pattern: "backend/admin-api/src/main/java/com/migao/admin/service/AfterSalesTicketService.java"
-    reason: "安全加固：createTicketForAgent UUID 路径加租户校验，无新业务逻辑"
 
   - pattern: "backend/admin-api/src/main/java/com/migao/admin/dto/agent/*"
     reason: "Agent DTO 定义 — 纯数据结构无运行时逻辑，由编译检查保障"
@@ -71,40 +46,15 @@ exemptions:
     reason: "#1483 纯新增 Agent BFF Controller，Service 端方法已合并在 main，单测覆盖 Service 层方法（AgentProductServiceTest 14 tests / AgentOrderServiceTest 5 tests），Controller 仅是薄包装"
 
   # #1720/#1723 — 米宝语音输入 ASR + 前端录音交互
-  - pattern: "backend/ai-agent-service/app/api/asr.py"
-    reason: "#1720 新增 ASR 语音转文字端点。DashScope SDK 封装，本地实测通过"
-  - pattern: "backend/ai-agent-service/app/api/products.py"
-    reason: "C 端只读端点（新品推荐/我的订单/我的售后）。已有 tests/test_api_products.py（9 tests PASS，含数据隔离断言）；gate 模板要求 tests/test_api/products.py 命名不符（同 chat.py/asr.py 豁免先例）"
   - pattern: "backend/ai-agent-service/app/llm/router.py"
     reason: "#2546: select_model 路由逻辑已由 tests/test_llm_pipeline.py TestSelectModel + tests/test_vision_integration.py TestSelectModelWithVision 覆盖（gate 模板要求独立 test_llm_router.py 不存在）"
 
-  - pattern: "backend/ai-agent-service/app/api/routes.py"
-    reason: "#1720 注册 ASR 路由，纯 import + include_router 无逻辑"
-  - pattern: "backend/ai-agent-service/app/config.py"
-    reason: "#1720 新增 3 个 ASR 配置项，纯字段声明无逻辑"
   - pattern: "frontend/admin-web/src/hooks/useVoiceRecorder.ts"
     reason: "#1720 语音录音 hook，浏览器 API 封装，依赖运行时环境"
-  - pattern: "frontend/admin-web/src/lib/api.ts"
-    reason: "#1720 新增 transcribeAudio 方法，纯 fetch 封装无业务逻辑"
 
   # WebM→opus 格式映射修复
-  - pattern: "backend/ai-agent-service/tests/test_asr.py"
-    reason: "自动生成测试，需更新 webm→opus 断言以匹配修复"
-
-  - pattern: "backend/admin-api/src/main/java/com/migao/admin/controller/AdminUserController.java"
-    reason: "#1830: JavaDoc 注释更新（移除 username 示例），纯文档无逻辑变更。已有 AdminUserControllerTest 覆盖"
-
-
-  - pattern: "backend/ai-agent-service/app/agents/customer_service_agent.py"
-    reason: "会话管理重构：已有 tests/test_customer_service_agent.py（45+ tests）覆盖 _build_initial_state/achat/astream_chat。gate 模板要求 test_agent_customer_service_agent.py 命名不符"
-
-  - pattern: "backend/ai-agent-service/app/context/*"
-    reason: "会话管理重构：app/context/tracker.py 整模块删除（生产零调用，P1 删 Redis 持久化 + P3 删 compress_history 后成死代码），无需为已删文件补测试"
 
   # ── 三大模块自洽性修复（fix/eval-case-role-compat #2575）──
-
-  - pattern: "backend/ai-agent-service/app/graph/skills/data_skill.py"
-    reason: "挂载 finance_api 到数据分析 skill：已有 tests/test_graph_builder.py + test_graph_skills.py 覆盖 skill 注册/路由（含 data 节点）。gate 模板要求 tests/test_graph_skills/data_skill.py 命名不符"
 
   - pattern: "backend/ai-agent-service/app/suggestions/follow_up.py"
     reason: "新增 finance 意图预设建议：已有 tests/test_follow_up_suggestions.py + test_integration_multimodal.py 覆盖（含 finance 预设断言）。gate 模板要求 tests/test_suggestions/follow_up.py 命名不符"
@@ -124,11 +74,7 @@ exemptions:
     reason: "历史分支 UI 重设计组件（chat/dashboard/ui），本次 PR 未改其逻辑，随分支统一部署"
   - pattern: "frontend/admin-web/src/components/chat/LogisticsCard.tsx"
     reason: "历史分支 UI 重设计组件（chat/dashboard/ui），本次 PR 未改其逻辑，随分支统一部署"
-  - pattern: "frontend/admin-web/src/components/chat/ProductCard.tsx"
-    reason: "历史分支 UI 重设计组件（chat/dashboard/ui），本次 PR 未改其逻辑，随分支统一部署"
   - pattern: "frontend/admin-web/src/components/chat/QuickActions.tsx"
-    reason: "历史分支 UI 重设计组件（chat/dashboard/ui），本次 PR 未改其逻辑，随分支统一部署"
-  - pattern: "frontend/admin-web/src/components/chat/SessionInsight.tsx"
     reason: "历史分支 UI 重设计组件（chat/dashboard/ui），本次 PR 未改其逻辑，随分支统一部署"
   - pattern: "frontend/admin-web/src/components/chat/ToolResultCard.tsx"
     reason: "历史分支 UI 重设计组件（chat/dashboard/ui），本次 PR 未改其逻辑，随分支统一部署"
@@ -139,8 +85,6 @@ exemptions:
   - pattern: "frontend/admin-web/src/components/dashboard/StatCard.tsx"
     reason: "历史分支 UI 重设计组件（chat/dashboard/ui），本次 PR 未改其逻辑，随分支统一部署"
   - pattern: "frontend/admin-web/src/components/dashboard/TrendChart.tsx"
-    reason: "历史分支 UI 重设计组件（chat/dashboard/ui），本次 PR 未改其逻辑，随分支统一部署"
-  - pattern: "frontend/admin-web/src/components/ops/OpsSidebar.tsx"
     reason: "历史分支 UI 重设计组件（chat/dashboard/ui），本次 PR 未改其逻辑，随分支统一部署"
   - pattern: "frontend/admin-web/src/components/providers/AuthProvider.tsx"
     reason: "历史分支 UI 重设计组件（chat/dashboard/ui），本次 PR 未改其逻辑，随分支统一部署"
@@ -154,5 +98,3 @@ exemptions:
     reason: "历史分支 UI 重设计组件（chat/dashboard/ui），本次 PR 未改其逻辑，随分支统一部署"
   - pattern: "frontend/admin-web/src/components/ui/Loading.tsx"
     reason: "历史分支 UI 重设计组件（chat/dashboard/ui），本次 PR 未改其逻辑，随分支统一部署"
-  - pattern: "frontend/admin-web/src/lib/session-insight.ts"
-    reason: "历史 UI 重设计删除该文件（main 有/本分支删除，HEAD 不存在）；gate 对删除文件误报缺测，删除无需测试"
