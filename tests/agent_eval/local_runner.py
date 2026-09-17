@@ -4720,6 +4720,36 @@ async def check_debug_permissions_effective(token: str, specs: list, declared: s
     return issues
 
 
+async def probe_permissions_cli(declared: str) -> int:
+    """`probe-permissions` 子命令的实现（**活体红证**，零 LLM、不跑任何用例）。
+
+    为什么需要（issue #4150）：判据"服务端回落通配 ⇒ 判红"必须有**可执行**的证伪路径，
+    否则下一个人只能相信注释。本入口对**活栈**跑一次探针并打印判定，退出码可直接接门禁：
+
+        local_runner.py probe-permissions --declared "employee:list"    # 期望 ✅ 退出 0
+        local_runner.py probe-permissions --declared "employee:list,"   # 植入夹具：尾逗号 = 空元素
+                                                                        # = 非法 ⇒ 服务端整串回落
+                                                                        # 通配 ⇒ 探针被放行 ⇒ ❌ 退出 1
+
+    ⚠️ 本机无栈时它会以"头未下发/请求失败"红 —— 那是**诚实**的红（判据不成立），不是判据坏了。
+    """
+    print(f"🔎 权限探针（零 LLM）：declared={declared!r}")
+    try:
+        tool, code, _params, expect = permission_probe_expectation(declared)
+        print(f"   探针工具 = {tool}（需 {code}）｜期望结局 = {expect}")
+        issues = await check_debug_permissions_effective(
+            "", [{"type": "debug_permissions_effective", "source": declared}], declared)
+    except Exception as e:                                       # noqa: BLE001
+        print(f"❌ 探针执行失败: {type(e).__name__}: {e}")
+        return 1
+    if issues:
+        for _i in issues:
+            print(f"❌ {_i}")
+        return 1
+    print("✅ 判定与期望一致：声明的权限范围在服务端**真的生效**（未回落通配）")
+    return 0
+
+
 def check_preclean_not_applied(msgs: list) -> list:
     """把 `pre_clean` 的**未应用/配置错误**折进用例结论（issue #3781）；返回断言级问题串。
 
@@ -7952,8 +7982,16 @@ async def main():
     # 步骤，成本由 run 的墙钟体现）。
     _run_t0 = time.monotonic()
     parser = argparse.ArgumentParser()
-    parser.add_argument("suite", choices=["smoke", "normal", "full", "adversarial", "case"], nargs="?", default="smoke")
+    parser.add_argument("suite",
+                        choices=["smoke", "normal", "full", "adversarial", "case",
+                                 "probe-permissions"],
+                        nargs="?", default="smoke",
+                        help="probe-permissions = **活体权限探针**（issue #4150）：零 LLM、不跑用例，对活栈校验「声明的权限范围真的生效」；退出码 0=生效 / 1=回落通配或读不出")
     parser.add_argument("--case-id", help="单条用例 ID（支持新 ID 与 legacy_id，如 OR-002 或 O002）")
+    parser.add_argument("--declared", default="employee:list",
+                        help="probe-permissions 专用：要校验的 `X-Debug-Permissions` 值。"
+                             "**植入夹具**用非法值（如 `employee:list,`）⇒ 服务端整串回落通配"
+                             " ⇒ 探针必被放行 ⇒ 期望判红（退出 1）")
     parser.add_argument("--case-ids", default="",
                         help="逗号分隔的用例 ID 列表（**迭代提速用**）：只跑这些用例，"
                              "可在任意 tier 上叠加（如 `normal --case-ids OR-019,OR-024`）。"
@@ -7972,6 +8010,10 @@ async def main():
     parser.add_argument("--no-classify", action="store_true",
                         help="关闭波动分类（issue #2890 兼容开关：恢复旧的无差别单次重试，调试用）")
     args = parser.parse_args()
+
+    if args.suite == "probe-permissions":
+        # 活体红证入口（issue #4150）：不选用例、不烧 LLM，只校验权限范围是否真的生效。
+        sys.exit(await probe_permissions_cli(args.declared))
 
     if args.cases:
         cases = load_cases_from_yaml(args.cases)

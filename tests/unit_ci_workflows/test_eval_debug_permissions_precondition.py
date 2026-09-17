@@ -527,3 +527,43 @@ class TestThePairIsIsolatedAndRegistered:
                 f"{cid} 的 skip_reason 未点名产品侧归属（#4147）：{reason[:120]!r}")
             assert "un-skip" in reason or "摘掉" in reason, (
                 f"{cid} 的 skip_reason 未写摘除判据（怎么才算修好）：{reason[:120]!r}")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 九、活体红证入口（`probe-permissions` 子命令）：零 LLM、不跑用例、可对活栈执行
+#     —— 本机无 docker 跑不了它，但它把"回落通配 ⇒ 判红"变成**下一个人 5 秒可执行**的证伪
+# ══════════════════════════════════════════════════════════════════════════════
+
+class TestLiveProbeEntrypoint:
+
+    def _cli(self, lr, monkeypatch, declared, fixture):
+        calls = []
+        monkeypatch.setattr(lr, "PERSONA", "mibao")
+        monkeypatch.setattr(lr, "SERVICE_TOKEN", "svc-token")
+        _install_transport(lr, monkeypatch, fixture, calls)
+        rc = asyncio.run(lr.probe_permissions_cli(declared))
+        return rc, calls
+
+    def test_cli_is_green_on_a_healthy_stack(self, monkeypatch):
+        """合法声明 + 服务端只给了它（探针被拒）⇒ 退出码 0（可直接接进脚本/门禁）。"""
+        lr = _runner()
+        rc, _ = self._cli(lr, monkeypatch, "employee:list", DENIED_FIXTURE)
+        assert rc == 0
+
+    def test_cli_reds_on_the_planted_wildcard_fixture(self, monkeypatch):
+        """**活体红证的可执行形态**：把声明改成非法值（尾逗号 ⇒ 空元素 ⇒ 服务端整串回落通配）
+        ⇒ 探针被放行 ⇒ 退出码 1。
+
+        这就是 issue #4150 要求的"植入式夹具"在**现实栈**上的跑法：
+        `local_runner.py probe-permissions --declared "employee:list,"`，期望 ❌。
+        """
+        lr = _runner()
+        rc, _ = self._cli(lr, monkeypatch, "employee:list,", WILDCARD_FIXTURE)
+        assert rc == 1, "回落通配却判绿/退出 0 ⇒ 活体红证入口无效"
+
+    def test_cli_entrypoint_is_wired_into_argparse(self):
+        """子命令必须真的接进 CLI（否则"可执行红证"只是一句文档）。"""
+        src = (REPO_ROOT / "tests" / "agent_eval" / "local_runner.py").read_text(encoding="utf-8")
+        assert '"probe-permissions"' in src, "未接进 argparse choices"
+        assert "--declared" in src, "未提供 --declared（无法植入夹具）"
+        assert "probe_permissions_cli" in src, "缺少子命令实现"
