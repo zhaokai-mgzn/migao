@@ -1045,10 +1045,10 @@
 数据: 默认三层合成：客户记忆 > 商家配置 > 行业标准（布帘默认定型/纱帘默认不定型、≤2.2m 单开/>2.2m 双开）
 数据: 矛盾拦截：4.6m 单开→建议双开、折数不可整除自动调整、倍数<1.5 拒绝、打孔不按折数
 数据: 每轮追问 ≤3 项；超过 3 轮转复尺/人工
-跳过: 澄清清单引擎是确定性纯函数（app/clarification/curtain_checklist.py），由单元测试全量覆盖（test_curtain_checklist.py），非 LLM 行为，不进入 agent-eval 冒烟（同 CH-036 惯例）
+跳过: 澄清清单引擎是确定性纯函数（app/clarification/curtain_checklist.py），由单元测试全量覆盖（backend/ai-agent-service/tests/test_clarification/test_curtain_checklist.py，18 项），非 LLM 行为，不进入 agent-eval 冒烟（同 CH-036 惯例）
 ```
 真值: ai-chat.intent-domains
-溯源: 2026-09-17 新增（issue #3986）：M3-E 窗帘下单澄清清单引擎覆盖登记，单测覆盖 ｜ tags: xiaobu, clarification, curtain
+溯源: 2026-09-17 新增（issue #3986）：M3-E 窗帘下单澄清清单引擎覆盖登记，单测覆盖。2026-09-18（issue #4120）**证据链修复**：原 traces.tests 指向不存在的 tests/test_curtain_checklist.py，且测试文件名为 curtain_checklist.py（不匹配 python_files = test_*.py）⇒ **永不被 pytest 收集**、18 个 def test_ 一个都没跑过 ⇒ 本条用例的机器证据为**零**而没有任何东西会变红。修法：文件改名 test_curtain_checklist.py（pytest tests/ -q 实测 18 passed）+ traces.tests 指向真实路径；并新增 L0 守卫 tests/unit_ci_workflows/test_eval_evidence_chain.py 锁死「traces 引用必须存在」与「以单测覆盖为由 skip 的文件必须真被收集」（同批修掉存量 11 条幽灵 traces.tests + 7 条幽灵 traces.ci）；断言未动 ｜ tags: xiaobu, clarification, curtain
 
 ### CH-036. 窗帘算料引擎确定性逻辑 - 折数法/工艺档位/红线/按货号汇总（单测覆盖，非 LLM 行为） 🔵
 ```
@@ -3375,7 +3375,7 @@
 清理: product_remove(product_keyword=测试窗帘)
 ```
 真值: product-sku-stock.create-flow, ai-chat.validate-input
-溯源: 2026-09-05 交互验证机制行为层新增（issue #2896 复盘）：前端 choice 多选「完成选择」按钮一次性提交『已选加工项：A、B』格式，需真实 LLM 验证解析全部名称 + 不二次询问。2026-09-10 校准：分类选择升级为 choice 卡（文本无法驱动）→ 加 auto_select 自动点分类卡第一个选项（#3160）+ 补加工项确认轮 ｜ tags: multi_turn, guided_flow, processing_item, multi_select
+溯源: 2026-09-05 交互验证机制行为层新增（issue #2896 复盘）：前端 choice 多选「完成选择」按钮一次性提交『已选加工项：A、B』格式，需真实 LLM 验证解析全部名称 + 不二次询问。2026-09-10 校准：分类选择升级为 choice 卡（文本无法驱动）→ 加 auto_select 自动点分类卡第一个选项（#3160）+ 补加工项确认轮。2026-09-18（issue #4120）：补 namespaces[product_name:测试窗帘]（用例自建同名商品的全局声明 ⇒ 与 PR-012 自动串行）+ 消除存量 CASE-TRUST-PRECLEAN-TARGET-UNRESOLVABLE（pre_clean 点名目标不在种子真值；实为用例自有资源，缺声明）。断言原样未动 ｜ tags: multi_turn, guided_flow, processing_item, multi_select
 
 ### PR-015. 加工项多选翻页 - 翻页后继续选择并一次性提交 🔵
 ```
@@ -3396,7 +3396,7 @@
 清理: product_remove(product_keyword=测试窗帘)
 ```
 真值: product-sku-stock.create-flow
-溯源: 2026-09-05 交互验证机制行为层新增（issue #2896 复盘）：翻页后 multiSelect/pagination 契约保持 ｜ tags: multi_turn, processing_item, pagination, multi_select
+溯源: 2026-09-05 交互验证机制行为层新增（issue #2896 复盘）：翻页后 multiSelect/pagination 契约保持。2026-09-18（issue #4120）：补 namespaces[product_name:测试窗帘]（用例自建同名商品的全局声明 ⇒ 与 PR-012 自动串行）+ 消除存量 CASE-TRUST-PRECLEAN-TARGET-UNRESOLVABLE（pre_clean 点名目标不在种子真值；实为用例自有资源，缺声明）。断言原样未动 ｜ tags: multi_turn, processing_item, pagination, multi_select
 
 ### PR-016. 建品流程 - 分类确认后按适用商品分类过滤/优先推荐加工项 🔵
 ```

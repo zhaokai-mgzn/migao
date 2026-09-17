@@ -594,7 +594,7 @@ cases:
     merge_log: "eval M002 吸收 verification 8.3（缺信息补全 = validate_input 引导）；2026-09-15（issue #3835）改名去种子撞名（同 PR-016 口径）：`名称叫夏日清风窗帘` → `名称叫E2E引导建品样品帘`（种子 `prod_eval_summer` 就叫「夏日清风窗帘」⇒ 运行期造同名副本；且它是**单一声明者** ⇒ 争用组不成立、隔离为零）；`pre_clean: product_remove{测试窗帘}` → 自有名（顺带消除对 PR-008「测试窗帘A」的子串误删）；expectations/data_checks 原样未动"
     traces:
       tests:
-        - "backend/ai-agent-service/tests/test_mibao_advanced_multiturn.py"
+        - "backend/ai-agent-service/tests/test_mibao_multiturn_product.py"
       ci:
         - agent-eval.yml
       verifies: []
@@ -639,7 +639,7 @@ cases:
     merge_log: "eval M003 独有（中途纠偏）；2026-09-09 校准：补「窗帘布艺」点分类卡轮（「分类选窗帘」后 agent 查分类树发现无「窗帘」精确分类发 choice 卡，原脚本后续轮跳过点卡导致分类卡反复发、6 轮走不到 create——与 PR-008 同类）"
     traces:
       tests:
-        - "backend/ai-agent-service/tests/test_mibao_advanced_multiturn.py"
+        - "backend/ai-agent-service/tests/test_mibao_multiturn_product.py"
       ci:
         - agent-eval.yml
       verifies: []
@@ -718,11 +718,18 @@ cases:
       - "「已选加工项：打孔加工、韩式折边」被解析为 2 个加工项（不只取第一个）"
       - "未在用户提交完整列表后再次询问加工项"
       - "最终创建成功且关联加工项数量 = 2"
+    # 用例自建资源的**全局声明**（issue #4120）：本用例创建并删除商品「测试窗帘」，
+    # 与 PR-012（同名声明的建品用例）自动串行 —— 否则并行期同名多件 ⇒ agent 发选择卡
+    # ⇒ 目标工具不执行。同时它把 `pre_clean.product_remove{测试窗帘}` 的目标登记为
+    # 「用例自有资源」（种子真值里没有是**设计**而非缺陷）：此前未声明 ⇒ 静态判据
+    # CASE-TRUST-PRECLEAN-TARGET-UNRESOLVABLE（假证据 / 无效复位家族，#3832/#3794）。
+    namespaces:
+      - "product_name:测试窗帘"
     pre_clean:
       - type: product_remove
         product_keyword: "测试窗帘"
     skip_reason: ""
-    merge_log: "2026-09-05 交互验证机制行为层新增（issue #2896 复盘）：前端 choice 多选「完成选择」按钮一次性提交『已选加工项：A、B』格式，需真实 LLM 验证解析全部名称 + 不二次询问。2026-09-10 校准：分类选择升级为 choice 卡（文本无法驱动）→ 加 auto_select 自动点分类卡第一个选项（#3160）+ 补加工项确认轮"
+    merge_log: "2026-09-05 交互验证机制行为层新增（issue #2896 复盘）：前端 choice 多选「完成选择」按钮一次性提交『已选加工项：A、B』格式，需真实 LLM 验证解析全部名称 + 不二次询问。2026-09-10 校准：分类选择升级为 choice 卡（文本无法驱动）→ 加 auto_select 自动点分类卡第一个选项（#3160）+ 补加工项确认轮。2026-09-18（issue #4120）：补 namespaces[product_name:测试窗帘]（用例自建同名商品的全局声明 ⇒ 与 PR-012 自动串行）+ 消除存量 CASE-TRUST-PRECLEAN-TARGET-UNRESOLVABLE（pre_clean 点名目标不在种子真值；实为用例自有资源，缺声明）。断言原样未动"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_interaction_flow_runner.py"
@@ -766,11 +773,18 @@ cases:
       - "翻页（__PAGE__ 协议）后加工项选择仍可继续（multiSelect 不丢）"
       - "翻页后勾选累积一次性提交被正确解析"
       - "最终创建成功"
+    # 用例自建资源的**全局声明**（issue #4120）：本用例创建并删除商品「测试窗帘」，
+    # 与 PR-012（同名声明的建品用例）自动串行 —— 否则并行期同名多件 ⇒ agent 发选择卡
+    # ⇒ 目标工具不执行。同时它把 `pre_clean.product_remove{测试窗帘}` 的目标登记为
+    # 「用例自有资源」（种子真值里没有是**设计**而非缺陷）：此前未声明 ⇒ 静态判据
+    # CASE-TRUST-PRECLEAN-TARGET-UNRESOLVABLE（假证据 / 无效复位家族，#3832/#3794）。
+    namespaces:
+      - "product_name:测试窗帘"
     pre_clean:
       - type: product_remove
         product_keyword: "测试窗帘"
     skip_reason: ""
-    merge_log: "2026-09-05 交互验证机制行为层新增（issue #2896 复盘）：翻页后 multiSelect/pagination 契约保持"
+    merge_log: "2026-09-05 交互验证机制行为层新增（issue #2896 复盘）：翻页后 multiSelect/pagination 契约保持。2026-09-18（issue #4120）：补 namespaces[product_name:测试窗帘]（用例自建同名商品的全局声明 ⇒ 与 PR-012 自动串行）+ 消除存量 CASE-TRUST-PRECLEAN-TARGET-UNRESOLVABLE（pre_clean 点名目标不在种子真值；实为用例自有资源，缺声明）。断言原样未动"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_interaction_flow_runner.py"
@@ -1106,7 +1120,7 @@ cases:
       ci:
         - agent-eval.yml
         - ai-agent-tests.yml
-        - admin-api-tests.yml
+        - pr-check.yml
       verifies: []
 
   - id: PR-020

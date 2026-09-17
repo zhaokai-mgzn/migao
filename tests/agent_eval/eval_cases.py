@@ -1520,7 +1520,7 @@ _CASE_CH_037 = EvalCase(
     user_inputs=['帮我家客厅做窗帘，大概要多少钱'],
     expectations=['direct_reply'],
     data_checks=['尺寸（宽/高）缺失必须追问（必填检测）——不阻塞，缺省即报', '默认三层合成：客户记忆 > 商家配置 > 行业标准（布帘默认定型/纱帘默认不定型、≤2.2m 单开/>2.2m 双开）', '矛盾拦截：4.6m 单开→建议双开、折数不可整除自动调整、倍数<1.5 拒绝、打孔不按折数', '每轮追问 ≤3 项；超过 3 轮转复尺/人工'],
-    skip_reason='澄清清单引擎是确定性纯函数（app/clarification/curtain_checklist.py），由单元测试全量覆盖（test_curtain_checklist.py），非 LLM 行为，不进入 agent-eval 冒烟（同 CH-036 惯例）',
+    skip_reason='澄清清单引擎是确定性纯函数（app/clarification/curtain_checklist.py），由单元测试全量覆盖（backend/ai-agent-service/tests/test_clarification/test_curtain_checklist.py，18 项），非 LLM 行为，不进入 agent-eval 冒烟（同 CH-036 惯例）',
     tags=['xiaobu', 'clarification', 'curtain'],
     persona='xiaobu',
     debug_user='',
@@ -4707,6 +4707,7 @@ _CASE_PR_014 = EvalCase(
     form_prefill=[],
     forbidden_card_text=[],
     pre_clean=[{'type': 'product_remove', 'product_keyword': '测试窗帘'}],
+    namespaces=['product_name:测试窗帘'],
 )
 
 # ── PR-015 [NORMAL] 加工项多选翻页 - 翻页后继续选择并一次性提交（源: cases/product.yml）──
@@ -4726,6 +4727,7 @@ _CASE_PR_015 = EvalCase(
     form_prefill=[],
     forbidden_card_text=[],
     pre_clean=[{'type': 'product_remove', 'product_keyword': '测试窗帘'}],
+    namespaces=['product_name:测试窗帘'],
 )
 
 # ── PR-016 [NORMAL] 建品流程 - 分类确认后按适用商品分类过滤/优先推荐加工项（源: cases/product.yml）──

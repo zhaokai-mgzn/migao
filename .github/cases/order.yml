@@ -264,7 +264,7 @@ cases:
     merge_log: "eval M006 吸收 verification 1.6（单步 update_status）、1.7 的状态更新段，并吸收 eval O004（标记已发货）；2026-09-14 去掉栈上不存在的硬编码订单号（issue #3599）；2026-09-15 修正 order_query 的声明（issue #3702）：原 `action: detail` 不在该工具枚举内（list/statistics/follow_status_stats），改为真实且语义正确的 `action: list`（查单=按 order_id/status 过滤；statistics/follow_status_stats 是汇总统计，与『查这一笔的状态』意图不符）"
     traces:
       tests:
-        - "backend/ai-agent-service/tests/test_mibao_advanced_multiturn.py"
+        - "backend/ai-agent-service/tests/test_mibao_multiturn_order.py"
       ci:
         - agent-eval.yml
       verifies: []
@@ -1915,7 +1915,7 @@ cases:
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_validate_input.py"
-        - "tests/agent_eval/test_acceptance_case_checks.py"
+        - "backend/ai-agent-service/tests/test_acceptance_case_checks.py"
       ci:
         - xiaobu-acceptance.yml
       verifies: []

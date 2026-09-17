@@ -78,7 +78,7 @@ cases:
     merge_log: "eval M004 + verification 8.2（原用例「长度>10」与代码不符，已按 ai-chat.escape-hatch 校准）。2026-09-14 校准（#3544 收口批）：data_checks 里恒真的「product_manage(action=create) 未被调用」升级为 forbidden_tools（action 限定，跨轮全程禁用）"
     traces:
       tests:
-        - "backend/ai-agent-service/tests/test_mibao_advanced_multiturn.py"
+        - "backend/ai-agent-service/tests/test_mibao_multiturn_advanced.py"
       ci:
         - agent-eval.yml
       verifies: []
@@ -345,7 +345,7 @@ cases:
         - "backend/admin-api/src/test/java/com/migao/admin/controller/CustomerAgentSessionControllerTest.java"
         - "backend/ai-agent-service/tests/test_tools_human_handoff.py"
       ci:
-        - admin-api-tests.yml
+        - pr-check.yml
       verifies: []
 
   - id: CH-009
@@ -782,7 +782,7 @@ cases:
         - "backend/admin-api/src/test/java/com/migao/admin/controller/CustomerAgentSessionControllerTest.java"
         - "frontend/admin-web/tests/unit/pages/human-sessions.test.tsx"
       ci:
-        - admin-api-tests.yml
+        - pr-check.yml
         - agent-eval.yml
       verifies: []
 
@@ -1099,7 +1099,7 @@ cases:
         - "backend/ai-agent-service/tests/test_user_memory.py"
         - "backend/ai-agent-service/tests/test_memory_injection.py"
         - "backend/ai-agent-service/tests/test_memory_extraction_tasks.py"
-        - "tests/agent_eval/test_acceptance_case_checks.py"
+        - "backend/ai-agent-service/tests/test_acceptance_case_checks.py"
       ci:
         - ai-agent-tests.yml
         - xiaobu-acceptance.yml
@@ -1181,7 +1181,7 @@ cases:
     merge_log: "issue #2815：C 端长期记忆系统 — 下单自动填充收货信息场景；issue #3360：解 skip + 补可执行断言（原 skip 理由已过期）"
     traces:
       tests:
-        - "backend/ai-agent-service/tests/test_customer_address_query.py"
+        - "backend/ai-agent-service/tests/test_tools_customer_address_query.py"
       ci:
         - ai-agent-tests.yml
       verifies: []
@@ -1525,7 +1525,7 @@ cases:
       tests:
         - "backend/ai-agent-service/tests/test_vision_integration.py"
         - "backend/ai-agent-service/tests/test_clarify_grounded.py"
-        - "tests/agent_eval/test_acceptance_case_checks.py"
+        - "backend/ai-agent-service/tests/test_acceptance_case_checks.py"
       ci:
         - xiaobu-acceptance.yml
       verifies: []
@@ -1602,7 +1602,7 @@ cases:
       tests:
         - "backend/ai-agent-service/tests/test_memory_injection.py"
         - "backend/ai-agent-service/tests/test_user_memory.py"
-        - "tests/agent_eval/test_acceptance_case_checks.py"
+        - "backend/ai-agent-service/tests/test_acceptance_case_checks.py"
       ci:
         - xiaobu-acceptance.yml
       verifies: []
@@ -1635,11 +1635,11 @@ cases:
       - "默认三层合成：客户记忆 > 商家配置 > 行业标准（布帘默认定型/纱帘默认不定型、≤2.2m 单开/>2.2m 双开）"
       - "矛盾拦截：4.6m 单开→建议双开、折数不可整除自动调整、倍数<1.5 拒绝、打孔不按折数"
       - "每轮追问 ≤3 项；超过 3 轮转复尺/人工"
-    skip_reason: "澄清清单引擎是确定性纯函数（app/clarification/curtain_checklist.py），由单元测试全量覆盖（test_curtain_checklist.py），非 LLM 行为，不进入 agent-eval 冒烟（同 CH-036 惯例）"
-    merge_log: "2026-09-17 新增（issue #3986）：M3-E 窗帘下单澄清清单引擎覆盖登记，单测覆盖"
+    skip_reason: "澄清清单引擎是确定性纯函数（app/clarification/curtain_checklist.py），由单元测试全量覆盖（backend/ai-agent-service/tests/test_clarification/test_curtain_checklist.py，18 项），非 LLM 行为，不进入 agent-eval 冒烟（同 CH-036 惯例）"
+    merge_log: "2026-09-17 新增（issue #3986）：M3-E 窗帘下单澄清清单引擎覆盖登记，单测覆盖。2026-09-18（issue #4120）**证据链修复**：原 traces.tests 指向不存在的 tests/test_curtain_checklist.py，且测试文件名为 curtain_checklist.py（不匹配 python_files = test_*.py）⇒ **永不被 pytest 收集**、18 个 def test_ 一个都没跑过 ⇒ 本条用例的机器证据为**零**而没有任何东西会变红。修法：文件改名 test_curtain_checklist.py（pytest tests/ -q 实测 18 passed）+ traces.tests 指向真实路径；并新增 L0 守卫 tests/unit_ci_workflows/test_eval_evidence_chain.py 锁死「traces 引用必须存在」与「以单测覆盖为由 skip 的文件必须真被收集」（同批修掉存量 11 条幽灵 traces.tests + 7 条幽灵 traces.ci）；断言未动"
     traces:
       tests:
-        - "backend/ai-agent-service/tests/test_curtain_checklist.py"
+        - "backend/ai-agent-service/tests/test_clarification/test_curtain_checklist.py"
       ci:
         - pr-check.yml
       verifies: []

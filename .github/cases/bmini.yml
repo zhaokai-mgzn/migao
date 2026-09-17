@@ -35,7 +35,7 @@ cases:
       tests:
         - "backend/admin-api/src/test/java/com/migao/admin/service/BminiLoginServiceTest.java"
       ci:
-        - admin-api-test.yml
+        - pr-check.yml
       verifies: []
 
   - id: BM-002
@@ -64,7 +64,7 @@ cases:
       tests:
         - "backend/admin-api/src/test/java/com/migao/admin/service/BminiLoginServiceTest.java"
       ci:
-        - admin-api-test.yml
+        - pr-check.yml
       verifies: []
 
   - id: BM-003
@@ -95,7 +95,7 @@ cases:
       tests:
         - "backend/admin-api/src/test/java/com/migao/admin/service/BminiLoginServiceTest.java"
       ci:
-        - admin-api-test.yml
+        - pr-check.yml
       verifies: []
   - id: BM-004
     legacy_id: ""

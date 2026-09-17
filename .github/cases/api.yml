@@ -276,7 +276,7 @@ cases:
       tests:
         - "frontend/mini-app/tests/auth.test.ts"
       ci:
-        - mini-app-tests.yml
+        - mini-app.yml
       verifies: []
 
   - id: API-013

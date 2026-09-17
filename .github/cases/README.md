@@ -35,6 +35,13 @@ cases/
 6. **persona 归属（issue #2855）**：可选字段 `persona: mibao | xiaobu`，标记用例归属 agent；缺省/`both` = 双端。
    `local_runner` 按 persona 过滤（mibao 跳过 xiaobu 专属，反之亦然），防止 C/B 端专属用例在另一端回归中误报。
    已标记案例：转人工（human_handoff）、C 端订单/物流（customer_* 工具）等小布专属用例。
+7. **证据链必须可解析（issue #4120）**：`traces.tests` 是**仓库根相对**的**真实存在**路径（测试文件改名/搬迁必须同步，
+   禁止指向已不存在的路径）；`traces.ci` 必须是 `.github/workflows/` 下真实存在的 workflow 文件名。
+   以「由单元测试覆盖」为由 `skip_reason` 时，点名的测试文件必须**真的会被 pytest 收集**
+   （判据：文件名匹配生效的 `python_files = test_*.py`，且落在 CI 真跑的收集根内、未被 `--ignore` 排除）
+   —— 否则该用例的机器证据为**零**，而 case_ids / traces / skip_reason 三个环节都不会报错（CH-037 实证）。
+   守卫：`tests/unit_ci_workflows/test_eval_evidence_chain.py`（pr-check 的 `ci workflow helper unit tests` job 每次 PR 都跑）。
+   改完用例记得同批重渲染生成物（见下「重新生成命令」）。
 
 ## 迁移进度
 
