@@ -68,11 +68,16 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
     private final ProcessingOrderMapper processingOrderMapper;
     /** 发货人兜底解析（issue #3768）：当前登录用户姓名 */
     private final UserService userService;
+    /** 写请求幂等键（issue #4037）：去重 / 结果回放 / 占位释放 */
+    private final ClientRequestIdService clientRequestIdService;
 
     /**
      * 订单号序列号（线程安全）
      */
     private static final AtomicInteger ORDER_SEQ = new AtomicInteger(0);
+
+    /** 幂等端点标识（issue #4037）：同键跨端点复用会在 client_request_keys.endpoint 留下可查证据 */
+    private static final String ENDPOINT_CREATE_ORDER = "POST /api/admin/agent/orders";
 
     /**
      * 合法的状态流转定义
@@ -1544,6 +1549,18 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
     /**
      * Agent 专用创建订单。
      * subtotal 服务端按 quantity × unitPrice 强制重算。
+     *
+     * <p>幂等键（issue #4037，F19）：请求头 {@code X-Client-Request-Id} 非空时按
+     * {@code (tenantId, 键)} 去重 —— 首次请求正常执行并把 {@link OrderDetailResponse} 快照落库，
+     * 同键再次到达**不再执行**、直接回放首次结果（顾客/LLM 看到同一订单号）。无键 ⇒ 原路径逐字不变。</p>
+     *
+     * <p><b>并发语义（如实登记，不谎称「并发也直接回放」）</b>：本方法带
+     * {@code @Transactional}，而 {@code claim}/{@code complete}/{@code discard} 跑在**同一个事务**里
+     * ⇒ ① 成功才一起提交、失败一起回滚（占位不会残留）；② **并发同键**时第二个请求的
+     * {@code INSERT ... ON CONFLICT DO NOTHING} 会**阻塞在唯一索引上**，直到第一个提交或回滚 ——
+     * 提交后它读到已落库的快照并回放（同一订单号），回滚后它自己成为首次执行者。
+     * 即并发是「串行等待」而非「立即回放」；这是刻意取舍（换取「不留残留占位」与更少机器），
+     * 代价是同键并发第二个请求的响应时间被拉长。</p>
      */
     @Transactional(rollbackFor = Exception.class)
     public OrderDetailResponse createOrderForAgent(AgentOrderCreateRequest request, Long tenantId) {
@@ -1596,7 +1613,34 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         }
         createReq.setItems(itemReqs);
 
-        return createOrder(createReq, tenantId);
+        // ── 幂等键（issue #4037）：同 (tenantId, X-Client-Request-Id) 只真正执行一次 ──
+        String clientRequestId = request.getClientRequestId();
+        // 无幂等键（老 ai-agent / 表单类调用方）⇒ 原路径逐字不变：零 DB 往返、不因服务端升级而报错
+        if (!StringUtils.hasText(clientRequestId)) {
+            return createOrder(createReq, tenantId);
+        }
+        // ① 原子占位（INSERT ... ON CONFLICT DO NOTHING，按影响行数判首次）——
+        //    不用「捕获唯一约束异常」探测冲突：PG 里冲突会让当前事务进入 aborted 状态，后续查询全失败
+        if (!clientRequestIdService.claim(tenantId, clientRequestId, ENDPOINT_CREATE_ORDER)) {
+            // ② 同键重复 ⇒ 不执行，直接回放首次成功快照（replay 对「占位但无结果」fail-closed 抛错）
+            return clientRequestIdService.replay(tenantId, clientRequestId, OrderDetailResponse.class)
+                    .orElseThrow(() -> new BusinessException("REQUEST_IN_PROGRESS",
+                            "同一 X-Client-Request-Id 的请求正在处理中，本次未重复执行（请勿重复提交）",
+                            409,
+                            "请勿重复提交；请稍后用 order_query 查询确认结果（换新幂等键重试同样会造成重复下单）"));
+        }
+        OrderDetailResponse created;
+        try {
+            created = createOrder(createReq, tenantId);
+        } catch (RuntimeException e) {
+            // ④ 执行失败 ⇒ 释放占位：否则一次失败就把该键永久占死，之后的重试全被误判为「重复」
+            clientRequestIdService.discard(tenantId, clientRequestId);
+            throw e; // 原样抛出，不吞（失败必须对调用方可见）
+        }
+        // ③ 执行成功 ⇒ 落结果快照，同键后续请求回放它。放在 try 之外：
+        //    快照写失败时**不得**释放占位（订单已经建出来了），宁可让同键请求 fail-closed 报错
+        clientRequestIdService.complete(tenantId, clientRequestId, created);
+        return created;
     }
 
     /**

@@ -1,5 +1,6 @@
 package com.migao.admin.dto.agent;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotNull;
@@ -46,6 +47,17 @@ public class AgentOrderCreateRequest {
     /** 商品明细（必填，至少一项；@Valid 让元素级约束级联生效，issue #3622） */
     @Valid
     private List<AgentOrderItem> items;
+
+    /**
+     * 客户端幂等键（issue #4037）—— 由 {@code AgentOrderController} 从请求头
+     * {@code X-Client-Request-Id} 注入，**不是业务字段**：不落 orders 表、不参与校验，
+     * 仅供服务端做 {@code (tenant_id, client_request_id)} 去重与结果回放。
+     *
+     * <p>{@code @JsonIgnore}：请求体里的同名 JSON 字段一律忽略 —— 幂等键**只认请求头**，
+     * 否则调用方可自选键绕过「同键只执行一次」（也能避免 body 值覆盖服务端注入的头值）。</p>
+     */
+    @JsonIgnore
+    private String clientRequestId;
 
     // ---- 订单商品子对象 ----
 

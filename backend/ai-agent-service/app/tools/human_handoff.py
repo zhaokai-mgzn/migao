@@ -12,6 +12,7 @@ import re
 from loguru import logger
 
 from app.tools.base import admin_api_failure, BaseTool, ToolContext, ToolResult
+from app.tools.order_create import CLIENT_REQUEST_ID_HEADER, _request_window_id
 from app.utils.http_client import get_admin_api_client
 
 # ── GB/T 47746-2026 转人工上下文同步（issue #2776）────────────────────
@@ -372,7 +373,12 @@ class HumanHandoffTool(BaseTool):
                 # 工单真实来源（issue #3686）：转人工工单的发起方就是当前会话调用方 ——
                 # C 端小布顾客转人工 → "customer"；B 端米宝转人工 → "agent"。
                 # 放 header 不放 body（同 #3605 取舍：来源不由 payload 决定）。
-                headers={"X-Agent-Client": context.ticket_source},
+                headers={
+                    "X-Agent-Client": context.ticket_source,
+                    # 幂等键（issue #4037 / F19）：同一重试窗内取值相同 ⇒ 服务端去重，
+                    # 「已建单但客户端报失败」后重试**只落一张工单**。
+                    CLIENT_REQUEST_ID_HEADER: _request_window_id(),
+                },
             )
 
             if not response.get("success"):
@@ -380,7 +386,8 @@ class HumanHandoffTool(BaseTool):
                 return admin_api_failure(response,
                     error=error_msg,
                     message=f"转人工失败：{error_msg}",
-                    suggestion="请稍后重试转人工，或直接拨打客服热线联系人工客服",
+                    suggestion=("请先核实转人工工单是否已经建好（不要重复调用）；"
+                                "顾客着急时可直接拨打客服热线"),
                 )
 
             ticket_data = response.get("data", {})
@@ -500,6 +507,9 @@ class HumanHandoffTool(BaseTool):
             return ToolResult(
                 success=False,
                 error="tool_execution_failed",
-                message="转人工失败，请稍后重试",
-                suggestion="系统暂时无法处理转人工请求，请稍后重试或直接拨打客服热线",
+                # 话术去「重试」（issue #4037 / F19）：HTTP 超时 25s < 工具超时 30s
+                # ⇒ 这次失败**可能已经建单**，让模型重试等于重复建单。
+                message="转人工没有成功返回。**先不要重复转人工** —— 请先核实工单是否已经建好。",
+                suggestion=("先核实转人工工单/人工会话是否已经建好（不要重复调用 human_handoff）；"
+                            "确实没有，再重新转一次，顾客着急时可直接拨打客服热线"),
             )

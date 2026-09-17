@@ -260,6 +260,11 @@ async def prepare_turn(
     _denial_corrected = False      # 文本级能力误宣只纠正一次（issue #3443）
     _stall_corrected = False       # 「确认却不动手」只纠正一次（issue #3445 类）
     _no_card_blocked_args = None   # 本轮"没发过确认卡就写单"被拦的参数（issue #3445 代码兜底）
+    # 同一次拦截对应的**被拦工具名 + 其金额事实**（issue #4037 / F22）：finalize 补卡时
+    # 要把"顾客将确认的那份明细"落库。**在门禁处置位时就算好**（而不是收尾从 args 里捞）：
+    # 门禁在多轮/并发迭代里会被调用多次，收尾单靠 `_no_card_blocked_args` 会拿到**别的调用**的参数。
+    _no_card_blocked_tool = ""
+    _no_card_blocked_facts = ""
     _write_ok = False              # 本轮是否有**写工具成功**（8.6 草稿态归一的前置，issue #3750）
     vision_analysis = ""
 
@@ -376,6 +381,8 @@ async def prepare_turn(
         "_denial_corrected": _denial_corrected,
         "_stall_corrected": _stall_corrected,
         "_no_card_blocked_args": _no_card_blocked_args,
+        "_no_card_blocked_tool": _no_card_blocked_tool,
+        "_no_card_blocked_facts": _no_card_blocked_facts,
         "_write_ok": _write_ok,
         "_relocked_this_round": _relocked_this_round,
     }

@@ -14,11 +14,18 @@
 （既有 import 路径零改动）。算法**逐字搬迁**、未改口径 —— 逐字节等价证据见
 `tests/test_tools_confirm_value.py`。
 
-依赖方向：本模块是**叶子**（只依赖标准库 `json`），`app.tools.*` / `app.graph.skills.*`
-单向依赖它，不制造跨层反向 import。
+依赖方向：本模块顶层只依赖标准库 `json` + `loguru`（与 `app/tools/*` 同款日志），
+`app.tools.*` / `app.graph.skills.*` 单向依赖它，不制造跨层反向 import。
+
+merge 后新增（F19/F22 侧，issue #4037）：`confirm_card_fields` 末尾追加订单**金额字段**，
+口径单点 = `order_create.order_facts_of`。该依赖是**同层**（`app.tools` → `app.tools`）、
+**函数级**（调用期才 import，不参与模块导入）+ 失败非致命，故不改变上面的依赖方向，
+也不触碰 `test_tools_layer_does_not_import_skill_layer`（只禁 `app.graph.*`）。
 """
 
 import json
+
+from loguru import logger
 
 # 控制键：动作指令 / 路由元数据，不是"要执行的内容"，不进卡片回显。
 _CONFIRM_CARD_CONTROL_KEYS = frozenset({
@@ -69,6 +76,23 @@ def confirm_card_fields(args: dict) -> list:
                        ("customer_address", "地址")):
         if a.get(key):
             fields.append({"label": label, "value": str(a.get(key))})
+    # 金额字段（issue #4037 / F22）**追加在末尾**：改前投影只有 商品/数量，卡上写多少钱
+    # 全凭模型自由发挥 ⇒ "卡上的钱"没有机器可读的那一份，¥498 的卡配 ¥133.80 的落库
+    # 无人发现。口径单点 = `order_create.order_facts_of`。
+    # ⚠️ 只在**金额算得出来**时追加（每行都有数量与单价），否则会渲染出顾客可见的
+    # 「小计 0 / 合计 0」假金额（R5：禁止新增静默失效形态）。
+    try:
+        from app.tools.order_create import order_facts_of
+        _facts = json.loads(order_facts_of(a) or "{}")
+        _fitems = _facts.get("items") or []
+        if _fitems and all(isinstance(it.get("qty"), (int, float))
+                           and isinstance(it.get("price"), (int, float)) for it in _fitems):
+            for label, key in (("单价", "price"), ("小计", "subtotal")):
+                vals = [f"{it[key]:g}" for it in _fitems]
+                fields.append({"label": label, "value": "、".join(vals[:3])})
+            fields.append({"label": "合计", "value": f"{_facts['total']:g}"})
+    except Exception as e:
+        logger.debug(f"[confirm-card] 金额字段渲染跳过（非致命）: {e}")
     if not fields:
         # 控制键是动作指令/路由元数据，不是"要执行的内容"，不进卡片回显
         # （issue #3882：action/operation/op/target_tool/target_action/params/

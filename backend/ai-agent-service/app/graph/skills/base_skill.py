@@ -1335,6 +1335,67 @@ def _confirm_card_seen(messages, session_state: dict | None = None) -> bool:
     return False
 
 
+# ── 确认事实（issue #4037 / F22）：键名与 confirmed_write_tool 同族 ──
+CONFIRMED_ORDER_FACTS_KEY = "confirmed_order_facts"
+
+
+def confirmed_order_facts_of(tool_name: str, args: dict) -> str:
+    """写调用参数 → 订单金额事实串（口径单点在 `order_create.order_facts_of`）。
+
+    函数级 import：`app.tools.order_create` 反向依赖本模块的接地判据，模块级会成环。
+    """
+    if str(tool_name or "") != "order_create":
+        return ""
+    try:
+        from app.tools.order_create import order_facts_of
+        return order_facts_of(args)
+    except Exception as e:  # pragma: no cover - 纯函数不应抛，抛了也不能破坏确认链路
+        logger.warning(f"[confirm-facts] 事实提取失败（非致命）: {e}")
+        return ""
+
+
+def record_confirmed_write(state: dict, tool_name: str, args: dict) -> dict:
+    """记下"顾客已确认的写操作 + 其中的金额事实"（就地改 `state` 并返回它）。
+
+    **三处确认落点共用本函数**（issue #4037 单一实现，防三份口径漂移）：
+      ① 确认卡点击（confirmValue 精确匹配）；
+      ② 文本确认（`_inject_pending_validated`）；
+      ③ 代码兜底补发的确认卡（8.3b）。
+    ③ 尤其重要：那张卡是**代码**替模型补的，顾客点的就是它 —— 事实必须来自
+    "本次被拦的写调用参数"（`_no_card_blocked_args`），否则补的卡是"只能点、无从核对"的。
+
+    事实的非空优先级：本次算得出就用本次；算不出（老形态写调用）保留已记的
+    —— 不用空值覆盖已有快照（那等于把一道已生效的守护静默关掉）。
+    """
+    _t = str(tool_name or "")
+    if not _t:
+        return state
+    state["confirmed_write_tool"] = _t
+    _fresh = confirmed_order_facts_of(_t, args or {})
+    if _fresh:
+        state[CONFIRMED_ORDER_FACTS_KEY] = _fresh
+    return state
+
+
+def _confirmed_facts_reject(tool_name: str, args: dict, full: dict) -> Optional[str]:
+    """落库前核对「顾客确认的事实」vs「本次要执行的事实」，不一致返回拦截描述。
+
+    只对 `order_create` 生效（F22 实证域：顾客点卡确认金额、随后金额被重写）。
+    判据本体在 `order_create.order_confirmation_mismatch`（纯函数，单点）。
+    """
+    if str(tool_name or "") != "order_create":
+        return None
+    _prior = str((full or {}).get(CONFIRMED_ORDER_FACTS_KEY) or "")
+    if not _prior:
+        return None
+    try:
+        from app.tools.order_create import order_confirmation_mismatch
+        return order_confirmation_mismatch(args or {}, _prior) or None
+    except Exception as e:
+        logger.warning(f"[confirm-facts] 一致性核对失败（非致命）: {e}")
+        return None
+
+
 def _has_inflight_interactive_card(messages) -> bool:
     """会话里是否已下发过交互卡（= 有**在办**的多轮流程）。
 
@@ -2200,6 +2261,9 @@ def _handoff_guard_applies(registry=None, *, order_in_progress: bool = False,
 # 现在派生逻辑只活在 `app/tools/confirm_value.py`，本文件**原样再导出**同名符号 ——
 # `app/api/chat.py`、`execution/finalize_turn.py`、既有测试的 import 路径零改动。
 # （`_confirm_card_fields_hint` 仍在本文件：它只是话术拼装。）
+# merge（F19/F22 × #4054）：P15 往**本文件**的 `confirm_card_fields` 追加的"金额字段"
+# 已随搬迁落进契约模块的同名函数（口径不变：末尾追加、金额算不出就不加）——
+# 故这里只需再导出，**不得**再写第二份投影（否则两张卡的钱各算各的）。
 from app.tools.confirm_value import (  # noqa: F401  (re-export：既有调用方从这里取)
     confirm_card_fields,
     confirm_value_for_fields,
@@ -3592,7 +3656,9 @@ async def _inject_pending_validated(system_prompt: str, state: AgentState, last_
         if pending and pending.get("target_tool") and (
                 is_card_confirm or _is_explicit_confirmation(last_user_msg or "")):
             _f = dict(full)
-            _f["confirmed_write_tool"] = pending["target_tool"]
+            # 与门禁同源记「已确认工具 + 被确认的订单金额事实」（issue #4037 / F22）：
+            # 事实取自**已校验待执行的参数**（顾客确认的就是这一份）。
+            record_confirmed_write(_f, pending["target_tool"], pending.get("params") or {})
             await store.commit(state["session_id"], _f)
             logger.info(
                 f"[pending-validated] 确认已记录 → confirmed_write_tool="
@@ -3680,10 +3746,11 @@ async def execute_skill(
         _denial_corrected=prep["_denial_corrected"],
         _stall_corrected=prep["_stall_corrected"],
         _no_card_blocked_args=prep["_no_card_blocked_args"],
+        _no_card_blocked_tool=prep["_no_card_blocked_tool"],
+        _no_card_blocked_facts=prep["_no_card_blocked_facts"],
         _write_ok=prep["_write_ok"],
         _relocked_this_round=prep["_relocked_this_round"],
     )
-
     # ── 8.3b / 8.4 / 8.5 / 8.6 节 + 9 / 10 节 ──
     # 注意 `new_messages`（第 7 节 append 过的**同一个 list**）与 `_executed_tools` 都按
     # **对象本身**继续传递 —— 8.4 的防双单判据、`result["messages"]` 都依赖同一性。
@@ -3695,6 +3762,8 @@ async def execute_skill(
         new_messages=prep["new_messages"],
         final_content=turn["final_content"],
         _no_card_blocked_args=turn["_no_card_blocked_args"],
+        _no_card_blocked_tool=turn["_no_card_blocked_tool"],
+        _no_card_blocked_facts=turn["_no_card_blocked_facts"],
         _write_ok=turn["_write_ok"],
         _relocked_this_round=turn["_relocked_this_round"],
         _executed_tools=turn["_executed_tools"],

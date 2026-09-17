@@ -309,14 +309,31 @@ class TestConfirmCardFieldsGenericFallback:
             f"控制键泄漏进卡片字段：{labels}")
 
     def test_c_end_order_args_unchanged(self):
-        """C 端订单参数走既有订单字段提取，行为不回归。"""
+        """C 端订单参数走既有订单字段提取，**既有标签与顺序不变**（issue #4037 校准）。
+
+        issue #4037 / F22 起，订单类参数**额外**带上金额字段（单价/小计/合计）——
+        改前投影只有 商品/数量，卡上写多少钱完全由模型自由发挥，于是
+        「卡上 ¥498、落库 ¥133.80」无人发现（全系统无一处校验两者一致）。
+        校准范围**仅限新增**：既有五个字段必须**逐字逐序**保留（缺任一都是回归）。
+        """
         fields = confirm_card_fields({
-            "items": [{"product_name": "遮光窗帘", "quantity": 3}],
+            "items": [{"product_name": "遮光窗帘", "quantity": 3,
+                       "unit_price": 168, "subtotal": 504.0}],
             "customer_name": "张三", "customer_phone": "13800138000",
             "customer_address": "浙江省杭州市",
         })
-        assert [f["label"] for f in fields] == ["商品", "数量", "收货人", "手机号", "地址"], (
-            f"C 端订单字段被改动：{fields}")
+        labels = [f["label"] for f in fields]
+        assert labels[:5] == ["商品", "数量", "收货人", "手机号", "地址"], (
+            f"C 端既有订单字段被改动/换序（金额字段只许**追加在末尾**）：{fields}")
+        assert {"单价", "小计", "合计"} <= set(labels), (
+            f"F22：确认卡投影缺金额事实（卡上的钱仍然无从核对）：{fields}")
+
+    def test_order_args_without_money_stay_money_free(self):
+        """R2 负例：没有金额可算的写参数（如只传商品名）**不得**凭空造出金额字段。"""
+        fields = confirm_card_fields({"items": [{"product_name": "遮光窗帘"}]})
+        labels = [f["label"] for f in fields]
+        assert "合计" not in labels and "单价" not in labels, (
+            f"无金额可算却造出金额字段（会让顾客看到凭空的钱）：{fields}")
 
     def test_only_control_keys_produce_no_fields(self):
         assert confirm_card_fields({}) == []
