@@ -39,6 +39,8 @@ import type {
   ProcessingOrder,
   ProcessingOrderGenerateResult,
   ProcessingOrderUpdateParams,
+  ProductionOperations,
+  PieceworkSummary,
   ProductStatus,
   AfterSalesTicket,
   AfterSalesListParams,
@@ -349,6 +351,17 @@ export const processingOrderApi = {
   // 状态更新：issue(发加工)/start/complete/cancel
   update: (id: string, data: ProcessingOrderUpdateParams) =>
     request.patch<ApiResponse<ProcessingOrder>>(`/api/admin/processing-orders/${id}`, data),
+}
+
+// 生产报工 API（issue #4000，M4-H；后端 ProductionController，权限 order:list）
+export const productionApi = {
+  // 加工单工序树 + 进度（含加工单二维码 token）
+  getOrderOperations: (orderId: string) =>
+    request.get<ApiResponse<ProductionOperations>>(`/api/admin/production/orders/${orderId}/operations`),
+
+  // 加工单计件汇总（内部计件：合计 + 分人 + 分工序）
+  getPiecework: (orderId: string) =>
+    request.get<ApiResponse<PieceworkSummary>>(`/api/admin/production/orders/${orderId}/piecework`),
 }
 
 // Dashboard API
@@ -876,6 +889,7 @@ const api = {
   afterSales: afterSalesApi,
   order: orderApi,
   processingOrder: processingOrderApi,
+  production: productionApi,
   dashboard: dashboardApi,
   upload: uploadApi,
   file: fileApi,

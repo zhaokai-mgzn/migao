@@ -555,3 +555,56 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+
+  - id: PP-011
+    legacy_id: ""
+    title: "加工单生产明细与任务卡渲染（工序进度/二维码/计件）"
+    domains:
+      - processing
+    tier: normal
+    persona: ""
+    tags:
+      - processing
+      - production
+      - admin_web
+      - print_task_card
+      - qrcode
+    truths_ref:
+      - processing-manage.crud
+    # ── 覆盖说明（issue #4000，M4-H 按需单据渲染）──
+    # admin-web 加工单生产明细页 `/processing-orders/{id}/production`：
+    #   - 头部：加工单号 / 订单号 / 状态 / 进度条（progress.percent）/ 交付日期
+    #   - 工序进度表：按 positions 分组，工序名 / 分组 / 应做数量+单位 / 单价 / 状态 / 已完成数量，必完工序标记
+    #   - 计件汇总：total + per_operation 明细（+ per_worker 分人）
+    #   - 可打印任务卡：加工单号 + 二维码（内容 = qr_token）+ 工序清单（含手工勾选位）
+    # 消费 main 已合并端点（勿再 mock 后端）：
+    #   GET /api/admin/production/orders/{orderId}/operations（工序树 + 进度 + qr_token）
+    #   GET /api/admin/production/orders/{orderId}/piecework（计件汇总）
+    # 真值源 docs/curtain-production-rules.md §1（加工单打印物含二维码）/§2 工序库（必完工序=打包前置）
+    # /§4 计件 /§5 扫码报工闭环。
+    # ⚠️ 双端（persona 空）：本用例是**前端渲染**行为，由 admin-web vitest 覆盖，
+    #    不进 agent-eval 冒烟（同 PP-010 惯例）。
+    user_inputs:
+      - "打开加工单生产明细，看工序进度和计件汇总，打印任务卡给工人扫码"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "工序进度表按部位分组渲染，行内给出「工序名 / 分组 / 应做数量+单位 / 单价 / 状态（待做|已完成）/ 已完成数量」"
+      - "必完工序（is_must_finish）加「必完」标记；非必完工序不得出现该标记"
+      - "进度条读 progress.percent 且与「已完成 done/total 道工序」文案一致（50% ⇒ 1/2）"
+      - "计件汇总渲染 total（¥ 两位小数）+ per_operation 明细；per_worker 非空时展示分人金额"
+      - "任务卡二维码内容 = qr_token（svg title = token）；qr_token 缺失时给占位提示而不是空码"
+      - "任务卡工序清单逐行渲染工序名 / 应做数量+单位 + 每行一个手工勾选位，并说明工人扫码后在小程序报工"
+      - "无工序 / 无计件 / 接口失败均渲染空态或错误提示 + 重试，不白屏"
+    skip_reason: "前端渲染行为（admin-web 组件/页面），由 vitest 单测全量覆盖（tests/unit/components/{ProductionProgressTable,PieceworkTable,TaskCardPrint}.test.tsx、tests/unit/pages/processing-orders-production.test.tsx、tests/unit/lib/use-route-id.test.ts），非 LLM 行为，不进入 agent-eval 冒烟（同 PP-010 惯例）"
+    merge_log: "2026-09-17 新增（issue #4000）：M4-H 按需单据渲染 —— 加工单生产明细页 + 可打印任务卡（含二维码）+ 计件汇总的前端覆盖登记；消费 main 已合并的生产端点（GET production/orders/{orderId}/operations、/piecework）"
+    traces:
+      tests:
+        - "frontend/admin-web/tests/unit/components/ProductionProgressTable.test.tsx"
+        - "frontend/admin-web/tests/unit/components/PieceworkTable.test.tsx"
+        - "frontend/admin-web/tests/unit/components/TaskCardPrint.test.tsx"
+        - "frontend/admin-web/tests/unit/pages/processing-orders-production.test.tsx"
+        - "frontend/admin-web/tests/unit/lib/use-route-id.test.ts"
+      ci:
+        - pr-check.yml
+      verifies: []
