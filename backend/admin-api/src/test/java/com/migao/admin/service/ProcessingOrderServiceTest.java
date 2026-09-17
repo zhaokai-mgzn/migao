@@ -1,5 +1,5 @@
 package com.migao.admin.service;
-// case_ids: PG-001, PG-002, PG-003, PG-004, PG-005, PG-006, PG-007, PG-008, PG-011, UI-030
+// case_ids: PG-001, PG-002, PG-003, PG-004, PG-005, PG-006, PG-007, PG-008, PG-011, PG-018, UI-030
 
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
@@ -11,11 +11,14 @@ import com.migao.admin.entity.Order;
 import com.migao.admin.entity.OrderItem;
 import com.migao.admin.entity.ProcessingItem;
 import com.migao.admin.entity.ProcessingOrder;
+import com.migao.admin.entity.ProcessingPositionOperation;
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.mapper.OrderItemMapper;
 import com.migao.admin.mapper.OrderMapper;
 import com.migao.admin.mapper.ProcessingItemMapper;
 import com.migao.admin.mapper.ProcessingOrderMapper;
+import com.migao.admin.mapper.ProcessingPositionOperationMapper;
+import com.migao.admin.mapper.ProductionWorkLogMapper;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -65,6 +68,16 @@ class ProcessingOrderServiceTest {
 
     @Mock
     private OrderService orderService;
+
+    @Mock
+    private ProductionService productionService;
+
+    /** issue #4116 全链路用例（生成 → 实例化）用：真实 ProductionService 的 DB 层依赖 */
+    @Mock
+    private ProcessingPositionOperationMapper positionOperationMapper;
+
+    @Mock
+    private ProductionWorkLogMapper workLogMapper;
 
     @Spy
     private ObjectMapper objectMapper = new ObjectMapper();
@@ -131,6 +144,26 @@ class ProcessingOrderServiceTest {
                 .productName("现货成品")
                 .quantity(BigDecimal.valueOf(1))
                 .processingInfo(new HashMap<String, Object>())
+                .build();
+    }
+
+    /** 脏数据：加工项缺名称（#4116 的防御分支——不得因脏数据阻断加工单生成） */
+    private OrderItem orderItemWithNamelessProcessing() {
+        Map<String, Object> info = new LinkedHashMap<>();
+        List<Map<String, Object>> procs = new ArrayList<>();
+        Map<String, Object> p = new LinkedHashMap<>();
+        p.put("id", "p9");
+        p.put("unit", "米");
+        p.put("quantity", 1);
+        procs.add(p);
+        info.put("processingItems", procs);
+        return OrderItem.builder()
+                .id("item-9")
+                .tenantId(TENANT)
+                .orderId("order-001")
+                .productName("布艺遮光帘B")
+                .quantity(BigDecimal.valueOf(1))
+                .processingInfo(info)
                 .build();
     }
 
@@ -206,6 +239,79 @@ class ProcessingOrderServiceTest {
 
         // 联动：订单 confirmed → producing
         verify(orderService).updateOrderStatus("order-001", "producing");
+    }
+
+    // ── issue #4116（P0 断链第一环）：生成加工单即实例化工序 → qr_token 非空 ──
+    //
+    // 病灶：POST /api/admin/production/orders/{id}/instantiate 全仓零调用者 ⇒
+    // processing_position_operations 恒空 ⇒ qr_token 恒 null ⇒ 任务卡只出「二维码待生成」占位
+    // ⇒ 工人扫码报工不可达。修法：加工单落行后自动实例化（本用例的断言即端到端判据）。
+
+    @Test
+    @DisplayName("#4116 生成加工单 → 工序实例落行 + qr_token 非空（真实 ProductionService 串联）")
+    void generateInstantiatesOperationsAndQrToken() {
+        // 真实 ProductionService（只 mock DB 层 Mapper）：断言"生成→实例化→token"真链路，
+        // 而不是"调了一次 productionService.instantiate"（效果层，非调用层）
+        ProcessingOrderService service = new ProcessingOrderService(
+                processingOrderMapper, orderMapper, orderItemMapper, processingItemMapper,
+                orderService, objectMapper,
+                new ProductionService(processingOrderMapper, positionOperationMapper, workLogMapper, orderMapper));
+
+        when(orderMapper.selectById("order-001")).thenReturn(confirmedOrder);
+        when(orderItemMapper.selectList(any())).thenReturn(List.of(orderItemWithProcessing("米白")));
+        when(processingItemMapper.selectById("p1"))
+                .thenReturn(ProcessingItem.builder().id("p1").name("打孔").unit("米").build());
+        // 生成前无加工单（null）；插入后返回刚落的加工单（模拟 DB 落行 + ASSIGN_UUID 主键回填）
+        java.util.concurrent.atomic.AtomicReference<ProcessingOrder> poRef =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        when(processingOrderMapper.selectActiveByOrderId("order-001", TENANT)).thenAnswer(inv -> poRef.get());
+        when(processingOrderMapper.insert(any(ProcessingOrder.class))).thenAnswer(inv -> {
+            ProcessingOrder inserted = inv.getArgument(0);
+            inserted.setId("po-001");
+            poRef.set(inserted);
+            return 1;
+        });
+        when(processingOrderMapper.updateById(any(ProcessingOrder.class))).thenReturn(1);
+
+        var results = service.generate(List.of("order-001"), TENANT, "u1");
+
+        assertThat(results.get(0).isSuccess()).isTrue();
+
+        // ① 工序实例必须真落行（部位=加工产物行，工序=加工项；数量/单位/单价随行）
+        ArgumentCaptor<ProcessingPositionOperation> opCaptor =
+                ArgumentCaptor.forClass(ProcessingPositionOperation.class);
+        verify(positionOperationMapper).insert(opCaptor.capture());
+        ProcessingPositionOperation instance = opCaptor.getValue();
+        assertThat(instance.getProcessingOrderId()).isEqualTo("po-001");
+        assertThat(instance.getPositionName()).isEqualTo("布艺遮光帘A 米白");
+        assertThat(instance.getOperationName()).isEqualTo("打孔");
+        assertThat(instance.getSeq()).isEqualTo(1);
+        assertThat(instance.getQty()).isEqualByComparingTo("2");
+        assertThat(instance.getUnit()).isEqualTo("米");
+        assertThat(instance.getUnitPrice()).isEqualByComparingTo("3.0");
+        assertThat(instance.getStatus()).isEqualTo("pending");
+        assertThat(instance.getIsMustFinish()).as("末道工序 = 完工门槛（全绿才判完工）").isTrue();
+
+        // ② qr_token 必须真落到加工单（任务卡二维码取值来源 = qr_token，非空才不走占位分支）
+        ArgumentCaptor<ProcessingOrder> tokenCaptor = ArgumentCaptor.forClass(ProcessingOrder.class);
+        verify(processingOrderMapper).updateById(tokenCaptor.capture());
+        assertThat(tokenCaptor.getValue().getId()).isEqualTo("po-001");
+        assertThat(tokenCaptor.getValue().getQrToken()).matches("[0-9a-f]{32}");
+    }
+
+    @Test
+    @DisplayName("#4116 加工项无名称（脏数据）→ 不阻断加工单生成，跳过自动实例化并留日志")
+    void generateSkipsInstantiationWhenProcessingItemNameMissing() {
+        when(orderMapper.selectById("order-001")).thenReturn(confirmedOrder);
+        when(orderItemMapper.selectList(any())).thenReturn(List.of(orderItemWithNamelessProcessing()));
+        when(processingOrderMapper.selectActiveByOrderId("order-001", TENANT)).thenReturn(null);
+        when(processingOrderMapper.insert(any(ProcessingOrder.class))).thenReturn(1);
+
+        var results = processingOrderService.generate(List.of("order-001"), TENANT, "u1");
+
+        assertThat(results.get(0).isSuccess()).isTrue();
+        assertThat(results.get(0).getProcessingOrderNo()).startsWith("JG-");
+        verify(productionService, never()).instantiate(anyString(), any(), anyLong());
     }
 
     // ── PG-002 幂等 ────────────────────────────────────────────────

@@ -61,6 +61,11 @@ class ProcessingOrderDetailNoProcOrderTest extends BaseControllerTest {
     @Mock
     private OrderService orderService;
 
+    // issue #4116：ProcessingOrderService 增依赖 ProductionService（生成加工单即实例化工序）；
+    // 本测试只覆盖 detail 查询，故 mock 掉（不参与本文件断言的链路）
+    @Mock
+    private com.migao.admin.service.ProductionService productionService;
+
     @Spy
     private ObjectMapper objectMapper = new ObjectMapper();
 
@@ -77,7 +82,8 @@ class ProcessingOrderDetailNoProcOrderTest extends BaseControllerTest {
         TableInfoHelper.initTableInfo(assistant, ProcessingOrder.class);
 
         processingOrderService = new ProcessingOrderService(
-                processingOrderMapper, orderMapper, orderItemMapper, processingItemMapper, orderService, objectMapper);
+                processingOrderMapper, orderMapper, orderItemMapper, processingItemMapper, orderService, objectMapper,
+                productionService);
         controller = new ProcessingOrderController(processingOrderService);
         mockMvc = buildMockMvc(controller);
     }

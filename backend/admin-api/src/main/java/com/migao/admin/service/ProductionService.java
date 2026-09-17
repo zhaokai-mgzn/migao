@@ -26,6 +26,7 @@ import java.time.OffsetDateTime;
 import java.time.YearMonth;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -71,7 +72,11 @@ public class ProductionService {
 
     /**
      * 实例化工序（加工单 × 部位 × 工序）+ 生成加工单二维码 token。
-     * 幂等：同一加工单重复实例化时软删旧实例（保留审计），已有 token 复用（已打印的码不失效）。
+     *
+     * 幂等（issue #4116）：**同一工序配置**的重复调用是空操作 —— 不重插行、不软删旧实例、
+     * 不清零已有报工的 done_qty，已有 token 复用（已打印的码不失效）。
+     * 仅当传入配置与已有实例不同（工艺变更 → 真·重新实例化）才软删旧实例并重插
+     * （软删保留审计，历史报工仍按实例快照可追溯）。
      */
     @Transactional(rollbackFor = Exception.class)
     @SuppressWarnings("unchecked")
@@ -86,17 +91,80 @@ public class ProductionService {
             throw BusinessException.validationError(
                     "订单 " + order.getOrderNo() + " 尚无加工单，请先生成加工单再实例化工序");
         }
-        // 重新实例化：旧实例软删（工序序列可能随工艺变更，历史报工仍按实例快照可追溯）
+        List<OpSpec> specs = parseSpecs(positions);
+        String qrToken = ensureQrToken(po);
+
+        // 幂等：配置与已有活跃实例一致 ⇒ 一行都不碰（重复调用不得重插行/不得清零报工进度）
+        List<ProcessingPositionOperation> existing = listOperations(po.getId(), tenantId);
+        if (!existing.isEmpty() && signatures(specsOf(existing)).equals(signatures(specs))) {
+            log.info("工序已实例化，重复调用跳过（幂等）: po={}, orderId={}, operations={}, qrToken={}",
+                    po.getProcessingOrderNo(), order.getId(), existing.size(), qrToken);
+            return instantiateResult(qrToken, existing.size());
+        }
+
+        // 首次实例化 / 工序序列随工艺变更 → 旧实例软删
         // 用字符串列名而非 Lambda 列名：LambdaUpdateWrapper.set 会立即求值列名，Standalone
         // MockMvc 单测环境没有 MyBatis-Plus TableInfo 缓存（同 SettingsController 的既有做法）。
-        positionOperationMapper.update(null, new UpdateWrapper<ProcessingPositionOperation>()
-                .eq("processing_order_id", po.getId())
-                .eq("tenant_id", tenantId)
-                .eq("deleted", 0)
-                .set("deleted", 1)
-                .set("updated_at", OffsetDateTime.now()));
+        if (!existing.isEmpty()) {
+            log.info("工序配置变更，重新实例化（旧实例软删 {} 条）: po={}", existing.size(), po.getProcessingOrderNo());
+            positionOperationMapper.update(null, new UpdateWrapper<ProcessingPositionOperation>()
+                    .eq("processing_order_id", po.getId())
+                    .eq("tenant_id", tenantId)
+                    .eq("deleted", 0)
+                    .set("deleted", 1)
+                    .set("updated_at", OffsetDateTime.now()));
+        }
 
-        int count = 0;
+        for (OpSpec spec : specs) {
+            positionOperationMapper.insert(ProcessingPositionOperation.builder()
+                    .tenantId(tenantId)
+                    .processingOrderId(po.getId())
+                    .positionName(spec.positionName())
+                    .seq(spec.seq())
+                    .operationName(spec.operationName())
+                    .groupName(spec.groupName())
+                    .unit(spec.unit())
+                    .qty(spec.qty())
+                    .unitPrice(spec.unitPrice())
+                    .factor(spec.factor())
+                    .isMustFinish(spec.mustFinish())
+                    .isStartMarker(spec.startMarker())
+                    .status("pending")
+                    .doneQty(BigDecimal.ZERO)
+                    .createdAt(OffsetDateTime.now())
+                    .updatedAt(OffsetDateTime.now())
+                    .deleted(0)
+                    .build());
+        }
+        log.info("实例化工序: po={}, orderId={}, operations={}, qrToken={}",
+                po.getProcessingOrderNo(), order.getId(), specs.size(), qrToken);
+        return instantiateResult(qrToken, specs.size());
+    }
+
+    /** 复用已有 token（已打印的码不失效）；缺失时生成 32 位 token 并落库。 */
+    private String ensureQrToken(ProcessingOrder po) {
+        if (StringUtils.hasText(po.getQrToken())) {
+            return po.getQrToken();
+        }
+        String qrToken = UUID.randomUUID().toString().replace("-", "");
+        processingOrderMapper.updateById(ProcessingOrder.builder().id(po.getId()).qrToken(qrToken).build());
+        return qrToken;
+    }
+
+    private Map<String, Object> instantiateResult(String qrToken, int operationCount) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("qr_token", qrToken);
+        result.put("operation_count", operationCount);
+        return result;
+    }
+
+    /**
+     * 请求工序归一化（幂等比较与落库**共用同一解析口径**，避免「比较一套、落库一套」漂移）。
+     * 缺省值与既有口径一致：seq = 部位内自然序，qty/单价 0，系数 1，标记 false。
+     */
+    @SuppressWarnings("unchecked")
+    private List<OpSpec> parseSpecs(List<?> positions) {
+        List<OpSpec> specs = new ArrayList<>();
         for (Object rawPosition : positions) {
             if (!(rawPosition instanceof Map<?, ?> positionMap)) {
                 continue;
@@ -117,43 +185,63 @@ public class ProductionService {
                 if (!StringUtils.hasText(operationName)) {
                     throw BusinessException.validationError("工序名（operation）不能为空");
                 }
-                positionOperationMapper.insert(ProcessingPositionOperation.builder()
-                        .tenantId(tenantId)
-                        .processingOrderId(po.getId())
-                        .positionName(positionName)
-                        .seq(op.get("seq") == null ? seq : bd(op.get("seq"), BigDecimal.valueOf(seq)).intValue())
-                        .operationName(operationName)
-                        .groupName(str(op.get("group")))
-                        .unit(str(op.get("unit")))
-                        .qty(bd(op.get("qty"), BigDecimal.ZERO))
-                        .unitPrice(bd(op.get("unit_price"), BigDecimal.ZERO))
-                        .factor(bd(op.get("factor"), BigDecimal.ONE))
-                        .isMustFinish(flag(op.get("is_must_finish")))
-                        .isStartMarker(flag(op.get("is_start_marker")))
-                        .status("pending")
-                        .doneQty(BigDecimal.ZERO)
-                        .createdAt(OffsetDateTime.now())
-                        .updatedAt(OffsetDateTime.now())
-                        .deleted(0)
-                        .build());
-                count++;
+                specs.add(new OpSpec(positionName,
+                        op.get("seq") == null ? seq : bd(op.get("seq"), BigDecimal.valueOf(seq)).intValue(),
+                        operationName,
+                        str(op.get("group")),
+                        str(op.get("unit")),
+                        bd(op.get("qty"), BigDecimal.ZERO),
+                        bd(op.get("unit_price"), BigDecimal.ZERO),
+                        bd(op.get("factor"), BigDecimal.ONE),
+                        flag(op.get("is_must_finish")),
+                        flag(op.get("is_start_marker"))));
                 seq++;
             }
         }
+        return specs;
+    }
 
-        String qrToken = StringUtils.hasText(po.getQrToken())
-                ? po.getQrToken()
-                : UUID.randomUUID().toString().replace("-", "");
-        if (!qrToken.equals(po.getQrToken())) {
-            processingOrderMapper.updateById(ProcessingOrder.builder().id(po.getId()).qrToken(qrToken).build());
+    /** 已落库实例 → 同一归一化形态（幂等比较用）。 */
+    private List<OpSpec> specsOf(List<ProcessingPositionOperation> operations) {
+        List<OpSpec> specs = new ArrayList<>();
+        for (ProcessingPositionOperation op : operations) {
+            specs.add(new OpSpec(op.getPositionName(), op.getSeq() == null ? 0 : op.getSeq(),
+                    op.getOperationName(), op.getGroupName(), op.getUnit(),
+                    op.getQty(), op.getUnitPrice(), op.getFactor(),
+                    Boolean.TRUE.equals(op.getIsMustFinish()), Boolean.TRUE.equals(op.getIsStartMarker())));
         }
-        log.info("实例化工序: po={}, orderId={}, operations={}, qrToken={}",
-                po.getProcessingOrderNo(), order.getId(), count, qrToken);
+        return specs;
+    }
 
-        Map<String, Object> result = new LinkedHashMap<>();
-        result.put("qr_token", qrToken);
-        result.put("operation_count", count);
-        return result;
+    /** 规范化签名（排序 ⇒ 与部位/工序书写顺序无关；数值去尾零 ⇒ 2 与 2.00 视为同一配置）。 */
+    private static List<String> signatures(List<OpSpec> specs) {
+        List<String> signatures = new ArrayList<>(specs.size());
+        for (OpSpec spec : specs) {
+            signatures.add(spec.signature());
+        }
+        Collections.sort(signatures);
+        return signatures;
+    }
+
+    /** 工序实例归一化形态：字段集 = 落库字段集（比较用的最小充分集）。 */
+    private record OpSpec(String positionName, int seq, String operationName, String groupName, String unit,
+                          BigDecimal qty, BigDecimal unitPrice, BigDecimal factor,
+                          boolean mustFinish, boolean startMarker) {
+
+        String signature() {
+            return String.join("\u0001",
+                    orDash(positionName), String.valueOf(seq), orDash(operationName), orDash(groupName),
+                    orDash(unit), num(qty), num(unitPrice), num(factor),
+                    String.valueOf(mustFinish), String.valueOf(startMarker));
+        }
+
+        private static String orDash(String value) {
+            return value == null ? "-" : value;
+        }
+
+        private static String num(BigDecimal value) {
+            return nz(value).stripTrailingZeros().toPlainString();
+        }
     }
 
     // ============================================================ 查询
