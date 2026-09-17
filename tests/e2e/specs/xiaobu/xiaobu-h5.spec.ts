@@ -1,4 +1,4 @@
-// case_ids: OR-001, DF-002, UI-014, UI-016
+// case_ids: OR-001, DF-002, UI-014, UI-016, ST-011
 /**
  * 小布 H5 视觉回归 — 无会话 UX + 快捷入口六格 + 订单卡片
  *
@@ -18,12 +18,18 @@
  * ⇒ 移除本 spec 对「新品推荐/遮光窗帘」的断言与 /chat/products/new-arrivals mock，
  *    并新增「快捷入口六格可见 + 商品推荐卡不得出现」的负向断言。
  *
- * 2026-09-18 同步 #4016 P14 卡型收敛（两个零发射点卡型**结论不同**，别混为一谈）：
- * · `payment` —— 工具层无数据源 ⇒ 缺触发机制，**维持裁剪** ⇒ 收到它落「消息内容暂不支持预览」占位；
+ * 2026-09-18 同步卡型口径（#4016 P14 的「两个零发射点卡型」现**统一为「补发射点」**）：
+ * · `payment` —— #4016 P14 当时工具层确实无数据源 ⇒ 缺触发机制 ⇒ 维持裁剪；**issue #4085 第 1 项**
+ *   按用户 2026-09-18 裁定（与 `production_progress` 同款）**补发射点**：新增 C 端只读工具
+ *   `payment_qrcode_query`（返回的 `data` 即卡载荷 —— `payment_qrcodes.wechat/alipay`
+ *   各含精简字段 image_url/payee_name；数据源复用 `GET /api/admin/agent/payment-qrcodes`）
+ *   → 后端 `_detect_card_type` 映射 `payment` → C 端恢复 `case 'payment'`
+ *   ⇒ 本 spec 断言它**真渲染**（收款码内容 + 无码空态），**不再**落「消息内容暂不支持预览」占位。
  * · `production_progress` —— `production_progress_query` 工具存在且返回的正是卡载荷 ⇒ 属**接线漏一行**，
  *   用户 2026-09-18 裁定「**补发射点**」⇒ 后端补映射、三端恢复渲染分支，本 spec 断言它**真渲染**。
- * · 3 对别名 + `knowledge(_result)` 维持裁剪。
- * （issue #4003 的教训：**砍卡片必须同批同步视觉 spec**，否则 spec 与实现分叉持续红。）
+ * · 3 对别名 + `knowledge(_result)` **仍维持裁剪**（后端至今无发射点）。
+ * （issue #4003 的教训：**砍/加卡片必须同批同步视觉 spec**，否则 spec 与实现分叉持续红 ——
+ *   #4085 正是被这条红项抓出来的：旧断言写「payment 维持裁剪」，与「已放行」的实现相反。）
  *   ⚠️ 刻意**不新增截图基线**：新基线需 darwin + linux 双平台产物（见 migao-dev-flow §8 坑表），
  *   而本改动不触碰既有基线的画面（空态/订单卡），故用 DOM 断言锁行为、复用既有基线。
  */
@@ -62,11 +68,36 @@ const MOCK_ORDER_CARD = {
   },
 }
 
-/** **维持裁剪**的卡型 mock（`payment`：工具层无数据源 ⇒ 缺触发机制，无发射点） */
-const MOCK_TRIMMED_CARD = {
+/** 收款码卡 mock（#4085 第 1 项「补发射点」后真可达 ⇒ 应**真渲染**）。
+ *
+ * 载荷形状 = C 端只读工具 `payment_qrcode_query` 的 `data`（`payment_qrcodes.wechat/alipay`
+ * 各含精简字段 image_url/payee_name）—— 与后端单测 `tests/test_payment_qrcode_query.py`
+ * 的冻结契约样例同源；旧 mock（顶层 order_no/amount/payee_name）**不是**真实载荷形状。
+ */
+const MOCK_PAYMENT_CARD = {
   type: 'payment',
-  data: { order_no: 'ORD-20260601-001', amount: 299.5, payee_name: '亿家纺织' },
+  data: {
+    payment_qrcodes: {
+      wechat: {
+        payment_type: 'wechat',
+        image_url: 'https://img.migao.test/w.png',
+        payee_name: '亿家纺织',
+      },
+      alipay: {
+        payment_type: 'alipay',
+        image_url: 'https://img.migao.test/a.png',
+        payee_name: '亿家纺织',
+      },
+    },
+  },
 }
+
+/** 商家未配收款码时的同卡型载荷：**空对象是合法答案**（工具 success=true）⇒ 卡片走空态。
+ *
+ * 真值：评测栈种子（tests/agent_eval/fixtures/*.sql、docs/deployment/demo-seed.sql）
+ * 里 `tenant_payment_qrcodes` 零行 —— 空态才是该环境下的真实形态（同 ST-012 的口径）。
+ */
+const MOCK_PAYMENT_CARD_EMPTY = { type: 'payment', data: { payment_qrcodes: {} } }
 
 /** 生产进度卡 mock（#4016 P14「补发射点」后真可达 ⇒ 应**真渲染**） */
 const MOCK_PRODUCTION_PROGRESS_CARD = {
@@ -229,7 +260,7 @@ test.describe('小布 H5 视觉回归', () => {
     })
   })
 
-  test('已裁剪卡型落可理解占位（#4016 P14：payment 工具层无数据源，维持裁剪）', async ({ page }) => {
+  test('收款码卡真渲染（#4085 第 1 项「补发射点」：payment 卡型已放行，C 端不再落占位）', async ({ page }) => {
     await setupMocks(page)
     const latestDone = page.waitForResponse(
       (r) => r.url().includes('/api/chat/sessions/latest') && r.status() === 200,
@@ -254,7 +285,7 @@ test.describe('小布 H5 视觉回归', () => {
         return
       }
       const body = [
-        `event: card\ndata: ${JSON.stringify(MOCK_TRIMMED_CARD)}\n`,
+        `event: card\ndata: ${JSON.stringify(MOCK_PAYMENT_CARD)}\n`,
         `event: done\ndata: ${JSON.stringify({ session_id: 'sess-vr-001', message_id: 'm2' })}\n`,
       ].join('\n')
       await route.fulfill({
@@ -272,11 +303,71 @@ test.describe('小布 H5 视觉回归', () => {
     await input.fill('怎么付款')
     await input.press('Enter')
 
-    // 占位文案可见（新真值）
-    await expect(page.getByText('📎 消息内容暂不支持预览')).toBeVisible()
-    // 且**不得**出现该卡型的内容/内部类型名（既不渲染卡、也不泄漏 type）
-    await expect(page.getByText('亿家纺织')).toHaveCount(0)
+    // **真渲染**（新真值）：卡片标题 + 微信/支付宝切换 + 收款方 + 二清提示可见
+    await expect(page.getByText(/扫码支付/).first()).toBeVisible()
+    await expect(page.getByText('微信', { exact: true })).toBeVisible()
+    await expect(page.getByText('支付宝', { exact: true })).toBeVisible()
+    await expect(page.getByText(/亿家纺织/).first()).toBeVisible()
+    await expect(page.getByText(/款项直接支付给商家/).first()).toBeVisible()
+    // 不再落「暂不支持预览」占位，也不泄漏内部卡型名
+    await expect(page.getByText('📎 消息内容暂不支持预览')).toHaveCount(0)
     await expect(page.getByText(/payment/)).toHaveCount(0)
+  })
+
+  test('收款码卡无码时走空态（商家未设码 = 合法答案，不落占位）', async ({ page }) => {
+    await setupMocks(page)
+    // 卡片在载荷无码时自取 /chat/payment-qrcodes（issue #3990）：mock 成空 ⇒ 确定性走空态
+    await page.route('**/api/chat/payment-qrcodes', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ success: true, data: {} }),
+      })
+    })
+    const latestDone = page.waitForResponse(
+      (r) => r.url().includes('/api/chat/sessions/latest') && r.status() === 200,
+    )
+    await page.goto('/#/pages/chat/index/index')
+    await latestDone
+    await expect(page.locator('.chat-page__navbar-name')).toBeVisible()
+
+    const input = page.locator('input, textarea').first()
+    await expect(input).toBeEnabled({ timeout: 10_000 })
+
+    await page.route('**/api/chat/send', async (route) => {
+      if (route.request().method() === 'OPTIONS') {
+        await route.fulfill({
+          status: 204,
+          headers: {
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Headers': 'Content-Type, X-Client-Type, Authorization',
+            'Access-Control-Allow-Methods': 'POST, OPTIONS',
+          },
+        })
+        return
+      }
+      const body = [
+        `event: card\ndata: ${JSON.stringify(MOCK_PAYMENT_CARD_EMPTY)}\n`,
+        `event: done\ndata: ${JSON.stringify({ session_id: 'sess-vr-001', message_id: 'm2b' })}\n`,
+      ].join('\n')
+      await route.fulfill({
+        status: 200,
+        contentType: 'text/event-stream',
+        headers: {
+          'Content-Type': 'text/event-stream',
+          'Cache-Control': 'no-cache',
+          'Access-Control-Allow-Origin': '*',
+        },
+        body,
+      })
+    })
+
+    await input.fill('怎么付款')
+    await input.press('Enter')
+
+    // 空态提示可见（ST-011「无收款码时展示降级提示」），且**不**落占位
+    await expect(page.getByText(/暂未设置收款码/).first()).toBeVisible()
+    await expect(page.getByText('📎 消息内容暂不支持预览')).toHaveCount(0)
   })
 
   test('生产进度卡真渲染（#4016 P14「补发射点」：后端已能下发，C 端不再落占位）', async ({ page }) => {
