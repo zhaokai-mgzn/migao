@@ -187,17 +187,23 @@ def live_chinese_wording_counts(app_dir: Path = APP_DIR) -> dict:
 
 
 def load_chinese_wording_baseline(path: Path = BASELINE_PATH) -> dict:
-    """存量基线（**只许缩短**）。文件缺失 = 空基线（任何站点都会报红，fail-closed）。"""
+    """存量基线（**只许缩短**）。文件缺失 = 空基线（任何站点都会报红，fail-closed）。
+
+    形态是 `files: [{path, count}, …]` —— **刻意不用「路径 + 冒号 + 数字」那种写法**：
+    该文本形态会被 Case Trust Gate 的 `CASE-TRUST-STALE-LINE-REF` 当成行号引用扫描
+    （实测 7 条假红）。属**引用格式**问题，改格式即可，判据一条不动。
+    """
     if not path.exists():
         return {}
     payload = json.loads(path.read_text(encoding="utf-8"))
-    entries = payload.get("entries", [])
-    assert isinstance(entries, list), f"{path} 的 `entries` 必须是列表（fail-closed）"
+    entries = payload.get("files", [])
+    assert isinstance(entries, list), f"{path} 的 `files` 必须是列表（fail-closed）"
     baseline = {}
     for entry in entries:
-        rel, _, count = str(entry).rpartition(":")
-        assert rel and count.isdigit(), f"基线条目形态必须是 `<相对路径>:<计数>`：{entry!r}"
-        baseline[rel] = int(count)
+        assert isinstance(entry, dict) and "path" in entry and "count" in entry, (
+            f"基线条目形态必须是 {{path, count}}：{entry!r}"
+        )
+        baseline[str(entry["path"])] = int(entry["count"])
     return baseline
 
 
