@@ -4,11 +4,11 @@
 -- 本文件是 **2026-05-30 的一次性快照**，此后未随迁移链更新，**两个方向都已失真**
 -- （2026-09-11 实测，逐表比对 docs/sql/schema.sql）：
 --
---   本文件缺失（schema.sql 已有，共 14 张）：
---     daily_briefings, finance_transactions, knowledge_candidates, knowledge_cards,
---     processing_orders, processing_position_operations, production_operations,
---     production_routings, production_work_logs, role_permissions, session_states,
---     tenant_payment_qrcodes, user_suggestion_prefs, user_memories
+--   本文件缺失（schema.sql 已有，共 15 张）：
+--     client_request_keys, daily_briefings, finance_transactions, knowledge_candidates,
+--     knowledge_cards, processing_orders, processing_position_operations,
+--     production_operations, production_routings, production_work_logs, role_permissions,
+--     session_states, tenant_payment_qrcodes, user_suggestion_prefs, user_memories
 --   本文件仍会创建，但**早已被迁移 DROP**（共 4 张）：
 --     knowledge_documents, knowledge_sync_history, rag_chunks,   ← V36 迁移 DROP
 --     quick_reply_templates

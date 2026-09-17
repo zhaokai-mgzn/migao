@@ -1456,6 +1456,21 @@ INSERT INTO roles (id, tenant_id, name, code, description, status) VALUES
 -- 守卫：tests/unit_ci_workflows/test_schema_integrity.py 双重断言
 --       （迁移链覆盖 + 代码必需列覆盖），漂移即 CI block。
 
+-- 写请求幂等键表（V50，issue #4037 F19；**先于迁移合入**：该迁移在 PR #4072 上、
+-- 因本文件缺这张表而 CI 变红 —— schema.sql 必须覆盖迁移链，故此处先补，迁移合入后自然一致）。
+-- 幂等：IF NOT EXISTS；与迁移链重复执行无害（迁移链仍是结构变更事实源）。
+CREATE TABLE IF NOT EXISTS client_request_keys (
+    id BIGSERIAL PRIMARY KEY,
+    tenant_id BIGINT NOT NULL,
+    client_request_id VARCHAR(128) NOT NULL,
+    endpoint VARCHAR(128) NOT NULL,
+    response_payload JSONB,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    UNIQUE (tenant_id, client_request_id)
+);
+CREATE INDEX IF NOT EXISTS idx_client_request_keys_tenant_created
+    ON client_request_keys (tenant_id, created_at DESC);
+
 -- 订单实收/优惠/退款（V5 / V14）
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS actual_amount DECIMAL(12,2) DEFAULT 0;
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS discount_amount DECIMAL(12,2) DEFAULT 0;
