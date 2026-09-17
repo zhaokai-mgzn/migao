@@ -231,11 +231,16 @@ gate_check() {
   # （issue #3724：旧实现把两者一视同仁地打印「跳过」+ return 0 = ✅ 假绿）。
   CHANGED=$(committed_changes)
   UNCOMMITTED=$(worktree_changes)
-  # 工作区新增/未跟踪的测试文件（弱断言扫描必须能看到它们，见下）
+  # 工作区新增/未跟踪的**候选**文件（弱断言扫描必须能看到它们，见下）。
+  # ⚠️ 这里**只收候选**、不判「是不是测试文件」：那句判定必须与 CI 同源，唯一实现在
+  #    `.github/growth_gate.py::_is_test_file`（issue #4077）。此前这里内联了一份
+  #    `grep -iE 'test|spec'`，与 CI 的内联 grep 是**两套判据** ⇒ 两边结论可以不同（见下注释）。
   # ⚠️ 用 `awk`（POSIX）而非 `sed 's/^\(A\|??\)…'`：`\|` 交替是 GNU 扩展，macOS 自带
   #    BSD sed 不认（静默不匹配 ⇒ 工作区新增文件又被漏扫，缺陷原地复发，实测）。
-  WORKTREE_NEW_TESTS=$(printf '%s\n' "$UNCOMMITTED" | awk '$1=="A"||$1=="??"{print $2}' \
-    | grep -E '\.(py|java|ts|tsx)$' | grep -iE 'test|spec' || true)
+  # 扩展名过滤留着：它等价于 `_is_test_file` 的第一道判据，作用是**别把二进制/大文件**
+  # 传给扫描器（否则 fail-closed 直接报错，见 `find_weak_asserts` 的 ValueError）。
+  WORKTREE_NEW_CANDIDATES=$(printf '%s\n' "$UNCOMMITTED" | awk '$1=="A"||$1=="??"{print $2}' \
+    | grep -E '\.(py|java|ts|tsx)$' || true)
   GATE_RC=0
   BLOCKERS=0
   if [ -n "$CHANGED" ]; then
@@ -258,18 +263,29 @@ gate_check() {
   if [ -n "$UNCOMMITTED" ]; then
     echo "::warning:: gate 预检**未覆盖**未提交改动：工作区有未提交改动，而「缺测/case_ids 追溯」按已提交 diff（origin/main...HEAD）扫描 ⇒ 这部分**未被检查**（原因：尚未提交 ≠ 没有变更；弱断言检查已改成同时看工作区）。处置：git commit 后重跑，可覆盖全部范围（migao-dev-flow §2.1）。"
   fi
-  # 弱断言检查（与 pr-check 的 Check weak asserts step 语义一致：只扫「新增测试文件」）。
-  # 与 CI 的唯一差别是扫描源：CI 上 PR 的改动必然已提交；本地可能还没提交 ⇒ 这里把
-  # **工作区新增/未跟踪**的测试文件一并纳入，使「提交前跑」也真的有效（issue #3724）。
-  NEW_TESTS=$( { git diff --diff-filter=A --name-only origin/main...HEAD 2>/dev/null || true; \
-                 printf '%s\n' "$WORKTREE_NEW_TESTS"; } | sort -u | grep -v '^$' || true)
-  if [ -n "$NEW_TESTS" ]; then
+  # 弱断言检查：**扫描集 = 新增测试文件**，判定用 CI 的同一份实现（issue #4077）。
+  # 判定收敛到单一事实源 `.github/growth_gate.py::_is_test_file`（`--new-tests-only`）——
+  # 口径见该函数 docstring。两处**判定本应相同**（都是「这个新增文件是不是测试文件」），
+  # 差别只在**扫描源**（这一句此前写成「与 pr-check 语义一致」但实现不同 = 注释漂移）。
+  # 下两行**同时**写在 `.github/workflows/pr-check.yml` 的 Check weak asserts step 注释里
+  # （裁定要求的「同一段文本、两处各一份」）：
+  #   · CI：`git diff --diff-filter=A origin/main...HEAD` —— PR 的改动必然已提交；
+  #   · 本地：上面那份 ∪ **工作区**新增/未跟踪文件 —— 本地可能还没提交，不并入则「提交前跑」
+  #     对该文件是空跑（issue #3724）。工作区里的文件**尚未被跟踪**，故用 `git status --porcelain`。
+  # 本函数只负责**收候选**：`--new-tests-only` 施加那份判定（剔除谁、扫谁都由它打印到日志）。
+  # ⚠️ 不变量（两地必须一致）：**新增源文件（如 app/**/x.py）不参与弱断言扫描** —— 给它扫弱断言
+  #    会报出 CI 不会报的**假红**（#4077 现场：`app/services/greeting.py` 被当测试文件报 1 处弱断言）。
+  #    反向不变量见守卫 `tests/unit_ci_workflows/test_growth_gate_fail_closed.py`：真弱断言测试
+  #    必须**两边都红**（过滤只许缩小扫描集，不许放过真问题）。
+  NEW_CANDIDATES=$( { git diff --diff-filter=A --name-only origin/main...HEAD 2>/dev/null || true; \
+                      printf '%s\n' "$WORKTREE_NEW_CANDIDATES"; } | sort -u | grep -v '^$' || true)
+  if [ -n "$NEW_CANDIDATES" ]; then
     echo "  🔍 扫描新增测试文件的弱断言"
-    if [ -n "$WORKTREE_NEW_TESTS" ]; then
-      echo "  ⚠️ 扫描集已并入工作区未提交的新增测试文件（未 commit，CI 尚看不到）："
-      printf '%s\n' "$WORKTREE_NEW_TESTS" | sed 's/^/     /'
+    if [ -n "$WORKTREE_NEW_CANDIDATES" ]; then
+      echo "  ⚠️ 候选集已并入工作区未提交的新增文件（未 commit，CI 尚看不到）："
+      printf '%s\n' "$WORKTREE_NEW_CANDIDATES" | sed 's/^/     /'
     fi
-    python3 .github/growth_gate.py --check-weak --files $NEW_TESTS || GATE_RC=1
+    python3 .github/growth_gate.py --check-weak --new-tests-only --files $NEW_CANDIDATES || GATE_RC=1
   fi
   case_coverage_check || GATE_RC=1
   [ "$GATE_RC" -eq 0 ] && [ "$BLOCKERS" = "0" ]

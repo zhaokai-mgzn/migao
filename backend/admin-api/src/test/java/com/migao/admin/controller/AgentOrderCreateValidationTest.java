@@ -2,6 +2,7 @@
 package com.migao.admin.controller;
 
 import com.migao.admin.controller.agent.AgentOrderController;
+import com.migao.admin.dto.OrderCreateRequest;
 import com.migao.admin.dto.OrderDetailResponse;
 import com.migao.admin.mapper.UserMapper;
 import com.migao.admin.service.OrderService;
@@ -28,7 +29,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * 为什么这是资金/库存完整性缺陷（修复前）：
  * <ul>
  *   <li>Agent 路径是 ai-agent 唯一实走的路径（`order_create` → POST /api/admin/agent/orders）；</li>
- *   <li>该路径的 DTO（`AgentOrderCreateRequest.AgentOrderItem`）**零约束注解**，
+ *   <li>该路径的 DTO（`OrderCreateRequest.OrderItemRequest`）**零约束注解**，
  *       Controller `createOrder` **没有 `@Valid`** → 负数量/负单价一路落库：</li>
  *   <li>`OrderService.createOrder()`（:413）直接 `unitPrice.multiply(BigDecimal.valueOf(quantity))`
  *       → **负金额**写进 `orders.total_amount`；</li>
@@ -71,7 +72,13 @@ class AgentOrderCreateValidationTest extends BaseControllerTest {
         mockMvc = buildMockMvc(agentOrderController);
     }
 
-    /** 组请求体：quantity/unitPrice 用原文（null 表示不传该字段） */
+    /**
+     * 组请求体：quantity/unitPrice 用原文（null 表示不传该字段）。
+     *
+     * <p>subtotal 一并给出（issue #4089 收敛后共享类型 @NotNull —— 收敛前 agent 侧可选）。
+     * 本类锁的是 quantity/unitPrice 的范围闸门，subtotal 给一个**不干扰该断言**的自洽值；
+     * "缺 subtotal 也必须被拒"由 {@code OrderDtoContractTest} 锁。</p>
+     */
     private String createBody(String quantity, String unitPrice) {
         StringBuilder item = new StringBuilder("{\"productName\":\"遮光窗帘\"");
         if (quantity != null) {
@@ -80,6 +87,7 @@ class AgentOrderCreateValidationTest extends BaseControllerTest {
         if (unitPrice != null) {
             item.append(",\"unitPrice\":").append(unitPrice);
         }
+        item.append(",\"subtotal\":504");
         item.append("}");
         return "{\"customerName\":\"张三\",\"customerPhone\":\"13800138000\",\"items\":["
                 + item + "]}";

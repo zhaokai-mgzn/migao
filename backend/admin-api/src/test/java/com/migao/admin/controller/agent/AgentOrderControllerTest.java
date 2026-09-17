@@ -109,7 +109,12 @@ class AgentOrderControllerTest extends BaseControllerTest {
         assertThat(captor.getValue().getClientRequestId()).isNull();
     }
 
-    /** 合法下单请求体；{@code withBodyKey} 时额外塞一个 body 里的 clientRequestId（应被忽略） */
+    /**
+     * 合法下单请求体；{@code withBodyKey} 时额外塞一个 body 里的 clientRequestId（应被忽略）。
+     *
+     * <p>{@code subtotal} 一并给出（issue #4089 收敛后共享类型 {@code @NotNull} —— 收敛前
+     * agent 侧 DTO 可选）。本类锁的是**幂等键入口**语义，subtotal 给一个不干扰该断言的自洽值。</p>
+     */
     private static String body(boolean withBodyKey) {
         return """
                 {
@@ -118,7 +123,7 @@ class AgentOrderControllerTest extends BaseControllerTest {
                   "customerAddress": "上海市浦东新区",
                   "clientRequestId": %s,
                   "items": [
-                    {"productName": "遮光窗帘", "quantity": 2, "unitPrice": 150}
+                    {"productName": "遮光窗帘", "quantity": 2, "unitPrice": 150, "subtotal": 300}
                   ]
                 }
                 """.formatted(withBodyKey ? "\"body-forged-key\"" : "null");

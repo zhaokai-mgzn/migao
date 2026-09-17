@@ -28,8 +28,10 @@
 2. `TestPermissionCodeIsTheGate` —— **表驱动**：对每个 B 端工具 × 每个商户角色，
    `check_permission` 的结果必须**恰好**等于「该角色的目录里有没有这个码」
    （`admin` 的 `*` 通配除外）——既有正向（持有码 ⇒ 放行）也有负向（无码 ⇒ 拒绝）；
-3. `TestRoleListIsNotTheGate` —— 反向证据：只写在 `allowed_roles` 里、目录中**没有**该码的
-   角色（`tenant_admin` 幽灵角色）必须被拒 —— 证明角色白名单不再是授权来源；
+3. `TestRoleListIsNotTheGate` —— 反向证据：**同时声明码与角色白名单**的替身上，判定必须
+   跟着**权限码**走（`tenant_admin` 列进白名单、目录无码 ⇒ 拒；`operator` 持码、不在白名单
+   ⇒ 放行）。**不再拿真工具的 `allowed_roles` 当前提** —— 已声明码的工具按 ④ 不得声明白名单，
+   那时读到的是 `BaseTool` 默认值，对任何工具都成立 ⇒ 空前提（#4149 G9 实测）；
 4. `TestCodedToolsCarryNoRoleList` —— 静态锁：声明了权限码的工具**不得**再声明
    `allowed_roles`（否则是第二份会漂移的、且实际不生效的假门禁）；
 5. 判据自身**可红 + 不恒真**（`TestGuardsAreNotVacuous`：注入式夹具必报、合法输入必不报）。
@@ -63,6 +65,9 @@
 """
 
 from __future__ import annotations
+
+import re
+from pathlib import Path
 
 from app.tools.base import BaseTool, ToolContext, ToolResult
 from app.tools.registry import create_default_registry
@@ -383,25 +388,42 @@ class TestPermissionCodeIsTheGate:
 # ──────────────────────────────────────────────────────────────────────────────
 
 class TestRoleListIsNotTheGate:
-    """只写在 `allowed_roles`、目录里没有码的角色必须被拒 —— 角色白名单已非门禁。"""
+    """`required_permissions` 在场时，`allowed_roles` **不参与**判定（#4149 G9 修正判别性）。
 
-    def test_ghost_role_listed_in_allowed_roles_is_still_denied(self):
-        tools = all_checked_tools()
-        tool = tools["category_manage"]
-        # 前提自断言：这条负例只在「tenant_admin 确实被列进了角色白名单」时有判别力
-        assert "tenant_admin" in tool.allowed_roles, (
-            "前提不成立：category_manage 的 allowed_roles 已不含 tenant_admin —— 本负例失去判别力"
+    ⚠️ **判别性从哪来**（旧版在这里是空判据）：已声明权限码的工具按不变式 ④**不得**再声明
+    `allowed_roles` ⇒ `category_manage` 的 `allowed_roles` 只是 `BaseTool` 的**默认值**
+    （`["customer","admin","agent","tenant_admin"]`），对任何未覆写的工具都成立 ⇒
+    拿 `"tenant_admin" in tool.allowed_roles` 当前提**没有任何判别力**（实测：`declares_allowed_roles`
+    为 False）。真正的判别性只能来自**同时声明两者**的替身 `_FakeCodedWithRoleList`：
+    结果必须跟着**权限码**走，两个方向各钉一条 ——
+      ① 列进角色白名单、目录里却没有该码的角色（`tenant_admin`）⇒ **拒绝**；
+      ② **没**列进角色白名单、却持有该码的角色（`operator`）⇒ **放行**。
+    两条必须同时成立：任何「按角色白名单判」的实现都会在其中一条上翻转
+    （红证：`TestGuardsAreNotVacuous::test_role_list_as_gate_implementation_is_caught`）。
+    """
+
+    def test_ghost_role_in_the_role_list_is_denied_because_it_has_no_code(self):
+        tool = _FakeCodedWithRoleList()
+        assert declares_allowed_roles(tool) is True, "前提自断言：替身必须真的声明了角色白名单"
+        assert "tenant_admin" in tool.allowed_roles, "前提：tenant_admin 在替身的角色白名单里"
+        assert ROLE_PERMISSIONS["tenant_admin"] == frozenset(), (
+            "前提：admin-api 目录里 tenant_admin 没有任何码（否则本负例失去判别力）"
         )
         assert role_allowed(tool, "tenant_admin") is False, (
             "tenant_admin 在 admin-api 权限目录里没有任何码 ⇒ 工具层必须拒绝"
             "（它在 admin-api 侧所有 @RequirePermission 接口都是 403，放行才是口径断裂）"
         )
 
-    def test_role_without_the_code_but_with_merchant_role_code_is_denied(self):
-        """`finance` 是**真实商户角色**，但没有 product:category ⇒ 必须拒绝（负向样本）。"""
-        tool = all_checked_tools()["category_manage"]
-        assert "finance" not in tool.allowed_roles, "前提：finance 不在该工具的角色白名单里"
-        assert role_allowed(tool, "finance") is False
+    def test_role_holding_the_code_is_allowed_even_without_the_role_list(self):
+        """反方向：**不在**角色白名单里但持有权限码 ⇒ 必须放行（码是门禁，白名单不是）。"""
+        tool = _FakeCodedWithRoleList()
+        assert "operator" not in tool.allowed_roles, (
+            "前提：operator 不在替身的角色白名单里（否则本判据无判别力）"
+        )
+        assert "product:category" in ROLE_PERMISSIONS["operator"], "前提：operator 持有该码"
+        assert role_allowed(tool, "operator") is True, (
+            "持码但不在角色白名单 ⇒ 必须放行；否则又回到按角色名硬编码的假拒绝（F4 病根）"
+        )
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -465,6 +487,19 @@ class _FakeRoleGatedOnly(BaseTool):
         return ToolResult(success=True)
 
 
+class _RoleListAsGateFixture(_FakeCodedWithRoleList):
+    """**红证替身**：把角色白名单当门禁（= #4106 F3/F4 的病灶实现）。
+
+    用途单一：证明 `TestRoleListIsNotTheGate` 的两条判据**确实有判别力**
+    （病灶实现下一条翻转成放行、另一条翻转成假拒绝），而不是恒绿的空判据（#4149 G9）。
+    """
+
+    name = "fake_role_list_as_gate"
+
+    def check_permission(self, context: ToolContext) -> bool:  # pragma: no cover - 替身
+        return context.role in self.allowed_roles
+
+
 class TestGuardsAreNotVacuous:
     """**:red_circle: 红证** + **阴性负例**：判据必须能报出，也必须能不报。"""
 
@@ -472,6 +507,20 @@ class TestGuardsAreNotVacuous:
         assert code_mismatches([_FakeWrongCodeTool()]) == ["fake_wrong_code"], (
             "映射判据是空的：码写错的工具没被报出"
         )
+
+    def test_role_list_as_gate_implementation_is_caught(self):
+        """**:red_circle: 红证（#4149 G9）** —— 换上「按角色白名单判」的实现，判据必须翻转。
+
+        翻转即判别力：`tenant_admin`（列进白名单、无码）被放行 + `operator`（持码、不在白名单）
+        被假拒绝 —— 与真实现逐条对照**两个方向都不同**，证明那两条断言不是恒绿的。
+        """
+        planted = _RoleListAsGateFixture()
+        real = _FakeCodedWithRoleList()
+        assert role_allowed(planted, "tenant_admin") is True, "病灶实现下 tenant_admin 会被放行"
+        assert role_allowed(planted, "operator") is False, "病灶实现下持码 operator 会被假拒绝"
+        assert [role_allowed(planted, r) for r in ("tenant_admin", "operator")] != [
+            role_allowed(real, r) for r in ("tenant_admin", "operator")
+        ], "病灶实现与真实现的判定完全相同 ⇒ 那两条判据没有判别力（空判据）"
 
     def test_role_list_lock_reports_a_coded_tool_with_a_role_list(self):
         assert coded_tools_carrying_a_role_list([_FakeCodedWithRoleList()]) == [
@@ -493,3 +542,277 @@ class TestGuardsAreNotVacuous:
             f"注册表只解析出 {len(coded)} 个带码工具（期望 ≥15）—— 判据会空转通过，请核对工具是否被改名/移除"
         )
         assert "category_manage" in tools, "`category_manage` 不见了（fail-closed）"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# ⑥ 单一真相源：镜像表必须对 **admin-api 源码**交叉核对（#4149 G8）
+# ──────────────────────────────────────────────────────────────────────────────
+#
+# `PERMISSION_CATALOG` / `ROLE_PERMISSIONS` 是 admin-api 源码的**手抄件**：没有源级核对时，
+# admin-api 改了某岗默认权限，本文件全绿而镜像腐烂 —— 而工具层正是按镜像推导放行集
+# ⇒ 腐烂即「持码被假拒绝 / 无码被放行」，且没有任何东西会红。
+# 先例（同款做法）：`test_permission_scope_injection.py` 的 `PERMISSION_LABELS` 源级核对。
+
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+_REGISTRATION_SERVICE = (
+    _REPO_ROOT / "backend/admin-api/src/main/java/com/migao/admin/service/RegistrationService.java"
+)
+_ROLE_SERVICE = (
+    _REPO_ROOT / "backend/admin-api/src/main/java/com/migao/admin/service/RoleService.java"
+)
+
+#: Java 权限目录行：`{"仪表板查看", "dashboard:view", "dashboard", "view", "查看数据概览"},`
+_JAVA_CATALOG_ROW_RE = re.compile(r'\{"[^"]+",\s*"([a-z][a-z_]*:[a-z_]+)"')
+#: `Role <var> = Role.builder() … .code("<role_code>") … .build();`
+_JAVA_ROLE_BUILDER_RE = re.compile(r'Role\s+(\w+)\s*=\s*Role\.builder\(\)(.*?)\.build\(\);', re.S)
+_JAVA_ROLE_CODE_RE = re.compile(r'\.code\("([a-z_]+)"\)')
+#: `attachDefaultPermissions(tenantId, <var>, List.of(…)|<x>.keySet(), permissionByCode);`
+_JAVA_ATTACH_RE = re.compile(
+    r"attachDefaultPermissions\(\s*tenantId\s*,\s*(\w+)\s*,\s*"
+    r"(List\.of\((?P<list>[^)]*)\)|(?P<all>[\w.]+\.keySet\(\)))\s*,",
+    re.S,
+)
+#: `case "<role>" -> List.of(…);`（RoleService 的硬编码回退）
+_JAVA_FALLBACK_RE = re.compile(r'case\s+"(\w+)"\s*->\s*List\.of\(([^)]*)\)', re.S)
+_JAVA_STRING_RE = re.compile(r'"([^"]+)"')
+
+#: 镜像里**刻意**登记为空集的角色（C 端角色 / admin-api 里不存在的幽灵角色）
+KNOWN_CODELESS_ROLES = ["agent", "customer", "tenant_admin"]
+
+
+def _read(path: Path) -> str:
+    return path.read_text(encoding="utf-8")
+
+
+def java_catalog_codes(text: str) -> frozenset:
+    """`RegistrationService` 的权限目录（`String[][] defaultPermissions = {…}`）里的码。"""
+    return frozenset(_JAVA_CATALOG_ROW_RE.findall(text))
+
+
+def java_seeded_role_permissions(text: str) -> dict:
+    """`attachDefaultPermissions(...)` 逐岗预置的默认码（**DB seed 口径**，新租户真值）。"""
+    var_to_code = {
+        m.group(1): code.group(1)
+        for m in _JAVA_ROLE_BUILDER_RE.finditer(text)
+        if (code := _JAVA_ROLE_CODE_RE.search(m.group(2)))
+    }
+    catalog = java_catalog_codes(text)
+    seeded: dict = {}
+    for m in _JAVA_ATTACH_RE.finditer(text):
+        role = var_to_code.get(m.group(1))
+        if role is None:
+            continue
+        seeded[role] = catalog if m.group("all") else frozenset(
+            _JAVA_STRING_RE.findall(m.group("list") or "")
+        )
+    return seeded
+
+
+def java_fallback_role_permissions(text: str) -> dict:
+    """`RoleService.getPermissionCodesForRole` 的硬编码回退（无 `role_permissions` 记录时）。"""
+    return {
+        m.group(1): frozenset(_JAVA_STRING_RE.findall(m.group(2)))
+        for m in _JAVA_FALLBACK_RE.finditer(text)
+    }
+
+
+def catalog_gaps(java_codes, mirror) -> list:
+    """目录 ↔ 镜像的差集（改名会同时表现为「镜像缺码」+「镜像多码」）。抽成纯函数以便喂夹具。"""
+    return sorted(
+        [f"镜像缺码:{c}" for c in java_codes if c not in mirror]
+        + [f"镜像多码:{c}" for c in mirror if c not in java_codes]
+    )
+
+
+def seeded_role_gaps(seeded: dict, mirror: dict) -> list:
+    """逐岗默认码 ↔ 镜像的差集（缺/多逐条列出）。`admin` 的通配语义由调用方单独核对。"""
+    gaps: list = []
+    for role, codes in seeded.items():
+        if role == "admin":
+            continue
+        have = mirror.get(role, frozenset())
+        gaps += [f"{role}:镜像缺码:{c}" for c in sorted(codes - have)]
+        gaps += [f"{role}:镜像多码:{c}" for c in sorted(have - codes)]
+    return sorted(gaps)
+
+
+def fallback_role_gaps(fallback: dict, mirror: dict) -> list:
+    """回退路径 ↔ 镜像：**回退里有、镜像里没有** = 工具层会对合法调用报「权限不足」（假拒绝）。"""
+    return sorted(
+        f"{role}:镜像缺码:{c}"
+        for role, codes in fallback.items() if role != "admin"
+        for c in sorted(codes - mirror.get(role, frozenset()))
+    )
+
+
+class TestRoleMirrorMatchesTheAdminApiSource:
+    """镜像表逐条对 admin-api 源码交叉核对（缺 / 多 / 改名都必须报出）。"""
+
+    def test_both_java_sources_are_parsed(self):
+        """fail-closed：抽不到内容 ⇒ 判据空跑，宁可红。"""
+        for path in (_REGISTRATION_SERVICE, _ROLE_SERVICE):
+            assert path.exists(), f"{path} 不见了 —— 真相源消失（fail-closed）"
+        registration, role_service = _read(_REGISTRATION_SERVICE), _read(_ROLE_SERVICE)
+        assert java_catalog_codes(registration), "`defaultPermissions` 一行都没抽到（正则或被扫目标变了）"
+        assert java_seeded_role_permissions(registration), "抽不到逐岗默认权限（fail-closed）"
+        assert java_fallback_role_permissions(role_service), "抽不到硬编码回退（fail-closed）"
+
+    def test_the_catalog_is_exactly_the_java_directory(self):
+        """18 码目录逐字一致：改名 ⇒ 「缺 + 多」同时出现。"""
+        gaps = catalog_gaps(java_catalog_codes(_read(_REGISTRATION_SERVICE)), PERMISSION_CATALOG)
+        assert gaps == [], (
+            f"`PERMISSION_CATALOG` 与 `RegistrationService.defaultPermissions` 不符：{gaps}"
+            "（镜像腐烂 ⇒ 工具层按错码授权）"
+        )
+
+    def test_seeded_role_defaults_match_the_mirror(self):
+        """五岗 seed 与镜像逐岗相等；`admin` 的 seed = 全量目录、镜像 = `*`（运行时通配）。"""
+        seeded = java_seeded_role_permissions(_read(_REGISTRATION_SERVICE))
+        assert set(seeded) == {"admin", "customer_service", "operator", "sales", "finance"}, (
+            f"admin-api 默认岗位集合变了：{sorted(seeded)} —— 镜像必须同步评审"
+        )
+        assert seeded["admin"] == java_catalog_codes(_read(_REGISTRATION_SERVICE)), (
+            "admin 岗位的 seed 必须预置全量目录（运行时 `getUserPermissions` 再折叠成 `*`）"
+        )
+        assert ROLE_PERMISSIONS["admin"] == frozenset({"*"}), (
+            "镜像里 admin 必须是运行时口径 `*`（`RoleService.getUserPermissions` 特判）"
+        )
+        gaps = seeded_role_gaps(seeded, ROLE_PERMISSIONS)
+        assert gaps == [], f"逐岗默认权限与镜像不符：{gaps}"
+
+    def test_the_hardcoded_fallback_is_covered_by_the_mirror(self):
+        """回退路径只能授予镜像认为该角色拥有的码（否则工具层假拒绝合法调用）。"""
+        fallback = java_fallback_role_permissions(_read(_ROLE_SERVICE))
+        gaps = fallback_role_gaps(fallback, ROLE_PERMISSIONS)
+        assert gaps == [], (
+            f"`RoleService.getPermissionCodesForRole` 的码不在镜像里：{gaps}"
+            "—— 这些角色在工具层会被判「权限不足」（F4 假拒绝形态）"
+        )
+
+    def test_no_mirrored_role_is_unknown_to_the_admin_api_source(self):
+        """反方向：镜像里持有码的角色必须来自两处源码之一；空集角色必须显式登记。"""
+        registration, role_service = _read(_REGISTRATION_SERVICE), _read(_ROLE_SERVICE)
+        known = set(java_seeded_role_permissions(registration)) | set(
+            java_fallback_role_permissions(role_service))
+        extra = sorted(r for r, codes in ROLE_PERMISSIONS.items() if codes and r not in known)
+        assert extra == [], (
+            f"镜像里这些角色持有权限码，但 admin-api 源码里根本没有它们：{extra}"
+            "（臆造角色 / 源码已删而镜像残留）"
+        )
+        codeless = sorted(r for r, codes in ROLE_PERMISSIONS.items() if not codes)
+        assert codeless == KNOWN_CODELESS_ROLES, (
+            f"无码角色集合变了：{codeless} —— C 端角色与幽灵角色必须逐个显式登记后才可加入"
+        )
+
+    def test_every_mirrored_role_code_exists_in_the_catalogue(self):
+        """镜像里不允许出现目录外的码（`*` 是运行时通配，不在目录里）。"""
+        unknown = sorted(
+            f"{role}:{code}" for role, codes in ROLE_PERMISSIONS.items()
+            for code in codes if code != "*" and code not in PERMISSION_CATALOG
+        )
+        assert unknown == [], f"镜像里出现了目录外的码：{unknown}"
+
+
+class TestRoleMirrorGuardIsNotVacuous:
+    """**:red_circle: 红证**（处方码夹具）+ **阴性负例**：源级核对必须能报出，也必须能不报。"""
+
+    #: 处方夹具：admin-api 把 operator 的默认码改了（含一个目录外的自造码），镜像没跟上
+    _PLANTED_TEXTS = {
+        "renamed_role_default": (
+            "String[][] defaultPermissions = {\n"
+            '        {"商品列表", "product:list", "product", "list", "x"}\n'
+            "};\n"
+            "Role operatorRole = Role.builder()\n"
+            '        .code("operator")\n'
+            "        .build();\n"
+            "attachDefaultPermissions(tenantId, operatorRole, "
+            'List.of("product:list", "wallet:payout"), permissionByCode);\n'
+        ),
+        "invented_catalog_code": (
+            "String[][] defaultPermissions = {\n"
+            '        {"钱包提现", "wallet:payout", "wallet", "payout", "x"}\n'
+            "};\n"
+        ),
+        "fallback_grants_a_code_the_mirror_lacks": (
+            "private List<String> getPermissionCodesForRole(String roleCode) {\n"
+            "    return switch (roleCode) {\n"
+            '        case "operator" -> List.of("wallet:payout");\n'
+            "        default -> List.of();\n"
+            "    };\n"
+            "}\n"
+        ),
+    }
+
+    def test_planted_java_true_source_is_parsed(self):
+        """夹具自证：处方源码必须先被解析出来（否则下面的红证是空跑）。"""
+        seeded = java_seeded_role_permissions(self._PLANTED_TEXTS["renamed_role_default"])
+        assert seeded == {"operator": frozenset({"product:list", "wallet:payout"})}, (
+            f"处方夹具没被解析出来：{seeded}"
+        )
+        assert java_catalog_codes(self._PLANTED_TEXTS["invented_catalog_code"]) == {"wallet:payout"}
+        assert java_fallback_role_permissions(
+            self._PLANTED_TEXTS["fallback_grants_a_code_the_mirror_lacks"]
+        ) == {"operator": frozenset({"wallet:payout"})}
+
+    def test_guard_reports_a_renamed_role_default(self):
+        """**:red_circle:** admin-api 改了某岗默认码而镜像没跟上 ⇒ 必须报出缺 + 多。"""
+        gaps = seeded_role_gaps(
+            java_seeded_role_permissions(self._PLANTED_TEXTS["renamed_role_default"]),
+            ROLE_PERMISSIONS,
+        )
+        assert "operator:镜像缺码:wallet:payout" in gaps, f"新码没被报出：{gaps}"
+        assert any(g.startswith("operator:镜像多码:") for g in gaps), (
+            f"被撤掉的码没被报出（只报新增 = 半个判据）：{gaps}"
+        )
+
+    def test_guard_reports_a_catalog_code_the_mirror_lacks(self):
+        """**:red_circle:** 目录里新增/改名一个码 ⇒ 必须报出「镜像缺码 + 镜像多码」。"""
+        gaps = catalog_gaps({"dashboard:view", "wallet:payout"}, PERMISSION_CATALOG)
+        assert "镜像缺码:wallet:payout" in gaps
+        assert any(g.startswith("镜像多码:") for g in gaps), (
+            "只报新增不报多余 ⇒ 改名会被当成两条无关变更（半个判据）"
+        )
+
+    def test_guard_reports_a_fallback_grant_the_mirror_lacks(self):
+        """**:red_circle:** 回退路径授予了镜像没有的码 ⇒ 必须报出（否则工具层假拒绝）。"""
+        gaps = fallback_role_gaps(
+            java_fallback_role_permissions(
+                self._PLANTED_TEXTS["fallback_grants_a_code_the_mirror_lacks"]),
+            ROLE_PERMISSIONS,
+        )
+        assert gaps == ["operator:镜像缺码:wallet:payout"], f"假拒绝形态未被报出：{gaps}"
+
+    def test_guard_reports_a_rotted_mirror_against_the_real_source(self):
+        """**:red_circle: 反向红证**：真源码不动、**镜像**被手改坏 ⇒ 同一条判据必须报出。
+
+        与处方 Java 夹具互补：那个证明「admin-api 改了能抓到」，这个证明「镜像被改坏了也能抓到」。
+        """
+        rotted = dict(
+            ROLE_PERMISSIONS,
+            operator=ROLE_PERMISSIONS["operator"] - {"processing:update"},
+            sales=ROLE_PERMISSIONS["sales"] | {"system:manage"},
+        )
+        gaps = seeded_role_gaps(
+            java_seeded_role_permissions(_read(_REGISTRATION_SERVICE)), rotted)
+        assert "operator:镜像缺码:processing:update" in gaps, f"镜像被删码没报出：{gaps}"
+        assert "sales:镜像多码:system:manage" in gaps, f"镜像被加码没报出：{gaps}"
+
+    def test_guard_does_not_flag_the_real_sources(self):
+        """**阴性负例**：当下真源码必须不报（防恒红 —— 镜像一旦腐烂才该红）。"""
+        registration, role_service = _read(_REGISTRATION_SERVICE), _read(_ROLE_SERVICE)
+        assert seeded_role_gaps(
+            java_seeded_role_permissions(registration), ROLE_PERMISSIONS) == []
+        assert fallback_role_gaps(
+            java_fallback_role_permissions(role_service), ROLE_PERMISSIONS) == []
+
+    def test_operator_seed_is_a_superset_of_the_hardcoded_fallback(self):
+        """登记的现实差异：seed（14 码）⊃ 回退（12 码，缺加工单查看/操作）。
+
+        镜像取 **seed 口径**（新租户真值，`V29`/`V32`/`V43` 对存量租户补齐）⇒
+        回退是它的子集；本断言把这条关系钉住，防「回退悄悄比 seed 更宽」被当成等价。
+        """
+        seeded = java_seeded_role_permissions(_read(_REGISTRATION_SERVICE))["operator"]
+        fallback = java_fallback_role_permissions(_read(_ROLE_SERVICE))["operator"]
+        assert fallback < seeded, (
+            f"回退不再是 seed 的真子集（seed={sorted(seeded)} / fallback={sorted(fallback)}）"
+            "—— 这两个口径的差异必须重新评审后再改镜像"
+        )

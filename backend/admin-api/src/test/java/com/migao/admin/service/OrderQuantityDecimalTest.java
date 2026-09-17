@@ -246,10 +246,12 @@ class OrderQuantityDecimalTest {
     @Test
     @DisplayName("Agent 路径端到端：小数数量 8.4 经 createOrderForAgent 透传落库且小计按原值重算")
     void agentPathKeepsDecimalQuantity() {
-        AgentOrderCreateRequest.AgentOrderItem agentItem = new AgentOrderCreateRequest.AgentOrderItem();
+        OrderCreateRequest.OrderItemRequest agentItem = new OrderCreateRequest.OrderItemRequest();
         agentItem.setProductName("刺绣窗帘");
         agentItem.setQuantity(new BigDecimal("8.4"));
         agentItem.setUnitPrice(new BigDecimal("100.00"));
+        // subtotal 必填（issue #4089 收敛）；server 侧仍按 quantity × unitPrice 重算（见用例断言）
+        agentItem.setSubtotal(new BigDecimal("840.00"));
         agentItem.setWidth(new BigDecimal("2.8"));
         agentItem.setHeight(new BigDecimal("3.0"));
         agentItem.setProcessingInfo(processingInfo(processingItem("刺绣工艺", "30.00", "8.4", "per_area", "252.00")));
