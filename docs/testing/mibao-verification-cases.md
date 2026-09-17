@@ -746,11 +746,12 @@
 ```
 你: 帮我查一下最近订单到哪了
 你: 这个窗帘褶皱倍数算得不对
-数据: order_query/quote 等明确业务意图即使含情绪词也不 offer（judge 白名单）
-数据: 正常咨询不出现 interact 建议卡片
+期望: order_query
+数据: （散文、**不计分**）order_query/quote 等明确业务意图即使含情绪词也不 offer（judge 白名单）
+数据: （散文、**不计分**）正常咨询不出现 interact 建议卡片 —— runner 现有能力**判不了「否」**：`handoff_offer` 节点的建议卡只走 interactive 事件（无 tool_call），而 runner 只有「卡片必须出现」的正向断言（`_interactive_satisfies`），没有「某类卡不得出现」的形态 ⇒ 该真值仍留在散文，不冒充已断言（能力缺口形态同 CH-001 的 suggestion 项）。
 ```
 真值: ai-chat.handoff-offer
-溯源: xiaobu-ai-handoff-guidance.md 意图过滤防打断 ｜ tags: handoff, non_interrupt
+溯源: xiaobu-ai-handoff-guidance.md 意图过滤防打断；2026-09-18 #4099：补机器计分项 expectations[order_query]（原只有纯散文 ⇒ 恒绿空断言），真值=「明确业务意图必须真的被服务」；「不弹建议卡」那半如实留在散文（runner 无负向卡片断言能力） ｜ tags: handoff, non_interrupt
 
 ### CH-017. 转人工携带 AI 对话上下文 - 客服工作台可见转人工前对话（GB/T 47746-2026 对齐） 🔵
 ```

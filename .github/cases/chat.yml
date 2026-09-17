@@ -750,12 +750,28 @@ cases:
     user_inputs:
       - "帮我查一下最近订单到哪了"
       - "这个窗帘褶皱倍数算得不对"
-    expectations: []
+    # 机器计分项（#4099）：本用例原先只有**纯散文** data_checks ⇒ `scoring_assertion_count = 0`
+    # ⇒ `score = 1.0` 恒绿（命中 CASE-TRUST-EMPTY-ASSERTION，同族空断言的「恒绿」一支）。
+    # 补的是「明确业务意图必须被**真的服务**」这条正向真值：顾客说「查订单」⇒ 必须真发起订单查询，
+    # 而不是把话头打断/推给人工（防打断的机器可判形态，语义与标题一致）。
+    # 可判红：该 expectation 的失败形态就是真跑日志里的 `unmatched expectation: order_query`
+    #   （同 CH-001 在 run 34650006175 的 `❌ product_search → unmatched expectation`）——
+    #   「agent 压根没查单」⇒ 红、score 归零；不是恒真项。
+    # 两腿都命中：runner 在 xiaobu 腿把 `order_query` 改写为 `customer_order_query`
+    #   （`check_expectation` 的 `PERSONA == "xiaobu"` 分支）；真跑证据：同类「查单」意图在
+    #   mibao 腿确实打出 `tools=['order_query', …]`（run 34650006175 的 CH-011 逐字）。
+    # 为什么**不**声明 args 值级 / `output_verify`（更强形态）：`order_query`（B 端，有 action）
+    #   与 `customer_order_query`（C 端）的 schema 不同，且映射只发生在 **expectation 层**
+    #   （`must_succeed` 不映射）⇒ 值级/效果层声明会**在一腿上假红**；要落先得取两腿种子真值。
+    # 判别力边界（照实登记，不冒充已覆盖）：存在性级 —— 证「有查单」，**不**证「查单成功/结果正确」。
+    expectations:
+      - tool: order_query
     data_checks:
-      - "order_query/quote 等明确业务意图即使含情绪词也不 offer（judge 白名单）"
-      - "正常咨询不出现 interact 建议卡片"
+      # 原两条都是纯散文（**不计分**）—— 保留语义，并如实标注它们**没有被机器断言**：
+      - "（散文、**不计分**）order_query/quote 等明确业务意图即使含情绪词也不 offer（judge 白名单）"
+      - "（散文、**不计分**）正常咨询不出现 interact 建议卡片 —— runner 现有能力**判不了「否」**：`handoff_offer` 节点的建议卡只走 interactive 事件（无 tool_call），而 runner 只有「卡片必须出现」的正向断言（`_interactive_satisfies`），没有「某类卡不得出现」的形态 ⇒ 该真值仍留在散文，不冒充已断言（能力缺口形态同 CH-001 的 suggestion 项）。"
     skip_reason: ""
-    merge_log: "xiaobu-ai-handoff-guidance.md 意图过滤防打断"
+    merge_log: "xiaobu-ai-handoff-guidance.md 意图过滤防打断；2026-09-18 #4099：补机器计分项 expectations[order_query]（原只有纯散文 ⇒ 恒绿空断言），真值=「明确业务意图必须真的被服务」；「不弹建议卡」那半如实留在散文（runner 无负向卡片断言能力）"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_handoff_judge.py"
