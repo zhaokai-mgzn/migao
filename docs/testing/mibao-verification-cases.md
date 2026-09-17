@@ -512,7 +512,7 @@
 真值: category-manage.delete, category-manage.delete-destructive, ai-chat.confirm-required
 溯源: verification 2.12 独有（二次确认行为在测试中未确认，见 category-manage.yml 缺口注释） ｜ tags: delete, destructive, confirm
 
-## 对话边界域（35 case）
+## 对话边界域（36 case）
 
 ### CH-001. 空结果 + suggestion 引导修复 🔴
 ```
@@ -1024,6 +1024,19 @@
 ```
 真值: ai-chat.context-memory
 溯源: 2026-09-14 新增（issue #3558 覆盖体检）：C 端长期记忆覆盖仅 1 条（CH-024 且其跨会话结论不可判定），补跨会话生效的独立用例 ｜ tags: memory, xiaobu, long_term, personalization, cross_session
+
+### CH-037. 窗帘下单澄清清单引擎（必填/默认三层/矛盾拦截/轮次上限，单测覆盖） 🔵
+```
+你: 帮我家客厅做窗帘，大概要多少钱
+期望: direct_reply
+数据: 尺寸（宽/高）缺失必须追问（必填检测）——不阻塞，缺省即报
+数据: 默认三层合成：客户记忆 > 商家配置 > 行业标准（布帘默认定型/纱帘默认不定型、≤2.2m 单开/>2.2m 双开）
+数据: 矛盾拦截：4.6m 单开→建议双开、折数不可整除自动调整、倍数<1.5 拒绝、打孔不按折数
+数据: 每轮追问 ≤3 项；超过 3 轮转复尺/人工
+跳过: 澄清清单引擎是确定性纯函数（app/clarification/curtain_checklist.py），由单元测试全量覆盖（test_curtain_checklist.py），非 LLM 行为，不进入 agent-eval 冒烟（同 CH-036 惯例）
+```
+真值: ai-chat.intent-domains
+溯源: 2026-09-17 新增（issue #3986）：M3-E 窗帘下单澄清清单引擎覆盖登记，单测覆盖 ｜ tags: xiaobu, clarification, curtain
 
 ## 跨域（3 case）
 
@@ -4080,14 +4093,14 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：300（活跃 152，跳过 148）
-- tier 分布：smoke 9 / normal 258 / adversarial 33
+- 用例总数：301（活跃 152，跳过 149）
+- tier 分布：smoke 9 / normal 259 / adversarial 33
 - 售后域：9
 - agents：6
 - api：19
 - bmini：5
 - 分类域：3
-- 对话边界域：35
+- 对话边界域：36
 - 跨域：3
 - 客户域：8
 - 数据域：10
