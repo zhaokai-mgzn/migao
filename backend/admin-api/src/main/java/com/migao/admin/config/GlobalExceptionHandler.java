@@ -2,6 +2,8 @@ package com.migao.admin.config;
 
 import com.migao.admin.dto.ApiResponse;
 import com.migao.admin.exception.BusinessException;
+import com.migao.admin.exception.PermissionDeniedException;
+import com.migao.admin.security.PermissionDeniedResponse;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
@@ -110,12 +112,19 @@ public class GlobalExceptionHandler {
 
     /**
      * 处理访问拒绝异常
+     *
+     * <p>{@code @RequirePermission} 拒绝时抛出的是 {@link PermissionDeniedException}，其
+     * {@code requiredPermission} 是结构化字段（不再解析异常 message）：权限码会进
+     * {@code error.message} 与 {@code error.details}，并由 {@link PermissionDeniedResponse}
+     * 附上「不要重试同一工具 + 找管理员授权」的可执行 suggestion（issue #4105 F1）。</p>
      */
     @ExceptionHandler(AccessDeniedException.class)
     public ResponseEntity<ApiResponse<Void>> handleAccessDeniedException(AccessDeniedException e) {
-        log.warn("权限不足: {}", e.getMessage());
-        ApiResponse<Void> response = ApiResponse.error("PERMISSION_DENIED", "权限不足");
-        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(response);
+        String requiredPermission = e instanceof PermissionDeniedException denied
+                ? denied.getRequiredPermission() : null;
+        log.warn("权限不足: {} (requiredPermission={})", e.getMessage(), requiredPermission);
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .body(PermissionDeniedResponse.of(requiredPermission));
     }
 
     /**

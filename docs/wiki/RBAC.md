@@ -72,14 +72,42 @@ users.permissions (JSON 权限码)               （员工权限快照：员工�
 | AI Tool | `required_permissions`（与 admin-api 权限目录**同源**）+ 工具内按 action 二次校验（如 `employee_manage`：查询需 employee:list，写操作需 employee:create）。覆盖范围随 #4106 铺开：此前仅 `employee_manage` 声明，其余工具只有 `allowed_roles` 角色粗筛 |
 | 前端 | `lib/permission.ts usePermission()`：菜单过滤 + `(dashboard)/layout.tsx` 路由守卫 + 员工页按钮级权限 |
 
-## 权限码矩阵与已知缺口
+## 服务间调用的授权边界（ai-agent → admin-api，issue #4105）
 
-**客服（customer_service）没有 `order:refund`，而售后只读端点也要求该码**（#4104 登记）：
-`AfterSalesController` 与 `agent/AgentAfterSalesController` 是**类级** `@RequirePermission("order:refund")`，
-连只读端点一并覆盖 ⇒ 客服在 admin-web 打开售后页长期 403，米宝侧只是把这个 403 藏在工具失败里
-（agent 路径"看不见"不等于不存在）。**该矩阵缺口的修复本轮刻意不做**（用户裁定，超出 #4103 范围）；
-写越权用例时请避开售后这一格 —— 用角色**从来就没有**的权限码（如 `employee:create` / `system:manage`）
-才能得到无歧义的"拒绝"语义。
+ai-agent 调用 admin-api **始终**带 `X-Service-Token` + `X-Tenant-Id` + `X-User-Id`。
+`ServiceTokenFilter` 按 `X-User-Id` 分两种身份，**这是安全边界，不得回退**：
+
+| `X-User-Id` | 认证身份 | 细粒度鉴权 |
+|---|---|---|
+| 命中**本租户商户员工**（行存在且未软删、`status=active`、租户一致、角色 ∉ {customer, agent}） | 该员工的**真实角色**（不再挂 `service`） | **生效** —— `@RequirePermission` + `roleService.getUserPermissions(realUserId)` |
+| 其余（无 `X-User-Id` / C 端 customer·agent / 跨租户 / 查不到用户） | 内部服务 `service`（今日行为） | 直通（无细粒度校验） |
+
+- 商户员工判定口径与 `UserMapper.selectActiveEmployeesByPhoneIgnoreTenant`（SQL `role NOT IN ('customer','agent')`）、
+  `AuthService.validateBminiEmployee`、`UserService` 员工管理「排除 C 端消费者」**同源**，不另造第二套。
+- 查库异常时回退 `service` 身份**并记 ERROR**：调用方已持有可信 `SERVICE_TOKEN`（可信内部服务，非不可信第三方），
+  失败回退不构成提权；留痕用于区分「查失败」与「查不到」。
+- ⚠️ 判定必须在 `TenantContext` 就绪**之后**执行（`users` 表不在 `MybatisPlusConfig.IGNORE_TENANT_TABLES` 内，
+  `TenantLineHandler` 在租户上下文为空时会抛错）——顺序写反会被上面的 fallback 吞成**静默失效**：
+  F2 全绿的单测/E2E 都 mock 了 Mapper，看不出来。守卫：
+  `ServiceTokenFilterTest.merchantStaffLookup_runsAfterTenantContextIsSet` 断言「查库那一刻的 TenantContext」。
+- 403 响应体（两条入口同一口径，`PermissionDeniedResponse`）：`error.code=PERMISSION_DENIED`、
+  `error.message` 含缺失权限码、`error.details[0]={field:"requiredPermission"}`，并带
+  **LLM 可执行 `suggestion`**（说明这是角色/权限限制、不是参数问题、不要重试同一工具、请管理员在「岗位权限」中授权）。
+
+> ⚠️ 内置岗位默认权限存在缺口（如 `customer_service` 默认权限不含 `order:refund`，而售后接口类级要求它）：
+> 此前被服务间旁路掩盖，F2 生效后客服驱动米宝处理售后会被 403。属**岗位权限矩阵**问题，见 #4104 后续修复；
+> `operator` 已有 `order:refund`，运营驱动的 B 端链路不受影响。
+
+## 写越权用例时的取值纪律（#4104 登记）
+
+岗位权限矩阵的存量缺口（如 `customer_service` 默认权限不含 `order:refund`，而 `AfterSalesController` /
+`agent/AgentAfterSalesController` 是**类级** `@RequirePermission("order:refund")`，连只读端点一并覆盖，
+详见上方缺口说明与 #4104）修复本轮刻意不做（用户裁定，超出 #4103 范围）。
+
+⇒ 编写"越权被拒"类评测用例时请**避开售后这一格**：它同时受"岗位矩阵缺口"影响，拒绝语义有歧义。
+用角色**从来就没有**的权限码（如 `employee:create` / `system:manage`）才能得到无歧义的"拒绝"语义，
+并且必须配一条**正向对照**用例（持该码时同一诉求应成功），否则无法区分"正确拒绝"与"整条链路坏了”。
+
 
 ## 菜单过滤
 
@@ -94,7 +122,8 @@ users.permissions (JSON 权限码)               （员工权限快照：员工�
 | 小程序 | `/api/auth/mini/login` | wx.login() → code → JWT（角色 customer，禁止访问 /api/admin/**） |
 | 管理后台 | `/api/auth/admin/login` | 短信验证码 → JWT（密码登录已禁用 #375） |
 | 公众号H5 | `/api/auth/h5/authorize` | OAuth 2.0 → code → JWT |
-| 服务间 | `X-Service-Token` | ServiceTokenFilter → ROLE_SERVICE；**带 `X-User-Id` 且该用户为同租户商户员工时不再直通**，按该员工真实角色走 `PermissionInterceptor` 细粒度强控（#4105）；其余情形（无 X-User-Id / C 端顾客 / 非本租户 / 查库异常）维持直通 |
+| 服务间 | `X-Service-Token` | ServiceTokenFilter：`X-User-Id` 命中本租户商户员工 → 挂真实角色走细粒度鉴权；否则 ROLE_SERVICE 直通（见「服务间调用的授权边界」） |
+
 
 ---
 详见: [部署](Deployment.md) · [API 参考](../api/api-reference.md)

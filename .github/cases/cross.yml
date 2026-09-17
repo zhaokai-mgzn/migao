@@ -170,6 +170,14 @@ cases:
       # 不确定的那一件上）。保留最早创建的（= 种子）。
       - type: product_dedupe
         product_keyword: "遮光窗帘"
+    # 前置自断言（§18.4，同 OR-014/OR-015 先例；issue #4046 的 OR-* 优先档 burn-down）：
+    # 本用例按名定位下单对象（遮光窗帘），「该名字唯一」是它依赖的可判定前置 ——
+    # `product_dedupe` 先于 capture 执行 ⇒ 捕获时恰为 1；出副本时折成
+    # `PRECONDITION_NOT_APPLIED`，不再伪装成「agent 不下单」。
+    precondition:
+      - type: product_count_for_keyword
+        source: "遮光窗帘"
+        expect: 1
     # 全局命名空间声明（issue #3781）：与同样争用该全局资源的用例自动互斥，
     # 消除「同栈并行用例互相写同一命名空间」造成的非确定性（真实 run 34856561459）。
     namespaces:
@@ -188,7 +196,7 @@ cases:
       - "订单创建成功并包含 SKU 信息"
       - "第7步自动找到刚创建的订单"
     skip_reason: ""
-    merge_log: "eval M007 独有（物流查询是旅程一环，独立用例见 OR-005）。2026-09-14 消除顺序依赖（issue #3568）：① 「看看第一个的详情」→ 点名「遮光窗帘」（推荐列表返回顺序依赖，同 OR-024 #3408）；② 色号「白色」→ 种子真实色号「米白」；③ 收尾裸文本「确认下单/确认」→ 答卡轮（#3518 口径）；④ 补 pre_clean product_dedupe + must_succeed[order_create]"
+    merge_log: "eval M007 独有（物流查询是旅程一环，独立用例见 OR-005）。2026-09-14 消除顺序依赖（issue #3568）：① 「看看第一个的详情」→ 点名「遮光窗帘」（推荐列表返回顺序依赖，同 OR-024 #3408）；② 色号「白色」→ 种子真实色号「米白」；③ 收尾裸文本「确认下单/确认」→ 答卡轮（#3518 口径）；④ 补 pre_clean product_dedupe + must_succeed[order_create]；2026-09-18 补前置自断言 precondition[product_count_for_keyword 遮光窗帘 expect=1]（issue #4046 的 OR-* 优先档 burn-down）"
     traces:
       tests:
         - "backend/ai-agent-service/tests/manual/mibao_scenarios.py"

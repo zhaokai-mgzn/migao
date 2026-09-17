@@ -1173,7 +1173,7 @@
 载荷(全场可用): customer_name=张三, customer_phone=13800138000, customer_address=浙江省杭州市西湖区文三路 1 号 1 幢 101 室
 ```
 真值: ai-chat.context-memory, ai-chat.intent-domains, order.states, order.logistics, id-resolve.index
-溯源: eval M007 独有（物流查询是旅程一环，独立用例见 OR-005）。2026-09-14 消除顺序依赖（issue #3568）：① 「看看第一个的详情」→ 点名「遮光窗帘」（推荐列表返回顺序依赖，同 OR-024 #3408）；② 色号「白色」→ 种子真实色号「米白」；③ 收尾裸文本「确认下单/确认」→ 答卡轮（#3518 口径）；④ 补 pre_clean product_dedupe + must_succeed[order_create] ｜ tags: multi_turn, real_scenario, cross_skill, full_journey
+溯源: eval M007 独有（物流查询是旅程一环，独立用例见 OR-005）。2026-09-14 消除顺序依赖（issue #3568）：① 「看看第一个的详情」→ 点名「遮光窗帘」（推荐列表返回顺序依赖，同 OR-024 #3408）；② 色号「白色」→ 种子真实色号「米白」；③ 收尾裸文本「确认下单/确认」→ 答卡轮（#3518 口径）；④ 补 pre_clean product_dedupe + must_succeed[order_create]；2026-09-18 补前置自断言 precondition[product_count_for_keyword 遮光窗帘 expect=1]（issue #4046 的 OR-* 优先档 burn-down） ｜ tags: multi_turn, real_scenario, cross_skill, full_journey
 
 ## 客户域（8 case）
 
@@ -2220,7 +2220,7 @@
 真值: ai-chat.context-memory
 溯源: 2026-09-04 新增：issue #2821 延续切片 C（vision 分析落槽 + base_skill 接线） ｜ tags: ontology, vision, context_memory, grounding, base_skill
 
-## 订单域（29 case）
+## 订单域（30 case）
 
 ### OR-001. 订单列表查询 🟢
 ```
@@ -2782,6 +2782,24 @@
 ```
 真值: order.create-flow, ai-chat.confirm-required
 溯源: 2026-09-18 新增（#4082 用例库维护 / 行为变更 S2 = #4073 @b6327160）：validate_input 校验失败禁止写落成代码闸门，此前 B 端无对应用例（C 端拒绝半见 OR-026）。机器判据三条：expectations[validate_input]（写前校验真的执行）+ required_args[validate_input: target_tool/target_action]（闸门按 tool::action 建账，校验带目标才武装）+ must_fail[order_create.args.customer_phone=05718886666]（参数值级：非法号不得落单；值级作用域由 #3689 落地）。**能力边界如实登记**：现有 runner 无法断言 tool_result 级 error code（error.code= 只读轮级 SSE error），故本用例**不**证明闸门拦下了写 —— 该能力缺口已开独立 issue，未写任何「看起来断言了」的假断言。pre_clean/namespaces 与 OR-015 同源（同商品 + 同 pre_clean 关键词）；precondition[product_count_for_keyword 遮光窗帘 expect=1] 为真前置自断言 ｜ tags: order_create, validate_input, rejection, defense
+
+### OR-031. 下单闭环（冒烟档）- 一句话给定商品/规格/客户 ⇒ 确认卡点击后必须真实落库 🟢
+```
+你: 给我下单：遮光窗帘，米白｜散剪｜2.8米门幅，3 米；客户张三 13800138000，收货地址浙江省杭州市西湖区文三路1号1幢101室
+你: [🔁 按目标工具重复直至成功：order_create，最多 3 次]
+期望: interact(component=confirm)
+期望: order_create
+数据: 确认卡点击后 order_create 必须真实执行并落库（机器断言见 must_succeed + db_verify[order_items/order_phone]：明细「遮光窗帘」×3 + 落库手机号 13800138000）—— 冒烟档只验主链路「成了没有」，金额/加工项细则由 normal 档承担
+数据: 确认卡必须先于写操作下发（order_before[interact[confirm] before order_create]）：#3976 线上实证的『空头承诺』形态（模型说已发卡/这就提交，实际无卡可点、订单永不落库）在冒烟档即判红
+清理: product_dedupe(product_keyword=遮光窗帘)
+时序: interact[confirm] before order_create
+必填: order_create() 字段 customer_phone, items
+必须成功: order_create
+落库: order_items → source=order_create; expect_products=['遮光窗帘']; expect_quantities={'遮光窗帘': 3}
+落库: order_phone → source=order_create; expect_phone=13800138000
+```
+真值: order.create-flow, order.states
+溯源: 2026-09-18 新增（用户裁定 2 / F17 / issue #4095）：冒烟档补下单用例 —— 此前冒烟档 9 条全只读、订单域唯一 OR-001 是列表查询 ⇒ 主链路零覆盖。persona=mibao（代客下单免验证码，链路最短）；一句话给全 + repeat_until 协作轮（有卡答卡，成功即停）；断言 = must_succeed[order_create] + db_verify[order_items/order_phone] + order_before[interact[confirm] before order_create] + required_args；自清理 product_dedupe + precondition[product_count_for_keyword expect=1] + namespaces（商品名/手机号）。未新增任何自动触发（裁定 2′/4′）。 ｜ tags: order_create, smoke, write
 
 ## 加工项域（11 case）
 
@@ -4300,8 +4318,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：315（活跃 159，跳过 156）
-- tier 分布：smoke 9 / normal 273 / adversarial 33
+- 用例总数：316（活跃 160，跳过 156）
+- tier 分布：smoke 10 / normal 273 / adversarial 33
 - 售后域：9
 - agents：6
 - api：19
@@ -4318,7 +4336,7 @@
 - misc：15
 - onboarding：5
 - ontology：4
-- 订单域：29
+- 订单域：30
 - 加工项域：11
 - processing-order：18
 - 商品域：25

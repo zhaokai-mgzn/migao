@@ -1678,6 +1678,7 @@ _CASE_CR_003 = EvalCase(
     must_succeed=[{'tool': 'order_create'}],
     pre_clean=[{'type': 'product_dedupe', 'product_keyword': '遮光窗帘'}],
     namespaces=['customer_phone:13800138000', 'product_name:遮光窗帘'],
+    precondition=[{'type': 'product_count_for_keyword', 'source': '遮光窗帘', 'expect': 1}],
     auto_fill={'customer_name': '张三', 'customer_phone': '13800138000', 'customer_address': '浙江省杭州市西湖区文三路 1 号 1 幢 101 室'},
 )
 
@@ -3848,6 +3849,31 @@ _CASE_OR_030 = EvalCase(
     must_fail=[{'tool': 'order_create', 'args': {'customer_phone': '05718886666'}}],
     pre_clean=[{'type': 'product_dedupe', 'product_keyword': '遮光窗帘'}],
     namespaces=['customer_phone:05718886666', 'product_name:遮光窗帘'],
+    precondition=[{'type': 'product_count_for_keyword', 'source': '遮光窗帘', 'expect': 1}],
+)
+
+# ── OR-031 [SMOKE] 下单闭环（冒烟档）- 一句话给定商品/规格/客户 ⇒ 确认卡点击后必须真实落库（源: cases/order.yml）──
+_CASE_OR_031 = EvalCase(
+    id='OR-031',
+    legacy_id='',
+    title='下单闭环（冒烟档）- 一句话给定商品/规格/客户 ⇒ 确认卡点击后必须真实落库',
+    skill=Skill.ORDER,
+    difficulty=Difficulty.SMOKE,
+    user_inputs=['给我下单：遮光窗帘，米白｜散剪｜2.8米门幅，3 米；客户张三 13800138000，收货地址浙江省杭州市西湖区文三路1号1幢101室', {'repeat_until': {'tool_called': 'order_create', 'max': 3}, 'code': '123456', 'fallback': '确认下单', 'form_values': {'customer_name': '张三', 'customer_phone': '13800138000', 'customer_address': '浙江省杭州市西湖区文三路1号1幢101室', 'color': '米白', 'colorName': '米白'}}],
+    expectations=['interact(component=confirm)', 'order_create'],
+    data_checks=['确认卡点击后 order_create 必须真实执行并落库（机器断言见 must_succeed + db_verify[order_items/order_phone]：明细「遮光窗帘」×3 + 落库手机号 13800138000）—— 冒烟档只验主链路「成了没有」，金额/加工项细则由 normal 档承担', '确认卡必须先于写操作下发（order_before[interact[confirm] before order_create]）：#3976 线上实证的『空头承诺』形态（模型说已发卡/这就提交，实际无卡可点、订单永不落库）在冒烟档即判红'],
+    skip_reason='',
+    tags=['order_create', 'smoke', 'write'],
+    persona='mibao',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    order_before=['interact[confirm] before order_create'],
+    required_args=[{'tool': 'order_create', 'fields': ['customer_phone', 'items']}],
+    must_succeed=[{'tool': 'order_create'}],
+    db_verify=[{'fetch': 'order_items', 'source': 'order_create', 'expect_products': ['遮光窗帘'], 'expect_quantities': {'遮光窗帘': 3}}, {'fetch': 'order_phone', 'source': 'order_create', 'expect_phone': '13800138000'}],
+    pre_clean=[{'type': 'product_dedupe', 'product_keyword': '遮光窗帘'}],
+    namespaces=['product_name:遮光窗帘', 'customer_phone:13800138000'],
     precondition=[{'type': 'product_count_for_keyword', 'source': '遮光窗帘', 'expect': 1}],
 )
 
@@ -6190,6 +6216,7 @@ ALL_CASES = (
     _CASE_OR_028,
     _CASE_OR_029,
     _CASE_OR_030,
+    _CASE_OR_031,
     _CASE_PG_001,
     _CASE_PG_002,
     _CASE_PG_003,

@@ -1,5 +1,6 @@
 package com.migao.admin.security;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
@@ -45,6 +46,8 @@ public class SecurityConfig {
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
     private final ServiceTokenFilter serviceTokenFilter;
     private final UserDetailsService userDetailsService;
+    /** 403 响应体序列化（与 @RequirePermission 拒绝同一份措辞，issue #4105 F1）。 */
+    private final ObjectMapper objectMapper;
 
     /**
      * CORS 允许的域名列表（从 .env / 环境变量注入，支持 Spring 属性解析）
@@ -172,11 +175,13 @@ public class SecurityConfig {
                                     "{\"success\":false,\"error\":{\"code\":\"UNAUTHORIZED\",\"message\":\"未认证，请先登录\"}}");
                         })
                         // 已认证但角色不足时返回统一的 403 JSON（与 401 结构一致）
+                        // 响应体走 PermissionDeniedResponse（issue #4105 F1）：与 @RequirePermission
+                        // 拒绝同一个 error.code / suggestion 口径，不再手写裸 JSON
                         .accessDeniedHandler((request, response, accessDeniedException) -> {
                             response.setStatus(HttpServletResponse.SC_FORBIDDEN);
                             response.setContentType("application/json;charset=UTF-8");
-                            response.getWriter().write(
-                                    "{\"success\":false,\"error\":{\"code\":\"FORBIDDEN\",\"message\":\"权限不足，禁止访问\"}}");
+                            objectMapper.writeValue(response.getWriter(),
+                                    PermissionDeniedResponse.of(null));
                         })
                 );
 
@@ -193,6 +198,10 @@ public class SecurityConfig {
      *   <li>其余角色视为商户员工角色（含角色管理创建的自定义角色）：允许进入管理后台，
      *       具体接口能否访问由 {@code @RequirePermission} + {@link PermissionInterceptor} 按权限码细粒度校验。</li>
      * </ul>
+     *
+     * <p>注意（issue #4105 F2）：携带 Service Token 且 {@code X-User-Id} 命中**本租户商户员工**的调用
+     * 不再挂 {@code service} 角色（见 {@link ServiceTokenFilter}），因此走的是第三条分支 ——
+     * 由 {@code @RequirePermission} 真正校验该员工权限，而不是在这里被整段放行。</p>
      */
     @Bean
     public AuthorizationManager<RequestAuthorizationContext> adminApiAuthorizationManager() {
