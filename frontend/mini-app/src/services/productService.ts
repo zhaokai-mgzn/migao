@@ -76,6 +76,19 @@ export async function getMyTickets(size = 5): Promise<MiniTicket[]> {
   }))
 }
 
-export default { getMyOrders, getMyTickets }
+/**
+ * 收款二维码（支付页展示，issue #3990）
+ * GET /api/chat/payment-qrcodes → {wechat: {image_url, payee_name}, alipay: {...}}
+ */
+export async function getPaymentQrcodes(): Promise<Record<string, { image_url?: string; payee_name?: string }>> {
+  const res = await get<ApiResponse<Record<string, { image_url?: string; payee_name?: string }>>>(
+    '/api/chat/payment-qrcodes',
+    { baseURL: AI_API_BASE_URL },
+  )
+  if (!res.success || !res.data) return {}
+  return res.data
+}
+
+export default { getMyOrders, getMyTickets, getPaymentQrcodes }
 
 

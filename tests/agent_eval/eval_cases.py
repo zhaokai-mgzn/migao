@@ -4851,6 +4851,24 @@ _CASE_ST_010 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── ST-011 [NORMAL] 企业收款二维码（微信/支付宝）C 端支付页展示与平台不经手资金（二清规避）（源: cases/settings.yml）──
+_CASE_ST_011 = EvalCase(
+    id='ST-011',
+    legacy_id='',
+    title='企业收款二维码（微信/支付宝）C 端支付页展示与平台不经手资金（二清规避）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['我支付这笔订单，怎么付款'],
+    expectations=['direct_reply'],
+    data_checks=['C 端支付页展示收款码（/chat/payment-qrcodes 精简字段 image_url/payee_name）+ 应付金额 + 微信/支付宝切换', '页面注明「款项直接支付给商家」（平台不经手资金，二清规避）', '商家设置端 PUT /api/admin/settings/payment-qrcodes/{type} upsert（wechat/alipay 各一张，非法类型拒绝）—— 由 SettingsControllerTest MockMvc 覆盖', '无收款码时展示降级提示（PaymentCard 空态）'],
+    skip_reason='',
+    tags=['settings', 'payment'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── TR-001 [NORMAL] refresh-success — 401 自动刷新并重放原请求（源: cases/token-refresh.yml）──
 _CASE_TR_001 = EvalCase(
     id='TR-001',
@@ -5988,6 +6006,7 @@ ALL_CASES = (
     _CASE_ST_008,
     _CASE_ST_009,
     _CASE_ST_010,
+    _CASE_ST_011,
     _CASE_TR_001,
     _CASE_TR_002,
     _CASE_TR_003,

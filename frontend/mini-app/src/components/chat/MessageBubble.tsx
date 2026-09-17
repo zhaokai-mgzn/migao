@@ -8,6 +8,7 @@ import LogisticsCard from '../cards/LogisticsCard'
 import KnowledgeCard from '../cards/KnowledgeCard'
 import OrderCard from '../cards/OrderCard'
 import QuotationCard from '../cards/QuotationCard'
+import PaymentCard from '../cards/PaymentCard'
 import ConfirmCard from '../cards/ConfirmCard'
 import ChoiceCard from '../cards/ChoiceCard'
 import FormCard from '../cards/FormCard'
@@ -120,6 +121,11 @@ function renderCard(card: CardData, idx: number, onInteract?: (value: string) =>
           onConfirm={onInteract ? () => onInteract('我要下单') : undefined}
         />
       )
+    }
+
+    case 'payment': {
+      // 收款二维码卡片（扫码直接付给商家，issue #3990）
+      return <PaymentCard key={`card-${idx}`} data={data} />
     }
 
     default:

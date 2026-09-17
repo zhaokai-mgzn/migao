@@ -1,0 +1,88 @@
+@use '../../styles/variables.scss' as *;
+
+.payment-card {
+  padding: 20px;
+  border-radius: $radius-lg;
+  border: 1px solid $border-color;
+  background: $bg-primary;
+  box-shadow: $shadow-card;
+
+  &__header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 14px;
+  }
+
+  &__title {
+    font-size: 28px;
+    font-weight: 600;
+    color: $text-primary;
+  }
+
+  &__order-no {
+    font-size: 22px;
+    color: $text-tertiary;
+  }
+
+  &__amount-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 14px;
+  }
+
+  &__amount-label {
+    font-size: 24px;
+    color: $text-secondary;
+  }
+
+  &__amount {
+    font-size: 40px;
+    font-weight: 700;
+    color: $primary-color;
+  }
+
+  &__tabs {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+
+  &__tab {
+    padding: 6px 20px;
+    border-radius: 24px;
+    font-size: 24px;
+    color: $text-secondary;
+    border: 1px solid $border-color;
+
+    &--active {
+      color: #ffffff;
+      background: $primary-color;
+      border-color: $primary-color;
+    }
+  }
+
+  &__qr {
+    width: 280px;
+    height: 280px;
+    margin: 0 auto 12px;
+    border-radius: $radius-md;
+    background: #f5f5f5;
+  }
+
+  &__payee {
+    display: block;
+    text-align: center;
+    font-size: 22px;
+    color: $text-secondary;
+    margin-bottom: 10px;
+  }
+
+  &__note {
+    display: block;
+    font-size: 20px;
+    color: $text-tertiary;
+    line-height: 1.6;
+  }
+}

@@ -70,6 +70,9 @@ class SettingsControllerTest {
     @Mock
     private PasswordEncoder passwordEncoder;
 
+    @Mock
+    private com.migao.admin.mapper.TenantPaymentQrcodeMapper paymentQrcodeMapper;
+
     @InjectMocks
     private SettingsController settingsController;
 
@@ -549,6 +552,49 @@ class SettingsControllerTest {
             var ann = method.getAnnotation(com.migao.admin.security.RequirePermission.class);
             assertThat(ann).as(m).isNotNull();
             assertThat(ann.value()).isEqualTo("system:manage");
+        }
+    }
+
+    @Nested
+    @DisplayName("收款二维码（issue #3990）")
+    class PaymentQrcodes {
+
+        @Test
+        @DisplayName("GET 收款二维码 -> 200 返回按类型分组")
+        void getReturnsGroupedByType() throws Exception {
+            var q = com.migao.admin.entity.TenantPaymentQrcode.builder()
+                    .id("qr-1").tenantId(1L).paymentType("wechat")
+                    .imageUrl("https://img/wechat.png").payeeName("亿家纺织").status("active").deleted(0)
+                    .build();
+            when(paymentQrcodeMapper.selectList(any())).thenReturn(List.of(q));
+
+            mockMvc.perform(get("/api/admin/settings/payment-qrcodes"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.success").value(true))
+                    .andExpect(jsonPath("$.data.wechat.payeeName").value("亿家纺织"));
+        }
+
+        @Test
+        @DisplayName("PUT 保存微信收款码（新建）-> 200 返回实体")
+        void upsertCreates() throws Exception {
+            when(paymentQrcodeMapper.selectOne(any())).thenReturn(null);
+            when(paymentQrcodeMapper.insert(any(com.migao.admin.entity.TenantPaymentQrcode.class))).thenReturn(1);
+
+            mockMvc.perform(put("/api/admin/settings/payment-qrcodes/wechat")
+                            .contentType("application/json")
+                            .content("{\"imageUrl\":\"https://img/wechat.png\",\"payeeName\":\"亿家纺织\"}"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.success").value(true))
+                    .andExpect(jsonPath("$.data.paymentType").value("wechat"));
+        }
+
+        @Test
+        @DisplayName("PUT 非法类型 -> 400")
+        void upsertRejectsInvalidType() throws Exception {
+            mockMvc.perform(put("/api/admin/settings/payment-qrcodes/unionpay")
+                            .contentType("application/json")
+                            .content("{\"imageUrl\":\"https://img/x.png\"}"))
+                    .andExpect(status().is4xxClientError());
         }
     }
 }
