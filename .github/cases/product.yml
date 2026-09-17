@@ -1355,6 +1355,15 @@ cases:
     pre_clean:
       - type: product_dedupe
         product_keyword: "遮光窗帘"
+    # 前置自断言（§18.4 / CASE-TRUST-NO-PRECONDITION-ASSERTION）：本用例的写对象是**共享夹具**
+    # `prod_eval_blackout`（按名定位），所以「该名字唯一」就是它依赖的前置 —— 出现第二件同名商品时
+    # agent 可能改到**别的对象**上，而红的表现会是 `unmatched expectation`（看起来像「agent 不干活」）。
+    # `product_dedupe`（pre_clean，先于 capture 执行）保证捕获时恰为 1（保留最早创建 = 种子），
+    # 故 `expect: 1` 可满足；漂移判据（默认 `max_growth: 0`）让「运行期被别人造出副本」显式化。
+    precondition:
+      - type: product_count_for_keyword
+        source: "遮光窗帘"
+        expect: 1
     skip_reason: ""
     merge_log: "2026-09-15 新增（issue #3930/#3931 实证 sess_2efa2071bb1747d8）：设主图成功路径——同回合 agent 先错误路由 product_update(images=…)（无该参数）被静默丢弃 → 「没有要修改的字段」→ 误宣「不支持图片」；19:49 改用 product_manage(action=update, images) 成功。本用例锁定正确路径（expectations/required_args/must_succeed 三层）；db_verify 对商品 images 无 fetch（只支持 processingItemConfigs），效果层由 must_succeed 兜底，落库层缺口已登记；2026-09-18 轮次预算修正（issue #4042）：收尾单张 `auto_respond` 轮被 R1 后的 **choice 卡**（「要设成哪种图？」）吃掉 ⇒ 同轮发出的 confirm 卡无人作答 ⇒ 用例**结构上不可满足**（合格 agent 也必红，首跑指纹 `no_success(product_manage)`）⇒ 改为 `repeat_until(tool_called=product_manage, max=3)` 协作轮（有卡答卡：choice→首项 / confirm→confirmValue；目标工具成功即跳过余轮）。断言（expectations / required_args / must_succeed）原样未动"
     traces:

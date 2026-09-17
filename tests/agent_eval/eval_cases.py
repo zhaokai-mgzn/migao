@@ -4807,6 +4807,7 @@ _CASE_PR_026 = EvalCase(
     must_succeed=[{'tool': 'product_manage', 'action': 'update'}],
     pre_clean=[{'type': 'product_dedupe', 'product_keyword': '遮光窗帘'}],
     namespaces=['product_name:遮光窗帘'],
+    precondition=[{'type': 'product_count_for_keyword', 'source': '遮光窗帘', 'expect': 1}],
 )
 
 # ── PR-027 [NORMAL] 设主图能力不误宣 - 回复不得出现「不包含图片上传/拿不到地址」类能力否定（源: cases/product.yml）──
