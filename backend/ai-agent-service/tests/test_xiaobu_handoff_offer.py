@@ -1,11 +1,13 @@
-"""小布 AI 主动引导转人工 — 图级/多轮场景测试
+"""小布 AI 主动建议 — 图级/多轮场景测试
 
-验证（设计文档 xiaobu-ai-handoff-guidance.md §4/§5）：
-- D1 显式转人工请求 → intent_router 短路直转 complaint（不弹建议卡）
+验证（设计文档 xiaobu-ai-handoff-guidance.md §4/§5；**卡片语义已于 2026-09-19 退场改造**）：
+- D1 显式人工介入请求（用户自己的话："转人工客服"）→ intent_router 短路 complaint（不弹建议卡）
 - D3 信号命中 → handoff_offer 节点产出安抚文案 + interact choice 卡片
-- 建议卡片 value（转人工客服）确认后 → 命中 D1 → human_handoff 直转
+- 建议卡片 value（"帮我把问题整理成售后工单"）确认后 → 命中 `rule_matcher` 的 after_sales
+  关键词 → **进入售后受理链路**（退场后不再有"直转人工"这条路；卡片只给"继续受理"出路）
 - 用户拒绝（继续咨询）→ 本会话不再自动建议（冷却）
 - 正常消息/明确业务意图 → 不弹卡（回归）
+- **用户可见文案不得邀约人工转接**（判据在 tests/unit_ci_workflows/test_human_handoff_retired.py）
 
 Mock 层：LLM/意图分类（IntentRouter.route）、租户配置、SessionStateStore。
 """
@@ -108,7 +110,7 @@ class TestD1ExplicitDirectHandoff:
 
 class TestHandoffOfferNode:
     async def test_offer_node_produces_text_and_choice_card(self):
-        """D3 命中 → 安抚文案 + interact choice 卡片（转人工/继续咨询）"""
+        """D3 命中 → 安抚文案 + interact choice 卡片（"继续受理"形态）"""
         from app.graph.handoff_offer import handoff_offer_node
 
         state = _make_state([HumanMessage(content="你们窗帘质量太差了，气死我了")])
@@ -135,8 +137,13 @@ class TestHandoffOfferNode:
         assert data["component"] == "choice"
         labels = [opt["label"] for opt in data["options"]]
         values = [opt["value"] for opt in data["options"]]
-        assert any("转人工" in v for v in values), f"确认选项应含转人工: {values}"
-        assert any("继续" in v for v in values), f"取消选项应含继续: {values}"
+        # 2026-09-19 退场改造：选项不再邀约人工，而是"继续受理"（整理成售后工单）+ 继续咨询
+        assert any("售后工单" in v for v in values), f"受理选项应指向售后工单: {values}"
+        assert any("继续" in v for v in values), f"继续选项应含继续: {values}"
+        # 退场面：卡片文案本身不得出现任何"邀约人工转接"措辞（顾客可见面）
+        for text in labels + values + [data["title"], result["final_answer"]]:
+            for phrase in ("转人工", "转接人工", "人工客服专员"):
+                assert phrase not in text, f"卡片/安抚文案仍在邀约人工转接：{text!r}"
 
     async def test_offer_node_writes_cooldown_state(self):
         """建议后写入 offer_count（冷却：本会话不再自动建议）"""
@@ -155,16 +162,31 @@ class TestHandoffOfferNode:
         assert commit_mock.await_count >= 1
 
 
-# ────────────────────── 端到端：建议 → 确认 → 直转 ──────────────────────
+# ────────────────────── 端到端：建议 → 点卡 → 继续受理 ──────────────────────
 
 
 class TestOfferToDirectHandoffE2E:
-    async def test_confirm_value_routes_back_to_direct_handoff(self):
-        """建议卡片 value='转人工客服' 作为用户消息 → 命中 D1 直转（能力闭环）"""
-        from app.graph.handoff_judge import is_explicit_handoff_request
+    async def test_confirm_value_routes_into_aftersales_intake(self):
+        """建议卡片 value（"帮我把问题整理成售后工单"）作为用户消息 → **进入售后受理链路**。
 
-        # 卡片点击后发送的 value 必须能被 D1 识别（否则确认后无法直转）
-        assert is_explicit_handoff_request("转人工客服") is True
+        2026-09-19 退场改造（原断言：value='转人工客服' → D1 直转 human_handoff —— 工具已
+        退场，该路径不存在）：卡片给的出路改成"继续受理"，故判据也随之改成**真实可达**的
+        那条：下轮 `rule_matcher` 命中 after_sales（source=rule，非 LLM 猜测）⇒ 售后 skill
+        接手（可落成工单）。用**真实卡片常量**驱动，防止文案改了而判据还锚旧字符串。
+        """
+        from app.graph.handoff_offer import _OFFER_OPTIONS
+        from app.graph.handoff_judge import is_explicit_handoff_request
+        from app.router.rule_matcher import RuleMatcher
+
+        intake_value = _OFFER_OPTIONS[0]["value"]
+        assert not is_explicit_handoff_request(intake_value), (
+            f"卡片受理选项被误判为「显式要求人工」（会走 complaint 直转）：{intake_value!r}"
+        )
+        matched = RuleMatcher().match(intake_value)
+        assert matched is not None and matched.intent.value == "after_sales", (
+            f"卡片受理选项没有确定性路由到售后域（顾客点了会落进兜底/答非所问）：{intake_value!r}"
+        )
+        assert matched.source == "rule", "受理选项应走确定性规则（不依赖 LLM 分类）"
 
     async def test_continue_value_not_explicit(self):
         from app.graph.handoff_judge import is_explicit_handoff_request

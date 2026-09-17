@@ -700,14 +700,15 @@
 真值: aftersales-flow.flow
 溯源: 2026-09-12（issue #3361）顾客改点名订单号 EVAL-ORD-0002（fixture 已发货单）——原「第一笔订单」依赖列表倒序，会被同跑的下单用例新建的「待付款」单顶到首位而按业务规则必被拒。C 端表单化交互方案 S3（miniapp-multiturn-form-scenarios.md） ｜ tags: multi_turn, aftersales, interactive
 
-### CH-013. AI 检测不满情绪 → 建议转人工卡片 → 用户确认后创建人工会话 🔵
+### CH-013. AI 检测不满情绪 → 建议卡片（继续受理）→ 用户点卡后进入售后受理链路 🔵
 ```
 你: 你们窗帘质量太差了，气死我了
-你: 转人工客服
+你: 帮我把问题整理成售后工单
 期望: interact(component=choice)
 数据: 不满情绪（general 意图）命中后 AI 先发建议卡片（interact choice），不直接转
-数据: interact 卡片选项含『转人工客服』『继续咨询小布』（卡片由确定性节点产出）
-数据: 用户点『转人工客服』后：AI 如实说明系统已无人工转接通道，不得承诺转接（机器断言见 forbidden_text）—— 不再创建人工会话
+数据: interact 卡片选项含『整理成售后工单』与『继续咨询小布』，且**不含**任何邀约人工转接的措辞（卡片文案判据见 tests/unit_ci_workflows/test_human_handoff_retired.py）
+数据: 用户点『整理成售后工单』后进入售后受理链路（确定性路由 after_sales, source=rule；判据见 tests/test_xiaobu_handoff_offer.py::TestOfferToDirectHandoffE2E）
+数据: 整场不出现假承诺话术（机器断言见 forbidden_text）—— 系统已无人工转接通道
 禁词: 已为您转接人工
 禁词: 已帮您转接人工
 禁词: 已转接人工
@@ -715,7 +716,7 @@
 禁词: 客服马上联系您
 ```
 真值: ai-chat.handoff-offer, ai-chat.intent-tool-map
-溯源: xiaobu-ai-handoff-guidance.md D3 AI 主动引导转人工；2026-09-19 **退场改造**（用户裁定）：移除 human_handoff 的 expectations/must_succeed（不可满足），后半改判「如实告知 + 禁止假承诺」；前半（建议卡 + 冷却）不变 ｜ tags: multi_turn, handoff, ai_guided
+溯源: xiaobu-ai-handoff-guidance.md D3 AI 主动引导转人工；2026-09-19 **退场改造**（用户裁定）：移除 human_handoff 的 expectations/must_succeed（不可满足）；**同批收口卡片文案**（邀约人工 → 继续受理：标题/选项/安抚文案改判，第 2 轮输入随之改为卡片新 value），前半（卡片 + 冷却）不变 ｜ tags: multi_turn, handoff, ai_guided
 
 ### CH-014. 用户拒绝建议 → 继续 AI 咨询且本会话不再自动建议 🔵
 ```
@@ -750,7 +751,7 @@
 真值: ai-chat.intent-tool-map
 溯源: xiaobu-ai-handoff-guidance.md D1 显式直转（UI-010 能力不退化）；2026-09-19 **退场改造**（用户裁定「不应该存在 human_handoff 这种东西，以后全是 AI 来判断」）：原断言（显式请求 → 直转工具）随工具退场永久不可满足，改判「如实告知 + 不得假承诺 + 继续服务」——用例保留为 live 回归（顾客仍会说『转人工』） ｜ tags: handoff, regression
 
-### CH-016. 明确业务意图（下单/查单/报价）不弹转人工建议卡（防打断） 🔵
+### CH-016. 明确业务意图（下单/查单/报价）不弹「问题特殊」建议卡（防打断） 🔵
 ```
 你: 帮我查一下最近订单到哪了
 你: 这个窗帘褶皱倍数算得不对
@@ -844,7 +845,7 @@
 你: 算了不说了
 期望: direct_reply or interact
 数据: 低置信澄清（source=low_confidence 重写 general）轮次计数存 SessionStateStore.clarify
-数据: 连续澄清 ≥ MAX_CLARIFY_ROUNDS(2) 轮后，不再以『您想做什么』追问——改给具体示例（查订单/搜商品/算料话术）+ 转人工出口
+数据: 连续澄清 ≥ MAX_CLARIFY_ROUNDS(2) 轮后，不再以『您想做什么』追问——改给具体示例（查订单/搜商品/算料话术）+ **继续受理的下一步**（2026-09-19 退场改造：原「转人工出口」已不存在，兜底话术改为「直接把想问的原话发我」；判据见 backend/ai-agent-service/tests/test_clarify_guard.py）
 数据: 用户给出实质意图/点选澄清卡 → 澄清计数清零，正常流程恢复
 数据: 存储异常降级不阻断主流程
 跳过: 轮次护栏为代码层纯逻辑，由 pytest 单测覆盖（test_clarify_guard.py 17 例含端到端序列），不进入 agent-eval 冒烟
@@ -1092,7 +1093,7 @@
 数据: 顾客问进度 → production_progress_query(order_no=EVAL-ORD-0002) 被调用且**成功**返回（must_succeed 断言 success=true，不是「工具名出现过」）
 数据: 端点订单解析与报工链路同口径（issue #4006/#4007）：复用 ProductionService.resolveOrder 的 order_id → order_no → qr_token 三形态 —— 给内部 id、订单号或加工单二维码 token 都能查到；只认 order_no 会让「有单却 404」
 数据: 夹具订单 EVAL-ORD-0002 无加工单 ⇒ 返回 0%/空工序但 success=true；如实转述「暂无加工进度」属合格行为，不算违规
-数据: 工具失败/查不到时如实告知并可转人工，禁止编造进度或交期
+数据: 工具失败/查不到时如实告知「当前查不到进度（该功能暂时不可用）」并给替代路径（稍后再试/换单号），禁止编造进度或交期
 必须成功: production_progress_query
 ```
 真值: ai-chat.intent-tool-map, ai-chat.tool-classes

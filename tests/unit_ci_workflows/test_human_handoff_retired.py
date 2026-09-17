@@ -93,6 +93,16 @@ FACADE_PY = APP_DIR / "tools" / "__init__.py"
 TOOL_FILE = APP_DIR / "tools" / "human_handoff.py"
 BASE_SKILL_PY = SKILLS_DIR / "base_skill.py"
 INTENT_CONFIG_PY = APP_DIR / "router" / "intent_config.py"
+#: **用户可见的"主动建议"文案载体**（handoff_offer 节点：卡片标题/选项 + 安抚文案）。
+#: 该文件里的字符串字面量**会直接发给顾客**（SSE text 事件 + interactive 卡片）⇒
+#: 退场后不得再出现"邀约人工转接"的措辞（详见 test_offer_copy_does_not_invite_a_handoff）。
+OFFER_NODE_PY = APP_DIR / "graph" / "handoff_offer.py"
+
+#: 「邀约/指向人工转接」的措辞（**只用于这份用户可见文案**，不扫全仓中文措辞）。
+#: 为什么这三条而不是更宽的词表：它们是**邀约形态**（"为您转接"/"转人工"/"人工专员跟进"）；
+#: 诚实文案用的是另一套措辞（"系统已无人工转接通道"）—— 后者**不含**下列任何一条
+#: （见负例 `test_detector_quiet_on_honest_no_channel_wording`）。
+HANDOFF_INVITE_PHRASES = ("转人工", "转接人工", "人工客服专员", "为您转接", "帮您转接")
 
 # 注册表真值解析器**复用** `test_l0_reachability_guards.registered_tools()`（A13 守卫的
 # 单一实现）—— 不复制平行实现（复制 = 双源漂移：改了一处口径另一处照样绿）。
@@ -159,6 +169,15 @@ def mentions_retired(text: str) -> bool:
         if re.search(r"(?<![A-Za-z0-9_])" + re.escape(alias) + r"(?![A-Za-z0-9_])", text):
             return True
     return False
+
+
+def invites_handoff(text: str) -> bool:
+    """用户可见文案是否在**邀约/指向人工转接**（纯函数，供注入式红证/负例驱动）。
+
+    只用于 `handoff_offer.py` 这类"用户可见文案载体"——**不扫全仓中文措辞**：
+    诚实文案（"系统已无人工转接通道，我继续帮您处理"）不含下表中的任何短语。
+    """
+    return any(p in str(text) for p in HANDOFF_INVITE_PHRASES)
 
 
 def _literal_tool_names(value: ast.AST) -> list[str] | None:
@@ -555,6 +574,51 @@ def test_prompt_surfaces_do_not_point_at_the_retired_tool():
     )
 
 
+def test_offer_copy_does_not_invite_a_handoff():
+    """**用户可见的建议卡文案不得邀约人工转接**（把旧文案加回去 ⇒ 必红）。
+
+    背景（2026-09-19 用户裁定「不应该存在 human_handoff 这种东西，以后全是 AI 来判断」的
+    **追加收口**）：`handoff_offer` 节点的卡片**直接发给顾客**（SSE text + interactive 卡），
+    它原先问「需要为您转接人工客服吗？」并给「👩‍💼 转人工客服」选项 —— 转人工能力退场后，
+    这等于**用户可见面在邀约一个不存在的能力**（点下去只会得到"无人工通道"的诚实回答 =
+    自相矛盾，本 PR 自己就留着一条"承诺做不到的事"）。
+    处置：**只改文案与选项语义**（节点与卡片机制保留，子系统删除属阶段二）——
+    「要不要转人工」→「要不要我把您的情况整理成售后工单跟进」= **继续受理**。
+
+    判据锚 = **本文件的字符串字面量**（卡片标题/选项/安抚文案都在这里）：
+    不得出现 `HANDOFF_INVITE_PHRASES`（邀约形态）。**不扫全仓中文措辞** ——
+    诚实文案（"系统已无人工转接通道，我继续帮您处理"）不含这些短语（见负例）。
+
+    反例输入：把 `_OFFER_OPTIONS` 的 label/value 改回 `"转人工客服"`（或把
+    `_COMFORT_*` 写回「建议转人工客服专员为您处理」）⇒ 必红。
+    """
+    literals = guidance_literal_strings(OFFER_NODE_PY)
+    offenders = [
+        f"{OFFER_NODE_PY.relative_to(REPO_ROOT)}:{lineno} → {text[:60]!r}"
+        for lineno, text in literals if invites_handoff(text)
+    ]
+    assert not offenders, (
+        f"建议卡/安抚文案仍在**邀约人工转接**（该能力已退场，顾客点了只会得到"
+        f"「无人工通道」的诚实回答 = 自相矛盾）：\n  " + "\n  ".join(offenders) + "\n"
+        f"→ 正确形态：改成「继续受理」（如「要我把您的情况整理成售后工单跟进吗」），"
+        f"选项 value 走 `rule_matcher` 的售后关键词，点下去真的进入受理链路。\n"
+        f"→ 断言清单：{list(HANDOFF_INVITE_PHRASES)}"
+    )
+    # 上界自证：字面量解析确实扫到了这张卡的全部文案（否则判据恒真 = 空跑）
+    assert len(literals) >= 8, (
+        f"{OFFER_NODE_PY.name} 只解析出 {len(literals)} 条字面量 —— 解析口径疑似失效"
+    )
+    # 反向自证：**卡片确实还在、且仍承载"继续受理"出路**（防"直接删卡了事"通过判据）
+    text = OFFER_NODE_PY.read_text(encoding="utf-8")
+    assert "component" in text and "choice" in text, (
+        "建议卡被删掉了 —— 本次口径是**只改文案与选项语义**（保留确定性节点与卡片机制，"
+        "子系统删除属阶段二）；直接删卡会让这条判据变成空跑"
+    )
+    assert "售后工单" in text, (
+        "卡片不再提供任何'继续受理'的出路（只是把邀约删掉了）—— 顾客侧会失去下一步"
+    )
+
+
 def test_intent_tool_hints_never_name_unreachable_tools():
     """`INTENT_TOOL_MAP`（给模型的工具提示表）里的工具名**必须真的可达**。
 
@@ -629,6 +693,44 @@ class TestGuardIsNotVacuous:
         """**红证②**：三种写法（工具名/类名/端点名）都必须报出（改个写法绕过判据 = 假绿）。"""
         for alias in RETIRED_ALIASES:
             assert mentions_retired(f"请调用 {alias} 处理"), f"别名漏判：{alias}"
+
+    def test_detector_fires_on_every_handoff_invite_phrase(self):
+        """**红证③（建议卡）**：每一种"邀约转人工"措辞都必须被看见（漏一种 = 假绿）。"""
+        for phrase in HANDOFF_INVITE_PHRASES:
+            assert invites_handoff(f"这个问题比较特殊，{phrase}吗？"), f"邀约措辞漏判：{phrase}"
+
+    def test_offer_red_proof_old_copy_is_reported(self):
+        """**红证④（建议卡）**：把**旧卡片文案原文**喂进判据 ⇒ 必须报出。
+
+        旧文案（origin/main 的 `_OFFER_TITLE`/`_OFFER_OPTIONS`/`_COMFORT_DEFAULT`）：
+        「这个问题比较特殊，需要为您转接人工客服吗？」/「👩‍💼 转人工客服」/
+        「建议转人工客服专员为您处理。」
+        """
+        old_copy = [
+            "这个问题比较特殊，需要为您转接人工客服吗？",
+            "👩‍💼 转人工客服",
+            "建议转人工客服专员为您处理。",
+            "有些情况由人工客服专员跟进会更高效。",
+        ]
+        missed = [t for t in old_copy if not invites_handoff(t)]
+        assert not missed, f"旧建议卡文案没被判据看见（判据失效）：{missed}"
+
+    def test_detector_quiet_on_honest_no_channel_wording(self):
+        """**负例（建议卡）**：**诚实文案**不得被报 —— 判据不能扫成"见人工二字就红"。
+
+        「如实说明系统已无人工转接通道，我继续帮您处理」是本退场改造**新增**的必需文案；
+        若判据扫的是"人工"这类措辞，它必红 ⇒ 判据只能靠豁免活着（= 空判据）。
+        """
+        honest = [
+            "该系统已无人工转接通道，我继续帮您处理可以吗？",
+            "抱歉，我没法把您转接给人工，但我可以现在就把问题整理成售后工单跟进。",
+            "要我把您的情况整理成售后工单跟进吗？",
+            "继续咨询小布",
+        ]
+        reported = [t for t in honest if invites_handoff(t)]
+        assert not reported, (
+            f"诚实文案被误报 → 判据在扫「人工」这类措辞（会把必需文案判红）：{reported}"
+        )
 
     def test_detector_stays_quiet_on_honest_unavailable_wording(self):
         """**负例**：合法的「如实告知该功能暂时不可用」文案（不含工具名）⇒ **不得报**。

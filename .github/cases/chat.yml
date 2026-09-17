@@ -617,7 +617,7 @@ cases:
 
   - id: CH-013
     legacy_id: ""
-    title: "AI 检测不满情绪 → 建议转人工卡片 → 用户确认后创建人工会话"
+    title: "AI 检测不满情绪 → 建议卡片（继续受理）→ 用户点卡后进入售后受理链路"
     domains:
       - chat
       - handoff
@@ -632,7 +632,9 @@ cases:
       - ai-chat.intent-tool-map
     user_inputs:
       - "你们窗帘质量太差了，气死我了"
-      - "转人工客服"
+      # 第 2 轮 = **卡片第 1 个选项的 value**（"继续受理"形态；改卡文案必须同步这里，
+      # 否则用例发的是"一张卡上不存在的选项"，测评结果不可归因）
+      - "帮我把问题整理成售后工单"
     expectations:
       # 带 args 的期望 = **行为层证据**（断言卡片形态，不只是"调用过"）—— 建议卡由
       # 确定性节点 handoff_offer 产出，与转人工工具是否可达**无关** ⇒ 这一半仍然全活。
@@ -640,12 +642,11 @@ cases:
         args:
           component: choice
     # ── 2026-09-19 退场改造（用户裁定：不应该存在 human_handoff 这种东西）──────
-    # 本条前半（不满情绪 → 建议卡片 offer_count 冷却）**仍然全活**（handoff_offer 是
-    # 确定性节点，不依赖工具可达性）⇒ 保留 interact 断言；后半（点『转人工客服』→
-    # 创建人工会话）随工具退场**永久不可满足** ⇒ 改判退场后的真实契约：
-    # 用户点卡后 AI 必须如实告知没有人工转接通道、不得假承诺转接（forbidden_text）。
-    # ⚠️ 过渡期已知矛盾（阶段二清单第 1 项）：建议卡片文案仍在问「需要为您转接人工客服吗」
-    #    —— 卡片是用户可见面（非模型可达面），其去留与 nodes/builder 同批处置，见汇报。
+    # 前半（不满情绪 → 建议卡片 + offer_count 冷却）**仍然全活**（确定性节点，不依赖工具
+    # 可达性）⇒ 保留 interact 断言；后半随工具退场永久不可满足 ⇒ 同一 PR 内**追加收口**
+    # 了卡片文案本身（邀约人工 → 继续受理，见 app/graph/handoff_offer.py）：
+    # 用户点卡后走 `rule_matcher` 的 after_sales（source=rule）⇒ 进入售后受理链路。
+    # `forbidden_text` 保留：模型仍可能**用自然语言**承诺"已为您转接"（真实假承诺风险）。
     forbidden_text:
       - "已为您转接人工"
       - "已帮您转接人工"
@@ -654,10 +655,11 @@ cases:
       - "客服马上联系您"
     data_checks:
       - "不满情绪（general 意图）命中后 AI 先发建议卡片（interact choice），不直接转"
-      - "interact 卡片选项含『转人工客服』『继续咨询小布』（卡片由确定性节点产出）"
-      - "用户点『转人工客服』后：AI 如实说明系统已无人工转接通道，不得承诺转接（机器断言见 forbidden_text）—— 不再创建人工会话"
+      - "interact 卡片选项含『整理成售后工单』与『继续咨询小布』，且**不含**任何邀约人工转接的措辞（卡片文案判据见 tests/unit_ci_workflows/test_human_handoff_retired.py）"
+      - "用户点『整理成售后工单』后进入售后受理链路（确定性路由 after_sales, source=rule；判据见 tests/test_xiaobu_handoff_offer.py::TestOfferToDirectHandoffE2E）"
+      - "整场不出现假承诺话术（机器断言见 forbidden_text）—— 系统已无人工转接通道"
     skip_reason: ""
-    merge_log: "xiaobu-ai-handoff-guidance.md D3 AI 主动引导转人工；2026-09-19 **退场改造**（用户裁定）：移除 human_handoff 的 expectations/must_succeed（不可满足），后半改判「如实告知 + 禁止假承诺」；前半（建议卡 + 冷却）不变"
+    merge_log: "xiaobu-ai-handoff-guidance.md D3 AI 主动引导转人工；2026-09-19 **退场改造**（用户裁定）：移除 human_handoff 的 expectations/must_succeed（不可满足）；**同批收口卡片文案**（邀约人工 → 继续受理：标题/选项/安抚文案改判，第 2 轮输入随之改为卡片新 value），前半（卡片 + 冷却）不变"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_handoff_judge.py"
@@ -756,7 +758,7 @@ cases:
 
   - id: CH-016
     legacy_id: ""
-    title: "明确业务意图（下单/查单/报价）不弹转人工建议卡（防打断）"
+    title: "明确业务意图（下单/查单/报价）不弹「问题特殊」建议卡（防打断）"
     domains:
       - chat
       - handoff
@@ -1088,7 +1090,7 @@ cases:
       - tool: direct_reply or interact
     data_checks:
       - "低置信澄清（source=low_confidence 重写 general）轮次计数存 SessionStateStore.clarify"
-      - "连续澄清 ≥ MAX_CLARIFY_ROUNDS(2) 轮后，不再以『您想做什么』追问——改给具体示例（查订单/搜商品/算料话术）+ 转人工出口"
+      - "连续澄清 ≥ MAX_CLARIFY_ROUNDS(2) 轮后，不再以『您想做什么』追问——改给具体示例（查订单/搜商品/算料话术）+ **继续受理的下一步**（2026-09-19 退场改造：原「转人工出口」已不存在，兜底话术改为「直接把想问的原话发我」；判据见 backend/ai-agent-service/tests/test_clarify_guard.py）"
       - "用户给出实质意图/点选澄清卡 → 澄清计数清零，正常流程恢复"
       - "存储异常降级不阻断主流程"
     skip_reason: "轮次护栏为代码层纯逻辑，由 pytest 单测覆盖（test_clarify_guard.py 17 例含端到端序列），不进入 agent-eval 冒烟"
@@ -1849,7 +1851,7 @@ cases:
       - "顾客问进度 → production_progress_query(order_no=EVAL-ORD-0002) 被调用且**成功**返回（must_succeed 断言 success=true，不是「工具名出现过」）"
       - "端点订单解析与报工链路同口径（issue #4006/#4007）：复用 ProductionService.resolveOrder 的 order_id → order_no → qr_token 三形态 —— 给内部 id、订单号或加工单二维码 token 都能查到；只认 order_no 会让「有单却 404」"
       - "夹具订单 EVAL-ORD-0002 无加工单 ⇒ 返回 0%/空工序但 success=true；如实转述「暂无加工进度」属合格行为，不算违规"
-      - "工具失败/查不到时如实告知并可转人工，禁止编造进度或交期"
+      - "工具失败/查不到时如实告知「当前查不到进度（该功能暂时不可用）」并给替代路径（稍后再试/换单号），禁止编造进度或交期"
     skip_reason: ""
     merge_log: "2026-09-17 新增（issue #3996，M4-I）：生产进度问答 C 端覆盖（小布）。2026-09-17（issue #4007，run 35233821582 CH-039 reproducible）：原输入不含订单号 → agent 先 customer_order_query 取号、查到全为「已发货/已完成」的存量单后直接作答、**production_progress_query 全程未调用** → 改为**点名单号**（fixture EVAL-ORD-0002，先例 CH-006 点名单号）使 agent 无需链式取号即可直接调工具；并补 must_succeed 把「工具被成功调用」变成机器断言（同批产品侧把 progress 的订单解析对齐 resolveOrder 三形态）"
     traces:
