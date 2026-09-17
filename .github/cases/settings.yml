@@ -344,6 +344,7 @@ cases:
     merge_log: "2026-09-18 新增（issue #4085 第 1 项）：用户 2026-09-18 裁定「建触发机制」——新增 C 端只读工具 payment_qrcode_query（数据源复用 GET /api/admin/agent/payment-qrcodes，不新造数据源）→ _detect_card_type 映射 payment → 恢复 mini-app 渲染分支 → 放行「渲染端 ⊆ 后端可产出」L0 契约守卫。本用例提供该工具的工具级正向覆盖（Case Coverage Gate 的 uncovered/missing_positive 缺口由此关闭）。"
     traces:
       tests:
+        - "backend/ai-agent-service/tests/test_payment_qrcode_query.py"
         - "backend/ai-agent-service/tests/test_payment_card_emission.py"
         - "frontend/mini-app/tests/payment-card.test.tsx"
       ci:

@@ -1,5 +1,5 @@
 # case_ids: ST-011, ST-012
-"""收款二维码卡的**发射点**：C 端工具 → `_detect_card_type` → 卡载荷（issue #4085 第 1 项）。
+"""收款二维码卡的**发射点**：工具 → `_detect_card_type` → 卡载荷 → 渲染（issue #4085 第 1 项）。
 
 ## 缺陷形态（本文件守卫的那条链）
 
@@ -9,9 +9,10 @@
 而**没有任何东西会红** —— 这是 `production_progress` 的同构形态（用户 2026-09-18 对两者
 下的裁定相同：**建触发机制 / 补发射点**）。
 
-本文件把整条链的每一跳都钉成确定性断言（零 LLM、零网络）：
+工具自身的契约（元数据/成功面/失败面/suggestion）在 `tests/test_payment_qrcode_query.py`；
+本文件只管**链路**：
 
-    payment_qrcode_query（工具，C 端只读）
+    payment_qrcode_query（工具）
       → 工具 data = {"payment_qrcodes": {...}}        （卡载荷）
       → chat.py `_detect_card_type` → "payment"       （发射点）
       → `_card_payload` 原样下发                       （SSE card 事件）
@@ -27,12 +28,12 @@
 
 ## 红证（每条断言都能红 —— 见本 PR 的实测输出）
 
-- **去掉 `_detect_card_type` 的 payment 分支** ⇒ `TestEmissionChain` 全部红（映射/payload/放行）；
-- **把工具从 skill 的 tool_names 摘掉** ⇒ `TestToolIsReachableByXiaobu` 红（能力不可达）；
-- **把工具从注册表摘掉** ⇒ `test_registered_in_global_registry` 红（模型看不见 + 跨端守卫会判孤儿）。
+- **去掉 `_detect_card_type` 的 payment 分支** ⇒ `TestEmissionChain` 红
+  （实测 4 failed，`assert None == 'payment'`）；
+- **把工具从 skill 的 tool_names 摘掉** ⇒ `TestToolIsReachableByXiaobu` 红
+  （实测「小布的工具集里没有 payment_qrcode_query ⇒ 模型永远调不到该工具」），
+  同时 L0 工具集同步守卫 `tests/unit_ci_workflows/test_xiaobu_case_set.py` 也红。
 """
-import re
-from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -40,218 +41,7 @@ import pytest
 from app.api.chat import _card_payload, _detect_card_type, _should_send_card
 from app.graph.skills.skill_registry import get_skill_registry
 from app.tools.base import ToolContext
-from app.tools.payment_qrcode_query import PaymentQrcodeQueryTool
 from app.tools.registry import get_tool_registry
-
-# 冻结契约端点（admin-api AgentPaymentController，#3990；C 端同源端点 app/api/payments.py）
-PAYMENT_PATH = "/api/admin/agent/payment-qrcodes"
-
-_REPO_ROOT = Path(__file__).resolve().parents[3]
-
-# 冻结契约样例：admin-api 返回 camelCase（imageUrl/payeeName），C 端只透出精简字段
-ADMIN_DATA = {
-    "wechat": {"paymentType": "wechat", "imageUrl": "https://img.migao.test/w.png",
-               "payeeName": "亿家纺织"},
-    "alipay": {"paymentType": "alipay", "imageUrl": "https://img.migao.test/a.png",
-               "payeeName": "亿家纺织"},
-}
-
-
-@pytest.fixture
-def tool():
-    return PaymentQrcodeQueryTool()
-
-
-@pytest.fixture
-def customer_context():
-    """C 端顾客（小布）上下文"""
-    return ToolContext(tenant_id=1, user_id="customer_001", session_id="sess_pay_1",
-                       role="customer")
-
-
-class TestToolMetadataContract:
-    """工具元数据：LLM 只读 description 选工具 ⇒ 触发/前置/反例/标注必须自带"""
-
-    def test_read_only_and_customer_only(self, tool):
-        assert tool.name == "payment_qrcode_query"
-        assert tool.read_only is True
-        assert tool.destructive is False
-        assert tool.idempotent is True
-        # C 端专属：商家设置端走 SettingsController（不经 Agent），故只对顾客开放
-        assert tool.allowed_roles == ["customer"]
-
-    def test_description_carries_trigger_counterexample_and_readonly(self, tool):
-        desc = tool.description
-        assert "【触发】" in desc and "付款" in desc
-        assert "【反例】" in desc and "customer_order_query" in desc
-        assert "READONLY" in desc
-        # 反编造口径必须在描述里（收款码是"付给谁"的钱路，编造后果最重）
-        assert "禁止编造" in desc
-
-    def test_no_required_params(self, tool):
-        """无入参：收款码按当前租户取（顾客无法、也不该指定别的商家）"""
-        assert tool.parameters["properties"] == {}
-        assert tool.parameters["required"] == []
-
-
-class TestExecuteSuccess:
-    """成功路径：调用冻结契约端点 + 输出即卡载荷"""
-
-    @patch("app.tools.payment_qrcode_query.get_admin_api_client")
-    async def test_fetches_frozen_endpoint_and_shapes_card_payload(
-        self, mock_get_client, tool, customer_context
-    ):
-        mock_client = AsyncMock()
-        mock_client.get = AsyncMock(return_value={"success": True, "data": dict(ADMIN_DATA)})
-        mock_get_client.return_value = mock_client
-
-        result = await tool.execute(context=customer_context)
-
-        assert result.success is True
-        # 端点用**字面量**（跨模块 payload 契约门禁要求可静态归属）+ 租户/用户上下文透传
-        args, kwargs = mock_client.get.call_args
-        assert args[0] == PAYMENT_PATH
-        assert kwargs["tenant_id"] == 1
-        assert kwargs["user_id"] == "customer_001"
-
-        # data **就是**卡载荷：PaymentCard 读 payment_qrcodes（camelCase → 精简字段归一）
-        assert set(result.data) == {"payment_qrcodes"}
-        qrcodes = result.data["payment_qrcodes"]
-        assert set(qrcodes) == {"wechat", "alipay"}
-        assert qrcodes["wechat"] == {
-            "payment_type": "wechat",
-            "image_url": "https://img.migao.test/w.png",
-            "payee_name": "亿家纺织",
-        }
-        assert qrcodes["alipay"]["payee_name"] == "亿家纺织"
-        assert "微信" in result.summary and "亿家纺织" in result.summary
-
-    @patch("app.tools.payment_qrcode_query.get_admin_api_client")
-    async def test_snake_case_fields_also_accepted(
-        self, mock_get_client, tool, customer_context
-    ):
-        """C 端同源端点（app/api/payments.py）下发的是 snake_case ⇒ 两种形态都要认"""
-        mock_client = AsyncMock()
-        mock_client.get = AsyncMock(return_value={
-            "success": True,
-            "data": {"wechat": {"image_url": "https://img.migao.test/w.png",
-                                "payee_name": "亿家纺织"}},
-        })
-        mock_get_client.return_value = mock_client
-
-        result = await tool.execute(context=customer_context)
-
-        assert result.success is True
-        assert result.data["payment_qrcodes"]["wechat"]["image_url"] == "https://img.migao.test/w.png"
-
-    @patch("app.tools.payment_qrcode_query.get_admin_api_client")
-    async def test_entry_without_image_is_skipped(
-        self, mock_get_client, tool, customer_context
-    ):
-        """无图不成码：缺 image_url 的配置项跳过（否则前端渲染空白方块）"""
-        mock_client = AsyncMock()
-        mock_client.get = AsyncMock(return_value={
-            "success": True,
-            "data": {"wechat": {"payeeName": "亿家纺织"},  # 无 imageUrl
-                     "alipay": {"imageUrl": "https://img.migao.test/a.png"}},
-        })
-        mock_get_client.return_value = mock_client
-
-        result = await tool.execute(context=customer_context)
-
-        assert result.success is True
-        assert set(result.data["payment_qrcodes"]) == {"alipay"}
-
-    @patch("app.tools.payment_qrcode_query.get_admin_api_client")
-    async def test_no_qrcode_configured_is_a_valid_answer_not_a_failure(
-        self, mock_get_client, tool, customer_context
-    ):
-        """商家未配收款码 ⇒ success=true + 空 payment_qrcodes（空态卡，不是失败）。
-
-        真值：评测栈种子（tests/agent_eval/fixtures/*.sql、docs/deployment/demo-seed.sql）
-        里 `tenant_payment_qrcodes` **零行** ⇒ 这正是评测环境下的真实形态，
-        故 ST-012 只断言「调用 + 载荷形状」，不断言非空内容（否则造恒红）。
-        """
-        mock_client = AsyncMock()
-        mock_client.get = AsyncMock(return_value={"success": True, "data": {}})
-        mock_get_client.return_value = mock_client
-
-        result = await tool.execute(context=customer_context)
-
-        assert result.success is True
-        assert result.data == {"payment_qrcodes": {}}
-        assert "暂未设置收款码" in result.message
-        # 空态仍然要发卡（ST-011 明写空态提示由 PaymentCard 渲染）——放行判据见 TestEmissionChain
-        assert _should_send_card("payment_qrcode_query",
-                                 {"success": True, "data": result.data}) is True
-
-
-class TestExecuteFailure:
-    """失败面：一律 success=False + **非空 suggestion**（自愈闸门依赖它，issue #4050）"""
-
-    async def test_non_customer_role_denied(self, tool):
-        ctx = ToolContext(tenant_id=1, user_id="agent_001", session_id="s", role="agent")
-        result = await tool.execute(context=ctx)
-
-        assert result.success is False
-        assert result.error == "权限不足"
-        assert result.suggestion and "禁止编造" in result.suggestion
-
-    @patch("app.tools.payment_qrcode_query.get_admin_api_client")
-    async def test_transport_exception_is_reported_with_suggestion(
-        self, mock_get_client, tool, customer_context
-    ):
-        mock_client = AsyncMock()
-        mock_client.get = AsyncMock(side_effect=RuntimeError("connection refused"))
-        mock_get_client.return_value = mock_client
-
-        result = await tool.execute(context=customer_context)
-
-        assert result.success is False
-        assert result.error == "tool_execution_failed"
-        assert result.suggestion and "禁止编造" in result.suggestion
-
-    @patch("app.tools.payment_qrcode_query.get_admin_api_client")
-    async def test_admin_api_rejection_is_reported_with_suggestion(
-        self, mock_get_client, tool, customer_context
-    ):
-        mock_client = AsyncMock()
-        mock_client.get = AsyncMock(return_value={
-            "success": False, "error": {"message": "无权访问"},
-        })
-        mock_get_client.return_value = mock_client
-
-        result = await tool.execute(context=customer_context)
-
-        assert result.success is False
-        assert result.error == "无权访问"
-        assert result.suggestion and result.suggestion.strip()
-
-
-def _failure_sites_have_suggestion() -> list[int]:
-    """源码层：本工具每个 `ToolResult(success=False, …)` 字面量都必须带 suggestion。
-
-    与 `tests/test_tool_failure_suggestions.py` 同口径（那里是全仓 L0），此处钉本文件
-    的红证可读性：本工具自身不留缺口，无需靠基线豁免。
-    """
-    src = (_REPO_ROOT / "backend" / "ai-agent-service" / "app" / "tools"
-           / "payment_qrcode_query.py").read_text(encoding="utf-8")
-    return [
-        m.start() for m in re.finditer(r"ToolResult\(\s*success=False", src)
-        if "suggestion=" not in src[m.start():m.start() + 600]
-    ]
-
-
-class TestToolSourceInvariants:
-    def test_every_failure_site_declares_a_suggestion(self):
-        offenders = _failure_sites_have_suggestion()
-        assert offenders == [], f"这些失败面缺 suggestion（LLM 无从引导用户）：{offenders}"
-
-    def test_suggestion_detector_is_not_vacuous(self):
-        """判据自证：把 suggestion 抠掉必须报出来（防「永远绿的空判据」）"""
-        planted = 'ToolResult(\n            success=False,\n            error="x",\n            message="y",\n        )'
-        m = re.search(r"ToolResult\(\s*success=False", planted)
-        assert m and "suggestion=" not in planted[m.start():m.start() + 600]
 
 
 class TestEmissionChain:
@@ -300,11 +90,10 @@ class TestEmissionChain:
         )
         assert set(payload) == {"payment_qrcodes"}
 
-
 class TestToolIsReachableByXiaobu:
     """可达性（**能力真的可达**的判据）——与跨端卡型契约守卫同源事实、各自独立断言。
 
-    病根形态：工具写好了却没进任何 skill 的 tool_names ⇒注册表里有、模型永远调不到
+    病根形态：工具写好了却没进任何 skill 的 tool_names ⇒ 注册表里有、模型永远调不到
     （`create_skill_registry` 是唯一的模型可见工具集工厂）。
     """
 
@@ -346,3 +135,36 @@ class TestToolIsReachableByXiaobu:
 
         subset = create_skill_registry(["payment_qrcode_query"])
         assert subset.get_tool("payment_qrcode_query") is not None
+
+    @patch("app.tools.payment_qrcode_query.get_admin_api_client")
+    async def test_end_to_end_emission_for_the_real_tool_payload(self, mock_get_client):
+        """链路闭环（对真工具求值）：工具 execute 的 data 原样成为 payment 卡载荷。
+
+        上游 mock 掉 admin-api（零网络），下游走**真实的** `_detect_card_type` /
+        `_card_payload` / `_should_send_card` —— 这样「工具的 data 就是卡载荷」
+        不是靠注释声称，而是判据。
+        """
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value={
+            "success": True,
+            "data": {"wechat": {"paymentType": "wechat",
+                                "imageUrl": "https://img/w.png",
+                                "payeeName": "亿家纺织"}},
+        })
+        mock_get_client.return_value = mock_client
+
+        from app.tools.payment_qrcode_query import PaymentQrcodeQueryTool
+
+        ctx = ToolContext(tenant_id=1, user_id="customer_001",
+                          session_id="sess_pay_e2e", role="customer")
+        result = await PaymentQrcodeQueryTool().execute(context=ctx)
+        assert result.success is True
+
+        envelope = {"success": result.success, "data": result.data}
+        assert _detect_card_type("payment_qrcode_query", envelope) == "payment"
+        assert _should_send_card("payment_qrcode_query", envelope) is True
+
+        card_type, card_data = _card_payload("payment_qrcode_query", envelope)
+        assert card_type == "payment"
+        assert card_data == result.data
+        assert card_data["payment_qrcodes"]["wechat"]["image_url"] == "https://img/w.png"
