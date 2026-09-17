@@ -728,12 +728,15 @@ class OrderCreateTool(BaseTool):
         返回拦截 ToolResult（error=unit_price_not_grounded / 配置错误级拒绝），
         全部行与库价一致（或非本工具校验域的加工项）时返回 None。
         """
-        # 复用 base_skill 的判据纯函数（含 SKU 匹配与回填话术），工具层只负责
+        # 复用**中性模块**的判据纯函数（含 SKU 匹配与回填话术），工具层只负责
         # 「从商品库解析权威快照」——同一判据单点，避免两处口径漂移。
         # 函数级 import：tools 是叶子模块，避免模块加载顺序依赖。
-        from app.graph.skills.base_skill import unit_price_grounding_error
-        from app.graph.skills.base_skill import _match_sku_price
-        from app.graph.skills.base_skill import _library_unit_price_grounded
+        # ⚠️ 判据定义在 `app/utils/sku_price.py`（中性层）：工具层**不得**反向 import
+        # skill 层（`app.graph.skills.base_skill`）的私有符号（issue #4057 S7）；
+        # 守卫见 tests/test_utils_sku_price.py。
+        from app.utils.sku_price import unit_price_grounding_error
+        from app.utils.sku_price import _match_sku_price
+        from app.utils.sku_price import _library_unit_price_grounded
 
         client = get_admin_api_client()
         # 同单多行同商品只查一次（grounded 快照按 product_id 或 product_name 缓存）
