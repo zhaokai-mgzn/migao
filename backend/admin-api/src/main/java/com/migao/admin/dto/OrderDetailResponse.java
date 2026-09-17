@@ -218,6 +218,9 @@ public class OrderDetailResponse {
 
         private String trackingNo;
 
+        /** 物流类型：express 快递 / logistics 物流专线（四季安等，issue #3984，V47） */
+        private String logisticsType;
+
         /**
          * 发货人姓名（发货单纸面「经手人」，issue #3768）。
          * ⚠️ 仅供 B 端发货单/订单详情展示；**不得**透传给 C 端顾客——

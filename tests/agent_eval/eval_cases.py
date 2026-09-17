@@ -1681,6 +1681,24 @@ _CASE_CU_007 = EvalCase(
     forbidden_text=['已下架', 'off_sale'],
 )
 
+# ── CU-008 [NORMAL] 客户工艺画像与常用物流存储（米宝 customer_manage 可写，M2-D）（源: cases/customer.yml）──
+_CASE_CU_008 = EvalCase(
+    id='CU-008',
+    legacy_id='',
+    title='客户工艺画像与常用物流存储（米宝 customer_manage 可写，M2-D）',
+    skill=Skill.CUSTOMER,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['把客户张三的工艺偏好设为经济省料，常用物流记成四季安（物流专线）'],
+    expectations=['customer_manage(action=update)'],
+    data_checks=['customer_manage(update) 可写 craftMode / craftProfile / defaultLogisticsType / defaultLogisticsCompany（CustomerProfile 新列，V47 迁移）', '物流类型区分 express（快递）与 logistics（物流/专线，如四季安）——POC 客户更多选物流', '工艺画像与常用物流在客户详情（GET /api/admin/customers/{id}）中返回，供报价协商（M3-F）读取', '字段跨端契约：工具下发字段名与 CustomerProfile 列一致（test_tool_field_name_contract.py 静态兜底）'],
+    skip_reason='',
+    tags=['customer', 'mibao', 'craft-profile', 'logistics'],
+    persona='mibao',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── DA-001 [NORMAL] 经营概览（源: cases/data.yml）──
 _CASE_DA_001 = EvalCase(
     id='DA-001',
@@ -5749,6 +5767,7 @@ ALL_CASES = (
     _CASE_CU_005,
     _CASE_CU_006,
     _CASE_CU_007,
+    _CASE_CU_008,
     _CASE_DA_001,
     _CASE_DA_002,
     _CASE_DA_003,

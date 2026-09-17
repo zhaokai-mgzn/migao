@@ -21,6 +21,8 @@ interface OrderInfo {
   customerName?: string
   customer_phone?: string
   customerPhone?: string
+  customer_address?: string
+  customerAddress?: string
   total_amount?: number
   totalAmount?: number
   status?: string
@@ -133,6 +135,14 @@ function OrderRow({ order }: { order: OrderInfo }) {
           {phone && (
             <Text className='order-card__customer-phone'>{phone}</Text>
           )}
+        </View>
+      )}
+      {/* 收货地址（issue #3984：地址与手机号同为订单强关联属性，同名客户可区分） */}
+      {(order.customer_address || order.customerAddress) && (
+        <View className='order-card__customer-row'>
+          <Text className='order-card__customer-address'>
+            📍 {(order.customer_address || order.customerAddress)}
+          </Text>
         </View>
       )}
 

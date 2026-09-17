@@ -1,6 +1,6 @@
 """
 工具下发字段名 ↔ admin-api 请求类型字段契约（跨服务写请求边界）
-# case_ids: AS-004, CU-004
+# case_ids: AS-004, CU-004, CU-008
 
 ① 契约层（docs/testing/interaction-verification.md「① 契约层」）：确定性、零 LLM、
 mock 客户端 + 静态解析 Java 源码 —— 拦「工具下发的字段名与 API 接收类型字段不一致」
@@ -163,6 +163,25 @@ REGISTRY: tuple[WriteContract, ...] = (
         endpoint="/api/admin/customers/c1",
         receiver_type="CustomerProfile",
         content_value="李四",
+    ),
+    # M2-D「更新客户工艺画像与常用物流」（issue #3984，V47）：
+    # craftMode/craftProfile/defaultLogisticsType/defaultLogisticsCompany 为 CustomerProfile 新列。
+    WriteContract(
+        tool_module="app.tools.customer_manage",
+        tool_kwargs={
+            "action": "update",
+            "customer_id": "c1",
+            "data": {
+                "craftMode": "economy",
+                "craftProfile": {"openCount": 2, "isShaped": True},
+                "defaultLogisticsType": "logistics",
+                "defaultLogisticsCompany": "四季安",
+            },
+        },
+        client_method="put",
+        endpoint="/api/admin/customers/c1",
+        receiver_type="CustomerProfile",
+        content_value="economy",
     ),
 )
 
