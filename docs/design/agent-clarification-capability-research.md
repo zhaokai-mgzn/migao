@@ -1,8 +1,11 @@
 # B/C 端 Agent「问题澄清能力」强化调研
 
+> **引用约定（§18.1 / R7）**：本文只写**文件路径 + 符号名**，**不写行号** —— 行号是易变键，实测本文件的历史行号已整体漂移（如 `_CONFIRM_EXACT` 曾标 `511-542`，现已在 ~673；`nodes.py` 的 vision 段、`base_skill.py` 的写确认守卫同理），照旧行号读代码会读到**别的东西**。
+> 需要定位时按符号名检索：`grep -n "<符号>" <路径>`。
+
 > 版本 v1.1 ｜ 2026-09-03 ｜ 场景：低学历用户 ×「随手发图」意图澄清
-> 方法：① MIGAO 代码逐文件核实（backend/ai-agent-service，行号截至调研日）；② 外部一手资料调研（论文/官方文档/专利，URL 见文末）
-> 性质：调研与方案设计文档，非实施清单。落地前请按行号二次核对（AI-TDD 红线：测试先行 + case_ids）。
+> 方法：① MIGAO 代码逐文件核实（backend/ai-agent-service，**按符号名核实、不记行号** —— 见文首引用约定）；② 外部一手资料调研（论文/官方文档/专利，URL 见文末）
+> 性质：调研与方案设计文档，非实施清单。落地前请按**符号名**二次核对（AI-TDD 红线：测试先行 + case_ids）。
 
 > **实施追踪（v1.1）**：本文件为设计源头，落地进展在仓库以分支 + PR 形式推进。
 > 已复核确认的代码事实见 §九（人工逐文件复核，修正调研期子代理偏差），
@@ -18,8 +21,8 @@
 
 | 层 | 现状 | 一句话缺口 |
 |---|---|---|
-| 意图感知 | 路由/分类器只吃**文本**，图片在路由前被剥离（`nodes.py:222-229`） | 图零意图感知：纯图消息=空文本进 L2 |
-| 图片理解 | vision prompt 是**开放描述**（"识别关键信息+回答问题+建议工具"），无结构化输出、无商户关联求证（`base_skill.py:861-869`） | 识别即用：从不求证"这张图对应哪个已有商品/订单/客户，用户想让我干什么" |
+| 意图感知 | 路由/分类器只吃**文本**，图片在路由前被剥离（`nodes.py`） | 图零意图感知：纯图消息=空文本进 L2 |
+| 图片理解 | vision prompt 是**开放描述**（"识别关键信息+回答问题+建议工具"），无结构化输出、无商户关联求证（`base_skill.py`） | 识别即用：从不求证"这张图对应哪个已有商品/订单/客户，用户想让我干什么" |
 | 澄清形态 | 米宝 B 端 general 澄清=纯文字列选项且 **interact 未绑定**（prompt 要求 interact 但工具不在列表 → LLM 无法兑现）；小布 C 端有 choice/form 卡但无"意图候选澄清" | 无"理解卡片 + 2~4 个可点选候选意图"形态 |
 | 状态记忆 | 无澄清状态机（stage 字段无人读写）；vision 结果不写入 entities；新图覆盖旧图 | 澄清轮次/待确认项无槽位，多图一诉求/图+订单组合求证无支撑 |
 | 评测 | eval 只断言工具序列，无澄清质量断言 | 澄清"越用越准"无闭环 |
@@ -49,28 +52,28 @@
 
 | # | 机制 | 位置 | 触发条件 | 现状缺陷 |
 |---|---|---|---|---|
-| A1 | 低置信度重写为 general 兜底澄清 | `router/intent_router.py:19,22-27,111-128` | L2 分类 confidence<0.55 且非豁免意图 | 信号只有 confidence 一个标量，无"该不该澄清/澄清什么"结构化输出；分类只看文本，图零感知 |
-| A2 | L1 关键词/正则"打平→交 L2"不硬猜 | `router/rule_matcher.py:156-213,100-101` | 多意图特异性打平 | 只裁决"走哪个 skill"，不裁决"要不要先澄清"；纯图消息文本空直接 return None |
-| A3 | general 兜底 prompt 引导 | `graph/skills/general_agent.py:66`、`references/prompts/general.md:24-27`、`EXAMPLES-general.md:5-13,52-57` | 意图=general | 只覆盖"文字列选项"一种形态；无图片澄清引导；仅米宝 persona |
-| A4 | 写操作 confirm 卡守卫 | `graph/skills/base_skill.py:1082-1095,545-569,521-542` | destructive/requires_confirmation 且无确认词 | 是"执行前确认"，不是"信息澄清" |
-| A5 | interact 流程占位（pending_skill） | `base_skill.py:1129-1133`、`graph/nodes.py:173-208,520-556` | interact 已下发等用户操作 | 最接近澄清状态机的机制，但只存 skill 名，无澄清轮数/待确认字段/候选 |
-| A6 | interact 组件三件套（choice/confirm/form） | `tools/interact.py:62-162,204-292` | 需用户从固定选项选/确认/补字段 | **仅 C 端 4 个 skill 绑定**；B 端 prompt 反复要求 interact 但工具未绑定 → LLM 无法兑现（G6） |
-| A7 | 表单字段不齐的补充提问 | `customer_order_skill.py:31`、`customer_quote_skill.py:53`、`product_skill.py:43,88-93` 等 | 创建类流程缺字段 | 话术具体有示例，最成熟的一档；但只服务字段收集，非意图澄清 |
-| A8 | B 端图片建品的"推理→批量确认" | `product_skill.py:73-79`、`references/prompts/product.md:36-53` | 图片+创建商品意图 | 唯一的"识别后求证"范式，但只服务建商品字段，且与 `EXAMPLES-product.md:83`（"识别结果直接预填不做二次确认"）自相矛盾（G7） |
-| A9 | 转人工引导 | `graph/nodes.py:156-171,290-345`、`handoff_judge.py` | 负面情绪/多轮未解决等 | 与澄清正交，但会抢占澄清机会 |
-| A10 | 图片分析失败兜底 | `base_skill.py:963-964` | vision LLM 失败/空结果 | 单句道歉，无"已看图但不懂意图"的澄清兜底（G12） |
+| A1 | 低置信度重写为 general 兜底澄清 | `router/intent_router.py` | L2 分类 confidence<0.55 且非豁免意图 | 信号只有 confidence 一个标量，无"该不该澄清/澄清什么"结构化输出；分类只看文本，图零感知 |
+| A2 | L1 关键词/正则"打平→交 L2"不硬猜 | `router/rule_matcher.py` | 多意图特异性打平 | 只裁决"走哪个 skill"，不裁决"要不要先澄清"；纯图消息文本空直接 return None |
+| A3 | general 兜底 prompt 引导 | `graph/skills/general_agent.py`、`references/prompts/general.md`、`EXAMPLES-general.md` | 意图=general | 只覆盖"文字列选项"一种形态；无图片澄清引导；仅米宝 persona |
+| A4 | 写操作 confirm 卡守卫 | `graph/skills/base_skill.py` | destructive/requires_confirmation 且无确认词 | 是"执行前确认"，不是"信息澄清" |
+| A5 | interact 流程占位（pending_skill） | `base_skill.py`、`graph/nodes.py` | interact 已下发等用户操作 | 最接近澄清状态机的机制，但只存 skill 名，无澄清轮数/待确认字段/候选 |
+| A6 | interact 组件三件套（choice/confirm/form） | `tools/interact.py` | 需用户从固定选项选/确认/补字段 | **仅 C 端 4 个 skill 绑定**；B 端 prompt 反复要求 interact 但工具未绑定 → LLM 无法兑现（G6） |
+| A7 | 表单字段不齐的补充提问 | `customer_order_skill.py`、`customer_quote_skill.py`、`product_skill.py` 等 | 创建类流程缺字段 | 话术具体有示例，最成熟的一档；但只服务字段收集，非意图澄清 |
+| A8 | B 端图片建品的"推理→批量确认" | `product_skill.py`、`references/prompts/product.md` | 图片+创建商品意图 | 唯一的"识别后求证"范式，但只服务建商品字段，且与 `EXAMPLES-product.md`（"识别结果直接预填不做二次确认"）自相矛盾（G7） |
+| A9 | 转人工引导 | `graph/nodes.py`、`handoff_judge.py` | 负面情绪/多轮未解决等 | 与澄清正交，但会抢占澄清机会 |
+| A10 | 图片分析失败兜底 | `base_skill.py` | vision LLM 失败/空结果 | 单句道歉，无"已看图但不懂意图"的澄清兜底（G12） |
 
 ### 3.2 图片输入链路与"识别即用"断层
 
-**链路（事实）**：上传校验（`api/chat.py:1103-1136`，≤3 张，仅 https//api/files）→ 路由前文本化（`nodes.py:222-229` 剥图）→ 带图强制不走 direct_reply（`nodes.py:435-452,500-507` → general vision mode）→ skill 内 vision 分支（`base_skill.py:924-997`：清旧缓存 → 2 次重试 vision LLM 纯分析 → 分析文本作为 SystemMessage 注入 → 绑工具进 ReAct）→ 跨轮缓存（`memory/session_memory.py:788-849`，PG JSON 截断 3000 字；`base_skill.py:871-891` 次轮注入"你上一轮已分析…"）。
+**链路（事实）**：上传校验（`api/chat.py`，≤3 张，仅 https//api/files）→ 路由前文本化（`nodes.py` 剥图）→ 带图强制不走 direct_reply（`nodes.py` → general vision mode）→ skill 内 vision 分支（`base_skill.py`：清旧缓存 → 2 次重试 vision LLM 纯分析 → 分析文本作为 SystemMessage 注入 → 绑工具进 ReAct）→ 跨轮缓存（`memory/session_memory.py`，PG JSON 截断 3000 字；`base_skill.py` 次轮注入"你上一轮已分析…"）。
 
-**唯一的全服务图片理解 prompt（`base_skill.py:861-869`）**：要求模型"1. 仔细观察识别关键信息 2. 根据用户提问结合图片回答 3. 有可操作信息可主动建议工具"。**开放描述，无结构化字段、无置信度、无商户关联求证指令。**
+**唯一的全服务图片理解 prompt（`base_skill.py`）**：要求模型"1. 仔细观察识别关键信息 2. 根据用户提问结合图片回答 3. 有可操作信息可主动建议工具"。**开放描述，无结构化字段、无置信度、无商户关联求证指令。**
 
 **断层证据（"识别即用"）**：
-- 意图分类阶段完全不看图（`intent_classifier.py:218-232` 只留 text）→ 图片无法参与"商品咨询/售后/算料/关联订单/建品"判定；
+- 意图分类阶段完全不看图（`intent_classifier.py` 只留 text）→ 图片无法参与"商品咨询/售后/算料/关联订单/建品"判定；
 - vision prompt 不含商户上下文与求证指令 → 模型默认把图当"当前话题直接输入"，从不先回答"图可能对应哪个已有信息、用户想干什么"再行动；
-- C 端识别后直接"搜相似/引导算料"（`customer_product_skill.py:33-37`、`customer_general_skill.py:40-44`），唯一澄清点是材质不确定可问——没有"您发这张图是想…？"；
-- B 端只有"建商品"属性求证（`prompts/product.md:36-53`），order/aftersales/customer skill prompt 无任何图片段；
+- C 端识别后直接"搜相似/引导算料"（`customer_product_skill.py`、`customer_general_skill.py`），唯一澄清点是材质不确定可问——没有"您发这张图是想…？"；
+- B 端只有"建商品"属性求证（`prompts/product.md`），order/aftersales/customer skill prompt 无任何图片段；
 - **无图向量/以图搜图/OCR 工具**，embedding 仅知识库且 RAG 已禁用；vision 结果从不写入 entities → "图=哪个订单/客户/商品"无召回保障，只能靠 LLM 拿分析文本去猜。
 
 **一句话**：现有链路 =「识别即用」+ 唯一内建求证点是 B 端建商品属性 + C 端两句"不确定可问"。**"图片疑似关联商户已有信息 → 推理候选 → 选项式澄清 → 再动作"整段在代码与 prompt 里不存在。**
@@ -81,28 +84,28 @@
 |---|---|---|
 | 技能集 | order/product/aftersales/customer/staff/settings/data（knowledge 禁用）；fallback=general | customer_order/product/quote/aftersales/knowledge；fallback=customer_general |
 | interact 组件 | **不可用**（8 个 skill tool_names 均无 interact，但 prompt 全文在要求它 → G6） | 可用：choice/form/confirm 均已绑定 |
-| 澄清载体 | 纯文字列选项（`prompts/general.md:24`），confirm 守卫退化文本 | choice 卡 + form 表单 + confirm 卡 + 转人工卡 |
+| 澄清载体 | 纯文字列选项（`prompts/general.md`），confirm 守卫退化文本 | choice 卡 + form 表单 + confirm 卡 + 转人工卡 |
 | 图片链路 | 仅建商品有属性推理段；其余域无图片 prompt | 商品/兜底 skill 有"识别→搜相似→引导算料"；售后收图但无 vision 描述段 |
-| 语气 | 同事语气（`references/base/identity.md:7`"干练靠谱"） | 导购语气 + 大白话替换术语（`customer_quote_skill.py:46,50-56`"绝不直接抛术语"） |
+| 语气 | 同事语气（`references/base/identity.md`"干练靠谱"） | 导购语气 + 大白话替换术语（`customer_quote_skill.py`"绝不直接抛术语"） |
 
 ---
 
 ## 四、缺口清单（面向低学历 × 图片意图澄清，12 项）
 
-| Gap | 描述 | 证据（AIS/ 下文件:行号） |
+| Gap | 描述 | 证据（AIS/ 下文件 + 符号） |
 |---|---|---|
-| G1 | **图片零意图感知**：路由/分类只吃文本，纯图消息=空文本进 L2 | `graph/nodes.py:222-229`；`router/intent_classifier.py:218-232`；`router/rule_matcher.py:100-101` |
-| G2 | **vision prompt 无意图/关联求证引导**：开放描述+直接回答，无"先判断用户想干什么、图关联哪些商户信息" | `graph/skills/base_skill.py:861-869,966-969` |
-| G3 | **无"该不该澄清"显式判定点**：分析成功即无条件进 ReAct；澄清唯一入口是文本低置信 | `base_skill.py:963-998` ↔ `intent_router.py:111-128` 之间无澄清决定点 |
-| G4 | **无澄清状态机**：SessionStateStore docstring 列了 stage 但全仓无人读写 | `memory/session_state_store.py:5,31-111`；`session_memory.py:666-784` |
-| G5 | **无"引导式意图选项"**：米宝 general 澄清=纯文字要求说出需求；小布 choice 卡无预置意图澄清选项 | `general_agent.py:66`；`prompts/general.md:24-25` |
-| G6 | **B 端 prompt↔工具不一致**：prompt/EXAMPLES 反复要求 interact，skill 未绑定 → 静默退化文本（而 EXAMPLES 又禁文本序号） | `product_skill.py:13-24 vs 26,38,43`；`prompts/product.md:24,27`；`EXAMPLES-product.md:100-107` |
-| G7 | **图片建品话术自相矛盾**："先呈现结果让用户确认" vs "识别结果直接预填"→ 行为漂移 | `product_skill.py:75-77` vs `EXAMPLES-product.md:83` |
-| G8 | **vision 输出无结构化契约**：无字段/无置信度；PROMPT-rules 要"低置信请用户确认"却无置信度可依 | `base_skill.py:946-949`；`references/PROMPT-rules.md:13` |
-| G9 | **跨轮澄清上下文缺失**：vision 缓存只支持同一图后续追问，新图覆盖旧图 | `base_skill.py:871-891,930-934` |
-| G10 | **vision 结果不进入实体/商户关联记忆**：entities 只从查询工具结果提取 | `memory/context_manager.py:389-452,218-229`；`nodes.py:96-132` |
-| G11 | **澄清质量无评测**：eval 只断言工具序列/未调用；无"澄清≤N 轮成交""话术含可点选项"断言 | `tests/agent_eval/local_runner.py:203-254`；`.github/cases/chat.yml:76-100` |
-| G12 | **低学历文案障碍层缺失**：澄清话术无难度分级、失败兜底无示例引导 | `base_skill.py:964,1048-1136`；`customer_quote_skill.py:46` 的大白话原则未推广 |
+| G1 | **图片零意图感知**：路由/分类只吃文本，纯图消息=空文本进 L2 | `graph/nodes.py`；`router/intent_classifier.py`；`router/rule_matcher.py` |
+| G2 | **vision prompt 无意图/关联求证引导**：开放描述+直接回答，无"先判断用户想干什么、图关联哪些商户信息" | `graph/skills/base_skill.py` |
+| G3 | **无"该不该澄清"显式判定点**：分析成功即无条件进 ReAct；澄清唯一入口是文本低置信 | `base_skill.py` ↔ `intent_router.py` 之间无澄清决定点 |
+| G4 | **无澄清状态机**：SessionStateStore docstring 列了 stage 但全仓无人读写 | `memory/session_state_store.py`；`session_memory.py` |
+| G5 | **无"引导式意图选项"**：米宝 general 澄清=纯文字要求说出需求；小布 choice 卡无预置意图澄清选项 | `general_agent.py`；`prompts/general.md` |
+| G6 | **B 端 prompt↔工具不一致**：prompt/EXAMPLES 反复要求 interact，skill 未绑定 → 静默退化文本（而 EXAMPLES 又禁文本序号） | `product_skill.py vs 26,38,43`；`prompts/product.md`；`EXAMPLES-product.md` |
+| G7 | **图片建品话术自相矛盾**："先呈现结果让用户确认" vs "识别结果直接预填"→ 行为漂移 | `product_skill.py` vs `EXAMPLES-product.md` |
+| G8 | **vision 输出无结构化契约**：无字段/无置信度；PROMPT-rules 要"低置信请用户确认"却无置信度可依 | `base_skill.py`；`references/PROMPT-rules.md` |
+| G9 | **跨轮澄清上下文缺失**：vision 缓存只支持同一图后续追问，新图覆盖旧图 | `base_skill.py` |
+| G10 | **vision 结果不进入实体/商户关联记忆**：entities 只从查询工具结果提取 | `memory/context_manager.py`；`nodes.py` |
+| G11 | **澄清质量无评测**：eval 只断言工具序列/未调用；无"澄清≤N 轮成交""话术含可点选项"断言 | `tests/agent_eval/local_runner.py`；`.github/cases/chat.yml` |
+| G12 | **低学历文案障碍层缺失**：澄清话术无难度分级、失败兜底无示例引导 | `base_skill.py`；`customer_quote_skill.py` 的大白话原则未推广 |
 
 ---
 
@@ -132,7 +135,7 @@
 - 认知负担控制：一次一件事、短句平实词、给例子不给定义、容忍口语/错别字/方言、"你是说…吗？"回显纠正、永远可反悔。
 - **结构化引导式对话优于裸表单**（印度政务系统对照实验）→ 澄清表现成"引导收集"而非"弹表单"。
 
-**→ 对 MIGAO**：所有澄清/求证话术遵守"1 问 1 屏 + 可点选 + 短句 + 术语翻译 + 示例 + 反悔出口"；把 C 端已有的大白话原则（`customer_quote_skill.py:46`）推广为共享层（修复 G12）。
+**→ 对 MIGAO**：所有澄清/求证话术遵守"1 问 1 屏 + 可点选 + 短句 + 术语翻译 + 示例 + 反悔出口"；把 C 端已有的大白话原则（`customer_quote_skill.py`）推广为共享层（修复 G12）。
 
 ### 方向4：澄清质量评测与闭环
 - 核心维度是 **usefulness（可行动性）**：问题能从上下文推断且答案改变下一步 = 有用；评测别看文本相似度。
@@ -162,7 +165,7 @@
 ## 六、落地建议（结合 MIGAO 可复用资产，分三阶段）
 
 ### Phase 1：意图级澄清协议（改动小、无图也受益，先做）
-1. **vision prompt 加"意图/关联求证"引导**（改 `base_skill.py:861-869` + 相应 EXAMPLES）：
+1. **vision prompt 加"意图/关联求证"引导**（改 `base_skill.py` + 相应 EXAMPLES）：
    分析图片后必须输出一段"我的理解"，含：图里是什么（类目/面料/款式/是否商户已有商品截图）、用户可能要干什么（候选 2~3 个，**只从商户能力域出候选**：找同款/识别面料/查订单/售后/算料/建商品）、不确定点。删除/弱化"直接回答+建议工具"的默认行动倾向。
 2. **澄清决策点**（修 G3）：在 vision 分析成功后、进 ReAct 前加轻量判定——文本明确（意图置信高）→ 直接做；文本模糊/纯图 → 走"呈现理解 + 求证"；复用现有低置信阈值思路扩展为"澄清信号"。
 3. **澄清状态槽**（修 G4/G9）：`SessionStateStore` 加 `clarification` 槽（轮次/待确认项/候选/来源图 id），与现有 pending_skill 共存；澄清轮数上限（如 2），超限走最优猜测或转人工。
@@ -173,12 +176,12 @@
    - C 端小布：customer_general/customer_product 识别图后，用 interact choice 下发"您发这张图是想：A 找同款/推荐 B 量尺寸算料 C 问价格/买这款 D 售后问题 E 其他（说给我听）"，每项带描述。
    - B 端米宝：general/product skill 图片入站后，choice 下发"这张图我识别为 [X 面料/XX 商品/像某订单的商品]，您是想：A 建/录成商品 B 查它是不是我们已有商品 C 关联某订单/客户 D 其他"。
    - 候选意图文案遵循方向3原则（短句、大白话、可点）。
-3. **候选 grounded 到商户库**：澄清前对商户库做轻量检索（product_search/customer_manage/order 相关只读查询或内存词表），把**命中结果作为候选卡片内容**注入；模型只组织候选列表不编造条目（修 G8 的方向：vision 输出附置信度与"商户库命中"字段）。interact choice 已支持 label/value/description + 分页 + 50 上限（`interact.py:148-225`），够用。
-4. **点选后衔接**：澄清卡走现有 pending_skill + `__FORM__` 回填协议（`chat.py:941-1008`）→ 用户点选内容注入 LLM 继续，无需新前端协议（C 端已有交互事件渲染链路；B 端若前端无 choice 卡渲染需补，见风险 §7）。
+3. **候选 grounded 到商户库**：澄清前对商户库做轻量检索（product_search/customer_manage/order 相关只读查询或内存词表），把**命中结果作为候选卡片内容**注入；模型只组织候选列表不编造条目（修 G8 的方向：vision 输出附置信度与"商户库命中"字段）。interact choice 已支持 label/value/description + 分页 + 50 上限（`interact.py`），够用。
+4. **点选后衔接**：澄清卡走现有 pending_skill + `__FORM__` 回填协议（`chat.py`）→ 用户点选内容注入 LLM 继续，无需新前端协议（C 端已有交互事件渲染链路；B 端若前端无 choice 卡渲染需补，见风险 §7）。
 
 ### Phase 3：评测闭环
 1. **cases/eval 增澄清断言族**（修 G11）：新 `.github/cases/` yml（如澄清采纳、澄清≤2 轮成交、纯图消息必出澄清卡而非直接下单、澄清候选含商户库命中），渲染 `eval_cases.py`；runner 加"澄清卡下发次数/采纳轮次/无猜测性写工具"断言。文件头按域声明 `# case_ids:`。
-2. **双端对齐**：把 C 端大白话原则（`customer_quote_skill.py:46`）提升为共享 rules（修 G12）；澄清/回执话术难度分级 + 失败兜底带示例（"您也可以直接说：帮我把这个做成商品"）。
+2. **双端对齐**：把 C 端大白话原则（`customer_quote_skill.py`）提升为共享 rules（修 G12）；澄清/回执话术难度分级 + 失败兜底带示例（"您也可以直接说：帮我把这个做成商品"）。
 3. **数据回流**：澄清样本（上下文快照/候选/点选/放弃/最终任务）落库，人工抽查 + LLM-judge 打分（usefulness/打扰分），失败样本回流 EXAMPLES few-shot。
 
 ---
@@ -243,7 +246,7 @@
 - [langchain-ai/deepagents: ask_user.py](https://github.com/langchain-ai/deepagents/blob/2d665804131961dfa7e2849248047deec818e4ef/libs/code/deepagents_code/ask_user.py)
 - [Anthropic: Building Effective Agents](https://www.anthropic.com/engineering/building-effective-agents)、[Scaling Managed Agents](https://www.anthropic.com/engineering/managed-agents)
 
-> 说明：个别 2026 年条目（MMShopBench、arXiv:2601.11722、arXiv:2603.11303 等）经镜像/代理访问，官方页待二次核验；引用前请按需确认。代码行号截至 2026-09-03 调研日，实施前以实际代码为准。
+> 说明：个别 2026 年条目（MMShopBench、arXiv:2601.11722、arXiv:2603.11303 等）经镜像/代理访问，官方页待二次核验；引用前请按需确认。代码事实按**符号名**核实（调研期曾记行号，已整体漂移 ⇒ 本文件按 §18.1 撤掉行号，实施前请按符号名检索）。
 
 ---
 
@@ -253,19 +256,19 @@
 
 | 调研项 | 结论 | 核实结果 |
 |---|---|---|
-| G6 B 端 prompt↔工具不一致 | product/order 等 B 端 skill 的 prompt 要求 interact，但 tool_names 不含 interact | ✅ 确认：`product_skill.py:13-24`（PRODUCT_TOOLS 无 interact）vs `product_skill.py:26,38,69-70`（prompt 要求 interact(choice)）；`references/prompts/product.md:24,27` 同。其余 B 端 skill（order/aftersales/customer/staff/settings/data）prompt **未**直接引用 interact（已逐文件 grep），受影响面主要是 product（建品/选加工项/SKU 场景）与 general（低置信澄清）。C 端 4 个 skill 均绑定 interact（`customer_*_skill.py` tool_names）。 |
-| G6 连带：代码层 confirm 拦截指令 | base_skill 拦截未确认写操作时 message 指示 LLM "请调用 interact（component=confirm）" | ✅ 确认：`base_skill.py:1079-1095`。B 端 skill 若无 interact 工具，LLM 会收到 tool_not_found → 澄清能力退化。**该 message 是共享代码路径，B/C 端一致**。 |
-| G7 图片建品话术矛盾 | product_skill.py "先呈现识别结果让用户确认" vs EXAMPLES "直接预填不做二次确认" vs prompts/product.md "先列出全部推理结果再一次性确认" | ✅ 确认三方表述不一致：`product_skill.py:75-79`（内联，先呈现+确认）、`references/prompts/product.md:30`（"直接预填表单，不要让用户重复输入"）+`:49-53`（"先列出全部推理结果，再让用户一次性确认或修改"）、`references/EXAMPLES-product.md:68,83`（"识别结果直接预填，不做二次确认"）。`prompts/product.md:30` 与 `:49-53` 本身也有张力（预填 vs 逐项确认）。实施需统一仲裁口径。 |
-| Vision prompt 现状 | 开放描述，无结构化输出/置信度/商户关联求证 | ✅ 确认：`base_skill.py:861-869`（唯一全服务图片理解段）+`:966-969`（分析后注入）+`:946-949`（自由文本分析结果直接入上下文）。 |
-| 图片路由 | 带图强制走 general（vision mode） | 🔧 部分修正：`nodes.py:500-507` 仅在 `action=direct_reply`（greeting/capabilities 等）时强制重定向到 `general`；**其余图片消息按意图正常路由到领域 skill**（如 product / customer_product），skill 内由 `base_skill.py:924-997` vision 分支处理。→ 澄清能力须建在 base_skill（两端共享）或各领域 skill prompt，而非只靠 general。 |
-| 澄清状态载体 | SessionStateStore 有 stage 字段但无人读写 | ✅ 确认：`session_state_store.py` 通用 JSON；全仓 grep 无 stage 读写。现有会话连续性靠 `pending_skill`（interact 成功 → `base_skill.py:1129-1133` set；`nodes.py:173-208,520-556` 回原 skill）。→ 澄清卡可先复用 pending_skill 语义，无需立即上澄清状态机。 |
-| interact 组件能力 | choice/confirm/form 三件套完整 | ✅ 确认：`tools/interact.py:62-162`（schema：choice options 含 label/value/description，form 含预填 value，confirm 含 confirmValue）、`:204-292`（组装）、`:220-225`（choice 上限 50）。choice 支持 pageMeta 分页（`:148-159`）。 | 
-| SSE 交互事件通道 | interact 成功 → interactive 事件 | ✅ 确认：`api/chat.py:596-600`（`tool_name=="interact"` 且 success → `SSEEvent.interactive(component_type, data)`）；`api/sse.py:124-139`（event: interactive）。__FORM__ 表单回填协议：`api/chat.py:937-1008,1039-1041`（`__FORM__|{json}` → 注入 LLM 上下文）。 |
-| vision_analysis 跨轮缓存 | 图分析结果可跨轮复用 | ✅ 确认：`memory/session_memory.py:788-849`（set/get/clear_vision_analysis，PG session_states JSON，截断 3000 字）；`base_skill.py:871-891`（次轮无图注入缓存）；`:930-934`（新图上传清旧缓存）。 |
-| 写操作 confirm 确认词判定 | 明确确认词开头才放行 | ✅ 确认：`base_skill.py:511-542`（_CONFIRM_EXACT/_CONFIRM_PREFIX/_is_explicit_confirmation）。 |
-| Prompt 分层组装 | identity/principles/PROMPT-rules/prompts/{skill}/inline/EXAMPLES 六层 | ✅ 确认：`base_skill.py:391-443`（_build_system_prompt）+ `_read_cached` 缓存（`:370-388`）。references/ 文件改动会被缓存——**运行时需重启/清缓存生效**；`backend/ai-agent-service/tests/test_prompt_snapshots.py` 守护 references 改动。 |
-| 图结构 | START → intent_router →(条件边 route_by_intent)→ Skill → END | ✅ 确认：`graph/builder.py:104-124`。澄清若做成显式图节点需改 builder + nodes；若走"skill 内 LLM 自主调 interact choice"则无需改图。 |
-| 双端 role/工具差异 | B 端 8 skill（order/product/aftersales/customer/staff/settings/data/general）；C 端 6 skill（customer_order/product/quote/aftersales/knowledge/general） | ✅ 确认：`agents/agents/mibao.py:14-24`、`agents/agents/xiaobu.py:34-42`；interact allowed_roles 含 admin/agent/tenant_admin/customer（`tools/interact.py:60`）→ 工具本身不拦 B 端角色。 |
+| G6 B 端 prompt↔工具不一致 | product/order 等 B 端 skill 的 prompt 要求 interact，但 tool_names 不含 interact | ✅ 确认：`product_skill.py`（PRODUCT_TOOLS 无 interact）vs `product_skill.py`（prompt 要求 interact(choice)）；`references/prompts/product.md` 同。其余 B 端 skill（order/aftersales/customer/staff/settings/data）prompt **未**直接引用 interact（已逐文件 grep），受影响面主要是 product（建品/选加工项/SKU 场景）与 general（低置信澄清）。C 端 4 个 skill 均绑定 interact（`customer_*_skill.py` tool_names）。 |
+| G6 连带：代码层 confirm 拦截指令 | base_skill 拦截未确认写操作时 message 指示 LLM "请调用 interact（component=confirm）" | ✅ 确认：`base_skill.py`。B 端 skill 若无 interact 工具，LLM 会收到 tool_not_found → 澄清能力退化。**该 message 是共享代码路径，B/C 端一致**。 |
+| G7 图片建品话术矛盾 | product_skill.py "先呈现识别结果让用户确认" vs EXAMPLES "直接预填不做二次确认" vs prompts/product.md "先列出全部推理结果再一次性确认" | ✅ 确认三方表述不一致：`product_skill.py`（内联，先呈现+确认）、`references/prompts/product.md`（"直接预填表单，不要让用户重复输入"）+`:49-53`（"先列出全部推理结果，再让用户一次性确认或修改"）、`references/EXAMPLES-product.md`（"识别结果直接预填，不做二次确认"）。`prompts/product.md` 与 `:49-53` 本身也有张力（预填 vs 逐项确认）。实施需统一仲裁口径。 |
+| Vision prompt 现状 | 开放描述，无结构化输出/置信度/商户关联求证 | ✅ 确认：`base_skill.py`（唯一全服务图片理解段）+`:966-969`（分析后注入）+`:946-949`（自由文本分析结果直接入上下文）。 |
+| 图片路由 | 带图强制走 general（vision mode） | 🔧 部分修正：`nodes.py` 仅在 `action=direct_reply`（greeting/capabilities 等）时强制重定向到 `general`；**其余图片消息按意图正常路由到领域 skill**（如 product / customer_product），skill 内由 `base_skill.py` vision 分支处理。→ 澄清能力须建在 base_skill（两端共享）或各领域 skill prompt，而非只靠 general。 |
+| 澄清状态载体 | SessionStateStore 有 stage 字段但无人读写 | ✅ 确认：`session_state_store.py` 通用 JSON；全仓 grep 无 stage 读写。现有会话连续性靠 `pending_skill`（interact 成功 → `base_skill.py` set；`nodes.py` 回原 skill）。→ 澄清卡可先复用 pending_skill 语义，无需立即上澄清状态机。 |
+| interact 组件能力 | choice/confirm/form 三件套完整 | ✅ 确认：`tools/interact.py`（schema：choice options 含 label/value/description，form 含预填 value，confirm 含 confirmValue）、`:204-292`（组装）、`:220-225`（choice 上限 50）。choice 支持 pageMeta 分页（`:148-159`）。 | 
+| SSE 交互事件通道 | interact 成功 → interactive 事件 | ✅ 确认：`api/chat.py`（`tool_name=="interact"` 且 success → `SSEEvent.interactive(component_type, data)`）；`api/sse.py`（event: interactive）。__FORM__ 表单回填协议：`api/chat.py`（`__FORM__|{json}` → 注入 LLM 上下文）。 |
+| vision_analysis 跨轮缓存 | 图分析结果可跨轮复用 | ✅ 确认：`memory/session_memory.py`（set/get/clear_vision_analysis，PG session_states JSON，截断 3000 字）；`base_skill.py`（次轮无图注入缓存）；`:930-934`（新图上传清旧缓存）。 |
+| 写操作 confirm 确认词判定 | 明确确认词开头才放行 | ✅ 确认：`base_skill.py`（_CONFIRM_EXACT/_CONFIRM_PREFIX/_is_explicit_confirmation）。 |
+| Prompt 分层组装 | identity/principles/PROMPT-rules/prompts/{skill}/inline/EXAMPLES 六层 | ✅ 确认：`base_skill.py`（_build_system_prompt）+ `_read_cached` 缓存（`:370-388`）。references/ 文件改动会被缓存——**运行时需重启/清缓存生效**；`backend/ai-agent-service/tests/test_prompt_snapshots.py` 守护 references 改动。 |
+| 图结构 | START → intent_router →(条件边 route_by_intent)→ Skill → END | ✅ 确认：`graph/builder.py`。澄清若做成显式图节点需改 builder + nodes；若走"skill 内 LLM 自主调 interact choice"则无需改图。 |
+| 双端 role/工具差异 | B 端 8 skill（order/product/aftersales/customer/staff/settings/data/general）；C 端 6 skill（customer_order/product/quote/aftersales/knowledge/general） | ✅ 确认：`agents/agents/mibao.py`、`agents/agents/xiaobu.py`；interact allowed_roles 含 admin/agent/tenant_admin/customer（`tools/interact.py`）→ 工具本身不拦 B 端角色。 |
 | 前置条件：B 端前端能否渲染交互卡 | 调研风险表首项 | ⏳ 子代理核实中（B 端 admin-web 是否消费 interactive 事件；C 端 mini-app 渲染链路）。结论决定 G6 修复方向（绑 interact vs 前端补渲染）。 |
 
 **复核结论**：调研报告的核心缺口（G1-G12）与"识别即用"判断在关键点上均成立；两处需在实施时按上表修正认知（图片并非一律走 general；受影响面集中在 product/general skill）。下一步修复顺序建议：G6（B 端 product/general 绑定 interact，前置依赖前端渲染结论）→ G7（统一图片建品话术仲裁）→ Phase 1 vision prompt 澄清引导（base_skill 共享层 + cases/eval 断言）。

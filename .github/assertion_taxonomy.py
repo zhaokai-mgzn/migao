@@ -247,7 +247,7 @@ def has_behavior_assertion(case: dict) -> bool:
 
     ⚠️ **裸工具名期望也不算行为层证据**：`expectations: [order_query]`（无 args）只证明
     「该工具被调用过」（runner 里是纯工具名子串匹配）—— 这正是 `PG-013` 的形态
-    （`[order_query, processing_order_generate]` + 8 条 `forbidden_text`），
+    （`[order_query, processing_order_generate]` + `forbidden_text` 若干条），
     功能对了却因 R1 良性措辞判红时，整条用例**没有任何断言**在证明「加工单真生成了」。
     带 args 的期望（`sku_update(price=150)` / `{tool:…, args:…}`）算行为层：它断言参数。
     """
@@ -1017,7 +1017,9 @@ RULES: tuple[dict, ...] = (
             "存量消耗）。实证 #3800（PG-013 重试前置不等价）、#3797（准备型 pre_clean "
             "未复位路径未纳入折叠）。"
         ),
-        "counterexample": "PG-013（写 `processing_order_generate`，无 pre_clean）",
+        "counterexample": ("PG-013（#3800 实证：重试前置不等价 —— 首跑已生成加工单、重试前置已变；"
+                           "#3833 后已补 `pre_clean[processing_order_reset]`，工具亦按 #3917 下线 ⇒ "
+                           "本条为**历史实例**，判据不变）"),
         "implemented": True,
         "fix": (
             "声明 `pre_clean`（`customer_tag_remove` / `product_remove` / `product_dedupe` / "
