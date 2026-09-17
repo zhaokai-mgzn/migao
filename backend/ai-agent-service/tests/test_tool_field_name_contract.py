@@ -706,9 +706,9 @@ def test_deleting_a_parent_field_turns_the_gate_red(tmp_path):
 def test_cyclic_extends_raises_instead_of_hanging(tmp_path):
     """负控③：自引用 / 成环的 `extends` 必须**显式报错**，不得挂死。
 
-    去掉环检测后本用例红：自引用会无限递归（RecursionError）而不是 AssertionError；
-    `@pytest.mark.timeout(10)` 是硬兜底 —— 解析退化成无界循环时 10s 超时红，
-    而不是拖到全局 `--timeout=120`。
+    去掉环检测后本用例红：自引用会**无限循环**（实测栈停在 `_source_of_receiver_type`
+    反复读同一份源码）而拿不到 AssertionError；`@pytest.mark.timeout(10)` 是硬兜底 ——
+    解析退化成无界循环时 10s 超时红，而不是拖到全局 `--timeout=120`。
     """
     self_ref = _java_fixture_tree(
         tmp_path / "self", {"Loop.java": "public class Loop extends Loop {\n    private String a;\n}\n"}
