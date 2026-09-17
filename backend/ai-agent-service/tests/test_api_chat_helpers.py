@@ -543,6 +543,119 @@ class TestCardClaimGuardReissuesCard:
         assert _mem.saved, "消息照旧落库"
 
 
+class TestCardGuardFactAndIntent:
+    """A7（issue #4013）：判据主体 = **事实**（本轮无卡）× **意图**（文本指向控件）。
+
+    实测残留（2026-09-17，2/2 漏检）：「开单**表单**已发出」「规格**回复『确认』**已发出」
+    ——**不含"卡片/卡"三字**，旧三条措辞判据（短语语料 / 动作⟷卡片 / 「卡片已发出」）
+    全不命中 ⇒ 顾客看到的"已发出"背后没有任何可点控件。旧语料判据的边界是结构性的
+    （全句不含「卡片/卡」的措辞必然漏检，作者已在 chat.py 登记该边界），故判据改绑
+    **结构关系**（控件手势 / 动作⟷控件实物 / 交付声称），这些措辞自动被覆盖、不必再喂语料。
+    """
+
+    def test_form_delivered_wording_detected(self):
+        """旧语料漏检形态①：「开单表单已发出」（无"卡"字）必须命中判据。"""
+        from app.api.chat import _has_card_claim
+
+        assert _has_card_claim("开单表单已发出"), "「表单已发出」漏检（2026-09-17 残留）"
+        assert _has_card_claim("开单表单已发出，请查收。")
+
+    def test_confirm_reply_delivered_wording_detected(self):
+        """旧语料漏检形态②：「规格回复『确认』已发出」（无控件名词）靠**要求确认**识别。"""
+        from app.api.chat import _has_card_claim
+
+        assert _has_card_claim("规格回复『确认』已发出"), "「…回复『确认』已发出」漏检"
+        assert _has_card_claim("已发出，请回复『确认』")
+
+    def test_gesture_instructions_without_card_noun_detected(self):
+        """旧语料覆盖过、但**判据**够不着的形态：动作词无控件名词（「请点击选择（可多选）」）。
+
+        旧实现靠逐字语料 `_CARD_CLAIM_REPRO_PHRASES` 兜住这两条 —— 换一种说法就漏。
+        """
+        from app.api.chat import _has_card_claim
+
+        assert _has_card_claim("请点击选择（可多选）")
+        assert _has_card_claim("请勾选加工项")
+
+    def test_r2_negative_logistics_delivery_not_detected(self):
+        """R2 负例：**业务事实**的交付动词不得被当成"控件声称"（判据要能被事实证伪）。"""
+        from app.api.chat import _has_card_claim
+
+        for text in ("物流已发出，预计 3 天后到达。",
+                     "您的货已发出，运单号 SF1234567890。",
+                     "价格已显示在上方列表里。",
+                     "好的，已为您查询到相关信息，请查看上方结果卡片。"):
+            assert not _has_card_claim(text), f"业务事实被误判为控件声称: {text!r}"
+
+    def test_form_delivered_with_pending_reissues_real_card(self):
+        """形态①+有待确认动作 ⇒ **真补卡**（生产里顾客等的是可点的确认卡，不是"已发出"）。"""
+        chunks, mem, store, marks = _claim_stream("开单表单已发出", store_state=_pending_state())
+        out = "".join(chunks)
+
+        assert "event: interactive" in out, f"有待确认动作时必须真发卡: {out[:400]}"
+        payload = mem.saved[0]["interactive"]
+        assert payload and payload["component"] == "confirm", payload
+        assert payload["fields"], "卡片必须回显已校验参数"
+        assert store.commits and str(store.commits[-1].get("last_confirm_value") or ""), (
+            "补卡必须落 last_confirm_value（否则顾客点了卡也过不了确认门禁）")
+        assert not any("确认卡片未显示" in c for c in chunks), "卡真到了就不得再说「未显示」"
+
+    def test_form_delivered_without_pending_rewritten(self):
+        """形态①+无待确认动作 ⇒ 改写掉"已发出"这条**指向不存在控件**的声称 + 直播提示。"""
+        chunks, mem, store, marks = _claim_stream("开单表单已发出")
+        out = "".join(chunks)
+
+        assert "event: interactive" not in out, "无待确认动作不得凭空造卡"
+        saved = mem.saved[0]["content"]
+        assert "已发出" not in saved, f"虚假交付声称未改写: {saved!r}"
+        assert "回复『确认』" in saved, saved
+        assert any("确认卡片未显示" in c for c in chunks), "直播侧必须给可执行下一步"
+        assert len(marks) == 1 and "改写" in str(marks[0]["message"])
+
+    def test_r2_negative_card_nounless_instruction_not_miswritten(self):
+        """R2 负例：无控件名词的**指令**（「请点击选择（可多选）」）无待确认动作时**不动话术**、
+        也不追加"回复确认"提示（那是错的下一步：顾客该回的是他要的加工项）。
+
+        改前行为：判据靠语料命中 → 改写为空操作，却仍追加提示（话术与提示打架）。
+        """
+        chunks, mem, store, marks = _claim_stream("请点击选择（可多选）")
+        out = "".join(chunks)
+
+        assert "event: interactive" not in out
+        assert mem.saved[0]["content"] == "请点击选择（可多选）", mem.saved[0]["content"]
+        assert not any("确认卡片未显示" in c for c in chunks), "不得给错的下一步"
+        assert len(marks) == 1 and "保持原文" in str(marks[0]["message"]), "必须留痕（不静默）"
+
+    def test_nounless_instruction_with_pending_reissues_card(self):
+        """无控件名词的指令 + 有待确认动作 ⇒ 也真补卡（顾客没控件可选时，卡就是唯一入口）。"""
+        chunks, mem, store, marks = _claim_stream("请点击选择（可多选）",
+                                                 store_state=_pending_state())
+        out = "".join(chunks)
+
+        assert "event: interactive" in out, f"有待确认动作时必须真发卡: {out[:400]}"
+        assert mem.saved[0]["interactive"], "卡必须随消息落库（刷新后仍在，issue #3883）"
+
+    def test_whitespaced_claim_still_rewritten(self):
+        """字符间空白（实测形态「请 点 击 上 方 卡 片」）：判据在归一文本上命中，
+        **改写必须跟得上** —— 否则"判得出来却改不掉"，顾客仍指着不存在的卡。"""
+        chunks, mem, store, marks = _claim_stream("请 点 击 上 方 卡 片")
+        saved = mem.saved[0]["content"]
+        assert "卡片" not in saved, f"逐字加空格的声称未被改写: {saved!r}"
+        assert "回复『确认』" in saved, saved
+        assert any("确认卡片未显示" in c for c in chunks), "直播侧必须给可执行下一步"
+
+    def test_r2_negative_benign_mention_untouched(self):
+        """R2 负例：合法提及（「请查看上方结果卡片」）在守卫层不得被误改/误提示。"""
+        text = "好的，已为您查询到相关信息，请查看上方结果卡片。"
+        chunks, mem, store, marks = _claim_stream(text)
+        out = "".join(chunks)
+
+        assert mem.saved[0]["content"] == text, mem.saved[0]["content"]
+        assert "event: interactive" not in out
+        assert not any("确认卡片未显示" in c for c in chunks)
+        assert marks == [], "合法提及不得触发守卫留痕"
+
+
 # ═══════════════════════════════════════
 # sse.py — SSEEvent / SSEStreamBuilder
 # ═══════════════════════════════════════
