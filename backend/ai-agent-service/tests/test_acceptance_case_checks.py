@@ -3768,10 +3768,11 @@ class TestAmountVerifyChecksRobustness:
         import unittest.mock as mock
 
         async def fake_price(token, name):
-            return price
+            # 库价真值集合（issue #4042）：seam 从"单个商品级价"改为真值 dict
+            return {"price": price, "skus": []}
 
         spec = [{"tool": "order_create", "product_name": "遮光窗帘", "checks": checks}]
-        with mock.patch.object(lr, "_fetch_product_price", new=fake_price):
+        with mock.patch.object(lr, "_fetch_product_price_truth", new=fake_price):
             return asyncio.run(lr.check_amount_verify("tok", [_order_round(7, items, total=total)], spec))
 
     def test_string_checks_still_verify(self):
@@ -3887,9 +3888,9 @@ class TestAmountVerify:
         import unittest.mock as mock
 
         async def fake_price(token, name):
-            return price
+            return {"price": price, "skus": []}      # 真值集合（issue #4042）
 
-        with mock.patch.object(lr, "_fetch_product_price", new=fake_price):
+        with mock.patch.object(lr, "_fetch_product_price_truth", new=fake_price):
             return asyncio.run(lr.check_amount_verify("tok", results, specs))
 
     def _spec(self, **kw):
@@ -3948,7 +3949,7 @@ class TestAmountVerify:
             return None
 
         items = [{"product_name": "遮光窗帘", "quantity": 3, "unit_price": 168.0, "subtotal": 504.0}]
-        with mock.patch.object(lr, "_fetch_product_price", new=none_price):
+        with mock.patch.object(lr, "_fetch_product_price_truth", new=none_price):
             issues = asyncio.run(lr.check_amount_verify("tok", [_order_round(7, items)],
                                                        self._spec()))
         assert any("查不到单价" in i for i in issues), "真值缺失必须显式报，不得静默跳过"

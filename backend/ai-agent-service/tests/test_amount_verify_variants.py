@@ -62,11 +62,58 @@ SPEC = [{"tool": "order_create", "product_name": "遮光窗帘",
          "checks": ["unit_price", "subtotal", "total"]}]
 
 
-def _run(results):
-    async def _fake_price(token, name):
-        return PRICE
-    with mock.patch.object(lr, "_fetch_product_price", new=_fake_price):
+def _run(results, truth=None):
+    async def _fake_truth(token, name):
+        return {"price": PRICE, "skus": []} if truth is None else truth
+    with mock.patch.object(lr, "_fetch_product_price_truth", new=_fake_truth):
         return asyncio.run(lr.check_amount_verify("tok", results, SPEC))
+
+
+class TestUnitPriceTruthScope:
+    """单价接地真值的**口径**必须与工具层闸门同源（issue #4042，run 35243351675 归因）。
+
+    实测假红：mibao 腿 OR-014 判「单价 150 ≠ 商品库 168」，而同栈 PR-021 把共享夹具
+    `prod_eval_blackout` 的米白/散剪 SKU 价改成 150（无复位）⇒ agent 按该规格下单的 150
+    就是**该 SKU 的库价**（工具层接地闸门照常放行），断言却按商品级价判红；
+    同一条断言在 xiaobu 腿（无该污染）判绿 ⇒ 差异在夹具不在 agent。
+    """
+
+    SKU_TRUTH = {"price": 168.0,
+                 "skus": [{"color_name": "米白", "sku_code": "", "price": 150.0},
+                          {"color_name": "浅灰", "sku_code": "", "price": 168.0}]}
+
+    def _items(self, unit_price, color=None):
+        pinfo = {"colorName": color} if color else {}
+        return [{"product_name": "遮光窗帘", "quantity": 3, "unit_price": unit_price,
+                 "subtotal": unit_price * 3, "processing_info": pinfo}]
+
+    def _check(self, unit_price, color=None):
+        results = [{
+            "tool_calls": [{"name": "order_create", "args": {"items": self._items(unit_price, color)}}],
+            "tool_results": [{"tool": "order_create",
+                              "result": {"success": True, "data": {"orderNo": "X"}}}],
+            "final_text": "下单成功",
+        }]
+        return _run(results, truth=self.SKU_TRUTH)
+
+    def test_declared_spec_matching_sku_price_passes(self):
+        """声明规格（米白）且单价 = 该 SKU 库价（150）⇒ **不得**判红（改前必红 = 本类的红证）"""
+        assert self._check(150.0, color="米白") == []
+
+    def test_declared_spec_wrong_price_still_fails(self):
+        """防编造不放宽：声明米白却报 999（不在库价集合）⇒ 仍判红"""
+        issues = self._check(999.0, color="米白")
+        assert issues and "单价" in issues[0], "编造价必须仍被判红（负例守恒）"
+
+    def test_no_spec_accepts_any_library_price(self):
+        """未声明规格 ⇒ 商品级价 ∪ 任一 SKU 价都算接地（#4011 同款豁免，不判死）"""
+        assert self._check(168.0) == []
+        assert self._check(150.0) == []
+
+    def test_fabricated_price_without_spec_still_fails(self):
+        """未声明规格也不许编造：库价集合外的 95.4 ⇒ 判红"""
+        issues = self._check(95.4)
+        assert issues and "单价" in issues[0]
 
 
 class TestSubtotalVariants:

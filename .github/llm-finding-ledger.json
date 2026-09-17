@@ -65,6 +65,20 @@
       "status": "unsunk",
       "reason": "issue 正文只有一条 run 链接（34806837519）、未列出任何失败用例 ID，无从定位到具体断言，属本台账建立前的存量 LLM 红例，尚未产出确定性断言",
       "follow_up": 4009
+    },
+    {
+      "issue": 4042,
+      "status": "sunk",
+      "sinks": [
+        {"kind": "case_assertion", "cases": ["OR-002"], "fields": ["output_verify"]},
+        {"kind": "case_assertion", "cases": ["OR-014"], "fields": ["amount_verify"]},
+        {"kind": "case_assertion", "cases": ["OR-029"], "fields": ["must_succeed"]},
+        {"kind": "case_assertion", "cases": ["PR-008"], "fields": ["must_succeed", "output_verify"]},
+        {"kind": "case_assertion", "cases": ["PR-016"], "fields": ["must_succeed"]},
+        {"kind": "case_assertion", "cases": ["PR-026"], "fields": ["must_succeed"]},
+        {"kind": "case_assertion", "cases": ["CU-008"], "fields": ["must_succeed"]}
+      ],
+      "evidence": "run 35243351675 @67db87ae（determination / normal 全库 / 两腿）的 7 条失败逐条下沉，PR 见本条目所在分支（分支名 fix/4042-llm-sink）。逐条：① **OR-002**（首跑指纹 arg_mismatch(order_query,status)）——原 `data_checks: data.orders.length >= 0` 恒真且不计分（OR-001 的 merge_log 已把本用例登记为未处理的同类实例）⇒ 升级为 output_verify(order_query(action=list) 的 orders 非空)；② **OR-014**——amount_verify 已在（且真红），本轮修的是它的**真值口径**：断言只取商品级价（168），而工具层接地闸门（order_create._reject_unit_price_not_grounded → unit_price_grounding_error）按**所选 SKU 价**判 ⇒ 同栈 PR-021 把共享夹具 prod_eval_blackout 的米白/散剪 SKU 价改成 150（无复位）后，按该规格下单 150 被断言判成「凭记忆报价」= 假红（同一条断言在 xiaobu 腿判绿，差异只在夹具）⇒ local_runner 的真值改为**库价真值集合**（声明规格取匹配 SKU 价，未声明取商品级价 ∪ 任一 SKU 价），红证：修前 runner + 同一假体必报「单价 150.0 ≠ 商品库 168.0」；③ **OR-029**——#4053 已补 must_succeed/precondition/order_before，但它的两个控制轮（auto_select / repeat_until）写成了 **JSON 字符串**，而 runner 只把 dict 轮当控制轮 ⇒ 声明静默失效、卡片无人作答、order_create 永不执行（恒红且归因错人）⇒ 改为 block style dict 轮，并补静态守卫 test_no_control_turn_is_written_as_json_string（红证：改回字符串形态 ⇒ 报 2 条）；④ **PR-008**（no_success(product_manage)）——改前零效果层断言（唯一产出侧痕迹 data.product_id.length > 0 不计分）⇒ 补 must_succeed + output_verify(product_id 非空) + pre_clean[product_remove 自有名] + precondition(expect=0)；⑤ **PR-016**（跨 run 复发 no_success(product_manage)）——改前零效果层断言 ⇒ 补 must_succeed + precondition(expect=0)；⑥ **PR-026**（no_success(product_manage(action=update))）——must_succeed 已在，但用例**结构上不可满足**：R2 的单张 auto_respond 轮被 R1 后的 choice 卡（「要设成哪种图？」）吃掉 ⇒ 同轮发出的 confirm 卡无人作答 ⇒ 改为 repeat_until(tool_called=product_manage, max=3)（有卡答卡，目标工具成功即跳过余轮）；⑦ **CU-008**（no_success(customer_manage)）——确定性断言早已在（expectations action=detail + must_succeed）且确实判红，属**产品行为缺陷**（问「客户工艺偏好/常用物流设置」时 agent 走 order_query/logistics_track 答订单物流），已按 R4「新违规只有两个出口」开独立 issue 跟踪，不在本 PR 修。**仍在跟踪的旁支（不属本 ledger 的 sunk 判据）**：PR-021 改共享夹具 SKU 价后**无复位**（写方自清理缺口）、PR-008 首跑的建品流程空转（agent 反复问加工项）——均已在 #4042 上回填并另开单。机械复核：python3 .github/llm_sink_check.py --issue 4042 与 --selftest 均返回 0"
     }
   ],
   "unimplemented": [

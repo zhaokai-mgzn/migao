@@ -3295,8 +3295,20 @@ def _first_successful_data(results: list, tool: str) -> dict:
     return {}
 
 
-async def _fetch_product_price(token: str, name: str) -> float | None:
-    """按商品名查商品库单价（接地真值）。"""
+async def _fetch_product_price_truth(token: str, name: str) -> dict | None:
+    """按商品名查**库价真值**：`{"price": 商品级价|None, "skus": [{color_name, sku_code, price}]}`。
+
+    为什么不能只回**商品级价**（issue #4042，run 35243351675 @67db87ae 归因）：
+    工具层接地闸门（`order_create._reject_unit_price_not_grounded` →
+    `unit_price_grounding_error`）判的是「**这个价是否存在于商品库**」，且**声明了规格**
+    （`processing_info.colorName/skuCode`）时按**所选 SKU 的价**判。断言侧此前只取商品级价 ⇒
+    **同一场景下闸门放行、断言判红**（两处口径漂移）：
+      · OR-014 在 mibao 腿判红（单价 150 ≠ 商品库 168），而同栈的 PR-021 把共享夹具
+        `prod_eval_blackout` 的米白/散剪 SKU 价改成 150 且**无复位** ⇒ agent 按该规格下单
+        150 = 该 SKU 的库价（闸门照常放行）⇒ 断言判成「凭记忆报价」= **假红**；
+      · 同一条断言在 xiaobu 腿（无该污染，SKU 价 = 商品价 = 168）判绿 ⇒ 差异只在夹具，不在 agent。
+    取不到 / 无任何单价 ⇒ None（调用方显式报「查不到单价」，不静默跳过）。
+    """
     try:
         async with httpx.AsyncClient() as c:
             h = _admin_headers(token)
@@ -3308,12 +3320,58 @@ async def _fetch_product_price(token: str, name: str) -> float | None:
             pid = items[0]["id"]
             rd = await c.get(f"{ADMIN_API}/api/admin/products/{pid}", headers=h, timeout=15)
             data = (_safe_json(rd, {}) or {}).get("data", {}) or {}
+            price = None
             for key in ("price", "basePrice", "base_price"):
                 if data.get(key) is not None:
-                    return float(data[key])
+                    price = float(data[key])
+                    break
+            skus = []
+            for sku in data.get("skus") or []:
+                if not isinstance(sku, dict) or sku.get("price") is None:
+                    continue
+                try:
+                    skus.append({
+                        "color_name": str(sku.get("colorName") or sku.get("color_name") or ""),
+                        "sku_code": str(sku.get("skuCode") or sku.get("sku_code") or ""),
+                        "price": float(sku["price"]),
+                    })
+                except (TypeError, ValueError):
+                    continue
+            if price is None and not skus:
+                return None
+            return {"price": price, "skus": skus}
     except Exception:
         return None
-    return None
+
+
+def _allowed_unit_prices(truth: dict, pinfo) -> list:
+    """该行**允许的单价集合**（纯函数；口径与工具层闸门同源，issue #4042）。
+
+    · 声明了规格（`processing_info.colorName/skuCode`）且能匹配到 SKU ⇒ **该 SKU 的价**；
+    · 声明了规格却匹配不到 SKU ⇒ 退化为**库价集合**（商品级 ∪ 全部 SKU）：闸门对"声明了规格
+      但解析不到唯一 SKU"按配置错误拒绝，断言侧不据此判红（规格名写法差异会造成假红），
+      但「必须是库里的价」这条防编造原意不变；
+    · 未声明规格 ⇒ 商品级价 ∪ 全部 SKU 价（闸门同款豁免，#4011：多规格价商品不该被判死）；
+    · 没有任何库价 ⇒ 返回 []（调用方已单独报「查不到单价」）。
+    """
+    truth = truth if isinstance(truth, dict) else {}
+    lib: list = []
+    p = truth.get("price")
+    if isinstance(p, (int, float)):
+        lib.append(float(p))
+    skus = [s for s in (truth.get("skus") or []) if isinstance(s, dict)]
+    sku_prices = [float(s["price"]) for s in skus if isinstance(s.get("price"), (int, float))]
+    info = pinfo if isinstance(pinfo, dict) else {}
+    color = str(info.get("colorName") or "")
+    code = str(info.get("skuCode") or "")
+    if color or code:
+        matched = [float(s["price"]) for s in skus
+                   if isinstance(s.get("price"), (int, float))
+                   and ((code and str(s.get("sku_code") or "") == code)
+                        or (color and str(s.get("color_name") or "") == color))]
+        if matched:
+            return matched
+    return lib + sku_prices
 
 
 def _ticket_ref_of(data) -> str:
@@ -3465,14 +3523,14 @@ async def check_amount_verify(token: str, results: list, amount_verify: list) ->
             issues.append(f"amount_verify[{tool}](R{rnd}): items 为空，金额无从核对")
             continue
 
-        price = None
+        truth = None
         if "unit_price" in checks:
             name = str(spec.get("product_name") or "")
             if not name:
                 issues.append("amount_verify: 声明了 unit_price 检查但未给 product_name（无法取真值）")
             else:
-                price = await _fetch_product_price(token, name)
-                if price is None:
+                truth = await _fetch_product_price_truth(token, name)
+                if truth is None:
                     issues.append(f"amount_verify: 商品「{name}」在商品库查不到单价（fixture 缺数据？）")
 
         subtotal_sum = 0.0
@@ -3508,13 +3566,14 @@ async def check_amount_verify(token: str, results: list, amount_verify: list) ->
                 canonical_fee_sum += canon_fee
                 proc_detail.append(f"items[{i}]: {detail}")
             subtotal_sum += sub_f
-            if "unit_price" in checks and price is not None:
+            if "unit_price" in checks and truth is not None:
                 # 只核对被声明商品的单价（多商品订单里其它行按各自商品库价另配 spec）
                 if not spec.get("product_name") or str(spec["product_name"]) in pname:
-                    if abs(up - price) > tol:
+                    allowed = _allowed_unit_prices(truth, pinfo)
+                    if allowed and not any(abs(up - a) <= tol for a in allowed):
                         issues.append(
-                            f"amount_verify[{tool}](R{rnd}): 「{pname}」单价 {up} ≠ 商品库 {price}"
-                            f"（凭记忆报价？）")
+                            f"amount_verify[{tool}](R{rnd}): 「{pname}」单价 {up} "
+                            f"不在库价集合 {sorted(allowed)}（凭记忆报价？）")
             if "subtotal" in checks:
                 # 两种**合法约定**都放行（#3511 T3.2 归因，acceptance-protocol §14.2 有效性漂移）：
                 #   ① 面料小计：subtotal = 数量 × 单价（服务端 canonical —— AgentOrderCreateRequest
@@ -4200,6 +4259,54 @@ def expand_repeat_turns(user_inputs: list) -> list:
         else:
             out.append(msg)
     return out
+
+
+# 控制轮的**专属键**（只有"要让 harness 替顾客作答"的轮才会出现这些键）。
+# ⚠️ 判据只用这张表，不靠措辞（R5：判据必须建在事实/结构上）：
+#   · 字符串能被 `json.loads` 解析成 dict；**且**键集 ⊆ 本表；**且**至少一个键
+#   ⇒ 几乎只可能是"作者本意是控制轮、却写成了 YAML 字符串"。
+# 顾客真的发一段 JSON 文本的用例不受影响（键集不在表内即放过）。
+_CONTROL_TURN_KEYS = frozenset({
+    "auto_select", "auto_respond", "repeat_until", "new_session", "auto_fill",
+    "text", "images", "code", "fallback", "form_values", "prefer_text",
+    "__repeat__", "opts",
+})
+
+
+def check_control_turns_declared(user_inputs: list) -> list:
+    """控制轮必须以 **dict**（YAML block style）声明；写成 JSON 字符串 ⇒ 报出来。
+
+    为什么（issue #4042 复核，实证 OR-029 —— #4053 的修法**静默失效**）：
+    `run_case` 只把 **dict** 轮解释成控制轮（`isinstance(msg, dict)` →
+    auto_select / auto_respond / repeat_until / new_session 分支），**字符串轮一律当纯文本
+    发给 agent**。于是把控制轮写成 JSON 字符串（YAML 单引号标量，如
+    `'{"auto_select": true}'`）时：
+      · harness 把**字面量 JSON 文本**当顾客消息发出去（agent 只会反问"这是什么"）；
+      · 卡片无人作答 ⇒ 目标写工具永不执行 ⇒ 用例**恒红**，且归因写成「agent 不写操作」。
+    这是标准「声明无消费」静默失效形态（R5），且**没有任何东西会变红** —— 故在跑轮次**之前**
+    折进 `case_issues`（与 `check_precondition_declared` 同族：fail-closed、不进 agent 归因）。
+    """
+    issues = []
+    for i, msg in enumerate(user_inputs or [], 1):
+        if not isinstance(msg, str):
+            continue
+        s = msg.strip()
+        if not (s.startswith("{") and s.endswith("}")):
+            continue
+        try:
+            parsed = json.loads(s)
+        except Exception:
+            continue
+        if not isinstance(parsed, dict) or not parsed:
+            continue
+        keys = set(parsed)
+        if keys <= _CONTROL_TURN_KEYS:
+            issues.append(
+                f"user_inputs 第 {i} 轮是**控制轮的 JSON 字符串**（键：{sorted(keys)}）—— "
+                f"runner 只把 dict 轮当控制轮，字符串轮会被当**纯文本**发给 agent "
+                f"⇒ 该声明静默失效（卡片无人作答、目标工具永不执行，用例恒红且归因错人）。"
+                f"请改成 YAML block style 的 dict 轮")
+    return issues
 
 
 async def check_debug_user_precondition(token: str, case) -> list:
@@ -5846,6 +5953,8 @@ async def run_case(case, token: str, session_id: str) -> dict:
     # 前置断言的**声明层**一致性（issue #3781，L0/零 LLM）：声明了没实现的 type
     # ⇒ 断言会静默跳过（"看起来有覆盖"），fail-closed 报出来。
     case_issues += check_precondition_declared(getattr(case, "precondition", None) or [])
+    # 控制轮的**声明形态**（issue #4042）：写成 JSON 字符串 ⇒ 静默退化成纯文本轮（fail-closed 报出来）
+    case_issues += check_control_turns_declared(getattr(case, "user_inputs", None) or [])
 
     # case 级表单值：所有 `auto_fill` 轮声明的并集 —— auto_respond 轮回答表单时复用，
     # 避免同一份收货信息在用例里重复声明（少一处漂移）

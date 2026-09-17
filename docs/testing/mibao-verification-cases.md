@@ -1269,7 +1269,7 @@
 必须成功: customer_manage
 ```
 真值: customer-crm.profile
-溯源: 2026-09-17 新增（issue #3984）：M2-D 客户工艺画像与常用物流存储覆盖登记。2026-09-17（issue #4007，run 35233821582 CU-008 reproducible）：原版是**写类**期望（customer_manage(action=update)）而输入场景是查询口径 → agent 不会调 update → 期望永不满足（恒红形态）。改读类：输入改「看看客户张三的工艺偏好和常用物流」+ 期望 action=detail（读）+ must_succeed；写路径明确交回单测契约（test_tool_field_name_contract.py，case_ids 含 CU-008） ｜ tags: customer, mibao, craft-profile, logistics
+溯源: 2026-09-17 新增（issue #3984）：M2-D 客户工艺画像与常用物流存储覆盖登记。2026-09-17（issue #4007，run 35233821582 CU-008 reproducible）：原版是**写类**期望（customer_manage(action=update)）而输入场景是查询口径 → agent 不会调 update → 期望永不满足（恒红形态）。改读类：输入改「看看客户张三的工艺偏好和常用物流」+ 期望 action=detail（读）+ must_succeed；写路径明确交回单测契约（test_tool_field_name_contract.py，case_ids 含 CU-008）；2026-09-18 下沉复核（issue #4042，LLM 红例 run 35243351675 @67db87ae）：本条**已有**确定性断言（`expectations: customer_manage(action=detail)` + `must_succeed`），确定性层确实拦住并判红（首跑指纹 `no_success(customer_manage)`，2 次 run 复发）⇒ 属**产品行为缺陷**（问「客户工艺偏好/常用物流设置」时 agent 走了 order_query/logistics_track 答订单物流，没走客户档案），已另开单跟踪；断言形态不动 ｜ tags: customer, mibao, craft-profile, logistics
 
 ## 数据域（10 case）
 
@@ -2204,10 +2204,11 @@
 ```
 你: 查看待发货的订单
 期望: order_query(action=list, status=confirmed)
-数据: data.orders.length >= 0
+数据: 订单列表查询必须真的返回数据（机器断言见 output_verify：orders 非空；空列表 / 未成功调用 ⇒ 判红）—— 原 `data.orders.length >= 0` 恒真且不计分，已弃用
+产出: order_query(list) → orders==__nonempty__
 ```
 真值: order.states, order.flow
-溯源: eval O002 + verification 1.2（同义） ｜ tags: query, filter
+溯源: eval O002 + verification 1.2（同义）；2026-09-18 下沉（issue #4042，LLM 红例 run 35243351675 首跑指纹 arg_mismatch(order_query,status)）：原 `data.orders.length >= 0` 恒真且不计分（同 OR-001 形态，OR-001 的 merge_log 已登记本用例为未处理的同类实例）⇒ 升级为 output_verify(order_query(action=list) 的 orders 非空) ｜ tags: query, filter
 
 ### OR-003. 订单统计 🔵
 ```
@@ -2395,7 +2396,7 @@
 载荷(全场可用): customer_name=张三, customer_phone=13800138000, customer_address=浙江省杭州市西湖区文三路1号1幢101室, color=米白, colorName=米白
 ```
 真值: order.states, order.create-flow, processing-manage.crud
-溯源: 2026-09-07 改写（issue #3005，回滚 #2986）：行业加工费按米计价、辅料（罗马圈/四爪钩等）含在按米加工费中——回滚 per_piece 与「每米数量」密度（数量=ceil(面料米数×密度) 与实际车间工艺不符、数量隐藏导致 B 端无法对账），数量改为按计价方式派生且展示（per_meter=面料米数、per_set/fixed=1）；2026-09-14 校准（#3538）：pre_clean 去 price 过滤（关键词去重，原 price 过滤限 100 元、在种子遮光窗帘 ¥168 的独立栈上恒不匹配 = 没去重）；2026-09-15（issue #3835）补 `precondition[product_count_for_keyword: 遮光窗帘, expect: 1]`：本用例按名定位下单对象、`amount_verify` 也按名取接地真值，故「该名字唯一」是可判定的前置 —— 判定跑 run 34908262839 首跑 R1 `product_search(products=2)` + R2 把 PR-016 造的 ¥100 副本选成目标，6 轮被岔路吃掉。声明前置后这类污染折成 `precondition_not_applied(declared:product_count_for_keyword)`，不再伪装成「agent 不下单」；断言（expectations/must_succeed/amount_verify/data_checks）原样未动；2026-09-15（B 端免验证码产品变更，窄跑 34930597539）：四个「123456」轮去掉 `prefer_text: true` —— 该开关会让 harness 无视待答 confirm 卡、把「点确认」轮硬发成验证码文本，而 B 端代客下单已免短信验证码、落单前必须点击确认卡（order_create 在确认卡未被点击时返回 confirmation_required_card_not_clicked，窄跑 R9~R11 逐字复现）。去掉后按 runner 既有 `resolve_auto_respond` 语义：有待答卡就答卡（confirm→点击 confirmValue / form→回填客户信息），无卡且 C 端 customer 角色被索码时才发 123456 兜底（C 端仍需验证码，见 order_create `_needs_sms_verification` role==customer 分支）；断言（expectations/must_succeed/amount_verify/data_checks/precondition）原样未动 ｜ tags: order_create, processing_item, pricing
+溯源: 2026-09-07 改写（issue #3005，回滚 #2986）：行业加工费按米计价、辅料（罗马圈/四爪钩等）含在按米加工费中——回滚 per_piece 与「每米数量」密度（数量=ceil(面料米数×密度) 与实际车间工艺不符、数量隐藏导致 B 端无法对账），数量改为按计价方式派生且展示（per_meter=面料米数、per_set/fixed=1）；2026-09-14 校准（#3538）：pre_clean 去 price 过滤（关键词去重，原 price 过滤限 100 元、在种子遮光窗帘 ¥168 的独立栈上恒不匹配 = 没去重）；2026-09-15（issue #3835）补 `precondition[product_count_for_keyword: 遮光窗帘, expect: 1]`：本用例按名定位下单对象、`amount_verify` 也按名取接地真值，故「该名字唯一」是可判定的前置 —— 判定跑 run 34908262839 首跑 R1 `product_search(products=2)` + R2 把 PR-016 造的 ¥100 副本选成目标，6 轮被岔路吃掉。声明前置后这类污染折成 `precondition_not_applied(declared:product_count_for_keyword)`，不再伪装成「agent 不下单」；断言（expectations/must_succeed/amount_verify/data_checks）原样未动；2026-09-15（B 端免验证码产品变更，窄跑 34930597539）：四个「123456」轮去掉 `prefer_text: true` —— 该开关会让 harness 无视待答 confirm 卡、把「点确认」轮硬发成验证码文本，而 B 端代客下单已免短信验证码、落单前必须点击确认卡（order_create 在确认卡未被点击时返回 confirmation_required_card_not_clicked，窄跑 R9~R11 逐字复现）。去掉后按 runner 既有 `resolve_auto_respond` 语义：有待答卡就答卡（confirm→点击 confirmValue / form→回填客户信息），无卡且 C 端 customer 角色被索码时才发 123456 兜底（C 端仍需验证码，见 order_create `_needs_sms_verification` role==customer 分支）；断言（expectations/must_succeed/amount_verify/data_checks/precondition）原样未动；2026-09-18 **假红归因**（issue #4042，LLM 红例 run 35243351675 @67db87ae）：本例在 mibao 腿判红（`amount_verify: 单价 150 ≠ 商品库 168`）而 **xiaobu 腿同一条断言判绿**，差异不在 agent —— 同栈的 PR-021（输入「把遮光窗帘的米白色散剪规格改成 150 元」）把**共享夹具** `prod_eval_blackout` 的米白/散剪 SKU 价改成 150 且**无复位**，而本例 `amount_verify` 的接地真值取的是**商品级价**（168，`_fetch_product_price`）⇒ 按所选规格下单（150 = 该 SKU 库价，工具层接地闸门同样放行）反被判成「凭记忆报价」。两层修法：① 断言语义对齐工具闸门（真值按所选规格取 SKU 价，见本 PR 对 `local_runner.check_amount_verify` 的改动）；② 写方无复位属独立缺陷，另开单跟踪（本 PR 不改夹具写入方） ｜ tags: order_create, processing_item, pricing
 
 ### OR-015. order_create 写操作前置校验必须真正执行（validate_input 规则分层修复，issue #3029 复盘） 🔵
 ```
@@ -2718,8 +2719,8 @@
 ```
 你: 录订单 张三（13800138000）｜ 2699系列雪尼尔窗帘面料 · 2699-03暖米色 · 散剪 · 2.8米 · 10 米 ｜ 加工项：纳米圈打孔、韩式波浪折边、高温定型
 你: 1. 2699系列雪尼尔窗帘面料｜¥23.8/米｜库存 1000
-你: {"auto_select": true}
-你: {"repeat_until": {"tool_called": "order_create", "max": 8}, "fallback": "确认下单", "form_values": {"customer_name": "张三", "customer_phone": "13800138000", "customer_address": "浙江省杭州市西湖区文三路1号1幢101室", "color": "2699-03暖米色", "colorName": "2699-03暖米色"}}
+你: [🤖 选第一个选项]
+你: [🔁 按目标工具重复直至成功：order_create，最多 8 次]
 期望: product_search
 期望: interact(component=choice)
 期望: product_detail
@@ -2734,7 +2735,7 @@
 必须成功: order_create
 ```
 真值: order.create-flow
-溯源: 2026-09-17 新增（issue #3976，线上实证 sess_202d55d49a254a10）：首条消息同时含商品细节与下单指令 → 意图路由判 product_inquiry → 整条 validate/confirm 链在 product skill 内完成，确认卡点击后模型调 order_create 撞 Tool not found（product 注册表无此工具）→ 空头承诺 + 订单永不落库。修复（route_by_intent 答卡轮归属 skill 迁移 + tool_not_found 兜底 relock + 8.4 收口扩展 B 端 order_create + metadata 假证据修复）后，确认轮应路由到 order skill 真实下单。2026-09-17 CI 门禁校准：B 端专属用例补 persona: mibao（C 端缺 sms_code 轮且 fixture 无该商品）、补 must_succeed[order_create]（效果层断言）与 precondition[product_count_for_keyword]（同名商品唯一前置，同 OR-008/OR-006 #3835 先例）。2026-09-17 夹具对齐（issue #4015，run 35233821582 @54e8fe9d 归因）：罐头输入与 tests/agent_eval/fixtures/mibao_eval_seed.sql 事实矛盾（规格 2699-06 蓝灰色 / 库存 9599 / 加工项 穿杆孔加工 ¥4/米 与 包边处理 ¥10/米 三项在 seed 里 0 命中；自称「已有客户」的赵凯 13456000919 亦不在 seed）⇒ 合格 agent 如实指出「对不上」并停在澄清，链路物理上走不完（恒红）。逐项改为 seed 真值（2699-03暖米色 / 库存 1000 / 纳米圈打孔 ¥8+韩式波浪折边 ¥12+高温定型 ¥10 / 张三 13800138000），并把后两轮改成 auto_select + repeat_until(tool_called=order_create) 协作轮（同 OR-016/OR-021 先例：卡内容由 LLM 动态生成，静态轮次表对不上就卡死）——断言（expectations / must_succeed / order_before / precondition）一律不放宽 ｜ tags: order_create, cross_skill, guided_flow
+溯源: 2026-09-17 新增（issue #3976，线上实证 sess_202d55d49a254a10）：首条消息同时含商品细节与下单指令 → 意图路由判 product_inquiry → 整条 validate/confirm 链在 product skill 内完成，确认卡点击后模型调 order_create 撞 Tool not found（product 注册表无此工具）→ 空头承诺 + 订单永不落库。修复（route_by_intent 答卡轮归属 skill 迁移 + tool_not_found 兜底 relock + 8.4 收口扩展 B 端 order_create + metadata 假证据修复）后，确认轮应路由到 order skill 真实下单。2026-09-17 CI 门禁校准：B 端专属用例补 persona: mibao（C 端缺 sms_code 轮且 fixture 无该商品）、补 must_succeed[order_create]（效果层断言）与 precondition[product_count_for_keyword]（同名商品唯一前置，同 OR-008/OR-006 #3835 先例）。2026-09-17 夹具对齐（issue #4015，run 35233821582 @54e8fe9d 归因）：罐头输入与 tests/agent_eval/fixtures/mibao_eval_seed.sql 事实矛盾（规格 2699-06 蓝灰色 / 库存 9599 / 加工项 穿杆孔加工 ¥4/米 与 包边处理 ¥10/米 三项在 seed 里 0 命中；自称「已有客户」的赵凯 13456000919 亦不在 seed）⇒ 合格 agent 如实指出「对不上」并停在澄清，链路物理上走不完（恒红）。逐项改为 seed 真值（2699-03暖米色 / 库存 1000 / 纳米圈打孔 ¥8+韩式波浪折边 ¥12+高温定型 ¥10 / 张三 13800138000），并把后两轮改成 auto_select + repeat_until(tool_called=order_create) 协作轮（同 OR-016/OR-021 先例：卡内容由 LLM 动态生成，静态轮次表对不上就卡死）——断言（expectations / must_succeed / order_before / precondition）一律不放宽；2026-09-18 复核修正（issue #4042）：上面那次改写的**后两轮写法无效** —— 它们是 JSON **字符串**（`'{\"auto_select\": true}'` / `'{\"repeat_until\": …}'`），而 runner 只把 **dict** 轮当控制轮（非 dict 一律按纯文本发送，见 `run_case` 的 `isinstance(msg, dict)` 分支），故 auto_select/repeat_until 两个声明**静默失效**、顾客消息变成字面量 JSON、卡片无人作答 ⇒ `order_create` 永不执行（恒红且归因错人）。已改为 YAML block style 的 dict 轮；并补静态守卫（`tests/unit_ci_workflows/test_eval_auto_respond_l0.py::test_no_control_turn_is_written_as_json_string`）防复发 ｜ tags: order_create, cross_skill, guided_flow
 
 ## 加工项域（11 case）
 
@@ -3193,15 +3194,17 @@
 你: 窗帘布艺
 你: 颜色选白色和灰色
 你: 货号用 TEST-CURTAIN-A
-你: 确认创建
-你: 确认创建测试窗帘A
+你: [🔁 按目标工具重复直至成功：product_manage，最多 3 次]
 期望: product_manage(action=create)
 期望: validate_input
 期望: interact(component=choice)
-数据: data.product_id.length > 0
+数据: 商品真的被创建（机器断言见 must_succeed[product_manage(action=create)] + output_verify 的 product_id 非空）；原 `data.product_id.length > 0` 不计分（无 success=true/error.code=/未被调用 关键词）⇒ 已弃用
+清理: product_remove(product_keyword=测试窗帘A)
+必须成功: product_manage(create)
+产出: product_manage(create) → product_id==__nonempty__
 ```
 真值: product-sku-stock.create-flow, product-sku-stock.create-confirm
-溯源: eval P003 + verification 2.9（同义，取 eval 版）；2026-09-09 校准：补「窗帘布艺」点分类卡轮 + 末轮回传 confirmValue「确认创建测试窗帘A」（agent 实际生成，含商品名上下文；原脚本末轮『确认创建』被 agent 理解成『发确认卡』而非『点确认卡回传』，product_manage 永不执行） ｜ tags: create, full_flow
+溯源: eval P003 + verification 2.9（同义，取 eval 版）；2026-09-09 校准：补「窗帘布艺」点分类卡轮 + 末轮回传 confirmValue「确认创建测试窗帘A」（agent 实际生成，含商品名上下文；原脚本末轮『确认创建』被 agent 理解成『发确认卡』而非『点确认卡回传』，product_manage 永不执行）；2026-09-18 下沉（issue #4042）：补 must_succeed[product_manage(action=create)] + output_verify(product_id 非空)，并把不计分的散文 `data.product_id.length > 0` 弃用；补 pre_clean[product_remove 自有名] + precondition[product_count_for_keyword expect=0]（前置自断言，清掉 CASE-TRUST-NO-EFFECT-ASSERTION / CASE-TRUST-NO-PRECONDITION-ASSERTION 两条存量违规）；2026-09-18 **轮次形状修正**（issue #4042 归因）：末两轮静态文本（「确认创建」/「确认创建测试窗帘A」）答不上 agent 动态生成的**加工项多选卡**，R5/R6 全被该卡吃掉 ⇒ confirm 卡在最后一轮才发出、无人点击 ⇒ 建品永不执行（`no_success(product_manage)`，与 OR-014/CH-010 同款 #3518 坑）⇒ 末两轮改为 `repeat_until(tool_called=product_manage, max=3)` 协作轮（有卡答卡 / 无卡发原 confirmValue 文本），断言原样未动 ｜ tags: create, full_flow
 
 ### PR-009. 商品更新 - 名称解析 ID 🔴
 ```
@@ -3343,12 +3346,13 @@
 数据: 分类确认后加工项选择器按「适用商品分类」过滤展示（processing_item_query 携带 applicable_category_id，= 已选商品分类 ID）
 数据: 适用分类为空（applicable_product_categories 为空）的加工项仍展示（= 适用所有分类），不因过滤而丢失
 数据: 当前分类无匹配加工项时以文字提示可跳过，不空转强制选择
-数据: 最终创建成功且关联加工项数量正确
+数据: 最终创建成功：机器断言见 must_succeed[product_manage(action=create)]（写成功）；「关联加工项数量正确」本轮**仍无机器判据**（db_verify 只支持 processingItemConfigs 谓词），已在 merge_log 登记为能力缺口
 清理: product_remove(product_keyword=E2E建品流程样品帘)
 必填: processing_item_query() 字段 applicable_category_id
+必须成功: product_manage(create)
 ```
 真值: product-sku-stock.create-flow, processing-manage.crud
-溯源: 2026-09-06 新增（issue #2964）：加工项「适用商品分类」配置此前无消费方，建品流程按已选分类过滤/推荐加工项（设计意图见 docs/design/admin-dashboard-design.md §6.1.1 适用商品分类+AI推荐）。2026-09-14 校准（#3518）：收尾裸文本「确认」改答卡轮（B 端 confirm 门禁：文字≠点卡）；2026-09-15 补自清理（issue #3800，判定跑 run 34865780382 实证）：本用例建的同名商品与种子 `prod_eval_blackout`（遮光窗帘）撞名，而 `namespaces` 只保证并行互斥、不解决重试前置等价性（#3751 的复位按 pre_clean opt-in）⇒ 首跑建出的那件留到重试 ⇒ agent 正确拒绝建重复 ⇒ 指纹漂移误判 unstable（首跑指纹无 `no_success(product_manage)`、重试指纹有，即铁证）⇒ 补 `product_dedupe{遮光窗帘}`（保留最早创建 = 种子）；**不能用 product_remove**（子串删全部 ⇒ 会连种子一起删，而它是 PR-005/PR-007/CR-001/CR-003/OR-015 的共享前置）；expectations/required_args/data_checks 原样未动 ｜ tags: processing_item, product_category, guided_flow, recommendation
+溯源: 2026-09-06 新增（issue #2964）：加工项「适用商品分类」配置此前无消费方，建品流程按已选分类过滤/推荐加工项（设计意图见 docs/design/admin-dashboard-design.md §6.1.1 适用商品分类+AI推荐）。2026-09-14 校准（#3518）：收尾裸文本「确认」改答卡轮（B 端 confirm 门禁：文字≠点卡）；2026-09-15 补自清理（issue #3800，判定跑 run 34865780382 实证）：本用例建的同名商品与种子 `prod_eval_blackout`（遮光窗帘）撞名，而 `namespaces` 只保证并行互斥、不解决重试前置等价性（#3751 的复位按 pre_clean opt-in）⇒ 首跑建出的那件留到重试 ⇒ agent 正确拒绝建重复 ⇒ 指纹漂移误判 unstable（首跑指纹无 `no_success(product_manage)`、重试指纹有，即铁证）⇒ 补 `product_dedupe{遮光窗帘}`（保留最早创建 = 种子）；**不能用 product_remove**（子串删全部 ⇒ 会连种子一起删，而它是 PR-005/PR-007/CR-001/CR-003/OR-015 的共享前置）；expectations/required_args/data_checks 原样未动；2026-09-17（issue #3835）输入商品名改为**用例自有**（`E2E建品流程样品帘`）+ `pre_clean[product_remove 自有名]`（根治跨用例同名污染）；2026-09-18 下沉（issue #4042）：补 must_succeed[product_manage(action=create)] + precondition[product_count_for_keyword expect=0]（清掉 CASE-TRUST-NO-EFFECT-ASSERTION / CASE-TRUST-NO-PRECONDITION-ASSERTION 两条存量违规）；「关联加工项数量正确」仍无机器判据（db_verify 只支持 processingItemConfigs 谓词），如实登记为能力缺口 ｜ tags: processing_item, product_category, guided_flow, recommendation
 
 ### PR-017. 商品创建/更新/详情透传「退货回补库存」开关（allow_return_restock） 🔵
 ```
@@ -3448,7 +3452,7 @@
 ### PR-026. 设置商品主图 - product_manage(action=update, images) 成功路径 🔵
 ```
 你: 把遮光窗帘的主图设成这张色卡图 [📷 附 1 图]
-你: [🤖 按上一轮卡片作答]
+你: [🔁 按目标工具重复直至成功：product_manage，最多 3 次]
 期望: product_manage(action=update)
 数据: product_manage(action=update) 携带 images（色卡图 URL）且执行成功 —— 商品主图已更新（images 落库）；db_verify[product_by_name] 当前只支持 processingItemConfigs 谓词（local_runner.py），商品 images 字段落库无 fetch，属 runner 能力缺口（如实登记，未掩盖）
 清理: product_dedupe(product_keyword=遮光窗帘)
@@ -3456,7 +3460,7 @@
 必须成功: product_manage(update)
 ```
 真值: product-sku-stock.status-flow
-溯源: 2026-09-15 新增（issue #3930/#3931 实证 sess_2efa2071bb1747d8）：设主图成功路径——同回合 agent 先错误路由 product_update(images=…)（无该参数）被静默丢弃 → 「没有要修改的字段」→ 误宣「不支持图片」；19:49 改用 product_manage(action=update, images) 成功。本用例锁定正确路径（expectations/required_args/must_succeed 三层）；db_verify 对商品 images 无 fetch（只支持 processingItemConfigs），效果层由 must_succeed 兜底，落库层缺口已登记 ｜ tags: image, write
+溯源: 2026-09-15 新增（issue #3930/#3931 实证 sess_2efa2071bb1747d8）：设主图成功路径——同回合 agent 先错误路由 product_update(images=…)（无该参数）被静默丢弃 → 「没有要修改的字段」→ 误宣「不支持图片」；19:49 改用 product_manage(action=update, images) 成功。本用例锁定正确路径（expectations/required_args/must_succeed 三层）；db_verify 对商品 images 无 fetch（只支持 processingItemConfigs），效果层由 must_succeed 兜底，落库层缺口已登记；2026-09-18 轮次预算修正（issue #4042）：收尾单张 `auto_respond` 轮被 R1 后的 **choice 卡**（「要设成哪种图？」）吃掉 ⇒ 同轮发出的 confirm 卡无人作答 ⇒ 用例**结构上不可满足**（合格 agent 也必红，首跑指纹 `no_success(product_manage)`）⇒ 改为 `repeat_until(tool_called=product_manage, max=3)` 协作轮（有卡答卡：choice→首项 / confirm→confirmValue；目标工具成功即跳过余轮）。断言（expectations / required_args / must_succeed）原样未动 ｜ tags: image, write
 
 ### PR-027. 设主图能力不误宣 - 回复不得出现「不包含图片上传/拿不到地址」类能力否定 🔵
 ```
