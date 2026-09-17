@@ -16,12 +16,16 @@
 2. **执行侧域相关** —— 每个 skill 只会拿到 `SkillConfig.tool_names` 里那十几个工具的
    LangChain 绑定；skill 外的工具名一律 `Tool not found`。
 
-⇒ **「能校验」与「能执行」之间没有任何一层在比对**。skills 可以（也会）对**自己执行不了**
+⇒ **「能校验」与「能执行」之间原本没有任何一层在比对**。skills 可以（也会）对**自己执行不了**
 的写工具完成 `validate_input` 并落地「已校验待执行」状态（`base_skill` 在
 `validate_input` 成功时落 `pending_validated_input`），随后模型调那个写工具 →
 `Tool not found`。线上实证 **#3976**（sess_202d55d49a254a10）：B 端在 `product` skill 内
 `validate_input(order_create)` + 发确认卡，点卡后 `[product] Tool not found: order_create`
 → 最终回复「已转到订单流程为您落单…请稍候，我这就提交」而 **orders 表无新订单**。
+
+**本文件补的就是那层守卫**：`validate_input` 的每个目标必须是**当前 skill 执行得了**的写工具；
+实测存量 **126** 处死角（8 个 skill），按 `A5_GAP_BASELINE` 登记为**存量账本**
+（锚 `c0be8e35`，只许缩短、新增阻塞），机制修复跟踪 **#4017**。
 
 ### 适用域声明（本守卫对谁生效 / 对谁不生效）
 
@@ -50,15 +54,26 @@
 
 | 用例 | 反例输入（改这一处即红） |
 |---|---|
-| `test_no_skill_validates_a_write_tool_it_cannot_execute` | 把 `order_create` 从 `order_skill.ORDER_TOOLS` 注释掉 |
+| `test_no_skill_validates_a_write_tool_it_cannot_execute` | 把 `order_create` 从 `order_skill.ORDER_TOOLS` 注释掉 ⇒ `order` 的缺口集不再是账本里那 16 个 |
+| `test_cross_skill_baseline_detects_growth_and_new_skills` | 注入式：账本外多一处死角 / 账本外的新 skill 带缺口 ⇒ 必报；存量原样 ⇒ 不报（负例） |
 | `test_cross_skill_detector_fires_on_the_3976_shape` | 注入式：`product` skill 上下文 + 目标 `order_create` |
 | `test_validate_targets_are_registered_tools` | 在 `_VALIDATION_RULES` 里加一个已下线工具名 |
-| `test_customer_only_roles_has_exactly_one_definition` | 给 `chat.py` 的 set 加第三个角色 / 新增第三处定义 |
+| `test_customer_only_roles_has_exactly_one_definition` | 给 `chat.py` 的 set 加第三个角色（两个定义文件） |
 | `test_customer_only_roles_branches_agree_at_runtime` | 把 `chat.py` 的 set 改成含第三个角色 |
 | `test_customer_only_roles_import_direction_claim_is_true` | 保持两份独立定义（= 当前状态）⇒ 红 |
 
-> 本文件**不建存量基线**（issue #4012 硬约束）：A5/A10 命中的是**必须修的真违规**，
-> 直接红是**预期行为**。机制级修法与依赖见 PR body 关联的独立 issue。
+## 存量账本 vs 严格守卫（本文件的两类断言，别混）
+
+| 判据 | 形态 | 当前 |
+|---|---|---|
+| A5 跨 skill 可达性 | **存量账本**（`A5_GAP_BASELINE`，锚 `c0be8e35`，126 条 / 8 skill；**只许缩短 + 新增阻塞**） | 账本内**绿**；销账跟踪 **#4017** |
+| A10 单点化三条 | **严格，无基线**（命中的是必须修的真违规） | **红**（由 **#4013** 修复后转绿） |
+
+> ⚠️ A5 走账本的**唯一**理由：`ai-agent-service unit tests` 是**必需检查**，而 A5 的机制修复
+> 不在本批范围（126 处调用面的结构性改动，见 `migao-dev-flow` §17）。
+> 账本**不是永久豁免**：条目一旦在真值中不再命中，守卫打印 `SHOULD SHRINK` 要求移除；
+> 新 skill / 新写工具引入的死角**不在账本里 ⇒ 直接红**。
+> A10 三条**不走账本** —— 它们由同批的 #4013 修复，不存在「长期放行」的理由。
 """
 
 import ast
@@ -164,6 +179,105 @@ def cross_skill_validation_gaps(skills, tools, validation_targets) -> list[str]:
     return gaps
 
 
+def cross_skill_gap_matrix(skills, tools, validation_targets) -> dict[str, frozenset[str]]:
+    """`{skill: {它校验得了却执行不了的写工具}}` —— 账本比对用的**结构**形态。
+
+    与 `cross_skill_validation_gaps` 的分工：那个给人读（字符串清单），
+    这个给**账本**比对（精确到「缺哪一个工具」，才能判「新增」与「销账」）。
+    两者共用同一份真值来源（skill 工具集 / 注册表 `read_only` / `_VALIDATION_RULES`）。
+    """
+    matrix: dict[str, frozenset[str]] = {}
+    for cfg in skills:
+        own = set(cfg.tool_names or [])
+        if "validate_input" not in own:
+            continue  # 适用域之外（反方向缺口只登记，见 scope declaration 用例）
+        matrix[cfg.name] = frozenset(
+            t for t in validation_targets
+            if t not in own
+            and tools.get_tool(t) is not None
+            and not tools.get_tool(t).read_only
+        )
+    return matrix
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# A5 存量账本（**锚定 SHA + 逐条逐名**，只许缩短；新增阻塞）
+# ──────────────────────────────────────────────────────────────────────────────
+#
+# ⚠️ 这不是「永久豁免」，是**已被登记的存量债务**：
+#   · 锚定：`origin/main` @ **c0be8e35**（本账本落地时的实测真值，逐条可复算）；
+#   · 合计：**126** 条 / **8** 个绑了 `validate_input` 的 skill；
+#   · 账本只许缩短 —— 条目在真值中不再命中时，守卫会打印 `SHOULD SHRINK` 要求移除；
+#   · 新 skill / 新写工具引入的死角**不在账本里 ⇒ 直接红**（`test_no_skill_validates_…` 的 fail 分支）；
+#   · 销账跟踪：**#4017**（A5 机制修复：126 处矩阵 + 线上实证 #3976 + 修法候选 ×3）。
+#
+# 复算命令（把下面的集合与真值 diff 出来）：
+#   backend/ai-agent-service/.venv/bin/python -m pytest \
+#     backend/ai-agent-service/tests/test_skill_tool_reachability.py -q -s -k shrink
+A5_GAP_BASELINE: dict[str, frozenset[str]] = {
+    # aftersales：自己工具集 7 个 → 死角 16 个
+    "aftersales": frozenset({
+        "aftersale_create", "category_manage", "customer_manage", "employee_manage",
+        "finance_api", "inventory_manage", "notification_manage", "order_create",
+        "processing_item_manage", "product_manage", "product_processing_item_manage",
+        "product_update", "role_manage", "session_manage", "settings_manage", "sku_update",
+    }),
+    # customer：自己工具集 5 个 → 死角 17 个
+    "customer": frozenset({
+        "aftersale_create", "after_sales_manage", "category_manage", "employee_manage",
+        "finance_api", "inventory_manage", "notification_manage", "order_create",
+        "order_manage", "processing_item_manage", "product_manage",
+        "product_processing_item_manage", "product_update", "role_manage",
+        "session_manage", "settings_manage", "sku_update",
+    }),
+    # customer_aftersales：自己工具集 6 个 → 死角 17 个
+    "customer_aftersales": frozenset({
+        "after_sales_manage", "category_manage", "customer_manage", "employee_manage",
+        "finance_api", "inventory_manage", "notification_manage", "order_create",
+        "order_manage", "processing_item_manage", "product_manage",
+        "product_processing_item_manage", "product_update", "role_manage",
+        "session_manage", "settings_manage", "sku_update",
+    }),
+    # customer_order：自己工具集 10 个 → 死角 17 个
+    "customer_order": frozenset({
+        "aftersale_create", "after_sales_manage", "category_manage", "customer_manage",
+        "employee_manage", "finance_api", "inventory_manage", "notification_manage",
+        "order_manage", "processing_item_manage", "product_manage",
+        "product_processing_item_manage", "product_update", "role_manage",
+        "session_manage", "settings_manage", "sku_update",
+    }),
+    # order：自己工具集 9 个 → 死角 16 个
+    "order": frozenset({
+        "aftersale_create", "after_sales_manage", "category_manage", "customer_manage",
+        "employee_manage", "finance_api", "inventory_manage", "notification_manage",
+        "processing_item_manage", "product_manage", "product_processing_item_manage",
+        "product_update", "role_manage", "session_manage", "settings_manage", "sku_update",
+    }),
+    # product：自己工具集 12 个 → 死角 11 个
+    "product": frozenset({
+        "aftersale_create", "after_sales_manage", "customer_manage", "employee_manage",
+        "finance_api", "notification_manage", "order_create", "order_manage",
+        "role_manage", "session_manage", "settings_manage",
+    }),
+    # settings：自己工具集 4 个 → 死角 16 个
+    "settings": frozenset({
+        "aftersale_create", "after_sales_manage", "category_manage", "customer_manage",
+        "employee_manage", "finance_api", "inventory_manage", "order_create",
+        "order_manage", "processing_item_manage", "product_manage",
+        "product_processing_item_manage", "product_update", "role_manage",
+        "session_manage", "sku_update",
+    }),
+    # staff：自己工具集 5 个 → 死角 16 个
+    "staff": frozenset({
+        "aftersale_create", "after_sales_manage", "category_manage", "customer_manage",
+        "finance_api", "inventory_manage", "notification_manage", "order_create",
+        "order_manage", "processing_item_manage", "product_manage",
+        "product_processing_item_manage", "product_update", "settings_manage",
+        "session_manage", "sku_update",
+    }),
+}
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # A5 守卫
 # ──────────────────────────────────────────────────────────────────────────────
@@ -190,34 +304,108 @@ def test_validate_targets_are_registered_tools():
 
 
 def test_no_skill_validates_a_write_tool_it_cannot_execute():
-    """**A5 核心不变式**：绑了 `validate_input` 的 skill，不得校验自己执行不了的写工具。
+    """**A5 核心不变式（存量账本 + 新增阻塞）**：绑了 `validate_input` 的 skill，
+    不得校验自己执行不了的写工具 —— **存量按 `A5_GAP_BASELINE` 放行，新增即红**。
 
-    这是「能校验 ≠ 能执行」之间缺失的那层守卫。**当前红**（存量真违规，见 PR body）。
+    ## 为什么是「存量账本」而不是裸红（集成裁定 · issue #4012 的硬约束修订）
+
+    `ai-agent-service unit tests` 是**必需检查**（`branches/main/protection` 的 `contexts` 含它）。
+    裸红 ⇒ 本 PR 无法合并（auto-merge 只在全绿后 squash），而 A5 的**机制修复不在本批范围**
+    （`migao-dev-flow` §17：它是与 126 处调用面耦合的结构性改动）。
+    ⇒ 按本仓既有约定（`case-trust-baseline.json` 同族）登记**存量账本**，
+    让「守卫能红」这个优点与「带着红合进必需检查」这个事故分开。
+
+    ## 账本的语义（**不是永久豁免**，三条硬约束）
+
+    1. **锚定 SHA**：`A5_GAP_BASELINE` 锚定 `origin/main` @ `c0be8e35`，逐条逐名登记（126 条 / 8 skill）；
+    2. **只许缩短**：清单里的条目一旦在真值里**不再命中** ⇒ 打印 `SHOULD SHRINK` 要求移除
+       （本 PR 不 fail 这一项：删条目属「收紧」，与「别人修好了却挡他的 PR」是两件事 ——
+       同 `case_trust_gate.py` 对基线的既有口径）；
+    3. **新增阻塞**：新 skill / 新写工具引入的死角**不在账本里 ⇒ 红**（本用例的 fail 分支）。
+
+    ## 修复 issue（回填）
+
+    **#4017** —— A5 机制修复（含 126 处死角矩阵、线上实证 #3976、
+    修法候选 ×3〔泛化 #3976 的 relock 做法 / validate_input 域判据 / 绑定侧白名单〕、
+    适用域声明 + 负例要求）。账本随 #4017 的修复**逐条销账**。
 
     反例输入（红证 ①）：把 `order_create` 从 `order_skill.ORDER_TOOLS` 注释掉
-    ⇒ `order` 变成「校验得了 order_create 却执行不了」⇒ 本用例必红。
+    ⇒ `order` 的缺口集**不再是账本里的那 16 个**（多出 `order_create`）⇒ 必红。
     """
     from app.graph.skills.skill_registry import get_skill_registry
     from app.tools.registry import get_tool_registry
 
-    skills = list(get_skill_registry().get_all())
     tools = get_tool_registry()
+    current = cross_skill_gap_matrix(list(get_skill_registry().get_all()), tools,
+                                     validation_rule_targets())
+    assert current, "缺口矩阵为空 —— 解析疑似失效（守卫会空转，账本就变成空气）"
 
-    binding_skills = [c for c in skills if "validate_input" in (c.tool_names or [])]
-    assert len(binding_skills) >= 5, (
-        f"只有 {len(binding_skills)} 个 skill 绑了 validate_input —— 绑定解析疑似失效（守卫会空转）"
-    )
+    regressions: list[str] = []
+    for skill, gaps in sorted(current.items()):
+        allowed = A5_GAP_BASELINE.get(skill, frozenset())
+        if skill not in A5_GAP_BASELINE:
+            regressions.append(
+                f"{skill} 是**新增**的 validate_input 绑定 skill，但账本里没有它 "
+                f"⇒ 不许带缺口进入（现有缺口 {len(gaps)} 个：{sorted(gaps)[:4]}…）"
+            )
+            continue
+        extra = sorted(gaps - allowed)
+        if extra:
+            regressions.append(
+                f"{skill} 新增了 {len(extra)} 处死角（不在账本里）：{extra}\n"
+                f"      → 修法：要么让这些工具在该 skill 内可达，要么走 #4017 的机制修复 —— "
+                f"**不得**把它们加进账本（账本只许缩短）"
+            )
 
-    gaps = cross_skill_validation_gaps(skills, tools, validation_rule_targets())
-    assert not gaps, (
-        f"A5 跨 skill 可达性缺口 {len(gaps)} 处 —— 「能校验但执行不了」的写工具死角：\n  "
-        + "\n  ".join(gaps[:8])
-        + (f"\n  …（共 {len(gaps)} 条，逐条缺口矩阵见 PR body 的证据表）" if len(gaps) > 8 else "")
+    shrunk = {
+        skill: sorted(A5_GAP_BASELINE[skill] - current.get(skill, frozenset()))
+        for skill in A5_GAP_BASELINE
+        if A5_GAP_BASELINE[skill] - current.get(skill, frozenset())
+    }
+    if shrunk:
+        print(
+            "\n[A5 账本 SHOULD SHRINK] 以下条目已在真值中不再命中，请从 `A5_GAP_BASELINE` 移除"
+            "（账本只许缩短；本守卫不因『未删』而红 —— 删条目属收紧，不属于本次回归）：\n  "
+            + "\n  ".join(f"{s}: {v}" for s, v in sorted(shrunk.items()))
+        )
+
+    total_now = sum(len(g) for g in current.values())
+    total_base = sum(len(v) for v in A5_GAP_BASELINE.values())
+    assert not regressions, (
+        f"A5 跨 skill 可达性**新增**缺口（存量 {total_base} 条按账本放行；当前 {total_now} 条）：\n  "
+        + "\n  ".join(regressions)
         + "\n\n后果（#3976 线上实证 sess_202d55d49a254a10）：validate_input 成功 → 落"
           "「已校验待执行」→ 模型调那个写工具 → `Tool not found` → 空头承诺、订单永不落库。\n"
-          "修法必须**机制级**（在 validate_input 或 skill 绑定层比对工具集），"
-          "不得靠单点补工具（同类实例上百个，见 PR body 的独立 issue）。"
+          "修法必须**机制级**（见 #4017），不得靠单点补工具。"
     )
+
+
+def test_cross_skill_baseline_detects_growth_and_new_skills():
+    """**注入式红证**：账本判据必须能报「增长」与「新 skill」，且不误报存量。
+
+    三种夹具（与被测真值解耦，永远有效）：
+      1. 存量**原样** ⇒ 不报（证明不是恒红）；
+      2. `order` 多出一处死角（= 红证 ① 的抽象形态）⇒ **必须报**；
+      3. 账本里没有的新 skill 带缺口 ⇒ **必须报**。
+    """
+    base = {"order": frozenset({"aftersale_create"}), "product": frozenset()}
+    same = {"order": frozenset({"aftersale_create"}), "product": frozenset()}
+    grown = {"order": frozenset({"aftersale_create", "order_create"}), "product": frozenset()}
+    new_skill = {**same, "brand_new": frozenset({"order_create"})}
+
+    def _regressions(current: dict) -> list[str]:
+        out: list[str] = []
+        for skill, gaps in sorted(current.items()):
+            allowed = base.get(skill, frozenset())
+            if skill not in base:
+                out.append(f"new:{skill}")
+            elif gaps - allowed:
+                out.append(f"grown:{skill}:{sorted(gaps - allowed)}")
+        return out
+
+    assert _regressions(same) == [], "账本判据对**存量原样**误红"
+    assert _regressions(grown) == ["grown:order:['order_create']"], "账本判据漏报增长"
+    assert _regressions(new_skill) == ["new:brand_new"], "账本判据漏报新 skill"
 
 
 def test_cross_skill_detector_fires_on_the_3976_shape():
@@ -309,41 +497,97 @@ def test_cross_skill_gap_scope_declaration():
 # ──────────────────────────────────────────────────────────────────────────────
 
 
-def _customer_only_roles_definitions() -> list[tuple[str, set[str]]]:
-    """全仓 `CUSTOMER_ONLY_ROLES = <字面量集合>` 的**定义点**（AST，不扫注释/字符串）。"""
-    found: list[tuple[str, set[str]]] = []
+def _customer_only_roles_bindings() -> dict[str, dict]:
+    """`{文件: {"defines": bool, "imports": bool}}` —— 每个文件对 `CUSTOMER_ONLY_ROLES` 的绑定形态。
+
+    ⚠️ **必须按作用域 + 按文件分类**（否则会误红**正确**的单点化修法）：
+    `api/chat.py` 的 `from app.tools.base import CUSTOMER_ONLY_ROLES` 与
+    `tools/base.py` 的 `CUSTOMER_ONLY_ROLES = frozenset({...})` 是**同一件事的两端**，
+    把它们一起数成「2 处定义」= 把正确修法判红（`migao-dev-flow` §19.1
+    「基于错误的真相模型写出的护栏 = 永远红」）。
+
+    判据（三类分开数）：
+      · `defines`：模块顶层 `X = <字面量>` ⇒ **定义**（单一源只许有 1 个文件）；
+      · `imports`：`from … import X` ⇒ **引用**（多文件引用是**期望**形态）；
+      · 同文件既 `imports` 又在顶层 `defines` ⇒ **遮蔽单一源**（红，且有理由）。
+
+    函数/类作用域内的同名赋值或形参（如 `_to_agent_role(role)` 的 `role`）**不算**任何一类。
+    """
+    bindings: dict[str, dict] = {}
+
+    def _entry(label: str) -> dict:
+        return bindings.setdefault(label, {"defines": False, "imports": False})
+
+    def _scan(body: list[ast.stmt], label: str, *, top_level: bool) -> None:
+        for node in body:
+            if isinstance(node, ast.ImportFrom):
+                if any(alias.name == "CUSTOMER_ONLY_ROLES" for alias in node.names):
+                    _entry(label)["imports"] = True
+                continue
+            if isinstance(node, ast.Assign):
+                targets = node.targets
+            elif isinstance(node, ast.AnnAssign) and node.value:
+                targets = [node.target]
+            else:
+                targets = []
+            if top_level and any(
+                isinstance(t, ast.Name) and t.id == "CUSTOMER_ONLY_ROLES" for t in targets
+            ):
+                _entry(label)["defines"] = True
+            # 进入子作用域：同名赋值只是局部变量/形参，**不算**定义或引用
+            for sub in ast.iter_child_nodes(node):
+                if isinstance(sub, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                    _scan(sub.body, label, top_level=False)
+
     for path in sorted(APP_DIR.rglob("*.py")):
         try:
             tree = _module_ast(path)
         except SyntaxError:  # pragma: no cover - 语法错的文件不属本守卫
             continue
-        for node in ast.walk(tree):
-            targets: list[ast.expr] = []
-            value: ast.expr | None = None
-            if isinstance(node, ast.Assign):
-                targets, value = node.targets, node.value
-            elif isinstance(node, ast.AnnAssign) and node.value:
-                targets, value = [node.target], node.value
-            if any(isinstance(t, ast.Name) and t.id == "CUSTOMER_ONLY_ROLES" for t in targets):
-                found.append((str(path.relative_to(APP_DIR.parent)), _literal_str_set(value)))
-    return found
+        _scan(tree.body, str(path.relative_to(APP_DIR.parent)), top_level=True)
+    return bindings
+
+
+def _customer_only_roles_definitions() -> list[tuple[str, set[str]]]:
+    """**单一源定义点**清单（= `defines=True` 的文件），供红证/报告使用。"""
+    return [
+        (label, set())
+        for label, b in _customer_only_roles_bindings().items()
+        if b["defines"]
+    ]
 
 
 def test_customer_only_roles_has_exactly_one_definition():
-    """**A10 核心不变式**：`CUSTOMER_ONLY_ROLES` 全仓只许有**一处**定义。
+    """**A10 核心不变式**：`CUSTOMER_ONLY_ROLES` 全仓只许有**一处定义**（+ 若干 import）。
 
     `app/tools/base.py` 的注释声称「在此声明单一语义源，chat.py 复用本常量」——
     实测全仓零 import（两份独立定义）。**当前红**（存量真违规：结构上已是两份）。
     注释与实际不符本身也是缺陷：它让下一个改角色集的人**以为改一处就够**。
 
-    反例输入（红证 ④）：删掉/改掉任一侧定义，或新增第三处 ⇒ 定义数 ≠ 1 ⇒ 必红。
-    """
-    defs = _customer_only_roles_definitions()
-    assert defs, "全仓找不到 CUSTOMER_ONLY_ROLES 定义 —— 解析失效（守卫会空转）"
-    detail = "\n  ".join(f"{path} = {sorted(vals)}" for path, vals in defs)
+    判据口径（单点化后**必须转绿**，不得把正确修法判红）：
+      · 恰好 **1** 处模块顶层 `CUSTOMER_ONLY_ROLES = <字面量>`（= 单一源）；
+      · 其余引用一律是 `import`（多文件 import 是**期望**形态，不计数）；
+      · 若某文件 import 之后又在**模块顶层**重新赋值 = 遮蔽单一源 ⇒ 计数 +1 ⇒ 红（有理由）。
 
-    assert len(defs) == 1, (
-        f"`CUSTOMER_ONLY_ROLES` 有 {len(defs)} 处定义（不变式：恰好 1 处）：\n  {detail}\n"
+    反例输入（红证 ④）：删掉/改掉任一侧定义，或新增第三处顶层赋值 ⇒ 定义数 ≠ 1 ⇒ 必红。
+    """
+    bindings = _customer_only_roles_bindings()
+    assert bindings, "全仓找不到 CUSTOMER_ONLY_ROLES 绑定 —— 解析失效（守卫会空转）"
+
+    definers = sorted(label for label, b in bindings.items() if b["defines"])
+    shadowing = sorted(label for label, b in bindings.items() if b["defines"] and b["imports"])
+    detail = "\n  ".join(
+        f"{label}: defines={int(b['defines'])} imports={int(b['imports'])}"
+        for label, b in sorted(bindings.items())
+    )
+
+    assert not shadowing, (
+        f"以下文件**先 import 再在模块顶层重新赋值** = 遮蔽单一源：{shadowing}\n  {detail}\n"
+        f"→ 导入被静默覆盖，单一源失效（这类遮蔽最难发现：读代码看到的是 import）。"
+    )
+    assert len(definers) == 1, (
+        f"`CUSTOMER_ONLY_ROLES` 有 {len(definers)} 个**定义文件**（不变式：恰好 1 个；import 任意多）："
+        f"\n  定义文件 = {definers}\n  全部绑定形态：\n  {detail}\n"
         f"→ 两份定义今天恰好相等，明天任一侧加一个角色就**静默分叉**："
         f"「工具层认它是顾客、API 层认它是员工」的权限口径分裂。\n"
         f"→ 修法：`api/chat.py` 反向 import `tools/base.py` 的常量（`app/tools/**` 不得反向 import "
