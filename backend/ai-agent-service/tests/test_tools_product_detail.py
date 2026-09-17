@@ -3,7 +3,7 @@
 
 测试 ProductDetailTool.execute() 的各种场景
 """
-# case_ids: CH-001, PR-003
+# case_ids: CH-001, PR-003, PR-004
 
 import pytest
 from unittest.mock import patch, AsyncMock
@@ -218,6 +218,73 @@ class TestProductDetailError:
 
         assert result.success is False
         assert "失败" in result.message or "重试" in result.message
+
+
+class TestProductStockAuthority:
+    """商品库存的唯一权威 = SKU 级（issue #4038）。
+
+    红证（改前 @ origin/main）：`_format_product` 直读后端 `data["stock"]`。
+    该字段是**商品级口径**，实测 DB 里 311/497 个商品与 SKU 汇总不一致 ——
+    有 SKU 的 351 个商品里 **299 个商品级恒为 0**，而 SKU 合计可以很大
+    （实测商品 `2699系列雪尼尔窗帘面料`：商品级 **0** / SKU 合计 **9599**，
+    DB 复现：`select p.stock, (select sum(s.stock) from product_skus s where s.product_id=p.id)
+    from products p where p.name like '2699系列%'`）。
+    改前：后端给什么就报什么；无 SKU 的商品恒报 0（agent 会据此对用户说「没货」）。
+    """
+
+    @patch("app.tools.product_detail.get_admin_api_client")
+    async def test_stock_follows_sku_authority_not_product_level(
+        self, mock_get_client, tool, sample_tool_context
+    ):
+        """后端商品级 `stock=0`（误导），SKU 合计 9599 ⇒ 工具必须报 9599。"""
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value={
+            "success": True,
+            "data": {
+                "id": "prod_2699",
+                "name": "2699系列雪尼尔窗帘面料",
+                "price": 299.0,
+                "stock": 0,  # 商品级（非权威）——实测该商品两列正是 0 vs 9599
+                "status": "on_sale",
+                "skus": [
+                    {"id": "sku_a", "skuCode": "2699-01", "stock": 9000},
+                    {"id": "sku_b", "skuCode": "2699-02", "stock": 599},
+                ],
+            },
+        })
+        mock_get_client.return_value = mock_client
+
+        result = await tool.execute(context=sample_tool_context, product_id="prod_2699")
+
+        assert result.success is True
+        assert result.data["stock"] == 9599, "商品库存数字必须来自 SKU 权威，而不是商品级 stock"
+        assert result.data["stock_source"] == "sku_sum"
+
+    @patch("app.tools.product_detail.get_admin_api_client")
+    async def test_no_sku_product_reports_unknown_not_zero(
+        self, mock_get_client, tool, sample_tool_context
+    ):
+        """无 SKU 记录 ⇒ `stock=None`（无法确认），且文案不得说成「库存 0 / 没货」。"""
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value={
+            "success": True,
+            "data": {
+                "id": "prod_nosku",
+                "name": "未维护规格的帘",
+                "price": 199.0,
+                "stock": 0,
+                "status": "on_sale",
+                "skus": [],
+            },
+        })
+        mock_get_client.return_value = mock_client
+
+        result = await tool.execute(context=sample_tool_context, product_id="prod_nosku")
+
+        assert result.success is True
+        assert result.data["stock"] is None, "无 SKU 记录不得谎报 0（会被读成「没货」）"
+        assert result.data["stock_source"] == "no_sku"
+        assert "尚未维护 SKU" in result.message, "必须把「无法确认库存」的原因告诉 LLM"
 
 
 class TestProductDetailFormatProduct:

@@ -693,6 +693,35 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
                 productColorMapper.deleteById(c.getId());
             }
         }
+
+        // SKU 变更后回写商品级 stock（issue #4038）：商品库存的**唯一权威是 SKU 级**，
+        // `products.stock` 只是派生冗余列。此前该列可被任意写（建品/改品都写它）却无人读，
+        // 于是持续漂移：实测 311/497 个商品与 SKU 汇总不一致、有 SKU 的 351 个里 299 个恒为 0
+        // （而 SKU 合计可以很大，如实测 `2699系列雪尼尔窗帘面料` 商品级 0 / SKU 合计 9599）。
+        syncProductStockFromSkus(productId);
+    }
+
+    /**
+     * 把商品级 `products.stock` 回写为 SKU 汇总（派生列，非权威）—— 唯一写入入口。
+     *
+     * <p>与 {@link #adjustStockForAgent} 同一口径（那里也是「商品级 stock 仅作冗余展示，
+     * 同步为 SKU 汇总值」）。只在**有 SKU 记录**时回写：无 SKU 的商品该列是唯一现存信息，
+     * 回写成 `SUM(空) = 0` 会把有值的库存抹掉（issue #4038 的 R2 负例）。
+     */
+    private void syncProductStockFromSkus(String productId) {
+        List<ProductSku> skus = productSkuMapper.selectList(
+                new LambdaQueryWrapper<ProductSku>()
+                        .eq(ProductSku::getProductId, productId)
+                        .select(ProductSku::getStock));
+        if (skus == null || skus.isEmpty()) {
+            return;
+        }
+        int total = skus.stream().mapToInt(s -> s.getStock() != null ? s.getStock() : 0).sum();
+        // 只带 id + stock 的部分更新：MyBatis-Plus updateById 不覆盖未设置字段
+        Product stockSync = new Product();
+        stockSync.setId(productId);
+        stockSync.setStock(total);
+        productMapper.updateById(stockSync);
     }
 
     /**

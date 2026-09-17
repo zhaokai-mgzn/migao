@@ -1570,6 +1570,90 @@ class ProductServiceTest {
         verify(productMapper).selectPage(any(Page.class), any(LambdaQueryWrapper.class));
     }
 
+    // ======================== 商品库存单一权威（#4038） ========================
+    // 权威 = SKU 级（product_skus.stock）；products.stock 降级为**派生冗余列**。
+    // 病根（DB 实测 2026-09-18）：该列可被任意写（建品/改品都写它），却**无任何读路径** ——
+    // 311/497 个商品它与 SKU 汇总不一致，有 SKU 的 351 个商品里 299 个恒为 0，
+    // 而 SKU 合计可以很大（实测 `2699系列雪尼尔窗帘面料`：商品级 0 / SKU 合计 9599）。
+    // ⇒ SKU 变更后必须把该列回写为 SKU 汇总，否则「同一商品两个数字」会持续再分裂。
+
+    @Test
+    @DisplayName("#4038: SKU 变更后商品级 stock 回写为 SKU 汇总（派生列不再漂移）")
+    void createProduct_ProductStockSyncedToSkuSum() {
+        // Given: 明确给出两个 SKU（30 + 70），而请求的商品级 stock 是另一个数字（999）
+        ProductCreateRequest request = new ProductCreateRequest();
+        request.setName("库存口径测试帘");
+        request.setCategoryId("cat-001");
+        request.setBasePrice(new BigDecimal("68.00"));
+        request.setStock(999); // 非权威的请求值：不得成为商品级列的最终值
+        ProductSkuInput s1 = new ProductSkuInput();
+        s1.setSellingMethod("bulk_cut");
+        s1.setDoorWidth("2.8米");
+        s1.setStock(30);
+        ProductSkuInput s2 = new ProductSkuInput();
+        s2.setSellingMethod("full_roll");
+        s2.setDoorWidth("2.8米");
+        s2.setStock(70);
+        request.setSkus(List.of(s1, s2));
+
+        when(categoryMapper.selectById("cat-001")).thenReturn(testCategory);
+        when(productMapper.insert(any(Product.class))).thenAnswer(invocation -> {
+            ((Product) invocation.getArgument(0)).setId("prod-stock-sync");
+            return 1;
+        });
+        // SKU 插入时收集；selectList 第一次（查既有 SKU）为空，回写那次返回已插入的 SKU
+        List<ProductSku> insertedSkus = new java.util.ArrayList<>();
+        when(productSkuMapper.insert(any(ProductSku.class))).thenAnswer(invocation -> {
+            insertedSkus.add(invocation.getArgument(0));
+            return 1;
+        });
+        when(productSkuMapper.selectList(any(LambdaQueryWrapper.class)))
+                .thenAnswer(invocation -> insertedSkus.isEmpty()
+                        ? new java.util.ArrayList<ProductSku>() : new java.util.ArrayList<>(insertedSkus));
+        when(productMapper.selectById("prod-stock-sync")).thenReturn(
+                Product.builder().id("prod-stock-sync").name("库存口径测试帘").build());
+
+        // When
+        productService.createProduct(request, 1L);
+
+        // Then: 商品级 stock 被回写为 SKU 汇总 100（而非请求值 999）
+        assertThat(insertedSkus).as("应生成 2 个 SKU").hasSize(2);
+        ArgumentCaptor<Product> updateCaptor = ArgumentCaptor.forClass(Product.class);
+        verify(productMapper, atLeastOnce()).updateById(updateCaptor.capture());
+        Product synced = updateCaptor.getAllValues().stream()
+                .filter(p -> "prod-stock-sync".equals(p.getId()))
+                .reduce((first, second) -> second)
+                .orElseThrow(() -> new AssertionError("SKU 变更后未回写商品级 stock"));
+        assertThat(synced.getStock())
+                .as("商品级 stock 必须等于 SKU 汇总（权威）")
+                .isEqualTo(100);
+    }
+
+    @Test
+    @DisplayName("#4038 R2 负例: 无 SKU 的商品不因「派生回写」把商品级库存抹成 0")
+    void createProduct_NoSku_DoesNotOverwriteProductStock() {
+        // Given: 无颜色、无 SKU（笛卡尔积不成立）—— 唯一现存信息就是商品级列
+        ProductCreateRequest request = new ProductCreateRequest();
+        request.setName("无规格商品");
+        request.setCategoryId("cat-001");
+        request.setBasePrice(new BigDecimal("50.00"));
+        request.setStock(50);
+
+        when(categoryMapper.selectById("cat-001")).thenReturn(testCategory);
+        when(productMapper.insert(any(Product.class))).thenAnswer(invocation -> {
+            ((Product) invocation.getArgument(0)).setId("prod-no-sku");
+            return 1;
+        });
+        when(productMapper.selectById("prod-no-sku")).thenReturn(
+                Product.builder().id("prod-no-sku").name("无规格商品").stock(50).build());
+
+        // When
+        productService.createProduct(request, 1L);
+
+        // Then: 不产生任何商品级库存回写（否则 50 会被抹成「SKU 汇总 = 0」）
+        verify(productMapper, never()).updateById(any(Product.class));
+    }
+
     // ======================== 商品-加工项关联（PP-006，issue #3005 回滚密度） ========================
 
     @Test

@@ -8,6 +8,11 @@ from typing import Any, Dict
 from loguru import logger
 
 from app.tools.base import BaseTool, ToolContext, ToolResult
+from app.tools.stock_semantics import (
+    NO_SKU_SOURCE,
+    no_sku_stock_note,
+    product_stock_summary,
+)
 from app.utils.http_client import get_admin_api_client
 
 
@@ -141,10 +146,15 @@ class ProductDetailTool(BaseTool):
             )
             
             price_text = f"{product.get('price')}元" if product.get('price') is not None else "暂无标价"
+            message = f"已获取商品【{product.get('name')}】的详细信息"
+            # 无 SKU 记录时把「无法确认库存」的原因显式交给 LLM（issue #4038）：
+            # 否则 stock=None 会被自行脑补成「没货」。
+            if product.get("stock_source") == NO_SKU_SOURCE:
+                message += f"；{no_sku_stock_note(product.get('name'))}"
             return ToolResult(
                 success=True,
                 data=product,
-                message=f"已获取商品【{product.get('name')}】的详细信息",            )
+                message=message)
             
         except Exception as e:
             logger.error(f"Product detail error: {e}", exc_info=True)
@@ -164,13 +174,19 @@ class ProductDetailTool(BaseTool):
         Returns:
             Dict: 格式化后的商品详情
         """
+        skus = self._format_skus(data.get("skus"))
+        # 商品库存数字的唯一权威 = SKU 级（issue #4038）：
+        # 不复用后端商品级 `data["stock"]`（该列实测 311/497 与 SKU 汇总不一致、
+        # 有 SKU 的商品里 299/351 恒为 0），一律由单点来源从 SKU 明细派生。
+        stock = product_stock_summary(skus)
         return {
             "id": data.get("id"),
             "name": data.get("name"),
             "description": data.get("description", ""),
             "price": data.get("price") or data.get("basePrice"),
             "original_price": data.get("originalPrice"),
-            "stock": data.get("stock"),
+            "stock": stock["stock"],
+            "stock_source": stock["stock_source"],
             "status": data.get("status"),
             "category_id": data.get("categoryId"),
             "category_name": data.get("categoryName"),
@@ -178,7 +194,7 @@ class ProductDetailTool(BaseTool):
             "main_image": data.get("mainImage") or (
                 data.get("images", [None])[0] if data.get("images") else None
             ),
-            "skus": self._format_skus(data.get("skus", [])),
+            "skus": skus,
             "specifications": data.get("specifications", {}),
             "processing_items": data.get("processingItems", []),
             "sales_count": data.get("salesCount", 0),
