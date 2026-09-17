@@ -1545,6 +1545,60 @@ _CASE_CH_038 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── CH-039 [NORMAL] 小布答顾客查生产进度（订单做到哪道工序/还要多久）（源: cases/chat.yml）──
+_CASE_CH_039 = EvalCase(
+    id='CH-039',
+    legacy_id='',
+    title='小布答顾客查生产进度（订单做到哪道工序/还要多久）',
+    skill=Skill.MULTI_TURN,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['我的订单做到哪了？还要等多久啊'],
+    expectations=['production_progress_query'],
+    data_checks=['顾客问进度 → 调 production_progress_query → 返回进度%/当前工序/待完工序/预计交期（不得只回一句「生产中」）', '缺订单号时先用 customer_order_query 取顾客本人订单号再查，禁止编造订单号或进度', '工具失败/查不到时如实告知并可转人工，禁止编造进度或交期'],
+    skip_reason='',
+    tags=['xiaobu', 'production', 'order'],
+    persona='xiaobu',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── CH-040 [NORMAL] 米宝查订单生产进度（做到哪道工序/还要多久）（源: cases/chat.yml）──
+_CASE_CH_040 = EvalCase(
+    id='CH-040',
+    legacy_id='',
+    title='米宝查订单生产进度（做到哪道工序/还要多久）',
+    skill=Skill.MULTI_TURN,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['帮我看看最近那笔还在生产的订单，做到哪道工序了，还要多久能好'],
+    expectations=['production_progress_query'],
+    data_checks=['商家问生产进度 → 调 production_progress_query → 返回进度%/当前工序/待完工序/预计交期', '缺订单号时先用 order_query 查单取号再查进度，禁止编造订单号或进度', '工具失败/查不到时如实告知，不得编造交期'],
+    skip_reason='',
+    tags=['mibao', 'production', 'order'],
+    persona='mibao',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── CH-041 [NORMAL] 米宝查工人计件工资（某师傅某月计件合计与明细）（源: cases/chat.yml）──
+_CASE_CH_041 = EvalCase(
+    id='CH-041',
+    legacy_id='',
+    title='米宝查工人计件工资（某师傅某月计件合计与明细）',
+    skill=Skill.MULTI_TURN,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['王师傅这个月计件做了多少？顺便看下明细'],
+    expectations=['piecework_query'],
+    data_checks=['商家问计件 → 调 piecework_query → 返回计件合计与逐工序明细（工序/数量/金额）', '工人姓名取自用户输入，用户未说月份时不编造月份（不传 period，按当月）', '查不到该工人/该月无报工时如实告知，禁止编造计件金额'],
+    skip_reason='',
+    tags=['mibao', 'production', 'piecework'],
+    persona='mibao',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── CR-001 [NORMAL] 查商品 → 下单（跨 Skill 复用 UUID）（源: cases/cross.yml）──
 _CASE_CR_001 = EvalCase(
     id='CR-001',
@@ -5868,6 +5922,9 @@ ALL_CASES = (
     _CASE_CH_037,
     _CASE_CH_036,
     _CASE_CH_038,
+    _CASE_CH_039,
+    _CASE_CH_040,
+    _CASE_CH_041,
     _CASE_CR_001,
     _CASE_CR_002,
     _CASE_CR_003,

@@ -12,6 +12,11 @@ from app.graph.skills.skill_config import SkillConfig
 # 查询 + 创建 + 确认交互 + 转人工）
 CUSTOMER_ORDER_TOOLS = [
     "customer_order_query",
+    # 生产进度（issue #3996，M4-I）：顾客问「我的订单做到哪了/还要多久」时调
+    # production_progress_query(order_no=…) 拿进度%/当前工序/待交期。
+    # 为什么不复用 customer_order_query：订单状态只说「生产中」，说不出**卡在哪道工序**；
+    # C 端工具集（= XIAOBU_TOOLS 真值源）未绑它时，用例 CH-039 与覆盖门禁会判「挂错端」。
+    "production_progress_query",
     "customer_logistics_track",
     "customer_address_query",
     # ── 商品检索/详情：**下单流程的必需项**（issue #3365）──

@@ -15,6 +15,9 @@ from app.graph.skills.skill_config import SkillConfig
 # 不绑则该承诺不可执行（#3317 的 6 处之一）。写操作安全由 admin-api 层承担，
 # agent 侧确认卡是交互一致性，不替代 admin-api 校验（不收紧、不移除写工具的门禁标记）。
 STAFF_TOOLS = ["employee_manage", "role_manage",
+    # 计件工资（issue #3996，M4-I）：商家问「王师傅这个月计件多少」属人事/工资域，
+    # 调 piecework_query(worker_name=…, period=YYYY-MM)；只读，不对 C 端开放。
+    "piecework_query",
     "validate_input",  # 写操作前置校验
     "interact",         # 交互卡片：写操作 confirm
 ]
@@ -30,6 +33,7 @@ STAFF_SYSTEM_PROMPT = """当前对话聚焦在员工账号、角色与权限管�
 5. 涉及密码、手机号、邮箱等敏感字段，按系统返回内容展示，不擅自传播
 6. 不编造员工/角色信息，所有数据均通过工具查询
 7. 当同事询问不在本技能工具范围内的需求（例如订单、商品、看板、通知等）时，以全能助手身份礼貌承接并提示同事重新描述，不得拒绝或自称只负责人事
+8. 同事问「某工人/师傅这个月计件多少 / 计件明细」时用 piecework_query 查（姓名必填，月份可选，不编造金额；查不到就说查不到）
 
 回复要求：
 - 结构化展示员工：姓名、工号、角色、状态、最近登录等

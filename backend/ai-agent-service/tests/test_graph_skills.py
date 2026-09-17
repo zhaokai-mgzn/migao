@@ -112,7 +112,12 @@ class TestSkillToolSubsets:
         assert "product_detail" in AFTERSALES_TOOLS
 
     def test_general_tools_includes_all(self):
-        """通用兜底 Skill 包含查询 + 基础管理 Tool + interact（澄清卡承载，Phase 2 #2789）"""
+        """通用兜底 Skill 包含查询 + 基础管理 Tool + interact（澄清卡承载，Phase 2 #2789）
+
+        issue #3996（M4-I）：兜底节点新增两个**只读**生产类查询工具
+        （production_progress_query / piecework_query）—— 生产/计件没有专属意图，
+        分类器可能落 general ⇒ 不绑则「米宝查不了生产进度/计件」= 能力谎报。
+        """
         expected = {
             "order_query",
             "logistics_track",
@@ -120,6 +125,8 @@ class TestSkillToolSubsets:
             "product_detail",
             "processing_item_query",
             "customer_manage",
+            "production_progress_query",  # issue #3996
+            "piecework_query",            # issue #3996（B 端专用，不对 C 端开放）
             "dashboard_stats",
             "session_manage",
             "after_sales_manage",

@@ -512,7 +512,7 @@
 真值: category-manage.delete, category-manage.delete-destructive, ai-chat.confirm-required
 溯源: verification 2.12 独有（二次确认行为在测试中未确认，见 category-manage.yml 缺口注释） ｜ tags: delete, destructive, confirm
 
-## 对话边界域（38 case）
+## 对话边界域（41 case）
 
 ### CH-001. 空结果 + suggestion 引导修复 🔴
 ```
@@ -1063,6 +1063,39 @@
 ```
 真值: ai-chat.intent-tool-map
 溯源: 2026-09-17 新增（issue #3990）：M3-F 报价协商确定性内核覆盖登记，单测覆盖 ｜ tags: xiaobu, quote, negotiation
+
+### CH-039. 小布答顾客查生产进度（订单做到哪道工序/还要多久） 🔵
+```
+你: 我的订单做到哪了？还要等多久啊
+期望: production_progress_query
+数据: 顾客问进度 → 调 production_progress_query → 返回进度%/当前工序/待完工序/预计交期（不得只回一句「生产中」）
+数据: 缺订单号时先用 customer_order_query 取顾客本人订单号再查，禁止编造订单号或进度
+数据: 工具失败/查不到时如实告知并可转人工，禁止编造进度或交期
+```
+真值: ai-chat.intent-tool-map, ai-chat.tool-classes
+溯源: 2026-09-17 新增（issue #3996，M4-I）：生产进度问答 C 端覆盖（小布） ｜ tags: xiaobu, production, order
+
+### CH-040. 米宝查订单生产进度（做到哪道工序/还要多久） 🔵
+```
+你: 帮我看看最近那笔还在生产的订单，做到哪道工序了，还要多久能好
+期望: production_progress_query
+数据: 商家问生产进度 → 调 production_progress_query → 返回进度%/当前工序/待完工序/预计交期
+数据: 缺订单号时先用 order_query 查单取号再查进度，禁止编造订单号或进度
+数据: 工具失败/查不到时如实告知，不得编造交期
+```
+真值: ai-chat.intent-tool-map, ai-chat.tool-classes
+溯源: 2026-09-17 新增（issue #3996，M4-I）：生产进度问答 B 端覆盖（米宝） ｜ tags: mibao, production, order
+
+### CH-041. 米宝查工人计件工资（某师傅某月计件合计与明细） 🔵
+```
+你: 王师傅这个月计件做了多少？顺便看下明细
+期望: piecework_query
+数据: 商家问计件 → 调 piecework_query → 返回计件合计与逐工序明细（工序/数量/金额）
+数据: 工人姓名取自用户输入，用户未说月份时不编造月份（不传 period，按当月）
+数据: 查不到该工人/该月无报工时如实告知，禁止编造计件金额
+```
+真值: ai-chat.intent-tool-map, ai-chat.tool-classes
+溯源: 2026-09-17 新增（issue #3996，M4-I）：计件工资问答 B 端覆盖（米宝） ｜ tags: mibao, production, piecework
 
 ## 跨域（3 case）
 
@@ -4157,14 +4190,14 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：306（活跃 153，跳过 153）
-- tier 分布：smoke 9 / normal 264 / adversarial 33
+- 用例总数：309（活跃 156，跳过 153）
+- tier 分布：smoke 9 / normal 267 / adversarial 33
 - 售后域：9
 - agents：6
 - api：19
 - bmini：5
 - 分类域：3
-- 对话边界域：38
+- 对话边界域：41
 - 跨域：3
 - 客户域：8
 - 数据域：10

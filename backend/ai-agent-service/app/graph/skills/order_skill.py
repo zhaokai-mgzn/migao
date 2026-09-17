@@ -14,6 +14,9 @@ from app.graph.skills.skill_config import SkillConfig
 # （订单详情-加工单块）。intents 保留（下方）⇒「加工单」问题仍路由到订单 skill，
 # 由 prompts/order.md 的概念区分口径引导，**不得**用加工项查询/目录代替、不得编造加工单数据。
 ORDER_TOOLS = ["order_query", "order_manage", "order_create", "logistics_track", "product_search", "product_detail",
+    # 生产进度（issue #3996，M4-I）：商家问「这单做到哪道工序/还要多久」→
+    # production_progress_query(order_no=…)。只读；缺号先用 order_query 取号。
+    "production_progress_query",
     "validate_input",  # 写操作前置校验
     "interact",        # 交互卡片：多 SKU 规格 choice（prompts/order.md 强制要求）、下单前 confirm、表单 form
 ]
@@ -21,7 +24,13 @@ ORDER_TOOLS = ["order_query", "order_manage", "order_create", "logistics_track",
 # 订单 Skill 专用 System Prompt（展示规则，状态机见 references/prompts/order.md）
 ORDER_SYSTEM_PROMPT = """## 订单展示
 
-表格或列表展示订单(订单号/客户/金额/状态/时间)，用emoji标记状态，末尾引导下一步操作。"""
+表格或列表展示订单(订单号/客户/金额/状态/时间)，用emoji标记状态，末尾引导下一步操作。
+
+## 生产进度（订单做到哪道工序）
+
+商家问「这单做到哪了/生产进度/还要多久/卡在哪道工序/排产了吗」时，调 production_progress_query(order_no=…)：
+拿到进度%、当前工序、待完工序、预计交期后再回答。缺订单号先用 order_query 查单取号，不要猜号；
+**转述必须来自工具返回**，工具查不到就如实说查不到，禁止编造进度或交期。"""
 
 ORDER_SKILL_CONFIG = SkillConfig(
     name="order",
