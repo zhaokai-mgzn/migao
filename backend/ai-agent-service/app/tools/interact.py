@@ -15,6 +15,10 @@ from typing import Any, Dict, List, Optional
 from loguru import logger
 
 from app.tools.base import BaseTool, ToolContext, ToolResult
+# confirmValue 的**单一派生平**（issue #4054）：按模块引入、调用期取属性 ——
+# 不 `from app.tools.confirm_value import confirm_value_for_fields` 冻住绑定，
+# 否则"单点"在测试/替换下观测不到（见 tests/test_tools_confirm_value.py）。
+from app.tools import confirm_value
 
 
 def _ensure_list(value: Any, field_name: str) -> Optional[List]:
@@ -418,16 +422,14 @@ class InteractTool(BaseTool):
             #   · 事实变了（数量 3→4、总价变）⇒ 值变 → 顾客必须重新确认新明细（语义不削弱）；
             #   · 仍以「确认」开头 → 门禁的短词判定（`_is_explicit_confirmation`）照常可用；
             #   · 按钮文字（confirmLabel）与顾客可见文案不受影响。
-            _facts = []
-            for _f in fields or []:
-                if isinstance(_f, dict):
-                    _facts.append(f"{_f.get('label') or ''}={_f.get('value') or ''}")
-                else:
-                    _facts.append(str(_f))
-            if _facts:
-                # 排序：**字段顺序**也是模型自由发挥的一部分（同一批事实可能换个顺序重发），
-                # 排序后"事实集合相同 ⇒ 值相同"才真正成立。
-                confirmValue = "确认：" + "；".join(sorted(_facts))
+            # 派生**只此一处**（issue #4054）：契约模块 `app/tools/confirm_value.py` ——
+            # 门禁侧（`chat.py` 补卡 / `finalize_turn` 8.3b）走的是同一个函数，
+            # 任一侧改口径都会同时动，不存在"两处必须一致"这种要靠人记的约定。
+            # 按**模块属性**在调用期取（不 `from ... import` 冻住绑定）：保证单点可被
+            # 测试/替换观测到，见 tests/test_tools_confirm_value.py。
+            # `or confirmValue`：字段非空时派生必非空（上面已 fail-closed 且逐项归一带 label），
+            # 该分支只为**逐字保留**旧内联版 `if _facts:` 的空值语义。
+            confirmValue = confirm_value.confirm_value_for_fields(fields) or confirmValue
             interactive_data = {
                 "component": "confirm",
                 "title": title,
