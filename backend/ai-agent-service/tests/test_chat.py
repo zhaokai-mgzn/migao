@@ -7,12 +7,16 @@ send_message 会话校验与 __PAGE__ 协议守卫、_agent_stream_to_sse 事件
 """
 # case_ids: API-001, API-002, API-003, API-004, API-005, OR-012, UI-031, UI-032, CH-010, CH-011
 
+import re
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi import HTTPException
+from loguru import logger
 
 from app.api.chat import (
+    PERSIST_FAILED_MARK,
+    _save_message_or_report,
     _should_send_card,
     _detect_card_type,
     _normalize_order_card_data,
@@ -1091,3 +1095,199 @@ class TestGetUserNickname:
             result = await _get_user_nickname(1, "u1")
         # 静默降级：DB 异常被吞、不向上抛，昵称不可得（None，非任何用户名）
         assert not result
+
+
+# ═══════════════════════════════════════════════
+# 落库失败不许静默（issue #4084）
+# ═══════════════════════════════════════════════
+
+
+@pytest.fixture
+def persist_audit():
+    """捕获 ERROR 级日志记录（含 loguru 的 exception/traceback 字段）。
+
+    用显式 sink 而不是 caplog：loguru 不接标准 logging，只有能拿到 `record["exception"]`
+    才算证明"traceback 真的落盘了"（沿用 tests/unit/test_llm_exception_attribution.py 的口径）。
+    """
+    records: list = []
+    sink_id = logger.add(lambda m: records.append(m.record), level="ERROR", format="{message}")
+    try:
+        yield records
+    finally:
+        logger.remove(sink_id)
+
+
+def _persist_audit_lines(records) -> list:
+    """落库失败审计行（稳定标记 = 检索入口）"""
+    return [r for r in records if PERSIST_FAILED_MARK in r["message"]]
+
+
+def _raising_save(exc: BaseException, *, only_role: str = "") -> AsyncMock:
+    """`save_message` 替身：指定 role 的落库抛指定异常（其余 role 照常成功）。"""
+    async def _save(**kw):
+        if not only_role or kw.get("role") == only_role:
+            raise exc
+        return f"msg_{kw.get('role', 'x')}"
+    return AsyncMock(side_effect=_save)
+
+
+def _page_tool_result():
+    from app.tools.base import ToolResult
+    return ToolResult(success=True, data={"items": [], "total": 0}, message="查询成功")
+
+
+class TestPersistFailureIsNeverSilent:
+    """#4084：落库失败必须留痕且可归因。
+
+    旧形态（病灶）：分页分支的 assistant 落库是 `except Exception: pass` —— 消息没落库、
+    日志里也没有，而 SSE 照常 `done` ⇒ 顾客侧"看起来成功"，回放历史才发现少一条。
+
+    三条判据（缺一即回归）：
+      ① **可见**：ERROR 审计行 + 稳定标记 `persist FAILED` + traceback；
+      ② **可归因**：`op=` / `write=`（哪条路径）/ `session=` / `incident=` 短码（同会话同异常同码）；
+      ③ **分类**：`CODE DEFECT`（编程错误 ⇒ 须改代码）vs `degraded`（存储瞬态 ⇒ 可降级）+ `suggestion：`。
+    并钉住"**不得把失败写成成功**"：fail-open 落点的 `done` 事件 message_id 必须是 null。
+    """
+
+    def _ctx(self):
+        return AgentContext(user_id="u1", tenant_id=1, session_id="s1", role="customer")
+
+    async def _collect(self, response) -> str:
+        return "".join([chunk async for chunk in response.body_iterator])
+
+    @pytest.mark.asyncio
+    async def test_helper_returns_none_when_nothing_was_written(self, persist_audit):
+        """单一策略点的返回契约：失败 ⇒ `None`（**没写进去**，调用方不得当成功）"""
+        sm = _memory()
+        sm.save_message = _raising_save(RuntimeError("db down"))
+        result = await _save_message_or_report(
+            sm, source="test.probe", session_id="s1", role="assistant", content="hi")
+        nothing_written = result is None
+        assert nothing_written, f"失败时不得返回 message_id（调用方不得当成功），实际 {result!r}"
+        assert len(_persist_audit_lines(persist_audit)) == 1
+
+    @patch("app.api.chat.get_tool_registry")
+    @patch("app.api.chat.SessionMemory")
+    @pytest.mark.asyncio
+    async def test_page_assistant_save_failure_is_audited(
+            self, MockSM, mock_registry, persist_audit):
+        """病灶点：分页 assistant 落库失败此前连日志都没有 ⇒ 现在必须可见且可归因"""
+        from app.api.chat import _handle_page_request
+
+        sm = _memory(get_session=_session())
+        sm.save_message = _raising_save(
+            TypeError("save_message() got an unexpected keyword argument 'tool_results'"),
+            only_role="assistant")
+        MockSM.return_value = sm
+        reg = MagicMock()
+        reg.execute_tool = AsyncMock(return_value=_page_tool_result())
+        mock_registry.return_value = reg
+
+        resp = await _handle_page_request(
+            ChatSendRequest(session_id="sess_1",
+                            message='__PAGE__|processing_item_query|{"page":2,"size":3}'),
+            tenant_id=1, user_id="user_1", current_user=_user())
+        body = await self._collect(resp)
+
+        # fail-open：落库失败不打断顾客这一页（行为与 #4084 之前一致）
+        assert "event: done" in body, body
+        lines = _persist_audit_lines(persist_audit)
+        assert len(lines) == 1, [r["message"] for r in persist_audit]
+        msg = lines[0]["message"]
+        assert "CODE DEFECT" in msg, msg
+        assert "op=save_message" in msg and "write=page.assistant" in msg, msg
+        assert re.search(r"incident=\w{8}", msg), msg
+        assert "suggestion：" in msg, msg
+        # traceback 真的落盘（否则线上只能看到一句话，归因不到行）
+        assert lines[0]["exception"][0] is TypeError, lines[0]["exception"]
+
+    @patch("app.api.chat._generate_title_async", new=AsyncMock())
+    @patch("app.api.chat._extract_memories_async", new=AsyncMock())
+    @pytest.mark.asyncio
+    async def test_save_failure_is_never_written_as_success(self, persist_audit):
+        """主发消息路径：TypeError（编程错误）⇒ CODE DEFECT；且 done 里没有 message_id"""
+        sm = _memory()
+        sm.save_message = _raising_save(TypeError("boom"))
+        events = [e async for e in _agent_stream_to_sse(
+            agent=_agent_with(AgentResponse(content="你好", type="text")),
+            message="你好", context=self._ctx(), chat_history=[],
+            tool_registry=MagicMock(), session_memory=sm,
+            session_id="s1", tenant_id=1, user_id="u1")]
+        body = "".join(events)
+
+        assert "event: done" in body, body
+        assert '"message_id": null' in body, body
+        msg = _persist_audit_lines(persist_audit)[0]["message"]
+        assert "CODE DEFECT" in msg and "write=chat.assistant" in msg, msg
+
+    @patch("app.api.chat._generate_title_async", new=AsyncMock())
+    @patch("app.api.chat._extract_memories_async", new=AsyncMock())
+    @pytest.mark.asyncio
+    async def test_save_timeout_is_degraded_but_traced(self, persist_audit):
+        """超时类（存储瞬态）：允许降级，但**必须留痕**（分类 degraded，不是 CODE DEFECT）"""
+        sm = _memory()
+        sm.save_message = _raising_save(TimeoutError("db timeout"))
+        events = [e async for e in _agent_stream_to_sse(
+            agent=_agent_with(AgentResponse(content="你好", type="text")),
+            message="你好", context=self._ctx(), chat_history=[],
+            tool_registry=MagicMock(), session_memory=sm,
+            session_id="s1", tenant_id=1, user_id="u1")]
+        body = "".join(events)
+
+        assert "event: done" in body, body
+        msg = _persist_audit_lines(persist_audit)[0]["message"]
+        assert "degraded" in msg and "CODE DEFECT" not in msg, msg
+        assert re.search(r"incident=\w{8}", msg), msg
+
+    @patch("app.api.chat.get_tool_registry")
+    @patch("app.api.chat.SessionMemory")
+    @pytest.mark.asyncio
+    async def test_page_user_save_failure_does_not_blame_the_tool(
+            self, MockSM, mock_registry, persist_audit):
+        """翻页轮次：用户侧合成标记落库失败 ⇒ 归因到**落库**，不得兜底成"翻页查询失败"
+
+        （旧形态：该落库与工具调用共用一个 try，落库失败被兜底成"工具执行失败/翻页查询失败"
+         —— 归因错人，顾客也被告知一件没发生的事。）
+        """
+        from app.api.chat import _handle_page_request
+
+        sm = _memory(get_session=_session())
+        sm.save_message = _raising_save(RuntimeError("db down"), only_role="user")
+        MockSM.return_value = sm
+        reg = MagicMock()
+        reg.execute_tool = AsyncMock(return_value=_page_tool_result())
+        mock_registry.return_value = reg
+
+        resp = await _handle_page_request(
+            ChatSendRequest(session_id="sess_1",
+                            message='__PAGE__|processing_item_query|{"page":2,"size":3}'),
+            tenant_id=1, user_id="user_1", current_user=_user())
+        body = await self._collect(resp)
+
+        assert "翻页查询失败" not in body, body
+        reg.execute_tool.assert_awaited_once()
+        msg = _persist_audit_lines(persist_audit)[0]["message"]
+        assert "write=page.user" in msg and "degraded" in msg, msg
+
+    @patch("app.agents.agent_router.get_agent_router")
+    @patch("app.api.chat.get_agent")
+    @patch("app.api.chat.get_tool_registry")
+    @patch("app.api.chat.SessionMemory")
+    @pytest.mark.asyncio
+    async def test_user_message_save_failure_is_fail_closed(
+            self, MockSM, _reg, _agent, mock_router, persist_audit):
+        """用户消息是后续轮次历史的锚 ⇒ fail-closed（不装作这轮开始了）+ 归因到落库"""
+        sm = _memory(get_session=_session())
+        sm.save_message = _raising_save(TypeError("boom"), only_role="user")
+        MockSM.return_value = sm
+        router = MagicMock()
+        router.route.return_value = "xiaobu"
+        mock_router.return_value = router
+
+        resp = await send_message(
+            ChatSendRequest(session_id="sess_1", message="你好"), current_user=_user())
+        body = await self._collect(resp)
+
+        assert "刚才这轮没成功" in body, body
+        msg = _persist_audit_lines(persist_audit)[0]["message"]
+        assert "write=chat.user" in msg and "CODE DEFECT" in msg, msg
