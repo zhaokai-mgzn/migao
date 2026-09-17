@@ -854,13 +854,14 @@ _CASE_CH_001 = EvalCase(
     difficulty=Difficulty.ADVERSARIAL,
     user_inputs=['查看不存在的商品详情'],
     expectations=['product_detail', 'product_search'],
-    data_checks=['error.code=NOT_FOUND', 'suggestion 非空且包含 product_search'],
+    data_checks=['（散文、**不计分**）suggestion 需非空且含 product_search：真实链路 product_detail 的 NOT_FOUND 分支返回「该商品 ID 在库中不存在，请改用 product_search 按商品名搜索，并把候选结果给用户确认」，确实含 product_search；但 runner **没有**「核 suggestion 内容」的能力（`check_expectation` 的 suggestion 分支只判「本轮有 error」，等于没核）⇒ 只作语义记录，**不冒充**已被断言。'],
     skip_reason='',
     tags=['error', 'suggestion', 'adversarial'],
     persona='mibao',
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+    must_fail=[{'tool': 'product_detail'}],
 )
 
 # ── CH-002 [ADVERSARIAL] 创建中途取消（escape hatch - 域关键词触发）（源: cases/chat.yml）──
@@ -1138,8 +1139,8 @@ _CASE_CH_016 = EvalCase(
     skill=Skill.MULTI_TURN,
     difficulty=Difficulty.NORMAL,
     user_inputs=['帮我查一下最近订单到哪了', '这个窗帘褶皱倍数算得不对'],
-    expectations=[],
-    data_checks=['order_query/quote 等明确业务意图即使含情绪词也不 offer（judge 白名单）', '正常咨询不出现 interact 建议卡片'],
+    expectations=['order_query'],
+    data_checks=['（散文、**不计分**）order_query/quote 等明确业务意图即使含情绪词也不 offer（judge 白名单）', '（散文、**不计分**）正常咨询不出现 interact 建议卡片 —— runner 现有能力**判不了「否」**：`handoff_offer` 节点的建议卡只走 interactive 事件（无 tool_call），而 runner 只有「卡片必须出现」的正向断言（`_interactive_satisfies`），没有「某类卡不得出现」的形态 ⇒ 该真值仍留在散文，不冒充已断言（能力缺口形态同 CH-001 的 suggestion 项）。'],
     skip_reason='',
     tags=['handoff', 'non_interrupt'],
     persona='',
@@ -1202,7 +1203,8 @@ _CASE_CH_019 = EvalCase(
     form_prefill=[],
     forbidden_card_text=[],
     pre_clean=[{'type': 'product_remove', 'product_keyword': 'CH019交互卡测试窗帘'}],
-    namespaces=['customer_phone:13800138000', 'product_name:CH019交互卡测试窗帘'],
+    namespaces=['customer_phone:13800138000', 'product_name:CH019交互卡测试窗帘', 'product_name:遮光窗帘'],
+    precondition=[{'type': 'product_count_for_keyword', 'source': '遮光窗帘', 'expect': 1}],
 )
 
 # ── CH-020 [NORMAL] C 端随手发图意图不明 - 先给候选意图卡，不默认直接搜相似（低学历场景）（源: cases/chat.yml）──

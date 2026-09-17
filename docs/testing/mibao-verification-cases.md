@@ -531,11 +531,11 @@
 你: 查看不存在的商品详情
 期望: product_detail
 期望: product_search
-数据: error.code=NOT_FOUND
-数据: suggestion 非空且包含 product_search
+数据: （散文、**不计分**）suggestion 需非空且含 product_search：真实链路 product_detail 的 NOT_FOUND 分支返回「该商品 ID 在库中不存在，请改用 product_search 按商品名搜索，并把候选结果给用户确认」，确实含 product_search；但 runner **没有**「核 suggestion 内容」的能力（`check_expectation` 的 suggestion 分支只判「本轮有 error」，等于没核）⇒ 只作语义记录，**不冒充**已被断言。
+必须失败: product_detail
 ```
 真值: ai-chat.suggestion-on-fail, id-resolve.name
-溯源: eval E001 + verification 8.1（同义） ｜ tags: error, suggestion, adversarial
+溯源: eval E001 + verification 8.1（同义）；2026-09-18 #4099：删掉恒不可满足的 `error.code` 断言（只读轮级 SSE error，工具失败走 tool_result，真值恒 None）+ 原 suggestion 条目改为「散文、不计分」，真值改由 must_fail[product_detail] 承载（可判红：查出来即红） ｜ tags: error, suggestion, adversarial
 
 ### CH-002. 创建中途取消（escape hatch - 域关键词触发） 🔴
 ```
@@ -746,11 +746,12 @@
 ```
 你: 帮我查一下最近订单到哪了
 你: 这个窗帘褶皱倍数算得不对
-数据: order_query/quote 等明确业务意图即使含情绪词也不 offer（judge 白名单）
-数据: 正常咨询不出现 interact 建议卡片
+期望: order_query
+数据: （散文、**不计分**）order_query/quote 等明确业务意图即使含情绪词也不 offer（judge 白名单）
+数据: （散文、**不计分**）正常咨询不出现 interact 建议卡片 —— runner 现有能力**判不了「否」**：`handoff_offer` 节点的建议卡只走 interactive 事件（无 tool_call），而 runner 只有「卡片必须出现」的正向断言（`_interactive_satisfies`），没有「某类卡不得出现」的形态 ⇒ 该真值仍留在散文，不冒充已断言（能力缺口形态同 CH-001 的 suggestion 项）。
 ```
 真值: ai-chat.handoff-offer
-溯源: xiaobu-ai-handoff-guidance.md 意图过滤防打断 ｜ tags: handoff, non_interrupt
+溯源: xiaobu-ai-handoff-guidance.md 意图过滤防打断；2026-09-18 #4099：补机器计分项 expectations[order_query]（原只有纯散文 ⇒ 恒绿空断言），真值=「明确业务意图必须真的被服务」；「不弹建议卡」那半如实留在散文（runner 无负向卡片断言能力） ｜ tags: handoff, non_interrupt
 
 ### CH-017. 转人工携带 AI 对话上下文 - 客服工作台可见转人工前对话（GB/T 47746-2026 对齐） 🔵
 ```
@@ -801,7 +802,7 @@
 清理: product_remove(product_keyword=CH019交互卡测试窗帘)
 ```
 真值: ai-chat.confirm-required
-溯源: issue #2777：G6 interact 绑定 B 端 + admin-web store 字段透传修复。2026-09-16（#3961）语料形态修复：user_inputs 由**能力问答**改为四类写操作的真实触发语（原语料两轮零工具调用 = 假红，污染整轮 completion 判定，见 #3955），四类覆盖面保留；expectations 不变（tool: interact）；data_checks 改为显式标注静态契约由单测/前端单测承重、行为面只留「任一链路下发交互卡」；补 persona: mibao（B 端专属，消除跨腿隐患）；补 namespaces（张三/13800138000 与 10 条用例互斥）；补 pre_clean product_remove（自建商品名重试前置复位）；④ 售后改状态轮有意不答卡，避免与 AS-004 争用 seed 工单；生成物已重渲染 ｜ tags: interactive, confirmation
+溯源: issue #2777：G6 interact 绑定 B 端 + admin-web store 字段透传修复。2026-09-16（#3961）语料形态修复：user_inputs 由**能力问答**改为四类写操作的真实触发语（原语料两轮零工具调用 = 假红，污染整轮 completion 判定，见 #3955），四类覆盖面保留；expectations 不变（tool: interact）；data_checks 改为显式标注静态契约由单测/前端单测承重、行为面只留「任一链路下发交互卡」；补 persona: mibao（B 端专属，消除跨腿隐患）；补 namespaces（张三/13800138000 与 10 条用例互斥）；补 pre_clean product_remove（自建商品名重试前置复位）；④ 售后改状态轮有意不答卡，避免与 AS-004 争用 seed 工单；生成物已重渲染。2026-09-18 #4099（burn-down，metric 收紧为 entries ⇒ 必须整条销账）：补 `precondition[product_count_for_keyword: 遮光窗帘, expect: 1]`（④ 轮按名字下单 ⇒ 该名字唯一是它真正依赖且**只读**的前置；不选 order_count_for_phone，因本用例自己会建单、漂移判据必然判红）+ namespaces 补 `product_name:遮光窗帘`（护住该前置的基线/漂移两格）；客户/工单两个维度无可声明类型，如实登记为未覆盖；断言（user_inputs/expectations/data_checks/pre_clean）原样未动 ｜ tags: interactive, confirmation
 
 ### CH-020. C 端随手发图意图不明 - 先给候选意图卡，不默认直接搜相似（低学历场景） 🔵
 ```

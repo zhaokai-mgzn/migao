@@ -33,11 +33,35 @@ cases:
     expectations:
       - tool: product_detail
       - tool: product_search
+    # ── 「不存在的商品不得查出结果」的机器判据（issue #4099）：工具级「零成功调用」──
+    # 为什么**不是**原先那条 `error.code` 断言（恒不可满足 ⇒ 永久红，把本用例 score 上限钉在 2/3）：
+    #   ① 取值路径对不上：runner 的 error-code 断言只读**轮级** SSE error
+    #      （`check_expectation` 取 `result.get("error")`），而该字段**只在** `event: error`
+    #      （异常路径）被赋值（`send_message` 的 SSE 解析分支）；工具失败走 `event: tool_result`
+    #      ⇒ 真值恒为 None。真跑实证：adversarial run 34650006175（main @7f2665ab）逐字
+    #      「expected error not_found but got None」；
+    #   ② 取值面即便扩到工具级也取不到该值：`product_detail` 的 NOT_FOUND 分支返回的 error
+    #      文本是「商品不存在」（`app/tools/product_detail.py`），不含 NOT_FOUND 字样。
+    # 替代判据可判红：`product_detail` 一旦**成功**（= 不存在的商品被查出来了 / 工具坏了）即判红、
+    # score 归零；而「工具正常返回但 data 为空」在 product_detail 里走 success=false 分支
+    # ⇒ 不会把合法行为判红（R2）。
+    # 判别力边界（照实登记，不当成已覆盖）：本断言是**工具级全程**口径 —— 若 agent 走完引导链后
+    #   改用**另一个真实商品 id** 取详情来展示候选，那条调用确实成功，也会判红。取舍：本用例要守的
+    #   真值是「空结果不得被吞掉」，而 runner 的 `must_fail` **无轮次作用域**、`expectation` 也无
+    #   取值级否定形态 ⇒ 只能取工具级。值级口径（`args: {product_id: …}`）要求用例先用罐头输入
+    #   钉死那个不存在的 id（会改用例输入），且 agent 换个 id 就静默不匹配（另一个方向的假绿面）
+    #   —— 两者都超出本包触点（#4099 只修「这条不可满足的计分项」）。
+    must_fail:
+      - tool: product_detail
     data_checks:
-      - "error.code=NOT_FOUND"
-      - "suggestion 非空且包含 product_search"
+      # 散文、**不计分**（runner 只把含机器计分标记的 data_checks 计入评分 —— 本文件刻意**不写**
+      # 那些标记：写进去会让散文被当成机器计分项，同族假绿面见 PR-008 的 `data_checks`）。
+      - "（散文、**不计分**）suggestion 需非空且含 product_search：真实链路 product_detail 的 NOT_FOUND 分支返回「该商品 ID 在库中不存在，请改用 product_search 按商品名搜索，并把候选结果给用户确认」，确实含 product_search；但 runner **没有**「核 suggestion 内容」的能力（`check_expectation` 的 suggestion 分支只判「本轮有 error」，等于没核）⇒ 只作语义记录，**不冒充**已被断言。"
+      # ⚠️ 上一句里的 `suggestion` 一词**同时**是 `_last_round_error_verdict` 的「用例显式预期错误」
+      #    标记（expectations/data_checks 含 error 码或 suggestion 时，最后轮 SSE error 不判失败）
+      #    —— 保留是**有意**的：本用例前提就是「查不到」，删掉它会新增一个与 #4099 无关的判红面。
     skip_reason: ""
-    merge_log: "eval E001 + verification 8.1（同义）"
+    merge_log: "eval E001 + verification 8.1（同义）；2026-09-18 #4099：删掉恒不可满足的 `error.code` 断言（只读轮级 SSE error，工具失败走 tool_result，真值恒 None）+ 原 suggestion 条目改为「散文、不计分」，真值改由 must_fail[product_detail] 承载（可判红：查出来即红）"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_product_detail.py"
@@ -726,12 +750,28 @@ cases:
     user_inputs:
       - "帮我查一下最近订单到哪了"
       - "这个窗帘褶皱倍数算得不对"
-    expectations: []
+    # 机器计分项（#4099）：本用例原先只有**纯散文** data_checks ⇒ `scoring_assertion_count = 0`
+    # ⇒ `score = 1.0` 恒绿（命中 CASE-TRUST-EMPTY-ASSERTION，同族空断言的「恒绿」一支）。
+    # 补的是「明确业务意图必须被**真的服务**」这条正向真值：顾客说「查订单」⇒ 必须真发起订单查询，
+    # 而不是把话头打断/推给人工（防打断的机器可判形态，语义与标题一致）。
+    # 可判红：该 expectation 的失败形态就是真跑日志里的 `unmatched expectation: order_query`
+    #   （同 CH-001 在 run 34650006175 的 `❌ product_search → unmatched expectation`）——
+    #   「agent 压根没查单」⇒ 红、score 归零；不是恒真项。
+    # 两腿都命中：runner 在 xiaobu 腿把 `order_query` 改写为 `customer_order_query`
+    #   （`check_expectation` 的 `PERSONA == "xiaobu"` 分支）；真跑证据：同类「查单」意图在
+    #   mibao 腿确实打出 `tools=['order_query', …]`（run 34650006175 的 CH-011 逐字）。
+    # 为什么**不**声明 args 值级 / `output_verify`（更强形态）：`order_query`（B 端，有 action）
+    #   与 `customer_order_query`（C 端）的 schema 不同，且映射只发生在 **expectation 层**
+    #   （`must_succeed` 不映射）⇒ 值级/效果层声明会**在一腿上假红**；要落先得取两腿种子真值。
+    # 判别力边界（照实登记，不冒充已覆盖）：存在性级 —— 证「有查单」，**不**证「查单成功/结果正确」。
+    expectations:
+      - tool: order_query
     data_checks:
-      - "order_query/quote 等明确业务意图即使含情绪词也不 offer（judge 白名单）"
-      - "正常咨询不出现 interact 建议卡片"
+      # 原两条都是纯散文（**不计分**）—— 保留语义，并如实标注它们**没有被机器断言**：
+      - "（散文、**不计分**）order_query/quote 等明确业务意图即使含情绪词也不 offer（judge 白名单）"
+      - "（散文、**不计分**）正常咨询不出现 interact 建议卡片 —— runner 现有能力**判不了「否」**：`handoff_offer` 节点的建议卡只走 interactive 事件（无 tool_call），而 runner 只有「卡片必须出现」的正向断言（`_interactive_satisfies`），没有「某类卡不得出现」的形态 ⇒ 该真值仍留在散文，不冒充已断言（能力缺口形态同 CH-001 的 suggestion 项）。"
     skip_reason: ""
-    merge_log: "xiaobu-ai-handoff-guidance.md 意图过滤防打断"
+    merge_log: "xiaobu-ai-handoff-guidance.md 意图过滤防打断；2026-09-18 #4099：补机器计分项 expectations[order_query]（原只有纯散文 ⇒ 恒绿空断言），真值=「明确业务意图必须真的被服务」；「不弹建议卡」那半如实留在散文（runner 无负向卡片断言能力）"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_handoff_judge.py"
@@ -887,6 +927,12 @@ cases:
     namespaces:
       - "customer_phone:13800138000"
       - "product_name:CH019交互卡测试窗帘"
+      # 依赖资源也进命名空间（issue #3781 的声明式隔离）：下面的前置断言把
+      # 「名字含『遮光窗帘』的商品件数 == 1」钉成可判定真值，而 PR-021 一类用例会**创建**
+      # 同名副本（product.yml 记录过旧输入「名称遮光窗帘，价格 100」）⇒ 并行跑时基线与
+      # 漂移两格都会被别人改写。声明后与争用它/写它的用例自动分道
+      # （先例：OR-015 / OR-030 / OR-031 / PR-025~027 / CR-003）。
+      - "product_name:遮光窗帘"
     # 自清理（#3800）：① 的商品是本用例自建的**自有名** ⇒ 重试前置须复位成「不存在」
     # （`product_remove` 按子串删；`product_dedupe` 只留 1 件，不构成「不存在」）。
     # 目标名同时声明在 namespaces 里 ⇒ 属「用例自建对象」，静态判据按该豁免放行
@@ -894,6 +940,28 @@ cases:
     pre_clean:
       - type: product_remove
         product_keyword: "CH019交互卡测试窗帘"
+    # ── 前置自断言（#4099：本用例原先缺这一格 ⇒ CASE-TRUST-NO-PRECONDITION-ASSERTION）──
+    # 为什么是「遮光窗帘 件数 == 1」：④ 轮的触发语是「帮客户张三（13800138000）下一单：
+    # **遮光窗帘** 3 米，要打孔加工」——按**名字**定位下单对象，故「该名字在种子栈里唯一」
+    # 就是它真正依赖的可判定前置。前置悄悄不成立时，红的表现会像「agent 不下单/不发卡」
+    # （归因错人），这正是本规则要拦的形态。
+    # 真值取证：`xiaobu_eval_seed.sql` 的 `prod_eval_blackout`（遮光窗帘 ¥168）是两个 seed 里
+    # **唯一**一个名字含该词的商品；`mibao_eval_seed.sql` 只加 `prod_eval_2699`
+    # （2699系列雪尼尔窗帘面料，不含该词），且评测栈按 xiaobu→mibao 顺序加载两份 seed
+    # （顺序由 `test_eval_stack_seed_parity.py` 锁住）⇒ 合并后件数恒为 1；另有 11 条在用用例
+    # 声明同一真值（OR-009/014/015/030/031、PR-017/025/026/027、PP-001、CR-003）。
+    # 为什么**不**声明 `order_count_for_phone: 13800138000`：本用例**自己就会给该号码建单**
+    # （④ 轮确认后 order_create 落库）⇒ `after - before = +1 > max_growth(默认 0)` ⇒ 漂移判据
+    # 必然判红 —— 那是「硬写一条注定红的守卫」，不如声明真正只读的那份依赖。
+    # 能力边界（照实登记，不冒充已覆盖）：本用例还依赖「客户张三（13800138000）存在」与
+    # 「工单 AS-20260914-9001 存在」，但 `_PRECONDITION_TYPES` 只登记了三种类型
+    # （order_count_for_phone / product_count_for_keyword / debug_permissions_effective），
+    # 客户与工单两个维度**没有**可声明类型 ⇒ 那两个依赖仍无自断言（不写会静默空转的假声明；
+    # 工单侧的争用已由「④ 轮有意不答卡」从写侧规避，见上方语料注释）。
+    precondition:
+      - type: product_count_for_keyword
+        source: "遮光窗帘"
+        expect: 1
     expectations:
       - tool: interact
     # data_checks 与语料对齐：原来三条**全是静态契约散文**（不计分、也不该靠 LLM 跑来证），
@@ -904,7 +972,7 @@ cases:
       - "【静态契约 ▪ 前端单测承重，非本用例】admin-web store 完整透传 confirmValue/cancelValue/pageMeta（confirm 卡回传上下文值而非死值）—— 断言在 traces.tests[1]"
       - "【本用例的行为面】真实写操作触发语下，四类链路**任一条**下发了交互卡（= expectations）；四类链路各自的完整正确性由专项用例承重：建品 PR-008 / 下单 OR-014 / 客户标签 CU-003 / 售后改状态 AS-004"
     skip_reason: ""
-    merge_log: "issue #2777：G6 interact 绑定 B 端 + admin-web store 字段透传修复。2026-09-16（#3961）语料形态修复：user_inputs 由**能力问答**改为四类写操作的真实触发语（原语料两轮零工具调用 = 假红，污染整轮 completion 判定，见 #3955），四类覆盖面保留；expectations 不变（tool: interact）；data_checks 改为显式标注静态契约由单测/前端单测承重、行为面只留「任一链路下发交互卡」；补 persona: mibao（B 端专属，消除跨腿隐患）；补 namespaces（张三/13800138000 与 10 条用例互斥）；补 pre_clean product_remove（自建商品名重试前置复位）；④ 售后改状态轮有意不答卡，避免与 AS-004 争用 seed 工单；生成物已重渲染"
+    merge_log: "issue #2777：G6 interact 绑定 B 端 + admin-web store 字段透传修复。2026-09-16（#3961）语料形态修复：user_inputs 由**能力问答**改为四类写操作的真实触发语（原语料两轮零工具调用 = 假红，污染整轮 completion 判定，见 #3955），四类覆盖面保留；expectations 不变（tool: interact）；data_checks 改为显式标注静态契约由单测/前端单测承重、行为面只留「任一链路下发交互卡」；补 persona: mibao（B 端专属，消除跨腿隐患）；补 namespaces（张三/13800138000 与 10 条用例互斥）；补 pre_clean product_remove（自建商品名重试前置复位）；④ 售后改状态轮有意不答卡，避免与 AS-004 争用 seed 工单；生成物已重渲染。2026-09-18 #4099（burn-down，metric 收紧为 entries ⇒ 必须整条销账）：补 `precondition[product_count_for_keyword: 遮光窗帘, expect: 1]`（④ 轮按名字下单 ⇒ 该名字唯一是它真正依赖且**只读**的前置；不选 order_count_for_phone，因本用例自己会建单、漂移判据必然判红）+ namespaces 补 `product_name:遮光窗帘`（护住该前置的基线/漂移两格）；客户/工单两个维度无可声明类型，如实登记为未覆盖；断言（user_inputs/expectations/data_checks/pre_clean）原样未动"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_skill_routing_integrity.py"
