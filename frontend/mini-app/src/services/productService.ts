@@ -38,25 +38,6 @@ export interface MiniTicket {
 }
 
 /**
- * 新品推荐（商家显式打标的在售商品）
- * GET /api/chat/products/new-arrivals?size=6
- */
-export async function getNewArrivals(size = 6): Promise<MiniProduct[]> {
-  const res = await get<ApiResponse<{ items: MiniProduct[]; total: number }>>(
-    '/api/chat/products/new-arrivals',
-    { baseURL: AI_API_BASE_URL, params: { size } },
-  )
-  if (!res.success || !res.data) return []
-  return (res.data.items || []).map((p: any) => ({
-    id: p.id,
-    name: p.name || '',
-    price: p.price ?? 0,
-    image: p.image,
-    sales_count: p.sales_count ?? 0,
-  }))
-}
-
-/**
  * 我的订单（「我的」页入口，强制按当前用户过滤）
  * GET /api/chat/orders/mine?page=1&size=5
  */
@@ -95,6 +76,6 @@ export async function getMyTickets(size = 5): Promise<MiniTicket[]> {
   }))
 }
 
-export default { getNewArrivals, getMyOrders, getMyTickets }
+export default { getMyOrders, getMyTickets }
 
 
