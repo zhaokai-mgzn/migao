@@ -310,6 +310,13 @@ PRECLEAN_CUSTOMER_TYPES = ("customer_tag_remove",)               # customer_keyw
 PRECONDITION_PRODUCT_TYPE = "product_count_for_keyword"          # source → 商品
 #: 明确**不在**本轮范围（布尔值只用于"显式跳过"，避免"扫到一半才发现"）：
 NAMESPACE_EMPLOYEE_PREFIXES = ("employee_name:", "employee_phone:")
+NAMESPACE_PREFIXES_JUDGED = ("product_name:", "customer_phone:")
+#: 分类面清单（判 / 显式范围外）—— 出现**不在两张表里**的新形态 ⇒ `TestNoSilentSkip` 报红，
+#: 不许悄悄落入盲区（盲区长得像通过，R5 禁的正是这种静默失效）
+DB_FETCH_JUDGED = (DB_FETCH_PRODUCT, DB_FETCH_ORDER_ITEMS)
+DB_FETCH_OUT_OF_SCOPE = ("employee", "employee_absent", "order_phone", "after_sales_ticket")
+OUTPUT_VERIFY_NAME_TOOLS_JUDGED = (TOOL_PROCESSING_MANAGE,)
+OUTPUT_VERIFY_NAME_TOOLS_OUT_OF_SCOPE = ()
 
 
 def declared_mentions(case: dict) -> list:
@@ -803,6 +810,72 @@ class TestSlotAnchors:
                     "db_verify": [dict(spec, fetch=fetch)]}
             assert declared_mentions(case) == [], (fetch, declared_mentions(case))
             assert unbacked_mentions([case]) == [], fetch
+
+
+def _unclassified(values, judged, out_of_scope) -> list:
+    return sorted(set(values) - set(judged) - set(out_of_scope) - {""})
+
+
+def unclassified_db_fetches(cases) -> list:
+    """未分类的 `db_verify.fetch` 取数类型（当前**不会**被判据核对 ⇒ 盲区与通过同形）。"""
+    return _unclassified((str(s.get("fetch") or "") for c in cases
+                          for s in c.get("db_verify") or [] if isinstance(s, dict)),
+                         DB_FETCH_JUDGED, DB_FETCH_OUT_OF_SCOPE)
+
+
+def unclassified_namespace_prefixes(cases) -> list:
+    return _unclassified((str(n).split(":")[0] + ":" for c in cases
+                          for n in c.get("namespaces") or []),
+                         NAMESPACE_PREFIXES_JUDGED, NAMESPACE_EMPLOYEE_PREFIXES)
+
+
+def unclassified_output_verify_name_tools(cases) -> list:
+    return _unclassified((str(s.get("tool") or "") for c in cases
+                          for s in c.get("output_verify") or []
+                          if isinstance(s, dict) and isinstance(s.get("expect"), dict)
+                          and s["expect"].get("name")),
+                         OUTPUT_VERIFY_NAME_TOOLS_JUDGED,
+                         OUTPUT_VERIFY_NAME_TOOLS_OUT_OF_SCOPE)
+
+
+class TestNoSilentSkip:
+    """**防静默**：判据"看不见"的形态必须报红，不许悄悄进盲区（R5）。
+
+    本判据只在**已分类**的槽位上工作 —— 于是"新出现一种取数类型/工具/命名空间前缀"时的
+    默认行为是**不判**（绿），而绿的形状与"真的没事"完全一样。这三条把默认行为翻过来：
+    新形态要么被判、要么被显式登记为范围外，两者都没有 ⇒ 报红（并提示该怎么归类）。
+    每条都带注入式红证（喂一条未分类形态 ⇒ 必报出）。
+    """
+
+    def test_every_db_verify_fetch_type_is_classified(self):
+        unknown = unclassified_db_fetches(_all_cases())
+        assert unknown == [], (
+            f"出现了未分类的 `db_verify.fetch` 取数类型 {unknown} —— 它当前**不会**被本判据核对"
+            "（盲区与通过同形）。请判定它读的是什么对象：属商品/加工项/色名/客户 ⇒ 加进 "
+            "`DB_FETCH_JUDGED` 并补抽取分支；不属本轮四类 ⇒ 加进 `DB_FETCH_OUT_OF_SCOPE` 并写明理由")
+        assert unclassified_db_fetches(
+            [{"id": "X", "db_verify": [{"fetch": "ticket_by_no", "name": "T-1"}]}]) \
+            == ["ticket_by_no"], "红证失败：未分类取数类型没被报出"
+
+    def test_every_namespace_prefix_is_classified(self):
+        unknown = unclassified_namespace_prefixes(_all_cases())
+        assert unknown == [], (
+            f"出现了未分类的 `namespaces` 前缀 {unknown} —— 同样的静默盲区。"
+            "属本轮四类 ⇒ 加进 `NAMESPACE_PREFIXES_JUDGED`；否则显式登记为范围外")
+        assert unclassified_namespace_prefixes(
+            [{"id": "X", "namespaces": ["order_no:EVAL-1"]}]) == ["order_no:"], \
+            "红证失败：未分类命名空间前缀没被报出"
+
+    def test_every_output_verify_name_tool_is_classified(self):
+        unknown = unclassified_output_verify_name_tools(_all_cases())
+        assert unknown == [], (
+            f"这些工具的 `output_verify[].expect.name` 未分类：{unknown} —— "
+            "`expect.name` 跨域同形（加工项名/员工名/商品名都可能用它），凭键名判类 = 假红；"
+            "请显式归类（判 or 范围外）")
+        assert unclassified_output_verify_name_tools(
+            [{"id": "X", "output_verify": [{"tool": "employee_manage",
+                                            "expect": {"name": "李四"}}]}]) \
+            == ["employee_manage"], "红证失败：未分类工具没被报出"
 
 
 class TestNegativeExamples:
