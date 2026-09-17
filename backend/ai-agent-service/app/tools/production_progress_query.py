@@ -17,9 +17,6 @@ from loguru import logger
 from app.tools.base import BaseTool, ToolContext, ToolResult
 from app.utils.http_client import get_admin_api_client
 
-# 冻结契约端点（#3995）
-PROGRESS_ENDPOINT = "/api/admin/agent/production/progress"
-
 
 def _fmt_percent(value: Any) -> str:
     """进度百分比展示：60.0 → '60'、60.5 → '60.5'、缺失 → '未知'（不编造 0%）"""
@@ -103,7 +100,10 @@ class ProductionProgressQueryTool(BaseTool):
         try:
             client = get_admin_api_client()
             response = await client.get(
-                PROGRESS_ENDPOINT,
+                # 冻结契约端点（#3995）；**路径用字面量**：跨模块 payload 契约门禁
+                # （tests/test_tool_payload_backend_contract.py）要求 admin-api 调用点
+                # 能静态归属到端点（模块常量会判「静默脱离射程」）。
+                "/api/admin/agent/production/progress",
                 params={"order_no": order_no},
                 tenant_id=context.tenant_id,
                 user_id=context.user_id,

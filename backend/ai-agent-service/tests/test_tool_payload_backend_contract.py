@@ -170,6 +170,21 @@ UNATTRIBUTABLE_CALLS: dict[str, str] = {
 # key = (工具文件相对路径, HTTP 方法, 归一化端点)
 ENDPOINT_ALLOWLIST: dict[tuple[str, str, str], dict[str, str]] = {
     # 当前为空：processing_item_manage 的 PUT /processing-items/{}/status（404）已由 #3591 改用真实端点
+    #
+    # ⚠️【临时条目·同批并行包，落地即删】issue #3996（M4-I，ai-agent 侧）按 #3995（M4-G-2）的
+    # **冻结契约**编码，端点由 #3995 在 admin-api 提供；两包同批并行 ⇒ 本包先合入时端点尚不存在。
+    # #3995 合入端点后，本文件的两个条目**必须删除**（否则 test_endpoint_allowlist_entries_are_current
+    # 判「陈旧条目」红）——这正是白名单「修好即销账」纪律的预期动作，不是遗留欠账。
+    ("app/tools/production_progress_query.py", "GET", "/api/admin/agent/production/progress"): {
+        "reason": "端点由并行包 #3995（M4-G-2）提供，本包（#3996）先按冻结契约接入 ⇒ 合入时端点尚未存在；#3995 落地后请删除本条目",
+        "owner": "M4-G-2 后端包（#3995）或同批集成方",
+        "issue": "#3996",
+    },
+    ("app/tools/piecework_query.py", "GET", "/api/admin/agent/production/piecework"): {
+        "reason": "端点由并行包 #3995（M4-G-2）提供，本包（#3996）先按冻结契约接入 ⇒ 合入时端点尚未存在；#3995 落地后请删除本条目",
+        "owner": "M4-G-2 后端包（#3995）或同批集成方",
+        "issue": "#3996",
+    },
 }
 
 # ── 白名单：存量缺陷工作清单（每条必须带 reason + owner + issue）─────────────

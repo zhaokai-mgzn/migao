@@ -18,9 +18,6 @@ from loguru import logger
 from app.tools.base import BaseTool, ToolContext, ToolResult
 from app.utils.http_client import get_admin_api_client
 
-# 冻结契约端点（#3995）
-PIECEWORK_ENDPOINT = "/api/admin/agent/production/piecework"
-
 # 统计月份形态：YYYY-MM（脏参数不发起调用，避免后端 500 与错误归因）
 PERIOD_RE = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
 
@@ -118,7 +115,9 @@ class PieceworkQueryTool(BaseTool):
         try:
             client = get_admin_api_client()
             response = await client.get(
-                PIECEWORK_ENDPOINT,
+                # 冻结契约端点（#3995）；**路径用字面量**：跨模块 payload 契约门禁
+                # （tests/test_tool_payload_backend_contract.py）要求调用点可静态归属端点。
+                "/api/admin/agent/production/piecework",
                 params=params,
                 tenant_id=context.tenant_id,
                 user_id=context.user_id,
