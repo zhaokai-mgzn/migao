@@ -26,7 +26,10 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 XIAOBU_TOOLS = frozenset({
     # customer_order_skill
     "customer_order_query", "customer_logistics_track", "customer_address_query",
-    "order_create", "interact", "human_handoff",
+    "order_create", "interact",
+    # ⚠️ `human_handoff` 已于 2026-09-19 按用户裁定退场（模型不可达）⇒ 从本真值移除：
+    # 留着的后果是"用例断言一个永远调不到的工具"，覆盖门禁会把已清理的用例重新判成
+    # 「挂错端/漏覆盖」。一致性仍由 TestXiaobuToolsetTruth（对比 skill 源码）锁。
     # customer_order_skill（issue #3996）：顾客查自己的生产进度（CH-039 断言该工具）
     "production_progress_query",
     # customer_order_skill + customer_general_skill（fallback）（issue #4085 第 1 项）：
@@ -44,7 +47,7 @@ XIAOBU_TOOLS = frozenset({
     "knowledge_search",
     # customer_general_skill（fallback）：product_search / product_detail /
     # customer_order_query / production_progress_query / payment_qrcode_query /
-    # customer_logistics_track / human_handoff / interact —— 均已在上方列出
+    # customer_logistics_track / interact —— 均已在上方列出
 })
 
 # 评测 runner 侧的「非真实工具」伪期望（不计入工具集校验）

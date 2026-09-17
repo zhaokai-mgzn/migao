@@ -104,7 +104,7 @@ class IntentResult:
 class RouteDecision:
     """路由决策结果"""
     intent_result: IntentResult
-    action: str  # "direct_reply" / "route_with_hint" / "full_agent" / "human_handoff"
+    action: str  # "direct_reply" / "route_with_hint" / "full_agent" / "handoff_offer"
     direct_reply: Optional[str] = None
     tool_hint: Optional[str] = None
 
@@ -121,7 +121,12 @@ INTENT_TOOL_MAP: dict[IntentType, list[str]] = {
     IntentType.GREETING: [],
     IntentType.FAREWELL: [],
     IntentType.CAPABILITIES: [],
-    IntentType.COMPLAINT: ["human_handoff"],
+    # ⚠️ COMPLAINT **不再**推荐 `human_handoff`（用户裁定 2026-09-19：该工具已退场、
+    # 模型不可达，见 app/tools/registry.py 的注册行注释）—— 指向一个拿不到的工具名
+    # 就是「给模型一个按不动的出口」。投诉意图改由兜底/售后 skill 自行受理
+    # （C 端走 aftersale_create 投诉工单；route action 仍可落到 handoff_offer 建议卡，
+    #  该确定性节点的去留属阶段二清理项）。
+    IntentType.COMPLAINT: [],
     IntentType.GENERAL: [],
     # 商家后台管理类意图
     IntentType.CUSTOMER_MANAGE: ["customer_manage"],

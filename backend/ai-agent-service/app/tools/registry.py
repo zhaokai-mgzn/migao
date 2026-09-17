@@ -99,6 +99,11 @@ _NO_ACTION_PARAM_TOOL_ACTION: Dict[str, str] = {
     "product_update": "update",
     "sku_update": "update",
     # human_handoff 建的是**投诉工单**（description：「自动创建投诉工单 → 通知管理员」）
+    # ⚠️ 该工具**已按用户裁定退场（模型不可达，见 `create_default_registry` 的注册行注释）**，
+    #    但本条目**保留**：本表的判据口径是「源码里 `read_only = False` 的工具」
+    #    （`tests/test_write_audit_action_semantics.py::_write_tools` 按**文件**扫，不按注册表）
+    #    ⇒ 工具类文件在、映射就必须在（删掉它只会把一条判据换成另一条红）。
+    #    阶段二完全删除 `app/tools/human_handoff.py` 时，本行随之删除。
     "human_handoff": "create",
     # processing_order_generate 语义是「批量生成加工单」（description【语义】），
     # 不是 create —— 与 processing_item_manage 的 create_processing_item 区分开
@@ -575,7 +580,12 @@ def create_default_registry() -> ToolRegistry:
     from app.tools.after_sales_manage import AfterSalesManageTool
     from app.tools.aftersale_create import AftersaleCreateTool
     from app.tools.aftersale_query import AftersaleQueryTool
-    from app.tools.human_handoff import HumanHandoffTool
+    # 转人工工具**不注册**（用户裁定 2026-09-19：「不应该存在 human_handoff 这种东西，
+    # 以后全是 AI 来判断」）—— 工具类文件保留（兼容存量数据 + 直测类单测仍跑），
+    # 但**默认注册表不含它** ⇒ 任何 persona 的 `get_schema()` 都拿不到它 ⇒ 模型不可达。
+    # 处置形态同 issue #3917（`processing_order_*`）：文件留、注册去、名单同步。
+    # 反回退判据：tests/unit_ci_workflows/test_human_handoff_retired.py
+    # from app.tools.human_handoff import HumanHandoffTool
     # [RAG 禁用] from app.tools.knowledge_manage import KnowledgeManageTool
     from app.tools.notification_manage import NotificationManageTool
     from app.tools.settings_manage import SettingsManageTool
@@ -621,7 +631,8 @@ def create_default_registry() -> ToolRegistry:
     registry.register(AfterSalesManageTool())
     registry.register(AftersaleCreateTool())
     registry.register(AftersaleQueryTool())
-    registry.register(HumanHandoffTool())
+    # 转人工工具不注册（用户裁定 2026-09-19，见上方 import 注释）：
+    # registry.register(HumanHandoffTool())
     # [RAG 禁用] registry.register(KnowledgeManageTool())
     registry.register(NotificationManageTool())
     registry.register(SettingsManageTool())

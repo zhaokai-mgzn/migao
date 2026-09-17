@@ -148,7 +148,7 @@ cases:
 
   - id: ST-008
     legacy_id: ""
-    title: "机器人设置生效 - 自动转人工关键词 + 非营业时间转人工降级"
+    title: "机器人设置生效 - 自动转人工关键词命中后如实告知（无人工通道）+ 非营业时间降级（确定性层）"
     domains:
       - settings
       - chat
@@ -161,30 +161,32 @@ cases:
       - settings-manage.ai-config
       - settings-manage.immediate-effect
     user_inputs:
-      - "商家配置 autoHandoffKeywords=[找老板,我要投诉] 后，用户消息'我要找老板'应触发转人工"
-      - "商家配置 afterHoursMode=auto_reply 且非营业时间时，转人工应降级返回 afterHoursMessage"
+      - "商家配置 autoHandoffKeywords=[找老板,我要投诉] 后，用户消息'我要找老板'应命中 complaint 路由（不再有可用的转人工工具）"
+      - "商家配置 afterHoursMode=auto_reply 且非营业时间时，转人工降级返回 afterHoursMessage（确定性层）"
     expectations:
-      - tool: human_handoff
-    # 写操作成功断言（issue #3367 覆盖审计）：`human_handoff` 是**写工具** ——
-    # 「调了」≠「人工会话真的建出来了」。本条用例的业务价值（工作台可见/可回复、
-    # 上下文透传）全部建立在会话真的落库之上；只断言工具名的话，返回
-    # success=false（甚至 tool_not_found）也照样判绿（issue #3361 已在 order_create
-    # 上实证过这种假绿）。实测本用例链路返回 id/ticketNo/status=pending，断言成立。
-    must_succeed:
-      - tool: human_handoff
+      # `direct_reply` = 本仓库「期望一段文本回答（无工具调用）」的标准标记；本条已
+      # unrunnable ⇒ 该期望是**形态留档**（真实覆盖见下方 data_checks 指向的纯函数单测）
+      - tool: direct_reply
+    # ── 2026-09-19 退场改造（用户裁定：不应该存在 human_handoff 这种东西）──────
+    # 原断言锚 human_handoff（expectations + must_succeed）—— 工具退场后不可满足，
+    # 移除。**保留**仍然真实的两条事实（且都是纯函数级，本来就在 skip 之外覆盖）：
+    #   · `is_auto_handoff_trigger` 命中 → complaint 意图（nodes.py 的 D2 路径**仍在**，
+    #     只是不再有工具可转）——这仍是配置生效的业务价值，判据在 test_tenant_config.py；
+    #   · 非营业时间降级（afterHoursMessage）原本实现在 `human_handoff.execute` 里 ⇒
+    #     随退场不可达，改由工具类直测单测覆盖（traces 保留），不在 agent 层假装跑过。
     data_checks:
-      - "is_auto_handoff_trigger('我要找老板', config) == true"
-      - "is_after_hours(config, 非营业时间) == true"
-      - "非营业时间转人工不创建工单，返回 afterHoursMessage"
+      - "（确定性层）is_auto_handoff_trigger('我要找老板', config) == true"
+      - "（确定性层）is_after_hours(config, 非营业时间) == true"
+      - "（确定性层）非营业时间降级不创建工单、返回 afterHoursMessage（实现在工具类内，随退场改为工具直测覆盖）"
     # 前置自断言（issue #4085 顺带销账 CASE-TRUST-NO-PRECONDITION-ASSERTION）：
     # 本用例的 premise 是**租户 AI 配置**（autoHandoffKeywords / afterHoursMode / 营业时间），
     # 而 agent-eval 栈无法设置 TenantAiConfig（故 skip_reason 把行为交给 pytest 纯函数单测）。
     # 写成**声明层**字段而不是散文，使「前置是什么、为什么本用例跑不了」机器可见 ——
     # 将来若解除 skip，前置不成立会以「agent 不干活」的形态出现（PG-013/CU-003 的教训），
     # 这里先把前提钉住；**不改变用例语义、不解除 skip**。
-    precondition: "租户 AI 配置就位：autoHandoffKeywords=[找老板,我要投诉]、afterHoursMode=auto_reply 且当前为非营业时间（TenantAiConfig；agent-eval 栈无法设置 ⇒ 本用例 skip，行为由 tests/test_tenant_config.py 的 is_auto_handoff_trigger / is_after_hours 纯函数单测覆盖）"
-    skip_reason: "纯配置函数行为由 pytest 单测（tests/test_tenant_config.py）验证：is_auto_handoff_trigger / is_after_hours 是纯函数，其入参 config（TenantAiConfig）无法经 agent-eval 设置，非 LLM 行为，不进入 C 端评测（issue #3270 断言层归因：原 user_inputs 是断言描述而非顾客对话）"
-    merge_log: "POC 机器人设置集成新增；2026-09-11 标 skip —— 原输入为配置描述、断言为纯函数级，agent-eval 无法设置 config（issue #3270）；2026-09-18（issue #4085）：补 `precondition` 声明层字段（原本前置只活在 skip_reason 散文里 ⇒ CASE-TRUST-NO-PRECONDITION-ASSERTION 存量违规），语义与 skip 状态未变"
+    precondition: "租户 AI 配置就位：autoHandoffKeywords=[找老板,我要投诉]、afterHoursMode=auto_reply 且当前为非营业时间（TenantAiConfig；agent-eval 栈无法设置 ⇒ 本用例 skip，行为由 tests/test_tenant_config.py 的 is_auto_handoff_trigger / is_after_hours 纯函数单测 + tests/test_tools_human_handoff.py 的降级分支覆盖）"
+    skip_reason: "纯配置函数行为由 pytest 单测（tests/test_tenant_config.py）验证：is_auto_handoff_trigger / is_after_hours 是纯函数，其入参 config（TenantAiConfig）无法经 agent-eval 设置，非 LLM 行为，不进入 C 端评测（issue #3270 断言层归因：原 user_inputs 是断言描述而非顾客对话）；2026-09-19 追加：转人工工具退场 ⇒ 原 human_handoff 断言不再有意义，降级分支改由工具直测覆盖"
+    merge_log: "POC 机器人设置集成新增；2026-09-11 标 skip —— 原输入为配置描述、断言为纯函数级，agent-eval 无法设置 config（issue #3270）；2026-09-18（issue #4085）：补 `precondition` 声明层字段（原本前置只活在 skip_reason 散文里 ⇒ CASE-TRUST-NO-PRECONDITION-ASSERTION 存量违规），语义与 skip 状态未变；2026-09-19 **退场改造**（用户裁定）：移除 human_handoff 的 expectations/must_succeed（不可满足），保留 D2 路由命中 + 非营业时间降级两条事实并改指确定性层"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tenant_config.py"

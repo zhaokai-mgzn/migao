@@ -358,14 +358,26 @@ class TestIntentRouter:
         assert decision.intent_result.intent == IntentType.ORDER_QUERY
         assert decision.action == "full_agent"
 
-    def test_make_decision_complaint_with_hint(self, router):
-        """投诉意图高置信度 → route_with_hint + human_handoff"""
+    def test_make_decision_complaint_without_hint(self, router):
+        """投诉意图高置信度 → route_with_hint，但**不再带任何工具提示**。
+
+        转人工工具（`human_handoff`）按用户裁定 2026-09-19 退场（模型不可达）
+        ⇒ `INTENT_TOOL_MAP[COMPLAINT]` 必须是空表：指向一个拿不到的工具名
+        就是「给模型一个按不动的出口」（它会照着 hint 去调 → `Tool not found`）。
+        action 本身不变（仍 route_with_hint），由兜底/售后 skill 自行受理投诉。
+        """
         intent_result = IntentResult(
             intent=IntentType.COMPLAINT, confidence=0.9, source="rule"
         )
         decision = router._make_decision(intent_result)
         assert decision.action == "route_with_hint"
-        assert "human_handoff" in decision.tool_hint
+        assert decision.tool_hint is None, (
+            f"投诉意图又带上了工具提示（{decision.tool_hint!r}）—— "
+            f"退场工具不得出现在给模型的 hint 里；若确实要推荐新工具，请先确认它已注册。"
+        )
+        assert INTENT_TOOL_MAP[IntentType.COMPLAINT] == [], (
+            "INTENT_TOOL_MAP[COMPLAINT] 非空 —— 投诉意图不得推荐已退场的转人工工具"
+        )
 
     # --- 端到端路由 ---
 

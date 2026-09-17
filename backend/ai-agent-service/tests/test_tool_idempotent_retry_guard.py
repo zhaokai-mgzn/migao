@@ -307,7 +307,10 @@ class TestIdempotencyClassificationLock:
         for name in (
             "order_create",       # 建单
             "aftersale_create",   # 建售后工单
-            "human_handoff",      # 转人工
+            # `human_handoff`（转人工）按用户裁定 2026-09-19 退场（`deprecated = True`、
+            # 不在注册表）⇒ 从本抽样移除（抽样口径是「注册表里的非幂等写工具」）。
+            # 它的 `idempotent = False` 声明**仍留在类上**（工具类保留），
+            # 由 `tests/test_tools_human_handoff.py` 直测类覆盖 —— 不留判据真空。
             "notification_manage",  # 发通知
             "customer_manage",    # 建客户
             "product_manage",     # 建商品

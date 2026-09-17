@@ -53,7 +53,9 @@ from app.tools.finance_api import FinanceApiTool
 from app.tools.after_sales_manage import AfterSalesManageTool
 from app.tools.aftersale_create import AftersaleCreateTool
 from app.tools.aftersale_query import AftersaleQueryTool
-from app.tools.human_handoff import HumanHandoffTool
+# 转人工工具**不导出**（用户裁定 2026-09-19 退场，模型不可达；见 registry.py 注册行注释）：
+# 门面清单必须与 `create_default_registry()` 一致（同下 #3917 的 processing_order_*）。
+# from app.tools.human_handoff import HumanHandoffTool
 from app.tools.notification_manage import NotificationManageTool
 from app.tools.settings_manage import SettingsManageTool
 from app.tools.session_manage import SessionManageTool
@@ -82,7 +84,7 @@ __all__ = [
     "ProcessingItemQueryTool", "CustomerManageTool", "EmployeeManageTool",
     "RoleManageTool", "DashboardStatsTool", "FinanceApiTool",
     "AfterSalesManageTool", "AftersaleCreateTool", "AftersaleQueryTool",
-    "HumanHandoffTool", "NotificationManageTool", "SettingsManageTool",
+    "NotificationManageTool", "SettingsManageTool",
     "SessionManageTool", "CategoryManageTool", "ProcessingItemManageTool",
     "ProductProcessingItemManageTool", "ProductUpdateTool", "SkuUpdateTool",
     "InteractTool", "ValidateInputTool", "CurtainCalcTool",

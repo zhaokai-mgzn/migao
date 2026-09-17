@@ -81,11 +81,25 @@ class TestForceExample:
         assert should_force_example(None) is False
 
     def test_fallback_text_is_actionable_and_low_reading_level(self):
-        """兜底话术必须给具体示例（低学历可照说）且有转人工出口。"""
-        assert "转人工" in CLARIFY_FORCE_EXAMPLE_TEXT, "兜底话术缺转人工出口"
+        """兜底话术必须给具体示例（低学历可照说），且**不得**再指向已退场的转人工出口。
+
+        变更沿革（用户裁定 2026-09-19：「不应该存在 human_handoff 这种东西，以后全是
+        AI 来判断」）：原断言要求话术里出现「转人工」作为出口 —— 转人工能力退场后，
+        这句会把用户指向一个**不存在**的入口（比没有出口更糟）。
+        替代出口 = **继续用例子引导**（"直接把想问的原话发我"）：低学历用户照说不难，
+        且不承诺任何系统做不到的事。
+        """
         assert "①" in CLARIFY_FORCE_EXAMPLE_TEXT, "兜底话术缺具体示例"
         # 低学历友好：句式可照抄（祈使句示例）
         assert "直接说一句" in CLARIFY_FORCE_EXAMPLE_TEXT
+        # 退场面：不得出现转人工出口话术（按"人工"定位，因为该话术本来就不含工具名）
+        for forbidden in ("转人工", "人工客服", "联系客服"):
+            assert forbidden not in CLARIFY_FORCE_EXAMPLE_TEXT, (
+                f"澄清兜底话术又出现了「{forbidden}」—— 转人工能力已退场，"
+                f"这是把用户指向不存在的入口（假承诺）"
+            )
+        # 替代出口存在（不是"删掉出口了事"）：必须给"继续说"的可执行下一步
+        assert "发我" in CLARIFY_FORCE_EXAMPLE_TEXT, "删掉了出口却没给替代路径"
 
 
 # ── 异步守卫（mock SessionStateStore）──

@@ -104,8 +104,8 @@ class TestRuleHits:
         # #3624 补加工项目录域（此前被商品规则的 `processing_item` 关键词吞掉 → 映射成建品价格用例）
         (PROCESSING_ITEM_MANAGE_PATH, ["PP-002", "PP-006"]),
         (PROCESSING_ITEM_QUERY_PATH, ["PP-002", "PP-006"]),
-        # #3624 补转人工 Tool 本体
-        (HUMAN_HANDOFF_PATH, ["CH-008", "CH-015"]),
+        # #3624 补转人工 Tool 本体（2026-09-19 退场后 CH-008 已 unrunnable ⇒ 只剩 CH-015）
+        (HUMAN_HANDOFF_PATH, ["CH-015"]),
     ])
     def test_rule_hit(self, path, expected):
         assert bm.map_changed_files_to_case_ids([path]) == expected
@@ -370,8 +370,7 @@ class TestBaseSkillRules:
 
 
 class TestHumanHandoffRules:
-    """#3624 追加：转人工 Tool 本体 → `CH-008`（创建人工会话，客服工作台可见）/ `CH-015`（显式
-    「转人工」不经建议卡直接转）。
+    """#3624 追加：转人工 Tool 本体 → `CH-015`（显式「转人工」→ 如实告知无人工通道 + 禁止假承诺）。
 
     来源（写工具确认门禁包 #3606 收口实测）：改 `human_handoff.py` 此前落**兜底网**，
     而当时它看起来"命中了规则"其实只是**测试文件名** `*_confirm_guard.py` 撞上防御关键词
@@ -379,17 +378,18 @@ class TestHumanHandoffRules:
     转人工用例一条没跑。
 
     映射依据（读用例真实内容）：
-      · `CH-008`「转人工创建人工会话 - 客服工作台可见并可回复」`user_inputs: ["我要转人工","客服在吗"]`
-        → `expectations: human_handoff`（覆盖工具的核心写入：建工单 + 建人工会话）
-      · `CH-015`「用户显式『转人工』不经建议卡片直接转（能力不退化）」`user_inputs: ["我要转人工"]`
-        → `expectations: human_handoff`（覆盖直转路径，与 base_skill 的建议卡分流互补）
-    这两条与 base_skill 规则给出的 `CH-013`/`CH-014`/`CH-015` 是**并集**（同一个转人工族，
+      · `CH-015`「用户显式『转人工』→ 如实告知无人工通道并继续服务」`user_inputs: ["我要转人工"]`
+        （覆盖对话侧的正确行为，与 base_skill 的建议卡分流互补）
+      · ~~`CH-008`~~：2026-09-19 随转人工工具退场标 **unrunnable**（断言不可满足，覆盖改指
+        admin-api + 工具直测单测）⇒ 从规则里移除 —— 规则桶只能选**跑得动**的用例，否则
+        "改了文件却只选中一条不跑的用例" = 门禁看似有射程、实际零执行（§19.1）。
+    这条与 base_skill 规则给出的 `CH-013`/`CH-014`/`CH-015` 是**并集**（同一个转人工族，
     入口不同：Tool 本体 vs 守卫判据）。
     """
 
     def test_human_handoff_maps_to_handoff_cases(self):
         assert bm.map_changed_files_with_source([HUMAN_HANDOFF_PATH]) == (
-            ["CH-008", "CH-015"], "rules")
+            ["CH-015"], "rules")
 
     def test_human_handoff_does_not_map_to_defense_cases(self):
         """防误报面回归：转人工与防御/注入无关 —— 改它也**不得**把 DF-011/DF-012 拉进来

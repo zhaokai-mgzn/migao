@@ -15,7 +15,7 @@ business_truths:
   - [aftersales-flow.timeline] 每次创建/状态变更写 ticket_timeline（created 记录 actorType=agent；status_change 记录 actorType=system）
   - [aftersales-flow.tenant-isolation] 租户隔离：MyBatis-Plus TenantLineInnerInterceptor 自动注入 tenant_id 过滤，仅租户内数据可见；跨租户详情 → 404
   - [aftersales-flow.customer-gap] 客户侧隔离缺口：Java 后端无 customer_id 过滤，customerId 字段实际存客户姓名 order.getCustomerName()；customer 隔离仅 ai-agent-service 客户端侧过滤
-  - [aftersales-flow.handoff] 转人工：human_handoff 工具创建 complaint 类型工单 + 系统通知管理员(recipientRole=admin)，通知失败不阻塞；但工具未传 orderId 且用 reason 字段，与 Java @NotBlank(orderId/description) 冲突（缺口）
+  - [aftersales-flow.handoff] 转人工（**2026-09-19 已按用户裁定退场，模型不可达**：工具类与后端端点保留、`deprecated = True`，不在默认注册表、不在任何 skill 工具集；判据 tests/unit_ci_workflows/test_human_handoff_retired.py）：退场前 human_handoff 工具创建 complaint 类型工单 + 系统通知管理员(recipientRole=admin)，通知失败不阻塞；但工具未传 orderId 且用 reason 字段，与 Java @NotBlank(orderId/description) 冲突（缺口，随退场不再由 agent 触发）
   - [aftersales-flow.type-enums] 售后类型：管理端表单校验 return|exchange|repair|refund|complaint|other；Agent 工具枚举 refund/exchange/repair/complaint/other（无 return），跨层枚举不一致
   - [aftersales-flow.agent-create] Agent 专用创建 POST /api/admin/agent/after-sales 的 orderId 可传 UUID 或订单号(ORD-xxx)，服务端自动解析并校验订单属于当前租户
   - [aftersales-flow.return-restock-switch] 售后库存联动（issue #2991）：refund/return 工单 resolved 时按商品「退货回补库存」开关（products.allow_return_restock，默认 false）决定是否恢复 SKU 库存——订单全部商品允许才整单回补，任一商品不允许则整单不回补（窗帘定制退货不可再售）；米宝不得在售后完成后默认引导恢复库存/重新上架
@@ -54,7 +54,7 @@ common_pitfalls:
   - 后端无 customer_id 隔离，customerId 字段存的是客户姓名而非 ID，勿据此做身份过滤断言
   - source 恒为 agent，请求体里的 source 字段不生效
   - 跨租户详情返回 404（NOT_FOUND）而非 403
-  - human_handoff 转人工工具未传 orderId/description，走表单 API 会触发 @NotBlank 校验失败
+  - human_handoff 转人工工具（**已退场/模型不可达**，2026-09-19 用户裁定）未传 orderId/description，走表单 API 会触发 @NotBlank 校验失败 —— 存量路径缺口，不再由 agent 触发
   - ticketType 枚举跨层不一致（Java 表单含 return+refund，Agent 工具仅 refund 无 return）
   - 创建前弹确认卡片是 Agent 层 prompt 约定，后端不强制，无法用 curl 验证
 

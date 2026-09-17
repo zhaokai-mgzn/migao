@@ -312,7 +312,7 @@ cases:
 
   - id: CH-008
     legacy_id: ""
-    title: "转人工创建人工会话 - 客服工作台可见并可回复"
+    title: "顾客要求转人工 → 系统无人工转接通道，AI 如实告知并自行受理（不得假承诺转接）"
     domains:
       - chat
       - settings
@@ -328,46 +328,38 @@ cases:
       - "我要转人工"
       - "客服在吗"
     expectations:
-      - tool: human_handoff
-    # 写操作成功断言（issue #3367 覆盖审计）：`human_handoff` 是**写工具** ——
-    # 「调了」≠「人工会话真的建出来了」。本条用例的业务价值（工作台可见/可回复、
-    # 上下文透传）全部建立在会话真的落库之上；只断言工具名的话，返回
-    # success=false（甚至 tool_not_found）也照样判绿（issue #3361 已在 order_create
-    # 上实证过这种假绿）。实测本用例链路返回 id/ticketNo/status=pending，断言成立。
-    must_succeed:
-      - tool: human_handoff
-    # 投递侧断言（issue #3553 / #3558 覆盖缺口）：`must_succeed` 只证明「人工会话/工单建出来了」，
-    # **证明不了「管理员真的收到了转人工提醒」** —— 后者才是本用例标题里的业务价值，
-    # 也是 2026-09-14 另一 worker 收口时实拍的「评测覆盖幻觉」：
-    #   · 评测栈（C 端 job 只叠 xiaobu_eval_seed.sql）里**只有 role='customer' 账号**；
-    #   · `POST /api/admin/notifications` 按收件人落库、**无广播语义**（收件人由
-    #     `GET /api/admin/users?status=active` 解析，默认排除 customer）；
-    #   ⇒ 投递分支在任何 C 端栈**不可达** → 工具走 success=True +
-    #     error=admin_notification_skipped_no_recipient + data.adminNotified=false 的降级分支，
-    #     而旧断言（只有 must_succeed）照样绿 = 只有一半覆盖。
-    # 修法：① 种子注入 B 端管理员（xiaobu_eval_seed.sql 6.1c，带 fail-closed 核对）；
-    #      ② 这里断言**投递事实** —— `data.adminNotified` 仅在「至少一位收件人真的收到
-    #         站内信」时为 true（human_handoff.execute: data["adminNotified"] = notify["delivered"] > 0）。
-    output_verify:
-      - tool: human_handoff
-        expect:
-          adminNotified: true
+      # `direct_reply` = 本仓库「期望一段文本回答（无工具调用）」的标准标记（103 条 skip 用例同款）；
+      # 本条已 unrunnable ⇒ 该期望是**形态留档**，不是活断言（真实覆盖见下方 data_checks 指向）
+      - tool: direct_reply
+    # ── 2026-09-19 退场登记（用户裁定）────────────────────────────────────────
+    # 裁定原文：「不应该存在 human_handoff 这种东西，以后全是 AI 来判断」。
+    # 本条原为「转人工创建人工会话（客服工作台可见/可回复 + AI 上下文透传 + 通知投递）」
+    # 的端到端写用例（expectations / must_succeed / output_verify 全部锚 human_handoff）。
+    # 工具退场后该链路在 agent 层**不存在了** ⇒ 端到端不可跑，按
+    # `migao-acceptance`「不能改的如实降级/登记」处置：
+    #   · 标 `unrunnable`（skip_reason 非空 ⇒ 不进 agent-eval，不会伪装成"跑过了"）；
+    #   · 业务价值（会话/工单/上下文落库、工作台可见可回复、通知投递）**能力未删除**
+    #     （阶段一范围），全部由确定性层覆盖：traces 保留 admin-api 单测 + 工具直测单测；
+    #   · 「顾客要求转人工时 AI 怎么答」这一半由 **CH-015**（live）承载（如实告知 +
+    #     禁止假承诺），不在本条重复；
+    #   · 「不得再绑定/再提示该工具」由结构性判据锁定：
+    #     tests/unit_ci_workflows/test_human_handoff_retired.py（回退绑定/回退 prompt 均红）。
+    # ⚠️ 阶段二彻底删除工具与后端端点时，本条连同确定性层单测一起下线（见汇报）。
+    precondition: "转人工工具（human_handoff）与后端人工会话端点仍在（阶段一保留），但**模型不可达**（不在默认注册表/任何 skill 工具集）⇒ 本用例无法经 agent 链路复现；会话/工单/上下文/投递语义由 traces 里的工具单测 + admin-api 单测覆盖"
+    skip_reason: "转人工工具已按用户裁定退场（模型不可达）：agent 不会（也不能）再触发人工会话创建，端到端写断言永久不可满足。能力未删除 ⇒ 由 backend/ai-agent-service/tests/test_tools_human_handoff.py（会话/工单/通知/上下文载荷）与 admin-api AgentSession* 单测（落库/可见性/跨租户拒绝）覆盖；退场后的对话行为（如实告知 + 禁止假承诺）由 CH-015 承载，不在 agent-eval 层重复"
     data_checks:
-      - "createSessionForHandoff 创建 waiting 会话 + system 消息"
-      - "sendMessage(agent) 后会话状态变 active"
-      - "getSessionByAiSessionId 返回含客服消息的会话"
-      - "createSessionForHandoff 持久化 ai_context_summary/ai_context_messages（快照字段可空）"
-      - "getSessionDetail(admin) 返回 aiContext；跨租户读取拒绝"
-      - "getSessionByAiSessionId(customer) 不含 aiContext 且过滤 isInternal 消息"
-      - "转人工站内信真的投递到 B 端账号（收件人经 GET /api/admin/users?status=active 解析）—— 由 output_verify.adminNotified 机器判定，不得停在「工具调用成功」"
-    skip_reason: ""
-    merge_log: "POC 人工客服工作台新增；2026 扩展：AI 上下文同步断言（GB/T 47746-2026）；2026-09-11 修正 user_inputs —— 原为断言描述文字（非顾客对话），agent 无法响应导致必然 0 分（issue #3270 断言层归因）"
+      - "（确定性层）createSessionForHandoff 创建 waiting 会话 + system 消息；sendMessage(agent) 后状态变 active"
+      - "（确定性层）getSessionByAiSessionId 返回含客服消息的会话；getSessionDetail(admin) 返回 aiContext，跨租户读取拒绝"
+      - "（确定性层）createSessionForHandoff 持久化 ai_context_summary/ai_context_messages（快照字段可空）"
+      - "（确定性层）转人工站内信真的投递到 B 端账号（output_verify.adminNotified 的机器判定改由工具单测覆盖）"
+    merge_log: "POC 人工客服工作台新增；2026 扩展：AI 上下文同步断言（GB/T 47746-2026）；2026-09-11 修正 user_inputs —— 原为断言描述文字（非顾客对话），agent 无法响应导致必然 0 分（issue #3270 断言层归因）；2026-09-19 **退场登记**（用户裁定「不应该存在 human_handoff 这种东西，以后全是 AI 来判断」）：端到端工具断言整体移除（不可满足）、标 unrunnable、断言口径改指确定性层单测；对话侧改由 CH-015 承载"
     traces:
       tests:
         - "backend/admin-api/src/test/java/com/migao/admin/service/AgentSessionServiceTest.java"
         - "backend/admin-api/src/test/java/com/migao/admin/controller/AgentSessionControllerTest.java"
         - "backend/admin-api/src/test/java/com/migao/admin/controller/CustomerAgentSessionControllerTest.java"
         - "backend/ai-agent-service/tests/test_tools_human_handoff.py"
+        - "tests/unit_ci_workflows/test_human_handoff_retired.py"
       ci:
         - pr-check.yml
       verifies: []
@@ -625,7 +617,7 @@ cases:
 
   - id: CH-013
     legacy_id: ""
-    title: "AI 检测不满情绪 → 建议转人工卡片 → 用户确认后创建人工会话"
+    title: "AI 检测不满情绪 → 建议卡片（继续受理）→ 用户点卡后进入售后受理链路"
     domains:
       - chat
       - handoff
@@ -640,23 +632,34 @@ cases:
       - ai-chat.intent-tool-map
     user_inputs:
       - "你们窗帘质量太差了，气死我了"
-      - "转人工客服"
+      # 第 2 轮 = **卡片第 1 个选项的 value**（"继续受理"形态；改卡文案必须同步这里，
+      # 否则用例发的是"一张卡上不存在的选项"，测评结果不可归因）
+      - "帮我把问题整理成售后工单"
     expectations:
+      # 带 args 的期望 = **行为层证据**（断言卡片形态，不只是"调用过"）—— 建议卡由
+      # 确定性节点 handoff_offer 产出，与转人工工具是否可达**无关** ⇒ 这一半仍然全活。
       - tool: interact
-      - tool: human_handoff
-    # 写操作成功断言（issue #3367 覆盖审计）：`human_handoff` 是**写工具** ——
-    # 「调了」≠「人工会话真的建出来了」。本条用例的业务价值（工作台可见/可回复、
-    # 上下文透传）全部建立在会话真的落库之上；只断言工具名的话，返回
-    # success=false（甚至 tool_not_found）也照样判绿（issue #3361 已在 order_create
-    # 上实证过这种假绿）。实测本用例链路返回 id/ticketNo/status=pending，断言成立。
-    must_succeed:
-      - tool: human_handoff
+        args:
+          component: choice
+    # ── 2026-09-19 退场改造（用户裁定：不应该存在 human_handoff 这种东西）──────
+    # 前半（不满情绪 → 建议卡片 + offer_count 冷却）**仍然全活**（确定性节点，不依赖工具
+    # 可达性）⇒ 保留 interact 断言；后半随工具退场永久不可满足 ⇒ 同一 PR 内**追加收口**
+    # 了卡片文案本身（邀约人工 → 继续受理，见 app/graph/handoff_offer.py）：
+    # 用户点卡后走 `rule_matcher` 的 after_sales（source=rule）⇒ 进入售后受理链路。
+    # `forbidden_text` 保留：模型仍可能**用自然语言**承诺"已为您转接"（真实假承诺风险）。
+    forbidden_text:
+      - "已为您转接人工"
+      - "已帮您转接人工"
+      - "已转接人工"
+      - "已提交转人工申请"
+      - "客服马上联系您"
     data_checks:
       - "不满情绪（general 意图）命中后 AI 先发建议卡片（interact choice），不直接转"
-      - "用户点『转人工客服』后命中 D1 显式请求 → human_handoff 创建人工会话"
-      - "interact 卡片选项含『转人工客服』『继续咨询小布』"
+      - "interact 卡片选项含『整理成售后工单』与『继续咨询小布』，且**不含**任何邀约人工转接的措辞（卡片文案判据见 tests/unit_ci_workflows/test_human_handoff_retired.py）"
+      - "用户点『整理成售后工单』后进入售后受理链路（确定性路由 after_sales, source=rule；判据见 tests/test_xiaobu_handoff_offer.py::TestOfferToDirectHandoffE2E）"
+      - "整场不出现假承诺话术（机器断言见 forbidden_text）—— 系统已无人工转接通道"
     skip_reason: ""
-    merge_log: "xiaobu-ai-handoff-guidance.md D3 AI 主动引导转人工"
+    merge_log: "xiaobu-ai-handoff-guidance.md D3 AI 主动引导转人工；2026-09-19 **退场改造**（用户裁定）：移除 human_handoff 的 expectations/must_succeed（不可满足）；**同批收口卡片文案**（邀约人工 → 继续受理：标题/选项/安抚文案改判，第 2 轮输入随之改为卡片新 value），前半（卡片 + 冷却）不变"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_handoff_judge.py"
@@ -701,7 +704,7 @@ cases:
 
   - id: CH-015
     legacy_id: ""
-    title: "用户显式『转人工』不经建议卡片直接转（能力不退化）"
+    title: "用户显式『转人工』→ 如实告知无人工通道并继续服务（不得假承诺转接）"
     domains:
       - chat
       - handoff
@@ -715,29 +718,47 @@ cases:
     user_inputs:
       - "我要转人工"
     expectations:
-      - tool: human_handoff
-    # 写操作成功断言（issue #3367 覆盖审计）：`human_handoff` 是**写工具** ——
-    # 「调了」≠「人工会话真的建出来了」。本条用例的业务价值（工作台可见/可回复、
-    # 上下文透传）全部建立在会话真的落库之上；只断言工具名的话，返回
-    # success=false（甚至 tool_not_found）也照样判绿（issue #3361 已在 order_create
-    # 上实证过这种假绿）。实测本用例链路返回 id/ticketNo/status=pending，断言成立。
-    must_succeed:
-      - tool: human_handoff
+      # 本仓库「期望一段文本回答（无工具调用）」的标准标记；本条的对话面语义正是
+      # 「AI 用文本如实回答，不调任何工具、不空转」⇒ 该期望可失败（调了工具即红）
+      - tool: direct_reply
+    # ── 2026-09-19 退场改造（用户裁定：不应该存在 human_handoff 这种东西）──────
+    # 本条原名「显式『转人工』不经建议卡片直接转（能力不退化）」—— 它的**前提**正是
+    # 被本次裁定取消的东西（"转人工"这条路必须还能走通）。故不能保留原断言（永远红），
+    # 也不删用例（顾客仍会说这句话，是最高频路径，必须有 live 判据）：
+    # 改判**退场后的正确行为** = 如实告知 + 不假承诺 + 不放弃服务。
+    # 「不得调用已退场工具」由 L0 结构判据锁定（tests/unit_ci_workflows/
+    # test_human_handoff_retired.py），此处不写恒真的 forbidden_tools。
+    forbidden_text:
+      - "已为您转接人工"
+      - "已帮您转接人工"
+      - "已转接人工"
+      - "已提交转人工申请"
+      - "客服马上联系您"
+      - "已通知人工客服"
+    want_text:
+      # 正向：必须**谈到人工通道这件事**（如实告知），而不是对"我要转人工"视而不见。
+      # 与 forbidden_text 构成正反双轨（§3.4）：只说"好的"、或直接换个话题都算失败。
+      - "人工"
     data_checks:
-      - "显式转人工请求 → intent_router 短路直转 complaint（source=explicit_handoff）"
-      - "不先弹建议卡片（无 interact），直接 human_handoff"
+      - "显式转人工请求 → intent_router 仍短路到 complaint（source=explicit_handoff，路由层判据见 tests/test_intent_router.py）"
+      - "AI 如实说明系统已无人工转接通道（不承诺转接、不指引不存在的入口）"
+      - "AI 不因『要人工』就停止服务：给出可执行的下一步（继续查/引导售后咨询走工单）"
+      - "整场不出现假承诺话术 —— 机器断言见 forbidden_text"
+      - "human_handoff 未被调用（该工具已退场、模型不可达 —— 结构性判据：tests/unit_ci_workflows/test_human_handoff_retired.py；此处登记为计分面）"
     skip_reason: ""
-    merge_log: "xiaobu-ai-handoff-guidance.md D1 显式直转（UI-010 能力不退化）"
+    merge_log: "xiaobu-ai-handoff-guidance.md D1 显式直转（UI-010 能力不退化）；2026-09-19 **退场改造**（用户裁定「不应该存在 human_handoff 这种东西，以后全是 AI 来判断」）：原断言（显式请求 → 直转工具）随工具退场永久不可满足，改判「如实告知 + 不得假承诺 + 继续服务」——用例保留为 live 回归（顾客仍会说『转人工』）"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_xiaobu_handoff_offer.py"
+        - "backend/ai-agent-service/tests/test_intent_router.py"
+        - "tests/unit_ci_workflows/test_human_handoff_retired.py"
       ci:
         - agent-eval.yml
       verifies: []
 
   - id: CH-016
     legacy_id: ""
-    title: "明确业务意图（下单/查单/报价）不弹转人工建议卡（防打断）"
+    title: "明确业务意图（下单/查单/报价）不弹「问题特殊」建议卡（防打断）"
     domains:
       - chat
       - handoff
@@ -798,22 +819,27 @@ cases:
       - "有什么窗帘推荐吗"
       - "我要转人工"
     expectations:
-      - tool: human_handoff
-    # 写操作成功断言（issue #3367 覆盖审计）：`human_handoff` 是**写工具** ——
-    # 「调了」≠「人工会话真的建出来了」。本条用例的业务价值（工作台可见/可回复、
-    # 上下文透传）全部建立在会话真的落库之上；只断言工具名的话，返回
-    # success=false（甚至 tool_not_found）也照样判绿（issue #3361 已在 order_create
-    # 上实证过这种假绿）。实测本用例链路返回 id/ticketNo/status=pending，断言成立。
-    must_succeed:
-      - tool: human_handoff
+      # `direct_reply` = 本仓库「期望一段文本回答（无工具调用）」的标准标记；本条已
+      # unrunnable ⇒ 该期望是**形态留档**（真实覆盖见下方 data_checks 指向的确定性层单测）
+      - tool: direct_reply
+    # ── 2026-09-19 退场登记（用户裁定：不应该存在 human_handoff 这种东西）──────
+    # 本条的**全部业务价值** = 「转人工时把 AI 对话上下文带给人工客服」——
+    # 工具退场后模型不可达，"转人工"这条链路在 agent 层**不存在了** ⇒ 端到端不可跑。
+    # 依 `migao-acceptance`：「不能改的如实降级/登记」——
+    #   · 标 `unrunnable`（skip_reason 非空 ⇒ 不进 agent-eval，不会伪装成"跑过了"）；
+    #   · 断言口径改为**确定性层**：AI 上下文快照的构造/截断/落库/可见性全部由
+    #     `test_tools_human_handoff.py`（直测工具类）+ admin-api 单测覆盖（traces 保留）；
+    #   · 后台能力与数据**未删除**（阶段一范围），故这些单测仍全绿、覆盖没有真空。
+    # ⚠️ 阶段二若彻底删除工具与后端端点，本条应随之下线（见汇报的阶段二清单）。
+    precondition: "转人工工具（human_handoff）与后端人工会话端点仍在（阶段一保留），但**模型不可达**（不在默认注册表/任何 skill 工具集）⇒ 本用例无法经 agent 链路复现；快照语义由 traces 里的工具单测 + admin-api 单测覆盖"
+    skip_reason: "转人工工具已按用户裁定退场（模型不可达）：agent 不会（也不能）再触发人工会话创建，端到端断言永久不可满足。能力本身未删除 ⇒ 由 backend/ai-agent-service/tests/test_tools_human_handoff.py（上下文构造/截断/POST 载荷）与 admin-api AgentSession* 单测（落库/可见性/跨租户拒绝）覆盖，不在 agent-eval 层重复"
     data_checks:
-      - "human_handoff POST 携带 aiContextSummary 与 aiContextMessages（仅 role=user/assistant，剥 think/图片占位，逐条与总量截断）"
-      - "createSessionForHandoff 持久化 ai_context_summary/ai_context_messages（JSONB）"
-      - "getSessionDetail(admin) 返回 aiContext；跨租户访问拒绝"
-      - "getSessionByAiSessionId(customer) 不含 aiContext 且过滤 isInternal 消息"
-      - "AI 会话关闭/清理后人工会话快照仍可见（快照语义）"
-    skip_reason: ""
-    merge_log: "2026 新增：GB/T 47746-2026 转人工 AI 上下文同步（issue #2776）"
+      - "（确定性层）human_handoff POST 携带 aiContextSummary 与 aiContextMessages（仅 role=user/assistant，剥 think/图片占位，逐条与总量截断）"
+      - "（确定性层）createSessionForHandoff 持久化 ai_context_summary/ai_context_messages（JSONB）"
+      - "（确定性层）getSessionDetail(admin) 返回 aiContext；跨租户访问拒绝"
+      - "（确定性层）getSessionByAiSessionId(customer) 不含 aiContext 且过滤 isInternal 消息"
+      - "（确定性层）AI 会话关闭/清理后人工会话快照仍可见（快照语义）"
+    merge_log: "2026 新增：GB/T 47746-2026 转人工 AI 上下文同步（issue #2776）；2026-09-19 **退场登记**（用户裁定）：expectations/must_succeed 移除（不可满足）、标 unrunnable、断言口径改指确定性层单测（能力未删除，无覆盖真空）"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_human_handoff.py"
@@ -1064,7 +1090,7 @@ cases:
       - tool: direct_reply or interact
     data_checks:
       - "低置信澄清（source=low_confidence 重写 general）轮次计数存 SessionStateStore.clarify"
-      - "连续澄清 ≥ MAX_CLARIFY_ROUNDS(2) 轮后，不再以『您想做什么』追问——改给具体示例（查订单/搜商品/算料话术）+ 转人工出口"
+      - "连续澄清 ≥ MAX_CLARIFY_ROUNDS(2) 轮后，不再以『您想做什么』追问——改给具体示例（查订单/搜商品/算料话术）+ **继续受理的下一步**（2026-09-19 退场改造：原「转人工出口」已不存在，兜底话术改为「直接把想问的原话发我」；判据见 backend/ai-agent-service/tests/test_clarify_guard.py）"
       - "用户给出实质意图/点选澄清卡 → 澄清计数清零，正常流程恢复"
       - "存储异常降级不阻断主流程"
     skip_reason: "轮次护栏为代码层纯逻辑，由 pytest 单测覆盖（test_clarify_guard.py 17 例含端到端序列），不进入 agent-eval 冒烟"
@@ -1825,7 +1851,7 @@ cases:
       - "顾客问进度 → production_progress_query(order_no=EVAL-ORD-0002) 被调用且**成功**返回（must_succeed 断言 success=true，不是「工具名出现过」）"
       - "端点订单解析与报工链路同口径（issue #4006/#4007）：复用 ProductionService.resolveOrder 的 order_id → order_no → qr_token 三形态 —— 给内部 id、订单号或加工单二维码 token 都能查到；只认 order_no 会让「有单却 404」"
       - "夹具订单 EVAL-ORD-0002 无加工单 ⇒ 返回 0%/空工序但 success=true；如实转述「暂无加工进度」属合格行为，不算违规"
-      - "工具失败/查不到时如实告知并可转人工，禁止编造进度或交期"
+      - "工具失败/查不到时如实告知「当前查不到进度（该功能暂时不可用）」并给替代路径（稍后再试/换单号），禁止编造进度或交期"
     skip_reason: ""
     merge_log: "2026-09-17 新增（issue #3996，M4-I）：生产进度问答 C 端覆盖（小布）。2026-09-17（issue #4007，run 35233821582 CH-039 reproducible）：原输入不含订单号 → agent 先 customer_order_query 取号、查到全为「已发货/已完成」的存量单后直接作答、**production_progress_query 全程未调用** → 改为**点名单号**（fixture EVAL-ORD-0002，先例 CH-006 点名单号）使 agent 无需链式取号即可直接调工具；并补 must_succeed 把「工具被成功调用」变成机器断言（同批产品侧把 progress 的订单解析对齐 resolveOrder 三形态）"
     traces:

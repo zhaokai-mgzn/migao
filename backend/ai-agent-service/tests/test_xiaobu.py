@@ -80,9 +80,26 @@ class TestXiaobuConfig:
             "capabilities",
         }
 
-    def test_capabilities_mentions_handoff(self):
+    def test_capabilities_does_not_promise_handoff(self):
+        """能力清单是**直接回复给顾客**的文案：不得再承诺转人工（能力已退场）。
+
+        变更沿革（用户裁定 2026-09-19）：「不应该存在 human_handoff 这种东西，以后全是
+        AI 来判断」—— 原断言要求清单里出现「📞 **转人工** - 输入'转人工'联系客服」，
+        那等于**当面告诉顾客**一个已经不存在的入口（顾客照着输入「转人工」只会得到
+        「系统无人工转接通道」）。替代：清单只列真实可用的能力。
+        """
         from app.agents.agents.xiaobu import XIAOBU_CONFIG
-        assert "转人工" in XIAOBU_CONFIG.direct_replies["capabilities"]
+
+        caps = XIAOBU_CONFIG.direct_replies["capabilities"]
+        for forbidden in ("转人工", "人工客服", "联系客服"):
+            assert forbidden not in caps, (
+                f"能力清单又承诺了「{forbidden}」—— 转人工能力已退场，"
+                f"这是把顾客指向不存在的入口"
+            )
+        # 不是"删掉一行了事"：清单必须仍有真实能力项（防退化成空壳文案）
+        assert "商品咨询" in caps and "订单查询" in caps and "售后申请" in caps, (
+            "能力清单被削成空壳 —— 应只删退场项、保留真实能力"
+        )
 
 
 class TestResolveXiaobuBotName:

@@ -65,8 +65,12 @@ from datetime import date
 #   ::test_write_tool_sets_only_name_reachable_tools（真值 = eval_case_filter 的两端工具集并集）。
 WRITE_TOOLS: frozenset[str] = frozenset({
     # read_only = False 且**未**声明 read_only_actions 的工具
+    # ⚠️ `human_handoff` 已于 2026-09-19 按用户裁定退场（模型不可达：不在默认注册表、
+    #    不在任何 skill 工具集）⇒ **从本表移除**（本表只列当前可达的工具，见上方幽灵
+    #    写工具口径）。工具类文件仍在 `app/tools/human_handoff.py`，但它只能被直测类
+    #    单测实例化，用例断言它会永远失败 ⇒ 留在表里只会让"写用例"分类产生假红。
+    #    工具文件删除（阶段二）时无本表改动。
     "aftersale_create",            # WRITE|NON_IDEMPOTENT
-    "human_handoff",               # WRITE|NON_IDEMPOTENT（每次调用创建新工单）
     "order_create",                # WRITE
     "order_manage",                # WRITE|DESTRUCTIVE
     "product_manage",              # WRITE|DESTRUCTIVE

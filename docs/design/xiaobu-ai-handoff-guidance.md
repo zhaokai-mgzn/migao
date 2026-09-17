@@ -1,5 +1,13 @@
 # 小布 AI 自动引导转人工（Guided Handoff）设计
 
+> ⛔ **本设计已失效（2026-09-19 用户裁定）**：裁定原文「**不应该存在 human_handoff 这种东西，
+> 以后全是 AI 来判断**」。转人工能力已退场（模型不可达），本文件描述的「邀约转人工卡片 /
+> D1 直转 / 人工会话闭环」**均不再成立**：
+> · 卡片已改为「继续受理」形态（把问题整理成售后工单）—— 代码 `app/graph/handoff_offer.py`；
+> · 退场判据：`tests/unit_ci_workflows/test_human_handoff_retired.py`；
+> · 本文件与整个 handoff 子系统的处置（含删除）见阶段二清单。
+> **不要照本文件实现新功能**；留档仅为回溯当时的决策依据。
+
 > 状态：设计评审中 ｜ 范围：ai-agent-service 为主（admin-api/admin-web 零改动）｜ 目标版本：v1
 > 关联：CH-008（转人工→人工会话闭环）、ST-008（关键词/非营业降级）、UI-010（快捷入口改版）、migao-dev-flow（确认门禁已代码化：`test_write_tool_confirm_gate_invariant`）
 

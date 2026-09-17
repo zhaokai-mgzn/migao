@@ -414,6 +414,27 @@ class TestTextDenialCorrectionCrossSkill:
 
 # ────────────────────── 行为面：跨 skill 的转人工拦截 ──────────────────────
 
+def _registry_with_retired_handoff(tools):
+    """`create_skill_registry(tools)` 子集 + **显式补回已退场的转人工工具实例**。
+
+    为什么必须显式补：`human_handoff` 已按用户裁定 2026-09-19 **退场（模型不可达）**——
+    不在默认注册表、不在任何 skill 工具集，故依赖全局注册表的子集构造**拿不到它**
+    （`create_skill_registry` 对缺失工具只 warning，静默少一个工具）。
+
+    而本文件覆盖的**守卫代码保留**（与"保留工具类文件"同口径）⇒ 行为面测试必须
+    显式注入实例，否则这 5 条会以"转人工被放行/没执行"的形态假红，或者更糟——
+    有人顺手删掉它们，让守卫的覆盖静默缩射程（§19.1「判据自己选择沉默」）。
+    """
+    from app.tools.human_handoff import HumanHandoffTool
+    from app.tools.registry import set_tool_scope
+
+    registry = create_skill_registry(list(tools))
+    if "human_handoff" in tools and registry.get_tool("human_handoff") is None:
+        registry.register(HumanHandoffTool())
+        set_tool_scope(registry.get_tool_names())
+    return registry
+
+
 def _run_handoff_guard(*, skill, reason, last_user_msg, facts, state_overrides=None,
                        tools=("human_handoff",)):
     sent = []
@@ -436,7 +457,9 @@ def _run_handoff_guard(*, skill, reason, last_user_msg, facts, state_overrides=N
         assert "human_handoff" in tools
         # ⚠️ 必须用**模块级导入的真函数**：此刻 `base_skill.create_skill_registry` 已被 patch，
         # 调它只会拿到 mock 的返回值（首版即此错，守卫判据失真为"没有写工具"）。
-        registry = create_skill_registry(list(tools))
+        # ⚠️ 且必须走 `_registry_with_retired_handoff`：转人工工具已退场（不在默认注册表），
+        # 直接调 `create_skill_registry` 会**静默少一个工具**（只 warning）⇒ 守卫行为面失真。
+        registry = _registry_with_retired_handoff(list(tools))
         create_reg.return_value = registry
         breaker = MagicMock()
 

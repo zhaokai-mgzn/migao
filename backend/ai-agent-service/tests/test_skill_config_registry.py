@@ -391,12 +391,17 @@ class TestAgentRouter:
 # ────────────── 小布 C 端售后 skill 引导（闭环回归） ──────────────
 
 
-def test_customer_aftersales_prompt_not_handoff_on_aftersale_requests():
-    """真实闭环回归：顾客换货/退货被误路由到 human_handoff。
+def test_customer_aftersales_prompt_self_handles_aftersale_requests():
+    """真实闭环回归：顾客换货/退货被误路由到转人工（工具已退场，规则改为"自己受理"）。
 
-    customer_aftersales 的 system prompt 必须明确「售后诉求 ≠ 转人工」——
-    换货/退货/退款/色差/质量等是 aftersale_create 场景，转人工仅限明确要求/
-    情绪激动/涉赔偿。
+    变更沿革（用户裁定 2026-09-19：「不应该存在 human_handoff 这种东西，以后全是
+    AI 来判断」）：本用例原断言「工具集含 human_handoff + prompt 里有『售后诉求 ≠ 转人工』
+    边界」—— 转人工能力退场后，**这两条都必须反过来**：
+      · 工具集**不得**再绑定该工具（绑了 = 模型拿到一个 `Tool not found` 的出口）；
+      · prompt 的规则从「什么时候才允许转人工」变成「**所有售后诉求都由你自己受理**」
+        + 「禁止假承诺已转接」（后者是退场后新增的高频失败形态）。
+    仍未变的（本次刻意保留的断言）：换货/退货/色差/质量 → aftersale_create；
+    已发货（shipped）等状态可售后（真实闭环回归：AI 曾误判"已发货不能售后"而推给人工）。
     """
     from app.graph.skills.customer_aftersales_skill import (
         CUSTOMER_AFTERSALES_TOOLS,
@@ -406,20 +411,31 @@ def test_customer_aftersales_prompt_not_handoff_on_aftersale_requests():
 
     # 工具列表包含 aftersale_create（核心建单工具）
     assert "aftersale_create" in CUSTOMER_AFTERSALES_TOOLS
-    assert "human_handoff" in CUSTOMER_AFTERSALES_TOOLS
+    # 退场面：不得再绑定转人工工具
+    assert "human_handoff" not in CUSTOMER_AFTERSALES_TOOLS, (
+        "customer_aftersales 又绑定了已退场的转人工工具 —— 模型不可达面被重新打开"
+    )
 
     # prompt 明确售后诉求应走 aftersale_create
     assert "aftersale_create" in CUSTOMER_AFTERSALES_SYSTEM_PROMPT
-    # 「售后诉求 ≠ 转人工」边界
-    assert "售后诉求 ≠ 转人工" in CUSTOMER_AFTERSALES_SYSTEM_PROMPT
-    # 换货/退货/色差/质量 = 创建场景，不是转人工理由
+    # 「所有售后诉求都由你自己受理」（替代原「售后诉求 ≠ 转人工」）
+    assert "所有售后诉求都由你自己受理" in CUSTOMER_AFTERSALES_SYSTEM_PROMPT
+    # 换货/退货/色差/质量 = 创建场景，不是推脱理由
     assert "换货/退货/退款/维修/色差/质量问题" in CUSTOMER_AFTERSALES_SYSTEM_PROMPT
     # 已发货（shipped）等已确认及以上订单可正常创建退/换货工单（状态门禁允许）
-    # —— 真实闭环回归：AI 看到"已发货"误判不能售后而转人工
+    # —— 真实闭环回归：AI 看到"已发货"误判不能售后而推给人工
     assert "已发货" in CUSTOMER_AFTERSALES_SYSTEM_PROMPT
     assert "shipped" in CUSTOMER_AFTERSALES_SYSTEM_PROMPT
-    # 转人工触发边界仍保留
-    assert "转人工" in CUSTOMER_AFTERSALES_SYSTEM_PROMPT
+    # 假承诺禁令（退场后新增的必需规则）+ 顾客"转人工"话术识别仍在
+    assert "禁止" in CUSTOMER_AFTERSALES_SYSTEM_PROMPT
+    assert "已为您转接人工客服" in CUSTOMER_AFTERSALES_SYSTEM_PROMPT
+    assert "转人工" in CUSTOMER_AFTERSALES_SYSTEM_PROMPT, (
+        "prompt 不再识别顾客的「转人工」话术 —— 顾客仍会说，识别不到就会答非所问"
+    )
+    # 退场面：prompt 里不得出现退场工具名
+    assert "human_handoff" not in CUSTOMER_AFTERSALES_SYSTEM_PROMPT, (
+        "prompt 里出现已退场工具名 —— 模型会被导向一个按不动的出口"
+    )
 
     # skill 配置正确挂载（供 registry 注册）
     assert CUSTOMER_AFTERSALES_SKILL_CONFIG.name == "customer_aftersales"
@@ -732,7 +748,12 @@ def test_customer_aftersales_exposes_order_lookup_and_interact():
     # 既有能力不回归
     assert "aftersale_create" in CUSTOMER_AFTERSALES_TOOLS
     assert "aftersale_query" in CUSTOMER_AFTERSALES_TOOLS
-    assert "human_handoff" in CUSTOMER_AFTERSALES_TOOLS
+    # 退场面（用户裁定 2026-09-19）：转人工工具**不得**再绑定 ——
+    # 绑了 = 该 skill 的工具集里有一个模型调不到的名字（`Tool not found`），
+    # 且 prompt 会跟着写"什么时候转人工"（指向不存在的出口）。
+    assert "human_handoff" not in CUSTOMER_AFTERSALES_TOOLS, (
+        "customer_aftersales 又绑定了已退场的转人工工具"
+    )
 
 
 def test_customer_skills_only_bind_tools_customer_role_can_use():

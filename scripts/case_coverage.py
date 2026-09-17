@@ -441,7 +441,8 @@ XIAOBU_TOOL_LABELS = {
     "aftersale_query": "售后工单查询",
     "aftersale_create": "售后工单创建",
     "knowledge_search": "知识问答（本店知识库）",
-    "human_handoff": "转人工",
+    # `human_handoff`: 转人工 —— 2026-09-19 按用户裁定退场（模型不可达）⇒ 标签移除
+    # （本表是"当前在能力矩阵里的工具"的人话标签；留着会让矩阵多一个永不出现的行）
     "interact": "交互卡片（choice/form/confirm）",
     "validate_input": "写操作前置校验",
 }

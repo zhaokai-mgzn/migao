@@ -2,16 +2,21 @@
 小布（Xiaobu）Agent 声明 v2
 
 C 端智能客服，面向微信小程序/H5/抖音小程序/Web 等多渠道终端消费者。
-提供商品咨询、订单查询/创建、物流追踪、售后申请、知识问答、转人工等服务。
+提供商品咨询、订单查询/创建、物流追踪、售后申请、知识问答等服务（**无人工转接**：
+所有问题由 AI 自行判断处理，见 2026-09-19 用户裁定）。
 
 安全: 只读为主 + 订单/售后创建需 confirm + tenant_id 自动注入 + customer 角色隔离
 
 v2 新增:
 - TenantAiConfig 集成: botName + greetingTemplate 替换硬编码
 - channel_config 集成: 不同渠道不同欢迎语
-- human_handoff: 转人工自动创建工单
 - 知识问答: 知识卡片检索优先（knowledge_search）+ LLM 通用知识兜底
   （issue #3077 卡片化；旧「LLM 内置知识替代 RAG」描述已失效）
+
+⚠️ 本模块的**字符串**（docstring / direct_replies）**不得出现退场工具名**：
+它曾作为 v2 能力之一列在这里，已按用户裁定 2026-09-19 退场（模型不可达）——
+留档请写在**注释**里（注释不会进模型上下文），判据见
+`tests/unit_ci_workflows/test_human_handoff_retired.py`。
 """
 from typing import Optional
 from loguru import logger
@@ -50,7 +55,11 @@ XIAOBU_CONFIG = AgentConfig(
             "🔍 **商品咨询** - 搜索商品、查看详情、面料推荐\n"
             "📦 **订单查询** - 查询订单状态、物流追踪\n"
             "🛠️ **售后申请** - 提交售后工单\n"
-            "📞 **转人工** - 输入'转人工'联系客服"
+            "💰 **算料报价** - 按窗户尺寸估算用布量与价格"
+            # ⚠️ 曾有一行「📞 **转人工** - 输入'转人工'联系客服」——已按用户裁定删除
+            # （2026-09-19：转人工能力退场，系统无人工转接通道）。这句是**直接回复给顾客
+            # 的能力清单**，留着就是把顾客指向一个不存在的入口。
+            # 判据：tests/test_xiaobu.py::TestXiaobuDirectReplies::test_capabilities_no_handoff_promise
         ),
     },
 )

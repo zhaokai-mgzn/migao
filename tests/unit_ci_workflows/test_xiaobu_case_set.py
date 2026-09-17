@@ -403,11 +403,29 @@ class TestCustomerFacingSemanticGuard:
             assert cid in sel, f"C 端对抗用例 {cid} 被语义收口误伤"
 
     def test_customer_end_llm_cases_preserved(self):
-        """C 端真实 LLM 用例必须保留（含显式 persona 与双端 C 端语义词）"""
+        """C 端真实 LLM 用例必须保留（含显式 persona 与双端 C 端语义词）。
+
+        ⚠️ 2026-09-19 调整（用户裁定「不应该存在 human_handoff 这种东西，以后全是
+        AI 来判断」）：`CH-008` 从本清单**移出** —— 它的端到端断言锚在已退场的转人工
+        工具上（人工会话创建 + 工作台可见可回复 + 上下文透传），退场后**不可满足**，
+        已按「如实降级/登记」标 unrunnable（能力未删除，改由 admin-api + 工具直测单测覆盖）。
+        这不是"静默缩小 C 端射程"：
+          · 对话侧同场景的 live 用例由 **CH-015**（本清单内，仍在）承载
+            （显式『转人工』→ 如实告知 + 禁止假承诺 + 继续服务）；
+          · 「不得再绑定/再提示该工具」由 tests/unit_ci_workflows/
+            test_human_handoff_retired.py 的结构性判据锁定（回退即红）。
+        """
         sel = self._sel_ids()
         for cid in ["AS-008", "KN-001", "KN-002", "KN-008", "OR-012", "PR-001",
-                    "PR-003", "CH-008", "CH-010", "CH-012", "CH-015"]:
+                    "PR-003", "CH-010", "CH-012", "CH-015"]:
             assert cid in sel, f"C 端用例 {cid} 漏选"
+        # 反向自证：被移出的 CH-008 必须确实 unrunnable —— 否则它会带着"不可满足的断言"
+        # 回到评测集，每轮固定 0 分噪音（而"漏选"这条断言看不出这种回退）
+        dim = {c["id"]: c for c in load_case_dicts(str(CASES_DIR))}
+        assert str(dim["CH-008"].get("skip_reason") or "").strip(), (
+            "CH-008 又被放回可跑集合了 —— 它的断言锚在已退场的转人工工具上，"
+            "跑起来必然 0 分（见本用例 docstring 的退场说明）"
+        )
 
     def test_filter_is_pure_function_of_case(self):
         """is_customer_facing_case 对同一用例幂等（无隐藏状态）"""

@@ -106,9 +106,25 @@ def test_order_prompt_no_product_contamination():
 
 
 def test_aftersales_has_critical_rules():
-    """售后 Prompt 必须包含转人工规则"""
+    """售后 Prompt 必须包含**复杂投诉的能力边界规则**（退场后不再有转人工出口）。
+
+    变更沿革（用户裁定 2026-09-19）：「不应该存在 human_handoff 这种东西，以后全是
+    AI 来判断」—— 原断言要求售后 prompt 出现「转人工 / 人工介入」，那是**指向一个
+    已退场出口**的指令（米宝侧本来也没有该工具）。替代规则：超权限/复杂投诉时
+    如实说明能力边界 + 把能落地的落地（落成工单/记录），不得推给人工了事。
+    """
     prompt = _build_system_prompt("aftersales")
-    assert "转人工" in prompt or "人工介入" in prompt
+    assert "不得" in prompt and "人工" in prompt, (
+        "售后 prompt 缺少「不得把用户推给人工了事」的能力边界规则"
+    )
+    assert "落成工单" in prompt or "记录" in prompt, (
+        "售后 prompt 缺少「把能落地的部分落地」的可执行下一步"
+    )
+    # 退场面：不得再出现"主动建议转人工"这类指向已退场出口的处方
+    for forbidden in ("主动建议转人工", "转人工处理", "联系人工客服"):
+        assert forbidden not in prompt, (
+            f"售后 prompt 又出现「{forbidden}」—— 转人工能力已退场，这是给模型一个按不动的出口"
+        )
 
 
 def test_order_prompt_requires_interact_for_sku_selection():
@@ -242,7 +258,7 @@ def test_snapshot_all_skills():
         "product": 12700,  # +800: 澄清话术(#2784)+承诺边界(#2785) + 加工项主动询问增强（issue #2892，达 9985）+ 建品规格/加工项价格规则（#3027，达 10732）+ 确认卡片必须发出（issue #3045，达 11131）+ 库存工具分工铁律（Round 37，达 11318）+ 120（issue #3930/#3931）：product_update 描述补「主图/详情图走 product_manage」反例 + product.md 主图/详情图映射行（达 12019）+ 379（issue #3936）：product.md 补「禁止以工具不支持/没有能力为由拒绝写操作」通用铁律（达 12398）；+300（issue #4107 F7）：共享层 `base/principles.md` 的权限归因规则补后半——「系统**确实**报权限拒绝时必须如实说明缺哪项能力 + 不得重试 + 给开通路径」（+168 字符，达 12562）
         "order": 12800,  # +800: 加工项数量自动推导（issue #2986）+ confirm 前必须主动询问加工项（issue #3033，达 8836）+ 共享规则确认卡片铁律（issue #3045，达 9133）+ 规格ID≠商品ID 铁律（Round 39，达 9396）+ 加工单域（#3340，达 10005）；+1200（issue #3799）：订单→物流链收口（prompts/order.md 链规则 + EXAMPLES-order.md「同一轮 order_query→logistics_track」正/反例，达 11364）；+600（issue #3873）：单价铁律——报价/确认/落单单价必须来自商品库，禁止编造分色价（达 11967）；+400（OR-014 判定跑 34923425338 收口）：单价铁律补「系统会拦截并回填」+ EXAMPLES-order.md 反例4「库价 168 却写米白 150」（达 12595）；-233（issue #3917，达 12362）：加工单章节由「工具操作指引」（生成/查询/发加工/start/complete/cancel）整体替换为「加工项 vs 加工单概念区分 + 不接入声明」——删 frontmatter/工具使用表 3 个 processing_order 工具行，新增概念定义/禁止代替/引导后台口径；+76（issue #3921，达 12438）：补「问加工单不调用任何工具（含订单查询/加工项查询）——调任何查询工具都拿不到加工单，只会答非所问」；+200（issue #4107 F7）：共享层 `base/principles.md` 权限归因规则补后半（达 12602）
         "aftersales": 8000,  # +1300: 禁英文枚举 + 退货库存规则（issue #2991）+ 换货加工项确认（issue #3033，达 6269）+ 共享规则确认卡片铁律（issue #3045，达 6566）+ 创建/关闭工单执行引导（Round 43，达 7068）
-        "customer": 8500,  # +3500: 领域 prompt 补齐打标签流程（CU-003 场景）+ EXAMPLES 补标签示例（Round 33）
+        "customer": 8600,  # +3500: 领域 prompt 补齐打标签流程（CU-003 场景）+ EXAMPLES 补标签示例（Round 33）；+100（用户裁定 2026-09-19 转人工退场）：共享层 `base/principles.md` 核心原则③ 由「遇问题转人工」改写为「自己解决到底（不得推给人工/管理员）」——该层每个 skill 都注入，customer 原本只剩 19 字符余量（达 8555），按本 dict 既有惯例显式上调并说明理由（不精简业务内容：退场后"不得假承诺转人工"是**新增**的必需规则）
         "staff": 8000,    # +3100: 领域 prompt 补齐创建角色流程（HR-005 场景）+ EXAMPLES 补角色创建示例（Round 32）
         "settings": 6500, # +1600: 领域 prompt 补齐配置/通知流程（Round 34）
         "data": 6800,     # +1700: 领域 prompt 补齐看板/会话流程（Round 34）；+300（issue #4107 F7）：共享层 `base/principles.md` 权限归因规则补后半（达 6660）
@@ -268,18 +284,35 @@ def test_snapshot_all_skills():
 
 def test_customer_aftersales_fewshot_guides_aftersale_create():
     """小布售后必须注入 C 端 few-shot：明确换货/退货诉求 → aftersale_create，
-    而非误走 human_handoff（真实闭环回归：两次新会话 AI 均转人工建 complaint 工单）。"""
+    **且不得再指向已退场的转人工出口**（真实闭环回归：两次新会话 AI 均转人工建 complaint 工单）。
+
+    变更沿革（用户裁定 2026-09-19）：「不应该存在 human_handoff 这种东西，以后全是
+    AI 来判断」—— 原断言要求 prompt 里出现 `human_handoff`（"反例存在"）与「转人工」。
+    退场后这两条**必须反过来**：工具名出现在 prompt 里 = 模型被告知一个按不动的出口
+    （L0 判据见 tests/unit_ci_workflows/test_human_handoff_retired.py）。
+    反例的教学价值以**不带工具名**的形式保留：反例1/2 改成「推给人工（应 aftersale_create）」。
+    """
     prompt = _build_system_prompt("customer_aftersales")
     # few-shot 已注入
     assert "Few-shot 参考示例" in prompt, "customer_aftersales 缺少 few-shot 注入"
     # 核心引导：换货/退货应 aftersale_create
     assert "aftersale_create" in prompt, "few-shot 未包含 aftersale_create 引导"
-    # 转人工边界明确（禁止把换货/退货转人工）
-    assert "转人工" in prompt and "换货" in prompt
-    # 反例存在（错误示例指明换货走 human_handoff 是错误）
-    assert "human_handoff" in prompt
+    # 换货场景仍在（下行断言依赖它）
+    assert "换货" in prompt, "few-shot 缺少换货场景"
+    # 反例仍在（教学价值不得因退场而丢）：推给人工被明确标为错误
+    assert "错误" in prompt and "需要人工客服处理哦" in prompt, (
+        "few-shot 丢了「推给人工 = 错误」的反例 —— 退场后这仍是高频失败形态"
+    )
+    # 退场面：prompt 里**不得**出现退场工具名（否则模型会承诺"已为您转接"）
+    assert "human_handoff" not in prompt, (
+        "customer_aftersales prompt 里出现了已退场工具名 —— 模型会被导向一个按不动的出口"
+    )
+    # 假承诺禁令在（退场后新增的必需规则）
+    assert "禁止" in prompt and "已为您转接人工客服" in prompt, (
+        "prompt 缺少「禁止假承诺转接」的显式禁令"
+    )
     # 已发货订单可售后（状态门禁：confirmed/producing/shipped/completed 均可建退换货）
-    # —— 真实闭环回归：AI 看到"已发货"误判不能售后而转人工
+    # —— 真实闭环回归：AI 看到"已发货"误判不能售后而推给人工
     assert "已发货" in prompt, "few-shot 未说明已发货订单可申请售后"
     assert "尺寸买大了" in prompt, "few-shot 缺少已发货换货示例"
 
