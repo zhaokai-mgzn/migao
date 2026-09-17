@@ -54,7 +54,7 @@ def get_fallback_result(tool_name: str, reason: Optional[str] = None) -> ToolRes
         reason: 降级原因，用于追溯（如 "circuit_breaker_open"、"timeout" 等）
 
     Returns:
-        ToolResult: success=False，包含友好提示文案
+        ToolResult: success=False，包含友好提示文案 + **可行动的下一步**（`suggestion`）
     """
     message = FALLBACK_MESSAGES.get(tool_name, DEFAULT_FALLBACK_MESSAGE)
     return ToolResult(
@@ -65,6 +65,22 @@ def get_fallback_result(tool_name: str, reason: Optional[str] = None) -> ToolRes
             "fallback": True,
             "reason": reason if reason else "service_unavailable",
         },
+        # ── 降级路径的**可行动下一步**（issue #4068，与 #4050 的 193 处失败面同口径）──
+        # 缺了它，`base_skill._self_correct_retry()` 的第一道闸门
+        # （`if not suggestion: return None`）直接短路 ⇒ 自愈引导永远拿不到这条降级结果，
+        # 模型只能凭 error 文案 `service_unavailable` 猜下一步：多半原地重放同一调用
+        # （熔断开路态下必然再失败），或者对用户只说一句「服务暂时不可用」就结束
+        # —— 两者都是「只说失败不说下一步」。
+        # 内容必须可执行：① 禁止重放（降级态下重放必然再失败）；② 禁止臆造结果；
+        # ③ 用 message 如实告知 + 给替代路径（人工入口 / 稍后再试）。
+        # 不写死 `human_handoff` 作为唯一出路：它是 C 端工具（`allowed_roles=["customer"]`），
+        # B 端调用只会拿到「权限不足」，故按「当前端可用的人工入口」表述。
+        suggestion=(
+            f"不要重放同一调用（{reason or '服务不可用'} 态下会再次失败），也不要臆造调用结果；"
+            "请把 message 如实告知用户「该功能暂时不可用」，并给出可执行的替代路径 —— "
+            "需要人工介入时改走当前端可用的人工入口（C 端可用 human_handoff 转人工），"
+            "否则建议用户稍后再试同一请求。"
+        ),
     )
 
 
