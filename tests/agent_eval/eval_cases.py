@@ -51,6 +51,7 @@ class EvalCase:
     db_verify: List[dict] = field(default_factory=list) # 落库层验证（创建后查 admin-api 断言价格=确认价，§3.2/issue #3056）
     output_verify: List[dict] = field(default_factory=list) # 产出侧断言（工具计算结果 payload，如算料用布量/spec公式，issue #3367）
     pre_clean: List[dict] = field(default_factory=list) # 评测前数据清理（写类 case 自我污染防线）
+    post_clean: List[dict] = field(default_factory=list) # 用例结束后复位共享夹具（写方复位，issue #4075）
     post_session: List[dict] = field(default_factory=list) # 会话关闭后落库断言（user_memories 只在 close 时 flush，issue #3357）
     debug_user: str = ""   # 多身份评测：以哪个 DEBUG 顾客身份跑（如 debug_customer_new，issue #3391）
     debug_permissions: str = ""   # 评测可控权限（B 端）：逗号分隔权限码，非空才下发 X-Debug-Permissions（issue #4108）
@@ -4581,6 +4582,7 @@ _CASE_PR_007 = EvalCase(
     required_args=[{'tool': 'product_manage', 'action': 'toggle_status', 'fields': ['product_id', 'status']}],
     must_succeed=[{'tool': 'product_manage', 'action': 'toggle_status'}],
     pre_clean=[{'type': 'product_dedupe', 'product_keyword': '遮光窗帘'}],
+    post_clean=[{'type': 'product_status_restore', 'product_keyword': '遮光窗帘'}],
     namespaces=['product_name:遮光窗帘'],
 )
 
@@ -4865,6 +4867,7 @@ _CASE_PR_021 = EvalCase(
     forbidden_card_text=[],
     must_succeed=[{'tool': 'sku_update'}],
     output_verify=[{'tool': 'sku_update', 'expect': {'new_price': 150}}],
+    post_clean=[{'type': 'sku_price_restore', 'product_keyword': '遮光窗帘', 'color_name': '米白', 'selling_method': 'bulk_cut', 'door_width': '2.8', 'price': 168}],
 )
 
 # ── PR-024 [NORMAL] 小布算料上限 - 定宽布买高 + 对花损耗（窗高超定高上限，必须走定宽分支并告警）（源: cases/product.yml）──
@@ -4904,6 +4907,7 @@ _CASE_PR_025 = EvalCase(
     forbidden_card_text=[],
     order_before=['interact[confirm] before product_manage'],
     pre_clean=[{'type': 'product_dedupe', 'product_keyword': '遮光窗帘'}],
+    post_clean=[{'type': 'product_status_restore', 'product_keyword': '遮光窗帘'}],
     namespaces=['product_name:遮光窗帘'],
     precondition=[{'type': 'product_count_for_keyword', 'source': '遮光窗帘', 'expect': 1}],
 )

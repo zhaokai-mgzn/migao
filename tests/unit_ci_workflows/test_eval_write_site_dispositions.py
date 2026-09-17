@@ -23,10 +23,17 @@
 | `restore_product` | PATCH 商品价 | 状态码 + **回读值** | ✅ #3807 已修（本 PR 红证：翻转 `PRODUCT_PRICE_FIELD` ⇒ 红） |
 | `_end_session` | PUT 关闭会话 | `status_code >= 400` 打印 | ✅ 失败不改用例结论（只影响记忆 flush），可接受 |
 | `_eval_remove_users` | DELETE 员工 | `status_code < 300` 才计数 | ✅ |
-| `_run_pre_clean_action` ×4 | PUT 下架 / DELETE 商品（`product_remove`、`product_dedupe`） | **未取响应** | ⚠️ **未校验**（见下"为什么本轮不顺手改"） |
-| `_run_pre_clean_action` | PUT 员工回 active（`employee_reactivate`） | **未取响应** | ⚠️ **未校验**（同上） |
-| `_run_pre_clean_action` | DELETE 客户标签（`customer_tag_remove`） | **未取响应** | ⚠️ **未校验**（同上） |
-| `_run_pre_clean_action` | DELETE 用户长期记忆 | `status_code >= 300` 或 `success is False` | ✅ |
+| `_run_clean_action` ×4 | PUT 下架 / DELETE 商品（`product_remove`、`product_dedupe`） | **未取响应** | ⚠️ **未校验**（见下"为什么本轮不顺手改"） |
+| `_run_clean_action` | PUT 员工回 active（`employee_reactivate`） | **未取响应** | ⚠️ **未校验**（同上） |
+| `_run_clean_action` | DELETE 客户标签（`customer_tag_remove`） | **未取响应** | ⚠️ **未校验**（同上） |
+| `_run_clean_action` | DELETE 用户长期记忆 | `status_code >= 300` 或 `success is False` | ✅ |
+| `_restore_product_status` | PUT 商品在售状态复位（`product_status_restore`，#4075） | 状态码 + **回读 `status`** | ✅ |
+| `_restore_sku_price` | PATCH SKU 价复位（`sku_price_restore`，#4075） | 状态码 + **回读 `skus[].price`** | ✅ |
+
+> 注（#4075）：实现体函数名由 `_run_pre_clean_action` 改为 **`_run_clean_action`** ——
+> `post_clean` 与 `pre_clean` 共用同一份实现（不复制第二套），名字不再带阶段。
+> 上表两处新增写点是**复位族**：它们的失败路径已按本仓库口径接进结论
+> （`PRECONDITION_NOT_RESTORED: post_clean` ⇒ `restore_failures` 阻塞）。
 | `login` / `get_or_create_session` ×2 | POST 登录 / 建会话 | 响应体**必须**被解析（拿不到 token/session_id 即抛错） | ✅ 隐式校验（缺值不可能继续） |
 
 ### 为什么本轮的 ⚠️ 三条只登记、不顺手改（诚实标注，不粉饰）
@@ -66,24 +73,31 @@ DISPOSITIONS = {
     ("_eval_remove_users", "delete", 1):
         "已校验：status_code < 300 计入 removed，>= 300 计 failed 并大声报出"
         "（issue #4189「清理失败 LOUD」；旧实现静默跳过 ⇒ 残留与'本就没有'同形）",
-    ("_run_pre_clean_action", "put", 1):
+    ("_run_clean_action", "put", 1):
         "未校验（product_remove 下架商品）：同类扫描登记，见本文件 docstring「为什么本轮不顺手改」"
         "（issue #3807 的类，独立单处理）",
-    ("_run_pre_clean_action", "delete", 1):
+    ("_run_clean_action", "delete", 1):
         "未校验（product_remove 删除商品）：同上，独立单处理（issue #3807）",
-    ("_run_pre_clean_action", "put", 2):
+    ("_run_clean_action", "put", 2):
         "未校验（product_dedupe 下架重复商品）：准备型 ⇒ 加回读会新增阻塞红，需独立红证"
         "（issue #3807）",
-    ("_run_pre_clean_action", "delete", 2):
+    ("_run_clean_action", "delete", 2):
         "未校验（product_dedupe 删除重复商品）：同上（issue #3807）",
-    ("_run_pre_clean_action", "put", 3):
+    ("_run_clean_action", "put", 3):
         "未校验（employee_reactivate 回 active）：已有前置查询断言目标存在；写结果未回读"
         "（issue #3807）",
-    ("_run_pre_clean_action", "delete", 3):
+    ("_run_clean_action", "delete", 3):
         "已校验（user_memories_clear）：status_code >= 300 或 body.success is False 即报"
         "「清理长期记忆失败」",
-    ("_run_pre_clean_action", "delete", 4):
+    ("_run_clean_action", "delete", 4):
         "未校验（customer_tag_remove 删标签）：清理型，同上独立单处理（issue #3807）",
+    # ── 复位族（issue #4075）：两条都是**已校验**档（状态码 + 回读值比对）──
+    ("_restore_product_status", "put", 1):
+        "已校验：status_code >= 300 记账 + **回读** `status` 比对（`_readback_product`）；"
+        "2xx 但值未落地 ⇒ `PRECONDITION_NOT_RESTORED: post_clean` 进结论",
+    ("_restore_sku_price", "patch", 1):
+        "已校验：status_code >= 300 记账 + **回读** `skus[].price` 比对（按色名/售卖方式/门幅）；"
+        "回读找不到该规格 ⇒ 按「未证实」记账（不静默当成功）",
     ("login", "post", 1):
         "已校验（隐式）：必须解析出 token，拿不到即抛错 —— 缺值不可能继续",
     ("get_or_create_session", "post", 1):

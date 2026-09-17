@@ -1,5 +1,10 @@
-# case_ids: HR-003, HR-002, CU-003, PG-013
-"""`pre_clean` 夹具层 **fail-closed**：注册表 + 未应用必须进结论（issue #3781）。
+# case_ids: HR-003, HR-002, CU-003, PG-013, PR-021, PR-025
+"""夹具层（`pre_clean` / `post_clean`）**fail-closed**：注册表 + 未应用必须进结论（#3781 / #4075）。
+
+> **#4075 的扩容**：`post_clean`（用例**结束后**复位共享夹具）与 `pre_clean` **共用**
+> 同一张类型登记表（`local_runner._CLEAN_TYPES`，其中的 `phases` 决定某类型能不能在某阶段跑）
+> 与同一份动作实现（`_run_clean_action`）。本文件因此从"只锁 pre"扩到"两个阶段都锁"：
+> 新增了**阶段一致性**、**复位族的失败禁止降级**、**pre 专属类型出现在 post 即配置错误**三条。
 
 ## 为什么单开这条守卫
 
@@ -93,12 +98,12 @@ def _load_runner():
 lr = _load_runner()
 
 
-def _declared_types() -> dict:
-    """用例库（单一源）里所有 `pre_clean.type` → 声明它的用例 ID。"""
+def _declared_types(field: str = "pre_clean") -> dict:
+    """用例库（单一源）里所有 `<field>.type` → 声明它的用例 ID（`field` 见 #4075）。"""
     from render_cases import load_case_dicts
     out: dict = {}
     for c in load_case_dicts(str(CASES_DIR)):
-        for spec in (c.get("pre_clean") or []):
+        for spec in (c.get(field) or []):
             t = str((spec or {}).get("type") or "")
             if t:
                 out.setdefault(t, []).append(c.get("id", "?"))
@@ -124,12 +129,13 @@ class TestRegistryIsTheSingleSource:
         `customer_tag_remove` 走的是**兜底分支**（`if _type != "customer_tag_remove": 报配置错误`
         —— 它排在最后，落到那里即它），故两种形态都算「有实现」。
 
-        ⚠️ 源码切片的锚点是 `_run_pre_clean_action`（**实现体**）而不是 `_run_pre_clean`
+        ⚠️ 源码切片的锚点是 `_run_clean_action`（**实现体**）而不是 `_run_pre_clean`
         （issue #3791 之后后者只是"按族归类"的薄入口，切它会切到空壳 ⇒ 本守卫静默空跑，
-        正是本仓库"绿了但没跑"的形态）。
+        正是本仓库"绿了但没跑"的形态）。#4075：实现体改名为 `_run_clean_action`
+        —— `pre_clean` / `post_clean` **共用同一份**（不复制第二套）。
         """
         src = Path(REPO_ROOT / "tests" / "agent_eval" / "local_runner.py").read_text(encoding="utf-8")
-        start = src.index("async def _run_pre_clean_action(")
+        start = src.index("async def _run_clean_action(")
         body = src[start:src.index("\nasync def ", start + 10)]
         assert "_type ==" in body, (
             "源码切片切到了空壳（锚点漂移）——本守卫会静默空跑，必须改锚点")
@@ -139,6 +145,8 @@ class TestRegistryIsTheSingleSource:
 
         missing = [t for t in sorted(lr._PRECLEAN_TYPES) if not _implemented(t)]
         assert missing == [], f"注册表里有但没实现分支的 type：{missing}"
+        missing_post = [t for t in sorted(lr._POSTCLEAN_TYPES) if not _implemented(t)]
+        assert missing_post == [], f"post 阶段登记了但没实现分支的 type：{missing_post}"
 
 
 class TestUnknownTypeIsNotASilentSkip:
@@ -153,9 +161,13 @@ class TestUnknownTypeIsNotASilentSkip:
         assert lr.check_preclean_not_applied([msg]) == [msg]
 
     def test_registered_but_unimplemented_type_is_also_a_config_error(self, monkeypatch):
-        """登记了但漏写实现体 ⇒ 同样走配置错误（不许退回静默）。"""
+        """登记了但漏写实现体 ⇒ 同样走配置错误（不许退回静默）。
+
+        #4075：登记的**唯一真值**是 `_CLEAN_TYPES`（`_PRECLEAN_TYPES` 由它派生）——
+        故造这个形态要往表里塞，而不是往派生视图里塞（后者已不再被动作层读取）。
+        """
         import asyncio
-        monkeypatch.setattr(lr, "_PRECLEAN_TYPES", lr._PRECLEAN_TYPES | {"ghost_type"})
+        monkeypatch.setitem(lr._CLEAN_TYPES, "ghost_type", {"phases": ("pre",), "attr": ""})
         msg = asyncio.run(lr._run_pre_clean("tok", {"type": "ghost_type"}))
         assert msg.startswith(lr._PRECLEAN_CONFIG_ERR), msg
         assert "未实现" in msg, msg
@@ -485,3 +497,92 @@ class TestProcessingOrderResetIsPrepareFamily:
         assert "未复位" in msg, msg          # 重试边界据此判"前置不等价"
         assert lr.check_preclean_not_applied([msg]) == [msg], (
             f"准备型未应用没有被折叠 —— 又会变成「绿了但没跑」：{msg!r}")
+
+
+# ── ⑧ `post_clean`（issue #4075）：阶段一致 + 复位族失败禁止降级 ──────────────────
+class TestPostCleanSharesTheRegistry:
+    """`post_clean` 与 `pre_clean` **共用**一张登记表与一份实现；本类锁共用关系本身。
+
+    为什么单锁（#4075）：新阶段最容易长出的两个静默失效是
+      ① **第二套登记表/实现**（"声明在 post、实现只认 pre" ⇒ 声明无消费，§20 R5 第 1 条）；
+      ② **把复位族的"目标不在"降级成良性 no-op**（那是清理族的语义 —— 复位族找不到目标
+         只说明"夹具状态未证实归零"，静默放行等于把 #4075 的静默又装回去）。
+    """
+
+    def test_every_declared_post_type_is_registered(self):
+        """用例库声明的每个 `post_clean.type` 都必须在 post 阶段登记（拼错 ⇒ CI 红）。"""
+        declared = _declared_types("post_clean")
+        assert declared, ("用例库里一个 `post_clean` 都没有？本守卫的前提失效"
+                          "（#4075 的修法就是给写方补 post_clean）")
+        unknown = {t: ids for t, ids in declared.items() if t not in lr._POSTCLEAN_TYPES}
+        assert unknown == {}, (
+            f"这些 post_clean 类型没有登记（会走配置错误 / 静默不生效）：{unknown}\n"
+            f"合法类型: {sorted(lr._POSTCLEAN_TYPES)}")
+
+    def test_every_type_declares_the_phases_it_may_run_in(self):
+        """**根因不变式**：每个 type 必须**显式**声明阶段（不允许默认两边都能跑）。"""
+        assert isinstance(lr._CLEAN_TYPES, dict) and lr._CLEAN_TYPES
+        legal = {"pre", "post"}
+        for t, meta in lr._CLEAN_TYPES.items():
+            phases = tuple(meta.get("phases") or ())
+            assert phases, f"{t} 没有声明 phases ⇒ 它会在某个阶段静默不可用"
+            assert set(phases) <= legal, f"{t} 声明了未知阶段：{phases}"
+            assert "attr" in meta, f"{t} 没有声明 attr（复位属性）—— 守卫无从建立属性↔类型映射"
+        # 两个派生视图必须与表一致（表是唯一真值）
+        assert lr._PRECLEAN_TYPES == frozenset(
+            t for t, m in lr._CLEAN_TYPES.items() if "pre" in m["phases"])
+        assert lr._POSTCLEAN_TYPES == frozenset(
+            t for t, m in lr._CLEAN_TYPES.items() if "post" in m["phases"])
+        assert lr._PRECLEAN_TYPES | lr._POSTCLEAN_TYPES == frozenset(lr._CLEAN_TYPES), (
+            "有 type 两个阶段都不在 —— 登记了却永远跑不到（幽灵条目）")
+
+    def test_pre_only_type_in_the_post_phase_is_a_config_error(self):
+        """阶段不一致是**配置错误**（带阶段化前缀），不是"未实现"、更不是静默跳过。"""
+        msg = asyncio_run(lr._run_post_clean("tok", {"type": "employee_remove"}))
+        assert msg.startswith(lr._POSTCLEAN_CONFIG_ERR), msg
+        assert "只允许在" in msg and "pre" in msg, (
+            f"阶段不一致的报错要指出「该类型只允许在哪个阶段声明」：{msg!r}")
+        assert lr.check_postclean_not_applied([msg]) == [msg]
+
+    def test_restore_family_is_not_demoted_to_a_benign_noop(self, monkeypatch):
+        """**复位族禁止降级**：目标不在 ⇒ 必须进结论（清理族的良性 no-op 语义不适用）。"""
+        for t in ("product_status_restore", "sku_price_restore"):
+            assert t not in lr._PRECLEAN_CLEANUP_TYPES, (
+                f"{t} 被归进清理族了 ⇒ 「目标不存在」会被降级成良性 no-op（静默）")
+        fake = _cat("/api/admin/products", {"data": {"items": []}})
+        monkeypatch.setattr(lr, "httpx", fake)
+        msg = asyncio_run(lr._run_post_clean(
+            "tok", {"type": "product_status_restore", "product_keyword": "遮光窗帘"}))
+        assert any("/api/admin/products" in u for u in fake.calls), fake.calls   # 真查过
+        assert msg.startswith(lr._POSTCLEAN_NOT_APPLIED), (
+            f"复位族的目标不存在没有进结论（静默）：{msg!r}")
+        assert lr.check_postclean_not_applied([msg]) == [msg]
+
+    def test_success_wording_avoids_the_reset_failure_wording(self):
+        """措辞红线（#3751 同口径）：**成功路径**的消息不得含「未复位」/「失败」。"""
+        ok = [
+            "已复位商品「遮光窗帘」在售状态 → on_sale（回读一致）",
+            "商品「遮光窗帘」在售状态本就是 on_sale，无需复位（幂等）",
+            "已复位 商品「遮光窗帘」/米白/bulk_cut/门幅2.8 的 SKU 价 → 168（回读一致）",
+            "商品「遮光窗帘」/米白/bulk_cut/门幅2.8 的 SKU 价本就是 168，无需复位（幂等）",
+        ]
+        for m in ok:
+            assert "未复位" not in m and "失败" not in m, m
+            assert not m.startswith(lr._POSTCLEAN_BAD_MARKERS), m
+        assert lr.check_postclean_not_applied(ok) == []
+
+    def test_two_phases_share_one_action_body(self):
+        """**不复制第二套**：两个阶段入口都指向同一份动作实现体（源码级自证）。"""
+        src = Path(REPO_ROOT / "tests" / "agent_eval" / "local_runner.py").read_text(encoding="utf-8")
+        assert src.count("async def _run_clean_action(") == 1, "动作实现被复制成两份"
+        assert 'await _run_clean_action(token, spec, "pre")' in src
+        assert 'await _run_clean_action(token, spec, "post")' in src
+        # 阶段化标记也各只有一处（配置错误 + 未应用），不各写一份
+        assert src.count('_POSTCLEAN_NOT_APPLIED = "PRECONDITION_NOT_RESTORED: post_clean"') == 1
+        assert src.count('_POSTCLEAN_CONFIG_ERR = "post_clean: 不支持的 type"') == 1
+
+
+def asyncio_run(coro):
+    """`asyncio.run` 的薄封装（本文件顶部没有 import asyncio，保持增量最小）。"""
+    import asyncio
+    return asyncio.run(coro)
