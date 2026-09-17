@@ -2680,7 +2680,7 @@
 真值: order.create-flow
 溯源: 2026-09-17 新增（issue #3976，线上实证 sess_202d55d49a254a10）：首条消息同时含商品细节与下单指令 → 意图路由判 product_inquiry → 整条 validate/confirm 链在 product skill 内完成，确认卡点击后模型调 order_create 撞 Tool not found（product 注册表无此工具）→ 空头承诺 + 订单永不落库。修复（route_by_intent 答卡轮归属 skill 迁移 + tool_not_found 兜底 relock + 8.4 收口扩展 B 端 order_create + metadata 假证据修复）后，确认轮应路由到 order skill 真实下单。2026-09-17 CI 门禁校准：B 端专属用例补 persona: mibao（C 端缺 sms_code 轮且 fixture 无该商品）、补 must_succeed[order_create]（效果层断言）与 precondition[product_count_for_keyword]（同名商品唯一前置，同 OR-008/OR-006 #3835 先例） ｜ tags: order_create, cross_skill, guided_flow
 
-## 加工项域（9 case）
+## 加工项域（10 case）
 
 ### PP-001. 加工项选择 - 分页翻页 🔵
 ```
@@ -2815,6 +2815,19 @@
 ```
 真值: ⚠️ 缺口（见对应模板 ⚠️ 注释）
 溯源: 2026-09-15 新增（issue #3672 / 归因报告 G4）：`processing_item_manage(action=calculate_price)` 此前在用例库**零覆盖**——§14.5 覆盖矩阵只到工具级（本工具已有 4 条正向用例 → 恒绿），per_area 分支 100% 不可达这条缺口在矩阵里永远看不见。断言全部机器可判：must_succeed(action=calculate_price) + required_args[processing_item_id,width,height] + output_verify(totalPrice=240.00，显式 action) + forbidden_text。 ｜ tags: processing_item, llm_behavior, tool_call, calculate_price, per_area
+
+### PP-010. 生产模块确定性核心 - 工艺路线实例化/计件/必完工序自动完工（单测覆盖） 🔵
+```
+你: 这个加工单走到哪了，还要多久完成
+期望: direct_reply
+数据: 工艺路线实例化：布帘·韩褶 11 道（精裁-布→…→外帘发货）；定型=否移除 定型-布/复烫-布；特殊选项插条件工序（拼2次→拼2次-布）
+数据: 应做数量=算料引擎输出（韩褶-布=折数 48、米工序=用料 12.3、套工序=1）—— 报工只确认不心算
+数据: 计件 = Σ(合格数量 × 单价 × 特殊选项系数)：一分二 ×1.7；返工/报废不计件；单工序一人制（无计件人数分摊）
+数据: 完工判定：必完工序（外帘装袋，打包前置）合格量满应做数量 → 订单自动生产完成
+跳过: 生产确定性核心是纯函数（app/production/），由单元测试全量覆盖（tests/test_production/），非 LLM 行为，不进入 agent-eval 冒烟（同 CH-036/037/038 惯例）
+```
+真值: ai-chat.intent-tool-map
+溯源: 2026-09-17 新增（issue #3993）：M4-G-1 生产模块确定性核心覆盖登记，单测覆盖 ｜ tags: processing, production, piecework
 
 ## processing-order（17 case）
 
@@ -4131,8 +4144,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：304（活跃 153，跳过 151）
-- tier 分布：smoke 9 / normal 262 / adversarial 33
+- 用例总数：305（活跃 153，跳过 152）
+- tier 分布：smoke 9 / normal 263 / adversarial 33
 - 售后域：9
 - agents：6
 - api：19
@@ -4150,7 +4163,7 @@
 - onboarding：5
 - ontology：4
 - 订单域：28
-- 加工项域：9
+- 加工项域：10
 - processing-order：17
 - 商品域：25
 - registry：1
