@@ -28,6 +28,13 @@ _VALIDATION_RULES: Dict[str, Dict[str, Any]] = {
             "required": ["product_id"],
             "product_id": {"type": str, "min_len": 1, "label": "商品ID"},
         },
+        # issue #4011 A4：此前无规则 ⇒ skipped 假绿（上下架是**面向顾客可见性**的写操作）。
+        # required/枚举按工具实现 `_toggle_status` 与 `VALID_PRODUCT_STATUSES`：on_sale/off_sale
+        # （draft/under_review 是后台人工流程，Agent 无权限，issue #3686）。
+        "toggle_status": {
+            "required": ["product_id", "status"],
+            "status": {"type": str, "enum": ["on_sale", "off_sale"], "label": "商品状态"},
+        },
     },
     "order_create": {
         "create": {
@@ -52,8 +59,9 @@ _VALIDATION_RULES: Dict[str, Dict[str, Any]] = {
         },
     },
     "order_manage": {
-        # 三个此前无规则的 action（issue #3566 核查）：闸门走「该操作无预定义规则」直接
-        # 放行，连 order_id 都不校验——其中 confirm_payment 是**资金动作**。
+        # 三个此前无规则的 action（issue #3566 核查）：闸门走「该操作无预定义规则」分支，
+# 改前**直接放行**（连 order_id 都不校验——其中 confirm_payment 是**资金动作**）；
+# issue #4011 A4 起该分支已改为 fail-closed，规则仍必须补齐（否则模型拿不到闸门保护）。
         # 真实契约在 Service 分支里（`OrderService.java:1585-1629`），工具统一 PATCH
         # `/api/admin/agent/orders/{id}`（`order_manage.py:128`）。
         "update_status": {
@@ -152,6 +160,19 @@ _VALIDATION_RULES: Dict[str, Dict[str, Any]] = {
             "name": {"type": str, "min_len": 1, "label": "员工姓名"},
             "phone": {"type": str, "min_len": 1, "label": "手机号"},
         },
+        # issue #4011 A4：下面 4 个 action 此前无规则 ⇒ 闸门返回 skipped 假绿。
+        # required 只列**工具实现硬拦**的字段（`employee_manage.py`）：`_update_user`/
+        # `_delete_user`/`_reset_password` 硬拦 user_id（“至少一个可改字段”与 new_password
+        # 缺省随机生成都由工具自己兜底）；`_toggle_status` 硬拦 user_id + status。
+        # 可选字段不声明字段级规则 = 不误拦合法取值（最简：只有会真拦的东西才写）。
+        "update": {"required": ["user_id"]},
+        "delete": {"required": ["user_id"]},
+        "reset_password": {"required": ["user_id"]},
+        "toggle_status": {
+            "required": ["user_id", "status"],
+            # 枚举值取工具白名单，非法值由工具/服务端拒（这里只提前拦）
+            "status": {"type": str, "enum": ["active", "disabled"], "label": "员工状态"},
+        },
     },
     # CU-004 回归防线：validate_input 对 customer_manage(update) 此前无规则 → 返回
     # 「未知工具/无需校验」，LLM 据此幻觉「手机号修改不支持」——但 admin-api
@@ -167,6 +188,14 @@ _VALIDATION_RULES: Dict[str, Dict[str, Any]] = {
             "customer_id": {"type": str, "min_len": 1, "label": "客户 UUID"},
             "tag_id": {"type": str, "min_len": 1, "label": "标签 ID"},
         },
+        # issue #4011 A4：4 个 tag 写操作此前无规则 ⇒ skipped 假绿。
+        # required 按工具实现硬拦的字段（`customer_manage.py` `_*_tag`）：add/remove 要
+        # customer_id+tag_id，create 要 name，update 要 tag_id（name/color 至少一项由工具
+        # 自己兜底报错），delete 要 tag_id。
+        "remove_tag": {"required": ["customer_id", "tag_id"]},
+        "create_tag": {"required": ["name"]},
+        "update_tag": {"required": ["tag_id"]},
+        "delete_tag": {"required": ["tag_id"]},
     },
     # HR-005 回归防线：role_manage 写操作此前无规则 → validate_input 返回「未知工具」，
     # LLM 据此退化到文本预览确认（不走 interact confirm 卡），角色创建流程不稳定。
@@ -184,6 +213,16 @@ _VALIDATION_RULES: Dict[str, Dict[str, Any]] = {
             "amount": {"type": (int, float), "min": 0.01, "label": "金额（>0，最低 0.01）"},
         },
     },
+    # ── issue #4011 A4：缺口补齐的通用口径（本次补的规则分散在各自的工具块里）──
+    # 缺口形态：工具已注册、该 action 无规则 ⇒ 旧实现返回 `success=True, data={"skipped": True}`
+    # （假绿）⇒ 模型读到“校验通过”继续执行，还会把 `pending_validated_input` 落账、下一轮被
+    # 注入“直接调用写工具…不要再发确认卡”的执行提示。补的规则：
+    #   employee_manage（update/delete/reset_password/toggle_status）、
+    #   product_manage（toggle_status）、customer_manage（4 个 tag 写）、
+    #   processing_item_manage（toggle_item_status + 3 个 category 写）。
+    # 同时把「无规则」分支改为 fail-closed（见 `execute()` 里的「该操作无校验规则」分支）。
+    # ⚠️ required 一律按**工具实现的真实必填**声明（不是照抄契约 DTO）：声明比实现更严
+    # = 合法调用被闸门拦（#3566 的 `settings_manage.update_settings` 就是这么坏掉的）。
     "notification_manage": {
         "mark_read": {
             "required": ["notification_id"],
@@ -257,6 +296,17 @@ _VALIDATION_RULES: Dict[str, Dict[str, Any]] = {
             "required": ["item_id"],
             "item_id": {"type": str, "min_len": 1, "label": "加工项 ID"},
         },
+        # issue #4011 A4：下面 4 个 action 此前无规则 ⇒ 闸门返回 skipped 假绿。
+        # required 按工具实现（`processing_item_manage.py`）：`_toggle_item_status` 硬拦
+        # item_id + status；`_create_category` 要 name；`_update_category` 要
+        # category_id + name；`_delete_category` 要 category_id（工具无“父分类”参数）。
+        "toggle_item_status": {
+            "required": ["item_id", "status"],
+            "status": {"type": str, "enum": ["active", "inactive"], "label": "加工项状态"},
+        },
+        "create_category": {"required": ["name"]},
+        "update_category": {"required": ["category_id", "name"]},
+        "delete_category": {"required": ["category_id"]},
     },
     "product_update": {
         "update": {
@@ -431,15 +481,41 @@ class ValidateInputTool(BaseTool):
                 success=False,
                 error="未知的工具",
                 message=f"未知的工具或操作: {target_tool}/{target_action}，无法进行输入校验。请联系管理员确认工具是否已注册。",
+                suggestion=(
+                    "不要依赖本工具放行：核对 target_tool 拼写，或先确认该工具是否已注册；"
+                    "只读工具不需要调用 validate_input"
+                ),
             )
 
         rules = tool_rules.get(target_action)
         if not rules:
-            # 工具已注册但该操作无校验规则 → 跳过（不是所有操作都有规则）
+            # 工具已注册但该 action 无校验规则 —— **不得假绿**（issue #4011 A4）。
+            #
+            # 改前这里是 `ToolResult(success=True, data={"validated": True, "skipped": True})`：
+            # 模型读到“校验通过”继续执行；更糟的是 `base_skill` 按
+            # `tool_name == "validate_input" and result.success` 落 `pending_validated_input`
+            # ⇒ 下一轮被注入执行提示「直接调用 {tool}(action=...) 执行写操作，不要再发
+            # interact(confirm) 确认卡」——**一道没跑过的闸门换来了逐字执行的授权**。
+            #
+            # 诚实语义：`success=True` 只允许表示**真跑了校验并通过**（下方 `validated=True`
+            # 且无 skipped）。没跑就是没跑 —— 失败 + 可行动建议（R5：fail-closed 分支必带
+            # suggestion，否则 `_self_correct_retry` 无从启动）。
+            #
+            # 为什么直接判死而不做“白名单跳过”：白名单会把「有规则的工具漏了某个写 action」
+            # 永久合法化（正是本次 A4 的病灶）。缺规则就是缺规则 —— 补规则才是出口。
             return ToolResult(
-                success=True,
-                data={"validated": True, "skipped": True},
-                message="无需校验（该操作无预定义规则）",
+                success=False,
+                error="该操作无校验规则",
+                message=(
+                    f"无法校验 {target_tool}/{target_action}：该操作没有预定义校验规则，"
+                    "校验**没有执行**（不要把它当成“校验通过”）。"
+                    "写操作请先确认参数完整（必填字段逐个自检）再提交；"
+                    "查询/只读操作不需要调用本工具。"
+                ),
+                suggestion=(
+                    f"不要依赖本工具放行：直接自检 {target_tool}(action='{target_action}') 的必填参数，"
+                    "或改用已登记规则的 action；参数齐备后再调用写工具执行"
+                ),
             )
 
         issues: List[str] = []
@@ -630,6 +706,12 @@ class ValidateInputTool(BaseTool):
                 data={"issues": issues, "missing_fields": missing},
                 error="参数校验失败",
                 message=f"参数校验失败，请补充以下信息后重试:\n" + "\n".join(f"  - {i}" for i in issues),
+                # R5（issue #4011）：fail-closed 分支必须带 suggestion —— `_self_correct_retry`
+                # 靠它启动自我纠正；只给失败不给下一步 = 模型原地重试同一组参数。
+                suggestion=(
+                    "按上面逐条补齐/改正参数后**重新调用 validate_input**；"
+                    f"全部通过（validated=true）后再调用 {target_tool}(action='{target_action}')"
+                ),
             )
 
         logger.info(f"[validate_input] {target_tool}.{target_action} passed validation")

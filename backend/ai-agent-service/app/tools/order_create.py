@@ -64,6 +64,12 @@ class OrderCreateTool(BaseTool):
         "【触发】创建订单。用户说'创建订单''下单'时调用。"
         "【前置】必须先调 product_detail 查 SKU，多 SKU 必须让用户选规格（颜色/售卖方式/门幅）。单 SKU 直接用。"
         "必填: customer_name + customer_phone + items(product_name+quantity+unit_price+subtotal)。"
+        # 契约面必须与运行时判据一致（issue #4011）：运行时对「商品有多个不同 SKU 价」要求
+        # 指定规格，而 schema 只声明 4 个必填、描述也没说 ⇒ LLM 无从知道 ⇒ 死锁
+        # （OR-014 首跑 13 次 order_create 无一成功，连正确库价 @168 也被拒）。
+        "【规格必填】商品有**多个不同 SKU 价**（分色/规格差价）时，items[i].processing_info "
+        "必须带 colorName 或 skuCode（取 product_detail 的 skus[].color_name / sku_code）；"
+        "单价必须落在商品库价集合内（商品 price 或某个 SKU 价），编造价一律拦截。"
         "【单价铁律】items[i].unit_price **必须等于商品库价**（product_detail 的 price，"
         "或所选 SKU 的 skus[].price；库中无分色差价时所有颜色同价）——"
         "禁止编造分色/规格价（如库价 168 却报「米白 150」），"
@@ -177,17 +183,21 @@ class OrderCreateTool(BaseTool):
                         },
                         "processing_info": {
                             "type": "object",
-                            "description": "商品销售信息（选了颜色/门幅后必填）：colorId(颜色ID，字符串，来自商品详情)、colorName(颜色名称)、sellingMethod(售卖方式: bulk_cut散剪/full_roll整卷)、doorWidth(门幅如2.8米)、skuCode(SKU编码)、processingItems(加工项列表)、processingFee(加工费合计)",
+                            "description": "商品销售信息（选了颜色/门幅后必填）：colorId(颜色ID，字符串，来自商品详情)、colorName(颜色名称)、sellingMethod(售卖方式: bulk_cut散剪/full_roll整卷)、doorWidth(门幅如2.8米)、skuCode(SKU编码)、processingItems(加工项列表)、processingFee(加工费合计)。"
+                                           "⚠️商品有**多个不同 SKU 价**时 colorName 或 skuCode **必填**（取 product_detail 的 skus[]）——"
+                                           "缺规格则无法确定该行库价、下单会被拒绝（issue #4011）",
                             "properties": {
                                 "colorId": {"type": "string", "description": "颜色ID（字符串，来自商品详情）"},
-                                "colorName": {"type": "string", "description": "颜色名称"},
+                                "colorName": {"type": "string", "minLength": 1,
+                                              "description": "颜色名称（取 product_detail skus[].color_name 原值）。商品有多个不同 SKU 价时必填"},
                                 "sellingMethod": {
                                     "type": "string",
                                     "enum": ["bulk_cut", "full_roll"],
                                     "description": "售卖方式，取 product_detail skus[].selling_method 原值：bulk_cut(散剪) / full_roll(整卷)。拼写变体（散剪/bulkCut）会被本地拒绝",
                                 },
                                 "doorWidth": {"type": "string", "description": "门幅"},
-                                "skuCode": {"type": "string", "description": "SKU编码"},
+                                "skuCode": {"type": "string", "minLength": 1,
+                                            "description": "SKU编码（取 product_detail skus[].sku_code 原值）。商品有多个不同 SKU 价时必填（与 colorName 二选一）"},
                                 "processingFee": {
                                     "type": "number",
                                     "minimum": 0,
@@ -723,6 +733,7 @@ class OrderCreateTool(BaseTool):
         # 函数级 import：tools 是叶子模块，避免模块加载顺序依赖。
         from app.graph.skills.base_skill import unit_price_grounding_error
         from app.graph.skills.base_skill import _match_sku_price
+        from app.graph.skills.base_skill import _library_unit_price_grounded
 
         client = get_admin_api_client()
         # 同单多行同商品只查一次（grounded 快照按 product_id 或 product_name 缓存）
@@ -765,19 +776,9 @@ class OrderCreateTool(BaseTool):
             }
             if len(sku_prices) > 1:
                 pinfo = item.get("processing_info")
-                if not isinstance(pinfo, dict) or not (pinfo.get("colorName") or pinfo.get("skuCode")):
-                    return ToolResult(
-                        success=False,
-                        error="unit_price_not_grounded",
-                        message=(
-                            f"商品明细第 {i + 1} 项「{name}」存在**多个规格价**"
-                            f"（{'/'.join(sorted(f'{p:g}' for p in sku_prices))}），"
-                            "下单必须通过 processing_info.colorName / skuCode 指定所选规格，"
-                            "否则无法确定该行应采用的库价。"
-                        ),
-                        suggestion="按 product_detail 的 skus[].color_name / sku_code 填 processing_info",
-                    )
-                if _match_sku_price(grounded, item) is None:
+                has_spec = isinstance(pinfo, dict) and bool(
+                    pinfo.get("colorName") or pinfo.get("skuCode"))
+                if has_spec and _match_sku_price(grounded, item) is None:
                     return ToolResult(
                         success=False,
                         error="unit_price_not_grounded",
@@ -788,6 +789,29 @@ class OrderCreateTool(BaseTool):
                         ),
                         suggestion="用 product_detail 返回的 skus[].color_name / sku_code 重新填写规格",
                     )
+                # 未指定规格 ⇒ 「库价无从唯一确定」，**不等于**「单价编造」（issue #4011）：
+                # 只要该单价确实来自商品库（商品级 price 或某个 SKU 价）就不得 fail-closed ——
+                # 改前这里无条件拒绝，连正确的 @168 也拒，OR-014 首跑 13 次调用无一成功（死锁）。
+                # 真编造价（不在库价集合内）不再放行，拒绝话术**列出全部库价**供模型自愈。
+                if not has_spec:
+                    up = self._parse_positive_number(item.get("unit_price"))
+                    if up is not None and not _library_unit_price_grounded(grounded, up):
+                        return ToolResult(
+                            success=False,
+                            error="unit_price_not_grounded",
+                            message=(
+                                f"商品明细第 {i + 1} 项「{name}」存在**多个规格价**"
+                                f"（{'/'.join(sorted(f'{p:g}' for p in sku_prices))}，"
+                                f"商品级库价 {self._library_price_of(grounded):g}），"
+                                f"而该行单价 {item.get('unit_price')} **不在库价集合内** —— 编造价拒绝。"
+                                "请按所选规格填写 processing_info.colorName / skuCode，"
+                                "并把 unit_price 改为该规格的库价（subtotal 同步 = 数量×单价）。"
+                            ),
+                            suggestion=(
+                                "先 product_detail 取 skus[].color_name/sku_code 与价格，"
+                                "把规格填进 processing_info、单价改成所选规格库价后重新下单"
+                            ),
+                        )
             # 判据复用：名称/ID 匹配 + SKU 价或商品价 + 容差 + 回填话术
             err = unit_price_grounding_error([item], grounded)
             if err:

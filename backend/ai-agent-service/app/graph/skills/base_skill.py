@@ -1105,6 +1105,27 @@ def _to_float(v) -> Optional[float]:
         return None
 
 
+def _library_unit_price_grounded(grounded: dict, unit_price) -> bool:
+    """`unit_price` 是否存在于商品库（商品级 price 或任一 SKU 价），容差同 `_PRICE_TOLERANCE`。
+
+    issue #4011：改前工具层闸门在「商品有多个不同 SKU 价、item 未指定规格」时直接
+    fail-closed，把「规格无从唯一确定」误判成「单价编造」，连正确库价（@168）也拒
+    ⇒ OR-014 首跑 13 次 order_create 无一成功。本判据只回答「这个价是否来自商品库」：
+    是 ⇒ 不是编造（规格维度交服务端 `validateAgentItemUnitPrice` 按 SKU 复核 / 人工确认）；
+    否 ⇒ 编造价，照旧拦截并回填（#3875/#3879 原意图不变）。
+    """
+    if not isinstance(grounded, dict):
+        return False
+    want = _to_float(unit_price)
+    if want is None:
+        return False
+    candidates = [_to_float(grounded.get("price"))]
+    for sku in grounded.get("skus") or []:
+        if isinstance(sku, dict):
+            candidates.append(_to_float(sku.get("price")))
+    return any(c is not None and abs(want - c) <= _PRICE_TOLERANCE for c in candidates)
+
+
 def unit_price_grounding_error(items: list, grounded_detail) -> Optional[str]:
     """下单明细单价 vs 商品库价的接地校验（零 LLM 纯函数）。
 
@@ -1121,7 +1142,10 @@ def unit_price_grounding_error(items: list, grounded_detail) -> Optional[str]:
 
     判据（事实驱动，区分「规格维度」与「单价」）：
       · 单价来自库（商品 price 或所选 SKU 的 price）；加工费来自加工项（不入此判据）；
-      · 无分色差价 ⇒ 分色价编造即拦截；有分色差价 ⇒ 按所选 SKU 判（不把规格选择弄坏）。
+      · 无分色差价 ⇒ 分色价编造即拦截；有分色差价 ⇒ 按所选 SKU 判（不把规格选择弄坏）；
+      · **未声明规格**的行：单价只要存在于商品库（商品 price 或任一 SKU 价）就不判死
+        （issue #4011：改前按商品级价兜底会把其它 SKU 的真实价判成编造 ⇒ 死锁）；
+        不在库价集合内才是编造 ⇒ 拦截并回填。
     """
     if not items or not isinstance(grounded_detail, dict):
         return None
@@ -1149,8 +1173,19 @@ def unit_price_grounding_error(items: list, grounded_detail) -> Optional[str]:
         lib_price = sku_price if sku_price is not None else g_price
         if abs(up - lib_price) <= _PRICE_TOLERANCE:
             continue
-        color_hint = ""
+        # 「未声明规格」的行不该被按商品级价兜底判死（issue #4011）：
+        # 没有规格标识时 lib_price 退化成商品级 price，会把**确实来自商品库其它 SKU** 的价
+        # （如分色价商品 米白100/香槟金130 报 130）判成“编造” —— 这正是 OR-014 首跑
+        # 13 次 order_create 无一成功的死锁形态（连正确库价也被拒）。
+        # 边界收紧为「该价是否存在于商品库」：存在 ⇒ 不是编造（规格维度交服务端按 SKU 复核 /
+        # 人工确认）；不存在 ⇒ 编造价，照旧拦截并回填（#3875/#3879 原意图不变）。
+        # ⚠️ 声明了规格却匹配不到 SKU 的行**不走**此豁免（保持既有兜底判据）。
         pinfo = item.get("processing_info")
+        has_spec = isinstance(pinfo, dict) and bool(
+            pinfo.get("colorName") or pinfo.get("skuCode"))
+        if not has_spec and _library_unit_price_grounded(grounded_detail, up):
+            continue
+        color_hint = ""
         if isinstance(pinfo, dict) and str(pinfo.get("colorName") or ""):
             color_hint = f"（规格 {pinfo.get('colorName')}）"
         return (
