@@ -106,6 +106,13 @@ modules:
         tests:
           - 'tests/test_briefing_{1}.py'
           - 'tests/test_{1}.py'
+      # 生产模块（issue #3993，M4-G）：测试放 tests/test_production/test_<模块>.py
+      # （pytest.ini 只收 test_*.py，故镜像目录内保留 test_ 前缀；通用规则会要求
+      #  tests/test_production/<源文件名>.py —— 那样不可被 pytest 收集，故显式登记本规则）
+      - pattern: 'backend/ai-agent-service/app/production/(.+)\.py'
+        tests:
+          - 'tests/test_production/test_{1}.py'
+          - 'tests/test_production/{1}.py'
       - pattern: 'backend/ai-agent-service/app/(.+)\.py'
         tests:
           - 'tests/test_{1}.py'
