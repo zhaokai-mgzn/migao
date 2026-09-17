@@ -772,6 +772,24 @@ _CASE_BM_005 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── BM-006 [NORMAL] 工人扫码报工 - 扫码/手输单号 → 本单工序 → 完成报工 → 完工提示（源: cases/bmini.yml）──
+_CASE_BM_006 = EvalCase(
+    id='BM-006',
+    legacy_id='',
+    title='工人扫码报工 - 扫码/手输单号 → 本单工序 → 完成报工 → 完工提示',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['工人扫加工单二维码（或手输单号）→ 老师傅看到本单工序：按部位分组展示「工序名 · 应做数量+单位 · 单价」→ 点「完成报工」→ 工序列推进 → 必完工序全绿显示「✅ 订单生产完成」'],
+    expectations=['direct_reply'],
+    data_checks=['二维码容错解析 order_id：裸单号 / migao://production/<id> / 带 query 的 URL 三种形态可解析，非法输入返回 null 且不发请求', '报工请求体逐字为冻结契约字段（worker_id/worker_name/qty/qualified_qty/work_type=normal），qty 默认=该工序应做数量', '报工失败（success=false）展示后端 message 且不清空工序列表；order_completed=true → 页面显示「✅ 订单生产完成」'],
+    skip_reason='纯前端单元测试（bmini-app tests/production-page.test.tsx + production-qr.test.ts），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['bmini', 'production', 'qr-report'],
+    persona='mibao',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── CT-001 [NORMAL] 分类树（源: cases/category.yml）──
 _CASE_CT_001 = EvalCase(
     id='CT-001',
@@ -5823,6 +5841,24 @@ _CASE_UI_042 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── UI-045 [NORMAL] 顾客端生产进度卡 — 进度%/当前工序/待完工序数/预计交付（不泄露内部信息，issue #3997）（源: cases/ui.yml）──
+_CASE_UI_045 = EvalCase(
+    id='UI-045',
+    legacy_id='',
+    title='顾客端生产进度卡 — 进度%/当前工序/待完工序数/预计交付（不泄露内部信息，issue #3997）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['顾客在小布对话里收到生产进度卡：显示加工单做到哪一步了（进度百分比）、当前在做哪道工序、还剩几道工序、预计什么时候交付'],
+    expectations=['direct_reply'],
+    data_checks=['进度百分比取 progress.percent；progress 缺省时按 已完/总数 推导，空态（无工序）显示「暂无生产进度」（不显示假进度、不空白）', '当前工序 = 第一个 status!=done 的工序；待完工序数 = status!=done 的工序数；交期字段缺省时不渲染交期行', '兼容两种载荷（M4-G-2 实装字段）：工序树 {positions[].operations[], progress:{total,done,percent}, expected_delivery_at} 与米宝精简进度 {progress_percent, current_operation, pending_operations[], total_operations, done_operations, expected_delivery_date}', '不泄露内部信息：工人姓名 / 计件单价 / 成本 / qr_token 不出现在卡片文案（内部计件与对外加工费两套账分离）', "MessageBubble 的 cardData.type='production_progress' 渲染该卡（未知卡片占位分支不被命中）"],
+    skip_reason='纯前端组件渲染由 jest 单测验证（frontend/mini-app/tests/production-progress-card.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ui', 'mini-app', 'production-progress', 'card'],
+    persona='xiaobu',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── UT-001 [NORMAL] 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值（源: cases/utils.yml）──
 _CASE_UT_001 = EvalCase(
     id='UT-001',
@@ -5899,6 +5935,7 @@ ALL_CASES = (
     _CASE_BM_003,
     _CASE_BM_004,
     _CASE_BM_005,
+    _CASE_BM_006,
     _CASE_CT_001,
     _CASE_CT_002,
     _CASE_CT_003,
@@ -6168,6 +6205,7 @@ ALL_CASES = (
     _CASE_UI_041,
     _CASE_UI_043,
     _CASE_UI_042,
+    _CASE_UI_045,
     _CASE_UT_001,
     _CASE_UT_002,
 )

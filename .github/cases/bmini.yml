@@ -1,6 +1,7 @@
-# cases/bmini.yml — B 端员工小程序登录域（issue #2977）
-# 来源：B 端 agent 手机版（微信小程序入口）员工绑定登录行为契约。
-# persona 不标记（admin-api 纯后端行为，不经 agent-eval LLM 冒烟，skip_reason 显式标注）。
+# cases/bmini.yml — B 端员工小程序域（issue #2977 登录；#3997 工人扫码报工）
+# 来源：B 端 agent 手机版（微信小程序入口）员工绑定登录行为契约 + 工人端扫码报工链路。
+# persona 按用例所属端标记：BM-001~005 为 admin-api 纯后端行为（不标记，skip_reason 显式标注）；
+# BM-006 为 B 端工人端（persona: mibao）。均不经 agent-eval LLM 冒烟。
 # 均为单元测试契约（AuthService.bminiLogin / WechatService bmini 渠道）。
 
 schema: "case-contract/1.0"
@@ -151,6 +152,39 @@ cases:
     traces:
       tests:
         - "frontend/bmini-app/tests/store-auth.test.ts"
+      ci:
+        - bmini-app.yml
+      verifies: []
+
+  - id: BM-006
+    legacy_id: ""
+    title: "工人扫码报工 - 扫码/手输单号 → 本单工序 → 完成报工 → 完工提示"
+    domains:
+      - bmini
+      - production
+      - frontend
+    persona: mibao
+    tier: normal
+    tags:
+      - bmini
+      - production
+      - qr-report
+    truths_ref:
+      - frontend-fix.no-api-change
+    user_inputs:
+      - "工人扫加工单二维码（或手输单号）→ 老师傅看到本单工序：按部位分组展示「工序名 · 应做数量+单位 · 单价」→ 点「完成报工」→ 工序列推进 → 必完工序全绿显示「✅ 订单生产完成」"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "二维码容错解析 order_id：裸单号 / migao://production/<id> / 带 query 的 URL 三种形态可解析，非法输入返回 null 且不发请求"
+      - "报工请求体逐字为冻结契约字段（worker_id/worker_name/qty/qualified_qty/work_type=normal），qty 默认=该工序应做数量"
+      - "报工失败（success=false）展示后端 message 且不清空工序列表；order_completed=true → 页面显示「✅ 订单生产完成」"
+    skip_reason: "纯前端单元测试（bmini-app tests/production-page.test.tsx + production-qr.test.ts），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-17 新增（issue #3997 M4-G-3）：消费 M4-G-2 冻结契约 GET/POST /api/admin/production/orders/{orderId}/operations[/{operationId}/report]；truths_ref 用 frontend-fix.no-api-change（本包不改后端 API；生产/扫码域暂无专属真值 key）"
+    traces:
+      tests:
+        - "frontend/bmini-app/tests/production-page.test.tsx"
+        - "frontend/bmini-app/tests/production-qr.test.ts"
       ci:
         - bmini-app.yml
       verifies: []
