@@ -262,11 +262,17 @@ python3.11 -m pytest tests/unit_ci_workflows/test_case_trust_gate.py -q # L0 守
 
 **未实装项**（见 `.github/case-trust-unimplemented.json`，**不写恒真规则凑数**）：
 每-PR 最低消减的**字面口径**（`scope=all_prs`，默认 `case_touching_prs` —— 见该文件登记的理由）、
-**未登记违规只报告不阻塞**（规则集变化/新用例带来的新码，需先清零才可 fail-closed）、
-`scripts/drift_audit.py` 的同款陈旧口径未同步（`DRIFT-AUDIT-STALE-DIFF-SCOPED`）、
 未知 `pre_clean.type` 静默跳过（#3797）、`pre_clean` 失败路径未折叠判据（#3797）、
 跨腿窄跑的运行期判定（#3822，属 runner 归因自动化即 #3483 的 T2）、
 **全库** persona 标注（有意不做的宽口径）、纯散文 `data_checks` 的**语义**质量（LLM 审计层）。
+
+> **已落地的两条（勿再照抄旧文）**：① 「未登记违规只报告不阻塞」已由 **#4046** 翻转为
+> fail-closed（全库判出、清单没有的码 ⇒ 阻塞）；② `scripts/drift_audit.py` 的同款陈旧口径
+> 已由 **#4045** 同步（全量对账 + 反向对账 + burn-down 预算，判据 **import 复用**
+> `case_trust_gate.reconcile_baseline` / `burn_down_verdict`）。两条都从
+> `.github/case-trust-unimplemented.json` 撤了登记 —— 留着就是与实现相反的假真值。
+> ⚠️ 本文件是 `migao-dev-flow` 技能的**同步副本**（版本戳已落后：副本 v1.3 / 权威源 1.31.0，
+> 章节差异由 `drift_audit` 的 `sync-copy` 判据持续报告）—— 完整同步待技能侧一并重渲染。
 
 ## 4. 部署
 - 合并到 main 自动触发 3 个部署（admin-api/ai-agent/frontend）+ post-deploy 冒烟。

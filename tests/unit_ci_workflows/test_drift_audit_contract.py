@@ -89,8 +89,13 @@ def _write(repo: Path, rel: str, content: str) -> None:
     p.write_text(content, encoding="utf-8")
 
 
-def mk_repo(tmp: Path, files: dict[str, str], *, commit: bool = True) -> Path:
-    """临时 git 仓库（分支 `main`，一次 base 提交）——夹具的**注入面**。"""
+def mk_repo(tmp: Path, files: dict[str, str], *, commit: bool = True,
+            surface_seed: bool = False) -> Path:
+    """临时 git 仓库（分支 `main`，一次 base 提交）——夹具的**注入面**。
+
+    `surface_seed=True` 会在 base 提交里多铺一个含**合规引用**的文件（见 `_seed_surface`）。
+    它必须进 base 提交（`git ls-files` 才算受管面）—— 事后写文件是 untracked，判据看不见。
+    """
     repo = tmp / "repo"
     repo.mkdir(parents=True, exist_ok=True)
     _git(repo, "init", "-q", "-b", "main")
@@ -98,10 +103,29 @@ def mk_repo(tmp: Path, files: dict[str, str], *, commit: bool = True) -> Path:
     _git(repo, "config", "user.name", "fixture")
     for rel, content in files.items():
         _write(repo, rel, content)
+    if surface_seed:
+        _write(repo, SURFACE_REL, _surface_body())
     if commit:
         _git(repo, "add", "-A")
         _git(repo, "commit", "-q", "-m", "base")
     return repo
+
+
+# 夹具的**受管引用面种子**：`ref-freshness` 的判定面非空（≥1 处引用），否则
+# `empty-surface` 会红 —— 那是**判据自身退化**的信号（`always=True`，永不进基线），
+# 不是本文件的被测对象。（实证：只要夹具仓库没有任何引用字面量，ref-freshness 的判定面
+# 就是 0 ⇒ 全量对账一上线就把这条硬漂移暴露出来。）
+SURFACE_REL = "scripts/fixture_surface.py"
+
+
+def _surface_body() -> str:
+    """**合规**的引用写法（`第 N 行` + `@<sha>`）：判定面 +1，且不产生任何漂移。
+
+    ⚠️ 被引对象用**本文件自己**：`REF_PATH` 的正则要求路径以 `[A-Za-z0-9_]` 起头（点开头的
+    `.agent-presets/...` **不被识别**）—— 用它当靶子会让判定面静默为 0 = 空断言。
+    """
+    return ('"""夹具种子：受管引用面非空。"""\n'
+            f"# 引用：`{SURFACE_REL}` **第 1 行**，`@d0724892`。\n")
 
 
 # ⚠️ 夹具里**不能出现字面量 `路径.ext:数字`**：dev-flow §18.1 说明这种写法会被
@@ -584,7 +608,7 @@ def test_baseline_only_shrinks_new_drift_blocks(tmp_path):
     repo = mk_repo(tmp_path, {
         SKILL_REL: SKILL_TMPL.format(version="1.28.0"),
         COPY_REL: COPY_TMPL.format(version="1.3"),
-    })
+    }, surface_seed=True)                    # 受管引用面非空（否则 empty-surface 硬漂移）
     only = ("--only", "sync-copy,ref-freshness")
     rc1, out1, _ = run(repo, "--check", *only)
     assert rc1 == 1, out1
@@ -633,24 +657,217 @@ def test_regen_baseline_requires_reason(tmp_path):
     assert "必须带 --reason" in p.stdout + p.stderr
 
 
-def test_stale_baseline_entry_warn_then_strict_red(tmp_path):
-    """基线陈旧项：PR 门禁**只告警**（#3846 裁定：硬阻塞会把修好的人卡在别人的文件上），
-    定时审计（`--strict-stale`）下**红**。"""
+def test_stale_baseline_entry_blocks_full_reconciliation(tmp_path):
+    """**#4045 的口径反转**：陈旧基线条目从「只在本次 diff 命中时才红」（且 PR 门禁上只告警）
+    改为**全量对账一律阻塞**。
+
+    旧口径的病（#4009 裁定 1 / #4031 第一实例）：条目陈旧与否只看 `changed ∩ 该文件`——
+    于是**只要没人再碰那个文件**，条目就永远躺着 = 永久豁免。本仓实测形态：
+    `…|local_runner.py#3899|bare` 在引用它的测试改掉后仍在清单里，`--check` 全绿。
+
+    红证（改前不报 / 改后报）：条目所在文件 `COPY_REL` **不在 base…HEAD 的 diff 里**
+    （夹具仓库工作区干净），旧口径 `stale_blocking == 0` ⇒ `rc == 0`；新口径必红。
+    负例（R2）：重生成基线（把已不再漂移的条目删掉）后 ⇒ 不得再红。
+    """
     repo = mk_repo(tmp_path, {
         SKILL_REL: SKILL_TMPL.format(version="1.28.0"),
         COPY_REL: COPY_TMPL.format(version="1.3"),
-        ".github/cases/order.yml": CASE_TMPL.format(
-            extra='pre_clean:\n      - type: customer_tag_remove\n        customer_index: 0'),
     })
-    run(repo, "--regen-baseline", "--reason", "首跑基线", "--only", "mutable-locator")
-    # 修好那条可变定位（改文件 = 本次 diff 命中该文件的形态）
-    _write(repo, ".github/cases/order.yml", CASE_TMPL.format(extra=""))
-    rc, out, rep = run(repo, "--check", "--only", "mutable-locator")
-    assert rc == 0, out
-    assert check_of(rep, "mutable-locator")["stale_baseline_entry"], out
-    assert rep["summary"]["stale_baseline_entry"] >= 1
-    rc2, out2, _ = run(repo, "--check", "--only", "mutable-locator", "--strict-stale")
-    assert rc2 == 1, out2
+    run(repo, "--check", "--only", "sync-copy", "--regen-baseline", "--reason", "首跑基线")
+    assert json.loads((repo / "scripts" / "drift_audit_baseline.json")
+                      .read_text(encoding="utf-8"))["entries"]["sync-copy"], "夹具没建起条目"
+    # 修好那条漂移（版面戳改对）——**但工作区干净、文件不在 diff 里**（旧口径的豁免条件）
+    _write(repo, COPY_REL, COPY_TMPL.format(version="1.28"))
+    rc, out, rep = run(repo, "--check", "--only", "sync-copy")
+    assert rc == 1, f"陈旧基线条目未阻塞（全量对账未生效）：\n{out}"
+    chk = check_of(rep, "sync-copy")
+    assert rep["summary"]["stale_baseline_blocking"] == 1, out
+    assert chk["stale_baseline_entry"], out
+    assert any("全量对账" in (e.get("hint") or "") for e in chk["stale_baseline_entry"]), out
+    # 负例（R2）：机械修复（重生成 = 删掉已不再漂移的条目）后 ⇒ 绿
+    run(repo, "--check", "--only", "sync-copy", "--regen-baseline", "--reason", "销账陈旧条目")
+    rc2, out2, _ = run(repo, "--check", "--only", "sync-copy")
+    assert rc2 == 0, out2
+
+
+def test_referenced_stale_entry_is_committed_as_a_red_proof(tmp_path):
+    """**真实存量证据**：本仓清单里那条 `…|local_runner.py#3899|bare` 必须是**可执行的红证**。
+
+    形态（`git log -S` 实测）：#4034（`9b12e1d7`）把引用它的那行删掉 ⇒ 引用没了、条目还在。
+    这条锁的是「全量对账」能看见**别的包留下的**陈旧条目（不是本 PR 自己造的），
+    且该条目的病根写在注册表里 —— 不能被静默改写成"已核销"。
+    """
+    p = REPO_ROOT / "scripts" / "drift_audit_baseline.json"
+    if not p.is_file():
+        pytest.skip("本分支尚未提交基线（首次落地时由 --regen-baseline 生成）")
+    data = json.loads(p.read_text(encoding="utf-8"))
+    entries = data["entries"]["ref-freshness"]
+    assert not [k for k in entries if "test_eval_stack_seed_parity.py" in k], (
+        "陈旧条目仍在清单里 —— 本项（#4045）的交付之一就是把它销账")
+    assert any(k.endswith("|bare") for k in entries), (
+        "夹具的前提失效：ref-freshness 的存量里已经没有 `|bare` 条目了 —— "
+        "请换一条**实测仍漂移**的条目重写本红证（前提不新鲜 = 空断言）")
+
+
+def test_dropped_still_violating_entry_blocks(tmp_path):
+    """反向对账（#4045）：`--base` 清单里记着、**现在仍然漂移**却被删掉 ⇒ 阻塞。
+
+    没有这一条，「只许缩短」就退化成「随便删都算缩短」—— 而 burn-down 预算恰恰在施压让人
+    删条目（R4：新违规只有两个出口 —— 本次修掉 / 开独立 issue 登记）。
+
+    红证：夹具仓库的基线条目是**已提交**的（= `origin/main` 那一份的形状），工作副本里把它
+    删掉并提交（不在 `--base` 分支上）⇒ 必红，且报出 `dropped_baseline_entry`。
+    """
+    repo = mk_repo(tmp_path, {
+        SKILL_REL: SKILL_TMPL.format(version="1.28.0"),
+        COPY_REL: COPY_TMPL.format(version="1.3"),
+    }, surface_seed=True)                    # 受管引用面非空（否则 empty-surface 硬漂移）
+    only = ("--only", "sync-copy,ref-freshness")
+    run(repo, "--check", *only, "--regen-baseline", "--reason", "首跑基线")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "把基线提交进 base（模拟 origin/main 上已有一份）")
+    line = f"引用：`{_NOWHERE}:3`\n"          # 新漂移（悬空引用）⇒ 基线会重生成出这条
+    _write(repo, COPY_REL, COPY_TMPL.format(version="1.28") + "\n" + line)
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "PR 改动：改对版本戳 + 引入一处新漂移")
+    run(repo, "--check", *only, "--regen-baseline", "--reason", "把新漂移记进基线")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "把含 dangling 的基线也提交进 base")
+    # 静默删掉那条**仍然漂移**的条目（工作副本 = 被审对象，base 那一份仍有它）
+    p = repo / "scripts" / "drift_audit_baseline.json"
+    data = json.loads(p.read_text(encoding="utf-8"))
+    kept = [k for k in data["entries"]["ref-freshness"] if k.endswith("|dangling")]
+    assert kept, f"夹具没造出 dangling 条目：{list(data['entries']['ref-freshness'])}"
+    for k in kept:
+        del data["entries"]["ref-freshness"][k]
+    p.write_text(json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+                 encoding="utf-8")
+    rc, out, rep = run(repo, "--check", *only)
+    assert rc == 1, f"删掉「仍在漂移」的条目却未阻塞 ⇒ 只许缩短失守（R4）：\n{out}"
+    chk = check_of(rep, "ref-freshness")
+    dropped = chk["dropped_baseline_entry"]
+    assert any(k == e.get("key") for k in kept for e in dropped), (
+        f"被删的条目没进 `dropped_baseline_entry`：kept={kept} / dropped={dropped}")
+    assert rep["summary"]["dropped_baseline_entry"] >= 1, out
+
+
+def test_burn_down_budget_blocks_when_baseline_touched_and_nothing_burned(tmp_path):
+    """burn-down 预算（#4045 交付 2）：动了基线（判据面）却**一条没减** ⇒ 阻塞。
+
+    `scope=case_touching_prs`（沿用 gate 的取值）= 只对本 PR **动了判据面**（基线文件本身 / 引入新的存量条目）
+    的 PR 生效 —— 与 case-trust 的 `case_touching_prs` 同一条设计（范围放大到"任何改了受管面
+    的 PR"会让无关 PR 全红 = 假红）。所谓「一条没减」= 只改注释、条目数不变。
+    负例（R2）：净减 ≥1（重生成时销掉一条陈旧条目）⇒ 不得红。
+    """
+    repo = mk_repo(tmp_path, {
+        SKILL_REL: SKILL_TMPL.format(version="1.28.0"),
+        COPY_REL: COPY_TMPL.format(version="1.3"),
+        ".github/cases/order.yml": CASE_TMPL.format(extra=""),   # 让 mutable-locator 也有面
+    }, surface_seed=True)                    # 受管引用面非空（否则 empty-surface 硬漂移）
+    only = ("--only", "sync-copy,ref-freshness")
+    run(repo, "--check", *only, "--regen-baseline", "--reason", "首跑")
+    bp = repo / "scripts" / "drift_audit_baseline.json"
+    # ⚠️ 预算**没得减就不该红**（gate 的「清单已清零 ⇒ 自动满足」）⇒ 夹具必须先有**存量豁免**，
+    # 否则这条判据永远绿（空断言）。`v1.3` 的版面戳差异就是那一条存量。
+    seeded = json.loads(bp.read_text(encoding="utf-8"))["entries"]
+    assert sum(len(v) for v in seeded.values()) >= 1, f"夹具没造出存量条目：{seeded}"
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "基线进 `main`（base；此后预算才对后续 PR 生效）")
+    # ⚠️ PR 必须开在**另一个分支**上：本仓的铁律是"禁止直推 main"，夹具若把改动也提交到 main，
+    # `git diff main...HEAD` 恒为空 ⇒ 「本 PR 动了判据面」无从判定（`changed_files` 为空 ⇒
+    # 预算被正确跳过，而不是"该红不红"）。实证：首个版本正是踩了这个。
+    _git(repo, "checkout", "-q", "-b", "pr")
+    # ① 动了基线文件，但条目一个没减 ⇒ 预算未达标
+    data = json.loads(bp.read_text(encoding="utf-8"))
+    data["reason"] = "只改了说明、条目没减"
+    bp.write_text(json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+                  encoding="utf-8")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "PR：只动基线说明、条目一条没减")
+    rc, out, rep = run(repo, "--check", *only)
+    assert rc == 1, f"动了判据面却一条没减，预算未红：\n{out}"
+    bd = rep["summary"]["burn_down"]
+    assert bd["blocking"], out
+    assert bd["in_scope"], f"scope 未命中（自造的 scope 名会被 gate 静默忽略）：{bd}"
+    assert any("预算未达标" in r for r in bd["reasons"]), out
+    # ② 负例（R2）：修好那条存量漂移 ⇒ 净缩 ≥1 ⇒ 不得红
+    _write(repo, COPY_REL, COPY_TMPL.format(version="1.28"))
+    run(repo, "--check", *only, "--regen-baseline", "--reason", "销账")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "PR：销掉一条存量漂移（净缩 1）")
+    rc2, out2, rep2 = run(repo, "--check", *only)
+    assert rc2 == 0, f"净缩后仍红（假红）：\n{out2}"
+    assert rep2["summary"]["burn_down"]["net"]["entries"][0] > 0, out2
+
+
+@pytest.mark.parametrize("tamper", ["stale", "dropped"])
+def test_reconcile_conclusion_comes_from_the_single_source(tmp_path, tamper: str):
+    """**不复制第二套口径**（#4045 交付 3）：把判据单一源**换成被篡改的副本** ⇒ drift_audit
+    的结论必须跟着变。
+
+    病根（#4045 的起因）：两处各写一套判据就必然漂移 —— 本脚本曾自称「沿用 case-trust 的
+    `stale_baseline_entries` 口径」，而那边已被 #4031 改成全量对账。故判据本体只有一处
+    （`.github/case_trust_gate.py` 的 `reconcile_baseline`），drift_audit 只做形态搬运。
+
+    注入方式：`drift_audit._load_gate_module()` 定位在**本仓** `.github/case_trust_gate.py`
+    （不跟 `--repo` 走，判据不该被被审仓库换掉），所以这里**直接用函数级注入**验证 ——
+    把该模块的 `reconcile_baseline` 换成「陈旧恒空」/「被删恒空」的桩，再跑 `compare_baseline`：
+    对应方向的阻塞必须消失。**若 drift_audit 自己藏了一套判据，结论不会变 ⇒ 本测试红。**
+    """
+    import importlib.util as _u
+    spec = _u.spec_from_file_location("drift_audit_under_test", DRIFT)
+    drift = _u.module_from_spec(spec)
+    # `dataclass` 要能在 `sys.modules` 里找到本模块（否则 `@dataclass` 当场抛
+    # AttributeError：`sys.modules.get(cls.__module__)` 为 None）。
+    sys.modules["drift_audit_under_test"] = drift
+    spec.loader.exec_module(drift)
+    gate = drift._load_gate_module()
+    # 两侧各自的红证输入（陈旧 / 被删是**两个方向**，同一组输入证不了两个 —— 首个版本即踩）：
+    # · 陈旧：清单里记着 `k1`、而本轮重算不再漂移 ⇒ 该条陈旧；
+    # · 被删：`origin/main` 的清单里记着 `k1`、**现在仍然漂移**，但本 PR 的清单里没有它。
+    cur = {"k1": 1} if tamper == "stale" else {}   # 本 PR 的清单（被删方向：这条被删了）
+    base = {"k1": 1}                    # `origin/main` 那一份（两个方向都记着 `k1`）
+    res = drift.CheckResult("ref-freshness")
+    if tamper == "dropped":
+        # 反向对账要「仍然漂移」才是**新增豁免** ⇒ 本轮重算必须命中 `k1`。
+        # （陈旧方向反过来：重算 0 命中 ⇒ 记着的码已不再命中。两个方向的 `now` 相反，
+        #   这正是首个版本用同一组输入证不了两个的原因。）
+        res.findings.append(drift.Finding("k1", "（夹具）仍漂移"))
+    real = gate.reconcile_baseline
+
+    def _stub(*a, **kw):
+        out = real(*a, **kw)
+        out[tamper] = []
+        return out
+
+    gate.reconcile_baseline = _stub
+    # ⚠️ 必须连 `_load_gate_module` 一起钉住：它每次调用都**重新 exec** 单一源 ⇒ 只改那一次
+    # 加载出来的模块对象，下一次调用会拿到一份干净的（补丁静默失效 = 空断言）。
+    real_loader = drift._load_gate_module
+    drift._load_gate_module = lambda: gate
+    try:
+        cmp_ = drift.compare_baseline(res, base, {"copy.md"}, recorded_entries=cur,
+                                      base_check_entries=base)
+    finally:
+        gate.reconcile_baseline = real
+        drift._load_gate_module = real_loader
+    if tamper == "stale":
+        assert cmp_["stale_blocking"] == [], (
+            f"判据源被换成「stale 恒空」后仍报阻塞 ⇒ drift_audit 藏了第二套「陈旧」判据"
+            f"（口径必然再分叉）：{cmp_}")
+    else:
+        assert cmp_["dropped"] == [], (
+            f"判据源被换成「dropped 恒空」后仍报被删 ⇒ drift_audit 藏了第二套反向对账：{cmp_}")
+    # 反向：不篡改时同一组输入**必须**报出该方向的项（避免"永远不报"冒充通过）
+    cmp2 = drift.compare_baseline(res, base, {"copy.md"}, recorded_entries=cur,
+                                  base_check_entries=base)
+    if tamper == "stale":
+        assert cmp2["stale_blocking"] == [("k1", 1)], cmp2
+    else:
+        assert [(d["key"], d["count"]) for d in cmp2["dropped"]] == [("k1", 1)], (
+            f"DBG cur={cur} base={base} stale={cmp2['stale_blocking']}")
+        assert cmp2["stale_blocking"] == [], (
+            "「被删」方向不该顺带报陈旧（两个判据混在一起 = 归因错）：" + str(cmp2))
 
 
 def test_baseline_entry_keys_have_no_line_numbers(tmp_path):

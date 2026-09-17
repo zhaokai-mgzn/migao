@@ -20,11 +20,19 @@
   python3 scripts/drift_audit.py --list-checks         # 打印判据集合（护栏清单，机器可读）
   python3 scripts/drift_audit.py --repo <path> --base <rev> --offline   # 供 L0 夹具使用
 
-**基线只许缩短**（防僵化）：
+**基线只许缩短**（防僵化，#4045 起=**全量对账** + burn-down 预算）：
   · 新增漂移（now > base，或出现新 key）⇒ `--check` 非零退出（fail-closed）；
   · 存量漂移（now == base）⇒ 打印放行；
   · 销账（base > now > 0）⇒ 打印并提示可 `--regen-baseline`；
-  · 条目已归零但仍在清单里（base > 0 == now）⇒ **红**（豁免一条不存在的漂移 = 未来的假真值）。
+  · 条目已归零但仍在清单里（base > 0 == now）⇒ **阻塞**（豁免一条不存在的漂移 = 未来的假真值）。
+    ⚠️ **不限本次 diff 命中**：只要清单里还躺着一条已不再漂移的条目就红 —— 否则「没人再碰那个文件」
+    就是永久豁免（旧口径的自述注释「沿用 `case_trust_gate` 的 `stale_baseline_entries` 口径」
+    在 #4031 之后已成假真值，见 #4045）；
+  · `--base` 清单里记着、现在**仍漂移**却被删掉 ⇒ **阻塞**（删条目 = 偷偷缩短）；
+  · burn-down 预算：`scope=surface_touching_prs` 的 PR 每 PR 至少净缩 `per_pr_min` 条。
+  **判据本体不在本文件**：调 `.github/case_trust_gate.py` 的 `reconcile_baseline` /
+  `burn_down_verdict`（import 复用，避免第二份口径；本脚本只做 `{key: 计数}` ⇄ `{case_id: [码]}`
+  的形态搬运）。
   `--regen-baseline` 必须带 `--reason`，理由写进基线 JSON（PR 里要说明为什么）。
 
 **为什么不做「语义级引用命中」**（诚实登记，勿当已实装）：
@@ -37,6 +45,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.util
 import json
 import os
 import re
@@ -1089,15 +1098,148 @@ def _counts(findings: list[Finding]) -> dict[str, int]:
     return out
 
 
-def compare_baseline(result: CheckResult, base_entries: dict[str, int],
-                     changed: set[str] | None = None) -> dict[str, list]:
-    """返回 {new, known, paydown, stale, stale_blocking}。**基线只许缩短**的判定全在这里。
+def _load_gate_module():
+    """加载 `.github/case_trust_gate.py`（**判据的单一真相源**，#4045）。
 
-    ⚠️ **`stale` 只在本次 diff 命中该条目时才阻塞**（沿用 `.github/case_trust_gate.py` 的
-    `stale_baseline_entries` 口径，避免"别人把它修好了，本门禁反而判红并挡住他们的 PR"）：
-    条目 key 的首段是文件路径；`changed` 为本 PR 改动文件集。`changed=None` ⇒ 不判定阻塞
-    （只报告），用于纯审计模式。
+    为什么 import 而不是复制：本脚本原先的 `stale_blocking` 注释自称「沿用
+    `case_trust_gate` 的 `stale_baseline_entries` 口径」，而 #4031 已把那边改成
+    **全量对账 + 反向对账 + burn-down 预算** ⇒ 两份口径**已分叉**，那句注释成了
+    **假真值**。现在「陈旧即红」的判据只有一处（`case_trust_gate.reconcile_baseline` /
+    `burn_down_verdict`），本脚本只做**形态搬运**（`{key: 计数}` ⇄ `{case_id: [码]}`）。
+
+    用 `importlib` 按**路径**加载：不往 `sys.path` 里塞 `.github/`（那是 case-trust 自己的
+    加载方式，本项目其余脚本没有这个约定），也不依赖当前工作目录。
     """
+    path = Path(__file__).resolve().parents[1] / ".github" / "case_trust_gate.py"
+    spec = importlib.util.spec_from_file_location("case_trust_gate", path)
+    if spec is None or spec.loader is None:  # pragma: no cover —— 路径算错才会发生
+        raise RuntimeError(f"加载不了判据单一源：{path}")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+# ⚠️ 「陈旧即红」的判据**不在本文件**：调 `case_trust_gate.reconcile_baseline`（#4045）。
+# 本脚本只把 `{条目 key: 计数}` 摊平成那边认识的 `violations_by_case` 形态。
+DRIFT_RECONCILE_HINT = (
+    f"全量对账（#4045）—— 基线条目**只许缩短**：修法是机械的 `{REGEN_COMMAND}`；"
+    "本 PR 若确实要保留某条，就得让它在**全库重算**里仍然真的漂移。"
+)
+
+
+def _codes_of(entries: dict[str, int]) -> dict[str, list[str]]:
+    """`{key: 计数}` → `{key: [码, …]}`（每个计数展开成**互不相同**的码）。
+
+    为什么要展开：计数是「豁免面」的真实大小，只写成 `{key}` 会让 `5 → 3` 的净缩
+    变成「key 仍在 ⇒ 不陈旧」= **永久豁免**（#4031 治的正是这个）。展开后
+    `5 - 3 = 2` 条码消失 ⇒ 全量对账如实判陈旧，与 case-trust 的码级差集**同构**。
+    """
+    out: dict[str, list[str]] = {}
+    for k, n in (entries or {}).items():
+        if n > 0:
+            out[k] = [k if n == 1 else f"{k} × {i}" for i in range(1, n + 1)]
+    return out
+
+
+def _as_violations(codes: dict[str, list[str]]) -> dict[str, list[dict]]:
+    """形态适配：case-trust 的**裁决输入**是 `{id: [{"code": …}]}`（`judge_case` 的产物），
+    本脚本的码就是字符串 ⇒ 只做这一层包装，**不碰任何判据**。"""
+    return {k: [{"code": c} for c in v] for k, v in codes.items()}
+
+
+def _as_baseline(entries: dict[str, int]) -> dict:
+    """形态适配：case-trust 的**清单**是 `{"violations": {id: {"codes": [...]}}}`，
+    本脚本的是 `{条目 key: 计数}` ⇒ 只做这一层包装，**不碰任何判据**。
+
+    ⚠️ 盲目传 `{id: [...]}`（不经 `violations` 包一层）会让 `_recorded_codes` 解析不到码 ⇒
+    清单**看起来是空的** ⇒ 陈旧项静默消失（实测踩过一次：`recorded_entries: 0`）。
+    """
+    return {"violations": {k: {"codes": v} for k, v in _codes_of(entries).items()}}
+
+
+def _budget_baseline(entries: dict[str, dict[str, int]], burn_down: Any = None) -> dict:
+    """把 `{判据: {条目: 计数}}` 摊平成 `burn_down_verdict` 认识的清单形态。
+
+    ⚠️ 这个包装不是可选的：`_count_exemptions` 只读 `violations` 键 ⇒ 直接喂本脚本的
+    `{"entries": …}` 会让**豁免面恒为 0**，于是「每 PR 最低消减」永远显示"已清零、自动满足"
+    = **预算形同虚设**（实测踩过一次：`in_scope=True` 却不红）。
+    """
+    flat: dict[str, int] = {}
+    for check_entries in entries.values():
+        for k, n in (check_entries or {}).items():
+            flat[k] = flat.get(k, 0) + n
+    out = _as_baseline(flat)
+    if burn_down is not None:
+        out["burn_down"] = burn_down
+    return out
+
+
+def reconcile_baseline(check_id: str, now_entries: dict[str, int],
+                       cur_entries: dict[str, int],
+                       base_entries: dict[str, int]) -> dict:
+    """**全量对账**（#4045）：复用 `case_trust_gate.reconcile_baseline`，**不复制判据**。
+
+    · `stale`（阻塞）：清单里记着、**全库重算**里已不漂移 ⇒ 必须移除。**不限本次 diff**：
+      这正是「永久豁免」的来源（实证：基线 `…|local_runner.py#3899|bare` 在引用它的测试
+      改掉后仍躺在清单里，旧口径 `--check` 只有告警，没人会因此变红）。
+    · `dropped`（阻塞）：`--base` 清单里记着、**现在仍然漂移**，却被本 PR 删掉 ⇒
+      **删条目 = 偷偷缩短**（没有这一条，「只许缩短」就退化成「随便删都算缩短」，而
+      burn-down 预算恰恰在施压让人删条目）。
+
+    `now_entries` = 本判据**全库**重算的 `{key: 计数}`；`cur_entries` = 当前清单里该判据的条目；
+    `base_entries` = `--base`（`origin/main`）那一份。
+    """
+    now, cur, base = _codes_of(now_entries), _codes_of(cur_entries), _codes_of(base_entries)
+    recon = _load_gate_module().reconcile_baseline(_as_baseline(cur_entries),
+                                                  _as_violations(now),
+                                                  _as_baseline(base_entries))
+    stale_keys = {c for s in recon["stale"] for c in s["removed_codes"]}
+    dropped_keys = {c for d in recon["dropped"] for c in d["dropped_codes"]}
+    # 判据来自上面那次调用；这里只把结果**归位**到 drift_audit 的形态（`{key: 计数}`）并
+    # 加上本门的修法文案 —— 不重算一遍「是否陈旧」（那才是第二份判据）。
+    stale = [{"key": k, "count": cur_entries[k], "check": check_id,
+              "hint": f"基线条目 `{k}` 已不再漂移（**全量对账**，不再限于本次 diff 命中）"
+                      f"—— 请从 {DEFAULT_BASELINE} 移除或收窄，命令：{REGEN_COMMAND}"}
+             for k in sorted(stale_keys)]
+    dropped = [{"key": k, "count": base_entries[k], "check": check_id,
+                "hint": f"`origin/main` 的清单里记着 `{k}`（{base_entries[k]} 处），"
+                        f"且**现在仍然漂移**，却被本 PR 从清单删掉 ⇒ **新增豁免**（基线只许"
+                        f"缩短；R4：新违规只有两个出口 —— 本次修掉 / 开独立 issue 登记）。"
+                        f"请恢复该条，或在本次把漂移修掉。"}
+               for k in sorted(dropped_keys)]
+    return {"stale": stale, "dropped": dropped,
+            "blocking": bool(stale or dropped),
+            "gate_blocking": bool(recon["blocking"])}
+
+
+def compare_baseline(result: CheckResult, base_entries: dict[str, int],
+                     changed: set[str] | None = None,
+                     recorded_entries: dict[str, int] | None = None,
+                     base_check_entries: dict[str, int] | None = None,
+                     unverifiable: bool = False) -> dict[str, list]:
+    """返回 {new, known, paydown, stale, stale_blocking, dropped, reconcile}。
+    **基线只许缩短**的判定全在这里。
+
+    ⚠️ **`stale` 的阻塞口径 = 全量对账**（#4045）：清单里任何「已不再漂移」的条目都阻塞，
+    **不再限于本次 diff 命中**（旧口径见 issue #4045 与未实装登记 `DRIFT-AUDIT-STALE-DIFF-SCOPED`，
+    该登记已随本项落地撤销）。`changed` 仍用于**新增**漂移的面内/面外区分（`_in_scope`：
+    面外新增不阻塞本 PR）与「本次有没有动判据面」（burn-down 的 `scope`），与陈旧判定无关。
+    `changed=None`（`--stale-scope none`，无 PR 上下文的纯审计）⇒ 不判阻塞，只报告。
+
+    `unverifiable`（本次**没能重算**这条判据）⇒ 条目进 `unverifiable_stale` 而**不进**
+    `stale`：没重算 ≠ 已不漂移（"没跑"必须长得像"没跑"）。**实证**：`--offline` 时
+    `heartbeat` 的 gh 查询全部返回「未知」⇒ `never-succeeded` 这类条目看起来归零，
+    若无条件判陈旧就会**凭空判红**（全量对账的正确性依赖"输入真的重算过"）。
+
+    四个入参各司其职，**混用任一个都会造出假红或永久豁免**（首个实现即踩，故写清）：
+    · `base_entries` —— 新增/放行/销账的**计数参照**（新漂移的 delta 由它算）；
+      同时充当 `recorded`/`base` 的缺省值（调用方没分别传时三者合一，见下）；
+    · `recorded_entries` —— **正向对账（陈旧）** 的参照 = **本 PR 的清单**（记了却不再漂移）；
+    · `base_check_entries` —— **反向对账（被删）** 的参照 = `--base` 那一份（缺省退回
+      `recorded_entries`：`--base` 上还没有清单时不存在「相对 base 被删」这回事）。
+    """
+    recorded = recorded_entries if recorded_entries is not None else base_entries
+    reconcile_base = base_check_entries if base_check_entries is not None else recorded
     now = _counts(result.findings)
     new, new_out, known, paydown, stale = [], [], [], [], []
     for k, n in sorted(now.items()):
@@ -1114,14 +1256,20 @@ def compare_baseline(result: CheckResult, base_entries: dict[str, int],
             known.append((k, n))
         else:
             paydown.append((k, b - n))
-    stale_blocking = []
-    for k, b in sorted(base_entries.items()):
-        if now.get(k, 0) == 0 and b > 0:
-            stale.append((k, b))
-            if changed is not None and _entry_file(k) in changed:
-                stale_blocking.append((k, b))
+    recon = reconcile_baseline(result.check_id, now, recorded, reconcile_base)
+    # ⚠️ **陈旧/被删一律以全量对账的结论为准**（`recon`），不在这里另算一套：
+    # · 阻塞只在有 PR 上下文（`changed is not None`）时生效 —— `--stale-scope none` /
+    #   `--regen-baseline` 声明了「没有 PR 上下文」，此时只报告；
+    # · 且只认**本次真的跑过**的判据（`now` 为空 ⇒ 该判据本轮没跑 ⇒ 不得读成「已不漂移」：
+    #   "没跑"必须长得像"没跑"，否则 `--only` 会凭空产出陈旧项 = 假红）。
+    stale = [(s["key"], s["count"]) for s in recon["stale"]]
+    unverifiable_stale = stale if unverifiable else []
+    stale = [] if unverifiable else stale
+    stale_blocking = stale if changed is not None else []
     return {"new": new, "new_out_of_scope": new_out, "known": known, "paydown": paydown,
-            "stale": stale, "stale_blocking": stale_blocking}
+            "stale": stale, "stale_blocking": stale_blocking,
+            "unverifiable_stale": unverifiable_stale,
+            "dropped": recon["dropped"], "reconcile": recon}
 
 
 def _entry_file(key: str) -> str:
@@ -1160,10 +1308,19 @@ def changed_files(a: Audit) -> set[str]:
 
 
 def run_audit(a: Audit, baseline: dict, only: list[str] | None,
-              changed: set[str] | None = None) -> dict:
-    base_entries_all = baseline.get("entries") or {}
+              changed: set[str] | None = None,
+              base_baseline: dict | None = None) -> dict:
+    """跑全部判据并做**全量对账 + burn-down 预算**（#4045）。
+
+    `base_baseline` = `--base`（`origin/main`）那一份基线：反向对账（「记着、仍漂移、
+    却被删掉」）与 burn-down 的**生效配置**都只认它（否则本 PR 改自己的清单就本次生效
+    = 自证式豁免）。**`--base` 上没有基线时退回当前那份**（首次落地 / 新仓 / 夹具仓库的形态）：
+    此时不存在"相对 base 被删"这回事，要把 `stale` 判成「只报告」而不是**凭空判红**。
+    """
+    cur_entries_all = dict(baseline.get("entries") or {})
+    base_entries_all = dict((base_baseline or {}).get("entries") or {}) or None
     for c in CHECKS:
-        base_entries_all.setdefault(c.id, {})
+        cur_entries_all.setdefault(c.id, {})
     out = {
         "schema": SCHEMA,
         "policy_version": POLICY_VERSION,
@@ -1178,6 +1335,7 @@ def run_audit(a: Audit, baseline: dict, only: list[str] | None,
     }
     new_total = new_out_total = 0
     known_total = paydown_total = stale_total = stale_block_total = 0
+    dropped_total = unverifiable_total = 0
     for c in CHECKS:
         if only and c.id not in only:
             continue
@@ -1188,14 +1346,35 @@ def run_audit(a: Audit, baseline: dict, only: list[str] | None,
                               error=f"{type(exc).__name__}: {exc}")
         if res.status != "error" and res.status != "unknown" \
                 and res.evaluated < c.min_evaluated:
+            # `always=True`（永不进基线、也不允许存量放行）：它是**护栏自身退化**的信号
+            # （判定面为空 ⇒ 该判据恒真 ⇒ 空断言），不是"某条漂移"。记进基线 = 把
+            # 「我的护栏曾经空跑」变成永久豁免 —— 而 #4045 的全量对账会把它读成
+            # 「已不再漂移的陈旧条目」⇒ 凭空判红（夹具实测：
+            # `ref-freshness|empty-surface` 在判定面恢复后消失 ⇒ 被判陈旧）。
             res.findings.append(Finding(
                 f"{c.id}|empty-surface",
-                f"判定面为 {res.evaluated}（下界 {c.min_evaluated}）—— 空集会让护栏恒真", True))
+                f"判定面为 {res.evaluated}（下界 {c.min_evaluated}）—— 空集会让护栏恒真",
+                True, always=True))
         env_res = [f for f in res.findings if f.env or f.always]
-        cmp_ = compare_baseline(res, base_entries_all.get(c.id, {}), changed)
+        # 两个参照物（**别混用**，混用会造出假红/永久豁免）：
+        # · 计数参照 `base_entries`：`--base` 上有基线就以它为准（新漂移的 delta 由它算）；
+        #   没有就退回当前那份（首次落地 / 夹具仓库：还没有"相对 base 的删改"）；
+        # · 正向对账参照 `recorded`：**清单本身**（陈旧 = 清单里记了却不再漂移）；
+        # · 反向对账参照：`--base` 那一份（缺省退回清单本身）。
+        recorded = cur_entries_all.get(c.id, {})
+        base_entries = base_entries_all.get(c.id, {}) if base_entries_all is not None \
+            else dict(recorded)
+        # 本次**没能重算**这条判据 ⇒ 它的旧条目不得读成「已不漂移」（没跑 ≠ 陈旧）：
+        # · 判定面为空（`empty-surface`）：这条判据的输入没了，结论无从谈起；
+        # · 需要网络而本次离线：`heartbeat` 的 gh 查询全返「未知」⇒ `never-succeeded`
+        #   这类条目看起来归零，无条件判陈旧就是**凭空判红**。
+        unverifiable = c.network and a.offline
+        cmp_ = compare_baseline(res, base_entries, changed, recorded_entries=recorded,
+                                base_check_entries=(base_entries_all or {}).get(c.id, {}),
+                                unverifiable=unverifiable)
         if res.status == "error":
             status = "error"
-        elif cmp_["new"] or cmp_["stale_blocking"] or env_res:
+        elif cmp_["new"] or cmp_["stale_blocking"] or cmp_["dropped"] or env_res:
             status = "new-drift"
         elif res.status == "unknown":
             status = "unknown"
@@ -1210,6 +1389,8 @@ def run_audit(a: Audit, baseline: dict, only: list[str] | None,
         paydown_total += len(cmp_["paydown"])
         stale_total += len(cmp_["stale"])
         stale_block_total += len(cmp_["stale_blocking"])
+        dropped_total += len(cmp_["dropped"])
+        unverifiable_total += len(cmp_["unverifiable_stale"])
         out["checks"].append({
             "id": c.id,
             "invariant": c.invariant,
@@ -1226,8 +1407,16 @@ def run_audit(a: Audit, baseline: dict, only: list[str] | None,
                                        for k, n in cmp_["new_out_of_scope"]],
             "known_drift": [{"key": k, "count": n} for k, n in cmp_["known"]],
             "paydown": [{"key": k, "delta": n} for k, n in cmp_["paydown"]],
-            "stale_baseline_entry": [{"key": k, "count": n} for k, n in cmp_["stale"]],
+            "stale_baseline_entry": [
+                {"key": k, "count": n, "check": c.id,
+                 "hint": next((s["hint"] for s in cmp_["reconcile"]["stale"]
+                               if s["key"] == k), "")}
+                for k, n in cmp_["stale"]],
+            "stale_baseline_unverifiable": [
+                {"key": k, "count": n, "check": c.id}
+                for k, n in cmp_["unverifiable_stale"]],
             "stale_baseline_blocking": [k for k, _ in cmp_["stale_blocking"]],
+            "dropped_baseline_entry": cmp_["dropped"],
             "env_findings": [{"key": f.key, "detail": f.detail} for f in env_res],
             "findings": [{"key": f.key, "detail": f.detail, "blocking": f.blocking,
                           "env": f.env, "always": f.always} for f in res.findings],
@@ -1235,6 +1424,36 @@ def run_audit(a: Audit, baseline: dict, only: list[str] | None,
                 next((f.detail for f in res.findings if f.key == k), k)
                 for k, _ in cmp_["new"]],
         })
+    # ── burn-down 预算（#4045）：判据本体在 `case_trust_gate.burn_down_verdict` ──────
+    # `scope=case_touching_prs` 的「命中」= 本 PR 动了**判据面**（基线文件本身，或引入了新的
+    # 存量条目）—— 与 case-trust 的 `case_touching_prs`（改用例文件）同一条设计：范围太大 =
+    # 每个 PR 都红 = 假红，范围太小 = 预算形同虚设。**取值必须落在 gate 认识的那两个里**。
+    baseline_touched = (changed is None or DEFAULT_BASELINE in changed
+                        or _new_in_scope(out))
+    budget = _load_gate_module().burn_down_verdict(
+        _budget_baseline(base_entries_all or {}, (base_baseline or {}).get("burn_down")),
+        _budget_baseline(cur_entries_all, baseline.get("burn_down")),
+        a.now.strftime("%Y-%m-%d"), baseline_touched,
+        label=DEFAULT_BASELINE, hint_extra=f"（本门禁的修法：`{REGEN_COMMAND}`）")
+    if not isinstance((base_baseline or {}).get("burn_down"), dict):
+        # **机制尚未在 `--base` 生效**（`main` 的清单里还没有 `burn_down` 块 = 本次是引入 PR）：
+        # 「清单不得增长」这条判据此刻没有可比的基线 —— 拿"没有配置"当"清单为空"会把
+        # **给后续 PR 立预算的那一次重生成**判成「新增豁免」，那是**假红**（后续每个 PR
+        # 都会栽在同一处）。此时只保留陈旧/被删（全量对账）与到期清零，不判净增长。
+        # ⚠️ 一旦预算在 `main` 生效，增长立刻照红（R4），**不是把预算关掉**。
+        budget["reasons"] = [r for r in budget["reasons"] if "基线**增长**了" not in r]
+        budget["blocking"] = bool(budget["reasons"])
+        budget["notes"].append(
+            "⏳ `--base` 的清单里还没有 `burn_down` 块 ⇒ 本次**不判净增长**"
+            "（引入 PR 的合法形态：它正是给后续 PR 立预算的那一次重生成）；"
+            "陈旧/被删（全量对账）与到期清零仍然生效，下一次重生成后增长照红。")
+    if not str((budget.get("config") or {}).get("deadline") or "").strip("0-"):
+        # **本门禁有意不设到期日**（理由见基线 `_burn_down_note`：65 条跨目录存量没有单一
+        # owner 能在某个日期前清零）⇒ 未设 = 该条不生效。gate 的 `_date()` 是给 case-trust 的
+        # fail-closed 兜底（那边**总是**有到期日），照抄会把它读成 `0000-00-00` = **已到期**
+        # ⇒ 每个 PR 都红（实测踩到）。到期日一旦真的写进配置，这里立刻照常判红。
+        budget["reasons"] = [r for r in budget["reasons"] if "到期清零" not in r]
+        budget["blocking"] = bool(budget["reasons"])
     out["summary"] = {
         "new_drift": new_total,
         "new_drift_out_of_scope": new_out_total,
@@ -1242,11 +1461,21 @@ def run_audit(a: Audit, baseline: dict, only: list[str] | None,
         "paydown": paydown_total,
         "stale_baseline_entry": stale_total,
         "stale_baseline_blocking": stale_block_total,
+        "dropped_baseline_entry": dropped_total,
+        "stale_baseline_unverifiable": unverifiable_total,
+        "burn_down": budget,
         "verdict": ("drift" if (new_total or new_out_total) else
                     ("crash" if any(c["status"] == "error" for c in out["checks"]) else
                      ("unknown" if any(c["status"] == "unknown" for c in out["checks"]) else "ok"))),
     }
     return out
+
+
+def _new_in_scope(rep: dict) -> bool:
+    """本 PR 的改动面里有没有**新增漂移**（burn-down 的 `scope=surface_touching_prs` 用）。"""
+    return any(c.get("new_drift") for c in rep.get("checks", []))
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # 主流程
 # ═══════════════════════════════════════════════════════════════════════════
@@ -1289,17 +1518,40 @@ def render_summary(rep: dict, baseline: dict) -> str:
         blocking_stale = set(c.get("stale_baseline_blocking") or [])
         for k in c["stale_baseline_entry"]:
             if k["key"] in blocking_stale:
-                L.append(f"     ⚠️ 基线条目已归零但未删：{k['key']}（你动了这个文件且它已不再漂移 "
-                         f"⇒ 豁免一条不存在的漂移 = 未来的假真值；`--strict-stale` 下红）")
+                L.append(f"     ❌ 基线条目已归零但未删（**全量对账**，不再限于本次 diff 命中）："
+                         f"{k['key']} ⇒ 豁免一条不存在的漂移 = 未来的假真值")
+                if k.get("hint"):
+                    L.append(f"        {k['hint']}")
             else:
-                L.append(f"     🧹 基线条目已归零（本 PR 未涉及该文件）：{k['key']}")
+                L.append(f"     🧹 基线条目已归零（无 PR 上下文：只报告不阻塞）：{k['key']}")
+        for k in c.get("stale_baseline_unverifiable", []):
+            L.append(f"     ⏭️ 判据本轮**未能重算**（网络不可达 / 判定面为空）⇒ 该条目"
+                     f"**不判陈旧**（没跑 ≠ 已不漂移）：{k['key']}")
+        for k in c.get("dropped_baseline_entry", []):
+            L.append(f"     ❌ 基线条目被删但**现在仍然漂移**（= 偷偷缩短/新增豁免）：{k['key']}")
+            if k.get("hint"):
+                L.append(f"        {k['hint']}")
         for k in c["paydown"]:
             L.append(f"     🧹 可销账：{k['key']} −{k['delta']}（可 `--regen-baseline --reason ...`）")
     L.append("-" * 78)
     L.append("本次相对基线的增减：新增漂移 %d（面内，阻塞） / 面外新增 %d（不阻塞，定时腿红） / "
-             "存量放行 %d / 可销账 %d / 基线归零未删 %d（其中本次 diff 命中 ⇒ 阻塞 %d）⇒ %s"
+             "存量放行 %d / 可销账 %d / 基线归零未删 %d（**全量对账 ⇒ 阻塞 %d**） / "
+             "条目被删但仍漂移 %d（阻塞）⇒ %s"
              % (s["new_drift"], s["new_drift_out_of_scope"], s["known_drift"], s["paydown"],
-                s["stale_baseline_entry"], s["stale_baseline_blocking"], s["verdict"].upper()))
+                s["stale_baseline_entry"], s["stale_baseline_blocking"],
+                s.get("dropped_baseline_entry", 0), s["verdict"].upper()))
+    bd = s.get("burn_down") or {}
+    if bd.get("active"):
+        net = bd.get("net") or {}
+        L.append("burn-down 预算（生效配置读 `--base` 那一份，`scope=%s` = 本 PR 动了判据面时"
+                 "要求净消减）：条目 %s / 违规码 %s；现剩 条目 %s / 违规码 %s ⇒ %s"
+                 % (bd["config"]["scope"], net.get("entries"), net.get("codes"),
+                    bd["remaining"]["entries"], bd["remaining"]["codes"],
+                    "❌ 未达标" if bd["blocking"] else "达标"))
+    for n in bd.get("notes", []):
+        L.append(f"· {n}")
+    for r in bd.get("reasons", []):
+        L.append(f"❌ [burn-down] {r}")
     if rep["unimplemented"]:
         L.append("未实装（**不用恒真判断凑数**）：" + "、".join(u["id"] for u in rep["unimplemented"]))
     L.append("-" * 78)
@@ -1314,6 +1566,78 @@ def render_summary(rep: dict, baseline: dict) -> str:
     return "\n".join(L)
 
 
+def load_base_baseline(a: Audit, rel: str = DEFAULT_BASELINE) -> dict | None:
+    """读 `--base`（通常是 `origin/main`）上的基线清单（不存在/读不出 → None）。
+
+    为什么需要它：全量对账要回答两个方向的问题 ——「记了却不再漂移」（陈旧）与
+    **「原本记了、现在仍漂移、却被删掉」**（偷偷缩短）。后者只能拿**基线那一份**当参照物
+    （本 PR 的清单正是被审对象）。burn-down 的**生效配置**同样只认它（自证式豁免的反面）。
+    """
+    text = a.read(rel, a.base)
+    if not text:
+        return None
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        return None
+
+
+def build_baseline(rep: dict, reason: str) -> dict:
+    """按本次审计的实测读数重建基线（`--regen-baseline` 的机械修复）。"""
+    entries = {}
+    for c in rep["checks"]:
+        ent: dict[str, int] = {}
+        for f in c["findings"]:
+            if f["env"] or f["always"]:
+                continue  # 环境漂移永不进基线（见 Finding 文档）
+            ent[f["key"]] = ent.get(f["key"], 0) + 1
+        entries[c["id"]] = ent
+    return {
+        "_comment": "漂移审计的**存量**违规清单（burn-down）。计数是「该 SHA 上判出的存量漂移」，"
+                    "**不是**『这些永远豁免』。",
+        "regenerate_command": REGEN_COMMAND,
+        "_when_to_regen": "① 你修好了某条存量漂移（门禁会告诉你：**全量对账**，不再限于你 diff 命中的文件）；"
+                          "② 别人合并了漂移修复 ⇒ 重跑审计后重生成，把已修好的条目删掉；"
+                          "③ 判据集合本身变化（新增/改名）⇒ 必须重生成。",
+        "_scope_note": "「已不再漂移 ⇒ 必须移除」是**全量对账**（#4045）：清单里任何条目都必须在"
+                       "**全库重算**里仍然真的漂移，**不再限于本次 diff 命中的文件**；反向同样成立 ——"
+                       "`origin/main` 记着、现在仍漂移却被删掉的条目会**阻塞**（删条目 = 偷偷缩短）。"
+                       "判据本体在 `.github/case_trust_gate.py` 的 `reconcile_baseline`（本脚本 import 复用，"
+                       "不复制第二套口径）。",
+        "_burn_down_note": "`burn_down` 块 = 每 PR 最低净消减（默认 ≥1 条）。"
+                           "**不设 `deadline` / `priority_deadline`**（未设 = 该两条不生效）："
+                           "本门禁的存量是 65 条**跨目录**条目（`docs/**` / `tests/**` / "
+                           "`scripts/**` / `.github/workflows/**` …），没有单一 owner 能在某个日期前"
+                           "清零；照抄 case-trust 的到期日只会造出一条**必然红且无人能修**的判据"
+                           "（到期日一旦写进 `--base` 那一份，按『只许收紧』还改不回来）。"
+                           "何时设：存量缩到可归属的范围、或用户明确给定日期时。"
+                           "（实证：首个版本照抄了 `_date()` 的 fail-closed 默认值 ⇒ 未设的日期被"
+                           "当成 `0000-00-00` = **已到期** ⇒ 每个 PR 都红。）"
+                           ""
+                           "（**生效配置读 `--base` 那一份**，本 PR 改不动本次判定）。"
+                           "`scope=case_touching_prs` 沿用 `case_trust_gate` 的**同一套取值**"
+                           "（那边=『本 PR 改了用例文件』，这边=『本 PR 动了**判据面**』：基线文件本身，"
+                           "或引入新的存量条目）—— 判据本体是 `case_trust_gate.burn_down_verdict`，"
+                           "**本脚本不复制、也不另造 scope 名**（实证：自造一个 gate 不认识的 scope "
+                           "名会被静默判成「不在范围内」= 预算形同虚设）。"
+                           "范围放大到「任何改了受管面的 PR」会让无关 PR 全红（假红）。",
+        "_entry_key_note": "条目 key 为 `<文件或分量>|<判据内部标识>`，**不含行号** —— "
+                           "否则改一行就换 key，『只许缩短』会退化成随机红。",
+        "schema": BASELINE_SCHEMA,
+        "policy_version": POLICY_VERSION,
+        "generated_at": rep["generated_at"],
+        "anchor_sha": rep["base"],
+        "cases_fingerprint": rep["cases_fingerprint"],
+        "reason": reason,
+        # 默认预算：每 PR ≥1 条净缩（`--base` 那一份生效；本 PR 写进清单的这份是**给后续 PR** 的）
+        "burn_down": {"per_pr_min": 1, "metric": "entries_or_codes",
+                      # 取值必须落在 `case_trust_gate.burn_down_verdict` 认识的那两个里
+                      # （`all_prs` / `case_touching_prs`）；语义见上面的 `_burn_down_note`。
+                      "scope": "case_touching_prs"},
+        "entries": entries,
+    }
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="统一漂移审计（真相源契约）")
     ap.add_argument("--repo", default=".", help="仓库根（默认当前目录）")
@@ -1321,7 +1645,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--baseline", default=None, help=f"基线 JSON（默认 {DEFAULT_BASELINE}）")
     ap.add_argument("--check", action="store_true", help="门禁模式：新增漂移 ⇒ 非零退出")
     ap.add_argument("--stale-scope", choices=["diff", "none"], default="diff",
-                    help="陈旧基线条目是否按 PR diff 收紧（默认 diff；`none` = 只报告不阻塞）")
+                    help="是否按 PR 上下文判阻塞（默认 diff）；`none` = 无 PR 上下文"
+                         "（纯审计 / 定时树）⇒ 陈旧条目与面外新增都只报告不阻塞")
     ap.add_argument("--regen-baseline", action="store_true", help="重生成基线（必须带 --reason）")
     ap.add_argument("--reason", default="", help="重生成基线的理由（写进基线 JSON，PR 里要说明）")
     ap.add_argument("--json", dest="json_out", default=None, help="机器可读报告输出路径")
@@ -1329,9 +1654,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--offline", action="store_true", help="跳过网络判据（心跳记未知）")
     ap.add_argument("--fail-on-unknown", action="store_true", help="未知也当失败（定时任务用）")
     ap.add_argument("--strict-stale", action="store_true",
-                    help="陈旧基线条目也阻塞（**定时审计用**）。PR 门禁**不要**开："
-                         "#3846 裁定「清单只许缩短」的**执行**按告警走 —— 硬阻塞会把修好用例的人"
-                         "卡在别人的基线文件上（假红）。")
+                    help="**定时审计腿**：面外新增漂移也阻塞（陈旧条目自 #4045 起一律阻塞，"
+                         "与本开关无关）。PR 门禁**不要**开：面外新增多半来自并行包刚合并进 "
+                         "main 的文件，硬阻塞 = 假红（#3846 / 实证 run 34914147884）。")
     ap.add_argument("--live-anchor", default=None, help="活锚目录（默认 ~/.dsh/.agent-presets/migao）")
     ap.add_argument("--gh-fixture", default=None, help="gh run list 的假数据（L0 夹具用）")
     ap.add_argument("--now", default=None, help="基准时刻 ISO8601（L0 夹具用）")
@@ -1356,45 +1681,19 @@ def main(argv: list[str] | None = None) -> int:
               live_anchor=Path(args.live_anchor) if args.live_anchor else None,
               gh_fixture=Path(args.gh_fixture) if args.gh_fixture else None)
     only = [x.strip() for x in args.only.split(",")] if args.only else None
-    # 纯审计（`--regen-baseline` 或默认报告模式）不按 diff 收紧陈旧判定；`--check` 才收紧。
-    # `--stale-scope none` = 不按 PR diff 收紧（纯审计 / 无 PR 上下文的树）；
-    # 默认 `diff` = 只对**本 PR 改动面**的新增漂移 fail-closed（见 `_in_scope`）。
+    # `--stale-scope none` = 无 PR 上下文（纯审计 / 定时树）：陈旧条目与面外新增都只报告；
+    # 默认 `diff` = 门禁口径：**全量对账**的陈旧/被删条目一律阻塞（#4045），
+    # 新增漂移只对**本 PR 改动面** fail-closed（见 `_in_scope`）。
     changed = changed_files(a) if args.stale_scope == "diff" else None
-    rep = run_audit(a, baseline, only, changed)
+    base_baseline = load_base_baseline(a)
+    rep = run_audit(a, baseline, only, changed, base_baseline)
 
     if args.regen_baseline:
         if not args.reason.strip():
             print("❌ --regen-baseline 必须带 --reason（PR 里要说明为什么重生成基线）")
             return 2
-        entries = {}
-        for c in rep["checks"]:
-            ent: dict[str, int] = {}
-            for f in c["findings"]:
-                if f["env"] or f["always"]:
-                    continue  # 环境漂移永不进基线（见 Finding 文档）
-                ent[f["key"]] = ent.get(f["key"], 0) + 1
-            entries[c["id"]] = ent
-        new_baseline = {
-            "_comment": "漂移审计的**存量**违规清单（burn-down）。计数是「该 SHA 上判出的存量漂移」，"
-                        "**不是**『这些永远豁免』。",
-            "regenerate_command": REGEN_COMMAND,
-            "_when_to_regen": "① 你修好了某条存量漂移（门禁会告诉你，且**只在你 diff 命中的文件上**判红）；"
-                              "② 别人合并了漂移修复 ⇒ 重跑审计后重生成，把已修好的条目删掉；"
-                              "③ 判据集合本身变化（新增/改名）⇒ 必须重生成。",
-            "_scope_note": "「已不再漂移 ⇒ 必须移除」这条**只对本次 PR diff 命中的文件生效**"
-                           "（见 drift_audit.compare_baseline 的 stale_blocking）—— 否则别人修好一条"
-                           "存量漂移，本门禁就会自己判红（假红）并挡住他们的 PR。"
-                           "口径与 `.github/case_trust_gate.py` 的 stale_baseline_entries 一致。",
-            "_entry_key_note": "条目 key 为 `<文件或分量>|<判据内部标识>`，**不含行号** —— "
-                               "否则改一行就换 key，『只许缩短』会退化成随机红。",
-            "schema": BASELINE_SCHEMA,
-            "policy_version": POLICY_VERSION,
-            "generated_at": rep["generated_at"],
-            "anchor_sha": rep["base"],
-            "cases_fingerprint": rep["cases_fingerprint"],
-            "reason": args.reason,
-            "entries": entries,
-        }
+        new_baseline = build_baseline(rep, args.reason)
+        entries = new_baseline["entries"]
         baseline_path.parent.mkdir(parents=True, exist_ok=True)
         baseline_path.write_text(
             json.dumps(new_baseline, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
@@ -1414,6 +1713,11 @@ def main(argv: list[str] | None = None) -> int:
     if not args.check:
         return 0
     if s["new_drift"]:
+        return 1
+    # 全量对账（#4045）：陈旧条目 / 被删但仍漂移的条目 ⇒ 阻塞（不再需要 `--strict-stale`）
+    if s["stale_baseline_blocking"] or s["dropped_baseline_entry"]:
+        return 1
+    if (s.get("burn_down") or {}).get("blocking"):
         return 1
     if args.strict_stale and (s["stale_baseline_entry"] or s["new_drift_out_of_scope"]):
         return 1
