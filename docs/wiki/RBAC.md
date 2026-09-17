@@ -84,6 +84,10 @@ ai-agent 调用 admin-api **始终**带 `X-Service-Token` + `X-Tenant-Id` + `X-U
   `AuthService.validateBminiEmployee`、`UserService` 员工管理「排除 C 端消费者」**同源**，不另造第二套。
 - 查库异常时回退 `service` 身份**并记 ERROR**：调用方已持有可信 `SERVICE_TOKEN`（可信内部服务，非不可信第三方），
   失败回退不构成提权；留痕用于区分「查失败」与「查不到」。
+- ⚠️ 判定必须在 `TenantContext` 就绪**之后**执行（`users` 表不在 `MybatisPlusConfig.IGNORE_TENANT_TABLES` 内，
+  `TenantLineHandler` 在租户上下文为空时会抛错）——顺序写反会被上面的 fallback 吞成**静默失效**：
+  F2 全绿的单测/E2E 都 mock 了 Mapper，看不出来。守卫：
+  `ServiceTokenFilterTest.merchantStaffLookup_runsAfterTenantContextIsSet` 断言「查库那一刻的 TenantContext」。
 - 403 响应体（两条入口同一口径，`PermissionDeniedResponse`）：`error.code=PERMISSION_DENIED`、
   `error.message` 含缺失权限码、`error.details[0]={field:"requiredPermission"}`，并带
   **LLM 可执行 `suggestion`**（说明这是角色/权限限制、不是参数问题、不要重试同一工具、请管理员在「岗位权限」中授权）。

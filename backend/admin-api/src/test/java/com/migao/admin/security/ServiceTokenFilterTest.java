@@ -277,6 +277,31 @@ class ServiceTokenFilterTest {
         }
     }
 
+    @Test
+    @DisplayName("查库判定必须在 TenantContext 就绪之后 — 否则租户插件抛错被 fallback 吞掉（修复静默失效）")
+    void merchantStaffLookup_runsAfterTenantContextIsSet() throws ServletException, IOException {
+        // 为什么断言「查库那一刻的 TenantContext」：真实 UserMapper 是 MyBatis-Plus 代理，
+        // users **不在** MybatisPlusConfig.IGNORE_TENANT_TABLES 内 ⇒ TenantLineHandler.getTenantId()
+        // 在 TenantContext 为空时抛 "Tenant context not initialized - possible unauthenticated access"。
+        // 该异常会被 resolveMerchantStaff 的 catch 吞成 fallback ⇒ 只留一条 ERROR 日志、
+        // F2 在**生产**完全失效，而 mock UserMapper 的单测/E2E 全绿 —— 典型静默失效形态。
+        when(request.getHeader(HEADER_NAME)).thenReturn(SECRET);
+        when(request.getHeader("X-Tenant-Id")).thenReturn("5");
+        when(request.getHeader("X-User-Id")).thenReturn("staff-001");
+        java.util.List<Long> tenantSeenByMapper = new java.util.ArrayList<>();
+        when(userMapper.selectById("staff-001")).thenAnswer(invocation -> {
+            tenantSeenByMapper.add(TenantContext.getTenantId());
+            return staff("staff-001", 5L, "operator", "active");
+        });
+
+        filter.doFilterInternal(request, response, filterChain);
+
+        assertThat(tenantSeenByMapper).containsExactly(5L);
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        assertThat(auth.getAuthorities()).extracting("authority").contains("ROLE_OPERATOR");
+        assertThat(TenantContext.getTenantId()).isNull();
+    }
+
     private static User staff(String id, Long tenantId, String role, String status) {
         return User.builder()
                 .id(id)

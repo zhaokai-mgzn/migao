@@ -86,6 +86,16 @@ public class ServiceTokenFilter extends OncePerRequestFilter {
                     // 从请求头中提取租户ID（内部服务调用时通过 X-Tenant-Id 传递）
                     Long tenantId = parseTenantId(request.getHeader("X-Tenant-Id"));
 
+                    // 设置租户上下文（始终设置，确保下游不会 NPE）。
+                    // ⚠️ 必须早于下面的 X-User-Id 查库：users 表不在
+                    // MybatisPlusConfig.IGNORE_TENANT_TABLES 内，TenantContext 为空时
+                    // TenantLineHandler.getTenantId() 会抛 "Tenant context not initialized"，
+                    // 该异常会被 resolveMerchantStaff 的 fallback 吞掉 ⇒ F2 在**生产**静默失效
+                    // （单测/E2E 都 mock 了 UserMapper，看不出来；只有断言"查库那一刻的
+                    // TenantContext"才能变红）。异常路径由下方 finally 统一清理。
+                    TenantContext.setTenantId(tenantId);
+                    tenantContextSet = true;
+
                     // 透传真实用户 ID（ai-agent-service 调用时携带 X-User-Id）：
                     // 无 X-User-Id（如 B 端员工上下文缺省或纯服务端调用）回退为 service 占位，
                     // 保证 SecurityUser.userId 语义一致且不抛错；C 端数据隔离由业务层据此强制过滤。
@@ -122,10 +132,6 @@ public class ServiceTokenFilter extends OncePerRequestFilter {
 
                     // 设置 SecurityContext
                     SecurityContextHolder.getContext().setAuthentication(authentication);
-
-                    // 设置租户上下文（始终设置，确保下游不会 NPE）
-                    TenantContext.setTenantId(tenantId);
-                    tenantContextSet = true;
 
                     log.debug("Service Token 认证成功: 内部服务调用, tenantId={}", tenantId);
                 } else {
