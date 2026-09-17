@@ -232,3 +232,38 @@ class TestRegistrySingleton:
             assert expected in names, f"{expected} 未注册"
         # #3081: quick_reply_manage 不得再注册
         assert "quick_reply_manage" not in names
+
+
+class TestToolsFacadeCompleteness:
+    """**不变式**：`app.tools` 门面必须导出注册表注册的**每一个** Tool 类（issue #4010 / A12）。
+
+    病根：`app/tools/__init__.py` 的 import 与 `__all__` 是**手写清单**，与
+    `create_default_registry()` 的注册清单各写一份 ⇒ 必然漂移（实测 registry 注册 35 个类，
+    10 个未 import、14 个不在 `__all__`，含 `OrderCreateTool` —— 下单主链路）。
+    漂移形态是**静默**的：`from app.tools import OrderCreateTool` 报 ImportError 才会发现，
+    「类还在、只是门面没导出」不会让任何既有测试变红。
+
+    适用域：`create_default_registry()` 注册的类名集合 ⊆ `app.tools.__all__`。
+    不适用域：**未注册**的工具类（如 #3917 下线的 `ProcessingOrderGenerateTool`）**不要求**
+    出现在门面里 —— 门面 = 可用工具面，不是「目录里所有文件」。
+    """
+
+    def test_registry_classes_are_all_exported(self):
+        import app.tools as facade
+
+        reset_tool_registry()
+        registered = {type(t).__name__ for t in get_tool_registry().get_all_tools()}
+        # 上界守卫：解析/注册静默失效时不得退化成「空集 ⇒ 恒真」（空断言）
+        assert len(registered) >= 30, f"注册表只解析出 {len(registered)} 个类，判据疑似空转"
+        missing = sorted(registered - set(facade.__all__))
+        assert not missing, f"这些已注册的 Tool 类没有从 app.tools 门面导出：{missing}"
+        # 导出即真的可导入（`__all__` 写了名字但没有 import = 门面谎报）
+        for name in sorted(registered):
+            assert getattr(facade, name, None) is not None, f"app.tools.{name} 不可访问"
+
+    def test_every_exported_name_exists(self):
+        """反向：`__all__` 不得列不存在的名字（`from app.tools import *` 会当场炸）。"""
+        import app.tools as facade
+
+        ghosts = sorted(n for n in facade.__all__ if getattr(facade, n, None) is None)
+        assert not ghosts, f"app.tools.__all__ 列了不存在的名字：{ghosts}"

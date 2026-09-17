@@ -58,14 +58,16 @@ import re
 # 故：**工具级显式枚举 + action 级显式枚举**，二者都写死在下方常量里。
 #
 # `WRITE_TOOLS`：整工具即为写（该类没有 read_only action，任何调用都是写）。
+# ⚠️ 只列**当前可达**的工具 —— 工具下线/改名后必须从本表移除，否则出现**幽灵写工具**
+# （判据从「工具真实可达」悄悄变成「曾经可达」，且不会让任何用例变红）。不变式测试：
+# tests/unit_ci_workflows/test_case_trust_gate.py::TestDegenerateGuardRails
+#   ::test_write_tool_sets_only_name_reachable_tools（真值 = eval_case_filter 的两端工具集并集）。
 WRITE_TOOLS: frozenset[str] = frozenset({
     # read_only = False 且**未**声明 read_only_actions 的工具
     "aftersale_create",            # WRITE|NON_IDEMPOTENT
     "human_handoff",               # WRITE|NON_IDEMPOTENT（每次调用创建新工单）
     "order_create",                # WRITE
     "order_manage",                # WRITE|DESTRUCTIVE
-    "processing_order_generate",   # WRITE
-    "processing_order_update",     # WRITE|DESTRUCTIVE
     "product_manage",              # WRITE|DESTRUCTIVE
     "product_processing_item_manage",  # WRITE|IDEMPOTENT
     "product_update",              # WRITE|IDEMPOTENT
