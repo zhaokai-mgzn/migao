@@ -105,12 +105,21 @@ public class OrderCreateRequest {
 
         /**
          * 宽度(米)
+         *
+         * <p>非负（issue #4089 · A17 收敛，分歧 D6）：收敛前该边界**只有 ai-agent 工具侧**有
+         * （schema {@code minimum: 0} + 本地 {@code _reject_invalid_amount}），服务端裸
+         * {@code BigDecimal} 零注解 —— 绕过工具直调即可落负宽度，而负尺寸会进面积/单价数学
+         * （{@code per_area} 按宽×高计价）。唯一生产者本就只发非负值，故对合法输入零影响。</p>
          */
+        @DecimalMin(value = "0", message = "宽度不能为负数")
         private BigDecimal width;
 
         /**
          * 高度(米)
+         *
+         * <p>非负（issue #4089 · A17 收敛，分歧 D6）：与宽度同口径，见上。</p>
          */
+        @DecimalMin(value = "0", message = "高度不能为负数")
         private BigDecimal height;
 
         /**
@@ -120,6 +129,11 @@ public class OrderCreateRequest {
 
         /**
          * 小计
+         *
+         * <p>必填（issue #4089 · A17 收敛）：收敛前 agent 侧 DTO 是平行定义且 {@code subtotal} 可选，
+         * 表单侧必填 —— 同一字段两种必填性（分歧 D3）。收敛为单一类型后取**更严**的一份：
+         * ai-agent 工具 schema 也把 {@code subtotal} 放在 {@code required} 里（唯一生产者本来就必传），
+         * 故对 agent 路径**不产生新增摩擦**，只是让服务端与工具侧同口径。</p>
          */
         @NotNull(message = "小计不能为空")
         @Positive(message = "小计必须大于 0")
