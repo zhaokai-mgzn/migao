@@ -15,7 +15,7 @@ AI 智能客服系统 - C 端"查物流" Tool（小布专用）
 from typing import Any, Dict, List, Optional
 from loguru import logger
 
-from app.tools.base import BaseTool, ToolContext, ToolResult
+from app.tools.base import admin_api_failure, BaseTool, ToolContext, ToolResult
 from app.tools.logistics_track import LogisticsTrackTool
 from app.utils.http_client import get_admin_api_client
 from app.utils.log_sanitizer import LogSanitizer
@@ -175,8 +175,7 @@ class CustomerLogisticsTrackTool(BaseTool):
                 f"[customer-logistics] Mine list rejected | tenant={context.tenant_id} "
                 f"error={error_msg}"
             )
-            return ToolResult(
-                success=False,
+            return admin_api_failure(response,
                 error=error_msg,
                 message="物流查询失败，请稍后重试",
                 suggestion="请稍后重试，或联系人工客服帮您查询",

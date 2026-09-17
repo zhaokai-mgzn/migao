@@ -7,7 +7,7 @@ AI 智能客服系统 - 通知管理 Tool
 from typing import Any, Dict, Optional
 from loguru import logger
 
-from app.tools.base import BaseTool, ToolContext, ToolResult
+from app.tools.base import admin_api_failure, BaseTool, ToolContext, ToolResult
 from app.utils.http_client import get_admin_api_client
 
 
@@ -307,8 +307,7 @@ class NotificationManageTool(BaseTool):
 
         if not response.get("success"):
             error_msg = response.get("error", {}).get("message", "查询失败")
-            return ToolResult(
-                success=False,
+            return admin_api_failure(response,
                 error=error_msg,
                 message=f"查询通知列表失败：{error_msg}",
                 suggestion="请稍后重试；若持续失败，请改为不带筛选条件查询，或请用户联系管理员核对通知数据",
@@ -343,8 +342,7 @@ class NotificationManageTool(BaseTool):
 
         if not response.get("success"):
             error_msg = response.get("error", {}).get("message", "查询失败")
-            return ToolResult(
-                success=False,
+            return admin_api_failure(response,
                 error=error_msg,
                 message=f"获取未读数失败：{error_msg}",
                 suggestion="请稍后重试；若持续失败，请改用 list 操作查询未读通知条数，或请用户稍后再看",
@@ -386,8 +384,7 @@ class NotificationManageTool(BaseTool):
 
         if not response.get("success"):
             error_msg = response.get("error", {}).get("message", "操作失败")
-            return ToolResult(
-                success=False,
+            return admin_api_failure(response,
                 error=error_msg,
                 message=f"标记已读失败：{error_msg}",
                 suggestion="请先用 notification_manage 的 list 操作确认该通知存在且未读，再重新执行标记已读",
@@ -417,8 +414,7 @@ class NotificationManageTool(BaseTool):
 
         if not response.get("success"):
             error_msg = response.get("error", {}).get("message", "操作失败")
-            return ToolResult(
-                success=False,
+            return admin_api_failure(response,
                 error=error_msg,
                 message=f"全部标记已读失败：{error_msg}",
                 suggestion="请稍后重试；若持续失败，请提示用户逐条标记已读，或请用户联系管理员核对通知服务",
@@ -457,8 +453,7 @@ class NotificationManageTool(BaseTool):
 
         if not response.get("success"):
             error_msg = response.get("error", {}).get("message", "删除失败")
-            return ToolResult(
-                success=False,
+            return admin_api_failure(response,
                 error=error_msg,
                 message=f"删除通知失败：{error_msg}",
                 suggestion="请先用 notification_manage 的 list 操作确认该通知仍在（已删除的不可重复删），再重试",
@@ -613,8 +608,7 @@ class NotificationManageTool(BaseTool):
                 f"[notification_manage] 创建通知投递失败: recipient={recipient_id}, "
                 f"tenant={context.tenant_id}, error={error_msg}"
             )
-            return ToolResult(
-                success=False,
+            return admin_api_failure(response,
                 data={"notificationSent": False, "recipientId": recipient_id},
                 error=_NOTIFY_SEND_FAILED,
                 message=f"创建通知失败：{error_msg}",

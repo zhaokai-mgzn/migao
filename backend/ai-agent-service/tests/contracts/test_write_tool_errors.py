@@ -5,6 +5,7 @@
 1. admin-api 返回 {success: false, error: {code, message}} → 透传错误信息
 2. 网络故障 → 不崩溃，返回友好错误
 """
+# case_ids: CH-001, DF-011, DF-012
 
 import pytest
 from unittest.mock import patch, AsyncMock
@@ -12,8 +13,14 @@ from unittest.mock import patch, AsyncMock
 from app.tools.base import ToolContext
 
 
-def _make_context(role="admin"):
-    return ToolContext(tenant_id=1, user_id="u1", session_id="s1", role=role)
+def _make_context(role="admin", permissions=("*",)):
+    """商户管理员上下文：`admin` 在 admin-api 里恒为通配权限 `["*"]`
+    （`RoleService.getUserPermissions` 特判）—— 工具层细粒度门禁按 JWT
+    `permissions` claim 判定（issue #4106 F3），故夹具必须带上权限码。"""
+    return ToolContext(
+        tenant_id=1, user_id="u1", session_id="s1",
+        role=role, permissions=list(permissions),
+    )
 
 
 # ═══════════════════════════════════════════════════════════════════

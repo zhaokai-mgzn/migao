@@ -7,7 +7,7 @@ AI 智能客服系统 - 客服会话管理 Tool
 from typing import Any, Dict, Optional
 from loguru import logger
 
-from app.tools.base import BaseTool, ToolContext, ToolResult
+from app.tools.base import admin_api_failure, BaseTool, ToolContext, ToolResult
 from app.utils.http_client import get_admin_api_client
 
 
@@ -33,7 +33,8 @@ class SessionManageTool(BaseTool):
         "【触发】用户说'会话列表''排队多少人''在线客服''客服情况''分配会话''结束会话'时调用。【前置】list/monitor/detail 查。assign 需 session_id+agent_id。end 需确认。【何时不用】经营概况用 dashboard_stats。查客服员工用 employee_manage。【标注】WRITE(assign/end) — 查询安全，写需确认"
         "【铁律】用户明确要求写操作（禁用/创建/调整/删除/上下架/重置等）时：先查必要信息拿真实 ID → 展示操作预览 + 确认卡 → 用户确认后立即调用写工具执行，禁止只查询/展示列表就停（HR-003/PP-006/PR-005 实拍：agent 只 list/query 不执行写工具判失败）。"
     )
-    allowed_roles = ["admin", "agent", "tenant_admin", "operator"]
+    # 权限码（admin-api 目录）：AgentSessionController 类级 `@RequirePermission("agent:session")`。
+    required_permissions = ["agent:session"]
 
     read_only = False
     requires_confirmation = True  # 审计 07 P0-L1: 高风险非 destructive 写操作需用户确认
@@ -173,8 +174,7 @@ class SessionManageTool(BaseTool):
 
         if not response.get("success"):
             error_msg = response.get("error", {}).get("message", "查询失败")
-            return ToolResult(
-                success=False,
+            return admin_api_failure(response,
                 error=error_msg,
                 message=f"查询会话列表失败：{error_msg}",
                 suggestion="请稍后重试；若持续失败，请改为不带状态筛选查询，或请用户联系管理员核对会话数据",
@@ -208,8 +208,7 @@ class SessionManageTool(BaseTool):
 
         if not response.get("success"):
             error_msg = response.get("error", {}).get("message", "查询失败")
-            return ToolResult(
-                success=False,
+            return admin_api_failure(response,
                 error=error_msg,
                 message=f"获取监控面板数据失败：{error_msg}",
                 suggestion="请稍后重试；若持续失败，请改用 list 操作查看会话列表，或请用户联系管理员核对会话服务",
@@ -242,8 +241,7 @@ class SessionManageTool(BaseTool):
 
         if not response.get("success"):
             error_msg = response.get("error", {}).get("message", "查询失败")
-            return ToolResult(
-                success=False,
+            return admin_api_failure(response,
                 error=error_msg,
                 message=f"查询会话详情失败：{error_msg}",
                 suggestion="请先用 session_manage 的 list 操作确认该会话仍在（已结束的会话不可再查看详情）后重试",
@@ -289,8 +287,7 @@ class SessionManageTool(BaseTool):
 
         if not response.get("success"):
             error_msg = response.get("error", {}).get("message", "分配失败")
-            return ToolResult(
-                success=False,
+            return admin_api_failure(response,
                 error=error_msg,
                 message=f"分配会话失败：{error_msg}",
                 suggestion="请先用 session_manage 的 detail 操作确认该会话处于待分配状态，再重新执行分配",
@@ -323,8 +320,7 @@ class SessionManageTool(BaseTool):
 
         if not response.get("success"):
             error_msg = response.get("error", {}).get("message", "结束失败")
-            return ToolResult(
-                success=False,
+            return admin_api_failure(response,
                 error=error_msg,
                 message=f"结束会话失败：{error_msg}",
                 suggestion="请先用 session_manage 的 detail 操作确认该会话仍在进行中（已结束的无需再结束）后重试",

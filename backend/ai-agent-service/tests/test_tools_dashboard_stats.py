@@ -13,12 +13,19 @@ def tool():
 
 
 @pytest.fixture
-def agent_ctx():
-    return ToolContext(tenant_id=1, user_id="agent_001", session_id="s", role="agent")
+def customer_service_ctx():
+    """商户客服岗（admin-api 角色码 `customer_service`）—— 目录里持 `dashboard:view`。
+
+    #4106 F3：工具层细粒度门禁按 JWT `permissions` claim 判定，不再按角色名硬编码。
+    """
+    return ToolContext(
+        tenant_id=1, user_id="cs_001", session_id="s",
+        role="customer_service", permissions=["dashboard:view"],
+    )
 
 
 class TestDashboardDeclaration:
-    """工具元数据声明 — READONLY 纯查询，admin/agent/tenant_admin 可用"""
+    """工具元数据声明 — READONLY 纯查询，持 `dashboard:view` 的商户员工可用"""
 
     def test_metadata(self, tool):
         assert tool.name == "dashboard_stats"
@@ -26,10 +33,13 @@ class TestDashboardDeclaration:
         assert tool.destructive is False
         assert tool.idempotent is True
 
-    def test_allowed_roles(self, tool):
-        # operator：admin-api 员工角色码（RoleService operator 有 dashboard:view，
-        # 角色码漂移修复 POC-2761 D 项）
-        assert set(tool.allowed_roles) == {"admin", "agent", "tenant_admin", "operator"}
+    def test_required_permissions(self, tool):
+        """看板端点的权限码 = DashboardController 类级 `@RequirePermission("dashboard:view")`。
+
+        #4106 F3/F4：此前只写角色白名单 ⇒ 目录里同样持码的 product_manager /
+        # knowledge_editor 等被工具判「权限不足」（假拒绝）。
+        """
+        assert tool.required_permissions == ["dashboard:view"]
 
 
 class TestDashboardPermission:
@@ -38,13 +48,24 @@ class TestDashboardPermission:
     def test_admin_allowed(self, tool, admin_tool_context):
         assert tool.check_permission(admin_tool_context) is True
 
-    def test_agent_allowed(self, tool, agent_ctx):
-        assert tool.check_permission(agent_ctx) is True
+    def test_customer_service_allowed(self, tool, customer_service_ctx):
+        assert tool.check_permission(customer_service_ctx) is True
 
     def test_operator_allowed(self, tool):
         # operator 员工（admin-api 签发角色码）应能查经营看板
-        op_ctx = ToolContext(tenant_id=1, user_id="op_001", session_id="s", role="operator")
+        op_ctx = ToolContext(
+            tenant_id=1, user_id="op_001", session_id="s",
+            role="operator", permissions=["dashboard:view"],
+        )
         assert tool.check_permission(op_ctx) is True
+
+    def test_role_without_the_code_is_denied(self, tool):
+        """负向：真实商户角色但**不持** `dashboard:view`（自定义无码角色）⇒ 拒绝。"""
+        custom_ctx = ToolContext(
+            tenant_id=1, user_id="custom_001", session_id="s",
+            role="poc_custom_role", permissions=["order:list"],
+        )
+        assert tool.check_permission(custom_ctx) is False
 
     def test_customer_denied(self, tool, sample_tool_context):
         assert tool.check_permission(sample_tool_context) is False

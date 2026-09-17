@@ -25,7 +25,9 @@
 `ToolResult(success=False, …)` 字面量调用点 = **396**，
 其中带非空 `suggestion=` 的 = **203**、缺口 = **193（48%）**、涉及 **31 个文件**。
 （口径：只算 `success` 为**字面量 `False`** 的调用；`success=some_bool` 这类运行时取值
-不计入 —— 它们不构成静态可判的缺口，登记在「不适用域」而非基线里。）
+不计入 —— 它们不构成静态可判的缺口，登记在「不适用域」而非基线里。
+issue #4106 F6 之后，admin-api 失败分支统一改道 `app/tools/base.py::admin_api_failure`，
+该形态**结构上不可能缺建议**（两条分支都产出非空建议），故与本口径并列计入分母。）
 
 ## 本文件锁的三条不变式（每条都有反例输入）
 
@@ -110,23 +112,39 @@ def _declares_suggestion(node: ast.Call) -> bool:
     return False
 
 
+#: 共享失败映射点（`app/tools/base.py`）—— 走它的失败面**结构上不可能缺** suggestion：
+#: 该函数在两条分支上都产出非空建议（授权类 → 可执行的权限指引；其它 → 服务端建议
+#: 或调用方兜底）。issue #4106 F6 把 ~100 个 admin-api 失败分支统一改道到它，
+#: 故分母口径必须同步承认这一形态，否则会**假红**（读数掉到 300 以下）。
+MAPPER_NAME = "admin_api_failure"
+
+
+def _callee_name(node: ast.AST) -> str | None:
+    if not isinstance(node, ast.Call):
+        return None
+    func = node.func
+    if isinstance(func, ast.Name):
+        return func.id
+    if isinstance(func, ast.Attribute):
+        return func.attr
+    return None
+
+
 def failure_sites_missing_suggestion(source: str) -> list[int]:
     """源码里**缺 `suggestion` 的 `ToolResult(success=False, …)`** 行号（升序、1-based）。
 
     非 `ToolResult` 的调用、`success=True` 的调用、以及 `success` 为非字面量的调用
     一律不计入 —— 它们是本判据的**不适用域**（阴性负例见 `TestSuggestionDetectorIsNotVacuous`）。
+    `admin_api_failure(...)` 调用同样不计入：它由共享映射点保证非空建议（口径见 `MAPPER_NAME`）。
     """
     tree = ast.parse(source)
     missing: list[int] = []
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call):
             continue
-        func = node.func
-        name = (
-            func.id
-            if isinstance(func, ast.Name)
-            else (func.attr if isinstance(func, ast.Attribute) else None)
-        )
+        name = _callee_name(node)
+        if name == MAPPER_NAME:
+            continue
         if name != "ToolResult":
             continue
         keywords = {kw.arg: kw.value for kw in node.keywords if kw.arg}
@@ -152,19 +170,19 @@ def live_violations() -> list[str]:
 
 
 def total_failure_sites() -> int:
-    """失败面总数（分母）—— 用于「守卫不得空转」的自证。"""
+    """失败面总数（分母）= `ToolResult(success=False, …)` + `admin_api_failure(…)`。
+
+    两种形态都算：前者自带 `suggestion=`，后者由共享映射点保证非空建议。
+    用于「守卫不得空转」的自证（分母被静默缩小 = 空断言）。
+    """
     total = 0
     for path in tool_source_files():
         tree = ast.parse(path.read_text(encoding="utf-8"))
         for node in ast.walk(tree):
-            if not isinstance(node, ast.Call):
+            name = _callee_name(node)
+            if name == MAPPER_NAME:
+                total += 1
                 continue
-            func = node.func
-            name = (
-                func.id
-                if isinstance(func, ast.Name)
-                else (func.attr if isinstance(func, ast.Attribute) else None)
-            )
             if name != "ToolResult":
                 continue
             keywords = {kw.arg: kw.value for kw in node.keywords if kw.arg}
@@ -315,6 +333,20 @@ class TestSuggestionDetectorIsNotVacuous:
         assert failure_sites_missing_suggestion(fixture.read_text(encoding="utf-8")) == [], (
             "判据误伤了合法输入（R2 负例证据：success=True / success 变量 / 非 ToolResult / "
             "已带建议 / 带 fallback 的变量 五类都必须放行）"
+        )
+
+    def test_mapper_calls_are_counted_in_the_denominator(self, tmp_path):
+        """**红证**：改道到共享映射点的失败面必须被分母承认（否则分母缩水 → 判据空转）。"""
+        fixture = tmp_path / "fixture_mapper.py"
+        fixture.write_text(
+            "from app.tools.base import admin_api_failure\n"
+            "def t(resp):\n"
+            "    return admin_api_failure(resp, error='x', message='y', suggestion='请稍后重试')\n",
+            encoding="utf-8",
+        )
+        source = fixture.read_text(encoding="utf-8")
+        assert failure_sites_missing_suggestion(source) == [], (
+            "共享映射点保证非空建议，不得被判为「缺 suggestion」"
         )
 
     def test_the_guard_reads_the_real_source_tree(self):

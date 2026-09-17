@@ -10,7 +10,7 @@ from datetime import datetime
 import httpx
 from loguru import logger
 
-from app.tools.base import BaseTool, ToolContext, ToolResult
+from app.tools.base import admin_api_failure, BaseTool, ToolContext, ToolResult
 from app.utils.http_client import get_admin_api_client
 from app.config import settings
 
@@ -225,8 +225,7 @@ class LogisticsTrackTool(BaseTool):
             
             if not order_response.get("success"):
                 error_msg = order_response.get("error", {}).get("message", "查询失败")
-                return ToolResult(
-                    success=False,
+                return admin_api_failure(order_response,
                     error=error_msg,
                     message="未找到该订单，请检查订单号",
                     suggestion="请检查ID是否正确，或尝试其他搜索条件",

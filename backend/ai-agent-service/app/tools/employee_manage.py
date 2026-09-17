@@ -7,7 +7,7 @@ AI 智能客服系统 - 员工管理 Tool
 from typing import Any, Dict, List, Optional
 from loguru import logger
 
-from app.tools.base import BaseTool, ToolContext, ToolResult
+from app.tools.base import admin_api_failure, BaseTool, ToolContext, ToolResult
 from app.utils.http_client import get_admin_api_client
 
 
@@ -36,11 +36,10 @@ class EmployeeManageTool(BaseTool):
         "【铁律】用户明确要求写操作（禁用/创建/调整/删除/上下架/重置等）时：先查必要信息拿真实 ID → 展示操作预览 + 确认卡 → 用户确认后立即调用写工具执行，禁止只查询/展示列表就停（HR-003/PP-006/PR-005 实拍：agent 只 list/query 不执行写工具判失败）。"
         "【铁律】用户说'确认''确认停用''确认删除'= 立即执行对应写 action（toggle_status/delete/reset_password），禁止收到确认后又 list 查询（HR-003 实拍：R2 确认后又 employee_manage(list) 判失败）。"
     )
-    allowed_roles = [
-        "admin", "tenant_admin", "operator", "product_manager", "knowledge_editor",
-    ]
-    # 粗粒度门槛：必须至少拥有员工模块的任意权限；具体 action 的权限在 execute 内按
-    # employee:list（查询）/ employee:create（写操作）二次校验，防止仅 employee:list 者执行写操作。
+    # 权限码（admin-api 目录）：AdminUserController 类级 `@RequirePermission("employee:list")`，
+    # 写操作（PUT/DELETE/reset-password/status）为 `employee:create`。
+    # 具体 action 的权限在 execute 内二次校验，防止仅 employee:list 者执行写操作。
+    # 不再用 allowed_roles —— 手写角色白名单会与目录漂移（#4106 F4）。
     required_permissions = ["employee:list", "employee:create"]
     read_only = False
     destructive = True   # 可删除员工、重置密码、禁用账号
@@ -226,8 +225,7 @@ class EmployeeManageTool(BaseTool):
 
         if not response.get("success"):
             error_msg = response.get("error", {}).get("message", "查询失败")
-            return ToolResult(
-                success=False,
+            return admin_api_failure(response,
                 error=error_msg,
                 message="员工列表查询失败，请稍后重试",
                 suggestion="请稍后重试，如持续失败请联系技术支持",
@@ -284,8 +282,7 @@ class EmployeeManageTool(BaseTool):
 
         if not response.get("success"):
             error_msg = response.get("error", {}).get("message", "查询失败")
-            return ToolResult(
-                success=False,
+            return admin_api_failure(response,
                 error=error_msg,
                 message="员工详情查询失败",
                 suggestion="请检查输入参数是否正确，或稍后重试",
@@ -349,8 +346,7 @@ class EmployeeManageTool(BaseTool):
 
         if not response.get("success"):
             error_msg = response.get("error", {}).get("message", "创建失败")
-            return ToolResult(
-                success=False,
+            return admin_api_failure(response,
                 error=error_msg,
                 message=f"创建员工失败：{error_msg}",
                 suggestion="请先用 employee_manage 的 list 操作确认该手机号未被其它员工占用，再重新执行创建",
@@ -417,8 +413,7 @@ class EmployeeManageTool(BaseTool):
 
         if not response.get("success"):
             error_msg = response.get("error", {}).get("message", "更新失败")
-            return ToolResult(
-                success=False,
+            return admin_api_failure(response,
                 error=error_msg,
                 message=f"更新员工失败：{error_msg}",
                 suggestion="请先用 employee_manage 的 detail 操作读取该员工当前信息，核对后再重试",
@@ -455,8 +450,7 @@ class EmployeeManageTool(BaseTool):
 
         if not response.get("success"):
             error_msg = response.get("error", {}).get("message", "删除失败")
-            return ToolResult(
-                success=False,
+            return admin_api_failure(response,
                 error=error_msg,
                 message=f"删除员工失败：{error_msg}",
                 suggestion="请先用 employee_manage 的 list 操作确认该员工存在且非当前登录账号，再重新执行删除",
@@ -499,8 +493,7 @@ class EmployeeManageTool(BaseTool):
 
         if not response.get("success"):
             error_msg = response.get("error", {}).get("message", "重置失败")
-            return ToolResult(
-                success=False,
+            return admin_api_failure(response,
                 error=error_msg,
                 message=f"重置密码失败：{error_msg}",
                 suggestion="请先用 employee_manage 的 list 操作确认该员工未被禁用，再重新执行重置密码",
@@ -546,8 +539,7 @@ class EmployeeManageTool(BaseTool):
 
         if not response.get("success"):
             error_msg = response.get("error", {}).get("message", "操作失败")
-            return ToolResult(
-                success=False,
+            return admin_api_failure(response,
                 error=error_msg,
                 message=f"切换员工状态失败：{error_msg}",
                 suggestion="请先用 employee_manage 的 detail 操作确认该员工当前状态（不可禁用自己/超管），再重试",

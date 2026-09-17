@@ -6,7 +6,7 @@ AI 智能客服系统 - 计件工资查询 Tool（issue #3996 / M4-I，仅 B 端
     GET /api/admin/agent/production/piecework?worker_name={姓名}&period=YYYY-MM
 
 返回：计件合计 + 明细（工序 / 数量 / 金额）。
-`allowed_roles` 只含商户侧角色 —— **工人工资不对 C 端顾客开放**（customer 不可见）。
+权限码 `order:list` 只可能来自商户员工 JWT —— **工人工资不对 C 端顾客开放**（C 端无权限码）。
 纯只读（read_only=True），无写操作、无破坏性。
 """
 
@@ -66,8 +66,10 @@ class PieceworkQueryTool(BaseTool):
         "required": ["worker_name"],
     }
 
-    # 仅 B 端：工人工资/人工成本不对 C 端顾客开放
-    allowed_roles = ["admin", "tenant_admin", "agent"]
+    # 仅 B 端：工人工资/人工成本不对 C 端顾客开放 —— C 端 JWT 没有权限码，天然被挡。
+    # 权限码（admin-api 目录）：AgentProductionController / ProductionController 类级
+    # `@RequirePermission("order:list")`。
+    required_permissions = ["order:list"]
     read_only = True
     destructive = False
     idempotent = True

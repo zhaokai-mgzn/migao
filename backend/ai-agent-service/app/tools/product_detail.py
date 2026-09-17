@@ -7,7 +7,7 @@ AI 智能客服系统 - 商品详情 Tool
 from typing import Any, Dict
 from loguru import logger
 
-from app.tools.base import BaseTool, ToolContext, ToolResult
+from app.tools.base import admin_api_failure, BaseTool, ToolContext, ToolResult
 from app.tools.stock_semantics import (
     NO_SKU_SOURCE,
     no_sku_stock_note,
@@ -89,15 +89,13 @@ class ProductDetailTool(BaseTool):
                 error_msg = response.get("error", {}).get("message", "查询失败")
                 
                 if error_code == "NOT_FOUND" or "不存在" in error_msg:
-                    return ToolResult(
-                        success=False,
+                    return admin_api_failure(response,
                         error="商品不存在",
                         message="抱歉，未找到该商品，请检查商品 ID 是否正确",
                         suggestion="该商品 ID 在库中不存在，请改用 product_search 按商品名搜索，并把候选结果给用户确认",
                     )
                 
-                return ToolResult(
-                    success=False,
+                return admin_api_failure(response,
                     error=error_msg,
                     message="查询商品详情失败，请稍后重试",
                     suggestion="请稍后重试，如持续失败请联系技术支持",

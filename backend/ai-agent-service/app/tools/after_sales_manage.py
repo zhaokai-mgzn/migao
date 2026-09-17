@@ -7,7 +7,7 @@ AI 智能客服系统 - 售后工单管理 Tool
 from typing import Any, Dict, Optional
 from loguru import logger
 
-from app.tools.base import BaseTool, ToolContext, ToolResult
+from app.tools.base import admin_api_failure, BaseTool, ToolContext, ToolResult
 from app.utils.enum_labels import (
     TICKET_PRIORITY_LABELS,
     TICKET_STATUS_LABELS,
@@ -51,7 +51,10 @@ class AfterSalesManageTool(BaseTool):
         "缺原因会被本工具拒绝——先问用户原因再调用）。"
         "可选: refund_amount, priority, images。仅查工单用 list/detail action。WRITE"
     )
-    allowed_roles = ["admin", "agent", "tenant_admin", "operator"]
+    # 权限码（admin-api 目录）：AfterSalesController / AgentAfterSalesController 类级
+    # `@RequirePermission("order:refund")`（售后工单 = 退款处理）。
+    # 不再用 allowed_roles —— 手写角色白名单会与目录漂移（#4106 F4）。
+    required_permissions = ["order:refund"]
 
     read_only = False
     destructive = True   # 可关闭/拒绝工单（不可逆）
@@ -225,8 +228,7 @@ class AfterSalesManageTool(BaseTool):
 
         if not response.get("success"):
             error_msg = response.get("error", {}).get("message", "查询失败")
-            return ToolResult(
-                success=False,
+            return admin_api_failure(response,
                 error=error_msg,
                 message=f"查询售后工单列表失败:{error_msg}",
                 suggestion="请稍后重试；若持续失败，请改为不带状态筛选查询，或请用户联系管理员核对工单数据",
@@ -274,8 +276,7 @@ class AfterSalesManageTool(BaseTool):
 
         if not response.get("success"):
             error_msg = response.get("error", {}).get("message", "查询失败")
-            return ToolResult(
-                success=False,
+            return admin_api_failure(response,
                 error=error_msg,
                 message=f"查询售后工单详情失败:{error_msg}",
                 suggestion="请先用 after_sales_manage 的 list 操作确认该工单仍在（已删除的工单不可查看详情）后重试",
@@ -370,8 +371,7 @@ class AfterSalesManageTool(BaseTool):
 
         if not response.get("success"):
             error_msg = response.get("error", {}).get("message", "创建失败")
-            return ToolResult(
-                success=False,
+            return admin_api_failure(response,
                 error=error_msg,
                 message=f"创建售后工单失败:{error_msg}",
                 suggestion="请先用 order_query 确认订单存在且属于当前租户，再重新执行创建工单",
@@ -462,8 +462,7 @@ class AfterSalesManageTool(BaseTool):
 
         if not response.get("success"):
             error_msg = response.get("error", {}).get("message", "更新失败")
-            return ToolResult(
-                success=False,
+            return admin_api_failure(response,
                 error=error_msg,
                 message=f"更新售后工单状态失败:{error_msg}",
                 suggestion="请先用 after_sales_manage 的 detail 操作确认该工单当前状态，再按合法流转路径重新执行更新",

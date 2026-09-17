@@ -2,7 +2,7 @@
 
 from loguru import logger
 
-from app.tools.base import BaseTool, ToolContext, ToolResult
+from app.tools.base import admin_api_failure, BaseTool, ToolContext, ToolResult
 from app.utils.http_client import get_admin_api_client
 
 
@@ -16,7 +16,10 @@ class SkuUpdateTool(BaseTool):
         "color/selling_method/door_width 都是可选的，至少填一个来定位 SKU。"
         "【标注】WRITE|IDEMPOTENT"
         "【铁律】用户明确要求写操作（禁用/创建/调整/删除/上下架/重置等）时：先查必要信息拿真实 ID → 展示操作预览 + 确认卡 → 用户确认后立即调用写工具执行，禁止只查询/展示列表就停（HR-003/PP-006/PR-005 实拍：agent 只 list/query 不执行写工具判失败）。")
-    allowed_roles = ["admin", "tenant_admin"]
+    # 权限码（admin-api 目录）：SKU 改价/改库存属商品写 ⇒ 写码 `product:create`
+    # （该 agent 端点只挂类级读码 `product:list`，按读码放行会让只读持有者拿到写权限）。
+    # 此前写死 ["admin","tenant_admin"] ⇒ operator / product_manager 持码却被判「权限不足」（#4106 F4）。
+    required_permissions = ["product:create"]
     read_only = False
     requires_confirmation = True  # 审计 07 P0-L1: 高风险非 destructive 写操作需用户确认
     destructive = False
@@ -88,7 +91,7 @@ class SkuUpdateTool(BaseTool):
         if not response.get("success"):
             err = response.get("error", {})
             msg = err.get("message", "更新失败") if isinstance(err, dict) else str(err)
-            return ToolResult(success=False, error=msg, message=f"SKU 调价失败: {msg}",
+            return admin_api_failure(response, error=msg, message=f"SKU 调价失败: {msg}",
                             suggestion="请先调 product_detail 查看 SKU 列表，确认颜色/售卖方式/门幅正确")
 
         desc_parts = [p for p in [color, selling_method, door_width] if p]

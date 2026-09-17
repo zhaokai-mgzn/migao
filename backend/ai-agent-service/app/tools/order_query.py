@@ -11,7 +11,7 @@ receiver（收货人姓名或手机号）/ status / startDate / endDate。
 from typing import Any, Dict, List, Optional
 from loguru import logger
 
-from app.tools.base import BaseTool, ToolContext, ToolResult
+from app.tools.base import admin_api_failure, BaseTool, ToolContext, ToolResult
 from app.utils.http_client import get_admin_api_client
 from app.utils.log_sanitizer import LogSanitizer
 
@@ -201,8 +201,7 @@ class OrderQueryTool(BaseTool):
         )
         if not response.get("success"):
             error_msg = response.get("error", {}).get("message", "查询失败")
-            return ToolResult(
-                success=False,
+            return admin_api_failure(response,
                 error=error_msg,
                 message="订单统计查询失败，请稍后重试",
                 suggestion="请检查参数是否正确，或稍后重试",
@@ -249,8 +248,7 @@ class OrderQueryTool(BaseTool):
         )
         if not response.get("success"):
             error_msg = response.get("error", {}).get("message", "查询失败")
-            return ToolResult(
-                success=False,
+            return admin_api_failure(response,
                 error=error_msg,
                 message="订单跟进状态统计查询失败，请稍后重试",
                 suggestion="请检查参数是否正确，或稍后重试",
@@ -344,8 +342,7 @@ class OrderQueryTool(BaseTool):
         # 解析响应
         if not response.get("success"):
             error_msg = response.get("error", {}).get("message", "查询失败")
-            return ToolResult(
-                success=False,
+            return admin_api_failure(response,
                 error=error_msg,
                 message="订单查询失败，请稍后重试",
                 suggestion="请稍后重试，或尝试输入订单号精确查询",
