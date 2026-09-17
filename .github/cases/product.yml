@@ -26,10 +26,23 @@ cases:
       - tool: product_search
         args:
           keyword: 遮光窗帘
+    # ── 产出侧下沉（issue #4025 F16，承接 #4042 的 OR-001/OR-002 同族修法）──
+    # 原 `data_checks: - "data.products.length > 0"` 是**装饰性断言**：
+    #   ① 不含机器计分关键词（`success=true` / `error.code=` / `未被调用` / `not called`）
+    #      ⇒ 纯散文**不计分**；② runner 也无从判定 `data` 指哪一次调用的 payload。
+    # ⇒ 「搜索被调用过」就等于满分，「到底搜出东西没有」不可见。语义等价地升级成**可失败**的
+    # 机器断言：搜索结果必须非空（空列表 / 从未成功调用 ⇒ 判红）。
+    # 可满足性（两条腿都核过）：种子恒有 `prod_eval_blackout`（遮光窗帘，在售）；
+    # 唯一会改它在售状态的是 PR-007/PR-025（**mibao 腿专属**，且均已在下架后复位），
+    # xiaobu 腿不跑它们 ⇒ 两腿都恒可搜到。
+    output_verify:
+      - tool: product_search
+        expect:
+          products: __nonempty__
     data_checks:
-      - "data.products.length > 0"
+      - "搜索必须真的返回商品（机器断言见 output_verify：products 非空）—— 原 `data.products.length > 0` 不计分，已弃用"
     skip_reason: ""
-    merge_log: "eval P001 + verification 2.1（同义，取 eval 版）"
+    merge_log: "eval P001 + verification 2.1（同义，取 eval 版）；2026-09-18 下沉（issue #4025 F16）：纯散文 `data.products.length > 0` 不计分（无机器计分关键词）⇒ output_verify(product_search 的 products 非空)"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_product_search.py"
@@ -54,10 +67,21 @@ cases:
       - tool: product_search
         args:
           stock_status: out_of_stock
+    # ── 产出侧下沉（issue #4025 F16）──
+    # 原 `data_checks: - "data.products.length >= 0"` 是 OR-002 的同族形态：**恒真 + 不计分**
+    # ⇒ 结构上不可能红。本用例的产物侧真值**是"空"**（种子 4 件商品 stock 全 > 0：
+    # 遮光窗帘 1000 / 北欧风窗帘 800 / 夏日清风窗帘 600 / 2699系列 1000），
+    # 故不能照抄 `__nonempty__`（那会造一条**恒红**）。改为断言**过滤器真的生效**：
+    # `total` 必须为 0 —— 过滤条件被忽略（如只按关键词检索、下发 stockBelow 失败、
+    # 后端口径漂移）⇒ total > 0 ⇒ 判红。这是 arg 级 `expectations` **看不见**的产出侧事实。
+    output_verify:
+      - tool: product_search
+        expect:
+          total: 0
     data_checks:
-      - "data.products.length >= 0"
+      - "「缺货商品」查询必须真的按库存过滤（机器断言见 output_verify：total == 0，= 种子无库存≤0 商品的可判定事实；过滤被忽略 ⇒ total>0 ⇒ 判红）—— 原 `data.products.length >= 0` 恒真且不计分，已弃用"
     skip_reason: ""
-    merge_log: "verification 2.2 独有"
+    merge_log: "verification 2.2 独有；2026-09-18 下沉（issue #4025 F16）：原 `data.products.length >= 0` 恒真且不计分（OR-002 同族）⇒ 升级为 output_verify(total == 0)——本用例产物侧真值本就是「空」，故断言的是**过滤器生效**而非「非空」（避免把恒真换成恒红）"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_product_search.py"
@@ -1267,6 +1291,18 @@ cases:
       # 答卡轮（同 PR-007 套路）：有卡回 confirmValue、无卡才发原文「确认」。
       - auto_respond:
           fallback: "确认"
+      # ── 复位轮（issue #4075 的**用例侧**修法，同 PR-007「下架→上架」先例）──
+      # 本用例改的是**共享夹具**（种子商品 `prod_eval_blackout` 的在售状态），且它是
+      # **mibao 腿专属**（`eval_case_filter.case_persona` 判定），而 mibao 腿同一栈里还跑
+      # PR-001 / PR-002 / OR-014 / PR-026 等**按名检索该商品**的用例 —— 不复位就等于把
+      # 「下架」留给它们：C 端 `product_search` 会强制下发 `status=on_sale`（issue #3932），
+      # 商品被下架时直接搜不到 ⇒ 假红，且归因写成「agent 不会搜/不干活」。
+      # 下架后**必须重新上架**，让本用例对世界的影响归零（R1：修机制不修事故点）。
+      - "把它重新上架"
+      - auto_respond:
+          fallback: "确认"
+      - auto_respond:
+          fallback: "确认"
     # 全局命名空间声明（issue #3781）：与 PR-007 同用「遮光窗帘」+ product_dedupe，
     # 声明同一命名空间自动互斥，消除同栈并行用例互相写同一命名空间造成的非确定性。
     namespaces:
@@ -1285,8 +1321,16 @@ cases:
     pre_clean:
       - type: product_dedupe
         product_keyword: "遮光窗帘"
+    # 前置自断言（§18.4；清掉 CASE-TRUST-NO-PRECONDITION-ASSERTION —— issue #4046 的存量未登记项）：
+    # 本用例按名定位**共享夹具**商品，故「该名字唯一」是它依赖的前置（`product_dedupe` 先于
+    # capture 执行 ⇒ 捕获时恰为 1）。前置不成立时折成 `PRECONDITION_NOT_APPLIED`，
+    # 不再伪装成「agent 不干活」。
+    precondition:
+      - type: product_count_for_keyword
+        source: "遮光窗帘"
+        expect: 1
     skip_reason: ""
-    merge_log: "2026-09-15 新增（#3882 复盘，#3886）：sess_f26fda5046f34992 复盘——B 端写操作（下架/删加工项）被确认门禁拦截后 agent 只在文本声称「确认卡已发出」而未调 interact，客户无卡可点；行为修复已合并（#3882：base_skill.py 兜底补发确认卡 + tests/test_b_end_confirm_card_fallback.py），本条为行为评测用例（LLM 真跑验证），核心断言 order_before[interact[confirm] before product_manage]：缺卡/写先于卡即红。以 PR-007 为模板（答卡轮 auto_respond fallback=确认 + pre_clean product_dedupe 遮光窗帘 + truths_ref product-sku-stock.status-flow + 命名空间互斥）。"
+    merge_log: "2026-09-15 新增（#3882 复盘，#3886）：sess_f26fda5046f34992 复盘——B 端写操作（下架/删加工项）被确认门禁拦截后 agent 只在文本声称「确认卡已发出」而未调 interact，客户无卡可点；行为修复已合并（#3882：base_skill.py 兜底补发确认卡 + tests/test_b_end_confirm_card_fallback.py），本条为行为评测用例（LLM 真跑验证），核心断言 order_before[interact[confirm] before product_manage]：缺卡/写先于卡即红。以 PR-007 为模板（答卡轮 auto_respond fallback=确认 + pre_clean product_dedupe 遮光窗帘 + truths_ref product-sku-stock.status-flow + 命名空间互斥）。2026-09-18 补复位轮 + 前置自断言（issue #4075 用例侧 / #4046）：下架后新增「重新上架」答卡轮（同 PR-007），让共享夹具在用例结束时归零（此前残留 off_sale 会污染同栈按名检索的用例）；并补 precondition[product_count_for_keyword expect=1]。**断言（expectations / order_before / data_checks）原样未动**"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_b_end_confirm_card_fallback.py"
@@ -1421,8 +1465,16 @@ cases:
     pre_clean:
       - type: product_dedupe
         product_keyword: "遮光窗帘"
+    # 前置自断言（§18.4；清掉 CASE-TRUST-NO-PRECONDITION-ASSERTION —— issue #4046 的存量未登记项）：
+    # 本用例按名定位**共享夹具**商品（写它的主图），「该名字唯一」是它依赖的前置
+    # （`product_dedupe` 先于 capture ⇒ 捕获时恰为 1）；漂移时折成 `PRECONDITION_NOT_APPLIED`，
+    # 不再伪装成「agent 能力误宣」。
+    precondition:
+      - type: product_count_for_keyword
+        source: "遮光窗帘"
+        expect: 1
     skip_reason: ""
-    merge_log: "2026-09-15 新增（issue #3931，实证 sess_2efa2071bb1747d8 19:46:32 拒绝文本）：「不包含图片上传」「拿不到可写入的地址」必须被守卫命中并纠正——product_manage 有 images/detail_images 参数、能力真实可达；forbidden_text 逐词机器断言（可判定形式），守卫判据与话术见 base_skill.py 的 _PRODUCT_IMAGE_ACTION_WORDS / _product_image_denial_hit / _TEXT_DENIAL_CORRECTIVE_PRODUCT_IMAGE"
+    merge_log: "2026-09-15 新增（issue #3931，实证 sess_2efa2071bb1747d8 19:46:32 拒绝文本）：「不包含图片上传」「拿不到可写入的地址」必须被守卫命中并纠正——product_manage 有 images/detail_images 参数、能力真实可达；forbidden_text 逐词机器断言（可判定形式），守卫判据与话术见 base_skill.py 的 _PRODUCT_IMAGE_ACTION_WORDS / _product_image_denial_hit / _TEXT_DENIAL_CORRECTIVE_PRODUCT_IMAGE。2026-09-18 补前置自断言（issue #4046）：precondition[product_count_for_keyword expect=1]（断言原样未动）"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_product_image_denial_guard.py"
