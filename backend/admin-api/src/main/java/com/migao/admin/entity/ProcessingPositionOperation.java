@@ -53,7 +53,7 @@ public class ProcessingPositionOperation {
     /** 特殊选项计件系数（如 一分二 ×1.7） */
     private BigDecimal factor;
 
-    /** 必完工序：全绿 → 订单自动完工 */
+    /** 必完工序：全绿 → 加工单置 completed（生产完工；订单状态不动，issue #4117） */
     private Boolean isMustFinish;
 
     /** 生产开始标记 */

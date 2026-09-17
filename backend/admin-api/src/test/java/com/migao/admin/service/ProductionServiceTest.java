@@ -1,7 +1,6 @@
 // case_ids: PG-018, CH-039, CH-040
 package com.migao.admin.service;
 
-import com.baomidou.mybatisplus.core.conditions.Wrapper;
 import com.migao.admin.config.TenantContext;
 import com.migao.admin.entity.Order;
 import com.migao.admin.entity.ProcessingOrder;
@@ -26,11 +25,12 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -39,7 +39,8 @@ import static org.mockito.Mockito.when;
  * ProductionService 语义测试（生产报工，issue #3995，M4-G-2）
  *
  * 与 M4-G-1 确定性核心（app/production/piecework.py）同口径，走 HTTP 层之外的边界语义：
- * 部分报工不算完成 / 订单非 producing 时不动状态 / 工序实例缺失时不误计件 / 计件按期过滤。
+ * 部分报工不算完成 / 完工 = 加工单置 completed（订单状态不动，issue #4117）/
+ * 工序实例缺失时不误计件 / 计件按期过滤。
  */
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
@@ -123,28 +124,88 @@ class ProductionServiceTest {
 
         assertThat((BigDecimal) result.get("done_qty")).isEqualByComparingTo("4.00");
         assertThat(result.get("status")).isEqualTo("done");
-        // 必完工序 4 < 10 ⇒ 不完工，订单状态不动（生产中的订单只能由「必完全绿」推进）
+        // 必完工序 4 < 10 ⇒ 不完工，加工单不动（只有「必完全绿」才置 completed）
         assertThat(result.get("order_completed")).isEqualTo(false);
-        verify(orderMapper, never()).update(isNull(), any());
+        verify(processingOrderMapper, never()).markCompletedIfActive(any(), any(), any());
+        verify(orderMapper, never()).update(any(), any());
     }
 
+    // ── 完工语义（issue #4117）：完工 = 加工单置 completed，**不是**订单状态推进 ──
+    //
+    // 病灶（P0·订单不可发货）：旧实现必完全绿时用裸 `UpdateWrapper<Order>` 直写订单
+    // `producing → completed`，而 OrderService.STATUS_TRANSITIONS 里该迁移**非法**且
+    // completed 是**终态**；同时 ProductionService 从不更新加工单状态，而发货守卫
+    // （assertProcessingCompletedBeforeShip）读的正是加工单 `status='completed'`
+    // ⇒ 含加工项订单报完工后**既发不了货也回不去**。
+
     @Test
-    @DisplayName("必完全绿但订单已不在 producing（并发/已发货）→ 条件更新 0 行，order_completed=false")
-    void completionIsAtomicAndOnlyFromProducing() {
+    @DisplayName("必完全绿 → 加工单置 completed（订单状态不动，不写订单表）")
+    void completionMarksProcessingOrderCompletedNotOrder() {
         when(positionOperationMapper.selectById("op-1"))
                 .thenReturn(op("op-1", "外帘装袋", "1.00", true, "pending", "0.00", "1.00", "1.00"));
         when(positionOperationMapper.selectList(any())).thenReturn(List.of(
                 op("op-1", "外帘装袋", "1.00", true, "done", "1.00", "1.00", "1.00")));
-        when(orderMapper.update(isNull(), any())).thenReturn(0);
+        when(processingOrderMapper.markCompletedIfActive(eq(PO_ID), eq(TENANT), any())).thenReturn(1);
+
+        Map<String, Object> result = service.report(ORDER_ID, "op-1", reportBody("1", "1", "normal"), TENANT);
+
+        assertThat(result.get("order_completed")).isEqualTo(true);
+        // ① 加工单必须被置 completed（生产完工的唯一写路径）
+        verify(processingOrderMapper).markCompletedIfActive(eq(PO_ID), eq(TENANT), any());
+        // ② 订单状态**不得**被生产侧改写（producing 是 shipOrderIfApplicable 唯一的可流转前置）
+        verify(orderMapper, never()).update(any(), any());
+    }
+
+    @Test
+    @DisplayName("加工单非活跃（并发取消）→ 条件更新 0 行，order_completed=false，不复活已取消加工单")
+    void completionIsAtomicAndSkipsNonActiveProcessingOrder() {
+        when(positionOperationMapper.selectById("op-1"))
+                .thenReturn(op("op-1", "外帘装袋", "1.00", true, "pending", "0.00", "1.00", "1.00"));
+        when(positionOperationMapper.selectList(any())).thenReturn(List.of(
+                op("op-1", "外帘装袋", "1.00", true, "done", "1.00", "1.00", "1.00")));
+        when(processingOrderMapper.markCompletedIfActive(eq(PO_ID), eq(TENANT), any())).thenReturn(0);
 
         Map<String, Object> result = service.report(ORDER_ID, "op-1", reportBody("1", "1", "normal"), TENANT);
 
         assertThat(result.get("order_completed")).isEqualTo(false);
-        ArgumentCaptor<Wrapper<Order>> captor = ArgumentCaptor.forClass(Wrapper.class);
-        verify(orderMapper).update(isNull(), captor.capture());
-        assertThat(captor.getValue().getSqlSegment())
-                .as("订单状态推进必须带 producing 前置条件（原子，不覆盖已发货/已完成）")
-                .contains("status");
+        verify(processingOrderMapper).markCompletedIfActive(eq(PO_ID), eq(TENANT), any());
+        verify(orderMapper, never()).update(any(), any());
+    }
+
+    @Test
+    @DisplayName("完工→发货贯通（#4117 红线）：必完全绿 → 加工单 completed → 发货守卫判据放行")
+    void productionCompletionUnblocksShipGuard() {
+        // 加工单状态用内存态驱动：发货守卫的判据是加工单 status='completed'（countCompletedByOrderId），
+        // 只有真的把加工单置 completed，守卫才会放行 —— 这样断言会双向变化（不是恒真）。
+        AtomicBoolean processingCompleted = new AtomicBoolean(false);
+        when(positionOperationMapper.selectById("op-1"))
+                .thenReturn(op("op-1", "外帘装袋", "1.00", true, "pending", "0.00", "1.00", "1.00"));
+        when(positionOperationMapper.selectList(any())).thenReturn(List.of(
+                op("op-1", "外帘装袋", "1.00", true, "done", "1.00", "1.00", "1.00")));
+        when(processingOrderMapper.markCompletedIfActive(eq(PO_ID), eq(TENANT), any()))
+                .thenAnswer(invocation -> {
+                    processingCompleted.set(true);
+                    return 1;
+                });
+        when(processingOrderMapper.countCompletedByOrderId(ORDER_ID, TENANT))
+                .thenAnswer(invocation -> processingCompleted.get() ? 1L : 0L);
+
+        // 前置：完工前守卫判据 = 0（含加工项订单会被 assertProcessingCompletedBeforeShip 拦截）
+        assertThat(processingOrderMapper.countCompletedByOrderId(ORDER_ID, TENANT))
+                .as("完工前：无 completed 加工单 ⇒ 发货守卫拦截")
+                .isZero();
+
+        Map<String, Object> result = service.report(ORDER_ID, "op-1", reportBody("1", "1", "normal"), TENANT);
+
+        // 端到端判据（先断言，红证② 的判据就是它）：必完全绿后，守卫判据
+        // （OrderService.assertProcessingCompletedBeforeShip 的 `countCompletedByOrderId(...) == 0`）
+        // 不再成立 ⇒ 发货放行
+        assertThat(processingOrderMapper.countCompletedByOrderId(ORDER_ID, TENANT))
+                .as("完工后：加工单 status='completed' ⇒ 发货守卫放行")
+                .isGreaterThan(0);
+        assertThat(result.get("order_completed")).isEqualTo(true);
+        // 订单留在 producing（shipOrderIfApplicable 只在 confirmed/producing 时流转）且从未被生产侧改写
+        verify(orderMapper, never()).update(any(), any());
     }
 
     @Test

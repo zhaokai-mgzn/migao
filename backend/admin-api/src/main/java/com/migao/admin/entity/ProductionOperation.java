@@ -44,7 +44,7 @@ public class ProductionOperation {
     /** 计件单价（元/单位） */
     private BigDecimal unitPrice;
 
-    /** 必完工序：全绿才可打包 → 订单自动完工 */
+    /** 必完工序：全绿才可打包 → 加工单置 completed（生产完工；订单状态不动，issue #4117） */
     private Boolean isMustFinish;
 
     /** 生产开始标记：该工序报工即视为进入生产中 */

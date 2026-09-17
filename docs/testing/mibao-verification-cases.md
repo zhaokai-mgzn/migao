@@ -3037,9 +3037,10 @@
 数据: 含加工项订单无 completed 加工单 → updateOrderStatus(shipped) 校验错误
 数据: 含加工项订单经 agent 发货路径（update_logistics→shipOrderIfApplicable）无 completed 加工单 → 同样校验错误（验收复核 P1 修复，2026-09-12）
 数据: 含加工项订单有 completed 加工单 → 可 shipped
+数据: 机器判据（未被调用）：countCompletedByOrderId=0 时 updateOrderStatus(shipped) 抛校验错误「须先完成加工单」且 orderMapper.update 未被调用（订单状态未被写）；countCompletedByOrderId=1 时放行、orderMapper.update 被调用（落 shipped）—— 由 OrderServiceTest 的 verify(never)/verify 与异常消息断言，非散文
 跳过: 由 OrderServiceTest + AgentOrderServiceTest 验证
 ```
-溯源: 2026-09-12 新增（issue #3340） ｜ tags: processing-order, guard, shipped
+溯源: 2026-09-12 新增（issue #3340）；2026-09-18（#4117 关联）：补一条机器计分型 data_check —— 原三条均为纯散文，计分断言数 = 0（expectations 空 + 无机器计分型 data_check）⇒ 恒绿形态（CASE-TRUST-EMPTY-ASSERTION）；改写为机器可判形态，断言语义**未放宽**（仍是「无 completed 加工单 → 拦截；有 → 放行」两条）。 ｜ tags: processing-order, guard, shipped
 
 ### PG-010. 订单取消联动 - 加工单 generated 自动作废；issued+ 拦截 🔵
 ```
@@ -3168,14 +3169,15 @@
 数据: success=true
 数据: 实例化：POST /api/admin/production/orders/{orderId}/instantiate 按部位写入 processing_position_operations（seq/应做数量 qty/快照单价 unit_price/系数 factor/必完标记 is_must_finish），并把 32 位 qr_token 落库到 processing_orders.qr_token；重复实例化复用同一 token（已打印二维码不失效）且旧实例软删（deleted=1）
 数据: 报工三态：POST /api/admin/production/orders/{orderId}/operations/{operationId}/report 落 production_work_logs（报工人/工序名快照/报工数量/合格数量/work_type）；仅 work_type=normal 且 qualified_qty>0 才累加 done_qty 并置 status=done，rework 返工 / scrap 报废既不累加进度也不计件
-数据: 必完完工：全部 is_must_finish 工序满足 done_qty ≥ qty 时，订单 status producing → completed（条件原子更新，order_completed=true）；订单已非 producing 时更新 0 行、order_completed=false，必完工序未全绿不完工
+数据: 必完完工（issue #4117 修语义：完工 = **加工单**置 completed，**订单状态不动**）：全部 is_must_finish 工序满足 done_qty ≥ qty 时，processing_orders.status 原子置 completed（活跃态条件更新 + completed_at，order_completed=true），订单保持 producing —— 订单状态机无 producing→completed（completed 是终态）⇒ 旧实现直写订单 completed 会让含加工项订单既发不了货也回不去；加工单非活跃（并发取消）时更新 0 行、order_completed=false；必完工序未全绿不完工
+数据: 完工→发货贯通（#4117 红证判据）：必完工序全绿 ⇒ 加工单 status='completed' ⇒ 发货守卫 assertProcessingCompletedBeforeShip 读到的 countCompletedByOrderId > 0 放行，且订单仍为 producing（shipOrderIfApplicable 只在 confirmed/producing 时流转）⇒ 含加工项订单完工后可发货
 数据: 计件：GET /api/admin/production/orders/{orderId}/piecework = Σ(合格数量 × 单价 × 系数)，排除返工/报废；单工序一人制（per_worker 按报工人归集、per_operation 按工序归集）
 数据: 租户隔离与软删：订单/工序实例/报工记录均按 tenant_id + deleted=0 过滤；跨租户订单或不属于该订单加工单的工序 → 404，且不落报工明细
 数据: 订单解析三形态（issue #4005）：GET/报工/计件的 {orderId} 路径参数支持 ① 内部 order_id ② 订单号 order_no（手输纸质单号）③ 加工单 qr_token（M4-H 打印任务卡二维码的取值来源）——三级都不中才 404；租户隔离/deleted 过滤逐级保持（证据：ProductionServiceTest 3 项 + ProductionControllerTest「路径参数=qr_token」1 项）
 数据: Agent 冻结契约（并行包消费）：GET /api/admin/agent/production/progress?order_no= 返回键集固定 {order_no,status,status_text,progress_percent,current_operation,pending_operations,total_operations,done_operations,expected_delivery_date}；GET /piecework?worker_name=&period=YYYY-MM 返回 {worker_name,period,total,details:[{operation,qty,amount}]}（缺键/改名即红）
 跳过: 后端契约用例（写路径无 LLM 环节，不进 agent-eval 冒烟）：断言全部由 Java 单测执行 —— ProductionControllerTest / AgentProductionControllerTest（MockMvc，含返回键集冻结断言）/ ProductionServiceTest（服务层语义）/ Mapper 契约测试（实体 ↔ V49 迁移 ↔ docs/sql/schema.sql 三源收敛）/ ProductionReportingMigrationTest（迁移与 qr_token 索引）
 ```
-溯源: 2026-09-17 新增（issue #3995，M4-G-2）：生产报工后端落地 —— V49 迁移（production_operations / production_routings / processing_position_operations / production_work_logs + processing_orders.qr_token）、ProductionService（实例化/扫码报工/必完自动完工/计件/进度）、ProductionController 与 AgentProductionController（冻结契约）。语义与 M4-G-1 确定性核心（app/production/{routing,piecework}.py，issue #3993）同口径：报工三态、必完工序全绿判定、计件排除返工/报废。 ｜ tags: processing-order, production-reporting, piecework, scan-report
+溯源: 2026-09-17 新增（issue #3995，M4-G-2）：生产报工后端落地 —— V49 迁移（production_operations / production_routings / processing_position_operations / production_work_logs + processing_orders.qr_token）、ProductionService（实例化/扫码报工/必完自动完工/计件/进度）、ProductionController 与 AgentProductionController（冻结契约）。语义与 M4-G-1 确定性核心（app/production/{routing,piecework}.py，issue #3993）同口径：报工三态、必完工序全绿判定、计件排除返工/报废。2026-09-18（issue #4117，P0 修语义）：原第 3 条 data_check 把**缺陷**写成期望（「订单 status producing → completed」，而 OrderService.STATUS_TRANSITIONS 里该迁移非法、completed 是终态）⇒ 改为「完工 = 加工单置 completed（订单保持 producing）」+ 新增「完工→发货贯通」判据；修复 = ProductionService.report 走 ProcessingOrderMapper.markCompletedIfActive（活跃态原子更新），禁止生产侧直写订单状态。 ｜ tags: processing-order, production-reporting, piecework, scan-report
 
 ## 商品域（25 case）
 
