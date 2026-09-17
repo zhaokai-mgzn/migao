@@ -72,8 +72,28 @@ public class PermissionInterceptor {
     }
 
     Object doIntercept(ProceedingJoinPoint joinPoint, RequirePermission requirePermission) throws Throwable {
-        String requiredPermission = requirePermission.value();
+        requirePermission(requirePermission.value());
 
+        // 执行目标方法
+        return joinPoint.proceed();
+    }
+
+    /**
+     * 命令式权限断言（issue #4148）：判定语义与 AOP 拦截**逐条相同**（未认证 ⇒ 拒绝 /
+     * 平台管理员与内部服务旁路 / `*` 通配 / `RoleService.getUserPermissions` 细粒度查询），
+     * 拒绝时抛 {@link PermissionDeniedException}（带结构化权限码，由 GlobalExceptionHandler
+     * 生成 403 + 缺失码 + 可执行 suggestion）。
+     *
+     * <p>为什么需要它：{@code @RequirePermission} 只能声明**端点级**的静态权限码，而
+     * {@code PATCH /api/admin/agent/orders/{id}} 一个入口按请求体的 {@code action} 覆盖
+     * status/logistics/payment/cancel/**refund** —— 退款是财务动作（表单路径
+     * {@code OrderController} 用的是 {@code order:refund}），只有到了 action 维度才判得出来。
+     * 控制器调用本方法复用**同一份**判定，而不是在自己的类里再写一段查权限：那是第二份授权实现，
+     * 必然与 AOP 口径漂移（旁路角色/通配/取码来源任一处不一致就会放出越权或误拒）。</p>
+     *
+     * @param requiredPermission 需要的权限码（如 {@code order:refund}）
+     */
+    public void requirePermission(String requiredPermission) {
         // 获取当前用户认证信息
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication == null || !authentication.isAuthenticated()) {
@@ -86,7 +106,7 @@ public class PermissionInterceptor {
         // service 为内部服务身份（internal-service），同样不适用租户权限查询。
         if (hasBypassRole(authentication)) {
             log.debug("权限检查跳过：用户为平台管理员或内部服务，权限 {}", requiredPermission);
-            return joinPoint.proceed();
+            return;
         }
 
         // 获取当前用户ID
@@ -111,9 +131,6 @@ public class PermissionInterceptor {
         }
 
         log.debug("权限检查通过：用户 {} 拥有权限 {}", userId, requiredPermission);
-
-        // 执行目标方法
-        return joinPoint.proceed();
     }
 
     /**
