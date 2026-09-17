@@ -9,6 +9,7 @@ import KnowledgeCard from '../cards/KnowledgeCard'
 import OrderCard from '../cards/OrderCard'
 import QuotationCard from '../cards/QuotationCard'
 import PaymentCard from '../cards/PaymentCard'
+import ProductionProgressCard from '../cards/ProductionProgressCard'
 import ConfirmCard from '../cards/ConfirmCard'
 import ChoiceCard from '../cards/ChoiceCard'
 import FormCard from '../cards/FormCard'
@@ -126,6 +127,11 @@ function renderCard(card: CardData, idx: number, onInteract?: (value: string) =>
     case 'payment': {
       // 收款二维码卡片（扫码直接付给商家，issue #3990）
       return <PaymentCard key={`card-${idx}`} data={data} />
+    }
+
+    case 'production_progress': {
+      // 顾客端生产进度卡（加工单进度/当前工序/交期，issue #3997）
+      return <ProductionProgressCard key={`card-${idx}`} data={data} />
     }
 
     default:

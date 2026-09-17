@@ -420,7 +420,7 @@
 ```
 溯源: 2026-09-07 新增：#2984 语音空录音体验优化（生产实证：无声音停止 → 空/极小 webm → 后端裸 500 → 前端 Failed to fetch） ｜ tags: asr, voice, error-handling
 
-## bmini（5 case）
+## bmini（6 case）
 
 ### BM-001. B 端员工首次小程序登录 - 微信授权手机号匹配员工并绑定 openid 🔵
 ```
@@ -480,6 +480,18 @@
 ```
 真值: auth-sms.bypass
 溯源: issue #2977 B 端手机版基建（复制自 mini-app） ｜ tags: bmini, store, auth
+
+### BM-006. 工人扫码报工 - 扫码/手输单号 → 本单工序 → 完成报工 → 完工提示 🔵
+```
+你: 工人扫加工单二维码（或手输单号）→ 老师傅看到本单工序：按部位分组展示「工序名 · 应做数量+单位 · 单价」→ 点「完成报工」→ 工序列推进 → 必完工序全绿显示「✅ 订单生产完成」
+期望: direct_reply
+数据: 二维码容错解析 order_id：裸单号 / migao://production/<id> / 带 query 的 URL 三种形态可解析，非法输入返回 null 且不发请求
+数据: 报工请求体逐字为冻结契约字段（worker_id/worker_name/qty/qualified_qty/work_type=normal），qty 默认=该工序应做数量
+数据: 报工失败（success=false）展示后端 message 且不清空工序列表；order_completed=true → 页面显示「✅ 订单生产完成」
+跳过: 纯前端单元测试（bmini-app tests/production-page.test.tsx + production-qr.test.ts），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: frontend-fix.no-api-change
+溯源: 2026-09-17 新增（issue #3997 M4-G-3）：消费 M4-G-2 冻结契约 GET/POST /api/admin/production/orders/{orderId}/operations[/{operationId}/report]；truths_ref 用 frontend-fix.no-api-change（本包不改后端 API；生产/扫码域暂无专属真值 key） ｜ tags: bmini, production, qr-report
 
 ## 分类域（3 case）
 
@@ -3611,7 +3623,7 @@
 真值: token-refresh.no-loop
 溯源: 2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421） ｜ tags: token_refresh, auth, no_loop
 
-## ui（43 case）
+## ui（44 case）
 
 ### UI-001. 织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理 🔵
 ```
@@ -4178,6 +4190,20 @@
 真值: frontend-fix.no-api-change
 溯源: 2026-09-15 新增（真机 walkthrough 实测反馈）：C 端气泡无 markdown 处理，LLM 回复的 **粗体**/列表裸奔；新增轻量 richText 解析 + 气泡按行渲染 ｜ tags: ui, chat, rich-text
 
+### UI-045. 顾客端生产进度卡 — 进度%/当前工序/待完工序数/预计交付（不泄露内部信息，issue #3997） 🔵
+```
+你: 顾客在小布对话里收到生产进度卡：显示加工单做到哪一步了（进度百分比）、当前在做哪道工序、还剩几道工序、预计什么时候交付
+期望: direct_reply
+数据: 进度百分比取 progress.percent；progress 缺省时按 已完/总数 推导，空态（无工序）显示「暂无生产进度」（不显示假进度、不空白）
+数据: 当前工序 = 第一个 status!=done 的工序；待完工序数 = status!=done 的工序数；交期字段缺省时不渲染交期行
+数据: 兼容两种载荷（M4-G-2 实装字段）：工序树 {positions[].operations[], progress:{total,done,percent}, expected_delivery_at} 与米宝精简进度 {progress_percent, current_operation, pending_operations[], total_operations, done_operations, expected_delivery_date}
+数据: 不泄露内部信息：工人姓名 / 计件单价 / 成本 / qr_token 不出现在卡片文案（内部计件与对外加工费两套账分离）
+数据: MessageBubble 的 cardData.type='production_progress' 渲染该卡（未知卡片占位分支不被命中）
+跳过: 纯前端组件渲染由 jest 单测验证（frontend/mini-app/tests/production-progress-card.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: frontend-fix.no-api-change
+溯源: 2026-09-17 新增（issue #3997 M4-G-3）：顾客端生产进度可视化 —— 消费生产报工契约的读侧；persona: xiaobu（C 端专属卡片） ｜ tags: ui, mini-app, production-progress, card
+
 ## utils（2 case）
 
 ### UT-001. 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值 🔵
@@ -4207,12 +4233,12 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：310（活跃 156，跳过 154）
-- tier 分布：smoke 9 / normal 268 / adversarial 33
+- 用例总数：312（活跃 156，跳过 156）
+- tier 分布：smoke 9 / normal 270 / adversarial 33
 - 售后域：9
 - agents：6
 - api：19
-- bmini：5
+- bmini：6
 - 分类域：3
 - 对话边界域：41
 - 跨域：3
@@ -4232,7 +4258,7 @@
 - registry：1
 - 设置域：9
 - token-refresh：4
-- ui：43
+- ui：44
 - utils：2
 
 ### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）

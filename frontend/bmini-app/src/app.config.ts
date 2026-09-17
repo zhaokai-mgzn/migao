@@ -6,6 +6,7 @@ export default defineAppConfig({
     'pages/profile/index/index',
     'pages/sessions/detail/index',
     'pages/auth/login/index',
+    'pages/production/index/index',
   ],
   window: {
     backgroundTextStyle: 'light',
