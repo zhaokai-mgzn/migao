@@ -31,7 +31,10 @@ from app.config import settings
 from app.graph.state import AgentState
 from app.graph.pending_validated import extract_pending, is_pending_for, PENDING_KEY
 from app.tools.base import ToolContext
-from app.tools.registry import ToolRegistry, set_tool_context, get_tool_context, audit_write_tool
+from app.tools.registry import (
+    ToolRegistry, set_tool_context, get_tool_context, set_tool_scope, get_tool_scope,
+    audit_write_tool,
+)
 from app.utils.log_sanitizer import LogSanitizer
 import app.utils.error_incident as _err_inc
 from app.memory.user_memory import UserMemoryManager
@@ -409,6 +412,13 @@ def create_skill_registry(tool_names: List[str]) -> ToolRegistry:
         else:
             logger.warning(f"[base_skill] Tool '{name}' not found in global registry")
 
+    # A5（issue #4017）：把**本轮可执行工具集**登记为执行域事实（`validate_input` 执行期
+    # 据此拒绝域外目标）。为什么不新造一套域判定：这里返回的 registry **就是**执行域本身 ——
+    # `prepare_turn` 随后用同一个对象 `get_langchain_tools()` 绑定给模型（"你有哪些工具"），
+    # 而 skill 外工具名在该 registry 里一律 `get_tool() is None` → `Tool not found`。
+    # 登记的是**实际注册成功**的名单（不是入参 `tool_names`）：全局注册表缺失的工具不会
+    # 出现在模型可见工具集里，也就不该被当成"域内可执行"。
+    set_tool_scope(skill_registry.get_tool_names())
     return skill_registry
 
 
@@ -3069,7 +3079,16 @@ async def _execute_tool_safe(tool, tool_args: dict, tool_context, state: dict) -
     session_id = state.get("session_id", "")
     tenant_id = str(state.get("tenant_id", ""))
     tool_name = tool.name
-    cache_key = f"{tenant_id}:{tool_name}:{json.dumps(tool_args, sort_keys=True, default=str)}"
+    # 缓存键必须覆盖**结果依赖的全部事实**（issue #4079 / A5）：`validate_input` 的结论依赖
+    # 「当前 skill 执行域」（域内 → success；域外 → `cross_skill_target`）⇒ 键里必须带域。
+    # 不带就是**跨域串味**：同租户 60s 内 A 域的成功结论会被 B 域命中（B 域根本执行不了那个
+    # 工具）⇒ A5 的死角从缓存里被放回来（"校验通过 → 确认卡 → Tool not found"）。
+    # 域外结论本身不进缓存（下面只存 success），所以受影响的正是上面这条危险方向。
+    _scope_key = ",".join(sorted(get_tool_scope() or ()))
+    cache_key = (
+        f"{tenant_id}:{_scope_key}:{tool_name}:"
+        f"{json.dumps(tool_args, sort_keys=True, default=str)}"
+    )
 
     # 2. 缓存检查（带 asyncio.Lock 防止并发竞态）
     # ⚠️ 仅缓存只读工具：写操作（read_only=False）绝不允许缓存，

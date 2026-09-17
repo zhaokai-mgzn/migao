@@ -34,6 +34,38 @@ def get_tool_context() -> Optional[ToolContext]:
     return _current_tool_context.get()
 
 
+# ── 当前**执行域**：本轮模型真正能调用的工具集（issue #4017 / A5）──────────────
+# 事实源只有一处：`base_skill.create_skill_registry(tool_names)` 造出的 skill 工具子集
+#（同一份事实被 `get_langchain_tools()` 拿去告诉模型"你有哪些工具"）。存在理由：
+# `validate_input` 的校验域是全局的（`_VALIDATION_RULES`），执行却是域相关的（skill 外工具
+# 一律 `Tool not found`），两侧从不比对 ⇒ 域外目标校验返回 success=True → 落「已校验待执行」
+# → 确认卡 → 点卡后 `Tool not found` → 空头承诺、订单永不落库（#3976）。
+#
+# 三态语义（适用域声明见 `ValidateInputTool.execute` 的域比对分支）：
+#   · `frozenset[str]`：skill 回合，本轮可执行工具集；· `frozenset()`：**空域** ⇒ 任何目标都
+#   不可执行 ⇒ `validate_input` fail-closed 全拒；· `None`：**无 skill 域**（`api/chat.py` /
+#   `api/internal.py` 直调全局注册表、单测直调）⇒ 域即全局注册表（由已注册检查兜底）——
+#   这是**可读的事实**（调用方不经 skill 回合），不是"读不到"。
+# 作用域 = 当前 asyncio 任务上下文（与 `_current_tool_context` 同族）：每个 skill 回合都重新
+# 登记，故同一任务里后一次执行总是看到本回合的域。
+_current_tool_scope: contextvars.ContextVar[Optional[frozenset]] = contextvars.ContextVar(
+    'current_tool_scope', default=None
+)
+
+
+def set_tool_scope(tool_names=None) -> None:
+    """登记当前 skill 的可执行工具集（调用方：`base_skill.create_skill_registry`）。
+
+    传 `None` 表示"无 skill 域"（非 skill 执行路径 / 测试隔离）。
+    """
+    _current_tool_scope.set(None if tool_names is None else frozenset(tool_names))
+
+
+def get_tool_scope() -> Optional[frozenset]:
+    """当前 skill 的可执行工具集；`None` = 无 skill 域（非 skill 回合）。"""
+    return _current_tool_scope.get()
+
+
 # ── 写操作审计落库（issue #4039）────────────────────────────────────────────
 # 为什么走 HTTP 而不是直连 DB：本仓架构契约 = 工具层一律经 admin-api 访问数据
 # （ai-agent-service 不持有 DB 凭据/租户会话上下文），审计表 audit_logs 在 admin-api 侧。

@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Optional
 from loguru import logger
 
 from app.tools.base import BaseTool, ToolContext, ToolResult
+from app.tools.registry import get_tool_scope
 
 
 # ── 各工具的参数校验规则 ──
@@ -534,6 +535,44 @@ class ValidateInputTool(BaseTool):
 
         issues: List[str] = []
         missing: List[str] = []
+
+        # ── A5（issue #4017）：校验域 vs **执行域**比对 ────────────────────────────
+        # 病灶：`_VALIDATION_RULES` 是**全局**表（域无关，任意已注册工具名都照常校验），而 skill
+        # 回合里模型只能调用 `create_skill_registry(tool_names)` 里那些工具（域相关，域外名一律
+        # `Tool not found`）。两侧从不比对 ⇒ 域外目标也返回 success=True → 落
+        # `pending_validated_input` → 发确认卡 → 点卡后 `Tool not found` → 空头承诺、订单永不
+        # 落库（#3976 sess_202d55d49a254a10；实测 126 处死角）。
+        #
+        # 事实源：`get_tool_scope()` —— 由 `create_skill_registry`（唯一造 skill 工具子集的工厂）
+        # 登记，**就是**被 `bind_tools` 交给模型的那份工具集 ⇒ 不是"第二套域判定"，是同一个事实。
+        #
+        # 适用域声明：生效 = skill 回合内校验**域外**目标（拒绝 + suggestion）、scope 为空集
+        # （空域 ⇒ 任何目标都执行不了 ⇒ fail-closed 全拒）；**不生效** = 域内目标（R2 负例）、
+        # scope=None（非 skill 回合：直调全局注册表/单测直调 ⇒ 域即全局表，由上方已注册检查兜底）、
+        # 只读目标与表外工具名（走既有「未知的工具」分支）。放在查表**之后**正是为保住后者。
+        _scope = get_tool_scope()
+        if _scope is not None and target_tool not in _scope:
+            logger.warning(
+                f"[validate_input] 跨 skill 域目标被拒: {target_tool}/{target_action} "
+                f"| 当前执行域 {len(_scope)} 个工具，不含该工具"
+            )
+            return ToolResult(
+                success=False,
+                data={"cross_skill_target": target_tool, "scope_size": len(_scope)},
+                error="cross_skill_target",
+                message=(
+                    f"`{target_tool}` **不属于当前流程可执行的工具**，校验未执行 —— "
+                    f"本流程执行它必然 `Tool not found`（参数再正确也不会落库）。"
+                ),
+                # R5（issue #4011）：fail-closed 分支必须带 suggestion —— `_self_correct_retry`
+                # 靠它启动自我纠正；只给失败不给下一步 = 模型原地重试同一组参数/继续发确认卡。
+                suggestion=(
+                    f"不要调用 {target_tool}，也不要为它发确认卡（点了也执行不了）。请改为："
+                    f"① 若该操作属于另一个业务模块，向用户说明需在对应流程中办理并给出可执行的下一步；"
+                    f"② 或用 human_handoff 转人工处理；"
+                    f"③ 若当前流程本就应该完成它，请把会话切到具备该工具的流程后再执行。"
+                ),
+            )
 
         # 1. 必填字段检查
         for field in rules.get("required", []):
