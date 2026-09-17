@@ -298,8 +298,20 @@ class TestExceptionBoundaryChain:
                 mock_settings.LOGISTICS_APPCODE = ""
                 mock_settings.LOGISTICS_API_URL = "https://fake.api/kdi"
 
-                result_logistics = await registry.execute_tool(
+                # ① 只给快递单号（缺必填 order_id）⇒ 契约层拦下，同样必须是**拒绝**而不是放行
+                #    （issue #4080 T2：`logistics_track.parameters.required = ["order_id"]`）
+                result_only_tracking = await registry.execute_tool(
                     "logistics_track", ctx_tenant_a, tracking_number="SF0000000000"
+                )
+                assert result_only_tracking.success is False
+                assert result_only_tracking.data is None
+                assert result_only_tracking.missing_params == ["order_id"]
+
+                # ② 订单号与快递单号同时给出 ⇒ 工具自己的**安全铁律**拒绝直查
+                #    （防用他人运单号刺探物流信息；这条判据不能被契约层替代）
+                result_logistics = await registry.execute_tool(
+                    "logistics_track", ctx_tenant_a, order_id="ORD-000000",
+                    tracking_number="SF0000000000"
                 )
                 # 快递单号直查必须被拒绝
                 assert result_logistics.success is False
