@@ -178,8 +178,18 @@ def test_sku_variant_price_matches_selected_sku():
     assert "130" in (result2.message or ""), f"必须回填所选 SKU 价 130: {result2.message}"
 
 
-def test_sku_variant_without_spec_rejected_as_config_error():
-    """分色价商品但下单未指定规格（无 colorName/skuCode）→ 无法确定库价 → 配置错误级拒绝。"""
+def test_sku_variant_without_spec_grounded_price_passes_but_keeps_spec_hint():
+    """分色价商品未指定规格（无 colorName/skuCode）：**不再无条件拒绝**（issue #4011）。
+
+    改前（本测试旧形态 `..._rejected_as_config_error`）：`len(sku_prices) > 1` 且无规格
+    ⇒ 直接 fail-closed 拒绝 —— 连**确实来自商品库的价**（130 = 香槟金 SKU 价）也拒，
+    即 OR-014 首跑「13 次 order_create 无一成功」的死锁形态（该测试当时钉住的正是这个缺陷）。
+
+    改后的边界：判据收窄为「该单价是否存在于商品库」——
+      · 存在 ⇒ 规格维度无法唯一确定 ≠ 单价编造 ⇒ 放行（服务端按 SKU 复核 / 人工确认）；
+      · 不存在 ⇒ 编造价，拦截且话术**列出全部库价**（见下一条测试）。
+    原意图（#3875/#3879 防编造分色价）由下一条测试继续钉住。
+    """
     skus = [
         {"id": "xy-1", "skuCode": "XY-01", "colorName": "米白",
          "sellingMethod": "bulk_cut", "doorWidth": "2.8", "price": 100.0, "stock": 10},
@@ -188,9 +198,29 @@ def test_sku_variant_without_spec_rejected_as_config_error():
     ]
     result, post_called, _sent = _run_execute(
         [_item("分色价商品", 130.0)], price=100.0, skus=skus, name="分色价商品")
-    assert post_called is False, "未指定规格的分色价商品无法核对单价 → 必须拒绝"
-    assert "规格" in (result.message or ""), \
-        f"话术应说明需按规格确定库价: {result.message}"
+    assert post_called is True and result.success is True, (
+        f"库中真实存在的价 130（香槟金 SKU 价）不得被拒: {result.error} {result.message}")
+
+
+def test_sku_variant_without_spec_fabricated_price_rejected_with_library_prices():
+    """未指定规格 + **编造价**（115 不在库价集合 {100,130}）⇒ 必须拒绝并回填全部库价。
+
+    这是 #3875/#3879「防编造分色价」原意图在“无规格”分支上的红证（含可自愈话术）。
+    """
+    skus = [
+        {"id": "xy-1", "skuCode": "XY-01", "colorName": "米白",
+         "sellingMethod": "bulk_cut", "doorWidth": "2.8", "price": 100.0, "stock": 10},
+        {"id": "xy-2", "skuCode": "XY-02", "colorName": "香槟金",
+         "sellingMethod": "bulk_cut", "doorWidth": "2.8", "price": 130.0, "stock": 10},
+    ]
+    result, post_called, _sent = _run_execute(
+        [_item("分色价商品", 115.0)], price=100.0, skus=skus, name="分色价商品")
+    assert post_called is False, "编造价 115 不在库价集合 → 必须拒绝"
+    assert result.success is False
+    message = result.message or ""
+    assert "100" in message and "130" in message, \
+        f"拒绝话术必须列出全部库价供模型自愈: {message}"
+    assert result.suggestion, "fail-closed 分支必须带 suggestion"
 
 
 # ── ⑤ 加工项 customPrice 不属于 unit_price 校验域 ──
