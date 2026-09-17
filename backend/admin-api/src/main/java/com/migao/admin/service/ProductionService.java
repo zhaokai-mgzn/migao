@@ -444,14 +444,45 @@ public class ProductionService {
         return result;
     }
 
-    /** 订单解析（租户隔离：跨租户/软删视同不存在）。 */
-    private Order resolveOrder(String orderId, Long tenantId) {
-        Order order = orderMapper.selectById(orderId);
-        if (order == null || !tenantId.equals(order.getTenantId())
-                || Integer.valueOf(1).equals(order.getDeleted())) {
+    /**
+     * 订单解析（租户隔离：跨租户/软删视同不存在）。
+     *
+     * 支持三形态（issue #4005——打印的加工单二维码内容是 {@code qr_token}，
+     * 若只按内部 order_id 解析，工人扫真码会得到「订单不存在」）：
+     * ① 内部 order_id；② 订单号 order_no（手输纸质单号）；③ 加工单 qr_token（打印二维码内容）。
+     * 用字符串列名而非 Lambda 列名：Standalone MockMvc 单测环境没有 MyBatis-Plus TableInfo 缓存
+     * （同本类既有的 UpdateWrapper 做法）。
+     */
+    private Order resolveOrder(String key, Long tenantId) {
+        Order order = orderMapper.selectById(key);
+        if (!isResolvable(order, tenantId)) {
+            // ② order_no 兜底
+            order = orderMapper.selectOne(new QueryWrapper<Order>()
+                    .eq("order_no", key)
+                    .eq("tenant_id", tenantId)
+                    .eq("deleted", 0)
+                    .last("LIMIT 1"));
+        }
+        if (!isResolvable(order, tenantId)) {
+            // ③ qr_token 兜底（加工单二维码内容 → 加工单 → 订单）
+            ProcessingOrder po = processingOrderMapper.selectOne(new QueryWrapper<ProcessingOrder>()
+                    .eq("qr_token", key)
+                    .eq("tenant_id", tenantId)
+                    .eq("deleted", 0)
+                    .last("LIMIT 1"));
+            order = po == null ? null : orderMapper.selectById(po.getOrderId());
+        }
+        if (!isResolvable(order, tenantId)) {
             throw BusinessException.notFound("订单");
         }
         return order;
+    }
+
+    /** 解析结果可用性（非空 + 同租户 + 未软删）。 */
+    private boolean isResolvable(Order order, Long tenantId) {
+        return order != null
+                && tenantId.equals(order.getTenantId())
+                && !Integer.valueOf(1).equals(order.getDeleted());
     }
 
     private List<ProcessingPositionOperation> listOperations(String processingOrderId, Long tenantId) {
