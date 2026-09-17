@@ -183,8 +183,14 @@ policy_version        # 判据口径版本（口径一改即失效）
 
 | 拓扑 | 形态 | 风险 | 判定 |
 |---|---|---|---|
-| **专用检出**（当前实际） | `ln -sfn <专用检出>/.agent-presets/migao ~/.dsh/.agent-presets/migao` | 需手动 ff，**会漂移但可断言** | ✅ **正解** |
-| **主工作区**（`AGENTS.md` 现教） | `ln -sfn "$PWD/.agent-presets/migao" …` | 主工作区常年**脏 + 落后**（实测 `HEAD=aa64bb98` 落后 `origin/main` **136 个提交**且脏）⇒ 照做 = **活锚指向陈旧树**，且 `AGENTS.md` 那句"合并/拉取后自动生效"**变成"永远按几天前的规则干活"** | ❌ **反模式**（issue **#3849**） |
+| **专用检出 / 只读镜像**（`#4026` 起为实际形态） | `ln -sfn <专职只读镜像>/.agent-presets/migao ~/.dsh/.agent-presets/migao` | 需手动/时机性 ff，**会漂移但可断言**（`#4026` 已补可执行判据 + 自愈：`./scripts/preset-anchor-check.sh` / `preset-anchor-refresh.sh`） | ✅ **正解** |
+| **主工作区**（**原** `AGENTS.md` 教法，`#4026` 已改掉） | `ln -sfn "$PWD/.agent-presets/migao" …` | 主工作区常年**脏 + 落后**（实测 `HEAD=aa64bb98` 落后 `origin/main` **136 个提交**且脏）⇒ 照做 = **活锚指向陈旧树**，且 `AGENTS.md` 那句"合并/拉取后自动生效"**变成"永远按几天前的规则干活"** | ❌ **反模式**（issue **#3849**；已由 **#4026** 在指令层修正） |
+
+**现状（`#4026` 落码后，2026-09-17）**：本机活锚 = `$HOME/migao-preset-anchor`（**独立克隆**、
+`checkout --detach origin/main`；不是 worktree、不是主工作区）。`AGENTS.md`「开发环境准备」与
+`.agent-presets/migao/README.md`「接线」已按此拓扑改写，并给出「自检（红就停）+ 自愈刷新」两条命令；
+`scripts/dev-worktree.sh add/rebase` 会在与主干同步的时机**顺带刷新镜像**（best-effort）。
+上面的表保留为**反模式记录**（历史 + 为什么危险）。
 
 **反模式为什么危险**：它**位于指令层**（技能是"改任何代码前必须加载"的东西）⇒ 按会话数放大；
 且**"照文档做就会错"**（不是疏忽），越新的人 / 越新的机器越容易踩；且**静默**。

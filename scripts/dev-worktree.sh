@@ -235,6 +235,32 @@ discard_preset_snapshot() {
   fi
 }
 
+# ── 活锚镜像刷新（v1.10，issue #4026）：让活锚**跟随 main**，而不是停在某个时刻 ──
+# 只在「与主干同步」的两个时机顺带刷新（add / rebase）。best-effort：
+# 镜像缺失（本机没接线）或离线 ⇒ **只告警**，不得因此把建工作区 / rebase 弄失败。
+# 为什么值得在这里做：预设 PR 合并后活锚必然落后一格（`migao-dev-flow` §18.2），
+# 而「落后 ⇒ 改进到不了加载点」正是 #4026 的病灶 —— 让同步时机顺带把锚点带上，
+# 「会跟随」就不依赖人记得跑命令（判据仍在 preset-anchor-check.sh / preset-guard 里）。
+refresh_anchor_mirror() {
+  local script="${ROOT}/scripts/preset-anchor-refresh.sh"
+  if [ ! -x "${script}" ]; then
+    echo "ℹ️  跳过活锚刷新：${script} 不存在或不可执行（本机可能没接线活锚）"
+    return 0
+  fi
+  local out="" rc=0
+  out="$("${script}" --no-check 2>&1)" || rc=$?
+  if [ "${rc}" = "0" ]; then
+    local moved
+    moved="$(printf '%s\n' "${out}" | sed -n 's/^✅ 镜像已跟随.*：//p' | head -1)"
+    echo "🔄 活锚镜像已刷新（${moved:-已在 origin/main}）—— 改进能到加载点（issue #4026）"
+  else
+    echo "⚠️  活锚镜像未刷新（exit ${rc}）—— 活锚会落后 ⇒ 改预设的改进到不了加载点："
+    printf '%s\n' "${out}" | tail -4 | sed 's/^/     /'
+    echo "     修：./scripts/preset-anchor-refresh.sh"
+  fi
+  return 0
+}
+
 cmd_rebase() {
   [ $# -ge 1 ] || usage
   local target="$1"
@@ -259,6 +285,7 @@ cmd_rebase() {
     exit 1
   fi
   refresh_presets "$path"
+  refresh_anchor_mirror
   echo
   echo "✅ rebase 完成：$(git -C "$path" log -1 --format='%h %s')"
 }
@@ -323,6 +350,10 @@ cmd_add() {
 
   # v1.8（issue #3851）：建完立刻把预设快照对齐 origin/main（否则 `git add -A` 会静默回退研发模式）
   refresh_presets "$path"
+
+  # v1.10（issue #4026）：与主干同步的时机顺带把**活锚镜像**也带上 main ——
+  # 否则「预设 PR 合并后活锚落后一格」会一直留到有人手动刷（改进到不了加载点）。
+  refresh_anchor_mirror
 
   echo
   echo "✅ 工作区就绪：${path}（分支 ${branch}）"
