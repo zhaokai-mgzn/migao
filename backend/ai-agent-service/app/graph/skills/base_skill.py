@@ -455,6 +455,17 @@ import os as _os
 _ref_dir = _os.path.join(_os.path.dirname(__file__), "references")
 _PROMPT_CACHE: dict = {}
 
+# **基础规则层**（必需，相对 `_ref_dir`）：每个 Skill 都注入的公共层 —— 缺失即「整层规则
+# 静默消失」（issue #4057 S5）。故这三个文件走 `_read_cached(..., required=True)`：缺失/为空
+# 时 **error 级日志 + 抛 `RequiredPromptMissingError`**，不得像可选层那样返回 ""。
+# 磁盘存在性由 L0 用例 `tests/unit_ci_workflows/test_ai_agent_prompt_reference_guard.py` 锁
+# （删文件 ⇒ CI 红），本处的清单必须与它逐字一致。
+_REQUIRED_PROMPT_FILES = (
+    "base/identity.md",     # Layer 1 公共身份
+    "base/principles.md",   # Layer 2 公共行为准则
+    "PROMPT-rules.md",      # Layer 2.5 共享 Prompt 规则（Certainty Tagging / P&E / 确认卡铁律）
+)
+
 # ────────────────────── Vision 图片意图澄清引导（Phase 1, issue #2777）──────────────────────
 # 背景：目标用户可能是初中/高中文化、不熟悉与 AI 沟通（随手发图、带口语短句/不带文字）。
 # 图片可能与商户已有信息（商品库/面料/订单/客户）关联，但意图多样（找同款/查订单/建品/售后）。
@@ -534,19 +545,41 @@ def _usable_vision_analysis(text: str) -> str:
     return "" if _is_degraded_vision_analysis(text) else text
 
 
-def _read_cached(path: str) -> str:
-    """读取文件内容，带缓存。文件不存在时返回 ''。"""
+class RequiredPromptMissingError(RuntimeError):
+    """必需的基础规则层 Prompt 文件缺失/为空（issue #4057 S5：fail-loud）。"""
+
+
+def _read_cached(path: str, required: bool = False) -> str:
+    """读取文件内容，带缓存。
+
+    `required=False` —— **可选层**（`prompts/<skill>.md`、`EXAMPLES-*.md`）：文件不存在是
+    **合法形态**（该层不注入），静默返回 ""。
+
+    `required=True` —— **基础规则层**（`_REQUIRED_PROMPT_FILES`）：缺失/不可读/为空
+    **不得**静默返回 ""（那会让整层公共规则消失而没有任何东西变红）⇒ error 级日志 +
+    抛 `RequiredPromptMissingError`。
+    """
     if path in _PROMPT_CACHE:
-        return _PROMPT_CACHE[path]
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            _PROMPT_CACHE[path] = f.read().strip()
-    except FileNotFoundError:
-        _PROMPT_CACHE[path] = ""
-    except Exception as e:
-        logger.warning(f"Failed to load prompt file '{path}': {e}")
-        _PROMPT_CACHE[path] = ""
-    return _PROMPT_CACHE[path]
+        text = _PROMPT_CACHE[path]
+    else:
+        text = ""
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                text = f.read().strip()
+            _PROMPT_CACHE[path] = text
+        except FileNotFoundError:
+            if not required:
+                _PROMPT_CACHE[path] = ""   # 可选层缺席 = 合法形态
+        except Exception as e:
+            logger.warning(f"Failed to load prompt file '{path}': {e}")
+            if not required:
+                _PROMPT_CACHE[path] = ""
+    if required and not text:
+        logger.error(f"[prompt-ref] REQUIRED 基础规则文件缺失/为空: {path}")
+        raise RequiredPromptMissingError(
+            f"必需的基础 Prompt 文件缺失或为空：{path} —— 基础规则层不得静默消失"
+            f"（issue #4057 S5）")
+    return text
 
 
 def _build_system_prompt(skill_name: str, inline_prompt: str = "") -> str:
@@ -562,22 +595,30 @@ def _build_system_prompt(skill_name: str, inline_prompt: str = "") -> str:
     所有文件均为可选，不存在时静默跳过。
     缓存到 _PROMPT_CACHE 避免每次请求读文件。
 
+    ⚠️ 例外（issue #4057 S5）：Layer 1/2/2.5 属**基础规则层**（`_REQUIRED_PROMPT_FILES`），
+    缺失/为空时**不静默**（error 日志 + `RequiredPromptMissingError`）—— 它们缺席等于
+    每个 Skill 都少一整层公共规则。Layer 3/5（`prompts/<skill>.md`、`EXAMPLES-*.md`）
+    仍可缺席（返回 ""）。
+
     Returns:
         组装好的完整 System Prompt 字符串
+
+    Raises:
+        RequiredPromptMissingError: 任一基础规则层文件缺失/不可读/为空。
     """
     parts = []
 
-    # Layer 1+2: 公共基础（身份 + 原则）
-    identity = _read_cached(_os.path.join(_ref_dir, "base", "identity.md"))
+    # Layer 1+2+2.5: 公共基础（身份 + 原则 + 共享 Prompt 规则）—— **必需层**，缺失即响亮失败
+    identity_rel, principles_rel, prompt_rules_rel = _REQUIRED_PROMPT_FILES
+    identity = _read_cached(_os.path.join(_ref_dir, identity_rel), required=True)
     if identity:
         parts.append(identity)
 
-    principles = _read_cached(_os.path.join(_ref_dir, "base", "principles.md"))
+    principles = _read_cached(_os.path.join(_ref_dir, principles_rel), required=True)
     if principles:
         parts.append(principles)
 
-    # Layer 2.5: 共享 Prompt 规则（Certainty Tagging / P&E / Verification）
-    prompt_rules = _read_cached(_os.path.join(_ref_dir, "PROMPT-rules.md"))
+    prompt_rules = _read_cached(_os.path.join(_ref_dir, prompt_rules_rel), required=True)
     if prompt_rules:
         parts.append(prompt_rules)
 
