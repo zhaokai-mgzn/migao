@@ -3563,11 +3563,12 @@ _CASE_OR_016 = EvalCase(
     data_checks=['product_detail 返回 processing_items 非空时，生成订单确认卡之前必须主动询问加工项（interact(choice, multiSelect=true) 展示，透传 pageMeta 支持翻页；空则如实告知后继续）', '用户选择加工项后，order_create 的 processing_info.processingItems 含 {id, name, unitPrice, quantity, unit, pricingMethod, subtotal}，processingFee 计入 subtotal（金额=面料小计+加工费）', '一次性提交『已选加工项：A、B』→ 解析全部名称，禁止只取第一个；用户说『不需要加工项』才跳过'],
     skip_reason='',
     tags=['order_create', 'processing_item', 'guided_flow'],
-    persona='',
+    persona='mibao',
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
     order_before=['interact[choice:processing_items] before interact[confirm]', 'interact[choice:processing_items] before order_create'],
+    must_succeed=[{'tool': 'order_create'}],
     pre_clean=[{'type': 'product_dedupe', 'product_keyword': '2699系列雪尼尔窗帘面料', 'price': 23.8}],
     namespaces=['customer_phone:13800138000', 'product_name:2699系列雪尼尔窗帘面料'],
     precondition=[{'type': 'product_count_for_keyword', 'source': '2699系列雪尼尔窗帘面料', 'expect': 1}],
@@ -4787,10 +4788,11 @@ _CASE_PR_018 = EvalCase(
     data_checks=['米宝（agent_type=mibao）回复中：product_list 卡片仅包含文本实际引用的商品（按商品名/ID 匹配），未被引用的商品不渲染', '文本未引用任何商品时不下发 product_list 卡片（宁可无卡，不误导）', '小布（agent_type=xiaobu）保持现状：product_search 结果全量渲染卡片（货架浏览体验不回退）'],
     skip_reason='',
     tags=['card', 'reference_alignment', 'mibao'],
-    persona='',
+    persona='mibao',
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+    must_succeed=[{'tool': 'product_search'}],
 )
 
 # ── PR-019 [NORMAL] 建品规格与加工项价格落库 — 推理属性经 specifications 落库、加工项经 processing_item_configs 携带价格（源: cases/product.yml）──

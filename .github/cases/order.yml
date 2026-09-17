@@ -944,6 +944,18 @@ cases:
       - guided_flow
     truths_ref:
       - order.create-flow
+    # ── persona（issue #4093 的 OR-016 条目 → 跟踪单 #4110）──
+    # 本条是 **B 端米宝**用例（店员代客下单），此前只在**运行期**被
+    # `eval_case_filter.is_customer_facing_case` 的语义过滤（`MIBAO_SEMANTIC_PATTERNS`）
+    # 隐式挡在 C 端腿之外 —— 该函数 docstring 原文即点名本用例：
+    # 「OR-016 首轮『给赵凯创建一个订单…』是**店员代客下单**语义，小布（C 端自助、
+    # 身份固定为本人）无法触发」。种子侧同样只有 B 端腿具备前提：`mibao_eval_seed.sql`
+    # 第 1 节标题逐字写着「商品：2699 系列雪尼尔窗帘面料（**OR-016 点名**）」，
+    # 而 `xiaobu_eval_seed.sql` 里该名商品 **0 件**。
+    # ⇒ 显式声明 persona（case-trust 规则 d）：把隐式的语义过滤换成可静态核对的标注，
+    #   同时消除 `CASE-TRUST-SINGLE-LEG-NO-PERSONA`。**选择结果不变**（B 端仍选中、
+    #   C 端仍不选中），只是不再依赖"读取输入措辞"的启发式。
+    persona: mibao
     user_inputs:
       - "给赵凯创建一个订单，2699系列雪尼尔窗帘面料，10米，散剪2.8米门幅，2699-03暖米色，手机13800138000"
       - "不需要加工项"
@@ -961,6 +973,19 @@ cases:
         args:
           component: choice
           multiSelect: true
+      - tool: order_create
+    # ── 效果层断言（issue #4093 的 OR-016 条目 → 跟踪单 #4110）──
+    # 为什么必补：首跑指纹是 `no_success(order_create) || order_before_missing(interact[choice:processing_items])`，
+    # 其中**前半（没成功）此前没有任何断言能判红** —— `expectations` 只证明 order_create
+    # 「被调用过」（`check_expectation` 不读 `success`），工具返回 `success=false` 照样计分
+    # 通过（「调用了 ≠ 成了」，#3778/#3361）。`data_checks` 那三条是**自然语义**、不计分。
+    # ⇒ `must_succeed`（fail-closed：一次都没成功即判红）是这条指纹唯一的确定性下沉形态。
+    # 可满足性（按 seed 真值核，**不是**"永远红"的空判据）：
+    #   · 下单对象齐备 —— `mibao_eval_seed.sql`：prod_eval_2699（¥23.80，has_processing=TRUE）
+    #     + 颜色 `2699-03暖米色` + `bulk_cut/2.8` 门幅 SKU（stock=500）+ 3 个加工项关联；
+    #   · 该链路**历史真跑通过** —— `docs/design/agent-production-gap-analysis.md`
+    #     「验证：**OR-016 3/3 通过**（去重 → 下单流程完整）」（同名商品去重后下单走通）。
+    must_succeed:
       - tool: order_create
     data_checks:
       - "product_detail 返回 processing_items 非空时，生成订单确认卡之前必须主动询问加工项（interact(choice, multiSelect=true) 展示，透传 pageMeta 支持翻页；空则如实告知后继续）"
@@ -983,7 +1008,7 @@ cases:
         source: "2699系列雪尼尔窗帘面料"
         expect: 1
     skip_reason: ""
-    merge_log: "2026-09-08 新增（issue #3033 复盘 sess_7f27137647e14b1e）：A5 confirm 卡在加工项询问前弹出、金额 ¥238 不含加工费，用户质问后才补 A6；order.md 加工项段从被动式改主动式 + EXAMPLES 例 2 补加工项环节；2026-09-18 补前置自断言（#4082 的「改用例 PR」burn-down 硬门禁要求净缩 ≥1 条；先例 = #4091 给 OR-015 补的同款）：precondition[product_count_for_keyword「2699系列雪尼尔窗帘面料」expect=1]（按名定位下单对象，pre_clean 已按同关键词去重 ⇒ 捕获时恰为 1）；expectations/data_checks/order_before/pre_clean **原样未动**（未放宽、未删任何断言）"
+    merge_log: "2026-09-08 新增（issue #3033 复盘 sess_7f27137647e14b1e）：A5 confirm 卡在加工项询问前弹出、金额 ¥238 不含加工费，用户质问后才补 A6；order.md 加工项段从被动式改主动式 + EXAMPLES 例 2 补加工项环节；2026-09-18 补前置自断言（#4082 的「改用例 PR」burn-down 硬门禁要求净缩 ≥1 条；先例 = #4091 给 OR-015 补的同款）：precondition[product_count_for_keyword「2699系列雪尼尔窗帘面料」expect=1]（按名定位下单对象，pre_clean 已按同关键词去重 ⇒ 捕获时恰为 1）；expectations/data_checks/order_before/pre_clean **原样未动**（未放宽、未删任何断言）；2026-09-18 下沉补齐（issue #4093 的 OR-016 条目 → 跟踪单 #4110，首跑指纹 `no_success(order_create) || order_before_missing(interact[choice:processing_items])`）：本单只补**效果层断言** `must_succeed[order_create]`（前半指纹此前无任何断言可判红）+ `persona: mibao`（清除 `CASE-TRUST-SINGLE-LEG-NO-PERSONA`；证据 = `eval_case_filter.is_customer_facing_case` docstring 点名本用例为店员代客下单语义 + `mibao_eval_seed.sql` 第 1 节「OR-016 点名」，且 C 端 seed 里该商品 0 件），precondition 系 #4082 批次已加、本次仅按 seed 真值复核 `expect=1`（mibao seed 该名商品恰 1 件）—— **断言只增不减**"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_prompt_snapshots.py"
