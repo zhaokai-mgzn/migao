@@ -1,52 +1,33 @@
 package com.migao.admin.dto.agent;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
-import jakarta.validation.Valid;
-import jakarta.validation.constraints.DecimalMin;
-import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.Positive;
+import com.migao.admin.dto.OrderCreateRequest;
 import lombok.Data;
-
-import java.math.BigDecimal;
-import java.util.List;
+import lombok.EqualsAndHashCode;
 
 /**
- * Agent 专用订单创建请求。
- * subtotal 可选 → 服务端按 quantity × unitPrice 重算。
- * productName 必填，productId 可选。
+ * Agent 下单请求 —— **人工路径 {@link OrderCreateRequest} 的子类型**（issue #4089 · A17 收敛）。
  *
- * 参数范围约束（issue #3622）：quantity/unitPrice/subtotal 与表单路径
- * `OrderCreateRequest.OrderItemRequest` **同口径**（@NotNull/@Positive）——Agent 路径是
- * ai-agent 唯一实走的路径，此前该 DTO 零约束注解 + Controller 无 @Valid，导致
- * **负数量/负单价可落库**（负金额，且「需求量 ≤ 库存」对负需求恒真 → 超卖防线被绕过）。
- * 注意：`items` 必须带 `@Valid` 才能把约束级联到元素；而 `createOrderForAgent` 手工
- * new `OrderCreateRequest` 转交 `createOrder()` 的路径**不过 Bean Validation**，
- * 故 `OrderService.createOrder` 另有显式判定（双保险，见该方法注释）。
+ * <p><b>为什么是继承而不是第二套定义</b>：修复前本类是一份**平行 DTO**（自己的 {@code AgentOrderItem}、
+ * 自己的一套注解），与表单 DTO 实测产生 **13 处分歧**（issue #4089 清单）：字段位置不同
+ * （{@code skuCode}/{@code colorName} 顶层 vs {@code processingInfo} 内）、必填性/边界不同
+ * （{@code subtotal} 可选 vs 必填）、{@code items} 无非空约束、{@code productName} 无非空约束……
+ * 更贵的是 `OrderService.createOrderForAgent` 只能**手工 {@code new OrderCreateRequest}** 逐字段搬运
+ * 再转交 —— 程序化构造的 Bean **不过 Bean Validation**，于是 Service 又得把那套判定**再写一遍**
+ * （= 「校验双写」，两处口径必然漂移）。</p>
+ *
+ * <p><b>收敛后的口径</b>：本类只保留必需的幂等键，**其余字段与全部约束都继承自共享类型**
+ * （唯一来源）。两条路径共用同一个 Validator、同一组注解、同一条文案；agent 侧只允许**收紧**
+ * （在共享类型上加约束），不允许放宽 —— 由 {@code OrderDtoContractTest} 锁死。</p>
+ *
+ * <p><b>明细字段</b>：直接用继承来的 {@code List<OrderCreateRequest.OrderItemRequest>}
+ * （不存在第二套明细类型）。SKU 规格键（{@code skuCode}/{@code colorName}）**只在
+ * {@code processingInfo} 内**——这是唯一生产者（ai-agent {@code order_create} 工具）的真实形态，
+ * 也是表单页的形态；服务端取价与库存两条路径都从 {@code processingInfo} 解析。</p>
  */
 @Data
-public class AgentOrderCreateRequest {
-
-    /** 客户姓名（必填） */
-    private String customerName;
-
-    /** 客户电话（必填，服务端校验 11 位手机号） */
-    private String customerPhone;
-
-    /** 客户收货地址（可选） */
-    private String customerAddress;
-
-    /** 订单备注（可选） */
-    private String remark;
-
-    /**
-     * 下单用户 ID（可选，内部服务调用时由 ai-agent 透传 X-User-Id；
-     * C 端小布下单时绑定真实用户，供数据隔离查询）
-     */
-    private String userId;
-
-    /** 商品明细（必填，至少一项；@Valid 让元素级约束级联生效，issue #3622） */
-    @Valid
-    private List<AgentOrderItem> items;
+@EqualsAndHashCode(callSuper = true)
+public class AgentOrderCreateRequest extends OrderCreateRequest {
 
     /**
      * 客户端幂等键（issue #4037）—— 由 {@code AgentOrderController} 从请求头
@@ -58,53 +39,4 @@ public class AgentOrderCreateRequest {
      */
     @JsonIgnore
     private String clientRequestId;
-
-    // ---- 订单商品子对象 ----
-
-    @Data
-    public static class AgentOrderItem {
-        /** 商品名称（必填） */
-        private String productName;
-
-        /** 商品 ID（可选，可为 UUID / 名称） */
-        private String productId;
-
-        /** SKU 编码（可选；提供且可解析时，服务端按 SKU 权威价严格校验 unitPrice，GB/T 47746-2026 M3，issue #2806） */
-        private String skuCode;
-
-        /** 颜色名称（可选；无 skuCode 时兜底解析 SKU 用） */
-        private String colorName;
-
-        /**
-         * 数量（必填）：口径按计价方式——per_meter=米数、per_set=件数、
-         * per_area=宽×高（㎡，可为小数如 8.4）。JSON 传整数（3）照常反序列化为 BigDecimal("3")。
-         *
-         * <p>下限 1（issue #3682）：数量直接驱动库存/销量，而 `OrderService` 对其取整数部分
-         * （`:1051` 库存校验 / `:1408` `deductStock` / `:1409` `increaseSalesCount`）——
-         * 0.5 → `needed = 0` 校验恒通过、扣 0 库存、销量 +0 → **订单成交但库存/销量零变动
-         * 且无任何告警**。旧口径「&gt; 0」是 issue #3666 放宽小数时留下的洞；下限 1 与
-         * ai-agent 工具层（`order_create._reject_quantity`）及表单页 `min={1}` 同口径。</p>
-         */
-        @NotNull(message = "数量不能为空")
-        @DecimalMin(value = "1", message = "数量不能小于 1")
-        private BigDecimal quantity;
-
-        /** 单价（必填，必须大于 0） */
-        @NotNull(message = "单价不能为空")
-        @Positive(message = "单价必须大于 0")
-        private BigDecimal unitPrice;
-
-        /** 小计（可选，空则服务端重算为 quantity × unitPrice；提供了就必须大于 0） */
-        @Positive(message = "小计必须大于 0")
-        private BigDecimal subtotal;
-
-        /** 宽度（可选） */
-        private BigDecimal width;
-
-        /** 高度（可选） */
-        private BigDecimal height;
-
-        /** 加工信息（可选，透传给 admin-api） */
-        private Object processingInfo;
-    }
 }

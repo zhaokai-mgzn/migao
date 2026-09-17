@@ -17,6 +17,10 @@ CUSTOMER_GENERAL_TOOLS = [
     # 生产进度（issue #3996）：兜底节点同样要能答「我订单做到哪了」——
     # 低置信/跨域问题落到本 skill 时，缺它就会变成「小布查不了进度」的能力谎报。
     "production_progress_query",
+    # 收款二维码（issue #4085 第 1 项）：同款理由 ——「怎么付款/收款码/扫码支付」不在
+    # 订单域关键词里（`rule_matcher` 只有 B 端财务的「收款」），低置信问题正是落到本兜底
+    # skill 的形态；缺它则顾客在最常见的问法下拿不到收款码（能力谎报 + 卡片零发射点）。
+    "payment_qrcode_query",
     "customer_logistics_track",
     "human_handoff",
     "interact",

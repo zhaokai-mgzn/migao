@@ -72,9 +72,10 @@ class AgentOrderServiceTest {
             AgentOrderCreateRequest req = new AgentOrderCreateRequest();
             req.setCustomerName("张三");
             req.setCustomerPhone("13800001111");
-            AgentOrderCreateRequest.AgentOrderItem item = new AgentOrderCreateRequest.AgentOrderItem();
+            OrderCreateRequest.OrderItemRequest item = new OrderCreateRequest.OrderItemRequest();
             item.setProductName("窗帘"); item.setQuantity(BigDecimal.valueOf(2));
             item.setUnitPrice(new BigDecimal("150"));
+            item.setSubtotal(new BigDecimal("300.00"));
             req.setItems(List.of(item));
 
             when(orderMapper.insert(any(Order.class))).thenAnswer(inv -> {
@@ -120,15 +121,26 @@ class AgentOrderServiceTest {
 
         // ============ GB/T 47746-2026 M3 服务端取价校验（issue #2806） ============
 
+        /**
+         * 取价校验请求构造（issue #4089 收敛后）：规格键（skuCode/colorName）**只在
+         * processingInfo 内**——DTO 不再有顶层同类字段（旧 AgentOrderItem 已删）。
+         */
         private AgentOrderCreateRequest buildPriceReq(String skuCode, String colorName,
                                                       BigDecimal unitPrice, Object processingInfo) {
             AgentOrderCreateRequest req = new AgentOrderCreateRequest();
             req.setCustomerName("张三"); req.setCustomerPhone("13800001111");
-            AgentOrderCreateRequest.AgentOrderItem item = new AgentOrderCreateRequest.AgentOrderItem();
+            OrderCreateRequest.OrderItemRequest item = new OrderCreateRequest.OrderItemRequest();
             item.setProductName("遮光窗帘"); item.setProductId("p-001");
-            item.setSkuCode(skuCode); item.setColorName(colorName);
-            item.setProcessingInfo(processingInfo);
+            Map<String, Object> info = new java.util.HashMap<>();
+            if (processingInfo instanceof Map<?, ?> given) {
+                given.forEach((k, v) -> info.put(String.valueOf(k), v));
+            }
+            if (skuCode != null) { info.put("skuCode", skuCode); }
+            if (colorName != null) { info.put("colorName", colorName); }
+            item.setProcessingInfo(info.isEmpty() ? null : info);
             item.setQuantity(BigDecimal.valueOf(2)); item.setUnitPrice(unitPrice);
+            // subtotal 必填（共享类型 @NotNull；收敛前 agent 侧可选）
+            item.setSubtotal(unitPrice == null ? null : unitPrice.multiply(BigDecimal.valueOf(2)));
             req.setItems(List.of(item));
             return req;
         }
@@ -211,19 +223,20 @@ class AgentOrderServiceTest {
 
         // ============ 参数范围闸门（issue #3622：负数量/负单价不得落库） ============
         //
-        // 为什么必须在 Service 层也判一次：createOrderForAgent **手工 new OrderCreateRequest**
-        // 再转交 createOrder() —— 程序化构造的 Bean **不经过 Bean Validation**，所以
-        // `OrderCreateRequest`/`AgentOrderItem` 上的 @Positive「只加注解」是拦不住它的。
-        // 控制器层由 AgentOrderCreateValidationTest 锁（422），本组锁服务层显式判定（调用方绕过 HTTP 也能拦住）。
+        // issue #4089 收敛后：agent 路径入参就是 OrderCreateRequest 的子类型（同一组注解），
+        // Bean Validation 在控制器层执行；本组锁的是 createOrder() 共享入口的显式判定 ——
+        // 它兜的是**绕过 HTTP 的程序化调用方**（不是"手工 new 让注解失效"导致的第二套口径）。
 
         private AgentOrderCreateRequest buildQtyReq(BigDecimal quantity, BigDecimal unitPrice) {
             AgentOrderCreateRequest req = new AgentOrderCreateRequest();
             req.setCustomerName("张三");
             req.setCustomerPhone("13800001111");
-            AgentOrderCreateRequest.AgentOrderItem item = new AgentOrderCreateRequest.AgentOrderItem();
+            OrderCreateRequest.OrderItemRequest item = new OrderCreateRequest.OrderItemRequest();
             item.setProductName("遮光窗帘");
             item.setQuantity(quantity);
             item.setUnitPrice(unitPrice);
+            item.setSubtotal(unitPrice == null ? null
+                    : unitPrice.multiply(quantity == null ? BigDecimal.ZERO : quantity));
             req.setItems(List.of(item));
             return req;
         }
@@ -368,10 +381,11 @@ class AgentOrderServiceTest {
             AgentOrderCreateRequest req = new AgentOrderCreateRequest();
             req.setCustomerName("张三");
             req.setCustomerPhone("13800001111");
-            AgentOrderCreateRequest.AgentOrderItem item = new AgentOrderCreateRequest.AgentOrderItem();
+            OrderCreateRequest.OrderItemRequest item = new OrderCreateRequest.OrderItemRequest();
             item.setProductName("遮光窗帘");
             item.setQuantity(new BigDecimal("0.5"));
             item.setUnitPrice(new BigDecimal("168"));
+            item.setSubtotal(new BigDecimal("84.00"));
             req.setItems(List.of(item));
 
             assertThatThrownBy(() -> orderService.createOrderForAgent(req, 1L))

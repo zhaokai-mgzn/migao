@@ -11,10 +11,13 @@
 #   ./scripts/batch-integrate-check.sh --base <ref> <branch>      # 换基准（默认 origin/main）
 #   环境变量 BIC_BASE=<ref> 等价于 --base
 #
-# 退出码: 0=无 FAIL；1=有 FAIL（R4 新增豁免 / 分支已落后 base / PR body 缺红证段）
+# 退出码: 0=无 FAIL；1=有 FAIL（R4 新增豁免 / 分支已落后 base / PR body 缺红证段 / **搁浅检测**）
+#   —— 搁浅那项是**三态**：`0` 无搁浅 / `1` 检出搁浅 / `3` 无法判定（缺 gh / 缺网络 / PR 元数据不全）；
+#      **`3` 一样计 FAIL**（「看不了」不得当「没问题」）。
 #
 # 自测（红证）：`./scripts/batch-integrate-check.sh origin/main` ⇒ R6 全 0 / R4 未新增 / exit=0。
 #   判别力红证：分支多出豁免条目 ⇒ R4 报「新增(用例,规则)对=N」+ exit=1；只删不增 ⇒ 「移除=N / OK」。
+#   搁浅红证：`./scripts/batch-integrate-check.sh feat/4065-stranding-check 3842` ⇒ 末段「检出搁浅」+ exit=1。
 #
 # ⚠️ 比较一律用**两点** `base..branch`（tip 对 tip = 合入会产生什么），**不是三点** `base...branch`：
 #    三点以 **merge-base** 为左端 ⇒ 回答的是「本分支相对 fork 点改了什么」，**不是**「合入后 base 变什么样」。
@@ -22,11 +25,20 @@
 #    同一批豁免**（`OR-009/010/011/015 :: CASE-TRUST-NO-EFFECT-ASSERTION`）⇒ 三点会说「该分支移除=4」
 #    （其实是 main 自己删的），两点才如实报「净变化 0」。用三点做前向比较 = **把别人已修好的算成本分支功劳**（假绿）。
 #
+# 覆盖项（落码状态**照实**登记）：R2（PR body 红证段）/ R4（豁免只许删）/ R5a（fail-closed 带 suggestion）
+#   / R5b（新增中文词表常量）/ R6（净变更量）/ R7（前提新鲜度）
+#   + **§17.3 交付物搁浅**（内容级）—— 落码在 `scripts/stranding-check.sh`（**单一实现**，本脚本只调它）。
 # 未覆盖项（**照实登记，不把"写进技能"写成"有门禁"**；同 §19 表口径）：R1 修机制不修事故点 / R3 失败集只许收敛
-#   —— 需读评测 artifact 或人工裁定，**本脚本不判**。本脚本机械覆盖 R2（PR body）/ R4 / R5 / R6 / R7（新鲜度）。
+#   —— 需读评测 artifact 或人工裁定，**本脚本不判**。
+#
+# ── §17.3 搁浅检测（issue #4065）接入口 ──────────────────────────────────────────────
+#   给了 PR 号时自动跑 `./scripts/stranding-check.sh --pr <n>`（判据本体在该脚本头部，此处不重复表述）。
+#   为什么接在这里：本脚本是**批量修复的集成验证入口**，而「秒合搁浅」正是集成环节漏掉的那一类
+#   （CI 绿 + auto-merge 绿，而交付物不在 main；实证 #3842 → #3847、#3819 → #3826）。
 #
 # ⚠️ **尚未接 CI required check**：本脚本现为**人工 / 集成环节调用**（`gh pr checks` 里看不到它），
 #    因此它**不会自动拦人** —— 别把"脚本存在"读成"违规会被挡下"（同 §19「现状」列的照实登记口径）。
+#    **搁浅检测同理**：人工 / 集成环节调用，**未接门禁**。
 set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
@@ -138,6 +150,20 @@ PY
     done
     printf '%s' "$BODY" | grep -qE 'Closes #[0-9]+' && echo "  OK 含 Closes #N" || echo "  MISS 缺 Closes #N"
   else echo "  (未给 PR 号，跳过)"; fi
+
+  echo "-- §17.3 交付物搁浅（内容级；单一实现 = scripts/stranding-check.sh）--"
+  if [ -n "$PR" ]; then
+    local SC_OUT SC_RC
+    SC_OUT="$(./scripts/stranding-check.sh --pr "$PR" 2>&1)"; SC_RC=$?
+    printf '%s\n' "$SC_OUT" | sed 's/^/  | /'
+    case "$SC_RC" in
+      0) echo "  OK 无搁浅（交付物逐条内容级核对通过）" ;;
+      1) echo "  FAIL 检出搁浅 ⇒ 开**跟随 PR** 补齐（**不得**向已合并分支追加 commit）"; rc=1 ;;
+      *) echo "  FAIL 无法判定（stranding-check exit=$SC_RC：缺 gh / 缺网络 / PR 元数据不全）—— **不许当通过**"; rc=1 ;;
+    esac
+  else
+    echo "  (未给 PR 号，跳过；单跑：./scripts/stranding-check.sh --pr <n>｜--branch <ref>)"
+  fi
 
   echo "-- 改动文件（核查越界；两点 = 合入后 base 的实际差异）--"
   git diff --name-only "$BASE..$BR" 2>/dev/null | sed 's/^/  /' | head -25

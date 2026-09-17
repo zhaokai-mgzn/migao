@@ -84,6 +84,14 @@ class OrderServiceTest {
     @Mock
     private ProcessingOrderMapper processingOrderMapper;
 
+    /** 库存流水（issue #4137）：订单腿落账写入方 —— 本类只断言订单行为，台账内容见 OrderStockLedgerTest */
+    @Mock
+    private StockLedgerService stockLedgerService;
+
+    /** 写请求幂等键（issue #4037，P15）与确认卡一致性（F22）：本类不涉及，仅补构造注入 */
+    @Mock
+    private ClientRequestIdService clientRequestIdService;
+
     private Order testOrder;
     private OrderItem testOrderItem;
 

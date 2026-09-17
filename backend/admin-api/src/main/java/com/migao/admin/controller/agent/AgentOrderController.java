@@ -9,6 +9,7 @@ import com.migao.admin.dto.agent.AgentOrderCreateRequest;
 import com.migao.admin.dto.agent.AgentOrderResolveResponse;
 import com.migao.admin.dto.agent.AgentOrderUpdateRequest;
 import com.migao.admin.security.SecurityUser;
+import com.migao.admin.security.PermissionInterceptor;
 import com.migao.admin.service.ClientRequestIdService;
 import com.migao.admin.service.OrderService;
 import com.migao.admin.security.RequirePermission;
@@ -25,6 +26,10 @@ import org.springframework.web.bind.annotation.*;
  * - ID 可传 UUID 或订单号（ORD-xxx），服务端自动解析
  * - 统一 PATCH 端点（一个接口覆盖 status/logistics/payment/cancel/refund）
  * - 提供订单号→UUID 解析端点
+ *
+ * <p>类级 {@code @RequirePermission("order:list")} 覆盖全部 action；**退款**是唯一的例外：
+ * 它额外要求 {@code order:refund}（见 {@link #updateOrder}），与表单路径
+ * {@code OrderController} 的退款路由同码。</p>
  */
 @Slf4j
 @RequirePermission("order:list")
@@ -35,17 +40,21 @@ public class AgentOrderController {
 
     private final OrderService orderService;
     private final com.migao.admin.mapper.UserMapper userMapper;
+    /**
+     * 权限判定复用点（issue #4148）：统一 PATCH 里的 action 级权限复检。
+     * 不在此类另写授权逻辑 —— 见 {@link PermissionInterceptor#requirePermission(String)}。
+     */
+    private final PermissionInterceptor permissionInterceptor;
 
     /**
      * Agent 专用创建订单。
      * POST /api/admin/agent/orders
-     * subtotal 服务端按 quantity × unitPrice 强制重算。
      *
-     * `@Valid`（issue #3622）：让 `AgentOrderCreateRequest.AgentOrderItem` 上的
-     * `@NotNull/@Positive` **真的执行** —— 修复前该端点无 `@Valid`，负数量/负单价一路落库
-     * （负金额 + 库存校验对负需求恒真 → 超卖防线被绕过）。校验失败由
-     * `GlobalExceptionHandler` 统一返回 422 VALIDATION_ERROR（与表单路径
-     * `/api/admin/orders` 同口径）；Service 层另有显式判定兜住绕过 HTTP 的调用方。
+     * <p>`@Valid`（issue #3622，收敛于 #4089）：请求类型 {@link AgentOrderCreateRequest} 是表单路径
+     * {@code OrderCreateRequest} 的**子类型**（只多一个幂等键），故两条路径共用同一组 Bean Validation
+     * 约束与同一条文案 —— 这里是真的执行点，Service 不再手工 {@code new} 一个 DTO 再判一遍
+     * （那正是「校验双写」）。校验失败由 {@code GlobalExceptionHandler} 统一返回 422
+     * VALIDATION_ERROR（与表单路径 `/api/admin/orders` 同口径）。</p>
      *
      * <p>幂等键（issue #4037）：请求头 {@code X-Client-Request-Id} 透传到
      * {@link AgentOrderCreateRequest#getClientRequestId()}，由
@@ -78,10 +87,20 @@ public class AgentOrderController {
      * Agent 专用统一订单更新。
      * PATCH /api/admin/agent/orders/{id}
      * id 可为 UUID 或订单号（ORD-xxx），服务端自动解析。
+     *
+     * <p><b>action 级权限复检（issue #4148）</b>：本类只有类级 {@code order:list}，而这一个
+     * 入口覆盖 status/logistics/payment/cancel/<b>refund</b> ⇒ 不复检就等于「仅持 order:list 的
+     * 商户员工（内置岗位 customer_service/sales/finance 都没有 order:refund）可借米宝退款」，
+     * 与表单路径 {@code OrderController} 的 {@code order:refund} 口径不一致。
+     * 判据与类级注解**同一处**（{@link PermissionInterceptor#requirePermission(String)}）：
+     * 旁路角色（平台管理员/内部服务）、{@code *} 通配、取码来源逐条一致；其余 action 不收窄。</p>
      */
     @PatchMapping("/{id}")
     public ApiResponse<OrderDetailResponse> updateOrder(@PathVariable String id,
                                                          @RequestBody AgentOrderUpdateRequest request) {
+        if ("refund".equals(request.getAction())) {
+            permissionInterceptor.requirePermission("order:refund");
+        }
         Long tenantId = TenantContext.getTenantId();
         log.info("[Agent] 更新订单: id={}, action={}, tenantId={}", id, request.getAction(), tenantId);
         try {

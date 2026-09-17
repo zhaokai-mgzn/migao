@@ -48,9 +48,12 @@
 被 11 个名字掩盖、并且**没有任何东西会红**。故本包把该接缝升级为**硬判据**
 （`test_renderer_case_sets_are_subset_of_backend_card_types`）。
 
-**两个零发射点卡型的处置不同（照实登记）**：
-- `payment` —— 工具层**没有任何数据源**（收款码走独立 REST、由卡片自取）⇒ 缺的是**触发机制**，
-  按产品裁定**维持裁剪**（另开单）；
+**两个零发射点卡型的处置（照实登记，两者最终都走「补发射点」）**：
+- `payment` —— #4016 P14 时工具层**没有任何数据源**（收款码走独立 REST、由卡片自取）⇒ 缺的是
+  **触发机制**，当时按产品裁定**维持裁剪**（另开单）；issue **#4085 第 1 项**按同款裁定
+  （用户 2026-09-18）**补发射点**：新增 C 端只读工具 `payment_qrcode_query`（返回的 `data`
+  即卡载荷 `{"payment_qrcodes": …}`，数据源复用 `GET /api/admin/agent/payment-qrcodes`），
+  `_detect_card_type` 补映射 ⇒ 该卡型进入**可产出集合（6 → 7）**，C 端渲染分支同步恢复；
 - `production_progress` —— `production_progress_query` 工具**存在且返回的正是卡载荷**
   ⇒ 属**接线漏一行**，用户 2026-09-18 裁定走「**补发射点**」：`_detect_card_type` 补映射后
   该卡型进入**可产出集合（5 → 6）**，三端渲染分支同步恢复（该工具同时绑在两个 persona 的
@@ -85,7 +88,8 @@
   当时报出三个渲染端的孤儿分支 —— C 端 `['knowledge', 'knowledge_result', 'logistics_track',
   'payment', 'product_recommend', 'production_progress']`、B 端移动同族（少 `payment` /
   `production_progress`）、B 端桌面 `['knowledge']`。除 `production_progress` 外均维持裁剪；
-  `production_progress` 已由「补发射点」转为**可产出 + 三端可渲染**（见上节）。
+  `production_progress` 已由「补发射点」转为**可产出 + 三端可渲染**（见上节）；
+  `payment` 随后由 **#4085 第 1 项**同样转为**可产出 + C 端可渲染**（其余别名类维持裁剪）。
 - **反向变异红**：把某个卡型从 `_CARD_TOOL_ANCHORS`/映射里去掉后，判据必须报出对应孤儿
   （证明「裁剪后转绿」不是判据恒真）。
 """
@@ -128,6 +132,9 @@ _CARD_TOOL_ANCHORS = {
     "curtain_calc": "quotation",
     # #4016 P14「补发射点」（用户 2026-09-18 裁定）：该工具返回的 data 正是卡载荷
     "production_progress_query": "production_progress",
+    # #4085 第 1 项「补发射点」（同款裁定）：`payment_qrcode_query` 的 data 即
+    # payment 卡载荷；数据源复用 GET /api/admin/agent/payment-qrcodes（不新造数据源）
+    "payment_qrcode_query": "payment",
 }
 
 # 交互组件（renderInteractive 的 switch）——不得被算作卡型

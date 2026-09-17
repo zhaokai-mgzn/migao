@@ -11,6 +11,7 @@ import com.migao.admin.entity.OrderLogistics;
 import com.migao.admin.entity.FinanceTransaction;
 import com.migao.admin.entity.Product;
 import com.migao.admin.entity.ProductSku;
+import com.migao.admin.entity.StockLedger;
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.mapper.FinanceTransactionMapper;
 import com.migao.admin.mapper.OrderItemMapper;
@@ -70,6 +71,11 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
     private final UserService userService;
     /** 写请求幂等键（issue #4037）：去重 / 结果回放 / 占位释放 */
     private final ClientRequestIdService clientRequestIdService;
+    /**
+     * 库存流水/台账（issue #4137）：订单腿（下单扣减 / 取消回补）的落账写入方。
+     * 落账唯一语义点在该服务（delta 由 after-before 算出），本类只提供「变更前快照 + 变更点」。
+     */
+    private final StockLedgerService stockLedgerService;
 
     /**
      * 订单号序列号（线程安全）
@@ -1342,14 +1348,14 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
      * 确认支付后：扣减库存 + 增加销量（商品级 + SKU级）
      */
     private void deductStockAndIncreaseSales(String orderId) {
-        adjustStockAndSales(orderId, true);
+        adjustStockAndSales(orderId, true, StockLedger.REASON_ORDER);
     }
 
     /**
      * 取消/退款后：恢复库存 + 减少销量（商品级 + SKU级）
      */
     private void restoreStockAndDecreaseSales(String orderId) {
-        adjustStockAndSales(orderId, false);
+        adjustStockAndSales(orderId, false, StockLedger.REASON_ORDER);
     }
 
     /**
@@ -1358,21 +1364,28 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
      * 仅由 AfterSalesTicketService 在售后工单 refund/return 完结且订单全部商品
      * allow_return_restock=true（允许退货回补库存）时调用；复用取消订单的库存恢复路径
      * （恢复商品级+SKU级库存并减少销量）。窗帘行业定制退货不可再售，默认不走到本路径。
+     *
+     * <p>台账（issue #4137）：本路径的这次变更由**调用方** AfterSalesTicketService 落
+     * {@code reason=aftersales} 行（它按「调用前快照 vs 调用后实际值」比对）——故这里传
+     * {@code null} 不重复记账：同一次变更写两行会让 delta 翻倍，且两行的 before 互不相同
+     * （相邻行首尾接不上，「库存为什么从 X 变成 Y」就答错了）。</p>
      */
     @Transactional(rollbackFor = Exception.class)
     public void restoreStockForReturn(String orderId) {
-        restoreStockAndDecreaseSales(orderId);
+        adjustStockAndSales(orderId, false, null);
         log.info("售后退货回补库存完成: orderId={}", orderId);
     }
 
     /**
      * 统一的库存和销量调整逻辑
      *
-     * @param orderId  订单ID
-     * @param isDeduct true=扣库存+增销量（确认支付），false=恢复库存+减销量（取消/退款）
+     * @param orderId      订单ID
+     * @param isDeduct     true=扣库存+增销量（确认支付），false=恢复库存+减销量（取消/退款）
+     * @param ledgerReason 台账变更来源（{@link StockLedger#REASON_ORDER}）；
+     *                     {@code null} = 本次变更的落账由上游站点负责（售后回补 → aftersales）
      */
     @SuppressWarnings("unchecked")
-    private void adjustStockAndSales(String orderId, boolean isDeduct) {
+    private void adjustStockAndSales(String orderId, boolean isDeduct, String ledgerReason) {
         List<OrderItem> items = orderItemMapper.selectList(
                 new LambdaQueryWrapper<OrderItem>().eq(OrderItem::getOrderId, orderId));
         if (items.isEmpty()) return;
@@ -1395,9 +1408,9 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
 
             // SKU级库存调整：从 processingInfo 中匹配 SKU
             if (isDeduct) {
-                deductSkuStock(item);
+                deductSkuStock(item, order, ledgerReason);
             } else {
-                restoreSkuStock(item);
+                restoreSkuStock(item, order, ledgerReason);
             }
         }
 
@@ -1415,28 +1428,56 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
     }
 
     /**
-     * 从 OrderItem 的 processingInfo 中匹配 SKU 并扣减库存
+     * 从 OrderItem 的 processingInfo 中匹配 SKU 并扣减库存（issue #4137：并落订单腿台账行）
      */
     @SuppressWarnings("unchecked")
-    private void deductSkuStock(OrderItem item) {
+    private void deductSkuStock(OrderItem item, Order order, String ledgerReason) {
         Long skuId = matchSkuId(item);
         if (skuId != null && item.getQuantity() != null) {
+            // 台账：变更前快照（只记真实变化，故快照必须取在写库之前）
+            Map<Long, ProductSku> stockBefore = snapshotForLedger(ledgerReason, item.getProductId());
             // issue #3666：库存/销量列是整数，取整数部分（与库存校验同一口径）
             productSkuMapper.deductStock(skuId, item.getQuantity().intValue());
             productSkuMapper.increaseSalesCount(skuId, item.getQuantity().intValue());
+            recordStockLedgerRows(ledgerReason, order, stockBefore, "订单确认支付扣减库存");
         }
     }
 
     /**
-     * 从 OrderItem 的 processingInfo 中匹配 SKU 并恢复库存
+     * 从 OrderItem 的 processingInfo 中匹配 SKU 并恢复库存（issue #4137：并落订单腿台账行）
      */
-    private void restoreSkuStock(OrderItem item) {
+    private void restoreSkuStock(OrderItem item, Order order, String ledgerReason) {
         Long skuId = matchSkuId(item);
         if (skuId != null && item.getQuantity() != null) {
+            Map<Long, ProductSku> stockBefore = snapshotForLedger(ledgerReason, item.getProductId());
             // issue #3666：库存/销量列是整数，取整数部分（与库存校验同一口径）
             productSkuMapper.restoreStock(skuId, item.getQuantity().intValue());
             productSkuMapper.decreaseSalesCount(skuId, item.getQuantity().intValue());
+            recordStockLedgerRows(ledgerReason, order, stockBefore, "订单取消/退款回补库存");
         }
+    }
+
+    /**
+     * 台账（issue #4137）：变更前快照 —— 复用 {@link StockLedgerService} 的同一套快照/比对语义
+     * （落账唯一语义点在那边，订单侧不新造第二套比对逻辑）。
+     *
+     * @param ledgerReason {@code null} = 该路径的落账由上游站点负责（售后回补 → aftersales）⇒ 不取快照、零开销
+     */
+    private Map<Long, ProductSku> snapshotForLedger(String ledgerReason, String productId) {
+        return ledgerReason == null ? Map.of() : stockLedgerService.snapshotSkus(List.of(productId));
+    }
+
+    /**
+     * 台账（issue #4137）：变更后按**实际值**比对落账，只记真实变化的 SKU
+     * （delta 由 {@link StockLedgerService} 按 after-before 算出；请求量与实际变化不一致时不落假账）。
+     */
+    private void recordStockLedgerRows(String ledgerReason, Order order,
+                                       Map<Long, ProductSku> stockBefore, String note) {
+        if (ledgerReason == null || order == null) {
+            return;
+        }
+        stockLedgerService.recordChangesAgainstSnapshot(order.getTenantId(), stockBefore,
+                ledgerReason, order.getOrderNo(), note);
     }
 
     /**
@@ -1548,7 +1589,19 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
 
     /**
      * Agent 专用创建订单。
-     * subtotal 服务端按 quantity × unitPrice 强制重算。
+     *
+     * <p><b>校验口径（issue #4089 · A17 收敛）</b>：入参是 {@link OrderCreateRequest} 的**子类型**
+     * （{@code AgentOrderCreateRequest} 只多一个请求头注入的幂等键），约束全部来自共享类型，
+     * 由 {@code AgentOrderController} 的 {@code @Valid} 执行；本方法**不再手工 {@code new}
+     * 一个 {@code OrderCreateRequest} 逐字段搬运**（那正是「校验双写」的载体：手工 new 让
+     * Bean Validation 失效 ⇒ 这里必须再判一遍 ⇒ 两处口径必然漂移），而是把请求**原对象**
+     * 交给 {@link #createOrder}（同一入口、同一套断言、同一份文案）。</p>
+     *
+     * <p>只保留两条**Bean Validation 表达不了**的 agent 专属语义：
+     * ① 姓名/电话非空 + 手机号格式（共享类型上的 {@code @NotBlank}/{@code @Pattern} 已在控制器层
+     * 执行，这里保留同名同文案的显式判定，兜住绕过 HTTP 的程序化调用方 —— 与 {@code createOrder}
+     * 的数量/单价闸门同族，不是第二套口径）；
+     * ② 服务端取价校验 {@link #validateAgentItemUnitPrice}（SKU 权威价，见该方法）。</p>
      *
      * <p>幂等键（issue #4037，F19）：请求头 {@code X-Client-Request-Id} 非空时按
      * {@code (tenantId, 键)} 去重 —— 首次请求正常执行并把 {@link OrderDetailResponse} 快照落库，
@@ -1571,53 +1624,36 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         if (!StringUtils.hasText(request.getCustomerPhone())) {
             throw BusinessException.validationError("客户电话不能为空");
         }
-        // 手机号格式校验
+        // 手机号格式校验（与共享 DTO 的 @Pattern 同一条正则、同一句文案）
         String phone = request.getCustomerPhone().trim();
         if (!phone.matches("^1[3-9]\\d{9}$")) {
             throw BusinessException.validationError("手机号格式不正确，请输入11位中国大陆手机号");
         }
+        request.setCustomerPhone(phone);
 
         if (request.getItems() == null || request.getItems().isEmpty()) {
             throw BusinessException.validationError("商品明细不能为空");
         }
 
-        OrderCreateRequest createReq = new OrderCreateRequest();
-        createReq.setCustomerName(request.getCustomerName());
-        createReq.setCustomerPhone(phone);
-        createReq.setCustomerAddress(request.getCustomerAddress());
-        createReq.setRemark(request.getRemark());
-        // C 端数据隔离：透传下单用户（可为空=商户代录，语义为"游客订单"）
-        createReq.setUserId(request.getUserId());
-
-        List<OrderCreateRequest.OrderItemRequest> itemReqs = new ArrayList<>();
-        for (var item : request.getItems()) {
+        for (OrderCreateRequest.OrderItemRequest item : request.getItems()) {
             // GB/T 47746-2026 M3（issue #2806）：服务端取价校验——SKU 可解析时，
-            // unitPrice 必须与权威价严格一致（防 LLM 定价幻觉；解析不到不拦截防误伤）
+            // unitPrice 必须与权威价严格一致（防 LLM 定价幻觉；解析不到不拦截防误伤）。
+            // 规格键（skuCode/colorName）从 processingInfo 解析（唯一生产者的形态，见本方法注释）。
             validateAgentItemUnitPrice(item, tenantId);
-
-            OrderCreateRequest.OrderItemRequest itemReq = new OrderCreateRequest.OrderItemRequest();
-            itemReq.setProductName(item.getProductName());
-            itemReq.setProductId(item.getProductId());
-            itemReq.setQuantity(item.getQuantity());
-            itemReq.setUnitPrice(item.getUnitPrice());
-            // subtotal 服务端强制重算（对抗 LLM 编造）
+            // subtotal 服务端强制重算（对抗 LLM 编造）—— 逐字保留收敛前的口径演算：
+            // `order_items.subtotal` 直接喂 `products.sales_amount`（见 adjustStockAndSales），
+            // 不能让客户端自称的小计进统计口径。这不是「第二套校验」（约束来自共享类型），
+            // 是**唯一**的口径归一化点。
             if (item.getQuantity() != null && item.getUnitPrice() != null) {
-                itemReq.setSubtotal(item.getUnitPrice().multiply(item.getQuantity()));
-            } else if (item.getSubtotal() != null) {
-                itemReq.setSubtotal(item.getSubtotal());
+                item.setSubtotal(item.getUnitPrice().multiply(item.getQuantity()));
             }
-            itemReq.setWidth(item.getWidth());
-            itemReq.setHeight(item.getHeight());
-            itemReq.setProcessingInfo(item.getProcessingInfo());
-            itemReqs.add(itemReq);
         }
-        createReq.setItems(itemReqs);
 
         // ── 幂等键（issue #4037）：同 (tenantId, X-Client-Request-Id) 只真正执行一次 ──
         String clientRequestId = request.getClientRequestId();
         // 无幂等键（老 ai-agent / 表单类调用方）⇒ 原路径逐字不变：零 DB 往返、不因服务端升级而报错
         if (!StringUtils.hasText(clientRequestId)) {
-            return createOrder(createReq, tenantId);
+            return createOrder(request, tenantId);
         }
         // ① 原子占位（INSERT ... ON CONFLICT DO NOTHING，按影响行数判首次）——
         //    不用「捕获唯一约束异常」探测冲突：PG 里冲突会让当前事务进入 aborted 状态，后续查询全失败
@@ -1631,7 +1667,7 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         }
         OrderDetailResponse created;
         try {
-            created = createOrder(createReq, tenantId);
+            created = createOrder(request, tenantId);
         } catch (RuntimeException e) {
             // ④ 执行失败 ⇒ 释放占位：否则一次失败就把该键永久占死，之后的重试全被误判为「重复」
             clientRequestIdService.discard(tenantId, clientRequestId);
@@ -1650,16 +1686,20 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
      * - 明细同时提供 productId 与 skuCode（或 colorName）且能解析到唯一 SKU → 请求 unitPrice
      *   必须与 SKU 权威价一致（BigDecimal compareTo == 0），不一致抛 400 并附权威价供修正；
      * - 解析不到（无 SKU 标识 / SKU 不存在 / 命中多条 SKU 无法唯一确定）→ 不拦截（防误伤），记 warn。
+     *
+     * <p>规格键只在 {@code processingInfo} 内（issue #4089 收敛后 DTO 不再有顶层
+     * {@code skuCode}/{@code colorName} 字段——那正是 issue 清单的 D1/D2：唯一生产者从不填它们，
+     * 而库存匹配键族也不读它们）。</p>
      */
-    private void validateAgentItemUnitPrice(AgentOrderCreateRequest.AgentOrderItem item, Long tenantId) {
+    private void validateAgentItemUnitPrice(OrderCreateRequest.OrderItemRequest item, Long tenantId) {
         if (item.getUnitPrice() == null) {
             return;
         }
-        // SKU 标识优先取顶层字段（契约预留），否则从 processingInfo（商品销售信息）内解析，
-        // 兼容 ai-agent order_create 现状（skuCode/colorName 嵌套在 processing_info 内）
-        String skuCode = item.getSkuCode();
-        String colorName = item.getColorName();
-        if (!StringUtils.hasText(skuCode) && !StringUtils.hasText(colorName) && item.getProcessingInfo() instanceof Map<?, ?> info) {
+        // SKU 标识从 processingInfo（商品销售信息）内解析 —— ai-agent order_create 与表单页
+        // 两个生产者的真实形态
+        String skuCode = null;
+        String colorName = null;
+        if (item.getProcessingInfo() instanceof Map<?, ?> info) {
             Object rawSku = info.get("skuCode");
             if (rawSku != null) {
                 skuCode = String.valueOf(rawSku);

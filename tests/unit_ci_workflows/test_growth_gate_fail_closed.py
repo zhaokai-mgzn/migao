@@ -16,6 +16,9 @@ growth_gate.py 的 --check-weak 分支在「读文件失败/路径不存在/解�
 """
 # case_ids: MC-012
 import importlib.util
+import os
+import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -131,3 +134,299 @@ def test_main_base_mode_fails_closed_on_git_error(monkeypatch):
     monkeypatch.setattr(gate.subprocess, "run", boom)
     rc = gate.main(["--base", "origin/main"])
     assert rc != 0, "扫描失败必须让门禁非零退出（fail-closed）"
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ⑤ 弱断言扫描的「测试文件」判定：本地 ≡ CI（issue #4077）
+#
+# 缺陷（2026-09-17 实证，非推断）：`verify-all.sh gate` 的弱断言扫描集是
+# 「`git diff --diff-filter=A origin/main...HEAD` 的**全部**新增文件 ∪ 工作区新增文件」——
+# **已提交那一臂没有 `test|spec` 过滤**，而 `pr-check.yml` 的同一 step 有。后果：新增**源文件**
+# （现场：`app/services/greeting.py`，正文一条 `assert result is <not None>` 形状的防御式断言）
+# 被当测试文件扫 ⇒ 本地报 1 处弱断言、gate ❌，CI 那步扫 0 个文件、✅ —— **假红**。
+# 同处注释还写着「与 pr-check 的 Check weak asserts step 语义一致」= 注释漂移（读注释的人
+# 会以为两地同口径），故本次一并改掉。
+#
+# 修法：判定收敛到**单一事实源** `growth_gate._is_test_file`（G5 用例追溯与弱断言扫描共用），
+# 由 `--check-weak --new-tests-only` 施加 —— 本地脚本不再自己写一份 grep。
+#
+# 不变量（下面四个场景就是它的可执行形态，**两个方向都要**）：
+#   · 假红方向：新增源文件**不得**让本地报红（CI 本来就不报）；
+#   · 假绿方向：真弱断言测试**两边都红**（过滤只许缩小扫描集，不许放过真问题）；
+#   · 判别性：强断言测试 + 源文件混合 ⇒ 不报；
+#   · 变异红证：把 `--new-tests-only` 从本地脚本摘掉（= 旧行为）⇒ 场景 A 立刻变回 ❌（断言非空转）。
+#
+# 与 CI 的一致性口径（**两处注释写同一段**，见 issue #4077 的裁定）：
+#   · 判定**本应相同** —— 都是「这个新增文件是不是测试文件」，唯一实现 `_is_test_file`；
+#   · 扫描源**本应不同** —— CI 只可能看到已提交 diff（PR 的改动必然已提交）；本地还要并入
+#     **工作区**未提交的新增文件（否则「提交前跑」对该文件是空跑，issue #3724）。
+#   ⚠️ 本测试**不复刻** `pr-check.yml` 的 grep，也不读它的文本 —— CI 侧口径在运行期由本文件
+#      场景 B 的文本 oracle 代表；把 workflow 文本焊进单测会让 workflow 一改（需 `workflow`
+#      scope，本分支 token 无）就红，那是在制造假红而不是防假红。
+# ══════════════════════════════════════════════════════════════════════════════
+
+# ── 真跑 `bash verify-all.sh gate` 的最小 harness ──
+# 与 `test_gate_uncommitted_noop.py` 同族但**不复用其模块**（那套 harness 要求恰好 1 个检查项
+# 日志、还带 locale/report 专项，语义不同，互相牵连只会让两边都脆）。
+VERIFY_ALL = REPO_ROOT / "verify-all.sh"
+YAML_LIGHT = REPO_ROOT / ".github" / "yaml_light.py"
+_RUN_TIMEOUT = 180
+
+_GIT_ENV = {
+    "GIT_CONFIG_GLOBAL": "/dev/null",
+    "GIT_CONFIG_SYSTEM": "/dev/null",
+    "GIT_AUTHOR_NAME": "ci-guard",
+    "GIT_AUTHOR_EMAIL": "ci-guard@example.invalid",
+    "GIT_COMMITTER_NAME": "ci-guard",
+    "GIT_COMMITTER_EMAIL": "ci-guard@example.invalid",
+    # CI 的 locale 是 C（LANG 未设）—— 显式钉住，让「本地绿」与「CI 绿」是同一件事
+    "LC_ALL": "C",
+    "LANG": "C",
+}
+
+
+def _git(repo, *args):
+    env = dict(os.environ)
+    env.update(_GIT_ENV)
+    return subprocess.run(
+        ["git", *args], cwd=str(repo), capture_output=True, text=True, env=env, check=True
+    )
+
+
+def _make_repo(tmp_path) -> Path:
+    """最小 git 仓库：真实的 verify-all.sh / growth_gate.py + 桩规则源与覆盖体检。
+
+    `refs/remotes/origin/main` 指向基线提交 ⇒ 之后 `git commit` 的内容都算「本 PR 新增文件」。
+    """
+    repo = tmp_path / "repo"
+    (repo / ".github" / "cases").mkdir(parents=True)
+    (repo / "scripts").mkdir()
+    # 桩用例：MC-012 —— 临时仓库里也要能解析到该 ID，否则 G5 会独立报「用例不存在」，
+    # 让「红是因为弱断言」这条判别力丢失
+    (repo / ".github" / "cases" / "misc.yml").write_text(
+        "cases:\n  - id: MC-012\n    title: stub\n    tier: normal\n", encoding="utf-8"
+    )
+    shutil.copy(VERIFY_ALL, repo / "verify-all.sh")
+    shutil.copy(GATE_PY, repo / ".github" / "growth_gate.py")
+    shutil.copy(YAML_LIGHT, repo / ".github" / "yaml_light.py")
+    # 桩规则源：无模块规则（本文件只关心「哪些文件进入弱断言扫描集」）
+    (repo / ".github" / "tech-stack.yml").write_text("modules: []\ntest_commands: {}\n")
+    (repo / ".github" / "qa-exemptions.yml").write_text("exemptions: []\n")
+    # 桩覆盖体检：`--check` 恒通过（判据在 scripts/*_coverage.py，与本缺陷无关）
+    for persona in ("xiaobu", "mibao"):
+        (repo / "scripts" / f"{persona}_coverage.py").write_text(
+            "import sys\nsys.exit(0)\n", encoding="utf-8"
+        )
+    (repo / "README.md").write_text("baseline\n", encoding="utf-8")
+    _git(repo, "init", "-q")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "baseline")
+    base = _git(repo, "rev-parse", "HEAD").stdout.strip()
+    _git(repo, "update-ref", "refs/remotes/origin/main", base)
+    return repo
+
+
+def _run_gate(repo):
+    """真跑 `bash verify-all.sh gate`，返回 (退出码, 控制台原文, 检查项日志原文)。
+
+    `report()` 把检查项输出重定向进 `/tmp/verify-all-<PID>-<slug>.log`、**成功时只打印 ✅**，
+    故用 `bash -c 'echo $$; exec bash …'` 让检查脚本与新 bash 同 PID（`exec` 不换 PID），
+    再按 **PID 定位**日志 —— 只定位，绝不复刻 slug 的命名渲染（它曾在 locale 上踩过坑）。
+    """
+    env = dict(os.environ)
+    env.update(_GIT_ENV)
+    assert Path("/tmp").is_dir(), "本守卫依赖 /tmp 存放 report() 日志（CI 与 macOS 均有）"
+    proc = subprocess.run(
+        ["bash", "-c", 'echo "PID=$$"; exec bash verify-all.sh gate'],
+        cwd=str(repo), capture_output=True, text=True, env=env, timeout=_RUN_TIMEOUT,
+    )
+    out = "%s%s" % (proc.stdout, proc.stderr)
+    paths = []
+    if m := re.search(r"PID=(\d+)", out):
+        pid = m.group(1)
+        paths = sorted(Path("/tmp").glob("verify-all-%s-*.log" % pid))
+    assert paths, f"未能按 PID 定位 gate 检查项日志（断言会退化成没线索的空串）：\n{out}"
+    log = paths[0].read_text(encoding="utf-8", errors="replace")
+    for p in paths:
+        p.unlink(missing_ok=True)  # 不留 /tmp 垃圾
+    assert log.strip(), f"日志文件为空（{paths[0]}）——检查项没往日志写任何东西？\n{out}"
+    return proc.returncode, out, log
+
+
+# 弱断言样本一律**拼接构造**（本文件自身也是「新增测试文件」，会被 `--check-weak` 扫）
+_WEAK_LINE = "    assert result is " + "not None\n"
+# CI 那条 step 的过滤（pr-check.yml 的 `grep -E '\.(py|java|ts|tsx)$' | grep -iE 'test|spec'`）
+# 的净化形态：只回答「CI 会不会把这个文件交给扫描器」——**故意不复刻 CI 的全文**。
+_CI_CODE_EXT = re.compile(r"\.(py|java|ts|tsx)$", re.I)
+_CI_TEST_NAME = re.compile(r"test|spec", re.I)
+
+# 扫描器输出里「**真的扫过某个文件**」的唯一形态（`📄 <path>: N 处弱断言`）。
+# ⚠️ 不能用「日志里有『弱断言』三个字」当判据 —— 固定表头「扫描新增测试文件的弱断言」
+#    也含这三个字，那条断言会恒真（空断言）。
+_SCANNED_RE = re.compile(r"📄 .*: \d+ 处弱断言")
+_TOTAL_RE = re.compile(r"合计 \d+ 个测试文件，(\d+) 处弱断言")
+
+
+# 临时仓库里的新增测试文件统一带上 case_ids 声明：G5 用例追溯是 gate 的**另一条**判据，
+# 不声明会独立触发 ❌ ⇒ 本文件就分不清「红是因为弱断言」还是「红是因为没声明 case_ids」
+# （断言失去判别力）。MC-012 是 `.github/cases/misc.yml` 里 CI 守卫类用例的既有关联 ID。
+_CASE_IDS_HEADER = "# case_ids: MC-012\n"
+
+
+def _write_new_source_file(repo, name="app/services/greeting.py"):
+    """新增**源文件**：正文恰好含一条与弱断言同形的防御式断言。
+
+    它**不是**测试文件 ⇒ 两地都不该扫它。CI 现场（改前）：这一步扫 0 个文件、✅。
+    """
+    path = repo / name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("def greet(name):\n    result = {'name': name}\n" + _WEAK_LINE +
+                    "    return 'hi ' + name\n", encoding="utf-8")
+    return name
+
+
+# ── A 假红方向：新增源文件不得被当测试文件扫（改前：本地 ❌ / CI ✅）──
+
+def _write_weak_test(repo, name="tests/test_weak_sample.py"):
+    """新增**测试文件**：头部声明 case_ids（让 G5 那条判据不干扰），正文一条弱断言。"""
+    path = repo / name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        _CASE_IDS_HEADER
+        + "def test_sample():\n    result = {'ok': True}\n" + _WEAK_LINE,
+        encoding="utf-8",
+    )
+    return name
+
+
+def test_new_source_file_is_not_scanned_for_weak_asserts(tmp_path):
+    """一个只新增源文件的 commit：`verify-all.sh gate` 必须 ✅（改前 ❌ 假红）。
+
+    红证（改前实测）：同一 commit 下本地打印
+    `📄 app/services/greeting.py: 1 处弱断言` + `合计 1 个测试文件` ⇒ gate ❌ / exit 1；
+    而 CI 的同一 step 扫 0 个文件 ⇒ ✅。这是**假红**：报的是 CI 不会报的红。
+    """
+    repo = _make_repo(tmp_path)
+    src = _write_new_source_file(repo)
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "add a new source file")
+    rc, out, log = _run_gate(repo)
+    assert rc == 0, f"只新增源文件不得让 gate 红（改前此处 ❌ 假红）：\n{out}\n{log}"
+    assert not _SCANNED_RE.search(log), (
+        f"该 commit 里没有任何新增测试文件 ⇒ 不该扫过任何文件（📄…处弱断言）；日志：\n{log}"
+    )
+    assert src in log, (
+        "过滤必须**可见**（否则「没扫」与「没跑」又不可区分）：日志里应留下被剔除的候选文件：\n"
+        f"{log}"
+    )
+
+
+# ── B 假绿方向：真弱断言测试两边都红 ──
+
+def test_real_weak_assert_caught_by_both_local_and_ci(tmp_path):
+    """真弱断言**测试文件**：本地 ❌（真扫）∧ CI 口径的扫描集**必须**包含它（证明非漏判）。
+
+    两向断言：本地这一半证「过滤没放宽到放过真问题」，CI 这一半证「本单不是靠缩小
+    CI 的扫描集来达成一致」—— 若哪天有人把过滤写成 `test`-only 的变体（例如把 `spec`
+    或某个扩展名漏掉），第二半立刻红。
+    """
+    repo = _make_repo(tmp_path)
+    src = _write_new_source_file(repo)
+    entry = _write_weak_test(repo)
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "add a weak test among source files")
+    rc, out, log = _run_gate(repo)
+    assert rc != 0, f"真弱断言测试必须让本地 gate 红（过滤不得漏掉真问题）：\n{out}\n{log}"
+    assert entry in log, f"命中的测试文件必须出现在日志里：\n{log}"
+    assert f"📄 {src}:" not in log, f"同一 commit 里的源文件不得被扫：\n{log}"
+    assert _TOTAL_RE.search(log) and _TOTAL_RE.search(log).group(1) == "1", (
+        f"必须真的扫出那 1 处（不是空跑）：\n{log}"
+    )
+    # G5 的缺声明 blocker 都以此结尾（gate 抬头也含「case_ids」字样，故不按裸词判）
+    assert "16-case-contract.md" not in log, (
+        f"红必须来自弱断言本身——测试文件已声明 case_ids，G5 不该再插一脚：\n{log}"
+    )
+
+    added = _git(repo, "diff", "--diff-filter=A", "--name-only", "origin/main...HEAD").stdout
+    candidates = [f for f in added.split("\n") if f.strip()]
+    ci_scan = [f for f in candidates
+               if _CI_CODE_EXT.search(f) and _CI_TEST_NAME.search(f)]
+    assert entry in ci_scan, (
+        "CI 口径必须把这个新增测试文件交给扫描器 —— 否则本地那一半红就是靠"
+        f"「两边都漏扫」换来的（假绿）：{ci_scan}"
+    )
+    assert src not in ci_scan, (
+        f"CI 口径本就不扫源文件（这正是本地假红的对照组）：{ci_scan}"
+    )
+
+
+# ── C 判别性：强断言测试 + 源文件混合 ⇒ 不报 ──
+
+def test_strong_assert_test_file_shared_predicate(tmp_path):
+    """**锐化过的**断言（值/集合/异常/抛错） + 源文件混合 ⇒ 两边都不报。
+
+    这是 **R2 负例**：证明本单没有变成「见 assert 就报」的过宽门禁 —— 不可满足的断言
+    （永远红）与永远不报的门禁同属「基于错误真相模型写出的护栏」。
+    """
+    repo = _make_repo(tmp_path)
+    src = _write_new_source_file(repo)
+    strong = repo / "tests" / "test_greeting_strong.py"
+    strong.parent.mkdir(parents=True, exist_ok=True)
+    strong.write_text(
+        _CASE_IDS_HEADER
+        + "import pytest\n"
+        "from app.services.greeting import greet\n"
+        "\n"
+        "def test_value_and_set_and_exception():\n"
+        "    assert greet('a') == 'hi a'\n"
+        "    assert greet('b') in {'hi b', 'hello b'}\n"
+        "    assert len(greet('c')) > 0\n"
+        "    with pytest.raises(KeyError):\n"
+        "        raise KeyError('boom')\n",
+        encoding="utf-8",
+    )
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "add a strong test among source files")
+    rc, out, log = _run_gate(repo)
+    assert rc == 0, f"强断言测试 + 源文件不该报红（负例）：\n{out}\n{log}"
+    scanned = _SCANNED_RE.findall(log)
+    assert len(scanned) == 1, (
+        f"强断言文件必须被**真扫过**（否则这一半是空跑：没扫过 ≠ 扫了 0 处）；日志：\n{log}"
+    )
+    assert f"📄 {strong.relative_to(repo)}: 0 处弱断言" in log, (
+        f"强断言测试文件必须进入扫描集且得 0 处：\n{log}"
+    )
+    assert f"📄 {src}:" not in log, f"源文件仍在候选里但必须被剔除：\n{log}"
+
+
+# ── D 变异红证：摘掉 `--new-tests-only`（= 旧行为）⇒ 场景 A 变回 ❌ ──
+
+def test_mutation_without_new_tests_only_reproduces_false_red(tmp_path):
+    """把过滤摘掉 ⇒ 只新增源文件的 commit 又变 ❌（#4077 现场复现，证明场景 A 非空断言）。
+
+    变异施加在**临时仓库的副本**上（与仓库自身真值解耦）：
+    `verify-all.sh` 调 gate 时删掉 `--new-tests-only` —— 这正是改前的行为。
+
+    ⚠️ 这同时锁住**本地脚本真的把该标志传下去了**：未来有人重构掉这个参数，
+    本测试会红（而不是静默回到「本地没有过滤」的旧形态）。
+    """
+    repo = _make_repo(tmp_path)
+    script = repo / "verify-all.sh"
+    text = script.read_text(encoding="utf-8")
+    mutated, hits = re.subn(r"--check-weak --new-tests-only ", "--check-weak ", text)
+    assert hits == 1, (
+        f"变异点丢失（命中 {hits} 处）：本地脚本没在弱断言扫描上施加共享判定"
+        "（`--check-weak --new-tests-only`）？"
+    )
+    script.write_text(mutated, encoding="utf-8")
+    src = _write_new_source_file(repo)
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "add a new source file")
+    rc, out, log = _run_gate(repo)
+    assert rc != 0, (
+        "旧行为（无过滤）本应把新增源文件当测试文件扫 ⇒ ❌；这里没红说明场景 A 的"
+        f"结论不是由过滤决定的（断言空转）：\n{out}\n{log}"
+    )
+    assert f"📄 {src}: 1 处弱断言" in log, (
+        f"旧行为应把源文件当测试文件并报出那处「弱断言」：\n{log}"
+    )
