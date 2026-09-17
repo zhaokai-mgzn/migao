@@ -89,7 +89,7 @@ public class BriefingController {
             details.put("enabled", config.get("enabled"));
             details.put("generateTime", config.get("generateTime"));
             auditLogService.recordLogAsync(tenantId, userId, userName,
-                    "update", "briefing_config", String.valueOf(tenantId), "智能每日经营简报配置",
+                    "update", "briefing_config", null, String.valueOf(tenantId), "智能每日经营简报配置",
                     details, null, null);
         } catch (Exception e) {
             log.warn("简报配置变更审计失败（不阻断）: {}", e.getMessage());

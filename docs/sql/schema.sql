@@ -901,8 +901,9 @@ CREATE TABLE audit_logs (
     tenant_id BIGINT NOT NULL REFERENCES tenants(id),
     user_id VARCHAR(64) NOT NULL,
     user_name VARCHAR(128),
-    action VARCHAR(64) NOT NULL,  -- create / update / delete / login / logout / assign / etc.
-    resource_type VARCHAR(64),  -- product / order / ticket / ai_config / employee / etc.
+    action VARCHAR(64) NOT NULL,  -- 动作**动词**：create / update / delete / toggle_status / confirm_payment / etc.
+    resource_type VARCHAR(64),  -- product / order / ticket / ai_config / employee / agent_tool / etc.
+    tool_name VARCHAR(64),  -- AI 工具名（仅 resource_type=agent_tool 有值；见迁移 V52 / issue #4071）
     resource_id VARCHAR(64),
     resource_name VARCHAR(255),
     action_details JSONB DEFAULT '{}',  -- 操作详情（修改前后的值）
@@ -1493,6 +1494,12 @@ ALTER TABLE tenant_applications ADD COLUMN IF NOT EXISTS risk_flags TEXT;
 ALTER TABLE tenant_applications ADD COLUMN IF NOT EXISTS review_summary TEXT;
 CREATE INDEX IF NOT EXISTS idx_tenant_applications_company_norm
     ON tenant_applications(company_name_norm);
+
+-- AI 工具写审计的工具名（V52 / issue #4071：`action` 收敛为动词，工具名另置本列）。
+-- 这里用 ADD COLUMN 而非写进上面 CREATE TABLE 的列清单，理由与本段其它条目一致 ——
+-- 迁移链是结构变更的**事实源**，bootstrap 段只负责「终态对齐」（漂移即 CI block）。
+ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS tool_name VARCHAR(64);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_tool_name ON audit_logs(tool_name);
 
 -- C 端长期记忆表（docs/sql/migrations/V20260608 + V20260904）
 CREATE TABLE IF NOT EXISTS user_memories (
