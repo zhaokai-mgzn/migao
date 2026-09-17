@@ -97,7 +97,25 @@ $ git status --short -- backend/ frontend/ tests/ .github/ scripts/ | wc -l
 0        # ← 四类禁用路径零改动
 ```
 
-## 4. 与既有归档的关系
+## 4. 本批归档的验证记录（可重跑）
+
+```bash
+# ① 文档门禁（L0 依赖的守卫族；改动 docs/ 不得弄红它）
+$ python3.11 -m pytest tests/unit_ci_workflows -q
+1291 passed, 3 skipped in 155.63s
+
+# ② QA Growth Gate 预检（CI 同规则；**必须在 git commit 之后跑**，§2.1）
+$ ./verify-all.sh gate
+变更集：7 个文件（origin/main...HEAD ∪ 工作区改动）
+✅ QA Growth Gate 预检
+========== 结果: 1 通过, 0 失败, 0 未就绪（真跑 1 项 / 共 1 项）==========
+
+# ③ INDEX 与归档文件的相对链接全部可打开
+$ python3.11 <linkcheck> docs/wiki/INDEX.md docs/audit-2026-09/03-*.md
+[7 文件] 检查 44 条相对链接，断链 0 条
+```
+
+## 5. 与既有归档的关系
 
 | 文件 | 内容 | 关系 |
 |---|---|---|
@@ -106,9 +124,18 @@ $ git status --short -- backend/ frontend/ tests/ .github/ scripts/ | wc -l
 | **本批 03** | 2026-09-17 三份报告 + 六机制 + 线上取证 + 评分卡 | 本批 |
 | issue #4009 | 「缺陷冻结清单」（A1~A17 / B1~B6 / C1~C5 + 任务包 P1~P5） | **条目层**；本批是它的**过程与证据层** |
 
-## 5. 本次归档**没能**落进仓库的资产（如实登记）
+## 6. 本次归档**没能**落进仓库的资产（如实登记）
 
-见 [03-5-live-session-forensics.md](03-5-live-session-forensics.md) §4「不可复算资产登记」。
-摘要：线上 DB 取证（会话/消息/metadata 计数）、审计时的 `gh api branches/main/protection` 读数、
+**完整登记见 [03-5-live-session-forensics.md](03-5-live-session-forensics.md) §5「不可复算资产登记（引用黑名单）」。**
+摘要：线上 DB 取证（会话数/消息数/metadata 计数/当日订单）、审计时的
+`gh api branches/main/protection` 读数、`R8 headRefOid` 的实测次数、
 `/tmp/migao_audit/TOOL_LAYER_AUDIT.md` 与 `/tmp/migao-b-order-eval-audit.md` 的**原文**——
 均**无仓库内可复现来源**，本批按 issue 正文重建结论、不重建数字。
+
+另外三类**有内容、但不完整**的：
+
+| 资产 | 归档到哪 | 缺口 |
+|---|---|---|
+| 报告③ 的 M6/M7/M9~M12/M14~M16（16 条里的 9 条） | **未归档** | issue #4041 正文只点名了 7 条（M1/M2/M3/M4/M5/M8/M13），其余**正文未展开** + 原报告已清理 ⇒ 不可重建，**不编造** |
+| 报告① 的「9 类互不相干职责」 | 未归档 | 人工分类判断，**无机械判据** |
+| 报告② 的 D-04/D-06~D-10 | 未归档（指向 #4009） | #4041 正文未列，条目在 **issue #4009 冻结清单**里 |
