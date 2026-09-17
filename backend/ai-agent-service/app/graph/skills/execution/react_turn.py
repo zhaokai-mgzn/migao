@@ -1282,6 +1282,35 @@ async def react_turn(
                             except Exception as e:
                                 logger.warning(f"[{skill_name}] pending_validated persist failed (non-fatal): {e}")
                         else:
+                            # ── 消化域闸门判决：`cross_skill_target` ⇒ 回锁归属流程（issue #4124）──
+                            # 病灶（#4123 的 artifact 原文）：`failed=validate_input!cross_skill_target`
+                            # 之后**没有任何代码消费这条判决**（改前 `grep -rn cross_skill_target
+                            # app/graph/skills/` 只命中一处注释）⇒ 模型只拿到劝导语
+                            # 「请把会话切到具备该工具的流程后再执行」，而它**没有切换原语** ⇒
+                            # 整条链路被放弃（AS-003 期望的 `after_sales_manage` 从未被调用）。
+                            # 这里把判决接上**已有的恢复原语**（`_route_cross_skill_target`）：
+                            # 归属从注册表事实 derive（`_flow_owner_skill`，不写死 skill 名）→
+                            # 回锁会话（含在办确认卡归属迁移）→ 指引写明「已切到哪 / 下一轮什么
+                            # 可用 / 本轮该做什么」。
+                            # 三条纪律：
+                            #   ① **不**改成 `success=True`（本轮 `bind_tools` 已定，目标工具本轮
+                            #      仍不可执行 ⇒ 那是 #3976 的空头承诺）；
+                            #   ② 置位 `_relocked_this_round` —— 指引承诺了"下一轮即可执行"，而
+                            #      `finalize_turn` 第 10 节**只在**该标志为真时才不把 pending_skill
+                            #      覆盖回本轮 skill（同 #3976 P3）。本形态的 `product` 就在
+                            #      `CREATION_SKILL_NAMES` 里 ⇒ 不置位就是"说了却没做"；
+                            #   ③ fail-safe：derive 不出归属（无 session / persona 不可达 /
+                            #      归属==当前流程）⇒ 不改任何状态，退回既有 suggestion。
+                            if result_dict.get("error") == "cross_skill_target":
+                                _route_msg = await _base._route_cross_skill_target(
+                                    session_id, state,
+                                    str((_vargs or {}).get("target_tool") or ""), skill_name)
+                                if _route_msg:
+                                    _relocked_this_round = True
+                                    result_dict = {**result_dict, "message": _route_msg,
+                                                   "suggestion": _route_msg}
+                                    result_str = json.dumps(
+                                        result_dict, ensure_ascii=False, default=str)
                             # 清除点之外的**留痕**（issue #4073 交付形态 1）：校验失败也落账 ——
                             # 改前失败路径不留任何痕迹，写调用点无从判断"这个写刚校验失败过"。
                             try:
