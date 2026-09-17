@@ -1272,6 +1272,14 @@ cases:
       - type: product_count_for_keyword
         source: "遮光窗帘"
         expect: 1
+    # ── 自清理（写类用例的前置等价性；同 PR-005/PR-007/PR-017 口径）──────────────
+    # 本用例是**共享夹具写方**：跑一次就把种子价改掉，而它自己靠**名字**定位
+    # （`precondition` 与 `post_clean` 都按名）。缺 `pre_clean` 时「重试前置 ≠ 首跑前置」
+    # （#3751/#3800 家族）；同名**副本**只能靠 `product_dedupe` 归并（保留最早创建 = 种子），
+    # 无副本时是良性 no-op（`_PRECLEAN_CLEANUP_TYPES` 口径）。
+    pre_clean:
+      - type: product_dedupe
+        product_keyword: "遮光窗帘"
     skip_reason: ""
     # ── 复位共享夹具（issue #4075 的**机制半边**：`post_clean`）──
     # 本用例改的是**共享夹具** `prod_eval_blackout`（种子「遮光窗帘」）的

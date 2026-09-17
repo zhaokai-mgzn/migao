@@ -3513,6 +3513,7 @@
 你: 确认
 期望: sku_update
 数据: sku_update 真成功且价格为 150 元（= 用户确认价）：机器断言见 must_succeed（写成功）+ output_verify（new_price==150）；裸断言「调用过」不算覆盖（#3544 假绿升级）
+清理: product_dedupe(product_keyword=遮光窗帘)
 复位: sku_price_restore(product_keyword=遮光窗帘、color_name=米白、selling_method=bulk_cut、door_width=2.8、price=168)
 必须成功: sku_update
 产出: sku_update → new_price==150
