@@ -330,13 +330,17 @@ _UNRELATED = '''\
 
 
 class SessionMemoryFactory:
+    """名字像替身工厂，但没有 save_message ⇒ 不是替身"""
+
     def __call__(self, *args, **kwargs):
         return object()
 
 
 class TestSessionMemoryHelpers:
-    def test_something(self):
-        assert True
+    """名字里带 SessionMemory 的测试类 —— 类名不构成判据"""
+
+    def helper(self):
+        return "不是替身"
 
 
 class UnrelatedThing:
