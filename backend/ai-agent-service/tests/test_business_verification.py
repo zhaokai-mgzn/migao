@@ -196,6 +196,10 @@ class _InMemorySessionStore:
     async def save_message(
         self, session_id, role, content, tool_calls=None,
         tenant_id=None, content_type="text", extra_metadata=None, interactive=None,
+        # 与 SessionMemory.save_message 同签名（issue #4052 新增 tool_results）：
+        # 替身签名落后 ⇒ 真实调用抛 TypeError 被 SSE 桥吞掉 ⇒ 「assistant 消息没落库」
+        # 只表现为断言计数不对（本轮实测本文件 test_get_history_returns_messages 红）
+        tool_results=None,
     ):
         self._counter += 1
         mid = f"msg_{self._counter:06d}"
@@ -203,6 +207,8 @@ class _InMemorySessionStore:
         meta = {}
         if tool_calls:
             meta["tool_calls"] = tool_calls
+        if tool_results:
+            meta["tool_results"] = tool_results
         if interactive:
             meta["interactive"] = interactive
             meta["interactive_answered"] = False
