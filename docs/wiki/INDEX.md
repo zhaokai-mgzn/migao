@@ -20,6 +20,7 @@ LLM 开发时按需加载对应页面 (~50 行/页，按场景索引)：
 | **可观测性/监控/ARMS 接入** | **[Observability](Observability.md)** |
 | **陈旧快照/移动靶的判定与处置（真相源契约）** | **[truth-source-contract](truth-source-contract.md)**（统一审计入口 `python3 scripts/drift_audit.py`） |
 | **门禁豁免口子总账（哪些机制能让检查变绿而不必真修 / 怎么收紧）** | **[gate-exemption-ledger](gate-exemption-ledger.md)**（每个数字附复算命令；收紧 = 减少能免检的面） |
+| **审计归档：三份报告 + 越修越多六机制 + 线上取证 + 评分卡（2026-09-17）** | **[audit-archive-2026-09-17](../audit-2026-09/03-audit-archive-README.md)**（**冻结快照**；每个计数附复算命令，读前先看它的「账本新鲜度契约」） |
 | CI/CD 流水线详情 | [CI-CD](CI-CD.md) |
 | 写测试/了解测试体系 | [Testing](Testing.md) |
 | **测试工程规范（拆分/ignore/脱敏/分层）** | **[test-engineering-standards](../testing/test-engineering-standards.md)** |
@@ -42,3 +43,4 @@ Wiki 页面是摘要，详细文档在：
 | 部署 | [docs/deployment/swas-migration-lessons.md](../deployment/swas-migration-lessons.md)（SWAS 踩坑）· [deployment-checklist.md](../deployment/deployment-checklist.md) |
 | API | [docs/api/api-reference.md](../api/api-reference.md) |
 | SQL | [docs/sql/schema.sql](../sql/schema.sql) |
+| 审计归档 | [docs/audit-2026-09/](../audit-2026-09/03-audit-archive-README.md)（03 批 = 2026-09-17：Skill 层 / Tool 层 / 评测体系 / 六机制 / 线上取证 + 评分卡）· [docs/audit-2026-08/](../audit-2026-08/01-docs-audit.md) |
