@@ -1,7 +1,9 @@
+// case_ids: DF-007, API-001
 package com.migao.admin.config;
 
 import com.migao.admin.dto.ApiResponse;
 import com.migao.admin.exception.BusinessException;
+import com.migao.admin.exception.PermissionDeniedException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -157,18 +159,50 @@ class GlobalExceptionHandlerTest {
 
     // ======================== 访问拒绝异常测试 ========================
 
+    // 背景（issue #4105 F1）：旧实现丢弃 PermissionInterceptor 抛出的「需要权限: X」，
+    // 只回硬编码 {"code":"PERMISSION_DENIED","message":"权限不足"} 且无 suggestion ⇒
+    // Agent 拿不到缺失权限码、也拿不到「不要重试」的指令，只能盲目重试同一工具。
+
     @Test
-    @DisplayName("处理 AccessDeniedException - 返回 403")
-    void handleAccessDeniedException() {
-        // Given
-        AccessDeniedException ex = new AccessDeniedException("权限不足");
+    @DisplayName("处理 AccessDeniedException(@RequirePermission 拒绝) - 403 携带缺失权限码 + 可执行 suggestion")
+    void handleAccessDeniedException_permissionDenied_carriesRequiredPermissionAndActionableSuggestion() {
+        // Given: PermissionInterceptor 抛出携带权限码的专用子类型
+        PermissionDeniedException ex = new PermissionDeniedException(
+                "权限不足，需要权限: product:manage", "product:manage");
 
         // When
         ResponseEntity<ApiResponse<Void>> response = handler.handleAccessDeniedException(ex);
 
-        // Then
+        // Then: 权限码既进 message（人读），也进 error.details（机读），suggestion 必须可执行
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+        ApiResponse<Void> body = response.getBody();
+        assertThat(body.isSuccess()).isFalse();
+        assertThat(body.getError().getCode()).isEqualTo("PERMISSION_DENIED");
+        assertThat(body.getError().getMessage()).contains("product:manage");
+        assertThat(body.getError().getDetails()).hasSize(1);
+        assertThat(body.getError().getDetails().get(0).getField()).isEqualTo("requiredPermission");
+        assertThat(body.getError().getDetails().get(0).getMessage()).isEqualTo("product:manage");
+        assertThat(body.getSuggestion())
+                .contains("product:manage")
+                .contains("不要重复调用同一工具")
+                .contains("岗位权限");
+    }
+
+    @Test
+    @DisplayName("处理 AccessDeniedException(路径级拒绝，未知所需权限) - 403 仍给出可执行 suggestion")
+    void handleAccessDeniedException_pathLevelDenial_genericSuggestionStillActionable() {
+        // Given: 认证入口（SecurityConfig.accessDeniedHandler 同源）的裸 AccessDeniedException
+        AccessDeniedException ex = new AccessDeniedException("权限不足，禁止访问");
+
+        // When
+        ResponseEntity<ApiResponse<Void>> response = handler.handleAccessDeniedException(ex);
+
+        // Then: 无权限码可带，但「不要重试 + 找管理员」的指令必须仍在
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
         assertThat(response.getBody().getError().getCode()).isEqualTo("PERMISSION_DENIED");
+        assertThat(response.getBody().getSuggestion())
+                .contains("不要重复调用同一工具")
+                .contains("岗位权限");
     }
 
     // ======================== 请求体格式异常处理测试 ========================

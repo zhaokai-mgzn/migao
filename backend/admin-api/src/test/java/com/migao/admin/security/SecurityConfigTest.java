@@ -1,5 +1,5 @@
 package com.migao.admin.security;
-// case_ids: DF-007
+// case_ids: DF-007, DF-017
 
 import com.aliyun.oss.OSS;
 import com.migao.admin.config.GlobalExceptionHandler;
@@ -11,6 +11,7 @@ import com.migao.admin.dto.PageResponse;
 import com.migao.admin.service.AuthService;
 import com.migao.admin.service.ProductService;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import com.baomidou.mybatisplus.autoconfigure.MybatisPlusAutoConfiguration;
@@ -23,10 +24,12 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.MediaType;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.List;
 
+import static org.hamcrest.Matchers.containsString;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
@@ -51,6 +54,17 @@ class SecurityConfigTest {
 
     @Autowired
     private ObjectMapper objectMapper;
+
+    @Autowired
+    private ServiceTokenFilter serviceTokenFilter;
+
+    /** Service Token 密钥：测试环境用固定值（生产从 SERVICE_TOKEN_SECRET 注入）。 */
+    private static final String SERVICE_SECRET = "test-service-token";
+
+    @BeforeEach
+    void setUpServiceTokenSecret() {
+        ReflectionTestUtils.setField(serviceTokenFilter, "serviceTokenSecret", SERVICE_SECRET);
+    }
 
     @MockBean
     private AuthService authService;
@@ -376,6 +390,81 @@ class SecurityConfigTest {
         mockMvc.perform(get("/api/admin/products")
                         .with(user("svc-1").roles("SERVICE")))
                 .andExpect(status().isOk());
+    }
+
+    // ======================== Service Token 透传商户员工 — 细粒度鉴权（issue #4105 F2）========================
+    // 背景：ai-agent 调用 admin-api 始终带 X-Service-Token + X-Tenant-Id + X-User-Id，
+    // ServiceTokenFilter 此前一律构造 role=service 的身份 ⇒ PermissionInterceptor.hasBypassRole()
+    // 直接放行，商户员工（受限岗位）能让米宝执行自己无权执行的写操作，admin-api 完全无感。
+    // 目标：X-User-Id 命中同租户商户员工时挂真实角色，交由 @RequirePermission 校验并返回 F1 的可执行 403。
+
+    @Test
+    @DisplayName("服务令牌 + 商户员工无 product:list ⇒ 403 且响应体携带缺失权限码 + 可执行 suggestion")
+    void serviceToken_merchantStaffWithoutPermission_deniedWithActionableBody() throws Exception {
+        when(userMapper.selectById("staff-1")).thenReturn(staffUser("staff-1", 1L, "operator", "active"));
+        when(roleService.getUserPermissions("staff-1")).thenReturn(List.of("dashboard:view"));
+
+        mockMvc.perform(get("/api/admin/products")
+                        .header("X-Service-Token", SERVICE_SECRET)
+                        .header("X-Tenant-Id", "1")
+                        .header("X-User-Id", "staff-1"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.error.code").value("PERMISSION_DENIED"))
+                .andExpect(jsonPath("$.error.message").value(containsString("product:list")))
+                .andExpect(jsonPath("$.error.details[0].field").value("requiredPermission"))
+                .andExpect(jsonPath("$.error.details[0].message").value("product:list"))
+                .andExpect(jsonPath("$.suggestion").value(containsString("product:list")))
+                .andExpect(jsonPath("$.suggestion").value(containsString("不要重复调用同一工具")));
+
+        // 负向控制（本用例的承重判据）：旧实现命中 service 旁路 ⇒ getUserPermissions 一次都不被调用、
+        // 且响应是 200 —— 上面两条断言与下面这条 verify 会同时变红，证明新守卫真的在承重。
+        verify(roleService).getUserPermissions("staff-1");
+        verify(productService, never()).getProducts(any(), any());
+    }
+
+    @Test
+    @DisplayName("服务令牌 + 商户员工持有 product:list ⇒ 200（细粒度校验放行，不再走旁路）")
+    void serviceToken_merchantStaffWithPermission_allowed() throws Exception {
+        when(userMapper.selectById("staff-2")).thenReturn(staffUser("staff-2", 1L, "operator", "active"));
+        when(roleService.getUserPermissions("staff-2")).thenReturn(List.of("product:list"));
+        when(productService.getProducts(any(), nullable(Long.class))).thenReturn(new PageResponse<>());
+
+        mockMvc.perform(get("/api/admin/products")
+                        .header("X-Service-Token", SERVICE_SECRET)
+                        .header("X-Tenant-Id", "1")
+                        .header("X-User-Id", "staff-2"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true));
+
+        // 旁路若仍在，getUserPermissions 永不被调用 ⇒ 本断言变红
+        verify(roleService).getUserPermissions("staff-2");
+    }
+
+    @Test
+    @DisplayName("服务令牌 + C 端消费者 X-User-Id ⇒ 行为与今日一致（C 端路径零回归）")
+    void serviceToken_customerXUserId_keepsLegacyServiceBypass() throws Exception {
+        when(userMapper.selectById("customer-9")).thenReturn(staffUser("customer-9", 1L, "customer", "active"));
+        when(productService.getProducts(any(), nullable(Long.class))).thenReturn(new PageResponse<>());
+
+        mockMvc.perform(get("/api/admin/products")
+                        .header("X-Service-Token", SERVICE_SECRET)
+                        .header("X-Tenant-Id", "1")
+                        .header("X-User-Id", "customer-9"))
+                .andExpect(status().isOk());
+
+        // C 端消费者不属于商户员工：仍走内部服务身份，不引入细粒度权限查询（逐字节保持今日路径）
+        verify(roleService, never()).getUserPermissions(anyString());
+    }
+
+    private static com.migao.admin.entity.User staffUser(String id, Long tenantId, String role, String status) {
+        return com.migao.admin.entity.User.builder()
+                .id(id)
+                .tenantId(tenantId)
+                .role(role)
+                .status(status)
+                .deleted(0)
+                .build();
     }
 
     // ======================== 商户员工角色门禁测试 ========================
