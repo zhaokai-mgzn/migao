@@ -417,4 +417,20 @@ class ProductionControllerTest {
         assertThat(ann).as("类级 @RequirePermission 缺失 = 权限护栏丢失").isNotNull();
         assertThat(ann.value()).isEqualTo("order:list");
     }
+
+    @Test
+    @DisplayName("扫工人二维码（路径参数=qr_token）→ 200 返回工序进度（issue #4005 断链修复）")
+    void getOperationsByQrTokenPath() throws Exception {
+        when(orderMapper.selectById("tok-abc")).thenReturn(null);
+        when(orderMapper.selectOne(any())).thenReturn(null);                    // order_no 未命中
+        when(processingOrderMapper.selectOne(any())).thenReturn(processingOrder("tok-abc"));
+        when(orderMapper.selectById(ORDER_ID)).thenReturn(order("producing"));
+        when(processingOrderMapper.selectActiveByOrderId(ORDER_ID, TENANT)).thenReturn(processingOrder("tok-abc"));
+        when(positionOperationMapper.selectList(any())).thenReturn(List.of());
+
+        mockMvc.perform(get("/api/admin/production/orders/tok-abc/operations"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.order_id").value(ORDER_ID));
+    }
 }

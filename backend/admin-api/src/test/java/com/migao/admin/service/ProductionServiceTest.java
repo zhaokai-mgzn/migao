@@ -217,4 +217,42 @@ class ProductionServiceTest {
         assertThat(result.get("current_operation")).isEqualTo("");
         assertThat((List<?>) result.get("pending_operations")).isEmpty();
     }
+
+    // ── 订单解析三形态（issue #4005：打印二维码内容 qr_token 必须可用于报工/查询）──
+
+    @Test
+    @DisplayName("路径参数为加工单 qr_token → 解析到订单（扫码报工链路）")
+    void getOperationsResolvesByQrToken() {
+        when(orderMapper.selectById("tok123")).thenReturn(null);
+        when(orderMapper.selectOne(any())).thenReturn(null);                        // order_no 未命中
+        when(processingOrderMapper.selectOne(any())).thenReturn(processingOrder()); // qr_token 命中
+        when(positionOperationMapper.selectList(any())).thenReturn(List.of());
+
+        Map<String, Object> result = service.getOperations("tok123", TENANT);
+
+        assertThat(result.get("order_id")).isEqualTo(ORDER_ID);
+    }
+
+    @Test
+    @DisplayName("路径参数为订单号 order_no → 解析到订单（手输纸质单号）")
+    void getOperationsResolvesByOrderNo() {
+        when(orderMapper.selectById("ORD-20260917-001")).thenReturn(null);
+        when(orderMapper.selectOne(any())).thenReturn(order("producing"));
+        when(positionOperationMapper.selectList(any())).thenReturn(List.of());
+
+        Map<String, Object> result = service.getOperations("ORD-20260917-001", TENANT);
+
+        assertThat(result.get("order_id")).isEqualTo(ORDER_ID);
+    }
+
+    @Test
+    @DisplayName("三形态都不命中 → notFound（不静默返回空）")
+    void getOperationsUnknownKeyNotFound() {
+        when(orderMapper.selectById("nope")).thenReturn(null);
+        when(orderMapper.selectOne(any())).thenReturn(null);
+        when(processingOrderMapper.selectOne(any())).thenReturn(null);
+
+        assertThatThrownBy(() -> service.getOperations("nope", TENANT))
+                .hasMessageContaining("订单");
+    }
 }
