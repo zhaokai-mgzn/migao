@@ -209,8 +209,23 @@ def _make_repo(tmp_path) -> Path:
     shutil.copy(VERIFY_ALL, repo / "verify-all.sh")
     shutil.copy(GATE_PY, repo / ".github" / "growth_gate.py")
     shutil.copy(YAML_LIGHT, repo / ".github" / "yaml_light.py")
-    # 桩规则源：无模块规则（本文件只关心「哪些文件进入弱断言扫描集」）
-    (repo / ".github" / "tech-stack.yml").write_text("modules: []\ntest_commands: {}\n")
+    # 桩规则源：**一条无害规则**（不是空 modules）—— 本文件只关心「哪些文件进入弱断言扫描集」。
+    # ⚠️ 2026-09-17 语义更新：growth_gate 现在把「规则源退化」当 **fail-closed**
+    # （`modules` 为空 / 正则非法 ⇒ exit 2，见 `.github/growth_gate.py` 的 `rule_errors`
+    # 与 `not rules` 分支）—— 旧桩图省事写的 `modules: []` 如今**本身就意味着
+    # 「整条缺测门禁失效」**，会把本 harness 的每个场景都额外打红（红因变成「规则源退化」
+    # 而不是「弱断言扫描集」⇒ 判别力丢失）。故换成一条真规则：它匹配不到本 harness 改动的
+    # 任何文件（新增源文件 / 新增测试文件）⇒ 分类结果与旧桩逐字一致（unmatched）。
+    (repo / ".github" / "tech-stack.yml").write_text(
+        "modules:\n"
+        "  - service: stub\n"
+        "    language: python\n"
+        "    patterns:\n"
+        "      - pattern: 'stub/(.+)\\.py'\n"
+        "        tests: ['tests/test_{1}.py']\n"
+        "test_commands: {}\n",
+        encoding="utf-8",
+    )
     (repo / ".github" / "qa-exemptions.yml").write_text("exemptions: []\n")
     # 桩覆盖体检：`--check` 恒通过（判据在 scripts/*_coverage.py，与本缺陷无关）
     for persona in ("xiaobu", "mibao"):
@@ -430,3 +445,109 @@ def test_mutation_without_new_tests_only_reproduces_false_red(tmp_path):
     assert f"📄 {src}: 1 处弱断言" in log, (
         f"旧行为应把源文件当测试文件并报出那处「弱断言」：\n{log}"
     )
+
+# ── ⑥ 规则源退化必须 fail-closed（2026-09-17 收紧）─────────────────────────────
+#
+# 病根（实测，非推断）：`compile_rules` 用裸 `continue` 静默丢弃「空 pattern / 非法正则」，
+# 而 `main()` 对「rules 为空」只打 `::warning::`。两条合起来是一条**现实的、不用改代码就能
+# 关掉整条缺测门禁的路**：编辑 `.github/tech-stack.yml` **本身不需要任何测试**
+# （该路径 unmatched ⇒ 既非 block 也非 warn），把 `modules:` 清空后每个变更文件都落进
+# `classify_file` 的 `unmatched` 分支 —— 而 `unmatched` 既不是 blocker 也不是 warning
+# ⇒ `blocker_count = 0` ⇒ CI 的 `Fail on blocking violations` 不触发、`verify-all.sh gate` 打 ✅。
+# 2026-09-17 实测原文：真源码文件显示「ℹ️ 未识别，跳过」+「## ✅ 全部通过」+ exit 0。
+
+_EMPTY_MODULES = "modules: []\ntest_commands: {}\n"
+
+# 第一条 pattern 的括号未闭合（re.error）；第二条合法 —— 收紧前前者被静默丢弃
+# ⇒ `builder.py` 落进 unmatched ⇒ ✅ 放行。
+_BAD_REGEX_MODULES = (
+    "modules:\n"
+    "  - service: stub\n"
+    "    language: python\n"
+    "    patterns:\n"
+    "      - pattern: 'app/(.+\\.py'\n"
+    "        tests: ['tests/test_{1}.py']\n"
+    "      - pattern: 'app/good/(.+)\\.py'\n"
+    "        tests: ['tests/test_{1}.py']\n"
+    "test_commands: {}\n"
+)
+
+_OK_MODULES = (
+    "modules:\n"
+    "  - service: stub\n"
+    "    language: python\n"
+    "    patterns:\n"
+    "      - pattern: 'stub/(.+)\\.py'\n"
+    "        tests: ['tests/test_{1}.py']\n"
+    "test_commands: {}\n"
+)
+
+# 一个在磁盘上真实存在、且**不在**任何豁免清单里的文件（用它避免豁免分支先命中而掩盖分类）
+_REAL_SOURCE = "backend/ai-agent-service/app/graph/builder.py"
+
+
+def _tech_stack(tmp_path, body):
+    p = tmp_path / "tech-stack.yml"
+    p.write_text(body, encoding="utf-8")
+    return str(p)
+
+
+def _run_gate_with_tech_stack(gate, tech_path, *files):
+    return gate.main(["--files", *files, "--tech-stack", tech_path, "--repo-root", str(REPO_ROOT)])
+
+
+def test_compile_rules_reports_discarded_patterns():
+    """被丢弃的规则必须**登记**出来（旧实现静默 continue，调用方无从知道规则少了）。"""
+    gate = _load_gate()
+    errors: list = []
+    gate.compile_rules(
+        [{"service": "s", "language": "python",
+          "patterns": [{"pattern": ""}, {"pattern": "app/(.+"}, {"pattern": "ok/(.+)"}]}],
+        {}, errors,
+    )
+    assert len(errors) == 2, f"空 pattern + 非法正则都必须登记，实得 {errors}"
+    assert any("空 pattern" in e for e in errors)
+    assert any("正则非法" in e for e in errors)
+
+
+def test_empty_modules_fails_closed(tmp_path, capsys):
+    """`modules: []` ⇒ 非零退出（收紧前 exit 0、blocker 0、显示「✅ 全部通过」）。"""
+    gate = _load_gate()
+    rc = _run_gate_with_tech_stack(gate, _tech_stack(tmp_path, _EMPTY_MODULES), _REAL_SOURCE)
+    out, err = capsys.readouterr()
+    assert rc != 0, "规则源为空必须让门禁失败（否则「清空 modules」就是关掉门禁的开关）"
+    assert "::error::" in err, f"必须给出明确错误，实得 stderr={err!r}"
+    assert "✅ 全部通过" not in out, "不得再打印「全部通过」"
+
+
+def test_invalid_regex_fails_closed(tmp_path, capsys):
+    """有 pattern 编译不过 ⇒ 非零退出（收紧前被静默丢弃 ⇒ 对应文件落入 unmatched ⇒ 放行）。"""
+    gate = _load_gate()
+    rc = _run_gate_with_tech_stack(gate, _tech_stack(tmp_path, _BAD_REGEX_MODULES), _REAL_SOURCE)
+    out, err = capsys.readouterr()
+    assert rc != 0, "规则源退化（有规则编译不过）必须让门禁失败"
+    assert "正则非法" in err, f"错误里必须点名是哪条 pattern，实得 stderr={err!r}"
+    assert "✅ 全部通过" not in out
+
+
+def test_valid_rules_still_pass(tmp_path, capsys):
+    """负例（防误伤）：合法规则源照旧静默通过 —— 收紧不得把正常路径变成假红。"""
+    gate = _load_gate()
+    rc = _run_gate_with_tech_stack(gate, _tech_stack(tmp_path, _OK_MODULES), "README.md")
+    out, _ = capsys.readouterr()
+    assert rc == 0, f"合法规则源 + 无规则命中必须 exit 0，实得 {rc}"
+    assert "✅ 全部通过" in out
+
+
+def test_repo_tech_stack_is_not_degenerate():
+    """真值不回退：仓库自己的 `.github/tech-stack.yml` 必须产出可执行规则。
+
+    否则收紧后 CI 会直接 exit 2 —— 这条断言让「谁把 modules 清空了」在单测层就可见。
+    """
+    gate = _load_gate()
+    tech, err = gate._load_yaml(str(REPO_ROOT / ".github" / "tech-stack.yml"))
+    assert not err, f"tech-stack.yml 读不出来：{err}"
+    errors: list = []
+    rules = gate.compile_rules(tech.get("modules") or [], tech.get("test_commands") or {}, errors)
+    assert not errors, f"tech-stack.yml 有规则编译不过：{errors}"
+    assert len(rules) >= 1, "tech-stack.yml 必须至少有一条可执行规则（否则缺测门禁整条失效）"

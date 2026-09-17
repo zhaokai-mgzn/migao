@@ -333,3 +333,106 @@ class TestSchemaCommentOnlyExemption:
         assert any("未新增迁移" in b for b in blockers), (
             "diff 读取失败时不得放行 —— 安全门禁的失效方向必须是报错而非放行"
         )
+
+
+# ── 取证 fail-closed + workflow 覆盖 `.yaml`（2026-09-17 收紧）────────────────
+
+class TestForensicsFailClosed:
+    """取证失败必须报错，**不得**被读成「没有破坏性变更」；workflow 扫描必须覆盖 `.yaml`。
+
+    病根（实测，非推断）：
+
+    ① `_git_name_status` 旧实现是裸 `except: return []`，**且不看 returncode** ——
+       `BASE` 配错 / 无共同祖先 / 非 git 仓库 / 超时都会返回 `[]`，于是「取证失败」与
+       「本次确实无变更」**不可区分**，整个安全门禁退化成
+       「0 变更、0 blocker、✅ danger-scan: 0 blocker / 0 warning」并 exit 0。
+       这与本文件 docstring 自称的 fail-closed、以及 schema 分支已经采纳的口径
+       （`test_git_diff_failure_fails_closed`）直接矛盾 —— 失效方向对安全门禁只能是报错。
+
+    ② workflow 扫描范围曾写死 `".github/workflows/*.yml"`，而 GitHub Actions **同样执行
+       `.yaml`** ⇒ 新增 `.github/workflows/evil.yaml` 不在任何一条判定线里
+       （workflow 变更 / 批量删除 / 部署文件三条都看不到）⇒ 安全审查该拦的东西根本没进视野。
+       收紧后扫描范围是**整个 `.github/workflows/` 目录**，再按「Actions 实际执行的后缀」过滤。
+    """
+
+    @staticmethod
+    def _fake_git(monkeypatch, *, rc=0, out="", err="fatal: bad revision 'origin/main...HEAD'"):
+        """把 danger_scan 内的 git 调用整体替换掉（返回固定 stdout/returncode/stderr）。"""
+        import danger_scan
+        import subprocess as _sp
+
+        class _R:
+            def __init__(self, stdout, returncode, stderr):
+                self.stdout, self.returncode, self.stderr = stdout, returncode, stderr
+
+        real = _sp.run
+
+        def fake_run(cmd, *a, **kw):
+            if isinstance(cmd, list) and cmd[:2] == ["git", "diff"]:
+                return _R(out, rc, err)
+            return real(cmd, *a, **kw)
+
+        monkeypatch.setattr(danger_scan.subprocess, "run", fake_run)
+
+    def test_git_name_status_distinguishes_failure_from_empty(self, monkeypatch):
+        """取证失败 → None；真无变更 → `[]`。两者**必须**可区分（旧实现都返回 `[]`）。"""
+        import danger_scan
+
+        self._fake_git(monkeypatch, rc=128)
+        failed = danger_scan._git_name_status(".")
+        self._fake_git(monkeypatch, rc=0, out="")
+        empty = danger_scan._git_name_status(".")
+        assert failed in (None,), f"取证失败必须返回 None，实得 {failed!r}"
+        assert empty == [], f"真无变更必须返回 []，实得 {empty!r}"
+
+    def test_main_fails_closed_when_forensics_fail(self, monkeypatch, tmp_path, capsys):
+        """端到端红证：让 git diff 失败 ⇒ main() 必须 exit 1 且 JSON 里有 blocker。
+
+        收紧前同一份输入得到 `✅ danger-scan: 0 blocker / 0 warning` + exit 0。
+        """
+        import json
+
+        import danger_scan
+
+        self._fake_git(monkeypatch, rc=128)
+        monkeypatch.chdir(tmp_path)
+        try:
+            danger_scan.main()
+            rc = 0
+        except SystemExit as e:
+            rc = e.code
+        err = capsys.readouterr().err
+        payload = json.loads((tmp_path / "danger-scan-result.json").read_text(encoding="utf-8"))
+        assert rc == 1, f"取证失败必须阻塞（exit 1），实得 exit {rc}；stderr={err}"
+        assert payload["blocker_count"] >= 1, f"取证失败必须记 blocker，实得 {payload}"
+        assert "取证失败" in " ".join(payload["blockers"])
+
+    def test_new_yaml_workflow_is_in_scan_scope(self, monkeypatch):
+        """`.yaml` 形态的新增 workflow 必须进入扫描范围（旧 scope 写死 `.yml` 会漏掉它）。"""
+        import danger_scan
+
+        name_status = "A\t.github/workflows/evil.yaml\nA\t.github/workflows/also.yaml\n"
+        self._fake_git(monkeypatch, rc=0, out=name_status)
+        changes = danger_scan._workflow_changes()
+        assert changes == [
+            ("A", ".github/workflows/evil.yaml"),
+            ("A", ".github/workflows/also.yaml"),
+        ], f"`.yaml` workflow 必须被纳入扫描范围，实得 {changes}"
+
+    def test_non_workflow_files_in_dir_are_not_flagged(self, monkeypatch):
+        """负例（防误伤）：`.github/workflows/` 下的非 workflow 文件不参与判定。"""
+        import danger_scan
+
+        self._fake_git(monkeypatch, rc=0, out="A\t.github/workflows/README.md\n")
+        assert danger_scan._workflow_changes() == [], (
+            "Actions 不执行的后缀不属于 workflow 变更，不得误报"
+        )
+
+    def test_new_yaml_workflow_blocks_end_to_end(self):
+        """`analyze` 对 `.yaml` 新增 workflow 照旧 BLOCK（覆盖范围的收紧不改变判据）。"""
+        blockers, _ = analyze(
+            workflow_changes=[("A", ".github/workflows/evil.yaml")],
+            wf_new_secrets={}, deleted_files=[], deploy_files=[],
+            migration_changes=[], schema_changes=[],
+        )
+        assert any("新增 workflow" in b for b in blockers)

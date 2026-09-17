@@ -25,6 +25,16 @@ MIGRATION_DIR = "backend/admin-api/src/main/resources/db/migration"
 SCHEMA_FILES = ("docs/sql/schema.sql", "docs/sql/schema_full.sql")
 MIGRATION_RE = re.compile(r"^V\d+__.*\.sql$")
 
+# workflow 目录（**整目录**为扫描范围，不再写 `*.yml` glob）。
+# 为什么（2026-09-17 实测的免检口子）：原 scope 写死 `.github/workflows/*.yml`，而 Actions
+# **同时**识别 `.yaml` —— 新增一个 `.github/workflows/evil.yaml` 不在任何一条扫描线里
+# （workflow 变更、批量删除、部署文件三条判定都看不到它）⇒ danger_scan 报
+# 「✅ 0 blocker / 0 warning」而安全审查该拦的东西**根本没进视野**。
+# 故按目录取全量，再用「Actions 实际会执行的后缀」过滤 —— 这是「workflow 文件」的定义，
+# 不是白名单；未识别的后缀（如 README.md）不属于可执行 workflow，不参与判定。
+WORKFLOW_DIR = ".github/workflows"
+WORKFLOW_SUFFIXES = (".yml", ".yaml")
+
 SECRET_REF_RE = re.compile(r"secrets\.([A-Za-z0-9_]+)")
 
 
@@ -207,27 +217,53 @@ def analyze(workflow_changes, wf_new_secrets, deleted_files, deploy_files, migra
 
 
 def _git_name_status(scope):
-    """返回 git diff --name-status origin/main...HEAD -- <scope> 的 [(status, path)]"""
+    """返回 `git diff --name-status <BASE>...HEAD -- <scope>` 的 [(status, path)]。
+
+    **fail-closed（本次收紧）**：取证失败返回 **None**，与「本次确实无变更」（返回 `[]`）
+    严格区分。旧实现（无 returncode 判定 + 裸 `except` → `[]`）把两者收敛成同一件事，
+    于是 BASE 配错 / 无共同祖先 / 非 git 仓库 / 超时都会让 **整个安全门禁**退化成
+    「0 变更、0 blocker、✅ PASSED」—— 而本文件 docstring 自己声称 fail-closed，
+    schema 分支也已按同一原则改过（见 `_ddl` 段的注释与 `test_git_diff_failure_fails_closed`）。
+    失效方向对安全门禁只能是「报错」，不能是「放行」。
+    """
     try:
         out = subprocess.run(
             ["git", "diff", "--name-status", f"{BASE}...HEAD", "--", scope],
             capture_output=True, text=True, timeout=30,
         )
-        lines = out.stdout.strip().splitlines() if out.stdout.strip() else []
-        result = []
-        for line in lines:
-            parts = line.split("\t")
-            if len(parts) >= 2:
-                # 完整 status（rename 是 R100/R062 等含相似度，A/M/D 为单字符）
-                # 调用方按 status[0] 取大类、按 status == "R100" 判纯改名（issue #3812）
-                result.append((parts[0], parts[-1]))
-        return result
-    except Exception:
-        return []
+    except Exception as e:
+        print(f"::error:: danger_scan 取证失败（{BASE}...HEAD -- {scope}）: {e}", file=sys.stderr)
+        return None
+    if out.returncode != 0:
+        detail = (out.stderr or "").strip().splitlines()
+        print(f"::error:: danger_scan 取证失败（{BASE}...HEAD -- {scope}，退出码 {out.returncode}）: "
+              f"{detail[0] if detail else '（git 未输出 stderr）'}", file=sys.stderr)
+        return None
+    result = []
+    for line in out.stdout.splitlines():
+        parts = line.split("\t")
+        if len(parts) >= 2:
+            # 完整 status（rename 是 R100/R062 等含相似度，A/M/D 为单字符）
+            # 调用方按 status[0] 取大类、按 status == "R100" 判纯改名（issue #3812）
+            result.append((parts[0], parts[-1]))
+    return result
+
+
+def _workflow_changes():
+    """workflow 目录内的变更 [(status, path)]；取证失败 → None（fail-closed）。"""
+    changes = _git_name_status(WORKFLOW_DIR)
+    if changes is None:
+        return None
+    return [(s, p) for s, p in changes if p.endswith(WORKFLOW_SUFFIXES)]
 
 
 def _workflow_new_secrets(paths):
-    """对修改的 workflow 提取新增的 secrets 引用行（移动/重排不算新增，issue #2949）"""
+    """对修改的 workflow 提取新增的 secrets 引用行（移动/重排不算新增，issue #2949）。
+
+    取证失败 → **None**（fail-closed）：拿不到某条 workflow 的 diff 时，「没看到新 secrets」
+    与「无法判断有没有新 secrets」是两件事 —— 后者若当成前者，等于给安全审查开一条
+    「让 git diff 失败即可放行」的路（与 `_git_name_status` 同族，见其 docstring）。
+    """
     secrets_by_path = {}
     for status, path in paths:
         if status[0] in ("M", "R"):
@@ -236,32 +272,65 @@ def _workflow_new_secrets(paths):
                     ["git", "diff", f"{BASE}...HEAD", "--", path],
                     capture_output=True, text=True, timeout=30,
                 )
-                lines = out.stdout.splitlines()
-                added = [l for l in lines if l.startswith("+") and "secrets." in l]
-                removed = [l for l in lines if l.startswith("-") and "secrets." in l]
-                truly_new = _truly_new_secret_lines(added, removed)
-                if truly_new:
-                    secrets_by_path[path] = truly_new
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"::error:: danger_scan 无法读取 {path} 的 secrets diff: {e}", file=sys.stderr)
+                return None
+            if out.returncode != 0:
+                print(f"::error:: danger_scan 无法读取 {path} 的 secrets diff（退出码 "
+                      f"{out.returncode}）", file=sys.stderr)
+                return None
+            lines = out.stdout.splitlines()
+            added = [l for l in lines if l.startswith("+") and "secrets." in l]
+            removed = [l for l in lines if l.startswith("-") and "secrets." in l]
+            truly_new = _truly_new_secret_lines(added, removed)
+            if truly_new:
+                secrets_by_path[path] = truly_new
     return secrets_by_path
 
 
 def main():
-    workflow_paths = _git_name_status(".github/workflows/*.yml")
+    # 取证先行（fail-closed）：三条扫描线任一拿不到变更清单 ⇒ 不判定、直接 blocker。
+    # 绝不允许「取证失败」被读成「没有破坏性变更」——那正是安全门禁的假绿形态。
+    blockers = []
     all_changes = _git_name_status(".")
+    if all_changes is None:
+        blockers.append(
+            f"无法获取变更清单（git diff {BASE}...HEAD）—— 安全门禁取证失败，"
+            f"不得按「无变更」放行。请确认 {BASE} 存在且与 HEAD 有共同祖先"
+            f"（CI: `git fetch origin main`；本地: DANGER_BASE 指向真实 ref）"
+        )
+        all_changes = []
+    workflow_paths = _workflow_changes()
+    if workflow_paths is None:
+        blockers.append(
+            f"无法获取 workflow 变更清单（{WORKFLOW_DIR}）—— 安全门禁取证失败，同上"
+        )
+        workflow_paths = []
+    wf_new_secrets = _workflow_new_secrets(workflow_paths)
+    if wf_new_secrets is None:
+        blockers.append(
+            "无法读取 workflow 的 secrets diff —— 安全门禁取证失败，不得按「无新增 secrets」放行"
+        )
+        wf_new_secrets = {}
+
     deleted_files = [p for s, p in all_changes if s == "D"]
     deploy_files = [p for s, p in all_changes if s[0] in ("M", "A", "R") and
                     (p.startswith("deploy/") or "/deploy/" in p)]
-    wf_new_secrets = _workflow_new_secrets(workflow_paths)
     migration_changes = _git_name_status(MIGRATION_DIR + "/*.sql")
+    if migration_changes is None:
+        blockers.append(
+            "无法获取迁移文件变更清单 —— 安全门禁取证失败（「迁移只增不改」判定未执行，"
+            "不得按「无迁移变更」放行）"
+        )
+        migration_changes = []
     schema_changes = [p for s, p in all_changes if p in SCHEMA_FILES]
 
     trusted = os.environ.get("DANGER_TRUSTED_ACTOR", "").lower() in ("1", "true", "yes")
-    blockers, warnings = analyze(
+    a_blockers, warnings = analyze(
         workflow_paths, wf_new_secrets, deleted_files, deploy_files,
         migration_changes, schema_changes, trusted_actor=trusted,
     )
+    blockers = blockers + a_blockers
 
     result = {
         "blocker_count": len(blockers),
