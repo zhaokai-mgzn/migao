@@ -260,6 +260,8 @@ class LogisticsTrackTool(BaseTool):
             tracking_no = logistics.get("trackingNo")
             # 后端 OrderDetailResponse.LogisticsInfo 字段是 logisticsCompany（无 company 字段）
             company = logistics.get("logisticsCompany", "未知")
+            # 物流类型（issue #3984，V47）：express 快递 / logistics 物流专线（四季安等）
+            logistics_type = logistics.get("logisticsType", "express")
             # 顺丰/中通/申通等需要「运单号:收件人手机号后4位」才能查全量轨迹：
             # 收件人手机号 = 订单根级 customerPhone（OrderDetailResponse 提供），取末 4 位。
             # （2026-09 修复：此前误以为后端不提供手机号 → 尾号恒为 None → 此类快递恒降级 mock）
@@ -269,9 +271,13 @@ class LogisticsTrackTool(BaseTool):
                 phone_tail = str(order_phone).strip()[-4:]
             
             # 查询物流轨迹
-            return await self._track_by_number(
+            result = await self._track_by_number(
                 context, tracking_no, company, order_id, phone_tail
             )
+            # 注入物流类型（issue #3984，V47）：express 快递 / logistics 物流专线
+            if result.success and isinstance(result.data, dict):
+                result.data["logistics_type"] = logistics_type
+            return result
             
         except Exception as e:
             logger.error(f"[logistics] Track by order error: {e}", exc_info=True)

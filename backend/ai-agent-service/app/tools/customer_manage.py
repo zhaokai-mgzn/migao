@@ -22,6 +22,8 @@ WRITABLE_FIELDS = frozenset({
     "wechatNickname", "phone", "gender",
     "regionProvince", "regionCity", "regionDistrict",
     "vipLevel", "customerStatus", "agentNotes", "tags", "customFields",
+    # 工艺画像与常用物流（issue #3984，V47，M2-D）
+    "craftMode", "craftProfile", "defaultLogisticsType", "defaultLogisticsCompany",
 })
 
 # 姓名别名 → canonical 列名：客户实体无 name/nickname/realName 列，姓名存 wechatNickname

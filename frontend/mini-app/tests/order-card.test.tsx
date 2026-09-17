@@ -115,3 +115,32 @@ describe('OrderCard', () => {
     expect(screen.queryByText('****')).toBeNull()
   })
 })
+
+  it('应展示收货地址（issue #3984：地址与手机号同为订单强关联属性）', () => {
+    render(
+      <OrderCard
+        data={{
+          order: {
+            order_no: 'ORD-1003',
+            status: 'shipped',
+            status_text: '已发货',
+            customer_name: '张三',
+            customer_phone: '13800138000',
+            customer_address: '郑州市西四环元通纺织城',
+          },
+        }}
+      />,
+    )
+    expect(screen.getByText(/郑州市西四环元通纺织城/)).toBeTruthy()
+  })
+
+  it('无收货地址时不渲染地址行', () => {
+    render(
+      <OrderCard
+        data={{
+          order: { order_no: 'ORD-1004', status: 'pending', status_text: '待付款', customer_name: '王五' },
+        }}
+      />,
+    )
+    expect(screen.queryByText(/📍/)).toBeNull()
+  })

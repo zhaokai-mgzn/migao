@@ -512,7 +512,7 @@
 真值: category-manage.delete, category-manage.delete-destructive, ai-chat.confirm-required
 溯源: verification 2.12 独有（二次确认行为在测试中未确认，见 category-manage.yml 缺口注释） ｜ tags: delete, destructive, confirm
 
-## 对话边界域（36 case）
+## 对话边界域（37 case）
 
 ### CH-001. 空结果 + suggestion 引导修复 🔴
 ```
@@ -1025,6 +1025,19 @@
 真值: ai-chat.context-memory
 溯源: 2026-09-14 新增（issue #3558 覆盖体检）：C 端长期记忆覆盖仅 1 条（CH-024 且其跨会话结论不可判定），补跨会话生效的独立用例 ｜ tags: memory, xiaobu, long_term, personalization, cross_session
 
+### CH-037. 窗帘下单澄清清单引擎（必填/默认三层/矛盾拦截/轮次上限，单测覆盖） 🔵
+```
+你: 帮我家客厅做窗帘，大概要多少钱
+期望: direct_reply
+数据: 尺寸（宽/高）缺失必须追问（必填检测）——不阻塞，缺省即报
+数据: 默认三层合成：客户记忆 > 商家配置 > 行业标准（布帘默认定型/纱帘默认不定型、≤2.2m 单开/>2.2m 双开）
+数据: 矛盾拦截：4.6m 单开→建议双开、折数不可整除自动调整、倍数<1.5 拒绝、打孔不按折数
+数据: 每轮追问 ≤3 项；超过 3 轮转复尺/人工
+跳过: 澄清清单引擎是确定性纯函数（app/clarification/curtain_checklist.py），由单元测试全量覆盖（test_curtain_checklist.py），非 LLM 行为，不进入 agent-eval 冒烟（同 CH-036 惯例）
+```
+真值: ai-chat.intent-domains
+溯源: 2026-09-17 新增（issue #3986）：M3-E 窗帘下单澄清清单引擎覆盖登记，单测覆盖 ｜ tags: xiaobu, clarification, curtain
+
 ### CH-036. 窗帘算料引擎确定性逻辑 - 折数法/工艺档位/红线/按货号汇总（单测覆盖，非 LLM 行为） 🔵
 ```
 你: 我客厅 4.64 米宽，帮我算一下韩褶窗帘要多少布
@@ -1100,7 +1113,7 @@
 真值: ai-chat.context-memory, ai-chat.intent-domains, order.states, order.logistics, id-resolve.index
 溯源: eval M007 独有（物流查询是旅程一环，独立用例见 OR-005）。2026-09-14 消除顺序依赖（issue #3568）：① 「看看第一个的详情」→ 点名「遮光窗帘」（推荐列表返回顺序依赖，同 OR-024 #3408）；② 色号「白色」→ 种子真实色号「米白」；③ 收尾裸文本「确认下单/确认」→ 答卡轮（#3518 口径）；④ 补 pre_clean product_dedupe + must_succeed[order_create] ｜ tags: multi_turn, real_scenario, cross_skill, full_journey
 
-## 客户域（7 case）
+## 客户域（8 case）
 
 ### CU-001. 客户列表 🟢
 ```
@@ -1182,6 +1195,18 @@
 ```
 真值: product-sku-stock.status-flow
 溯源: 2026-09-15 新增（issue #3932）：C 端小布只能展示已上架商品——product_search/product_detail 顾客侧上架过滤（sess_2efa2071bb1747d8 复盘关联） ｜ tags: c-end, product, visibility
+
+### CU-008. 客户工艺画像与常用物流存储（米宝 customer_manage 可写，M2-D） 🔵
+```
+你: 把客户张三的工艺偏好设为经济省料，常用物流记成四季安（物流专线）
+期望: customer_manage(action=update)
+数据: customer_manage(update) 可写 craftMode / craftProfile / defaultLogisticsType / defaultLogisticsCompany（CustomerProfile 新列，V47 迁移）
+数据: 物流类型区分 express（快递）与 logistics（物流/专线，如四季安）——POC 客户更多选物流
+数据: 工艺画像与常用物流在客户详情（GET /api/admin/customers/{id}）中返回，供报价协商（M3-F）读取
+数据: 字段跨端契约：工具下发字段名与 CustomerProfile 列一致（test_tool_field_name_contract.py 静态兜底）
+```
+真值: customer-crm.profile
+溯源: 2026-09-17 新增（issue #3984）：M2-D 客户工艺画像与常用物流存储覆盖登记 ｜ tags: customer, mibao, craft-profile, logistics
 
 ## 数据域（10 case）
 
@@ -4081,16 +4106,16 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：300（活跃 151，跳过 149）
-- tier 分布：smoke 9 / normal 258 / adversarial 33
+- 用例总数：302（活跃 152，跳过 150）
+- tier 分布：smoke 9 / normal 260 / adversarial 33
 - 售后域：9
 - agents：6
 - api：19
 - bmini：5
 - 分类域：3
-- 对话边界域：36
+- 对话边界域：37
 - 跨域：3
-- 客户域：7
+- 客户域：8
 - 数据域：10
 - 防御域：22
 - finance：4

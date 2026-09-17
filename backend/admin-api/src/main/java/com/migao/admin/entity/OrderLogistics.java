@@ -36,6 +36,9 @@ public class OrderLogistics {
      */
     private String shipperName;
 
+    /** 物流类型：express 快递 / logistics 物流专线（四季安等，issue #3984，V47） */
+    private String logisticsType;
+
     /** in_transit / delivered / returned */
     private String status;
 

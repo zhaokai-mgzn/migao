@@ -533,6 +533,12 @@ CREATE TABLE customer_profiles (
     tags JSONB DEFAULT '[]',  -- 客户标签 ID 列表
     custom_fields JSONB DEFAULT '{}',  -- 自定义字段
 
+    -- 工艺画像与常用物流（issue #3984，V47 迁移；M2-D）
+    craft_mode VARCHAR(16) DEFAULT 'standard',  -- standard 跟随企业固定工艺 / economy 主动省料 / self_quoted 自报用料
+    craft_profile JSONB DEFAULT '{}',  -- 工艺偏好 JSON：开数/定型/档位等默认（M3-F 报价协商读取）
+    default_logistics_type VARCHAR(16) DEFAULT 'express',  -- 常用物流类型：express 快递 / logistics 物流专线
+    default_logistics_company VARCHAR(128),  -- 客户常用物流/快递公司（下单自动带出）
+
     -- 生命周期
     lifecycle_stage VARCHAR(32) DEFAULT 'new',  -- new / growing / mature / declining / churned
     churn_risk_score DECIMAL(5, 4) DEFAULT 0.0000,  -- 流失风险评分 0-1
@@ -706,6 +712,7 @@ CREATE TABLE order_logistics (
     logistics_company VARCHAR(128) NOT NULL,
     tracking_no VARCHAR(128) NOT NULL,
     shipper_name VARCHAR(64),                 -- 发货人（发货单纸面「经手人」，V46 迁移；存量 NULL）
+    logistics_type VARCHAR(16) DEFAULT 'express',  -- 物流类型：express 快递 / logistics 物流专线（四季安等，V47 迁移；issue #3984）
     status VARCHAR(32) DEFAULT 'in_transit',  -- in_transit / delivered / returned
     tracking_info JSONB DEFAULT '[]',  -- 物流轨迹
     shipped_at TIMESTAMP WITH TIME ZONE,

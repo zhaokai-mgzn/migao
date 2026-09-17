@@ -293,3 +293,35 @@ cases:
       ci:
         - xiaobu-acceptance.yml
       verifies: []
+
+  - id: CU-008
+    legacy_id: ""
+    title: "客户工艺画像与常用物流存储（米宝 customer_manage 可写，M2-D）"
+    domains:
+      - customer
+    tier: normal
+    persona: mibao
+    tags:
+      - customer
+      - mibao
+      - craft-profile
+      - logistics
+    truths_ref:
+      - customer-crm.profile
+    # ── 覆盖说明（issue #3984，M2-D）──
+    # 用户 2026-09-17 三项要求之一：客户级工艺偏好（standard 跟随企业固定工艺 /
+    # economy 主动省料 / self_quoted 自报用料）与常用物流/快递公司需持久化，
+    # 由米宝经 customer_manage(update) 写入（字段契约由 test_tool_field_name_contract.py 兜底）。
+    user_inputs:
+      - "把客户张三的工艺偏好设为经济省料，常用物流记成四季安（物流专线）"
+    expectations:
+      - tool: customer_manage
+        args:
+          action: update
+    data_checks:
+      - "customer_manage(update) 可写 craftMode / craftProfile / defaultLogisticsType / defaultLogisticsCompany（CustomerProfile 新列，V47 迁移）"
+      - "物流类型区分 express（快递）与 logistics（物流/专线，如四季安）——POC 客户更多选物流"
+      - "工艺画像与常用物流在客户详情（GET /api/admin/customers/{id}）中返回，供报价协商（M3-F）读取"
+      - "字段跨端契约：工具下发字段名与 CustomerProfile 列一致（test_tool_field_name_contract.py 静态兜底）"
+    skip_reason: ""
+    merge_log: "2026-09-17 新增（issue #3984）：M2-D 客户工艺画像与常用物流存储覆盖登记"

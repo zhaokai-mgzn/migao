@@ -1491,6 +1491,24 @@ _CASE_CH_035 = EvalCase(
     post_session=[{'fetch': 'user_memories', 'agent_type': 'xiaobu', 'checks': ['count>=1', 'has_key:curtain_style', 'value_contains:奶油风']}],
 )
 
+# ── CH-037 [NORMAL] 窗帘下单澄清清单引擎（必填/默认三层/矛盾拦截/轮次上限，单测覆盖）（源: cases/chat.yml）──
+_CASE_CH_037 = EvalCase(
+    id='CH-037',
+    legacy_id='',
+    title='窗帘下单澄清清单引擎（必填/默认三层/矛盾拦截/轮次上限，单测覆盖）',
+    skill=Skill.MULTI_TURN,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['帮我家客厅做窗帘，大概要多少钱'],
+    expectations=['direct_reply'],
+    data_checks=['尺寸（宽/高）缺失必须追问（必填检测）——不阻塞，缺省即报', '默认三层合成：客户记忆 > 商家配置 > 行业标准（布帘默认定型/纱帘默认不定型、≤2.2m 单开/>2.2m 双开）', '矛盾拦截：4.6m 单开→建议双开、折数不可整除自动调整、倍数<1.5 拒绝、打孔不按折数', '每轮追问 ≤3 项；超过 3 轮转复尺/人工'],
+    skip_reason='澄清清单引擎是确定性纯函数（app/clarification/curtain_checklist.py），由单元测试全量覆盖（test_curtain_checklist.py），非 LLM 行为，不进入 agent-eval 冒烟（同 CH-036 惯例）',
+    tags=['xiaobu', 'clarification', 'curtain'],
+    persona='xiaobu',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── CH-036 [NORMAL] 窗帘算料引擎确定性逻辑 - 折数法/工艺档位/红线/按货号汇总（单测覆盖，非 LLM 行为）（源: cases/chat.yml）──
 _CASE_CH_036 = EvalCase(
     id='CH-036',
@@ -1697,6 +1715,24 @@ _CASE_CU_007 = EvalCase(
     form_prefill=[],
     forbidden_card_text=[],
     forbidden_text=['已下架', 'off_sale'],
+)
+
+# ── CU-008 [NORMAL] 客户工艺画像与常用物流存储（米宝 customer_manage 可写，M2-D）（源: cases/customer.yml）──
+_CASE_CU_008 = EvalCase(
+    id='CU-008',
+    legacy_id='',
+    title='客户工艺画像与常用物流存储（米宝 customer_manage 可写，M2-D）',
+    skill=Skill.CUSTOMER,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['把客户张三的工艺偏好设为经济省料，常用物流记成四季安（物流专线）'],
+    expectations=['customer_manage(action=update)'],
+    data_checks=['customer_manage(update) 可写 craftMode / craftProfile / defaultLogisticsType / defaultLogisticsCompany（CustomerProfile 新列，V47 迁移）', '物流类型区分 express（快递）与 logistics（物流/专线，如四季安）——POC 客户更多选物流', '工艺画像与常用物流在客户详情（GET /api/admin/customers/{id}）中返回，供报价协商（M3-F）读取', '字段跨端契约：工具下发字段名与 CustomerProfile 列一致（test_tool_field_name_contract.py 静态兜底）'],
+    skip_reason='',
+    tags=['customer', 'mibao', 'craft-profile', 'logistics'],
+    persona='mibao',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
 )
 
 # ── DA-001 [NORMAL] 经营概览（源: cases/data.yml）──
@@ -5757,6 +5793,7 @@ ALL_CASES = (
     _CASE_CH_033,
     _CASE_CH_034,
     _CASE_CH_035,
+    _CASE_CH_037,
     _CASE_CH_036,
     _CASE_CR_001,
     _CASE_CR_002,
@@ -5768,6 +5805,7 @@ ALL_CASES = (
     _CASE_CU_005,
     _CASE_CU_006,
     _CASE_CU_007,
+    _CASE_CU_008,
     _CASE_DA_001,
     _CASE_DA_002,
     _CASE_DA_003,
