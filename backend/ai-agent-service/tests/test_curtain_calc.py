@@ -14,7 +14,7 @@
 
 真值来源：docs/curtain-fabric-quote-rules.md（行业标准值 + 经验默认值）
 """
-# case_ids: PR-013, PR-024, OR-022, CH-036
+# case_ids: PR-013, PR-024, OR-022, CH-036, CH-038
 
 import math
 import pytest
@@ -255,6 +255,57 @@ class TestCurtainCalcPriceGuard:
         assert "预估" in (result.message or "") or "估算" in (result.message or ""), (
             f"报价 message 必须带预估限定: {result.message}"
         )
+
+    async def test_tool_execute_craft_tier_economy(self, sample_tool_context):
+        """工艺档位经工具生效：economy 档用料少于 standard 档（报价协商，issue #3990）"""
+        from app.tools.curtain_calc import CurtainCalcTool
+        tool = CurtainCalcTool()
+        standard = await tool.execute(
+            context=sample_tool_context,
+            window_width=6.6, window_height=2.6, mounting="s_hook",
+            fabric_width=3.2, fabric_price=23.8,
+            open_count=2, craft_tier="standard",
+        )
+        economy = await tool.execute(
+            context=sample_tool_context,
+            window_width=6.6, window_height=2.6, mounting="s_hook",
+            fabric_width=3.2, fabric_price=23.8,
+            open_count=2, craft_tier="economy",
+        )
+        assert standard.success and economy.success
+        assert economy.data["fabric_meters"] < standard.data["fabric_meters"]
+        assert economy.data["craft_tier"] == "economy"
+        assert standard.data["craft_tier"] == "standard"
+
+    async def test_tool_execute_pleat_customer_quoted(self, sample_tool_context):
+        """客户自报折数经工具生效：48 折双开 → 12.3 米且来源标记 customer_quoted（issue #3990）"""
+        from app.tools.curtain_calc import CurtainCalcTool
+        tool = CurtainCalcTool()
+        result = await tool.execute(
+            context=sample_tool_context,
+            window_width=6.6, window_height=2.6, mounting="s_hook",
+            fabric_width=3.2, fabric_price=23.8,
+            open_count=2, pleat_count=48, source="customer_quoted",
+        )
+        assert result.success is True, f"折数法应成功: error={result.error}"
+        assert result.data["pleat_count"] == 48
+        assert result.data["fabric_meters"] == 12.3
+        assert result.data["source"] == "customer_quoted"
+        assert result.data["per_panel_pleats"] == 24
+
+    async def test_tool_execute_open_count_default_single(self, sample_tool_context):
+        """open_count 默认单开（余量 0.2）"""
+        from app.tools.curtain_calc import CurtainCalcTool
+        tool = CurtainCalcTool()
+        result = await tool.execute(
+            context=sample_tool_context,
+            window_width=5.0, window_height=2.6, mounting="s_hook",
+            fabric_width=3.2, fabric_price=23.8,
+            pleat_count=20,
+        )
+        assert result.success is True
+        assert result.data["open_count"] == 1
+        assert result.data["fabric_meters"] == 0.25 * 20 + 0.2
 
 
 class TestCurtainCalcDescriptionGuard:

@@ -512,7 +512,7 @@
 真值: category-manage.delete, category-manage.delete-destructive, ai-chat.confirm-required
 溯源: verification 2.12 独有（二次确认行为在测试中未确认，见 category-manage.yml 缺口注释） ｜ tags: delete, destructive, confirm
 
-## 对话边界域（37 case）
+## 对话边界域（38 case）
 
 ### CH-001. 空结果 + suggestion 引导修复 🔴
 ```
@@ -1050,6 +1050,19 @@
 ```
 真值: ai-chat.intent-tool-map
 溯源: 2026-09-17 新增（issue #3982）：M2-C 算料引擎折数法/档位/红线/汇总的覆盖登记，单测覆盖 ｜ tags: xiaobu, quote, curtain-calc
+
+### CH-038. 窗帘报价协商 - 工艺档位/客户自报反算/来源标记（确定性单测覆盖） 🔵
+```
+你: 我客厅 4.64 米宽做韩褶，能不能便宜点
+期望: direct_reply
+数据: 报价协商：craft_tier=economy 重算给出省料档对比（用料/价格少于 standard）
+数据: 客户自报折数/用料：pleat_count + source=customer_quoted 反算校验（48 折双开 → 12.3 米）
+数据: 开数余量：单开 +0.2 / 对开四开 +0.3；对开折数必须偶数
+数据: 顾客自报 ≠ 成交价：最终档位由商家确认，来源标记供对账（M3-F 商家裁定）
+跳过: 报价协商内核是确定性纯计算（curtain_calc 折数法/档位），由单测覆盖，非 LLM 行为，不进入 agent-eval 冒烟（同 CH-036/037 惯例）
+```
+真值: ai-chat.intent-tool-map
+溯源: 2026-09-17 新增（issue #3990）：M3-F 报价协商确定性内核覆盖登记，单测覆盖 ｜ tags: xiaobu, quote, negotiation
 
 ## 跨域（3 case）
 
@@ -4106,14 +4119,14 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：302（活跃 152，跳过 150）
-- tier 分布：smoke 9 / normal 260 / adversarial 33
+- 用例总数：303（活跃 152，跳过 151）
+- tier 分布：smoke 9 / normal 261 / adversarial 33
 - 售后域：9
 - agents：6
 - api：19
 - bmini：5
 - 分类域：3
-- 对话边界域：37
+- 对话边界域：38
 - 跨域：3
 - 客户域：8
 - 数据域：10
