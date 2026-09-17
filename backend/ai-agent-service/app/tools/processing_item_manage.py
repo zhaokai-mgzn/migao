@@ -204,6 +204,7 @@ class ProcessingItemManageTool(BaseTool):
                 success=False,
                 error=f"无效的操作类型: {action}",
                 message=f"不支持的操作类型，可选：{', '.join(VALID_ACTIONS)}",
+                suggestion="请从工具说明里的可选操作类型中选一个后重试，不要自行改用其它 action",
             )
 
         try:
@@ -266,18 +267,21 @@ class ProcessingItemManageTool(BaseTool):
                 success=False,
                 error="缺少加工项名称",
                 message="创建加工项时必须提供 name",
+                suggestion="缺少加工项名称 name，请向用户询问加工项名称后重试",
             )
         if not category_id:
             return ToolResult(
                 success=False,
                 error="缺少分类 ID",
                 message="创建加工项时必须提供 category_id",
+                suggestion="缺少分类 category_id，请先用 processing_item_manage 的 list_categories 操作取到分类后重试",
             )
         if price is None:
             return ToolResult(
                 success=False,
                 error="缺少价格",
                 message="创建加工项时必须提供 price",
+                suggestion="缺少单价 price，请向用户确认加工项单价后重试",
             )
         if not pricing_method:
             return ToolResult(
@@ -335,6 +339,7 @@ class ProcessingItemManageTool(BaseTool):
                 success=False,
                 error=error_msg,
                 message=f"创建加工项失败：{error_msg}",
+                suggestion="请先用 processing_item_manage 的 list 操作确认是否已有同名加工项，再改用更新或换一个名称",
             )
 
         return ToolResult(
@@ -404,6 +409,7 @@ class ProcessingItemManageTool(BaseTool):
                 success=False,
                 error=error_msg,
                 message=f"{fail_prefix}：{error_msg}",
+                suggestion="请先读取该加工项详情，核对必填字段（名称/分类/计价方式/单价）是否齐全后再重试",
             )
 
         return ToolResult(
@@ -435,6 +441,7 @@ class ProcessingItemManageTool(BaseTool):
                 success=False,
                 error="缺少加工项 ID",
                 message="更新加工项时必须提供 item_id",
+                suggestion="缺少加工项 ID item_id，请先用 processing_item_query 查到该加工项后重试",
             )
 
         if pricing_method is not None and pricing_method not in VALID_PRICING_METHODS:
@@ -479,6 +486,7 @@ class ProcessingItemManageTool(BaseTool):
                 success=False,
                 error="缺少更新内容",
                 message="更新加工项时至少提供 name、category_id、price、pricing_method 或 description 之一",
+                suggestion="缺少更新内容，请让用户给出要修改的字段（名称/分类/单价/计价方式/描述）后重试",
             )
 
         return await self._put_item_full(
@@ -497,6 +505,7 @@ class ProcessingItemManageTool(BaseTool):
                 success=False,
                 error="缺少加工项 ID",
                 message="删除加工项时必须提供 item_id",
+                suggestion="缺少加工项 ID item_id，请先用 processing_item_query 查到该加工项后重试",
             )
 
         logger.info(f"[processing-item-manage] DeleteItem: item_id={item_id} | tenant={context.tenant_id}")
@@ -514,6 +523,7 @@ class ProcessingItemManageTool(BaseTool):
                 success=False,
                 error=error_msg,
                 message=f"删除加工项失败：{error_msg}",
+                suggestion="请先用 processing_item_query 确认该加工项存在、且未被订单或商品引用后再重新执行删除",
             )
 
         return ToolResult(
@@ -544,12 +554,14 @@ class ProcessingItemManageTool(BaseTool):
                 success=False,
                 error="缺少加工项 ID",
                 message="启用/停用加工项时必须提供 item_id",
+                suggestion="缺少加工项 ID item_id，请先用 processing_item_query 查到该加工项后重试",
             )
         if not status or status not in ("active", "inactive"):
             return ToolResult(
                 success=False,
                 error=f"无效的状态值: {status}",
                 message="请提供有效的状态值：active（启用）或 inactive（停用）",
+                suggestion="status 只支持 active（启用）/ inactive（停用），请按用户意图改传其中一个后重试",
             )
 
         status_text = "启用" if status == "active" else "停用"
@@ -579,6 +591,7 @@ class ProcessingItemManageTool(BaseTool):
                 success=False,
                 error=error_msg,
                 message=f"获取加工分类列表失败：{error_msg}",
+                suggestion="请稍后重试；若持续失败，请改用 processing_item_query 按分类名查询，或请用户联系管理员核对加工分类配置",
             )
 
         return ToolResult(
@@ -599,6 +612,7 @@ class ProcessingItemManageTool(BaseTool):
                 success=False,
                 error="缺少分类名称",
                 message="创建加工分类时必须提供 name",
+                suggestion="缺少分类名称 name，请向用户询问加工分类名称后重试",
             )
 
         json_data: Dict[str, Any] = {"name": name}
@@ -623,6 +637,7 @@ class ProcessingItemManageTool(BaseTool):
                 success=False,
                 error=error_msg,
                 message=f"创建加工分类失败：{error_msg}",
+                suggestion="请先用 processing_item_manage 的 list_categories 操作确认是否已有同名分类，再改用更新或换一个名称",
             )
 
         return ToolResult(
@@ -644,12 +659,14 @@ class ProcessingItemManageTool(BaseTool):
                 success=False,
                 error="缺少分类 ID",
                 message="更新加工分类时必须提供 category_id",
+                suggestion="缺少分类 ID category_id，请先用 processing_item_manage 的 list_categories 操作取到分类后重试",
             )
         if not name:
             return ToolResult(
                 success=False,
                 error="缺少分类名称",
                 message="更新加工分类时必须提供 name",
+                suggestion="缺少分类名称 name，请向用户询问新的分类名称后重试",
             )
 
         json_data: Dict[str, Any] = {"name": name}
@@ -675,6 +692,7 @@ class ProcessingItemManageTool(BaseTool):
                 success=False,
                 error=error_msg,
                 message=f"更新加工分类失败：{error_msg}",
+                suggestion="请先用 processing_item_manage 的 list_categories 操作确认该分类仍在，再重新执行更新",
             )
 
         return ToolResult(
@@ -690,6 +708,7 @@ class ProcessingItemManageTool(BaseTool):
                 success=False,
                 error="缺少分类 ID",
                 message="删除加工分类时必须提供 category_id",
+                suggestion="缺少分类 ID category_id，请先用 processing_item_manage 的 list_categories 操作取到分类后重试",
             )
 
         logger.info(
@@ -710,6 +729,7 @@ class ProcessingItemManageTool(BaseTool):
                 success=False,
                 error=error_msg,
                 message=f"删除加工分类失败：{error_msg}",
+                suggestion="请先用 processing_item_manage 的 list 操作确认该分类下已无加工项，再重新执行删除",
             )
 
         return ToolResult(
@@ -745,12 +765,14 @@ class ProcessingItemManageTool(BaseTool):
                 success=False,
                 error="缺少加工项 ID",
                 message="计算价格时必须提供 processing_item_id",
+                suggestion="缺少加工项 ID processing_item_id，请先用 processing_item_query 查到该加工项后重试",
             )
         if (width is None) != (height is None):
             return ToolResult(
                 success=False,
                 error="尺寸不完整",
                 message="按面积计价需要同时提供宽度和高度（width 与 height，单位：米）",
+                suggestion="按面积计价必须同时给出宽和高，请向用户补齐缺失的一项（单位为米）后重试",
             )
 
         has_dimensions = width is not None and height is not None
@@ -760,6 +782,7 @@ class ProcessingItemManageTool(BaseTool):
                     success=False,
                     error="缺少数量",
                     message="计算价格时必须提供 quantity",
+                    suggestion="缺少数量 quantity，请向用户确认计件数（同一尺寸做几件，默认 1）后重试",
                 )
             # per_area：面积由 dimensions 承载，quantity 是计件数，缺省 1
             quantity = 1
@@ -790,6 +813,7 @@ class ProcessingItemManageTool(BaseTool):
                 success=False,
                 error=error_msg,
                 message=f"计算加工价格失败：{error_msg}",
+                suggestion="请先用 processing_item_query 核对计价方式与参数（按面积需宽×高、按米需长度）后再重试",
             )
 
         data = response.get("data", {})

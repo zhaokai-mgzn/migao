@@ -108,6 +108,7 @@ class InventoryManageTool(BaseTool):
                 success=False,
                 error="权限不足",
                 message="抱歉，库存调整和低库存预警功能仅限管理员和客服使用。如需查询商品库存，请告诉我商品名称或 ID。",
+                suggestion="顾客端只能查询库存，请改用 query 操作；如需调整库存请转人工或由管理员操作",
             )
         
         # 参数校验
@@ -116,6 +117,7 @@ class InventoryManageTool(BaseTool):
                 success=False,
                 error=f"无效的操作类型: {action}",
                 message=f"不支持的操作类型，可选：{', '.join(VALID_ACTIONS)}",
+                suggestion="请从工具说明里的可选操作类型中选一个后重试，不要自行改用其它 action",
             )
         
         try:
@@ -161,6 +163,7 @@ class InventoryManageTool(BaseTool):
                 success=False,
                 error="缺少商品 ID",
                 message="查询库存时必须提供商品 ID（product_id）",
+                suggestion="缺少 product_id，请先用 product_search 查到该商品后重试",
             )
         
         client = get_admin_api_client()
@@ -248,6 +251,7 @@ class InventoryManageTool(BaseTool):
                 success=False,
                 error="缺少商品 ID",
                 message="调整库存时必须提供商品 ID（product_id）",
+                suggestion="缺少 product_id，请先用 product_search 查到该商品后重试",
             )
         
         if adjustment is None:
@@ -255,6 +259,7 @@ class InventoryManageTool(BaseTool):
                 success=False,
                 error="缺少调整数量",
                 message="调整库存时必须提供调整数量（adjustment）",
+                suggestion="缺少调整数量 adjustment，请向用户确认要增加还是减少多少件后重试",
             )
         
         if not reason:
@@ -262,6 +267,7 @@ class InventoryManageTool(BaseTool):
                 success=False,
                 error="缺少调整原因",
                 message="调整库存时必须提供调整原因（reason）",
+                suggestion="缺少调整原因 reason，请向用户询问本次库存调整的原因后重试",
             )
         
         # 先查询当前库存
@@ -278,6 +284,7 @@ class InventoryManageTool(BaseTool):
                 success=False,
                 error=error_msg,
                 message="无法获取当前库存信息",
+                suggestion="请先用 product_search 确认该商品仍在架且商品 ID 正确，再重新执行调整",
             )
         
         product_data = query_response.get("data", {})
@@ -290,6 +297,7 @@ class InventoryManageTool(BaseTool):
                 success=False,
                 error="库存不足",
                 message=f"当前库存 {current_stock}，无法减少 {abs(adjustment)}",
+                suggestion="请向用户说明当前库存不足，确认是否减少调整数量或改为先入库后再出库",
             )
         
         # 更新库存（生产回归修复）：

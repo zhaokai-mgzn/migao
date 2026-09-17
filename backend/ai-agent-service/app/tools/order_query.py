@@ -158,6 +158,7 @@ class OrderQueryTool(BaseTool):
                 success=False,
                 error=f"无效的操作类型: {action}",
                 message="不支持的操作类型，可选：list / statistics / follow_status_stats",
+                suggestion="操作类型只支持 list / statistics / follow_status_stats，请改用其中之一后重试",
             )
 
         try:

@@ -160,6 +160,7 @@ class EmployeeManageTool(BaseTool):
                 success=False,
                 error=f"无效的操作类型: {action}",
                 message=f"不支持的操作类型，可选：{', '.join(sorted(VALID_ACTIONS))}",
+                suggestion="请从工具说明里的可选操作类型中选一个后重试，不要自行改用其它 action",
             )
 
         try:
@@ -271,6 +272,7 @@ class EmployeeManageTool(BaseTool):
                 success=False,
                 error="缺少员工 ID",
                 message="查询员工详情时必须提供员工 ID（user_id）",
+                suggestion="缺少 user_id，请先用 employee_manage 的 list 操作查到该员工后再重试",
             )
 
         client = get_admin_api_client()
@@ -312,18 +314,21 @@ class EmployeeManageTool(BaseTool):
                 success=False,
                 error="缺少手机号",
                 message="创建员工时必须提供手机号（phone）",
+                suggestion="缺少手机号 phone，请向用户询问员工手机号后重试",
             )
         if not password:
             return ToolResult(
                 success=False,
                 error="缺少密码",
                 message="创建员工时必须提供密码（password）",
+                suggestion="缺少初始密码 password，请向用户询问或按公司规则生成初始密码后重试",
             )
         if not name:
             return ToolResult(
                 success=False,
                 error="缺少姓名",
                 message="创建员工时必须提供姓名（name）",
+                suggestion="缺少员工姓名 name，请向用户询问员工姓名后重试",
             )
 
         json_data: Dict[str, Any] = {
@@ -348,6 +353,7 @@ class EmployeeManageTool(BaseTool):
                 success=False,
                 error=error_msg,
                 message=f"创建员工失败：{error_msg}",
+                suggestion="请先用 employee_manage 的 list 操作确认该手机号未被其它员工占用，再重新执行创建",
             )
 
         data = response.get("data", {})
@@ -376,6 +382,7 @@ class EmployeeManageTool(BaseTool):
                 success=False,
                 error="缺少员工 ID",
                 message="更新员工时必须提供员工 ID（user_id）",
+                suggestion="缺少 user_id，请先用 employee_manage 的 list 操作查到该员工后再重试",
             )
 
         json_data: Dict[str, Any] = {}
@@ -397,6 +404,7 @@ class EmployeeManageTool(BaseTool):
                 success=False,
                 error="缺少更新内容",
                 message="更新员工时必须提供至少一个字段（name/phone/password/avatar/role）",
+                suggestion="缺少更新内容，请让用户给出要修改的字段（姓名/手机号/角色等）后重试",
             )
 
         client = get_admin_api_client()
@@ -413,6 +421,7 @@ class EmployeeManageTool(BaseTool):
                 success=False,
                 error=error_msg,
                 message=f"更新员工失败：{error_msg}",
+                suggestion="请先用 employee_manage 的 detail 操作读取该员工当前信息，核对后再重试",
             )
 
         logger.info(f"[employee-manage] Updated user_id={user_id} | tenant={context.tenant_id}")
@@ -434,6 +443,7 @@ class EmployeeManageTool(BaseTool):
                 success=False,
                 error="缺少员工 ID",
                 message="删除员工时必须提供员工 ID（user_id）",
+                suggestion="缺少 user_id，请先用 employee_manage 的 list 操作查到该员工后再重试",
             )
 
         client = get_admin_api_client()
@@ -449,6 +459,7 @@ class EmployeeManageTool(BaseTool):
                 success=False,
                 error=error_msg,
                 message=f"删除员工失败：{error_msg}",
+                suggestion="请先用 employee_manage 的 list 操作确认该员工存在且非当前登录账号，再重新执行删除",
             )
 
         logger.info(f"[employee-manage] Deleted user_id={user_id} | tenant={context.tenant_id}")
@@ -471,6 +482,7 @@ class EmployeeManageTool(BaseTool):
                 success=False,
                 error="缺少员工 ID",
                 message="重置密码时必须提供员工 ID（user_id）",
+                suggestion="缺少 user_id，请先用 employee_manage 的 list 操作查到该员工后再重试",
             )
 
         json_data: Dict[str, Any] = {}
@@ -491,6 +503,7 @@ class EmployeeManageTool(BaseTool):
                 success=False,
                 error=error_msg,
                 message=f"重置密码失败：{error_msg}",
+                suggestion="请先用 employee_manage 的 list 操作确认该员工未被禁用，再重新执行重置密码",
             )
 
         logger.info(f"[employee-manage] Reset password for user_id={user_id} | tenant={context.tenant_id}")
@@ -513,12 +526,14 @@ class EmployeeManageTool(BaseTool):
                 success=False,
                 error="缺少员工 ID",
                 message="切换状态时必须提供员工 ID（user_id）",
+                suggestion="缺少 user_id，请先用 employee_manage 的 list 操作查到该员工后再重试",
             )
         if not status or status not in ("active", "disabled"):
             return ToolResult(
                 success=False,
                 error="无效的状态值",
                 message="切换状态时必须提供状态（status），可选：active / disabled",
+                suggestion="status 只支持 active / disabled，请按用户意图改传其中一个后重试",
             )
 
         client = get_admin_api_client()
@@ -535,6 +550,7 @@ class EmployeeManageTool(BaseTool):
                 success=False,
                 error=error_msg,
                 message=f"切换员工状态失败：{error_msg}",
+                suggestion="请先用 employee_manage 的 detail 操作确认该员工当前状态（不可禁用自己/超管），再重试",
             )
 
         status_text = "启用" if status == "active" else "禁用"

@@ -99,6 +99,7 @@ class KnowledgeSearchTool(BaseTool):
                     success=False,
                     error=error_msg,
                     message="知识检索失败，请稍后重试",
+                    suggestion="请稍后重试；若持续失败，请改用通用行业知识谨慎回答并注明是通用建议，不要伪称本店规则",
                 )
 
             cards = response.get("data") or []
@@ -130,4 +131,5 @@ class KnowledgeSearchTool(BaseTool):
                 success=False,
                 error="知识检索暂不可用",
                 message="知识检索暂不可用，请用通用行业知识谨慎回答并注明通用建议",
+                suggestion="请用通用行业知识谨慎回答并明确注明「通用建议」，同时提醒用户该结论不代表本店政策",
             )

@@ -160,6 +160,7 @@ class AfterSalesManageTool(BaseTool):
                 success=False,
                 error=f"无效的操作类型: {action}",
                 message=f"不支持的操作类型,可选:{', '.join(VALID_ACTIONS)}",
+                suggestion="请从工具说明里的可选操作类型中选一个后重试，不要自行改用其它 action",
             )
 
         try:
@@ -228,6 +229,7 @@ class AfterSalesManageTool(BaseTool):
                 success=False,
                 error=error_msg,
                 message=f"查询售后工单列表失败:{error_msg}",
+                suggestion="请稍后重试；若持续失败，请改为不带状态筛选查询，或请用户联系管理员核对工单数据",
             )
 
         data = response.get("data", {})
@@ -260,6 +262,7 @@ class AfterSalesManageTool(BaseTool):
                 success=False,
                 error="缺少工单 ID",
                 message="查看详情时必须提供工单 ID(ticket_id)",
+                suggestion="缺少 ticket_id，请先用 after_sales_manage 的 list 操作取到工单 ID 后重试",
             )
 
         client = get_admin_api_client()
@@ -275,6 +278,7 @@ class AfterSalesManageTool(BaseTool):
                 success=False,
                 error=error_msg,
                 message=f"查询售后工单详情失败:{error_msg}",
+                suggestion="请先用 after_sales_manage 的 list 操作确认该工单仍在（已删除的工单不可查看详情）后重试",
             )
 
         data = response.get("data", {})
@@ -309,6 +313,7 @@ class AfterSalesManageTool(BaseTool):
                 success=False,
                 error="缺少订单 ID",
                 message="创建售后工单时必须提供关联订单 ID(order_id)",
+                suggestion="缺少订单 ID order_id，请先用 order_query 查到该订单后重试",
             )
 
         if not ticket_type:
@@ -316,6 +321,7 @@ class AfterSalesManageTool(BaseTool):
                 success=False,
                 error="缺少工单类型",
                 message="创建售后工单时必须提供工单类型(ticket_type)",
+                suggestion="缺少工单类型 ticket_type，请向用户确认是退货/换货/维修/投诉中的哪一类后重试",
             )
 
         if ticket_type not in VALID_TICKET_TYPES:
@@ -324,6 +330,7 @@ class AfterSalesManageTool(BaseTool):
                 success=False,
                 error=f"无效的工单类型: {ticket_type}",
                 message=f"不支持的工单类型,可选:{valid_labels}",
+                suggestion="请改用错误提示中列出的合法工单类型后重试，不要自行新增类型名",
             )
 
         if not reason:
@@ -331,6 +338,7 @@ class AfterSalesManageTool(BaseTool):
                 success=False,
                 error="缺少原因说明",
                 message="创建售后工单时必须提供原因说明(reason)",
+                suggestion="缺少原因说明 reason，请向用户询问售后原因后重试（这是工单必填项）",
             )
 
         # 对抗编程：reason → description 字段映射 + 透传所有可选字段
@@ -366,6 +374,7 @@ class AfterSalesManageTool(BaseTool):
                 success=False,
                 error=error_msg,
                 message=f"创建售后工单失败:{error_msg}",
+                suggestion="请先用 order_query 确认订单存在且属于当前租户，再重新执行创建工单",
             )
 
         data = response.get("data", {})
@@ -396,6 +405,7 @@ class AfterSalesManageTool(BaseTool):
                 success=False,
                 error="缺少工单 ID",
                 message="更新状态时必须提供工单 ID(ticket_id)",
+                suggestion="缺少 ticket_id，请先用 after_sales_manage 的 list 操作取到工单 ID 后重试",
             )
 
         if not status:
@@ -403,6 +413,7 @@ class AfterSalesManageTool(BaseTool):
                 success=False,
                 error="缺少状态参数",
                 message="更新状态时必须提供新状态(status)",
+                suggestion="缺少目标状态 status，请向用户确认工单要流转到哪个状态后重试",
             )
 
         if status not in VALID_TICKET_STATUSES:
@@ -411,6 +422,7 @@ class AfterSalesManageTool(BaseTool):
                 success=False,
                 error=f"无效的工单状态: {status}",
                 message=f"不支持的状态值,可选:{valid_labels}",
+                suggestion="请改用错误提示中列出的合法状态值后重试，不要自行新增状态名",
             )
 
         # 关闭/拒绝必须带原因（issue #3744 / AS-004）：admin-api 仅在 remark 非空时写
@@ -454,6 +466,7 @@ class AfterSalesManageTool(BaseTool):
                 success=False,
                 error=error_msg,
                 message=f"更新售后工单状态失败:{error_msg}",
+                suggestion="请先用 after_sales_manage 的 detail 操作确认该工单当前状态，再按合法流转路径重新执行更新",
             )
 
         logger.info(

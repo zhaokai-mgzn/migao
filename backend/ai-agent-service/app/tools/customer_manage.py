@@ -167,6 +167,7 @@ class CustomerManageTool(BaseTool):
                 success=False,
                 error=f"无效的操作类型: {action}",
                 message=f"不支持的操作类型，可选：{', '.join(sorted(VALID_ACTIONS))}",
+                suggestion="请从工具说明里的可选操作类型中选一个后重试，不要自行改用其它 action",
             )
 
         try:
@@ -292,6 +293,7 @@ class CustomerManageTool(BaseTool):
                 success=False,
                 error="缺少客户 ID",
                 message="查询客户详情时必须提供客户 ID（customer_id）",
+                suggestion="缺少 customer_id，请先用 customer_manage 的 list 操作按姓名或手机号搜到客户后重试",
             )
 
         client = get_admin_api_client()
@@ -334,6 +336,7 @@ class CustomerManageTool(BaseTool):
                 success=False,
                 error="缺少客户 ID",
                 message="更新客户档案时必须提供客户 ID（customer_id）",
+                suggestion="缺少 customer_id，请先用 customer_manage 的 list 操作确认客户后再重试",
             )
 
         if not data:
@@ -341,6 +344,7 @@ class CustomerManageTool(BaseTool):
                 success=False,
                 error="缺少更新数据",
                 message="更新客户档案时必须提供更新数据（data）",
+                suggestion="缺少 data，请把要修改的字段（如 remark、phone）放进 data 中重试",
             )
 
         # 归一化为实体真实列名 + 白名单校验：不可写字段显式报错，绝不静默忽略/部分写入（#3551）
@@ -370,6 +374,7 @@ class CustomerManageTool(BaseTool):
                 success=False,
                 error=error_msg,
                 message=f"客户档案更新失败：{error_msg}",
+                suggestion="请先用 customer_manage 的 detail 操作读取当前档案，核对字段后再重试；不要改成其它客户",
             )
 
         updated_fields = sorted(payload.keys())
@@ -396,12 +401,14 @@ class CustomerManageTool(BaseTool):
                 success=False,
                 error="缺少客户 ID",
                 message="添加标签时必须提供客户 ID（customer_id）",
+                suggestion="缺少 customer_id，请先用 customer_manage 的 list 操作搜到客户后重试",
             )
         if not tag_id:
             return ToolResult(
                 success=False,
                 error="缺少标签 ID",
                 message="添加标签时必须提供标签 ID（tag_id）",
+                suggestion="缺少 tag_id，请先用 customer_manage 的 list_tags 操作取到标签 ID 后重试",
             )
 
         client = get_admin_api_client()
@@ -417,6 +424,7 @@ class CustomerManageTool(BaseTool):
                 success=False,
                 error=error_msg,
                 message=f"添加标签失败：{error_msg}",
+                suggestion="请先用 customer_manage 的 list_tags 操作确认标签仍在，再重新执行添加标签",
             )
 
         logger.info(f"[customer-manage] Added tag {tag_id} to customer {customer_id} | tenant={context.tenant_id}")
@@ -439,12 +447,14 @@ class CustomerManageTool(BaseTool):
                 success=False,
                 error="缺少客户 ID",
                 message="移除标签时必须提供客户 ID（customer_id）",
+                suggestion="缺少 customer_id，请先用 customer_manage 的 list 操作搜到客户后重试",
             )
         if not tag_id:
             return ToolResult(
                 success=False,
                 error="缺少标签 ID",
                 message="移除标签时必须提供标签 ID（tag_id）",
+                suggestion="缺少 tag_id，请先用 customer_manage 的 list_tags 操作取到标签 ID 后重试",
             )
 
         client = get_admin_api_client()
@@ -460,6 +470,7 @@ class CustomerManageTool(BaseTool):
                 success=False,
                 error=error_msg,
                 message=f"移除标签失败：{error_msg}",
+                suggestion="请先用 customer_manage 的 detail 操作确认该客户确实带有此标签，再重新执行移除",
             )
 
         logger.info(f"[customer-manage] Removed tag {tag_id} from customer {customer_id} | tenant={context.tenant_id}")
@@ -509,6 +520,7 @@ class CustomerManageTool(BaseTool):
                 success=False,
                 error="缺少标签名称",
                 message="创建标签时必须提供标签名称（name）",
+                suggestion="缺少标签名称 name，请向用户询问要创建的标签名称后重试",
             )
 
         json_data: Dict[str, Any] = {"name": name}
@@ -529,6 +541,7 @@ class CustomerManageTool(BaseTool):
                 success=False,
                 error=error_msg,
                 message=f"创建标签失败：{error_msg}",
+                suggestion="请先用 customer_manage 的 list_tags 操作确认是否已有同名标签，再改用 update_tag 或换一个名称",
             )
 
         data = response.get("data", {})
@@ -553,6 +566,7 @@ class CustomerManageTool(BaseTool):
                 success=False,
                 error="缺少标签 ID",
                 message="更新标签时必须提供标签 ID（tag_id）",
+                suggestion="缺少 tag_id，请先用 customer_manage 的 list_tags 操作取到标签 ID 后重试",
             )
 
         json_data: Dict[str, Any] = {}
@@ -566,6 +580,7 @@ class CustomerManageTool(BaseTool):
                 success=False,
                 error="缺少更新内容",
                 message="更新标签时必须提供名称（name）或颜色（color）",
+                suggestion="缺少更新内容，请让用户给出新的标签名称或颜色后重试",
             )
 
         client = get_admin_api_client()
@@ -582,6 +597,7 @@ class CustomerManageTool(BaseTool):
                 success=False,
                 error=error_msg,
                 message=f"更新标签失败：{error_msg}",
+                suggestion="请先用 customer_manage 的 list_tags 操作确认标签仍在，再重新执行更新",
             )
 
         logger.info(f"[customer-manage] Updated tag {tag_id} | tenant={context.tenant_id}")
@@ -603,6 +619,7 @@ class CustomerManageTool(BaseTool):
                 success=False,
                 error="缺少标签 ID",
                 message="删除标签时必须提供标签 ID（tag_id）",
+                suggestion="缺少 tag_id，请先用 customer_manage 的 list_tags 操作取到标签 ID 后重试",
             )
 
         client = get_admin_api_client()
@@ -618,6 +635,7 @@ class CustomerManageTool(BaseTool):
                 success=False,
                 error=error_msg,
                 message=f"删除标签失败：{error_msg}",
+                suggestion="请先用 customer_manage 的 list_tags 操作确认该标签未被其它客户占用，再重新执行删除",
             )
 
         logger.info(f"[customer-manage] Deleted tag {tag_id} | tenant={context.tenant_id}")

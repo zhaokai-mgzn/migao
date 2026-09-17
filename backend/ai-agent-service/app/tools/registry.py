@@ -264,6 +264,7 @@ class ToolRegistry:
                 success=False,
                 error=f"Tool '{name}' not found",
                 message=f"未知工具：{name}",
+                suggestion="该工具名不在可用工具列表中，请从当前技能可用的工具里重新选择，不要臆造工具名",
             )
         
         # 权限检查
@@ -273,6 +274,7 @@ class ToolRegistry:
                 success=False,
                 error="Permission denied",
                 message="您没有权限使用该功能",
+                suggestion="当前账号无该工具权限，请改用只读查询或请用户联系管理员开通权限",
             )
         
         # 写操作审计日志：记录所有非只读操作的用户/参数/结果
@@ -313,6 +315,7 @@ class ToolRegistry:
                 success=False,
                 error="tool_execution_failed",
                 message="工具执行失败，请稍后重试",
+                suggestion="请稍后重试；若持续失败，请改用其它可用工具完成用户诉求，必要时转人工",
             )
     
     def clear(self):

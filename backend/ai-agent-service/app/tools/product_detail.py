@@ -66,6 +66,7 @@ class ProductDetailTool(BaseTool):
                 success=False,
                 error="缺少商品 ID",
                 message="请提供商品 ID",
+                suggestion="缺少 product_id，请先用 product_search 按商品名查到该商品后重试",
             )
         
         try:
@@ -87,6 +88,7 @@ class ProductDetailTool(BaseTool):
                         success=False,
                         error="商品不存在",
                         message="抱歉，未找到该商品，请检查商品 ID 是否正确",
+                        suggestion="该商品 ID 在库中不存在，请改用 product_search 按商品名搜索，并把候选结果给用户确认",
                     )
                 
                 return ToolResult(
@@ -103,6 +105,7 @@ class ProductDetailTool(BaseTool):
                     success=False,
                     error="商品不存在",
                     message="抱歉，未找到该商品",
+                    suggestion="该商品不存在或已下架，请改用 product_search 按商品名搜索并把候选结果给用户确认",
                 )
             
             # 验证响应数据的 tenant_id
@@ -116,6 +119,7 @@ class ProductDetailTool(BaseTool):
                     success=False,
                     error="商品不存在",
                     message="抱歉，未找到该商品",
+                    suggestion="该商品不属于当前商户，请改用 product_search 在本店范围内重新搜索",
                 )
 
             # C 端（顾客）只能查看已上架商品（issue #3932）：下架/未上架商品一律按
@@ -130,6 +134,7 @@ class ProductDetailTool(BaseTool):
                     success=False,
                     error="商品不存在",
                     message="抱歉，未找到该商品",
+                    suggestion="该商品未上架，请告知用户当前不可下单，并推荐 product_search 中的在架同类商品",
                 )
             
             # 格式化商品详情
