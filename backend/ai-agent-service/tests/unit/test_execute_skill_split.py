@@ -15,9 +15,18 @@
 
 ⚠️ 本文件只断言**结构**；行为面由既有用例（CH-013/CH-014/CH-015 等）与全量单测覆盖 ——
 结构守卫**不替代**行为验证。
+
+⚠️ 口径对齐（#4054，2026-09-18）：`STAYS_IN_BASE_SKILL` 的判据由「**定义在** base_skill.py」
+改为「**可从** base_skill.py **导入**（定义或再导出）」—— 因为 #4054 把 confirmValue 的
+派生逻辑搬到了契约模块 `app/tools/confirm_value.py`（消灭两处独立生成器），这两个名字在这里
+变成 `ImportFrom`。**未放宽**：判据本体 `assert_name_importable_from_base_skill` 仍是
+fail-closed 两条（模块级命名空间 + 真实 import 后必须可调用），负例见
+`test_importable_criterion_is_fail_closed`。
 """
 import ast
+import importlib
 import re
+import types
 from pathlib import Path
 
 import pytest
@@ -39,7 +48,11 @@ EXECUTION_MODULES = {
 # 每段实现的最小体量：低于此值说明"搬了个空壳"（原三段分别约 292 / 1185 / 208 行）
 MIN_REGION_LINES = 50
 
-# 留在 `base_skill.py` 的模块级助手（搬迁**不得**动它们；`_execute_tool_safe` 另有守卫）
+# 必须**可从 `base_skill.py` 导入**的模块级名字（搬迁**不得**让 `execution/*` 的顶层 import 断掉）。
+# ⚠️ 口径（#4054 对齐，2026-09-18）：**可从 base_skill 导入**（定义**或**再导出）——
+# 不是"定义在本文件里"。`confirm_value_for_fields` / `confirm_card_fields` 的派生逻辑已搬到
+# 契约模块 `app/tools/confirm_value.py`（消灭"两处独立生成器"），本文件只原样再导出同名符号；
+# 判据本体见 `assert_name_importable_from_base_skill`（两条 fail-closed，**未放宽**）。
 STAYS_IN_BASE_SKILL = [
     "_execute_tool_safe",
     "_self_correct_retry",
@@ -75,6 +88,53 @@ def _find_func(tree: ast.Module, name: str):
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == name:
             return node
     raise AssertionError(f"{name} 未定义（结构守卫的被测对象不见了）")
+
+
+def _module_level_names(path: Path) -> set:
+    """`path` 模块级**可用**的名字：定义（函数/类）+ 再导出（`import` 别名）。
+
+    fail-closed：文件缺失即报错（`_read` 里 assert，不给"扫不到就通过"留口子）。
+    """
+    names = set()
+    for node in _module_ast(path).body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            names.add(node.name)
+        elif isinstance(node, (ast.Import, ast.ImportFrom)):
+            names.update(a.asname or a.name.split(".")[0] for a in node.names)
+    return names
+
+
+def _assert_module_level_name(path: Path, name: str) -> None:
+    """fail-closed ①：名字必须在**模块级命名空间**里（定义或再导出），否则报错。"""
+    assert name in _module_level_names(path), (
+        f"{name} 不在 {path.name} 的模块级（既没定义也没再导出）"
+        f" —— `execution/*` 的顶层 `from ...base_skill import {name}` 会当场 ImportError"
+    )
+
+
+def _assert_live_binding(module, name: str) -> None:
+    """fail-closed ②：**真去 import** 后必须取得到且可调用，否则报错。"""
+    obj = getattr(module, name, None)
+    assert callable(obj), (
+        f"{name} 从 {module.__name__} 真实导入后不可调用（{obj!r}）—— 再导出没接上"
+    )
+
+
+def assert_name_importable_from_base_skill(name: str) -> None:
+    """判据本体：`name` 必须**可从 `base_skill.py` 导入**（定义**或**再导出）且可调用。
+
+    立法本意（#4049 的 S3 条）：`execution/{prepare,react,finalize}_turn.py` **顶层**
+    `from app.graph.skills.base_skill import <name>` 必须继续成立、且**不成环**。
+    再导出同样满足这个本意（依赖方向仍是 `execution/*` → `base_skill` → 契约模块，单向）——
+    故判据是「**能从 base_skill 拿到**」，而不是「**定义在 base_skill 里**」：#4054 把
+    confirmValue 的派生搬去 `app/tools/confirm_value.py` 后，这两个名字在这里变成 `ImportFrom`。
+
+    ⚠️ **这不是放宽门禁**，是把判据对齐到真正的不变式；两条 fail-closed 都还在
+    （`_assert_module_level_name` + `_assert_live_binding`，负例见
+    `test_importable_criterion_is_fail_closed`）。
+    """
+    _assert_module_level_name(BASE_SKILL_PY, name)
+    _assert_live_binding(importlib.import_module("app.graph.skills.base_skill"), name)
 
 
 def family_sources(execution_dir: Path = EXECUTION_DIR) -> dict:
@@ -190,13 +250,35 @@ class TestGuardsSurviveTheMove:
         )
 
     @pytest.mark.parametrize("name", STAYS_IN_BASE_SKILL)
-    def test_module_level_helpers_stay_in_base_skill(self, name):
-        """模块级助手留在原文件（三段实现顶层 import 它们，搬走会与 import 方向成环）。"""
-        defined = {
-            n.name for n in _module_ast(BASE_SKILL_PY).body
-            if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
-        }
-        assert name in defined, f"{name} 不在 base_skill.py 的模块级（助手被搬走了）"
+    def test_module_level_helpers_stay_importable_from_base_skill(self, name):
+        """模块级助手必须**可从 base_skill 导入**（定义或再导出）且可调用。
+
+        口径见 `assert_name_importable_from_base_skill`（#4054 与 S3 的本意对齐：
+        `execution/*` 顶层 import 不成环，而不是"必须写在这个文件里"）。
+        """
+        assert_name_importable_from_base_skill(name)
+
+    def test_importable_criterion_is_fail_closed(self, tmp_path):
+        """负例（§19.1）：这条判据必须**真的会红**，不是"扫不到就通过"的空判据。
+
+        ① 既没定义也没再导出 ⇒ 报错；
+        ② **再导出形态必须被接受**（本次口径对齐的对象，否则新口径是假的）；
+        ③ 真实绑定那一半也会红（AST 里"看起来有"但运行期取不到 / 不是可调用对象）。
+        """
+        fake = tmp_path / "base_skill.py"
+        fake.write_text("def _kept():\n    return 1\n", encoding="utf-8")
+        with pytest.raises(AssertionError, match="既没定义也没再导出"):
+            _assert_module_level_name(fake, "confirm_value_for_fields")
+
+        fake.write_text(
+            "from app.tools.confirm_value import confirm_value_for_fields\n", encoding="utf-8")
+        _assert_module_level_name(fake, "confirm_value_for_fields")
+
+        with pytest.raises(AssertionError, match="不可调用"):
+            _assert_live_binding(
+                types.SimpleNamespace(__name__="fake_base_skill",
+                                      confirm_value_for_fields=123),
+                "confirm_value_for_fields")
 
     @pytest.mark.parametrize("token", GUARD_TOKENS)
     def test_guard_token_survives_somewhere_in_the_family(self, token):
