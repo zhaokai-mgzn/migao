@@ -7,6 +7,7 @@ import ProductFormList from '../cards/ProductFormList'
 import LogisticsCard from '../cards/LogisticsCard'
 import OrderCard from '../cards/OrderCard'
 import QuotationCard from '../cards/QuotationCard'
+import PaymentCard from '../cards/PaymentCard'
 import ProductionProgressCard from '../cards/ProductionProgressCard'
 import ConfirmCard from '../cards/ConfirmCard'
 import ChoiceCard from '../cards/ChoiceCard'
@@ -113,6 +114,14 @@ function renderCard(card: CardData, idx: number, onInteract?: (value: string) =>
       // 走「补发射点」—— 此前只有卡片没有发射点（组件永不渲染），后端已补
       // `production_progress_query → production_progress` 映射。
       return <ProductionProgressCard key={`card-${idx}`} data={data} />
+    }
+
+    case 'payment': {
+      // 收款二维码卡片（M3-F-3 / issue #3990）。issue #4016 P14 曾按「工具层没有数据源」
+      // 裁掉本分支；issue #4085 第 1 项按同款裁定（2026-09-18）**恢复**：发射点 =
+      // C 端工具 `payment_qrcode_query`，其 data 即卡载荷 {"payment_qrcodes": {...}}
+      // （有码→展示微信/支付宝收款码；无码→PaymentCard 空态降级提示）。
+      return <PaymentCard key={`card-${idx}`} data={data} />
     }
 
     default:

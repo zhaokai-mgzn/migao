@@ -13,6 +13,8 @@ version: "1.0"
 # 把「修改 B 端 intent 必须验证 xiaobu 路由」从注释承诺变为机器校验（全量严查）。
 # route_key 以 B 端全局映射为约定事实源（skill_registry.get_intent_to_route_map(persona=mibao)）；
 # agents 声明真实可达端：mibao=商家后台，xiaobu=小程序消费者。
+# agents: [] = **不声明可达性**（loader.py 既有语义；用于已下线 intent 留史，
+# 见 processing_order_* —— #3917 下线 / issue #4058 对齐），不参与可达性校验。
 # 兜底 intent「general」不属于业务表；B 端 RAG 禁用故 knowledge 域仅 xiaobu 可达。
 intent_ownership:
   # ── 订单域 ──
@@ -28,19 +30,26 @@ intent_ownership:
     route_key: order
     agents: [mibao, xiaobu]
     description: 物流查询（C 端仅本人已发货订单）
-  # ── 加工单域（issue #3340，仅 B 端米宝可达）──
+  # ── 加工单域（issue #3340 登记；**#3917 产品决策已下线**，issue #4058 让 schema 对齐现实）──
+  # 按 #3917 这 3 个工具已从注册与绑定下线（registry.py 的 import 行注释保留、
+  # order_skill.py 的 tool_names/intents 均已移除、IntentType 无此三值）⇒ 米宝**不可达**。
+  # 此处保留 route_key 与 description 以留史，但 `agents: []` **不声明任何可达性**
+  #（loader.py 既有语义：agents 缺省为空 = 未声明可达性）——故契约校验不再把已下线的
+  # 意图当成「假声明」而恒红（改前恒红 3 项，见 issue #4058）。
+  # 恢复接入时：取消 registry.py 里那 3 行 import 的注释，并在此恢复 agents: [mibao]。
+  # 勿新增 status/deprecated 字段——本 schema 无此惯例。
   processing_order_generate:
     route_key: order
-    agents: [mibao]
-    description: 生成加工单（批量，写操作确认闸；联动订单进入 producing）
+    agents: []
+    description: 生成加工单（批量，写操作确认闸；联动订单进入 producing）—— #3917 已下线，仅留史
   processing_order_query:
     route_key: order
-    agents: [mibao]
-    description: 加工单查询（只读）
+    agents: []
+    description: 加工单查询（只读）—— #3917 已下线，仅留史
   processing_order_update:
     route_key: order
-    agents: [mibao]
-    description: 加工单状态更新（issue/start/complete/cancel，写操作确认闸）
+    agents: []
+    description: 加工单状态更新（issue/start/complete/cancel，写操作确认闸）—— #3917 已下线，仅留史
   # ── 售后域 ──
   after_sales:
     route_key: aftersales

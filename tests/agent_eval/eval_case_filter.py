@@ -29,6 +29,11 @@ XIAOBU_TOOLS = frozenset({
     "order_create", "interact", "human_handoff",
     # customer_order_skill（issue #3996）：顾客查自己的生产进度（CH-039 断言该工具）
     "production_progress_query",
+    # customer_order_skill + customer_general_skill（fallback）（issue #4085 第 1 项）：
+    # 顾客问「怎么付款/收款码/扫码支付」→ payment_qrcode_query（只读，商家自己的收款码；
+    # 返回 data 即 payment 卡载荷）。绑定见两个 CUSTOMER_*_TOOLS 常量（本集合是其事实源副本，
+    # 一致性由 tests/unit_ci_workflows/test_xiaobu_case_set.py::TestXiaobuToolsetTruth 锁）。
+    "payment_qrcode_query",
     # customer_product_skill
     "product_search", "product_detail",
     # customer_quote_skill
@@ -38,8 +43,8 @@ XIAOBU_TOOLS = frozenset({
     # customer_knowledge_skill
     "knowledge_search",
     # customer_general_skill（fallback）：product_search / product_detail /
-    # customer_order_query / production_progress_query / customer_logistics_track /
-    # human_handoff / interact —— 均已在上方列出
+    # customer_order_query / production_progress_query / payment_qrcode_query /
+    # customer_logistics_track / human_handoff / interact —— 均已在上方列出
 })
 
 # 评测 runner 侧的「非真实工具」伪期望（不计入工具集校验）
