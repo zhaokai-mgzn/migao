@@ -60,8 +60,14 @@ def _load_runner():
 
 
 def _load_cases():
-    import eval_cases
-    return list(eval_cases.ALL_CASES)
+    """共享 `ALL_CASES` 的**深拷贝**（issue #4061）。
+
+    本文件有一条用例要"清掉声明、复现改造前行为"——**必须改副本**：直接改共享实例
+    会污染同进程后续测试（`test_eval_case_asset_truth.py` 会读到被清空的 `namespaces`），
+    而 CI 按路径字母序收集、受害者先跑 ⇒ 这种污染在 CI 上**永远不红**。
+    """
+    from unit_ci_workflows import conftest
+    return conftest.shared_eval_cases()
 
 
 lr = _load_runner()
@@ -115,13 +121,13 @@ class TestIsolationBeforeAfter:
             assert lr.needs_serial_lane(c, conflicted), (
                 f"{cid} 未进串行道 —— 它声明的资源正被别的用例争用（这正是污染的来源）")
         # ② 把声明全部清掉 = 复现**改造前**的判据 ⇒ 铁证对重新落回并行道
-        stripped = [x for x in real]
-        for x in stripped:
+        #    （`real` 是深拷贝，这里的原地改写不会外泄到共享 `ALL_CASES` —— issue #4061）
+        for x in real:
             x.namespaces = []
-        ns0 = lr.namespace_conflict_groups(stripped)
+        ns0 = lr.namespace_conflict_groups(real)
         assert ns0 == {}, "清掉声明后仍有争用组（说明争用不是从声明推出来的，模型不自洽）"
         conflicted0 = frozenset()
-        still_serial = [x.id for x in stripped
+        still_serial = [x.id for x in real
                         if lr.needs_serial_lane(x, conflicted0)
                         and x.id in ("HR-002", "HR-003", "AS-003", "OR-016")]
         assert still_serial == [], (
