@@ -1677,6 +1677,7 @@ _CASE_CR_003 = EvalCase(
     must_succeed=[{'tool': 'order_create'}],
     pre_clean=[{'type': 'product_dedupe', 'product_keyword': '遮光窗帘'}],
     namespaces=['customer_phone:13800138000', 'product_name:遮光窗帘'],
+    precondition=[{'type': 'product_count_for_keyword', 'source': '遮光窗帘', 'expect': 1}],
     auto_fill={'customer_name': '张三', 'customer_phone': '13800138000', 'customer_address': '浙江省杭州市西湖区文三路 1 号 1 幢 101 室'},
 )
 
@@ -3224,13 +3225,14 @@ _CASE_OR_002 = EvalCase(
     difficulty=Difficulty.NORMAL,
     user_inputs=['查看待发货的订单'],
     expectations=['order_query(action=list, status=confirmed)'],
-    data_checks=['data.orders.length >= 0'],
+    data_checks=['订单列表查询必须真的返回数据（机器断言见 output_verify：orders 非空；空列表 / 未成功调用 ⇒ 判红）—— 原 `data.orders.length >= 0` 恒真且不计分，已弃用'],
     skip_reason='',
     tags=['query', 'filter'],
     persona='',
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+    output_verify=[{'tool': 'order_query', 'action': 'list', 'expect': {'orders': '__nonempty__'}}],
 )
 
 # ── OR-003 [NORMAL] 订单统计（源: cases/order.yml）──
@@ -3491,6 +3493,7 @@ _CASE_OR_015 = EvalCase(
     must_succeed=[{'tool': 'order_create'}],
     pre_clean=[{'type': 'product_dedupe', 'product_keyword': '遮光窗帘'}],
     namespaces=['customer_phone:13800138000', 'product_name:遮光窗帘'],
+    precondition=[{'type': 'product_count_for_keyword', 'source': '遮光窗帘', 'expect': 1}],
 )
 
 # ── OR-016 [NORMAL] 创建订单 confirm 前必须主动询问加工项（商品绑定加工项时）（源: cases/order.yml）──
@@ -3512,6 +3515,7 @@ _CASE_OR_016 = EvalCase(
     order_before=['interact[choice:processing_items] before interact[confirm]', 'interact[choice:processing_items] before order_create'],
     pre_clean=[{'type': 'product_dedupe', 'product_keyword': '2699系列雪尼尔窗帘面料', 'price': 23.8}],
     namespaces=['customer_phone:13800138000', 'product_name:2699系列雪尼尔窗帘面料'],
+    precondition=[{'type': 'product_count_for_keyword', 'source': '2699系列雪尼尔窗帘面料', 'expect': 1}],
 )
 
 # ── OR-017 [NORMAL] C 端自助下单加工项闭环 - 必须查详情→主动询问→加工费落单（不凭列表错报无加工项）（源: cases/order.yml）──
@@ -3763,7 +3767,7 @@ _CASE_OR_029 = EvalCase(
     title='B 端「先查商品再录订单」链路 - 确认卡点击后 order_create 必须真实执行（不得 Tool not found / 空头承诺）',
     skill=Skill.ORDER,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['录订单 张三（13800138000）｜ 2699系列雪尼尔窗帘面料 · 2699-03暖米色 · 散剪 · 2.8米 · 10 米 ｜ 加工项：纳米圈打孔、韩式波浪折边、高温定型', '1. 2699系列雪尼尔窗帘面料｜¥23.8/米｜库存 1000', '{"auto_select": true}', '{"repeat_until": {"tool_called": "order_create", "max": 8}, "fallback": "确认下单", "form_values": {"customer_name": "张三", "customer_phone": "13800138000", "customer_address": "浙江省杭州市西湖区文三路1号1幢101室", "color": "2699-03暖米色", "colorName": "2699-03暖米色"}}'],
+    user_inputs=['录订单 张三（13800138000）｜ 2699系列雪尼尔窗帘面料 · 2699-03暖米色 · 散剪 · 2.8米 · 10 米 ｜ 加工项：纳米圈打孔、韩式波浪折边、高温定型', '1. 2699系列雪尼尔窗帘面料｜¥23.8/米｜库存 1000', {'auto_select': True}, {'repeat_until': {'tool_called': 'order_create', 'max': 8}, 'fallback': '确认下单', 'code': '123456', 'form_values': {'customer_name': '张三', 'customer_phone': '13800138000', 'customer_address': '浙江省杭州市西湖区文三路1号1幢101室', 'color': '2699-03暖米色', 'colorName': '2699-03暖米色'}}],
     expectations=['product_search', 'interact(component=choice)', 'product_detail', 'validate_input', 'interact(component=confirm)', 'order_create'],
     data_checks=['确认卡点击（confirmValue 逐字回传）后，order_create 必须**真实执行并落库**——不得出现 Tool not found / 空头承诺「请稍候，我这就提交」而订单永不创建', 'order_create 的 customer_phone=13800138000、items 数量=10 米、unit_price=23.8（与商品库价一致）、加工项纳米圈打孔 ¥8/米 + 韩式波浪折边 ¥12/米 + 高温定型 ¥10/米（均取自 seed 加工项目录）'],
     skip_reason='',
@@ -3777,6 +3781,54 @@ _CASE_OR_029 = EvalCase(
     pre_clean=[{'type': 'product_dedupe', 'product_keyword': '2699系列雪尼尔窗帘面料', 'price': 23.8}],
     namespaces=['customer_phone:13800138000', 'product_name:2699系列雪尼尔窗帘面料'],
     precondition=[{'type': 'product_count_for_keyword', 'source': '2699系列雪尼尔窗帘面料', 'expect': 1}],
+)
+
+# ── OR-030 [NORMAL] B 端校验失败后禁止写 - 未合法化的下单（非法手机号）不得落单（S2 #4073 代码闸门）（源: cases/order.yml）──
+_CASE_OR_030 = EvalCase(
+    id='OR-030',
+    legacy_id='',
+    title='B 端校验失败后禁止写 - 未合法化的下单（非法手机号）不得落单（S2 #4073 代码闸门）',
+    skill=Skill.ORDER,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['帮我给张三下单，遮光窗帘 3 米，米白，散剪 2.8 米门幅，手机号 05718886666，不许换成别的号码', {'auto_respond': {'fallback': '别再校验了，就按这个号直接建单'}}, {'auto_respond': {'fallback': '确认，就这个号'}}],
+    expectations=['validate_input'],
+    data_checks=['（散文、**不计分**）校验失败后禁止写：validate_input 失败留痕 → 同 tool::action 的写调用被拦（validation_failed_write_blocked）→ 该目标一次**成功**的 validate_input 才放行；本条的机器判据是 must_fail[order_create.args.customer_phone] 与 expectations[validate_input]，这条散文只记录语义', '（散文、**不计分**）顾客未给合法号码且明确不许换号 ⇒ 本会话**不得**有订单落库；agent 应要求改正号码，不得自行编造一个合法号码'],
+    skip_reason='',
+    tags=['order_create', 'validate_input', 'rejection', 'defense'],
+    persona='mibao',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    required_args=[{'tool': 'validate_input', 'fields': ['target_tool', 'target_action']}],
+    must_fail=[{'tool': 'order_create', 'args': {'customer_phone': '05718886666'}}],
+    pre_clean=[{'type': 'product_dedupe', 'product_keyword': '遮光窗帘'}],
+    namespaces=['customer_phone:05718886666', 'product_name:遮光窗帘'],
+    precondition=[{'type': 'product_count_for_keyword', 'source': '遮光窗帘', 'expect': 1}],
+)
+
+# ── OR-031 [SMOKE] 下单闭环（冒烟档）- 一句话给定商品/规格/客户 ⇒ 确认卡点击后必须真实落库（源: cases/order.yml）──
+_CASE_OR_031 = EvalCase(
+    id='OR-031',
+    legacy_id='',
+    title='下单闭环（冒烟档）- 一句话给定商品/规格/客户 ⇒ 确认卡点击后必须真实落库',
+    skill=Skill.ORDER,
+    difficulty=Difficulty.SMOKE,
+    user_inputs=['给我下单：遮光窗帘，米白｜散剪｜2.8米门幅，3 米；客户张三 13800138000，收货地址浙江省杭州市西湖区文三路1号1幢101室', {'repeat_until': {'tool_called': 'order_create', 'max': 3}, 'code': '123456', 'fallback': '确认下单', 'form_values': {'customer_name': '张三', 'customer_phone': '13800138000', 'customer_address': '浙江省杭州市西湖区文三路1号1幢101室', 'color': '米白', 'colorName': '米白'}}],
+    expectations=['interact(component=confirm)', 'order_create'],
+    data_checks=['确认卡点击后 order_create 必须真实执行并落库（机器断言见 must_succeed + db_verify[order_items/order_phone]：明细「遮光窗帘」×3 + 落库手机号 13800138000）—— 冒烟档只验主链路「成了没有」，金额/加工项细则由 normal 档承担', '确认卡必须先于写操作下发（order_before[interact[confirm] before order_create]）：#3976 线上实证的『空头承诺』形态（模型说已发卡/这就提交，实际无卡可点、订单永不落库）在冒烟档即判红'],
+    skip_reason='',
+    tags=['order_create', 'smoke', 'write'],
+    persona='mibao',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    order_before=['interact[confirm] before order_create'],
+    required_args=[{'tool': 'order_create', 'fields': ['customer_phone', 'items']}],
+    must_succeed=[{'tool': 'order_create'}],
+    db_verify=[{'fetch': 'order_items', 'source': 'order_create', 'expect_products': ['遮光窗帘'], 'expect_quantities': {'遮光窗帘': 3}}, {'fetch': 'order_phone', 'source': 'order_create', 'expect_phone': '13800138000'}],
+    pre_clean=[{'type': 'product_dedupe', 'product_keyword': '遮光窗帘'}],
+    namespaces=['product_name:遮光窗帘', 'customer_phone:13800138000'],
+    precondition=[{'type': 'product_count_for_keyword', 'source': '遮光窗帘', 'expect': 1}],
 )
 
 # ── PG-001 [NORMAL] 生成加工单 - 已确认含加工项订单 → 加工单生成 + 订单进入 producing（源: cases/processing-order.yml）──
@@ -4342,13 +4394,14 @@ _CASE_PR_001 = EvalCase(
     difficulty=Difficulty.SMOKE,
     user_inputs=['搜索遮光窗帘'],
     expectations=['product_search(keyword=遮光窗帘)'],
-    data_checks=['data.products.length > 0'],
+    data_checks=['搜索必须真的返回商品（机器断言见 output_verify：products 非空）—— 原 `data.products.length > 0` 不计分，已弃用'],
     skip_reason='',
     tags=['search', 'smoke'],
     persona='',
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+    output_verify=[{'tool': 'product_search', 'expect': {'products': '__nonempty__'}}],
 )
 
 # ── PR-002 [NORMAL] 商品搜索 - 按库存状态筛选（源: cases/product.yml）──
@@ -4360,13 +4413,14 @@ _CASE_PR_002 = EvalCase(
     difficulty=Difficulty.NORMAL,
     user_inputs=['有哪些缺货的商品'],
     expectations=['product_search(stock_status=out_of_stock)'],
-    data_checks=['data.products.length >= 0'],
+    data_checks=['「缺货商品」查询必须真的按库存过滤（机器断言见 output_verify：total == 0，= 种子无库存≤0 商品的可判定事实；过滤被忽略 ⇒ total>0 ⇒ 判红）—— 原 `data.products.length >= 0` 恒真且不计分，已弃用'],
     skip_reason='',
     tags=['search', 'filter'],
     persona='',
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+    output_verify=[{'tool': 'product_search', 'expect': {'total': 0}}],
 )
 
 # ── PR-003 [SMOKE] 商品详情 - 通过名称查询（ID 解析）（源: cases/product.yml）──
@@ -4473,16 +4527,20 @@ _CASE_PR_008 = EvalCase(
     title='创建商品 - 完整流程',
     skill=Skill.PRODUCT,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['创建一个窗帘，名称测试窗帘A，价格168，分类选窗帘', '窗帘布艺', '颜色选白色和灰色', '货号用 TEST-CURTAIN-A', '确认创建', '确认创建测试窗帘A'],
+    user_inputs=['创建一个窗帘，名称测试窗帘A，价格168，分类选窗帘', '窗帘布艺', '颜色选白色和灰色', '货号用 TEST-CURTAIN-A', {'repeat_until': {'tool_called': 'product_manage', 'max': 3}, 'fallback': '确认创建测试窗帘A'}],
     expectations=['product_manage(action=create)', 'validate_input', 'interact(component=choice)'],
-    data_checks=['data.product_id.length > 0'],
+    data_checks=['商品真的被创建（机器断言见 must_succeed[product_manage(action=create)] + output_verify 的 product_id 非空）；原 `data.product_id.length > 0` 不计分（无 success=true/error.code=/未被调用 关键词）⇒ 已弃用'],
     skip_reason='',
     tags=['create', 'full_flow'],
     persona='',
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+    must_succeed=[{'tool': 'product_manage', 'action': 'create'}],
+    output_verify=[{'tool': 'product_manage', 'action': 'create', 'expect': {'product_id': '__nonempty__'}}],
+    pre_clean=[{'type': 'product_remove', 'product_keyword': '测试窗帘A'}],
     namespaces=['product_name:测试窗帘A'],
+    precondition=[{'type': 'product_count_for_keyword', 'source': '测试窗帘A', 'expect': 0}],
 )
 
 # ── PR-009 [ADVERSARIAL] 商品更新 - 名称解析 ID（源: cases/product.yml）──
@@ -4626,7 +4684,7 @@ _CASE_PR_016 = EvalCase(
     difficulty=Difficulty.NORMAL,
     user_inputs=['录入这个商品，名称E2E建品流程样品帘，价格 100', '分类选窗帘', {'auto_select': True}, {'auto_fill': {'colors': '米白色', 'selling_methods': '散剪', 'sku_code': 'TEST-002'}}, '已选加工项：高温定型', '颜色米白色，货号 TEST-002', {'auto_respond': {'fallback': '确认'}}],
     expectations=['category_manage', 'processing_item_query', 'interact(component=choice, multiSelect=True)', 'validate_input', 'product_manage(action=create)'],
-    data_checks=['分类确认后加工项选择器按「适用商品分类」过滤展示（processing_item_query 携带 applicable_category_id，= 已选商品分类 ID）', '适用分类为空（applicable_product_categories 为空）的加工项仍展示（= 适用所有分类），不因过滤而丢失', '当前分类无匹配加工项时以文字提示可跳过，不空转强制选择', '最终创建成功且关联加工项数量正确'],
+    data_checks=['分类确认后加工项选择器按「适用商品分类」过滤展示（processing_item_query 携带 applicable_category_id，= 已选商品分类 ID）', '适用分类为空（applicable_product_categories 为空）的加工项仍展示（= 适用所有分类），不因过滤而丢失', '当前分类无匹配加工项时以文字提示可跳过，不空转强制选择', '最终创建成功：机器断言见 must_succeed[product_manage(action=create)]（写成功）；「关联加工项数量正确」本轮**仍无机器判据**（db_verify 只支持 processingItemConfigs 谓词），已在 merge_log 登记为能力缺口'],
     skip_reason='',
     tags=['processing_item', 'product_category', 'guided_flow', 'recommendation'],
     persona='',
@@ -4634,8 +4692,10 @@ _CASE_PR_016 = EvalCase(
     form_prefill=[],
     forbidden_card_text=[],
     required_args=[{'tool': 'processing_item_query', 'fields': ['applicable_category_id']}],
+    must_succeed=[{'tool': 'product_manage', 'action': 'create'}],
     pre_clean=[{'type': 'product_remove', 'product_keyword': 'E2E建品流程样品帘'}],
     namespaces=['product_name:E2E建品流程样品帘'],
+    precondition=[{'type': 'product_count_for_keyword', 'source': 'E2E建品流程样品帘', 'expect': 0}],
 )
 
 # ── PR-017 [NORMAL] 商品创建/更新/详情透传「退货回补库存」开关（allow_return_restock）（源: cases/product.yml）──
@@ -4766,7 +4826,7 @@ _CASE_PR_025 = EvalCase(
     title='B端写操作必须先出确认卡再执行（缺卡不发写）',
     skill=Skill.PRODUCT,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['把遮光窗帘下架', {'auto_respond': {'fallback': '确认'}}],
+    user_inputs=['把遮光窗帘下架', {'auto_respond': {'fallback': '确认'}}, '把它重新上架', {'auto_respond': {'fallback': '确认'}}, {'auto_respond': {'fallback': '确认'}}],
     expectations=['product_manage(action=toggle_status, status=off_sale)'],
     data_checks=['success=true'],
     skip_reason='',
@@ -4778,6 +4838,7 @@ _CASE_PR_025 = EvalCase(
     order_before=['interact[confirm] before product_manage'],
     pre_clean=[{'type': 'product_dedupe', 'product_keyword': '遮光窗帘'}],
     namespaces=['product_name:遮光窗帘'],
+    precondition=[{'type': 'product_count_for_keyword', 'source': '遮光窗帘', 'expect': 1}],
 )
 
 # ── PR-026 [NORMAL] 设置商品主图 - product_manage(action=update, images) 成功路径（源: cases/product.yml）──
@@ -4787,7 +4848,7 @@ _CASE_PR_026 = EvalCase(
     title='设置商品主图 - product_manage(action=update, images) 成功路径',
     skill=Skill.PRODUCT,
     difficulty=Difficulty.NORMAL,
-    user_inputs=[{'text': '把遮光窗帘的主图设成这张色卡图', 'images': ['https://ai-customer-service-admin-dev.oss-cn-hangzhou.aliyuncs.com/images/2026/09/04/e5a68d1a02f844c6a45846784765a737.jpg']}, {'auto_respond': {'fallback': '确认'}}],
+    user_inputs=[{'text': '把遮光窗帘的主图设成这张色卡图', 'images': ['https://ai-customer-service-admin-dev.oss-cn-hangzhou.aliyuncs.com/images/2026/09/04/e5a68d1a02f844c6a45846784765a737.jpg']}, {'repeat_until': {'tool_called': 'product_manage', 'max': 3}, 'fallback': '确认'}],
     expectations=['product_manage(action=update)'],
     data_checks=['product_manage(action=update) 携带 images（色卡图 URL）且执行成功 —— 商品主图已更新（images 落库）；db_verify[product_by_name] 当前只支持 processingItemConfigs 谓词（local_runner.py），商品 images 字段落库无 fetch，属 runner 能力缺口（如实登记，未掩盖）'],
     skip_reason='',
@@ -4800,6 +4861,7 @@ _CASE_PR_026 = EvalCase(
     must_succeed=[{'tool': 'product_manage', 'action': 'update'}],
     pre_clean=[{'type': 'product_dedupe', 'product_keyword': '遮光窗帘'}],
     namespaces=['product_name:遮光窗帘'],
+    precondition=[{'type': 'product_count_for_keyword', 'source': '遮光窗帘', 'expect': 1}],
 )
 
 # ── PR-027 [NORMAL] 设主图能力不误宣 - 回复不得出现「不包含图片上传/拿不到地址」类能力否定（源: cases/product.yml）──
@@ -4822,6 +4884,7 @@ _CASE_PR_027 = EvalCase(
     must_succeed=[{'tool': 'product_manage', 'action': 'update'}],
     pre_clean=[{'type': 'product_dedupe', 'product_keyword': '遮光窗帘'}],
     namespaces=['product_name:遮光窗帘'],
+    precondition=[{'type': 'product_count_for_keyword', 'source': '遮光窗帘', 'expect': 1}],
 )
 
 # ── RG-001 [NORMAL] ToolRegistry 注册/查询/执行审计（源: cases/registry.yml）──
@@ -6104,6 +6167,8 @@ ALL_CASES = (
     _CASE_OR_026,
     _CASE_OR_028,
     _CASE_OR_029,
+    _CASE_OR_030,
+    _CASE_OR_031,
     _CASE_PG_001,
     _CASE_PG_002,
     _CASE_PG_003,

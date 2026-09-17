@@ -1191,13 +1191,18 @@ describe('ToolResultCard', () => {
     expect(screen.getByText(/SF1234567890/)).toBeInTheDocument()
   })
 
-  it('renders knowledge card', () => {
+  it('renders unsupported placeholder for knowledge (backend never emits it, #4016)', () => {
+    // 裁剪前这里断言 knowledge-card 渲染成功 —— 后端 `_detect_card_type` 从不下发
+    // knowledge 卡型 ⇒ 死 UI。现锁新真值：走可理解占位且不泄漏内部类型名。
+    // `knowledge` 已从 CardType 联合移除（后端从不下发）⇒ 这里模拟线上**残留 type**
+    // 走到 B 端时的兜底表现（弱类型入站载荷，与其他卡同族）
     const card = {
-      type: 'knowledge' as const,
+      type: 'knowledge',
       data: { title: '布艺清洗指南', content: '...' },
-    }
+    } as unknown as import('@/types').ChatCard
     render(<ToolResultCard card={card} />)
-    expect(screen.getByTestId('knowledge-card')).toBeInTheDocument()
+    expect(screen.queryByTestId('knowledge-card')).not.toBeInTheDocument()
+    expect(screen.getByTestId('tool-result-card-unsupported')).toBeInTheDocument()
   })
 
   it('renders order card with status badge', () => {
@@ -1291,6 +1296,37 @@ describe('ToolResultCard', () => {
     render(<ToolResultCard card={card} />)
     expect(screen.getByTestId('tool-result-card-unsupported')).toBeInTheDocument()
     expect(screen.queryByText(/quotation/)).not.toBeInTheDocument()
+  })
+})
+
+// ═══════════════════════════════════════════════════
+// 卡内超链接（#4016 P14 ④）
+// ═══════════════════════════════════════════════════
+
+// ⚠️ 本文件把 `@/components/chat/ProductCard` 整体 mock 掉了（见文件顶部 vi.mock），
+// 故**商品卡超链接**的真值断言在 `tests/unit/components/ProductCard.test.tsx`
+// （真实组件、不递归子目录）。这里只覆盖 ToolResultCard 内联的 OrderCard/OrderRow
+// —— 它是就地定义的真实实现，未被 mock。
+describe('ToolResultCard 订单卡超链接（本端生成路由）', () => {
+  const hrefs = (c: HTMLElement) =>
+    Array.from(c.querySelectorAll('a')).map((a) => a.getAttribute('href'))
+
+  it('order 卡链接 /orders/{id}（id 取自 tool 结果真值；两端路由不同故各端自拼）', () => {
+    const card = {
+      type: 'order' as const,
+      data: { order: { id: 'o-9', orderNo: 'ORD-009', status: 'confirmed' } },
+    }
+    const { container } = render(<ToolResultCard card={card} />)
+    expect(hrefs(container)).toEqual(['/orders/o-9'])
+  })
+
+  it('负例（R2）：订单没有 id 时不生成链接 —— 不得凭空造路由', () => {
+    const card = {
+      type: 'order' as const,
+      data: { order: { orderNo: 'ORD-010', status: 'confirmed' } },
+    }
+    const { container } = render(<ToolResultCard card={card} />)
+    expect(hrefs(container)).toEqual([])
   })
 })
 

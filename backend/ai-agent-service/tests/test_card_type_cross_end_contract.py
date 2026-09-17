@@ -8,7 +8,8 @@
 
 - C 端 `frontend/mini-app/src/components/chat/MessageBubble.tsx::renderCard` 实现 9 种，含 `quotation` → 齐全；
 - B 端移动 `frontend/bmini-app/src/components/chat/MessageBubble.tsx::renderCard` 与 C 端同族 → 齐全；
-- B 端桌面 `frontend/admin-web/src/components/chat/ToolResultCard.tsx` 只实现 5 种、**不含 `quotation`**，
+- B 端桌面 `frontend/admin-web/src/components/chat/ToolResultCard.tsx` 当时只实现 5 种、**不含 `quotation`**
+  （现为 6 种：新增 `production_progress`，见下「反向契约」节），
   且 `default` 分支把内部类型名回显成「未知卡片类型: quotation」灰盒 ——
   既**没有任何按钮**（不可理解、不可点击），又把**内部类型名泄漏**给商家用户。
 
@@ -35,6 +36,29 @@
 另加一条全局判据：`_detect_card_type` 的值域必须 ⊆ 全部渲染端 case 的并集
 （任何卡型至少有一端能渲染 —— 不许存在「谁都渲染不了」的卡型）。
 
+## 反向契约（issue #4016 P14 追加）：渲染端 case 集合 ⊆ 后端可产出卡型集合
+
+上面那条是**正向**（后端能发 ⇒ 前端要能渲染）；本文件另加**反向**（前端有 case ⇒ 后端真会发）。
+反向缺口的形态 = 「前端声称支持某卡型、后端**永远不发**」⇒ 该分支是**死 UI**，
+但它**不会自己变红**：多一个永不命中的 `case` 而已，测试照绿、CI 照绿。
+
+`#3960` 当时的口径是「**保留分支 + 用测试标注**，不顺手删除」（反向缺口无用户可见缺陷，
+且 `knowledge` 分支未来接上卡片事件即可复用）。`#4016` **收紧了该口径**：审计实测
+前端 11 个卡型名里有 **6 个**后端永不产出，别名与死分支让「实际语义只有 5 个」的真相
+被 11 个名字掩盖、并且**没有任何东西会红**。故本包把该接缝升级为**硬判据**
+（`test_renderer_case_sets_are_subset_of_backend_card_types`）。
+
+**两个零发射点卡型的处置不同（照实登记）**：
+- `payment` —— 工具层**没有任何数据源**（收款码走独立 REST、由卡片自取）⇒ 缺的是**触发机制**，
+  按产品裁定**维持裁剪**（另开单）；
+- `production_progress` —— `production_progress_query` 工具**存在且返回的正是卡载荷**
+  ⇒ 属**接线漏一行**，用户 2026-09-18 裁定走「**补发射点**」：`_detect_card_type` 补映射后
+  该卡型进入**可产出集合（5 → 6）**，三端渲染分支同步恢复（该工具同时绑在两个 persona 的
+  Skill 上 ⇒ 正向判据要求 C 端 + B 端移动 + B 端桌面**三端都能渲染**，实测缺任一端即报红）。
+
+> 口径演进的判据落点：正向判据护「发得出、渲染不了」，反向判据护「渲染得了、发不出」。
+> 两者都读同一份源码真值提取器（不加第二份口径），红证见文末「常驻判别性检验」。
+
 ## 真值来源（刻意不靠「扫注释猜」）
 
 1. **后端卡型**：对**真实函数** `_detect_card_type` 求值，工具名取自**工具注册表**、
@@ -57,6 +81,13 @@
 - **构造红**：对「故意构造的、不在渲染集合里的卡型」断言必被每个渲染端判违规；
   对「故意构造的、无渲染端登记的 persona」断言必被判违规。
 - **回放红**：把 B 端 `default` 还原成修复前的实现文本，泄漏判据必须能认出（证判据非空）。
+- **反向真实红（#4016 裁剪前实测，历史事实）**：`test_renderer_case_sets_are_subset_of_backend_card_types`
+  当时报出三个渲染端的孤儿分支 —— C 端 `['knowledge', 'knowledge_result', 'logistics_track',
+  'payment', 'product_recommend', 'production_progress']`、B 端移动同族（少 `payment` /
+  `production_progress`）、B 端桌面 `['knowledge']`。除 `production_progress` 外均维持裁剪；
+  `production_progress` 已由「补发射点」转为**可产出 + 三端可渲染**（见上节）。
+- **反向变异红**：把某个卡型从 `_CARD_TOOL_ANCHORS`/映射里去掉后，判据必须报出对应孤儿
+  （证明「裁剪后转绿」不是判据恒真）。
 """
 from __future__ import annotations
 
@@ -65,7 +96,7 @@ from pathlib import Path
 
 import pytest
 
-from app.api.chat import _detect_card_type
+from app.api.chat import _card_payload, _detect_card_type
 from app.graph.skills.skill_registry import get_skill_registry
 from app.tools.registry import get_tool_registry
 
@@ -95,6 +126,8 @@ _CARD_TOOL_ANCHORS = {
     "logistics_track": "logistics",
     "order_query": "order",
     "curtain_calc": "quotation",
+    # #4016 P14「补发射点」（用户 2026-09-18 裁定）：该工具返回的 data 正是卡载荷
+    "production_progress_query": "production_progress",
 }
 
 # 交互组件（renderInteractive 的 switch）——不得被算作卡型
@@ -327,31 +360,152 @@ class TestCrossEndCardTypeContract:
             )
 
 
-class TestUnreachableRendererBranches:
-    """**保留但用测试标注**的反向缺口：渲染端有分支、后端**从不下发**该卡型。
+def orphan_renderer_branches(
+    renderer_types: dict[str, set[str]], producible: set[str]
+) -> dict[str, list[str]]:
+    """**反向**判据（纯函数，可用构造输入做判别性检验）。
 
-    处置口径（issue #3960，最小做法）：**保留分支 + 用测试标注**，不顺手删除 ——
-    反向缺口不会造成用户可见缺陷（多一个永不命中的 case 而已），
-    而删除属于「顺手大改」（且 `knowledge` 是 B 端知识卡片检索的实际能力，
-    未来接上 `knowledge` 卡片事件即可复用该分支）。
-    真值：`SSEEvent.card` 全仓只有 `app/api/chat.py` 经 `_detect_card_type` 调用
-    （`app/api/sse.py` 只提供工厂），故「后端卡型集合」就是唯一产出面。
+    入参 `renderer_types`：渲染端名 → 该端卡型 switch 的 case 集合；
+    `producible`：后端 `_detect_card_type` 在**注册表里的工具**上真能返回的卡型集合。
+    返回 `{渲染端名: 后端永不下发的卡型}`；全空 = 反向契约成立。
+    （真值取自**注册表**而非 `_detect_card_type` 的函数体：写进函数却没有任何工具能触发
+    的映射同样是死路径 —— `production_progress` 曾是该形态的实例，现已按裁定补上映射。）
+    """
+    return {
+        name: sorted(types - producible)
+        for name, types in renderer_types.items()
+        if types - producible
+    }
+
+
+# 前端路由字面量：agent 侧**不得**出现（两端路由不同 ⇒ 只能由各端自己拼）
+_ROUTE_LITERAL_RE = re.compile(r"""["'`]/?(?:products|orders)/""")
+_URL_FIELD_KEYS = ("href", "url", "link", "linkUrl", "jumpUrl")
+
+
+class TestAgentSideCarriesNoRoutes:
+    """L0：href 必须**事实驱动**且**由各端生成**（issue #4016 P14 第四节三条硬约束）。
+
+    约束 1「两端路由不同（admin-web `/products/{id}`、`/orders/{id}`；mini-app 是 Taro 路由
+    且当前零链接能力）⇒ agent 侧只给 `product_id`/`order_no` 这类不可变标识，
+    **不得在 agent 侧写死 href**」与约束 3「href 只能由工具结果真值映射生成，**不得由模型编造**」
+    都需要常驻机械判据 —— 否则「agent 悄悄拼了个路由」或「卡载荷里带上了模型给的 URL」
+    都不会有任何东西变红（与 #3970「声称发卡但没发」同族的静默失效）。
     """
 
-    def test_admin_web_knowledge_branch_is_currently_unreachable(self):
-        """B 端桌面 `case 'knowledge'` 目前是死分支：后端从不把 `knowledge` 作为卡型下发。
+    def test_no_frontend_route_literals_in_agent_card_path(self):
+        """agent 侧（chat.py）不得出现前端路由字面量 `/products/`、`/orders/`。"""
+        source = _read(REPO_ROOT / "backend" / "ai-agent-service" / "app" / "api" / "chat.py")
+        hits = [
+            f"第 {no} 行：{line.strip()}"
+            for no, line in enumerate(source.split("\n"), 1)
+            if _ROUTE_LITERAL_RE.search(line)
+        ]
+        assert hits == [], (
+            "agent 侧写死了前端路由（路由必须由各端自己拼，否则 C 端会拿到 B 端路径）："
+            + "；".join(hits)
+        )
 
-        若哪天后端开始下发 `knowledge`，本用例会红 —— 那正是提醒：确认三端都接到了该卡型
-        （`test_persona_reachable_card_types_are_renderable_on_its_ends` 会同时给出结论）。
+    def test_route_literal_detector_recognises_a_planted_route(self):
+        """红证（变异）：把路由字面量喂给判据必须被认出 —— 证上面那条不是空断言。"""
+        planted = 'card["href"] = f"/products/{pid}"'
+        assert _ROUTE_LITERAL_RE.search(planted), "路由判据认不出植入的路由字面量（空断言）"
+
+    def test_card_payload_carries_no_url_fields(self):
+        """卡载荷**不得**新增 href/url/link 型字段：真值标识由工具结果携带，路由各端自拼。
+
+        载荷里出现 URL 字段 ⇒ 前端可能直接采信它 ⇒ 模型编造的链接变成可点链接
+        （约束 3）。本判据对真实 `_card_payload` 求值（非清单副本）。
         """
-        assert "knowledge" not in _all_backend_card_tools().values(), (
-            "后端已开始下发 knowledge 卡型 —— 请确认各渲染端分支与数据形态，并更新本标注"
+        payload_type, payload = _card_payload(
+            "product_search",
+            {"success": True, "data": {"products": [{"id": "p-1", "name": "窗帘A"}]}},
         )
-        assert "knowledge" in _renderer_card_types(RENDERERS["B端桌面 admin-web ToolResultCard"]), (
-            "B 端桌面的 knowledge 分支已被删除 —— 若为有意清理，请同步删除本标注用例"
+        assert payload_type == "product_list" and payload, "前置：该输入必须产出商品卡载荷"
+
+        offenders = sorted(k for k in payload if k.lower() in _URL_FIELD_KEYS)
+        offenders += sorted(
+            f"products[].{k}"
+            for p in (payload.get("products") or [])
+            if isinstance(p, dict)
+            for k in p
+            if k.lower() in _URL_FIELD_KEYS
+        )
+        assert offenders == [], (
+            f"卡载荷出现了 URL 型字段（href 必须事实驱动、由各端生成）：{offenders}"
         )
 
-    """红证：证明上面的判据**真的会红**（常驻判别性检验，不是一次性人工验证）。"""
+    def test_url_field_detector_recognises_a_planted_url_field(self):
+        """红证（构造）：载荷里植入 `href` 必须被判据认出（防空断言）。"""
+        planted = {"products": [{"id": "p-1", "href": "/products/p-1"}]}
+        offenders = sorted(
+            f"products[].{k}"
+            for p in (planted.get("products") or [])
+            if isinstance(p, dict)
+            for k in p
+            if k.lower() in _URL_FIELD_KEYS
+        )
+        assert offenders == ["products[].href"], f"URL 字段判据认不出植入字段：{offenders}"
+
+
+class TestNoOrphanRendererBranches:
+    """**反向**契约（issue #4016 P14）：渲染端 case 集合 ⊆ 后端可产出卡型集合。
+
+    它取代了 `#3960` 的「保留分支 + 逐条标注」口径（原因见模块 docstring「反向契约」节）：
+    标注只能记录**一条**已知缺口，且不留神就会与源码脱节；硬判据覆盖**全部**渲染端，
+    且随源码自动前进 —— 谁再加一个后端永不产出的 `case`，这里立刻红。
+    """
+
+    def test_renderer_case_sets_are_subset_of_backend_card_types(self):
+        renderer_types = _current_renderer_types()
+        producible = set(_all_backend_card_tools().values())
+        violations = orphan_renderer_branches(renderer_types, producible)
+        assert violations == {}, (
+            "前端有渲染分支、后端**永不下发**的卡型（死 UI：能力在代码里、路径不存在）："
+            + "；".join(f"{end} 多出 {orphans}" for end, orphans in violations.items())
+            + f"｜后端可产出集合={sorted(producible)}"
+        )
+
+    def test_orphan_criterion_is_non_vacuous(self):
+        """防空跑：两侧都必须非空，否则上面的子集断言会**真空通过**。"""
+        producible = set(_all_backend_card_tools().values())
+        assert producible, "后端可产出卡型集合为空 —— 反向判据退化成空断言"
+        for end, types in _current_renderer_types().items():
+            assert types, f"渲染端 {end} 提取到 0 个 case —— 提取器坏了（反向判据会真空通过）"
+
+    def test_orphan_reported_when_a_backend_mapping_is_removed(self):
+        """变异红证：把一个卡型从后端可产出集合里**去掉**，判据必须报出该孤儿分支。
+
+        这是「裁剪后转绿」的判别性检验 —— 若判据恒真，这条会绿着骗人。
+        """
+        renderer_types = _current_renderer_types()
+        producible = set(_all_backend_card_tools().values())
+        victim = sorted(producible & set().union(*renderer_types.values()))
+        assert victim, "后端可产出集合与渲染端集合无交集 —— 变异实验无法构造"
+        trimmed = producible - {victim[0]}
+
+        violations = orphan_renderer_branches(renderer_types, trimmed)
+        assert violations, f"去掉 {victim[0]} 后判据仍未报违规 ⇒ 反向断言是空断言"
+        for end, orphans in violations.items():
+            if victim[0] in renderer_types.get(end, set()):
+                assert victim[0] in orphans, f"{end} 未报出被移除的卡型：{orphans}"
+
+    def test_fabricated_renderer_case_is_flagged(self):
+        """构造红证：故意构造一个后端永不产出的 case，断言必被判为孤儿。
+
+        刻意**只喂构造输入**（不掺当前源码真值）：当前真值里的存量孤儿会让等值断言
+        在修复前假红、修复后真绿 —— 那种「判据自己会随被测对象变化」的红证不是判别性检验。
+        """
+        fabricated = "__fabricated_orphan_card__"
+        violations = orphan_renderer_branches(
+            {"__fabricated_end__": {"product_list", fabricated}},
+            set(_all_backend_card_tools().values()),
+        )
+        assert violations == {"__fabricated_end__": [fabricated]}, (
+            f"构造的孤儿分支未被报出 ⇒ 反向判据恒真（空断言）。实际 violations={violations}"
+        )
+
+    """红证：证明**正向**判据也真的会红（常驻判别性检验，不是一次性人工验证）。"""
 
     def test_violation_reported_when_a_renderer_case_is_deleted(self):
         """变异红证：文本删掉 C 端 `case 'quotation':` 后，xiaobu 可达性判据必须报出 quotation。"""

@@ -20,9 +20,9 @@ jest.mock('../src/components/cards/LogisticsCard', () => {
     return <div data-testid="logistics-card">logistics</div>
   }
 })
-jest.mock('../src/components/cards/KnowledgeCard', () => {
-  return function MockKnowledgeCard() {
-    return <div data-testid="knowledge-card">knowledge</div>
+jest.mock('../src/components/cards/ProductionProgressCard', () => {
+  return function MockProductionProgressCard() {
+    return <div data-testid="production-progress-card">progress</div>
   }
 })
 jest.mock('../src/components/cards/OrderCard', () => {
@@ -121,7 +121,7 @@ describe('MessageBubble', () => {
     expect(screen.getByTestId('logistics-card')).toBeTruthy()
   })
 
-  it('应渲染知识库卡片', () => {
+  it('后端永不产出的卡型落可理解占位（#4016 P14 裁掉 knowledge 死分支）', () => {
     const msg: Message = {
       ...baseMsg,
       role: 'assistant',
@@ -132,7 +132,26 @@ describe('MessageBubble', () => {
     }
     render(<MessageBubble message={msg} />)
 
-    expect(screen.getByTestId('knowledge-card')).toBeTruthy()
+    // 裁剪前这里断言 knowledge-card 渲染成功 —— 但后端 `_detect_card_type`
+    // **从不**下发 knowledge/knowledge_result 卡型 ⇒ 那是「代码里有能力、路径不存在」
+    // 的死 UI（#4016 反向契约实测）。现锁新真值：未知卡型走可理解占位，不再声称有知识卡。
+    expect(screen.queryByTestId('knowledge-card')).toBeNull()
+    expect(screen.getByText('📎 消息内容暂不支持预览')).toBeTruthy()
+  })
+
+  it('应渲染生产进度卡（#4016 P14「补发射点」：后端已补 production_progress 映射）', () => {
+    const msg: Message = {
+      ...baseMsg,
+      role: 'assistant',
+      content: '生产进度：',
+      cards: [
+        { type: 'production_progress', data: { progress_percent: 40, current_operation: '韩褶' } },
+      ],
+    }
+    render(<MessageBubble message={msg} />)
+
+    expect(screen.getByTestId('production-progress-card')).toBeTruthy()
+    expect(screen.queryByText('📎 消息内容暂不支持预览')).toBeNull()
   })
 
   it('应渲染订单卡片（不再落入 📎 order 占位符）', () => {

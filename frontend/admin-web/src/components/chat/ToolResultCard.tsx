@@ -4,7 +4,7 @@ import Link from 'next/link'
 import type { ChatCard } from '@/types'
 import ProductCard from './ProductCard'
 import LogisticsCard from './LogisticsCard'
-import KnowledgeCard from './KnowledgeCard'
+import ProductionProgressCard, { type ProductionProgressCardData } from './ProductionProgressCard'
 
 interface ToolResultCardProps {
   card: ChatCard
@@ -18,10 +18,12 @@ export default function ToolResultCard({ card }: ToolResultCardProps) {
       return <ProductCard data={card.data} />
     case 'logistics':
       return <LogisticsCard data={card.data} />
-    case 'knowledge':
-      return <KnowledgeCard data={card.data} />
     case 'order':
       return <OrderCard data={card.data} />
+    case 'production_progress':
+      // 生产进度卡（#4016 P14「补发射点」；两个 persona 都绑了该工具 ⇒ 三端都要能渲染）
+      // 出站载荷是弱类型 Record（与其他卡同族），此处按卡载荷形状收窄一次
+      return <ProductionProgressCard data={card.data as ProductionProgressCardData} />
     default:
       // 未知卡片类型：不回显内部 type（避免把内部类型名泄漏给商家用户），
       // 给出可理解的通用占位（与 C 端「消息内容暂不支持预览」同族口径，issue #3960）

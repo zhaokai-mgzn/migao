@@ -1477,11 +1477,21 @@ class TestProcessingItemsFallbackWiring:
              patch("app.graph.skills.base_skill._execute_tool_safe", fake_execute):
             from app.tools.product_detail import ProductDetailTool
             from app.tools.interact import InteractTool
+            from app.tools.registry import get_tool_registry
             registry = MagicMock()
             registry.get_langchain_tools.return_value = []
+            # S4（issue #4079）：模式 C 加工项兜底的适用性判据已从字面量
+            # `skill_name in ("customer_order", "customer_aftersales")` 改为**事实**
+            # （C 端 × 本 skill 工具集里有需确认写工具）⇒ 替身必须**如实建模** customer_order
+            # 的工具集（含 order_create）。否则替身世界 = "没有任何工具的 customer_order"
+            # （生产里不存在）⇒ 判据在替身里恒假 = 假红。
+            _order_create = get_tool_registry().get_tool("order_create")
+            assert _order_create is not None, "全局注册表里没有 order_create —— 替身无法建模事实"
+            registry.get_all_tools.return_value = [_order_create]
             registry.get_tool.side_effect = lambda n: {
                 "product_detail": ProductDetailTool(),
                 "interact": InteractTool(),
+                "order_create": _order_create,
             }.get(n)
             create_reg.return_value = registry
 
@@ -4586,9 +4596,16 @@ class TestProcessingItemsAskedPersistsCrossTurn:
             for attr, val in (("name", "interact"), ("read_only", False),
                               ("destructive", False), ("requires_confirmation", False)):
                 setattr(tool, attr, val)
+            # S4（issue #4079）：同 `TestProcessingItemsFallbackWiring` —— 判据改读**事实**
+            # （C 端 × 本 skill 工具集含需确认写工具），替身必须建模 customer_order 的工具集。
+            from app.tools.registry import get_tool_registry
+            _order_create = get_tool_registry().get_tool("order_create")
+            assert _order_create is not None, "全局注册表里没有 order_create —— 替身无法建模事实"
             registry = MagicMock()
             registry.get_langchain_tools.return_value = []
-            registry.get_tool.side_effect = lambda n: tool if n == "interact" else None
+            registry.get_all_tools.return_value = [_order_create]
+            registry.get_tool.side_effect = lambda n: (
+                tool if n == "interact" else (_order_create if n == "order_create" else None))
             create_reg.return_value = registry
             breaker = MagicMock()
 
@@ -4824,8 +4841,11 @@ class TestWriteInputRecovery:
     # ── ② 失败即记账 ──
 
     def test_missing_input_failure_recorded(self):
+        # 夹具按**真实工具结果形状**给（issue #4080 T3）：缺参走结构化字段
+        # `missing_params`，不再由中文错误原文反推（断言未改）
         seen = self._run("确认", {"items": []},
-                         force_fail='{"success": false, "error": "缺少短信验证码"}')
+                         force_fail='{"success": false, "error": "缺少短信验证码", '
+                                    '"missing_params": ["sms_code"]}')
         flags = [c.get("last_write_input_error") for c in seen["commits"]
                  if c.get("last_write_input_error")]
         assert flags, "缺参失败必须跨轮记账，否则下一轮无从知道该要什么"
@@ -4849,7 +4869,8 @@ class TestWriteInputRecovery:
         """判不出"已补齐"的参数（商品明细）不得记账：否则该写工具被**永久**拦住，
         真实顾客说"就是刚才那款"也解不开。"""
         seen = self._run("确认", {"items": []},
-                         force_fail='{"success": false, "error": "缺少商品明细"}')
+                         force_fail='{"success": false, "error": "缺少商品明细", '
+                                    '"missing_params": ["items"]}')
         assert not seen["final_store"].get("last_write_input_error"), \
             "记账了不可识别的参数 → 该写工具将被永久锁死"
 

@@ -399,6 +399,12 @@ def _detect_card_type(tool_name: str, result: Dict[str, Any]) -> Optional[str]:
         return "order"
     elif tool_name == "curtain_calc":
         return "quotation"
+    elif tool_name == "production_progress_query":
+        # 生产进度卡（M4-G-3 / issue #3997 已交付的顾客端卡片）。
+        # issue #4016 P14：此前**只有卡片、没有发射点** ⇒ 组件永不渲染
+        # （「交付物在 main ≠ 能力可达」）。用户 2026-09-18 裁定走「补发射点」：该工具返回的
+        # `data` 正是卡载荷（progress_percent / current_operation / expected_delivery_date / positions）。
+        return "production_progress"
     return None
 
 
@@ -449,6 +455,15 @@ def _should_send_card(tool_name: str, result: Dict[str, Any]) -> bool:
     if tool_name == "curtain_calc":
         data = result.get("data", {})
         return data.get("total") is not None
+
+    # 生产进度有结果时发送进度卡（issue #4016 P14 补发射点）
+    # 判据 = **工具契约事实**：`production_progress_query` 成功时保证 `data` 是非空 dict
+    # （空 dict 走 success=False/NOT_FOUND 分支，见该工具第 145 行），且**无加工单也 success=true**
+    # （0%/空工序是合法结果）⇒ 不能用「有工序」当判据，否则「暂无生产进度」空态永远看不到卡
+    # （UI-045 明写「空态（无工序）显示『暂无生产进度』，不显示假进度、不空白」）。
+    if tool_name == "production_progress_query":
+        data = result.get("data", {})
+        return isinstance(data, dict) and len(data) > 0
 
     return False
 
@@ -953,6 +968,10 @@ async def _agent_stream_to_sse(
     _pending_calls: Dict[str, List[dict]] = {}
     # LLM hallucinated <interact> XML block payload (issue #3036 / UI-032)
     last_interactive_payload = None
+    # 本轮**真实发出**的卡型（去重、保序）→ 收尾 save_message(extra_metadata=…) 落
+    # metadata.cards（issue #4016 A15）：展示卡此前完全不落库，导致「哪种卡被真实使用」
+    # 无法统计、裁剪只能靠猜。与 interactive 同形：只在真发卡时写，无卡轮次不写键。
+    emitted_card_types: List[str] = []
     _done_sent = False
     # B 端引用对齐（issue #3009 / case PR-018）：mibao 的 product_list 卡片
     # 延迟到文本生成后按引用过滤再发，避免「文本说 5 件、卡片列 20 件」两层皮
@@ -1106,6 +1125,10 @@ async def _agent_stream_to_sse(
                                             f"type={card_type} data_keys={list(card_data.keys()) if isinstance(card_data, dict) else 'N/A'}"
                                         )
                                         yield SSEEvent.card(card_type, card_data)
+                                        # 登记**真实发出**的卡型（A15 用量统计；放在 yield 之后
+                                        # 使「落库 = 真发出」在代码顺序上也成立）
+                                        if card_type not in emitted_card_types:
+                                            emitted_card_types.append(card_type)
 
                                 # 检查是否来自 interact 工具 → 发送交互式组件事件
                                 # 与 LLM 幻觉 <interact> XML 分支同协议：把载荷写入
@@ -1173,6 +1196,10 @@ async def _agent_stream_to_sse(
                     f"kept={len(kept)} total={len(card_data.get('products') or [])}"
                 )
                 yield SSEEvent.card("product_list", filtered_data)
+                # 只记**真发出**的：被引用对齐丢弃的 pending 卡不算一次使用
+                # （否则用量统计被「发了又被丢掉」的卡虚高，#4016 A15 口径）
+                if "product_list" not in emitted_card_types:
+                    emitted_card_types.append("product_list")
             else:
                 logger.info(
                     f"[chat/card] Dropped product_list card (no product referenced in final text) | "
@@ -1241,6 +1268,8 @@ async def _agent_stream_to_sse(
                     # 工具执行结果元信息（issue #4052）：与 tool_calls 逐项对齐
                     tool_results=tool_results_info if tool_results_info else None,
                     interactive=last_interactive_payload if last_interactive_payload else None,
+                    # 展示卡卡型落库（#4016 A15）：无卡轮次不写键，与 interactive 同形
+                    extra_metadata={"cards": emitted_card_types} if emitted_card_types else None,
                     tenant_id=tenant_id,
                 ),
                 timeout=10.0,
@@ -1440,6 +1469,8 @@ async def _handle_page_request(
     )
 
     async def _page_stream():
+        # 本轮真实发出的卡型 → 落 metadata.cards（#4016 A15，与主流式路径同口径）
+        page_card_types: List[str] = []
         try:
             # 保存用户的翻页消息
             await session_memory.save_message(
@@ -1477,6 +1508,8 @@ async def _handle_page_request(
                 card_type, card_data = _card_payload(tool_name, {"success": True, "data": tool_data})
                 if card_type:
                     yield SSEEvent.card(card_type, card_data)
+                    if card_type not in page_card_types:
+                        page_card_types.append(card_type)
 
                 # 构建新一页的选项列表，触发交互组件
                 page = params.get("page", 1)
@@ -1548,6 +1581,7 @@ async def _handle_page_request(
                     session_id=session_id, role="assistant",
                     content=f"已展示第{params.get('page', '?')}页结果",
                     tenant_id=tenant_id,
+                    extra_metadata={"cards": page_card_types} if page_card_types else None,
                 ),
                 timeout=10.0,
             )
@@ -2129,14 +2163,19 @@ async def get_history(
         # interactive payload + answered flag passthrough (issue #3036 / UI-031)
         interactive_data = None
         interactive_answered = False
+        # 展示卡卡型回传（#4016 A15）：与 interactive 对称 —— 落库的卡型要能**读出来**
+        # 才不是只写不读的空字段（`metadata ? 'cards'` 亦可直接在库上做用量统计）。
+        card_types = None
         if isinstance(metadata, dict):
             interactive_data = metadata.get("interactive")
             interactive_answered = metadata.get("interactive_answered", False) is True
+            card_types = metadata.get("cards")
         elif isinstance(metadata, str):
             try:
                 meta_parsed = json.loads(metadata)
                 interactive_data = meta_parsed.get("interactive")
                 interactive_answered = meta_parsed.get("interactive_answered", False) is True
+                card_types = meta_parsed.get("cards")
             except (json.JSONDecodeError, TypeError):
                 pass
 
@@ -2154,6 +2193,9 @@ async def get_history(
             "interactive": _mask_card_for_customer(interactive_data, current_user)
             if isinstance(interactive_data, dict) else interactive_data,
             "interactive_answered": interactive_answered,
+            # 卡型列表（落库值原样回传；空/缺失 → None，前端按「无卡」处理）
+            "cards": card_types if isinstance(card_types, list) else None,
+            # 卡型列表（落库值原样回传；空/缺失 → None，前端按「无卡」处理）
             "created_at": _format_datetime(msg["created_at"]),
         })
     

@@ -1049,11 +1049,15 @@ class TestGateShell:
         assert UNIMPLEMENTED.exists(), f"未实装清单缺失：{UNIMPLEMENTED}"
         text = UNIMPLEMENTED.read_text(encoding="utf-8")
         for needle in ("CASE-TRUST-BURN-DOWN-SCOPE-CASE-TOUCHING-ONLY",
-                       "CASE-TRUST-UNREGISTERED-VIOLATION-NOT-BLOCKING",
                        "DRIFT-AUDIT-STALE-DIFF-SCOPED"):
             assert needle in text, f"未实装清单缺了 #4031 后的真实残留缺口登记：{needle}"
         assert "CASE-TRUST-BASELINE-PRUNING-ENFORCEMENT" not in text, (
             "旧的「无机械强制，只告警」登记未撤 —— 与实现相反，是假真值"
+        )
+        # #4046 已于本 PR 翻转 fail-closed ⇒ 该条**不得**再留在未实装清单里
+        # （留着就是与实现相反的假真值：读者会以为「未登记违规只报告」）。
+        assert "CASE-TRUST-UNREGISTERED-VIOLATION-NOT-BLOCKING" not in text, (
+            "「未登记违规只报告」的未实装登记未撤 —— 该口径已 fail-closed（#4046）"
         )
 
     def test_gate_blocks_unknown_preclean_without_crashing(self):
@@ -1275,3 +1279,34 @@ class TestRedProofRecord:
         text = REDPROOF.read_text(encoding="utf-8")
         missing = [r["code"] for r in tax.RULES if r["code"] not in text]
         assert not missing, f"红证留档未覆盖这些规则码：{missing}"
+
+    def test_unregistered_violation_blocks(self):
+        """#4046：**未登记**违规（基线里没有、全库判出）必须**阻塞**（不再是「只报告」）。
+
+        红证：把 `blocking` 改回 `bool(stale or dropped or integrity)` ⇒ 本用例红。
+        翻转前置（存量未登记清零）：`#4078` 修 `PR-026` + 本 PR 修 `PR-025`/`PR-027`
+        ⇒ 全库判出 == 清单条目数、未登记 0 条 —— 故此刻翻转不会误伤在飞 PR。
+        """
+        gate = _gate_module()
+        v = tax.judge_case(fixture_pg_013(), catalog=_seed_catalog())
+        assert codes(v), "夹具前提：该用例当下确有违规码"
+        # 基线里**完全没有**这条用例 ⇒ 它判出的所有码都是「未登记」
+        recon = gate.reconcile_baseline({"violations": {}}, {"PG-013": v})
+        assert [u["case_id"] for u in recon["unregistered"]] == ["PG-013"], recon["unregistered"]
+        assert recon["blocking"], (
+            "未登记违规未被阻塞 —— 它会在基线外静默躺着（「不会红的判据」的另一形态）"
+        )
+        # 负例（R2）：全部违规都已如实入账 ⇒ **不得**判成未登记（否则全库永远红）
+        recorded = {"violations": {"PG-013": {"codes": sorted({x["code"] for x in v})}}}
+        recon2 = gate.reconcile_baseline(recorded, {"PG-013": v})
+        assert recon2["unregistered"] == [], recon2["unregistered"]
+
+    def test_report_says_unregistered_blocks(self):
+        """报告口径必须与实现一致（不许留「只报告」这类假真值）。"""
+        gate = _gate_module()
+        v = tax.judge_case(fixture_pg_013(), catalog=_seed_catalog())
+        recon = gate.reconcile_baseline({"violations": {}}, {"PG-013": v})
+        text = gate.render_report([], [], recon["stale"], set(), list(tax.UNIMPLEMENTED),
+                                  recon=recon)
+        assert "未登记违规" in text and "阻塞" in text, text
+        assert "只报告" not in text, "报告仍在说「只报告」= 与实现相反（假真值）"

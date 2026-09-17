@@ -279,8 +279,10 @@ def reconcile_baseline(baseline: dict, violations_by_case: dict[str, list[dict]]
     · `dropped`（阻塞）：`--base` 清单里记着、现在**仍命中**，却被本 PR 从清单删掉 ⇒
       **偷偷新增豁免**（R4）。没有这一条，「只许缩短」就退化成「随便删都算缩短」——
       而 burn-down 预算恰恰在施压让人删条目；
-    · `unregistered`（报告）：全库判出、清单里没有的码（规则集变化 / 用例新增造成）。
-      只报告不阻塞，理由见 `.github/case-trust-unimplemented.json` 的登记。
+    · `unregistered`（**阻塞**，`#4046` 已于本 PR 翻转）：全库判出、清单里没有的码
+      （规则集变化 / 用例新增造成）⇒ 本次修掉，或按 R4 开独立 issue 登记。
+      翻转前的前置条件 =「存量未登记清零」（`#4078` 修 `PR-026` + 本 PR 修 `PR-025`/`PR-027`
+      ⇒ 全库判出 139 == 清单 139）；旧措辞「只报告不阻塞」已撤 —— 与实现相反的注释 = 假真值。
 
     ⚠️ **判定输入必须与 `--regen-baseline` 同源**（`judge_all(cases, catalog)`，**不传**
     `raw_text`）：基线的码是那条路径算出来的，用另一条路径（diff 路径会传 `raw_text`，
@@ -356,7 +358,10 @@ def reconcile_baseline(baseline: dict, violations_by_case: dict[str, list[dict]]
         "judged_cases": judged_cases if judged_cases is not None else len(now),
         "violating_cases": len(now),
         "recorded_entries": len(recorded),
-        "blocking": bool(stale or dropped or integrity),
+        # `unregistered`（#4046，本 PR 翻转）：全库判出、基线里没有的码
+        # ⇒ 阻塞。翻转的前置是「存量未登记清零」（#4078 修 PR-026 + 本 PR 修 PR-025/027
+        # ⇒ 全库 判出 139 == 清单 139，未登记 0 条），故此刻翻转不会误伤任何在飞 PR。
+        "blocking": bool(stale or dropped or unregistered or integrity),
     }
 
 
@@ -692,12 +697,16 @@ def render_report(blocking: list[dict], passed: list[dict], stale: list[dict],
             out.append(f"  · {r}")
     if recon and (recon.get("unregistered") or []):
         out.append("")
-        out.append(f"⚠️ 未登记违规 {len(recon['unregistered'])} 条（**只报告**，机制缺口已如实登记，"
-                   f"见 .github/case-trust-unimplemented.json）：")
+        out.append(f"❌ 未登记违规 {len(recon['unregistered'])} 条（**阻塞** —— 基线里没有、"
+                   f"全库判出）：")
         for u in recon["unregistered"][:10]:
             out.append(f"  · {u['case_id']}：{'、'.join(u['codes'])}")
         if len(recon["unregistered"]) > 10:
             out.append(f"  · …共 {len(recon['unregistered'])} 条")
+        out.append("    怎么改（#4046：本口径已 fail-closed，前置「存量未登记清零」"
+                   "由 #4078 + 本 PR 完成）：**本次把用例修掉**；确属需要入账的新违规，"
+                   "按 R4 开独立 issue 登记后再由裁定决定 —— 未登记一律阻塞，"
+                   "不许静默躺在基线外（「不会红的判据」的另一种形态）。")
     if passed:
         out.append("")
         out.append(f"ℹ️ 存量违规放行 {sum(len(p['violations']) for p in passed)} 条"

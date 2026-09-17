@@ -34,6 +34,38 @@ def get_tool_context() -> Optional[ToolContext]:
     return _current_tool_context.get()
 
 
+# ── 当前**执行域**：本轮模型真正能调用的工具集（issue #4017 / A5）──────────────
+# 事实源只有一处：`base_skill.create_skill_registry(tool_names)` 造出的 skill 工具子集
+#（同一份事实被 `get_langchain_tools()` 拿去告诉模型"你有哪些工具"）。存在理由：
+# `validate_input` 的校验域是全局的（`_VALIDATION_RULES`），执行却是域相关的（skill 外工具
+# 一律 `Tool not found`），两侧从不比对 ⇒ 域外目标校验返回 success=True → 落「已校验待执行」
+# → 确认卡 → 点卡后 `Tool not found` → 空头承诺、订单永不落库（#3976）。
+#
+# 三态语义（适用域声明见 `ValidateInputTool.execute` 的域比对分支）：
+#   · `frozenset[str]`：skill 回合，本轮可执行工具集；· `frozenset()`：**空域** ⇒ 任何目标都
+#   不可执行 ⇒ `validate_input` fail-closed 全拒；· `None`：**无 skill 域**（`api/chat.py` /
+#   `api/internal.py` 直调全局注册表、单测直调）⇒ 域即全局注册表（由已注册检查兜底）——
+#   这是**可读的事实**（调用方不经 skill 回合），不是"读不到"。
+# 作用域 = 当前 asyncio 任务上下文（与 `_current_tool_context` 同族）：每个 skill 回合都重新
+# 登记，故同一任务里后一次执行总是看到本回合的域。
+_current_tool_scope: contextvars.ContextVar[Optional[frozenset]] = contextvars.ContextVar(
+    'current_tool_scope', default=None
+)
+
+
+def set_tool_scope(tool_names=None) -> None:
+    """登记当前 skill 的可执行工具集（调用方：`base_skill.create_skill_registry`）。
+
+    传 `None` 表示"无 skill 域"（非 skill 执行路径 / 测试隔离）。
+    """
+    _current_tool_scope.set(None if tool_names is None else frozenset(tool_names))
+
+
+def get_tool_scope() -> Optional[frozenset]:
+    """当前 skill 的可执行工具集；`None` = 无 skill 域（非 skill 回合）。"""
+    return _current_tool_scope.get()
+
+
 # ── 写操作审计落库（issue #4039）────────────────────────────────────────────
 # 为什么走 HTTP 而不是直连 DB：本仓架构契约 = 工具层一律经 admin-api 访问数据
 # （ai-agent-service 不持有 DB 凭据/租户会话上下文），审计表 audit_logs 在 admin-api 侧。
@@ -257,54 +289,19 @@ class ToolRegistry:
     @staticmethod
     def _build_args_schema(tool: BaseTool) -> Optional[Type[BaseModel]]:
         """从 Tool 的 parameters JSON Schema 动态生成 Pydantic 模型
-        
+
+        **实现单点来源**（issue #4080）：生成逻辑在 `app.tools.base.build_args_schema()`，
+        本方法只做转接（此处曾是三份副本之一）。
+
         Args:
             tool: 原始 Tool
-            
+
         Returns:
             Optional[Type[BaseModel]]: Pydantic 模型类，用作 args_schema
         """
-        props = tool.parameters.get("properties", {})
-        if not props:
-            return None
-        
-        required_fields = set(tool.parameters.get("required", []))
-        
-        # JSON Schema type -> Python type 映射
-        type_map = {
-            "string": str,
-            "integer": int,
-            "number": float,
-            "boolean": bool,
-            "array": list,
-            "object": dict,
-        }
-        
-        field_definitions = {}
-        for field_name, field_schema in props.items():
-            py_type = type_map.get(field_schema.get("type", "string"), str)
-            description = field_schema.get("description", "")
-            default = field_schema.get("default", ...)
-            
-            if field_name in required_fields:
-                field_definitions[field_name] = (
-                    py_type,
-                    Field(description=description),
-                )
-            else:
-                # 可选参数
-                field_definitions[field_name] = (
-                    Optional[py_type],
-                    Field(default=default if default is not ... else None, description=description),
-                )
-        
-        if not field_definitions:
-            return None
-        
-        # 动态创建 Pydantic 模型
-        model_name = f"{tool.name.title().replace('_', '')}Args"
-        return create_model(model_name, **field_definitions)
-    
+        from app.tools.base import build_args_schema
+        return build_args_schema(tool.name, tool.parameters)
+
     def _create_langchain_tool(self, tool: BaseTool) -> Any:
         """创建 LangChain Tool（已废弃，使用 LangChainToolAdapter）
         
@@ -358,6 +355,13 @@ class ToolRegistry:
                 suggestion="当前账号无该工具权限，请改用只读查询或请用户联系管理员开通权限",
             )
         
+        # 入参契约校验（issue #4080 T2）：判据本体在 `BaseTool.validate_args`（单一来源），
+        # 此处是**第二个共享消费点**（与 `base_skill._execute_tool_safe` 同一条）。
+        # 只认 `ToolResult` 实例（MagicMock 替身会自动变出 Mock ⇒ 不得当成契约失败而误拦）
+        _contract_failure = tool.validate_args(kwargs)
+        if isinstance(_contract_failure, ToolResult):
+            return _contract_failure
+
         # 写操作审计日志：记录所有非只读操作的用户/参数/结果
         # 参数脱敏：仅记录结构化字段名，不记录值（避免 phone/address/name 等 PII 入日志）
         is_write = not tool.read_only

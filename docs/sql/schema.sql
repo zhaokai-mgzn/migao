@@ -1519,6 +1519,25 @@ CREATE INDEX IF NOT EXISTS idx_user_memories_importance
 CREATE INDEX IF NOT EXISTS idx_user_memories_agent
     ON user_memories(agent_type, tenant_id, user_id);
 
+-- 写请求幂等键表（V50，issue #4037 / F19）
+-- ai-agent 的写请求带 X-Client-Request-Id，服务端按 (tenant_id, client_request_id) 去重：
+-- 首次执行并把结果快照落库，同键重放不再执行（HTTP 客户端超时 25s < 工具超时 30s ⇒
+-- 「已落库但报失败」的窗口客观存在，LLM 一重试就是重复下单 = 直接资金损失）。
+-- 逐列与 V50__create_client_request_keys.sql 一致（含内联唯一约束与同款诊断索引）。
+CREATE TABLE IF NOT EXISTS client_request_keys (
+    id BIGSERIAL PRIMARY KEY,
+    tenant_id BIGINT NOT NULL,               -- 租户隔离维度：去重键 = (tenant_id, client_request_id)
+    client_request_id VARCHAR(128) NOT NULL, -- 幂等键，取自请求头 X-Client-Request-Id
+    endpoint VARCHAR(128) NOT NULL,          -- 受理端点（如 POST /api/admin/agent/orders），诊断用
+    response_payload JSONB,                  -- 首次执行成功后的响应快照；NULL = 已占位但尚无结果
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    -- 去重判据：同租户同键只允许一行。并发同键时第二个写入者被它挡住
+    -- （INSERT ... ON CONFLICT DO NOTHING → 影响行数 0 ⇒ 判为「重复请求」）。
+    UNIQUE (tenant_id, client_request_id)
+);
+CREATE INDEX IF NOT EXISTS idx_client_request_keys_tenant_created
+    ON client_request_keys (tenant_id, created_at DESC);
+
 -- ================================================
 -- END OF SCHEMA
 -- ================================================

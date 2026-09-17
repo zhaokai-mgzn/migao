@@ -247,7 +247,7 @@ def has_behavior_assertion(case: dict) -> bool:
 
     ⚠️ **裸工具名期望也不算行为层证据**：`expectations: [order_query]`（无 args）只证明
     「该工具被调用过」（runner 里是纯工具名子串匹配）—— 这正是 `PG-013` 的形态
-    （`[order_query, processing_order_generate]` + 8 条 `forbidden_text`），
+    （`[order_query, processing_order_generate]` + `forbidden_text` 若干条），
     功能对了却因 R1 良性措辞判红时，整条用例**没有任何断言**在证明「加工单真生成了」。
     带 args 的期望（`sku_update(price=150)` / `{tool:…, args:…}`）算行为层：它断言参数。
     """
@@ -1017,7 +1017,9 @@ RULES: tuple[dict, ...] = (
             "存量消耗）。实证 #3800（PG-013 重试前置不等价）、#3797（准备型 pre_clean "
             "未复位路径未纳入折叠）。"
         ),
-        "counterexample": "PG-013（写 `processing_order_generate`，无 pre_clean）",
+        "counterexample": ("PG-013（#3800 实证：重试前置不等价 —— 首跑已生成加工单、重试前置已变；"
+                           "#3833 后已补 `pre_clean[processing_order_reset]`，工具亦按 #3917 下线 ⇒ "
+                           "本条为**历史实例**，判据不变）"),
         "implemented": True,
         "fix": (
             "声明 `pre_clean`（`customer_tag_remove` / `product_remove` / `product_dedupe` / "
@@ -1178,20 +1180,6 @@ UNIMPLEMENTED: tuple[dict, ...] = (
         "needs": (
             "要先让「清单条目可被多条 PR 各自删除的小文件化 / 自动重生成」落地，"
             "每-PR 口径才有可安全阻塞的目标（同族于 drift_audit 的全量对账，见下一条 ⇒ **#4045**）。"
-        ),
-    },
-    {
-        "code": "CASE-TRUST-UNREGISTERED-VIOLATION-NOT-BLOCKING",
-        "title": "全库判出的**未登记**违规只报告、不阻塞",
-        "why_not": (
-            "#4031 的全量对账阻塞两个方向：① 记了却不再违规；② `origin/main` 记了、仍违规"
-            "却被删掉。**未登记方向**（规则集变化 / 新用例带来的新码，且不在本次 diff 命中的"
-            "用例上）目前只报告：若改成阻塞，任何规则新增都会让全仓 PR 立刻变红，"
-            "在「全库未登记数 = 0」达成前不具备可安全阻塞的前提（实测存量 3 条：PR-025/026/027）。"
-        ),
-        "needs": (
-            "先把未登记数清到 0（逐条修掉或按 R4 开独立 issue），再把「未登记即阻塞」设为 fail-closed；"
-            "**已开独立 issue 登记：`#4046`**（存量 3 条：PR-025/026/027）；同批登记见 `.github/case-trust-baseline.json` 的 `burn_down` 与 #4031 的 PR 说明。"
         ),
     },
     {

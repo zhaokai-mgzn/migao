@@ -81,10 +81,23 @@ cases:
         args:
           action: list
           status: confirmed
+    # 产出侧断言（issue #4042 下沉）：原 `data_checks: - "data.orders.length >= 0"`
+    # 与 OR-001 是**同一形态**（OR-001 的 merge_log 已把本用例登记为"未处理的同类实例"）：
+    #   ① 长度不可能 < 0 ⇒ 判据的真值与被测行为**无关**（恒真，结构上不可能红）；
+    #   ② 纯散文 `data_checks` **不计分**（计分白名单只认 `success=true` / `error.code=` /
+    #      `未被调用` / `not called`）⇒ 连"被读过一眼"都没有。
+    # ⇒ 升级成**可失败**的机器断言：带 status=confirmed 的列表查询必须**真的返回订单**
+    #    （空列表 / 从未成功调用 ⇒ 判红）。seed 真值可满足：mibao 腿有 3 笔 confirmed 订单
+    #    （`tests/agent_eval/fixtures/mibao_eval_seed.sql` 的 EVAL-MB-ORD-0002/0003/0004）。
+    output_verify:
+      - tool: order_query
+        action: list
+        expect:
+          orders: __nonempty__
     data_checks:
-      - "data.orders.length >= 0"
+      - "订单列表查询必须真的返回数据（机器断言见 output_verify：orders 非空；空列表 / 未成功调用 ⇒ 判红）—— 原 `data.orders.length >= 0` 恒真且不计分，已弃用"
     skip_reason: ""
-    merge_log: "eval O002 + verification 1.2（同义）"
+    merge_log: "eval O002 + verification 1.2（同义）；2026-09-18 下沉（issue #4042，LLM 红例 run 35243351675 首跑指纹 arg_mismatch(order_query,status)）：原 `data.orders.length >= 0` 恒真且不计分（同 OR-001 形态，OR-001 的 merge_log 已登记本用例为未处理的同类实例）⇒ 升级为 output_verify(order_query(action=list) 的 orders 非空)"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_order_query.py"
@@ -805,7 +818,7 @@ cases:
         source: "遮光窗帘"
         expect: 1
     skip_reason: ""
-    merge_log: "2026-09-07 改写（issue #3005，回滚 #2986）：行业加工费按米计价、辅料（罗马圈/四爪钩等）含在按米加工费中——回滚 per_piece 与「每米数量」密度（数量=ceil(面料米数×密度) 与实际车间工艺不符、数量隐藏导致 B 端无法对账），数量改为按计价方式派生且展示（per_meter=面料米数、per_set/fixed=1）；2026-09-14 校准（#3538）：pre_clean 去 price 过滤（关键词去重，原 price 过滤限 100 元、在种子遮光窗帘 ¥168 的独立栈上恒不匹配 = 没去重）；2026-09-15（issue #3835）补 `precondition[product_count_for_keyword: 遮光窗帘, expect: 1]`：本用例按名定位下单对象、`amount_verify` 也按名取接地真值，故「该名字唯一」是可判定的前置 —— 判定跑 run 34908262839 首跑 R1 `product_search(products=2)` + R2 把 PR-016 造的 ¥100 副本选成目标，6 轮被岔路吃掉。声明前置后这类污染折成 `precondition_not_applied(declared:product_count_for_keyword)`，不再伪装成「agent 不下单」；断言（expectations/must_succeed/amount_verify/data_checks）原样未动；2026-09-15（B 端免验证码产品变更，窄跑 34930597539）：四个「123456」轮去掉 `prefer_text: true` —— 该开关会让 harness 无视待答 confirm 卡、把「点确认」轮硬发成验证码文本，而 B 端代客下单已免短信验证码、落单前必须点击确认卡（order_create 在确认卡未被点击时返回 confirmation_required_card_not_clicked，窄跑 R9~R11 逐字复现）。去掉后按 runner 既有 `resolve_auto_respond` 语义：有待答卡就答卡（confirm→点击 confirmValue / form→回填客户信息），无卡且 C 端 customer 角色被索码时才发 123456 兜底（C 端仍需验证码，见 order_create `_needs_sms_verification` role==customer 分支）；断言（expectations/must_succeed/amount_verify/data_checks/precondition）原样未动"
+    merge_log: "2026-09-07 改写（issue #3005，回滚 #2986）：行业加工费按米计价、辅料（罗马圈/四爪钩等）含在按米加工费中——回滚 per_piece 与「每米数量」密度（数量=ceil(面料米数×密度) 与实际车间工艺不符、数量隐藏导致 B 端无法对账），数量改为按计价方式派生且展示（per_meter=面料米数、per_set/fixed=1）；2026-09-14 校准（#3538）：pre_clean 去 price 过滤（关键词去重，原 price 过滤限 100 元、在种子遮光窗帘 ¥168 的独立栈上恒不匹配 = 没去重）；2026-09-15（issue #3835）补 `precondition[product_count_for_keyword: 遮光窗帘, expect: 1]`：本用例按名定位下单对象、`amount_verify` 也按名取接地真值，故「该名字唯一」是可判定的前置 —— 判定跑 run 34908262839 首跑 R1 `product_search(products=2)` + R2 把 PR-016 造的 ¥100 副本选成目标，6 轮被岔路吃掉。声明前置后这类污染折成 `precondition_not_applied(declared:product_count_for_keyword)`，不再伪装成「agent 不下单」；断言（expectations/must_succeed/amount_verify/data_checks）原样未动；2026-09-15（B 端免验证码产品变更，窄跑 34930597539）：四个「123456」轮去掉 `prefer_text: true` —— 该开关会让 harness 无视待答 confirm 卡、把「点确认」轮硬发成验证码文本，而 B 端代客下单已免短信验证码、落单前必须点击确认卡（order_create 在确认卡未被点击时返回 confirmation_required_card_not_clicked，窄跑 R9~R11 逐字复现）。去掉后按 runner 既有 `resolve_auto_respond` 语义：有待答卡就答卡（confirm→点击 confirmValue / form→回填客户信息），无卡且 C 端 customer 角色被索码时才发 123456 兜底（C 端仍需验证码，见 order_create `_needs_sms_verification` role==customer 分支）；断言（expectations/must_succeed/amount_verify/data_checks/precondition）原样未动；2026-09-18 **假红归因**（issue #4042，LLM 红例 run 35243351675 @67db87ae）：本例在 mibao 腿判红（`amount_verify: 单价 150 ≠ 商品库 168`）而 **xiaobu 腿同一条断言判绿**，差异不在 agent —— 同栈的 PR-021（输入「把遮光窗帘的米白色散剪规格改成 150 元」）把**共享夹具** `prod_eval_blackout` 的米白/散剪 SKU 价改成 150 且**无复位**，而本例 `amount_verify` 的接地真值取的是**商品级价**（168，`_fetch_product_price`）⇒ 按所选规格下单（150 = 该 SKU 库价，工具层接地闸门同样放行）反被判成「凭记忆报价」。两层修法：① 断言语义对齐工具闸门（真值按所选规格取 SKU 价，见本 PR 对 `local_runner.check_amount_verify` 的改动）；② 写方无复位属独立缺陷，另开单跟踪（本 PR 不改夹具写入方）"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_order_create_processing_quantity.py"
@@ -881,8 +894,16 @@ cases:
       # 按关键词去重保留最早创建的（= 种子商品，加工项最全），删掉其余副本（同 #3518 先例）。
       - type: product_dedupe
         product_keyword: "遮光窗帘"
+    # 前置自断言（§18.4，同 OR-014/OR-029 先例）：本用例按名定位下单对象，
+    # 故「该名字唯一」是它依赖的可判定前置（`product_dedupe` 先于 capture ⇒ 捕获时恰为 1）。
+    # 出副本时折成 `PRECONDITION_NOT_APPLIED`，不再伪装成「agent 不下单」
+    # （issue #3835 的形态：PR-016 曾造出同名副本 → 目标工具永不执行）。
+    precondition:
+      - type: product_count_for_keyword
+        source: "遮光窗帘"
+        expect: 1
     skip_reason: ""
-    merge_log: "2026-09-08 新增（issue #3029 复盘）：_VALIDATION_RULES[order_create] 平铺结构而 execute 按 tool_rules.get(target_action) 分层读取 → 校验永远空转，手机号/必填空转；修复为 {create: {...}} 分层并对齐 product_manage，补 L2 单测；2026-09-09 校准：补「散剪规格→跳过加工项→确认」三轮（遮光窗帘有散剪/整卷需澄清售卖方式，单轮到不了 validate_input；probe 实证 4 轮走通）；2026-09-14 校准（#3538）：pre_clean 去 price 过滤（关键词去重，原 price 过滤限 100 元、在种子遮光窗帘 ¥168 的独立栈上恒不匹配 = 没去重）。2026-09-14 校准（#3544，REPORT §2.1）：补颜色应答轮——原 4 轮台词从未回答 agent 追问的「颜色」（三个 run 行为签名同构：R-verify/R1 四轮全卡颜色、R2 的 R3/R4 卡颜色），轮次用尽即停在待确认态；R3 改协作答卡轮（choice→首项=米白，无卡发含颜色原文），并补 2 轮收尾答卡余量（R2 实测 R4 只发 confirm 卡、无轮去点 → order_create 永不发生）。expectations / order_before / required_args 保持不动（REPORT §2.1 明确「保持不动」，未放宽）；2026-09-17 校准（issue #4014 B3）：补效果层断言 must_succeed[order_create]（本用例守护校验链，此前无人证明链路真的走到了写成功；order_before/required_args 均只覆盖「调用顺序/参数齐全」）；expectations / order_before / required_args / data_checks 保持不动"
+    merge_log: "2026-09-08 新增（issue #3029 复盘）：_VALIDATION_RULES[order_create] 平铺结构而 execute 按 tool_rules.get(target_action) 分层读取 → 校验永远空转，手机号/必填空转；修复为 {create: {...}} 分层并对齐 product_manage，补 L2 单测；2026-09-09 校准：补「散剪规格→跳过加工项→确认」三轮（遮光窗帘有散剪/整卷需澄清售卖方式，单轮到不了 validate_input；probe 实证 4 轮走通）；2026-09-14 校准（#3538）：pre_clean 去 price 过滤（关键词去重，原 price 过滤限 100 元、在种子遮光窗帘 ¥168 的独立栈上恒不匹配 = 没去重）。2026-09-14 校准（#3544，REPORT §2.1）：补颜色应答轮——原 4 轮台词从未回答 agent 追问的「颜色」（三个 run 行为签名同构：R-verify/R1 四轮全卡颜色、R2 的 R3/R4 卡颜色），轮次用尽即停在待确认态；R3 改协作答卡轮（choice→首项=米白，无卡发含颜色原文），并补 2 轮收尾答卡余量（R2 实测 R4 只发 confirm 卡、无轮去点 → order_create 永不发生）。expectations / order_before / required_args 保持不动（REPORT §2.1 明确「保持不动」，未放宽）；2026-09-17 校准（issue #4014 B3）：补效果层断言 must_succeed[order_create]（本用例守护校验链，此前无人证明链路真的走到了写成功；order_before/required_args 均只覆盖「调用顺序/参数齐全」）；expectations / order_before / required_args / data_checks 保持不动；2026-09-18 补前置自断言（issue #4046 的 OR-* 优先档 burn-down）：precondition[product_count_for_keyword 遮光窗帘 expect=1]（同 OR-014/OR-029；断言原样未动）"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_validate_input.py"
@@ -933,8 +954,17 @@ cases:
       - type: product_dedupe
         product_keyword: "2699系列雪尼尔窗帘面料"
         price: 23.8
+    # 前置自断言（§18.4，同 OR-009/OR-014/OR-015(已由 #4091 补)/OR-021 先例）：本用例按**名字**
+    # 定位下单对象（「2699系列雪尼尔窗帘面料」），故「该名字在种子栈里唯一」是可判定的前置 ——
+    # 别人造出同名副本时折成 `precondition_not_applied`，不再伪装成「agent 不会下单」。
+    # 依据：`pre_clean.product_dedupe` 先于 capture 执行 ⇒ 捕获时恰为 1；OR-021 已声明**同一
+    # source + 同一 expect**（同商品），本条声明形状与它逐字一致。
+    precondition:
+      - type: product_count_for_keyword
+        source: "2699系列雪尼尔窗帘面料"
+        expect: 1
     skip_reason: ""
-    merge_log: "2026-09-08 新增（issue #3033 复盘 sess_7f27137647e14b1e）：A5 confirm 卡在加工项询问前弹出、金额 ¥238 不含加工费，用户质问后才补 A6；order.md 加工项段从被动式改主动式 + EXAMPLES 例 2 补加工项环节"
+    merge_log: "2026-09-08 新增（issue #3033 复盘 sess_7f27137647e14b1e）：A5 confirm 卡在加工项询问前弹出、金额 ¥238 不含加工费，用户质问后才补 A6；order.md 加工项段从被动式改主动式 + EXAMPLES 例 2 补加工项环节；2026-09-18 补前置自断言（#4082 的「改用例 PR」burn-down 硬门禁要求净缩 ≥1 条；先例 = #4091 给 OR-015 补的同款）：precondition[product_count_for_keyword「2699系列雪尼尔窗帘面料」expect=1]（按名定位下单对象，pre_clean 已按同关键词去重 ⇒ 捕获时恰为 1）；expectations/data_checks/order_before/pre_clean **原样未动**（未放宽、未删任何断言）"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_prompt_snapshots.py"
@@ -1983,8 +2013,32 @@ cases:
     user_inputs:
       - "录订单 张三（13800138000）｜ 2699系列雪尼尔窗帘面料 · 2699-03暖米色 · 散剪 · 2.8米 · 10 米 ｜ 加工项：纳米圈打孔、韩式波浪折边、高温定型"
       - "1. 2699系列雪尼尔窗帘面料｜¥23.8/米｜库存 1000"
-      - '{"auto_select": true}'
-      - '{"repeat_until": {"tool_called": "order_create", "max": 8}, "fallback": "确认下单", "form_values": {"customer_name": "张三", "customer_phone": "13800138000", "customer_address": "浙江省杭州市西湖区文三路1号1幢101室", "color": "2699-03暖米色", "colorName": "2699-03暖米色"}}'
+      # ⚠️ 控制轮必须是 **dict（YAML block style）**：runner 只把 dict 轮解释成控制轮
+      # （`isinstance(msg, dict)` → auto_select / auto_respond / repeat_until 分支），
+      # 字符串轮一律当**纯文本**发给 agent。原先这两轮写成 JSON 字符串
+      # （`'{"auto_select": true}'` / `'{"repeat_until": …}'`）⇒ 控制语义**静默失效**：
+      # harness 把字面量 JSON 文本当顾客消息发出去、卡片无人作答 ⇒ `order_create` 永不执行
+      # ⇒ 恒红，且归因指向"agent 不下单"（issue #4042 复核发现；静态守卫见
+      # `tests/unit_ci_workflows/test_eval_auto_respond_l0.py` 的
+      # `test_no_control_turn_is_written_as_json_string`）。
+      - auto_select: true
+      - repeat_until:
+          tool_called: order_create
+          max: 8
+        fallback: "确认下单"
+        # `code`（issue #3430 的 repeat_until 契约 + `test_xiaobu_case_set` 的
+        # `test_write_cases_using_repeat_until_supply_code` 守卫）：断言了需验证码的写工具
+        # （order_create）的 repeat_until 用例必须能**被问码就供码** —— 否则 agent 真索码时
+        # 无码可给、流程仍卡死。同 OR-028（persona: mibao）先例。B 端代客下单本免验证码
+        # （`_needs_sms_verification` 只对 role==customer 生效），此声明是"合作型顾客"的
+        # 兜底：真被索码时给 dev/CI 栈的 bypass 码（SMS_BYPASS_CODE=123456）。
+        code: "123456"
+        form_values:
+          customer_name: "张三"
+          customer_phone: "13800138000"
+          customer_address: "浙江省杭州市西湖区文三路1号1幢101室"
+          color: "2699-03暖米色"
+          colorName: "2699-03暖米色"
     namespaces:
       - "customer_phone:13800138000"
       - "product_name:2699系列雪尼尔窗帘面料"
@@ -2016,7 +2070,7 @@ cases:
         product_keyword: "2699系列雪尼尔窗帘面料"
         price: 23.8
     skip_reason: ""
-    merge_log: "2026-09-17 新增（issue #3976，线上实证 sess_202d55d49a254a10）：首条消息同时含商品细节与下单指令 → 意图路由判 product_inquiry → 整条 validate/confirm 链在 product skill 内完成，确认卡点击后模型调 order_create 撞 Tool not found（product 注册表无此工具）→ 空头承诺 + 订单永不落库。修复（route_by_intent 答卡轮归属 skill 迁移 + tool_not_found 兜底 relock + 8.4 收口扩展 B 端 order_create + metadata 假证据修复）后，确认轮应路由到 order skill 真实下单。2026-09-17 CI 门禁校准：B 端专属用例补 persona: mibao（C 端缺 sms_code 轮且 fixture 无该商品）、补 must_succeed[order_create]（效果层断言）与 precondition[product_count_for_keyword]（同名商品唯一前置，同 OR-008/OR-006 #3835 先例）。2026-09-17 夹具对齐（issue #4015，run 35233821582 @54e8fe9d 归因）：罐头输入与 tests/agent_eval/fixtures/mibao_eval_seed.sql 事实矛盾（规格 2699-06 蓝灰色 / 库存 9599 / 加工项 穿杆孔加工 ¥4/米 与 包边处理 ¥10/米 三项在 seed 里 0 命中；自称「已有客户」的赵凯 13456000919 亦不在 seed）⇒ 合格 agent 如实指出「对不上」并停在澄清，链路物理上走不完（恒红）。逐项改为 seed 真值（2699-03暖米色 / 库存 1000 / 纳米圈打孔 ¥8+韩式波浪折边 ¥12+高温定型 ¥10 / 张三 13800138000），并把后两轮改成 auto_select + repeat_until(tool_called=order_create) 协作轮（同 OR-016/OR-021 先例：卡内容由 LLM 动态生成，静态轮次表对不上就卡死）——断言（expectations / must_succeed / order_before / precondition）一律不放宽"
+    merge_log: "2026-09-17 新增（issue #3976，线上实证 sess_202d55d49a254a10）：首条消息同时含商品细节与下单指令 → 意图路由判 product_inquiry → 整条 validate/confirm 链在 product skill 内完成，确认卡点击后模型调 order_create 撞 Tool not found（product 注册表无此工具）→ 空头承诺 + 订单永不落库。修复（route_by_intent 答卡轮归属 skill 迁移 + tool_not_found 兜底 relock + 8.4 收口扩展 B 端 order_create + metadata 假证据修复）后，确认轮应路由到 order skill 真实下单。2026-09-17 CI 门禁校准：B 端专属用例补 persona: mibao（C 端缺 sms_code 轮且 fixture 无该商品）、补 must_succeed[order_create]（效果层断言）与 precondition[product_count_for_keyword]（同名商品唯一前置，同 OR-008/OR-006 #3835 先例）。2026-09-17 夹具对齐（issue #4015，run 35233821582 @54e8fe9d 归因）：罐头输入与 tests/agent_eval/fixtures/mibao_eval_seed.sql 事实矛盾（规格 2699-06 蓝灰色 / 库存 9599 / 加工项 穿杆孔加工 ¥4/米 与 包边处理 ¥10/米 三项在 seed 里 0 命中；自称「已有客户」的赵凯 13456000919 亦不在 seed）⇒ 合格 agent 如实指出「对不上」并停在澄清，链路物理上走不完（恒红）。逐项改为 seed 真值（2699-03暖米色 / 库存 1000 / 纳米圈打孔 ¥8+韩式波浪折边 ¥12+高温定型 ¥10 / 张三 13800138000），并把后两轮改成 auto_select + repeat_until(tool_called=order_create) 协作轮（同 OR-016/OR-021 先例：卡内容由 LLM 动态生成，静态轮次表对不上就卡死）——断言（expectations / must_succeed / order_before / precondition）一律不放宽；2026-09-18 复核修正（issue #4042）：上面那次改写的**后两轮写法无效** —— 它们是 JSON **字符串**（`'{\"auto_select\": true}'` / `'{\"repeat_until\": …}'`），而 runner 只把 **dict** 轮当控制轮（非 dict 一律按纯文本发送，见 `run_case` 的 `isinstance(msg, dict)` 分支），故 auto_select/repeat_until 两个声明**静默失效**、顾客消息变成字面量 JSON、卡片无人作答 ⇒ `order_create` 永不执行（恒红且归因错人）。已改为 YAML block style 的 dict 轮；并补静态守卫（`tests/unit_ci_workflows/test_eval_auto_respond_l0.py::test_no_control_turn_is_written_as_json_string`）防复发"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_graph_nodes.py"
@@ -2025,4 +2079,191 @@ cases:
         - "backend/ai-agent-service/tests/test_order_price_grounding.py"
       ci:
         - agent-eval.yml
+      verifies: []
+
+  - id: OR-030
+    legacy_id: ""
+    title: "B 端校验失败后禁止写 - 未合法化的下单（非法手机号）不得落单（S2 #4073 代码闸门）"
+    domains:
+      - order
+      - chat
+    persona: mibao
+    tier: normal
+    tags:
+      - order_create
+      - validate_input
+      - rejection
+      - defense
+    truths_ref:
+      - order.create-flow
+      - ai-chat.confirm-required
+    # ── 本批行为变更（S2 = #4073，main @b6327160）的 B 端覆盖（#4082 §14）──
+    # 机制：`validate_input` 失败**也留痕**（`VALIDATION_FAILURE_KEY`）→ 写调用点
+    # `react_turn._run_one_tool`（共享执行路径）在确认门禁**之外、之前**拦下同 `tool::action`
+    # 的写调用（`validation_failed_write_blocked` + 可执行 suggestion）→ 只有该目标一次
+    # **成功**的 `validate_input` 才清除留痕并放行（= 补参重校 → 放行）。
+    # 本条是 B 端（米宝）的**拒绝半**，与 C 端 OR-026（同族，走 db_verify 口径）对称。
+    #
+    # ── 本用例机器判什么 / **不**判什么（照实写；禁止"看起来断言了、实际不执行"）──
+    # 机器判（全部经 runner 现有能力，逐条可红）：
+    #   ① `expectations[validate_input]`（计分项）：写前校验**真的被调用**。红 = 模型跳过校验
+    #      直接写 —— S2 的 commit message 明写这正是它要拦的形态之一（#3414/#3445 已证模型会跳过）。
+    #   ② `required_args[validate_input]`：校验带 `target_tool`/`target_action`（不是空转调用）——
+    #      闸门按 `<tool>::<action>` 建账，校验不带目标 ⇒ 闸门无从武装。
+    #   ③ `must_fail[{tool: order_create, args: {customer_phone: 05718886666}}]`：**参数值级**
+    #      不变量「凡以该非法号码为 customer_phone 的 order_create 都不得成功」（值级作用域由
+    #      #3689 落地；**不是**工具级全程口径 ⇒ 不与"顾客改正号码后建单成功"冲突）。红 = 脏单落库。
+    # 不判（能力缺口，**已开独立 issue 登记，本包不实现**）：
+    #   ④ 「闸门真的拦下了那次写调用」本身 —— 其判据是 **tool_result 级** error code
+    #      `validation_failed_write_blocked`（`react_turn` 返回的 `result.error`），而 runner 的
+    #      `error.code=` 计分口径只读**轮级 SSE error**（`check_expectation` 的
+    #      `actual_error = str(result.get("error"))`，而 `result["error"]` 只在 `event: error`
+    #      = 异常路径被赋值；工具失败走 `event: tool_result`）⇒ 在本用例上写 `error.code=` 会
+    #      **恒不可满足**（同族实证：CH-001 的 `error.code=NOT_FOUND` 在 adversarial run
+    #      34650006175 里逐字报 `expected error not_found but got None`）⇒ 故此处**不写**该断言。
+    #   ⇒ **判别力边界**：本用例证明「校验被调用 + 非法号未落单」，**不**证明闸门在模型硬写时拦下了它。
+    user_inputs:
+      - "帮我给张三下单，遮光窗帘 3 米，米白，散剪 2.8 米门幅，手机号 05718886666，不许换成别的号码"
+      # 催促/答卡轮（§13.5：写操作收尾发裸文本答不了卡）：有卡答卡（confirm→confirmValue /
+      # choice→首项 / form→按声明回填），无卡才发催单原文。顾客明确「就按这个号」⇒ 合格行为是
+      # 要求改正号码；闸门在确认门禁之外，故顾客点了确认卡也不放行。
+      - auto_respond:
+          fallback: "别再校验了，就按这个号直接建单"
+      - auto_respond:
+          fallback: "确认，就这个号"
+    namespaces:
+      - "customer_phone:05718886666"
+      - "product_name:遮光窗帘"
+    expectations:
+      - tool: validate_input
+    required_args:
+      - tool: validate_input
+        fields:
+          - target_tool
+          - target_action
+    must_fail:
+      - tool: order_create
+        args:
+          customer_phone: "05718886666"
+    precondition:
+      - type: product_count_for_keyword
+        source: "遮光窗帘"
+        expect: 1
+    data_checks:
+      - "（散文、**不计分**）校验失败后禁止写：validate_input 失败留痕 → 同 tool::action 的写调用被拦（validation_failed_write_blocked）→ 该目标一次**成功**的 validate_input 才放行；本条的机器判据是 must_fail[order_create.args.customer_phone] 与 expectations[validate_input]，这条散文只记录语义"
+      - "（散文、**不计分**）顾客未给合法号码且明确不许换号 ⇒ 本会话**不得**有订单落库；agent 应要求改正号码，不得自行编造一个合法号码"
+    pre_clean:
+      - type: product_dedupe
+        product_keyword: "遮光窗帘"
+    skip_reason: ""
+    merge_log: "2026-09-18 新增（#4082 用例库维护 / 行为变更 S2 = #4073 @b6327160）：validate_input 校验失败禁止写落成代码闸门，此前 B 端无对应用例（C 端拒绝半见 OR-026）。机器判据三条：expectations[validate_input]（写前校验真的执行）+ required_args[validate_input: target_tool/target_action]（闸门按 tool::action 建账，校验带目标才武装）+ must_fail[order_create.args.customer_phone=05718886666]（参数值级：非法号不得落单；值级作用域由 #3689 落地）。**能力边界如实登记**：现有 runner 无法断言 tool_result 级 error code（error.code= 只读轮级 SSE error），故本用例**不**证明闸门拦下了写 —— 该能力缺口已开独立 issue，未写任何「看起来断言了」的假断言。pre_clean/namespaces 与 OR-015 同源（同商品 + 同 pre_clean 关键词）；precondition[product_count_for_keyword 遮光窗帘 expect=1] 为真前置自断言"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_validation_failure_write_gate.py"
+      ci:
+        - agent-eval.yml
+      verifies: []
+
+  # ── 冒烟档的下单主链路（用户裁定 2 / issue #4095，F17）──────────────────────
+  # 为什么新增：冒烟档 9 条用例全是只读，订单域唯一一条 OR-001 是**列表查询** ⇒
+  # 「校验 → 确认卡 → order_create 真实落库」这条主链路在冒烟档**零覆盖**。
+  # 设计取舍（冒烟档 = 门禁级、快）：
+  #   · persona 固定 mibao：B 端代客下单**免短信验证码**（order_create 的
+  #     `_needs_sms_verification` 只对 role==customer 生效）⇒ 链路最短；
+  #   · 轮次最少化：**一句话给全**（商品/规格/数量/客户/地址），确认卡与可能的追问
+  #     交给 `repeat_until` 协作轮（有卡答卡 / 被问码供码 / 无卡发 fallback），
+  #     目标工具成功即跳过余轮 —— 不写静态轮次表（LLM 动态卡序列对不上会卡死，#3483）。
+  #   · 断言只留「成了没有」这条主线：must_succeed（写成功）+ db_verify（明细与手机号
+  #     落库）+ order_before（确认卡先于写，防 #3976 的"空头承诺"回归）；
+  #     金额/加工项细则由 normal 档的 OR-011/OR-014 承担，不在冒烟档重复。
+  - id: OR-031
+    legacy_id: ""
+    title: "下单闭环（冒烟档）- 一句话给定商品/规格/客户 ⇒ 确认卡点击后必须真实落库"
+    domains:
+      - order
+    tier: smoke
+    persona: mibao
+    tags:
+      - order_create
+      - smoke
+      - write
+    truths_ref:
+      - order.create-flow
+      - order.states
+    user_inputs:
+      - "给我下单：遮光窗帘，米白｜散剪｜2.8米门幅，3 米；客户张三 13800138000，收货地址浙江省杭州市西湖区文三路1号1幢101室"
+      - repeat_until:
+          tool_called: order_create
+          max: 3
+        # B 端免验证码；声明 `code` 是「合作型顾客」兜底（真被索码就供 dev/CI 栈的
+        # bypass 码 123456）—— 也是 `test_write_cases_using_repeat_until_supply_code`
+        # 守卫的契约要求（断言了 order_create 的 repeat_until 用例必须能供码）。
+        code: "123456"
+        fallback: "确认下单"
+        form_values:
+          customer_name: "张三"
+          customer_phone: "13800138000"
+          customer_address: "浙江省杭州市西湖区文三路1号1幢101室"
+          color: "米白"
+          colorName: "米白"
+    # 命名空间（#3781）：本用例往**共享商品名**与客户手机号上写（下单消耗库存/建单），
+    # 与同名商品的建/删/调价用例、同手机号的订单用例自动互斥（≥2 声明者才进串行道）。
+    namespaces:
+      - "product_name:遮光窗帘"
+      - "customer_phone:13800138000"
+    expectations:
+      - tool: interact
+        args:
+          component: confirm
+      - tool: order_create
+    must_succeed:
+      - tool: order_create
+    order_before:
+      - "interact[confirm] before order_create"
+    required_args:
+      - tool: order_create
+        fields:
+          - customer_phone
+          - items
+    db_verify:
+      - fetch: order_items
+        source: order_create
+        expect_products:
+          - "遮光窗帘"
+        expect_quantities:
+          遮光窗帘: 3
+      - fetch: order_phone
+        source: order_create
+        expect_phone: "13800138000"
+    precondition:
+      - type: product_count_for_keyword
+        source: "遮光窗帘"
+        expect: 1
+    data_checks:
+      - "（散文、**不计分**）校验失败后禁止写：validate_input 失败留痕 → 同 tool::action 的写调用被拦（validation_failed_write_blocked）→ 该目标一次**成功**的 validate_input 才放行；本条的机器判据是 must_fail[order_create.args.customer_phone] 与 expectations[validate_input]，这条散文只记录语义"
+      - "（散文、**不计分**）顾客未给合法号码且明确不许换号 ⇒ 本会话**不得**有订单落库；agent 应要求改正号码，不得自行编造一个合法号码"
+    pre_clean:
+      - type: product_dedupe
+        product_keyword: "遮光窗帘"
+    skip_reason: ""
+    merge_log: "2026-09-18 新增（#4082 用例库维护 / 行为变更 S2 = #4073 @b6327160）：validate_input 校验失败禁止写落成代码闸门，此前 B 端无对应用例（C 端拒绝半见 OR-026）。机器判据三条：expectations[validate_input]（写前校验真的执行）+ required_args[validate_input: target_tool/target_action]（闸门按 tool::action 建账，校验带目标才武装）+ must_fail[order_create.args.customer_phone=05718886666]（参数值级：非法号不得落单；值级作用域由 #3689 落地）。**能力边界如实登记**：现有 runner 无法断言 tool_result 级 error code（error.code= 只读轮级 SSE error），故本用例**不**证明闸门拦下了写 —— 该能力缺口已开独立 issue，未写任何「看起来断言了」的假断言。pre_clean/namespaces 与 OR-015 同源（同商品 + 同 pre_clean 关键词）；precondition[product_count_for_keyword 遮光窗帘 expect=1] 为真前置自断言"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_validation_failure_write_gate.py"
+      ci:
+        - agent-eval.yml
+    pre_clean:
+      - type: product_dedupe
+        product_keyword: "遮光窗帘"
+    data_checks:
+      - "确认卡点击后 order_create 必须真实执行并落库（机器断言见 must_succeed + db_verify[order_items/order_phone]：明细「遮光窗帘」×3 + 落库手机号 13800138000）—— 冒烟档只验主链路「成了没有」，金额/加工项细则由 normal 档承担"
+      - "确认卡必须先于写操作下发（order_before[interact[confirm] before order_create]）：#3976 线上实证的『空头承诺』形态（模型说已发卡/这就提交，实际无卡可点、订单永不落库）在冒烟档即判红"
+    skip_reason: ""
+    merge_log: "2026-09-18 新增（用户裁定 2 / F17 / issue #4095）：冒烟档补下单用例 —— 此前冒烟档 9 条全只读、订单域唯一 OR-001 是列表查询 ⇒ 主链路零覆盖。persona=mibao（代客下单免验证码，链路最短）；一句话给全 + repeat_until 协作轮（有卡答卡，成功即停）；断言 = must_succeed[order_create] + db_verify[order_items/order_phone] + order_before[interact[confirm] before order_create] + required_args；自清理 product_dedupe + precondition[product_count_for_keyword expect=1] + namespaces（商品名/手机号）。未新增任何自动触发（裁定 2′/4′）。"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_order_create_tool_price_grounding.py"
+        - "backend/ai-agent-service/tests/test_order_create_processing_quantity.py"
+      ci:
+        - xiaobu-acceptance.yml
       verifies: []

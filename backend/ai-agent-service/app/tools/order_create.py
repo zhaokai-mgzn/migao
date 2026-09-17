@@ -881,12 +881,15 @@ class OrderCreateTool(BaseTool):
         返回拦截 ToolResult（error=unit_price_not_grounded / 配置错误级拒绝），
         全部行与库价一致（或非本工具校验域的加工项）时返回 None。
         """
-        # 复用 base_skill 的判据纯函数（含 SKU 匹配与回填话术），工具层只负责
+        # 复用**中性模块**的判据纯函数（含 SKU 匹配与回填话术），工具层只负责
         # 「从商品库解析权威快照」——同一判据单点，避免两处口径漂移。
         # 函数级 import：tools 是叶子模块，避免模块加载顺序依赖。
-        from app.graph.skills.base_skill import unit_price_grounding_error
-        from app.graph.skills.base_skill import _match_sku_price
-        from app.graph.skills.base_skill import _library_unit_price_grounded
+        # ⚠️ 判据定义在 `app/utils/sku_price.py`（中性层）：工具层**不得**反向 import
+        # skill 层（`app.graph.skills.base_skill`）的私有符号（issue #4057 S7）；
+        # 守卫见 tests/test_utils_sku_price.py。
+        from app.utils.sku_price import unit_price_grounding_error
+        from app.utils.sku_price import _match_sku_price
+        from app.utils.sku_price import _library_unit_price_grounded
 
         client = get_admin_api_client()
         # 同单多行同商品只查一次（grounded 快照按 product_id 或 product_name 缓存）
@@ -1107,6 +1110,7 @@ class OrderCreateTool(BaseTool):
                 error="缺少商品明细",
                 message="创建订单时必须提供商品明细列表（items）",
                 suggestion="请提供至少一件商品的信息（名称、数量、单价）",
+                missing_params=["items"],
             )
 
         # 校验每个商品项
@@ -1134,6 +1138,11 @@ class OrderCreateTool(BaseTool):
             if _bounds_reject is not None:
                 return _bounds_reject
 
+        # ── 缺参的**结构化**形态（issue #4080 T3）──
+        # 下面 4 个失败点（缺少商品明细 / 缺少短信验证码 / 验证码格式无效 / 验证码错误或已过期）
+        # 此前是「缺哪个参数」判据的**唯一生产者**，而消费端靠**中文错误原文子串**反推
+        # （`WRITE_INPUT_ERROR_PARAMS` + `key in text`）⇒ 错误文案改一个字，判据静默失效。
+        # 现在每个失败点**直接带上 `missing_params`**，消费端只读结构化字段。
         # Gap-1 安全加固: SMS 验证码校验（仅 customer 角色需要）。
         # ⚠️ 顺序铁律（issue #3586）：纯本地的**确定性**校验（明细格式/数量/金额）必须排在
         # SMS 之前 —— 前者零成本零副作用，后者要读 Redis；参数本身就非法时不该先产生
@@ -1145,6 +1154,7 @@ class OrderCreateTool(BaseTool):
                     error="缺少短信验证码",
                     message="为了您的账户安全，创建订单前需要验证手机号。请输入短信验证码",
                     suggestion="请先请求发送短信验证码到您的手机，然后提供收到的验证码",
+                    missing_params=["sms_code"],
                 )
             if not _OTP_VALID_PATTERN.match(sms_code):
                 return ToolResult(
@@ -1152,6 +1162,7 @@ class OrderCreateTool(BaseTool):
                     error="验证码格式无效",
                     message="短信验证码为4-6位数字，请检查后重新输入",
                     suggestion="请输入您收到的4-6位数字验证码",
+                    missing_params=["sms_code"],
                 )
             verified = await self._verify_sms_code(
                 phone=customer_phone,
@@ -1164,6 +1175,7 @@ class OrderCreateTool(BaseTool):
                     error="验证码错误或已过期",
                     message="短信验证码错误或已过期，请重新获取验证码",
                     suggestion="请重新请求发送短信验证码，并在5分钟内完成验证",
+                    missing_params=["sms_code"],
                 )
 
         # ── 同一张单里出现**完全相同的商品行** → fail-closed（issue #3392，DB 实证）──

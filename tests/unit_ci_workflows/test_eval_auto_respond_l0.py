@@ -1,4 +1,4 @@
-# case_ids: OR-014, OR-022, OR-024, CR-003, PR-019, OR-023, PR-016, OR-026
+# case_ids: OR-014, OR-022, OR-024, CR-003, PR-019, OR-023, PR-016, OR-026, OR-029
 """**L0** 守卫：`resolve_auto_respond` 的载荷窗口 + `resolve_repeat_turn` 的载荷饿死 + 形状不兼容签名。
 
 ## 为什么单列一个 L0 文件（issue #3804 验收标准 2）
@@ -435,3 +435,51 @@ def test_s1_family_replay_ledger():
     assert len(ledger) == len(S1_FAMILY), ledger
 
 
+
+# ── ⑦ 控制轮必须写成 dict（YAML block style），不得写成 JSON 字符串（issue #4042）────
+# 病根（实证 OR-029，**#4053 的修法静默失效**）：`run_case` 只把 dict 轮当控制轮
+# （`isinstance(msg, dict)` → auto_select / auto_respond / repeat_until / new_session 分支），
+# **字符串轮一律当纯文本**发给 agent ⇒ 把控制轮写成 YAML 单引号 JSON 标量
+# （`'{"auto_select": true}'`）时，harness 会把字面量 JSON 当顾客消息发出去、
+# 卡片无人作答 ⇒ 目标写工具永不执行 ⇒ 用例恒红，且归因写成"agent 不写操作"。
+# 这一格属 R5「声明无消费」的静默失效族：**没有任何东西会变红**，故必须有机检查。
+
+def test_no_control_turn_is_written_as_json_string():
+    """用例库里不得有"写成 JSON 字符串的控制轮"（红证：改回 OR-029 的旧写法 ⇒ 本用例红）。"""
+    offenders = []
+    for case in _cases():
+        for msg in lr.check_control_turns_declared(getattr(case, "user_inputs", None) or []):
+            offenders.append(f"{getattr(case, 'id', '?')}: {msg}")
+    assert offenders == [], (
+        "以下用例把控制轮写成了 JSON 字符串 —— runner 会当纯文本发给 agent，"
+        "声明静默失效（卡片无人作答、目标工具永不执行）：\n" + "\n".join(offenders))
+
+
+def test_json_string_control_turn_variant_is_red():
+    """反向守卫（红证本体）：把控制轮写回 JSON 字符串形态 ⇒ 判据必须报出来。
+
+    形态取自 OR-029 的**修前原文**（#4053 合并时的写法，issue #4042 复核发现其无效）。
+    """
+    legacy = [
+        "录订单 张三（13800138000）｜ 2699系列雪尼尔窗帘面料 · 2699-03暖米色",
+        "1. 2699系列雪尼尔窗帘面料｜¥23.8/米｜库存 1000",
+        '{"auto_select": true}',
+        '{"repeat_until": {"tool_called": "order_create", "max": 8}, "fallback": "确认下单"}',
+    ]
+    issues = lr.check_control_turns_declared(legacy)
+    assert len(issues) == 2, issues
+    assert all("控制轮" in i for i in issues), issues
+    # 轮次序号必须点得出来（工具/断言要能定位到具体哪一轮）
+    assert "第 3 轮" in issues[0] and "第 4 轮" in issues[1], issues
+
+
+def test_customer_json_text_is_not_flagged_as_control_turn():
+    """负例（R2：不得拦掉原本合法的输入）：顾客真的发一段 JSON 文本不是控制轮 ⇒ 不得报。
+
+    判据只看**控制轮专属键**（auto_select/auto_respond/repeat_until/…），
+    普通 JSON 载荷（键集不在表内）与带 `text` 的 dict 轮都不受影响。
+    """
+    assert lr.check_control_turns_declared(['{"order":"A123"}', '{"a": 1, "b": 2}',
+                                            '{"color":"米白","qty":3}']) == []
+    assert lr.check_control_turns_declared([{"auto_select": True}, "普通文本",
+                                            {"text": "看看这个"}]) == []
