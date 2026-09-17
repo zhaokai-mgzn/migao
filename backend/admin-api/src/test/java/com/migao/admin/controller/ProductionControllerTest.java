@@ -13,6 +13,8 @@ import com.migao.admin.mapper.ProcessingOrderMapper;
 import com.migao.admin.mapper.ProcessingPositionOperationMapper;
 import com.migao.admin.mapper.ProductionWorkLogMapper;
 import com.migao.admin.security.RequirePermission;
+import com.migao.admin.service.ClientRequestIdService;
+import com.migao.admin.service.ProductionOperationQueryService;
 import com.migao.admin.service.ProductionService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -29,8 +31,10 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.matchesPattern;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -71,15 +75,26 @@ class ProductionControllerTest {
     private ProductionWorkLogMapper workLogMapper;
     @Mock
     private OrderMapper orderMapper;
+    @Mock
+    private ClientRequestIdService clientRequestIdService;
+    @Mock
+    private ProductionOperationQueryService productionOperationQueryService;
 
     @BeforeEach
     void setUp() {
         TenantContext.setTenantId(TENANT);
         ProductionService service = new ProductionService(
-                processingOrderMapper, positionOperationMapper, workLogMapper, orderMapper);
-        mockMvc = MockMvcBuilders.standaloneSetup(new ProductionController(service))
+                processingOrderMapper, positionOperationMapper, workLogMapper, orderMapper,
+                clientRequestIdService);
+        mockMvc = MockMvcBuilders.standaloneSetup(
+                        new ProductionController(service, productionOperationQueryService))
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .build();
+        // 无幂等键 ⇒ 老路径（claim 首执）；幂等接线自身的断言见「报工」段的两个专测
+        when(clientRequestIdService.claim(any(), any(), any())).thenReturn(true);
+        // §5-1 原子有序推进：真实 DB 首执影响 1 行；CAS 失败由专测打桩为 0
+        when(positionOperationMapper.advanceDoneQtyIfUnchanged(any(), any(), any(), any(), any(), any()))
+                .thenReturn(1);
     }
 
     @AfterEach
@@ -387,6 +402,155 @@ class ProductionControllerTest {
                 .andExpect(status().isNotFound());
 
         verify(workLogMapper, never()).insert(any(ProductionWorkLog.class));
+    }
+
+    // ── §5 防呆的 HTTP 层（issue #4116 P0-3）：请求头透传 / 越站 422 / 超上限 422 / 软删 404 ──
+
+    @Test
+    @DisplayName("§5-1 幂等：X-Client-Request-Id 透传到服务层（不同指纹 ⇒ 服务层不被误报成重复）")
+    void reportPassesClientRequestIdHeaderToService() throws Exception {
+        when(orderMapper.selectById(ORDER_ID)).thenReturn(order("producing"));
+        when(processingOrderMapper.selectActiveByOrderId(ORDER_ID, TENANT)).thenReturn(processingOrder("tok123"));
+        when(positionOperationMapper.selectById("op-1"))
+                .thenReturn(op("op-1", 1, "精裁-布", "12.30", false, "pending", "0.00"));
+        when(positionOperationMapper.selectList(any())).thenReturn(List.of());
+        when(workLogMapper.insert(any(ProductionWorkLog.class))).thenReturn(1);
+
+        mockMvc.perform(post("/api/admin/production/orders/" + ORDER_ID + "/operations/op-1/report")
+                        .contentType("application/json")
+                        .header(ClientRequestIdService.HEADER, "req-key-http-1")
+                        .content("{\"worker_name\":\"张师傅\",\"qty\":1,\"qualified_qty\":1,\"work_type\":\"normal\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.done_qty").value(1.0));
+
+        // 判据锚在**指纹**上：接线若丢头/写死键，claim 收到的就不是它（打桩不命中 ⇒ 走回放分支）
+        verify(clientRequestIdService).claim(TENANT, "req-key-http-1", ProductionService.ENDPOINT_REPORT);
+        verify(clientRequestIdService).complete(eq(TENANT), eq("req-key-http-1"), any());
+    }
+
+    @Test
+    @DisplayName("§5-1 幂等：同键重复 ⇒ 回放首次结果并带 replayed=true（HTTP 层契约）")
+    void reportReplaysForRepeatedClientRequestId() throws Exception {
+        when(orderMapper.selectById(ORDER_ID)).thenReturn(order("producing"));
+        when(processingOrderMapper.selectActiveByOrderId(ORDER_ID, TENANT)).thenReturn(processingOrder("tok123"));
+        Map<String, Object> snapshot = new java.util.LinkedHashMap<>();
+        snapshot.put("operation_id", "op-1");
+        snapshot.put("done_qty", new BigDecimal("4.00"));
+        snapshot.put("status", "done");
+        snapshot.put("order_completed", false);
+        when(clientRequestIdService.claim(TENANT, "req-key-http-2", ProductionService.ENDPOINT_REPORT))
+                .thenReturn(false);
+        when(clientRequestIdService.replay(TENANT, "req-key-http-2", Map.class))
+                .thenReturn(java.util.Optional.of(snapshot));
+
+        mockMvc.perform(post("/api/admin/production/orders/" + ORDER_ID + "/operations/op-1/report")
+                        .contentType("application/json")
+                        .header(ClientRequestIdService.HEADER, "req-key-http-2")
+                        .content("{\"worker_name\":\"张师傅\",\"qty\":4,\"qualified_qty\":4,\"work_type\":\"normal\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.done_qty").value(4.0))
+                .andExpect(jsonPath("$.data.replayed").value(true));
+
+        // 效果层：重复请求**没有**落明细、**没有**推进
+        verify(workLogMapper, never()).insert(any(ProductionWorkLog.class));
+        verify(positionOperationMapper, never())
+                .advanceDoneQtyIfUnchanged(any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("§5-2 越站：前道未完成 ⇒ 422 + suggestion（不落明细、不推进）")
+    void reportRejectedWhenPredecessorNotDone() throws Exception {
+        when(orderMapper.selectById(ORDER_ID)).thenReturn(order("producing"));
+        when(processingOrderMapper.selectActiveByOrderId(ORDER_ID, TENANT)).thenReturn(processingOrder("tok123"));
+        when(positionOperationMapper.selectById("op-2"))
+                .thenReturn(op("op-2", 2, "布帘车被", "10.00", false, "pending", "0.00"));
+        when(positionOperationMapper.selectList(any())).thenReturn(List.of(
+                op("op-1", 1, "精裁-布", "10.00", false, "done", "4.00"),
+                op("op-2", 2, "布帘车被", "10.00", false, "pending", "0.00")));
+
+        mockMvc.perform(post("/api/admin/production/orders/" + ORDER_ID + "/operations/op-2/report")
+                        .contentType("application/json")
+                        .content("{\"worker_name\":\"张师傅\",\"qty\":10,\"qualified_qty\":10,\"work_type\":\"normal\"}"))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.error.message", containsString("尚未完成")))
+                .andExpect(jsonPath("$.suggestion", containsString("请先报工完成")));
+
+        verify(workLogMapper, never()).insert(any(ProductionWorkLog.class));
+    }
+
+    @Test
+    @DisplayName("§5-3 数量上限：超应做数量 ⇒ 422 + suggestion（不 clamp、不落明细）")
+    void reportRejectedWhenExceedingPlannedQty() throws Exception {
+        when(orderMapper.selectById(ORDER_ID)).thenReturn(order("producing"));
+        when(processingOrderMapper.selectActiveByOrderId(ORDER_ID, TENANT)).thenReturn(processingOrder("tok123"));
+        when(positionOperationMapper.selectById("op-1"))
+                .thenReturn(op("op-1", 1, "精裁-布", "10.00", false, "done", "9.00"));
+
+        mockMvc.perform(post("/api/admin/production/orders/" + ORDER_ID + "/operations/op-1/report")
+                        .contentType("application/json")
+                        .content("{\"worker_name\":\"张师傅\",\"qty\":5,\"qualified_qty\":5,\"work_type\":\"normal\"}"))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.error.message", containsString("超上限")))
+                .andExpect(jsonPath("$.suggestion", containsString("最多可报")));
+
+        verify(workLogMapper, never()).insert(any(ProductionWorkLog.class));
+        verify(positionOperationMapper, never())
+                .advanceDoneQtyIfUnchanged(any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("§5-4 非本部位：软删实例 ⇒ 404（不可报工到已废弃的工序实例）")
+    void reportRejectedForDeletedOperation() throws Exception {
+        when(orderMapper.selectById(ORDER_ID)).thenReturn(order("producing"));
+        when(processingOrderMapper.selectActiveByOrderId(ORDER_ID, TENANT)).thenReturn(processingOrder("tok123"));
+        ProcessingPositionOperation gone = op("op-gone", 1, "精裁-布", "10.00", false, "pending", "0.00");
+        gone.setDeleted(1);
+        when(positionOperationMapper.selectById("op-gone")).thenReturn(gone);
+
+        mockMvc.perform(post("/api/admin/production/orders/" + ORDER_ID + "/operations/op-gone/report")
+                        .contentType("application/json")
+                        .content("{\"worker_name\":\"张师傅\",\"qty\":1,\"qualified_qty\":1,\"work_type\":\"normal\"}"))
+                .andExpect(status().isNotFound());
+
+        verify(workLogMapper, never()).insert(any(ProductionWorkLog.class));
+    }
+
+    // ══════════════════════════ 工序库 / 工艺路线（只读消费者，issue #4116 P0-2）══════════════════════════
+
+    @Test
+    @DisplayName("工序库只读接口：GET /operations-catalog 透传租户 + 返回 groups 结构")
+    void operationsCatalogReturnsGroups() throws Exception {
+        when(productionOperationQueryService.catalog(TENANT)).thenReturn(Map.of(
+                "total", 30,
+                "groups", List.of(Map.of("group", "裁剪", "operations", List.of(
+                        Map.of("name", "精裁-布", "unit", "米", "unit_price", new BigDecimal("0.40")))))));
+
+        mockMvc.perform(get("/api/admin/production/operations-catalog"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.total").value(30))
+                .andExpect(jsonPath("$.data.groups[0].group").value("裁剪"))
+                .andExpect(jsonPath("$.data.groups[0].operations[0].name").value("精裁-布"));
+
+        verify(productionOperationQueryService).catalog(TENANT);
+    }
+
+    @Test
+    @DisplayName("工艺路线只读接口：GET /routings 透传租户 + 返回 routings 结构")
+    void routingsReturnsTemplates() throws Exception {
+        when(productionOperationQueryService.routings(TENANT)).thenReturn(Map.of(
+                "total", 6,
+                "routings", List.of(Map.of(
+                        "curtain_type", "布帘", "craft", "韩褶", "operation_count", 11,
+                        "operations", List.of(Map.of("seq", 1, "operation", "精裁-布"))))));
+
+        mockMvc.perform(get("/api/admin/production/routings"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.total").value(6))
+                .andExpect(jsonPath("$.data.routings[0].curtain_type").value("布帘"))
+                .andExpect(jsonPath("$.data.routings[0].operation_count").value(11));
+
+        verify(productionOperationQueryService).routings(TENANT);
     }
 
     // ══════════════════════════ 计件 ══════════════════════════

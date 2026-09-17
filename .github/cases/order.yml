@@ -1797,6 +1797,21 @@ cases:
       - "帮我看看我刚下的那单的快递物流到哪了"
     expectations:
       - tool: customer_logistics_track
+    # ── 效果层断言（2026-09-18 补，case-trust burn-down：`CASE-TRUST-FORBIDDEN-TEXT-SOLE`）──
+    # 为什么必须补：`forbidden_text` 是**全程**语义（扫所有轮的 final_text，**无轮次作用域**）
+    # ⇒ 首跑功能正确却可能因某一轮的良性措辞判红（假红，实证 #3833 / PG-013）。
+    # 本用例原先只有「裸工具名期望 + 两条禁词」：裸期望只证明「被调用过」，
+    # 工具返回 success=false（工具层故障/能力自我否定）照样判 100% ——
+    # 禁令一响，整条用例就等于什么都没测。补 `must_succeed` 后，
+    # 「查询**真的成功**」成为独立判据（与禁令互不代偿）。
+    # 语义与数据前提（已核）：输入是「我刚下的那单」，种子
+    # `tests/agent_eval/fixtures/xiaobu_eval_seed.sql` 的 `EVAL-ORD-0002` 是
+    # `status='shipped'` + 物流行（`logistics_company`/`tracking_no`）且
+    # `created_at` 最新 ⇒ 解析到该单、工具返回 success=true 是可满足的；
+    # 本用例**不**禁「暂无物流信息」这类诚实回复（那是文案层，不在本断言射程内）。
+    # ⚠️ 只加断言，未改任何既有断言/输入（expectations / forbidden_text / data_checks 原样未动）。
+    must_succeed:
+      - tool: customer_logistics_track
     forbidden_text:
       - "没有权限"
       - "无权限"

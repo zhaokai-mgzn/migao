@@ -79,6 +79,10 @@ class ProcessingOrderServiceTest {
     @Mock
     private ProductionWorkLogMapper workLogMapper;
 
+    /** 报工幂等键服务（issue #4116 §5-1）：本用例只走实例化、不触发报工 ⇒ 只需一个可用桩 */
+    @Mock
+    private ClientRequestIdService clientRequestIdService;
+
     @Spy
     private ObjectMapper objectMapper = new ObjectMapper();
 
@@ -255,7 +259,8 @@ class ProcessingOrderServiceTest {
         ProcessingOrderService service = new ProcessingOrderService(
                 processingOrderMapper, orderMapper, orderItemMapper, processingItemMapper,
                 orderService, objectMapper,
-                new ProductionService(processingOrderMapper, positionOperationMapper, workLogMapper, orderMapper));
+                new ProductionService(processingOrderMapper, positionOperationMapper, workLogMapper, orderMapper,
+                        clientRequestIdService));
 
         when(orderMapper.selectById("order-001")).thenReturn(confirmedOrder);
         when(orderItemMapper.selectList(any())).thenReturn(List.of(orderItemWithProcessing("米白")));

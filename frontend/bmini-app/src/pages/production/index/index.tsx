@@ -4,6 +4,7 @@ import Taro from '@tarojs/taro'
 import { useAuthStore } from '../../../store/authStore'
 import {
   getOrderOperations,
+  reportInFlightLock,
   reportOperation,
   type OrderOperations,
   type ProductionOperation,
@@ -31,6 +32,15 @@ export default function ProductionPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [orderCompleted, setOrderCompleted] = useState(false)
+  /**
+   * 报工在飞锁（issue #4116 §5-1）：值 = 正在报工的工序 id（null = 空闲）。
+   * 锁本体在 `productionService.reportInFlightLock`（可被单测直接证明「第二笔被拒」）；
+   * 这里只持有它的**可见面**：按钮 disabled + 「报工中…」文案。
+   * 为什么必须有：工人手快连点两次「完成报工」会发出**两个**请求（各自一个幂等键 ⇒
+   * 服务端按幂等键去重挡不住），一次报工就被记两遍。服务端侧另有幂等键与数量上限两道
+   * （见 ProductionService.report）。
+   */
+  const [reportingId, setReportingId] = useState<string | null>(null)
 
   /** 拉取工序列表（扫码成功 / 手输查单共用） */
   const loadOrder = useCallback(async (rawId: string) => {
@@ -70,23 +80,34 @@ export default function ProductionPage() {
   const handleReport = useCallback(
     async (operation: ProductionOperation) => {
       if (!detail) return
+      // in-flight 锁（issue #4116 §5-1）：连点第二次直接丢弃 —— 不发第二个请求。
+      // 测试前置：锁是模块级单例（跨用例残留），故用例之间必须 `reportInFlightLock.release()`
+      // 复位；此处**不做**兜底复位 —— 兜底会掩盖「上一次报工没走完 finally」的真实缺陷。
+      if (!reportInFlightLock.tryAcquire()) return
+      setReportingId(operation.id)
       setError('')
-      const res = await reportOperation(detail.order_id, operation.id, {
-        worker_id: user?.id || '',
-        worker_name: user?.nickname || '',
-        qty: operation.qty,
-        qualified_qty: operation.qty,
-        work_type: 'normal',
-      })
-      if (!res.success) {
-        setError(res.message || '报工失败，请重试')
-        return
+      try {
+        const res = await reportOperation(detail.order_id, operation.id, {
+          worker_id: user?.id || '',
+          worker_name: user?.nickname || '',
+          qty: operation.qty,
+          qualified_qty: operation.qty,
+          work_type: 'normal',
+        })
+        if (!res.success) {
+          setError(res.message || '报工失败，请重试')
+          return
+        }
+        if (res.data?.order_completed) {
+          setOrderCompleted(true)
+        }
+        // 复用同一入口刷新进度（报工成功才刷新；回放结果同样刷新以对齐服务端真值）
+        await loadOrder(detail.order_id)
+      } finally {
+        // 任何出口（成功/失败/抛错）都必须解锁，否则一次网络异常会把按钮永久锁死
+        reportInFlightLock.release()
+        setReportingId(null)
       }
-      if (res.data?.order_completed) {
-        setOrderCompleted(true)
-      }
-      // 复用同一入口刷新进度（报工成功才刷新）
-      await loadOrder(detail.order_id)
     },
     [detail, user, loadOrder],
   )
@@ -170,8 +191,13 @@ export default function ProductionPage() {
                       {`已报 ${operation.done_qty}${operation.unit}`}
                     </Text>
                   </View>
-                  <Button className='operation-item__btn' onClick={() => handleReport(operation)}>
-                    完成报工
+                  {/* disabled = in-flight 锁的可见面（issue #4116 §5-1）：报工期间不可再点 */}
+                  <Button
+                    className='operation-item__btn'
+                    disabled={reportingId !== null}
+                    onClick={() => handleReport(operation)}
+                  >
+                    {reportingId === operation.id ? '报工中…' : '完成报工'}
                   </Button>
                 </View>
               ))}

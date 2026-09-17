@@ -7,6 +7,7 @@ import com.migao.admin.entity.Order;
 import com.migao.admin.entity.ProcessingOrder;
 import com.migao.admin.entity.ProcessingPositionOperation;
 import com.migao.admin.entity.ProductionWorkLog;
+import com.migao.admin.exception.BusinessException;
 import com.migao.admin.mapper.OrderMapper;
 import com.migao.admin.mapper.ProcessingOrderMapper;
 import com.migao.admin.mapper.ProcessingPositionOperationMapper;
@@ -27,6 +28,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -62,15 +64,24 @@ class ProductionServiceTest {
     private ProductionWorkLogMapper workLogMapper;
     @Mock
     private OrderMapper orderMapper;
+    @Mock
+    private ClientRequestIdService clientRequestIdService;
 
     private ProductionService service;
 
     @BeforeEach
     void setUp() {
         TenantContext.setTenantId(TENANT);
-        service = new ProductionService(processingOrderMapper, positionOperationMapper, workLogMapper, orderMapper);
+        service = new ProductionService(processingOrderMapper, positionOperationMapper, workLogMapper,
+                orderMapper, clientRequestIdService);
         when(orderMapper.selectById(ORDER_ID)).thenReturn(order("producing"));
         when(processingOrderMapper.selectActiveByOrderId(ORDER_ID, TENANT)).thenReturn(processingOrder());
+        // 无幂等键 ⇒ 既有用例全部走原路径（claim 返回 true = 首执），故此处只打桩「首执」分支；
+        // 幂等自身的语义由 reportIsIdempotentOnSameClientRequestId / 不同键负例 两条专测覆盖。
+        when(clientRequestIdService.claim(any(), any(), any())).thenReturn(true);
+        // 原子有序推进默认生效（真实 DB 首执就是 1 行）；CAS 失败（并发）由专测打桩为 0。
+        when(positionOperationMapper.advanceDoneQtyIfUnchanged(any(), any(), any(), any(), any(), any()))
+                .thenReturn(1);
     }
 
     @AfterEach
@@ -115,6 +126,50 @@ class ProductionServiceTest {
                 "qualified_qty", new BigDecimal(qualifiedQty), "work_type", workType);
     }
 
+    /** 工序实例夹具（§5 防呆用）：可指定部位/序号/开始标记，便于构造越站与超上限场景。 */
+    private ProcessingPositionOperation positionOp(String id, String position, int seq, String name,
+                                                   String qty, String doneQty, String status,
+                                                   boolean startMarker, Integer deleted) {
+        return ProcessingPositionOperation.builder()
+                .id(id).tenantId(TENANT).processingOrderId(PO_ID)
+                .positionName(position).seq(seq).operationName(name)
+                .groupName("后道").unit("米")
+                .qty(new BigDecimal(qty)).unitPrice(new BigDecimal("0.40")).factor(BigDecimal.ONE)
+                .isMustFinish(false).isStartMarker(startMarker)
+                .status(status).doneQty(new BigDecimal(doneQty)).deleted(deleted)
+                .build();
+    }
+
+    /** 报工（无幂等键 = 老客户端路径；幂等专测另行传键）。 */
+    private Map<String, Object> report(String operationId, Map<String, Object> body) {
+        return service.report(ORDER_ID, operationId, body, TENANT, null);
+    }
+
+    /** 复位单个测试对 positionOperationMapper 的打桩（不应答 delete 掉 setUp 的通用桩）。 */
+    private void resetPositionOperationMapper() {
+        org.mockito.Mockito.reset(positionOperationMapper);
+        when(positionOperationMapper.advanceDoneQtyIfUnchanged(any(), any(), any(), any(), any(), any()))
+                .thenReturn(1);
+    }
+
+    /**
+     * 内存态工序实例（读→CAS 推进→再读得到新值，模拟真实 DB 的 read-modify-write）。
+     * 二次报工的 {@code done_qty} 必须从**已推进**的状态起算 —— 否则「两次都执行」的负例
+     * 只是在测常量桩，测不出累加语义。
+     */
+    private ProcessingPositionOperation statefulOp(String id, String qty) {
+        ProcessingPositionOperation state =
+                positionOp(id, "布帘", 1, "精裁-布", qty, "0.00", "pending", true, 0);
+        when(positionOperationMapper.selectById(id)).thenAnswer(inv -> state);
+        when(positionOperationMapper.advanceDoneQtyIfUnchanged(
+                eq(id), any(), any(), any(), any(), any())).thenAnswer(inv -> {
+            state.setDoneQty(inv.getArgument(4));
+            state.setStatus("done");
+            return 1;
+        });
+        return state;
+    }
+
     @Test
     @DisplayName("部分报工：done_qty 累加但进度仍算未完成（done_qty < qty）")
     void partialReportKeepsOperationNotDone() {
@@ -123,7 +178,7 @@ class ProductionServiceTest {
         when(positionOperationMapper.selectList(any())).thenReturn(List.of(
                 op("op-1", "外帘装袋", "10.00", true, "done", "4.00", "1.00", "1.00")));
 
-        Map<String, Object> result = service.report(ORDER_ID, "op-1", reportBody("4", "4", "normal"), TENANT);
+        Map<String, Object> result = service.report(ORDER_ID, "op-1", reportBody("4", "4", "normal"), TENANT, null);
 
         assertThat((BigDecimal) result.get("done_qty")).isEqualByComparingTo("4.00");
         assertThat(result.get("status")).isEqualTo("done");
@@ -150,7 +205,7 @@ class ProductionServiceTest {
                 op("op-1", "外帘装袋", "1.00", true, "done", "1.00", "1.00", "1.00")));
         when(processingOrderMapper.markCompletedIfActive(eq(PO_ID), eq(TENANT), any())).thenReturn(1);
 
-        Map<String, Object> result = service.report(ORDER_ID, "op-1", reportBody("1", "1", "normal"), TENANT);
+        Map<String, Object> result = service.report(ORDER_ID, "op-1", reportBody("1", "1", "normal"), TENANT, null);
 
         assertThat(result.get("order_completed")).isEqualTo(true);
         // ① 加工单必须被置 completed（生产完工的唯一写路径）
@@ -168,7 +223,7 @@ class ProductionServiceTest {
                 op("op-1", "外帘装袋", "1.00", true, "done", "1.00", "1.00", "1.00")));
         when(processingOrderMapper.markCompletedIfActive(eq(PO_ID), eq(TENANT), any())).thenReturn(0);
 
-        Map<String, Object> result = service.report(ORDER_ID, "op-1", reportBody("1", "1", "normal"), TENANT);
+        Map<String, Object> result = service.report(ORDER_ID, "op-1", reportBody("1", "1", "normal"), TENANT, null);
 
         assertThat(result.get("order_completed")).isEqualTo(false);
         verify(processingOrderMapper).markCompletedIfActive(eq(PO_ID), eq(TENANT), any());
@@ -198,7 +253,7 @@ class ProductionServiceTest {
                 .as("完工前：无 completed 加工单 ⇒ 发货守卫拦截")
                 .isZero();
 
-        Map<String, Object> result = service.report(ORDER_ID, "op-1", reportBody("1", "1", "normal"), TENANT);
+        Map<String, Object> result = service.report(ORDER_ID, "op-1", reportBody("1", "1", "normal"), TENANT, null);
 
         // 端到端判据（先断言，红证② 的判据就是它）：必完全绿后，守卫判据
         // （OrderService.assertProcessingCompletedBeforeShip 的 `countCompletedByOrderId(...) == 0`）
@@ -295,9 +350,9 @@ class ProductionServiceTest {
         when(positionOperationMapper.selectById("op-1"))
                 .thenReturn(op("op-1", "精裁-布", "10.00", false, "pending", "0.00", "0.40", "1.00"));
 
-        assertThatThrownBy(() -> service.report(ORDER_ID, "op-1", reportBody("0", "0", "normal"), TENANT))
+        assertThatThrownBy(() -> service.report(ORDER_ID, "op-1", reportBody("0", "0", "normal"), TENANT, null))
                 .hasMessageContaining("qty");
-        assertThatThrownBy(() -> service.report(ORDER_ID, "op-1", reportBody("1", "-1", "normal"), TENANT))
+        assertThatThrownBy(() -> service.report(ORDER_ID, "op-1", reportBody("1", "-1", "normal"), TENANT, null))
                 .hasMessageContaining("qualified_qty");
         verify(workLogMapper, never()).insert(any(ProductionWorkLog.class));
     }
@@ -436,5 +491,224 @@ class ProductionServiceTest {
 
         assertThatThrownBy(() -> service.getOperations("nope", TENANT))
                 .hasMessageContaining("订单");
+    }
+
+    // ══════════════════════════ §5 四项防呆（issue #4116 P0-3）══════════════════════════
+    //
+    // 病灶（逐项一次真实误报工的形态）：
+    //   ① 重复报工：工人连点两次 / 网络重试 ⇒ 同一笔报工落两条明细、done_qty 翻倍（原代码
+    //      `doneQty = doneQty.add(qualifiedQty)` 无条件累加，且前端无 in-flight 锁）；
+    //   ② 越站：前道未完成也能报后续工序 ⇒ 工序顺序失控、必完判定提前全绿 ⇒ 假完工；
+    //   ③ 超上限：报工数量无上界 ⇒ done_qty 可超过应做数量（进度百分比 >100、计件虚高）；
+    //   ④ 非本部位：软删实例（工艺变更后重新实例化留下的旧行）仍可被报工 ⇒ 进度记到废弃实例上。
+    //
+    // 每条都有**独立**红证：把对应防呆拆掉后，下面那条断言必红（见 PR 证据表）。
+
+    private static final String KEY = "req-key-1";
+
+    @Test
+    @DisplayName("§5-1 幂等：同键重复报工不重复累加 done_qty、不重复落明细，回放首次结果并标记 replayed")
+    void reportIsIdempotentOnSameClientRequestId() {
+        when(positionOperationMapper.selectById("op-1"))
+                .thenReturn(positionOp("op-1", "布帘", 1, "精裁-布", "10.00", "0.00", "pending", true, 0));
+        when(positionOperationMapper.selectList(any())).thenReturn(List.of());
+        // 首次占位成功、第二次同键已被占用
+        when(clientRequestIdService.claim(TENANT, KEY, ProductionService.ENDPOINT_REPORT))
+                .thenReturn(true, false);
+
+        Map<String, Object> first = service.report(ORDER_ID, "op-1", reportBody("4", "4", "normal"), TENANT, KEY);
+        Map<String, Object> snapshot = new java.util.LinkedHashMap<>(first);
+        when(clientRequestIdService.replay(TENANT, KEY, Map.class)).thenReturn(Optional.of(snapshot));
+        Map<String, Object> second = service.report(ORDER_ID, "op-1", reportBody("4", "4", "normal"), TENANT, KEY);
+
+        // 首次：4.00；重复：回放同一份快照 —— **不是** 8.00（无条件累加的形态）
+        assertThat((BigDecimal) first.get("done_qty")).isEqualByComparingTo("4.00");
+        assertThat((BigDecimal) second.get("done_qty"))
+                .as("同键重复不得再累加（否则 done_qty 翻倍 = 计件虚高）")
+                .isEqualByComparingTo("4.00");
+        assertThat(second.get("replayed")).isEqualTo(Boolean.TRUE);
+        // 效果层：报工明细只落一条（不是「调了两次但都失败」），原子推进只发生一次
+        verify(workLogMapper, times(1)).insert(any(ProductionWorkLog.class));
+        verify(positionOperationMapper, times(1))
+                .advanceDoneQtyIfUnchanged(any(), any(), any(), any(), any(), any());
+        verify(clientRequestIdService).complete(eq(TENANT), eq(KEY), any());
+    }
+
+    @Test
+    @DisplayName("§5-1 负例（R2）：不同幂等键 ⇒ 两次都真的执行（合法追加报工不得被拦成重复）")
+    void differentClientRequestIdsBothAdvance() {
+        statefulOp("op-1", "10.00");
+        when(positionOperationMapper.selectList(any())).thenReturn(List.of());
+        when(clientRequestIdService.claim(TENANT, "req-key-A", ProductionService.ENDPOINT_REPORT)).thenReturn(true);
+        when(clientRequestIdService.claim(TENANT, "req-key-B", ProductionService.ENDPOINT_REPORT)).thenReturn(true);
+
+        Map<String, Object> first = service.report(ORDER_ID, "op-1", reportBody("4", "4", "normal"), TENANT, "req-key-A");
+        Map<String, Object> second = service.report(ORDER_ID, "op-1", reportBody("3", "3", "normal"), TENANT, "req-key-B");
+
+        assertThat((BigDecimal) first.get("done_qty")).isEqualByComparingTo("4.00");
+        assertThat((BigDecimal) second.get("done_qty")).isEqualByComparingTo("7.00");
+        verify(workLogMapper, times(2)).insert(any(ProductionWorkLog.class));
+        verify(clientRequestIdService, never()).replay(any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("§5-2 越站：同部位前道未完成 ⇒ 422 + 可行动 suggestion，不落明细、不推进")
+    void reportRejectedWhenPredecessorOperationNotDone() {
+        when(positionOperationMapper.selectById("op-2"))
+                .thenReturn(positionOp("op-2", "布帘", 2, "布帘车被", "10.00", "0.00", "pending", false, 0));
+        // 报工前快照：同部位 seq=1「精裁-布」只报了 4/10（未完成）
+        when(positionOperationMapper.selectList(any())).thenReturn(List.of(
+                positionOp("op-1", "布帘", 1, "精裁-布", "10.00", "4.00", "done", true, 0),
+                positionOp("op-2", "布帘", 2, "布帘车被", "10.00", "0.00", "pending", false, 0)));
+
+        assertThatThrownBy(() -> report("op-2", reportBody("10", "10", "normal")))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("精裁-布")
+                .hasMessageContaining("尚未完成")
+                .as("可行动 suggestion：先报工完成前道工序")
+                .extracting(e -> ((BusinessException) e).getSuggestion())
+                .asString()
+                .contains("请先报工完成");
+
+        verify(workLogMapper, never()).insert(any(ProductionWorkLog.class));
+        verify(positionOperationMapper, never())
+                .advanceDoneQtyIfUnchanged(any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("§5-2 负例（R2）：合法顺序（前道已完成）不得被拦 —— 真报工推进到 10.00")
+    void reportAllowedWhenPredecessorOperationDone() {
+        when(positionOperationMapper.selectById("op-2"))
+                .thenReturn(positionOp("op-2", "布帘", 2, "布帘车被", "10.00", "0.00", "pending", false, 0));
+        when(positionOperationMapper.selectList(any())).thenReturn(List.of(
+                positionOp("op-1", "布帘", 1, "精裁-布", "10.00", "10.00", "done", true, 0),
+                positionOp("op-2", "布帘", 2, "布帘车被", "10.00", "0.00", "pending", false, 0)));
+
+        Map<String, Object> result = report("op-2", reportBody("10", "10", "normal"));
+
+        assertThat((BigDecimal) result.get("done_qty")).isEqualByComparingTo("10.00");
+        assertThat(result.get("status")).isEqualTo("done");
+        verify(workLogMapper).insert(any(ProductionWorkLog.class));
+    }
+
+    @Test
+    @DisplayName("§5-2 返工/报废不受顺序门禁（如实记录现场不得被拦）")
+    void reworkAndScrapAreNotBlockedBySequenceGate() {
+        when(positionOperationMapper.selectById("op-2"))
+                .thenReturn(positionOp("op-2", "布帘", 2, "布帘车被", "10.00", "0.00", "pending", false, 0));
+        when(positionOperationMapper.selectList(any())).thenReturn(List.of(
+                positionOp("op-1", "布帘", 1, "精裁-布", "10.00", "0.00", "pending", true, 0),
+                positionOp("op-2", "布帘", 2, "布帘车被", "10.00", "0.00", "pending", false, 0)));
+
+        Map<String, Object> result = service.report(ORDER_ID, "op-2",
+                reportBody("2", "0", "scrap"), TENANT, null);
+
+        assertThat(result.get("status")).isEqualTo("pending");
+        verify(workLogMapper).insert(any(ProductionWorkLog.class));
+    }
+
+    @Test
+    @DisplayName("§5-3 数量上限：done_qty + 本次 > qty ⇒ 422 + suggestion（不落库、不 clamp）")
+    void reportRejectedWhenExceedingPlannedQty() {
+        when(positionOperationMapper.selectById("op-1"))
+                .thenReturn(positionOp("op-1", "布帘", 1, "外帘装袋", "10.00", "9.00", "done", false, 0));
+
+        assertThatThrownBy(() -> report("op-1", reportBody("5", "5", "normal")))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("超上限")
+                .hasMessageContaining("10")
+                .as("可行动 suggestion：本次最多可报剩余数量 / 先修正应做数量")
+                .extracting(e -> ((BusinessException) e).getSuggestion())
+                .asString()
+                .contains("最多可报");
+
+        verify(workLogMapper, never()).insert(any(ProductionWorkLog.class));
+        verify(positionOperationMapper, never())
+                .advanceDoneQtyIfUnchanged(any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("§5-3 负例（R2）：恰好报满（9 + 1 = 10）不得被拦")
+    void reportAllowedWhenExactlyReachingPlannedQty() {
+        when(positionOperationMapper.selectById("op-1"))
+                .thenReturn(positionOp("op-1", "布帘", 1, "外帘装袋", "10.00", "9.00", "done", false, 0));
+        when(positionOperationMapper.selectList(any())).thenReturn(List.of());
+
+        Map<String, Object> result = report("op-1", reportBody("1", "1", "normal"));
+
+        assertThat((BigDecimal) result.get("done_qty")).isEqualByComparingTo("10.00");
+        verify(workLogMapper).insert(any(ProductionWorkLog.class));
+    }
+
+    @Test
+    @DisplayName("§5-4 非本部位：软删实例（含 deleted 为 NULL 的脏数据）⇒ 404，不落明细")
+    void reportRejectedForDeletedOrNullFlaggedOperation() {
+        for (Integer deleted : new Integer[]{1, null}) {
+            org.mockito.Mockito.clearInvocations(positionOperationMapper);
+            when(positionOperationMapper.selectById("op-gone"))
+                    .thenReturn(positionOp("op-gone", "布帘", 1, "精裁-布", "10.00", "0.00", "pending", true, deleted));
+
+            assertThatThrownBy(() -> report("op-gone", reportBody("1", "1", "normal")))
+                    .as("deleted=%s 的实例不得被报工（fail-closed：NULL 也视为不可用）", deleted)
+                    .isInstanceOf(BusinessException.class)
+                    .hasMessageContaining("工序");
+            verify(workLogMapper, never()).insert(any(ProductionWorkLog.class));
+        }
+    }
+
+    @Test
+    @DisplayName("§5-4 非本部位：跨租户实例 ⇒ 404（越租户报工不得发生）")
+    void reportRejectedForForeignTenantOperation() {
+        ProcessingPositionOperation foreign = positionOp("op-x", "布帘", 1, "精裁-布", "10.00", "0.00", "pending", true, 0);
+        foreign.setTenantId(999L);
+        when(positionOperationMapper.selectById("op-x")).thenReturn(foreign);
+
+        assertThatThrownBy(() -> report("op-x", reportBody("1", "1", "normal")))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("工序");
+        verify(workLogMapper, never()).insert(any(ProductionWorkLog.class));
+    }
+
+    @Test
+    @DisplayName("§5-1 并发（不同键）：CAS 影响 0 行 ⇒ fail-closed 409，绝不静默覆盖别人的报工")
+    void concurrentAdvanceFailsClosedWhenCasMisses() {
+        when(positionOperationMapper.selectById("op-1"))
+                .thenReturn(positionOp("op-1", "布帘", 1, "精裁-布", "10.00", "0.00", "pending", true, 0));
+        when(positionOperationMapper.selectList(any())).thenReturn(List.of());
+        when(positionOperationMapper.advanceDoneQtyIfUnchanged(any(), any(), any(), any(), any(), any()))
+                .thenReturn(0);
+
+        assertThatThrownBy(() -> report("op-1", reportBody("1", "1", "normal")))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("另一次报工");
+    }
+
+    @Test
+    @DisplayName("§5-1 执行失败 ⇒ 释放幂等占位（否则该键被永久占死，工人重试永远进不来）")
+    void failedReportReleasesIdempotencyPlaceholder() {
+        when(positionOperationMapper.selectById("op-1"))
+                .thenReturn(positionOp("op-1", "布帘", 1, "外帘装袋", "10.00", "9.00", "done", false, 0));
+
+        assertThatThrownBy(() -> service.report(ORDER_ID, "op-1", reportBody("5", "5", "normal"), TENANT, KEY))
+                .isInstanceOf(BusinessException.class);
+
+        verify(clientRequestIdService).discard(TENANT, KEY);
+        verify(clientRequestIdService, never()).complete(any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("§5-1 无幂等键 ⇒ 零幂等交互（向后兼容未升级的调用方）")
+    void reportWithoutKeyKeepsLegacyPath() {
+        when(positionOperationMapper.selectById("op-1"))
+                .thenReturn(positionOp("op-1", "布帘", 1, "精裁-布", "10.00", "0.00", "pending", true, 0));
+        when(positionOperationMapper.selectList(any())).thenReturn(List.of());
+
+        Map<String, Object> result = report("op-1", reportBody("4", "4", "normal"));
+
+        assertThat((BigDecimal) result.get("done_qty")).isEqualByComparingTo("4.00");
+        verify(workLogMapper).insert(any(ProductionWorkLog.class));
+        // 无键 ⇒ 绝不走「回放」分支（那会把合法的首次报工误判成重复）；
+        // claim(null) / complete(null) 按既有契约是 no-op（返回 true / 不发 SQL），不构成本用例判据
+        verify(clientRequestIdService, never()).replay(any(), any(), any());
     }
 }
