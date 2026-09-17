@@ -2189,7 +2189,7 @@
 真值: ai-chat.context-memory
 溯源: 2026-09-04 新增：issue #2821 延续切片 C（vision 分析落槽 + base_skill 接线） ｜ tags: ontology, vision, context_memory, grounding, base_skill
 
-## 订单域（28 case）
+## 订单域（29 case）
 
 ### OR-001. 订单列表查询 🟢
 ```
@@ -2436,7 +2436,7 @@
 时序: interact[choice:processing_items] before order_create
 ```
 真值: order.create-flow
-溯源: 2026-09-08 新增（issue #3033 复盘 sess_7f27137647e14b1e）：A5 confirm 卡在加工项询问前弹出、金额 ¥238 不含加工费，用户质问后才补 A6；order.md 加工项段从被动式改主动式 + EXAMPLES 例 2 补加工项环节 ｜ tags: order_create, processing_item, guided_flow
+溯源: 2026-09-08 新增（issue #3033 复盘 sess_7f27137647e14b1e）：A5 confirm 卡在加工项询问前弹出、金额 ¥238 不含加工费，用户质问后才补 A6；order.md 加工项段从被动式改主动式 + EXAMPLES 例 2 补加工项环节；2026-09-18 补前置自断言（#4082 的「改用例 PR」burn-down 硬门禁要求净缩 ≥1 条；先例 = #4091 给 OR-015 补的同款）：precondition[product_count_for_keyword「2699系列雪尼尔窗帘面料」expect=1]（按名定位下单对象，pre_clean 已按同关键词去重 ⇒ 捕获时恰为 1）；expectations/data_checks/order_before/pre_clean **原样未动**（未放宽、未删任何断言） ｜ tags: order_create, processing_item, guided_flow
 
 ### OR-017. C 端自助下单加工项闭环 - 必须查详情→主动询问→加工费落单（不凭列表错报无加工项） 🔵
 ```
@@ -2736,6 +2736,21 @@
 ```
 真值: order.create-flow
 溯源: 2026-09-17 新增（issue #3976，线上实证 sess_202d55d49a254a10）：首条消息同时含商品细节与下单指令 → 意图路由判 product_inquiry → 整条 validate/confirm 链在 product skill 内完成，确认卡点击后模型调 order_create 撞 Tool not found（product 注册表无此工具）→ 空头承诺 + 订单永不落库。修复（route_by_intent 答卡轮归属 skill 迁移 + tool_not_found 兜底 relock + 8.4 收口扩展 B 端 order_create + metadata 假证据修复）后，确认轮应路由到 order skill 真实下单。2026-09-17 CI 门禁校准：B 端专属用例补 persona: mibao（C 端缺 sms_code 轮且 fixture 无该商品）、补 must_succeed[order_create]（效果层断言）与 precondition[product_count_for_keyword]（同名商品唯一前置，同 OR-008/OR-006 #3835 先例）。2026-09-17 夹具对齐（issue #4015，run 35233821582 @54e8fe9d 归因）：罐头输入与 tests/agent_eval/fixtures/mibao_eval_seed.sql 事实矛盾（规格 2699-06 蓝灰色 / 库存 9599 / 加工项 穿杆孔加工 ¥4/米 与 包边处理 ¥10/米 三项在 seed 里 0 命中；自称「已有客户」的赵凯 13456000919 亦不在 seed）⇒ 合格 agent 如实指出「对不上」并停在澄清，链路物理上走不完（恒红）。逐项改为 seed 真值（2699-03暖米色 / 库存 1000 / 纳米圈打孔 ¥8+韩式波浪折边 ¥12+高温定型 ¥10 / 张三 13800138000），并把后两轮改成 auto_select + repeat_until(tool_called=order_create) 协作轮（同 OR-016/OR-021 先例：卡内容由 LLM 动态生成，静态轮次表对不上就卡死）——断言（expectations / must_succeed / order_before / precondition）一律不放宽；2026-09-18 复核修正（issue #4042）：上面那次改写的**后两轮写法无效** —— 它们是 JSON **字符串**（`'{\"auto_select\": true}'` / `'{\"repeat_until\": …}'`），而 runner 只把 **dict** 轮当控制轮（非 dict 一律按纯文本发送，见 `run_case` 的 `isinstance(msg, dict)` 分支），故 auto_select/repeat_until 两个声明**静默失效**、顾客消息变成字面量 JSON、卡片无人作答 ⇒ `order_create` 永不执行（恒红且归因错人）。已改为 YAML block style 的 dict 轮；并补静态守卫（`tests/unit_ci_workflows/test_eval_auto_respond_l0.py::test_no_control_turn_is_written_as_json_string`）防复发 ｜ tags: order_create, cross_skill, guided_flow
+
+### OR-030. B 端校验失败后禁止写 - 未合法化的下单（非法手机号）不得落单（S2 #4073 代码闸门） 🔵
+```
+你: 帮我给张三下单，遮光窗帘 3 米，米白，散剪 2.8 米门幅，手机号 05718886666，不许换成别的号码
+你: [🤖 按上一轮卡片作答]
+你: [🤖 按上一轮卡片作答]
+期望: validate_input
+数据: （散文、**不计分**）校验失败后禁止写：validate_input 失败留痕 → 同 tool::action 的写调用被拦（validation_failed_write_blocked）→ 该目标一次**成功**的 validate_input 才放行；本条的机器判据是 must_fail[order_create.args.customer_phone] 与 expectations[validate_input]，这条散文只记录语义
+数据: （散文、**不计分**）顾客未给合法号码且明确不许换号 ⇒ 本会话**不得**有订单落库；agent 应要求改正号码，不得自行编造一个合法号码
+清理: product_dedupe(product_keyword=遮光窗帘)
+必填: validate_input() 字段 target_tool, target_action
+必须失败: order_create 值级作用域: customer_phone=05718886666
+```
+真值: order.create-flow, ai-chat.confirm-required
+溯源: 2026-09-18 新增（#4082 用例库维护 / 行为变更 S2 = #4073 @b6327160）：validate_input 校验失败禁止写落成代码闸门，此前 B 端无对应用例（C 端拒绝半见 OR-026）。机器判据三条：expectations[validate_input]（写前校验真的执行）+ required_args[validate_input: target_tool/target_action]（闸门按 tool::action 建账，校验带目标才武装）+ must_fail[order_create.args.customer_phone=05718886666]（参数值级：非法号不得落单；值级作用域由 #3689 落地）。**能力边界如实登记**：现有 runner 无法断言 tool_result 级 error code（error.code= 只读轮级 SSE error），故本用例**不**证明闸门拦下了写 —— 该能力缺口已开独立 issue，未写任何「看起来断言了」的假断言。pre_clean/namespaces 与 OR-015 同源（同商品 + 同 pre_clean 关键词）；precondition[product_count_for_keyword 遮光窗帘 expect=1] 为真前置自断言 ｜ tags: order_create, validate_input, rejection, defense
 
 ## 加工项域（11 case）
 
@@ -4254,8 +4269,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：312（活跃 156，跳过 156）
-- tier 分布：smoke 9 / normal 270 / adversarial 33
+- 用例总数：313（活跃 157，跳过 156）
+- tier 分布：smoke 9 / normal 271 / adversarial 33
 - 售后域：9
 - agents：6
 - api：19
@@ -4272,7 +4287,7 @@
 - misc：15
 - onboarding：5
 - ontology：4
-- 订单域：28
+- 订单域：29
 - 加工项域：11
 - processing-order：18
 - 商品域：25

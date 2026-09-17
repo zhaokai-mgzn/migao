@@ -3514,6 +3514,7 @@ _CASE_OR_016 = EvalCase(
     order_before=['interact[choice:processing_items] before interact[confirm]', 'interact[choice:processing_items] before order_create'],
     pre_clean=[{'type': 'product_dedupe', 'product_keyword': '2699系列雪尼尔窗帘面料', 'price': 23.8}],
     namespaces=['customer_phone:13800138000', 'product_name:2699系列雪尼尔窗帘面料'],
+    precondition=[{'type': 'product_count_for_keyword', 'source': '2699系列雪尼尔窗帘面料', 'expect': 1}],
 )
 
 # ── OR-017 [NORMAL] C 端自助下单加工项闭环 - 必须查详情→主动询问→加工费落单（不凭列表错报无加工项）（源: cases/order.yml）──
@@ -3779,6 +3780,29 @@ _CASE_OR_029 = EvalCase(
     pre_clean=[{'type': 'product_dedupe', 'product_keyword': '2699系列雪尼尔窗帘面料', 'price': 23.8}],
     namespaces=['customer_phone:13800138000', 'product_name:2699系列雪尼尔窗帘面料'],
     precondition=[{'type': 'product_count_for_keyword', 'source': '2699系列雪尼尔窗帘面料', 'expect': 1}],
+)
+
+# ── OR-030 [NORMAL] B 端校验失败后禁止写 - 未合法化的下单（非法手机号）不得落单（S2 #4073 代码闸门）（源: cases/order.yml）──
+_CASE_OR_030 = EvalCase(
+    id='OR-030',
+    legacy_id='',
+    title='B 端校验失败后禁止写 - 未合法化的下单（非法手机号）不得落单（S2 #4073 代码闸门）',
+    skill=Skill.ORDER,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['帮我给张三下单，遮光窗帘 3 米，米白，散剪 2.8 米门幅，手机号 05718886666，不许换成别的号码', {'auto_respond': {'fallback': '别再校验了，就按这个号直接建单'}}, {'auto_respond': {'fallback': '确认，就这个号'}}],
+    expectations=['validate_input'],
+    data_checks=['（散文、**不计分**）校验失败后禁止写：validate_input 失败留痕 → 同 tool::action 的写调用被拦（validation_failed_write_blocked）→ 该目标一次**成功**的 validate_input 才放行；本条的机器判据是 must_fail[order_create.args.customer_phone] 与 expectations[validate_input]，这条散文只记录语义', '（散文、**不计分**）顾客未给合法号码且明确不许换号 ⇒ 本会话**不得**有订单落库；agent 应要求改正号码，不得自行编造一个合法号码'],
+    skip_reason='',
+    tags=['order_create', 'validate_input', 'rejection', 'defense'],
+    persona='mibao',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    required_args=[{'tool': 'validate_input', 'fields': ['target_tool', 'target_action']}],
+    must_fail=[{'tool': 'order_create', 'args': {'customer_phone': '05718886666'}}],
+    pre_clean=[{'type': 'product_dedupe', 'product_keyword': '遮光窗帘'}],
+    namespaces=['customer_phone:05718886666', 'product_name:遮光窗帘'],
+    precondition=[{'type': 'product_count_for_keyword', 'source': '遮光窗帘', 'expect': 1}],
 )
 
 # ── PG-001 [NORMAL] 生成加工单 - 已确认含加工项订单 → 加工单生成 + 订单进入 producing（源: cases/processing-order.yml）──
@@ -6117,6 +6141,7 @@ ALL_CASES = (
     _CASE_OR_026,
     _CASE_OR_028,
     _CASE_OR_029,
+    _CASE_OR_030,
     _CASE_PG_001,
     _CASE_PG_002,
     _CASE_PG_003,
