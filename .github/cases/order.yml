@@ -954,8 +954,17 @@ cases:
       - type: product_dedupe
         product_keyword: "2699系列雪尼尔窗帘面料"
         price: 23.8
+    # 前置自断言（§18.4，同 OR-009/OR-014/OR-015(已由 #4091 补)/OR-021 先例）：本用例按**名字**
+    # 定位下单对象（「2699系列雪尼尔窗帘面料」），故「该名字在种子栈里唯一」是可判定的前置 ——
+    # 别人造出同名副本时折成 `precondition_not_applied`，不再伪装成「agent 不会下单」。
+    # 依据：`pre_clean.product_dedupe` 先于 capture 执行 ⇒ 捕获时恰为 1；OR-021 已声明**同一
+    # source + 同一 expect**（同商品），本条声明形状与它逐字一致。
+    precondition:
+      - type: product_count_for_keyword
+        source: "2699系列雪尼尔窗帘面料"
+        expect: 1
     skip_reason: ""
-    merge_log: "2026-09-08 新增（issue #3033 复盘 sess_7f27137647e14b1e）：A5 confirm 卡在加工项询问前弹出、金额 ¥238 不含加工费，用户质问后才补 A6；order.md 加工项段从被动式改主动式 + EXAMPLES 例 2 补加工项环节"
+    merge_log: "2026-09-08 新增（issue #3033 复盘 sess_7f27137647e14b1e）：A5 confirm 卡在加工项询问前弹出、金额 ¥238 不含加工费，用户质问后才补 A6；order.md 加工项段从被动式改主动式 + EXAMPLES 例 2 补加工项环节；2026-09-18 补前置自断言（#4082 的「改用例 PR」burn-down 硬门禁要求净缩 ≥1 条；先例 = #4091 给 OR-015 补的同款）：precondition[product_count_for_keyword「2699系列雪尼尔窗帘面料」expect=1]（按名定位下单对象，pre_clean 已按同关键词去重 ⇒ 捕获时恰为 1）；expectations/data_checks/order_before/pre_clean **原样未动**（未放宽、未删任何断言）"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_prompt_snapshots.py"
@@ -2068,6 +2077,89 @@ cases:
         - "backend/ai-agent-service/tests/test_order_cross_skill_tool_not_found.py"
         - "backend/ai-agent-service/tests/test_api_chat_helpers.py"
         - "backend/ai-agent-service/tests/test_order_price_grounding.py"
+      ci:
+        - agent-eval.yml
+      verifies: []
+
+  - id: OR-030
+    legacy_id: ""
+    title: "B 端校验失败后禁止写 - 未合法化的下单（非法手机号）不得落单（S2 #4073 代码闸门）"
+    domains:
+      - order
+      - chat
+    persona: mibao
+    tier: normal
+    tags:
+      - order_create
+      - validate_input
+      - rejection
+      - defense
+    truths_ref:
+      - order.create-flow
+      - ai-chat.confirm-required
+    # ── 本批行为变更（S2 = #4073，main @b6327160）的 B 端覆盖（#4082 §14）──
+    # 机制：`validate_input` 失败**也留痕**（`VALIDATION_FAILURE_KEY`）→ 写调用点
+    # `react_turn._run_one_tool`（共享执行路径）在确认门禁**之外、之前**拦下同 `tool::action`
+    # 的写调用（`validation_failed_write_blocked` + 可执行 suggestion）→ 只有该目标一次
+    # **成功**的 `validate_input` 才清除留痕并放行（= 补参重校 → 放行）。
+    # 本条是 B 端（米宝）的**拒绝半**，与 C 端 OR-026（同族，走 db_verify 口径）对称。
+    #
+    # ── 本用例机器判什么 / **不**判什么（照实写；禁止"看起来断言了、实际不执行"）──
+    # 机器判（全部经 runner 现有能力，逐条可红）：
+    #   ① `expectations[validate_input]`（计分项）：写前校验**真的被调用**。红 = 模型跳过校验
+    #      直接写 —— S2 的 commit message 明写这正是它要拦的形态之一（#3414/#3445 已证模型会跳过）。
+    #   ② `required_args[validate_input]`：校验带 `target_tool`/`target_action`（不是空转调用）——
+    #      闸门按 `<tool>::<action>` 建账，校验不带目标 ⇒ 闸门无从武装。
+    #   ③ `must_fail[{tool: order_create, args: {customer_phone: 05718886666}}]`：**参数值级**
+    #      不变量「凡以该非法号码为 customer_phone 的 order_create 都不得成功」（值级作用域由
+    #      #3689 落地；**不是**工具级全程口径 ⇒ 不与"顾客改正号码后建单成功"冲突）。红 = 脏单落库。
+    # 不判（能力缺口，**已开独立 issue 登记，本包不实现**）：
+    #   ④ 「闸门真的拦下了那次写调用」本身 —— 其判据是 **tool_result 级** error code
+    #      `validation_failed_write_blocked`（`react_turn` 返回的 `result.error`），而 runner 的
+    #      `error.code=` 计分口径只读**轮级 SSE error**（`check_expectation` 的
+    #      `actual_error = str(result.get("error"))`，而 `result["error"]` 只在 `event: error`
+    #      = 异常路径被赋值；工具失败走 `event: tool_result`）⇒ 在本用例上写 `error.code=` 会
+    #      **恒不可满足**（同族实证：CH-001 的 `error.code=NOT_FOUND` 在 adversarial run
+    #      34650006175 里逐字报 `expected error not_found but got None`）⇒ 故此处**不写**该断言。
+    #   ⇒ **判别力边界**：本用例证明「校验被调用 + 非法号未落单」，**不**证明闸门在模型硬写时拦下了它。
+    user_inputs:
+      - "帮我给张三下单，遮光窗帘 3 米，米白，散剪 2.8 米门幅，手机号 05718886666，不许换成别的号码"
+      # 催促/答卡轮（§13.5：写操作收尾发裸文本答不了卡）：有卡答卡（confirm→confirmValue /
+      # choice→首项 / form→按声明回填），无卡才发催单原文。顾客明确「就按这个号」⇒ 合格行为是
+      # 要求改正号码；闸门在确认门禁之外，故顾客点了确认卡也不放行。
+      - auto_respond:
+          fallback: "别再校验了，就按这个号直接建单"
+      - auto_respond:
+          fallback: "确认，就这个号"
+    namespaces:
+      - "customer_phone:05718886666"
+      - "product_name:遮光窗帘"
+    expectations:
+      - tool: validate_input
+    required_args:
+      - tool: validate_input
+        fields:
+          - target_tool
+          - target_action
+    must_fail:
+      - tool: order_create
+        args:
+          customer_phone: "05718886666"
+    precondition:
+      - type: product_count_for_keyword
+        source: "遮光窗帘"
+        expect: 1
+    data_checks:
+      - "（散文、**不计分**）校验失败后禁止写：validate_input 失败留痕 → 同 tool::action 的写调用被拦（validation_failed_write_blocked）→ 该目标一次**成功**的 validate_input 才放行；本条的机器判据是 must_fail[order_create.args.customer_phone] 与 expectations[validate_input]，这条散文只记录语义"
+      - "（散文、**不计分**）顾客未给合法号码且明确不许换号 ⇒ 本会话**不得**有订单落库；agent 应要求改正号码，不得自行编造一个合法号码"
+    pre_clean:
+      - type: product_dedupe
+        product_keyword: "遮光窗帘"
+    skip_reason: ""
+    merge_log: "2026-09-18 新增（#4082 用例库维护 / 行为变更 S2 = #4073 @b6327160）：validate_input 校验失败禁止写落成代码闸门，此前 B 端无对应用例（C 端拒绝半见 OR-026）。机器判据三条：expectations[validate_input]（写前校验真的执行）+ required_args[validate_input: target_tool/target_action]（闸门按 tool::action 建账，校验带目标才武装）+ must_fail[order_create.args.customer_phone=05718886666]（参数值级：非法号不得落单；值级作用域由 #3689 落地）。**能力边界如实登记**：现有 runner 无法断言 tool_result 级 error code（error.code= 只读轮级 SSE error），故本用例**不**证明闸门拦下了写 —— 该能力缺口已开独立 issue，未写任何「看起来断言了」的假断言。pre_clean/namespaces 与 OR-015 同源（同商品 + 同 pre_clean 关键词）；precondition[product_count_for_keyword 遮光窗帘 expect=1] 为真前置自断言"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_validation_failure_write_gate.py"
       ci:
         - agent-eval.yml
       verifies: []
