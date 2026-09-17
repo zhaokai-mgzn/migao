@@ -7,7 +7,13 @@ AI 智能客服系统 - 员工管理 Tool
 from typing import Any, Dict, List, Optional
 from loguru import logger
 
-from app.tools.base import admin_api_failure, BaseTool, ToolContext, ToolResult
+from app.tools.base import (
+    admin_api_failure,
+    BaseTool,
+    ToolContext,
+    ToolResult,
+    permission_denied,
+)
 from app.utils.http_client import get_admin_api_client
 
 
@@ -143,9 +149,9 @@ class EmployeeManageTool(BaseTool):
         # 的员工通过米宝执行创建/删除/重置密码等写操作。
         required = "employee:list" if action in self.read_only_actions else "employee:create"
         if "*" not in (context.permissions or []) and required not in (context.permissions or []):
-            return ToolResult(
-                success=False,
-                error="权限不足",
+            # 门禁**之外**的动作级拒绝 ⇒ 必须自己走共享构造点带码（issue #4147 G2；
+            # 被 L0 静态锁 tests/test_tool_denial_semantics.py 覆盖）。
+            return permission_denied(
                 message="您没有权限执行该员工操作",
                 suggestion=(
                     "请联系管理员在「员工管理」中为您开通相应权限"

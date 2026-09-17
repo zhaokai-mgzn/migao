@@ -191,7 +191,18 @@ class TestValidateInputTypeCheck:
 
 
 class TestValidateInputPermission:
-    async def test_unauthorized(self, tool, unauthorized_tool_context):
+    """本工具的角色门禁 = **角色层不适用**（issue #4147 G1b）。
+
+    改前：`allowed_roles = ["admin","agent","tenant_admin","customer"]` ⇒ 除 admin 外的
+    **全部商户员工**（operator / product_manager / customer_service / sales / finance /
+    自定义岗位）调用一律「权限不足」—— 而它是纯本地参数校验器，双端都要用。
+    改后：角色不设限（`["*"]`，仍要求已认证），真正的授权边界在**目标写工具自己的
+    `required_permissions`** 上（admin-api 权限码）—— 下一条用例即证明该边界仍在。
+    """
+
+    async def test_unknown_role_gets_a_real_verdict_not_a_false_denial(
+        self, tool, unauthorized_tool_context
+    ):
         result = await tool.execute(
             context=unauthorized_tool_context,
             target_tool="product_manage",
@@ -199,7 +210,18 @@ class TestValidateInputPermission:
             params={"name": "x", "price": 1},
         )
         assert result.success is False
-        assert "权限" in result.error
+        assert "权限不足" not in (result.error or ""), (
+            "角色层不适用：不得再对商户侧角色吐假拒绝（真问题是缺必填字段）"
+        )
+        assert "分类ID" in result.message, f"应给出真实校验结论（实际 {result.message!r}）"
+
+    async def test_the_authorization_boundary_is_the_target_write_tool(
+        self, unauthorized_tool_context
+    ):
+        """边界没消失，只是归位：同一身份写 `product_manage` 仍被目标工具自己的门禁拒绝。"""
+        from app.tools.registry import get_tool_registry
+        target = get_tool_registry().get_tool("product_manage")
+        assert target.check_permission(unauthorized_tool_context) is False
 
 
 class TestProductCreateDeterministicAttrs:

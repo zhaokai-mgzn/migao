@@ -34,6 +34,20 @@ NON_RETRYABLE_ERROR_CODES = frozenset({
     "PERMISSION_DENIED", "FORBIDDEN", "AUTH_REQUIRED", "AUTH_FAILED", "UNAUTHORIZED",
 })
 
+#: 认证/会话类码（`NON_RETRYABLE_ERROR_CODES` 的**子集**）—— 与「账号缺权限」不是一回事。
+#:
+#: 为什么单独点名（issue #4147 G10）：这两类失败都不可重试，但**归因完全不同** ——
+#: 401 系列常常是服务令牌/登录态/会话失效（基础设施或会话问题），而 #4106 的映射点把它们
+#: 一并换成「你的账号缺少权限，请管理员在管理后台开通」⇒ 把基础设施故障说成用户的权限问题，
+#: 用户按提示去找管理员开通永远修不好。文案必须**按码分叉**，重试语义（不可重试）不变。
+AUTHENTICATION_ERROR_CODES = frozenset({"AUTH_REQUIRED", "AUTH_FAILED", "UNAUTHORIZED"})
+
+#: 工具层权限拒绝（`check_permission` 判否）统一使用的错误码。
+#:
+#: 与 admin-api 403 同名（`GlobalExceptionHandler` / `PermissionInterceptor`），因此**天然落在**
+#: `NON_RETRYABLE_ERROR_CODES` 里 —— 这是工具层拒绝与「#4122 非重试闸门」之间的唯一接口。
+PERMISSION_DENIED_CODE = "PERMISSION_DENIED"
+
 #: admin-api 在异常 message 里携带缺失权限码的形态（`PermissionInterceptor` 第 107 行）
 _REQUIRED_PERMISSION_RE = re.compile(r"需要权限[:：]?\s*([A-Za-z][A-Za-z0-9_:]*)")
 
@@ -95,18 +109,65 @@ def _detail_required_permission(details: Any) -> Optional[str]:
     return None
 
 
-def _denial_suggestion(required_permission: Optional[str]) -> str:
-    """授权失败给模型的**可执行**建议（不是「稍后重试」套话）。
+def _denial_suggestion(required_permission: Optional[str],
+                       code: Optional[str] = None) -> str:
+    """授权/认证失败给模型的**可执行**建议（不是「稍后重试」套话）。
 
-    必须同时说清三件事，否则模型只会原地重试或胡编参数：
-    ① 这是权限限制、不是参数问题；② **不要重试**；③ 去哪开通（管理后台的授权路径）。
+    按**失败性质**分两半（issue #4147 G10）—— 两者都不可重试，但归因与出路不同：
+
+    - 认证类（`AUTHENTICATION_ERROR_CODES`）：常见真因是登录态/会话失效或服务令牌
+      （内部服务认证）配置问题 ⇒ 必须说清「这不是你的账号缺权限」，并给重新登录 +
+      排查令牌的出路，**不得**指引用户去管理后台开通权限（那永远修不好）。
+    - 其它授权类（PERMISSION_DENIED / FORBIDDEN）：必须同时说清三件事，否则模型只会
+      原地重试或胡编参数：① 这是权限限制、不是参数问题；② **不要重试**；
+      ③ 去哪开通（管理后台的授权路径）。
     """
+    if code in AUTHENTICATION_ERROR_CODES:
+        return (
+            "这是登录态/会话或服务令牌（认证）问题，**不是**账号缺少权限、也不是参数问题："
+            "请不要重试，也不要换参数重试。请引导用户重新登录后再发起本次操作；"
+            "若重新登录后仍失败，请联系管理员或技术支持排查该账号的登录态与服务令牌配置。"
+        )
     missing = f"「{required_permission}」" if required_permission else "执行该操作所需的"
     return (
         "这是权限限制（不是参数问题）：请不要重试，也不要换参数重试。"
         f"当前账号缺少{missing}权限，请如实告知用户，并指引其联系管理员在管理后台"
         "（「员工管理 → 编辑员工 → 权限」或「角色管理 → 岗位权限」）为该账号开通后，"
         "再由用户重新发起本次操作。"
+    )
+
+
+def permission_denied(
+    *,
+    error: Optional[str] = None,
+    message: Optional[str] = None,
+    suggestion: Optional[str] = None,
+) -> ToolResult:
+    """**工具层权限拒绝的唯一构造点**（issue #4147 G2）。
+
+    为什么必须有：工具层 `check_permission` 的拒绝过去是就地手写的
+    `ToolResult(success=False, error="权限不足", …)`（41 处），**从不带 `error_code`**
+    ⇒ #4122 加的非重试闸门（`error_code in NON_RETRYABLE_ERROR_CODES`）对权限拒绝恒不触发，
+    幂等工具仍会被 `_self_correct_retry` 拿去做「参数改写重放」：拿同一身份、同一权限再调一次
+    永远不可能成功，还会把拒绝改写成「参数问题」。
+
+    语义（不猜）：
+    - `error_code` 恒为 `PERMISSION_DENIED_CODE`（∈ `NON_RETRYABLE_ERROR_CODES`）——
+      这是消费方判定「不可重试」的唯一依据；
+    - 默认文案取 `_denial_suggestion`（与 admin-api 403 的映射点**同源**，不另立第二份文案）；
+    - 调用方可以按场景**覆盖** message/suggestion（跨端拒绝要讲清"该能力只对某一端开放"，
+      比统一文案更有用）—— 覆盖的只是文案，码不变。
+
+    不覆盖的拒绝点：工具级门禁拒绝由共享执行入口 `_execute_tool_safe` **统一盖章**
+    （见该函数；判据是「门禁说不 + 交付了失败」，与工具怎么措辞无关）——
+    41 处手写拒绝里有 3 个文件属其它包持有，逐点手改必然漏，而漏掉的那一处就是闸门的静默缺口。
+    """
+    return ToolResult(
+        success=False,
+        error=error or "权限不足",
+        message=message or "您没有权限执行该操作",
+        suggestion=suggestion or _denial_suggestion(None, PERMISSION_DENIED_CODE),
+        error_code=PERMISSION_DENIED_CODE,
     )
 
 
@@ -127,8 +188,10 @@ def admin_api_failure(
 
     映射规则：
 
-    - `error.code ∈ NON_RETRYABLE_ERROR_CODES` ⇒ 建议一律换成可执行的权限指引
-      （说明是权限限制、不要重试、指向管理后台授权路径），并保留服务端给的缺失权限码。
+    - `error.code ∈ NON_RETRYABLE_ERROR_CODES` ⇒ 建议一律换成**可执行**指引，并按码分叉
+      （issue #4147 G10）：授权类（PERMISSION_DENIED/FORBIDDEN）说明「这是权限限制、不要重试、
+      去哪开通」并保留服务端给的缺失权限码；认证类（AUTH_REQUIRED/AUTH_FAILED/UNAUTHORIZED）
+      说明「这可能是登录态/会话/服务令牌问题，不是账号缺权限」。
       **调用方的 `suggestion` 在这一支被刻意忽略** —— 它正是要被顶掉的套话。
     - 其它失败 ⇒ 服务端非空的 `suggestion` 优先，其次才是调用方给的默认文案；
       `message` / `error` 同理（调用方给了就用调用方的，因为它通常已拼上服务端 message）。
@@ -157,7 +220,7 @@ def admin_api_failure(
             data=data,
             error=error or service_message or "权限不足",
             message=message or service_message or "您没有权限执行该操作",
-            suggestion=_denial_suggestion(_required_permission(payload)),
+            suggestion=_denial_suggestion(_required_permission(payload), code),
             error_code=code,
         )
 
@@ -407,6 +470,7 @@ class BaseTool(ABC):
     # 角色白名单 —— **只在未声明 required_permissions 时生效**（见 check_permission）。
     # 声明了权限码的工具不得再声明它：那是第二份会漂移、且实际不生效的假门禁
     # （issue #4106 F3/F4；由 tests/test_tool_permission_codes.py 静态锁定）。
+    # `["*"]` = **角色层不适用**（任何已认证身份；仅纯本地校验类工具可用，见 check_permission）。
     allowed_roles: list[str] = ["customer", "admin", "agent", "tenant_admin"]
     # 细粒度权限码（**权威层**）：非空 ⇒ 由 JWT permissions claim 决定访问，
     # 空列表 ⇒ 回落到 allowed_roles 粗筛。码取自 admin-api 权限目录
@@ -448,6 +512,8 @@ class BaseTool(ABC):
            （C 端 JWT 没有权限码，加码会让 C 端全量失效）与目录里没有对应码的
            通用工具（如 `notification_manage`：`NotificationController` 全类无
            `@RequirePermission`）。这一层是**真正需要**的，不是历史包袱。
+           `allowed_roles == ["*"]`（角色层不适用）只给「纯本地校验」类工具用，
+           当前唯一使用者 = `validate_input`（双端都要用 + 商户角色码是开放集合）。
 
         Args:
             context: Tool 执行上下文
@@ -479,6 +545,18 @@ class BaseTool(ABC):
             return any(p in permissions for p in self.required_permissions)
 
         # 角色层（粗筛）：只给「没有目录权限码」的工具用
+        #
+        # `"*"` = **角色层不适用**（issue #4147 G1b）：本工具对**任何已认证身份**开放。
+        # 只允许「纯本地、无副作用、自身不构成任何特权能力」的校验类工具声明它，当前唯一
+        # 使用者 = `validate_input`。为什么需要这个哨兵：① 它双端都要用（C 端「确认-执行链」
+        # 依赖它成功才落「已校验待执行」）；② 商户侧角色码是**开放集合**（admin-api「角色管理」
+        # 可创建任意岗位码，`_to_agent_role` 明确保留原角色码）⇒ 任何手写角色清单都必然
+        # 把持有权限码的员工判成「权限不足」（#4106 F4 的同款形态，只是换了个工具）；
+        # ③ 真正的授权在**目标写工具自己的 `required_permissions`** 上（本工具不读库不写库）。
+        # 复用权限层的既有 `"*"` = 全量 语义（`admin` 的 `permissions == ["*"]`），不另造概念。
+        # `require_auth` 仍然生效：这一支的语义是「角色不设限」，不是「无需认证」。
+        if "*" in self.allowed_roles:
+            return True
         return context.role in self.allowed_roles
     
     def get_schema(self) -> Dict[str, Any]:

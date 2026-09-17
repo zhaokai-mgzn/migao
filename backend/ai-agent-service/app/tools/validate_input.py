@@ -7,7 +7,7 @@
 from typing import Any, Dict, List, Optional
 from loguru import logger
 
-from app.tools.base import BaseTool, ToolContext, ToolResult
+from app.tools.base import BaseTool, ToolContext, ToolResult, permission_denied
 from app.tools.registry import get_tool_scope
 
 
@@ -438,17 +438,22 @@ class ValidateInputTool(BaseTool):
     description = (
         "【触发】调用 product_manage、order_create、order_manage 等写操作前，先调用本工具校验参数完整性。【前置】需要 target_tool + target_action + params。校验通过返回 success=true。【反例】不要跳过校验直接调写操作。查询操作不需要校验。【标注】READONLY — 纯本地校验，不调用外部API"
     )
-    # ⚠️ 必须含 `customer`（C 端小布）：本工具是**纯本地参数校验**（description 自述
-    # READONLY、不调用外部 API），小布的 `customer_aftersales` 绑定它，而 `base_skill`
-    # 的「确认-执行链」依赖它**成功**才持久化「已校验待执行」状态：
-    #     if tool_name == "validate_input" and result_dict.get("success"): → 落 pending
-    # 此前不含 customer → 顾客调用一律 `权限不足` → C 端售后 confirm 永远换不来执行
-    # （CI 实证 run 34620594324：`failed=validate_input!权限不足` → 兜底 human_handoff，
-    #  aftersale_create 整轮 0 次成功）。
-    # 安全性：本工具不读库、不写库、不访问外部服务，只校验调用方自己传来的参数；
-    # 真正的权限门禁在各自写工具的 required_permissions（admin-api 权限码，见
-    # `app/tools/base.py::check_permission`）上，放开这里不构成越权。
-    allowed_roles = ["admin", "agent", "tenant_admin", "customer"]
+    # ⚠️ 角色层**不适用**（`["*"]`）—— 本工具是**双端 + 全岗位**的前置校验器，
+    # 不是一份会漂移的角色清单（issue #4147 G1(b)）。三条理由：
+    # ① 双端都要用：小布的 `customer_aftersales`/`customer_order` 绑定它，而 `base_skill`
+    #    的「确认-执行链」依赖它**成功**才持久化「已校验待执行」状态
+    #    （`if tool_name == "validate_input" and result_dict.get("success"):` → 落 pending）；
+    #    此前不含 customer → 顾客调用一律 `权限不足` → C 端售后 confirm 永远换不来执行
+    #    （CI 实证 run 34620594324：`failed=validate_input!权限不足` → 兜底 human_handoff）。
+    # ② 商户侧角色码是**开放集合**：admin-api「角色管理」可创建任意岗位码，`_to_agent_role`
+    #    明确保留原角色码 ⇒ 任何手写清单（曾为 admin/agent/tenant_admin/customer）都必然把
+    #    operator / product_manager / customer_service / sales / finance / 自定义岗位判成
+    #    「权限不足」（#4106 F4 的同款假拒绝，只是换了个工具）。
+    # ③ 安全性：本工具不读库、不写库、不访问外部服务，只校验调用方自己传来的参数；
+    #    真正的权限门禁在各自写工具的 required_permissions（admin-api 权限码，见
+    #    `app/tools/base.py::check_permission`）上，放开这里不构成越权。
+    # `require_auth` 仍为 True：这一支的语义是「角色不设限」，不是「无需认证」。
+    allowed_roles = ["*"]
 
     parameters = {
         "type": "object",
@@ -477,8 +482,11 @@ class ValidateInputTool(BaseTool):
         params: Optional[Dict[str, Any]] = None,
     ) -> ToolResult:
         if not self.check_permission(context):
-            return ToolResult(success=False,
-                error="权限不足",
+            # 走共享构造点（issue #4147 G2）：拒绝必须带不可重试码，否则消费点读不到码
+            # ⇒ 幂等工具仍会被拿去做「参数改写重放」。同时这里补上 message ——
+            # 改前该拒绝是 `message=None`（G1(a) 的 TypeError 源头：`.get("message", …)`
+            # 对「键存在、值为 None」不生效）。
+            return permission_denied(
                 suggestion="请改用当前账号有权限的操作，或请用户联系管理员开通权限后再校验",
             )
 

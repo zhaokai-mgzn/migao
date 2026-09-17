@@ -47,6 +47,11 @@ users.permissions (JSON 权限码)               （员工权限快照：员工�
 - `permissions` claim 由 `JwtAuthenticationFilter` 解析，并透传到米宝工具的 `ToolContext.permissions`（同一份权限码，不另立口径）。
   生效边界（#4106 铺开后为**全部 B 端工具**；此前只有 `employee_manage` 声明 `required_permissions`）：
   工具声明 `required_permissions` 时按权限码放行，`allowed_roles` 只做粗筛与路由；越权的最终关口是 admin-api 的 `@RequirePermission` 403（见下方「强制点」与「权限码矩阵与已知缺口」）。
+  两点补充口径（#4147）：① `allowed_roles = ["*"]` 表示**角色层不适用**（任何已认证身份），
+  只允许纯本地校验类工具声明（当前唯一 `validate_input`）—— 商户角色码是**开放集合**
+  （「岗位权限」页可创建任意岗位码），任何手写清单都会把持码员工判成「权限不足」；
+  ② 工具层 `check_permission` 的拒绝必须带 `error_code ∈ NON_RETRYABLE_ERROR_CODES`
+  （当前 `PERMISSION_DENIED`），否则授权失败会进自修复重试的参数改写重放。
 
 ## 全链路现状（员工管理权限）
 
