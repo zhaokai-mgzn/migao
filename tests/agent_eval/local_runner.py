@@ -4585,21 +4585,104 @@ def check_precondition_declared(specs: list) -> list:
     return issues
 
 
-# ── 评测可控权限的**前置自断言**（issue #4108；CI run 35259795549 的
-#    `CASE-TRUST-NO-PRECONDITION-ASSERTION` × 2）────────────────────────────────
+# ── 评测可控权限的**前置自断言**（issue #4108；`#4150` 改成**观测服务端**）─────────
 # 为什么必须有：`X-Debug-Permissions` 的生效条件是「DEBUG=true ∧ `X-Debug-Role` 非 customer
 # ∧ 值过白名单」。任一条不成立（头名拼错 / 值含空格 / 角色写成 customer / 栈里 DEBUG=false）
 # ⇒ 服务端**静默回落通配 `["*"]`**（`app/utils/auth.py::_debug_permissions_override`）
 # ⇒ HR-009 的「越权被拒」变成「有权限所以成功」，而报告上只表现为
 # `unmatched expectation`（**看起来像 agent 不干活**）—— 归因全错，正是 PG-013/CU-003 的形态。
 #
-# 判据必须是**否定式**的（"回落形态一律红"），而不是"等于声明值即绿"：
-# 空值 / 含 `*` / 任一非法码都会让服务端整串回落 ⇒ 生效范围**不可能是**声明值 ⇒ 必红。
-def check_debug_permissions_effective(specs: list, effective: str) -> list:
-    """核对「用例声明的权限范围」是否真的生效（纯函数）。
+# ⚠️ 旧实现是**空断言**（issue #4150 实证）：它把「用例声明的 `debug_permissions`」当作
+# `effective`（`_case_debug_permissions(case)`）与 `source` 比对 —— 两侧同源（同一个 YAML 值）
+# ⇒ **恒等恒绿**；上面列的四类运行期形态**一个都进不了那个入参**。判据必须观测
+# 「服务端**真的**给了什么范围」，而不是"我声明了什么"。
+#
+# 观测面（零 LLM、零产品改动）：`__PAGE__` 分页协议是**唯一**「带本会话身份执行工具、
+# 且不经模型」的确定性入口（`app/api/chat.py::_handle_page_request` → 直调
+# `registry.execute_tool`，其 `ToolContext.permissions` 取自 `current_user.permissions`）。
+# 探针工具必须是该协议白名单里**声明了 `required_permissions`** 的那一个 —— 其余白名单工具
+# 只按角色层放行、对权限码不敏感 ⇒ 做不了判据。当前唯一满足的是 `dashboard_stats`
+# （`required_permissions = ["dashboard:view"]`）。
+# 判据 = 「声明的范围里有没有探针那个码」与「探针的**实际结局**」必须一致：
+#   · 不在声明范围 ⇒ 必须被拒 —— **服务端回落通配时它会被放行 ⇒ 红**（本包的核心红证）；
+#   · 在声明范围   ⇒ 必须放行 —— 少给了码 ⇒ 红（会表现成"误拒"，看起来像 agent 不干活）。
+#
+# ⚠️ **哨兵码的前置条件（如实登记，不藏着）**：本判据的可判别性依赖「哨兵码不在用例声明的
+# 范围内」。若某条用例声明的范围**本来就含** `dashboard:view`，那"服务端回落通配"与"真的授予
+# 了它"在探针上**同形**（都是 allowed）⇒ 该用例的这一格会**静默变绿**（护栏变成空断言）。
+# 这一条有机械守卫（`test_eval_debug_permissions_precondition.TestSentinelBoundary`：
+# 声明了本前置的用例其范围不得含哨兵码），新增此类用例必须换判据或换哨兵。
+# 声明值**不做 strip/归一化**：服务端也不做（含空白 = 非法 = 整串回落通配），
+# 客户端"顺手修好"就会把那一格判绿（与服务端口径分叉 ⇒ 假绿）。
+_PERMISSION_PROBE_TOOLS: tuple = (("dashboard_stats", "dashboard:view"),)
+#: 探针载荷：必须过工具自己的入参契约（`dashboard_stats.parameters.required = ["action"]`），
+#: 否则健康栈上工具也会失败 ⇒ 判据退化成恒红。
+_PERMISSION_PROBE_PARAMS: dict = {"action": "overview"}
+#: 权限拒绝的**产品锚点**（`registry.execute_tool` 的 message）：只用于把「被权限拒绝」与
+#: 「工具执行失败」区分开（后者同样没有 tool_call 事件）。判据主体是**结构化事件**，
+#: 文案只做消歧，且由单测锚定产品源码里仍有它（漂移 ⇒ 单测红）。
+_PERMISSION_DENIED_MARKER = "没有权限"
 
-    `effective` = 该用例声明的 `debug_permissions`（**值与渲染器同源**，见
-    `_case_debug_permissions`）；未声明（空）时不适用 —— 由调用方跳过。
+
+def probe_permission_verdict(result: dict, tool: str) -> tuple:
+    """把探针那一轮的 SSE 事件读成判定（纯函数；三种结局都有红证，见单测）。
+
+    返回 `(verdict, note)`：
+      · `allowed` —— 探针工具**真的执行了**（`tool_call` / `tool_result` 事件在）⇒ 权限层放行；
+      · `denied`  —— 没有工具事件，且错误文案命中权限拒绝锚点 ⇒ 权限层拒绝；
+      · `unknown` —— 两者都不是（HTTP/会话异常、工具执行失败…）⇒ **失败关闭**：
+        取不到真值一律判前置不成立（"查不到"不许当"没问题"，与 `employee_absent` 同口径）。
+    """
+    r = result or {}
+    names = [str(tc.get("name") or "") for tc in (r.get("tool_calls") or [])]
+    tools_hit = [str(x.get("tool") or "") for x in (r.get("tool_results") or [])]
+    if tool in names or tool in tools_hit:
+        return "allowed", f"探针 {tool} **真的执行了**（tool_call/tool_result 事件在）"
+    err = str(r.get("error") or "")
+    if err and _PERMISSION_DENIED_MARKER in err:
+        return "denied", f"探针 {tool} 被权限层拒绝（error={err[:80]!r}）"
+    return "unknown", (
+        f"读不出探针 {tool} 的结局（既无工具事件，error={err[:120]!r} 也不含权限拒绝文案）")
+
+
+def permission_probe_expectation(declared: str) -> tuple:
+    """按声明范围挑探针并算出**期望结局**（纯函数）。
+
+    返回 `(tool, code, params, expect)`；`expect ∈ {"allowed", "denied"}`。
+    """
+    for tool, code in _PERMISSION_PROBE_TOOLS:
+        return tool, code, dict(_PERMISSION_PROBE_PARAMS), (
+            "allowed" if code in declared.split(",") else "denied")
+    raise RuntimeError("_PERMISSION_PROBE_TOOLS 为空 —— 判据失去目标（不得静默跳过）")
+
+
+async def _probe_permission_scope(token, tool, params, debug_user, debug_permissions) -> tuple:
+    """在**专用探针会话**里直调工具，观测服务端实际生效的权限范围（零 LLM）。
+
+    会话独立于用例会话：`__PAGE__` 路径会往会话里写两条消息（用户轮 + 助手轮），
+    用用例自己的会话会污染被测对话历史（改变用例前提）。
+    """
+    sid = await get_or_create_session(token, prefer_new=True, debug_user=debug_user,
+                                      debug_permissions=debug_permissions)
+    try:
+        r = await send_message(
+            token, sid,
+            f"__PAGE__|{tool}|{json.dumps(params, ensure_ascii=False)}",
+            debug_user=debug_user, debug_permissions=debug_permissions)
+        return probe_permission_verdict(r, tool)
+    finally:
+        await _end_session(token, sid, debug_user=debug_user,
+                           debug_permissions=debug_permissions)
+
+
+async def check_debug_permissions_effective(token: str, specs: list, declared: str,
+                                           debug_user: str = "") -> list:
+    """核对「用例声明的权限范围」是否**真的生效**（**观测服务端**，issue #4150）。
+
+    `declared` = 该用例声明的 `debug_permissions`（`_case_debug_permissions`，
+    也是 `_chat_headers` 真正下发的值）；未声明（空）时不适用 —— 由调用方跳过。
+    `specs` 里的 `source` 是**期望**（用例声明它依赖哪个范围）——与 `declared` 不一致时，
+    探针的读数会与期望对不上而判红（fail-closed），无需另设一条比对。
     """
     issues = []
     for s in specs or []:
@@ -4611,15 +4694,66 @@ def check_debug_permissions_effective(specs: list, effective: str) -> list:
                 "precondition[debug_permissions_effective]: 缺 source（声明了权限范围却没说"
                 "是哪个范围 —— 断言会静默跳过）")
             continue
-        if effective != src:
+        # 前提校验之一（与 `_chat_headers` **同源**，不复制"什么条件下会下发"这份知识）：
+        # 该头压根没下发时（persona 非 mibao / 无 SERVICE_TOKEN），声明范围不可能生效。
+        if not _chat_headers(token, debug_user, declared).get("X-Debug-Permissions"):
             issues.append(
-                f"precondition[debug_permissions_effective]: 本会话**未以声明的权限范围**跑 —— "
-                f"用例声明 {src!r}，实际生效 {effective!r}。"
-                f"本用例考的是「该权限范围下的行为」，范围不符时它的红/绿**不可归因于被测行为**。"
-                f"核对：`X-Debug-Permissions` 是否真的下发（`_case_debug_permissions` → "
-                f"`_chat_headers`）+ 服务端是否回落通配（`*`/空白/空元素/非法码一律回落 `[\"*\"]`）"
-                f"+ 栈是否为 DEBUG=true")
+                f"precondition[debug_permissions_effective]: `X-Debug-Permissions` **未下发**"
+                f"（`_chat_headers` 在当前 persona/token 形态下不会带它）⇒ 服务端只会给通配"
+                f"`[\"*\"]`，用例声明 {src!r} 的范围**不可能生效**，其红/绿不可归因于被测行为")
+            continue
+        tool, code, params, expect = permission_probe_expectation(declared)
+        verdict, note = await _probe_permission_scope(
+            token, tool, params, debug_user, declared)
+        if verdict == "unknown":
+            issues.append(
+                f"precondition[debug_permissions_effective]: {note} —— 本会话是否以声明的权限"
+                f"范围跑**无法判定**（fail-closed；取不到真值不许当通过）")
+        elif verdict != expect:
+            if verdict == "allowed":        # 声明里没有该码，却被放行 ⇒ 服务端回落通配
+                issues.append(
+                    f"precondition[debug_permissions_effective]: 本会话的**服务端生效权限**"
+                    f"不是用例声明的范围 —— 用例声明 {src!r}（不含 {code}），但探针 {tool}"
+                    f"（需 {code}）**被放行执行** ⇒ 服务端落回了通配 `[\"*\"]`"
+                    f"（头未下发/头名不符/值非法/角色分支不符/栈非 DEBUG）。"
+                    f"此时「越权被拒」会变成「有权限所以成功」，本用例的红/绿不可归因于被测行为。"
+                    f"{note}")
+            else:                            # 声明里有该码，却被拒 ⇒ 声明的码没生效
+                issues.append(
+                    f"precondition[debug_permissions_effective]: 声明的 `{code}` **没有生效** —— "
+                    f"探针 {tool} 被拒，说明服务端生效范围里没有它（用例声明 {src!r}）。"
+                    f"该用例的前提（依赖该码）不成立。{note}")
     return issues
+
+
+async def probe_permissions_cli(declared: str) -> int:
+    """`probe-permissions` 子命令的实现（**活体红证**，零 LLM、不跑任何用例）。
+
+    为什么需要（issue #4150）：判据"服务端回落通配 ⇒ 判红"必须有**可执行**的证伪路径，
+    否则下一个人只能相信注释。本入口对**活栈**跑一次探针并打印判定，退出码可直接接门禁：
+
+        local_runner.py probe-permissions --declared "employee:list"    # 期望 ✅ 退出 0
+        local_runner.py probe-permissions --declared "employee:list,"   # 植入夹具：尾逗号 = 空元素
+                                                                        # = 非法 ⇒ 服务端整串回落
+                                                                        # 通配 ⇒ 探针被放行 ⇒ ❌ 退出 1
+
+    ⚠️ 本机无栈时它会以"头未下发/请求失败"红 —— 那是**诚实**的红（判据不成立），不是判据坏了。
+    """
+    print(f"🔎 权限探针（零 LLM）：declared={declared!r}")
+    try:
+        tool, code, _params, expect = permission_probe_expectation(declared)
+        print(f"   探针工具 = {tool}（需 {code}）｜期望结局 = {expect}")
+        issues = await check_debug_permissions_effective(
+            "", [{"type": "debug_permissions_effective", "source": declared}], declared)
+    except Exception as e:                                       # noqa: BLE001
+        print(f"❌ 探针执行失败: {type(e).__name__}: {e}")
+        return 1
+    if issues:
+        for _i in issues:
+            print(f"❌ {_i}")
+        return 1
+    print("✅ 判定与期望一致：声明的权限范围在服务端**真的生效**（未回落通配）")
+    return 0
 
 
 def check_preclean_not_applied(msgs: list) -> list:
@@ -6093,13 +6227,20 @@ async def run_case(case, token: str, session_id: str) -> dict:
     # 前置断言的**声明层**一致性（issue #3781，L0/零 LLM）：声明了没实现的 type
     # ⇒ 断言会静默跳过（"看起来有覆盖"），fail-closed 报出来。
     case_issues += check_precondition_declared(getattr(case, "precondition", None) or [])
-    # 评测可控权限的**前置自断言**（issue #4108）：声明的权限范围必须真的生效 ——
-    # 否则服务端静默回落通配 `["*"]`，用例考的不是它声称的行为（归因全错）。
-    # 纯函数、零 HTTP：`effective` 取自用例自己的声明（与 `_chat_headers` 下发值同源）。
-    case_issues += check_debug_permissions_effective(
-        getattr(case, "precondition", None) or [],
-        _case_debug_permissions(case),
-    ) if _case_debug_permissions(case) else []
+    # 评测可控权限的**前置自断言**（issue #4108；#4150 改成**观测服务端**）：声明的权限范围
+    # 必须真的生效 —— 判据 = `__PAGE__` 直调 `dashboard_stats` 的**探针**（零 LLM，
+    # 探针会话独立、跑完即关），**不再拿"声明"比"声明"**（那是恒绿空断言）。
+    # 失败关闭：探针异常/读不出结局 ⇒ 记一条断言级失败（不许静默跳过）。
+    if _case_debug_permissions(case):
+        try:
+            case_issues += await check_debug_permissions_effective(
+                token, getattr(case, "precondition", None) or [],
+                _case_debug_permissions(case),
+                getattr(case, "debug_user", "") or "",
+            )
+        except Exception as e:
+            case_issues.append(
+                f"precondition[debug_permissions_effective] 探针执行失败: {type(e).__name__}: {e}")
     # 控制轮的**声明形态**（issue #4042）：写成 JSON 字符串 ⇒ 静默退化成纯文本轮（fail-closed 报出来）
     case_issues += check_control_turns_declared(getattr(case, "user_inputs", None) or [])
 
@@ -7847,8 +7988,16 @@ async def main():
     # 步骤，成本由 run 的墙钟体现）。
     _run_t0 = time.monotonic()
     parser = argparse.ArgumentParser()
-    parser.add_argument("suite", choices=["smoke", "normal", "full", "adversarial", "case"], nargs="?", default="smoke")
+    parser.add_argument("suite",
+                        choices=["smoke", "normal", "full", "adversarial", "case",
+                                 "probe-permissions"],
+                        nargs="?", default="smoke",
+                        help="probe-permissions = **活体权限探针**（issue #4150）：零 LLM、不跑用例，对活栈校验「声明的权限范围真的生效」；退出码 0=生效 / 1=回落通配或读不出")
     parser.add_argument("--case-id", help="单条用例 ID（支持新 ID 与 legacy_id，如 OR-002 或 O002）")
+    parser.add_argument("--declared", default="employee:list",
+                        help="probe-permissions 专用：要校验的 `X-Debug-Permissions` 值。"
+                             "**植入夹具**用非法值（如 `employee:list,`）⇒ 服务端整串回落通配"
+                             " ⇒ 探针必被放行 ⇒ 期望判红（退出 1）")
     parser.add_argument("--case-ids", default="",
                         help="逗号分隔的用例 ID 列表（**迭代提速用**）：只跑这些用例，"
                              "可在任意 tier 上叠加（如 `normal --case-ids OR-019,OR-024`）。"
@@ -7867,6 +8016,10 @@ async def main():
     parser.add_argument("--no-classify", action="store_true",
                         help="关闭波动分类（issue #2890 兼容开关：恢复旧的无差别单次重试，调试用）")
     args = parser.parse_args()
+
+    if args.suite == "probe-permissions":
+        # 活体红证入口（issue #4150）：不选用例、不烧 LLM，只校验权限范围是否真的生效。
+        sys.exit(await probe_permissions_cli(args.declared))
 
     if args.cases:
         cases = load_cases_from_yaml(args.cases)
