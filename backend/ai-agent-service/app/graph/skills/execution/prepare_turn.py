@@ -17,8 +17,9 @@ from typing import Any, List
 from app.graph.skills.base_skill import (
     AIMessage, AgentState, CircuitBreakerOpenError, HumanMessage,
     LLM_CALL_TIMEOUT_S, SystemMessage, VISION_CLARIFY_GUIDE, _build_system_prompt,
-    _extract_content, _extract_intent_name, _inject_pending_validated, _inject_user_memories,
-    _inject_user_preferences, _inject_write_input_recovery, _sanitize_messages_for_text_path, _track_llm_cost,
+    _extract_content, _extract_intent_name, _inject_pending_validated, _inject_permission_scope,
+    _inject_user_memories, _inject_user_preferences, _inject_write_input_recovery,
+    _sanitize_messages_for_text_path, _track_llm_cost,
     _usable_vision_analysis, _vision_retry_needed, build_tool_context, has_images,
     llm_breaker_name,
 )
@@ -183,6 +184,10 @@ async def prepare_turn(
     # 4e. 写工具缺参等待期注入（issue #3365，OR-017）：顾客欠验证码等参数时，
     # 明令"索要参数、禁止重复调用、禁止重发同一张确认卡"——模型层不遵从是死循环的真因。
     system_prompt = await _inject_write_input_recovery(system_prompt, state, _confirm_msg)
+    # 4f. B 端权限范围注入（issue #4107 / 父单 #4103 F8）：让模型知道本会话人的角色与权限码，
+    # 越权请求不尝试、权限拒绝不重试、如实说明缺哪项能力并给开通路径。C 端 / 空权限 /
+    # admin 通配一律**原样返回**（逐字节不变 ⇒ C 端零回归）；标签取自 admin-api 权限目录镜像。
+    system_prompt = _inject_permission_scope(system_prompt, state)
 
     if is_multimodal:
         system_prompt = (
