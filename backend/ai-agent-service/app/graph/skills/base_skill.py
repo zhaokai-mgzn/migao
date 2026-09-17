@@ -30,7 +30,7 @@ from loguru import logger
 from app.config import settings
 from app.graph.state import AgentState
 from app.graph.pending_validated import extract_pending, is_pending_for, PENDING_KEY
-from app.tools.base import ToolContext
+from app.tools.base import ToolContext, ToolResult
 from app.tools.registry import (
     ToolRegistry, set_tool_context, get_tool_context, set_tool_scope, get_tool_scope,
     audit_write_tool,
@@ -1451,29 +1451,17 @@ def resolve_sms_code(known_code, given_code) -> tuple[str, str]:
 # 修法与 handoff_blocked_inflight 同族：跨轮记账 + 不放行注定失败的调用 + 禁止重发同一张卡。
 WRITE_INPUT_ERROR_KEY = "last_write_input_error"
 
-# 工具错误原文 → 缺的参数名。只登记**能从顾客单条消息可靠识别**的参数（保守）。
-WRITE_INPUT_ERROR_PARAMS: dict = {
-    "缺少短信验证码": "sms_code",
-    "验证码格式无效": "sms_code",
-    "验证码错误或已过期": "sms_code",
-    "缺少商品明细": "items",
-}
-
+# 「缺哪个参数」从**结构化字段** `ToolResult.missing_params` 来（issue #4080 T3）。
+# 这里曾有一张「中文错误原文 → 参数名」的子串表 + `missing_input_param()`（`key in text`）：
+# 它的唯一生产者是 `app/tools/order_create.py` 的 4 个失败点，而**错误文案改一个字**
+# （"缺少"→"未提供"）判据就静默失效、且不会有任何东西变红（R5 明令禁止的形态）。
+# 现在：生产者直接带 `missing_params`（+ `base.BaseTool.validate_args` 的契约失败也带），
+# 消费端（本文件 2 处 + `execution/react_turn.py` 1 处）只读结构化字段 —— 表**删除**，
+# 基线 4 条 → 0（R4：只许缩短，不得扩容）。
 _INPUT_PARAM_LABELS: dict = {
     "sms_code": "短信验证码（4-6 位数字）",
     "items": "商品明细（名称、数量、单价）",
 }
-
-
-def missing_input_param(error: str) -> str:
-    """工具错误原文 → 所缺参数名；不是「缺参」类失败时返回空串。"""
-    text = str(error or "")
-    if not text:
-        return ""
-    for key, param in WRITE_INPUT_ERROR_PARAMS.items():
-        if key in text:
-            return param
-    return ""
 
 
 def user_supplied_param(param: str, user_msg: str) -> bool:
@@ -2831,7 +2819,9 @@ async def _write_input_recovery_block(tool_name: str, args: dict, tool_call: dic
     flag = full.get(WRITE_INPUT_ERROR_KEY)
     if not isinstance(flag, dict):
         return None
-    param = flag.get("param") or missing_input_param(flag.get("error", ""))
+    # 结构化优先（issue #4080 T3）：`param` 由记账方从 `missing_params` 写入；
+    # 非法/缺失的 flag 一律当作「无欠参」放行（fail-open，不静默锁死工具）。
+    param = flag.get("param") or ""
     if not param:
         return None
     if user_supplied_param(param, last_user_msg):
@@ -2934,7 +2924,9 @@ async def _inject_write_input_recovery(system_prompt: str, state: dict,
         flag = full.get(WRITE_INPUT_ERROR_KEY)
         if not isinstance(flag, dict):
             return system_prompt
-        param = flag.get("param") or missing_input_param(flag.get("error", ""))
+        # 结构化优先（issue #4080 T3）：`param` 由记账方从 `missing_params` 写入；
+        # 非法/缺失的 flag 一律当作「无欠参」放行（fail-open，不静默锁死工具）。
+        param = flag.get("param") or ""
         if not param:
             return system_prompt
         if user_supplied_param(param, last_user_msg):
@@ -3063,6 +3055,7 @@ async def _execute_tool_safe(tool, tool_args: dict, tool_context, state: dict) -
         "summary": "",
         "suggestion": "",
         "terminal": False,
+        "missing_params": [],
     }
 
     # 写工具图片类参数被丢弃 → 不执行，返回失败 + 正确工具指引（issue #3930）：
@@ -3075,6 +3068,26 @@ async def _execute_tool_safe(tool, tool_args: dict, tool_context, state: dict) -
 
     # 1.5. 自动解析 _ids 参数：LLM 传加工项名称/序号时自动转 UUID
     tool_args = await _auto_resolve_ids(tool, tool_args, state)
+
+    # ── 1.6 入参契约校验（issue #4080 T2）──
+    # 工具**自己声明的** `parameters` 必须在这里被真的消费：缺显式 required / 类型不可解析 /
+    # 枚举越界 ⇒ **不执行本体**，直接回结构化失败（error + 可执行 suggestion + missing_params），
+    # 由 react_turn 的 `_self_correct_retry` 自愈链接手（它第二行就是"没有 suggestion 就短路"）。
+    # 为什么放在共享执行入口：判据**不逐工具手写**（R1）—— react_turn 与 finalize_turn 都走这里。
+    # fail-open：没有 `parameters` 的鸭子类型替身 `getattr` 取不到 ⇒ 不校验（不静默拦合法调用）；
+    # **只认 `ToolResult` 实例**：`MagicMock` 工具（并发/隔离测试里大量使用）的属性访问会自动
+    # 变出 Mock 对象，`is not None` 判据会把它们当成"契约失败"而误拦（实测：15 个隔离用例红）。
+    _args_contract_check = getattr(tool, "validate_args", None)
+    if callable(_args_contract_check):
+        _contract_failure = _args_contract_check(tool_args)
+        if isinstance(_contract_failure, ToolResult):
+            # 填**共用出口字典**（#4057 T4 的单点出口）—— 不另造字典，否则异常出口会缺字段
+            result_dict["error"] = _contract_failure.error
+            result_dict["message"] = _contract_failure.message
+            result_dict["suggestion"] = getattr(_contract_failure, "suggestion", None) or ""
+            result_dict["missing_params"] = list(
+                getattr(_contract_failure, "missing_params", None) or [])
+            return json.dumps(result_dict, ensure_ascii=False), result_dict
 
     session_id = state.get("session_id", "")
     tenant_id = str(state.get("tenant_id", ""))
@@ -3163,6 +3176,7 @@ async def _execute_tool_safe(tool, tool_args: dict, tool_context, state: dict) -
         summary=getattr(result, "summary", None) or "",
         suggestion=getattr(result, "suggestion", None) or "",
         terminal=bool(getattr(result, "terminal", False)),
+        missing_params=list(getattr(result, "missing_params", None) or []),
     )
     result_str = json.dumps(result_dict, ensure_ascii=False, default=str)
 

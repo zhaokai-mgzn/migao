@@ -289,54 +289,19 @@ class ToolRegistry:
     @staticmethod
     def _build_args_schema(tool: BaseTool) -> Optional[Type[BaseModel]]:
         """从 Tool 的 parameters JSON Schema 动态生成 Pydantic 模型
-        
+
+        **实现单点来源**（issue #4080）：生成逻辑在 `app.tools.base.build_args_schema()`，
+        本方法只做转接（此处曾是三份副本之一）。
+
         Args:
             tool: 原始 Tool
-            
+
         Returns:
             Optional[Type[BaseModel]]: Pydantic 模型类，用作 args_schema
         """
-        props = tool.parameters.get("properties", {})
-        if not props:
-            return None
-        
-        required_fields = set(tool.parameters.get("required", []))
-        
-        # JSON Schema type -> Python type 映射
-        type_map = {
-            "string": str,
-            "integer": int,
-            "number": float,
-            "boolean": bool,
-            "array": list,
-            "object": dict,
-        }
-        
-        field_definitions = {}
-        for field_name, field_schema in props.items():
-            py_type = type_map.get(field_schema.get("type", "string"), str)
-            description = field_schema.get("description", "")
-            default = field_schema.get("default", ...)
-            
-            if field_name in required_fields:
-                field_definitions[field_name] = (
-                    py_type,
-                    Field(description=description),
-                )
-            else:
-                # 可选参数
-                field_definitions[field_name] = (
-                    Optional[py_type],
-                    Field(default=default if default is not ... else None, description=description),
-                )
-        
-        if not field_definitions:
-            return None
-        
-        # 动态创建 Pydantic 模型
-        model_name = f"{tool.name.title().replace('_', '')}Args"
-        return create_model(model_name, **field_definitions)
-    
+        from app.tools.base import build_args_schema
+        return build_args_schema(tool.name, tool.parameters)
+
     def _create_langchain_tool(self, tool: BaseTool) -> Any:
         """创建 LangChain Tool（已废弃，使用 LangChainToolAdapter）
         
@@ -390,6 +355,13 @@ class ToolRegistry:
                 suggestion="当前账号无该工具权限，请改用只读查询或请用户联系管理员开通权限",
             )
         
+        # 入参契约校验（issue #4080 T2）：判据本体在 `BaseTool.validate_args`（单一来源），
+        # 此处是**第二个共享消费点**（与 `base_skill._execute_tool_safe` 同一条）。
+        # 只认 `ToolResult` 实例（MagicMock 替身会自动变出 Mock ⇒ 不得当成契约失败而误拦）
+        _contract_failure = tool.validate_args(kwargs)
+        if isinstance(_contract_failure, ToolResult):
+            return _contract_failure
+
         # 写操作审计日志：记录所有非只读操作的用户/参数/结果
         # 参数脱敏：仅记录结构化字段名，不记录值（避免 phone/address/name 等 PII 入日志）
         is_write = not tool.read_only

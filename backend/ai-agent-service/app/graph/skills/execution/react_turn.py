@@ -36,7 +36,7 @@ from app.graph.skills.base_skill import (
     _requires_confirmation, _self_correct_retry, _stall_has_progress, _stored_sms_code,
     _track_llm_cost, _write_input_recovery_block, capability_denial_text_hit, card_fingerprint,
     extract_pending, extract_product_keyword, extract_sms_code, is_pending_for,
-    llm_breaker_name, llm_incident_id, missing_input_param, raw_phones_in,
+    llm_breaker_name, llm_incident_id, raw_phones_in,
     resolve_sms_code, safe_exc_message, unit_price_grounding_error,
 )
 from app.graph.pending_validated import VALIDATION_FAILURE_KEY
@@ -1255,15 +1255,21 @@ async def react_turn(
                     # 清除只认**同一把工具**成功：product_search 之类只读工具成功不能清账，
                     # 否则欠参标记被顺手抹掉、下一轮又回到"重发卡 + 重复调用"的老路。
                     if session_id and tool_name != "validate_input":
-                        _param = "" if result_dict.get("success") else missing_input_param(
-                            result_dict.get("error") or "")
+                        # 缺参**只认结构化字段**（issue #4080 T3）：生产者有两处 ——
+                        # ① 工具自己的失败面（`order_create` 的 4 个点带 `missing_params`）；
+                        # ② 契约层（`BaseTool.validate_args` 拦住缺必填/类型/枚举时也带）。
+                        # 此前这里靠**中文错误原文子串匹配**反推（`missing_input_param`），
+                        # 错误文案一改判据就静默失效。
+                        # 只记账「判得出顾客已补齐」的参数（否则永久锁死该工具）——
+                        # 过滤合并进列表推导，与原先的"先记后清"等价且少一次赋值。
+                        _param = next(
+                            (p for p in (result_dict.get("missing_params") or [])
+                             if p in RECOGNIZABLE_INPUT_PARAMS), "")
                         try:
                             from app.memory.session_state_store import SessionStateStore as _S5
                             _s5 = _S5()
                             _f5 = await _s5.load(session_id) or {}
                             _prev5 = _f5.get(WRITE_INPUT_ERROR_KEY) or {}
-                            if _param and _param not in RECOGNIZABLE_INPUT_PARAMS:
-                                _param = ""   # 判不出"已补齐"的参数不记账（否则永久锁死该工具）
                             if _param:
                                 _f5[WRITE_INPUT_ERROR_KEY] = {
                                     "tool": tool_name,

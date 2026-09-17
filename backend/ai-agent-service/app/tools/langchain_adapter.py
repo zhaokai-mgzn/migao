@@ -6,25 +6,11 @@ AI 智能客服系统 - LangChain Tool 适配器
 
 import json
 import time
-from typing import Any, Optional, Annotated
+from typing import Any, Optional
 from loguru import logger
-from pydantic import BaseModel, Field, create_model
-from pydantic.functional_validators import BeforeValidator
+from pydantic import BaseModel
 
-from app.tools.base import BaseTool, ToolContext, ToolResult
-
-
-def _json_string_parser(value: Any) -> Any:
-    """BeforeValidator: LLM传了JSON字符串时自动解析为list/dict"""
-    if isinstance(value, str) and value.strip().startswith(("[", "{")):
-        try:
-            return json.loads(value)
-        except (json.JSONDecodeError, TypeError):
-            logger.warning(
-                f"[LangChainAdapter] Failed to parse JSON string arg: "
-                f"value={value[:200]}"
-            )
-    return value
+from app.tools.base import BaseTool, ToolContext, ToolResult, build_args_schema
 
 
 class LangChainToolAdapter:
@@ -37,59 +23,19 @@ class LangChainToolAdapter:
     @staticmethod
     def build_args_schema(tool: BaseTool) -> Optional[type[BaseModel]]:
         """从 Tool 的 parameters JSON Schema 动态生成 Pydantic 模型
-        
+
+        **实现单点来源**（issue #4080）：生成逻辑在 `app.tools.base.build_args_schema()`，
+        本方法只做转接 —— 这里曾是三份副本之一（`BaseTool._get_args_schema()` / 本文件 /
+        `ToolRegistry._build_args_schema()`），副本之间必然漂移。
+
         Args:
             tool: 原始 Tool
-            
+
         Returns:
             Optional[type[BaseModel]]: Pydantic 模型类，用作 args_schema
         """
-        props = tool.parameters.get("properties", {})
-        if not props:
-            return None
-        
-        required_fields = set(tool.parameters.get("required", []))
-        
-        # JSON Schema type -> Python type 映射
-        type_map = {
-            "string": str,
-            "integer": int,
-            "number": float,
-            "boolean": bool,
-            "array": list,
-            "object": dict,
-        }
-        
-        field_definitions = {}
-        for field_name, field_schema in props.items():
-            py_type = type_map.get(field_schema.get("type", "string"), str)
-            description = field_schema.get("description", "")
-            default = field_schema.get("default", ...)
+        return build_args_schema(tool.name, tool.parameters)
 
-            # array/object 字段加 BeforeValidator，在 Pydantic 类型强制前解析 JSON 字符串
-            # LLM 可能把 colors='[\"米白\"]' 传成字符串，不处理 Pydantic 会用 list(str) 逐字符拆分
-            validators = []
-            if py_type in (list, dict):
-                validators.append(_json_string_parser)
-
-            if field_name in required_fields:
-                field_definitions[field_name] = (
-                    Annotated[py_type, *validators] if validators else py_type,
-                    Field(description=description),
-                )
-            else:
-                field_definitions[field_name] = (
-                    Annotated[Optional[py_type], *validators] if validators else Optional[py_type],
-                    Field(default=default if default is not ... else None, description=description),
-                )
-        
-        if not field_definitions:
-            return None
-        
-        # 动态创建 Pydantic 模型
-        model_name = f"{tool.name.title().replace('_', '')}Args"
-        return create_model(model_name, **field_definitions)
-    
     @staticmethod
     def _normalize_args(tool: BaseTool, kwargs: dict) -> dict:
         """根据 Tool 的 JSON Schema 规范化参数类型

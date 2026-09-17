@@ -4841,8 +4841,11 @@ class TestWriteInputRecovery:
     # ── ② 失败即记账 ──
 
     def test_missing_input_failure_recorded(self):
+        # 夹具按**真实工具结果形状**给（issue #4080 T3）：缺参走结构化字段
+        # `missing_params`，不再由中文错误原文反推（断言未改）
         seen = self._run("确认", {"items": []},
-                         force_fail='{"success": false, "error": "缺少短信验证码"}')
+                         force_fail='{"success": false, "error": "缺少短信验证码", '
+                                    '"missing_params": ["sms_code"]}')
         flags = [c.get("last_write_input_error") for c in seen["commits"]
                  if c.get("last_write_input_error")]
         assert flags, "缺参失败必须跨轮记账，否则下一轮无从知道该要什么"
@@ -4866,7 +4869,8 @@ class TestWriteInputRecovery:
         """判不出"已补齐"的参数（商品明细）不得记账：否则该写工具被**永久**拦住，
         真实顾客说"就是刚才那款"也解不开。"""
         seen = self._run("确认", {"items": []},
-                         force_fail='{"success": false, "error": "缺少商品明细"}')
+                         force_fail='{"success": false, "error": "缺少商品明细", '
+                                    '"missing_params": ["items"]}')
         assert not seen["final_store"].get("last_write_input_error"), \
             "记账了不可识别的参数 → 该写工具将被永久锁死"
 

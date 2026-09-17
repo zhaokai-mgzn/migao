@@ -29,6 +29,27 @@ class _FakeTool(BaseTool):
         return ToolResult(success=True, data={"ok": True}, message="done")
 
 
+class _KeywordTool(BaseTool):
+    """必填参数名不与 `execute_tool` 的形参冲突的只读假工具（issue #4080 T2 用）。"""
+
+    name = "keyword_tool"
+    description = "keyword probe"
+
+    parameters = {
+        "type": "object",
+        "properties": {"keyword": {"type": "string", "description": "关键词"}},
+        "required": ["keyword"],
+    }
+
+    def __init__(self):
+        super().__init__()
+        self.seen: list[dict] = []
+
+    async def execute(self, context: ToolContext, keyword: str = "") -> ToolResult:
+        self.seen.append({"keyword": keyword})
+        return ToolResult(success=True, data={"keyword": keyword}, message="ok")
+
+
 class _WriteTool(BaseTool):
     """写工具（read_only=False），用于执行审计测试"""
 
@@ -152,10 +173,38 @@ class TestRegistryBuildArgsSchema:
 
 class TestRegistryExecute:
     async def test_execute_tool(self, registry, ctx):
+        """参数齐全 ⇒ 照常执行（含 `execute_tool` 的第二条入口：issue #4080 T2）。
+
+        这里用 `_KeywordTool` 而不是 `_FakeTool`：`_FakeTool` 的必填参数名恰好叫 `name`，
+        与 `ToolRegistry.execute_tool(name, context, **kwargs)` 的**第一个形参同名** ⇒
+        经本路径**永远传不进去**（改前会抛 `TypeError: got multiple values for argument 'name'`）。
+        契约校验落地后该形态变成**结构化缺参失败**（见下一条用例），不再抛异常。
+        """
+        registry.register(_KeywordTool())
+        result = await registry.execute_tool("keyword_tool", ctx, keyword="窗帘")
+        assert result.success is True
+        assert result.data == {"keyword": "窗帘"}
+
+    async def test_execute_tool_rejects_missing_required_arg(self, registry, ctx):
+        """缺显式 `required` ⇒ 契约层拦下，不进工具本体（issue #4080 T2）。"""
+        registry.register(_KeywordTool())
+        result = await registry.execute_tool("keyword_tool", ctx)
+        assert result.success is False
+        assert result.error == "missing_required_args"
+        assert result.missing_params == ["keyword"]
+        assert result.suggestion.strip() != ""
+
+    async def test_execute_tool_missing_param_named_like_the_tool_name_kwarg(self, registry, ctx):
+        """`_FakeTool` 的必填参数叫 `name`（与 `execute_tool` 的形参同名）⇒ 结构化缺参失败。
+
+        改前形态是 `TypeError: multiple values for argument 'name'`（未捕获 → 500）；
+        现在至少给出**可解释**的失败与 suggestion（本路径无法满足该参数这一点由本用例显式登记）。
+        """
         registry.register(_FakeTool())
         result = await registry.execute_tool("fake_tool", ctx, price=9.9)
-        assert result.success is True
-        assert result.data == {"ok": True}
+        assert result.success is False
+        assert result.error == "missing_required_args"
+        assert result.missing_params == ["name"]
 
     async def test_execute_nonexistent(self, registry, ctx):
         result = await registry.execute_tool("nonexistent", ctx)

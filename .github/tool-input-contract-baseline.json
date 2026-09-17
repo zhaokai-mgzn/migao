@@ -1,0 +1,15 @@
+{
+  "_comment": "「中文措辞当判据」站点的存量基线（issue #4080 = 母单 #4043 的 T-B 包 T2/T3 的机制守卫 ②）。判据本体：tests/unit_ci_workflows/test_tool_input_contract_guards.py。形态：<app 相对路径>:<站点数>；站点 = `<中文常量> in/not in <表达式>` 或 含 ≥2 个中文 key 的 dict 字面量。**只许缩短，不得扩容**（R4）：新增站点必须本次修掉或开独立 issue，不允许就地放宽本文件。",
+  "_scope": "backend/ai-agent-service/app/**",
+  "_recount": "cd backend/ai-agent-service && .venv/bin/python -c \"import sys; sys.path.insert(0,'../../'); from tests.unit_ci_workflows.test_tool_input_contract_guards import live_chinese_wording_counts; print(live_chinese_wording_counts())\"  # 或在仓库根跑 pytest tests/unit_ci_workflows/test_tool_input_contract_guards.py -q",
+  "_shrink_note": "本次改造删除了 `base_skill.WRITE_INPUT_ERROR_PARAMS`（中文错误原文 → 参数名 的子串表，4 条），故 base_skill.py 的计数较改造前下降 —— 基线只许缩短，因此按缩短后的实测值登记。其余站点（路由/规则匹配、ASR 文本、物流状态映射表）是存量、本次不动，仅锁「不新增」。",
+  "entries": [
+    "api/asr.py:1",
+    "graph/skills/base_skill.py:6",
+    "production/routing.py:2",
+    "router/rule_matcher.py:5",
+    "tools/inventory_manage.py:1",
+    "tools/logistics_track.py:2",
+    "tools/product_detail.py:1"
+  ]
+}
