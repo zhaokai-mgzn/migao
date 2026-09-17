@@ -1607,11 +1607,12 @@
 期望: direct_reply
 数据: UserRole 枚举须包含 admin-api 全部商户员工角色码（admin/operator/product_manager/knowledge_editor/customer_service/super_admin），admin-api JWT 解析不被 pydantic 校验拒绝（此前仅 customer/agent/admin 三值 → 员工 401）
 数据: 认证通过后原角色码保留（不折叠），AgentConfig.allowed_roles 按角色路由：operator/product_manager/customer_service/knowledge_editor → mibao（B 端），customer → xiaobu（C 端）
-数据: 工具层 allowed_roles 放行 operator 等员工角色执行其 admin-api 权限码对应的只读/业务工具（如 dashboard_stats/order_query/product_search），customer 角色仍被拒（无越权）
+数据: 权限码（而非角色白名单）是工具层的控权关口：工具声明 `required_permissions` 时，`ToolContext.permissions` 须含任一码（或 `*`）才放行，工具内再按 action 二次校验（现状仅 employee_manage 实装，#4106 铺开后为全部 B 端工具）
+数据: 角色白名单 `allowed_roles` 只做**粗筛与路由**，不承担细粒度控权：它既不保证'有权限码者一定放行'（漂移即假性拒绝，#4106 F4），也不保证'无权限码者一定被拒'（order_query/product_search/dashboard_stats 含 customer 属 C 端共用，非越权）；越权拦截的最终关口是 admin-api 的 `@RequirePermission` 403（#4105）
 跳过: 认证/路由/工具权限由 ai-agent 单测验证（test_utils_auth.py 等），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: ai-chat.permission-layers
-溯源: 2026-09-02 新增：POC 演示审查 D 项 — 角色码漂移导致商户员工（非 admin）米宝对话全部 401（UserRole 枚举硬编码三值 vs admin-api 签发五角色码）；修复 UserRole 枚举 + mibao.allowed_roles + 工具层 allowed_roles 三方对齐 ｜ tags: defense, auth, role-drift
+溯源: 2026-09-02 新增：POC 演示审查 D 项 — 角色码漂移导致商户员工（非 admin）米宝对话全部 401（UserRole 枚举硬编码三值 vs admin-api 签发五角色码）；修复 UserRole 枚举 + mibao.allowed_roles + 工具层 allowed_roles 三方对齐。2026-09-18 修正（issue #4108 / 父 #4103 Pkg D）：删掉一条**断言了不存在行为**的 data_check —— 原文称「工具层按 admin-api 权限码放行 operator、customer 仍被拒」，实测全仓 39 个工具只有 employee_manage 声明 required_permissions（权限码控权未铺开，#4106 才铺），且 order_query/product_search/dashboard_stats 的 allowed_roles 本身就含 customer（工具层角色白名单不是防越权关口）⇒ 改为如实描述修好后的契约：权限码是工具层控权关口（#4106），越权最终由 admin-api @RequirePermission 403 拦截（#4105）。 ｜ tags: defense, auth, role-drift
 
 ### DF-018. 长会话确认守卫不被污染 - 会话长度提示不得拼入用户消息，保证确认词可识别 🔴
 ```
@@ -1739,7 +1740,7 @@
 真值: finance.summary
 溯源: 本期默认时间范围（本月1号~今天） ｜ tags: finance, summary
 
-## 人事域（8 case）
+## 人事域（10 case）
 
 ### HR-001. 员工列表 🟢
 ```
@@ -1831,6 +1832,39 @@
 ```
 真值: employee-role.users-endpoint, employee-role.write-require-admin, employee-role.update-field-consumption
 溯源: 2026-09-14 新增（issue #3593）：员工更新（改手机号）落库断言缺失 —— HR-001~007 无任何 update 覆盖，是 #3550（phone/roleIds 被 admin-api 静默忽略 → 200 假成功，PR #3561 已修）潜伏至今的用例层根因。断言口径：expectations.args 值级（action=update + 目标=种子员工 debug_employee_wangwu + 新值逐字 13900139111）+ must_succeed[update]（写真的成功）+ required_args[user_id, phone]（下发参数完整）。⚠️ 仍缺的能力：仓库 db_verify 只有 order_phone / order_items / product_by_name / after_sales_ticket（末项为 #3580 同批新增），**没有员工/用户核对器** ⇒ 接收侧静默忽略这一精确类尚不能机器判定。需要的 runner 规格（归属 runner 包，本包不碰 local_runner.py）：db_verify: [{fetch: employee, name: 「王五」, expect_fields: {phone: 「13900139111」}}] —— 取数走 GET /api/admin/users?keyword=<name>（或 /api/admin/users/{id}）→ 在 items 里按 name/phone 定位 → 逐条比对 expect_fields（值不等即失败，取不到记录也判失败而非跳过）；expect_fields.role_code 可同时覆盖角色侧（roleIds）同源缺陷。本条选「改手机号」而非「改角色」的理由：role 的**合法下发形态有两种**（role_ids=[角色表主键] 或 role=角色 code，见 AdminUserController.updateUser 与 employee_manage._update_user 的 if role_ids / elif role 分支），在 required_args / expectations 无 OR 分支能力时对任一形态做值级断言都会造成另一半假红；手机号只有 phone 一种形态，可做值级断言。角色侧（roleIds ↔ role code）的落库断言由同一 db_verify[employee].expect_fields.role_code 承担，建议 runner 包一并实现。 ｜ tags: update, write, confirm
+
+### HR-009. 越权创建员工（仅 employee:list）- 不得自旋重复失败调用，须如实说明缺哪项权限并给开通路径 🔵
+```
+你: 帮我开个客服账号，姓名李四，手机号 13800009999，密码 Test123456
+你: 那我要怎么才能开通这个权限？
+期望: employee_manage(action=create)
+数据: 同一失败的 create 调用不得跨轮重复（自旋）：本仓库 runner 目前**没有**跨轮重复调用断言，故该条只能靠 LLM 层人工/盲审读报告 —— 如实登记，不假装已机器判定
+数据: 回复须点明是**账号权限**不足（而非功能不存在），并指向管理员在「角色管理/员工管理」为其开通 employee:create
+数据: 不得出现「请稍后重试」这类对确定性拒绝无效的敷衍话术
+清理: employee_remove(employee_name=李四、employee_phone=13800009999)
+禁词（全程）: 暂不支持、功能暂未开放、系统不支持、还没有这个功能、请稍后重试、无法创建
+全程禁用: order_manage
+全程禁用: product_manage
+必须: {'any_of': ['开通']}
+必须失败: employee_manage(create)
+落库: employee_absent 李四 → name=李四; phone=13800009999
+```
+真值: ai-chat.permission-layers, employee-role.write-require-admin
+溯源: 2026-09-18 新增（issue #4108 / 父 #4103 Pkg D）：让权限拒绝路径在评测中可达。断言口径：expectations 要求至少尝试一次 create（防'压根没调'与'如实说明'同形）+ must_fail 断言 create 一次都不得成功（**未修实现的判别性断言**：通配权限下 create 会成功 ⇒ 红）+ forbidden_text 三条反模式（功能不存在/稍后重试/无法创建）+ want_text 要求给出开通路径。身份靠服务端 DEBUG-only 的 X-Debug-Permissions（严格白名单、拒绝 *、生产不可达），harness 侧由 case 字段 debug_permissions 透传（仅非空时下发）。⚠️ 已知能力缺口：「同一失败调用不得重复」无 runner 断言，见 data_checks 首条；2026-09-18 第二轮（CI run 35259795549 的 Case Trust Gate 4 条阻塞）：补 ① `precondition[debug_permissions_effective source=employee:list]`（门禁 f 条 —— 声明的权限范围必须真的生效，否则服务端静默回落通配 `*`，用例考的不是它声称的行为）；② `db_verify[employee_absent]` 负效果断言（门禁 a2 条 —— 被拒绝的写，效果层真值是「该员工不得落库」；`must_fail` 只覆盖「没有一次成功调用」，门禁静默失效时脏数据会真的落库）；③ `pre_clean[employee_remove]`（门禁 b 条 —— 期望路径不造东西，但门禁失效那一格会造，清理保证重试前置等价 + 让 employee_absent 不因残留而持续红）。断言口径不变、无放宽。 ｜ tags: permission, denial, auth, regression
+
+### HR-010. 有能力时不得误拒（正向对照）- 持 employee:create 时同一请求必须真的执行 🔵
+```
+你: 帮我开个客服账号，姓名李四，手机号 13800009999，密码 Test123456
+你: 确认
+期望: employee_manage(action=create)
+数据: 持 employee:create 的员工请求同一动作时，agent 必须走完创建（不得以权限为由拒绝）
+数据: 创建结果须回执给用户（账号已开/密码等），不得只展示查询结果就停（HR-003/PP-006/PR-005 同族）
+清理: employee_remove(employee_name=李四、employee_phone=13800009999)
+必须成功: employee_manage(create)
+落库: employee 李四 → name=李四; expect_fields={'phone': '13800009999'}
+```
+真值: ai-chat.permission-layers, employee-role.write-require-admin
+溯源: 2026-09-18 新增（issue #4108 / 父 #4103 Pkg D）：「有能力时不得误拒」的正向对照。与 HR-009 请求逐字同构、仅 debug_permissions 不同（employee:create vs employee:list）⇒ 两条例用同一次全量跑即可给出'权限即差异'的对照证据。断言：expectations（action=create 值级）+ must_succeed（写真的成功）。幂等靠 pre_clean[employee_remove] + namespaces 声明（与任何写同名员工的用例自动串行，#3781 并行污染隔离）；2026-09-18 第二轮（同 CI run）：补 `precondition[debug_permissions_effective source=employee:create]`（门禁 f 条 —— 该码没生效则「正向对照」退化，生效成别的码则误拒而像 agent 不干活）+ `db_verify[employee]` 正向落库断言（读落库行，拦 #3550 的「200 假成功」）。断言口径不变、无放宽。 ｜ tags: permission, create, positive-control
 
 ## knowledge（7 case）
 
@@ -2354,7 +2388,7 @@
 禁参: customer_logistics_track() 不得含 tracking_number
 ```
 真值: order.logistics
-溯源: 2026-09-01 新增：C 端查物流入口（转人工→查物流）后端能力，与 B 端 logistics_track 物理隔离 ｜ tags: query, logistics, data_safety
+溯源: 2026-09-01 新增：C 端查物流入口（转人工→查物流）后端能力，与 B 端 logistics_track 物理隔离。2026-09-18 补前置自断言 + namespaces（issue #4108 的 CI run 35259795549 burn-down：改用例文件的 PR 必须净缩 ≥1 条存量违规，先清 OR-*；本用例命中的唯一一条是 CASE-TRUST-NO-PRECONDITION-ASSERTION）：`namespaces[customer_phone:13800138000]` + `precondition[order_count_for_phone:13800138000]`（不写 expect —— 该基线随栈组成变化，写死会制造假红）。**断言（user_inputs / expectations / forbidden_args / data_checks）原样未动，无放宽、无删减。** ｜ tags: query, logistics, data_safety
 
 ### OR-013. B 端物流查询 - 仅支持真实订单号，拒绝快递单号直查 🔵
 ```
@@ -4287,8 +4321,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：314（活跃 158，跳过 156）
-- tier 分布：smoke 10 / normal 271 / adversarial 33
+- 用例总数：316（活跃 160，跳过 156）
+- tier 分布：smoke 10 / normal 273 / adversarial 33
 - 售后域：9
 - agents：6
 - api：19
@@ -4300,7 +4334,7 @@
 - 数据域：10
 - 防御域：22
 - finance：4
-- 人事域：8
+- 人事域：10
 - knowledge：7
 - misc：15
 - onboarding：5

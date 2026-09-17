@@ -594,9 +594,20 @@ cases:
     data_checks:
       - "UserRole 枚举须包含 admin-api 全部商户员工角色码（admin/operator/product_manager/knowledge_editor/customer_service/super_admin），admin-api JWT 解析不被 pydantic 校验拒绝（此前仅 customer/agent/admin 三值 → 员工 401）"
       - "认证通过后原角色码保留（不折叠），AgentConfig.allowed_roles 按角色路由：operator/product_manager/customer_service/knowledge_editor → mibao（B 端），customer → xiaobu（C 端）"
-      - "工具层 allowed_roles 放行 operator 等员工角色执行其 admin-api 权限码对应的只读/业务工具（如 dashboard_stats/order_query/product_search），customer 角色仍被拒（无越权）"
+      # ── 2026-09-18 改写（issue #4108 / 父 #4103 Pkg D）──
+      # 原文写的是「工具层 allowed_roles 放行 operator 等员工角色执行其 admin-api 权限码对应的
+      # 只读/业务工具（如 dashboard_stats/order_query/product_search），customer 角色仍被拒
+      # （无越权）」——这不是当前真值，两头都不成立：
+      #   · 「按 admin-api 权限码放行」是**未实装**的期待：全仓 39 个工具里**只有
+      #     `employee_manage` 声明了 `required_permissions`**（其余工具的权限判据只有角色白名单）；
+      #   · 「customer 仍被拒」对上述三个工具**恰好相反**：order_query / product_search /
+      #     dashboard_stats 的 `allowed_roles` **本身就含 "customer"**（C 端也要用），
+      #     工具层的角色白名单从来不是防越权的关口。
+      # 改写口径 = 如实描述**修好之后**生效的契约（不做"写一条会恒红的期待"的假断言）：
+      - "权限码（而非角色白名单）是工具层的控权关口：工具声明 `required_permissions` 时，`ToolContext.permissions` 须含任一码（或 `*`）才放行，工具内再按 action 二次校验（现状仅 employee_manage 实装，#4106 铺开后为全部 B 端工具）"
+      - "角色白名单 `allowed_roles` 只做**粗筛与路由**，不承担细粒度控权：它既不保证'有权限码者一定放行'（漂移即假性拒绝，#4106 F4），也不保证'无权限码者一定被拒'（order_query/product_search/dashboard_stats 含 customer 属 C 端共用，非越权）；越权拦截的最终关口是 admin-api 的 `@RequirePermission` 403（#4105）"
     skip_reason: "认证/路由/工具权限由 ai-agent 单测验证（test_utils_auth.py 等），非 LLM 行为，不进入 agent-eval 冒烟"
-    merge_log: "2026-09-02 新增：POC 演示审查 D 项 — 角色码漂移导致商户员工（非 admin）米宝对话全部 401（UserRole 枚举硬编码三值 vs admin-api 签发五角色码）；修复 UserRole 枚举 + mibao.allowed_roles + 工具层 allowed_roles 三方对齐"
+    merge_log: "2026-09-02 新增：POC 演示审查 D 项 — 角色码漂移导致商户员工（非 admin）米宝对话全部 401（UserRole 枚举硬编码三值 vs admin-api 签发五角色码）；修复 UserRole 枚举 + mibao.allowed_roles + 工具层 allowed_roles 三方对齐。2026-09-18 修正（issue #4108 / 父 #4103 Pkg D）：删掉一条**断言了不存在行为**的 data_check —— 原文称「工具层按 admin-api 权限码放行 operator、customer 仍被拒」，实测全仓 39 个工具只有 employee_manage 声明 required_permissions（权限码控权未铺开，#4106 才铺），且 order_query/product_search/dashboard_stats 的 allowed_roles 本身就含 customer（工具层角色白名单不是防越权关口）⇒ 改为如实描述修好后的契约：权限码是工具层控权关口（#4106），越权最终由 admin-api @RequirePermission 403 拦截（#4105）。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_utils_auth.py"

@@ -3,7 +3,7 @@ AI 智能客服系统 - JWT 认证模块测试
 
 测试 auth.py 中的 JWT Token 解析和用户身份提取逻辑
 """
-# case_ids: DF-014, OR-022
+# case_ids: DF-014, DF-017, OR-022
 
 import time
 import jwt
@@ -339,6 +339,148 @@ class TestGetCurrentUser:
         assert user.user_id == "custom_staff_1"
         assert user.role == "poc_operator_custom"
         assert "dashboard:view" in user.permissions
+
+
+class TestDebugPermissionsHeader:
+    """评测可控身份（issue #4108 / 父 #4103 Pkg D）：DEBUG-only 的 `X-Debug-Permissions`。
+
+    为什么需要（本包的存在理由）：B 端评测恒以 `X-Debug-Role: mibao` 跑，服务端 DEBUG
+    分支给的是 `permissions=["*"]` ⇒ **权限拒绝路径在评测里不可达**，本次修复的核心行为
+    （越权时不自旋、如实说明并给开通路径）拿不到 LLM 层证据。该头让单条用例以**受限员工
+    身份**跑（同 `X-Debug-User` 的多身份先例 #3391）。
+
+    安全约束（与 P0-3 同源：DEBUG 误配不得变成提权后门）：
+      · 仅 DEBUG=true + `X-Debug-Role` 非 customer（B 端调试分支）时生效，生产不可达；
+      · 严格白名单正则，**拒绝 `*`**（否则"限制权限"的头反而变成通配提权）；
+      · 非法值一律回落既有 `["*"]` 并告警 —— **绝不部分应用**（半截列表 = 静默的权限语义漂移）。
+    """
+
+    def _request(self, headers):
+        request = MagicMock()
+        request.cookies = {}
+        request.state = MagicMock()
+        request.headers = headers
+        return request
+
+    @patch("app.utils.auth.settings")
+    @pytest.mark.asyncio
+    async def test_valid_header_sets_permissions_exactly(self, mock_settings):
+        """合法值 ⇒ 身份恰好携带这些码；角色仍是 B 端调试角色，租户不变。"""
+        mock_settings.DEBUG = True
+        mock_settings.JWT_PUBLIC_KEY = ""
+
+        from app.utils.auth import get_current_user
+
+        user = await get_current_user(self._request({
+            "X-Debug-Role": "mibao",
+            "X-Debug-Permissions": "employee:list,order:list",
+        }), authorization=None)
+
+        assert user.permissions == ["employee:list", "order:list"], (
+            "X-Debug-Permissions 未生效 ⇒ 越权用例仍以通配权限跑（#4108 本要治的形态）")
+        assert user.role == "admin"
+        assert user.user_id == "dev_user"
+        assert user.tenant_id == 1
+
+    @patch("app.utils.auth.settings")
+    @pytest.mark.asyncio
+    async def test_absent_header_keeps_wildcard(self, mock_settings):
+        """**缺省行为逐字不变**（`["*"]`）—— 全部存量评测依赖这一条。"""
+        mock_settings.DEBUG = True
+        mock_settings.JWT_PUBLIC_KEY = ""
+
+        from app.utils.auth import get_current_user
+
+        user = await get_current_user(self._request({"X-Debug-Role": "mibao"}),
+                                      authorization=None)
+        assert user.permissions == ["*"]
+
+    @pytest.fixture
+    def warning_records(self):
+        """捕获 WARNING 级日志。
+
+        用显式 loguru sink 而不是 `caplog`：**loguru 不接标准 logging**，
+        caplog 恒空 ⇒ 断言"有告警"会变成永远红的假判据（本文件相邻先例
+        `test_llm_exception_attribution.audit_records` 同一处理）。
+        """
+        from loguru import logger as _logger
+        records: list = []
+        sink_id = _logger.add(lambda m: records.append(m.record),
+                              level="WARNING", format="{message}")
+        try:
+            yield records
+        finally:
+            _logger.remove(sink_id)
+
+    @pytest.mark.parametrize("bad", [
+        "*",                                  # 通配 = 提权（本头必须挡住的头号形态）
+        "employee:list,*",                    # 混在合法码里也不行
+        "product:list,,order:list",           # 空元素 = 半截列表
+        "order:list,",                        # 尾逗号 = 空元素
+        ",order:list",                        # 首逗号 = 空元素
+        " ; rm -rf /",                        # 注入形状
+        "employee:list; rm -rf /",            # 合法码 + 注入
+        " employee:list",                     # 前导空白
+        "employee:list ",                     # 尾随空白
+        "employee list",                      # 内部空白
+        "employee:list\norder:list",          # 换行（header 注入）
+        "EMPLOYEE:LIST",                      # 大小写（权限码全小写）
+        "9order:list",                        # 首字符非字母
+        "a" * 300,                            # 超长（无界 = 资源面）
+        "employee:list," + "b" * 80,          # 单个元素超界
+    ])
+    @patch("app.utils.auth.settings")
+    @pytest.mark.asyncio
+    async def test_invalid_values_fall_back_to_wildcard_with_warning(
+            self, mock_settings, warning_records, bad):
+        """非法值 ⇒ 回落 `["*"]` + 告警；**绝不部分应用**（半截列表是静默权限漂移）。"""
+        mock_settings.DEBUG = True
+        mock_settings.JWT_PUBLIC_KEY = ""
+
+        from app.utils.auth import get_current_user
+
+        user = await get_current_user(self._request({
+            "X-Debug-Role": "mibao",
+            "X-Debug-Permissions": bad,
+        }), authorization=None)
+
+        assert user.permissions == ["*"], f"非法值被部分应用/采纳: {bad!r}"
+        assert any("X-Debug-Permissions" in r["message"] for r in warning_records), (
+            f"非法值静默回落（无告警）—— 误配不可见: {bad!r}")
+
+    @patch("app.utils.auth.settings")
+    @pytest.mark.asyncio
+    async def test_production_ignores_header_entirely(self, mock_settings):
+        """DEBUG=false ⇒ 分支不可达：带合法头仍 401（不是"生效了但为空"）。"""
+        mock_settings.DEBUG = False
+        mock_settings.JWT_PUBLIC_KEY = ""
+
+        from app.utils.auth import get_current_user
+
+        with pytest.raises(HTTPException) as exc_info:
+            await get_current_user(self._request({
+                "X-Debug-Role": "mibao",
+                "X-Debug-Permissions": "employee:list",
+            }), authorization=None)
+        assert exc_info.value.status_code == 401
+
+    @patch("app.utils.auth.settings")
+    @pytest.mark.asyncio
+    async def test_customer_branch_unaffected(self, mock_settings):
+        """C 端（customer）分支不受影响：既不改身份，也不给权限（该分支零权限是既有语义）。"""
+        mock_settings.DEBUG = True
+        mock_settings.JWT_PUBLIC_KEY = ""
+
+        from app.utils.auth import get_current_user
+
+        user = await get_current_user(self._request({
+            "X-Debug-Role": "customer",
+            "X-Debug-Permissions": "employee:list",
+        }), authorization=None)
+
+        assert user.user_id == "debug_customer_1"
+        assert user.role == "customer"
+        assert user.permissions == [], "C 端调试身份不得被 X-Debug-Permissions 赋权"
 
 
 class TestVerifyServiceToken:

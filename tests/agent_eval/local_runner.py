@@ -215,7 +215,8 @@ async def restore_product(token: str, product_id: str) -> str:
         return f"✅ 价格已复位：商品 {short} → {price}（回读一致）"
 
 
-async def _end_session(token: str, session_id: str, debug_user: str = "") -> None:
+async def _end_session(token: str, session_id: str, debug_user: str = "",
+                       debug_permissions: str = "") -> None:
     """评测会话清理（协议 §2.2）：case 结束后关闭会话，并触发长时记忆 flush。
 
     **主路径必须是 ai-agent 的关闭接口**（PUT {AI_API}/api/chat/sessions/{id}/close）：
@@ -237,7 +238,8 @@ async def _end_session(token: str, session_id: str, debug_user: str = "") -> Non
             # 用默认身份关闭会 403（实测 sess_... HTTP 403）→ close 路径失效 =
             # 记忆候选不 flush（正是本函数注释里 issue #3357 修过的"静默失效"）。
             r = await c.put(f"{AI_API}/api/chat/sessions/{session_id}/close",
-                            headers=_chat_headers(token, debug_user), timeout=15)
+                            headers=_chat_headers(token, debug_user, debug_permissions),
+                            timeout=15)
             if r.status_code >= 400:
                 print(f"     ⚠️ 会话关闭失败 HTTP {r.status_code}: id={session_id} "
                       f"body={str(getattr(r, 'content', b''))[:120]}")
@@ -956,13 +958,32 @@ async def login() -> str:
         return ""
     return await _retry_502("登录", _do_login)
 
-def _chat_headers(token: str, debug_user: str = "") -> dict:
+def _case_debug_user(case) -> str:
+    """用例声明的 DEBUG 身份（缺省 ""，见 `debug_user` 字段，issue #3391）。"""
+    return getattr(case, "debug_user", "") or ""
+
+
+def _case_debug_permissions(case) -> str:
+    """用例声明的 DEBUG 权限码（缺省 "" = 不下发 `X-Debug-Permissions`，issue #4108）。
+
+    **缺省必须与旧版逐字一致**：`""` ⇒ 不发该头 ⇒ 服务端仍给通配 `["*"]`
+    ⇒ 全部存量用例行为不变（新机制只对**显式声明**的用例生效）。
+    """
+    return getattr(case, "debug_permissions", "") or ""
+
+
+def _chat_headers(token: str, debug_user: str = "",
+                  debug_permissions: str = "") -> dict:
     """ai-agent 请求头：调试身份必须显式声明（P0-3 安全加固）
 
     - xiaobu（C 端）：X-Debug-Role: customer（DEBUG 本地栈/CI 显式注入小布身份）
     - mibao（B 端）+ SERVICE_TOKEN（CI）：X-Debug-Role: mibao——此前不带任何头
       依赖"无 token → DEBUG 静默降级 tenant1 管理员"，服务端已 fail-closed，
       现改为显式声明管理员调试身份，语义不变（eval 仍跑 tenant1 词元通达）。
+      `debug_permissions` 非空时追加 `X-Debug-Permissions`（issue #4108）：
+      B 端评测默认拿到通配 `["*"]` ⇒ **权限拒绝路径在评测里不可达**；该头让
+      **单条**用例以受限员工身份跑，从而产出「越权时不自旋、如实说明、给开通路径」
+      的 LLM 层证据。**只在非空时下发** —— 未声明的用例与服务端既有行为逐字一致。
     - 其它（本地真实登录）：Bearer token
     """
     if PERSONA == "xiaobu":
@@ -975,15 +996,21 @@ def _chat_headers(token: str, debug_user: str = "") -> dict:
             h["X-Debug-User"] = debug_user
         return h
     if SERVICE_TOKEN:
-        return {"X-Debug-Role": "mibao"}
+        h = {"X-Debug-Role": "mibao"}
+        # 评测可控权限（issue #4108）：服务端只在「DEBUG + 非 customer 调试身份」分支读它，
+        # 且严格白名单（拒绝 `*`/空白/空元素），非法值整串回落通配。
+        if debug_permissions:
+            h["X-Debug-Permissions"] = debug_permissions
+        return h
     return {"Authorization": f"Bearer {token}"} if token else {}
 
 async def get_or_create_session(token: str, prefer_new: bool = True,
-                                 debug_user: str = "") -> str:
+                                 debug_user: str = "",
+                                 debug_permissions: str = "") -> str:
     """获取或创建会话（502 重试：部署窗口自愈）"""
     async def _do() -> str:
         async with httpx.AsyncClient() as c:
-            h = _chat_headers(token, debug_user)
+            h = _chat_headers(token, debug_user, debug_permissions)
             if prefer_new:
                 r = await c.post(f"{AI_API}/api/chat/sessions", headers=h, json={}, timeout=10)
                 payload = _safe_json(r, {}) or {}
@@ -1004,7 +1031,8 @@ async def get_or_create_session(token: str, prefer_new: bool = True,
     return await _retry_502("创建会话", _do)
 
 async def send_message(token: str, session_id: str, message: str, images: list = None,
-                       debug_user: str = "") -> dict:
+                       debug_user: str = "",
+                       debug_permissions: str = "") -> dict:
     """发送消息并收集 SSE 事件
 
     Args:
@@ -1018,7 +1046,7 @@ async def send_message(token: str, session_id: str, message: str, images: list =
         body["images"] = images
 
     async with httpx.AsyncClient(timeout=120) as c:
-        h = _chat_headers(token, debug_user)
+        h = _chat_headers(token, debug_user, debug_permissions)
 
         result = {
             "user_message": message,
@@ -4366,6 +4394,11 @@ _PRECONDITION_NO_DRIFT = 0
 _PRECONDITION_TYPES: dict = {
     "order_count_for_phone": "手机号名下订单数",
     "product_count_for_keyword": "名字含该关键词的商品件数",
+    # 评测可控权限（issue #4108）：`source` = 用例声明的 `debug_permissions`（逗号分隔权限码）。
+    # 判据**不是**"数一个共享字面量有没有漂移"，而是"**本用例的权限范围是否真的生效**"——
+    # 见 `check_debug_permissions_effective`。`source` 语义与上两条一致 =「我依赖的那个
+    # 不可变键」；此处那个键就是用例自己声明的权限码串（渲染器与用例**同源**）。
+    "debug_permissions_effective": "本用例声明的 DEBUG 权限范围是否真的生效",
 }
 
 
@@ -4506,12 +4539,86 @@ def check_precondition_drift(specs: list, before: dict, after: dict) -> list:
     return issues
 
 
+async def _probe_employee_absent(token: str, emp_id: str = "", name: str = "",
+                                 phone: str = "") -> tuple:
+    """该员工/用户是否**不存在**（负效果断言的取数基元，issue #4108）→ (bool | None, 说明)。
+
+    · `True`  = 确认不存在（可以判绿）；
+    · `False` = 存在（命中即越权产物 ⇒ 调用方判红）；
+    · `None`  = **取数失败**（HTTP 异常/非 2xx）—— 调用方必须判失败，**不得**读成"不存在"：
+      `_safe_json` 对非 JSON/瞬断按空结果降级，把"查不到"当"没有"会让这条断言在网络抖动时
+      **静默变绿**（本仓库「环境层问题伪装成业务结论」的既有形态）。
+    · `False` 的判定用**双条件**（name ∧ phone，二者都给了就都要满足）：复用
+      `_eval_find_users`（`employee_remove` / `employee_reactivate` 的同一份
+      「怎么定位员工」定义），**不另立第二份口径**；只给一个键时按该键匹配。
+    """
+    _want_name = str(name or "").strip() or str(emp_id or "").strip()
+    _want_phone = str(phone or "").strip()
+    if not _want_name and not _want_phone:
+        return None, "缺 id/name/phone（定位不到对象）"
+    try:
+        async with httpx.AsyncClient() as c:
+            if emp_id:
+                r = await c.get(f"{ADMIN_API}/api/admin/users/{emp_id}",
+                                headers=_admin_headers(token), timeout=15)
+                if r.status_code >= 400:
+                    return None, f"GET /api/admin/users/{emp_id} HTTP {r.status_code}"
+                body = _safe_json(r, None)
+                data = (body or {}).get("data") if isinstance(body, dict) else None
+                if isinstance(data, dict) and data:
+                    return False, f"id={emp_id} 命中"
+            hits = await _eval_find_users(c, _admin_headers(token),
+                                          name=str(name or ""), phone=_want_phone)
+            if hits:
+                return False, f"命中 {len(hits)} 条（name={name!r} phone={phone!r}）"
+            return True, ""
+    except Exception as e:                                       # noqa: BLE001
+        return None, f"查询异常 {type(e).__name__}: {e}"
+
+
 def check_precondition_declared(specs: list) -> list:
     """声明层静态一致（L0）：声明的 type 必须已有实现（fail-closed，不静默跳过）。"""
     issues = []
     for t in precondition_capture_shape(specs):
         if t not in _PRECONDITION_TYPES:
             issues.append(f"precondition: 声明的 type {t!r} 没有实现（断言会静默跳过）")
+    return issues
+
+
+# ── 评测可控权限的**前置自断言**（issue #4108；CI run 35259795549 的
+#    `CASE-TRUST-NO-PRECONDITION-ASSERTION` × 2）────────────────────────────────
+# 为什么必须有：`X-Debug-Permissions` 的生效条件是「DEBUG=true ∧ `X-Debug-Role` 非 customer
+# ∧ 值过白名单」。任一条不成立（头名拼错 / 值含空格 / 角色写成 customer / 栈里 DEBUG=false）
+# ⇒ 服务端**静默回落通配 `["*"]`**（`app/utils/auth.py::_debug_permissions_override`）
+# ⇒ HR-009 的「越权被拒」变成「有权限所以成功」，而报告上只表现为
+# `unmatched expectation`（**看起来像 agent 不干活**）—— 归因全错，正是 PG-013/CU-003 的形态。
+#
+# 判据必须是**否定式**的（"回落形态一律红"），而不是"等于声明值即绿"：
+# 空值 / 含 `*` / 任一非法码都会让服务端整串回落 ⇒ 生效范围**不可能是**声明值 ⇒ 必红。
+def check_debug_permissions_effective(specs: list, effective: str) -> list:
+    """核对「用例声明的权限范围」是否真的生效（纯函数）。
+
+    `effective` = 该用例声明的 `debug_permissions`（**值与渲染器同源**，见
+    `_case_debug_permissions`）；未声明（空）时不适用 —— 由调用方跳过。
+    """
+    issues = []
+    for s in specs or []:
+        if not isinstance(s, dict) or s.get("type") != "debug_permissions_effective":
+            continue
+        src = str(s.get("source") or "")
+        if not src:
+            issues.append(
+                "precondition[debug_permissions_effective]: 缺 source（声明了权限范围却没说"
+                "是哪个范围 —— 断言会静默跳过）")
+            continue
+        if effective != src:
+            issues.append(
+                f"precondition[debug_permissions_effective]: 本会话**未以声明的权限范围**跑 —— "
+                f"用例声明 {src!r}，实际生效 {effective!r}。"
+                f"本用例考的是「该权限范围下的行为」，范围不符时它的红/绿**不可归因于被测行为**。"
+                f"核对：`X-Debug-Permissions` 是否真的下发（`_case_debug_permissions` → "
+                f"`_chat_headers`）+ 服务端是否回落通配（`*`/空白/空元素/非法码一律回落 `[\"*\"]`）"
+                f"+ 栈是否为 DEBUG=true")
     return issues
 
 
@@ -5064,6 +5171,38 @@ async def check_db_verify(token: str, db_verify: list, results: list | None = No
                         f"（员工 {_emp_ref!r}）—— 下发对 + 调用成功 + 库里没变 = 静默忽略")
             continue
 
+        if fetch == "employee_absent":
+            # **负效果**断言（issue #4108）：该员工/用户**不得存在**。
+            # 为什么必须有：权限被拒的写用例，其效果层真值是**负向**的（"什么都没落库"）。
+            # `must_fail` 只覆盖"没有一次成功调用"；若权限门禁**静默失效**
+            # （`X-Debug-Permissions` 被回落成通配、或某天 `check_permission` 被改坏），
+            # `create` 会成功 ⇒ 必须有一层读**落库真身**的断言把它判红（#3778「调用了 ≠ 成了」
+            # 的反面：**没调用也可能已经成了**，只有落库层能证伪）。
+            _abs_name = str(spec.get("name") or "").strip()
+            _abs_phone = str(spec.get("phone") or "").strip()
+            _abs_id = str(spec.get("id") or "").strip()
+            if not (_abs_id or _abs_name or _abs_phone):
+                issues.append(
+                    "db_verify[employee_absent]: 缺 id/name/phone（定位不到对象 ⇒ 断言永远绿 = 空断言）")
+                continue
+            _who_abs = _abs_id or _abs_name or _abs_phone
+            _found_abs, _note_abs = await _probe_employee_absent(
+                token, emp_id=_abs_id, name=_abs_name, phone=_abs_phone)
+            if _found_abs is None:
+                # ⚠️ **查询失败 ≠ 不存在**（本仓库反复踩的「环境层问题伪装成业务结论」）：
+                # `_safe_json` 对非 JSON/瞬断按空字典降级 ⇒ 若把"查不到"直接读成"没有"，
+                # 这条断言会在网络抖动时**静默变绿**（假绿）。故取数异常判失败而非跳过。
+                issues.append(
+                    f"db_verify[employee_absent]: 查不到员工 {_who_abs!r} 的存在性"
+                    f"（{_note_abs or '取数异常'}）—— 取不到真值不许当「不存在」")
+                continue
+            if _found_abs:
+                issues.append(
+                    f"db_verify[employee_absent]: 员工 {_who_abs!r} **已落库**"
+                    f"（{_note_abs or '已存在'}）—— 该操作本应被权限拒绝/不成立；"
+                    f"落库即越权产物（脏数据），判失败而非跳过")
+            continue
+
         if fetch == "after_sales_ticket":
             # 售后工单落库断言（issue #3544 / AS-004 假绿升级）：AS-004 的
             # `data_checks: "closedAt/closeReason 写入"` 是自然语义、**不计分**
@@ -5235,7 +5374,8 @@ async def _close_and_verify_session(case, token: str, r: dict, session_id: str) 
     重试路径同样必须调用（否则重试通过时 post_session 从未被执行 → 假绿）。
     """
     await _end_session(token, r.get("final_session_id") or session_id,
-                       debug_user=getattr(case, "debug_user", "") or "")
+                       debug_user=getattr(case, "debug_user", "") or "",
+                       debug_permissions=_case_debug_permissions(case))
     if not getattr(case, "post_session", None):
         return
     try:
@@ -5953,6 +6093,13 @@ async def run_case(case, token: str, session_id: str) -> dict:
     # 前置断言的**声明层**一致性（issue #3781，L0/零 LLM）：声明了没实现的 type
     # ⇒ 断言会静默跳过（"看起来有覆盖"），fail-closed 报出来。
     case_issues += check_precondition_declared(getattr(case, "precondition", None) or [])
+    # 评测可控权限的**前置自断言**（issue #4108）：声明的权限范围必须真的生效 ——
+    # 否则服务端静默回落通配 `["*"]`，用例考的不是它声称的行为（归因全错）。
+    # 纯函数、零 HTTP：`effective` 取自用例自己的声明（与 `_chat_headers` 下发值同源）。
+    case_issues += check_debug_permissions_effective(
+        getattr(case, "precondition", None) or [],
+        _case_debug_permissions(case),
+    ) if _case_debug_permissions(case) else []
     # 控制轮的**声明形态**（issue #4042）：写成 JSON 字符串 ⇒ 静默退化成纯文本轮（fail-closed 报出来）
     case_issues += check_control_turns_declared(getattr(case, "user_inputs", None) or [])
 
@@ -5984,9 +6131,11 @@ async def run_case(case, token: str, session_id: str) -> dict:
         images = []
         if isinstance(msg, dict) and msg.get("new_session"):
             await _end_session(token, session_id,
-                               debug_user=getattr(case, "debug_user", "") or "")
+                               debug_user=getattr(case, "debug_user", "") or "",
+                               debug_permissions=_case_debug_permissions(case))
             session_id = await get_or_create_session(
-                token, prefer_new=True, debug_user=getattr(case, "debug_user", "") or "")
+                token, prefer_new=True, debug_user=getattr(case, "debug_user", "") or "",
+                debug_permissions=_case_debug_permissions(case))
             session_breaks += 1
         if isinstance(msg, dict) and msg.get("auto_select"):
             # choice 卡自动回放（CU-003 回归防线）：上一轮 agent 下发 choice 卡时，
@@ -6052,7 +6201,8 @@ async def run_case(case, token: str, session_id: str) -> dict:
                 "——跨会话轮必须给出文本"
             )
         r = await send_message(token, session_id, text, images=images,
-                               debug_user=getattr(case, "debug_user", "") or "")
+                               debug_user=getattr(case, "debug_user", "") or "",
+                               debug_permissions=_case_debug_permissions(case))
         r["__round"] = i + 1
         r["__all_tool_names"] = [tc["name"] for tc in r["tool_calls"]]
         all_tool_names.extend(r["__all_tool_names"])
@@ -6360,7 +6510,8 @@ async def run_suite(cases, label: str, classify: bool = True, retry_budget: int 
 
         # 每个用例用独立 session，避免前序用例污染上下文
         session_id = await get_or_create_session(
-            token, prefer_new=True, debug_user=getattr(case, "debug_user", "") or "")
+            token, prefer_new=True, debug_user=getattr(case, "debug_user", "") or "",
+            debug_permissions=_case_debug_permissions(case))
 
         icon = {Difficulty.SMOKE: "🟢", Difficulty.NORMAL: "🔵",
                 Difficulty.EDGE: "🟡", Difficulty.ADVERSARIAL: "🔴"}.get(case.difficulty, "⚪")
@@ -6499,7 +6650,8 @@ async def run_suite(cases, label: str, classify: bool = True, retry_budget: int 
                 # 复位是**前置**动作，只能在这次边界（上一次尝试的断言已全部跑完）发生。
                 await _reset_for_retry()
                 retry_sid = await get_or_create_session(
-                    token, prefer_new=True, debug_user=getattr(case, "debug_user", "") or "")
+                    token, prefer_new=True, debug_user=getattr(case, "debug_user", "") or "",
+                    debug_permissions=_case_debug_permissions(case))
                 r2 = await _attempt(retry_sid)
                 r2["retried"] = True
                 classification = _classify_attempts(r, r2)
@@ -6557,7 +6709,8 @@ async def run_suite(cases, label: str, classify: bool = True, retry_budget: int 
                 # 拿"首次尝试的产物"当第二次尝试的前置。
                 await _reset_for_retry()
                 retry_sid = await get_or_create_session(
-                    token, prefer_new=True, debug_user=getattr(case, "debug_user", "") or "")
+                    token, prefer_new=True, debug_user=getattr(case, "debug_user", "") or "",
+                    debug_permissions=_case_debug_permissions(case))
                 r2 = await _attempt(retry_sid)
                 r2["retried"] = True
                 if r2["score"] >= 1.0 or r2["score"] > r["score"]:
@@ -7642,6 +7795,11 @@ def load_cases_from_yaml(cases_dir: str) -> list:
             # 漏映射 = 用例仍以 debug_customer_1 跑 = 新客路径假绿（首版即踩：渲染器映射了、
             # 装载器漏了，单测只覆盖渲染器 → CI 全绿但订单全挂在 debug_customer_1 名下）。
             debug_user=c.get("debug_user", ""),
+            # 评测可控权限（issue #4108）：**必须在这里映射** —— CI 走的是本 YAML 装载路径
+            # （`--cases .github/cases`），不是生成物 `eval_cases.py`；漏映射 = 用例声明了
+            # 受限权限却仍以通配跑 ⇒ 越权用例**静默退化成普通成功用例**（#3391/#3417 同款假绿，
+            # 由 test_acceptance_case_checks 的 PROBES 逐字段守住）。
+            debug_permissions=c.get("debug_permissions", ""),
             order_before=c.get("order_before") or [],
             forbidden_text=c.get("forbidden_text") or [],
             want_text=c.get("want_text") or [],

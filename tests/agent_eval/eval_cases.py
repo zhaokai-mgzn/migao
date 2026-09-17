@@ -53,6 +53,7 @@ class EvalCase:
     pre_clean: List[dict] = field(default_factory=list) # 评测前数据清理（写类 case 自我污染防线）
     post_session: List[dict] = field(default_factory=list) # 会话关闭后落库断言（user_memories 只在 close 时 flush，issue #3357）
     debug_user: str = ""   # 多身份评测：以哪个 DEBUG 顾客身份跑（如 debug_customer_new，issue #3391）
+    debug_permissions: str = ""   # 评测可控权限（B 端）：逗号分隔权限码，非空才下发 X-Debug-Permissions（issue #4108）
     form_prefill: List[dict] = field(default_factory=list) # form 卡预填断言（老客户收货信息自动带出，issue #3397）
     forbidden_card_text: List = field(default_factory=list) # 卡片内容反模式（卡里不得出现「用量/倍数」等把金额翻倍的框架，issue #3402）
     namespaces: List[str] = field(default_factory=list) # 全局命名空间声明（<kind>:<值>，如 customer_phone:13800138000）；两条用例有交集 → 自动串行（issue #3781 并行污染隔离）
@@ -2307,7 +2308,7 @@ _CASE_DF_017 = EvalCase(
     difficulty=Difficulty.NORMAL,
     user_inputs=['admin-api 商户员工（operator/product_manager/customer_service/knowledge_editor）登录后打开米宝 B 端对话'],
     expectations=['direct_reply'],
-    data_checks=['UserRole 枚举须包含 admin-api 全部商户员工角色码（admin/operator/product_manager/knowledge_editor/customer_service/super_admin），admin-api JWT 解析不被 pydantic 校验拒绝（此前仅 customer/agent/admin 三值 → 员工 401）', '认证通过后原角色码保留（不折叠），AgentConfig.allowed_roles 按角色路由：operator/product_manager/customer_service/knowledge_editor → mibao（B 端），customer → xiaobu（C 端）', '工具层 allowed_roles 放行 operator 等员工角色执行其 admin-api 权限码对应的只读/业务工具（如 dashboard_stats/order_query/product_search），customer 角色仍被拒（无越权）'],
+    data_checks=['UserRole 枚举须包含 admin-api 全部商户员工角色码（admin/operator/product_manager/knowledge_editor/customer_service/super_admin），admin-api JWT 解析不被 pydantic 校验拒绝（此前仅 customer/agent/admin 三值 → 员工 401）', '认证通过后原角色码保留（不折叠），AgentConfig.allowed_roles 按角色路由：operator/product_manager/customer_service/knowledge_editor → mibao（B 端），customer → xiaobu（C 端）', '权限码（而非角色白名单）是工具层的控权关口：工具声明 `required_permissions` 时，`ToolContext.permissions` 须含任一码（或 `*`）才放行，工具内再按 action 二次校验（现状仅 employee_manage 实装，#4106 铺开后为全部 B 端工具）', "角色白名单 `allowed_roles` 只做**粗筛与路由**，不承担细粒度控权：它既不保证'有权限码者一定放行'（漂移即假性拒绝，#4106 F4），也不保证'无权限码者一定被拒'（order_query/product_search/dashboard_stats 含 customer 属 C 端共用，非越权）；越权拦截的最终关口是 admin-api 的 `@RequirePermission` 403（#4105）"],
     skip_reason='认证/路由/工具权限由 ai-agent 单测验证（test_utils_auth.py 等），非 LLM 行为，不进入 agent-eval 冒烟',
     tags=['defense', 'auth', 'role-drift'],
     persona='',
@@ -2637,6 +2638,56 @@ _CASE_HR_008 = EvalCase(
     required_args=[{'tool': 'employee_manage', 'action': 'update', 'fields': ['user_id', 'phone']}],
     must_succeed=[{'tool': 'employee_manage', 'action': 'update'}],
     namespaces=['employee_phone:13700137000', 'employee_phone:13900139111'],
+)
+
+# ── HR-009 [NORMAL] 越权创建员工（仅 employee:list）- 不得自旋重复失败调用，须如实说明缺哪项权限并给开通路径（源: cases/hr.yml）──
+_CASE_HR_009 = EvalCase(
+    id='HR-009',
+    legacy_id='',
+    title='越权创建员工（仅 employee:list）- 不得自旋重复失败调用，须如实说明缺哪项权限并给开通路径',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['帮我开个客服账号，姓名李四，手机号 13800009999，密码 Test123456', '那我要怎么才能开通这个权限？'],
+    expectations=['employee_manage(action=create)'],
+    data_checks=['同一失败的 create 调用不得跨轮重复（自旋）：本仓库 runner 目前**没有**跨轮重复调用断言，故该条只能靠 LLM 层人工/盲审读报告 —— 如实登记，不假装已机器判定', '回复须点明是**账号权限**不足（而非功能不存在），并指向管理员在「角色管理/员工管理」为其开通 employee:create', '不得出现「请稍后重试」这类对确定性拒绝无效的敷衍话术'],
+    skip_reason='',
+    tags=['permission', 'denial', 'auth', 'regression'],
+    persona='mibao',
+    debug_user='',
+    debug_permissions='employee:list',
+    form_prefill=[],
+    forbidden_card_text=[],
+    forbidden_text=[{'any_of': ['暂不支持', '功能暂未开放', '系统不支持', '还没有这个功能', '请稍后重试', '无法创建']}],
+    forbidden_tools=['order_manage', 'product_manage'],
+    want_text=[{'any_of': ['开通']}],
+    must_fail=[{'tool': 'employee_manage', 'action': 'create'}],
+    db_verify=[{'fetch': 'employee_absent', 'name': '李四', 'phone': '13800009999'}],
+    pre_clean=[{'type': 'employee_remove', 'employee_name': '李四', 'employee_phone': '13800009999'}],
+    precondition=[{'type': 'debug_permissions_effective', 'source': 'employee:list'}],
+)
+
+# ── HR-010 [NORMAL] 有能力时不得误拒（正向对照）- 持 employee:create 时同一请求必须真的执行（源: cases/hr.yml）──
+_CASE_HR_010 = EvalCase(
+    id='HR-010',
+    legacy_id='',
+    title='有能力时不得误拒（正向对照）- 持 employee:create 时同一请求必须真的执行',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['帮我开个客服账号，姓名李四，手机号 13800009999，密码 Test123456', '确认'],
+    expectations=['employee_manage(action=create)'],
+    data_checks=['持 employee:create 的员工请求同一动作时，agent 必须走完创建（不得以权限为由拒绝）', '创建结果须回执给用户（账号已开/密码等），不得只展示查询结果就停（HR-003/PP-006/PR-005 同族）'],
+    skip_reason='',
+    tags=['permission', 'create', 'positive-control'],
+    persona='mibao',
+    debug_user='',
+    debug_permissions='employee:create',
+    form_prefill=[],
+    forbidden_card_text=[],
+    must_succeed=[{'tool': 'employee_manage', 'action': 'create'}],
+    db_verify=[{'fetch': 'employee', 'name': '李四', 'expect_fields': {'phone': '13800009999'}}],
+    pre_clean=[{'type': 'employee_remove', 'employee_name': '李四', 'employee_phone': '13800009999'}],
+    namespaces=['employee_name:李四', 'employee_phone:13800009999'],
+    precondition=[{'type': 'debug_permissions_effective', 'source': 'employee:create'}],
 )
 
 # ── KN-001 [SMOKE] 小布知识问答 - 面料问题先检索本店知识卡片（query 必填）（源: cases/knowledge.yml）──
@@ -3428,6 +3479,8 @@ _CASE_OR_012 = EvalCase(
     form_prefill=[],
     forbidden_card_text=[],
     forbidden_args=[{'tool': 'customer_logistics_track', 'fields': ['tracking_number']}],
+    namespaces=['customer_phone:13800138000'],
+    precondition=[{'type': 'order_count_for_phone', 'source': '13800138000'}],
 )
 
 # ── OR-013 [NORMAL] B 端物流查询 - 仅支持真实订单号，拒绝快递单号直查（源: cases/order.yml）──
@@ -6108,6 +6161,8 @@ ALL_CASES = (
     _CASE_HR_006,
     _CASE_HR_007,
     _CASE_HR_008,
+    _CASE_HR_009,
+    _CASE_HR_010,
     _CASE_KN_001,
     _CASE_KN_002,
     _CASE_KN_003,

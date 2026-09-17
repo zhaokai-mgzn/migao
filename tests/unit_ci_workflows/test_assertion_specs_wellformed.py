@@ -27,7 +27,10 @@ TOOLS_DIR = REPO_ROOT / "backend" / "ai-agent-service" / "app" / "tools"
 
 SUPPORTED_DB_FETCH = {
     "product_by_name", "order_items", "order_phone", "after_sales_ticket", "employee",
-    "processing_order"}
+    "processing_order",
+    # 负效果断言（issue #4108）：该员工**不得存在**。被权限拒绝的写用例，其效果层真值
+    # 是负向的 —— 只有读落库真身能证伪"门禁静默失效后脏数据已落库"（#3778 的反面）。
+    "employee_absent"}
 SUPPORTED_POST_SESSION_FETCH = {"user_memories"}
 
 
@@ -208,6 +211,13 @@ class TestAssertionSpecsWellFormed:
                         bad.append(
                             f"{c['id']}.db_verify[{i}]: processing_order 缺 checks"
                             f"（空断言 —— 运行时会失败关闭）")
+                if fetch == "employee_absent":
+                    # 负效果断言同样必须**能定位对象**：缺 id/name/phone ⇒ 查不到任何东西
+                    # ⇒ 恒判"不存在"= 永远绿的空断言（issue #4108，与 employee 同族）。
+                    if not (s.get("id") or s.get("name") or s.get("phone")):
+                        bad.append(
+                            f"{c['id']}.db_verify[{i}]: employee_absent 缺 id/name/phone"
+                            f"（定位不到对象 ⇒ 断言永远绿）")
             for i, s in enumerate(_specs(c, "post_session")):
                 if s.get("fetch") not in SUPPORTED_POST_SESSION_FETCH:
                     bad.append(f"{c['id']}.post_session[{i}]: 不支持的 fetch={s.get('fetch')!r}")
