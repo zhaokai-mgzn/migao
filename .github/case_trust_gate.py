@@ -275,7 +275,14 @@ def select_reconcile_base(args_base: str, touched: dict[str, list[str]],
                 f"⚠️ 未触碰受管面，但 `git merge-base {args_base} HEAD` 取不到"
                 f"（浅克隆？）⇒ **退回严格口径** {args_base}（fail-closed，可能对 main 侧 "
                 f"prune 误判为「基线增长」，请 checkout 时带 fetch-depth: 0）")
-    return (load_base_baseline(sha), f"merge-base({sha[:7]})",
+    fork_baseline = load_base_baseline(sha)
+    if fork_baseline is None:
+        # 分叉点上没有清单 ⇒ 计数基准会是**空账本**（before=0 ⇒ 「只许缩短」退化成恒真）
+        # ⇒ 退回严格口径（fail-closed）：宁可按 main 比，也不在空账本上静默通过。
+        return (main_baseline, f"base({args_base})",
+                f"⚠️ 未触碰受管面，但分叉点 {sha[:7]} 上没有 `case-trust-baseline.json`"
+                f"（历史异常）⇒ **退回严格口径** {args_base}（fail-closed：不在空账本上判）")
+    return (fork_baseline, f"merge-base({sha[:7]})",
             f"本 PR **未触碰受管面**（用例库目录 + 豁免清单都没改）⇒ 对账/计数基准取"
             f"**分支分叉点** {sha[:7]}（main 侧别人的 prune 不算本次的账）"
             f"；生效配置仍读 {args_base}")

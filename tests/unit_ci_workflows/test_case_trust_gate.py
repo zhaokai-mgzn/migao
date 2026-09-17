@@ -1704,6 +1704,20 @@ class TestReconcileBaseAlignment:
         assert base is main_base and name == "base(origin/main)", (name, note)
         assert "取不到" in note and "fail-closed" in note, note
 
+    def test_missing_fork_point_baseline_falls_back_to_strict(self):
+        """分叉点上没有清单 ⇒ 退回严格口径（否则计数基准是空账本 ⇒「只许缩短」恒真）。"""
+        g = self._g()
+        main_base = {"violations": {"A": {"codes": ["X"]}}, "burn_down": CFG}
+        real = g.load_base_baseline
+        g.load_base_baseline = lambda ref: None
+        try:
+            base, name, note = g.select_reconcile_base(
+                "origin/main", {"cases_dir": [], "case_yml": [], "baseline": []}, main_base)
+        finally:
+            g.load_base_baseline = real
+        assert base is main_base and name == "base(origin/main)", (name, note)
+        assert "退回严格口径" in note, note
+
     def test_deleting_an_entry_still_blocks_when_managed_surface_touched(self):
         """**红证 C①（证明没放宽）**：删掉清单里「仍在违规」的条目 ⇒ 触碰受管面 ⇒ 照旧红。
 
