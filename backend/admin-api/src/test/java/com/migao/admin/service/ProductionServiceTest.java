@@ -32,6 +32,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -145,6 +146,84 @@ class ProductionServiceTest {
         assertThat(captor.getValue().getSqlSegment())
                 .as("订单状态推进必须带 producing 前置条件（原子，不覆盖已发货/已完成）")
                 .contains("status");
+    }
+
+    // ── issue #4116：实例化幂等（重复调用不得重插行 / 不得清零已有报工进度）──
+    //
+    // 病灶：instantiate 原语义「每次调用先软删旧实例再重插」⇒ 重复调用会把已报工的
+    // done_qty 清零（新实例从 0 起算），工序进度凭空回退。修法：配置一致 ⇒ 空操作。
+
+    /** 与 existingInstances() 完全一致的实例化请求（同配置）。 */
+    private Map<String, Object> instantiateBody(String qtyOfFirstOp) {
+        List<Map<String, Object>> ops = List.of(
+                Map.of("seq", 1, "operation", "精裁-布", "group", "裁剪", "unit", "米",
+                        "qty", new BigDecimal(qtyOfFirstOp), "unit_price", new BigDecimal("0.40"),
+                        "factor", BigDecimal.ONE, "is_must_finish", false, "is_start_marker", true),
+                Map.of("seq", 2, "operation", "外帘装袋", "group", "后道", "unit", "套",
+                        "qty", BigDecimal.ONE, "unit_price", BigDecimal.ONE,
+                        "factor", BigDecimal.ONE, "is_must_finish", true, "is_start_marker", false));
+        return Map.of("positions", List.of(Map.of("position_name", "布帘", "operations", ops)));
+    }
+
+    private ProcessingPositionOperation instance(String id, int seq, String operation, String group, String unit,
+                                                 String qty, String unitPrice, String status, String doneQty) {
+        return ProcessingPositionOperation.builder()
+                .id(id).tenantId(TENANT).processingOrderId(PO_ID)
+                .positionName("布帘").seq(seq).operationName(operation).groupName(group).unit(unit)
+                .qty(new BigDecimal(qty))
+                .unitPrice(new BigDecimal(unitPrice))
+                .factor(BigDecimal.ONE)
+                .isMustFinish("外帘装袋".equals(operation))
+                .isStartMarker("精裁-布".equals(operation))
+                .status(status).doneQty(new BigDecimal(doneQty)).deleted(0)
+                .build();
+    }
+
+    /** 已落库的活跃实例：精裁-布（应做 12.30 米，未报工）+ 外帘装袋（必完，已报满 1.00）。 */
+    private List<ProcessingPositionOperation> existingInstances() {
+        return List.of(
+                instance("op-1", 1, "精裁-布", "裁剪", "米", "12.30", "0.40", "pending", "0.00"),
+                instance("op-2", 2, "外帘装袋", "后道", "套", "1.00", "1.00", "done", "1.00"));
+    }
+
+    @Test
+    @DisplayName("#4116 幂等：同配置连续两次实例化 → 不重插、不软删、报工进度不清零、token 复用")
+    void instantiateTwiceIsIdempotent() {
+        List<ProcessingPositionOperation> existing = existingInstances();
+        when(positionOperationMapper.selectList(any())).thenReturn(existing);
+
+        Map<String, Object> first = service.instantiate(ORDER_ID, instantiateBody("12.30"), TENANT);
+        Map<String, Object> second = service.instantiate(ORDER_ID, instantiateBody("12.30"), TENANT);
+
+        // 已是同一配置 ⇒ 不软删旧实例（那是清零报工进度的机制）、不重插行、不动 token
+        verify(positionOperationMapper, never()).update(isNull(), any());
+        verify(positionOperationMapper, never()).insert(any(ProcessingPositionOperation.class));
+        verify(positionOperationMapper, never()).updateById(any(ProcessingPositionOperation.class));
+        verify(processingOrderMapper, never()).updateById(any(ProcessingOrder.class));
+        assertThat(second.get("operation_count")).isEqualTo(2);
+        assertThat(first.get("qr_token")).isEqualTo("tok123");
+        assertThat(second.get("qr_token")).isEqualTo("tok123");
+        // 已报工实例仍是原对象（done_qty=1.00 未被重置为 0）——软删+重插是唯一会清零的路径，
+        // 上面两条 never() 即该断言的机制层证据
+        assertThat(existing.get(1).getDoneQty()).isEqualByComparingTo("1.00");
+        assertThat(existing.get(1).getStatus()).isEqualTo("done");
+    }
+
+    @Test
+    @DisplayName("#4116 工艺变更（配置不同）→ 旧实例软删 + 重插（保留既有重新实例化语义）")
+    void instantiateReinstantiatesWhenConfigurationChanged() {
+        when(positionOperationMapper.selectList(any())).thenReturn(existingInstances());
+
+        Map<String, Object> result = service.instantiate(ORDER_ID, instantiateBody("15.00"), TENANT);
+
+        ArgumentCaptor<Wrapper<ProcessingPositionOperation>> wrapperCaptor = ArgumentCaptor.forClass(Wrapper.class);
+        verify(positionOperationMapper).update(isNull(), wrapperCaptor.capture());
+        assertThat(wrapperCaptor.getValue().getSqlSegment())
+                .as("配置变更才软删旧实例（保留审计）")
+                .contains("deleted");
+        verify(positionOperationMapper, times(2)).insert(any(ProcessingPositionOperation.class));
+        assertThat(result.get("operation_count")).isEqualTo(2);
+        assertThat(result.get("qr_token")).isEqualTo("tok123");
     }
 
     @Test

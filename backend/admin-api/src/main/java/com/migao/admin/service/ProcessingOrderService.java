@@ -51,6 +51,7 @@ public class ProcessingOrderService {
     private final ProcessingItemMapper processingItemMapper;
     private final OrderService orderService;
     private final ObjectMapper objectMapper;
+    private final ProductionService productionService;
 
     /** 加工单状态机（与 OrderService.STATUS_TRANSITIONS 同模式） */
     private static final Map<String, Set<String>> STATUS_TRANSITIONS = Map.of(
@@ -152,7 +153,82 @@ public class ProcessingOrderService {
         }
         log.info("生成加工单: no={}, orderId={}, tenantId={}, operator={}",
                 po.getProcessingOrderNo(), order.getId(), tenantId, operator);
+        // 工序实例化（issue #4116，P0 断链第一环）：加工单落行后**立即**实例化工序。
+        // 此前 instantiate 端点全仓零调用者 ⇒ 工序列表恒空 ⇒ qr_token 恒 null ⇒
+        // 任务卡只出「二维码待生成」占位、工人扫码报工不可达。同一事务：实例化失败整体回滚，
+        // 不留「有加工单、无工序」的半成品（工序另可由 POST .../instantiate 手工补做）。
+        instantiateOperations(order, po, snapshot, tenantId);
         return GenerateResult.ok(rawId, po.getProcessingOrderNo());
+    }
+
+    /**
+     * 自动实例化工序（issue #4116）。
+     *
+     * 工序来源 = 加工单快照（订单已确认内容的固化副本）：每个快照行 = 一个部位/套，
+     * 行内 processingItems（加工项目录）即该部位的工序序列 —— 加工项目录是当下唯一的工序真值源，
+     * 不依赖 production_operations / production_routings（两表尚无种子，见 #4116 P0-2）。
+     * 应做数量取加工项数量；**末道工序标「必完」**（真值源 §2「此工序必须完成才可打包」= 完工门槛），
+     * 避免「报一道工序就整单完工」。脏数据（加工项无名称）跳过并留日志，不阻断加工单生成。
+     */
+    private void instantiateOperations(Order order, ProcessingOrder po,
+                                       List<Map<String, Object>> snapshot, Long tenantId) {
+        List<Map<String, Object>> positions = buildPositionPayload(snapshot);
+        if (positions.isEmpty()) {
+            log.warn("加工单无可用加工项派生工序，跳过自动实例化（可用手工端点补做）: no={}, orderId={}",
+                    po.getProcessingOrderNo(), order.getId());
+            return;
+        }
+        productionService.instantiate(order.getId(), Map.of("positions", positions), tenantId);
+    }
+
+    /** 实例化 payload：快照行 → 部位（加工产物名[+色号]，同行多套据此区分）→ 工序（加工项）。 */
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> buildPositionPayload(List<Map<String, Object>> snapshot) {
+        List<Map<String, Object>> positions = new ArrayList<>();
+        for (Map<String, Object> entry : snapshot) {
+            if (!(entry.get("processingItems") instanceof List<?> items)) {
+                continue;
+            }
+            List<Map<String, Object>> operations = new ArrayList<>();
+            for (Object rawItem : items) {
+                if (!(rawItem instanceof Map<?, ?> itemMap)) {
+                    continue;
+                }
+                Map<String, Object> item = (Map<String, Object>) itemMap;
+                String name = str(item.get("name"));
+                if (!StringUtils.hasText(name)) {
+                    log.warn("加工项缺少名称，跳过该工序: productName={}", entry.get("productName"));
+                    continue;
+                }
+                Map<String, Object> operation = new LinkedHashMap<>();
+                operation.put("seq", operations.size() + 1);
+                operation.put("operation", name);
+                copyIfPresent(item, operation, "unit");
+                copyIfPresent(item, operation, "quantity", "qty");
+                copyIfPresent(item, operation, "unitPrice", "unit_price");
+                operations.add(operation);
+            }
+            if (operations.isEmpty()) {
+                continue;
+            }
+            operations.get(operations.size() - 1).put("is_must_finish", true);
+            String productName = str(entry.get("productName"));
+            String colorName = str(entry.get("colorName"));
+            Map<String, Object> position = new LinkedHashMap<>();
+            position.put("position_name", productName == null ? "未命名部位"
+                    : (colorName == null ? productName : productName + " " + colorName));
+            position.put("operations", operations);
+            positions.add(position);
+        }
+        return positions;
+    }
+
+    private static String str(Object value) {
+        if (value == null) {
+            return null;
+        }
+        String text = String.valueOf(value).trim();
+        return text.isEmpty() ? null : text;
     }
 
     /**
