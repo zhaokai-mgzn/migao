@@ -104,9 +104,60 @@ def _sibling_receiver_fields_fn():
     )
 
 
+# ── Java `extends` 继承链（issue #4166：断言实现窄于真实语义 ⇒ 假红）─────────
+#
+# 为什么必须沿继承链收集父类字段：Spring/Jackson 反序列化 `@RequestBody` 的是**整体
+# 对象图**，父类声明的字段照样绑定。只看被点名类型**自身**声明的字段 ⇒ 把继承来的键
+# 判成「接收端读不到」⇒ **假红**（产品侧是对的，窄的是断言）。
+# 实证：#4089（PR #4162，`73846861`）把 `AgentOrderCreateRequest` 收敛成
+# `extends OrderCreateRequest` + 只声明 `clientRequestId`，本门禁随即把
+# items/customerName/customerPhone/customerAddress/remark 报成「未登记的不一致键」。
+_EXTENDS_RE = re.compile(r"\bextends\s+([\w.]+)")
+
+
+def _java_parent_type(class_name: str) -> str | None:
+    """`class X extends Y` 的父类简单名（无 `extends` / 找不到该类声明 → None）。
+
+    只读**类声明头部**（`class X` 到类体 `{` 之间）：全文件搜 `extends` 会把方法体里的
+    泛型通配（`? extends Foo`）当成父类，造出幽灵继承边。
+    定位顺序与 sibling 的 `_source_of_receiver_type` 同口径：**同名文件优先**（其次任意
+    含该声明的文件 = 内部类形态）。
+    """
+    ordered = sorted(_java_sources().items(), key=lambda kv: (Path(kv[0]).stem != class_name, kv[0]))
+    for _rel, src in ordered:
+        m = re.search(rf"\bclass\s+{re.escape(class_name)}\b", src)
+        if not m:
+            continue
+        rest = src[m.end():]
+        stops = [i for i in (rest.find("{"), rest.find(";")) if i >= 0]
+        head = rest[: min(stops)] if stops else rest[:200]
+        pm = _EXTENDS_RE.search(head)
+        return pm.group(1).split(".")[-1] if pm else None
+    return None
+
+
 def _java_receiver_fields(class_name: str) -> frozenset[str]:
-    """Java 接收类型（请求 DTO / 实体）的实例字段名（复用 sibling 的解析器与口径）。"""
-    return _sibling_receiver_fields_fn()(class_name)
+    """Java 接收类型（请求 DTO / 实体 / 内部类）**及其 `extends` 祖先链**的实例字段名。
+
+    字段名本身仍由 sibling 解析器给（单一事实源：同一正则、同一缓存、同一口径）；
+    本函数只补「沿继承链逐级取值」这一层。祖先类解析不到时**不吞异常** —— sibling 的
+    `assert` 会被 `_receiving_keys` 转成「接收类型无法解析」红，符合本文件「显式暴露而非
+    静默跳过」的口径（静默少收字段 = 假绿）。
+    """
+    return _java_fields_with_ancestors(class_name, ())
+
+
+@lru_cache(maxsize=None)
+def _java_fields_with_ancestors(class_name: str, _seen: tuple[str, ...]) -> frozenset[str]:
+    """递归收集 `class_name` 自身 + 各级父类的字段（多级；`_seen` 防循环继承死递归）。"""
+    if class_name in _seen:
+        return frozenset()
+    fields = set(_sibling_receiver_fields_fn()(class_name))
+    parent = _java_parent_type(class_name)
+    if parent:
+        fields |= _java_fields_with_ancestors(parent, _seen + (class_name,))
+    return frozenset(fields)
+
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _TOOLS_DIR = Path(__file__).resolve().parent.parent / "app" / "tools"
@@ -959,6 +1010,83 @@ def test_scanner_recognizes_known_java_shapes() -> None:
             problems.append(f"GET /api/admin/products: 接收端可读键不应包含 {bogus!r}（假阴性风险）")
 
     assert not problems, "❌ 扫描器形状自检失败（解析回归会让清单变成误报）：\n  " + "\n  ".join(problems)
+
+
+def test_receiver_keys_follow_the_extends_chain() -> None:
+    """负例（本次修复目标）：被点名类型 `extends` 父类时，父类字段**同样是**接收端可读键。
+
+    实证（issue #4166）：#4089 把 `AgentOrderCreateRequest` 收敛成
+    `extends OrderCreateRequest` + 只声明 `clientRequestId`（继承来的字段 Jackson 照常绑定）
+    后，只看自身声明的解析把 items/customerName/customerPhone/customerAddress/remark 报成
+    「未登记的不一致键」⇒ **假红**：产品侧是对的，窄的是断言。
+
+    本用例同时锁**判别力**（③）：修复只许扩到「真实继承链上的字段」，链外的键仍必须不可读 ——
+    否则「沿继承链收集」会退化成「什么键都读得到」的恒绿门禁。
+    """
+    eps = _lookup_endpoints("POST", "/api/admin/agent/orders")
+    assert len(eps) == 1, f"POST /api/admin/agent/orders 端点解析命中 {len(eps)} 条（应为 1）"
+    ep = eps[0]
+    assert ep.body_type == "AgentOrderCreateRequest", (
+        f"POST /api/admin/agent/orders 的 @RequestBody 解析为 {ep.body_type!r}"
+        f"（期望 'AgentOrderCreateRequest'）@ {ep.controller}:{ep.line}"
+    )
+    readable = _receiving_keys(ep) or frozenset()
+    problems = []
+    # ① 父类 `OrderCreateRequest` 声明的字段：继承形态下必须可读
+    for k in ("customerName", "customerPhone", "customerAddress", "remark", "items", "userId"):
+        if k not in readable:
+            problems.append(f"父类 OrderCreateRequest 继承来的键 {k!r} 未进入接收端可读键")
+    # ② 自身声明的字段不能被继承解析吞掉
+    if "clientRequestId" not in readable:
+        problems.append("自身声明的键 'clientRequestId' 未进入接收端可读键")
+    # ③ 红证（防「解析过宽」）：链外键不得凭空可读
+    for bogus in ("customerId", "agentNote", "itemsTotal"):
+        if bogus in readable:
+            problems.append(f"接收端可读键不应包含链外键 {bogus!r}（假阴性风险）")
+    # ④ 本次的假红调用点不得再出现在「未登记的不一致键」里
+    regressed = sorted(
+        f"{call.file}:{call.line} → {call.endpoint} 键 {k!r}"
+        for call, _ep, bad in _violations()
+        for k in bad
+        if (call.file, call.endpoint, k) not in ALLOWLIST
+        and (call.endpoint == "/api/admin/agent/orders")
+    )
+    if regressed:
+        problems.append("继承形态端点仍报未登记的不一致键：\n      " + "\n      ".join(regressed))
+    assert not problems, (
+        "❌ extends 继承链解析回归（接收端可读键少了继承来的字段）：\n  " + "\n  ".join(problems)
+    )
+
+
+def test_extends_chain_walker_recurses_and_keeps_discriminating(monkeypatch) -> None:
+    """解析器自检：多级 `extends` 链逐级收字段，且链外的键仍不可读（红证）。
+
+    真实仓库当前只有**一级**链（`AgentOrderCreateRequest → OrderCreateRequest`），
+    只测真实链锁不住「多级」这条要求（父类自己不继承、祖父类才有字段的形态）——
+    故用合成三级链把递归钉死；另断言链外键不入集，防递归顺手放宽成恒绿。
+    """
+    parents = {"_TProbeLeaf": "_TProbeMid", "_TProbeMid": "_TProbeBase", "_TProbeBase": None}
+    declared = {
+        "_TProbeLeaf": frozenset({"leafKey"}),
+        "_TProbeMid": frozenset({"midKey"}),
+        "_TProbeBase": frozenset({"baseKey"}),
+    }
+    monkeypatch.setattr(
+        "tests.test_tool_payload_backend_contract._java_parent_type", parents.__getitem__
+    )
+    monkeypatch.setattr(
+        "tests.test_tool_payload_backend_contract._sibling_receiver_fields_fn",
+        lambda: declared.__getitem__,
+    )
+    got = _java_receiver_fields("_TProbeLeaf")
+    problems = [
+        f"多级 extends 链漏收 {k!r}（只收自身/一级父类 → 仍是假红）"
+        for k in ("leafKey", "midKey", "baseKey")
+        if k not in got
+    ]
+    if "outsideKey" in got:
+        problems.append("链外键 'outsideKey' 被收进可读键（解析过宽 = 假阴性风险）")
+    assert not problems, "❌ extends 递归解析自检失败：\n  " + "\n  ".join(problems)
 
 
 def test_payload_keys_are_readable_by_receiver() -> None:
