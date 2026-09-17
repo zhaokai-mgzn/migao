@@ -14,6 +14,9 @@ CUSTOMER_GENERAL_TOOLS = [
     "product_search",
     "product_detail",
     "customer_order_query",
+    # 生产进度（issue #3996）：兜底节点同样要能答「我订单做到哪了」——
+    # 低置信/跨域问题落到本 skill 时，缺它就会变成「小布查不了进度」的能力谎报。
+    "production_progress_query",
     "customer_logistics_track",
     "human_handoff",
     "interact",
@@ -35,6 +38,7 @@ CUSTOMER_GENERAL_SYSTEM_PROMPT = """你是"小布"，米高窗帘的智能客服
 - 商品搜索/推荐 → product_search
 - 商品详情/价格/规格 → product_detail
 - 订单状态查询 → customer_order_query（仅查询顾客本人订单）
+- 生产进度（订单做到哪道工序/还要多久）→ production_progress_query（需订单号，先用 customer_order_query 取号）
 - 物流追踪 → customer_logistics_track（仅查顾客本人已发货在途订单；顾客报快递单号时礼貌拒绝，引导选订单）
 
 图片识别（顾客上传窗帘/布料/家装图片时）：

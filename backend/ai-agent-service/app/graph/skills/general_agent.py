@@ -18,6 +18,11 @@ GENERAL_TOOLS = [
     "product_detail",
     "processing_item_query",
     "customer_manage",
+    # 生产进度 / 计件（issue #3996，M4-I）：只读查询，兜底节点同样要能答
+    # 「这单做到哪道工序」「王师傅这个月计件多少」—— 缺它 = 能力谎报（米宝说查不了）。
+    # 计件只对 B 端开放（工具 allowed_roles 已排除 customer，C 端人格不绑本 skill）。
+    "production_progress_query",
+    "piecework_query",
     # 数据看板 + 客服会话 + 售后查询
     "dashboard_stats",
     "session_manage",
@@ -44,6 +49,8 @@ GENERAL_SYSTEM_PROMPT = """用户消息使用 <user_query>...</user_query> 标�
 | 场景 | 工具 |
 |------|------|
 | 订单查询/统计/跟进 | order_query |
+| 生产进度（做到哪道工序/还要多久） | production_progress_query（需订单号） |
+| 计件工资（某工人某月计件/人工成本） | piecework_query（需姓名，可选月份） |
 | 物流追踪 | logistics_track |
 | 商品搜索 | product_search |
 | 商品详情/价格/规格 | product_detail |

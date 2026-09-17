@@ -1720,3 +1720,111 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+
+  - id: CH-039
+    legacy_id: ""
+    title: "小布答顾客查生产进度（订单做到哪道工序/还要多久）"
+    domains:
+      - chat
+      - order
+    tier: normal
+    persona: xiaobu
+    tags:
+      - xiaobu
+      - production
+      - order
+    truths_ref:
+      - ai-chat.intent-tool-map
+      - ai-chat.tool-classes
+    # ── 覆盖说明（issue #3996，M4-I）──
+    # 顾客问「我的订单做到哪了」→ 小布调 production_progress_query(order_no=…) 取进度%/
+    # 当前工序/待完工序/预计交期；数量与状态语义见冻结契约（M4-G-2 端点）。
+    # 顾客没给订单号时先用 customer_order_query 列出本人订单取号（不猜号、不编造进度）。
+    user_inputs:
+      - "我的订单做到哪了？还要等多久啊"
+    expectations:
+      - tool: production_progress_query
+    data_checks:
+      - "顾客问进度 → 调 production_progress_query → 返回进度%/当前工序/待完工序/预计交期（不得只回一句「生产中」）"
+      - "缺订单号时先用 customer_order_query 取顾客本人订单号再查，禁止编造订单号或进度"
+      - "工具失败/查不到时如实告知并可转人工，禁止编造进度或交期"
+    skip_reason: ""
+    merge_log: "2026-09-17 新增（issue #3996，M4-I）：生产进度问答 C 端覆盖（小布）"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_production_progress_query.py"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  - id: CH-040
+    legacy_id: ""
+    title: "米宝查订单生产进度（做到哪道工序/还要多久）"
+    domains:
+      - chat
+      - order
+    tier: normal
+    persona: mibao
+    tags:
+      - mibao
+      - production
+      - order
+    truths_ref:
+      - ai-chat.intent-tool-map
+      - ai-chat.tool-classes
+    # ── 覆盖说明（issue #3996，M4-I）──
+    # B 端商家问「这单做到哪道工序」→ 米宝调 production_progress_query(order_no=…)。
+    # 本用例是 mibao 侧该工具的**唯一**覆盖证据（覆盖门禁对「米宝 skill 绑了但零用例」
+    # 判 uncovered 阻塞），也是「米宝真的能用生产进度」的行为面证据。
+    user_inputs:
+      - "帮我看看最近那笔还在生产的订单，做到哪道工序了，还要多久能好"
+    expectations:
+      - tool: production_progress_query
+    data_checks:
+      - "商家问生产进度 → 调 production_progress_query → 返回进度%/当前工序/待完工序/预计交期"
+      - "缺订单号时先用 order_query 查单取号再查进度，禁止编造订单号或进度"
+      - "工具失败/查不到时如实告知，不得编造交期"
+    skip_reason: ""
+    merge_log: "2026-09-17 新增（issue #3996，M4-I）：生产进度问答 B 端覆盖（米宝）"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_production_progress_query.py"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  - id: CH-041
+    legacy_id: ""
+    title: "米宝查工人计件工资（某师傅某月计件合计与明细）"
+    domains:
+      - chat
+      - hr
+    tier: normal
+    persona: mibao
+    tags:
+      - mibao
+      - production
+      - piecework
+    truths_ref:
+      - ai-chat.intent-tool-map
+      - ai-chat.tool-classes
+    # ── 覆盖说明（issue #3996，M4-I）──
+    # 商家问「王师傅这个月计件多少」→ 米宝调 piecework_query(worker_name=…, period=…) 取
+    # 合计 + 逐工序明细。计件工资只对 B 端开放（工具 allowed_roles 排除 customer，
+    # C 端小布工具集不含本工具）—— 本用例是 mibao 侧该工具的唯一覆盖证据。
+    user_inputs:
+      - "王师傅这个月计件做了多少？顺便看下明细"
+    expectations:
+      - tool: piecework_query
+    data_checks:
+      - "商家问计件 → 调 piecework_query → 返回计件合计与逐工序明细（工序/数量/金额）"
+      - "工人姓名取自用户输入，用户未说月份时不编造月份（不传 period，按当月）"
+      - "查不到该工人/该月无报工时如实告知，禁止编造计件金额"
+    skip_reason: ""
+    merge_log: "2026-09-17 新增（issue #3996，M4-I）：计件工资问答 B 端覆盖（米宝）"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_piecework_query.py"
+      ci:
+        - pr-check.yml
+      verifies: []

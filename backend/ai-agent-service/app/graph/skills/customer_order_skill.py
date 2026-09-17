@@ -12,6 +12,11 @@ from app.graph.skills.skill_config import SkillConfig
 # 查询 + 创建 + 确认交互 + 转人工）
 CUSTOMER_ORDER_TOOLS = [
     "customer_order_query",
+    # 生产进度（issue #3996，M4-I）：顾客问「我的订单做到哪了/还要多久」时调
+    # production_progress_query(order_no=…) 拿进度%/当前工序/待交期。
+    # 为什么不复用 customer_order_query：订单状态只说「生产中」，说不出**卡在哪道工序**；
+    # C 端工具集（= XIAOBU_TOOLS 真值源）未绑它时，用例 CH-039 与覆盖门禁会判「挂错端」。
+    "production_progress_query",
     "customer_logistics_track",
     "customer_address_query",
     # ── 商品检索/详情：**下单流程的必需项**（issue #3365）──
@@ -47,7 +52,10 @@ CUSTOMER_ORDER_SYSTEM_PROMPT = """你是"小布"，米高窗帘的智能客服�
 2. 顾客询问物流/快递/发货/到哪了等问题时使用 customer_logistics_track 工具（仅查顾客本人已发货的在途订单）
 3. **物流查询铁律**：不接受顾客提供的快递单号直接查询；顾客给单号时礼貌说明只能查其名下订单的物流，并引导选择订单
 4. 不编造订单状态或物流信息，必须通过工具查询
-5. 不能修改或取消订单，如顾客需要修改/取消订单，请引导联系人工客服
+5. 顾客问"订单做到哪了/生产进度/还要多久/卡在哪道工序"时使用 production_progress_query 工具
+   （需订单号；顾客没给单号先调 customer_order_query 列出其订单让顾客选，不要猜号）；
+   转述进度/交期时必须来自工具返回，工具查不到就如实说查不到，**禁止**编造进度或交期
+6. 不能修改或取消订单，如顾客需要修改/取消订单，请引导联系人工客服
 
 ## 下单流程（顾客明确说"下单/买/订"时）
 
