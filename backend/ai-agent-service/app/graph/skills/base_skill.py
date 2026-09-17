@@ -3230,15 +3230,31 @@ async def _execute_tool_safe(tool, tool_args: dict, tool_context, state: dict) -
     # 幻觉参数净化（见 _sanitize_tool_args 注释：order_create 收到 action → TypeError → 抖动）
     _raw_args = dict(tool_args)
     tool_args = _sanitize_tool_args(tool, tool_args)
+
+    # 1.1 出口字典**单点构造**（issue #4057 T4）：`ToolResult` 声明的字段全在这一个字面量里，
+    # 全部 5 条出口（参数丢弃 / 缓存命中 / 超时 / 异常 / 正常）**共用**它 —— 异常出口只覆盖
+    # error/message，不得再各自手写 `{"success": False, "error": …}`（那会让
+    # message/summary/suggestion/terminal/data 在某条出口缺席 = 消费点恒 None，而契约守卫
+    # `tests/test_contract_wiring.py` 改前只看正常出口那一个字面量 ⇒ 静默违反）。
+    # ⚠️ 异常出口**不补 suggestion**：`_self_correct_retry` 以 suggestion 为触发条件，
+    #    补它会改变重试行为（属 T1/T3 范围）。
+    result_dict = {
+        "success": False,
+        "data": None,
+        "error": None,
+        "message": None,
+        "summary": "",
+        "suggestion": "",
+        "terminal": False,
+    }
+
     # 写工具图片类参数被丢弃 → 不执行，返回失败 + 正确工具指引（issue #3930）：
     # 静默丢弃会制造「空字段调用 → 没有要修改的字段 → 模型外推该入口不支持图片」的误宣链。
     _drop_msg = _dropped_args_guidance(tool, _raw_args)
     if _drop_msg:
         logger.warning(f"[tool-arg-sanitize] {tool.name} 写工具图片类参数被丢弃 → 拒绝执行: {_drop_msg}")
-        _err_json = json.dumps(
-            {"success": False, "error": _drop_msg, "message": _drop_msg},
-            ensure_ascii=False)
-        return _err_json, {"success": False, "error": _drop_msg}
+        result_dict["error"] = result_dict["message"] = _drop_msg
+        return json.dumps(result_dict, ensure_ascii=False), result_dict
 
     # 1.5. 自动解析 _ids 参数：LLM 传加工项名称/序号时自动转 UUID
     tool_args = await _auto_resolve_ids(tool, tool_args, state)
@@ -3283,8 +3299,9 @@ async def _execute_tool_safe(tool, tool_args: dict, tool_context, state: dict) -
             tool_name,
             json.dumps(LogSanitizer.sanitize_tree(tool_args), ensure_ascii=False, default=str)[:300],
         )
-        err = json.dumps({"success": False, "error": "timeout", "message": "工具执行超时"}, ensure_ascii=False)
-        return err, {"success": False, "error": "timeout"}
+        result_dict["error"] = "timeout"
+        result_dict["message"] = "工具执行超时"
+        return json.dumps(result_dict, ensure_ascii=False), result_dict
     except Exception as e:
         # 生产回归（sess_fba38395ed094a9d）：此前用 f-string 把 args JSON 拼进消息文本，
         # loguru 因 exc_info=True 触发 message.format()，JSON 里的未配对花括号（如截断的
@@ -3298,10 +3315,9 @@ async def _execute_tool_safe(tool, tool_args: dict, tool_context, state: dict) -
             json.dumps(LogSanitizer.sanitize_tree(tool_args), ensure_ascii=False, default=str)[:500],
             exc_info=True,
         )
-        err = json.dumps({"success": False, "error": "tool_execution_failed",
-                          "message": f"工具 {tool_name} 执行失败，请检查参数格式后重试"},
-                         ensure_ascii=False)
-        return err, {"success": False, "error": "tool_execution_failed"}
+        result_dict["error"] = "tool_execution_failed"
+        result_dict["message"] = f"工具 {tool_name} 执行失败，请检查参数格式后重试"
+        return json.dumps(result_dict, ensure_ascii=False), result_dict
     finally:
         if _audit_write:
             await audit_write_tool(
@@ -3309,19 +3325,19 @@ async def _execute_tool_safe(tool, tool_args: dict, tool_context, state: dict) -
                 (time.time() - _audit_t0) * 1000,
             )
 
-    # 4. 格式化结果
+    # 4. 格式化结果（同一个出口字典，按成功分支填入 `ToolResult` 的真实字段）
     # `ToolResult` **声明的字段必须全部带进 result_dict**（issue #4013 A2：此前漏传
     # terminal/summary ⇒ 消费点 `result_dict.get("terminal")` 恒 None ⇒ reset_domain
     # 永不触发 = 死契约）。判据：tests/test_terminal_tool_and_prompt_contract.py。
-    result_dict = {
-        "success": result.success,
-        "data": result.data,
-        "error": result.error,
-        "message": result.message,
-        "summary": getattr(result, "summary", None) or "",
-        "suggestion": getattr(result, "suggestion", None) or "",
-        "terminal": bool(getattr(result, "terminal", False)),
-    }
+    result_dict.update(
+        success=result.success,
+        data=result.data,
+        error=result.error,
+        message=result.message,
+        summary=getattr(result, "summary", None) or "",
+        suggestion=getattr(result, "suggestion", None) or "",
+        terminal=bool(getattr(result, "terminal", False)),
+    )
     result_str = json.dumps(result_dict, ensure_ascii=False, default=str)
 
     # 5. 缓存（带锁）— 仅只读工具
