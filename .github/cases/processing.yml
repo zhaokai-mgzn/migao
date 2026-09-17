@@ -515,3 +515,43 @@ cases:
       ci:
         - agent-eval.yml
       verifies: []
+
+  - id: PP-010
+    legacy_id: ""
+    title: "生产模块确定性核心 - 工艺路线实例化/计件/必完工序自动完工（单测覆盖）"
+    domains:
+      - processing
+    tier: normal
+    persona: ""
+    tags:
+      - processing
+      - production
+      - piecework
+    truths_ref:
+      - ai-chat.intent-tool-map
+    # ── 覆盖说明（issue #3993，M4-G-1）──
+    # 生产模块确定性核心（纯函数零 DB，app/production/）：
+    #   - build_routing：部位×工艺路线（布帘韩褶 11 道实证走线）+ 特殊选项条件工序 + 定型开关
+    #   - instance_operations：应做数量 = 算料引擎输出（折数/用料/套数），报工只确认
+    #   - compute_piecework：计件 = Σ(合格数量 × 单价 × 特殊选项系数)，单工序一人制，返工/报废不计
+    #   - is_production_done：必完工序全绿 → 订单自动生产完成
+    # 真值源 docs/curtain-production-rules.md §2~§5（2026-09 行业 ERP 截图实证）。
+    # ⚠️ 双端（persona 空）：确定性逻辑由单测全量覆盖（tests/test_production/），不进 agent-eval 冒烟。
+    user_inputs:
+      - "这个加工单走到哪了，还要多久完成"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "工艺路线实例化：布帘·韩褶 11 道（精裁-布→…→外帘发货）；定型=否移除 定型-布/复烫-布；特殊选项插条件工序（拼2次→拼2次-布）"
+      - "应做数量=算料引擎输出（韩褶-布=折数 48、米工序=用料 12.3、套工序=1）—— 报工只确认不心算"
+      - "计件 = Σ(合格数量 × 单价 × 特殊选项系数)：一分二 ×1.7；返工/报废不计件；单工序一人制（无计件人数分摊）"
+      - "完工判定：必完工序（外帘装袋，打包前置）合格量满应做数量 → 订单自动生产完成"
+    skip_reason: "生产确定性核心是纯函数（app/production/），由单元测试全量覆盖（tests/test_production/），非 LLM 行为，不进入 agent-eval 冒烟（同 CH-036/037/038 惯例）"
+    merge_log: "2026-09-17 新增（issue #3993）：M4-G-1 生产模块确定性核心覆盖登记，单测覆盖"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_production/test_routing.py"
+        - "backend/ai-agent-service/tests/test_production/test_piecework.py"
+      ci:
+        - pr-check.yml
+      verifies: []

@@ -4215,6 +4215,24 @@ _CASE_PP_009 = EvalCase(
     output_verify=[{'tool': 'processing_item_manage', 'action': 'calculate_price', 'expect': {'totalPrice': 240.0}}],
 )
 
+# ── PP-010 [NORMAL] 生产模块确定性核心 - 工艺路线实例化/计件/必完工序自动完工（单测覆盖）（源: cases/processing.yml）──
+_CASE_PP_010 = EvalCase(
+    id='PP-010',
+    legacy_id='',
+    title='生产模块确定性核心 - 工艺路线实例化/计件/必完工序自动完工（单测覆盖）',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['这个加工单走到哪了，还要多久完成'],
+    expectations=['direct_reply'],
+    data_checks=['工艺路线实例化：布帘·韩褶 11 道（精裁-布→…→外帘发货）；定型=否移除 定型-布/复烫-布；特殊选项插条件工序（拼2次→拼2次-布）', '应做数量=算料引擎输出（韩褶-布=折数 48、米工序=用料 12.3、套工序=1）—— 报工只确认不心算', '计件 = Σ(合格数量 × 单价 × 特殊选项系数)：一分二 ×1.7；返工/报废不计件；单工序一人制（无计件人数分摊）', '完工判定：必完工序（外帘装袋，打包前置）合格量满应做数量 → 订单自动生产完成'],
+    skip_reason='生产确定性核心是纯函数（app/production/），由单元测试全量覆盖（tests/test_production/），非 LLM 行为，不进入 agent-eval 冒烟（同 CH-036/037/038 惯例）',
+    tags=['processing', 'production', 'piecework'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── PR-001 [SMOKE] 商品搜索 - 关键词模糊匹配（源: cases/product.yml）──
 _CASE_PR_001 = EvalCase(
     id='PR-001',
@@ -5991,6 +6009,7 @@ ALL_CASES = (
     _CASE_PP_007,
     _CASE_PP_008,
     _CASE_PP_009,
+    _CASE_PP_010,
     _CASE_PR_001,
     _CASE_PR_002,
     _CASE_PR_003,
