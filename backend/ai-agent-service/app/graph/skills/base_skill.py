@@ -2961,6 +2961,98 @@ async def _inject_write_input_recovery(system_prompt: str, state: dict,
         return system_prompt
 
 
+# ── B 端权限范围注入（issue #4107 / 父单 #4103 的 F8）──────────────────────────
+# 权限码 → 产品能力名：**权威源是 admin-api 的权限目录**（两张 code→name 表：
+# `RegistrationService.initializeDefaultRolesAndPermissions` 的 `defaultPermissions`
+# = 全量 18 条；`PermissionService.ensureFullPermissionCatalog` = 其中 16 条子集）。
+# 这里只是**只读镜像**（名称逐字取自 Java 表，不改写、不润色），漂移由
+# `tests/test_permission_scope_injection.py` 的目录守卫机械核对：缺标签 / 标签多余 /
+# 名称不一致**都红**（并有"处方码"负例证明它会红）。目录外的码（租户自定义权限）
+# **不编名字**，原样回显码本身（详见 `_inject_permission_scope`）。
+PERMISSION_LABELS = {
+    "dashboard:view": "仪表板查看",
+    "product:manage": "商品管理",
+    "product:list": "商品列表",
+    "product:create": "新增商品",
+    "product:category": "商品分类",
+    "processing:manage": "加工管理",
+    "processing:view": "加工单查看",
+    "processing:update": "加工单操作",
+    "knowledge:manage": "知识库管理",
+    "order:list": "订单列表",
+    "order:detail": "订单详情",
+    "order:refund": "订单退款",
+    "customer:view": "客户管理",
+    "finance:view": "财务对账",
+    "agent:session": "会话监控",
+    "employee:list": "员工列表",
+    "employee:create": "新增员工",
+    "system:manage": "系统管理",
+}
+
+#: 注入块最多列出的权限码条数（prompt 预算：超出只给计数，不把 prompt 撑成权限清单）
+_MAX_SCOPE_CODES = 20
+
+
+def _inject_permission_scope(system_prompt: str, state: AgentState) -> str:
+    """B 端（米宝）**权限范围**注入（issue #4107 / 父单 #4103 的 F8）。
+
+    让模型知道「本会话人是谁、能做什么」，从而：越权请求不尝试、权限拒绝不重试、
+    如实说明缺哪项能力并给开通路径（对应 principles.md 的权限归因规则两半）。
+
+    - 仅 B 端（`agent_type == "mibao"`）且权限码非空、非 admin 通配（`"*"`）时注入；
+      C 端（xiaobu）/ 空权限 / 通配权限 ⇒ **原样返回同一个对象**（逐字节不变，C 端零回归）
+    - 能力名取自 `PERMISSION_LABELS`（admin-api 权限目录的只读镜像）；目录外的码原样回显，
+      **绝不补造名字**（自造码会把模型引向不存在的越权能力）
+    - 码做换行消毒 + 50 字截断（与 `identity_prefix` 同口径）——否则被篡改的 claim 能在
+      prompt 里伪造出注入块之外的行
+    - 任何异常不抛（fire-and-forget 语义，与 `_inject_user_memories` 一致）
+    """
+    try:
+        if state.get("agent_type") != "mibao":
+            return system_prompt
+        raw_perms = state.get("permissions")
+        # 形状守卫：只有**码列表**才有范围可言。裸字符串（如 "order:list"）逐字符迭代会注入
+        # 一串单字符"码"（比不注入更糟）⇒ 非列表一律按"没有可说的范围"处理。
+        if not isinstance(raw_perms, (list, tuple)):
+            return system_prompt
+        codes = [
+            c.replace("\n", " ").replace("\r", " ").strip()[:50]
+            for c in raw_perms
+            if isinstance(c, str) and c.strip()
+        ]
+        # admin 通配（`["*"]`）= 无范围可言；注入反而会让模型误以为"只有这些能力"
+        if not codes or "*" in codes:
+            return system_prompt
+        ordered: List[str] = []
+        for c in codes:                      # 去重且保序（会话顺序 = 用户习惯顺序）
+            if c not in ordered:
+                ordered.append(c)
+        shown = ordered[:_MAX_SCOPE_CODES]
+        caps = "、".join(
+            f"{PERMISSION_LABELS[c]}({c})" if c in PERMISSION_LABELS else c
+            for c in shown
+        )
+        if len(ordered) > _MAX_SCOPE_CODES:
+            caps += f"…（共 {len(ordered)} 项）"
+        role = str(state.get("role") or "").replace("\n", " ").replace("\r", " ").strip()[:50]
+        logger.info(
+            f"[permission-scope] 注入 B 端权限范围 role={role or '未知'} codes={len(ordered)}"
+        )
+        return (
+            "【权限范围】当前会话人的角色：" + (role or "未知") + "\n"
+            "- 可用能力（仅限以下，超出即无权）：" + caps + "\n"
+            "- 超出范围的请求：不要调用工具尝试，也不要反复重试被拒绝的调用"
+            "（换参数同样不会成功，权限拒绝是该请求的终态）——必须如实告知用户其账号缺少哪项能力，"
+            "并指引其联系管理员在「角色管理」或「员工管理」中开通该权限\n"
+            "【权限范围结束】\n\n"
+            + system_prompt
+        )
+    except Exception as e:
+        logger.warning(f"[permission-scope] 注入失败（非致命）: {e}")
+        return system_prompt
+
+
 def extract_product_keyword(text: str) -> str:
     """从顾客消息里抽取**可用于 product_search 的商品关键词**（issue #3365）。
 
