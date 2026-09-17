@@ -190,7 +190,13 @@ async def _generate_title_async(
             await sm.update_session_title(session_id, new_title)
             logger.info(f"[chat/send] Title generated | session={session_id} title={new_title}")
     except Exception as e:
-        logger.debug(f"[chat/send] Title generation failed (non-fatal): {e}")
+        # #4084：`update_session_title` 是**落库**写，且这里是 fire-and-forget ⇒ 失败只留一句
+        # `debug` 在默认 INFO 级别下**等于没留痕**（#3357 的同款教训：user_memories 长期为 0
+        # 却无人发现）。会话标题失败代价小，故不升到 ERROR/incident，但必须是可见的 warning。
+        logger.warning(
+            f"[chat/send] Session title update failed (non-fatal) | "
+            f"session={session_id} error={type(e).__name__}: {e}"
+        )
 
 
 async def _extract_memories_async(
@@ -230,6 +236,102 @@ async def _extract_memories_async(
             f"[chat/send] Memory accumulation failed (non-fatal) | session={session_id} "
             f"agent={agent_type} error={type(e).__name__}: {e}"
         )
+
+
+# ============ 落库失败：单一策略点（issue #4084） ============
+#
+# 病灶：本文件对 `session_memory.save_message(...)` 有 4 处调用，**每处各写一个 `except`**、
+# 降级策略各异 —— 分页分支的 assistant 落库是 `except Exception: pass`：消息没落库、
+# 日志里也没有，而 SSE 照常 `done` ⇒ 顾客这轮"看起来成功"，下次回放历史才发现少一条
+# （验收取证也看不到）。同族形态（#4070 实测）：生产签名新增一个可选参数、替身不认识该
+# 关键字 ⇒ `TypeError` 被同一个 `except Exception` 吞掉 ⇒ assistant 消息静默不落库。
+#
+# 归口：本文件的落库/状态写都经 `_save_message_or_report` / `_report_persist_failure`
+# （唯一策略点），失败**必留痕且可归因**：
+#   · `log_exception_audit` ⇒ ERROR + traceback + `incident=` 短码（同会话同异常同码，
+#     `grep "persist FAILED"` 即可聚合「连续 N 轮落库失败」）；
+#   · 按异常类型**分类**："CODE DEFECT"（TypeError/AttributeError/KeyError/NameError ——
+#     签名漂移、字段改名一类，须改代码）与 "degraded"（超时/连接类，可降级）处置完全不同，
+#     混成一个 `except Exception` 正是这类缺陷能潜伏的原因；
+#   · 返回 `None` = **没写进去**：调用方不得当成功（`done` 事件的 message_id 亦为 null）。
+#
+# ⚠️ 为什么默认 fail-open（`fail_open=True`）：落库失败时模型回复**已经流给顾客**，此时中断
+# 整轮会把"历史缺一条"升级成"这轮白聊"。本仓纪律是"允许 fail-open，不允许静默" ——
+# 该形态由 L0 守卫 `tests/unit_ci_workflows/test_persistence_failure_swallow_guard.py`
+# 钉住（裸 `except: pass` / `except: continue` 吞落库调用 ⇒ 门禁红）。
+# 少数落点保持 fail-closed（`fail_open=False`，*用户消息是后续轮次历史的锚*）：行为与本
+# 函数引入前一致，只是把归因从"event_stream error"改成"落库失败"。
+
+#: 审计行标记（稳定检索入口）：`grep "persist FAILED"` 捞出全部落库/状态写失败
+PERSIST_FAILED_MARK = "[chat/send] persist FAILED"
+
+#: 编程错误类异常（**代码缺陷**，不是存储故障）—— 见模块上方 #4070 的实测形态
+_CODE_DEFECT_EXCS = (TypeError, AttributeError, KeyError, NameError)
+
+#: 分类 → 处置建议（进审计行；不含用户可见文本）
+_PERSIST_SUGGESTION = {
+    "CODE DEFECT": (
+        "这是编程错误（签名漂移/字段改名一类：例如 SessionMemory 新增参数而调用方或测试替身"
+        "没跟上，见 #4070），须修代码；反复出现说明落库契约已不一致"
+    ),
+    "degraded": (
+        "按存储瞬态故障处置：本轮已 fail-open 继续，但**这一条不会出现在历史里**；"
+        "连续出现须查 DB/连接池"
+    ),
+}
+
+
+def _report_persist_failure(
+    *, exc: BaseException, op: str, source: str,
+    session_id: str = "", role: str = "", tenant_id: Any = None,
+) -> str:
+    """落库/状态写失败 → 审计行（返回 incident 短码）。
+
+    只陈述**失败**（不写成功）；分类只回答"这是代码缺陷还是存储故障"。
+    `source` 是**归因键**（哪条路径的落库，如 `chat.assistant`），不作任何分支判据。
+    """
+    kind = "CODE DEFECT" if isinstance(exc, _CODE_DEFECT_EXCS) else "degraded"
+    return _err_inc.log_exception_audit(
+        logger=logger,
+        mark=f"{PERSIST_FAILED_MARK} ({kind}) op={op} write={source} role={role or '-'}",
+        exc=exc,
+        session_id=session_id,
+        extra=(
+            f"tenant={tenant_id if tenant_id is not None else '-'} "
+            f"req={_err_inc.current_request_id()} suggestion：{_PERSIST_SUGGESTION[kind]}"
+        ),
+    )
+
+
+async def _save_message_or_report(
+    session_memory: Any,
+    *,
+    source: str,
+    fail_open: bool = True,
+    timeout: float = 10.0,
+    **kwargs: Any,
+) -> Optional[str]:
+    """落库单一策略点（issue #4084）：返回 message_id；失败留痕（返回 None / 按需上抛）。
+
+    Args:
+        source: 归因键（哪条路径的落库，如 `chat.assistant` / `page.user`）—— 只进审计行。
+        fail_open: `True`（默认）落库失败不打断用户对话（留痕后返回 None）；
+            `False` 留痕后**原样上抛**（"用户消息是后续轮次历史的锚"这类必须 fail-closed 的落点）。
+        timeout: `asyncio.wait_for` 超时（秒）—— 避免落库阻塞 SSE 流关闭。
+    """
+    try:
+        return await asyncio.wait_for(
+            session_memory.save_message(**kwargs), timeout=timeout)
+    except Exception as exc:
+        _report_persist_failure(
+            exc=exc, op="save_message", source=source,
+            session_id=kwargs.get("session_id", ""), role=kwargs.get("role", ""),
+            tenant_id=kwargs.get("tenant_id"),
+        )
+        if not fail_open:
+            raise
+        return None
+
 
 def _format_datetime(dt: Any) -> str:
     """格式化日期时间为 ISO 8601 字符串（UTC，以 Z 结尾）"""
@@ -935,8 +1037,12 @@ async def _reissue_confirm_card(
         full["last_confirm_skill"] = skill_name
         await store.commit(session_id, full)
     except Exception as e:
-        # 非致命：卡照发（门店/顾客至少有点卡入口），但留痕以便事后归因
-        logger.warning(f"[chat/card-claim] 补发卡的 confirmValue 落库失败（非致命）: {e}")
+        # 非致命：卡照发（门店/顾客至少有点卡入口），但留痕以便事后归因。
+        # #4084：`last_confirm_value` 是**确认门禁**的比对值 —— 它没落库时顾客点了卡也过不了
+        # 门禁，属"卡片态取证失真"的同族 ⇒ 归口到落库审计（incident 短码可聚合）。
+        _report_persist_failure(
+            exc=e, op="commit", source="chat.card_confirm_value", session_id=session_id,
+        )
     logger.warning(
         f"[chat/card-claim] 文本声称发卡但本轮无卡 ⇒ 按待确认动作补发确认卡 "
         f"| session={session_id} tool={pending.get('target_tool')} "
@@ -1273,33 +1379,22 @@ async def _agent_stream_to_sse(
                         f"| {assistant_content!r}"
                     )
 
-        # 保存消息到数据库（带超时保护，避免阻塞 SSE 流关闭）
-        message_id = None
-        try:
-            message_id = await asyncio.wait_for(
-                session_memory.save_message(
-                    session_id=session_id,
-                    role="assistant",
-                    content=assistant_content,
-                    tool_calls=tool_calls_info if tool_calls_info else None,
-                    # 工具执行结果元信息（issue #4052）：与 tool_calls 逐项对齐
-                    tool_results=tool_results_info if tool_results_info else None,
-                    interactive=last_interactive_payload if last_interactive_payload else None,
-                    # 展示卡卡型落库（#4016 A15）：无卡轮次不写键，与 interactive 同形
-                    extra_metadata={"cards": emitted_card_types} if emitted_card_types else None,
-                    tenant_id=tenant_id,
-                ),
-                timeout=10.0,
-            )
-        except asyncio.TimeoutError:
-            logger.error(
-                f"[chat/send] save_message timeout | session={session_id} tenant={tenant_id}"
-            )
-        except Exception as save_err:
-            logger.error(
-                f"[chat/send] save_message failed | session={session_id} error={save_err}",
-                exc_info=True,
-            )
+        # 保存消息到数据库（#4084：经落库单一策略点 —— 失败必留痕且归因到"落库"，
+        # 超时保护仍在 helper 内；返回值 None = 没写进去，`done` 事件的 message_id 亦为 null）
+        message_id = await _save_message_or_report(
+            session_memory,
+            source="chat.assistant",
+            session_id=session_id,
+            role="assistant",
+            content=assistant_content,
+            tool_calls=tool_calls_info if tool_calls_info else None,
+            # 工具执行结果元信息（issue #4052）：与 tool_calls 逐项对齐
+            tool_results=tool_results_info if tool_results_info else None,
+            interactive=last_interactive_payload if last_interactive_payload else None,
+            # 展示卡卡型落库（#4016 A15）：无卡轮次不写键，与 interactive 同形
+            extra_metadata={"cards": emitted_card_types} if emitted_card_types else None,
+            tenant_id=tenant_id,
+        )
 
         # suggestions 由 LLM 在回复中自然生成，无需在此额外生成
 
@@ -1488,19 +1583,28 @@ async def _handle_page_request(
     async def _page_stream():
         # 本轮真实发出的卡型 → 落 metadata.cards（#4016 A15，与主流式路径同口径）
         page_card_types: List[str] = []
+        # 保存用户的翻页消息（#4084：经落库单一策略点，且**移出**下面的工具 try）——
+        # 旧形态把它跟在工具调用同一个 try 里，落库失败会被兜底成"工具执行失败/翻页查询失败"：
+        # 归因错人（排查看错方向），顾客也被告知一件没发生的事。翻页是只读 UI 动作，
+        # 合成标记（"查看第N页"）没写进去不该拦住这一页 ⇒ fail-open + 明确留痕。
+        await _save_message_or_report(
+            session_memory, source="page.user",
+            session_id=session_id, role="user",
+            content=f"查看第{params.get('page', '?')}页", tenant_id=tenant_id,
+        )
         try:
-            # 保存用户的翻页消息
-            await session_memory.save_message(
-                session_id=session_id, role="user",
-                content=f"查看第{params.get('page', '?')}页", tenant_id=tenant_id,
-            )
             # paging is also a user reply -> old-page interactive marked answered
             _marker = getattr(session_memory, "mark_last_interactive_answered", None)
             if _marker is not None:
                 try:
                     await _marker(session_id)
                 except Exception as _me:
-                    logger.warning(f"[page] mark_interactive_answered skipped | session={session_id} error={_me}")
+                    # 卡片态落库失败（#4084）：卡片会永远停在"未作答"，事后再看会话记录已失真
+                    # ⇒ 留痕 + incident 短码（不再只留一句 warning）
+                    _report_persist_failure(
+                        exc=_me, op="mark_last_interactive_answered",
+                        source="page.mark_answered", session_id=session_id, tenant_id=tenant_id,
+                    )
 
             yield SSEEvent.loading("正在查询...")
 
@@ -1591,19 +1695,15 @@ async def _handle_page_request(
             logger.error(f"[page] Tool execution failed: {e}", exc_info=True)
             yield SSEEvent.error("翻页查询失败，请稍后重试")
 
-        # 保存 assistant 响应
-        try:
-            await asyncio.wait_for(
-                session_memory.save_message(
-                    session_id=session_id, role="assistant",
-                    content=f"已展示第{params.get('page', '?')}页结果",
-                    tenant_id=tenant_id,
-                    extra_metadata={"cards": page_card_types} if page_card_types else None,
-                ),
-                timeout=10.0,
-            )
-        except Exception:
-            pass
+        # 保存 assistant 响应（#4084 病灶点：此前是 `except Exception: pass` —— 消息没落库、
+        # 日志里也没有，翻页轮次在历史里凭空少一条且无人知道；现经单一策略点留痕）
+        await _save_message_or_report(
+            session_memory, source="page.assistant",
+            session_id=session_id, role="assistant",
+            content=f"已展示第{params.get('page', '?')}页结果",
+            tenant_id=tenant_id,
+            extra_metadata={"cards": page_card_types} if page_card_types else None,
+        )
 
         yield SSEEvent.done(session_id, None)
         logger.debug(f"[page] SSE stream ended | session={session_id}")
@@ -1796,7 +1896,11 @@ async def send_message(
             content_type = "mixed" if images else "text"
             extra_metadata = {"images": images} if images else None
             
-            await session_memory.save_message(
+            # 用户消息是**后续轮次历史的锚**：它没写进去就不该装作这轮开始了
+            # ⇒ fail_open=False（留痕后原样上抛，由本生成器的兜底给出"这轮没成功"）。
+            # 旧形态：异常混进下面的通用 except，日志只说"event_stream error"，归因不明（#4084）。
+            await _save_message_or_report(
+                session_memory, source="chat.user", fail_open=False,
                 session_id=session_id,
                 role="user",
                 content=request.message,
@@ -1811,7 +1915,11 @@ async def send_message(
                 try:
                     await _marker(session_id)
                 except Exception as _me:
-                    logger.warning(f"[chat/send] mark_interactive_answered skipped | session={session_id} error={_me}")
+                    # 卡片态落库失败（#4084）：卡片停在"未作答"⇒ 会话记录里的卡片态失真
+                    _report_persist_failure(
+                        exc=_me, op="mark_last_interactive_answered",
+                        source="chat.mark_answered", session_id=session_id, tenant_id=tenant_id,
+                    )
             
             # 3. 构建多模态消息内容
             if images:
