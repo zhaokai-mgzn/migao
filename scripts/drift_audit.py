@@ -1464,7 +1464,13 @@ def run_audit(a: Audit, baseline: dict, only: list[str] | None,
         "dropped_baseline_entry": dropped_total,
         "stale_baseline_unverifiable": unverifiable_total,
         "burn_down": budget,
-        "verdict": ("drift" if (new_total or new_out_total) else
+        # 抬头判定必须把**全量对账**与**预算**的阻塞算进去（#4045）：否则报告抬头写 OK
+        # 而退出码是 1（`--check`）—— 「结论与实现相反」正是本单要治的形态。
+        # ⚠️ 位置有讲究：`drift` 必须排在 `unknown` **之前**（有阻塞时，局部判据的
+        # 「未知」不该把结论盖成"没结论"——实测：删掉一条仍违规的条目时抬头显示 UNKNOWN
+        # 而 rc=1）。
+        "verdict": ("drift" if (new_total or new_out_total or stale_block_total
+                                or dropped_total or budget.get("blocking")) else
                     ("crash" if any(c["status"] == "error" for c in out["checks"]) else
                      ("unknown" if any(c["status"] == "unknown" for c in out["checks"]) else "ok"))),
     }

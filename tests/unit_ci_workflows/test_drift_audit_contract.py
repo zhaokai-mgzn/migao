@@ -937,6 +937,44 @@ def test_regen_recomputes_entries_but_never_touches_burn_down_or_anchor(tmp_path
         assert after[k] == before[k], f"重生成改写了 {k}：{before[k]!r} → {after[k]!r}"
 
 
+def test_verdict_reflects_full_reconciliation_not_only_new_drift(tmp_path):
+    """抬头 `verdict` 必须把**全量对账**的阻塞算进去（#4045；回归用例）。
+
+    形态（实测）：删掉一条「仍漂移」的条目 ⇒ `--check` 已经 `rc=1`、报告里也有
+    `条目被删但仍漂移 1（阻塞）`，而抬头却写 `UNKNOWN`（因为它只看 `new_drift` 与
+    「有没有 unknown 判据」——「结论与实现相反」正是本单要治的形态）。
+    ⚠️ 位置有讲究：`drift` 要排在 `unknown` **之前**（局部判据的「未知」不该把
+    已经成立的阻塞盖成"没结论"）。
+    """
+    repo = mk_repo(tmp_path, {
+        SKILL_REL: SKILL_TMPL.format(version="1.28.0"),
+        COPY_REL: COPY_TMPL.format(version="1.3"),
+    }, surface_seed=True)
+    only = ("--only", "sync-copy,ref-freshness")
+    bp = repo / "scripts" / "drift_audit_baseline.json"
+    run(repo, "--check", *only, "--regen-baseline", "--reason", "首跑基线")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "基线进 base")
+    _git(repo, "checkout", "-q", "-b", "pr")
+    data = json.loads(bp.read_text(encoding="utf-8"))
+    # `sync-copy` 的存量条目是 `version` / `sections-diverged`（key 由该判据自己构造，
+    # 不带 `|` 分段 —— 别照抄别的判据的形态）
+    live = sorted(k for k in data["entries"]["sync-copy"] if k == "version")
+    assert live, f"夹具没造出 `version` 条目：{list(data['entries']['sync-copy'])}"
+    for k in live:
+        del data["entries"]["sync-copy"][k]        # 删掉**仍然漂移**的条目
+    bp.write_text(json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+                  encoding="utf-8")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "PR：删掉一条仍漂移的条目")
+    rc, out, rep = run(repo, "--check", *only)
+    assert rc == 1, out
+    assert rep["summary"]["dropped_baseline_entry"] >= 1, out
+    assert rep["summary"]["verdict"] == "drift", (
+        f"全量对账已判阻塞（rc=1）而抬头是 {rep['summary']['verdict']!r} ⇒ "
+        f"结论与实现相反（读者会以为没结论）：\n{out}")
+
+
 def test_real_repo_audit_is_green_on_current_tree():
     """本 PR 自身的自证：在当前树上 `--check` 必须绿（存量放行、无新增漂移）。
 
