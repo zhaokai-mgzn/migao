@@ -255,6 +255,7 @@ class LogisticsTrackTool(BaseTool):
                     success=False,
                     error="订单未发货",
                     message="该订单尚未发货，发货后我会帮您跟踪物流",
+                    suggestion="该订单尚未发货，请告知用户发货后再查询物流，不要编造物流轨迹",
                 )
             
             tracking_no = logistics.get("trackingNo")

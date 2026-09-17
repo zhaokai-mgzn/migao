@@ -134,6 +134,7 @@ class SettingsManageTool(BaseTool):
                 success=False,
                 error=f"无效的操作类型: {action}",
                 message=f"不支持的操作类型，可选：{', '.join(VALID_ACTIONS)}",
+                suggestion="请从工具说明里的可选操作类型中选一个后重试，不要自行改用其它 action",
             )
 
         try:
@@ -186,6 +187,7 @@ class SettingsManageTool(BaseTool):
                 success=False,
                 error=error_msg,
                 message=f"获取系统设置失败：{error_msg}",
+                suggestion="请稍后重试；若持续失败，请让用户通过商户后台「系统设置」页查看，或联系平台管理员",
             )
 
         data = response.get("data", {})
@@ -216,6 +218,7 @@ class SettingsManageTool(BaseTool):
                 success=False,
                 error="缺少更新参数",
                 message="更新设置时至少需要提供一个字段（name 或 industry）",
+                suggestion="缺少更新参数，请向用户确认要修改的是商户名称还是所属行业后重试",
             )
 
         client = get_admin_api_client()
@@ -232,6 +235,7 @@ class SettingsManageTool(BaseTool):
                 success=False,
                 error=error_msg,
                 message=f"更新系统设置失败：{error_msg}",
+                suggestion="请先用 settings_manage 的 get 操作读取当前设置，核对字段后再重试",
             )
 
         logger.info(
@@ -262,6 +266,7 @@ class SettingsManageTool(BaseTool):
                 success=False,
                 error=error_msg,
                 message=f"获取AI配置失败：{error_msg}",
+                suggestion="请稍后重试；若持续失败，请让用户通过商户后台「AI 配置」页查看，或联系平台管理员",
             )
 
         data = response.get("data", {})
@@ -296,6 +301,7 @@ class SettingsManageTool(BaseTool):
                 success=False,
                 error="缺少更新参数",
                 message="更新AI配置时至少需要提供一个配置字段",
+                suggestion="缺少更新参数，请向用户确认要调整的 AI 配置项（如自动回复、营业时间）后重试",
             )
 
         client = get_admin_api_client()
@@ -312,6 +318,7 @@ class SettingsManageTool(BaseTool):
                 success=False,
                 error=error_msg,
                 message=f"更新AI配置失败：{error_msg}",
+                suggestion="请先用 settings_manage 的 get_ai_config 操作读取当前 AI 配置，核对后再重试",
             )
 
         logger.info(
@@ -336,6 +343,7 @@ class SettingsManageTool(BaseTool):
                 success=False,
                 error="缺少旧密码",
                 message="修改密码时必须提供旧密码（old_password）",
+                suggestion="缺少旧密码，请向用户询问当前密码后重试（不要代替用户猜测或编造密码）",
             )
 
         if not new_password:
@@ -343,6 +351,7 @@ class SettingsManageTool(BaseTool):
                 success=False,
                 error="缺少新密码",
                 message="修改密码时必须提供新密码（new_password）",
+                suggestion="缺少新密码，请向用户询问要设置的新密码后重试",
             )
 
         if len(new_password) < 6:
@@ -350,6 +359,7 @@ class SettingsManageTool(BaseTool):
                 success=False,
                 error="新密码过短",
                 message="新密码长度不能少于 6 位",
+                suggestion="新密码不足 6 位，请让用户重新提供至少 6 位的新密码后重试",
             )
 
         client = get_admin_api_client()
@@ -369,6 +379,7 @@ class SettingsManageTool(BaseTool):
                 success=False,
                 error=error_msg,
                 message=f"修改密码失败：{error_msg}",
+                suggestion="请让用户确认旧密码是否正确；若用户已忘记密码，请引导其走找回密码流程或联系管理员",
             )
 
         logger.info(
@@ -402,6 +413,7 @@ class SettingsManageTool(BaseTool):
                 success=False,
                 error=error_msg,
                 message=f"查询登录日志失败：{error_msg}",
+                suggestion="请稍后重试；若持续失败，请缩小时间范围或请用户联系管理员核对登录日志数据",
             )
 
         data = response.get("data", {})

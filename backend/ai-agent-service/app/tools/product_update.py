@@ -83,7 +83,11 @@ class ProductUpdateTool(BaseTool):
             json_data["allowReturnRestock"] = allow_return_restock
 
         if not json_data:
-            return ToolResult(success=False, error="没有要修改的字段", message="请提供至少一个要修改的字段")
+            return ToolResult(success=False,
+                error="没有要修改的字段",
+                message="请提供至少一个要修改的字段",
+                suggestion="没有要修改的字段，请向用户确认要改哪一项（价格/库存/规格等）后重试",
+            )
 
         logger.info(f"[product_update] {product_id}: {list(json_data.keys())}")
         client = get_admin_api_client()

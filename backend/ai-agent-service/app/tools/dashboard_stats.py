@@ -121,6 +121,7 @@ class DashboardStatsTool(BaseTool):
                 success=False,
                 error=f"无效的操作类型: {action}",
                 message=f"不支持的操作类型，可选：{', '.join(sorted(VALID_ACTIONS))}",
+                suggestion="请从工具说明里的可选操作类型中选一个后重试，不要自行改用其它 action",
             )
 
         # 强制转换参数为 int

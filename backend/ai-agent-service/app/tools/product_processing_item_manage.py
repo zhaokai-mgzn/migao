@@ -75,11 +75,13 @@ class ProductProcessingItemManageTool(BaseTool):
             return ToolResult(
                 success=False, error="无效的加工项操作",
                 message="action 必须为 add 或 remove",
+                suggestion="加工项操作只支持 add / remove，请改用其中之一后重试",
             )
         if not item_ids:
             return ToolResult(
                 success=False, error="缺少加工项 ID",
                 message="请提供加工项 ID 列表",
+                suggestion="缺少加工项 ID 列表 item_ids，请先用 processing_item_query 查到加工项后重试",
             )
 
         # ── ID 自动解析：LLM 传名称/序号/UUID 都接受 ──
@@ -93,6 +95,7 @@ class ProductProcessingItemManageTool(BaseTool):
             return ToolResult(
                 success=False, error="商品不存在",
                 message=f"找不到商品「{product_id}」，请确认商品名称或 ID",
+                suggestion="找不到该商品，请先用 product_search 让用户确认商品名称或 ID 后重试",
             )
 
         resolved_item_ids = await resolve_processing_item_ids(
@@ -102,6 +105,7 @@ class ProductProcessingItemManageTool(BaseTool):
             return ToolResult(
                 success=False, error="加工项不存在",
                 message="找不到指定的加工项，请检查加工项名称或 ID",
+                suggestion="找不到指定加工项，请先用 processing_item_query 查到加工项后重试",
             )
 
         logger.info(
@@ -123,6 +127,7 @@ class ProductProcessingItemManageTool(BaseTool):
             return ToolResult(
                 success=False, error=error_msg,
                 message=f"加工项{action}失败：{error_msg}",
+                suggestion="请先用 product_detail 确认该商品与加工项配置，核对 item_ids 后重新提交",
             )
 
         items = response.get("data", [])

@@ -106,6 +106,7 @@ class SessionManageTool(BaseTool):
                 success=False,
                 error=f"无效的操作类型: {action}",
                 message=f"不支持的操作类型，可选：{', '.join(VALID_ACTIONS)}",
+                suggestion="请从工具说明里的可选操作类型中选一个后重试，不要自行改用其它 action",
             )
 
         try:
@@ -176,6 +177,7 @@ class SessionManageTool(BaseTool):
                 success=False,
                 error=error_msg,
                 message=f"查询会话列表失败：{error_msg}",
+                suggestion="请稍后重试；若持续失败，请改为不带状态筛选查询，或请用户联系管理员核对会话数据",
             )
 
         data = response.get("data", {}) or {}
@@ -210,6 +212,7 @@ class SessionManageTool(BaseTool):
                 success=False,
                 error=error_msg,
                 message=f"获取监控面板数据失败：{error_msg}",
+                suggestion="请稍后重试；若持续失败，请改用 list 操作查看会话列表，或请用户联系管理员核对会话服务",
             )
 
         return ToolResult(
@@ -225,6 +228,7 @@ class SessionManageTool(BaseTool):
                 success=False,
                 error="缺少会话 ID",
                 message="查看会话详情时必须提供 session_id",
+                suggestion="缺少 session_id，请先用 session_manage 的 list 操作取到会话 ID 后重试",
             )
 
         logger.info(f"[session-manage] Detail: session_id={session_id} | tenant={context.tenant_id}")
@@ -242,6 +246,7 @@ class SessionManageTool(BaseTool):
                 success=False,
                 error=error_msg,
                 message=f"查询会话详情失败：{error_msg}",
+                suggestion="请先用 session_manage 的 list 操作确认该会话仍在（已结束的会话不可再查看详情）后重试",
             )
 
         return ToolResult(
@@ -259,12 +264,14 @@ class SessionManageTool(BaseTool):
                 success=False,
                 error="缺少会话 ID",
                 message="分配会话时必须提供 session_id",
+                suggestion="缺少 session_id，请先用 session_manage 的 list 操作取到会话 ID 后重试",
             )
         if not employee_id:
             return ToolResult(
                 success=False,
                 error="缺少客服员工 ID",
                 message="分配会话时必须提供 employee_id",
+                suggestion="缺少 employee_id，请先用 employee_manage 的 list 操作选取在职客服后重试",
             )
 
         logger.info(
@@ -286,6 +293,7 @@ class SessionManageTool(BaseTool):
                 success=False,
                 error=error_msg,
                 message=f"分配会话失败：{error_msg}",
+                suggestion="请先用 session_manage 的 detail 操作确认该会话处于待分配状态，再重新执行分配",
             )
 
         return ToolResult(
@@ -301,6 +309,7 @@ class SessionManageTool(BaseTool):
                 success=False,
                 error="缺少会话 ID",
                 message="结束会话时必须提供 session_id",
+                suggestion="缺少 session_id，请先用 session_manage 的 list 操作取到会话 ID 后重试",
             )
 
         logger.info(f"[session-manage] End: session_id={session_id} | tenant={context.tenant_id}")
@@ -318,6 +327,7 @@ class SessionManageTool(BaseTool):
                 success=False,
                 error=error_msg,
                 message=f"结束会话失败：{error_msg}",
+                suggestion="请先用 session_manage 的 detail 操作确认该会话仍在进行中（已结束的无需再结束）后重试",
             )
 
         return ToolResult(

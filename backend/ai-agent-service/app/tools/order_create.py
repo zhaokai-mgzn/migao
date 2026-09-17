@@ -855,6 +855,7 @@ class OrderCreateTool(BaseTool):
                             "无法确定库价。请先用 product_search / product_detail "
                             "确认 product_id 后，在下单 items 中带上 product_id 重试。"
                         ),
+                        suggestion="同名商品在库中不唯一，请先用 product_search 让用户确认具体是哪一款，再用该商品下单",
                     )
                 if len(exact) == 1:
                     rid = exact[0].get("id")
@@ -873,6 +874,7 @@ class OrderCreateTool(BaseTool):
                     f"（{type(e).__name__}），无法确认单价（拒绝比放行安全）。"
                     "请稍后重试，或先 product_search / product_detail 确认商品与库价。"
                 ),
+                suggestion="请稍后重试；重试前先用 product_search / product_detail 确认商品与库价，不要凭记忆填单价下单",
             )
         if not detail:
             return None, None
@@ -960,6 +962,7 @@ class OrderCreateTool(BaseTool):
                     success=False,
                     error=f"商品明细第 {i + 1} 项格式错误",
                     message=f"商品明细第 {i + 1} 项必须是对象，包含 product_name、quantity、unit_price、subtotal",
+                    suggestion="商品明细每项必须是对象，请按 product_name / quantity / unit_price / subtotal 重新组织后重试",
                 )
             required_fields = ["product_name", "quantity", "unit_price", "subtotal"]
             for field in required_fields:
@@ -968,6 +971,7 @@ class OrderCreateTool(BaseTool):
                         success=False,
                         error=f"商品明细第 {i + 1} 项缺少 {field}",
                         message=f"商品明细第 {i + 1} 项缺少必填字段：{field}",
+                        suggestion="商品明细缺必填字段，请补齐 product_name / quantity / unit_price / subtotal 后重试",
                     )
             # 数值语义闸门（issue #3586）：数量/单价/小计的正负与量级 —— 在发 HTTP 之前拒绝。
             # 负数量会算出负金额落库（下游 createOrder 不做正负判断、Agent 路径 DTO 无 Bean Validation），
@@ -1121,6 +1125,7 @@ class OrderCreateTool(BaseTool):
                     success=False,
                     error=error_msg,
                     message=f"创建订单失败：{error_msg}",
+                    suggestion="请先用 product_detail 确认商品在架与库价、并核对数量，再重新提交下单",
                 )
 
             order_data = response.get("data", {})

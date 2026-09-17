@@ -334,6 +334,7 @@ class InteractTool(BaseTool):
                 success=False,
                 error="权限不足",
                 message="无法展示交互组件",
+                suggestion="请改用当前账号有权限的交互方式向用户提问（纯文本追问），或请用户联系管理员开通权限",
             )
 
         if component == "choice":
@@ -344,6 +345,7 @@ class InteractTool(BaseTool):
                     success=False,
                     error="options 必须是数组",
                     message="选项列表格式错误，请重试",
+                    suggestion="options 必须是数组，请把选项改成 JSON 数组形式（每项含 label 与 value）后重试",
                 )
             # 逐项归一（issue #3962）：前端按 `opt.label` 渲染 → 缺 label 就是「没有按钮的卡」。
             # 归一后为空 ⇒ 落到下面的既有校验 fail-closed（不新造错误文案）。
@@ -353,6 +355,7 @@ class InteractTool(BaseTool):
                     success=False,
                     error="choice 组件需要至少一个 option",
                     message="选项列表不能为空",
+                    suggestion="选项列表不能为空，请补充至少一个带 label 的选项后重试",
                 )
             # 限制选项数量防止 UI 溢出（auto-interact 生成的上限更高）
             MAX_OPTIONS = 50
@@ -391,6 +394,7 @@ class InteractTool(BaseTool):
                     success=False,
                     error="fields 必须是数组",
                     message="确认信息格式错误，请重试",
+                    suggestion="fields 必须是数组，请把确认项改成 JSON 数组形式（每项含 label 与 value）后重试",
                 )
             # 逐项归一（issue #3962）：与 choice 同规则 —— 缺 label 的字段行无文字、
             # 且 confirmValue 会拼出 `=值` 这种空标签（顾客点击必不中）。
@@ -400,6 +404,7 @@ class InteractTool(BaseTool):
                     success=False,
                     error="confirm 组件需要至少一个 field",
                     message="确认信息不能为空",
+                    suggestion="确认信息不能为空，请补充至少一个带 label 的确认项后重试",
                 )
 
             # ── confirmValue 由**实质内容**决定，不采用模型措辞（issue #3401 根因）──
@@ -440,6 +445,7 @@ class InteractTool(BaseTool):
                     success=False,
                     error="form 组件需要至少一个 formField",
                     message="表单字段不能为空",
+                    suggestion="表单字段不能为空，请补充至少一个带 key 与 label 的表单字段后重试",
                 )
             # 限制字段数量
             if len(formFields) > 6:
@@ -452,6 +458,7 @@ class InteractTool(BaseTool):
                         success=False,
                         error="每个 formField 必须有 key 和 label",
                         message="表单字段格式错误",
+                        suggestion="表单每个字段都必须带 key 与 label，请补齐缺失的字段属性后重试",
                     )
 
             interactive_data = {
@@ -466,6 +473,7 @@ class InteractTool(BaseTool):
                 success=False,
                 error=f"不支持的组件类型: {component}",
                 message="仅支持 choice、confirm、form 组件",
+                suggestion="组件类型只支持 choice / confirm / form，请改用其中一种后重试",
             )
 
         # ⚠️ 卡片脱敏**不在这里**做（issue #3379 修正）：工具返回值会进入**模型上下文**

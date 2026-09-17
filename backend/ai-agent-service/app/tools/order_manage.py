@@ -70,7 +70,11 @@ class OrderManageTool(BaseTool):
         refund_reason: Optional[str] = None,
     ) -> ToolResult:
         if not self.check_permission(context):
-            return ToolResult(success=False, error="权限不足", message="您没有权限执行订单管理操作")
+            return ToolResult(success=False,
+                error="权限不足",
+                message="您没有权限执行订单管理操作",
+                suggestion="请改用只读查询（order_query）向用户提供订单信息；如需改单请先确认当前账号权限",
+            )
 
         if action not in VALID_ACTIONS:
             return ToolResult(
@@ -105,13 +109,25 @@ class OrderManageTool(BaseTool):
 
         if action == "update_status":
             if not status:
-                return ToolResult(success=False, error="缺少状态参数", message="更新状态时必须提供新状态（status）")
+                return ToolResult(success=False,
+                    error="缺少状态参数",
+                    message="更新状态时必须提供新状态（status）",
+                    suggestion="缺少目标状态 status，请向用户确认要改成哪个状态后重试",
+                )
             json_data["status"] = status
         elif action == "update_logistics":
             if not logistics_company:
-                return ToolResult(success=False, error="缺少快递公司", message="请提供快递公司")
+                return ToolResult(success=False,
+                    error="缺少快递公司",
+                    message="请提供快递公司",
+                    suggestion="缺少快递公司 logistics_company，请向用户询问快递公司名称后重试",
+                )
             if not tracking_number:
-                return ToolResult(success=False, error="缺少运单号", message="请提供运单号")
+                return ToolResult(success=False,
+                    error="缺少运单号",
+                    message="请提供运单号",
+                    suggestion="缺少运单号 tracking_number，请向用户询问运单号后重试",
+                )
             json_data["logisticsCompany"] = logistics_company
             json_data["trackingNumber"] = tracking_number
         elif action == "cancel":
