@@ -11,6 +11,7 @@ import com.migao.admin.entity.OrderLogistics;
 import com.migao.admin.entity.FinanceTransaction;
 import com.migao.admin.entity.Product;
 import com.migao.admin.entity.ProductSku;
+import com.migao.admin.entity.StockLedger;
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.mapper.FinanceTransactionMapper;
 import com.migao.admin.mapper.OrderItemMapper;
@@ -70,6 +71,11 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
     private final UserService userService;
     /** 写请求幂等键（issue #4037）：去重 / 结果回放 / 占位释放 */
     private final ClientRequestIdService clientRequestIdService;
+    /**
+     * 库存流水/台账（issue #4137）：订单腿（下单扣减 / 取消回补）的落账写入方。
+     * 落账唯一语义点在该服务（delta 由 after-before 算出），本类只提供「变更前快照 + 变更点」。
+     */
+    private final StockLedgerService stockLedgerService;
 
     /**
      * 订单号序列号（线程安全）
@@ -1342,14 +1348,14 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
      * 确认支付后：扣减库存 + 增加销量（商品级 + SKU级）
      */
     private void deductStockAndIncreaseSales(String orderId) {
-        adjustStockAndSales(orderId, true);
+        adjustStockAndSales(orderId, true, StockLedger.REASON_ORDER);
     }
 
     /**
      * 取消/退款后：恢复库存 + 减少销量（商品级 + SKU级）
      */
     private void restoreStockAndDecreaseSales(String orderId) {
-        adjustStockAndSales(orderId, false);
+        adjustStockAndSales(orderId, false, StockLedger.REASON_ORDER);
     }
 
     /**
@@ -1358,21 +1364,28 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
      * 仅由 AfterSalesTicketService 在售后工单 refund/return 完结且订单全部商品
      * allow_return_restock=true（允许退货回补库存）时调用；复用取消订单的库存恢复路径
      * （恢复商品级+SKU级库存并减少销量）。窗帘行业定制退货不可再售，默认不走到本路径。
+     *
+     * <p>台账（issue #4137）：本路径的这次变更由**调用方** AfterSalesTicketService 落
+     * {@code reason=aftersales} 行（它按「调用前快照 vs 调用后实际值」比对）——故这里传
+     * {@code null} 不重复记账：同一次变更写两行会让 delta 翻倍，且两行的 before 互不相同
+     * （相邻行首尾接不上，「库存为什么从 X 变成 Y」就答错了）。</p>
      */
     @Transactional(rollbackFor = Exception.class)
     public void restoreStockForReturn(String orderId) {
-        restoreStockAndDecreaseSales(orderId);
+        adjustStockAndSales(orderId, false, null);
         log.info("售后退货回补库存完成: orderId={}", orderId);
     }
 
     /**
      * 统一的库存和销量调整逻辑
      *
-     * @param orderId  订单ID
-     * @param isDeduct true=扣库存+增销量（确认支付），false=恢复库存+减销量（取消/退款）
+     * @param orderId      订单ID
+     * @param isDeduct     true=扣库存+增销量（确认支付），false=恢复库存+减销量（取消/退款）
+     * @param ledgerReason 台账变更来源（{@link StockLedger#REASON_ORDER}）；
+     *                     {@code null} = 本次变更的落账由上游站点负责（售后回补 → aftersales）
      */
     @SuppressWarnings("unchecked")
-    private void adjustStockAndSales(String orderId, boolean isDeduct) {
+    private void adjustStockAndSales(String orderId, boolean isDeduct, String ledgerReason) {
         List<OrderItem> items = orderItemMapper.selectList(
                 new LambdaQueryWrapper<OrderItem>().eq(OrderItem::getOrderId, orderId));
         if (items.isEmpty()) return;
@@ -1395,9 +1408,9 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
 
             // SKU级库存调整：从 processingInfo 中匹配 SKU
             if (isDeduct) {
-                deductSkuStock(item);
+                deductSkuStock(item, order, ledgerReason);
             } else {
-                restoreSkuStock(item);
+                restoreSkuStock(item, order, ledgerReason);
             }
         }
 
@@ -1415,28 +1428,56 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
     }
 
     /**
-     * 从 OrderItem 的 processingInfo 中匹配 SKU 并扣减库存
+     * 从 OrderItem 的 processingInfo 中匹配 SKU 并扣减库存（issue #4137：并落订单腿台账行）
      */
     @SuppressWarnings("unchecked")
-    private void deductSkuStock(OrderItem item) {
+    private void deductSkuStock(OrderItem item, Order order, String ledgerReason) {
         Long skuId = matchSkuId(item);
         if (skuId != null && item.getQuantity() != null) {
+            // 台账：变更前快照（只记真实变化，故快照必须取在写库之前）
+            Map<Long, ProductSku> stockBefore = snapshotForLedger(ledgerReason, item.getProductId());
             // issue #3666：库存/销量列是整数，取整数部分（与库存校验同一口径）
             productSkuMapper.deductStock(skuId, item.getQuantity().intValue());
             productSkuMapper.increaseSalesCount(skuId, item.getQuantity().intValue());
+            recordStockLedgerRows(ledgerReason, order, stockBefore, "订单确认支付扣减库存");
         }
     }
 
     /**
-     * 从 OrderItem 的 processingInfo 中匹配 SKU 并恢复库存
+     * 从 OrderItem 的 processingInfo 中匹配 SKU 并恢复库存（issue #4137：并落订单腿台账行）
      */
-    private void restoreSkuStock(OrderItem item) {
+    private void restoreSkuStock(OrderItem item, Order order, String ledgerReason) {
         Long skuId = matchSkuId(item);
         if (skuId != null && item.getQuantity() != null) {
+            Map<Long, ProductSku> stockBefore = snapshotForLedger(ledgerReason, item.getProductId());
             // issue #3666：库存/销量列是整数，取整数部分（与库存校验同一口径）
             productSkuMapper.restoreStock(skuId, item.getQuantity().intValue());
             productSkuMapper.decreaseSalesCount(skuId, item.getQuantity().intValue());
+            recordStockLedgerRows(ledgerReason, order, stockBefore, "订单取消/退款回补库存");
         }
+    }
+
+    /**
+     * 台账（issue #4137）：变更前快照 —— 复用 {@link StockLedgerService} 的同一套快照/比对语义
+     * （落账唯一语义点在那边，订单侧不新造第二套比对逻辑）。
+     *
+     * @param ledgerReason {@code null} = 该路径的落账由上游站点负责（售后回补 → aftersales）⇒ 不取快照、零开销
+     */
+    private Map<Long, ProductSku> snapshotForLedger(String ledgerReason, String productId) {
+        return ledgerReason == null ? Map.of() : stockLedgerService.snapshotSkus(List.of(productId));
+    }
+
+    /**
+     * 台账（issue #4137）：变更后按**实际值**比对落账，只记真实变化的 SKU
+     * （delta 由 {@link StockLedgerService} 按 after-before 算出；请求量与实际变化不一致时不落假账）。
+     */
+    private void recordStockLedgerRows(String ledgerReason, Order order,
+                                       Map<Long, ProductSku> stockBefore, String note) {
+        if (ledgerReason == null || order == null) {
+            return;
+        }
+        stockLedgerService.recordChangesAgainstSnapshot(order.getTenantId(), stockBefore,
+                ledgerReason, order.getOrderNo(), note);
     }
 
     /**
