@@ -3405,7 +3405,7 @@
 真值: ai-chat.tool-classes, ai-chat.permission-layers
 溯源: 2026-08-25 新增：ai-agent-service tools-mixed-part2 覆盖率补全（issue #2426） ｜ tags: registry, tool_execute, audit
 
-## 设置域（8 case）
+## 设置域（9 case）
 
 ### ST-001. 系统设置 - 读取 🔵
 ```
@@ -3489,6 +3489,18 @@
 ```
 真值: settings-page.basic-only
 溯源: 2026-09-07 新增：企业基础信息隐藏登录日志/修改密码入口（issue #3006） ｜ tags: setting, ui, tab
+
+### ST-011. 企业收款二维码（微信/支付宝）C 端支付页展示与平台不经手资金（二清规避） 🔵
+```
+你: 我支付这笔订单，怎么付款
+期望: direct_reply
+数据: C 端支付页展示收款码（/chat/payment-qrcodes 精简字段 image_url/payee_name）+ 应付金额 + 微信/支付宝切换
+数据: 页面注明「款项直接支付给商家」（平台不经手资金，二清规避）
+数据: 商家设置端 PUT /api/admin/settings/payment-qrcodes/{type} upsert（wechat/alipay 各一张，非法类型拒绝）—— 由 SettingsControllerTest MockMvc 覆盖
+数据: 无收款码时展示降级提示（PaymentCard 空态）
+```
+真值: settings-manage.ai-config
+溯源: 2026-09-17 新增（issue #3990）：M3-F 企业收款二维码——C 端展示行为覆盖（persona 双端）；写路径由 MockMvc 单测覆盖 ｜ tags: settings, payment
 
 ## token-refresh（4 case）
 
@@ -4132,8 +4144,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：304（活跃 152，跳过 152）
-- tier 分布：smoke 9 / normal 262 / adversarial 33
+- 用例总数：305（活跃 153，跳过 152）
+- tier 分布：smoke 9 / normal 263 / adversarial 33
 - 售后域：9
 - agents：6
 - api：19
@@ -4155,7 +4167,7 @@
 - processing-order：17
 - 商品域：25
 - registry：1
-- 设置域：8
+- 设置域：9
 - token-refresh：4
 - ui：43
 - utils：2

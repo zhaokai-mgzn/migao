@@ -229,6 +229,8 @@ class SecurityConfigTest {
     @MockBean
     private com.migao.admin.mapper.UserMapper userMapper;
     @MockBean
+    private com.migao.admin.mapper.TenantPaymentQrcodeMapper paymentQrcodeMapper;
+    @MockBean
     private com.migao.admin.mapper.UserRoleMapper userRoleMapper;
     @MockBean
     private com.migao.admin.mapper.RolePermissionMapper rolePermissionMapper;

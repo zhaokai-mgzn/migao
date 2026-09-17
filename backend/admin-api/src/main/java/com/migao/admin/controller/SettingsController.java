@@ -47,6 +47,7 @@ public class SettingsController {
     private final AuditLogService auditLogService;
     private final UserMapper userMapper;
     private final PasswordEncoder passwordEncoder;
+    private final com.migao.admin.mapper.TenantPaymentQrcodeMapper paymentQrcodeMapper;
 
     // ==================== 基本设置 ====================
 
@@ -315,6 +316,70 @@ public class SettingsController {
         PageResponse<AuditLog> result = auditLogService.getAuditLogPage(
                 page, size, "login", null, null, null, null, tenantId);
         return ApiResponse.success(result);
+    }
+
+    // ==================== 收款二维码（issue #3990，M3-F-2）====================
+
+    /**
+     * 获取本租户收款二维码（微信/支付宝各一张）
+     * GET /api/admin/settings/payment-qrcodes
+     * 返回按 payment_type 分组的 map：{wechat: {...}, alipay: {...}}
+     */
+    @RequirePermission("system:manage")
+    @GetMapping("/api/admin/settings/payment-qrcodes")
+    public ApiResponse<Map<String, Object>> getPaymentQrcodes() {
+        Long tenantId = TenantContext.getTenantId();
+        var wrapper = new LambdaQueryWrapper<com.migao.admin.entity.TenantPaymentQrcode>()
+                .eq(com.migao.admin.entity.TenantPaymentQrcode::getTenantId, tenantId)
+                .eq(com.migao.admin.entity.TenantPaymentQrcode::getDeleted, 0);
+        Map<String, Object> result = new HashMap<>();
+        for (com.migao.admin.entity.TenantPaymentQrcode q : paymentQrcodeMapper.selectList(wrapper)) {
+            result.put(q.getPaymentType(), q);
+        }
+        return ApiResponse.success(result);
+    }
+
+    /**
+     * 保存/更新某类型收款二维码（upsert）
+     * PUT /api/admin/settings/payment-qrcodes/{type}  body: {imageUrl, payeeName, remark}
+     */
+    @RequirePermission("system:manage")
+    @PutMapping("/api/admin/settings/payment-qrcodes/{type}")
+    public ApiResponse<com.migao.admin.entity.TenantPaymentQrcode> upsertPaymentQrcode(
+            @PathVariable String type,
+            @RequestBody java.util.Map<String, String> body) {
+        Long tenantId = TenantContext.getTenantId();
+        if (!"wechat".equals(type) && !"alipay".equals(type)) {
+            throw BusinessException.validationError("收款类型仅支持 wechat/alipay");
+        }
+        String imageUrl = body.get("imageUrl");
+        if (imageUrl == null || imageUrl.isBlank()) {
+            throw BusinessException.validationError("imageUrl 不能为空");
+        }
+        var wrapper = new LambdaQueryWrapper<com.migao.admin.entity.TenantPaymentQrcode>()
+                .eq(com.migao.admin.entity.TenantPaymentQrcode::getTenantId, tenantId)
+                .eq(com.migao.admin.entity.TenantPaymentQrcode::getPaymentType, type)
+                .eq(com.migao.admin.entity.TenantPaymentQrcode::getDeleted, 0);
+        com.migao.admin.entity.TenantPaymentQrcode q = paymentQrcodeMapper.selectOne(wrapper);
+        if (q == null) {
+            q = com.migao.admin.entity.TenantPaymentQrcode.builder()
+                    .tenantId(tenantId)
+                    .paymentType(type)
+                    .imageUrl(imageUrl)
+                    .payeeName(body.get("payeeName"))
+                    .remark(body.get("remark"))
+                    .status("active")
+                    .deleted(0)
+                    .build();
+            paymentQrcodeMapper.insert(q);
+        } else {
+            q.setImageUrl(imageUrl);
+            if (body.get("payeeName") != null) q.setPayeeName(body.get("payeeName"));
+            if (body.get("remark") != null) q.setRemark(body.get("remark"));
+            paymentQrcodeMapper.updateById(q);
+        }
+        log.info("保存收款二维码: tenantId={} type={}", tenantId, type);
+        return ApiResponse.success(q);
     }
 
     // ==================== 请求 DTO ====================
