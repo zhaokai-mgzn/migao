@@ -1527,6 +1527,24 @@ _CASE_CH_036 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── CH-038 [NORMAL] 窗帘报价协商 - 工艺档位/客户自报反算/来源标记（确定性单测覆盖）（源: cases/chat.yml）──
+_CASE_CH_038 = EvalCase(
+    id='CH-038',
+    legacy_id='',
+    title='窗帘报价协商 - 工艺档位/客户自报反算/来源标记（确定性单测覆盖）',
+    skill=Skill.MULTI_TURN,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['我客厅 4.64 米宽做韩褶，能不能便宜点'],
+    expectations=['direct_reply'],
+    data_checks=['报价协商：craft_tier=economy 重算给出省料档对比（用料/价格少于 standard）', '客户自报折数/用料：pleat_count + source=customer_quoted 反算校验（48 折双开 → 12.3 米）', '开数余量：单开 +0.2 / 对开四开 +0.3；对开折数必须偶数', '顾客自报 ≠ 成交价：最终档位由商家确认，来源标记供对账（M3-F 商家裁定）'],
+    skip_reason='报价协商内核是确定性纯计算（curtain_calc 折数法/档位），由单测覆盖，非 LLM 行为，不进入 agent-eval 冒烟（同 CH-036/037 惯例）',
+    tags=['xiaobu', 'quote', 'negotiation'],
+    persona='xiaobu',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── CR-001 [NORMAL] 查商品 → 下单（跨 Skill 复用 UUID）（源: cases/cross.yml）──
 _CASE_CR_001 = EvalCase(
     id='CR-001',
@@ -5795,6 +5813,7 @@ ALL_CASES = (
     _CASE_CH_035,
     _CASE_CH_037,
     _CASE_CH_036,
+    _CASE_CH_038,
     _CASE_CR_001,
     _CASE_CR_002,
     _CASE_CR_003,

@@ -1683,3 +1683,40 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+
+  - id: CH-038
+    legacy_id: ""
+    title: "窗帘报价协商 - 工艺档位/客户自报反算/来源标记（确定性单测覆盖）"
+    domains:
+      - chat
+      - customer
+    tier: normal
+    persona: xiaobu
+    tags:
+      - xiaobu
+      - quote
+      - negotiation
+    truths_ref:
+      - ai-chat.intent-tool-map
+    # ── 覆盖说明（issue #3990，M3-F）──
+    # 报价协商的确定性内核：curtain_calc 支持 craft_tier（standard/economy）档位对比、
+    # pleat_count 客户自报折数、source=customer_quoted 来源标记、open_count 开数余量。
+    # 纯计算由单测覆盖（test_curtain_calc.py 新增 3 项），不进 agent-eval 冒烟（同 CH-036/037 惯例）。
+    # 行业实证：economy 档用料 < standard 档；48 折双开 → 12.3 米；单开余量 0.2。
+    user_inputs:
+      - "我客厅 4.64 米宽做韩褶，能不能便宜点"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "报价协商：craft_tier=economy 重算给出省料档对比（用料/价格少于 standard）"
+      - "客户自报折数/用料：pleat_count + source=customer_quoted 反算校验（48 折双开 → 12.3 米）"
+      - "开数余量：单开 +0.2 / 对开四开 +0.3；对开折数必须偶数"
+      - "顾客自报 ≠ 成交价：最终档位由商家确认，来源标记供对账（M3-F 商家裁定）"
+    skip_reason: "报价协商内核是确定性纯计算（curtain_calc 折数法/档位），由单测覆盖，非 LLM 行为，不进入 agent-eval 冒烟（同 CH-036/037 惯例）"
+    merge_log: "2026-09-17 新增（issue #3990）：M3-F 报价协商确定性内核覆盖登记，单测覆盖"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_curtain_calc.py"
+      ci:
+        - pr-check.yml
+      verifies: []

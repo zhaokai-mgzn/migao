@@ -368,6 +368,11 @@ class CurtainCalcTool(BaseTool):
     description = (
         "计算窗帘用布量与报价。用户询问窗帘需要多少布、多少钱、怎么算料时调用。"
         "【前置】需要窗宽(米)、窗高(米)；面料单价可通过 product_detail 查询得到。"
+        "【折数法·韩褶】mounting=s_hook 时可用折数法：用料 = 0.25×折数 + 余量（单开0.2/多开0.3）。"
+        "顾客自报折数或自报用料时：把折数传 pleat_count；或传 craft_tier=economy 出省料档对比。"
+        "开数传 open_count（1/2/4），对开折数须偶数、四开能被 4 整除。"
+        "取值来源传 source（formula/manual/customer_quoted）——客户自报的用料必须标记，"
+        "与商家确认的档位分开（商家裁定后以确认值为准）。"
         "【反例】查面料价格/库存用 product_detail，不要用它算料；下单用 order_create。"
         "【反例·重要】顾客**直接说了要买多少米布**（如「要 3 米」「买 3 米布」「3 米，散剪」）时，"
         "那已经是**购买数量**，**不要**调用本工具 —— 把米数当窗宽再乘褶皱倍数会算出 3 倍布量、"
@@ -417,6 +422,24 @@ class CurtainCalcTool(BaseTool):
                 "type": "number",
                 "description": "花距（米），对花时有效，常见 0.3~0.6",
             },
+            "open_count": {
+                "type": "integer",
+                "description": "打开方式开数：1 单开 / 2 双开 / 4 四开（默认 1）。对开总折数必须偶数、四开能被 4 整除",
+            },
+            "pleat_count": {
+                "type": "integer",
+                "description": "折数（韩褶折数法，mounting=s_hook 时有效）。客户自报折数/用料时传此值；用料 = 0.25×折数 + 余量（单开0.2/多开0.3）",
+            },
+            "source": {
+                "type": "string",
+                "description": "折数/用料取值来源：formula 公式计算 / manual 人工指定 / customer_quoted 客户自报（默认 formula）",
+                "enum": ["formula", "manual", "customer_quoted"],
+            },
+            "craft_tier": {
+                "type": "string",
+                "description": "工艺档位：standard 标准工艺（默认，倍数 2.0）/ economy 经济工艺（倍数 1.8，省料）。顾客要省钱或自报用料时用 economy 档对比；与 pleat_count 二选一",
+                "enum": ["standard", "economy"],
+            },
         },
         "required": ["window_width", "window_height"],
     }
@@ -432,6 +455,10 @@ class CurtainCalcTool(BaseTool):
         fabric_price: Optional[float] = None,
         has_pattern: bool = False,
         pattern_repeat: float = 0.0,
+        open_count: int = 1,
+        pleat_count: Optional[int] = None,
+        source: str = "formula",
+        craft_tier: Optional[str] = None,
     ) -> ToolResult:
         """执行算料报价"""
         if not self.check_permission(context):
@@ -485,6 +512,10 @@ class CurtainCalcTool(BaseTool):
                 fabric_price=float(fabric_price),
                 has_pattern=has_pattern,
                 pattern_repeat=pattern_repeat,
+                open_count=int(open_count),
+                pleat_count=int(pleat_count) if pleat_count is not None else None,
+                source=source,
+                craft_tier=craft_tier,
             )
 
             logger.info(
