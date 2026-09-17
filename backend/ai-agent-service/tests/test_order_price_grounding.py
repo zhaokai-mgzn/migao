@@ -1,4 +1,4 @@
-# case_ids: OR-014, PR-016
+# case_ids: OR-014, PR-016, OR-029
 """B 端下单「单价接地」校验 + 建品「确认-执行」收口（run 34916256903 归因）。
 
 背景（run 34916256903，mibao 腿）：
@@ -156,25 +156,35 @@ def test_b_create_confirm_eligible_truth_table():
     assert _b_create_flow_confirm_eligible(
         {"target_tool": "product_manage", "target_action": "update", "params": {}},
         confirmed=True) is False, "非 create（更新/停用等其它流程）不在此收口范围"
+    # issue #3976（OR-029）：B 端 `order_create` 也纳入确认-执行收口 —— 线上实证
+    # sess_202d55d49a254a10：确认卡点击后模型空头承诺「请稍候，我这就提交」、订单永不落库；
+    # B 端 admin/agent 角色下单无需 sms_code（order_create.py 安全规则），收口安全性成立。
     assert _b_create_flow_confirm_eligible(
         {"target_tool": "order_create", "target_action": "create", "params": {}},
-        confirmed=True) is False, "order_create 建单不属于本收口（C 端已有 8.4）"
+        confirmed=True) is True, "B 端 order_create 确认后必须可代码收口（issue #3976）"
+    assert _b_create_flow_confirm_eligible(
+        {"target_tool": "order_create", "target_action": "update", "params": {}},
+        confirmed=True) is False, "order_create 非 create 流程不在收口范围"
 
 
 # ── ⑥ B 端建品「确认-执行」收口接线（8.4 扩展的端到端红证）──
 
 def _run_b_create_closure(user_msg, llm_reply, role="admin",
-                          pending=_UNSET, store_extra=None, model_calls_write=False):
-    """执行 B 端建品确认轮的 execute_skill（role=admin, skill=product）。
+                          pending=_UNSET, store_extra=None, model_calls_write=False,
+                          write_tool="product_manage", confirm_value=None):
+    """执行 B 端建品/下单确认轮的 execute_skill（role=admin, skill=product）。
 
     与 C 端收口测试同构（TestConfirmClosureCodeSide._run），mock 掉
-    _execute_tool_safe，记录 product_manage 是否被代码收口执行。
-    pending=_UNSET → 用默认建品 pending；pending=None → **无** pending。
+    _execute_tool_safe，记录写工具是否被代码收口执行。
+    pending=_UNSET → 用默认建品 pending；pending=None → **无** pending；
+    write_tool → 收口目标写工具（product_manage=建品 / order_create=下单，#3976）；
+    confirm_value → 会话最近确认卡的 confirmValue（None → 建品默认卡值）。
     """
     import json as _json
 
     seen = {"calls": []}
-    full = {"last_confirm_value": "确认：价格=¥100；分类=窗帘布艺；商品名称=E2E建品流程样品帘"}
+    default_confirm = "确认：价格=¥100；分类=窗帘布艺；商品名称=E2E建品流程样品帘"
+    full = {"last_confirm_value": confirm_value or default_confirm}
     if pending is _UNSET:
         full["pending_validated_input"] = {
             "target_tool": "product_manage", "target_action": "create",
@@ -207,14 +217,14 @@ def _run_b_create_closure(user_msg, llm_reply, role="admin",
          patch("app.memory.session_state_store.SessionStateStore",
                side_effect=lambda *a, **k: _Store()):
         tool = MagicMock()
-        tool.name = "product_manage"
+        tool.name = write_tool
         tool.read_only = False
         tool.destructive = True
         tool.requires_confirmation = True
         tool.parameters = {"type": "object", "properties": {"action": {"type": "string"}}}
         registry = MagicMock()
         registry.get_langchain_tools.return_value = []
-        registry.get_tool.side_effect = lambda n: tool if n == "product_manage" else None
+        registry.get_tool.side_effect = lambda n: tool if n == write_tool else None
         create_reg.return_value = registry
         breaker = MagicMock()
 
@@ -228,7 +238,7 @@ def _run_b_create_closure(user_msg, llm_reply, role="admin",
             from langchain_core.messages import AIMessage
             call = MagicMock(spec=AIMessage)
             call.content = ""
-            call.tool_calls = [{"name": "product_manage", "args": {"action": "create"}, "id": "c1"}]
+            call.tool_calls = [{"name": write_tool, "args": {"action": "create"}, "id": "c1"}]
             msgs.append(call)
         final = MagicMock(spec=object)
         final.content = llm_reply
@@ -243,7 +253,7 @@ def _run_b_create_closure(user_msg, llm_reply, role="admin",
                  "current_skill": "product"}
         res = asyncio.run(execute_skill(
             state=state, skill_name="product",
-            tool_names=["product_manage", "interact", "validate_input"],
+            tool_names=[write_tool, "interact", "validate_input"],
             system_prompt="p"))
     return res, seen, full
 
@@ -290,6 +300,55 @@ def test_b_create_model_already_wrote_no_double_execution():
     # 模型已写 1 次成功（pending 随成功清除）→ 收口不得追加第 2 次
     assert len(seen["calls"]) == 1, \
         f"模型已调写工具 → 代码不得重复执行（应恰 1 次，不得 2 次）: {seen['calls']}"
+
+
+def test_b_order_confirmed_but_model_idles_closes_to_execute():
+    """红证（接线，issue #3976 / OR-029）：B 端**下单**，用户已确认、模型只回话不执行
+    → 代码必须收口执行 order_create。
+
+    线上实证（sess_202d55d49a254a10）：product skill 内确认卡点击后，模型空头承诺
+    「已转到订单流程为您落单…请稍候，我这就提交」而 order_create 从未执行（先被
+    tool_not_found 拦、随后 relock 兜底但模型不再动手）→ orders 表无新单。
+    8.4 收口扩展覆盖 B 端 order_create（admin 角色无需 sms_code，安全性成立）后，
+    即使模型不动手，代码也会真实落单。
+    """
+    pending = {
+        "target_tool": "order_create", "target_action": "create",
+        "params": {"customer_name": "赵凯", "customer_phone": "13456000919",
+                   "items": [{"product_name": "2699系列雪尼尔窗帘面料",
+                              "quantity": 10, "unit_price": 23.8, "subtotal": 238}]},
+    }
+    confirm_value = (
+        "确认：客户=赵凯（13456000919）· 已有客户；商品=2699系列雪尼尔窗帘面料；数量=10 米；"
+        "规格=2699-06 蓝灰色 · 散剪 · 2.8米；面料单价=¥23.8/米（面料小计 ¥238）；"
+        "预估合计=约 ¥498（以系统结算为准）"
+    )
+    _res, seen, _full = _run_b_create_closure(
+        confirm_value,
+        "已转到订单流程为您落单，请稍候。",
+        pending=pending,
+        write_tool="order_create",
+        confirm_value=confirm_value)
+    assert any(
+        c[0] == "order_create" and c[1].get("action") == "create"
+        for c in seen["calls"]
+    ), f"B 端订单确认后模型不动手 → 代码必须收口执行 order_create（issue #3976）; calls={seen['calls']}"
+
+
+def test_b_order_not_confirmed_no_closure():
+    """反向守卫（issue #3976）：B 端下单**未确认** → 不得代执行 order_create。"""
+    pending = {
+        "target_tool": "order_create", "target_action": "create",
+        "params": {"customer_name": "赵凯", "customer_phone": "13456000919",
+                   "items": [{"product_name": "2699系列雪尼尔窗帘面料",
+                              "quantity": 10, "unit_price": 23.8, "subtotal": 238}]},
+    }
+    _res, seen, _full = _run_b_create_closure(
+        "改成 5 米吧",  # 变更数量，非确认
+        "好的，已改为 5 米。",
+        pending=pending,
+        write_tool="order_create")
+    assert seen["calls"] == [], f"未确认不得执行 order_create（安全性质）: {seen['calls']}"
 
 
 # ── ⑦ B 端 order skill「已接地 → 单价必须来自库」接线（OR-014 形态）──

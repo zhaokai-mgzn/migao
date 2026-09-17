@@ -342,13 +342,15 @@ class TestBuildInitialState:
 
     @pytest.mark.asyncio
     async def test_returns_15_keys(self):
-        """_build_initial_state 返回 19 个键（15 + #3557 的确认卡两字段 + 答卡轮通用两字段：
+        """_build_initial_state 返回 20 个键（19 + issue #3976 的 pending_validated_input）：
 
         `last_confirm_value` / `last_confirm_skill` —— confirm 卡答卡轮判据（#3557）；
         `last_card` / `last_card_skill` —— **任意卡型**答卡轮判据（choice / form）。
         后者是 run 34841029062 OR-015 R4 的根因缺口：加工项多选卡的答卡值
         「已选加工项：纳米圈打孔 · ¥9.5/米」含 L1 商品域关键词「加工项」→ 无通用卡记录时
         答卡轮不被识别 → L1 域逃逸清锁 → 落到 product skill（无 order_create）零工具拒答。
+        `pending_validated_input` —— 已校验待执行写（validate_input 落库），路由层答卡轮
+        据此把确认轮迁移到写工具的归属 skill（#3976，B 端实证 sess_202d55d49a254a10）。
         """
         agent = _bare_agent()
         with patch("app.memory.session_memory.SessionMemory") as mock_sm, \
@@ -360,11 +362,12 @@ class TestBuildInitialState:
             state = await agent._build_initial_state(
                 [HumanMessage(content="hi")], self._ctx()
             )
-        assert len(state) == 19
+        assert len(state) == 20
         assert state["last_confirm_value"] == ""
         assert state["last_confirm_skill"] == ""
         assert state["last_card"] == {}
         assert state["last_card_skill"] == ""
+        assert state["pending_validated_input"] == {}
         assert state["messages"][0].content == "hi"
         assert state["agent_type"] == "xiaobu"
         assert state["tenant_id"] == 1

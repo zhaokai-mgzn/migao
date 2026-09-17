@@ -230,6 +230,35 @@ def _is_own_card_round(state: dict) -> bool:
     return _is_card_confirm_round(state) or _is_card_answer_round(state)
 
 
+def _card_round_flow_owner(state: dict) -> str:
+    """答卡轮：确认卡的写执行目标归属**其他 skill** 时，本轮应路由到的 skill。
+
+    issue #3976：B 端实证（sess_202d55d49a254a10）——用户在 product skill 内完成
+    `validate_input(target_tool=order_create)` 与确认卡，点卡后答卡轮豁免把会话留在
+    product，但 product 的注册表**没有** `order_create` → LLM 按执行提示调用即
+    `Tool not found: order_create` → 订单永不落库。
+
+    判据是**系统状态事实**（`pending_validated_input.target_tool` 存在 + 注册表归属
+    skill ≠ 当前 pending skill），**不是**卡值内容 —— 与 #3557 防回归的分界：
+    PR-007 商品上下架卡（无 pending 写目标）仍留在本 skill，不受影响。
+
+    返回归属 skill 名（B 端 `order` / C 端 `customer_order`）；无待执行写 /
+    归属 == 当前 skill / 解析失败时返回 ""。
+    """
+    pending = str(state.get("pending_interact_skill") or "")
+    if not pending:
+        return ""
+    pv = state.get("pending_validated_input") or {}
+    target = str((pv or {}).get("target_tool") or "")
+    if not target:
+        return ""
+    from app.graph.skills.base_skill import _flow_owner_skill
+    owner = _flow_owner_skill(state, tool_name=target)
+    if not owner or owner == pending:
+        return ""
+    return owner
+
+
 # 已知领域：`_SKILL_DOMAIN_KEYWORDS` 的键 + knowledge（无关键词表但有独立 skill）
 _KNOWN_DOMAINS = frozenset(_SKILL_DOMAIN_KEYWORDS) | {"knowledge"}
 
@@ -918,11 +947,18 @@ def route_by_intent(state: AgentState) -> str:
         # 卡型覆盖：confirm（#3677）+ choice / form（本 PR；run 34841029062 OR-015 R4）。
         # 与 #3361 的契约不冲突：那个场景的输入不是本 skill 卡的取值，见 `_card_accepts_answer`。
         if _is_own_card_round(state):
+            # issue #3976：确认卡的写执行目标归属**其他 skill**（如 product 内的
+            # order_create 确认卡归属 order）→ 本轮直接路由到归属 skill，让写工具
+            # 在本轮即可真实执行（否则留在无该工具的 skill → Tool not found →
+            # 订单永不落库，sess_202d55d49a254a10 实证）。
+            _flow_owner = _card_round_flow_owner(state)
+            _route_target = _flow_owner or pending_skill
             logger.info(
                 f"[route_by_intent] 答卡轮：留在本 skill（不判话题切换）"
+                f"{'，确认卡执行目标归属 → ' + _flow_owner if _flow_owner else ''}"
                 f" | skill={pending_skill} | session={session_id}"
             )
-            return pending_skill
+            return _route_target
 
         # 使用模块级单一来源关键词表（plan_rewrite 护栏与 escape hatch 共用）
         # 如果用户消息包含非当前 skill 领域的关键词，允许切换

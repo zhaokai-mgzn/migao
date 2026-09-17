@@ -1073,6 +1073,17 @@ async def _agent_stream_to_sse(
                             for tc in response.tool_calls:
                                 tool_name = tc.get("tool", "")
                                 result_dict = tc.get("result", {})
+                                # issue #3976（P4）：未执行的调用（tool_not_found）不得
+                                # 写进 metadata.tool_calls —— 工具根本没执行，记录它会让
+                                # 评测/回放按 metadata 断言「调用了该工具」被**假绿**骗过
+                                # （B 端实证 sess_202d55d49a254a10：最终消息 metadata 记录
+                                # 了从未执行的 order_create，而订单实际未落库）。
+                                _res_error = result_dict.get("error") if isinstance(result_dict, dict) else ""
+                                if _res_error == "tool_not_found":
+                                    for _i in range(len(tool_calls_info) - 1, -1, -1):
+                                        if tool_calls_info[_i].get("tool") == tool_name:
+                                            tool_calls_info.pop(_i)
+                                            break
                                 yield SSEEvent.tool_result(tool_name, result_dict)
 
                                 # 检查是否需要发送卡片（order 卡片自动归一化载荷）

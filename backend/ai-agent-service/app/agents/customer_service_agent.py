@@ -205,6 +205,9 @@ class BaseAgent:
         last_confirm_skill = ""
         last_card: dict = {}
         last_card_skill = ""
+        # 已校验待执行写（issue #3976）：validate_input 通过后由 base_skill 落库的
+        # pending_validated_input；路由层答卡轮据此判断确认卡执行目标归属哪个 skill。
+        pending_validated_input: dict = {}
         if context.session_id:
             try:
                 from app.memory.session_state_store import SessionStateStore
@@ -217,6 +220,8 @@ class BaseAgent:
                 _last_card = _card_state.get("last_card")
                 last_card = _last_card if isinstance(_last_card, dict) else {}
                 last_card_skill = str(_card_state.get("last_card_skill") or "")
+                _pvi = _card_state.get("pending_validated_input")
+                pending_validated_input = _pvi if isinstance(_pvi, dict) else {}
             except Exception as e:
                 logger.warning(
                     f"[_build_initial_state] Failed to load last_confirm_*/last_card "
@@ -243,6 +248,7 @@ class BaseAgent:
             "last_confirm_skill": last_confirm_skill,
             "last_card": last_card,
             "last_card_skill": last_card_skill,
+            "pending_validated_input": pending_validated_input,
         }
     
     async def achat(
