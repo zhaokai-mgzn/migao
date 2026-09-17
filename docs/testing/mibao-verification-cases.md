@@ -2707,6 +2707,7 @@
 数据: 物流内容 grounded 到本人订单（运单号/快递公司），不编造单号（自然语义，防线以 expectation + forbidden_text 为准）
 禁词: 没有权限
 禁词: 无权限
+必须成功: customer_logistics_track
 ```
 真值: order.logistics
 溯源: 2026-09-14 新增（#3494 覆盖审计）：OR-012 的正向展示断言为自然语义 data_checks（不计分）；本条补专属正向旅程——工具可达 + 权限否定禁词双防线，机器可执行；不依赖在途订单数据状态（诚实『暂无』回复不误伤，故不禁『暂无/无法查询』） ｜ tags: query, logistics

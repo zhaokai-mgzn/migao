@@ -3773,6 +3773,7 @@ _CASE_OR_025 = EvalCase(
     form_prefill=[],
     forbidden_card_text=[],
     forbidden_text=['没有权限', '无权限'],
+    must_succeed=[{'tool': 'customer_logistics_track'}],
 )
 
 # ── OR-026 [NORMAL] C 端非法手机号下单 - 写前校验必须挡住（不得用座机号/非 1 开头号码建单）（源: cases/order.yml）──
