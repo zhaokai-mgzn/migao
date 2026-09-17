@@ -38,6 +38,7 @@ from app.graph.skills.base_skill import (
     llm_breaker_name, llm_incident_id, missing_input_param, raw_phones_in,
     resolve_sms_code, safe_exc_message, unit_price_grounding_error,
 )
+from app.graph.pending_validated import VALIDATION_FAILURE_KEY
 
 
 # 「第 7 节未执行 ⇒ 该名未绑定」的哨兵。
@@ -507,6 +508,57 @@ async def react_turn(
                             last_user_msg, state)
                         if _blocked3 is not None:
                             return _blocked3
+                        # ── 校验失败禁止写（issue #4073，S2：prompt 铁律落成代码闸门）──
+                        # 铁律原文（`app/graph/skills/references/PROMPT-rules.md`）：
+                        # 「**铁律：validate_input 校验失败时，禁止继续执行写工具。**」
+                        # 改前：代码侧只在**成功**时落 `pending_validated_input`，失败路径
+                        # 一滴痕迹不留 ⇒ "校验失败后照写"代码无从拦，唯一防线是模型自觉
+                        # （#3414/#3445 家族已反复证模型会跳过）。同一条产线上价格接地
+                        # （`unit_price_grounding_error`）有代码闸门、这条只有措辞 —— 本闸门
+                        # 把保护等级拉平（fail-closed）。
+                        #
+                        # **共享执行路径**，不是给某个 skill 打补丁（R1）：所有绑了
+                        # `validate_input` 的 skill 都用这一处（与上面掩码手机号门禁同点）。
+                        #
+                        # 位置纪律：这一条**故意在确认门禁之外、之前**（本行以下才是
+                        # `_requires_confirmation` 的放行链）—— 顾客点了确认卡也**不得**
+                        # 放行（#3414「只补卡不放行写」的同族）：确认只解决"要不要做"，
+                        # 不解决"参数对不对"，而校验失败正是参数不对。
+                        if session_id and args:
+                            from app.graph.pending_validated import (
+                                format_failure_block_message, is_failure_for,
+                                matched_failure)
+                            _act = str((args or {}).get("action") or "")
+                            try:
+                                from app.memory.session_state_store import (
+                                    SessionStateStore as _S7)
+                                _f7 = await _S7().load(session_id) or {}
+                            except Exception as _e7:
+                                # 读不到会话状态 ⇒ 无账可查 ⇒ 放行（与 `_write_input_recovery_block`
+                                # /`_card_loop_block` 既有降级口径一致）。这里**刻意**不 fail-closed：
+                                # 存储故障是全局的，锁死全部写会让整个服务不可用，而本闸门防的是
+                                # "模型明知失败仍写"这一确定性形态，不是存储故障。
+                                _f7 = {}
+                                logger.warning(f"[{skill_name}] 校验失败账读取失败（非致命）: {_e7}")
+                            if is_failure_for(_f7, tool_name, _act):
+                                _fa = matched_failure(_f7, tool_name, _act)
+                                _msg7 = format_failure_block_message(tool_name, _act, _fa)
+                                _err7 = "validation_failed_write_blocked"
+                                logger.warning(
+                                    f"[{skill_name}] 拦截**校验失败后的写调用** {tool_name}"
+                                    f"(action={_act or '-'}) | session={session_id}"
+                                    f" | 校验错误={str((_fa or {}).get('error') or '')[:60]!r}")
+                                return (tool_call,
+                                        json.dumps({"success": False, "error": _err7,
+                                                    "message": _msg7,
+                                                    "suggestion": (
+                                                        f"先补齐参数 → 重新调用 validate_input"
+                                                        f"(target_tool='{tool_name}'"
+                                                        + (f", target_action='{_act}'" if _act else "")
+                                                        + f") → 校验通过后再调用 {tool_name}"
+                                                    )},
+                                                   ensure_ascii=False),
+                                        {"success": False, "error": _err7})
                     # ── 兜底：C 端在办流程中禁止「无信号误转人工」（CH-012 实证）──
                     # R1 已下发选单卡、R3 用户仅回「质量问题」，agent 却 human_handoff
                     # （还创建了投诉工单）→ 流程被放弃、轮数耗尽、aftersale_create 未发生。
@@ -1133,21 +1185,49 @@ async def react_turn(
                     # ── 确认-执行链状态（issue #3031）──
                     # validate_input 通过 → 持久化「已校验待执行」状态，下一轮确认时
                     # 直接执行写工具，不再从零重走 validate+interact（sess_50ff 三张 confirm 卡根因）。
-                    if session_id and tool_name == "validate_input" and result_dict.get("success"):
-                        try:
-                            pending = extract_pending(tool_call.get("args") or {})
-                            if pending:
-                                from app.memory.session_state_store import SessionStateStore
-                                store = SessionStateStore()
-                                full = await store.load(session_id) or {}
-                                full[PENDING_KEY] = pending
-                                await store.commit(session_id, full)
-                                logger.info(
-                                    f"[{skill_name}] Pending validated persisted: "
-                                    f"{pending['target_tool']}.{pending['target_action']} | session={session_id}"
-                                )
-                        except Exception as e:
-                            logger.warning(f"[{skill_name}] pending_validated persist failed (non-fatal): {e}")
+                    if session_id and tool_name == "validate_input":
+                        from app.graph.pending_validated import (
+                            clear_validation_failure, extract_validation_failure,
+                            mark_validation_failure)
+                        _vargs = tool_call.get("args") or {}
+                        if result_dict.get("success"):
+                            try:
+                                pending = extract_pending(_vargs)
+                                if pending:
+                                    from app.memory.session_state_store import SessionStateStore
+                                    store = SessionStateStore()
+                                    full = await store.load(session_id) or {}
+                                    full[PENDING_KEY] = pending
+                                    # 清除点②（issue #4073）：该目标**新的成功校验**覆盖旧失败账
+                                    # —— 这正是模型的恢复路径（补参 → 重新校验 → 写恢复放行）。
+                                    # 只清同一 `tool::action`：别的目标欠的账不得被顺手抹掉。
+                                    full = clear_validation_failure(
+                                        full, pending["target_tool"], pending["target_action"])
+                                    await store.commit(session_id, full)
+                                    logger.info(
+                                        f"[{skill_name}] Pending validated persisted: "
+                                        f"{pending['target_tool']}.{pending['target_action']} | session={session_id}"
+                                    )
+                            except Exception as e:
+                                logger.warning(f"[{skill_name}] pending_validated persist failed (non-fatal): {e}")
+                        else:
+                            # 清除点之外的**留痕**（issue #4073 交付形态 1）：校验失败也落账 ——
+                            # 改前失败路径不留任何痕迹，写调用点无从判断"这个写刚校验失败过"。
+                            try:
+                                failure = extract_validation_failure(_vargs, result_dict)
+                                if failure:
+                                    from app.memory.session_state_store import SessionStateStore
+                                    store = SessionStateStore()
+                                    full = await store.load(session_id) or {}
+                                    await store.commit(
+                                        session_id, mark_validation_failure(full, failure))
+                                    logger.warning(
+                                        f"[{skill_name}] 校验失败留痕（写闸门据此拦截）: "
+                                        f"{failure['target_tool']}.{failure['target_action'] or '-'}"
+                                        f" | error={failure['error'][:60]!r} | session={session_id}"
+                                    )
+                            except Exception as e:
+                                logger.warning(f"[{skill_name}] validation-failure persist failed (non-fatal): {e}")
                     # 缺参失败 → 跨轮记账（下一轮注入索要指令 + 拦截重复动作，issue #3365）
                     # 清除只认**同一把工具**成功：product_search 之类只读工具成功不能清账，
                     # 否则欠参标记被顺手抹掉、下一轮又回到"重发卡 + 重复调用"的老路。
@@ -1199,12 +1279,22 @@ async def react_turn(
                             from app.memory.session_state_store import SessionStateStore
                             store = SessionStateStore()
                             full = await store.load(session_id) or {}
+                            _before = dict(full)
                             pending = full.get(PENDING_KEY)
                             if is_pending_for(pending, tool_name):
                                 full.pop(PENDING_KEY, None)
+                            # 清除点①（issue #4073）：目标写工具**成功**执行 → 该目标的校验
+                            # 失败账闭环。只清本次这个 `tool::action`（每次写调用前已按它
+                            # 判过闸门 ⇒ 能执行成功就说明那条失败账已不再成立）。
+                            from app.graph.pending_validated import clear_validation_failure
+                            full = clear_validation_failure(
+                                full, tool_name,
+                                str((tool_call.get("args") or {}).get("action") or ""))
+                            if full != _before:
                                 await store.commit(session_id, full)
                                 logger.info(
-                                    f"[{skill_name}] Pending validated cleared after {tool_name} | session={session_id}"
+                                    f"[{skill_name}] Pending validated / 校验失败账 cleared after "
+                                    f"{tool_name} | session={session_id}"
                                 )
                         except Exception as e:
                             logger.warning(f"[{skill_name}] pending_validated clear failed (non-fatal): {e}")
@@ -1218,6 +1308,22 @@ async def react_turn(
                             logger.info(
                                 f"[{skill_name}] Terminal tool {tool_name} — domain context reset | session={session_id}"
                             )
+                            # 清除点③（issue #4073）：事务终态重置（`reset_domain` 族）——
+                            # 一笔业务已经走完，残留的校验失败账属于**上一笔**的参数形态，
+                            # 留给下一笔会把新流程误拦（fail-closed 不得变成"永久锁死"）。
+                            try:
+                                from app.memory.session_state_store import SessionStateStore as _S8
+                                _s8 = _S8()
+                                _f8 = await _s8.load(session_id) or {}
+                                if _f8.get(VALIDATION_FAILURE_KEY):
+                                    _f8.pop(VALIDATION_FAILURE_KEY, None)
+                                    await _s8.commit(session_id, _f8)
+                                    logger.info(
+                                        f"[{skill_name}] Terminal tool {tool_name} → 清除校验失败账"
+                                        f" | session={session_id}"
+                                    )
+                            except Exception as _e8:
+                                logger.warning(f"[{skill_name}] 校验失败账清除失败（非致命）: {_e8}")
                         except Exception as e:
                             logger.warning(f"[{skill_name}] Terminal reset failed | session={session_id} error={e}")
                     new_messages.append(ToolMessage(content=result_str, tool_call_id=tool_call["id"], name=tool_name))
