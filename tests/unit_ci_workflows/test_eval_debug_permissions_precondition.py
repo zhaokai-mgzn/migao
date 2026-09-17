@@ -567,3 +567,40 @@ class TestLiveProbeEntrypoint:
         assert '"probe-permissions"' in src, "未接进 argparse choices"
         assert "--declared" in src, "未提供 --declared（无法植入夹具）"
         assert "probe_permissions_cli" in src, "缺少子命令实现"
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 十、哨兵边界（**如实登记的前置条件**，不是重做判据）
+#     判据的可判别性依赖「哨兵码不在用例声明的范围内」：含它则"回落通配"与"真的授予了它"
+#     在探针上同形（都 allowed）⇒ 该格静默变绿（空断言）。
+# ══════════════════════════════════════════════════════════════════════════════
+
+class TestSentinelBoundary:
+
+    def test_no_case_declares_the_sentinel_code(self):
+        """**机械守卫**：凡声明了 `debug_permissions_effective` 的用例，其 `debug_permissions`
+        都不得含哨兵码 `dashboard:view`（含它 ⇒ 判据不可判别、静默变绿）。
+
+        未来若要写一条"看板权限"的用例：换判据（例如改用另一个声明了权限码的白名单工具）
+        或换哨兵，**不要**把哨兵码放进声明范围里让这条护栏变成空断言。
+        """
+        lr = _runner()
+        sentinel = lr._PERMISSION_PROBE_TOOLS[0][1]
+        offenders = []
+        for cid, c in _cases().items():
+            specs = c.get("precondition") or []
+            if not any(isinstance(sp, dict)
+                       and sp.get("type") == "debug_permissions_effective" for sp in specs):
+                continue
+            declared = {x for x in str(c.get("debug_permissions") or "").split(",") if x}
+            if sentinel in declared:
+                offenders.append(cid)
+        assert offenders == [], (
+            f"这些用例声明的范围含哨兵码 {sentinel!r} ⇒ 权限前置判据在它们身上**不可判别**"
+            f"（回落通配与真授予同形 ⇒ 静默变绿）：{offenders}")
+
+    def test_sentinel_is_actually_derived_from_the_probe_table(self):
+        """守卫不得写死字面量：哨兵必须取自分页探针表（换哨兵时守卫自动跟随）。"""
+        lr = _runner()
+        assert lr._PERMISSION_PROBE_TOOLS, "探针表为空 ⇒ 判据失去目标"
+        assert lr.permission_probe_expectation("employee:list")[1] == lr._PERMISSION_PROBE_TOOLS[0][1]

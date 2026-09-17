@@ -1849,7 +1849,6 @@
 必须: {'any_of': ['开通']}
 必须失败: employee_manage(create)
 落库: employee_absent 李四 → name=李四; phone=13800009999
-跳过: 被测行为当前被产品侧 prompt 明令禁止 ⇒ 现在跑必红/闪烁（issue #4150；真跑实测 run 35264687083 两次尝试同一指纹：`unmatched expectation: employee_manage(action=create)` ⇒ **工具层从未被触达**，拒绝发生在 prompt/模型层）。本用例测量的是意图行为「越权请求**尝试一次** → 工具层拒绝 → 不自旋 → 如实说明缺 employee:create → 给开通路径」，而同批注入的 B 端权限范围块（#4107 F8）写着「超出范围的请求：不要调用工具尝试」—— 两者只能由**产品侧收窄注入文案**（只禁「重复重试」）解决，请求已登记在 #4147（skills/** 归该包，本包不改）。反向对齐（删掉「尝试一次」）会让计分通道为空（静态门禁 CASE-TRUST-EMPTY-ASSERTION）并丢掉权限拒绝路径唯一的 LLM 层证据，故不采用。摘掉本行（un-skip）的判据：① #4147 收窄注入文案；② 重跑本用例，期望路径（expectations 命中 + must_fail/db_verify 绿 + want_text 开通）成立。在此之前留在跑集里只会让真失败与已知产品缺口同形。
 ```
 真值: ai-chat.permission-layers, employee-role.write-require-admin
 溯源: 2026-09-18 新增（issue #4108 / 父 #4103 Pkg D）：让权限拒绝路径在评测中可达。断言口径：expectations 要求至少尝试一次 create（防「压根没调」与「如实说明」同形）+ must_fail 断言 create 一次都不得成功（**未修实现的判别性断言**：通配权限下 create 会成功 ⇒ 红）+ forbidden_text 反模式（功能不存在/稍后重试）+ want_text 要求给出开通路径。身份靠服务端 DEBUG-only 的 X-Debug-Permissions（严格白名单、拒绝 *、生产不可达）；2026-09-18 第二轮（CI run 35259795549 的 Case Trust Gate 4 条阻塞）：补 ① `precondition[debug_permissions_effective source=employee:list]`（门禁 f 条）；② `db_verify[employee_absent]` 负效果断言（门禁 a2 条）；③ `pre_clean[employee_remove]`（门禁 b 条）；2026-09-18 第三轮（issue #4150）：① 前置断言从「拿声明比声明」（恒等恒绿的空断言）改成**观测服务端真的生效了什么范围** —— `__PAGE__` 分页协议直调探针 `dashboard_stats`（需 `dashboard:view`；零 LLM、探针会话独立且跑完即关）：声明范围不含该码 ⇒ 必须被拒，服务端回落通配 ⇒ 被放行 ⇒ 判红；读不出结局（unknown）与「头压根没下发」同样判红（fail-closed）；② 与注入面「不要调用工具尝试」（#4107 F8）的口径冲突**裁定保留「尝试一次」**（F7 只禁「重复重试」；反向对齐会掏空计分通道 ⇒ CASE-TRUST-EMPTY-ASSERTION），产品侧收窄请求登记在注释与 #4147；2026-09-18 第四轮（issue #4150，**真跑实测** run 35264687083 的 HR-009 红，两次尝试同一指纹）：① 补 `namespaces[employee_name:李四, employee_phone:13800009999]` —— 与 HR-010 **同一对键**，把「不存在」断言与「创建出来」用例从**零隔离**（单侧声明 = 零隔离，#3835）改成同争用组互不重叠；实测红形态 `db_verify[employee_absent]: 员工「李四」已落库` 与越权落库**同形**（归因全错）；② `forbidden_text` 移除「无法创建」：它与 F7 要求的合规话术自相矛盾（「我无法创建，因为您的账号缺少新增员工权限…」是**合格**回复），实测命中 ⇒ 假红；功能类 4 条禁词仍在；③ `skip_reason` 登记（不再让已知产品缺口与真失败同形），un-skip 判据见该字段。断言口径只增不减（唯一移除项是上面那条假红禁词）。 ｜ tags: permission, denial, auth, regression
@@ -1864,7 +1863,6 @@
 清理: employee_remove(employee_name=李四、employee_phone=13800009999)
 必须成功: employee_manage(create)
 落库: employee 李四 → name=李四; expect_fields={'phone': '13800009999'}
-跳过: 产品侧回归未修 ⇒ 现在跑必红（issue #4150；真跑实测 run 35264687083 两次尝试同一指纹：`no_success(employee_manage)` + `must_succeed: 从未被调用` ⇒ **工具层从未被触达**，拒绝发生在 prompt/模型层：注入块宣称「超出即无权…不要调用工具尝试」，且调试身份的 role=admin 与「只有一个权限码」自相矛盾）。本条**正确地**抓到了这个回归（#4147 的 G6 正在收窄注入面），但修好之前它没有绿的可能；留一条恒红用例在跑集里会压住整条 B 端腿的 completion.ok，并让真失败与已知缺口同形。摘掉本行（un-skip）的判据：① #4147 收窄/修正注入面的权限语义；② 重跑本用例，期望路径（expectations 命中 + must_succeed 绿 + db_verify[employee] 绿）成立。禁止为变绿删期望/效果层断言。后台修复单：#4147（skills/** 归该包）。
 ```
 真值: ai-chat.permission-layers, employee-role.write-require-admin
 溯源: 2026-09-18 新增（issue #4108 / 父 #4103 Pkg D）：「有能力时不得误拒」的正向对照。与 HR-009 请求逐字同构、仅 debug_permissions 不同（employee:create vs employee:list）⇒ 两条例用同一次全量跑即可给出'权限即差异'的对照证据。断言：expectations（action=create 值级）+ must_succeed（写真的成功）。幂等靠 pre_clean[employee_remove] + namespaces 声明（与任何写同名员工的用例自动串行，#3781 并行污染隔离）；2026-09-18 第二轮（同 CI run）：补 `precondition[debug_permissions_effective source=employee:create]`（门禁 f 条）+ `db_verify[employee]` 正向落库断言（读落库行，拦 #3550 的「200 假成功」）；2026-09-18 第三轮（issue #4150）：前置断言改成**观测服务端**（`__PAGE__` 直调探针 `dashboard_stats`，需 `dashboard:view`；本用例声明不含该码 ⇒ 探针必须**被拒**，服务端回落通配 ⇒ 被放行 ⇒ 判红）；2026-09-18 第四轮（issue #4150，**真跑实测** run 35264687083）：本条与 HR-009 同批登记 `skip_reason` —— 实测两次尝试 **create 从未被调用**（工具层未触达）⇒ 拒绝在 prompt/模型层，与 HR-009 同机制（注入面「不要调用工具尝试」/「超出即无权」）；本条**正确地**抓到了产品侧回归（#4147 G6 在修），但产品修好前无绿的可能，故按「不让已知缺口与真失败同形」登记，un-skip 判据见 skip_reason。断言口径不变、无放宽（未删任何断言）。 ｜ tags: permission, create, positive-control
@@ -4341,7 +4339,7 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：317（活跃 159，跳过 158）
+- 用例总数：317（活跃 161，跳过 156）
 - tier 分布：smoke 10 / normal 274 / adversarial 33
 - 售后域：9
 - agents：6
