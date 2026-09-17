@@ -416,9 +416,12 @@ async def _delivered_results_for_denied_tools(ctx: ToolContext) -> list[tuple[st
             continue
         args = _sample_args(tool)
         contract_failure = tool.validate_args(args)
-        assert contract_failure is None, (
-            f"{name}: 守卫自身的入参样本不满足契约（{contract_failure}）—— 样本生成器要跟上"
-        )
+        if isinstance(contract_failure, ToolResult):
+            # 守卫自身的**前置自断言**（不是被测行为）：样本不满足契约会让下面的判据
+            # 被"缺参失败"挡住 = 空跑，所以这里必须显式失败（fail-closed）。
+            raise AssertionError(
+                f"{name}: 守卫自身的入参样本不满足契约（{contract_failure}）—— 样本生成器要跟上"
+            )
         _, result_dict = await _execute_tool_safe(tool, dict(args), ctx, dict(STATE))
         delivered.append((name, result_dict))
     return delivered
