@@ -3614,13 +3614,15 @@ _CASE_OR_029 = EvalCase(
     data_checks=['确认卡点击（confirmValue 逐字回传）后，order_create 必须**真实执行并落库**——不得出现 Tool not found / 空头承诺「请稍候，我这就提交」而订单永不创建', 'order_create 的 customer_phone=13456000919、items 数量=10 米、unit_price=23.8（与商品库价一致）、加工项韩式波浪折边/穿杆孔加工/包边处理'],
     skip_reason='',
     tags=['order_create', 'cross_skill', 'guided_flow'],
-    persona='',
+    persona='mibao',
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
     order_before=['interact[choice] before product_detail', 'interact[confirm] before order_create'],
+    must_succeed=[{'tool': 'order_create'}],
     pre_clean=[{'type': 'product_dedupe', 'product_keyword': '2699系列雪尼尔窗帘面料', 'price': 23.8}],
     namespaces=['customer_phone:13456000919', 'product_name:2699系列雪尼尔窗帘面料'],
+    precondition=[{'type': 'product_count_for_keyword', 'source': '2699系列雪尼尔窗帘面料', 'expect': 1}],
 )
 
 # ── PG-001 [NORMAL] 生成加工单 - 已确认含加工项订单 → 加工单生成 + 订单进入 producing（源: cases/processing-order.yml）──
