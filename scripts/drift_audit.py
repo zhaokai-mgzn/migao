@@ -322,7 +322,8 @@ def check_skill_anchor(a: Audit) -> CheckResult:
                 "live-anchor|uncommitted",
                 f"活锚检出有 {n_dirty} 个未提交改动落在 `.agent-presets/` 下 —— 活锚内容"
                 f"不对应任何已提交版本，加载器读到的规则**无法用 sha 引证**"
-                f"（issue #3849：AGENTS.md 教的换链拓扑会把活锚指向主工作区，主工作区既落后又脏）",
+                f"（换链拓扑要求活锚指向**专职只读镜像**；#4026 已把 AGENTS.md/本目录 README 的"
+                f"旧教法「指向主工作区」改掉，并给了 `scripts/preset-anchor-refresh.sh` 做刷新）",
                 env=True))
         live_sha = subprocess.run(["git", "-C", str(live_root), "rev-parse", "HEAD"],
                                   capture_output=True, text=True).stdout.strip()
@@ -340,6 +341,12 @@ def check_skill_anchor(a: Audit) -> CheckResult:
                 if n and int(n) > 0 and touched:
                     r.notes.append(f"活锚仓库 {live_root} HEAD={live_sha[:8]} 落后 "
                                    f"{a.base}={base_sha[:8]} **{n} 个提交**")
+                    # 口径分工（#4026）：本审计停在**内容级**（落后区间没碰 `.agent-presets/` ⇒
+                    # 只记 note，避免"每次主干合并都判红"的噪音）；**开工/提交路径**另有 sha 级判据
+                    # `./scripts/preset-anchor-check.sh`（落后即红，"先同步再动手"）+ 刷新
+                    # `./scripts/preset-anchor-refresh.sh`。两处判据分工写在 guard 的 `anchor` 段注释里。
+                    r.notes.append("（落后即先同步再动手：`./scripts/preset-anchor-check.sh` → "
+                                   "`./scripts/preset-anchor-refresh.sh`；#4026）")
                     r.findings.append(Finding(
                         "live-anchor|commits-behind",
                         f"活锚检出落后 {a.base} **{n} 个提交**，且落后区间**动过** "

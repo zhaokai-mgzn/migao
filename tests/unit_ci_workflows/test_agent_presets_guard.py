@@ -853,9 +853,76 @@ def test_anchor_scripts_are_syntax_clean_and_zero_dep():
 
 
 def test_dev_worktree_points_at_the_anchor_scripts():
-    """接线：`dev-worktree.sh` 的说明必须指向活锚自检/刷新脚本（否则读者只知道内容单调性那一半）。"""
+    """接线：`dev-worktree.sh` 必须①指向活锚自检/刷新脚本、②在**与主干同步的时机**顺带刷新镜像。
+
+    ① 保证读者知道「内容单调性」只是防线的一半；② 才是「让活锚会跟随」——
+    否则预设 PR 合并后锚点一直落后，改进到不了加载点（`#4026` 的病灶）。
+    """
     source = DEV_WORKTREE.read_text(encoding="utf-8")
 
     assert "preset-anchor-check.sh" in source
     assert "preset-anchor-refresh.sh" in source
     assert "活锚" in source
+    assert "refresh_anchor_mirror()" in source, "镜像刷新函数缺失（活锚不会跟随）"
+    # 两个「与主干同步」的时机都要调（add 建工作区后 / rebase 到 main 后）
+    add_body = source.split("cmd_add()", 1)[1].split("cmd_list()", 1)[0]
+    rebase_body = source.split("cmd_rebase()", 1)[1].split("cmd_add()", 1)[0]
+    assert "refresh_anchor_mirror" in add_body, "add 后没刷活锚镜像"
+    assert "refresh_anchor_mirror" in rebase_body, "rebase 后没刷活锚镜像"
+
+
+def test_dev_worktree_add_fetches_anchor_mirror_end_to_end(anchor_env: dict, tmp_path: Path):
+    """端到端：`add` 必须把活锚镜像**真的 fetch 到最新 origin/main**（不是只打印一句话）。
+
+    红证形状：镜像停在 `c1`、origin/main 已到 `c4` ⇒ `add` 跑完镜像 HEAD 必须是 `c4`
+    （只打印不干活 ⇒ 这条会红）。
+    """
+    seed, mirror = anchor_env["seed"], anchor_env["mirror"]
+    # 夹具仓库自带入口脚本（脚本按自身位置解析 ROOT）
+    (seed / "scripts").mkdir(exist_ok=True)
+    for src in (DEV_WORKTREE, GUARD, CHECK_SH, REFRESH_SH):
+        dst = seed / "scripts" / src.name
+        dst.write_bytes(src.read_bytes())
+        dst.chmod(0o755)
+    _git(seed, "branch", "fix/anchor-e2e")
+    # origin/main 前进一格（c4，与预设无关），而镜像还停在 c1
+    (seed / "later.txt").write_text("主干又前进了一格\n", encoding="utf-8")
+    _git(seed, "add", "-A")
+    _git(seed, "commit", "-q", "-m", "c4 主干前进")
+    c4 = _git(seed, "rev-parse", "HEAD").stdout.strip()
+    _git(seed, "push", "-q", "origin", "main")
+    _git(mirror, "checkout", "-q", "--detach", anchor_env["c1"])
+    assert _git(mirror, "rev-parse", "HEAD").stdout.strip() == anchor_env["c1"]
+
+    env = {
+        **os.environ,
+        "MIGAO_WT_BASE": str(tmp_path / "wt"),
+        "MIGAO_PRESET_MIRROR": str(mirror),
+        "MIGAO_PRESET_LIVE": _anchor_of(anchor_env),
+    }
+    proc = subprocess.run(
+        ["bash", str(seed / "scripts" / "dev-worktree.sh"), "add", "fix/anchor-e2e"],
+        cwd=seed, capture_output=True, text=True, env=env,
+    )
+
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "活锚镜像已刷新" in proc.stdout
+    assert _git(mirror, "rev-parse", "HEAD").stdout.strip() == c4, (
+        "add 之后镜像没跟上 origin/main —— 活锚不会跟随，改进到不了加载点（#4026）"
+    )
+
+
+# ── ⑥ 与 drift_audit C1 的口径分工（防「第二份口径」）────────────────────────
+
+def test_anchor_judgement_documents_its_division_of_labour_with_drift_audit():
+    """`anchor` 段必须写明与 `drift_audit` C1 的**分工**，否则两处判据会互相矛盾。
+
+    分工：C1 是机械对账（内容级，躲「每次主干合并都判红」的噪音红）；`anchor` 是开工/提交路径
+    （sha 落后即红 = issue #4026 的要求），噪音由 add/rebase 的顺带刷新压掉。
+    """
+    guard_src = GUARD.read_text(encoding="utf-8")
+    audit_src = (REPO_ROOT / "scripts" / "drift_audit.py").read_text(encoding="utf-8")
+
+    assert "drift_audit" in guard_src, "guard 未点出与 C1 的分工（会有第二份口径）"
+    assert "噪音红" in guard_src, "guard 未写明 C1 为什么停在内容级（读者会以为矛盾）"
+    assert "preset-anchor-check.sh" in audit_src, "C1 未指向开工/提交路径的 sha 级判据"
