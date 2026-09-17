@@ -1,6 +1,7 @@
 // case_ids: PG-018, CH-039, CH-040
 package com.migao.admin.service;
 
+import com.baomidou.mybatisplus.core.conditions.Wrapper;
 import com.migao.admin.config.TenantContext;
 import com.migao.admin.entity.Order;
 import com.migao.admin.entity.ProcessingOrder;
@@ -20,6 +21,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
+import static org.mockito.ArgumentMatchers.isNull;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
