@@ -15,7 +15,8 @@ from typing import Any, List
 from app.graph.skills.base_skill import (
     AgentState, CREATION_SKILL_NAMES, SMS_GATED_WRITE_TOOLS, ToolMessage,
     _b_create_flow_confirm_eligible, _confirm_card_seen, _is_card_confirm_value, _is_customer_role,
-    _is_explicit_confirmation, _should_code_close_loop, _stored_sms_code, build_confirm_interact_xml,
+    _is_explicit_confirmation, _order_write_tool_here, _should_code_close_loop, _stored_sms_code,
+    build_confirm_interact_xml,
     build_tool_context, confirm_card_fields, confirm_value_for_fields, extract_sms_code,
     is_pending_for, normalize_draft_state_reply, resolve_sms_code,
 )
@@ -86,7 +87,13 @@ async def finalize_turn(
             # 标题按端适配（issue #3882）：C 端保持既有「请确认订单信息」；
             # B 端写技能（product/general 等）用通用标题 —— 下架/删加工项弹一张
             # "订单信息"卡只会让客户更困惑。
-            _btitle = ("请确认订单信息" if skill_name == "customer_order"
+            # 适用性判据（issue #4079 S4）：旧实现 `skill_name == "customer_order"` 是
+            # 字面量白名单 ⇒ 换成**事实**：C 端（`_is_customer_role`）× 本 skill 有下单写工具
+            #（`_order_write_tool_here`）。等价性：C 端里含 order_create 的只有
+            # `customer_order`（B 端 `order` 虽同样有 order_create，但不是顾客角色 ⇒ 仍走
+            # 通用标题，分端行为不变）。
+            _btitle = ("请确认订单信息"
+                       if _is_customer_role(state) and _order_write_tool_here(skill_registry)
                        else "请确认操作")
             final_content = final_content + "\n" + build_confirm_interact_xml(
                 _btitle, _bfields, confirm_value=_bvalue)
@@ -194,6 +201,9 @@ async def finalize_turn(
     # ── 8.6 草稿态回复归一（issue #3750）──
     # 判据（保守，四条同时成立才动文本；任一不成立就一字不改）：
     #   ① C 端 + 下单域 Skill（与 8.3b 同域；B 端写流程各异，不在此列）；
+    #      「下单域 Skill」= **事实**（issue #4079 S4）：本 skill 工具子集里有下单写工具
+    #      （`_order_write_tool_here`）—— 取代旧字面量 `skill_name == "customer_order"`；
+    #      C 端里含 order_create 的只有 `customer_order`，等价。
     #   ② 存在「已校验待执行」的写（`validate_input` 通过后落库的 `pending_validated_input`，
     #      写成功后由本文件 `:3915` 清除 ⇒ 已闭环的轮次自动不在范围内）；
     #   ③ 该写**还没被顾客确认**（`confirmed_write_tool != target`）。点卡/文本确认的轮次由
@@ -203,8 +213,8 @@ async def finalize_turn(
     #   ④ 本轮没有任何写工具成功（成功即闭环，回复该说"订单已提交成功"）。
     # 命中后只改**回复文本**：完成/变更态措辞 → 草稿态；去掉验证码诉求句（唯一下一步＝点卡）。
     # ⚠️ 不放行任何写调用（#3414），确认门禁与 `:3614` 的拦截逻辑一字不动。
-    if (session_id and final_content and skill_name == "customer_order"
-            and not _write_ok and _is_customer_role(state)):
+    if (session_id and final_content and not _write_ok
+            and _is_customer_role(state) and _order_write_tool_here(skill_registry)):
         try:
             from app.memory.session_state_store import SessionStateStore as _S9
             _f9 = await _S9().load(session_id) or {}

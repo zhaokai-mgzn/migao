@@ -1477,11 +1477,21 @@ class TestProcessingItemsFallbackWiring:
              patch("app.graph.skills.base_skill._execute_tool_safe", fake_execute):
             from app.tools.product_detail import ProductDetailTool
             from app.tools.interact import InteractTool
+            from app.tools.registry import get_tool_registry
             registry = MagicMock()
             registry.get_langchain_tools.return_value = []
+            # S4（issue #4079）：模式 C 加工项兜底的适用性判据已从字面量
+            # `skill_name in ("customer_order", "customer_aftersales")` 改为**事实**
+            # （C 端 × 本 skill 工具集里有需确认写工具）⇒ 替身必须**如实建模** customer_order
+            # 的工具集（含 order_create）。否则替身世界 = "没有任何工具的 customer_order"
+            # （生产里不存在）⇒ 判据在替身里恒假 = 假红。
+            _order_create = get_tool_registry().get_tool("order_create")
+            assert _order_create is not None, "全局注册表里没有 order_create —— 替身无法建模事实"
+            registry.get_all_tools.return_value = [_order_create]
             registry.get_tool.side_effect = lambda n: {
                 "product_detail": ProductDetailTool(),
                 "interact": InteractTool(),
+                "order_create": _order_create,
             }.get(n)
             create_reg.return_value = registry
 
@@ -4586,9 +4596,16 @@ class TestProcessingItemsAskedPersistsCrossTurn:
             for attr, val in (("name", "interact"), ("read_only", False),
                               ("destructive", False), ("requires_confirmation", False)):
                 setattr(tool, attr, val)
+            # S4（issue #4079）：同 `TestProcessingItemsFallbackWiring` —— 判据改读**事实**
+            # （C 端 × 本 skill 工具集含需确认写工具），替身必须建模 customer_order 的工具集。
+            from app.tools.registry import get_tool_registry
+            _order_create = get_tool_registry().get_tool("order_create")
+            assert _order_create is not None, "全局注册表里没有 order_create —— 替身无法建模事实"
             registry = MagicMock()
             registry.get_langchain_tools.return_value = []
-            registry.get_tool.side_effect = lambda n: tool if n == "interact" else None
+            registry.get_all_tools.return_value = [_order_create]
+            registry.get_tool.side_effect = lambda n: (
+                tool if n == "interact" else (_order_create if n == "order_create" else None))
             create_reg.return_value = registry
             breaker = MagicMock()
 

@@ -40,6 +40,7 @@ from app.graph.skills.base_skill import (
     _DRAFT_CODE_ASK_HINTS,
     _DRAFT_STATE_PHRASE,
 )
+from app.tools.registry import get_tool_registry
 
 # ── OR-026 真实夹具（逐字取自 run 34849029334 的 xiaobu flake 台账 / trace）──
 # 次败 R2：手机号改成 13800138000 后，模型**没有任何写工具成功**却说「已更新」。
@@ -194,8 +195,16 @@ def _run_epilogue(reply_text: str, *, store_state: dict | None = None,
          patch("app.graph.skills.base_skill._execute_tool_safe", fake_execute):
         registry = MagicMock()
         registry.get_langchain_tools.return_value = []
-        registry.get_tool.side_effect = lambda n: (write_tool if n == getattr(write_tool, "name", None)
-                                                  else None)
+        # S4（issue #4079）：8.6 收尾判据已从字面量 `skill_name == "customer_order"` 改为
+        # **事实**（C 端 × 本 skill 工具集里有下单写工具）⇒ 测试替身必须**如实建模**
+        # `customer_order` 的工具集（含 `order_create`）。否则替身造出的是"没有任何工具的
+        # customer_order skill"这个生产里不存在的世界，判据在替身里恒为假 = **假红**。
+        _order_create = get_tool_registry().get_tool("order_create")
+        assert _order_create is not None, "全局注册表里没有 order_create —— 替身无法建模事实"
+        registry.get_tool.side_effect = lambda n: (
+            write_tool if n == getattr(write_tool, "name", None)
+            else (_order_create if n == "order_create" else None))
+        registry.get_all_tools.return_value = [_order_create]
         create_reg.return_value = registry
         breaker = MagicMock()
 

@@ -12,6 +12,11 @@
     （旧正则在主体与否定词之间写死 `{0,8}` 窗口，插一个「这边」就漏）；
   · **边界面**：越权/第三方主体/顾客显式诉求**仍不得**被纠正（防"一律不否定"的过度纠正，
     先例 DF-020/DF-021 与 `check_false_inability` 的边界）。
+  · **形状面（issue #4079 S4）**：`skill_name` 与**字符串字面量**比较 = 白名单复发的**形状**；
+    判据扫**整个执行家族**（`app/graph/skills/execution/*.py`），fail-closed + 植入负例。
+    为什么必须按形状（AST `Compare`）而不是某一种写法（`skill_name in (`）：S4 首轮审计就是
+    按单一写法数出来的 ⇒ 只数到 2 处，实测按形状数是 **6 处**（`react_turn` 658/666/1048/1084、
+    `finalize_turn` 89/206）。
 """
 # case_ids: OR-021, OR-022, OR-025, AS-009, CH-013, CH-014, CH-015
 
@@ -20,6 +25,7 @@ import asyncio
 import inspect
 import json
 import re
+from pathlib import Path
 from unittest.mock import patch, AsyncMock, MagicMock
 
 import pytest
@@ -524,3 +530,154 @@ class TestHandoffGuardCrossSkill:
             state_overrides={"pending_interact_skill": "customer_product"})
         assert "handoff_blocked" not in str(result)
         assert "human_handoff" in sent
+
+
+# ────────────────────── 形状面：执行家族的写路径不得按 skill 名判定（#4079 S4）──────────────────────
+#
+# 病灶（与上面「事实面」同族，只是位置在**执行家族**而不是 `base_skill` 的判据函数里）：
+# 生成该缺陷的机制是"**按 skill 名判定**"，它在 S3 拆分后散落在 `execution/*.py` 的循环体
+# 与收尾逻辑里（例如 `_run_one_tool` 的下单接地闸门、模式 C 加工项兜底、8.3b/8.6 收尾）——
+# 旧判据 `test_no_skill_name_literal_in_guard_code` 只扫 `GUARD_FUNCS` 名单内的函数，
+# 这些位置**从未被覆盖**（判据自己选择沉默）。
+#
+# 本节的判据按**形状**写：`skill_name` 与**字符串字面量**的任何比较（`==` / `!=` / `in` /
+# `not in`）= 白名单形态。注释与 docstring（`ast.Constant` 但不在 `Compare` 里）不算 ——
+# 说明历史是允许的，判定用字面量不允许。
+#
+# ## 适用域声明（本判据对谁生效 / 对谁不生效）
+#   · 覆盖：`app/graph/skills/execution/*.py` 里**内联字符串字面量**与 `skill_name` 的比较；
+#   · 不覆盖 ①：**命名常量集合**（`base_skill.CREATION_SKILL_NAMES`）—— 它是"多轮引导写流程"
+#     的**产品分类**（settings/data/general 有需确认写工具但**不在**该集合里），改判成
+#     "有需确认写工具"会连带改变这三个 skill 的跨轮锁定行为（**行为不等价**）；该分类由
+#     `tests/test_graph_skills.py` 的 should_lock / over_locked 不变式机械锁定，故如实登记为边界；
+#   · 不覆盖 ②：`base_skill.py` 的 `GUARD_FUNCS`（由既有
+#     `test_no_skill_name_literal_in_guard_code` 覆盖；本节只补一条"不误报"的负例）；
+#   · fail-closed：执行家庭目录/文件缺失、或整个家族里再也搜不到 `skill_name` 这个变量
+#     ⇒ **报错**（判据失去被扫对象时不得静默通过）。
+
+EXECUTION_DIR = Path(__file__).resolve().parents[1] / "app" / "graph" / "skills" / "execution"
+_SKILL_NAME_VAR = "skill_name"
+
+
+def _string_constants(node: ast.AST) -> list:
+    """比较对象里的**字符串字面量**（含元组/集合/列表形态）。"""
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return [node.value]
+    if isinstance(node, (ast.Tuple, ast.Set, ast.List)):
+        return [e.value for e in node.elts
+                if isinstance(e, ast.Constant) and isinstance(e.value, str)]
+    return []
+
+
+def _skill_name_literal_offenders(sources: dict) -> list:
+    """`{标签: 源码}` 里所有「`skill_name` 与字符串字面量比较」的位置（纯函数，可喂夹具）。
+
+    抽成纯函数是为了能喂**植入违规的负例**（证明它真的会红），而不是只能靠改真代码才红。
+    """
+    offenders: list = []
+    for label, src in sources.items():
+        tree = ast.parse(src, filename=label)
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Compare):
+                continue
+            operands = [node.left, *node.comparators]
+            for i, operand in enumerate(operands):
+                if not (isinstance(operand, ast.Name) and operand.id == _SKILL_NAME_VAR):
+                    continue
+                for j, other in enumerate(operands):
+                    if i == j:
+                        continue
+                    for literal in _string_constants(other):
+                        offenders.append(
+                            f"{label}: 第 {node.lineno} 行  "
+                            f"`{_SKILL_NAME_VAR}` 与字面量 {literal!r} 比较"
+                        )
+    return offenders
+
+
+def _execution_family_sources() -> dict:
+    """执行家族源码（fail-closed：目录/文件缺失即报错，不给"扫不到就通过"留口子）。"""
+    assert EXECUTION_DIR.is_dir(), (
+        f"执行家族目录不存在：{EXECUTION_DIR}（fail-closed，不静默跳过）"
+    )
+    files = sorted(EXECUTION_DIR.glob("*.py"))
+    assert len(files) >= 3, (
+        f"{EXECUTION_DIR} 下的实现文件少于 3 个（实得 {[p.name for p in files]}）—— "
+        f"清扫范围会静默漏掉搬走的判定"
+    )
+    return {f"execution/{p.name}": p.read_text(encoding="utf-8") for p in files}
+
+
+class TestNoSkillNameLiteralInExecutionWritePaths:
+    """判据从 `GUARD_FUNCS` 名单扩到**执行家族的写路径**（#4079 S4 的落地判据）。"""
+
+    def test_no_skill_name_literal_in_execution_family(self):
+        """真实执行家族里**零**「`skill_name` 与字面量比较」——新增一处即红。
+
+        红证（改前实测，按 AST 形状数）：`react_turn.py` 第 658/666/1048/1084 行、
+        `finalize_turn.py` 第 89/206 行，共 **6 处**（按 `skill_name in (` 单写法只数得到 2 处）。
+        """
+        sources = _execution_family_sources()
+
+        # fail-closed：判据的被扫对象必须真的存在（否则本用例是"永远绿的空判据"）
+        name_uses = sum(
+            1 for src in sources.values()
+            for node in ast.walk(ast.parse(src))
+            if isinstance(node, ast.Name) and node.id == _SKILL_NAME_VAR
+        )
+        assert name_uses > 0, (
+            f"整个执行家族里搜不到 `{_SKILL_NAME_VAR}` —— 判据失去被扫对象"
+            f"（改名/搬走即须同步本判据，不得静默通过）"
+        )
+
+        offenders = _skill_name_literal_offenders(sources)
+        assert not offenders, (
+            "执行家族的写路径里出现 `skill_name` 与字符串字面量比较 = **skill 名白名单复发**：\n  "
+            + "\n  ".join(offenders)
+            + "\n→ 判据必须取自**事实/状态**（本文件上面的 `_order_write_tool_here` / "
+              "`_registry_has_confirm_write_tool` / `_registry_has_tool` / `_is_customer_role` 族），"
+              "否则新增 skill 时这条判定会静默失效（#3389→#3477→#3443→#3476→#4079 的五次复发机制）"
+        )
+
+    def test_guard_fires_on_planted_literal_and_stays_green_on_clean_source(self):
+        """**植入违规的负例**：判据真的会红，且对干净源码/文档串不误报（不是恒红空判据）。"""
+        planted = {
+            "execution/fake_react_turn.py": (
+                "def _run_one_tool(skill_name, tool_name):\n"
+                "    if tool_name == 'order_create' and skill_name in ('customer_order', 'order'):\n"
+                "        return True\n"
+                "    return skill_name == 'product'\n"
+            ),
+        }
+        hits = _skill_name_literal_offenders(planted)
+        assert hits, "植入 `skill_name in ('customer_order', 'order')` 后判据仍不报 —— 这是空判据"
+        assert any("customer_order" in h for h in hits) and any("'product'" in h for h in hits), (
+            f"植入的两种形态（in 元组 / == 单品）没有都被抓到：{hits}"
+        )
+
+        clean = {
+            "execution/clean.py": (
+                '"""旧实现是 `skill_name in ("customer_order", "order")` 白名单（说明允许）。"""\n'
+                "def _run_one_tool(skill_name, registry, state):\n"
+                "    # 注释里提到 skill_name == 'product' 也不算（注释不进 AST 常量比较）\n"
+                "    return _order_write_tool_here(registry) and _is_customer_role(state)\n"
+            ),
+        }
+        assert _skill_name_literal_offenders(clean) == [], (
+            "干净源码（含文档串/注释里的历史说明）被误报 —— 判据把说明当成了判定"
+        )
+        assert _skill_name_literal_offenders({}) == [], "空输入不得报错以外的任何结论"
+
+    def test_existing_guard_funcs_are_not_flagged(self):
+        """R2 阴性负例：既有 `GUARD_FUNCS` 不被本判据误报（它们的 docstring 里有历史字面量）。"""
+        sources = {
+            name: inspect.getsource(getattr(base_skill, name))
+            for name in TestCapabilityPredicatesAreFactDriven.GUARD_FUNCS
+        }
+        # 前提断言（防"空扫"）：确实有 docstring 里写着旧白名单的字面量
+        assert any("customer_order" in src for src in sources.values()), (
+            "GUARD_FUNCS 的说明串里找不到旧白名单字面量 —— 本负例失去意义（可能被清理过）"
+        )
+        assert _skill_name_literal_offenders(sources) == [], (
+            "既有守卫函数被误报（把 docstring 里的历史说明当成判定）—— 误红即坏断言"
+        )
