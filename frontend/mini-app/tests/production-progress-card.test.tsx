@@ -87,10 +87,12 @@ describe('ProductionProgressCard（顾客端生产进度卡）', () => {
     expect(text).not.toContain('worker')
   })
 
-  it('后端无 production_progress 发射点 ⇒ 落可理解占位，不再声称可达（#4016 P14）', () => {
-    // 旧断言名是「接线验证」，但它只验证了 renderCard 有分支、**没验证后端会下发**
-    // —— `_detect_card_type` 无 `production_progress_query` 映射 ⇒ 组件永不渲染。
-    // 这正是「交付物在 main ≠ 能力可达」的假接线验证形态（#4016）。现锁裁剪后的真值。
+  it('经 MessageBubble 的 production_progress 分支真渲染（#4016 P14「补发射点」）', () => {
+    // 本用例曾是**假接线验证**：只验证 renderCard 有分支、没验证后端会下发 ——
+    // 而 `_detect_card_type` 当时**没有** `production_progress_query` 映射 ⇒ 组件永不渲染
+    // （「交付物在 main ≠ 能力可达」）。用户 2026-09-18 裁定补发射点后，后端映射已补
+    // （端到端那一格证据在 backend/ai-agent-service/tests/test_card_type_persist.py：
+    //  工具结果 → event: card(type=production_progress) → metadata.cards）。
     render(
       <MessageBubble
         message={{
@@ -104,8 +106,9 @@ describe('ProductionProgressCard（顾客端生产进度卡）', () => {
       />,
     )
 
-    expect(screen.queryByText('40%')).toBeNull()
-    expect(screen.getByText('📎 消息内容暂不支持预览')).toBeTruthy()
+    expect(screen.getByText('40%')).toBeTruthy()
+    expect(screen.getByText('当前工序：韩褶')).toBeTruthy()
+    expect(screen.queryByText('📎 消息内容暂不支持预览')).toBeNull()
   })
 
   it('兼容米宝精简进度载荷（progress_percent/current_operation/pending_operations/expected_delivery_date）', () => {

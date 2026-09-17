@@ -7,6 +7,7 @@ import ProductFormList from '../cards/ProductFormList'
 import LogisticsCard from '../cards/LogisticsCard'
 import OrderCard from '../cards/OrderCard'
 import QuotationCard from '../cards/QuotationCard'
+import ProductionProgressCard from '../cards/ProductionProgressCard'
 import ConfirmCard from '../cards/ConfirmCard'
 import ChoiceCard from '../cards/ChoiceCard'
 import FormCard from '../cards/FormCard'
@@ -104,6 +105,11 @@ function renderCard(card: CardData, idx: number, onInteract?: (value: string) =>
           onConfirm={onInteract ? () => onInteract('我要下单') : undefined}
         />
       )
+    }
+
+    case 'production_progress': {
+      // 生产进度卡（#4016 P14，用户 2026-09-18 裁定补发射点；与 C 端同族组件）
+      return <ProductionProgressCard key={`card-${idx}`} data={data} />
     }
 
     default:

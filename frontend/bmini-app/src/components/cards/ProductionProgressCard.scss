@@ -1,0 +1,61 @@
+.production-progress-card {
+  background: #ffffff;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  padding: 20px;
+
+  &__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  &__title {
+    font-size: 28px;
+    font-weight: 600;
+    color: #1f2937;
+  }
+
+  &__percent {
+    font-size: 32px;
+    font-weight: 600;
+    color: #1a73e8;
+  }
+
+  &__track {
+    margin-top: 16px;
+    height: 12px;
+    background: #eef2f7;
+    border-radius: 6px;
+    overflow: hidden;
+  }
+
+  &__fill {
+    height: 12px;
+    background: #1a73e8;
+    border-radius: 6px;
+  }
+
+  &__row {
+    display: block;
+    margin-top: 12px;
+    font-size: 24px;
+    color: #4b5563;
+  }
+
+  &__empty {
+    display: block;
+    margin-top: 16px;
+    font-size: 24px;
+    color: #9ca3af;
+  }
+
+  &__delivery {
+    display: block;
+    margin-top: 16px;
+    padding-top: 16px;
+    border-top: 1px solid #f3f4f6;
+    font-size: 24px;
+    color: #6b7280;
+  }
+}

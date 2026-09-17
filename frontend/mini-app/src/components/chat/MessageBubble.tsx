@@ -7,6 +7,7 @@ import ProductFormList from '../cards/ProductFormList'
 import LogisticsCard from '../cards/LogisticsCard'
 import OrderCard from '../cards/OrderCard'
 import QuotationCard from '../cards/QuotationCard'
+import ProductionProgressCard from '../cards/ProductionProgressCard'
 import ConfirmCard from '../cards/ConfirmCard'
 import ChoiceCard from '../cards/ChoiceCard'
 import FormCard from '../cards/FormCard'
@@ -105,6 +106,13 @@ function renderCard(card: CardData, idx: number, onInteract?: (value: string) =>
           onConfirm={onInteract ? () => onInteract('我要下单') : undefined}
         />
       )
+    }
+
+    case 'production_progress': {
+      // 生产进度卡（M4-G-3 / issue #3997）。issue #4016 P14：用户 2026-09-18 裁定
+      // 走「补发射点」—— 此前只有卡片没有发射点（组件永不渲染），后端已补
+      // `production_progress_query → production_progress` 映射。
+      return <ProductionProgressCard key={`card-${idx}`} data={data} />
     }
 
     default:

@@ -1194,10 +1194,12 @@ describe('ToolResultCard', () => {
   it('renders unsupported placeholder for knowledge (backend never emits it, #4016)', () => {
     // 裁剪前这里断言 knowledge-card 渲染成功 —— 后端 `_detect_card_type` 从不下发
     // knowledge 卡型 ⇒ 死 UI。现锁新真值：走可理解占位且不泄漏内部类型名。
+    // `knowledge` 已从 CardType 联合移除（后端从不下发）⇒ 这里模拟线上**残留 type**
+    // 走到 B 端时的兜底表现（弱类型入站载荷，与其他卡同族）
     const card = {
-      type: 'knowledge' as const,
+      type: 'knowledge',
       data: { title: '布艺清洗指南', content: '...' },
-    }
+    } as unknown as import('@/types').ChatCard
     render(<ToolResultCard card={card} />)
     expect(screen.queryByTestId('knowledge-card')).not.toBeInTheDocument()
     expect(screen.getByTestId('tool-result-card-unsupported')).toBeInTheDocument()

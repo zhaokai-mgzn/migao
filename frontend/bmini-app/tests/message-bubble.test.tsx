@@ -20,6 +20,11 @@ jest.mock('../src/components/cards/LogisticsCard', () => {
     return <div data-testid="logistics-card">logistics</div>
   }
 })
+jest.mock('../src/components/cards/ProductionProgressCard', () => {
+  return function MockProductionProgressCard() {
+    return <div data-testid="production-progress-card">progress</div>
+  }
+})
 jest.mock('../src/components/cards/OrderCard', () => {
   return function MockOrderCard() {
     return <div data-testid="order-card">order</div>
@@ -132,6 +137,21 @@ describe('MessageBubble', () => {
     // 的死 UI（#4016 反向契约实测）。现锁新真值：未知卡型走可理解占位，不再声称有知识卡。
     expect(screen.queryByTestId('knowledge-card')).toBeNull()
     expect(screen.getByText('📎 消息内容暂不支持预览')).toBeTruthy()
+  })
+
+  it('应渲染生产进度卡（#4016 P14「补发射点」：后端已补 production_progress 映射）', () => {
+    const msg: Message = {
+      ...baseMsg,
+      role: 'assistant',
+      content: '生产进度：',
+      cards: [
+        { type: 'production_progress', data: { progress_percent: 40, current_operation: '韩褶' } },
+      ],
+    }
+    render(<MessageBubble message={msg} />)
+
+    expect(screen.getByTestId('production-progress-card')).toBeTruthy()
+    expect(screen.queryByText('📎 消息内容暂不支持预览')).toBeNull()
   })
 
   it('应渲染订单卡片（不再落入 📎 order 占位符）', () => {
