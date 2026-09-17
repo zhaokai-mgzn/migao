@@ -35,6 +35,8 @@ persona 家族切。家族由 `SkillConfig.system_prompts` 的 key **derive**（
 """
 import itertools
 
+import pytest
+
 from app.agents.agent_config import get_agent_config
 from app.graph.skills.base_skill import create_skill_registry
 from app.graph.skills.skill_registry import get_skill_registry
@@ -85,7 +87,8 @@ class TestReadonlySharingWithinPersona:
         两个方向在**同一条用例**里断言（防"只测放行"的单向假绿）。
         """
         cfg = get_skill_registry().get("product")
-        assert cfg is not None, "product skill 不在注册表 —— 判据指错对象"
+        if cfg is None:
+            pytest.fail("product skill 不在注册表 —— 判据指错对象")
 
         own = set(cfg.tool_names)
         family = _family_cfgs(cfg)
@@ -130,7 +133,8 @@ class TestReadonlySharingWithinPersona:
                 continue
             reg, scope, bound = _scope_after(cfg.tool_names)
             checked += 1
-            assert scope is not None, f"{cfg.name}: 工厂没登记执行域（域闸门静默失效）"
+            if scope is None:
+                pytest.fail(f"{cfg.name}: 工厂没登记执行域（域闸门静默失效）")
             assert scope == frozenset(reg.get_tool_names()), (
                 f"{cfg.name}: 校验域与 registry 实注册名单不一致 —— 域闸门判的不是模型手里的工具"
             )
