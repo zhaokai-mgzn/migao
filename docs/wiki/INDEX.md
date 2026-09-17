@@ -26,6 +26,7 @@ LLM 开发时按需加载对应页面 (~50 行/页，按场景索引)：
 | **AI 可执行验收协议（验收/评测放心交给 AI）** | **[acceptance-protocol](../testing/acceptance-protocol.md)** |
 | **评测环境分工与门禁（标准考场/云测试/生产三层）** | **[eval-environments](../testing/eval-environments.md)** |
 | **评测流水线性能账（为什么慢/怎么快，实测 + 反模式 + 思考开关真伪）** | **[eval-pipeline-performance](../testing/eval-pipeline-performance.md)** |
+| **LLM 发现 → 确定性下沉（红例必须落成确定性断言；台账 + 机械检查）** | **[llm-finding-sinking](../testing/llm-finding-sinking.md)** |
 | **C 端对抗评测基线与反模式（B 端形状断言为何误判）** | **[xiaobu-adversarial-baseline](../testing/xiaobu-adversarial-baseline.md)** |
 | **检查功能自洽性（闭环谓词 P0/P1/P2）** | **[self-consistency-checklist](self-consistency-checklist.md)** |
 | 遇到问题 | [Troubleshooting](Troubleshooting.md) |

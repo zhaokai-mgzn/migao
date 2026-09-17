@@ -1,0 +1,77 @@
+{
+  "version": 1,
+  "note": "LLM 红例 → 确定性下沉台账（用户裁定 4′，issue #4034 ← #4009）。凡由真实 LLM 评测自动开单发现的红例（标题族见下），都必须在这里**有且只有一条**条目：status=sunk = 已产出 ≥1 条确定性断言（效果层用例断言或 L0 不变式）；status=unsunk = **显式登记为未下沉**（reason + follow_up 必填）。「没有条目」= 静默通过，是裁定明令禁止的形态。机械检查入口：`python3 .github/llm_sink_check.py --selftest | --issue N | --all`（退出码 0=已下沉且断言非空 / 1=违规或未登记 / 3=无法判定）。判据的单一源 = `.github/assertion_taxonomy.py` 的 `EFFECT_FIELDS` + `has_effect_assertion`（本台账不另列一份字段清单）。LLM 来源 issue 的标题族 = `[Post-Deploy] 部署后回归失败` / `[Xiaobu] … 验收失败` / `[Agent Eval] 米宝冒烟评测失败` / `[Agent Eval] 米宝对抗评测失败`。GitHub 侧回填记录的机读标记：`<!-- llm-sink-backfill: #<issue> sunk=<cases> -->`（也认评论里出现 `llm-finding-ledger.json` 或「下沉台账」字样）。",
+  "_schema": {
+    "version": "台账版本（当前 1）",
+    "entries[].issue": "发现该 LLM 红例的 GitHub issue 号（正整数）",
+    "entries[].status": "sunk | unsunk（无第三态：未下沉必须显式登记）",
+    "entries[].sinks[].kind": "case_assertion（用例库效果层断言）| l0_invariant（L0 不变式测试）",
+    "entries[].sinks[].cases": "用例 ID 列表；每条必须存在于 .github/cases/*.yml，且其 merge_log 回填 `#<issue>`（记入用例库 + 回填链）",
+    "entries[].sinks[].fields": "case_assertion 声明核的效果层字段，必须 ⊆ EFFECT_FIELDS，且用例里**至少一个非空**（空壳即违规）",
+    "entries[].sinks[].test_file": "l0_invariant 的测试文件路径，相对仓库根",
+    "entries[].sinks[].test_names": "l0_invariant 的测试函数名列表，必须在该文件里有字面 `def <name>(`",
+    "entries[].evidence": "sunk 必填：凭什么判定它已下沉（指向 PR / run / 用例 merge_log）",
+    "entries[].reason": "unsunk 必填：未下沉的原因（须写出该 issue 正文里的真实失败用例 ID）",
+    "entries[].follow_up": "unsunk 必填：跟踪单号（正整数）",
+    "unimplemented": "**如实登记**未机械化的部分（不得写恒真判据凑数；见文件末尾）"
+  },
+  "entries": [
+    {
+      "issue": 4014,
+      "status": "sunk",
+      "sinks": [
+        {"kind": "case_assertion", "cases": ["OR-009", "OR-010", "OR-011"], "fields": ["must_succeed"]},
+        {"kind": "case_assertion", "cases": ["OR-011"], "fields": ["db_verify"]}
+      ],
+      "evidence": "P5 包（issue #4014 的 B3，PR #4021 / commit 8dfc85a4）把 3 条下单用例从『工具被调用过』升级为效果层断言：OR-009/OR-010/OR-011 各补 must_succeed[order_create]，OR-011 另补 db_verify（order_items 明细+数量、order_phone 落库号）；三条用例的 merge_log 逐条记到 issue #4014（`--selftest` 逐条核 merge_log 含 `#4014`）"
+    },
+    {
+      "issue": 3679,
+      "status": "sunk",
+      "sinks": [
+        {
+          "kind": "l0_invariant",
+          "cases": ["DF-011"],
+          "test_file": "backend/ai-agent-service/tests/unit/test_circuit_breaker.py",
+          "test_names": [
+            "test_repeated_404_leaves_breaker_closed",
+            "test_5xx_does_trip_breaker",
+            "test_open_breaker_never_invokes_the_callable"
+          ]
+        }
+      ],
+      "evidence": "DF-011 的两条自然语义 data_checks（不计分、且以『连续 3 次失败』这一**不存在的前提**为基础——404 不计入熔断）下沉为 test_circuit_breaker.py 的机器断言（见 .github/cases/defense.yml 的 DF-011 merge_log，其中记到 issue #3679 / CI run 34838080233）：404 恒不抬 failure_count（前提否证）+ 5xx 必开路（反向护栏）+ 开路后底层函数 0 次调用（DF-011 的可执行判据）"
+    },
+    {
+      "issue": 3955,
+      "status": "unsunk",
+      "reason": "issue 正文列出的可复现失败用例是 CH-019 / OR-014 / PR-014，属本台账建立前的存量 LLM 红例，尚未产出确定性断言",
+      "follow_up": 4009
+    },
+    {
+      "issue": 3870,
+      "status": "unsunk",
+      "reason": "issue 正文列出的失败用例是 OR-014 / PR-016（另有跨 run 复发的系统性缺口 PP-001），属本台账建立前的存量 LLM 红例，尚未产出确定性断言",
+      "follow_up": 4009
+    },
+    {
+      "issue": 3534,
+      "status": "unsunk",
+      "reason": "issue 正文列出的确定性失败用例是 AS-003 / AS-004 / OR-015（另有 unstable 的 PR-005 / PR-016），属本台账建立前的存量 LLM 红例，尚未产出确定性断言",
+      "follow_up": 4009
+    },
+    {
+      "issue": 3533,
+      "status": "unsunk",
+      "reason": "issue 正文只有一条 run 链接（34806837519）、未列出任何失败用例 ID，无从定位到具体断言，属本台账建立前的存量 LLM 红例，尚未产出确定性断言",
+      "follow_up": 4009
+    }
+  ],
+  "unimplemented": [
+    "**新红例的自动入账未实装**：检查器只能核台账里已有的条目，没有写台账的能力；评测 workflow 建 issue 时**不会**同步写一条 `status: unsunk` 占位，入账仍需人或 agent 动手。`--all` 只是把「缺失」**查出来**（且要求 gh 可用），查到 ≠ 补上。",
+    "**GitHub issue 侧的回填核验未接入 CI required check**：核它需要 `gh` + 网络，故只在 `--issue N --check-backfill` / `--all` 里做，`gh` 不可用/未登录/查询失败时返回 **3（无法判定）**，绝不谎报通过；可进 CI 的离线档 `--selftest` 只核**用例库侧**回填（用例 merge_log 含 `#<issue>`）。⇒ 「用例库侧回填完整」**不等于**「发现它的 issue 上已回填」。",
+    "**没有任何机制保证 GitHub 侧回填一定会发生**（目前靠人/agent 自觉）。复算现状：`python3 .github/llm_sink_check.py --issue 4014 --check-backfill`（#3679 同理）—— 两条已 sunk 的存量条目在 issue 上都还没有回填评注，故该命令现在如实返回 1（回填缺失），而不是 0。补法：在发现红例的 issue 上贴 `<!-- llm-sink-backfill: #<issue> sunk=<cases> -->`。",
+    "**`[行为映射门禁] 规则命中用例失败` 一族默认不在 `--all` 的枚举范围内**（默认只认 note 里那 4 条标题族）⇒ `--all` 报「全部已登记」时，对那一族**不成立**。该族同样是真实 LLM 评测开的单（#3679 就是其中一条，已作为 sunk 条目入账）。现状复算：`gh issue list --state open --search 'in:title \"[行为映射门禁]\"'`。",
+    "**断言判别力（造缺陷它会不会红）不在这层检查的能力范围内**：本检查只回答「断言非空 + 是效果层字段 + 回填链在」，不回答「这个断言真的会红」——后者属 runner / 红证层（见 `migao-acceptance`「空断言：不会红的断言 = 空断言」），本台账不假装覆盖它。"
+  ]
+}

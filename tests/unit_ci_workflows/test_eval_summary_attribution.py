@@ -626,8 +626,16 @@ class TestEvidenceWindow:
         assert rc == 3, f"无窗口时必须退 3（调用方回落 tail），实得 {rc}"
 
     def test_workflows_consume_the_window_not_only_tail(self):
-        """**接线上锁**：三个评测 workflow 的 Diagnose 必须调用取数脚本 —— 否则窗口白写。"""
-        for wf in ("post-deploy-eval.yml", "xiaobu-acceptance.yml", "agent-behavior-eval.yml"):
+        """**接线上锁**：跑评测的 workflow 的 Diagnose 必须调用取数脚本 —— 否则窗口白写。
+
+        ⚠️ 本循环**移出** `agent-behavior-eval.yml`（2026-09-17 用户裁定 2′/4′，issue #4034）：
+        它的评测 job 已整体删除，PR 上只剩纯静态 `map` job ⇒ **不再产生任何 eval summary**
+        （零 LLM、零 `write_summary_json`），「窗口写进 artifact 供取数」在该文件里**没有被测对象**。
+        留着它只会让本条变成对着一份永不产出的 summary 的空断言（不会红的断言）。
+        仍会产生 summary 的两路留在循环里（判定用途的单一入口 `post-deploy-eval` + 小布验收
+        `xiaobu-acceptance`）；该 workflow 若重新评测，本循环必须把它加回。
+        """
+        for wf in ("post-deploy-eval.yml", "xiaobu-acceptance.yml"):
             src = (REPO_ROOT / ".github" / "workflows" / wf).read_text(encoding="utf-8")
             assert "eval_log_windows.sh" in src, f"{wf} 未按用例窗口取数（固定 tail 会丢失败窗口）"
             assert "--since" in src and "--until" in src, f"{wf} 没把窗口喂给 docker logs"

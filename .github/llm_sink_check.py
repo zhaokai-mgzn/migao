@@ -355,7 +355,7 @@ def entry_for(ledger: dict, issue: int) -> dict | None:
 
 
 def describe_entry(entry: dict) -> str:
-    """一行摘要（给 --selftest / --all 打）。"""
+    """一行摘要（给 --selftest 打）—— 不带状态图标，图标由调用方按核验结果加。"""
     issue = entry.get("issue")
     status = entry.get("status")
     if status == "sunk":
@@ -369,8 +369,8 @@ def describe_entry(entry: dict) -> str:
             elif sink.get("kind") == "l0_invariant":
                 bits.append(f"L0:{sink.get('test_file')}"
                             f"({','.join(sink.get('test_names') or [])})")
-        return f"✅ #{issue} sunk ← {'; '.join(bits)}"
-    return (f"⚠️ #{issue} unsunk（显式登记）reason={entry.get('reason')!r} "
+        return f"#{issue} sunk ← {'; '.join(bits)}"
+    return (f"#{issue} unsunk（显式登记）reason={entry.get('reason')!r} "
             f"follow_up=#{entry.get('follow_up')}")
 
 
@@ -443,8 +443,9 @@ def issue_backfill_state(issue: int) -> tuple[bool, bool, str]:
 # ══════════════════════════════════════════════════════════════════════════════
 
 def mode_selftest(ledger: dict, cases_by_id: dict,
-                  repo_root: Path = REPO_ROOT) -> tuple[int, list[str], dict]:
-    lines = [f"台账：{LEDGER_PATH}",
+                  repo_root: Path = REPO_ROOT,
+                  ledger_path: Path = LEDGER_PATH) -> tuple[int, list[str], dict]:
+    lines = [f"台账：{ledger_path}",
              f"用例库：{CASES_DIR}（{len(cases_by_id)} 条用例）",
              f"效果层字段（源自 assertion_taxonomy.EFFECT_FIELDS）：{list(EFFECT_FIELDS)}"]
     entries = ledger.get("entries") or []
@@ -454,7 +455,9 @@ def mode_selftest(ledger: dict, cases_by_id: dict,
     violations = schema_violations + [v for _e, vs in per_entry for v in vs]
     for entry, bad in per_entry:
         line = describe_entry(entry) if isinstance(entry, dict) else repr(entry)
-        lines.append(f"{'❌' if bad else '  '} {line}")
+        # 图标按**核验结果**给：违规 ⇒ ❌（不看台账自己声明的状态），未下沉 ⇒ ⚠️
+        icon = "❌" if bad else ("⚠️" if entry.get("status") == "unsunk" else "✅")
+        lines.append(f"{icon} {line}")
         lines.extend(f"       ↳ {v.code}: {v.detail}" for v in bad)
     lines.extend(f"❌ {v.code}: {v.detail}" for v in schema_violations)
     lines.append(f"未实装登记：{len(ledger.get('unimplemented') or [])} 条"
@@ -468,7 +471,7 @@ def mode_selftest(ledger: dict, cases_by_id: dict,
         "mode": "selftest",
         "exit_code": EXIT_VIOLATION if violations else EXIT_OK,
         "ok": not violations,
-        "ledger": str(LEDGER_PATH),
+        "ledger": str(ledger_path),
         "entry_count": len(ledger.get("entries") or []),
         "violations": [v.as_dict() for v in violations],
         "unimplemented": ledger.get("unimplemented") or [],
@@ -643,7 +646,8 @@ def main(argv: list[str] | None = None) -> int:
         return EXIT_VIOLATION
 
     if args.selftest:
-        code, lines, result = mode_selftest(ledger, load_case_index())
+        code, lines, result = mode_selftest(ledger, load_case_index(),
+                                            ledger_path=Path(args.ledger))
     elif args.issue is not None:
         code, lines, result = mode_issue(ledger, load_case_index(), args.issue,
                                          check_backfill=args.check_backfill)
