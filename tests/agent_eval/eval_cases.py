@@ -5778,7 +5778,7 @@ _CASE_UI_045 = EvalCase(
     difficulty=Difficulty.NORMAL,
     user_inputs=['顾客在小布对话里收到生产进度卡：显示加工单做到哪一步了（进度百分比）、当前在做哪道工序、还剩几道工序、预计什么时候交付'],
     expectations=['direct_reply'],
-    data_checks=['进度百分比取 progress.percent；progress 缺省时按 已完/总数 推导，空态（无工序）显示「暂无生产进度」（不显示假进度、不空白）', '当前工序 = 第一个 status!=done 的工序；待完工序数 = status!=done 的工序数；交期字段缺省时不渲染交期行', '不泄露内部信息：工人姓名 / 计件单价 / 成本 / qr_token 不出现在卡片文案（内部计件与对外加工费两套账分离）', "MessageBubble 的 cardData.type='production_progress' 渲染该卡（未知卡片占位分支不被命中）"],
+    data_checks=['进度百分比取 progress.percent；progress 缺省时按 已完/总数 推导，空态（无工序）显示「暂无生产进度」（不显示假进度、不空白）', '当前工序 = 第一个 status!=done 的工序；待完工序数 = status!=done 的工序数；交期字段缺省时不渲染交期行', '兼容两种载荷（M4-G-2 实装字段）：工序树 {positions[].operations[], progress:{total,done,percent}, expected_delivery_at} 与米宝精简进度 {progress_percent, current_operation, pending_operations[], total_operations, done_operations, expected_delivery_date}', '不泄露内部信息：工人姓名 / 计件单价 / 成本 / qr_token 不出现在卡片文案（内部计件与对外加工费两套账分离）', "MessageBubble 的 cardData.type='production_progress' 渲染该卡（未知卡片占位分支不被命中）"],
     skip_reason='纯前端组件渲染由 jest 单测验证（frontend/mini-app/tests/production-progress-card.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟',
     tags=['ui', 'mini-app', 'production-progress', 'card'],
     persona='xiaobu',

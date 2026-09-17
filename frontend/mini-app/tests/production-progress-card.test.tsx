@@ -104,4 +104,30 @@ describe('ProductionProgressCard（顾客端生产进度卡）', () => {
     expect(screen.getByText('40%')).toBeTruthy()
     expect(screen.getByText('当前工序：韩褶')).toBeTruthy()
   })
+
+  it('兼容米宝精简进度载荷（progress_percent/current_operation/pending_operations/expected_delivery_date）', () => {
+    // 来源：M4-G-2 已合并的 GET /api/admin/agent/production/progress 返回形状（无 positions）
+    render(
+      <ProductionProgressCard
+        data={{
+          order_no: 'CSO260915-02615',
+          status: 'producing',
+          status_text: '生产中',
+          progress_percent: 40,
+          current_operation: '韩褶',
+          pending_operations: ['韩褶', '定型'],
+          total_operations: 5,
+          done_operations: 2,
+          expected_delivery_date: '2026-09-25',
+        }}
+      />,
+    )
+
+    expect(screen.getByText('40%')).toBeTruthy()
+    expect(screen.getByText('当前工序：韩褶')).toBeTruthy()
+    expect(screen.getByText('待完 2 道工序')).toBeTruthy()
+    expect(screen.getByText('预计交付 2026-09-25')).toBeTruthy()
+    // 有数据就不该落到空态
+    expect(screen.queryByText('暂无生产进度')).toBeNull()
+  })
 })
