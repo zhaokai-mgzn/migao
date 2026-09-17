@@ -54,6 +54,91 @@ ROD_PRICE = 25.0              # 罗马杆 元/米
 TIEBACK_PRICE = 15.0          # 绑带 元/对
 INSTALL_PRICE = 18.0          # 安装 元/米（按杆长）
 
+# ── 韩折折数法常量（【标】2026-09 客户纸表/行业系统加工单实证）──
+PLEAT_FABRIC_PER_FOLD = 0.25       # 每折吃布（米）
+MARGIN_SINGLE = 0.2                # 单开余量（两侧包边各 10cm）
+MARGIN_MULTI = 0.3                 # 对开/四开余量（每片外侧包边 10cm + 内侧对缝 5cm）
+MIN_FULLNESS = 1.5                 # 褶皱倍数下限（低于影响美观，行业红线）
+
+# ── 工艺档位（【默】商家可配；每档 = 名义倍数 → 折数规则）──
+DEFAULT_CRAFT_TIERS: Dict[str, Dict[str, Any]] = {
+    "standard": {"fullness": 2.0, "label": "标准工艺"},
+    "economy": {"fullness": 1.8, "label": "经济工艺"},
+}
+
+
+def margin_for_open_count(open_count: int = 1) -> float:
+    """打开方式开数 → 侧边余量（米）：单开 0.2 / 多开 0.3"""
+    return MARGIN_SINGLE if open_count <= 1 else MARGIN_MULTI
+
+
+def derive_pleat_count(width: float, fullness: float, open_count: int = 1) -> tuple[int, str]:
+    """倍数意图 → 折数实现（按开数取整：对开偶数 / 四开 4 的倍数）。
+
+    红线：fullness < MIN_FULLNESS 拒绝（行业美学下限）。
+    Returns: (折数, 告警) — 告警非空表示做过取整调整。
+    """
+    if fullness < MIN_FULLNESS:
+        raise ValueError(
+            f"褶皱倍数 {fullness} 低于行业下限 {MIN_FULLNESS}，影响美观，请选择更高倍数档位"
+        )
+    pleats = int(
+        round((width * fullness - margin_for_open_count(open_count)) / PLEAT_FABRIC_PER_FOLD)
+    )
+    pleats = max(pleats, open_count)
+    if open_count > 1:
+        adjusted = math.ceil(pleats / open_count) * open_count
+    else:
+        adjusted = pleats
+    warning = (
+        f"折数 {pleats} 无法被开数 {open_count} 整除，已取最近可行 {adjusted} 折"
+        if adjusted != pleats else ""
+    )
+    return adjusted, warning
+
+
+def calculate_fabric_by_pleats(
+    pleat_count: int,
+    open_count: int = 1,
+    source: str = "formula",
+    width: Optional[float] = None,
+) -> tuple[float, str, dict]:
+    """折数法算料：用料 = 0.25 × 折数 + 余量（单开 0.2 / 多开 0.3）。
+
+    开数不可整除时自动取最近可行折数并告警。
+    Returns: (用料米数, 告警, 折数信息 dict)
+    """
+    warning = ""
+    if open_count > 1 and pleat_count % open_count != 0:
+        adjusted = math.ceil(pleat_count / open_count) * open_count
+        warning = f"折数 {pleat_count} 无法被开数 {open_count} 整除，已取最近可行 {adjusted} 折"
+        pleat_count = adjusted
+    meters = round(PLEAT_FABRIC_PER_FOLD * pleat_count + margin_for_open_count(open_count), 2)
+    info = {
+        "pleat_count": pleat_count,
+        "per_panel_pleats": pleat_count // open_count if open_count > 1 else pleat_count,
+        "open_count": open_count,
+        "margin": margin_for_open_count(open_count),
+        "source": source,
+    }
+    if width:
+        info["fullness_actual"] = round(meters / width, 2)
+    return meters, warning, info
+
+
+def aggregate_by_fabric(positions: List[Dict[str, Any]]) -> Dict[str, float]:
+    """按货号-色号汇总用料（采购/套裁视图）。
+
+    Args:
+        positions: [{fabric_code, meters}, ...]
+    Returns: {fabric_code: 合计米数}
+    """
+    agg: Dict[str, float] = {}
+    for p in positions:
+        code = p.get("fabric_code") or "未指定"
+        agg[code] = round(agg.get(code, 0.0) + float(p.get("meters", 0.0)), 2)
+    return agg
+
 
 def calculate_fabric_meters(
     window_width: float,
@@ -113,6 +198,10 @@ def build_quote(
     fabric_price: float = 30.0,
     has_pattern: bool = False,
     pattern_repeat: float = 0.0,
+    open_count: int = 1,
+    pleat_count: Optional[int] = None,
+    source: str = "formula",
+    craft_tier: Optional[str] = None,
 ) -> Dict[str, Any]:
     """构建完整报价单。
 
@@ -125,23 +214,60 @@ def build_quote(
         fabric_price: 面料单价（元/米）
         has_pattern: 是否对花
         pattern_repeat: 花距（米）
+        open_count: 打开方式开数（1 单开 / 2 双开 / 4 四开；默认 1）
+        pleat_count: 折数（韩褶折数法；给定时按 0.25×折数+余量 算料，issue #3982）
+        source: 折数/用料取值来源（formula / manual / customer_quoted）
+        craft_tier: 工艺档位（standard / economy；与 pleat_count 二选一）
 
     Returns:
         报价字典：fabric_meters / fabric_cost / processing_cost / accessory_cost /
         install_cost / total / breakdown / formula_used / warning / fullness
+        （折数法时另含 pleat_count / per_panel_pleats / open_count / margin / source / craft_tier）
     """
     # 褶皱倍数默认值
     N = fullness if fullness is not None else DEFAULT_FULLNESS.get(mounting, 2.0)
 
-    meters, formula_used, warning = calculate_fabric_meters(
-        window_width=window_width,
-        window_height=window_height,
-        fullness=N,
-        fabric_width=fabric_width,
-        mounting=mounting,
-        has_pattern=has_pattern,
-        pattern_repeat=pattern_repeat,
-    )
+    # 韩褶折数法（工艺档位或客户自报折数触发）：用料 = 0.25 × 折数 + 余量
+    pleat_mode = mounting == "s_hook" and (pleat_count is not None or craft_tier is not None)
+    pleat_fields: Dict[str, Any] = {}
+    if pleat_mode:
+        if pleat_count is None:
+            tier = DEFAULT_CRAFT_TIERS.get(craft_tier or "standard", DEFAULT_CRAFT_TIERS["standard"])
+            pleat_count, tier_warning = derive_pleat_count(window_width, tier["fullness"], open_count)
+            N = tier["fullness"]
+        else:
+            tier_warning = ""
+        meters, pleat_warning, info = calculate_fabric_by_pleats(
+            pleat_count, open_count, source=source, width=window_width
+        )
+        warning = " ".join(w for w in [tier_warning, pleat_warning] if w)
+        formula_used = "fixed_height_pleats"
+        if window_height + HEM_MARGIN > fabric_width:
+            panels = math.ceil(meters / fabric_width)
+            meters = panels * (window_height + HEM_MARGIN + (pattern_repeat if has_pattern else 0.0))
+            formula_used = "fixed_width_pleats"
+            warning = (warning + " " if warning else "") + (
+                f"成品高 {window_height:.2f}m 超过门幅 {fabric_width:.2f}m 的定高上限，"
+                f"已按定宽布（买高）计算，幅数 {panels} 幅。"
+            )
+        pleat_fields = {
+            "pleat_count": info["pleat_count"],
+            "per_panel_pleats": info["per_panel_pleats"],
+            "open_count": open_count,
+            "margin": info["margin"],
+            "source": source,
+            "craft_tier": craft_tier,
+        }
+    else:
+        meters, formula_used, warning = calculate_fabric_meters(
+            window_width=window_width,
+            window_height=window_height,
+            fullness=N,
+            fabric_width=fabric_width,
+            mounting=mounting,
+            has_pattern=has_pattern,
+            pattern_repeat=pattern_repeat,
+        )
 
     # 面料费
     fabric_cost = meters * fabric_price
@@ -192,6 +318,42 @@ def build_quote(
         "formula_used": formula_used,
         "fullness": N,
         "warning": warning,
+        **pleat_fields,
+    }
+
+
+def calculate_multi_position(positions: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """多部位批量算料：逐部位 build_quote + 总用料 + 按货号-色号汇总。
+
+    Args:
+        positions: [build_quote 参数 + fabric_code, ...]
+    Returns: {positions: [quote...], total_meters, by_fabric}
+    """
+    results: List[Dict[str, Any]] = []
+    for p in positions:
+        q = build_quote(
+            window_width=p["window_width"],
+            window_height=p["window_height"],
+            mounting=p.get("mounting", "s_hook"),
+            fullness=p.get("fullness"),
+            fabric_width=p.get("fabric_width", 2.8),
+            fabric_price=p.get("fabric_price", 30.0),
+            has_pattern=p.get("has_pattern", False),
+            pattern_repeat=p.get("pattern_repeat", 0.0),
+            open_count=p.get("open_count", 1),
+            pleat_count=p.get("pleat_count"),
+            source=p.get("source", "formula"),
+            craft_tier=p.get("craft_tier"),
+        )
+        q["fabric_code"] = p.get("fabric_code") or "未指定"
+        results.append(q)
+    by_fabric = aggregate_by_fabric(
+        [{"fabric_code": r["fabric_code"], "meters": r["fabric_meters"]} for r in results]
+    )
+    return {
+        "positions": results,
+        "total_meters": round(sum(r["fabric_meters"] for r in results), 2),
+        "by_fabric": by_fabric,
     }
 
 

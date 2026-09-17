@@ -1491,6 +1491,24 @@ _CASE_CH_035 = EvalCase(
     post_session=[{'fetch': 'user_memories', 'agent_type': 'xiaobu', 'checks': ['count>=1', 'has_key:curtain_style', 'value_contains:奶油风']}],
 )
 
+# ── CH-036 [NORMAL] 窗帘算料引擎确定性逻辑 - 折数法/工艺档位/红线/按货号汇总（单测覆盖，非 LLM 行为）（源: cases/chat.yml）──
+_CASE_CH_036 = EvalCase(
+    id='CH-036',
+    legacy_id='',
+    title='窗帘算料引擎确定性逻辑 - 折数法/工艺档位/红线/按货号汇总（单测覆盖，非 LLM 行为）',
+    skill=Skill.MULTI_TURN,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['我客厅 4.64 米宽，帮我算一下韩褶窗帘要多少布'],
+    expectations=['direct_reply'],
+    data_checks=['韩褶折数法算料：用料 = 0.25×折数 + 余量（单开 0.2 / 对开四开 0.3）—— 换算唯一性由单测保证', '倍数 < 1.5 拒绝报价（行业美学下限红线）', '开数不可整除自动取最近可行折数并告警（33 折双开 → 34 折）', '按货号-色号汇总用料（2698-11 跨部位合计 28.0 米）—— 采购/套裁视图'],
+    skip_reason='算料引擎是确定性纯计算（curtain_calc），由单元测试全量覆盖（test_curtain_calc.py），非 LLM 行为，不进入 agent-eval 冒烟（同 UI 类用例惯例）',
+    tags=['xiaobu', 'quote', 'curtain-calc'],
+    persona='xiaobu',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── CR-001 [NORMAL] 查商品 → 下单（跨 Skill 复用 UUID）（源: cases/cross.yml）──
 _CASE_CR_001 = EvalCase(
     id='CR-001',
@@ -5739,6 +5757,7 @@ ALL_CASES = (
     _CASE_CH_033,
     _CASE_CH_034,
     _CASE_CH_035,
+    _CASE_CH_036,
     _CASE_CR_001,
     _CASE_CR_002,
     _CASE_CR_003,

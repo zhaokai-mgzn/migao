@@ -8,10 +8,13 @@
 - 罗马帘公式：M = (W+0.2) × (H+0.3)
 - 完整报价：面料费+加工费+辅料费+安装费=总价
 - 超限告警：成品高超门幅定高上限时返回 warning
+- 韩折折数法（M2-C，issue #3982）：0.25×折数+余量（单开0.2/多开0.3）、
+  倍数→折数派生（按开数取整）、工艺档位、来源标记、倍数<1.5 红线、
+  开数整除调整、按货号-色号汇总（采购/套裁视图）
 
 真值来源：docs/curtain-fabric-quote-rules.md（行业标准值 + 经验默认值）
 """
-# case_ids: PR-013, PR-024, OR-022
+# case_ids: PR-013, PR-024, OR-022, CH-036
 
 import math
 import pytest
@@ -19,7 +22,13 @@ import pytest
 from app.tools.curtain_calc import (
     DEFAULT_FULLNESS,
     DEFAULT_PROCESSING_PRICE,
+    DEFAULT_CRAFT_TIERS,
     calculate_fabric_meters,
+    calculate_fabric_by_pleats,
+    calculate_multi_position,
+    derive_pleat_count,
+    margin_for_open_count,
+    aggregate_by_fabric,
     build_quote,
 )
 
@@ -262,3 +271,120 @@ class TestCurtainCalcDescriptionGuard:
         assert "购买数量" in desc, "描述必须点明「顾客说的米数＝购买数量」"
         assert "不要" in desc and "调用本工具" in desc, "必须明确写「不要调用本工具」"
         assert "窗宽" in desc and "窗高" in desc, "必须说明只有窗户尺寸才调用"
+
+
+# ──────────────────────────────────────────────
+# 韩折折数法（【标】0.25 米/折 + 余量：单开 0.2 / 多开 0.3）
+# 行业实证：6.6m 韩褶双开 48 折 → 0.25×48+0.3 = 12.3 米
+# ──────────────────────────────────────────────
+def test_pleat_fabric_industry_case():
+    """行业实证：48 折双开 → 12.3 米（客户纸表/加工单一致）"""
+    meters, warning, info = calculate_fabric_by_pleats(48, open_count=2)
+    assert meters == 12.3
+    assert warning == ""
+    assert info["per_panel_pleats"] == 24
+    assert info["margin"] == 0.3
+
+
+def test_pleat_fabric_single_margin():
+    """单开余量 0.2：20 折 → 5.2 米"""
+    meters, _, _ = calculate_fabric_by_pleats(20, open_count=1)
+    assert meters == 5.2
+
+
+def test_margin_for_open_count():
+    assert margin_for_open_count(1) == 0.2
+    assert margin_for_open_count(2) == 0.3
+    assert margin_for_open_count(4) == 0.3
+
+
+def test_derive_pleat_count_from_fullness():
+    """倍数意图→折数实现：6.6m × 2.0 双开 → 52 折（(13.2-0.3)/0.25=51.6→52），且为偶数"""
+    pleats, warning = derive_pleat_count(6.6, 2.0, open_count=2)
+    assert pleats == 52
+    assert pleats % 2 == 0
+    assert warning == ""
+
+
+def test_derive_pleat_count_four_way_divisible():
+    """四开：折数必须是 4 的倍数"""
+    pleats, _ = derive_pleat_count(6.6, 2.0, open_count=4)
+    assert pleats % 4 == 0
+
+
+def test_fullness_red_line_rejected():
+    """红线：倍数 < 1.5 拒绝（行业美学下限，见真值源 §1）"""
+    with pytest.raises(ValueError):
+        derive_pleat_count(3.0, 1.4, open_count=2)
+
+
+def test_pleat_divisibility_adjustment():
+    """47 折双开不可整除 → 自动取 48 并告警"""
+    meters, warning, info = calculate_fabric_by_pleats(47, open_count=2)
+    assert info["pleat_count"] == 48
+    assert "47" in warning and "48" in warning
+    assert meters == 12.3
+
+
+def test_craft_tiers():
+    """工艺档位：标准 2.0 / 经济 1.8，档位越高折数越多（换算唯一性）"""
+    assert DEFAULT_CRAFT_TIERS["standard"]["fullness"] == 2.0
+    assert DEFAULT_CRAFT_TIERS["economy"]["fullness"] == 1.8
+    p_s, _ = derive_pleat_count(6.6, DEFAULT_CRAFT_TIERS["standard"]["fullness"], 2)
+    p_e, _ = derive_pleat_count(6.6, DEFAULT_CRAFT_TIERS["economy"]["fullness"], 2)
+    assert p_s > p_e
+
+
+def test_pleat_source_marker():
+    """取值来源标记：客户自报折数"""
+    _, _, info = calculate_fabric_by_pleats(48, open_count=2, source="customer_quoted")
+    assert info["source"] == "customer_quoted"
+
+
+def test_aggregate_by_fabric():
+    """按货号-色号汇总（手写单实证）：2698-11 跨 4 部位合计 9.2+4+5.5+9.3 = 28.0 米"""
+    positions = [
+        {"fabric_code": "2698-11", "meters": 9.2},
+        {"fabric_code": "2698-11", "meters": 4.0},
+        {"fabric_code": "2698-11", "meters": 5.5},
+        {"fabric_code": "2698-11", "meters": 9.3},
+        {"fabric_code": "25118-C31", "meters": 8.3},
+    ]
+    agg = aggregate_by_fabric(positions)
+    assert agg["2698-11"] == 28.0
+    assert agg["25118-C31"] == 8.3
+
+
+def test_build_quote_pleat_mode():
+    """build_quote 折数法：48 折双开（3.2m 定高布，对应行业 6.6×2.6 场景）→ 用料 12.3，且带折数/来源/档位信息"""
+    q = build_quote(
+        window_width=6.6, window_height=2.6, mounting="s_hook",
+        fabric_width=3.2,
+        pleat_count=48, open_count=2, source="customer_quoted",
+        fabric_price=23.8,
+    )
+    assert q["fabric_meters"] == 12.3
+    assert q["pleat_count"] == 48
+    assert q["open_count"] == 2
+    assert q["source"] == "customer_quoted"
+    assert q["formula_used"] == "fixed_height_pleats"
+
+
+def test_multi_position_quote():
+    """多部位批量：两扇窗（3.2m 定高布）→ 各自报价 + 总用料 + 按货号汇总"""
+    positions = [
+        {"window_width": 4.64, "window_height": 2.6, "mounting": "s_hook",
+         "pleat_count": 46, "open_count": 2, "fabric_width": 3.2,
+         "fabric_code": "2698-11", "fabric_price": 23.8},
+        {"window_width": 4.64, "window_height": 2.35, "mounting": "s_hook",
+         "pleat_count": 33, "open_count": 2, "fabric_width": 3.2,
+         "fabric_code": "25118-C31", "fabric_price": 30.0},
+    ]
+    res = calculate_multi_position(positions)
+    assert len(res["positions"]) == 2
+    # 33 折双开不可整除 → 自动调整为 34 折（8.8 米）
+    expected = (0.25 * 46 + 0.3) + (0.25 * 34 + 0.3)
+    assert abs(res["total_meters"] - expected) < 0.01
+    assert res["positions"][1]["pleat_count"] == 34
+    assert res["by_fabric"]["2698-11"] > 0
+    assert res["by_fabric"]["25118-C31"] > 0
