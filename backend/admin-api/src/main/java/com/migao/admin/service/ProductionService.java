@@ -27,13 +27,17 @@ import java.time.YearMonth;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 /**
  * 生产报工服务（issue #3995，M4-G-2）
@@ -55,6 +59,20 @@ public class ProductionService {
     /** 报工三态：normal 正常 / rework 返工 / scrap 报废（M4-G-1 WORK_TYPES 同口径） */
     public static final Set<String> WORK_TYPES = Set.of("normal", "rework", "scrap");
 
+    /**
+     * 报工端点标识（幂等诊断用：同键跨端点复用会在 {@code client_request_keys.endpoint} 留证）。
+     * 与 Controller 的路径逐字一致 —— 改动路径必须同改此处，否则诊断列表会指错端点。
+     */
+    public static final String ENDPOINT_REPORT =
+            "POST /api/admin/production/orders/{orderId}/operations/{operationId}/report";
+
+    /**
+     * 回放标记键名（与既有 {@code ClientRequestIdService.replayedMarker} 同口径，
+     * {@code OrderDetailResponse}/{@code AfterSalesDetailResponse} 的 {@code replayed} 字段同源）。
+     * 有它 ⇒ 本次**没有**新落库，前端不该把它当成一次新报工（进度/完工提示会因此错位）。
+     */
+    public static final String REPLAYED_KEY = "replayed";
+
     private static final Map<String, String> ORDER_STATUS_LABELS = Map.of(
             "pending", "待付款",
             "confirmed", "已确认",
@@ -67,6 +85,7 @@ public class ProductionService {
     private final ProcessingPositionOperationMapper positionOperationMapper;
     private final ProductionWorkLogMapper workLogMapper;
     private final OrderMapper orderMapper;
+    private final ClientRequestIdService clientRequestIdService;
 
     // ============================================================ 实例化
 
@@ -312,20 +331,95 @@ public class ProductionService {
     // ============================================================ 报工
 
     /**
-     * 扫码报工：落报工明细（三态）→ 正常报工累加 done_qty 并置 done
-     * → 必完工序全绿则**加工单**置 completed（订单状态不动，见方法内注释）。
+     * 扫码报工：幂等占位 → 四项防呆 →（落报工明细 → 原子推进 done_qty → 必完全绿则加工单置 completed）。
+     *
+     * <p><b>§5 四项防呆（issue #4116，逐项对应一次真实误报工的形态）：</b></p>
+     * <ol>
+     *   <li><b>重复报工幂等</b>（{@code X-Client-Request-Id} 同键 ⇒ 不执行、回放首次结果）：
+     *       工人连点两次 / 网络重试 ⇒ 同一笔报工落两条明细、{@code done_qty} 翻倍。
+     *       复用既有 {@link ClientRequestIdService}（与下单/建工单**同一套**实现与同一张表）。
+     *       接线放在本方法（Controller 只透传请求头）：本方法**不加** {@code @Transactional}，
+     *       占位与快照的提交边界才是既有的「先占位 → 执行 → 落快照」同款（见方法内注释）。</li>
+     *   <li><b>越站</b>（前道未完成不得报后续工序）：判据来自既有语义 —— 工序实例的
+     *       {@code seq}（部位内顺序，V49 注释）+ {@link #isDone}（{@code done_qty ≥ qty}）；
+     *       {@code is_start_marker} 只影响订单状态推进，**不参与**顺序判据（避免第二套口径）。</li>
+     *   <li><b>数量上限</b>（{@code done_qty + 本次合格数 ≤ qty}）：见方法内注释（选择**拒绝**的理由）。</li>
+     *   <li><b>非本部位</b>（报工必须落在该加工单**实际存在且活跃**的工序实例上）：
+     *       {@code selectById} 命中后按 tenant_id / deleted=0（fail-closed，含 NULL）/ 加工单归属三重校验，
+     *       三重任一不成立即 404；且此处**只**认库里的实例 id —— 请求体里的工序名不参与定位，
+     *       无法凭空造出工序名。</li>
+     * </ol>
+     *
+     * <p>并发（不同键/无键的并发请求）：由 {@code advanceDoneQtyIfUnchanged} 的 CAS 谓词关闭
+     * 丢更新窗口（见该 Mapper 方法注释），影响行数 0 ⇒ fail-closed 而不是静默覆盖。</p>
+     *
+     * @param clientRequestId 幂等键（{@code X-Client-Request-Id}）；缺失/空白 ⇒ 原路径逐字不变
      */
-    @Transactional(rollbackFor = Exception.class)
     public Map<String, Object> report(String orderId, String operationId,
-                                      Map<String, Object> body, Long tenantId) {
+                                      Map<String, Object> body, Long tenantId,
+                                      String clientRequestId) {
+        // ① 先占位：同键重复请求**不执行**（不落明细、不累加、不推进完工判定）
+        if (!clientRequestIdService.claim(tenantId, clientRequestId, ENDPOINT_REPORT)) {
+            // ② 回放首次成功结果；无快照（占位在飞/已失败）⇒ replay fail-closed 抛错，不返回空结果
+            Map<String, Object> replayed = replayReport(tenantId, clientRequestId);
+            log.info("[报工幂等] 同键重复请求：跳过执行，回放首次结果 tenantId={}, operationId={}",
+                    tenantId, operationId);
+            return replayed;
+        }
+        try {
+            Map<String, Object> result = doReport(orderId, operationId, body, tenantId);
+            // ③ 落结果快照（同键后续请求回放它）。放在 try 之外：快照写失败时**不得**释放占位
+            //    —— 报工已经落库，宁可让同键请求 fail-closed 报错，也不能退化成「再报一次」
+            clientRequestIdService.complete(tenantId, clientRequestId, result);
+            return result;
+        } catch (RuntimeException e) {
+            // ④ 执行失败（校验/越站/超上限/串行冲突/DB 错误）⇒ 释放占位：否则一次失败就把该键
+            //    永久占死，工人改用同键重试（小程序重试）会被误判为「重复」而永远进不来
+            clientRequestIdService.discard(tenantId, clientRequestId);
+            throw e; // 原样抛出，不吞（失败必须对工人可见）
+        }
+    }
+
+    /**
+     * 回放首次成功结果并打上 {@link #REPLAYED_KEY} 标记。
+     *
+     * <p>为什么必须有标记：没有它，调用方分不出「首次执行成功」与「同键回放」——
+     * 小程序无法告知工人"这次没有新增报工"、也无法解释 {@code done_qty} 为什么没变。</p>
+     *
+     * <p>回放内容 = 首次那份快照（{@code done_qty}/{@code status} 是**首次执行时**的取值）：
+     * 幂等的定义就是「同键拿到同一结果」，不得用当前库值替换（那会让两次响应不同 ⇒ 非幂等）。</p>
+     */
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    private Map<String, Object> replayReport(Long tenantId, String clientRequestId) {
+        Optional<Map> stale = clientRequestIdService.replay(tenantId, clientRequestId, Map.class);
+        Map<String, Object> snapshot = (Map<String, Object>) stale.orElseThrow(
+                () -> new BusinessException("REQUEST_IN_PROGRESS",
+                        "同一 X-Client-Request-Id 的报工请求正在处理中，本次未重复报工",
+                        409,
+                        "请勿重复提交；请稍后下拉刷新本加工单工序进度确认是否已报工"
+                                + "（换新幂等键重试会重复报工）"));
+        snapshot.put(REPLAYED_KEY, Boolean.TRUE);
+        return snapshot;
+    }
+
+    /**
+     * 报工主体（占位成功后才执行；**不加** {@code @Transactional} —— 见 {@link #report} 的接线注释）。
+     */
+    private Map<String, Object> doReport(String orderId, String operationId,
+                                         Map<String, Object> body, Long tenantId) {
         Order order = resolveOrder(orderId, tenantId);
         ProcessingOrder po = processingOrderMapper.selectActiveByOrderId(order.getId(), tenantId);
         if (po == null) {
             throw BusinessException.validationError(
                     "订单 " + order.getOrderNo() + " 尚无加工单，无法报工");
         }
+        // 防呆④ 非本部位：活跃性判据用 `deleted=0` 的**正向**相等（fail-closed）——
+        // 旧写法 `Integer.valueOf(1).equals(deleted)` 在 deleted 为 NULL 时判为「未软删」而放行，
+        // 而软删实例（工艺变更后重新实例化，V49 `deleted INTEGER DEFAULT 0` 可空）
+        // 正是**不该**再被报工的那批（进度会记到废弃实例上，工件永远做不完）。
         ProcessingPositionOperation op = positionOperationMapper.selectById(operationId);
-        if (op == null || !tenantId.equals(op.getTenantId()) || Integer.valueOf(1).equals(op.getDeleted())
+        if (op == null || !tenantId.equals(op.getTenantId())
+                || !Integer.valueOf(0).equals(op.getDeleted())
                 || !po.getId().equals(op.getProcessingOrderId())) {
             throw BusinessException.notFound("工序");
         }
@@ -342,6 +436,14 @@ public class ProductionService {
         BigDecimal qualifiedQty = rawQualified == null ? qty : bd(rawQualified, qty);
         if (qualifiedQty.signum() < 0) {
             throw BusinessException.validationError("qualified_qty 不能为负");
+        }
+        // 报工前的实例快照（越站判据必须看**报工前**的状态，不能看自己这次的结果）
+        List<ProcessingPositionOperation> before = listOperations(po.getId(), tenantId);
+        boolean advances = "normal".equals(workType) && qualifiedQty.signum() > 0;
+
+        if (advances) {
+            assertPredecessorsDone(op, before);
+            assertWithinPlannedQty(op, qualifiedQty);
         }
 
         workLogMapper.insert(ProductionWorkLog.builder()
@@ -361,16 +463,22 @@ public class ProductionService {
 
         BigDecimal doneQty = nz(op.getDoneQty());
         String status = op.getStatus() == null ? "pending" : op.getStatus();
-        boolean advances = "normal".equals(workType) && qualifiedQty.signum() > 0;
         if (advances) {
-            doneQty = doneQty.add(qualifiedQty);
+            BigDecimal previousDoneQty = nz(op.getDoneQty());
+            String previousStatus = status;
+            doneQty = previousDoneQty.add(qualifiedQty);
             status = "done";
-            positionOperationMapper.updateById(ProcessingPositionOperation.builder()
-                    .id(op.getId())
-                    .doneQty(doneQty)
-                    .status(status)
-                    .updatedAt(OffsetDateTime.now())
-                    .build());
+            // 原子有序推进（CAS：仅当该行仍是读到的旧值时才累加）——
+            // 影响行数 0 ⇒ 并发请求已经推进过这一行：fail-closed，绝不静默覆盖别人的报工
+            int rows = positionOperationMapper.advanceDoneQtyIfUnchanged(
+                    op.getId(), tenantId, previousDoneQty, previousStatus, doneQty, OffsetDateTime.now());
+            if (rows == 0) {
+                throw new BusinessException("OPERATION_ALREADY_ADVANCED",
+                        "工序「" + op.getOperationName() + "」刚被另一次报工推进（本次未重复累加）",
+                        409,
+                        "请下拉刷新本加工单工序进度后再确认是否仍需报工；"
+                                + "若这是本人刚提交的报工，说明已成功，无需重报");
+            }
         }
 
         boolean productionCompleted = false;
@@ -397,6 +505,78 @@ public class ProductionService {
         // 键名为**冻结契约**（bmini 扫工页 productionService.ts 消费），语义 = 加工单完工（生产完成）
         result.put("order_completed", productionCompleted);
         return result;
+    }
+
+    /**
+     * 防呆② 越站：前道工序未完成（{@code done_qty < qty}）时不得报后续工序。
+     *
+     * <p>为什么用「立即前道」而不是「全部前道」：{@code seq} 保证顺序，若立即前道已完成，
+     * 则它之前的所有工序在**同一不变式**下也已完成（每次报工都过本闸门）——
+     * 逐条遍历是同一判据的冗余形式，取「seq 最大且小于本工序」的那一条即可。
+     * 与 {@code listOperations} 的既有排序（部位名 / seq）同口径：同部位内比较。</p>
+     *
+     * <p>仅约束**推进型**报工（normal 且合格数 &gt; 0）：返工/报废（rework/scrap）是
+     * 「如实记录现场」而非推进生产，把它们拦在顺序门外会逼工人不记录 —— 那是更坏的失效。</p>
+     */
+    private void assertPredecessorsDone(ProcessingPositionOperation op,
+                                        List<ProcessingPositionOperation> before) {
+        int seq = op.getSeq() == null ? 0 : op.getSeq();
+        if (seq <= 0) {
+            return; // 无序号（脏数据）⇒ 无顺序可判，不误伤
+        }
+        ProcessingPositionOperation predecessor = before.stream()
+                .filter(prev -> !Objects.equals(prev.getId(), op.getId()))
+                .filter(prev -> Objects.equals(prev.getPositionName(), op.getPositionName()))
+                .filter(prev -> prev.getSeq() != null && prev.getSeq() > 0 && prev.getSeq() < seq)
+                .max(Comparator.comparingInt(ProcessingPositionOperation::getSeq))
+                .orElse(null);
+        if (predecessor != null && !isDone(predecessor)) {
+            throw new BusinessException("OPERATION_SEQUENCE_VIOLATION",
+                    "前道工序「" + predecessor.getOperationName() + "」尚未完成"
+                            + "（已报 " + nz(predecessor.getDoneQty()).stripTrailingZeros().toPlainString()
+                            + "/" + nz(predecessor.getQty()).stripTrailingZeros().toPlainString() + "），"
+                            + "不能越过它报「" + op.getOperationName() + "」",
+                    422,
+                    "请先报工完成「" + predecessor.getOperationName() + "」（本部位第 "
+                            + predecessor.getSeq() + " 道工序），再回来报「" + op.getOperationName() + "」");
+        }
+    }
+
+    /**
+     * 防呆③ 数量上限：{@code done_qty + 本次合格数 ≤ qty}。
+     *
+     * <p><b>选「拒绝 + 可行动 suggestion」而不是 clamp（理由）</b>：
+     * ① 报工明细（{@code production_work_logs}）是计件工资的**唯一凭证**且**不可变**（V49 注释：
+     *    「明细不可变」）—— clamp 只压 {@code done_qty} 不压明细，同一笔报工会出现
+     *    「明细 15 米 / 进度 10 米」的自相矛盾台账，计件金额与进度永久对不上，且**事后无法分辨**
+     *    哪边才是真的；拒绝则台账内**恒**满足 {@code Σ合格数 = done_qty}（可对账的不变式）。
+     * ② 超报的语义歧义只有工人自己知道（多做了？把「10 套」看成「10 米」？应做数量本身填错？）
+     *    —— 静默截断替他做了决定，而**错误的那一半数据已经落库**。
+     * ③ 本仓既有口径是 fail-closed + suggestion（{@code BusinessException} 的四参构造、
+     *    {@code ClientRequestIdService} 的「不静默返回空 DTO」），拒绝与之一致。</p>
+     *
+     * <p>作业面「多做了一点」的真实诉求由 suggestion 指路（改应做数量 / 按剩余数量报工），
+     * 不靠静默丢数据解决。</p>
+     */
+    private void assertWithinPlannedQty(ProcessingPositionOperation op, BigDecimal qualifiedQty) {
+        BigDecimal planned = nz(op.getQty());
+        BigDecimal done = nz(op.getDoneQty());
+        BigDecimal remaining = planned.subtract(done);
+        if (done.add(qualifiedQty).compareTo(planned) <= 0) {
+            return;
+        }
+        throw new BusinessException("REPORT_QTY_EXCEEDS_PLANNED",
+                "报工数量超上限：本次合格 " + qualifiedQty.stripTrailingZeros().toPlainString()
+                        + " + 累计已报 " + done.stripTrailingZeros().toPlainString()
+                        + " = " + done.add(qualifiedQty).stripTrailingZeros().toPlainString()
+                        + " 超过应做 " + planned.stripTrailingZeros().toPlainString()
+                        + "（剩余 " + (remaining.signum() < 0 ? "0" : remaining.stripTrailingZeros().toPlainString())
+                        + "），本次未落库",
+                422,
+                "数量可疑，请核对后重报：本次最多可报 " + (remaining.signum() < 0 ? "0" : remaining.stripTrailingZeros().toPlainString())
+                        + "（= 应做 " + planned.stripTrailingZeros().toPlainString()
+                        + " − 已报 " + done.stripTrailingZeros().toPlainString() + "）；"
+                        + "若实际应做数量就是这么多，请先由管理员在工艺路线/工序实例上修正应做数量，再报工");
     }
 
     /** 必完工序全绿判定（与 M4-G-1 piecework.is_production_done 同口径：无必完工序时判定为真）。 */

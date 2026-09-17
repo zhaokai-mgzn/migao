@@ -63,6 +63,8 @@ export interface ReportResult {
   done_qty: number
   status: string
   order_completed: boolean
+  /** 服务端回放标记（issue #4116 §5-1）：true = 本次**没有**新落库（同幂等键重复到达） */
+  replayed?: boolean
 }
 
 /**
@@ -74,6 +76,86 @@ export interface ProductionResponse<T> {
   data?: T
   message?: string
   error?: { code?: string; message?: string }
+}
+
+/**
+ * 幂等键（issue #4116 §5-1）：与服务端 `ClientRequestIdService.HEADER` 逐字同名。
+ * 同键重复到达时服务端**不再执行**、直接回放首次结果 ⇒ 网络重试不会重复报工。
+ */
+export const CLIENT_REQUEST_ID_HEADER = 'X-Client-Request-Id'
+
+/**
+ * 生成本次报工动作的幂等键（一次**用户动作**一个键；重试沿用原键）。
+ * 前缀 `report-` 便于在 `client_request_keys.endpoint` 旁一眼看出调用来源。
+ */
+export function newReportRequestId(): string {
+  const nativeUuid = (globalThis as any)?.crypto?.randomUUID
+  const suffix =
+    typeof nativeUuid === 'function'
+      ? nativeUuid.call((globalThis as any).crypto)
+      : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`
+  return `report-${suffix}`
+}
+
+/**
+ * 报工在飞锁（issue #4116 §5-1）——「同一时刻只允许一笔报工在飞」的**单一事实源**。
+ *
+ * 为什么需要它（以及为什么它是服务端幂等键**挡不住**的那一半）：工人手快连点两次
+ * 「完成报工」会并发进入 `handleReport` 两次，各自生成一个**不同的**幂等键 ⇒ 服务端按
+ * `(tenant_id, client_request_id)` 去重时两条都算「首执」⇒ 一次报工被记两遍
+ * （`done_qty` 翻倍、计件虚高）。客户端必须在**动作层**只放一笔过去。
+ *
+ * 为什么抽成独立对象而不是页面里一个 `useState`：`<Button disabled>` 在时序上是**异步**的
+ * （要等 React 重渲染），而真实连点在毫秒级；且 disabled 只是**可见面**，一旦它被改动
+ * （换组件库 / 加 `loading` 态 / 事件重放）锁就静默消失。抽出来后锁可被单测**直接**证明
+ * 「第二笔被拒」，不必依赖「disabled 恰好已生效」这种时序巧合 ——
+ * 实测：靠 disabled 兜底时，把页面里的锁拔掉、连点断言**照样绿**（假绿）。
+ */
+export class ReportInFlightLock {
+  private inFlight = false
+
+  /** 尝试开始一笔报工：true = 允许（并置为在飞）；false = 已有一笔在飞，本次必须丢弃 */
+  tryAcquire(): boolean {
+    if (this.inFlight) return false
+    this.inFlight = true
+    return true
+  }
+
+  /** 结束（成功/失败/抛错都必须调，否则锁永久占死、工人再也报不了工） */
+  release(): void {
+    this.inFlight = false
+  }
+
+  isInFlight(): boolean {
+    return this.inFlight
+  }
+}
+
+/** 报工在飞锁实例（页面级单例：报工页同时只服务一个加工单） */
+export const reportInFlightLock = new ReportInFlightLock()
+
+/**
+ * 报工（一次扫码同时推进工序进度 + 记录个人计件）
+ *
+ * 幂等（issue #4116 §5-1）：每次调用生成一个幂等键随请求头发出 ⇒ 工具/网络层重试
+ * 同一动作时服务端只真正报工一次（响应带 `replayed:true`，调用方据此不要重复刷新/播报）。
+ * **连点**由调用方的 {@link reportInFlightLock} 拦（连点 = 两个不同幂等键，服务端去重挡不住）。
+ */
+export async function reportOperation(
+  orderId: string,
+  operationId: string,
+  payload: ReportPayload,
+): Promise<ProductionResponse<ReportResult>> {
+  try {
+    const res = await post<ProductionResponse<ReportResult>>(
+      `/api/admin/production/orders/${encodeURIComponent(orderId)}/operations/${encodeURIComponent(operationId)}/report`,
+      payload,
+      { baseURL: API_BASE_URL, headers: { [CLIENT_REQUEST_ID_HEADER]: newReportRequestId() } },
+    )
+    return toResponse(res, '报工失败，请重试')
+  } catch (error: any) {
+    return { success: false, message: error?.data?.message || error?.message || '报工失败，请重试' }
+  }
 }
 
 /** 归一化后端业务响应（HTTP 200 但 success=false 的失败文案要能透出到页面） */
@@ -100,26 +182,6 @@ export async function getOrderOperations(
     return toResponse(res, '未找到该加工单，请确认单号')
   } catch (error: any) {
     return { success: false, message: error?.data?.message || error?.message || '加载工序失败，请重试' }
-  }
-}
-
-/**
- * 报工（一次扫码同时推进工序进度 + 记录个人计件）
- */
-export async function reportOperation(
-  orderId: string,
-  operationId: string,
-  payload: ReportPayload,
-): Promise<ProductionResponse<ReportResult>> {
-  try {
-    const res = await post<ProductionResponse<ReportResult>>(
-      `/api/admin/production/orders/${encodeURIComponent(orderId)}/operations/${encodeURIComponent(operationId)}/report`,
-      payload,
-      { baseURL: API_BASE_URL },
-    )
-    return toResponse(res, '报工失败，请重试')
-  } catch (error: any) {
-    return { success: false, message: error?.data?.message || error?.message || '报工失败，请重试' }
   }
 }
 

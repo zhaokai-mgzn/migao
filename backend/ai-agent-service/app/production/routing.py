@@ -88,18 +88,56 @@ MUST_FINISH_OPS = {"外帘装袋"}   # 打包前置（截图「此工序必须�
 START_MARKER_OPS = {"精裁-布", "精裁-纱"}  # 首工序触发订单进入生产中
 
 
+# 应做数量的来源键（**契约钉死点**，issue #4116 契约漂移修复）
+# ---------------------------------------------------------------------------
+# 病根：`_qty_for` 读 `meters`，而算料引擎 `curtain_calc.build_quote` 实际返回的是
+# **`fabric_meters`**（键名不同）⇒ 一旦接线到真实引擎产出，「米」类工序应做数量**恒 0**
+# （幅/套类再叠加「读不到 panels/set_count」⇒ 恒 1）。这段漂移此前藏在**零调用者**的死代码里
+# （routing.py 在本仓无运行时消费者），靠 `tests/test_production/test_routing.py` 用**引擎真产出**
+# 喂 `_qty_for` 才照出来。
+#
+# 本常量是「_qty_for 会读哪些键」的单一清单，测试用它把两侧键集钉住
+# （引擎真产出键集 ⊇ 各 unit 的主键，或显式登记为待补键）。
+METER_KEYS = ("fabric_meters", "meters")   # 主键 = 引擎真产出；`meters` 为兼容位（同族工具聚合视图口径）
+FOLD_KEYS = ("pleat_count",)               # 韩褶折数法才产出；非折数法（定宽米数法）缺失 ⇒ 兜底 1
+HOLE_KEYS = ("holes",)                     # 引擎暂未产出 ⇒ 按 HOLE_PER_METER 估算（见 _qty_for）
+PANEL_KEYS = ("panels",)                   # 引擎暂未产出（build_quote 内部局部量）⇒ 兜底 1，待补
+SET_KEYS = ("set_count",)                  # 引擎暂未产出 ⇒ 兜底 1（一个部位 = 一樘，语义成立）
+
+# 孔数估算：引擎不产出 `holes` 时的行业口径（每米约 6 孔；12.3 米 → 72 孔与现场核对一致）
+HOLE_PER_METER = 6
+
+
 def _qty_for(operation: str, calc_info: Dict[str, Any]) -> float:
-    """应做数量 = 算料引擎输出（折数/用料/孔数/幅数/套数），报工只确认不心算。"""
+    """应做数量 = 算料引擎输出（折数/用料/孔数/幅数/套数），报工只确认不心算。
+
+    键口径见模块常量（{@link METER_KEYS} 等）；缺键**一律兜底 1**，绝不落 0
+    （应做 0 会让 `done_qty ≥ qty` 恒真 ⇒ 工序一开始就算完成 ⇒ 假完工，同族缺陷）。
+    """
     unit = OPERATION_CATALOG.get(operation, {}).get("unit", "米")
     if unit == "折":
-        return float(calc_info.get("pleat_count", 0))
+        return float(_pick(calc_info, FOLD_KEYS, 1))
     if unit == "孔":
-        return float(calc_info.get("holes", calc_info.get("meters", 0) * 6))
+        holes = _pick(calc_info, HOLE_KEYS, None)
+        if holes is not None:
+            return float(holes)
+        meters = _pick(calc_info, METER_KEYS, 0)
+        # 引擎真产出没有 holes（见 HOLE_KEYS 注释）：按每米 6 孔估算；米数也读不到才兜底 1
+        return float(meters) * HOLE_PER_METER if meters else 1.0
     if unit == "幅":
-        return float(calc_info.get("panels", 1))
+        return float(_pick(calc_info, PANEL_KEYS, 1))
     if unit == "套":
-        return float(calc_info.get("set_count", 1))
-    return float(calc_info.get("meters", 0))  # 米
+        return float(_pick(calc_info, SET_KEYS, 1))
+    return float(_pick(calc_info, METER_KEYS, 1))  # 米
+
+
+def _pick(calc_info: Dict[str, Any], keys: tuple, default: Any) -> Any:
+    """按 keys 顺序取第一个非空值（键名漂移的双读兼容），全缺 ⇒ default。"""
+    for key in keys:
+        value = calc_info.get(key)
+        if value is not None:
+            return value
+    return default
 
 
 def build_routing(position: Dict[str, Any]) -> List[str]:
@@ -148,7 +186,8 @@ def instance_operations(
 
     Args:
         position: {curtain_type, craft, is_shaped, special_options, open_count}
-        calc_info: 算料引擎输出 {pleat_count, meters, panels, holes, set_count, source, craft_tier}
+        calc_info: 算料引擎输出（`curtain_calc.build_quote` 的返回，键见 METER_KEYS/FOLD_KEYS 等；
+                   缺 `panels`/`set_count`/`holes` 时按 _qty_for 的兜底口径处理，不落 0）
     Returns: 工序实例列表 [{seq, operation, group, unit, qty, unit_price, factor,
              is_must_finish, is_start_marker, qty_source}]
     """

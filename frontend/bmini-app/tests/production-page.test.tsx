@@ -24,6 +24,9 @@ jest.mock('@tarojs/taro', () => ({
 }))
 
 jest.mock('../src/services/productionService', () => ({
+  // 锁用真身（issue #4116 §5-1）：页面调用 reportInFlightLock.tryAcquire()，
+  // 若一并 mock 掉会拿到 undefined ⇒ 点「完成报工」直接抛错
+  ...jest.requireActual('../src/services/productionService'),
   getOrderOperations: jest.fn(),
   reportOperation: jest.fn(),
 }))

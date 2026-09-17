@@ -1467,6 +1467,68 @@ INSERT INTO roles (id, tenant_id, name, code, description, status) VALUES
   ON CONFLICT (id) DO NOTHING;
 
 -- ================================================
+-- 工序库 / 工艺路线模板种子（V54，issue #4116 P0-2）
+-- ================================================
+-- 为什么 schema.sql 里也要有：本文件是**全新库的一次性 bootstrap**（CI/本地 docker 栈由
+-- docker-entrypoint-initdb.d 执行），而 **MigrationRunner/Flyway 不在该栈运行** —— 只存在于
+-- 迁移链的种子在新建库上并不存在（同第 11 节 bootstrap 对齐段的既有教训）。
+-- 内容与 V54__seed_production_operations.sql 逐字同口径；三源漂移由测试守
+-- （tests/unit_ci_workflows/test_production_catalog_seed.py：V54 ↔ 本文件 ↔ routing.py 比对）。
+-- 幂等：ON CONFLICT DO NOTHING（冲突目标 = V49 的部分唯一索引，均带 WHERE deleted = 0）。
+INSERT INTO production_operations
+    (id, tenant_id, name, group_name, position, unit, unit_price,
+     is_must_finish, is_start_marker, sort_order, status)
+VALUES
+  ('op-v54-01', 1, '精裁-布', '裁剪', '布帘', '米', 0.4, FALSE, TRUE, 1, 'active'),
+  ('op-v54-02', 1, '精裁-纱', '裁剪', '纱帘', '米', 0.4, FALSE, TRUE, 2, 'active'),
+  ('op-v54-03', 1, '裁剪-布', '裁剪', '布帘', '米', 0.4, FALSE, FALSE, 3, 'active'),
+  ('op-v54-04', 1, '裁剪-纱', '裁剪', '纱帘', '米', 0.4, FALSE, FALSE, 4, 'active'),
+  ('op-v54-05', 1, '布三边', '车位', NULL, '米', 0.4, FALSE, FALSE, 5, 'active'),
+  ('op-v54-06', 1, '纱三边', '车位', NULL, '米', 0.4, FALSE, FALSE, 6, 'active'),
+  ('op-v54-07', 1, '韩褶-布', '车位', '布帘', '折', 0.4, FALSE, FALSE, 7, 'active'),
+  ('op-v54-08', 1, '韩褶-纱', '车位', '纱帘', '折', 0.4, FALSE, FALSE, 8, 'active'),
+  ('op-v54-09', 1, '上车布-布', '车位', '布帘', '米', 0.5, FALSE, FALSE, 9, 'active'),
+  ('op-v54-10', 1, '上车布-纱', '车位', '纱帘', '米', 0.5, FALSE, FALSE, 10, 'active'),
+  ('op-v54-11', 1, '打孔-布', '车位', '布帘', '孔', 0.15, FALSE, FALSE, 11, 'active'),
+  ('op-v54-12', 1, '打孔-纱', '车位', '纱帘', '孔', 0.15, FALSE, FALSE, 12, 'active'),
+  ('op-v54-13', 1, '拼1次-布', '车位', '布帘', '幅', 0.8, FALSE, FALSE, 13, 'active'),
+  ('op-v54-14', 1, '拼2次-布', '车位', '布帘', '幅', 1.2, FALSE, FALSE, 14, 'active'),
+  ('op-v54-15', 1, '拼3次-布', '车位', '布帘', '幅', 1.6, FALSE, FALSE, 15, 'active'),
+  ('op-v54-16', 1, '花边-布', '车位', '布帘', '米', 0.6, FALSE, FALSE, 16, 'active'),
+  ('op-v54-17', 1, '铅坠-布', '车位', '布帘', '米', 0.3, FALSE, FALSE, 17, 'active'),
+  ('op-v54-18', 1, '接高-布', '车位', '布帘', '幅', 1.0, FALSE, FALSE, 18, 'active'),
+  ('op-v54-19', 1, '帘头制作', '车位', '帘头', '个', 2.0, FALSE, FALSE, 19, 'active'),
+  ('op-v54-20', 1, '熨烫-布', '后道', '布帘', '米', 0.35, FALSE, FALSE, 20, 'active'),
+  ('op-v54-21', 1, '定型-布', '后道', '布帘', '米', 0.4, FALSE, FALSE, 21, 'active'),
+  ('op-v54-22', 1, '复烫-布', '后道', '布帘', '米', 0.35, FALSE, FALSE, 22, 'active'),
+  ('op-v54-23', 1, '布帘车被', '后道', NULL, '米', 0.4, FALSE, FALSE, 23, 'active'),
+  ('op-v54-24', 1, '外帘打卷', '后道', '外帘', '套', 1.0, FALSE, FALSE, 24, 'active'),
+  ('op-v54-25', 1, '外帘装袋', '后道', '外帘', '套', 1.0, TRUE, FALSE, 25, 'active'),
+  ('op-v54-26', 1, '质检', '后道', NULL, '套', 1.5, FALSE, FALSE, 26, 'active'),
+  ('op-v54-27', 1, '外帘发货', '后道', '外帘', '套', 1.0, FALSE, FALSE, 27, 'active'),
+  ('op-v54-28', 1, '绑带-布', '其他', '布帘', '套', 0.5, FALSE, FALSE, 28, 'active'),
+  ('op-v54-29', 1, '抱枕', '其他', NULL, '个', 2.0, FALSE, FALSE, 29, 'active'),
+  ('op-v54-30', 1, '腰靠垫', '其他', NULL, '个', 2.0, FALSE, FALSE, 30, 'active')
+ON CONFLICT (tenant_id, name) WHERE deleted = 0 DO NOTHING;
+
+INSERT INTO production_routings
+    (id, tenant_id, curtain_type, craft, operations, status)
+VALUES
+  ('rt-v54-01', 1, '布帘', '韩褶',
+   '["精裁-布","布三边","韩褶-布","上车布-布","熨烫-布","定型-布","复烫-布","布帘车被","外帘打卷","外帘装袋","外帘发货"]'::jsonb, 'active'),
+  ('rt-v54-02', 1, '布帘', '打孔',
+   '["精裁-布","布三边","打孔-布","熨烫-布","定型-布","复烫-布","布帘车被","外帘打卷","外帘装袋","外帘发货"]'::jsonb, 'active'),
+  ('rt-v54-03', 1, '布帘', '四爪钩',
+   '["精裁-布","布三边","上车布-布","熨烫-布","布帘车被","外帘打卷","外帘装袋","外帘发货"]'::jsonb, 'active'),
+  ('rt-v54-04', 1, '布帘', '穿杆',
+   '["精裁-布","布三边","熨烫-布","布帘车被","外帘打卷","外帘装袋","外帘发货"]'::jsonb, 'active'),
+  ('rt-v54-05', 1, '纱帘', '韩褶',
+   '["精裁-纱","纱三边","韩褶-纱","外帘打卷","外帘装袋","外帘发货"]'::jsonb, 'active'),
+  ('rt-v54-06', 1, '帘头', '平幔',
+   '["精裁-布","布三边","帘头制作","定型-布","外帘打卷","外帘装袋","外帘发货"]'::jsonb, 'active')
+ON CONFLICT (tenant_id, curtain_type, craft) WHERE deleted = 0 DO NOTHING;
+
+-- ================================================
 -- 11. bootstrap 对齐：迁移链/java 实体已要求、本文件此前缺失的列与表（issue #3270）
 -- ================================================
 -- 为什么放在最后、且用 ALTER：本文件是**全新库的一次性 bootstrap**（CI/本地 docker 栈

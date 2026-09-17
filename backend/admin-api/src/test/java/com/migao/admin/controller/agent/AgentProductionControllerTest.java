@@ -14,6 +14,7 @@ import com.migao.admin.mapper.ProcessingOrderMapper;
 import com.migao.admin.mapper.ProcessingPositionOperationMapper;
 import com.migao.admin.mapper.ProductionWorkLogMapper;
 import com.migao.admin.security.RequirePermission;
+import com.migao.admin.service.ClientRequestIdService;
 import com.migao.admin.service.ProductionService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -66,12 +67,15 @@ class AgentProductionControllerTest {
     private ProductionWorkLogMapper workLogMapper;
     @Mock
     private OrderMapper orderMapper;
+    @Mock
+    private ClientRequestIdService clientRequestIdService;
 
     @BeforeEach
     void setUp() {
         TenantContext.setTenantId(TENANT);
         ProductionService service = new ProductionService(
-                processingOrderMapper, positionOperationMapper, workLogMapper, orderMapper);
+                processingOrderMapper, positionOperationMapper, workLogMapper, orderMapper,
+                clientRequestIdService);
         mockMvc = MockMvcBuilders.standaloneSetup(new AgentProductionController(service))
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .build();
