@@ -132,6 +132,16 @@ _VALIDATION_RULES: Dict[str, Dict[str, Any]] = {
             "priority": {"type": str, "label": "优先级(普通/紧急/严重; 传值 normal/urgent/critical)"},
             "refund_amount": {"type": (int, float), "min": 0, "label": "退款金额"},
         },
+        # issue #4011 A4（本次全量审计补出的同族缺口，issue 正文未列）：
+        # `update_status` 是工单状态变更（对顾客可见的写），此前同样无规则 ⇒ skipped 假绿。
+        # required/枚举按工具实现 `_update_status` 与 `VALID_TICKET_STATUSES`
+        # （`after_sales_manage.py`：pending/processing/resolved/rejected/closed）。
+        "update_status": {
+            "required": ["ticket_id", "status"],
+            "status": {"type": str, "enum": ["pending", "processing", "resolved",
+                                             "rejected", "closed"],
+                       "label": "工单状态"},
+        },
     },
     "aftersale_create": {
         "create": {
