@@ -19,6 +19,7 @@ jest.mock('@tarojs/taro', () => {
       showToast: jest.fn(),
       showModal: jest.fn(() => Promise.resolve({ confirm: true })),
       redirectTo: jest.fn(),
+      navigateTo: jest.fn(),
       switchTab: jest.fn(),
       getStorageSync: jest.fn((k: string) => storage[k] ?? ''),
       setStorageSync: jest.fn((k: string, v: any) => { storage[k] = v }),
@@ -97,10 +98,20 @@ describe('ProfilePage', () => {
     expect(screen.getByText('运')).toBeTruthy()
   })
 
-  it('应显示菜单项（关于我们/隐私协议）', () => {
+  it('应显示菜单项（扫码报工/关于我们/隐私协议）', () => {
     render(<ProfilePage />)
+    expect(screen.getByText('扫码报工')).toBeTruthy()
     expect(screen.getByText('关于我们')).toBeTruthy()
     expect(screen.getByText('隐私协议')).toBeTruthy()
+  })
+
+  it('点击「扫码报工」应跳转工人扫码报工页（issue #3997）', () => {
+    render(<ProfilePage />)
+    fireEvent.click(screen.getByText('扫码报工'))
+
+    expect(Taro.navigateTo).toHaveBeenCalledWith({
+      url: '/pages/production/index/index',
+    })
   })
 
   it('B 端员工不展示 C 端消费者功能（无订单/售后/绑定手机号入口）', () => {

@@ -1,0 +1,107 @@
+// case_ids: UI-045
+/**
+ * 顾客端生产进度卡测试（issue #3997，M4-G-3）
+ *
+ * 面向 C 端顾客：只展示**进度 / 当前工序 / 待完工序数 / 预计交付**，
+ * 不得出现工人姓名、计件单价、成本、qr_token 等内部信息（两套账分离，真值源
+ * docs/curtain-production-rules.md §4/§5）。
+ * 空态（无工序数据）必须优雅降级，不崩不空白。
+ */
+import React from 'react'
+import { render, screen } from '@testing-library/react'
+import ProductionProgressCard from '../src/components/cards/ProductionProgressCard'
+import MessageBubble from '../src/components/chat/MessageBubble'
+
+/** 后端生产进度载荷（工序实例 + 进度 + 交期） */
+const DATA = {
+  order_id: 'CSO260915-02615',
+  order_no: 'CSO260915-02615',
+  qr_token: 'qr-token-1',
+  status: 'producing',
+  progress: { total: 5, done: 2, percent: 40 },
+  positions: [
+    {
+      position_name: '布帘',
+      operations: [
+        { id: 'op1', operation: '精裁', status: 'done', qty: 11, unit: '米', unit_price: 3.5 },
+        { id: 'op2', operation: '韩褶', status: 'pending', qty: 11, unit: '米', unit_price: 5, worker_name: '张师傅' },
+      ],
+    },
+    {
+      position_name: '纱帘',
+      operations: [
+        { id: 'op3', operation: '定型', status: 'pending', qty: 11, unit: '米', unit_price: 4 },
+      ],
+    },
+  ],
+  expected_delivery_at: '2026-09-25',
+}
+
+describe('ProductionProgressCard（顾客端生产进度卡）', () => {
+  it('正常：展示进度百分比 / 当前工序 / 待完工序数 / 预计交付日期', () => {
+    render(<ProductionProgressCard data={DATA} />)
+
+    expect(screen.getByText('40%')).toBeTruthy()
+    // 当前工序 = 第一个未完成工序
+    expect(screen.getByText('当前工序：韩褶')).toBeTruthy()
+    // 待完工序数 = status!=='done' 的工序数（韩褶 + 定型 = 2）
+    expect(screen.getByText('待完 2 道工序')).toBeTruthy()
+    expect(screen.getByText('预计交付 2026-09-25')).toBeTruthy()
+  })
+
+  it('进度缺省但工序齐全时：百分比按工序推导（不显示假进度）', () => {
+    const { progress, ...rest } = DATA
+    render(<ProductionProgressCard data={rest as typeof DATA} />)
+
+    // done=1 / total=3 → 33%
+    expect(screen.getByText('33%')).toBeTruthy()
+    expect(screen.getByText('待完 2 道工序')).toBeTruthy()
+  })
+
+  it('空态：无工序数据时优雅降级（不崩、给文案、不出现当前工序行）', () => {
+    render(<ProductionProgressCard data={{}} />)
+
+    expect(screen.getByText('暂无生产进度')).toBeTruthy()
+    expect(screen.queryByText(/当前工序/)).toBeNull()
+    expect(screen.queryByText(/待完/)).toBeNull()
+    expect(screen.queryByText(/预计交付/)).toBeNull()
+  })
+
+  it('交期字段缺省 → 不渲染交期行（优雅降级）', () => {
+    const { expected_delivery_at, ...rest } = DATA
+    render(<ProductionProgressCard data={rest as typeof DATA} />)
+
+    expect(screen.getByText('40%')).toBeTruthy()
+    expect(screen.queryByText(/预计交付/)).toBeNull()
+  })
+
+  it('不泄露内部信息（工人姓名 / 计件单价 / qr_token / 部位成本）', () => {
+    const { container } = render(<ProductionProgressCard data={DATA} />)
+    const text = container.textContent || ''
+
+    expect(text).not.toContain('张师傅')
+    expect(text).not.toContain('qr-token-1')
+    expect(text).not.toContain('单价')
+    expect(text).not.toContain('¥')
+    expect(text).not.toContain('3.50')
+    expect(text).not.toContain('worker')
+  })
+
+  it('经 MessageBubble 的 production_progress 卡分支渲染（接线验证）', () => {
+    render(
+      <MessageBubble
+        message={{
+          id: 'm1',
+          role: 'assistant',
+          content: '',
+          type: 'card',
+          created_at: '2026-09-17T10:00:00Z',
+          cardData: { type: 'production_progress', data: DATA },
+        }}
+      />,
+    )
+
+    expect(screen.getByText('40%')).toBeTruthy()
+    expect(screen.getByText('当前工序：韩褶')).toBeTruthy()
+  })
+})

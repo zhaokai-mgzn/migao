@@ -51,6 +51,11 @@ export default function ProfilePage() {
     Taro.redirectTo({ url: '/pages/auth/login/index' })
   }
 
+  /** 工人扫码报工入口（issue #3997，M4-G-3） */
+  const handleProduction = () => {
+    Taro.navigateTo({ url: '/pages/production/index/index' })
+  }
+
   // ========== 未登录 ==========
   if (!isLoggedIn) {
     return (
@@ -92,6 +97,10 @@ export default function ProfilePage() {
 
       {/* ===== 功能入口 ===== */}
       <View className='profile-menu'>
+        <View className='menu-item' onClick={handleProduction}>
+          <Text className='menu-item__text'>扫码报工</Text>
+          <Text className='menu-item__arrow'>›</Text>
+        </View>
         <View className='menu-item' onClick={handleAbout}>
           <Text className='menu-item__text'>关于我们</Text>
           <Text className='menu-item__arrow'>›</Text>
