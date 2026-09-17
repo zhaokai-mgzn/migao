@@ -244,3 +244,33 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+
+  - id: ST-011
+    legacy_id: ""
+    title: "企业收款二维码设置（微信/支付宝，商家自设，平台不经手资金）"
+    domains:
+      - settings
+      - finance
+    tier: normal
+    persona: mibao
+    tags:
+      - mibao
+      - settings
+      - payment
+    truths_ref:
+      - settings-manage.ai-config
+    # ── 覆盖说明（issue #3990，M3-F-2）──
+    # 用户 2026-09-17 新增要求：企业设置支付宝/微信收款二维码，C 端支付页展示扫码支付。
+    # 平台不经手资金（二清规避）：二维码是商家自己的收款码，页面须注明「款项直接支付给商家」。
+    # 后端端点：GET/PUT /api/admin/settings/payment-qrcodes[/{type}]（system:manage 权限）。
+    user_inputs:
+      - "帮我上传微信收款码图片，收款主体是亿家纺织"
+    expectations:
+      - tool: settings_manage
+    data_checks:
+      - "PUT /api/admin/settings/payment-qrcodes/{type} 可保存/更新收款码（wechat/alipay 各一张，upsert）"
+      - "GET /api/admin/settings/payment-qrcodes 按类型返回；非法类型拒绝"
+      - "平台不经手资金：收款码为商家自有（image_url/payee_name），页面注明款项直接支付给商家"
+      - "C 端支付页展示收款码 + 应付金额 + 上传支付凭证引导（M3-F-3 UI 落地）"
+    skip_reason: ""
+    merge_log: "2026-09-17 新增（issue #3990）：M3-F-2 企业收款二维码设置（后端端点，MockMvc 覆盖）"

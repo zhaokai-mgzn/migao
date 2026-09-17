@@ -3392,7 +3392,7 @@
 真值: ai-chat.tool-classes, ai-chat.permission-layers
 溯源: 2026-08-25 新增：ai-agent-service tools-mixed-part2 覆盖率补全（issue #2426） ｜ tags: registry, tool_execute, audit
 
-## 设置域（8 case）
+## 设置域（9 case）
 
 ### ST-001. 系统设置 - 读取 🔵
 ```
@@ -3476,6 +3476,18 @@
 ```
 真值: settings-page.basic-only
 溯源: 2026-09-07 新增：企业基础信息隐藏登录日志/修改密码入口（issue #3006） ｜ tags: setting, ui, tab
+
+### ST-011. 企业收款二维码设置（微信/支付宝，商家自设，平台不经手资金） 🔵
+```
+你: 帮我上传微信收款码图片，收款主体是亿家纺织
+期望: settings_manage
+数据: PUT /api/admin/settings/payment-qrcodes/{type} 可保存/更新收款码（wechat/alipay 各一张，upsert）
+数据: GET /api/admin/settings/payment-qrcodes 按类型返回；非法类型拒绝
+数据: 平台不经手资金：收款码为商家自有（image_url/payee_name），页面注明款项直接支付给商家
+数据: C 端支付页展示收款码 + 应付金额 + 上传支付凭证引导（M3-F-3 UI 落地）
+```
+真值: settings-manage.ai-config
+溯源: 2026-09-17 新增（issue #3990）：M3-F-2 企业收款二维码设置（后端端点，MockMvc 覆盖） ｜ tags: mibao, settings, payment
 
 ## token-refresh（4 case）
 
@@ -4119,8 +4131,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：303（活跃 152，跳过 151）
-- tier 分布：smoke 9 / normal 261 / adversarial 33
+- 用例总数：304（活跃 153，跳过 151）
+- tier 分布：smoke 9 / normal 262 / adversarial 33
 - 售后域：9
 - agents：6
 - api：19
@@ -4142,7 +4154,7 @@
 - processing-order：17
 - 商品域：25
 - registry：1
-- 设置域：8
+- 设置域：9
 - token-refresh：4
 - ui：43
 - utils：2

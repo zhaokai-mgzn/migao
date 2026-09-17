@@ -4851,6 +4851,24 @@ _CASE_ST_010 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── ST-011 [NORMAL] 企业收款二维码设置（微信/支付宝，商家自设，平台不经手资金）（源: cases/settings.yml）──
+_CASE_ST_011 = EvalCase(
+    id='ST-011',
+    legacy_id='',
+    title='企业收款二维码设置（微信/支付宝，商家自设，平台不经手资金）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['帮我上传微信收款码图片，收款主体是亿家纺织'],
+    expectations=['settings_manage'],
+    data_checks=['PUT /api/admin/settings/payment-qrcodes/{type} 可保存/更新收款码（wechat/alipay 各一张，upsert）', 'GET /api/admin/settings/payment-qrcodes 按类型返回；非法类型拒绝', '平台不经手资金：收款码为商家自有（image_url/payee_name），页面注明款项直接支付给商家', 'C 端支付页展示收款码 + 应付金额 + 上传支付凭证引导（M3-F-3 UI 落地）'],
+    skip_reason='',
+    tags=['mibao', 'settings', 'payment'],
+    persona='mibao',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── TR-001 [NORMAL] refresh-success — 401 自动刷新并重放原请求（源: cases/token-refresh.yml）──
 _CASE_TR_001 = EvalCase(
     id='TR-001',
@@ -5988,6 +6006,7 @@ ALL_CASES = (
     _CASE_ST_008,
     _CASE_ST_009,
     _CASE_ST_010,
+    _CASE_ST_011,
     _CASE_TR_001,
     _CASE_TR_002,
     _CASE_TR_003,
