@@ -330,23 +330,32 @@ class TestSuggestionDetectorIsNotVacuous:
 
 
 class TestThresholdGrowthIsRefused:
-    """基线**只许缩短**：新增违规必须报出，缩短必须放行（R4 / §19.1 元规则）。"""
+    """基线**只许缩短**：新增违规必须报出，缩短必须放行（R4 / §19.1 元规则）。
+
+    ⚠️ **夹具路径必须写成「占位符形态」**（`no/such/…`），**不要**改成真实文件名：
+    `.github/case_trust_gate.py` 的 `CASE-TRUST-STALE-LINE-REF` 规则会扫本 PR 新增行里的
+    「文件名 + 冒号 + 行号」形态并要求它在 `origin/main` 上命中；本文件的那些串是**夹具**
+    （不是引用），写成裸文件名会被判「该文件在 origin/main 上不存在」⇒ CI 红（本 PR 实测踩过）。
+    占位符前缀 `no/such/` 命中该门禁的 `_PLACEHOLDER_PATH_RE` ⇒ 被正当地跳过。
+    判据只按「文件名 + 行号」字符串分组，文件名叫什么不影响被测语义。
+    （本条注释本身也**刻意不写出**那个形态，否则它会成为同一规则的新命中点 —— 实测踩过第二次。）
+    """
 
     def test_a_new_violation_outside_the_baseline_is_refused(self):
         """**红证**：新文件出现缺口 ⇒ `unbaselined` 必报。"""
-        baseline = ["customer_manage.py:248"]
-        assert unbaselined(["customer_manage.py:248", "brand_new_manage.py:42"], baseline) == [
-            "brand_new_manage.py:42"
-        ]
+        baseline = ["no/such/customer_manage.py:248"]
+        assert unbaselined(
+            ["no/such/customer_manage.py:248", "no/such/brand_new_manage.py:42"], baseline
+        ) == ["no/such/brand_new_manage.py:42"]
 
     def test_shrinking_the_baseline_is_accepted(self):
         """**负例**：把缺口全部修掉（违规变空）⇒ 必须放行（防恒红）。"""
-        assert unbaselined([], ["customer_manage.py:248"]) == []
+        assert unbaselined([], ["no/such/customer_manage.py:248"]) == []
         assert unbaselined([], []) == []
 
     def test_an_absent_baseline_file_means_no_exemption(self):
         """空基线 = 唯一合法终态：它**不放行**任何违规。"""
-        assert unbaselined(["anything.py:1"], []) == ["anything.py:1"]
+        assert unbaselined(["no/such/anything.py:1"], []) == ["no/such/anything.py:1"]
 
     def test_an_empty_baseline_is_the_declared_target(self):
         """本 PR 的落地形态：基线为空（193 处已全部补齐，无任何豁免）。"""
