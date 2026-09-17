@@ -23,7 +23,7 @@ from typing import Any, Dict
 
 from loguru import logger
 
-from app.tools.base import BaseTool, ToolContext, ToolResult
+from app.tools.base import BaseTool, ToolContext, ToolResult, admin_api_failure
 from app.utils.http_client import get_admin_api_client
 
 # 支持的收款方式（与 admin-api 表 tenant_payment_qrcodes.payment_type、C 端
@@ -94,6 +94,9 @@ class PaymentQrcodeQueryTool(BaseTool):
             )
 
         if not isinstance(response, dict) or not response.get("success"):
+            # **必须走共享映射点**（issue #4149 G4）：扩宽后的 L0 锁在 main 上抓到本文件
+            # （`Or` 形态此前不在判据射程内）—— 403/401 若就地返回，`error_code` 会丢，
+            # 授权失败就被降级成「请稍后重试」并被自修复重试再买一次拒绝。
             error_info = response.get("error", {}) if isinstance(response, dict) else {}
             error_msg = (
                 error_info.get("message", "查询失败")
@@ -102,8 +105,8 @@ class PaymentQrcodeQueryTool(BaseTool):
             logger.info(
                 f"[payment-qrcode] Rejected | tenant={context.tenant_id} error={error_msg}"
             )
-            return ToolResult(
-                success=False,
+            return admin_api_failure(
+                response,
                 error=error_msg,
                 message="查询收款二维码失败，请稍后重试",
                 suggestion=(
