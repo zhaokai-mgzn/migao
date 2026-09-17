@@ -405,6 +405,13 @@ def _detect_card_type(tool_name: str, result: Dict[str, Any]) -> Optional[str]:
         # （「交付物在 main ≠ 能力可达」）。用户 2026-09-18 裁定走「补发射点」：该工具返回的
         # `data` 正是卡载荷（progress_percent / current_operation / expected_delivery_date / positions）。
         return "production_progress"
+    elif tool_name == "payment_qrcode_query":
+        # 收款二维码卡（M3-F-3 / issue #3990 已交付的顾客端卡片）。
+        # issue #4085 第 1 项：与 production_progress 同构的「有卡片、零发射点」形态
+        # （#4016 P14 当时以「工具层没有数据源」裁掉了 C 端渲染分支）——用户 2026-09-18
+        # 裁定走「补发射点」：`payment_qrcode_query` 返回的 `data` 正是卡载荷
+        # （{"payment_qrcodes": {"wechat": {...}, "alipay": {...}}}，见该工具 execute 返回段）。
+        return "payment"
     return None
 
 
@@ -462,6 +469,16 @@ def _should_send_card(tool_name: str, result: Dict[str, Any]) -> bool:
     # （0%/空工序是合法结果）⇒ 不能用「有工序」当判据，否则「暂无生产进度」空态永远看不到卡
     # （UI-045 明写「空态（无工序）显示『暂无生产进度』，不显示假进度、不空白」）。
     if tool_name == "production_progress_query":
+        data = result.get("data", {})
+        return isinstance(data, dict) and len(data) > 0
+
+    # 收款码有结果时发送支付卡（issue #4085 第 1 项补发射点）
+    # 判据 = **工具契约事实**：`payment_qrcode_query` 成功时保证 `data` 至少有
+    # `payment_qrcodes` 一个键（查询失败/权限不足走 success=False，见该工具 execute），
+    # 且**商家没配收款码也是 success=true**（空 dict 是合法答案）⇒ 不能用「有码」当判据，
+    # 否则「商家暂未设置收款码」空态永远看不到卡（ST-011 明写「无收款码时展示降级提示
+    # （PaymentCard 空态）」）。
+    if tool_name == "payment_qrcode_query":
         data = result.get("data", {})
         return isinstance(data, dict) and len(data) > 0
 
