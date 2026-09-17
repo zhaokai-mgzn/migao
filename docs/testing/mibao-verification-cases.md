@@ -2306,7 +2306,7 @@
 必须成功: order_create
 ```
 真值: order.states, order.create-flow, product-sku-stock.aggregate
-溯源: eval M005 独有（多轮引导细节），与 OR-008 互补不合并；2026-09-09 校准：① interact 组件期望 sku_table 全库不存在（agent 从始发 choice），改为 choice；② 补「跳过加工项→点确认卡」两轮（真实流程需 7 轮，原 5 轮预设过严，agent 正确要求点卡不默认跳过）；2026-09-17 校准（issue #4014 B3）：补效果层断言 must_succeed[order_create]（此前只有裸工具名期望 =「调用过」，工具 success=false 照样判 100%）；user_inputs / expectations / required_args / data_checks 原样未动 ｜ tags: multi_turn, order_create, sku_select, full_flow
+溯源: eval M005 独有（多轮引导细节），与 OR-008 互补不合并；2026-09-09 校准：① interact 组件期望 sku_table 全库不存在（agent 从始发 choice），改为 choice；② 补「跳过加工项→点确认卡」两轮（真实流程需 7 轮，原 5 轮预设过严，agent 正确要求点卡不默认跳过）；2026-09-17 校准（issue #4014 B3）：补效果层断言 must_succeed[order_create]（此前只有裸工具名期望 =「调用过」，工具 success=false 照样判 100%）；user_inputs / expectations / required_args / data_checks 原样未动。2026-09-18 补前置自断言（burn-down 预算，随 OR-029 夹具对齐 PR 一并做）：`precondition[product_count_for_keyword: 遮光窗帘, expect: 1]` —— 本用例按**名字**选品（「要遮光窗帘」），「该名字在种子栈里唯一」是可判定的前置（同 OR-014 #3835 先例）；横跨三份文件的一次性所有权放宽见该 PR 说明。断言（user_inputs / expectations / required_args / must_succeed / data_checks）原样未动 ｜ tags: multi_turn, order_create, sku_select, full_flow
 
 ### OR-010. 创建订单 - 汇总确认简化流程 🔵
 ```

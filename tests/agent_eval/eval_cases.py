@@ -3364,6 +3364,7 @@ _CASE_OR_009 = EvalCase(
     required_args=[{'tool': 'order_create', 'fields': ['items[].processing_info.sellingMethod', 'items[].processing_info.doorWidth', 'items[].processing_info.colorName']}],
     must_succeed=[{'tool': 'order_create'}],
     namespaces=['customer_phone:13800138000'],
+    precondition=[{'type': 'product_count_for_keyword', 'source': '遮光窗帘', 'expect': 1}],
 )
 
 # ── OR-010 [NORMAL] 创建订单 - 汇总确认简化流程（源: cases/order.yml）──
