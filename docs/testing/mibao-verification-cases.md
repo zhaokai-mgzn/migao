@@ -3477,17 +3477,17 @@
 真值: settings-page.basic-only
 溯源: 2026-09-07 新增：企业基础信息隐藏登录日志/修改密码入口（issue #3006） ｜ tags: setting, ui, tab
 
-### ST-011. 企业收款二维码设置（微信/支付宝，商家自设，平台不经手资金） 🔵
+### ST-011. 企业收款二维码（微信/支付宝）C 端支付页展示与平台不经手资金（二清规避） 🔵
 ```
-你: 帮我上传微信收款码图片，收款主体是亿家纺织
-期望: settings_manage
-数据: PUT /api/admin/settings/payment-qrcodes/{type} 可保存/更新收款码（wechat/alipay 各一张，upsert）
-数据: GET /api/admin/settings/payment-qrcodes 按类型返回；非法类型拒绝
-数据: 平台不经手资金：收款码为商家自有（image_url/payee_name），页面注明款项直接支付给商家
-数据: C 端支付页展示收款码 + 应付金额 + 上传支付凭证引导（M3-F-3 UI 落地）
+你: 我支付这笔订单，怎么付款
+期望: direct_reply
+数据: C 端支付页展示收款码（/chat/payment-qrcodes 精简字段 image_url/payee_name）+ 应付金额 + 微信/支付宝切换
+数据: 页面注明「款项直接支付给商家」（平台不经手资金，二清规避）
+数据: 商家设置端 PUT /api/admin/settings/payment-qrcodes/{type} upsert（wechat/alipay 各一张，非法类型拒绝）—— 由 SettingsControllerTest MockMvc 覆盖
+数据: 无收款码时展示降级提示（PaymentCard 空态）
 ```
 真值: settings-manage.ai-config
-溯源: 2026-09-17 新增（issue #3990）：M3-F-2 企业收款二维码设置（后端端点，MockMvc 覆盖） ｜ tags: mibao, settings, payment
+溯源: 2026-09-17 新增（issue #3990）：M3-F 企业收款二维码——C 端展示行为覆盖（persona 双端）；写路径由 MockMvc 单测覆盖 ｜ tags: settings, payment
 
 ## token-refresh（4 case）
 

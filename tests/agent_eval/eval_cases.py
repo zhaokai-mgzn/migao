@@ -4851,19 +4851,19 @@ _CASE_ST_010 = EvalCase(
     forbidden_card_text=[],
 )
 
-# ── ST-011 [NORMAL] 企业收款二维码设置（微信/支付宝，商家自设，平台不经手资金）（源: cases/settings.yml）──
+# ── ST-011 [NORMAL] 企业收款二维码（微信/支付宝）C 端支付页展示与平台不经手资金（二清规避）（源: cases/settings.yml）──
 _CASE_ST_011 = EvalCase(
     id='ST-011',
     legacy_id='',
-    title='企业收款二维码设置（微信/支付宝，商家自设，平台不经手资金）',
+    title='企业收款二维码（微信/支付宝）C 端支付页展示与平台不经手资金（二清规避）',
     skill=Skill.GENERAL,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['帮我上传微信收款码图片，收款主体是亿家纺织'],
-    expectations=['settings_manage'],
-    data_checks=['PUT /api/admin/settings/payment-qrcodes/{type} 可保存/更新收款码（wechat/alipay 各一张，upsert）', 'GET /api/admin/settings/payment-qrcodes 按类型返回；非法类型拒绝', '平台不经手资金：收款码为商家自有（image_url/payee_name），页面注明款项直接支付给商家', 'C 端支付页展示收款码 + 应付金额 + 上传支付凭证引导（M3-F-3 UI 落地）'],
+    user_inputs=['我支付这笔订单，怎么付款'],
+    expectations=['direct_reply'],
+    data_checks=['C 端支付页展示收款码（/chat/payment-qrcodes 精简字段 image_url/payee_name）+ 应付金额 + 微信/支付宝切换', '页面注明「款项直接支付给商家」（平台不经手资金，二清规避）', '商家设置端 PUT /api/admin/settings/payment-qrcodes/{type} upsert（wechat/alipay 各一张，非法类型拒绝）—— 由 SettingsControllerTest MockMvc 覆盖', '无收款码时展示降级提示（PaymentCard 空态）'],
     skip_reason='',
-    tags=['mibao', 'settings', 'payment'],
-    persona='mibao',
+    tags=['settings', 'payment'],
+    persona='',
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],

@@ -247,30 +247,32 @@ cases:
 
   - id: ST-011
     legacy_id: ""
-    title: "企业收款二维码设置（微信/支付宝，商家自设，平台不经手资金）"
+    title: "企业收款二维码（微信/支付宝）C 端支付页展示与平台不经手资金（二清规避）"
     domains:
       - settings
       - finance
+      - chat
     tier: normal
-    persona: mibao
+    persona: ""
     tags:
-      - mibao
       - settings
       - payment
     truths_ref:
       - settings-manage.ai-config
-    # ── 覆盖说明（issue #3990，M3-F-2）──
+    # ── 覆盖说明（issue #3990，M3-F-2/F-3）──
     # 用户 2026-09-17 新增要求：企业设置支付宝/微信收款二维码，C 端支付页展示扫码支付。
     # 平台不经手资金（二清规避）：二维码是商家自己的收款码，页面须注明「款项直接支付给商家」。
-    # 后端端点：GET/PUT /api/admin/settings/payment-qrcodes[/{type}]（system:manage 权限）。
+    # ⚠️ 写路径（PUT /api/admin/settings/payment-qrcodes/{type}，system:manage）由确定性单测覆盖
+    #    （SettingsControllerTest MockMvc + TenantPaymentQrcodeMapperTest），本用例承担**展示/合规**行为覆盖：
+    #    C 端支付页 /chat/payment-qrcodes 返回精简字段并渲染 PaymentCard（读类，满足断言可信度门禁）。
     user_inputs:
-      - "帮我上传微信收款码图片，收款主体是亿家纺织"
+      - "我支付这笔订单，怎么付款"
     expectations:
-      - tool: settings_manage
+      - tool: direct_reply
     data_checks:
-      - "PUT /api/admin/settings/payment-qrcodes/{type} 可保存/更新收款码（wechat/alipay 各一张，upsert）"
-      - "GET /api/admin/settings/payment-qrcodes 按类型返回；非法类型拒绝"
-      - "平台不经手资金：收款码为商家自有（image_url/payee_name），页面注明款项直接支付给商家"
-      - "C 端支付页展示收款码 + 应付金额 + 上传支付凭证引导（M3-F-3 UI 落地）"
+      - "C 端支付页展示收款码（/chat/payment-qrcodes 精简字段 image_url/payee_name）+ 应付金额 + 微信/支付宝切换"
+      - "页面注明「款项直接支付给商家」（平台不经手资金，二清规避）"
+      - "商家设置端 PUT /api/admin/settings/payment-qrcodes/{type} upsert（wechat/alipay 各一张，非法类型拒绝）—— 由 SettingsControllerTest MockMvc 覆盖"
+      - "无收款码时展示降级提示（PaymentCard 空态）"
     skip_reason: ""
-    merge_log: "2026-09-17 新增（issue #3990）：M3-F-2 企业收款二维码设置（后端端点，MockMvc 覆盖）"
+    merge_log: "2026-09-17 新增（issue #3990）：M3-F 企业收款二维码——C 端展示行为覆盖（persona 双端）；写路径由 MockMvc 单测覆盖"
