@@ -116,6 +116,11 @@ class SecurityConfigTest {
     @MockBean
     private com.migao.admin.service.ProcessingOrderService processingOrderService;
 
+    // 库存台账 Mapper（issue #4055）：MyBatis-Plus 自动扫描到的 Mapper，本上下文无 sqlSessionFactory
+    // （MybatisPlusAutoConfiguration 已排除），按本文件既有口径（UserMemoryMapper 等）用 @MockBean 顶替
+    @MockBean
+    private com.migao.admin.mapper.StockLedgerMapper stockLedgerMapper;
+
     @MockBean
     private com.migao.admin.service.NotificationService notificationService;
 

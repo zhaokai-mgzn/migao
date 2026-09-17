@@ -7,6 +7,8 @@ import com.migao.admin.entity.AfterSalesTicket;
 import com.migao.admin.entity.Order;
 import com.migao.admin.entity.OrderItem;
 import com.migao.admin.entity.Product;
+import com.migao.admin.entity.ProductSku;
+import com.migao.admin.entity.StockLedger;
 import com.migao.admin.entity.TicketTimeline;
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.mapper.AfterSalesTicketMapper;
@@ -25,6 +27,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -32,6 +35,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.*;
@@ -73,6 +77,10 @@ class AfterSalesTicketServiceTest {
 
     @Mock
     private OrderService orderService;
+
+    /** 库存台账（issue #4055）：回补链落账语义见 StockLedgerTest / StockLedgerServiceTest */
+    @Mock
+    private StockLedgerService stockLedgerService;
 
     private AfterSalesTicket testTicket;
     private Order testOrder;
@@ -1298,6 +1306,85 @@ class AfterSalesTicketServiceTest {
 
         // then: 订单全部商品允许回补 → 调用库存恢复
         verify(orderService).restoreStockForReturn("order-001");
+    }
+
+    @Test
+    @DisplayName("return 工单 resolved — 回补落库存台账（reason=aftersales / refNo=工单号），快照取在回补之前")
+    void updateTicketStatus_ResolvedReturn_writesStockLedger() {
+        // given: processing → resolved 的 return 工单，订单商品允许退货回补
+        AfterSalesTicket processingTicket = AfterSalesTicket.builder()
+                .id("ticket-rs1")
+                .tenantId(1L)
+                .ticketNo("AS-RESTOCK-001")
+                .orderId("order-001")
+                .ticketType("return")
+                .status("processing")
+                .build();
+        AfterSalesStatusUpdateRequest request = new AfterSalesStatusUpdateRequest();
+        request.setStatus("resolved");
+
+        when(afterSalesTicketMapper.selectById("ticket-rs1")).thenReturn(processingTicket);
+        when(afterSalesTicketMapper.updateById(any(AfterSalesTicket.class))).thenReturn(1);
+        when(orderItemMapper.selectList(any(LambdaQueryWrapper.class)))
+                .thenReturn(List.of(buildOrderItem("prod-1")));
+        when(productMapper.selectBatchIds(anyCollection()))
+                .thenReturn(List.of(Product.builder().id("prod-1").allowReturnRestock(true).build()));
+
+        Map<Long, ProductSku> snapshot = Map.of(100L, ledgerSku(100L, 10));
+        when(stockLedgerService.snapshotSkus(anyCollection())).thenReturn(snapshot);
+        when(stockLedgerService.recordChangesAgainstSnapshot(
+                eq(1L), eq(snapshot), eq(StockLedger.REASON_AFTERSALES), eq("AS-RESTOCK-001"), anyString()))
+                .thenReturn(1);
+
+        // when
+        afterSalesTicketService.updateTicketStatus("ticket-rs1", request);
+
+        // then: 顺序是「先快照 → 再回补 → 最后比对落账」——
+        // 顺序反了 before 就是回补后的值，台账会记不出这次变化（静默漏账，账实不符）
+        InOrder inOrder = inOrder(stockLedgerService, orderService);
+        inOrder.verify(stockLedgerService).snapshotSkus(anyCollection());
+        inOrder.verify(orderService).restoreStockForReturn("order-001");
+        inOrder.verify(stockLedgerService).recordChangesAgainstSnapshot(
+                eq(1L), eq(snapshot), eq(StockLedger.REASON_AFTERSALES), eq("AS-RESTOCK-001"), anyString());
+    }
+
+    @Test
+    @DisplayName("return 工单 resolved — 商品开关关闭时不回补也不落台账（无变化不该有流水）")
+    void updateTicketStatus_ResolvedReturn_switchOff_writesNoLedger() {
+        AfterSalesTicket processingTicket = AfterSalesTicket.builder()
+                .id("ticket-rs5")
+                .tenantId(1L)
+                .ticketNo("AS-RESTOCK-005")
+                .orderId("order-001")
+                .ticketType("return")
+                .status("processing")
+                .build();
+        AfterSalesStatusUpdateRequest request = new AfterSalesStatusUpdateRequest();
+        request.setStatus("resolved");
+
+        when(afterSalesTicketMapper.selectById("ticket-rs5")).thenReturn(processingTicket);
+        when(afterSalesTicketMapper.updateById(any(AfterSalesTicket.class))).thenReturn(1);
+        when(orderItemMapper.selectList(any(LambdaQueryWrapper.class)))
+                .thenReturn(List.of(buildOrderItem("prod-1")));
+        when(productMapper.selectBatchIds(anyCollection()))
+                .thenReturn(List.of(Product.builder().id("prod-1").allowReturnRestock(false).build()));
+
+        afterSalesTicketService.updateTicketStatus("ticket-rs5", request);
+
+        verify(stockLedgerService, never()).snapshotSkus(anyCollection());
+        verify(stockLedgerService, never()).recordChangesAgainstSnapshot(
+                any(), any(), any(), any(), any());
+    }
+
+    /** 台账快照夹具（SKU 级库存，与 stock_ledger_entries 的粒度一致） */
+    private ProductSku ledgerSku(Long id, int stock) {
+        ProductSku sku = new ProductSku();
+        sku.setId(id);
+        sku.setTenantId(1L);
+        sku.setProductId("prod-1");
+        sku.setSkuCode("SKU-" + id);
+        sku.setStock(stock);
+        return sku;
     }
 
     @Test

@@ -51,6 +51,10 @@ class ConcurrentTenantIsolationTest {
     @Mock
     private com.migao.admin.mapper.FinanceTransactionMapper financeTransactionMapper;
 
+    /** 库存台账（issue #4055）：本类只验证租户隔离，不触发落账 */
+    @Mock
+    private StockLedgerService stockLedgerService;
+
     @InjectMocks
     private ProductService productService;
 
