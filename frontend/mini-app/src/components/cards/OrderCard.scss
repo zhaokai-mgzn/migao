@@ -152,6 +152,14 @@
     color: $text-secondary;
   }
 
+  &__customer-address {
+    font-size: 22px;
+    color: $text-tertiary;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
   // 底部：时间 + 合计
   &__footer {
     display: flex;

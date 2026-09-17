@@ -741,6 +741,7 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
             logisticsInfo.setId(logistics.getId());
             logisticsInfo.setLogisticsCompany(logistics.getLogisticsCompany());
             logisticsInfo.setTrackingNo(logistics.getTrackingNo());
+            logisticsInfo.setLogisticsType(logistics.getLogisticsType());
             logisticsInfo.setStatus(logistics.getStatus());
             logisticsInfo.setTrackingInfo(logistics.getTrackingInfo());
             logisticsInfo.setShipperName(logistics.getShipperName());

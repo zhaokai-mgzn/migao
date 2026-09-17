@@ -1087,7 +1087,7 @@
 真值: ai-chat.context-memory, ai-chat.intent-domains, order.states, order.logistics, id-resolve.index
 溯源: eval M007 独有（物流查询是旅程一环，独立用例见 OR-005）。2026-09-14 消除顺序依赖（issue #3568）：① 「看看第一个的详情」→ 点名「遮光窗帘」（推荐列表返回顺序依赖，同 OR-024 #3408）；② 色号「白色」→ 种子真实色号「米白」；③ 收尾裸文本「确认下单/确认」→ 答卡轮（#3518 口径）；④ 补 pre_clean product_dedupe + must_succeed[order_create] ｜ tags: multi_turn, real_scenario, cross_skill, full_journey
 
-## 客户域（7 case）
+## 客户域（8 case）
 
 ### CU-001. 客户列表 🟢
 ```
@@ -1169,6 +1169,18 @@
 ```
 真值: product-sku-stock.status-flow
 溯源: 2026-09-15 新增（issue #3932）：C 端小布只能展示已上架商品——product_search/product_detail 顾客侧上架过滤（sess_2efa2071bb1747d8 复盘关联） ｜ tags: c-end, product, visibility
+
+### CU-008. 客户工艺画像与常用物流存储（米宝 customer_manage 可写，M2-D） 🔵
+```
+你: 把客户张三的工艺偏好设为经济省料，常用物流记成四季安（物流专线）
+期望: customer_manage(action=update)
+数据: customer_manage(update) 可写 craftMode / craftProfile / defaultLogisticsType / defaultLogisticsCompany（CustomerProfile 新列，V47 迁移）
+数据: 物流类型区分 express（快递）与 logistics（物流/专线，如四季安）——POC 客户更多选物流
+数据: 工艺画像与常用物流在客户详情（GET /api/admin/customers/{id}）中返回，供报价协商（M3-F）读取
+数据: 字段跨端契约：工具下发字段名与 CustomerProfile 列一致（test_tool_field_name_contract.py 静态兜底）
+```
+真值: customer-crm.profile
+溯源: 2026-09-17 新增（issue #3984）：M2-D 客户工艺画像与常用物流存储覆盖登记 ｜ tags: customer, mibao, craft-profile, logistics
 
 ## 数据域（10 case）
 
@@ -4068,8 +4080,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：299（活跃 151，跳过 148）
-- tier 分布：smoke 9 / normal 257 / adversarial 33
+- 用例总数：300（活跃 152，跳过 148）
+- tier 分布：smoke 9 / normal 258 / adversarial 33
 - 售后域：9
 - agents：6
 - api：19
@@ -4077,7 +4089,7 @@
 - 分类域：3
 - 对话边界域：35
 - 跨域：3
-- 客户域：7
+- 客户域：8
 - 数据域：10
 - 防御域：22
 - finance：4

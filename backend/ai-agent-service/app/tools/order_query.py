@@ -448,6 +448,7 @@ class OrderQueryTool(BaseTool):
                 "order_no": record.get("orderNo"),
                 "customer_name": record.get("customerName"),
                 "customer_phone": record.get("customerPhone"),
+                "customer_address": record.get("customerAddress"),
                 "total_amount": record.get("totalAmount"),
                 "status": status,
                 "status_text": ORDER_STATUS_TEXT.get(status, status),

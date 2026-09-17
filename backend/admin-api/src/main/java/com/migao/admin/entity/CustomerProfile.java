@@ -94,6 +94,20 @@ public class CustomerProfile {
     @TableField(typeHandler = com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler.class)
     private Object customFields;
 
+    // --- 工艺画像与常用物流（issue #3984，M2-D）---
+    /** standard 跟随企业固定工艺 / economy 主动省料 / self_quoted 自报用料 */
+    private String craftMode;
+
+    /** 工艺偏好 JSON（开数/定型/档位等默认，M3-F 报价协商读取） */
+    @TableField(typeHandler = com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler.class)
+    private Object craftProfile;
+
+    /** 常用物流类型：express 快递 / logistics 物流专线 */
+    private String defaultLogisticsType;
+
+    /** 客户常用物流/快递公司（下单自动带出） */
+    private String defaultLogisticsCompany;
+
     // --- 生命周期 ---
     /** new / growing / mature / declining / churned */
     private String lifecycleStage;

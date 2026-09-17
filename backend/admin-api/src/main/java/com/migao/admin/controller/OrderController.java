@@ -279,6 +279,7 @@ public class OrderController {
 
         String logisticsCompany = body.get("logisticsCompany");
         String trackingNo = body.get("trackingNo");
+        String logisticsType = body.get("logisticsType"); // express / logistics（issue #3984，V47）
         // 发货人（issue #3768）：显式传入优先，否则取当前登录用户姓名兜底
         String providedShipper = body.get("shipperName");
         String shipperName = orderService.resolveShipperName(providedShipper);
@@ -290,6 +291,7 @@ public class OrderController {
             OrderLogistics logistics = existing.get(0);
             if (logisticsCompany != null) logistics.setLogisticsCompany(logisticsCompany);
             if (trackingNo != null) logistics.setTrackingNo(trackingNo);
+            if (logisticsType != null) logistics.setLogisticsType(logisticsType);
             // 仅显式传入才覆盖：改运单号/纠错 ≠ 换发货人，也不为存量历史订单猜经手人
             if (org.springframework.util.StringUtils.hasText(providedShipper)) {
                 logistics.setShipperName(shipperName);
@@ -302,6 +304,7 @@ public class OrderController {
                     .orderId(id)
                     .logisticsCompany(logisticsCompany)
                     .trackingNo(trackingNo)
+                    .logisticsType(logisticsType != null ? logisticsType : "express")
                     .shipperName(shipperName)
                     .status("in_transit")
                     .build();
