@@ -11,14 +11,21 @@
 - 韩折折数法（M2-C，issue #3982）：0.25×折数+余量（单开0.2/多开0.3）、
   倍数→折数派生（按开数取整）、工艺档位、来源标记、倍数<1.5 红线、
   开数整除调整、按货号-色号汇总（采购/套裁视图）
+- 辅料口径（issue #4118，以 #3005 为准）：罗马圈**不得**由米数推导/默认单列，
+  只走 `accessories` 显式入参（数量/单价由顾客给；缺项 fail-closed）
+- 文档算例锚定（issue #4118 ②）：§7 的数值必须被代码**逐值复现**，改文档/改代码都变红
 
 真值来源：docs/curtain-fabric-quote-rules.md（行业标准值 + 经验默认值）
 """
 # case_ids: PR-013, PR-024, OR-022, CH-036, CH-038
 
 import math
+import re
+from pathlib import Path
+
 import pytest
 
+from app.tools import curtain_calc as curtain_calc_module
 from app.tools.curtain_calc import (
     DEFAULT_FULLNESS,
     DEFAULT_PROCESSING_PRICE,
@@ -27,10 +34,15 @@ from app.tools.curtain_calc import (
     calculate_fabric_by_pleats,
     calculate_multi_position,
     derive_pleat_count,
+    explicit_accessories,
     margin_for_open_count,
     aggregate_by_fabric,
     build_quote,
 )
+
+#: 仓根（tests/ → ai-agent-service/ → backend/ → 仓根），与既有测试同惯例
+REPO_ROOT = Path(__file__).resolve().parents[3]
+QUOTE_RULES_DOC = REPO_ROOT / "docs" / "curtain-fabric-quote-rules.md"
 
 
 # ──────────────────────────────────────────────
@@ -169,10 +181,13 @@ def test_quote_total_breakdown():
 
     M = 6.6m
     面料费 = 6.6 × 30 = 198
-    加工费 = 6.6 × 8 = 52.8
-    辅料费 = 罗马圈 40×1.5=60 + 孔带 6.6×8=52.8 + 罗马杆 3.4×25=85 + 绑带 15 = 212.8
+    加工费 = 6.6 × 8 = 52.8        （按米打包，**已含罗马圈等辅料**，issue #3005/#4118）
+    辅料费 = 孔带 6.6×8=52.8 + 罗马杆 3.4×25=85 + 绑带 15 = 152.8
     安装费 = 3.4 × 18 = 61.2
-    总价 = 198 + 52.8 + 212.8 + 61.2 = 524.8
+    总价 = 198 + 52.8 + 152.8 + 61.2 = 464.8
+
+    ⚠️ 本条曾断言 `60 + 52.8 + 85 + 15` / 总价 `524.8`（罗马圈 40×1.5=60 由米数推导）
+    —— 那是 issue #4118 ② 的「单测反向锚定偏离值」，已按 #3005 口径改正。
     """
     quote = build_quote(
         window_width=3.0,
@@ -184,10 +199,10 @@ def test_quote_total_breakdown():
     assert quote["fabric_meters"] == pytest.approx(6.6)
     assert quote["fabric_cost"] == pytest.approx(198.0)
     assert quote["processing_cost"] == pytest.approx(52.8)
-    # 辅料：罗马圈 40×1.5=60 + 孔带 52.8 + 罗马杆 85 + 绑带 15
-    assert quote["accessory_cost"] == pytest.approx(60 + 52.8 + 85 + 15)
+    # 辅料：孔带 52.8 + 罗马杆 85 + 绑带 15（罗马圈不进默认项 —— 见 TestAccessoryCaliber）
+    assert quote["accessory_cost"] == pytest.approx(52.8 + 85 + 15)
     assert quote["install_cost"] == pytest.approx(61.2)
-    assert quote["total"] == pytest.approx(198 + 52.8 + 212.8 + 61.2)
+    assert quote["total"] == pytest.approx(198 + 52.8 + 152.8 + 61.2)
 
 
 def test_quote_uses_default_fullness_when_not_provided():
@@ -439,3 +454,227 @@ def test_multi_position_quote():
     assert res["positions"][1]["pleat_count"] == 34
     assert res["by_fabric"]["2698-11"] > 0
     assert res["by_fabric"]["25118-C31"] > 0
+
+
+# ══════════════════════════════════════════════
+# 辅料口径（issue #4118，以 #3005 为准）：**不推导、只显式**
+#
+# 病根：`ring_count = round(meters * ROMAN_RING_PER_METER)` 由米数推导罗马圈个数并单列费用，
+# 而 §5 计价口径明令「罗马圈…不参与系统数量推导」（8 元/米加工费已含圈）
+# ⇒ 同一单两种算法并存（加工费 8 元/米 + 单收 60 元圈费）。
+# 治法：删掉推导与「每米 N 个」密度；顾客**显式**要单独买 ⇒ 走 accessories 显式入参。
+# ══════════════════════════════════════════════
+
+class TestAccessoryCaliber:
+    """默认报价里**不得**出现按「个」的推导项；显式入参才计入。"""
+
+    def test_no_ring_density_constants(self):
+        """「每米布 N 个」密度常量必须不存在 —— 留着它就会再长出推导（#3005 无密度口径）。"""
+        assert not hasattr(curtain_calc_module, "ROMAN_RING_PER_METER"), (
+            "罗马圈密度常量又回来了 —— 它会诱使 `round(meters * density)` 式推导（违反 §5）"
+        )
+        assert not hasattr(curtain_calc_module, "ROMAN_RING_PRICE")
+
+    def test_eyelet_default_breakdown_has_no_per_piece_item(self):
+        """★红证①：把 `round(meters * ROMAN_RING_PER_METER)` 的圈费加回默认报价 ⇒ 本断言红。"""
+        quote = build_quote(
+            window_width=3.0, window_height=2.7, mounting="eyelet",
+            fabric_width=3.0, fabric_price=30.0,
+        )
+        assert [b["name"] for b in quote["breakdown"]] == [
+            "面料", "加工费", "孔带", "罗马杆", "绑带", "安装费",
+        ]
+        assert [b["name"] for b in quote["breakdown"] if "个" in b["detail"]] == []
+        assert quote["accessory_cost"] == pytest.approx(152.8)
+        assert quote["total"] == pytest.approx(464.8)
+
+    def test_more_meters_never_adds_a_per_piece_item(self):
+        """米数变多（窗更宽）只让「孔带」按米变贵，**不**冒出按个的项。"""
+        small = build_quote(window_width=1.0, window_height=2.5, mounting="eyelet",
+                            fabric_width=2.8, fabric_price=30.0)
+        big = build_quote(window_width=5.0, window_height=2.5, mounting="eyelet",
+                          fabric_width=2.8, fabric_price=30.0)
+        assert big["fabric_meters"] > small["fabric_meters"]
+        assert big["accessory_cost"] > small["accessory_cost"]        # 孔带按米涨（真实项）
+        for q in (small, big):
+            assert [b["name"] for b in q["breakdown"] if "个" in b["detail"]] == []
+
+    def test_explicit_accessories_counted_verbatim(self):
+        """顾客显式单独买罗马圈（40 个 × 1.5 元）⇒ 原样计入，数量/单价都不许被"优化"。"""
+        quote = build_quote(
+            window_width=3.0, window_height=2.7, mounting="eyelet",
+            fabric_width=3.0, fabric_price=30.0,
+            accessories=[{"name": "罗马圈", "quantity": 40, "unit_price": 1.5}],
+        )
+        ring = [b for b in quote["breakdown"] if b["name"] == "罗马圈"]
+        assert len(ring) == 1, f"显式辅料必须出现在明细里：{quote['breakdown']}"
+        assert ring[0]["detail"] == "40个 × ¥1.5/个"
+        assert ring[0]["cost"] == pytest.approx(60.0)
+        assert quote["accessory_cost"] == pytest.approx(152.8 + 60.0)
+        assert quote["total"] == pytest.approx(464.8 + 60.0)
+
+    def test_default_and_explicit_quotes_differ_only_by_the_explicit_line(self):
+        """同一算例：不给 accessories 与给 40 个圈的**差**必须恰好等于显式那一项（不推导的判据）。"""
+        base = build_quote(window_width=3.0, window_height=2.7, mounting="eyelet",
+                           fabric_width=3.0, fabric_price=30.0)
+        with_ring = build_quote(window_width=3.0, window_height=2.7, mounting="eyelet",
+                                fabric_width=3.0, fabric_price=30.0,
+                                accessories=[{"name": "罗马圈", "quantity": 40, "unit_price": 1.5}])
+        assert with_ring["total"] - base["total"] == pytest.approx(60.0)
+
+    def test_explicit_accessory_unit_defaults_to_piece(self):
+        """unit 缺省 = 「个」；给 unit 则照用（辅料单位不猜成米）。"""
+        rows, total = explicit_accessories([{"name": "罗马圈", "quantity": 40, "unit_price": 1.5}])
+        assert rows[0]["detail"] == "40个 × ¥1.5/个"
+        assert total == pytest.approx(60.0)
+
+    @pytest.mark.parametrize("bad", [
+        {"name": "罗马圈"},                                       # 缺数量与单价
+        {"quantity": 40, "unit_price": 1.5},                      # 缺名称
+        {"name": "罗马圈", "quantity": 0, "unit_price": 1.5},       # 数量非正
+        {"name": "罗马圈", "quantity": 40, "unit_price": -1.0},     # 单价为负
+        {"name": "罗马圈", "quantity": "一堆", "unit_price": 1.5},  # 数量非数
+        "罗马圈 40 个",                                            # 不是对象
+    ])
+    def test_malformed_accessories_rejected(self, bad):
+        """fail-closed：缺项/非法值一律 **拒绝** —— 不猜默认、不静默丢弃顾客的显式选择。"""
+        with pytest.raises(ValueError):
+            build_quote(
+                window_width=3.0, window_height=2.7, mounting="eyelet",
+                fabric_width=3.0, fabric_price=30.0, accessories=[bad],
+            )
+
+    def test_multi_position_passes_explicit_accessories_through(self):
+        """多部位批量不得静默丢掉显式辅料（`positions[i].accessories` 必须落到该部位报价）。"""
+        res = calculate_multi_position([{
+            "window_width": 3.0, "window_height": 2.7, "mounting": "eyelet",
+            "fabric_width": 3.0, "fabric_price": 30.0, "fabric_code": "2698-11",
+            "accessories": [{"name": "罗马圈", "quantity": 40, "unit_price": 1.5}],
+        }])
+        assert res["positions"][0]["accessory_cost"] == pytest.approx(152.8 + 60.0)
+
+
+class TestCurtainCalcAccessoryCaliberTool:
+    """工具层（LLM 实际走的那条路）：schema 声明、传参生效、非法入参给出可自纠的原因。"""
+
+    def test_schema_and_description_declare_explicit_only(self):
+        from app.tools.curtain_calc import CurtainCalcTool
+        props = CurtainCalcTool.parameters["properties"]
+        assert "accessories" in props, "不给显式入口 ⇒ 顾客的显式选择无处表达（只能被推导）"
+        assert props["accessories"]["items"]["required"] == ["name", "quantity", "unit_price"]
+        desc = CurtainCalcTool.description
+        assert "已含在按米单价里" in desc, "描述必须说明加工费已含辅料（否则模型仍会单列）"
+        assert "不要" in desc and "推算辅料个数" in desc, "描述必须明令不得按米数推算辅料个数"
+
+    async def test_tool_default_quote_has_no_ring(self, sample_tool_context):
+        """★红证①（工具层）：推导复活 ⇒ message/明细里出现「罗马圈 40个」。"""
+        from app.tools.curtain_calc import CurtainCalcTool
+        result = await CurtainCalcTool().execute(
+            context=sample_tool_context, window_width=3.0, window_height=2.7,
+            mounting="eyelet", fabric_width=3.0, fabric_price=30.0,
+        )
+        assert result.success is True, f"报价应成功: error={result.error}"
+        assert "罗马圈" not in str(result.data["breakdown"])
+        assert result.data["total"] == pytest.approx(464.8)
+
+    async def test_tool_applies_explicit_accessories(self, sample_tool_context):
+        from app.tools.curtain_calc import CurtainCalcTool
+        result = await CurtainCalcTool().execute(
+            context=sample_tool_context, window_width=3.0, window_height=2.7,
+            mounting="eyelet", fabric_width=3.0, fabric_price=30.0,
+            accessories=[{"name": "罗马圈", "quantity": 40, "unit_price": 1.5}],
+        )
+        assert result.success is True, f"显式辅料应被接受: error={result.error}"
+        assert result.data["total"] == pytest.approx(524.8)
+        assert "罗马圈" in str(result.data["breakdown"])
+
+    async def test_tool_rejects_malformed_accessory_with_reason(self, sample_tool_context):
+        """非法显式辅料 → 明确失败 + 原因回给模型（不落成笼统的「算料失败」）。"""
+        from app.tools.curtain_calc import CurtainCalcTool
+        result = await CurtainCalcTool().execute(
+            context=sample_tool_context, window_width=3.0, window_height=2.7,
+            mounting="eyelet", fabric_width=3.0, fabric_price=30.0,
+            accessories=[{"name": "罗马圈"}],
+        )
+        assert result.success is False
+        assert "罗马圈" in (result.message or ""), f"必须指出是哪项辅料: {result.message}"
+        assert "quantity" in (result.message or "")
+        assert result.suggestion
+
+
+# ══════════════════════════════════════════════
+# 文档算例锚定（issue #4118 ②）：真值源必须算得出自己写的数
+#
+# 病根：§7 算例写「总价 ≈ 505 元」，代码算出 524.8，单测还反向锚定了 524.8；
+# 全仓 `505` 零命中 ⇒ 文档与实现**永久漂移且无人发现**。
+# 治法：§7 的每个数值都做成锚点，断言 = 代码逐值复现；改文档任一个数 ⇒ 本类变红。
+# ══════════════════════════════════════════════
+
+class TestDocExampleAnchor:
+    """`docs/curtain-fabric-quote-rules.md` §7 ↔ `build_quote` 逐值一致。"""
+
+    @staticmethod
+    def _section7() -> str:
+        doc = QUOTE_RULES_DOC.read_text(encoding="utf-8")
+        m = re.search(r"^## 7\..*?(?=^## 8\.)", doc, re.S | re.M)
+        assert m, (
+            f"{QUOTE_RULES_DOC} 里找不到 §7 算例小节（被改写/删除？）—— "
+            "文档改写必须同步本锚点，禁止让判据静默失效"
+        )
+        return m.group(0)
+
+    @staticmethod
+    def _anchored(section: str, pattern: str, what: str) -> float:
+        m = re.search(pattern, section)
+        assert m, f"§7 里找不到「{what}」的锚点数值（期望形态：{pattern}）—— 文档改写后须同步本锚点"
+        return float(m.group(1))
+
+    def test_section7_example_matches_code(self):
+        """§7 主算例（3m×2.7m / 3.0m 定高布 / 2 倍褶 / 打孔 / 30 元每米）逐值对齐代码输出。"""
+        section = self._section7()
+        quote = build_quote(
+            window_width=3.0, window_height=2.7, mounting="eyelet",
+            fabric_width=3.0, fabric_price=30.0,
+        )
+        anchors = {
+            "面料米数": (r"\*\*面料\*\*[^\n]*=\s*([\d.]+)m", quote["fabric_meters"]),
+            "面料费": (r"\*\*面料费\*\*[^\n]*=\s*([\d.]+) 元", quote["fabric_cost"]),
+            "加工费": (r"\*\*加工费\*\*[^\n]*=\s*([\d.]+) 元", quote["processing_cost"]),
+            "辅料费": (r"\*\*辅料费\*\*[^\n]*=\s*([\d.]+) 元", quote["accessory_cost"]),
+            "安装费": (r"\*\*安装费\*\*[^\n]*=\s*([\d.]+) 元", quote["install_cost"]),
+            "总价": (r"\*\*总价\*\*[^\n]*=\s*\*\*([\d.]+) 元\*\*", quote["total"]),
+        }
+        for what, (pattern, expected) in anchors.items():
+            assert self._anchored(section, pattern, what) == pytest.approx(expected), (
+                f"§7 算例的「{what}」与代码输出不一致（文档锚点值取自文档，代码 = {expected}）"
+            )
+        assert self._anchored(section, r"≈\s*([\d.]+) 元/㎡", "折合窗面积单价") == pytest.approx(
+            round(quote["total"] / (3.0 * 2.7), 1)
+        )
+
+    def test_section7_explicit_ring_variant_matches_code(self):
+        """§7 第 7 条（显式买圈）：加价与总价可复现，且**只在**显式入参下出现。"""
+        section = self._section7()
+        m = re.search(r"单独买罗马圈[^\n]*?([\d.]+) 元，总价 \*\*([\d.]+) 元\*\*", section)
+        assert m, "§7 找不到「显式买罗马圈」的加价/总价锚点 —— 文档改写后须同步本锚点"
+        quoted_adder, quoted_total = float(m.group(1)), float(m.group(2))
+        with_ring = build_quote(
+            window_width=3.0, window_height=2.7, mounting="eyelet",
+            fabric_width=3.0, fabric_price=30.0,
+            accessories=[{"name": "罗马圈", "quantity": 40, "unit_price": 1.5}],
+        )
+        base = build_quote(
+            window_width=3.0, window_height=2.7, mounting="eyelet",
+            fabric_width=3.0, fabric_price=30.0,
+        )
+        assert quoted_adder == pytest.approx(with_ring["total"] - base["total"])
+        assert quoted_total == pytest.approx(with_ring["total"])
+        assert "罗马圈" not in [b["name"] for b in base["breakdown"]], (
+            "文档承诺「不推导」⇒ 不给显式入参时明细里不得出现罗马圈"
+        )
+
+    def test_section5_caliber_states_no_derivation(self):
+        """§5 计价口径（本单裁定的依据）必须仍在文档里 —— 锚点被删则判据失去依据。"""
+        doc = QUOTE_RULES_DOC.read_text(encoding="utf-8")
+        assert "不参与系统数量推导" in doc
+        assert "accessories" in doc and "显式入参" in doc

@@ -8,7 +8,9 @@ business_truths:
   - [fabric-calc.fixed-width] 定宽布买高公式：P = ceil((W+0.3)×N/G)，M = P × (H + 0.3)（G=门幅，H=窗高）；窗高+0.3 > 门幅时触发并告警
   - [fabric-calc.pattern-loss] 对花损耗：每幅加 1 个花距（30~60cm）
   - [fabric-calc.roman] 罗马帘公式：M = (W + 0.2) × (H + 0.3)，无褶皱倍率
-  - [fabric-calc.quote-total] 报价总价 = 面料费 + 加工费 + 辅料费 + 安装费；打孔加工费默认8元/米
+  - [fabric-calc.quote-total] 报价总价 = 面料费 + 加工费 + 辅料费 + 安装费；打孔加工费默认8元/米（按面料米数打包，**已含罗马圈等辅料**，issue #3005）
+  - [fabric-calc.accessory-explicit-only] 辅料（罗马圈等按个辅料）**只走显式入参** `accessories=[{name,quantity,unit_price}]`，数量由顾客明说；**禁止**由面料米数推导（无「每米 N 个」密度，罗马圈不随打孔帘默认单列，issue #3005/#4118）
+  - [fabric-calc.doc-example] 真值源 docs/curtain-fabric-quote-rules.md §7 算例可被代码逐值复现：3m×2.7m、3.0m 定高布、2 倍褶、打孔、30 元/米 → 面料 6.6m/198 元、加工 52.8 元、辅料 152.8 元、安装 61.2 元、**总价 464.8 元**；显式单独买 40 个罗马圈（1.5 元/个）→ 524.8 元
   - [fabric-calc.no-fabrication] 不编造报价数据，必须通过 curtain_calc 工具计算
 
 primary_specs:
@@ -18,4 +20,6 @@ reviewer_asserts:
   - 工具: curtain_calc
     expect: 定高布 3m×2.5m×2倍×2.8m门幅 → fabric_meters=6.6
     expect: 定宽布 3m×2.7m×2倍×2.8m门幅 → fabric_meters=9.0 且 warning 非空
+    expect: 打孔帘 3m×2.7m×2倍×3.0m门幅×30元/米 → accessory_cost=152.8（明细无「罗马圈」）、total=464.8
+    expect: 同上 + accessories=[{罗马圈,40,1.5}] → accessory_cost=212.8、total=524.8（数量原样、不推导）
     expect: 报价 total = fabric_cost + processing_cost + accessory_cost + install_cost
