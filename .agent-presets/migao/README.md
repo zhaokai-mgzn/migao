@@ -25,7 +25,8 @@ DSH 从**已配置的 roots** 发现 preset（`USER_PRESET_DIR = '.agent-presets
 
 - **权威源（single source of truth）= 本目录** `migao/.agent-presets/migao/`（issue #3614 裁定）。
   研发模式的**改动 = 产品仓库的 PR**，与代码同流程评审、同历史回溯；`~/.dsh/.agent-presets/migao`
-  软链指向本目录（或本目录所在的工作区）后，仓库 `main` 的内容即生效内容。
+  软链指向**专职只读镜像**（独立克隆的 `.agent-presets/migao`，见「接线」）后，仓库 `main` 的内容即生效内容 ——
+  ⚠️ 但**镜像要有人去刷新**（`./scripts/preset-anchor-refresh.sh`）：锚点落后时「合并即生效」并不成立（`#4026`）。
 - **历史独立仓库 `zhaokai-mgzn/migao-agent-presets` = 历史 / 镜像**：本目录内容由它迁入。
   **迁移后以产品仓库为准**；两边都可被编辑 → 会漂移，因此**不要再向独立仓库提交新改动**
   （除用户明确裁定的归档窗口内的一次性收尾）。
@@ -35,62 +36,77 @@ DSH 从**已配置的 roots** 发现 preset（`USER_PRESET_DIR = '.agent-presets
 
 ## 接线（本机 / 换机 / 新队友）
 
-**⚠️ 顺序铁律：先合并含本目录的 PR，再换链** —— 仓库尚无 `.agent-presets/migao/` 时换链会让 DSH 当场失效。
+**⚠️ 两条铁律**：① **先合并含本目录的 PR，再换链** —— 仓库尚无 `.agent-presets/migao/` 时换链会让 DSH 当场失效；
+② **锚点必须指向「专职只读镜像」**（独立克隆），**不是**任何会被开发、被切分支、被清理的工作区 —— 理由见下节「两条实测」。
 
 ```bash
-# 在已克隆（且已含本目录）的 migao 仓库根目录执行
-ls .agent-presets/migao/preset.yml     # ① 先确认仓库里已有该路径
+# ① 建专职只读镜像（独立克隆；本机约定 $HOME/migao-preset-anchor —— 长期保留、勿删）
+MIRROR="$HOME/migao-preset-anchor"
+git clone --no-checkout <产品仓库 URL> "$MIRROR"
+git -C "$MIRROR" checkout --detach origin/main
+ls "$MIRROR/.agent-presets/migao/preset.yml"     # 镜像里已有该路径才继续
 
 # ② 摘掉旧目录 / 旧软链（若是实体目录，先备份而不是直接删）
 mv "$HOME/.dsh/.agent-presets/migao" "$HOME/.dsh/.agent-presets/migao.bak-$(date +%Y%m%d-%H%M%S)" 2>/dev/null || true
 
 # ③ 换链：-s 建软链 / -f 覆盖已存在项 / -n 不跟随已存在的软链目录
-ln -sfn "$PWD/.agent-presets/migao" "$HOME/.dsh/.agent-presets/migao"
+ln -sfn "$MIRROR/.agent-presets/migao" "$HOME/.dsh/.agent-presets/migao"
 
 # ④ 校验：应能读到 preset 元数据与技能
 cat "$HOME/.dsh/.agent-presets/migao/preset.yml"
 head -3 "$HOME/.dsh/.agent-presets/migao/skills/migao-dev-flow/SKILL.md"
+
+# ⑤ 开工自检 / 自愈（在产品仓库任一工作区根目录跑）
+./scripts/preset-anchor-check.sh      # 落后 / 悬空 / 内容不同 / 技能加载不了 ⇒ 非零退出（红就停）
+./scripts/preset-anchor-refresh.sh    # 把镜像刷到 origin/main 并复检（预设 PR 合并后必跑一次）
 ```
 
-- **换机 / 新队友**：`git clone` 产品仓库 → 在仓库根跑上面 ②~④ 即获得**同一份**研发模式
-  （不再依赖个人 `~/.dsh` 里的手抄副本）。
-- 软链指向工作区文件，**合并到 `main` 后自动生效**（拉取即更新，无需重链）。
+- **换机 / 新队友**：`git clone` 产品仓库 → 跑上面 ①~④，即获得**同一份**研发模式
+  （不再依赖个人 `~/.dsh` 里的手抄副本：手抄副本没有跟随机制，必然腐烂）。
+- ⚠️ **「合并到 `main` 就自动生效」只在锚点跟得上时才成立**：镜像**不会自己 fetch** ——
+  预设 PR 合并后跑一次 `./scripts/preset-anchor-refresh.sh`，否则下一个会话读到的仍是旧模式（`#4026`）。
 
-## 本机 live 锚点与运维铁律（2026-09-14 换链；2026-09-16 事故后重指主工作区）
+## 本机 live 锚点与运维铁律（2026-09-17 换链到**专职只读镜像** `~/migao-preset-anchor`；issue #4026）
 
-**现行锚点**：`~/ai native/migao`（产品仓库**主工作区**）的 `.agent-presets/migao` ——
-`~/.dsh/.agent-presets/migao` 软链直接指向它。事故修复时已核内容与 `origin/main` 一致
-（解析后即主工作区 = `main@51bff941` = `origin/main`，同源）。**可编辑副本只剩产品仓库一份**：
-研发模式改动只能走产品仓库 PR ——「live 源 vs 权威源」分裂（`migao-dev-flow` §17.3 反模式）**已消除**。
+**现行锚点**：`~/.dsh/.agent-presets/migao` → `$HOME/migao-preset-anchor/.agent-presets/migao`
+（**独立克隆** + `checkout --detach origin/main`：它不是 worktree、不是主工作区、不承载任何开发改动）。
 
-> **2026-09-16 事故（为什么锚点换了）**：原锚点是独立 sparse clone `~/ai native/migao-preset-live/`。
-> 一次 AI 会话的清理命令 `rm -rf migao-loop migao-preset-live migao-agent-presets …` 把**软链目标**硬删了
-> ⇒ `~/.dsh/.agent-presets/migao` 变**悬空软链** ⇒ DSH 扫不到 preset（“a dangling link is not a preset”）
-> ⇒ 「米高研发」从 DSH 消失、新建/恢复会话报 `agent-preset/not-found`，且**无任何报错**（静默失效）。
-> 修复 = 重指软链到主仓库工作区（会话数据未丢）。**教训：预设活锚是「live 内容本身」，不是可清理的工作副本
-> —— 任何清理命令（`rm -rf` / `git clean` / worktree prune / 脚本清理）都不得命中软链或其目标。**
+**为什么必须是独立克隆（两条实测，缺一不可）**：
+
+- **落后形态**（`#4026`，2026-09-17）：原锚点指向产品仓库**主工作区**。主工作区会落后 `main`
+  —— 实测落后 **42 个提交**，而**内容当时恰好一致**（所以「比版本号/比内容」都看不出问题）。
+  危险在**下一次**：一旦有 PR 改了 `.agent-presets/**` 并合并，改进就**永远到不了加载点**，
+  后续所有会话读到的仍是旧模式 —— 这就是「**迭代了但模式没进化**」的确切机制，且**零检查会因此变红**。
+- **被删形态**（`#3956`，2026-09-16 事故）：更早的锚点是独立 sparse clone `~/ai native/migao-preset-live/`，
+  一条 AI 会话的清理命令 `rm -rf migao-loop migao-preset-live migao-agent-presets …` 把**软链目标**硬删了
+  ⇒ 软链悬空 ⇒ DSH 扫不到 preset（“a dangling link is not a preset”）⇒「米高研发」从 DSH 消失、
+  新建/恢复会话报 `agent-preset/not-found`，且**无任何报错**（静默失效）。
+  **教训：锚点是「live 内容本身」，不是可清理的工作副本 —— 目标被删 = 模式当场消失。**
+  故本机锚点路径取 `$HOME/migao-preset-anchor`（名字即「锚点」，刻意不带 `-live`/`-wt` 这类"临时工作副本"语义），
+  并在镜像根放 `DO-NOT-DELETE-anchor.md` 供人识别。
 
 **为什么不用 git worktree 做锚点**：worktree 属 `scripts/dev-worktree.sh rm` / `git worktree prune` 的
-**清理半径**（"可丢弃"语义）。被删 ⇒ 软链悬空 ⇒ **DSH 静默加载不到研发模式**。主工作区（现行锚点）
-天然不在任何 worktree 清理流程之内 —— 但同理，**主工作区也禁止出现在任何 `rm -rf` / 清理命令里**。
+**清理半径**（「可丢弃」语义）⇒ 被删即软链悬空 ⇒ DSH 静默加载不到研发模式。
+`preset-anchor-refresh.sh` 已把这条**固化成判据**：镜像的 `git-common-dir` 不是它自己的 `.git`（= 它是某仓库的
+worktree）⇒ **拒绝刷新**并打印原因，而不是"先刷了再说"。
 
 **运维铁律（锚点不是"另一个工作区"，是 live 内容本身）**：
+
 1. **只读**：不得就地编辑、不得切分支、不得留未提交改动 —— 否则会变成「**藏在软链目标里的第三份副本**」：
    它直接生效，却**没有 PR、没有评审、没有 diff 提醒**，比双源漂移**更隐蔽**。
-   （改 preset 内容 = 走仓库 PR；本目录文档随 PR 更新。）
-2. **跟 main**：生效版本 = 主工作区版本。每次合并 preset PR 后 `git pull` / `./scripts/sync-main.sh`
-   把主工作区跟到 `origin/main`；开工前按 `migao-dev-flow` §18.2 核活锚新鲜度（内容级 diff）。
+   `preset-anchor-refresh.sh` 见到**已跟踪文件脏**就 fail-closed 停手（不静默覆盖）。
+2. **跟 `main`**：生效版本 = 镜像 `origin/main` 版本。跑 `./scripts/preset-anchor-refresh.sh`
+   （`fetch` + `checkout --detach origin/main` + 复检）；开工前先跑 `./scripts/preset-anchor-check.sh`（红就停）。
 3. **不可删**：锚点**不参与任何清理流程**。执行清理**之前**先
-   `readlink "$HOME/.dsh/.agent-presets/migao"`，把解析出的目标及其父目录**排除在外**；
-   同仓库 `migao-wt/` 的 worktree 属于「可丢弃」语义，可清 —— **但软链目标永远不是**。
+   `readlink "$HOME/.dsh/.agent-presets/migao"`，把解析出的目标及其父目录**排除在外**。
 
 **健康检查（换链后 / 怀疑「研发模式消失/不变」时）**：
 
 ```bash
-readlink "$HOME/.dsh/.agent-presets/migao"        # → …/migao/.agent-presets/migao
+readlink "$HOME/.dsh/.agent-presets/migao"        # → …/migao-preset-anchor/.agent-presets/migao
 test -e "$HOME/.dsh/.agent-presets/migao" && echo "软链目标存在 ✓" || echo "⚠️ 悬空软链——DSH 加载不到 preset"
 cat "$HOME/.dsh/.agent-presets/migao/preset.yml" >/dev/null && echo "preset 元数据可读"
-grep -m1 '^version' "$HOME/.dsh/.agent-presets/migao"/skills/*/SKILL.md   # 应与 origin/main 的版本一致（活锚新鲜度）
+./scripts/preset-anchor-check.sh                  # 一条命令判「新鲜 / 落后 / 悬空 / 内容不同 / 加载不了」
 ```
 
 > ⚠️ 锚点选择**救不了**「从构建产物启动 DSH」这条路径：那条限制与锚点位置无关，见下一节。

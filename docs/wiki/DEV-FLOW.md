@@ -98,8 +98,9 @@ done | sed 's/ .*//' | sort | uniq -c | sort -rn
 | 层 | 位置 | 管什么 |
 |---|---|---|
 | ① **创建路径**（根治） | `scripts/dev-worktree.sh add` | 建完工作区**自动** `git checkout origin/main -- .agent-presets/`；输出刷新了哪些文件与**理由** |
-| ② **提交路径**（增量 fail-closed） | `./scripts/dev-worktree.sh preset-guard`（判定本体 `scripts/agent-presets-guard.py`） | 暂存/工作区的预设**版本下降** ⇒ **非零退出**；**合法升级放行**；同版本内容不同 = **分叉 → 告警** |
+| ② **提交路径**（增量 fail-closed） | `./scripts/dev-worktree.sh preset-guard`（判定本体 `scripts/agent-presets-guard.py`） | 暂存/工作区的预设**版本下降** ⇒ **非零退出**；**合法升级放行**；同版本内容不同 = **分叉 → 告警**；**并判活锚新鲜度**（见 ④） |
 | ③ **机械安全网**（全库/定时对账） | `#3843` 的统一审计 `drift_audit --check` 的「`.agent-presets/**` 版本单调性」守卫 | 存量工作区 + CI 侧对账。**与本单互补**：本单管增量、贴合工作区；审计管全库、定时 |
+| ④ **加载点**（活锚，`#4026`） | `./scripts/preset-anchor-check.sh` / `preset-anchor-refresh.sh`（判定本体同上 `anchor` 子命令） | **DSH 真正加载的那份内容**是否就是 `origin/main`：内容逐字节 + 检出 sha + frontmatter 可加载性 ⇒ 落后/悬空/内容不同/加载不了 = **非零退出**（`⏭️ 未跑判定` ≠ 通过）。前三层都对了、活锚落后 ⇒ 改进仍**到不了加载点** |
 
 ```bash
 # 提交前自查（版本下降即拒绝提交；升级/相同放行）
@@ -107,7 +108,17 @@ done | sed 's/ .*//' | sort | uniq -c | sort -rn
 ./scripts/dev-worktree.sh preset-guard --source index   # 只看 `git diff --cached`
 # 命中时的修法（与 issue #3851 记录的人工修法同一形状）
 git checkout origin/main -- .agent-presets/
+
+# 加载点自查（开工第一件事；落后即先同步再动手）
+./scripts/preset-anchor-check.sh                    # 红就停：落后/悬空/内容不同/技能加载不了
+./scripts/preset-anchor-refresh.sh                  # 自愈：只读镜像 fetch + checkout --detach origin/main + 复检
 ```
+
+> **④ 为什么单列一层**：①②③ 管的都是「**仓库里的**（工作区/暂存区/全库）预设内容」，
+> 而**生效的是活锚**（`~/.dsh/.agent-presets/migao` 解析出的目录）。实测活锚曾指向落后 `origin/main`
+> **42 个提交**的主工作区，**内容当时恰好一致** ⇒ 前三层全绿、也没有任何东西变红，
+> 但下一次改预设的改进**永远到不了加载点**。故锚点必须是**专职只读镜像**（不是会在清理半径内的
+> `migao-wt/*` worktree，也不是会被开发的主工作区），并由 `preset-anchor-refresh.sh` 负责跟随。
 
 **存量清理（只出清单，脚本绝不代删）**：判据 = **分支已合入 `origin/main`**（祖先可达，或 `git cherry` 无 `+` 行
 —— squash 合并后 commit 可达性不是判据）+ **工作树干净** + **无活跃会话锁** ⇒ 列「可安全移除」；否则列「需人看」并给原因：
