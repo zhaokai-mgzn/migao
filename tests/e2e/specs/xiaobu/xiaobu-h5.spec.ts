@@ -17,6 +17,13 @@
  * 「新品推荐」区块已删除，推荐改由「推荐热门商品」快捷对话入口承载）
  * ⇒ 移除本 spec 对「新品推荐/遮光窗帘」的断言与 /chat/products/new-arrivals mock，
  *    并新增「快捷入口六格可见 + 商品推荐卡不得出现」的负向断言。
+ *
+ * 2026-09-18 同步 #4016 P14 卡型收敛：C 端 `renderCard` 裁掉**后端永不产出**的
+ * `payment` / `production_progress` / `knowledge(_result)` 死分支与 3 对别名
+ * ⇒ 收到这些卡型时落「消息内容暂不支持预览」占位。本 spec 新增一条常驻断言锁该真值
+ *   （issue #4003 的教训：**砍卡片必须同批同步视觉 spec**，否则 spec 与实现分叉持续红）。
+ *   ⚠️ 刻意**不新增截图基线**：新基线需 darwin + linux 双平台产物（见 migao-dev-flow §8 坑表），
+ *   而本改动不触碰既有基线的画面（空态/订单卡），故用 DOM 断言锁行为、复用既有基线。
  */
 
 import { test, expect } from '../../fixtures'
@@ -51,6 +58,12 @@ const MOCK_ORDER_CARD = {
       },
     ],
   },
+}
+
+/** 已裁剪卡型 mock（后端**零发射点**，前端分支已按 #4016 P14 移除 ⇒ 应落占位） */
+const MOCK_TRIMMED_CARD = {
+  type: 'payment',
+  data: { order_no: 'ORD-20260601-001', amount: 299.5, payee_name: '亿家纺织' },
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -199,5 +212,55 @@ test.describe('小布 H5 视觉回归', () => {
     await expect(page).toHaveScreenshot('xiaobu-order-card.png', {
       maxDiffPixelRatio: 0.02,
     })
+  })
+
+  test('已裁剪卡型落可理解占位（#4016 P14：后端零发射点，前端不再声称可达）', async ({ page }) => {
+    await setupMocks(page)
+    const latestDone = page.waitForResponse(
+      (r) => r.url().includes('/api/chat/sessions/latest') && r.status() === 200,
+    )
+    await page.goto('/#/pages/chat/index/index')
+    await latestDone
+    await expect(page.locator('.chat-page__navbar-name')).toBeVisible()
+
+    const input = page.locator('input, textarea').first()
+    await expect(input).toBeEnabled({ timeout: 10_000 })
+
+    await page.route('**/api/chat/send', async (route) => {
+      if (route.request().method() === 'OPTIONS') {
+        await route.fulfill({
+          status: 204,
+          headers: {
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Headers': 'Content-Type, X-Client-Type, Authorization',
+            'Access-Control-Allow-Methods': 'POST, OPTIONS',
+          },
+        })
+        return
+      }
+      const body = [
+        `event: card\ndata: ${JSON.stringify(MOCK_TRIMMED_CARD)}\n`,
+        `event: done\ndata: ${JSON.stringify({ session_id: 'sess-vr-001', message_id: 'm2' })}\n`,
+      ].join('\n')
+      await route.fulfill({
+        status: 200,
+        contentType: 'text/event-stream',
+        headers: {
+          'Content-Type': 'text/event-stream',
+          'Cache-Control': 'no-cache',
+          'Access-Control-Allow-Origin': '*',
+        },
+        body,
+      })
+    })
+
+    await input.fill('怎么付款')
+    await input.press('Enter')
+
+    // 占位文案可见（新真值）
+    await expect(page.getByText('📎 消息内容暂不支持预览')).toBeVisible()
+    // 且**不得**出现该卡型的内容/内部类型名（既不渲染卡、也不泄漏 type）
+    await expect(page.getByText('亿家纺织')).toHaveCount(0)
+    await expect(page.getByText(/payment/)).toHaveCount(0)
   })
 })
