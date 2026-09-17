@@ -40,7 +40,6 @@
 """
 import asyncio
 import importlib.util
-import os
 import sys
 import types
 from pathlib import Path
@@ -87,6 +86,16 @@ def _runner():
 
     替身一旦被调用就抛错：本文件的探针全部被 monkeypatch 拦下，**不得真实发 HTTP**
     （否则"单测"会依赖活的评测栈 —— 那是评测层的事，不是 L0）。
+
+    ⚠️ **这里不得写 `os.environ`**（2026-09-18 实证；本文件曾有两行 `setdefault`）：
+    `os.environ` 是**进程级**的，而本目录里有测试**真跑子进程**
+    （`test_verify_all_quick_scope` 的 `pytest tests/ --collect-only`、`test_gate_uncommitted_noop`
+    的 `verify-all.sh`）—— 子进程**继承**进程环境，旧写法把 `DATABASE_URL=postgresql://…`
+    （**无 `+asyncpg`**）带进子进程 ⇒ `create_async_engine` 据此选中同步驱动 ⇒ ImportError
+    ⇒ 后者 exit 4、3 个 error（`migao-dev-flow` §9「本地红 / CI 绿 = 环境差异」的同族形态，
+    且会随「CI 里有没有设该变量」漂移）。实测：`import local_runner` **不需要**任何 DSN
+    （runner 只在 `_eval_db_dsn()` 里惰性读取）⇒ 真需要时也必须写成 `postgresql+asyncpg://`
+    并**用完即还原**（走 monkeypatch/fixture，不落进程环境）。
     """
     try:
         import httpx  # noqa: F401
@@ -99,8 +108,6 @@ def _runner():
 
         stub.AsyncClient = _NoHTTP
         sys.modules.setdefault("httpx", stub)
-    os.environ.setdefault("DATABASE_URL", "postgresql://u:p@localhost:5432/db")
-    os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
     spec = importlib.util.spec_from_file_location(
         "migao_eval_runner_dbp", REPO_ROOT / "tests" / "agent_eval" / "local_runner.py")
     mod = importlib.util.module_from_spec(spec)
