@@ -1606,3 +1606,40 @@ cases:
       ci:
         - xiaobu-acceptance.yml
       verifies: []
+
+  - id: CH-037
+    legacy_id: ""
+    title: "窗帘下单澄清清单引擎（必填/默认三层/矛盾拦截/轮次上限，单测覆盖）"
+    domains:
+      - chat
+      - customer
+    tier: normal
+    persona: xiaobu
+    tags:
+      - xiaobu
+      - clarification
+      - curtain
+    truths_ref:
+      - ai-chat.intent-domains
+    # ── 覆盖说明（issue #3986，M3-E）──
+    # 现实订单大量信息靠默认约定兜底（2026-09 客户强调）。澄清做成确定性清单驱动：
+    # 必填（尺寸）追问、默认三层（行业标/商家默/客户记忆 craft_profile）、缺省即报、
+    # 矛盾拦截（4.6m 单开→建议双开/折数整除/工艺互斥/倍数红线）、轮次上限转复尺。
+    # 纯函数零 IO，由单测全量覆盖（同 CH-036 惯例不进 agent-eval 冒烟）。
+    user_inputs:
+      - "帮我家客厅做窗帘，大概要多少钱"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "尺寸（宽/高）缺失必须追问（必填检测）——不阻塞，缺省即报"
+      - "默认三层合成：客户记忆 > 商家配置 > 行业标准（布帘默认定型/纱帘默认不定型、≤2.2m 单开/>2.2m 双开）"
+      - "矛盾拦截：4.6m 单开→建议双开、折数不可整除自动调整、倍数<1.5 拒绝、打孔不按折数"
+      - "每轮追问 ≤3 项；超过 3 轮转复尺/人工"
+    skip_reason: "澄清清单引擎是确定性纯函数（app/clarification/curtain_checklist.py），由单元测试全量覆盖（test_curtain_checklist.py），非 LLM 行为，不进入 agent-eval 冒烟（同 CH-036 惯例）"
+    merge_log: "2026-09-17 新增（issue #3986）：M3-E 窗帘下单澄清清单引擎覆盖登记，单测覆盖"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_curtain_checklist.py"
+      ci:
+        - pr-check.yml
+      verifies: []

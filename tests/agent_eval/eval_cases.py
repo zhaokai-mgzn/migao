@@ -1491,6 +1491,24 @@ _CASE_CH_035 = EvalCase(
     post_session=[{'fetch': 'user_memories', 'agent_type': 'xiaobu', 'checks': ['count>=1', 'has_key:curtain_style', 'value_contains:奶油风']}],
 )
 
+# ── CH-037 [NORMAL] 窗帘下单澄清清单引擎（必填/默认三层/矛盾拦截/轮次上限，单测覆盖）（源: cases/chat.yml）──
+_CASE_CH_037 = EvalCase(
+    id='CH-037',
+    legacy_id='',
+    title='窗帘下单澄清清单引擎（必填/默认三层/矛盾拦截/轮次上限，单测覆盖）',
+    skill=Skill.MULTI_TURN,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['帮我家客厅做窗帘，大概要多少钱'],
+    expectations=['direct_reply'],
+    data_checks=['尺寸（宽/高）缺失必须追问（必填检测）——不阻塞，缺省即报', '默认三层合成：客户记忆 > 商家配置 > 行业标准（布帘默认定型/纱帘默认不定型、≤2.2m 单开/>2.2m 双开）', '矛盾拦截：4.6m 单开→建议双开、折数不可整除自动调整、倍数<1.5 拒绝、打孔不按折数', '每轮追问 ≤3 项；超过 3 轮转复尺/人工'],
+    skip_reason='澄清清单引擎是确定性纯函数（app/clarification/curtain_checklist.py），由单元测试全量覆盖（test_curtain_checklist.py），非 LLM 行为，不进入 agent-eval 冒烟（同 CH-036 惯例）',
+    tags=['xiaobu', 'clarification', 'curtain'],
+    persona='xiaobu',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── CR-001 [NORMAL] 查商品 → 下单（跨 Skill 复用 UUID）（源: cases/cross.yml）──
 _CASE_CR_001 = EvalCase(
     id='CR-001',
@@ -5757,6 +5775,7 @@ ALL_CASES = (
     _CASE_CH_033,
     _CASE_CH_034,
     _CASE_CH_035,
+    _CASE_CH_037,
     _CASE_CR_001,
     _CASE_CR_002,
     _CASE_CR_003,
