@@ -31,7 +31,7 @@ from app.config import settings
 from app.graph.state import AgentState
 from app.graph.pending_validated import extract_pending, is_pending_for, PENDING_KEY
 from app.tools.base import ToolContext
-from app.tools.registry import ToolRegistry, set_tool_context, get_tool_context
+from app.tools.registry import ToolRegistry, set_tool_context, get_tool_context, audit_write_tool
 from app.utils.log_sanitizer import LogSanitizer
 import app.utils.error_incident as _err_inc
 from app.memory.user_memory import UserMemoryManager
@@ -3222,12 +3222,19 @@ async def _execute_tool_safe(tool, tool_args: dict, tool_context, state: dict) -
                     return cached["result"], cached["dict"]
 
     # 3. 执行 + 超时
+    # 写审计落库（issue #4039）：本函数是米宝/小布**真实写路径**（直调 tool.execute，
+    # 不经 ToolRegistry.execute_tool）⇒ hook 必须挂在这里，否则 audit_logs 恒 0 行。
+    # 挂 finally：成功/超时/异常三条出口都留痕（失败也要可追溯）；只读工具不记。
+    _audit_write = not tool.read_only
+    _audit_t0 = time.time()
+    _audit_ok = False
     try:
         logger.info(f"[tool-exec] {tool_name} start")
         result = await asyncio.wait_for(
             tool.execute(tool_context, **tool_args),
             timeout=30.0,
         )
+        _audit_ok = bool(result.success)
         logger.info(f"[tool-exec] {tool_name} done success={result.success}")
     except asyncio.TimeoutError:
         logger.error(
@@ -3254,6 +3261,12 @@ async def _execute_tool_safe(tool, tool_args: dict, tool_context, state: dict) -
                           "message": f"工具 {tool_name} 执行失败，请检查参数格式后重试"},
                          ensure_ascii=False)
         return err, {"success": False, "error": "tool_execution_failed"}
+    finally:
+        if _audit_write:
+            await audit_write_tool(
+                tool_name, tool_context, tool_args, _audit_ok,
+                (time.time() - _audit_t0) * 1000,
+            )
 
     # 4. 格式化结果
     # `ToolResult` **声明的字段必须全部带进 result_dict**（issue #4013 A2：此前漏传
