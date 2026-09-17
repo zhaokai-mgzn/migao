@@ -45,7 +45,7 @@ async def prepare_turn(
     # 模块顶层 `from ... import <name>` 会把绑定**冻在 import 那一刻** ⇒ patch 静默失效
     #（本仓最忌讳的「判据自己选择沉默」）。拆分前这些名字是 base_skill 的模块全局、**调用期**
     # 解析；下面这几行恢复**同一解析时机**，语义与拆分前一致。
-    # 机械守护：tests/unit/test_execute_skill_split.py::test_no_patch_seam_is_frozen_at_import
+    # 机械守护：tests/unit/test_execute_skill_split.py::test_no_patch_seam_is_frozen_at_module_level
     from app.graph.skills import base_skill as _base
     LLMFactory = _base.LLMFactory
     create_skill_registry = _base.create_skill_registry
