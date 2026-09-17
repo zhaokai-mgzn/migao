@@ -64,6 +64,9 @@ public class ProcessingOrder {
 
     private Integer printCount;
 
+    /** 加工单二维码 token（V49，扫码报工入口；32 位 UUID 去横线） */
+    private String qrToken;
+
     @TableField(fill = FieldFill.INSERT)
     private OffsetDateTime createdAt;
 
