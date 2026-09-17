@@ -42,6 +42,8 @@ class AgentProductServiceTest {
     @Mock private ProductProcessingItemMapper productProcessingItemMapper;
     @Mock private ProcessingItemMapper processingItemMapper;
     @Mock private ProductAttributeMapper productAttributeMapper;
+    /** 库存台账（issue #4055）：手工调整的落账断言见 StockLedgerTest */
+    @Mock private StockLedgerService stockLedgerService;
 
     private Product testProduct;
     private Category testCategory;

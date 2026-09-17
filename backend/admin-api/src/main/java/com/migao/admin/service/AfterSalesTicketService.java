@@ -5,6 +5,8 @@ import com.migao.admin.entity.AfterSalesTicket;
 import com.migao.admin.entity.Order;
 import com.migao.admin.entity.OrderItem;
 import com.migao.admin.entity.Product;
+import com.migao.admin.entity.ProductSku;
+import com.migao.admin.entity.StockLedger;
 import com.migao.admin.entity.TicketTimeline;
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.mapper.AfterSalesTicketMapper;
@@ -49,6 +51,8 @@ public class AfterSalesTicketService extends ServiceImpl<AfterSalesTicketMapper,
     private final OrderService orderService;
     private final ObjectMapper objectMapper;
     private final NotificationService notificationService;
+    /** 库存台账（issue #4055）：回补/扣减只在这一处比对落账，变更逻辑本身仍在既有实现点 */
+    private final StockLedgerService stockLedgerService;
 
     // ======================== 工单来源（issue #3686） ========================
     // `source` = 工单的**真实来源**。取值集合取自代码既有事实，勿臆造第四个值：
@@ -711,9 +715,16 @@ public class AfterSalesTicketService extends ServiceImpl<AfterSalesTicketMapper,
 
         // 全部商品允许回补 → 复用订单库存恢复路径（恢复 SKU 库存 + 减销量）
         try {
+            // 库存台账（issue #4055）：真正的 SKU 改动发生在 OrderService.restoreStockForReturn 内部
+            // （本 issue 不动该文件），故按「回补前快照 vs 回补后实际值」比对落账 ——
+            // 只记真实变化的 SKU，且快照必须取在**调用回补之前**（否则链条首尾接不上）。
+            Map<Long, ProductSku> stockBefore = stockLedgerService.snapshotSkus(productIds);
             orderService.restoreStockForReturn(ticket.getOrderId());
-            log.info("售后工单完结按商品开关回补库存完成: ticketNo={}, orderId={}, productIds={}",
-                    ticket.getTicketNo(), ticket.getOrderId(), productIds);
+            int ledgerRows = stockLedgerService.recordChangesAgainstSnapshot(
+                    ticket.getTenantId(), stockBefore, StockLedger.REASON_AFTERSALES,
+                    ticket.getTicketNo(), "退货回补库存（allow_return_restock=true）");
+            log.info("售后工单完结按商品开关回补库存完成: ticketNo={}, orderId={}, productIds={}, 库存流水行数={}",
+                    ticket.getTicketNo(), ticket.getOrderId(), productIds, ledgerRows);
         } catch (Exception e) {
             log.warn("售后工单完结回补库存失败（不影响工单主流程）: ticketNo={}, error={}",
                     ticket.getTicketNo(), e.getMessage());

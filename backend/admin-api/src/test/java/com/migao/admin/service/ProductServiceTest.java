@@ -73,6 +73,10 @@ class ProductServiceTest {
     @Mock
     private ProductAttributeMapper productAttributeMapper;
 
+    /** 库存台账（issue #4055）：本类只断言既有库存路径不受影响，落账语义见 StockLedgerTest */
+    @Mock
+    private StockLedgerService stockLedgerService;
+
     private Product testProduct;
     private Category testCategory;
 

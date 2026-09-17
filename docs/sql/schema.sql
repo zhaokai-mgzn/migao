@@ -892,6 +892,35 @@ CREATE INDEX IF NOT EXISTS idx_daily_briefings_tenant_date
     ON daily_briefings (tenant_id, biz_date);
 
 -- ================================================
+-- 9.7 库存流水/台账（issue #4055，V53 迁移）
+-- ================================================
+-- SKU 级库存变更事实账（粒度 = SKU 级，#4038：product_skus.stock 是权威、products.stock 是派生）。
+-- 每行 = 一次变更（before_qty → after_qty），同 SKU 相邻两行必须首尾相接才可对账。
+-- 保留期：不设 TTL，随订单生命周期软删（deleted）。与 orders.stock_deducted 死列的关系见 V53 头注释。
+CREATE TABLE IF NOT EXISTS stock_ledger_entries (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    tenant_id BIGINT NOT NULL REFERENCES tenants(id),
+    product_id VARCHAR(64) NOT NULL REFERENCES products(id),
+    sku_id BIGINT,                                   -- 无 FK：SKU 会被硬删重建（追溯优先用 sku_code）
+    sku_code VARCHAR(64),
+    delta INT NOT NULL,                              -- 正=入库/回补，负=出库/扣减（恒等于 after_qty - before_qty）
+    before_qty INT NOT NULL,
+    after_qty INT NOT NULL,
+    reason VARCHAR(16) NOT NULL,                     -- order / aftersales / manual
+    ref_no VARCHAR(64),                              -- 订单号 / 工单号；manual 为空
+    note VARCHAR(255),                               -- 人类可读原因（如「盘点」「报损」）
+    operator VARCHAR(64) NOT NULL,                   -- 登录用户名；内部服务 = internal-service；无认证 = system
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    deleted INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_stock_ledger_tenant_sku
+    ON stock_ledger_entries (tenant_id, sku_id, id);
+CREATE INDEX IF NOT EXISTS idx_stock_ledger_tenant_product
+    ON stock_ledger_entries (tenant_id, product_id, id);
+CREATE INDEX IF NOT EXISTS idx_stock_ledger_tenant_ref
+    ON stock_ledger_entries (tenant_id, ref_no, id);
+
+-- ================================================
 -- 10. 审计日志表
 -- ================================================
 

@@ -8,6 +8,7 @@ import com.migao.admin.entity.ProductAttribute;
 import com.migao.admin.entity.ProductColor;
 import com.migao.admin.entity.ProductProcessingItem;
 import com.migao.admin.entity.ProductSku;
+import com.migao.admin.entity.StockLedger;
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.mapper.CategoryMapper;
 import com.migao.admin.mapper.ProcessingItemMapper;
@@ -66,6 +67,8 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
     private final ProductProcessingItemMapper productProcessingItemMapper;
     private final ProcessingItemMapper processingItemMapper;
     private final ProductAttributeMapper productAttributeMapper;
+    /** 库存台账（issue #4055）：本类只负责在库存变更点写一行流水，查询/落账语义在该服务内 */
+    private final StockLedgerService stockLedgerService;
 
     /**
      * 商品品牌存储在 product_attributes 表的 attr_key
@@ -1864,6 +1867,12 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
             throw BusinessException.validationError("商品没有 SKU，无法调整库存，请先在商品详情维护 SKU");
         }
 
+        // 库存台账（issue #4055）：分配算法会原地改写 sku.getStock()，变更前值必须先记下来
+        Map<Long, Integer> stockBefore = new LinkedHashMap<>();
+        for (ProductSku sku : skus) {
+            stockBefore.put(sku.getId(), sku.getStock() != null ? sku.getStock() : 0);
+        }
+
         int total = skus.stream().mapToInt(s -> s.getStock() != null ? s.getStock() : 0).sum();
         long newTotalLong = (long) total + adjustment;
         if (newTotalLong < 0) {
@@ -1905,6 +1914,14 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
 
         for (ProductSku sku : skus) {
             productSkuMapper.updateById(sku);
+            int before = stockBefore.getOrDefault(sku.getId(), 0);
+            int after = sku.getStock() != null ? sku.getStock() : 0;
+            if (before != after) {
+                // 库存台账（issue #4055）：每次 SKU 库存变更写一行流水（before/after 首尾相接可对账）。
+                // 未拿到分配量的 SKU（调整量小于 SKU 数）不落行 —— 台账里不出现 0 变更噪声。
+                stockLedgerService.record(tenantId, productId, sku.getId(), sku.getSkuCode(),
+                        before, after, StockLedger.REASON_MANUAL, null, reason);
+            }
         }
         // 商品级 stock 仅作冗余展示，同步为 SKU 汇总值
         product.setStock(newTotal);

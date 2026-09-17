@@ -13,7 +13,7 @@ import java.util.regex.Pattern;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * 生产报工（V49，issue #3995）SQL 契约测试支撑
+ * 生产报工（V49，issue #3995）/ 库存台账（V53，issue #4055）SQL 契约测试支撑
  *
  * 把「Java 实体字段 ↔ 迁移列 ↔ bootstrap schema」三源收敛变成可执行断言：
  * 只写实体不写迁移、或迁移不同步 docs/sql/schema.sql 都会在此变红
@@ -53,7 +53,16 @@ final class ProductionMigrationSql {
      * 列名按行首匹配（避免 `qty` 被 `done_qty` 这类子串误命中）。
      */
     static void assertTableColumns(String table, String... columns) {
-        for (String source : new String[]{MIGRATION, SCHEMA}) {
+        assertTableColumnsIn(MIGRATION, table, columns);
+    }
+
+    /**
+     * 同上，但显式指定迁移文件（V53 库存台账等复用；避免为每个迁移复制一套读文件逻辑）。
+     *
+     * @param migration 仓库根相对的迁移路径
+     */
+    static void assertTableColumnsIn(String migration, String table, String... columns) {
+        for (String source : new String[]{migration, SCHEMA}) {
             String body = createTableBody(read(source), table);
             assertThat(body).as("%s 缺少表 %s", source, table).isNotNull();
             for (String column : columns) {
