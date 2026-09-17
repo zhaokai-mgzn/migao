@@ -278,6 +278,14 @@ jobs:
 
       # 弱断言检测：新增测试文件不得用凑数断言（is not None / assert True / 空 pass）
       # 只扫「新增」测试文件，存量测试的弱断言不阻塞（历史遗留，避免误伤）
+      # ⚠️ 这里的 `grep -iE 'test|spec'` 是「哪些文件算测试文件」的**内联副本**；判定本体
+      #    在 `.github/growth_gate.py::_is_test_file`（G5 用例追溯与 `verify-all.sh` 的
+      #    `--check-weak --new-tests-only` 共用同一实现）—— 改判定口径请改那里，勿只改本行
+      #    （issue #4077：本地曾因缺这层过滤而把新增**源文件**当测试文件扫 ⇒ 报出 CI 不会报的红）。
+      # 与本地 `verify-all.sh gate` 的**唯一差别是扫描源**（判定本应相同、扫描源本应不同）：
+      # 本 step 只能看到已提交 diff（`--diff-filter=A origin/main...HEAD`，PR 的改动必然已提交）；
+      # 本地还要并入**工作区**未提交的新增文件（否则「提交前跑」对该文件是空跑，issue #3724）。
+      # ↑ 这段口径与 `verify-all.sh` gate_check 的弱断言段保持一致（同一段文字，issue #4077）。
       - name: Check weak asserts in new tests
         run: |
           NEW_TESTS=$(git diff --diff-filter=A --name-only origin/main...HEAD | grep -E '\.(py|java|ts|tsx)$' | grep -iE 'test|spec' || true)

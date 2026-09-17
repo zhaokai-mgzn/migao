@@ -245,6 +245,13 @@ def _is_test_file(file_path):
 
     判定：扩展名必须是代码文件（.py/.java/.ts/.tsx），文件名含 test/spec；
     conftest（pytest 夹具，非用例）与 runner/生成数据文件（local_runner/eval_cases 等）不算。
+
+    ⚠️ **本函数是「哪些文件算测试文件」的单一事实源（issue #4077）**：G5 用例追溯与新测试
+    弱断言扫描（`--check-weak --new-tests-only`）都必须调它。此前这句判定在三处各写了一遍
+    （本函数 / `pr-check.yml` 的内联 grep / `verify-all.sh` 的内联 grep），且本地那处**只**过滤
+    工作区新增文件、不过滤已提交 diff 里的新增文件 ⇒ 新增**源文件**（如 `app/**/x.py`）被当作
+    测试文件扫弱断言、报出 CI 不会报的红（`verify-all.sh` 曾断言「与 pr-check 语义一致」但实现
+    不同 = 注释漂移）。**禁止在别处再写一套判定**：复制一份必然漂移。
     """
     base = file_path.split("/")[-1]
     if not base.endswith(TEST_FILE_EXTS):
@@ -592,6 +599,9 @@ def main(argv=None):
                         help="有 blocker 时退出码 1（本地/CLI 用）；默认退出码 0（CI 由 JSON 判定，崩溃才非零）")
     parser.add_argument("--check-weak", action="store_true",
                         help="扫描 --files 指定测试文件的弱断言（凑数断言），有则退出 1")
+    parser.add_argument("--new-tests-only", action="store_true",
+                        help="配合 --check-weak：先按 _is_test_file 过滤掉非测试文件再扫"
+                             "（调用方可能把候选文件与源文件混在一起传进来，见 issue #4077）")
     parser.add_argument("--check-cases",
                         help="用例库目录（cases/*.yml）——启用 G5 用例追溯链：测试文件 ↔ 行为用例")
     args = parser.parse_args(argv)
@@ -600,8 +610,23 @@ def main(argv=None):
         if not args.files:
             print("⚠️ --check-weak 需配合 --files 指定测试文件")
             return 1
+        # 只扫**测试文件**：候选文件里可能混着新增源文件（本地 `verify-all.sh gate` 把
+        # 「已提交新增文件 ∪ 工作区新增文件」一并传来），判定走 `_is_test_file` 单一事实源
+        # —— 门禁的扫描集与「测试文件」的定义必须同源，否则新增源文件会被当测试文件扫
+        # ⇒ 报出 CI 不会报的红（issue #4077）。该步只缩小扫描集，**不放宽判定**：
+        # 真弱断言仍逐个检出（解释器无关，纯文本扫描）。
+        files = [f for f in args.files if f.strip()]
+        if args.new_tests_only:
+            kept = [f for f in files if _is_test_file(f)]
+            if len(kept) < len(files):
+                print(f"  ⏭️ 按测试文件判定剔除 {len(files) - len(kept)} 个非测试文件"
+                      f"（新增源文件不参与弱断言扫描，与 CI 同一判定：_is_test_file）")
+            files = kept
+        if not files:
+            print("✅ 候选文件中无新增测试文件，跳过弱断言检查")
+            return 0
         total = 0
-        for tf in args.files:
+        for tf in files:
             try:
                 weak = find_weak_asserts(tf)
             except ValueError as e:
@@ -613,7 +638,7 @@ def main(argv=None):
             for w in weak:
                 print(f"  L{w['line_no']}: {w['line']}")
             total += len(weak)
-        print(f"\n合计 {len(args.files)} 个测试文件，{total} 处弱断言")
+        print(f"\n合计 {len(files)} 个测试文件，{total} 处弱断言")
         return 1 if total > 0 else 0
 
     tech_path = args.tech_stack or _find_tech_stack()
