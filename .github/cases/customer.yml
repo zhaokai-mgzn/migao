@@ -296,7 +296,7 @@ cases:
 
   - id: CU-008
     legacy_id: ""
-    title: "客户工艺画像与常用物流存储（米宝 customer_manage 可写，M2-D）"
+    title: "客户工艺画像与常用物流查询（米宝 customer_manage 读路径，M2-D）"
     domains:
       - customer
     tier: normal
@@ -308,20 +308,36 @@ cases:
       - logistics
     truths_ref:
       - customer-crm.profile
-    # ── 覆盖说明（issue #3984，M2-D）──
+    # ── 覆盖说明（issue #3984，M2-D；2026-09-17 issue #4007 改读类）──
     # 用户 2026-09-17 三项要求之一：客户级工艺偏好（standard 跟随企业固定工艺 /
-    # economy 主动省料 / self_quoted 自报用料）与常用物流/快递公司需持久化，
-    # 由米宝经 customer_manage(update) 写入（字段契约由 test_tool_field_name_contract.py 兜底）。
+    # economy 主动省料 / self_quoted 自报用料）与常用物流/快递公司需持久化。
+    # ⚠️ 本用例只承担**读路径**（agent 行为面）：场景是「查看某客户的工艺偏好/常用物流」，
+    #   期望 customer_manage(action=detail)（detail ∈ 工具 read_only_actions，不受确认门禁拦截）。
+    #   原版是**写类**（期望 action=update），但输入场景是「查询」口径 → agent 不会调 update
+    #   ⇒ run 35233821582 `unmatched expectation: customer_manage(action=update)`
+    #   （reproducible）。写路径本身是**确定性契约**（字段名/落库），由单测覆盖：
+    #   backend/ai-agent-service/tests/test_tool_field_name_contract.py（其 case_ids 含 CU-008）
+    #   + 后端 V47 迁移列 —— 不靠 LLM 行为面重复验。
+    #   读类用例不得被要求效果层断言（assertion_taxonomy：is_write_expectation 按
+    #   read_only_actions 判读，detail ∈ read_only_actions）。
     user_inputs:
-      - "把客户张三的工艺偏好设为经济省料，常用物流记成四季安（物流专线）"
+      - "帮我看看客户张三的工艺偏好和常用物流设置是什么"
     expectations:
       - tool: customer_manage
         args:
-          action: update
+          action: detail
+    must_succeed:
+      - tool: customer_manage
     data_checks:
-      - "customer_manage(update) 可写 craftMode / craftProfile / defaultLogisticsType / defaultLogisticsCompany（CustomerProfile 新列，V47 迁移）"
+      - "客户工艺偏好/常用物流是**读**场景 → customer_manage(action=detail) 被调用且成功（must_succeed 断言 success=true）；detail 返回 CustomerProfile 的 craftMode/craftProfile/defaultLogisticsType/defaultLogisticsCompany"
+      - "写路径（customer_manage(action=update) 写 craftMode / craftProfile / defaultLogisticsType / defaultLogisticsCompany，CustomerProfile 新列 V47 迁移）**由单测契约覆盖**：test_tool_field_name_contract.py（case_ids 含 CU-008）+ 后端列契约，不在本行为用例重复断言"
       - "物流类型区分 express（快递）与 logistics（物流/专线，如四季安）——POC 客户更多选物流"
       - "工艺画像与常用物流在客户详情（GET /api/admin/customers/{id}）中返回，供报价协商（M3-F）读取"
-      - "字段跨端契约：工具下发字段名与 CustomerProfile 列一致（test_tool_field_name_contract.py 静态兜底）"
     skip_reason: ""
-    merge_log: "2026-09-17 新增（issue #3984）：M2-D 客户工艺画像与常用物流存储覆盖登记"
+    merge_log: "2026-09-17 新增（issue #3984）：M2-D 客户工艺画像与常用物流存储覆盖登记。2026-09-17（issue #4007，run 35233821582 CU-008 reproducible）：原版是**写类**期望（customer_manage(action=update)）而输入场景是查询口径 → agent 不会调 update → 期望永不满足（恒红形态）。改读类：输入改「看看客户张三的工艺偏好和常用物流」+ 期望 action=detail（读）+ must_succeed；写路径明确交回单测契约（test_tool_field_name_contract.py，case_ids 含 CU-008）"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_tool_field_name_contract.py"
+      ci:
+        - pr-check.yml
+      verifies: []

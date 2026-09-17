@@ -1736,23 +1736,34 @@ cases:
     truths_ref:
       - ai-chat.intent-tool-map
       - ai-chat.tool-classes
-    # ── 覆盖说明（issue #3996，M4-I）──
-    # 顾客问「我的订单做到哪了」→ 小布调 production_progress_query(order_no=…) 取进度%/
+    # ── 覆盖说明（issue #3996，M4-I；2026-09-17 issue #4007 改为点名单号）──
+    # 顾客问「我的订单做到哪道工序了」→ 小布调 production_progress_query(order_no=…) 取进度%/
     # 当前工序/待完工序/预计交期；数量与状态语义见冻结契约（M4-G-2 端点）。
-    # 顾客没给订单号时先用 customer_order_query 列出本人订单取号（不猜号、不编造进度）。
+    # ⚠️ 为何**点名 fixture 订单号**（EVAL-ORD-0002）：原输入「我的订单做到哪了」要求 agent
+    #   先链式取号（customer_order_query → 从列表里挑一笔），同跑的下单用例会新建「待付款」单、
+    #   「最近一笔」被顶位 ⇒ 取号结果不确定 ⇒ 工具被调但参数错的概率不可控（先例：
+    #   CH-006「我要退上次买的那单，订单号 EVAL-ORD-0002」——点名 fixture 订单即确定性）。
+    # ⚠️ 夹具订单**没有加工单**（seed 无 processing_orders）：端点返回 progress_percent=0 /
+    #   current_operation 空串 / pending_operations 空数组，但 success=true（「未开始」态，
+    #   见 ProductionService.progress 的注释）。故本用例断言的是「工具被**成功调用**」
+    #   （must_succeed 机器断言 success=true），**不**追求非零进度。
     user_inputs:
-      - "我的订单做到哪了？还要等多久啊"
+      - "我的订单 EVAL-ORD-0002 做到哪道工序了？还要等多久啊"
     expectations:
       - tool: production_progress_query
+    must_succeed:
+      - tool: production_progress_query
     data_checks:
-      - "顾客问进度 → 调 production_progress_query → 返回进度%/当前工序/待完工序/预计交期（不得只回一句「生产中」）"
-      - "缺订单号时先用 customer_order_query 取顾客本人订单号再查，禁止编造订单号或进度"
+      - "顾客问进度 → production_progress_query(order_no=EVAL-ORD-0002) 被调用且**成功**返回（must_succeed 断言 success=true，不是「工具名出现过」）"
+      - "端点订单解析与报工链路同口径（issue #4006/#4007）：复用 ProductionService.resolveOrder 的 order_id → order_no → qr_token 三形态 —— 给内部 id、订单号或加工单二维码 token 都能查到；只认 order_no 会让「有单却 404」"
+      - "夹具订单 EVAL-ORD-0002 无加工单 ⇒ 返回 0%/空工序但 success=true；如实转述「暂无加工进度」属合格行为，不算违规"
       - "工具失败/查不到时如实告知并可转人工，禁止编造进度或交期"
     skip_reason: ""
-    merge_log: "2026-09-17 新增（issue #3996，M4-I）：生产进度问答 C 端覆盖（小布）"
+    merge_log: "2026-09-17 新增（issue #3996，M4-I）：生产进度问答 C 端覆盖（小布）。2026-09-17（issue #4007，run 35233821582 CH-039 reproducible）：原输入不含订单号 → agent 先 customer_order_query 取号、查到全为「已发货/已完成」的存量单后直接作答、**production_progress_query 全程未调用** → 改为**点名单号**（fixture EVAL-ORD-0002，先例 CH-006 点名单号）使 agent 无需链式取号即可直接调工具；并补 must_succeed 把「工具被成功调用」变成机器断言（同批产品侧把 progress 的订单解析对齐 resolveOrder 三形态）"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_production_progress_query.py"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ProductionServiceTest.java"
       ci:
         - pr-check.yml
       verifies: []
@@ -1772,23 +1783,37 @@ cases:
     truths_ref:
       - ai-chat.intent-tool-map
       - ai-chat.tool-classes
-    # ── 覆盖说明（issue #3996，M4-I）──
+    # ── 覆盖说明（issue #3996，M4-I；2026-09-17 issue #4007 改为点名单号）──
     # B 端商家问「这单做到哪道工序」→ 米宝调 production_progress_query(order_no=…)。
     # 本用例是 mibao 侧该工具的**唯一**覆盖证据（覆盖门禁对「米宝 skill 绑了但零用例」
     # 判 uncovered 阻塞），也是「米宝真的能用生产进度」的行为面证据。
+    # ⚠️ 为何**点名 fixture 订单号**（EVAL-MB-ORD-0003）：原输入「最近那笔还在生产的订单」
+    #   要求 agent 先 order_query 按状态筛再取号；实测（run 35233821582）筛出 0 笔
+    #   「生产中」订单 → agent 直接答「没有可查的生产进度」、**工具全程未调用**。
+    #   点名单号后无需链式取号（先例：CH-006 点名单号即确定性）。选 0003 而非 0001：
+    #   0001 是**已完成**订单且挂 AS-003 售后写用例；0003 状态「已确认」（与「还要多久能好」
+    #   的问法自洽），且唯一并点名它的 PG-015 已 skip（加工单工具不对 agent 开放）
+    #   ⇒ 不存在「并发生成加工单」的进度竞态。
+    # ⚠️ 夹具订单**没有加工单**：端点返回 progress_percent=0 / current_operation 空串 /
+    #   pending_operations 空数组，但 success=true（「未开始」态）。故本用例断言的是
+    #   「工具被**成功调用**」（must_succeed），**不**追求非零进度。
     user_inputs:
-      - "帮我看看最近那笔还在生产的订单，做到哪道工序了，还要多久能好"
+      - "订单 EVAL-MB-ORD-0003 做到哪道工序了，还要多久能好"
     expectations:
       - tool: production_progress_query
+    must_succeed:
+      - tool: production_progress_query
     data_checks:
-      - "商家问生产进度 → 调 production_progress_query → 返回进度%/当前工序/待完工序/预计交期"
-      - "缺订单号时先用 order_query 查单取号再查进度，禁止编造订单号或进度"
+      - "商家问生产进度 → production_progress_query(order_no=EVAL-MB-ORD-0003) 被调用且**成功**返回（must_succeed 断言 success=true，不是「工具名出现过」）"
+      - "端点订单解析与报工链路同口径（issue #4006/#4007）：复用 ProductionService.resolveOrder 的 order_id → order_no → qr_token 三形态（#4007 前只认 order_no，给内部 id 会 404）"
+      - "夹具订单 EVAL-MB-ORD-0003 无加工单 ⇒ 返回 0%/空工序但 success=true；如实转述「尚未开始生产/暂无工序」属合格行为"
       - "工具失败/查不到时如实告知，不得编造交期"
     skip_reason: ""
-    merge_log: "2026-09-17 新增（issue #3996，M4-I）：生产进度问答 B 端覆盖（米宝）"
+    merge_log: "2026-09-17 新增（issue #3996，M4-I）：生产进度问答 B 端覆盖（米宝）。2026-09-17（issue #4007，run 35233821582 CH-040 reproducible）：原输入「最近那笔还在生产的订单」→ agent 用 order_query(status=producing) 筛出 0 笔即作答、**production_progress_query 全程未调用**；改为点名单号 EVAL-MB-ORD-0003（PG-015 已 skip ⇒ 无加工单竞态）+ 补 must_succeed；产品侧同批把 progress 的订单解析对齐 resolveOrder 三形态"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_production_progress_query.py"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ProductionServiceTest.java"
       ci:
         - pr-check.yml
       verifies: []

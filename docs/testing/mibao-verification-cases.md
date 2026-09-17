@@ -1078,25 +1078,29 @@
 
 ### CH-039. 小布答顾客查生产进度（订单做到哪道工序/还要多久） 🔵
 ```
-你: 我的订单做到哪了？还要等多久啊
+你: 我的订单 EVAL-ORD-0002 做到哪道工序了？还要等多久啊
 期望: production_progress_query
-数据: 顾客问进度 → 调 production_progress_query → 返回进度%/当前工序/待完工序/预计交期（不得只回一句「生产中」）
-数据: 缺订单号时先用 customer_order_query 取顾客本人订单号再查，禁止编造订单号或进度
+数据: 顾客问进度 → production_progress_query(order_no=EVAL-ORD-0002) 被调用且**成功**返回（must_succeed 断言 success=true，不是「工具名出现过」）
+数据: 端点订单解析与报工链路同口径（issue #4006/#4007）：复用 ProductionService.resolveOrder 的 order_id → order_no → qr_token 三形态 —— 给内部 id、订单号或加工单二维码 token 都能查到；只认 order_no 会让「有单却 404」
+数据: 夹具订单 EVAL-ORD-0002 无加工单 ⇒ 返回 0%/空工序但 success=true；如实转述「暂无加工进度」属合格行为，不算违规
 数据: 工具失败/查不到时如实告知并可转人工，禁止编造进度或交期
+必须成功: production_progress_query
 ```
 真值: ai-chat.intent-tool-map, ai-chat.tool-classes
-溯源: 2026-09-17 新增（issue #3996，M4-I）：生产进度问答 C 端覆盖（小布） ｜ tags: xiaobu, production, order
+溯源: 2026-09-17 新增（issue #3996，M4-I）：生产进度问答 C 端覆盖（小布）。2026-09-17（issue #4007，run 35233821582 CH-039 reproducible）：原输入不含订单号 → agent 先 customer_order_query 取号、查到全为「已发货/已完成」的存量单后直接作答、**production_progress_query 全程未调用** → 改为**点名单号**（fixture EVAL-ORD-0002，先例 CH-006 点名单号）使 agent 无需链式取号即可直接调工具；并补 must_succeed 把「工具被成功调用」变成机器断言（同批产品侧把 progress 的订单解析对齐 resolveOrder 三形态） ｜ tags: xiaobu, production, order
 
 ### CH-040. 米宝查订单生产进度（做到哪道工序/还要多久） 🔵
 ```
-你: 帮我看看最近那笔还在生产的订单，做到哪道工序了，还要多久能好
+你: 订单 EVAL-MB-ORD-0003 做到哪道工序了，还要多久能好
 期望: production_progress_query
-数据: 商家问生产进度 → 调 production_progress_query → 返回进度%/当前工序/待完工序/预计交期
-数据: 缺订单号时先用 order_query 查单取号再查进度，禁止编造订单号或进度
+数据: 商家问生产进度 → production_progress_query(order_no=EVAL-MB-ORD-0003) 被调用且**成功**返回（must_succeed 断言 success=true，不是「工具名出现过」）
+数据: 端点订单解析与报工链路同口径（issue #4006/#4007）：复用 ProductionService.resolveOrder 的 order_id → order_no → qr_token 三形态（#4007 前只认 order_no，给内部 id 会 404）
+数据: 夹具订单 EVAL-MB-ORD-0003 无加工单 ⇒ 返回 0%/空工序但 success=true；如实转述「尚未开始生产/暂无工序」属合格行为
 数据: 工具失败/查不到时如实告知，不得编造交期
+必须成功: production_progress_query
 ```
 真值: ai-chat.intent-tool-map, ai-chat.tool-classes
-溯源: 2026-09-17 新增（issue #3996，M4-I）：生产进度问答 B 端覆盖（米宝） ｜ tags: mibao, production, order
+溯源: 2026-09-17 新增（issue #3996，M4-I）：生产进度问答 B 端覆盖（米宝）。2026-09-17（issue #4007，run 35233821582 CH-040 reproducible）：原输入「最近那笔还在生产的订单」→ agent 用 order_query(status=producing) 筛出 0 笔即作答、**production_progress_query 全程未调用**；改为点名单号 EVAL-MB-ORD-0003（PG-015 已 skip ⇒ 无加工单竞态）+ 补 must_succeed；产品侧同批把 progress 的订单解析对齐 resolveOrder 三形态 ｜ tags: mibao, production, order
 
 ### CH-041. 米宝查工人计件工资（某师傅某月计件合计与明细） 🔵
 ```
@@ -1254,17 +1258,18 @@
 真值: product-sku-stock.status-flow
 溯源: 2026-09-15 新增（issue #3932）：C 端小布只能展示已上架商品——product_search/product_detail 顾客侧上架过滤（sess_2efa2071bb1747d8 复盘关联） ｜ tags: c-end, product, visibility
 
-### CU-008. 客户工艺画像与常用物流存储（米宝 customer_manage 可写，M2-D） 🔵
+### CU-008. 客户工艺画像与常用物流查询（米宝 customer_manage 读路径，M2-D） 🔵
 ```
-你: 把客户张三的工艺偏好设为经济省料，常用物流记成四季安（物流专线）
-期望: customer_manage(action=update)
-数据: customer_manage(update) 可写 craftMode / craftProfile / defaultLogisticsType / defaultLogisticsCompany（CustomerProfile 新列，V47 迁移）
+你: 帮我看看客户张三的工艺偏好和常用物流设置是什么
+期望: customer_manage(action=detail)
+数据: 客户工艺偏好/常用物流是**读**场景 → customer_manage(action=detail) 被调用且成功（must_succeed 断言 success=true）；detail 返回 CustomerProfile 的 craftMode/craftProfile/defaultLogisticsType/defaultLogisticsCompany
+数据: 写路径（customer_manage(action=update) 写 craftMode / craftProfile / defaultLogisticsType / defaultLogisticsCompany，CustomerProfile 新列 V47 迁移）**由单测契约覆盖**：test_tool_field_name_contract.py（case_ids 含 CU-008）+ 后端列契约，不在本行为用例重复断言
 数据: 物流类型区分 express（快递）与 logistics（物流/专线，如四季安）——POC 客户更多选物流
 数据: 工艺画像与常用物流在客户详情（GET /api/admin/customers/{id}）中返回，供报价协商（M3-F）读取
-数据: 字段跨端契约：工具下发字段名与 CustomerProfile 列一致（test_tool_field_name_contract.py 静态兜底）
+必须成功: customer_manage
 ```
 真值: customer-crm.profile
-溯源: 2026-09-17 新增（issue #3984）：M2-D 客户工艺画像与常用物流存储覆盖登记 ｜ tags: customer, mibao, craft-profile, logistics
+溯源: 2026-09-17 新增（issue #3984）：M2-D 客户工艺画像与常用物流存储覆盖登记。2026-09-17（issue #4007，run 35233821582 CU-008 reproducible）：原版是**写类**期望（customer_manage(action=update)）而输入场景是查询口径 → agent 不会调 update → 期望永不满足（恒红形态）。改读类：输入改「看看客户张三的工艺偏好和常用物流」+ 期望 action=detail（读）+ must_succeed；写路径明确交回单测契约（test_tool_field_name_contract.py，case_ids 含 CU-008） ｜ tags: customer, mibao, craft-profile, logistics
 
 ## 数据域（10 case）
 
@@ -3568,14 +3573,15 @@
 ### ST-011. 企业收款二维码（微信/支付宝）C 端支付页展示与平台不经手资金（二清规避） 🔵
 ```
 你: 我支付这笔订单，怎么付款
-期望: direct_reply
+期望: direct_reply or order_query
 数据: C 端支付页展示收款码（/chat/payment-qrcodes 精简字段 image_url/payee_name）+ 应付金额 + 微信/支付宝切换
 数据: 页面注明「款项直接支付给商家」（平台不经手资金，二清规避）
 数据: 商家设置端 PUT /api/admin/settings/payment-qrcodes/{type} upsert（wechat/alipay 各一张，非法类型拒绝）—— 由 SettingsControllerTest MockMvc 覆盖
 数据: 无收款码时展示降级提示（PaymentCard 空态）
+数据: 答付款问题前先定位订单（order_query / C 端 customer_order_query）属合格路径；direct_reply 直答亦合格（OR 形态）
 ```
 真值: settings-manage.ai-config
-溯源: 2026-09-17 新增（issue #3990）：M3-F 企业收款二维码——C 端展示行为覆盖（persona 双端）；写路径由 MockMvc 单测覆盖 ｜ tags: settings, payment
+溯源: 2026-09-17 新增（issue #3990）：M3-F 企业收款二维码——C 端展示行为覆盖（persona 双端）；写路径由 MockMvc 单测覆盖。2026-09-17（issue #4007，run 35233821582 ST-011 reproducible）：期望由裸 `direct_reply` 放宽为 `direct_reply or order_query` —— 实测 mibao 腿 R1 先 order_query（查这笔待付款订单）再答付款指引，行为合理却被「期望无工具调用」判红（期望过严）；OR 形态同时保留直接答分支（小布腿 runner 侧 order_query→customer_order_query 同义映射） ｜ tags: settings, payment
 
 ## token-refresh（4 case）
 

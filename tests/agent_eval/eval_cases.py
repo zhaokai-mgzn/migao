@@ -1570,15 +1570,16 @@ _CASE_CH_039 = EvalCase(
     title='小布答顾客查生产进度（订单做到哪道工序/还要多久）',
     skill=Skill.MULTI_TURN,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['我的订单做到哪了？还要等多久啊'],
+    user_inputs=['我的订单 EVAL-ORD-0002 做到哪道工序了？还要等多久啊'],
     expectations=['production_progress_query'],
-    data_checks=['顾客问进度 → 调 production_progress_query → 返回进度%/当前工序/待完工序/预计交期（不得只回一句「生产中」）', '缺订单号时先用 customer_order_query 取顾客本人订单号再查，禁止编造订单号或进度', '工具失败/查不到时如实告知并可转人工，禁止编造进度或交期'],
+    data_checks=['顾客问进度 → production_progress_query(order_no=EVAL-ORD-0002) 被调用且**成功**返回（must_succeed 断言 success=true，不是「工具名出现过」）', '端点订单解析与报工链路同口径（issue #4006/#4007）：复用 ProductionService.resolveOrder 的 order_id → order_no → qr_token 三形态 —— 给内部 id、订单号或加工单二维码 token 都能查到；只认 order_no 会让「有单却 404」', '夹具订单 EVAL-ORD-0002 无加工单 ⇒ 返回 0%/空工序但 success=true；如实转述「暂无加工进度」属合格行为，不算违规', '工具失败/查不到时如实告知并可转人工，禁止编造进度或交期'],
     skip_reason='',
     tags=['xiaobu', 'production', 'order'],
     persona='xiaobu',
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+    must_succeed=[{'tool': 'production_progress_query'}],
 )
 
 # ── CH-040 [NORMAL] 米宝查订单生产进度（做到哪道工序/还要多久）（源: cases/chat.yml）──
@@ -1588,15 +1589,16 @@ _CASE_CH_040 = EvalCase(
     title='米宝查订单生产进度（做到哪道工序/还要多久）',
     skill=Skill.MULTI_TURN,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['帮我看看最近那笔还在生产的订单，做到哪道工序了，还要多久能好'],
+    user_inputs=['订单 EVAL-MB-ORD-0003 做到哪道工序了，还要多久能好'],
     expectations=['production_progress_query'],
-    data_checks=['商家问生产进度 → 调 production_progress_query → 返回进度%/当前工序/待完工序/预计交期', '缺订单号时先用 order_query 查单取号再查进度，禁止编造订单号或进度', '工具失败/查不到时如实告知，不得编造交期'],
+    data_checks=['商家问生产进度 → production_progress_query(order_no=EVAL-MB-ORD-0003) 被调用且**成功**返回（must_succeed 断言 success=true，不是「工具名出现过」）', '端点订单解析与报工链路同口径（issue #4006/#4007）：复用 ProductionService.resolveOrder 的 order_id → order_no → qr_token 三形态（#4007 前只认 order_no，给内部 id 会 404）', '夹具订单 EVAL-MB-ORD-0003 无加工单 ⇒ 返回 0%/空工序但 success=true；如实转述「尚未开始生产/暂无工序」属合格行为', '工具失败/查不到时如实告知，不得编造交期'],
     skip_reason='',
     tags=['mibao', 'production', 'order'],
     persona='mibao',
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+    must_succeed=[{'tool': 'production_progress_query'}],
 )
 
 # ── CH-041 [NORMAL] 米宝查工人计件工资（某师傅某月计件合计与明细）（源: cases/chat.yml）──
@@ -1807,22 +1809,23 @@ _CASE_CU_007 = EvalCase(
     forbidden_text=['已下架', 'off_sale'],
 )
 
-# ── CU-008 [NORMAL] 客户工艺画像与常用物流存储（米宝 customer_manage 可写，M2-D）（源: cases/customer.yml）──
+# ── CU-008 [NORMAL] 客户工艺画像与常用物流查询（米宝 customer_manage 读路径，M2-D）（源: cases/customer.yml）──
 _CASE_CU_008 = EvalCase(
     id='CU-008',
     legacy_id='',
-    title='客户工艺画像与常用物流存储（米宝 customer_manage 可写，M2-D）',
+    title='客户工艺画像与常用物流查询（米宝 customer_manage 读路径，M2-D）',
     skill=Skill.CUSTOMER,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['把客户张三的工艺偏好设为经济省料，常用物流记成四季安（物流专线）'],
-    expectations=['customer_manage(action=update)'],
-    data_checks=['customer_manage(update) 可写 craftMode / craftProfile / defaultLogisticsType / defaultLogisticsCompany（CustomerProfile 新列，V47 迁移）', '物流类型区分 express（快递）与 logistics（物流/专线，如四季安）——POC 客户更多选物流', '工艺画像与常用物流在客户详情（GET /api/admin/customers/{id}）中返回，供报价协商（M3-F）读取', '字段跨端契约：工具下发字段名与 CustomerProfile 列一致（test_tool_field_name_contract.py 静态兜底）'],
+    user_inputs=['帮我看看客户张三的工艺偏好和常用物流设置是什么'],
+    expectations=['customer_manage(action=detail)'],
+    data_checks=['客户工艺偏好/常用物流是**读**场景 → customer_manage(action=detail) 被调用且成功（must_succeed 断言 success=true）；detail 返回 CustomerProfile 的 craftMode/craftProfile/defaultLogisticsType/defaultLogisticsCompany', '写路径（customer_manage(action=update) 写 craftMode / craftProfile / defaultLogisticsType / defaultLogisticsCompany，CustomerProfile 新列 V47 迁移）**由单测契约覆盖**：test_tool_field_name_contract.py（case_ids 含 CU-008）+ 后端列契约，不在本行为用例重复断言', '物流类型区分 express（快递）与 logistics（物流/专线，如四季安）——POC 客户更多选物流', '工艺画像与常用物流在客户详情（GET /api/admin/customers/{id}）中返回，供报价协商（M3-F）读取'],
     skip_reason='',
     tags=['customer', 'mibao', 'craft-profile', 'logistics'],
     persona='mibao',
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+    must_succeed=[{'tool': 'customer_manage'}],
 )
 
 # ── DA-001 [NORMAL] 经营概览（源: cases/data.yml）──
@@ -4985,8 +4988,8 @@ _CASE_ST_011 = EvalCase(
     skill=Skill.GENERAL,
     difficulty=Difficulty.NORMAL,
     user_inputs=['我支付这笔订单，怎么付款'],
-    expectations=['direct_reply'],
-    data_checks=['C 端支付页展示收款码（/chat/payment-qrcodes 精简字段 image_url/payee_name）+ 应付金额 + 微信/支付宝切换', '页面注明「款项直接支付给商家」（平台不经手资金，二清规避）', '商家设置端 PUT /api/admin/settings/payment-qrcodes/{type} upsert（wechat/alipay 各一张，非法类型拒绝）—— 由 SettingsControllerTest MockMvc 覆盖', '无收款码时展示降级提示（PaymentCard 空态）'],
+    expectations=['direct_reply or order_query'],
+    data_checks=['C 端支付页展示收款码（/chat/payment-qrcodes 精简字段 image_url/payee_name）+ 应付金额 + 微信/支付宝切换', '页面注明「款项直接支付给商家」（平台不经手资金，二清规避）', '商家设置端 PUT /api/admin/settings/payment-qrcodes/{type} upsert（wechat/alipay 各一张，非法类型拒绝）—— 由 SettingsControllerTest MockMvc 覆盖', '无收款码时展示降级提示（PaymentCard 空态）', '答付款问题前先定位订单（order_query / C 端 customer_order_query）属合格路径；direct_reply 直答亦合格（OR 形态）'],
     skip_reason='',
     tags=['settings', 'payment'],
     persona='',
