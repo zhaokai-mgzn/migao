@@ -1166,20 +1166,46 @@ UNIMPLEMENTED: tuple[dict, ...] = (
         ),
     },
     {
-        "code": "CASE-TRUST-BASELINE-PRUNING-ENFORCEMENT",
-        "title": "「基线清单只许缩短」的**执行**（陈清单条目的机械强制移除）",
+        "code": "CASE-TRUST-BURN-DOWN-SCOPE-CASE-TOUCHING-ONLY",
+        "title": "burn-down 预算的「每 PR 最低消减」**默认只对改用例的 PR 生效**",
         "why_not": (
-            "**判据**已实装（`case_trust_gate.stale_baseline_entries`：本次 diff 命中且原违规码"
-            "不再命中的项会被报出，并带重生成命令），但**执行只能是告警，不能阻塞** —— "
-            "阻塞会要求用例作者改 `.github/case-trust-baseline.json`，而该文件**不是他们的文件**、"
-            "且可能正被**在飞**的基线重生成改动持有（实证：另一包正在修 CU-003/PG-013，基线文件"
-            "同时被本门禁的 PR 创建/更新）。硬阻塞 = 把「修好用例」的人卡在别人的文件上 = 假红"
-            "（`migao-acceptance`：不能因为「改法写了但没照着改」就把**正确**形态判红）。"
+            "#4031 已实装全量对账（陈旧条目阻塞）+ 到期清零（全局生效），但**每-PR 最低消减**"
+            "的口径默认 `scope=case_touching_prs`：字面口径（**每个** PR，含不改用例的）"
+            "会让全仓每个 PR 都必须改 `.github/cases/**` + 清单才能合并 —— 与「先把清单清干净"
+            "再翻 required，避免阻塞所有人」的顺序铁律自相矛盾，且会把 Java 单测 PR 也卡在"
+            "用例库上（= 假红）。口径是**数据**（`burn_down.scope`），改为 `all_prs` 即字面口径。"
         ),
         "needs": (
-            "需要「基线重生成」与「用例修复」解耦的机制（例如基线随 main 自动重生成、"
-            "或把清单条目做成可被多条 PR 各自删除的小文件），静态门禁才有可安全阻塞的目标。"
-            "机制现状照实说：**清单缩短无机械强制，只告警 + 复盘**。"
+            "要先让「清单条目可被多条 PR 各自删除的小文件化 / 自动重生成」落地，"
+            "每-PR 口径才有可安全阻塞的目标（同族于 drift_audit 的全量对账，见下一条 ⇒ **#4045**）。"
+        ),
+    },
+    {
+        "code": "CASE-TRUST-UNREGISTERED-VIOLATION-NOT-BLOCKING",
+        "title": "全库判出的**未登记**违规只报告、不阻塞",
+        "why_not": (
+            "#4031 的全量对账阻塞两个方向：① 记了却不再违规；② `origin/main` 记了、仍违规"
+            "却被删掉。**未登记方向**（规则集变化 / 新用例带来的新码，且不在本次 diff 命中的"
+            "用例上）目前只报告：若改成阻塞，任何规则新增都会让全仓 PR 立刻变红，"
+            "在「全库未登记数 = 0」达成前不具备可安全阻塞的前提（实测存量 3 条：PR-025/026/027）。"
+        ),
+        "needs": (
+            "先把未登记数清到 0（逐条修掉或按 R4 开独立 issue），再把「未登记即阻塞」设为 fail-closed；"
+            "**已开独立 issue 登记：`#4046`**（存量 3 条：PR-025/026/027）；同批登记见 `.github/case-trust-baseline.json` 的 `burn_down` 与 #4031 的 PR 说明。"
+        ),
+    },
+    {
+        "code": "DRIFT-AUDIT-STALE-DIFF-SCOPED",
+        "title": "`scripts/drift_audit.py` 的同款「陈旧即红」仍是 diff 命中口径（未同步 #4031）",
+        "why_not": (
+            "同族缺陷的**第二实例**：`drift_audit.compare_baseline` 的 `stale_blocking` 只在"
+            "本次 diff 命中该条目时才阻塞（源码注释自称「沿用 `.github/case_trust_gate.py` 的"
+            "`stale_baseline_entries` 口径」）⇒ #4031 把 case_trust_gate 改成全量对账后，两者**口径已分叉**，"
+            "该脚本仍会留下永久豁免（它的基线是 `entries` 计数形态，需独立改造）。"
+        ),
+        "needs": (
+            "按 #4031 同款改造 drift_audit 的 compare_baseline（全量对账 + burn-down 预算）"
+            "并补红证；**已开独立 issue 登记：`#4045`**（不属 #4031 的文件所有权，避免与在飞包冲突；同 issue 含 `pr-check.yml` 注释块口径同步 —— 需 `workflow` scope）。"
         ),
     },
     {
