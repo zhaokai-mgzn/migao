@@ -244,6 +244,8 @@ _GAP_ACTIONS = [
     ("processing_item_manage", "create_category", {"name": "刺绣工艺"}),
     ("processing_item_manage", "update_category", {"category_id": "pc1", "name": "刺绣工艺"}),
     ("processing_item_manage", "delete_category", {"category_id": "pc1"}),
+    # 本次全量审计补出的同族缺口（issue #4011 正文未列）：工单状态变更
+    ("after_sales_manage", "update_status", {"ticket_id": "t1", "status": "processing"}),
 ]
 
 # 故意不补规则、也**不该**补的路径（真·无规则 ⇒ 必须失败且带 suggestion，不得假绿）。
