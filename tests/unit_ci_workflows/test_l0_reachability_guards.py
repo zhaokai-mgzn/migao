@@ -38,7 +38,7 @@ AST 天然只看**活的代码**，这正是要的语义（`processing_order_*` 
 | `test_every_registered_write_tool_is_declared` | 新增一个 `read_only=False` 的工具却不动 taxonomy ⇒ 必红 |
 | `test_registry_parser_matches_the_known_tool_set` | 把某个 `registry.register(...)` 注释掉 ⇒ 解析集合变化 ⇒ 与名单不符即红 |
 
-> 第 4 条是**解析器自证**：它把「AST 解析出的 35 个工具名」与文件内**逐字写明**的名单比对 ——
+> 第 4 条是**解析器自证**：它把「AST 解析出的工具名集合」与文件内**逐字写明**的名单比对 ——
 > 解析器一旦失效（漏解析/多解析），本用例先红，避免上面三条退化成**恒真空转**。
 """
 
@@ -59,14 +59,18 @@ SERVICE_ROOT = REPO_ROOT / "backend" / "ai-agent-service"
 REGISTRY_PY = SERVICE_ROOT / "app" / "tools" / "registry.py"
 BASE_PY = SERVICE_ROOT / "app" / "tools" / "base.py"
 
-#: **AST 解析器自证名单** —— `create_default_registry()` 当前实际注册的工具名（逐字，35 个）。
+#: **AST 解析器自证名单** —— `create_default_registry()` 当前实际注册的工具名（逐字）。
 #: 只用于锁「解析器没坏」；工具增删时**必须**同步本名单（这正是想要的摩擦：
 #: 新增工具会强制有人看一眼 taxonomy 是否需要同步）。
+#: 数量**刻意不写死**（易变数字写进文案必然腐烂，§19.2）：实测条数以本名单为准。
+#: 本次移除 `human_handoff`（按用户裁定 2026-09-19 退场、模型不可达，注册行已注释）
+#: ⇒ 解析集合少一个 ⇒ 名单同步（工具类文件仍在，正是"比注册表不比文件"的活例，
+#: 与 `#3917` 的 `processing_order_*` 同款）。
 KNOWN_REGISTERED_TOOLS: frozenset[str] = frozenset({
     "after_sales_manage", "aftersale_create", "aftersale_query", "category_manage",
     "curtain_calc", "customer_address_query", "customer_logistics_track", "customer_manage",
     "customer_order_query", "dashboard_stats", "employee_manage", "finance_api",
-    "human_handoff", "interact", "inventory_manage", "knowledge_search", "logistics_track",
+    "interact", "inventory_manage", "knowledge_search", "logistics_track",
     "notification_manage", "order_create", "order_manage", "order_query", "piecework_query",
     "processing_item_manage", "processing_item_query", "product_detail", "product_manage",
     "product_processing_item_manage", "product_search", "product_update",

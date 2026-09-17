@@ -141,15 +141,22 @@ class TestMibaoToolsetTruth:
         )
 
     def test_mibao_toolset_excludes_customer_only_tools(self):
-        """B 端工具集不得混入小布专属工具（customer_* 系 / aftersale_create 等）。"""
+        """B 端工具集不得混入小布专属工具（customer_* 系 / aftersale_create 等）。
+
+        ⚠️ 2026-09-19：`human_handoff` 已按用户裁定退场（模型不可达）⇒ 从"C 端专属工具"
+        清单移除 —— 本清单的语义是「**某一端**有、另一端不得混入」，退场后它**两端都没有**，
+        留着只会让"B 端混入了 C 端工具"这条判据对一个人人都不该有的名字产生僵尸命中面。
+        """
         real = _mibao_real_toolset()
         c_only_expected = {
             "aftersale_create", "aftersale_query", "curtain_calc",
             "customer_address_query", "customer_logistics_track",
-            "customer_order_query", "human_handoff",
+            "customer_order_query",
         }
         leaked = real & c_only_expected
         assert not leaked, f"B 端工具集混入 C 端专属工具: {sorted(leaked)}"
+        # 自证：退场工具不得作为"任何一端"的工具出现在 B 端工具集里
+        assert "human_handoff" not in real, "B 端工具集出现了已退场的转人工工具"
 
 
 class TestBendCaseToolBoundary:
@@ -224,9 +231,13 @@ class TestBendWriteToolSuccessAssertions:
             f"B 端可跑用例 must_succeed 声明了非 B 端工具（拼写错误或越界）: {bad}")
 
     def test_must_succeed_tool_matches_persona_boundary(self):
-        """双向护栏：C 端专属工具不得出现在 B 端可跑用例的 must_succeed 里。"""
+        """双向护栏：C 端专属工具不得出现在 B 端可跑用例的 must_succeed 里。
+
+        （`human_handoff` 已于 2026-09-19 退场、两端都不可达 ⇒ 从本 C 端专属清单移除，
+        与 `test_mibao_toolset_excludes_customer_only_tools` 同口径。）
+        """
         c_only = {"aftersale_create", "curtain_calc", "customer_order_query",
-                  "customer_address_query", "customer_logistics_track", "human_handoff"}
+                  "customer_address_query", "customer_logistics_track"}
         bad = []
         for c in _bend_runnable_cases():
             for m in c.get("must_succeed") or []:

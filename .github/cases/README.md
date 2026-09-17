@@ -34,7 +34,9 @@ cases/
 5. **生成物禁手写**：`eval_cases.py` 与 `mibao-verification-cases.md` 迁移完成后由 `render_cases.py` 渲染。
 6. **persona 归属（issue #2855）**：可选字段 `persona: mibao | xiaobu`，标记用例归属 agent；缺省/`both` = 双端。
    `local_runner` 按 persona 过滤（mibao 跳过 xiaobu 专属，反之亦然），防止 C/B 端专属用例在另一端回归中误报。
-   已标记案例：转人工（human_handoff）、C 端订单/物流（customer_* 工具）等小布专属用例。
+   已标记案例：C 端订单/物流（customer_* 工具）等小布专属用例。
+   （**转人工 human_handoff 已退场**，2026-09-19 用户裁定「不应该存在 human_handoff
+   这种东西，以后全是 AI 来判断」；相关用例见 CH-008/013/015/017 的改造与登记。）
 7. **证据链必须可解析（issue #4120）**：`traces.tests` 是**仓库根相对**的**真实存在**路径（测试文件改名/搬迁必须同步，
    禁止指向已不存在的路径）；`traces.ci` 必须是 `.github/workflows/` 下真实存在的 workflow 文件名。
    以「由单元测试覆盖」为由 `skip_reason` 时，点名的测试文件必须**真的会被 pytest 收集**

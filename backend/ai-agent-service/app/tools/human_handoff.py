@@ -1,6 +1,19 @@
 """
 AI 智能客服系统 - 转人工 Tool (小布专用)
 
+⚠️ **已按用户裁定下线（模型不可达）** —— 用户裁定原文（2026-09-19）：
+「**不应该存在 human_handoff 这种东西，以后全是 AI 来判断**」。
+
+本文件**保留**仅为兼容存量数据（历史工单/人工会话的读写路径仍由 admin-api 承担）
+与**直测类单测**（`tests/test_tools_human_handoff.py` 等直接实例化本类）。
+**它不在默认注册表里**（`app/tools/registry.py::create_default_registry` 的注册行已注释），
+也不在任何 skill 的 `tool_names` 里 ⇒ 模型**拿不到**这个工具、也无从被提示它存在。
+不要因为"工具类还在"就把它加回注册表或 skill 工具集：那是回退，
+`s/tests/unit_ci_workflows/test_human_handoff_retired.py` 会红。
+完全删除所需的清理项（DB/前端/用例/文档）见本分支汇报的阶段二清单。
+
+原始说明（保留，供阶段二删除前回溯）：
+
 客户说"转人工"时调用，自动创建投诉工单并通知管理员。
 
 安全（#518）:
@@ -140,13 +153,21 @@ class HumanHandoffTool(BaseTool):
     小布（C端客服）专用：客户要求转人工时，自动创建投诉类型售后工单，
     通知管理员，并返回友好提示告知客户等待人工回电。
 
-    使用场景:
+    ⚠️ **已按用户裁定下线（模型不可达）** —— 见模块 docstring。
+    类上带 `deprecated = True`（与 #3917 下线的 `processing_order_*` 同一机制）：
+    静态守卫据此把它排除在「已注册/未注册」闭环之外
+    （`tests/test_tool_schema_contract_invariants.py::test_every_tool_class_is_registered_or_marked_deprecated`
+     的失败信息原文指引的正是这一条）。
+    不要移除 `deprecated` —— 那会让守卫改判成「死工具」，并把本类拉回注册闭环。
+
+    使用场景（历史，保留供阶段二回溯）:
     - 客户说"转人工""人工客服""找人工""我要投诉"
     - 多次沟通无法解决问题时的兜底路径
     - 客户情绪激动要求人工介入
     """
 
     name = "human_handoff"
+    deprecated = True
     description = (
         "【触发】客户说'转人工''人工客服''找人工''我要投诉''找你们领导'时调用。"
         "【功能】自动创建投诉工单 → 通知管理员 → 返回安抚话术。"

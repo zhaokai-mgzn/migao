@@ -623,23 +623,19 @@
 真值: ai-chat.intent-domains, ai-chat.context-memory
 溯源: eval M012 独有；2026-09-14 自包含化（issue #3599）：序号指代 → 点名种子内真实商品 ｜ tags: multi_turn, casual_chat, context_isolation
 
-### CH-008. 转人工创建人工会话 - 客服工作台可见并可回复 🔵
+### CH-008. 顾客要求转人工 → 系统无人工转接通道，AI 如实告知并自行受理（不得假承诺转接） 🔵
 ```
 你: 我要转人工
 你: 客服在吗
-期望: human_handoff
-数据: createSessionForHandoff 创建 waiting 会话 + system 消息
-数据: sendMessage(agent) 后会话状态变 active
-数据: getSessionByAiSessionId 返回含客服消息的会话
-数据: createSessionForHandoff 持久化 ai_context_summary/ai_context_messages（快照字段可空）
-数据: getSessionDetail(admin) 返回 aiContext；跨租户读取拒绝
-数据: getSessionByAiSessionId(customer) 不含 aiContext 且过滤 isInternal 消息
-数据: 转人工站内信真的投递到 B 端账号（收件人经 GET /api/admin/users?status=active 解析）—— 由 output_verify.adminNotified 机器判定，不得停在「工具调用成功」
-必须成功: human_handoff
-产出: human_handoff → adminNotified==True
+期望: direct_reply
+数据: （确定性层）createSessionForHandoff 创建 waiting 会话 + system 消息；sendMessage(agent) 后状态变 active
+数据: （确定性层）getSessionByAiSessionId 返回含客服消息的会话；getSessionDetail(admin) 返回 aiContext，跨租户读取拒绝
+数据: （确定性层）createSessionForHandoff 持久化 ai_context_summary/ai_context_messages（快照字段可空）
+数据: （确定性层）转人工站内信真的投递到 B 端账号（output_verify.adminNotified 的机器判定改由工具单测覆盖）
+跳过: 转人工工具已按用户裁定退场（模型不可达）：agent 不会（也不能）再触发人工会话创建，端到端写断言永久不可满足。能力未删除 ⇒ 由 backend/ai-agent-service/tests/test_tools_human_handoff.py（会话/工单/通知/上下文载荷）与 admin-api AgentSession* 单测（落库/可见性/跨租户拒绝）覆盖；退场后的对话行为（如实告知 + 禁止假承诺）由 CH-015 承载，不在 agent-eval 层重复
 ```
 真值: ai-chat.intent-tool-map, settings-manage.ai-config
-溯源: POC 人工客服工作台新增；2026 扩展：AI 上下文同步断言（GB/T 47746-2026）；2026-09-11 修正 user_inputs —— 原为断言描述文字（非顾客对话），agent 无法响应导致必然 0 分（issue #3270 断言层归因） ｜ tags: handoff, agent_session
+溯源: POC 人工客服工作台新增；2026 扩展：AI 上下文同步断言（GB/T 47746-2026）；2026-09-11 修正 user_inputs —— 原为断言描述文字（非顾客对话），agent 无法响应导致必然 0 分（issue #3270 断言层归因）；2026-09-19 **退场登记**（用户裁定「不应该存在 human_handoff 这种东西，以后全是 AI 来判断」）：端到端工具断言整体移除（不可满足）、标 unrunnable、断言口径改指确定性层单测；对话侧改由 CH-015 承载 ｜ tags: handoff, agent_session
 
 ### CH-009. interact form 表单提交注入上下文（__FORM__ 协议） 🔵
 ```
@@ -708,15 +704,18 @@
 ```
 你: 你们窗帘质量太差了，气死我了
 你: 转人工客服
-期望: interact
-期望: human_handoff
+期望: interact(component=choice)
 数据: 不满情绪（general 意图）命中后 AI 先发建议卡片（interact choice），不直接转
-数据: 用户点『转人工客服』后命中 D1 显式请求 → human_handoff 创建人工会话
-数据: interact 卡片选项含『转人工客服』『继续咨询小布』
-必须成功: human_handoff
+数据: interact 卡片选项含『转人工客服』『继续咨询小布』（卡片由确定性节点产出）
+数据: 用户点『转人工客服』后：AI 如实说明系统已无人工转接通道，不得承诺转接（机器断言见 forbidden_text）—— 不再创建人工会话
+禁词: 已为您转接人工
+禁词: 已帮您转接人工
+禁词: 已转接人工
+禁词: 已提交转人工申请
+禁词: 客服马上联系您
 ```
 真值: ai-chat.handoff-offer, ai-chat.intent-tool-map
-溯源: xiaobu-ai-handoff-guidance.md D3 AI 主动引导转人工 ｜ tags: multi_turn, handoff, ai_guided
+溯源: xiaobu-ai-handoff-guidance.md D3 AI 主动引导转人工；2026-09-19 **退场改造**（用户裁定）：移除 human_handoff 的 expectations/must_succeed（不可满足），后半改判「如实告知 + 禁止假承诺」；前半（建议卡 + 冷却）不变 ｜ tags: multi_turn, handoff, ai_guided
 
 ### CH-014. 用户拒绝建议 → 继续 AI 咨询且本会话不再自动建议 🔵
 ```
@@ -731,16 +730,25 @@
 真值: ai-chat.handoff-offer
 溯源: xiaobu-ai-handoff-guidance.md 冷却/防骚扰 ｜ tags: multi_turn, handoff, cooldown
 
-### CH-015. 用户显式『转人工』不经建议卡片直接转（能力不退化） 🔵
+### CH-015. 用户显式『转人工』→ 如实告知无人工通道并继续服务（不得假承诺转接） 🔵
 ```
 你: 我要转人工
-期望: human_handoff
-数据: 显式转人工请求 → intent_router 短路直转 complaint（source=explicit_handoff）
-数据: 不先弹建议卡片（无 interact），直接 human_handoff
-必须成功: human_handoff
+期望: direct_reply
+数据: 显式转人工请求 → intent_router 仍短路到 complaint（source=explicit_handoff，路由层判据见 tests/test_intent_router.py）
+数据: AI 如实说明系统已无人工转接通道（不承诺转接、不指引不存在的入口）
+数据: AI 不因『要人工』就停止服务：给出可执行的下一步（继续查/引导售后咨询走工单）
+数据: 整场不出现假承诺话术 —— 机器断言见 forbidden_text
+数据: human_handoff 未被调用（该工具已退场、模型不可达 —— 结构性判据：tests/unit_ci_workflows/test_human_handoff_retired.py；此处登记为计分面）
+禁词: 已为您转接人工
+禁词: 已帮您转接人工
+禁词: 已转接人工
+禁词: 已提交转人工申请
+禁词: 客服马上联系您
+禁词: 已通知人工客服
+必须: 人工
 ```
 真值: ai-chat.intent-tool-map
-溯源: xiaobu-ai-handoff-guidance.md D1 显式直转（UI-010 能力不退化） ｜ tags: handoff, regression
+溯源: xiaobu-ai-handoff-guidance.md D1 显式直转（UI-010 能力不退化）；2026-09-19 **退场改造**（用户裁定「不应该存在 human_handoff 这种东西，以后全是 AI 来判断」）：原断言（显式请求 → 直转工具）随工具退场永久不可满足，改判「如实告知 + 不得假承诺 + 继续服务」——用例保留为 live 回归（顾客仍会说『转人工』） ｜ tags: handoff, regression
 
 ### CH-016. 明确业务意图（下单/查单/报价）不弹转人工建议卡（防打断） 🔵
 ```
@@ -758,16 +766,16 @@
 你: 帮我查一下我的订单
 你: 有什么窗帘推荐吗
 你: 我要转人工
-期望: human_handoff
-数据: human_handoff POST 携带 aiContextSummary 与 aiContextMessages（仅 role=user/assistant，剥 think/图片占位，逐条与总量截断）
-数据: createSessionForHandoff 持久化 ai_context_summary/ai_context_messages（JSONB）
-数据: getSessionDetail(admin) 返回 aiContext；跨租户访问拒绝
-数据: getSessionByAiSessionId(customer) 不含 aiContext 且过滤 isInternal 消息
-数据: AI 会话关闭/清理后人工会话快照仍可见（快照语义）
-必须成功: human_handoff
+期望: direct_reply
+数据: （确定性层）human_handoff POST 携带 aiContextSummary 与 aiContextMessages（仅 role=user/assistant，剥 think/图片占位，逐条与总量截断）
+数据: （确定性层）createSessionForHandoff 持久化 ai_context_summary/ai_context_messages（JSONB）
+数据: （确定性层）getSessionDetail(admin) 返回 aiContext；跨租户访问拒绝
+数据: （确定性层）getSessionByAiSessionId(customer) 不含 aiContext 且过滤 isInternal 消息
+数据: （确定性层）AI 会话关闭/清理后人工会话快照仍可见（快照语义）
+跳过: 转人工工具已按用户裁定退场（模型不可达）：agent 不会（也不能）再触发人工会话创建，端到端断言永久不可满足。能力本身未删除 ⇒ 由 backend/ai-agent-service/tests/test_tools_human_handoff.py（上下文构造/截断/POST 载荷）与 admin-api AgentSession* 单测（落库/可见性/跨租户拒绝）覆盖，不在 agent-eval 层重复
 ```
 真值: ai-chat.intent-tool-map, ai-chat.handoff-offer
-溯源: 2026 新增：GB/T 47746-2026 转人工 AI 上下文同步（issue #2776） ｜ tags: handoff, agent_session, ai_context
+溯源: 2026 新增：GB/T 47746-2026 转人工 AI 上下文同步（issue #2776）；2026-09-19 **退场登记**（用户裁定）：expectations/must_succeed 移除（不可满足）、标 unrunnable、断言口径改指确定性层单测（能力未删除，无覆盖真空） ｜ tags: handoff, agent_session, ai_context
 
 ### CH-018. 低学历用户图片意图澄清 - 随手发图不带文字时先给候选意图再动作（issue #2777） 🔵
 ```
@@ -2688,7 +2696,7 @@
 期望: order_create
 数据: 顾客已给「数量 3 米」后，不得再发「选择用量/褶皱倍数」卡，也不得把 3 米换算成 6 米（2 倍金额）
 数据: 数量就是 3 米：金额 = 单价 × 3，最终必须真实落单（order_create 成功）
-数据: 整场不得出现 human_handoff（主转化路径不得转人工）
+数据: 整场不得把主转化路径推给人工：不出现『已为您转接人工』『需要人工处理』之类的收场话术，也不得因此不落单（退场后该保护改以「假承诺」为锚，见下方 merge_log）
 时序: interact[confirm] before order_create
 必须成功: order_create
 金额: order_create 「遮光窗帘」 → unit_price; subtotal; total
@@ -2697,7 +2705,7 @@
 载荷(全场可用): customer_name=张三, customer_phone=13800138000, customer_address=浙江省杭州市西湖区文三路1号1幢101室
 ```
 真值: order.create-flow, ai-chat.confirm-required
-溯源: 2026-09-13 新增（issue #3402）：沉淀 C-A1 主路径真因（数量口径 → 产出层反模式断言） ｜ tags: order_create, quantity, ceiling, xiaobu
+溯源: 2026-09-13 新增（issue #3402）：沉淀 C-A1 主路径真因（数量口径 → 产出层反模式断言）；2026-09-19 **退场同步**（用户裁定）：第 3 条由「整场不得出现 human_handoff」改为「不得把主转化路径推给人工（假承诺话术为锚）」—— 原断言在工具退场后**恒真**（模型调不到它，工具名不在任何 skill 工具集，结构性判据见 tests/unit_ci_workflows/test_human_handoff_retired.py），而真实风险变成了模型改用自然语言承诺转接，故把锚点移到实际可失败的话术面 ｜ tags: order_create, quantity, ceiling, xiaobu
 
 ### OR-025. C 端物流正向查询 - 工具可达 + 能力不否定（权限类禁词） 🔵
 ```
@@ -3624,19 +3632,18 @@
 真值: agent-notification.notification-status
 溯源: verification 6.5 独有 ｜ tags: write
 
-### ST-008. 机器人设置生效 - 自动转人工关键词 + 非营业时间转人工降级 🔵
+### ST-008. 机器人设置生效 - 自动转人工关键词命中后如实告知（无人工通道）+ 非营业时间降级（确定性层） 🔵
 ```
-你: 商家配置 autoHandoffKeywords=[找老板,我要投诉] 后，用户消息'我要找老板'应触发转人工
-你: 商家配置 afterHoursMode=auto_reply 且非营业时间时，转人工应降级返回 afterHoursMessage
-期望: human_handoff
-数据: is_auto_handoff_trigger('我要找老板', config) == true
-数据: is_after_hours(config, 非营业时间) == true
-数据: 非营业时间转人工不创建工单，返回 afterHoursMessage
-必须成功: human_handoff
-跳过: 纯配置函数行为由 pytest 单测（tests/test_tenant_config.py）验证：is_auto_handoff_trigger / is_after_hours 是纯函数，其入参 config（TenantAiConfig）无法经 agent-eval 设置，非 LLM 行为，不进入 C 端评测（issue #3270 断言层归因：原 user_inputs 是断言描述而非顾客对话）
+你: 商家配置 autoHandoffKeywords=[找老板,我要投诉] 后，用户消息'我要找老板'应命中 complaint 路由（不再有可用的转人工工具）
+你: 商家配置 afterHoursMode=auto_reply 且非营业时间时，转人工降级返回 afterHoursMessage（确定性层）
+期望: direct_reply
+数据: （确定性层）is_auto_handoff_trigger('我要找老板', config) == true
+数据: （确定性层）is_after_hours(config, 非营业时间) == true
+数据: （确定性层）非营业时间降级不创建工单、返回 afterHoursMessage（实现在工具类内，随退场改为工具直测覆盖）
+跳过: 纯配置函数行为由 pytest 单测（tests/test_tenant_config.py）验证：is_auto_handoff_trigger / is_after_hours 是纯函数，其入参 config（TenantAiConfig）无法经 agent-eval 设置，非 LLM 行为，不进入 C 端评测（issue #3270 断言层归因：原 user_inputs 是断言描述而非顾客对话）；2026-09-19 追加：转人工工具退场 ⇒ 原 human_handoff 断言不再有意义，降级分支改由工具直测覆盖
 ```
 真值: settings-manage.ai-config, settings-manage.immediate-effect
-溯源: POC 机器人设置集成新增；2026-09-11 标 skip —— 原输入为配置描述、断言为纯函数级，agent-eval 无法设置 config（issue #3270）；2026-09-18（issue #4085）：补 `precondition` 声明层字段（原本前置只活在 skip_reason 散文里 ⇒ CASE-TRUST-NO-PRECONDITION-ASSERTION 存量违规），语义与 skip 状态未变 ｜ tags: ai_config, handoff
+溯源: POC 机器人设置集成新增；2026-09-11 标 skip —— 原输入为配置描述、断言为纯函数级，agent-eval 无法设置 config（issue #3270）；2026-09-18（issue #4085）：补 `precondition` 声明层字段（原本前置只活在 skip_reason 散文里 ⇒ CASE-TRUST-NO-PRECONDITION-ASSERTION 存量违规），语义与 skip 状态未变；2026-09-19 **退场改造**（用户裁定）：移除 human_handoff 的 expectations/must_succeed（不可满足），保留 D2 路由命中 + 非营业时间降级两条事实并改指确定性层 ｜ tags: ai_config, handoff
 
 ### ST-009. 系统通知总开关 - 租户关闭后自动站内信停止发送（#3003） 🔵
 ```
@@ -3865,11 +3872,11 @@
 数据: QuickActions 渲染 4 个入口：查订单/找产品/售后咨询/查物流（无「退换货」「转人工」文案残留）
 数据: 点击「查物流」发送物流查询 prompt（如「帮我查一下物流」），进入 C 端仅查本人已发货订单物流的链路
 数据: 点击「售后咨询」发送售后 prompt（如「我想咨询售后问题」），进入售后工单快捷对话
-数据: 「转人工」入口移除后，输入「转人工」关键词仍可触发 human_handoff（能力不退化）
+数据: 「转人工」入口移除 + 转人工能力退场（2026-09-19 用户裁定）后，输入「转人工」关键词不再导向任何转人工能力：AI 如实告知系统无人工转接通道并继续服务（机器断言见 CH-015 的 forbidden_text）
 跳过: 纯前端入口改版由 mini-app jest 单测 + xiaobu E2E 验证，非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: frontend-fix.xiaobu-quick-actions
-溯源: 2026-09-01 新增：小布快捷入口改版（转人工→查物流、退换货→售后咨询，弱化退换货引导） ｜ tags: mini-app, quick-actions, chat-entry
+溯源: 2026-09-01 新增：小布快捷入口改版（转人工→查物流、退换货→售后咨询，弱化退换货引导）；2026-09-19 **退场同步**（用户裁定）：第 4 条 data_check 由「输入『转人工』仍可触发 human_handoff（能力不退化）」改为「不再导向转人工能力，AI 如实告知」——原断言的前提（该能力应保留）正是本次裁定取消的东西 ｜ tags: mini-app, quick-actions, chat-entry
 
 ### UI-011. 侧边栏移除「米宝 · 在线对话」/chat 菜单入口 —— 智能体对话入口统一收敛到右下角浮动按钮（#3094） 🔵
 ```
@@ -4345,7 +4352,7 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：317（活跃 161，跳过 156）
+- 用例总数：317（活跃 159，跳过 158）
 - tier 分布：smoke 10 / normal 274 / adversarial 33
 - 售后域：9
 - agents：6

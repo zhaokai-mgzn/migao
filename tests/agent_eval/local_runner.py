@@ -1870,8 +1870,11 @@ def check_false_success(results: list) -> list:
 
 
 # 写工具（有副作用的）：判定"状态宣告是否有落地"时只认这些
+# ⚠️ 2026-09-19：`human_handoff` 已按用户裁定退场（模型不可达）⇒ 从本表移除
+# （本表是"当前可能被 agent 调用的写工具"清单；留着 = 陈旧判据。若有人把它绑回工具集，
+#  先红的是 tests/unit_ci_workflows/test_human_handoff_retired.py）。
 _WRITE_TOOL_NAMES = frozenset({
-    "order_create", "aftersale_create", "human_handoff",
+    "order_create", "aftersale_create",
     "product_update", "order_update", "customer_update",
     "after_sales_manage", "product_manage", "order_manage",
     "customer_manage", "settings_manage", "staff_manage",

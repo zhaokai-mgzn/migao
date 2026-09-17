@@ -69,8 +69,11 @@ UNIVERSAL_BLOCK_GUARDS = {
 
 
 # 写工具（有副作用的）：断言它们就必须同时断言成功，否则"调了≠成了"的假绿会重现
+# ⚠️ 2026-09-19：`human_handoff` 已按用户裁定退场（模型不可达、不在任何 skill 工具集）
+# ⇒ 从本表移除（本表是"用例断言了它就必须断言成功"的**当前可达**写工具清单；
+#   留着即陈旧判据 —— 不会有任何用例再断言它，见 .github/assertion_taxonomy.py 同款收窄）。
 WRITE_TOOLS = frozenset({
-    "order_create", "aftersale_create", "human_handoff",
+    "order_create", "aftersale_create",
     "product_update", "order_update", "customer_update",
 })
 

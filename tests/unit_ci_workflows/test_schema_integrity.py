@@ -1382,11 +1382,14 @@ class TestEvalArtifactAuditStep:
         body = self._step().get("run") or ""
         for table in ("agent_sessions", "orders", "after_sales_tickets", "user_memories"):
             assert table in body, f"审计未覆盖表 {table}"
-        # C 端评测会话在 ai-agent 的 sessions 表（`agent_sessions` 是人工会话表，
-        # 只有 human_handoff 会写）——旧审计把两张表混为一谈，会话残留看不见（#3357）
+        # C 端评测会话在 ai-agent 的 sessions 表（`agent_sessions` 是**人工会话**表 ——
+# 2026-09-19 前由已退场的转人工工具写入；工具退场后仍保有存量数据与后端端点，
+# 故审计照样统计）。旧审计把两张表混为一谈，会话残留看不见（#3357）
         assert "FROM sessions" in body, "审计未统计 ai-agent 会话表 sessions"
         assert "status='active'" in body, "审计未统计未关闭残留会话（清理失效无人发现）"
-        assert "ticket_type='complaint'" in body, "未单独统计转人工工单（CH-008/013/015 对账）"
+        # 投诉工单统计仍在（退场后由 aftersale_create 的 complaint 类型产出；
+        # 原对账口径 CH-008/013/015 已随退场改造，判据本身不变）
+        assert "ticket_type='complaint'" in body, "未单独统计投诉工单（存量人工会话对账）"
         assert (self._step().get("env") or {}).get("DEV_SERVICE_TOKEN"), (
             "缺 DEV_SERVICE_TOKEN → compose 插值失败 → 审计为空"
         )

@@ -21,15 +21,15 @@
   },
   "anchor_sha": "44615b6c9be18d23709a92c0c7e027da259f0836",
   "case_total": 317,
-  "violation_case_count": 131,
+  "violation_case_count": 127,
   "rule_counts": {
     "CASE-TRUST-EMPTY-ASSERTION": 26,
     "CASE-TRUST-NO-EFFECT-ASSERTION": 25,
-    "CASE-TRUST-NO-SELF-CLEAN": 40,
+    "CASE-TRUST-NO-SELF-CLEAN": 35,
     "CASE-TRUST-PRECLEAN-TARGET-UNRESOLVABLE": 0,
     "CASE-TRUST-FORBIDDEN-TEXT-SOLE": 6,
     "CASE-TRUST-VOLATILE-LOCATOR": 1,
-    "CASE-TRUST-NO-PRECONDITION-ASSERTION": 94,
+    "CASE-TRUST-NO-PRECONDITION-ASSERTION": 91,
     "CASE-TRUST-STALE-LINE-REF": 0,
     "CASE-TRUST-SINGLE-LEG-NO-PERSONA": 15
   },
@@ -143,12 +143,6 @@
         "CASE-TRUST-SINGLE-LEG-NO-PERSONA"
       ]
     },
-    "CH-008": {
-      "codes": [
-        "CASE-TRUST-NO-PRECONDITION-ASSERTION",
-        "CASE-TRUST-NO-SELF-CLEAN"
-      ]
-    },
     "CH-009": {
       "codes": [
         "CASE-TRUST-EMPTY-ASSERTION"
@@ -172,8 +166,7 @@
     },
     "CH-013": {
       "codes": [
-        "CASE-TRUST-NO-PRECONDITION-ASSERTION",
-        "CASE-TRUST-NO-SELF-CLEAN"
+        "CASE-TRUST-NO-PRECONDITION-ASSERTION"
       ]
     },
     "CH-014": {
@@ -181,21 +174,9 @@
         "CASE-TRUST-NO-PRECONDITION-ASSERTION"
       ]
     },
-    "CH-015": {
-      "codes": [
-        "CASE-TRUST-NO-PRECONDITION-ASSERTION",
-        "CASE-TRUST-NO-SELF-CLEAN"
-      ]
-    },
     "CH-016": {
       "codes": [
         "CASE-TRUST-NO-PRECONDITION-ASSERTION"
-      ]
-    },
-    "CH-017": {
-      "codes": [
-        "CASE-TRUST-NO-PRECONDITION-ASSERTION",
-        "CASE-TRUST-NO-SELF-CLEAN"
       ]
     },
     "CH-018": {
@@ -747,11 +728,6 @@
       "codes": [
         "CASE-TRUST-NO-EFFECT-ASSERTION",
         "CASE-TRUST-NO-PRECONDITION-ASSERTION",
-        "CASE-TRUST-NO-SELF-CLEAN"
-      ]
-    },
-    "ST-008": {
-      "codes": [
         "CASE-TRUST-NO-SELF-CLEAN"
       ]
     },

@@ -973,24 +973,23 @@ _CASE_CH_007 = EvalCase(
     forbidden_card_text=[],
 )
 
-# ── CH-008 [NORMAL] 转人工创建人工会话 - 客服工作台可见并可回复（源: cases/chat.yml）──
+# ── CH-008 [NORMAL] 顾客要求转人工 → 系统无人工转接通道，AI 如实告知并自行受理（不得假承诺转接）（源: cases/chat.yml）──
 _CASE_CH_008 = EvalCase(
     id='CH-008',
     legacy_id='',
-    title='转人工创建人工会话 - 客服工作台可见并可回复',
+    title='顾客要求转人工 → 系统无人工转接通道，AI 如实告知并自行受理（不得假承诺转接）',
     skill=Skill.MULTI_TURN,
     difficulty=Difficulty.NORMAL,
     user_inputs=['我要转人工', '客服在吗'],
-    expectations=['human_handoff'],
-    data_checks=['createSessionForHandoff 创建 waiting 会话 + system 消息', 'sendMessage(agent) 后会话状态变 active', 'getSessionByAiSessionId 返回含客服消息的会话', 'createSessionForHandoff 持久化 ai_context_summary/ai_context_messages（快照字段可空）', 'getSessionDetail(admin) 返回 aiContext；跨租户读取拒绝', 'getSessionByAiSessionId(customer) 不含 aiContext 且过滤 isInternal 消息', '转人工站内信真的投递到 B 端账号（收件人经 GET /api/admin/users?status=active 解析）—— 由 output_verify.adminNotified 机器判定，不得停在「工具调用成功」'],
-    skip_reason='',
+    expectations=['direct_reply'],
+    data_checks=['（确定性层）createSessionForHandoff 创建 waiting 会话 + system 消息；sendMessage(agent) 后状态变 active', '（确定性层）getSessionByAiSessionId 返回含客服消息的会话；getSessionDetail(admin) 返回 aiContext，跨租户读取拒绝', '（确定性层）createSessionForHandoff 持久化 ai_context_summary/ai_context_messages（快照字段可空）', '（确定性层）转人工站内信真的投递到 B 端账号（output_verify.adminNotified 的机器判定改由工具单测覆盖）'],
+    skip_reason='转人工工具已按用户裁定退场（模型不可达）：agent 不会（也不能）再触发人工会话创建，端到端写断言永久不可满足。能力未删除 ⇒ 由 backend/ai-agent-service/tests/test_tools_human_handoff.py（会话/工单/通知/上下文载荷）与 admin-api AgentSession* 单测（落库/可见性/跨租户拒绝）覆盖；退场后的对话行为（如实告知 + 禁止假承诺）由 CH-015 承载，不在 agent-eval 层重复',
     tags=['handoff', 'agent_session'],
     persona='xiaobu',
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
-    must_succeed=[{'tool': 'human_handoff'}],
-    output_verify=[{'tool': 'human_handoff', 'expect': {'adminNotified': True}}],
+    precondition='转人工工具（human_handoff）与后端人工会话端点仍在（阶段一保留），但**模型不可达**（不在默认注册表/任何 skill 工具集）⇒ 本用例无法经 agent 链路复现；会话/工单/上下文/投递语义由 traces 里的工具单测 + admin-api 单测覆盖',
 )
 
 # ── CH-009 [NORMAL] interact form 表单提交注入上下文（__FORM__ 协议）（源: cases/chat.yml）──
@@ -1083,15 +1082,15 @@ _CASE_CH_013 = EvalCase(
     skill=Skill.MULTI_TURN,
     difficulty=Difficulty.NORMAL,
     user_inputs=['你们窗帘质量太差了，气死我了', '转人工客服'],
-    expectations=['interact', 'human_handoff'],
-    data_checks=['不满情绪（general 意图）命中后 AI 先发建议卡片（interact choice），不直接转', '用户点『转人工客服』后命中 D1 显式请求 → human_handoff 创建人工会话', 'interact 卡片选项含『转人工客服』『继续咨询小布』'],
+    expectations=['interact(component=choice)'],
+    data_checks=['不满情绪（general 意图）命中后 AI 先发建议卡片（interact choice），不直接转', 'interact 卡片选项含『转人工客服』『继续咨询小布』（卡片由确定性节点产出）', '用户点『转人工客服』后：AI 如实说明系统已无人工转接通道，不得承诺转接（机器断言见 forbidden_text）—— 不再创建人工会话'],
     skip_reason='',
     tags=['multi_turn', 'handoff', 'ai_guided'],
     persona='xiaobu',
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
-    must_succeed=[{'tool': 'human_handoff'}],
+    forbidden_text=['已为您转接人工', '已帮您转接人工', '已转接人工', '已提交转人工申请', '客服马上联系您'],
 )
 
 # ── CH-014 [NORMAL] 用户拒绝建议 → 继续 AI 咨询且本会话不再自动建议（源: cases/chat.yml）──
@@ -1112,23 +1111,24 @@ _CASE_CH_014 = EvalCase(
     forbidden_card_text=[],
 )
 
-# ── CH-015 [NORMAL] 用户显式『转人工』不经建议卡片直接转（能力不退化）（源: cases/chat.yml）──
+# ── CH-015 [NORMAL] 用户显式『转人工』→ 如实告知无人工通道并继续服务（不得假承诺转接）（源: cases/chat.yml）──
 _CASE_CH_015 = EvalCase(
     id='CH-015',
     legacy_id='',
-    title='用户显式『转人工』不经建议卡片直接转（能力不退化）',
+    title='用户显式『转人工』→ 如实告知无人工通道并继续服务（不得假承诺转接）',
     skill=Skill.MULTI_TURN,
     difficulty=Difficulty.NORMAL,
     user_inputs=['我要转人工'],
-    expectations=['human_handoff'],
-    data_checks=['显式转人工请求 → intent_router 短路直转 complaint（source=explicit_handoff）', '不先弹建议卡片（无 interact），直接 human_handoff'],
+    expectations=['direct_reply'],
+    data_checks=['显式转人工请求 → intent_router 仍短路到 complaint（source=explicit_handoff，路由层判据见 tests/test_intent_router.py）', 'AI 如实说明系统已无人工转接通道（不承诺转接、不指引不存在的入口）', 'AI 不因『要人工』就停止服务：给出可执行的下一步（继续查/引导售后咨询走工单）', '整场不出现假承诺话术 —— 机器断言见 forbidden_text', 'human_handoff 未被调用（该工具已退场、模型不可达 —— 结构性判据：tests/unit_ci_workflows/test_human_handoff_retired.py；此处登记为计分面）'],
     skip_reason='',
     tags=['handoff', 'regression'],
     persona='xiaobu',
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
-    must_succeed=[{'tool': 'human_handoff'}],
+    forbidden_text=['已为您转接人工', '已帮您转接人工', '已转接人工', '已提交转人工申请', '客服马上联系您', '已通知人工客服'],
+    want_text=['人工'],
 )
 
 # ── CH-016 [NORMAL] 明确业务意图（下单/查单/报价）不弹转人工建议卡（防打断）（源: cases/chat.yml）──
@@ -1157,15 +1157,15 @@ _CASE_CH_017 = EvalCase(
     skill=Skill.MULTI_TURN,
     difficulty=Difficulty.NORMAL,
     user_inputs=['帮我查一下我的订单', '有什么窗帘推荐吗', '我要转人工'],
-    expectations=['human_handoff'],
-    data_checks=['human_handoff POST 携带 aiContextSummary 与 aiContextMessages（仅 role=user/assistant，剥 think/图片占位，逐条与总量截断）', 'createSessionForHandoff 持久化 ai_context_summary/ai_context_messages（JSONB）', 'getSessionDetail(admin) 返回 aiContext；跨租户访问拒绝', 'getSessionByAiSessionId(customer) 不含 aiContext 且过滤 isInternal 消息', 'AI 会话关闭/清理后人工会话快照仍可见（快照语义）'],
-    skip_reason='',
+    expectations=['direct_reply'],
+    data_checks=['（确定性层）human_handoff POST 携带 aiContextSummary 与 aiContextMessages（仅 role=user/assistant，剥 think/图片占位，逐条与总量截断）', '（确定性层）createSessionForHandoff 持久化 ai_context_summary/ai_context_messages（JSONB）', '（确定性层）getSessionDetail(admin) 返回 aiContext；跨租户访问拒绝', '（确定性层）getSessionByAiSessionId(customer) 不含 aiContext 且过滤 isInternal 消息', '（确定性层）AI 会话关闭/清理后人工会话快照仍可见（快照语义）'],
+    skip_reason='转人工工具已按用户裁定退场（模型不可达）：agent 不会（也不能）再触发人工会话创建，端到端断言永久不可满足。能力本身未删除 ⇒ 由 backend/ai-agent-service/tests/test_tools_human_handoff.py（上下文构造/截断/POST 载荷）与 admin-api AgentSession* 单测（落库/可见性/跨租户拒绝）覆盖，不在 agent-eval 层重复',
     tags=['handoff', 'agent_session', 'ai_context'],
     persona='xiaobu',
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
-    must_succeed=[{'tool': 'human_handoff'}],
+    precondition='转人工工具（human_handoff）与后端人工会话端点仍在（阶段一保留），但**模型不可达**（不在默认注册表/任何 skill 工具集）⇒ 本用例无法经 agent 链路复现；快照语义由 traces 里的工具单测 + admin-api 单测覆盖',
 )
 
 # ── CH-018 [NORMAL] 低学历用户图片意图澄清 - 随手发图不带文字时先给候选意图再动作（issue #2777）（源: cases/chat.yml）──
@@ -3742,7 +3742,7 @@ _CASE_OR_024 = EvalCase(
     difficulty=Difficulty.NORMAL,
     user_inputs=['我想买遮光窗帘，米白 3 米，要打孔加工', {'auto_respond': {'fallback': '纳米圈打孔'}}, '数量 3 米', {'auto_respond': {'fallback': '确认下单', 'form_values': {'customer_name': '张三', 'customer_phone': '13800138000', 'customer_address': '浙江省杭州市西湖区文三路1号1幢101室'}}}, {'auto_respond': {'fallback': '确认', 'form_values': {'customer_name': '张三', 'customer_phone': '13800138000', 'customer_address': '浙江省杭州市西湖区文三路1号1幢101室'}}}, {'auto_respond': {'fallback': '123456', 'prefer_text': True}}, {'auto_respond': {'fallback': '123456', 'prefer_text': True}}, {'auto_respond': {'fallback': '确认'}}, {'auto_respond': {'fallback': '确认'}}],
     expectations=['product_search', 'product_detail', 'interact', 'order_create'],
-    data_checks=['顾客已给「数量 3 米」后，不得再发「选择用量/褶皱倍数」卡，也不得把 3 米换算成 6 米（2 倍金额）', '数量就是 3 米：金额 = 单价 × 3，最终必须真实落单（order_create 成功）', '整场不得出现 human_handoff（主转化路径不得转人工）'],
+    data_checks=['顾客已给「数量 3 米」后，不得再发「选择用量/褶皱倍数」卡，也不得把 3 米换算成 6 米（2 倍金额）', '数量就是 3 米：金额 = 单价 × 3，最终必须真实落单（order_create 成功）', '整场不得把主转化路径推给人工：不出现『已为您转接人工』『需要人工处理』之类的收场话术，也不得因此不落单（退场后该保护改以「假承诺」为锚，见下方 merge_log）'],
     skip_reason='',
     tags=['order_create', 'quantity', 'ceiling', 'xiaobu'],
     persona='xiaobu',
@@ -5057,24 +5057,23 @@ _CASE_ST_005 = EvalCase(
     forbidden_card_text=[],
 )
 
-# ── ST-008 [NORMAL] 机器人设置生效 - 自动转人工关键词 + 非营业时间转人工降级（源: cases/settings.yml）──
+# ── ST-008 [NORMAL] 机器人设置生效 - 自动转人工关键词命中后如实告知（无人工通道）+ 非营业时间降级（确定性层）（源: cases/settings.yml）──
 _CASE_ST_008 = EvalCase(
     id='ST-008',
     legacy_id='',
-    title='机器人设置生效 - 自动转人工关键词 + 非营业时间转人工降级',
+    title='机器人设置生效 - 自动转人工关键词命中后如实告知（无人工通道）+ 非营业时间降级（确定性层）',
     skill=Skill.GENERAL,
     difficulty=Difficulty.NORMAL,
-    user_inputs=["商家配置 autoHandoffKeywords=[找老板,我要投诉] 后，用户消息'我要找老板'应触发转人工", '商家配置 afterHoursMode=auto_reply 且非营业时间时，转人工应降级返回 afterHoursMessage'],
-    expectations=['human_handoff'],
-    data_checks=["is_auto_handoff_trigger('我要找老板', config) == true", 'is_after_hours(config, 非营业时间) == true', '非营业时间转人工不创建工单，返回 afterHoursMessage'],
-    skip_reason='纯配置函数行为由 pytest 单测（tests/test_tenant_config.py）验证：is_auto_handoff_trigger / is_after_hours 是纯函数，其入参 config（TenantAiConfig）无法经 agent-eval 设置，非 LLM 行为，不进入 C 端评测（issue #3270 断言层归因：原 user_inputs 是断言描述而非顾客对话）',
+    user_inputs=["商家配置 autoHandoffKeywords=[找老板,我要投诉] 后，用户消息'我要找老板'应命中 complaint 路由（不再有可用的转人工工具）", '商家配置 afterHoursMode=auto_reply 且非营业时间时，转人工降级返回 afterHoursMessage（确定性层）'],
+    expectations=['direct_reply'],
+    data_checks=["（确定性层）is_auto_handoff_trigger('我要找老板', config) == true", '（确定性层）is_after_hours(config, 非营业时间) == true', '（确定性层）非营业时间降级不创建工单、返回 afterHoursMessage（实现在工具类内，随退场改为工具直测覆盖）'],
+    skip_reason='纯配置函数行为由 pytest 单测（tests/test_tenant_config.py）验证：is_auto_handoff_trigger / is_after_hours 是纯函数，其入参 config（TenantAiConfig）无法经 agent-eval 设置，非 LLM 行为，不进入 C 端评测（issue #3270 断言层归因：原 user_inputs 是断言描述而非顾客对话）；2026-09-19 追加：转人工工具退场 ⇒ 原 human_handoff 断言不再有意义，降级分支改由工具直测覆盖',
     tags=['ai_config', 'handoff'],
     persona='xiaobu',
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
-    must_succeed=[{'tool': 'human_handoff'}],
-    precondition='租户 AI 配置就位：autoHandoffKeywords=[找老板,我要投诉]、afterHoursMode=auto_reply 且当前为非营业时间（TenantAiConfig；agent-eval 栈无法设置 ⇒ 本用例 skip，行为由 tests/test_tenant_config.py 的 is_auto_handoff_trigger / is_after_hours 纯函数单测覆盖）',
+    precondition='租户 AI 配置就位：autoHandoffKeywords=[找老板,我要投诉]、afterHoursMode=auto_reply 且当前为非营业时间（TenantAiConfig；agent-eval 栈无法设置 ⇒ 本用例 skip，行为由 tests/test_tenant_config.py 的 is_auto_handoff_trigger / is_after_hours 纯函数单测 + tests/test_tools_human_handoff.py 的降级分支覆盖）',
 )
 
 # ── ST-009 [NORMAL] 系统通知总开关 - 租户关闭后自动站内信停止发送（#3003）（源: cases/settings.yml）──
@@ -5393,7 +5392,7 @@ _CASE_UI_010 = EvalCase(
     difficulty=Difficulty.NORMAL,
     user_inputs=['小布聊天主页四个快捷对话入口：查订单/找产品/售后咨询/查物流'],
     expectations=['direct_reply'],
-    data_checks=['QuickActions 渲染 4 个入口：查订单/找产品/售后咨询/查物流（无「退换货」「转人工」文案残留）', '点击「查物流」发送物流查询 prompt（如「帮我查一下物流」），进入 C 端仅查本人已发货订单物流的链路', '点击「售后咨询」发送售后 prompt（如「我想咨询售后问题」），进入售后工单快捷对话', '「转人工」入口移除后，输入「转人工」关键词仍可触发 human_handoff（能力不退化）'],
+    data_checks=['QuickActions 渲染 4 个入口：查订单/找产品/售后咨询/查物流（无「退换货」「转人工」文案残留）', '点击「查物流」发送物流查询 prompt（如「帮我查一下物流」），进入 C 端仅查本人已发货订单物流的链路', '点击「售后咨询」发送售后 prompt（如「我想咨询售后问题」），进入售后工单快捷对话', '「转人工」入口移除 + 转人工能力退场（2026-09-19 用户裁定）后，输入「转人工」关键词不再导向任何转人工能力：AI 如实告知系统无人工转接通道并继续服务（机器断言见 CH-015 的 forbidden_text）'],
     skip_reason='纯前端入口改版由 mini-app jest 单测 + xiaobu E2E 验证，非 LLM 行为，不进入 agent-eval 冒烟',
     tags=['mini-app', 'quick-actions', 'chat-entry'],
     persona='',
