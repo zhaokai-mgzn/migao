@@ -9,10 +9,10 @@ from app.graph.skills.base_skill import execute_skill
 from app.graph.skills.skill_config import SkillConfig
 
 # 订单 Skill 可用的 Tool 列表
-# ⚠️ 加工单工具（processing_order_generate/query/update）不在此列（产品决策 2026-09-15，
-# issue #3917）：agent 暂不接入加工单工具，须区分「加工项/加工单」概念并引导后台
-# （订单详情-加工单块）。intents 保留（下方）⇒「加工单」问题仍路由到订单 skill，
-# 由 prompts/order.md 的概念区分口径引导，**不得**用加工项查询/目录代替、不得编造加工单数据。
+# ⚠️ 加工单工具（processing_order_generate/query/update）不在此列，其 3 个意图也一并从 intents
+# 移除（#3917 产品决策；issue #4027：不在 IntentType 里 ⇒ 分类器提示裸 token、路由表死键）。
+# 「加工单」问题由 prompts/order.md 的概念区分口径引导：区分「加工项/加工单」并引导后台
+# （订单详情-加工单块），**不得**用加工项查询/目录代替、不得编造加工单数据。
 ORDER_TOOLS = ["order_query", "order_manage", "order_create", "logistics_track", "product_search", "product_detail",
     # 生产进度（issue #3996，M4-I）：商家问「这单做到哪道工序/还要多久」→
     # production_progress_query(order_no=…)。只读；缺号先用 order_query 取号。
@@ -38,8 +38,7 @@ ORDER_SKILL_CONFIG = SkillConfig(
     display_name="订单管理",
     tool_names=ORDER_TOOLS,
     route_keys=["order"],
-    intents=["order_query", "order_create", "logistics_track",
-             "processing_order_generate", "processing_order_query", "processing_order_update"],
+    intents=["order_query", "order_create", "logistics_track"],
     system_prompts={"mibao": ORDER_SYSTEM_PROMPT},
     default_persona="mibao",
 )
