@@ -70,6 +70,28 @@ users.permissions (JSON 权限码)               （员工权限快照：员工�
 | AI Tool | `required_permissions` + 工具内按 action 二次校验（如 `employee_manage`：查询需 employee:list，写操作需 employee:create） |
 | 前端 | `lib/permission.ts usePermission()`：菜单过滤 + `(dashboard)/layout.tsx` 路由守卫 + 员工页按钮级权限 |
 
+## 服务间调用的授权边界（ai-agent → admin-api，issue #4105）
+
+ai-agent 调用 admin-api **始终**带 `X-Service-Token` + `X-Tenant-Id` + `X-User-Id`。
+`ServiceTokenFilter` 按 `X-User-Id` 分两种身份，**这是安全边界，不得回退**：
+
+| `X-User-Id` | 认证身份 | 细粒度鉴权 |
+|---|---|---|
+| 命中**本租户商户员工**（行存在且未软删、`status=active`、租户一致、角色 ∉ {customer, agent}） | 该员工的**真实角色**（不再挂 `service`） | **生效** —— `@RequirePermission` + `roleService.getUserPermissions(realUserId)` |
+| 其余（无 `X-User-Id` / C 端 customer·agent / 跨租户 / 查不到用户） | 内部服务 `service`（今日行为） | 直通（无细粒度校验） |
+
+- 商户员工判定口径与 `UserMapper.selectActiveEmployeesByPhoneIgnoreTenant`（SQL `role NOT IN ('customer','agent')`）、
+  `AuthService.validateBminiEmployee`、`UserService` 员工管理「排除 C 端消费者」**同源**，不另造第二套。
+- 查库异常时回退 `service` 身份**并记 ERROR**：调用方已持有可信 `SERVICE_TOKEN`（可信内部服务，非不可信第三方），
+  失败回退不构成提权；留痕用于区分「查失败」与「查不到」。
+- 403 响应体（两条入口同一口径，`PermissionDeniedResponse`）：`error.code=PERMISSION_DENIED`、
+  `error.message` 含缺失权限码、`error.details[0]={field:"requiredPermission"}`，并带
+  **LLM 可执行 `suggestion`**（说明这是角色/权限限制、不是参数问题、不要重试同一工具、请管理员在「岗位权限」中授权）。
+
+> ⚠️ 内置岗位默认权限存在缺口（如 `customer_service` 默认权限不含 `order:refund`，而售后接口类级要求它）：
+> 此前被服务间旁路掩盖，F2 生效后客服驱动米宝处理售后会被 403。属**岗位权限矩阵**问题，见 #4104 后续修复；
+> `operator` 已有 `order:refund`，运营驱动的 B 端链路不受影响。
+
 ## 菜单过滤
 
 前端侧边栏（#2969 重构七大组：工作台 / 智能客服(含知识库) / 商品管理 / 订单管理 / 客户管理(含财务对账) / 组织管理(员工+岗位权限+企业信息) / 通知中心）根据 `permissions` 动态渲染（`Sidebar.tsx`），
@@ -83,7 +105,7 @@ users.permissions (JSON 权限码)               （员工权限快照：员工�
 | 小程序 | `/api/auth/mini/login` | wx.login() → code → JWT（角色 customer，禁止访问 /api/admin/**） |
 | 管理后台 | `/api/auth/admin/login` | 短信验证码 → JWT（密码登录已禁用 #375） |
 | 公众号H5 | `/api/auth/h5/authorize` | OAuth 2.0 → code → JWT |
-| 服务间 | `X-Service-Token` | ServiceTokenFilter → ROLE_SERVICE 直通 |
+| 服务间 | `X-Service-Token` | ServiceTokenFilter：`X-User-Id` 命中本租户商户员工 → 挂真实角色走细粒度鉴权；否则 ROLE_SERVICE 直通（见「服务间调用的授权边界」） |
 
 ---
 详见: [部署](Deployment.md) · [API 参考](../api/api-reference.md)

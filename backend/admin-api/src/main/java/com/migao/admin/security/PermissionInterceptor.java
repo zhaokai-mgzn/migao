@@ -1,5 +1,6 @@
 package com.migao.admin.security;
 
+import com.migao.admin.exception.PermissionDeniedException;
 import com.migao.admin.service.RoleService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -104,7 +105,9 @@ public class PermissionInterceptor {
 
         if (!hasPermission) {
             log.warn("权限检查失败：用户 {} 缺少权限 {}", userId, requiredPermission);
-            throw new AccessDeniedException("权限不足，需要权限: " + requiredPermission);
+            // 权限码作为结构化字段随异常传递（issue #4105 F1），下游不再解析 message
+            throw new PermissionDeniedException(
+                    "权限不足，需要权限: " + requiredPermission, requiredPermission);
         }
 
         log.debug("权限检查通过：用户 {} 拥有权限 {}", userId, requiredPermission);
