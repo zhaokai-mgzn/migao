@@ -8416,6 +8416,11 @@ def load_cases_from_yaml(cases_dir: str) -> list:
             form_prefill=c.get("form_prefill") or [],
             forbidden_card_text=c.get("forbidden_card_text") or [],
             pre_clean=c.get("pre_clean") or [],
+            # 写方复位（issue #4075）：**必须在这里映射** —— CI 走的是本 YAML 装载路径
+            # （`--cases .github/cases`），不是生成物 `eval_cases.py`；漏映射 = 用例声明的
+            # `post_clean` 恒为空 ⇒ 写方改掉共享夹具后没人复位（#4075 机制半边白做），
+            # 由 `tests/test_acceptance_case_checks.py` 的 PROBES 逐字段守住。
+            post_clean=c.get("post_clean") or [],
             post_session=c.get("post_session") or [],
             # 并行污染隔离 + 运行期前置断言（issue #3781）。**必须在这里映射**：
             # CI 走的是本装载路径（`--cases .github/cases`），不是生成物 `eval_cases.py`
