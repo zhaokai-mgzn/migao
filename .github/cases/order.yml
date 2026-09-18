@@ -2467,3 +2467,51 @@ cases:
       ci:
         - xiaobu-acceptance.yml
       verifies: []
+
+  # ── 算料（折数法）──
+  - id: OR-032
+    legacy_id: ""
+    title: "算料试算端点 - 折数法（标准档）单一真值 + 后端产出的可读公式串"
+    domains:
+      - order
+      - processing
+    tier: normal
+    persona: ""
+    tags:
+      - order
+      - craft_calc
+      - fabric
+      - single_source_of_truth
+    truths_ref:
+      - fabric-calc.pleat-method
+      - fabric-calc.craft-tier
+      - fabric-calc.fullness-actual
+      - fabric-calc.craft-calc-endpoint
+    # ── 覆盖说明（issue #4421，后端半边）──
+    # 商家手工下单页此前**零算料通路**（数量/米数靠商家手填）。本端点 =
+    # `POST /api/internal/production/craft-calc`（ai-agent，Service Token）+ admin-api
+    # `CraftCalcClient` / `POST /api/admin/orders/craft-calc`（试算，不落库）。
+    # 口径 = 用户 2026-09-19 裁定：折数法（标准档 2.0）——`折数 = round((W×N − margin)/0.25)`
+    # 再按开数取整；`用料 = 0.25×折数 + margin`（单开 0.2 / 多开 0.3）。
+    # 纸表逐值复现（本单的锚）：单开 0.25n+0.2、对开 0.25n+0.3；
+    # 抽验 4折=1.2 / 8折=2.3 / 48折=12.3 / 52折=13.3 / 56折=14.3；6.6m 双开标准档 ⇒ 52 折 / 13.3 米。
+    # 架构口径：**不新增第二份算料逻辑** —— 端点只调 `curtain_calc.build_quote`，
+    # `formula_text` 由后端按同一份数字产出（前端/Java 侧自拼 = 第二份算料逻辑）。
+    user_inputs:
+      - "商家手工下单页按宽 6.6m / 双开 / 标准档试算用料"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "（散文、**不计分**）折数法纸表逐值复现：单开 0.25n+0.2、对开 0.25n+0.3（4折=1.2/8折=2.3/48折=12.3/52折=13.3/56折=14.3）"
+      - "（散文、**不计分**）单一真值：端点返回值 === 直调 curtain_calc.build_quote 逐值相等；formula_text 与数值同源（后端产出）"
+    skip_reason: "[backend-contract] 内部端点 + Java 客户端由 pytest（tests/test_production/test_craft_calc.py）与 JUnit（CraftCalcClientTest / CraftCalcControllerTest）验证，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-19 新增（issue #4421 后端半边）：算料试算端点 + 折数法单一真值 + 纸表逐值复现。前端（下单页试算接线）由另一会话承担，本用例只锚后端契约。"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_production/test_craft_calc.py"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/CraftCalcClientTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/controller/CraftCalcControllerTest.java"
+      ci:
+        - ai-agent-tests.yml
+        - pr-check.yml
+      verifies: []

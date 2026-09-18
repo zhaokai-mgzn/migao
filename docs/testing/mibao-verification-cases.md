@@ -2246,7 +2246,7 @@
 真值: ai-chat.context-memory
 溯源: 2026-09-04 新增：issue #2821 延续切片 C（vision 分析落槽 + base_skill 接线） ｜ tags: ontology, vision, context_memory, grounding, base_skill
 
-## 订单域（30 case）
+## 订单域（31 case）
 
 ### OR-001. 订单列表查询 🟢
 ```
@@ -2831,6 +2831,17 @@
 ```
 真值: order.create-flow, order.states
 溯源: 2026-09-18 新增（用户裁定 2 / F17 / issue #4095）：冒烟档补下单用例 —— 此前冒烟档 9 条全只读、订单域唯一 OR-001 是列表查询 ⇒ 主链路零覆盖。persona=mibao（代客下单免验证码，链路最短）；一句话给全 + repeat_until 协作轮（有卡答卡，成功即停）；断言 = must_succeed[order_create] + db_verify[order_items/order_phone] + order_before[interact[confirm] before order_create] + required_args；自清理 product_dedupe + precondition[product_count_for_keyword expect=1] + namespaces（商品名/手机号）。未新增任何自动触发（裁定 2′/4′）。 ｜ tags: order_create, smoke, write
+
+### OR-032. 算料试算端点 - 折数法（标准档）单一真值 + 后端产出的可读公式串 🔵
+```
+你: 商家手工下单页按宽 6.6m / 双开 / 标准档试算用料
+期望: direct_reply
+数据: （散文、**不计分**）折数法纸表逐值复现：单开 0.25n+0.2、对开 0.25n+0.3（4折=1.2/8折=2.3/48折=12.3/52折=13.3/56折=14.3）
+数据: （散文、**不计分**）单一真值：端点返回值 === 直调 curtain_calc.build_quote 逐值相等；formula_text 与数值同源（后端产出）
+跳过: [backend-contract] 内部端点 + Java 客户端由 pytest（tests/test_production/test_craft_calc.py）与 JUnit（CraftCalcClientTest / CraftCalcControllerTest）验证，非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: fabric-calc.pleat-method, fabric-calc.craft-tier, fabric-calc.fullness-actual, fabric-calc.craft-calc-endpoint
+溯源: 2026-09-19 新增（issue #4421 后端半边）：算料试算端点 + 折数法单一真值 + 纸表逐值复现。前端（下单页试算接线）由另一会话承担，本用例只锚后端契约。 ｜ tags: order, craft_calc, fabric, single_source_of_truth
 
 ## 加工项域（11 case）
 
@@ -4583,8 +4594,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：336（活跃 154，跳过 182）
-- tier 分布：smoke 10 / normal 295 / adversarial 31
+- 用例总数：337（活跃 154，跳过 183）
+- tier 分布：smoke 10 / normal 296 / adversarial 31
 - 售后域：9
 - agents：6
 - api：19
@@ -4601,7 +4612,7 @@
 - misc：15
 - onboarding：5
 - ontology：4
-- 订单域：30
+- 订单域：31
 - 加工项域：11
 - processing-order：39
 - 商品域：21

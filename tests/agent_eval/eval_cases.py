@@ -3933,6 +3933,24 @@ _CASE_OR_031 = EvalCase(
     precondition=[{'type': 'product_count_for_keyword', 'source': '遮光窗帘', 'expect': 1}],
 )
 
+# ── OR-032 [NORMAL] 算料试算端点 - 折数法（标准档）单一真值 + 后端产出的可读公式串（源: cases/order.yml）──
+_CASE_OR_032 = EvalCase(
+    id='OR-032',
+    legacy_id='',
+    title='算料试算端点 - 折数法（标准档）单一真值 + 后端产出的可读公式串',
+    skill=Skill.ORDER,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['商家手工下单页按宽 6.6m / 双开 / 标准档试算用料'],
+    expectations=['direct_reply'],
+    data_checks=['（散文、**不计分**）折数法纸表逐值复现：单开 0.25n+0.2、对开 0.25n+0.3（4折=1.2/8折=2.3/48折=12.3/52折=13.3/56折=14.3）', '（散文、**不计分**）单一真值：端点返回值 === 直调 curtain_calc.build_quote 逐值相等；formula_text 与数值同源（后端产出）'],
+    skip_reason='[backend-contract] 内部端点 + Java 客户端由 pytest（tests/test_production/test_craft_calc.py）与 JUnit（CraftCalcClientTest / CraftCalcControllerTest）验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['order', 'craft_calc', 'fabric', 'single_source_of_truth'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── PG-001 [NORMAL] 生成加工单 - 已确认含加工项订单 → 加工单生成（**不**推进订单；issue #4305）（源: cases/processing-order.yml）──
 _CASE_PG_001 = EvalCase(
     id='PG-001',
@@ -6621,6 +6639,7 @@ ALL_CASES = (
     _CASE_OR_029,
     _CASE_OR_030,
     _CASE_OR_031,
+    _CASE_OR_032,
     _CASE_PG_001,
     _CASE_PG_002,
     _CASE_PG_003,

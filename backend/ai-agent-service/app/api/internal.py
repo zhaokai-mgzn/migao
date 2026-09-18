@@ -18,6 +18,7 @@ from app.api.response_models import make_response
 from app.knowledge.distill import distill
 from app.briefing.generator import generate_briefing
 from app.production.routing import qty_and_source
+from app.tools import curtain_calc
 
 router = APIRouter()
 
@@ -63,6 +64,31 @@ class OperationQtyPosition(BaseModel):
 class OperationQtyRequest(BaseModel):
     """工序应做数量请求（issue #4208）"""
     positions: List[OperationQtyPosition] = Field(default_factory=list, description="待算部位列表")
+
+
+# 算料试算的引擎入参（issue #4421）：
+#   · 门幅 —— 折数法（定高买宽）**不消费**门幅，它只决定「成品高 + 卷边 > 门幅」时是否
+#     转定宽买高；取 3.2m（宽幅定高布，与 issue #4118 ⑤-B 实测的同一扇窗 6.6m/2.6m 同口径）
+#     ⇒ 常规层高走折数法本式 `0.25×折数+余量`，正是本单要交付的那个数。
+#     门幅**不入参**：商家手工下单页当前没有门幅字段，加了就是一个没有消费者的契约字段
+#     （后续按面料真实门幅接线的口径待裁定）。
+#   · 窗高缺省 2.5m（常见层高口径；**不传 ≠ 0**）。
+_FABRIC_WIDTH = 3.2
+_DEFAULT_HEIGHT = 2.5
+
+
+class CraftCalcRequest(BaseModel):
+    """算料试算请求（issue #4421，商家手工下单页）
+
+    用料口径 = 用户 2026-09-19 裁定的**折数法（标准档）**：
+    `宽 × 倍数 → 折数（按开数取整）→ 0.25×折数 + 余量`。
+    """
+    width: float = Field(..., gt=0, description="窗宽（米）")
+    height: Optional[float] = Field(None, gt=0, description="窗高（米）；不传按 2.5m 常见层高处理")
+    open_count: int = Field(1, ge=1, description="打开方式开数（1 单开 / 2 双开 / 4 四开）")
+    mounting: str = Field("s_hook", description="悬挂方式（s_hook 韩褶才走折数法）")
+    craft_tier: str = Field("standard", description="工艺档位（standard 2.0 / economy 1.8）")
+    style: Optional[str] = Field(None, description="款式（**只透传**，引擎无款式分支，不影响数值）")
 
 
 @router.post("/tools/execute")
@@ -247,3 +273,96 @@ async def operation_qty(
         f"operations={sum(len(p['qty_by_operation']) for p in positions)}"
     )
     return make_response(True, data={"positions": positions})
+
+
+def _formula_text(width: float, fullness: float, pleat_count: int, open_count: int, meters: float) -> str:
+    """可读公式串 —— **后端产出**，与数值同源（issue #4421 交付物 1）。
+
+    形态：`(6.6+0.3)×2.0 → 52折 → 0.25×52+0.3 = 13.3米`。
+
+    三个数字全部取自**同一次算料**：倍数与折数来自引擎（`build_quote` 的 `fullness` /
+    `pleat_count`），余量走 `curtain_calc.margin_for_open_count`（与算料同一个函数）。
+    ⇒ 公式串不可能与米数不一致；前端**不得**自拼（前端自拼 = 第二份算料逻辑）。
+    """
+    margin = curtain_calc.margin_for_open_count(open_count)
+    return (
+        f"({width:g}+{margin:g})×{fullness:g} → {pleat_count:g}折 → "
+        f"{curtain_calc.PLEAT_FABRIC_PER_FOLD:g}×{pleat_count:g}+{margin:g} = {meters:g}米"
+    )
+
+
+@router.post("/production/craft-calc")
+async def craft_calc(
+    request: CraftCalcRequest,
+    authorized: bool = Depends(verify_service_token),
+):
+    """算料试算（issue #4421，`POST /api/internal/production/craft-calc`）
+
+    商家手工下单页按宽/高/开数/档位试算用料 —— 此前该页面**零算料通路**，数量/米数靠商家手填。
+
+    **单一真值**：本端点不复制任何算料公式，只把请求转成 `curtain_calc.build_quote` 的入参
+    并取回算料子集（形态照 `ProductionOperationQtyClient` 的既有先例：Java 侧不复制第二份算料逻辑）。
+    `formula_text` 亦由后端按**同一份数字**产出 —— 前端不得自拼公式。
+
+    返回 `data`：`fabric_meters` / `pleat_count` / `per_panel_pleats` / `open_count` / `margin` /
+    `fullness`（档位**理论**倍数）/ `fullness_actual`（用料÷窗宽，**实际**倍数）/
+    `formula_used` / `formula_text` / `source` / `craft_tier` / `warning`。
+
+    fail-closed：`mounting` 非韩褶（折数法不适用）或档位低于行业下限 ⇒ 400，**不静默回落到倍数法**
+    —— 静默回落正是 issue #4118 ⑤-B 治过的「同一扇窗两个数」缺陷。
+    """
+    try:
+        quote = curtain_calc.build_quote(
+            window_width=request.width,
+            window_height=request.height if request.height is not None else _DEFAULT_HEIGHT,
+            mounting=request.mounting,
+            open_count=request.open_count,
+            fabric_width=_FABRIC_WIDTH,
+            craft_tier=request.craft_tier,
+            style=request.style,
+        )
+    except ValueError as e:  # 倍数低于行业下限（MIN_FULLNESS）等入参非法
+        raise HTTPException(
+            status_code=400,
+            detail={"success": False, "error": {"code": "CRAFT_CALC_INVALID_INPUT", "message": str(e)}},
+        ) from e
+
+    if "pleat_count" not in quote:
+        # `mounting != s_hook` ⇒ 引擎走倍数法，本端点答不出折数法结果。
+        # **不静默回落**：如实报错，由调用方显式选韩褶。
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "success": False,
+                "error": {
+                    "code": "CRAFT_CALC_NOT_PLEAT_MODE",
+                    "message": (
+                        f"悬挂方式 {request.mounting} 不走折数法（折数法仅在 mounting=s_hook 生效），"
+                        "无法给出折数/用料，请改用 s_hook"
+                    ),
+                },
+            },
+        )
+
+    data = {
+        "fabric_meters": quote["fabric_meters"],
+        "pleat_count": quote["pleat_count"],
+        "per_panel_pleats": quote["per_panel_pleats"],
+        "open_count": quote["open_count"],
+        "margin": quote["margin"],
+        "fullness": quote["fullness"],
+        "fullness_actual": quote.get("fullness_actual"),
+        "formula_used": quote["formula_used"],
+        "formula_text": _formula_text(
+            request.width, quote["fullness"], quote["pleat_count"],
+            request.open_count, quote["fabric_meters"],
+        ),
+        "source": quote["source"],
+        "craft_tier": quote["craft_tier"],
+        "warning": quote["warning"],
+    }
+    logger.info(
+        f"Craft calc: width={request.width} open_count={request.open_count} "
+        f"tier={request.craft_tier} => {data['fabric_meters']}m / {data['pleat_count']}折"
+    )
+    return make_response(True, data=data)
