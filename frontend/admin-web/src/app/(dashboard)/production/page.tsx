@@ -98,8 +98,18 @@ export default function ProductionBoardPage() {
       if (cancelled) return
       const loaded = new Map<string, BoardRow>()
       for (const d of details) {
+        // ⚠️ 下面这个 `d.status === 'fulfilled'` 只是 **TS 类型收窄**（`allSettled` 返回联合类型，
+        // 取 `d.value` 必须先收窄），**不是**「失败行不写缓存」的语义守卫：
+        // 内层 `allSettled` 已经吞掉单行失败，上面的 async mapper **永不 reject**
+        // ⇒ `details` 恒为 fulfilled ⇒ **两个接口都失败的行同样进缓存**（progress/total 为 undefined），
+        // 该行保持「—」且**本会话不重试**；重试靠「刷新」（清缓存）或整页重载。
+        //
+        // 🔴 不要"照字面"改成「失败不写缓存」：那会让 `pending` **永不收敛**
+        //    ⇒ 每次 `setRows(prev.map(...))` 都产生**新数组** ⇒ `rows` 身份变化
+        //    ⇒ 本 effect（依赖 `[rows, page, pageSize, loading, error]`）被重新触发
+        //    ⇒ **无限请求循环**。当前语义（失败也缓存）正是为避免它，已被
+        //    `production-board.test.tsx` 的「失败行切页来回不重发」断言钉住（issue #4372）。
         if (d.status === 'fulfilled') {
-          // 单行失败不写缓存（下次进页可重试），该行保持「—」
           loaded.set(d.value.po.orderId, d.value)
           detailCache.current.set(d.value.po.id, d.value)
         }
