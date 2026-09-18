@@ -67,6 +67,19 @@
   }
 }
 
+/* 弱网降级（issue #4206）：离线态必须显式可见，不得把本机缓存冒充服务端真值 */
+.production-offline {
+  margin: 16px 24px 0;
+  padding: 20px;
+  background: #fffbe6;
+  border-radius: 12px;
+
+  &__text {
+    font-size: 24px;
+    color: #ad6800;
+  }
+}
+
 .production-loading,
 .production-empty {
   padding: 80px 24px;
@@ -99,6 +112,39 @@
     height: 12px;
     background: #1a73e8;
     border-radius: 6px;
+  }
+
+  /* 计件金额累计（issue #4206 判据 3）：服务端 piecework 口径（排除返工/报废） */
+  &__piecework {
+    display: block;
+    margin-top: 16px;
+    font-size: 26px;
+    font-weight: 600;
+    color: #d46b08;
+  }
+}
+
+/* 报工明细（issue #4206 判据 3 / 真值源 §5「操作记录 = 报工明细」） */
+.production-logs {
+  margin: 20px 24px 0;
+  padding: 20px;
+  background: #ffffff;
+  border-radius: 16px;
+
+  &__title {
+    display: block;
+    font-size: 28px;
+    font-weight: 600;
+    color: #0a2540;
+    padding-bottom: 12px;
+    border-bottom: 1px solid #f3f4f6;
+  }
+
+  &__item {
+    display: block;
+    margin-top: 12px;
+    font-size: 24px;
+    color: #667085;
   }
 }
 
@@ -167,8 +213,52 @@
     color: #9aa5b1;
   }
 
+  /* 该工序累计计件金额（issue #4206 判据 3） */
+  &__piecework {
+    display: block;
+    margin-top: 4px;
+    font-size: 22px;
+    color: #d46b08;
+  }
+
+  &__actions {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    margin-left: 16px;
+  }
+
+  /* 完成数量可编辑（issue #4206 判据 1）：默认 = 应做数量，上限 = 应做数量 */
+  &__qty {
+    display: flex;
+    align-items: center;
+    height: 64px;
+    padding: 0 12px;
+    background: #f5f7fa;
+    border-radius: 12px;
+  }
+
+  &__qty-input {
+    width: 96px;
+    height: 64px;
+    font-size: 28px;
+    color: #0a2540;
+    text-align: center;
+  }
+
+  &__qty-unit {
+    font-size: 24px;
+    color: #9aa5b1;
+  }
+
+  &__qty-hint {
+    margin-top: 6px;
+    font-size: 20px;
+    color: #9aa5b1;
+  }
+
   &__btn {
-    margin: 0 0 0 16px;
+    margin: 12px 0 0 0;
     width: 176px;
     height: 68px;
     line-height: 68px;
