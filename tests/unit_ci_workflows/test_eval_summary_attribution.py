@@ -345,8 +345,14 @@ class TestCompletionCarriesReasons:
           ④ `restore_failures`（#3807）：商品价格复位未生效（共享状态未回滚）⇒ 结论不可信；
           ⑤ `harness_incompatible_failures`（#3803）：载荷字段与待答 form 卡零匹配 ⇒
              **不是** agent 行为失败（归因单列），但仍然阻塞。
-        本夹具三者皆空 —— 也就是说：**既有桶/文案一字未动**，新增的只是"多出来的失败形态
-        不再混进 `deterministic_failures`（那会继续归因错人）"。
+
+        ⚠️ **本包（#4245）再追加一个独立桶**（同一纪律：只加分桶、**不放宽阻塞**）：
+          ⑥ `case_asset_failures`：`precondition_not_applied` 族（`pre_clean` 未应用 /
+             运行期前置漂移）⇒ 该用例本次红/绿**无判别力**（runner 原文已断言"不可归因于
+             agent 行为"），故从 `deterministic_failures`/`systemic_recurrence`/
+             `journey_failures` 里**分出来单列**，但**仍计入 `ok`**（结论不可用）。
+             本夹具该桶为空 —— 新增的只是"多出来的失败形态不再归因错人"。
+        本夹具四者皆空 —— 也就是说：**既有桶/文案一字未动**。
         """
         verdict = lr.completion_verdict(self._results(), (_journey_id(),))
         assert verdict == {
@@ -358,6 +364,7 @@ class TestCompletionCarriesReasons:
             "systemic_recurrence": [],
             "restore_failures": [],
             "harness_incompatible_failures": [],
+            "case_asset_failures": [],
             "total": 4, "passed": 1,
         }
         # ② 口径锚点：同样是"两次皆败"，`unstable` 必须进阻塞桶（旧口径会放行）
@@ -372,6 +379,7 @@ class TestCompletionCarriesReasons:
             "systemic_recurrence": [],
             "restore_failures": [],
             "harness_incompatible_failures": [],
+            "case_asset_failures": [],
             "total": 1, "passed": 0,
         }
 

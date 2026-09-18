@@ -4915,6 +4915,28 @@ def check_precondition_drift(specs: list, before: dict, after: dict) -> list:
     return issues
 
 
+def precondition_not_applied_fact(result: dict, pre_clean_bad: list) -> list:
+    """前置不成立族的**结构化事实**（issue #4245）—— 判定层据此单列 `case_asset_failures`。
+
+    族成员（在 `_failure_signature` 里同属 `precondition_not_applied(...)` 这一原子）：
+      ① `pre_clean: 前置未应用` / `PRECONDITION_NOT_APPLIED` —— 夹具层没准备（#3781）；
+      ② `precondition[<type>]` —— `check_precondition_drift` 观测到靶子漂移 / 本就不成立（#3835）。
+    两者都让该用例本次的**红/绿失去判别力**（runner 原文：「本次红/绿**不可归因于
+    agent 行为**」）⇒ 归因必须单列，不得混进 `deterministic_failures`（"agent/产品的
+    确定性回归"）或 `systemic_recurrence`（"跨 run 复发"）—— 那两桶都在指名 agent/产品，
+    读它们的人会去查 agent 行为（实测 PR-016 落前者、PR-008 落后者）。
+
+    ⚠️ **复位族**（`PRECONDITION_NOT_RESTORED`）**不在**本族：它已有自己的桶
+    （`restore_failures`，#3807/#4075），语义是"共享状态没归零 ⇒ 本用例与后续用例不可信"。
+
+    空列表 = 该用例不属此族（**不设兜底默认值**：字段恒非空会把桶变成噪声）。
+    """
+    fact = [str(m) for m in (pre_clean_bad or [])]
+    if result.get("precondition_check"):
+        fact.append(str(result["precondition_check"]))
+    return fact
+
+
 async def _probe_employee_absent(token: str, emp_id: str = "", name: str = "",
                                  phone: str = "") -> tuple:
     """该员工/用户是否**不存在**（负效果断言的取数基元，issue #4108）→ (bool | None, 说明)。
@@ -7518,6 +7540,15 @@ async def run_suite(cases, label: str, classify: bool = True, retry_budget: int 
                 r["precondition"] = ("PRECONDITION_NOT_RESTORED: 共享状态复位未生效 "
                                      f"（{_not_restored[0][:160]}）—— 本用例与后续读它的用例结果不可信")
 
+        # 前置不成立族（issue #4245）：`pre_clean` 未应用 + 运行期前置漂移在
+        # `_failure_signature` 里是**同一原子**（`precondition_not_applied(...)`）⇒ 把这一族
+        # 结构化落盘（沿用 #3803 的范式：结构化事实 + 判定层单列桶），让结论档能把
+        # "靶子没成立"与"agent 没做"分开。落在这里（收尾块）而非各产生点：正常/崩溃两条
+        # 路径都经过此处，且 `precondition_check`（漂移族）此时已在结果 dict 上。
+        _precond_fact = precondition_not_applied_fact(r, _pre_clean_bad)
+        if _precond_fact:
+            r["precondition_not_applied"] = _precond_fact
+
         if CASE_SLEEP:
             await asyncio.sleep(CASE_SLEEP)  # rate limit（可配：EVAL_CASE_SLEEP）
         # 用例级**驻留时长**（含重试与重试前置复位；含并行道的**读位排队**；
@@ -7801,6 +7832,11 @@ async def run_suite(cases, label: str, classify: bool = True, retry_budget: int 
         print(f"   🔬 确定性失败（必须修）: {', '.join(verdict['deterministic_failures'])}")
     if verdict["journey_failures"]:
         print(f"   🧭 关键旅程失败（不放行）: {', '.join(verdict['journey_failures'])}")
+    # 用例资产缺陷（#4245）：与上面两桶**分开打印** —— 这一桶的红不是 agent 行为，
+    # 读到它的人应该去修前置/用例资产，而不是去查 prompt/工具（归因错人是本单要治的）。
+    if verdict["case_asset_failures"]:
+        print(f"   📦 用例资产缺陷（前置未成立/漂移，**不可归因于 agent**）: "
+              f"{', '.join(verdict['case_asset_failures'])}")
     if verdict["flake_released"]:
         print(f"   🎲 已放行波动（flake 台账）: {', '.join(verdict['flake_released'])}")
 
@@ -7924,6 +7960,11 @@ def completion_verdict(results: list, key_journey_ids: tuple = ()) -> dict:
         （实测 run 34916256903：OR-016 因旅程身份逃出所有桶，与本段判据冲突）。
       - **前置未复位**（#3807）：`restore` 里带 `PRECONDITION_NOT_RESTORED` 的用例 ⇒
         共享商品价格处于未知状态 ⇒ 独立进 `restore_failures` 并阻塞（与本用例 score 无关）。
+      - **用例资产缺陷**（#4245）：`precondition_not_applied` 族（`pre_clean` 未应用 /
+        运行期前置漂移）⇒ 该用例本次的红/绿**无判别力**（runner 原文已断言"不可归因于
+        agent 行为"）⇒ 独立进 `case_asset_failures` 并阻塞，**不**进 `deterministic_failures`
+        / `systemic_recurrence` / `journey_failures`（那三桶都在指名 agent/产品，
+        实测 PR-016 落 deterministic、PR-008 落 systemic ⇒ 读的人去查 agent 行为）。
 
     ⚠️ **放行条目为什么不能只看 `score<1`**（issue #3781，真实 run 34856561459 实证）：
     放行档的语义前提就是"重试**通过**" ⇒ 该用例的最终 `score == 1.0`。旧实现的断言
@@ -7945,16 +7986,18 @@ def completion_verdict(results: list, key_journey_ids: tuple = ()) -> dict:
 
     Returns:
         {"ok", "reason", "deterministic_failures", "journey_failures",
-         "flake_released", "systemic_recurrence", "restore_failures", "total", "passed"}
+         "flake_released", "systemic_recurrence", "restore_failures",
+         "harness_incompatible_failures", "case_asset_failures", "total", "passed"}
     """
     if not results:
         return {"ok": False, "reason": "0 个用例执行（环境/登录失败，禁止假绿）",
                 "deterministic_failures": [], "journey_failures": [],
                 "flake_released": [], "systemic_recurrence": [], "restore_failures": [],
-                "harness_incompatible_failures": [], "total": 0, "passed": 0}
+                "harness_incompatible_failures": [], "case_asset_failures": [],
+                "total": 0, "passed": 0}
     journey_set = set(key_journey_ids or ())
     deterministic, journey_fail, flake_released = [], [], []
-    systemic, restore_fail, harness_bad = [], [], []
+    systemic, restore_fail, harness_bad, case_asset = [], [], [], []
 
     def _is_recurring(r) -> bool:
         return bool(r.get("cross_run_recurrence"))
@@ -7969,6 +8012,14 @@ def completion_verdict(results: list, key_journey_ids: tuple = ()) -> dict:
         # 不进 `deterministic_failures`（那是"agent/产品的确定性回归"清单）。
         if r.get("harness_incompatible"):
             harness_bad.append(cid)
+        # 前置不成立族（#4245）：`pre_clean` 未应用 / 运行期前置漂移 ⇒ 该用例本次的
+        # 红/绿**无判别力**（runner 原文断言"不可归因于 agent 行为"）⇒ 单列
+        # `case_asset_failures`，且**先于**复发/旅程/放行判定 —— 否则同一条会被折进
+        # `systemic_recurrence`（PR-008 实测）或 `journey_failures`，归因继续指错人。
+        # 仍然阻塞 `ok`（见下方 ok 表达式）：结论不可用，只是"该谁修"不同。
+        if r.get("precondition_not_applied"):
+            case_asset.append(cid)
+            continue
         if r.get("score", 0) >= 1.0:
             # 重试通过的放行条目（score==1.0）在这里被捞出来——见 docstring 的 #3781 说明
             # ⚠️ 跨 run 复发**必须先于**旅程守卫判定（fail-closed 第一，盲审缺陷一）：
@@ -8001,7 +8052,7 @@ def completion_verdict(results: list, key_journey_ids: tuple = ()) -> dict:
         else:
             deterministic.append(cid)
     ok = (not deterministic and not journey_fail and not systemic
-          and not restore_fail and not harness_bad)
+          and not restore_fail and not harness_bad and not case_asset)
     total = len(results)
     passed = sum(1 for r in results if r.get("score", 0) >= 1.0)
     if ok:
@@ -8018,6 +8069,10 @@ def completion_verdict(results: list, key_journey_ids: tuple = ()) -> dict:
         if systemic:
             parts.append(f"跨 run 复发的系统性缺口 {len(systemic)} 条"
                          f"（同一首跑指纹在历史 run 反复出现，不按波动放行）: {', '.join(systemic)}")
+        if case_asset:
+            parts.append(f"用例资产缺陷 {len(case_asset)} 条"
+                         f"（前置未成立/期间漂移 ⇒ 该用例本次红/绿无判别力，"
+                         f"**不可归因于 agent**，须先修前置或用例资产）: {', '.join(case_asset)}")
         if restore_fail:
             parts.append(f"前置未复位 {len(restore_fail)} 条"
                          f"（共享状态未回滚，结论不可信）: {', '.join(restore_fail)}")
@@ -8033,6 +8088,7 @@ def completion_verdict(results: list, key_journey_ids: tuple = ()) -> dict:
         "systemic_recurrence": systemic,
         "restore_failures": restore_fail,
         "harness_incompatible_failures": harness_bad,
+        "case_asset_failures": case_asset,
         "total": total, "passed": passed,
     }
 
@@ -8197,6 +8253,11 @@ def _summary_case(result: dict, failures: list) -> dict:
         entry["precondition_baseline"] = result["precondition_baseline"]
     if result.get("precondition_check"):
         entry["precondition_check"] = result["precondition_check"]
+    # 前置不成立族（issue #4245）：结构化事实随 artifact 落盘 —— 顶层
+    # `completion.case_asset_failures` 给出 ID 列表，这里给出**哪条前置没成立**，
+    # 让"这次红与 agent 无关"可逐条核对（缺省不带该键，同 failures/harness_incompatible）。
+    if result.get("precondition_not_applied"):
+        entry["precondition_not_applied"] = result["precondition_not_applied"]
     # 放行波动标记（issue #3781）：条目级留痕 —— 顶层 `completion.flake_released` 给出
     # ID 列表，这里给出"该 ID 的最终 score/分类是什么"，让"为什么放行"可逐条核对
     # （缺省不带该键，同 failures：通过用例不刷屏，只有真放行的少数条目才带）。
@@ -8388,11 +8449,13 @@ def write_summary_json(path: str, label: str, shard: str, results: list,
     # 顶层判定**只加不改**（#3708）：`completion_verdict` 的算法/`reason` 原文一字未动
     # （与历史 run 的对比必须仍成立），只**附加** `ID → 首要原因` 映射，让"哪些用例 + 为什么"
     # 一次读全（完整原因列表在各用例条目的 `failures`；放行波动也列出，否则"为什么放行"缺证据）。
+    # #4245：`case_asset_failures` 同样要给出原因 —— 否则"前置没成立"这条红在结论档里
+    # 只剩一个 ID，读的人又会回去查 agent 行为。
     _verdict = payload["completion"]
     _verdict["failure_reasons"] = {
         cid: (_reasons.get(cid) or [""])[0]
         for cid in (_verdict["deterministic_failures"] + _verdict["journey_failures"]
-                    + _verdict["flake_released"])
+                    + _verdict["case_asset_failures"] + _verdict["flake_released"])
     }
     # 成本块（#3761）：**只加**顶层键（既有字段/键顺序一字未动 —— 消费者
     # `report` job 的 jq 与 `TestLegacyBytesUnchanged` 都依赖这一点）。
