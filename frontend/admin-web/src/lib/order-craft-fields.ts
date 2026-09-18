@@ -188,3 +188,69 @@ export function buildEdgeLineCraftSpec(
     metersSource,
   }
 }
+
+// ── 樘窗绑组（issue #4395）：一樘窗的多条**部位行**写同一个 `craftLineId` ──────────
+//
+// 病根（#4387 的「未做」项）：下单页**只在拼色时**写 `craftLineId` ⇒ 顾客下「布 + 纱」
+// （两条明细行、都不带该键）⇒ 消费端 `ProcessingOrderService.craftGroupKey` 回落到各自 `itemId`
+// ⇒ **两行各成一樘窗** ⇒ 套级工序（外帘打卷/装袋/发货）在加工单上出现 2 次
+// （#4384 A2 的红证因此不会转绿）。
+//
+// ⚠️ **语义边界**：`craftLineId` 标识**樘窗**（一个窗户），**不是**「面料行组」——
+// 部位 = 一行明细 = 一件帘 ⇒ 布行与纱行**各成部位**（读侧不合并），只有配布边行不独立成部位。
+// 不得改成「组内只留一个部位」（那会与 #4387 钉死的语义冲突）。
+
+/** 「主布行」的部位取值（§4.2 `curtainType`）—— 樘窗代表行优先取它 */
+const CURTAIN_TYPE_CLOTH = '布帘'
+
+/** 樘窗绑组的入参行（纯函数：只取判组需要的三个字段） */
+export interface WindowLineRef {
+  /** 客户端行标识 —— `craftLineId` 的取值来源（服务端生成 `order_item.id` 之前只有它可用） */
+  id: string
+  /** 樘窗名称 / 窗号；去空白后非空且与他人相同 ⇒ 同樘窗。未填 ⇒ 不参与绑组 */
+  windowLabel?: string
+  /** 部位（§4.2 `curtainType`）—— 用于挑「主布行」作代表行 */
+  curtainType?: string
+}
+
+/**
+ * 把「同一樘窗的多条部位行」解析成 `行标识 → craftLineId`（issue #4395 判据 1 的纯函数半边）。
+ *
+ * 三条口径（**缺值不写**是本源文件的硬约束 1，这里逐条对齐）：
+ * 1. **未填窗号 ⇒ 不写**：缺省回落本行 `itemId` ⇒ 各自成组 = **存量语义逐字不变**；
+ * 2. **窗号只有一行 ⇒ 不写**：单行樘窗的组键本来就 = 本行 `itemId`，写它没有信息量；
+ * 3. **代表行 = 组内第一条「部位=布帘」的行**（= 主布行；§4.8 的 `craftLineId` 口径就是
+ *    「主布行的行标识」，`R-b` 加工费也落主布行）；组内没有布帘（纱 + 帘头）⇒ 取**组内首行**
+ *    （不猜、不丢组 —— 静默丢组会让整樘窗没有归属层级）。
+ */
+export function resolveWindowCraftLineIds(
+  lines: ReadonlyArray<WindowLineRef>
+): Record<string, string> {
+  const groups = new Map<string, WindowLineRef[]>()
+  for (const line of lines) {
+    const label = text(line.windowLabel)
+    if (label === null) continue
+    const group = groups.get(label)
+    if (group) group.push(line)
+    else groups.set(label, [line])
+  }
+
+  const craftLineIds: Record<string, string> = {}
+  for (const group of groups.values()) {
+    if (group.length < 2) continue
+    const representative =
+      group.find((line) => text(line.curtainType) === CURTAIN_TYPE_CLOTH) ?? group[0]
+    for (const line of group) craftLineIds[line.id] = representative.id
+  }
+  return craftLineIds
+}
+
+/**
+ * 樘窗行的绑组键：**只写 `craftLineId`**。
+ *
+ * 不写 `componentRole`：缺省即主布（§4.8 存量兼容），而**纱行既不是主布也不是配布边**
+ * ⇒ 角色由读侧按部位 / 组内顺序判定，写侧不冒充。
+ */
+export function buildWindowGroupKey(craftLineId: string): Record<string, unknown> {
+  return { craftLineId }
+}
