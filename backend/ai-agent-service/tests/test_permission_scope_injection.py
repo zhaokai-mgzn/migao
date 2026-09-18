@@ -1,4 +1,4 @@
-# case_ids: CH-001, HR-005, HR-006
+# case_ids: CH-001, HR-005, HR-006, HR-009, HR-010
 """B 端权限范围注入 + `principles.md` 权限归因规则两半（issue #4107 / 父单 #4103 的 F8+F7）。
 
 被测契约（本包 = F7/F8，仅 `app/graph/skills/**`）：
@@ -54,12 +54,27 @@ PROMPT = "原有 system prompt 内容（注入只能追加，不得改动它）"
 #: 现在：清单只声明「当前账号已开通的能力」，删掉排他断言与"不要尝试"；
 #: 改为「**先调用，由系统给权威结论**；真被拒 ⇒ 不重试 / 如实指名 / 给开通路径」。
 #: F7 两半都保留：前半（不得甩锅权限）由 principles.md 守卫锁，后半（真拒绝必须如实说明）在这里锁。
+#:
+#: ⚠️ 2026-09-19 改版（issue #4197，**假真值修正**）：改前那句是
+#: 「（**换参数同样不会成功**，权限拒绝是该**请求**的终态）」。事实：本仓库有**按 action 分权**
+#: 的工具（`employee_manage`：读要 `employee:list`、写要 `employee:create`；`order_manage` 的
+#: `ACTION_PERMISSIONS` 只有 `refund` 要 `order:refund`，其余只要 `order:list`）⇒
+#: **换 action 确实可能成功**，"换参数同样不会成功" 是把"这一次被拒"说成"整个工具没戏"的
+#: **假真值**，等于教模型过度泛化（一拒全拒）—— HR-010（正向对照：持 `employee:create` 时
+#: 同一请求必须真的执行）恒红的红因在**处方**、不在模型（run 35295494688 逐字轨迹：
+#: `failed=role_manage!权限不足,employee_manage!权限不足` 后模型直接放弃，再没试 create）。
+#: 收窄后：终态语义**限定到同一调用**（同一失败调用不得跨轮重复 —— 与 HR-009 的 `must_fail`
+#: 与 `data_checks`「同一失败的 create 调用不得跨轮重复」相容，它禁的是自旋），
+#: 但允许**换 action 再试一次**（只一次，仍被拒就停手）。
 EXPECTED_SCOPE_BLOCK = (
     "【权限范围】当前会话人的角色：operator\n"
     "- 当前账号已开通的能力：订单列表(order:list)、新增商品(product:create)\n"
     "- 调用被系统以权限不足拒绝时：**不要重试**同一调用"
-    "（换参数同样不会成功，权限拒绝是该请求的终态）——必须如实告知用户其账号缺少哪项能力，"
-    "并指引其联系管理员在「角色管理」或「员工管理」中开通该权限\n"
+    "（重试同一调用不会成功：权限拒绝是**该调用**的终态，同一失败调用不得跨轮重复）；"
+    "同一工具的不同 action 权限可能不同（查询 vs 写入、退款 vs 改单）："
+    "被拒后**换 action 可以再试一次**，仍被拒就停手；"
+    "随后如实告知用户其账号缺少哪项能力，并指引其联系管理员在「角色管理」或"
+    "「员工管理」开通该权限\n"
     "【权限范围结束】\n\n"
 )
 
@@ -99,14 +114,17 @@ class TestInjectedWhenBsideHasPermissions:
     @pytest.mark.parametrize("token", [
         # ⚠️ issue #4147 G6（口径 #4150）：原第一条是「不要调用工具尝试」—— 它正是**缺陷本身**
         # （真实评测 run 35264687083：模型因此一次都没调用 employee_manage，HR-009/HR-010 全红）。
-        # 保留下来的四件必须说清的事：被拒后不重试 / 终态语义 / 如实指名 / 给开通路径。
+        # 保留下来的必须说清的事：被拒后不重试**同一调用** / 终态语义**限定到该调用** /
+        # 同一失败调用不得跨轮重复 / **换 action 可以再试一次** / 如实指名 / 给开通路径。
         "不要重试",                            # 确实被拒时不重试同一调用
-        "权限拒绝是该请求的终态",              # 终态语义
+        "权限拒绝是**该调用**的终态",           # 终态语义（issue #4197 收窄到同一调用）
+        "同一失败调用不得跨轮重复",             # 不自旋（与 HR-009 的 data_checks 同口径）
+        "换 action 可以再试一次",               # action 级权限可能不同（issue #4197 的处方）
         "如实告知用户其账号缺少哪项能力",       # 如实 + 指名
         "「角色管理」", "「员工管理」",         # 开通路径
     ])
     def test_carries_actionable_guidance_sentences(self, token):
-        """必须说清的事：被拒后不重试 / 终态 / 如实指名 / 给开通路径（F7 后半）。"""
+        """必须说清的事（F7 后半 + #4197 的 action 级收窄）：缺任一条即红。"""
         assert token in _scope(_OPERATOR_STATE)
 
     def test_the_old_false_refusal_wording_is_gone(self):
@@ -115,12 +133,36 @@ class TestInjectedWhenBsideHasPermissions:
         这不是"砍文案"：删掉的是**排他断言**「超出即无权」与**禁止尝试**
         「不要调用工具尝试」——两句合起来才构成"清单 ⇒ 能力全集"的误读。
         清单本身（已开通能力 + 码）原样保留，被拒后的指引一字未减。
+
+        ⚠️ issue #4197 追加两条**假真值**禁词（改前的原文，逐字）：
+        「换参数同样不会成功」把"这一次被拒"说成"整个工具没戏"，
+        「权限拒绝是该**请求**的终态」把终态语义从"一次调用"放宽到"整个请求"。
+        两句都是对 action 级分权工具的假真值 ⇒ 不得复活。
         """
         out = _scope(_OPERATOR_STATE)
-        for banned in ("超出即无权", "不要调用工具尝试"):
+        for banned in ("超出即无权", "不要调用工具尝试",
+                       "换参数同样不会成功", "权限拒绝是该请求的终态"):
             assert banned not in out, (
-                f"旧文案 {banned!r} 会把按角色开放的工具说成无权（#4147 G6 / #4150 回归）"
+                f"旧文案 {banned!r} 与事实不符（#4147 G6 / #4150 / #4197 回归）"
             )
+
+    def test_the_action_level_allowance_does_not_reopen_the_cross_turn_spin(self):
+        """**收窄不是放开**（issue #4197 的硬约束）：换 action 的那一次许可，
+        不得把「同一失败调用不得跨轮重复」一起放开 —— HR-009 的 `must_fail` +
+        `data_checks`（同一失败的 create 调用不得跨轮重复）靠这一句承重。
+
+        判据取**结构**而非措辞：块里必须同时出现「同一调用/同一失败调用」的终态句
+        与「换 action」的许可句；只有许可句、没有终态句 = 自旋面打开（红）。
+        """
+        out = _scope(_OPERATOR_STATE)
+        assert "同一调用" in out and "不得跨轮重复" in out, (
+            "行动许可句在、终态句没了 ⇒ 同一失败调用可以跨轮自旋（HR-009 的判据面被掏空）"
+        )
+        # 红证（负例夹具）：只留许可句的形态必须被判缺终态句 —— 证明上面那条不是恒绿。
+        permissive_only = "被拒后可以换 action 再试一次"
+        assert not ("同一调用" in permissive_only and "不得跨轮重复" in permissive_only), (
+            "夹具失效：负例里本就含终态句"
+        )
 
     def test_the_attempt_once_path_is_not_forbidden(self):
         """**#4150 裁定**：注入块不得禁止"先发起一次调用" —— 权威结论来自系统而不是清单。
@@ -219,6 +261,42 @@ class TestByteIdenticalWhenNothingToSay:
 
 
 # ════════════════════════════════════════════════════════════════════════════
+# #4197 事实基础守卫：处方说的「换 action 可能成功」必须是**机制真值**，不是新的一句假真值
+#    —— 分权一旦消失（工具改成整工具一个码），处方就又变成假真值（反向的 #4197）
+# ════════════════════════════════════════════════════════════════════════════
+
+class TestTheActionLevelClaimIsBackedByTheMechanism:
+    """注入块的因果句「同一工具的不同 action 权限可能不同」的事实基础。
+
+    为什么锁源码而非只锁文案：本单的病根正是**处方与机制不一致**（旧句说"换参数同样不会成功"，
+    机制却按 action 分权）。文案改对了但机制变了（例：employee_manage 改成整工具一个码），
+    处方会**重新变成假真值**，而没有任何东西会因此变红。故这里把两个引用点钉在工具源码上
+    （与 `_JAVA_CATALOGS` 的读源纪律同口径；漂移即红，处置 = 要么改机制、要么改处方）。
+    """
+
+    def _src(self, rel):
+        return (_SERVICE_DIR / rel).read_text(encoding="utf-8")
+
+    def test_employee_manage_splits_read_and_write_codes_by_action(self):
+        """`employee_manage`：读 action 要 `employee:list`、写 action 要 `employee:create`。"""
+        src = self._src("app/tools/employee_manage.py")
+        assert 'required_permissions = ["employee:list", "employee:create"]' in src, (
+            "employee_manage 的权限码变了 ⇒ HR-009/HR-010 的「权限即差异」对照失效")
+        assert '"employee:list" if action in self.read_only_actions else "employee:create"' in src, (
+            "employee_manage 不再按 action 分权 ⇒ 注入块的「换 action 可能成功」变成假真值"
+            "（旧 #4197 的形态：处方与机制不一致）")
+
+    def test_order_manage_refund_needs_a_stricter_code_than_list(self):
+        """`order_manage`：只有 `refund` 要 `order:refund`，其余（含改单）只要 `order:list`。"""
+        src = self._src("app/tools/order_manage.py")
+        assert '"refund": "order:refund"' in src, (
+            "order_manage 的 action→码映射变了 ⇒ 处方里「退款 vs 改单」的例子失去事实基础")
+        assert 'required_permissions = ["order:list"]' in src, (
+            "order_manage 的粗筛码变了 ⇒ 上面的 action 级差异不再是「同一工具不同 action」"
+        )
+
+
+# ════════════════════════════════════════════════════════════════════════════
 # F8 接线：注入必须真的出现在**运行时传给 LLM 的 system prompt** 里
 # ════════════════════════════════════════════════════════════════════════════
 
@@ -302,7 +380,7 @@ class TestWiredIntoTheRealPromptAssembly:
         text = self._system_text(captured)
         assert "【权限范围】" in text
         assert "订单列表(order:list)" in text
-        assert "权限拒绝是该请求的终态" in text
+        assert "权限拒绝是**该调用**的终态" in text
 
     async def test_c_end_prompt_reaches_the_llm_without_the_scope_block(self, captured):
         from app.graph.skills.base_skill import execute_skill
@@ -315,7 +393,7 @@ class TestWiredIntoTheRealPromptAssembly:
         )
         text = self._system_text(captured)
         assert "【权限范围】" not in text
-        assert "权限拒绝是该请求的终态" not in text
+        assert "权限拒绝是**该调用**的终态" not in text
 
 
 # ════════════════════════════════════════════════════════════════════════════

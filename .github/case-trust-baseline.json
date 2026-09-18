@@ -446,11 +446,6 @@
         "CASE-TRUST-NO-SELF-CLEAN"
       ]
     },
-    "OR-013": {
-      "codes": [
-        "CASE-TRUST-NO-PRECONDITION-ASSERTION"
-      ]
-    },
     "OR-014": {
       "codes": [
         "CASE-TRUST-SINGLE-LEG-NO-PERSONA"

@@ -7,7 +7,7 @@
 - 健康检查
 """
 
-from typing import Optional, Dict, Any
+from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from loguru import logger
@@ -17,6 +17,7 @@ from app.tools import ToolContext, get_tool_registry
 from app.api.response_models import make_response
 from app.knowledge.distill import distill
 from app.briefing.generator import generate_briefing
+from app.production.routing import qty_and_source
 
 router = APIRouter()
 
@@ -46,6 +47,22 @@ class BriefingGenerateRequest(BaseModel):
     """
     tenant_id: int = Field(..., description="租户 ID")
     snapshot: Dict[str, Any] = Field(..., description="聚合指标快照 {metrics: {key: value}, facts: [...]}")
+
+
+class OperationQtyPosition(BaseModel):
+    """待算应做数量的单个部位（issue #4208）
+
+    请求可带 `curtain_type` / `craft`（契约形状，同 admin-api 侧），但**本端点不需要**：
+    工序清单由调用方给出（真相源 = DB 工序库 #4193），数量只取决于 `operations` + `calc_info`。
+    """
+    position_name: str = Field(..., description="部位名（原样回传，不参与计算）")
+    operations: List[str] = Field(default_factory=list, description="该部位的工序名列表")
+    calc_info: Dict[str, Any] = Field(default_factory=dict, description="算料引擎输出（fabric_meters/pleat_count 等）")
+
+
+class OperationQtyRequest(BaseModel):
+    """工序应做数量请求（issue #4208）"""
+    positions: List[OperationQtyPosition] = Field(default_factory=list, description="待算部位列表")
 
 
 @router.post("/tools/execute")
@@ -191,3 +208,42 @@ async def generate_daily_briefing(
     )
     briefing = await generate_briefing(request.snapshot)
     return make_response(True, data={"briefing": briefing})
+
+
+@router.post("/production/operation-qty")
+async def operation_qty(
+    request: OperationQtyRequest,
+    authorized: bool = Depends(verify_service_token),
+):
+    """工序应做数量 = 算料引擎输出（issue #4208 方案 A，`POST /api/internal/production/operation-qty`）
+
+    admin-api 生成加工单时逐工序问数量。真值源 = `app/production/routing.py::_qty_for`
+    （本仓此前的**零运行时消费者**，商家后台「应做数量」因此退化成订单数量，如「韩褶-布」显示 3 折）。
+
+    本端点**只答数量**：路线 / 单价 / 必完标记的真相源是 DB 工序库（#4193），不在此返回。
+    兜底口径（不把加工单生成打成硬失败）：缺键 / 引擎不认识的工序或单位 ⇒ qty=1（**绝不落 0**，
+    应做 0 会让 `done_qty ≥ qty` 恒真 ⇒ 假完工）+ `qty_source="fallback"`，HTTP 仍 200。
+
+    `qty_source_by_operation` 三态（供页面/排查区分值的来路，Java 侧照此落 `qty_source` 列）：
+    ① 键名（`fabric_meters` / `pleat_count` / `holes`）= 该键直接供数；
+    ② `<键名>_x6` = 「孔」类无 holes 时按每米 6 孔的行业口径估算（12.3 米 → 73.8 孔）；
+    ③ `"fallback"` = 真兜底 1（无键可读 / 未知工序或单位 / panels・set_count 引擎待补键）。
+    """
+    positions = []
+    for position in request.positions:
+        qty_by_operation: Dict[str, float] = {}
+        qty_source_by_operation: Dict[str, str] = {}
+        for operation in position.operations:
+            qty, source = qty_and_source(operation, position.calc_info)
+            qty_by_operation[operation] = qty
+            qty_source_by_operation[operation] = source
+        positions.append({
+            "position_name": position.position_name,
+            "qty_by_operation": qty_by_operation,
+            "qty_source_by_operation": qty_source_by_operation,
+        })
+    logger.info(
+        f"Operation qty resolved: positions={len(positions)}, "
+        f"operations={sum(len(p['qty_by_operation']) for p in positions)}"
+    )
+    return make_response(True, data={"positions": positions})

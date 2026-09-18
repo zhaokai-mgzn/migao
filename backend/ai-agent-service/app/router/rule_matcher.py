@@ -204,6 +204,49 @@ class RuleMatcher:
                 matched_keywords=_hit_verbs,
             )
 
+        # ── 客户域前置改判（issue #4198，CU-008 恒红真因）──
+        # 机制（**域切分 + 单关键词抢路由**）：KEYWORD_MAP 里**没有任何客户域关键词**
+        # （「客户/资料/标签/画像/工艺偏好」一个都不命中），于是复合句被**从属关键词**
+        # （「物流」）以 **0.95 置信度整句劫持**到 logistics_track → 域 = order。
+        # 而 order skill 的工具集是
+        # ['order_query','order_manage','order_create','logistics_track','product_search',
+        #  'product_detail','production_progress_query','validate_input','interact'] ——
+        # **不含 `customer_manage`** ⇒ 模型**物理上无法**调用该工具，
+        # `must_succeed: customer_manage` 必然红（与 trace 逐字吻合：那次会话实际调用的
+        # 就是 order_query + logistics_track）。**这不是模型选择问题**（若域 = customer/general，
+        # 两个工具都在，才轮到谈"选择"）。
+        #
+        # 实测读数（复算命令见 PR body，@d5bca241 改前）：
+        #   "帮我看看客户张三的工艺偏好和常用物流设置是什么"（CU-008 user_inputs 原文）
+        #     → intent=logistics_track, confidence=0.95, matched_keywords=['物流'] → 域 order
+        #   "客户张三的常用物流设置是什么"                    → 同上
+        #   "帮我看看客户张三的工艺偏好"（去掉「物流」）        → 无命中 → 落 L2
+        #   "查一下客户张三的资料和标签"                      → 无命中 → 落 L2
+        #
+        # **为什么不用 KEYWORD_MAP**：该表是**多意图收集**，命中 ≥2 个意图即按"最长命中关键词"
+        # 裁决、打平则返回 None 降级 L2（非确定性）；本用例同时含「工艺偏好」+「物流」两族词
+        # ⇒ 加表会让它变 L2（"客户资料"4 字 vs "物流"2 字其实能分，但"客户标签"与"物流"同为
+        # 2 字就打平）—— 本单要的恰是**确定性**路由。故走本文件既有的**前置改判**范式
+        # （同 订单统计→order_query / 回补库存→product / 交易动词→order_create /
+        # 售后政策→knowledge_faq）。
+        #
+        # 位置依据（本文件既有原则"交易动作比手段权威"）：排在「显式交易动词优先」**之后**
+        # ⇒「帮客户张三下一单…」等下单话语仍走 order_create（零劫持）；排在「尺寸+算料→quote」
+        # **之前** ⇒ 与算料正则的竞争按同一原则裁决。
+        # 只用**具体短语**、**禁裸「客户」**：裸词会劫持"帮客户…下单/查客户手机号的订单/客户确认收货"
+        # 等 28 条订单·售后话语（电池复算清单见 PR body），把本单的病灶（工具不可达）反向复制一遍。
+        _customer_phrases = ("客户画像", "工艺偏好", "客户资料", "客户档案", "客户标签",
+                             "客户偏好", "常用物流", "客户信息", "客户详情", "客户列表",
+                             "客户消费", "消费偏好")
+        _hit_customer = [p for p in _customer_phrases if p.lower() in msg_lower]
+        if _hit_customer:
+            return IntentResult(
+                intent=IntentType.CUSTOMER_QUERY,
+                confidence=0.98,
+                source="rule",
+                matched_keywords=_hit_customer,
+            )
+
         # --- 优先匹配「尺寸数字 + 褶皱/算料/报价」→ quote（算料报价） ---
         # 否则"3米窗 2倍褶皱 多少钱"会被"多少钱"(3字) 压过"褶皱"(2字) 误路由到商品咨询。
         # 尺寸 + 褶皱/倍数 是算料意图的强信号，前置拦截。

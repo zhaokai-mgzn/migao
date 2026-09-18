@@ -664,6 +664,22 @@ cases:
           tool_called: logistics_track
           max: 2
         fallback: "就用你查到的那笔订单号帮我查物流"
+    # 前置自断言 + 命名空间（burn-down；**先例 = 紧邻的 OR-012**，同款依赖、同款治法，不另立口径）。
+    # 本用例 R2「那用我最近一笔订单的订单号查一下物流」在**该手机号名下订单集合**里取值，
+    # 而同栈并行建单用例（OR-016 / CR-001 / CH-010 / OR-008 / OR-009 / OR-015 / CR-003）
+    # 都在同一个手机号下建单 ⇒ 运行期间集合会变，「最近一笔」可能读到并行用例刚建的订单；
+    # 那时红的表现是 `unmatched expectation`，看起来像「agent 不会查物流」（归因全错，
+    # 同 AS-003 / PG-013 / CU-003 的形态）。
+    # 治法（与 OR-012 逐字同款）：① `namespaces` → 与同手机号的建单用例自动互斥（不再同窗口）；
+    #   ② `precondition[order_count_for_phone]` → 运行期间该号码订单数一旦增长即判**前置不成立**
+    #   （不是行为失败），并在 summary 留 `capture → after` 两个读数。
+    # ⚠️ 刻意**不**声明 `expect: <N>`：该基线随栈组成而变（本栈含 B 端种子 + 并行建单，
+    # 不是可写死的常量），写错会制造**假红** —— 与 OR-014/OR-025 的「按名唯一」（恒为 1）不同。
+    namespaces:
+      - "customer_phone:13800138000"
+    precondition:
+      - type: order_count_for_phone
+        source: "13800138000"
     expectations:
       - tool: logistics_track
     required_args:
@@ -676,7 +692,7 @@ cases:
       - "按真实订单号查询：订单详情→运单号→轨迹（API 失败降级 mock）；显式公司 code 不被 API 识别(203)时去掉 type 自动识别重试一次"
       - "第 2 轮必须解析出**真实存在的**订单号（required_args 守住 order_id 非空），不得沿用第 1 轮被拒绝的快递单号"
     skip_reason: ""
-    merge_log: "2026-09-01 新增：B 端物流查询安全收紧（禁止物流号直查，防用他人运单号刺探）；2026-09-14 自包含化（issue #3599）：第 2 轮去掉栈上不存在的硬编码订单号，改自然指代 + required_args[order_id]；2026-09-15 协作轮（issue #3792）：判定跑 run 34865780382 里本用例被判 reproducible（R1 正确拒绝快递单号、R2 只到 order_query ⇒ logistics_track 未调用），暴露**用例对轮次结构敏感**（两步意图压在一轮、无兜底；同 run 另有用例 rounds=1 完成同一链）⇒ 追加 repeat_until(tool_called=logistics_track, max=2) 协作轮（范式同 #3568/#3430），fallback 中性（不替 agent 报订单号）；`max` 由 3 收到 **2**（用户裁定：fallback 是「有意义的重问」⇒ 一轮追加即公平的第二次机会，`max=3` 会把「对首次请求不交付」多掩盖一轮；真实行为缺口另立 #3799，本改法**不掩盖**它）；expectations/required_args/data_checks 原样**未放宽**（协作轮用尽仍不调 logistics_track ⇒ 照旧判红）"
+    merge_log: "2026-09-01 新增：B 端物流查询安全收紧（禁止物流号直查，防用他人运单号刺探）；2026-09-14 自包含化（issue #3599）：第 2 轮去掉栈上不存在的硬编码订单号，改自然指代 + required_args[order_id]；2026-09-15 协作轮（issue #3792）：判定跑 run 34865780382 里本用例被判 reproducible（R1 正确拒绝快递单号、R2 只到 order_query ⇒ logistics_track 未调用），暴露**用例对轮次结构敏感**（两步意图压在一轮、无兜底；同 run 另有用例 rounds=1 完成同一链）⇒ 追加 repeat_until(tool_called=logistics_track, max=2) 协作轮（范式同 #3568/#3430），fallback 中性（不替 agent 报订单号）；`max` 由 3 收到 **2**（用户裁定：fallback 是「有意义的重问」⇒ 一轮追加即公平的第二次机会，`max=3` 会把「对首次请求不交付」多掩盖一轮；真实行为缺口另立 #3799，本改法**不掩盖**它）；expectations/required_args/data_checks 原样**未放宽**（协作轮用尽仍不调 logistics_track ⇒ 照旧判红）；2026-09-18 补前置自断言 + namespaces（burn-down：改用例文件的 PR 须净缩 ≥1 条存量违规，本用例命中的唯一一条是 CASE-TRUST-NO-PRECONDITION-ASSERTION）：`namespaces[customer_phone:13800138000]` + `precondition[order_count_for_phone:13800138000]`（不写 expect —— 该基线随栈组成变化，写死会制造假红；**先例 = 紧邻的 OR-012**，同款依赖、同款治法，不另立口径）。**断言（user_inputs / expectations / required_args / data_checks / repeat_until）原样未动，无放宽、无删减。**"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_logistics_track.py"

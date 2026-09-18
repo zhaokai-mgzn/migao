@@ -797,20 +797,40 @@ def _resolve_repo_path(path: str, base: str, cache: dict) -> str | None:
     return resolved
 
 
+def _read_text_or_none(p: Path) -> str | None:
+    """按 UTF-8 读文本；**不可解码（二进制）⇒ None**。
+
+    调用方必须把 None **显式登记**（不得静默 continue）—— 「没跑」必须长得像「没跑」。
+    为什么需要它（issue #4210）：本仓的视觉回归基线就是 PNG，**UI 一改就必须更新基线**；
+    旧实现对每个改动文件无条件 `read_text(utf-8)` ⇒ `UnicodeDecodeError` ⇒ 整个门禁以
+    **crash** 报红（规则 G 事实上没跑却把合法 PR 拦下：既是假红，又让判据在「含二进制的
+    改动集」这一整类 PR 上失效）。二进制文件里也不可能有 `path:NNN` 的**文本**引用。
+    """
+    try:
+        return p.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        return None
+
+
 def check_reference_freshness_in_diff(files: list[str], base: str = "origin/main") -> dict:
     """规则 G：扫本次 diff 新增/修改的 `path:NNN` 引用，核 `origin/main` 是否命中。
 
-    三条降噪纪律（缺任一条都会产出**误报**）：
+    四条降噪纪律（缺任一条都会产出**误报**）：
       ① **只扫本次新增/改动行**（不把存量过期引用算到本 PR 头上）；
       ② **豁免门禁自身的实现/测试/红证留档**（那里的「不存在路径」是夹具）；
       ③ **先去重、再解析路径**（裸文件名按 basename 唯一匹配；`git ls-files` 解析不到的
-         占位符形态直接丢弃，不算引用）。
-    返回 `tax.check_reference_freshness` 的结果，外加 `scanned_files` / `skipped_placeholders`。
+         占位符形态直接丢弃，不算引用）；
+      ④ **跳过不可按 UTF-8 解码的二进制文件并显式登记**（issue #4210：不跳过 ⇒ 门禁
+         在「改动集含截图基线/图片」的 PR 上直接 crash；跳过面只覆盖「读不出文本」的文件，
+         文本文件照旧判定 ⇒ 不吞真判据）。
+    返回 `tax.check_reference_freshness` 的结果，外加 `scanned_files` /
+    `skipped_placeholders` / `skipped_binary`。
     """
     cache: dict = {}
     refs: list[dict] = []
     scanned: list[str] = []
     skipped: list[str] = []
+    skipped_binary: list[str] = []
     seen: set[tuple[str, int]] = set()
     for rel in files:
         p = REPO_ROOT / rel
@@ -819,7 +839,11 @@ def check_reference_freshness_in_diff(files: list[str], base: str = "origin/main
         scanned.append(rel)
         if rel in _REF_EXEMPT_FILES:
             continue
-        text = p.read_text(encoding="utf-8")
+        text = _read_text_or_none(p)
+        if text is None:
+            # 二进制（不可 UTF-8 解码）：不可能含 `path:NNN` 文本引用 ⇒ 跳过并**登记**
+            skipped_binary.append(rel)
+            continue
         old = _git_show(base, rel) or ""
         old_lines = set(old.splitlines())
         for ln in text.splitlines():
@@ -845,6 +869,7 @@ def check_reference_freshness_in_diff(files: list[str], base: str = "origin/main
     res["scanned_files"] = scanned
     res["ref_count"] = len(refs)
     res["skipped_placeholders"] = sorted(set(skipped))
+    res["skipped_binary"] = sorted(skipped_binary)
     return res
 
 
@@ -936,6 +961,13 @@ def render_report(blocking: list[dict], passed: list[dict], stale: list[dict],
         for p in passed:
             codes = "、".join(v["code"] for v in p["violations"])
             out.append(f"  · {p['case_id']}：{codes}")
+    if refs and refs.get("skipped_binary"):
+        # 「没跑」必须长得像「没跑」（issue #4210）：跳过二进制是**登记**，不是静默放行
+        skipped_bin = refs["skipped_binary"]
+        out.append("")
+        out.append(f"⏭️ 引用新鲜度（规则 G）**跳过 {len(skipped_bin)} 个二进制文件**"
+                   f"（不可按 UTF-8 解码 ⇒ 不可能含 `path:NNN` 文本引用；"
+                   f"**显式登记，非静默**）：{'、'.join(skipped_bin)}")
     if refs and (refs.get("ref_count") or refs.get("warnings")):
         warn_refs = refs.get("warnings") or []
         out.append("")

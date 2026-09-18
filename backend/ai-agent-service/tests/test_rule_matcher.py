@@ -1,4 +1,4 @@
-# case_ids: MC-010, MC-011, AS-003, AS-004, AS-005, HR-002, DA-004, PR-013, DA-003, PP-002, OR-014, CH-010, PG-017
+# case_ids: MC-010, MC-011, AS-003, AS-004, AS-005, HR-002, DA-004, PR-013, DA-003, PP-002, OR-014, CH-010, PG-017, CU-008, CU-001, CU-002
 """规则匹配器单元测试（app/router/rule_matcher.py）
 
 覆盖：_extract_text / RuleMatcher.match 关键词优先级 / 正则规则 / 未命中。
@@ -348,6 +348,99 @@ class TestOrderVerbBeatsQuote:
     def test_other_order_verbs(self):
         for msg in ("我要买遮光窗帘 3 米", "帮我买 2 米面料", "创建订单"):
             assert self._intent(msg) == IntentType.ORDER_CREATE, msg
+
+
+class TestCustomerProfileRouting:
+    """客户画像/工艺偏好/常用物流 → CUSTOMER_QUERY（issue #4198，CU-008 恒红真因）。
+
+    机制（域切分 + 单关键词抢路由）：KEYWORD_MAP 里**没有**任何客户域关键词，
+    CU-008 原文只命中「物流」→ `logistics_track`（conf 0.95）→ 域 = order
+    （`_SKILL_DOMAIN_KEYWORDS` 与 INTENT_DOMAINS 均归 order）→ **order 域工具集不含
+    `customer_manage`** ⇒ 模型物理不可达，`must_succeed: customer_manage` 必然红
+    （run 35295494688 @d5bca241 及此前 6 个 run，实测命令见 PR body）。
+
+    为什么**不**加进 KEYWORD_MAP：该表是**多意图收集**，命中 ≥2 个意图即返回 None 降级 L2
+    （非确定性）；本用例同时含「工艺偏好」+「物流」两族词 ⇒ 加表会让它变 L2。
+    ⇒ 走本文件既有的**前置改判**范式（同 订单统计→order_query / 回补库存→product /
+    交易动词→order_create / 售后政策→knowledge_faq）：位置在「显式交易动词优先」之后、
+    「尺寸+算料→quote」之前（依据本文件既有原则"交易动作比手段权威"）。
+    """
+
+    def _intent(self, message):
+        """返回意图值（None = 无命中/降级 L2）。"""
+        result = RuleMatcher().match(message)
+        return result.intent.value if result else None
+
+    def test_cu008_utterance_routes_to_customer_query(self):
+        """红证：CU-008 原文改前 = logistics_track（域 order，customer_manage 不可达）。"""
+        assert self._intent("帮我看看客户张三的工艺偏好和常用物流设置是什么") == "customer_query"
+
+    def test_customer_phrase_beats_logistics_keyword_without_l2_degrade(self):
+        """关键不变式：客户短语 + 「物流」同现 ⇒ 必须 CUSTOMER_QUERY，**不得降级 L2（None）**。
+
+        这是本单的存在理由 —— KEYWORD_MAP 路线会让复合句变 L2（多意图平局），
+        确定性路由随之丢失；前置改判必须给出唯一确定的意图。
+        """
+        for msg in ("帮我看看客户张三的工艺偏好和常用物流设置是什么",
+                    "客户张三的常用物流设置是什么"):
+            assert self._intent(msg) == "customer_query", msg
+
+    def test_other_customer_profile_phrasings(self):
+        """其余客户档案类短语同样确定性命中（改前均为 None → 落 L2）。"""
+        for msg in ("查客户列表", "看张三的客户档案", "客户张三的客户画像是什么",
+                    "客户张三的消费偏好是什么", "看看客户信息"):
+            assert self._intent(msg) == "customer_query", msg
+
+    def test_no_hijack_of_order_and_aftersales_utterances(self):
+        """负例（零劫持）：含「客户」的订单/售后话语**逐条保持改前意图**（#4198 电池复算抽样）。
+
+        断言的是**精确意图**（含 `None` = 改前就未命中、落 L2），不是 `!= customer_query`
+        ——「没被劫持到客户域」也可能是被劫持到**别的**域，等值断言才排得掉。
+        期望值与改前实测逐条一致（本文件在改前跑此用例**全绿**，见 PR body 红证对照）：
+          · CH-019「帮客户…下一单」     = quote        （改前 quote）
+          · CR-003「就这个，帮我下单…」  = order_create （改前 order_create）
+          · OR-006「客户确认收货了…」    = None         （改前 None → 落 L2）
+          · AS-003「查一下客户手机号…订单」= order_query  （改前 order_query）
+
+        只用具体短语（禁裸「客户」）的理由就在这些负例里：「帮客户…下一单」若被裸词劫持，
+        下单/查询/售后全被改判到客户域 ⇒ order_create 不可达（把本单的病灶反向复制一遍）。
+        """
+        for msg, want in (
+            ("帮客户张三（手机号 13800138000）下一单：遮光窗帘 3 米，要打孔加工", "quote"),
+            ("就这个，帮我下单，客户张三 13800138000，2件", "order_create"),
+            ("客户确认收货了，标记完成", None),
+            ("查一下客户手机号 13800138000 最近的订单", "order_query"),
+        ):
+            got = self._intent(msg)
+            assert got == want, f"劫持：{msg!r} 期望 {want}，实得 {got}"
+
+    def test_customer_query_declared_tool_is_reachable_in_its_domain(self):
+        """可达性判据：`customer_query` → 路由 key → 该 skill 工具集必须含 `customer_manage`。
+
+        这是 CU-008 那一类的**常驻守卫**：把「用例声明的工具必须在该域可达」钉死，
+        防同类复发（改前 CU-008 的组合 `logistics_track` → order skill，其工具集不含
+        `customer_manage` ⇒ 模型物理不可达）。
+        """
+        from app.graph.skills.skill_registry import get_skill_registry
+
+        registry = get_skill_registry()
+        route_key = registry.get_intent_to_route_map("mibao").get(IntentType.CUSTOMER_QUERY.value)
+        assert route_key, "intent customer_query 无路由 key（声明面缺失）"
+        tools = list(getattr(registry.get(route_key), "tool_names", None) or [])
+        assert "customer_manage" in tools, f"route_key={route_key} tools={tools}"
+
+    def test_cu008_declared_tool_reachable_from_the_utterance(self):
+        """端到端可达性：CU-008 原文 → 意图 → 该域工具集 ⊇ 用例声明的工具。
+
+        改前必红：`logistics_track` → order skill 的 9 个工具里没有 `customer_manage`。
+        """
+        from app.graph.skills.skill_registry import get_skill_registry
+
+        intent = self._intent("帮我看看客户张三的工艺偏好和常用物流设置是什么")
+        registry = get_skill_registry()
+        route_key = registry.get_intent_to_route_map("mibao").get(intent)
+        tools = list(getattr(registry.get(route_key), "tool_names", None) or [])
+        assert "customer_manage" in tools, f"intent={intent} route_key={route_key} tools={tools}"
 
 
 class TestCustomerProductBrowsePhrasing:

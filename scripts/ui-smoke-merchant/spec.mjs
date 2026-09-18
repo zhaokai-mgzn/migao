@@ -11,6 +11,8 @@ const REPO_ROOT = process.env.REPO_ROOT || join(import.meta.dirname, '..', '..')
 const { chromium } = createRequire(join(REPO_ROOT, 'tests', 'package.json'))('playwright')
 
 const BASE = process.env.BASE_URL || 'http://127.0.0.1:3001'
+// 管理端 API（node 侧直连，见 adminApi 的注释说明为什么不从页面内 fetch）
+const API_BASE = process.env.API_BASE || 'http://127.0.0.1:8090'
 const OUT = process.env.OUT_DIR || '/tmp/ui-smoke/out'
 const PHONE = process.env.PHONE || '13800138000'
 const SMS_CODE = process.env.SMS_CODE || '123456'
@@ -78,6 +80,40 @@ async function safeClick(page, locator, label) {
 // toast 校验（antd/message 样式：出现即可）
 async function expectToast(page, text) {
   await page.getByText(text, { exact: false }).first().waitFor({ state: 'visible', timeout: 6000 }).catch(() => {})
+}
+
+// 管理端 API（node 侧直连，复用浏览器会话的登录态）。
+// 为什么不从页面内 fetch：access_token 是 HttpOnly+Secure+SameSite=Strict cookie，
+// 浏览器在 http 跨端口（3003 → 809x）下**不发**它 ⇒ 页面内 fetch 必 401（实测）；
+// node 侧显式带 Cookie 头则 200，且无 CORS 参与、鉴权主体与 UI 会话是同一用户/租户。
+async function adminApi(page) {
+  const at = (await page.context().cookies()).find((c) => c.name === 'access_token')
+  if (!at?.value) throw new Error('未取到 access_token cookie（浏览器未登录）')
+  const call = async (method, path, body) => {
+    const res = await fetch(API_BASE + path, {
+      method,
+      headers: { 'Content-Type': 'application/json', Cookie: `access_token=${at.value}` },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    })
+    const text = await res.text()
+    if (!res.ok) throw new Error(`${method} ${path} → HTTP ${res.status}：${text.slice(0, 200)}`)
+    return JSON.parse(text)
+  }
+  return { get: (p) => call('GET', p), post: (p, b) => call('POST', p, b) }
+}
+
+// 登录态自补：`--group 32-` 会把 01-login 一并过滤掉 ⇒ 本旅程单跑时自补一次 UI 登录
+// （全量跑时 cookie 已在，直接跳过，不重复发码）
+async function ensureLoggedIn(page) {
+  if ((await page.context().cookies()).some((c) => c.name === 'access_token')) return
+  await page.goto(BASE + '/login', { waitUntil: 'domcontentloaded', timeout: 25000 })
+  await expectText(page, '手机号登录')
+  await page.fill('#phone', PHONE)
+  await safeClick(page, page.getByRole('button', { name: /获取验证码/ }), '获取验证码')
+  await page.waitForTimeout(1200)
+  await page.fill('#code', SMS_CODE)
+  await safeClick(page, page.getByRole('button', { name: /登\s*录|登录/ }).last(), '登录')
+  await page.waitForURL('**/dashboard**', { timeout: 20000 })
 }
 
 // ────────────────────────── 登录 ──────────────────────────
@@ -566,6 +602,131 @@ async function orderDetailJourney(page, orderId) {
   }
 }
 
+// ────────────────────────── 生产报工正向旅程（#4186） ──────────────────────────
+/**
+ * 加工单二维码 + 计件**正向**旅程（issue #4186 收口要求）。
+ *
+ * 原「qr_token 为空 ⇒ 任务卡落占位」这一半自洽，但「非空 ⇒ 出二维码」这一半**从未被行使**；
+ * 本旅程把它固化成可复跑的正向判据（每条断言锚定具体值/存在性 + 语义，不写「不抛异常就算过」）：
+ *  ① API 建一张含加工项的订单（独立数据，与 16- 旅程同量级，不动存量）
+ *  ② UI：订单详情 → 「确认付款」（pending→confirmed）→ 「生成加工单」
+ *     （未确认付款时「生成加工单」按钮不出现 —— 这是本旅程第一步必须做的原因）
+ *  ③ GET /api/admin/production/orders/{orderId}/operations：qr_token 为 32 位十六进制 **且** positions 非空
+ *  ④ 生产明细页 DOM **计数**真值：task-card-qr ≥ 1、task-card-qr-placeholder = 0、operation-row-* ≥ 1
+ *  ⑤ 报工一次（normal）→ 刷新后进度不再 0%、计件合计 > 0 且 piecework-empty 不存在
+ *
+ * ⚠️ 任务卡是 `display:none`（打印才显形）⇒ 用 innerText 判「页面含二维码」会**假阴性**，
+ *    DOM 计数（locator.count()）才是真值。
+ */
+async function productionQrJourney(page) {
+  // ⚠️ 补登录态**必须早于 journey()**（即早于本旅程的 console 监听窗口）：
+  // `--group 32-` 会把 01-login 一并过滤掉，而补登录时 60s 防刷窗口可能正生效
+  // （另一会话刚为同一手机号发过码）⇒ POST /api/auth/sms-code 回 400，
+  // 该 400 与本次要固化的链路无关，落在监听窗口内就会**把全绿的旅程翻成红**（实测）。
+  await ensureLoggedIn(page)
+  const h = await journey('32-production-qr-and-piecework')(page)
+  try {
+    const api = await adminApi(page)
+
+    // ① 建单（含加工项）—— 独立数据，不污染存量
+    const created = await api.post('/api/admin/orders', {
+      customerName: '生产旅程', customerPhone: '13900003333', customerAddress: '杭州市西湖区生产路 1 号',
+      discountAmount: 0, items: [{
+        productId: 'deff0be6c885cbf0469abe4f7b8da608', productName: '2699系列雪尼尔窗帘面料',
+        quantity: 2, unitPrice: 23.8, subtotal: 47.6,
+        processingInfo: { sellingMethod: 'bulk_cut', doorWidth: '2.8', processingFee: 15,
+          processingItems: [{ id: 'proc_item_1', name: '锁边', unitPrice: 7.5, quantity: 2, unit: '米', pricingMethod: 'per_meter', subtotal: 15 }] }
+      }],
+    })
+    const orderId = created?.data?.id
+    if (!orderId) throw new Error(`[① 建单] 未返回 data.id：${JSON.stringify(created).slice(0, 200)}`)
+
+    // ② UI：确认付款 → 生成加工单
+    await nav(page, `/orders/${orderId}`, '')
+    // 等按钮就位而不是定长 sleep：详情页首屏要先过鉴权初始化 + 拉订单，实测曾停在「加载中…」
+    // （截图：整页只有一个 spinner）⇒ 定长 2.5s 后判 isVisible 会假红
+    const payBtn = page.getByRole('button', { name: /确认付款/ }).first()
+    const canPay = await payBtn.waitFor({ state: 'visible', timeout: 15000 }).then(() => true).catch(() => false)
+    if (!canPay) throw new Error(`[② 确认付款] 15s 内未见「确认付款」按钮（url=${page.url()}；新单应为 pending 且有该闸门按钮）`)
+    // 闸门弹窗（#3583）：弹窗确认键文本恰为「确定」（与页面的「确认付款」按钮可区分）；
+    // 定长 sleep 判不出「弹窗是否真的开了 / 请求是否还在飞」——实测曾因确认后 1.8s 仍在 loading 而假红
+    // （截图：弹窗开着、确定键转圈），故改为等弹窗出现（首点被 hydration 吞掉时重试一次）。
+    const confirmBtn = page.getByRole('button', { name: '确定', exact: true })
+    let modalUp = false
+    for (let i = 0; i < 2 && !modalUp; i++) {
+      await safeClick(page, payBtn, '确认付款')
+      modalUp = await confirmBtn.waitFor({ state: 'visible', timeout: 4000 }).then(() => true).catch(() => false)
+    }
+    if (!modalUp) throw new Error('[② 确认付款] 点击「确认付款」后确认闸门弹窗未出现（#3583 语义）')
+    await confirmBtn.click()
+    // 等按钮出现而不是定长 sleep：确认收款 → 订单转 confirmed → 加工单块才渲染生成按钮
+    const genBtn = page.getByRole('button', { name: /生成加工单/ }).first()
+    const canGen = await genBtn.waitFor({ state: 'visible', timeout: 12000 }).then(() => true).catch(() => false)
+    if (!canGen) {
+      const st = (await api.get(`/api/admin/orders/${orderId}`).catch(() => ({})))?.data?.status
+      throw new Error(`[② 生成加工单] 确认付款后 12s 内仍未出现「生成加工单」按钮（order.status=${st}，期望 confirmed/producing）`)
+    }
+    await safeClick(page, genBtn, '生成加工单')
+    // 等生成效果可见（加工单块渲染出加工单号）再读 API：生成是后端点 + 前端 load()，定长 sleep 会假红
+    await page.getByText(/JG-\d{8}-\d+/).first().waitFor({ state: 'visible', timeout: 12000 }).catch(() => {})
+
+    // ③ API 判据（#4186 核心）
+    const ops = (await api.get(`/api/admin/production/orders/${orderId}/operations`))?.data
+    const qrToken = String(ops?.qr_token ?? '')
+    const positions = Array.isArray(ops?.positions) ? ops.positions : []
+    const opTotal = positions.reduce((n, p) => n + (Array.isArray(p.operations) ? p.operations.length : 0), 0)
+    if (!/^[0-9a-f]{32}$/.test(qrToken)) throw new Error(`[③ qr_token] 非 32 位十六进制：${JSON.stringify(ops?.qr_token)}（UI 生成加工单后应立即有码）`)
+    if (opTotal < 1) throw new Error(`[③ positions] 工序实例为空：部位 ${positions.length} 个 / 工序 ${opTotal} 道`)
+    if (Number(ops?.progress?.total) !== opTotal) throw new Error(`[③ progress.total] ${ops?.progress?.total} 与工序数 ${opTotal} 不一致`)
+
+    // ④ 生产明细页：DOM 计数（不是 innerText）
+    const poNo = String((await api.get(`/api/admin/processing-orders/${orderId}`))?.data?.processingOrderNo ?? '')
+    if (!/^JG-\d{8}-\d+$/.test(poNo)) throw new Error(`[④ 加工单号] 非 JG-YYYYMMDD-NNNN：${JSON.stringify(poNo)}`)
+    await nav(page, `/processing-orders/${poNo}/production`, '加工单生产明细')
+    // 等数据就位再计数：任务卡是 display:none（打印才显形）⇒ **只能等 attached，等 visible 会永远超时**；
+    // 等「二维码 或 占位」其一出现 = 工序数据已到达，此后计数才是稳定真值（定长 sleep 会假红）
+    await page.locator('[data-testid="task-card-qr"], [data-testid="task-card-qr-placeholder"]').first()
+      .waitFor({ state: 'attached', timeout: 15000 }).catch(() => {})
+    const qrN = await page.locator('[data-testid="task-card-qr"]').count()
+    const phN = await page.locator('[data-testid="task-card-qr-placeholder"]').count()
+    const rowN = await page.locator('[data-testid^="operation-row-"]').count()
+    if (qrN < 1) throw new Error(`[④ task-card-qr] 计数 ${qrN}（期望 ≥1）——qr_token 非空却未渲染二维码`)
+    if (phN !== 0) throw new Error(`[④ task-card-qr-placeholder] 计数 ${phN}（期望 0）——落占位分支`)
+    if (rowN < 1) throw new Error(`[④ operation-row-*] 计数 ${rowN}（期望 ≥1）`)
+    if (rowN !== opTotal) throw new Error(`[④ DOM↔API 不一致] operation-row-*=${rowN}，而 /operations 工序数=${opTotal}`)
+
+    // ⑤ 报工一次：取各部位**首道**工序（无前道 ⇒ 不触越站闸门）中应做量>0 且单价>0 的一道（保证计件 > 0）
+    const firsts = positions.map((p) => (p.operations ?? []).slice().sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0))[0]).filter(Boolean)
+    const target = firsts.find((o) => Number(o.qty) > 0 && Number(o.unit_price) > 0) ?? firsts.find((o) => Number(o.qty) > 0)
+    if (!target) throw new Error(`[⑤ 报工] 无可报工序（各部位首道工序应做量均 ≤ 0）：${JSON.stringify(firsts.map(o => [o.operation, o.qty, o.unit_price]))}`)
+    const qty = Number(target.qty)
+    const rep = (await api.post(`/api/admin/production/orders/${orderId}/operations/${target.id}/report`,
+      { worker_id: 'ui-smoke-worker', worker_name: '冒烟工人', qty, qualified_qty: qty, work_type: 'normal' }))?.data
+    if (rep?.status !== 'done') throw new Error(`[⑤ 报工] 未推进到 done：${JSON.stringify(rep)}（工序「${target.operation}」应做 ${qty}）`)
+
+    // 刷新页面读真值：进度不再 0% + 计件合计 > 0
+    await page.reload({ waitUntil: 'domcontentloaded' })
+    // 等工序表就位（operation-row-* 只在 /operations 返回后渲染）——进度文案与它同源，
+    // 数据未到达时百分数只是过渡值 0%，据此断言会假红；等工序行 attached 后读到的才是最终值
+    await page.locator('[data-testid^="operation-row-"]').first().waitFor({ state: 'attached', timeout: 15000 }).catch(() => {})
+    await page.locator('[data-testid="piecework-total"], [data-testid="piecework-empty"]').first()
+      .waitFor({ state: 'attached', timeout: 15000 }).catch(() => {})
+    const progressText = String(await page.locator('[data-testid="production-progress-text"]').first().textContent().catch(() => '') ?? '').trim()
+    const totalN = await page.locator('[data-testid="piecework-total"]').count()
+    const emptyN = await page.locator('[data-testid="piecework-empty"]').count()
+    const totalText = totalN ? String(await page.locator('[data-testid="piecework-total"]').first().textContent() ?? '').trim() : ''
+    const totalAmount = Number(totalText.replace(/[^0-9.]/g, ''))
+    if (!progressText || progressText.startsWith('0%')) throw new Error(`[⑤ 进度] 报工后仍为 ${JSON.stringify(progressText)}（期望非 0%）`)
+    if (emptyN !== 0) throw new Error(`[⑤ piecework-empty] 计数 ${emptyN}（期望 0）——报工后计件汇总仍落空态`)
+    if (totalN !== 1) throw new Error(`[⑤ piecework-total] 计数 ${totalN}（期望 1）`)
+    if (!(totalAmount > 0)) throw new Error(`[⑤ 计件合计] ${JSON.stringify(totalText)}（期望 > 0）`)
+
+    await h.done(true, '', `订单 ${orderId} / 加工单 ${poNo}：qr_token=${qrToken}；工序 ${opTotal} 道；DOM qr=${qrN} 占位=${phN} 行=${rowN}；报工「${target.operation}」${qty}${target.unit ?? ''} → 进度 ${progressText}、计件 ${totalText}`)
+  } catch (e) {
+    await h.done(false, `生产报工正向旅程失败: ${String(e.message || e).slice(0, 400)}`)
+  }
+}
+
 // ────────────────────────── 发货页 ──────────────────────────
 async function orderShipJourney(page, orderId) {
   const h = await journey('17-order-ship')(page)
@@ -929,7 +1090,7 @@ async function main() {
   await jrun('15-orders-new', ordersNewJourney, page)
 
   // 订单详情：用 API 创建含加工项的订单（独立数据，不污染存量）
-  const apiBase = process.env.API_BASE || 'http://127.0.0.1:8090'
+  const apiBase = API_BASE
   const token = process.env.API_TOKEN || ''
   let orderId = ''
   if (token) {
@@ -954,6 +1115,8 @@ async function main() {
 
   const detOrderId = orderId || process.env.ORDER_ID || ''
   await jrun('16-order-detail-processing-order', (p) => orderDetailJourney(p, detOrderId), page)
+  // #4186 收口：加工单二维码 / 工序列 / 计件的**正向**分支（自带建单，不依赖 16- 的数据）
+  await jrun('32-production-qr-and-piecework', productionQrJourney, page)
   await jrun('17-order-ship', (p) => orderShipJourney(p, detOrderId), page)
   await jrun('18-after-sales-list', afterSalesListJourney, page)
   const aftersalesId = process.env.AFTERSALES_ID || ''

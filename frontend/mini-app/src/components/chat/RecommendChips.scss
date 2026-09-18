@@ -1,0 +1,46 @@
+// RecommendChips — 主页顶部横滑推荐胶囊（瑞幸 Agent 主页同款）
+@use '../../styles/variables.scss' as *;
+
+.recommend-chips {
+  width: 100%;
+  margin-top: 28px;
+
+  // 横滑容器：通栏（左右留白由 row 的 padding 给，滚动时不裁切）
+  &__scroll {
+    width: 100%;
+    white-space: nowrap;
+  }
+
+  &__row {
+    display: inline-flex;
+    gap: 14px;
+    padding: 4px 40px;
+  }
+
+  &__chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 14px 26px;
+    background: $bg-primary;
+    border: 1px solid $border-color;
+    border-radius: $radius-full;
+    box-shadow: $shadow-card;
+    white-space: nowrap;
+
+    &--hover {
+      opacity: 0.85;
+    }
+  }
+
+  &__icon {
+    font-size: 26px;
+    line-height: 1;
+  }
+
+  &__text {
+    font-size: 26px;
+    color: $text-primary;
+    line-height: 1;
+  }
+}

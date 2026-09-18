@@ -1,6 +1,6 @@
 // case_ids: BM-006
 /**
- * 报工网络层幂等键测试（issue #4116 §5-1）。
+ * 报工网络层契约测试：幂等键（issue #4116 §5-1）+ 失败分类（issue #4206 弱网降级的前提）。
  *
  * ## 病根（服务端去重挡不住的那一半）
  * 服务端按 `X-Client-Request-Id` 去重（同键重放、不重复累加 `done_qty`），但**前提是请求带了键**。
@@ -10,6 +10,8 @@
  * ## 红证
  * 把 `reportOperation` 的 `headers` 去掉 ⇒ 断言 ① 必红（Taro.request 收到的 header 里没有幂等键）。
  * 把 `newReportRequestId()` 写成常量 ⇒ 断言 ② 必红（两次调用同键 = 第二次报工被服务端当重复丢弃）。
+ * 把失败分类写成恒 `offline: true`（或删掉该字段）⇒ 「有 HTTP 状态码 ⇒ false」必红 ——
+ * 那正是「一次数量超上限的拒绝被当成离线失败、联网后被反复重发」的形态（issue #4206）。
  */
 import Taro from '@tarojs/taro'
 import {
@@ -70,6 +72,47 @@ describe('reportOperation 幂等键（issue #4116 §5-1）', () => {
     const key = newReportRequestId()
     expect(key.length).toBeLessThanOrEqual(128)
     expect(key).not.toContain(' ')
+  })
+})
+
+/**
+ * 失败分类（issue #4206）：离线报工队列**只**收「传输层失败」。
+ *
+ * 为什么这条必须在网络层（真 `reportOperation` + mock `Taro.request`）测：页面的用例会
+ * mock 掉整个服务层，`offline` 标记就成了测试自己喂进去的常量 ⇒ 把实现写成
+ * `offline: true`（或删掉该标记）页面用例**照样绿**（本会话实测：本条是唯一能红的判据）。
+ *
+ * 为什么区分这么重要：有 HTTP 状态码 = 服务端**已经答复**（422 数量超上限 / 404 非本部位 /
+ * 409 同键在飞），且失败路径上服务端已 `discard` 释放幂等键 ⇒ 换个时机重发会**真的再执行一次**。
+ */
+describe('reportOperation 失败分类（issue #4206 弱网降级）', () => {
+  beforeEach(() => {
+    jest.clearAllMocks()
+  })
+
+  it('无 HTTP 状态码（断网/超时后仍失败）⇒ offline=true（页面据此入离线队列）', async () => {
+    // 这里用**不可重试**的传输层错误：可重试形态（errMsg 含 fail/timeout/网络）会先走满
+    // 3 次指数退避（1+2+4s）才抛出，而判据是同一条 —— 有没有 HTTP 状态码，故不值得让
+    // 全套用例为它多等 7 秒。
+    ;(Taro.request as jest.Mock).mockRejectedValue({ errMsg: 'boom' })
+
+    const res = await reportOperation(ORDER_ID, 'op2', PAYLOAD)
+
+    expect(res.success).toBe(false)
+    expect(res.offline).toBe(true)
+  })
+
+  it('有 HTTP 状态码（422 数量超上限）⇒ offline=false 且后端 message 透出（不得入离线队列）', async () => {
+    ;(Taro.request as jest.Mock).mockResolvedValue({
+      statusCode: 422,
+      data: { success: false, message: '报工数量超上限：本次最多可报 11' },
+    })
+
+    const res = await reportOperation(ORDER_ID, 'op2', PAYLOAD)
+
+    expect(res.success).toBe(false)
+    expect(res.offline).toBe(false)
+    expect(res.message).toBe('报工数量超上限：本次最多可报 11')
   })
 })
 

@@ -5,6 +5,7 @@
  */
 
 import Taro from '@tarojs/taro'
+import { flushPendingReports, type FlushResult } from './productionOffline'
 
 /**
  * 初始化全局错误处理器
@@ -23,6 +24,20 @@ export function setupErrorHandler(): void {
 }
 
 /**
+ * 补传结果一句话（issue #4206）：工人必须知道「补上了几条 / 哪条被拒 / 还剩几条」——
+ * 静默丢弃 = 丢单，而丢单的报工是**计件工资的凭证**（真值源 §4/§5）。
+ */
+function flushSummary(result: FlushResult): string {
+  const parts: string[] = []
+  if (result.sent.length > 0) parts.push(`已补传 ${result.sent.length} 条报工`)
+  if (result.rejected.length > 0) {
+    parts.push(`补传被拒：${result.rejected[0].operationName}（${result.rejected[0].message}）`)
+  }
+  if (result.remaining > 0) parts.push(`仍有 ${result.remaining} 条待补传`)
+  return parts.join('；')
+}
+
+/**
  * 初始化网络状态监听
  * 断网时弹 toast 提醒，恢复时也提示
  */
@@ -35,13 +50,24 @@ export function setupNetworkListener(): void {
         icon: 'none',
         duration: 3000,
       })
-    } else {
-      Taro.showToast({
-        title: '网络已恢复',
-        icon: 'success',
-        duration: 2000,
-      })
+      return
     }
+    Taro.showToast({
+      title: '网络已恢复',
+      icon: 'success',
+      duration: 2000,
+    })
+    // 弱网降级（issue #4206）：网络恢复 ⇒ 自动补传离线报工。
+    // 复用入队时的幂等键 ⇒ 服务端只落一次（不会重复计件）。
+    void flushPendingReports()
+      .then((result) => {
+        if (result.sent.length > 0 || result.rejected.length > 0 || result.remaining > 0) {
+          Taro.showToast({ title: flushSummary(result), icon: 'none', duration: 3000 })
+        }
+      })
+      .catch((error) => {
+        console.error('【离线报工补传】失败', error)
+      })
   })
 
   // 获取初始网络状态

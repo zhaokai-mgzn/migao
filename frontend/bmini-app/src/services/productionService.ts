@@ -76,6 +76,13 @@ export interface ProductionResponse<T> {
   data?: T
   message?: string
   error?: { code?: string; message?: string }
+  /**
+   * **传输层**失败标记（issue #4206）：true = 请求没拿到 HTTP 状态码（断网/超时/DNS）。
+   * 调用方据此决定是否进离线补传队列 —— 有状态码的失败是服务端**已经答复**
+   * （422 数量超上限 / 404 非本部位 / 409 同键在飞），重发不会变好，且服务端在失败路径上
+   * 已释放幂等键（`ClientRequestIdService.discard`）⇒ 换个时机重发会**真的再执行一次**。
+   */
+  offline?: boolean
 }
 
 /**
@@ -140,21 +147,33 @@ export const reportInFlightLock = new ReportInFlightLock()
  * 幂等（issue #4116 §5-1）：每次调用生成一个幂等键随请求头发出 ⇒ 工具/网络层重试
  * 同一动作时服务端只真正报工一次（响应带 `replayed:true`，调用方据此不要重复刷新/播报）。
  * **连点**由调用方的 {@link reportInFlightLock} 拦（连点 = 两个不同幂等键，服务端去重挡不住）。
+ *
+ * @param requestId 本次动作的幂等键（issue #4206）：**调用方生成并在重发时复用同一个键**。
+ *   不传则内部生成 —— 离线补传队列必须传（复用入队时的键，否则服务端记两遍）。
  */
 export async function reportOperation(
   orderId: string,
   operationId: string,
   payload: ReportPayload,
+  requestId?: string,
 ): Promise<ProductionResponse<ReportResult>> {
   try {
     const res = await post<ProductionResponse<ReportResult>>(
       `/api/admin/production/orders/${encodeURIComponent(orderId)}/operations/${encodeURIComponent(operationId)}/report`,
       payload,
-      { baseURL: API_BASE_URL, headers: { [CLIENT_REQUEST_ID_HEADER]: newReportRequestId() } },
+      {
+        baseURL: API_BASE_URL,
+        headers: { [CLIENT_REQUEST_ID_HEADER]: requestId || newReportRequestId() },
+      },
     )
     return toResponse(res, '报工失败，请重试')
   } catch (error: any) {
-    return { success: false, message: error?.data?.message || error?.message || '报工失败，请重试' }
+    return {
+      success: false,
+      message: error?.data?.message || error?.message || '报工失败，请重试',
+      // 无 HTTP 状态码 = 传输层失败（断网/超时）；有状态码 = 服务端已答复（业务拒绝）
+      offline: !error?.statusCode,
+    }
   }
 }
 
@@ -181,8 +200,39 @@ export async function getOrderOperations(
     )
     return toResponse(res, '未找到该加工单，请确认单号')
   } catch (error: any) {
-    return { success: false, message: error?.data?.message || error?.message || '加载工序失败，请重试' }
+    return {
+      success: false,
+      message: error?.data?.message || error?.message || '加载工序失败，请重试',
+      offline: !error?.statusCode,
+    }
   }
 }
 
-export default { getOrderOperations, reportOperation }
+/**
+ * 加工单计件汇总（契约 3：GET .../piecework）
+ *
+ * `{total, per_worker, per_operation}` —— Σ(合格数量 × 单价 × 系数)，**排除返工/报废**
+ * （真值源 §4：内部计件与对外加工费两套账分离；计件按报工当时的单价快照）。
+ * 页面据此展示「本单累计计件 + 该工序累计计件」（issue #4206 判据 3）。
+ */
+export interface PieceworkSummary {
+  total: number
+  per_worker: Record<string, number>
+  per_operation: { operation: string; amount: number }[]
+}
+
+export async function getOrderPiecework(
+  orderId: string,
+): Promise<ProductionResponse<PieceworkSummary>> {
+  try {
+    const res = await get<ProductionResponse<PieceworkSummary>>(
+      `/api/admin/production/orders/${encodeURIComponent(orderId)}/piecework`,
+      { baseURL: API_BASE_URL },
+    )
+    return toResponse(res, '计件金额加载失败')
+  } catch (error: any) {
+    return { success: false, message: error?.data?.message || error?.message || '计件金额加载失败' }
+  }
+}
+
+export default { getOrderOperations, getOrderPiecework, reportOperation }
