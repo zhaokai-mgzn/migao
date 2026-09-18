@@ -8,12 +8,19 @@
 #   ./verify-all.sh frontend       # 仅前端（vitest + tsc）
 #   ./verify-all.sh backend        # 仅 Java 后端
 #   ./verify-all.sh agent          # 仅 AI Agent
-#   ./verify-all.sh gate           # 仅 QA Growth Gate 预检（本地跑 CI 规则）
+#   ./verify-all.sh gate           # 本地预检：QA Growth Gate +（命中 cases 受管面时）cases 面门禁
 #
 # ⚠️ gate 档的扫描源是**已提交**的 diff（`git diff … origin/main...HEAD`）：工作区有未提交改动
 #    时，按已提交 diff 扫描的部分（缺测/case_ids 追溯）**覆盖不到它们** —— 脚本会**点名该范围**
 #    并打 `::warning::`（在控制台可见），**不因「未提交」本身失败**；弱断言检查已改成
 #    「已提交新增 ∪ 工作区新增」，所以提交前跑也真的有效（issue #3724：旧实现把空集静默当通过）。
+#
+# ⚠️ **cases 面门禁**（issue #4221）：变更集命中受管面（`.github/cases/**` / case-trust 账本 /
+#    两条生成物）时，额外跑 CI `pr-check` 的 `case-trust-gate` + `case-truth-check`
+#    **同脚本同参数**（Case Trust / Case Contract / 生成物新鲜度），任一非零 ⇒ gate 非零；
+#    **未命中 ⇒ 显式声明「未跑」**（不碰用例库的 PR 不得被用例库卡住，见 `managed_case_paths`）。
+#    此前 gate 档只跑 QA Growth Gate ⇒ 对被门禁管理的 cases 面**是空的**，而「空」在控制台上
+#    表现为 ✅ ⇒ 只碰用例注释的 PR「本地绿、CI 红」（实测 #4197）。
 #
 # 检查项三态（2026-09-15 固化）：
 #   ✅ 通过      —— **真跑了**且退出 0
@@ -224,6 +231,64 @@ case_coverage_check() {
   done
 }
 
+# ── cases 受管面命中判定（**单一实现**，issue #4221）──────────────────────────
+# 为什么需要（2026-09-18 实测，#4197 包）：gate 档此前只跑 QA Growth Gate ⇒ 对被门禁管理的
+# **cases 面是空的**，而「空」在控制台上表现为 ✅ ⇒ 只碰了用例注释/`merge_log` 的 PR
+# 「本地绿、CI 红」（CI 的 `python3 .github/case_trust_gate.py` exit 1：burn-down 未达标），
+# 白跑一整轮 CI。形态属 migao-acceptance 的「空跑/假绿」——**没跑必须长得像没跑**（§16.7）。
+#
+# 判据（stdin: 文件路径一行一个 → stdout: 命中的受管面路径）：
+#   · `.github/cases/`             —— 行为用例单一源（case-trust-gate / case-truth-check 的被测对象）；
+#   · `.github/case-trust-*.json`  —— case_trust_gate 的**债务账本**（其 docstring §⑤ 明写
+#                                     「改豁免清单」也算触碰受管面）；
+#   · 两条生成物                    —— 生成物新鲜度校验的被测对象。
+# ⚠️ **反向红线**（issue #4221 判据 2）：不在此列的变更集 ⇒ 该面门禁**不跑**，绝不因新增检查变红
+#    —— 否则会把不碰用例库的 PR 卡在用例库上（与 `burn_down.scope=case_touching_prs` 的既有取舍
+#    冲突，#4155）。
+managed_case_paths() {
+  grep -E '^(\.github/cases/.*|\.github/case-trust-(baseline|unimplemented)\.json|tests/agent_eval/eval_cases\.py|docs/testing/mibao-verification-cases\.md)$' || true
+}
+
+# 变更集（CHANGE_SET，**共享实现**，见文件头）是否命中受管面。
+# ⚠️ 用变量收结果再判空，**不要**写成 `… | grep -q .`：`grep -q` 命中即退，上游 `printf` 可能
+#    吃 SIGPIPE ⇒ `set -o pipefail` 下函数返回非零 = 命中被读成不命中（**假绿**）。
+cases_face_hit() {
+  local hit
+  hit="$(printf '%s\n' "${CHANGE_SET:-}" | managed_case_paths)"
+  [ -n "$hit" ]
+}
+
+# cases 面门禁（**调用而非复制**，issue #4221 判据 3）：与 CI `pr-check` 的 `case-trust-gate` /
+# `case-truth-check` job **同脚本同参数**（守卫 tests/unit_ci_workflows/test_verify_all_gate_parity.py
+# 锁「CI 改了参数而本地没跟」的漂移）。任一子门禁非零 ⇒ 本函数非零。
+# ⚠️ 生成物新鲜度**刻意不原地渲染**（CI 是原地渲染 + `git diff --exit-code`）：原地渲染会脏工作区，
+#    故渲染到临时文件再比 —— 判定等价（render 确定性已实测），副作用为零。
+# 只在 cases_face_hit() 为真时调用（未命中的声明在调用点，见 gate 档）。
+cases_face_gate() {
+  local hit rc=0
+  hit="$(printf '%s\n' "${CHANGE_SET:-}" | managed_case_paths)"
+  echo "── [cases 面门禁] 命中受管面 —— 与 pr-check 同名 job 同脚本同参数 ──"
+  printf '%s\n' "$hit" | sed 's/^/     /'
+  python3 .github/case_trust_gate.py --base origin/main || rc=1
+  python3 .github/truths.py check --templates .github/templates --cases .github/cases || rc=1
+  local tmp_eval tmp_md
+  tmp_eval="$(mktemp)"; tmp_md="$(mktemp)"
+  if python3 .github/render_cases.py --cases .github/cases \
+       --out-eval "$tmp_eval" --out-md "$tmp_md" >/dev/null \
+     && cmp -s "$tmp_eval" tests/agent_eval/eval_cases.py \
+     && cmp -s "$tmp_md" docs/testing/mibao-verification-cases.md; then
+    echo "  ✅ 生成物与 cases/ 单一源同步"
+  else
+    echo "  ❌ 生成物与 cases/ 单一源不同步（或渲染失败）—— 跑 .github/render_cases.py 重渲染并提交生成物"
+    rc=1
+  fi
+  rm -f "$tmp_eval" "$tmp_md"
+  # 残余未覆盖必须显式声明（issue #4221 判据 2）：report() 会把 `::warning::` 抬到控制台，
+  # 免得 ✅ 被读成「CI 也会绿」。
+  echo "::warning:: 本地 cases 面门禁**未覆盖**：CI 侧还有本地跑不了的格子 —— Case Trust 的 L0 退化守卫单测（tests/unit_ci_workflows/test_case_trust_gate.py）、追踪单状态查询（需网络；取不到时门禁自行打印「未跑判定」且不计入退出码）、以及 pr-check 的其它 job。**另：Case Trust 的逐条判定只读已提交 diff** —— 用例改动若尚未 commit，该判定是「未跑」而非「通过」（实测：未提交的注释型用例改动此处仍 ✅），故本项须在 commit 之后重跑（migao-dev-flow §2.1）。CI 仍是权威（issue #4221 边界）。"
+  return "$rc"
+}
+
 gate_check() {
   echo "── [QA Growth Gate] 本地预检（与 pr-check qa-growth-gate 同规则，含 G5 case_ids 追溯）──"
   # 变更集来源是**共享实现**（committed_changes/worktree_changes，见文件头）—— 别在这里另写一套。
@@ -367,6 +432,14 @@ case "$MODE" in
     ;;
   gate)
     report "QA Growth Gate 预检"  gate_check
+    # cases 面门禁（issue #4221）：命中受管面才作为**独立检查项**真跑；未命中 ⇒ 控制台显式声明「未跑」。
+    # ⚠️ 本分支的**字符串里不得出现 `#`**（L0 守卫按「剥注释后的代码行」解析本分支）与「未提交」三字
+    #    （test_gate_uncommitted_noop 的防误伤断言）。
+    if cases_face_hit; then
+      report "cases 面门禁（Case Trust / Case Contract / 生成物新鲜度）" cases_face_gate
+    else
+      echo "— cases 面门禁**未跑**：本次变更集未命中受管面（.github/cases/** 等）—— 这不是「通过」（CI 的 case-truth-check / case-trust-gate 仍对每个 PR 跑；命中判据 = managed_case_paths()）"
+    fi
     ;;
   *)
     echo "用法: $0 {quick|full|frontend|backend|agent|gate}"
