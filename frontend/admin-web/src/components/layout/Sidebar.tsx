@@ -30,6 +30,9 @@ import {
   FolderTree,
   Calculator,
   Newspaper,
+  Factory,
+  ClipboardCheck,
+  ListChecks,
 } from 'lucide-react'
 import { useAuthStore } from '@/store/auth'
 import { cn } from '@/lib/utils'
@@ -63,6 +66,9 @@ const iconMap: Record<string, LucideIcon> = {
   FolderTree,
   Calculator,
   Newspaper,
+  Factory,
+  ClipboardCheck,
+  ListChecks,
 }
 
 interface SidebarProps {
