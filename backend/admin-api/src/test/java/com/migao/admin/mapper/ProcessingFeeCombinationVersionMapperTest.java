@@ -15,9 +15,9 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * ProcessingFeeCombinationVersionMapper 契约测试（加工费组合定价版本账，issue #4386，V66）
+ * ProcessingFeeCombinationVersionMapper 契约测试（加工费组合定价版本账，issue #4386，V68）
  *
- * <p>验证：表映射 {@code processing_fee_combination_versions} + 实体字段与迁移 V66 /
+ * <p>验证：表映射 {@code processing_fee_combination_versions} + 实体字段与迁移 V68 /
  * {@code docs/sql/schema.sql} **双源收敛**（与 #4308 的 {@code production_routing_versions} 同构）。</p>
  *
  * <p><b>为什么需要本文件</b>：加工费单价是**订单金额**的直接输入 ⇒ 改价必须留痕。
@@ -27,9 +27,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 @DisplayName("ProcessingFeeCombinationVersionMapper 表/字段契约（加工费组合定价版本账）")
 class ProcessingFeeCombinationVersionMapperTest {
 
-    /** V66 迁移路径（本包内**唯一**一份字面量：两个 Mapper 契约测试共用，避免两处漂移）。 */
-    static final String V66 =
-            "backend/admin-api/src/main/resources/db/migration/V66__create_processing_fee_combinations.sql";
+    /** V68 迁移路径（本包内**唯一**一份字面量：两个 Mapper 契约测试共用，避免两处漂移）。 */
+    static final String V68 =
+            "backend/admin-api/src/main/resources/db/migration/V68__create_processing_fee_combinations.sql";
 
     @Test
     @DisplayName("实体映射 processing_fee_combination_versions 表")
@@ -40,14 +40,14 @@ class ProcessingFeeCombinationVersionMapperTest {
     }
 
     @Test
-    @DisplayName("实体字段与迁移 V66 / bootstrap schema 列收敛（双源）")
+    @DisplayName("实体字段与迁移 V68 / bootstrap schema 列收敛（双源）")
     void entityFieldsMatchMigration() {
         List<String> fields = Arrays.stream(ProcessingFeeCombinationVersion.class.getDeclaredFields())
                 .map(Field::getName)
                 .toList();
         assertThat(fields).contains(
                 "tenantId", "combinationId", "compositionKey", "unitPrice", "status", "deleted");
-        ProductionMigrationSql.assertTableColumnsIn(V66,
+        ProductionMigrationSql.assertTableColumnsIn(V68,
                 "processing_fee_combination_versions",
                 "id", "tenant_id", "combination_id", "composition_key", "unit_price",
                 "status", "created_at", "deleted");

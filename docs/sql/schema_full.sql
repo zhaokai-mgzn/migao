@@ -16,7 +16,7 @@
 --     user_memories
 --     （production_option_factors / production_option_routings = V59，issue #4230 Java 侧；
 --       production_route_signals / production_routing_versions = V60，issue #4308 路线可配；
---       processing_fee_combinations / processing_fee_combination_versions = V66，issue #4386
+--       processing_fee_combinations / processing_fee_combination_versions = V68，issue #4386
 --       加工费组合定价）
 --   本文件仍会创建，但**早已被迁移 DROP**（共 4 张）：
 --     knowledge_documents, knowledge_sync_history, rag_chunks,   ← V36 迁移 DROP

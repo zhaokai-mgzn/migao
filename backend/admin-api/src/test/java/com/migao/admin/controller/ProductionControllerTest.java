@@ -120,7 +120,7 @@ class ProductionControllerTest {
     private OrderItemMapper orderItemMapper;
     @Mock
     private ProcessingItemMapper processingItemMapper;
-    /** 加工费组合定价（issue #4386，V66）：组合表 + 版本账（读面另用 orderItemMapper）。 */
+    /** 加工费组合定价（issue #4386，V68）：组合表 + 版本账（读面另用 orderItemMapper）。 */
     @Mock
     private com.migao.admin.mapper.ProcessingFeeCombinationMapper processingFeeCombinationMapper;
     @Mock

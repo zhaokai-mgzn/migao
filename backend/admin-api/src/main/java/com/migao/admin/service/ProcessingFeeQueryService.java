@@ -22,7 +22,7 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * 加工费组合定价**读面**（V66，issue #4386，P1）。
+ * 加工费组合定价**读面**（V68，issue #4386，P1）。
  *
  * <p><b>为什么读写分开</b>：写面（{@link ProcessingFeeCombinationCommandService}）只有它能改价；
  * 读面（列表 / 缺口）谁都能调。把两者塞进一个类会让「谁在改加工费」变得不可 grep（同 #4308 对路线库的处置）。</p>

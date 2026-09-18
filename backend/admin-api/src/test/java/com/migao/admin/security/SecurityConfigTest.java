@@ -280,7 +280,7 @@ class SecurityConfigTest {
     private com.migao.admin.mapper.ProductionRouteSignalMapper productionRouteSignalMapper;
     @MockBean
     private com.migao.admin.mapper.ProductionRoutingVersionMapper productionRoutingVersionMapper;
-    // 加工费组合定价（issue #4386，V66）：组合表 + 版本账 + 读面要用的订单行 Mapper。同族坑第 3 次
+    // 加工费组合定价（issue #4386，V68）：组合表 + 版本账 + 读面要用的订单行 Mapper。同族坑第 3 次
     // —— 漏任何一个 ⇒ ProcessingFeeQueryService / ProcessingFeeCombinationCommandService
     // 的构造依赖建不出来 ⇒ 本类全 error「Property 'sqlSessionTemplate' are required」。
     @MockBean

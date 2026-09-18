@@ -5,7 +5,7 @@ import com.migao.admin.entity.ProcessingFeeCombinationVersion;
 import org.apache.ibatis.annotations.Mapper;
 
 /**
- * 加工费组合定价版本账 Mapper（V66，issue #4386）
+ * 加工费组合定价版本账 Mapper（V68，issue #4386）
  */
 @Mapper
 public interface ProcessingFeeCombinationVersionMapper extends BaseMapper<ProcessingFeeCombinationVersion> {

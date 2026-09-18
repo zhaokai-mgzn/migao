@@ -14,7 +14,7 @@ import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 
 /**
- * 加工费组合定价（V66，issue #4386，P1）
+ * 加工费组合定价（V68，issue #4386，P1）
  * 对应表：processing_fee_combinations
  *
  * <p><b>口径（用户裁定 2026-09-19）</b>：「不是每个加工项收取一个费用，而且通常是组合」

@@ -64,7 +64,8 @@
     "V63__structure_order_line_craft_spec.sql": "sha256:540349bbaae5ee168781b66a2a532887d86a61c56beb2f68e08fcae05413bb6c",
     "V64__open_count_is_a_positive_integer.sql": "sha256:07a68981893c73394c9e011e5365f802c7b67bfcf22f94287617c0511cba2771",
     "V65__align_special_option_names_with_erp.sql": "sha256:bc6f2c4bcd9cbe78c090ddfa5633509ec667644ea6bd816dad914a48c83be9fd",
-    "V66__create_processing_fee_combinations.sql": "sha256:a59516dc403964ed0a446053194dba73883cdc4e379e9d3ee35e11dce301bc2f",
-    "V67__add_scope_to_production_operations.sql": "sha256:58800362f1b8c32bb7e607f0c9ecaf7632a5413cc98f92e4ee81fa57b82969fd"
+    "V66__decouple_product_processing_items.sql": "sha256:8f2d4b369ac88a207472b9feba6e901eae2e62307ecd4b96cddcbf8f6ce50ce3",
+    "V67__add_scope_to_production_operations.sql": "sha256:58800362f1b8c32bb7e607f0c9ecaf7632a5413cc98f92e4ee81fa57b82969fd",
+    "V68__create_processing_fee_combinations.sql": "sha256:2869b62456b4083fe71074bae93a57bfe6c4c7bbae2151d7fc5d21b15d135840"
   }
 }

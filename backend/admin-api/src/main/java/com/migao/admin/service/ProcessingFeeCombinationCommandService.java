@@ -26,7 +26,7 @@ import java.util.Set;
 import java.util.TreeSet;
 
 /**
- * 加工费组合定价**写面**（V66，issue #4386，P1；用户裁定 2026-09-19「缺乏加工费的管理模块」）。
+ * 加工费组合定价**写面**（V68，issue #4386，P1；用户裁定 2026-09-19「缺乏加工费的管理模块」）。
  *
  * <p><b>两个时刻、两个角色</b>：商家在**配置时**自行组合并定价（本类 = 那个写面）；
  * 系统在**下单时**按选配结果匹配组合 → 取价 → × 加工费米数 → **一个数**。
@@ -52,7 +52,7 @@ import java.util.TreeSet;
 @RequiredArgsConstructor
 public class ProcessingFeeCombinationCommandService {
 
-    /** 组合状态取值（V66 `status VARCHAR(16) DEFAULT 'active'`：active / disabled）。 */
+    /** 组合状态取值（V68 `status VARCHAR(16) DEFAULT 'active'`：active / disabled）。 */
     private static final Set<String> STATUSES = Set.of("active", "disabled");
 
     /** provenance 词表（与 {@code production_operations.source} / V62 逐字同口径）。 */

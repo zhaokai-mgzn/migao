@@ -24,7 +24,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
 /**
- * 加工费组合定价**读面 + Mapper/表契约**（V66，issue #4386）
+ * 加工费组合定价**读面 + Mapper/表契约**（V68，issue #4386）
  *
  * <h2>读面为什么单独一个类</h2>
  * 写面（{@code ProcessingFeeCombinationCommandService}）只有它能改价；读面（列表 / 缺口）

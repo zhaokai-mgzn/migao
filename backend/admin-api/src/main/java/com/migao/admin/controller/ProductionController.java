@@ -56,7 +56,7 @@ public class ProductionController {
     private final ProcessingOrderService processingOrderService;
 
     /**
-     * 加工费组合定价（V66，issue #4386）：读面（列表 / 缺口）+ 写面（新建 / 改价 / 停用）。
+     * 加工费组合定价（V68，issue #4386）：读面（列表 / 缺口）+ 写面（新建 / 改价 / 停用）。
      *
      * <p>用字段注入而不是构造参数：本类构造签名被 {@code ProductionControllerTest} 的
      * standaloneSetup 显式装配（6 个参数），加参数会把该测试的每一处装配都改一遍 ——
@@ -336,7 +336,7 @@ public class ProductionController {
                 productionOperationQueryService.routingGaps(TenantContext.getTenantId()));
     }
 
-    // ══════════════════════ 加工费组合定价（V66，issue #4386）══════════════════════
+    // ══════════════════════ 加工费组合定价（V68，issue #4386）══════════════════════
 
     /**
      * 加工费组合定价列表（选配特征集合 → 加工费单价 元/米）

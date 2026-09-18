@@ -12,7 +12,7 @@ import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 
 /**
- * 加工费组合定价**版本账**（V66，issue #4386）
+ * 加工费组合定价**版本账**（V68，issue #4386）
  * 对应表：processing_fee_combination_versions（与 {@link ProductionRoutingVersion}（#4308）**同构**）
  *
  * <p>加工费单价是**订单金额**的直接输入 ⇒ 改一次价必须留痕，「这个组合昨天什么价」要答得出。
