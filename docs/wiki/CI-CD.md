@@ -88,3 +88,32 @@ Issue 创建（CONTRACT_JSON 含 business_truths + cases 引用）→ 自动生�
 
 ---
 详见: [SWAS 迁移踩坑](../deployment/swas-migration-lessons.md) · [部署检查清单](../deployment/deployment-checklist.md)
+
+## Danger Scan：删除 workflow 的人工确认通道（#4295）
+
+`Danger Scan (破坏性变更检测)` 是 **required** check。它把「删除 workflow 文件」判为 BLOCK ——
+但补本条之前，**没有任何记录"人工确认"的地方**（`DANGER_TRUSTED_ACTOR` 只对"新增"降级）。
+
+⚠️ **这在本仓库会硬卡死**：分支保护开了 `enforce_admins=true`（"不允许绕过上述设置"），
+它**对管理员同样生效** ⇒ 既没有 `gh pr merge --admin`，UI 也不提供 "Merge without waiting"。
+实测（#4288）：`GraphQL: Required status check "Danger Scan (破坏性变更检测)" is failing.`
+⇒ 在补通道前，**删除任何 workflow 在机制上都不可能合并**。
+
+**怎么删**（owner 本人操作，两步）：
+
+1. 在 PR 上评论一行（**必须由 owner 账号发出**；其他人的评论一律不采信）：
+   ```
+   /danger-ack delete-workflow .github/workflows/<要删的文件>.yml
+   ```
+   批量清理可用 `/danger-ack delete-workflow all`（展开为本次**全部**被删的 workflow）。
+2. 重跑一次该 check（`gh run rerun <danger-scan-run-id> --failed`）。
+
+之后该条降为 WARN，并在 `danger-scan-result.json` 的 `acks` 里留痕（谁确认的 + 确认评论链接）。
+
+- **为什么用评论而不是 label**：`gh run rerun` **复用原始事件载荷**（标签快照是旧的），
+  且 label 变更不在 `pr-check` 的 `pull_request.types` 里 ⇒ label 方案在重跑下不生效；
+  评论在**运行期**读 API，故重跑能拿到最新确认。
+- **fail-closed**：无删除 / 评论 API 失败 / 非 owner / 未命中 marker ⇒ ack 为空 ⇒ **仍 BLOCK**
+  （无确认时的行为与补通道前**逐字相同**）。
+- 判定逻辑在 `danger_scan.py` 的 `parse_delete_acks()` 纯函数里（**不在 YAML 字符串里**）——
+  首版把判据写成脚本文本匹配，红证实测"不红"（空断言），故改挂到纯函数上。

@@ -555,11 +555,55 @@ jobs:
         with:
           fetch-depth: 0
 
+      # ── 删除 workflow 的人工确认通道（#4295）───────────────────────────────────
+      # 为什么需要：danger-scan 对「删除 workflow」是 BLOCK，文案写「需人工确认」，
+      #   但补本条之前**没有任何记录确认的地方** ⇒ 在 enforce_admins=true 的仓库里
+      #   「删除任何 workflow」在机制上都不可能合并（#4288 实测：`gh pr merge --admin`
+      #   被 GraphQL 拒、UI 不提供绕过入口）。本步骤把「人工确认」落成可留痕的动作。
+      #
+      # 为什么用**评论**而不是 label（#4288 实测）：label 变更不在本 workflow 的
+      #   pull_request.types 里，且 `gh run rerun` **复用原始事件载荷**（标签快照是旧的）
+      #   ⇒ label 方案在重跑下不生效。评论在**运行期**读 API，故 rerun 也能拿到最新确认。
+      #
+      # fail-closed：无删除 / API 失败 / 非 owner / 无 marker ⇒ DANGER_ACK_DELETE 为空
+      #   ⇒ danger_scan.py 仍按 BLOCK 处理（无确认时的行为与补通道前逐字相同）。
+      #
+      # ⚠️ 判定逻辑**不在本 YAML 里**（首版把它写成字符串匹配，红证实测"不红" = 空断言）：
+      #   过滤/解析全在 `danger_scan.py` 的 `parse_delete_acks()` 纯函数（有行为级单测），
+      #   本步骤只负责「取评论 → 喂给它 → 写 GITHUB_ENV」。要改逻辑请改那个函数。
+      - name: Resolve workflow-deletion acks (owner 显式确认 → DANGER_ACK_DELETE)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          # 与 DANGER_TRUSTED_ACTOR 同源（本仓库 owner）；非 owner 的评论一律不算确认
+          DANGER_OWNER: zhaokai-mgzn
+        run: |
+          set -uo pipefail
+          git fetch origin main --quiet || true
+          # ① 取评论（**每个 PR 都跑**，即使本次没有删除）：本通道的静默失效形态是
+          #    「token 读不到评论 ⇒ 永远不放行」—— fail-closed 的反面是红得无声无息，
+          #    直到有人要删 workflow 才发现。故心跳必须恒可见（§18.6「环境静默即缺陷」）：
+          #    下面的 --resolve-acks 每次都会打一行「owner 评论数=N」。
+          if ! gh api "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments" \
+                 --paginate --slurp > /tmp/pr-comments.json 2>/dev/null; then
+            echo "⛔ 评论 API 读取失败 ⇒ fail-closed（本次不放行任何删除）——"
+            echo "   若这是 token 权限问题，本确认通道将**永久失效**（需给本 job 补 issues: read）"
+            exit 0
+          fi
+          DELETED=$(git diff --diff-filter=D --name-only origin/main...HEAD -- .github/workflows \
+            | grep -E '\.(yml|yaml)$' | paste -sd, - || true)
+          echo "── 待确认删除：${DELETED:-（无）} ──"
+          # ② 解析 owner 的确认 —— 过滤/解析全在 danger_scan.py 的纯函数里（有行为级单测）
+          DANGER_COMMENTS_JSON=/tmp/pr-comments.json \
+          DANGER_DELETED_WORKFLOWS="$DELETED" \
+            python3 .github/danger_scan.py --resolve-acks >> "$GITHUB_ENV"
+
       - name: Run danger scan
         env:
           DANGER_BASE: origin/main
           # 受信任维护者（owner）新增 workflow（如发布流程）→ 降为 WARN；fork 贡献者 → BLOCK
           DANGER_TRUSTED_ACTOR: ${{ github.actor == 'zhaokai-mgzn' && '1' || '0' }}
+          # DANGER_ACK_DELETE / DANGER_ACK_BY / DANGER_ACK_URL 由上一步骤经 $GITHUB_ENV 注入
         run: |
           git fetch origin main --quiet
           python3 .github/danger_scan.py

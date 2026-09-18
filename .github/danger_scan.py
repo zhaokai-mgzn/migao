@@ -7,6 +7,22 @@
 - BLOCK：修改 docs/sql/schema*.sql（表结构参考）但未同时新增迁移文件（DDL 与迁移脱节）
 - WARN：批量删除文件（>=30）、修改生产部署文件、修改 workflow（无新增 secrets）
 
+## 删除 workflow 的**人工确认通道**（`DANGER_ACK_DELETE`，#4295）
+
+删除 workflow 会 BLOCK，但护栏文案说的是「需人工确认」—— 而**确认必须有落点**，
+否则在 `enforce_admins=true` 的仓库里「删除任何 workflow」在机制上都不可能通过
+（#4288 实测：`gh pr merge --admin` 被 GraphQL 拒、UI 也不提供绕过入口）。
+
+故补一条**可留痕**的确认通道（不改无确认时的行为，逐字仍是 BLOCK）：
+
+- `DANGER_ACK_DELETE`：逗号分隔的、**已被显式确认**可删除的 workflow 路径；`*` 表示全部。
+- `DANGER_ACK_BY` / `DANGER_ACK_URL`：确认人登录名与确认评论链接（写进 JSON 留痕）。
+- 取值由 `pr-check.yml` 的「Resolve workflow-deletion acks」步骤在**运行期**读 PR 评论得出：
+  只有**仓库 owner** 自己发的、含 `/danger-ack delete-workflow <path>`（或 `... all`）的评论才算。
+  ⚠️ 用评论而不是 label：#4288 实测 `gh run rerun` 复用**原始事件载荷**（label 快照是旧的）
+  ⇒ label 方案重跑不生效；评论在运行期读 API，故 rerun 也能拿到最新确认。
+- **fail-closed**：取不到评论 / API 失败 / 非 owner ⇒ 该变量为空 ⇒ 仍 BLOCK。
+
 用法（由 pr-check 的 danger-scan job 调用）：
     python3 .github/danger_scan.py
 输出：danger-scan-result.json（JSON）+ 控制台报告；存在 blocker 时 exit 1。
@@ -37,6 +53,95 @@ WORKFLOW_SUFFIXES = (".yml", ".yaml")
 
 SECRET_REF_RE = re.compile(r"secrets\.([A-Za-z0-9_]+)")
 
+# ── 删除 workflow 的确认 marker（#4295）────────────────────────────────────────
+# 判据必须落在**这个纯函数**上，而不是 workflow 里的字符串匹配：
+# 首版把判据写成「脚本里含 user.login 且含 DANGER_OWNER」—— 红证实测**不红**
+# （同一脚本另一条取 ACK_URL 的 gh api 也含这两个词，把 owner 过滤整条删掉照样绿）。
+# 空断言形态（`migao-acceptance`）：断言的东西不是"决定放行的那个表达式"。
+ACK_MARKER = "/danger-ack delete-workflow"
+
+
+def parse_delete_acks(comments, owner, deleted_paths):
+    """从 PR 评论里解析「已确认可删除」的 workflow 路径。纯函数。
+
+    规则（只有 owner 本人发的评论算数）：
+      · `/danger-ack delete-workflow <path>` —— 确认**该路径**；
+      · `/danger-ack delete-workflow all`   —— 一次确认**全部**（展开为 deleted_paths）。
+
+    Args:
+        comments: PR 评论对象列表（REST `/issues/{n}/comments` 的形状，可含 `user.login`/`body`/`html_url`）
+        owner:    确认人登录名；**只有**该账号的评论被采信（其他人评论一律忽略）
+        deleted_paths: 本次被删除的 workflow 路径列表
+
+    Returns:
+        (acked_paths: set[str], via_url: str) —— via_url 是**最后一条**采信评论的链接（留痕用）；
+        无命中时返回 (set(), "")。
+    """
+    bodies, last_url = [], ""
+    for c in comments or []:
+        if not isinstance(c, dict):
+            continue
+        if ((c.get("user") or {}).get("login") or "") != owner or not owner:
+            continue
+        body = c.get("body") or ""
+        bodies.append(body)
+        last_url = c.get("html_url") or last_url
+    if not bodies:
+        return set(), ""
+
+    acked = set()
+    all_acked = any(f"{ACK_MARKER} all" in b for b in bodies)
+    for path in deleted_paths or []:
+        if all_acked or any(f"{ACK_MARKER} {path}" in b for b in bodies):
+            acked.add(path)
+    return acked, (last_url if acked else "")
+
+
+def ack_env_lines(acked, owner, via_url):
+    """把解析结果格式化成可直接 `>> $GITHUB_ENV` 的行（空 ⇒ danger_scan 仍 BLOCK）。"""
+    return [
+        f"DANGER_ACK_DELETE={','.join(sorted(acked))}",
+        f"DANGER_ACK_BY={owner if acked else ''}",
+        f"DANGER_ACK_URL={via_url if acked else ''}",
+    ]
+
+
+def resolve_acks_main():
+    """`--resolve-acks` 模式：读评论 JSON → 打印 GITHUB_ENV 行（由 pr-check 的 ack 步骤调用）。
+
+    fail-closed：文件缺失 / JSON 非法 / owner 为空 ⇒ 打印空 DANGER_ACK_DELETE（仍 BLOCK）。
+    """
+    owner = os.environ.get("DANGER_OWNER", "").strip()
+    deleted = [p.strip() for p in os.environ.get("DANGER_DELETED_WORKFLOWS", "").split(",") if p.strip()]
+    comments = []
+    path = os.environ.get("DANGER_COMMENTS_JSON", "")
+    try:
+        with open(path) as f:
+            raw = json.load(f)
+        # `gh api --paginate --slurp` 产出「页数组的数组」；单页时也可能就是评论数组
+        if isinstance(raw, list) and raw and isinstance(raw[0], list):
+            comments = [c for page in raw for c in page]
+        elif isinstance(raw, list):
+            comments = raw
+    except Exception as exc:  # noqa: BLE001 —— 任何异常都必须 fail-closed
+        print(f"⚠️ 评论 JSON 读取失败（{exc}）⇒ fail-closed", file=sys.stderr)
+        comments = []
+    owner_n = sum(
+        1 for c in comments
+        if isinstance(c, dict) and ((c.get("user") or {}).get("login") or "") == owner and owner
+    )
+    acked, via = parse_delete_acks(comments, owner, deleted)
+    for line in ack_env_lines(acked, owner, via):
+        print(line)
+    # **心跳**（§18.6「环境静默即缺陷」）：本通道的静默失效形态是「读不到评论 ⇒ 永远不放行」，
+    # 命令行恒打「评论总数 / owner 评论数」——owner 评论数长期为 0 就能立刻看出通道没用上，
+    # 而不是等到有人要删 workflow 才发现（fail-closed 的反面是红得无声无息）。
+    print(
+        f"── 评论总数={len(comments)} / owner({owner or '未设置'}) 评论数={owner_n}"
+        f" / 待确认={len(deleted)} / 已确认={sorted(acked) or '（无）'} ──",
+        file=sys.stderr,
+    )
+
 
 def _truly_new_secret_lines(added_lines, removed_lines):
     """从 diff 的 added/removed 行中筛出「真正新增」的 secrets 引用行。
@@ -62,7 +167,7 @@ def _truly_new_secret_lines(added_lines, removed_lines):
     return truly_new
 
 
-def analyze(workflow_changes, wf_new_secrets, deleted_files, deploy_files, migration_changes, schema_changes, trusted_actor=False):
+def analyze(workflow_changes, wf_new_secrets, deleted_files, deploy_files, migration_changes, schema_changes, trusted_actor=False, delete_acked=frozenset()):
     """纯函数：对变更清单做安全判定。返回 (blockers, warnings)。
 
     Args:
@@ -72,6 +177,9 @@ def analyze(workflow_changes, wf_new_secrets, deleted_files, deploy_files, migra
         deploy_files:     deploy/ 或 scripts 下被改动的文件列表
         migration_changes: db/migration/*.sql 的 [(status, path)]
         schema_changes:    docs/sql/schema*.sql 的 [(status, path)]
+        delete_acked:     **已被显式确认**可删除的 workflow 路径集合（`"*"` = 全部）。
+                          为空 ⇒ 删除 workflow 一律 BLOCK（与 #4295 之前**逐字相同**）。
+                          来源见模块 docstring「删除 workflow 的人工确认通道」。
     """
     blockers = []
     warnings = []
@@ -83,7 +191,15 @@ def analyze(workflow_changes, wf_new_secrets, deleted_files, deploy_files, migra
             else:
                 blockers.append(f"新增 workflow 文件 {path} —— 需人工安全审查（workflow 可携带 secrets 执行）")
         elif status == "D":
-            blockers.append(f"删除 workflow 文件 {path} —— 需人工确认")
+            if path in delete_acked or "*" in delete_acked:
+                # 已由维护者显式确认（见模块 docstring 的确认通道）——降级为 WARN 并留痕。
+                warnings.append(f"删除 workflow 文件 {path}（**已由维护者显式确认**，见 danger-scan-result.json 的 acks）")
+            else:
+                blockers.append(
+                    f"删除 workflow 文件 {path} —— 需人工确认"
+                    f"（维护者评论 `/danger-ack delete-workflow {path}` 后重跑本检查；"
+                    "或 `/danger-ack delete-workflow all` 一次确认全部）"
+                )
         elif status[0] in ("M", "R"):
             new_sec = wf_new_secrets.get(path, [])
             real_sec = [l for l in new_sec if "secrets.GITHUB_TOKEN" not in l]
@@ -326,17 +442,32 @@ def main():
     schema_changes = [p for s, p in all_changes if p in SCHEMA_FILES]
 
     trusted = os.environ.get("DANGER_TRUSTED_ACTOR", "").lower() in ("1", "true", "yes")
+    # 删除 workflow 的人工确认通道（#4295）：由 pr-check 的 ack 步骤在运行期从 PR 评论解析得出。
+    # 未设置/解析失败 ⇒ 空集合 ⇒ 删除一律 BLOCK（fail-closed，与补通道前逐字相同）。
+    delete_acked = frozenset(
+        p.strip() for p in os.environ.get("DANGER_ACK_DELETE", "").split(",") if p.strip()
+    )
+    ack_by = os.environ.get("DANGER_ACK_BY", "").strip()
+    ack_url = os.environ.get("DANGER_ACK_URL", "").strip()
     a_blockers, warnings = analyze(
         workflow_paths, wf_new_secrets, deleted_files, deploy_files,
         migration_changes, schema_changes, trusted_actor=trusted,
+        delete_acked=delete_acked,
     )
     blockers = blockers + a_blockers
+
+    # 留痕：谁确认了哪些删除、确认凭据在哪 —— 让「人工确认」这件事可追溯（不是"说确认就确认"）。
+    acks = [
+        {"path": p, "by": ack_by or "(unknown)", "via": ack_url or "(unknown)"}
+        for p in sorted(delete_acked)
+    ]
 
     result = {
         "blocker_count": len(blockers),
         "warning_count": len(warnings),
         "blockers": blockers,
         "warnings": warnings,
+        "acks": acks,
     }
     with open("danger-scan-result.json", "w") as f:
         json.dump(result, f, ensure_ascii=False, indent=2)
@@ -353,4 +484,7 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    if "--resolve-acks" in sys.argv[1:]:
+        resolve_acks_main()
+    else:
+        main()
