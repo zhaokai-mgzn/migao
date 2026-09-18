@@ -44,6 +44,24 @@ _NUMERIC_PREFIX_PATTERN = re.compile(r"^[¥￥$]?\s*(?P<num>[+-]?\d+(?:\.\d+)?)"
 _SELLING_METHODS = ("bulk_cut", "full_roll")
 _PRICING_METHODS = ("per_meter", "per_set", "fixed", "per_area")
 
+# ── 工艺规格（craft spec）枚举闸门（issue #4346 包 1 / 设计文档 §4.2 · §4.8）────────
+# `processing_info` 是**整体透传**的（本工具不重拼字段）⇒ 新键不会丢；但**错值**会一路到
+# 服务端 —— 部位/工艺错了会取到**错误工序路线**（实证 V58：纱帘订单拿到布帘的 11 道工序，
+# 工序与工资全错）。故在工具侧 fail-fast：拒绝 + 点名合法值，让 LLM 下一轮自愈。
+# ⚠️ 刻意**不**做别名归一化（同 `_SELLING_METHODS` 口径）：`韩式褶`→`韩褶` 这类归一
+# 会把契约藏进工具层，而静默接受的代价是**静默取错路线**。
+# - curtainType: `production_routings.curtain_type`（布帘/纱帘/帘头）
+# - craft:       `production_routings.craft`（韩褶/打孔/四爪钩/穿杆/平幔）——
+#                与 `mounting`（eyelet/s_hook/hook/roman）是**两层**，禁止互相推导
+# - componentRole: 明细行角色（主布/配布边/纱），设计文档 §4.8
+# - style:       款式（单色/拼色），真值源 `curtain-production-rules.md` §8
+# - metersSource: 配布边米数来源（跟随主布/人工指定），设计文档 §4.8
+_CURTAIN_TYPES = ("布帘", "纱帘", "帘头")
+_CRAFTS = ("韩褶", "打孔", "四爪钩", "穿杆", "平幔")
+_COMPONENT_ROLES = ("主布", "配布边", "纱")
+_STYLES = ("单色", "拼色")
+_METERS_SOURCES = ("跟随主布", "人工指定")
+
 # 万能验证码 bypass（POC/测试阶段，对齐 admin-api 的 sms.bypass-code 机制）。
 # 空字符串 = 禁用 bypass（生产安全默认）。POC 部署时设置 SMS_BYPASS_CODE=123456 与 admin-api 对齐。
 SMS_BYPASS_CODE = os.getenv("SMS_BYPASS_CODE", "")
@@ -309,6 +327,21 @@ class OrderCreateTool(BaseTool):
         "【不议价】agent 路径不允许偏离商品库价；顾客要议价/优惠时不要改单价，请引导走后台。"
         "售卖方式/门幅/颜色等规格信息放入 items[i].processing_info（字段：skuId/skuCode/colorName/sellingMethod/doorWidth），"
         "不要平铺在 items 顶层（平铺会被丢弃）。"
+        # 工艺规格落库（issue #4346 / 设计文档 §4.9）：引导清单**已经问到了**这些工艺参数，
+        # 但此前下单时全被丢弃 ⇒ 加工单只能靠加工项名**猜**部位（实证 V58：纱帘订单拿到布帘的
+        # 11 道工序，工序与工资全错）。故要求随单落库。
+        "【工艺规格·必带】引导清单/顾客已明确的工艺参数必须写进 items[i].processing_info（**顶层键**）："
+        "curtainType（部位：布帘/纱帘/帘头）、craft（安装工艺：韩褶/打孔/四爪钩/穿杆/平幔 —— "
+        "**与 mounting 是两层，不要互相推导**）、isShaped（是否定型）、style（单色/拼色）、"
+        "specialOptions（下单勾选的特殊选项，如 拼1次/加铅块/加花边/抱枕/布绑带）。"
+        "**枚举必须逐字一致**（「韩式褶」非法，应为「韩褶」）—— 错值会让加工单取到**错误工序路线**。"
+        "**顾客没说就不填**：不要猜、不要补默认值。"
+        "【双拼·主布/配布边】拼色（双拼）时一扇窗拆**两条明细行**：主布行带 componentRole=主布 "
+        "与全部工艺规格；配布边行带 componentRole=配布边 + craftLineId=主布行的行标识"
+        "（绑成一组，否则加工单会把一扇窗算成两扇、折数/开数/工序/计件全部翻倍），"
+        "并带 metersSource（跟随主布/人工指定）。**加工项只挂主布行**。"
+        "【加工费米数】加工费按**主布米数**算（配布边米数不参与）—— 米数由算料（curtain_calc）给出，"
+        "**不要自己推算**。"
         "【铁律·加工项】product_detail 返回的加工项（processing_items）非空时，**必须先调用 "
         "interact(component=choice, multiSelect=true) 主动询问顾客要不要加工项**（列出名称与单价），"
         "把所选写入 items[i].processing_info.processingItems、合计写入 processingFee 并计入金额；"
@@ -432,6 +465,52 @@ class OrderCreateTool(BaseTool):
                                     "description": "售卖方式，取 product_detail skus[].selling_method 原值：bulk_cut(散剪) / full_roll(整卷)。拼写变体（散剪/bulkCut）会被本地拒绝",
                                 },
                                 "doorWidth": {"type": "string", "description": "门幅"},
+                                # ── 工艺规格（issue #4346 / 设计文档 §4.2 · §4.8 · §4.9）──────────
+                                # 引导清单已问到的工艺参数**必须随单落库** —— 否则加工单只能靠
+                                # 关键字猜部位（实证 V58：纱帘订单拿到布帘的 11 道工序，工序与工资全错）。
+                                # 枚举一律与库侧逐字一致；**顾客没说就不填**（不猜、不补默认值）。
+                                "curtainType": {
+                                    "type": "string",
+                                    "enum": ["布帘", "纱帘", "帘头"],
+                                    "description": "部位/帘种（引导清单已采集）。错值会取到**错误工序路线**；顾客没说 ⇒ 不填",
+                                },
+                                "craft": {
+                                    "type": "string",
+                                    "enum": ["韩褶", "打孔", "四爪钩", "穿杆", "平幔"],
+                                    "description": "安装工艺（引导清单已采集，须与工序库枚举**逐字一致**）。与 mounting（eyelet/s_hook/hook/roman）是**两层**，**不要互相推导**（「韩式褶」不是合法值，应为「韩褶」）",
+                                },
+                                "isShaped": {
+                                    "type": "boolean",
+                                    "description": "是否定型（引导清单已采集：布帘/帘头默认是、纱帘默认否）",
+                                },
+                                "style": {
+                                    "type": "string",
+                                    "enum": ["单色", "拼色"],
+                                    "description": "款式。拼色（双拼）时见 componentRole/craftLineId",
+                                },
+                                "specialOptions": {
+                                    "type": "array",
+                                    "items": {"type": "string"},
+                                    "description": "下单勾选的**特殊选项**（部位级，19 项，如 拼1次/加铅块/加花边/抱枕/布绑带）——影响车间条件工序与计件系数",
+                                },
+                                "componentRole": {
+                                    "type": "string",
+                                    "enum": ["主布", "配布边", "纱"],
+                                    "description": "明细行角色（设计文档 §4.8）。缺省视为「主布」（存量单兼容）。双拼 = 主布行 + 配布边行**两条明细行**",
+                                },
+                                "craftLineId": {
+                                    "type": "string",
+                                    "description": "**同一扇窗的绑组标识**：配布边行填主布行的行标识 ⇒ 加工单只生成一个部位（否则一扇窗被算成两扇，折数/开数/工序/计件全部翻倍）",
+                                },
+                                "metersSource": {
+                                    "type": "string",
+                                    "enum": ["跟随主布", "人工指定"],
+                                    "description": "配布边米数来源：默认「跟随主布」；顾客/商家改过米数 ⇒ 「人工指定」（防事后分不清是系统算的还是人改的）",
+                                },
+                                "processingMeters": {
+                                    "type": "number",
+                                    "description": "加工费米数（= **主布行**米数，配布边米数不参与）。由算料给出，**不要自己推算**",
+                                },
                                 "skuCode": {"type": "string", "minLength": 1,
                                             "description": "SKU编码（取 product_detail skus[].sku_code 原值）。商品有多个不同 SKU 价时必填（与 colorName 二选一）"},
                                 "processingFee": {
@@ -685,31 +764,41 @@ class OrderCreateTool(BaseTool):
 
     @staticmethod
     def _reject_invalid_enum(where: str, field_label: str, field_key: str, raw: Any,
-                             legal: tuple) -> Optional[ToolResult]:
-        """枚举闸门（issue #3622）：售卖方式/计价方式必须是**后端字面认得的**枚举值。
+                             legal: tuple, impact: str = "") -> Optional[ToolResult]:
+        """枚举闸门（issue #3622）：售卖方式/计价方式/工艺规格必须是**后端字面认得的**枚举值。
 
         刻意不做别名归一化（"散剪"→bulk_cut）：后端 `OrderService:1435` 是**按字面**
         eq 匹配 SKU 的，归一化会把"这个字段到底该传什么"的契约藏进工具层；而静默接受
         变体的代价是**静默不匹配**（SKU 匹配不到 → 库存校验/销量统计静默丢失）。
         所以拒绝 + 点名合法值，让 LLM 下一轮自愈。
+
+        `impact`（issue #4346）：**后果说明**必须与该字段的真实后果一致 —— 工艺规格的后果是
+        「取到错误工序路线」，不是「SKU 匹配不到」。默认文案只对 SKU 规格族成立。
         """
         if raw is None:
             return None  # 可选字段（单 SKU 商品不一定有售卖方式）
         if isinstance(raw, str) and raw in legal:
             return None
+        # 括号提示**按字段族**分流：只有售卖方式/计价方式才有各自的补充说明。
+        # （原实现用「非 sellingMethod 即计价方式」的二分 ⇒ 给部位/工艺串上
+        #  「per_piece 按个不支持」这种**串味提示**，会误导 LLM 自愈方向。）
+        if field_key.endswith("sellingMethod"):
+            hint = "（散剪=bulk_cut、整卷=full_roll）"
+        elif field_key.endswith("pricingMethod"):
+            hint = "（per_piece 按个不支持，issue #3005）"
+        else:
+            hint = ""
         return ToolResult(
             success=False,
             error=f"{where}{field_label}无效",
             message=(
                 f"{where}的{field_label}是「{raw}」，不是后端认得的合法值。"
-                "拼写变体会被**静默**当成另一个规格：SKU 匹配按字面比较 → 匹配不到 → "
-                "库存校验与销量统计静默丢失。"
+                + (impact or (
+                    "拼写变体会被**静默**当成另一个规格：SKU 匹配按字面比较 → 匹配不到 → "
+                    "库存校验与销量统计静默丢失。"
+                ))
             ),
-            suggestion=(
-                f"请改用 product_detail 返回的**原值**：{' / '.join(legal)}"
-                + ("（散剪=bulk_cut、整卷=full_roll）" if field_key.endswith("sellingMethod")
-                   else "（per_piece 按个不支持，issue #3005）")
-            ),
+            suggestion=f"请改用 product_detail 返回的**原值**：{' / '.join(legal)}{hint}",
         )
 
     @staticmethod
@@ -727,6 +816,25 @@ class OrderCreateTool(BaseTool):
             pinfo.get("sellingMethod"), _SELLING_METHODS)
         if rejected is not None:
             return rejected
+        # 工艺规格枚举闸门（issue #4346 / 设计文档 §4.2 · §4.8）：部位/工艺错值会取到
+        # **错误工序路线**（实证 V58：纱帘订单拿到布帘的 11 道工序，工序与工资全错）。
+        # 键缺席一律放行（可选透传，不得变成硬门槛 —— 存量单/普通商品没有这些键）。
+        craft_spec_impact = (
+            "错值会让加工单取到**错误工序路线**（实证 V58：纱帘订单拿到布帘的 11 道工序，"
+            "工序与工资全错）。"
+        )
+        for label, key, legal in (
+            ("部位/帘种", "curtainType", _CURTAIN_TYPES),
+            ("安装工艺", "craft", _CRAFTS),
+            ("明细行角色", "componentRole", _COMPONENT_ROLES),
+            ("款式", "style", _STYLES),
+            ("配布边米数来源", "metersSource", _METERS_SOURCES),
+        ):
+            rejected = OrderCreateTool._reject_invalid_enum(
+                where, label, f"processing_info.{key}", pinfo.get(key), legal,
+                impact=craft_spec_impact)
+            if rejected is not None:
+                return rejected
         if pinfo.get("processingFee") is not None:
             rejected = OrderCreateTool._reject_invalid_amount(
                 where, "加工费", "processing_info.processingFee", pinfo.get("processingFee"),

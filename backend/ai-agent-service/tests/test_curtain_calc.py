@@ -840,3 +840,112 @@ class TestDocExampleAnchor:
         doc = QUOTE_RULES_DOC.read_text(encoding="utf-8")
         assert "不参与系统数量推导" in doc
         assert "accessories" in doc and "显式入参" in doc
+
+
+class TestCraftSpecOutput:
+    """工艺规格输出（issue #4346，包 1 · Python 生产端）
+
+    设计：`docs/design/order-craft-spec-design.md` §4.9（报价单与落库「同源」）/ §6.1（米数拆两个）。
+    目的：`curtain_calc` 的输出**就是**将来落进 `order_items.processing_info` 的那一份 craft spec ——
+    报价卡直接渲染它、`order_create` 把同一个 dict 落库，**不重新拼装、不二次推导**。
+    """
+
+    CRAFT_KEYS = ("curtain_type", "craft", "is_shaped", "style", "special_options")
+
+    def test_echoes_craft_spec_fields(self):
+        """传入的工艺字段必须**原样回显**（不推导、不补默认值）。"""
+        q = build_quote(
+            window_width=3.0,
+            window_height=2.7,
+            fabric_price=30.0,
+            curtain_type="纱帘",
+            craft="打孔",
+            is_shaped=False,
+            style="拼色",
+            special_options=["拼2次", "加铅块"],
+        )
+        assert q["curtain_type"] == "纱帘"
+        assert q["craft"] == "打孔"
+        assert q["is_shaped"] is False
+        assert q["style"] == "拼色"
+        assert q["special_options"] == ["拼2次", "加铅块"]
+
+    def test_craft_spec_defaults_are_none_not_invented(self):
+        """不传 ⇒ 键存在但为 `None` —— **不得替顾客发明部位/工艺**（口径纪律）。"""
+        q = build_quote(window_width=3.0, window_height=2.7)
+        for key in self.CRAFT_KEYS:
+            assert key in q, f"craft spec 键 {key} 缺失（契约要求键恒在）"
+            assert q[key] is None, f"{key} 非 None ⇒ 替顾客发明了默认值"
+
+    def test_processing_meters_splits_from_fabric_meters(self):
+        """§6.1 已裁定：米数拆两个字段；**单面料行时两值恒等**（现有单金额不变）。"""
+        q = build_quote(window_width=3.0, window_height=2.7, fabric_price=30.0)
+        assert "processing_meters" in q, "§6.1 要求输出 processing_meters"
+        assert q["processing_meters"] == q["fabric_meters"]
+
+    def test_split_does_not_change_existing_amounts(self):
+        """**回归护栏**：拆字段不得改任何一个数值（现有单金额一字不变）。"""
+        q = build_quote(
+            window_width=3.0, window_height=2.7, mounting="eyelet",
+            fabric_width=3.0, fabric_price=30.0,
+        )
+        assert q["fabric_meters"] == pytest.approx(6.6)          # 文档 §7 算例锚定
+        assert q["processing_meters"] == pytest.approx(6.6)
+        assert q["total"] == pytest.approx(464.8)                # 文档 §7 算例锚定
+
+    def test_open_count_and_pleats_are_usable_as_craft_spec(self):
+        """**回归护栏**：打开方式/折数/每片折数已是既有输出 ⇒ 直接当 craft spec 用，不新增重复键。"""
+        q = build_quote(
+            window_width=6.6, window_height=2.92, mounting="s_hook",
+            pleat_count=48, open_count=2,
+        )
+        assert q["open_count"] == 2
+        assert q["pleat_count"] == 48
+        assert q["per_panel_pleats"] == 24                       # 文档 §11 算例（48 折双开）
+
+    def test_formula_used_is_the_cutting_mode_truth(self):
+        """**回归护栏**：加工类型（定高买宽/定宽买高）的算料侧真值 = `formula_used`，不新增重复字段。"""
+        assert build_quote(window_width=3.0, window_height=2.7,
+                           fabric_width=3.0)["formula_used"] == "fixed_height"
+        assert build_quote(window_width=3.0, window_height=2.7,
+                           fabric_width=2.8)["formula_used"] == "fixed_width"
+
+
+class TestCraftSpecToolPassthrough:
+    """Tool 层：工艺规格必须**穿过 execute** 落到 `data` —— 否则 LLM 传了也白传。"""
+
+    async def test_execute_passes_craft_spec_through(self, sample_tool_context):
+        """execute → data 透传（含 §6.1 的米数拆两个字段）。"""
+        from app.tools.curtain_calc import CurtainCalcTool
+
+        result = await CurtainCalcTool().execute(
+            context=sample_tool_context,
+            window_width=3.0,
+            window_height=2.7,
+            fabric_price=30.0,
+            curtain_type="纱帘",
+            craft="打孔",
+            is_shaped=False,
+            style="拼色",
+            special_options=["拼2次"],
+        )
+        assert result.success is True
+        data = result.data
+        assert data["curtain_type"] == "纱帘"
+        assert data["craft"] == "打孔"
+        assert data["is_shaped"] is False
+        assert data["style"] == "拼色"
+        assert data["special_options"] == ["拼2次"]
+        assert data["processing_meters"] == data["fabric_meters"]
+
+    def test_schema_declares_craft_spec_params(self):
+        """schema 必须**声明**这些参数 —— 未声明则 LLM 传不进来（等于没实现）。"""
+        from app.tools.curtain_calc import CurtainCalcTool
+
+        props = CurtainCalcTool.parameters["properties"]
+        for key in ("curtain_type", "craft", "is_shaped", "style", "special_options"):
+            assert key in props, f"schema 缺 {key} ⇒ LLM 无法传该字段"
+        assert props["craft"]["enum"] == ["韩褶", "打孔", "四爪钩", "穿杆", "平幔"], (
+            "craft 枚举必须与工序库 production_routings.craft 逐字一致"
+        )
+        assert props["curtain_type"]["enum"] == ["布帘", "纱帘", "帘头"]
