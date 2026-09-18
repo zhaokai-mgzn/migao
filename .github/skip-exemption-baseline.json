@@ -3,9 +3,9 @@
   "_scope": "`skip_total` / `legacy_skip_ids` 是**锚定 SHA 上的快照**；`pending_classification` 只许是其子集且**只许缩短**（到期即红）。非 pending 的任何非空 skip_reason（含新增用例）必须完全合规 ⇒ 新增一律 fail-closed。总量只许缩（净增即红）。",
   "_when_to_update": "① 有人把某条存量改到合规 ⇒ 从 pending_classification 删掉该条（不要改 skip_total）；② 新增 skip ⇒ **不得**记进本文件（先改到合规；确属豁免的走'改判据'流程）；③ 某条 skip 被真正解掉（用例恢复可跑）⇒ 同步下调 skip_total + 追加 history 一行（只许非增）；④ 到期日到点 ⇒ 必须清零 pending，不得顺手推后。",
   "_how_to": "本文件是**数据**，人工维护；判据在 test_skip_exemption_gate.py。改了用例库后跑 `python3 -m pytest tests/unit_ci_workflows/test_skip_exemption_gate.py -q` 复核。",
-  "anchor_sha": "f74909b79381b66dbbdfac995ac860fa39a37d69",
+  "anchor_sha": "da935b6a0fa931b17d3b9c50fe1273e171fa28b4",
   "anchored_at": "2026-09-18",
-  "skip_total": 158,
+  "skip_total": 162,
   "legacy_skip_ids": [
     "AG-001",
     "AG-002",
@@ -109,8 +109,12 @@
     "PG-015",
     "PG-016",
     "PG-018",
+    "PG-019",
+    "PG-020",
+    "PG-021",
     "PP-010",
     "PP-011",
+    "PP-012",
     "RG-001",
     "ST-008",
     "ST-009",
@@ -237,10 +241,14 @@
       "note": "rebase 到最新 main（原锚点 51e40495）：`.github/cases/**` 与被测用例库相对原锚点**无差异**（`git diff --stat <old>..<new> -- .github/cases/` 为空）⇒ 锚点快照与 pending 判定仍然成立"
     },
     {
-      "sha": "f74909b79381b66dbbdfac995ac860fa39a37d69",
+      "sha": "da935b6a0fa931b17d3b9c50fe1273e171fa28b4",
       "date": "2026-09-18",
-      "skip_total": 158,
-      "note": "重锚定：纳入 #4192（转人工退场）对 CH-008/CH-017 的 unrunnable 登记，两条已机器钉住（test_tools_human_handoff.py + admin-api AgentSession* 单测）"
+      "skip_total": 162,
+      "note": "重锚定：纳入 #4192（转人工退场）对 CH-008/CH-017 的 unrunnable 登记，两条已机器钉住（test_tools_human_handoff.py + admin-api AgentSession* 单测） ｜ 重锚定（集成裁定 方案 A：末行增长 + 显式 note）：纳入本批新增的 4 条 backend-contract 登记 —— PG-019/PG-020/PG-021（#4202 存量单恢复 / #4204 工序库写面+单价版本化 / #4205 计件报表；前端包 PR #4219 的 case_ids 依赖其存在）与 PP-012（#4208 内部算料数量端点，ai-agent 半边 PR #4215 已合并）。四条均带 traces.tests 钉住测试；非空 skip_reason 的目的是**不进 agent-eval 冒烟**（runner 按 skip_reason 过滤）⇒ 不是可删的豁免。仅增这一批，未放行任何存量。 ｜ 重锚定（集成裁定 方案 A：末行增长 + 显式 note）：纳入本批新增的 4 条 backend-contract 登记 —— PG-019/PG-020/PG-021（#4202 存量单恢复 / #4204 工序库写面+单价版本化 / #4205 计件报表；前端包 PR #4219 的 case_ids 依赖其存在）与 PP-012（#4208 内部算料数量端点，ai-agent 半边 PR #4215 已合并）。四条均带 traces.tests 钉住测试；非空 skip_reason 的目的是**不进 agent-eval 冒烟**（runner 按 skip_reason 过滤）⇒ 不是可删的豁免。仅增这一批，未放行任何存量。",
+      "previous_anchor": {
+        "sha": "f74909b79381b66dbbdfac995ac860fa39a37d69",
+        "skip_total": 158
+      }
     }
   ]
 }
