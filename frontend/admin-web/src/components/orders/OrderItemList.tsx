@@ -1,5 +1,6 @@
 'use client'
 
+import { craftSpecRows, isCraftSpecKey } from '@/lib/craft-spec'
 import type { OrderItem } from '@/types'
 
 interface OrderItemListProps {
@@ -29,7 +30,14 @@ export default function OrderItemList({ items, className }: OrderItemListProps) 
 
       {/* 明细行 */}
       <div className="divide-y divide-neutral-100">
-        {items.map((item, index) => (
+        {items.map((item, index) => {
+          // 工艺规格（issue #4355 / 设计文档 §4.9 ②）：直读 processing_info，缺值行已丢弃
+          const specRows = craftSpecRows(item.processingInfo)
+          // 工艺键已由规格块按标签展示 ⇒ 键值兜底行只留非工艺键（同一真值不重复展示）
+          const otherEntries = Object.entries(item.processingInfo ?? {}).filter(
+            ([key]) => !isCraftSpecKey(key)
+          )
+          return (
           <div key={item.id || index} className="grid grid-cols-12 gap-2 px-4 py-3 items-center">
             <div className="col-span-4">
               <div className="font-medium text-neutral-900 text-sm">{item.productName}</div>
@@ -63,9 +71,21 @@ export default function OrderItemList({ items, className }: OrderItemListProps) 
                   <span className="text-xs text-neutral-400">高: {item.height}m</span>
                 )}
               </div>
-              {item.processingInfo && Object.keys(item.processingInfo).length > 0 && (
+              {/* 工艺规格（设计文档 §4.9 ②）：无任何工艺键时整块不出现 */}
+              {specRows.length > 0 && (
+                <div className="mt-1.5 space-y-0.5">
+                  <div className="text-xs font-medium text-neutral-500">工艺规格</div>
+                  {specRows.map((row) => (
+                    <div key={row.label} className="flex flex-wrap gap-x-2 text-xs">
+                      <span className="text-neutral-400">{row.label}</span>
+                      <span className="text-neutral-700">{row.value}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {otherEntries.length > 0 && (
                 <div className="mt-1 text-xs text-amber-600">
-                  加工: {Object.entries(item.processingInfo).map(([k, v]) => `${k}: ${v}`).join(', ')}
+                  加工: {otherEntries.map(([k, v]) => `${k}: ${v}`).join(', ')}
                 </div>
               )}
             </div>
@@ -82,7 +102,8 @@ export default function OrderItemList({ items, className }: OrderItemListProps) 
               {formatAmount(item.subtotal + (item.processingFee || 0))}
             </div>
           </div>
-        ))}
+          )
+        })}
       </div>
 
       {/* 合计 */}
