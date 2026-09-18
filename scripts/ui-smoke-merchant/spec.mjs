@@ -5,6 +5,9 @@
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { createRequire } from 'node:module'
+// 判据最小单元（issue #4226）：加工单号**形态**判据 + 404 探测豁免的**结构化**判据。
+// 抽到同目录纯函数模块的理由：它们的可信度要能单独验证（见 criteria.test.mjs，node:test 无新依赖）。
+import { ORDER_NO_SHAPE, matchProcessingOrderNo, isConsoleProbe404, isProbe404Exempt } from './criteria.mjs'
 
 // playwright 依赖挂在仓库 tests/ 目录（worktree 内未安装，统一用主仓库 tests/node_modules）
 const REPO_ROOT = process.env.REPO_ROOT || join(import.meta.dirname, '..', '..')
@@ -76,6 +79,12 @@ async function safeClick(page, locator, label) {
   await locator.waitFor({ state: 'visible', timeout: 8000 })
   await locator.click()
 }
+
+// 等元素出现（返回 true/false，超时**不抛**、返回 false）—— issue #4226②：
+// 「定长 sleep 后单次 isVisible()」在真浏览器上偶发不可见 ⇒ 假红（`17-order-ship` 被
+// 加工单守卫阻断就是这么来的）。判定「页面/按钮是否就位」一律走本助手。
+const waitVisible = (locator, timeout) =>
+  locator.waitFor({ state: 'visible', timeout }).then(() => true).catch(() => false)
 
 // toast 校验（antd/message 样式：出现即可）
 async function expectToast(page, text) {
@@ -540,17 +549,22 @@ async function orderDetailJourney(page, orderId) {
   const h = await journey('16-order-detail-processing-order')(page)
   // 加工单「开始加工/加工完成」用 window.confirm —— 必须接受，否则流转被自动拒绝
   page.on('dialog', (d) => d.accept())
-  // 加工单块挂载时会先 GET /processing-orders/{orderId} 探测（未生成时后端 404，
-  // 组件 catch → notFound → 展示生成按钮）——该 404 是预期探测，豁免但不隐藏（记 note）
+  // ③ 结构化 404 判据（issue #4226③）：加工单块挂载时会先 GET /processing-orders/{orderId} 探测
+  // （未生成时后端 404，组件 catch → notFound → 展示生成按钮）——该 404 是预期探测，豁免但不隐藏（记 note）。
+  // ⚠️ 豁免必须按 `response.status()` 收集的**结构化**事实判定：旧写法扫「错误消息文本里含 404」
+  // 会把旅程**自身**抛出、文案里恰好带 404 的错误一并豁免 ⇒ 假绿。
+  const responses = []
+  const onResponse = (r) => { if (r.status() === 404) responses.push({ url: r.url(), status: r.status() }) }
+  page.on('response', onResponse)
   const origDone = h.done
   h.done = async (ok, why, ev) => {
+    page.removeListener('response', onResponse)
     const res = await origDone(ok, why, ev)
-    // post-filter：加工单未生成时组件先探测 GET /processing-orders/{orderId}（后端 404，catch→notFound→生成按钮）
-    // 该 404 是预期探测行为；若旅程失败仅因这类 404，判通过并记 note
-    const probe404 = res.errors.filter(e => e.includes('Failed to load resource') && e.includes('404'))
-    if (probe404.length && res.errors.every(e => e.includes('404'))) {
-      res.notes.push(`加工单未生成前 GET /processing-orders/{orderId} 404 探测（预期，${probe404.length} 条）`)
-      res.errors = res.errors.filter(e => !e.includes('404'))
+    // 仅当「失败原因**全部**是这次真探测在 console 打出的文案」且确有对应结构化 404 响应时才豁免
+    if (isProbe404Exempt(res.errors, responses)) {
+      const n = res.errors.filter(isConsoleProbe404).length
+      res.notes.push(`加工单未生成前 GET /processing-orders/{orderId} 404 探测（预期，${n} 条 console 文案；结构化 404 响应 ${responses.length} 次）`)
+      res.errors = res.errors.filter((e) => !isConsoleProbe404(e))
       if (res.errors.length === 0) { res.pass = true; console.log(`✅ ${h.rec.journey}（404 探测豁免）`) }
     }
     return res
@@ -558,45 +572,49 @@ async function orderDetailJourney(page, orderId) {
   try {
     if (!orderId) { await h.done(false, '无目标订单'); return }
     await nav(page, `/orders/${orderId}`, '')
-    await page.waitForTimeout(2500)
     // 确认收款（pending → confirmed；#3583 闸门语义：需显式确认弹窗）
     const payBtn = page.getByRole('button', { name: /确认付款/ }).first()
-    if (await payBtn.isVisible().catch(() => false)) {
+    if (await waitVisible(payBtn, 12000)) {
       await payBtn.click()
-      await page.waitForTimeout(800)
       // 确认弹窗（闸门）
       const confirmBtn = page.getByRole('button', { name: /确 认|确认付款|确定/ }).last()
-      if (await confirmBtn.isVisible().catch(() => false)) {
+      if (await waitVisible(confirmBtn, 6000)) {
         await confirmBtn.click()
-        await page.waitForTimeout(1800)
       }
     }
     // 加工单生成（confirmation 门禁的 UI 侧：按钮 + 结果可见）
     const genBtn = page.getByRole('button', { name: /生成加工单/ }).first()
-    if (await genBtn.isVisible().catch(() => false)) {
+    if (await waitVisible(genBtn, 12000)) {
       await genBtn.click()
-      await page.waitForTimeout(2500)
     }
-    // 加工单块出现：单号 + 状态时间线（已生成）
-    const poNo = page.locator('text=/PO-[0-9-]+|PG-[0-9-]+/').first()
-    const poVisible = await poNo.isVisible().catch(() => false)
+    // ① 加工单块出现：**在加工单块容器内**取单号（issue #4226①：不猜前缀，也不全页乱匹配）。
+    // 真实加工单号前缀是 JG-（实测 JG-20260918-9049），旧正则 /PO-…|PG-…/ 永不命中
+    // ⇒ 证据恒为「加工单可见=false」= 空判据。容器 = ProcessingOrderBlock 的打印区
+    // `.po-print-area`（该组件内唯一，po 为 null 时不渲染）；组件无 data-testid 且前端不属本包所有权。
+    const poBlock = page.locator('.po-print-area').first()
+    const poVisible = await waitVisible(poBlock, 12000)
+    const poNo = poVisible ? matchProcessingOrderNo(await poBlock.textContent().catch(() => '')) : null
     // 状态流转：发加工 → 开始加工 → 加工完成
     let flowDone = ''
-    for (const [btn, expect] of [['发加工', '已发加工'], ['开始加工', '加工中'], ['加工完成', '加工完成']]) {
+    for (const [btn, expectText] of [['发加工', '已发加工'], ['开始加工', '加工中'], ['加工完成', '加工完成']]) {
       const b = page.getByRole('button', { name: new RegExp(btn) }).first()
-      if (!(await b.isVisible().catch(() => false))) { flowDone += ` [${btn}不可见]`; break }
+      // ② 等按钮出现（不是定长 sleep 后单次 isVisible）：偶发不可见会让加工单停在未完成态，
+      // 下游 `17-order-ship` 被「须先完成加工单后再发货」守卫阻断（A/B 两轮均红 = 噪声淹没真回归）
+      if (!(await waitVisible(b, 12000))) { flowDone += ` [${btn}不可见]`; break }
       await b.click()
-      await page.waitForTimeout(1200)
       if (btn === '发加工') {
-        // 内联表单：加工方/交期
-        await page.locator('input[placeholder*="加工方"]').fill('冒烟加工厂').catch(() => {})
-        await page.getByRole('button', { name: /确认发加工/ }).click().catch(() => {})
-        await page.waitForTimeout(1500)
+        // 内联表单：加工方/交期（等表单就位再填，不再定长 sleep 后盲填）
+        const processor = page.locator('input[placeholder*="加工方"]').first()
+        if (await waitVisible(processor, 8000)) await processor.fill('冒烟加工厂').catch(() => {})
+        const issueBtn = page.getByRole('button', { name: /确认发加工/ }).first()
+        if (await waitVisible(issueBtn, 8000)) await issueBtn.click().catch(() => {})
       }
-      flowDone += ` [${btn}→ok]`
+      // 状态文案回显 = 流转真的发生了（原来 `expect` 被解构却从未使用 ⇒ 声明了判据却不判）
+      const echoed = await waitVisible(page.getByText(expectText, { exact: false }).first(), 12000)
+      flowDone += ` [${btn}→${expectText}${echoed ? '✓' : '未回显'}]`
     }
-    if (!poVisible && !flowDone) throw new Error('加工单块未出现')
-    await h.done(true, '', `加工单生成+流转: ${flowDone}; 加工单可见=${poVisible}`)
+    if (!poVisible || !poNo) throw new Error(`加工单块/单号未出现（订单 ${orderId}：生成后 12s 内 ${poVisible ? '块已见但单号不匹配' : `未见 .po-print-area 块`} ${ORDER_NO_SHAPE.source}；流转${flowDone || '未开始'}）`)
+    await h.done(true, '', `加工单生成+流转: ${flowDone}; 加工单 ${poNo} 可见=${poVisible}`)
   } catch (e) {
     await h.done(false, `订单详情失败: ${String(e).slice(0, 400)}`)
   }
@@ -732,9 +750,17 @@ async function orderShipJourney(page, orderId) {
   const h = await journey('17-order-ship')(page)
   try {
     await nav(page, `/orders/${orderId}/ship`, '')
-    await page.waitForTimeout(1500)
+    // 等页面**稳定**再判，而不是定长 sleep 后数控件（issue #4226②）：含加工项订单要等
+    // GET /processing-orders/{orderId} 回来才决定渲染「发货表单」还是「加工单守卫页」，
+    // 1500ms 内没回来就判「无表单」是**假红**；两种终态都要能分辨（否则归因不可读）。
+    const submit = page.getByRole('button', { name: /确认发货/ }).first()
+    const guard = page.getByText(/须先完成加工单后再发货/).first()
+    await Promise.race([waitVisible(submit, 15000), waitVisible(guard, 15000)])
+    if (await waitVisible(guard, 1000)) {
+      throw new Error(`发货表单被加工单前置守卫阻断（订单 ${orderId} 的加工单未流转到 completed ⇒ 16- 前置未达成）`)
+    }
     const hasForm = await page.locator('input, textarea, select').count()
-    if (hasForm === 0) throw new Error('发货页无表单')
+    if (hasForm === 0) throw new Error(`发货页无表单（15s 内既未见表单，也未见加工单守卫；url=${page.url()}）`)
     await h.done(true, '', `发货页表单渲染（${hasForm} 控件）`)
   } catch (e) {
     await h.done(false, `发货页失败: ${String(e).slice(0, 300)}`)
