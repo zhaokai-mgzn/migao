@@ -333,8 +333,13 @@ export default function ProductionBoardPage() {
                     </td>
                     <td className="px-4 py-4 whitespace-nowrap">
                       <div className="flex items-center gap-2">
-                        {/* w-16（原 w-24）：#4357 为容纳第 8 列而收紧，几何探针复测无溢出 */}
-                        <div className="h-2 w-16 overflow-hidden rounded-full bg-neutral-100">
+                        {/* w-12（原 w-24，经 w-16 再收紧）：#4357 为容纳第 8 列而收窄。
+                            ⚠️ 本表是**内容驱动**（`table-layout: auto`，与全仓其余 18 处密集表格
+                            同一约定，不引入 `table-fixed`）⇒ 列宽随数据浮动。实测：3 行数据
+                            （客户名 2 字）下 8 列合计 1100 = 容器宽（无横向滚动）；客户名 3~4 字时
+                            曾溢出 12px —— 收窄进度条后复测为 0。数据再宽时容器横向滚动（by design），
+                            「操作」列不会画在可视区外——这正是本节段要防的形态（§15.3 几何探针）。 */}
+                        <div className="h-2 w-12 overflow-hidden rounded-full bg-neutral-100">
                           <div className="h-full rounded-full bg-primary-600" style={{ width: `${percent}%` }} />
                         </div>
                         <span className="text-neutral-700" data-testid={`production-row-progress-${po.id}`}>
