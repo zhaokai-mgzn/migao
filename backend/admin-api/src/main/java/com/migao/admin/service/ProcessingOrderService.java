@@ -28,7 +28,9 @@ import java.time.OffsetDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -998,11 +1000,45 @@ public class ProcessingOrderService {
             }
             list = processingOrderMapper.selectList(wrapper);
         }
+        Map<String, Order> orders = loadOrders(list);
         List<ProcessingOrderResponse> result = new ArrayList<>();
         for (ProcessingOrder po : list) {
-            result.add(toResponse(po, tenantId));
+            result.add(toResponse(po, tenantId, orders.get(po.getOrderId())));
         }
         return result;
+    }
+
+    /**
+     * 批量取回列表所需的订单（issue #4304）。
+     *
+     * <p><b>为什么必须批量</b>：列表此前逐行调用 {@link #toResponse(ProcessingOrder, Long)}，
+     * 而后者内部 {@code orderMapper.selectById(po.getOrderId())} 只为拿
+     * orderNo/customerName/customerPhone ⇒ N 行 N 次单查。实测 31 行的列表请求里
+     * {@code FROM orders} 单行查询 63 条、本地耗时 ~2.0s（云 dev DB 每跳几十毫秒）。
+     * 这里一次 {@code IN} 取回（{@code selectBatchIds}），逐行按 orderId 建映射。</p>
+     *
+     * <p><b>租户过滤不在本方法</b>：{@code selectBatchIds} 与 {@code selectById} 同为 BaseMapper
+     * 标准方法，租户条件由 {@code TenantLineInnerInterceptor} 注入、软删由 {@code Order} 的
+     * {@code @TableLogic} 兜底 ⇒ 与单查同口径，不因批量而放宽。</p>
+     */
+    private Map<String, Order> loadOrders(List<ProcessingOrder> list) {
+        Set<String> orderIds = new LinkedHashSet<>();
+        for (ProcessingOrder po : list) {
+            if (po.getOrderId() != null) {
+                orderIds.add(po.getOrderId());
+            }
+        }
+        if (orderIds.isEmpty()) {
+            return Map.of();
+        }
+        List<Order> orders = orderMapper.selectBatchIds(orderIds);
+        Map<String, Order> byId = new HashMap<>();
+        if (orders != null) {
+            for (Order order : orders) {
+                byId.put(order.getId(), order);
+            }
+        }
+        return byId;
     }
 
     public ProcessingOrderResponse getDetail(String rawId, Long tenantId) {
@@ -1020,8 +1056,17 @@ public class ProcessingOrderService {
         return toResponse(po, tenantId);
     }
 
-    @SuppressWarnings("unchecked")
+    /**
+     * 单条路径（详情/状态变更）：按 {@code po.getOrderId()} 单查订单。
+     * 行为与 #4304 之前逐字相同 —— 列表路径改用 {@link #toResponse(ProcessingOrder, Long, Order)}
+     * 批量取回的订单，两条路径的响应字段口径共用同一段映射。
+     */
     private ProcessingOrderResponse toResponse(ProcessingOrder po, Long tenantId) {
+        return toResponse(po, tenantId, orderMapper.selectById(po.getOrderId()));
+    }
+
+    @SuppressWarnings("unchecked")
+    private ProcessingOrderResponse toResponse(ProcessingOrder po, Long tenantId, Order order) {
         ProcessingOrderResponse resp = new ProcessingOrderResponse();
         resp.setId(po.getId());
         resp.setTenantId(String.valueOf(po.getTenantId()));
@@ -1039,8 +1084,7 @@ public class ProcessingOrderService {
         resp.setCancelledAt(po.getCancelledAt());
         resp.setCancelledReason(po.getCancelledReason());
         resp.setPrintCount(po.getPrintCount());
-        // 订单信息
-        Order order = orderMapper.selectById(po.getOrderId());
+        // 订单信息（列表路径由调用方批量取回后传入，单条路径传入单查结果；null 时字段留空，同旧行为）
         if (order != null) {
             resp.setOrderNo(order.getOrderNo());
             resp.setCustomerName(order.getCustomerName());
