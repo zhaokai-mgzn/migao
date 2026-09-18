@@ -525,6 +525,46 @@ class TestReferenceFreshness:
             "规则 G 未做「只扫新增行」过滤 —— 会把存量过期引用算到无关 PR 头上（假红）"
         )
 
+    def test_binary_file_in_diff_does_not_crash_the_gate(self, tmp_path, monkeypatch):
+        """红证（issue #4210）：改动集含**二进制文件** ⇒ 规则 G 不得崩溃，且必须**显式登记跳过**。
+
+        病根：`check_reference_freshness_in_diff` 对每个改动文件无条件 `read_text(encoding="utf-8")`。
+        本仓的视觉回归基线就是 PNG（**UI 一改就必须更新**）⇒ `UnicodeDecodeError`
+        ⇒ 整个 Case Trust Gate 以 **crash** 报红：规则 G **事实上没跑**，却把合法 PR 拦下
+        （既是**假红**，又让判据在「改动集含二进制」这一整类 PR 上失效）。
+        实证载体：PR #4209（小布主页改版只更新了截图基线，业务断言全绿，本 gate 9s 内崩溃）。
+
+        判据三条（缺任一条都不算修好）：
+          ① 不抛异常；
+          ② 二进制文件进 `skipped_binary`（**登记**，不是静默跳过 —— 「没跑」必须长得像「没跑」）；
+          ③ 跳过**只作用于不可解码的文件**：同一次调用里的**文本**文件仍照旧参与判定
+             （其过期 `path:NNN` 仍判阻塞 ⇒ 跳过没有把真判据一起吞掉）。
+        """
+        gate = _gate_module()
+        # 隔离到 tmp_path：不写仓库树、不依赖任何真实二进制资产（并发安全、可复跑）
+        monkeypatch.setattr(gate, "REPO_ROOT", tmp_path)
+        monkeypatch.setattr(gate, "_ORIGIN_LINES_CACHE", {})
+
+        bin_rel = "assets/probe_binary_4210.png"
+        bin_path = tmp_path / bin_rel
+        bin_path.parent.mkdir(parents=True, exist_ok=True)
+        bin_path.write_bytes(b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01")
+
+        text_rel = "notes/probe_4210.md"
+        text_path = tmp_path / text_rel
+        text_path.parent.mkdir(parents=True, exist_ok=True)
+        # 过期引用：该文件在仓库里不存在、且不属占位符形态（`_PLACEHOLDER_PATH_RE`）⇒ 必须判阻塞
+        text_path.write_text("见 `docs/absent_probe_4210.py:10` 的实现\n", encoding="utf-8")
+
+        res = gate.check_reference_freshness_in_diff([bin_rel, text_rel], base="origin/main")
+
+        assert res.get("skipped_binary") == [bin_rel], (
+            f"二进制文件未被登记为跳过（要么崩溃、要么静默跳过）：{res.get('skipped_binary')}")
+        assert text_rel not in res["skipped_binary"], (
+            f"文本文件被误判为二进制而跳过 —— 跳过面过宽，会连真判据一起吞：{res}")
+        assert res["blocking"], (
+            f"文本文件里的过期引用未判阻塞 ⇒ 跳过把真判据一起吞掉了（假绿）：{res}")
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 二、判据不得宽到误伤（假红侧）
