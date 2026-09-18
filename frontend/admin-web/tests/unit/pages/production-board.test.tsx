@@ -1,9 +1,11 @@
-// case_ids: PG-019
+// case_ids: PG-019, PP-014
 // PG-019（issue #4203）：生产模块菜单入口 + 生产看板页 ——
-// ① 侧边栏出现「生产管理」组三个节点（生产看板 /production、工序库 /production/operations、
-//    计件工资 /production/piecework，权限码统一 processing:manage）；
+// ① 侧边栏出现「生产管理」组节点（生产看板 /production、工序库 /production/operations、
+//    工艺路线 /production/routings、计件工资 /production/piecework，权限码统一 processing:manage）；
 // ② /production 看板渲染**真实数据**（≥1 行加工单 + 每单工序进度 + 计件合计）。
 // 反 placeholder：看板断言必须落到真实数据行，不能只断言页面存在。
+// PP-014（issue #4307 前端半边）：菜单组新增第 4 项「工艺路线」—— 页面存在但侧边栏进不去
+// 等于没交付；本文件的链接清单 + 权限码断言随之由三项改四项（红证：加项后旧断言即红）。
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor, within } from '@testing-library/react'
 
@@ -65,19 +67,22 @@ const ORDERS = [
 const ok = (data: unknown) => ({ data: { success: true, data } })
 
 describe('生产管理菜单入口（侧边栏）', () => {
-  it('侧边栏出现「生产管理」组与三个节点，路径与权限码正确', () => {
+  it('侧边栏出现「生产管理」组与四个节点，路径与权限码正确', () => {
     render(<Sidebar collapsed={false} onToggle={() => {}} />)
 
     const group = screen.getByText('生产管理').closest('.mb-4') as HTMLElement
     expect(group).toBeTruthy()
     const links = group.querySelectorAll('a')
-    expect(links).toHaveLength(3)
+    // 4 项：生产看板 / 工序库 / 工艺路线（issue #4307 新增）/ 计件工资
+    expect(links).toHaveLength(4)
     expect(links[0].textContent).toContain('生产看板')
     expect(links[0]).toHaveAttribute('href', '/production')
     expect(links[1].textContent).toContain('工序库')
     expect(links[1]).toHaveAttribute('href', '/production/operations')
-    expect(links[2].textContent).toContain('计件工资')
-    expect(links[2]).toHaveAttribute('href', '/production/piecework')
+    expect(links[2].textContent).toContain('工艺路线')
+    expect(links[2]).toHaveAttribute('href', '/production/routings')
+    expect(links[3].textContent).toContain('计件工资')
+    expect(links[3]).toHaveAttribute('href', '/production/piecework')
   })
 
   it('「加工单」不搬家：仍留在「订单管理」组（避免动既有 IA）', () => {
@@ -91,10 +96,11 @@ describe('生产管理菜单入口（侧边栏）', () => {
     expect(within(productionGroup).queryByText('加工单')).not.toBeInTheDocument()
   })
 
-  it('权限码口径一致：生产管理组三项统一 processing:manage（与既有 menu.ts 口径一致）', () => {
+  it('权限码口径一致：生产管理组四项统一 processing:manage（与既有 menu.ts 口径一致）', () => {
     const group = menuGroups.find((g) => g.key === 'production')
     expect(group).toBeTruthy()
     expect(group!.children.map((c) => c.permissionCode)).toEqual([
+      'processing:manage',
       'processing:manage',
       'processing:manage',
       'processing:manage',

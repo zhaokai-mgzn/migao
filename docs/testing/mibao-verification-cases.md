@@ -2332,6 +2332,7 @@
 期望: order_create
 数据: data.order_id.length > 0
 必填: order_create() 字段 items[].processing_info.sellingMethod, items[].processing_info.doorWidth
+必须成功: order_create
 ```
 真值: order.states, order.create-flow, product-sku-stock.aggregate
 溯源: eval O003 独有（SKU 先查流程）；verification 1.8 的简化版见 OR-010 ｜ tags: create, sku_select, full_flow
@@ -2820,7 +2821,7 @@
 真值: order.create-flow, order.states
 溯源: 2026-09-18 新增（用户裁定 2 / F17 / issue #4095）：冒烟档补下单用例 —— 此前冒烟档 9 条全只读、订单域唯一 OR-001 是列表查询 ⇒ 主链路零覆盖。persona=mibao（代客下单免验证码，链路最短）；一句话给全 + repeat_until 协作轮（有卡答卡，成功即停）；断言 = must_succeed[order_create] + db_verify[order_items/order_phone] + order_before[interact[confirm] before order_create] + required_args；自清理 product_dedupe + precondition[product_count_for_keyword expect=1] + namespaces（商品名/手机号）。未新增任何自动触发（裁定 2′/4′）。 ｜ tags: order_create, smoke, write
 
-## 加工项域（13 case）
+## 加工项域（14 case）
 
 ### PP-001. 加工项选择 - 分页翻页 🔵
 ```
@@ -3013,6 +3014,25 @@
 跳过: [backend-contract] ai-agent 内部端点（服务间调用，非 LLM 行为）：由 pytest 全量覆盖 backend/ai-agent-service/tests/test_production/test_operation_qty.py（含 _qty_for 直调比对与三源键漂移门禁），不进入 agent-eval 冒烟（同 PP-010 惯例）
 ```
 溯源: 2026-09-18 新增（issue #4208 ai-agent 半边，PR #4215）：应做数量内部端点 POST /api/internal/production/operation-qty（X-Service-Token）—— 让 routing._qty_for 从「零运行时消费者」变成算料数量的唯一真相源；兜底口径「绝不落 0」+ qty_source 三态（键名 / <键名>_x6 / fallback）。红证（实现前）：端点未实现 ⇒ 404（assert 404 == 200 红）、resp.json()['data'] KeyError；键漂移门禁在 KNOWN_QTY_UNITS/DIRECT_QTY_KEYS 未定义时 import 即红。同批把该测试文件补进 PP-010.traces.tests（同为生产确定性核心的证据面）。**未做（如实登记）**：Java 侧接线（生成加工单时逐工序调用本端点）不在本单，#4208 保持 OPEN。 ｜ tags: processing, production, qty-engine
+
+### PP-014. 工艺路线商家可配用户面 - 序列编辑护栏逐条可见 / 缺口区 / 信号映射 / 四态路线来源提示（前端单测覆盖） 🔵
+```
+你: 打开工艺路线，改一下布帘×韩褶的工序顺序，看看缺口里还有哪些工序没进路线
+期望: direct_reply
+数据: 路线列表渲染**真实数据**：路线数 + 「部位 × 工艺」标题 + 每道工序的分组/单位/单价；必完工序带「必完」标记，非必完不得出现该标记（注入：把库口径 is_must_finish 由 true 改 false ⇒ 断言红）
+数据: 序列编辑：从工序库选工序 → 保存 ⇒ `PUT /api/admin/production/routings/{id}` 的 body 恰为 `{operations:[...]}`，且**顺序等于屏幕顺序**（注入：把上移/下移/删除任一处的 draft 变换去掉 ⇒ 「顺序等于屏幕顺序」「被删工序不在请求体」两条红）
+数据: 保存被拒时**逐条**展示后端护栏理由，不得只弹「保存失败」：`error.response.data.error_messages` 三条 ⇒ 页面渲染三条独立条目，并分别带可读归因（工序不存在 / 工序重复 / 缺少必完工序）；`error` 单条形态兼容（注入：把 error_messages 分支退化成一句通用文案 ⇒ 三条断言红）
+数据: 空序列**本地先拦**：删除最后一道后保存 ⇒ 不发出 PUT（`not called`），并给出「序列不能为空」理由（注入：去掉本地校验 ⇒ PUT 被调用，断言红）
+数据: 缺口区两只清单可见：①「有工序但未进任何路线」逐条渲染（真值源下 4 道：裁剪-布/裁剪-纱/质检/腰靠垫，**双向可红**：少一道或多一道都红）②「库里没有路线的信号组合」（罗马帘 × 韩褶）以清单形式给出（注入：把任一清单改成只显示条数 ⇒ 该条红）
+数据: 新建路线 `POST /api/admin/production/routings` 提交 `{curtain_type, craft, operations: []}`（部位/工艺为空时本地拦）；新增工序 `POST /api/admin/production/operations` 提交 `{name, group_name?, unit?, unit_price}`（单价非数值时本地拦）
+数据: 信号映射：`GET` 列表渲染；新增走 `POST /route-signals`、编辑走 `PUT /route-signals/{id}`、删除**二次确认后**走 `DELETE /route-signals/{id}`（注入：删除改成不确认直接删 ⇒ confirm 断言红）
+数据: 接口失败不白屏：路线列表失败给错误提示 + 重试（重试后渲染出真实数据）；缺口/信号单条失败只在**该区**给可读提示，路线列表照常渲染（注入：把 allSettled 改成 Promise.all ⇒ 单条失败即整页白屏，断言红）
+数据: 加工单四态路线来源提示（`route_source`）：default ⇒ 高亮提示「未识别工艺信号…请核对工序与计件单价」+ 报出实际使用的 `route_key`；partial ⇒ 提示「只识别出一半，另一半取默认值」；missing_route ⇒ 用 `route_requested_key` 报「本单识别的是 X，但工序库里没有这条路线」+ 报实际使用键；derived / 字段缺失 ⇒ **不提示**（静默 = 未知，**不得**显示成「已派生」）（注入：去掉任一分支 ⇒ 该态断言红；把未知值当 derived 正面渲染 ⇒ 第四条红）
+数据: 侧边栏入口：生产管理组含「工艺路线」→ `/production/routings`，权限码 `processing:manage`（组内四项口径一致）（注入：只加页面不加菜单项 ⇒ 链接数与权限码数组断言红）
+跳过: [backend-contract] 前端组件/页面契约（admin-web），由 vitest 单测全量覆盖（frontend/admin-web/tests/unit/pages/production-routings.test.tsx、tests/unit/lib/route-source.test.ts、tests/unit/pages/processing-orders-production.test.tsx、tests/unit/pages/production-board.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟（同 PP-010/PP-011 惯例）
+```
+真值: ⚠️ 缺口（见对应模板 ⚠️ 注释）
+溯源: 2026-09-19 新增（issue #4307 前端半边；契约所有者 = 后端 4308）：工艺路线配置页 /production/routings（列表 + 序列编辑 + 护栏理由逐条展示 + 缺口区 + 新建路线 + 信号映射增删改 + 新增工序）、加工单/生产明细页四态路线来源提示（default/partial/missing_route/derived）、生产管理菜单第 4 项入口。**红证**（实现前逐条红，见 data_checks 各条括号内注入法）：页面与端点消费者不存在 ⇒ 渲染断言全红；护栏理由映射未实现 ⇒ 只得到一句通用文案；菜单缺项 ⇒ 链接数 3→4 断言红；route-source 未实现 ⇒ import 即红。**未做（如实登记）**：E2E spec（需活后端与已合入的 4308 端点，登记为后续项，不在本单）；后端尚未合入 ⇒ 单测全部 mock `lib/api` 层，**不依赖真实后端**；不做拖拽编排（v1 = 从工序库选 + 上移/下移/删除，冻结口径）。关联后端 4308（本单不引用其用例文件 processing-order.yml）。 ｜ tags: processing, production, admin_web, routing, route_signals, gap_visibility, route_source
 
 ## processing-order（35 case）
 
@@ -4607,8 +4627,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：336（活跃 162，跳过 174）
-- tier 分布：smoke 10 / normal 293 / adversarial 33
+- 用例总数：337（活跃 162，跳过 175）
+- tier 分布：smoke 10 / normal 294 / adversarial 33
 - 售后域：9
 - agents：6
 - api：19
@@ -4626,7 +4646,7 @@
 - onboarding：5
 - ontology：4
 - 订单域：30
-- 加工项域：13
+- 加工项域：14
 - processing-order：35
 - 商品域：25
 - registry：1
@@ -4701,4 +4721,5 @@
 - PP-008: 米宝加工项 LLM 行为：停用加工项（toggle_item_status → inactive）
 - PP-009: 米宝加工项 LLM 行为：per_area 按面积算价（calculate_price 下发 dimensions，不双计）
 - PP-012: 内部算料数量端点 - 应做数量=引擎输出/兜底 1/未知工序 fallback（单测覆盖）
+- PP-014: 工艺路线商家可配用户面 - 序列编辑护栏逐条可见 / 缺口区 / 信号映射 / 四态路线来源提示（前端单测覆盖）
 
