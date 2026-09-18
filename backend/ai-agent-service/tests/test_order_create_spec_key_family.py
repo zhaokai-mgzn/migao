@@ -275,3 +275,137 @@ class TestCraftSpecEnumGate:
         desc = OrderCreateTool.description
         for token in ("工艺规格", "componentRole", "craftLineId", "主布米数"):
             assert token in desc, f"工具描述未教「{token}」⇒ LLM 不会填这些键"
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 写侧补全：工艺键 + 算料输出键（issue #4374 包 4a · 设计文档 §4.2 / §4.3 / §4.6 入口 1）
+# ══════════════════════════════════════════════════════════════════════════════
+# 病根：包 1（#4346）只声明了 9 个 craft 键 ⇒ 加工类型/打开方式/褶距/对花与**全部算料输出键**
+# 既不在 schema、也不在「必带」指令里 ⇒ LLM 大概率不写 ⇒ 订单/加工单面**看不到**这些字段
+# （缺值不渲染 ⇒ 不出错，但用户看不到）。
+#
+# 两条硬口径（本段判据锁的就是它们）：
+# ① **声明与教学必须同时存在** —— 只声明不教 ⇒ LLM 不填；只教不声明 ⇒ 参数传不进来；
+# ② **算料输出键只许原样透传** —— 唯一来源是 `curtain_calc` 输出（键名 snake_case 逐字一致，
+#    设计文档 §4.5）；缺就不填，**禁止自己推算/补 0**（不发明数字）。
+_CRAFT_SPEC_EXTRA_KEYS = (
+    "cuttingMode", "openCount", "pleatSpacing", "hasPattern", "patternRepeat",
+)
+_CALC_OUTPUT_KEYS = (
+    "fabric_meters", "pleat_count", "per_panel_pleats", "panels",
+    "fullness", "fullness_actual", "source",
+)
+
+
+def _pi_props() -> dict:
+    return OrderCreateTool.parameters["properties"]["items"]["items"][
+        "properties"]["processing_info"]["properties"]
+
+
+class TestCraftSpecKeyCompletion:
+    """`order_create` 的工艺键与算料输出键：声明 + 教学 + 闸门（issue #4374）。"""
+
+    def test_schema_declares_missing_craft_and_calc_keys(self):
+        """缺失键必须在 schema 里**声明**（否则 LLM 传不进来 ⇒ 等于没实现）。"""
+        props = _pi_props()
+        for key in _CRAFT_SPEC_EXTRA_KEYS + _CALC_OUTPUT_KEYS:
+            assert key in props, f"processing_info schema 未声明 {key} ⇒ LLM 传不进来"
+        assert props["cuttingMode"]["enum"] == ["定高买宽", "定宽买高"], (
+            "加工类型枚举 = 算料侧 `formula_used` 的两态口径（设计文档 §4.2）"
+        )
+        assert props["openCount"]["enum"] == [1, 2, 4], (
+            "打开方式开数只认 1/2/4（单开/双开/四开）"
+        )
+        for key in ("pleatSpacing", "patternRepeat", "fabric_meters", "pleat_count",
+                    "per_panel_pleats", "panels", "fullness", "fullness_actual"):
+            assert props[key].get("minimum") == 0, f"{key} 必须声明为非负数（minimum: 0）"
+
+    def test_description_teaches_craft_and_calc_keys(self):
+        """工具描述必须**教**这些键 —— 只声明不教 ⇒ LLM 不会填。"""
+        desc = OrderCreateTool.description
+        for key in _CRAFT_SPEC_EXTRA_KEYS + _CALC_OUTPUT_KEYS:
+            assert key in desc, f"工具描述未教「{key}」⇒ LLM 不会填"
+
+    def test_description_requires_calc_output_passthrough(self):
+        """算料输出键的来源与红线必须写进描述：原样透传 `curtain_calc` 输出，禁止自己推算。"""
+        desc = OrderCreateTool.description
+        assert "curtain_calc" in desc, "描述未点名算料输出的唯一来源（curtain_calc）"
+        for token in ("原样透传", "不要自己推算"):
+            assert token in desc, f"描述缺「{token}」⇒ LLM 会自己推算算料数字（发明数字）"
+        assert "不要补 0" in desc or "不补 0" in desc, (
+            "描述未说明「缺就不填、不要补 0」⇒ 缺值会被填成假数字"
+        )
+
+    def test_description_declares_source_enum_per_truth_doc(self):
+        """`source` 口径必须与真值源 §8 一致（`公式计算`/`人工指定`/`客户自报`）。"""
+        assert _pi_props()["source"]["enum"] == ["公式计算", "人工指定", "客户自报"], (
+            "source 枚举必须与 docs/curtain-fabric-quote-rules.md §8 逐字一致"
+        )
+        desc = OrderCreateTool.description
+        for value in ("公式计算", "人工指定", "客户自报"):
+            assert value in desc, f"描述未教 source 的合法值「{value}」"
+
+    def test_cutting_mode_and_open_count_enum_gate(self):
+        """取值闸门：错值/别名一律拒绝并点名合法值（沿用 `_reject_invalid_enum` 口径）。"""
+        rejected = OrderCreateTool._validate_processing_info(0, {"cuttingMode": "定高"})
+        assert rejected is not None and rejected.success is False
+        assert "加工类型" in (rejected.message or ""), "报错必须点名是哪个字段"
+        assert "定高买宽" in (rejected.suggestion or ""), "必须给出合法值让 LLM 自愈"
+        assert "错误工序路线" in (rejected.message or ""), (
+            "必须说明该字段的真实后果（默认文案只对 SKU 规格族成立）"
+        )
+
+        rejected = OrderCreateTool._validate_processing_info(0, {"openCount": 3})
+        assert rejected is not None and rejected.success is False
+        assert "打开方式" in (rejected.message or "")
+        assert "1" in (rejected.suggestion or "") and "4" in (rejected.suggestion or "")
+
+        for bad in ("2", True):        # 字符串数字 / 布尔都不得被当成开数 2/1 静默放行
+            rejected = OrderCreateTool._validate_processing_info(0, {"openCount": bad})
+            assert rejected is not None and rejected.success is False, (
+                f"openCount={bad!r} 被静默接受 ⇒ 取值类型口径不严"
+            )
+
+    @pytest.mark.parametrize(
+        "pinfo, label",
+        [
+            ({"pleatSpacing": -0.1}, "褶距"),
+            ({"patternRepeat": -0.5}, "花距"),
+            ({"fabric_meters": -1}, "面料米数"),
+            ({"pleat_count": -48}, "折数"),
+            ({"per_panel_pleats": -24}, "每片折数"),
+            ({"panels": -2}, "幅数"),
+            ({"fullness": -2.0}, "理论褶倍"),
+            ({"fullness_actual": -1.8}, "实际褶倍"),
+        ],
+    )
+    def test_negative_numeric_calc_keys_are_rejected(self, pinfo, label):
+        """数值键非负：负数一律本地拒绝（负米数/负幅数会一路写进订单）。"""
+        result = OrderCreateTool._validate_processing_info(0, pinfo)
+        assert result is not None, f"{label} 负数未被拦下 ⇒ 会一路写到订单"
+        assert result.success is False
+        assert label in (result.message or ""), "报错必须点名是哪个字段"
+
+    def test_valid_extra_keys_pass(self):
+        """合法值放行（含 0：褶距/花距可以合法为 0）。"""
+        assert OrderCreateTool._validate_processing_info(0, {
+            "cuttingMode": "定宽买高",
+            "openCount": 2,
+            "pleatSpacing": 0.1,
+            "hasPattern": True,
+            "patternRepeat": 0,
+            "fabric_meters": 12.3,
+            "pleat_count": 48,
+            "per_panel_pleats": 24,
+            "panels": 4,
+            "fullness": 2.0,
+            "fullness_actual": 1.86,
+            "source": "公式计算",
+        }) is None
+
+    def test_absent_extra_keys_pass(self):
+        """**键缺席一律放行** —— 算料输出/工艺规格是可选透传，缺省不得变成硬门槛。"""
+        assert OrderCreateTool._validate_processing_info(0, {"sellingMethod": "bulk_cut"}) is None
+        assert OrderCreateTool._validate_processing_info(
+            0, {"processingItems": [{"name": "打孔", "unitPrice": 8, "quantity": 3}]}
+        ) is None
