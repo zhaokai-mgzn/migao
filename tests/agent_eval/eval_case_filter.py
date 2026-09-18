@@ -39,11 +39,13 @@ XIAOBU_TOOLS = frozenset({
     "payment_qrcode_query",
     # customer_product_skill
     "product_search", "product_detail",
-    # customer_order_skill（issue #4371 商品↔加工项解耦）：加工项不再挂在商品上
-    # （`product_detail` 不再返回 processing_items）⇒ 顾客下单前问加工项的唯一事实源
-    # 改为**店铺级目录** `processing_item_query`。绑定见 customer_order_skill.py 的
-    # CUSTOMER_ORDER_TOOLS（本集合是其事实源副本，一致性由
-    # tests/unit_ci_workflows/test_xiaobu_case_set.py::TestXiaobuToolsetTruth 锁）。
+    # customer_order_skill + customer_general_skill（issue #4371 商品↔加工项解耦）：
+    # 加工项不再挂在商品上（`product_detail` 不再返回 processing_items）⇒ 顾客问加工项/
+    # 加工收费的事实源改为**店铺级目录** `processing_item_query`。绑定见
+    # customer_order_skill.py 的 CUSTOMER_ORDER_TOOLS（下单前询问）与
+    # customer_general_skill.py 的 CUSTOMER_GENERAL_TOOLS（兜底问「加工怎么收费」）
+    # —— 本集合是其事实源副本，一致性由
+    # tests/unit_ci_workflows/test_xiaobu_case_set.py::TestXiaobuToolsetTruth 锁。
     "processing_item_query",
     # customer_quote_skill
     "curtain_calc",
