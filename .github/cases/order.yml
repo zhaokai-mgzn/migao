@@ -336,6 +336,12 @@ cases:
     domains:
       - order
       - product
+    # 端别：与同族 OR-010（同为 B 端代客下单、同用 order_create + confirm 门禁）一致。
+    # ⚠️ 判据源 `is_single_leg_by_toolset` 认为「工具集 ⊆ XIAOBU_TOOLS ⇒ 只能跑小布」，
+    # 但 order_create / validate_input / product_detail **两端都有**（OR-010 是 mibao 用例
+    # 且 must_succeed[order_create] 已在 main）⇒ 该判据对"共享工具"用例是假阳性；
+    # 本条按**实际端别**标注，不按该判据反推（另见 issue 登记）。
+    persona: mibao
     tier: normal
     tags:
       - create
@@ -367,6 +373,15 @@ cases:
     namespaces:
       - "customer_phone:13800138000"
 
+    # 前置：本用例依赖「商品『遮光窗帘』在位且规格可定位」（它先查该商品的 SKU 再下单）。
+    # 用**已实现**的类型（`_PRECONDITION_TYPES` 的 product_count_for_keyword，口径与
+    # product_remove/product_dedupe 同一份实现）；**有意不给 `expect`** —— 计数随栈而变，
+    # 写死基线 = 依赖栈的恒红判据（同 chat.yml 的先例），漂移格仍生效。
+    # ⚠️ 不声明 `order_count_for_phone: 13800138000`：**本用例自己就会给该号码建单**，
+    # 那是"基于错误的真相模型写出的护栏 = 永远红"（chat.yml:1021 同款判断）。
+    precondition:
+      - type: product_count_for_keyword
+        source: "遮光窗帘"
     expectations:
       - tool: product_detail
         args:
@@ -377,6 +392,10 @@ cases:
         fields:
           - items[].processing_info.sellingMethod
           - items[].processing_info.doorWidth
+    # 效果层断言（与 OR-010 同款，issue #4014 B3 口径）：「调用了 ≠ 成了」——
+    # 此前只有 product_detail/order_create 的存在性期望，下单失败也判通过。
+    must_succeed:
+      - tool: order_create
     data_checks:
       - "data.order_id.length > 0"
     skip_reason: ""

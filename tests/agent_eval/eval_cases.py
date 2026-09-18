@@ -3404,12 +3404,14 @@ _CASE_OR_008 = EvalCase(
     data_checks=['data.order_id.length > 0'],
     skip_reason='',
     tags=['create', 'sku_select', 'full_flow'],
-    persona='',
+    persona='mibao',
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
     required_args=[{'tool': 'order_create', 'fields': ['items[].processing_info.sellingMethod', 'items[].processing_info.doorWidth']}],
+    must_succeed=[{'tool': 'order_create'}],
     namespaces=['customer_phone:13800138000'],
+    precondition=[{'type': 'product_count_for_keyword', 'source': '遮光窗帘'}],
 )
 
 # ── OR-009 [NORMAL] 下单全流程 - 选品→选SKU→确认数量→下单（源: cases/order.yml）──
