@@ -1,0 +1,15 @@
+{
+  "position_name": "oracle-probe",
+  "qty_by_operation": {
+    "精裁-布": 3.0,
+    "布三边": 3.0,
+    "韩褶-布": 1.0,
+    "外帘装袋": 1.0
+  },
+  "qty_source_by_operation": {
+    "精裁-布": "fabric_meters",
+    "布三边": "fabric_meters",
+    "韩褶-布": "fallback",
+    "外帘装袋": "fallback"
+  }
+}

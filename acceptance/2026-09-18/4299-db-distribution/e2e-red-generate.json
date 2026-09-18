@@ -1,0 +1,1 @@
+{"success":true,"data":[{"orderRef":"78d207ac2d30c609d5f68cbc9128ccb6","success":false,"message":"订单 20260918609560006 当前状态 [producing] 不允许生成加工单，须为已确认","code":"VALIDATION_ERROR"}],"requestId":"req_74ba722205514a59","timestamp":1789726392}
