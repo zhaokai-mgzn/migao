@@ -10,6 +10,17 @@ import type { ProductProcessingItem } from '@/lib/api'
 import { resolveImageUrl } from '@/lib/utils'
 import { useOrderAmounts } from '@/hooks/useOrderAmounts'
 import { Button, Card, Input, Modal } from '@/components/ui'
+import OrderCraftFields from '@/components/orders/OrderCraftFields'
+import {
+  COMPONENT_ROLE_EDGE,
+  METERS_SOURCE_FOLLOW,
+  METERS_SOURCE_MANUAL,
+  STYLE_MIXED,
+  buildCraftSpec,
+  buildEdgeLineCraftSpec,
+  buildMainLineGroupKeys,
+  type CraftSpecInput,
+} from '@/lib/order-craft-fields'
 import type { Product, OrderItemFormData, Customer } from '@/types'
 
 interface OrderProductSku {
@@ -42,6 +53,12 @@ interface OrderLineItem {
   processingItems: ProductProcessingItem[]
   processingLoading: boolean
   selectedProcessing: Record<string, { selected: boolean; qty: number }>
+  /** 工艺规格录入（issue #4375 §4.2/§4.5）—— 未填的键不落库 */
+  craft: CraftSpecInput
+  /** 配布边米数（§4.8）；`null` = 未改过 ⇒ 跟随主布米数 */
+  edgeMeters: number | null
+  /** 配布边单价；`null` = 未填 ⇒ 不生成配布边明细行（后端单价必须 > 0，不凭空造价） */
+  edgeUnitPrice: number | null
 }
 
 const sellingMethodLabel: Record<string, string> = {
@@ -82,7 +99,27 @@ function createEmptyLineItem(): OrderLineItem {
     processingItems: [],
     processingLoading: false,
     selectedProcessing: {},
+    craft: {},
+    edgeMeters: null,
+    edgeUnitPrice: null,
   }
+}
+
+/**
+ * 配布边行是否成立（§4.8）：款式 = 拼色 **且** 商家填了配布边单价。
+ *
+ * 为什么不给单价兜底默认值：后端 `OrderCreateRequest.OrderItemRequest.unitPrice` 带
+ * `@Positive`（单价必须 > 0），而配布边的用料加价口径**待客户裁定**（issue #4341 第 4 项）
+ * ⇒ 凭空给一个价就是**静默改钱**。宁可少一行，也不编价。
+ */
+function edgeUnitPriceOf(line: OrderLineItem): number | null {
+  if (line.craft.style !== STYLE_MIXED) return null
+  return line.edgeUnitPrice != null && line.edgeUnitPrice > 0 ? line.edgeUnitPrice : null
+}
+
+/** 配布边米数（§4.8 已裁定口径）：默认 = 主布米数（= 该行数量），可编辑 */
+function edgeMetersOf(line: OrderLineItem): number {
+  return line.edgeMeters ?? (Number(line.quantity) || 0)
 }
 
 export default function NewOrderPage() {
@@ -311,11 +348,19 @@ export default function NewOrderPage() {
   // ===== 费用汇总 =====
   const totals = useMemo(() => {
     let productSubtotal = 0
+    let edgeSubtotal = 0
     let processingFee = 0
 
     lineItems.forEach((item) => {
       if (!item.product) return
       productSubtotal += (Number(item.quantity) || 0) * (Number(item.unitPrice) || 0)
+      // 双拼配布边（§4.8）：配布边是一条**独立面料明细行** ⇒ 金额必须计入订单总额，
+      // 否则后端「应收 - 优惠 ≈ 实收」校验会拒单（金额 = 商家自己填的单价 × 米数，
+      // 本包不引入任何工艺加价 —— 加价口径待 issue #4341 裁定）。
+      const edgePrice = edgeUnitPriceOf(item)
+      if (edgePrice !== null) {
+        edgeSubtotal += edgeMetersOf(item) * edgePrice
+      }
       Object.entries(item.selectedProcessing).forEach(([piId, cfg]) => {
         if (!cfg.selected) return
         const pi = item.processingItems.find((p) => p.id === piId)
@@ -328,8 +373,9 @@ export default function NewOrderPage() {
 
     return {
       productSubtotal,
+      edgeSubtotal,
       processingFee,
-      total: productSubtotal + processingFee,
+      total: productSubtotal + edgeSubtotal + processingFee,
     }
   }, [lineItems])
 
@@ -404,7 +450,7 @@ export default function NewOrderPage() {
 
     const items: OrderItemFormData[] = lineItems
       .filter((l) => l.product)
-      .map((line) => {
+      .flatMap((line) => {
         const sku = line.selectedSku
         const colorName =
           uniqueColors(line.product!.skus).find((c) => c.id === line.selectedColorId)?.name
@@ -435,26 +481,62 @@ export default function NewOrderPage() {
 
         const productSub = (Number(line.quantity) || 0) * (Number(line.unitPrice) || 0)
 
-        return {
-          productId: line.product!.id,
-          productName: line.product!.name,
-          quantity: Number(line.quantity),
-          unitPrice: Number(line.unitPrice),
-          subtotal: productSub + lineProcessingFee,
-          processingInfo:
-            processingDetails.length > 0 || sku || colorName
-              ? {
-                  colorId: line.selectedColorId ?? undefined,
-                  colorName,
-                  skuId: sku?.id,
-                  skuCode: sku?.skuCode,
-                  sellingMethod: sku?.sellingMethod,
-                  doorWidth: sku?.doorWidth,
-                  processingFee: lineProcessingFee,
-                  processingItems: processingDetails,
-                }
-              : undefined,
-        } as OrderItemFormData
+        // 工艺规格落库（issue #4375 §4.2/§4.5）：只落用户真填了的键（缺值不写）。
+        // 拼色（双拼）时主布行额外绑组（§4.8）：componentRole=主布 + craftLineId 自指。
+        const edgePrice = edgeUnitPriceOf(line)
+        const isPaired = edgePrice !== null
+        const mainSpec = isPaired
+          ? { ...buildCraftSpec(line.craft), ...buildMainLineGroupKeys(line.id) }
+          : buildCraftSpec(line.craft)
+
+        const rows: OrderItemFormData[] = [
+          {
+            productId: line.product!.id,
+            productName: line.product!.name,
+            quantity: Number(line.quantity),
+            unitPrice: Number(line.unitPrice),
+            subtotal: productSub + lineProcessingFee,
+            processingInfo:
+              processingDetails.length > 0 || sku || colorName || Object.keys(mainSpec).length > 0
+                ? {
+                    colorId: line.selectedColorId ?? undefined,
+                    colorName,
+                    skuId: sku?.id,
+                    skuCode: sku?.skuCode,
+                    sellingMethod: sku?.sellingMethod,
+                    doorWidth: sku?.doorWidth,
+                    processingFee: lineProcessingFee,
+                    processingItems: processingDetails,
+                    ...mainSpec,
+                  }
+                : undefined,
+          } as OrderItemFormData,
+        ]
+
+        // 配布边行（§4.8 一扇窗 = 主布行 + 配布边行）：
+        // - **不携带工艺规格**（折数/开数/幅数是一扇窗的属性 ⇒ 两行都带会让工序与计件翻倍）
+        // - **不挂加工项**（硬约束：加工费只挂主布行）
+        // - **不关联主布商品**（后端按 productId 聚合库存/销量 ⇒ 复用会双扣库存、双计销量）
+        if (edgePrice !== null) {
+          const edgeMeters = edgeMetersOf(line)
+          rows.push({
+            productName: COMPONENT_ROLE_EDGE,
+            quantity: edgeMeters,
+            unitPrice: edgePrice,
+            subtotal: edgeMeters * edgePrice,
+            processingInfo: {
+              colorName,
+              skuCode: sku?.skuCode,
+              doorWidth: sku?.doorWidth,
+              ...buildEdgeLineCraftSpec(
+                line.id,
+                line.edgeMeters === null ? METERS_SOURCE_FOLLOW : METERS_SOURCE_MANUAL
+              ),
+            },
+          } as OrderItemFormData)
+        }
+
+        return rows
       })
 
     const actual = actualNumber
@@ -533,6 +615,11 @@ export default function NewOrderPage() {
                     onChangeQty={(q) => handleLineQtyChange(line, q)}
                     onChangePrice={(p) => updateLineItem(line.id, { unitPrice: p })}
                     onToggleProcessing={(pi, sel) => toggleProcessing(line, pi, sel)}
+                    onChangeCraft={(patch) =>
+                      updateLineItem(line.id, { craft: { ...line.craft, ...patch } })
+                    }
+                    onEdgeMetersChange={(m) => updateLineItem(line.id, { edgeMeters: m })}
+                    onEdgeUnitPriceChange={(p) => updateLineItem(line.id, { edgeUnitPrice: p })}
                   />
                 ))}
               </div>
@@ -630,6 +717,9 @@ export default function NewOrderPage() {
                         },
                         0
                       )
+                      // 双拼配布边（§4.8）：独立面料行的金额同样计入本行小计
+                      const edgePrice = edgeUnitPriceOf(line)
+                      const edgeFee = edgePrice === null ? 0 : edgeMetersOf(line) * edgePrice
                       return (
                         <div
                           key={line.id}
@@ -647,10 +737,15 @@ export default function NewOrderPage() {
                                   +加工 {formatAmount(procFee)}
                                 </span>
                               )}
+                              {edgeFee > 0 && (
+                                <span className="ml-2 text-orange-600">
+                                  +配布边 {formatAmount(edgeFee)}
+                                </span>
+                              )}
                             </div>
                           </div>
                           <span className="text-neutral-800 font-medium shrink-0">
-                            {formatAmount(sub + procFee)}
+                            {formatAmount(sub + procFee + edgeFee)}
                           </span>
                         </div>
                       )
@@ -660,6 +755,9 @@ export default function NewOrderPage() {
 
               <dl className="space-y-3 text-sm">
                 <Row label="商品小计" value={formatAmount(totals.productSubtotal)} />
+                {totals.edgeSubtotal > 0 && (
+                  <Row label="配布边" value={formatAmount(totals.edgeSubtotal)} />
+                )}
                 <Row
                   label="加工费"
                   value={formatAmount(totals.processingFee)}
@@ -892,6 +990,9 @@ interface LineItemBlockProps {
   onChangeQty: (q: number) => void
   onChangePrice: (p: number) => void
   onToggleProcessing: (pi: ProductProcessingItem, selected: boolean) => void
+  onChangeCraft: (patch: Partial<CraftSpecInput>) => void
+  onEdgeMetersChange: (meters: number | null) => void
+  onEdgeUnitPriceChange: (price: number | null) => void
 }
 
 function LineItemBlock({
@@ -906,6 +1007,9 @@ function LineItemBlock({
   onChangeQty,
   onChangePrice,
   onToggleProcessing,
+  onChangeCraft,
+  onEdgeMetersChange,
+  onEdgeUnitPriceChange,
 }: LineItemBlockProps) {
   const colorOptions = useMemo(
     () => uniqueColors(line.product?.skus),
@@ -1166,6 +1270,17 @@ function LineItemBlock({
                 )}
               </div>
             )}
+
+            {/* 工艺规格（§4.2 字段表 A + §4.8 双拼）：下单页此前一个工艺字段都不写 */}
+            <OrderCraftFields
+              value={line.craft}
+              onChange={onChangeCraft}
+              mainMeters={line.quantity}
+              edgeMeters={line.edgeMeters}
+              onEdgeMetersChange={onEdgeMetersChange}
+              edgeUnitPrice={line.edgeUnitPrice}
+              onEdgeUnitPriceChange={onEdgeUnitPriceChange}
+            />
           </>
         )}
       </div>

@@ -449,4 +449,244 @@ describe('NewOrderPage', () => {
       })
     })
   })
+
+  // ===== 工艺规格写侧（issue #4375 包 4b · 设计文档 §4.2/§4.5/§4.6 入口 2/§4.8）=====
+  //
+  // 病根：下单页构造 processingInfo 时只写 6 个规格键 ⇒ 商家手工建的订单，订单/加工单面
+  // 一个工艺字段都不显示。下面这组判据即「手工录单也要把工艺规格落库」。
+  describe('工艺规格写侧（#4375）', () => {
+    const setupCurtain = async (productName = '遮光窗帘') => {
+      mockGetProducts.mockResolvedValue({
+        data: { data: { items: [{ id: 'p1', name: productName, price: 100 }], total: 1 } },
+      })
+      mockGetProduct.mockResolvedValue({
+        data: {
+          data: { id: 'p1', name: productName, skus: [], supportsProcessing: true, price: 100 },
+        },
+      })
+      mockGetProductProcessingItems.mockResolvedValue({
+        data: {
+          data: [
+            {
+              id: 'pi1',
+              name: '打孔加工',
+              pricingMethod: 'per_meter',
+              unitPrice: 5,
+              customPrice: null,
+              finalPrice: 5,
+              unit: '米',
+            },
+          ],
+        },
+      })
+      render(<NewOrderPage />)
+      await pickProduct(productName)
+      await screen.findByLabelText('部位')
+    }
+
+    const field = (name: string) => screen.getByLabelText(name)
+
+    const craftInfo = () => {
+      const payload = mockCreateOrder.mock.calls[0][0]
+      return payload.items[0].processingInfo as Record<string, unknown>
+    }
+
+    it('填了工艺规格 ⇒ 提交 payload 的 processingInfo 含全部 camelCase 工艺键（判据 F·B 端半边）', async () => {
+      await setupCurtain()
+
+      fireEvent.change(field('部位'), { target: { value: '纱帘' } })
+      fireEvent.change(field('工艺'), { target: { value: '打孔' } })
+      fireEvent.change(field('加工类型'), { target: { value: '定高买宽' } })
+      fireEvent.change(field('打开方式'), { target: { value: '2' } })
+      fireEvent.change(field('是否定型'), { target: { value: 'false' } })
+      fireEvent.change(field('款式'), { target: { value: '单色' } })
+      fireEvent.change(field('褶距'), { target: { value: '0.1' } })
+      fireEvent.change(field('是否对花'), { target: { value: 'true' } })
+      fireEvent.change(field('花距'), { target: { value: '0.6' } })
+      fireEvent.click(screen.getByRole('button', { name: '加铅块' }))
+      fireEvent.click(screen.getByRole('button', { name: '拼2次' }))
+
+      fillCustomerAndSubmit()
+      await waitFor(() => {
+        expect(mockCreateOrder).toHaveBeenCalled()
+      })
+
+      expect(craftInfo()).toMatchObject({
+        curtainType: '纱帘',
+        craft: '打孔',
+        cuttingMode: '定高买宽',
+        openCount: 2,
+        isShaped: false,
+        style: '单色',
+        pleatSpacing: 0.1,
+        hasPattern: true,
+        patternRepeat: 0.6,
+        specialOptions: ['加铅块', '拼2次'],
+      })
+    })
+
+    it('不填工艺规格 ⇒ payload 里不出现这些键（缺值不写，不写空串/0/false）', async () => {
+      await setupCurtain()
+
+      fillCustomerAndSubmit()
+      await waitFor(() => {
+        expect(mockCreateOrder).toHaveBeenCalled()
+      })
+
+      const payload = mockCreateOrder.mock.calls[0][0]
+      const info = (payload.items[0].processingInfo ?? {}) as Record<string, unknown>
+      for (const key of [
+        'curtainType',
+        'craft',
+        'cuttingMode',
+        'openCount',
+        'isShaped',
+        'pleatSpacing',
+        'hasPattern',
+        'patternRepeat',
+        'style',
+        'specialOptions',
+        'componentRole',
+        'craftLineId',
+        'metersSource',
+      ]) {
+        expect(info).not.toHaveProperty(key)
+      }
+      // 无规格、无加工项 ⇒ 连 processingInfo 本身都不写（比「写一堆空键」更保守）
+      expect(payload.items[0].processingInfo).toBeUndefined()
+    })
+
+    it('单色单不写 componentRole / craftLineId（缺省即主布，存量语义不动）', async () => {
+      await setupCurtain()
+      fireEvent.change(field('款式'), { target: { value: '单色' } })
+
+      fillCustomerAndSubmit()
+      await waitFor(() => {
+        expect(mockCreateOrder).toHaveBeenCalled()
+      })
+
+      const info = craftInfo()
+      expect(info.style).toBe('单色')
+      expect(info).not.toHaveProperty('componentRole')
+      expect(info).not.toHaveProperty('craftLineId')
+    })
+
+    it('双拼（拼色）⇒ 主布行 + 配布边行两行，craftLineId 绑成一组（§4.8）', async () => {
+      await setupCurtain()
+      fireEvent.change(field('款式'), { target: { value: '拼色' } })
+      fireEvent.change(field('配布边单价'), { target: { value: '40' } })
+
+      fillCustomerAndSubmit()
+      await waitFor(() => {
+        expect(mockCreateOrder).toHaveBeenCalled()
+      })
+
+      const payload = mockCreateOrder.mock.calls[0][0]
+      expect(payload.items).toHaveLength(2)
+
+      const mainInfo = payload.items[0].processingInfo as Record<string, unknown>
+      const edgeInfo = payload.items[1].processingInfo as Record<string, unknown>
+
+      expect(mainInfo.componentRole).toBe('主布')
+      expect(edgeInfo.componentRole).toBe('配布边')
+      // 两行同组键 ⇒ 消费端合并为一扇窗的一个部位（否则折数/开数/工序/计件全翻倍）
+      expect(edgeInfo.craftLineId).toBe(mainInfo.craftLineId)
+      expect(mainInfo.craftLineId).toBeTruthy()
+      expect(edgeInfo.metersSource).toBe('跟随主布')
+      // 配布边行不携带工艺规格（折数/开数/幅数是一扇窗的属性）
+      expect(edgeInfo).not.toHaveProperty('craft')
+      expect(edgeInfo).not.toHaveProperty('openCount')
+    })
+
+    it('双拼：配布边米数默认 = 主布米数；改过 ⇒ metersSource=人工指定', async () => {
+      await setupCurtain()
+      const qtyInput = (await screen.findByText('数量')).closest('div')!.querySelector('input') as HTMLInputElement
+      fireEvent.change(qtyInput, { target: { value: '3' } })
+      fireEvent.change(field('款式'), { target: { value: '拼色' } })
+      fireEvent.change(field('配布边单价'), { target: { value: '40' } })
+
+      // 未改过 ⇒ 默认跟主布
+      expect((field('配布边米数') as HTMLInputElement).value).toBe('3')
+
+      fireEvent.change(field('配布边米数'), { target: { value: '2.5' } })
+
+      fillCustomerAndSubmit()
+      await waitFor(() => {
+        expect(mockCreateOrder).toHaveBeenCalled()
+      })
+
+      const payload = mockCreateOrder.mock.calls[0][0]
+      const edgeInfo = payload.items[1].processingInfo as Record<string, unknown>
+      expect(edgeInfo.metersSource).toBe('人工指定')
+      expect(payload.items[1].quantity).toBe(2.5)
+    })
+
+    it('双拼：加工项只挂主布行，配布边行不重复计加工费（硬约束）', async () => {
+      await setupCurtain()
+      fireEvent.click(await screen.findByRole('checkbox'))
+      fireEvent.change(field('款式'), { target: { value: '拼色' } })
+      fireEvent.change(field('配布边单价'), { target: { value: '40' } })
+
+      fillCustomerAndSubmit()
+      await waitFor(() => {
+        expect(mockCreateOrder).toHaveBeenCalled()
+      })
+
+      const payload = mockCreateOrder.mock.calls[0][0]
+      const mainInfo = payload.items[0].processingInfo as Record<string, unknown>
+      const edgeInfo = payload.items[1].processingInfo as Record<string, unknown>
+      expect((mainInfo.processingItems as unknown[]).length).toBe(1)
+      expect(Number(mainInfo.processingFee)).toBeGreaterThan(0)
+      expect(edgeInfo).not.toHaveProperty('processingItems')
+      expect(edgeInfo).not.toHaveProperty('processingFee')
+    })
+
+    it('双拼：配布边行不关联主布商品（不重复扣库存/不重复计销量）', async () => {
+      await setupCurtain()
+      fireEvent.change(field('款式'), { target: { value: '拼色' } })
+      fireEvent.change(field('配布边单价'), { target: { value: '40' } })
+
+      fillCustomerAndSubmit()
+      await waitFor(() => {
+        expect(mockCreateOrder).toHaveBeenCalled()
+      })
+
+      const payload = mockCreateOrder.mock.calls[0][0]
+      expect(payload.items[1].productName).toBe('配布边')
+      expect(payload.items[1].productId).toBeUndefined()
+    })
+
+    it('不填配布边单价 ⇒ 不生成配布边行（后端 unitPrice 必须 > 0，不得凭空造价）', async () => {
+      await setupCurtain()
+      fireEvent.change(field('款式'), { target: { value: '拼色' } })
+
+      fillCustomerAndSubmit()
+      await waitFor(() => {
+        expect(mockCreateOrder).toHaveBeenCalled()
+      })
+
+      const payload = mockCreateOrder.mock.calls[0][0]
+      expect(payload.items).toHaveLength(1)
+      expect((payload.items[0].processingInfo as Record<string, unknown>).style).toBe('拼色')
+    })
+
+    it('双拼：配布边金额计入订单总额（否则后端「应收 - 优惠 ≈ 实收」校验会拒单）', async () => {
+      await setupCurtain()
+      fireEvent.change(field('款式'), { target: { value: '拼色' } })
+      fireEvent.change(field('配布边单价'), { target: { value: '40' } })
+
+      // 主布 100 × 1 米 + 配布边 40 × 1 米 = 140
+      await waitFor(() => {
+        expect(screen.getByText('订单金额').closest('div')!.textContent).toContain('¥140.00')
+      })
+
+      fillCustomerAndSubmit()
+      await waitFor(() => {
+        expect(mockCreateOrder).toHaveBeenCalled()
+      })
+
+      const payload = mockCreateOrder.mock.calls[0][0]
+      expect(payload.actualAmount).toBe(140)
+    })
+  })
 })
