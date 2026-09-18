@@ -429,6 +429,53 @@ public class ProcessingOrderService {
     private record RouteKey(String curtainType, String craft, String source) {
     }
 
+    // ============================================================ 存量单恢复 / 打印计数
+
+    /**
+     * 按订单派生工序实例 payload（issue #4202）——{@code POST /api/admin/production/orders/{orderId}/instantiate}
+     * 的 {@code positions} 缺省路径复用**生成加工单时的同一份**解析：
+     * {@link #buildSnapshot}（订单明细 → 部位/工艺信号）+ {@link #buildPositionPayload}（工序库路线）。
+     *
+     * <p>为什么必须复用而不是另写一份：存量单（生成于 #4116「生成即实例化」之前，工序实例与
+     * {@code qr_token} 双空）补工序时，派生的路线/单价/必完标记必须与**新建单**逐字同源 ——
+     * 第二份路线解析必然与 {@link #generateOne} 漂移（关键字表/默认路线/fail-closed 三处口径）。</p>
+     *
+     * <p>取不到路线、或路线引用的工序在库中缺行时**同样 fail-closed**
+     * （{@link #ERR_ROUTING_NOT_FOUND} / {@link #ERR_OPERATION_NOT_FOUND} + suggestion），
+     * 绝不静默返回空 payload（那会让调用方落一个「有加工单、零工序」的空壳）。</p>
+     *
+     * @return 与 {@code instantiate} 请求体里 {@code positions} 同构的列表
+     */
+    public List<Map<String, Object>> derivePositionPayload(String rawOrderId, Long tenantId) {
+        Order order = resolveOrder(rawOrderId, tenantId);
+        if (order == null) {
+            throw BusinessException.notFound("订单");
+        }
+        return buildPositionPayload(buildSnapshot(loadOrderItems(order.getId(), tenantId), tenantId), tenantId);
+    }
+
+    /**
+     * 记录一次任务卡打印（issue #4202 边角修复）——{@code processing_orders.print_count} 此前
+     * **零写方**（全仓只有建单时的 {@code printCount(0)} 与响应映射）⇒ 真值源 §1「记录打印次数」
+     * 在数据层不可观测。SQL 内原子自增（并发多标签页打印不丢计数），返回递增后的计数。
+     *
+     * @param rawId 加工单 id / 加工单号 / 订单 id（与 {@link #getDetail} 同一解析口径）
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public Map<String, Object> recordPrint(String rawId, Long tenantId) {
+        ProcessingOrder po = resolveProcessingOrder(rawId, tenantId);
+        if (po == null) {
+            throw BusinessException.notFound("加工单");
+        }
+        processingOrderMapper.incrementPrintCount(po.getId(), tenantId, OffsetDateTime.now());
+        ProcessingOrder after = processingOrderMapper.selectById(po.getId());
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("order_id", po.getOrderId());
+        result.put("processing_order_no", po.getProcessingOrderNo());
+        result.put("print_count", after == null ? null : after.getPrintCount());
+        return result;
+    }
+
     private static String str(Object value) {
         if (value == null) {
             return null;

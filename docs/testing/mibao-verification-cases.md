@@ -2819,7 +2819,7 @@
 真值: order.create-flow, order.states
 溯源: 2026-09-18 新增（用户裁定 2 / F17 / issue #4095）：冒烟档补下单用例 —— 此前冒烟档 9 条全只读、订单域唯一 OR-001 是列表查询 ⇒ 主链路零覆盖。persona=mibao（代客下单免验证码，链路最短）；一句话给全 + repeat_until 协作轮（有卡答卡，成功即停）；断言 = must_succeed[order_create] + db_verify[order_items/order_phone] + order_before[interact[confirm] before order_create] + required_args；自清理 product_dedupe + precondition[product_count_for_keyword expect=1] + namespaces（商品名/手机号）。未新增任何自动触发（裁定 2′/4′）。 ｜ tags: order_create, smoke, write
 
-## 加工项域（11 case）
+## 加工项域（12 case）
 
 ### PP-001. 加工项选择 - 分页翻页 🔵
 ```
@@ -2984,7 +2984,19 @@
 真值: processing-manage.crud
 溯源: 2026-09-17 新增（issue #4000）：M4-H 按需单据渲染 —— 加工单生产明细页 + 可打印任务卡（含二维码）+ 计件汇总的前端覆盖登记；消费 main 已合并的生产端点（GET production/orders/{orderId}/operations、/piecework） ｜ tags: processing, production, admin_web, print_task_card, qrcode
 
-## processing-order（18 case）
+### PP-012. 内部算料数量端点 - 应做数量=引擎输出/兜底 1/未知工序 fallback（单测覆盖） 🔵
+```
+数据: success=true
+数据: 数量**只**来自算料引擎（真值源 §3）：冻结样例 calc_info={fabric_meters:12.3, pleat_count:24, panels:2, set_count:1} + 工序 [精裁-布, 布三边, 韩褶-布, 外帘装袋] ⇒ {精裁-布:12.3, 布三边:12.3, 韩褶-布:24.0, 外帘装袋:1.0}，且逐值 == routing._qty_for 直调结果（防复制第二份算料逻辑的守门断言）
+数据: 缺键**一律兜底 1、绝不落 0**（应做 0 ⇒ done_qty ≥ qty 恒真 ⇒ 假完工）：calc_info={} ⇒ 各工序 qty == 1.0 且 != 0
+数据: 引擎不认识的工序/单位 ⇒ qty=1.0 + qty_source=fallback，且 HTTP **仍 200**（不得把加工单生成打成硬失败）；判别性：若实现只把 _qty_for 原样透传（未知工序按「米」读 fabric_meters）会得到 12.3 ⇒ 本条仍红
+数据: 鉴权：缺 X-Service-Token ⇒ 401（内部端点不得裸奔）
+数据: 「孔」类无 holes ⇒ 按每米 6 孔估算 12.3×6=73.8，来源 = fabric_meters_x6（**不等于** fallback）—— 让「真兜底」与「有依据的推算」可区分
+跳过: [backend-contract] ai-agent 内部端点（服务间调用，非 LLM 行为）：由 pytest 全量覆盖 backend/ai-agent-service/tests/test_production/test_operation_qty.py（含 _qty_for 直调比对与三源键漂移门禁），不进入 agent-eval 冒烟（同 PP-010 惯例）
+```
+溯源: 2026-09-18 新增（issue #4208 ai-agent 半边，PR #4215）：应做数量内部端点 POST /api/internal/production/operation-qty（X-Service-Token）—— 让 routing._qty_for 从「零运行时消费者」变成算料数量的唯一真相源；兜底口径「绝不落 0」+ qty_source 三态（键名 / <键名>_x6 / fallback）。红证（实现前）：端点未实现 ⇒ 404（assert 404 == 200 红）、resp.json()['data'] KeyError；键漂移门禁在 KNOWN_QTY_UNITS/DIRECT_QTY_KEYS 未定义时 import 即红。同批把该测试文件补进 PP-010.traces.tests（同为生产确定性核心的证据面）。**未做（如实登记）**：Java 侧接线（生成加工单时逐工序调用本端点）不在本单，#4208 保持 OPEN。 ｜ tags: processing, production, qty-engine
+
+## processing-order（21 case）
 
 ### PG-001. 生成加工单 - 已确认含加工项订单 → 加工单生成 + 订单进入 producing 🔵
 ```
@@ -3021,11 +3033,13 @@
 
 ### PG-005. 加工单状态机 - generated→issued→in_processing→completed 主链 🔵
 ```
+数据: success=true
 数据: issue（发加工，可填加工方/交期）→ issued；start → in_processing；complete → completed
 数据: complete 后订单保持 producing（不自动 shipped，发货需物流单号）
-跳过: [backend-contract] 由 ProcessingOrderServiceTest 验证
+数据: 端点层证据（machine-scored）：PATCH /api/admin/processing-orders/{id} action=issue → 200 + $.success=true + $.data.status=issued（ProcessingOrderControllerTest.updateIssue —— 该测试是**唯一**把状态机主链落到 HTTP 层的证据；本条的 `success=true` 计分断言据此成立，不是凭空写的关键词）
+跳过: [backend-contract] 由 ProcessingOrderServiceTest（状态机主链与订单联动）+ ProcessingOrderControllerTest（PATCH 端点：200 + success=true + status=issued）验证
 ```
-溯源: 2026-09-12 新增（issue #3340） ｜ tags: processing-order, state-machine
+溯源: 2026-09-12 新增（issue #3340）。2026-09-18 断言反空转（case-trust burn-down）：原先 2 条 data_check 全是散文 ⇒ CASE-TRUST-EMPTY-ASSERTION（计分断言数 = 0 = 恒绿）。修法 = 把**已经存在**的 HTTP 层效果断言显式化 —— ProcessingOrderControllerTest.updateIssue 补 `$.success` 断言并纳入本条 traces，本条据此新增机器计分型 data_check（`success=true`）。只减不增：本条从 case-trust 豁免清单销账。 ｜ tags: processing-order, state-machine
 
 ### PG-006. 加工单状态机 - 非法迁移拒绝（如 generated→completed、completed 冻结） 🔵
 ```
@@ -3194,11 +3208,50 @@
 数据: 完工→发货贯通（#4117 红证判据）：必完工序全绿 ⇒ 加工单 status='completed' ⇒ 发货守卫 assertProcessingCompletedBeforeShip 读到的 countCompletedByOrderId > 0 放行，且订单仍为 producing（shipOrderIfApplicable 只在 confirmed/producing 时流转）⇒ 含加工项订单完工后可发货
 数据: 计件：GET /api/admin/production/orders/{orderId}/piecework = Σ(合格数量 × 单价 × 系数)，排除返工/报废；单工序一人制（per_worker 按报工人归集、per_operation 按工序归集）
 数据: 租户隔离与软删：订单/工序实例/报工记录均按 tenant_id + deleted=0 过滤；跨租户订单或不属于该订单加工单的工序 → 404，且不落报工明细
-数据: 订单解析三形态（issue #4005）：GET/报工/计件的 {orderId} 路径参数支持 ① 内部 order_id ② 订单号 order_no（手输纸质单号）③ 加工单 qr_token（M4-H 打印任务卡二维码的取值来源）——三级都不中才 404；租户隔离/deleted 过滤逐级保持（证据：ProductionServiceTest 3 项 + ProductionControllerTest「路径参数=qr_token」1 项）
+数据: 订单解析**四形态**（issue #4005 + #4222）：GET/报工/计件的 {orderId} 路径参数支持 ① 内部 order_id ② 订单号 order_no（手输纸质单号）③ 加工单 qr_token（M4-H 打印任务卡二维码的取值来源）④ **加工单号 processing_order_no**（工人端「或手输加工单号」兜底路径 + 任务卡上唯一可抄的号；qr_token 只以二维码图形呈现、无可读文本，issue #4222）——四级都不中才 404；租户隔离/deleted 过滤逐级保持，④ 与 ③ 同构且插在其后（既有三形态优先级不变）。（证据：ProductionServiceTest 4 项含 #4222 的加工单号形态 + ProductionControllerTest「路径参数=qr_token」1 项）
 数据: Agent 冻结契约（并行包消费）：GET /api/admin/agent/production/progress?order_no= 返回键集固定 {order_no,status,status_text,progress_percent,current_operation,pending_operations,total_operations,done_operations,expected_delivery_date}；GET /piecework?worker_name=&period=YYYY-MM 返回 {worker_name,period,total,details:[{operation,qty,amount}]}（缺键/改名即红）
 跳过: [backend-contract] 后端契约用例（写路径无 LLM 环节，不进 agent-eval 冒烟）：断言全部由 Java 单测执行 —— ProductionControllerTest / AgentProductionControllerTest（MockMvc，含返回键集冻结断言）/ ProductionServiceTest（服务层语义）/ ProcessingOrderServiceTest（生成加工单即实例化：库逐条一致 + fail-closed）/ ProductionOperationQueryServiceTest（工序库只读消费者 + findRouting）/ Mapper 契约测试（实体 ↔ V49 迁移 ↔ docs/sql/schema.sql 三源收敛）/ ProductionReportingMigrationTest（迁移与 qr_token 索引）
 ```
 溯源: 2026-09-17 新增（issue #3995，M4-G-2）：生产报工后端落地 —— V49 迁移（production_operations / production_routings / processing_position_operations / production_work_logs + processing_orders.qr_token）、ProductionService（实例化/扫码报工/必完自动完工/计件/进度）、ProductionController 与 AgentProductionController（冻结契约）。语义与 M4-G-1 确定性核心（app/production/{routing,piecework}.py，issue #3993）同口径：报工三态、必完工序全绿判定、计件排除返工/报废。2026-09-18（issue #4117，P0 修语义）：原第 3 条 data_check 把**缺陷**写成期望（「订单 status producing → completed」，而 OrderService.STATUS_TRANSITIONS 里该迁移非法、completed 是终态）⇒ 改为「完工 = 加工单置 completed（订单保持 producing）」+ 新增「完工→发货贯通」判据；修复 = ProductionService.report 走 ProcessingOrderMapper.markCompletedIfActive（活跃态原子更新），禁止生产侧直写订单状态。2026-09-18（issue #4116 剩余两半，P0-3 + P0-2）：新增「§5 四项防呆」（重复报工幂等/越站顺序门禁/数量上限拒绝/非本部位 fail-closed + CAS 原子推进 + 前端 in-flight 锁）与「工序库/工艺路线种子与只读消费者」（V54 种子 + operations-catalog/routings 端点 + 三源收敛守卫）两条 data_check；同包修掉 `_qty_for` 的契约漂移（读 `meters` 而引擎真产出是 `fabric_meters` ⇒ 米类工序应做数量恒 0），判据 = 用**引擎真产出**喂 instance_operations（tests/test_production/test_routing.py）。未做（如实登记）：生成加工单的工序来源切换、以及「每部位末道工序 is_must_finish=true」改读库 —— 待裁定。2026-09-18（issue #4116 **切库第二半**，用户裁定「现在就切」）：生成加工单时的工序实例化**从加工项目录改为从工序库**（production_routings + production_operations）—— 取路线判据 = 订单侧可派生信号（加工项名 > options > 商品名 > 销售方式）匹配 curtain_type/craft，派生键库中无该路线 ⇒ 回落默认路线 布帘×韩褶；取不到路线/路线引用的工序无活跃行 ⇒ **fail-closed**（PRODUCTION_ROUTING_NOT_FOUND / PRODUCTION_OPERATION_NOT_FOUND + suggestion + incident 日志），不回退加工项目录、不落半成品（解析移到写库之前）；is_must_finish/is_start_marker 改读库 ⇒ 删除「末道必完」临时口径（末道「外帘发货」库里是 false）。作废本轮之前的两条假真值：V54 旧注释与 PG-018 旧文案里的「本包不切换工序来源 / 不改末道必完默认 / 两处口径待裁定 / 不要互读」。未对齐（如实登记）：部位仍只能落产品名（订单侧无部位字段）、条件工序与 is_shaped 未接线、qty 暂退化为部位订单数量。 ｜ tags: processing-order, production-reporting, piecework, scan-report
+
+### PG-019. 存量加工单恢复路径——instantiate 的 positions 可选（按订单派生）+ 幂等 + 二维码撤销 + 打印计数 🔵
+```
+数据: success=true
+数据: positions 可选（#4202 冻结契约）：POST /api/admin/production/orders/{orderId}/instantiate 的 positions 缺省（空 body / 无该键）或空数组时，服务端**按订单派生**工序实例 —— 复用 ProcessingOrderService.buildPositionPayload 的工序库路线（经 ProcessingOrderService.derivePositionPayload，与 generateOne **同一份**解析：同一套 部位×工艺 派生键、同一份默认路线 布帘×韩褶、同一套 fail-closed），**不复制第二份路线解析逻辑**；响应与显式传入时同构（{qr_token, operation_count}）。派生结果逐字取库：部位名 = 加工产物名[+色号]、seq 来自路线、group/unit/unit_price/is_must_finish/is_start_marker 来自 production_operations、qty = 该部位订单数量（缺值兜底 1）。证据：ProductionControllerTest 3 项（缺省派生逐字落库 11 道 / 空数组同口径 / 无加工项 ⇒ 派生为空 ⇒ 422 fail-closed）+ ProcessingOrderServiceTest 3 项（派生取库 / 空库 fail-closed / 订单不存在 404）
+数据: 幂等（#4202 验收判据 1 后半）：对**已有实例**的单，派生结果与既有实例配置一致时是**幂等空操作** —— 不重插行（positionOperationMapper.insert 零调用）、不软删（update 零调用）、不清零既有 done_qty、复用已有 qr_token（已打印的码不失效）。红证：ProductionControllerTest「instantiateDerivedIsIdempotentWhenInstancesAlreadyExist」（既有实例含一条已报满的 done_qty=2 工序，断言 insert/update 均零调用且返回旧 token）
+数据: 二维码撤销（#4202 冻结契约 6）：POST /api/admin/production/orders/{orderId}/qr-token/revoke（方法级 processing:manage）把 processing_orders.qr_token 置 NULL（SQL 内 SET qr_token = NULL + tenant/deleted 守卫）⇒ 已打印的码立即失效（扫码解析走 qr_token 形态，置空后解析不到订单 ⇒ 报工 404）；再次 instantiate 时由 ensureQrToken **重新生成**新码（新码 ≠ 旧码）。证据：ProductionControllerTest「revokeQrTokenThenInstantiateRegeneratesToken」（撤销响应 {revoked:true, qr_token:null} + 撤销后实例化得到新的 32 位 token）+ ProcessingOrderMapperTest「revokeQrToken_sqlShape」
+数据: 打印计数（#4202 冻结契约 6 前半）：processing_orders.print_count 此前**零 UPDATE 写方**（全仓只有建单时的 printCount(0) 与响应映射）⇒ 真值源 §1「加工单打印物含二维码…记录打印次数」在数据层不可观测。新增 POST /api/admin/production/orders/{orderId}/print（**沿用类级 order:list**，不新增方法级注解：打印按钮对客服/销售/财务可见，收窄成 processing:manage 会变成「能看单却打不了卡」的功能回退）→ SQL 内原子自增 COALESCE(print_count,0)+1（读改写会丢并发计数）并返回递增后的计数。证据：ProductionControllerTest「printIncrementsPrintCount」+ ProcessingOrderServiceTest 2 项（自增返回新计数 / 无加工单 404 且不写）+ ProcessingOrderMapperTest「incrementPrintCount_sqlShape」
+数据: 权限分工（#4202 冻结契约 2/6，与 #4104 的控制器级错配台账一致）：instantiate 与 print 沿用类级 order:list；qr-token/revoke 与 PUT operations/{id}、GET piecework/summary 用方法级 processing:manage（PermissionInterceptor 方法级优先）。**控制器类级口径统一归 #4104，本批不动**。证据：ProductionControllerTest「updateOperationDeclaresManagePermission」（4 个方法的注解逐条断言，含 printOrder 必须**没有**方法级注解）
+数据: 历史口径已作废（防假真值回填）：PG-018 时代的「POST .../instantiate 的 positions 为空 ⇒ 422」在 #4202 之后**不再成立**（缺省/空数组改走派生；服务层的 positions 非空校验只对「派生结果也为空」的路径生效）。旧测试 instantiateWithoutPositionsRejected 已随之改写，不得再按旧口径写回
+跳过: [backend-contract] 后端契约用例（写路径无 LLM 环节，不进 agent-eval 冒烟）：断言全部由 Java 单测执行 —— ProductionControllerTest（MockMvc + 真实 ProductionService/ProcessingOrderService/工序库读面，只 mock Mapper）/ ProcessingOrderServiceTest（派生 payload + 打印计数）/ ProcessingOrderMapperTest（两条新 SQL 的自增与置空形态）
+```
+溯源: 2026-09-18 新增（issue #4202，P0，后端半边）：存量加工单恢复路径。红证（修复前实测）：ProductionControllerTest 三条派生用例得 `Status expected:<200> but was:<422>`（GlobalExceptionHandler 原文 `[VALIDATION_ERROR] positions 不能为空`，与 issue 走查记录逐字一致），revoke/print 两条得 404（端点不存在）；修复后 165 项相关单测全绿。实现：ProcessingOrderService.derivePositionPayload（public，复用 buildSnapshot + buildPositionPayload，未复制第二份路线解析）+ ProductionController.withDerivedPositions（positions 缺省/空 ⇒ 派生）+ ProductionService.revokeQrToken + ProcessingOrderService.recordPrint（ProcessingOrderMapper.incrementPrintCount/revokeQrToken 两条原子 SQL）。前端半边（「补生成工序」按钮 / 任务卡占位文案）由 #4202 的前端包承接，不在本条。 ｜ tags: processing-order, production-reporting, recovery, qr-token
+
+### PG-020. 工序库写面——PUT /production/operations/{id} + 单价版本表（当前价 = 最新版本行，实例快照冻结） 🔵
+```
+数据: success=true
+数据: 写面端点（#4204 冻结契约 2）：PUT /api/admin/production/operations/{id}（方法级 processing:manage）body {unit_price?, is_must_finish?, is_start_marker?, status?, unit?, group_name?, sort_order?} —— **部分更新**（只写 body 里出现的字段，未给的列一律不碰，避免把并发改动覆盖回去），返回更新后的工序（形态 = 目录项 operationView，与 GET /operations-catalog 同一份整形）。非法值 fail-closed：负单价 / status ∉ {active,disabled} / 非布尔标记 ⇒ 422 且不落库；工序不存在/跨租户/已软删 ⇒ 404 且不落库。证据：ProductionOperationCommandServiceTest 6 项 + ProductionControllerTest 4 项
+数据: 单价版本化（#4204 冻结契约 3）：改价 = 同一事务写两处 —— ① production_operations.unit_price（新生成加工单的实例化取值源）② production_operation_price_versions 追加一行（**当前价 = 最新版本行**）。新表由 V55__create_production_operation_price_versions.sql 建出（版本号从 V55 起，避开 #3813 登记的存量重复版本号 V29/V33 区间），并同步 docs/sql/schema.sql（bootstrap 路径不跑迁移链）；幂等：CREATE TABLE/INDEX IF NOT EXISTS + 回填初始版本按 NOT EXISTS 守卫 + ON CONFLICT (id) DO NOTHING（bootstrap-first 会让迁移在建好终态的库上再跑一遍，无守卫则每次启动追加一行重复版本）。证据：ProductionOperationPriceVersionMapperTest 4 项（实体↔V55↔schema.sql 三源收敛 / 幂等 / 索引按 (operation_id, created_at DESC) 且只索引未软删 / 外键指向 production_operations）
+数据: 实例快照冻结（#4204 验收判据 1 后半 + 2）：改价**不影响既有实例**与历史报工 —— processing_position_operations.unit_price 是生成时的快照（V49 注释），PUT 路径物理上没有写实例表的能力（ProductionOperationCommandService 不注入实例表 Mapper，结构判据）。红证：ProductionOperationCommandServiceTest「priceChangeCannotTouchInstanceSnapshots」（结构断言）+ ProductionControllerTest「updateOperationWritesNewPrice」（verify 实例表 insert/update 零调用）
+数据: 改价不制造无意义调价账：同价重复提交 ⇒ 幂等空操作（不追加版本行），但仍返回更新后的工序。证据：ProductionOperationCommandServiceTest「samePriceDoesNotAppendVersion」+ ProductionControllerTest「updateOperationWithSamePriceDoesNotAppendVersion」
+数据: 权限（#4204 验收判据 3）：写面是方法级 processing:manage（类级 order:list 是读口径，覆盖不了写操作；PermissionInterceptor 方法级优先）。红证：ProductionControllerTest「updateOperationDeclaresManagePermission」逐条断言注解值；非 processing:manage 调用由 PermissionInterceptor 拦为 403（拦截器语义见 PermissionInterceptorTest/DF-007）
+数据: 历史口径已作废（防假真值回填）：ProductionOperationQueryService 类注释里「只读边界（本类明确不做）：不提供工序库的增删改端点」在新口径下**仍成立**（该类仍只有 SELECT）—— 写面在 ProductionOperationCommandService；不得把「写面存在」读成「读类越界」。另：V54 种子是**初始价**来源，改价后 production_operations.unit_price 与最新版本行同事务维护，「当前价 = 最新版本行」对存量数据由 V55 回填保证
+跳过: [backend-contract] 后端契约用例（写路径无 LLM 环节，不进 agent-eval 冒烟）：断言全部由 Java 单测执行 —— ProductionOperationCommandServiceTest（写面语义 + 版本账 + 结构判据）/ ProductionControllerTest（MockMvc 端点契约 + 权限注解）/ ProductionOperationPriceVersionMapperTest（实体 ↔ V55 ↔ docs/sql/schema.sql 三源收敛 + 幂等）
+```
+溯源: 2026-09-18 新增（issue #4204，P1）：工序库从「只读 + 唯一写方是 V54 种子 SQL」变成有写面 + 单价版本账。红证（修复前实测）：ProductionControllerTest「updateOperationWritesNewPrice」得 `Status expected:<200> but was:<404>`（PUT 端点不存在），「updateOperationDeclaresManagePermission」得 `NoSuchMethodException: ProductionController.updateOperation(String,Map)`；版本表/实体不存在 ⇒ 新测试文件编译失败（找不到 ProductionOperationPriceVersion / ProductionOperationPriceVersionMapper）。修复后全绿。实现：ProductionOperationCommandService（部分更新 + 改价追加版本行）+ ProductionController.updateOperation + V55 迁移 + 实体/Mapper + docs/sql/schema.sql 镜像（经用户裁定批准；该文件不在原始写路径白名单内，属白名单疏漏）。不做（如实登记）：工序库前端（#4203 承接）、特殊选项系数 factor 接线（另单）。 ｜ tags: processing-order, production-operations, price-versioning
+
+### PG-021. 计件工资报表——GET /production/piecework/summary（按人/按期）+ 生产管理菜单同构 🔵
+```
+数据: success=true
+数据: 报表端点（#4205 冻结契约 4）：GET /api/admin/production/piecework/summary?period=YYYY-MM[&worker_name=]（方法级 processing:manage）→ {period, total, per_worker:[{worker_name, amount, qty}], per_operation:[{operation, amount, qty}]}。聚合源 = production_work_logs（work_date 落在 period 内、work_type=normal）；period 必填且必须 YYYY-MM（缺失/非法 ⇒ 422 可行动错误，不静默返回空报表）；worker_name 是可选下钻维度（查询参数名逐字为 worker_name）。证据：ProductionControllerTest 3 项 + ProductionPieceworkSummaryTest 5 项
+数据: 口径一致性（#4205 验收判据 2，**红证判据**）：同一批报工下「per-order 合计 == 报表 total」—— 两者共用**同一份**聚合（ProductionService.aggregate：Σ(合格数量 × 实例快照单价 × 系数)，返工/报废排除），禁止复制第二套算法。实例缺失（软删）的报工在两处**同一判据**下都不计价（都取「活跃实例」，否则同一笔报工在两套端点数值不等）。红证：ProductionPieceworkSummaryTest「summaryTotalEqualsPerOrderTotal」（7.40 == 7.40 且 per_worker 金额逐项相等）+「softDeletedInstanceIsNotCountedInEitherEndpoint」
+数据: 走查实测单可复现（#4205 验收判据 1）：加工单 JG-20260918-6914 的 1 条报工（「走查工人」精裁-布 3 米 × ¥0.40）⇒ per_worker 含该工人且金额 = 1.20。红证：ProductionPieceworkSummaryTest「walkthroughOrderIsReproducible」（对 dev 库实测数据形态的确定性复现；真实库对账由走查收尾执行）
+数据: 返工/报废不计件 + 期间边界（#4205 验收判据 3）：rework/scrap 不进 per_worker/per_operation/total（与既有 per-order 口径同一份逻辑）；period 边界压在 SQL（work_date >= 当月首日 且 <= 当月末日，含端点）。证据：ProductionPieceworkSummaryTest「periodBoundaryAndOptionalWorkerFilter」（捕获 wrapper 断言 SQL 段含 work_date/worker_name 且绑定参数含 2026-09-01/2026-09-30）+「summaryTotalEqualsPerOrderTotal」里的 rework 负例
+数据: 菜单同构（#4203 验收判据 2 的后端半边，与 #4205 同批）：MenuController 静态权限树与 AuthService.buildMenusByPermissions 同步新增「生产管理」节点 —— 生产看板 /production、工序库 /production/operations、计件工资 /production/piecework，权限码统一 processing:manage；侧边栏组 key = production-center（沿用 product-center/trade-center 约定，与前端 config/menu.ts 的 MenuGroup.key 对齐）；无 processing:manage 权限时整组不出现。证据：MenuControllerTest（DOM 真值逐字段断言：组 label/三子节点 label/三子节点 code）+ AuthServiceTest 2 项（有权限出现且路径逐条相等 / 无权限整组隐藏）
+数据: 冻结契约不可改（防回归）：既有 per-order 计件 GET /api/admin/production/orders/{orderId}/piecework 的响应形状不变（{total, per_worker:{工人:金额}, per_operation:[{operation,amount}]}），agent 侧 GET /api/admin/agent/production/piecework 的键集 {worker_name,period,total,details:[{operation,qty,amount}]} 不变 —— 共用聚合的重构不得改这两个形状（PG-018 的既有断言继续守护）
+跳过: [backend-contract] 后端契约用例（写路径无 LLM 环节，不进 agent-eval 冒烟）：断言全部由 Java 单测执行 —— ProductionPieceworkSummaryTest（报表语义 + 口径一致性 + 走查数据复现）/ ProductionControllerTest（MockMvc 端点契约 + 参数校验）/ MenuControllerTest 与 AuthServiceTest（菜单同构 + 权限门控）
+```
+溯源: 2026-09-18 新增（issue #4205，P1）+ 同批的菜单后端半边（#4203）：计件工资报表从「只有 per-order 汇总」变成按人/按期两级报表，且与 per-order 共用同一份聚合函数（验收判据要求两者对同一张单数值相等）。红证（修复前实测）：ProductionControllerTest 三条报表用例得 `Status expected:<200> but was:<404>`（端点不存在）、period 缺失用例得 `expected:<422> but was:<404>`；MenuControllerTest 得 `$.data.length() expected:<9> but was:<8>` 且 `$.data[?(@.code=='production')]` 无值；AuthServiceTest 得「菜单缺少「生产管理」组：[dashboard, product-center, notifications]」。修复后全绿。实现：ProductionService.pieceworkSummary + aggregate（per-order/报表/工人计件三处共用金额算法）+ parsePeriod（报表必填、工人计件可选，共用一份校验）+ ProductionController.pieceworkSummary（查询参数逐字 worker_name）+ 菜单两处同构。不做（如实登记）：按单下钻的多级联动 UI、工资发放/审批流。 ｜ tags: processing-order, piecework, report, menu
 
 ## 商品域（25 case）
 
@@ -4365,8 +4418,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：317（活跃 159，跳过 158）
-- tier 分布：smoke 10 / normal 274 / adversarial 33
+- 用例总数：321（活跃 159，跳过 162）
+- tier 分布：smoke 10 / normal 278 / adversarial 33
 - 售后域：9
 - agents：6
 - api：19
@@ -4384,8 +4437,8 @@
 - onboarding：5
 - ontology：4
 - 订单域：30
-- 加工项域：11
-- processing-order：18
+- 加工项域：12
+- processing-order：21
 - 商品域：25
 - registry：1
 - 设置域：10
@@ -4438,7 +4491,11 @@
 - PG-016: 米宝加工单 LLM 行为：更新加工单状态（完成加工，产出核到 completed）
 - PG-017: 米宝加工单概念区分：用户问加工单 → 不调加工项/加工单工具，解释概念并引导后台（#3917）
 - PG-018: 生产报工闭环——扫码报工→进度推进→必完工序自动完工→计件
+- PG-019: 存量加工单恢复路径——instantiate 的 positions 可选（按订单派生）+ 幂等 + 二维码撤销 + 打印计数
+- PG-020: 工序库写面——PUT /production/operations/{id} + 单价版本表（当前价 = 最新版本行，实例快照冻结）
+- PG-021: 计件工资报表——GET /production/piecework/summary（按人/按期）+ 生产管理菜单同构
 - PP-007: 米宝加工项 LLM 行为：只改单价不清空其它字段（部分更新语义）
 - PP-008: 米宝加工项 LLM 行为：停用加工项（toggle_item_status → inactive）
 - PP-009: 米宝加工项 LLM 行为：per_area 按面积算价（calculate_price 下发 dimensions，不双计）
+- PP-012: 内部算料数量端点 - 应做数量=引擎输出/兜底 1/未知工序 fallback（单测覆盖）
 

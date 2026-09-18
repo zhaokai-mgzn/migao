@@ -31,6 +31,12 @@ public class MenuController {
         MenuNode p2 = new MenuNode("product:create", "新增商品");
         MenuNode p3 = new MenuNode("product:category", "商品分类管理");
         MenuNode p4 = new MenuNode("processing:manage", "加工项管理");
+        // 生产管理（issue #4203/#4205 后端半边）：三个节点共用 processing:manage ——
+        // 与 AuthService.buildMenusByPermissions 的侧边栏节点**必须同构**（否则「岗位权限」页
+        // 勾得动、侧边栏看不到），也与前端 menu.ts 同构。
+        MenuNode pr1 = new MenuNode("processing:manage", "生产看板");
+        MenuNode pr2 = new MenuNode("processing:manage", "工序库");
+        MenuNode pr3 = new MenuNode("processing:manage", "计件工资");
         MenuNode a1 = new MenuNode("agent:session", "会话监控");
         MenuNode e1 = new MenuNode("employee:list", "员工列表");
         MenuNode e2 = new MenuNode("employee:create", "新增员工");
@@ -42,6 +48,7 @@ public class MenuController {
             new MenuNode("dashboard", "工作台", List.of(d1)),
             new MenuNode("orders", "订单管理", List.of(o1, o2, o3)),
             new MenuNode("products", "商品管理", List.of(p1, p2, p3, p4)),
+            new MenuNode("production", "生产管理", List.of(pr1, pr2, pr3)),
             new MenuNode("agent", "客服工作台", List.of(a1)),
             new MenuNode("employees", "员工管理", List.of(e1, e2)),
             new MenuNode("customers", "客户管理", List.of(c1)),

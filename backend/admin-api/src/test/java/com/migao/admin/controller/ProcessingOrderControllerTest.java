@@ -103,6 +103,7 @@ class ProcessingOrderControllerTest extends BaseControllerTest {
                         .contentType("application/json")
                         .content("{\"action\":\"issue\",\"processor\":\"朝阳加工厂\",\"expectedDeliveryDate\":\"2026-09-20\"}"))
                 .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data.status").value("issued"))
                 .andExpect(jsonPath("$.data.processor").value("朝阳加工厂"));
     }
