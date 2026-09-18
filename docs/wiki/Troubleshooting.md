@@ -29,12 +29,24 @@
 
 ## 数据库迁移
 
-**迁移失败不阻塞启动** — `MigrationRunner` 会将错误记入日志但不阻止应用启动（可能已在 DB 手动执行过）。查看 SWAS 容器日志确认（服务器上 `cd /opt/migao-deploy && docker compose logs admin-api`）：
+**迁移失败按「失败性质」分流**（issue #4241）—— 两类行为的处置完全不同，**不要混为一谈**：
+
+| 失败性质 | 行为 | 排查方向 |
+|---|---|---|
+| **连接类**（连不上库 / 连接超时 / DNS 解析失败） | **有限次退避重试**（默认 5 次，最坏约 24s）；**重试耗尽 ⇒ 启动失败、进程非 0 退出** | **先查 DB 可达性/白名单/密码**，多半是**一次抖动**，重启即可恢复 |
+| **内容类**（某条迁移的 SQL 语法/约束报错） | 记 ERROR + **跳过该条 + 继续其余迁移**（#3615/#3714 口径） | 看日志里点名的那条迁移，修 SQL 后重跑 |
+
+> ⚠️ **连接类失败不再"不阻塞启动"**：修复前它会让应用**带着落后的 schema 照常 UP**，故障后移到业务层（表现为随机的 500「relation … does not exist」），排查极易被引向"业务代码 bug"。现在它是**启动失败**，编排层（`docker compose up -d --wait`）能直接看见。
+
+查看 SWAS 容器日志确认（服务器上 `cd /opt/migao-deploy && docker compose logs admin-api`）：
 ```
 ✅ 迁移完成: V9__xxx.sql
 ❌ 迁移失败: V9__xxx.sql  (手动检查是否已执行)
+❌ 迁移失败  ← 随后 Application run failed + 非 0 退出 = 连接类重试耗尽
 ```
-手动标记已执行: `INSERT INTO schema_migrations (version) VALUES ('V9__xxx.sql');`
+
+**内容类**失败时手动标记已执行: `INSERT INTO schema_migrations (version) VALUES ('V9__xxx.sql');`
+（**仅限内容类** —— 连接类请先修连通性，不要靠手动记账绕过。）
 
 ## AI 服务常见问题
 
