@@ -62,12 +62,31 @@ _CRAFTS = ("韩褶", "打孔", "四爪钩", "穿杆", "平幔")
 _COMPONENT_ROLES = ("主布", "配布边", "纱")
 _STYLES = ("单色", "拼色")
 _METERS_SOURCES = ("跟随主布", "人工指定")
-# 加工类型（issue #4362，S1）：真值源 §8 术语表「定高买宽（买宽度米数）/ 定宽买高（按门幅幅数×高度）」。
-# ⚠️ `_CRAFTS` 里**保留** `四爪钩`：它是 `production_routings.craft` 的**既有数据键**（阶段 3 才迁移，
-# 见 #4365），本工具枚举必须与库逐字一致（`test_order_create_spec_key_family` 锁死）。
-# 但按用户裁定它**不是工艺**（是加工项/配件）⇒ 见 description 的「工艺单值·四爪钩是加工项」段，
-# 引导模型把它放进 processingItems 而不是 craft。
+
+# ── 写侧补全：加工类型 / 打开方式 / 算料输出来源（issue #4374 包 4a / 设计文档 §4.2 · §4.3）──
+# 加工类型 = 算料侧 `formula_used` 的两态口径（设计文档 §4.2：`fixed_height*` → 定高买宽；
+# `fixed_width*` / `roman_panel` → 定宽买高）。**与 `mounting`（悬挂方式）是两层**，不互相推导。
 _CUTTING_MODES = ("定高买宽", "定宽买高")
+# 打开方式开数：单开/双开/四开（`curtain_calc` 的 `open_count`）。**数值枚举**，只认这三个数。
+_OPEN_COUNTS = (1, 2, 4)
+# 算料输出的取值来源（真值源 `docs/curtain-fabric-quote-rules.md` §8 原文口径：
+# 「折数/用料必须带来源（公式计算 / 人工指定 / 客户自报），防止多渠道不一致」）。
+_SOURCES = ("公式计算", "人工指定", "客户自报")
+# 算料输出键 → 字段标签（负值闸门的报错要**点名**是哪个字段）。
+# 键名一律 snake_case，与 `curtain_calc` 输出**逐字一致**（设计文档 §4.5：改它 = 改契约）。
+_CALC_OUTPUT_LABELS = (
+    ("fabric_meters", "面料米数"),
+    ("pleat_count", "折数"),
+    ("per_panel_pleats", "每片折数"),
+    ("panels", "幅数"),
+    ("fullness", "理论褶倍"),
+    ("fullness_actual", "实际褶倍"),
+)
+# 工艺规格数值键 → 字段标签（同上）。
+_CRAFT_SPEC_NUMBERS = (
+    ("pleatSpacing", "褶距"),
+    ("patternRepeat", "花距"),
+)
 
 # 万能验证码 bypass（POC/测试阶段，对齐 admin-api 的 sms.bypass-code 机制）。
 # 空字符串 = 禁用 bypass（生产安全默认）。POC 部署时设置 SMS_BYPASS_CODE=123456 与 admin-api 对齐。
@@ -339,19 +358,31 @@ class OrderCreateTool(BaseTool):
         # 11 道工序，工序与工资全错）。故要求随单落库。
         "【工艺规格·必带】引导清单/顾客已明确的工艺参数必须写进 items[i].processing_info（**顶层键**）："
         "curtainType（部位：布帘/纱帘/帘头）、craft（安装工艺：韩褶/打孔/穿杆/平幔 —— "
-        "**与 mounting 是两层，不要互相推导**）、isShaped（是否定型）、openCount（打开方式/开数：1/2/4）、"
-        "cuttingMode（加工类型：定高买宽/定宽买高，由算料口径给出）、pleatSpacing（褶距，米）、"
-        "hasPattern（是否对花）、corner（转角形态，取自清单「窗型」）、style（单色/拼色）、"
-        "specialOptions（下单勾选的特殊选项，如 拼1次/加铅块/加花边/抱枕/布绑带）；"
-        "算料输出原样带上：pleat_count（总褶数）/fullness（理论褶倍）/fullness_actual（实际褶倍）。"
+        "**与 mounting 是两层，不要互相推导**）、isShaped（是否定型）、style（单色/拼色）、"
+        "cuttingMode（加工类型：定高买宽/定宽买高）、openCount（打开方式开数：1/2/4）、"
+        "pleatSpacing（褶距，米）、hasPattern + patternRepeat（是否对花 + 花距，米）、"
+        "corner（转角形态，取自清单「窗型」：平开/落地/飘窗/转角/L窗）、"
+        "specialOptions（下单勾选的特殊选项，如 拼1次/加铅块/加花边/抱枕/布绑带）。"
         "**枚举必须逐字一致**（「韩式褶」非法，应为「韩褶」）—— 错值会让加工单取到**错误工序路线**。"
         # 工艺单值 + 四爪钩归属（issue #4362 阶段 1 / issue #4365 用户裁定）：四爪钩/四叉钩/穿钩是
         # **加工项（配件）**，不是并列工艺；工艺（安装工艺＝打褶/悬挂方式）**单值**。
-        # 模型把它当 craft 填 ⇒ 会取到「四爪钩」这条独立路线（信号层已指向主线，显式值仍会生效）。
+        # 模型把它当 craft 填 ⇒ 会取到「四爪钩」这条独立路线（信号层已指向主线，**显式值仍会生效**）。
         "【工艺单值·四爪钩是加工项】craft 只能填**安装工艺**（打褶/悬挂方式），且**只能一个值**；"
         "「四爪钩/四叉钩/穿钩」属**加工项（配件）** ⇒ 放进 processingItems（它会驱动穿钩类加工），"
         "**不要**填进 craft。"
         "**顾客没说就不填**：不要猜、不要补默认值。"
+        # 算料输出透传（issue #4374 / 设计文档 §4.3）：这些键的**唯一来源**是 curtain_calc 的输出，
+        # 且键名 snake_case 与它**逐字一致**（设计文档 §4.5：改键名 = 改契约）。
+        # 红线 = 不发明数字：缺就不填（不补 0、不自己乘倍数推算）——自己推算会让
+        # 「报价单展示的米数」≠「订单落库的米数」，对顾客的承诺与履约不一致。
+        "【算料输出·原样透传】已调用 curtain_calc 算料时，把它的输出**原样透传**进 "
+        "items[i].processing_info（**顶层键**，键名逐字一致，**不要自己推算**）："
+        "fabric_meters（面料米数）、pleat_count（总褶数）、per_panel_pleats（每片折数）、"
+        "panels（幅数）、fullness（理论褶倍）、fullness_actual（实际褶倍）、"
+        "source（取值来源：curtain_calc 的 formula → 「公式计算」/ manual → 「人工指定」/ "
+        "customer_quoted → 「客户自报」）。"
+        "**没算料 / 输出里没有该键 ⇒ 就不要填**（**不要补 0**、不要按倍数自己乘）——"
+        "算料数字只有一个真值源，自己推算会让报价单与订单对不上。"
         "【双拼·主布/配布边】拼色（双拼）时一扇窗拆**两条明细行**：主布行带 componentRole=主布 "
         "与全部工艺规格；配布边行带 componentRole=配布边 + craftLineId=主布行的行标识"
         "（绑成一组，否则加工单会把一扇窗算成两扇、折数/开数/工序/计件全部翻倍），"
@@ -499,50 +530,6 @@ class OrderCreateTool(BaseTool):
                                     "type": "boolean",
                                     "description": "是否定型（引导清单已采集：布帘/帘头默认是、纱帘默认否）",
                                 },
-                                # ── 下单行要素（issue #4362，S1）：真值源 §1 逐项，全部**可空** ──
-                                # 此前只有前 3 个键有声明 ⇒ 加工类型/开数/褶距/对花/转角**无处可写**，
-                                # 而它们是算料与工序的输入（错值直接算错工资）。键名与 Java 侧
-                                # `OrderLineCraftFields` 的读法逐字一致（DB 列名 = 这里的 snake_case 键）。
-                                "openCount": {
-                                    # ⚠️ **刻意不写 `enum`**：本仓库的结构性护栏要求 `enum` 项一律是
-                                    # **非空字符串**（`tests/test_order_create_quantity_bounds.py::
-                                    # test_enum_declarations_are_non_empty_string_lists`，防
-                                    # `enum: []` / `enum: [None]` 式空转声明）—— 而开数是**整数**维度
-                                    # （1/2/4），写成 `[1, 2, 4]` 会撞那条护栏。合法值放到 description
-                                    # 里教模型（真值源 §8：单开 / 双开·对开 / 四开）。
-                                    "type": "integer",
-                                    "minimum": 1,
-                                    "description": "打开方式（开数，真值源 §8）：1 单开 / 2 双开·对开 / 4 四开。对开总折数必须为偶数",
-                                },
-                                "cuttingMode": {
-                                    "type": "string",
-                                    "enum": ["定高买宽", "定宽买高"],
-                                    "description": "加工类型（真值源 §8）：定高买宽 = 买宽度米数 / 定宽买高 = 按门幅幅数×高度。取值来自算料口径，**不要自己反推**",
-                                },
-                                "pleatSpacing": {
-                                    "type": "number",
-                                    "description": "褶距（米，韩褶默认 0.1）—— 引导清单已采集",
-                                },
-                                "hasPattern": {
-                                    "type": "boolean",
-                                    "description": "是否对花（引导清单已采集）。对花时定宽买高每幅加一个花距；顾客没说 ⇒ 不填",
-                                },
-                                "corner": {
-                                    "type": "string",
-                                    "description": "转角形态（取自引导清单「窗型」：平开/落地/飘窗/转角/L窗）。它**影响开数与片数** ⇒ 属算料输入，不要只留在对话里",
-                                },
-                                "pleat_count": {
-                                    "type": "number",
-                                    "description": "总褶数（**算料输出**，由 curtain_calc 给出，不要自己推算）",
-                                },
-                                "fullness": {
-                                    "type": "number",
-                                    "description": "理论褶倍（**算料输出**，名义倍数如 2.00）",
-                                },
-                                "fullness_actual": {
-                                    "type": "number",
-                                    "description": "实际褶倍（**算料输出**，由实际用料反算如 1.86）—— 与理论褶倍**分开填**，不是冗余字段",
-                                },
                                 "style": {
                                     "type": "string",
                                     "enum": ["单色", "拼色"],
@@ -570,6 +557,83 @@ class OrderCreateTool(BaseTool):
                                 "processingMeters": {
                                     "type": "number",
                                     "description": "加工费米数（= **主布行**米数，配布边米数不参与）。由算料给出，**不要自己推算**",
+                                },
+                                # ── 工艺规格补全（issue #4374 包 4a / 设计文档 §4.2）────────────
+                                # 包 1（#4346）只声明了 9 个键 ⇒ 加工类型/打开方式/褶距/对花既不在
+                                # schema、也不在「必带」指令里 ⇒ LLM 大概率不写 ⇒ 订单/加工单面看不到。
+                                "cuttingMode": {
+                                    "type": "string",
+                                    "enum": ["定高买宽", "定宽买高"],
+                                    "description": "加工类型（= 算料侧 `curtain_calc` 的 `formula_used`：`fixed_height*` → 定高买宽，`fixed_width*`/`roman_panel` → 定宽买高）。与 mounting（悬挂方式）是**两层**，不要互相推导；顾客没说 ⇒ 不填",
+                                },
+                                "openCount": {
+                                    "type": "integer",
+                                    "enum": [1, 2, 4],
+                                    "description": "打开方式开数：1 单开 / 2 双开 / 4 四开（引导清单已采集）。折数整除校验与算料余量按它走；顾客没说 ⇒ 不填",
+                                },
+                                "pleatSpacing": {
+                                    "type": "number",
+                                    "minimum": 0,
+                                    "description": "褶距（米，引导清单已采集，默认 0.1）。用于折数/褶距换算与可行性校验",
+                                },
+                                "hasPattern": {
+                                    "type": "boolean",
+                                    "description": "是否对花（大花型面料；定宽买高时每幅加 1 个花距）。顾客没说 ⇒ 不填",
+                                },
+                                "patternRepeat": {
+                                    "type": "number",
+                                    "minimum": 0,
+                                    "description": "花距（米，对花时有效，常见 0.3~0.6）。须与 hasPattern 同时给",
+                                },
+                                # 转角（issue #4362，S1；真值源 §8 + #4344 建议 6）：C 端澄清清单
+                                # **已经问了**「平开/落地/飘窗/转角/L窗——转角影响开数与片数」，
+                                # 但此前只停在提示里（`curtain_checklist` 的 `window_type` 零消费者）
+                                # ⇒ 属算料输入，必须随单落库（列 `order_items.corner`）。
+                                "corner": {
+                                    "type": "string",
+                                    "description": "转角形态（取自引导清单「窗型」：平开/落地/飘窗/转角/L窗）。它**影响开数与片数** ⇒ 属算料输入，不要只留在对话里；顾客没说 ⇒ 不填",
+                                },
+                                # ── 算料输出（issue #4374 包 4a / 设计文档 §4.3 · §4.5）──────────
+                                # 唯一来源 = `curtain_calc` 的输出，**原样透传**；缺就不填（不补 0、不推算）。
+                                # 键名一律 snake_case（与 `curtain_calc` 输出逐字一致 —— 改它 = 改契约）。
+                                "fabric_meters": {
+                                    "type": "number",
+                                    "minimum": 0,
+                                    "description": "面料米数（**原样取 `curtain_calc` 输出的 `fabric_meters`**，不要自己推算、缺就不填）",
+                                },
+                                "pleat_count": {
+                                    "type": "number",
+                                    "minimum": 0,
+                                    "description": "总褶数（**原样取 `curtain_calc` 输出的 `pleat_count`**，不要自己推算、缺就不填）",
+                                },
+                                "per_panel_pleats": {
+                                    "type": "number",
+                                    "minimum": 0,
+                                    "description": "每片折数（**原样取 `curtain_calc` 输出的 `per_panel_pleats`**，不要自己推算、缺就不填）",
+                                },
+                                "panels": {
+                                    "type": "number",
+                                    "minimum": 0,
+                                    "description": "幅数（**原样取 `curtain_calc` 输出的 `panels`**；只有定宽买高才有该键 —— 缺就不填，不要补 0）",
+                                },
+                                "fullness": {
+                                    "type": "number",
+                                    "minimum": 0,
+                                    "description": "**理论**褶倍（**原样取 `curtain_calc` 输出的 `fullness`**，随工艺档位走；不要自己推算）",
+                                },
+                                "fullness_actual": {
+                                    "type": "number",
+                                    "minimum": 0,
+                                    "description": "**实际**褶倍（**原样取 `curtain_calc` 输出的 `fullness_actual`**，随用料走；与 fullness 语义不同，两个都要原样透传）",
+                                },
+                                "source": {
+                                    "type": "string",
+                                    # ⚠️ 此处必须写字面量：`parameters` 会被 admin-api 的
+                                    # `OrderDtoContractTest.pythonSchema` 用 `ast.literal_eval` 源码级求值
+                                    # ⇒ 任何函数调用（如 `list(_SOURCES)`）都会让该契约测试判红。
+                                    # 值必须与 `_SOURCES` 逐字一致（那边是运行时闸门的真值源）。
+                                    "enum": ["公式计算", "人工指定", "客户自报"],
+                                    "description": "折数/用料的取值来源（真值源 §8：必须带来源，防多渠道不一致）。`curtain_calc` 的 source 为 formula → 「公式计算」/ manual → 「人工指定」/ customer_quoted → 「客户自报」",
                                 },
                                 "skuCode": {"type": "string", "minLength": 1,
                                             "description": "SKU编码（取 product_detail skus[].sku_code 原值）。商品有多个不同 SKU 价时必填（与 colorName 二选一）"},
@@ -834,10 +898,17 @@ class OrderCreateTool(BaseTool):
 
         `impact`（issue #4346）：**后果说明**必须与该字段的真实后果一致 —— 工艺规格的后果是
         「取到错误工序路线」，不是「SKU 匹配不到」。默认文案只对 SKU 规格族成立。
+
+        数值枚举（issue #4374）：`openCount` 这类**数值**枚举（1/2/4）走同一条闸门 ——
+        严格按「类型 + 字面」比对：字符串 `"2"` 与布尔 `True` 都**不算** 2/1
+        （刻意不做类型归一化，同「不做别名归一化」口径：静默接受变体的代价是
+        **静默按错的开数算折数/余量**）。
         """
         if raw is None:
             return None  # 可选字段（单 SKU 商品不一定有售卖方式）
         if isinstance(raw, str) and raw in legal:
+            return None
+        if not isinstance(raw, str) and not isinstance(raw, bool) and raw in legal:
             return None
         # 括号提示**按字段族**分流：只有售卖方式/计价方式才有各自的补充说明。
         # （原实现用「非 sellingMethod 即计价方式」的二分 ⇒ 给部位/工艺串上
@@ -848,6 +919,15 @@ class OrderCreateTool(BaseTool):
             hint = "（per_piece 按个不支持，issue #3005）"
         else:
             hint = ""
+        # 取值来源**按字段族**分流：数值枚举（openCount）不来自 product_detail，
+        # 照抄 SKU 规格族的「product_detail 返回的原值」会误导 LLM 去查商品详情。
+        if all(isinstance(v, str) for v in legal):
+            suggestion = f"请改用 product_detail 返回的**原值**：{' / '.join(legal)}{hint}"
+        else:
+            suggestion = (
+                f"请改用合法值：{' / '.join(str(v) for v in legal)}{hint}"
+                "（必须是**数值**型，字符串「2」不算 2）"
+            )
         return ToolResult(
             success=False,
             error=f"{where}{field_label}无效",
@@ -858,7 +938,7 @@ class OrderCreateTool(BaseTool):
                     "库存校验与销量统计静默丢失。"
                 ))
             ),
-            suggestion=f"请改用 product_detail 返回的**原值**：{' / '.join(legal)}{hint}",
+            suggestion=suggestion,
         )
 
     @staticmethod
@@ -886,14 +966,30 @@ class OrderCreateTool(BaseTool):
         for label, key, legal in (
             ("部位/帘种", "curtainType", _CURTAIN_TYPES),
             ("安装工艺", "craft", _CRAFTS),
-            ("加工类型", "cuttingMode", _CUTTING_MODES),
             ("明细行角色", "componentRole", _COMPONENT_ROLES),
             ("款式", "style", _STYLES),
             ("配布边米数来源", "metersSource", _METERS_SOURCES),
+            # 写侧补全（issue #4374 / 设计文档 §4.2）：加工类型与打开方式错值同样会
+            # 让加工单取到**错误工序路线**（加工类型还决定定高/定宽买料口径）。
+            ("加工类型", "cuttingMode", _CUTTING_MODES),
+            ("打开方式", "openCount", _OPEN_COUNTS),
+            # 取值来源（真值源 §8 要求「必须带来源，防多渠道不一致」）——
+            # 写「formula」这类**算料侧英文**值不算带来源：落库后没人知道那是哪个口径。
+            ("取值来源", "source", _SOURCES),
         ):
             rejected = OrderCreateTool._reject_invalid_enum(
                 where, label, f"processing_info.{key}", pinfo.get(key), legal,
                 impact=craft_spec_impact)
+            if rejected is not None:
+                return rejected
+        # 算料输出/工艺规格的**数值键非负**（issue #4374 交付物 4）：负米数/负幅数会一路写进订单，
+        # 加工单按它算数量 ⇒ 负用料。键缺席一律放行（可选透传，不得变成硬门槛）。
+        for key, label in _CRAFT_SPEC_NUMBERS + _CALC_OUTPUT_LABELS:
+            if pinfo.get(key) is None:
+                continue
+            rejected = OrderCreateTool._reject_invalid_amount(
+                where, label, f"processing_info.{key}", pinfo.get(key),
+                f"负{label}会让加工单按负数算料/展示（订单与算料输出自相矛盾）")
             if rejected is not None:
                 return rejected
         if pinfo.get("processingFee") is not None:
