@@ -35,7 +35,8 @@ V54 落**初始种子**（把 `app/production/routing.py` 的既有确定性常�
 工序行内顺序按 `sort_order` 连续，与迁移侧「两段拼接」的行序天然不同 ⇒ 工序按名称键比对、
 不依赖行序；路线侧 schema.sql 里同一条 INSERT 按 `V54 行 → V58 行` 顺序书写 ⇒ 行序可比）。
 
-## 漂移形态（本测试会让它变红；红证见文件尾 `TestGuardSelfProof`）
+## 漂移形态（本测试会让它变红；红证见文件尾 `test_parser_detects_injected_drift` /
+`test_routing_parser_detects_injected_drift`，注入式自证）
 
 ① 改了 Python 目录（改名/改价/加减工序）却没同步种子；② 迁移源与 bootstrap 源不一致
 （bootstrap 库与迁移库工序库不同）；③ 路线里引用了工序库里不存在的工序名
