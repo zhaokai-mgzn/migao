@@ -87,6 +87,9 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
+        with:
+          # 路径门控（下面 Detect admin-web changes）要 diff origin/main...HEAD，浅克隆拿不到 merge-base
+          fetch-depth: 0
 
       - name: Set up Node.js 20
         uses: actions/setup-node@v7
@@ -106,6 +109,39 @@ jobs:
       - name: ESLint
         working-directory: frontend/admin-web
         run: npm run lint
+
+      # ── 为什么必须有这一步（issue #4412）────────────────────────────────────────
+      # Next 的 route 文件（page/layout/template/route）**只允许导出框架认识的字段**，
+      # 且**预渲染期**的错误（模块顶层碰浏览器 API、SSG 取数崩）—— 这两类 `tsc --noEmit`
+      # **结构上就看不见**，只有 `next build` 会判。Next 14 又没有 `next typegen`（15+ 才有）。
+      # 实证：2026-09-18 `export function describeRoutingGuard(...)` 写在 page.tsx 里
+      # ⇒ `tsc` 绿、`deploy-frontend` 的 Docker `next build` 红，**前端腿连断 4 次 / 11.5 小时**，
+      # 期间 #4323/#4383/#4386/#4401 等一批「已合入 main」的前端在测试环境上 404（不可达）。
+      # 判据 = 变更后 `next build` 通过（真值 frontend-fix.next-build）；防回退锁见
+      # tests/unit_ci_workflows/test_admin_web_next_build_gate.py
+      - name: Detect admin-web changes
+        id: detect_aw
+        run: |
+          # 仅 PR 事件用 diff 门控；push main / workflow_dispatch 全量跑
+          # （origin/main 与 HEAD 相同，diff 无意义）—— 同 ai-agent-tests.yml 既有写法
+          if [ "$GITHUB_EVENT_NAME" != "pull_request" ]; then
+            echo "run_build=true" >> "$GITHUB_OUTPUT"
+            echo "✅ 非 PR 事件，执行 next build"
+            exit 0
+          fi
+          git fetch origin main --quiet
+          if git diff --name-only origin/main...HEAD | grep -q '^frontend/admin-web/'; then
+            echo "run_build=true" >> "$GITHUB_OUTPUT"
+            echo "✅ 含 admin-web 变更，执行 next build"
+          else
+            echo "run_build=false" >> "$GITHUB_OUTPUT"
+            echo "⏭️ 无 admin-web 变更 —— next build **未跑**（「没跑」不是「通过」）"
+          fi
+
+      - name: Production build (Next-only checks)
+        if: steps.detect_aw.outputs.run_build == 'true'
+        working-directory: frontend/admin-web
+        run: npm run build
 
       - name: Run unit tests
         working-directory: frontend/admin-web
