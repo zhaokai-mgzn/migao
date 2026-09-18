@@ -1984,6 +1984,21 @@ cases:
           customer_address: "浙江省杭州市西湖区文三路1号1幢101室"
           color: "米白"
           colorName: "米白"
+    # 自清理 / 前置自断言（2026-09-19 issue #4357 的 burn-down 缴费）：
+    #   · namespaces：本用例**自己就会给 13800138000 建单** ⇒ 与同号码的建单/查询用例并行互斥
+    #     （同 AS-003 / CH-010 先例）。
+    #   · precondition 选**只读**靶子 `product_count_for_keyword: 遮光窗帘` —— 本用例按**名字**
+    #     选品（R1「遮光窗帘 3 米」），「该名字在种子栈里唯一」是它真正依赖且**不自己改写**的前置
+    #     （种子 xiaobu_eval_seed.sql 里恰 1 件 prod_eval_blackout，同 OR-009/OR-011/OR-014 口径）。
+    #     ⚠️ **有意不声明 `order_count_for_phone: 13800138000`**：本用例自己就会给该号码建单
+    #     ⇒ `after - before = +1 > max_growth(缺省 0)` 会**恒判运行期漂移**（硬写一条注定红的守卫；
+    #     同 chat.yml #4099 / cross.yml 的先例与理由）。
+    namespaces:
+      - customer_phone:13800138000
+    precondition:
+      - type: product_count_for_keyword
+        source: 遮光窗帘
+        expect: 1
     expectations:
       - tool: product_search
       - tool: customer_address_query
@@ -2018,7 +2033,7 @@ cases:
       - "改正后（13800138000）必须继续走完下单闭环：不得因一次校验失败就自我否定、或要求顾客从头再来"
       - "落库收货人/地址与顾客所给一致（预填真值，掩码/改写会静默寄错，issue #3379/#3386）"
     skip_reason: ""
-    merge_log: "2026-09-14 新增（issue #3558 覆盖体检）：validate_input 在 C 端仅 OR-023（正向半），补拒绝半——非法号码不得落单"
+    merge_log: "2026-09-14 新增（issue #3558 覆盖体检）：validate_input 在 C 端仅 OR-023（正向半），补拒绝半——非法号码不得落单。2026-09-19（issue #4357 的 burn-down 缴费 —— 本 PR 改了 cases/*.yml ⇒ 每 PR 至少净缩 1 条存量违规，取优先档 OR-*）：本条命中的两个码一起清零 —— 补 `namespaces[customer_phone:13800138000]`（自清理/并行互斥，CASE-TRUST-NO-SELF-CLEAN）+ 补 `precondition[product_count_for_keyword: 遮光窗帘, expect: 1]`（可判定前置，CASE-TRUST-NO-PRECONDITION-ASSERTION）⇒ 整条销账。**断言面（user_inputs / expectations / must_succeed / required_args / order_before / db_verify / data_checks）一字未动、无放宽。**"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_validate_input.py"

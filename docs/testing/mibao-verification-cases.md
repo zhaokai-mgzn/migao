@@ -2747,7 +2747,7 @@
 落库: order_phone → source=order_create; expect_phone=13800138000; expect_customer_name=张三; expect_address_contains=文三路
 ```
 真值: order.create-flow, ai-chat.confirm-required
-溯源: 2026-09-14 新增（issue #3558 覆盖体检）：validate_input 在 C 端仅 OR-023（正向半），补拒绝半——非法号码不得落单 ｜ tags: order_create, validate_input, rejection, xiaobu
+溯源: 2026-09-14 新增（issue #3558 覆盖体检）：validate_input 在 C 端仅 OR-023（正向半），补拒绝半——非法号码不得落单。2026-09-19（issue #4357 的 burn-down 缴费 —— 本 PR 改了 cases/*.yml ⇒ 每 PR 至少净缩 1 条存量违规，取优先档 OR-*）：本条命中的两个码一起清零 —— 补 `namespaces[customer_phone:13800138000]`（自清理/并行互斥，CASE-TRUST-NO-SELF-CLEAN）+ 补 `precondition[product_count_for_keyword: 遮光窗帘, expect: 1]`（可判定前置，CASE-TRUST-NO-PRECONDITION-ASSERTION）⇒ 整条销账。**断言面（user_inputs / expectations / must_succeed / required_args / order_before / db_verify / data_checks）一字未动、无放宽。** ｜ tags: order_create, validate_input, rejection, xiaobu
 
 ### OR-028. B 端下单加工项按面积计价 - 小数面积 8.4 ㎡ 保真（不得截断成 8 少收钱） 🔵
 ```
