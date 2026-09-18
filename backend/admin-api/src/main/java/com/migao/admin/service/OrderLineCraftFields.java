@@ -9,7 +9,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * 下单行要素（{@code order_items} 的 craft spec 列，V62 / issue #4362，S1）的**单一映射点**。
+ * 下单行要素（{@code order_items} 的 craft spec 列，V63 / issue #4362，S1）的**单一映射点**。
  *
  * <h2>为什么要有这个类（而不是两处各写一遍）</h2>
  * 这些要素有两个消费面，两面的键名口径**不同且都已被既有代码钉死**：
@@ -31,7 +31,7 @@ import java.util.Map;
  * （可空字段的坏值不该让顾客下不了单，且下游 {@code deriveRouteKey} 有派生兜底）。
  *
  * <p><b>本类不是真值源</b>：列语义的权威在 DB 列注释
- * （{@code V62__structure_order_line_craft_spec.sql}），本类只做搬运。</p>
+ * （{@code V63__structure_order_line_craft_spec.sql}），本类只做搬运。</p>
  */
 @Slf4j
 final class OrderLineCraftFields {

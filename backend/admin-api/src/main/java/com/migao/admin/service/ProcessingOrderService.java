@@ -856,7 +856,7 @@ public class ProcessingOrderService {
      * <p><b>取法优先级（三层，冻结口径）</b>：</p>
      * <ol>
      *   <li><b>显式字段</b>（最高）—— 订单行写下的部位/工艺。载体有两者、**同源**：
-     *       {@code order_items.curtain_type} / {@code craft} <b>列</b>（V62 / issue #4362，结构化落库）
+     *       {@code order_items.curtain_type} / {@code craft} <b>列</b>（V63 / issue #4362，结构化落库）
      *       与 {@code processing_info} 顶层的同键（issue #4354 起的旧载体，存量单）；
      *       列非空时在 {@link #buildSnapshot} 里覆盖同键 ⇒ 两维都在 ⇒ 来源 {@code direct}；</li>
      *   <li><b>加工项推导</b> —— 显式字段缺的那一维由**加工项**（名称自带部位/工艺，如
@@ -1125,7 +1125,7 @@ public class ProcessingOrderService {
             for (String key : CALC_OUTPUT_SNAPSHOT_KEYS) {
                 copyIfPresent(pi, entry, key);
             }
-            // 显式字段覆盖（V62，issue #4362，S1）：order_items 的 craft spec **列**最后叠加 ——
+            // 显式字段覆盖（V63，issue #4362，S1）：order_items 的 craft spec **列**最后叠加 ——
             // 推导链的**最高优先级**是「显式字段」，JSONB 键是存量单的旧载体（同一事实的两种落法）。
             // 列非空即覆盖同名的 JSONB 键；列全空（存量单 / 未填）⇒ 本行是 no-op，
             // 快照与迁移前**逐字相同** ⇒ 派生路径不受影响（它是长期兜底，不退场）。

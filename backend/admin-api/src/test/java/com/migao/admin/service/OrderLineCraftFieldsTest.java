@@ -15,7 +15,7 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * 下单行要素映射的**单一实现点**（V62，issue #4362，S1）。
+ * 下单行要素映射的**单一实现点**（V63，issue #4362，S1）。
  *
  * <p>本类存在的理由（为什么不能只靠 {@code OrderServiceTest} 那几条端到端断言）：
  * 键名映射有两个消费面（写面 {@code materialize} → DB 列；读面 {@code toSnapshotKeys} → 加工单快照键），
@@ -38,7 +38,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@code pleatCount} ⇒ 判据 3 红；② 把 {@code materialize} 的 {@code isShaped} 那行删掉 ⇒ 判据 1 红；
  * ③ 把 {@code bool} 的 {@code "是"} 分支补上（凭字面猜中文）⇒ 判据 4 红。</p>
  */
-@DisplayName("下单行要素映射（V62，issue #4362 S1）")
+@DisplayName("下单行要素映射（V63，issue #4362 S1）")
 class OrderLineCraftFieldsTest {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();

@@ -48,12 +48,12 @@ public class OrderItem {
 
     private BigDecimal subtotal;
 
-    // ── 下单行要素（V62，issue #4362，S1）──────────────────────────────────────
+    // ── 下单行要素（V63，issue #4362，S1）──────────────────────────────────────
     // 此前这些要素要么埋在 processing_info JSONB，要么只在 C 端澄清清单里被问过却不落库
     // ⇒ 加工单只能靠加工项名**猜**部位/工艺（实证 V58：纱帘订单拿到布帘的 11 道工序，
     // 工序与计件工资全错）。**全部 nullable、不设必填校验**（用户裁定「部位不是必填的」）
     // ⇒ 派生路径不退场，它是**长期兜底**（见 ProcessingOrderService.deriveRouteKey）。
-    // 逐列语义见 V62__structure_order_line_craft_spec.sql 的列注释（DB 是权威）。
+    // 逐列语义见 V63__structure_order_line_craft_spec.sql 的列注释（DB 是权威）。
 
     /** 部位/帘种（布帘/纱帘/帘头）；工序库路线按它索引（production_routings.curtain_type） */
     private String curtainType;

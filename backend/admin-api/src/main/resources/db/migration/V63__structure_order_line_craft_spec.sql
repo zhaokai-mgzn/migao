@@ -37,7 +37,8 @@
 --
 -- ## 不改已应用的迁移
 -- V60/V61 已发布 ⇒ 整份按文件名 skip，往里加行在存量环境**永远不生效**。
--- 故本单的 DDL/DML 一律走新迁移 V62（V61 已被 #4351 占用）。
+-- 故本单的 DDL/DML 一律走新迁移 V63（V61 已被 #4351 占用；**V62 已被 #4381 占用** ——
+-- 本包原用 V62，同步 main 时撞号 ⇒ 让号改 V63，避免 V62 一号两文件）。
 
 -- ── ① order_items 的下单行要素列（全部 nullable，无校验）──
 ALTER TABLE order_items ADD COLUMN IF NOT EXISTS curtain_type VARCHAR(16);
@@ -53,27 +54,27 @@ ALTER TABLE order_items ADD COLUMN IF NOT EXISTS has_pattern BOOLEAN;
 ALTER TABLE order_items ADD COLUMN IF NOT EXISTS corner VARCHAR(32);
 
 COMMENT ON COLUMN order_items.curtain_type IS
-    '部位/帘种（V62，issue #4362）：布帘/纱帘/帘头 —— 工序库路线**按部位索引**（production_routings.curtain_type）。**可空**（用户裁定「部位不是必填的」）⇒ 空值时加工单侧走派生兜底；不设必填校验';
+    '部位/帘种（V63，issue #4362）：布帘/纱帘/帘头 —— 工序库路线**按部位索引**（production_routings.curtain_type）。**可空**（用户裁定「部位不是必填的」）⇒ 空值时加工单侧走派生兜底；不设必填校验';
 COMMENT ON COLUMN order_items.craft IS
-    '安装工艺（V62，issue #4362；issue #4365 冻结语义 = **打褶/悬挂方式**）：韩褶/打孔/穿杆/平幔（罗马帘）。**单值**。⚠️「四爪钩/四叉钩」是**加工项（配件）不是工艺**（用户裁定），不进本列 —— 它由 processingItems 携带并驱动「要不要穿钩」；不设必填校验';
+    '安装工艺（V63，issue #4362；issue #4365 冻结语义 = **打褶/悬挂方式**）：韩褶/打孔/穿杆/平幔（罗马帘）。**单值**。⚠️「四爪钩/四叉钩」是**加工项（配件）不是工艺**（用户裁定），不进本列 —— 它由 processingItems 携带并驱动「要不要穿钩」；不设必填校验';
 COMMENT ON COLUMN order_items.open_count IS
-    '打开方式（开数，V62）：1 单开 / 2 双开·对开 / 4 四开。对开总折数必须为偶数（真值源 §8）；可空';
+    '打开方式（开数，V63）：1 单开 / 2 双开·对开 / 4 四开。对开总折数必须为偶数（真值源 §8）；可空';
 COMMENT ON COLUMN order_items.cutting_mode IS
-    '加工类型（V62）：定高买宽 / 定宽买高 —— 决定是否出现 `裁高-布`（issue #4343）；取值来自算料 formula_used；可空';
+    '加工类型（V63）：定高买宽 / 定宽买高 —— 决定是否出现 `裁高-布`（issue #4343）；取值来自算料 formula_used；可空';
 COMMENT ON COLUMN order_items.is_shaped IS
-    '是否定型（V62）：部位级开关，打褶后蒸烫固定褶形；加工单实例化时 false ⇒ 剔除 定型-布/复烫-布；可空（缺值＝不定型，与既有接线同口径）';
+    '是否定型（V63）：部位级开关，打褶后蒸烫固定褶形；加工单实例化时 false ⇒ 剔除 定型-布/复烫-布；可空（缺值＝不定型，与既有接线同口径）';
 COMMENT ON COLUMN order_items.fullness IS
-    '理论褶倍（V62）：名义倍数（如 2.00）。与 fullness_actual **分开存** —— 实证 用料 12.300 ÷ 成品宽 6.6 ≈ 1.86 ≠ 2.00，实际用料按实际褶倍算（issue #4344 §二）；可空';
+    '理论褶倍（V63）：名义倍数（如 2.00）。与 fullness_actual **分开存** —— 实证 用料 12.300 ÷ 成品宽 6.6 ≈ 1.86 ≠ 2.00，实际用料按实际褶倍算（issue #4344 §二）；可空';
 COMMENT ON COLUMN order_items.fullness_actual IS
-    '实际褶倍（V62）：由实际用料反算（如 1.86）。与理论褶倍是两个独立事实（issue #4344 数值交叉验证已证明不是冗余字段）；可空';
+    '实际褶倍（V63）：由实际用料反算（如 1.86）。与理论褶倍是两个独立事实（issue #4344 数值交叉验证已证明不是冗余字段）；可空';
 COMMENT ON COLUMN order_items.pleat_spacing IS
-    '褶距（V62，单位：米，韩褶默认 0.1）：实证 部位备注「公式--48个折」+ 四开 ⇒ 12 折/开、褶距 ≈ 13.75cm（issue #4344 §二）；可空';
+    '褶距（V63，单位：米，韩褶默认 0.1）：实证 部位备注「公式--48个折」+ 四开 ⇒ 12 折/开、褶距 ≈ 13.75cm（issue #4344 §二）；可空';
 COMMENT ON COLUMN order_items.pleat_count IS
-    '总褶数（V62）：与 production_position_operations 的应做数量口径对齐（韩褶-布 的 qty 单位＝折，读 pleat_count）；可空（缺值 ⇒ 加工单侧 qty_source=fallback）';
+    '总褶数（V63）：与 production_position_operations 的应做数量口径对齐（韩褶-布 的 qty 单位＝折，读 pleat_count）；可空（缺值 ⇒ 加工单侧 qty_source=fallback）';
 COMMENT ON COLUMN order_items.has_pattern IS
-    '是否对花（V62）：定宽买高时每幅加一个花距；可空（缺值＝不按对花加料）';
+    '是否对花（V63）：定宽买高时每幅加一个花距；可空（缺值＝不按对花加料）';
 COMMENT ON COLUMN order_items.corner IS
-    '转角（V62）：转角形态（取自 C 端澄清清单的窗型：平开/落地/飘窗/转角/L窗）。它**影响开数与片数** ⇒ 属算料输入，不该只停在澄清提示（issue #4344 建议 6）；自由文本、可空、不设枚举（形态未由客户冻结）';
+    '转角（V63）：转角形态（取自 C 端澄清清单的窗型：平开/落地/飘窗/转角/L窗）。它**影响开数与片数** ⇒ 属算料输入，不该只停在澄清提示（issue #4344 建议 6）；自由文本、可空、不设枚举（形态未由客户冻结）';
 
 -- ── ② 信号映射层：四爪钩/四叉钩 → 主线工艺（不再当独立路线键）──
 -- 只改「当前仍指向 四爪钩」的行（`WHERE craft = '四爪钩'`）：终态确定、重跑 0 行受影响，

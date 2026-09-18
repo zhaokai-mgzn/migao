@@ -39,17 +39,17 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       {@code route_key} / {@code route_requested_key} / {@code route_source} 在迁移（幂等
  *       {@code ADD COLUMN IF NOT EXISTS}）与 bootstrap 两处都在 —— bootstrap 路径**不跑迁移链**，
  *       只写迁移 ⇒ 新建库上该列不存在 ⇒ 加工单查询 500（#3270 形态）。</li>
- *   <li><b>V62（issue #4362）：四爪钩/四叉钩指向主线</b> —— 判据 6：两源同一条 UPDATE、
+ *   <li><b>V63（issue #4362）：四爪钩/四叉钩指向主线</b> —— 判据 6：两源同一条 UPDATE、
  *       目标 = {@code ProcessingOrderService.DEFAULT_CRAFT}（主线工艺）、合成终态里
  *       **不再有** {@code craft=四爪钩} 的活跃行。</li>
- *   <li><b>V62：下单行要素 11 列两处都在且全部可空</b> —— 判据 7：{@code ADD COLUMN IF NOT EXISTS}
+ *   <li><b>V63：下单行要素 11 列两处都在且全部可空</b> —— 判据 7：{@code ADD COLUMN IF NOT EXISTS}
  *       + bootstrap 建表自带 + **不得** {@code NOT NULL}（用户裁定「部位不是必填的」）。</li>
  * </ol>
  *
  * <p><b>红证</b>：① 改种子里任一行的 {@code curtain_type}/{@code craft}/{@code priority} ⇒ 判据 1 红；
  * ② 把「帘头」两行合成一行（或把两条部分唯一索引换成 {@code (tenant_id, signal)}）⇒ 判据 2 红；
  * ③ 把常量表加回 {@code ProcessingOrderService} ⇒ 判据 3 红；④ 从 bootstrap 里删掉任一列 ⇒ 判据 4 红；
- * ⑤ 删掉 V62 的那条 UPDATE / 把目标值改成 {@code 四爪钩} / 只改迁移不改 schema（或反之）⇒ 判据 6 红；
+ * ⑤ 删掉 V63 的那条 UPDATE / 把目标值改成 {@code 四爪钩} / 只改迁移不改 schema（或反之）⇒ 判据 6 红；
  * ⑥ 把任一要素列写成 {@code NOT NULL}、或漏进 bootstrap、或改列类型 ⇒ 判据 7 红。</p>
  */
 @DisplayName("路线可配迁移契约 + 三源防漂移（V60，issue #4308）")
@@ -57,8 +57,8 @@ class ProductionRouteSignalMigrationTest {
 
     private static final String MIGRATION =
             "backend/admin-api/src/main/resources/db/migration/V60__create_routing_customization_tables.sql";
-    private static final String MIGRATION_V62 =
-            "backend/admin-api/src/main/resources/db/migration/V62__structure_order_line_craft_spec.sql";
+    private static final String MIGRATION_V63 =
+            "backend/admin-api/src/main/resources/db/migration/V63__structure_order_line_craft_spec.sql";
     private static final String SCHEMA = "docs/sql/schema.sql";
     private static final String SERVICE =
             "backend/admin-api/src/main/java/com/migao/admin/service/ProcessingOrderService.java";
@@ -143,7 +143,7 @@ class ProductionRouteSignalMigrationTest {
         }
     }
 
-    /** 解析 V62/schema 里那条 `UPDATE production_route_signals SET craft = '<目标>' …` 的目标值。 */
+    /** 解析 V63/schema 里那条 `UPDATE production_route_signals SET craft = '<目标>' …` 的目标值。 */
     private static String hookRepointTarget(String sql) {
         Matcher m = Pattern.compile(
                         "UPDATE\\s+production_route_signals\\s+SET\\s+craft\\s*=\\s*'([^']+)'",
@@ -169,13 +169,13 @@ class ProductionRouteSignalMigrationTest {
     }
 
     @Test
-    @DisplayName("判据 6：V62 把「四爪钩/四叉钩」指向**主线工艺** —— 两源终态一致，且不再有 craft=四爪钩 的活跃行")
+    @DisplayName("判据 6：V63 把「四爪钩/四叉钩」指向**主线工艺** —— 两源终态一致，且不再有 craft=四爪钩 的活跃行")
     void hookSignalsPointAtMainLineInBothSources() throws Exception {
-        String migrationV62 = read(MIGRATION_V62);
+        String migrationV63 = read(MIGRATION_V63);
         String schema = read(SCHEMA);
 
         // ① 两源都要有这条 UPDATE，且**目标值逐字相同**（否则 bootstrap 与迁移链终态漂移）
-        String targetFromMigration = hookRepointTarget(migrationV62);
+        String targetFromMigration = hookRepointTarget(migrationV63);
         String targetFromSchema = hookRepointTarget(schema);
         assertThat(targetFromSchema).as("bootstrap 终态必须与迁移链同一条 UPDATE（同一目标工艺）")
                 .isEqualTo(targetFromMigration);
@@ -183,7 +183,7 @@ class ProductionRouteSignalMigrationTest {
         assertThat(targetFromMigration)
                 .as("必须指向主线工艺 —— 「四爪钩/四叉钩」是加工项（配件），不是并列工艺（#4365 裁定）")
                 .isEqualTo(ProcessingOrderService.DEFAULT_CRAFT);
-        for (String sql : List.of(migrationV62, schema)) {
+        for (String sql : List.of(migrationV63, schema)) {
             assertThat(sql).as("UPDATE 的 WHERE 必须点名这两个信号（只改这两行，不扫别的）")
                     .contains("'四爪钩'").contains("'四叉钩'");
         }
@@ -201,17 +201,17 @@ class ProductionRouteSignalMigrationTest {
                     .isNotEqualTo("四爪钩");
         }
         // ④ 迁移链与 bootstrap **同一条 DML 形态**（`ADD COLUMN IF NOT EXISTS` 之外的幂等写法）
-        assertThat(migrationV62).as("UPDATE 必须限定当前仍指向 四爪钩 的行 ⇒ 重跑 0 行受影响（幂等）")
+        assertThat(migrationV63).as("UPDATE 必须限定当前仍指向 四爪钩 的行 ⇒ 重跑 0 行受影响（幂等）")
                 .contains("craft = '四爪钩'");
     }
 
     @Test
-    @DisplayName("判据 7：下单行要素 11 列在 V62（幂等增列）与 bootstrap 两处都在，且全部可空（无 NOT NULL/默认值）")
+    @DisplayName("判据 7：下单行要素 11 列在 V63（幂等增列）与 bootstrap 两处都在，且全部可空（无 NOT NULL/默认值）")
     void orderLineCraftSpecColumnsExistInBothSourcesAndAreNullable() throws Exception {
-        String migrationV62 = read(MIGRATION_V62);
+        String migrationV63 = read(MIGRATION_V63);
         String schema = read(SCHEMA);
 
-        // 列名 → 类型（与 V62 的 DDL 逐字一致；类型写错会让写入静默截断/溢出）
+        // 列名 → 类型（与 V63 的 DDL 逐字一致；类型写错会让写入静默截断/溢出）
         String[][] columns = {
                 {"curtain_type", "VARCHAR\\(16\\)"},
                 {"craft", "VARCHAR\\(16\\)"},
@@ -226,8 +226,8 @@ class ProductionRouteSignalMigrationTest {
                 {"corner", "VARCHAR\\(32\\)"}};
         for (String[] column : columns) {
             assertThat(Pattern.compile("ADD\\s+COLUMN\\s+IF\\s+NOT\\s+EXISTS\\s+" + column[0] + "\\s+" + column[1],
-                            Pattern.CASE_INSENSITIVE).matcher(migrationV62).find())
-                    .as("V62 必须用 ADD COLUMN IF NOT EXISTS 增列 %s（MigrationRunner 要求可重复执行）", column[0])
+                            Pattern.CASE_INSENSITIVE).matcher(migrationV63).find())
+                    .as("V63 必须用 ADD COLUMN IF NOT EXISTS 增列 %s（MigrationRunner 要求可重复执行）", column[0])
                     .isTrue();
         }
 
@@ -248,7 +248,7 @@ class ProductionRouteSignalMigrationTest {
                     .as("列 %s 不得 NOT NULL —— 用户裁定「部位不是必填的」，本包不设必填校验", column[0])
                     .isFalse();
         }
-        assertThat(migrationV62).as("列注释必须说明「可空 + 不设必填校验」（DB 是权威，字段什么意思不能靠猜）")
+        assertThat(migrationV63).as("列注释必须说明「可空 + 不设必填校验」（DB 是权威，字段什么意思不能靠猜）")
                 .contains("部位不是必填");
     }
 

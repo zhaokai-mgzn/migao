@@ -356,7 +356,7 @@ class OrderServiceTest {
         verify(orderItemMapper).insert(any(OrderItem.class));
     }
 
-    // ============ 下单行要素结构化落库（V62，issue #4362，S1）============
+    // ============ 下单行要素结构化落库（V63，issue #4362，S1）============
     // 判据：两个采集端（C 端小布澄清清单 / B 端米宝 order_create）写入的 processing_info 顶层
     // 工艺规格键，必须**物化**到 order_items 的列上（此前它们埋在 JSONB 里，加工单只能靠猜）。
     // 全部可空、不设必填校验（用户裁定「部位不是必填的」）⇒ 缺键不报错、就是缺。
@@ -393,7 +393,7 @@ class OrderServiceTest {
     }
 
     @Test
-    @DisplayName("V62 下单行要素：processing_info 的 11 个工艺规格键逐列落到 order_items（Map 形态）")
+    @DisplayName("V63 下单行要素：processing_info 的 11 个工艺规格键逐列落到 order_items（Map 形态）")
     void createOrder_materializesCraftSpecColumns() {
         Map<String, Object> info = new LinkedHashMap<>();
         info.put("sellingMethod", "bulk_cut");
@@ -433,7 +433,7 @@ class OrderServiceTest {
     }
 
     @Test
-    @DisplayName("V62 下单行要素：processing_info 是 JSON **字符串**时同样落列（自定义 @Select 路径形态）")
+    @DisplayName("V63 下单行要素：processing_info 是 JSON **字符串**时同样落列（自定义 @Select 路径形态）")
     void createOrder_materializesCraftSpecFromJsonString() throws Exception {
         String json = objectMapper.writeValueAsString(Map.of(
                 "curtainType", "布帘", "craft", "韩褶", "openCount", 2, "isShaped", true,
@@ -456,7 +456,7 @@ class OrderServiceTest {
     }
 
     @Test
-    @DisplayName("V62 下单行要素：完全不带工艺规格键也可下单（可空、不设必填校验）")
+    @DisplayName("V63 下单行要素：完全不带工艺规格键也可下单（可空、不设必填校验）")
     void createOrder_withoutCraftSpecStillSucceeds() {
         Map<String, Object> info = new LinkedHashMap<>();
         info.put("sellingMethod", "bulk_cut");
@@ -482,7 +482,7 @@ class OrderServiceTest {
     }
 
     @Test
-    @DisplayName("V62 下单行要素：取不出值的键**不静默**（WARN 日志）但不拒绝整单")
+    @DisplayName("V63 下单行要素：取不出值的键**不静默**（WARN 日志）但不拒绝整单")
     void createOrder_warnsOnUnparseableCraftSpecValue() {
         Map<String, Object> info = new LinkedHashMap<>();
         info.put("openCount", "四开");          // 非数字 ⇒ 不落列

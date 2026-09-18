@@ -157,11 +157,11 @@ class ProcessingOrderRouteSourceTest {
     }
 
     /**
-     * 信号映射表（**库**，V60 种子逐行 + V62 修正 + 一条商家自建行「罗马帘」）。
+     * 信号映射表（**库**，V60 种子逐行 + V63 修正 + 一条商家自建行「罗马帘」）。
      *
-     * <p><b>V62 修正（issue #4362 阶段 1 ② / issue #4365 裁定）</b>：{@code 四爪钩 / 四叉钩} 是
+     * <p><b>V63 修正（issue #4362 阶段 1 ② / issue #4365 裁定）</b>：{@code 四爪钩 / 四叉钩} 是
      * **加工项（配件）不是工艺**（工艺＝安装工艺＝打褶/悬挂方式，**单值**）⇒ 这两行指向**主线工艺**
-     * {@code 韩褶}，不再是独立路线键。桩必须与库的**终态**一致（V60 种子 + V62 UPDATE）——
+     * {@code 韩褶}，不再是独立路线键。桩必须与库的**终态**一致（V60 种子 + V63 UPDATE）——
      * 否则「派生读库」的等价性证据是假的。</p>
      *
      * <p>「罗马帘」那两行是本文件的关键判别物：它在**迁移前的常量表里不存在** ⇒
@@ -276,7 +276,7 @@ class ProcessingOrderRouteSourceTest {
     }
 
     /**
-     * 一条订单明细，可**分别**指定三种载体（V62 / issue #4362 的推导链判别物）：
+     * 一条订单明细，可**分别**指定三种载体（V63 / issue #4362 的推导链判别物）：
      * <ol>
      *   <li>{@code columnCurtainType}/{@code columnCraft} = {@code order_items} 的**结构化列**
      *       （显式字段，最高优先级）；</li>
@@ -385,8 +385,8 @@ class ProcessingOrderRouteSourceTest {
         stubSignals();
         stubRoutings();
         // 加工项名就是「四爪钩」（配件本身），商品名含「布」⇒ 帘种 布帘。
-        // V62 前：信号 四爪钩 → craft=四爪钩 ⇒ 派生键 布帘×四爪钩（库里没有该路线 ⇒ missing_route，
-        //         requested=布帘×四爪钩）；V62 后：指向主线工艺 韩褶 ⇒ 布帘×韩褶 + **derived**。
+        // V63 前：信号 四爪钩 → craft=四爪钩 ⇒ 派生键 布帘×四爪钩（库里没有该路线 ⇒ missing_route，
+        //         requested=布帘×四爪钩）；V63 后：指向主线工艺 韩褶 ⇒ 布帘×韩褶 + **derived**。
         // ⇒ 断言 routeSource=derived 且 requested=布帘×韩褶 就能区分两者（本用例即红证）。
         AtomicReference<ProcessingOrder> po = stubGenerate(List.of(
                 itemWithCarriers("item-1", "布艺遮光帘A", "四爪钩", null, null, null, null)));

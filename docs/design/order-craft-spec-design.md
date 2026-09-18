@@ -185,7 +185,7 @@
 
 ### 4.1 落位与理由
 
-**落位：`order_items` 的**结构化列**（V62，issue #4362 S1）+ `processing_info`（既有 JSONB）顶层扁平键作为**写入口**。**
+**落位：`order_items` 的**结构化列**（V63，issue #4362 S1）+ `processing_info`（既有 JSONB）顶层扁平键作为**写入口**。**
 
 > ⚠️ **本节口径已被 issue #4362（S1）更新**（2026-09-19）：原文写的是「**不加新列、不加新表、不写迁移**」
 > —— 那是 #4346/#4354 阶段（只要求「先落库」）的取法。S1 的判据升级为「把下单行要素**结构化**落到
@@ -193,7 +193,7 @@
 > 埋在 JSONB 里的要素**不可查询、不可约束、下游只能按字符串键取**。故：
 > 1. **新增 11 个 nullable 列**（`curtain_type` / `craft` / `open_count` / `cutting_mode` / `is_shaped` /
 >    `fullness` / `fullness_actual` / `pleat_spacing` / `pleat_count` / `has_pattern` / `corner`，
->    V62 迁移 + `docs/sql/schema.sql` 终态）；
+>    V63 迁移 + `docs/sql/schema.sql` 终态）；
 > 2. **写入口仍是 `processing_info` 顶层键**（不新增 DTO 字段 —— 避免第二份定义，
 >    `OrderDtoContractTest` 锁死 DTO 形态；两个采集端本来就写 JSONB）⇒
 >    `OrderService.createOrder`（三条路径的唯一共享入口）把它**物化**到列上
@@ -294,7 +294,7 @@
 >
 > | 层 | 条件 | 取法 | `route_source` |
 > |---|---|---|---|
-> | 1 **显式字段** | 订单行带 `curtainType` **+** `craft`（V62 起 = `order_items` 的**列**；JSONB 同键是旧载体） | 直读 | `direct` |
+> | 1 **显式字段** | 订单行带 `curtainType` **+** `craft`（V63 起 = `order_items` 的**列**；JSONB 同键是旧载体） | 直读 | `direct` |
 > | 2 **加工项推导** | 显式字段缺的那一维，由**加工项名 / 加工项 options** 经信号映射表推出 | 派生 | `partial`（只一维）/ `derived` |
 > | 3 **信号派生兜底** | 加工项也不给信号 ⇒ 退到**商品名 / 销售方式**（同一张映射表） | 派生 | 同上；两层都不中 ⇒ `default` |
 > | 4 | 键解析出来了但库里无该路线 | 回落默认路线（不 fail-closed；fail-closed 只在**连默认路线都没有**时） | `missing_route` |
