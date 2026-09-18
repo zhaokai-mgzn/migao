@@ -846,6 +846,78 @@ def needs_precondition_assertion(case: dict) -> bool:
     return n_rounds >= 2 or is_write_case(case)
 
 
+# ── 前置的**运行期漂移**容差（`max_growth`，issue #4200）───────────────────────
+# 真值锚点 = `local_runner` 的 `_PRECONDITION_NO_DRIFT`（按该文本检索）与它的漂移判据
+# `after - before > max_growth`：缺省 0 = 「运行期间**不得**新增」。本模块只对齐这一个
+# 缺省值（不复制 runner 的整段判定），供静态判据回答「缺 max_growth 时运行期会容忍多少」。
+PRECONDITION_NO_DRIFT = 0
+
+#: 与「自建商品名」配对的前置类型（真值 = `local_runner._PRECONDITION_TYPES` 的
+#: `product_count_for_keyword`）。一致性由 `tests/unit_ci_workflows/test_case_trust_gate.py`
+#: 的 `test_self_target_type_matches_runner_source` 直接读 runner 源码锁定（防双源漂移）。
+SELF_TARGET_PRECONDITION_TYPE = "product_count_for_keyword"
+
+
+def case_declared_product_names(case: dict) -> set:
+    """`namespaces` 里声明的 `product_name:<值>` = 本用例**自建**的商品名。
+
+    与 `case_declared_resource_values` 同一份 `<kind>:<值>` 约定，只按 **kind** 收窄到商品：
+    判「自建目标」必须知道是**哪一类**资源，只看值会把 `customer_phone:<值>` 也算进来。
+    """
+    out = set()
+    for k in (case or {}).get("namespaces") or []:
+        kind, _, value = str(k).partition(":")
+        if kind == "product_name" and value.strip():
+            out.add(value.strip())
+    return out
+
+
+def self_target_missing_max_growth(case: dict) -> list[str]:
+    """自建商品名 + `expect: 0` 的前置**却没给** `max_growth` ⇒ 返回这些关键词（#4200）。
+
+    判据（**只用现成声明**，不新造字段）：
+      `namespaces` 声明了 `product_name:<KW>`（= 本用例自己会创建这个名字的商品）
+      ∧ 存在 `precondition[type=product_count_for_keyword, source=<KW>, expect=0]`
+      ∧ `max_growth` 缺失或 < 1。
+
+    为什么这是**结构性恒红**（不是偶发红）：runner 的漂移判据 `after - before > max_growth`
+    缺省 0，而用例**自己就要创建同名商品** ⇒ 正常行为下 `0 → 1 > 0` **恒判漂移**、`score`
+    归零 —— 哪怕逐条计分断言全 passed（实证判定跑 `35295494688`：`PR-008` / `PR-016`
+    `score=0.0` 而逐条计分断言全 ✅；同族潜伏例 `CH-005`）。先例 = `HR-002` 的
+    `max_growth: 1`，以及用例库既有的「自建目标的用例必须给 max_growth」口径。
+
+    判别力不丢：`max_growth: 1` 只容忍**自建的那一个**，并行用例再造同名（`0 → 2`）仍判漂移
+    （运行期红证见 `test_eval_debug_permissions_precondition.py` 的 `max_growth: 1` 用例）。
+    """
+    names = case_declared_product_names(case)
+    if not names:
+        return []
+    out: list[str] = []
+    for spec in case.get("precondition") or []:
+        if not isinstance(spec, dict):
+            continue
+        if str(spec.get("type") or "") != SELF_TARGET_PRECONDITION_TYPE:
+            continue
+        kw = str(spec.get("source") or "")
+        if kw not in names:
+            continue
+        # `expect` 缺失 ⇒ 不判（本规则的形态是「声明了必须不存在、却又不容忍自建的那一个」；
+        # 口径与 runner 的 `int(expect)` 强制转换同源，`"0"` 也算 0）。
+        try:
+            expect_i = int(spec.get("expect"))
+        except (TypeError, ValueError):
+            continue
+        if expect_i != 0:
+            continue
+        try:
+            growth = int(spec.get("max_growth", PRECONDITION_NO_DRIFT))
+        except (TypeError, ValueError):
+            growth = PRECONDITION_NO_DRIFT
+        if growth < 1:
+            out.append(kw)
+    return out
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # 五之四、引用新鲜度（`path:NNN` 行号引用）
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1118,6 +1190,25 @@ RULES: tuple[dict, ...] = (
             f"前置不成立时应走 runner 已有的失败关闭路径"
             f"（`{PRECONDITION_FAILCLOSED_ANCHOR}`）。"
             "**红线：不得为了让用例变绿而删这类断言。**"
+        ),
+    },
+    {
+        "code": "CASE-TRUST-SELF-TARGET-NO-MAX-GROWTH",
+        "title": "自建目标的 `expect: 0` 前置必须给 `max_growth`",
+        "why": (
+            "runner 的漂移判据是 `after - before > max_growth`（缺省 0），而用例**自己就会创建**"
+            "同名商品 ⇒ 正常行为下 `0 → 1 > 0` **恒判漂移**、`score` 归零 —— 即使逐条计分断言"
+            "全 passed（实证判定跑 `35295494688` @`d5bca241`：`PR-008` / `PR-016` `score=0.0` 而"
+            "逐条计分断言全 ✅；同族潜伏例 `CH-005`）。"
+            "先例 = `HR-002` 的 `max_growth: 1`（自建目标的用例必须给 max_growth）。"
+        ),
+        "counterexample": ("PR-008（自建名 `测试窗帘A` + `expect: 0` 无 `max_growth`）；"
+                           "PR-016（`E2E建品流程样品帘`）同形；C 端 CH-005（`星夜`）同形"),
+        "implemented": True,
+        "fix": (
+            "给该前置加 `max_growth: 1` —— 只容忍**本用例自己造的那一个**；并行用例再造同名"
+            "（`0 → 2`）仍判漂移，判别力不丢。**不得**改 `expect` / 删断言来绕过："
+            "那会连「基线本就不成立」这一格一起丢掉。"
         ),
     },
     {
@@ -1596,6 +1687,16 @@ def judge_case(case: dict, *, catalog: dict[str, set[str]] | None = None,
                 f"{'、含写期望' if is_write_case(case) else ''}）没有任何**可判定**的前置断言"
                 f"⇒ 前置不成立时红的表现像「agent 不干活」"
                 f"（PG-013 重试前置不成立 / CU-003 客户数=2 的形态）")
+
+    # ── 规则 h：自建目标的 `expect: 0` 前置必须给 `max_growth`（issue #4200）──
+    for kw in self_target_missing_max_growth(case):
+        add("CASE-TRUST-SELF-TARGET-NO-MAX-GROWTH",
+            f"`namespaces` 声明了自建名 {kw!r}（本用例自己会创建它），"
+            f"而 `precondition[{SELF_TARGET_PRECONDITION_TYPE}]` 对同一名字声明 `expect: 0` "
+            f"却不给 `max_growth`（缺省 {PRECONDITION_NO_DRIFT}）⇒ 正常行为下 "
+            f"`0 → 1 > 0` **恒判漂移**、score 归零（实证判定跑 35295494688："
+            f"PR-008 / PR-016 逐条计分断言全 passed 而 score=0.0）"
+            f"⇒ 加 `max_growth: 1` 容忍自建的那一个（并行再造同名仍判漂移）")
 
     # ── 规则 d：单端用例必须标注 persona ──
     if missing_persona_annotation(case):
