@@ -28,6 +28,8 @@ interface TaskCardPrintProps {
   orderNo?: string
   /** 加工单二维码 token（工人扫码报工）；为空时给占位提示，不画假码 */
   qrToken?: string | null
+  /** 二维码缺失时的占位文案（缺省＝待生成）；撤销后传「已撤销」，避免纸面指向不存在的按钮 */
+  qrPlaceholderHint?: string
   positions?: ProductionPosition[]
   className?: string
 }
@@ -41,6 +43,7 @@ export default function TaskCardPrint({
   processingOrderNo,
   orderNo,
   qrToken,
+  qrPlaceholderHint,
   positions,
   className,
 }: TaskCardPrintProps) {
@@ -103,9 +106,13 @@ export default function TaskCardPrint({
                 data-testid="task-card-qr-placeholder"
                 className="flex h-[140px] w-[140px] items-center justify-center border border-dashed border-neutral-400 text-center text-xs text-neutral-500"
               >
-                二维码待生成
-                <br />
-                （本页点「补生成工序」即可）
+                {qrPlaceholderHint ?? (
+                  <>
+                    二维码待生成
+                    <br />
+                    （本页点「补生成工序」即可）
+                  </>
+                )}
               </div>
             )}
             <div className="mt-1 text-xs text-neutral-600">扫码报工</div>
