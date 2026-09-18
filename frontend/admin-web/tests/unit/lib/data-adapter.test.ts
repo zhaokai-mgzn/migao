@@ -9,7 +9,7 @@
  *
  * 这些转换如果出错，数据会静默损坏——后端收到错误值或前端展示错误状态。
  */
-// case_ids: OR-003, OR-004, OR-005, UI-040
+// case_ids: OR-003, OR-004, OR-005, UI-040, UI-047
 
 import { describe, it, expect } from 'vitest'
 import {
@@ -241,6 +241,27 @@ describe('buildLogisticsPayload', () => {
     }
     const payload = buildLogisticsPayload(data)
     expect((payload as any).shippingMethod).toBeUndefined()
+  })
+
+  // ---- 物流类型（issue #4419 / UI-047）----
+
+  it('透传 logisticsType（express 快递 / logistics 物流专线）', () => {
+    const payload = buildLogisticsPayload({
+      company: '四季安物流',
+      trackingNo: 'SJA001',
+      shippingMethod: 'logistics',
+      logisticsType: 'logistics',
+    })
+    expect(payload.logisticsType).toBe('logistics')
+  })
+
+  it('未选物流类型时不下发 logisticsType（由后端按列默认 express 兜底，不写假值）', () => {
+    const payload = buildLogisticsPayload({
+      company: '顺丰速运',
+      trackingNo: 'SF1',
+      shippingMethod: 'logistics',
+    })
+    expect(payload.logisticsType).toBeUndefined()
   })
 
   // ---- 发货人（发货单「经手人」，issue #3768 / UI-040）----

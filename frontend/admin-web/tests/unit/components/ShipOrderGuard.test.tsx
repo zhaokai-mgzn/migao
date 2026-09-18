@@ -19,6 +19,10 @@ vi.mock('@/lib/api', () => ({
   processingOrderApi: {
     detail: (...args: any[]) => mockPODetail(...args),
   },
+  // 客户常用物流档案带出（issue #4419）：本文件不关心带出结果，给个「查不到客户」的空响应
+  customerApi: {
+    getCustomers: vi.fn().mockResolvedValue({ data: { data: { items: [], total: 0 } } }),
+  },
 }))
 
 vi.mock('@/lib/use-route-id', () => ({

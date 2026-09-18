@@ -355,6 +355,18 @@ public class CustomerService extends ServiceImpl<CustomerProfileMapper, Customer
         if (StringUtils.hasText(profile.getDefaultLogisticsCompany())) {
             existing.setDefaultLogisticsCompany(profile.getDefaultLogisticsCompany());
         }
+        // --- 默认收货信息（issue #4419，V70）---
+        // 与上面同口径：只在**显式非空**时覆盖（空白/缺省一律不动既有值）——
+        // 客户管理页只提交改动过的字段，空白若当成「清空」会把已录地址误抹掉。
+        if (StringUtils.hasText(profile.getDefaultReceiverName())) {
+            existing.setDefaultReceiverName(profile.getDefaultReceiverName());
+        }
+        if (StringUtils.hasText(profile.getDefaultReceiverPhone())) {
+            existing.setDefaultReceiverPhone(profile.getDefaultReceiverPhone());
+        }
+        if (StringUtils.hasText(profile.getDefaultReceiverAddress())) {
+            existing.setDefaultReceiverAddress(profile.getDefaultReceiverAddress());
+        }
 
         customerProfileMapper.updateById(existing);
         log.info("更新客户档案成功: id={}", customerId);

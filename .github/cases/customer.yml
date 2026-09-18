@@ -341,3 +341,46 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+
+  - id: CU-009
+    legacy_id: ""
+    title: "客户默认收货信息与常用物流档案（客户管理「收货信息」卡片 + 落库契约，issue #4419）"
+    domains:
+      - customer
+      - ui
+    tier: normal
+    tags:
+      - customer
+      - ui
+      - logistics
+      - receiver-address
+      - admin-web
+    truths_ref:
+      - customer-crm.receiver-address
+    # ── 覆盖说明（issue #4419）──
+    # 用户 2026-09-19 反馈：「客户管理功能缺乏对客户的收货地址信息、常用物流/快递方式以及
+    # 常用物流/快递公司 的记录」。修前 customer_profiles 只有 region_province/city/district
+    # （客户所在地区，不是收货地址），常用物流两列（V47）虽存在但 admin-web 零暴露
+    # （`grep -rn "defaultLogistics" frontend/admin-web/src` = 0 命中）⇒「有列无界面」+「地址无处可存」。
+    # ⚠️ 本用例承担**记录与落库**（确定性面）：读路径在客户详情已由 CU-002/CU-008 覆盖，
+    #   写路径的字段名/落库由单测契约强制（不靠 LLM 行为面重复验）。
+    user_inputs:
+      - "客户管理里要能记录客户的收货地址、常用物流/快递方式和常用物流/快递公司；新增订单选客户时自动带出"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "customer_profiles 新增 default_receiver_name VARCHAR(100) / default_receiver_phone VARCHAR(20) / default_receiver_address TEXT（V70 迁移，列注释与 schema.sql bootstrap 终态同步）；PUT /api/admin/customers/{id} 非空拷贝落库，客户详情 GET /api/admin/customers/{id} 返回"
+      - "客户详情页「收货信息」卡片可查看/编辑：收货人姓名、收货人电话、收货地址、常用物流方式（express 快递 / logistics 物流专线）、常用物流公司（预置候选 datalist + 允许自定义）"
+      - "落库是**效果层**断言：CustomerReceiverAddressPersistTest 断言交给 Mapper 的实体内容（删掉 setXxx 即红）；前端由 customer-detail.test.tsx 断言 updateCustomer payload 五键齐全（空白不覆盖既有值）"
+      - "米宝写路径 customer_manage(update) 的 3 个新列与 CustomerService.updateCustomer 非空拷贝白名单**同集合**（test_tool_field_name_contract.py 的 java-service-null-copy 判据）——防 #4115 同款「工具可写 + 服务层静默丢弃」"
+      - "空白/缺省字段不覆盖既有收货信息（清空语义未定义 ⇒ 一律不覆盖），避免客户管理页把已录地址误抹掉"
+    skip_reason: "[backend-contract] 字段落库与前端表单交互由确定性单测覆盖（CustomerReceiverAddressPersistTest + customer-detail.test.tsx + test_tool_field_name_contract.py）；读路径已由 CU-002/CU-008 覆盖，非 LLM 行为新增面，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-19 新增（issue #4419）：客户管理「收货信息」闭环 —— V70 迁移 3 列 + 客户详情页卡片读写 + 米宝写白名单同集合"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/CustomerReceiverAddressPersistTest.java"
+        - "frontend/admin-web/tests/unit/pages/customer-detail.test.tsx"
+        - "backend/ai-agent-service/tests/test_tool_field_name_contract.py"
+      ci:
+        - pr-check.yml
+      verifies: []
