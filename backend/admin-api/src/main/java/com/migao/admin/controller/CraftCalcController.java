@@ -65,6 +65,7 @@ public class CraftCalcController {
         data.put("fabricMeters", result.fabricMeters());
         data.put("pleatCount", result.pleatCount());
         data.put("perPanelPleats", result.perPanelPleats());
+        data.put("perFold", result.perFold());
         data.put("fullness", result.fullness());
         data.put("fullnessActual", result.fullnessActual());
         data.put("formulaUsed", result.formulaUsed());

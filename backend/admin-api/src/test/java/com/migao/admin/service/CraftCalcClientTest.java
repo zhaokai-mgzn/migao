@@ -15,6 +15,7 @@ import org.springframework.web.client.RestTemplate;
 
 import java.lang.reflect.Field;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -79,7 +80,7 @@ class CraftCalcClientTest {
         return """
                 {"success":true,"data":{
                   "fabric_meters":13.3,"pleat_count":52,"per_panel_pleats":26,"open_count":2,
-                  "margin":0.3,"fullness":2.0,"fullness_actual":2.02,
+                  "margin":0.3,"per_fold":0.25,"fullness":2.0,"fullness_actual":2.02,
                   "formula_used":"fixed_height_pleats",
                   "formula_text":"(6.6+0.3)×2 → 52折 → 0.25×52+0.3 = 13.3米",
                   "source":"formula","craft_tier":"standard","warning":""},
@@ -98,6 +99,7 @@ class CraftCalcClientTest {
         assertThat(result.fabricMeters()).isEqualByComparingTo("13.3");
         assertThat(result.pleatCount()).isEqualTo(52);
         assertThat(result.perPanelPleats()).isEqualTo(26);
+        assertThat(result.perFold()).isEqualByComparingTo("0.25");
         assertThat(result.fullness()).isEqualByComparingTo("2.0");
         assertThat(result.fullnessActual()).isEqualByComparingTo("2.02");
         assertThat(result.formulaUsed()).isEqualTo("fixed_height_pleats");
@@ -106,6 +108,28 @@ class CraftCalcClientTest {
         assertThat(result.source()).isEqualTo("formula");
         assertThat(result.craftTier()).isEqualTo("standard");
         assertThat(result.warning()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("拼色样例：per_fold=0.65 + 34.1 米逐值解析（系数由后端给，Java 侧不自算）")
+    void parsesMixedColorPerFoldVerbatim() {
+        when(restTemplate.exchange(eq(URL), eq(HttpMethod.POST), any(HttpEntity.class), eq(String.class)))
+                .thenReturn(ResponseEntity.ok("""
+                        {"success":true,"data":{
+                          "fabric_meters":34.1,"pleat_count":52,"per_panel_pleats":26,
+                          "per_fold":0.65,"open_count":2,"margin":0.3,
+                          "fullness":2.0,"fullness_actual":5.17,
+                          "formula_used":"fixed_height_pleats",
+                          "formula_text":"(6.6+0.3)×2 → 52折 → 0.65×52+0.3 = 34.1米",
+                          "source":"formula","craft_tier":"standard","warning":""}}
+                        """));
+
+        CraftCalcClient.CraftCalcResult result = client.calc(Map.of(
+                "width", 6.6, "open_count", 2, "style", "拼色", "special_options", List.of("拼1次")));
+
+        assertThat(result.fabricMeters()).isEqualByComparingTo("34.1");
+        assertThat(result.perFold()).isEqualByComparingTo("0.65");
+        assertThat(result.formulaText()).contains("0.65×52");
     }
 
     @Test

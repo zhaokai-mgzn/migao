@@ -58,7 +58,7 @@ class CraftCalcControllerTest extends BaseControllerTest {
 
     private static CraftCalcClient.CraftCalcResult frozen() {
         return new CraftCalcClient.CraftCalcResult(
-                new BigDecimal("13.3"), 52, 26,
+                new BigDecimal("13.3"), 52, 26, new BigDecimal("0.25"),
                 new BigDecimal("2.0"), new BigDecimal("2.02"),
                 "fixed_height_pleats",
                 "(6.6+0.3)×2 → 52折 → 0.25×52+0.3 = 13.3米",
@@ -78,6 +78,7 @@ class CraftCalcControllerTest extends BaseControllerTest {
                 .andExpect(jsonPath("$.data.fabricMeters").value(13.3))
                 .andExpect(jsonPath("$.data.pleatCount").value(52))
                 .andExpect(jsonPath("$.data.perPanelPleats").value(26))
+                .andExpect(jsonPath("$.data.perFold").value(0.25))
                 .andExpect(jsonPath("$.data.fullness").value(2.0))
                 .andExpect(jsonPath("$.data.fullnessActual").value(2.02))
                 .andExpect(jsonPath("$.data.source").value("formula"))
@@ -104,6 +105,23 @@ class CraftCalcControllerTest extends BaseControllerTest {
                 .containsEntry("open_count", 2)
                 .containsEntry("mounting", "s_hook")
                 .containsEntry("craft_tier", "standard");
+    }
+
+    @Test
+    @DisplayName("拼色入参逐字透传：style + special_options 原样给 ai-agent（系数由后端定，Java 侧不自算）")
+    @SuppressWarnings("unchecked")
+    void passesMixedColorOptionsThroughVerbatim() throws Exception {
+        when(craftCalcClient.calc(any())).thenReturn(frozen());
+
+        mockMvc.perform(post(URL).contentType(APPLICATION_JSON).content(
+                        "{\"width\":6.6,\"open_count\":2,\"style\":\"拼色\",\"special_options\":[\"拼1次\"]}"))
+                .andExpect(status().isOk());
+
+        ArgumentCaptor<Map<String, Object>> captor = ArgumentCaptor.forClass(Map.class);
+        verify(craftCalcClient).calc(captor.capture());
+        assertThat(captor.getValue())
+                .containsEntry("style", "拼色")
+                .containsEntry("special_options", java.util.List.of("拼1次"));
     }
 
     @Test

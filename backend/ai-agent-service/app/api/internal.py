@@ -81,14 +81,20 @@ class CraftCalcRequest(BaseModel):
     """算料试算请求（issue #4421，商家手工下单页）
 
     用料口径 = 用户 2026-09-19 裁定的**折数法（标准档）**：
-    `宽 × 倍数 → 折数（按开数取整）→ 0.25×折数 + 余量`。
+    `宽 × 倍数 → 折数（按开数取整）→ 每折吃布 × 折数 + 余量`。
+    **每折吃布随款式/拼次变化**（同一次裁定，纸质速查表表头）：
+    单色 0.25 / 拼色·拼1次 0.65 / 拼色·拼2次 1.2 米每折；余量不随拼色变化（单开 0.2 / 多开 0.3）。
     """
     width: float = Field(..., gt=0, description="窗宽（米）")
     height: Optional[float] = Field(None, gt=0, description="窗高（米）；不传按 2.5m 常见层高处理")
     open_count: int = Field(1, ge=1, description="打开方式开数（1 单开 / 2 双开 / 4 四开）")
     mounting: str = Field("s_hook", description="悬挂方式（s_hook 韩褶才走折数法）")
     craft_tier: str = Field("standard", description="工艺档位（standard 2.0 / economy 1.8）")
-    style: Optional[str] = Field(None, description="款式（**只透传**，引擎无款式分支，不影响数值）")
+    style: Optional[str] = Field(None, description="款式（单色 / 拼色）；拼色**必须**同时给拼次特殊选项才用料系数")
+    special_options: List[str] = Field(
+        default_factory=list,
+        description="部位级特殊选项（逐字名，见 routing.SPECIAL_OPTION_ROUTINGS）；拼色用料系数由 拼1次/拼2次 决定",
+    )
 
 
 @router.post("/tools/execute")
@@ -275,19 +281,24 @@ async def operation_qty(
     return make_response(True, data={"positions": positions})
 
 
-def _formula_text(width: float, fullness: float, pleat_count: int, open_count: int, meters: float) -> str:
+def _formula_text(
+    width: float, fullness: float, pleat_count: int, open_count: int,
+    meters: float, per_fold: float,
+) -> str:
     """可读公式串 —— **后端产出**，与数值同源（issue #4421 交付物 1）。
 
-    形态：`(6.6+0.3)×2.0 → 52折 → 0.25×52+0.3 = 13.3米`。
+    形态：`(6.6+0.3)×2.0 → 52折 → 0.25×52+0.3 = 13.3米`；
+    拼色时系数如实换（`0.65×52+0.3 = 34.1米`）。
 
-    三个数字全部取自**同一次算料**：倍数与折数来自引擎（`build_quote` 的 `fullness` /
-    `pleat_count`），余量走 `curtain_calc.margin_for_open_count`（与算料同一个函数）。
-    ⇒ 公式串不可能与米数不一致；前端**不得**自拼（前端自拼 = 第二份算料逻辑）。
+    四个数字全部取自**同一次算料**：倍数/折数/每折吃布来自引擎（`build_quote` 的
+    `fullness` / `pleat_count` / `per_fold`），余量走 `curtain_calc.margin_for_open_count`
+    （与算料同一个函数）⇒ 公式串不可能与米数不一致；
+    前端**不得**自拼（前端自拼 = 第二份算料逻辑）。
     """
     margin = curtain_calc.margin_for_open_count(open_count)
     return (
         f"({width:g}+{margin:g})×{fullness:g} → {pleat_count:g}折 → "
-        f"{curtain_calc.PLEAT_FABRIC_PER_FOLD:g}×{pleat_count:g}+{margin:g} = {meters:g}米"
+        f"{per_fold:g}×{pleat_count:g}+{margin:g} = {meters:g}米"
     )
 
 
@@ -305,12 +316,34 @@ async def craft_calc(
     `formula_text` 亦由后端按**同一份数字**产出 —— 前端不得自拼公式。
 
     返回 `data`：`fabric_meters` / `pleat_count` / `per_panel_pleats` / `open_count` / `margin` /
+    `per_fold`（每折吃布：单色 0.25 / 拼1次 0.65 / 拼2次 1.2）/
     `fullness`（档位**理论**倍数）/ `fullness_actual`（用料÷窗宽，**实际**倍数）/
     `formula_used` / `formula_text` / `source` / `craft_tier` / `warning`。
 
-    fail-closed：`mounting` 非韩褶（折数法不适用）或档位低于行业下限 ⇒ 400，**不静默回落到倍数法**
-    —— 静默回落正是 issue #4118 ⑤-B 治过的「同一扇窗两个数」缺陷。
+    fail-closed（三处，均**不静默**）：
+    ① `mounting` 非韩褶（折数法不适用）⇒ 400；
+    ② 档位低于行业下限 ⇒ 400；
+    ③ **拼色命中纸表未登记的拼次**（如 `拼3次`）⇒ 400 `MIXED_PER_FOLD_NOT_REGISTERED`
+    —— 不插值、不退回单色系数（那是发明口径）。
     """
+    # 拼色缺口判定**先于**算料：纸表只有「1个折 0.65 / 2个折 1.2」两行，
+    # `拼3次` 是表外项 ⇒ 不猜、不插值，显式报缺口（issue #4421 边界）。
+    gap = curtain_calc.mixed_per_fold_gap(request.special_options)
+    if gap:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "success": False,
+                "error": {
+                    "code": "MIXED_PER_FOLD_NOT_REGISTERED",
+                    "message": (
+                        f"特殊选项「{gap}」的拼色用料系数纸表未登记（已登记："
+                        f"{'/'.join(sorted(curtain_calc.MIXED_COLOR_PER_FOLD))}）——"
+                        "不插值、不按单色系数估算，请先裁定该拼次的每折吃布（米/折）"
+                    ),
+                },
+            },
+        )
     try:
         quote = curtain_calc.build_quote(
             window_width=request.width,
@@ -320,6 +353,7 @@ async def craft_calc(
             fabric_width=_FABRIC_WIDTH,
             craft_tier=request.craft_tier,
             style=request.style,
+            special_options=request.special_options,
         )
     except ValueError as e:  # 倍数低于行业下限（MIN_FULLNESS）等入参非法
         raise HTTPException(
@@ -350,12 +384,13 @@ async def craft_calc(
         "per_panel_pleats": quote["per_panel_pleats"],
         "open_count": quote["open_count"],
         "margin": quote["margin"],
+        "per_fold": quote["per_fold"],
         "fullness": quote["fullness"],
         "fullness_actual": quote.get("fullness_actual"),
         "formula_used": quote["formula_used"],
         "formula_text": _formula_text(
             request.width, quote["fullness"], quote["pleat_count"],
-            request.open_count, quote["fabric_meters"],
+            request.open_count, quote["fabric_meters"], quote["per_fold"],
         ),
         "source": quote["source"],
         "craft_tier": quote["craft_tier"],

@@ -129,6 +129,110 @@ class TestPaperTableReproduction:
 
 
 # ══════════════════════════════════════════════════════════════════════════
+# 拼色用料系数（用户 2026-09-19 裁定，纸质速查表表头原文）
+#
+# 表头：「拼色下料 **1个折 0.65** ／ **2个折 1.2**」—— 用户裁定这是**用料**口径（不是计价）：
+#   单色        0.25 米/折
+#   拼色·拼1次  0.65 米/折
+#   拼色·拼2次  1.2  米/折
+# **余量不变**（单开 0.2 / 多开 0.3）—— 52 折双开：单色 13.3 / 拼1次 34.1 / 拼2次 62.7。
+#
+# 红证（实现前）：引擎恒按 0.25 算 ⇒ 拼1次/拼2次都得 13.3 ⇒ 下面每一条都红。
+# ══════════════════════════════════════════════════════════════════════════
+
+# 纸表表头原文系数（用户 2026-09-19 裁定）：特殊选项名 → 每折吃布（米）
+MIXED_PER_FOLD = {"拼1次": 0.65, "拼2次": 1.2}
+
+
+class TestMixedColorPerFold:
+
+    def test_engine_coefficient_table(self):
+        """引擎的拼色系数表必须与纸表表头**逐值**一致（0.65 / 1.2）。"""
+        for option, per_fold in MIXED_PER_FOLD.items():
+            assert curtain_calc.MIXED_COLOR_PER_FOLD[option] == per_fold
+        assert curtain_calc.PLEAT_FABRIC_PER_FOLD == 0.25      # 单色不变
+
+    @pytest.mark.parametrize("option,per_fold", sorted(MIXED_PER_FOLD.items()))
+    def test_mixed_uses_its_own_per_fold(self, option, per_fold):
+        """拼色 ⇒ 用料 = 系数 × 折数 + 余量（余量与单色同一套）。"""
+        meters, _, info = curtain_calc.calculate_fabric_by_pleats(
+            52, open_count=2, per_fold=per_fold)
+        assert meters == round(per_fold * 52 + 0.3, 2)
+        assert info["per_fold"] == per_fold
+
+    def test_endpoint_single_color_frozen_unchanged(self, client):
+        """防回归：单色 52 折双开仍是 13.3 米（拼色改动不得动单色一个数）。"""
+        data = _data(client, FROZEN)
+        assert data["fabric_meters"] == 13.3
+        assert data["per_fold"] == 0.25
+
+    @pytest.mark.parametrize("option,expected", [("拼1次", 34.1), ("拼2次", 62.7)])
+    def test_endpoint_mixed_numbers(self, client, option, expected):
+        """判据：拼1次 52 折双开 ⇒ **34.1 米**；拼2次 ⇒ **62.7 米**。
+
+        红证：修复前按 0.25 算 ⇒ 两条都得 13.3 ⇒ 红。
+        """
+        data = _data(client, {**FROZEN, "style": "拼色", "special_options": [option]})
+        assert data["pleat_count"] == 52
+        assert data["fabric_meters"] == expected
+        assert data["per_fold"] == MIXED_PER_FOLD[option]
+
+    def test_single_open_margin_still_point_two_for_mixed(self, client):
+        """单开余量仍为 0.2（防「顺手统一余量」）：拼1次 4 折单开 = 0.65×4+0.2 = 2.8。"""
+        data = _data(client, {
+            "width": 2.0, "open_count": 1, "style": "拼色", "special_options": ["拼1次"],
+        })
+        assert data["open_count"] == 1
+        assert data["margin"] == 0.2
+        assert data["fabric_meters"] == round(0.65 * data["pleat_count"] + 0.2, 2)
+
+    def test_single_color_margin_anchor_untouched(self, client):
+        """纸表单开锚（单色 4 折 = 1.2 米）不得被拼色改动带偏。"""
+        meters, _, _ = curtain_calc.calculate_fabric_by_pleats(4, open_count=1)
+        assert meters == 1.2
+
+    def test_formula_text_carries_the_mixed_coefficient(self, client):
+        """公式串必须带上真实系数（0.65），不得仍写 0.25（否则展示与数值不同源）。"""
+        data = _data(client, {**FROZEN, "style": "拼色", "special_options": ["拼1次"]})
+        assert "0.65×52" in data["formula_text"]
+        assert data["formula_text"].endswith("= 34.1米")
+
+    def test_single_color_style_does_not_change_numbers(self, client):
+        """`style=单色`（显式）与不传 style 同值 —— 系数只由拼次决定，不由款式单独决定。"""
+        base = _data(client, FROZEN)
+        explicit = _data(client, {**FROZEN, "style": "单色"})
+        assert explicit["fabric_meters"] == base["fabric_meters"]
+        assert explicit["per_fold"] == 0.25
+
+    def test_mixed_style_without_special_option_is_not_a_mixed_quote(self, client):
+        """`style=拼色` 但**没给**拼次 ⇒ 无系数依据 ⇒ 不得凭空按 0.65/1.2 算。
+
+        本单不发明口径：按单色系数 0.25 算，并在 `warning` 里**显式**说明（可见，不静默）。
+        """
+        data = _data(client, {**FROZEN, "style": "拼色"})
+        assert data["fabric_meters"] == 13.3
+        assert data["per_fold"] == 0.25
+        assert "拼次" in data["warning"]
+
+    def test_unregistered_mixed_option_is_visible_not_silent(self, client):
+        """**拼3次不在纸表里** ⇒ 不猜、不插值：显式 400 + 缺口说明（不得静默按 0.65/1.2/0.25 算）。"""
+        resp = _post(client, {**FROZEN, "style": "拼色", "special_options": ["拼3次"]})
+        assert resp.status_code == 400
+        assert "MIXED_PER_FOLD_NOT_REGISTERED" in resp.text
+        assert "拼3次" in resp.text
+
+    def test_unregistered_option_constant_is_registered_as_gap(self):
+        """缺口登记可机读：`MIXED_PER_FOLD_UNREGISTERED` 必须含 `拼3次`（登记缺口，不静默）。"""
+        assert "拼3次" in curtain_calc.MIXED_PER_FOLD_UNREGISTERED
+
+    def test_per_fold_is_reflected_in_fullness_actual(self, client):
+        """实际倍数随用料走：拼2次 62.7 ÷ 6.6 = 9.5（理论倍数仍是 2.0）。"""
+        data = _data(client, {**FROZEN, "style": "拼色", "special_options": ["拼2次"]})
+        assert data["fullness"] == 2.0
+        assert data["fullness_actual"] == 9.5
+
+
+# ══════════════════════════════════════════════════════════════════════════
 # 判据 4：6.6m / 双开 / 标准档 ⇒ 52 折 / 13.3 米（冻结样例）
 # ══════════════════════════════════════════════════════════════════════════
 
@@ -227,8 +331,8 @@ class TestResponseShape:
 
     EXPECTED_KEYS = {
         "fabric_meters", "pleat_count", "per_panel_pleats", "open_count", "margin",
-        "fullness", "fullness_actual", "formula_used", "formula_text", "source",
-        "craft_tier", "warning",
+        "per_fold", "fullness", "fullness_actual", "formula_used", "formula_text",
+        "source", "craft_tier", "warning",
     }
 
     def test_data_has_frozen_keys(self, client):

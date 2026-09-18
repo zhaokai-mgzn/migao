@@ -2521,15 +2521,20 @@ cases:
       - fabric-calc.pleat-method
       - fabric-calc.craft-tier
       - fabric-calc.fullness-actual
+      - fabric-calc.mixed-color-per-fold
       - fabric-calc.craft-calc-endpoint
     # ── 覆盖说明（issue #4421，后端半边）──
     # 商家手工下单页此前**零算料通路**（数量/米数靠商家手填）。本端点 =
     # `POST /api/internal/production/craft-calc`（ai-agent，Service Token）+ admin-api
     # `CraftCalcClient` / `POST /api/admin/orders/craft-calc`（试算，不落库）。
     # 口径 = 用户 2026-09-19 裁定：折数法（标准档 2.0）——`折数 = round((W×N − margin)/0.25)`
-    # 再按开数取整；`用料 = 0.25×折数 + margin`（单开 0.2 / 多开 0.3）。
+    # 再按开数取整；`用料 = 每折吃布 × 折数 + margin`（单开 0.2 / 多开 0.3）。
+    # **每折吃布随款式/拼次变化**（同一次裁定，纸质速查表表头原文「拼色下料 1个折 0.65 / 2个折 1.2」，
+    # 是**用料**口径）：单色 0.25 / 拼色·拼1次 0.65 / 拼色·拼2次 1.2 米每折；余量不随拼色变化。
     # 纸表逐值复现（本单的锚）：单开 0.25n+0.2、对开 0.25n+0.3；
-    # 抽验 4折=1.2 / 8折=2.3 / 48折=12.3 / 52折=13.3 / 56折=14.3；6.6m 双开标准档 ⇒ 52 折 / 13.3 米。
+    # 抽验 4折=1.2 / 8折=2.3 / 48折=12.3 / 52折=13.3 / 56折=14.3；6.6m 双开标准档 ⇒ 52 折 / 13.3 米；
+    # 拼色 52 折双开 ⇒ 拼1次 34.1 米 / 拼2次 62.7 米。
+    # ⚠️ 缺口（不猜不插值）：纸表未登记 `拼3次` 的用料系数 ⇒ 端点 fail-closed `MIXED_PER_FOLD_NOT_REGISTERED`。
     # 架构口径：**不新增第二份算料逻辑** —— 端点只调 `curtain_calc.build_quote`，
     # `formula_text` 由后端按同一份数字产出（前端/Java 侧自拼 = 第二份算料逻辑）。
     user_inputs:
@@ -2539,8 +2544,9 @@ cases:
     data_checks:
       - "（散文、**不计分**）折数法纸表逐值复现：单开 0.25n+0.2、对开 0.25n+0.3（4折=1.2/8折=2.3/48折=12.3/52折=13.3/56折=14.3）"
       - "（散文、**不计分**）单一真值：端点返回值 === 直调 curtain_calc.build_quote 逐值相等；formula_text 与数值同源（后端产出）"
+      - "（散文、**不计分**）拼色用料系数（用户 2026-09-19 裁定）：拼1次 0.65 / 拼2次 1.2 米每折；52 折双开 ⇒ 34.1 / 62.7 米；拼3次未登记 ⇒ fail-closed 显式报缺口"
     skip_reason: "[backend-contract] 内部端点 + Java 客户端由 pytest（tests/test_production/test_craft_calc.py）与 JUnit（CraftCalcClientTest / CraftCalcControllerTest）验证，非 LLM 行为，不进入 agent-eval 冒烟"
-    merge_log: "2026-09-19 新增（issue #4421 后端半边）：算料试算端点 + 折数法单一真值 + 纸表逐值复现。前端（下单页试算接线）由另一会话承担，本用例只锚后端契约。"
+    merge_log: "2026-09-19 新增（issue #4421 后端半边）：算料试算端点 + 折数法单一真值 + 纸表逐值复现。前端（下单页试算接线）由另一会话承担，本用例只锚后端契约。同日追加用户裁定：拼色每折吃布系数（拼1次 0.65 / 拼2次 1.2 米每折，纸表表头原文，是**用料**而非计价）—— 与真值源 §10 旧措辞冲突，已按裁定改正 docs §10；`拼3次` 纸表未登记 ⇒ 显式缺口 fail-closed，不插值。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_production/test_craft_calc.py"

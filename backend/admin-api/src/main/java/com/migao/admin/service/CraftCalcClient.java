@@ -23,7 +23,8 @@ import java.util.Map;
  * 调 ai-agent 内部端点 {@code POST /api/internal/production/craft-calc}（Service Token 认证）。
  *
  * <p>真值源：{@code docs/curtain-fabric-quote-rules.md} §8（韩折折数法）/ §9（工艺档位）/
- * §11（算例）。用料口径 = 用户 2026-09-19 裁定：`宽 × 倍数 → 折数（按开数取整）→ 0.25×折数 + 余量`。
+ * §11（算例）。用料口径 = 用户 2026-09-19 裁定：`宽 × 倍数 → 折数（按开数取整）→ 每折吃布 × 折数 + 余量`
+ * —— **每折吃布随款式/拼次变化**（单色 0.25 / 拼色·拼1次 0.65 / 拼色·拼2次 1.2 米，纸质速查表表头）。
  * 算料口径的唯一实现是 ai-agent 的 {@code app/tools/curtain_calc.py} ——
  * <b>Java 侧不复制第二份算料逻辑</b>（同 {@link ProductionOperationQtyClient} 口径），
  * 本类只做「问 + 取」。<b>公式串 {@code formula_text} 亦由 ai-agent 后端产出</b>，
@@ -110,6 +111,7 @@ public class CraftCalcClient {
                     data.path("fabric_meters").decimalValue(),
                     data.path("pleat_count").asInt(),
                     data.path("per_panel_pleats").asInt(),
+                    data.path("per_fold").decimalValue(),
                     data.path("fullness").decimalValue(),
                     data.path("fullness_actual").isMissingNode() || data.path("fullness_actual").isNull()
                             ? null : data.path("fullness_actual").decimalValue(),
@@ -147,9 +149,10 @@ public class CraftCalcClient {
     /**
      * 试算结果。
      *
-     * @param fabricMeters 用料米数（折数法：`0.25×折数 + 余量`）
+     * @param fabricMeters 用料米数（折数法：`每折吃布 × 折数 + 余量`）
      * @param pleatCount 折数（按开数取整后的总折数）
      * @param perPanelPleats 每片折数
+     * @param perFold 每折吃布（米）：单色 0.25 / 拼色·拼1次 0.65 / 拼色·拼2次 1.2（用户 2026-09-19 裁定）
      * @param fullness **理论**倍数（档位名义值，standard 2.0 / economy 1.8）
      * @param fullnessActual **实际**倍数（用料 ÷ 窗宽；与理论倍数语义不同，展示取实际值）
      * @param formulaUsed 算式（{@code fixed_height_pleats} / {@code fixed_width_pleats}）
@@ -161,6 +164,7 @@ public class CraftCalcClient {
     public record CraftCalcResult(BigDecimal fabricMeters,
                                   int pleatCount,
                                   int perPanelPleats,
+                                  BigDecimal perFold,
                                   BigDecimal fullness,
                                   BigDecimal fullnessActual,
                                   String formulaUsed,

@@ -2838,10 +2838,11 @@
 期望: direct_reply
 数据: （散文、**不计分**）折数法纸表逐值复现：单开 0.25n+0.2、对开 0.25n+0.3（4折=1.2/8折=2.3/48折=12.3/52折=13.3/56折=14.3）
 数据: （散文、**不计分**）单一真值：端点返回值 === 直调 curtain_calc.build_quote 逐值相等；formula_text 与数值同源（后端产出）
+数据: （散文、**不计分**）拼色用料系数（用户 2026-09-19 裁定）：拼1次 0.65 / 拼2次 1.2 米每折；52 折双开 ⇒ 34.1 / 62.7 米；拼3次未登记 ⇒ fail-closed 显式报缺口
 跳过: [backend-contract] 内部端点 + Java 客户端由 pytest（tests/test_production/test_craft_calc.py）与 JUnit（CraftCalcClientTest / CraftCalcControllerTest）验证，非 LLM 行为，不进入 agent-eval 冒烟
 ```
-真值: fabric-calc.pleat-method, fabric-calc.craft-tier, fabric-calc.fullness-actual, fabric-calc.craft-calc-endpoint
-溯源: 2026-09-19 新增（issue #4421 后端半边）：算料试算端点 + 折数法单一真值 + 纸表逐值复现。前端（下单页试算接线）由另一会话承担，本用例只锚后端契约。 ｜ tags: order, craft_calc, fabric, single_source_of_truth
+真值: fabric-calc.pleat-method, fabric-calc.craft-tier, fabric-calc.fullness-actual, fabric-calc.mixed-color-per-fold, fabric-calc.craft-calc-endpoint
+溯源: 2026-09-19 新增（issue #4421 后端半边）：算料试算端点 + 折数法单一真值 + 纸表逐值复现。前端（下单页试算接线）由另一会话承担，本用例只锚后端契约。同日追加用户裁定：拼色每折吃布系数（拼1次 0.65 / 拼2次 1.2 米每折，纸表表头原文，是**用料**而非计价）—— 与真值源 §10 旧措辞冲突，已按裁定改正 docs §10；`拼3次` 纸表未登记 ⇒ 显式缺口 fail-closed，不插值。 ｜ tags: order, craft_calc, fabric, single_source_of_truth
 
 ## 加工项域（11 case）
 
