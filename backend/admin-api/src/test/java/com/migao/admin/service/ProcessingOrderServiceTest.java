@@ -1570,4 +1570,113 @@ class ProcessingOrderServiceTest {
 
         verify(processingOrderMapper, never()).incrementPrintCount(any(), any(), any());
     }
+
+    // ── 列表查询 N+1（issue #4304）────────────────────────────────
+    //
+    // 实测（issue #4304）：GET /api/admin/processing-orders 31 行 ≈ 2.0s，SQL 日志同一请求窗口
+    // 里 `FROM orders` 单行查询 63 条（31 行 × 2 次请求）——根因是 list() 逐行 toResponse()，
+    // 而 toResponse() 内部 orderMapper.selectById(po.getOrderId()) 只为拿 orderNo/customerName/customerPhone。
+    // 下列两条用例的**红证**：修复前逐行 selectById ⇒ `never()` / `times(1)` 断言必红。
+
+    /** 列表真值构造：N 行加工单 + 与之一一对应的订单（订单号/客户名/电话逐行可区分）。 */
+    private List<Order> ordersFor(int count) {
+        List<Order> orders = new ArrayList<>();
+        for (int i = 0; i < count; i++) {
+            orders.add(Order.builder()
+                    .id("order-" + i)
+                    .tenantId(TENANT)
+                    .orderNo("ORD-20260912-" + String.format("%04d", i))
+                    .customerName("客户" + i)
+                    .customerPhone("13800138" + String.format("%03d", i))
+                    .build());
+        }
+        return orders;
+    }
+
+    /** 列表真值构造：N 行加工单，orderId 逐行不同（防「按位取错订单」）。 */
+    private List<ProcessingOrder> processingOrdersFor(int count) {
+        List<ProcessingOrder> rows = new ArrayList<>();
+        for (int i = 0; i < count; i++) {
+            ProcessingOrder po = po("po-" + i, "issued");
+            po.setOrderId("order-" + i);
+            po.setProcessingOrderNo("JG-20260912-" + String.format("%04d", i));
+            rows.add(po);
+        }
+        return rows;
+    }
+
+    /** 逐行比对：orderId / orderNo / customerName / customerPhone 必须与订单真值**一一对应**。 */
+    private void assertOrderFieldsAligned(List<ProcessingOrderResponse> result) {
+        List<ProcessingOrder> truth = processingOrdersFor(result.size());
+        List<String> orderIds = new ArrayList<>();
+        List<String> poNos = new ArrayList<>();
+        for (int i = 0; i < result.size(); i++) {
+            assertThat(result.get(i).getOrderNo()).isEqualTo("ORD-20260912-" + String.format("%04d", i));
+            assertThat(result.get(i).getCustomerName()).isEqualTo("客户" + i);
+            assertThat(result.get(i).getCustomerPhone()).isEqualTo("13800138" + String.format("%03d", i));
+            orderIds.add(result.get(i).getOrderId());
+            poNos.add(result.get(i).getProcessingOrderNo());
+        }
+        // 加工单号与订单号必须**同行对齐**（批量结果按 orderId 建映射，不得按查询返回顺序错位）
+        assertThat(orderIds).containsExactlyElementsOf(
+                truth.stream().map(ProcessingOrder::getOrderId).toList());
+        assertThat(poNos).containsExactlyElementsOf(
+                truth.stream().map(ProcessingOrder::getProcessingOrderNo).toList());
+    }
+
+    @Test
+    @DisplayName("#4304 列表 31 行：订单**一次批量取回**，逐行 selectById 调用 0 次（N+1 红证）")
+    void listLoadsOrdersInOneBatchInsteadOfPerRow() {
+        when(processingOrderMapper.selectList(any())).thenReturn(processingOrdersFor(31));
+        when(orderMapper.selectBatchIds(anyCollection())).thenReturn(ordersFor(31));
+
+        List<ProcessingOrderResponse> result = processingOrderService.list(null, null, TENANT);
+
+        assertThat(result).hasSize(31);
+        // 红证①：修复前这里 31 次
+        verify(orderMapper, never()).selectById(anyString());
+        // 红证②：修复前这里是 0 次
+        verify(orderMapper, times(1)).selectBatchIds(anyCollection());
+        // 防「批量查询少取字段/按位错配」：逐行与订单真值相等
+        assertOrderFieldsAligned(result);
+    }
+
+    @Test
+    @DisplayName("#4304 列表关键字路径：同样一次批量取回订单（selectByKeyword 分支不回归 N+1）")
+    void listByKeywordAlsoLoadsOrdersInOneBatch() {
+        when(processingOrderMapper.selectByKeyword(eq("JG-20260912"), eq(TENANT)))
+                .thenReturn(processingOrdersFor(5));
+        when(orderMapper.selectBatchIds(anyCollection())).thenReturn(ordersFor(5));
+
+        List<ProcessingOrderResponse> result = processingOrderService.list("JG-20260912", null, TENANT);
+
+        assertThat(result).hasSize(5);
+        verify(orderMapper, never()).selectById(anyString());
+        verify(orderMapper, times(1)).selectBatchIds(anyCollection());
+        assertOrderFieldsAligned(result);
+    }
+
+    @Test
+    @DisplayName("#4304 空列表：不下发空 IN 查询（无行 ⇒ 零次订单查询）")
+    void listWithNoRowsQueriesNoOrders() {
+        when(processingOrderMapper.selectList(any())).thenReturn(List.of());
+
+        assertThat(processingOrderService.list(null, null, TENANT)).isEmpty();
+
+        verify(orderMapper, never()).selectById(anyString());
+        verify(orderMapper, never()).selectBatchIds(anyCollection());
+    }
+
+    @Test
+    @DisplayName("#4304 详情路径不回归：getDetail 仍按单条 selectById 取订单（不改签名语义）")
+    void getDetailStillLoadsOrderBySingleSelect() {
+        when(processingOrderMapper.selectOne(any())).thenReturn(po("po-1", "issued"));
+        when(orderMapper.selectById("order-001")).thenReturn(confirmedOrder);
+
+        ProcessingOrderResponse resp = processingOrderService.getDetail("po-1", TENANT);
+
+        assertThat(resp.getOrderNo()).isEqualTo("ORD-20260912-0001");
+        verify(orderMapper, times(1)).selectById("order-001");
+        verify(orderMapper, never()).selectBatchIds(anyCollection());
+    }
 }
