@@ -396,9 +396,10 @@ class HumanHandoffTool(BaseTool):
                 # 放 header 不放 body（同 #3605 取舍：来源不由 payload 决定）。
                 headers={
                     "X-Agent-Client": context.ticket_source,
-                    # 幂等键（issue #4037 / F19）：同一重试窗内取值相同 ⇒ 服务端去重，
-                    # 「已建单但客户端报失败」后重试**只落一张工单**。
-                    CLIENT_REQUEST_ID_HEADER: _request_window_id(),
+                    # 幂等键（issue #4037 / F19；作用域 = **会话**，issue #4195）：同一会话
+                    # 同一重试窗内取值相同 ⇒ 服务端去重，「已建单但客户端报失败」后重试
+                    # **只落一张工单**；不同会话取值不同 ⇒ 不再回放别人的工单。
+                    CLIENT_REQUEST_ID_HEADER: _request_window_id(context),
                 },
             )
 
