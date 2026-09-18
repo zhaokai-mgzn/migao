@@ -535,6 +535,90 @@ class TestFullnessActualPassthrough:
 
 
 # ══════════════════════════════════════════════
+# 默认档**静默**回落 ⇒ 显式告警（issue #4118 ⑤-B）
+#
+# 病根：韩褶（s_hook）折数法只在**显式**传 `craft_tier` / `pleat_count` 时生效
+# （`pleat_mode` 判据在 `build_quote` 内），两者都缺 ⇒ **静默**回落倍数法
+# （回落分支的 `warning` 为空）。实测 6.6m 窗 / 2.6m 高 / 双开 / 3.2m 门幅：
+# 标准档折数法 **13.3 米（52 折）** vs 倍数法 **13.8 米**，差 0.5 米**且无任何告警**。
+# 治法：回落分支**也**返回显式 `warning`（说明按倍数法计价、非标准档折数法）。
+# ⚠️ 铁律：**数值一个字都不能变**（13.8 仍是 13.8）——本项治的是**静默**，不是数值。
+# 「按 §9 接线默认标准档（13.8→13.3）」= 改既有报价口径 = 改钱，**不在本包**（转客户提问项）。
+# ══════════════════════════════════════════════
+
+class TestDefaultTierFallbackWarning:
+    """漏传档位/折数时的倍数法回落必须**显式告警**，且数值逐值不变。"""
+
+    #: ⑤-B 红证场景（与文档 §9 待裁定条目的实测场景一致）
+    FALLBACK = dict(
+        window_width=6.6, window_height=2.6, mounting="s_hook",
+        open_count=2, fabric_width=3.2, fabric_price=50.0,
+    )
+
+    def test_fallback_to_multiplier_method_is_not_silent(self):
+        """★红证①：漏传 `craft_tier`/`pleat_count` ⇒ 倍数法回落的 `warning` **必须非空**。
+
+        改前形态：回落分支返回 `warning=""` ⇒ 顾客拿到的是倍数法的数（13.8 米），
+        却**没有任何信号**说明它不等于标准档折数法（13.3 米）——「静默」就是本项的缺陷。
+        """
+        q = build_quote(**self.FALLBACK)
+        assert q["formula_used"] == "fixed_height", (
+            f"前提：漏传档位时走的应是倍数法，实际 formula_used={q['formula_used']!r}"
+        )
+        assert q["warning"], (
+            "漏传档位/折数时**静默**走倍数法（warning 为空）—— 同一单与标准档折数法差 0.5 米"
+            "却无任何告警（issue #4118 ⑤-B）"
+        )
+        assert "倍数法" in q["warning"], f"告警须点名本次口径是倍数法：{q['warning']!r}"
+        assert "craft_tier" in q["warning"] and "pleat_count" in q["warning"], (
+            f"告警须给出补救入口（传 craft_tier 或 pleat_count）：{q['warning']!r}"
+        )
+
+    def test_fallback_values_are_byte_for_byte_unchanged(self):
+        """★红证②（防顺手改数）：回落分支**逐值**与改前相同，且 ≠ 标准档折数法。
+
+        本项只补告警、**不动数值**：13.8 仍是 13.8（标准档折数法 13.3 是**另一个**口径，
+        改它 = 改钱 ⇒ 不在本包）。任何"顺手把默认值接成标准档"的实现都会在此变红。
+        """
+        q = build_quote(**self.FALLBACK)
+        assert {
+            "fabric_meters": q["fabric_meters"],
+            "fabric_cost": q["fabric_cost"],
+            "processing_cost": q["processing_cost"],
+            "accessory_cost": q["accessory_cost"],
+            "install_cost": q["install_cost"],
+            "total": q["total"],
+            "fullness": q["fullness"],
+            "formula_used": q["formula_used"],
+        } == {
+            "fabric_meters": 13.8, "fabric_cost": 690.0, "processing_cost": 138.0,
+            "accessory_cost": 0.0, "install_cost": 126.0, "total": 954.0,
+            "fullness": 2.0, "formula_used": "fixed_height",
+        }, f"回落分支的数值被改动了（本项只治静默、不改钱）：{q}"
+        assert "pleat_count" not in q and "fullness_actual" not in q, (
+            "回落仍是倍数法 ⇒ 不得凭空长出折数字段（否则卡片会渲染一个没人算过的折数）"
+        )
+        # 对照：标准档折数法确实是**另一个**数（若两法同值，本告警无意义）
+        std = build_quote(**self.FALLBACK, craft_tier="standard")
+        assert (std["fabric_meters"], std["pleat_count"]) == (13.3, 52)
+        assert std["warning"] == "", "显式传档位 ⇒ 折数法，不该有「回落」告警"
+        assert q["fabric_meters"] != std["fabric_meters"]
+
+    def test_no_false_alarm_when_method_is_explicit_or_not_applicable(self):
+        """防噪音告警：非韩褶（倍数法本就是本口径）与显式传档位/折数 ⇒ 不得报「回落」。"""
+        eyelet = build_quote(
+            window_width=3.0, window_height=2.7, mounting="eyelet",
+            fabric_width=3.0, fabric_price=30.0,
+        )
+        assert eyelet["warning"] == "", "打孔帘走倍数法是本口径，不是「回落」"
+        assert build_quote(**self.FALLBACK, craft_tier="standard")["warning"] == ""
+        assert build_quote(**self.FALLBACK, craft_tier="economy")["warning"] == ""
+        assert build_quote(
+            **self.FALLBACK, pleat_count=48, source="customer_quoted",
+        )["warning"] == "", "顾客自报折数 ⇒ 折数法，不是「回落」"
+
+
+# ══════════════════════════════════════════════
 # 辅料口径（issue #4118，以 #3005 为准）：**不推导、只显式**
 #
 # 病根：`ring_count = round(meters * ROMAN_RING_PER_METER)` 由米数推导罗马圈个数并单列费用，

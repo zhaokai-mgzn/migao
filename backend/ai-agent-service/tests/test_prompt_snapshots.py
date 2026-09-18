@@ -12,6 +12,7 @@
 """
 
 import os as _os
+import re
 
 import pytest
 
@@ -489,6 +490,108 @@ def test_customer_prompt_length_snapshot(skill):
         warnings.warn(
             f"⚠️  {skill}: C 端 prompt 长度 {len(prompt)}/{max_len} "
             f"({len(prompt)*100//max_len}%) — 接近上限，新内容需精简"
+        )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 报价协商口径「不再打架」（issue #4118 ⑥-B）
+#
+# 病根：**同一段 system prompt** 里两句相反指令 ——
+#   L3（`references/prompts/customer_quote.md`）：「顾客问『还能便宜点吗』→ 传
+#       craft_tier=economy 重算一档，给省 X 米布、省 ¥Y 的对比」；
+#   L4（`customer_quote_skill.py` 的 `CUSTOMER_QUOTE_SYSTEM_PROMPT`）：「问能不能便宜/有优惠
+#       → 引导活动页或到店确认，**不要承诺**」。
+# L4 拼在**后**（调用点 `_build_system_prompt(skill_name, inline_prompt=system_prompt)`）
+# ⇒ 实际行为取决于 L4；而笼统的「不要」会把 #3990 已交付的**工艺省料方案对比**一起禁掉。
+# 治法（B：保留能力 + 消除矛盾）：两侧收口 —— 明确区分「**工艺省料方案对比**（要做）」
+# 与「**价格优惠承诺**（不做）」，使两层的动作集**互不重叠**。
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _bullets_with(text: str, marker: str):
+    """返回含 `marker` 的**整行**（逐行 bullet 粒度；找不到返回空表）。"""
+    return [ln.strip() for ln in text.splitlines() if marker in ln]
+
+
+class TestQuoteNegotiationPromptNotConflicting:
+    """省料对比要做、价格优惠承诺不做 —— L3 与 L4 对**同一动作**不得给出相反指令。"""
+
+    #: L3 要求做的动作（工艺省料方案对比）的关键词
+    SAVING_ACTION = ("重算", "省料", "省米", "工艺对比")
+    #: L4 禁止的动作（价格优惠承诺）的关键词
+    DISCOUNT_ACTION = ("价格优惠", "折扣")
+
+    def _layers(self):
+        """按**运行时口径**取三层：L3（md 原文）、L4（SkillConfig 内联）、组装结果。"""
+        from app.graph.skills.customer_quote_skill import CUSTOMER_QUOTE_SYSTEM_PROMPT as L4
+
+        with open(_os.path.join(_EXAMPLES_DIR, "prompts", "customer_quote.md"),
+                  encoding="utf-8") as f:
+            l3 = f.read()
+        composed = _build_system_prompt("customer_quote", inline_prompt=L4)
+        return l3, L4, composed
+
+    def _l3_saving_bullet(self, l3: str) -> str:
+        hits = _bullets_with(l3, "craft_tier=economy")
+        assert len(hits) == 1, f"L3 的省料对比条目应恰好 1 条，实际 {len(hits)} 条：{hits}"
+        return hits[0]
+
+    def _l4_scope_of_prohibition(self, l4: str) -> str:
+        """L4「不要承诺」的**宾语**（禁令作用域）—— 冲突与否全看这一段。"""
+        hits = _bullets_with(l4, "不要承诺")
+        assert len(hits) == 1, f"L4 的「不要承诺」条目应恰好 1 条，实际 {len(hits)} 条：{hits}"
+        m = re.search(r"不要承诺([^。；\n]*)", hits[0])
+        assert m, f"L4 的禁令句式变了，无法解析作用域：{hits[0]!r}"
+        return m.group(1)
+
+    def test_l3_keeps_saving_comparison_and_declares_it_not_a_discount(self):
+        """L3：省料对比能力**保留**（#3990 已交付，删掉 = 删功能），且明说**不是**价格优惠承诺。"""
+        l3, _, composed = self._layers()
+        bullet = self._l3_saving_bullet(l3)
+        assert "重算" in bullet and "省" in bullet, (
+            f"L3 丢了「economy 重算给省 X 米布对比」能力 —— 这是 #3990 已交付的功能：{bullet!r}"
+        )
+        assert re.search(r"(不是|非)[^。；\n]{0,8}价格优惠", bullet), (
+            f"L3 必须明说这是**工艺省料方案**的对比、**不是**价格优惠承诺（否则与 L4 打架）：{bullet!r}"
+        )
+        assert bullet in composed, "L3 的这条指导没进组装后的 system prompt"
+
+    def test_l4_prohibition_is_scoped_to_price_discount_only(self):
+        """L4：「不要承诺」的作用域**只限价格优惠**，且显式豁免省料对比（不再笼统禁）。"""
+        _, l4, composed = self._layers()
+        scope = self._l4_scope_of_prohibition(l4)
+        assert any(k in scope for k in self.DISCOUNT_ACTION), (
+            f"L4 的禁令宾语未限定为「价格优惠/折扣」，实际作用域={scope!r}"
+        )
+        leaked = [k for k in self.SAVING_ACTION if k in scope]
+        assert not leaked, (
+            f"L4 的禁令把省料对比一起禁掉了（命中 {leaked}）⇒ 与 L3 相反指令，"
+            f"作用域={scope!r}"
+        )
+        assert any(k in l4 for k in ("省料", "工艺对比", "省米")), (
+            "L4 必须显式豁免工艺省料对比（否则模型会连省料对比一起拒掉）"
+        )
+        assert "允许" in l4 or "可以" in l4, "L4 的豁免须是**允许式**表述，不是又一句禁令"
+
+    def test_two_layers_address_disjoint_actions(self):
+        """结构化判据：省料对比 = L3 要做 ∩ L4 不禁；价格优惠承诺 = L3 不要求 ∩ L4 禁。"""
+        l3, l4, _ = self._layers()
+        saving_bullet = self._l3_saving_bullet(l3)
+        scope = self._l4_scope_of_prohibition(l4)
+
+        # ① 省料对比：L3 要求做（正向指令），L4 的禁令作用域**不覆盖**它
+        assert any(k in saving_bullet for k in self.SAVING_ACTION), saving_bullet
+        assert not any(k in scope for k in self.SAVING_ACTION), (
+            f"省料对比同时被 L3 要求、被 L4 禁止 ⇒ 两句打架：scope={scope!r}"
+        )
+        # ② 价格优惠承诺：L4 禁止，而 L3 的省料条目**不**对它下相反指令
+        assert any(k in scope for k in self.DISCOUNT_ACTION), scope
+        assert "不要承诺" not in saving_bullet, (
+            f"L3 的省料条目里出现禁令句式 ⇒ 与 L4 的作用域再次交叠：{saving_bullet!r}"
+        )
+        # ③ 组装结果里两层都在（同一次调用的同一段 prompt）
+        assert saving_bullet in _build_system_prompt(
+            "customer_quote",
+            inline_prompt=l4,
         )
 
 
