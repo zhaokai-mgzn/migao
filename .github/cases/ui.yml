@@ -1499,3 +1499,33 @@ cases:
         - mini-app.yml
       verifies: []
 
+  - id: UI-046
+    legacy_id: ""
+    title: "admin-web 构建契约 - route 文件导出越界 / 预渲染期错误必须被 CI 的 next build 拦下（issue #4412）"
+    domains:
+      - ui
+      - frontend
+      - ci
+    tier: normal
+    tags:
+      - ci
+      - next-build
+      - build-contract
+    truths_ref:
+      - frontend-fix.next-build
+    user_inputs:
+      - "前端 PR：route 文件（page/layout/template/route）只导出框架认识的字段；预渲染期不得抛错"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "pr-check 的 admin-web-test job 在 tsc/lint 之后执行 npm run build（Next-only 校验）"
+      - "该步有 job 内路径门控：无 frontend/admin-web/** 变更时**未跑**（「没跑」不得读成「通过」）"
+      - "checkout 为 fetch-depth: 0（否则三点 diff 取不到 merge-base，门控恒判无变更）"
+    skip_reason: "[backend-contract] CI workflow 结构由 pytest 单测验证（tests/unit_ci_workflows/test_admin_web_next_build_gate.py），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-19 新增：admin-web 的 next build 门禁 + 路径门控 + 防回退锁（issue #4412；断链实证 11.5 小时 / 前端 404）"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_admin_web_next_build_gate.py"
+      ci:
+        - pr-check.yml
+      verifies: []

@@ -6323,6 +6323,24 @@ _CASE_UI_045 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── UI-046 [NORMAL] admin-web 构建契约 - route 文件导出越界 / 预渲染期错误必须被 CI 的 next build 拦下（issue #4412）（源: cases/ui.yml）──
+_CASE_UI_046 = EvalCase(
+    id='UI-046',
+    legacy_id='',
+    title='admin-web 构建契约 - route 文件导出越界 / 预渲染期错误必须被 CI 的 next build 拦下（issue #4412）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['前端 PR：route 文件（page/layout/template/route）只导出框架认识的字段；预渲染期不得抛错'],
+    expectations=['direct_reply'],
+    data_checks=['pr-check 的 admin-web-test job 在 tsc/lint 之后执行 npm run build（Next-only 校验）', '该步有 job 内路径门控：无 frontend/admin-web/** 变更时**未跑**（「没跑」不得读成「通过」）', 'checkout 为 fetch-depth: 0（否则三点 diff 取不到 merge-base，门控恒判无变更）'],
+    skip_reason='[backend-contract] CI workflow 结构由 pytest 单测验证（tests/unit_ci_workflows/test_admin_web_next_build_gate.py），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ci', 'next-build', 'build-contract'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── UT-001 [NORMAL] 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值（源: cases/utils.yml）──
 _CASE_UT_001 = EvalCase(
     id='UT-001',
@@ -6691,6 +6709,7 @@ ALL_CASES = (
     _CASE_UI_043,
     _CASE_UI_042,
     _CASE_UI_045,
+    _CASE_UI_046,
     _CASE_UT_001,
     _CASE_UT_002,
 )
