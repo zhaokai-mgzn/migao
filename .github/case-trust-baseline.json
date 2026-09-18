@@ -21,9 +21,9 @@
   },
   "anchor_sha": "44615b6c9be18d23709a92c0c7e027da259f0836",
   "case_total": 324,
-  "violation_case_count": 114,
+  "violation_case_count": 91,
   "rule_counts": {
-    "CASE-TRUST-EMPTY-ASSERTION": 24,
+    "CASE-TRUST-EMPTY-ASSERTION": 1,
     "CASE-TRUST-NO-EFFECT-ASSERTION": 23,
     "CASE-TRUST-NO-SELF-CLEAN": 30,
     "CASE-TRUST-PRECLEAN-TARGET-UNRESOLVABLE": 0,
@@ -38,51 +38,6 @@
     "API-010": {
       "codes": [
         "CASE-TRUST-NO-PRECONDITION-ASSERTION"
-      ]
-    },
-    "API-012": {
-      "codes": [
-        "CASE-TRUST-EMPTY-ASSERTION"
-      ]
-    },
-    "API-013": {
-      "codes": [
-        "CASE-TRUST-EMPTY-ASSERTION"
-      ]
-    },
-    "API-014": {
-      "codes": [
-        "CASE-TRUST-EMPTY-ASSERTION"
-      ]
-    },
-    "API-015": {
-      "codes": [
-        "CASE-TRUST-EMPTY-ASSERTION"
-      ]
-    },
-    "API-016": {
-      "codes": [
-        "CASE-TRUST-EMPTY-ASSERTION"
-      ]
-    },
-    "API-017": {
-      "codes": [
-        "CASE-TRUST-EMPTY-ASSERTION"
-      ]
-    },
-    "API-019": {
-      "codes": [
-        "CASE-TRUST-EMPTY-ASSERTION"
-      ]
-    },
-    "API-020": {
-      "codes": [
-        "CASE-TRUST-EMPTY-ASSERTION"
-      ]
-    },
-    "API-021": {
-      "codes": [
-        "CASE-TRUST-EMPTY-ASSERTION"
       ]
     },
     "API-022": {
@@ -255,26 +210,6 @@
     "DA-006": {
       "codes": [
         "CASE-TRUST-NO-PRECONDITION-ASSERTION"
-      ]
-    },
-    "DA-007": {
-      "codes": [
-        "CASE-TRUST-EMPTY-ASSERTION"
-      ]
-    },
-    "DA-008": {
-      "codes": [
-        "CASE-TRUST-EMPTY-ASSERTION"
-      ]
-    },
-    "DA-009": {
-      "codes": [
-        "CASE-TRUST-EMPTY-ASSERTION"
-      ]
-    },
-    "DA-010": {
-      "codes": [
-        "CASE-TRUST-EMPTY-ASSERTION"
       ]
     },
     "DF-002": {
@@ -501,59 +436,9 @@
         "CASE-TRUST-NO-SELF-CLEAN"
       ]
     },
-    "PG-002": {
-      "codes": [
-        "CASE-TRUST-EMPTY-ASSERTION"
-      ]
-    },
-    "PG-003": {
-      "codes": [
-        "CASE-TRUST-EMPTY-ASSERTION"
-      ]
-    },
-    "PG-004": {
-      "codes": [
-        "CASE-TRUST-EMPTY-ASSERTION"
-      ]
-    },
-    "PG-006": {
-      "codes": [
-        "CASE-TRUST-EMPTY-ASSERTION"
-      ]
-    },
-    "PG-007": {
-      "codes": [
-        "CASE-TRUST-EMPTY-ASSERTION"
-      ]
-    },
-    "PG-008": {
-      "codes": [
-        "CASE-TRUST-EMPTY-ASSERTION"
-      ]
-    },
-    "PG-010": {
-      "codes": [
-        "CASE-TRUST-EMPTY-ASSERTION"
-      ]
-    },
-    "PG-011": {
-      "codes": [
-        "CASE-TRUST-EMPTY-ASSERTION"
-      ]
-    },
-    "PG-012": {
-      "codes": [
-        "CASE-TRUST-EMPTY-ASSERTION"
-      ]
-    },
     "PG-013": {
       "codes": [
         "CASE-TRUST-NO-PRECONDITION-ASSERTION"
-      ]
-    },
-    "PG-014": {
-      "codes": [
-        "CASE-TRUST-EMPTY-ASSERTION"
       ]
     },
     "PG-016": {

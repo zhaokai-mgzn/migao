@@ -10,6 +10,10 @@
 **① 逐条判定（diff 命中）**：`git diff origin/main...HEAD` 命中的 `cases/*.yml` → 对每个文件
 比对 `origin/main` 版本与 HEAD 版本里用例块的文本 → 文本**新增或变化**的用例 ID 才参与裁决。
 ⇒ **不阻塞存量**（存量在基线清单里），也不会因为「别人还没修的存量用例」把无关 PR 判红。
+⚠️ 判据本身按**计分通道分流**（#4244）：`[backend-contract]` 用例不进 agent-eval，其计分通道
+是 `traces.tests`（非空且引用真实存在）⇒ 不适用 `EMPTY/NO-EFFECT-ASSERTION`（判据本体在
+`assertion_taxonomy.backend_contract_scoring_channel`，本脚本只把 `repo_root` 传下去）；
+分流读数在报告里**必须可见**（静默豁免同族反模式）。
 
 **② 全量对账（整个豁免清单，**不限 diff 命中**，#4031）**：豁免清单是**债务账本**，
 不是「这些用例永远豁免」。故每次运行都对**全库**重算一遍，逐条核对：
@@ -316,8 +320,14 @@ def collect_changed_ids(files: list[str], base: str,
 # ══════════════════════════════════════════════════════════════════════════════
 
 def judge_all(cases: list[dict], catalog: dict[str, set[str]],
-              raw_by_id: dict[str, str] | None = None) -> list[dict]:
-    """逐用例裁决 → [{"case_id", "violations"}]（**只调 taxonomy，不重复实现判据**）。"""
+              raw_by_id: dict[str, str] | None = None,
+              repo_root: Path = REPO_ROOT) -> list[dict]:
+    """逐用例裁决 → [{"case_id", "violations"}]（**只调 taxonomy，不重复实现判据**）。
+
+    `repo_root` 交给 taxonomy 做「计分通道分流」的 `traces.tests` 存在性校验（#4244）——
+    必须显式传（不传 ⇒ taxonomy 按未成立处理 = fail-closed，会把 `[backend-contract]`
+    用例误报成「补计分断言」）。
+    """
     raw_by_id = raw_by_id or {}
     out = []
     for case in cases:
@@ -325,9 +335,17 @@ def judge_all(cases: list[dict], catalog: dict[str, set[str]],
         out.append({
             "case_id": cid,
             "violations": tax.judge_case(case, catalog=catalog,
-                                         raw_text=raw_by_id.get(cid)),
+                                         raw_text=raw_by_id.get(cid),
+                                         repo_root=repo_root),
         })
     return out
+
+
+def scoring_channel_stats(cases: list[dict],
+                          repo_root: Path = REPO_ROOT) -> dict[str, int]:
+    """计分通道分流读数（#4244）：`{exempt, other}` —— 报告必须打印（防静默豁免）。"""
+    exempt = sum(1 for c in cases if tax.backend_contract_scoring_channel(c, repo_root))
+    return {"exempt": exempt, "other": len(cases) - exempt}
 
 
 def classify(judged: list[dict], baseline: dict) -> dict:
@@ -881,13 +899,20 @@ def render_report(blocking: list[dict], passed: list[dict], stale: list[dict],
                   changed_ids: set[str], unimplemented: list[dict],
                   refs: dict | None = None, recon: dict | None = None,
                   budget: dict | None = None,
-                  unimpl_guard: dict | None = None) -> str:
+                  unimpl_guard: dict | None = None,
+                  scoring_channel: dict | None = None) -> str:
     """人类/agent 可读的失败报告 —— **每条都带「怎么改」**。"""
     out: list[str] = []
     out.append("═══ 断言可信度门禁（假红/假绿结构性护栏 A 层，单一判据源 "
                "= .github/assertion_taxonomy.py）═══")
     out.append(f"本次改动命中的用例条目：{len(changed_ids)} 条"
                f"（{'、'.join(sorted(changed_ids)) if changed_ids else '无'}）")
+    if scoring_channel:
+        out.append(
+            f"ℹ️ 计分通道分流（#4244）：{scoring_channel['exempt']} 条 `[backend-contract]` "
+            f"用例的计分通道 = `traces.tests`（非空且文件真实存在）⇒ 不适用 "
+            f"EMPTY/NO-EFFECT-ASSERTION；其余 {scoring_channel['other']} 条仍按 runner "
+            f"计分口径判（分流读数必须可见 —— 静默豁免同族反模式）")
     if recon:
         out.append(f"全量对账范围：**全库 {recon['judged_cases']} 条用例**重算"
                    f"（判出违规 {recon['violating_cases']} 条，豁免清单 {recon['recorded_entries']} 条"
@@ -1551,7 +1576,8 @@ def main(argv: list[str] | None = None) -> int:
 
     print(render_report(verdict["blocking"], verdict["passed"], recon["stale"],
                         changed_ids, unimpl_guard["entries"], refs, recon=recon,
-                        budget=budget, unimpl_guard=unimpl_guard))
+                        budget=budget, unimpl_guard=unimpl_guard,
+                        scoring_channel=scoring_channel_stats(all_cases)))
     if refs["blocking"]:
         print("")
         for b in refs["blocking"]:

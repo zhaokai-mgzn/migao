@@ -25,6 +25,9 @@ PR Check 的用例侧门禁原本只有 `Case Contract (truths_ref)`（引用可
 **依赖纪律**：纯函数、零第三方依赖、无副作用（不读文件、不联网、不 import 后端 app 包），
 因此可被 L0 单测（`tests/unit_ci_workflows/`）与 CI job 直接调用 —— CI 的
 `ci workflow helper unit tests` job 只 `pip install pytest pyyaml`（见 pr-check.yml）。
+**唯一例外**（#4244）：`backend_contract_scoring_channel(case, repo_root)` 在调用方
+**显式传入 `repo_root`** 时做一次 `traces.tests` 存在性校验（`Path.is_file()`，stdlib）——
+不传即不做（按未成立处理，fail-closed）；`judge_case` 默认路径仍不读文件。
 
 ## 与 #3483 的关系
 
@@ -42,6 +45,7 @@ from __future__ import annotations
 
 import re
 from datetime import date
+from pathlib import Path
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 一、写工具集合 / 写 action（**精确枚举，禁用宽正则**）
@@ -218,6 +222,46 @@ def machine_scored_data_checks(case: dict) -> list[str]:
 # ══════════════════════════════════════════════════════════════════════════════
 # 三、可失败性（「不会红的断言 = 空断言」）
 # ══════════════════════════════════════════════════════════════════════════════
+
+# ── 三之零、计分通道分流：`[backend-contract]` 用例的判据在 `traces.tests`（#4244）──
+#
+# 病灶（#4244）：规则 a1（`EMPTY-ASSERTION`）/ a2（`NO-EFFECT-ASSERTION`）的**前提**是
+# 「该用例由 runner 计分」—— `total_exp == 0 ⇒ score = 1.0` ⇒ 恒绿。但 `[backend-contract]`
+# 类用例**根本不进 agent-eval**（runner 侧按 `skip_reason` 过滤 ⇒ 既不会绿也不会红，而是
+# **未运行**），它们的真实计分通道是 `traces.tests`（Java / pytest，由 CI 的
+# `ci workflow helper unit tests` 等 job 跑）。对它们提「补计分断言」只有两条路，都是
+# 仓库最忌讳的形态：**纸面修复**（把散文 `data_checks` 改写成含 `error.code=` 的形态 ——
+# 静态门禁绿、运行期零变化）或凭空编造断言。两者都 = `migao-acceptance` 的「绿了但没跑」。
+#
+# 故 a1/a2 做**计分通道分流**：豁免必须**同时**满足两个条件（缺一即照旧报，防豁免被当万金油）
+#   ① **入口条件**：`skip_reason` 以 `[backend-contract]` 开头（声明「不进 agent-eval」）；
+#   ② **结构性条件**：`traces.tests` **非空** 且引用**全部**真实存在。
+# ② 的口径**复用**既有先例、不另造第二套：`tests/unit_ci_workflows/test_eval_evidence_chain.py`
+# 的 `trace_ghosts()`（路径相对仓库根 `is_file()`）+ `Case Contract` 的「引用必须可解析」。
+# ⚠️ 其余规则（自清理 / 前置自断言 / 单端 persona / 定位键 …）对这类用例**一字不放宽**：
+# 分流的是「谁给它计分」，不是「它免检」。
+BACKEND_CONTRACT_MARKER = "[backend-contract]"
+
+
+def is_backend_contract_case(case: dict) -> bool:
+    """该用例是否声明为 `[backend-contract]`（不进 agent-eval 冒烟、非 LLM 行为）。"""
+    return str(case.get("skip_reason") or "").strip().startswith(BACKEND_CONTRACT_MARKER)
+
+
+def backend_contract_scoring_channel(case: dict, repo_root=None) -> bool:
+    """该用例的计分通道是否**在 `traces.tests`**（⇒ a1/a2 不适用，见上节说明）。
+
+    `repo_root is None` ⇒ 存在性**无法校验** ⇒ **按未成立**处理（fail-closed：宁可多报一条
+    「补计分断言」，也不静默放行）。传 `repo_root` 是本模块**唯一**的文件系统接触点，
+    且必须由调用方显式传入（默认路径仍是纯函数）—— 门禁侧传仓库根。
+    """
+    if not is_backend_contract_case(case):
+        return False
+    refs = [str(r) for r in ((case.get("traces") or {}).get("tests") or [])]
+    if not refs or repo_root is None:
+        return False
+    return all((Path(repo_root) / r).is_file() for r in refs)
+
 
 def scoring_assertion_count(case: dict) -> int:
     """**计分**断言条数 —— 精确复刻 runner 的 `total_exp`。
@@ -1075,6 +1119,11 @@ RULES: tuple[dict, ...] = (
             "空断言（恒绿）：`total_exp == 0` ⇒ `score = 1.0`，用例永远绿。"
             "见 `migao-acceptance`「假绿 / 假红：断言自身会双向骗人」的空断言（恒绿）支；"
             "实证 #3559 / PR-021。"
+            "⚠️ 适用范围（#4244）：本规则的前提是**该用例由 runner 计分** —— `[backend-contract]` "
+            "用例不进 agent-eval（runner 侧按 `skip_reason` 过滤 ⇒ 未运行，既不会绿也不会红），"
+            "其计分通道是 `traces.tests`（非空且引用真实存在）⇒ 由 "
+            "`backend_contract_scoring_channel` 分流豁免；对它们提「补计分断言」只会逼出"
+            "纸面修复（改散文形态、运行期零变化）。"
         ),
         "counterexample": "PR-021（只有纯散文 data_checks，无 expectations、无 success=true）",
         "implemented": True,
@@ -1090,6 +1139,9 @@ RULES: tuple[dict, ...] = (
         "why": (
             "「调用了 ≠ 成了」（#3778）：`expectations`/`required_args` 只证明调用发生、"
             "参数给对，工具返回 `success=false` 也照样通过。"
+            "⚠️ 适用范围（#4244）：与 a1 同一条分流 —— `[backend-contract]` 用例不进 "
+            "agent-eval，其效果层证据在 `traces.tests`（真实存在的后端契约测试）里，"
+            "不适用本规则。"
         ),
         "counterexample": "PR-021（`sku_update` 只有工具名期望 + 散文 data_checks）",
         "implemented": True,
@@ -1603,12 +1655,14 @@ def judge_unimplemented(entries, *, today: str,
 # ══════════════════════════════════════════════════════════════════════════════
 
 def judge_case(case: dict, *, catalog: dict[str, set[str]] | None = None,
-               raw_text: str | None = None) -> list[dict]:
+               raw_text: str | None = None, repo_root=None) -> list[dict]:
     """对**单条**用例给出违规列表（纯函数，无副作用）。
 
     返回 `[{"code", "case_id", "detail", "fix"}]`，空列表 = 无违规。
     `catalog` 为 None 时跳过「种子可解析」规则（**不**当成通过 —— 由调用方决定是否加载种子；
     门禁脚本**必须**传 catalog，否则会静默少判一条规则，故门禁里断言 catalog 非空）。
+    `repo_root` 只用于「计分通道分流」的 `traces.tests` 存在性校验（#4244）：
+    传仓库根即启用；不传 ⇒ 按未成立处理（fail-closed，见 `backend_contract_scoring_channel`）。
     """
     out: list[dict] = []
     cid = str(case.get("id") or "?")
@@ -1621,9 +1675,13 @@ def judge_case(case: dict, *, catalog: dict[str, set[str]] | None = None,
             "fix": RULES_BY_CODE[code]["fix"],
         })
 
+    # ── 计分通道分流（#4244）：`[backend-contract]` 用例由 `traces.tests` 计分，
+    #    不适用下面 a1/a2 两条**runner 计分口径**的规则（其余规则一字不放宽）──
+    traces_scored = backend_contract_scoring_channel(case, repo_root)
+
     # ── 规则 a1：可失败性（计分断言非空）──
     n_scoring = scoring_assertion_count(case)
-    if n_scoring == 0:
+    if n_scoring == 0 and not traces_scored:
         add("CASE-TRUST-EMPTY-ASSERTION",
             f"计分断言数 = 0（expectations={len(case.get('expectations') or [])}，"
             f"机器计分型 data_checks={len(machine_scored_data_checks(case))}）"
@@ -1633,7 +1691,7 @@ def judge_case(case: dict, *, catalog: dict[str, set[str]] | None = None,
     write_exps = write_expectations(case)
     if write_exps:
         names = ", ".join(sorted({t for t, _ in write_exps}))
-        if not has_effect_assertion(case):
+        if not has_effect_assertion(case) and not traces_scored:
             add("CASE-TRUST-NO-EFFECT-ASSERTION",
                 f"含写期望 [{names}] 但无任何效果层断言"
                 f"（效果层字段：{'/'.join(EFFECT_FIELDS)}；"
