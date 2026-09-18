@@ -428,14 +428,20 @@ cases:
     pre_clean:
       - type: product_remove
         product_keyword: "测试窗帘A"
+    # 前置自断言（#3800 / §18.4）：`expect: 0` 判基线（上一跑残留），
+    # `max_growth: 1` 判运行期漂移 —— **本用例自己就会创建**这个名字的商品，
+    # 不给容差则正常行为下 `0 → 1 > 0` **恒判漂移**（issue #4200 的病灶形态；
+    # 判定跑 35295494688 实测：逐条计分断言全 passed 而 score=0.0）。
+    # 只容忍自建的那一个：并行用例再造同名（`0 → 2`）仍判漂移，判别力不丢。
     precondition:
       - type: product_count_for_keyword
         source: "测试窗帘A"
         expect: 0
+        max_growth: 1
     data_checks:
       - "商品真的被创建（机器断言见 must_succeed[product_manage(action=create)] + output_verify 的 product_id 非空）；原 `data.product_id.length > 0` 不计分（无 success=true/error.code=/未被调用 关键词）⇒ 已弃用"
     skip_reason: ""
-    merge_log: "eval P003 + verification 2.9（同义，取 eval 版）；2026-09-09 校准：补「窗帘布艺」点分类卡轮 + 末轮回传 confirmValue「确认创建测试窗帘A」（agent 实际生成，含商品名上下文；原脚本末轮『确认创建』被 agent 理解成『发确认卡』而非『点确认卡回传』，product_manage 永不执行）；2026-09-18 下沉（issue #4042）：补 must_succeed[product_manage(action=create)] + output_verify(product_id 非空)，并把不计分的散文 `data.product_id.length > 0` 弃用；补 pre_clean[product_remove 自有名] + precondition[product_count_for_keyword expect=0]（前置自断言，清掉 CASE-TRUST-NO-EFFECT-ASSERTION / CASE-TRUST-NO-PRECONDITION-ASSERTION 两条存量违规）；2026-09-18 **轮次形状修正**（issue #4042 归因）：末两轮静态文本（「确认创建」/「确认创建测试窗帘A」）答不上 agent 动态生成的**加工项多选卡**，R5/R6 全被该卡吃掉 ⇒ confirm 卡在最后一轮才发出、无人点击 ⇒ 建品永不执行（`no_success(product_manage)`，与 OR-014/CH-010 同款 #3518 坑）⇒ 末两轮改为 `repeat_until(tool_called=product_manage, max=3)` 协作轮（有卡答卡 / 无卡发原 confirmValue 文本），断言原样未动"
+    merge_log: "eval P003 + verification 2.9（同义，取 eval 版）；2026-09-09 校准：补「窗帘布艺」点分类卡轮 + 末轮回传 confirmValue「确认创建测试窗帘A」（agent 实际生成，含商品名上下文；原脚本末轮『确认创建』被 agent 理解成『发确认卡』而非『点确认卡回传』，product_manage 永不执行）；2026-09-18 下沉（issue #4042）：补 must_succeed[product_manage(action=create)] + output_verify(product_id 非空)，并把不计分的散文 `data.product_id.length > 0` 弃用；补 pre_clean[product_remove 自有名] + precondition[product_count_for_keyword expect=0]（前置自断言，清掉 CASE-TRUST-NO-EFFECT-ASSERTION / CASE-TRUST-NO-PRECONDITION-ASSERTION 两条存量违规）；2026-09-18 **轮次形状修正**（issue #4042 归因）：末两轮静态文本（「确认创建」/「确认创建测试窗帘A」）答不上 agent 动态生成的**加工项多选卡**，R5/R6 全被该卡吃掉 ⇒ confirm 卡在最后一轮才发出、无人点击 ⇒ 建品永不执行（`no_success(product_manage)`，与 OR-014/CH-010 同款 #3518 坑）⇒ 末两轮改为 `repeat_until(tool_called=product_manage, max=3)` 协作轮（有卡答卡 / 无卡发原 confirmValue 文本），断言原样未动；2026-09-18（issue #4200 的恒红修复）：`precondition` 补 `max_growth: 1` —— 本用例自己就要创建「测试窗帘A」⇒ 容差缺省 0 时正常行为下 `0 → 1 > 0` **恒判运行期漂移**、score 归零（判定跑 35295494688 实测：`assertions_fired.scoring` 逐条 ✅ 而 `score=0.0`，唯一 failure 是前置自身）⇒ 容忍自建的那一个；并行用例再造同名（`0 → 2`）仍判漂移，判别力不丢。`expect` 与全部断言（expectations / must_succeed / output_verify / pre_clean / namespaces）原样未动、无放宽。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/manual/mibao_scenarios.py"
@@ -899,13 +905,17 @@ cases:
       - type: product_count_for_keyword
         source: "E2E建品流程样品帘"
         expect: 0
+        # `max_growth: 1`（issue #4200）：本用例自己就要创建这个名字的商品 ⇒
+        # 不给容差则正常行为下 `0 → 1 > 0` 恒判漂移（实测 score=0.0 而逐条计分断言全 passed）。
+        # 只容忍自建的那一个：并行用例再造同名（`0 → 2`）仍判漂移。
+        max_growth: 1
     data_checks:
       - "分类确认后加工项选择器按「适用商品分类」过滤展示（processing_item_query 携带 applicable_category_id，= 已选商品分类 ID）"
       - "适用分类为空（applicable_product_categories 为空）的加工项仍展示（= 适用所有分类），不因过滤而丢失"
       - "当前分类无匹配加工项时以文字提示可跳过，不空转强制选择"
       - "最终创建成功：机器断言见 must_succeed[product_manage(action=create)]（写成功）；「关联加工项数量正确」本轮**仍无机器判据**（db_verify 只支持 processingItemConfigs 谓词），已在 merge_log 登记为能力缺口"
     skip_reason: ""
-    merge_log: "2026-09-06 新增（issue #2964）：加工项「适用商品分类」配置此前无消费方，建品流程按已选分类过滤/推荐加工项（设计意图见 docs/design/admin-dashboard-design.md §6.1.1 适用商品分类+AI推荐）。2026-09-14 校准（#3518）：收尾裸文本「确认」改答卡轮（B 端 confirm 门禁：文字≠点卡）；2026-09-15 补自清理（issue #3800，判定跑 run 34865780382 实证）：本用例建的同名商品与种子 `prod_eval_blackout`（遮光窗帘）撞名，而 `namespaces` 只保证并行互斥、不解决重试前置等价性（#3751 的复位按 pre_clean opt-in）⇒ 首跑建出的那件留到重试 ⇒ agent 正确拒绝建重复 ⇒ 指纹漂移误判 unstable（首跑指纹无 `no_success(product_manage)`、重试指纹有，即铁证）⇒ 补 `product_dedupe{遮光窗帘}`（保留最早创建 = 种子）；**不能用 product_remove**（子串删全部 ⇒ 会连种子一起删，而它是 PR-005/PR-007/CR-001/CR-003/OR-015 的共享前置）；expectations/required_args/data_checks 原样未动；2026-09-17（issue #3835）输入商品名改为**用例自有**（`E2E建品流程样品帘`）+ `pre_clean[product_remove 自有名]`（根治跨用例同名污染）；2026-09-18 下沉（issue #4042）：补 must_succeed[product_manage(action=create)] + precondition[product_count_for_keyword expect=0]（清掉 CASE-TRUST-NO-EFFECT-ASSERTION / CASE-TRUST-NO-PRECONDITION-ASSERTION 两条存量违规）；「关联加工项数量正确」仍无机器判据（db_verify 只支持 processingItemConfigs 谓词），如实登记为能力缺口"
+    merge_log: "2026-09-06 新增（issue #2964）：加工项「适用商品分类」配置此前无消费方，建品流程按已选分类过滤/推荐加工项（设计意图见 docs/design/admin-dashboard-design.md §6.1.1 适用商品分类+AI推荐）。2026-09-14 校准（#3518）：收尾裸文本「确认」改答卡轮（B 端 confirm 门禁：文字≠点卡）；2026-09-15 补自清理（issue #3800，判定跑 run 34865780382 实证）：本用例建的同名商品与种子 `prod_eval_blackout`（遮光窗帘）撞名，而 `namespaces` 只保证并行互斥、不解决重试前置等价性（#3751 的复位按 pre_clean opt-in）⇒ 首跑建出的那件留到重试 ⇒ agent 正确拒绝建重复 ⇒ 指纹漂移误判 unstable（首跑指纹无 `no_success(product_manage)`、重试指纹有，即铁证）⇒ 补 `product_dedupe{遮光窗帘}`（保留最早创建 = 种子）；**不能用 product_remove**（子串删全部 ⇒ 会连种子一起删，而它是 PR-005/PR-007/CR-001/CR-003/OR-015 的共享前置）；expectations/required_args/data_checks 原样未动；2026-09-17（issue #3835）输入商品名改为**用例自有**（`E2E建品流程样品帘`）+ `pre_clean[product_remove 自有名]`（根治跨用例同名污染）；2026-09-18 下沉（issue #4042）：补 must_succeed[product_manage(action=create)] + precondition[product_count_for_keyword expect=0]（清掉 CASE-TRUST-NO-EFFECT-ASSERTION / CASE-TRUST-NO-PRECONDITION-ASSERTION 两条存量违规）；「关联加工项数量正确」仍无机器判据（db_verify 只支持 processingItemConfigs 谓词），如实登记为能力缺口；2026-09-18（issue #4200 的恒红修复）：该 `precondition` 补 `max_growth: 1` —— 本用例自己就要创建「E2E建品流程样品帘」⇒ 容差缺省 0 时正常行为下 `0 → 1 > 0` **恒判运行期漂移**、score 归零（判定跑 35295494688 实测：`assertions_fired.scoring` 逐条 ✅ 而 `score=0.0`，唯一 failure 是前置自身）⇒ 容忍自建的那一个；并行用例再造同名（`0 → 2`）仍判漂移。`expect` 与全部断言（expectations / required_args / must_succeed / pre_clean / namespaces）原样未动、无放宽。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_processing_item_query.py"
