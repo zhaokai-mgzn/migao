@@ -3619,7 +3619,7 @@
 必须成功: product_manage(create)
 ```
 真值: product-sku-stock.create-flow, product-sku-stock.create-confirm, ai-chat.validate-input
-溯源: eval M002 吸收 verification 8.3（缺信息补全 = validate_input 引导）；2026-09-15（issue #3835）改名去种子撞名（同 PR-016 口径）：`名称叫夏日清风窗帘` → `名称叫E2E引导建品样品帘`（种子 `prod_eval_summer` 就叫「夏日清风窗帘」⇒ 运行期造同名副本；且它是**单一声明者** ⇒ 争用组不成立、隔离为零）；`pre_clean: product_remove{测试窗帘}` → 自有名（顺带消除对 PR-008「测试窗帘A」的子串误删）；expectations/data_checks 原样未动。2026-09-19（#4371 商品↔加工项解耦）：删除「需要打孔和韩式折边这两个加工项」一轮 + `expectations[processing_item_query]` + `data_checks[创建的加工项数量 = 2]`（改为 = 0，与解耦后的真值一致）—— 建品不再询问/关联加工项；引导流程断言（interact choice / validate_input / product_manage create）原样未动。 ｜ tags: multi_turn, guided_flow, full_create, processing_item
+溯源: eval M002 吸收 verification 8.3（缺信息补全 = validate_input 引导）；2026-09-15（issue #3835）改名去种子撞名（同 PR-016 口径）：`名称叫夏日清风窗帘` → `名称叫E2E引导建品样品帘`（种子 `prod_eval_summer` 就叫「夏日清风窗帘」⇒ 运行期造同名副本；且它是**单一声明者** ⇒ 争用组不成立、隔离为零）；`pre_clean: product_remove{测试窗帘}` → 自有名（顺带消除对 PR-008「测试窗帘A」的子串误删）；expectations/data_checks 原样未动。2026-09-19（#4371 商品↔加工项解耦）：删除「需要打孔和韩式折边这两个加工项」一轮 + `expectations[processing_item_query]` + `data_checks[创建的加工项数量 = 2]`（改为 = 0，与解耦后的真值一致）—— 建品不再询问/关联加工项；引导流程断言（interact choice / validate_input / product_manage create）原样未动。2026-09-19（issue #4412 的 burn-down 缴费 —— 本 PR 改了 cases/*.yml ⇒ 每 PR 至少净缩 1 条存量违规）：补 `precondition[product_count_for_keyword: E2E引导建品样品帘, expect: 0, max_growth: 1]` —— 创建前提 = 该名字下无既有商品（残留 ⇒ 建出同名副本，红的表现像「agent 不会建品」，归因全错）；`expect: 0` 判基线、`max_growth: 1` 容忍本用例自己造的那一个（自建目标先例：chat.yml #4099 / hr.yml HR-002）。断言（user_inputs / expectations / must_succeed / pre_clean / namespaces）原样未动、无放宽。 ｜ tags: multi_turn, guided_flow, full_create, processing_item
 
 ### PR-012. 商品创建中途修改 - 用户纠偏 🔵
 ```
@@ -3934,7 +3934,7 @@
 真值: token-refresh.no-loop
 溯源: 2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421） ｜ tags: token_refresh, auth, no_loop
 
-## ui（43 case）
+## ui（44 case）
 
 ### UI-001. 织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理 🔵
 ```
@@ -4509,6 +4509,18 @@
 真值: frontend-fix.no-api-change
 溯源: 2026-09-17 新增（issue #3997 M4-G-3）：顾客端生产进度可视化 —— 消费生产报工契约的读侧；persona: xiaobu（C 端专属卡片） ｜ tags: ui, mini-app, production-progress, card
 
+### UI-046. admin-web 构建契约 - route 文件导出越界 / 预渲染期错误必须被 CI 的 next build 拦下（issue #4412） 🔵
+```
+你: 前端 PR：route 文件（page/layout/template/route）只导出框架认识的字段；预渲染期不得抛错
+期望: direct_reply
+数据: pr-check 的 admin-web-test job 在 tsc/lint 之后执行 npm run build（Next-only 校验）
+数据: 该步有 job 内路径门控：无 frontend/admin-web/** 变更时**未跑**（「没跑」不得读成「通过」）
+数据: checkout 为 fetch-depth: 0（否则三点 diff 取不到 merge-base，门控恒判无变更）
+跳过: [backend-contract] CI workflow 结构由 pytest 单测验证（tests/unit_ci_workflows/test_admin_web_next_build_gate.py），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: frontend-fix.next-build
+溯源: 2026-09-19 新增：admin-web 的 next build 门禁 + 路径门控 + 防回退锁（issue #4412；断链实证 11.5 小时 / 前端 404） ｜ tags: ci, next-build, build-contract
+
 ## utils（2 case）
 
 ### UT-001. 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值 🔵
@@ -4538,8 +4550,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：333（活跃 154，跳过 179）
-- tier 分布：smoke 10 / normal 292 / adversarial 31
+- 用例总数：334（活跃 154，跳过 180）
+- tier 分布：smoke 10 / normal 293 / adversarial 31
 - 售后域：9
 - agents：6
 - api：19
@@ -4563,7 +4575,7 @@
 - registry：1
 - 设置域：10
 - token-refresh：4
-- ui：43
+- ui：44
 - utils：2
 
 ### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）
