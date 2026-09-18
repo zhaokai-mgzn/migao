@@ -13,6 +13,11 @@ concurrency:
 permissions:
   contents: read
   pull-requests: write
+  # 读 PR 评论（danger-scan 的「删除 workflow」确认通道，#4295/#4301：ack 步骤调
+  # `gh api .../issues/{n}/comments`）。显式声明而不是依赖「pull-requests: write 是否
+  # 隐含覆盖 issue 评论读」的推断 —— 该通道的失效形态是 fail-closed（永远不放行），
+  # 推断错了就是静默失效（§18.6「环境静默即缺陷」）。
+  issues: read
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
