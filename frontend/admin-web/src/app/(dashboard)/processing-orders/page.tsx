@@ -2,23 +2,19 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { toast } from 'sonner'
 import { toastRequestError } from '@/lib/api-error'
 import { Search, RefreshCw } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { processingOrderApi } from '@/lib/api'
-import { Modal, Button } from '@/components/ui'
+import { Button } from '@/components/ui'
 import StatusBadge from '@/components/ui/StatusBadge'
 import DateTimeCell from '@/components/common/DateTimeCell'
 import { chipToneClasses } from '@/lib/status-chip'
 import {
   PROCESSING_ORDER_STATUS_LABELS,
-  PROCESSING_ORDER_ACTIONS,
-  PROCESSING_ORDER_ACTION_LABELS,
-  PROCESSING_ORDER_ACTION_DONE,
   processingOrderStatusChipFor,
 } from '@/lib/processing-order'
-import type { ProcessingOrder, ProcessingOrderUpdateParams } from '@/types'
+import type { ProcessingOrder } from '@/types'
 
 /** 状态下拉选项（含「全部」） */
 const STATUS_FILTER_OPTIONS: { value: string; label: string }[] = [
@@ -59,28 +55,13 @@ export default function ProcessingOrdersPage() {
   /** 列表请求序号（issue #4303）：只认最新一次请求的响应 */
   const listReqSeq = useRef(0)
 
-  // 写操作弹窗：发加工（issue）/ 取消加工单（cancel）
-  const [actionTarget, setActionTarget] = useState<{
-    po: ProcessingOrder
-    action: 'issue' | 'cancel'
-  } | null>(null)
-  const [form, setForm] = useState<{ processor: string; date: string; reason: string }>({
-    processor: '',
-    date: '',
-    reason: '',
-  })
-  const [busy, setBusy] = useState(false)
-
-  /**
-   * 加载列表。
-   * `silent`：写操作后的收敛刷新 —— 不切 loading 态，避免刚更新好的行被「加载中…」盖掉。
-   */
+  /** 加载列表（issue #4303：请求时序保护 —— 只认最新一次请求的响应）。 */
   const loadList = useCallback(
-    async (opts?: { silent?: boolean }) => {
+    async () => {
       // 请求时序保护（issue #4303）：只认最新一次请求的响应，旧的在飞响应一律丢弃
       // （实测：4174ms 才返回的旧 GET 落在 PATCH 之后，把新数据覆盖回旧值）
       const seq = ++listReqSeq.current
-      if (!opts?.silent) setLoading(true)
+      setLoading(true)
       setLoadError('')
       try {
         const res = await processingOrderApi.list({
@@ -101,12 +82,6 @@ export default function ProcessingOrdersPage() {
     [search]
   )
 
-  /** 写操作成功后用写响应**即时**更新该行（不等下一次列表请求返回） */
-  const applyUpdated = (updated?: ProcessingOrder) => {
-    if (!updated) return
-    setList((prev) => prev.map((x) => (x.id === updated.id ? { ...x, ...updated } : x)))
-  }
-
   useEffect(() => {
     loadList()
   }, [loadList])
@@ -125,55 +100,6 @@ export default function ProcessingOrdersPage() {
     // 订单详情页已含加工单块（状态机操作与打印），列表页只负责跳转
     router.push(`/orders/${po.orderId}`)
   }
-
-  /** 开始加工 / 加工完成：轻量 confirm 后直接调用（与订单详情加工单块一致） */
-  const handleSimpleAction = async (po: ProcessingOrder, action: 'start' | 'complete') => {
-    const label = PROCESSING_ORDER_ACTION_LABELS[action]
-    if (!window.confirm(`确认将加工单 ${po.processingOrderNo} 标记为「${label}」？`)) return
-    setBusy(true)
-    try {
-      const res = await processingOrderApi.update(po.id, { action })
-      applyUpdated(res.data?.data)
-      toast.success(PROCESSING_ORDER_ACTION_DONE[action])
-      loadList({ silent: true })
-    } catch (e) {
-      console.error(e)
-      toastRequestError(e, `${label}失败`)
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  const openActionModal = (po: ProcessingOrder, action: 'issue' | 'cancel') => {
-    setForm({ processor: '', date: '', reason: '' })
-    setActionTarget({ po, action })
-  }
-
-  /** 发加工 / 取消：弹窗确认后提交（cancel 原因必填，与后端校验一致） */
-  const handleActionSubmit = async () => {
-    if (!actionTarget) return
-    const { po, action } = actionTarget
-    setBusy(true)
-    try {
-      const res = await processingOrderApi.update(po.id, {
-        action,
-        processor: action === 'issue' ? form.processor.trim() || undefined : undefined,
-        expectedDeliveryDate: action === 'issue' ? form.date.trim() || undefined : undefined,
-        reason: action === 'cancel' ? form.reason.trim() : undefined,
-      } satisfies ProcessingOrderUpdateParams)
-      applyUpdated(res.data?.data)
-      toast.success(PROCESSING_ORDER_ACTION_DONE[action])
-      setActionTarget(null)
-      loadList({ silent: true })
-    } catch (e) {
-      console.error(e)
-      toastRequestError(e, `${PROCESSING_ORDER_ACTION_LABELS[action]}失败`)
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  const isCancelDisabled = !form.reason.trim() || busy
 
   return (
     <div className="p-6 space-y-4">
@@ -292,7 +218,6 @@ export default function ProcessingOrdersPage() {
               !loadError &&
               list.map((po) => {
                 const chip = processingOrderStatusChipFor(po.status)
-                const actions = PROCESSING_ORDER_ACTIONS[po.status] ?? []
                 const summary = renderItemsSummary(po)
                 return (
                   <tr key={po.id} className="border-b border-neutral-100 align-top transition-colors hover:bg-neutral-50/60">
@@ -339,29 +264,8 @@ export default function ProcessingOrdersPage() {
                         >
                           生产明细
                         </Button>
-                        {actions.includes('issue') && (
-                          <Button size="sm" disabled={busy} onClick={() => openActionModal(po, 'issue')}>
-                            {PROCESSING_ORDER_ACTION_LABELS.issue}
-                          </Button>
-                        )}
-                        {actions.includes('start') && (
-                          <Button size="sm" disabled={busy} onClick={() => handleSimpleAction(po, 'start')}>
-                            {PROCESSING_ORDER_ACTION_LABELS.start}
-                          </Button>
-                        )}
-                        {actions.includes('complete') && (
-                          <Button size="sm" disabled={busy} onClick={() => handleSimpleAction(po, 'complete')}>
-                            {PROCESSING_ORDER_ACTION_LABELS.complete}
-                          </Button>
-                        )}
-                        {actions.includes('cancel') && (
-                          <Button variant="danger" size="sm" disabled={busy} onClick={() => openActionModal(po, 'cancel')}>
-                            {PROCESSING_ORDER_ACTION_LABELS.cancel}
-                          </Button>
-                        )}
-                        {po.status === 'completed' && (
-                          <span className="text-xs text-green-600">加工已完成</span>
-                        )}
+                        {/* 状态流转入口收敛到订单详情页（issue #4305：用户裁定「从订单作为发加工的唯一入口」） */}
+                        <span className="text-xs text-neutral-400">状态流转请在订单详情操作</span>
                       </div>
                     </td>
                   </tr>
@@ -371,75 +275,6 @@ export default function ProcessingOrdersPage() {
         </table>
       </div>
 
-      {/* 发加工 / 取消 确认弹窗 */}
-      <Modal
-        open={!!actionTarget}
-        onClose={() => {
-          if (!busy) setActionTarget(null)
-        }}
-        title={actionTarget?.action === 'cancel' ? '取消加工单' : '发加工'}
-        footer={
-          <div className="flex justify-end gap-2">
-            <Button variant="secondary" disabled={busy} onClick={() => setActionTarget(null)}>
-              取消
-            </Button>
-            {actionTarget?.action === 'cancel' ? (
-              <Button variant="danger" disabled={isCancelDisabled} loading={busy} onClick={handleActionSubmit}>
-                确认取消
-              </Button>
-            ) : (
-              <Button loading={busy} onClick={handleActionSubmit}>
-                确认发加工
-              </Button>
-            )}
-          </div>
-        }
-      >
-        {actionTarget?.action === 'cancel' ? (
-          <div className="px-6 py-4 space-y-3 text-sm">
-            <p className="text-neutral-600">
-              确认取消加工单 <span className="font-medium text-neutral-900">{actionTarget.po.processingOrderNo}</span>
-              吗？取消后订单将回退为「已确认」，可重新生成加工单。
-            </p>
-            <div>
-              <label className="block mb-1 text-neutral-600">取消原因（必填）</label>
-              <input
-                autoFocus
-                placeholder="请输入取消原因"
-                value={form.reason}
-                onChange={(e) => setForm({ ...form, reason: e.target.value })}
-                className="w-full h-9 px-3 rounded border border-neutral-300 bg-white text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 placeholder:text-neutral-400"
-              />
-            </div>
-          </div>
-        ) : (
-          <div className="px-6 py-4 space-y-3 text-sm">
-            <p className="text-neutral-600">
-              确认将加工单 <span className="font-medium text-neutral-900">{actionTarget?.po.processingOrderNo}</span>{' '}
-              发给加工方？
-            </p>
-            <div>
-              <label className="block mb-1 text-neutral-600">加工方</label>
-              <input
-                autoFocus
-                placeholder="如：朝阳加工厂"
-                value={form.processor}
-                onChange={(e) => setForm({ ...form, processor: e.target.value })}
-                className="w-full h-9 px-3 rounded border border-neutral-300 bg-white text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 placeholder:text-neutral-400"
-              />
-            </div>
-            <div>
-              <label className="block mb-1 text-neutral-600">交期（可选）</label>
-              <input
-                type="date"
-                value={form.date}
-                onChange={(e) => setForm({ ...form, date: e.target.value })}
-                className="w-full h-9 px-3 rounded border border-neutral-300 bg-white text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
-              />
-            </div>
-          </div>
-        )}
-      </Modal>
     </div>
   )
 }
