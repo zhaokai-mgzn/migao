@@ -1,3 +1,4 @@
+# case_ids: PP-013
 """特殊选项 → 条件工序 / 计件系数（issue #4230，v1a-PY 半边）
 
 真值源 `docs/curtain-production-rules.md` §1【默】特殊选项清单（19 项，下单勾选，
@@ -23,7 +24,6 @@ v1 边界（issue #4230 §2.4，**刻意不做**）：
 - 判据 4：`OPTION_FACTOR_SCOPES` 未定义 ⇒ import 即红（Collection Error）；
 - 判据 5：`余料带回(布)` 未登记为不计件 ⇒ 判据 1 红（同一条门禁覆盖）。
 """
-# case_ids: PP-010
 
 import pytest
 

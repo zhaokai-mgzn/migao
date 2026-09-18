@@ -2819,7 +2819,7 @@
 真值: order.create-flow, order.states
 溯源: 2026-09-18 新增（用户裁定 2 / F17 / issue #4095）：冒烟档补下单用例 —— 此前冒烟档 9 条全只读、订单域唯一 OR-001 是列表查询 ⇒ 主链路零覆盖。persona=mibao（代客下单免验证码，链路最短）；一句话给全 + repeat_until 协作轮（有卡答卡，成功即停）；断言 = must_succeed[order_create] + db_verify[order_items/order_phone] + order_before[interact[confirm] before order_create] + required_args；自清理 product_dedupe + precondition[product_count_for_keyword expect=1] + namespaces（商品名/手机号）。未新增任何自动触发（裁定 2′/4′）。 ｜ tags: order_create, smoke, write
 
-## 加工项域（11 case）
+## 加工项域（12 case）
 
 ### PP-001. 加工项选择 - 分页翻页 🔵
 ```
@@ -2967,6 +2967,20 @@
 ```
 真值: ai-chat.intent-tool-map
 溯源: 2026-09-17 新增（issue #3993）：M4-G-1 生产模块确定性核心覆盖登记，单测覆盖 ｜ tags: processing, production, piecework
+
+### PP-013. 特殊选项全登记 - 19 项无第四类未登记（条件工序/计件系数/不计件 三分类门禁） 🔵
+```
+你: 这个加工单有哪些特殊选项，分别怎么算工序和计件
+期望: direct_reply
+数据: 19 项真值源特殊选项**每一项**都落在三类之一（加工序=SPECIAL_OPTION_ROUTINGS / 加系数=OPTION_FACTOR_SCOPES / 不计件=NON_PIECEWORK_OPTIONS），不允许第四类「未登记」
+数据: A′ 类 5 道新工序（绑带-纱/logo条-布/立边-布/扣环-布/防翘扣-布）在 OPERATION_CATALOG 中存在且分组/单位/单价齐全，且有映射指向它们
+数据: 三条复用映射的锚点位置正确：布绑带→绑带-布 在 布帘车被 之后、余料做帘头→帘头制作 在 布三边 之后、抱枕→抱枕 在 外帘打卷 之后（断言前后相邻工序）
+数据: 系数：一分二 ⇒ 每道工序 factor=1.7；不带选项 ⇒ 1.0；operation_name 限定档位可用（以限定值构造证明）；多个加系数选项相乘
+数据: 不计件显式：余料带回(布)/(纱) ⇒ 路线逐值不变、factor 仍 1.0，且它们是**被登记**为不计件而不是「查不到映射」
+跳过: [backend-contract] 生产确定性核心是纯函数（app/production/），由单元测试全量覆盖（tests/test_production/test_special_options.py），非 LLM 行为，不进入 agent-eval 冒烟（同 PP-010 惯例）
+```
+真值: processing-manage.crud
+溯源: 2026-09-18 新增（issue #4230 v1a-PY）：真值源 19 项特殊选项的「三类全登记」结构门禁 + 5 道新工序 + 条件工序锚点 + 计件系数结构；与 PP-010 的分工 = PP-010 宽覆盖生产确定性核心，PP-013 专钉「19 项无第四类未登记」 ｜ tags: processing, production, piecework, special_options
 
 ### PP-011. 加工单生产明细与任务卡渲染（工序进度/二维码/计件） 🔵
 ```
@@ -4363,8 +4377,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：317（活跃 159，跳过 158）
-- tier 分布：smoke 10 / normal 274 / adversarial 33
+- 用例总数：318（活跃 159，跳过 159）
+- tier 分布：smoke 10 / normal 275 / adversarial 33
 - 售后域：9
 - agents：6
 - api：19
@@ -4382,7 +4396,7 @@
 - onboarding：5
 - ontology：4
 - 订单域：30
-- 加工项域：11
+- 加工项域：12
 - processing-order：18
 - 商品域：25
 - registry：1
