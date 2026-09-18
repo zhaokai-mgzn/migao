@@ -1534,6 +1534,8 @@ VALUES
   ('op-v56-05', 1, '防翘扣-布', '车位', NULL, '个', 0.2, FALSE, FALSE, 35, 'active')
 ON CONFLICT (tenant_id, name) WHERE deleted = 0 DO NOTHING;
 
+-- 工艺路线模板种子（V54 的 6 条 + V58 的 3 条，issue #4246 的纱帘路线补齐）。
+-- 守卫逐行比对口径：本文件 == V54 ∪ V58（见 tests/unit_ci_workflows/test_production_catalog_seed.py）。
 INSERT INTO production_routings
     (id, tenant_id, curtain_type, craft, operations, status)
 VALUES
@@ -1548,7 +1550,16 @@ VALUES
   ('rt-v54-05', 1, '纱帘', '韩褶',
    '["精裁-纱","纱三边","韩褶-纱","外帘打卷","外帘装袋","外帘发货"]'::jsonb, 'active'),
   ('rt-v54-06', 1, '帘头', '平幔',
-   '["精裁-布","布三边","帘头制作","定型-布","外帘打卷","外帘装袋","外帘发货"]'::jsonb, 'active')
+   '["精裁-布","布三边","帘头制作","定型-布","外帘打卷","外帘装袋","外帘发货"]'::jsonb, 'active'),
+  -- 末 3 行（rt-v58-*）来自 V58__seed_sheer_curtain_routings.sql（issue #4246 补的 3 条纱帘路线，
+  -- **零新造工序**：只消费库里早已存在、有价、零消费的 上车布-纱 / 打孔-纱）。本文件是终态 ⇒
+  -- 与 V54 的 6 行写同一条 INSERT（V54 行在前、V58 行在后），守卫逐行比对时可依赖该行序。
+  ('rt-v58-01', 1, '纱帘', '打孔',
+   '["精裁-纱","纱三边","打孔-纱","外帘打卷","外帘装袋","外帘发货"]'::jsonb, 'active'),
+  ('rt-v58-02', 1, '纱帘', '四爪钩',
+   '["精裁-纱","纱三边","上车布-纱","外帘打卷","外帘装袋","外帘发货"]'::jsonb, 'active'),
+  ('rt-v58-03', 1, '纱帘', '穿杆',
+   '["精裁-纱","纱三边","外帘打卷","外帘装袋","外帘发货"]'::jsonb, 'active')
 ON CONFLICT (tenant_id, curtain_type, craft) WHERE deleted = 0 DO NOTHING;
 
 -- 单价版本回填（V55，issue #4204）：每条活跃工序一行初始版本 ⇒ 「当前价 = 最新版本行」对存量数据成立。
