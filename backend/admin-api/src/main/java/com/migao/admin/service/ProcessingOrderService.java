@@ -194,6 +194,21 @@ public class ProcessingOrderService {
     /** 配布边（§4.8）：**不独立成加工部位**的部件角色 —— 组内出现主布行时它被合并进去。 */
     private static final String COMPONENT_ROLE_EDGE = "配布边";
 
+    /**
+     * **套级**工序的作用域取值（`production_operations.scope`，V67 / issue #4384 A1）。
+     *
+     * <p>套级 = **每樘窗一次**（真值源 §8：「外帘是加工单打印行部位，**不是**路线键」）⇒
+     * 实例化时同一樘窗（{@code craftGroupKey} 组）只落一次，而不是像部位级那样每个部位各落一次。</p>
+     *
+     * <p>⚠️ 这是**词表值**（库列注释冻结的两态之一），不是工序名白名单 —— 判据一律读
+     * {@link ProductionOperationQueryService#findRouting} 带出的 `scope`（逐字取库）；
+     * 硬编码 `外帘打卷/装袋/发货` 会让商家在工序库把某道改成部位级后**不生效**（第二份口径）。</p>
+     */
+    private static final String SCOPE_SET = "set";
+
+    /** 部位（`curtainType`）取值「布帘」—— 樘窗的**主布行**（套级工序的承载体，同写侧 #4395 的代表行口径）。 */
+    private static final String CURTAIN_TYPE_CLOTH = "布帘";
+
     /** 加工单状态机（与 OrderService.STATUS_TRANSITIONS 同模式） */    private static final Map<String, Set<String>> STATUS_TRANSITIONS = Map.of(
             "generated", Set.of("issued", "cancelled"),
             "issued", Set.of("in_processing", "cancelled"),
@@ -386,6 +401,8 @@ public class ProcessingOrderService {
         List<ProductionOptionFactor> optionFactors = productionOperationQueryService.optionFactors(tenantId);
         // 樘窗绑组（issue #4354 引入，issue #4387 语义扩展）：组键 = `craftLineId`（缺省 ⇒ 本行 itemId ⇒ 各自成组）
         Set<String> groupsWithMainRow = groupsWithMainRow(snapshot);
+        // 套级工序的承载体（issue #4384 A2）：每个樘窗组只挑一行（主布行）—— 见 setLevelKeeperItemIds
+        Set<String> setLevelKeepers = setLevelKeeperItemIds(snapshot, groupsWithMainRow);
         for (Map<String, Object> entry : snapshot) {
             if (!(entry.get("processingItems") instanceof List<?>)) {
                 continue;
@@ -395,12 +412,20 @@ public class ProcessingOrderService {
                 // 折数/开数/幅数/工序/计件全部翻倍）。该行自身的货号/米数仍在快照里可展示。
                 continue;
             }
+            // 本行是否承载所在樘窗的套级工序（= 该组的主布行）。
+            // `itemId` 恒非空（`buildSnapshot` 无条件落 `order_items.id` = 主键）⇒ 用它做承载标识。
+            boolean keepsSetLevel = setLevelKeepers.contains(str(entry.get("itemId")));
             RouteKey key = deriveRouteKey(entry, tenantId);
             RouteResolution resolution = resolveRoute(key, tenantId, entry);
             resolutions.add(resolution);
             Map<String, Object> route = resolution.route();
             List<Map<String, Object>> operations = new ArrayList<>();
             for (Map<String, Object> step : (List<Map<String, Object>>) route.get("operations")) {
+                // 套级工序（issue #4384 A2）：同一樘窗只落一次（挂该组主布行的部位名）。
+                // 判据 = 库里带出的 `scope`（逐字取库）——**不硬编码工序名**（商家改了库要生效）。
+                if (!keepsSetLevel && SCOPE_SET.equals(str(step.get("scope")))) {
+                    continue;
+                }
                 Map<String, Object> operation = new LinkedHashMap<>();
                 operation.put("operation", step.get("operation"));
                 // 分组/单位/单价/必完/开始标记**逐字取库**（不猜、不补默认值）
@@ -499,6 +524,58 @@ public class ProcessingOrderService {
     private static String craftGroupKey(Map<String, Object> entry) {
         String craftLineId = str(entry.get("craftLineId"));
         return craftLineId != null ? craftLineId : str(entry.get("itemId"));
+    }
+
+    /**
+     * 套级工序（{@code scope='set'}）的**承载体**：每个樘窗组只挑一行（issue #4384 **A2**）。
+     *
+     * <p>挑法与写侧（#4395 的 {@code resolveWindowCraftLineIds}）**同口径**：组内**第一条
+     * `curtainType=布帘`** 的行（= 主布行 —— §4.8 的 `craftLineId` 口径、§5.6 R-b 的加工费也落它）；
+     * 组内没有布帘（纱 + 帘头）⇒ 取**组内首行**（不猜、不丢组：静默丢组会让整樘窗没有套级工序）。</p>
+     *
+     * <p>只考虑**会变成部位的行**：被吸收的配布边行与无加工项的行在实例化循环里被 {@code continue}
+     * 跳过 ⇒ 它们不能承载套级工序（否则套级工序会落在不存在的部位上 = 静默丢失）。</p>
+     *
+     * <h2>为什么挂主布行，而不是新增一个「外帘」部位行（设计裁定）</h2>
+     * <ol>
+     *   <li><b>部位计数口径</b>：部位 = 一行 {@code order_items}（R-a）⇒ 新增「外帘」行会让
+     *       `positions` 数变成「部位数 + 1」，订单/看板/加工单按部位数展示的地方全部对不上；</li>
+     *   <li><b>存量单兼容</b>：新增行会让**每一个**单行樘窗（存量单的绝大多数）多一行 ⇒
+     *       与判据「不属于樘窗组 / 单行自成一组 ⇒ 行为逐字不变」冲突；</li>
+     *   <li><b>先例</b>：樘窗级的东西落该组**主布行**（§5.6 R-b：加工费按樘窗一条、落主布行）；</li>
+     *   <li><b>真值源 §8 的「外帘是加工单<u>打印行部位</u>」是打印粒度要求</b> ⇒ 归 #4388
+     *       （定位键 {@code (order_item_id, position_kind)} + 打印粒度）；本单边界明确排除定位键；</li>
+     *   <li><b>工人扫码端仍看得到</b>：扫码/详情/报工读的是**工序行**，按 {@code position_name}
+     *       分组（{@code ProductionService.buildPositions}）⇒ 套级工序挂在主布行部位名下照样可见可报工。</li>
+     * </ol>
+     *
+     * @return 各组承载体行的 {@code itemId} 集合（空快照 / 全是被吸收行 ⇒ 空集）
+     */
+    private static Set<String> setLevelKeeperItemIds(List<Map<String, Object>> snapshot,
+                                                     Set<String> groupsWithMainRow) {
+        Map<String, List<Map<String, Object>>> byGroup = new LinkedHashMap<>();
+        for (Map<String, Object> entry : snapshot) {
+            if (!(entry.get("processingItems") instanceof List<?>) || isAbsorbedEdgeRow(entry, groupsWithMainRow)) {
+                continue;
+            }
+            // 组键恒非空（`itemId` = order_items 主键，`buildSnapshot` 无条件落）⇒ 不存在「不参与绑组」的行；
+            // 万一为空（脏快照）⇒ 该行自成一樘窗（键用行标识兜底），**不静默并组**。
+            String groupKey = craftGroupKey(entry);
+            byGroup.computeIfAbsent(groupKey == null ? "item:" + str(entry.get("itemId")) : groupKey,
+                    k -> new ArrayList<>()).add(entry);
+        }
+        Set<String> keepers = new LinkedHashSet<>();
+        for (List<Map<String, Object>> group : byGroup.values()) {
+            Map<String, Object> keeper = group.stream()
+                    .filter(row -> CURTAIN_TYPE_CLOTH.equals(str(row.get("curtainType"))))
+                    .findFirst()
+                    .orElse(group.get(0));
+            String itemId = str(keeper.get("itemId"));
+            if (itemId != null) {
+                keepers.add(itemId);
+            }
+        }
+        return keepers;
     }
 
     /** 多部位 roll-up：取最需关注的一条（{@link #severity}），同档取先出现者。 */
