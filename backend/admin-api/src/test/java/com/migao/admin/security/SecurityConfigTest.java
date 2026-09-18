@@ -275,6 +275,13 @@ class SecurityConfigTest {
     // 时上下文整体起不来（26 条安全用例连坐失败，实测）。
     @MockBean
     private com.migao.admin.mapper.ProductionOperationPriceVersionMapper productionOperationPriceVersionMapper;
+    // 路线可配（issue #4308，V60）：信号映射表 + 路线版本账。同族坑再犯一次（实测：漏了前者 ⇒
+    // ProductionOperationQueryService 的第 5 个构造参数建不出来 ⇒ 本类 26 条全 error
+    // 「Property 'sqlSessionTemplate' are required」）⇒ **新增 Mapper/构造依赖必须同步补这里**。
+    @MockBean
+    private com.migao.admin.mapper.ProductionRouteSignalMapper productionRouteSignalMapper;
+    @MockBean
+    private com.migao.admin.mapper.ProductionRoutingVersionMapper productionRoutingVersionMapper;
     @MockBean
     private com.migao.admin.service.ProductionService productionService;
 

@@ -114,9 +114,12 @@ public class ProcessingOrderService {
      * 默认路线键（派生不出 部位/工艺 时的兜底，issue #4116 用户裁定）。
      * ⚠️ 这是**路线键**的兜底，不是**数据源**的兜底：默认路线同样必须来自工序库，
      * 库里连它都没有 ⇒ fail-closed 中止生成（绝不回退加工项目录）。
+     *
+     * <p>{@code public}（issue #4308）：缺口查询（{@code GET /production/routing-gaps}）要用
+     * 同一对默认值算「某个信号单独命中时**会**派生出哪个键」—— 复制第二份默认值必然漂移。</p>
      */
-    private static final String DEFAULT_CURTAIN_TYPE = "布帘";
-    private static final String DEFAULT_CRAFT = "韩褶";
+    public static final String DEFAULT_CURTAIN_TYPE = "布帘";
+    public static final String DEFAULT_CRAFT = "韩褶";
 
     /**
      * 部位（帘种）与工艺的**派生来源**（V60，issue #4308）：租户级库表

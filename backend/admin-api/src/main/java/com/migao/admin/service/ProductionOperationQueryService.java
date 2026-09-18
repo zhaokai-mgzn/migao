@@ -18,9 +18,11 @@ import org.springframework.stereotype.Service;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 
 /**
  * 工序库 / 工艺路线**只读**消费者（issue #4116 P0-2）。
@@ -50,6 +52,22 @@ import java.util.Objects;
 @Service
 @RequiredArgsConstructor
 public class ProductionOperationQueryService {
+
+    /**
+     * 「有工序、有价、**有意不消费**（等客户确认）」的工序集合（issue #4308 P4；真值源 =
+     * {@code backend/ai-agent-service/app/production/routing.py::PENDING_CUSTOMER_CONFIRMATION_OPERATIONS}）。
+     *
+     * <p><b>这不是缺陷清单，是提问清单</b>：issue #4261 逐项登记了为什么必须问客户
+     * （裁剪vs精裁是否两道 / 质检是否每单必做 / 腰靠垫归属 / 罗马帘整套工序 / 纱帘熨烫定型）——
+     * 猜出来的工序与单价会**直接算成工人工资**，故一律不猜。</p>
+     *
+     * <p>⚠️ <b>与 routing.py 同源由测试守</b>（Java 无法 import Python）：
+     * {@code ProductionRouteSignalMigrationTest} 逐字解析 {@code routing.py} 的
+     * {@code frozenset} 并与本常量**双向比对**（少一道/多一道都红）。改一处不改另一处即红 ——
+     * 抄一份字面量而不守，就是第二份口径。</p>
+     */
+    public static final Set<String> PENDING_CUSTOMER_CONFIRMATION_OPERATIONS =
+            Set.of("裁剪-布", "裁剪-纱", "质检", "腰靠垫");
 
     private final ProductionOperationMapper productionOperationMapper;
     private final ProductionRoutingMapper productionRoutingMapper;
@@ -245,6 +263,97 @@ public class ProductionOperationQueryService {
                         .eq(ProductionRouteSignal::getStatus, "active")
                         .orderByAsc(ProductionRouteSignal::getPriority)
                         .orderByAsc(ProductionRouteSignal::getId));
+        return rows == null ? List.of() : rows;
+    }
+
+    /**
+     * **缺口可查**（issue #4308 交付物 5 / P4）：把「只活在代码注释里的缺口」变成商家能看见的数据。
+     *
+     * <p>两只清单：</p>
+     * <ol>
+     *   <li>{@code unrouted_operations} —— **有活跃工序但未进任何活跃路线**的工序。
+     *       真值源下应为 {@code 裁剪-布 / 裁剪-纱 / 质检 / 腰靠垫} 四道，且它们**不是缺陷**：
+     *       issue #4261 逐项登记了「为什么必须问客户」（裁剪vs精裁是否两道 / 质检是否每单必做 /
+     *       腰靠垫归属 / 罗马帘整套工序 / 纱帘熨烫定型）⇒ 每条带
+     *       {@code pending_confirmation=true}，**不要让商家/前端把它们读成「系统漏了」**。</li>
+     *   <li>{@code signal_keys_without_route} —— **库里没有路线的信号组合**：逐个活跃信号行算出
+     *       「只命中它时会派生的键」（另一维取默认），报出库中无该路线的那些。
+     *       例：商家自建信号「罗马帘」⇒ {@code 罗马帘×韩褶} 无路线（#4261 ①，本单**不发明**该路线）。</li>
+     * </ol>
+     *
+     * <p>口径与派生**同源**：默认维取值直接引用 {@link ProcessingOrderService#DEFAULT_CURTAIN_TYPE}
+     * / {@link ProcessingOrderService#DEFAULT_CRAFT}（复制第二份必然漂移）。</p>
+     */
+    public Map<String, Object> routingGaps(Long tenantId) {
+        List<ProductionRouting> routings = activeRoutings(tenantId);
+        Set<String> routed = new LinkedHashSet<>();
+        for (ProductionRouting routing : routings) {
+            routed.addAll(operationNames(routing.getOperations()));
+        }
+        Set<String> existingKeys = new LinkedHashSet<>();
+        for (ProductionRouting routing : routings) {
+            existingKeys.add(routing.getCurtainType() + "×" + routing.getCraft());
+        }
+
+        List<Map<String, Object>> unrouted = new ArrayList<>();
+        int pending = 0;
+        for (ProductionOperation op : activeOperations(tenantId)) {
+            if (routed.contains(op.getName())) {
+                continue;
+            }
+            boolean isPending = PENDING_CUSTOMER_CONFIRMATION_OPERATIONS.contains(op.getName());
+            if (isPending) {
+                pending++;
+            }
+            Map<String, Object> entry = new LinkedHashMap<>();
+            entry.put("name", op.getName());
+            entry.put("group_name", op.getGroupName());
+            entry.put("unit", op.getUnit());
+            entry.put("unit_price", nz(op.getUnitPrice()));
+            entry.put("pending_confirmation", isPending);
+            entry.put("note", isPending
+                    ? "有意挂起、等客户输入（issue #4261 提问清单），不是系统漏了；客户回复前不要替它编工序/单价"
+                    : "该工序有价但没有任何活跃路线消费它；可经「工艺路线」页把它加进某条路线，或停用它");
+            unrouted.add(entry);
+        }
+
+        List<Map<String, Object>> signalGaps = new ArrayList<>();
+        for (ProductionRouteSignal signal : routeSignals(tenantId)) {
+            String curtainType = signal.getCurtainType() == null
+                    ? ProcessingOrderService.DEFAULT_CURTAIN_TYPE : signal.getCurtainType();
+            String craft = signal.getCraft() == null
+                    ? ProcessingOrderService.DEFAULT_CRAFT : signal.getCraft();
+            String key = curtainType + "×" + craft;
+            if (existingKeys.contains(key)) {
+                continue;
+            }
+            Map<String, Object> entry = new LinkedHashMap<>();
+            entry.put("curtain_type", curtainType);
+            entry.put("craft", craft);
+            entry.put("route_key", key);
+            entry.put("signal", signal.getSignal());
+            signalGaps.add(entry);
+        }
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("unrouted_operations", unrouted);
+        result.put("unrouted_operation_total", unrouted.size());
+        result.put("pending_confirmation_total", pending);
+        result.put("signal_keys_without_route", signalGaps);
+        return result;
+    }
+
+    /**
+     * 活跃工序（tenant + deleted=0 + status=active，按分组/排序位稳定返回）。
+     */
+    private List<ProductionOperation> activeOperations(Long tenantId) {
+        List<ProductionOperation> rows = productionOperationMapper.selectList(
+                new LambdaQueryWrapper<ProductionOperation>()
+                        .eq(ProductionOperation::getTenantId, tenantId)
+                        .eq(ProductionOperation::getDeleted, 0)
+                        .eq(ProductionOperation::getStatus, "active")
+                        .orderByAsc(ProductionOperation::getSortOrder)
+                        .orderByAsc(ProductionOperation::getName));
         return rows == null ? List.of() : rows;
     }
 
