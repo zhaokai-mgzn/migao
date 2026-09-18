@@ -4335,6 +4335,24 @@ _CASE_PG_023 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── PG-024 [NORMAL] 加工单列表请求时序保护——旧的在飞响应晚到不得覆盖更新的列表数据（源: cases/processing-order.yml）──
+_CASE_PG_024 = EvalCase(
+    id='PG-024',
+    legacy_id='',
+    title='加工单列表请求时序保护——旧的在飞响应晚到不得覆盖更新的列表数据',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['打开加工单列表，连续筛选/刷新（或发加工后刷新），列表始终显示最新一次请求的数据'],
+    expectations=[],
+    data_checks=["时序保护（**核心/长期判据，红证在这条**）：同一页面并发多个列表请求时，**只认最新一次请求的响应** —— 先发出的慢请求（旧数据快照）晚到 ⇒ 其响应被**丢弃**，列表**不得**回退成旧数据。红证（修复前实测，本机 vitest）：`processing-orders-list.test.tsx` 断言①得 `expected '…已生成…' to contain '加工中'`（旧响应把「加工中」覆盖回「已生成」，与 issue #4303 的实测形态同形）", '同一保护覆盖全部触发路径：搜索/筛选（查询）、重置、刷新、写操作后的收敛刷新 —— 共用**同一份**列表加载函数与同一套请求序号，不得各写一套（禁止复制第二份加载逻辑）；且 `loading` 态只由最新一次请求收尾（旧响应被丢弃时不得把 loading 错误地留在 true）', "写响应即时反映（**当前 main 有效**，随列表页写入口一并演进）：写操作成功后用写响应更新该行（`{...x, ...updated}`），**不等**下一次列表请求返回；且该次收敛刷新不切 loading 态（否则刚更新好的行会被「加载中…」盖掉）。红证（修复前实测）：断言②得 `expected '…加载中…' to contain '已发加工'`。⚠️ 后续 P3（移除加工单列表页写入口、唯一入口改订单详情页）落地时本条随实现一并移除，由该单更新本测试文件", '不回归：加载失败仍给「加载加工单失败，请稍后重试」+ 重试入口；首屏/筛选后的空态文案（「暂无加工单」/「暂无加工单（当前筛选条件下）」）与状态文案（已生成/已发加工/加工中/加工完成/已取消）不变'],
+    skip_reason='[backend-contract] 前端行为（admin-web 页面/交互），由 vitest 单测覆盖（frontend/admin-web/tests/unit/pages/processing-orders-list.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟（同 PP-011 惯例）',
+    tags=['processing-order', 'admin_web', 'request_ordering', 'list_refresh'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── PP-001 [NORMAL] 加工项选择 - 分页翻页（源: cases/processing.yml）──
 _CASE_PP_001 = EvalCase(
     id='PP-001',
@@ -6427,6 +6445,7 @@ ALL_CASES = (
     _CASE_PG_021,
     _CASE_PG_022,
     _CASE_PG_023,
+    _CASE_PG_024,
     _CASE_PP_001,
     _CASE_PP_002,
     _CASE_PP_003,
