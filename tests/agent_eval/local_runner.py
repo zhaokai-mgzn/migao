@@ -621,6 +621,11 @@ def serialize_seconds(cases: list, durations: dict, concurrency: int = 6) -> dic
             "serial_s": round(serial_s, 1), "wall_s": round(max(parallel_s, serial_s), 1)}
 
 
+def _norm_phone(v) -> str:
+    """手机号**数字归一**（`_eval_find_users` / `_probe_employee_count` 共用 —— 单一真相源）。"""
+    return re.sub(r"\D", "", str(v or ""))
+
+
 async def _eval_find_users(client, headers, name: str = "", phone: str = "") -> list:
     """按**姓名 / 手机号**精确查员工账号（评测前置的数据层基元，issue #3781）。
 
@@ -641,7 +646,7 @@ async def _eval_find_users(client, headers, name: str = "", phone: str = "") -> 
     用它定位可让用例对"同名残留"免疫。
     """
     want_name = str(name or "").strip()
-    want_phone = re.sub(r"\D", "", str(phone or ""))
+    want_phone = _norm_phone(phone)
     if not want_name and not want_phone:
         return []
     out = []
@@ -652,7 +657,7 @@ async def _eval_find_users(client, headers, name: str = "", phone: str = "") -> 
         for u in items:
             if want_name and str(u.get("name") or "").strip() != want_name:
                 continue
-            if want_phone and re.sub(r"\D", "", str(u.get("phone") or "")) != want_phone:
+            if want_phone and _norm_phone(u.get("phone")) != want_phone:
                 continue
             if u not in out:
                 out.append(u)
@@ -661,14 +666,20 @@ async def _eval_find_users(client, headers, name: str = "", phone: str = "") -> 
     return out
 
 
-async def _eval_remove_users(client, headers, name: str = "", phone: str = "") -> int:
-    """删除匹配的员工账号（`HR-002` 产物清理专用，issue #3781）；返回删除条数。
+async def _eval_remove_users(client, headers, name: str = "", phone: str = "") -> tuple:
+    """删除匹配的员工账号（`HR-002` 产物清理专用，issue #3781）；返回 `(removed, failed)`。
 
     走 `DELETE /api/admin/users/{id}`（`AdminUserController.deleteUser` @`:268`，
     无请求体；与 `employee_manage` 的 `delete` action 同一路径与权限码
     `employee:create` —— `app/tools/employee_manage.py:_delete_user` 传的就是裸 DELETE）。
+
+    ⚠️ `failed` 记账（issue #4189「清理失败 LOUD，不跳过」）：旧实现只把
+    `status_code < 300` 计入 `removed`，`>= 300` 直接跳过 ⇒ 调用方把「命中但没删掉」
+    报成「无 … 需清理（幂等）」—— 残留与"本就没有"在报告里同形（归因错人）。
+    现在命中但删除失败也**计数**，由 `employee_remove` 大声报出（消息含「删除失败」）。
     """
     removed = 0
+    failed = 0
     for u in await _eval_find_users(client, headers, name, phone):
         uid = u.get("id")
         if not uid:
@@ -677,7 +688,9 @@ async def _eval_remove_users(client, headers, name: str = "", phone: str = "") -
                                 headers=headers, timeout=15)
         if r.status_code < 300:
             removed += 1
-    return removed
+        else:
+            failed += 1
+    return removed, failed
 
 
 async def _run_pre_clean(token: str, spec: dict) -> str:
@@ -815,8 +828,15 @@ async def _run_pre_clean_action(token: str, spec: dict) -> str:
         phone = str(spec.get("employee_phone", "") or "")
         async with httpx.AsyncClient() as c:
             h = _admin_headers(token)
-            removed = await _eval_remove_users(c, h, name, phone)
+            removed, failed = await _eval_remove_users(c, h, name, phone)
         _who = f"「{name}」" + (f"（手机号 {phone}）" if phone else "")
+        # ⚠️ 命中却删不掉 = **清理失败**，必须大声（issue #4189「LOUD，不跳过」）：
+        # 旧实现把 `status_code >= 300` 的删除静默跳过，报成「无 … 需清理（幂等）」，
+        # 残留与"本就没有"在报告里同形。消息含「失败」是有意的 —— 重试复位检测
+        # （`_reset_for_retry`）据此把该次重试标为「前置未复位、结论不可归因」（诚实）。
+        if failed:
+            return (f"命中 {removed + failed} 个测试员工 {_who}，其中 {failed} 个删除失败"
+                    f"（DELETE HTTP ≥300）—— 现场已保留，见 _eval_remove_users")
         # ⚠️ 措辞红线：不含「未复位」/「失败」（见 docstring）
         return (f"已清理 {removed} 个测试员工 {_who}"
                 if removed else f"无 {_who} 员工需清理（幂等）")
@@ -4397,6 +4417,13 @@ _PRECONDITION_NO_DRIFT = 0
 _PRECONDITION_TYPES: dict = {
     "order_count_for_phone": "手机号名下订单数",
     "product_count_for_keyword": "名字含该关键词的商品件数",
+    # 员工创建/更新的**前置**（issue #4189 的 burn-down 缴费，HR-002 使用）：
+    # `source` = 手机号（数字归一的不可变键）→ 基线 = 该号码名下的员工/用户数。
+    # 与 `order_count_for_phone` 同构：`expect` 判基线（HR-002 声明 expect=0 = 创建目标
+    # 必须空闲），`max_growth` 判运行期漂移（HR-002 声明 max_growth=1 = 只允许本用例
+    # 自己造的那一个；并行用例再造同名 ⇒ 判红）。定位口径与 `employee_remove` 同一份
+    # （`_norm_phone` + `/api/admin/users` 列表），不存在第二份"怎么数员工"的定义。
+    "employee_count_for_phone": "该手机号名下的员工/用户数（创建前置：目标可创建）",
     # 评测可控权限（issue #4108）：`source` = 用例声明的 `debug_permissions`（逗号分隔权限码）。
     # 判据**不是**"数一个共享字面量有没有漂移"，而是"**本用例的权限范围是否真的生效**"——
     # 见 `check_debug_permissions_effective`。`source` 语义与上两条一致 =「我依赖的那个
@@ -4413,7 +4440,10 @@ def precondition_capture_shape(specs: list) -> dict:
       · `product_count_for_keyword`：`{"source": "<商品名关键词>"}` → 基线 = 名字**含该关键词**
         的商品件数（口径与 `product_remove`/`product_dedupe` 同一份实现
         `_list_products_matching`，**不复制第二份"怎么数商品"的定义**）。
-        `source` 字段名对两种类型语义一致 =「我依赖的那个共享资源**的不可变键**」。
+      · `employee_count_for_phone`：`{"source": "<手机号>"}` → 基线 = 该号码名下的员工/用户数
+        （口径与 `_eval_find_users` / `employee_remove` / `employee_reactivate` 同一份，
+        `_norm_phone` 数字归一，**不复制第二份"怎么数员工"的定义**）。
+        `source` 字段名对三种类型语义一致 =「我依赖的那个共享资源**的不可变键**」。
     返回 `{type: [source, …]}`（保序去重）。未知类型原样返回 —— 由
     `check_precondition_declared` 静态守卫判"声明了没人实现的类型"（fail-closed）。
     """
@@ -4471,6 +4501,37 @@ async def _probe_product_count(token: str, keyword: str) -> int | None:
     try:
         async with httpx.AsyncClient() as c:
             return len(await _list_products_matching(c, token, str(keyword), size=50))
+    except Exception:
+        return None
+
+
+async def _probe_employee_count(token: str, phone: str) -> int | None:
+    """该手机号名下的**员工/用户数**（HR-002 创建前置：target 必须可创建）；取不到返回 None。
+
+    走 `GET /api/admin/users` 分页（`AdminUserController.getUsers` → `toEmployeeMap`，
+    与 `employee_manage` 列表同一套字段），按手机号**数字归一**精确匹配 —— 定位口径与
+    `_eval_find_users` / `employee_remove` / `employee_reactivate` **同一份**（§18 单一真相源）。
+    返回 None = 请求/解析异常（**不**当成 0：0 会被读成"目标可创建"，是另一种误判 ——
+    前置断言取不到真值必须 fail-closed，与 `_probe_phone_order_count` 同口径）。
+    """
+    if not _norm_phone(phone):
+        return None
+    try:
+        async with httpx.AsyncClient() as c:
+            h = _admin_headers(token)
+            want = _norm_phone(phone)
+            n = 0
+            for page in (1, 2):
+                r = await c.get(f"{ADMIN_API}/api/admin/users", headers=h,
+                                params={"page": page, "size": 200}, timeout=15)
+                body = _safe_json(r, None)
+                if not isinstance(body, dict):
+                    return None
+                items = (body.get("data") or {}).get("items", [])
+                n += sum(1 for u in items if _norm_phone(u.get("phone")) == want)
+                if len(items) < 200:
+                    break
+            return n
     except Exception:
         return None
 
@@ -5333,7 +5394,13 @@ async def check_db_verify(token: str, db_verify: list, results: list | None = No
                     f"db_verify[employee_absent]: 查不到员工 {_who_abs!r} 的存在性"
                     f"（{_note_abs or '取数异常'}）—— 取不到真值不许当「不存在」")
                 continue
-            if _found_abs:
+            # ⚠️ issue #4189（真跑 run 35273366357 / 35264687083 同指纹）：旧判定是
+            # `if _found_abs:` —— **布尔反转**！`_probe_employee_absent` 的语义是
+            # `True` = 确认不存在（可判绿）、`False` = 存在（判红）。旧代码把"不存在"
+            # 判成「已落库」：HR-009 在模型行为**完全正确**（李四未落库）时也必红，
+            # 且注释回落到「已存在」（=`True` 空注释路径）—— 报告读成"残留数据"。
+            # 判别性承重方向：**越权落库（False）⇒ 红**；正确拒绝（True）⇒ 绿。
+            if not _found_abs:
                 issues.append(
                     f"db_verify[employee_absent]: 员工 {_who_abs!r} **已落库**"
                     f"（{_note_abs or '已存在'}）—— 该操作本应被权限拒绝/不成立；"
@@ -6702,6 +6769,11 @@ async def run_suite(cases, label: str, classify: bool = True, retry_budget: int 
                         _n = await _probe_product_count(token, _src)
                         if _n is not None:
                             _precond_base[f"product_count_for_keyword:{_src}"] = _n
+                    for _src in precondition_capture_shape(_precond_specs).get(
+                            "employee_count_for_phone", []):
+                        _n = await _probe_employee_count(token, _src)
+                        if _n is not None:
+                            _precond_base[f"employee_count_for_phone:{_src}"] = _n
                     if _precond_base:
                         _precond_base_label = ("capture" if _attempt_no == 1
                                                else f"capture(attempt{_attempt_no})")
@@ -6720,6 +6792,11 @@ async def run_suite(cases, label: str, classify: bool = True, retry_budget: int 
                         _n = await _probe_product_count(token, _src)
                         if _n is not None:
                             _after[f"product_count_for_keyword:{_src}"] = _n
+                    for _src in precondition_capture_shape(_precond_specs).get(
+                            "employee_count_for_phone", []):
+                        _n = await _probe_employee_count(token, _src)
+                        if _n is not None:
+                            _after[f"employee_count_for_phone:{_src}"] = _n
                     _issues = check_precondition_drift(_precond_specs, _precond_base, _after)
                     if _issues:
                         # 前置不成立 ⇒ 本用例本次尝试的判定**不可归因于 agent**：

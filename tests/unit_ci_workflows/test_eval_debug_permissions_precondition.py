@@ -1,4 +1,4 @@
-# case_ids: HR-009, HR-010
+# case_ids: HR-002, HR-009, HR-010
 """评测可控权限（`X-Debug-Permissions`）的**前置自断言**：判据 = **服务端探针**（issue #4150）。
 
 ## 病灶（issue #4150，验证于 `origin/main`）
@@ -381,6 +381,242 @@ class TestEmployeeAbsentShapeIsFailClosed:
         assert "employee_absent" in src, (
             "test_assertion_specs_wellformed.SUPPORTED_DB_FETCH 未收录 employee_absent"
             " ⇒ 用例里写了它会被 L0 判「不支持的 fetch」")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 五·一、`employee_absent` 三态读数 → 判绿/判红的**映射**（issue #4189 真红证）
+# ══════════════════════════════════════════════════════════════════════════════
+
+class TestEmployeeAbsentVerdictMapping:
+    """`_probe_employee_absent` 的三态（True/False/None）→ `check_db_verify` 的判定。
+
+    病灶（真跑 run 35273366357 / 35264687083 同指纹，issue #4189）：`check_db_verify`
+    对 `employee_absent` 的判定**布尔反转** —— `_probe_employee_absent` 的 docstring
+    与实现都是 `True` = 确认不存在（可以判绿），调用方却写 `if _found_abs:`
+    （True ⇒ 报「已落库」）。实测形态（run 35273366357 日志逐字）：
+    `pre_clean: 无「李四」…员工需清理（幂等）` + 模型从未调 create + 失败注释回落到
+    「已存在」（=`True` 空注释路径）⇒ **正确拒绝**被判「越权落库」，两次同指纹，
+    报告读成"残留数据"（issue 原判）—— 真因在 runner，不在用例、也不在数据。
+    """
+
+    SPEC = {"fetch": "employee_absent", "name": "李四", "phone": "13800009999"}
+
+    def _check(self, lr, monkeypatch, verdict, note=""):
+        async def _fake_probe(token, emp_id="", name="", phone=""):
+            return verdict, note
+
+        monkeypatch.setattr(lr, "_probe_employee_absent", _fake_probe)
+        return asyncio.run(lr.check_db_verify("tok", [self.SPEC]))
+
+    def test_absent_verdict_passes(self, monkeypatch):
+        """`True`（确认不存在 = 本轮**正确拒绝**）⇒ 不得报「已落库」（本条的**红证**）。
+
+        未修实现下本测试红：`if _found_abs:` 把"不存在"判成"已落库" ⇒
+        HR-009 在模型行为**完全正确**时也必红（issue #4189 的恒红真身）。
+        """
+        lr = _runner()
+        issues = self._check(lr, monkeypatch, True)
+        assert issues == [], f"正确拒绝（李四未落库）被判红 ⇒ employee_absent 布尔反转：{issues}"
+
+    def test_present_verdict_is_red(self, monkeypatch):
+        """`False`（存在 = 越权产物落库）⇒ 必须报「已落库」（**判别性承重**）。"""
+        lr = _runner()
+        issues = self._check(lr, monkeypatch, False, "命中 1 条（name='李四' phone='13800009999'）")
+        assert issues and "已落库" in issues[0], f"越权落库未被判红 ⇒ 断言失效：{issues}"
+
+    def test_unknown_verdict_fail_closed(self, monkeypatch):
+        """`None`（取数失败）⇒ 判失败而非当「不存在」（fail-closed 不回归）。"""
+        lr = _runner()
+        issues = self._check(lr, monkeypatch, None, "查询异常")
+        assert issues and "查不到" in issues[0], f"取数失败未被 fail-closed：{issues}"
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 五·二、`employee_remove` 命中却删不掉时必须**大声**（issue #4189：「清理失败 LOUD」）
+# ══════════════════════════════════════════════════════════════════════════════
+
+class TestEmployeeRemoveReportsDeleteFailure:
+    """`_eval_remove_users` 对 `DELETE` 失败必须记账、`employee_remove` 必须大声报。
+
+    病灶：`_eval_remove_users` 对 `status_code >= 300` 只跳过不记账，`employee_remove`
+    于是把「命中但没删掉」报成「无 … 员工需清理（幂等）」—— 残留与"本就没有"
+    在报告里同形（归因错人；issue #4189 要求的「清理失败 LOUD，不跳过」）。
+    本测试锁新语义：命中 ≥1 条但删除失败 ⇒ 返回 failed>0；消息不得是「无 … 幂等」。
+    """
+
+    # ── `_eval_remove_users` 层：命中/删除成败的记账 ──
+
+    def _run_remove(self, lr, users, delete_codes):
+        import json
+
+        class _Resp:
+            def __init__(self, status_code, payload):
+                self.status_code = status_code
+                self.content = json.dumps(payload).encode()
+
+        class _Client:
+            def __init__(self):
+                self._codes = iter(delete_codes)
+
+            async def get(self, *a, **k):
+                return _Resp(200, {"data": {"items": users, "total": len(users)}})
+
+            async def delete(self, *a, **k):
+                return _Resp(next(self._codes), {"success": False})
+
+        return asyncio.run(lr._eval_remove_users(_Client(), {}, "李四", "13800009999"))
+
+    def test_found_but_delete_failed_is_counted(self):
+        """命中 1 条、DELETE 返回 500 ⇒ (removed=0, failed=1)，不得当"无需清理"。"""
+        lr = _runner()
+        removed, failed = self._run_remove(lr, [{"id": "u1", "name": "李四",
+                                                 "phone": "13800009999"}], [500])
+        assert (removed, failed) == (0, 1), f"删除失败未被记账：removed={removed} failed={failed}"
+
+    def test_clean_removal_counts(self):
+        lr = _runner()
+        removed, failed = self._run_remove(lr, [{"id": "u1", "name": "李四",
+                                                 "phone": "13800009999"}], [200])
+        assert (removed, failed) == (1, 0), f"正常删除未被计数：removed={removed} failed={failed}"
+
+    def test_absent_target_stays_benign(self):
+        """目标不存在 = 良性 no-op（removed=0, failed=0），不得进结论。"""
+        lr = _runner()
+        removed, failed = self._run_remove(lr, [], [])
+        assert (removed, failed) == (0, 0), "目标不存在必须保持良性 no-op"
+
+    # ── `employee_remove` 消息层：失败必须大声 ──
+
+    def test_employee_remove_failure_message_is_loud(self, monkeypatch):
+        """`_eval_remove_users` 报 failed>0 ⇒ 消息**不得**是「无 … 需清理（幂等）」。"""
+        lr = _runner()
+
+        async def _fake_remove(client, headers, name="", phone=""):
+            return 0, 1
+
+        class _DummyClient:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *a):
+                return False
+
+        monkeypatch.setattr(lr, "_eval_remove_users", _fake_remove)
+        monkeypatch.setattr(lr.httpx, "AsyncClient", lambda *a, **k: _DummyClient())
+        msg = asyncio.run(lr._run_pre_clean_action(
+            "tok", {"type": "employee_remove", "employee_name": "李四",
+                    "employee_phone": "13800009999"}))
+        assert "删除" in msg and "幂等" not in msg, (
+            f"删除失败被当成良性 no-op（静默跳过）：{msg!r}")
+        assert "13800009999" in msg, f"失败消息没点名对象：{msg!r}"
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 五·三、`employee_count_for_phone` 前置（HR-002 创建前提；issue #4189 burn-down 缴费）
+# ══════════════════════════════════════════════════════════════════════════════
+
+class TestEmployeeCountPrecondition:
+    """`employee_count_for_phone` 的 runner 侧判据（与 `order_count_for_phone` 同构）。
+
+    用途（HR-002，issue #4189）：创建员工的前提 = 手机号 `13812345678` 名下**没有**既有
+    员工（残留会撞唯一校验 ⇒ agent 合理澄清 ⇒ 恒红且归因全错）。`expect: 0` 判基线
+    （开跑有残留 ⇒ 前置本就不成立 ⇒ 红），`max_growth: 1` 容忍本用例自己造的那一个、
+    并行用例再造同名 ⇒ 漂移判红。定位口径与 `employee_remove` 同一份（`_norm_phone`）。
+    """
+
+    SPEC = [{"type": "employee_count_for_phone", "source": "13812345678",
+             "expect": 0, "max_growth": 1}]
+
+    def test_declared_type_is_implemented(self):
+        lr = _runner()
+        assert lr.check_precondition_declared(self.SPEC) == []
+
+    def test_clean_baseline_is_green(self):
+        """基线 = 0（目标可创建）且本用例只造 1 个 ⇒ 绿。"""
+        lr = _runner()
+        assert lr.check_precondition_drift(
+            self.SPEC, {"employee_count_for_phone:13812345678": 0},
+            {"employee_count_for_phone:13812345678": 1}) == []
+
+    def test_residue_baseline_is_red(self):
+        """**红证**：开跑时已有残留（count=1）⇒ 前置本就不成立 ⇒ 红（判别性承重）。"""
+        lr = _runner()
+        issues = lr.check_precondition_drift(
+            self.SPEC, {"employee_count_for_phone:13812345678": 1},
+            {"employee_count_for_phone:13812345678": 1})
+        assert issues and "本就不成立" in issues[0], issues
+        assert issues[0].startswith("precondition[employee_count_for_phone]"), issues[0]
+
+    def test_parallel_pollution_is_red(self):
+        """**红证**：运行中被并行用例再造一个同名（0 → 2）⇒ 超出 max_growth=1 ⇒ 漂移判红。"""
+        lr = _runner()
+        issues = lr.check_precondition_drift(
+            self.SPEC, {"employee_count_for_phone:13812345678": 0},
+            {"employee_count_for_phone:13812345678": 2})
+        assert issues and "漂移" in issues[0], issues
+
+    def test_unreadable_probe_does_not_fake_a_verdict(self):
+        """取不到读数时**不报**（网络抖动 ≠ 前置不成立）—— 与既有类型同口径。"""
+        lr = _runner()
+        assert lr.check_precondition_drift(self.SPEC, {}, {}) == []
+
+    def test_probe_fail_closed_on_http_failure(self, monkeypatch):
+        """取数失败 ⇒ None（**不得读成 0** —— 0 会被当成"目标可创建"，假绿形态）。"""
+        lr = _runner()
+
+        class _Resp:
+            status_code = 500
+            content = b""
+
+        class _Client:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *a):
+                return False
+
+            async def get(self, *a, **k):
+                return _Resp()
+
+        monkeypatch.setattr(lr.httpx, "AsyncClient", lambda *a, **k: _Client())
+        assert asyncio.run(lr._probe_employee_count("tok", "13812345678")) is None
+
+    def test_probe_counts_matching_rows(self, monkeypatch):
+        """探针按手机号**数字归一**精确计数（与 `_eval_find_users` 同一份定位口径）。"""
+        import json
+        lr = _runner()
+
+        class _Resp:
+            def __init__(self, payload):
+                self.status_code = 200
+                self.content = json.dumps(payload).encode()
+
+        class _Client:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *a):
+                return False
+
+            async def get(self, *a, **k):
+                return _Resp({"data": {"items": [
+                    {"id": "u1", "name": "王五", "phone": "13812345678"},
+                    {"id": "u2", "name": "王五", "phone": "138 0013 8000"},
+                ], "total": 2}})
+
+        monkeypatch.setattr(lr.httpx, "AsyncClient", lambda *a, **k: _Client())
+        assert asyncio.run(lr._probe_employee_count("tok", "13812345678")) == 1
+        assert asyncio.run(lr._probe_employee_count("tok", "13800138000")) == 1
+        assert asyncio.run(lr._probe_employee_count("tok", "")) is None
+
+    def test_hr002_declares_the_precondition(self):
+        """真实用例 HR-002 必须声明该前置（burn-down 缴费的落点）。"""
+        c = _cases()["HR-002"]
+        pre = [s for s in (c.get("precondition") or [])
+               if isinstance(s, dict) and s.get("type") == "employee_count_for_phone"]
+        assert pre, f"HR-002 未声明 employee_count_for_phone 前置：{c.get('precondition')}"
+        assert pre[0].get("source") == "13812345678", pre
+        assert pre[0].get("expect") == 0, pre
 
 
 # ══════════════════════════════════════════════════════════════════════════════

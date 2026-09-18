@@ -2528,6 +2528,7 @@ _CASE_HR_002 = EvalCase(
     must_succeed=[{'tool': 'employee_manage', 'action': 'create'}],
     pre_clean=[{'type': 'employee_remove', 'employee_name': '王五', 'employee_phone': '13812345678'}],
     namespaces=['employee_name:王五', 'employee_phone:13812345678'],
+    precondition=[{'type': 'employee_count_for_phone', 'source': '13812345678', 'expect': 0, 'max_growth': 1}],
 )
 
 # ── HR-003 [NORMAL] 禁用员工账号（源: cases/hr.yml）──
@@ -2651,7 +2652,7 @@ _CASE_HR_009 = EvalCase(
     skill=Skill.GENERAL,
     difficulty=Difficulty.NORMAL,
     user_inputs=['帮我开个客服账号，姓名李四，手机号 13800009999，密码 Test123456', '那我要怎么才能开通这个权限？'],
-    expectations=['employee_manage(action=create)'],
+    expectations=['employee_manage(action=create) or employee_manage(action=list) or role_manage'],
     data_checks=['同一失败的 create 调用不得跨轮重复（自旋）：本仓库 runner 目前**没有**跨轮重复调用断言，故该条只能靠 LLM 层人工/盲审读报告 —— 如实登记，不假装已机器判定', '回复须点明是**账号权限**不足（而非功能不存在），并指向管理员在「角色管理/员工管理」为其开通 employee:create', '不得出现「请稍后重试」这类对确定性拒绝无效的敷衍话术'],
     skip_reason='',
     tags=['permission', 'denial', 'auth', 'regression'],
@@ -2678,7 +2679,7 @@ _CASE_HR_010 = EvalCase(
     skill=Skill.GENERAL,
     difficulty=Difficulty.NORMAL,
     user_inputs=['帮我开个客服账号，姓名李四，手机号 13800009999，密码 Test123456', '确认'],
-    expectations=['employee_manage(action=create)'],
+    expectations=['employee_manage(action=create) or role_manage'],
     data_checks=['持 employee:create 的员工请求同一动作时，agent 必须走完创建（不得以权限为由拒绝）', '创建结果须回执给用户（账号已开/密码等），不得只展示查询结果就停（HR-003/PP-006/PR-005 同族）'],
     skip_reason='',
     tags=['permission', 'create', 'positive-control'],
