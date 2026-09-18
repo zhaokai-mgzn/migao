@@ -95,15 +95,28 @@ class TestVerifyTriggerChain:
             "否则 gh issue comment/edit/reopen 全部 403"
         )
 
-    def test_has_trigger_immune_to_github_token_suppression(self):
-        """必须有**不依赖 PR 合并事件**的触发类型：bot 合并不触发 closed（issue #3608 真因）。
+    def test_is_manual_only_after_4262(self):
+        """★ #4262（2026-09-18 用户裁定）：自动验收**已停用** —— 本 workflow 改为**仅手动**。
 
-        旧版只有 `pull_request: [closed]` → bot 合并（本仓库 87% 的合并方式）100% 不触发。
+        用户原话：「不要自动进行验证，都是重复的验证，白白消耗成本」+「手动集中跑一次即可」。
+
+        被删的三类自动触发及各自的"重复"形态：
+          · `schedule: */30` —— 无人触发也每 30 分钟重扫同一批已合并 PR（**重复验证**）；
+          · `pull_request_target: [opened, reopened]` —— 开/重开 PR 即自动入验收队列；
+          · `pull_request: [closed]` —— 合并即自动入验收队列。
+        ⇒ 自动触发集合必须**为空**，只留 `workflow_dispatch`。
+
+        ⚠️ 历史教训**保留**（不是作废，而是"若将来要恢复自动触发，必须这么做"）：
+        自动触发必须用对 `GITHUB_TOKEN` 抑制免疫的触发源 —— bot 合并（本仓库 87% 的合并方式）
+        下 `pull_request: [closed]` 100% 不触发（issue #3608 实测真因）。恢复 = 先拿用户裁定，
+        再按 §"可靠触发源"改回 `pull_request_target: [opened, reopened]` + 同步本测试。
         """
-        types = set((_triggers(_load()).get("pull_request_target") or {}).get("types") or [])
-        assert types & {"opened", "reopened"}, (
-            f"pull_request_target.types={sorted(types)}：必须有 opened/reopened 这类"
-            "「PR 打开即触发」的可靠事件，否则 auto-merge（GITHUB_TOKEN）合并的 PR 零触发"
+        auto = set(_triggers(_load()).keys()) - {"workflow_dispatch"}
+        assert not auto, (
+            f"verify-trigger.yml 仍有自动触发 {sorted(auto)} —— "
+            "#4262 用户裁定「不要自动进行验证」⇒ 只能保留 workflow_dispatch（手动对账）。"
+            "要恢复自动验收必须先拿用户裁定，并同步改本测试 + 白名单锁"
+            "（tests/unit_ci_workflows/test_behavior_eval_pr_thin.py）。"
         )
 
     def test_has_manual_dispatcher_entry(self):

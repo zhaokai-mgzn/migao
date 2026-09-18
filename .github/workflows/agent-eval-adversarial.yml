@@ -9,17 +9,17 @@ permissions:
   issues: write
 
 on:
-  # ★ 触发口径（2026-09-17 用户裁定 2′/4′，承载 issue #4034）：**before == after，本次未改**。
-  #   本 workflow 的自动触发只有"每周六对抗档"这一个**定时**，没有 PR / 合并 / 迭代触发
-  #   —— 裁定明确「定时跑保留」，故**不动它**（删掉 = 白丢对抗覆盖）。
+  # ★ 触发口径（2026-09-17 裁定 2′/4′ 承载 #4034；2026-09-18 #4262 用户裁定收紧）：
+  #   本 workflow 的每周六对抗档**定时已删除** —— 全仓自动真实 LLM 触发由 3 条收敛为
+  #   **1 条**（只留 `post-deploy-eval.yml` 每周一 normal 全量）。用户原话：
+  #   「不要自动进行验证，都是重复的验证，白白消耗成本」+「兜底定时改成每周自动跑一次」。
+  #   ⇒ 本 workflow 改为**仅手动**：需要对抗覆盖时 `workflow_dispatch` 派发，覆盖未消失、
+  #   只是不再由 cron 自动付费。
   #   真实 LLM 的**判定用途**唯一入口 = `post-deploy-eval.yml`（档位矩阵见该文件头部）；
-  #   本 workflow 是**定时专项工具**（只追踪不阻塞）。
+  #   本 workflow 是**手动专项工具**（只追踪不阻塞）。
   #   防回退：`tests/unit_ci_workflows/test_behavior_eval_pr_thin.py` 的白名单锁死
-  #   "自动 LLM 触发集合"，**新增**任何自动触发（含给本文件加 PR/push）都会直接红。
+  #   "自动 LLM 触发集合"（**只留 1 条**，其余必须为空），新增任何自动触发都会直接红。
   workflow_dispatch:
-  schedule:
-    # 每周六 03:00 CST（UTC+8）= 周五 19:00 UTC，低峰期跑对抗 tier
-    - cron: '0 19 * * 5'
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
