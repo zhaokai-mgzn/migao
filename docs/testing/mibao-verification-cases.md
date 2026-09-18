@@ -2367,7 +2367,7 @@
 必须成功: order_create
 ```
 真值: order.states, order.create-flow
-溯源: verification 1.8 独有（smoke 简化版，与 OR-008/OR-009 的细粒度版互补）；2026-08-14 按 EXAMPLES-order.md 例2 校准为多轮（完整收货信息→选1→确认），单轮直下单与设计澄清流程不符；2026-09-02 补价格铁律；2026-09-04 修复 choice 卡片消费协议不匹配（审计 #2818 Agent Eval 失败根因）：原「选1」为自然语言序号，LLM 无法关联 interact(choice) 选项导致反复 product_detail 追问、永不进入 validate_input/order_create；改为显式售卖方式描述（与 OR-008/009 一致），且「2件」与商品按米计价（¥99/米）矛盾改为「2米」，实测全流程通过；2026-09-09 校准：R3「确认下单」改「不添加加工项，确认下单」+ 补第4轮「确认下单」——agent 把加工项询问当强制环节，用户说「确认下单」仍发加工项卡（probe 实证），需明确跳过加工项才推进（与 OR-009 校准一致）；2026-09-17 校准（issue #4014 B3）：补效果层断言 must_succeed[order_create]（简化流程此前只断言 validate_input/order_create 出现过 ⇒「调用了 ≠ 成了」；真实 run 里本用例首跑红指纹含 `no_success(order_create)`，说明失败确实发生过而断言看不见）；user_inputs / expectations / required_args / want_text 原样未动 ｜ tags: create, confirm
+溯源: verification 1.8 独有（smoke 简化版，与 OR-008/OR-009 的细粒度版互补）；2026-08-14 按 EXAMPLES-order.md 例2 校准为多轮（完整收货信息→选1→确认），单轮直下单与设计澄清流程不符；2026-09-02 补价格铁律；2026-09-04 修复 choice 卡片消费协议不匹配（审计 #2818 Agent Eval 失败根因）：原「选1」为自然语言序号，LLM 无法关联 interact(choice) 选项导致反复 product_detail 追问、永不进入 validate_input/order_create；改为显式售卖方式描述（与 OR-008/009 一致），且「2件」与商品按米计价（¥99/米）矛盾改为「2米」，实测全流程通过；2026-09-09 校准：R3「确认下单」改「不添加加工项，确认下单」+ 补第4轮「确认下单」——agent 把加工项询问当强制环节，用户说「确认下单」仍发加工项卡（probe 实证），需明确跳过加工项才推进（与 OR-009 校准一致）；2026-09-17 校准（issue #4014 B3）：补效果层断言 must_succeed[order_create]（简化流程此前只断言 validate_input/order_create 出现过 ⇒「调用了 ≠ 成了」；真实 run 里本用例首跑红指纹含 `no_success(order_create)`，说明失败确实发生过而断言看不见）；user_inputs / expectations / required_args / want_text 原样未动；2026-09-19（burn-down 缴费，随 #4386 的用例面改动）：补 `namespaces[product_name:遮光窗帘]` + `precondition[product_count_for_keyword: 遮光窗帘 expect=1]` —— 一次销掉该条存量违规的 `CASE-TRUST-NO-PRECONDITION-ASSERTION`（按名字选品无可判定前置）与 `CASE-TRUST-NO-SELF-CLEAN`（写用例未声明自清理），整条销账、清单条目随之删除；形态与 OR-009 / OR-011 / PR-007 同一份。断言面（expectations / required_args / must_succeed / data_checks / want_text）一字未动、无放宽。 ｜ tags: create, confirm
 
 ### OR-011. AI 下单闭环 - 算料报价→确认→SMS→订单创建 🔵
 ```
@@ -2818,7 +2818,7 @@
 真值: order.create-flow, order.states
 溯源: 2026-09-18 新增（用户裁定 2 / F17 / issue #4095）：冒烟档补下单用例 —— 此前冒烟档 9 条全只读、订单域唯一 OR-001 是列表查询 ⇒ 主链路零覆盖。persona=mibao（代客下单免验证码，链路最短）；一句话给全 + repeat_until 协作轮（有卡答卡，成功即停）；断言 = must_succeed[order_create] + db_verify[order_items/order_phone] + order_before[interact[confirm] before order_create] + required_args；自清理 product_dedupe + precondition[product_count_for_keyword expect=1] + namespaces（商品名/手机号）。未新增任何自动触发（裁定 2′/4′）。 ｜ tags: order_create, smoke, write
 
-## 加工项域（10 case）
+## 加工项域（11 case）
 
 ### PP-002. 加工项分类列表 🔵
 ```
@@ -2965,7 +2965,7 @@
 期望: direct_reply
 数据: 路线列表渲染**真实数据**：路线数 + 「部位 × 工艺」标题 + 每道工序的分组/单位/单价；必完工序带「必完」标记，非必完不得出现该标记（注入：把库口径 is_must_finish 由 true 改 false ⇒ 断言红）
 数据: 序列编辑：从工序库选工序 → 保存 ⇒ `PUT /api/admin/production/routings/{id}` 的 body 恰为 `{operations:[...]}`，且**顺序等于屏幕顺序**（注入：把上移/下移/删除任一处的 draft 变换去掉 ⇒ 「顺序等于屏幕顺序」「被删工序不在请求体」两条红）
-数据: 保存被拒时**逐条**展示后端护栏理由，不得只弹「保存失败」：`error.response.data.error_messages` 三条 ⇒ 页面渲染三条独立条目，并分别带可读归因（工序不存在 / 工序重复 / 缺少必完工序）；`error` 单条形态兼容（注入：把 error_messages 分支退化成一句通用文案 ⇒ 三条断言红）
+数据: 保存被拒时**逐条**展示后端护栏理由，不得只弹「保存失败」：按**真实信封** `error.response.data.error.details[].message` 三条 ⇒ 页面渲染三条独立条目，并分别带可读归因（工序不存在 / 工序重复 / 缺少必完工序）；`error.message` 单条形态退化兼容（⚠️ 后端**没有**顶层 `error_messages` 字段，`error` 也不是字符串 —— 按那个形状读会让真实失败路径静默退化成「Request failed with status code 422」，见 `docs/design/craft-routing-customization.md` §5.4 的假绿教训；注入：把 details 分支退化成一句通用文案 ⇒ 三条断言红）
 数据: 空序列**本地先拦**：删除最后一道后保存 ⇒ 不发出 PUT（`not called`），并给出「序列不能为空」理由（注入：去掉本地校验 ⇒ PUT 被调用，断言红）
 数据: 缺口区两只清单可见：①「有工序但未进任何路线」逐条渲染（真值源下 4 道：裁剪-布/裁剪-纱/质检/腰靠垫，**双向可红**：少一道或多一道都红）②「库里没有路线的信号组合」（罗马帘 × 韩褶）以清单形式给出（注入：把任一清单改成只显示条数 ⇒ 该条红）
 数据: 新建路线 `POST /api/admin/production/routings` 提交 `{curtain_type, craft, operations: []}`（部位/工艺为空时本地拦）；新增工序 `POST /api/admin/production/operations` 提交 `{name, group_name?, unit?, unit_price}`（单价非数值时本地拦）
@@ -2977,6 +2977,21 @@
 ```
 真值: ⚠️ 缺口（见对应模板 ⚠️ 注释）
 溯源: 2026-09-19 新增（issue #4307 前端半边；契约所有者 = 后端 4308）：工艺路线配置页 /production/routings（列表 + 序列编辑 + 护栏理由逐条展示 + 缺口区 + 新建路线 + 信号映射增删改 + 新增工序）、加工单/生产明细页四态路线来源提示（default/partial/missing_route/derived）、生产管理菜单第 4 项入口。**红证**（实现前逐条红，见 data_checks 各条括号内注入法）：页面与端点消费者不存在 ⇒ 渲染断言全红；护栏理由映射未实现 ⇒ 只得到一句通用文案；菜单缺项 ⇒ 链接数 3→4 断言红；route-source 未实现 ⇒ import 即红。**未做（如实登记）**：E2E spec（需活后端与已合入的 4308 端点，登记为后续项，不在本单）；后端尚未合入 ⇒ 单测全部 mock `lib/api` 层，**不依赖真实后端**；不做拖拽编排（v1 = 从工序库选 + 上移/下移/删除，冻结口径）。关联后端 4308（本单不引用其用例文件 processing-order.yml）。 ｜ tags: processing, production, admin_web, routing, route_signals, gap_visibility, route_source
+
+### PG-040. 加工费组合定价 - 组合→单价（元/米）写面五条护栏 + composition_key 归一化 + 版本账 + 未定价缺口可见 🔵
+```
+数据: success=true
+数据: 判据 1·**同一组合不重复定价**：同一 `composition_key` 建两次 ⇒ 第二次 HTTP **409**（冲突响应：错误码为 CONFLICT 形态 + 可行动 `suggestion`），且**零 insert**（撞 DB 唯一键 `uk_processing_fee_combinations_tenant_key` = 500，是缺陷不是护栏）。证据：ProcessingFeeCombinationCommandServiceTest「duplicateCompositionIsRejectedWithConflict」+ ProductionControllerTest「createProcessingFeeCombinationDuplicateReturnsConflict」（**注入**：去掉 `rejectDuplicate` ⇒ 两条断言红）
+数据: 判据 2·**归一化确定性、与书写顺序无关**：`compositionKey` 口径 = trim → 丢空 → 去重 → **按 Unicode 码点升序** → `+` 连接 ⇒ `韩褶+打孔+定型` ≡ `定型+打孔+韩褶` ≡ `打孔+定型+韩褶` 全部等于 `定型+打孔+韩褶`（码点真值：定 U+5B9A < 打 U+6253 < 韩 U+97E9，**勿凭读起来顺猜顺序**）；落库值与响应 `composition_key` 都是**归一化后**的值，`items` 与 key 同源；归一化后相同 ⇒ 撞判据 1 的 409。**为什么不能用「加工项目录 sort_order 序」**：那会让 key 随加工项表改动漂移（商家调一下排序 ⇒ 已成交组合匹配不上自己的价）。证据：ProcessingFeeCombinationCommandServiceTest「compositionKeyIsOrderIndependent」「storedCompositionKeyIsNormalized」「reorderedRequestHitsDuplicateGuard」（**注入**：把 `TreeSet` 改成 `LinkedHashSet` ⇒ 三条红，实测）
+数据: 判据 3·**护栏理由逐条可见**（422 + 真实信封）：失败响应 = HTTP **422** + `{success:false, error:{code:'VALIDATION_ERROR', message, details:[{field,message}]}, suggestion}` —— `details[].message` **逐条**（空组合 field=items / 特征名不存在或已停用 field=items[i] / 特征名重复 field=items[i] / unit_price 缺失·非数值·负数 field=unit_price / source 不在词表 field=source），且**一次报全**（不是报第一条就返回）；`unit_price=0` 合法（商家可把某组合做成免费）。证据：ProcessingFeeCombinationCommandServiceTest 四条护栏用例 + ProductionControllerTest「createProcessingFeeCombinationGuardFailureReturnsDetailsEnvelope」（断言 `details.length()==2`、`details[0].field=items[1]`、`details[1].field=unit_price`、`suggestion` 非空）。⚠️ 前端必须按 `error.details[].message` 读 —— **不得**读不存在的顶层 `error_messages`（#4308 实测：按那个形状读 ⇒ 真实失败路径静默退化成「Request failed with status code 422」）
+数据: 判据 4·**缺口可见**：`GET /api/admin/production/processing-fee-gaps` = 「订单里**实际出现过**（`order_items.processing_info.processingItems[].name`，与 OrderService.extractProcessingItems 同口径）、但库里查不到价」的组合 ⇒ 每行 `{composition_key, items, order_count, note}`，已定价的**不出现**，书写顺序不同的同一组合**合并计数**；空集时返回 `[]` + total=0（不是 null/异常）；响应带 `scanned_order_items` + `scanned_truncated`（扫描有上限，超限**不静默**）。**不发明任何默认价**（缺口就是缺口）。证据：ProcessingFeeCombinationCommandServiceTest「gapsListUnpricedCombinationsSeenInOrders」「gapsEmptyWhenNoOrders」+ ProductionControllerTest「processingFeeGapsEndpointIsRegistered」（**注入**：不排除已定价组合 ⇒ 判据红，实测）
+数据: 判据 5·**版本账**：新建落**首行**、改单价**真的变了**才追加一行到 `processing_fee_combination_versions`（记变更后 `unit_price` + 冗余 `composition_key` —— 组合行停用/改名后历史账仍答得出「当时是哪一组」）；同价重复提交 = **幂等空操作**（不追加无意义行，沿用 #4308 口径）；停用 = 软删语义（`status=disabled`，行保留、`deleted` 不动）。证据：ProcessingFeeCombinationCommandServiceTest「priceChangeAppendsVersionRow」「samePriceIsIdempotentNoop」「createAppendsFirstVersionRow」「disableKeepsRow」（**注入**：`appendVersion` 直接 return ⇒ 两条红，实测）
+数据: 判据 6·**管理面**（前端）：`/production/processing-fees` 渲染真实组合行（选配特征 + `¥x.xx` 元/米）、新建提交 `{items:[勾选集合], unit_price}`（**前端不拼 composition_key** —— 自己拼 = 第二份口径）、护栏理由**逐条**渲染、空组合**本地先拦**（不发 POST）、缺口区逐条可见、改单价走 `PUT /{id}`（body 只有 unit_price）、停用走 `DELETE /{id}`（二次确认后）、单接口失败只在**该区**给可读提示（不整页白屏）；侧边栏生产管理组含「加工费管理」→ 本路由，权限码 `processing:manage`，**只追加、既有项位次不变**。证据：frontend/admin-web/tests/unit/pages/processing-fees.test.tsx + tests/unit/pages/production-board.test.tsx（**注入**：把读法退化成 `error.message` 一句话 ⇒ 三条独立条目断言红）
+数据: **红证（实测输出，2026-09-19）**：① 去掉归一化排序 ⇒ `Tests run: 17, Failures: 3`；② 去掉唯一键护栏 ⇒ `Failures: 2, Errors: 3`；③ 缺口不排除已定价 ⇒ `Failures: 1`；④ 去掉落账 ⇒ `Failures: 2`。**未做（如实登记）**：计价接线（`OrderService.sumProcessingFee` / 下单页 / ai-agent）**不在本单**（issue #4386「不做」），`fee_source` 三态（matched/unpriced/manual）随之未落码；`processing_rules` 可组合性校验未落码（KNOWN-03 仍在）。
+跳过: [backend-contract] 后端契约 + 前端组件契约（无 LLM 环节，不进 agent-eval 冒烟）：断言由 ProcessingFeeCombinationCommandServiceTest + ProductionControllerTest + frontend/admin-web/tests/unit/pages/processing-fees.test.tsx + tests/unit/pages/production-board.test.tsx 执行
+```
+真值: ⚠️ 缺口（见对应模板 ⚠️ 注释）
+溯源: 2026-09-19 新增（issue #4386，P1；用户裁定「缺乏加工费的管理模块」+ 组合口径）。交付：V68 `processing_fee_combinations` + `processing_fee_combination_versions`（与 #4308 的 production_routing_versions 同构）+ 写面五条护栏（422 details 逐条 / 409 撞唯一键）+ `composition_key` 确定性归一化（与书写顺序无关）+ 缺口端点 + `/production/processing-fees` 管理页与侧边栏入口。**未做**：计价接线（不改 OrderService.sumProcessingFee / orders-new 页 / ai-agent）—— 本包交付的是**商家的配置面**（先例 #4308：先交付写面+护栏+缺口，消费面由 #4354 后续接）；`processing_rules` 落码不做。 ｜ tags: processing, processing_fee, fee_combination, composition_key, normalization, version_ledger, gap_visibility
 
 ## processing-order（39 case）
 
@@ -4523,8 +4538,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：332（活跃 154，跳过 178）
-- tier 分布：smoke 10 / normal 291 / adversarial 31
+- 用例总数：333（活跃 154，跳过 179）
+- tier 分布：smoke 10 / normal 292 / adversarial 31
 - 售后域：9
 - agents：6
 - api：19
@@ -4542,7 +4557,7 @@
 - onboarding：5
 - ontology：4
 - 订单域：30
-- 加工项域：10
+- 加工项域：11
 - processing-order：39
 - 商品域：21
 - registry：1
@@ -4622,4 +4637,5 @@
 - PP-009: 米宝加工项 LLM 行为：per_area 按面积算价（calculate_price 下发 dimensions，不双计）
 - PP-012: 内部算料数量端点 - 应做数量=引擎输出/兜底 1/未知工序 fallback（单测覆盖）
 - PP-014: 工艺路线商家可配用户面 - 序列编辑护栏逐条可见 / 缺口区 / 信号映射 / 四态路线来源提示（前端单测覆盖）
+- PG-040: 加工费组合定价 - 组合→单价（元/米）写面五条护栏 + composition_key 归一化 + 版本账 + 未定价缺口可见
 

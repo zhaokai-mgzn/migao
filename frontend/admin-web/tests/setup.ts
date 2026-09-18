@@ -262,4 +262,6 @@ vi.mock('lucide-react', () => ({
   ShieldOff: iconStub('shield-off'),
   // issue #4307: 「工艺路线」菜单项新增图标（序列编辑的 ArrowUp/ArrowDown/Plus/Trash2 已在上方登记）
   Route: iconStub('route'),
+  // issue #4386: 「加工费管理」菜单项新增图标
+  BadgeDollarSign: iconStub('badge-dollar-sign'),
 }))
