@@ -48,7 +48,9 @@ public class GlobalExceptionHandler {
                 default -> null;
             };
         }
-        ApiResponse<Void> response = ApiResponse.error(e.getCode(), e.getMessage());
+        // 逐条理由透传（issue #4308）：写面护栏失败要能「逐条展示」——复用既有信封字段
+        // error.details:[{field,message}]，不新造字段；e.getDetails() 为 null 时与旧行为逐字相同。
+        ApiResponse<Void> response = ApiResponse.error(e.getCode(), e.getMessage(), e.getDetails());
         if (suggestion != null) {
             response.setSuggestion(suggestion);
         }

@@ -2438,6 +2438,7 @@
 数据: 加工费 = 单价 × 数量（打孔 8 元/米 × 3 米 = 24 元），漏算/错算加工费 = 订单金额错误
 数据: C 端下单是**两步**：确认订单信息后还需手机验证码（order_create 的 sms_code，customer 角色必填）。用例必须提供验证码这一轮，否则 AI 停在第 5 步「请提供验证码」，order_create 永不发生（run 34622425044 实证：R7 顾客回「确认」后无任何工具调用）。dev/CI 栈已设 SMS_BYPASS_CODE=123456，此处用该码走真实校验分支。
 清理: product_dedupe(product_keyword=遮光窗帘)
+时序: interact[confirm] before order_create
 必须成功: order_create
 金额: order_create 「遮光窗帘」 → unit_price; subtotal; total
 载荷(全场可用): customer_name=张三, customer_phone=13800138000, customer_address=浙江省杭州市西湖区文三路1号1幢101室, color=米白, colorName=米白
@@ -3013,7 +3014,7 @@
 ```
 溯源: 2026-09-18 新增（issue #4208 ai-agent 半边，PR #4215）：应做数量内部端点 POST /api/internal/production/operation-qty（X-Service-Token）—— 让 routing._qty_for 从「零运行时消费者」变成算料数量的唯一真相源；兜底口径「绝不落 0」+ qty_source 三态（键名 / <键名>_x6 / fallback）。红证（实现前）：端点未实现 ⇒ 404（assert 404 == 200 红）、resp.json()['data'] KeyError；键漂移门禁在 KNOWN_QTY_UNITS/DIRECT_QTY_KEYS 未定义时 import 即红。同批把该测试文件补进 PP-010.traces.tests（同为生产确定性核心的证据面）。**未做（如实登记）**：Java 侧接线（生成加工单时逐工序调用本端点）不在本单，#4208 保持 OPEN。 ｜ tags: processing, production, qty-engine
 
-## processing-order（25 case）
+## processing-order（35 case）
 
 ### PG-001. 生成加工单 - 已确认含加工项订单 → 加工单生成（**不**推进订单；issue #4305） 🔵
 ```
@@ -3324,6 +3325,119 @@
 跳过: [backend-contract] 前端行为（admin-web 页面/交互），由 vitest 单测覆盖（frontend/admin-web/tests/unit/pages/processing-orders-list.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟（同 PP-011 惯例）
 ```
 溯源: 2026-09-18 新增（issue #4303）：加工单列表页写操作后行状态不刷新（用户看起来像「点了没反应」）。根因两条：① `loadList()` 无请求时序保护（任何历史请求的响应回来都 `setList`，后到的旧响应覆盖新数据）；② 写操作成功后只 `loadList()`、不用写响应即时更新该行。红证（修复前实测，本机 vitest 2 条红）：断言① `expected '…已生成…' to contain '加工中'`（旧响应覆盖新数据）+ 断言② `expected '…加载中…' to contain '已发加工'`（行未反映写响应）；修复后同两条全绿。实现：`listReqSeq` 请求序号 ref（旧响应一律丢弃、`loading` 只由最新请求收尾）+ 写成功后 `applyUpdated(res.data?.data)` 即时更新该行 + 写后收敛刷新走 `loadList({ silent: true })`。**判据长期形态**按后续 P3（移除列表页写入口、唯一入口改订单详情页）的裁定定为「加载竞态」；断言②属「当前 main 有效」，P3 落地时随实现一并移除并由该单更新测试文件。 ｜ tags: processing-order, admin_web, request_ordering, list_refresh
+
+### PG-026. 路线来源 T1：信号全不命中 ⇒ route_source=default + route_key=默认键 + requested=null + incident warn 日志 🔵
+```
+数据: success=true
+数据: T1（最隐蔽的一层）：订单侧可派生信号（加工项名 > 加工项 options > 商品名 > 销售方式）**全不命中** ⇒ 直接取默认路线键 `布帘×韩褶`，加工单落 `route_source='default'`、`route_key='布帘×韩褶'`、`route_requested_key=NULL`（两维都没派生出来 ⇒ 没有「想走的键」）。迁移前这条路径**连一行 info 日志都没有**，成功路径零痕迹 ⇒ 罗马帘订单今天就走这条且无从发现。证据：ProcessingOrderRouteSourceTest「noSignalFallsBackToDefaultAndIsObservable」（断言三列 + warn 级 incident 日志）
+数据: **红证（注入式，实测）**：① 把 `deriveRouteKey` 的 `source` 恒置 `derived` ⇒ `noSignalFallsBackToDefaultAndIsObservable` 红（`[T1 必须是 default —— 不得伪装成「已派生」]`）；② 去掉 T1 的 `log.warn` ⇒ 同用例红（`[T1 必须留 warn 级 incident 痕迹（grep 标记可捞全量）]`）；③ 把三列从 `ProcessingOrder.builder()` 摘掉 ⇒ 6 条红。
+数据: T1 是**预期形态**而非错误（issue #4308「明确不做」：不做无条件 fail-closed，无信号订单仍走默认路线）—— 但必须**可观测**：日志级别 WARN + 结构化 incident 标记 `INCIDENT_PRODUCTION_ROUTE_DEFAULTED`（grep 可捞全量），且从加工单详情 API 可查。
+跳过: [backend-contract] 后端契约用例（生成加工单是服务端写路径，无 LLM 环节，不进 agent-eval 冒烟）：断言全部由 Java 单测执行 —— ProcessingOrderRouteSourceTest（四态 + 多部位 roll-up，7 条）
+```
+溯源: 2026-09-19 新增（issue #4308，P1）。红证（注入式实测，见 data_checks 与同批 PG-027~PG-030）：本批共 10 次注入，逐条命中不同断言。实现：V60 迁移（`processing_orders` 三列 + `production_route_signals` 信号映射表 + `production_routing_versions` 版本账）+ `ProcessingOrderService` 派生读库（常量表已删除）+ 四态来源 + 多部位 roll-up + 详情响应透出三列。**不做**：无条件 fail-closed（无信号订单仍走默认路线，只做可观测）。 ｜ tags: processing-order, production-routing, route-source, observability
+
+### PG-027. 路线来源 半命中：只派生出一维 ⇒ route_source=partial + 键 = 命中维 + 默认维 🔵
+```
+数据: success=true
+数据: 半命中（issue #4308 P1 判据原文的「半命中」）：信号含「纱」但无任何工艺信号 ⇒ 帘种 = 纱帘、工艺取默认 韩褶 ⇒ 路线键 `纱帘×韩褶`，`route_source='partial'`，`route_requested_key='纱帘×韩褶'`。补救动作 = 去「信号映射」补另一维。证据：ProcessingOrderRouteSourceTest「singleDimensionHitIsPartial」
+数据: **红证（注入式，实测）**：把「只命中一维」分支的 `source` 改成 `derived` ⇒ `singleDimensionHitIsPartial` 红（`[只命中一维 ⇒ partial（补救动作 = 去信号映射补另一维）]`）；把 `route_requested_key` 恒置 null ⇒ 同用例红（`[partial 也要记下「想走的键」]`）。
+数据: **partial 与 missing_route 不得合并**（冻结契约）：两者都「有问题」但**补救动作不同** —— partial 要**补信号**、missing_route 要**建路线**；并成一个值后前端给不出可行动的提示语。证据：本用例 + PG-028 + PG-030 的次序断言（「multiPositionMissingRouteOutranksPartial」）
+跳过: [backend-contract] 后端契约用例（服务端写路径，无 LLM 环节）：断言由 ProcessingOrderRouteSourceTest 执行
+```
+溯源: 2026-09-19 新增（issue #4308，P1）。红证见 data_checks。实现见 PG-026。 ｜ tags: processing-order, production-routing, route-source
+
+### PG-028. 路线来源 T2：两维都命中但库中无该路线 ⇒ route_source=missing_route + requested 记下「识别的键」 🔵
+```
+数据: success=true
+数据: T2：派生键在库中**没有**对应路线 ⇒ 回落默认路线，加工单落 `route_source='missing_route'`、`route_key='布帘×韩褶'`（**实际使用**的键）、`route_requested_key='罗马帘×韩褶'`（**派生出来想用**的键）。没有 requested 这一列，提示说不出「识别的 X 在库里没有路线」⇒ 用户拿不到可行动的下一步。迁移前这一层只有一句 `log.info`，用户侧完全不可见。证据：ProcessingOrderRouteSourceTest「derivedKeyMissingFromLibraryIsMissingRouteAndKeepsRequestedKey」（含 incident 日志断言 + 实例工序 = 默认路线的回归断言）
+数据: **红证（注入式，实测）**：① 把 T2 的 `source = \"missing_route\"` 改回 `partial`（= 并入旧三态口径）⇒ 2 条红（本用例 `[T2 不得并入 partial：补救动作不同（T2 要**建路线**，partial 要**补信号**）]` + PG-030 的次序断言）；② 去掉 T2 的 incident 日志（warn→debug）⇒ 本用例红（`[T2 必须有 incident 痕迹（迁移前只有一句 info，用户侧不可见）]`）；③ `route_requested_key` 恒 null ⇒ 本用例红（`[必须记下「识别的键」—— 没有它，提示说不出该建哪条路线]`）。
+数据: **T2 是「库里缺数据」不是「订单有问题」**：库里没有任何「罗马帘」专属工序与单价（#4261 ①）⇒ 本单**不发明**罗马帘路线（凭空造的单价会直接算成工人工资）；正确解法 = 商家用本单交付的写面**自己建工序 + 建路线**，而 `missing_route` + `route_requested_key` 就是驱动这个动作的可行动信号。
+数据: **T3 保持 fail-closed 不变**（#4116 已落码）：默认路线也没有 / 路线引用的工序缺行 ⇒ `PRODUCTION_ROUTING_NOT_FOUND` / `PRODUCTION_OPERATION_NOT_FOUND` + 可行动 suggestion + incident 日志，**不落半成品**。证据：ProcessingOrderServiceTest 的空库/缺工序两条负例（本单未改动该路径）
+跳过: [backend-contract] 后端契约用例（服务端写路径，无 LLM 环节）：断言由 ProcessingOrderRouteSourceTest + ProcessingOrderServiceTest 执行
+```
+溯源: 2026-09-19 新增（issue #4308，P1）。红证见 data_checks。实现见 PG-026。 ｜ tags: processing-order, production-routing, route-source, missing-route
+
+### PG-029. 路线来源 正常派生：两维都由库中信号命中且路线存在 ⇒ route_source=derived 且不打 incident 🔵
+```
+数据: success=true
+数据: 正常派生：加工项名「韩褶-布」同时命中帘种（布帘）与工艺（韩褶），且 `布帘×韩褶` 路线在库中存在 ⇒ `route_source='derived'`、`route_key` = `route_requested_key` = `布帘×韩褶`，且**不打任何 incident 日志**（干净路径打 incident ⇒ incident 变噪音，没人会看）。证据：ProcessingOrderRouteSourceTest「fullyDerivedKeyIsDerived」
+数据: **红证（注入式，实测）**：把 `deriveRouteKey` 的库读取（`productionOperationQueryService.routeSignals(tenantId)`）换成空表（= 模拟「派生仍读常量、不看库」）⇒ 4 红 + 2 UnnecessaryStubbing 错（本用例 `[两维命中 + 路线存在 ⇒ derived]` 是其一）—— 这条同时证明「派生**读库**而非读常量」：判别物是**库里配了、迁移前常量表里没有**的信号行「罗马帘」。
+跳过: [backend-contract] 后端契约用例（服务端写路径，无 LLM 环节）：断言由 ProcessingOrderRouteSourceTest 执行
+```
+溯源: 2026-09-19 新增（issue #4308，P1）。红证见 data_checks。实现见 PG-026。 ｜ tags: processing-order, production-routing, route-source
+
+### PG-030. 多部位 roll-up：三列取最需关注的一条（default > missing_route > partial > derived），三列同源 🔵
+```
+数据: success=true
+数据: 多部位 roll-up（本单唯一「有损聚合」的字段）：`processing_orders` 只有**单值** `route_key` / `route_requested_key` / `route_source` 三列，而一张单可能有多个部位（各自一条路线）⇒ 取**最需关注**的那一条，次序 `default` > `missing_route` > `partial` > `derived`（零信息最不可信）。三条断言各覆盖一对相对次序：derived+missing_route ⇒ missing_route；missing_route+default ⇒ default；partial+missing_route ⇒ missing_route。证据：ProcessingOrderRouteSourceTest「multiPositionRollsUpToMostNeedingAttention」+「multiPositionDefaultOutranksMissingRoute」+「multiPositionMissingRouteOutranksPartial」
+数据: **三列必须同源取自同一条部位**（拿 A 的 source 配 B 的键就是自相矛盾）：`multiPositionRollsUpToMostNeedingAttention` 断言 `route_source='missing_route'` 时 `route_requested_key` 必须是**同一部位**的 `罗马帘×韩褶`。
+数据: **红证（注入式，实测）**：① 把 roll-up 从「取最需关注」改成「取第一条」（`worst == null` 短路）⇒ 2 条红（`[多部位取最需关注的一条 ⇒ missing_route 盖住 derived]` / `[冻结口径：default（零信息）> missing_route > partial > derived]`）；② 把 `severity` 里 `missing_route` 与 `partial` 的次序对调 ⇒ `multiPositionMissingRouteOutranksPartial` 红（`[missing_route 比 partial 更需关注（补救 = 建路线）]`）—— 这条是**先补的判别物**：首版三条 roll-up 用例都盖不住 partial↔missing_route 的相对次序，注入后仍全绿 ⇒ 属「不会红的断言」，已补该用例后注入即红。
+数据: 未知 / null 来源取值落**最需关注**档（`severity` 的 `default -> 3`）：不静默降级为「正常」（与仓库「未知形态必须 fail-loud」同口径）。
+跳过: [backend-contract] 后端契约用例（服务端写路径，无 LLM 环节）：断言由 ProcessingOrderRouteSourceTest 执行
+```
+溯源: 2026-09-19 新增（issue #4308，P1）。红证见 data_checks。实现见 PG-026。**如实登记**：首版 roll-up 用例（2 条）在「partial↔missing_route 次序对调」注入下**仍全绿** ⇒ 当时是空断言，已补第三条判别用例。 ｜ tags: processing-order, production-routing, route-source, roll-up
+
+### PG-031. V60 迁移契约：信号种子 ↔ 迁移前常量表 ↔ bootstrap 三源逐行相等 + 用途拆分 + 派生不再读常量 🔵
+```
+数据: success=true
+数据: 判据 1·三源逐行相等：V60 的 `production_route_signals` 种子 ↔ `docs/sql/schema.sql` 的 bootstrap 终态 ↔ **迁移前的两张常量表**（`CURTAIN_TYPE_KEYWORDS` / `CRAFT_KEYWORDS` @9673df68，测试内逐条转录）逐行逐值相等（signal / curtain_type / craft / 用途内 priority，**顺序即语义**）。改名/改值/加减信号即红。证据：ProductionRouteSignalMigrationTest「seedMatchesLegacyKeywordTablesAndBootstrap」
+数据: 判据 2·用途拆分不可压成一行：「帘头」在两个用途里位次**相反**（帘种表最前 = 防「帘头纱」被判成纱帘；工艺表最后 = 它是工艺侧兜底）⇒ 必须两行 + 唯一性按用途拆（两条部分唯一索引 + `CHECK` 至少给出一维）。压成 `(tenant_id, signal)` 单唯一键会让「帘头」的工艺映射在同一信号文本里抢在韩褶/打孔之前生效 ⇒ **静默改路线 = 静默改工资**。证据：ProductionRouteSignalMigrationTest「perPurposeSplitKeepsOppositeRanksForLiTou」
+数据: 判据 3·派生**不再读常量**：`ProcessingOrderService` 里不得再出现那两张常量表（常量与库并存 = 第二份口径，且漂移的那一份不会变红），派生必须走 `routeSignals(tenantId)`。证据：ProductionRouteSignalMigrationTest「derivationNoLongerReadsJavaConstants」+ ProcessingOrderServiceTest 的派生用例（桩换成 V60 种子行后断言逐字未改仍绿 = 读库≡读常量的等价性证据）
+数据: 判据 4·加工单三列 + bootstrap 终态：`processing_orders` 的 `route_key` / `route_requested_key` / `route_source` 在迁移（幂等 `ADD COLUMN IF NOT EXISTS`）与 bootstrap **两处都在** —— bootstrap 路径**不跑迁移链**，只写迁移 ⇒ 新建库上该列不存在 ⇒ 加工单查询 500（#3270 形态）；四态口径写在列注释里。证据：ProductionRouteSignalMigrationTest「processingOrderColumnsAndVersionLedgerExistInBothSources」+ ProductionRouteSignalMapperTest / ProductionRoutingVersionMapperTest（实体字段 ↔ 迁移列 ↔ bootstrap 三源收敛）
+数据: **红证（注入式，实测）**：① 把种子第 4 行的 `craft` 改值 ⇒ 判据 1 红；② 把「帘头」两行合成一行（或删掉按用途拆的唯一索引）⇒ 判据 2 红；③ 把常量表加回 `ProcessingOrderService` ⇒ 判据 3 红；④ 从 bootstrap 的 `processing_orders` 删掉任一列 ⇒ 判据 4 红。
+数据: **已知缺口（如实登记）**：三个种子迁移（V54/V56/V58/V59/V60）都只种 `tenant_id = 1`（与四个先例逐字一致）⇒ **非 1 号租户的工序库/路线库为空**、建单 fail-closed（422）。#4316 接住该缺口，而**本单交付的写面正是它的补救路径**（此前非 1 号租户连工序都建不出来）。
+跳过: [backend-contract] 后端契约用例（迁移/表结构是服务端写路径，无 LLM 环节，不进 agent-eval 冒烟）：断言全部由 Java 单测执行 —— ProductionRouteSignalMigrationTest（三源防漂移 4 项）/ ProductionRouteSignalMapperTest / ProductionRoutingVersionMapperTest（实体↔迁移↔bootstrap 收敛）
+```
+真值: ⚠️ 缺口（见对应模板 ⚠️ 注释）
+溯源: 2026-09-19 新增（issue #4308，P1）。红证见 data_checks。实现：V60 迁移（`production_route_signals` + `production_routing_versions` + `processing_orders` 三列；bootstrap 终态同步）+ 两个实体/两个 Mapper。**已知缺口**：种子只种 tenant_id=1（与 V54/V56/V58/V59 先例一致），见 #4316。 ｜ tags: processing-order, production-routing, migration, drift-guard
+
+### PG-032. 路线写面：POST/PUT /routings + 五条护栏（空序列/工序不存在/重复/必完/seq 归一化）+ 版本账 🔵
+```
+数据: success=true
+数据: 五条护栏（issue #4308 P3 冻结清单，逐条断言 + 逐条红证）：① 空序列拒；② 引用工序库中不存在的工序拒（`operations[1]` 指名是哪一道）；③ 重复工序拒（同工序两次 ⇒ 工人按两遍单价拿钱）；④ 至少一道必完工序（必完工序全绿是完工判定的唯一依据，一道都没有 ⇒ 这张单永远完不了工）；⑤ seq 归一化为 1..N（响应逐位回读 1/2/3）。**全部违规一次报全**（不是报第一条就返回）。护栏失败一律不落库。证据：ProductionRoutingCommandServiceTest 5 项 + ProductionControllerTest「updateRoutingGuardFailureReturnsDetailsEnvelope」（MockMvc 断言 422 + `error.details[0].field`）
+数据: 错误形状（冻结契约）：HTTP **422** + `error.details:[{field,message}]` **逐条**理由（复用既有信封字段，不新造；`message` 只做一句话摘要），`suggestion` 可行动。落码 = `BusinessException.validationError(msg, details, suggestion)` + `GlobalExceptionHandler` 透传 `ApiResponse.error(code, message, e.getDetails())`（纯追加，`details` 为 null 时与旧行为逐字相同）。证据：ProductionControllerTest 的 MockMvc 断言 + BusinessException/GlobalExceptionHandler 源码
+数据: 版本账：序列**真的变了**才追加 `production_routing_versions` 一行（路由 id / 帘种 / 工艺 / 变更后有序序列 / 道数）；同序列重复提交 = 幂等空操作（沿用 `production_operation_price_versions` 的「同值不记账」口径，否则账本被无意义重复行淹没）。证据：ProductionRoutingCommandServiceTest「validSequenceIsNormalizedAndVersioned」+「sameSequenceIsIdempotentNoop」
+数据: 新建路线（补遗端点 `POST /routings`）：`operations` 可缺省 = 初版空序列；响应与 `GET /routings` 单项**同构**（同一份 `routingView`）；同「部位×工艺」已存在（**含停用行**）⇒ 409（否则撞 DB 唯一索引变 500，而不是可行动错误）；跨租户/不存在的路线 ⇒ 404。证据：ProductionRoutingCommandServiceTest 3 项 + ProductionControllerTest「createRoutingReturnsRoutingView」
+数据: **红证（注入式）**：① 去掉「空序列」分支 ⇒ 空序列用例红；② 去掉「工序不存在」分支 ⇒ `operations[1]` 断言红；③ 去掉「重复」分支 ⇒ 重复用例红；④ 去掉「必完」分支 ⇒ `must_finish` 断言红；⑤ 把 `appendVersion` 去掉 ⇒ 版本账断言红；⑥ 把「同序列不记账」的判断去掉 ⇒ 幂等用例红。
+数据: **不做（如实登记）**：路线版本回滚 UI（版本账先落数据）；自由命名 + 拖拽编排的通用编辑器（v1 = 从工序库选 + 有序序列）。
+跳过: [backend-contract] 后端契约用例（服务端写路径，无 LLM 环节，不进 agent-eval 冒烟）：断言由 ProductionRoutingCommandServiceTest（14 条）+ ProductionControllerTest（MockMvc 6 条）执行
+```
+溯源: 2026-09-19 新增（issue #4308，P1）。红证见 data_checks。实现：ProductionRoutingCommandService（护栏唯一一份，新建与改序列共用）+ ProductionController 三端点（POST/PUT routings）+ BusinessException.details 透传。 ｜ tags: processing-order, production-routing, guard, version-ledger
+
+### PG-033. 信号映射写面：GET/POST/PUT/DELETE /route-signals（商家可增删改，派生读它） 🔵
+```
+数据: success=true
+数据: 写面完整集 = `GET`（列表 `{total, signals:[{id,signal,curtain_type,craft,priority,status}]}`）+ `POST` + `PUT /{id}` + `DELETE /{id}`，全部方法级 `processing:manage`。证据：ProductionControllerTest「routeSignalsListShape」+「routingWriteFaceDeclaresManagePermissions」+ ProductionRoutingCommandServiceTest 4 项
+数据: 护栏：① 两维（`curtain_type`/`craft`）**至少给一个**（都不给 ⇒ 命中后什么都不改 = 死数据；DB 侧另有 CHECK 兜底）；② `priority` 缺省 = **该用途内**最大 + 1（与迁移前常量表「顺序即优先级」同口径；帘种行与工艺行各自排序）；③ 同信号**同用途**重复 ⇒ 409，**跨用途允许**（「帘头」两行是设计，见 PG-031 判据 2）；④ 同用途 `priority` 撞档 ⇒ 422（撞档时「谁先命中」由内部 id 决定，对商家**不可预测**）；⑤ 改信号把两维都清空 ⇒ 422。证据：ProductionRoutingCommandServiceTest「createSignalRequiresAtLeastOneTarget」/「createSignalAssignsNextPriorityWithinPurpose」/「createSignalRejectsSamePurposeDuplicateButAllowsCrossPurpose」/「createSignalRejectsPriorityCollisionWithinPurpose」/「updateAndDeleteSignalGuards」
+数据: 删除 = **软删**（`deleted=1`）：派生读 `deleted=0 AND status=active` ⇒ 立刻不再参与派生；而「谁在何时删掉哪条映射」是排查路线错配的唯一证据（物理删会丢掉它）。证据：ProductionRoutingCommandServiceTest「updateAndDeleteSignalGuards」
+数据: **红证（注入式）**：① 去掉「至少一维」校验 ⇒ 该用例红；② 把 priority 缺省改成固定 0 ⇒ 取序用例红；③ 去掉同用途重复校验 ⇒ 409 断言红；④ 去掉 priority 撞档校验 ⇒ `priority` 断言红；⑤ 把软删改成 `deleted=0`（等价物理删语义）⇒ 软删断言红。
+跳过: [backend-contract] 后端契约用例（服务端写路径，无 LLM 环节）：断言由 ProductionRoutingCommandServiceTest + ProductionControllerTest 执行
+```
+溯源: 2026-09-19 新增（issue #4308，P1）。红证见 data_checks。实现：ProductionRoutingCommandService 的信号 CRUD + ProductionOperationQueryService.routeSignalList（读面）。 ｜ tags: processing-order, production-routing, route-signals
+
+### PG-034. 新增工序：POST /operations + 单价版本账首行（商家建路线的前置） 🔵
+```
+数据: success=true
+数据: `POST /api/admin/production/operations`（body `{name, group_name?, unit?, unit_price, position?, is_must_finish?, is_start_marker?, sort_order?}`）⇒ 落 `production_operations` 行（`status=active`/`deleted=0`，`group_name` 缺省「其他」、`unit` 缺省「米」），**同事务写 `production_operation_price_versions` 首行** —— 使「当前价 = 最新版本行」对新工序同样成立（迁移 V55 的回填正是为消灭这种不一致）。证据：ProductionOperationCommandServiceTest「createWritesOperationAndFirstPriceVersion」+ ProductionControllerTest「createOperationReturnsCatalogShape」
+数据: 护栏：同名（**含停用行**）⇒ 409 不落库（唯一索引是 `(tenant_id, name) WHERE deleted=0`，只比活跃行会让同名停用行撞 DB 索引 ⇒ 500 而不是可行动错误）；缺 name / 缺 unit_price / 负单价 ⇒ 422 不落库（**不发明默认单价** —— 猜出来的单价会直接算成工人工资）。证据：ProductionOperationCommandServiceTest「createRejectsDuplicateName」+「createRejectsMissingOrNegativePrice」
+数据: **为什么必须有这个端点**：`production_operations` 的唯一写方曾是 V54/V56 种子 SQL（全仓对 `productionOperationMapper` 零写调用）⇒ 商家建不了自己的路线（没有工序可选），非 1 号租户连一道工序都建不出来（#4316）。证据同上 + ProductionControllerTest 的权限断言
+数据: **红证（注入式）**：① 去掉版本账首行写入 ⇒ 版本断言红；② 把重名判据改成只比 `status=active` ⇒ 同名停用行用例红；③ 去掉负单价校验 ⇒ 422 断言红。
+跳过: [backend-contract] 后端契约用例（服务端写路径，无 LLM 环节）：断言由 ProductionOperationCommandServiceTest + ProductionControllerTest 执行
+```
+溯源: 2026-09-19 新增（issue #4308，P1）。红证见 data_checks。实现：ProductionOperationCommandService.create + ProductionController POST /operations。 ｜ tags: processing-order, production-routing, operations
+
+### PG-035. 缺口可查：GET /routing-gaps 两只清单 + 待确认标记（与 routing.py 同源，引用 #4261） 🔵
+```
+数据: success=true
+数据: 缺口①「有活跃工序但未进任何活跃路线」：逐条列出（`{name, group_name, unit, unit_price, pending_confirmation, note}`）+ `unrouted_operation_total`。**双向可红**：少一道（漏报）或多一道（把已进路线的工序也报进来）都红。证据：ProductionOperationQueryServiceTest「routingGapsListsUnroutedOperationsWithPendingFlag」+「routingGapsExcludesOperationsConsumedByAnyActiveRouting」
+数据: **待确认语义（issue #4261，本单补遗）**：那 4 道（裁剪-布 / 裁剪-纱 / 质检 / 腰靠垫）**不是缺陷**，而是**有意挂起、等客户输入** —— #4261 逐项登记了理由（裁剪vs精裁是否两道 / 质检是否每单必做 / 腰靠垫归属 / 罗马帘整套工序 / 纱帘熨烫定型）。故每条带 `pending_confirmation=true` + 人话 `note`（「有意挂起、等客户输入（issue #4261 提问清单），不是系统漏了」）+ 顶层 `pending_confirmation_total`，**不要让商家/前端把它们读成「系统漏了」**。证据：ProductionOperationQueryServiceTest 的 pending 断言 + ProductionControllerTest「routingGapsShape」
+数据: **与 routing.py 同源（机器可判）**：`ProductionOperationQueryService.PENDING_CUSTOMER_CONFIRMATION_OPERATIONS` ↔ `backend/ai-agent-service/app/production/routing.py::PENDING_CUSTOMER_CONFIRMATION_OPERATIONS` **双向逐字比对**（少一道/多一道都红）。Java 无法 import Python ⇒ 用「逐字解析 frozenset + 双向集合相等」守（同 `ProductionOptionRoutingMigrationTest` 对 SPECIAL_OPTION_ROUTINGS 的既有范式）；**抄一份字面量而不守 = 第二份口径**。证据：ProductionRouteSignalMigrationTest「pendingConfirmationSetMatchesTruthSource」
+数据: 缺口②「库里没有路线的信号组合」：逐个活跃信号行算出「只命中它时会派生的键」（缺失维取**默认** `布帘`/`韩褶`，与派生同源 —— 直接引用 `ProcessingOrderService.DEFAULT_CURTAIN_TYPE/DEFAULT_CRAFT`，不复制第二份），报出库中无该路线的那些（`{curtain_type, craft, route_key, signal}`）。例：商家自建信号「罗马帘」⇒ `罗马帘×韩褶` 无路线（#4261 ①，本单**不发明**该路线）。证据：ProductionOperationQueryServiceTest「routingGapsListsSignalKeysWithoutRoute」
+数据: **红证（注入式）**：① 把「已进路线的工序」过滤去掉 ⇒ 双向可红用例红；② 去掉 `pending_confirmation` 字段 ⇒ pending 断言红；③ 改 `PENDING_CUSTOMER_CONFIRMATION_OPERATIONS` 少一道/多一道 ⇒ routing.py 同源用例红；④ 把缺失维的默认值改成字面量「布帘」以外的值 ⇒ 缺口②用例红。
+数据: **已知缺口（如实登记）**：三个种子迁移（V54/V56/V58/V59/V60）只种 `tenant_id = 1` ⇒ 非 1 号租户工序库/路线库为空、建单 fail-closed（422）。#4316 接住该缺口，而**本单交付的写面正是它的补救路径**（此前非 1 号租户连工序都建不出来）。
+跳过: [backend-contract] 后端契约用例（服务端只读查询 + 与 Python 真值源的静态收敛，无 LLM 环节）：断言由 ProductionOperationQueryServiceTest + ProductionRouteSignalMigrationTest + ProductionControllerTest 执行
+```
+溯源: 2026-09-19 新增（issue #4308，P1）。红证见 data_checks。实现：ProductionOperationQueryService.routingGaps + PENDING_CUSTOMER_CONFIRMATION_OPERATIONS 常量（与 routing.py 同源由测试守）+ ProductionController GET /routing-gaps。**不做**：不发明罗马帘/新课工序的行业数据（单价会直接变成工人工资，见 #4261）。 ｜ tags: processing-order, production-routing, gap-visibility, pending-confirmation
 
 ## 商品域（25 case）
 
@@ -4493,8 +4607,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：326（活跃 162，跳过 164）
-- tier 分布：smoke 10 / normal 283 / adversarial 33
+- 用例总数：336（活跃 162，跳过 174）
+- tier 分布：smoke 10 / normal 293 / adversarial 33
 - 售后域：9
 - agents：6
 - api：19
@@ -4513,7 +4627,7 @@
 - ontology：4
 - 订单域：30
 - 加工项域：13
-- processing-order：25
+- processing-order：35
 - 商品域：25
 - registry：1
 - 设置域：10
@@ -4573,6 +4687,16 @@
 - PG-023: 特殊选项 → 计件（Java 侧）——订单携带 specialOptions + 条件工序 + 计件系数 + 系数真的进钱
 - PG-025: 米数映射判据 = 加工项 pricingMethod（取值用订单行 quantity）——calc_info.fabric_meters 真库可达面命中 67/68
 - PG-024: 加工单列表请求时序保护——旧的在飞响应晚到不得覆盖更新的列表数据
+- PG-026: 路线来源 T1：信号全不命中 ⇒ route_source=default + route_key=默认键 + requested=null + incident warn 日志
+- PG-027: 路线来源 半命中：只派生出一维 ⇒ route_source=partial + 键 = 命中维 + 默认维
+- PG-028: 路线来源 T2：两维都命中但库中无该路线 ⇒ route_source=missing_route + requested 记下「识别的键」
+- PG-029: 路线来源 正常派生：两维都由库中信号命中且路线存在 ⇒ route_source=derived 且不打 incident
+- PG-030: 多部位 roll-up：三列取最需关注的一条（default > missing_route > partial > derived），三列同源
+- PG-031: V60 迁移契约：信号种子 ↔ 迁移前常量表 ↔ bootstrap 三源逐行相等 + 用途拆分 + 派生不再读常量
+- PG-032: 路线写面：POST/PUT /routings + 五条护栏（空序列/工序不存在/重复/必完/seq 归一化）+ 版本账
+- PG-033: 信号映射写面：GET/POST/PUT/DELETE /route-signals（商家可增删改，派生读它）
+- PG-034: 新增工序：POST /operations + 单价版本账首行（商家建路线的前置）
+- PG-035: 缺口可查：GET /routing-gaps 两只清单 + 待确认标记（与 routing.py 同源，引用 #4261）
 - PP-007: 米宝加工项 LLM 行为：只改单价不清空其它字段（部分更新语义）
 - PP-008: 米宝加工项 LLM 行为：停用加工项（toggle_item_status → inactive）
 - PP-009: 米宝加工项 LLM 行为：per_area 按面积算价（calculate_price 下发 dimensions，不双计）

@@ -14,6 +14,7 @@ import com.migao.admin.entity.ProcessingOrder;
 import com.migao.admin.entity.ProcessingPositionOperation;
 import com.migao.admin.entity.ProductionOptionFactor;
 import com.migao.admin.entity.ProductionOptionRouting;
+import com.migao.admin.entity.ProductionRouteSignal;
 import com.migao.admin.entity.ProductionWorkLog;
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.mapper.OrderItemMapper;
@@ -135,12 +136,49 @@ class ProcessingOrderServiceTest {
             {"外帘发货", "后道", "套", "1.0", "false", "false"}};
 
     /**
+     * 信号映射表桩（V60，issue #4308）：**逐行抄自 V60 迁移的种子** ——
+     * 而 V60 的种子又是迁移前两张常量表（`CURTAIN_TYPE_KEYWORDS` / `CRAFT_KEYWORDS`）的逐条快照。
+     *
+     * <p>⇒ 本文件里「派生键命中」的断言**逐字未改**却仍然绿，就是「派生读库 ≡ 派生读常量」的
+     * 等价性证据（这是最强形态的红证：把 {@code processingOrderService} 改回读常量，
+     * 本桩就再也影响不了结果 ⇒ 判别物是「库里有、常量里没有」的一行，见
+     * {@link #routeSignals}）。</p>
+     *
+     * <p>{@code priority} 是**用途内**序（帘种行 1..3 / 工艺行 1..7），故「帘头」两行位次相反 ——
+     * 这正是不能压成 `(tenant_id, signal)` 单唯一键的原因（见 V60 迁移注释）。</p>
+     */
+    private static List<ProductionRouteSignal> v60Signals() {
+        return List.of(
+                routeSignal("sig-v60-01", "帘头", "帘头", null, 1),
+                routeSignal("sig-v60-02", "纱", "纱帘", null, 2),
+                routeSignal("sig-v60-03", "布", "布帘", null, 3),
+                routeSignal("sig-v60-04", "韩褶", null, "韩褶", 1),
+                routeSignal("sig-v60-05", "打孔", null, "打孔", 2),
+                routeSignal("sig-v60-06", "四爪钩", null, "四爪钩", 3),
+                routeSignal("sig-v60-07", "四叉钩", null, "四爪钩", 4),
+                routeSignal("sig-v60-08", "穿杆", null, "穿杆", 5),
+                routeSignal("sig-v60-09", "平幔", null, "平幔", 6),
+                routeSignal("sig-v60-10", "帘头", null, "平幔", 7));
+    }
+
+    private static ProductionRouteSignal routeSignal(String id, String signal, String curtainType,
+                                                     String craft, int priority) {
+        return ProductionRouteSignal.builder().id(id).tenantId(TENANT).signal(signal)
+                .curtainType(curtainType).craft(craft).priority(priority)
+                .status("active").deleted(0).build();
+    }
+
+    /**
      * 工序库桩：把 V54 的两条路线装进 findRouting；未登记的键返回 null
      * （= 库里没有该路线 ⇒ 走默认路线兜底，仍没有才 fail-closed）。
+     *
+     * <p>同时装信号映射表（V60，issue #4308）：派生**读库而非读常量** ⇒
+     * 「库中映射命中的优先级高于默认」这条判据依赖本桩，缺了它所有派生用例都退化成 T1。</p>
      */
     private void stubLibrary() {
         when(productionOperationQueryService.findRouting(eq(TENANT), anyString(), anyString()))
                 .thenAnswer(inv -> v54Route(inv.getArgument(1), inv.getArgument(2)));
+        when(productionOperationQueryService.routeSignals(TENANT)).thenReturn(v60Signals());
     }
 
     /** V54 库路线的形态（与 ProductionOperationQueryService.findRouting 的返回同构）。 */

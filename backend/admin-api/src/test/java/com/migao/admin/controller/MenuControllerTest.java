@@ -122,10 +122,13 @@ class MenuControllerTest {
             childLabels.add(child.path("label").asText());
             childCodes.add(child.path("code").asText());
         });
+        // 四节点（issue #4308 新增「工艺路线」= 路线/信号/工序写面的用户面入口）。
+        // 精确断言（不是 contains）：漏加菜单项 ⇒ 岗位权限页勾得动、侧边栏看不到（#4203 同族坑）。
         org.junit.jupiter.api.Assertions.assertEquals(
-                java.util.List.of("生产看板", "工序库", "计件工资"), childLabels);
-        // 三节点共用同一权限码：岗位权限页勾一处 = 整组可见（与 menu.ts / AuthService 同构）
+                java.util.List.of("生产看板", "工序库", "计件工资", "工艺路线"), childLabels);
+        // 四节点共用同一权限码：岗位权限页勾一处 = 整组可见（与 menu.ts / AuthService 同构）
         org.junit.jupiter.api.Assertions.assertEquals(
-                java.util.List.of("processing:manage", "processing:manage", "processing:manage"), childCodes);
+                java.util.List.of("processing:manage", "processing:manage", "processing:manage",
+                        "processing:manage"), childCodes);
     }
 }

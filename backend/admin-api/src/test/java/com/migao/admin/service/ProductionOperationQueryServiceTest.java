@@ -1,4 +1,4 @@
-// case_ids: PG-018
+// case_ids: PG-018, PG-035
 package com.migao.admin.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
@@ -50,10 +50,12 @@ class ProductionOperationQueryServiceTest {
     private com.migao.admin.mapper.ProductionOptionRoutingMapper productionOptionRoutingMapper;
     @Mock
     private com.migao.admin.mapper.ProductionOptionFactorMapper productionOptionFactorMapper;
+    @Mock
+    private com.migao.admin.mapper.ProductionRouteSignalMapper productionRouteSignalMapper;
 
     private ProductionOperationQueryService service() {
         return new ProductionOperationQueryService(productionOperationMapper, productionRoutingMapper,
-                productionOptionRoutingMapper, productionOptionFactorMapper);
+                productionOptionRoutingMapper, productionOptionFactorMapper, productionRouteSignalMapper);
     }
 
     /**
@@ -311,5 +313,82 @@ class ProductionOperationQueryServiceTest {
         verify(productionOperationMapper, org.mockito.Mockito.never()).updateById(any(ProductionOperation.class));
         verify(productionRoutingMapper, org.mockito.Mockito.never()).insert(any(ProductionRouting.class));
         verify(productionRoutingMapper, org.mockito.Mockito.never()).updateById(any(ProductionRouting.class));
+    }
+
+    // ══════════════════ 缺口可查（issue #4308 交付物 5 / P4，PG-035）══════════════════
+    //
+    // P4 的病根：4 道「有工序、有价、有意不消费（待客户确认）」的工序与罗马帘缺口**只活在代码注释里**
+    // ⇒ 商家看不到、无法自行处置。本查询把缺口变成数据；且必须能表达「**待确认**」语义 ——
+    // 它们是 issue #4261 逐项登记的「等客户输入」，不是「系统漏了」。
+
+    private static com.migao.admin.entity.ProductionRouteSignal signal(
+            String id, String keyword, String curtainType, String craft, int priority) {
+        return com.migao.admin.entity.ProductionRouteSignal.builder()
+                .id(id).tenantId(TENANT).signal(keyword).curtainType(curtainType).craft(craft)
+                .priority(priority).status("active").deleted(0).build();
+    }
+
+    @Test
+    @DisplayName("缺口①：有活跃工序但未进任何活跃路线 ⇒ 逐条列出，且**待客户确认**的带 pending_confirmation")
+    void routingGapsListsUnroutedOperationsWithPendingFlag() {
+        when(productionRoutingMapper.selectList(any())).thenReturn(List.of(
+                routing("rt-v54-01", "布帘", "韩褶", List.of("精裁-布", "布三边", "外帘装袋"))));
+        when(productionOperationMapper.selectList(any())).thenReturn(List.of(
+                op("op-1", "精裁-布", "裁剪", "布帘", "米", "0.40", false, true, 1),
+                op("op-2", "布三边", "车位", "布帘", "米", "0.40", false, false, 2),
+                op("op-3", "外帘装袋", "后道", "外帘", "套", "1.00", true, false, 3),
+                // 未进任何路线：其中「裁剪-纱」在 routing.py 的待确认登记里
+                op("op-4", "裁剪-纱", "裁剪", "纱帘", "米", "0.40", false, true, 4),
+                op("op-5", "质检", "后道", null, "套", "1.50", false, false, 5),
+                op("op-6", "腰靠垫", "其他", null, "个", "2.00", false, false, 6)));
+        when(productionRouteSignalMapper.selectList(any())).thenReturn(List.of());
+
+        Map<String, Object> gaps = service().routingGaps(TENANT);
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> unrouted = (List<Map<String, Object>>) gaps.get("unrouted_operations");
+        assertThat(unrouted).extracting(m -> m.get("name")).containsExactly("裁剪-纱", "质检", "腰靠垫");
+        assertThat(unrouted).as("每条都带库口径的分组/单位/单价（商家据此判断该怎么处置）")
+                .allSatisfy(m -> assertThat(m).containsKeys("group_name", "unit", "unit_price"));
+        assertThat(unrouted).allSatisfy(m -> assertThat(m.get("pending_confirmation")).isEqualTo(true));
+        assertThat(gaps.get("pending_confirmation_total")).isEqualTo(3);
+        assertThat(gaps.get("unrouted_operation_total")).isEqualTo(3);
+    }
+
+    @Test
+    @DisplayName("缺口①（双向可红）：进了路线的工序**不得**出现在缺口里")
+    void routingGapsExcludesOperationsConsumedByAnyActiveRouting() {
+        when(productionRoutingMapper.selectList(any())).thenReturn(List.of(
+                routing("rt-v54-01", "布帘", "韩褶", List.of("精裁-布", "外帘装袋"))));
+        when(productionOperationMapper.selectList(any())).thenReturn(List.of(
+                op("op-1", "精裁-布", "裁剪", "布帘", "米", "0.40", false, true, 1),
+                op("op-3", "外帘装袋", "后道", "外帘", "套", "1.00", true, false, 3)));
+        when(productionRouteSignalMapper.selectList(any())).thenReturn(List.of());
+
+        Map<String, Object> gaps = service().routingGaps(TENANT);
+
+        assertThat((List<?>) gaps.get("unrouted_operations")).as("少一道/多一道都红").isEmpty();
+        assertThat(gaps.get("pending_confirmation_total")).isEqualTo(0);
+    }
+
+    @Test
+    @DisplayName("缺口②：库里没有路线的信号组合 ⇒ 报出「信号单独命中时会派生的键」（另一维取默认）")
+    void routingGapsListsSignalKeysWithoutRoute() {
+        when(productionRoutingMapper.selectList(any())).thenReturn(List.of(
+                routing("rt-v54-01", "布帘", "韩褶", List.of("精裁-布"))));
+        when(productionOperationMapper.selectList(any())).thenReturn(List.of());
+        when(productionRouteSignalMapper.selectList(any())).thenReturn(List.of(
+                signal("s1", "布", "布帘", null, 3),          // 布帘×韩褶 有路线 ⇒ 不报
+                signal("s2", "罗马帘", "罗马帘", null, 4),      // 罗马帘×韩褶 无路线 ⇒ 报（#4261 ①）
+                signal("s3", "罗马帘", null, "韩褶", 8)));      // 同上（工艺行），去重后仍一条
+
+        Map<String, Object> gaps = service().routingGaps(TENANT);
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> missing = (List<Map<String, Object>>) gaps.get("signal_keys_without_route");
+        assertThat(missing).hasSize(1);
+        assertThat(missing.get(0).get("curtain_type")).isEqualTo("罗马帘");
+        assertThat(missing.get(0).get("craft")).as("缺失维取默认（与派生同源，不复制第二份默认值）").isEqualTo("韩褶");
+        assertThat(missing.get(0).get("route_key")).isEqualTo("罗马帘×韩褶");
     }
 }

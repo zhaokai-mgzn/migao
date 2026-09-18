@@ -1,5 +1,6 @@
 package com.migao.admin.service;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.migao.admin.entity.ProductionOperation;
 import com.migao.admin.entity.ProductionOperationPriceVersion;
 import com.migao.admin.exception.BusinessException;
@@ -127,8 +128,85 @@ public class ProductionOperationCommandService {
         return productionOperationQueryService.operationView(op);
     }
 
+    /**
+     * 新增工序（issue #4308 交付物 4：{@code POST /api/admin/production/operations}）。
+     *
+     * <p><b>为什么必须有这个端点</b>：商家要建自己的路线，得先有工序可选 —— 而此前
+     * {@code production_operations} 的**唯一写方是 V54/V56 种子 SQL**（全仓对
+     * {@code productionOperationMapper} 零写调用），非 1 号租户连一道工序都建不出来
+     * （见 #4316）。本端点是「企业设置工艺路线」的前置。</p>
+     *
+     * <p><b>单价版本账首行同事务写</b>：与 {@link #update} 的「当前价 = 最新版本行」口径一致 ——
+     * 新工序若只写 {@code unit_price} 而不写版本行，「当前价 = 最新版本行」对它就**不成立**
+     * （迁移 V55 的回填正是为消灭这种不一致）。</p>
+     *
+     * <p><b>不发明行业数据</b>：本端点只落**商家给的值**，不给任何默认单价/默认工序名
+     * （猜出来的单价会直接算成工人工资，见 issue #4261）。</p>
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public Map<String, Object> create(Map<String, Object> body, Long tenantId) {
+        String name = requiredText(body == null ? null : body.get("name"), "name");
+        BigDecimal unitPrice = decimal(body.get("unit_price"), "unit_price");
+        if (unitPrice.signum() < 0) {
+            throw BusinessException.validationError("unit_price 不能为负");
+        }
+        // 重名判据覆盖**停用/软删之外**的全部行：唯一索引是 (tenant_id, name) WHERE deleted=0，
+        // 只比活跃行会让「同名停用行」撞 DB 索引 ⇒ 500 而不是可行动错误。
+        Long sameName = productionOperationMapper.selectCount(new LambdaQueryWrapper<ProductionOperation>()
+                .eq(ProductionOperation::getTenantId, tenantId)
+                .eq(ProductionOperation::getDeleted, 0)
+                .eq(ProductionOperation::getName, name));
+        if (sameName != null && sameName > 0) {
+            throw BusinessException.conflict("工序「" + name + "」已存在",
+                    "同名工序只能有一条：改它的单价/状态，或换一个工序名（目录查看入口 GET /api/admin/production/operations-catalog）");
+        }
+        String status = body.containsKey("status") ? requiredText(body.get("status"), "status") : "active";
+        if (!STATUSES.contains(status)) {
+            throw BusinessException.validationError("status 仅支持 active/disabled");
+        }
+
+        ProductionOperation op = ProductionOperation.builder()
+                .tenantId(tenantId)
+                .name(name)
+                .groupName(body.containsKey("group_name")
+                        ? requiredText(body.get("group_name"), "group_name") : "其他")
+                .position(optionalText(body.get("position")))
+                .unit(body.containsKey("unit") ? requiredText(body.get("unit"), "unit") : "米")
+                .unitPrice(unitPrice)
+                .isMustFinish(body.containsKey("is_must_finish")
+                        && bool(body.get("is_must_finish"), "is_must_finish"))
+                .isStartMarker(body.containsKey("is_start_marker")
+                        && bool(body.get("is_start_marker"), "is_start_marker"))
+                .sortOrder(body.containsKey("sort_order")
+                        ? decimal(body.get("sort_order"), "sort_order").intValue() : 0)
+                .status(status)
+                .createdAt(OffsetDateTime.now())
+                .updatedAt(OffsetDateTime.now())
+                .deleted(0)
+                .build();
+        productionOperationMapper.insert(op);
+        // 单价版本账首行（同事务）：使「当前价 = 最新版本行」对新工序同样成立
+        priceVersionMapper.insert(ProductionOperationPriceVersion.builder()
+                .tenantId(tenantId)
+                .operationId(op.getId())
+                .unitPrice(unitPrice)
+                .createdAt(OffsetDateTime.now())
+                .deleted(0)
+                .build());
+        log.info("新增工序: tenantId={}, name={}, unit={}, unitPrice={}", tenantId, name, op.getUnit(), unitPrice);
+        return productionOperationQueryService.operationView(op);
+    }
+
     private static BigDecimal nz(BigDecimal value) {
         return value == null ? BigDecimal.ZERO : value;
+    }
+
+    private static String optionalText(Object value) {
+        if (value == null) {
+            return null;
+        }
+        String text = String.valueOf(value).trim();
+        return text.isEmpty() ? null : text;
     }
 
     private static String requiredText(Object value, String field) {

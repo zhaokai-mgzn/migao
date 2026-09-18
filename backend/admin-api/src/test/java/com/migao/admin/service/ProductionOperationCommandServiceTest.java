@@ -1,6 +1,6 @@
 package com.migao.admin.service;
 
-// case_ids: PG-020
+// case_ids: PG-020, PG-034
 
 import com.migao.admin.entity.ProductionOperation;
 import com.migao.admin.entity.ProductionOperationPriceVersion;
@@ -55,6 +55,8 @@ class ProductionOperationCommandServiceTest {
     private com.migao.admin.mapper.ProductionOptionRoutingMapper productionOptionRoutingMapper;
     @Mock
     private com.migao.admin.mapper.ProductionOptionFactorMapper productionOptionFactorMapper;
+    @Mock
+    private com.migao.admin.mapper.ProductionRouteSignalMapper productionRouteSignalMapper;
 
     private ProductionOperationCommandService service() {
         // 读面用**真实对象**（只 mock Mapper）：响应形态 = 目录项形态（同一份 operationView），
@@ -62,7 +64,8 @@ class ProductionOperationCommandServiceTest {
         return new ProductionOperationCommandService(
                 productionOperationMapper, priceVersionMapper,
                 new ProductionOperationQueryService(productionOperationMapper, productionRoutingMapper,
-                        productionOptionRoutingMapper, productionOptionFactorMapper));
+                        productionOptionRoutingMapper, productionOptionFactorMapper,
+                        productionRouteSignalMapper));
     }
 
     private ProductionOperation operation(String unitPrice, String status) {
@@ -190,5 +193,57 @@ class ProductionOperationCommandServiceTest {
         assertThat(hasInstanceWriter)
                 .as("工序库写面不得依赖实例表 Mapper（改价必须冻结既有实例快照）")
                 .isFalse();
+    }
+
+    // ══════════════════ 新增工序（issue #4308 交付物 4，PG-034）══════════════════
+    //
+    // 为什么必须有这个端点：production_operations 的**唯一写方曾是 V54/V56 种子 SQL**
+    // （全仓对 productionOperationMapper 零写调用）⇒ 商家建不了自己的路线（没有工序可选），
+    // 非 1 号租户连一道工序都建不出来（#4316）。本端点 = 「企业设置工艺路线」的前置。
+
+    @Test
+    @DisplayName("新增工序 ⇒ 落库 + **同事务写单价版本账首行**（使「当前价 = 最新版本行」对它也成立）")
+    void createWritesOperationAndFirstPriceVersion() {
+        when(productionOperationMapper.selectCount(any())).thenReturn(0L);
+
+        Map<String, Object> result = service().create(Map.of(
+                "name", "罗马帘-穿杆", "group_name", "车位", "unit", "米", "unit_price", 0.6), TENANT);
+
+        ArgumentCaptor<ProductionOperation> op = ArgumentCaptor.forClass(ProductionOperation.class);
+        verify(productionOperationMapper).insert(op.capture());
+        assertThat(op.getValue().getName()).isEqualTo("罗马帘-穿杆");
+        assertThat(op.getValue().getUnitPrice()).isEqualByComparingTo("0.6");
+        assertThat(op.getValue().getStatus()).isEqualTo("active");
+        assertThat(op.getValue().getDeleted()).isEqualTo(0);
+        ArgumentCaptor<ProductionOperationPriceVersion> version =
+                ArgumentCaptor.forClass(ProductionOperationPriceVersion.class);
+        verify(priceVersionMapper).insert(version.capture());
+        assertThat(version.getValue().getOperationId()).as("版本行必须挂在刚建的工序上").isEqualTo(op.getValue().getId());
+        assertThat(version.getValue().getUnitPrice()).isEqualByComparingTo("0.6");
+        assertThat(result.get("name")).isEqualTo("罗马帘-穿杆");
+    }
+
+    @Test
+    @DisplayName("新增工序：同名（含停用行）⇒ 409，不落库（否则撞 DB 唯一索引变 500 而非可行动错误）")
+    void createRejectsDuplicateName() {
+        when(productionOperationMapper.selectCount(any())).thenReturn(1L);
+
+        assertThatThrownBy(() -> service().create(Map.of("name", "韩褶-布", "unit_price", 0.4), TENANT))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> assertThat(((BusinessException) e).getHttpStatus()).isEqualTo(409));
+        verify(productionOperationMapper, never()).insert(any(ProductionOperation.class));
+        verify(priceVersionMapper, never()).insert(any(ProductionOperationPriceVersion.class));
+    }
+
+    @Test
+    @DisplayName("新增工序：缺 name / 缺 unit_price / 负单价 ⇒ 422，不落库（不发明默认单价）")
+    void createRejectsMissingOrNegativePrice() {
+        assertThatThrownBy(() -> service().create(Map.of("unit_price", 0.4), TENANT))
+                .isInstanceOf(BusinessException.class);
+        assertThatThrownBy(() -> service().create(Map.of("name", "罗马帘-穿杆"), TENANT))
+                .isInstanceOf(BusinessException.class);
+        assertThatThrownBy(() -> service().create(Map.of("name", "罗马帘-穿杆", "unit_price", -1), TENANT))
+                .isInstanceOf(BusinessException.class);
+        verify(productionOperationMapper, never()).insert(any(ProductionOperation.class));
     }
 }

@@ -1,6 +1,9 @@
 package com.migao.admin.exception;
 
+import com.migao.admin.dto.ApiResponse;
 import lombok.Getter;
+
+import java.util.List;
 
 /**
  * 业务异常类
@@ -25,6 +28,12 @@ public class BusinessException extends RuntimeException {
      */
     @Getter
     private String suggestion;
+
+    /**
+     * **逐条**理由（issue #4308）：复用既有信封字段 {@code error.details:[{field,message}]}，
+     * 由 {@link com.migao.admin.config.GlobalExceptionHandler} 透传。默认 null（既有调用方语义不变）。
+     */
+    private List<ApiResponse.ErrorDetail> details;
 
     /**
      * 构造业务异常
@@ -84,6 +93,25 @@ public class BusinessException extends RuntimeException {
     }
 
     /**
+     * 参数校验错误 + **逐条理由**（issue #4308：写面护栏失败要能「逐条展示」）。
+     *
+     * <p>复用**既有**信封字段 {@code error.details:[{field,message}]}（{@code ApiResponse.ErrorInfo}
+     * 自始就有 {@code details}），不新造字段 —— 前端已按该形状渲染逐条理由。
+     * {@code message} 仍是一句话摘要（人读/日志），逐条细节走 {@code details}。</p>
+     *
+     * @param message    一句话摘要
+     * @param details    逐条理由（{@code field} = 违规维度，如 {@code operations} / {@code operations[2]}）
+     * @param suggestion 可行动建议
+     */
+    public static BusinessException validationError(String message,
+                                                    List<ApiResponse.ErrorDetail> details,
+                                                    String suggestion) {
+        BusinessException e = new BusinessException("VALIDATION_ERROR", message, 422, suggestion);
+        e.details = details;
+        return e;
+    }
+
+    /**
      * 资源不存在
      */
     public static BusinessException notFound(String resource) {
@@ -93,6 +121,16 @@ public class BusinessException extends RuntimeException {
     /** 资源不存在（含 LLM 修复建议） */
     public static BusinessException notFound(String resource, String suggestion) {
         return new BusinessException("NOT_FOUND", resource + "不存在", 404, suggestion);
+    }
+
+    /** 冲突（唯一键撞车等）：409 + 可行动建议。 */
+    public static BusinessException conflict(String message, String suggestion) {
+        return new BusinessException("CONFLICT", message, 409, suggestion);
+    }
+
+    /** 一条护栏理由（{@code field} = 违规维度）。 */
+    public static ApiResponse.ErrorDetail detail(String field, String message) {
+        return new ApiResponse.ErrorDetail(field, message);
     }
 
     /**
