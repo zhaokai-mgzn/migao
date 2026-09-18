@@ -1,6 +1,6 @@
 'use client'
 
-import { craftSpecRows, isCraftSpecKey } from '@/lib/craft-spec'
+import { craftSpecRows, isCraftSpecKey } from '@/lib/craft-display'
 import type { OrderItem } from '@/types'
 
 interface OrderItemListProps {

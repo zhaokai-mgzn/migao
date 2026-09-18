@@ -12,7 +12,7 @@ import { Button, Loading, Modal } from '@/components/ui'
 import { OrderProgressSteps, CloseOrderModal, LogisticsForm, RefundOrderModal, ProcessingOrderBlock, ShipmentDoc } from '@/components/orders'
 import type { Order, OrderItem, LogisticsFormData, ProcessingOrder } from '@/types'
 import { normalizeOrderStatus, displayOrderStatus } from '@/types'
-import { craftSpecRows } from '@/lib/craft-spec'
+import { craftSpecRows } from '@/lib/craft-display'
 import { cn } from '@/lib/utils'
 
 // 格式化金额（含千分位+两位小数）

@@ -7,7 +7,7 @@
  * 绝不出现 undefined/null/NaN，也不补默认值。
  */
 import { describe, expect, it } from 'vitest'
-import { craftSpecLine, craftSpecRows, isCraftSpecKey } from '@/lib/craft-spec'
+import { craftSpecLine, craftSpecRows, isCraftSpecKey } from '@/lib/craft-display'
 
 /** 订单/快照层口径（camelCase，§4.5）：order_items.processing_info / items_snapshot */
 const orderCraftSpec = {

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { View, Text } from '@tarojs/components'
-import { craftSpecRows } from '../../utils/craft-spec'
+import { craftSpecRows } from '../../utils/craft-display'
 import './QuotationCard.scss'
 
 export interface QuoteBreakdown {
@@ -54,7 +54,7 @@ export default function QuotationCard({ data, onConfirm }: QuotationCardProps) {
   const breakdown = data.breakdown || []
   // 确认下单防连点锁：点击后锁卡（issue #3040 收尾 #3038，防重复下单）
   const [confirmed, setConfirmed] = useState(false)
-  // 工艺规格（issue #4355 / 设计文档 §4.9 ①）：同一份定义（utils/craft-spec）渲染，缺值行已丢弃
+  // 工艺规格（issue #4355 / 设计文档 §4.9 ①）：同一份定义（utils/craft-display）渲染，缺值行已丢弃
   const specRows = craftSpecRows(data).filter((row) => !HEADER_LABELS.has(row.label))
 
   return (

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Button } from '@/components/ui'
 import { processingOrderApi } from '@/lib/api'
 // 工艺规格展示的单一真值定义（设计文档 §4.9「一份 spec，三处渲染」）
-import { craftSpecLine, craftSpecRows } from '@/lib/craft-spec'
+import { craftSpecLine, craftSpecRows } from '@/lib/craft-display'
 // 状态文案单一来源：与列表页共用（加工单状态机语义见 lib/processing-order.ts）
 import { PROCESSING_ORDER_STATUS_LABELS as STATUS_TEXT } from '@/lib/processing-order'
 import type { ProcessingOrder, ProcessingOrderItem } from '@/types'

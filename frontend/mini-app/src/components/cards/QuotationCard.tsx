@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { View, Text } from '@tarojs/components'
-import { craftSpecRows } from '../../utils/craft-spec'
+import { craftSpecRows } from '../../utils/craft-display'
 import './QuotationCard.scss'
 
 export interface QuoteBreakdown {
@@ -63,7 +63,7 @@ export default function QuotationCard({ data, onConfirm }: QuotationCardProps) {
   // 实际褶倍与理论值不同（客户自报折数 / 经济档）⇒ 一并标注实际值：
   // 只显示理论值会让顾客以为「2 倍褶皱」就是实际用料比，而实际可能只有 1.86 倍（issue #4118 ④）
   const showActualFullness = data.fullness_actual != null && data.fullness_actual !== data.fullness
-  // 工艺规格（issue #4355 / 设计文档 §4.9 ①）：同一份定义（utils/craft-spec）渲染，缺值行已丢弃
+  // 工艺规格（issue #4355 / 设计文档 §4.9 ①）：同一份定义（utils/craft-display）渲染，缺值行已丢弃
   const specRows = craftSpecRows(data).filter((row) => !HEADER_LABELS.has(row.label))
 
   return (

@@ -6,7 +6,7 @@ import { QRCodeSVG } from 'qrcode.react'
 import Badge from '@/components/ui/Badge'
 import { cn } from '@/lib/utils'
 // 工艺规格展示的单一真值定义（设计文档 §4.9「一份 spec，三处渲染」）
-import { craftSpecRows } from '@/lib/craft-spec'
+import { craftSpecRows } from '@/lib/craft-display'
 import type { ProcessingOrderItem, ProductionPosition } from '@/types'
 
 /**
