@@ -59,13 +59,19 @@ D-01~D-11 里，本批能落到仓库命令上的逐条复算如下；**未能�
 # ── T1：D-01 terminal 赋值点 / 消费点 / tests 命中 ──
 $ A=backend/ai-agent-service/app
 $ git grep -n "terminal=True" 46c91d3c -- $A/tools
-46c91d3c:$A/tools/aftersale_create.py:282:                terminal=True,
-46c91d3c:$A/tools/human_handoff.py:463:                        terminal=True,
-46c91d3c:$A/tools/human_handoff.py:493:                terminal=True,
-46c91d3c:$A/tools/order_create.py:1116:                terminal=True,
+46c91d3c:backend/ai-agent-service/app/tools/aftersale_create.py:282:                terminal=True,
+46c91d3c:backend/ai-agent-service/app/tools/human_handoff.py:463:                        terminal=True,
+46c91d3c:backend/ai-agent-service/app/tools/human_handoff.py:493:                terminal=True,
+46c91d3c:backend/ai-agent-service/app/tools/order_create.py:1116:                terminal=True,
 $ git grep -c terminal 46c91d3c -- tests/ | wc -l
 0
 ```
+
+> ⚠️ **归档时的唯一一处非逐字改动**：上面 4 行把 shell 变量 `$A` **展开**成了
+> `backend/ai-agent-service/app`（原文输出里是 `$A` 开头的缩写形式）。原因：那种「`$A` + 路径 + 冒号 + 行号」
+> 的写法会被 `CASE-TRUST-STALE-LINE-REF` 规则当成**仓库路径引用**，解析出一个并不存在的路径
+> ⇒ 门禁 fail-closed 判红（实证：PR #4410 首次 CI，4 处全中）。展开后路径真实、行号在 `origin/main` 上仍在界内，
+> 机械校验通过。命令与输出内容未改，仅变量展开。
 
 ```bash
 # ── T2：D-02 http_client 4xx 分支（基线 vs main）──
