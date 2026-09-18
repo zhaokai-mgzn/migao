@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { AlertCircle, ArrowLeft, Printer, RefreshCw } from 'lucide-react'
+import { AlertCircle, ArrowLeft, Printer, RefreshCw, Wrench } from 'lucide-react'
 import { Button } from '@/components/ui'
 import StatusBadge from '@/components/ui/StatusBadge'
 import { chipToneClasses } from '@/lib/status-chip'
@@ -33,6 +33,8 @@ export default function ProcessingOrderProductionPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [operationsError, setOperationsError] = useState('')
+  const [instantiateError, setInstantiateError] = useState('')
+  const [instantiating, setInstantiating] = useState(false)
 
   const load = useCallback(async () => {
     if (!id) return
@@ -62,6 +64,7 @@ export default function ProcessingOrderProductionPage() {
       ])
       if (opsRes.status === 'fulfilled') {
         setOperations(opsRes.value.data?.data ?? null)
+        setInstantiateError('')
       } else {
         setOperations(null)
         setOperationsError('工序进度加载失败，请稍后重试')
@@ -80,11 +83,41 @@ export default function ProcessingOrderProductionPage() {
     load()
   }, [load])
 
+  /**
+   * 补生成工序（issue #4202 前端半边）：存量加工单（生成于「生成加工单即自动实例化」之前）
+   * 工序实例与 qr_token 双空，此前**没有任何 UI 入口**能触达 instantiate 端点。
+   * 冻结契约：positions 变为可选 —— 空 body ⇒ 服务端按订单自动派生工序；已有实例时幂等空操作。
+   */
+  const handleInstantiate = async () => {
+    if (!po?.orderId) return
+    setInstantiating(true)
+    setInstantiateError('')
+    try {
+      await productionApi.instantiate(po.orderId)
+      await load()
+    } catch (e) {
+      console.error(e)
+      setInstantiateError('补生成工序失败，请稍后重试')
+    } finally {
+      setInstantiating(false)
+    }
+  }
+
+  /** 打印任务卡：先上报打印计数（fire-and-forget，失败不得阻断打印），再打印。 */
+  const handlePrint = () => {
+    if (po?.orderId) {
+      productionApi.recordPrint(po.orderId).catch(() => {})
+    }
+    window.print()
+  }
+
   const progress = operations?.progress
   const percent = Math.min(100, Math.max(0, Math.round(Number(progress?.percent ?? 0))))
   const doneCount = progress?.done ?? 0
   const totalCount = progress?.total ?? 0
   const chip = processingOrderStatusChipFor(po?.status)
+  // 存量单恢复路径：无工序实例 且 非终态取消（cancelled 不可重生成）
+  const showInstantiate = !operationsError && (operations?.positions?.length ?? 0) === 0 && po?.status !== 'cancelled'
 
   return (
     <div className="p-6 space-y-4">
@@ -140,7 +173,7 @@ export default function ProcessingOrderProductionPage() {
                   </p>
                 </div>
               </div>
-              <Button data-testid="production-print-button" onClick={() => window.print()}>
+              <Button data-testid="production-print-button" onClick={handlePrint}>
                 <Printer className="w-4 h-4 mr-1.5" />
                 打印任务卡
               </Button>
@@ -188,7 +221,31 @@ export default function ProcessingOrderProductionPage() {
 
           {/* 工序进度（按部位分组 + 必完工序标记） */}
           <div className="rounded-lg border border-neutral-200 bg-white p-5">
-            <h2 className="mb-3 text-base font-medium text-neutral-900">工序进度</h2>
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+              <h2 className="text-base font-medium text-neutral-900">工序进度</h2>
+              {/* 存量加工单恢复路径（issue #4202）：无工序实例且非取消态时补生成 */}
+              {showInstantiate && (
+                <Button
+                  size="sm"
+                  disabled={instantiating}
+                  loading={instantiating}
+                  data-testid="production-instantiate-button"
+                  onClick={handleInstantiate}
+                >
+                  {!instantiating && <Wrench className="w-4 h-4 mr-1.5" />}
+                  补生成工序
+                </Button>
+              )}
+            </div>
+            {instantiateError && (
+              <p
+                className="mb-3 flex items-center gap-2 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600"
+                data-testid="production-instantiate-error"
+              >
+                <AlertCircle className="w-4 h-4" />
+                {instantiateError}
+              </p>
+            )}
             {operationsError ? (
               <div
                 className="flex items-center gap-2 rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-6 text-sm text-neutral-600"

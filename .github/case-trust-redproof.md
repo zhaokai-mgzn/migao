@@ -140,6 +140,7 @@ python3.11 -m pytest tests/unit_ci_workflows -q
 | `CASE-TRUST-FORBIDDEN-TEXT-SOLE` | `fixture_pg_013` | 8 条 `forbidden_text` + 无行为/效果层断言 |
 | `CASE-TRUST-VOLATILE-LOCATOR` | `fixture_cu_003` | `pre_clean[].customer_index: 0`（按列表位置定位客户） |
 | `CASE-TRUST-NO-PRECONDITION-ASSERTION` | `fixture_pg_013` | 多轮写用例无 `precondition` / 机器计分型前置断言 |
+| `CASE-TRUST-SELF-TARGET-NO-MAX-GROWTH` | `TestSelfTargetMaxGrowth` 的注入夹具 | 自建名 + `expect: 0` 前置缺 `max_growth`（或 <1）⇒ 运行期 `0 → 1` 恒判漂移 |
 | `CASE-TRUST-STALE-LINE-REF` | `TestReferenceFreshness` 的 3 个注入夹具 | 行号越界 / 文件不存在 / 符号在文件里完全找不到 |
 | `CASE-TRUST-SINGLE-LEG-NO-PERSONA` | `fixture_single_leg_unmarked` | `{curtain_calc}` ⊆ 小布工具集但无 `persona` |
 
@@ -203,6 +204,31 @@ python3.11 -m pytest tests/unit_ci_workflows -q
 > 报出「`local_runner.py` 在 origin/main 上只有 **32 行**」（真实 7422 行）这类**自相矛盾的假读数**，
 > 把合法引用误判成「行号越界」。修复 = **两个独立缓存** + 注释写明为什么必须分开。
 > 这正是本包要治的形态（读数不可信 ⇒ 结论不可信），故留档。
+
+### 绿证 H —— 规则 h（自建目标的 `expect: 0` 前置必须给 `max_growth`）的注入式红证（2026-09-18，#4200）
+
+**病灶（**结构性**恒红，不是偶发红）**：runner 的漂移判据是 `after - before > max_growth`，
+`max_growth` 缺省 0；而用例**自己就要创建同名商品** ⇒ 正常行为下 `0 → 1 > 0` **恒判漂移**、
+`score` 归零 —— 与 agent 行为对错**正交**。
+
+- **实测铁证**（判定跑 `35295494688` @`d5bca241`）：`PR-008` / `PR-016` `score=0.0`，唯一
+  failure 是 `precondition[product_count_for_keyword]: 前置在本次运行期间漂移 —— … capture=0`
+  `→ after=1（允许增长 ≤0）`，而 `assertions_fired.scoring` 逐条 ✅；`CH-005` 是同族潜伏例
+  （adversarial 档未进 normal 两条腿的执行集 ⇒ 一跑即红）。
+- **注入式红证** —— `TestSelfTargetMaxGrowth`：自建名 + `expect: 0` + 无 `max_growth`
+  ⇒ 判据函数 `self_target_missing_max_growth` 认出该名字、`judge_case` 报
+  `CASE-TRUST-SELF-TARGET-NO-MAX-GROWTH`；`max_growth` ∈ {`0`, `None`, `"0"`, `-1`} 四支
+  **同样**必报（取值口径照 runner 的 `int(...)`：取不出整数时 runner 回落
+  `_PRECONDITION_NO_DRIFT` ⇒ 静态侧必须同口径，否则留一个洞）。
+- **反向证据（防假红）**：补 `max_growth: 1` ⇒ 同一夹具**全绿**；缺 `expect` / `expect: 1` /
+  namespace 不是 `product_name:*` / 前置点名**别的**名字 / 前置类型不是建品计数 ⇒ 均**不报**
+  （判据只认「**同一个**自建名 + `expect: 0`」这一形态，不臆造更宽口径）。
+- **库级回归锁**：全库用例对本码的违规数 = **0**（三条实例已修 ⇒ 本规则**不是新增豁免**，
+  读数见基线 `rule_counts` 里本码那一格）；三条实例的 `expect: 0`、`max_growth >= 1` 与
+  `expectations` / `must_succeed` / `namespaces` / `pre_clean` 逐项锁定**未放宽**。
+- **单一真相源**：类型名与缺省容差直接读 `tests/agent_eval/local_runner.py` 的源码比对
+  （`_PRECONDITION_TYPES` 含 `product_count_for_keyword`、`_PRECONDITION_NO_DRIFT = 0`），
+  任一侧改了而另一侧没跟上即红。
 
 ### 绿证 D —— 退化守卫
 

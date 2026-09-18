@@ -105,7 +105,7 @@ export default function TaskCardPrint({
               >
                 二维码待生成
                 <br />
-                （请先在订单详情生成加工单）
+                （本页点「补生成工序」即可）
               </div>
             )}
             <div className="mt-1 text-xs text-neutral-600">扫码报工</div>

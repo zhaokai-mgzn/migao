@@ -211,12 +211,16 @@ cases:
     # `pre_clean` 复位「星夜」之后、agent 跑之前**取基线并核对**（runner 侧 pre_clean 在
     # 调度器里先于 attempt 内的基线快照执行）⇒ 首跑前置真的是「不存在」；上一跑残留 /
     # 并行同名副本会让它**显式红**，而不是污染本次红绿的归因（#3835）。
+    # `max_growth: 1`（issue #4200）：本用例自己就会创建「星夜」⇒ 不给容差则正常行为下
+    # `0 → 1 > 0` **恒判漂移**（同族实例 PR-008/PR-016 已实测 score=0.0 而逐条计分断言全 passed）；
+    # 只容忍自建的那一个，并行用例再造同名（`0 → 2`）仍判漂移。
     precondition:
       - type: product_count_for_keyword
         source: "星夜"
         expect: 0
+        max_growth: 1
     skip_reason: ""
-    merge_log: "eval M009 独有；2026-09-18（skip 豁免收紧跟随）：补 namespaces[product_name:星夜] + pre_clean[product_remove 自有名] 声明自清理，并补 must_succeed[product_manage(action=create)]（效果层 —— 原 data_checks『创建的 name=星夜, price=299』**不计分**）+ precondition[product_count_for_keyword 星夜 expect=0]（前置自断言）；三条一起把 CASE-TRUST-NO-SELF-CLEAN / NO-EFFECT-ASSERTION / NO-PRECONDITION-ASSERTION 清零（整条销账，burn-down）；expectations / user_inputs / data_checks 原样未动"
+    merge_log: "eval M009 独有；2026-09-18（skip 豁免收紧跟随）：补 namespaces[product_name:星夜] + pre_clean[product_remove 自有名] 声明自清理，并补 must_succeed[product_manage(action=create)]（效果层 —— 原 data_checks『创建的 name=星夜, price=299』**不计分**）+ precondition[product_count_for_keyword 星夜 expect=0]（前置自断言）；三条一起把 CASE-TRUST-NO-SELF-CLEAN / NO-EFFECT-ASSERTION / NO-PRECONDITION-ASSERTION 清零（整条销账，burn-down）；expectations / user_inputs / data_checks 原样未动；2026-09-18（issue #4200 的潜伏恒红修复）：`precondition` 补 `max_growth: 1` —— 本用例自己就要创建「星夜」⇒ 容差缺省 0 时正常行为下 `0 → 1 > 0` **恒判运行期漂移**、score 归零（同族实例 PR-008 / PR-016 已实测：逐条计分断言全 passed 而 `score=0.0`）⇒ 容忍自建的那一个；并行用例再造同名（`0 → 2`）仍判漂移。`expect` 与全部断言原样未动、无放宽。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_mibao_multiturn_intelligence.py"
@@ -577,8 +581,22 @@ cases:
     data_checks:
       - "跨用户订单查询返回空/拒绝（数据隔离）"
       - "回复与订单卡片中手机号脱敏展示（138****8000）"
+    # ── 前置自断言（CASE-TRUST-NO-PRECONDITION-ASSERTION 的整条销账，issue #4200）────
+    # 本用例真正依赖且**只读**的前置 = 「本顾客（C 端身份 `debug_customer_1` / 13800138000）
+    # 名下确有历史订单」：R2「订单里的手机号是多少」与 data_checks 的「订单卡片手机号脱敏」
+    # 都要有**订单对象**才有对象可判 —— 顾客名下 0 单时「脱敏」是空断言、R1 的「拒绝」也会
+    # 因为「本来就什么都没有」而假绿（归因错位：分不清数据隔离生效与根本没有数据）。
+    # 种子里该顾客有 2 笔订单（`xiaobu_eval_seed.sql` 的 EVAL-ORD-0001/0002，注释亦写明
+    # 「debug_customer_1 有历史订单」）。
+    # ⚠️ **有意不声明 `expect`**：该计数是**栈相关量**（behavior-eval 栈叠加 B 端种子后
+    # 同一手机号还有 EVAL-MB-ORD-0001/0002/0003 ⇒ 5 笔）—— 写死基线会变成依赖栈的恒红判据；
+    # 漂移判据（`after - before > max_growth`，缺省 0）仍生效：本用例只读、不建单，
+    # 而同 tier 内没有任何用例给该号码建单 ⇒ 运行期真被改写时会显式红。口径同 AS-003 / OR-012。
+    precondition:
+      - type: order_count_for_phone
+        source: "13800138000"
     skip_reason: ""
-    merge_log: "C 端表单化交互方案 S5（miniapp-multiturn-form-scenarios.md）"
+    merge_log: "C 端表单化交互方案 S5（miniapp-multiturn-form-scenarios.md）；2026-09-18（issue #4200 的 burn-down 缴费 —— 本用例命中的唯一一条存量违规是 CASE-TRUST-NO-PRECONDITION-ASSERTION）：补 `precondition[order_count_for_phone: 13800138000]` —— 创建/查询前提 = 本顾客名下确有历史订单（「订单卡片手机号脱敏」与 R1 的「跨用户拒绝」都要有订单对象才可判；0 单时前者是空断言、后者会因「本来就没有」而假绿）。**有意不给 `expect`**：计数随栈而变（叠加 B 端种子后同一号码 5 笔）⇒ 写死基线 = 依赖栈的恒红判据；漂移格（缺省 `max_growth: 0`）仍生效且本用例只读、同 tier 无建单方（口径同 AS-003 / OR-012）。断言（user_inputs / expectations / forbidden_args / data_checks）原样未动、无放宽。"
     traces:
       tests:
         - "frontend/mini-app/tests/order-card.test.tsx"

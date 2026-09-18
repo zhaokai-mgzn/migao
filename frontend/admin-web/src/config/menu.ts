@@ -88,6 +88,19 @@ export const menuGroups: MenuGroup[] = [
       { key: 'settings', name: '企业基础信息', icon: 'Building2', path: '/settings', permissionCode: 'system:manage' },
     ],
   },
+  // issue #4203：生产管理组（生产看板 / 工序库 / 计件工资）。
+  // 权限码统一 processing:manage —— 与既有「加工项管理」「加工单」同一口径（operator 已持有该码，
+  // 且同时具备 processing:view/update 的 API 权限）；「加工单」**不搬家**，仍留订单管理组（不动既有 IA）。
+  {
+    key: 'production',
+    name: '生产管理',
+    icon: 'Factory',
+    children: [
+      { key: 'production-board', name: '生产看板', icon: 'ClipboardCheck', path: '/production', permissionCode: 'processing:manage' },
+      { key: 'production-operations', name: '工序库', icon: 'ListChecks', path: '/production/operations', permissionCode: 'processing:manage' },
+      { key: 'production-piecework', name: '计件工资', icon: 'Calculator', path: '/production/piecework', permissionCode: 'processing:manage' },
+    ],
+  },
 ]
 
 // 一级独立菜单项（无子级，直接跳转，排在分组后面）

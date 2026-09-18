@@ -583,7 +583,7 @@
 必须成功: product_manage
 ```
 真值: ai-chat.context-memory, ai-chat.escape-hatch
-溯源: eval M009 独有；2026-09-18（skip 豁免收紧跟随）：补 namespaces[product_name:星夜] + pre_clean[product_remove 自有名] 声明自清理，并补 must_succeed[product_manage(action=create)]（效果层 —— 原 data_checks『创建的 name=星夜, price=299』**不计分**）+ precondition[product_count_for_keyword 星夜 expect=0]（前置自断言）；三条一起把 CASE-TRUST-NO-SELF-CLEAN / NO-EFFECT-ASSERTION / NO-PRECONDITION-ASSERTION 清零（整条销账，burn-down）；expectations / user_inputs / data_checks 原样未动 ｜ tags: multi_turn, interruption, context_persistence, adversarial
+溯源: eval M009 独有；2026-09-18（skip 豁免收紧跟随）：补 namespaces[product_name:星夜] + pre_clean[product_remove 自有名] 声明自清理，并补 must_succeed[product_manage(action=create)]（效果层 —— 原 data_checks『创建的 name=星夜, price=299』**不计分**）+ precondition[product_count_for_keyword 星夜 expect=0]（前置自断言）；三条一起把 CASE-TRUST-NO-SELF-CLEAN / NO-EFFECT-ASSERTION / NO-PRECONDITION-ASSERTION 清零（整条销账，burn-down）；expectations / user_inputs / data_checks 原样未动；2026-09-18（issue #4200 的潜伏恒红修复）：`precondition` 补 `max_growth: 1` —— 本用例自己就要创建「星夜」⇒ 容差缺省 0 时正常行为下 `0 → 1 > 0` **恒判运行期漂移**、score 归零（同族实例 PR-008 / PR-016 已实测：逐条计分断言全 passed 而 `score=0.0`）⇒ 容忍自建的那一个；并行用例再造同名（`0 → 2`）仍判漂移。`expect` 与全部断言原样未动、无放宽。 ｜ tags: multi_turn, interruption, context_persistence, adversarial
 
 ### CH-006. 对抗性 - 10 轮密集对话后精确操作 🔴
 ```
@@ -682,7 +682,7 @@
 禁参: customer_order_query() 不得含 user_id, customer_id, user_name, customer_name
 ```
 真值: id-resolve.name
-溯源: C 端表单化交互方案 S5（miniapp-multiturn-form-scenarios.md） ｜ tags: data_safety, mask, isolation
+溯源: C 端表单化交互方案 S5（miniapp-multiturn-form-scenarios.md）；2026-09-18（issue #4200 的 burn-down 缴费 —— 本用例命中的唯一一条存量违规是 CASE-TRUST-NO-PRECONDITION-ASSERTION）：补 `precondition[order_count_for_phone: 13800138000]` —— 创建/查询前提 = 本顾客名下确有历史订单（「订单卡片手机号脱敏」与 R1 的「跨用户拒绝」都要有订单对象才可判；0 单时前者是空断言、后者会因「本来就没有」而假绿）。**有意不给 `expect`**：计数随栈而变（叠加 B 端种子后同一号码 5 笔）⇒ 写死基线 = 依赖栈的恒红判据；漂移格（缺省 `max_growth: 0`）仍生效且本用例只读、同 tier 无建单方（口径同 AS-003 / OR-012）。断言（user_inputs / expectations / forbidden_args / data_checks）原样未动、无放宽。 ｜ tags: data_safety, mask, isolation
 
 ### CH-012. 退换货申请（订单定位→原因选择→confirm 确认→售后单） 🔵
 ```
@@ -3363,7 +3363,7 @@
 产出: product_manage(create) → product_id==__nonempty__
 ```
 真值: product-sku-stock.create-flow, product-sku-stock.create-confirm
-溯源: eval P003 + verification 2.9（同义，取 eval 版）；2026-09-09 校准：补「窗帘布艺」点分类卡轮 + 末轮回传 confirmValue「确认创建测试窗帘A」（agent 实际生成，含商品名上下文；原脚本末轮『确认创建』被 agent 理解成『发确认卡』而非『点确认卡回传』，product_manage 永不执行）；2026-09-18 下沉（issue #4042）：补 must_succeed[product_manage(action=create)] + output_verify(product_id 非空)，并把不计分的散文 `data.product_id.length > 0` 弃用；补 pre_clean[product_remove 自有名] + precondition[product_count_for_keyword expect=0]（前置自断言，清掉 CASE-TRUST-NO-EFFECT-ASSERTION / CASE-TRUST-NO-PRECONDITION-ASSERTION 两条存量违规）；2026-09-18 **轮次形状修正**（issue #4042 归因）：末两轮静态文本（「确认创建」/「确认创建测试窗帘A」）答不上 agent 动态生成的**加工项多选卡**，R5/R6 全被该卡吃掉 ⇒ confirm 卡在最后一轮才发出、无人点击 ⇒ 建品永不执行（`no_success(product_manage)`，与 OR-014/CH-010 同款 #3518 坑）⇒ 末两轮改为 `repeat_until(tool_called=product_manage, max=3)` 协作轮（有卡答卡 / 无卡发原 confirmValue 文本），断言原样未动 ｜ tags: create, full_flow
+溯源: eval P003 + verification 2.9（同义，取 eval 版）；2026-09-09 校准：补「窗帘布艺」点分类卡轮 + 末轮回传 confirmValue「确认创建测试窗帘A」（agent 实际生成，含商品名上下文；原脚本末轮『确认创建』被 agent 理解成『发确认卡』而非『点确认卡回传』，product_manage 永不执行）；2026-09-18 下沉（issue #4042）：补 must_succeed[product_manage(action=create)] + output_verify(product_id 非空)，并把不计分的散文 `data.product_id.length > 0` 弃用；补 pre_clean[product_remove 自有名] + precondition[product_count_for_keyword expect=0]（前置自断言，清掉 CASE-TRUST-NO-EFFECT-ASSERTION / CASE-TRUST-NO-PRECONDITION-ASSERTION 两条存量违规）；2026-09-18 **轮次形状修正**（issue #4042 归因）：末两轮静态文本（「确认创建」/「确认创建测试窗帘A」）答不上 agent 动态生成的**加工项多选卡**，R5/R6 全被该卡吃掉 ⇒ confirm 卡在最后一轮才发出、无人点击 ⇒ 建品永不执行（`no_success(product_manage)`，与 OR-014/CH-010 同款 #3518 坑）⇒ 末两轮改为 `repeat_until(tool_called=product_manage, max=3)` 协作轮（有卡答卡 / 无卡发原 confirmValue 文本），断言原样未动；2026-09-18（issue #4200 的恒红修复）：`precondition` 补 `max_growth: 1` —— 本用例自己就要创建「测试窗帘A」⇒ 容差缺省 0 时正常行为下 `0 → 1 > 0` **恒判运行期漂移**、score 归零（判定跑 35295494688 实测：`assertions_fired.scoring` 逐条 ✅ 而 `score=0.0`，唯一 failure 是前置自身）⇒ 容忍自建的那一个；并行用例再造同名（`0 → 2`）仍判漂移，判别力不丢。`expect` 与全部断言（expectations / must_succeed / output_verify / pre_clean / namespaces）原样未动、无放宽。 ｜ tags: create, full_flow
 
 ### PR-009. 商品更新 - 名称解析 ID 🔴
 ```
@@ -3511,7 +3511,7 @@
 必须成功: product_manage(create)
 ```
 真值: product-sku-stock.create-flow, processing-manage.crud
-溯源: 2026-09-06 新增（issue #2964）：加工项「适用商品分类」配置此前无消费方，建品流程按已选分类过滤/推荐加工项（设计意图见 docs/design/admin-dashboard-design.md §6.1.1 适用商品分类+AI推荐）。2026-09-14 校准（#3518）：收尾裸文本「确认」改答卡轮（B 端 confirm 门禁：文字≠点卡）；2026-09-15 补自清理（issue #3800，判定跑 run 34865780382 实证）：本用例建的同名商品与种子 `prod_eval_blackout`（遮光窗帘）撞名，而 `namespaces` 只保证并行互斥、不解决重试前置等价性（#3751 的复位按 pre_clean opt-in）⇒ 首跑建出的那件留到重试 ⇒ agent 正确拒绝建重复 ⇒ 指纹漂移误判 unstable（首跑指纹无 `no_success(product_manage)`、重试指纹有，即铁证）⇒ 补 `product_dedupe{遮光窗帘}`（保留最早创建 = 种子）；**不能用 product_remove**（子串删全部 ⇒ 会连种子一起删，而它是 PR-005/PR-007/CR-001/CR-003/OR-015 的共享前置）；expectations/required_args/data_checks 原样未动；2026-09-17（issue #3835）输入商品名改为**用例自有**（`E2E建品流程样品帘`）+ `pre_clean[product_remove 自有名]`（根治跨用例同名污染）；2026-09-18 下沉（issue #4042）：补 must_succeed[product_manage(action=create)] + precondition[product_count_for_keyword expect=0]（清掉 CASE-TRUST-NO-EFFECT-ASSERTION / CASE-TRUST-NO-PRECONDITION-ASSERTION 两条存量违规）；「关联加工项数量正确」仍无机器判据（db_verify 只支持 processingItemConfigs 谓词），如实登记为能力缺口 ｜ tags: processing_item, product_category, guided_flow, recommendation
+溯源: 2026-09-06 新增（issue #2964）：加工项「适用商品分类」配置此前无消费方，建品流程按已选分类过滤/推荐加工项（设计意图见 docs/design/admin-dashboard-design.md §6.1.1 适用商品分类+AI推荐）。2026-09-14 校准（#3518）：收尾裸文本「确认」改答卡轮（B 端 confirm 门禁：文字≠点卡）；2026-09-15 补自清理（issue #3800，判定跑 run 34865780382 实证）：本用例建的同名商品与种子 `prod_eval_blackout`（遮光窗帘）撞名，而 `namespaces` 只保证并行互斥、不解决重试前置等价性（#3751 的复位按 pre_clean opt-in）⇒ 首跑建出的那件留到重试 ⇒ agent 正确拒绝建重复 ⇒ 指纹漂移误判 unstable（首跑指纹无 `no_success(product_manage)`、重试指纹有，即铁证）⇒ 补 `product_dedupe{遮光窗帘}`（保留最早创建 = 种子）；**不能用 product_remove**（子串删全部 ⇒ 会连种子一起删，而它是 PR-005/PR-007/CR-001/CR-003/OR-015 的共享前置）；expectations/required_args/data_checks 原样未动；2026-09-17（issue #3835）输入商品名改为**用例自有**（`E2E建品流程样品帘`）+ `pre_clean[product_remove 自有名]`（根治跨用例同名污染）；2026-09-18 下沉（issue #4042）：补 must_succeed[product_manage(action=create)] + precondition[product_count_for_keyword expect=0]（清掉 CASE-TRUST-NO-EFFECT-ASSERTION / CASE-TRUST-NO-PRECONDITION-ASSERTION 两条存量违规）；「关联加工项数量正确」仍无机器判据（db_verify 只支持 processingItemConfigs 谓词），如实登记为能力缺口；2026-09-18（issue #4200 的恒红修复）：该 `precondition` 补 `max_growth: 1` —— 本用例自己就要创建「E2E建品流程样品帘」⇒ 容差缺省 0 时正常行为下 `0 → 1 > 0` **恒判运行期漂移**、score 归零（判定跑 35295494688 实测：`assertions_fired.scoring` 逐条 ✅ 而 `score=0.0`，唯一 failure 是前置自身）⇒ 容忍自建的那一个；并行用例再造同名（`0 → 2`）仍判漂移。`expect` 与全部断言（expectations / required_args / must_succeed / pre_clean / namespaces）原样未动、无放宽。 ｜ tags: processing_item, product_category, guided_flow, recommendation
 
 ### PR-017. 商品创建/更新/详情透传「退货回补库存」开关（allow_return_restock） 🔵
 ```

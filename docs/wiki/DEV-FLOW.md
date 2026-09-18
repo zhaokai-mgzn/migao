@@ -206,7 +206,7 @@ CI 里调用**真实 LLM**（生产 `ai-api.migaozn.com` + `SERVICE_TOKEN`）的
 | `.github/case-trust-redproof.md` | 红证留档（补前必红 / 补后绿原文），由 L0 守卫锁定防事后改写 |
 | `tests/unit_ci_workflows/test_case_trust_gate.py` | L0 守卫 + 退化守卫（已知缺陷夹具必须被判违规；正确形态不得误伤） |
 
-**九条规则**（逐条带「为什么算缺陷」+ 反例 + 怎么改；失败信息里都有）：
+**十条规则**（逐条带「为什么算缺陷」+ 反例 + 怎么改；失败信息里都有）：
 
 1. `CASE-TRUST-EMPTY-ASSERTION` —— 计分断言数不得为 0（`total_exp == 0` ⇒ `score = 1.0` 恒绿）；
 2. `CASE-TRUST-NO-EFFECT-ASSERTION` —— 写类用例必须 ≥1 条效果层断言
@@ -236,6 +236,13 @@ CI 里调用**真实 LLM**（生产 `ai-api.migaozn.com` + `SERVICE_TOKEN`）的
    符号在文件里完全找不到 ⇒ **阻塞**；行号漂移（符号在别处）⇒ 警告。
 9. `CASE-TRUST-SINGLE-LEG-NO-PERSONA` —— 按工具集可判定为单端的用例必须标注 `persona`
    （#3822：缺标注的另一条腿必挂，`case_ids` 窄跑还会触发 runner 的「禁止静默少跑」守卫）。
+10. `CASE-TRUST-SELF-TARGET-NO-MAX-GROWTH` —— **自建目标**的 `expect: 0` 前置必须给 `max_growth`
+    （#4200：`namespaces` 声明了 `product_name:<KW>` ∧ 前置对同一名字声明 `expect: 0` ∧
+    `max_growth` 缺失或 <1）。为什么：runner 的漂移判据是 `after - before > max_growth`
+    （缺省 0），而用例**自己就会创建**那个名字的商品 ⇒ 正常行为下 `0 → 1 > 0` **恒判漂移**、
+    `score` 归零（实测 `PR-008` / `PR-016` 逐条计分断言全 passed 而 `score=0.0`）。
+    修法 = 加 `max_growth: 1`（只容忍自建的那一个；并行再造同名仍判漂移）；
+    **不得**改 `expect` / 删断言绕过。先例：`HR-002`。
 
 **三层判定必须同时存在**（缺任一层就必然假红或债务僵化）：
 

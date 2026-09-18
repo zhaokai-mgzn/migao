@@ -940,7 +940,7 @@ _CASE_CH_005 = EvalCase(
     must_succeed=[{'tool': 'product_manage', 'args': {'action': 'create'}}],
     pre_clean=[{'type': 'product_remove', 'product_keyword': '星夜'}],
     namespaces=['product_name:星夜'],
-    precondition=[{'type': 'product_count_for_keyword', 'source': '星夜', 'expect': 0}],
+    precondition=[{'type': 'product_count_for_keyword', 'source': '星夜', 'expect': 0, 'max_growth': 1}],
 )
 
 # ── CH-006 [ADVERSARIAL] 对抗性 - 10 轮密集对话后精确操作（源: cases/chat.yml）──
@@ -1057,6 +1057,7 @@ _CASE_CH_011 = EvalCase(
     form_prefill=[],
     forbidden_card_text=[],
     forbidden_args=[{'tool': 'customer_order_query', 'fields': ['user_id', 'customer_id', 'user_name', 'customer_name']}],
+    precondition=[{'type': 'order_count_for_phone', 'source': '13800138000'}],
 )
 
 # ── CH-012 [NORMAL] 退换货申请（订单定位→原因选择→confirm 确认→售后单）（源: cases/chat.yml）──
@@ -4703,7 +4704,7 @@ _CASE_PR_008 = EvalCase(
     output_verify=[{'tool': 'product_manage', 'action': 'create', 'expect': {'product_id': '__nonempty__'}}],
     pre_clean=[{'type': 'product_remove', 'product_keyword': '测试窗帘A'}],
     namespaces=['product_name:测试窗帘A'],
-    precondition=[{'type': 'product_count_for_keyword', 'source': '测试窗帘A', 'expect': 0}],
+    precondition=[{'type': 'product_count_for_keyword', 'source': '测试窗帘A', 'expect': 0, 'max_growth': 1}],
 )
 
 # ── PR-009 [ADVERSARIAL] 商品更新 - 名称解析 ID（源: cases/product.yml）──
@@ -4860,7 +4861,7 @@ _CASE_PR_016 = EvalCase(
     must_succeed=[{'tool': 'product_manage', 'action': 'create'}],
     pre_clean=[{'type': 'product_remove', 'product_keyword': 'E2E建品流程样品帘'}],
     namespaces=['product_name:E2E建品流程样品帘'],
-    precondition=[{'type': 'product_count_for_keyword', 'source': 'E2E建品流程样品帘', 'expect': 0}],
+    precondition=[{'type': 'product_count_for_keyword', 'source': 'E2E建品流程样品帘', 'expect': 0, 'max_growth': 1}],
 )
 
 # ── PR-017 [NORMAL] 商品创建/更新/详情透传「退货回补库存」开关（allow_return_restock）（源: cases/product.yml）──

@@ -21,7 +21,7 @@ PR 门禁外壳。两者若只被「真实用例库」间接覆盖，就有典�
 见本文件末尾 `TestRedProofRecord.test_red_proof_before_gate_is_documented` 锁定的
 `.github/case-trust-redproof.md`：**补前必红 / 补后绿**的原文逐字留档，防止红证被事后改写。
 """
-# case_ids: CU-003, PG-013, PR-021, CH-009, CH-016, OR-012, CH-011
+# case_ids: CU-003, PG-013, PR-021, CH-009, CH-016, OR-012, CH-011, PR-008, PR-016, CH-005
 import copy
 import json
 import subprocess
@@ -451,6 +451,176 @@ class TestPreconditionAssertion:
         assert tax.needs_precondition_assertion(case) is False
         assert "CASE-TRUST-NO-PRECONDITION-ASSERTION" not in codes(
             tax.judge_case(case, catalog=_seed_catalog()))
+
+
+class TestSelfTargetMaxGrowth:
+    """规则 h：自建目标的 `expect: 0` 前置必须给 `max_growth`（issue #4200）。
+
+    病根（代码级，一行可读）：runner 的漂移判据是 `after - before > max_growth`，`max_growth`
+    缺省 0；而用例**自己就要创建同名商品** ⇒ 正常行为下 `0 → 1 > 0` **恒判漂移**、`score`
+    归零 —— 即使逐条计分断言全 passed。实证（判定跑 `35295494688` @`d5bca241`）：
+    `PR-008` / `PR-016` `score=0.0`，唯一 failure 是 `precondition[product_count_for_keyword]`
+    的漂移串，而 `assertions_fired.scoring` 逐条 ✅；`CH-005` 是同族潜伏例（adversarial 档
+    未在 normal 两条腿的执行集里 ⇒ 一跑即红）。
+    """
+
+    #: 三条实例（全库 `expect: 0` 的建品前置只有这三条，判据面无第二份口径）
+    INSTANCES = {
+        "PR-008": "测试窗帘A",
+        "PR-016": "E2E建品流程样品帘",
+        "CH-005": "星夜",
+    }
+
+    def _real_cases(self) -> dict:
+        return {str(c.get("id")): c for c in _gate_module().load_cases_from_dir()}
+
+    def _self_target_fixture(self, **precondition_extra) -> dict:
+        """改前形态的注入夹具（**逐字**取自三条实例的共同形状）。"""
+        return {
+            "id": "FAKE-PR-4200", "title": "（注入夹具）自建名 + expect:0 无 max_growth",
+            "user_inputs": ["创建一个窗帘，名称测试窗帘A，价格168", "确认创建测试窗帘A"],
+            "expectations": [{"tool": "product_manage", "args": {"action": "create"}}],
+            "must_succeed": [{"tool": "product_manage"}],
+            "namespaces": ["product_name:测试窗帘A"],
+            "pre_clean": [{"type": "product_remove", "product_keyword": "测试窗帘A"}],
+            "precondition": [{"type": "product_count_for_keyword", "source": "测试窗帘A",
+                              "expect": 0, **precondition_extra}],
+        }
+
+    # ── 红证（注入式）────────────────────────────────────────────────────────
+    def test_red_proof_self_target_without_max_growth_is_blocked(self):
+        """**注入式红证**：自建名 + `expect: 0` + 无 `max_growth` ⇒ 必报该码。"""
+        case = self._self_target_fixture()
+        assert tax.self_target_missing_max_growth(case) == ["测试窗帘A"], (
+            "判据函数未认出恒红形态"
+        )
+        v = tax.judge_case(case, catalog=_seed_catalog())
+        assert "CASE-TRUST-SELF-TARGET-NO-MAX-GROWTH" in codes(v), (
+            f"自建目标的 `expect: 0` 前置缺 `max_growth` 未被判违规，实际={v}"
+        )
+
+    @pytest.mark.parametrize("bad", [{"max_growth": 0}, {"max_growth": None},
+                                     {"max_growth": "0"}, {"max_growth": -1}])
+    def test_red_proof_any_sub_one_growth_is_blocked(self, bad):
+        """`max_growth` 存在但 < 1（含 `None` / 字符串 `"0"`）⇒ 同样恒红 ⇒ 同样必报。
+
+        `None` / `"0"` 两支照 runner 的 `int(...)` 取值口径判：runner 取不出整数时回落
+        `_PRECONDITION_NO_DRIFT`（= 0）⇒ 静态侧必须与它**同口径**（否则判据留一个洞）。
+        """
+        v = tax.judge_case(self._self_target_fixture(**bad), catalog=_seed_catalog())
+        assert "CASE-TRUST-SELF-TARGET-NO-MAX-GROWTH" in codes(v), (
+            f"max_growth={bad!r} 未被判违规，实际={v}"
+        )
+
+    # ── 反向证据（不误伤）────────────────────────────────────────────────────
+    def test_max_growth_one_is_accepted(self):
+        """**反向证据**：补 `max_growth: 1` ⇒ 同一条夹具**全绿**（判据不恒红）。"""
+        case = self._self_target_fixture(max_growth=1)
+        assert tax.self_target_missing_max_growth(case) == []
+        assert tax.judge_case(case, catalog=_seed_catalog()) == [], (
+            "补了 `max_growth: 1` 仍被判违规 ⇒ 恒红判据（门禁无法被修好）"
+        )
+
+    def test_no_baseline_declaration_is_out_of_scope(self):
+        """边界（**照实登记**）：缺 `expect` 的声明**不在**本规则口径内。
+
+        本规则判的形态是「**声明了**必须不存在（`expect: 0`）、却不容忍自建的那一个」
+        —— 基线格是这条判据的锚点。缺 `expect` 时静态侧无法断定运行期一定漂移
+        （不同栈的基线不同），故不判（不臆造更宽的判据）。
+        """
+        case = self._self_target_fixture()
+        del case["precondition"][0]["expect"]
+        assert tax.self_target_missing_max_growth(case) == []
+        assert "CASE-TRUST-SELF-TARGET-NO-MAX-GROWTH" not in codes(
+            tax.judge_case(case, catalog=_seed_catalog()))
+
+    def test_non_zero_expect_is_out_of_scope(self):
+        """`expect: 1`（依赖既有对象）不是本规则形态：它不是「自建的那一个」。"""
+        case = self._self_target_fixture(expect=1)
+        assert tax.self_target_missing_max_growth(case) == []
+
+    def test_namespace_kind_narrowing(self):
+        """kind 收窄：`customer_phone:<值>` 声明**不得**替 `product_name` 顶包。"""
+        case = self._self_target_fixture()
+        case["namespaces"] = ["customer_phone:测试窗帘A"]
+        assert tax.case_declared_product_names(case) == set(), (
+            "非 product_name 的 namespace 被当成了自建商品名"
+        )
+        assert tax.self_target_missing_max_growth(case) == []
+
+    def test_precondition_for_a_different_name_does_not_trigger(self):
+        """前置点名的名字 ≠ 自建名 ⇒ 不判（判据必须锁定**同一个**名字）。"""
+        case = self._self_target_fixture()
+        case["precondition"][0]["source"] = "遮光窗帘"
+        assert tax.self_target_missing_max_growth(case) == []
+
+    def test_unknown_precondition_type_does_not_trigger(self):
+        """前置类型不是建品计数 ⇒ 不判（类型面由 runner 的 `_PRECONDITION_TYPES` 定）。"""
+        case = self._self_target_fixture()
+        case["precondition"][0]["type"] = "order_count_for_phone"
+        assert tax.self_target_missing_max_growth(case) == []
+
+    # ── 库级回归锁（三条实例已修 + 未放宽）──────────────────────────────────
+    def test_real_library_has_no_self_target_violation(self):
+        """**全库**不得再有本码违规（三条实例已修 ⇒ 新规则存量清零，不是新增豁免）。"""
+        live = {cid: c for cid, c in self._real_cases().items()}
+        assert set(self.INSTANCES) <= set(live), (
+            f"三条实例消失了：{sorted(set(self.INSTANCES) - set(live))}"
+        )
+        hits = sorted(cid for cid, c in live.items()
+                      if "CASE-TRUST-SELF-TARGET-NO-MAX-GROWTH" in codes(
+                          tax.judge_case(c, catalog=_seed_catalog())))
+        assert hits == [], f"全库仍有自建目标缺 max_growth 的用例：{hits}"
+
+    @pytest.mark.parametrize("cid", ["PR-008", "PR-016", "CH-005"])
+    def test_instance_fix_keeps_the_assertions_strong(self, cid):
+        """**不得放宽**：三条实例修的是「自建容忍度」，不是判据强度。
+
+        锁定：① `expect: 0` 仍在（基线格没被拆掉，判别力不丢）；② `max_growth >= 1`
+        （恰好容忍自建的那一个 —— 并行用例再造同名 `0 → 2` 仍判漂移）；
+        ③ 原有断言面（expectations / must_succeed / namespaces / `pre_clean` 的自有名复位）
+        逐项仍在。
+        """
+        case = self._real_cases()[cid]
+        specs = [s for s in (case.get("precondition") or [])
+                 if isinstance(s, dict)
+                 and s.get("type") == tax.SELF_TARGET_PRECONDITION_TYPE]
+        assert specs, f"{cid} 的建品前置声明消失了（基线格被拆掉 = 判据放宽）"
+        spec = specs[0]
+        assert spec.get("expect") == 0, f"{cid} 的 `expect: 0` 被改掉（放宽基线格）：{spec}"
+        assert int(spec.get("max_growth", 0)) >= 1, f"{cid} 的 max_growth 仍 <1：{spec}"
+        assert case.get("namespaces"), f"{cid} 的 namespaces 声明消失"
+        assert case.get("expectations"), f"{cid} 的 expectations 消失"
+        assert case.get("must_succeed"), f"{cid} 的 must_succeed 消失"
+        assert any(s.get("type") == "product_remove"
+                   for s in (case.get("pre_clean") or [])
+                   if isinstance(s, dict)), f"{cid} 的自清理声明消失"
+
+    # ── 单一真相源（防双源漂移）──────────────────────────────────────────────
+    def test_self_target_type_and_default_match_runner_source(self):
+        """类型名与缺省容差必须与 runner 同源（任一侧改了而另一侧没跟上即红）。
+
+        直接读 `tests/agent_eval/local_runner.py` 的源码（同 `test_machine_scored_marker_
+        matches_runner_source` 的做法）：判据类型必须在 `_PRECONDITION_TYPES` 里，
+        缺省容差必须是 `_PRECONDITION_NO_DRIFT` 的字面值。
+        """
+        runner = (REPO_ROOT / "tests" / "agent_eval" / "local_runner.py").read_text(
+            encoding="utf-8")
+        anchor = "_PRECONDITION_TYPES: dict = {"
+        assert anchor in runner, (
+            "runner 的前置类型表锚点消失（源码已改）—— 请同步 assertion_taxonomy："
+            f"按 {anchor!r} 检索"
+        )
+        body = runner[runner.index(anchor): runner.index(anchor) + 2000]
+        assert f'"{tax.SELF_TARGET_PRECONDITION_TYPE}"' in body, (
+            f"静态判据用的类型 {tax.SELF_TARGET_PRECONDITION_TYPE!r} 不在 runner 的 "
+            f"`_PRECONDITION_TYPES` 里 ⇒ 该前置在运行期会被判「未知 type、静默跳过」"
+        )
+        no_drift = "_PRECONDITION_NO_DRIFT"
+        assert f"{no_drift} = {tax.PRECONDITION_NO_DRIFT}" in runner, (
+            f"runner 的缺省容差不再是 {tax.PRECONDITION_NO_DRIFT} ⇒ 静态判据与运行期漂移"
+            f"判据已漂移（按 {no_drift!r} 检索）"
+        )
 
 
 class TestReferenceFreshness:
