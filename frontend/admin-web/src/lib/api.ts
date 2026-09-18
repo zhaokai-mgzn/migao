@@ -391,6 +391,14 @@ export const productionApi = {
       {},
     ),
 
+  // 撤销加工单二维码 token（issue #4240；真值源 §1「token 化、可撤销」）——
+  // 撤销后 qr_token 置空 ⇒ 已打印的旧码立即失效；再次 instantiate 时重新生成新码。
+  // 注意：该端点是**方法级** processing:manage（仅 operator/admin），与同类只读端点的类级 order:list 不同。
+  revokeQrToken: (orderId: string) =>
+    request.post<ApiResponse<{ order_id?: string; qr_token?: string | null; revoked?: boolean }>>(
+      `/api/admin/production/orders/${orderId}/qr-token/revoke`,
+    ),
+
   // 打印次数上报（fire-and-forget，失败不得阻断打印）
   recordPrint: (orderId: string) =>
     request.post<ApiResponse<{ order_id?: string; processing_order_no?: string; print_count?: number }>>(

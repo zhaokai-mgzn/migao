@@ -5,6 +5,9 @@
 // PG-019（issue #4202，前端半边）：存量加工单（positions 为空且非 cancelled）显示「补生成工序」
 // → 调 POST /production/orders/{orderId}/instantiate（空 body）→ 刷新出工序表与二维码；
 // 有数据 / 已取消时按钮不出现；任务卡占位文案不得误导（不得再指向「请先在订单详情生成加工单」）。
+// PG-019（issue #4240，前端半边）：真值源 §1「二维码 token 化、可撤销」的 UI 发射点 ——
+// 生产明细页「撤销二维码」入口（二次确认后才发 POST .../qr-token/revoke，按 processing:manage 显隐）
+// → 撤销后刷新回占位态 + 可见「已撤销」反馈。
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -14,6 +17,7 @@ const mockGetOrderOperations = vi.fn()
 const mockGetPiecework = vi.fn()
 const mockInstantiate = vi.fn()
 const mockRecordPrint = vi.fn()
+const mockRevokeQrToken = vi.fn()
 
 vi.mock('@/lib/api', () => ({
   processingOrderApi: {
@@ -24,7 +28,14 @@ vi.mock('@/lib/api', () => ({
     getPiecework: (...args: unknown[]) => mockGetPiecework(...args),
     instantiate: (...args: unknown[]) => mockInstantiate(...args),
     recordPrint: (...args: unknown[]) => mockRecordPrint(...args),
+    revokeQrToken: (...args: unknown[]) => mockRevokeQrToken(...args),
   },
+}))
+
+// 权限显隐用例需要切换当前用户（usePermission → useAuthStore(selector)）
+const mockUseAuthStore = vi.fn()
+vi.mock('@/store/auth', () => ({
+  useAuthStore: (selector: any) => (selector ? selector(mockUseAuthStore()) : mockUseAuthStore()),
 }))
 
 vi.mock('@/lib/use-route-id', () => ({
@@ -89,13 +100,21 @@ const PIECEWORK = {
 
 const ok = (data: unknown) => ({ data: { success: true, data } })
 
+/** 撤销后后端语义：qr_token 置空（工序实例仍在），见 PG-019 data_checks「二维码撤销」 */
+const OPERATIONS_REVOKED = { ...OPERATIONS, qr_token: null }
+
 describe('加工单生产明细页', () => {
   beforeEach(() => {
+    // 默认 operator（持有 processing:manage ⇒ 撤销入口可见）
+    mockUseAuthStore.mockReset().mockReturnValue({
+      user: { id: 'u-1', name: '运营', roles: ['operator'], permissions: ['processing:manage'] },
+    })
     mockDetail.mockReset().mockResolvedValue(ok(PROCESSING_ORDER))
     mockGetOrderOperations.mockReset().mockResolvedValue(ok(OPERATIONS))
     mockGetPiecework.mockReset().mockResolvedValue(ok(PIECEWORK))
     mockInstantiate.mockReset().mockResolvedValue(ok({ qr_token: 'qr-token-abc123', operation_count: 2 }))
     mockRecordPrint.mockReset().mockResolvedValue(ok({ print_count: 1 }))
+    mockRevokeQrToken.mockReset().mockResolvedValue(ok({ order_id: 'order-uuid-1', qr_token: null, revoked: true }))
   })
 
   it('渲染头部信息：加工单号/订单号/状态/交期 + 进度百分比', async () => {
@@ -259,5 +278,106 @@ describe('加工单生产明细页', () => {
     expect(placeholder.textContent).not.toContain('请先在订单详情生成加工单')
     // 指引指向本页的补生成工序（同一修复面的正向判据）
     expect(screen.getByTestId('production-instantiate-button')).toHaveTextContent('补生成工序')
+  })
+
+  // ── PG-019（#4240 前端半边）：撤销二维码入口（真值源 §1「token 化、可撤销」）──
+
+  it('#4240 有二维码 + 有 processing:manage：入口可达，点开只弹二次确认（未确认不发请求）', async () => {
+    render(<ProductionDetailPage />)
+
+    await waitFor(() => expect(screen.getByTestId('task-card-qr')).toBeInTheDocument())
+    const entry = screen.getByTestId('production-revoke-button')
+    expect(entry).toHaveTextContent('撤销二维码')
+
+    await userEvent.click(entry)
+
+    // 二次确认弹窗出现（口径：真值源 §1 撤销是安全相关写操作，避免误触作废已打印纸件）
+    expect(await screen.findByRole('dialog', { name: '撤销二维码' })).toBeInTheDocument()
+    // **未确认 ⇒ 一个请求都不许发**（红证：去掉确认直接调端点 ⇒ 本条必红）
+    expect(mockRevokeQrToken).not.toHaveBeenCalled()
+  })
+
+  it('#4240 弹窗点「取消」：关窗且不发请求', async () => {
+    render(<ProductionDetailPage />)
+
+    await waitFor(() => expect(screen.getByTestId('task-card-qr')).toBeInTheDocument())
+    await userEvent.click(screen.getByTestId('production-revoke-button'))
+    await screen.findByRole('dialog', { name: '撤销二维码' })
+
+    await userEvent.click(screen.getByTestId('production-revoke-cancel'))
+
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: '撤销二维码' })).not.toBeInTheDocument())
+    expect(mockRevokeQrToken).not.toHaveBeenCalled()
+    // 入口保留（可再次发起）
+    expect(screen.getByTestId('production-revoke-button')).toBeInTheDocument()
+  })
+
+  it('#4240 确认撤销：按 orderId 调 revoke → 刷新回占位态 + 可见「已撤销」反馈 + 入口消失', async () => {
+    mockGetOrderOperations
+      .mockResolvedValueOnce(ok(OPERATIONS))
+      .mockResolvedValue(ok(OPERATIONS_REVOKED))
+    render(<ProductionDetailPage />)
+
+    await waitFor(() => expect(screen.getByTestId('task-card-qr')).toBeInTheDocument())
+    await userEvent.click(screen.getByTestId('production-revoke-button'))
+    await screen.findByRole('dialog', { name: '撤销二维码' })
+    await userEvent.click(screen.getByTestId('production-revoke-confirm'))
+
+    // 生产端点一律走**订单 id**（不是加工单号），与既有 instantiate/print 同口径
+    await waitFor(() => expect(mockRevokeQrToken).toHaveBeenCalledWith('order-uuid-1'))
+
+    // 撤销后刷新数据 ⇒ 任务卡二维码回到占位态（旧码在页面上不再出现）
+    await waitFor(() => expect(screen.getByTestId('task-card-qr-placeholder')).toBeInTheDocument())
+    expect(screen.queryByTestId('task-card-qr')).not.toBeInTheDocument()
+    // 占位文案要说清为什么没码（不能仍指向不存在的「补生成工序」按钮）
+    expect(screen.getByTestId('task-card-qr-placeholder').textContent).toContain('已撤销')
+
+    // 可见反馈（屏幕上的「已撤销」提示，不是仅 toast）
+    const notice = screen.getByTestId('production-revoke-success')
+    expect(notice).toBeVisible()
+    expect(notice).toHaveTextContent('已撤销')
+    expect(notice).toHaveTextContent('旧码')
+    // 已无可撤销对象 ⇒ 入口收起（防对空 token 重复撤销）
+    expect(screen.queryByTestId('production-revoke-button')).not.toBeInTheDocument()
+  })
+
+  it('#4240 权限显隐：无 processing:manage（客服）时入口不渲染（有二维码也不渲染）', async () => {
+    mockUseAuthStore.mockReturnValue({
+      user: { id: 'u-2', name: '客服小王', roles: ['customer_service'], permissions: ['order:list'] },
+    })
+    render(<ProductionDetailPage />)
+
+    // 页面数据照常加载（工序/二维码都在）—— 挡住的只是写入口
+    await waitFor(() => expect(screen.getByTestId('task-card-qr')).toBeInTheDocument())
+    // 红证：去掉显隐判断（无条件渲染按钮）⇒ 本条必红
+    expect(screen.queryByTestId('production-revoke-button')).not.toBeInTheDocument()
+    // 其它入口不受影响（打印任务卡沿用类级 order:list 口径，仍可见）
+    expect(screen.getByTestId('production-print-button')).toBeInTheDocument()
+  })
+
+  it('#4240 无二维码（qr_token 为空）：不渲染撤销入口（无可撤销对象）', async () => {
+    mockGetOrderOperations.mockResolvedValue(ok({ ...OPERATIONS_REVOKED, positions: [] }))
+    mockGetPiecework.mockResolvedValue(ok({ total: 0 }))
+    render(<ProductionDetailPage />)
+
+    await waitFor(() => expect(screen.getByTestId('production-header')).toBeInTheDocument())
+    expect(screen.queryByTestId('production-revoke-button')).not.toBeInTheDocument()
+  })
+
+  it('#4240 撤销失败：弹窗内可见错误提示，不误报成功，入口保留（可重试）', async () => {
+    mockRevokeQrToken.mockRejectedValueOnce(new Error('403 Forbidden'))
+    render(<ProductionDetailPage />)
+
+    await waitFor(() => expect(screen.getByTestId('task-card-qr')).toBeInTheDocument())
+    await userEvent.click(screen.getByTestId('production-revoke-button'))
+    await screen.findByRole('dialog', { name: '撤销二维码' })
+    await userEvent.click(screen.getByTestId('production-revoke-confirm'))
+
+    await waitFor(() => expect(screen.getByTestId('production-revoke-error')).toBeInTheDocument())
+    expect(screen.getByTestId('production-revoke-error')).toHaveTextContent('撤销二维码失败')
+    // 失败不得走到「已撤销」反馈，也不得把二维码改成占位态
+    expect(screen.queryByTestId('production-revoke-success')).not.toBeInTheDocument()
+    expect(screen.getByTestId('task-card-qr')).toBeInTheDocument()
+    expect(screen.getByTestId('production-revoke-button')).toBeInTheDocument()
   })
 })

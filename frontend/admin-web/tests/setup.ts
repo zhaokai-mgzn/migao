@@ -258,4 +258,6 @@ vi.mock('lucide-react', () => ({
   // issue #4203/#4202: 生产管理菜单组 + 补生成工序按钮新增图标（ClipboardCheck 已在上面登记）
   Factory: iconStub('factory'),
   Wrench: iconStub('wrench'),
+  // issue #4240: 生产明细页「撤销二维码」入口新增图标
+  ShieldOff: iconStub('shield-off'),
 }))
