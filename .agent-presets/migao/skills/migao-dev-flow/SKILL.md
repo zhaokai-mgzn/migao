@@ -1,6 +1,6 @@
 ---
 name: migao-dev-flow
-version: 1.33.0
+version: 1.34.0
 # ⚠️ YAML 纯标量陷阱 + 本仓库取舍（v1.21，2026-09-15 实证）：
 # `description` 是 YAML **纯标量** ⇒ 解析在第一个「空白 + `#`」处**截断**（`#` 起被当成注释起始），
 # 其余内容**静默丢失** —— 「文件里写了」≠「加载器读到了」（与「注释漂移 = 假绿来源」同族，但更隐蔽）。
@@ -33,7 +33,7 @@ description: MIGAO 项目开发提效流程固化 — 开发、验证、提交�
 
 | 工具 | 用途 | 何时用 |
 |---|---|---|
-| `./verify-all.sh quick/full/gate` | 三模块一键测试 + QA gate 预检 | 每次改动后、提交前 |
+| `./verify-all.sh quick/full/gate` | 三模块一键测试 + QA gate 预检；**gate 档**在变更集命中受管用例面（`.github/cases/**` / case-trust 账本 / `eval_cases.py` / `mibao-verification-cases.md`）时**额外**跑 cases 面门禁（Case Trust / Case Contract / 生成物新鲜度，**同脚本同参数调用、不复制规则**），**未命中 ⇒ 显式打印「未跑」**（"没跑"必须长得像"没跑"，**不是通过**）；残余未覆盖（Case Trust 的 L0 守卫单测 / 追踪单状态查询 / pr-check 其它 job）打 `::warning::`（**#4221**） | 每次改动后、提交前 |
 | `./contract-check.sh` | 三端契约一致性（字段名/状态枚举/端点） | 并行改动、跨模块改动后 |
 | `./check-ui-regression.sh` | UI 回退检测（neutral token vs origin/main） | **提交前必跑** |
 
@@ -72,6 +72,12 @@ description: MIGAO 项目开发提效流程固化 — 开发、验证、提交�
 > 这不是吹毛求疵：本会话中一个包按"提交前"跑 ② 得到 ✅，`git commit` 后同一条命令变 ❌
 > （新增测试里的 `assert x is not None` 被判弱断言），CI 直接红。形态属
 > `migao-acceptance`「空跑」——**绿了但没跑**。同理 `quick` 不受影响（它跑的是真实测试）。
+>
+> **② 还含一层「cases 面门禁」**（v1.34 / **#4221**）：变更集命中受管用例面 ⇒ **额外**跑
+> Case Trust / Case Contract / 生成物新鲜度（**同脚本同参数**，见 `verify-all.sh` 的 `cases_face_gate()`），
+> 任一非零 ⇒ gate 非零；**未命中 ⇒ 控制台显式打印「未跑」** ——
+> 与 ② 同因，该判定**只读已提交 diff** ⇒ 用例改动未 commit 时它是「未跑」而非「通过」，故仍在 commit 后跑。
+> 残余未覆盖项（Case Trust 的 L0 守卫单测 / 追踪单状态查询 / pr-check 其它 job）打 `::warning::`；**CI 仍是权威**。
 
 ### 2.2 红线（踩过的高频坑，禁止违反）
 - **禁止 `git add -A` 盲目提交**：工作区长期积压的未提交改动（尤其旧版 UI）会覆盖 main 上已验收的版本。提交前先 `git status` 检查积压，**逐个确认** UI 文件不是旧版。
@@ -84,7 +90,15 @@ description: MIGAO 项目开发提效流程固化 — 开发、验证、提交�
   4. 多分支并行验证用 `./scripts/dev-worktree.sh add <branch>`（独立工作区，切换零污染），**禁止反复 checkout 切分支**；
   5. 定期清理：`git branch --merged origin/main` 全删；`git cherry origin/main <branch>` 全 `-` 表示内容已落地可删；无独有提交的分支直接删。
 - **新增/修改测试必须带 `# case_ids: OR-xxx`** 注释头（按域：OR 订单/AS 售后/PR 商品/FN 财务/CU 客户/DA 看板/UI 前端），否则 QA Growth Gate 会 block 合并。
-  - **硬约束：`# case_ids:` 必须出现在测试文件前 50 行内**（`growth_gate.py:extract_case_ids()` 只扫前 50 行；docstring 长的文件极易踩——实证：`# case_ids:` 落在第 71 行即被 QA Gate 判「未声明」block，须移到文件头或第 1 行）。
+  - **硬约束 A（位置）：`# case_ids:` 必须出现在测试文件前 50 行内**（`growth_gate.py:extract_case_ids()` 只扫前 50 行；docstring 长的文件极易踩——实证：`# case_ids:` 落在第 71 行即被 QA Gate 判「未声明」block，须移到文件头或第 1 行）。
+  - **硬约束 B（形态，v1.34 / #4239）：只认「注释起始的声明行」且「首个命中即停」** ——
+    正则 = `^\s*(#|//|\*)\s*case_ids\s*[:=]\s*\[?(...)\]?`（`#` / `//` / JSDoc 块注释续行 ` * ` 三种注释形态），
+    **不再全文累积**。⇒ **docstring / 正文里「提及」`case_ids:` 不算声明**：
+    旧实现用 `search` 全文累积时，「提及」= 「声明」（假红：合规 PR 被判「声明了不存在的用例 ID」；
+    假绿：一个真声明都没有的文件被判「已声明」⇒ 门禁**根本失效**）。
+    ⇒ **旧时代「靠改措辞规避门禁」的 workaround 已失效，不要再教**；同一文件**声明两次**时只有**第一处**生效
+    （第二处会被遮蔽，实证 `test_after_sales_manage.py` 合并为单一声明行）。
+    判据源 `.github/growth_gate.py` 的 `extract_case_ids()`；守卫 `tests/unit_ci_workflows/test_growth_gate_case_ids.py`。
 - **测试文件路径**：前端组件测试放 `tests/unit/components/<Name>.test.tsx`（gate 模板不递归子目录，勿放 `orders/` 子目录）。
 - **PR body 必写 `Closes #<issue号>`**（v1.4 新增，2026-09-05 治理固化）：GitHub 只在 PR **body** 含 `Closes/Fixes/Resolves #xx` 关键词时自动关闭 issue，**标题里的「(issue #xx)」不生效**。不写 = 修复合并了 issue 还挂着，全靠人回头对账（实证：9-05 存量 12 个 open issue 里 8 个已修复未关闭）。创建 PR 时在 body 首行写 `Closes #xx`；无 issue 关联的基建类 PR 标 `N/A（基建）`。CI 有 `pr-issue-link` 检查（见 §3），漏写会打 `needs-issue-link` 标签提醒。
 - **要表达「不关某 issue」时，绝不能把关键词写在 issue 号前**（v1.19 新增，2026-09-15 实证误关）：`close-linked-issues.yml` 用**朴素 grep 正则** `(close|closes|closed|fix|fixes|fixed|resolve|resolves|resolved)[[:space:]]*#[0-9]+` 扫 body，**否定句照样命中**——写成「不 `Closes #3559`（保持 OPEN）」会在合并后**秒级误关**该 issue；更麻烦的是该工作流的**定时对账会对近 48h 合并的 PR 反复重扫当前 body**，措辞不改就**反复误关**。
@@ -99,6 +113,16 @@ description: MIGAO 项目开发提效流程固化 — 开发、验证、提交�
   - 关联**已 CLOSED** 的 issue（如"实现 #3709 的收口要求"）**不要**写 `Closes`——用「关联 #NNNN」
     这类不带关键词的措辞；否则每轮对账都会拿到一条"该关却没关成"的无效目标（#3559 家族）。
   - 误关后：重开 issue + 同时改写 body（否则下一轮对账再关一次）。
+- **「全绿却 BLOCKED」⇒ 首查未解决评审线程**（v1.34 / **#4231**）：main 的分支保护开了
+  `required_conversation_resolution` ⇒ **机器人留下的、且已被后续提交解决的**评审线程
+  （`isOutdated=true` 但 `isResolved=false`）会**永久卡合并，且没有任何检查会变红**
+  —— 危险处正是「全绿却合不了」会把排查引向 CI / 冲突 / label（#4218 实测：21 pass / 0 fail、
+  `mergeable=MERGEABLE`、labels 空、auto-merge 已启用，却 25 分钟不合；手动 resolve 后 **46 秒**自动合并）。
+  锚点命令 = `python3 scripts/resolve_stale_bot_threads.py <PR>`（三态 `0/1/3`；**默认 dry-run（只读）**，
+  `--apply` 才写；`3` = 无法判定，**不得当 `0` 读**）。
+  它**只** resolve「未解决 + bot + `isOutdated`」，**人类线程永不自动 resolve**
+  （`required_conversation_resolution` 对**人类**评审线程是有价值的护栏 —— **不要**关掉它）。
+  workflow 级自动化 (a)/(b) 因本机 token **无 `workflow` scope** 属**保留类**（不改任何 workflow）。
 
 ### 2.3 多会话并发规范（v1.3 新增，2026-09-04 实战固化：多 DSH 会话并行踩脚治理）
 
@@ -159,6 +183,9 @@ gh run rerun $run --failed
 - agent 创建 PR 后**不需要等人工合并**——CI 绿即自动合；合并后 issue 因 body 的 Closes 自动关闭，形成「PR→合并→issue 关闭」全自动闭环。
 - 三个兜底闸门：bot PR（dependabot 需人工按 §7 SOP 分类）、`block/merge` 标签（人工闸）、draft PR 不自动合。
 - 强制人工合并的例外：改 `.github/workflows/` 的 PR 需 `workflow` scope（默认 token 无），按 §7.1 保留类处理。
+- **「全绿却 BLOCKED」不是 CI 问题**（v1.34 / **#4231**）：CI 绿 + `MERGEABLE` + 无阻塞 label 而
+  `mergeStateStatus=BLOCKED` ⇒ 按 §2.2 首查**未解决评审线程**
+  （`python3 scripts/resolve_stale_bot_threads.py <PR>`），**别**去重跑 CI / 查冲突 / 查 label。
 
 ### 3.4 测试要求按变更文件类型（QA Growth Gate 门禁）
 
@@ -232,6 +259,7 @@ cd .github && python3 render_cases.py --cases cases --out-eval /tmp/ec.py --out-
 | **shallow clone 无共同祖先** | `git merge-base` 失败、merge 报 unrelated histories | `git fetch --deepen=300 origin main` 后重试 |
 | **UI 视觉问题排查** | 页面白屏/不渲染 | 三步定位：① spec 加 `page.on('pageerror')`/`console` 打印重跑 ② 下载 `xiaobu-visual-diffs` artifact 看 trace/截图（像素分析判断纯白）③ 对比本地构建产物（`grep process` 等） |
 | **本地 .env 云库地址泄漏进单测**（issue #2957，2026-09-06） | 本地 pytest 从分钟级恶化到小时级（`verify-all.sh quick` 实测 58min 跑不完），CI 却 1-3 分钟正常 | 根因：本地 `.env` 的 DATABASE_URL/REDIS_URL 指向阿里云 RDS/Redis **公网地址**，单测未 mock 的存储调用（SessionStateStore/SessionMemory/context_manager）真实连接云库，每用例挂起/超时数十秒。修复：`tests/conftest.py` 顶部 `os.environ.setdefault("DATABASE_URL"/"REDIS_URL", localhost)`——setdefault 不覆盖 CI 注入的真实 env（环境变量优先级高于 .env 文件），单测内未 mock 连接毫秒级拒绝走降级。**判断信号：本地慢、CI 快 = 环境差异（.env/依赖），不是业务代码** |
+| **测试产物用「全局通配」定位 / 清理**（issue #4158，2026-09-18） | `/tmp/verify-all-*-*.log` 这类**跨进程通配**：清理时会删掉**别的会话 / 别的 worktree 正在用**的日志 ⇒ **跨会话假红**（issue 载**三路执行者独立撞到**）；`<PID>` 通配定位还会因 **PID 复用**读到别的会话的同前缀残骸；日志被外部清理器删掉则退化成**空 glob 断言**或裸 `FileNotFoundError`（看不出该找什么、找过哪些路径） | **产物路径必须由被测系统给出，或限定在测试自己的临时目录**（`tmp_path` / `TMPDIR` + 唯一前缀）；🔴 **禁止 `/tmp/verify-all-*-*.log` 这类全局通配清理**（清理收窄到 **`$$` 作用域**）；定位失败必须**明确报红 + 打印全现场**（期望路径模式 / PID / 实际命中 / 被排除的残骸清单 / 控制台原文 / 处置线索），**不得**空跑 —— 形态同 `migao-acceptance`「空跑：绿了但没跑」。**已落码**：单一实现 `tests/unit_ci_workflows/test_verify_all_log_scope.py` 的 `run_gate()`（PID 通配 ∩ **归属过滤**＝运行前快照 + mtime 窗口；定位不到 ⇒ `VerifyAllLogNotFound` + 全现场），静态清理口径守卫 + 行为判据 ⑨⑩ 同在该文件 |
 
 ## 9. 本地验证防恶化（v1.5 新增，2026-09-06 issue #2957 复盘固化）
 
@@ -519,6 +547,17 @@ python3 scripts/xiaobu_coverage.py && python3 scripts/mibao_coverage.py
   但列表不刷新、不跳转，用户看不到结果）；
 - 范例：`frontend/admin-web/tests/unit/pages/knowledge.test.tsx` 的
   「套用后可见可编辑」「采纳后可见可编辑」两个用例（断言跳转 + 列表刷新 + 卡片可见 + 编辑弹窗回填）。
+- **判据自身的三条纪律**（v1.34 / **#4226**；商家冒烟套件实证 —— 判据坏了**没有任何东西会变红**）：
+  1. **不猜标识前缀**：单号 / ID 按**形态**取（如 `[A-Z]{2}-\d{8}-\d+`）并**限定在它该出现的容器内**
+     （如加工单块），**禁止**写 `PO-` / `PG-` 这类**白名单前缀**正则（实测真实前缀是 `JG-` ⇒ 该判据**恒假** = 空断言）；
+     也**不得**"全页按形态取号"（会命中同页别的单号）—— 两个极端都是假绿。形态正则**左右边界**要钉死
+     （`ORD-…` 会被"错开一位"命中成 `RD-…`）。
+  2. **豁免必须结构化**：按 `response.status() === 404` 这类**结构化事实**收集豁免，
+     **禁止**"**消息文本**含 404 就豁免"（旅程**自身**抛出、文案里恰好带 404 的错误会被一并豁免 = 假绿）。
+  3. **等元素，不定长 sleep**：用 `waitFor({state:'visible'})` 这类等待（超时返回 false 并参与判定），
+     **禁止**"定长 sleep + 单次 `isVisible()`"（偶发不可见 ⇒ 假红淹没真回归，并让下游旅程被守卫阻断）。
+  判据抽成**纯函数**以便独立验证（可执行判据级红证，不必起真栈）：`scripts/ui-smoke-merchant/criteria.mjs`
+  + `criteria.test.mjs`（`node:test`，零新依赖）；静态守卫 `tests/unit_ci_workflows/test_ui_smoke_criteria_trust.py`。
 
 ### 15.2 真实浏览器旅程验证（本地起服务走查，不能只靠 vitest）
 
@@ -587,6 +626,18 @@ const vision = await agent(
 
 **实证**（issue #3080）：确认弹窗按钮组（footer 重复按钮修复）/采纳高亮行/来源筛选
 三组视觉判定均由 GLM-5.3-Flash 读图完成，与 DOM 断言互证。
+
+> ⚠️ **视觉基线的新鲜度**（v1.34 / **#4249**）：把**构建与起服务混写**进 `webServer.command`
+> （`npx taro build … ; python3 -m http.server …`）+ 本地 `reuseExistingServer: true`
+> ⇒ 只要端口上**已有服务在听**，Playwright 就**整条命令一步都不执行（含构建）** ⇒ 服务旧 `dist/`
+> ⇒ `--update-snapshots` 报绿而基线被写成**旧画面**，**没有任何东西会变红**
+> （错基线提交后**真实回归被永久放行**；与 §18.5「账本/生成物新鲜度」同族：读的是快照，当成现值用）。
+> **判据**：**构建绝不写进 `webServer.command`**（构建放**配置加载期**，早于 webServer 启动）
+> + `reuseExistingServer: false`（端口被占就**报错退出**，不静默复用）+ **产物新鲜度护栏**
+> （判据用**内容指纹**，**不依赖 mtime**；构建失败必须**带出构建输出**，禁止 `>/dev/null 2>&1` 吞掉）。
+> **已落码**：`tests/xiaobu_dist_freshness.py`（H5 侧的 `assertDistFresh` 等价物，三态 `0/1/3`；
+> `dist/.build-stamp.json` 记源码 + dist 指纹，起服务前校验；本地 `ensure` / CI `check`）
+> + `tests/playwright.xiaobu.config.ts`；守卫 `tests/unit_ci_workflows/test_xiaobu_h5_dist_freshness.py`。
 
 ### 15.6 E2E 选择器优先级（2026-09-14 由原独立技能收敛并入）
 
@@ -880,7 +931,7 @@ completion_verdict ✅ + 双裁判无未裁定分歧；运行期只 smoke/抽样
 
 #### 结论的构成与读法（v1.29 新增，2026-09-15 实证固化）
 
-**判据（读 summary 的 `completion` 字段，一行即可自查）**：`ok = 五类阻塞桶全空`，**不是**"还有没有
+**判据（读 summary 的 `completion` 字段，一行即可自查）**：`ok = 六类阻塞桶全空`，**不是**"还有没有
 产品缺陷"这一个问题。逐桶判据与实测取值（判定跑 `34908262839` 的两条腿，读 artifact
 `eval-summary-mibao.json` / `eval-summary-xiaobu.json` 的 `completion`；改动前后都可能漂 ⇒ **数字用
 命令自证，别照抄本节**）：
@@ -892,6 +943,7 @@ completion_verdict ✅ + 双裁判无未裁定分歧；运行期只 smoke/抽样
 | `systemic_recurrence` | 跨 run **首跑指纹**复发（fail-closed，**收紧后仍压 `ok`**） | mibao `OR-014` / `PG-016` / `PP-001` / `PR-017` |
 | `restore_failures` | 前置未复位（`restore` 含 `PRECONDITION_NOT_RESTORED`）—— 污染的是**共享资源** | `[]` |
 | `harness_incompatible_failures` | 夹具/用例形状不兼容 —— 判红照旧阻塞，但**归因单列**、不进"产品确定性回归"清单 | `[]` |
+| `case_asset_failures` | `precondition_not_applied` 族（`pre_clean` 未应用 / 运行期前置漂移）—— 该用例本次红/绿**无判别力**（runner 原文：**不可归因于 agent 行为**），但**仍阻塞**，且**不再进**上面前三桶 | `[]` |
 
 - **放行集当前只有 `llm-noise`**（= 首败 + 新 session 重试**通过**；`unstable` 已不再放行，
   `migao-acceptance` v1.6 与 `_COMPLETION_RELEASED_CLASSES` 同源）。放行 ≠ 通过：它进
@@ -900,8 +952,15 @@ completion_verdict ✅ + 双裁判无未裁定分歧；运行期只 smoke/抽样
   实测：`34908262839` 判定 `ok=false`，其构成为 **2 条用例资产缺陷**（`PG-013` 双重假红 / `CU-003`
   真值三处错误，见 **#3833** / **#3832**）+ **4 条原被放行的系统性缺口现形**；
   **两类都不该记成"当批改动引入的产品 bug"**。
-- ⚠️ **别把它简化成"三类"**：真值（代码）是**五类**（上表全列）。只列 `deterministic / journey /
-  systemic` 会把 `restore_failures` / `harness_incompatible_failures` 两条**真阻塞**漏在视野外。
+- ⚠️ **别把它简化成"三类"**：真值（代码）是**六类**（上表全列）。只列 `deterministic / journey /
+  systemic` 会把 `restore_failures` / `harness_incompatible_failures` / `case_asset_failures`
+  三条**真阻塞**漏在视野外。
+- **"前置不成立"不是 agent 的红**（v1.34 / **#4245**）：`case_asset_failures` 桶治的是**归因错人** ——
+  该族原被折进 `deterministic_failures`（"agent/产品的确定性回归"，实测 `PR-016`）或
+  `systemic_recurrence`（"跨 run 复发"，实测 `PR-008`）⇒ 读的人去查 agent 行为。
+  判据源 `tests/agent_eval/local_runner.py` 的 `completion_verdict` / `precondition_not_applied_fact`
+  （**复位族** `PRECONDITION_NOT_RESTORED` **不在**本族，它已有 `restore_failures`）；
+  判据与放行政策**同源**写在 `migao-acceptance`「结论档机器判定」节，此处不重复表述。
 - **收紧判据后失败数上升 = 设计效果**（同节「口径收紧后怎么读变红」）：拿**同一批用例**在
   **收紧前**的判定跑当对照基线（锚定 SHA + 逐桶条数），把「本次新引入」与「原本被放行的缺口现形」
   **分开标注**，**不得**归因当批改动 —— 这条纪律**就是**上一条实测的产物。
@@ -1237,6 +1296,15 @@ diff -q /tmp/ec.py tests/agent_eval/eval_cases.py \
   **不得**只看上面那两个文件就宣称"账本新鲜"。
 - **反面教材**：跨 run flake 索引（#3806）曾是**死代码 + 假夹具守卫** ⇒ **历史放行依据本身是错的**
   （曾把真产品缺陷判成 `llm-noise` 放行）。**放行依据也要有新鲜度**。
+- **对账脚本自己的「唯一合法出口」也不能崩**（v1.34 / **#4247**）：`refs-are-fixtures` 例外
+  （`# drift-audit: refs-are-fixtures`，`tests/**` 专用）在「**同文件里有已入基线的引用条目**」时
+  曾抛 `KeyError` —— 门禁侧回的是**展开码**（`…|bare × 1`），清单的键是**原键**（`…|bare`），
+  键形对不上；后果是**该文件一加 marker 就 traceback 取代结论**（唯一出口"用就崩"，等于没有出口）。
+  已修：键形映射显式化（`_codes_of` 加 `{len(key)}:` 前缀 + `_collapse_code` 结构性逆映射）；
+  万一归位再失败则 **fail-closed 报出该条 stale**（不再抛），提示里打**键形差异** +
+  重生成命令。判据源 `scripts/drift_audit.py` 的 `reconcile_baseline` / `_collapse_code`
+  （守卫 `tests/unit_ci_workflows/test_drift_audit_reconcile.py`）。**核法**：给带引用条目的文件加 marker 后，
+  对账必须产出**可行动的 stale 报告**（含"移除或收窄 + 重生成命令"），**不是** traceback。
 
 ### 18.6 环境静默**即缺陷**（不是"这个套件一直红"）
 
@@ -1326,9 +1394,9 @@ dispatch 部署 ⇒ 容器重建产生 **1~3 分钟**的 502 窗口；一次活�
 
 | # | 范式 | 判据（一句话，可执行） | 落码锚点 | 现状 |
 |---|---|---|---|---|
-| 1 | **单一真相源与不可变引用** | 真值只读 `git show origin/main:<path>`；引用吃符号不吃行号；定位被测对象只用不可变键 | **§18**（18.1~18.8；18.5 的 `pre_clean` 渲染一格随 `#3836`） | **部分落码**（`pre_clean` 账本渲染 1 格）；**统一审计 `scripts/drift_audit.py` 未落码** |
-| 2 | **断言可信度**（假红 / 假绿的结构性护栏） | 写类用例 ≥1 条效果层断言；有自清理或命名空间且点名可解析；散文禁令不单独承重；单端用例标 persona | **§19.1**（判据源）；`.github/case_trust_gate.py` + `.github/assertion_taxonomy.py` + 基线 `.github/case-trust-baseline.json` + 未实装登记 `.github/case-trust-unimplemented.json` + `pr-check.yml` 的 `Case Trust Gate (断言可信度)` job（**#3842**） | **已落码**（门禁 + 基线 + 未实装登记齐全） |
-| 3 | **结论的构成与读法** | `ok` = 五类阻塞桶全空；结论须按桶分解；收紧口径后"新引入"与"原放行现形"分开标注；每条失败有归因；不越证据等级 | **§16.7「结论的构成与读法」** | **已落码**（`local_runner.completion_verdict` 输出 `completion` 五桶 + `run_key`；读法本身是纪律） |
+| 1 | **单一真相源与不可变引用** | 真值只读 `git show origin/main:<path>`；引用吃符号不吃行号；定位被测对象只用不可变键 | **§18**（18.1~18.8；18.5 的 `pre_clean` 渲染一格随 `#3836`、`drift_audit` 的 `refs-are-fixtures` 例外随 **#4247**） | **部分落码**（`pre_clean` 账本渲染 1 格 + `reconcile_baseline` 键形归位）；**统一审计 `scripts/drift_audit.py` 未落码** |
+| 2 | **断言可信度**（假红 / 假绿的结构性护栏） | 写类用例 ≥1 条效果层断言；有自清理或命名空间且点名可解析；散文禁令不单独承重；单端用例标 persona；**`[backend-contract]` 用例的计分通道 = `traces.tests`**（非空且引用文件真实存在 ⇒ a1/a2 分流不报，其余规则一字不放宽） | **§19.1**（判据源）；`.github/case_trust_gate.py` + `.github/assertion_taxonomy.py` + 基线 `.github/case-trust-baseline.json` + 未实装登记 `.github/case-trust-unimplemented.json` + `pr-check.yml` 的 `Case Trust Gate (断言可信度)` job（**#3842**；计分通道分流 **#4244**） | **已落码**（门禁 + 基线 + 未实装登记齐全） |
+| 3 | **结论的构成与读法** | `ok` = **六类**阻塞桶全空（含 `case_asset_failures`）；结论须按桶分解；收紧口径后"新引入"与"原放行现形"分开标注；每条失败有归因；不越证据等级 | **§16.7「结论的构成与读法」** | **已落码**（`local_runner.completion_verdict` 输出 `completion` **六桶** + `run_key`；`case_asset_failures` 随 **#4245** 落码；读法本身是纪律） |
 | 4 | **fencing（结论绑定版本）** | 结论绑定 `(sha, tier, case_ids, cases_fingerprint, policy_version)` + 环境指纹/种子哈希；版本一动结论失效 | **§17.4「结论的 fencing」**（`run_key` 是其机读形态） | **部分落码**：`run_key` 由 runner 写出（可引用）；"不得套用旧结论"为纪律，无门禁 |
 | 5 | **静默失败即缺陷** | 调 issue API 的 workflow 必须声明 `issues: write`（PR 评论可用 `pull-requests: write`），否则 fail-closed 判红 | **§18.6 + §18.6.1**；`tests/unit_ci_workflows/test_workflow_issue_permissions.py`（**#3838**）；心跳检查 | **部分落码**：权限守卫已落码；**心跳检查未落码**（人工检查 + 开单） |
 | 6 | **归因纪律** | 归因强度匹配证据强度；双侧禁令（不为脱罪归评测侧 / 不为显严格硬归产品）；跨 run ≠ 同因；独立复核可推翻主会话初判 | **`migao-acceptance`「归因纪律（v1.10 新增）」**；（§16.7 的「每条失败必须有归因」是同一族的运维侧形态，不重复展开） | **仅纪律（未落码）** |
@@ -1338,6 +1406,7 @@ dispatch 部署 ⇒ 容器重建产生 **1~3 分钟**的 502 窗口；一次活�
 | 10 | **worktree 预设快照 / `git add -A` 静默回退** | 动 `.agent-presets/**` 的 PR 必须核**版本不降级**；`git diff --cached -- .agent-presets/` 出现版本回退 ⇒ 拒绝提交 | **§2.3 第 7 条**（含命令）/ **§19.2 ②** | **仅纪律（未落码）**（`dev-worktree.sh` 实测**不刷新也不排除** `.agent-presets/`） |
 | 11 | **不写死易变数字** | 只给**检索命令** + `@<sha>` 限定的实测值；引用数字必须**连命令一起给** | **§19.2 ③**（反例：同一量先写 **14** 实测 **13**、先写 **19** 实测 **11**）；正例见 **§18.6** 的"命令自证，别记数字" | **仅纪律（未落码）**（无扫描；属编写规范） |
 | 12 | **批量修复的防复发纪律（R1~R7）** | 修机制不修事故点（同类 ≥2 ⇒ 修机制）/ 负例证据 / 失败集只许收敛 / 禁止新增豁免 / 禁止新增静默失效形态 / 净变更量 `app/**` ≤0 / 前提必须新鲜 | **§20**（判据表）；机械入口 `scripts/batch-integrate-check.sh`（**#4023**） | **部分落码**（R6/R4/R5/R2/R7 已落码；**R1/R3 未落码**——见脚本头部登记） |
+| 13 | **豁免账本按类分流（增长判据不许只看总数）** | `skip_total` **不作增长分母**；增长只判**债务类**（`debt_skip_ids`/`debt_skip_total`，**只许缩**）；`[backend-contract]` 单列**只增**合规清单 `backend_contract_ids`（其 `skip_reason` 是 runner 侧分隔符、设计上不进 agent-eval ⇒ 新增该类合规用例**无需**重锚定）；`_when_to_update` 与门禁例外条款**口径合一**（`history` 末行带显式 note 的锚点前移是**唯一**例外） | `.github/skip-exemption-baseline.json` 的 `_scope` / `_when_to_update` / `debt_*` / `backend_contract_ids` 字段；守卫 `tests/unit_ci_workflows/test_skip_exemption_gate.py`（**#4233**） | **已落码**（判据 = 该文件字段 + 守卫测试，随 pr-check 的 `ci workflow helper unit tests` job 跑） |
 
 > **表的使用方式**：判据在**落码锚点**那一格的文件/脚本/技能节里；本表**不复述**判据正文。
 > 「现状」列**照实写** —— **未落码就是未落码**（同 §18 开头的警告：登记为纪律 ≠ 有人拦着你）。
@@ -1377,7 +1446,20 @@ dispatch 部署 ⇒ 容器重建产生 **1~3 分钟**的 502 窗口；一次活�
    判据 = 按工具集可判定为单端的用例，必须有 `persona:` 标注；
    **"配对"不能豁免跨腿窄跑**（§16.6 ② / **#3822**，此处只给指针，不重复表述）。
 
-**两条元规则（护栏自己的护栏）**：
+**a1 / a2 的适用范围 = 计分通道分流（v1.34 / #4244）**：规则 `CASE-TRUST-EMPTY-ASSERTION`(a1) 与
+`CASE-TRUST-NO-EFFECT-ASSERTION`(a2) 的**前提**是「该用例由 runner 计分」（`total_exp == 0 ⇒ score = 1.0`）。
+`[backend-contract]` 类用例**根本不进 agent-eval**（runner 侧按 `skip_reason` 过滤 ⇒ **未运行**，
+既不会绿也不会红），它们的**计分通道是 `traces.tests`**（Java / pytest）。豁免须**同时**满足两个条件
+（缺一即照旧报，防豁免被当万金油）：① **入口条件** = `skip_reason` 以 `[backend-contract]` 开头；
+② **结构性条件** = `traces.tests` **非空** 且引用**全部**真实存在（路径相对仓库根 `is_file()`）；
+`repo_root` 不传 ⇒ 存在性**无法校验** ⇒ **按未成立**处理（fail-closed）。
+⇒ 对这类用例**不再报** a1/a2（不再逼出「把散文改写成含 `error.code=` 形态、运行期零变化」的**纸面修复**）；
+**非**该类的纯散文用例**仍报**；**其余规则（自清理 / 前置自断言 / 单端 persona / 定位键 …）一字不放宽**
+—— 分流的是「**谁给它计分**」，不是「它免检」。
+判据源 `.github/assertion_taxonomy.py` 的 `is_backend_contract_case` / `backend_contract_scoring_channel`
+（基线据此**只删不加** prune 23 条误报；`case_trust_gate` 报告须打印分流读数，防静默豁免）。
+
+**三条元规则（护栏自己的护栏）**：
 
 - **存量基线只许缩短，并显式登记未实装项**：门禁对**存量**违规用
   `.github/case-trust-baseline.json` 放行（锚定 SHA + 逐条计数），**新增违规阻塞**；
@@ -1387,6 +1469,11 @@ dispatch 部署 ⇒ 容器重建产生 **1~3 分钟**的 502 窗口；一次活�
   `.github/case-trust-unimplemented.json`（当前 **5 条**：`PRECLEAN-UNKNOWN-TYPE` /
   `PRECLEAN-FAILURE-FOLD` / `CROSS-LEG-NARROW-RUN` / `ALL-CASES-PERSONA-ANNOTATED`（**有意不做**）/
   `PROSE-DATA-CHECK-QUALITY`；其中**2 条属 runner=T2** 侧能力）——「登记缺什么」比「写个恒真的检查」诚实。
+  **豁免账本的增长判据按类分流**（v1.34 / **#4233**，同族：别用总数当分母）：`skip_total` **不再作增长分母**；
+  增长只判**债务类**（`debt_skip_ids` / `debt_skip_total`，**只许缩**）；`[backend-contract]` 单列
+  **只增**合规清单 `backend_contract_ids`（设计上不进 agent-eval ⇒ 新增该类合规用例无需重锚定）；
+  `_when_to_update` 与门禁例外条款**口径合一**（`history` 末行带显式 `note` 的锚点前移是**唯一**例外）。
+  详版 = `.github/skip-exemption-baseline.json` 的字段 + `test_skip_exemption_gate.py`（§19 表的「豁免账本按类分流」行）。
 - **基于错误的真相模型写出的护栏 = 永远红或永远被豁免的空判据**：
   实证（本会话）：曾要求「`docs/wiki/DEV-FLOW.md` 与技能 `SKILL.md` **diff == 0**」作为"同步"判据 ——
   实测两者 **971 行 vs 230 行**、版本戳 **v1.3 vs v1.27** ⇒ **diff 永远非 0**，那条判据**永远红**，
@@ -1395,6 +1482,17 @@ dispatch 部署 ⇒ 容器重建产生 **1~3 分钟**的 502 窗口；一次活�
   **要么由权威源生成**（生成物 + 新鲜度 diff，§18.5），**要么撤回 claim**。
   **推论**：写任何护栏之前先问「**我据以判定的那个事实模型，本身是真的吗**」——
   模型错了，护栏越严格，越是在制造**永远红**（假红）或**永远豁免**（假绿）。
+- **红证本身也要有红证（缓存卫生）**（v1.34 / **#4260**）：**取红证的动作自己会骗人** ——
+  **同秒 + 同字节长度**的替换让 Python `.pyc` 头只记 `(mtime 秒, size)`、**两项都没变** ⇒
+  解释器**不重编译、复用旧 `.pyc`** ⇒ 注入**未生效**却读到旧值：**假绿证**（把本来有效的护栏
+  当"空断言"删掉/放宽）或**假红证 / 错归因**。**判据**：注入**前后都必须清缓存** + 用**内容指纹**
+  （`sha256`）自证注入/还原**真的生效**，**禁用 mtime / size** 判新鲜度（它们与载体无关地不可靠）；
+  锚点 = `python3 scripts/red_proof.py clear|fingerprint|injected|restored`（三态 `0/1/3`；
+  `--no-clear` 是诊断模式，**非零退出**）。⚠️ macOS 上 `.pyc` 可落在
+  `~/Library/Caches/com.apple.python`（`sys.pycache_prefix` / `PYTHONPYCACHEPREFIX`）⇒
+  仓库内 `rm -rf __pycache__` **可能是空操作**（却看起来"做了清缓存这件事"）。
+  同族载体：Java `.class` 增量编译 / JS / TS transform cache。**详版 = `docs/testing/test-engineering-standards.md` §8**。
+  **现状：未接 CI required check**（人工 / 取红证流程调用；自测红证 `tests/unit_ci_workflows/test_red_proof_guard.py`）。
 
 ### 19.2 交付与账本的新鲜度：三条"静默失效"的形状
 
@@ -1420,6 +1518,12 @@ dispatch 部署 ⇒ 容器重建产生 **1~3 分钟**的 502 窗口；一次活�
      **新的陈旧快照**，而**没有人会因此变红**（同族于 §18.5「账本里看不出来的字段 = 缺陷的盲区」）。
    - **正例**：§18.6 的「列出所有带定时的 workflow（**当前 13 个 —— 命令自证，别记数字**）」——
      给命令 + 就地标注"别记数字"，才是可维护的写法。
+   - **同族的第二种载体：注释 / docstring 里的数字与 `Test*` 标识符引用**（v1.34 / **#4259**）。
+     实证：类注释写死「30 道工序 + 6 条 部位×工艺 路线」，库已变成 **35 道 / 9 条**后**注释不会跟着变**
+     （读者按错数字理解代码）；docstring 里反引号引用的测试类名在仓内**零命中** ⇒ 读者会去找一个
+     **不存在**的东西。已落码守卫 = `tests/unit_ci_workflows/test_declaration_truth_guards.py`，
+     取**形态判据**（禁出现「N 道工序 / N 条…路线」形态；反引号引用的测试标识符必须**可在仓内解析**）
+     而非"与源码等值"，且**每条判据都带注入式自证**（在构造的缺陷载荷上必须报错 —— 否则主测试的绿只是空跑）。
    - **为什么这条属本节**：它和 ①② 是同一个病（**读者拿到的是快照，却当成现值用**），
      只是快照的载体从"分支内容"换成了"文档里印死的数字"。
 
@@ -1442,7 +1546,7 @@ dispatch 部署 ⇒ 容器重建产生 **1~3 分钟**的 502 窗口；一次活�
 
 **机械检查入口**：`./scripts/batch-integrate-check.sh <branch> [pr]`（批量 `--all b1 b2 …`）；R6/R4/R5/R2/R7 已落码，**R1/R3 未落码**（见脚本头部登记）。**尚未接 CI required check**——现为人工 / 集成环节调用，**不会自动拦人**。
 
-## 版本沿革（v1.1 → v1.30.1）
+## 版本沿革（v1.1 → v1.34）
 
 > 本节由 **v1.21** 从 frontmatter `description` **逐字迁入**（条目文本未改，仅加列表符号并按版本排序）。
 > 背景：frontmatter `description` 是 YAML 纯标量，会在第一个「空白 + `#`」处**静默截断** ——
@@ -1628,3 +1732,41 @@ dispatch 部署 ⇒ 容器重建产生 **1~3 分钟**的 502 窗口；一次活�
      指令（提示词/技能）约束，没有机械锁** —— 机械锁只能拦 workflow 触发面，拦不住 agent 主动
      `gh workflow run`。防这条的唯一现实手段是用户裁定 + 本技能口径；若再观察到自动派发，
      按「新增自动 LLM 花费」开单处理。
+- v1.34（2026-09-18 **同步本批「判据/门禁自身缺陷」的已落码口径**，本次）：本批 12 条
+  （**#4239 / #4245 / #4244 / #4233 / #4221 / #4260 / #4247 / #4231 / #4158 / #4259 / #4226 / #4249**）
+  此前只活在代码与 PR 描述里，**技能口径已过期或缺失** —— 本次把**已落码**的口径搬进本技能
+  （按 §20 纪律：**只写判据 + 指针，不写散文**）：
+  ① §2.2 case_ids 硬约束拆成 **A 位置 / B 形态**：只认**注释起始的声明行**且**首个命中即停**，
+  docstring / 正文里「提及」不算声明 ⇒ **旧时代"靠改措辞规避门禁"的 workaround 已失效，不要再教**（#4239）；
+  ② §16.7 桶表 + §19 表：`ok` = **六类**阻塞桶全空，新增 `case_asset_failures`
+  （`precondition_not_applied` 族 ⇒ 该用例红/绿**不可归因于 agent**、**仍阻塞**、**不再进**前三桶）（#4245）；
+  ③ §19.1 a1/a2 **计分通道分流**：`[backend-contract]` 用例的计分通道 = `traces.tests`
+  （非空且引用文件真实存在）⇒ 不再逼出「改散文形态、运行期零变化」的**纸面修复**；
+  **非**该类的纯散文用例**仍报**，其余规则**一字不放宽**（#4244）；
+  ④ §19.1 元规则 ① + §19 表新增**第 13 行**：**豁免账本按类分流** —— `skip_total` 不作增长分母；
+  增长只判**债务类**（`debt_skip_*`，只许缩）；`[backend-contract]` 单列**只增**合规清单；
+  `_when_to_update` 与门禁例外条款**口径合一**（#4233）；
+  ⑤ §1 三把工具表 + §2.1：`gate` 在变更集命中受管用例面时**额外**跑 cases 面门禁
+  （**同脚本同参数调用、不复制规则**），**未命中 ⇒ 显式打印「未跑」**（"没跑"必须长得像"没跑"，不是通过）（#4221）；
+  ⑥ §19.1 新增元规则 ③ **红证卫生**：注入**前后清缓存** + **内容指纹**自证（**禁 mtime/size**）；
+  macOS 上 `.pyc` 可落 `~/Library/Caches/com.apple.python` ⇒ 仓库内 `rm -rf __pycache__` **可能是空操作**（#4260）；
+  ⑦ §18.5：`drift_audit` 的 `refs-are-fixtures` 例外在「**同文件里有已入基线的引用条目**」时**不再崩**
+  （原 `KeyError`），改为产出**可行动**的 stale 报告（#4247）；
+  ⑧ §2.2 + §3.3 **判定信号入册**：「CI 全绿 + `mergeable=MERGEABLE` + 无阻塞 label + 却
+  `mergeStateStatus=BLOCKED`」⇒ **首查未解决评审线程**（`required_conversation_resolution` 让机器人留下、
+  且**已被后续提交解决**的线程**永久卡合并，且没有任何检查会变红**）；锚点
+  `python3 scripts/resolve_stale_bot_threads.py <PR>`（三态 `0/1/3`、**默认 dry-run**、
+  **人类线程永不自动 resolve**）（#4231）；
+  ⑨ §8 表：测试产物**定位与清理**纪律 —— 路径**必须由被测系统给出**或限定在测试自己的临时目录；
+  🔴 **禁止 `/tmp/verify-all-*-*.log` 这类全局通配清理**（跨会话假红）；定位失败必须**明确报红 + 给全现场**；
+  落码锚点 = `tests/unit_ci_workflows/test_verify_all_log_scope.py` 的 `run_gate()`（PID 通配 ∩ 归属过滤）（#4158）；
+  ⑩ §19.2 ③：**注释 / docstring 里的数字与 `Test*` 标识符引用也会腐烂**；守卫 =
+  `tests/unit_ci_workflows/test_declaration_truth_guards.py`（取**形态判据**而非"与源码等值"，且带注入式自证）（#4259）；
+  ⑪ §15.1：商家冒烟**判据自身**三条纪律（**不猜单号前缀** / **豁免必须结构化** / **等元素而非定长 sleep**）（#4226）；
+  ⑫ §15.5：视觉基线新鲜度 —— **构建绝不写进 `webServer.command`**（放配置加载期）
+  + `reuseExistingServer: false` + **内容指纹**产物新鲜度护栏；旧的"构建与起服务混写 + 本地复用"
+  会让基线被写成**旧画面**且不报错（DOM 断言恰好还绿 ⇒ **永久假绿**）；
+  落码锚点 = `tests/xiaobu_dist_freshness.py` + `tests/playwright.xiaobu.config.ts`（#4249）。
+  **落码状态照实登记**：本批 12 条**均已落码**（⑨ ⑫ 的落地 PR `#4296` / `#4294` 在本版定稿时合入；
+  先前写成"未落码"的那一稿是按当时 `origin/main` 的真实状态写的，已随本次同步改判）。
+  `migao-acceptance` 同步 +0.1.0（v1.12：**六桶口径** + **红证卫生**）。
