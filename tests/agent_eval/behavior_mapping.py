@@ -129,12 +129,20 @@ MAPPING_RULES = [
     # 已按 §14.2 记入归因队列；本门禁现为「报告制」，不会阻塞合并。
     (r"app/tools/processing_item_manage\.py|app/tools/processing_item_query\.py",
      ["PP-002", "PP-006"]),
-    # 加工单概念区分（PG-017，issue #3917）→ 承载文件 = order skill 本体 +
-    # prompts/order.md 的概念区分口径。产品决策（2026-09-15，#3917）：agent 暂不
-    # 接入加工单工具（processing_order_generate/query/update 已从注册表与 ORDER_TOOLS
-    # 移除，工具类文件保留）⇒ 改**工具实现文件**不再映射 PG-013/015/016（它们已
-    # skip_reason 非空、对 agent 不可跑，锚了 = 挂不可跑用例 = 假阻塞），改 order
-    # skill / order prompt（概念区分口径所在）才是本域唯一的行为承载 → PG-017。
+    # 加工单域（PG-017「概念区分 / 真值路由」；PG-013/015/016 的 LLM 行为）→ 承载文件 =
+    # order skill 本体 + prompts/order.md。沿革：
+    #   · #3917 下线期：加工单工具从注册表与 ORDER_TOOLS 移除（工具类文件保留）⇒ 改
+    #     **工具实现文件**不映射 PG-013/015/016（当时它们 skip_reason 非空、对 agent 不可跑，
+    #     锚了 = 挂不可跑用例 = 假阻塞）⇒ 本域唯一的行为承载是 order skill / order prompt
+    #     的概念区分口径 → PG-017。
+    #   · **#4196 恢复接入后**：三条 PG 已回到可跑集（skip 清空），但**本规则集仍不加**
+    #     `app/tools/processing_order_*.py` 桶 —— 这是**有意为之**（不是漏改）：该桶会进
+    #     blocking 规则族 ⇒ 每次改这三个工具文件都吃一遍真实 LLM 规则桶（#3551「规则过宽
+    #     ⇒ 假阻塞红」同型；本域 PG-013/015/016 还有状态机走位、成本更高）。确定性回归由
+    #     L0 单测承担（`tests/test_tools_processing_order_*.py` 直测类 +
+    #     `test_tools_processing_order_issue_optional_contract.py`），而**行为侧**凡改
+    #     prompts/order.md（口径所在）必命中本规则 ⇒ PG-017 必跑。若后续要把工具实现文件
+    #     也锚进来，须先按 §14.5 评估规则桶的成本与稳定性（当前不加）。
     # 注：order_skill.py 同时命中第一条规则（OR-016/OR-028），并集去重。
     # general.md 亦承载加工单≠加工项兜底口径（#3921，L2 落 general 时防混用）。
     (r"prompts/order\.md|prompts/general\.md|app/graph/skills/order_skill\.py", ["PG-017"]),

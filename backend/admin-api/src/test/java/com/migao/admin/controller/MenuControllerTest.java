@@ -1,5 +1,7 @@
 package com.migao.admin.controller;
 
+// case_ids: PG-021
+
 import com.migao.admin.config.GlobalExceptionHandler;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
@@ -42,7 +44,7 @@ class MenuControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data").isArray())
-                .andExpect(jsonPath("$.data.length()").value(8));
+                .andExpect(jsonPath("$.data.length()").value(9));   // 8 组 + 生产管理（issue #4203/#4205）
     }
 
     @Test
@@ -94,5 +96,36 @@ class MenuControllerTest {
         var data1 = objectMapper.readTree(result1.getResponse().getContentAsString()).get("data");
         var data2 = objectMapper.readTree(result2.getResponse().getContentAsString()).get("data");
         org.junit.jupiter.api.Assertions.assertEquals(data1, data2);
+    }
+
+    @Test
+    @DisplayName("生产管理组：生产看板/工序库/计件工资 三节点，权限码统一 processing:manage（issue #4203/#4205）")
+    void productionGroupIsExposedWithUnifiedPermissionCode() throws Exception {
+        String body = mockMvc.perform(get("/api/admin/menus"))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString(java.nio.charset.StandardCharsets.UTF_8);
+
+        // 用 DOM 真值逐字段断言（jsonPath 的过滤表达式对「单元素结果是否解包」语义不稳，
+        // 同族踩坑见 #4186：判「页面含某文案」不能用 innerText，要看结构真值）
+        com.fasterxml.jackson.databind.JsonNode production = null;
+        for (com.fasterxml.jackson.databind.JsonNode node : objectMapper.readTree(body).path("data")) {
+            if ("production".equals(node.path("code").asText())) {
+                production = node;
+            }
+        }
+        org.junit.jupiter.api.Assertions.assertNotNull(production, "菜单树缺少「生产管理」组");
+        org.junit.jupiter.api.Assertions.assertEquals("生产管理", production.path("label").asText());
+
+        java.util.List<String> childLabels = new java.util.ArrayList<>();
+        java.util.List<String> childCodes = new java.util.ArrayList<>();
+        production.path("children").forEach(child -> {
+            childLabels.add(child.path("label").asText());
+            childCodes.add(child.path("code").asText());
+        });
+        org.junit.jupiter.api.Assertions.assertEquals(
+                java.util.List.of("生产看板", "工序库", "计件工资"), childLabels);
+        // 三节点共用同一权限码：岗位权限页勾一处 = 整组可见（与 menu.ts / AuthService 同构）
+        org.junit.jupiter.api.Assertions.assertEquals(
+                java.util.List.of("processing:manage", "processing:manage", "processing:manage"), childCodes);
     }
 }

@@ -3,9 +3,9 @@
   "_scope": "`skip_total` / `legacy_skip_ids` 是**锚定 SHA 上的快照**；`pending_classification` 只许是其子集且**只许缩短**（到期即红）。非 pending 的任何非空 skip_reason（含新增用例）必须完全合规 ⇒ 新增一律 fail-closed。总量只许缩（净增即红）。",
   "_when_to_update": "① 有人把某条存量改到合规 ⇒ 从 pending_classification 删掉该条（不要改 skip_total）；② 新增 skip ⇒ **不得**记进本文件（先改到合规；确属豁免的走'改判据'流程）；③ 某条 skip 被真正解掉（用例恢复可跑）⇒ 同步下调 skip_total + 追加 history 一行（只许非增）；④ 到期日到点 ⇒ 必须清零 pending，不得顺手推后。",
   "_how_to": "本文件是**数据**，人工维护；判据在 test_skip_exemption_gate.py。改了用例库后跑 `python3 -m pytest tests/unit_ci_workflows/test_skip_exemption_gate.py -q` 复核。",
-  "anchor_sha": "f74909b79381b66dbbdfac995ac860fa39a37d69",
+  "anchor_sha": "14922a81df0d699d849bd0244f85f095a72d3a83",
   "anchored_at": "2026-09-18",
-  "skip_total": 158,
+  "skip_total": 160,
   "legacy_skip_ids": [
     "AG-001",
     "AG-002",
@@ -104,13 +104,15 @@
     "PG-010",
     "PG-011",
     "PG-012",
-    "PG-013",
     "PG-014",
-    "PG-015",
-    "PG-016",
     "PG-018",
+    "PG-019",
+    "PG-020",
+    "PG-021",
     "PP-010",
     "PP-011",
+    "PP-012",
+    "PP-013",
     "RG-001",
     "ST-008",
     "ST-009",
@@ -209,18 +211,6 @@
     "OR-006": {
       "category": "no-data-source",
       "missing": "缺 live `skip_issue`（理由里的 #3599 已 CLOSED）；且 `order.yml` 有两个在飞分支 ⇒ 本分支不改该文件"
-    },
-    "PG-013": {
-      "category": "deprecated",
-      "missing": "缺 live `skip_issue`（决策 issue #3917 已 CLOSED）与 `skip_expires` ⇒ 不构成可追踪债务"
-    },
-    "PG-015": {
-      "category": "deprecated",
-      "missing": "缺 live `skip_issue`（决策 issue #3917 已 CLOSED）与 `skip_expires` ⇒ 不构成可追踪债务"
-    },
-    "PG-016": {
-      "category": "deprecated",
-      "missing": "缺 live `skip_issue`（决策 issue #3917 已 CLOSED）与 `skip_expires` ⇒ 不构成可追踪债务"
     }
   },
   "pending_expires": "2026-11-30",
@@ -237,10 +227,14 @@
       "note": "rebase 到最新 main（原锚点 51e40495）：`.github/cases/**` 与被测用例库相对原锚点**无差异**（`git diff --stat <old>..<new> -- .github/cases/` 为空）⇒ 锚点快照与 pending 判定仍然成立"
     },
     {
-      "sha": "f74909b79381b66dbbdfac995ac860fa39a37d69",
+      "sha": "14922a81df0d699d849bd0244f85f095a72d3a83",
       "date": "2026-09-18",
-      "skip_total": 158,
-      "note": "重锚定：纳入 #4192（转人工退场）对 CH-008/CH-017 的 unrunnable 登记，两条已机器钉住（test_tools_human_handoff.py + admin-api AgentSession* 单测）"
+      "skip_total": 160,
+      "note": "重锚定（集成裁定 方案 A：末行增长 + 显式 note）：本行合并记录两批增量，**仅增这两批、未放行任何存量**。\n① PKG-BE 批（#4237）：PG-019/PG-020/PG-021（#4202 存量单恢复 / #4204 工序库写面+单价版本化 / #4205 计件报表）与 PP-012（#4208 内部算料数量端点）；\n② 本包批（#4230，PR #4234）：**PP-013** —— 特殊选项 19 项全登记门禁，`traces.tests` 已钉住 `backend/ai-agent-service/tests/test_production/test_special_options.py`。该用例是纯函数确定性判据、非 LLM 行为 ⇒ 用非空 skip_reason 使其不进 agent-eval 冒烟（runner 按 skip_reason 过滤），不是可删的豁免。\n实测三个数：用例库 322（= origin/main 321 + PP-013）／账本旧值 159（origin/main @14922a81 实测非空 skip 亦为 159）／账本新值 160。\n⚠️ 本批是**同日第二次**重锚定（PKG-BE 156→159，本包 159→160），佐证 issue #4233：`[backend-contract]` 类用例设计上就不进 agent-eval，却计入 skip_total 增长 ⇒ 每新增一条此类用例都要重锚 ⇒「总量只许缩」被例行化、摩擦力归零。本包不修该门禁（不属本 PR 范围）。\n（历史说明：锚点 da935b6a 处本行原记 159；按本文件「history 只许非增」的既有处置，重锚定值就地合并写入末行，不另起一行。另实测各锚点真值 51e40495=156 / 8a97c025=156 / da935b6a=158 / 14922a81=159 —— PKG-BE 当年记的 159 系其**分支本地**计数，锚点前移到 main 后以 main 真值为准。）",
+      "previous_anchor": {
+        "sha": "da935b6a0fa931b17d3b9c50fe1273e171fa28b4",
+        "skip_total": 159
+      }
     }
   ]
 }

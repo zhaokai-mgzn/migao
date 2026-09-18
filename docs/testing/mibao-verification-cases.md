@@ -101,7 +101,7 @@
 必须成功: after_sales_manage(create)
 ```
 真值: aftersales-flow.agent-create, aftersales-flow.flow
-溯源: 2026-09-08 新增（issue #3033 复盘 sess_50ff3e3c824c4a70）：换货选 2699 面料（绑 5 加工项）全程未提加工项；aftersales.md 补换货加工项确认规则 + EXAMPLES 例 4。2026-09-14 自包含化（issue #3568）：原单轮输入缺「先定位订单」轮 → 用例恒不可达被 skip（**从未执行**）→ 补 order_query 定位轮 + 答卡轮（repeat_until max=5），断言加两条 order_query 时序 + success=true，解 skip。**两次真 LLM 重放驱动迭代**：① run 34809750975 得 75% 且首版「静态文本选单轮」对不上 agent 的 choice 选单卡（该客户名下 6 笔订单）→ 改答卡轮；② run 34812509606 得 75% 且**换货工单已真实创建**（`ticketNo=AS-20260914-9002`）→ 首版 fallback「需要打孔加工」**替 agent 把加工项说了出来**、把缺口掩盖成「卡里有加工项」→ 改中性「好的」。③ run 34815074088（中性 fallback）得 0%，trace 显示**流程本身完全正确**：R2 product_detail（发现 2 条同名）→ 选品卡 → R3 **agent 主动发加工项 choice 卡** → R5 order_query → R8 after_sales_manage 建单成功；唯一失败项是我自己加的 `order_before[order_query before product_detail]`（**业务上不成立的过度约束**）→ 已删除该条，保留 `order_query before after_sales_manage` 与两条 `processing_ask` 时序。2026-09-15 断言侧升级（issue #3683，归因报告 §G2：能力缺口已被三条独立证据否证——`aftersales.md:27-31` 有规则 / run 34815074088 R3 agent 主动发加工项 choice 卡 / run 34817668476 最终断言集 1.00 pass）：① `data_checks: success=true` → `must_succeed:[after_sales_manage(action=create)]`（canonical 写成功断言；旧「C 端守卫全库校验」的阻塞理由已随 #3544/#3580 的 persona 收窄失效）；② 报告要求的 `db_verify[after_sales_ticket,expect_status=pending]` **未加**——create 路径 payload 键是 `id` 而核对器只认 `ticket_id`（探针 `create 形态 -> (None, {})`），照抄即永久假红，已登记为待补 runner 能力；③ 未放宽 `processing_ask` 时序、未回加已删的 `order_query before product_detail` ｜ tags: exchange, processing_item, guided_flow
+溯源: 2026-09-08 新增（issue #3033 复盘 sess_50ff3e3c824c4a70）：换货选 2699 面料（绑 5 加工项）全程未提加工项；aftersales.md 补换货加工项确认规则 + EXAMPLES 例 4。2026-09-14 自包含化（issue #3568）：原单轮输入缺「先定位订单」轮 → 用例恒不可达被 skip（**从未执行**）→ 补 order_query 定位轮 + 答卡轮（repeat_until max=5），断言加两条 order_query 时序 + success=true，解 skip。**两次真 LLM 重放驱动迭代**：① run 34809750975 得 75% 且首版「静态文本选单轮」对不上 agent 的 choice 选单卡（该客户名下 6 笔订单）→ 改答卡轮；② run 34812509606 得 75% 且**换货工单已真实创建**（`ticketNo=AS-20260914-9002`）→ 首版 fallback「需要打孔加工」**替 agent 把加工项说了出来**、把缺口掩盖成「卡里有加工项」→ 改中性「好的」。③ run 34815074088（中性 fallback）得 0%，trace 显示**流程本身完全正确**：R2 product_detail（发现 2 条同名）→ 选品卡 → R3 **agent 主动发加工项 choice 卡** → R5 order_query → R8 after_sales_manage 建单成功；唯一失败项是我自己加的 `order_before[order_query before product_detail]`（**业务上不成立的过度约束**）→ 已删除该条，保留 `order_query before after_sales_manage` 与两条 `processing_ask` 时序。2026-09-15 断言侧升级（issue #3683，归因报告 §G2：能力缺口已被三条独立证据否证——`backend/ai-agent-service/app/graph/skills/references/prompts/aftersales.md` 的「换货/维修流程（选目标商品后必须确认加工项）」小节有规则 / run 34815074088 R3 agent 主动发加工项 choice 卡 / run 34817668476 最终断言集 1.00 pass）：① `data_checks: success=true` → `must_succeed:[after_sales_manage(action=create)]`（canonical 写成功断言；旧「C 端守卫全库校验」的阻塞理由已随 #3544/#3580 的 persona 收窄失效）；② 报告要求的 `db_verify[after_sales_ticket,expect_status=pending]` **未加**——create 路径 payload 键是 `id` 而核对器只认 `ticket_id`（探针 `create 形态 -> (None, {})`），照抄即永久假红，已登记为待补 runner 能力；③ 未放宽 `processing_ask` 时序、未回加已删的 `order_query before product_detail`；2026-09-18（issue #4196 的 burn-down 缴费）：补 `precondition[product_count_for_keyword: 2699系列雪尼尔窗帘面料, expect: 1]` —— 本用例按商品名定位换货目标、且 `pre_clean[product_dedupe]` 已按同名去重 ⇒「该名唯一」是可判定的前置（同 OR-014 先例 #3835）；并行用例造出同名副本 ⇒ 判**前置不成立**（不可归因于 agent），不再伪装成 `no_success(after_sales_manage)`（该首跑指纹在 35268148590 / 35295494688 各复发一次，归因长期停在「待查」）。断言只增不减：未改 expectations / must_succeed / order_before / data_checks / pre_clean 任何一条 ｜ tags: exchange, processing_item, guided_flow
 
 ### AS-008. C 端售后进度查询 - 仅限本人工单 + 拒绝跨用户/快递单号式越权查询 🔵
 ```
@@ -2416,7 +2416,7 @@
 必填: logistics_track() 字段 order_id
 ```
 真值: order.logistics
-溯源: 2026-09-01 新增：B 端物流查询安全收紧（禁止物流号直查，防用他人运单号刺探）；2026-09-14 自包含化（issue #3599）：第 2 轮去掉栈上不存在的硬编码订单号，改自然指代 + required_args[order_id]；2026-09-15 协作轮（issue #3792）：判定跑 run 34865780382 里本用例被判 reproducible（R1 正确拒绝快递单号、R2 只到 order_query ⇒ logistics_track 未调用），暴露**用例对轮次结构敏感**（两步意图压在一轮、无兜底；同 run 另有用例 rounds=1 完成同一链）⇒ 追加 repeat_until(tool_called=logistics_track, max=2) 协作轮（范式同 #3568/#3430），fallback 中性（不替 agent 报订单号）；`max` 由 3 收到 **2**（用户裁定：fallback 是「有意义的重问」⇒ 一轮追加即公平的第二次机会，`max=3` 会把「对首次请求不交付」多掩盖一轮；真实行为缺口另立 #3799，本改法**不掩盖**它）；expectations/required_args/data_checks 原样**未放宽**（协作轮用尽仍不调 logistics_track ⇒ 照旧判红） ｜ tags: query, logistics, data_safety
+溯源: 2026-09-01 新增：B 端物流查询安全收紧（禁止物流号直查，防用他人运单号刺探）；2026-09-14 自包含化（issue #3599）：第 2 轮去掉栈上不存在的硬编码订单号，改自然指代 + required_args[order_id]；2026-09-15 协作轮（issue #3792）：判定跑 run 34865780382 里本用例被判 reproducible（R1 正确拒绝快递单号、R2 只到 order_query ⇒ logistics_track 未调用），暴露**用例对轮次结构敏感**（两步意图压在一轮、无兜底；同 run 另有用例 rounds=1 完成同一链）⇒ 追加 repeat_until(tool_called=logistics_track, max=2) 协作轮（范式同 #3568/#3430），fallback 中性（不替 agent 报订单号）；`max` 由 3 收到 **2**（用户裁定：fallback 是「有意义的重问」⇒ 一轮追加即公平的第二次机会，`max=3` 会把「对首次请求不交付」多掩盖一轮；真实行为缺口另立 #3799，本改法**不掩盖**它）；expectations/required_args/data_checks 原样**未放宽**（协作轮用尽仍不调 logistics_track ⇒ 照旧判红）；2026-09-18 补前置自断言 + namespaces（burn-down：改用例文件的 PR 须净缩 ≥1 条存量违规，本用例命中的唯一一条是 CASE-TRUST-NO-PRECONDITION-ASSERTION）：`namespaces[customer_phone:13800138000]` + `precondition[order_count_for_phone:13800138000]`（不写 expect —— 该基线随栈组成变化，写死会制造假红；**先例 = 紧邻的 OR-012**，同款依赖、同款治法，不另立口径）。**断言（user_inputs / expectations / required_args / data_checks / repeat_until）原样未动，无放宽、无删减。** ｜ tags: query, logistics, data_safety
 
 ### OR-014. 下单加工项数量规则 - 按计价方式，无每米数量密度推导 🔵
 ```
@@ -2819,7 +2819,7 @@
 真值: order.create-flow, order.states
 溯源: 2026-09-18 新增（用户裁定 2 / F17 / issue #4095）：冒烟档补下单用例 —— 此前冒烟档 9 条全只读、订单域唯一 OR-001 是列表查询 ⇒ 主链路零覆盖。persona=mibao（代客下单免验证码，链路最短）；一句话给全 + repeat_until 协作轮（有卡答卡，成功即停）；断言 = must_succeed[order_create] + db_verify[order_items/order_phone] + order_before[interact[confirm] before order_create] + required_args；自清理 product_dedupe + precondition[product_count_for_keyword expect=1] + namespaces（商品名/手机号）。未新增任何自动触发（裁定 2′/4′）。 ｜ tags: order_create, smoke, write
 
-## 加工项域（12 case）
+## 加工项域（13 case）
 
 ### PP-001. 加工项选择 - 分页翻页 🔵
 ```
@@ -2998,7 +2998,19 @@
 真值: processing-manage.crud
 溯源: 2026-09-17 新增（issue #4000）：M4-H 按需单据渲染 —— 加工单生产明细页 + 可打印任务卡（含二维码）+ 计件汇总的前端覆盖登记；消费 main 已合并的生产端点（GET production/orders/{orderId}/operations、/piecework） ｜ tags: processing, production, admin_web, print_task_card, qrcode
 
-## processing-order（18 case）
+### PP-012. 内部算料数量端点 - 应做数量=引擎输出/兜底 1/未知工序 fallback（单测覆盖） 🔵
+```
+数据: success=true
+数据: 数量**只**来自算料引擎（真值源 §3）：冻结样例 calc_info={fabric_meters:12.3, pleat_count:24, panels:2, set_count:1} + 工序 [精裁-布, 布三边, 韩褶-布, 外帘装袋] ⇒ {精裁-布:12.3, 布三边:12.3, 韩褶-布:24.0, 外帘装袋:1.0}，且逐值 == routing._qty_for 直调结果（防复制第二份算料逻辑的守门断言）
+数据: 缺键**一律兜底 1、绝不落 0**（应做 0 ⇒ done_qty ≥ qty 恒真 ⇒ 假完工）：calc_info={} ⇒ 各工序 qty == 1.0 且 != 0
+数据: 引擎不认识的工序/单位 ⇒ qty=1.0 + qty_source=fallback，且 HTTP **仍 200**（不得把加工单生成打成硬失败）；判别性：若实现只把 _qty_for 原样透传（未知工序按「米」读 fabric_meters）会得到 12.3 ⇒ 本条仍红
+数据: 鉴权：缺 X-Service-Token ⇒ 401（内部端点不得裸奔）
+数据: 「孔」类无 holes ⇒ 按每米 6 孔估算 12.3×6=73.8，来源 = fabric_meters_x6（**不等于** fallback）—— 让「真兜底」与「有依据的推算」可区分
+跳过: [backend-contract] ai-agent 内部端点（服务间调用，非 LLM 行为）：由 pytest 全量覆盖 backend/ai-agent-service/tests/test_production/test_operation_qty.py（含 _qty_for 直调比对与三源键漂移门禁），不进入 agent-eval 冒烟（同 PP-010 惯例）
+```
+溯源: 2026-09-18 新增（issue #4208 ai-agent 半边，PR #4215）：应做数量内部端点 POST /api/internal/production/operation-qty（X-Service-Token）—— 让 routing._qty_for 从「零运行时消费者」变成算料数量的唯一真相源；兜底口径「绝不落 0」+ qty_source 三态（键名 / <键名>_x6 / fallback）。红证（实现前）：端点未实现 ⇒ 404（assert 404 == 200 红）、resp.json()['data'] KeyError；键漂移门禁在 KNOWN_QTY_UNITS/DIRECT_QTY_KEYS 未定义时 import 即红。同批把该测试文件补进 PP-010.traces.tests（同为生产确定性核心的证据面）。**未做（如实登记）**：Java 侧接线（生成加工单时逐工序调用本端点）不在本单，#4208 保持 OPEN。 ｜ tags: processing, production, qty-engine
+
+## processing-order（21 case）
 
 ### PG-001. 生成加工单 - 已确认含加工项订单 → 加工单生成 + 订单进入 producing 🔵
 ```
@@ -3035,11 +3047,13 @@
 
 ### PG-005. 加工单状态机 - generated→issued→in_processing→completed 主链 🔵
 ```
+数据: success=true
 数据: issue（发加工，可填加工方/交期）→ issued；start → in_processing；complete → completed
 数据: complete 后订单保持 producing（不自动 shipped，发货需物流单号）
-跳过: [backend-contract] 由 ProcessingOrderServiceTest 验证
+数据: 端点层证据（machine-scored）：PATCH /api/admin/processing-orders/{id} action=issue → 200 + $.success=true + $.data.status=issued（ProcessingOrderControllerTest.updateIssue —— 该测试是**唯一**把状态机主链落到 HTTP 层的证据；本条的 `success=true` 计分断言据此成立，不是凭空写的关键词）
+跳过: [backend-contract] 由 ProcessingOrderServiceTest（状态机主链与订单联动）+ ProcessingOrderControllerTest（PATCH 端点：200 + success=true + status=issued）验证
 ```
-溯源: 2026-09-12 新增（issue #3340） ｜ tags: processing-order, state-machine
+溯源: 2026-09-12 新增（issue #3340）。2026-09-18 断言反空转（case-trust burn-down）：原先 2 条 data_check 全是散文 ⇒ CASE-TRUST-EMPTY-ASSERTION（计分断言数 = 0 = 恒绿）。修法 = 把**已经存在**的 HTTP 层效果断言显式化 —— ProcessingOrderControllerTest.updateIssue 补 `$.success` 断言并纳入本条 traces，本条据此新增机器计分型 data_check（`success=true`）。只减不增：本条从 case-trust 豁免清单销账。 ｜ tags: processing-order, state-machine
 
 ### PG-006. 加工单状态机 - 非法迁移拒绝（如 generated→completed、completed 冻结） 🔵
 ```
@@ -3115,10 +3129,10 @@
 禁词（第 2 轮）: 无加工项、无法生成加工单、系统判定为
 禁词（第 3 轮）: 无加工项、无法生成加工单、系统判定为
 必填: processing_order_generate() 字段 order_ids
-跳过: agent 暂不接入加工单工具（产品决策 2026-09-15，issue #3917）：processing_order_* 已从注册表与 order skill 移除，本用例断言的工具对 agent 不再开放；工具恢复接入后启用（届时由 PG-017 的概念区分用例守护期间行为）
+必须成功: processing_order_generate
 ```
 真值: ⚠️ 缺口（见对应模板 ⚠️ 注释）
-溯源: 2026-09-12 新增（验收缺口 #3348）：米宝加工单 LLM 行为真实对话用例（替代纯单测覆盖）；2026-09-15（issue #3833）修双重假红：① 补 `pre_clean: processing_order_reset(order_no=EVAL-MB-ORD-0002)` —— 写类用例自清理，重试前置回到 seed 初始态（confirmed + 无加工单），与首跑等价；② `forbidden_text` 从全程语义收紧成「轮次 + 措辞」：R1 问答轮如实陈述（某单未见加工项/引用系统判定）不再判红，写操作轮（R2/R3）真拒绝仍必红；能力自我否定/编造失败类措辞保持全程。expectations / required_args **未改**；2026-09-15（issue #3917）skip：加工单工具对 agent 不再开放 ｜ tags: processing_order, llm_behavior, tool_call
+溯源: 2026-09-12 新增（验收缺口 #3348）：米宝加工单 LLM 行为真实对话用例（替代纯单测覆盖）；2026-09-15（issue #3833）修双重假红：① 补 `pre_clean: processing_order_reset(order_no=EVAL-MB-ORD-0002)` —— 写类用例自清理，重试前置回到 seed 初始态（confirmed + 无加工单），与首跑等价；② `forbidden_text` 从全程语义收紧成「轮次 + 措辞」：R1 问答轮如实陈述（某单未见加工项/引用系统判定）不再判红，写操作轮（R2/R3）真拒绝仍必红；能力自我否定/编造失败类措辞保持全程。expectations / required_args **未改**；2026-09-15（issue #3917）skip：加工单工具对 agent 不再开放；2026-09-18（issue #4196）**去 skip**：加工单工具恢复接入（registry 注册 + order skill 工具/意图 + IntentType/描述/域/工具映射四处 + prompts/order.md 操作指引），**断言面原样保留**（expectations / must_succeed / required_args / forbidden_text / pre_clean 全部未改，未放宽）；去 skip 不空跑的前置 = runner 的 `pre_clean[processing_order_reset]` + 种子 EVAL-MB-ORD-0002/0003/0004（confirmed + paid + 明细带加工项）；**同 PR 补 must_succeed[processing_order_generate]**（去 skip 后 `.github/case_trust_gate.py` 全量对账判出的存量缺陷 `CASE-TRUST-NO-EFFECT-ASSERTION`：#3778「调用了 ≠ 成了」—— 原断言面里 `order_before` 是时序、`required_args` 在工具未调用时 `continue` 全绿、两条 `data_checks` 是纯散文 ⇒ **无任何效果层断言**。按 #4046 的 fail-closed 口径**当场修掉**，不入账基线；这是**加强**不是放宽，expectations / required_args / forbidden_text / pre_clean 一字未动） ｜ tags: processing_order, llm_behavior, tool_call
 
 ### PG-014. 订单加工项不可变（源头约束，决策 C）：创建后无任何修改通道 🔵
 ```
@@ -3140,6 +3154,7 @@
 期望: processing_order_query
 数据: success=true
 数据: 回查结果 grounded 到刚生成的加工单（status ∈ generated/issued/in_processing/completed/cancelled，不得编造）
+清理: processing_order_reset(order_no=EVAL-MB-ORD-0003)
 禁词: 暂不支持
 禁词: 功能不存在
 禁词: 没有这个功能
@@ -3147,9 +3162,8 @@
 必填: processing_order_query() 字段 keyword
 必须成功: processing_order_generate
 必须成功: processing_order_query
-跳过: agent 暂不接入加工单工具（产品决策 2026-09-15，issue #3917）：processing_order_* 已从注册表与 order skill 移除，本用例断言的工具对 agent 不再开放；工具恢复接入后启用（届时由 PG-017 的概念区分用例守护期间行为）
 ```
-溯源: 2026-09-14 新增（issue #3568 / #3592）：processing_order_query 此前**零用例覆盖**（scripts/mibao_coverage.py --check 在 pristine main 上 exit 2 报出的结构性缺失）。形态 =「先对种子订单生成加工单 → 按订单号回查」（干净栈无加工单 seed，直接「查一下」会假绿）。断言机器可判：must_succeed ×2 + required_args[keyword] + forbidden_text。2026-09-14 首次真重放（run 34820346966，issue #3658）：✅ **通过（score=100%）—— PG-015 的第一次真实执行证据**。目标订单由 0002 改为 0003（独立订单竞态修复，见 user_inputs 注释）。2026-09-15（issue #3917）skip：加工单工具对 agent 不再开放 ｜ tags: processing_order, llm_behavior, tool_call, query
+溯源: 2026-09-14 新增（issue #3568 / #3592）：processing_order_query 此前**零用例覆盖**（scripts/mibao_coverage.py --check 在 pristine main 上 exit 2 报出的结构性缺失）。形态 =「先对种子订单生成加工单 → 按订单号回查」（干净栈无加工单 seed，直接「查一下」会假绿）。断言机器可判：must_succeed ×2 + required_args[keyword] + forbidden_text。2026-09-14 首次真重放（run 34820346966，issue #3658）：✅ **通过（score=100%）—— PG-015 的第一次真实执行证据**。目标订单由 0002 改为 0003（独立订单竞态修复，见 user_inputs 注释）。2026-09-15（issue #3917）skip：加工单工具对 agent 不再开放；2026-09-18（issue #4196）**去 skip**：加工单工具恢复接入（registry 注册 + order skill 工具/意图 + IntentType/描述/域/工具映射四处 + prompts/order.md 操作指引），**断言面原样保留**（expectations / must_succeed / required_args / forbidden_text / pre_clean 全部未改，未放宽）；去 skip 不空跑的前置 = runner 的 `pre_clean[processing_order_reset]` + 种子 EVAL-MB-ORD-0002/0003/0004（confirmed + paid + 明细带加工项）；**同 PR 补 `pre_clean: processing_order_reset(order_no=EVAL-MB-ORD-0003)`**（去 skip 后全量对账判出的存量缺陷 `CASE-TRUST-NO-SELF-CLEAN`：#3800 前置等价性 —— 本用例 R1 就是写（0003 转 producing）却未声明自清理，重试前置与首跑不等价。按 #4046 的 fail-closed 口径**当场修掉**，不入账基线；形态与 PG-013（0002）/ PG-016（0004）完全同构，0003 由 #3658 拆给本用例独占；这是**加强**不是放宽，其余断言一字未动） ｜ tags: processing_order, llm_behavior, tool_call, query
 
 ### PG-016. 米宝加工单 LLM 行为：更新加工单状态（完成加工，产出核到 completed） 🔵
 ```
@@ -3173,26 +3187,24 @@
 必填: processing_order_update() 字段 id
 必须成功: processing_order_update(complete)
 产出: processing_order_update(complete) → action==complete
-跳过: agent 暂不接入加工单工具（产品决策 2026-09-15，issue #3917）：processing_order_* 已从注册表与 order skill 移除，本用例断言的工具对 agent 不再开放；工具恢复接入后启用（届时由 PG-017 的概念区分用例守护期间行为）
 ```
 真值: ⚠️ 缺口（见对应模板 ⚠️ 注释）
-溯源: 2026-09-14 新增（issue #3568 / #3592）：processing_order_update 此前**零用例覆盖**（同 PG-015 的结构性缺失）。断言机器可判：expectations(action=complete) + must_succeed(action=complete) + required_args[id] + output_verify（**显式声明 action**，防多 action 工具核到别的 payload 造成假绿）。2026-09-14 首次真重放（run 34820346966，issue #3658）：❌ 失败 → 归因**用例资产缺陷**（非 agent 能力缺口）：① 与 PG-013/015 抢同一种子订单 EVAL-MB-ORD-0002（并发生成只有一方成功，实测生成被拒「订单已生产中」后 agent 转向 issue 流，complete 期望永不满足）；② 输入跳步（生成后直接「标记完成」违反状态机 generated→completed 非法迁移，PG-006 铁律）。修复：独立订单 0004 + 完整状态机走位。2026-09-14 第二轮验证重放（run 34821647043）：❌ 再失败 → 新发现**用例设计缺陷**：状态机三步全用 `repeat_until{tool_called: processing_order_update}`，而 runner 停条件是**工具级**（issue #3430）——issue 成功（R6）后 start/complete 的 repeat 轮被整体跳过（开始加工确认卡无人答）。修复：每步确认卡改用 `auto_respond`（有卡答卡、无停条件跳过），生成步保留 repeat_until（工具唯一）。2026-09-14 第三轮验证重放（run 34822527203，PG-016-only）：状态机全走位成功（issue→start→complete 各成功，工具 14 调 0 失败），仅剩 output_verify 假红——`expect: result.status: completed` 用了**点号路径**，而 runner 的 check_output_verify 只按字面扁平 key 查顶层 payload（不支持嵌套路径，run 34822527203 实证「结果里没有字段 'result.status'」）。修复：expect 收敛为扁平键 `action: complete`（状态到达 completed 由 must_succeed + 服务端状态机兜底）。2026-09-15 第四轮归因（issue #3856，承接 #3835 的 PG-016 条目）：首跑指纹 `no_success(processing_order_update)` 在 4 个 run 复发（34873715194 / 34865780382 / 34856561459 / 34908262839）⇒ 复核后判**产品侧**：agent 把「加工方」当发加工必填 （34908262839 首跑 R5/R6 两次文本索要、R8/R10 两次 form 卡，`processing_order_update` 一次都没调用）。复核证据：processor/交期在工具 schema（`required=['id','action']`）、`validate_input`（`issue.required=['id']`）、服务端 DTO/Service **四处均为可选**——唯独 LLM 面对的口径 `prompts/order.md` 的「发加工」行把 `processor=加工方` 写进签名且不带「可选」标注（同行 `cancel(reason=必填)` 却标注）⇒ 口径不一致。**反证**：同 run 重试里 agent 未带 processor 直接 issue 成功（服务端接受）。修复 = 该行标注可选 + 禁止为可选字段索要/阻塞/重复发卡（不是静默默认值：缺省即不传该字段）。另一支机制（写落库后同 session 再读仍旧状态，34873715194/34865780382）**证据不足**：能排除「写没落库」（重试 R4 报「不允许从 [加工中] 变更」，证明首跑 issue+start 已落库），但读陈旧 vs 同轮并发竞态分不清 —— 缺 `#3823` 的 tool args/响应体 + DB 时序。本单同时补 `pre_clean: processing_order_reset{order_no: EVAL-MB-ORD-0004}`（§18.4：原先重试前置与首跑不等价，重试块 R1 实测「已经生成过加工单了」）。2026-09-15（issue #3917）skip：加工单工具对 agent 不再开放 ｜ tags: processing_order, llm_behavior, tool_call, update
+溯源: 2026-09-14 新增（issue #3568 / #3592）：processing_order_update 此前**零用例覆盖**（同 PG-015 的结构性缺失）。断言机器可判：expectations(action=complete) + must_succeed(action=complete) + required_args[id] + output_verify（**显式声明 action**，防多 action 工具核到别的 payload 造成假绿）。2026-09-14 首次真重放（run 34820346966，issue #3658）：❌ 失败 → 归因**用例资产缺陷**（非 agent 能力缺口）：① 与 PG-013/015 抢同一种子订单 EVAL-MB-ORD-0002（并发生成只有一方成功，实测生成被拒「订单已生产中」后 agent 转向 issue 流，complete 期望永不满足）；② 输入跳步（生成后直接「标记完成」违反状态机 generated→completed 非法迁移，PG-006 铁律）。修复：独立订单 0004 + 完整状态机走位。2026-09-14 第二轮验证重放（run 34821647043）：❌ 再失败 → 新发现**用例设计缺陷**：状态机三步全用 `repeat_until{tool_called: processing_order_update}`，而 runner 停条件是**工具级**（issue #3430）——issue 成功（R6）后 start/complete 的 repeat 轮被整体跳过（开始加工确认卡无人答）。修复：每步确认卡改用 `auto_respond`（有卡答卡、无停条件跳过），生成步保留 repeat_until（工具唯一）。2026-09-14 第三轮验证重放（run 34822527203，PG-016-only）：状态机全走位成功（issue→start→complete 各成功，工具 14 调 0 失败），仅剩 output_verify 假红——`expect: result.status: completed` 用了**点号路径**，而 runner 的 check_output_verify 只按字面扁平 key 查顶层 payload（不支持嵌套路径，run 34822527203 实证「结果里没有字段 'result.status'」）。修复：expect 收敛为扁平键 `action: complete`（状态到达 completed 由 must_succeed + 服务端状态机兜底）。2026-09-15 第四轮归因（issue #3856，承接 #3835 的 PG-016 条目）：首跑指纹 `no_success(processing_order_update)` 在 4 个 run 复发（34873715194 / 34865780382 / 34856561459 / 34908262839）⇒ 复核后判**产品侧**：agent 把「加工方」当发加工必填 （34908262839 首跑 R5/R6 两次文本索要、R8/R10 两次 form 卡，`processing_order_update` 一次都没调用）。复核证据：processor/交期在工具 schema（`required=['id','action']`）、`validate_input`（`issue.required=['id']`）、服务端 DTO/Service **四处均为可选**——唯独 LLM 面对的口径 `prompts/order.md` 的「发加工」行把 `processor=加工方` 写进签名且不带「可选」标注（同行 `cancel(reason=必填)` 却标注）⇒ 口径不一致。**反证**：同 run 重试里 agent 未带 processor 直接 issue 成功（服务端接受）。修复 = 该行标注可选 + 禁止为可选字段索要/阻塞/重复发卡（不是静默默认值：缺省即不传该字段）。另一支机制（写落库后同 session 再读仍旧状态，34873715194/34865780382）**证据不足**：能排除「写没落库」（重试 R4 报「不允许从 [加工中] 变更」，证明首跑 issue+start 已落库），但读陈旧 vs 同轮并发竞态分不清 —— 缺 `#3823` 的 tool args/响应体 + DB 时序。本单同时补 `pre_clean: processing_order_reset{order_no: EVAL-MB-ORD-0004}`（§18.4：原先重试前置与首跑不等价，重试块 R1 实测「已经生成过加工单了」）。2026-09-15（issue #3917）skip：加工单工具对 agent 不再开放；2026-09-18（issue #4196）**去 skip**：加工单工具恢复接入（registry 注册 + order skill 工具/意图 + IntentType/描述/域/工具映射四处 + prompts/order.md 操作指引），**断言面原样保留**（expectations / must_succeed / required_args / forbidden_text / pre_clean 全部未改，未放宽）；去 skip 不空跑的前置 = runner 的 `pre_clean[processing_order_reset]` + 种子 EVAL-MB-ORD-0002/0003/0004（confirmed + paid + 明细带加工项） ｜ tags: processing_order, llm_behavior, tool_call, update
 
-### PG-017. 米宝加工单概念区分：用户问加工单 → 不调加工项/加工单工具，解释概念并引导后台（#3917） 🔵
+### PG-017. 米宝加工单真值路由：问加工单数据 → 必须走 processing_order_query（不得用加工项目录冒充/编造，#4196） 🔵
 ```
 你: 查看加工单数据
-期望: direct_reply
+期望: processing_order_query
 数据: success=true
-数据: agent 不调用加工项查询/加工项目录代替加工单，不编造加工单数据（状态/进度/编号），解释两概念并引导后台订单详情-加工单块（机器断言：direct_reply + forbidden_tools + want_text/forbidden_text）
+数据: agent 用 processing_order_query 取加工单真值（成功返回），不用加工项查询/加工项目录冒充加工单、不编造加工单号/状态（机器断言：expectations + must_succeed + forbidden_tools + forbidden_text）
 禁词（第 1 轮）: 压褶定型、LG工艺、窗幔制作、刺绣工艺
 全程禁用: processing_item_query
 全程禁用: processing_order_generate
-全程禁用: processing_order_query
 全程禁用: processing_order_update
 必须: 加工单
-必须: {'any_of': ['后台', '订单详情']}
+必须成功: processing_order_query
 ```
-溯源: 2026-09-15 新增（issue #3917）：B 端概念区分用例（加工单工具关闭后的行为守护）。断言组合：expectations=[direct_reply]（该轮零工具调用 —— 目录替代形态必调 processing_item_query，加工单形态必调 processing_order_*）+ forbidden_tools（跨轮全程禁用 4 工具，调用即违规）+ want_text（含「加工单」+「后台/订单详情」引导）+ forbidden_text（R1 轮次作用域 any_of，禁目录特征词）+ success=true（计分）。persona: mibao（B 端专属，缺省会触发另一腿「禁止静默少跑」，#3822）。 ｜ tags: processing_order, llm_behavior, concept_distinction, product_decision
+溯源: 2026-09-15 新增（issue #3917）：B 端概念区分用例（加工单工具关闭后的行为守护，expectations=[direct_reply] + forbidden_tools 4 工具 + want_text 引导后台 + forbidden_text R1 目录特征词 + success=true）。；2026-09-18（issue #4196）**改判据**（加工单工具恢复接入）：① expectations 由 [direct_reply] 改为 [processing_order_query] —— 问加工单数据必须走真值工具；② 新增 must_succeed[processing_order_query]（工具必须成功返回，防「调了但失败/能力否定」）；③ want_text 去掉「后台/订单详情」（引导后台是下线态处方，接入后正确行为是给数据）；④ **forbidden 面原样保留**：processing_item_query（不得用加工项目录冒充加工单）+ 加工单生成/流转两写工具（只读问句不得顺手写）+ R1 目录特征词 forbidden_text **逐字未改**。**为什么这不是放宽**：(a) 靶子一条没删 —— 冒充形态仍必红（调 processing_item_query 即违规，且真值工具缺席同样必红）；(b) 判据从「不许调」换成「必须调真值且成功」= **换向 + 新增正向要求**（原来只证明「什么都没做」，现在证明「路由到了正确的真值工具并拿到真值」）；(c) persona / tier / domains 均未动。persona: mibao（B 端专属，缺省会触发另一腿「禁止静默少跑」，#3822）。 ｜ tags: processing_order, llm_behavior, concept_distinction, product_decision
 
 ### PG-018. 生产报工闭环——扫码报工→进度推进→必完工序自动完工→计件 🔵
 ```
@@ -3208,11 +3220,50 @@
 数据: 完工→发货贯通（#4117 红证判据）：必完工序全绿 ⇒ 加工单 status='completed' ⇒ 发货守卫 assertProcessingCompletedBeforeShip 读到的 countCompletedByOrderId > 0 放行，且订单仍为 producing（shipOrderIfApplicable 只在 confirmed/producing 时流转）⇒ 含加工项订单完工后可发货
 数据: 计件：GET /api/admin/production/orders/{orderId}/piecework = Σ(合格数量 × 单价 × 系数)，排除返工/报废；单工序一人制（per_worker 按报工人归集、per_operation 按工序归集）
 数据: 租户隔离与软删：订单/工序实例/报工记录均按 tenant_id + deleted=0 过滤；跨租户订单或不属于该订单加工单的工序 → 404，且不落报工明细
-数据: 订单解析三形态（issue #4005）：GET/报工/计件的 {orderId} 路径参数支持 ① 内部 order_id ② 订单号 order_no（手输纸质单号）③ 加工单 qr_token（M4-H 打印任务卡二维码的取值来源）——三级都不中才 404；租户隔离/deleted 过滤逐级保持（证据：ProductionServiceTest 3 项 + ProductionControllerTest「路径参数=qr_token」1 项）
+数据: 订单解析**四形态**（issue #4005 + #4222）：GET/报工/计件的 {orderId} 路径参数支持 ① 内部 order_id ② 订单号 order_no（手输纸质单号）③ 加工单 qr_token（M4-H 打印任务卡二维码的取值来源）④ **加工单号 processing_order_no**（工人端「或手输加工单号」兜底路径 + 任务卡上唯一可抄的号；qr_token 只以二维码图形呈现、无可读文本，issue #4222）——四级都不中才 404；租户隔离/deleted 过滤逐级保持，④ 与 ③ 同构且插在其后（既有三形态优先级不变）。（证据：ProductionServiceTest 4 项含 #4222 的加工单号形态 + ProductionControllerTest「路径参数=qr_token」1 项）
 数据: Agent 冻结契约（并行包消费）：GET /api/admin/agent/production/progress?order_no= 返回键集固定 {order_no,status,status_text,progress_percent,current_operation,pending_operations,total_operations,done_operations,expected_delivery_date}；GET /piecework?worker_name=&period=YYYY-MM 返回 {worker_name,period,total,details:[{operation,qty,amount}]}（缺键/改名即红）
 跳过: [backend-contract] 后端契约用例（写路径无 LLM 环节，不进 agent-eval 冒烟）：断言全部由 Java 单测执行 —— ProductionControllerTest / AgentProductionControllerTest（MockMvc，含返回键集冻结断言）/ ProductionServiceTest（服务层语义）/ ProcessingOrderServiceTest（生成加工单即实例化：库逐条一致 + fail-closed）/ ProductionOperationQueryServiceTest（工序库只读消费者 + findRouting）/ Mapper 契约测试（实体 ↔ V49 迁移 ↔ docs/sql/schema.sql 三源收敛）/ ProductionReportingMigrationTest（迁移与 qr_token 索引）
 ```
 溯源: 2026-09-17 新增（issue #3995，M4-G-2）：生产报工后端落地 —— V49 迁移（production_operations / production_routings / processing_position_operations / production_work_logs + processing_orders.qr_token）、ProductionService（实例化/扫码报工/必完自动完工/计件/进度）、ProductionController 与 AgentProductionController（冻结契约）。语义与 M4-G-1 确定性核心（app/production/{routing,piecework}.py，issue #3993）同口径：报工三态、必完工序全绿判定、计件排除返工/报废。2026-09-18（issue #4117，P0 修语义）：原第 3 条 data_check 把**缺陷**写成期望（「订单 status producing → completed」，而 OrderService.STATUS_TRANSITIONS 里该迁移非法、completed 是终态）⇒ 改为「完工 = 加工单置 completed（订单保持 producing）」+ 新增「完工→发货贯通」判据；修复 = ProductionService.report 走 ProcessingOrderMapper.markCompletedIfActive（活跃态原子更新），禁止生产侧直写订单状态。2026-09-18（issue #4116 剩余两半，P0-3 + P0-2）：新增「§5 四项防呆」（重复报工幂等/越站顺序门禁/数量上限拒绝/非本部位 fail-closed + CAS 原子推进 + 前端 in-flight 锁）与「工序库/工艺路线种子与只读消费者」（V54 种子 + operations-catalog/routings 端点 + 三源收敛守卫）两条 data_check；同包修掉 `_qty_for` 的契约漂移（读 `meters` 而引擎真产出是 `fabric_meters` ⇒ 米类工序应做数量恒 0），判据 = 用**引擎真产出**喂 instance_operations（tests/test_production/test_routing.py）。未做（如实登记）：生成加工单的工序来源切换、以及「每部位末道工序 is_must_finish=true」改读库 —— 待裁定。2026-09-18（issue #4116 **切库第二半**，用户裁定「现在就切」）：生成加工单时的工序实例化**从加工项目录改为从工序库**（production_routings + production_operations）—— 取路线判据 = 订单侧可派生信号（加工项名 > options > 商品名 > 销售方式）匹配 curtain_type/craft，派生键库中无该路线 ⇒ 回落默认路线 布帘×韩褶；取不到路线/路线引用的工序无活跃行 ⇒ **fail-closed**（PRODUCTION_ROUTING_NOT_FOUND / PRODUCTION_OPERATION_NOT_FOUND + suggestion + incident 日志），不回退加工项目录、不落半成品（解析移到写库之前）；is_must_finish/is_start_marker 改读库 ⇒ 删除「末道必完」临时口径（末道「外帘发货」库里是 false）。作废本轮之前的两条假真值：V54 旧注释与 PG-018 旧文案里的「本包不切换工序来源 / 不改末道必完默认 / 两处口径待裁定 / 不要互读」。未对齐（如实登记）：部位仍只能落产品名（订单侧无部位字段）、条件工序与 is_shaped 未接线、qty 暂退化为部位订单数量。 ｜ tags: processing-order, production-reporting, piecework, scan-report
+
+### PG-019. 存量加工单恢复路径——instantiate 的 positions 可选（按订单派生）+ 幂等 + 二维码撤销 + 打印计数 🔵
+```
+数据: success=true
+数据: positions 可选（#4202 冻结契约）：POST /api/admin/production/orders/{orderId}/instantiate 的 positions 缺省（空 body / 无该键）或空数组时，服务端**按订单派生**工序实例 —— 复用 ProcessingOrderService.buildPositionPayload 的工序库路线（经 ProcessingOrderService.derivePositionPayload，与 generateOne **同一份**解析：同一套 部位×工艺 派生键、同一份默认路线 布帘×韩褶、同一套 fail-closed），**不复制第二份路线解析逻辑**；响应与显式传入时同构（{qr_token, operation_count}）。派生结果逐字取库：部位名 = 加工产物名[+色号]、seq 来自路线、group/unit/unit_price/is_must_finish/is_start_marker 来自 production_operations、qty = 该部位订单数量（缺值兜底 1）。证据：ProductionControllerTest 3 项（缺省派生逐字落库 11 道 / 空数组同口径 / 无加工项 ⇒ 派生为空 ⇒ 422 fail-closed）+ ProcessingOrderServiceTest 3 项（派生取库 / 空库 fail-closed / 订单不存在 404）
+数据: 幂等（#4202 验收判据 1 后半）：对**已有实例**的单，派生结果与既有实例配置一致时是**幂等空操作** —— 不重插行（positionOperationMapper.insert 零调用）、不软删（update 零调用）、不清零既有 done_qty、复用已有 qr_token（已打印的码不失效）。红证：ProductionControllerTest「instantiateDerivedIsIdempotentWhenInstancesAlreadyExist」（既有实例含一条已报满的 done_qty=2 工序，断言 insert/update 均零调用且返回旧 token）
+数据: 二维码撤销（#4202 冻结契约 6）：POST /api/admin/production/orders/{orderId}/qr-token/revoke（方法级 processing:manage）把 processing_orders.qr_token 置 NULL（SQL 内 SET qr_token = NULL + tenant/deleted 守卫）⇒ 已打印的码立即失效（扫码解析走 qr_token 形态，置空后解析不到订单 ⇒ 报工 404）；再次 instantiate 时由 ensureQrToken **重新生成**新码（新码 ≠ 旧码）。证据：ProductionControllerTest「revokeQrTokenThenInstantiateRegeneratesToken」（撤销响应 {revoked:true, qr_token:null} + 撤销后实例化得到新的 32 位 token）+ ProcessingOrderMapperTest「revokeQrToken_sqlShape」
+数据: 打印计数（#4202 冻结契约 6 前半）：processing_orders.print_count 此前**零 UPDATE 写方**（全仓只有建单时的 printCount(0) 与响应映射）⇒ 真值源 §1「加工单打印物含二维码…记录打印次数」在数据层不可观测。新增 POST /api/admin/production/orders/{orderId}/print（**沿用类级 order:list**，不新增方法级注解：打印按钮对客服/销售/财务可见，收窄成 processing:manage 会变成「能看单却打不了卡」的功能回退）→ SQL 内原子自增 COALESCE(print_count,0)+1（读改写会丢并发计数）并返回递增后的计数。证据：ProductionControllerTest「printIncrementsPrintCount」+ ProcessingOrderServiceTest 2 项（自增返回新计数 / 无加工单 404 且不写）+ ProcessingOrderMapperTest「incrementPrintCount_sqlShape」
+数据: 权限分工（#4202 冻结契约 2/6，与 #4104 的控制器级错配台账一致）：instantiate 与 print 沿用类级 order:list；qr-token/revoke 与 PUT operations/{id}、GET piecework/summary 用方法级 processing:manage（PermissionInterceptor 方法级优先）。**控制器类级口径统一归 #4104，本批不动**。证据：ProductionControllerTest「updateOperationDeclaresManagePermission」（4 个方法的注解逐条断言，含 printOrder 必须**没有**方法级注解）
+数据: 历史口径已作废（防假真值回填）：PG-018 时代的「POST .../instantiate 的 positions 为空 ⇒ 422」在 #4202 之后**不再成立**（缺省/空数组改走派生；服务层的 positions 非空校验只对「派生结果也为空」的路径生效）。旧测试 instantiateWithoutPositionsRejected 已随之改写，不得再按旧口径写回
+跳过: [backend-contract] 后端契约用例（写路径无 LLM 环节，不进 agent-eval 冒烟）：断言全部由 Java 单测执行 —— ProductionControllerTest（MockMvc + 真实 ProductionService/ProcessingOrderService/工序库读面，只 mock Mapper）/ ProcessingOrderServiceTest（派生 payload + 打印计数）/ ProcessingOrderMapperTest（两条新 SQL 的自增与置空形态）
+```
+溯源: 2026-09-18 新增（issue #4202，P0，后端半边）：存量加工单恢复路径。红证（修复前实测）：ProductionControllerTest 三条派生用例得 `Status expected:<200> but was:<422>`（GlobalExceptionHandler 原文 `[VALIDATION_ERROR] positions 不能为空`，与 issue 走查记录逐字一致），revoke/print 两条得 404（端点不存在）；修复后 165 项相关单测全绿。实现：ProcessingOrderService.derivePositionPayload（public，复用 buildSnapshot + buildPositionPayload，未复制第二份路线解析）+ ProductionController.withDerivedPositions（positions 缺省/空 ⇒ 派生）+ ProductionService.revokeQrToken + ProcessingOrderService.recordPrint（ProcessingOrderMapper.incrementPrintCount/revokeQrToken 两条原子 SQL）。前端半边（「补生成工序」按钮 / 任务卡占位文案）由 #4202 的前端包承接，不在本条。 ｜ tags: processing-order, production-reporting, recovery, qr-token
+
+### PG-020. 工序库写面——PUT /production/operations/{id} + 单价版本表（当前价 = 最新版本行，实例快照冻结） 🔵
+```
+数据: success=true
+数据: 写面端点（#4204 冻结契约 2）：PUT /api/admin/production/operations/{id}（方法级 processing:manage）body {unit_price?, is_must_finish?, is_start_marker?, status?, unit?, group_name?, sort_order?} —— **部分更新**（只写 body 里出现的字段，未给的列一律不碰，避免把并发改动覆盖回去），返回更新后的工序（形态 = 目录项 operationView，与 GET /operations-catalog 同一份整形）。非法值 fail-closed：负单价 / status ∉ {active,disabled} / 非布尔标记 ⇒ 422 且不落库；工序不存在/跨租户/已软删 ⇒ 404 且不落库。证据：ProductionOperationCommandServiceTest 6 项 + ProductionControllerTest 4 项
+数据: 单价版本化（#4204 冻结契约 3）：改价 = 同一事务写两处 —— ① production_operations.unit_price（新生成加工单的实例化取值源）② production_operation_price_versions 追加一行（**当前价 = 最新版本行**）。新表由 V55__create_production_operation_price_versions.sql 建出（版本号从 V55 起，避开 #3813 登记的存量重复版本号 V29/V33 区间），并同步 docs/sql/schema.sql（bootstrap 路径不跑迁移链）；幂等：CREATE TABLE/INDEX IF NOT EXISTS + 回填初始版本按 NOT EXISTS 守卫 + ON CONFLICT (id) DO NOTHING（bootstrap-first 会让迁移在建好终态的库上再跑一遍，无守卫则每次启动追加一行重复版本）。证据：ProductionOperationPriceVersionMapperTest 4 项（实体↔V55↔schema.sql 三源收敛 / 幂等 / 索引按 (operation_id, created_at DESC) 且只索引未软删 / 外键指向 production_operations）
+数据: 实例快照冻结（#4204 验收判据 1 后半 + 2）：改价**不影响既有实例**与历史报工 —— processing_position_operations.unit_price 是生成时的快照（V49 注释），PUT 路径物理上没有写实例表的能力（ProductionOperationCommandService 不注入实例表 Mapper，结构判据）。红证：ProductionOperationCommandServiceTest「priceChangeCannotTouchInstanceSnapshots」（结构断言）+ ProductionControllerTest「updateOperationWritesNewPrice」（verify 实例表 insert/update 零调用）
+数据: 改价不制造无意义调价账：同价重复提交 ⇒ 幂等空操作（不追加版本行），但仍返回更新后的工序。证据：ProductionOperationCommandServiceTest「samePriceDoesNotAppendVersion」+ ProductionControllerTest「updateOperationWithSamePriceDoesNotAppendVersion」
+数据: 权限（#4204 验收判据 3）：写面是方法级 processing:manage（类级 order:list 是读口径，覆盖不了写操作；PermissionInterceptor 方法级优先）。红证：ProductionControllerTest「updateOperationDeclaresManagePermission」逐条断言注解值；非 processing:manage 调用由 PermissionInterceptor 拦为 403（拦截器语义见 PermissionInterceptorTest/DF-007）
+数据: 历史口径已作废（防假真值回填）：ProductionOperationQueryService 类注释里「只读边界（本类明确不做）：不提供工序库的增删改端点」在新口径下**仍成立**（该类仍只有 SELECT）—— 写面在 ProductionOperationCommandService；不得把「写面存在」读成「读类越界」。另：V54 种子是**初始价**来源，改价后 production_operations.unit_price 与最新版本行同事务维护，「当前价 = 最新版本行」对存量数据由 V55 回填保证
+跳过: [backend-contract] 后端契约用例（写路径无 LLM 环节，不进 agent-eval 冒烟）：断言全部由 Java 单测执行 —— ProductionOperationCommandServiceTest（写面语义 + 版本账 + 结构判据）/ ProductionControllerTest（MockMvc 端点契约 + 权限注解）/ ProductionOperationPriceVersionMapperTest（实体 ↔ V55 ↔ docs/sql/schema.sql 三源收敛 + 幂等）
+```
+溯源: 2026-09-18 新增（issue #4204，P1）：工序库从「只读 + 唯一写方是 V54 种子 SQL」变成有写面 + 单价版本账。红证（修复前实测）：ProductionControllerTest「updateOperationWritesNewPrice」得 `Status expected:<200> but was:<404>`（PUT 端点不存在），「updateOperationDeclaresManagePermission」得 `NoSuchMethodException: ProductionController.updateOperation(String,Map)`；版本表/实体不存在 ⇒ 新测试文件编译失败（找不到 ProductionOperationPriceVersion / ProductionOperationPriceVersionMapper）。修复后全绿。实现：ProductionOperationCommandService（部分更新 + 改价追加版本行）+ ProductionController.updateOperation + V55 迁移 + 实体/Mapper + docs/sql/schema.sql 镜像（经用户裁定批准；该文件不在原始写路径白名单内，属白名单疏漏）。不做（如实登记）：工序库前端（#4203 承接）、特殊选项系数 factor 接线（另单）。 ｜ tags: processing-order, production-operations, price-versioning
+
+### PG-021. 计件工资报表——GET /production/piecework/summary（按人/按期）+ 生产管理菜单同构 🔵
+```
+数据: success=true
+数据: 报表端点（#4205 冻结契约 4）：GET /api/admin/production/piecework/summary?period=YYYY-MM[&worker_name=]（方法级 processing:manage）→ {period, total, per_worker:[{worker_name, amount, qty}], per_operation:[{operation, amount, qty}]}。聚合源 = production_work_logs（work_date 落在 period 内、work_type=normal）；period 必填且必须 YYYY-MM（缺失/非法 ⇒ 422 可行动错误，不静默返回空报表）；worker_name 是可选下钻维度（查询参数名逐字为 worker_name）。证据：ProductionControllerTest 3 项 + ProductionPieceworkSummaryTest 5 项
+数据: 口径一致性（#4205 验收判据 2，**红证判据**）：同一批报工下「per-order 合计 == 报表 total」—— 两者共用**同一份**聚合（ProductionService.aggregate：Σ(合格数量 × 实例快照单价 × 系数)，返工/报废排除），禁止复制第二套算法。实例缺失（软删）的报工在两处**同一判据**下都不计价（都取「活跃实例」，否则同一笔报工在两套端点数值不等）。红证：ProductionPieceworkSummaryTest「summaryTotalEqualsPerOrderTotal」（7.40 == 7.40 且 per_worker 金额逐项相等）+「softDeletedInstanceIsNotCountedInEitherEndpoint」
+数据: 走查实测单可复现（#4205 验收判据 1）：加工单 JG-20260918-6914 的 1 条报工（「走查工人」精裁-布 3 米 × ¥0.40）⇒ per_worker 含该工人且金额 = 1.20。红证：ProductionPieceworkSummaryTest「walkthroughOrderIsReproducible」（对 dev 库实测数据形态的确定性复现；真实库对账由走查收尾执行）
+数据: 返工/报废不计件 + 期间边界（#4205 验收判据 3）：rework/scrap 不进 per_worker/per_operation/total（与既有 per-order 口径同一份逻辑）；period 边界压在 SQL（work_date >= 当月首日 且 <= 当月末日，含端点）。证据：ProductionPieceworkSummaryTest「periodBoundaryAndOptionalWorkerFilter」（捕获 wrapper 断言 SQL 段含 work_date/worker_name 且绑定参数含 2026-09-01/2026-09-30）+「summaryTotalEqualsPerOrderTotal」里的 rework 负例
+数据: 菜单同构（#4203 验收判据 2 的后端半边，与 #4205 同批）：MenuController 静态权限树与 AuthService.buildMenusByPermissions 同步新增「生产管理」节点 —— 生产看板 /production、工序库 /production/operations、计件工资 /production/piecework，权限码统一 processing:manage；侧边栏组 key = production-center（沿用 product-center/trade-center 约定，与前端 config/menu.ts 的 MenuGroup.key 对齐）；无 processing:manage 权限时整组不出现。证据：MenuControllerTest（DOM 真值逐字段断言：组 label/三子节点 label/三子节点 code）+ AuthServiceTest 2 项（有权限出现且路径逐条相等 / 无权限整组隐藏）
+数据: 冻结契约不可改（防回归）：既有 per-order 计件 GET /api/admin/production/orders/{orderId}/piecework 的响应形状不变（{total, per_worker:{工人:金额}, per_operation:[{operation,amount}]}），agent 侧 GET /api/admin/agent/production/piecework 的键集 {worker_name,period,total,details:[{operation,qty,amount}]} 不变 —— 共用聚合的重构不得改这两个形状（PG-018 的既有断言继续守护）
+跳过: [backend-contract] 后端契约用例（写路径无 LLM 环节，不进 agent-eval 冒烟）：断言全部由 Java 单测执行 —— ProductionPieceworkSummaryTest（报表语义 + 口径一致性 + 走查数据复现）/ ProductionControllerTest（MockMvc 端点契约 + 参数校验）/ MenuControllerTest 与 AuthServiceTest（菜单同构 + 权限门控）
+```
+溯源: 2026-09-18 新增（issue #4205，P1）+ 同批的菜单后端半边（#4203）：计件工资报表从「只有 per-order 汇总」变成按人/按期两级报表，且与 per-order 共用同一份聚合函数（验收判据要求两者对同一张单数值相等）。红证（修复前实测）：ProductionControllerTest 三条报表用例得 `Status expected:<200> but was:<404>`（端点不存在）、period 缺失用例得 `expected:<422> but was:<404>`；MenuControllerTest 得 `$.data.length() expected:<9> but was:<8>` 且 `$.data[?(@.code=='production')]` 无值；AuthServiceTest 得「菜单缺少「生产管理」组：[dashboard, product-center, notifications]」。修复后全绿。实现：ProductionService.pieceworkSummary + aggregate（per-order/报表/工人计件三处共用金额算法）+ parsePeriod（报表必填、工人计件可选，共用一份校验）+ ProductionController.pieceworkSummary（查询参数逐字 worker_name）+ 菜单两处同构。不做（如实登记）：按单下钻的多级联动 UI、工资发放/审批流。 ｜ tags: processing-order, piecework, report, menu
 
 ## 商品域（25 case）
 
@@ -3942,31 +3993,33 @@
 真值: frontend-fix.no-api-change, frontend-fix.vitest
 溯源: 2026-09-02 新增：POC 演示修复 — 拍照找布场景顾客发纯图会被 chatStore 静默拦截（chatStore.ts `!content.trim()` 守卫），须文字同行才发得出 ｜ tags: mini-app, chat-input, image, vision
 
-### UI-014. 小布聊天主页快捷入口六格化 - 算料报价与推荐热门商品并列（取消全宽） 🔵
+### UI-014. 小布聊天主页快捷入口 - 六入口全保留，瑞幸式两栏分组排列（算料报价取消全宽） 🔵
 ```
-你: 顾客打开小布聊天主页，快捷入口区六个入口等权排列：算料报价/推荐热门商品/查订单/找产品/售后咨询/查物流
+你: 顾客打开小布聊天主页，快捷入口区六个入口按两栏分组排列：左「下单小助手」算料报价/找产品/查订单，右「专属推荐师」推荐热门商品/售后咨询/查物流
 期望: direct_reply
-数据: QuickActions 渲染 6 个入口：算料报价/推荐热门商品/查订单/找产品/售后咨询/查物流（无「退换货」「转人工」文案残留）
-数据: 「算料报价」为首项但不再带 wide 全宽样式（与其余入口等权，2 列网格 3 行）
+数据: QuickActions 渲染 6 个入口（两栏各 3 行）：算料报价/找产品/查订单 + 推荐热门商品/售后咨询/查物流（无「退换货」「转人工」文案残留）
+数据: 「算料报价」不再带 wide 全宽样式（与其余入口等权；六格时代的 .quick-actions__item 类已随重排退场）
 数据: 点击「算料报价」发送算料 prompt（含 quote 路由关键词：用料/报价），直达 curtain_calc 算料报价链路
 数据: 点击「推荐热门商品」发送推荐 prompt，进入商品推荐问答
 数据: 其余入口行为不回归（查订单/找产品/售后咨询/查物流 prompt 不变）
 跳过: [backend-contract] 纯前端入口由 mini-app jest 单测验证（quick-actions.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: frontend-fix.xiaobu-quick-actions
-溯源: 2026-09-04 新增 POC 全宽主入口；2026-09-17 修订：产品决策六格化，算料报价取消全宽与推荐热门商品并列 ｜ tags: mini-app, quick-actions, quote
+溯源: 2026-09-04 新增 POC 全宽主入口；2026-09-17 修订：产品决策六格化，算料报价取消全宽与推荐热门商品并列；2026-09-18 修订（issue #4199，用户裁定参考瑞幸 Agent 布局）：六格等权 → 两栏分组（能力面不收缩，仅重排 + 组头配色） ｜ tags: mini-app, quick-actions, quote
 
-### UI-044. 小布聊天主页空态移除商品推荐卡（NewArrivals），推荐改由快捷对话入口承载 🔵
+### UI-044. 小布聊天主页空态移除商品推荐卡（NewArrivals），推荐改由文字胶囊/快捷对话入口承载 🔵
 ```
-你: 顾客打开小布聊天主页空态：不再展示热销商品图片与名称，仅保留品牌欢迎语与快捷对话入口
+你: 顾客打开小布聊天主页空态：顶部一条可横滑的推荐胶囊（如「🪟 遮光窗帘，一拉就黑」），不再展示热销商品图片与名称
 期望: direct_reply
-数据: 空态（MessageList 无消息时）不再渲染 NewArrivals 商品卡片（无商品图/名横滑区）
-数据: 空态保留品牌头+欢迎语+快捷入口（QuickActions 6 格）
-数据: 推荐能力由「推荐热门商品」快捷入口以对话形式承载，商品推荐问答不回归
-跳过: [backend-contract] 纯前端空态由 mini-app jest 单测验证（quick-actions.test.tsx）+ H5 视觉回归（xiaobu-h5.spec.ts），非 LLM 行为，不进入 agent-eval 冒烟
+数据: 空态（MessageList 无消息时）不再渲染 NewArrivals 商品卡片（无商品图/名横滑区；结构性判据 = `.new-arrivals*` 计数 0、无 img、无「¥」价格）
+数据: 空态渲染 RecommendChips 横滑区：5 条**纯前端静态策划文案**胶囊（图标+文案），点任一胶囊发送对应 prompt 进对话（与快捷入口同语义）
+数据: 胶囊**不请求商品接口**（不恢复 getNewArrivals）—— 与「空态不铺商品图/名」的裁定一致，推荐一律以对话形式承载
+数据: 空态保留品牌头 + 欢迎语 + 推荐胶囊 + 两栏分组快捷入口（UI-014）
+数据: 推荐能力由「推荐热门商品」快捷入口与推荐胶囊以**对话形式**承载，商品推荐问答不回归
+跳过: [backend-contract] 纯前端空态由 mini-app jest 单测验证（recommend-chips.test.tsx / quick-actions.test.tsx）+ H5 视觉回归（xiaobu-h5.spec.ts），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: frontend-fix.xiaobu-quick-actions
-溯源: 2026-09-17 新增：产品决策——空态不再铺商品图/名，推荐改为快捷对话入口；同日补 H5 视觉回归 spec 同步（issue #4003：spec 仍断言已删除的新品推荐 → 持续红，已改为六格+负向断言并更新截图基线） ｜ tags: mini-app, chat-entry, empty-state
+溯源: 2026-09-17 新增：产品决策——空态不再铺商品图/名，推荐改为快捷对话入口；同日补 H5 视觉回归 spec 同步（issue #4003：spec 仍断言已删除的新品推荐 → 持续红，已改为六格+负向断言并更新截图基线）；2026-09-18 修订（issue #4199，用户裁定「完全参考瑞幸 Agent 样式布局」）：空态新增**顶部横滑推荐胶囊**（RecommendChips，5 条静态文案、零商品图/名/价格 ⇒ 本条的负向判据不变）；同时**不再单列 UI-046** —— 胶囊属空态构成，折进本条，避免新增 skip 使 `skip_total` 净增（判据条数不减） ｜ tags: mini-app, chat-entry, empty-state
 
 ### UI-015. 我的页移除「账号信息」占位入口（功能开发中占位不进 POC 演示） 🔵
 ```
@@ -4377,8 +4430,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：318（活跃 159，跳过 159）
-- tier 分布：smoke 10 / normal 275 / adversarial 33
+- 用例总数：322（活跃 162，跳过 160）
+- tier 分布：smoke 10 / normal 279 / adversarial 33
 - 售后域：9
 - agents：6
 - api：19
@@ -4396,8 +4449,8 @@
 - onboarding：5
 - ontology：4
 - 订单域：30
-- 加工项域：12
-- processing-order：18
+- 加工项域：13
+- processing-order：21
 - 商品域：25
 - registry：1
 - 设置域：10
@@ -4448,9 +4501,13 @@
 - PG-014: 订单加工项不可变（源头约束，决策 C）：创建后无任何修改通道
 - PG-015: 米宝加工单 LLM 行为：查询加工单（生成 → 按订单号回查状态）
 - PG-016: 米宝加工单 LLM 行为：更新加工单状态（完成加工，产出核到 completed）
-- PG-017: 米宝加工单概念区分：用户问加工单 → 不调加工项/加工单工具，解释概念并引导后台（#3917）
+- PG-017: 米宝加工单真值路由：问加工单数据 → 必须走 processing_order_query（不得用加工项目录冒充/编造，#4196）
 - PG-018: 生产报工闭环——扫码报工→进度推进→必完工序自动完工→计件
+- PG-019: 存量加工单恢复路径——instantiate 的 positions 可选（按订单派生）+ 幂等 + 二维码撤销 + 打印计数
+- PG-020: 工序库写面——PUT /production/operations/{id} + 单价版本表（当前价 = 最新版本行，实例快照冻结）
+- PG-021: 计件工资报表——GET /production/piecework/summary（按人/按期）+ 生产管理菜单同构
 - PP-007: 米宝加工项 LLM 行为：只改单价不清空其它字段（部分更新语义）
 - PP-008: 米宝加工项 LLM 行为：停用加工项（toggle_item_status → inactive）
 - PP-009: 米宝加工项 LLM 行为：per_area 按面积算价（calculate_price 下发 dimensions，不双计）
+- PP-012: 内部算料数量端点 - 应做数量=引擎输出/兜底 1/未知工序 fallback（单测覆盖）
 

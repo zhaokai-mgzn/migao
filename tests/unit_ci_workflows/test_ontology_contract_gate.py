@@ -4,9 +4,12 @@
 """L0 守卫：`scripts/check_ontology_contract.py`（contract-check.sh 第 6 项）不得恒红、且**不许放宽成空判据**。
 
 为什么这个文件存在（issue #4058，唯一账本；#4062 已关闭并入本单）：
-  ① **恒红**：schema 仍声明 `processing_order_*` 三个已下线 intent（#3917 产品决策
+  ① **恒红**：schema 曾声明 `processing_order_*` 三个已下线 intent（#3917 产品决策
      从注册与绑定下线）"mibao 可达"，而双端映射里没有 ⇒ `contract-check.sh`
      （AGENTS.md 铁律 2「三把工具」之一）在 main 上**必然红**；
+     ⚠️ **#4196 已恢复接入**（schema 与双端映射重新一致）⇒ 该具体实例消失，
+     但判据面**不降级**：见 `test_schema_declared_reachability_has_a_live_mapping`
+     （由 schema 现读真值，覆盖同一形态的**两个方向**）；
   ② **不可诊断**：包装脚本用 `grep -E "^❌" | head -3` 取详情，而明细行前缀是
      `   - intent …`（无 ❌ 前缀）⇒ 被整片过滤，红却指不出是谁；
   ③ **零接线**：`scripts/check_ontology_contract.py` 全仓 workflow 0 处引用 ⇒
@@ -63,6 +66,10 @@ REAL_AGENT_INTENT_MAPS = {
         "order_create": "order", "order_query": "order",
         "permission_manage": "staff", "processing_manage": "product",
         "product_inquiry": "product", "role_manage": "staff",
+        # 加工单域（#3340 登记 → #3917 下线 → **#4196 恢复接入**）：route_key=order，
+        # 由 order skill 承载 ⇒ 重新出现在 mibao 真值映射里（仅 B 端；C 端不声明）。
+        "processing_order_generate": "order", "processing_order_query": "order",
+        "processing_order_update": "order",
         "session_manage": "data", "staff_manage": "staff",
         "statistics": "data", "system_settings": "settings",
     },
@@ -90,12 +97,24 @@ REAL_AGENT_ROUTE_KEYS = {
                "order", "product", "quote", "settings", "staff"},
 }
 
-# #3917 下线、由 #4058 对齐 schema 的 3 个 intent（**不得**再声明任何可达性）
-RETIRED_INTENTS = (
-    "processing_order_generate",
-    "processing_order_query",
-    "processing_order_update",
-)
+# #3917 下线、由 #4058 对齐 schema 的 3 个 intent —— **#4196 已恢复接入** ⇒ 本元组清空。
+# 口径随之**换向**（不是删判据）：原先守「这 3 个不得声明可达性」，现在守「schema 声明的
+# 可达性必须与活映射一致」（见 `test_schema_declared_reachability_has_a_live_mapping`）。
+# ⚠️ 之所以保留这个空元组而不是连判据一起删：删掉就等于把「已下线 intent 不许假声明可达」
+# 这条**判别力**也一起丢掉（migao-acceptance：不会红的断言 = 空断言）。当前无已下线 intent
+# ⇒ 由下面的对称判据承接同一判别力，并额外覆盖「新 intent 只在 schema 里声明、忘了落 skill」
+# 这个方向。
+RETIRED_INTENTS: tuple[str, ...] = ()
+
+# schema 里**声明了可达性**（`agents` 非空）的业务 intent —— 真值由 schema.yaml 现读，
+# 不在本文件硬编码（硬编码会让这条判据变成「与自己的副本比对」）。
+def _schema_declared_mappings(ontology) -> dict[str, dict[str, str]]:
+    """`{intent: {agent: route_key}}` —— 只取 schema 里 `agents` 非空的条目。"""
+    return {
+        name: {agent: own.route_key for agent in own.agents}
+        for name, own in ontology.intent_ownership.items()
+        if own.agents
+    }
 
 
 def _violations(ontology) -> list:
@@ -126,22 +145,70 @@ class TestContractGate:
             + "\n".join(f"  - {v}" for v in violations)
         )
 
+    def test_schema_declared_reachability_has_a_live_mapping(self, ontology):
+        """**对称判据**（承接 `RETIRED_INTENTS` 清空后的判别力，不降级为空断言）。
+
+        口径：#3917 下线期这条守「已下线的 3 个 intent 不得声明可达性」；#4196 恢复接入后
+        已无已下线 intent，故换成守**声明侧 ↔ 活映射侧一致**，两条子判据（**逐条点名**，
+        不靠 `test_live_schema_has_no_violations` 的整体清单兜底）：
+          · ① **存在性**：schema 里声明了 `agents` 的每个 intent，在对应 agent 的真值映射里
+               必须有条目（缺 = 「假声明」形态，正是 #4058 恒红的病根）；
+          · ② **route_key 一致性（仅 mibao）**：B 端全局映射是路由约定的事实源 ⇒ mibao 的
+               route_key 必须与 schema 逐字一致。**xiaobu 不比对** —— 按
+               `app/ontology/contract.py` 的既有契约（v2 第 1b 条），C 端 customer_general
+               兜底 skill 会把大量 intent 的 route_key 覆盖成 `data`，只要求可达、不要求逐字
+               （对 xiaobu 严比 = 制造 20+ 条与产品契约相悖的假红）。
+        ① 覆盖「只在 schema 声明可达、忘了落 skill」这个方向（`RETIRED_INTENTS` 那三条判据
+        只覆盖「已下线却仍声明」的反方向）——两条方向合起来才是完整判据面。
+        """
+        declared = _schema_declared_mappings(ontology)
+        assert declared, (
+            "schema 里没有任何 `agents` 非空的 intent ⇒ 本判据会静默空转（fail-closed）"
+        )
+        problems: list[str] = []
+        for intent, agent_map in sorted(declared.items()):
+            for agent, route_key in sorted(agent_map.items()):
+                live = REAL_AGENT_INTENT_MAPS.get(agent, {})
+                if intent not in live:
+                    problems.append(
+                        f"{intent}：schema 声明 {agent} 可达（route_key={route_key}），"
+                        f"但该 agent 的真值映射里没有它"
+                    )
+                elif agent == "mibao" and live[intent] != route_key:
+                    problems.append(
+                        f"{intent}：route_key 漂移（mibao）—— schema={route_key}，"
+                        f"活映射={live[intent]}"
+                    )
+        assert problems == [], (
+            "schema 声明的可达性与活映射不一致（contract-check.sh 第 6 项会因此恒红，"
+            "issue #4058 的形态）：\n  " + "\n  ".join(problems)
+        )
+
     def test_retired_intents_declare_no_reachability(self, ontology):
-        """#3917 下线的 3 个 intent：保留留史信息但**不声明任何 agent 可达**。
+        """已下线 intent（当前**无**，`RETIRED_INTENTS` 为空）：保留留史但不得声明可达性。
 
         照 loader.py 既有语义（agents 缺省为空 = 未声明可达性），**不新增**
         status/deprecated 字段——本 schema 无此惯例。
+        ⚠️ `RETIRED_INTENTS` 为空 ⇒ 循环体不执行。**这不是空断言**：它是一条**待命**判据
+        （下次有人下线 intent 时把名字填进元组即生效），且同一判别力当前由
+        `test_schema_declared_reachability_has_a_live_mapping` 的 ① 承担 —— 那里用的是
+        schema 现读的真值而非本元组。两者分工：本元组管「显式登记的下线项」，那条管「全部声明项」。
         """
         owned = ontology.intent_ownership
         for intent in RETIRED_INTENTS:
             assert intent in owned, f"{intent} 的留史登记被误删（应保留 route_key/description）"
             assert owned[intent].agents == [], (
-                f"{intent} 已按 #3917 下线，agents 必须为空（不得重新声明可达性）"
+                f"{intent} 已下线，agents 必须为空（不得重新声明可达性）"
             )
             assert owned[intent].route_key == "order", f"{intent} 留史 route_key 应为 order"
 
     def test_retired_intents_absent_from_actual_maps(self):
-        """守卫生效的前提：这 3 个 intent 确实**不在**双端真实映射里（现实未回退）。"""
+        """守卫生效的前提：已下线 intent 确实**不在**双端真实映射里（现实未回退）。
+
+        当前 `RETIRED_INTENTS` 为空 ⇒ 循环不执行；把名字填回元组即恢复判别力
+        （#3917 期间它是活判据，**#4196 恢复接入后** 这 3 个 intent 重新出现在 mibao 映射里
+        —— 见上方 `REAL_AGENT_INTENT_MAPS`，故不得再把它们列进 `RETIRED_INTENTS`）。
+        """
         for intent in RETIRED_INTENTS:
             for agent, mapping in REAL_AGENT_INTENT_MAPS.items():
                 assert intent not in mapping, (

@@ -170,6 +170,30 @@ public class ProductionService {
         return qrToken;
     }
 
+    /**
+     * 撤销加工单二维码 token（issue #4202；真值源 §1「token 化、可撤销」）。
+     *
+     * <p>撤销 = 置空 {@code qr_token}：已打印的码立即失效（{@link #resolveOrder} 的 qr_token
+     * 形态解析不到订单 ⇒ 扫码报工 404），再次 {@link #instantiate} 时由 {@link #ensureQrToken}
+     * 重新生成新码。这是**安全相关写操作**（旧纸件作废），端点声明 {@code processing:manage}。</p>
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public Map<String, Object> revokeQrToken(String orderId, Long tenantId) {
+        Order order = resolveOrder(orderId, tenantId);
+        ProcessingOrder po = processingOrderMapper.selectActiveByOrderId(order.getId(), tenantId);
+        if (po == null) {
+            throw BusinessException.validationError(
+                    "订单 " + order.getOrderNo() + " 尚无加工单，没有可撤销的二维码");
+        }
+        boolean revoked = processingOrderMapper.revokeQrToken(po.getId(), tenantId, OffsetDateTime.now()) > 0;
+        log.info("撤销加工单二维码: orderNo={}, po={}, revoked={}", order.getOrderNo(), po.getProcessingOrderNo(), revoked);
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("order_id", order.getId());
+        result.put("qr_token", null);
+        result.put("revoked", revoked);
+        return result;
+    }
+
     private Map<String, Object> instantiateResult(String qrToken, int operationCount) {
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("qr_token", qrToken);
@@ -287,7 +311,7 @@ public class ProductionService {
      * 无加工单/无实例时为「未开始」态而不是错误态（current_operation 为空串，交期为 null）。
      *
      * 订单解析与报工链路同口径（issue #4007）：复用 {@link #resolveOrder} 的
-     * order_id → order_no → qr_token 三形态，**不得只认 order_no** —— agent 侧拿到的是
+     * order_id → order_no → qr_token → processing_order_no 四形态，**不得只认 order_no** —— agent 侧拿到的是
      * 内部 order_id（CH-039/CH-040 的 `no_success(production_progress_query)` 病灶）。
      */
     public Map<String, Object> progress(String orderNo, Long tenantId) {
@@ -594,6 +618,10 @@ public class ProductionService {
     /**
      * 加工单计件汇总：Σ(合格数量 × 单价 × 系数)，排除返工/报废；单工序一人制。
      * 返回 {total, per_worker: {工人: 金额}, per_operation: [{operation, amount}]}。
+     *
+     * <p>聚合算法**只有一份**（{@link #aggregate}）：期间报表 {@link #pieceworkSummary} 与
+     * 工人计件 {@link #workerPiecework} 共用它 —— 两套实现必然漂移，而验收判据要求
+     * 「同一张单的 per-order 合计 = 报表里该单贡献值」。</p>
      */
     public Map<String, Object> piecework(String orderId, Long tenantId) {
         Order order = resolveOrder(orderId, tenantId);
@@ -606,37 +634,138 @@ public class ProductionService {
             byId.put(op.getId(), op);
         }
 
-        Map<String, BigDecimal> perWorker = new LinkedHashMap<>();
-        Map<String, BigDecimal> perOperation = new LinkedHashMap<>();
+        PieceworkTotals totals = aggregate(listWorkLogs(po.getId(), tenantId), byId::get);
+
+        Map<String, Object> perWorkerRounded = new LinkedHashMap<>();
+        totals.workerAmount().forEach((worker, amount) -> perWorkerRounded.put(worker, money(amount)));
+        List<Map<String, Object>> perOperationList = new ArrayList<>();
+        totals.operationAmount().forEach((operation, amount) -> perOperationList.add(
+                new LinkedHashMap<>(Map.of("operation", operation, "amount", money(amount)))));
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("total", money(totals.total()));
+        result.put("per_worker", perWorkerRounded);
+        result.put("per_operation", perOperationList);
+        return result;
+    }
+
+    /**
+     * 计件工资报表（issue #4205，冻结契约）：
+     * {@code {period, total, per_worker:[{worker_name, amount, qty}], per_operation:[{operation, amount, qty}]}}。
+     *
+     * <p>聚合源 = {@code production_work_logs}（{@code work_date} 落在 period 内、{@code work_type=normal}，
+     * 返工/报废不计件），算法与 per-order {@link #piecework} **同一份**（见 {@link #aggregate}）。
+     * 真值源 §4：「工资报表 = 报工事件聚合（按人/按期/按单下钻）」。{@code worker_name} 是可选下钻维度。</p>
+     *
+     * <p>工序单价取**实例快照**（{@code processing_position_operations.unit_price}）：改价只影响
+     * 新报工，历史报工按当时价（逐笔可追溯，见 {@link ProductionOperationCommandService}）。</p>
+     *
+     * @param period 必填，YYYY-MM
+     */
+    public Map<String, Object> pieceworkSummary(String period, String workerName, Long tenantId) {
+        YearMonth month = parsePeriod(period, true);
+        // 字符串列名（非 Lambda）：期间边界断言需要一个可被 Standalone 单测取 SQL 段的 wrapper
+        QueryWrapper<ProductionWorkLog> wrapper = new QueryWrapper<ProductionWorkLog>()
+                .eq("tenant_id", tenantId)
+                .eq("deleted", 0)
+                .ge("work_date", month.atDay(1))
+                .le("work_date", month.atEndOfMonth())
+                .orderByAsc("work_date");
+        if (StringUtils.hasText(workerName)) {
+            wrapper.eq("worker_name", workerName.trim());
+        }
+
+        PieceworkTotals totals = aggregate(list(wrapper), activeOperationsById(tenantId)::get);
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("period", month.toString());
+        result.put("total", money(totals.total()));
+        result.put("per_worker", amountAndQtyRows(totals.workerAmount(), totals.workerQty(), "worker_name"));
+        result.put("per_operation", amountAndQtyRows(totals.operationAmount(), totals.operationQty(), "operation"));
+        return result;
+    }
+
+    /**
+     * 计件聚合（**per-order 汇总 / 期间报表 / 工人计件共用的唯一算法**）。
+     *
+     * <p>口径：Σ(合格数量 × 实例快照单价 × 系数)，排除 rework/scrap；实例缺失（已软删）的报工
+     * 不计价（不可计价而不是抛错 —— 与既有 per-order 口径一致）。金额逐笔四舍五入到分再累加
+     * （与既有实现逐字相同，避免合计出现 0.005 级漂移）。</p>
+     *
+     * @param operationLookup 工序实例查找（per-order 用「该加工单的活跃实例」，报表用「本租户活跃实例」；
+     *                        两处都必须是**活跃**实例，否则同一笔报工在两套端点下取值不同）
+     */
+    private PieceworkTotals aggregate(List<ProductionWorkLog> logs,
+                                      java.util.function.Function<String, ProcessingPositionOperation> operationLookup) {
+        Map<String, BigDecimal> workerAmount = new LinkedHashMap<>();
+        Map<String, BigDecimal> workerQty = new LinkedHashMap<>();
+        Map<String, BigDecimal> operationAmount = new LinkedHashMap<>();
+        Map<String, BigDecimal> operationQty = new LinkedHashMap<>();
         BigDecimal total = BigDecimal.ZERO;
-        for (ProductionWorkLog log : listWorkLogs(po.getId(), tenantId)) {
+        for (ProductionWorkLog log : logs) {
             if (!"normal".equals(log.getWorkType())) {
                 continue; // 返工/报废不计件
             }
-            ProcessingPositionOperation op = byId.get(log.getOperationId());
+            ProcessingPositionOperation op = operationLookup.apply(log.getOperationId());
             if (op == null) {
                 continue; // 工序实例已不存在（软删）→ 该笔不可计价，跳过而不是抛错
             }
             BigDecimal amount = money(nz(log.getQualifiedQty())
                     .multiply(nz(op.getUnitPrice()))
                     .multiply(op.getFactor() == null ? BigDecimal.ONE : op.getFactor()));
-            perWorker.merge(StringUtils.hasText(log.getWorkerName()) ? log.getWorkerName() : "未分配",
-                    amount, BigDecimal::add);
-            perOperation.merge(op.getOperationName(), amount, BigDecimal::add);
+            String worker = StringUtils.hasText(log.getWorkerName()) ? log.getWorkerName() : "未分配";
+            String operation = op.getOperationName();
+            workerAmount.merge(worker, amount, BigDecimal::add);
+            workerQty.merge(worker, nz(log.getQualifiedQty()), BigDecimal::add);
+            operationAmount.merge(operation, amount, BigDecimal::add);
+            operationQty.merge(operation, nz(log.getQualifiedQty()), BigDecimal::add);
             total = total.add(amount);
         }
+        return new PieceworkTotals(total, workerAmount, workerQty, operationAmount, operationQty);
+    }
 
-        Map<String, Object> perWorkerRounded = new LinkedHashMap<>();
-        perWorker.forEach((worker, amount) -> perWorkerRounded.put(worker, money(amount)));
-        List<Map<String, Object>> perOperationList = new ArrayList<>();
-        perOperation.forEach((operation, amount) -> perOperationList.add(
-                new LinkedHashMap<>(Map.of("operation", operation, "amount", money(amount)))));
+    /** 聚合中间态（金额已逐笔取整；qty 为该维度的合格数量合计）。 */
+    private record PieceworkTotals(BigDecimal total,
+                                   Map<String, BigDecimal> workerAmount,
+                                   Map<String, BigDecimal> workerQty,
+                                   Map<String, BigDecimal> operationAmount,
+                                   Map<String, BigDecimal> operationQty) {
+    }
 
-        Map<String, Object> result = new LinkedHashMap<>();
-        result.put("total", money(total));
-        result.put("per_worker", perWorkerRounded);
-        result.put("per_operation", perOperationList);
-        return result;
+    /** {name: amount, qty} 行列表（保留首次出现顺序 = work_date 升序，报表可复现）。 */
+    private static List<Map<String, Object>> amountAndQtyRows(Map<String, BigDecimal> amounts,
+                                                              Map<String, BigDecimal> quantities,
+                                                              String nameKey) {
+        List<Map<String, Object>> rows = new ArrayList<>();
+        amounts.forEach((name, amount) -> {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put(nameKey, name);
+            row.put("amount", money(amount));
+            row.put("qty", nz(quantities.get(name)));
+            rows.add(row);
+        });
+        return rows;
+    }
+
+    /**
+     * 全租户**活跃**工序实例按 id 索引（报表用）。
+     *
+     * <p>判据与 {@link #listOperations}（per-order）一致 = {@code tenant_id + deleted=0}：
+     * 若改用 {@code selectById} 逐条查，已软删实例会被算进来 ⇒ 同一笔报工在报表里计价、
+     * 在 per-order 里不计价（两套端点数值不等，正是 #4205 验收判据要防的漂移）。</p>
+     */
+    private Map<String, ProcessingPositionOperation> activeOperationsById(Long tenantId) {
+        List<ProcessingPositionOperation> rows = positionOperationMapper.selectList(
+                new LambdaQueryWrapper<ProcessingPositionOperation>()
+                        .eq(ProcessingPositionOperation::getTenantId, tenantId)
+                        .eq(ProcessingPositionOperation::getDeleted, 0));
+        Map<String, ProcessingPositionOperation> byId = new HashMap<>();
+        if (rows != null) {
+            for (ProcessingPositionOperation op : rows) {
+                byId.put(op.getId(), op);
+            }
+        }
+        return byId;
     }
 
     /**
@@ -647,17 +776,7 @@ public class ProductionService {
         if (!StringUtils.hasText(workerName)) {
             throw BusinessException.validationError("worker_name 不能为空");
         }
-        YearMonth month = null;
-        if (StringUtils.hasText(period)) {
-            if (!period.trim().matches("\\d{4}-\\d{2}")) {
-                throw BusinessException.validationError("period 格式必须是 YYYY-MM");
-            }
-            try {
-                month = YearMonth.parse(period.trim());
-            } catch (DateTimeParseException e) {
-                throw BusinessException.validationError("period 格式必须是 YYYY-MM");
-            }
-        }
+        YearMonth month = parsePeriod(period, false);
         // 字符串列名（非 Lambda）：期间边界断言需要一个可被 Standalone 单测取 SQL 段的 wrapper
         QueryWrapper<ProductionWorkLog> wrapper = new QueryWrapper<ProductionWorkLog>()
                 .eq("tenant_id", tenantId)
@@ -669,38 +788,49 @@ public class ProductionService {
                     .le("work_date", month.atEndOfMonth());
         }
 
-        Map<String, BigDecimal> qtyByOperation = new LinkedHashMap<>();
-        Map<String, BigDecimal> amountByOperation = new LinkedHashMap<>();
-        BigDecimal total = BigDecimal.ZERO;
-        for (ProductionWorkLog log : list(wrapper)) {
-            if (!"normal".equals(log.getWorkType())) {
-                continue;
-            }
-            ProcessingPositionOperation op = positionOperationMapper.selectById(log.getOperationId());
-            if (op == null) {
-                continue;
-            }
-            BigDecimal amount = money(nz(log.getQualifiedQty())
-                    .multiply(nz(op.getUnitPrice()))
-                    .multiply(op.getFactor() == null ? BigDecimal.ONE : op.getFactor()));
-            String key = StringUtils.hasText(log.getOperationName()) ? log.getOperationName() : op.getOperationName();
-            qtyByOperation.merge(key, nz(log.getQualifiedQty()), BigDecimal::add);
-            amountByOperation.merge(key, amount, BigDecimal::add);
-            total = total.add(amount);
-        }
+        // 与 per-order 计件 / 期间报表**同一份**聚合（{@link #aggregate}）：金额 = 合格数量 ×
+        // 实例快照单价 × 系数，排除返工/报废。工序实例按 id 直查（保持既有 B 端契约口径）。
+        PieceworkTotals totals = aggregate(list(wrapper), positionOperationMapper::selectById);
 
         List<Map<String, Object>> details = new ArrayList<>();
-        qtyByOperation.forEach((operation, qty) -> details.add(new LinkedHashMap<>(Map.of(
-                "operation", operation,
-                "qty", qty,
-                "amount", money(amountByOperation.getOrDefault(operation, BigDecimal.ZERO))))));
+        totals.operationAmount().forEach((operation, amount) -> {
+            Map<String, Object> detail = new LinkedHashMap<>();
+            detail.put("operation", operation);
+            detail.put("qty", nz(totals.operationQty().get(operation)));
+            detail.put("amount", money(amount));
+            details.add(detail);
+        });
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("worker_name", workerName.trim());
         result.put("period", period == null ? "" : period.trim());
-        result.put("total", money(total));
+        result.put("total", money(totals.total()));
         result.put("details", details);
         return result;
+    }
+
+    /**
+     * period 解析（YYYY-MM）——工人计件（agent 契约，period 可选）与期间报表（#4205，period 必填）
+     * **共用这一份**校验：两处各写一遍必然漂移（一处收 "2026-9"、另一处不收）。
+     *
+     * @param required 缺失时是否报错（报表的 period 是契约必填项）
+     * @return null 仅当 period 为空且 required=false
+     */
+    private static YearMonth parsePeriod(String period, boolean required) {
+        if (!StringUtils.hasText(period)) {
+            if (required) {
+                throw BusinessException.validationError("period 不能为空（格式 YYYY-MM）");
+            }
+            return null;
+        }
+        if (!period.trim().matches("\\d{4}-\\d{2}")) {
+            throw BusinessException.validationError("period 格式必须是 YYYY-MM");
+        }
+        try {
+            return YearMonth.parse(period.trim());
+        } catch (DateTimeParseException e) {
+            throw BusinessException.validationError("period 格式必须是 YYYY-MM");
+        }
     }
 
     // ============================================================ 内部
@@ -716,9 +846,11 @@ public class ProductionService {
     /**
      * 订单解析（租户隔离：跨租户/软删视同不存在）。
      *
-     * 支持三形态（issue #4005——打印的加工单二维码内容是 {@code qr_token}，
+     * 支持四形态（issue #4005 + #4222——打印的加工单二维码内容是 {@code qr_token}，
      * 若只按内部 order_id 解析，工人扫真码会得到「订单不存在」）：
-     * ① 内部 order_id；② 订单号 order_no（手输纸质单号）；③ 加工单 qr_token（打印二维码内容）。
+     * ① 内部 order_id；② 订单号 order_no（手输纸质单号）；③ 加工单 qr_token（打印二维码内容）；
+     * ④ 加工单号 processing_order_no（工人端「手输加工单号」兜底路径 + 任务卡上唯一可抄的号，
+     * issue #4222）。四级都不中才 404。
      * 用字符串列名而非 Lambda 列名：Standalone MockMvc 单测环境没有 MyBatis-Plus TableInfo 缓存
      * （同本类既有的 UpdateWrapper 做法）。
      */
@@ -736,6 +868,19 @@ public class ProductionService {
             // ③ qr_token 兜底（加工单二维码内容 → 加工单 → 订单）
             ProcessingOrder po = processingOrderMapper.selectOne(new QueryWrapper<ProcessingOrder>()
                     .eq("qr_token", key)
+                    .eq("tenant_id", tenantId)
+                    .eq("deleted", 0)
+                    .last("LIMIT 1"));
+            order = po == null ? null : orderMapper.selectById(po.getOrderId());
+        }
+        if (!isResolvable(order, tenantId)) {
+            // ④ processing_order_no 兜底（加工单号 JG-YYYYMMDD-XXXX → 加工单 → 订单，issue #4222）
+            //    工人端「或手输加工单号」兜底路径、以及任务卡上唯一可抄的号（text-2xl 加工单号；
+            //    qr_token 只以二维码图形呈现、无可读文本）都是**加工单号**，而 ③ 只认 qr_token
+            //    ⇒ 只认 ①②③ 时这条 UI 自己要求的输入必然「未找到该加工单」。
+            //    与 ③ 同构（同租户 + deleted=0 + LIMIT 1），插在 ③ **之后**：既有三形态优先级不变。
+            ProcessingOrder po = processingOrderMapper.selectOne(new QueryWrapper<ProcessingOrder>()
+                    .eq("processing_order_no", key)
                     .eq("tenant_id", tenantId)
                     .eq("deleted", 0)
                     .last("LIMIT 1"));

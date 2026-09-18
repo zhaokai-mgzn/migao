@@ -59,4 +59,32 @@ public interface ProcessingOrderMapper extends BaseMapper<ProcessingOrder> {
             "AND status IN ('generated','issued','in_processing','completed')")
     int markCompletedIfActive(@Param("id") String id, @Param("tenantId") Long tenantId,
                               @Param("completedAt") OffsetDateTime completedAt);
+
+    /**
+     * 打印计数原子递增（issue #4202 边角修复）—— {@code print_count} 此前**零 UPDATE 写方**：
+     * 真值源 §1 要求加工单打印物「记录打印次数」，而全仓只有建单时的 {@code printCount(0)}
+     * 与响应映射 ⇒ 打印次数在数据层永不可观测。
+     *
+     * <p>SQL 内自增（{@code COALESCE(print_count,0)+1}）而不是「读出来 +1 再写回」：
+     * 同一张卡可能被多人/多标签页同时打印，读改写会丢计数。返回影响行数
+     * （0 = 加工单不存在/跨租户/已软删 ⇒ 调用方 fail-closed）。</p>
+     */
+    @Update("UPDATE processing_orders SET print_count = COALESCE(print_count, 0) + 1, " +
+            "updated_at = #{updatedAt} " +
+            "WHERE id = #{id} AND tenant_id = #{tenantId} AND deleted = 0")
+    int incrementPrintCount(@Param("id") String id, @Param("tenantId") Long tenantId,
+                            @Param("updatedAt") OffsetDateTime updatedAt);
+
+    /**
+     * 撤销二维码 token（issue #4202）：置空 {@code qr_token} ⇒ 已打印的码立即失效
+     * （扫码解析走 {@code qr_token} 形态，置空后解析不到订单 ⇒ 报工 404），
+     * 再次实例化时由 {@code ProductionService.ensureQrToken} 重新生成。
+     *
+     * <p>置 NULL 而不是换一个新 token：撤销的语义是「这张纸作废」，不是「静默换一张纸」——
+     * 换 token 会让工人手里的旧码解析失败但页面/接口仍显示有码，谁也不知道该重新打印。</p>
+     */
+    @Update("UPDATE processing_orders SET qr_token = NULL, updated_at = #{updatedAt} " +
+            "WHERE id = #{id} AND tenant_id = #{tenantId} AND deleted = 0")
+    int revokeQrToken(@Param("id") String id, @Param("tenantId") Long tenantId,
+                      @Param("updatedAt") OffsetDateTime updatedAt);
 }

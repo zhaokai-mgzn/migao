@@ -1110,6 +1110,19 @@ public class AuthService {
             menus.add(menuGroup("product-center", "商品管理", "Store", productChildren));
         }
 
+        // 生产管理分组（issue #4203/#4205 后端半边）：生产看板 / 工序库 / 计件工资，权限码统一
+        // processing:manage。三个节点**必须与 MenuController 的静态权限树同构**（岗位权限页勾选
+        // 与真实侧边栏的单一真相），也与前端 config/menu.ts 同构。
+        List<UserInfoResponse.MenuItem> productionChildren = new java.util.ArrayList<>();
+        if (isAll || permissions.contains("processing:manage")) {
+            productionChildren.add(menuItem("production", "生产看板", "Factory", "/production"));
+            productionChildren.add(menuItem("production-operations", "工序库", "ListChecks", "/production/operations"));
+            productionChildren.add(menuItem("production-piecework", "计件工资", "Coins", "/production/piecework"));
+        }
+        if (!productionChildren.isEmpty()) {
+            menus.add(menuGroup("production-center", "生产管理", "Factory", productionChildren));
+        }
+
         // 订单管理分组
         List<UserInfoResponse.MenuItem> tradeChildren = new java.util.ArrayList<>();
         if (isAll || permissions.contains("order:list")) {

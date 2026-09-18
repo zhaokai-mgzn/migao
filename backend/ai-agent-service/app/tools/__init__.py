@@ -30,8 +30,8 @@ from app.tools.registry import (
 
 # 具体 Tool 实现 —— 清单与顺序必须与 `create_default_registry()` 一致（漏导出是**静默**漂移，
 # `from app.tools import OrderCreateTool` 才报错；不变式 = tests/test_tools_registry.py
-# ::TestToolsFacadeCompleteness）。未注册的类（KnowledgeManageTool、#3917 下线的
-# processing_order_*）**不进**本清单。
+# ::TestToolsFacadeCompleteness）。未注册的类（KnowledgeManageTool、human_handoff）
+# **不进**本清单；加工单三工具按 issue #4196 恢复注册 ⇒ 一并回到本清单。
 from app.tools.product_search import ProductSearchTool
 from app.tools.product_detail import ProductDetailTool
 from app.tools.logistics_track import LogisticsTrackTool
@@ -42,6 +42,9 @@ from app.tools.customer_order_query import CustomerOrderQueryTool
 from app.tools.customer_address_query import CustomerAddressQueryTool
 from app.tools.order_manage import OrderManageTool
 from app.tools.order_create import OrderCreateTool
+from app.tools.processing_order_generate import ProcessingOrderGenerateTool
+from app.tools.processing_order_query import ProcessingOrderQueryTool
+from app.tools.processing_order_update import ProcessingOrderUpdateTool
 from app.tools.product_manage import ProductManageTool
 from app.tools.inventory_manage import InventoryManageTool
 from app.tools.processing_item_query import ProcessingItemQueryTool
@@ -54,7 +57,7 @@ from app.tools.after_sales_manage import AfterSalesManageTool
 from app.tools.aftersale_create import AftersaleCreateTool
 from app.tools.aftersale_query import AftersaleQueryTool
 # 转人工工具**不导出**（用户裁定 2026-09-19 退场，模型不可达；见 registry.py 注册行注释）：
-# 门面清单必须与 `create_default_registry()` 一致（同下 #3917 的 processing_order_*）。
+# 门面清单必须与 `create_default_registry()` 一致（加工单三工具已按 #4196 恢复注册）。
 # from app.tools.human_handoff import HumanHandoffTool
 from app.tools.notification_manage import NotificationManageTool
 from app.tools.settings_manage import SettingsManageTool
@@ -81,6 +84,8 @@ __all__ = [
     "CustomerLogisticsTrackTool", "KnowledgeSearchTool", "OrderQueryTool",
     "CustomerOrderQueryTool", "CustomerAddressQueryTool", "OrderManageTool",
     "OrderCreateTool", "ProductManageTool", "InventoryManageTool",
+    "ProcessingOrderGenerateTool", "ProcessingOrderQueryTool",
+    "ProcessingOrderUpdateTool",
     "ProcessingItemQueryTool", "CustomerManageTool", "EmployeeManageTool",
     "RoleManageTool", "DashboardStatsTool", "FinanceApiTool",
     "AfterSalesManageTool", "AftersaleCreateTool", "AftersaleQueryTool",
