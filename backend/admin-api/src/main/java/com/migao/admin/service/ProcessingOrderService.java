@@ -457,6 +457,11 @@ public class ProcessingOrderService {
                     : (colorName == null ? productName : productName + " " + colorName);
             Map<String, Object> position = new LinkedHashMap<>();
             position.put("position_name", positionName);
+            // 主定位键（V69，issue #4388 / #4373 裁定）：`order_item_id` = 该快照行对应的 order_items 行，
+            // `position_kind` = 可读定位（哪一件帘）。`position_name` 是**展示名**，同商品同色号的两个窗
+            // 会同名 ⇒ 只有这一对键能唯一定位实例（读面分组、算料按行取、报工/计件归属都靠它）。
+            position.put("order_item_id", str(entry.get("itemId")));
+            position.put("position_kind", str(entry.get("curtainType")));
             position.put("operations", operations);
             positions.add(position);
             operationRows.add(operations);
@@ -750,7 +755,13 @@ public class ProcessingOrderService {
         }
     }
 
-    /** 算料请求体里的单个部位（与 ai-agent 端点冻结契约同构）。 */
+    /**
+     * 算料请求体里的单个部位（与 ai-agent 端点冻结契约同构）。
+     *
+     * <p>{@code order_item_id}（V69，issue #4388）是**额外**键：端点模型（pydantic 默认 `extra` 忽略）
+     * 不会因它报错，但**也不会回显** ⇒ 今天只用于「请求自描述 + 排查」（谁的数量是谁的），
+     * 以及将来引擎回显后可改成按行匹配。**本单不改 ai-agent**（边界：Agent 层另单）。</p>
+     */
     private Map<String, Object> qtyRequest(Map<String, Object> entry, String positionName,
                                            List<Map<String, Object>> operations) {
         List<String> names = new ArrayList<>(operations.size());
@@ -759,6 +770,7 @@ public class ProcessingOrderService {
         }
         Map<String, Object> position = new LinkedHashMap<>();
         position.put("position_name", positionName);
+        position.put("order_item_id", str(entry.get("itemId")));
         position.put("operations", names);
         position.put("calc_info", calcInfo(entry));
         return position;
@@ -835,9 +847,16 @@ public class ProcessingOrderService {
     /**
      * 用算料引擎的返回回填 {@code qty} 与 {@code qty_source}。
      *
-     * <p>fail-closed 的两个细节：① 端点返回条数与请求不符 ⇒ 客户端已抛错（不在此处补位）；
+     * <p>fail-closed 的三个细节：① 端点返回条数与请求不符 ⇒ 客户端已抛错（不在此处补位）；
      * ② 端点漏答某道工序（契约外形态）⇒ 同样抛错，**不**替它兜底 1 ——
-     * 静默补值会让「算料服务没答」与「算料服务答了兜底 1」长得一模一样。</p>
+     * 静默补值会让「算料服务没答」与「算料服务答了兜底 1」长得一模一样；
+     * ③ <b>身份校验（issue #4388）</b>：条数相同 ≠ 对得上 —— 响应必须**指回请求里的那个部位**
+     * （引擎契约是纯映射、保序；本断言把「靠数组位次对齐」从**隐含假设**变成**显式契约**）⇒
+     * 一旦引擎重排/串位，是**显式失败**而不是把 A 窗的数量写到 B 窗上（静默错配 = 本仓最大失败模式）。</p>
+     *
+     * <p>⚠️ <b>已知边界（登记在 PR）</b>：引擎响应只回 {@code position_name}，**不回显行标识**
+     * ⇒ **同名**部位之间仍无法靠身份区分（本断言对它们恒成立）。真正的按 {@code order_item_id}
+     * 取值需要 ai-agent 端回显该键（属 Agent 侧改动，跟随单）。</p>
      */
     private void fillQty(List<Map<String, Object>> positions,
                          List<List<Map<String, Object>>> operationRows,
@@ -851,6 +870,14 @@ public class ProcessingOrderService {
         }
         for (int i = 0; i < positions.size(); i++) {
             ProductionOperationQtyClient.PositionQty answered = resolved.get(i);
+            String requestedName = String.valueOf(request.get(i).get("position_name"));
+            if (!requestedName.equals(answered.positionName())) {
+                throw new BusinessException(ProductionOperationQtyClient.ERR_OPERATION_QTY_UNAVAILABLE,
+                        "算料服务返回的部位身份与请求不符（第 " + (i + 1) + " 个：请求「" + requestedName
+                                + "」，响应「" + answered.positionName() + "」），已中止生成加工单（不静默错配）",
+                        422,
+                        "请确认 ai-agent-service 版本与 admin-api 契约一致后重新生成加工单");
+            }
             for (Map<String, Object> operation : operationRows.get(i)) {
                 String name = String.valueOf(operation.get("operation"));
                 BigDecimal qty = answered.qtyByOperation().get(name);

@@ -40,7 +40,7 @@ public class ProcessingPositionOperation {
      * 同商品同色号的两个窗**同名** ⇒ 只靠名字无法区分（今天读面会把它们并成一个部位）。
      * {@code (order_item_id, seq)} 才是实例的唯一归属。</p>
      *
-     * <p>⚠️ **可空**：本列（V68）引入**之前**生成的存量行没有该值（无法可靠回填 ——
+     * <p>⚠️ **可空**：本列（V69）引入**之前**生成的存量行没有该值（无法可靠回填 ——
      * `position_name` 是可读名，回填只能靠猜）⇒ 读面按 {@code position_name} 兜底分组（行为逐字不变）。</p>
      */
     private String orderItemId;

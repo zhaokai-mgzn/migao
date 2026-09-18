@@ -37,11 +37,11 @@ ALTER TABLE processing_position_operations ADD COLUMN IF NOT EXISTS order_item_i
 ALTER TABLE processing_position_operations ADD COLUMN IF NOT EXISTS position_kind VARCHAR(16);
 
 COMMENT ON COLUMN processing_position_operations.order_item_id IS
-    '工序实例主定位键（V68，issue #4388 / #4373 裁定）：指向 order_items.id（一樘窗的一行）。'
+    '工序实例主定位键（V69，issue #4388 / #4373 裁定）：指向 order_items.id（一樘窗的一行）。'
     'NULL = 本列引入前的**存量行**（无法可靠回填，不猜）⇒ 读面按 position_name 兜底分组（行为逐字不变）。'
     '不加外键：订单行与加工单实例的生命周期不同（实例是生产凭据，报工/计件挂在它上面）。';
 COMMENT ON COLUMN processing_position_operations.position_kind IS
-    '部位种类（V68，issue #4388）：布帘/纱帘/帘头（= 快照 curtainType），解决「哪一件帘」的可读定位与冗余校验。'
+    '部位种类（V69，issue #4388）：布帘/纱帘/帘头（= 快照 curtainType），解决「哪一件帘」的可读定位与冗余校验。'
     'NULL = 存量行（同 order_item_id）。';
 
 -- ── ② 按行归属的查询索引（读面/报工/计件按 order_item_id 归属）──
