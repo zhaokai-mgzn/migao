@@ -28,6 +28,18 @@ cases:
         args:
           action: add
       - tool: processing_item_query
+    # ── 效果层断言（issue #4230 的 burn-down 缴费；修 CASE-TRUST-NO-EFFECT-ASSERTION）──
+    # 病根（`assertion_taxonomy` 规则 a / #3778「调用了 ≠ 成了」）：本用例此前**只有工具名期望**
+    # + 散文 `data_checks`（"data.pageMeta != null"）⇒ `product_processing_item_manage` 返回
+    # `success=false`（如 `processing_item_not_found` / 权限拒绝）也照样判 ✅。
+    # 修法 = **行为层**（非纸面）：加 `must_succeed` 断「至少一次真的 add 成功」，
+    # 且按 `action: add` 过滤（同工具别的 action 成功不能顶替，见 `local_runner.check_must_succeed`
+    # 的 issue #3681 语义）。这是**运行期**判据 —— 该用例非 skip（`skip_reason: ""`）⇒ 真会跑。
+    # 确定性证据（覆盖该行为的测试方法）：`test_tools_product_processing_item_manage.py::TestExecute::test_add_items_success`
+    #   —— 断言 `result.success is True` 且 `client.patch.assert_awaited_once()`。
+    must_succeed:
+      - tool: product_processing_item_manage
+        action: add
     data_checks:
       - "data.pageMeta != null"
     pre_clean:
@@ -52,10 +64,11 @@ cases:
         source: "遮光窗帘"
         expect: 1
     skip_reason: ""
-    merge_log: "eval P004 + verification 2.13（查询部分同义）+ 2.14 的查询段；2026-09-14 校准（#3538）：① 输入去「100元的那件」价格点名（独立栈种子只有 ¥168 款，点名不存在的价 → agent 澄清查无此价 → 流程不前进），自包含化同 AS-003（#3511）/CR-001/PR-005/PR-007/PR-021（#3518）先例；② pre_clean 去 price 过滤（关键词去重，原 price 过滤限 100 元、在种子 ¥168 的栈上恒不匹配）"
+    merge_log: "eval P004 + verification 2.13（查询部分同义）+ 2.14 的查询段；2026-09-14 校准（#3538）：① 输入去「100元的那件」价格点名（独立栈种子只有 ¥168 款，点名不存在的价 → agent 澄清查无此价 → 流程不前进），自包含化同 AS-003（#3511）/CR-001/PR-005/PR-007/PR-021（#3518）先例；② pre_clean 去 price 过滤（关键词去重，原 price 过滤限 100 元、在种子 ¥168 的栈上恒不匹配）；2026-09-18 burn-down 缴费（issue #4230）：补 `must_succeed[product_processing_item_manage(action=add)]` 修 CASE-TRUST-NO-EFFECT-ASSERTION（此前只有工具名期望 + 散文 data_checks ⇒ 写工具返回 success=false 也判 ✅）；**这是行为层修复、不是纸面修复**（该用例 `skip_reason: \"\"` ⇒ 真会跑，断言由 runner 运行期判定）；确定性证据 = test_tools_product_processing_item_manage.py::TestExecute::test_add_items_success（断言 result.success is True + client.patch.assert_awaited_once）；断言只增不减：未改 expectations / data_checks / pre_clean / precondition 任何一条"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_processing_item_query.py"
+        - "backend/ai-agent-service/tests/test_tools_product_processing_item_manage.py"
       ci:
         - agent-eval.yml
       verifies: []
@@ -553,6 +566,56 @@ cases:
         - "backend/ai-agent-service/tests/test_production/test_routing.py"
         - "backend/ai-agent-service/tests/test_production/test_piecework.py"
         - "backend/ai-agent-service/tests/test_production/test_operation_qty.py"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  - id: PP-013
+    legacy_id: ""
+    title: "特殊选项全登记 - 19 项无第四类未登记（条件工序/计件系数/不计件 三分类门禁）"
+    domains:
+      - processing
+    tier: normal
+    persona: ""
+    tags:
+      - processing
+      - production
+      - piecework
+      - special_options
+    truths_ref:
+      - processing-manage.crud
+    # ── 覆盖说明（issue #4230 v1a-PY）──
+    # 病灶：真值源 docs/curtain-production-rules.md §1【默】列了 19 项「特殊选项」（下单勾选，
+    # 影响用料/工序/计件系数），而 routing.py 的 SPECIAL_OPTION_ROUTINGS 只映射了 9 项
+    # ⇒ 其余 10 项**既不加工序、也不加系数、也没有任何登记**：「忘了映射」与「本来就不计件」
+    # 在数据上长得一模一样（都是 `.get(opt)` → None 的静默黑洞）。
+    #
+    # 本用例钉的是**结构判据**（与 PP-010 的分工）：PP-010 是生产确定性核心的**宽覆盖**
+    # （build_routing 基准路线 + 条件工序 + 应做数量 + 计件）；PP-013 专钉「19 项每一项都必须
+    # 落在 加工序 / 加系数 / 不计件 三类之一，**不允许第四类未登记**」这条门禁。
+    # 另有：5 道新工序入库且字段齐全、三条复用映射的**锚点位置**（前后相邻工序）、
+    # 系数结构（一分二 ×1.7 / `operation_name` 限定档可用 / 无选项恒 1.0）、
+    # `余料带回(布)` 路线不变且 factor 仍 1.0、无选项时不回归（逐值）。
+    #
+    # 红证（实现前逐条红，已在 PR 报告留痕）：10 个未登记选项 ⇒ 门禁点名；
+    # 5 道新工序不在 OPERATION_CATALOG ⇒ KeyError；三条映射未落 ⇒ 路线里没有该工序；
+    # `OPTION_FACTOR_SCOPES` 未定义 ⇒ import 即红（Collection Error）。
+    # ⚠️ 双端（persona 空）：确定性逻辑由单测全量覆盖（tests/test_production/），不进 agent-eval 冒烟。
+    user_inputs:
+      - "这个加工单有哪些特殊选项，分别怎么算工序和计件"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "19 项真值源特殊选项**每一项**都落在三类之一（加工序=SPECIAL_OPTION_ROUTINGS / 加系数=OPTION_FACTOR_SCOPES / 不计件=NON_PIECEWORK_OPTIONS），不允许第四类「未登记」"
+      - "A′ 类 5 道新工序（绑带-纱/logo条-布/立边-布/扣环-布/防翘扣-布）在 OPERATION_CATALOG 中存在且分组/单位/单价齐全，且有映射指向它们"
+      - "三条复用映射的锚点位置正确：布绑带→绑带-布 在 布帘车被 之后、余料做帘头→帘头制作 在 布三边 之后、抱枕→抱枕 在 外帘打卷 之后（断言前后相邻工序）"
+      - "系数：一分二 ⇒ 每道工序 factor=1.7；不带选项 ⇒ 1.0；operation_name 限定档位可用（以限定值构造证明）；多个加系数选项相乘"
+      - "不计件显式：余料带回(布)/(纱) ⇒ 路线逐值不变、factor 仍 1.0，且它们是**被登记**为不计件而不是「查不到映射」"
+    skip_reason: "[backend-contract] 生产确定性核心是纯函数（app/production/），由单元测试全量覆盖（tests/test_production/test_special_options.py），非 LLM 行为，不进入 agent-eval 冒烟（同 PP-010 惯例）"
+    merge_log: "2026-09-18 新增（issue #4230 v1a-PY）：真值源 19 项特殊选项的「三类全登记」结构门禁 + 5 道新工序 + 条件工序锚点 + 计件系数结构；与 PP-010 的分工 = PP-010 宽覆盖生产确定性核心，PP-013 专钉「19 项无第四类未登记」"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_production/test_special_options.py"
       ci:
         - pr-check.yml
       verifies: []

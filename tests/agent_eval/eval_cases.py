@@ -4312,6 +4312,7 @@ _CASE_PP_001 = EvalCase(
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+    must_succeed=[{'tool': 'product_processing_item_manage', 'action': 'add'}],
     pre_clean=[{'type': 'product_dedupe', 'product_keyword': '遮光窗帘'}],
     precondition=[{'type': 'product_count_for_keyword', 'source': '遮光窗帘', 'expect': 1}],
 )
@@ -4487,6 +4488,24 @@ _CASE_PP_010 = EvalCase(
     data_checks=['工艺路线实例化：布帘·韩褶 11 道（精裁-布→…→外帘发货）；定型=否移除 定型-布/复烫-布；特殊选项插条件工序（拼2次→拼2次-布）', '应做数量=算料引擎输出（韩褶-布=折数 48、米工序=用料 12.3、套工序=1）—— 报工只确认不心算', '计件 = Σ(合格数量 × 单价 × 特殊选项系数)：一分二 ×1.7；返工/报废不计件；单工序一人制（无计件人数分摊）', '完工判定：必完工序（外帘装袋，打包前置）合格量满应做数量 → 订单自动生产完成'],
     skip_reason='[backend-contract] 生产确定性核心是纯函数（app/production/），由单元测试全量覆盖（tests/test_production/），非 LLM 行为，不进入 agent-eval 冒烟（同 CH-036/037/038 惯例）',
     tags=['processing', 'production', 'piecework'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── PP-013 [NORMAL] 特殊选项全登记 - 19 项无第四类未登记（条件工序/计件系数/不计件 三分类门禁）（源: cases/processing.yml）──
+_CASE_PP_013 = EvalCase(
+    id='PP-013',
+    legacy_id='',
+    title='特殊选项全登记 - 19 项无第四类未登记（条件工序/计件系数/不计件 三分类门禁）',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['这个加工单有哪些特殊选项，分别怎么算工序和计件'],
+    expectations=['direct_reply'],
+    data_checks=['19 项真值源特殊选项**每一项**都落在三类之一（加工序=SPECIAL_OPTION_ROUTINGS / 加系数=OPTION_FACTOR_SCOPES / 不计件=NON_PIECEWORK_OPTIONS），不允许第四类「未登记」', 'A′ 类 5 道新工序（绑带-纱/logo条-布/立边-布/扣环-布/防翘扣-布）在 OPERATION_CATALOG 中存在且分组/单位/单价齐全，且有映射指向它们', '三条复用映射的锚点位置正确：布绑带→绑带-布 在 布帘车被 之后、余料做帘头→帘头制作 在 布三边 之后、抱枕→抱枕 在 外帘打卷 之后（断言前后相邻工序）', '系数：一分二 ⇒ 每道工序 factor=1.7；不带选项 ⇒ 1.0；operation_name 限定档位可用（以限定值构造证明）；多个加系数选项相乘', '不计件显式：余料带回(布)/(纱) ⇒ 路线逐值不变、factor 仍 1.0，且它们是**被登记**为不计件而不是「查不到映射」'],
+    skip_reason='[backend-contract] 生产确定性核心是纯函数（app/production/），由单元测试全量覆盖（tests/test_production/test_special_options.py），非 LLM 行为，不进入 agent-eval 冒烟（同 PP-010 惯例）',
+    tags=['processing', 'production', 'piecework', 'special_options'],
     persona='',
     debug_user='',
     form_prefill=[],
@@ -6373,6 +6392,7 @@ ALL_CASES = (
     _CASE_PP_008,
     _CASE_PP_009,
     _CASE_PP_010,
+    _CASE_PP_013,
     _CASE_PP_011,
     _CASE_PP_012,
     _CASE_PR_001,

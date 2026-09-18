@@ -1488,7 +1488,10 @@ INSERT INTO roles (id, tenant_id, name, code, description, status) VALUES
 -- docker-entrypoint-initdb.d 执行），而 **MigrationRunner/Flyway 不在该栈运行** —— 只存在于
 -- 迁移链的种子在新建库上并不存在（同第 11 节 bootstrap 对齐段的既有教训）。
 -- 内容与 V54__seed_production_operations.sql 逐字同口径；三源漂移由测试守
--- （tests/unit_ci_workflows/test_production_catalog_seed.py：V54 ↔ 本文件 ↔ routing.py 比对）。
+-- （tests/unit_ci_workflows/test_production_catalog_seed.py：V54 ∪ V56 ↔ 本文件 ↔ routing.py 比对）。
+-- 末 5 行（op-v56-*）来自 V56__seed_special_option_operations.sql（issue #4230 特殊选项 A′ 类新增工序）；
+-- 本文件是**终态**（全新库一次性 bootstrap）⇒ 两个迁移的内容在此合并且**按 sort_order 连续**，
+-- 迁移侧则由 V54（1..30）+ V56（31..35）两段拼成 —— 守卫按**名称 → 值**比对，不依赖行序。
 -- 幂等：ON CONFLICT DO NOTHING（冲突目标 = V49 的部分唯一索引，均带 WHERE deleted = 0）。
 INSERT INTO production_operations
     (id, tenant_id, name, group_name, position, unit, unit_price,
@@ -1523,7 +1526,12 @@ VALUES
   ('op-v54-27', 1, '外帘发货', '后道', '外帘', '套', 1.0, FALSE, FALSE, 27, 'active'),
   ('op-v54-28', 1, '绑带-布', '其他', '布帘', '套', 0.5, FALSE, FALSE, 28, 'active'),
   ('op-v54-29', 1, '抱枕', '其他', NULL, '个', 2.0, FALSE, FALSE, 29, 'active'),
-  ('op-v54-30', 1, '腰靠垫', '其他', NULL, '个', 2.0, FALSE, FALSE, 30, 'active')
+  ('op-v54-30', 1, '腰靠垫', '其他', NULL, '个', 2.0, FALSE, FALSE, 30, 'active'),
+  ('op-v56-01', 1, '绑带-纱', '其他', NULL, '套', 0.5, FALSE, FALSE, 31, 'active'),
+  ('op-v56-02', 1, 'logo条-布', '车位', NULL, '米', 0.6, FALSE, FALSE, 32, 'active'),
+  ('op-v56-03', 1, '立边-布', '车位', NULL, '米', 0.5, FALSE, FALSE, 33, 'active'),
+  ('op-v56-04', 1, '扣环-布', '车位', NULL, '个', 0.3, FALSE, FALSE, 34, 'active'),
+  ('op-v56-05', 1, '防翘扣-布', '车位', NULL, '个', 0.2, FALSE, FALSE, 35, 'active')
 ON CONFLICT (tenant_id, name) WHERE deleted = 0 DO NOTHING;
 
 INSERT INTO production_routings
