@@ -40,8 +40,12 @@ CI 侧 `CI=true` ⇒ 本来就是 false ⇒ 不受影响。
    `reuseExistingServer` 必须是字面量 `false`；同族扫描落成判据（不只落成报告里的散文）。
 ② **静态：身份判据真的接进了配置** —— 判据文件被调用、调用点在 `webServer:` **之前**
    （配置加载期 = 起服务之前），且**只在本地**跑（`if (!process.env.CI)` 包裹 ⇒ CI 侧行为等价）。
-③ **红证（对旧文本）** —— 同一条静态判据跑 `origin/main` 的旧配置文本必须**拒绝**它
-   （否则判据是空断言：「不会红的判据」等于没有）。
+③ **红证（对修复前文本）** —— 同一条静态判据跑**修复前**的配置文本必须**拒绝**它
+   （否则判据是空断言：「不会红的判据」等于没有）。锚点 = `PRE_FIX_WEBSERVER_SNIPPET`
+   （逐字节内联，出处 `9673df68`）+ 一条 git 溯源交叉校验（取不到该 commit 时**显式 skip**）。
+   ⚠️ **不得把锚点绑 `origin/main` 这类可变引用**（§18.3「按可变键定位被测对象」）：本文件首版就是这么写的，
+   结果 PR #4320 一合并进 main，锚点文本立刻变成「修复后」⇒ 断言恒红 ⇒ `ci workflow helper unit tests`
+   对**每个** PR 变红（跟随修复见下方「沿革」）。
 ④ **运行期（真监听进程 + 真 cwd + 真子进程跑 CLI）** ——
    端口空闲 ⇒ 0（且不依赖 lsof）；**外来 checkout 的服务占用 ⇒ 1 且点名外来路径**（本单核心场景，
    旧形态下它会静默测错对象）；本检出的服务占用 ⇒ 0 但提示先停掉（身份可区分）；
@@ -58,6 +62,19 @@ CI 侧 `CI=true` ⇒ 本来就是 false ⇒ 不受影响。
 - 本包**未新增用例**：沿用 `tests/unit_ci_workflows/` 同族既有 case id `MC-012`
   （同 `test_xiaobu_h5_dist_freshness.py`（#4249）/ `test_red_proof_guard.py`（#4260）口径），
   塞进行为用例库会污染覆盖矩阵。
+
+## 沿革（照实登记）
+
+- #4313 首次交付（PR #4320，合并 commit `8bf2eac0`）：`reuseExistingServer: false` + 服务身份前置断言 +
+  本文件。当时红证锚点绑的是 **`origin/main`**。
+- 跟随修复（本 PR）：**锚点改绑不可变引用**（内联片段 + `9673df68` 溯源校验）。原写法在合并后自红 ——
+  病根与 #4313 同族（**按可变键定位被测对象**）：`origin/main` 是移动靶，修复一进 main，锚点就变成
+  「修复后」文本。代价是 `ci workflow helper unit tests` 对每个 PR 变红（PR 触发，故 main 自身不红）。
+- 顺带裁定（**不做**）：考虑过给判据加 Linux `/proc` 解析以摆脱 `lsof` 依赖。CI 实证**不需要** ——
+  合并后 `ci workflow helper unit tests` 在 ubuntu runner 上 **pass**（2m4s），说明 12 条含 `lsof` 路径的
+  判据在 CI 真跑过（`lsof` 在该 runner 上存在；`actions/runner-images` 的 apt 清单不含它，但清单不是全集）。
+  故按「最少代码」不引入第二套机制（缺 `lsof` 时判据退化为「未判定 + 告警」，硬拦面 `reuseExistingServer: false`
+  不受影响）。
 """
 from __future__ import annotations
 
@@ -84,7 +101,7 @@ sys.path.append(str(Path(__file__).resolve().parent))
 from test_xiaobu_h5_dist_freshness import find_reuse_setting  # noqa: E402
 
 
-# ── 静态判据（纯文本，可对任意版本的配置文本跑 —— 红证靠它取 origin/main 的旧文本）──
+# ── 静态判据（纯文本，可对任意版本的配置文本跑 —— 红证靠它跑内联的修复前片段）──
 
 def scan_family_reuse_settings() -> dict:
     """同族全量核对表：`tests/playwright*.config.ts` → 各自的 `reuseExistingServer` 右值。"""
@@ -116,15 +133,35 @@ def guard_is_ci_gated(text: str) -> bool:
     return "\n}" not in text[marker:guard_at]
 
 
-def pre_fix_config_text() -> str:
-    """`origin/main` 上修复前的配置文本（取不到就 skip，且**说明为什么**）。"""
+# 修复前的原样片段（**不可变引用**）：逐字节取自 `9673df68:tests/playwright.config.ts`（#4313 的
+# 修复基线提交）。红证锚点**不得**绑 `origin/main` 这类**可变**引用 —— 那正是本仓 §18.3 的病
+# 「按可变键定位被测对象」：修复一合并进 main，锚点就变成「修复后」文本 ⇒ 断言恒红、卡住**所有** PR
+# （实证：PR #4320 合并后，本测试在 main 上自红）。
+PRE_FIX_CONFIG_REF = "9673df68"
+PRE_FIX_WEBSERVER_SNIPPET = """
+  // CI 也启动本地 Next.js dev server，E2E 测的是 PR 新代码而非旧部署
+  webServer: {
+    command: 'npm run dev',
+    cwd: '../frontend/admin-web',
+    port: 3001,
+    reuseExistingServer: !process.env.CI,
+    timeout: 180_000,
+    env: {
+      // 前端 API 请求走远程 dev admin-api（CI 里没有本地 Java 后端）
+      NEXT_PUBLIC_API_BASE_URL: process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:8080',
+    },
+  },
+});
+"""
+
+
+def historical_config_text(ref: str = PRE_FIX_CONFIG_REF):
+    """`ref` 上的配置文本；取不到（浅克隆 / 该 commit 不在本地）⇒ None（由调用方显式 skip）。"""
     r = subprocess.run(
-        ["git", "show", f"origin/main:tests/{CONFIG.name}"],
+        ["git", "show", f"{ref}:tests/{CONFIG.name}"],
         cwd=str(REPO_ROOT), capture_output=True, text=True,
     )
-    if r.returncode != 0 or not r.stdout.strip():
-        pytest.skip(f"取不到 origin/main 的旧配置文本（{r.stderr.strip()[:120]}）—— 红证无法在此环境复现，请人工登记")
-    return r.stdout
+    return r.stdout if r.returncode == 0 and r.stdout.strip() else None
 
 
 # ── ① 静态：静默复用已关闭 ──
@@ -176,17 +213,36 @@ def test_identity_guard_does_not_run_in_ci():
     )
 
 
-# ── ③ 红证：同一条判据对 origin/main 旧文本必须拒绝 ──
+# ── ③ 红证：同一条判据对「修复前」文本必须拒绝（锚点 = 不可变引用，见 PRE_FIX_WEBSERVER_SNIPPET）──
 
 def test_criterion_rejects_pre_fix_config_text():
-    old = pre_fix_config_text()
-    old_setting = find_reuse_setting(old)
+    """判据的**判别力**：修复前的形态必须被拒（否则是空断言）。锚点逐字节内联 ⇒ 与 main 前进无关。"""
+    old_setting = find_reuse_setting(PRE_FIX_WEBSERVER_SNIPPET)
     assert old_setting != "false", (
         f"对修复前的旧文本，判据居然也判「已修」（读到 `{old_setting}`）—— 说明这条判据是空断言"
         "（不会红的判据 = 没有判据）。"
     )
-    assert not guard_is_ci_gated(old), (
-        "旧文本里居然存在「受 CI 门控的身份判据」—— 红证取错对象了（应按 origin/main 复核）"
+    assert not guard_is_ci_gated(PRE_FIX_WEBSERVER_SNIPPET), (
+        "旧文本里居然存在「受 CI 门控的身份判据」—— 红证取错对象了"
+    )
+
+
+def test_pre_fix_snippet_matches_history_when_available():
+    """溯源守卫：内联片段确实逐字节来自 `PRE_FIX_CONFIG_REF`（防「改片段让锚点变好过」）。
+
+    该 commit 不在本地（浅克隆 / CI 默认 fetch-depth=1）⇒ **显式 skip**（不是静默通过）。
+    """
+    historical = historical_config_text()
+    if historical is None:
+        pytest.skip(
+            f"本地取不到 {PRE_FIX_CONFIG_REF}（浅克隆？）—— 溯源交叉校验跳过；"
+            "判别力仍由 test_criterion_rejects_pre_fix_config_text 的内联锚点保证"
+        )
+    assert find_reuse_setting(historical) == find_reuse_setting(PRE_FIX_WEBSERVER_SNIPPET), (
+        "内联的修复前片段与历史文本不一致（`reuseExistingServer` 右值不同）—— 锚点被改过？"
+    )
+    assert not guard_is_ci_gated(historical), (
+        f"{PRE_FIX_CONFIG_REF} 的历史文本里已有受 CI 门控的身份判据 —— 基线 commit 取错了"
     )
 
 
