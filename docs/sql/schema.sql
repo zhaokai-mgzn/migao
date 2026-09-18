@@ -1026,6 +1026,60 @@ CREATE INDEX IF NOT EXISTS idx_routing_versions_routing
 COMMENT ON TABLE production_routing_versions IS
     '工艺路线版本账（V60，issue #4308）：每次改序列追加一行；路线是计件工资与完工判定的唯一输入，改动必须留痕';
 
+-- 加工费组合定价 + 版本账（V66，issue #4386「加工费管理模块」）
+-- 迁移链同款见 backend/admin-api/src/main/resources/db/migration/V66__create_processing_fee_combinations.sql
+-- （为什么两处都要：本文件是**全新库的一次性 bootstrap**，该路径**不跑迁移链** ⇒ 只存在于迁移里的表
+--  在建库后并不存在，admin-api 查询 500，形态见 issue #3270。）
+-- 用户裁定（2026-09-19）：「不是每个加工项收取一个费用，而且通常是组合」「选配完的一个商品
+--  **只会收取一种加工费**，然后根据米算出这个商品的加工费」⇒ 一行 = 一组选配特征 → 一个单价（元/米）。
+-- composition_key 归一化口径（冻结）：trim → 丢空 → 去重 → 按 Unicode 码点升序 → `+` 连接
+--   ⇒ `韩褶+打孔+定型` ≡ `定型+打孔+韩褶`（与书写顺序无关；否则同一笔钱建出两行，取价不可复现）。
+-- 不是穷举幂集：只维护实际会卖的组合，未定价组合由 GET /production/processing-fee-gaps 暴露为缺口。
+CREATE TABLE IF NOT EXISTS processing_fee_combinations (
+    id VARCHAR(64) PRIMARY KEY,
+    tenant_id BIGINT NOT NULL REFERENCES tenants(id),
+    composition_key VARCHAR(256) NOT NULL,           -- 归一化后的选配特征集合（取价的匹配键）
+    items JSONB NOT NULL DEFAULT '[]',               -- 归一化后的特征名有序列表（与 key 同源，展示用）
+    unit_price DECIMAL(10, 2) NOT NULL,              -- 加工费单价（**元/米**）
+    status VARCHAR(16) NOT NULL DEFAULT 'active',    -- active / disabled（停用 = 保留行）
+    sort_order INT NOT NULL DEFAULT 0,
+    source VARCHAR(16),                              -- 实证 / 推算 / 占位待确认（与 V62 同词表）；NULL = 未知
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    deleted INTEGER NOT NULL DEFAULT 0,
+    CONSTRAINT ck_processing_fee_combinations_unit_price CHECK (unit_price >= 0),
+    CONSTRAINT ck_processing_fee_combinations_key_not_blank CHECK (btrim(composition_key) <> '')
+);
+-- 唯一键 = (tenant_id, composition_key) WHERE deleted = 0 —— 同一组合不重复定价。
+CREATE UNIQUE INDEX IF NOT EXISTS uk_processing_fee_combinations_tenant_key
+    ON processing_fee_combinations (tenant_id, composition_key)
+    WHERE deleted = 0;
+CREATE INDEX IF NOT EXISTS idx_processing_fee_combinations_tenant_status
+    ON processing_fee_combinations (tenant_id, status, sort_order)
+    WHERE deleted = 0;
+COMMENT ON TABLE processing_fee_combinations IS
+    '加工费组合定价（V66，issue #4386）：一行 = 一组选配特征 → 一个加工费单价（元/米）；下单侧按选配结果匹配本表取价，× 加工费米数 = 一个数';
+COMMENT ON COLUMN processing_fee_combinations.composition_key IS
+    '归一化后的选配特征集合（trim → 丢空 → 去重 → 按 Unicode 码点升序 → `+` 连接）；与书写顺序无关：`韩褶+打孔+定型` ≡ `定型+打孔+韩褶`';
+COMMENT ON COLUMN processing_fee_combinations.unit_price IS
+    '加工费单价（元/米）：组合价 × 加工费米数 = 该商品这一个数。CHECK >= 0 —— 负单价会把订单金额算成负数';
+
+CREATE TABLE IF NOT EXISTS processing_fee_combination_versions (
+    id VARCHAR(64) PRIMARY KEY,
+    tenant_id BIGINT NOT NULL REFERENCES tenants(id),
+    combination_id VARCHAR(64) NOT NULL REFERENCES processing_fee_combinations(id),
+    composition_key VARCHAR(256) NOT NULL,           -- 冗余存键（组合行停用/改名后仍答得出「当时是哪一组」）
+    unit_price DECIMAL(10, 2) NOT NULL,              -- 本次变更后的单价（元/米）
+    status VARCHAR(16) NOT NULL DEFAULT 'active',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    deleted INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_processing_fee_combination_versions_combination
+    ON processing_fee_combination_versions (combination_id, created_at DESC)
+    WHERE deleted = 0;
+COMMENT ON TABLE processing_fee_combination_versions IS
+    '加工费组合定价版本账（V66，issue #4386）：单价真的变了才追加一行（同值重复提交是幂等空操作）；当前价 = 最新版本行';
+
 -- 信号种子（tenant_id=1；**逐条**抄自迁移前的 ProcessingOrderService 两张常量关键字表：
 -- 3 帘种 + 7 工艺 = 10 行。顺序即语义：「帘头」在帘种表最前（防「帘头纱」被判纱帘）、
 -- 在工艺表最后（工艺侧兜底）⇒ 不得为好看重排。）

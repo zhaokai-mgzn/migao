@@ -34,6 +34,7 @@ import {
   ClipboardCheck,
   ListChecks,
   Route,
+  BadgeDollarSign,
 } from 'lucide-react'
 import { useAuthStore } from '@/store/auth'
 import { cn } from '@/lib/utils'

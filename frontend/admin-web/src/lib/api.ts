@@ -49,6 +49,12 @@ import type {
   Routing,
   RoutingCreateParams,
   RoutingGaps,
+  // 加工费组合定价（issue #4386）
+  FeeCombination,
+  FeeCombinationsResponse,
+  FeeCombinationCreateParams,
+  FeeCombinationUpdateParams,
+  FeeGaps,
   RouteOperationCreateParams,
   RouteSignal,
   RouteSignalsResponse,
@@ -411,6 +417,28 @@ export const productionApi = {
   // 缺口：①有活跃工序但未进任何活跃路线 ②库中无路线的信号组合
   getRoutingGaps: () =>
     request.get<ApiResponse<RoutingGaps>>('/api/admin/production/routing-gaps'),
+
+  // ── 加工费组合定价（issue #4386 前端半边；契约所有者 = 后端 4386，权限 processing:manage）──
+  // 口径（用户裁定 2026-09-19）：「不是每个加工项收取一个费用，而且通常是组合」
+  // 「选配完的一个商品只会收取一种加工费」⇒ 一行 = 一组选配特征 → 一个单价（元/米）。
+  // ⚠️ `composition_key` 的归一化（与书写顺序无关）**在服务端**：前端只提交勾选的加工项名集合，
+  //    自己拼 key 会变成第二份口径（两边漂移 ⇒ 页面显示的组合与库里不是同一个）。
+  getFeeCombinations: () =>
+    request.get<ApiResponse<FeeCombinationsResponse>>('/api/admin/production/processing-fee-combinations'),
+  createFeeCombination: (data: FeeCombinationCreateParams) =>
+    request.post<ApiResponse<FeeCombination>>('/api/admin/production/processing-fee-combinations', data),
+  updateFeeCombination: (id: string, data: FeeCombinationUpdateParams) =>
+    request.put<ApiResponse<FeeCombination>>(
+      `/api/admin/production/processing-fee-combinations/${id}`,
+      data,
+    ),
+  // 停用（软删语义：status=disabled，行保留可回溯）
+  disableFeeCombination: (id: string) =>
+    request.delete<ApiResponse<FeeCombination>>(
+      `/api/admin/production/processing-fee-combinations/${id}`,
+    ),
+  // 缺口：订单里出现过、但库里查不到价的选配组合
+  getFeeGaps: () => request.get<ApiResponse<FeeGaps>>('/api/admin/production/processing-fee-gaps'),
 
   // 计件工资报表（按期间 YYYY-MM 聚合，可按工人筛选）
   getPieceworkSummary: (params: { period: string; worker_name?: string }) =>

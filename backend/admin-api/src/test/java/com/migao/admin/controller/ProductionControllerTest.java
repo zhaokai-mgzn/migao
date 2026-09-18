@@ -1,4 +1,4 @@
-// case_ids: PG-018, PG-019, PG-020, PG-021, PG-032, PG-033, PG-034, PG-035
+// case_ids: PG-018, PG-019, PG-020, PG-021, PG-032, PG-033, PG-034, PG-035, PG-040
 package com.migao.admin.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -8,6 +8,8 @@ import com.migao.admin.entity.Order;
 import com.migao.admin.entity.OrderItem;
 import com.migao.admin.entity.ProcessingOrder;
 import com.migao.admin.entity.ProcessingPositionOperation;
+import com.migao.admin.entity.ProcessingFeeCombination;
+import com.migao.admin.entity.ProcessingItem;
 import com.migao.admin.entity.ProductionOperation;
 import com.migao.admin.entity.ProductionOperationPriceVersion;
 import com.migao.admin.entity.ProductionRouting;
@@ -27,6 +29,8 @@ import com.migao.admin.service.OrderService;
 import com.migao.admin.service.ProcessingOrderService;
 import com.migao.admin.service.ProductionOperationCommandService;
 import com.migao.admin.service.ProductionRoutingCommandService;
+import com.migao.admin.service.ProcessingFeeCombinationCommandService;
+import com.migao.admin.service.ProcessingFeeQueryService;
 import com.migao.admin.service.ProductionOperationQueryService;
 import com.migao.admin.service.ProductionOperationQtyClient;
 import com.migao.admin.service.ProductionService;
@@ -116,6 +120,11 @@ class ProductionControllerTest {
     private OrderItemMapper orderItemMapper;
     @Mock
     private ProcessingItemMapper processingItemMapper;
+    /** 加工费组合定价（issue #4386，V66）：组合表 + 版本账（读面另用 orderItemMapper）。 */
+    @Mock
+    private com.migao.admin.mapper.ProcessingFeeCombinationMapper processingFeeCombinationMapper;
+    @Mock
+    private com.migao.admin.mapper.ProcessingFeeCombinationVersionMapper processingFeeCombinationVersionMapper;
     @Mock
     private OrderService orderService;
     /** 应做数量来源（issue #4208 接线）：存量单补工序的派生路径与 generate 路径同一份，故也要打桩。 */
@@ -145,9 +154,22 @@ class ProductionControllerTest {
         ProductionRoutingCommandService routingCommandService = new ProductionRoutingCommandService(
                 productionRoutingMapper, routingVersionMapper, productionOperationMapper,
                 productionRouteSignalMapper, queryService);
-        mockMvc = MockMvcBuilders.standaloneSetup(
-                        new ProductionController(service, queryService, commandService,
-                                routingCommandService, processingOrderService))
+        // 加工费组合定价（issue #4386）：真实服务（只 mock Mapper），写面响应形态 = 列表项形态
+        // （同一份 combinationView）。控制器里这两个依赖是**字段注入**（不动既有 6 参构造），
+        // 故这里用 ReflectionTestUtils 装配 —— 目的只是让新端点可达，不改既有端点的装配。
+        ProcessingFeeQueryService feeQueryService = new ProcessingFeeQueryService(
+                processingFeeCombinationMapper, processingItemMapper, orderItemMapper);
+        ProcessingFeeCombinationCommandService feeCommandService =
+                new ProcessingFeeCombinationCommandService(
+                        processingFeeCombinationMapper, processingFeeCombinationVersionMapper,
+                        processingItemMapper, feeQueryService);
+        ProductionController controller = new ProductionController(service, queryService, commandService,
+                routingCommandService, processingOrderService);
+        org.springframework.test.util.ReflectionTestUtils.setField(controller,
+                "processingFeeQueryService", feeQueryService);
+        org.springframework.test.util.ReflectionTestUtils.setField(controller,
+                "processingFeeCombinationCommandService", feeCommandService);
+        mockMvc = MockMvcBuilders.standaloneSetup(controller)
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .build();
         // 无幂等键 ⇒ 老路径（claim 首执）；幂等接线自身的断言见「报工」段的两个专测
@@ -1223,5 +1245,94 @@ class ProductionControllerTest {
                 .as("期间边界取当月首末（含端点）—— 日期是绑定参数，不在 SQL 文本里")
                 .contains(LocalDate.of(2026, 9, 1), LocalDate.of(2026, 9, 30));
         assertThat(sql).as("worker_name 是可选下钻维度").contains("worker_name");
+    }
+
+    // ══════════════════ 加工费组合定价 + 缺口（issue #4386，PG-040）══════════════════
+
+    /**
+     * 判据 3 的**信封层**红证：护栏失败必须是 HTTP 422 + {@code error.details[].message} **逐条**。
+     *
+     * <p>为什么必须在这一层验：服务层单测只能证明 {@code BusinessException.details} 有值 ——
+     * 而「前端能不能读到」取决于 {@code GlobalExceptionHandler} 有没有把它透传进响应体。
+     * #4308 的假绿教训：前端曾按**不存在的** {@code error.error_messages} 读 ⇒ 真实失败路径
+     * 静默退化成「Request failed with status code 422」（集成方探针 2/2 红）。</p>
+     */
+    @Test
+    @DisplayName("#4386 POST /processing-fee-combinations 护栏失败 ⇒ 422 + error.details 逐条理由")
+    void createProcessingFeeCombinationGuardFailureReturnsDetailsEnvelope() throws Exception {
+        when(processingItemMapper.selectList(any())).thenReturn(List.of(
+                ProcessingItem.builder().id("pi-1").tenantId(TENANT).name("韩褶")
+                        .categoryId("cat-1").pricingMethod("per_meter")
+                        .unitPrice(new BigDecimal("8")).unit("米").status("active").deleted(0).build()));
+
+        mockMvc.perform(post("/api/admin/production/processing-fee-combinations")
+                        .contentType("application/json")
+                        .content("{\"items\":[\"韩褶\",\"库里没有的加工项\"],\"unit_price\":\"-1\"}"))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
+                .andExpect(jsonPath("$.error.details").isArray())
+                .andExpect(jsonPath("$.error.details.length()").value(2))
+                .andExpect(jsonPath("$.error.details[0].field").value("items[1]"))
+                .andExpect(jsonPath("$.error.details[0].message").isNotEmpty())
+                .andExpect(jsonPath("$.error.details[1].field").value("unit_price"))
+                .andExpect(jsonPath("$.suggestion").isNotEmpty());
+
+        verify(processingFeeCombinationMapper, never()).insert(any(ProcessingFeeCombination.class));
+    }
+
+    /** 判据 1 的信封层红证：同一组合重复定价 = **409**（不是 422、更不是 500）。 */
+    @Test
+    @DisplayName("#4386 同一 composition_key 重复定价 ⇒ 409 + 可行动 suggestion")
+    void createProcessingFeeCombinationDuplicateReturnsConflict() throws Exception {
+        when(processingItemMapper.selectList(any())).thenReturn(List.of(
+                ProcessingItem.builder().id("pi-1").tenantId(TENANT).name("韩褶")
+                        .categoryId("cat-1").pricingMethod("per_meter")
+                        .unitPrice(new BigDecimal("8")).unit("米").status("active").deleted(0).build()));
+        when(processingFeeCombinationMapper.selectList(any())).thenReturn(List.of(
+                ProcessingFeeCombination.builder().id("c1").tenantId(TENANT)
+                        .compositionKey("韩褶").unitPrice(new BigDecimal("12"))
+                        .status("active").sortOrder(0).deleted(0).build()));
+
+        mockMvc.perform(post("/api/admin/production/processing-fee-combinations")
+                        .contentType("application/json")
+                        .content("{\"items\":[\"韩褶\"],\"unit_price\":\"15\"}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.error.code").value("CONFLICT"))
+                .andExpect(jsonPath("$.suggestion").isNotEmpty());
+
+        verify(processingFeeCombinationMapper, never()).insert(any(ProcessingFeeCombination.class));
+    }
+
+    /** 判据 4 的信封层红证：缺口端点真的注册了、且形状是清单而非 404。 */
+    @Test
+    @DisplayName("#4386 GET /processing-fee-gaps ⇒ 未定价组合清单（不是 404）")
+    void processingFeeGapsEndpointIsRegistered() throws Exception {
+        when(processingFeeCombinationMapper.selectList(any())).thenReturn(List.of());
+        when(orderItemMapper.selectList(any())).thenReturn(List.of());
+
+        mockMvc.perform(get("/api/admin/production/processing-fee-gaps"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.unpriced_combinations").isArray())
+                .andExpect(jsonPath("$.data.unpriced_combination_total").value(0));
+    }
+
+    /** 写端点权限口径：三个写端点全部方法级 {@code processing:manage}（与 #4308 同口径）。 */
+    @Test
+    @DisplayName("#4386 加工费组合写端点权限 = 方法级 processing:manage")
+    void processingFeeWriteEndpointsRequireProcessingManage() throws Exception {
+        Method create = ProductionController.class.getMethod(
+                "createProcessingFeeCombination", Map.class);
+        Method update = ProductionController.class.getMethod(
+                "updateProcessingFeeCombination", String.class, Map.class);
+        Method disable = ProductionController.class.getMethod(
+                "disableProcessingFeeCombination", String.class);
+
+        for (Method method : List.of(create, update, disable)) {
+            RequirePermission annotation = method.getAnnotation(RequirePermission.class);
+            assertThat(annotation).as("%s 必须声明方法级权限", method.getName()).isNotNull();
+            assertThat(annotation.value()).isEqualTo("processing:manage");
+        }
     }
 }

@@ -905,6 +905,73 @@ export interface RoutingGaps {
   signal_keys_without_route?: RoutingGapSignalKey[]
 }
 
+// ── 加工费组合定价（issue #4386；契约所有者 = 后端 4386）────────────────────────
+// 口径（用户裁定 2026-09-19）：「不是每个加工项收取一个费用，而且通常是组合」
+// 「选配完的一个商品只会收取一种加工费」⇒ 一行 = 一组选配特征 → 一个单价（元/米）。
+
+/**
+ * 一行加工费组合定价。
+ *
+ * ⚠️ `composition_key` 是**服务端归一化**后的匹配键（与书写顺序无关）——
+ * 前端**只读**它，**绝不**自己拼（自己拼 = 第二份口径，漂移后页面显示的组合与库里不是同一个）。
+ * `items` 与 `composition_key` **同源**，展示用。
+ */
+export interface FeeCombination {
+  id?: string
+  /** 归一化后的选配特征集合（如 `定型+打孔+韩褶`）—— 取价的匹配键 */
+  composition_key: string
+  /** 归一化后的特征名有序列表（展示用） */
+  items?: string[]
+  /** 加工费单价（元/米） */
+  unit_price?: number
+  /** 展示单位（服务端给「元/米」） */
+  unit?: string
+  status?: string
+  sort_order?: number
+  /** provenance：实证 / 推算 / 占位待确认；null = 未知（商家自建） */
+  source?: string | null
+  updated_at?: string | null
+}
+
+/** GET /api/admin/production/processing-fee-combinations */
+export interface FeeCombinationsResponse {
+  total?: number
+  combinations?: FeeCombination[]
+}
+
+/** POST /api/admin/production/processing-fee-combinations body（**只提交勾选集合**，key 由服务端归一） */
+export interface FeeCombinationCreateParams {
+  items: string[]
+  unit_price: number
+  sort_order?: number
+  source?: string
+}
+
+/** PUT /api/admin/production/processing-fee-combinations/{id} body（部分更新） */
+export interface FeeCombinationUpdateParams {
+  unit_price?: number
+  status?: string
+  source?: string
+  sort_order?: number
+}
+
+/** 未定价组合（GET /api/admin/production/processing-fee-gaps）—— 每一条都是**可行动项** */
+export interface FeeGapCombination {
+  composition_key: string
+  items?: string[]
+  /** 该组合在订单里出现的次数（商家按成交热度排序补价） */
+  order_count: number
+  note?: string
+}
+
+export interface FeeGaps {
+  unpriced_combinations?: FeeGapCombination[]
+  unpriced_combination_total?: number
+  /** 已扫描的订单行数（缺口扫描有上限，超限时 scanned_truncated=true —— 不静默） */
+  scanned_order_items?: number
+  scanned_truncated?: boolean
+}
+
 export interface PieceworkWorkerAmount {
   worker_name: string
   amount: number

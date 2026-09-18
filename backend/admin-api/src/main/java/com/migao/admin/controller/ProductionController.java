@@ -7,6 +7,8 @@ import com.migao.admin.service.ClientRequestIdService;
 import com.migao.admin.service.ProcessingOrderService;
 import com.migao.admin.service.ProductionOperationCommandService;
 import com.migao.admin.service.ProductionOperationQueryService;
+import com.migao.admin.service.ProcessingFeeCombinationCommandService;
+import com.migao.admin.service.ProcessingFeeQueryService;
 import com.migao.admin.service.ProductionRoutingCommandService;
 import com.migao.admin.service.ProductionService;
 import lombok.RequiredArgsConstructor;
@@ -52,6 +54,19 @@ public class ProductionController {
     private final ProductionOperationCommandService productionOperationCommandService;
     private final ProductionRoutingCommandService productionRoutingCommandService;
     private final ProcessingOrderService processingOrderService;
+
+    /**
+     * 加工费组合定价（V66，issue #4386）：读面（列表 / 缺口）+ 写面（新建 / 改价 / 停用）。
+     *
+     * <p>用字段注入而不是构造参数：本类构造签名被 {@code ProductionControllerTest} 的
+     * standaloneSetup 显式装配（6 个参数），加参数会把该测试的每一处装配都改一遍 ——
+     * 而本单的改动面**不应**扩到既有测试（同 #4308 的「不复制第二份装配」口径）。
+     * Spring 生产装配下这两条一定非 null（同包 {@code @Service}）。</p>
+     */
+    @org.springframework.beans.factory.annotation.Autowired
+    private ProcessingFeeQueryService processingFeeQueryService;
+    @org.springframework.beans.factory.annotation.Autowired
+    private ProcessingFeeCombinationCommandService processingFeeCombinationCommandService;
 
     /**
      * 实例化工序 + 生成加工单二维码 token
@@ -319,5 +334,74 @@ public class ProductionController {
     public ApiResponse<Map<String, Object>> routingGaps() {
         return ApiResponse.success(
                 productionOperationQueryService.routingGaps(TenantContext.getTenantId()));
+    }
+
+    // ══════════════════════ 加工费组合定价（V66，issue #4386）══════════════════════
+
+    /**
+     * 加工费组合定价列表（选配特征集合 → 加工费单价 元/米）
+     * GET /api/admin/production/processing-fee-combinations
+     *
+     * <p>用户裁定（2026-09-19）：「不是每个加工项收取一个费用，而且通常是组合」——
+     * 本表是商家**配置时**自行组合并定价的写面，也是下单侧按选配结果取价的匹配表。</p>
+     */
+    @GetMapping("/processing-fee-combinations")
+    public ApiResponse<Map<String, Object>> processingFeeCombinations() {
+        return ApiResponse.success(processingFeeQueryService.combinations(TenantContext.getTenantId()));
+    }
+
+    /**
+     * 新建加工费组合定价
+     * POST /api/admin/production/processing-fee-combinations
+     * body: {items: ["韩褶","打孔","定型"], unit_price, sort_order?, source?, status?}
+     *
+     * <p><b>护栏（全部有红证）</b>：组合非空 / 特征名合法且不重复 / unit_price ≥ 0 /
+     * source 在词表内 / composition_key **归一化后落库**（与书写顺序无关）；撞已有组合 ⇒ **409**。
+     * 失败统一 **HTTP 422 + {@code error.details:[{field,message}]} 逐条理由**（一次报全）。</p>
+     */
+    @PostMapping("/processing-fee-combinations")
+    @RequirePermission("processing:manage")
+    public ApiResponse<Map<String, Object>> createProcessingFeeCombination(
+            @RequestBody Map<String, Object> body) {
+        return ApiResponse.success(processingFeeCombinationCommandService.createCombination(
+                body, TenantContext.getTenantId()));
+    }
+
+    /**
+     * 改加工费单价 / 状态（部分更新）
+     * PUT /api/admin/production/processing-fee-combinations/{id}
+     * body: {unit_price?, status?, source?, sort_order?}
+     *
+     * <p>单价**真的变了**才追加 {@code processing_fee_combination_versions} 一行
+     * （同值重复提交 = 幂等空操作）。</p>
+     */
+    @PutMapping("/processing-fee-combinations/{id}")
+    @RequirePermission("processing:manage")
+    public ApiResponse<Map<String, Object>> updateProcessingFeeCombination(
+            @PathVariable String id, @RequestBody Map<String, Object> body) {
+        return ApiResponse.success(processingFeeCombinationCommandService.updateCombination(
+                id, body, TenantContext.getTenantId()));
+    }
+
+    /**
+     * 停用加工费组合（**软删语义**：status=disabled，行保留可回溯）
+     * DELETE /api/admin/production/processing-fee-combinations/{id}
+     */
+    @DeleteMapping("/processing-fee-combinations/{id}")
+    @RequirePermission("processing:manage")
+    public ApiResponse<Map<String, Object>> disableProcessingFeeCombination(@PathVariable String id) {
+        return ApiResponse.success(processingFeeCombinationCommandService.disableCombination(
+                id, TenantContext.getTenantId()));
+    }
+
+    /**
+     * **加工费缺口**：订单里实际出现过、但「加工费组合」里查不到价的选配组合。
+     *
+     * <p>与 {@code GET /production/routing-gaps} 同构：把「只会在顾客下单后才发现漏配价」
+     * 变成商家在配置阶段就能看见的待办。**不发明任何默认价** —— 缺口就是缺口。</p>
+     */
+    @GetMapping("/processing-fee-gaps")
+    public ApiResponse<Map<String, Object>> processingFeeGaps() {
+        return ApiResponse.success(processingFeeQueryService.feeGaps(TenantContext.getTenantId()));
     }
 }

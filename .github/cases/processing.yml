@@ -579,7 +579,7 @@ cases:
     data_checks:
       - "路线列表渲染**真实数据**：路线数 + 「部位 × 工艺」标题 + 每道工序的分组/单位/单价；必完工序带「必完」标记，非必完不得出现该标记（注入：把库口径 is_must_finish 由 true 改 false ⇒ 断言红）"
       - "序列编辑：从工序库选工序 → 保存 ⇒ `PUT /api/admin/production/routings/{id}` 的 body 恰为 `{operations:[...]}`，且**顺序等于屏幕顺序**（注入：把上移/下移/删除任一处的 draft 变换去掉 ⇒ 「顺序等于屏幕顺序」「被删工序不在请求体」两条红）"
-      - "保存被拒时**逐条**展示后端护栏理由，不得只弹「保存失败」：`error.response.data.error_messages` 三条 ⇒ 页面渲染三条独立条目，并分别带可读归因（工序不存在 / 工序重复 / 缺少必完工序）；`error` 单条形态兼容（注入：把 error_messages 分支退化成一句通用文案 ⇒ 三条断言红）"
+      - "保存被拒时**逐条**展示后端护栏理由，不得只弹「保存失败」：按**真实信封** `error.response.data.error.details[].message` 三条 ⇒ 页面渲染三条独立条目，并分别带可读归因（工序不存在 / 工序重复 / 缺少必完工序）；`error.message` 单条形态退化兼容（⚠️ 后端**没有**顶层 `error_messages` 字段，`error` 也不是字符串 —— 按那个形状读会让真实失败路径静默退化成「Request failed with status code 422」，见 `docs/design/craft-routing-customization.md` §5.4 的假绿教训；注入：把 details 分支退化成一句通用文案 ⇒ 三条断言红）"
       - "空序列**本地先拦**：删除最后一道后保存 ⇒ 不发出 PUT（`not called`），并给出「序列不能为空」理由（注入：去掉本地校验 ⇒ PUT 被调用，断言红）"
       - "缺口区两只清单可见：①「有工序但未进任何路线」逐条渲染（真值源下 4 道：裁剪-布/裁剪-纱/质检/腰靠垫，**双向可红**：少一道或多一道都红）②「库里没有路线的信号组合」（罗马帘 × 韩褶）以清单形式给出（注入：把任一清单改成只显示条数 ⇒ 该条红）"
       - "新建路线 `POST /api/admin/production/routings` 提交 `{curtain_type, craft, operations: []}`（部位/工艺为空时本地拦）；新增工序 `POST /api/admin/production/operations` 提交 `{name, group_name?, unit?, unit_price}`（单价非数值时本地拦）"
@@ -594,6 +594,66 @@ cases:
         - "frontend/admin-web/tests/unit/pages/production-routings.test.tsx"
         - "frontend/admin-web/tests/unit/lib/route-source.test.ts"
         - "frontend/admin-web/tests/unit/pages/processing-orders-production.test.tsx"
+        - "frontend/admin-web/tests/unit/pages/production-board.test.tsx"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  # ==========================================================================
+  # PG-040（issue #4386，P1）—— 加工费**组合**定价（商家配置面）。
+  #
+  # 为什么单列而非并进 PP-001~PP-006：那几条是**单个加工项**的 CRUD/报价口径；本条的
+  # 判据是「**组合 → 一个价（元/米）**」这一层 —— 用户裁定「不是每个加工项收取一个费用，
+  # 而且通常是组合」「选配完的一个商品只会收取一种加工费」，而这一层此前**表都没有**。
+  #
+  # 真值暂缺（README 约定 4）：`truths_ref: []` —— 加工费数值本身（打孔到底 ¥8.00 还是
+  # ¥9.50）属**改钱**，关联 #4341 待客户裁定；本用例只钉**结构与护栏**，不钉具体金额。
+  #
+  # 红证（实现前逐条红，注入法见各 data_check 括号内）：
+  #   · 服务/端点不存在 ⇒ 编译失败 + MockMvc 404；
+  #   · `compositionKey` 改成按书写顺序 ⇒ 判据 2 三条红（归一化 + 落库值 + 重复护栏）；
+  #   · 去掉唯一键护栏 ⇒ 判据 1 红（409 → 500/落库两行）；
+  #   · 缺口端点不实现 / 不排除已定价 ⇒ 判据 4 红；
+  #   · 去掉落账 ⇒ 判据 5 两条红；
+  #   · 前端按 `error_messages` 读 ⇒ 判据 3 的三条独立条目断言红（#4308 的假绿形态）。
+  # ==========================================================================
+  - id: PG-040
+    legacy_id: ""
+    title: "加工费组合定价 - 组合→单价（元/米）写面五条护栏 + composition_key 归一化 + 版本账 + 未定价缺口可见"
+    domains:
+      - processing
+      - production
+    tier: normal
+    persona: ""
+    tags:
+      - processing
+      - processing_fee
+      - fee_combination
+      - composition_key
+      - normalization
+      - version_ledger
+      - gap_visibility
+    truths_ref: []
+    user_inputs:
+      - "把韩褶+打孔定一个价，再加定型又是一个价；看看还有哪些卖过的组合没定价"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "success=true"
+      - "判据 1·**同一组合不重复定价**：同一 `composition_key` 建两次 ⇒ 第二次 HTTP **409** + `error.code=CONFLICT` + 可行动 `suggestion`，且**零 insert**（撞 DB 唯一键 `uk_processing_fee_combinations_tenant_key` = 500，是缺陷不是护栏）。证据：ProcessingFeeCombinationCommandServiceTest「duplicateCompositionIsRejectedWithConflict」+ ProductionControllerTest「createProcessingFeeCombinationDuplicateReturnsConflict」（**注入**：去掉 `rejectDuplicate` ⇒ 两条断言红）"
+      - "判据 2·**归一化确定性、与书写顺序无关**：`compositionKey` 口径 = trim → 丢空 → 去重 → **按 Unicode 码点升序** → `+` 连接 ⇒ `韩褶+打孔+定型` ≡ `定型+打孔+韩褶` ≡ `打孔+定型+韩褶` 全部等于 `定型+打孔+韩褶`（码点真值：定 U+5B9A < 打 U+6253 < 韩 U+97E9，**勿凭读起来顺猜顺序**）；落库值与响应 `composition_key` 都是**归一化后**的值，`items` 与 key 同源；归一化后相同 ⇒ 撞判据 1 的 409。**为什么不能用「加工项目录 sort_order 序」**：那会让 key 随加工项表改动漂移（商家调一下排序 ⇒ 已成交组合匹配不上自己的价）。证据：ProcessingFeeCombinationCommandServiceTest「compositionKeyIsOrderIndependent」「storedCompositionKeyIsNormalized」「reorderedRequestHitsDuplicateGuard」（**注入**：把 `TreeSet` 改成 `LinkedHashSet` ⇒ 三条红，实测）"
+      - "判据 3·**护栏理由逐条可见**（422 + 真实信封）：失败响应 = HTTP **422** + `{success:false, error:{code:'VALIDATION_ERROR', message, details:[{field,message}]}, suggestion}` —— `details[].message` **逐条**（空组合 field=items / 特征名不存在或已停用 field=items[i] / 特征名重复 field=items[i] / unit_price 缺失·非数值·负数 field=unit_price / source 不在词表 field=source），且**一次报全**（不是报第一条就返回）；`unit_price=0` 合法（商家可把某组合做成免费）。证据：ProcessingFeeCombinationCommandServiceTest 四条护栏用例 + ProductionControllerTest「createProcessingFeeCombinationGuardFailureReturnsDetailsEnvelope」（断言 `details.length()==2`、`details[0].field=items[1]`、`details[1].field=unit_price`、`suggestion` 非空）。⚠️ 前端必须按 `error.details[].message` 读 —— **不得**读不存在的顶层 `error_messages`（#4308 实测：按那个形状读 ⇒ 真实失败路径静默退化成「Request failed with status code 422」）"
+      - "判据 4·**缺口可见**：`GET /api/admin/production/processing-fee-gaps` = 「订单里**实际出现过**（`order_items.processing_info.processingItems[].name`，与 OrderService.extractProcessingItems 同口径）、但库里查不到价」的组合 ⇒ 每行 `{composition_key, items, order_count, note}`，已定价的**不出现**，书写顺序不同的同一组合**合并计数**；空集时返回 `[]` + total=0（不是 null/异常）；响应带 `scanned_order_items` + `scanned_truncated`（扫描有上限，超限**不静默**）。**不发明任何默认价**（缺口就是缺口）。证据：ProcessingFeeCombinationCommandServiceTest「gapsListUnpricedCombinationsSeenInOrders」「gapsEmptyWhenNoOrders」+ ProductionControllerTest「processingFeeGapsEndpointIsRegistered」（**注入**：不排除已定价组合 ⇒ 判据红，实测）"
+      - "判据 5·**版本账**：新建落**首行**、改单价**真的变了**才追加一行到 `processing_fee_combination_versions`（记变更后 `unit_price` + 冗余 `composition_key` —— 组合行停用/改名后历史账仍答得出「当时是哪一组」）；同价重复提交 = **幂等空操作**（不追加无意义行，沿用 #4308 口径）；停用 = 软删语义（`status=disabled`，行保留、`deleted` 不动）。证据：ProcessingFeeCombinationCommandServiceTest「priceChangeAppendsVersionRow」「samePriceIsIdempotentNoop」「createAppendsFirstVersionRow」「disableKeepsRow」（**注入**：`appendVersion` 直接 return ⇒ 两条红，实测）"
+      - "判据 6·**管理面**（前端）：`/production/processing-fees` 渲染真实组合行（选配特征 + `¥x.xx` 元/米）、新建提交 `{items:[勾选集合], unit_price}`（**前端不拼 composition_key** —— 自己拼 = 第二份口径）、护栏理由**逐条**渲染、空组合**本地先拦**（不发 POST）、缺口区逐条可见、改单价走 `PUT /{id}`（body 只有 unit_price）、停用走 `DELETE /{id}`（二次确认后）、单接口失败只在**该区**给可读提示（不整页白屏）；侧边栏生产管理组含「加工费管理」→ 本路由，权限码 `processing:manage`，**只追加、既有项位次不变**。证据：frontend/admin-web/tests/unit/pages/processing-fees.test.tsx + tests/unit/pages/production-board.test.tsx（**注入**：把读法退化成 `error.message` 一句话 ⇒ 三条独立条目断言红）"
+      - "**红证（实测输出，2026-09-19）**：① 去掉归一化排序 ⇒ `Tests run: 17, Failures: 3`；② 去掉唯一键护栏 ⇒ `Failures: 2, Errors: 3`；③ 缺口不排除已定价 ⇒ `Failures: 1`；④ 去掉落账 ⇒ `Failures: 2`。**未做（如实登记）**：计价接线（`OrderService.sumProcessingFee` / 下单页 / ai-agent）**不在本单**（issue #4386「不做」），`fee_source` 三态（matched/unpriced/manual）随之未落码；`processing_rules` 可组合性校验未落码（KNOWN-03 仍在）。"
+    skip_reason: "[backend-contract] 后端契约 + 前端组件契约（无 LLM 环节，不进 agent-eval 冒烟）：断言由 ProcessingFeeCombinationCommandServiceTest + ProductionControllerTest + frontend/admin-web/tests/unit/pages/processing-fees.test.tsx + tests/unit/pages/production-board.test.tsx 执行"
+    merge_log: "2026-09-19 新增（issue #4386，P1；用户裁定「缺乏加工费的管理模块」+ 组合口径）。交付：V66 `processing_fee_combinations` + `processing_fee_combination_versions`（与 #4308 的 production_routing_versions 同构）+ 写面五条护栏（422 details 逐条 / 409 撞唯一键）+ `composition_key` 确定性归一化（与书写顺序无关）+ 缺口端点 + `/production/processing-fees` 管理页与侧边栏入口。**未做**：计价接线（不改 OrderService.sumProcessingFee / orders-new 页 / ai-agent）—— 本包交付的是**商家的配置面**（先例 #4308：先交付写面+护栏+缺口，消费面由 #4354 后续接）；`processing_rules` 落码不做。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ProcessingFeeCombinationCommandServiceTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/controller/ProductionControllerTest.java"
+        - "frontend/admin-web/tests/unit/pages/processing-fees.test.tsx"
         - "frontend/admin-web/tests/unit/pages/production-board.test.tsx"
       ci:
         - pr-check.yml

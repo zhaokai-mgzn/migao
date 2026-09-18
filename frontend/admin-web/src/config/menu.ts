@@ -106,6 +106,8 @@ export const menuGroups: MenuGroup[] = [
       { key: 'production-operations', name: '工序库', icon: 'ListChecks', path: '/production/operations', permissionCode: 'processing:manage' },
       // issue #4307：路线序列编辑 / 信号映射 / 缺口可见 —— 页面存在但侧边栏进不去等于没交付
       { key: 'production-routings', name: '工艺路线', icon: 'Route', path: '/production/routings', permissionCode: 'processing:manage' },
+      // issue #4386：加工费**组合**定价（不是每个加工项一个价）—— 商家配置面，下单时由系统按选配匹配
+      { key: 'production-processing-fees', name: '加工费管理', icon: 'BadgeDollarSign', path: '/production/processing-fees', permissionCode: 'processing:manage' },
       { key: 'production-piecework', name: '计件工资', icon: 'Calculator', path: '/production/piecework', permissionCode: 'processing:manage' },
     ],
   },
