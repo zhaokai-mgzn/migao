@@ -43,4 +43,28 @@ export function parseOrderIdFromQr(raw: string): string | null {
   return normalizeOrderId(candidate)
 }
 
-export default { parseOrderIdFromQr }
+/**
+ * 跳转/启动参数键（按优先级）。与后端 `resolveOrder` 的三形态一致：
+ * `order_id`（内部 id）/ `order_no`（对外单号）/ `qr_token`（二维码 token，`qr`/`token` 两个键名）。
+ */
+const PARAM_KEYS = ['order_id', 'orderId', 'order_no', 'orderNo', 'qr', 'token'] as const
+
+/**
+ * 跳转/启动参数 → order_id（issue #4206 判据 4：携带加工单号的跳转直达报工页）
+ *
+ * 消费 `Taro.getCurrentInstance().router.params`（深链/`navigateTo` 带参/扫码落地页共用）。
+ * **逐个键试**而不是只看第一个：`order_id` 非法（如被塞了别的值）时不得挡住后面合法的 `qr`。
+ * 全部解析不出 ⇒ null（防呆：不瞎猜单号去请求）。
+ */
+export function resolveOrderIdFromParams(params?: Record<string, any> | null): string | null {
+  if (!params) return null
+  for (const key of PARAM_KEYS) {
+    const value = params[key]
+    if (value === undefined || value === null || value === '') continue
+    const orderId = parseOrderIdFromQr(String(value))
+    if (orderId) return orderId
+  }
+  return null
+}
+
+export default { parseOrderIdFromQr, resolveOrderIdFromParams }
