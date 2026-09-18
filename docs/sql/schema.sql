@@ -888,6 +888,49 @@ CREATE INDEX IF NOT EXISTS idx_op_price_versions_operation
     WHERE deleted = 0;
 COMMENT ON TABLE production_operation_price_versions IS '工序计件单价版本（V55，issue #4204）：当前价 = 最新版本行；实例单价仍是生成时快照，改价不影响既有实例与历史报工';
 
+-- 特殊选项 → 条件工序 / 计件系数（V59，issue #4230 Java 侧 v1a）
+-- 迁移链同款见 backend/admin-api/src/main/resources/db/migration/V59__create_production_option_tables.sql
+-- 为什么两处都要：本文件是**全新库的一次性 bootstrap**（docker-entrypoint-initdb.d 执行），
+-- 而 **Flyway/MigrationRunner 不在该栈运行** —— 只存在于迁移链的表在建库后并不存在（#3270 形态）。
+-- 真值源 = ai-agent app/production/routing.py 的 SPECIAL_OPTION_ROUTINGS / OPTION_FACTOR_SCOPES
+-- （NON_PIECEWORK_OPTIONS 那两项是**显式登记的「不计件」**，两张表都**不**种 —— 种进来会把它
+-- 变成「有映射但系数 1」，两种语义又混成一种）。
+CREATE TABLE IF NOT EXISTS production_option_routings (
+    id VARCHAR(64) PRIMARY KEY,
+    tenant_id BIGINT NOT NULL REFERENCES tenants(id),
+    option_name VARCHAR(32) NOT NULL,                -- 特殊选项名（真值源 §1 的 19 项之一）
+    operation_name VARCHAR(64) NOT NULL,             -- 条件工序名（production_operations.name）
+    after_operation VARCHAR(64) NOT NULL,            -- 插在它之后（不在路线中 ⇒ 追加到末尾）
+    sort_order INT NOT NULL DEFAULT 0,
+    status VARCHAR(16) NOT NULL DEFAULT 'active',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    deleted INTEGER NOT NULL DEFAULT 0
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_production_option_routings_tenant_option_op
+    ON production_option_routings (tenant_id, option_name, operation_name)
+    WHERE deleted = 0;
+
+CREATE TABLE IF NOT EXISTS production_option_factors (
+    id VARCHAR(64) PRIMARY KEY,
+    tenant_id BIGINT NOT NULL REFERENCES tenants(id),
+    option_name VARCHAR(32) NOT NULL,
+    operation_name VARCHAR(64),                      -- NULL = 该部位全部工序（平摊档）；非空 = 逐工序例外档
+    factor NUMERIC(6,2) NOT NULL DEFAULT 1,          -- 乘在工序实例 factor 上
+    source VARCHAR(16) NOT NULL DEFAULT '推算',       -- 实证 / 推算
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    deleted INTEGER NOT NULL DEFAULT 0
+);
+-- 唯一性用**表达式索引**（COALESCE(operation_name,'')）：NULL 在普通唯一索引里互不相等，
+-- 不加 COALESCE 就能插进多行「同选项同平摊档」⇒ 系数取值不确定（静默失真）。
+CREATE UNIQUE INDEX IF NOT EXISTS uk_production_option_factors_tenant_option_op
+    ON production_option_factors (tenant_id, option_name, COALESCE(operation_name, ''))
+    WHERE deleted = 0;
+
+COMMENT ON TABLE production_option_routings IS '特殊选项 → 条件工序（V59，issue #4230）：实例化时把 operation_name 插到 after_operation 之后';
+COMMENT ON TABLE production_option_factors IS '特殊选项 → 计件系数（V59，issue #4230）：operation_name NULL = 该部位全部工序（平摊档），非空 = 逐工序例外档（例外档盖住平摊档）';
+
 -- ================================================
 -- 9.6 智能每日经营简报（issue #3468，V44 迁移）
 -- ================================================
@@ -1573,6 +1616,40 @@ WHERE o.deleted = 0
       SELECT 1 FROM production_operation_price_versions v
       WHERE v.operation_id = o.id AND v.deleted = 0
   )
+ON CONFLICT (id) DO NOTHING;
+
+-- 特殊选项 → 条件工序 / 计件系数种子（V59，issue #4230 Java 侧 v1a）
+-- 逐字抄自真值源 backend/ai-agent-service/app/production/routing.py 的 SPECIAL_OPTION_ROUTINGS
+-- （16 项，sort_order 与真值源字典序一致）与 OPTION_FACTOR_SCOPES（v1 只种「一分二 ⇒ ×1.7」这个
+-- **实证**档；§2.4 的逐工序细算档是纯推算，不拿推算值覆盖实证值 ⇒ 不种）。
+-- NON_PIECEWORK_OPTIONS（余料带回(布)/(纱)）**不种**：它们是显式登记的「不计件」。
+-- 防漂移：backend/admin-api/src/test/java/com/migao/admin/migration/ProductionOptionRoutingMigrationTest.java
+-- 逐行比对本文件 / V59 迁移 / routing.py 三源（改名/改值/加减选项即红）。
+INSERT INTO production_option_routings
+    (id, tenant_id, option_name, operation_name, after_operation, sort_order, status)
+VALUES
+  ('opt-rt-01', 1, '拼1次',      '拼1次-布',  '布三边',   1, 'active'),
+  ('opt-rt-02', 1, '拼2次',      '拼2次-布',  '布三边',   2, 'active'),
+  ('opt-rt-03', 1, '拼3次',      '拼3次-布',  '布三边',   3, 'active'),
+  ('opt-rt-04', 1, '加花边',     '花边-布',   '布三边',   4, 'active'),
+  ('opt-rt-05', 1, '加铅块',     '铅坠-布',   '布三边',   5, 'active'),
+  ('opt-rt-06', 1, '接高',       '接高-布',   '精裁-布',  6, 'active'),
+  ('opt-rt-07', 1, '双眼皮接高', '接高-布',   '精裁-布',  7, 'active'),
+  ('opt-rt-08', 1, '余料做绑带', '绑带-布',   '布帘车被', 8, 'active'),
+  ('opt-rt-09', 1, '布绑带',     '绑带-布',   '布帘车被', 9, 'active'),
+  ('opt-rt-10', 1, '余料做帘头', '帘头制作',  '布三边',  10, 'active'),
+  ('opt-rt-11', 1, '抱枕',       '抱枕',      '外帘打卷', 11, 'active'),
+  ('opt-rt-12', 1, '纱绑带',     '绑带-纱',   '布帘车被', 12, 'active'),
+  ('opt-rt-13', 1, '加logo条',   'logo条-布', '布三边',  13, 'active'),
+  ('opt-rt-14', 1, '加立边',     '立边-布',   '布三边',  14, 'active'),
+  ('opt-rt-15', 1, '扣环',       '扣环-布',   '布三边',  15, 'active'),
+  ('opt-rt-16', 1, '防翘扣',     '防翘扣-布', '布三边',  16, 'active')
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO production_option_factors
+    (id, tenant_id, option_name, operation_name, factor, source)
+VALUES
+  ('opt-fa-01', 1, '一分二', NULL, 1.7, '实证')
 ON CONFLICT (id) DO NOTHING;
 
 -- ================================================

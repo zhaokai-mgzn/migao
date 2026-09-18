@@ -9,6 +9,8 @@ import com.migao.admin.entity.Order;
 import com.migao.admin.entity.OrderItem;
 import com.migao.admin.entity.ProcessingItem;
 import com.migao.admin.entity.ProcessingOrder;
+import com.migao.admin.entity.ProductionOptionFactor;
+import com.migao.admin.entity.ProductionOptionRouting;
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.mapper.OrderItemMapper;
 import com.migao.admin.mapper.OrderMapper;
@@ -25,9 +27,11 @@ import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ThreadLocalRandom;
 
@@ -298,6 +302,10 @@ public class ProcessingOrderService {
         // 与 positions **同序**：回填 qty/qty_source 时按位取，不靠部位名（同商品同色号的两行会重名）
         List<List<Map<String, Object>>> operationRows = new ArrayList<>();
         List<Map<String, Object>> request = new ArrayList<>();
+        // 特殊选项映射（issue #4230）：两张表都极小，**一次取回**本租户的全部活跃行，
+        // 逐部位在内存里按本单的 specialOptions 过滤 —— 避免「每个选项一次查询」的 N+1。
+        List<ProductionOptionRouting> optionRoutings = productionOperationQueryService.optionRoutings(tenantId);
+        List<ProductionOptionFactor> optionFactors = productionOperationQueryService.optionFactors(tenantId);
         for (Map<String, Object> entry : snapshot) {
             if (!(entry.get("processingItems") instanceof List<?>)) {
                 continue;
@@ -307,7 +315,6 @@ public class ProcessingOrderService {
             List<Map<String, Object>> operations = new ArrayList<>();
             for (Map<String, Object> step : (List<Map<String, Object>>) route.get("operations")) {
                 Map<String, Object> operation = new LinkedHashMap<>();
-                operation.put("seq", step.get("seq"));
                 operation.put("operation", step.get("operation"));
                 // 分组/单位/单价/必完/开始标记**逐字取库**（不猜、不补默认值）
                 operation.put("group", step.get("group"));
@@ -317,6 +324,13 @@ public class ProcessingOrderService {
                 operation.put("is_start_marker", step.get("is_start_marker"));
                 operations.add(operation);
             }
+            // 特殊选项（issue #4230）：插条件工序 → 重排 seq → 落计件系数
+            List<String> options = specialOptions(entry);
+            if (!options.isEmpty()) {
+                insertConditionalOperations(operations, options, optionRoutings, tenantId, entry);
+            }
+            renumberSeq(operations);
+            applyFactors(operations, options, optionFactors);
             String productName = str(entry.get("productName"));
             String colorName = str(entry.get("colorName"));
             String positionName = productName == null ? "未命名部位"
@@ -333,6 +347,162 @@ public class ProcessingOrderService {
         }
         fillQty(positions, operationRows, request);
         return positions;
+    }
+
+    // ============================================================ 特殊选项（issue #4230）
+
+    /**
+     * 本单携带的特殊选项（{@code processingInfo.specialOptions: string[]}，v1a 新增携带）。
+     *
+     * <p>归一化：只认字符串数组形态（前端/agent 写的就是数组），空白项丢弃、去重保序 ——
+     * 重复选项不得把同一道条件工序插两次（插两次会让工人按两遍单价拿钱）。</p>
+     */
+    private static List<String> specialOptions(Map<String, Object> entry) {
+        Object raw = entry.get("specialOptions");
+        if (!(raw instanceof List<?> list)) {
+            return List.of();
+        }
+        List<String> options = new ArrayList<>(list.size());
+        for (Object item : list) {
+            String option = str(item);
+            if (option != null && !options.contains(option)) {
+                options.add(option);
+            }
+        }
+        return options;
+    }
+
+    /**
+     * 插入条件工序（issue #4230 验收判据 1）：选项 → {@code production_option_routings} →
+     * 把 {@code operation_name} 插到 {@code after_operation} 之后。
+     *
+     * <p>与真值源 {@code routing.py::build_routing} + {@code _insert_after} 同口径：
+     * 锚点不在该部位路线中 ⇒ **追加到末尾**（例：纱帘路线没有「布帘车被」，
+     * 「余料做绑带/布绑带/纱绑带」就落到末尾）；同一锚点上的多个插入按 {@code sort_order}
+     * 依次插在锚点之后 ⇒ 后插的在前（与 Python 的 `insert(idx+1, …)` 逐字同款）。</p>
+     *
+     * <p>工序元数据（分组/单位/单价/必完/开始标记）**逐字取库**；条件工序在工序库无活跃行 ⇒
+     * fail-closed（{@link #ERR_OPERATION_NOT_FOUND}）—— 静默跳过会让「勾了却没加工序」
+     * 在数据上消失，那正是本单要治的「设计过但从未接线」形态。</p>
+     */
+    private void insertConditionalOperations(List<Map<String, Object>> operations, List<String> options,
+                                             List<ProductionOptionRouting> optionRoutings,
+                                             Long tenantId, Map<String, Object> entry) {
+        List<ProductionOptionRouting> applicable = new ArrayList<>();
+        for (ProductionOptionRouting routing : optionRoutings) {
+            if (options.contains(routing.getOptionName())) {
+                applicable.add(routing);
+            }
+        }
+        if (applicable.isEmpty()) {
+            return; // 选项未登记条件工序（纯系数选项 / 显式不计件选项）⇒ 路线不变，不是错误
+        }
+        applicable.sort(Comparator.comparing(
+                (ProductionOptionRouting r) -> r.getSortOrder() == null ? 0 : r.getSortOrder())
+                .thenComparing(r -> r.getOptionName() == null ? "" : r.getOptionName()));
+        Map<String, Map<String, Object>> catalog = productionOperationQueryService.operationsByName(tenantId);
+        List<String> missing = new ArrayList<>();
+        for (ProductionOptionRouting routing : applicable) {
+            String operationName = routing.getOperationName();
+            Map<String, Object> meta = catalog.get(operationName);
+            if (meta == null) {
+                missing.add(operationName);
+                continue;
+            }
+            Map<String, Object> operation = new LinkedHashMap<>();
+            operation.put("operation", operationName);
+            operation.putAll(meta);
+            int anchor = indexOfOperation(operations, routing.getAfterOperation());
+            if (anchor < 0) {
+                log.info("特殊选项「{}」的锚点工序「{}」不在该部位路线中，条件工序「{}」追加到末尾: productName={}",
+                        routing.getOptionName(), routing.getAfterOperation(), operationName, entry.get("productName"));
+                operations.add(operation);
+            } else {
+                operations.add(anchor + 1, operation);
+            }
+        }
+        if (!missing.isEmpty()) {
+            log.error("{} 特殊选项引用的条件工序在工序库无活跃行，生成加工单中止: tenantId={}, 缺工序={}, productName={}",
+                    INCIDENT_ROUTING_UNRESOLVED, tenantId, missing, entry.get("productName"));
+            throw new BusinessException(ERR_OPERATION_NOT_FOUND,
+                    String.format("特殊选项引用的条件工序 %s 在工序库中不存在，无法实例化工序", missing),
+                    422,
+                    String.format("请在工序库补上 %s（或停用引用它的特殊选项映射）；"
+                                    + "工序库目录查看入口 GET /api/admin/production/operations-catalog",
+                            String.join("、", missing)));
+        }
+    }
+
+    /** 锚点工序在路线中的下标；不在 ⇒ -1（调用方按真值源口径追加到末尾）。 */
+    private static int indexOfOperation(List<Map<String, Object>> operations, String operationName) {
+        for (int i = 0; i < operations.size(); i++) {
+            if (Objects.equals(operations.get(i).get("operation"), operationName)) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    /**
+     * 重排部位内序号（1..N）。
+     *
+     * <p>为什么必须重排：库路线的 seq 只覆盖**基准**工序，条件工序插进来后原序号会重复/断档；
+     * 而 {@code seq} 是报工「越站」防呆（{@code assertPredecessorsDone} 取「seq 最大的前道」）
+     * 与页面排序的**唯一**顺序依据 ⇒ 序号错 = 越站校验错。真值源同款：
+     * {@code routing.py::instance_operations} 在插完条件工序后 `enumerate(route, start=1)`。</p>
+     *
+     * <p>无特殊选项时结果与库路线逐值相同（路线 seq 本来就是 1..N）⇒ 不回归。</p>
+     */
+    private static void renumberSeq(List<Map<String, Object>> operations) {
+        for (int i = 0; i < operations.size(); i++) {
+            operations.get(i).put("seq", i + 1);
+        }
+    }
+
+    /**
+     * 落计件系数（issue #4230 验收判据 2）：选项 → {@code production_option_factors} →
+     * 该部位每道工序的 {@code factor}。
+     *
+     * <p>取用口径与真值源 {@code routing.py::factor_for} 逐字同口径：
+     * ① 单个选项内**例外档盖住平摊档**（{@code operation_name} 命中的档优先，否则取 NULL 档）
+     * —— 不是相乘（相乘会把「平摊 ×1.7 + 逐工序 ×2.0」算成 ×3.4，纯属重复计费）；
+     * ② 多个加系数选项之间**相乘**（独立倍率的合成口径）；
+     * ③ 未登记的选项**不得**悄悄改系数（查不到档 ⇒ 保持 1）。</p>
+     *
+     * <p>落进 {@code factor} 后由计件公式（{@code Σ 合格数 × 单价 × 系数}）真的乘进钱 ——
+     * 该列自 V49 就存在、公式也真的读它，但**此前零写方** ⇒ 恒 1.00。</p>
+     */
+    private static void applyFactors(List<Map<String, Object>> operations, List<String> options,
+                                     List<ProductionOptionFactor> optionFactors) {
+        if (options.isEmpty()) {
+            for (Map<String, Object> operation : operations) {
+                operation.put("factor", BigDecimal.ONE);
+            }
+            return;
+        }
+        for (Map<String, Object> operation : operations) {
+            String operationName = String.valueOf(operation.get("operation"));
+            BigDecimal factor = BigDecimal.ONE;
+            for (String option : options) {
+                ProductionOptionFactor scoped = null;
+                ProductionOptionFactor flat = null;
+                for (ProductionOptionFactor row : optionFactors) {
+                    if (!option.equals(row.getOptionName())) {
+                        continue;
+                    }
+                    if (operationName.equals(row.getOperationName())) {
+                        scoped = row;          // 例外档
+                    } else if (row.getOperationName() == null) {
+                        flat = row;            // 平摊档
+                    }
+                }
+                ProductionOptionFactor hit = scoped != null ? scoped : flat;
+                if (hit != null && hit.getFactor() != null) {
+                    factor = factor.multiply(hit.getFactor());
+                }
+            }
+            operation.put("factor", factor);
+        }
     }
 
     /** 算料请求体里的单个部位（与 ai-agent 端点冻结契约同构）。 */
@@ -610,6 +780,10 @@ public class ProcessingOrderService {
             copyIfPresent(pi, entry, "sellingMethod");
             copyIfPresent(pi, entry, "doorWidth");
             copyIfPresent(pi, entry, "unit");
+            // 特殊选项（issue #4230 v1a）：订单侧**新携带** specialOptions: string[]，
+            // 落在既有 processingInfo JSONB 内（**无需迁移**）；加工单快照透传一份，
+            // 生成时的条件工序/计件系数都从快照读（快照是加工单的固化真相）。
+            copyIfPresent(pi, entry, "specialOptions");
             // 加工项明细 + options 补齐
             List<Map<String, Object>> itemsWithOptions = new ArrayList<>();
             for (Map<String, Object> p : procs) {

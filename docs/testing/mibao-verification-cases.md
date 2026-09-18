@@ -3013,7 +3013,7 @@
 ```
 溯源: 2026-09-18 新增（issue #4208 ai-agent 半边，PR #4215）：应做数量内部端点 POST /api/internal/production/operation-qty（X-Service-Token）—— 让 routing._qty_for 从「零运行时消费者」变成算料数量的唯一真相源；兜底口径「绝不落 0」+ qty_source 三态（键名 / <键名>_x6 / fallback）。红证（实现前）：端点未实现 ⇒ 404（assert 404 == 200 红）、resp.json()['data'] KeyError；键漂移门禁在 KNOWN_QTY_UNITS/DIRECT_QTY_KEYS 未定义时 import 即红。同批把该测试文件补进 PP-010.traces.tests（同为生产确定性核心的证据面）。**未做（如实登记）**：Java 侧接线（生成加工单时逐工序调用本端点）不在本单，#4208 保持 OPEN。 ｜ tags: processing, production, qty-engine
 
-## processing-order（22 case）
+## processing-order（23 case）
 
 ### PG-001. 生成加工单 - 已确认含加工项订单 → 加工单生成 + 订单进入 producing 🔵
 ```
@@ -3218,7 +3218,7 @@
 数据: 工序库/工艺路线种子与只读消费者（issue #4116 P0-2；#4246 扩为 9 条路线 + 四源收敛）：V54__seed_production_operations.sql 把 routing.py 的 30 道工序（OPERATION_CATALOG：分组/部位/单位/单价/is_must_finish/is_start_marker）与 6 条 部位×工艺 路线（ROUTINGS，布帘·韩褶 = 11 道）作为**初始种子**落库（幂等：ON CONFLICT (…) WHERE deleted = 0 DO NOTHING）；V56__seed_special_option_operations.sql 追加 #4230 的 5 道特殊选项工序（含单价版本行）；V58__seed_sheer_curtain_routings.sql 追加 #4246 的 3 条**纱帘**路线（纱帘×打孔 / 纱帘×四爪钩 / 纱帘×穿杆，**零新造工序** —— 只消费库里早已存在、有价、零消费的 上车布-纱 ¥0.5/米 与 打孔-纱 ¥0.15/孔，此前派生键取不到路线 ⇒ 回落 布帘×韩褶 ⇒ 纱帘订单拿到布帘的 11 道工序、工序与工资全错）；docs/sql/schema.sql 同步同款终态种子（bootstrap 路径不跑迁移链）。只读消费者 GET /api/admin/production/operations-catalog 按分组返回工序目录、GET /api/admin/production/routings 返回路线（含每道工序的库口径单位/单价），另有 ProductionOperationQueryService.findRouting（实例化用，返回 missing_operations 供 fail-closed）。**四源**（routing.py ↔ V54 ∪ V56 ∪ V58 ↔ schema.sql）漂移即红（tests/unit_ci_workflows/test_production_catalog_seed.py：工序按名称逐行逐值、路线逐条逐字，且自证「每个源都真被读到」—— 源缺席即 fail-closed）。孤儿工序**显式登记**（#4246 判据 3）：被新路线消费的 上车布-纱 / 打孔-纱 不再是孤儿，仍为孤儿且**有意不消费**（需客户确认，不许猜价）的恰为 裁剪-布 / 裁剪-纱 / 质检 / 腰靠垫 四道 —— 登记在 routing.py 的 PENDING_CUSTOMER_CONFIRMATION_OPERATIONS，由 tests/test_production/test_routing.py 断言「孤儿集合恰为该 4 道」（双向可红：谁给这 4 道建了路线或新造工序却未登记即红）
 数据: 工序来源切库（issue #4116 第二半，用户裁定「现在就切」2026-09-18）：生成加工单时的工序实例化**改读工序库** —— 取路线判据 = 订单侧可派生信号（加工项名 > 加工项 options > 商品名 > 销售方式，含 帘头/纱/布 与 韩褶/打孔/四爪钩/穿杆/平幔 关键字）匹配 production_routings 的 curtain_type/craft；派生键库中无该路线 ⇒ 回落**默认路线 布帘×韩褶**（兜底的是路线键，不是数据源）。取不到路线/路线引用的工序在库中无活跃行 ⇒ **fail-closed 中止生成**：错误码 PRODUCTION_ROUTING_NOT_FOUND / PRODUCTION_OPERATION_NOT_FOUND + 可行动 suggestion（说出库中现有路线与 V54 种子/查询端点）+ incident 日志 INCIDENT_PRODUCTION_ROUTING_UNRESOLVED，**绝不回退加工项目录**、**不落加工单行**。is_must_finish / is_start_marker 改读 production_operations 同名列（V54 只标「外帘装袋」为必完）⇒「每部位末道工序必完」的临时口径（#4131）**已删除**，末道「外帘发货」在库里是 false。证据：ProcessingOrderServiceTest 6 项（库逐条一致 / 加工项目录自定义项不进实例 / 空库 fail-closed / 缺工序 fail-closed / 派生键命中 / 派生键回落默认 / 无信号落默认 / 幂等重放不写行且 token 稳定）
 数据: 工序来源切库的**历史口径已作废**（同上，防假真值回填）：V54 迁移注释与旧 PG-018 文案里的「本包不切换工序来源、不改末道必完默认、两处口径待裁定」「种子口径 ≠ 实例口径，不要互读」在新口径下**均为假真值** —— 实例化现在就是读这两张表，两处口径已合一
-数据: 部位语义**尚未对齐**（如实登记，不许假装已对齐）：processing_position_operations.position_name 只能是「加工产物名[+色号]」，因为**订单侧没有部位/帘种字段**，而工序库路线是按部位索引的 ⇒ 实例化时只能**派生**部位（关键字表，见 ProcessingOrderService.deriveRouteKey），派生不中落默认路线。**待订单侧补「部位/帘种」字段后再对齐**（届时改直读 + 删关键字派生表）。另：route 只取**基准序列**，特殊选项条件工序（拼1次/花边/铅坠/接高/绑带，routing.py SPECIAL_OPTION_ROUTINGS）与 is_shaped 定型开关**尚未接线**；应做数量 qty 暂退化为该部位订单数量（缺值兜底 1，绝不落 0）—— 三处均待接线
+数据: 部位语义**尚未对齐**（如实登记，不许假装已对齐）：processing_position_operations.position_name 只能是「加工产物名[+色号]」，因为**订单侧没有部位/帘种字段**，而工序库路线是按部位索引的 ⇒ 实例化时只能**派生**部位（关键字表，见 ProcessingOrderService.deriveRouteKey），派生不中落默认路线。**待订单侧补「部位/帘种」字段后再对齐**（届时改直读 + 删关键字派生表）。另：route 只取**基准序列**；特殊选项条件工序（拼1次/花边/铅坠/接高/绑带，routing.py SPECIAL_OPTION_ROUTINGS）与应做数量 qty 两处**已于 2026-09-18 接线**（见 PG-022 / PG-023 —— 条件工序按 production_option_routings 插入且 seq 重排、qty 取自算料引擎端点且落 qty_source 列）；**尚未接线**的只剩 is_shaped 定型开关一处。⚠️ 历史口径（防假真值回填）：本句在 #4208/#4230 Java 侧落地前写的是「条件工序与 is_shaped 尚未接线；qty 暂退化为该部位订单数量（缺值兜底 1）」—— 那三个分句里前两个**已作废**，不得再按旧口径写回。
 数据: 必完完工（issue #4117 修语义：完工 = **加工单**置 completed，**订单状态不动**）：全部 is_must_finish 工序满足 done_qty ≥ qty 时，processing_orders.status 原子置 completed（活跃态条件更新 + completed_at，order_completed=true），订单保持 producing —— 订单状态机无 producing→completed（completed 是终态）⇒ 旧实现直写订单 completed 会让含加工项订单既发不了货也回不去；加工单非活跃（并发取消）时更新 0 行、order_completed=false；必完工序未全绿不完工
 数据: 完工→发货贯通（#4117 红证判据）：必完工序全绿 ⇒ 加工单 status='completed' ⇒ 发货守卫 assertProcessingCompletedBeforeShip 读到的 countCompletedByOrderId > 0 放行，且订单仍为 producing（shipOrderIfApplicable 只在 confirmed/producing 时流转）⇒ 含加工项订单完工后可发货
 数据: 计件：GET /api/admin/production/orders/{orderId}/piecework = Σ(合格数量 × 单价 × 系数)，排除返工/报废；单工序一人制（per_worker 按报工人归集、per_operation 按工序归集）
@@ -3281,6 +3281,23 @@
 跳过: [backend-contract] 后端契约用例（生成加工单是服务端写路径，无 LLM 环节，不进 agent-eval 冒烟）：断言全部由 Java 单测执行 —— ProductionOperationQtyClientTest（客户端冻结契约 + fail-closed 四态）/ ProcessingOrderServiceTest（端到端 qty + calc_info 口径 + fail-closed 不落半成品）/ ProductionPositionOperationQtySourceMigrationTest（V57 迁移 ↔ 实体 ↔ 落库语句三源收敛）/ ProductionControllerTest（存量单补工序的派生路径）
 ```
 溯源: 2026-09-18 新增（issue #4208，P1，Java 半边；ai-agent 半边 = PR #4215）。红证（修复前实测）：把 `buildPositionPayload` 的 `fillQty` 换回「应做数量 = 订单数量」⇒ ProcessingOrderServiceTest 5 条红（`generateTakesQtyFromCalcEngineNotFromOrderQuantity` 期望 12.3/24 实得 2、`generateInstantiatesOperationsVerbatimFromOperationLibrary`、`derivePositionPayloadUsesOperationLibrary`、`generateFailsClosedWhenQtyServiceUnavailable`、`calcInfoDoesNotInventFabricMetersForNonPerMeter`）；把客户端的不可达分支改回「返回空列表」（静默降级）⇒ ProductionOperationQtyClientTest「unreachableServiceFailsClosed」红；实现前 `ProductionOperationQtyClient` 类不存在 ⇒ 新增测试文件编译失败（找不到符号）。实现：ProductionOperationQtyClient（照抄 BriefingGenerateClient 范式：RestTemplate + SimpleClientHttpRequestFactory 超时 + 复用既有配置键）+ ProcessingOrderService.buildPositionPayload 两段式（先解析路线、再一次性问数回填）+ calcInfo 键名映射 + V57 迁移与实体/落库/幂等签名四处同改 + ProductionService.operationView 透出 qty_source。**不做（如实登记）**：下单时落库算料输出（#4118，跟随项）；订单侧补「部位/帘种」字段（类注释既有登记）。 ｜ tags: processing-order, production-reporting, operation-qty, calc-engine
+
+### PG-023. 特殊选项 → 计件（Java 侧）——订单携带 specialOptions + 条件工序 + 计件系数 + 系数真的进钱 🔵
+```
+数据: success=true
+数据: 订单携带（issue #4230 §2.1-1/2）：`processingInfo.specialOptions: string[]` 落在**既有 JSONB 内**（无需迁移），`buildSnapshot` 透传一份到加工单快照的 `items_snapshot[].specialOptions`（快照是加工单的固化真相，生成时的条件工序/系数都从快照读）。证据：ProcessingOrderServiceTest「generateSuccess」（快照五要素断言段）+ 判据 1/2 的用例（生成后实例即由快照的选项驱动）
+数据: 判据 1·加工序（**红证**）：建单带 `specialOptions:[\"拼1次\"]` ⇒ 工序实例**多出 `拼1次-布`** 且**插在 `布三边` 之后**（seq=3），分组/单位/单价**逐字取工序库**（车位/幅/0.8）；不带该选项时**不出现**。锚点不在该部位路线中时**追加到末尾**（与真值源 `routing.py::_insert_after` 同款，例：纱帘路线无「布帘车被」）。条件工序插入后 **seq 重排为 1..N** —— seq 是报工「越站」防呆（取「seq 最大的前道」）与页面排序的唯一顺序依据，序号重复/断档 = 越站校验错。证据：ProcessingOrderServiceTest「specialOptionInsertsConditionalOperationAfterAnchor」（含不带选项的负例同断言）+「conditionalOperationAppendsWhenAnchorAbsent」
+数据: 判据 2·加系数（**红证**）：建单带 `specialOptions:[\"一分二\"]` ⇒ 该部位**每道**工序实例 `factor = 1.7`；不带时为 `1.00`。取用口径与真值源 `routing.py::factor_for` 逐字同口径：单选项内**例外档盖住平摊档**（不是相乘 —— 相乘会把「平摊 ×1.7 + 逐工序 ×2.0」算成 ×3.4，重复计费）；多选项之间**相乘**；未登记选项**不得**悄悄改系数。证据：ProcessingOrderServiceTest「specialOptionFactorAppliesToEveryOperationOfThePosition」（带 1.7 / 不带 1 双向断言）
+数据: 判据 3·**系数真的进了钱**（把「写进列」与「进了钱」分开钉死）：同一张单带/不带「一分二」的**计件合计**比值 = 1.7。判据走**真实** `ProductionService.aggregate`（Σ 合格数 × 实例快照单价 × 系数）+ 每条实例一笔「合格 1」的报工，合计比值因逐笔四舍五入到分有 0.01 级偏差 ⇒ 断言用容差（±0.01）而不是等号（等号会假红），并硬断言方向「带系数 > 不带」。证据：ProcessingOrderServiceTest「specialOptionFactorReachesPieceworkAmount」
+数据: 判据 4·分类 C 不静默：`余料带回(布)` ⇒ 工序数**不变**、`factor` **仍为 1**，且**不是**因为「没映射到」—— 真值源 `NON_PIECEWORK_OPTIONS` 把它**显式登记为「不计件」**，两张表都**不种**（种进来会把它变成「有映射但系数 1」，两种语义又混成一种）。判别性：同一张单换成有映射的选项（余料做帘头）⇒ 工序数必须变 12。证据：ProcessingOrderServiceTest「nonPieceworkOptionIsExplicitNoop」+ ProductionOptionRoutingMigrationTest「nonPieceworkOptionsAreNotSeeded」
+数据: 判据 5·种子防漂移（三源逐行相等）：V59 迁移的种子 ↔ `docs/sql/schema.sql` 的 bootstrap 终态 ↔ ai-agent `routing.py` 的 `SPECIAL_OPTION_ROUTINGS`（16 项，选项/条件工序/锚点/sort_order 逐值相等）与 `OPTION_FACTOR_SCOPES`（v1 只有「一分二 ⇒ ×1.7 / 该部位全部工序」一个**实证**档；§2.4 的逐工序细算档是纯推算 ⇒ 不种，不拿推算值覆盖实证值）。沿用 V54/V56 的既有防漂移范式。证据：ProductionOptionRoutingMigrationTest「seedMatchesTruthSourceAndBootstrap」+「factorScopesMatchTruthSource」
+数据: 结构判据：`production_option_factors.operation_name` **可空**（NULL = 该部位全部工序的平摊档；非空 = 逐工序例外档，为「不把路堵死」保留），唯一性必须走 **COALESCE 表达式索引** —— NULL 在普通唯一索引里互不相等，不加 COALESCE 就能插进多行「同选项同平摊档」⇒ 系数取值不确定（静默失真）。证据：ProductionOptionRoutingMigrationTest「tableShapeGuardsNullFlatScope」
+数据: 判据 6·不回归：无特殊选项的订单，工序实例的工序名/seq/单价/**factor 恒 1** 与改动前逐值相同。证据：ProcessingOrderServiceTest「noSpecialOptionsKeepsRouteAndFactorUnchanged」+「generateInstantiatesOperationsVerbatimFromOperationLibrary」
+数据: fail-closed：特殊选项引用的条件工序在工序库**无活跃行** ⇒ 中止生成（`PRODUCTION_OPERATION_NOT_FOUND` + 指名补救入口的 suggestion），**不落半成品**（不静默跳过 —— 静默跳过会让「勾了却没加工序」在数据上消失，那正是本单要治的形态）。证据：ProcessingOrderServiceTest「specialOptionReferencingMissingOperationFailsClosed」
+数据: **已知缺口（如实登记）**：加工单详情响应新增 `specialOptions` 字段（`ProcessingOrderItemBrief`）—— 不加会让 Jackson 的未知属性使整份 `items` 静默变 null；**商家后台「特殊选项」配置页（v1b）与下单勾选 UI（v1c）不在本单**（真值源 §2.2 的默认值是行业推算，v1b 才让商家可配）。
+跳过: [backend-contract] 后端契约用例（生成加工单是服务端写路径，无 LLM 环节，不进 agent-eval 冒烟）：断言全部由 Java 单测执行 —— ProcessingOrderServiceTest（条件工序插入/锚点缺失/seq 重排/系数双向/系数进钱/不计件显式 no-op/fail-closed/不回归）/ ProductionOptionRoutingMigrationTest（V59 ↔ bootstrap ↔ routing.py 三源防漂移 + 结构判据）
+```
+溯源: 2026-09-18 新增（issue #4230，P1，Java 侧 v1a；ai-agent 半边 = PR #4234）。红证（修复前实测）：把 `buildPositionPayload` 里「插条件工序 + 落系数」两段整体去掉（= 修复前「订单不携带 specialOptions、factor 恒 1」的形态）⇒ ProcessingOrderServiceTest **6 条红**（specialOptionInsertsConditionalOperationAfterAnchor / conditionalOperationAppendsWhenAnchorAbsent / specialOptionFactorAppliesToEveryOperationOfThePosition / specialOptionFactorReachesPieceworkAmount / nonPieceworkOptionIsExplicitNoop / specialOptionReferencingMissingOperationFailsClosed），还原后全绿（md5 复核还原一致）；实现前两张表/两个实体/两个 Mapper 不存在 ⇒ 新增测试文件编译失败（找不到符号）。实现：V59 迁移（两张表 + 16 行条件工序种子 + 1 行系数种子，**版本号从 V58 让位** —— main 的 #4257 已占用 V58）+ `ProductionOptionRouting`/`ProductionOptionFactor` 实体与 Mapper + `ProductionOperationQueryService` 三处只读方法（optionRoutings/optionFactors/operationsByName，与 findRouting 的 catalogByName 同一份读取口径）+ `ProcessingOrderService` 的 specialOptions 归一化 / insertConditionalOperations / renumberSeq / applyFactors + buildSnapshot 透传 + 详情响应补字段。**不做（如实登记）**：v1b 商家配置页、v1c 下单勾选 UI、§2.4 逐工序细算档（推算值，待客户确认）。 ｜ tags: processing-order, production-reporting, special-options, piecework
 
 ## 商品域（25 case）
 
@@ -4450,8 +4467,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：323（活跃 162，跳过 161）
-- tier 分布：smoke 10 / normal 280 / adversarial 33
+- 用例总数：324（活跃 162，跳过 162）
+- tier 分布：smoke 10 / normal 281 / adversarial 33
 - 售后域：9
 - agents：6
 - api：19
@@ -4470,7 +4487,7 @@
 - ontology：4
 - 订单域：30
 - 加工项域：13
-- processing-order：22
+- processing-order：23
 - 商品域：25
 - registry：1
 - 设置域：10
@@ -4527,6 +4544,7 @@
 - PG-020: 工序库写面——PUT /production/operations/{id} + 单价版本表（当前价 = 最新版本行，实例快照冻结）
 - PG-021: 计件工资报表——GET /production/piecework/summary（按人/按期）+ 生产管理菜单同构
 - PG-022: 应做数量接算料引擎（Java 接线）——ProductionOperationQtyClient + buildPositionPayload + qty_source 列
+- PG-023: 特殊选项 → 计件（Java 侧）——订单携带 specialOptions + 条件工序 + 计件系数 + 系数真的进钱
 - PP-007: 米宝加工项 LLM 行为：只改单价不清空其它字段（部分更新语义）
 - PP-008: 米宝加工项 LLM 行为：停用加工项（toggle_item_status → inactive）
 - PP-009: 米宝加工项 LLM 行为：per_area 按面积算价（calculate_price 下发 dimensions，不双计）

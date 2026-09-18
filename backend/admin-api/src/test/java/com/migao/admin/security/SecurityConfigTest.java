@@ -262,6 +262,11 @@ class SecurityConfigTest {
     private com.migao.admin.mapper.ProductionOperationMapper productionOperationMapper;
     @MockBean
     private com.migao.admin.mapper.ProductionRoutingMapper productionRoutingMapper;
+    // 特殊选项两张表（issue #4230，V59）：同族 —— 没有 sqlSessionFactory，必须在此 mock
+    @MockBean
+    private com.migao.admin.mapper.ProductionOptionRoutingMapper productionOptionRoutingMapper;
+    @MockBean
+    private com.migao.admin.mapper.ProductionOptionFactorMapper productionOptionFactorMapper;
     @MockBean
     private com.migao.admin.mapper.ProcessingPositionOperationMapper processingPositionOperationMapper;
     @MockBean

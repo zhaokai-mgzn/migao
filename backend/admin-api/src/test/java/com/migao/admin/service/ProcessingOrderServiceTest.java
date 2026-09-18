@@ -1,5 +1,5 @@
 package com.migao.admin.service;
-// case_ids: PG-001, PG-002, PG-003, PG-004, PG-005, PG-006, PG-007, PG-008, PG-011, PG-018, PG-019, PG-022, UI-030
+// case_ids: PG-001, PG-002, PG-003, PG-004, PG-005, PG-006, PG-007, PG-008, PG-011, PG-018, PG-019, PG-022, PG-023, UI-030
 
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
@@ -12,6 +12,9 @@ import com.migao.admin.entity.OrderItem;
 import com.migao.admin.entity.ProcessingItem;
 import com.migao.admin.entity.ProcessingOrder;
 import com.migao.admin.entity.ProcessingPositionOperation;
+import com.migao.admin.entity.ProductionOptionFactor;
+import com.migao.admin.entity.ProductionOptionRouting;
+import com.migao.admin.entity.ProductionWorkLog;
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.mapper.OrderItemMapper;
 import com.migao.admin.mapper.OrderMapper;
@@ -31,6 +34,7 @@ import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -236,6 +240,63 @@ class ProcessingOrderServiceTest {
 
     /** 捕获「实例 qty 来自算料引擎而非订单数量」的夹具：订单数量 = 2（≠ 算料输出）。 */
     private static final String ORDER_QUANTITY = "2";
+
+    // ── 特殊选项桩（issue #4230）──────────────────────────────────
+    //
+    // 两张表的种子与 ai-agent routing.py 的 SPECIAL_OPTION_ROUTINGS / OPTION_FACTOR_SCOPES
+    // 逐字同源（V59 迁移 / bootstrap / 真值源的三源相等由 ProductionOptionRoutingMigrationTest 守），
+    // 这里只放本文件断言用到的那几行。
+
+    /** 条件工序元数据（= 工序库 production_operations 的库口径；本文件只桩断言用到的那几道）。 */
+    private static Map<String, Object> operationMeta(String group, String unit, String unitPrice) {
+        Map<String, Object> meta = new LinkedHashMap<>();
+        meta.put("group", group);
+        meta.put("unit", unit);
+        meta.put("unit_price", new BigDecimal(unitPrice));
+        meta.put("is_must_finish", false);
+        meta.put("is_start_marker", false);
+        return meta;
+    }
+
+    private static ProductionOptionRouting optionRouting(String option, String operation, String after, int sort) {
+        return ProductionOptionRouting.builder().id("opt-rt-" + sort).tenantId(TENANT)
+                .optionName(option).operationName(operation).afterOperation(after)
+                .sortOrder(sort).status("active").deleted(0).build();
+    }
+
+    private static ProductionOptionFactor optionFactor(String option, String operation, String factor) {
+        return ProductionOptionFactor.builder().id("opt-fa-1").tenantId(TENANT)
+                .optionName(option).operationName(operation).factor(new BigDecimal(factor))
+                .source("实证").deleted(0).build();
+    }
+
+    /**
+     * 两张特殊选项表 + 条件工序元数据的桩（逐字对齐 V59 种子里本文件用到的那几行）。
+     * 只桩「拼1次 / 加花边 / 余料做帘头 / 一分二」四行 —— 断言不依赖未桩的行。
+     */
+    private void stubOptionTables() {
+        // lenient：只有**带特殊选项**的用例才会走到 operationsByName（条件工序元数据），
+        // 严格桩会把「备而不用」判为失败 —— 那是噪音，不是缺陷。
+        lenient().when(productionOperationQueryService.optionRoutings(TENANT)).thenReturn(List.of(
+                optionRouting("拼1次", "拼1次-布", "布三边", 1),
+                optionRouting("加花边", "花边-布", "布三边", 4),
+                optionRouting("余料做帘头", "帘头制作", "布三边", 10)));
+        lenient().when(productionOperationQueryService.optionFactors(TENANT)).thenReturn(List.of(
+                optionFactor("一分二", null, "1.7")));
+        Map<String, Map<String, Object>> catalog = new LinkedHashMap<>();
+        catalog.put("拼1次-布", operationMeta("车位", "幅", "0.8"));
+        catalog.put("花边-布", operationMeta("车位", "米", "0.6"));
+        catalog.put("帘头制作", operationMeta("车位", "个", "2.0"));
+        lenient().when(productionOperationQueryService.operationsByName(TENANT)).thenReturn(catalog);
+    }
+
+    /** 带特殊选项的订单明细（布帘×韩褶路线，与 orderItemHanzhe 同源，只多 specialOptions）。 */
+    @SuppressWarnings("unchecked")
+    private OrderItem orderItemHanzheWithOptions(String colorName, List<String> specialOptions) {
+        OrderItem item = orderItemHanzhe(colorName);
+        ((Map<String, Object>) item.getProcessingInfo()).put("specialOptions", specialOptions);
+        return item;
+    }
 
     /** 「生成加工单 → 真链路实例化」的装配：真实 ProductionService + 真实 ProcessingOrderService。 */
     private ProcessingOrderService realChainService() {
@@ -670,6 +731,242 @@ class ProcessingOrderServiceTest {
         verify(processingOrderMapper, never()).insert(any(ProcessingOrder.class));
         verify(positionOperationMapper, never()).insert(any(ProcessingPositionOperation.class));
         verify(orderService, never()).updateOrderStatus(anyString(), anyString());
+    }
+
+    // ══════════════════ 特殊选项 → 条件工序 + 计件系数（issue #4230 Java 侧 v1a）══════════════════
+    //
+    // 病根（取证事实）：`processing_position_operations.factor` 列自 V49 就存在（注释原文
+    // 「特殊选项计件系数（如 一分二 ×1.7）」）、计件公式也真的乘它，但 `buildPositionPayload`
+    // **从不 put factor** ⇒ 落库恒 1.00（实测库里每行都是「系数=1.00」）；且订单侧**从不携带**
+    // specialOptions ⇒ 整条链「设计过但从未接线」= 少发工人钱。下面五条即该链的判据。
+
+    @Test
+    @DisplayName("#4230 判据 1：带「拼1次」⇒ 多出「拼1次-布」且插在「布三边」之后；不带 ⇒ 不出现")
+    void specialOptionInsertsConditionalOperationAfterAnchor() {
+        stubLibrary();
+        stubOptionTables();
+        stubGenerate(List.of(orderItemHanzheWithOptions("米白", List.of("拼1次"))));
+        when(processingItemMapper.selectById("p1"))
+                .thenReturn(ProcessingItem.builder().id("p1").name("韩褶-布").unit("折").build());
+
+        var results = realChainService().generate(List.of("order-001"), TENANT, "u1");
+        assertThat(results.get(0).isSuccess()).isTrue();
+
+        ArgumentCaptor<ProcessingPositionOperation> captor =
+                ArgumentCaptor.forClass(ProcessingPositionOperation.class);
+        verify(positionOperationMapper, times(V54_BULIAN_HANZHE.length + 1)).insert(captor.capture());
+        List<ProcessingPositionOperation> instances = captor.getAllValues();
+
+        // 位置：库路线 11 道 + 1 道条件工序；「拼1次-布」紧跟在「布三边」之后（seq 3）
+        assertThat(instances).extracting(ProcessingPositionOperation::getOperationName)
+                .containsExactly("精裁-布", "布三边", "拼1次-布", "韩褶-布", "上车布-布", "熨烫-布",
+                        "定型-布", "复烫-布", "布帘车被", "外帘打卷", "外帘装袋", "外帘发货");
+        // seq 必须重排成 1..N（报工越站防呆取「seq 最大的前道」⇒ 序号重复/断档 = 越站校验错）
+        assertThat(instances).extracting(ProcessingPositionOperation::getSeq)
+                .containsExactly(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12);
+        // 条件工序的分组/单位/单价**逐字取工序库**（不猜、不补默认值）
+        ProcessingPositionOperation inserted = instances.get(2);
+        assertThat(inserted.getGroupName()).isEqualTo("车位");
+        assertThat(inserted.getUnit()).isEqualTo("幅");
+        assertThat(inserted.getUnitPrice()).isEqualByComparingTo("0.8");
+        assertThat(inserted.getPositionName()).isEqualTo("布艺遮光帘A 米白");
+
+        // 不带该选项 ⇒ 该工序**不出现**（负例同断言内，避免"两条用例各自打桩"的漂移）
+        reset(positionOperationMapper);
+        stubGenerate(List.of(orderItemHanzhe("米白")));
+        var without = realChainService().generate(List.of("order-001"), TENANT, "u1");
+        assertThat(without.get(0).isSuccess()).isTrue();
+        ArgumentCaptor<ProcessingPositionOperation> captor2 =
+                ArgumentCaptor.forClass(ProcessingPositionOperation.class);
+        verify(positionOperationMapper, times(V54_BULIAN_HANZHE.length)).insert(captor2.capture());
+        assertThat(captor2.getAllValues()).extracting(ProcessingPositionOperation::getOperationName)
+                .doesNotContain("拼1次-布");
+    }
+
+    @Test
+    @DisplayName("#4230 判据 2：带「一分二」⇒ 该部位**每道**工序 factor=1.7；不带 ⇒ 1.00")
+    void specialOptionFactorAppliesToEveryOperationOfThePosition() {
+        stubLibrary();
+        stubOptionTables();
+        stubGenerate(List.of(orderItemHanzheWithOptions("米白", List.of("一分二"))));
+        when(processingItemMapper.selectById("p1"))
+                .thenReturn(ProcessingItem.builder().id("p1").name("韩褶-布").unit("折").build());
+
+        var results = realChainService().generate(List.of("order-001"), TENANT, "u1");
+        assertThat(results.get(0).isSuccess()).isTrue();
+
+        ArgumentCaptor<ProcessingPositionOperation> captor =
+                ArgumentCaptor.forClass(ProcessingPositionOperation.class);
+        verify(positionOperationMapper, times(V54_BULIAN_HANZHE.length)).insert(captor.capture());
+        // 「一分二」不加工序（只加系数）⇒ 工序数不变，但每道都乘 1.7
+        assertThat(captor.getAllValues()).allSatisfy(instance ->
+                assertThat(instance.getFactor()).as("工序「%s」的系数", instance.getOperationName())
+                        .isEqualByComparingTo("1.7"));
+
+        // 不带 ⇒ 逐条 1.00（防"系数被无条件写成 1.7"的假修复）
+        reset(positionOperationMapper);
+        stubGenerate(List.of(orderItemHanzhe("米白")));
+        realChainService().generate(List.of("order-001"), TENANT, "u1");
+        ArgumentCaptor<ProcessingPositionOperation> captor2 =
+                ArgumentCaptor.forClass(ProcessingPositionOperation.class);
+        verify(positionOperationMapper, times(V54_BULIAN_HANZHE.length)).insert(captor2.capture());
+        assertThat(captor2.getAllValues()).allSatisfy(instance ->
+                assertThat(instance.getFactor()).isEqualByComparingTo("1"));
+    }
+
+    @Test
+    @DisplayName("#4230 判据 4：不计件选项（余料带回(布)）⇒ 工序数不变、factor 仍为 1，且不是「没映射到」")
+    void nonPieceworkOptionIsExplicitNoop() {
+        stubLibrary();
+        stubOptionTables();
+        stubGenerate(List.of(orderItemHanzheWithOptions("米白", List.of("余料带回(布)"))));
+        when(processingItemMapper.selectById("p1"))
+                .thenReturn(ProcessingItem.builder().id("p1").name("韩褶-布").unit("折").build());
+
+        var results = realChainService().generate(List.of("order-001"), TENANT, "u1");
+        assertThat(results.get(0).isSuccess()).isTrue();
+
+        ArgumentCaptor<ProcessingPositionOperation> captor =
+                ArgumentCaptor.forClass(ProcessingPositionOperation.class);
+        verify(positionOperationMapper, times(V54_BULIAN_HANZHE.length)).insert(captor.capture());
+        assertThat(captor.getAllValues()).extracting(ProcessingPositionOperation::getOperationName)
+                .containsExactlyElementsOf(java.util.Arrays.stream(V54_BULIAN_HANZHE).map(r -> r[0]).toList());
+        assertThat(captor.getAllValues()).allSatisfy(instance ->
+                assertThat(instance.getFactor()).isEqualByComparingTo("1"));
+        // 判别性（否则本用例对「选项根本没被读」也是绿的）：同一张单换一个**有映射**的选项
+        // （余料做帘头 → 帘头制作，插在布三边后）⇒ 工序数必须变成 12
+        reset(positionOperationMapper);
+        stubGenerate(List.of(orderItemHanzheWithOptions("米白", List.of("余料做帘头"))));
+        realChainService().generate(List.of("order-001"), TENANT, "u1");
+        ArgumentCaptor<ProcessingPositionOperation> changed =
+                ArgumentCaptor.forClass(ProcessingPositionOperation.class);
+        verify(positionOperationMapper, times(V54_BULIAN_HANZHE.length + 1)).insert(changed.capture());
+        assertThat(changed.getAllValues()).extracting(ProcessingPositionOperation::getOperationName)
+                .contains("帘头制作");
+    }
+
+    @Test
+    @DisplayName("#4230 判据 3：系数真的进了钱 —— 同一张单带/不带「一分二」的计件合计比值 ≈ 1.7")
+    void specialOptionFactorReachesPieceworkAmount() {
+        BigDecimal withOption = pieceworkTotalFor(List.of("一分二"));
+        BigDecimal without = pieceworkTotalFor(List.of());
+
+        assertThat(without).as("不带特殊选项 ⇒ 合计 = Σ(1 × 库单价)").isGreaterThan(BigDecimal.ZERO);
+        double ratio = withOption.divide(without, 6, RoundingMode.HALF_UP).doubleValue();
+        // 逐笔四舍五入到分（ProductionService.aggregate 的既有口径）⇒ 合计比值与 1.7 有 0.01 级偏差，
+        // 断言用容差而不是等号（等号会假红）；但「带系数 ≠ 不带」这一条是硬断言。
+        assertThat(ratio).as("计件合计比值（带 一分二 / 不带）= 1.7 ± 0.01").isCloseTo(1.7, org.assertj.core.data.Offset.offset(0.01));
+        assertThat(withOption).as("系数必须让钱变多（方向）").isGreaterThan(without);
+    }
+
+    /** 生成一张带指定特殊选项的加工单，按**真实** ProductionService 算该单计件合计。 */
+    @SuppressWarnings("unchecked")
+    private BigDecimal pieceworkTotalFor(List<String> specialOptions) {
+        stubLibrary();
+        stubOptionTables();
+        stubGenerate(List.of(orderItemHanzheWithOptions("米白", specialOptions)));
+        when(processingItemMapper.selectById("p1"))
+                .thenReturn(ProcessingItem.builder().id("p1").name("韩褶-布").unit("折").build());
+        List<ProcessingPositionOperation> stored = new ArrayList<>();
+        when(positionOperationMapper.insert(any(ProcessingPositionOperation.class))).thenAnswer(inv -> {
+            ProcessingPositionOperation row = inv.getArgument(0);
+            row.setId("op-" + (stored.size() + 1));
+            stored.add(row);
+            return 1;
+        });
+
+        var results = realChainService().generate(List.of("order-001"), TENANT, "u1");
+        assertThat(results.get(0).isSuccess()).isTrue();
+        assertThat(stored).isNotEmpty();
+
+        // 每条实例各报一笔「合格 1」（worker/单价/系数都取自**实例快照**）
+        List<ProductionWorkLog> logs = new ArrayList<>();
+        for (ProcessingPositionOperation row : stored) {
+            logs.add(ProductionWorkLog.builder().tenantId(TENANT).processingOrderId("po-001")
+                    .operationId(row.getId()).operationName(row.getOperationName())
+                    .workerName("走查工人").qty(BigDecimal.ONE).qualifiedQty(BigDecimal.ONE)
+                    .workType("normal").deleted(0).build());
+        }
+        when(positionOperationMapper.selectList(any())).thenReturn(stored);
+        when(workLogMapper.selectList(any())).thenReturn(logs);
+
+        ProductionService real = new ProductionService(processingOrderMapper, positionOperationMapper,
+                workLogMapper, orderMapper, clientRequestIdService);
+        Map<String, Object> piecework = real.piecework("order-001", TENANT);
+        return (BigDecimal) piecework.get("total");
+    }
+
+    @Test
+    @DisplayName("#4230 fail-closed：特殊选项引用的条件工序在工序库无活跃行 ⇒ 中止生成、不落半成品")
+    void specialOptionReferencingMissingOperationFailsClosed() {
+        stubLibrary();
+        // 只桩「拼1次」的映射，但**不**给「拼1次-布」的工序库元数据（= 库里缺这道工序）
+        when(productionOperationQueryService.optionRoutings(TENANT)).thenReturn(List.of(
+                optionRouting("拼1次", "拼1次-布", "布三边", 1)));
+        when(productionOperationQueryService.optionFactors(TENANT)).thenReturn(List.of());
+        when(productionOperationQueryService.operationsByName(TENANT)).thenReturn(Map.of());
+        // 不调 stubGenerate：fail-closed 发生在落库之前，给它打 insert 桩会被严格桩判为多余
+        when(orderMapper.selectById("order-001")).thenReturn(confirmedOrder);
+        when(orderItemMapper.selectList(any())).thenReturn(List.of(orderItemHanzheWithOptions("米白", List.of("拼1次"))));
+        when(processingOrderMapper.selectActiveByOrderId("order-001", TENANT)).thenReturn(null);
+
+        var results = realChainService().generate(List.of("order-001"), TENANT, "u1");
+
+        assertThat(results.get(0).isSuccess()).isFalse();
+        assertThat(results.get(0).getCode()).isEqualTo(ProcessingOrderService.ERR_OPERATION_NOT_FOUND);
+        assertThat(results.get(0).getMessage()).contains("拼1次-布");
+        assertThat(results.get(0).getSuggestion()).as("失败必须可行动").contains("operations-catalog");
+        verify(processingOrderMapper, never()).insert(any(ProcessingOrder.class));
+        verify(positionOperationMapper, never()).insert(any(ProcessingPositionOperation.class));
+    }
+
+    @Test
+    @DisplayName("#4230 锚点不在该部位路线中 ⇒ 条件工序追加到末尾（routing.py _insert_after 同款）")
+    void conditionalOperationAppendsWhenAnchorAbsent() {
+        stubLibrary();
+        when(productionOperationQueryService.optionRoutings(TENANT)).thenReturn(List.of(
+                optionRouting("余料做绑带", "绑带-布", "不存在的工序", 8)));
+        when(productionOperationQueryService.optionFactors(TENANT)).thenReturn(List.of());
+        when(productionOperationQueryService.operationsByName(TENANT)).thenReturn(Map.of(
+                "绑带-布", operationMeta("其他", "套", "0.5")));
+        stubGenerate(List.of(orderItemHanzheWithOptions("米白", List.of("余料做绑带"))));
+        when(processingItemMapper.selectById("p1"))
+                .thenReturn(ProcessingItem.builder().id("p1").name("韩褶-布").unit("折").build());
+
+        var results = realChainService().generate(List.of("order-001"), TENANT, "u1");
+        assertThat(results.get(0).isSuccess()).isTrue();
+
+        ArgumentCaptor<ProcessingPositionOperation> captor =
+                ArgumentCaptor.forClass(ProcessingPositionOperation.class);
+        verify(positionOperationMapper, times(V54_BULIAN_HANZHE.length + 1)).insert(captor.capture());
+        List<ProcessingPositionOperation> instances = captor.getAllValues();
+        assertThat(instances.get(instances.size() - 1).getOperationName()).isEqualTo("绑带-布");
+        assertThat(instances.get(instances.size() - 1).getSeq()).isEqualTo(V54_BULIAN_HANZHE.length + 1);
+    }
+
+    @Test
+    @DisplayName("#4230 不回归：无特殊选项 ⇒ 工序实例与 factor 与改动前逐值相同")
+    void noSpecialOptionsKeepsRouteAndFactorUnchanged() {
+        stubLibrary();
+        stubOptionTables();
+        stubGenerate(List.of(orderItemHanzhe("米白")));
+        when(processingItemMapper.selectById("p1"))
+                .thenReturn(ProcessingItem.builder().id("p1").name("韩褶-布").unit("折").build());
+
+        var results = realChainService().generate(List.of("order-001"), TENANT, "u1");
+        assertThat(results.get(0).isSuccess()).isTrue();
+
+        ArgumentCaptor<ProcessingPositionOperation> captor =
+                ArgumentCaptor.forClass(ProcessingPositionOperation.class);
+        verify(positionOperationMapper, times(V54_BULIAN_HANZHE.length)).insert(captor.capture());
+        List<ProcessingPositionOperation> instances = captor.getAllValues();
+        for (int i = 0; i < V54_BULIAN_HANZHE.length; i++) {
+            String[] row = V54_BULIAN_HANZHE[i];
+            assertThat(instances.get(i).getOperationName()).isEqualTo(row[0]);
+            assertThat(instances.get(i).getSeq()).as("序号 = 库路线原序 1..N").isEqualTo(i + 1);
+            assertThat(instances.get(i).getUnitPrice()).isEqualByComparingTo(row[3]);
+            assertThat(instances.get(i).getFactor()).isEqualByComparingTo("1");
+        }
     }
 
     @Test
