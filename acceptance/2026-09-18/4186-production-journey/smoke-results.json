@@ -1,0 +1,12 @@
+[
+  {
+    "journey": "32-production-qr-and-piecework",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "订单 403fee51621a1460899a9ac98be3f860 / 加工单 JG-20260918-9051：qr_token=67bb062fa07243939fe6d219309c2634；工序 11 道；DOM qr=1 占位=0 行=11；报工「精裁-布」2米 → 进度 9%（已完成 1/11 道工序）、计件 ¥0.80",
+      "/Users/guangzhen.zk/ai native/migao-wt/4186-production-journey/acceptance/2026-09-18/4186-production-journey/screenshots/32-production-qr-and-piecework.png"
+    ]
+  }
+]

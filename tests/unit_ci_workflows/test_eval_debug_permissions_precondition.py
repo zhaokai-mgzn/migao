@@ -40,6 +40,7 @@
 """
 import asyncio
 import importlib.util
+import re
 import sys
 import types
 from pathlib import Path
@@ -79,6 +80,32 @@ UNKNOWN_FIXTURE = {
     "tool_results": [],
     "error": "{'message': '翻页查询失败，请稍后重试'}",
 }
+
+#: 哨兵码（与 runner 的 `_PERMISSION_PROBE_TOOLS` **同源**：`TestSentinelBoundary` 锁这一致性）
+PROBE_CODE = "dashboard:view"
+#: 服务端权限码正则（逐字取 `app/utils/auth.py::_DEBUG_PERMISSION_CODE_RE`；漂移由
+#: `TestProductAnchors.test_denial_message_is_emitted_as_an_sse_error` 同族的锚点测试兜底）
+_PERMISSION_CODE_RE = re.compile(r"[a-z][a-z0-9_]{0,31}(?::[a-z][a-z0-9_]{0,31}){0,2}")
+
+
+def server_fixture(scope: str) -> dict:
+    """**服务端结局模拟器**（issue #4197）：按 `X-Debug-Permissions` 的值算出探针会遇到什么。
+
+    口径 = 服务端的两条真实分支（`app/utils/auth.py::_debug_permissions_override` +
+    `BaseTool.check_permission`）：非法/空/含 `*`（字符集里没有它）⇒ **整串回落通配** ⇒ 探针被放行；
+    合法 ⇒ 生效范围**就是声明的那些码** ⇒ 探针只在哨兵码被声明时放行。
+
+    为什么夹具要"会算"而不是给常量：正向对照是**第二个探针会话**（声明范围 = 用例范围 ∪ 哨兵码），
+    健康栈上两条探针的结局**必然不同**（负向被拒、正向放行）——常量夹具无法表达"服务端兑现了
+    声明范围"这一形态（改前只有一条探针，常量够用）。
+    """
+    text = str(scope or "")
+    codes = text.split(",")
+    valid = bool(text) and len(text) <= 255 and all(
+        _PERMISSION_CODE_RE.fullmatch(c) for c in codes)
+    if not valid:
+        return dict(WILDCARD_FIXTURE)
+    return dict(WILDCARD_FIXTURE) if PROBE_CODE in codes else dict(DENIED_FIXTURE)
 
 
 def _runner():
@@ -120,7 +147,11 @@ def _cases():
 
 
 def _install_transport(lr, monkeypatch, fixture, calls=None):
-    """把探针的**唯一传输面**换成夹具（会话创建 / 发消息 / 关会话），并记录实际请求。"""
+    """把探针的**唯一传输面**换成夹具（会话创建 / 发消息 / 关会话），并记录实际请求。
+
+    `fixture` 可以是常量结局（"服务端无论如何都这么答"）或**可调用**（按声明范围算结局，
+    见 `server_fixture`）——正向对照会话与负向探针的结局不同，只有后者能表达"健康栈"。
+    """
     async def _new_session(token, prefer_new=True, debug_user="", debug_permissions=""):
         (calls if calls is not None else []).append(
             ("session", debug_user, debug_permissions))
@@ -130,7 +161,7 @@ def _install_transport(lr, monkeypatch, fixture, calls=None):
                     debug_user="", debug_permissions=""):
         (calls if calls is not None else []).append(
             ("send", session_id, message, debug_user, debug_permissions))
-        return dict(fixture)
+        return dict(fixture(debug_permissions) if callable(fixture) else fixture)
 
     async def _end(token, session_id, debug_user="", debug_permissions=""):
         (calls if calls is not None else []).append(("end", session_id))
@@ -229,18 +260,22 @@ class TestAssertionObservesTheServer:
         assert "通配" in issues[0] or "生效" in issues[0]
 
     def test_declared_scope_effective_is_green(self, monkeypatch):
-        """**绿线**：声明 `employee:list` 且服务端真的只给了它（探针被拒）⇒ 绿。"""
+        """**绿线**：声明 `employee:list` 且服务端真的只给了它 ⇒ 绿。
+
+        夹具 = **服务端模拟器**（`server_fixture`）：负向探针（声明范围不含哨兵码）被拒、
+        正向对照会话（声明范围 = 用例范围 ∪ 哨兵码）放行 —— 这才叫"声明范围被兑现"。
+        """
         lr = _runner()
-        assert _check(lr, monkeypatch, "employee:list", DENIED_FIXTURE) == []
+        assert _check(lr, monkeypatch, "employee:list", server_fixture) == []
 
     def test_hr010_declared_create_is_green_on_denied_probe(self, monkeypatch):
-        """HR-010 的声明（`employee:create`）不含探针码 ⇒ 期望同为"被拒" ⇒ 绿。"""
+        """HR-010 的声明（`employee:create`）在**兑现**的服务端上 ⇒ 绿。"""
         lr = _runner()
-        assert _check(lr, monkeypatch, "employee:create", DENIED_FIXTURE) == []
+        assert _check(lr, monkeypatch, "employee:create", server_fixture) == []
 
     def test_declared_multi_code_is_green_on_denied_probe(self, monkeypatch):
         lr = _runner()
-        assert _check(lr, monkeypatch, "employee:list,order:list", DENIED_FIXTURE) == []
+        assert _check(lr, monkeypatch, "employee:list,order:list", server_fixture) == []
 
     def test_unknown_verdict_is_red(self, monkeypatch):
         """读不出真相 ⇒ 失败关闭（"查不到"不许当"没问题"）。"""
@@ -302,29 +337,136 @@ class TestAssertionObservesTheServer:
         assert calls == [], "缺 source 还去发探针 ⇒ 无意义请求"
 
     def test_probe_uses_the_page_protocol_and_the_case_permissions(self, monkeypatch):
-        """探针必须**真的**用「本用例声明的权限头」走 `__PAGE__` 直调（否则观测的不是被测前提）。"""
+        """探针必须**真的**用「本用例声明的权限头」走 `__PAGE__` 直调（否则观测的不是被测前提）。
+
+        issue #4197：现在是**两条**探针 —— ①负向（用例声明范围；期望被拒，抓通配回落）；
+        ②正向对照（声明范围 = 用例范围 ∪ 哨兵码；期望放行，抓"声明了却没兑现"）。
+        两条都必须带各自会话的声明头、且都要关会话（不留残留会话）。
+        """
         lr = _runner()
         calls = []
-        _check(lr, monkeypatch, "employee:list", DENIED_FIXTURE, calls=calls)
+        _check(lr, monkeypatch, "employee:list", server_fixture, calls=calls)
         sends = [c for c in calls if c[0] == "send"]
-        assert len(sends) == 1, f"探针应恰好发一次（实际 {calls}）"
+        assert len(sends) == 2, f"应有负向 + 正向对照两条探针（实际 {calls}）"
         _, sid, message, _du, perms = sends[0]
         assert message.startswith("__PAGE__|"), message
         assert "dashboard_stats" in message, message
-        assert perms == "employee:list", f"探针没带用例声明的权限头：{perms!r}"
+        assert perms == "employee:list", f"负向探针没带用例声明的权限头：{perms!r}"
         assert sid == "sess-probe"
-        assert [c for c in calls if c[0] == "end"], "探针会话必须关闭（不留残留会话）"
+        assert sends[1][4] == "employee:list,dashboard:view", (
+            f"正向对照的声明范围必须是「用例范围 ∪ 哨兵码」：{sends[1][4]!r}")
+        assert len([c for c in calls if c[0] == "end"]) == 2, "两条探针会话都必须关闭"
 
     def test_probe_params_are_accepted_by_the_tool(self, monkeypatch):
         """探针载荷必须过工具自己的入参契约（`dashboard_stats.parameters.required=[action]`）
         —— 否则工具在**健康栈**上也会失败，判据退化成恒红。"""
         lr = _runner()
         calls = []
-        _check(lr, monkeypatch, "employee:list", DENIED_FIXTURE, calls=calls)
-        message = [c for c in calls if c[0] == "send"][0][2]
+        _check(lr, monkeypatch, "employee:list", server_fixture, calls=calls)
         import json as _json
-        params = _json.loads(message.split("|", 2)[2])
-        assert params.get("action") == "overview", params
+        for _send in [c for c in calls if c[0] == "send"]:
+            params = _json.loads(_send[2].split("|", 2)[2])
+            assert params.get("action") == "overview", params
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 三·二、正向对照（issue #4197）：声明了却**没被兑现**必须判红
+#       —— 改前只有"通配回落"一个方向 ⇒ 「声明了但没授予」与"正常生效"同形（HR-010 卡在这格）
+# ══════════════════════════════════════════════════════════════════════════════
+
+class TestPositiveControlCatchesUndeclaredDelivery:
+    """判据第二方向：**有效范围里必须有声明过的码**（正向对照会话 ⇒ 哨兵码必须放行）。
+
+    证据强度边界（**不得越级读**）：本条测的是**机制** —— 声明的范围被服务端兑现到执行层、
+    且不是通配回落；它**不直接测量** `employee:create` 这一个码（要直测得有 `required_permissions`
+    ∈ `employee:*` 的探针工具，而分页白名单禁止管理类工具入列 ⇒ 结构性不可达，
+    见 `TestProductAnchors.test_no_employee_code_tool_is_page_reachable` 的机械守卫）。
+    """
+
+    def test_declared_but_not_delivered_is_red(self, monkeypatch):
+        """**红线（本单的核心红证）**：服务端**谁都不给**（连声明了哨兵码的会话也被拒）。
+
+        形态 = "头被丢弃 / 权限没落到执行层 / 走了别的身份分支"：负向探针（`employee:list`
+        不含哨兵码）被拒 ⇒ 改前的判据**判绿**，而用例的前提（依赖声明的码）根本不成立 ⇒
+        HR-010 的红会被读成"agent 不作为"。现在必须判红。
+        """
+        lr = _runner()
+        issues = _check(lr, monkeypatch, "employee:list", DENIED_FIXTURE)
+        assert issues, "声明了却没被兑现却判绿 ⇒ 判据只有「通配回落」一个方向（#4197 未修）"
+        assert any("兑现" in i for i in issues), f"红要指认「没兑现」：{issues}"
+
+    def test_the_red_is_not_vacuous_on_a_delivered_scope(self, monkeypatch):
+        """对照（证上一条不是恒红）：同一判据在**兑现了**声明范围的服务端上必须绿。"""
+        lr = _runner()
+        assert _check(lr, monkeypatch, "employee:list", server_fixture) == []
+
+    def test_positive_control_unknown_verdict_is_red(self, monkeypatch):
+        """正向对照**读不出结局** ⇒ 失败关闭（"查不到"不许当"没问题"）。
+
+        夹具：负向探针正常被拒；一旦会话声明了哨兵码，服务端答非所问（unknown）——
+        这正是"取不到真值"的形态，必须红。
+        """
+        lr = _runner()
+
+        def _fixture(scope: str) -> dict:
+            return dict(UNKNOWN_FIXTURE) if PROBE_CODE in scope.split(",") \
+                else dict(DENIED_FIXTURE)
+
+        issues = _check(lr, monkeypatch, "employee:list", _fixture)
+        assert issues and any("正向对照" in i and "无法判定" in i for i in issues), issues
+
+    def test_positive_control_is_skipped_when_the_case_declares_the_sentinel(self, monkeypatch):
+        """用例本身声明了哨兵码 ⇒ 负向那格**就是**正向（见上一条分支），不得重复探。
+
+        判据落在**请求数**上（不是注释）：declare 含哨兵码时只发一次探针。
+        """
+        lr = _runner()
+        calls = []
+        assert _check(lr, monkeypatch, PROBE_CODE, server_fixture, calls=calls) == []
+        assert len([c for c in calls if c[0] == "send"]) == 1, (
+            f"声明含哨兵码时不该再发正向对照（浪费一次会话）：{calls}")
+
+    def test_positive_scope_is_the_case_scope_plus_the_sentinel_code(self):
+        """纯函数口径：正向对照的声明范围 = 用例范围 ∪ 哨兵码，且**不做 strip/归一化**。"""
+        lr = _runner()
+        assert lr.permission_probe_positive_scope("employee:list") == \
+            f"employee:list,{PROBE_CODE}"
+        assert lr.permission_probe_positive_scope(" employee:list") == \
+            f" employee:list,{PROBE_CODE}", (
+                "客户端「顺手」归一化 ⇒ 与服务端口径分叉（服务端含空白即整串回落通配）")
+        scope = lr.permission_probe_positive_scope("employee:create")
+        _tool, code, _params, expect = lr.permission_probe_expectation(scope)
+        assert code == PROBE_CODE and expect == "allowed", (
+            "正向对照的期望必须是「放行」——否则这条探针不是正向判据")
+
+    # ── 拼不出**合法**声明 ⇒ fail-closed（不许"因通配而变绿"）──────────────────────
+    # 病根：服务端对非法值**整串回落通配**，而追加哨兵码可能把**本来合法但很长**的用例声明
+    # 顶过 255 上限 ⇒ 拼出的范围非法 ⇒ 探针被放行 ⇒ 正向对照**因为通配而变绿**
+    # （正是它要抓的形态，却成了空判据）。
+    LONG_VALID_DECLARED = ",".join(["employee:list"] * 18)   # 251 字 ≤ 255 ⇒ 合法
+
+    def test_the_length_limit_is_the_products_limit(self):
+        """上限值必须与产品源码**同一数字**（漂移 ⇒ 本地判据与服务端口径分叉）。"""
+        lr = _runner()
+        src = (AI_AGENT / "app" / "utils" / "auth.py").read_text(encoding="utf-8")
+        assert "if len(raw) > 255 or not all(" in src, (
+            "服务端的 `X-Debug-Permissions` 长度/白名单校验变了 ⇒ 本判据的上限必须同步")
+        assert lr._DEBUG_PERMISSION_MAX_LEN == 255
+        assert len(self.LONG_VALID_DECLARED) <= 255, "夹具失效：用例声明本身就非法了"
+
+    def test_over_long_positive_scope_refuses_to_compose(self):
+        """纯函数：拼出来超上限 ⇒ 抛 ValueError（**不许**返回一个非法声明去探）。"""
+        lr = _runner()
+        with pytest.raises(ValueError) as ei:
+            lr.permission_probe_positive_scope(self.LONG_VALID_DECLARED)
+        assert "上限" in str(ei.value) and "通配" in str(ei.value), str(ei.value)
+
+    def test_over_long_declaration_fails_closed_instead_of_green(self, monkeypatch):
+        """整条判据：合法但过长的声明 ⇒ **判红**（正向对照无法构造），不许静默变绿。"""
+        lr = _runner()
+        issues = _check(lr, monkeypatch, self.LONG_VALID_DECLARED, server_fixture)
+        assert issues, "拼不出合法正向对照却判绿 ⇒ 该格是空判据（#4197 的形态复发）"
+        assert any("正向对照" in i and "无法构造" in i for i in issues), issues
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -788,9 +930,15 @@ class TestLiveProbeEntrypoint:
         return rc, calls
 
     def test_cli_is_green_on_a_healthy_stack(self, monkeypatch):
-        """合法声明 + 服务端只给了它（探针被拒）⇒ 退出码 0（可直接接进脚本/门禁）。"""
+        """合法声明 + 服务端**兑现**了它 ⇒ 退出码 0（可直接接进脚本/门禁）。
+
+        issue #4197 起「健康栈」= **两条探针都对**：负向（用例范围，不含哨兵码）被拒 +
+        正向对照（用例范围 ∪ 哨兵码）放行。故夹具必须是**会算的服务端模拟器**
+        （`server_fixture`）而不是常量 `DENIED_FIXTURE` —— 常量下正向对照必然被拒，
+        那正是「声明了却没兑现」，本来就该判红（见 `TestPositiveControlCatchesUndeclaredDelivery`）。
+        """
         lr = _runner()
-        rc, _ = self._cli(lr, monkeypatch, "employee:list", DENIED_FIXTURE)
+        rc, _ = self._cli(lr, monkeypatch, "employee:list", server_fixture)
         assert rc == 0
 
     def test_cli_reds_on_the_planted_wildcard_fixture(self, monkeypatch):
