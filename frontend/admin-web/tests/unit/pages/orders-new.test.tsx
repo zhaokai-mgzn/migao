@@ -447,22 +447,20 @@ describe('NewOrderPage', () => {
       })
       mockGetProduct.mockResolvedValue({
         data: {
-          data: { id: 'p1', name: productName, skus: [], supportsProcessing: true, price: 100 },
+          data: { id: 'p1', name: productName, skus: [], price: 100 },
         },
       })
-      mockGetProductProcessingItems.mockResolvedValue({
+      // ⚠️ 2026-09-19（#4371 商品↔加工项解耦）：加工项不再随商品下发（商品 payload 已无
+      // `supportsProcessing`/`processingItems`），改由**店铺级目录**提供 ⇒ 这里桩目录端点
+      // （「双拼：加工项只挂主布行」那条判据需要一个可勾选的加工项）。
+      // 目录条目形状 = `ProcessingItem`（`unitPrice`/`unit`，无 `customPrice`/`finalPrice`）。
+      mockGetProcessingItems.mockResolvedValue({
         data: {
-          data: [
-            {
-              id: 'pi1',
-              name: '打孔加工',
-              pricingMethod: 'per_meter',
-              unitPrice: 5,
-              customPrice: null,
-              finalPrice: 5,
-              unit: '米',
-            },
-          ],
+          data: {
+            items: [
+              { id: 'pi1', name: '打孔加工', pricingMethod: 'per_meter', unitPrice: 5, unit: '米' },
+            ],
+          },
         },
       })
       render(<NewOrderPage />)
