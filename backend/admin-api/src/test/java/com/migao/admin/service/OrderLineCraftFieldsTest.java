@@ -39,7 +39,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * ③ 把 {@code bool} 的 {@code "是"} 分支补上（凭字面猜中文）⇒ 判据 4 红。</p>
  */
 @DisplayName("下单行要素映射（V62，issue #4362 S1）")
-class OrderLineCraftSpecTest {
+class OrderLineCraftFieldsTest {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
@@ -64,7 +64,7 @@ class OrderLineCraftSpecTest {
     void materializeMapsEveryKeyFromMap() {
         OrderItem item = OrderItem.builder().orderId("o1").productName("布艺遮光帘A").build();
 
-        OrderLineCraftSpec.materialize(fullCraftSpec(), item);
+        OrderLineCraftFields.materialize(fullCraftSpec(), item);
 
         assertThat(item.getCurtainType()).isEqualTo("纱帘");
         assertThat(item.getCraft()).isEqualTo("打孔");
@@ -84,8 +84,8 @@ class OrderLineCraftSpecTest {
     void materializeMapsEveryKeyFromJsonString() throws Exception {
         OrderItem item = OrderItem.builder().orderId("o1").productName("布艺遮光帘A").build();
 
-        OrderLineCraftSpec.materialize(
-                OrderLineCraftSpec.normalize(MAPPER.writeValueAsString(fullCraftSpec()), MAPPER), item);
+        OrderLineCraftFields.materialize(
+                OrderLineCraftFields.normalize(MAPPER.writeValueAsString(fullCraftSpec()), MAPPER), item);
 
         assertThat(item.getCurtainType()).isEqualTo("纱帘");
         assertThat(item.getOpenCount()).isEqualTo(4);
@@ -98,10 +98,10 @@ class OrderLineCraftSpecTest {
     void absentKeysStayNull() {
         OrderItem item = OrderItem.builder().orderId("o1").productName("普通商品").build();
 
-        OrderLineCraftSpec.materialize(Map.of("sellingMethod", "bulk_cut"), item);
-        OrderLineCraftSpec.materialize(null, item);
-        OrderLineCraftSpec.materialize(Map.of("curtainType", "   "), item);
-        OrderLineCraftSpec.materialize(OrderLineCraftSpec.normalize("not-a-json-object", MAPPER), item);
+        OrderLineCraftFields.materialize(Map.of("sellingMethod", "bulk_cut"), item);
+        OrderLineCraftFields.materialize(null, item);
+        OrderLineCraftFields.materialize(Map.of("curtainType", "   "), item);
+        OrderLineCraftFields.materialize(OrderLineCraftFields.normalize("not-a-json-object", MAPPER), item);
 
         assertThat(item.getCurtainType()).isNull();
         assertThat(item.getCraft()).isNull();
@@ -120,13 +120,13 @@ class OrderLineCraftSpecTest {
     @DisplayName("判据 3：读面键名逐字一致 —— 算料输出保持 snake_case，工艺规格 camelCase")
     void snapshotKeysUseExactWhitelistNames() {
         OrderItem item = OrderItem.builder().orderId("o1").productName("布艺遮光帘A").build();
-        OrderLineCraftSpec.materialize(fullCraftSpec(), item);
+        OrderLineCraftFields.materialize(fullCraftSpec(), item);
 
-        assertThat(OrderLineCraftSpec.toSnapshotKeys(item)).containsOnlyKeys(
+        assertThat(OrderLineCraftFields.toSnapshotKeys(item)).containsOnlyKeys(
                 "curtainType", "craft", "openCount", "cuttingMode", "isShaped", "pleatSpacing",
                 "hasPattern", "corner", "fullness", "fullness_actual", "pleat_count");
         // 算料输出键**不得**被写成 camelCase（那样加工单侧取不到值，而缺键是静默的）
-        assertThat(OrderLineCraftSpec.toSnapshotKeys(item))
+        assertThat(OrderLineCraftFields.toSnapshotKeys(item))
                 .containsEntry("pleat_count", 48)
                 .containsEntry("fullness", new BigDecimal("2.0"))
                 .containsEntry("fullness_actual", new BigDecimal("1.86"))
@@ -137,11 +137,11 @@ class OrderLineCraftSpecTest {
     @DisplayName("判据 3：读面只放非空值（列全空 ⇒ 空 map ⇒ 对快照是 no-op）")
     void snapshotKeysSkipNulls() {
         OrderItem empty = OrderItem.builder().orderId("o1").productName("普通商品").build();
-        assertThat(OrderLineCraftSpec.toSnapshotKeys(empty)).isEmpty();
+        assertThat(OrderLineCraftFields.toSnapshotKeys(empty)).isEmpty();
 
         OrderItem partial = OrderItem.builder().orderId("o1").productName("x")
                 .curtainType("布帘").build();
-        assertThat(OrderLineCraftSpec.toSnapshotKeys(partial)).containsOnlyKeys("curtainType");
+        assertThat(OrderLineCraftFields.toSnapshotKeys(partial)).containsOnlyKeys("curtainType");
     }
 
     @Test
@@ -155,7 +155,7 @@ class OrderLineCraftSpecTest {
         info.put("hasPattern", 1);            // 数字不是布尔
         info.put("curtainType", "纱帘");      // 同一行里的合法值不受影响
 
-        OrderLineCraftSpec.materialize(info, item);
+        OrderLineCraftFields.materialize(info, item);
 
         assertThat(item.getOpenCount()).isNull();
         assertThat(item.getPleatCount()).isNull();
@@ -169,7 +169,7 @@ class OrderLineCraftSpecTest {
     void booleanCoercionIsStrict() {
         OrderItem item = OrderItem.builder().orderId("o1").productName("x").build();
 
-        OrderLineCraftSpec.materialize(Map.of("isShaped", "TRUE", "hasPattern", Boolean.FALSE), item);
+        OrderLineCraftFields.materialize(Map.of("isShaped", "TRUE", "hasPattern", Boolean.FALSE), item);
 
         assertThat(item.getIsShaped()).isTrue();
         assertThat(item.getHasPattern()).isFalse();
@@ -185,7 +185,7 @@ class OrderLineCraftSpecTest {
         info.put("pleatSpacing", 0.12);
         info.put("fullness", List.of());        // 明显不是数字 ⇒ null（不抛异常炸掉整单）
 
-        OrderLineCraftSpec.materialize(info, item);
+        OrderLineCraftFields.materialize(info, item);
 
         assertThat(item.getOpenCount()).isEqualTo(2);
         assertThat(item.getPleatCount()).isEqualTo(48);

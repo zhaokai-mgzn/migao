@@ -291,7 +291,7 @@ ORDER_LINE_CRAFT_SPEC_KEYS = (
 )
 
 
-class TestOrderLineCraftSpecKeys:
+class TestOrderLineCraftFieldsKeys:
     """下单行要素（11 项）的 schema 声明 + 描述教学 + 加工类型闸门。"""
 
     def _props(self):

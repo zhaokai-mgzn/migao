@@ -502,7 +502,7 @@ class OrderCreateTool(BaseTool):
                                 # ── 下单行要素（issue #4362，S1）：真值源 §1 逐项，全部**可空** ──
                                 # 此前只有前 3 个键有声明 ⇒ 加工类型/开数/褶距/对花/转角**无处可写**，
                                 # 而它们是算料与工序的输入（错值直接算错工资）。键名与 Java 侧
-                                # `OrderLineCraftSpec` 的读法逐字一致（DB 列名 = 这里的 snake_case 键）。
+                                # `OrderLineCraftFields` 的读法逐字一致（DB 列名 = 这里的 snake_case 键）。
                                 "openCount": {
                                     "type": "integer",
                                     "enum": [1, 2, 4],
@@ -1379,7 +1379,7 @@ class OrderCreateTool(BaseTool):
         # curtain_type / open_count / is_shaped / pleat_spacing / has_pattern / window_type）
         # 采集的工艺参数，直接放进 processing_info 时在此**归一**为工艺规格键（camelCase）。
         # 映射的**唯一实现**在 app/clarification/curtain_checklist.py::to_craft_spec
-        # （Java 侧 OrderLineCraftSpec 的写/读面按同一套键名走 ⇒ 不写第二份映射）。
+        # （Java 侧 OrderLineCraftFields 的写/读面按同一套键名走 ⇒ 不写第二份映射）。
         # `setdefault`：已给 canonical 键的行**不被覆盖**（归一只是键改名，不做业务推导、
         # 不补默认值、不猜）。位置在全部校验之前 ⇒ 归一后的 canonical 键照常过枚举闸门。
         for item in items:

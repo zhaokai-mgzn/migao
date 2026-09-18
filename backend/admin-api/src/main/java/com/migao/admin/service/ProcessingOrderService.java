@@ -1129,7 +1129,7 @@ public class ProcessingOrderService {
             // 推导链的**最高优先级**是「显式字段」，JSONB 键是存量单的旧载体（同一事实的两种落法）。
             // 列非空即覆盖同名的 JSONB 键；列全空（存量单 / 未填）⇒ 本行是 no-op，
             // 快照与迁移前**逐字相同** ⇒ 派生路径不受影响（它是长期兜底，不退场）。
-            entry.putAll(OrderLineCraftSpec.toSnapshotKeys(item));
+            entry.putAll(OrderLineCraftFields.toSnapshotKeys(item));
             // 加工项明细 + options 补齐
             List<Map<String, Object>> itemsWithOptions = new ArrayList<>();
             for (Map<String, Object> p : procs) {

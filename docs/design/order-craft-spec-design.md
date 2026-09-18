@@ -197,8 +197,8 @@
 > 2. **写入口仍是 `processing_info` 顶层键**（不新增 DTO 字段 —— 避免第二份定义，
 >    `OrderDtoContractTest` 锁死 DTO 形态；两个采集端本来就写 JSONB）⇒
 >    `OrderService.createOrder`（三条路径的唯一共享入口）把它**物化**到列上
->    （单一映射点 = `OrderLineCraftSpec.materialize`）；
-> 3. **读面列优先**：`buildSnapshot` 在 JSONB 键之后叠加列值（`OrderLineCraftSpec.toSnapshotKeys`）
+>    （单一映射点 = `OrderLineCraftFields.materialize`）；
+> 3. **读面列优先**：`buildSnapshot` 在 JSONB 键之后叠加列值（`OrderLineCraftFields.toSnapshotKeys`）
 >    ⇒ 推导链最高层「显式字段」有了结构化载体。
 >
 > 下面 1./2./3. 三条理由对**写入口**仍然成立（扁平键 = 零改动即有通路），故保留原文。

@@ -517,8 +517,8 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
             // order_create）写入的 processing_info 顶层工艺规格键在此**物化**到 order_items 的列上。
             // 判在本方法（表单 / Agent / 程序化三条路径的**唯一共享入口**）才无死角；
             // 全部可空、不设必填校验（用户裁定「部位不是必填的」）⇒ 缺键就是缺。
-            OrderLineCraftSpec.materialize(
-                    OrderLineCraftSpec.normalize(itemRequest.getProcessingInfo(), objectMapper), item);
+            OrderLineCraftFields.materialize(
+                    OrderLineCraftFields.normalize(itemRequest.getProcessingInfo(), objectMapper), item);
             item.setSubtotal(resolveItemSubtotal(itemRequest));
             orderItemMapper.insert(item);
         }

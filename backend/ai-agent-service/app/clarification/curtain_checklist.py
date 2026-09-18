@@ -52,7 +52,7 @@ CHECKLIST: List[Dict[str, Any]] = [
 # ── 清单字段 → 下单行要素（order_items 的 craft spec，issue #4362 S1）────────────────
 # **唯一映射点**：清单字段 id（snake_case，本模块的词汇）→ `processing_info` 顶层键
 # （camelCase，订单/加工单两侧既有词汇，见设计文档 order-craft-spec-design.md §4.5）。
-# 两个消费面（Java `OrderLineCraftSpec` 的写/读面）都按这套键名走 ⇒ 映射只在这里写一次。
+# 两个消费面（Java `OrderLineCraftFields` 的写/读面）都按这套键名走 ⇒ 映射只在这里写一次。
 #
 # 为什么必须有它：真值源 §1 的下单行要素此前「**问到了却不落库**」—— 清单把值收进 collector，
 # 会话结束就没了；加工单只能靠加工项名**猜**部位/工艺（实证 V58：纱帘订单拿到布帘的 11 道工序，

@@ -425,7 +425,7 @@ class TestOrderCreatePayload:
 
         判据：真值源 §1 的 11 个要素里，此前只有 3 个有 schema 声明 ⇒ 加工类型/开数/褶距/对花/转角
         **无处可写**；`processing_info` 是整体透传的 ⇒ 只要模型填了、schema 认了，就必须原样上行
-        （服务端 `OrderLineCraftSpec.materialize` 再把它落到 `order_items` 的列上）。
+        （服务端 `OrderLineCraftFields.materialize` 再把它落到 `order_items` 的列上）。
         """
         mock_client = AsyncMock()
         mock_client.post = AsyncMock(return_value={"success": True, "data": {"id": "o1"}})

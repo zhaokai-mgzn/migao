@@ -34,9 +34,16 @@ import java.util.Map;
  * （{@code V62__structure_order_line_craft_spec.sql}），本类只做搬运。</p>
  */
 @Slf4j
-final class OrderLineCraftSpec {
+final class OrderLineCraftFields {
 
-    private OrderLineCraftSpec() {
+    // ⚠️ **类名不得以 `Spec` 结尾**（本类原名 `OrderLineCraftSpec`，已因此改名）：
+    // QA Growth Gate 的「测试文件」判定是**路径启发式**（`.github/growth_gate.py::_is_test_file`
+    // = 扩展名 + 文件名含 `test|spec`，大小写不敏感）⇒ 生产类名里的 `Spec`（specification）会被
+    // 判成测试文件，于是被要求声明 `# case_ids:`（给源码加 case_ids 才是真正的"改措辞规避门禁"）。
+    // 改名的理由不是绕门禁，而是**消除歧义**：本仓库的「测试文件」就是靠这个命名约定识别的。
+    // 别改回去。
+
+    private OrderLineCraftFields() {
     }
 
     /**
