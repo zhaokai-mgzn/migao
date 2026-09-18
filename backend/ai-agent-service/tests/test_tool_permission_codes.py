@@ -13,7 +13,7 @@
 其余 37 个**纯靠手写的 `allowed_roles` 角色码白名单**授权（F3：细粒度层是空护栏）。
 
 白名单随后**必然漂移**（F4）：`category_manage` / `product_update` / `sku_update` /
-`processing_item_manage` / `product_processing_item_manage` / `role_manage` /
+`processing_item_manage` / `role_manage` /
 `settings_manage` 等把 `allowed_roles` 写死成 `["admin", "tenant_admin"]`，
 而 admin-api 的角色目录里 `operator` / `product_manager` 明明持有对应权限码
 （真值源 `RegistrationService.initializeDefaultRolesAndPermissions` 的 18 码目录 +
@@ -145,7 +145,6 @@ TOOL_PERMISSION_CODES: dict[str, tuple[str, ...]] = {
     "processing_order_query": ("processing:view",),
     "processing_order_update": ("processing:update",),
     "product_manage": ("product:create",),
-    "product_processing_item_manage": ("processing:manage",),
     "product_update": ("product:create",),
     "role_manage": ("system:manage",),
     "session_manage": ("agent:session",),
@@ -172,7 +171,6 @@ EXPECTED_ALLOWED_ROLES: dict[str, frozenset[str]] = {
     "processing_order_query": frozenset({"operator", "customer_service", "sales", "finance"}),
     "processing_order_update": frozenset({"operator"}),
     "product_manage": frozenset({"operator", "product_manager"}),
-    "product_processing_item_manage": frozenset({"operator", "product_manager"}),
     "product_update": frozenset({"operator", "product_manager"}),
     "role_manage": frozenset(),
     "session_manage": frozenset({"operator", "customer_service"}),
@@ -345,13 +343,12 @@ class TestPermissionCodeIsTheGate:
         tools = all_checked_tools()
         for name in (
             "category_manage", "product_update", "sku_update",
-            "processing_item_manage", "product_processing_item_manage",
-            "role_manage", "settings_manage",
+            "processing_item_manage", "role_manage", "settings_manage",
         ):
             assert name in EXPECTED_ALLOWED_ROLES, f"{name} 不在核定映射里"
         for name in (
             "category_manage", "product_update", "sku_update",
-            "processing_item_manage", "product_processing_item_manage",
+            "processing_item_manage",
         ):
             assert role_allowed(tools[name], "operator") is True, (
                 f"{name}: operator 持有对应权限码，不得再判「权限不足」"

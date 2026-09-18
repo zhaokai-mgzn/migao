@@ -19,9 +19,9 @@
 → 用户: "张三，138xxxx，翻领刺绣客厅窗帘，2件"
 → query: product_search(keyword="翻领刺绣客厅窗帘") → 显示商品列表
 → 用户: "选1"
-→ product_detail → 档案含 processing_items（若有）
-→ **加工项环节（confirm 前必做）**：interact(choice, multiSelect=true) 展示该商品加工项
-   （透传 pageMeta；processing_items 为空则告知"该商品无可用加工项"继续）
+→ product_detail → 商品档案（SKU/规格；**不含**加工项）
+→ **加工项环节（confirm 前必做）**：processing_item_query() 拿**店铺目录**（与商品无关，#4371）
+   → interact(choice, multiSelect=true) 展示（透传 pageMeta；目录为空才告知"暂无可用加工项"）
 → 用户: "不需要加工项" / 选择加工项
 → confirm: "确认创建？张三 138xxxx，翻领刺绣客厅窗帘×2"（含加工项则列出名称+金额）
 → 用户: "确认"
@@ -51,7 +51,7 @@
 ### 例5: 创建带加工项的订单（加工费必须计入）
 用户: "李女士 13800138000，买遮光窗帘 3 米，要高温定型加工，地址杭州西湖区"
 ```
-→ product_detail(遮光窗帘) → skus=[...], processing_items=[{id:"pi_shape_high", name:"高温定型", finalPrice:20, unit:"米", pricingMethod:"per_meter"}, ...]
+→ product_detail(遮光窗帘) → skus=[...]；processing_item_query() → 店铺目录=[{id:"pi_shape_high", name:"高温定型", unit_price:20, unit:"米", pricing_method:"per_meter"}, ...]
 → 用户确认 3 米 + 高温定型
 → order_create(
     customer_name="李女士", customer_phone="13800138000",
@@ -71,7 +71,7 @@
 ### 例5b: 按米计价加工项（数量=面料米数，辅料含在加工费中）
 用户: "王先生 13900139000，遮光窗帘 3 米，要打孔加工"
 ```
-→ product_detail → processing_items=[{id:"pi-punch", name:"打孔（罗马圈）", finalPrice:8, pricingMethod:"per_meter"}]
+→ processing_item_query(keyword="打孔") → 目录=[{id:"pi-punch", name:"打孔（罗马圈）", unit_price:8, pricing_method:"per_meter"}]
 → 加工费：8 元/米 × 3 米 = 24 元（罗马圈等辅料已含在按米加工费中）
 → order_create(items=[{product_name:"遮光窗帘", quantity:3, unit_price:88, subtotal:288,
     processing_info:{processingFee:24, processingItems:[{id:"pi-punch", name:"打孔（罗马圈）", unitPrice:8, quantity:3, pricingMethod:"per_meter", subtotal:24}]}}])

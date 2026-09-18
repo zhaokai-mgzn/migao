@@ -5,8 +5,7 @@ import { useRouter } from 'next/navigation'
 import { ArrowLeft, Search, Package, User, Receipt, Settings2, Plus, Trash2, UserPlus, Phone, MapPin } from 'lucide-react'
 import { toast } from 'sonner'
 import { toastRequestError } from '@/lib/api-error'
-import { orderApi, productApi, customerApi } from '@/lib/api'
-import type { ProductProcessingItem } from '@/lib/api'
+import { orderApi, productApi, customerApi, processingItemApi } from '@/lib/api'
 import { resolveImageUrl } from '@/lib/utils'
 import { useOrderAmounts } from '@/hooks/useOrderAmounts'
 import { Button, Card, Input, Modal } from '@/components/ui'
@@ -23,7 +22,8 @@ import {
   resolveWindowCraftLineIds,
   type CraftSpecInput,
 } from '@/lib/order-craft-fields'
-import type { Product, OrderItemFormData, Customer } from '@/types'
+// #4371：加工项类型改为**店铺级目录**的 `ProcessingItem`（旧 `ProductProcessingItem` 已随解耦删除）
+import type { Product, ProcessingItem, OrderItemFormData, Customer } from '@/types'
 
 interface OrderProductSku {
   id: string
@@ -40,8 +40,6 @@ interface OrderProductSku {
 interface ProductDetail extends Omit<Product, 'skus'> {
   skus?: OrderProductSku[]
   basePrice?: number
-  supportsProcessing?: boolean
-  hasProcessing?: boolean
 }
 
 interface OrderLineItem {
@@ -52,8 +50,7 @@ interface OrderLineItem {
   selectedSku: OrderProductSku | null
   quantity: number
   unitPrice: number
-  processingItems: ProductProcessingItem[]
-  processingLoading: boolean
+  processingItems: ProcessingItem[]
   selectedProcessing: Record<string, { selected: boolean; qty: number }>
   /** 工艺规格录入（issue #4375 §4.2/§4.5）—— 未填的键不落库 */
   craft: CraftSpecInput
@@ -88,7 +85,7 @@ function genId(): string {
 
 // 加工项数量规则（issue #3005 回滚 #2986）：行业加工费按米计价、辅料含在加工费中，
 // 无 per_piece/每米数量密度——per_meter → 数量=面料米数；per_set/fixed/per_area → 1
-function deriveProcessingQty(pi: ProductProcessingItem, fabricMeters: number): number {
+function deriveProcessingQty(pi: ProcessingItem, fabricMeters: number): number {
   const method = pi.pricingMethod
   if (method === 'per_meter') return Math.max(1, fabricMeters)
   return 1
@@ -104,7 +101,6 @@ function createEmptyLineItem(): OrderLineItem {
     quantity: 1,
     unitPrice: 0,
     processingItems: [],
-    processingLoading: false,
     selectedProcessing: {},
     craft: {},
     windowLabel: '',
@@ -158,6 +154,40 @@ export default function NewOrderPage() {
 
   // 表单错误
   const [errors, setErrors] = useState<Record<string, string>>({})
+
+  // ===== 加工项目录（店铺级，独立于商品）=====
+  // issue #4371：加工项与商品解耦 —— 目录只加载一次，商品选择不再过滤/触发加工项请求
+  const [processingCatalog, setProcessingCatalog] = useState<ProcessingItem[]>([])
+  const [processingCatalogLoading, setProcessingCatalogLoading] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    const load = async () => {
+      setProcessingCatalogLoading(true)
+      try {
+        const res = await processingItemApi.getProcessingItems({ page: 1, size: 100 })
+        if (!cancelled) setProcessingCatalog(res.data?.data?.items || [])
+      } catch (e) {
+        if (!cancelled) setProcessingCatalog([])
+      } finally {
+        if (!cancelled) setProcessingCatalogLoading(false)
+      }
+    }
+    load()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  // 目录到达后同步到各行项（行项可能在目录加载完成前就已选好商品）
+  useEffect(() => {
+    if (processingCatalogLoading) return
+    setLineItems((prev) =>
+      prev.map((it) =>
+        it.processingItems === processingCatalog ? it : { ...it, processingItems: processingCatalog }
+      )
+    )
+  }, [processingCatalog, processingCatalogLoading])
 
   // ===== 行项更新工具 =====
   const updateLineItem = useCallback(
@@ -241,7 +271,7 @@ export default function NewOrderPage() {
     setCustomerResults([])
   }
 
-  // ===== 选中商品后加载详情 + 加工项 =====
+  // ===== 选中商品后加载详情 =====
   const handlePickProduct = async (product: Product) => {
     const lineId = activeLineId
     setProductModalOpen(false)
@@ -249,8 +279,6 @@ export default function NewOrderPage() {
 
     updateLineItem(lineId, {
       productLoading: true,
-      processingLoading: true,
-      processingItems: [],
       selectedProcessing: {},
       selectedColorId: null,
       selectedSku: null,
@@ -258,7 +286,7 @@ export default function NewOrderPage() {
       unitPrice: 0,
     })
 
-    // 1) 加载商品详情（含 SKU）
+    // 加载商品详情（含 SKU）；加工项不再随商品加载（issue #4371：与商品解耦，走店铺级目录）
     let detail: ProductDetail | null = null
     try {
       const res = await productApi.getProduct(product.id)
@@ -275,35 +303,9 @@ export default function NewOrderPage() {
       product: detail,
       productLoading: false,
       unitPrice: fallbackPrice,
+      processingItems: processingCatalog,
+      selectedProcessing: {},
     })
-
-    // 2) 加载该商品的可选加工项
-    const supports =
-      detail?.supportsProcessing !== false && detail?.hasProcessing !== false
-    if (!supports) {
-      updateLineItem(lineId, {
-        processingLoading: false,
-        processingItems: [],
-        selectedProcessing: {},
-      })
-      return
-    }
-
-    try {
-      const res = await productApi.getProductProcessingItems(product.id)
-      const items = res.data?.data || []
-      updateLineItem(lineId, {
-        processingItems: items,
-        processingLoading: false,
-        selectedProcessing: {},
-      })
-    } catch (e) {
-      updateLineItem(lineId, {
-        processingItems: [],
-        processingLoading: false,
-        selectedProcessing: {},
-      })
-    }
   }
 
   // ===== 颜色 / 规格 选择 =====
@@ -326,7 +328,7 @@ export default function NewOrderPage() {
 
   const toggleProcessing = (
     line: OrderLineItem,
-    pi: ProductProcessingItem,
+    pi: ProcessingItem,
     selected: boolean
   ) => {
     const prev = line.selectedProcessing[pi.id] || { selected: false, qty: 1 }
@@ -373,7 +375,7 @@ export default function NewOrderPage() {
         if (!cfg.selected) return
         const pi = item.processingItems.find((p) => p.id === piId)
         if (!pi) return
-        const price = Number(pi.finalPrice) || Number(pi.unitPrice) || 0
+        const price = Number(pi.unitPrice) || 0
         const q = Math.max(1, Number(cfg.qty) || 1)
         processingFee += price * q
       })
@@ -478,7 +480,7 @@ export default function NewOrderPage() {
           .map(([piId, v]) => {
             const pi = line.processingItems.find((p) => p.id === piId)
             if (!pi) return null
-            const unit = Number(pi.finalPrice) || Number(pi.unitPrice) || 0
+            const unit = Number(pi.unitPrice) || 0
             const qty = Math.max(1, Number(v.qty) || 1)
             return {
               id: pi.id,
@@ -635,6 +637,7 @@ export default function NewOrderPage() {
                     line={line}
                     canRemove={lineItems.length > 1}
                     errors={errors}
+                    processingLoading={processingCatalogLoading}
                     onPickProduct={() => openProductModalFor(line.id)}
                     onRemove={() => removeLineItem(line.id)}
                     onSelectColor={(colorId) => handleSelectColor(line, colorId)}
@@ -740,7 +743,7 @@ export default function NewOrderPage() {
                           if (!cfg.selected) return s
                           const pi = line.processingItems.find((p) => p.id === piId)
                           if (!pi) return s
-                          const price = Number(pi.finalPrice) || Number(pi.unitPrice) || 0
+                          const price = Number(pi.unitPrice) || 0
                           return s + price * Math.max(1, cfg.qty || 1)
                         },
                         0
@@ -1011,13 +1014,14 @@ interface LineItemBlockProps {
   line: OrderLineItem
   canRemove: boolean
   errors: Record<string, string>
+  processingLoading: boolean
   onPickProduct: () => void
   onRemove: () => void
   onSelectColor: (colorId: string) => void
   onSelectSku: (sku: OrderProductSku) => void
   onChangeQty: (q: number) => void
   onChangePrice: (p: number) => void
-  onToggleProcessing: (pi: ProductProcessingItem, selected: boolean) => void
+  onToggleProcessing: (pi: ProcessingItem, selected: boolean) => void
   onChangeCraft: (patch: Partial<CraftSpecInput>) => void
   /** 樘窗窗号（issue #4395）：同樘窗的多条部位行填同一个值 */
   onChangeWindowLabel: (label: string) => void
@@ -1030,6 +1034,7 @@ function LineItemBlock({
   line,
   canRemove,
   errors,
+  processingLoading,
   onPickProduct,
   onRemove,
   onSelectColor,
@@ -1050,9 +1055,6 @@ function LineItemBlock({
     if (!line.product?.skus || line.selectedColorId == null) return []
     return line.product.skus.filter((s) => s.colorId === line.selectedColorId)
   }, [line.product, line.selectedColorId])
-
-  const supportsProcessing =
-    line.product?.supportsProcessing !== false && line.product?.hasProcessing !== false
 
   const errProduct = errors[`line_${line.id}_product`]
   const errColor = errors[`line_${line.id}_color`]
@@ -1243,64 +1245,56 @@ function LineItemBlock({
               </div>
             </div>
 
-            {/* 加工选项（按商品过滤） */}
-            {supportsProcessing && (
-              <div className="pt-2 border-t border-neutral-100">
-                <div className="flex items-center gap-2 mb-3">
-                  <Settings2 className="w-4 h-4 text-neutral-500" />
-                  <span className="text-sm font-medium text-neutral-700">加工选项（可选）</span>
-                </div>
-
-                {line.processingLoading ? (
-                  <div className="text-sm text-neutral-400 py-2">加工项加载中…</div>
-                ) : line.processingItems.length === 0 ? (
-                  <div className="text-sm text-neutral-400 py-2">该商品暂无可选加工项</div>
-                ) : (
-                  <div className="space-y-2">
-                    {line.processingItems.map((pi) => {
-                      const cfg = line.selectedProcessing[pi.id] || { selected: false, qty: 1 }
-                      const finalPrice = Number(pi.finalPrice) || Number(pi.unitPrice) || 0
-                      return (
-                        <div
-                          key={pi.id}
-                          className={
-                            'flex items-center gap-3 p-3 rounded border transition-colors ' +
-                            (cfg.selected
-                              ? 'border-primary-300 bg-primary-50/40'
-                              : 'border-neutral-200 bg-white')
-                          }
-                        >
-                          <input
-                            type="checkbox"
-                            checked={cfg.selected}
-                            onChange={(e) => onToggleProcessing(pi, e.target.checked)}
-                            className="w-4 h-4 accent-primary-600"
-                          />
-                          <div className="flex-1 min-w-0">
-                            <div className="text-sm font-medium text-neutral-900">{pi.name}</div>
-                            <div className="text-xs text-neutral-500 mt-0.5">
-                              ¥{finalPrice.toFixed(2)} / {pi.unit || '项'}
-                              {pi.customPrice != null && pi.customPrice !== pi.unitPrice && (
-                                <span className="ml-2 text-neutral-400 line-through">
-                                  ¥{Number(pi.unitPrice).toFixed(2)}
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                          {/* 加工项行显示「名称 + 数量 + 金额」，数量=面料米数（按米）或 1（按套/一口价/面积）（issue #3005 回滚 #2986） */}
-                          {cfg.selected && (
-                            <span className="text-sm font-semibold text-primary-600 shrink-0">
-                              {Math.max(1, Number(cfg.qty) || 1)}{pi.unit || '项'} ·{' '}
-                              {formatAmount(finalPrice * (Math.max(1, Number(cfg.qty) || 1)))}
-                            </span>
-                          )}
-                        </div>
-                      )
-                    })}
-                  </div>
-                )}
+            {/* 加工选项（店铺级目录，与商品解耦 —— issue #4371） */}
+            <div className="pt-2 border-t border-neutral-100">
+              <div className="flex items-center gap-2 mb-3">
+                <Settings2 className="w-4 h-4 text-neutral-500" />
+                <span className="text-sm font-medium text-neutral-700">加工选项（可选）</span>
               </div>
-            )}
+              {processingLoading ? (
+                <div className="text-sm text-neutral-400 py-2">加工项加载中…</div>
+              ) : line.processingItems.length === 0 ? (
+                <div className="text-sm text-neutral-400 py-2">暂无可用加工项</div>
+              ) : (
+                <div className="space-y-2">
+                  {line.processingItems.map((pi) => {
+                    const cfg = line.selectedProcessing[pi.id] || { selected: false, qty: 1 }
+                    const finalPrice = Number(pi.unitPrice) || 0
+                    return (
+                      <div
+                        key={pi.id}
+                        className={
+                          'flex items-center gap-3 p-3 rounded border transition-colors ' +
+                          (cfg.selected
+                            ? 'border-primary-300 bg-primary-50/40'
+                            : 'border-neutral-200 bg-white')
+                        }
+                      >
+                        <input
+                          type="checkbox"
+                          checked={cfg.selected}
+                          onChange={(e) => onToggleProcessing(pi, e.target.checked)}
+                          className="w-4 h-4 accent-primary-600"
+                        />
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm font-medium text-neutral-900">{pi.name}</div>
+                          <div className="text-xs text-neutral-500 mt-0.5">
+                            ¥{finalPrice.toFixed(2)} / {pi.unit || '项'}
+                          </div>
+                        </div>
+                        {/* 加工项行显示「名称 + 数量 + 金额」，数量=面料米数（按米）或 1（按套/一口价/面积）（issue #3005 回滚 #2986） */}
+                        {cfg.selected && (
+                          <span className="text-sm font-semibold text-primary-600 shrink-0">
+                            {Math.max(1, Number(cfg.qty) || 1)}{pi.unit || '项'} ·{' '}
+                            {formatAmount(finalPrice * (Math.max(1, Number(cfg.qty) || 1)))}
+                          </span>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
 
             {/* 樘窗绑组（issue #4395）：同一樘窗的多条部位行（布行 + 纱行）填**同一个窗号**
                 ⇒ 提交时写同一个 craftLineId（樘窗 = 套级工序与加工费的归属层级） */}

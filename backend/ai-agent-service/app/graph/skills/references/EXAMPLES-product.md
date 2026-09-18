@@ -6,7 +6,7 @@
 
 ### 轮次 1 — 收集基本信息 + 分类选择
 ```
-→ category_manage(action="tree")   // 获取分类树（分类 ID 是加工项过滤的前提）
+→ category_manage(action="tree")   // 获取分类树（分类 ID 是建品归属的前提）
 → interact(
     component="form",
     title="新建商品 — 基本信息",
@@ -20,29 +20,15 @@
   )
 → 💬 "遮光窗帘已查到分类可选。货号可从色卡提取或按品牌首字母生成。"
 ```
-🔴 分类未确认前不要查加工项（没有分类 ID ⇒ 传不了 `applicable_category_id`）。
+🔴 分类未确认前不要发汇总确认卡（没有分类 ID ⇒ 建品归属缺失）。
 
-### 轮次 2 — 分类确认 + 回填 → 加工项选择
+### 轮次 2 — 分类确认 + 回填 → 货号
 ```
 用户点选分类卡「窗帘」（= 已确认分类 ID，如 cat_curtain）+ 回填 form:
   name="遮光窗帘", price=50, selling_methods=["散剪","整卷"], door_widths=["2.8米"], sku_code="ZG-001"
-→ 💬 "基本信息已收到。请选择该商品要关联的加工项（可多选，也可回复'不需要'跳过）："
-→ processing_item_query(applicable_category_id="cat_curtain")  // 🔴 必须带已确认分类 ID：按「适用商品分类」过滤（issue #2964）
-→ interact(
-    component="choice",
-    title="请选择加工项（第1/2页）",
-    options=[
-      {label:"1. 打孔加工 ¥8/米", value:"pi_a1b2c3d4e5f6g7h8"},
-      {label:"2. S钩安装 ¥5/米", value:"pi_i9j0k1l2m3n4o5p6"},
-      {label:"3. 韩式褶加工 ¥12/米", value:"pi_q7r8s9t0u1v2w3x4"}
-    ],
-    pageMeta: {current:1, total:2, totalCount:16, tool:"processing_item_query", params:'{"applicable_category_id":"cat_curtain","page":1,"size":10}'},  // 🔴 必须透传（含 applicable_category_id，翻页不丢），前端自动翻页
-    multiSelect: true  // 🔴 必须传：支持连续点选多个加工项（issue #2894）
-  )
-→ 用户点击勾选序号 1 和 3（本地勾选，不发消息）→ 点「完成选择」按钮
-→ 用户一次性发送 "已选加工项：1. 打孔加工 ¥8/米、3. 韩式褶加工 ¥12/米"
-→ 💬 解析全部名称（打孔加工、韩式褶加工）→ 汇总确认，不再二次询问加工项
-→ 用户翻页可继续选择其它加工项；点「不需要加工项」→ 跳过关联
+→ 💬 "基本信息已收到。货号 ZG-001 可以吗？"
+🔴 建品**没有**加工项多选卡（issue #4371：加工项是店铺级目录，与商品无关）——
+   不要调 processing_item_query 问加工项，也不要把加工项写进 create 参数。
 ```
 
 ### 轮次 3 — 汇总确认
@@ -58,11 +44,10 @@
     action="create", name="遮光窗帘", price=50, status="on_sale",
     sku_code="ZG-001", colors=["2699-01 米白色"],
     selling_methods=["散剪","整卷"], door_widths=["2.8米"],
-    processing_item_ids=["pi_a1b2c3d4e5f6g7h8", "pi_q7r8s9t0u1v2w3x4"],
     specifications={"克重":"200-300g","材质":"涤纶","功能":"遮光","工艺":"色织","风格":"现代简约","图案":"纯色"},
     unit="米", pricing_type="per_meter"
   )
-→ ✅ "遮光窗帘（ZG-001）已创建并上架，关联 2 个加工项。"
+→ ✅ "遮光窗帘（ZG-001）已创建并上架。"
 → product_search 验证入库
 ```
 
@@ -84,7 +69,7 @@
     ]
   )
 → 💬 "图片识别到名称'雪尼尔遮光窗帘'、2 种颜色。价格和售卖方式还需补充。货号建议 XNE3610。"
-用户回填 price=68, selling_methods=["散剪"] → 加工项 choice → confirm → validate_input → product_manage → 完成
+用户回填 price=68, selling_methods=["散剪"] → confirm → validate_input → product_manage → 完成
 ```
 
 关键点：识别结果**以预填 form 呈现（呈现即一次确认入口）**，不要跳过呈现直接建品；
@@ -100,7 +85,7 @@
 用户: "38 一米" → 💬 "好的。售卖方式？散剪还是整卷？"
 用户: "散剪" → category_manage(tree) → 💬 "窗帘分类如下：[分类树]。归入哪个？"
 用户: "客厅窗帘" → 💬 "还需要货号，比如 JY-001，您可以改。"
-用户: "JY-001" → processing_item_query → interact choice → confirm → validate_input → product_manage → 完成
+用户: "JY-001" → confirm → validate_input → product_manage → 完成
 ```
 
 关键点：每次追问 1-2 个字段，缺失字段逐个补，不编造。
@@ -136,21 +121,9 @@
 
 关键点：改价格/名称/状态用 product_update，只传 product_id + 要改的字段。**必须先向用户展示确认卡、征得明确确认后再调用，禁止跳过确认直接改价。不要调 product_manage 或 validate_input。**
 
-## 示例 5：已有商品增删加工项（product_processing_item_manage）
+## 示例 5：多步操作（逐个执行，不要并行）
 
-用户: "给遮光窗帘加上 S 钩安装"
-
-```
-→ 先向用户展示拟添加项并征得明确确认（interact confirm）："将为「遮光窗帘」添加加工项：S钩安装，确认吗？"
-→ 用户确认后 → product_processing_item_manage(product_id="遮光窗帘", action="add", item_ids=["S钩安装"])
-→ ✅ "加工项已添加，当前共 1 个加工项"
-```
-
-关键点：直接用 product_processing_item_manage，传产品名和加工项名。**不要先调 processing_item_query 或 product_detail。** 名称会自动解析为 UUID。**写操作必须先征得用户明确确认（确认卡）再执行，禁止跳过确认直接增删。**
-
-## 示例 6：多步操作（逐个执行，不要并行）
-
-用户: "查遮光窗帘，改成 199，加上 S 钩安装"
+用户: "查遮光窗帘，改成 199"
 
 ```
 轮次 1:
@@ -160,10 +133,18 @@
 轮次 2:
 → product_update(product_id="遮光窗帘", price=199)
 → 💬 "价格已改为 ¥199"
-
-轮次 3:
-→ product_processing_item_manage(product_id="遮光窗帘", action="add", item_ids=["S钩安装"])
-→ 💬 "S 钩安装已添加"
 ```
 
 关键点：**每个操作单独一轮，不要在一次回复中并行走两个操作。**
+
+## 示例 6：店铺加工项目录（与商品无关）
+
+用户: "有哪些加工项？"
+
+```
+→ processing_item_query()   // 🔴 店铺级目录：不带商品、不带商品分类
+→ 💬 如实列出名称与单价（可多选展示，不要"等X项"省略）
+```
+
+关键点：加工项是**店铺级目录**（issue #4371），与具体商品无关；商品上不再关联加工项。
+顾客要在**下单**时加加工项，属订单域流程（按店铺目录单独选），不在建品流程里代做。

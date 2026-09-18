@@ -8,7 +8,7 @@ PostgreSQL 15，39 张业务表，按域分组：
 |----|----|------|
 | **租户/认证** | tenants, tenant_apps, tenant_ai_configs, users, user_identities, platform_admins | 多租户 + 多渠道认证 |
 | **RBAC** | roles, permissions, user_roles | 5角色权限体系 |
-| **商品** | products, product_skus, product_colors, product_attributes, product_processing_items | SKU矩阵 |
+| **商品** | products, product_skus, product_colors, product_attributes | SKU矩阵 |
 | **分类/加工** | categories, processing_categories, processing_items | 分类树 + 加工项 |
 | **订单** | orders, order_items, order_logistics | 订单全生命周期 |
 | **售后** | after_sales_tickets, ticket_notes, ticket_timeline | 售后工单 |

@@ -4,11 +4,9 @@ import com.migao.admin.config.TenantContext;
 import com.migao.admin.dto.ApiResponse;
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.dto.ProductResponse;
-import com.migao.admin.dto.ProductProcessingItemResponse;
 import com.migao.admin.dto.ProductSkuResponse;
 import com.migao.admin.dto.agent.AgentProductCreateRequest;
 import com.migao.admin.dto.agent.AgentProductUpdateRequest;
-import com.migao.admin.dto.agent.AgentProcessingItemActionRequest;
 import com.migao.admin.service.ProductService;
 import com.migao.admin.security.RequirePermission;
 import lombok.RequiredArgsConstructor;
@@ -23,9 +21,11 @@ import java.util.Map;
  * Agent 专用商品管理控制器。
  * 与表单 API (/api/admin/products) 的关键差异：
  * - PATCH 部分更新：null 字段 = 不修改
- * - 分类/加工项 ID 支持名称/UUID/序号
- * - 加工项支持增量 add/remove
+ * - 分类 ID 支持名称/UUID/序号
  * - 错误返回含 suggestion
+ *
+ * <p>加工项解耦（issue #4371）：商品不再持有加工项，故本控制器**没有**加工项增删端点；
+ * 加工项是店铺全目录，按加工项自己的 API 管理。</p>
  */
 @Slf4j
 @RequirePermission("product:list")
@@ -184,34 +184,6 @@ public class AgentProductController {
             return ApiResponse.success(result);
         } catch (Exception e) {
             log.warn("[Agent] 单SKU调价失败: product={}, skuId={}, error={}", productId, skuId, e.getMessage());
-            throw e;
-        }
-    }
-
-    /**
-     * Agent 专用加工项增删。
-     * PATCH /api/admin/agent/products/{id}/processing-items
-     * add: 仅插入不存在的；remove: 仅删除存在的（幂等）。
-     */
-    @PatchMapping("/{id}/processing-items")
-    public ApiResponse<List<ProductProcessingItemResponse>> mergeProcessingItems(
-            @PathVariable String id,
-            @RequestBody AgentProcessingItemActionRequest request) {
-        Long tenantId = TenantContext.getTenantId();
-        log.info("[Agent] 加工项 {}: productId={}, count={}, tenantId={}",
-                request.getAction(), id,
-                request.getItemIds() != null ? request.getItemIds().size() : 0, tenantId);
-        String resolvedId = productService.resolveProductId(id, tenantId);
-        if (resolvedId == null) {
-            throw BusinessException.notFound("商品",
-                    "未找到商品「" + id + "」，请先用 product_search 查出正确 ID 后重试");
-        }
-        try {
-            List<ProductProcessingItemResponse> result =
-                    productService.updateProductProcessingItems(resolvedId, request, tenantId);
-            return ApiResponse.success(result);
-        } catch (Exception e) {
-            log.warn("[Agent] 加工项操作失败: productId={}, error={}", id, e.getMessage());
             throw e;
         }
     }

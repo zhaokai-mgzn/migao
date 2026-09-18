@@ -16,16 +16,16 @@ PRODUCT_TOOLS = [
     "product_update",               # 商品级统一定价
     "sku_update",                  # 单独 SKU 调价
     "product_manage",               # 商品 CRUD（create/update/toggle_status）
-    "product_processing_item_manage", # 商品加工项关联（add/remove）— 直接调，传名称即可
     "processing_item_manage",       # 加工项 CRUD（create_processing_item/update/delete）— 用户说新增加工项/改加工项/删加工项时调用（PP-006：曾缺此工具 → agent 误宣「只有查询能力」）
     "inventory_manage",
-    "processing_item_query",        # 仅新建商品时选择加工项用
+    "processing_item_query",        # 店铺加工项目录（与商品无关）— 用户问加工项列表/单价时调用
     "category_manage",
     "validate_input",
-    "interact",                     # 交互卡片：SKU/分类/加工项 choice、写前 confirm、表单 form
+    "interact",                     # 交互卡片：SKU/分类 choice、写前 confirm、表单 form
 ]
 
-PRODUCT_SYSTEM_PROMPT = """## 🔴 改商品级定价→product_update。单独调某个SKU价格→调product_detail看SKU列表，用interact(choice)让用户选具体SKU（选项格式: '颜色 售卖方式 门幅 | 当前价格'），用户选后调sku_update。SKU≤5个时直接列文本即可。商品加工项关联→product_processing_item_manage；创建/改/删加工项→processing_item_manage（action=create_processing_item/update_item/delete_item），禁止用 product_manage 建加工项。一次只做一个操作。
+PRODUCT_SYSTEM_PROMPT = """## 🔴 改商品级定价→product_update。单独调某个SKU价格→调product_detail看SKU列表，用interact(choice)让用户选具体SKU（选项格式: '颜色 售卖方式 门幅 | 当前价格'），用户选后调sku_update。SKU≤5个时直接列文本即可。创建/改/删加工项→processing_item_manage（action=create_processing_item/update_item/delete_item），禁止用 product_manage 建加工项。一次只做一个操作。
+🔴 **加工项与商品无关**（issue #4371）：加工项是**店铺级目录**，商品上不再关联加工项——建品时**不需要**询问/选择加工项，也不要把加工项写进 create 参数（product_manage 没有该参数）。顾客要加工项时在下单环节按目录单独选。
 
 ## SKU 表格格式
 多SKU时用表格展示：颜色 | 售卖方式 | 门幅 | 价格。不要用"颜色/散剪""颜色/整卷"做列头——颜色是一列，售卖方式是一列，分开。
@@ -48,7 +48,6 @@ PRODUCT_SYSTEM_PROMPT = """## 🔴 改商品级定价→product_update。单独�
 | door_widths | 是 | 用户提供或默认["2.8米"] |
 | colors | 是 | 用户提供或图片识别 |
 | 以上三个字段决定 SKU 笛卡尔积 |
-| processing_item_ids | 否 | **必须主动询问**，基本信息收齐且**分类确认后**调 processing_item_query(**带 applicable_category_id=已确认分类 ID**) 展示选择器。用户点序号选择，可多次选。仅用户明确说"不需要"时跳过 |
 | unit | 否 | 窗帘默认"米" |
 | pricing_type | 否 | 窗帘默认"per_meter" |
 | specifications | 否 | 窗帘默认见下方 |
@@ -75,12 +74,12 @@ brand 仅用户提及时才传，不可自行推断。
 
 ## 加工项
 
-🔴 **创建流程中必须主动询问加工项**：基本信息（表单）收齐且用户确认分类后，**下一步必须询问"是否需要加工项"，展示加工项选择器**——用 processing_item_query(**必须带 `applicable_category_id=已确认的商品分类 ID`**，按「适用商品分类」过滤/优先推荐，issue #2964) 获取列表 → interact(component=choice, ...) 展示（**必须透传 tool 返回的 pageMeta** 供前端翻页，**并传 multiSelect=true 支持多选**，用户可连续点选多个加工项、翻页后继续选）；用户明确说"不需要加工项"/"不用"时才跳过。
-**禁止跳过该询问**（未询问就直接建品 = 加工项关联信息未确认，视为流程缺陷；若用户此前已明确表示不需要，可跳过）。
-**顺序铁律（PR-014）**：分类确认后的**下一步只有一条路 = 发加工项多选卡**；**禁止跳过加工项询问直接发汇总确认卡**——「汇总确认卡」只能出现在加工项多选卡之后（"尽快发确认卡"不适用于建品，建品是多步引导流程）。
-**一次性提交格式**：多选选择器下用户点「完成选择」后，会一次性发送「已选加工项：A、B、C」（名称列表，如"已选加工项：罗马杆环安装、高温定型"）。**收到该格式消息 = 用户已完成全部加工项选择**，应解析出全部名称（逐个用 processing_item_query 或名称 → ID 解析）并进入汇总确认，**禁止再次询问加工项、也禁止只取第一个**。若用户只说"不需要加工项"则跳过关联。
-创建时**必须**将已选加工项传入 product_manage(create)：processing_item_ids + processing_item_configs（每项含 processingItemId + customPrice + unit，customPrice 取 processing_item_query 返回的 unit_price，禁止只传名称/缺价格——validate_input 会拦截，issue #3052）。
-汇总确认时必须列出已选加工项，确认后传入 create，**禁止遗漏**。
+🔴 **加工项与商品无关**（issue #4371 用户裁定）：加工项是**店铺级目录**，商品不再关联加工项。
+- **建品流程不询问加工项**：收集字段 → 分类确认 → 货号 → 汇总确认卡 → create，中间**没有**加工项多选卡（旧的「分类确认后必须先发加工项多选卡」已作废）。
+- **禁止**把加工项写进 product_manage(create)：该工具**没有** processing_item_ids / processing_item_configs 参数（传了会被服务端静默丢弃）。
+- 顾客问"有哪些加工项"→ 调 processing_item_query（店铺目录，与商品无关，可按 keyword 搜索）如实列报。
+- 顾客要**增删某个加工项本身**（店铺目录的增删改）→ processing_item_manage。
+- 顾客要在**下单**时加加工项 → 那是订单域的事，如实说明"加工项在下单时按店铺目录单独选"，不要在建品流程里代做。
 
 ## 写后复查（#3899）
 

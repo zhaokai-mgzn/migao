@@ -217,13 +217,18 @@ B 端评测跑**生产**（有真实数据），C 端跑**全新 bootstrap 空�
 | 实体 | 内容 | 服务的用例 |
 |---|---|---|
 | `categories` | 窗帘布艺 | 商品分类 |
-| `processing_categories` / `processing_items` | 纳米圈打孔 ¥8/米、韩式波浪折边 ¥12/米、高温定型 ¥10/米 | 下单加工项环节 |
-| `products` | **遮光窗帘**（on_sale/per_meter/has_processing）、北欧风窗帘 | PR-001 / PR-003 |
+| `processing_categories` / `processing_items` | 纳米圈打孔 ¥8/米、韩式波浪折边 ¥12/米、高温定型 ¥10/米（**店铺级目录**） | 下单加工项环节（OR-016 / OR-017） |
+| `products` | **遮光窗帘**（on_sale/per_meter）、北欧风窗帘 | PR-001 / PR-003 |
 | `product_colors` / `product_skus` | 米白/浅灰/雾霾蓝 × 散剪 2.8m | 选品规格收集（colorId 等） |
-| `product_processing_items` | 商品↔加工项关联（4 条） | OR-016 / OR-017 |
 | `users` | `debug_customer_1`（与 `auth.py` DEBUG customer 身份同 id） | C 端身份一致性 |
 | `orders` / `order_items` | **EVAL-ORD-0002 已发货**（最新）+ EVAL-ORD-0001 已完成，均带收货人/电话/地址 | CH-010 / CH-012 / OR-009 / OR-014 / OR-017 |
 | `order_logistics` | 顺丰在途轨迹 | OR-012 物流查询 |
+
+> ⚠️ 2026-09-19（issue #4371 商品↔加工项解耦）：原表里还有一行
+> `product_processing_items`（商品↔加工项关联 4 条）—— 该表已随解耦由 **V61 迁移 DROP**，
+> fixture 里的关联种子同步删除。加工项是**店铺级目录**（上表 `processing_items`），
+> 下单/建品一律从目录取，不再经商品过滤 ⇒ **不要再往 fixture 里加关联种子**
+> （会报 `relation "product_processing_items" does not exist`）。
 
 **为什么顾客本人 + 历史订单是必需项（不是"补点数据"）** —— 这三个缺口都会让 agent
 的**正确行为**也拿 0 分：

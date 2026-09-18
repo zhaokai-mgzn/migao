@@ -82,11 +82,6 @@ public class Product {
     private String stockDeductionMode = "on_order";
 
     /**
-     * 是否含加工项
-     */
-    private Boolean hasProcessing;
-
-    /**
      * 累计销量
      */
     private Integer salesCount;

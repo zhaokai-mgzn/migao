@@ -16,7 +16,7 @@
 有一次是对的"（实证 OR-014 run 34841029062：一次"下单成功但金额错 168≠198"、
 一次"order_create 从未被调用" —— 2/2 都真失败）。波动放行的前提是"有一次通过"。
 """
-# case_ids: OR-016, PR-019, PR-020, AS-007, FN-004, HR-003, DA-002, CU-003, CT-002, OR-012, CH-010, OR-017, KN-001, CH-008, CH-024, OR-014
+# case_ids: OR-016, PR-019, AS-007, FN-004, HR-003, DA-002, CU-003, CT-002, OR-012, CH-010, OR-017, KN-001, CH-008, CH-024, OR-014
 import importlib.util
 from pathlib import Path
 

@@ -1,4 +1,4 @@
-# case_ids: PR-021, PR-025, PR-007, PR-017, PR-005, PR-009, OR-014, PR-016
+# case_ids: PR-021, PR-025, PR-007, PR-017, PR-005, PR-009, OR-014
 """**共享夹具的属性写方**必须声明复位手段（issue #4075 的机制半边：L0 判据 + 红证）。
 
 ## 病灶（run `35243351675` @`67db87ae`，两条腿同一条断言结论相反）
@@ -137,12 +137,14 @@ def _all_cases() -> list:
 #: 那 5 个工具（按工具名检索即可复算）。**其余写工具写的是别的实体**
 #: （`order_create`=订单 / `customer_manage`=客户 / `after_sales_manage`=工单 / …），
 #: 它们不改共享夹具 ⇒ 不适用本判据（不适用域负例见本文件末尾）。
+#: ⚠️ 2026-09-19（#4371 商品↔加工项解耦）：`product_processing_item_manage`（给**商品**
+#: 增删加工项）已随「商品不再持有加工项」退场（工具文件与注册行都删）⇒ 从本集合移除。
+#: 移除**不是**放宽：该工具已不可能出现在任何用例的期望里（其 3 条用例已整条删除）。
 PRODUCT_ENTITY_TOOLS: frozenset = frozenset({
     "product_manage",
     "product_update",
     "sku_update",
     "inventory_manage",
-    "product_processing_item_manage",
 })
 
 #: `(tool, action)` → **属性键**（`""` = 写商品实体但**不改共享夹具的属性**）。
@@ -155,8 +157,8 @@ PRODUCT_ATTR_WRITERS: dict = {
     ("product_update", ""): "product_attr",                 # base_price / allow_return_restock / …
     ("product_manage", "update"): "product_attr",           # images / 字段级更新
     ("inventory_manage", "adjust"): "stock",
-    ("product_processing_item_manage", "add"): "processing_items",
-    ("product_processing_item_manage", ""): "processing_items",
+    # ⚠️ `("product_processing_item_manage", "add"/"")`: "processing_items" 两条已随
+    # #4371 解耦移除（工具退场；`processing_items` 这一「属性键」也不再有写方）。
     # 期望里没声明 action 的裸 `product_manage`：**改哪个属性不可判定** ⇒ 单列 `unknown`，
     # 让"未定型"这件事在台账里可见（而不是被当成"不改共享夹具"）。
     ("product_manage", ""): "unknown",
@@ -179,9 +181,6 @@ REGISTERED_RESTORE_GAPS: dict = {
     "PR-027": "product_attr / images（主图）—— 无复位类型（#4128）",
     "CH-006": "product_attr（改价 199，且**不在** #3807 的快照 tag 覆盖面内）"
               "+ processing_items —— 无复位类型（#4128）",
-    "PP-001": "processing_items —— 无复位类型（#4128）",
-    "PP-003": "processing_items —— 无复位类型（#4128）",
-    "PP-004": "processing_items —— 无复位类型（#4128）",
 }
 
 

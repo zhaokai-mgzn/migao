@@ -10,7 +10,12 @@ import java.util.Map;
  * Agent 专用商品创建请求。
  * 全部字段 Optional —— 无 @NotBlank，字段为 null 时取默认值或报友好错误。
  * categoryId 可为名称/UUID/前缀，服务端解析。
- * processingItemIds 可为 UUID 字符串/名称/序号，服务端解析。
+ *
+ * <p>加工项解耦（issue #4371）：商品**不再**持有加工项 —— 加工项是店铺全目录，
+ * 由用户在加工项目录里独立选择，生产路线由「安装方式 + 商品」经
+ * {@code app/production/routing.py} 的 {@code ROUTINGS[(部位,工艺)]} 决定。
+ * 故本请求**没有** processingItemIds / processingItemConfigs 字段
+ * （回归防线见 {@code ProductProcessingDecouplingTest}）。
  */
 @Data
 public class AgentProductCreateRequest {
@@ -60,16 +65,6 @@ public class AgentProductCreateRequest {
     /** 门幅列表（如 "2.8米"） */
     private List<String> doorWidths;
 
-    /**
-     * 加工项 ID 列表。
-     * 可混合传入 UUID 字符串 / 加工项名称 / 序号（1-based）。
-     * 服务端统一解析为真实 UUID。
-     */
-    private List<String> processingItemIds;
-
-    /** 加工项配置（含自定义价格） */
-    private List<AgentProcessingItemConfig> processingItemConfigs;
-
     /** 规格属性 */
     private Map<String, String> specifications;
 
@@ -81,14 +76,4 @@ public class AgentProductCreateRequest {
      * 窗帘行业定制退货不可再售，默认不回补；可再售商品（标准件/配件）传 true 开启。
      */
     private Boolean allowReturnRestock;
-
-    // ---- 加工项配置子对象 ----
-
-    @Data
-    public static class AgentProcessingItemConfig {
-        /** 加工项 ID（可为 UUID / 名称 / 序号） */
-        private String processingItemId;
-        /** 自定义价格（可选） */
-        private BigDecimal customPrice;
-    }
 }

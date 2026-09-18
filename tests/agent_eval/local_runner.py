@@ -7917,8 +7917,12 @@ def _ci_verdict(results: list) -> tuple[bool, str]:
 # 关键旅程 = P0 跨域核心链路：用户真会走的路，任何一条失败都不放行（即使分类 llm-noise）。
 # mibao 旅程多为双端用例（B 端全量会跑）；xiaobu 旅程为 C 端专属。
 # 新增旅程必须在此登记（completion_verdict 的存在性守卫在测试里锁定）。
+#: ⚠️ 2026-09-19（#4371 商品↔加工项解耦）：`PR-020`（建品加工项价格落库盯防）已随
+#: 「商品不再持有加工项」**整条用例删除**（其断言对象 `processingItemConfigs.finalPrice`
+#: 已不存在）⇒ 从关键旅程清单移除。旅程集合**只许收缩**：删掉一条已不存在的用例不是放宽门禁
+#: （那条用例已不可能再失败），留下它反而会让 `completion_verdict` 的旅程集合里出现悬空 ID。
 KEY_JOURNEYS_MIBAO = (
-    "OR-016", "PR-019", "PR-020", "AS-007", "FN-004",
+    "OR-016", "PR-019", "AS-007", "FN-004",
     "HR-003", "DA-002", "CU-003", "CT-002",
 )
 KEY_JOURNEYS_XIAOBU = (

@@ -1,6 +1,8 @@
 // case_ids: OR-009, OR-014, UI-038
 // OR-014（issue #3005 回滚 #2986）：下单加工项数量规则——per_meter→面料米数；per_set/fixed/per_area→1，
 // 商品数量变化联动重算；加工项行显示「名称+数量+金额」供对账，无数量输入框（数量由计价方式派生）
+// ⚠️ 2026-09-19（#4371 商品↔加工项解耦）：加工项改为**店铺级目录**（processingItemApi.getProcessingItems
+// 只加载一次），不再按商品过滤；解耦钉死断言见 orders-new-decoupled.test.tsx
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 
@@ -8,7 +10,7 @@ import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 const mockCreateOrder = vi.fn()
 const mockGetProducts = vi.fn()
 const mockGetProduct = vi.fn()
-const mockGetProductProcessingItems = vi.fn()
+const mockGetProcessingItems = vi.fn()
 const mockGetCustomers = vi.fn()
 
 vi.mock('@/lib/api', () => ({
@@ -18,7 +20,9 @@ vi.mock('@/lib/api', () => ({
   productApi: {
     getProducts: (...args: any[]) => mockGetProducts(...args),
     getProduct: (...args: any[]) => mockGetProduct(...args),
-    getProductProcessingItems: (...args: any[]) => mockGetProductProcessingItems(...args),
+  },
+  processingItemApi: {
+    getProcessingItems: (...args: any[]) => mockGetProcessingItems(...args),
   },
   customerApi: {
     getCustomers: (...args: any[]) => mockGetCustomers(...args),
@@ -46,6 +50,8 @@ describe('NewOrderPage', () => {
     mockGetProducts.mockResolvedValue({
       data: { data: { items: [] } },
     })
+    // 加工项目录（店铺级）：默认空目录，需要加工项的用例自行覆盖
+    mockGetProcessingItems.mockResolvedValue({ data: { data: { items: [] } } })
   })
 
   it('should render page title', async () => {
@@ -120,9 +126,8 @@ describe('NewOrderPage', () => {
       data: { data: { items: [{ id: 'p1', name: '测试窗帘', price: 100 }], total: 1 } },
     })
     mockGetProduct.mockResolvedValue({
-      data: { data: { id: 'p1', name: '测试窗帘', skus: [], supportsProcessing: false, price: 100 } },
+      data: { data: { id: 'p1', name: '测试窗帘', skus: [], price: 100 } },
     })
-    mockGetProductProcessingItems.mockResolvedValue({ data: { data: [] } })
 
     render(<NewOrderPage />)
 
@@ -169,21 +174,15 @@ describe('NewOrderPage', () => {
       data: { data: { items: [{ id: 'p1', name: '遮光窗帘', price: 100 }], total: 1 } },
     })
     mockGetProduct.mockResolvedValue({
-      data: { data: { id: 'p1', name: '遮光窗帘', skus: [], supportsProcessing: true, price: 100 } },
+      data: { data: { id: 'p1', name: '遮光窗帘', skus: [], price: 100 } },
     })
-    mockGetProductProcessingItems.mockResolvedValue({
+    mockGetProcessingItems.mockResolvedValue({
       data: {
-        data: [
-          {
-            id: 'pi1',
-            name: '打孔加工',
-            pricingMethod: 'per_meter',
-            unitPrice: 5,
-            customPrice: null,
-            finalPrice: 5,
-            unit: '米',
-          },
-        ],
+        data: {
+          items: [
+            { id: 'pi1', name: '打孔加工', pricingMethod: 'per_meter', unitPrice: 5, unit: '米' },
+          ],
+        },
       },
     })
 
@@ -225,21 +224,15 @@ describe('NewOrderPage', () => {
       data: { data: { items: [{ id: 'p2', name: '雪纺纱', price: 80 }], total: 1 } },
     })
     mockGetProduct.mockResolvedValue({
-      data: { data: { id: 'p2', name: '雪纺纱', skus: [], supportsProcessing: true, price: 80 } },
+      data: { data: { id: 'p2', name: '雪纺纱', skus: [], price: 80 } },
     })
-    mockGetProductProcessingItems.mockResolvedValue({
+    mockGetProcessingItems.mockResolvedValue({
       data: {
-        data: [
-          {
-            id: 'pi2',
-            name: '韩式定型',
-            pricingMethod: 'per_meter',
-            unitPrice: 3,
-            customPrice: null,
-            finalPrice: 3,
-            unit: '米',
-          },
-        ],
+        data: {
+          items: [
+            { id: 'pi2', name: '韩式定型', pricingMethod: 'per_meter', unitPrice: 3, unit: '米' },
+          ],
+        },
       },
     })
 
@@ -273,21 +266,15 @@ describe('NewOrderPage', () => {
       data: { data: { items: [{ id: 'p3', name: '棉麻布', price: 60 }], total: 1 } },
     })
     mockGetProduct.mockResolvedValue({
-      data: { data: { id: 'p3', name: '棉麻布', skus: [], supportsProcessing: true, price: 60 } },
+      data: { data: { id: 'p3', name: '棉麻布', skus: [], price: 60 } },
     })
-    mockGetProductProcessingItems.mockResolvedValue({
+    mockGetProcessingItems.mockResolvedValue({
       data: {
-        data: [
-          {
-            id: 'pi3',
-            name: '帘头加工',
-            pricingMethod: 'per_set',
-            unitPrice: 50,
-            customPrice: null,
-            finalPrice: 50,
-            unit: '套',
-          },
-        ],
+        data: {
+          items: [
+            { id: 'pi3', name: '帘头加工', pricingMethod: 'per_set', unitPrice: 50, unit: '套' },
+          ],
+        },
       },
     })
 
@@ -323,9 +310,8 @@ describe('NewOrderPage', () => {
       data: { data: { items: [{ id: 'p9', name: '测试9999', price: 9 }], total: 1 } },
     })
     mockGetProduct.mockResolvedValue({
-      data: { data: { id: 'p9', name: '测试9999', skus: [], supportsProcessing: false, price: 9 } },
+      data: { data: { id: 'p9', name: '测试9999', skus: [], price: 9 } },
     })
-    mockGetProductProcessingItems.mockResolvedValue({ data: { data: [] } })
 
     render(<NewOrderPage />)
     await pickProduct('测试9999')
@@ -461,22 +447,20 @@ describe('NewOrderPage', () => {
       })
       mockGetProduct.mockResolvedValue({
         data: {
-          data: { id: 'p1', name: productName, skus: [], supportsProcessing: true, price: 100 },
+          data: { id: 'p1', name: productName, skus: [], price: 100 },
         },
       })
-      mockGetProductProcessingItems.mockResolvedValue({
+      // ⚠️ 2026-09-19（#4371 商品↔加工项解耦）：加工项不再随商品下发（商品 payload 已无
+      // `supportsProcessing`/`processingItems`），改由**店铺级目录**提供 ⇒ 这里桩目录端点
+      // （「双拼：加工项只挂主布行」那条判据需要一个可勾选的加工项）。
+      // 目录条目形状 = `ProcessingItem`（`unitPrice`/`unit`，无 `customPrice`/`finalPrice`）。
+      mockGetProcessingItems.mockResolvedValue({
         data: {
-          data: [
-            {
-              id: 'pi1',
-              name: '打孔加工',
-              pricingMethod: 'per_meter',
-              unitPrice: 5,
-              customPrice: null,
-              finalPrice: 5,
-              unit: '米',
-            },
-          ],
+          data: {
+            items: [
+              { id: 'pi1', name: '打孔加工', pricingMethod: 'per_meter', unitPrice: 5, unit: '米' },
+            ],
+          },
         },
       })
       render(<NewOrderPage />)
@@ -716,14 +700,13 @@ describe('NewOrderPage', () => {
               id,
               name: id === 'p2' ? '配套纱帘' : '遮光窗帘',
               skus: [],
-              supportsProcessing: false,
               price: id === 'p2' ? 60 : 100,
             },
           },
         })
       )
-      mockGetProductProcessingItems.mockResolvedValue({ data: { data: [] } })
-
+      // ⚠️ 2026-09-19（#4371 商品↔加工项解耦）：商品 payload 已无 `supportsProcessing`/`processingItems`，
+      // 加工项改由**店铺级目录**端点提供（本组樘窗判据不需要加工项 ⇒ 用 beforeEach 的空目录默认桩）。
       render(<NewOrderPage />)
 
       // 第一行：布帘商品

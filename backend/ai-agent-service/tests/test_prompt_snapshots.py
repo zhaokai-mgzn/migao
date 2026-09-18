@@ -218,16 +218,38 @@ def test_product_create_carries_inferred_specifications():
     assert "推理" in prompt, "product prompt 未要求携带图片推理属性"
 
 
-def test_product_create_carries_processing_item_configs():
-    """建品：加工项必须经 processing_item_configs 传入（含价格），禁止只传名称列表（sess_c1fce183dae24f22 复盘）。
+def test_product_create_is_not_gated_on_processing_items():
+    """issue #4371（用户裁定，2026-09-19）：商品↔加工项**解耦** —— 建品不再询问加工项。
 
-    旧缺陷：prompt 要求 create 时只传 processing_item_ids=[名称] → 商品加工项
-    custom_price 全 NULL → 详情页展示 ¥0.00。加工项选择器已展示价格，必须一并落库。
+    旧形态：建品 prompt 强制「分类确认后必须先发加工项多选卡」，并把所选经
+    `processing_item_ids + processing_item_configs` 传入 create（#3027/#3052）。
+    用户裁定：「用户选择完商品以及安装方式后，加工工序已经固定了，额外的加工项可以
+    单独从加工项中选择，不需要通过商品来关联上加工项进行过滤一道」。
+    ⇒ create 流程不得再出现加工项多选卡/加工项参数（本断言防回退）。
     """
     prompt = _build_system_prompt("product")
-    assert "processing_item_configs" in prompt, "product prompt 未要求创建时携带加工项价格配置"
-    # 价格需从查询结果取真实 unit_price，禁止编造
-    assert "unit_price" in prompt or "unitPrice" in prompt, "product prompt 未要求取加工项真实默认单价"
+    # ① 旧口径的**肯定式指令**必须消失（否则模型又会在建品时弹加工项卡、
+    #    传一个接收侧不存在的参数）。只禁指令式措辞 —— 解耦后的正确口径本身就是
+    #    用「没有 processing_item_configs 参数」这类**否定式**说明写出来的。
+    for forbidden in ("必须先发加工项多选卡", "分类确认后主动询问", "禁止不询问加工项就直接建品",
+                      "applicable_category_id"):
+        assert forbidden not in prompt, (
+            f"product prompt 又出现建品加工项绑定口径「{forbidden}」—— 解耦被回退"
+        )
+    # ② 否定式口径必须在（显式告诉模型「建品没有这一步 / 没有这个参数」，
+    #    否则模型会凭旧记忆硬传一个被服务端静默丢弃的键）
+    assert "建品流程没有加工项多选卡" in prompt, (
+        "product prompt 缺少「建品流程没有加工项多选卡」的显式否定口径"
+    )
+    assert "没有 processing_item_ids / processing_item_configs 参数" in prompt, (
+        "product prompt 未声明 create 没有加工项参数（模型会硬传被静默丢弃的键）"
+    )
+    # ③ 新口径必须在：加工项是店铺级目录、与商品无关
+    assert "与商品无关" in prompt or "与具体商品无关" in prompt, (
+        "product prompt 未声明「加工项是店铺级目录、与商品无关」"
+    )
+    # ④ 查询目录的能力仍在（顾客问加工项要能如实回答）
+    assert "processing_item_query" in prompt, "product prompt 丢了加工项目录查询能力"
 
 
 # ============ Prompt 增量快照 ============

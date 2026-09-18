@@ -389,10 +389,11 @@ class OrderCreateTool(BaseTool):
         "并带 metersSource（跟随主布/人工指定）。**加工项只挂主布行**。"
         "【加工费米数】加工费按**主布米数**算（配布边米数不参与）—— 米数由算料（curtain_calc）给出，"
         "**不要自己推算**。"
-        "【铁律·加工项】product_detail 返回的加工项（processing_items）非空时，**必须先调用 "
-        "interact(component=choice, multiSelect=true) 主动询问顾客要不要加工项**（列出名称与单价），"
+        "【铁律·加工项】加工项是**店铺级目录，与商品无关**（issue #4371）——**必须先调用 "
+        "processing_item_query 拿目录**（可带 keyword，**不带**商品分类参数），"
+        "再调用 interact(component=choice, multiSelect=true) 主动询问顾客要不要加工项（列出名称与单价），"
         "把所选写入 items[i].processing_info.processingItems、合计写入 processingFee 并计入金额；"
-        "顾客说不需要可跳过；加工项为空才可告知无可用加工项。"
+        "顾客说不需要可跳过；目录为空才可告知无可用加工项。"
         "**未询问就直接建单 = 漏收加工费 = 订单金额错误**，属禁止行为。"
         # 口径规则放工具描述而非 system prompt（issue #3521）：
         #   ① 这是**参数语义**（processingItems 的 quantity 怎么来），与字段定义同处最合适；
@@ -412,7 +413,7 @@ class OrderCreateTool(BaseTool):
         "服务端只按这个明细口径计总额，两处不一致时顾客在确认卡上看到的总额 ≠ 实际落库/收款金额。"
         "【反例】跳过 SKU 选择直接下单；把 sellingMethod/doorWidth 平铺进 items；"
         "臆造规格键（如自己编 colorId/skuId）或只给颜色不给门幅就下单（服务端无法定位 SKU ⇒ 拒绝）；"
-        "凭 product_search 列表断言'该商品无加工项'（列表本就查不到，必须查详情）。修改订单用 order_manage。WRITE"
+        "凭 product_search 列表断言'该商品无加工项'（加工项是店铺级目录，必须查 processing_item_query）。修改订单用 order_manage。WRITE"
     )
     allowed_roles = ["admin", "agent", "tenant_admin", "customer"]
 
@@ -668,7 +669,7 @@ class OrderCreateTool(BaseTool):
                                             "pricingMethod": {
                                                 "type": "string",
                                                 "enum": ["per_meter", "per_set", "fixed", "per_area"],
-                                                "description": "计价方式，取 product_detail processing_items[].pricing_method 原值：per_meter(按米)/per_set(按套)/fixed(一口价)/per_area(按面积)；per_piece(按个)不支持",
+                                                "description": "计价方式，取 processing_item_query 返回的 pricing_method 原值：per_meter(按米)/per_set(按套)/fixed(一口价)/per_area(按面积)；per_piece(按个)不支持",
                                             },
                                             "subtotal": {"type": "number", "minimum": 0},
                                         },

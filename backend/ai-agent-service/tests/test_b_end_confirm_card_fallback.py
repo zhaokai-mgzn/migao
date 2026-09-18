@@ -1,4 +1,4 @@
-# case_ids: PR-007, PR-016
+# case_ids: PR-007
 """B 端写操作被确认门禁拦截后，代码兜底**补发确认卡**（issue #3882）。
 
 背景：`base_skill.py` 8.3b 的补卡兜底（issue #3445 家族）只对

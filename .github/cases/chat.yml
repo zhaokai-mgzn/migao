@@ -271,25 +271,24 @@ cases:
       - "商品管理：把第一款遮光窗帘的价格改成 199"
       # 答卡轮（§13.5：写操作卡下发后**必须有点卡轮**，裸文本「确认」≠ 点卡）——
       # 实测：R8/R9 两轮都只发了 interact(confirm) 卡，没有轮次去点它 →
-      # product_manage / product_processing_item_manage 永不执行（用例以"改价没生效"红）。
+      # product_manage 永不执行（用例以"改价没生效"红）。
       - auto_respond:
           fallback: "确认"
-      - "商品管理：给这款商品添加加工项 纳米圈打孔"
-      - auto_respond:
-          fallback: "确认"
+      # ⚠️ 2026-09-19（#4371 解耦）：原 R9「商品管理：给这款商品添加加工项 纳米圈打孔」+ 其
+      # 答卡轮**已删除** —— 它驱动 `product_processing_item_manage`（给**商品**挂加工项），
+      # 该工具随「商品不再持有加工项」退场。用例核心（10 轮长上下文 + 跨域回切 + 改价后回查）
+      # 由剩余轮次完整保留。
       - "确认下刚才改的价格生效了（现在是 199 吗）"
     expectations:
       - tool: product_manage
         args:
           action: update
-      - tool: product_processing_item_manage
       - tool: product_detail
     data_checks:
       - "第8轮 product_id 来自第1-2轮上下文（同一商品，不重新问顾客）"
-      - "第9轮加工项按**名称**解析到真实目录项（纳米圈打孔，种子 fixture 内存在），不得编造"
       - "全程无重复 product_search 查同一商品"
     skip_reason: ""
-    merge_log: "eval M010 独有；2026-09-14 自包含化（issue #3599）：序号指代 → 点名种子内真实对象（依赖排序/加工项个数的指代在别的栈上会指向别的东西或不存在）"
+    merge_log: "eval M010 独有；2026-09-14 自包含化（issue #3599）：序号指代 → 点名种子内真实对象（依赖排序/加工项个数的指代在别的栈上会指向别的东西或不存在）。2026-09-19（#4371 商品↔加工项解耦）：删除「给这款商品添加加工项 纳米圈打孔」一轮 + 其答卡轮 + `expectations[product_processing_item_manage]` + `data_checks[第9轮加工项按名称解析…]` —— 商品不再持有加工项，该工具退场；长上下文/跨域回切/改价回查意图与其余断言原样未动。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_mibao_multiturn_intelligence.py"
@@ -1031,8 +1030,10 @@ cases:
     # 真值取证：`xiaobu_eval_seed.sql` 的 `prod_eval_blackout`（遮光窗帘 ¥168）是两个 seed 里
     # **唯一**一个名字含该词的商品；`mibao_eval_seed.sql` 只加 `prod_eval_2699`
     # （2699系列雪尼尔窗帘面料，不含该词），且评测栈按 xiaobu→mibao 顺序加载两份 seed
-    # （顺序由 `test_eval_stack_seed_parity.py` 锁住）⇒ 合并后件数恒为 1；另有 11 条在用用例
-    # 声明同一真值（OR-009/014/015/030/031、PR-017/025/026/027、PP-001、CR-003）。
+    # （顺序由 `test_eval_stack_seed_parity.py` 锁住）⇒ 合并后件数恒为 1；另有在用用例
+    # 声明同一真值（OR-009/014/015/030/031、PR-017/025/026/027、OR-017、CR-003）。
+    # ⚠️ 2026-09-19（#4371）：原清单里的 `PP-001` 已随「商品不再持有加工项」**整条用例删除**
+    # ⇒ 换成同样按名定位「遮光窗帘」的 **OR-017**（下单加工项闭环，仍在线）。
     # 为什么**不**声明 `order_count_for_phone: 13800138000`：本用例**自己就会给该号码建单**
     # （④ 轮确认后 order_create 落库）⇒ `after - before = +1 > max_growth(默认 0)` ⇒ 漂移判据
     # 必然判红 —— 那是「硬写一条注定红的守卫」，不如声明真正只读的那份依赖。

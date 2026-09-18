@@ -998,7 +998,7 @@ cases:
 
   - id: OR-016
     legacy_id: ""
-    title: "创建订单 confirm 前必须主动询问加工项（商品绑定加工项时）"
+    title: "创建订单 confirm 前必须主动询问加工项（店铺加工项目录非空时）"
     domains:
       - order
       - chat
@@ -1046,14 +1046,16 @@ cases:
     # 通过（「调用了 ≠ 成了」，#3778/#3361）。`data_checks` 那三条是**自然语义**、不计分。
     # ⇒ `must_succeed`（fail-closed：一次都没成功即判红）是这条指纹唯一的确定性下沉形态。
     # 可满足性（按 seed 真值核，**不是**"永远红"的空判据）：
-    #   · 下单对象齐备 —— `mibao_eval_seed.sql`：prod_eval_2699（¥23.80，has_processing=TRUE）
-    #     + 颜色 `2699-03暖米色` + `bulk_cut/2.8` 门幅 SKU（stock=500）+ 3 个加工项关联；
+    #   · 下单对象齐备 —— `mibao_eval_seed.sql`：prod_eval_2699（¥23.80）
+    #     + 颜色 `2699-03暖米色` + `bulk_cut/2.8` 门幅 SKU（stock=500）；
+    #   · 询问前提 = **店铺加工项目录非空**（#4371 解耦后不再依赖「商品绑了加工项」）：
+    #     mibao seed 的 `processing_items` 种子（刺绣工艺 等）即该前提。
     #   · 该链路**历史真跑通过** —— `docs/design/agent-production-gap-analysis.md`
     #     「验证：**OR-016 3/3 通过**（去重 → 下单流程完整）」（同名商品去重后下单走通）。
     must_succeed:
       - tool: order_create
     data_checks:
-      - "product_detail 返回 processing_items 非空时，生成订单确认卡之前必须主动询问加工项（interact(choice, multiSelect=true) 展示，透传 pageMeta 支持翻页；空则如实告知后继续）"
+      - "店铺加工项目录（processing_item_query）非空时，生成订单确认卡之前必须主动询问加工项（interact(choice, multiSelect=true) 展示，透传 pageMeta 支持翻页；目录为空则如实告知后继续）"
       - "用户选择加工项后，order_create 的 processing_info.processingItems 含 {id, name, unitPrice, quantity, unit, pricingMethod, subtotal}，processingFee 计入 subtotal（金额=面料小计+加工费）"
       - "一次性提交『已选加工项：A、B』→ 解析全部名称，禁止只取第一个；用户说『不需要加工项』才跳过"
     order_before:
@@ -1073,7 +1075,7 @@ cases:
         source: "2699系列雪尼尔窗帘面料"
         expect: 1
     skip_reason: ""
-    merge_log: "2026-09-08 新增（issue #3033 复盘 sess_7f27137647e14b1e）：A5 confirm 卡在加工项询问前弹出、金额 ¥238 不含加工费，用户质问后才补 A6；order.md 加工项段从被动式改主动式 + EXAMPLES 例 2 补加工项环节；2026-09-18 补前置自断言（#4082 的「改用例 PR」burn-down 硬门禁要求净缩 ≥1 条；先例 = #4091 给 OR-015 补的同款）：precondition[product_count_for_keyword「2699系列雪尼尔窗帘面料」expect=1]（按名定位下单对象，pre_clean 已按同关键词去重 ⇒ 捕获时恰为 1）；expectations/data_checks/order_before/pre_clean **原样未动**（未放宽、未删任何断言）；2026-09-18 下沉补齐（issue #4093 的 OR-016 条目 → 跟踪单 #4110，首跑指纹 `no_success(order_create) || order_before_missing(interact[choice:processing_items])`）：本单只补**效果层断言** `must_succeed[order_create]`（前半指纹此前无任何断言可判红）+ `persona: mibao`（清除 `CASE-TRUST-SINGLE-LEG-NO-PERSONA`；证据 = `eval_case_filter.is_customer_facing_case` docstring 点名本用例为店员代客下单语义 + `mibao_eval_seed.sql` 第 1 节「OR-016 点名」，且 C 端 seed 里该商品 0 件），precondition 系 #4082 批次已加、本次仅按 seed 真值复核 `expect=1`（mibao seed 该名商品恰 1 件）—— **断言只增不减**"
+    merge_log: "2026-09-08 新增（issue #3033 复盘 sess_7f27137647e14b1e）：A5 confirm 卡在加工项询问前弹出、金额 ¥238 不含加工费，用户质问后才补 A6；order.md 加工项段从被动式改主动式 + EXAMPLES 例 2 补加工项环节；2026-09-18 补前置自断言（#4082 的「改用例 PR」burn-down 硬门禁要求净缩 ≥1 条；先例 = #4091 给 OR-015 补的同款）：precondition[product_count_for_keyword「2699系列雪尼尔窗帘面料」expect=1]（按名定位下单对象，pre_clean 已按同关键词去重 ⇒ 捕获时恰为 1）；expectations/data_checks/order_before/pre_clean **原样未动**（未放宽、未删任何断言）；2026-09-18 下沉补齐（issue #4093 的 OR-016 条目 → 跟踪单 #4110，首跑指纹 `no_success(order_create) || order_before_missing(interact[choice:processing_items])`）：本单只补**效果层断言** `must_succeed[order_create]`（前半指纹此前无任何断言可判红）+ `persona: mibao`（清除 `CASE-TRUST-SINGLE-LEG-NO-PERSONA`；证据 = `eval_case_filter.is_customer_facing_case` docstring 点名本用例为店员代客下单语义 + `mibao_eval_seed.sql` 第 1 节「OR-016 点名」，且 C 端 seed 里该商品 0 件），precondition 系 #4082 批次已加、本次仅按 seed 真值复核 `expect=1`（mibao seed 该名商品恰 1 件）—— **断言只增不减**；2026-09-19（#4371 商品↔加工项解耦）：询问前提由「商品绑定加工项（product_detail 返回 processing_items 非空 / products.has_processing）」改为「**店铺加工项目录非空**」（加工项是店铺级目录，商品不再持有加工项）；同步改标题、`data_checks` 第 1 条、seed 可满足性注释（去掉 has_processing/加工项关联的引用）。`expectations` / `must_succeed` / `order_before` / `pre_clean` / `precondition` / `persona` **原样未动**（`interact[choice:processing_items]` 是 runner 的**卡片语义**判据 —— 卡仍要发，只是来源从商品改成目录）。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_prompt_snapshots.py"
@@ -1134,6 +1136,13 @@ cases:
     expectations:
       - tool: product_search
       - tool: product_detail
+      # ⚠️ 2026-09-19（#4371 商品↔加工项解耦）：**必须**先查店铺加工项目录再发多选卡 ——
+      # `product_detail` 不再返回 `processing_items`（商品不持有加工项），
+      # 加工项一律来自 `processing_item_query`（店铺级目录，不带商品分类参数）。
+      # 补这条断言同时是 C 端覆盖门禁的要求：`processing_item_query` 此前在 C 端腿
+      # 只由本用例的 `order_before`（`interact[choice:processing_items]`）间接锚定，
+      # 解耦后该卡来源变了，工具本身必须有**显式**期望，否则判「零覆盖」。
+      - tool: processing_item_query
       - tool: interact
         args:
           component: choice
@@ -1150,8 +1159,8 @@ cases:
         product_name: "夏日清风窗帘"
         checks: [unit_price, subtotal, total]
     data_checks:
-      - "product_search 列表数据不含 processing_items/colorId/skus，必须先调 product_detail 取详情；未调详情即断言「无加工项」属能力误宣"
-      - "加工项非空时 confirm 之前必须用 interact(choice, multiSelect=true) 主动询问，列出名称与单价（如「纳米圈打孔 ¥8/米」）"
+      - "product_search 列表数据不含 colorId/skus，必须先调 product_detail 取详情"
+      - "加工项是**店铺级目录**（#4371 解耦：product_detail 不再返回 processing_items）⇒ 必须调 processing_item_query 拿目录，再在 confirm 之前用 interact(choice, multiSelect=true) 主动询问，列出名称与单价（如「纳米圈打孔 ¥8/米」）"
       - "所选加工项写入 order_create 的 processing_info.processingItems（id/name/unitPrice/quantity/unit/pricingMethod/subtotal），合计写入 processingFee 且计入订单金额；按米计价项加工数量=面料米数"
       - "顾客说「不需要加工项」可跳过；加工项确实为空时才告知无可用加工项"
       - "C 端下单是**两步**：确认订单信息后还需手机验证码（order_create 的 sms_code，customer 角色必填）。用例必须提供验证码这一轮，否则 AI 停在第 5 步「请提供验证码」，order_create 永不发生（run 34622425044 实证：R7 顾客回「确认」后无任何工具调用）。dev/CI 栈已设 SMS_BYPASS_CODE=123456，此处用该码走真实校验分支。"
@@ -1167,7 +1176,7 @@ cases:
       - "无可用加工项"
       - "该商品无加工项"
     skip_reason: ""
-    merge_log: "2026-09-12（issue #3361）交互轮改协议轮（auto_select 答加工项多选卡 + auto_respond 答表单/确认/验证码）：原静态「确认」喂不进加工项 choice 卡 → agent 重发同卡、轮数耗尽、order_create 未发生。2026-09-11 新增（issue #3270 C 端加工项能力补齐）：实测修复前 agent 只调 product_search 未调 product_detail，向顾客断言「这款商品暂未查询到可选加工项」，而该商品实际有 2 个加工项（纳米圈打孔 ¥8/米、韩式波浪折边 ¥12/米）→ 顾客永远选不到加工项、加工费进不了单。修复后实测同输入已主动列出真实加工项与单价。forbidden_text 锁定「凭列表错报无加工项」这一确定性反模式"
+    merge_log: "2026-09-12（issue #3361）交互轮改协议轮（auto_select 答加工项多选卡 + auto_respond 答表单/确认/验证码）：原静态「确认」喂不进加工项 choice 卡 → agent 重发同卡、轮数耗尽、order_create 未发生。2026-09-11 新增（issue #3270 C 端加工项能力补齐）：实测修复前 agent 只调 product_search 未调 product_detail，向顾客断言「这款商品暂未查询到可选加工项」，而该商品实际有 2 个加工项（纳米圈打孔 ¥8/米、韩式波浪折边 ¥12/米）→ 顾客永远选不到加工项、加工费进不了单。修复后实测同输入已主动列出真实加工项与单价。forbidden_text 锁定「凭列表错报无加工项」这一确定性反模式。2026-09-19（#4371 商品↔加工项解耦）：加工项来源由 `product_detail.processing_items` 改为**店铺级目录** `processing_item_query`（商品不再持有加工项）⇒ `expectations` 补 `processing_item_query`（显式期望；同时满足 C 端工具覆盖门禁）、`data_checks` 第 1/2 条同步改判（去掉 processing_items 的引用）；`user_inputs` / `order_before` / `must_succeed` / `amount_verify` / `forbidden_text` 原样未动（卡仍要发，只是来源从商品改成目录）。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_customer_order_processing_item.py"

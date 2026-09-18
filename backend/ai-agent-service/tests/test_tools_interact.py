@@ -1,5 +1,5 @@
 """InteractTool 单元测试 — 生成交互组件，无 API 调用"""
-# case_ids: PP-001, PR-010, CH-019, UI-043
+# case_ids: PR-010, CH-019, UI-043
 import pytest
 import json
 from app.tools.interact import InteractTool

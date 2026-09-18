@@ -79,7 +79,10 @@ KNOWN_REGISTERED_TOOLS: frozenset[str] = frozenset({
     # 正是「注册行被注释掉 ⇒ 解析集合少一个」这条摩擦的实例）
     "processing_order_generate", "processing_order_query", "processing_order_update",
     "product_detail", "product_manage",
-    "product_processing_item_manage", "product_search", "product_update",
+    # ⚠️ 2026-09-19（#4371 商品↔加工项解耦）：`product_processing_item_manage`（给**商品**
+    # 增删加工项）**已从注册表与工具文件删除** —— 商品不再持有加工项（加工项是店铺级目录）。
+    # 本名单是「解析器没坏」的自证集合，工具删了就必须同步（这正是想要的摩擦）。
+    "product_search", "product_update",
     "production_progress_query", "role_manage", "session_manage", "settings_manage",
     "sku_update", "validate_input",
     # 收款二维码查询（issue #4085 第 1 项）：只读 ⇒ **不进** taxonomy 的 `WRITE_TOOLS`

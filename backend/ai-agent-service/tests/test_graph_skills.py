@@ -1,3 +1,4 @@
+# case_ids: PR-008
 """
 LangGraph Skill 节点测试
 
@@ -1036,7 +1037,7 @@ class TestCustomerSkillPendingLock:
              patch("app.graph.skills.base_skill.get_skill_llm") as get_llm, \
              patch("app.graph.skills.base_skill.create_skill_registry") as create_reg, \
              patch("app.graph.skills.base_skill.set_tool_context"):
-            from app.tools.product_detail import ProductDetailTool
+            from app.tools.processing_item_query import ProcessingItemQueryTool
             from app.tools.interact import InteractTool
             registry = MagicMock()
             registry.get_langchain_tools.return_value = []
@@ -1302,10 +1303,13 @@ class TestConfirmGateGuidance:
 class TestProcessingItemsFallback:
     """加工项漏问代码兜底（OR-017 抖动根因，模式 C 代码管）
 
-    业务铁律「商品有加工项 → confirm 前必须先问」只在 prompt/工具描述里时，
+    业务铁律「店铺有加工项 → confirm 前必须先问」只在 prompt/工具描述里时，
     约 1/3 轮次 LLM 会漏掉（CI 实证 run 34622425044 ✅ / 34626024229 ❌ /
     34662285260 ❌，**同代码同用例**）。本兜底把「先问加工项」变成**确定性**：
     检测到 confirm 卡而加工项未问 → 把该卡改写为加工项 choice 卡。
+
+    issue #4371（商品↔加工项解耦）：事实源由 `product_detail.processing_items`
+    改为**店铺级目录** `processing_item_query`（商品上不再持有加工项）。
     """
 
     def _result(self, name, data, success=True):
@@ -1314,9 +1318,10 @@ class TestProcessingItemsFallback:
                 {"success": success, "data": data})
 
     def _detail_msg(self, items):
-        payload = {"success": True, "data": {"processing_items": items}}
+        """店铺加工项目录查询结果（解耦后的唯一事实源）。"""
+        payload = {"success": True, "data": {"items": items, "total": len(items)}}
         return ToolMessage(content=json.dumps(payload, ensure_ascii=False),
-                           tool_call_id="d1", name="product_detail")
+                           tool_call_id="d1", name="processing_item_query")
 
     def _user(self, text):
         return HumanMessage(content=text)
@@ -1363,10 +1368,10 @@ class TestProcessingItemsFallback:
         confirm = self._result("interact", {"component": "confirm", "fields": []})
         plan = lr2._plan_processing_items_rewrite(
             [confirm], [self._user("确认下单")])
-        assert plan is None, "没有加工项数据不得改写"
+        assert plan is None, "没有加工项目录数据不得改写"
 
     def test_rewrite_works_cross_turn(self):
-        """product_detail 与 confirm 跨轮（OR-017 实测形态：R1 查详情、R2 发卡）"""
+        """processing_item_query 与 confirm 跨轮（OR-017 实测形态：R1 查目录、R2 发卡）"""
         items = [{"id": "pi1", "name": "打孔", "unitPrice": 8.0},
                  {"id": "pi2", "name": "折边", "unitPrice": 12.0}]
         confirm = self._result("interact", {"component": "confirm", "fields": []})
@@ -1429,7 +1434,7 @@ class TestProcessingItemsFallback:
         msgs = [self._user("帮我下单，遮光窗帘 3 米，要打孔加工"), self._detail_msg(items),
                 self._user("确认下单")]
         plan = lr2._plan_processing_items_rewrite([confirm], msgs)
-        assert plan is not None, "需求前置（detail 之前提到）不算已作答 → 仍要摆加工项"
+        assert plan is not None, "需求前置（查目录之前提到）不算已作答 → 仍要摆加工项"
 
     def test_rewrite_fires_when_user_text_unrelated(self):
         """detail 之后顾客只说了数量/确认，没提加工项 → 仍要问（不得因新判据漏问）。"""
@@ -1460,9 +1465,9 @@ class TestProcessingItemsFallbackWiring:
                   "pricingMethod": "per_meter"}]
 
         async def fake_execute(tool, args, ctx, state):
-            if tool.name == "product_detail":
-                return (json.dumps({"success": True, "data": {"processing_items": items}}),
-                        {"success": True, "data": {"processing_items": items}})
+            if tool.name == "processing_item_query":
+                return (json.dumps({"success": True, "data": {"items": items, "total": len(items)}}),
+                        {"success": True, "data": {"items": items, "total": len(items)}})
             if tool.name == "interact":
                 return (json.dumps({"success": True,
                                     "data": {"component": "confirm", "fields": []}}),
@@ -1475,7 +1480,7 @@ class TestProcessingItemsFallbackWiring:
              patch("app.graph.skills.base_skill.create_skill_registry") as create_reg, \
              patch("app.graph.skills.base_skill.set_tool_context"), \
              patch("app.graph.skills.base_skill._execute_tool_safe", fake_execute):
-            from app.tools.product_detail import ProductDetailTool
+            from app.tools.processing_item_query import ProcessingItemQueryTool
             from app.tools.interact import InteractTool
             from app.tools.registry import get_tool_registry
             registry = MagicMock()
@@ -1489,7 +1494,7 @@ class TestProcessingItemsFallbackWiring:
             assert _order_create is not None, "全局注册表里没有 order_create —— 替身无法建模事实"
             registry.get_all_tools.return_value = [_order_create]
             registry.get_tool.side_effect = lambda n: {
-                "product_detail": ProductDetailTool(),
+                "processing_item_query": ProcessingItemQueryTool(),
                 "interact": InteractTool(),
                 "order_create": _order_create,
             }.get(n)
@@ -1503,7 +1508,7 @@ class TestProcessingItemsFallbackWiring:
             breaker.call = _passthrough
             get_breaker.return_value = breaker
 
-            # 第 1 次 LLM 调用：product_detail；第 2 次：interact(confirm)；第 3 次：收尾文本
+            # 第 1 次 LLM 调用：processing_item_query（店铺加工项目录）；第 2 次：interact(confirm)；第 3 次：收尾文本
             def make_call(name, args):
                 m = MagicMock(spec=_AI)
                 m.content = ""
@@ -1517,7 +1522,7 @@ class TestProcessingItemsFallbackWiring:
             llm = MagicMock()
             llm.bind_tools.return_value = llm
             llm.ainvoke = AsyncMock(side_effect=[
-                make_call("product_detail", {"id": "prod_x"}),
+                make_call("processing_item_query", {}),
                 make_call("interact", {"component": "confirm", "fields": []}),
                 final,
             ])
@@ -1527,12 +1532,12 @@ class TestProcessingItemsFallbackWiring:
             state = _make_state(messages=[
                 HumanMessage(content="我要买夏日清风窗帘，确认下单"),
                 ToolMessage(content=json.dumps({"success": True,
-                                                "data": {"processing_items": items}}),
-                            tool_call_id="d0", name="product_detail"),
+                                                "data": {"items": items, "total": len(items)}}),
+                            tool_call_id="d0", name="processing_item_query"),
             ])
             return asyncio.run(execute_skill(
                 state=state, skill_name="customer_order",
-                tool_names=["product_detail", "interact"],
+                tool_names=["processing_item_query", "interact"],
                 system_prompt="你是小布",
             ))
 
@@ -4578,11 +4583,16 @@ class TestProcessingItemsAskedPersistsCrossTurn:
                 seen["commits"].append(dict(new_full))
                 full.clear(); full.update(new_full)
 
+        # issue #4371：商品详情不再持有加工项 ⇒ 兜底事实源是店铺级目录查询结果；
+        # product_detail 仍保留（记账键 `processing_items_asked` 按商品 id 记账，读它的 id）。
         detail = ToolMessage(
             content=_json.dumps({"success": True, "data": {
-                "id": product_id, "name": "夏日清风窗帘",
-                "processing_items": self._ITEMS}}, ensure_ascii=False),
+                "id": product_id, "name": "夏日清风窗帘"}}, ensure_ascii=False),
             tool_call_id="d1", name="product_detail")
+        catalog = ToolMessage(
+            content=_json.dumps({"success": True, "data": {
+                "items": self._ITEMS, "total": len(self._ITEMS)}}, ensure_ascii=False),
+            tool_call_id="d2", name="processing_item_query")
 
         with patch("app.memory.session_memory.SessionMemory"), \
              patch("app.graph.skills.base_skill.get_breaker") as get_breaker, \
@@ -4626,7 +4636,7 @@ class TestProcessingItemsAskedPersistsCrossTurn:
             llm.ainvoke = AsyncMock(side_effect=[call, final])
             get_llm.return_value = llm
             res = asyncio.run(execute_skill(
-                state=_make_state(messages=[HumanMessage(content="帮我下单"), detail]),
+                state=_make_state(messages=[HumanMessage(content="帮我下单"), detail, catalog]),
                 skill_name="customer_order",
                 tool_names=["interact"], system_prompt="p"))
         cards = []

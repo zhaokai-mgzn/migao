@@ -21,7 +21,7 @@ PR 门禁外壳。两者若只被「真实用例库」间接覆盖，就有典�
 见本文件末尾 `TestRedProofRecord.test_red_proof_before_gate_is_documented` 锁定的
 `.github/case-trust-redproof.md`：**补前必红 / 补后绿**的原文逐字留档，防止红证被事后改写。
 """
-# case_ids: CU-003, PG-013, PR-021, CH-009, CH-016, OR-012, CH-011, PR-008, PR-016, CH-005
+# case_ids: CU-003, PG-013, PR-021, CH-009, CH-016, OR-012, CH-011, PR-008, CH-005
 import copy
 import json
 import subprocess
@@ -678,10 +678,13 @@ class TestSelfTargetMaxGrowth:
     未在 normal 两条腿的执行集里 ⇒ 一跑即红）。
     """
 
-    #: 三条实例（全库 `expect: 0` 的建品前置只有这三条，判据面无第二份口径）
+    #: 实例（全库 `expect: 0` 的建品前置，判据面无第二份口径）
+    #: ⚠️ 原三条中的 `PR-016`（「E2E建品流程样品帘」）已随 #4371 商品↔加工项解耦**整条用例删除**
+    #: （其全部语义建立在"商品持有加工项 + 按适用分类过滤"之上）⇒ 实例集随之收缩到两条。
+    #: 判据面**未放宽**：`self_target_missing_max_growth` 仍扫**全库**（`test_real_library_has_no_self_target_violation`），
+    #: 这里的两条只是"已修实例"的抽样锁。
     INSTANCES = {
         "PR-008": "测试窗帘A",
-        "PR-016": "E2E建品流程样品帘",
         "CH-005": "星夜",
     }
 
@@ -776,17 +779,17 @@ class TestSelfTargetMaxGrowth:
 
     # ── 库级回归锁（三条实例已修 + 未放宽）──────────────────────────────────
     def test_real_library_has_no_self_target_violation(self):
-        """**全库**不得再有本码违规（三条实例已修 ⇒ 新规则存量清零，不是新增豁免）。"""
+        """**全库**不得再有本码违规（实例已修 ⇒ 新规则存量清零，不是新增豁免）。"""
         live = {cid: c for cid, c in self._real_cases().items()}
         assert set(self.INSTANCES) <= set(live), (
-            f"三条实例消失了：{sorted(set(self.INSTANCES) - set(live))}"
+            f"已修实例消失了：{sorted(set(self.INSTANCES) - set(live))}"
         )
         hits = sorted(cid for cid, c in live.items()
                       if "CASE-TRUST-SELF-TARGET-NO-MAX-GROWTH" in codes(
                           tax.judge_case(c, catalog=_seed_catalog())))
         assert hits == [], f"全库仍有自建目标缺 max_growth 的用例：{hits}"
 
-    @pytest.mark.parametrize("cid", ["PR-008", "PR-016", "CH-005"])
+    @pytest.mark.parametrize("cid", ["PR-008", "CH-005"])
     def test_instance_fix_keeps_the_assertions_strong(self, cid):
         """**不得放宽**：三条实例修的是「自建容忍度」，不是判据强度。
 

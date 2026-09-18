@@ -3,29 +3,9 @@
 import { useEffect, useState, useCallback, Fragment } from 'react'
 import { Plus } from 'lucide-react'
 import { toast } from 'sonner'
-import { processingItemApi, processingCategoryApi, categoryApi } from '@/lib/api'
+import { processingItemApi, processingCategoryApi } from '@/lib/api'
 import { Modal, Button } from '@/components/ui'
-import type { ProcessingItem, ProcessingCategory, PricingMethod, Category } from '@/types'
-
-// 扁平化分类树为 checkbox 选项
-function flattenCategories(
-  categories: Category[],
-  level = 0
-): { value: string; label: string; indent: number }[] {
-  const result: { value: string; label: string; indent: number }[] = []
-  for (const cat of categories) {
-    const prefix = '  '.repeat(level)
-    result.push({
-      value: cat.id,
-      label: `${prefix}${level > 0 ? '└ ' : ''}${cat.name}`,
-      indent: level,
-    })
-    if (cat.children && cat.children.length > 0) {
-      result.push(...flattenCategories(cat.children, level + 1))
-    }
-  }
-  return result
-}
+import type { ProcessingItem, ProcessingCategory, PricingMethod } from '@/types'
 
 // 弹窗内表单数据
 interface FormData {
@@ -36,7 +16,6 @@ interface FormData {
   discountQty: string
   discountRate: string
   categoryId: string
-  applicableProductCategories: string[]
 }
 
 // 计价方式 → 单位映射
@@ -75,14 +54,11 @@ const EMPTY_FORM: FormData = {
   discountQty: '2',
   discountRate: '',
   categoryId: '',
-  applicableProductCategories: [],
 }
 
 export default function ProcessingPage() {
   const [items, setItems] = useState<ProcessingItem[]>([])
   const [categories, setCategories] = useState<ProcessingCategory[]>([])
-  const [productCategories, setProductCategories] = useState<Category[]>([])
-  const [catOptions, setCatOptions] = useState<{ value: string; label: string; indent: number }[]>([])
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
 
@@ -100,17 +76,13 @@ export default function ProcessingPage() {
   const loadData = useCallback(async () => {
     setLoading(true)
     try {
-      const [itemsRes, catsRes, prodCatsRes] = await Promise.all([
+      const [itemsRes, catsRes] = await Promise.all([
         processingItemApi.getProcessingItems({ page: 1, size: 999 }),
         processingCategoryApi.getProcessingCategories(),
-        categoryApi.getCategories(),
       ])
       const pageData = itemsRes.data?.data
       setItems(pageData?.items || [])
       setCategories(catsRes.data?.data || [])
-      const prodCats = prodCatsRes.data?.data || []
-      setProductCategories(prodCats)
-      setCatOptions(flattenCategories(prodCats))
     } catch (error) {
       console.error('加载数据失败:', error)
       toast.error('加载数据失败')
@@ -143,7 +115,6 @@ export default function ProcessingPage() {
       discountQty: '2',
       discountRate: '',
       categoryId: item.categoryId || categories[0]?.id || '',
-      applicableProductCategories: item.applicableProductCategories || [],
     })
     setErrors({})
     setFormOpen(true)
@@ -239,7 +210,6 @@ export default function ProcessingPage() {
         unitPrice: parseFloat(form.unitPrice),
         unit: PRICING_UNIT_MAP[pricingMethod] || '套',
         status: 'active' as const,
-        applicableProductCategories: form.applicableProductCategories,
       }
 
       if (editingId) {
@@ -287,18 +257,6 @@ export default function ProcessingPage() {
     return opt?.label || method
   }
 
-  // 适用商品分类列展示：ID → 名称（分类树多选，多个逗号分隔）；未配置 = 适用所有分类（issue #2964）
-  const getApplicableCategoryLabels = (categories: string[] | undefined) => {
-    const ids = categories || []
-    if (ids.length === 0) return '适用所有分类'
-    return ids
-      .map((id) => {
-        const opt = catOptions.find((o) => o.value === id)
-        return opt ? opt.label.trim() : id
-      })
-      .join('、')
-  }
-
   return (
     <div className="p-6">
       {/* 页面标题 */}
@@ -330,9 +288,6 @@ export default function ProcessingPage() {
               <th className="px-4 py-3 text-left text-sm font-semibold text-neutral-900 w-[18%] whitespace-nowrap">
                 加工项计价方式
               </th>
-              <th className="px-4 py-3 text-left text-sm font-semibold text-neutral-900 w-[20%] whitespace-nowrap">
-                适用商品分类
-              </th>
               <th className="px-4 py-3 text-left text-sm font-semibold text-neutral-900 w-[10%] whitespace-nowrap">
                 操作
               </th>
@@ -341,7 +296,7 @@ export default function ProcessingPage() {
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={5} className="px-4 py-12 text-center text-neutral-500">
+                <td colSpan={4} className="px-4 py-12 text-center text-neutral-500">
                   <div className="flex items-center justify-center gap-2">
                     <div className="w-5 h-5 border-2 border-primary-600 border-t-transparent rounded-full animate-spin" />
                     加载中...
@@ -350,7 +305,7 @@ export default function ProcessingPage() {
               </tr>
             ) : items.length === 0 ? (
               <tr>
-                <td colSpan={5} className="px-4 py-12 text-center text-sm text-neutral-400">
+                <td colSpan={4} className="px-4 py-12 text-center text-sm text-neutral-400">
                   暂无加工项，点击右上角「新增加工项」开始创建
                 </td>
               </tr>
@@ -364,9 +319,6 @@ export default function ProcessingPage() {
                     </td>
                     <td className="px-4 py-3 text-sm text-neutral-900">
                       {getPricingMethodLabel(item.pricingMethod || '')}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-neutral-600">
-                      {getApplicableCategoryLabels(item.applicableProductCategories)}
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-3 whitespace-nowrap">
@@ -571,49 +523,6 @@ export default function ProcessingPage() {
                 </div>
               </div>
             )}
-          </div>
-
-          {/* 适用商品分类 */}
-          <div className="space-y-2">
-            <label className="block text-sm font-medium text-neutral-800">适用商品分类</label>
-            <div className="max-h-40 overflow-y-auto border border-neutral-200 rounded-lg p-2 space-y-1">
-              {catOptions.map((opt) => (
-                <label
-                  key={opt.value}
-                  className="flex items-center gap-2 text-sm hover:bg-neutral-50 px-1 py-0.5 rounded cursor-pointer"
-                >
-                  <input
-                    type="checkbox"
-                    checked={form.applicableProductCategories.includes(opt.value)}
-                    onChange={(e) => {
-                      const current = form.applicableProductCategories
-                      if (e.target.checked) {
-                        setForm({
-                          ...form,
-                          applicableProductCategories: [...current, opt.value],
-                        })
-                      } else {
-                        setForm({
-                          ...form,
-                          applicableProductCategories: current.filter((id) => id !== opt.value),
-                        })
-                      }
-                    }}
-                    className="rounded border-neutral-300 text-primary-600 focus:ring-primary-500"
-                  />
-                  <span
-                    className="text-neutral-700"
-                    style={{ paddingLeft: `${opt.indent * 12}px` }}
-                  >
-                    {opt.label.trim()}
-                  </span>
-                </label>
-              ))}
-              {catOptions.length === 0 && (
-                <p className="text-neutral-400 text-xs py-1">暂无商品分类</p>
-              )}
-            </div>
-            <p className="text-xs text-neutral-400">不选则适用所有商品分类</p>
           </div>
         </div>
       </Modal>

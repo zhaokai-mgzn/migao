@@ -1,4 +1,4 @@
-// case_ids: CH-001, CH-002, CH-010, PP-001, CH-027, CH-028, UI-030
+// case_ids: CH-001, CH-002, CH-010, CH-027, CH-028, UI-030
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { act } from '@testing-library/react'
 

@@ -1,6 +1,6 @@
 """
 跨模块 payload 契约门禁：ai-agent 下发的 payload 键 ⊆ admin-api 接收端可读键
-# case_ids: UT-001, ON-003, AS-004, PR-002, PR-019, PR-020, PP-006, HR-001, CU-004, ST-004
+# case_ids: UT-001, ON-003, AS-004, PR-002, PR-019, PP-006, HR-001, CU-004, ST-004
 
 ① 契约层（docs/testing/interaction-verification.md「① 契约层」）：确定性、零 LLM、零网络。
 静态解析 Python 工具源码的 payload 构造 + 静态解析 Java controller/DTO 源码的接收字段，

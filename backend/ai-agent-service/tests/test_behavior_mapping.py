@@ -1,4 +1,4 @@
-# case_ids: OR-016, OR-028, AS-007, PR-019, PR-020, CH-010, CU-003, CU-004, HR-001, HR-005, ST-003, ST-005, DA-004, FN-001, PP-002, PP-006, PP-001, PP-003, PG-017, CH-013, CH-014, CH-015, CH-008
+# case_ids: OR-016, OR-028, AS-007, PR-019, CH-010, CU-003, CU-004, HR-001, HR-005, ST-003, ST-005, DA-004, FN-001, PP-002, PP-006, PG-017, CH-013, CH-014, CH-015, CH-008
 """行为改动 diff → 用例映射单测（tests/agent_eval/behavior_mapping.py，issue #3502）。
 
 被测契约（详见模块 docstring）：
@@ -89,7 +89,7 @@ class TestRuleHits:
         ("backend/ai-agent-service/app/tools/order_create.py", ["OR-016", "OR-028"]),
         ("backend/ai-agent-service/app/tools/order_query.py", ["OR-016", "OR-028"]),
         (AFTERSALES_PATH, ["AS-007"]),
-        (PRODUCT_PATH, ["PR-019", "PR-020"]),
+        (PRODUCT_PATH, ["PR-019"]),
         (CARD_PATH, ["CH-010", "CH-019"]),
         (VISION_PATH, ["CH-021", "CH-026"]),
         (GUARD_PATH, ["DF-011", "DF-012"]),
@@ -212,7 +212,7 @@ class TestProcessingDomainRules:
     """#3624 缺口③：加工项目录（PP-*）与加工单生成（PG-*）此前无规则。
 
     实证（#3591 收口）：改 `processing_item_manage.py`，映射推出的却是
-    **PR-019/PR-020（商品建品价格）** —— 根因是 product 规则的 `processing_item`
+    **PR-019（商品建品价格）** —— 根因是 product 规则的 `processing_item`
     关键词把加工项目录文件吞进商品域（union 里也没有任何 PP-*），加工项目录自己的
     用例一条没跑（#3511 的旁路同型：规则的**关键词**比意图宽 → 映射到无因果的用例）。
     """
@@ -226,18 +226,22 @@ class TestProcessingDomainRules:
 
     @pytest.mark.parametrize("path", [PROCESSING_ITEM_MANAGE_PATH, PROCESSING_ITEM_QUERY_PATH])
     def test_processing_item_library_no_longer_maps_to_product_cases(self, path):
-        """改加工项目录**不得**再映射到商品建品价格用例（PR-019/PR-020 断言的是
+        """改加工项目录**不得**再映射到商品建品价格用例（PR-019 断言的是
         `product_manage(action=create)`，与目录 CRUD 无因果 —— 那就是假阻塞）。"""
         cases = bm.map_changed_files_to_case_ids([path])
-        assert "PR-019" not in cases and "PR-020" not in cases
+        assert "PR-019" not in cases
 
-    def test_product_side_processing_item_maps_to_product_and_direct_cases(self):
-        """收窄关键词不得丢规则，且 #3658 起并集补锚直测用例：商品侧加工项挂载 Tool 仍走
-        商品域（PR-019/PR-020，#3624 决策），**同时**补锚直接行使它的 PP-001（normal，
-        `product_processing_item_manage(action=add)`）/ PP-003（adversarial，confirm 卡 + add）。
+    def test_product_side_processing_item_binding_is_gone(self):
+        """issue #4371（商品↔加工项解耦）：**商品侧加工项挂载**已退场。
+
+        旧形态：`product_processing_item_manage.py`（给**商品**挂加工项）映射到
+        商品域 PR-019 + 直测 PP-001/PP-003。该工具与 PR-020 用例已随解耦一并删除，
+        映射表里也不再有「商品侧加工项」规则桶 —— 此路径现落**兜底网**（不静默跳过）。
         """
-        assert bm.map_changed_files_to_case_ids([PRODUCT_PROCESSING_ITEM_PATH]) == [
-            "PP-001", "PP-003", "PR-019", "PR-020"]
+        assert not (REPO_ROOT / PRODUCT_PROCESSING_ITEM_PATH).exists(), (
+            "商品侧加工项挂载工具已退场，不得复活")
+        assert bm.map_changed_files_with_source([PRODUCT_PROCESSING_ITEM_PATH]) == (
+            bm.DEFAULT_BEHAVIOR_CASES, "default_net")
 
     def test_order_prompt_change_maps_to_pg017(self):
         """改 prompts/order.md（加工项 vs 加工单概念区分口径，#3917）→ PG-017 进强信号集。
@@ -464,7 +468,7 @@ class TestOrderingStability:
     def test_rule_declaration_order_does_not_leak_into_output(self):
         """结果按用例 ID 字典序（不是 MAPPING_RULES 的声明序）——写死期望值锁住口径。"""
         result = bm.map_changed_files_to_case_ids([GUARD_PATH, PRODUCT_PATH])
-        assert result == ["DF-011", "DF-012", "PR-019", "PR-020"]
+        assert result == ["DF-011", "DF-012", "PR-019"]
 
 
 class TestMappingSource:

@@ -226,8 +226,6 @@ class SecurityConfigTest {
     @MockBean
     private com.migao.admin.mapper.ProductAttributeMapper productAttributeMapper;
     @MockBean
-    private com.migao.admin.mapper.ProductProcessingItemMapper productProcessingItemMapper;
-    @MockBean
     private com.migao.admin.mapper.RoleMapper roleMapper;
     @MockBean
     private com.migao.admin.mapper.SessionMapper sessionMapper;

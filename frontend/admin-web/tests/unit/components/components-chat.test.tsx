@@ -1,4 +1,4 @@
-// case_ids: CH-001, CH-002, CH-003, UI-006, UI-017, PP-001, PR-010, UI-030, UI-031, UI-032
+// case_ids: CH-001, CH-002, CH-003, UI-006, UI-017, PR-010, UI-030, UI-031, UI-032
 /**
  * components/chat 覆盖率补全 — Issue #567
  *

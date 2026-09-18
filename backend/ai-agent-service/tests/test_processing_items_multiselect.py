@@ -1,9 +1,9 @@
-"""加工项 choice 卡 multiSelect 自动补齐纯函数单测（模式 C 代码兜底，PR-014/015）。
+"""加工项 choice 卡 multiSelect 自动补齐纯函数单测（模式 C 代码兜底）。
 
 背景：prompt 已写「加工项选择必须 multiSelect=true」，但 LLM 仍漏传（🧬不稳定），
 加工项选择器退化成单选，多选流程断裂。设计标准 §3「改 3 次 prompt 修不好 → 代码管」。
 """
-# case_ids: PR-014, PR-015, PR-016
+# case_ids: OR-017, CH-010
 import importlib.util
 from pathlib import Path
 

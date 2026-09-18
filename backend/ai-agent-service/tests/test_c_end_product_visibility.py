@@ -5,7 +5,7 @@ C 端商品可见性单元测试（issue #3932）
 不得出现在 product_search 结果、product_detail 详情、C 端商品客服提示词中；
 B 端（admin 等商户角色）保持现状——能看到自己店铺全状态商品。
 """
-# case_ids: PR-001, PR-002, PR-007, PR-009, CH-001, PR-003, PR-019, PR-020
+# case_ids: PR-001, PR-002, PR-007, PR-009, CH-001, PR-003, PR-019
 
 import pytest
 from unittest.mock import patch, AsyncMock

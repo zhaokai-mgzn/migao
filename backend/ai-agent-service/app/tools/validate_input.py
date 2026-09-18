@@ -22,7 +22,6 @@ _VALIDATION_RULES: Dict[str, Dict[str, Any]] = {
             "stock_quantity": {"type": int, "min": 0, "label": "库存数量"},
             "category_id": {"type": str, "label": "分类ID"},
             "description": {"type": str, "label": "描述"},
-            "processing_item_ids": {"type": list, "label": "加工项ID列表"},
             "status": {"type": str, "label": "商品状态(on_sale/off_sale)"},
         },
         "update": {
@@ -45,18 +44,6 @@ _VALIDATION_RULES: Dict[str, Dict[str, Any]] = {
             "items": {"type": list, "min_len": 1, "label": "商品明细"},
             "customer_address": {"type": str, "label": "收货地址"},
             "remark": {"type": str, "label": "备注"},
-        },
-    },
-    "product_processing_item_manage": {
-        "add": {
-            "required": ["product_id", "item_ids"],
-            "product_id": {"type": str, "min_len": 1, "label": "商品ID（支持名称/UUID/序号）"},
-            "item_ids": {"type": list, "min_len": 1, "label": "加工项ID列表（支持名称/UUID/序号）"},
-        },
-        "remove": {
-            "required": ["product_id", "item_ids"],
-            "product_id": {"type": str, "min_len": 1, "label": "商品ID（支持名称/UUID/序号）"},
-            "item_ids": {"type": list, "min_len": 1, "label": "加工项ID列表（支持名称/UUID/序号）"},
         },
     },
     "order_manage": {
@@ -700,24 +687,13 @@ class ValidateInputTool(BaseTool):
                         f"请输入 11 位中国大陆手机号（1 开头）。"
                     )
 
-        # 5. 加工项ID格式检查
-        pids = params.get("processing_item_ids")
-        if pids and isinstance(pids, list):
-            for pid in pids:
-                pid_str = str(pid).strip()
-                # 纯数字 → 拒绝，引导LLM使用真实UUID
-                if pid_str.isdigit():
-                    issues.append(
-                        f"加工项ID \"{pid_str}\" 是序号而非真实ID。"
-                        f"请使用 processing_item_query 返回的真实ID（如 pi_xxxxxxxxxxxxxxxx），"
-                        f"不要使用行号/序号。"
-                    )
-                # 非数字非 UUID 格式的 ID — 宽松通过（processing_item_query 返回的 ID 格式多样）
-
-        # 6. 建品参数确定性兜底（issue #3052，2026-09-08 Round2 实拍）：
+        # 5. 建品参数确定性兜底（issue #3052，2026-09-08 Round2 实拍）：
         #    prompt 指令会被 LLM 方差漏掉 → validate_input 必须成为确定性闸门
         #    - specifications 键必须存在（用户明确拒绝规格时传空对象 {}）
-        #    - 选了加工项 → processing_item_configs 必须存在且每项含 customPrice+unit
+        #    （原「选了加工项 → processing_item_configs 必须存在」与「加工项ID格式检查」两道
+        #     已随 issue #4371「商品↔加工项解耦」整体删除：product_manage(create) 不再有
+        #     加工项参数，加工项是店铺级目录，下单时随 processing_info.processingItems 走，
+        #     其闸门是下面第 6 条的加工费一致性兜底。）
         if target_tool == "product_manage" and target_action == "create":
             if "specifications" not in params:
                 issues.append(
@@ -725,30 +701,8 @@ class ValidateInputTool(BaseTool):
                     "\"工艺\":\"色织\",\"风格\":\"现代简约\",\"图案\":\"纯色\"}；"
                     "用户明确表示不需要规格时传空对象 {}）"
                 )
-            pcs = params.get("processing_item_configs")
-            if (pids and isinstance(pids, list) and pids) or (pcs and isinstance(pcs, list) and pcs):
-                if not pcs or not isinstance(pcs, list) or not pcs:
-                    issues.append(
-                        "选了加工项但未传 processing_item_configs（必须为列表，每项含 "
-                        "{processingItemId, customPrice}；customPrice 取 processing_item_query 返回的 unit_price）"
-                    )
-                else:
-                    for pc in pcs:
-                        if not isinstance(pc, dict):
-                            issues.append("processing_item_configs 元素必须是对象")
-                            break
-                        if not (pc.get("customPrice") or pc.get("unit_price")):
-                            issues.append(
-                                f"processing_item_configs 缺价格 customPrice/unit_price: {str(pc)[:100]}"
-                            )
-                            break
-                        # ⚠️ 不再要求 `unit`（issue #3566 核查）：契约里**没有**这个字段——
-                        # agent 路径 `AgentProductCreateRequest.AgentProcessingItemConfig`
-                        # 只有 processingItemId + customPrice（`AgentProductCreateRequest.java:88-93`），
-                        # 表单路径 `ProcessingItemConfigInput.java:12-22` 同。旧规则逼 LLM
-                        # 编一个接收侧不读的键（Jackson 静默丢弃）=「下发字段接收侧不读」同型缺陷。
 
-        # 7. 下单加工费一致性兜底（issue #3521，与上面 #3052 同一理由：
+        # 6. 下单加工费一致性兜底（issue #3521，与上面 #3052 同一理由：
         #    prompt 指令会被 LLM 方差漏掉 → validate_input 必须是确定性闸门）。
         #    服务端 OrderService.sumProcessingFee() 只按 `processingItems[i].unitPrice × quantity`
         #    计总额（Java 侧 brief.amount 就是这两个字段相乘），**`processingFee` 字段不参与**。
@@ -830,11 +784,6 @@ class ValidateInputTool(BaseTool):
         summary_lines.append("")
         summary_lines.append("> ⚠️ 请逐项核对以上参数是否与你向用户确认的内容一致。")
         summary_lines.append("> 如有遗漏（如少了某个售卖方式/颜色/门幅），请立即修正参数后重新校验。")
-        # product_manage.create 加工项遗漏提醒
-        if target_tool == "product_manage" and target_action == "create":
-            pids = params.get("processing_item_ids")
-            if not pids:
-                summary_lines.append("> ⚠️ 未传入 processing_item_ids，如用户已选加工项请务必添加")
         summary_lines.append(f"> 确认无误后，立即调用 {target_tool}(action='{target_action}', ...) 执行。")
         summary = "\n".join(summary_lines)
 

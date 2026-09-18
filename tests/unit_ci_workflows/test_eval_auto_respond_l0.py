@@ -1,4 +1,4 @@
-# case_ids: OR-014, OR-022, OR-024, CR-003, PR-019, OR-023, PR-016, OR-026, OR-029
+# case_ids: OR-014, OR-022, OR-024, CR-003, PR-019, OR-023, OR-026, OR-029
 """**L0** 守卫：`resolve_auto_respond` 的载荷窗口 + `resolve_repeat_turn` 的载荷饿死 + 形状不兼容签名。
 
 ## 为什么单列一个 L0 文件（issue #3804 验收标准 2）
