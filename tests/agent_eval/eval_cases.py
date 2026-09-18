@@ -3904,16 +3904,16 @@ _CASE_OR_031 = EvalCase(
     precondition=[{'type': 'product_count_for_keyword', 'source': '遮光窗帘', 'expect': 1}],
 )
 
-# ── PG-001 [NORMAL] 生成加工单 - 已确认含加工项订单 → 加工单生成 + 订单进入 producing（源: cases/processing-order.yml）──
+# ── PG-001 [NORMAL] 生成加工单 - 已确认含加工项订单 → 加工单生成（**不**推进订单；issue #4305）（源: cases/processing-order.yml）──
 _CASE_PG_001 = EvalCase(
     id='PG-001',
     legacy_id='',
-    title='生成加工单 - 已确认含加工项订单 → 加工单生成 + 订单进入 producing',
+    title='生成加工单 - 已确认含加工项订单 → 加工单生成（**不**推进订单；issue #4305）',
     skill=Skill.GENERAL,
     difficulty=Difficulty.NORMAL,
     user_inputs=[],
     expectations=[],
-    data_checks=['已确认订单含加工项 → 生成 processing_orders(status=generated)，快照五要素齐全（商品/颜色/门幅/宽×高/数量/加工项）', '快照加工项含 options（生成时从加工项目录补齐，下单时未落库）', '快照不含销售价（决策 2：加工单给加工方只看加工费）', '联动：订单 confirmed → producing（orderService.updateOrderStatus 调用）', '生成加工单成功（机器断言：$.data[i].success=true，ProcessingOrderServiceTest.generateSuccess / generateInstantiatesOperationsVerbatimFromOperationLibrary）——工序来源 = 工序库（issue #4116 切库）：生成加工单时按 部位×工艺 派生键读 production_routings 取基准路线、按名读 production_operations 取分组/单位/单价/is_must_finish/is_start_marker —— 工序/单位/单价/必完标记**逐字取库**，加工项目录**不再**提供工序；派生键库中无该路线 ⇒ 回落默认路线 布帘×韩褶；默认路线也取不到、或路线引用的工序在库中无活跃行 ⇒ 生成失败（$.data[i].success=false + 错误码 PRODUCTION_ROUTING_NOT_FOUND / PRODUCTION_OPERATION_NOT_FOUND + suggestion 指名补救入口），**不回退加工项目录**且**不落加工单行**（不制造「有加工单、无工序、无 qr_token」的孤儿态）—— 证据：ProcessingOrderServiceTest（逐条一致 1 项 + 负例 2 项 + 取法 3 项 + 幂等重放 1 项）'],
+    data_checks=['已确认订单含加工项 → 生成 processing_orders(status=generated)，快照五要素齐全（商品/颜色/门幅/宽×高/数量/加工项）', '快照加工项含 options（生成时从加工项目录补齐，下单时未落库）', '快照不含销售价（决策 2：加工单给加工方只看加工费）', '**不**联动订单（issue #4305，用户裁定「发加工 = 订单进入生产中」）：生成加工单后订单状态**保持 confirmed** —— 机器判据 = ProcessingOrderServiceTest 断言 never(orderService).updateOrderStatus(any, 「producing」) 且 never revertProducingToConfirmed（订单联动的唯一时点已挪到「发加工」，见 PG-005）', '生成加工单成功（机器断言：$.data[i].success=true，ProcessingOrderServiceTest.generateSuccess / generateInstantiatesOperationsVerbatimFromOperationLibrary）——工序来源 = 工序库（issue #4116 切库）：生成加工单时按 部位×工艺 派生键读 production_routings 取基准路线、按名读 production_operations 取分组/单位/单价/is_must_finish/is_start_marker —— 工序/单位/单价/必完标记**逐字取库**，加工项目录**不再**提供工序；派生键库中无该路线 ⇒ 回落默认路线 布帘×韩褶；默认路线也取不到、或路线引用的工序在库中无活跃行 ⇒ 生成失败（$.data[i].success=false + 错误码 PRODUCTION_ROUTING_NOT_FOUND / PRODUCTION_OPERATION_NOT_FOUND + suggestion 指名补救入口），**不回退加工项目录**且**不落加工单行**（不制造「有加工单、无工序、无 qr_token」的孤儿态）—— 证据：ProcessingOrderServiceTest（逐条一致 1 项 + 负例 2 项 + 取法 3 项 + 幂等重放 1 项）'],
     skip_reason='[backend-contract] 由 ProcessingOrderServiceTest 验证（generate 成功路径 + 快照 options/无价格断言 + 切库后的路线解析 fail-closed 与幂等重放）',
     tags=['processing-order', 'generate', 'linkage'],
     persona='',
@@ -3985,7 +3985,7 @@ _CASE_PG_005 = EvalCase(
     difficulty=Difficulty.NORMAL,
     user_inputs=[],
     expectations=[],
-    data_checks=['success=true', 'issue（发加工，可填加工方/交期）→ issued；start → in_processing；complete → completed', 'complete 后订单保持 producing（不自动 shipped，发货需物流单号）', '端点层证据（machine-scored）：PATCH /api/admin/processing-orders/{id} action=issue → 200 + $.success=true + $.data.status=issued（ProcessingOrderControllerTest.updateIssue —— 该测试是**唯一**把状态机主链落到 HTTP 层的证据；本条的 `success=true` 计分断言据此成立，不是凭空写的关键词）'],
+    data_checks=['success=true', 'issue（发加工，可填加工方/交期）→ 加工单 issued **且联动订单 confirmed→producing**（issue #4305：这是订单进入「生产中」的**唯一时点**，落库失败时回退订单状态）；start → in_processing；complete → completed', 'complete 后订单保持 producing（不自动 shipped，发货需物流单号）', '入口收敛（issue #4305，用户裁定「从订单作为发加工的唯一入口」）：加工单列表页 /processing-orders **不再渲染** 发加工/开始加工/加工完成/取消 四个动作入口（只留 查看 / 生产明细 + 「状态流转请在订单详情操作」提示），状态流转唯一入口 = 订单详情页加工单块 —— 证据：admin-web tests/unit/pages/processing-orders-list.test.tsx（第 ② 条断言：四个按钮 queryByRole 均为 null）', '端点层证据（machine-scored）：PATCH /api/admin/processing-orders/{id} action=issue → 200 + $.success=true + $.data.status=issued（ProcessingOrderControllerTest.updateIssue —— 该测试是**唯一**把状态机主链落到 HTTP 层的证据；本条的 `success=true` 计分断言据此成立，不是凭空写的关键词）'],
     skip_reason='[backend-contract] 由 ProcessingOrderServiceTest（状态机主链与订单联动）+ ProcessingOrderControllerTest（PATCH 端点：200 + success=true + status=issued）验证',
     tags=['processing-order', 'state-machine'],
     persona='',
@@ -4012,16 +4012,16 @@ _CASE_PG_006 = EvalCase(
     forbidden_card_text=[],
 )
 
-# ── PG-007 [NORMAL] 加工单取消联动 - generated 取消 → 订单 producing→confirmed 回退（源: cases/processing-order.yml）──
+# ── PG-007 [NORMAL] 加工单取消联动 - issued 及之后取消 → 订单 producing→confirmed 回退（generated 取消不再回退；issue #4305）（源: cases/processing-order.yml）──
 _CASE_PG_007 = EvalCase(
     id='PG-007',
     legacy_id='',
-    title='加工单取消联动 - generated 取消 → 订单 producing→confirmed 回退',
+    title='加工单取消联动 - issued 及之后取消 → 订单 producing→confirmed 回退（generated 取消不再回退；issue #4305）',
     skill=Skill.GENERAL,
     difficulty=Difficulty.NORMAL,
     user_inputs=[],
     expectations=[],
-    data_checks=['取消加工单（必填原因）→ cancelled + 订单 producing→confirmed 回退（重新可生成）'],
+    data_checks=['取消加工单（必填原因）→ 加工单 cancelled；**issued 及之后**取消 ⇒ 订单 producing→confirmed 回退（重新可生成）；**generated 取消时订单本就 confirmed ⇒ 不触发回退**（issue #4305：订单进入 producing 的时点已从「生成加工单」挪到「发加工」，故 generated 阶段订单尚未 producing）'],
     skip_reason='[backend-contract] 由 ProcessingOrderServiceTest 验证',
     tags=['processing-order', 'linkage', 'cancel'],
     persona='',
@@ -4129,7 +4129,7 @@ _CASE_PG_013 = EvalCase(
     difficulty=Difficulty.NORMAL,
     user_inputs=['最近有没有已确认、需要加工的订单？', '帮我把订单 EVAL-MB-ORD-0002 生成加工单', '确认'],
     expectations=['order_query', 'processing_order_generate'],
-    data_checks=['前置：目标环境至少存在一个「已确认且含加工项」订单（否则 order_query 为空、无法生成）——CI smoke 档不纳入，normal 档需保证前置数据', '生成后 processing_orders 落新行（status=generated），订单转 producing（验收以 GET /api/admin/processing-orders?keyword=<订单号> 复核）'],
+    data_checks=['前置：目标环境至少存在一个「已确认且含加工项」订单（否则 order_query 为空、无法生成）——CI smoke 档不纳入，normal 档需保证前置数据', '生成后 processing_orders 落新行（status=generated）；**订单状态保持 confirmed**（issue #4305：订单进入 producing 的时点已从「生成加工单」挪到「发加工」—— 机器判据 = ProcessingOrderServiceTest 断言生成路径 never updateOrderStatus(producing)）；验收以 GET /api/admin/processing-orders?keyword=<订单号> 复核加工单行'],
     skip_reason='',
     tags=['processing_order', 'llm_behavior', 'tool_call'],
     persona='',
@@ -4988,6 +4988,7 @@ _CASE_PR_019 = EvalCase(
     must_succeed=[{'tool': 'product_manage', 'action': 'create'}],
     pre_clean=[{'type': 'product_remove', 'product_keyword': 'E2E色卡建品样品面料'}],
     namespaces=['product_name:E2E色卡建品样品面料'],
+    precondition=[{'type': 'product_count_for_keyword', 'source': 'E2E色卡建品样品面料', 'expect': 0, 'max_growth': 1}],
     auto_fill={'name': 'E2E色卡建品样品面料', 'price': '23.8', 'colors': '2699-01 米白', 'door_widths': '2.8米', 'selling_methods': '散剪', 'sku_code': 'XNE2699'},
 )
 

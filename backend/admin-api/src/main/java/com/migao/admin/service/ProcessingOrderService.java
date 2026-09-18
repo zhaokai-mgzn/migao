@@ -41,10 +41,13 @@ import java.util.concurrent.ThreadLocalRandom;
  * 加工单服务（issue #3340，设计文档 docs/design/processing-order-design.md）
  *
  * 核心职责：
- * 1. 生成加工单（快照固化五要素 + options，不含销售价）+ 订单 confirmed→producing 联动；
+ * 1. 生成加工单（快照固化五要素 + options，不含销售价），**不**联动订单状态；
  * 2. 加工单状态机（generated→issued→in_processing→completed | cancelled），非法迁移拒绝；
- * 3. 取消联动（generated 取消 → 订单 producing→confirmed 回退）；
- * 4. 订单侧联动（shipped 守卫 / 订单取消自动作废）由 OrderService 完成。
+ * 3. 发加工（issue）联动订单 confirmed→producing（**唯一时点**，issue #4305：用户裁定
+ *    「发加工 = 订单进入生产中」，时点从「生成加工单」挪到「发加工」）；
+ * 4. 取消联动（issued 及之后取消 → 订单 producing→confirmed 回退；generated 取消时订单
+ *    本就 confirmed ⇒ 回退自然不触发）；
+ * 5. 订单侧联动（shipped 守卫 / 订单取消自动作废）由 OrderService 完成。
  *
  * <h2>工序来源（issue #4116，用户裁定「现在就切」，2026-09-18）</h2>
  * 生成加工单时的工序实例化读**工序库**：{@code production_routings}（部位×工艺 → 基准工序序列）
@@ -219,23 +222,16 @@ public class ProcessingOrderService {
                 .deleted(0)
                 .build();
 
-        // 联动先行（验收复核 #3345 P2②）：先推进订单 confirmed→producing，再落加工单。
-        // 落库失败时回退订单状态，杜绝「producing 无加工单」孤儿态；
-        // 并发重复生成由 partial unique index 兜底 → 转幂等错误（P2①）。
-        orderService.updateOrderStatus(order.getId(), "producing");
+        // 生成**不**联动订单状态（issue #4305，用户裁定「发加工 = 订单进入生产中」）：
+        // 订单 confirmed→producing 的时点已从「生成加工单」挪到「发加工」（见 updateStatus）。
+        // 故此处不再有「联动先行 + 失败回退」那段 —— 订单状态在生成路径上全程不动，
+        // 也就没有「producing 无加工单」的孤儿态可言（该孤儿态的成因随联动一并挪走）。
+        // 并发重复生成仍由 partial unique index 兜底 → 转幂等错误（P2①）。
         try {
             processingOrderMapper.insert(po);
         } catch (org.springframework.dao.DuplicateKeyException e) {
-            orderService.revertProducingToConfirmed(order.getId(), "加工单并发重复生成，订单状态回退");
             throw BusinessException.validationError(
                     "订单 " + order.getOrderNo() + " 加工单已生成（并发操作），请刷新后重试");
-        } catch (Exception e) {
-            try {
-                orderService.revertProducingToConfirmed(order.getId(), "加工单生成失败，订单状态回退");
-            } catch (Exception revertErr) {
-                log.warn("加工单生成失败且状态回退失败: orderId={}, err={}", order.getId(), revertErr.getMessage());
-            }
-            throw e;
         }
         log.info("生成加工单: no={}, orderId={}, tenantId={}, operator={}",
                 po.getProcessingOrderNo(), order.getId(), tenantId, operator);
@@ -898,7 +894,7 @@ public class ProcessingOrderService {
 
     /**
      * 加工单状态更新（action: issue/start/complete/cancel）。
-     * 状态机校验 + 订单联动（cancel → producing→confirmed 回退）。
+     * 状态机校验 + 订单联动（issue → 订单 confirmed→producing；cancel → 订单 producing→confirmed 回退）。
      */
     @Transactional(rollbackFor = Exception.class)
     public ProcessingOrderResponse updateStatus(String rawId, ProcessingOrderUpdateRequest req,
@@ -954,8 +950,32 @@ public class ProcessingOrderService {
             default:
                 break;
         }
-        processingOrderMapper.updateById(upd);
-
+        // 联动先行（issue #4305，用户裁定「发加工 = 订单进入生产中」）：**发加工是订单
+        // confirmed→producing 的唯一时点**（生成加工单不再推进订单）。先推进订单、再落加工单
+        // issued —— 落库失败时回退订单状态，杜绝「订单生产中、加工单未发出」孤儿态
+        // （形态 = #3345 P2② 给 generate 的同款 fail-closed，现随联动一并挪到这里）。
+        // 已是 producing 的订单（旧语义下「生成即推进」的存量数据）不重复推进、也不回退。
+        boolean orderLinked = false;
+        if ("issue".equals(action)) {
+            Order order = orderMapper.selectById(po.getOrderId());
+            if (order != null && "confirmed".equals(order.getStatus())) {
+                orderService.updateOrderStatus(order.getId(), "producing");
+                orderLinked = true;
+            }
+        }
+        try {
+            processingOrderMapper.updateById(upd);
+        } catch (Exception e) {
+            if (orderLinked) {
+                try {
+                    orderService.revertProducingToConfirmed(po.getOrderId(), "加工单发加工落库失败，订单状态回退");
+                } catch (Exception revertErr) {
+                    log.warn("发加工落库失败且订单状态回退失败: orderId={}, err={}",
+                            po.getOrderId(), revertErr.getMessage());
+                }
+            }
+            throw e;
+        }
         // 联动：加工单取消（未发货）→ 订单 producing→confirmed 回退（重新可生成加工单）
         if ("cancel".equals(action)) {
             Order order = orderMapper.selectById(po.getOrderId());

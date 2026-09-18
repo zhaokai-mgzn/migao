@@ -3015,16 +3015,16 @@
 
 ## processing-order（24 case）
 
-### PG-001. 生成加工单 - 已确认含加工项订单 → 加工单生成 + 订单进入 producing 🔵
+### PG-001. 生成加工单 - 已确认含加工项订单 → 加工单生成（**不**推进订单；issue #4305） 🔵
 ```
 数据: 已确认订单含加工项 → 生成 processing_orders(status=generated)，快照五要素齐全（商品/颜色/门幅/宽×高/数量/加工项）
 数据: 快照加工项含 options（生成时从加工项目录补齐，下单时未落库）
 数据: 快照不含销售价（决策 2：加工单给加工方只看加工费）
-数据: 联动：订单 confirmed → producing（orderService.updateOrderStatus 调用）
+数据: **不**联动订单（issue #4305，用户裁定「发加工 = 订单进入生产中」）：生成加工单后订单状态**保持 confirmed** —— 机器判据 = ProcessingOrderServiceTest 断言 never(orderService).updateOrderStatus(any, 「producing」) 且 never revertProducingToConfirmed（订单联动的唯一时点已挪到「发加工」，见 PG-005）
 数据: 生成加工单成功（机器断言：$.data[i].success=true，ProcessingOrderServiceTest.generateSuccess / generateInstantiatesOperationsVerbatimFromOperationLibrary）——工序来源 = 工序库（issue #4116 切库）：生成加工单时按 部位×工艺 派生键读 production_routings 取基准路线、按名读 production_operations 取分组/单位/单价/is_must_finish/is_start_marker —— 工序/单位/单价/必完标记**逐字取库**，加工项目录**不再**提供工序；派生键库中无该路线 ⇒ 回落默认路线 布帘×韩褶；默认路线也取不到、或路线引用的工序在库中无活跃行 ⇒ 生成失败（$.data[i].success=false + 错误码 PRODUCTION_ROUTING_NOT_FOUND / PRODUCTION_OPERATION_NOT_FOUND + suggestion 指名补救入口），**不回退加工项目录**且**不落加工单行**（不制造「有加工单、无工序、无 qr_token」的孤儿态）—— 证据：ProcessingOrderServiceTest（逐条一致 1 项 + 负例 2 项 + 取法 3 项 + 幂等重放 1 项）
 跳过: [backend-contract] 由 ProcessingOrderServiceTest 验证（generate 成功路径 + 快照 options/无价格断言 + 切库后的路线解析 fail-closed 与幂等重放）
 ```
-溯源: 2026-09-12 新增（issue #3340）。2026-09-18（issue #4116 切库）：新增「工序来源 = 工序库」判据（含失败错误码与 fail-closed 语义）；同日本条补上**机器计分型**断言 —— 此前 4 条 data_check 全是纯散文（CASE-TRUST-EMPTY-ASSERTION，恒绿），case-trust 清单据此整条销账。断言形态 2026-09-18 rebase 时修正：错误码改**散文描述**（PRODUCTION_ROUTING_NOT_FOUND / PRODUCTION_OPERATION_NOT_FOUND 是 admin-api HTTP 层错误码，runner 的 error.code= 只读轮级 SSE error 无法计分 —— 同族能力边界登记见 order.yml #4082），机器断言改为生成成功路径 `success=true`（Java 断言 generateSuccess）。 ｜ tags: processing-order, generate, linkage
+溯源: 2026-09-12 新增（issue #3340）。2026-09-18（issue #4116 切库）：新增「工序来源 = 工序库」判据（含失败错误码与 fail-closed 语义）；同日本条补上**机器计分型**断言 —— 此前 4 条 data_check 全是纯散文（CASE-TRUST-EMPTY-ASSERTION，恒绿），case-trust 清单据此整条销账。断言形态 2026-09-18 rebase 时修正：错误码改**散文描述**（PRODUCTION_ROUTING_NOT_FOUND / PRODUCTION_OPERATION_NOT_FOUND 是 admin-api HTTP 层错误码，runner 的 error.code= 只读轮级 SSE error 无法计分 —— 同族能力边界登记见 order.yml #4082），机器断言改为生成成功路径 `success=true`（Java 断言 generateSuccess）。2026-09-18（issue #4305，用户裁定「发加工 = 订单进入生产中」）：原第 4 条判据「联动：订单 confirmed → producing」**已过时**（那是旧时点）⇒ 改判为「生成加工单不推进订单（订单保持 confirmed；never updateOrderStatus / never revert）」，订单联动的唯一时点挪到 issue（PG-005 新增判据）；断言面其余未动。 ｜ tags: processing-order, generate, linkage
 
 ### PG-002. 生成加工单 - 幂等：同一订单已有活跃加工单 → 拒绝重复生成 🔵
 ```
@@ -3051,12 +3051,13 @@
 ### PG-005. 加工单状态机 - generated→issued→in_processing→completed 主链 🔵
 ```
 数据: success=true
-数据: issue（发加工，可填加工方/交期）→ issued；start → in_processing；complete → completed
+数据: issue（发加工，可填加工方/交期）→ 加工单 issued **且联动订单 confirmed→producing**（issue #4305：这是订单进入「生产中」的**唯一时点**，落库失败时回退订单状态）；start → in_processing；complete → completed
 数据: complete 后订单保持 producing（不自动 shipped，发货需物流单号）
+数据: 入口收敛（issue #4305，用户裁定「从订单作为发加工的唯一入口」）：加工单列表页 /processing-orders **不再渲染** 发加工/开始加工/加工完成/取消 四个动作入口（只留 查看 / 生产明细 + 「状态流转请在订单详情操作」提示），状态流转唯一入口 = 订单详情页加工单块 —— 证据：admin-web tests/unit/pages/processing-orders-list.test.tsx（第 ② 条断言：四个按钮 queryByRole 均为 null）
 数据: 端点层证据（machine-scored）：PATCH /api/admin/processing-orders/{id} action=issue → 200 + $.success=true + $.data.status=issued（ProcessingOrderControllerTest.updateIssue —— 该测试是**唯一**把状态机主链落到 HTTP 层的证据；本条的 `success=true` 计分断言据此成立，不是凭空写的关键词）
 跳过: [backend-contract] 由 ProcessingOrderServiceTest（状态机主链与订单联动）+ ProcessingOrderControllerTest（PATCH 端点：200 + success=true + status=issued）验证
 ```
-溯源: 2026-09-12 新增（issue #3340）。2026-09-18 断言反空转（case-trust burn-down）：原先 2 条 data_check 全是散文 ⇒ CASE-TRUST-EMPTY-ASSERTION（计分断言数 = 0 = 恒绿）。修法 = 把**已经存在**的 HTTP 层效果断言显式化 —— ProcessingOrderControllerTest.updateIssue 补 `$.success` 断言并纳入本条 traces，本条据此新增机器计分型 data_check（`success=true`）。只减不增：本条从 case-trust 豁免清单销账。 ｜ tags: processing-order, state-machine
+溯源: 2026-09-12 新增（issue #3340）。2026-09-18 断言反空转（case-trust burn-down）：原先 2 条 data_check 全是散文 ⇒ CASE-TRUST-EMPTY-ASSERTION（计分断言数 = 0 = 恒绿）。修法 = 把**已经存在**的 HTTP 层效果断言显式化 —— ProcessingOrderControllerTest.updateIssue 补 `$.success` 断言并纳入本条 traces，本条据此新增机器计分型 data_check（`success=true`）。只减不增：本条从 case-trust 豁免清单销账。2026-09-18（issue #4305）：主链判据补「issue 联动订单 confirmed→producing（唯一时点）」+ 新增「入口收敛」判据（列表页四个动作入口移除，唯一入口 = 订单详情页加工单块），并把前端断言文件纳入本条 traces。 ｜ tags: processing-order, state-machine
 
 ### PG-006. 加工单状态机 - 非法迁移拒绝（如 generated→completed、completed 冻结） 🔵
 ```
@@ -3065,12 +3066,12 @@
 ```
 溯源: 2026-09-12 新增（issue #3340） ｜ tags: processing-order, state-machine
 
-### PG-007. 加工单取消联动 - generated 取消 → 订单 producing→confirmed 回退 🔵
+### PG-007. 加工单取消联动 - issued 及之后取消 → 订单 producing→confirmed 回退（generated 取消不再回退；issue #4305） 🔵
 ```
-数据: 取消加工单（必填原因）→ cancelled + 订单 producing→confirmed 回退（重新可生成）
+数据: 取消加工单（必填原因）→ 加工单 cancelled；**issued 及之后**取消 ⇒ 订单 producing→confirmed 回退（重新可生成）；**generated 取消时订单本就 confirmed ⇒ 不触发回退**（issue #4305：订单进入 producing 的时点已从「生成加工单」挪到「发加工」，故 generated 阶段订单尚未 producing）
 跳过: [backend-contract] 由 ProcessingOrderServiceTest 验证
 ```
-溯源: 2026-09-12 新增（issue #3340） ｜ tags: processing-order, linkage, cancel
+溯源: 2026-09-12 新增（issue #3340）。2026-09-18（issue #4305）：取消回退的**触发条件**随订单联动时点一并改判 —— 旧判据把「generated 取消 → 回退」当主例，而新语义下 generated 阶段订单仍是 confirmed（无回退可言）⇒ 改判为「issued 及之后取消才回退」；证据 = ProcessingOrderServiceTest（generated 取消不触发 revert + issued 取消回退正例）。 ｜ tags: processing-order, linkage, cancel
 
 ### PG-008. 加工单取消 - issued 及以上必须填原因（人工确认语义） 🔵
 ```
@@ -3121,7 +3122,7 @@
 期望: order_query
 期望: processing_order_generate
 数据: 前置：目标环境至少存在一个「已确认且含加工项」订单（否则 order_query 为空、无法生成）——CI smoke 档不纳入，normal 档需保证前置数据
-数据: 生成后 processing_orders 落新行（status=generated），订单转 producing（验收以 GET /api/admin/processing-orders?keyword=<订单号> 复核）
+数据: 生成后 processing_orders 落新行（status=generated）；**订单状态保持 confirmed**（issue #4305：订单进入 producing 的时点已从「生成加工单」挪到「发加工」—— 机器判据 = ProcessingOrderServiceTest 断言生成路径 never updateOrderStatus(producing)）；验收以 GET /api/admin/processing-orders?keyword=<订单号> 复核加工单行
 清理: processing_order_reset(order_no=EVAL-MB-ORD-0002)
 时序: order_query before processing_order_generate
 禁词: 暂不支持
@@ -3135,7 +3136,7 @@
 必须成功: processing_order_generate
 ```
 真值: ⚠️ 缺口（见对应模板 ⚠️ 注释）
-溯源: 2026-09-12 新增（验收缺口 #3348）：米宝加工单 LLM 行为真实对话用例（替代纯单测覆盖）；2026-09-15（issue #3833）修双重假红：① 补 `pre_clean: processing_order_reset(order_no=EVAL-MB-ORD-0002)` —— 写类用例自清理，重试前置回到 seed 初始态（confirmed + 无加工单），与首跑等价；② `forbidden_text` 从全程语义收紧成「轮次 + 措辞」：R1 问答轮如实陈述（某单未见加工项/引用系统判定）不再判红，写操作轮（R2/R3）真拒绝仍必红；能力自我否定/编造失败类措辞保持全程。expectations / required_args **未改**；2026-09-15（issue #3917）skip：加工单工具对 agent 不再开放；2026-09-18（issue #4196）**去 skip**：加工单工具恢复接入（registry 注册 + order skill 工具/意图 + IntentType/描述/域/工具映射四处 + prompts/order.md 操作指引），**断言面原样保留**（expectations / must_succeed / required_args / forbidden_text / pre_clean 全部未改，未放宽）；去 skip 不空跑的前置 = runner 的 `pre_clean[processing_order_reset]` + 种子 EVAL-MB-ORD-0002/0003/0004（confirmed + paid + 明细带加工项）；**同 PR 补 must_succeed[processing_order_generate]**（去 skip 后 `.github/case_trust_gate.py` 全量对账判出的存量缺陷 `CASE-TRUST-NO-EFFECT-ASSERTION`：#3778「调用了 ≠ 成了」—— 原断言面里 `order_before` 是时序、`required_args` 在工具未调用时 `continue` 全绿、两条 `data_checks` 是纯散文 ⇒ **无任何效果层断言**。按 #4046 的 fail-closed 口径**当场修掉**，不入账基线；这是**加强**不是放宽，expectations / required_args / forbidden_text / pre_clean 一字未动） ｜ tags: processing_order, llm_behavior, tool_call
+溯源: 2026-09-12 新增（验收缺口 #3348）：米宝加工单 LLM 行为真实对话用例（替代纯单测覆盖）；2026-09-15（issue #3833）修双重假红：① 补 `pre_clean: processing_order_reset(order_no=EVAL-MB-ORD-0002)` —— 写类用例自清理，重试前置回到 seed 初始态（confirmed + 无加工单），与首跑等价；② `forbidden_text` 从全程语义收紧成「轮次 + 措辞」：R1 问答轮如实陈述（某单未见加工项/引用系统判定）不再判红，写操作轮（R2/R3）真拒绝仍必红；能力自我否定/编造失败类措辞保持全程。expectations / required_args **未改**；2026-09-15（issue #3917）skip：加工单工具对 agent 不再开放；2026-09-18（issue #4196）**去 skip**：加工单工具恢复接入（registry 注册 + order skill 工具/意图 + IntentType/描述/域/工具映射四处 + prompts/order.md 操作指引），**断言面原样保留**（expectations / must_succeed / required_args / forbidden_text / pre_clean 全部未改，未放宽）；去 skip 不空跑的前置 = runner 的 `pre_clean[processing_order_reset]` + 种子 EVAL-MB-ORD-0002/0003/0004（confirmed + paid + 明细带加工项）；**同 PR 补 must_succeed[processing_order_generate]**（去 skip 后 `.github/case_trust_gate.py` 全量对账判出的存量缺陷 `CASE-TRUST-NO-EFFECT-ASSERTION`：#3778「调用了 ≠ 成了」—— 原断言面里 `order_before` 是时序、`required_args` 在工具未调用时 `continue` 全绿、两条 `data_checks` 是纯散文 ⇒ **无任何效果层断言**。按 #4046 的 fail-closed 口径**当场修掉**，不入账基线；这是**加强**不是放宽，expectations / required_args / forbidden_text / pre_clean 一字未动）。2026-09-18（issue #4305，用户裁定「发加工 = 订单进入生产中」）：第 2 条 data_check 里「订单转 producing」**已过时**（那是旧时点）⇒ 改判为「订单**保持 confirmed**」（加工单行照旧落库），其余断言未动。 ｜ tags: processing_order, llm_behavior, tool_call
 
 ### PG-014. 订单加工项不可变（源头约束，决策 C）：创建后无任何修改通道 🔵
 ```
@@ -3599,7 +3600,7 @@
 载荷(全场可用): name=E2E色卡建品样品面料, price=23.8, colors=2699-01 米白, door_widths=2.8米, selling_methods=散剪, sku_code=XNE2699
 ```
 真值: product-sku-stock.low-stock
-溯源: 2026-09-08 新增（issue #3027）：sess_c1fce183dae24f22 复盘 — AI 预填表单展示了推理属性但 create 未落库（product_attributes 0 行）；加工项只传名称列表 → custom_price 全 NULL → 详情页 ¥0.00/米（单位硬编码）。三端修复：prompt 强制 specifications+processing_item_configs、admin-api finalPrice 回退、admin-web 渲染回退；2026-09-09 校准：补真实色卡图（原纯文本「根据这张图片」无 images，agent 要图走不下去）。2026-09-14 资产重写（#3518）：② 色卡识别结果轮由 `auto_select`（对 form 卡发「第一个」→ 表单从未提交）改为按 formFields 真实 key 回填的 `auto_respond`；③ 原文本占位符「颜色…门幅…」补真实值、加工项「波浪定型」换目录中真实存在的「韩式波浪折边」；④ 收尾改协作答卡轮。2026-09-15 §14.1 回填（issue #3683）：补 `must_succeed:[product_manage(action=create)]`（原仅有 expectations 参数级匹配 + required_args，create 失败仍判过）；db_verify 未加——商品名与种子 `prod_eval_2699` 同名同价、`_fetch_product_configs` 取 keyword 首条无法区分本次新建与种子（见用例内注释）；2026-09-15（issue #3835）**改名去种子撞名**：`E2E色卡建品样品面料` → `E2E色卡建品样品面料`（种子 `prod_eval_2699` 就叫前者 ⇒ 运行期造同名副本，读者按名搜会得到 products=2；改名后本次新建可被关键字唯一定位，上述 db_verify 歧义随之解除）、`pre_clean: product_dedupe{E2E色卡建品样品面料, price: 23.8}` → `product_remove{自有名}`、补 `namespaces: product_name:E2E色卡建品样品面料`；断言（expectations/must_succeed/required_args/data_checks/forbidden_text）原样未动 ｜ tags: product_create, specifications, processing_item, regression
+溯源: 2026-09-08 新增（issue #3027）：sess_c1fce183dae24f22 复盘 — AI 预填表单展示了推理属性但 create 未落库（product_attributes 0 行）；加工项只传名称列表 → custom_price 全 NULL → 详情页 ¥0.00/米（单位硬编码）。三端修复：prompt 强制 specifications+processing_item_configs、admin-api finalPrice 回退、admin-web 渲染回退；2026-09-09 校准：补真实色卡图（原纯文本「根据这张图片」无 images，agent 要图走不下去）。2026-09-14 资产重写（#3518）：② 色卡识别结果轮由 `auto_select`（对 form 卡发「第一个」→ 表单从未提交）改为按 formFields 真实 key 回填的 `auto_respond`；③ 原文本占位符「颜色…门幅…」补真实值、加工项「波浪定型」换目录中真实存在的「韩式波浪折边」；④ 收尾改协作答卡轮。2026-09-15 §14.1 回填（issue #3683）：补 `must_succeed:[product_manage(action=create)]`（原仅有 expectations 参数级匹配 + required_args，create 失败仍判过）；db_verify 未加——商品名与种子 `prod_eval_2699` 同名同价、`_fetch_product_configs` 取 keyword 首条无法区分本次新建与种子（见用例内注释）；2026-09-15（issue #3835）**改名去种子撞名**：`E2E色卡建品样品面料` → `E2E色卡建品样品面料`（种子 `prod_eval_2699` 就叫前者 ⇒ 运行期造同名副本，读者按名搜会得到 products=2；改名后本次新建可被关键字唯一定位，上述 db_verify 歧义随之解除）、`pre_clean: product_dedupe{E2E色卡建品样品面料, price: 23.8}` → `product_remove{自有名}`、补 `namespaces: product_name:E2E色卡建品样品面料`；断言（expectations/must_succeed/required_args/data_checks/forbidden_text）原样未动。2026-09-18（issue #4305 的 burn-down 缴费）：补 `precondition[product_count_for_keyword: E2E色卡建品样品面料, expect=0, max_growth=1]` —— 建品用例的真前置 =「目标名尚不存在且运行期只新增自己那一件」；判据清零 `CASE-TRUST-NO-PRECONDITION-ASSERTION`（整条销账）。断言面一字未动。 ｜ tags: product_create, specifications, processing_item, regression
 
 ### PR-020. 建品加工项价格落库盯防 — 自定义价须等于用户确认价（BFF 合并回归） 🔵
 ```
@@ -4533,13 +4534,13 @@
 - KN-004: 米宝知识问答 - 加工计价规则走 processing_item_query 工具（加工项派生卡片已移除）
 - KN-008: 知识来源标注边界 - 自补常识不得混入「📖 来自本店知识库」标注（P2-4，issue #3076）
 - MC-012: CI 失败报告去重 - 同日同标题 open issue 存在时不重复建
-- PG-001: 生成加工单 - 已确认含加工项订单 → 加工单生成 + 订单进入 producing
+- PG-001: 生成加工单 - 已确认含加工项订单 → 加工单生成（**不**推进订单；issue #4305）
 - PG-002: 生成加工单 - 幂等：同一订单已有活跃加工单 → 拒绝重复生成
 - PG-003: 生成加工单 - 无加工项订单不生成（现货成品直跳发货）
 - PG-004: 生成加工单 - 未确认订单拒绝（pending/已取消不允许）
 - PG-005: 加工单状态机 - generated→issued→in_processing→completed 主链
 - PG-006: 加工单状态机 - 非法迁移拒绝（如 generated→completed、completed 冻结）
-- PG-007: 加工单取消联动 - generated 取消 → 订单 producing→confirmed 回退
+- PG-007: 加工单取消联动 - issued 及之后取消 → 订单 producing→confirmed 回退（generated 取消不再回退；issue #4305）
 - PG-008: 加工单取消 - issued 及以上必须填原因（人工确认语义）
 - PG-009: 订单发货守卫 - 含加工项订单须完成加工单后才能 shipped
 - PG-010: 订单取消联动 - 加工单 generated 自动作废；issued+ 拦截

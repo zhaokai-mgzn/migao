@@ -609,9 +609,24 @@ async function orderDetailJourney(page, orderId) {
         const issueBtn = page.getByRole('button', { name: /确认发加工/ }).first()
         if (await waitVisible(issueBtn, 8000)) await issueBtn.click().catch(() => {})
       }
-      // 状态文案回显 = 流转真的发生了（原来 `expect` 被解构却从未使用 ⇒ 声明了判据却不判）
-      const echoed = await waitVisible(page.getByText(expectText, { exact: false }).first(), 12000)
-      flowDone += ` [${btn}→${expectText}${echoed ? '✓' : '未回显'}]`
+      // 效果层断言（issue #4305）：旧写法断言**全页文本**「已发加工」是**空判据** ——
+      // 加工单块的状态时间线恒含四个步骤文案（已生成→已发加工→加工中→加工完成），
+      // 无论实际状态如何都能命中（假绿）。改判两件真效果：
+      //   ① `.po-print-area` 内的**状态徽标**（该容器内唯一的 `span.bg-primary-50`）逐字等于期望；
+      //   ② **按钮切换**（按钮由状态驱动渲染）：发加工后「发加工」消失、「开始加工」出现，依此类推。
+      const badge = poBlock.locator('span.bg-primary-50').first()
+      const badgeText = (await waitVisible(badge, 12000)) ? ((await badge.textContent()) ?? '').trim() : ''
+      const badgeOk = badgeText === expectText
+      const nextBtn = { 发加工: '开始加工', 开始加工: '加工完成', 加工完成: null }[btn]
+      const switched = nextBtn
+        ? await waitVisible(page.getByRole('button', { name: new RegExp(nextBtn) }).first(), 12000)
+        : true
+      flowDone += ` [${btn}→徽标「${badgeText || '未取到'}」${badgeOk ? '✓' : '✗期望' + expectText};按钮切换${switched ? '✓' : '✗'}]`
+      if (!badgeOk || !switched) {
+        throw new Error(
+          `[${btn}] 效果层断言未过：状态徽标=「${badgeText}」（期望「${expectText}」）、按钮切换=${switched}`,
+        )
+      }
     }
     if (!poVisible || !poNo) throw new Error(`加工单块/单号未出现（订单 ${orderId}：生成后 12s 内 ${poVisible ? '块已见但单号不匹配' : `未见 .po-print-area 块`} ${ORDER_NO_SHAPE.source}；流转${flowDone || '未开始'}）`)
     await h.done(true, '', `加工单生成+流转: ${flowDone}; 加工单 ${poNo} 可见=${poVisible}`)
