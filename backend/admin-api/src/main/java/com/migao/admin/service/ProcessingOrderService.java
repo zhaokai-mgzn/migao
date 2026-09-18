@@ -58,12 +58,15 @@ import java.util.concurrent.ThreadLocalRandom;
  * 取不到路线/工序 ⇒ fail-closed 中止生成（{@link #ERR_ROUTING_NOT_FOUND} /
  * {@link #ERR_OPERATION_NOT_FOUND} + {@link #INCIDENT_ROUTING_UNRESOLVED} 日志），**不回退**旧路径。
  *
- * <h2>部位语义（如实登记，尚未对齐）</h2>
+ * <h2>部位语义（issue #4354 起：直读优先，派生降级为存量单兜底）</h2>
  * {@code processing_position_operations.position_name} 取「加工产物名[+色号]」（如「布艺遮光帘A 米白」），
- * 因为**订单侧没有部位/帘种字段** —— 而工序库的路线是**按部位**索引的（布帘/纱帘/帘头）。
- * ⇒ 本包只能在实例化时**派生**部位（见 {@link #deriveRouteKey}），派生不中就落默认路线 布帘×韩褶。
- * **待订单侧补「部位/帘种」字段后再对齐**（届时改为直读 + 删掉关键字派生表）——
- * 在此之前，部位名与路线键**不是**同一个语义层，不得把前者当成后者的真值。
+ * 因为订单侧**没有独立的部位列** —— 而工序库的路线是**按部位**索引的（布帘/纱帘/帘头）。
+ * 自 issue #4354 起，订单侧已把工艺规格（{@code curtainType} / {@code craft}）落在
+ * {@code order_items.processing_info} 顶层 ⇒ 实例化时**直读**（见 {@link #deriveRouteKey}）；
+ * 只有**两维都缺**的存量单才退回关键字派生（{@link ProductionOperationQueryService#routeSignals}
+ * 的商家可配信号映射表，issue #4308）。
+ * <p>⚠️ 部位名与路线键仍**不是**同一个语义层（前者是展示名、后者是索引键），
+ * 不得把前者当成后者的真值。</p>
  */
 @Slf4j
 @Service
@@ -143,9 +146,46 @@ public class ProcessingOrderService {
      * 算料输入的透传白名单（键名与 ai-agent {@code routing.py} 的
      * {@code METER_KEYS/FOLD_KEYS/HOLE_KEYS/PANEL_KEYS/SET_KEYS} 同口径）：
      * 订单侧若已存算料输出就原样送过去，Java 侧**不发明数字**（见 {@link #calcInfo}）。
+     *
+     * <p>{@code per_panel_pleats} / {@code fullness} / {@code fullness_actual} 为 issue #4354 新增
+     * （设计文档 §4.3）：它们是**展示/复核**用键（每片折数、理论/实际褶倍），算料端点按
+     * {@code calc_info} 的自由字典读，多传不改变取值口径。</p>
      */
     private static final List<String> CALC_INFO_KEYS = List.of(
-            "fabric_meters", "meters", "pleat_count", "holes", "panels", "set_count", "source");
+            "fabric_meters", "meters", "pleat_count", "holes", "panels", "set_count", "source",
+            "per_panel_pleats", "fullness", "fullness_actual");
+
+    /**
+     * 加工单快照要固化的**算料输出**键（issue #4354，设计文档 §4.9）：订单侧下单时已落库的算料输出
+     * 原样进快照 —— 加工单的固化真相里没有它，车间就少一个数（§4.3 的「生产为零」根因）。
+     * 逐键 {@code copyIfPresent}：**缺键就缺**，Java 不造值。
+     */
+    private static final List<String> CALC_OUTPUT_SNAPSHOT_KEYS = List.of(
+            "fabric_meters", "pleat_count", "per_panel_pleats", "panels", "holes",
+            "fullness", "fullness_actual");
+
+    /**
+     * 加工单快照要固化的**工艺规格**键（issue #4354，设计文档 §4.2 / §4.8）：
+     * {@code processing_info} 顶层扁平键，订单侧下单时原样落库。
+     *
+     * <p>⚠️ 新键不加进这里就**不会进快照**（{@link #buildSnapshot} 逐键取）⇒
+     * 「车间少一道活 / 少一个展示字段」，而快照是加工单的固化真相，事后补不回来。</p>
+     */
+    private static final List<String> CRAFT_SPEC_SNAPSHOT_KEYS = List.of(
+            "curtainType", "craft", "cuttingMode", "openCount", "isShaped", "pleatSpacing",
+            "hasPattern", "patternRepeat", "style", "room", "batchNo",
+            "componentRole", "craftLineId", "metersSource", "processingMeters");
+
+    /**
+     * {@code isShaped=false} 时从实例里剔除的工序（issue #4354，设计文档 §4.7）。
+     * 与真值源 {@code routing.py::build_routing} 的 {@code route = [op for op in route
+     * if op not in ("定型-布", "复烫-布")]} **逐字同款**（工序名同源，且都在条件工序插入**之前**剔除
+     * —— 否则以这两道为锚点的条件工序会因锚点消失而落到末尾，与 Python 的落位不一致）。
+     */
+    private static final List<String> UNSHAPED_REMOVED_OPERATIONS = List.of("定型-布", "复烫-布");
+
+    /** 配布边（§4.8）：**不独立成加工部位**的部件角色 —— 组内出现主布行时它被合并进去。 */
+    private static final String COMPONENT_ROLE_EDGE = "配布边";
 
     /** 加工单状态机（与 OrderService.STATUS_TRANSITIONS 同模式） */    private static final Map<String, Set<String>> STATUS_TRANSITIONS = Map.of(
             "generated", Set.of("issued", "cancelled"),
@@ -299,7 +339,15 @@ public class ProcessingOrderService {
      * 实例化 payload：快照行 → 部位 → **工序库**里的基准工序序列 → **算料引擎**给出的应做数量。
      *
      * <p>部位名 = 加工产物名[+色号]（同行多套据此区分）—— 见类注释「部位语义」节：
-     * 订单侧尚无部位/帘种字段 ⇒ 部位**只能**落到产品名，**待订单侧补字段后再对齐**（本包不假装已对齐）。</p>
+     * 部位名落到产品名，而路线键由 {@link #deriveRouteKey} **直读**订单工艺规格（存量单才派生）。</p>
+     *
+     * <p><b>拼色绑组（issue #4354，设计文档 §4.8）</b>：同一扇窗的主布行 + 配布边行用
+     * {@code craftLineId} 绑成一组 ⇒ 配布边行**不独立成部位**（否则一扇窗被算成两扇：
+     * 折数/开数/幅数/工序/计件全部翻倍）。组内只有配布边行时它仍自成部位（不静默丢窗）。</p>
+     *
+     * <p><b>定型开关（issue #4354，设计文档 §4.7）</b>：{@code isShaped=false} ⇒ 从基准序列里
+     * 剔除 {@link #UNSHAPED_REMOVED_OPERATIONS}（真值源 §10 登记的「唯一尚未接线」项），
+     * 与 {@code routing.py::build_routing} 同序（在条件工序插入之前）。</p>
      *
      * <p><b>应做数量（qty，issue #4208）</b>：库路线只给单位/单价，不给数量；数量的唯一真值源是
      * 算料引擎（{@code routing.py::_qty_for}），由 {@link ProductionOperationQtyClient} 逐部位问取。
@@ -326,8 +374,15 @@ public class ProcessingOrderService {
         // 逐部位在内存里按本单的 specialOptions 过滤 —— 避免「每个选项一次查询」的 N+1。
         List<ProductionOptionRouting> optionRoutings = productionOperationQueryService.optionRoutings(tenantId);
         List<ProductionOptionFactor> optionFactors = productionOperationQueryService.optionFactors(tenantId);
+        // 拼色绑组（issue #4354，设计文档 §4.8）：组键 = `craftLineId`（缺省 ⇒ 本行 itemId ⇒ 各自成组）
+        Set<String> groupsWithMainRow = groupsWithMainRow(snapshot);
         for (Map<String, Object> entry : snapshot) {
             if (!(entry.get("processingItems") instanceof List<?>)) {
+                continue;
+            }
+            if (isAbsorbedEdgeRow(entry, groupsWithMainRow)) {
+                // 配布边行并入同组的主布部位 ⇒ **不独立成部位**（否则一扇窗被算成两扇：
+                // 折数/开数/幅数/工序/计件全部翻倍）。该行自身的货号/米数仍在快照里可展示。
                 continue;
             }
             RouteKey key = deriveRouteKey(entry, tenantId);
@@ -345,6 +400,14 @@ public class ProcessingOrderService {
                 operation.put("is_must_finish", step.get("is_must_finish"));
                 operation.put("is_start_marker", step.get("is_start_marker"));
                 operations.add(operation);
+            }
+            // 定型接线（issue #4354，设计文档 §4.7）：`isShaped=false` ⇒ 剔除 定型-布 / 复烫-布
+            // （真值源 §10 登记的「唯一尚未接线」项）。**严格布尔 false** 才生效，且必须在条件工序
+            // 插入**之前** —— 与 routing.py::build_routing 逐字同序（否则以这两道为锚点的条件工序
+            // 会因锚点消失而落到末尾，与 Python 的落位不一致）。
+            if (Boolean.FALSE.equals(entry.get("isShaped"))) {
+                operations.removeIf(operation ->
+                        UNSHAPED_REMOVED_OPERATIONS.contains(String.valueOf(operation.get("operation"))));
             }
             // 特殊选项（issue #4230）：插条件工序 → 重排 seq → 落计件系数
             List<String> options = specialOptions(entry);
@@ -373,6 +436,57 @@ public class ProcessingOrderService {
                 worst == null ? null : worst.routeKey(),
                 worst == null ? null : worst.routeRequestedKey(),
                 worst == null ? null : worst.routeSource());
+    }
+
+    /**
+     * 拼色绑组（issue #4354，设计文档 §4.8）：同一扇窗的多行用 {@code craftLineId} 绑成一组，
+     * 组内**只保留一个部位**（主布行）。
+     *
+     * <p><b>组键</b> = 本行 {@code craftLineId}；缺省 ⇒ 本行 {@code itemId}。
+     * 后者让「配布边行填**主布行的行标识**」（order_create 工具描述教的形态）也能对齐 ——
+     * 两个不同行的 {@code itemId} 天然不等 ⇒ **没有 {@code craftLineId} 的行永远各自成组**，
+     * 即「缺键时行为逐字不变」（存量单兼容）。</p>
+     *
+     * @return 组内**存在**可作主布的行（有加工项且角色非 {@link #COMPONENT_ROLE_EDGE}）的组键集合
+     */
+    private static Set<String> groupsWithMainRow(List<Map<String, Object>> snapshot) {
+        Set<String> groups = new LinkedHashSet<>();
+        for (Map<String, Object> entry : snapshot) {
+            if (!(entry.get("processingItems") instanceof List<?>) || isEdgeRow(entry)) {
+                continue;
+            }
+            String groupKey = craftGroupKey(entry);
+            if (groupKey != null) {
+                groups.add(groupKey);
+            }
+        }
+        return groups;
+    }
+
+    /**
+     * 该行是否被同组的主布部位**吸收**（⇒ 不独立成部位）。
+     *
+     * <p>只吸收 {@code componentRole=配布边} 的行：{@code 纱} 是**独立部位**（纱帘），
+     * 与主布同组时仍须各成部位。组内若只有配布边行（主布行缺加工项 / {@code craftLineId} 悬空），
+     * 它**必须**自己成部位 —— 静默丢掉会让整扇窗没有工序（比双算更糟：工人拿不到工钱）。</p>
+     */
+    private static boolean isAbsorbedEdgeRow(Map<String, Object> entry, Set<String> groupsWithMainRow) {
+        if (!isEdgeRow(entry)) {
+            return false;
+        }
+        String groupKey = craftGroupKey(entry);
+        return groupKey != null && groupsWithMainRow.contains(groupKey);
+    }
+
+    /** 是否「配布边」部件行（缺省角色视为主布 ⇒ 不是配布边，存量单兼容）。 */
+    private static boolean isEdgeRow(Map<String, Object> entry) {
+        return COMPONENT_ROLE_EDGE.equals(str(entry.get("componentRole")));
+    }
+
+    /** 绑组键：{@code craftLineId} 优先，缺省回落到本行 {@code itemId}（两者都缺 ⇒ null = 不参与绑组）。 */
+    private static String craftGroupKey(Map<String, Object> entry) {
+        String craftLineId = str(entry.get("craftLineId"));
+        return craftLineId != null ? craftLineId : str(entry.get("itemId"));
     }
 
     /** 多部位 roll-up：取最需关注的一条（{@link #severity}），同档取先出现者。 */
@@ -692,7 +806,7 @@ public class ProcessingOrderService {
         Map<String, Object> route = productionOperationQueryService.findRouting(
                 tenantId, key.curtainType(), key.craft());
         if (route == null) {
-            log.warn("{} 派生路线键「{}」在工序库无对应路线，回落默认路线 {}×{}（来源 {} ⇒ missing_route）: "
+            log.warn("{} 路线键「{}」在工序库无对应路线，回落默认路线 {}×{}（来源 {} ⇒ missing_route）: "
                             + "tenantId={}, productName={}, 库中现有路线={}",
                     INCIDENT_ROUTE_FALLBACK, usedKey, DEFAULT_CURTAIN_TYPE, DEFAULT_CRAFT, source,
                     tenantId, entry.get("productName"), productionOperationQueryService.routingKeys(tenantId));
@@ -731,31 +845,56 @@ public class ProcessingOrderService {
     }
 
     /**
-     * 从订单侧**可派生信号**推出路线键（`curtain_type` + `craft`）+ 来源三态。
+     * 路线键（`curtain_type` + `craft`）+ 来源：**直读优先、派生兜底**（issue #4354 落码，
+     * 设计文档 §4.7 与在飞的 #4308 调和后的取法）。
      *
-     * <p>信号优先级（命中即止，先信号后关键字 —— 更权威的信号先说话）：
-     * ① 加工项名（加工项目录里工序名自带部位/工艺，如「韩褶-布」「打孔-纱」「帘头制作」）
-     * ② 加工项 options（如「四爪钩」）③ 商品名 ④ 销售方式。两类信号各自独立扫描，
-     * 只会派生出一半时另一半取默认值（来源记 {@code partial}）。</p>
+     * <p><b>取法优先级（设计文档 §4.7 与 #4308 调和后的口径）</b>：</p>
+     * <ol>
+     *   <li>订单行带 {@code curtainType} + {@code craft} ⇒ <b>直读</b>（订单写下的值），
+     *       来源 {@code direct}（本包新增第 5 态）；</li>
+     *   <li>只带一维 ⇒ 直读该维 + 派生另一维，来源 {@code partial}；</li>
+     *   <li>两维都缺（<b>存量单</b>）⇒ 走 #4308 的信号映射表（商家可配），
+     *       来源 {@code derived} / {@code default}。</li>
+     * </ol>
+     *
+     * <p><b>为什么保留派生表</b>：#4308 已把「关键字派生」做成**商家可配的信号映射表**
+     * （{@code production_route_signals}）并保留了存量单兜底面 ⇒ 本包**只把直读插到它前面**，
+     * 不删表、不改派生口径（删表会与 #4308 的实现直接冲突）。</p>
+     *
+     * <p><b>为什么不校验直读值</b>：直读值是订单侧已落库的真值，Java 只读不猜、不归一
+     * （错值/库里无该路线 ⇒ 由 {@link #resolveRoute} 的 T2 显式落 {@code missing_route}
+     * 并记 incident 日志，绝不静默）。空白键（{@code " "}）视为**缺键**（{@code str} 会 trim）——
+     * 否则会造出「{@code  ×韩褶}」这种不存在的键。</p>
+     *
+     * <p>信号优先级（仅派生路径，命中即止）：① 加工项名（加工项目录里工序名自带部位/工艺，
+     * 如「韩褶-布」「打孔-纱」「帘头制作」）② 加工项 options（如「四爪钩」）③ 商品名 ④ 销售方式。
+     * 两类信号各自独立扫描，只会派生出一半时另一半取默认值（来源记 {@code partial}）。</p>
      *
      * <p><b>来源四态（V60，issue #4308 冻结口径；落 {@code processing_orders.route_source}）</b>：
      * {@code derived} = 两维都由库中信号映射命中且路线在库中存在；{@code partial} = 只命中一维；
-     * {@code default} = 两维全不命中（T1）。**本方法只产出这三态**；第四态 {@code missing_route}
-     * （T2 = 派生键在库中无路线而回落默认路线）由 {@link #resolveRoute} 在回落时引入 ——
-     * 否则「回落过」与「本来就没派生」在数据上长得一模一样，而前者是错配高发形态。</p>
-     *
-     * <p>⚠️ 这是**当前的**取法：订单侧没有部位/帘种字段（见类注释「部位语义」节），
-     * 待订单侧补字段后应改为直读，届时本方法连同信号表一起退场。</p>
+     * {@code default} = 两维全不命中（T1）。**本方法只产出这三态 + 本包新增的 {@code direct}**；
+     * 第五态 {@code missing_route}（T2 = 键在库中无路线而回落默认路线）由 {@link #resolveRoute}
+     * 在回落时引入 —— 否则「回落过」与「本来就没派生」在数据上长得一模一样，
+     * 而前者是错配高发形态。</p>
      */
     private RouteKey deriveRouteKey(Map<String, Object> entry, Long tenantId) {
+        // ① 两维都直读 ⇒ direct（**不查**信号映射表：订单侧的真值优先于任何派生）
+        String directCurtainType = str(entry.get("curtainType"));
+        String directCraft = str(entry.get("craft"));
+        if (directCurtainType != null && directCraft != null) {
+            return new RouteKey(directCurtainType, directCraft, "direct");
+        }
+        // ② 只带一维 ⇒ 直读该维 + 派生另一维；③ 两维都缺（存量单）⇒ 保留既有派生
         List<String> signals = signals(entry);
         // 映射表来自**库**（租户级、商家可配）；常量表已删除 —— 派生不再读常量（issue #4308 P2）。
         List<ProductionRouteSignal> mappings = productionOperationQueryService.routeSignals(tenantId);
-        String curtainType = firstSignalMatch(signals, mappings, true);
-        String craft = firstSignalMatch(signals, mappings, false);
+        String curtainType = directCurtainType != null
+                ? directCurtainType : firstSignalMatch(signals, mappings, true);
+        String craft = directCraft != null ? directCraft : firstSignalMatch(signals, mappings, false);
         String source;
         if (curtainType != null && craft != null) {
-            source = "derived";
+            // 有一维是直读的 ⇒ 补救动作 = 去信号映射补另一维（与「两维都派生」的 derived 区分开）
+            source = directCurtainType != null || directCraft != null ? "partial" : "derived";
         } else if (curtainType != null || craft != null) {
             source = "partial";
         } else {
@@ -820,9 +959,9 @@ public class ProcessingOrderService {
     }
 
     /**
-     * 派生出的路线键 + 来源（{@code derived} 两维命中 / {@code partial} 只命中一维 /
-     * {@code default} 全不命中 —— **本 record 只产出这三态**，第四态 {@code missing_route}
-     * 由 {@link #resolveRoute} 在「派生键库中无路线而回落」时引入）。
+     * 路线键 + 来源（{@code direct} 两维直读订单工艺规格 / {@code derived} 两维都由信号映射命中 /
+     * {@code partial} 只命中或只直读一维 / {@code default} 全不命中 —— **本 record 只产出这四态**，
+     * 第五态 {@code missing_route} 由 {@link #resolveRoute} 在「键在库中无路线而回落」时引入）。
      */
     private record RouteKey(String curtainType, String craft, String source) {
     }
@@ -832,8 +971,8 @@ public class ProcessingOrderService {
      * 三者必须同源返回 —— 分两次算必然漂移（「用的路线」与「记下来的键」对不上就白记了）。
      *
      * @param routeKey          实际使用的路线键（T1/T2 时 = 默认 布帘×韩褶）
-     * @param routeRequestedKey 派生出来想用的路线键；两维全不命中（source=default）时 null
-     * @param routeSource       derived / partial / missing_route / default
+     * @param routeRequestedKey 想用的路线键（派生/直读出来的那个）；两维全不命中（source=default）时 null
+     * @param routeSource       direct / derived / partial / missing_route / default
      */
     private record RouteResolution(Map<String, Object> route, String routeKey,
                                    String routeRequestedKey, String routeSource) {
@@ -848,14 +987,17 @@ public class ProcessingOrderService {
      *   <li>{@code default}（3）—— 两维全不命中 = **零信息**下的默认路线：不知道该怎么走，
      *       错配无从预判（罗马帘订单今天就落在这一层）；</li>
      *   <li>{@code missing_route}（2）—— 知道该走哪条、库里却没有 ⇒ 走了默认路线，工序与计件工资**可能整体错**；</li>
-     *   <li>{@code partial}（1）—— 只命中一维 ⇒ 键可能错，补另一维即可；</li>
-     *   <li>{@code derived}（0）—— 无异常。</li>
+     *   <li>{@code partial}（1）—— 只命中/只直读一维 ⇒ 键可能错，补另一维即可；</li>
+     *   <li>{@code derived} / {@code direct}（0）—— 无异常。</li>
      * </ol>
      * 同档取先出现者（稳定）。逐部位明细在工序实例里，这里只回答「这张单有没有需要人看的东西」。
+     *
+     * <p>{@code direct}（issue #4354）与 {@code derived} **同档**：两者都不是「需要人看」的形态，
+     * 故不新增档位、不改既有相对次序；混档时按行序取先出现者（与「两个 derived 之间」的既有取法一致）。</p>
      */
     private static int severity(String routeSource) {
         return switch (routeSource == null ? "default" : routeSource) {
-            case "derived" -> 0;
+            case "derived", "direct" -> 0;
             case "partial" -> 1;
             case "missing_route" -> 2;
             default -> 3; // default 及其它未知取值：按最需关注处理（不静默降级）
@@ -921,6 +1063,12 @@ public class ProcessingOrderService {
     /**
      * 快照构建（五要素 + options；不含销售价——决策 2）。
      * 加工项 options 下单时未落库，此处从加工项目录补齐（设计文档查漏点 1）。
+     *
+     * <p><b>craft spec + 算料输出（issue #4354，设计文档 §4.9）</b>：订单侧自 #4346 起把工艺规格与
+     * 算料输出落在 {@code processing_info} 顶层；本方法**逐键**取（{@code copyIfPresent}）——
+     * 新键不加进白名单就**不会进快照**，而快照是加工单的**固化真相**（生成时的条件工序与计件系数
+     * 都从它读）⇒ 漏一个键 = 车间少一道活 / 少一个展示字段，事后补不回来。
+     * 逐键透传的代价是「缺键就缺」（存量单没有这些键）—— **不造值**是硬约束。</p>
      */
     @SuppressWarnings("unchecked")
     private List<Map<String, Object>> buildSnapshot(List<OrderItem> items, Long tenantId) {
@@ -933,6 +1081,8 @@ public class ProcessingOrderService {
                 continue;
             }
             Map<String, Object> entry = new LinkedHashMap<>();
+            // 明细行 id：拼色绑组的组键来源（§4.8 的 craftLineId 取「主布行的 order_item.id」）
+            entry.put("itemId", item.getId());
             entry.put("productName", item.getProductName());
             entry.put("quantity", item.getQuantity());
             entry.put("width", item.getWidth());
@@ -948,6 +1098,13 @@ public class ProcessingOrderService {
             // 落在既有 processingInfo JSONB 内（**无需迁移**）；加工单快照透传一份，
             // 生成时的条件工序/计件系数都从快照读（快照是加工单的固化真相）。
             copyIfPresent(pi, entry, "specialOptions");
+            // 工艺规格 + 算料输出（issue #4354）：全键逐字透传（缺键就缺）
+            for (String key : CRAFT_SPEC_SNAPSHOT_KEYS) {
+                copyIfPresent(pi, entry, key);
+            }
+            for (String key : CALC_OUTPUT_SNAPSHOT_KEYS) {
+                copyIfPresent(pi, entry, key);
+            }
             // 加工项明细 + options 补齐
             List<Map<String, Object>> itemsWithOptions = new ArrayList<>();
             for (Map<String, Object> p : procs) {

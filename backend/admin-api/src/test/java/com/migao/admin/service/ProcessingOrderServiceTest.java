@@ -136,6 +136,18 @@ class ProcessingOrderServiceTest {
             {"外帘发货", "后道", "套", "1.0", "false", "false"}};
 
     /**
+     * rt-v58-01 纱帘×打孔 —— 6 道（V58 种子逐字）。与布帘路线**一道工序都不重合**
+     * ⇒ 「纱帘订单不得拿到布帘工序」这条判据（issue #4354 判据 A）的判别物。
+     */
+    private static final String[][] V58_SHALU_DAKONG = {
+            {"精裁-纱", "裁剪", "米", "0.4", "false", "true"},
+            {"纱三边", "车位", "米", "0.4", "false", "false"},
+            {"打孔-纱", "车位", "孔", "0.15", "false", "false"},
+            {"外帘打卷", "后道", "套", "1.0", "false", "false"},
+            {"外帘装袋", "后道", "套", "1.0", "true", "false"},
+            {"外帘发货", "后道", "套", "1.0", "false", "false"}};
+
+    /**
      * 信号映射表桩（V60，issue #4308）：**逐行抄自 V60 迁移的种子** ——
      * 而 V60 的种子又是迁移前两张常量表（`CURTAIN_TYPE_KEYWORDS` / `CRAFT_KEYWORDS`）的逐条快照。
      *
@@ -178,7 +190,9 @@ class ProcessingOrderServiceTest {
     private void stubLibrary() {
         when(productionOperationQueryService.findRouting(eq(TENANT), anyString(), anyString()))
                 .thenAnswer(inv -> v54Route(inv.getArgument(1), inv.getArgument(2)));
-        when(productionOperationQueryService.routeSignals(TENANT)).thenReturn(v60Signals());
+        // lenient：**直读**路径（订单带 curtainType + craft，issue #4354）根本不查信号映射表
+        // ⇒ 该桩备而不用；Mockito 严格桩会把「备而不用」判为失败 —— 那是噪音，不是缺陷。
+        lenient().when(productionOperationQueryService.routeSignals(TENANT)).thenReturn(v60Signals());
     }
 
     /** V54 库路线的形态（与 ProductionOperationQueryService.findRouting 的返回同构）。 */
@@ -186,6 +200,7 @@ class ProcessingOrderServiceTest {
         String[][] steps = switch (curtainType + "×" + craft) {
             case "布帘×韩褶" -> V54_BULIAN_HANZHE;
             case "布帘×打孔" -> V54_BULIAN_DAKONG;
+            case "纱帘×打孔" -> V58_SHALU_DAKONG;
             default -> null;
         };
         if (steps == null) {
@@ -264,9 +279,9 @@ class ProcessingOrderServiceTest {
         });
     }
 
-    /** 工序 → 单位（查 V54 两条路线表；未知工序返回 null ⇒ 走兜底档）。 */
+    /** 工序 → 单位（查 V54/V58 三条路线表；未知工序返回 null ⇒ 走兜底档）。 */
     private static String unitOfOperation(String operation) {
-        for (String[][] table : List.of(V54_BULIAN_HANZHE, V54_BULIAN_DAKONG)) {
+        for (String[][] table : List.of(V54_BULIAN_HANZHE, V54_BULIAN_DAKONG, V58_SHALU_DAKONG)) {
             for (String[] row : table) {
                 if (row[0].equals(operation)) {
                     return row[2];
@@ -476,6 +491,147 @@ class ProcessingOrderServiceTest {
                 .productName(productName).quantity(BigDecimal.valueOf(2))
                 .width(new BigDecimal("2.5")).height(new BigDecimal("2.8"))
                 .processingInfo(info).build();
+    }
+
+    // ── craft spec 消费（issue #4354 / 设计文档 §4.7 直读优先 · §4.8 craftLineId 分组 · §4.9 快照白名单）──
+    //
+    // 订单侧自包 1（#4346）起把工艺规格落在 `processing_info` **顶层**；此前 Java 侧**不读**它们，
+    // 部位/工艺只能靠加工项名关键字**猜**（实证 V58：纱帘订单拿到布帘的 11 道工序，工序与工资全错）。
+    // 下面这批夹具/用例即「把猜换成读」的判据。
+
+    /** craft spec / 算料输出的键值对（保序；`k1, v1, k2, v2 …`）。 */
+    private static Map<String, Object> spec(Object... keyValues) {
+        Map<String, Object> spec = new LinkedHashMap<>();
+        for (int i = 0; i + 1 < keyValues.length; i += 2) {
+            spec.put(String.valueOf(keyValues[i]), keyValues[i + 1]);
+        }
+        return spec;
+    }
+
+    /** 同 {@link #processedItem}，另在 `processing_info` **顶层**补 craft spec / 算料输出键。 */
+    @SuppressWarnings("unchecked")
+    private OrderItem processedItemWithSpec(String itemId, String productName, String colorName,
+                                            List<Map<String, Object>> procs, Map<String, Object> spec) {
+        OrderItem item = processedItem(itemId, productName, colorName, procs);
+        ((Map<String, Object>) item.getProcessingInfo()).putAll(spec);
+        return item;
+    }
+
+    /**
+     * 纱帘·打孔订单（**带 craft spec**）：加工项名「韩褶-布」把**派生**指向 布帘×韩褶（11 道），
+     * 而 craft spec 直读 = 纱帘×打孔（6 道）—— 两条路线**一道工序都不重合**
+     * ⇒ 「直读优先」只有直读真生效时才绿（这正是 V58 实证的错配形态）。
+     */
+    private OrderItem orderItemShaluDakongWithSpec(String colorName) {
+        return processedItemWithSpec("item-1", "布艺遮光帘A", colorName,
+                List.of(Map.of("id", "p1", "name", "韩褶-布", "unitPrice", 3.0, "quantity", 2, "unit", "折")),
+                spec("curtainType", "纱帘", "craft", "打孔"));
+    }
+
+    /** 布帘·韩褶 + `isShaped=false`（判据 C：定型接线）。 */
+    private OrderItem orderItemHanzheUnshaped(String colorName) {
+        return processedItemWithSpec("item-1", "布艺遮光帘A", colorName,
+                List.of(Map.of("id", "p1", "name", "韩褶-布", "unitPrice", 3.0, "quantity", 2, "unit", "折")),
+                spec("curtainType", "布帘", "craft", "韩褶", "isShaped", false));
+    }
+
+    /** 同上，但 `isShaped` 是**脏数据**（字符串 "false"）⇒ 必须按「不是布尔 false」处理（与 Python `is False` 同款）。 */
+    private OrderItem orderItemHanzheWithStringIsShaped(String colorName) {
+        return processedItemWithSpec("item-1", "布艺遮光帘A", colorName,
+                List.of(Map.of("id", "p1", "name", "韩褶-布", "unitPrice", 3.0, "quantity", 2, "unit", "折")),
+                spec("curtainType", "布帘", "craft", "韩褶", "isShaped", "false"));
+    }
+
+    /** craft spec 键**存在但空白**（脏数据形态）⇒ 必须视为**缺键**，不得当成值。 */
+    private OrderItem orderItemHanzheWithBlankSpec(String colorName) {
+        return processedItemWithSpec("item-1", "布艺遮光帘A", colorName,
+                List.of(Map.of("id", "p1", "name", "韩褶-布", "unitPrice", 3.0, "quantity", 2, "unit", "折")),
+                spec("curtainType", "   ", "craft", ""));
+    }
+
+    /** 订单侧**已落库**算料输出（§4.3）—— 米/折两个主键 + 本包新增白名单的三个键。 */
+    private OrderItem orderItemHanzheWithCalcOutput(String colorName) {
+        return processedItemWithSpec("item-1", "布艺遮光帘A", colorName,
+                List.of(Map.of("id", "p1", "name", "韩褶-布", "unitPrice", 3.0, "quantity", 2, "unit", "折")),
+                spec("fabric_meters", new BigDecimal("12.3"), "pleat_count", 24,
+                        "per_panel_pleats", 12, "fullness", new BigDecimal("2.0"),
+                        "fullness_actual", new BigDecimal("1.95")));
+    }
+
+    /** craft spec **全键**（§4.2 的 11 键 + §4.8 的 3 键 + processingMeters）+ §4.3 算料输出 7 键。 */
+    private OrderItem orderItemWithFullCraftSpec(String colorName) {
+        return processedItemWithSpec("item-1", "布艺遮光帘A", colorName,
+                List.of(Map.of("id", "p1", "name", "打孔-纱", "unitPrice", 3.0, "quantity", 2, "unit", "孔")),
+                spec("curtainType", "纱帘", "craft", "打孔", "cuttingMode", "定高买宽", "openCount", 2,
+                        "isShaped", false, "pleatSpacing", new BigDecimal("0.1"),
+                        "hasPattern", true, "patternRepeat", new BigDecimal("0.6"),
+                        "style", "拼色", "room", "客厅", "batchNo", "B-20260918",
+                        "componentRole", "主布", "craftLineId", "item-1",
+                        "metersSource", "跟随主布", "processingMeters", new BigDecimal("12.3"),
+                        "fabric_meters", new BigDecimal("12.3"), "pleat_count", 24,
+                        "per_panel_pleats", 12, "panels", 4, "holes", 73.8,
+                        "fullness", new BigDecimal("2.0"), "fullness_actual", new BigDecimal("1.95")));
+    }
+
+    /** 无 craft spec / 无算料输出的行（判别「缺键就缺，不造值」）。 */
+    private OrderItem orderItemWithoutCraftSpec() {
+        return processedItemWithSpec("item-2", "遮光成品Y", "米白",
+                List.of(Map.of("id", "p9", "name", "工序甲", "unitPrice", 1.0, "quantity", 1, "unit", "米")),
+                Map.of());
+    }
+
+    /**
+     * 拼色一扇窗（判据 G）：主布行（item-1，带工艺规格 + 加工项）+ 配布边行（item-2，**同 craftLineId**）。
+     *
+     * <p>配布边行也带加工项 —— 这正是「一扇窗被算成两扇」的形态：部位数 / 工序 / 计件全部翻倍。
+     * 两行同 `craftLineId` ⇒ 消费端必须合并为一个部位。</p>
+     */
+    private List<OrderItem> colorBlockWindow() {
+        OrderItem main = processedItemWithSpec("item-1", "布艺遮光帘A", "米白",
+                List.of(Map.of("id", "p1", "name", "韩褶-布", "unitPrice", 3.0, "quantity", 2, "unit", "折")),
+                spec("curtainType", "布帘", "craft", "韩褶", "style", "拼色",
+                        "componentRole", "主布", "craftLineId", "item-1"));
+        OrderItem edge = processedItemWithSpec("item-2", "配布边", "米白",
+                List.of(Map.of("id", "p2", "name", "韩褶-布", "unitPrice", 3.0, "quantity", 2, "unit", "折")),
+                spec("style", "拼色", "componentRole", "配布边", "craftLineId", "item-1"));
+        return List.of(main, edge);
+    }
+
+    /**
+     * 同上，但主布行**自身不带** `craftLineId`，只有配布边行填「主布行的行标识」
+     * （= order_create 工具描述教的形态）⇒ 组键必须能由「本行 itemId」与「别行的 craftLineId」对齐。
+     */
+    private List<OrderItem> colorBlockWindowBoundByMainRowId() {
+        OrderItem main = processedItemWithSpec("item-1", "布艺遮光帘A", "米白",
+                List.of(Map.of("id", "p1", "name", "韩褶-布", "unitPrice", 3.0, "quantity", 2, "unit", "折")),
+                spec("curtainType", "布帘", "craft", "韩褶", "style", "拼色", "componentRole", "主布"));
+        OrderItem edge = processedItemWithSpec("item-2", "配布边", "米白",
+                List.of(Map.of("id", "p2", "name", "韩褶-布", "unitPrice", 3.0, "quantity", 2, "unit", "折")),
+                spec("style", "拼色", "componentRole", "配布边", "craftLineId", "item-1"));
+        return List.of(main, edge);
+    }
+
+    /** 路线表的工序名序列（断言用）。 */
+    private static List<String> operationNames(String[][] table) {
+        return java.util.Arrays.stream(table).map(row -> row[0]).toList();
+    }
+
+    /** 快照条目（craft spec 全键 + 算料输出），供详情响应用例直接喂 `items_snapshot`。 */
+    private static Map<String, Object> craftSpecSnapshotEntry() {
+        Map<String, Object> entry = new LinkedHashMap<>();
+        entry.put("itemId", "item-1");
+        entry.put("productName", "布艺遮光帘A");
+        entry.put("colorName", "米白");
+        entry.putAll(spec("curtainType", "纱帘", "craft", "打孔", "cuttingMode", "定高买宽",
+                "openCount", 2, "isShaped", false, "pleatSpacing", new BigDecimal("0.1"),
+                "hasPattern", true, "patternRepeat", new BigDecimal("0.6"), "style", "拼色",
+                "batchNo", "B-20260918", "componentRole", "主布", "craftLineId", "item-1",
+                "metersSource", "跟随主布", "processingMeters", new BigDecimal("12.3"),
+                "fabric_meters", new BigDecimal("12.3"), "pleat_count", 24, "per_panel_pleats", 12,
+                "panels", 4, "holes", 73.8, "fullness", new BigDecimal("2.0"),
+                "fullness_actual", new BigDecimal("1.95")));
+        entry.put("processingItems", List.of(Map.of("id", "p1", "name", "打孔-纱")));
+        return entry;
     }
 
     /** 脏数据：加工项缺名称（#4116 的防御分支——不得因脏数据阻断加工单生成） */
@@ -1362,6 +1518,214 @@ class ProcessingOrderServiceTest {
                 .insert(any(ProcessingPositionOperation.class));
     }
 
+    // ══ issue #4354（设计文档 §4.7 / §4.8 / §4.9）：Java 消费端把「猜」换成「读」══
+
+    @Test
+    @DisplayName("#4354 判据 A：订单带 curtainType=纱帘 + craft=打孔 ⇒ **直读**取 纱帘×打孔（派生会指向布帘）")
+    void craftSpecDirectReadBeatsKeywordDerivation() {
+        stubLibrary();
+        stubGenerate(List.of(orderItemShaluDakongWithSpec("米白")));
+
+        var results = realChainService().generate(List.of("order-001"), TENANT, "u1");
+
+        assertThat(results.get(0).isSuccess()).isTrue();
+        // 直读 ⇒ 取订单写下的键，且**不查**信号映射表（派生只是存量单兜底）
+        verify(productionOperationQueryService).findRouting(TENANT, "纱帘", "打孔");
+        verify(productionOperationQueryService, never()).findRouting(TENANT, "布帘", "韩褶");
+        verify(productionOperationQueryService, never()).routeSignals(TENANT);
+
+        ArgumentCaptor<ProcessingOrder> poCaptor = ArgumentCaptor.forClass(ProcessingOrder.class);
+        verify(processingOrderMapper).insert(poCaptor.capture());
+        assertThat(poCaptor.getValue().getRouteKey()).isEqualTo("纱帘×打孔");
+        assertThat(poCaptor.getValue().getRouteSource()).as("直读 = 新增第 5 态 direct").isEqualTo("direct");
+        assertThat(poCaptor.getValue().getRouteRequestedKey()).isEqualTo("纱帘×打孔");
+
+        ArgumentCaptor<ProcessingPositionOperation> opCaptor =
+                ArgumentCaptor.forClass(ProcessingPositionOperation.class);
+        verify(positionOperationMapper, times(V58_SHALU_DAKONG.length)).insert(opCaptor.capture());
+        List<String> instantiated = opCaptor.getAllValues().stream()
+                .map(ProcessingPositionOperation::getOperationName).toList();
+        assertThat(instantiated).containsExactlyElementsOf(operationNames(V58_SHALU_DAKONG));
+        // 「不重合」按**布帘专属**工序判：打卷/装袋/发货是两条路线共有的后道
+        // （V58 种子按布帘同工艺镜像时**刻意保留**了这一段，见该迁移注释）⇒ 拿整条布帘路线比会假红。
+        List<String> bulianOnly = new ArrayList<>(operationNames(V54_BULIAN_HANZHE));
+        bulianOnly.removeAll(operationNames(V58_SHALU_DAKONG));
+        assertThat(bulianOnly).as("自检：判别物必须非空（否则本断言空转 = 假绿）").isNotEmpty();
+        assertThat(instantiated).as("V58 实证的错配：纱帘订单**不得**拿到布帘专属工序")
+                .doesNotContainAnyElementsOf(bulianOnly);
+    }
+
+    @Test
+    @DisplayName("#4354 判据 C：isShaped=false ⇒ 实例**剔除** 定型-布 / 复烫-布（真值源 §10 的唯一未接线项）")
+    void unshapedOrderDropsShapingOperations() {
+        stubLibrary();
+        stubGenerate(List.of(orderItemHanzheUnshaped("米白")));
+
+        var results = realChainService().generate(List.of("order-001"), TENANT, "u1");
+
+        assertThat(results.get(0).isSuccess()).isTrue();
+        ArgumentCaptor<ProcessingPositionOperation> opCaptor =
+                ArgumentCaptor.forClass(ProcessingPositionOperation.class);
+        verify(positionOperationMapper, times(V54_BULIAN_HANZHE.length - 2)).insert(opCaptor.capture());
+        List<ProcessingPositionOperation> instances = opCaptor.getAllValues();
+        assertThat(instances).extracting(ProcessingPositionOperation::getOperationName)
+                .doesNotContain("定型-布", "复烫-布")
+                .contains("韩褶-布", "外帘发货");
+        assertThat(instances).extracting(ProcessingPositionOperation::getSeq)
+                .as("删两道后 seq 必须重排为连续 1..N（前道判定 防呆② 按 seq 取立即前道，留空档会看错前道）")
+                .containsExactlyElementsOf(java.util.stream.IntStream
+                        .rangeClosed(1, V54_BULIAN_HANZHE.length - 2).boxed().toList());
+    }
+
+    @Test
+    @DisplayName("#4354 只认**严格布尔** false：isShaped 为脏数据（字符串）⇒ 不删工序（与 routing.py 的 `is False` 同款）")
+    void nonBooleanIsShapedDoesNotDropShapingOperations() {
+        stubLibrary();
+        stubGenerate(List.of(orderItemHanzheWithStringIsShaped("米白")));
+
+        var results = realChainService().generate(List.of("order-001"), TENANT, "u1");
+
+        assertThat(results.get(0).isSuccess()).isTrue();
+        verify(positionOperationMapper, times(V54_BULIAN_HANZHE.length))
+                .insert(any(ProcessingPositionOperation.class));
+    }
+
+    @Test
+    @DisplayName("#4354 判据 E：两维全缺且派生也拿不到路线 ⇒ fail-closed（不静默落别的路线、不落半成品）")
+    void missingCraftSpecAndUnderivableRouteFailsClosed() {
+        // 库里**只有** 纱帘×打孔（没有默认路线 布帘×韩褶）：两维全缺 ⇒ 派生全不命中 ⇒ T3 ⇒ 中止生成
+        when(productionOperationQueryService.findRouting(eq(TENANT), anyString(), anyString()))
+                .thenAnswer(inv -> "纱帘".equals(inv.getArgument(1)) ? v54Route("纱帘", "打孔") : null);
+        when(productionOperationQueryService.routingKeys(TENANT)).thenReturn(List.of("纱帘×打孔"));
+        when(orderMapper.selectById("order-001")).thenReturn(confirmedOrder);
+        when(orderItemMapper.selectList(any())).thenReturn(List.of(orderItemWithoutRouteSignal()));
+        when(processingOrderMapper.selectActiveByOrderId("order-001", TENANT)).thenReturn(null);
+
+        var results = processingOrderService.generate(List.of("order-001"), TENANT, "u1");
+
+        assertThat(results.get(0).isSuccess()).isFalse();
+        assertThat(results.get(0).getCode()).isEqualTo(ProcessingOrderService.ERR_ROUTING_NOT_FOUND);
+        verify(processingOrderMapper, never()).insert(any(ProcessingOrder.class));
+        verify(productionService, never()).instantiate(anyString(), any(), anyLong());
+    }
+
+    @Test
+    @DisplayName("#4354 空白 craft spec 键 = **缺键**（不把空白当值 ⇒ 不造出「 ×韩褶」这种路线键）")
+    void blankCraftSpecKeysAreTreatedAsAbsent() {
+        stubLibrary();
+        stubGenerate(List.of(orderItemHanzheWithBlankSpec("米白")));
+
+        var results = realChainService().generate(List.of("order-001"), TENANT, "u1");
+
+        assertThat(results.get(0).isSuccess()).isTrue();
+        ArgumentCaptor<ProcessingOrder> poCaptor = ArgumentCaptor.forClass(ProcessingOrder.class);
+        verify(processingOrderMapper).insert(poCaptor.capture());
+        assertThat(poCaptor.getValue().getRouteKey()).isEqualTo("布帘×韩褶");
+        assertThat(poCaptor.getValue().getRouteSource())
+                .as("空白键不是值：仍走既有派生（derived）—— 既不是 direct，也不是 missing_route")
+                .isEqualTo("derived");
+    }
+
+    @Test
+    @DisplayName("#4354 判据 G：拼色一扇窗（主布行 + 配布边行同 craftLineId）⇒ **只生成一个部位**，工序不翻倍")
+    void colorBlockWindowProducesSinglePosition() {
+        stubLibrary();
+        stubGenerate(colorBlockWindow());
+
+        var results = realChainService().generate(List.of("order-001"), TENANT, "u1");
+
+        assertThat(results.get(0).isSuccess()).isTrue();
+        // 一个部位 ⇒ 算料只被问一个部位（否则折数/开数按「两扇窗」各算一次 = 双算）
+        ArgumentCaptor<List<Map<String, Object>>> reqCaptor = ArgumentCaptor.forClass(List.class);
+        verify(productionOperationQtyClient).resolve(reqCaptor.capture());
+        assertThat(reqCaptor.getValue()).as("一扇窗 = 一个部位（主布 + 配布边 合并）").hasSize(1);
+        assertThat(reqCaptor.getValue().get(0).get("position_name")).isEqualTo("布艺遮光帘A 米白");
+        // 工序实例 = 主布路线的 11 道，**不是** 22 道
+        ArgumentCaptor<ProcessingPositionOperation> opCaptor =
+                ArgumentCaptor.forClass(ProcessingPositionOperation.class);
+        verify(positionOperationMapper, times(V54_BULIAN_HANZHE.length)).insert(opCaptor.capture());
+        assertThat(opCaptor.getAllValues()).extracting(ProcessingPositionOperation::getOperationName)
+                .containsExactlyElementsOf(operationNames(V54_BULIAN_HANZHE));
+    }
+
+    @Test
+    @DisplayName("#4354 craftLineId 绑组：配布边行填**主布行的行标识**（主布行自身无该键）⇒ 同样只生成一个部位")
+    void edgeRowBindingByMainRowIdAlsoMerges() {
+        stubLibrary();
+        stubGenerate(colorBlockWindowBoundByMainRowId());
+
+        var results = realChainService().generate(List.of("order-001"), TENANT, "u1");
+
+        assertThat(results.get(0).isSuccess()).isTrue();
+        ArgumentCaptor<List<Map<String, Object>>> reqCaptor = ArgumentCaptor.forClass(List.class);
+        verify(productionOperationQtyClient).resolve(reqCaptor.capture());
+        assertThat(reqCaptor.getValue()).hasSize(1);
+        verify(positionOperationMapper, times(V54_BULIAN_HANZHE.length))
+                .insert(any(ProcessingPositionOperation.class));
+    }
+
+    @Test
+    @DisplayName("#4354 判据 B（消费端半边）：订单带 fabric_meters/pleat_count ⇒ 米类应做数量取自算料输出，不是 fallback 1")
+    void orderCalcOutputReachesQtyEngineInsteadOfFallback() {
+        Map<String, Object> calcInfo = generateAndCaptureCalcInfo(orderItemHanzheWithCalcOutput("米白"), true);
+
+        assertThat(calcInfo).as("订单侧已落库的算料输出必须原样透传给算料端点")
+                .containsKeys("fabric_meters", "pleat_count");
+        assertThat(calcInfo).as("§4.3 新增白名单键：per_panel_pleats / fullness / fullness_actual")
+                .containsKeys("per_panel_pleats", "fullness", "fullness_actual");
+
+        List<ProcessingPositionOperation> instances = capturedInstances();
+        assertThat(instances.get(0).getOperationName()).isEqualTo("精裁-布");
+        assertThat(instances.get(0).getQtySource())
+                .as("米类工序应做数量必须来自算料输出（fallback 1 = 本单要治的缺陷）")
+                .isEqualTo("fabric_meters");
+        assertThat(instances.get(0).getQty()).isEqualByComparingTo(CALC_FABRIC_METERS);
+        assertThat(instances.get(2).getOperationName()).isEqualTo("韩褶-布");
+        assertThat(instances.get(2).getQtySource()).isEqualTo("pleat_count");
+        assertThat(instances.get(2).getQty()).isEqualByComparingTo(CALC_PLEAT_COUNT);
+    }
+
+    @Test
+    @DisplayName("#4354 §4.9 快照白名单：craft spec 全键 + 算料输出键逐键进快照；缺键就缺（不造值）")
+    void snapshotCarriesCraftSpecAndCalcOutputVerbatim() {
+        stubLibrary();
+        when(orderMapper.selectById("order-001")).thenReturn(confirmedOrder);
+        when(orderItemMapper.selectList(any()))
+                .thenReturn(List.of(orderItemWithFullCraftSpec("米白"), orderItemWithoutCraftSpec()));
+        when(processingOrderMapper.selectActiveByOrderId("order-001", TENANT)).thenReturn(null);
+        when(processingOrderMapper.insert(any(ProcessingOrder.class))).thenReturn(1);
+
+        processingOrderService.generate(List.of("order-001"), TENANT, "u1");
+
+        ArgumentCaptor<ProcessingOrder> poCaptor = ArgumentCaptor.forClass(ProcessingOrder.class);
+        verify(processingOrderMapper).insert(poCaptor.capture());
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> snapshot = (List<Map<String, Object>>) poCaptor.getValue().getItemsSnapshot();
+        assertThat(snapshot).hasSize(2);
+
+        Map<String, Object> withSpec = snapshot.get(0);
+        assertThat(withSpec).containsEntry("itemId", "item-1");
+        assertThat(withSpec).containsEntry("curtainType", "纱帘").containsEntry("craft", "打孔");
+        assertThat(withSpec).containsEntry("cuttingMode", "定高买宽").containsEntry("openCount", 2);
+        assertThat(withSpec).containsEntry("isShaped", false)
+                .containsEntry("pleatSpacing", new BigDecimal("0.1"));
+        assertThat(withSpec).containsEntry("hasPattern", true)
+                .containsEntry("patternRepeat", new BigDecimal("0.6"));
+        assertThat(withSpec).containsEntry("style", "拼色").containsEntry("room", "客厅")
+                .containsEntry("batchNo", "B-20260918");
+        assertThat(withSpec).containsEntry("componentRole", "主布").containsEntry("craftLineId", "item-1")
+                .containsEntry("metersSource", "跟随主布")
+                .containsEntry("processingMeters", new BigDecimal("12.3"));
+        assertThat(withSpec).containsKeys("fabric_meters", "pleat_count", "per_panel_pleats",
+                "panels", "holes", "fullness", "fullness_actual");
+
+        Map<String, Object> withoutSpec = snapshot.get(1);
+        assertThat(withoutSpec).containsEntry("itemId", "item-2");
+        assertThat(withoutSpec).as("缺键就缺：Java 不发明工艺规格，也不发明算料数字")
+                .doesNotContainKeys("curtainType", "craft", "isShaped", "componentRole", "craftLineId",
+                        "fabric_meters", "pleat_count", "per_panel_pleats");
+    }
+
     @Test
     @DisplayName("#4116 切库后幂等：库派生 payload 重放实例化 ⇒ 一行不写、qr_token 复用（#4116 §4 不回退）")
     void libraryDerivedPayloadReplayIsIdempotentAndKeepsQrToken() {
@@ -1728,6 +2092,45 @@ class ProcessingOrderServiceTest {
         assertThat(resp.getItems().get(0).getProductName()).isEqualTo("布艺遮光帘A");
         assertThat(resp.getItems().get(0).getColorName()).isEqualTo("米白");
         assertThat(resp.getItems().get(0).getProcessingItems()).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("#4354 §4.9 第③处展示：加工单详情响应必须透出 craft spec（DTO 未声明 ⇒ 未知属性 ⇒ items 整段 null）")
+    void detailExposesCraftSpecForDisplay() {
+        ProcessingOrder po = po("po-1", "issued");
+        po.setItemsSnapshot(List.of(craftSpecSnapshotEntry()));
+        when(processingOrderMapper.selectOne(any())).thenReturn(po);
+        when(orderMapper.selectById("order-001")).thenReturn(confirmedOrder);
+
+        ProcessingOrderResponse resp = processingOrderService.getDetail("po-1", TENANT);
+
+        assertThat(resp.getItems())
+                .as("快照出现 DTO 未声明的键 ⇒ Jackson 未知属性 ⇒ items 整段退化成 null（响应静默）")
+                .isNotNull().hasSize(1);
+        ProcessingOrderResponse.ProcessingOrderItemBrief brief = resp.getItems().get(0);
+        assertThat(brief.getItemId()).isEqualTo("item-1");
+        assertThat(brief.getCurtainType()).isEqualTo("纱帘");
+        assertThat(brief.getCraft()).isEqualTo("打孔");
+        assertThat(brief.getCuttingMode()).isEqualTo("定高买宽");
+        assertThat(brief.getOpenCount()).isEqualTo(2);
+        assertThat(brief.getIsShaped()).isEqualTo(false);
+        assertThat(brief.getPleatSpacing()).isEqualTo(new BigDecimal("0.1"));
+        assertThat(brief.getHasPattern()).isEqualTo(true);
+        assertThat(brief.getPatternRepeat()).isEqualTo(new BigDecimal("0.6"));
+        assertThat(brief.getStyle()).isEqualTo("拼色");
+        assertThat(brief.getBatchNo()).isEqualTo("B-20260918");
+        assertThat(brief.getComponentRole()).isEqualTo("主布");
+        assertThat(brief.getCraftLineId()).isEqualTo("item-1");
+        assertThat(brief.getMetersSource()).isEqualTo("跟随主布");
+        assertThat(brief.getProcessingMeters()).isEqualTo(new BigDecimal("12.3"));
+        assertThat(brief.getFabricMeters()).isEqualTo(new BigDecimal("12.3"));
+        assertThat(brief.getPleatCount()).isEqualTo(24);
+        assertThat(brief.getPerPanelPleats()).isEqualTo(12);
+        assertThat(brief.getPanels()).isEqualTo(4);
+        assertThat(brief.getHoles()).isEqualTo(73.8);
+        assertThat(brief.getFullness()).isEqualTo(new BigDecimal("2.0"));
+        assertThat(brief.getFullnessActual()).isEqualTo(new BigDecimal("1.95"));
+        assertThat(brief.getRoom()).as("快照里没有的键 → 响应就是 null（不造值）").isNull();
     }
 
     // ── 验收复核修复（PR #3345）：生成竞态/并发重复 ──────────────────

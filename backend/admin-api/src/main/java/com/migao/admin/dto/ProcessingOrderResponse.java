@@ -1,5 +1,6 @@
 package com.migao.admin.dto;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.Data;
 
 import java.math.BigDecimal;
@@ -59,6 +60,12 @@ public class ProcessingOrderResponse {
      */
     @Data
     public static class ProcessingOrderItemBrief {
+        /**
+         * 订单明细行 id（issue #4354）：拼色绑组用 —— `craftLineId` 按设计文档 §4.8 取「主布行的
+         * {@code order_item.id}」，配布边行填的就是它。进快照是为了让「一扇窗 = 一组」这件事
+         * 在**固化真相**里自解释（缺 `craftLineId` 时它就是本行自己的组键）。
+         */
+        private String itemId;
         private String productName;
         private String sku;
         private String colorName;
@@ -80,6 +87,74 @@ public class ProcessingOrderResponse {
          */
         private Object specialOptions;
         private String remark;
+
+        // ── 工艺规格（craft spec，issue #4354 / 设计文档 §4.9 第③处展示）──────────────
+        //
+        // 快照（`items_snapshot`）是加工单的**固化真相**；下面这些键由订单侧下单时原样落库
+        // （§4.2 / §4.3），本 DTO 逐键声明 —— **漏一个键，响应里 `items` 就整段变 null**
+        // （Jackson 未知属性 ⇒ `toResponse` 的 convertValue 抛错被 catch ⇒ 静默退化）。
+        //
+        // 一律用 `Object`（同 `specialOptions` 的理由）：工艺规格来自多个写面（ai-agent /
+        // 下单页 / 商家补录），形态不干净时**不得**让整份快照解析失败；取值一律**逐字透传**
+        // 订单已落库的值，Java 不发明、不归一（缺键就是 null）。
+
+        /** 部位/帘种（`布帘` / `纱帘` / `帘头`，与工序库 `production_routings.curtain_type` 同枚举）。 */
+        private Object curtainType;
+        /** 安装工艺（`韩褶` / `打孔` / `四爪钩` / `穿杆` / `平幔`）。 */
+        private Object craft;
+        /** 加工类型（`定高买宽` / `定宽买高`）。 */
+        private Object cuttingMode;
+        /** 打开方式（`1` / `2` / `4`）。 */
+        private Object openCount;
+        /** 是否定型：`false` ⇒ 实例化时已剔除 `定型-布` / `复烫-布`（本包接线）。 */
+        private Object isShaped;
+        /** 褶距（米）。 */
+        private Object pleatSpacing;
+        /** 是否对花。 */
+        private Object hasPattern;
+        /** 花距（米）。 */
+        private Object patternRepeat;
+        /** 款式（`单色` / `拼色`）。 */
+        private Object style;
+        /** 房间名。 */
+        private Object room;
+        /** 面料批号。 */
+        private Object batchNo;
+        /** 明细行角色（`主布` / `配布边` / `纱`；缺省视为 `主布`）。 */
+        private Object componentRole;
+        /** 同一扇窗的绑组标识（配布边行填主布行的行标识；同组只生成一个部位）。 */
+        private Object craftLineId;
+        /** 配布边米数来源（`跟随主布` / `人工指定`）。 */
+        private Object metersSource;
+        /** 加工费米数（= 主布行米数；配布边米数不参与）。 */
+        private Object processingMeters;
+
+        // ── 算料输出（§4.3；键名 snake_case 与 CALC_INFO_KEYS / routing.py 同口径，**不改名**）──
+        //
+        // ⚠️ 必须显式 `@JsonProperty`：全局 ObjectMapper **没有** SNAKE_CASE 命名策略
+        // （快照其余键都是 camelCase），不标注 ⇒ 键映射不上 ⇒ 这几个字段恒为 null（静默）。
+
+        /** 面料米数。 */
+        @JsonProperty("fabric_meters")
+        private Object fabricMeters;
+        /** 总褶数。 */
+        @JsonProperty("pleat_count")
+        private Object pleatCount;
+        /** 折数（每片）。 */
+        @JsonProperty("per_panel_pleats")
+        private Object perPanelPleats;
+        /** 幅数（定宽买高）。 */
+        @JsonProperty("panels")
+        private Object panels;
+        /** 打孔孔数。 */
+        @JsonProperty("holes")
+        private Object holes;
+        /** 理论褶倍。 */
+        @JsonProperty("fullness")
+        private Object fullness;
+        /** 实际褶倍。 */
+        @JsonProperty("fullness_actual")
+        private Object fullnessActual;
     }
 
     @Data
