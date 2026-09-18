@@ -107,6 +107,34 @@ SET_KEYS = ("set_count",)                  # 引擎暂未产出 ⇒ 兜底 1（�
 # 孔数估算：引擎不产出 `holes` 时的行业口径（每米约 6 孔；12.3 米 → 72 孔与现场核对一致）
 HOLE_PER_METER = 6
 
+# 单位 → 该单位应做数量的候选来源键（**有序**，与 `_qty_for` 的分支逐条对应）
+# 存在理由（issue #4208）：内部端点要回答 `qty_source_by_operation`（口径来源），
+# 而「哪个键供了数」这件事只在 `_qty_for` 的分支里。此处把它声明成数据，端点据此标注
+# —— **数量值仍由 `_qty_for` 给出，本表不参与计算**（严禁第二份算料逻辑）。
+# 漂移护栏：`tests/test_production/test_operation_qty.py::TestSourceKeysDriftGate` 逐单位喂键
+# 反查 `_qty_for` 是否真读该键（改 `_qty_for` 的读键而不改本表 ⇒ 红）。
+QTY_SOURCE_KEYS: Dict[str, tuple] = {
+    "米": METER_KEYS,
+    "折": FOLD_KEYS,
+    "孔": HOLE_KEYS + METER_KEYS,   # holes 命中 ⇒ 直采；无 holes 有米数 ⇒ 按米估算（见下）
+    "幅": PANEL_KEYS,
+    "套": SET_KEYS,
+}
+
+# 非「孔」单位**直接供数**的键（命中即报键名）：引擎真产出 `fabric_meters`/`pleat_count`。
+# 「孔」的直采键是 `holes`（引擎暂未产出，见 HOLE_KEYS 注释，但调用方可按现场口径给出），
+# 在 `qty_and_source` 的「孔」分支单独处理 —— 该分支还有「按米估算」这一中间态。
+DIRECT_QTY_KEYS = ("fabric_meters", "pleat_count")
+
+# `qty_source` 的三态语义（字段存在的唯一理由：让「真兜底」与「有依据的推算」可区分）
+#   ① 键名（DIRECT_QTY_KEYS）           = 该键直接供数（算料输出 / 现场给定）
+#   ② "<键名>_x6"（HOLE_PER_METER 后缀）= 无 holes 时按**每米 HOLE_PER_METER 孔**的行业口径
+#      估算（见 `_qty_for` 的「孔」分支②；12.3 米 → 73.8 孔，与现场核对一致）
+#      ⇒ 标 fallback 会把「有依据的估算」说成「占位值」，正是本单要治的误导
+#   ③ "fallback"                        = 真兜底：无键可读 / 引擎不认识的工序或单位 /
+#      panels・set_count（引擎已登记为**待补键**：见 PANEL_KEYS/SET_KEYS 注释，未产出）
+HOLE_ESTIMATE_SUFFIX = f"_x{HOLE_PER_METER}"
+
 
 def _qty_for(operation: str, calc_info: Dict[str, Any]) -> float:
     """应做数量 = 算料引擎输出（折数/用料/孔数/幅数/套数），报工只确认不心算。
@@ -138,6 +166,33 @@ def _pick(calc_info: Dict[str, Any], keys: tuple, default: Any) -> Any:
         if value is not None:
             return value
     return default
+
+
+def qty_and_source(operation: str, calc_info: Dict[str, Any]) -> tuple:
+    """应做数量 + 口径来源标签（issue #4208）：`(qty, qty_source)`。
+
+    数量：命中算料键 ⇒ 一律取 `_qty_for`（**唯一算料真相源**，严禁第二份逻辑）；
+    无口径（缺键 / 引擎不认识的工序 / 引擎不认识的单位）⇒ **兜底 1，绝不落 0**
+    （应做 0 ⇒ `done_qty ≥ qty` 恒真 ⇒ 假完工）。
+
+    来源标签三态见模块常量注释（{@link DIRECT_QTY_KEYS} / {@link HOLE_ESTIMATE_SUFFIX}）：
+    键名 = 直接供数；`<键名>_x6` = 每米 6 孔的行业估算；"fallback" = 真兜底。
+    调用方据此区分「算料输出 / 有依据的估算 / 兜底占位」，**不据此报错**（判据 3：HTTP 仍 200）。
+    """
+    unit = OPERATION_CATALOG.get(operation, {}).get("unit")
+    for key in QTY_SOURCE_KEYS.get(unit, ()):
+        if calc_info.get(key) is None:
+            continue
+        qty = _qty_for(operation, calc_info)
+        if unit == "孔":
+            # 分支① holes 直采；分支② 无 holes 有米数 ⇒ 每米 HOLE_PER_METER 孔的行业估算
+            # （分支②的值 ≠ 真兜底 1.0 ⇒ 必须可与分支③区分，否则「有依据的估算」被说成占位值）
+            return (qty, key) if key in HOLE_KEYS else (qty, f"{key}{HOLE_ESTIMATE_SUFFIX}")
+        if key in DIRECT_QTY_KEYS:
+            return qty, key
+        # panels / set_count：引擎**待补键**（PANEL_KEYS/SET_KEYS 注释）⇒ 不是算料输出
+        return qty, "fallback"
+    return 1.0, "fallback"
 
 
 def build_routing(position: Dict[str, Any]) -> List[str]:
