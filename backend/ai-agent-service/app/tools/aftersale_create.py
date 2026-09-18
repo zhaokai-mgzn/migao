@@ -12,7 +12,11 @@ from loguru import logger
 
 from app.tools.base import admin_api_failure, BaseTool, ToolContext, ToolResult
 from app.utils.enum_labels import TICKET_TYPE_LABELS
-from app.tools.order_create import CLIENT_REQUEST_ID_HEADER, _request_window_id
+from app.tools.order_create import (
+    AFTERSALE_CREATE_OP,
+    CLIENT_REQUEST_ID_HEADER,
+    _request_window_id,
+)
 from app.utils.http_client import get_admin_api_client
 
 
@@ -250,10 +254,12 @@ class AftersaleCreateTool(BaseTool):
                 # 服务端只接受白名单值，缺省回退 agent（= 旧行为）。
                 headers={
                     "X-Agent-Client": context.ticket_source,
-                    # 幂等键（issue #4037 / F19；作用域 = **会话**，issue #4195）：同一会话
-                    # 同一重试窗内取值相同 ⇒ 服务端去重，「已建单但客户端报失败」后重试
-                    # **只落一张工单**；不同会话取值不同 ⇒ 不再回放别人的工单。
-                    CLIENT_REQUEST_ID_HEADER: _request_window_id(context),
+                    # 幂等键（issue #4037 / F19；作用域 = **会话**，issue #4195；维度 = **操作**，
+                    # issue #4212）：同一会话同一重试窗内取值相同 ⇒ 服务端去重，「已建单但客户端
+                    # 报失败」后重试**只落一张工单**；不同会话取值不同 ⇒ 不再回放别人的工单；
+                    # `op=AFTERSALE_CREATE_OP` ⇒ 不再与下单/转人工端点撞键（服务端唯一键不含
+                    # endpoint，撞键时按本端点类型回放别人的快照 ⇒ 409「本次未重复建单」）。
+                    CLIENT_REQUEST_ID_HEADER: _request_window_id(context, op=AFTERSALE_CREATE_OP),
                 },
             )
 

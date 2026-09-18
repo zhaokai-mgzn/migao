@@ -25,7 +25,11 @@ import re
 from loguru import logger
 
 from app.tools.base import admin_api_failure, BaseTool, ToolContext, ToolResult
-from app.tools.order_create import CLIENT_REQUEST_ID_HEADER, _request_window_id
+from app.tools.order_create import (
+    CLIENT_REQUEST_ID_HEADER,
+    HUMAN_HANDOFF_OP,
+    _request_window_id,
+)
 from app.utils.http_client import get_admin_api_client
 
 # ── GB/T 47746-2026 转人工上下文同步（issue #2776）────────────────────
@@ -396,10 +400,11 @@ class HumanHandoffTool(BaseTool):
                 # 放 header 不放 body（同 #3605 取舍：来源不由 payload 决定）。
                 headers={
                     "X-Agent-Client": context.ticket_source,
-                    # 幂等键（issue #4037 / F19；作用域 = **会话**，issue #4195）：同一会话
-                    # 同一重试窗内取值相同 ⇒ 服务端去重，「已建单但客户端报失败」后重试
-                    # **只落一张工单**；不同会话取值不同 ⇒ 不再回放别人的工单。
-                    CLIENT_REQUEST_ID_HEADER: _request_window_id(context),
+                    # 幂等键（issue #4037 / F19；作用域 = **会话**，issue #4195；维度 = **操作**，
+                    # issue #4212）：同一会话同一重试窗内取值相同 ⇒ 服务端去重，「已建单但客户端
+                    # 报失败」后重试**只落一张工单**；不同会话取值不同 ⇒ 不再回放别人的工单；
+                    # `op=HUMAN_HANDOFF_OP` ⇒ 不再与下单/售后端点撞键（服务端唯一键不含 endpoint）。
+                    CLIENT_REQUEST_ID_HEADER: _request_window_id(context, op=HUMAN_HANDOFF_OP),
                 },
             )
 

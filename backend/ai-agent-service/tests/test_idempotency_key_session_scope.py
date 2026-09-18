@@ -1,7 +1,7 @@
-# case_ids: OR-011, OR-017
-"""幂等键必须按**会话**分段（issue #4195，P0 跨会话串单）—— 红证先行。
+# case_ids: OR-011, OR-017, AS-007
+"""幂等键必须按**会话** × **操作**分段（issue #4195 P0 跨会话串单；issue #4212 跨端点撞键）。
 
-## 缺陷（值级 + 代码级两重证据）
+## 缺陷 1（值级 + 代码级两重证据，issue #4195）
 判定 run `35295494688`（@`d5bca241`）：mibao 腿的 `OR-011` / `OR-014`（两次调用）/ `OR-028`
 **都拿到同一张单**（`order_create(replayed=True orderNo=20260918485580004 customerName=张三
 customerPhone=13812345678)`），而该单逐字是 **`OR-010` 的 user_inputs**；
@@ -13,16 +13,29 @@ xiaobu 腿 `OR-017` / `OR-018` / `OR-019` 同样都拿到别人的单（期望 4
 引入者 = `5c94a315`（#4072 的 F19/F22）；三个调用点：`order_create` / `aftersale_create` /
 `human_handoff`（后两者 `from app.tools.order_create import _request_window_id`）。
 
-## 本文件的两条红证 + 一把接线锁（判据各自都能红，见末两个 class）
+## 缺陷 2（服务端契约读数，issue #4212）：键**不标识"哪一次逻辑写请求"**
+服务端去重键 = `(tenant_id, client_request_id)`，**不含 endpoint**（`V50` 建表：表里有
+`endpoint` 列但不进唯一键）；命中已占位时 `AgentAfterSalesController` 按**本端点自己的类型**
+`replay(..., AfterSalesDetailResponse.class)`，反序列化别人端点的快照必然失败 ⇒
+`orElseThrow(409, "本次未重复建单")`。⇒ 同一会话 10 分钟窗内**先建订单、再建售后工单**
+（或反之）⇒ 第二次被 409 挡下，且文案指向"重复提交"（归因误导：用户只请求了一次）。
+旧键（进程全局）撞键概率更高，故 #4195 是严格改善、不消除本形态。
+修法：键里加**操作维度**（三个调用点各自的常量，单一事实源 = `ORDER_CREATE_OP` 等三个常量，
+集中定义在 `order_create.py` 供另两处 import）；同操作重试仍取同键 ⇒ F19 语义不变。
+
+## 本文件的三条红证 + 一把接线锁（判据各自都能红，见末三个 class）
 1. 【红证 1】两个**不同 `session_id`** 的 `ToolContext` ⇒ 键必须**不同**（改前：进程全局 ⇒ 同键）；
 2. 【红证 2】**同一** `ToolContext` + 同一窗口 ⇒ 键必须**相同** —— F19 语义
    （「订单已落库但客户端报失败 ⇒ 模型重试 ⇒ 服务端仍只落一单」）不得被这次修复破坏；
-3. 【接线锁】三个调用点都必须把本会话的 `ToolContext` 递进**同一入口**（静态判据 + 处方副本红证
-   + 经真实工具的端到端头断言）。
+3. 【红证 3】**同一** `ToolContext` + **两个不同操作** ⇒ 键必须**不同**（改前：键里没有 op ⇒ 同键
+   ⇒ 服务端按本端点类型回放别人端点的快照 ⇒ 409）；
+4. 【接线锁】三个调用点都必须把本会话的 `ToolContext` + **本文件的操作常量**递进**同一入口**
+   （静态判据 + 处方副本红证 + 经真实工具的端到端头断言）。
 
-## 本单**不**解决（如实登记，见 #4195 第五节）
-同一会话 10 分钟窗内的**两笔不同订单**（合法复购）仍会被当成重试吞掉 —— 需按归一化订单事实
-指纹（`order_facts_of`，F22 已存在）收窄；把"重试去重"与"内容去重"一次改完会同时动两处语义。
+## 本单**不**解决（如实登记，见 #4195 第五节 / #4212）
+同一会话、**同一操作**、10 分钟窗内的**两笔不同订单**（合法复购）仍会被当成重试吞掉 ——
+需按归一化订单事实指纹（`order_facts_of`，F22 已存在）收窄；把"重试去重"与"内容去重"
+一次改完会同时动两处语义（#4212 第二节 A 类残留）。
 """
 from __future__ import annotations
 
@@ -51,7 +64,21 @@ APP_DIR = SERVICE_DIR / "app"
 KEY_ENTRY = "_request_window_id"
 KEY_HELPERS = ("_window_id", "_request_window_id")
 #: 三条写路径（每个文件**恰好 1 处**调用入口）：少一处 = 该写路径没有幂等键。
-WRITE_PATHS = ("tools/order_create.py", "tools/aftersale_create.py", "tools/human_handoff.py")
+#: 值 = 该写路径**必须**使用的操作维度常量名（issue #4212；单一事实源在 `tools/order_create.py`）。
+WRITE_PATHS = {
+    "tools/order_create.py": "ORDER_CREATE_OP",
+    "tools/aftersale_create.py": "AFTERSALE_CREATE_OP",
+    "tools/human_handoff.py": "HUMAN_HANDOFF_OP",
+}
+#: 操作常量必须**只**定义在入口模块（第二份定义 = 三处口径各自漂移）。
+OP_OWNER = "tools/order_create.py"
+#: 三个操作维度的**期望取值**。刻意钉死字面量：改值 = 部署窗口内同一次重试的键轮换
+#: （旧 pod 与新 pod 算出不同键 ⇒ 灰度期间那一单可能重复落库）—— 不是随手可改的常量。
+EXPECTED_OPS = {
+    "ORDER_CREATE_OP": "order",
+    "AFTERSALE_CREATE_OP": "aftersale",
+    "HUMAN_HANDOFF_OP": "handoff",
+}
 
 #: 钉死的"现在"（1_700_000_000 ≈ 2023-11-14）：幂等键是时间的函数，不钉时钟的断言会在
 #: 窗口边界随机红/绿（`_IDEMPOTENCY_WINDOW_SECONDS = 600`，两个断言之间跨窗即假红）。
@@ -70,15 +97,15 @@ def _ctx(session_id: Optional[str], user_id: str = "u1", tenant_id: int = 1,
     return ToolContext(tenant_id=tenant_id, user_id=user_id, session_id=session_id, role=role)
 
 
-def _keys_of(*contexts: ToolContext) -> list:
-    """在**同一个窗口**里为每个 context 各取一次键（差异只可能来自作用域）。"""
+def _keys_of(*contexts: ToolContext, op: str = order_create.ORDER_CREATE_OP) -> list:
+    """在**同一个窗口**里为每个 context 各取一次键（差异只可能来自作用域 / 操作维度）。"""
     with _at():
-        return [order_create._request_window_id(ctx) for ctx in contexts]
+        return [order_create._request_window_id(ctx, op=op) for ctx in contexts]
 
 
 @pytest.fixture(autouse=True)
 def _fresh_window_cache():
-    """每个用例从空缓存开始：`(窗口, 作用域)` 进缓存键 ⇒ 跨用例残留会让"同键/异键"断言失真。"""
+    """每个用例从空缓存开始：`(窗口, 作用域, 操作)` 进缓存键 ⇒ 跨用例残留会让"同键/异键"断言失真。"""
     order_create._window_id.cache_clear()
     yield
     order_create._window_id.cache_clear()
@@ -129,10 +156,11 @@ class TestKeyIsScopedToTheSession:
     def test_key_rotates_across_windows_for_the_same_session(self):
         """跨窗必须换新键（R2）：顾客**真的想再下一单**时不能被当成重试吞掉。"""
         ctx = _ctx("sess_A", "u1")
+        op = order_create.ORDER_CREATE_OP
         with _at():
-            now_key = order_create._request_window_id(ctx)
+            now_key = order_create._request_window_id(ctx, op=op)
         with _at(_NOW + 600 * 2):
-            later_key = order_create._request_window_id(ctx)
+            later_key = order_create._request_window_id(ctx, op=op)
         assert now_key != later_key, (
             f"跨窗仍是同一把键（{now_key}）⇒ 10 分钟后顾客的合法复购全被当成重试回放")
 
@@ -172,6 +200,67 @@ class TestKeyIsScopedToTheSession:
         assert len({first, second, identity_key}) == 3, (
             f"无身份的键撞上了某个会话的键：{[first, second, identity_key]}")
 
+    def test_no_identity_key_still_carries_the_operation(self):
+        """无身份分支也把 `op` 纳入键的构成（#4212）—— 否则该分支下两个操作又同键。"""
+        order_key, aftersale_key = (
+            _keys_of(None, op=order_create.ORDER_CREATE_OP)[0],
+            _keys_of(None, op=order_create.AFTERSALE_CREATE_OP)[0])
+        assert order_key != aftersale_key, (
+            f"无身份分支里两个操作共用一把键（{order_key}）⇒ 与身份分支口径不一致"
+            "（键的构成随身份存在与否而变，是下一处漂移源）")
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# ①′ 键的操作维度：同一会话跨端点（#4212）—— 红证 3
+# ──────────────────────────────────────────────────────────────────────────────
+
+class TestKeyIsScopedToTheOperation:
+    """:red_circle: **红证 3**（issue #4212）—— 同会话**不同操作**必须取**不同**键。
+
+    服务端去重键 = `(tenant_id, client_request_id)`（**不含 endpoint**，`V50` 建表）：
+    同会话同窗内"下单"与"售后建单"共用一把键 ⇒ 第二次 `claim` 失败 ⇒
+    `AgentAfterSalesController` 按**本端点类型**回放别人端点的快照 ⇒ 反序列化失败 ⇒
+    409「本次未重复建单」—— 用户只请求了一次却被拒，文案还指向"重复提交"。
+    """
+
+    OPS = ("ORDER_CREATE_OP", "AFTERSALE_CREATE_OP", "HUMAN_HANDOFF_OP")
+
+    def test_two_operations_in_one_session_get_different_keys(self):
+        """:red_circle: 【红证 3】同一 `ToolContext` + 三个不同操作 ⇒ 三把**不同**的键。"""
+        ctx = _ctx("sess_A", "u1")
+        keys = [_keys_of(ctx, op=getattr(order_create, name))[0] for name in self.OPS]
+        assert len(set(keys)) == 3, (
+            f"同一会话的三个操作只得到 {len(set(keys))} 把键：{keys} ⇒ 服务端按本端点类型回放"
+            "别人端点的快照 ⇒ 409「本次未重复建单」（用户只请求一次却被拒，归因误导）")
+
+    def test_operation_and_session_are_independent_dimensions(self):
+        """3 操作 × 2 会话 ⇒ 6 把互不相同的键（操作维度不得把两个会话折叠到一起）。"""
+        ops = [getattr(order_create, name) for name in self.OPS]
+        keys = [order_create._request_window_id(ctx, op=op)
+                for op in ops for ctx in (_ctx("sess_A", "u1"), _ctx("sess_B", "u2"))]
+        assert len(set(keys)) == 6, f"3 操作 × 2 会话只得到 {len(set(keys))} 把键：{keys}"
+
+    @pytest.mark.parametrize("op_name", OPS)
+    def test_same_operation_retry_reuses_the_key(self, op_name):
+        """**:large_blue_circle: F19 不破**：同一会话 + **同一操作** + 同窗 ⇒ 键必须相同。
+
+        三个操作各测一遍 —— 只测下单会让"售后/转人工的键每次都在轮换"漏网
+        （那两条写路径的重试照样重复建单）。
+        """
+        op = getattr(order_create, op_name)
+        first, retry = _keys_of(_ctx("sess_A", "u1"), _ctx("sess_A", "u1"), op=op)
+        assert first == retry, (
+            f"{op_name}（op={op}）：同一会话的重试换了键（{first} ≠ {retry}）⇒ 服务端去重失效，"
+            "「已落库但报失败」后的重试会**重复落单**（F19 被这次改动破坏）")
+
+    def test_the_three_operations_are_distinct_constants(self):
+        """操作维度是**单一事实源**的常量：取值互不相同，且不是随手可改的字面量。"""
+        actual = {name: getattr(order_create, name) for name in self.OPS}
+        assert actual == EXPECTED_OPS, (
+            f"操作常量取值变了：{actual}（期望 {EXPECTED_OPS}）—— 改值 = 部署窗口内同一次重试"
+            "的键轮换（旧/新 pod 算出不同键 ⇒ 灰度期间可能重复落库）；若确要改，"
+            "同步更新本判据并在 PR 里说明灰度口径")
+
 
 class TestKeyStaysAWireSafeHeaderValue:
     """键要进 HTTP 头 + 服务端 `client_request_keys.client_request_id VARCHAR(128)`。"""
@@ -199,15 +288,41 @@ class TestKeyStaysAWireSafeHeaderValue:
         assert len(set(keys)) == 3, (
             f"只差一个标点的会话号被折叠成同一把键：{keys} —— 清洗式实现会引入跨会话串单")
 
+    @pytest.mark.parametrize("hostile_op", [
+        "order",                    # 生产形态
+        "op/one",                   # 斜杠
+        "a b",                      # 空格
+        'x"y;z',                    # 引号/分号（头注入形态）
+        "操作",                      # 非 ASCII
+        "",                         # 空串（接线写错时的形态）
+        "o" * 200,                  # 超长：服务端 `normalize()` 对 >128 **抛错拒绝**（不是静默截断）
+    ])
+    def test_key_is_a_valid_header_value_for_hostile_ops(self, hostile_op):
+        """`op` 与作用域同口径处理（sha256 定长 token）⇒ 任意 op 都不会撑破键长。
+
+        服务端 `ClientRequestIdService.normalize()` 对 `> 128` **抛 `BusinessException`
+        拒绝**（400 级）—— 所以"op 直接拼进键"在超长/非法字符下会把写请求打成 400；
+        哈希后键长恒定（本判据同时钉住 ≤128 与字符集）。
+        """
+        key = _keys_of(_ctx("sess_A", "u1"), op=hostile_op)[0]
+        assert re.fullmatch(r"[A-Za-z0-9._:-]{8,128}", key), (
+            f"op={hostile_op!r} 时键是 {key!r} —— 不是合法 HTTP 头值/超出服务端 VARCHAR(128)")
+        assert len(key) <= 128, f"op={hostile_op!r} 时键长 {len(key)} 超过服务端 VARCHAR(128)"
+
 
 class TestF19SurvivesConcurrency:
-    """作用域进缓存键后，条目数 ≈ 一个窗口内的活跃会话数 —— 容量不足会**静默**毁掉 F19。"""
+    """作用域/操作进缓存键后，条目数 ≈ 一个窗口内的活跃会话数 × 操作数 —— 容量不足会**静默**毁掉 F19。"""
 
-    @staticmethod
-    def _keys_stay_stable(key_of, window: int, scopes: list) -> bool:
+    #: 缓存键的**调用形态**必须唯一：`lru_cache` 把 `f(1,2,3)` 与 `f(1,2,op=3)` 当成两条不同条目
+    #: ⇒ 一处按位置传、一处按关键字传 = 同一次重试取到两把键（F19 静默失效）。故本文件的判据
+    #: 一律用与生产同一形态（`op=` 关键字）调用。
+    OP = "order"
+
+    @classmethod
+    def _keys_stay_stable(cls, key_of, window: int, scopes: list) -> bool:
         """同窗内先取一轮（制造多作用域），再回取第一个 —— 值必须没变（= 没被挤出缓存）。"""
-        first = {s: key_of(window, s) for s in scopes}
-        return key_of(window, scopes[0]) == first[scopes[0]]
+        first = {s: key_of(window, s, op=cls.OP) for s in scopes}
+        return key_of(window, scopes[0], op=cls.OP) == first[scopes[0]]
 
     def test_many_sessions_in_one_window_keep_their_keys(self):
         scopes = [f"sess_{i:03d}" for i in range(64)]
@@ -215,11 +330,41 @@ class TestF19SurvivesConcurrency:
             "同窗内 64 个会话把先前的条目挤出缓存 ⇒ 重试取到**新键** ⇒ 服务端无从去重"
             "（F19 在并发下静默失效，而单线程小规模测试看不出来）")
 
+    def test_three_operations_do_not_evict_each_other(self):
+        """操作维度把条目数**×3** ⇒ 缓存容量必须同步扩容（沿用旧值 = F19 余量静默缩到 1/3）。
+
+        判据 = 64 会话 × 3 操作全取一遍后，最早那条仍在（没被挤出）。这条在容量退回
+        #4195 时的 4096 下**也会通过**（192 < 4096），故它钉的是"实现把三份都算进容量"，
+        扩容本身由常量注释与 `_IDEMPOTENCY_CACHE_SIZE` 的取值承担。
+        """
+        key_of = order_create._window_id
+        ops = (order_create.ORDER_CREATE_OP, order_create.AFTERSALE_CREATE_OP,
+               order_create.HUMAN_HANDOFF_OP)
+        first = key_of(_WINDOW, "sess_000", op=ops[0])
+        for op in ops:
+            for s in [f"sess_{i:03d}" for i in range(64)]:
+                key_of(_WINDOW, s, op=op)
+        assert key_of(_WINDOW, "sess_000", op=ops[0]) == first, (
+            "三个操作的条目互相挤出 ⇒ 同一次重试取到新键（F19 静默失效）")
+
     def test_the_stability_predicate_can_go_red_on_a_small_cache(self):
         """:red_circle: 判据自身可红：容量退回 8（改动前的 `maxsize`）⇒ 同一判据必须报「不稳定」。"""
         tiny = lru_cache(maxsize=8)(order_create._window_id.__wrapped__)
         assert self._keys_stay_stable(tiny, _WINDOW, [f"sess_{i:03d}" for i in range(64)]) is False, (
             "小容量缓存下判据仍然「稳定」 ⇒ 上一条断言是空的（它抓不到缓存挤出的形态）")
+
+    def test_the_operation_cannot_be_passed_positionally(self):
+        """:red_circle: 结构性护栏：`op` 必须是**关键字限定**参数（位置传参直接 TypeError）。
+
+        为什么这条是行为判据而不是实现洁癖：`lru_cache` 把 `f(w, s, op)` 与 `f(w, s, op=op)`
+        当成**两条不同条目** ⇒ 两种形态并存时，同一次重试会取到两把键（F19 静默失效，
+        而且只在"有的调用点按位置传"时出现 —— 单点调用的小规模测试看不出来）。
+        关键字限定让这个形态**不可表达**（改前：位置传参合法 ⇒ 本判据红）。
+        """
+        with pytest.raises(TypeError):
+            order_create._window_id(_WINDOW, "sess_A", self.OP)
+        with pytest.raises(TypeError):
+            order_create._request_window_id(_ctx("sess_A", "u1"), self.OP)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -323,6 +468,33 @@ class TestWritePathsSendTheSessionScopedKey:
         assert key_a != key_b, (
             f"转人工建单：两个会话下发了同一个幂等键（{key_a}）⇒ 第二张工单被回放成第一张")
 
+    async def test_one_session_three_endpoints_send_three_keys(self):
+        """:red_circle: 红证 3 的端到端形态（#4212）：**同一会话**先下单、再售后建单、再转人工。
+
+        改前：三条写路径共用一把键 ⇒ 服务端 `claim` 命中已占位 ⇒ 按**本端点类型**回放
+        别人端点的快照 ⇒ 反序列化失败 ⇒ 409「本次未重复建单」（用户只请求了一次却被拒）。
+        ⚠️ 下单用 `role="agent"` 只为绕开 SMS 闸门；售后/转人工工具**只对客户开放**
+        （`role="customer"`）—— 三者 `session_id` 相同 ⇒ 作用域一致，差异只可能来自 op。
+        """
+        ctx = _ctx("sess_A", "u1")
+        with _at():
+            order_key = await self._order_key(_ctx("sess_A", "u1", role="agent"))
+            aftersale_key = await self._aftersale_key(ctx)
+            handoff_key = await self._handoff_key(ctx)
+        assert len({order_key, aftersale_key, handoff_key}) == 3, (
+            f"同一会话的三个端点下发了 {len({order_key, aftersale_key, handoff_key})} 把键"
+            f"（下单={order_key} / 售后={aftersale_key} / 转人工={handoff_key}）"
+            " ⇒ 后两个请求会被服务端按本端点类型回放第一个端点的快照 ⇒ 409「本次未重复建单」")
+
+    async def test_same_endpoint_retry_still_reuses_one_key(self):
+        """:large_blue_circle: F19 不破（端到端）：同一会话 + 同一端点 ⇒ 仍是同一把键。"""
+        ctx = _ctx("sess_A", "u1")
+        with _at():
+            first = await self._aftersale_key(ctx)
+            retry = await self._aftersale_key(ctx)
+        assert first == retry, (
+            f"售后建单：同一会话的重试换了键（{first} ≠ {retry}）⇒ 「已建单但报失败」后重试会重复建单")
+
 
 # ──────────────────────────────────────────────────────────────────────────────
 # ③ 接线锁（静态）：判据 = 源码文本的纯函数
@@ -347,8 +519,32 @@ def key_calls(source: str) -> list:
             if isinstance(n, ast.Call) and _callee(n) == KEY_ENTRY]
 
 
+def op_argument_gaps(rel: str, call: ast.Call, expected: str) -> list:
+    """调用点的 `op` 实参缺口（**空 = 该点用对了操作常量**，issue #4212）。
+
+    判据只认**常量名**：写字面量（`op="aftersale"`）或错常量（`op=ORDER_CREATE_OP`）都报出
+    —— 前者让三处口径各自漂移且静态抓不到，后者把"售后"写成"下单"的键（跨端点撞键照旧）。
+    """
+    gaps: list = []
+    named = [kw for kw in call.keywords if kw.arg == "op"]
+    if len(named) != 1:
+        return [f"{rel}:{call.lineno}: `op` 关键字实参 {len(named)} 个（期望恰好 1 个）"
+                " —— 缺 op = 键不区分操作（#4212 的跨端点撞键：售后/订单共用一把键 ⇒ 409）"]
+    value = named[0].value
+    if not isinstance(value, ast.Name):
+        gaps.append(
+            f"{rel}:{call.lineno}: `op` 的实参是 {ast.unparse(value)!r}（期望常量名 `{expected}`）"
+            " —— 写字面量 ⇒ 三处口径各自漂移，且改名/改值不会被任何判据发现")
+    elif value.id != expected:
+        gaps.append(
+            f"{rel}:{call.lineno}: `op` 用的是 `{value.id}`（本文件期望 `{expected}`）"
+            " —— 操作维度串台 = 两个端点的写请求共用一把键（服务端按本端点类型回放必失败 ⇒ 409）")
+    return gaps
+
+
 def wiring_gaps(sources: dict) -> list:
-    """接线缺口清单（**空 = 接线成立**）：每个调用点都递了本会话的 `context`，且三条写路径都在册。"""
+    """接线缺口清单（**空 = 接线成立**）：每个调用点都递了本会话的 `context` + **本文件的 op 常量**，
+    且三条写路径都在册。"""
     gaps: list = []
     for rel in WRITE_PATHS:
         source = sources.get(rel)
@@ -367,6 +563,44 @@ def wiring_gaps(sources: dict) -> list:
                 gaps.append(
                     f"{rel}:{call.lineno}: `{KEY_ENTRY}` 的实参是 {handed or '（无）'}"
                     "（期望 [`context`]）—— 幂等键必须由**本会话的 ToolContext**决定")
+            if rel in WRITE_PATHS:
+                gaps.extend(op_argument_gaps(rel, call, WRITE_PATHS[rel]))
+    return gaps
+
+
+def op_constant_sites(sources: dict) -> list:
+    """操作常量的**定义点**（口径必须单点：`tools/order_create.py` 之外再定义一份 = 漂移源）。"""
+    sites: list = []
+    for rel, source in sorted(sources.items()):
+        for node in ast.walk(ast.parse(source)):
+            targets = node.targets if isinstance(node, ast.Assign) else (
+                [node.target] if isinstance(node, ast.AnnAssign) else [])
+            for target in targets:
+                if isinstance(target, ast.Name) and target.id in EXPECTED_OPS:
+                    sites.append(f"{rel}:{node.lineno}:{target.id}")
+    return sites
+
+
+def op_import_gaps(sources: dict) -> list:
+    """另两条写路径**从入口模块 import** 各自的操作常量（缺口清单，空 = 成立）。"""
+    gaps: list = []
+    for rel, op_name in sorted(WRITE_PATHS.items()):
+        if rel == OP_OWNER:
+            continue
+        source = sources.get(rel)
+        if source is None:
+            gaps.append(f"{rel}: 源码缺失 —— 判据的真相源消失（fail-closed）")
+            continue
+        imported = {
+            alias.asname or alias.name
+            for node in ast.walk(ast.parse(source))
+            if isinstance(node, ast.ImportFrom) and node.module == "app.tools.order_create"
+            for alias in node.names
+        }
+        if op_name not in imported:
+            gaps.append(
+                f"{rel}: 未从 app.tools.order_create import {op_name}（实得 {sorted(imported)}）"
+                " —— 就地定义/写死 = 操作维度不再是同一常量源")
     return gaps
 
 
@@ -381,7 +615,7 @@ def helper_definition_sites(sources: dict) -> list:
 
 
 class TestCallSitesGoThroughOneEntryPoint:
-    """接线锁：三个调用点都走**同一入口**，且入口**只定义一次**（不新增第二份口径）。"""
+    """接线锁：三个调用点都走**同一入口** + **本文件的操作常量**，入口与常量各**只定义一次**。"""
 
     def test_the_sources_are_real(self):
         """fail-closed：读不到源文件 ⇒ 判据空转，宁可红。"""
@@ -393,7 +627,8 @@ class TestCallSitesGoThroughOneEntryPoint:
     def test_every_call_site_hands_in_the_session_context(self):
         gaps = wiring_gaps(app_sources())
         assert gaps == [], ("接线断了：\n  " + "\n  ".join(gaps)
-                            + "\n\n修法：三个调用点都写 `_request_window_id(context)`")
+                            + "\n\n修法：三个调用点都写 "
+                              "`_request_window_id(context, op=<本文件的操作常量>)`")
 
     def test_the_entry_point_has_exactly_one_implementation(self):
         sites = helper_definition_sites(app_sources())
@@ -402,6 +637,21 @@ class TestCallSitesGoThroughOneEntryPoint:
             f"幂等键出现第二份实现：{sites} —— 三个调用点必须走同一入口（口径分裂 ⇒ 各自漂移）")
         assert len(sites) == len(KEY_HELPERS), (
             f"幂等键的定义点数量变了（期望 {len(KEY_HELPERS)} 个 = {KEY_HELPERS}）：{sites}")
+
+    def test_the_operation_constants_have_one_source_of_truth(self):
+        """三个操作常量**只在入口模块**定义一次（另两处 import）—— 否则三处口径各自漂移。"""
+        sites = op_constant_sites(app_sources())
+        modules = sorted({s.split(":")[0] for s in sites})
+        assert modules == [OP_OWNER], (
+            f"操作维度常量出现第二份定义：{sites} —— 单一事实源必须是 {OP_OWNER}"
+            "（另两处 `from app.tools.order_create import <常量>`）")
+        assert len(sites) == len(EXPECTED_OPS), (
+            f"操作常量定义点数量变了（期望 {len(EXPECTED_OPS)} 个 = {list(EXPECTED_OPS)}）：{sites}")
+
+    def test_every_write_path_imports_its_operation_constant(self):
+        """另两条写路径必须**从入口模块 import** 操作常量（不得就地定义/写字面量）。"""
+        missing = op_import_gaps(app_sources())
+        assert missing == [], ("操作维度不是同一常量源：\n  " + "\n  ".join(missing))
 
 
 class TestWiringLockCanGoRed:
@@ -424,13 +674,14 @@ class TestWiringLockCanGoRed:
 
     def test_dropping_the_context_argument_is_caught(self):
         gaps = wiring_gaps(self._mutated("tools/human_handoff.py",
-                                         f"{KEY_ENTRY}(context)", f"{KEY_ENTRY}()"))
-        assert len(gaps) == 1 and "实参" in gaps[0], f"不传 context 未被报出（判据是空的）：{gaps}"
+                                         f"{KEY_ENTRY}(context, op=HUMAN_HANDOFF_OP)",
+                                         f"{KEY_ENTRY}()"))
+        assert any("实参" in g for g in gaps), f"不传 context 未被报出（判据是空的）：{gaps}"
 
     def test_removing_the_idempotency_header_is_caught(self):
         gaps = wiring_gaps(self._mutated(
             "tools/aftersale_create.py",
-            f"CLIENT_REQUEST_ID_HEADER: {KEY_ENTRY}(context),", ""))
+            f"CLIENT_REQUEST_ID_HEADER: {KEY_ENTRY}(context, op=AFTERSALE_CREATE_OP),", ""))
         assert any("调用点 0 处" in g for g in gaps), f"整条幂等键被摘掉却未报出：{gaps}"
 
     def test_missing_source_file_is_caught(self):
@@ -447,9 +698,52 @@ class TestWiringLockCanGoRed:
         assert modules == ["tools/aftersale_create.py", "tools/order_create.py"], (
             f"第二份幂等键实现未被报出：{modules}")
 
+    def test_dropping_the_op_argument_is_caught(self):
+        """:red_circle: 处方 = 调用点不传 `op`（#4212 改前形态）⇒ 必须报出。"""
+        gaps = wiring_gaps(self._mutated(
+            "tools/human_handoff.py",
+            f"{KEY_ENTRY}(context, op=HUMAN_HANDOFF_OP)", f"{KEY_ENTRY}(context)"))
+        assert any("关键字实参" in g for g in gaps), (
+            f"调用点不传 op 却未报出（接线锁是空的）：{gaps}")
+
+    def test_a_literal_operation_value_is_caught(self):
+        """:red_circle: 处方 = 写字面量（`op="handoff"`）⇒ 必须报出（三处口径会各自漂移）。"""
+        gaps = wiring_gaps(self._mutated(
+            "tools/human_handoff.py",
+            f"{KEY_ENTRY}(context, op=HUMAN_HANDOFF_OP)", f'{KEY_ENTRY}(context, op="handoff")'))
+        assert any("字面量" in g for g in gaps), f"op 写字面量却未报出：{gaps}"
+
+    def test_swapping_the_operation_constant_is_caught(self):
+        """:red_circle: 处方 = 传错常量（售后传下单的 op）⇒ 必须报出（跨端点撞键照旧）。"""
+        gaps = wiring_gaps(self._mutated(
+            "tools/aftersale_create.py",
+            f"{KEY_ENTRY}(context, op=AFTERSALE_CREATE_OP)",
+            f"{KEY_ENTRY}(context, op=ORDER_CREATE_OP)"))
+        assert any("串台" in g for g in gaps), f"op 常量串台却未报出：{gaps}"
+
+    def test_a_local_operation_constant_is_caught(self):
+        """:red_circle: 处方 = 就地再定义一份操作常量 ⇒ 必须报出（单一事实源被破）。"""
+        sources = self._mutated(
+            "tools/aftersale_create.py", "class AftersaleCreateTool",
+            'AFTERSALE_CREATE_OP = "aftersale"\n\n\nclass AftersaleCreateTool')
+        modules = sorted({s.split(":")[0] for s in op_constant_sites(sources)})
+        assert modules == ["tools/aftersale_create.py", OP_OWNER], (
+            f"第二份操作常量定义未被报出：{modules}")
+
+    def test_a_missing_operation_import_is_caught(self):
+        """:red_circle: 处方 = 另两条写路径不 import 操作常量 ⇒ 必须报出。"""
+        sources = app_sources()
+        for rel, anchor in (("tools/aftersale_create.py", "    AFTERSALE_CREATE_OP,\n"),
+                            ("tools/human_handoff.py", "    HUMAN_HANDOFF_OP,\n")):
+            assert sources[rel].count(anchor) == 1, f"处方锚点漂了：{rel} 里 {anchor!r}"
+            sources[rel] = sources[rel].replace(anchor, "")
+        gaps = op_import_gaps(sources)
+        assert len(gaps) == 2 and all("import" in g for g in gaps), (
+            f"操作常量未被 import 却静默通过：{gaps}")
+
 
 class TestTheTwoRedProofsCanGoRed:
-    """**:red_circle: 红证 1/2 的判据自身可红**：把被测行为改坏，`_keys_of` 必须报出改前形态。"""
+    """**:red_circle: 红证 1/2/3 的判据自身可红**：把被测行为改坏，`_keys_of` 必须报出改前形态。"""
 
     def test_the_scope_predicate_reports_the_old_process_global_behaviour(self, monkeypatch):
         """处方 = 改前口径（作用域**进程全局**）⇒ 两个会话必同键（红证 1 因此会红）。"""
@@ -462,7 +756,24 @@ class TestTheTwoRedProofsCanGoRed:
     def test_the_retry_predicate_reports_a_key_that_stops_being_cached(self, monkeypatch):
         """处方 = 去掉缓存（每次新键，等价于"不去重"）⇒ 同一会话的重试必不同键（红证 2 因此会红）。"""
         monkeypatch.setattr(order_create, "_window_id",
-                            lambda window, scope: f"{window}-{uuid.uuid4().hex[:12]}")
+                            lambda window, scope, *, op: f"{window}-{uuid.uuid4().hex[:12]}")
         first, retry = _keys_of(_ctx("sess_A", "u1"), _ctx("sess_A", "u1"))
         assert first != retry, (
             "处方（每次新键）下同会话重试竟然仍同键 ⇒ 红证 2 抓的不是这个形态，判据是空的")
+
+    def test_the_operation_predicate_reports_the_pre_change_key(self, monkeypatch):
+        """处方 = **#4212 改前口径**（缓存键只有 `(窗口, 作用域)`、键里没有 op）⇒ 两个操作必同键。
+
+        这正是本单要修的形态，也正是红证 3 在改前的红：那时无论哪个端点，键都相同。
+        """
+        @lru_cache(maxsize=order_create._IDEMPOTENCY_CACHE_SIZE)
+        def pre_change(window, scope):
+            return f"{window}-{order_create._scope_token(scope)}-{uuid.uuid4().hex[:12]}"
+
+        monkeypatch.setattr(order_create, "_window_id",
+                            lambda window, scope, *, op: pre_change(window, scope))
+        ctx = _ctx("sess_A", "u1")
+        order_key = _keys_of(ctx, op=order_create.ORDER_CREATE_OP)[0]
+        aftersale_key = _keys_of(ctx, op=order_create.AFTERSALE_CREATE_OP)[0]
+        assert order_key == aftersale_key, (
+            "处方（键里没有 op）下同会话两个操作竟然仍不同键 ⇒ 红证 3 抓的不是这个形态，判据是空的")
