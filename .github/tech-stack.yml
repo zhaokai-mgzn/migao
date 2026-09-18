@@ -113,6 +113,14 @@ modules:
         tests:
           - 'tests/test_production/test_{1}.py'
           - 'tests/test_production/{1}.py'
+      # 澄清清单模块（issue #4362，S1）：测试放 tests/test_clarification/test_<模块>.py
+      # （与上面 production 同因：pytest.ini 只收 test_*.py，通用规则会要求
+      #  tests/test_clarification/<源文件名>.py —— 那样不可被 pytest 收集，
+      #  门禁会「绿」而测试从不运行 = 本仓库最忌的静默失效，故显式登记本规则）
+      - pattern: 'backend/ai-agent-service/app/clarification/(.+)\.py'
+        tests:
+          - 'tests/test_clarification/test_{1}.py'
+          - 'tests/test_clarification/{1}.py'
       - pattern: 'backend/ai-agent-service/app/(.+)\.py'
         tests:
           - 'tests/test_{1}.py'
