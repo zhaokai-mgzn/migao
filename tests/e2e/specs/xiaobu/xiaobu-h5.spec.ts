@@ -1,6 +1,6 @@
 // case_ids: OR-001, DF-002, UI-014, UI-016, UI-044, ST-011
 /**
- * 小布 H5 视觉回归 — 无会话 UX + 瑞幸式主页（推荐胶囊 + 两栏分组）+ 订单卡片
+ * 小布 H5 视觉回归 — 无会话 UX + 主页（推荐胶囊 + 六格等权）+ 订单卡片
  *
  * 目的：验证 C 端 mini-app 渲染效果（用户直接看到的 UI），
  * 弥补 API 层验收覆盖不到的视觉/布局回归。
@@ -10,22 +10,31 @@
  *
  * Mock 策略：拦截 API 返回固定数据，保证视觉断言确定性（不依赖真实 LLM/后端）。
  *
- * UI-014: 快捷入口六入口全保留（M1-A/issue #3978 起为六格等权；issue #4199 起重排为两栏分组）
+ * UI-014: 快捷入口六入口全保留，**六格等权**（2 列 × 3 行，算料报价不跨整行）
  * UI-016: 导航副标题企业名取自企业设置 tenantName（mock='米高窗帘'）
- * UI-044/UI-014: 瑞幸 Agent 布局 —— 顶部横滑推荐胶囊（空态构成）+「你可以这样对我说：」两栏分组
+ * UI-044: 空态顶部推荐胶囊（**3 条 × 3 行左对齐**，纯前端静态策划文案；文案 = 专业服务句）
  *
  * 2026-09-17 同步 M1-A（UI-044）：空态**不再展示商品推荐卡**（NewArrivals 组件与
  * 「新品推荐」区块已删除，推荐改由「推荐热门商品」快捷对话入口承载）
  * ⇒ 移除本 spec 对「新品推荐/遮光窗帘」的断言与 /chat/products/new-arrivals mock，
  *    并新增「商品推荐卡不得出现」的负向断言。
  *
- * 2026-09-18 同步 issue #4199（用户裁定「完全参考瑞幸 Agent 样式布局」）：
- * · 新增 RecommendChips 横滑推荐胶囊（5 条**纯前端静态策划文案**，不恢复商品接口）
- * · QuickActions 六格 → 「你可以这样对我说：」两栏分组（下单小助手 / 专属推荐师）
- * · **同一批**更新 `xiaobu-empty-welcome.png` 截图基线（空态画面改变 ⇒ darwin + linux 双平台，
- *   见 migao-dev-flow §8 坑表的平台基线纪律）
- * · ⚠️ 旧负向断言 `getByText('遮光窗帘')` 是**子串**匹配，而新胶囊文案「遮光窗帘，一拉就黑」
- *   合法含该词 ⇒ 代理失效，改判 `.new-arrivals*` 容器 + `¥` 价格的结构性断言
+ * 2026-09-18 同步 issue #4236（用户裁定「**回退为六格**，保留推荐胶囊」）：
+ * · `#4199` 曾把 QuickActions 改成瑞幸式两栏分组（「你可以这样对我说：」+ 下单小助手/专属推荐师
+ *   + 组头配色 + 右箭头），用户判为「反而改得更丑」并明确要回「上个 2 列 × 3 行的设计」
+ *   ⇒ **回退为六格等权** + 原标题「您可以试试以下问题」；本 spec 对两栏分组结构做**负向断言**
+ *   （防半回退 / 死代码）。
+ * · **保留** RecommendChips（用户在原截图上圈出该区并明确「保留」），随后**两轮定稿**：
+ *   ① 文案改「能力钩子 + 场景痛点」（每条指向不同能力）→ ② 用户要求「不要太口语化，我们得专业」
+ *   ⇒ 定稿为**专业服务句**（行业术语 + 服务项）；
+ *   ③ 用户要求「最多 3 条最有价值」⇒ 保留 3 条；
+ *   ④ 用户提出「靠左侧对齐会不会更好」并授权按 UI 经验定 ⇒ **3 条 × 3 行、左对齐**：
+ *   三条宽度不同（201/175/149px），居中会让**左边缘参差**（ragged left）——竖排列表的扫视
+ *   锚点就是左边缘；左对齐只让右边缘参差（正常的「标签感」），且左边缘与六格左列逐像素对齐。
+ *   横滑实现撤下（横滑必然左对齐 + 右端截断，3 条只会把第 3 条切掉）。
+ * · **同一批**更新 `xiaobu-empty-welcome.png` 截图基线（空态画面再次改变 ⇒ darwin + linux 双平台）。
+ * · ⚠️ 商品卡的负向判据保持**结构性**（`.new-arrivals*` 容器 + `¥` 价格），不用商品名子串代理
+ *   —— 胶囊文案可能合法含商品词，子串代理会假红。
  *
  * 2026-09-18 同步卡型口径（#4016 P14 的「两个零发射点卡型」现**统一为「补发射点」**）：
  * · `payment` —— #4016 P14 当时工具层确实无数据源 ⇒ 缺触发机制 ⇒ 维持裁剪；**issue #4085 第 1 项**
@@ -162,7 +171,7 @@ async function setupMocks(page: import('@playwright/test').Page) {
 // ═══════════════════════════════════════════════════════════════
 
 test.describe('小布 H5 视觉回归', () => {
-  test('空态欢迎屏：横滑推荐胶囊 + 两栏分组入口（无商品推荐卡）', async ({ page }) => {
+  test('空态欢迎屏：横滑推荐胶囊 + 六格等权入口（无商品推荐卡）', async ({ page }) => {
     await setupMocks(page)
     await page.goto('/#/pages/chat/index/index')
 
@@ -171,28 +180,33 @@ test.describe('小布 H5 视觉回归', () => {
     // UI-016：副标题企业名来自企业设置（mock tenantName='米高窗帘'），非硬编码默认值
     await expect(page.getByText('米高窗帘 · 智能购物助手')).toBeVisible()
 
-    // UI-044（issue #4199，瑞幸 Agent 布局）：顶部横滑推荐胶囊 —— 纯前端静态策划文案
-    await expect(page.locator('.recommend-chips__chip')).toHaveCount(5)
-    await expect(page.getByText('遮光窗帘，一拉就黑')).toBeVisible()
-    await expect(page.getByText('算料报价，一分钟出')).toBeVisible()
+    // UI-044（issue #4236 定稿）：顶部推荐胶囊 —— 3 条专业服务句、**左对齐竖排**
+    await expect(page.locator('.recommend-chips__chip')).toHaveCount(3)
+    await expect(page.getByText('按窗尺寸测算用布量与报价')).toBeVisible()
+    await expect(page.getByText('遮光率等级与适用场景')).toBeVisible()
+    await expect(page.getByText('查询订单物流轨迹')).toBeVisible()
+    // 横滑实现已撤下（横滑必然左对齐 + 右端截断，与「居中」相斥）—— 负向断言防半回退
+    await expect(page.locator('.recommend-chips__scroll')).toHaveCount(0)
+    await expect(page.locator('.recommend-chips__row')).toHaveCount(0)
 
-    // UI-014：瑞幸式「你可以这样对我说：」两栏分组（组头 + 六行入口 + 右箭头）
-    await expect(page.getByText('你可以这样对我说：')).toBeVisible()
-    await expect(page.getByText('下单小助手')).toBeVisible()
-    await expect(page.getByText('专属推荐师')).toBeVisible()
-    await expect(page.locator('.quick-actions__group')).toHaveCount(2)
-    await expect(page.locator('.quick-actions__row')).toHaveCount(6)
-    await expect(page.locator('.quick-actions__row-arrow')).toHaveCount(6)
-    // UI-014：六入口能力面不收缩（两栏重排后逐个仍在）
+    // UI-014（issue #4236 回退）：六格等权（2 列 × 3 行），原标题「您可以试试以下问题」
+    await expect(page.getByText('您可以试试以下问题')).toBeVisible()
+    await expect(page.locator('.quick-actions__item')).toHaveCount(6)
+    // 两栏分组结构（#4209）已按用户裁定撤下 —— 负向断言防止半回退/死代码
+    await expect(page.locator('.quick-actions__group')).toHaveCount(0)
+    await expect(page.locator('.quick-actions__row')).toHaveCount(0)
+    await expect(page.getByText('下单小助手')).toHaveCount(0)
+    await expect(page.getByText('专属推荐师')).toHaveCount(0)
+    // UI-014：六入口能力面不收缩（回退前后逐个仍在）
     for (const label of ['算料报价', '推荐热门商品', '查订单', '找产品', '售后咨询', '查物流']) {
       await expect(page.getByText(label, { exact: true })).toBeVisible()
     }
     // 无「会话」tab（2 tab：对话/我的）
     await expect(page.getByText('会话', { exact: true })).toHaveCount(0)
 
-    // UI-044：空态**不得**出现商品推荐卡。判据改成**结构性**的 ——
-    // 旧断言用「遮光窗帘」子串做代理，而新推荐胶囊的合法文案含该词（「遮光窗帘，一拉就黑」），
-    // 子串代理已失效；这里直接断言商品卡容器 / 商品图 / 价格三者都不存在。
+    // UI-044：空态**不得**出现商品推荐卡。判据是**结构性**的 ——
+    // 「遮光窗帘」子串代理已不可用（推荐胶囊文案可能合法含该词），
+    // 故直接断言商品卡容器 / 商品图 / 价格三者都不存在。
     await expect(page.locator('.new-arrivals')).toHaveCount(0)
     await expect(page.locator('.new-arrivals__card')).toHaveCount(0)
     await expect(page.getByText(/新品推荐/)).toHaveCount(0)
@@ -204,15 +218,15 @@ test.describe('小布 H5 视觉回归', () => {
     })
   })
 
-  test('推荐胶囊点击唤起对话（瑞幸式横滑入口，纯前端文案）', async ({ page }) => {
+  test('推荐胶囊点击唤起对话（居中胶囊，纯前端文案）', async ({ page }) => {
     await setupMocks(page)
     await page.goto('/#/pages/chat/index/index')
 
     // UI-044：点胶囊 = 发送对应 prompt 进对话（与快捷入口同语义）
-    const chip = page.getByText('遮光窗帘，一拉就黑')
+    const chip = page.getByText('按窗尺寸测算用布量与报价')
     await expect(chip).toBeVisible()
     await chip.click()
-    await expect(page.getByText('推荐一下遮光窗帘')).toBeVisible()
+    await expect(page.getByText('帮我算一下窗帘用料和价格')).toBeVisible()
   })
 
   test('快捷入口「推荐热门商品」点击唤起对话（替代已移除的商品卡入口）', async ({ page }) => {

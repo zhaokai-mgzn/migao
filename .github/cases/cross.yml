@@ -91,6 +91,21 @@ cases:
       - "搜遮光窗帘"
       - "查张三这个客户"
       - "给张三下个遮光窗帘的订单"
+    # 前置自断言 + 命名空间（burn-down；**先例 = OR-012 / CH-019**，同款治法，不另立口径）。
+    # R3「给张三下个遮光窗帘的订单」按**商品名**定位下单对象，且断言「order_create 复用前两轮的
+    # product_id」⇒ 「该名字在栈里唯一」是本用例真正依赖、且**只读**的前置。并行建品用例一旦造出
+    # 同名副本，R1 搜到的候选就有两个、R3 可能落到另一个 id 上；那时红的表现是
+    # `unmatched expectation`，看起来像「agent 不会跨 skill 切换」（归因全错，同 AS-003/PG-013/CU-003 形态）。
+    # ⚠️ 刻意**不**声明 `order_count_for_phone: 13800138000` —— 本用例 R3 自己就会给该号码建单，
+    # `after - before = +1 > max_growth(0)` ⇒ 漂移判据必然判红（那是「硬写一条注定红的守卫」）。
+    # `namespaces` 护住该前置的基线/漂移两格，并与同手机号的建单用例互斥（自清理的弱证据形态）。
+    namespaces:
+      - "product_name:遮光窗帘"
+      - "customer_phone:13800138000"
+    precondition:
+      - type: product_count_for_keyword
+        source: "遮光窗帘"
+        expect: 1
     expectations:
       - tool: product_search
       - tool: customer_manage
@@ -99,7 +114,7 @@ cases:
       - "order_create 复用前两轮的 product_id 和 customer_id"
       - "success=true"
     skip_reason: ""
-    merge_log: "eval C003 独有"
+    merge_log: "eval C003 独有；2026-09-18 补前置自断言 + namespaces（burn-down：改用例文件的 PR 须净缩 ≥1 条存量违规，本用例命中的两条是 CASE-TRUST-NO-PRECONDITION-ASSERTION + CASE-TRUST-NO-SELF-CLEAN）：`precondition[product_count_for_keyword: 遮光窗帘, expect: 1]`（R3 按名下单 ⇒ 名字唯一是它真正依赖且只读的前置，先例 = OR-014/CH-019；**不选 order_count_for_phone**，因本用例自己会建单、漂移判据必然判红）+ `namespaces[product_name:遮光窗帘, customer_phone:13800138000]`（护住该前置两格 + 与同手机号建单用例互斥）。**断言（user_inputs / expectations / data_checks）原样未动，无放宽、无删减。**"
     traces:
       tests:
         - "backend/ai-agent-service/tests/manual/mibao_scenarios.py"
