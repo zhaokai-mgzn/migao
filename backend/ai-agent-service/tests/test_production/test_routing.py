@@ -8,7 +8,10 @@ from app.production.routing import (
     METER_KEYS,
     OPERATION_CATALOG,
     PANEL_KEYS,
+    PENDING_CUSTOMER_CONFIRMATION_OPERATIONS,
+    ROUTINGS,
     SET_KEYS,
+    SPECIAL_OPTION_ROUTINGS,
     build_routing,
     instance_operations,
 )
@@ -188,3 +191,107 @@ def test_qty_keys_are_declared():
     for keys in (HOLE_KEYS, PANEL_KEYS, SET_KEYS):
         assert isinstance(keys, tuple) and keys, "待补键清单不得为空"
     assert METER_KEYS[0] == "fabric_meters", "米数主键必须是引擎真产出键名"
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 纱帘工艺路线补齐（issue #4246，P2）
+#
+# 病根（真值源 §3 列了「韩褶/打孔/四爪钩/穿杆/纱帘/帘头/罗马帘」，而 ROUTINGS 只有 6 条、
+# 纱帘只有「韩褶」一条）：`deriveRouteKey`（Java）派生出的「纱帘×打孔」在路线库里取不到 ⇒
+# **回落默认 布帘×韩褶** ⇒ 一张「纱帘+打孔」的订单拿到**布帘的 11 道工序**（精裁-布/布三边/
+# 韩褶-布…）⇒ 工人按布帘工序报工、计件按布帘单价算 ⇒ **工序与工资都是错的**。
+#
+# 本单只补 3 条路线，**零新造工序**（`上车布-纱` ¥0.5/米、`打孔-纱` ¥0.15/孔 早已在库里、
+# 有价、零消费 —— 设计时就打算给纱帘用，只是路线没建）。
+# ══════════════════════════════════════════════════════════════════════════════
+
+#: issue #4246 §二 表格的逐字工序序列（真值源 = issue 正文，不是本测试的发明）
+SHEER_ROUTES = {
+    ("纱帘", "打孔"): ["精裁-纱", "纱三边", "打孔-纱", "外帘打卷", "外帘装袋", "外帘发货"],
+    ("纱帘", "四爪钩"): ["精裁-纱", "纱三边", "上车布-纱", "外帘打卷", "外帘装袋", "外帘发货"],
+    ("纱帘", "穿杆"): ["精裁-纱", "纱三边", "外帘打卷", "外帘装袋", "外帘发货"],
+}
+
+
+@pytest.mark.parametrize("key,expected", sorted(SHEER_ROUTES.items()))
+def test_sheer_route_is_exact(key, expected):
+    """3 条纱帘路线可用且序列与 #4246 §二 表格**逐字相等**（判据 1）"""
+    curtain_type, craft = key
+    route = build_routing({"curtain_type": curtain_type, "craft": craft, "is_shaped": True})
+    assert route == expected, f"{curtain_type}×{craft} 路线漂移"
+
+
+def test_sheer_drill_route_does_not_fall_back_to_cloth_route():
+    """判据 4（本单的核心）：纱帘×打孔 命中自己的路线，**不再**回落 布帘×韩褶。
+
+    回落形态（实现前）：`build_routing` 会抛 `ValueError`（ROUTINGS 里没有该键），
+    而 Java 侧 `deriveRouteKey` 的兜底是「取不到路线 ⇒ 用默认路线 布帘×韩褶」⇒
+    纱帘订单拿到 11 道布帘工序。故断言：既不得等于布帘路线，也不得含任何 `-布` 工序。
+    """
+    sheer_drill = build_routing({"curtain_type": "纱帘", "craft": "打孔"})
+    cloth_route = build_routing({"curtain_type": "布帘", "craft": "韩褶"})
+    assert sheer_drill != cloth_route, "纱帘×打孔 落回了布帘×韩褶 ⇒ 工序与计件单价全错"
+    assert not [op for op in sheer_drill if op.endswith("-布")], (
+        "纱帘路线上出现了布帘工序 ⇒ 工人按布帘工序报工、按布帘单价计件")
+    assert "打孔-纱" in sheer_drill and "精裁-布" not in sheer_drill
+
+
+def test_sheer_routes_consume_only_existing_operations():
+    """零新造工序（判据 2）：3 条新路线的每道工序都必须是**已存在**的工序库条目"""
+    missing = sorted({op for ops in SHEER_ROUTES.values() for op in ops
+                      if op not in OPERATION_CATALOG})
+    assert not missing, f"纱帘路线引用了工序库里不存在的工序（本单不许新造工序）：{missing}"
+
+
+def test_operation_catalog_size_is_frozen_for_this_issue():
+    """零新造工序（判据 2 红线）：工序库条目数 = V54 的 30 道 + V56 的 5 道 = 35。
+
+    本单**只加路线**；任何「顺手加一道工序/改一个单价」都会让这里红
+    （工序库 ↔ 种子 SQL 的逐行逐值比对另见
+    `tests/unit_ci_workflows/test_production_catalog_seed.py`）。
+    """
+    assert len(OPERATION_CATALOG) == 35, (
+        "工序库条目数变了 —— 本单（#4246）不许新造工序/改单价；"
+        "确需新增请走新迁移 + 同步 V54∪V56∪V58 聚合守卫")
+    assert OPERATION_CATALOG["上车布-纱"] == {"group": "车位", "unit": "米", "unit_price": 0.5}
+    assert OPERATION_CATALOG["打孔-纱"] == {"group": "车位", "unit": "孔", "unit_price": 0.15}
+
+
+def _orphan_operations() -> set:
+    """有工序、有价、**零消费**的工序（既不在任何路线里，也不被任何特殊选项条件工序引用）。"""
+    consumed = {op for ops in ROUTINGS.values() for op in ops}
+    consumed |= {rule["operation"] for rule in SPECIAL_OPTION_ROUTINGS.values()
+                 if "operation" in rule}
+    return set(OPERATION_CATALOG) - consumed
+
+
+def test_orphan_operations_are_explicitly_registered():
+    """孤儿工序**显式登记**（判据 3）：有意不消费的 4 道必须与常量集合**恰等**。
+
+    为什么要有这条：`上车布-纱`/`打孔-纱` 被 #4246 的新路线消费后不再是孤儿；
+    `裁剪-布`/`裁剪-纱`/`质检`/`腰靠垫` **仍为孤儿**且是**有意**的（需客户确认，不许猜，
+    见 #4246 §二「不做」表）⇒ 登记在 `PENDING_CUSTOMER_CONFIRMATION_OPERATIONS`。
+    双向可红：① 谁「顺手」给这 4 道建了路线 ⇒ 计算集变小 ⇒ 红（逼他显式销账并说明依据）；
+    ② 谁新造了工序却没建路线/没登记 ⇒ 计算集变大 ⇒ 红（不再沉默）。
+    """
+    assert _orphan_operations() == set(PENDING_CUSTOMER_CONFIRMATION_OPERATIONS), (
+        "孤儿工序集合漂移：有意不消费（待客户确认）与「忘了建路线」必须在数据上可区分")
+    assert _orphan_operations() == {"裁剪-布", "裁剪-纱", "质检", "腰靠垫"}
+
+
+def test_sheer_routes_deorphan_the_two_sheer_operations():
+    """判据 3 前半：`上车布-纱` / `打孔-纱` 被新路线消费 ⇒ **不再**是孤儿"""
+    orphans = _orphan_operations()
+    assert "上车布-纱" not in orphans, "上车布-纱 仍零消费（#4246 的四爪钩路线没消费它）"
+    assert "打孔-纱" not in orphans, "打孔-纱 仍零消费（#4246 的打孔路线没消费它）"
+    assert ("纱帘", "四爪钩") in ROUTINGS and ("纱帘", "打孔") in ROUTINGS
+
+
+def test_existing_routes_unchanged():
+    """判据 6（不回归）：既有 6 条路线逐值不变（布帘×韩褶 仍是 11 道实证走线）"""
+    assert len(ROUTINGS) == 9, "路线总数应为 既有 6 条 + #4246 新增 3 条"
+    assert len(ROUTINGS[("布帘", "韩褶")]) == 11
+    assert ROUTINGS[("纱帘", "韩褶")] == ["精裁-纱", "纱三边", "韩褶-纱",
+                                          "外帘打卷", "外帘装袋", "外帘发货"]
+    assert ROUTINGS[("帘头", "平幔")] == ["精裁-布", "布三边", "帘头制作", "定型-布",
+                                          "外帘打卷", "外帘装袋", "外帘发货"]

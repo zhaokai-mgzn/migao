@@ -26,11 +26,14 @@ V54 落**初始种子**（把 `app/production/routing.py` 的既有确定性常�
 | `app/production/routing.py` `OPERATION_CATALOG` / `ROUTINGS` | **真值源**（确定性核心，M4-G-1） |
 | `db/migration/V54__seed_production_operations.sql` | 存量库的**初始**种子（已发布 ⇒ 只增不改） |
 | `db/migration/V56__seed_special_option_operations.sql` | 存量库的**增量**种子（#4230 的 5 道新工序） |
+| `db/migration/V58__seed_sheer_curtain_routings.sql` | 存量库的**增量**路线种子（#4246 的 3 条纱帘路线，**零新造工序** ⇒ 只种路线） |
 | `docs/sql/schema.sql` | 全新库 bootstrap 的**终态**种子（CI/本地 docker 栈**不跑迁移链**） |
 
 ⇒ 收敛判据 = **`V54 ∪ V56`（按名称取键）== `OPERATION_CATALOG`（逐行逐值）**，且
-`schema.sql` 的工序集合与 `V54 ∪ V56` 的**名称 → 值**映射相等（`schema.sql` 是终态，
-行内顺序按 `sort_order` 连续，与迁移侧「两段拼接」的行序天然不同 ⇒ 名称键比对，不依赖行序）。
+**`V54 ∪ V58`（按 部位×工艺 取键）== `ROUTINGS`（逐条有序序列）**；`schema.sql` 的工序集合与
+`V54 ∪ V56` 的**名称 → 值**映射相等、路线集合与 `V54 ∪ V58` **逐行**相等（`schema.sql` 是终态，
+工序行内顺序按 `sort_order` 连续，与迁移侧「两段拼接」的行序天然不同 ⇒ 工序按名称键比对、
+不依赖行序；路线侧 schema.sql 里同一条 INSERT 按 `V54 行 → V58 行` 顺序书写 ⇒ 行序可比）。
 
 ## 漂移形态（本测试会让它变红；红证见文件尾 `TestGuardSelfProof`）
 
@@ -53,8 +56,12 @@ SEED_OPERATION_SQLS = (
     MIGRATION_DIR / "V54__seed_production_operations.sql",
     MIGRATION_DIR / "V56__seed_special_option_operations.sql",
 )
-# 路线模板仍只由 V54 落（#4230 不新增路线）
-ROUTING_SQL = MIGRATION_DIR / "V54__seed_production_operations.sql"
+# 路线种子**按序**聚合（先 V54 的 6 条，后 V58 的 3 条）；新增路线迁移在此追加，
+# 改这里 = 显式登记新源（#4246 把路线从「V54 单源」扩为「V54 ∪ V58」）
+ROUTING_SEED_SQLS = (
+    MIGRATION_DIR / "V54__seed_production_operations.sql",
+    MIGRATION_DIR / "V58__seed_sheer_curtain_routings.sql",
+)
 SCHEMA = REPO / "docs/sql/schema.sql"
 ROUTING_PY_DIR = REPO / "backend/ai-agent-service"
 
@@ -191,9 +198,13 @@ def seed_sqls():
 
 
 @pytest.fixture(scope="module")
-def routing_sql():
-    assert ROUTING_SQL.exists(), f"路线种子迁移缺失：{ROUTING_SQL}"
-    return ROUTING_SQL.read_text(encoding="utf-8")
+def routing_sqls():
+    """[(路径名, 文本)]——按 ROUTING_SEED_SQLS 顺序；文件缺失 **fail-closed**（不许静默少读一个源）。"""
+    out = []
+    for path in ROUTING_SEED_SQLS:
+        assert path.exists(), f"路线种子迁移缺失：{path}（多源聚合少了它 = 守卫空跑一半）"
+        out.append((path.name, path.read_text(encoding="utf-8")))
+    return out
 
 
 @pytest.fixture(scope="module")
@@ -207,6 +218,15 @@ def catalog_rows(seed_sqls):
     rows = []
     for name, sql in seed_sqls:
         rows += parse_seed(sql, "production_operations", OP_COLUMNS)
+    return rows
+
+
+@pytest.fixture(scope="module")
+def routing_rows(routing_sqls):
+    """路线种子的**聚合**行（V54 → V58 顺序拼接；行序即「既有 6 条 + 新增 3 条」）。"""
+    rows = []
+    for name, sql in routing_sqls:
+        rows += parse_seed(sql, "production_routings", ROUTING_COLUMNS)
     return rows
 
 
@@ -244,21 +264,21 @@ def test_seed_has_no_duplicate_operation_names(catalog_rows):
     assert duplicates == [], f"种子重名工序（后一条会被 ON CONFLICT 静默吞掉）: {duplicates}"
 
 
-def test_routing_operations_exist_in_seed(catalog_rows, routing_sql):
+def test_routing_operations_exist_in_seed(catalog_rows, routing_rows):
     """路线里引用的每道工序都必须在**聚合后的**工序库种子中（否则实例化时无单价/单位可依）"""
     catalog_names = {key_of(r) for r in catalog_rows}
     missing = []
-    for row in parse_seed(routing_sql, "production_routings", ROUTING_COLUMNS):
+    for row in routing_rows:
         for operation in normalize_routing_operations(row["operations"]):
             if operation not in catalog_names:
                 missing.append(operation)
     assert not missing, f"路线引用了工序库中不存在的工序：{sorted(set(missing))}"
 
 
-def test_routings_match_python(routing_sql, python_catalog):
-    """V54 工艺路线种子逐条等于 ROUTINGS（部位×工艺 → 有序工序序列）"""
+def test_routings_match_python(routing_rows, python_catalog):
+    """V54 ∪ V58 工艺路线种子逐条等于 ROUTINGS（部位×工艺 → 有序工序序列）"""
     _, routings = python_catalog
-    rows = parse_seed(routing_sql, "production_routings", ROUTING_COLUMNS)
+    rows = routing_rows
     assert len(rows) == len(routings), "路线条数与 ROUTINGS 不一致"
 
     parsed = {(normalize_value(r["curtain_type"]), normalize_value(r["craft"])):
@@ -267,15 +287,22 @@ def test_routings_match_python(routing_sql, python_catalog):
     assert parsed == expected, "路线内容漂移（逐条比对 部位×工艺 → 工序序列）"
     # 布帘·韩褶 = 11 道实证走线（回归锚点，防整条路线被误删）
     assert len(parsed[("布帘", "韩褶")]) == 11
+    # #4246 新增的 3 条纱帘路线（逐字钉死 —— 它们此前**不存在** ⇒ 派生键回落布帘路线）
+    assert parsed[("纱帘", "打孔")] == ("精裁-纱", "纱三边", "打孔-纱",
+                                        "外帘打卷", "外帘装袋", "外帘发货")
+    assert parsed[("纱帘", "四爪钩")] == ("精裁-纱", "纱三边", "上车布-纱",
+                                          "外帘打卷", "外帘装袋", "外帘发货")
+    assert parsed[("纱帘", "穿杆")] == ("精裁-纱", "纱三边",
+                                        "外帘打卷", "外帘装袋", "外帘发货")
 
 
 # ── ② bootstrap（schema.sql）↔ 迁移源聚合 ──
 
-def test_schema_sql_matches_seed_sources(catalog_rows, routing_sql, schema_sql):
-    """docs/sql/schema.sql 的种子与 V54 ∪ V56 一致（bootstrap 路径不跑迁移链）。
+def test_schema_sql_matches_seed_sources(catalog_rows, routing_rows, schema_sql):
+    """docs/sql/schema.sql 的种子与 V54 ∪ V56（工序）/ V54 ∪ V58（路线）一致。
 
-    比对口径 = **名称 → 逐值**（`schema.sql` 是终态、行内按 sort_order 连续；迁移侧是两段拼接
-    ⇒ 跨文件行序本来不同，故不比对行序，但**每个值逐个比** —— 改名/改价/改标记照样红）。
+    比对口径 = **名称 → 逐值**（`schema.sql` 是终态、工序行内按 sort_order 连续；迁移侧是两段拼接
+    ⇒ 跨文件行序本来不同，故工序不比对行序，但**每个值逐个比** —— 改名/改价/改标记照样红）。
     另比对 `sort_order`：bootstrap 的连续序号必须是 `1..N` 的**严格递增**序列（漏排/重排即红）。
     """
     schema_ops = parse_seed(schema_sql, "production_operations", OP_COLUMNS)
@@ -286,10 +313,9 @@ def test_schema_sql_matches_seed_sources(catalog_rows, routing_sql, schema_sql):
     assert [int(normalize_value(r["sort_order"])) for r in schema_ops] == \
         list(range(1, len(schema_ops) + 1)), "schema.sql 的 sort_order 不是 1..N 连续序列"
 
-    # 路线种子：两源逐行一致（schema.sql 与 V54 同款单条 INSERT，行序可比）
-    assert parse_seed(schema_sql, "production_routings", ROUTING_COLUMNS) == \
-        parse_seed(routing_sql, "production_routings", ROUTING_COLUMNS), \
-        "production_routings 种子在两源间漂移：schema.sql 与 V54 必须逐行一致"
+    # 路线种子：bootstrap 的**同一条 INSERT** 里按 V54 行 → V58 行顺序书写 ⇒ 与聚合行序可比、逐行一致
+    assert parse_seed(schema_sql, "production_routings", ROUTING_COLUMNS) == routing_rows, \
+        "production_routings 种子在两源间漂移：schema.sql 必须逐行等于 V54 ∪ V58（含 #4246 的 3 条纱帘路线）"
 
 
 def _diff_keys(left: dict, right: dict) -> str:
@@ -316,11 +342,32 @@ def test_every_seed_source_contributes_to_the_aggregate(seed_sqls):
         "#4230 的 5 道新工序必须由 V56 贡献（少一个 ⇒ 实例化取不到工序 ⇒ fail-closed）")
 
 
+def test_every_routing_source_contributes_to_the_aggregate(routing_sqls):
+    """路线多源自证：**每个**路线源的路线都被聚合读到（含 V58 的 3 条纱帘路线）。
+
+    反例（本测试要挡的形态）：聚合退化成只读 V54 ⇒ V58 从未被行使 ⇒ #4246 的 3 条纱帘路线
+    既不在守卫射程内、又不会被任何断言照出来（「绿了但没生效」）。
+    """
+    per_source = {name: {(normalize_value(r["curtain_type"]), normalize_value(r["craft"]))
+                         for r in parse_seed(sql, "production_routings", ROUTING_COLUMNS)}
+                  for name, sql in routing_sqls}
+    for name, keys in per_source.items():
+        assert keys, f"{name} 未解析到任何路线行（该源等于没被读）"
+    assert len(per_source) >= 2, "路线种子只剩一个源（#4246 的多源口径失效）"
+    assert {("纱帘", "打孔"), ("纱帘", "四爪钩"), ("纱帘", "穿杆")} <= \
+        per_source["V58__seed_sheer_curtain_routings.sql"], (
+        "#4246 的 3 条纱帘路线必须由 V58 贡献（少一条 ⇒ 派生键回落布帘×韩褶 ⇒ 工序与工资全错）")
+    assert ("纱帘", "韩褶") in per_source["V54__seed_production_operations.sql"], (
+        "V54 的既有 6 条路线必须仍由 V54 贡献（V58 只做增量，不改 V54）")
+
+
 # ── ③ 幂等性（MigrationRunner 约定：所有迁移可重复执行）──
 
-def test_seed_sql_is_idempotent(seed_sqls, routing_sql, schema_sql):
+def test_seed_sql_is_idempotent(seed_sqls, routing_sqls, schema_sql):
     """每条种子语句都必须带 ON CONFLICT DO NOTHING（冲突目标 = V49 部分唯一索引）"""
-    sources = [(name, sql) for name, sql in seed_sqls] + [("schema.sql", schema_sql)]
+    sources = [(name, sql) for name, sql in seed_sqls] \
+        + [(name, sql) for name, sql in routing_sqls if (name, sql) not in seed_sqls] \
+        + [("schema.sql", schema_sql)]
     for label, sql in sources:
         for table in ("production_operations", "production_routings"):
             stmt = re.search(
@@ -372,3 +419,44 @@ def test_parser_detects_injected_drift():
         "ON CONFLICT (tenant_id, name) WHERE deleted = 0 DO NOTHING;", ";"), re.I | re.S)
     # 多源**聚合**口径同样要能红：注入一条与真值源不一致的行 ⇒ 键集/值比对必须不等
     assert by_name(parsed_good) != by_name(parsed_bad), "多源聚合比对读不出值漂移"
+
+
+def test_routing_parser_detects_injected_drift():
+    """路线侧注入式自证（#4246）：聚合比对必须照得出「路线序列被改」「引用不存在的工序」「不幂等」。
+
+    否则 `test_routings_match_python` / `test_routing_operations_exist_in_seed` /
+    `test_seed_sql_is_idempotent` 的绿就是**空跑**。
+    """
+    good = """
+    INSERT INTO production_routings (id, tenant_id, curtain_type, craft, operations, status) VALUES
+      ('rt-v58-01', 1, '纱帘', '打孔',
+       '["精裁-纱","纱三边","打孔-纱","外帘打卷","外帘装袋","外帘发货"]'::jsonb, 'active')
+    ON CONFLICT (tenant_id, curtain_type, craft) WHERE deleted = 0 DO NOTHING;
+    """
+    # ① 序列被改（打孔-纱 → 打孔-布）= 「改了 Python 目录却不同步种子」/「两源不一致」的形态
+    drifted = good.replace("打孔-纱", "打孔-布")
+    # ② 引用不存在的工序
+    bogus = good.replace("打孔-纱", "打孔-不存在")
+    # ③ 不幂等（ON CONFLICT 丢失）
+    non_idempotent = good.replace(
+        "ON CONFLICT (tenant_id, curtain_type, craft) WHERE deleted = 0 DO NOTHING;", ";")
+
+    rows_good = parse_seed(good, "production_routings", ROUTING_COLUMNS)
+    rows_drifted = parse_seed(drifted, "production_routings", ROUTING_COLUMNS)
+    assert rows_good and rows_drifted
+    assert normalize_routing_operations(rows_good[0]["operations"]) == \
+        ("精裁-纱", "纱三边", "打孔-纱", "外帘打卷", "外帘装袋", "外帘发货")
+    assert normalize_routing_operations(rows_drifted[0]["operations"]) != \
+        normalize_routing_operations(rows_good[0]["operations"]), \
+        "路线解析器读不出序列变化 ⇒ 路线比对是空断言"
+
+    catalog_names = {"精裁-纱", "纱三边", "打孔-纱", "外帘打卷", "外帘装袋", "外帘发货"}
+    assert not [op for op in normalize_routing_operations(rows_good[0]["operations"])
+                if op not in catalog_names], "合法路线不应报缺工序"
+    assert [op for op in normalize_routing_operations(
+        parse_seed(bogus, "production_routings", ROUTING_COLUMNS)[0]["operations"])
+        if op not in catalog_names] == ["打孔-不存在"], "缺工序判据读不出不存在的工序"
+
+    assert re.search(r"ON\s+CONFLICT.*DO\s+NOTHING", good, re.I | re.S)
+    assert not re.search(r"ON\s+CONFLICT.*DO\s+NOTHING", non_idempotent, re.I | re.S), \
+        "幂等判据读不出丢失的 ON CONFLICT ⇒ 该断言是空断言"
