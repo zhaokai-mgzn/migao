@@ -45,6 +45,13 @@
 ⇒ 本机与 CI 的文件名不同。现改为：按 **PID 定位**（不复刻命名渲染）+ 子进程显式钉
 `LC_ALL=C`（本地跑 ≡ CI 跑）+ 定位不到/多于 1 条/日志为空一律**大声失败**并附控制台原文；
 同时脚本侧把 slug 做成 locale 无关并加 `cksum` 兜底唯一性（场景 8 就是它的守卫）。
+
+## 定位/清理口径已抽成单一实现（issue #4158，2026-09-18）
+
+按 PID 通配定位本身还有两个洞：**PID 复用**会读到别的会话留下的同前缀残骸；日志被外部清理器
+删掉会退化成裸 `FileNotFoundError` / 无信息的「未能定位」。故定位/归属/清理口径统一搬到
+`test_verify_all_log_scope.py` 的 `run_gate()`（本文件 `_run_gate` 只是薄包装）：
+**归属过滤**（运行前快照 + mtime 窗口）+ 失败时打印**全现场**。场景 ⑨/⑩ 是它的行为判据。
 """
 import os
 import re
@@ -54,6 +61,12 @@ from pathlib import Path
 
 import pytest
 
+from unit_ci_workflows.test_verify_all_log_scope import (
+    FOREIGN_SENTINEL,
+    VerifyAllLogNotFound,
+    run_gate,
+)
+
 REPO_ROOT = Path(__file__).parent.parent.parent
 VERIFY_ALL = REPO_ROOT / "verify-all.sh"
 GROWTH_GATE = REPO_ROOT / ".github" / "growth_gate.py"
@@ -62,7 +75,6 @@ YAML_LIGHT = REPO_ROOT / ".github" / "yaml_light.py"
 # 弱断言样本（拼接构造，避免本文件自己被判弱断言）
 _WEAK_LINE = "    assert result is " + "not None\n"
 
-_LOG_RE = re.compile(r"日志: (?P<path>\S+)")
 # 修复前的「静默空跑」提示原文（用整句匹配：growth_gate 的 md 里也有「未识别，跳过」字样）
 _SILENT_SKIP = "无变更或无法对比 origin/main，跳过"
 _RUN_TIMEOUT = 180
@@ -79,6 +91,9 @@ _GIT_ENV = {
 # CI 的 locale 是 C（LANG 未设）—— 本守卫**显式钉住**它，让"本地绿"与"CI 绿"是同一件事
 # （历史教训：日志名/编码类断言只在某个 locale 下成立 ⇒ 本地绿 / CI 红）。
 _C_LOCALE_ENV = {"LC_ALL": "C", "LANG": "C"}
+
+# 本文件跑 gate 的固定环境：钉住 git 身份 + locale（本地跑 ≡ CI 跑）。
+_GATE_ENV = {**_GIT_ENV, **_C_LOCALE_ENV}
 
 # 备用 UTF-8 locale：用于证明脚本的日志命名**与 locale 无关**（见测试 ⑧）。
 _UTF8_CANDIDATES = ("C.UTF-8", "en_US.UTF-8", "zh_CN.UTF-8")
@@ -146,51 +161,19 @@ def _write_weak_test(repo, name="tests/test_weak_sample.py"):
     return name
 
 
-def _run_gate(repo):
+def _run_gate(repo, **kw):
     """真跑 `bash verify-all.sh gate`，返回 (退出码, 控制台输出, 检查项日志原文)。
-
-    `report()` 把检查项输出重定向进 `/tmp/verify-all-<PID>-<slug>.log`，**成功时只打印
-    ✅、不打印路径** ⇒ 这里用 `bash -c 'echo $$; exec bash …'` 让检查脚本与新 bash 同 PID
-    （`exec` 不换 PID），再按 **PID 定位**日志 —— 只**定位**，绝不复刻被测脚本的命名渲染：
 
     ⚠️ 曾经踩过（issue #3724 首轮 CI 红，5 failed「log == ''」）：`report()` 的 slug 走
     `tr -c '[:alnum:]'`，其 `[:alnum:]` **随 locale 变** —— 本机 UTF-8 保留中文「预检」、
     CI（`LC_ALL=C`）把它逐字节压成 `-`，测试按名硬拼路径 ⇒ file-not-found、日志读成空串、
-    断言全假失败。**本地绿 / CI 红，且失败信息里什么线索都没有。**
+    断言全假失败。**本地绿 / CI 红，且失败信息里什么线索都没有。** ⇒ 只**定位** PID，绝不复刻命名渲染。
 
-    因此本函数：① 按 PID 定位；② 子进程环境**显式钉 `LC_ALL=C`/`LANG=C`**（本地跑 ≡ CI 跑，
-    把那次现场固化成可复现输入）；③ 定位不到就**大声失败**并附控制台原文，不再静默空串。
+    定位/归属/清理口径的**单一实现**在 `test_verify_all_log_scope.py::run_gate()`
+    （issue #4158）：按 PID 通配 ∩ 归属过滤（运行前快照 + mtime 窗口）定位，拿不到就打印
+    期望模式/实际命中/残骸清单/控制台原文并报红。这里只负责钉住本文件的环境。
     """
-    import os
-
-    env = dict(os.environ)
-    env.update(_GIT_ENV)
-    env.update(_C_LOCALE_ENV)  # 本机 ≡ CI：不给 locale 留下"本地恰好能过"的机会
-    assert Path("/tmp").is_dir(), "本守卫依赖 /tmp 存放 report() 日志（CI 与 macOS 均有）"
-    proc = subprocess.run(
-        ["bash", "-c", 'echo "PID=$$"; exec bash verify-all.sh gate'],
-        cwd=str(repo), capture_output=True, text=True, env=env, timeout=_RUN_TIMEOUT,
-    )
-    out = "%s%s" % (proc.stdout, proc.stderr)
-    paths = []
-    if m := re.search(r"PID=(\d+)", out):
-        pid = m.group(1)
-        out = out.replace("PID=%s\n" % pid, "")
-        paths = sorted(Path("/tmp").glob("verify-all-%s-*.log" % pid))
-    if not paths:  # 回退：失败时 `report()` 会把日志路径打进控制台（PID 分支落空也要能兜住）
-        paths = [Path(m.group("path")) for m in _LOG_RE.finditer(out)]
-    assert paths, (
-        "未能定位 gate 检查项的日志文件（PID 通配与「日志: <path>」回退都没命中）——"
-        f"断言会退化成没线索的空串。控制台原文：\n{out}"
-    )
-    assert len(paths) == 1, (
-        f"`gate` 档应只产生 1 个检查项日志，实得 {len(paths)}: {paths}\n"
-        f"（多于 1 个说明日志定位过宽，取 [0] 会读到别人的现场）控制台原文：\n{out}"
-    )
-    log = paths[0].read_text(encoding="utf-8", errors="replace")
-    paths[0].unlink(missing_ok=True)  # 不留 /tmp 垃圾
-    assert log.strip(), f"日志文件为空（{paths[0]}）——检查项没往日志写任何东西？\n{out}"
-    return proc.returncode, out, log
+    return run_gate(repo, env=_GATE_ENV, **kw)
 
 
 # ── ① 未提交 + 工作区有弱断言 ⇒ 必须红且打印 file:line（旧实现此处 ✅ 假绿）──
@@ -417,3 +400,51 @@ def test_report_log_paths_unique_for_pure_cjk_names():
     assert paths[0] != paths[1], (
         f"两个纯 CJK 检查名得到同一日志路径 {paths[0]!r} —— 唯一性丢失（cksum 兜底缺失？）"
     )
+
+
+# ── ⑨ 外来同前缀残骸不得被误读（issue #4158 判据①）──
+
+def test_foreign_same_prefix_stale_log_is_not_misread(tmp_path):
+    """共享 `/tmp` 里有**同 PID 前缀**的外来日志 ⇒ 守卫不得误读，仍须绿且读到自己的现场。
+
+    现场构造：subprocess 在 `exec` 之前先落一份 `verify-all-<同一 PID>-AAA-Foreign-Stale.log`
+    （slug 排序**在**自己的日志之前 ⇒ 旧口径取 `paths[0]` 必然读到哨兵），
+    并把 mtime 回拨到 2020 —— 这正是「PID 复用留下的残骸」的定义（由**已死**进程写下）。
+
+    红证（改前实测）：`assert len(paths) == 1` 拿到 2 条 ⇒ 假红；去掉该断言则直接读到哨兵。
+    """
+    repo = _make_repo(tmp_path)
+    (repo / "README.md").write_text("baseline\ndirty edit\n", encoding="utf-8")  # 有未提交改动
+    rc, out, log = _run_gate(repo, plant_foreign_stale=True)
+    assert FOREIGN_SENTINEL not in log, (
+        "守卫读到了**同前缀的外来残骸**（PID 复用别人的现场）——报错会指向与本案无关的内容：\n"
+        + log
+    )
+    assert FOREIGN_SENTINEL not in out, f"外来哨兵串出现在了控制台里：\n{out}"
+    assert rc == 0, f"「未提交」本身不得让 gate 失败，更不该被外来残骸带成假红：\n{out}"
+    assert "未提交" in out and "未提交" in log, (
+        f"必须读到**本次运行自己**的现场（未提交告警）：\n控制台：\n{out}\n日志：\n{log}"
+    )
+
+
+# ── ⑩ 自己的日志被外部清理器删掉 ⇒ 明确报红 + 定位信息（issue #4158 判据②）──
+
+def test_own_log_deleted_mid_flight_fails_loudly(tmp_path):
+    """本测试自己的日志被删 ⇒ 必须**明确报红并给出定位信息**，不是裸 `Errno`/无信息空断言。
+
+    现场构造：脚本跑完、定位之前删掉 PID 通配命中的日志 —— 与真实 flake 观测量相同
+    （日志 fd 指向已 unlink 的 inode ⇒ 路径消失；本仓曾由 `test_verify_all_tri_state_noop.py`
+    的全局通配清理制造，已收窄为 `$$` 作用域）。
+
+    红证（改前实测）：`Path.read_text()` 抛 `FileNotFoundError: [Errno 2] …`（无期望模式/无残骸清单），
+    或退化成 `assert paths` 的「未能定位」—— 排查只能靠猜。
+    """
+    repo = _make_repo(tmp_path)
+    (repo / "README.md").write_text("baseline\ndirty edit\n", encoding="utf-8")
+    with pytest.raises(VerifyAllLogNotFound) as ei:
+        _run_gate(repo, delete_own_log=True)
+    msg = str(ei.value)
+    assert "verify-all-" in msg and "-*.log" in msg, f"必须给出**期望路径模式**：\n{msg}"
+    assert "PID" in msg and "/tmp" in msg, f"必须给出 PID 与 /tmp 现场：\n{msg}"
+    assert "没写出日志" in msg or "删" in msg, f"必须给出归因线索（被外部清理/没写出）：\n{msg}"
+    assert "未提交" in msg, f"必须带上控制台原文（否则排查仍需重跑）：\n{msg}"

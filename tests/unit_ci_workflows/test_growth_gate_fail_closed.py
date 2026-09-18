@@ -23,6 +23,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from unit_ci_workflows.test_verify_all_log_scope import run_gate
+
 REPO_ROOT = Path(__file__).parent.parent.parent
 GATE_PY = REPO_ROOT / ".github" / "growth_gate.py"
 
@@ -166,8 +168,9 @@ def test_main_base_mode_fails_closed_on_git_error(monkeypatch):
 # ══════════════════════════════════════════════════════════════════════════════
 
 # ── 真跑 `bash verify-all.sh gate` 的最小 harness ──
-# 与 `test_gate_uncommitted_noop.py` 同族但**不复用其模块**（那套 harness 要求恰好 1 个检查项
-# 日志、还带 locale/report 专项，语义不同，互相牵连只会让两边都脆）。
+# ⚠️ 2026-09-18（issue #4158）更正：定位/归属/清理口径**改为复用**单一实现
+# `test_verify_all_log_scope.py::run_gate()` —— 各写一份正是本 issue 的病根
+# （按 PID 通配裸定位：PID 复用读错现场 / 被外部清理抛裸 Errno）。本文件只保留自己的环境钉法。
 VERIFY_ALL = REPO_ROOT / "verify-all.sh"
 YAML_LIGHT = REPO_ROOT / ".github" / "yaml_light.py"
 _RUN_TIMEOUT = 180
@@ -244,28 +247,12 @@ def _make_repo(tmp_path) -> Path:
 def _run_gate(repo):
     """真跑 `bash verify-all.sh gate`，返回 (退出码, 控制台原文, 检查项日志原文)。
 
-    `report()` 把检查项输出重定向进 `/tmp/verify-all-<PID>-<slug>.log`、**成功时只打印 ✅**，
-    故用 `bash -c 'echo $$; exec bash …'` 让检查脚本与新 bash 同 PID（`exec` 不换 PID），
-    再按 **PID 定位**日志 —— 只定位，绝不复刻 slug 的命名渲染（它曾在 locale 上踩过坑）。
+    定位/归属/清理口径的**单一实现**在 `test_verify_all_log_scope.py::run_gate()`
+    （issue #4158）：按 PID 通配 ∩ 归属过滤定位（运行前快照 + mtime 窗口排除同 PID 的外来残骸），
+    拿不到就打印期望模式/实际命中/残骸清单/控制台原文并报红 —— 不再裸 `FileNotFoundError`
+    （改前：外部清理器在 glob 与 `read_text` 之间删掉日志即抛 `[Errno 2]`，且无任何定位线索）。
     """
-    env = dict(os.environ)
-    env.update(_GIT_ENV)
-    assert Path("/tmp").is_dir(), "本守卫依赖 /tmp 存放 report() 日志（CI 与 macOS 均有）"
-    proc = subprocess.run(
-        ["bash", "-c", 'echo "PID=$$"; exec bash verify-all.sh gate'],
-        cwd=str(repo), capture_output=True, text=True, env=env, timeout=_RUN_TIMEOUT,
-    )
-    out = "%s%s" % (proc.stdout, proc.stderr)
-    paths = []
-    if m := re.search(r"PID=(\d+)", out):
-        pid = m.group(1)
-        paths = sorted(Path("/tmp").glob("verify-all-%s-*.log" % pid))
-    assert paths, f"未能按 PID 定位 gate 检查项日志（断言会退化成没线索的空串）：\n{out}"
-    log = paths[0].read_text(encoding="utf-8", errors="replace")
-    for p in paths:
-        p.unlink(missing_ok=True)  # 不留 /tmp 垃圾
-    assert log.strip(), f"日志文件为空（{paths[0]}）——检查项没往日志写任何东西？\n{out}"
-    return proc.returncode, out, log
+    return run_gate(repo, env=_GIT_ENV)
 
 
 # 弱断言样本一律**拼接构造**（本文件自身也是「新增测试文件」，会被 `--check-weak` 扫）
