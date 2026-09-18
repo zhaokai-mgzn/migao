@@ -3036,8 +3036,6 @@
 
 ### PG-040. 加工费组合定价 - 组合→单价（元/米）写面五条护栏 + composition_key 归一化 + 版本账 + 未定价缺口可见 🔵
 ```
-你: 把韩褶+打孔定一个价，再加定型又是一个价；看看还有哪些卖过的组合没定价
-期望: direct_reply
 数据: success=true
 数据: 判据 1·**同一组合不重复定价**：同一 `composition_key` 建两次 ⇒ 第二次 HTTP **409** + `error.code=CONFLICT` + 可行动 `suggestion`，且**零 insert**（撞 DB 唯一键 `uk_processing_fee_combinations_tenant_key` = 500，是缺陷不是护栏）。证据：ProcessingFeeCombinationCommandServiceTest「duplicateCompositionIsRejectedWithConflict」+ ProductionControllerTest「createProcessingFeeCombinationDuplicateReturnsConflict」（**注入**：去掉 `rejectDuplicate` ⇒ 两条断言红）
 数据: 判据 2·**归一化确定性、与书写顺序无关**：`compositionKey` 口径 = trim → 丢空 → 去重 → **按 Unicode 码点升序** → `+` 连接 ⇒ `韩褶+打孔+定型` ≡ `定型+打孔+韩褶` ≡ `打孔+定型+韩褶` 全部等于 `定型+打孔+韩褶`（码点真值：定 U+5B9A < 打 U+6253 < 韩 U+97E9，**勿凭读起来顺猜顺序**）；落库值与响应 `composition_key` 都是**归一化后**的值，`items` 与 key 同源；归一化后相同 ⇒ 撞判据 1 的 409。**为什么不能用「加工项目录 sort_order 序」**：那会让 key 随加工项表改动漂移（商家调一下排序 ⇒ 已成交组合匹配不上自己的价）。证据：ProcessingFeeCombinationCommandServiceTest「compositionKeyIsOrderIndependent」「storedCompositionKeyIsNormalized」「reorderedRequestHitsDuplicateGuard」（**注入**：把 `TreeSet` 改成 `LinkedHashSet` ⇒ 三条红，实测）

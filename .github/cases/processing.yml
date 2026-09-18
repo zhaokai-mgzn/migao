@@ -634,10 +634,14 @@ cases:
       - version_ledger
       - gap_visibility
     truths_ref: []
-    user_inputs:
-      - "把韩褶+打孔定一个价，再加定型又是一个价；看看还有哪些卖过的组合没定价"
-    expectations:
-      - tool: direct_reply
+    # `user_inputs` / `expectations` 留空 = 本条**不是 LLM 行为用例**（无 agent 轮次可跑）：
+    # 判据全部由 `traces.tests` 的确定性测试执行（计分通道分流，见门禁的「计分通道分流」读数）。
+    # 形态同 PG-036 / PG-037（同为 [backend-contract] 的后端契约用例）——
+    # ⚠️ **不写** `expectations[].tool`：那会让本条被判成「写类用例」，从而被要求声明自清理
+    # （`pre_clean` / `namespaces`），而它**根本不经 runner 执行** ⇒ 那是给不存在的运行期行为
+    # 交一份假的自清理声明（「为绿而绿」的形态，门禁 R4 明确禁止新增豁免）。
+    user_inputs: []
+    expectations: []
     data_checks:
       - "success=true"
       - "判据 1·**同一组合不重复定价**：同一 `composition_key` 建两次 ⇒ 第二次 HTTP **409** + `error.code=CONFLICT` + 可行动 `suggestion`，且**零 insert**（撞 DB 唯一键 `uk_processing_fee_combinations_tenant_key` = 500，是缺陷不是护栏）。证据：ProcessingFeeCombinationCommandServiceTest「duplicateCompositionIsRejectedWithConflict」+ ProductionControllerTest「createProcessingFeeCombinationDuplicateReturnsConflict」（**注入**：去掉 `rejectDuplicate` ⇒ 两条断言红）"
