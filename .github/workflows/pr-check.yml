@@ -525,8 +525,9 @@ jobs:
   # smoke 档真实 LLM。移除理由：
   #   ① 云环境不含 PR 分支代码 → 评测结果与本 PR 改动**无因果**（与 behavior-eval
   #      dogfooding 的 CH-010 无因果红同一形态，AD §6.1 事实 1 的第四层）；
-  #   ② B 端行为信号由 agent-behavior-eval 的**映射用例**承担（app/** 命中即跑，
-  #      规则桶或兜底网），完整 B 端覆盖由 post-deploy-eval（双 persona 全量）承担；
+  #   ② ~~B 端行为信号由 agent-behavior-eval 的**映射用例**承担（app/** 命中即跑，
+  #      规则桶或兜底网）~~（⚠️ #4275：该 workflow 已整体删除 ⇒ PR 层不再有行为信号），
+  #      完整 B 端覆盖由 post-deploy-eval（双 persona 全量）承担；
   #   ③ AD §6.3：PR 层默认不跑 smoke/云冒烟；本层是四层冗余里成本最大的单层
   #      （实测 2.5h 内 smoke 85 次 ≈ 43% 的总评测次数）。
   gitleaks-scan:

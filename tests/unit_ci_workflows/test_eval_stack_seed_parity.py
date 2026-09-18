@@ -36,12 +36,25 @@
 `agent-behavior-eval.yml` 的 `behavior-eval` job（起 docker 栈 + 注种子 + 跑 `local_runner.py`
 + 真实 LLM）**整体删除**：PR 上只剩纯静态的 `map` job（diff → case_ids，零 LLM）。
 它**不再起栈、不再注种子、不再跑 runner** ⇒ 已不是本 family 的成员，故从 `EVAL_WORKFLOWS`
-移出（连同一切按 workflow 参数化的用例；移出的理由写在那个常量上方）。
+移出（连同一切按 workflow 参数化的用例）。
 
-⚠️ **移出不是豁免**（§19.1 元规则：白名单只许缩短，不许成为藏身处）：
-`TestExcludedWorkflowHasNoStackMachinery` 用**结构判据**证明它真的没有栈机件；
-LLM job 一旦被加回来那条守卫先红 —— 那时本集合必须同步加回。PR 层零 LLM 的机械锁
-（含"自动 LLM 触发白名单"）见 `tests/unit_ci_workflows/test_behavior_eval_pr_thin.py`。
+## 2026-09-18 变更：该 workflow **整个文件已删除**（用户裁定，#4275）
+
+`agent-behavior-eval.yml` 已**整体删除**（PR 层零 LLM 映射信号：零成本，但每个触及
+`backend/ai-agent-service/app/**` 的 PR 都会自动跑并刷评论，9/18 实测 13 次/天；
+用户裁定「不要自动进行验证」+「CI 运行次数太多」）⇒ 文件不存在了。
+
+随之**删掉的是"被测对象已不存在"的断言**（不是放宽门槛）：
+- `TestExcludedWorkflowHasNoStackMachinery`（证明它"真的没有栈机件"的结构判据）——
+  对象已删，无需证明；
+- `TestPrLayerIsSignalOnlyNotGate`（PR 层零 LLM / 零建 issue / 零死权限 / 反假绿）——
+  该 workflow 是它唯一的被测对象。
+
+**保留下来的是本 family 的判据本体**：`EVAL_WORKFLOWS` 白名单（谁起栈谁登记）、
+种子单一源、规则等价与反例、同栈不混 persona、归属锁定 —— 一个都没少。
+若将来重新引入一个"起栈 + 注种子 + 跑 runner"的 workflow，它必须登记进 `EVAL_WORKFLOWS`
+并由本文件全部判据覆盖（**不许借"文件已删"把新入口藏在外面**）。
+PR 层零 LLM 的机械锁（含"自动 LLM 触发白名单"）见 `tests/unit_ci_workflows/test_behavior_eval_pr_thin.py`。
 
 ## case_ids 说明（不编造）
 
@@ -69,10 +82,12 @@ SEED_SCRIPT = REPO_ROOT / "scripts" / "eval_stack_seed.sh"
 # ★ 2026-09-17 移出 `agent-behavior-eval.yml`（用户裁定 2′/4′，issue #4034）：它的
 #   `behavior-eval` job（起栈 + 注种子 + local_runner + 真实 LLM）**整体删除**，PR 上
 #   只剩纯静态的 `map` job ⇒ 已不属于本 family（白名单的语义是"谁起栈谁登记"）。
-#   ⚠️ 这不是"为了让测试变绿而放宽"：移出**由结构判据背书** ——
-#   `TestExcludedWorkflowHasNoStackMachinery` 断言该文件里**一件栈机件都没有**
-#   （零种子单一源调用 / 零 docker compose / 零 local_runner / 零 `id: eval` 步骤）。
-#   把 LLM job 加回来 ⇒ 那条守卫先红 ⇒ 本集合必须同步加回，本 family 的判据一个都不会少。
+# ★ 2026-09-18（#4275 用户裁定）：该 workflow **整个文件已删除**（连零 LLM 的 map job 一并
+#   移除 —— 它的唯一产物是 PR 评论，且每个 app/** PR 都自动跑+刷评论）。
+#   ⚠️ 白名单**只许缩短不许成为藏身处**：将来若有人新造一个"起栈 + 注种子 + 跑 runner"的
+#   workflow，它**必须登记进本集合**并由本文件全部判据覆盖 —— 不许借"那个文件删了"把新入口
+#   藏在外面。原来背书"移出"的结构判据（`TestExcludedWorkflowHasNoStackMachinery`）随
+#   被测文件删除而移除（对象已不存在，无物可证）。
 EVAL_WORKFLOWS = (
     "xiaobu-acceptance.yml",
     "post-deploy-eval.yml",
@@ -146,61 +161,6 @@ def _run_seed_script(monkeypatch, tmp_path, persona: str):
         f"eval_stack_seed.sh --persona {persona} --dry-run 失败：\n{proc.stdout}\n{proc.stderr}"
     )
     return FIXTURE_RE.findall(proc.stdout)
-
-
-class TestExcludedWorkflowHasNoStackMachinery:
-    """`agent-behavior-eval.yml` 被移出 `EVAL_WORKFLOWS` 的**结构性理由**（不是豁免）。
-
-    白名单的惯例是"漏登记 = 新造一套口径的入口"，所以"移出"必须能被**证伪**，否则它就成了
-    藏 LLM job 的地方（§19.1：基于错误真相模型写出的护栏 = 永远被豁免的空判据）。
-    本类断言该 workflow 的**步骤正文**里一件栈机件都没有：
-    ① 不调用种子单一源（不起栈就不注种子）；② 无 `docker compose`；
-    ③ 无 `local_runner.py`（零 LLM 的机械形式）；④ 无 `id: eval` 步骤。
-    另外单列一条：被删的 `behavior-eval` job 不得回来。
-
-    ⚠️ **必须先剥掉 YAML 注释行**：该文件头部注释**合法地**记着沿革（"曾经的栈怎么起 /
-    runner 在哪 / job 级槽位叫什么"），按原文搜会把沿革说明误判成"机件回来了"（假红）；
-    反过来只搜注释则等于不搜（假绿）—— 故判据落在"步骤正文"这一层。
-    """
-
-    EXCLUDED = "agent-behavior-eval.yml"
-
-    def _stack_surface(self) -> str:
-        """步骤正文（name + run + with.script），逐行剥掉 `#` 注释行后拼接。"""
-        chunks = []
-        for job in _jobs(self.EXCLUDED).values():
-            for s in job.get("steps") or []:
-                chunks.append(s.get("name") or "")
-                chunks.append(s.get("run") or "")
-                chunks.append(str((s.get("with") or {}).get("script") or ""))
-        text = "\n".join(chunks)
-        return "\n".join(ln for ln in text.splitlines() if not ln.lstrip().startswith("#"))
-
-    def test_excluded_workflow_has_no_stack_machinery(self):
-        """零栈机件 —— 任何一件回来，本 workflow 就不再是「纯静态」，必须重回白名单。"""
-        text = self._stack_surface()
-        for banned in ("eval_stack_seed.sh", "docker compose", "local_runner.py"):
-            assert banned not in text, (
-                f"{self.EXCLUDED} 的步骤正文里出现了栈机件 {banned!r} —— "
-                "它已不是「纯静态映射」workflow（裁定 2′/4′，#4034）：把 LLM/栈加回来必须"
-                "**同时**把它加回 EVAL_WORKFLOWS 并由本文件全部判据重新覆盖，"
-                "不许借「移出白名单」把起栈的 job 藏在外面"
-            )
-        step_ids = [s.get("id") for job in _jobs(self.EXCLUDED).values()
-                    for s in (job.get("steps") or [])]
-        assert "eval" not in step_ids, (
-            f"{self.EXCLUDED} 出现了 `id: eval` 步骤（{step_ids}）—— "
-            "PR 层零 LLM 的形态是「没有评测步骤」，不是「评测步骤恒 exit 0」"
-        )
-
-    def test_deleted_eval_job_has_not_come_back(self):
-        """被删的 `behavior-eval` job 不得回来（回来即重新成为 PR 层真实 LLM 入口）。"""
-        jobs = _jobs(self.EXCLUDED)
-        assert "behavior-eval" not in jobs, (
-            f"{self.EXCLUDED} 又有了 `behavior-eval` job（现为 {sorted(jobs)}）—— "
-            "裁定 2′/4′（#4034）删掉它正是因为「永不执行的死 job」也算死机制；"
-            "把它加回来 = 重新在每个行为 PR 上烧真实 token + 占评测槽位"
-        )
 
 
 class TestSeedRuleSingleSource:
@@ -457,7 +417,7 @@ class TestEvalConcurrencySlot:
         "xiaobu-acceptance.yml": "xiaobu-acceptance",
     }
 
-    @pytest.mark.parametrize("workflow", ("xiaobu-acceptance.yml", "agent-behavior-eval.yml"))
+    @pytest.mark.parametrize("workflow", ("xiaobu-acceptance.yml",))
     def test_file_level_group_keeps_per_pr_cancel(self, workflow: str):
         """文件级必须仍是**按 PR** + cancel-in-progress=true（PR 迭代的取消能力别丢）。
 
@@ -566,101 +526,6 @@ class TestEvalConcurrencySlot:
             assert group.startswith(self.GROUP), (
                 f"{wf}/{job_name} 的 job 级槽位 {group!r} 与 post-deploy-eval 不同源"
             )
-
-
-class TestPrLayerIsSignalOnlyNotGate:
-    """PR 层是**信号**而非门禁：零真实 LLM、零建 issue（用户裁定 2′/4′，issue #4034）。
-
-    沿革（为什么原类 `TestBehaviorGateIsNonBlocking` 的判据全部失去被测对象）：
-    2026-09-14~09-17 本 workflow 曾是 PR 门禁（规则命中 = 强信号：报告 + PR 评论 +
-    自动开 issue、步骤恒 `exit 0` 不拦合并）。该评测 job 已**整体删除** ⇒
-    「恒 exit 0 / 开 issue / issues: write / ruleFail 三元」这一组语义**在 PR 层不复存在**；
-    但**不许**因此删掉了事 —— 本条把同一件事（LLM 结论不得在 PR 层被误读）钉在**新边界**上：
-
-      a. **零 LLM**：没有 `id: eval` 步骤，任何步骤的命令体都不得出现 `local_runner.py`
-         （PR 路径上的 LLM 调用数 = 0；同源判据见 `test_behavior_eval_pr_thin.py` 的触发白名单）；
-      b. **零建 issue**：不得有 `issues.create(`（PR 评论走 `issues.createComment(`，
-         那是 `pull-requests: write` 覆盖的 PR 评论，不是 issue）；
-      c. **零死权限**：`permissions` 不得声明 `issues: *`（声明了却没有消费方 = §19.2 死权限）；
-      d. **反假绿 + 可执行出口**：映射评论必须自己说清「没有跑任何 LLM」（否则「有映射结论」
-         会被读成「评测通过」），并给出可复制的派发命令（裁定后它是 PR 上唯一输出）。
-    """
-
-    WORKFLOW = "agent-behavior-eval.yml"
-
-    def _script_text(self) -> str:
-        """步骤正文（name + run + with.script），**剥掉 `#` 注释行**。
-
-        必须剥注释：该文件头部沿革**合法地**写着 `local_runner.py` / `eval_stack_seed.sh`
-        （"曾经的评测怎么跑"），按原文搜会把沿革误判成"LLM 回来了"（假红）；
-        而只看注释又等于不搜（假绿）—— 故判据落在"步骤正文"这一层。
-        """
-        chunks = []
-        for s in _steps(self.WORKFLOW):
-            chunks.append(s.get("name") or "")
-            chunks.append(s.get("run") or "")
-            chunks.append(str((s.get("with") or {}).get("script") or ""))
-        text = "\n".join(chunks)
-        return "\n".join(ln for ln in text.splitlines() if not ln.lstrip().startswith("#"))
-
-    def test_no_eval_step_and_no_llm_runner(self):
-        """(a) 零 LLM：没有评测步骤，也没有任何命令体调用 `local_runner.py`。"""
-        ids = [s.get("id") for s in _steps(self.WORKFLOW)]
-        assert "eval" not in ids, (
-            f"出现 `id: eval` 评测步骤（{ids}）—— PR 层零 LLM 的形态是「没有评测步骤」，"
-            "不是「评测步骤恒 exit 0」；真要在 PR 上恢复评测，必须先改裁定并同步 "
-            "test_behavior_eval_pr_thin.py 的触发白名单"
-        )
-        body = self._script_text()
-        assert "local_runner.py" not in body, (
-            "步骤命令体里出现 `local_runner.py` —— PR 路径上的真实 LLM 调用数不再为 0"
-            "（裁定 2′/4′ 的要点就是省钱：LLM 负责发现，不负责每个 PR）"
-        )
-
-    def test_no_issue_creation_step(self):
-        """(b) 零建 issue：PR 层只发评论，不再有「规则命中失败 → 自动开 issue」这条链。"""
-        scripts = "\n".join(str((s.get("with") or {}).get("script") or "")
-                            for s in _steps(self.WORKFLOW))
-        assert not re.search(r"issues\.create\s*\(", scripts), (
-            "出现 `issues.create(` —— 建 issue 的步骤随评测 job 一并停用了（裁定 2′/4′）；"
-            "若确认这是新加的必要步骤，须同时把 `issues: write` 补回来（#3497），"
-            "并同步 test_workflow_issue_permissions.py 的口径"
-        )
-
-    def test_permissions_do_not_declare_issues_write(self):
-        """(c) 零死权限：`issues: *` 不得声明（声明了却没有消费方 = §19.2「声明无消费」）。"""
-        perms = _load_workflow(self.WORKFLOW).get("permissions") or {}
-        assert "issues" not in perms, (
-            f"permissions 声明了 issues={perms.get('issues')!r}，但本 workflow 已无任何 "
-            "`issues.*` 调用（建 issue 的步骤随 job 删除）—— 这正是「声明无消费」的死权限："
-            "读者会以为有人在建 issue，而权限本身也在暗示一条已停用的链路。"
-            "真需要时应**同时**加回声明与消费方"
-        )
-
-    def test_pr_comment_declares_no_llm_ran_and_gives_dispatch_command(self):
-        """(d) 反假绿 + 可执行出口：评论写明「没跑 LLM」，并给出派发命令。"""
-        scripts = "\n".join(str((s.get("with") or {}).get("script") or "")
-                            for s in _steps(self.WORKFLOW))
-        assert "没有跑任何真实 LLM" in scripts, (
-            "PR 评论没有明确写出「本次没有跑任何真实 LLM」—— 读者会把「有映射结论」读成"
-            "「评测通过」（假绿）；「没跑」必须长得像「没跑」（§16.7 禁空跑 ③）"
-        )
-        assert "把本评论读成" in scripts and "评测通过" in scripts, (
-            "PR 评论缺少「不要把本评论读成评测通过」这条显式否认 —— 只写「没跑」不够，"
-            "要直接把误读路径封掉"
-        )
-        assert "尚未执行" in scripts, (
-            "映射用例的**未执行**状态没出现在 PR 评论里（评论是裁定后 PR 上唯一的输出口，"
-            "run summary 读者不一定会看）"
-        )
-        assert "gh workflow run post-deploy-eval.yml" in scripts, (
-            "PR 评论没给出可复制的派发命令（`gh workflow run post-deploy-eval.yml …`）—— "
-            "裁定后本评论是唯一输出，缺它读者只拿到「要跑」而拿不到「怎么跑」"
-        )
-        assert "purpose=debug" in scripts, (
-            "派发命令未标注 `purpose=debug`（定点复现、**非判定用途**）—— 不标注会把 PR 层"
-            "窄跑的结论误升为判定结论（#3769：判定用途只允许全库跑）"
-        )
 
 
 class TestSeedBeforeEvalOrdering:

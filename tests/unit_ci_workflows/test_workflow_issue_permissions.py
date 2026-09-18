@@ -92,7 +92,7 @@ def _step_text(step) -> str:
     """步骤里**会执行**的文本：github-script 的 `with.script` + run 步骤的 `run`。
 
     刻意不读 `with.body` / 原始文件文本 —— 只认"会被执行的代码"，避免把 YAML 注释或
-    文案里的示例措辞（如 `agent-behavior-eval.yml` 的 `# … issues.create 会 HttpError …`）
+    文案里的示例措辞（#4275 前举例 `agent-behavior-eval.yml`，该文件已删；示例措辞形态不变）
     当成真实调用（假红）。取证形态见 test_mentions_without_call_are_not_flagged。
     """
     if not isinstance(step, dict):
@@ -373,7 +373,8 @@ def test_issue_comment_without_any_write_scope_is_red(tmp_path):
 def test_mentions_without_call_are_not_flagged(tmp_path):
     """**提及**≠**调用**：YAML 注释与日志文案里的 op 名不算违规（防"正则扫全文"假红）。
 
-    真实形态：`agent-behavior-eval.yml` 的权限注释写着「缺 issues: write 时
+    真实形态（#4275 前）：`agent-behavior-eval.yml` 的权限注释写着「缺 issues: write 时
+    （该文件已删除，此处保留为**历史形态**；判据本体针对存续 workflow）
     issues.create 会 HttpError 静默崩溃」；`post-deploy-eval.yml` 同理。
     """
     path = tmp_path / "comment-only.yml"

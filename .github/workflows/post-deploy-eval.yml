@@ -24,7 +24,7 @@ name: Post-Deploy Eval (部署后全量回归)
 # ── 其它真实 LLM 入口（**全部手动专用工具**；均无自动触发）────────────────────
 # | workflow | 触发（after） | 用途 | 边界 |
 # |---|---|---|---|
-# | `agent-behavior-eval.yml` | **PR（零 LLM）** | diff→case_ids **映射信号** + 打印派发命令 | **不产生评测结论**（LLM job 已删除） |
+# | ~~`agent-behavior-eval.yml`~~ | — | — | **#4275 已删除整个文件**（PR 层零 LLM 映射信号：零成本，但每个 `app/**` PR 都自动跑+刷评论，9/18 实测 13 次/天；用户裁定「不要自动进行验证」）。能力去向：`behavior_mapping.py` 纯函数 + §13.2 映射表（本地算） |
 # | `xiaobu-acceptance.yml` | **仅手动**（#4262 删除每周定时） | C 端专项 + **单腿窄跑**（§16.7 指名的单腿入口） | 非判定（除显式声明） |
 # | `agent-eval-adversarial.yml` | **仅手动**（#4262 删除每周定时） | B 端对抗 | 只追踪不阻塞 |
 # | `agent-eval.yml` | 手动 | 打**共享云环境**的 normal 冒烟（评的是已部署 main） | 与 PR 无因果；非判定 |
@@ -32,6 +32,8 @@ name: Post-Deploy Eval (部署后全量回归)
 # ── 停用 / 保留清单（before → after）────────────────────────────────────────
 # 停用：`agent-behavior-eval.yml` 的 `pull_request` → 真实 LLM（**job 整体删除**，不是加
 #   `if` 关掉 —— 关掉会留下永不执行的死 job）。**代价已知并接受**：PR 阶段不再有 LLM 行为信号。
+# 停用（#4275，用户裁定 2026-09-18）：**该文件整个删除**（连零 LLM 的 `map` job 一并移除）——
+#   它的唯一产物是 PR 评论（`createComment` 打在 PR 上），无 PR 可评论 ⇒ 留手动档 = 死 job。
 # 保留（#4262 收敛后的**唯一**自动 LLM 触发）：本文件**每周 1 条** normal 全量档。
 # 停用（#4262，用户裁定 2026-09-18）：`xiaobu-acceptance` 每周 adversarial 档、
 #   `agent-eval-adversarial` 每周 adversarial 档（两条自动触发删除，改为**仅手动**）。
@@ -523,7 +525,8 @@ jobs:
         #
         # ★ 口径**单一实现**（issue #3563）：本步骤只调用 scripts/eval_stack_seed.sh，
         #   规则（xiaobu=仅 C 端种子 / mibao=C 端+B 端）在脚本里，与
-        #   xiaobu-acceptance.yml、agent-behavior-eval.yml **共用同一份** —— 禁止在此内联
+        #   xiaobu-acceptance.yml **共用同一份**（#4275 前还有 agent-behavior-eval.yml，已删）
+        #   —— 禁止在此内联
         #   fixture 路径。矩阵每条腿自带 persona → 每套栈恰装该 persona 的种子，
         #   与其它 workflow 上同 persona 的栈逐字节同构（这才是"标准考场"的前提）。
         #   静态锁：tests/unit_ci_workflows/test_eval_stack_seed_parity.py（L0）。
