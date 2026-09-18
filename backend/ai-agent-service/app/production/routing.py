@@ -42,6 +42,15 @@ OPERATION_CATALOG: Dict[str, Dict[str, Any]] = {
     "绑带-布": {"group": "其他", "unit": "套", "unit_price": 0.5},
     "抱枕": {"group": "其他", "unit": "个", "unit_price": 2.0},
     "腰靠垫": {"group": "其他", "unit": "个", "unit_price": 2.0},
+    # ── issue #4230：特殊选项 A′ 类补齐的 5 道工序（单价为**行业推算**，商家可配）──
+    # 推理依据（issue #4230 §2.2）：绑带-纱 与 绑带-布 对称；logo条-布 参照 花边-布 ¥0.6/米
+    # （同为缝一条装饰带）；立边-布 参照 布三边 ¥0.4/米（立边更费工）；扣环-布 参照
+    # 打孔-布 ¥0.15/孔 ×2（多一道锁边）；防翘扣-布 比扣环简单。
+    "绑带-纱": {"group": "其他", "unit": "套", "unit_price": 0.5},
+    "logo条-布": {"group": "车位", "unit": "米", "unit_price": 0.6},
+    "立边-布": {"group": "车位", "unit": "米", "unit_price": 0.5},
+    "扣环-布": {"group": "车位", "unit": "个", "unit_price": 0.3},
+    "防翘扣-布": {"group": "车位", "unit": "个", "unit_price": 0.2},
 }
 
 # ── 工艺路线模板（部位×工艺 → 基准工序序列）──
@@ -70,7 +79,11 @@ ROUTINGS: Dict[str, List[str]] = {
     ],
 }
 
-# ── 特殊选项 → 条件工序（插在目标工序后；一分二为计件系数不插工序）──
+# ── 特殊选项 → 条件工序（插在目标工序后；`after` = **锚点在它之前**，见 `_insert_after`）──
+# 真值源 §1【默】19 项特殊选项，按处置分三类（**每一类都要显式登记**，见下方
+# `NON_PIECEWORK_OPTIONS` / `OPTION_FACTOR_SCOPES` 的注释；门禁 =
+# `tests/test_production/test_special_options.py::TestCriterion1CoverageGate`）：
+#   ① 加条件工序 = 本表；② 加计件系数 = `OPTION_FACTOR_SCOPES`；③ 不计件 = `NON_PIECEWORK_OPTIONS`。
 SPECIAL_OPTION_ROUTINGS: Dict[str, Dict[str, Any]] = {
     "拼1次": {"operation": "拼1次-布", "after": "布三边"},
     "拼2次": {"operation": "拼2次-布", "after": "布三边"},
@@ -80,8 +93,44 @@ SPECIAL_OPTION_ROUTINGS: Dict[str, Dict[str, Any]] = {
     "接高": {"operation": "接高-布", "after": "精裁-布"},
     "双眼皮接高": {"operation": "接高-布", "after": "精裁-布"},
     "余料做绑带": {"operation": "绑带-布", "after": "布帘车被"},
-    "一分二": {"factor": 1.7},  # 计件系数（同族选项，行业 ERP 实证 1.7）
+    # ── issue #4230：19 项里有 10 项此前**零登记**（既不加工序、也不加系数、也没标不计件），
+    # 「忘了映射」与「本来就不计件」在数据上长得一模一样（都是 `.get(opt)` → None 的静默黑洞）。
+    # 以下按用户裁定（2026-09-18「按你的行业推算补齐，落成数据，客户反馈再改」）补齐：
+    "布绑带": {"operation": "绑带-布", "after": "布帘车被"},      # 推算：与「余料做绑带」同工序，仅材料来源不同
+    "余料做帘头": {"operation": "帘头制作", "after": "布三边"},    # 推算：复用库里已有的孤儿工序「帘头制作」
+    "抱枕": {"operation": "抱枕", "after": "外帘打卷"},           # 推算：复用孤儿工序「抱枕」，插在打卷后（装袋前）
+    "纱绑带": {"operation": "绑带-纱", "after": "布帘车被"},
+    "加logo条": {"operation": "logo条-布", "after": "布三边"},
+    "加立边": {"operation": "立边-布", "after": "布三边"},
+    "扣环": {"operation": "扣环-布", "after": "布三边"},
+    "防翘扣": {"operation": "防翘扣-布", "after": "布三边"},
 }
+
+# ── 特殊选项 → 计件系数（真值源 §4「条件系数表：特殊选项 → **工序** → 系数」）──
+# 每个选项一个**档位列表**（按书写顺序解析，**后面的档覆盖前面的档** —— 与 CSS/路由表同构：
+# 先写平摊档，再写逐工序/逐部位的**例外**档），档位字段：
+#   `factor`         系数（乘在工序实例的 `factor` 上）
+#   `operation_name` 限定工序名；`None` = 该**部位全部**工序（平摊档）
+#   `curtain_type`   限定部位（布帘/纱帘/帘头）；`None` = 不限部位
+#   `source`         `实证` / `推算`（真值源标注口径，商家可配版本化）
+#
+# v1 **只种「一分二 ⇒ 1.7 / 全部工序」一个档** —— 它是唯一的**实证**值（真值源 §4 + 行业 ERP）。
+# issue #4230 §2.4 的逐工序/逐分组细算档（车位 ≈×2.0 / 后道 ×1.0 / 裁剪 ×1.2）是**纯推算**，
+# 且按其细算的总价会**低于**平摊 ×1.7 ⇒ **不拿推算值覆盖实证值**，v1 不启用、不种值。
+# 结构留 `operation_name` / `curtain_type` 两个限定档位，等客户确认后再细化（不把路堵死）——
+# 「该档位可用」由 `test_operation_scoped_factor_applies_to_that_operation_only` 以限定值构造证明。
+OPTION_FACTOR_SCOPES: Dict[str, List[Dict[str, Any]]] = {
+    "一分二": [
+        {"factor": 1.7, "operation_name": None, "curtain_type": None, "source": "实证"},
+    ],
+}
+
+# ── 不影响计件的特殊选项（**显式登记**，不留静默黑洞）──
+# 真值源 §1【默】把这两项与其余 17 项并列列出，但它们的业务语义是**只是把余料还给客户**，
+# 不增加车间任何工序、也不改变已有工序的费工程度 ⇒ 既不加工序也不加系数、计件金额不变。
+# 登记在这里的唯一理由：让「本来就不计件」与「忘了映射」在数据上**可区分**
+# （前者在这里有名字，后者会撞 `TestCriterion1CoverageGate` 的红）。
+NON_PIECEWORK_OPTIONS = frozenset({"余料带回(布)", "余料带回(纱)"})
 
 # 必完工序 / 生产开始标记（默认；商家可配「此工序必须完成才可打包」）
 MUST_FINISH_OPS = {"外帘装袋"}   # 打包前置（截图「此工序必须完成才可打包」）
@@ -225,13 +274,42 @@ def build_routing(position: Dict[str, Any]) -> List[str]:
     if position.get("is_shaped") is False:
         route = [op for op in route if op not in ("定型-布", "复烫-布")]
 
-    # 特殊选项条件工序（按 after 定位插入）
+    # 特殊选项条件工序（按 after 定位插入；`NON_PIECEWORK_OPTIONS` 与纯系数选项无 operation 档 ⇒ 跳过）
     specials = position.get("special_options") or []
     for opt in specials:
         rule = SPECIAL_OPTION_ROUTINGS.get(opt)
         if rule and "operation" in rule:
             route = _insert_after(route, rule["operation"], rule["after"])
     return route
+
+
+def _scope_applies(scope: Dict[str, Any], position: Dict[str, Any], operation: str) -> bool:
+    """档位是否作用于该（部位, 工序）——`None` 限定 = 不限（见 `OPTION_FACTOR_SCOPES` 注释）。"""
+    operation_name = scope.get("operation_name")
+    if operation_name is not None and operation_name != operation:
+        return False
+    curtain_type = scope.get("curtain_type")
+    return curtain_type is None or curtain_type == position.get("curtain_type", "布帘")
+
+
+def factor_for(position: Dict[str, Any], operation: str) -> float:
+    """该工序实例的特殊选项计件系数（真值源 §4 条件系数表；无选项 ⇒ 1.0）。
+
+    单个选项内：**后面的档覆盖前面的档**（最后一个命中的档生效，见 `OPTION_FACTOR_SCOPES`
+    注释）—— 逐工序/逐部位的**例外档**因此能盖住平摊档，而**不是**与它相乘
+    （相乘会把「平摊 ×1.7 + 车位 ×2.0」算成 ×3.4，纯属重复计费）。
+    多个加系数选项并存：各自解出的系数**相乘**（独立倍率的合成口径；v1 只种「一分二」一个档）。
+    只认 `OPTION_FACTOR_SCOPES` 登记过的选项：未登记的名字**不得**悄悄改系数。
+    """
+    factor = 1.0
+    for opt in position.get("special_options") or []:
+        resolved = None
+        for scope in OPTION_FACTOR_SCOPES.get(opt, ()):
+            if _scope_applies(scope, position, operation):
+                resolved = float(scope["factor"])   # 后档覆盖前档
+        if resolved is not None:
+            factor *= resolved
+    return factor
 
 
 def _insert_after(route: List[str], operation: str, after: str) -> List[str]:
@@ -259,12 +337,6 @@ def instance_operations(
              is_must_finish, is_start_marker, qty_source}]
     """
     route = build_routing(position)
-    specials = position.get("special_options") or []
-    factor = 1.0
-    for opt in specials:
-        rule = SPECIAL_OPTION_ROUTINGS.get(opt)
-        if rule and "factor" in rule:
-            factor = float(rule["factor"])
 
     instances: List[Dict[str, Any]] = []
     for seq, operation in enumerate(route, start=1):
@@ -276,7 +348,7 @@ def instance_operations(
             "unit": meta["unit"],
             "qty": _qty_for(operation, calc_info),
             "unit_price": meta["unit_price"],
-            "factor": factor,
+            "factor": factor_for(position, operation),
             "is_must_finish": operation in MUST_FINISH_OPS,
             "is_start_marker": operation in START_MARKER_OPS,
             "qty_source": calc_info.get("source", "formula"),
