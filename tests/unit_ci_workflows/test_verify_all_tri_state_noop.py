@@ -108,7 +108,11 @@ def _report_harness(root: Path, calls: str) -> str:
         + 'echo "COUNTERS PASS=$PASS FAIL=$FAIL READY=$READY"\n'
         + 'echo "FAILED=[${FAILED[*]:-}]"\n'
         + 'echo "NOT_READY=[${NOT_READY[*]:-}]"\n'
-        + "rm -f /tmp/verify-all-*-*.log\n"
+        # ⚠️ 清理必须**限定在本 harness 自己的作用域**（issue #4158）：这里曾是全局通配
+        #    `rm -f /tmp/verify-all-*`，在 ~40 个 sibling worktree 并行跑测试时会删掉**别的进程
+        #    （含正在跑的 `./verify-all.sh gate`）正在用的日志** ⇒ 判据自己制造假红。
+        #    本 harness 的 `report()` 与这条清理在**同一个 shell** 里 ⇒ `$$` 就是那些日志的 PID。
+        + "rm -f /tmp/verify-all-$$-*.log\n"
     )
 
 
