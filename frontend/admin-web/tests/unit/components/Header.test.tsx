@@ -435,13 +435,17 @@ describe('Header', () => {
     expect(screen.queryByText('工作台')).not.toBeInTheDocument()
   })
 
-  it('/production/operations 路径面包屑（更具体子路径优先于 /production）', async () => {
-    mockPathname = '/production/operations'
+  // issue #4416：工序库并入「工艺配置」/production/routings（旧 /production/operations 已重定向）
+  it('/production/routings 路径面包屑（生产管理 > 工艺配置，更具体子路径优先于 /production）', async () => {
+    mockPathname = '/production/routings'
     await act(async () => {
       render(<Header />)
     })
     expect(screen.getByText('生产管理')).toBeInTheDocument()
-    expect(screen.getByText('工序库')).toBeInTheDocument()
+    expect(screen.getByText('工艺配置')).toBeInTheDocument()
+    // 旧菜单名「工序库」/「工艺路线」都不该再出现在面包屑里（§15.2 面包屑与侧边栏菜单名一致）
+    expect(screen.queryByText('工序库')).not.toBeInTheDocument()
+    expect(screen.queryByText('工艺路线')).not.toBeInTheDocument()
   })
 
   it('/production/piecework 路径面包屑（生产管理 > 计件工资）', async () => {

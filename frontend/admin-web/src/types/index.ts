@@ -885,23 +885,40 @@ export interface RouteOperationCreateParams {
   position?: string
 }
 
-/** 缺口语义（GET /api/admin/production/routing-gaps）：两类缺口都是**可行动项** */
+/** 缺口语义（GET /api/admin/production/routing-gaps）：两类缺口**语义不同**，不得混渲 */
 export interface RoutingGapOperation {
   name: string
   group_name?: string | null
   unit?: string | null
   unit_price?: number | null
+  /**
+   * **有意挂起、等客户确认**（issue #4261 提问清单：裁剪vs精裁是否两道 / 质检是否每单必做 /
+   * 腰靠垫归属 / 罗马帘整套工序 / 纱帘熨烫定型）。
+   *
+   * ⚠️ 后端 `ProductionOperationQueryService.routingGaps` 明写：**「不要让商家/前端把它们
+   * 读成「系统漏了」」** —— 猜出来的工序与单价会**直接算成工人工资**，故一律不猜。
+   * ⇒ `true` 的条目必须与真缺口**分开渲染**，且不进「就绪度」的待处理计数。
+   */
+  pending_confirmation?: boolean
+  /** 后端给的可读说明（挂起原因 / 该工序有价但无路线消费）—— 直接展示，不在前端重写一份 */
+  note?: string | null
 }
 
-/** 库里没有任何（活跃）路线的信号组合 —— 这些组合目前会静默回落到默认路线 */
+/** 库里没有任何（活跃）路线的信号组合 —— 这些组合目前会回落到默认路线 */
 export interface RoutingGapSignalKey {
   curtain_type: string
   craft: string
+  /** 派生出的完整路线键（如 `罗马帘×韩褶`）—— 服务端给，前端不自己拼 */
+  route_key?: string
+  /** 命中它时派生出该键的信号关键词 */
+  signal?: string
 }
 
 /** GET /api/admin/production/routing-gaps */
 export interface RoutingGaps {
   unrouted_operations?: RoutingGapOperation[]
+  unrouted_operation_total?: number
+  pending_confirmation_total?: number
   signal_keys_without_route?: RoutingGapSignalKey[]
 }
 
