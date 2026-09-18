@@ -197,6 +197,40 @@ def fixture_single_leg_unmarked() -> dict:
     }
 
 
+# ── `[backend-contract]` 计分通道分流夹具（#4244）──────────────────────────────
+# 存在性口径**复用** `tests/unit_ci_workflows/test_eval_evidence_chain.py` 的 `trace_ghosts()`：
+# 路径相对仓库根 `is_file()`（不另造第二套「这个引用算不算真」的判据）。
+BC_TRACES_OK = "backend/ai-agent-service/tests/test_chat.py"
+# 幽灵引用：逐字取自 #4120 实测的 CH-037 改前值（该路径不存在 ⇒ 证据链是假的）
+BC_TRACES_GHOST = "backend/ai-agent-service/tests/test_curtain_checklist.py"
+BC_SKIP_REASON = ("[backend-contract] 会话端点由 pytest 单测验证（tests/test_chat.py），"
+                  "非 LLM 行为，不进入 agent-eval 冒烟")
+
+
+def fixture_backend_contract_case(**over) -> dict:
+    """`[backend-contract]` 形态（#4244）：`skip_reason` 前缀 + `traces.tests` 指向真实文件。
+
+    载荷逐字取自 `.github/cases/api.yml` 的 API-012（`expectations: []` + 纯散文
+    `data_checks` + `traces.tests: backend/ai-agent-service/tests/test_chat.py`）。
+    `over` 用于注入「条件不成立」的变体（traces 为空 / 幽灵 / 去掉前缀 / 加写期望）。
+    """
+    case = {
+        "id": "FAKE-API-999",
+        "title": "（注入夹具）[backend-contract] 纯散文用例（计分通道 = traces.tests）",
+        "expectations": [],
+        "data_checks": [
+            "close/reopen/delete/history 对不存在会话返回 404 SESSION_NOT_FOUND",
+            "跨租户或非所有者访问返回 403 PERMISSION_DENIED",
+        ],
+        "skip_reason": BC_SKIP_REASON,
+        "traces": {"tests": [BC_TRACES_OK], "ci": [], "verifies": []},
+        "forbidden_text": [],
+        "persona": "",
+    }
+    case.update(over)
+    return case
+
+
 def codes(violations) -> set:
     return {v["code"] for v in violations}
 
@@ -305,6 +339,161 @@ class TestKnownDefectFixturesAreBlocked:
         }
         missing = required - blocked_codes
         assert not missing, f"这些规则从未被任何红证夹具触发（判据可能是空壳）：{sorted(missing)}"
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 一之三、计分通道分流：`[backend-contract]` 用例的判据在 `traces.tests`（#4244）
+# ══════════════════════════════════════════════════════════════════════════════
+
+class TestBackendContractScoringChannel:
+    """#4244：规则 a1/a2 的**适用范围**按计分通道分流，判据本身一字不改。
+
+    病灶：`EMPTY-ASSERTION` / `NO-EFFECT-ASSERTION` 的前提是「该用例**由 runner 计分**」
+    （`total_exp == 0 ⇒ score = 1.0` ⇒ 恒绿）。但 `[backend-contract]` 用例**根本不跑**
+    （runner 侧按 `skip_reason` 过滤 ⇒ 既不会绿也不会红，而是**未运行**），真实计分通道是
+    `traces.tests`（Java / pytest，由 CI 的 helper job 跑）。对它们提「补计分断言」只会逼出
+    **纸面修复**（把散文改写成 `error.code=` 形态：静态门禁绿、运行期零变化）= 仓库最忌讳的
+    「绿了但没跑」。
+
+    豁免必须**同时**满足两个条件（缺一即照旧报 —— 防豁免被当万金油）：
+      ① **入口条件**：`skip_reason` 以 `[backend-contract]` 开头；
+      ② **结构性条件**：`traces.tests` **非空** 且引用**全部**真实存在。
+    """
+
+    def test_backend_contract_with_existing_traces_is_exempt(self):
+        """**红证①**：`[backend-contract]` + `traces.tests` 非空且文件存在 ⇒ 不报 EMPTY-ASSERTION。
+
+        改前形态下必红（判据只看 runner 计分断言数 = 0 ⇒ 照报）。
+        """
+        case = fixture_backend_contract_case()
+        assert (REPO_ROOT / BC_TRACES_OK).is_file(), (
+            f"夹具前提被破坏：{BC_TRACES_OK} 不存在 ⇒ 结构性条件不成立，本条失去判别力"
+        )
+        assert tax.scoring_assertion_count(case) == 0, "夹具前提：runner 计分断言数应为 0"
+        v = tax.judge_case(case, catalog=_seed_catalog(), repo_root=REPO_ROOT)
+        assert "CASE-TRUST-EMPTY-ASSERTION" not in codes(v), (
+            f"[backend-contract] 用例（计分通道 = traces.tests）仍被要求补 runner 计分断言"
+            f"（⇒ 逼出纸面修复），实际={v}"
+        )
+
+    def test_backend_contract_write_case_skips_effect_rule_too(self):
+        """**红证①（a2 支）**：同一条豁免对 `NO-EFFECT-ASSERTION` 成立。"""
+        case = fixture_backend_contract_case(expectations=[{"tool": "sku_update"}])
+        assert tax.write_expectations(case), "夹具前提：必须被判成写用例"
+        v = tax.judge_case(case, catalog=_seed_catalog(), repo_root=REPO_ROOT)
+        assert "CASE-TRUST-NO-EFFECT-ASSERTION" not in codes(v), (
+            f"[backend-contract] 写用例（计分通道 = traces.tests）仍被要求效果层断言，实际={v}"
+        )
+
+    @pytest.mark.parametrize("factory", [fixture_ch_009, fixture_ch_016],
+                             ids=["CH-009", "CH-016"])
+    def test_non_backend_contract_prose_case_still_flagged(self, factory):
+        """**红证②**：**非** `[backend-contract]` 的纯散文用例 ⇒ **仍报**（真护栏不许被拆）。"""
+        case = factory()
+        assert tax.scoring_assertion_count(case) == 0, "夹具前提：计分断言数应为 0"
+        v = tax.judge_case(case, catalog=_seed_catalog(), repo_root=REPO_ROOT)
+        assert "CASE-TRUST-EMPTY-ASSERTION" in codes(v), (
+            f"{case['id']}（真跑 + 零计分断言 ⇒ 恒绿）被豁免了 —— 判据被改过头，实际={v}"
+        )
+
+    def test_traces_alone_does_not_exempt_without_the_marker(self):
+        """**红证②（更强）**：有 `traces.tests`（且文件存在）但**无**前缀 ⇒ 仍报。
+
+        这是「入口条件」的判据 —— 真实 `CH-009`（`skip_reason: ""`）正是这个形态：
+        它**真的**在 agent-eval 跑，`total_exp == 0` ⇒ 恒绿；`traces` 是「另有单测覆盖」
+        的声明，**替代不了**计分断言（否则 `traces` 就成了万能免死金牌）。
+        """
+        case = fixture_ch_009()
+        case["traces"] = {"tests": [BC_TRACES_OK], "ci": [], "verifies": []}
+        v = tax.judge_case(case, catalog=_seed_catalog(), repo_root=REPO_ROOT)
+        assert "CASE-TRUST-EMPTY-ASSERTION" in codes(v), (
+            f"没有 [backend-contract] 前缀（= 真跑用例）却凭 traces 被豁免，实际={v}"
+        )
+
+    def test_backend_contract_without_traces_still_flagged(self):
+        """**红证③a**：`[backend-contract]` 但 `traces.tests` **为空** ⇒ 仍报。"""
+        case = fixture_backend_contract_case(traces={"tests": [], "ci": [], "verifies": []})
+        v = tax.judge_case(case, catalog=_seed_catalog(), repo_root=REPO_ROOT)
+        assert "CASE-TRUST-EMPTY-ASSERTION" in codes(v), (
+            f"无计分通道（traces.tests 为空）却被豁免 ⇒ 豁免成了无判据的万金油，实际={v}"
+        )
+
+    def test_backend_contract_with_ghost_traces_still_flagged(self):
+        """**红证③b**：`[backend-contract]` 但 `traces.tests` 指向**不存在的文件** ⇒ 仍报。"""
+        case = fixture_backend_contract_case(
+            traces={"tests": [BC_TRACES_GHOST], "ci": [], "verifies": []})
+        assert not (REPO_ROOT / BC_TRACES_GHOST).is_file(), "夹具前提：幽灵引用必须不存在"
+        v = tax.judge_case(case, catalog=_seed_catalog(), repo_root=REPO_ROOT)
+        assert "CASE-TRUST-EMPTY-ASSERTION" in codes(v), (
+            f"幽灵 traces.tests（文件不存在）仍被当计分通道 ⇒ 假证据链被豁免，实际={v}"
+        )
+
+    def test_ghost_in_one_of_several_traces_still_flagged(self):
+        """**红证③c**：多条引用里**任一条**是幽灵 ⇒ 整体不成立（fail-closed，不做「至少一条」）。"""
+        case = fixture_backend_contract_case(
+            traces={"tests": [BC_TRACES_OK, BC_TRACES_GHOST], "ci": [], "verifies": []})
+        v = tax.judge_case(case, catalog=_seed_catalog(), repo_root=REPO_ROOT)
+        assert "CASE-TRUST-EMPTY-ASSERTION" in codes(v), (
+            f"「部分引用为真」被当成计分通道成立 ⇒ 假证据链可混过，实际={v}"
+        )
+
+    def test_missing_repo_root_fails_closed(self):
+        """不传 `repo_root` ⇒ 存在性**无法校验** ⇒ 按未成立处理（fail-closed，不静默放行）。"""
+        case = fixture_backend_contract_case()
+        v = tax.judge_case(case, catalog=_seed_catalog())
+        assert "CASE-TRUST-EMPTY-ASSERTION" in codes(v), (
+            f"未提供 repo_root（存在性未校验）却已放行 ⇒ 判据可被静默绕开，实际={v}"
+        )
+
+    def test_other_rules_still_fire_on_backend_contract_cases(self):
+        """**不得**变成「`[backend-contract]` 一律跳过」：其它规则对该类用例照旧命中。"""
+        case = fixture_backend_contract_case(
+            user_inputs=["查一下订单", "再查一次"], expectations=[{"tool": "order_query"}])
+        v = tax.judge_case(case, catalog=_seed_catalog(), repo_root=REPO_ROOT)
+        assert "CASE-TRUST-NO-PRECONDITION-ASSERTION" in codes(v), (
+            f"[backend-contract] 用例被整体豁免（其它规则也不再命中）= 无判据豁免，实际={v}"
+        )
+
+    # ── 库级回归锁（23 条存量基线条目随本次分流整条销账）──────────────────────
+    def _live(self) -> dict:
+        return {str(c.get("id")): c for c in _gate_module().load_cases_from_dir()}
+
+    def test_real_library_exemption_covers_exactly_the_evidence_chain_cases(self):
+        """**库级**：豁免面 == 「真跑 + 零计分断言」用例里**有有效证据链**的那一部分。
+
+        等价于「判据只放过 `traces.tests` 计分通道那一类」——两边都非空 ⇒ 判据既不空转
+        （豁免面塌成 0）也不恒绿（真跑用例一条都不报）。
+        """
+        live = self._live()
+        zero_scoring = {cid for cid, c in live.items() if tax.scoring_assertion_count(c) == 0}
+        exempt = {cid for cid, c in live.items()
+                  if tax.backend_contract_scoring_channel(c, REPO_ROOT)}
+        assert len(exempt) >= 100, (
+            f"豁免面只算出 {len(exempt)} 条 —— 判据疑似空转（口径或 traces 解析失效）"
+        )
+        hits = {cid for cid, c in live.items()
+                if "CASE-TRUST-EMPTY-ASSERTION" in codes(
+                    tax.judge_case(c, catalog=_seed_catalog(), repo_root=REPO_ROOT))}
+        assert hits == zero_scoring - exempt, (
+            f"EMPTY-ASSERTION 的命中集与「零计分断言 − 豁免面」不相等：\n"
+            f"  多报（真跑用例被放过或豁免失效）：{sorted(hits - (zero_scoring - exempt))}\n"
+            f"  漏报（豁免面过大）：{sorted((zero_scoring - exempt) - hits)}"
+        )
+        assert hits, (
+            "全库已无任何 EMPTY-ASSERTION 命中 ⇒ 判据可能被改成恒绿（真护栏被拆）"
+        )
+
+    def test_real_library_exempt_cases_report_no_runner_scoring_rule(self):
+        """库级回归：全库豁免用例**一条都不再**命中这两条 runner 计分口径的规则。"""
+        live = self._live()
+        exempt = [cid for cid, c in live.items()
+                  if tax.backend_contract_scoring_channel(c, REPO_ROOT)]
+        runner_scoring_codes = {"CASE-TRUST-EMPTY-ASSERTION",
+                                "CASE-TRUST-NO-EFFECT-ASSERTION"}
+        hits = sorted(cid for cid in exempt
+                      if runner_scoring_codes & codes(
+                          tax.judge_case(live[cid], catalog=_seed_catalog(), repo_root=REPO_ROOT)))
+        assert hits == [], f"这些 [backend-contract] 用例仍被要求 runner 计分断言：{hits}"
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1271,6 +1460,19 @@ class TestGateShell:
         assert "❌ 阻塞" in report, f"陈旧项未判阻塞：{report[:400]}"
         assert "✅ 通过" not in report
         assert "全量对账" in report or "只许缩短" in report, "报告未说明这是全量对账的结论"
+
+    def test_report_shows_scoring_channel_split(self):
+        """报告必须**打印**计分通道分流读数（#4244）。
+
+        理由同「没跑必须长得像没跑」：分流会让若干基线条目整条销账，若报告里没有任何读数，
+        读者只能看到「净缩了 23 条」而不知**为什么**（= 静默豁免，同族反模式）。
+        """
+        gate = self._gate()
+        report = gate.render_report(blocking=[], passed=[], stale=[], changed_ids=set(),
+                                    unimplemented=[],
+                                    scoring_channel={"exempt": 152, "other": 172})
+        assert "traces.tests" in report, f"报告未说明计分通道分流的口径：{report[:600]}"
+        assert "152" in report, f"报告未打印豁免面读数：{report[:600]}"
 
     def test_unimplemented_manifest_registers_the_remaining_burn_down_gaps(self):
         """机制现状必须**照实登记**（不许把「写进技能」当「有门禁」，也不许倒过来）。
