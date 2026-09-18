@@ -378,7 +378,8 @@ cases:
     # product_remove/product_dedupe 同一份实现）；**有意不给 `expect`** —— 计数随栈而变，
     # 写死基线 = 依赖栈的恒红判据（同 chat.yml 的先例），漂移格仍生效。
     # ⚠️ 不声明 `order_count_for_phone: 13800138000`：**本用例自己就会给该号码建单**，
-    # 那是"基于错误的真相模型写出的护栏 = 永远红"（chat.yml:1021 同款判断）。
+    # 那是"基于错误的真相模型写出的护栏 = 永远红"（同 chat.yml 里那条「**不**声明
+    # order_count_for_phone」的先例判断）。
     precondition:
       - type: product_count_for_keyword
         source: "遮光窗帘"
