@@ -342,7 +342,21 @@ export default function ProcessingFeesPage() {
       </section>
 
       {/* ── 新建组合 ── */}
-      <Modal open={createOpen} onClose={() => setCreateOpen(false)} title="新建加工费组合">
+      <Modal
+        open={createOpen}
+        onClose={() => setCreateOpen(false)}
+        title="新建加工费组合"
+        footer={
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" onClick={() => setCreateOpen(false)}>
+              取消
+            </Button>
+            <Button onClick={() => void submitCreate()} disabled={saving} data-testid="fee-combination-submit">
+              保存
+            </Button>
+          </div>
+        }
+      >
         <div className="space-y-4">
           <div>
             <div className="mb-2 text-sm font-medium text-neutral-700">选配组合（可多选）</div>
@@ -381,16 +395,8 @@ export default function ProcessingFeesPage() {
               data-testid="fee-combination-price-input"
             />
             <p className="mt-1 text-xs text-neutral-500">
-              一个组合**一个价**：韩褶+打孔 与 韩褶+打孔+定型 是两个不同的组合，各自定价。
+              一个组合<strong>一个价</strong>：韩褶+打孔 与 韩褶+打孔+定型 是两个不同的组合，各自定价。
             </p>
-          </div>
-          <div className="flex justify-end gap-2">
-            <Button variant="secondary" onClick={() => setCreateOpen(false)}>
-              取消
-            </Button>
-            <Button onClick={() => void submitCreate()} disabled={saving} data-testid="fee-combination-submit">
-              保存
-            </Button>
           </div>
         </div>
       </Modal>
