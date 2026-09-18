@@ -782,7 +782,10 @@ class TestDegenerateGuardRails:
         病根：`WRITE_TOOLS` 是**手写枚举**（本模块 header 解释过为什么必须显式枚举、
         不能用宽正则），但它与「工具是否还在」是两个各自维护的清单 ⇒ 工具下线后
         分类表照旧保留 ⇒ 出现**幽灵写工具**。实证：`processing_order_generate` /
-        `processing_order_update` 已于 #3917 从注册表与 skill 绑定移除，本表仍列着。
+        `processing_order_update` 曾在 #3917 下线期滞留本表（#4010 / A13 的立单理由）；
+        ⚠️ 两者已按 **#4196** 恢复接入 ⇒ **不再是幽灵**（现为本表的正当成员），
+        当前该形态的活例是 `human_handoff`（用户裁定 2026-09-19 退场、注册行已注释、
+        类文件仍在）。
 
         为什么是静默失效：`WRITE_TOOLS` 只被 `judge_case` 用来判「该用例是不是写用例」——
         多一个永不出现的工具名，既不会报错也不会让任何用例变红，只是把判据从

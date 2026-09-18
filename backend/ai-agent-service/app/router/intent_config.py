@@ -22,6 +22,11 @@ class IntentType(str, Enum):
     ORDER_QUERY = "order_query"
     ORDER_CREATE = "order_create"
     LOGISTICS_TRACK = "logistics_track"
+    # 加工单域（issue #4196 恢复接入；#3917 曾下线、#4027 曾把这三个意图从 skill 声明里移除）。
+    # 归订单域：route_key 全是 order，由订单 skill 承载（`get_intent_to_route_map` 的事实源）。
+    PROCESSING_ORDER_GENERATE = "processing_order_generate"
+    PROCESSING_ORDER_QUERY = "processing_order_query"
+    PROCESSING_ORDER_UPDATE = "processing_order_update"
     AFTER_SALES = "after_sales"
     AFTER_SALES_CREATE = "after_sales_create"
     COMPLAINT = "complaint"
@@ -61,7 +66,10 @@ class IntentType(str, Enum):
 # 用于意图命名空间化：Agent 只关注自己领域的意图子集
 INTENT_DOMAINS: dict[str, set[str]] = {
     "common": {"greeting", "farewell", "capabilities", "general"},
-    "order": {"order_query", "order_create", "logistics_track", "after_sales", "after_sales_create", "complaint"},
+    "order": {"order_query", "order_create", "logistics_track", "after_sales", "after_sales_create", "complaint",
+              # 加工单域（issue #4196 恢复接入）：route_key=order ⇒ 必须归本域，
+              # 否则 `get_intents_by_domains({"order"})` 拿不到它们（域内漏登记 = 分类器不展示）。
+              "processing_order_generate", "processing_order_query", "processing_order_update"},
     "product": {"product_inquiry", "quote", "category_manage", "processing_manage"},
     "crm": {"customer_manage", "customer_query"},
     "hr": {"employee_manage", "staff_manage", "role_manage", "permission_manage"},
@@ -114,6 +122,10 @@ INTENT_TOOL_MAP: dict[IntentType, list[str]] = {
     IntentType.ORDER_QUERY: ["order_query"],
     IntentType.ORDER_CREATE: ["order_create"],
     IntentType.LOGISTICS_TRACK: ["logistics_track", "customer_logistics_track"],
+    # 加工单域（issue #4196 恢复接入）—— 推荐 Tool 与 order_skill.ORDER_TOOLS 同名（单一真相源）
+    IntentType.PROCESSING_ORDER_QUERY: ["processing_order_query"],
+    IntentType.PROCESSING_ORDER_GENERATE: ["processing_order_generate"],
+    IntentType.PROCESSING_ORDER_UPDATE: ["processing_order_update"],
     IntentType.PRODUCT_INQUIRY: ["product_search", "product_detail"],
     IntentType.QUOTE: ["curtain_calc", "product_detail"],
     IntentType.AFTER_SALES: ["order_query", "after_sales_manage"],

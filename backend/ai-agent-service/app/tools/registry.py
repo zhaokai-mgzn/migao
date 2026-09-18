@@ -562,13 +562,13 @@ def create_default_registry() -> ToolRegistry:
     from app.tools.customer_address_query import CustomerAddressQueryTool
     from app.tools.order_manage import OrderManageTool
     from app.tools.order_create import OrderCreateTool
-    # 加工单工具类保留但不再注册（产品决策 2026-09-15，issue #3917）：
-    # agent 暂不接入 processing_order_* 工具，须区分「加工项/加工单」概念并引导后台；
-    # 工具类文件保留（tests/test_tools_processing_order_*.py 直测类），未来恢复接入时
-    # 取消本行注释即可。
-    # from app.tools.processing_order_generate import ProcessingOrderGenerateTool
-    # from app.tools.processing_order_query import ProcessingOrderQueryTool
-    # from app.tools.processing_order_update import ProcessingOrderUpdateTool
+    # 加工单工具**恢复注册**（issue #4196：用户裁定反转 #3917 的「暂不接入」决策）。
+    # #3917 下线期间本处三行 import 以注释留恢复路径，现按该路径恢复；
+    # 概念区分口径不退场（见 order_skill.py 与 prompts/order.md 的防混淆守则）：
+    # 仍**不得**用加工项查询/目录冒充加工单、不得编造加工单数据。
+    from app.tools.processing_order_generate import ProcessingOrderGenerateTool
+    from app.tools.processing_order_query import ProcessingOrderQueryTool
+    from app.tools.processing_order_update import ProcessingOrderUpdateTool
     from app.tools.product_manage import ProductManageTool
     from app.tools.inventory_manage import InventoryManageTool
     from app.tools.processing_item_query import ProcessingItemQueryTool
@@ -583,7 +583,8 @@ def create_default_registry() -> ToolRegistry:
     # 转人工工具**不注册**（用户裁定 2026-09-19：「不应该存在 human_handoff 这种东西，
     # 以后全是 AI 来判断」）—— 工具类文件保留（兼容存量数据 + 直测类单测仍跑），
     # 但**默认注册表不含它** ⇒ 任何 persona 的 `get_schema()` 都拿不到它 ⇒ 模型不可达。
-    # 处置形态同 issue #3917（`processing_order_*`）：文件留、注册去、名单同步。
+    # 处置形态参照 issue #3917 当年对 `processing_order_*` 的处理（文件留、注册去、
+    # 名单同步）——注：加工单已按 issue #4196 恢复注册，本行只借其**处置形态**，不指现状。
     # 反回退判据：tests/unit_ci_workflows/test_human_handoff_retired.py
     # from app.tools.human_handoff import HumanHandoffTool
     # [RAG 禁用] from app.tools.knowledge_manage import KnowledgeManageTool
@@ -615,10 +616,10 @@ def create_default_registry() -> ToolRegistry:
     registry.register(CustomerAddressQueryTool())
     registry.register(OrderManageTool())
     registry.register(OrderCreateTool())
-    # 加工单工具不注册（issue #3917，见上方 import 注释）：
-    # registry.register(ProcessingOrderGenerateTool())
-    # registry.register(ProcessingOrderQueryTool())
-    # registry.register(ProcessingOrderUpdateTool())
+    # 加工单工具恢复注册（issue #4196，见上方 import 注释）
+    registry.register(ProcessingOrderGenerateTool())
+    registry.register(ProcessingOrderQueryTool())
+    registry.register(ProcessingOrderUpdateTool())
     registry.register(ProductManageTool())
     registry.register(InventoryManageTool())
     registry.register(ProcessingItemQueryTool())

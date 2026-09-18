@@ -194,6 +194,7 @@ _CASE_AS_007 = EvalCase(
     order_before=['order_query before after_sales_manage', 'processing_ask before after_sales_manage', 'processing_ask before interact[confirm]'],
     must_succeed=[{'tool': 'after_sales_manage', 'action': 'create'}],
     pre_clean=[{'type': 'product_dedupe', 'product_keyword': '2699系列雪尼尔窗帘面料', 'price': 23.8}],
+    precondition=[{'type': 'product_count_for_keyword', 'source': '2699系列雪尼尔窗帘面料', 'expect': 1}],
 )
 
 # ── AS-008 [NORMAL] C 端售后进度查询 - 仅限本人工单 + 拒绝跨用户/快递单号式越权查询（源: cases/aftersales.yml）──
@@ -4124,7 +4125,7 @@ _CASE_PG_013 = EvalCase(
     user_inputs=['最近有没有已确认、需要加工的订单？', '帮我把订单 EVAL-MB-ORD-0002 生成加工单', '确认'],
     expectations=['order_query', 'processing_order_generate'],
     data_checks=['前置：目标环境至少存在一个「已确认且含加工项」订单（否则 order_query 为空、无法生成）——CI smoke 档不纳入，normal 档需保证前置数据', '生成后 processing_orders 落新行（status=generated），订单转 producing（验收以 GET /api/admin/processing-orders?keyword=<订单号> 复核）'],
-    skip_reason='agent 暂不接入加工单工具（产品决策 2026-09-15，issue #3917）：processing_order_* 已从注册表与 order skill 移除，本用例断言的工具对 agent 不再开放；工具恢复接入后启用（届时由 PG-017 的概念区分用例守护期间行为）',
+    skip_reason='',
     tags=['processing_order', 'llm_behavior', 'tool_call'],
     persona='',
     debug_user='',
@@ -4133,6 +4134,7 @@ _CASE_PG_013 = EvalCase(
     order_before=['order_query before processing_order_generate'],
     forbidden_text=['暂不支持', '功能不存在', '没有这个功能', '生成未成功', '生成失败', {'round': 2, 'any_of': ['无加工项', '无法生成加工单', '系统判定为']}, {'round': 3, 'any_of': ['无加工项', '无法生成加工单', '系统判定为']}],
     required_args=[{'tool': 'processing_order_generate', 'fields': ['order_ids']}],
+    must_succeed=[{'tool': 'processing_order_generate'}],
     pre_clean=[{'type': 'processing_order_reset', 'order_no': 'EVAL-MB-ORD-0002'}],
 )
 
@@ -4164,7 +4166,7 @@ _CASE_PG_015 = EvalCase(
     user_inputs=['把订单 EVAL-MB-ORD-0003 生成加工单', {'repeat_until': {'tool_called': 'processing_order_generate', 'max': 3}, 'fallback': '确认'}, '订单 EVAL-MB-ORD-0003 的加工单现在什么状态？', {'repeat_until': {'tool_called': 'processing_order_query', 'max': 3}, 'fallback': '确认'}],
     expectations=['processing_order_generate', 'processing_order_query'],
     data_checks=['success=true', '回查结果 grounded 到刚生成的加工单（status ∈ generated/issued/in_processing/completed/cancelled，不得编造）'],
-    skip_reason='agent 暂不接入加工单工具（产品决策 2026-09-15，issue #3917）：processing_order_* 已从注册表与 order skill 移除，本用例断言的工具对 agent 不再开放；工具恢复接入后启用（届时由 PG-017 的概念区分用例守护期间行为）',
+    skip_reason='',
     tags=['processing_order', 'llm_behavior', 'tool_call', 'query'],
     persona='',
     debug_user='',
@@ -4173,6 +4175,7 @@ _CASE_PG_015 = EvalCase(
     forbidden_text=['暂不支持', '功能不存在', '没有这个功能', '无法查询'],
     required_args=[{'tool': 'processing_order_query', 'fields': ['keyword']}],
     must_succeed=[{'tool': 'processing_order_generate'}, {'tool': 'processing_order_query'}],
+    pre_clean=[{'type': 'processing_order_reset', 'order_no': 'EVAL-MB-ORD-0003'}],
 )
 
 # ── PG-016 [NORMAL] 米宝加工单 LLM 行为：更新加工单状态（完成加工，产出核到 completed）（源: cases/processing-order.yml）──
@@ -4185,7 +4188,7 @@ _CASE_PG_016 = EvalCase(
     user_inputs=['把订单 EVAL-MB-ORD-0004 生成加工单', {'repeat_until': {'tool_called': 'processing_order_generate', 'max': 3}, 'fallback': '确认'}, '这笔加工单发加工，交期下周三', {'auto_respond': {'fallback': '确认'}}, '开始加工', {'auto_respond': {'fallback': '确认'}}, '这笔加工单加工完成了，标记完成', {'auto_respond': {'fallback': '确认'}}],
     expectations=['processing_order_update(action=complete)'],
     data_checks=['success=true', '结论 grounded 到刚更新的加工单（订单联动状态见加工单设计决策 3：complete 不回退订单）'],
-    skip_reason='agent 暂不接入加工单工具（产品决策 2026-09-15，issue #3917）：processing_order_* 已从注册表与 order skill 移除，本用例断言的工具对 agent 不再开放；工具恢复接入后启用（届时由 PG-017 的概念区分用例守护期间行为）',
+    skip_reason='',
     tags=['processing_order', 'llm_behavior', 'tool_call', 'update'],
     persona='',
     debug_user='',
@@ -4198,16 +4201,16 @@ _CASE_PG_016 = EvalCase(
     pre_clean=[{'type': 'processing_order_reset', 'order_no': 'EVAL-MB-ORD-0004'}],
 )
 
-# ── PG-017 [NORMAL] 米宝加工单概念区分：用户问加工单 → 不调加工项/加工单工具，解释概念并引导后台（#3917）（源: cases/processing-order.yml）──
+# ── PG-017 [NORMAL] 米宝加工单真值路由：问加工单数据 → 必须走 processing_order_query（不得用加工项目录冒充/编造，#4196）（源: cases/processing-order.yml）──
 _CASE_PG_017 = EvalCase(
     id='PG-017',
     legacy_id='',
-    title='米宝加工单概念区分：用户问加工单 → 不调加工项/加工单工具，解释概念并引导后台（#3917）',
+    title='米宝加工单真值路由：问加工单数据 → 必须走 processing_order_query（不得用加工项目录冒充/编造，#4196）',
     skill=Skill.GENERAL,
     difficulty=Difficulty.NORMAL,
     user_inputs=['查看加工单数据'],
-    expectations=['direct_reply'],
-    data_checks=['success=true', 'agent 不调用加工项查询/加工项目录代替加工单，不编造加工单数据（状态/进度/编号），解释两概念并引导后台订单详情-加工单块（机器断言：direct_reply + forbidden_tools + want_text/forbidden_text）'],
+    expectations=['processing_order_query'],
+    data_checks=['success=true', 'agent 用 processing_order_query 取加工单真值（成功返回），不用加工项查询/加工项目录冒充加工单、不编造加工单号/状态（机器断言：expectations + must_succeed + forbidden_tools + forbidden_text）'],
     skip_reason='',
     tags=['processing_order', 'llm_behavior', 'concept_distinction', 'product_decision'],
     persona='mibao',
@@ -4215,8 +4218,9 @@ _CASE_PG_017 = EvalCase(
     form_prefill=[],
     forbidden_card_text=[],
     forbidden_text=[{'round': 1, 'any_of': ['压褶定型', 'LG工艺', '窗幔制作', '刺绣工艺']}],
-    forbidden_tools=['processing_item_query', 'processing_order_generate', 'processing_order_query', 'processing_order_update'],
-    want_text=['加工单', {'any_of': ['后台', '订单详情']}],
+    forbidden_tools=['processing_item_query', 'processing_order_generate', 'processing_order_update'],
+    want_text=['加工单'],
+    must_succeed=[{'tool': 'processing_order_query'}],
 )
 
 # ── PG-018 [NORMAL] 生产报工闭环——扫码报工→进度推进→必完工序自动完工→计件（源: cases/processing-order.yml）──
