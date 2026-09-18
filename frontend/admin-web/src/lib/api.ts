@@ -54,6 +54,8 @@ import type {
   RouteSignalsResponse,
   RouteSignalParams,
   RoutingSequenceParams,
+  ProductionSeedTemplate,
+  ProductionSeedApplyResult,
   ProductStatus,
   AfterSalesTicket,
   AfterSalesListParams,
@@ -383,6 +385,17 @@ export const productionApi = {
 
   getRoutings: () =>
     request.get<ApiResponse<RoutingsResponse>>('/api/admin/production/routings'),
+
+  // ── 行业生产模板目录 + 一键套用（issue #4361 冻结契约；前端半边 #4363）──
+  // 存量非 1 号租户工序库/路线库为空（V54/V56/V58/V59 只种 tenant_id=1）⇒ 这是其补救路径。
+  // 套用幂等：已存在的工序/路线自动跳过（响应给出 created_operations / created_routings / skipped）。
+  getSeedTemplates: () =>
+    request.get<ApiResponse<ProductionSeedTemplate[]>>('/api/admin/production/seed-templates'),
+
+  applySeedTemplate: (templateId: string) =>
+    request.post<ApiResponse<ProductionSeedApplyResult>>(
+      `/api/admin/production/seed-templates/${templateId}/apply`,
+    ),
 
   // 工序库写：改单价 / 必完开关等（权限 processing:manage）
   updateOperation: (id: string | number, data: ProductionOperationUpdateParams) =>
