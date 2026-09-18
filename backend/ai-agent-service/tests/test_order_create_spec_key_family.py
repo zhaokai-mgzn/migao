@@ -303,10 +303,15 @@ class TestOrderLineCraftFieldsKeys:
         for key in ORDER_LINE_CRAFT_SPEC_KEYS:
             assert key in props, f"processing_info schema 未声明 {key} ⇒ LLM 传不进来（等于没实现）"
 
-    def test_open_count_and_cutting_mode_carry_frozen_enums(self):
+    def test_open_count_is_integer_and_cutting_mode_carries_frozen_enum(self):
         props = self._props()
-        # 真值源 §8 术语表：单开/双开·对开/四开；定高买宽|定宽买高
-        assert props["openCount"]["enum"] == [1, 2, 4]
+        # 真值源 §8 术语表：单开/双开·对开/四开（整数维度）+ 定高买宽|定宽买高（字符串枚举）
+        assert props["openCount"]["type"] == "integer"
+        # ⚠️ openCount **不得**声明 `enum`：本仓库结构性护栏要求 enum 项一律非空字符串
+        # （`test_order_create_quantity_bounds.py::test_enum_declarations_are_non_empty_string_lists`），
+        # 而开数是整数维度 ⇒ 合法值只能放 description 里教（下面一条断言钉住它真的教了）
+        assert "enum" not in props["openCount"]
+        assert all(v in props["openCount"]["description"] for v in ("1", "2", "4"))
         assert props["cuttingMode"]["enum"] == ["定高买宽", "定宽买高"]
 
     def test_description_teaches_every_order_line_element(self):

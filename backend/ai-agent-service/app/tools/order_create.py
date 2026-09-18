@@ -504,9 +504,15 @@ class OrderCreateTool(BaseTool):
                                 # 而它们是算料与工序的输入（错值直接算错工资）。键名与 Java 侧
                                 # `OrderLineCraftFields` 的读法逐字一致（DB 列名 = 这里的 snake_case 键）。
                                 "openCount": {
+                                    # ⚠️ **刻意不写 `enum`**：本仓库的结构性护栏要求 `enum` 项一律是
+                                    # **非空字符串**（`tests/test_order_create_quantity_bounds.py::
+                                    # test_enum_declarations_are_non_empty_string_lists`，防
+                                    # `enum: []` / `enum: [None]` 式空转声明）—— 而开数是**整数**维度
+                                    # （1/2/4），写成 `[1, 2, 4]` 会撞那条护栏。合法值放到 description
+                                    # 里教模型（真值源 §8：单开 / 双开·对开 / 四开）。
                                     "type": "integer",
-                                    "enum": [1, 2, 4],
-                                    "description": "打开方式（开数）：1 单开 / 2 双开·对开 / 4 四开。对开总折数必须为偶数（真值源 §8）",
+                                    "minimum": 1,
+                                    "description": "打开方式（开数，真值源 §8）：1 单开 / 2 双开·对开 / 4 四开。对开总折数必须为偶数",
                                 },
                                 "cuttingMode": {
                                     "type": "string",
