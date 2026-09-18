@@ -337,6 +337,8 @@ export default function ProcessingOrderProductionPage() {
             qrToken={operations?.qr_token}
             qrPlaceholderHint={qrPlaceholderHint}
             positions={operations?.positions}
+            // 工艺规格真值来源 = 加工单快照明细（issue #4355 / 设计文档 §4.9 ③）
+            items={po.items}
           />
 
           {/* 撤销二维码二次确认（issue #4240）：确认后才发请求 */}

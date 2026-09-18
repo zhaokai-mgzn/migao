@@ -5,7 +5,9 @@ import { createPortal } from 'react-dom'
 import { QRCodeSVG } from 'qrcode.react'
 import Badge from '@/components/ui/Badge'
 import { cn } from '@/lib/utils'
-import type { ProductionPosition } from '@/types'
+// 工艺规格展示的单一真值定义（设计文档 §4.9「一份 spec，三处渲染」）
+import { craftSpecRows } from '@/lib/craft-spec'
+import type { ProcessingOrderItem, ProductionPosition } from '@/types'
 
 /**
  * 加工单任务卡（可打印纸面，issue #4000 / M4-H 按需单据渲染）
@@ -31,6 +33,11 @@ interface TaskCardPrintProps {
   /** 二维码缺失时的占位文案（缺省＝待生成）；撤销后传「已撤销」，避免纸面指向不存在的按钮 */
   qrPlaceholderHint?: string
   positions?: ProductionPosition[]
+  /**
+   * 加工单快照明细（issue #4355 / 设计文档 §4.9 ③）：工艺规格的真值来源 = `items_snapshot`
+   * （与 `order_items.processing_info` 同键名）。缺省/无工艺键 ⇒ 纸面不出工艺块（存量加工单）。
+   */
+  items?: ProcessingOrderItem[]
   className?: string
 }
 
@@ -45,6 +52,7 @@ export default function TaskCardPrint({
   qrToken,
   qrPlaceholderHint,
   positions,
+  items,
   className,
 }: TaskCardPrintProps) {
   // 打印只发生在客户端；SSR/首帧无 document，portal 前先等 mounted
@@ -56,6 +64,11 @@ export default function TaskCardPrint({
   const operations = (positions ?? []).flatMap((position) =>
     (position.operations ?? []).map((op) => ({ ...op, positionName: position.position_name || '' })),
   )
+
+  // 工艺规格（§4.9 ③）：只保留真有值的行；全部为空 ⇒ 整块不出现（存量加工单）
+  const craftItems = (items ?? [])
+    .map((item) => ({ item, rows: craftSpecRows(item) }))
+    .filter((entry) => entry.rows.length > 0)
 
   return createPortal(
     <div className={cn('task-card-print-area text-neutral-900', className)}>
@@ -122,6 +135,28 @@ export default function TaskCardPrint({
         <div className="mb-3 border border-neutral-400 bg-neutral-50 px-2 py-1.5 text-xs">
           工人扫码 → 小程序选本工序 → 填完成数量 → 计件自动登记（本卡勾选仅作车间纸质标记）
         </div>
+
+        {/* 工艺规格（issue #4355 / 设计文档 §4.9 ③）：车间按工艺生产，缺一字段 = 少一道活 */}
+        {craftItems.length > 0 && (
+          <div className="mb-3 border border-neutral-400 px-2 py-1.5 text-xs" data-testid="task-card-craft-spec">
+            <div className="mb-1 font-semibold">工艺规格</div>
+            {craftItems.map(({ item, rows }, index) => (
+              <div key={index} className={index > 0 ? 'mt-1.5 border-t border-neutral-200 pt-1.5' : ''}>
+                <div className="font-medium">
+                  {item.productName}
+                  {item.colorName ? `（${item.colorName}）` : ''}
+                </div>
+                <div className="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5">
+                  {rows.map((row) => (
+                    <span key={row.label}>
+                      <span className="text-neutral-500">{row.label}</span> {row.value}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
 
         <table className="w-full border-collapse">
           <thead>

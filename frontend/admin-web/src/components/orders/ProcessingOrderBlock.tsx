@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Button } from '@/components/ui'
 import { processingOrderApi } from '@/lib/api'
+// 工艺规格展示的单一真值定义（设计文档 §4.9「一份 spec，三处渲染」）
+import { craftSpecLine, craftSpecRows } from '@/lib/craft-spec'
 // 状态文案单一来源：与列表页共用（加工单状态机语义见 lib/processing-order.ts）
 import { PROCESSING_ORDER_STATUS_LABELS as STATUS_TEXT } from '@/lib/processing-order'
 import type { ProcessingOrder, ProcessingOrderItem } from '@/types'
@@ -50,6 +52,9 @@ function toPlainText(po: ProcessingOrder): string {
       it.quantity != null ? `数量:${it.quantity}${it.unit ?? ''}` : '',
     ].filter(Boolean)
     if (attrs.length) lines.push(`  ${attrs.join('  ')}`)
+    // 工艺规格（issue #4355 / 设计文档 §4.9 ③）：加工方拿到的文本必须带工艺，否则车间按老习惯做
+    const specRows = craftSpecRows(it)
+    if (specRows.length) lines.push(`  工艺规格：${specRows.map(craftSpecLine).join('  ')}`)
     ;(it.processingItems ?? []).forEach((p) => {
       const opt = Array.isArray(p.options) && p.options.length ? `（${p.options.join('/')}）` : ''
       lines.push(`  加工：${p.name}${opt}${p.quantity != null ? ` × ${p.quantity}${p.unit ?? ''}` : ''}`)
@@ -243,7 +248,10 @@ export default function ProcessingOrderBlock({ orderId, orderStatus, hasProcessi
 
           {/* 快照明细（不含销售价——决策 2） */}
           <div className="mt-3 space-y-3">
-            {(po.items ?? []).map((it, idx) => (
+            {(po.items ?? []).map((it, idx) => {
+              // 工艺规格（issue #4355 / 设计文档 §4.9 ③）：渲染快照里固化的那一份，缺值行已丢弃
+              const specRows = craftSpecRows(it)
+              return (
               <div key={idx} className="rounded-md bg-neutral-50 p-3 text-sm">
                 <div className="font-medium text-neutral-900">
                   {it.productName}
@@ -258,6 +266,18 @@ export default function ProcessingOrderBlock({ orderId, orderStatus, hasProcessi
                     it.quantity != null && `数量 ${it.quantity}${it.unit ?? ''}`,
                   ].filter(Boolean).join(' · ')}
                 </div>
+                {/* 工艺规格：无任何工艺键（存量单）时整块不出现 */}
+                {specRows.length > 0 && (
+                  <div className="mt-1.5 space-y-0.5" data-testid="po-item-craft-spec">
+                    <div className="text-xs font-medium text-neutral-600">工艺规格</div>
+                    {specRows.map((row) => (
+                      <div key={row.label} className="flex flex-wrap gap-x-2 text-xs">
+                        <span className="text-neutral-400">{row.label}</span>
+                        <span className="text-neutral-700">{row.value}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
                 {(it.processingItems ?? []).length > 0 && (
                   <ul className="mt-1.5 space-y-0.5 text-xs text-amber-700">
                     {(it.processingItems ?? []).map((p, pi) => (
@@ -271,7 +291,8 @@ export default function ProcessingOrderBlock({ orderId, orderStatus, hasProcessi
                 )}
                 {it.remark && <div className="mt-1 text-xs text-neutral-500">备注：{it.remark}</div>}
               </div>
-            ))}
+              )
+            })}
           </div>
           {po.remark && <p className="mt-2 text-xs text-neutral-500">整体备注：{po.remark}</p>}
 
