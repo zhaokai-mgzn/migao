@@ -89,9 +89,9 @@
       "version": 1
     }
   },
-  "generated_at": "2026-09-18T04:00:15.868748+00:00",
+  "generated_at": "2026-09-18T04:07:08.086944+00:00",
   "policy_version": 1,
-  "reason": "#4196 burn-down 缴费的连带销账：AS-007 的 merge_log 里那条既有裸行号引用 aftersales.md:27-31 已按引用纪律改成「完整路径 + 文本锚点」（门禁 CASE-TRUST-STALE-LINE-REF 判它路径在 origin/main 不存在）⇒ ref-freshness 的该条漂移已消失，按「只许缩短」销账",
+  "reason": "#4196 burn-down 缴费的连带销账：AS-007 的 merge_log 里那条既有裸行号引用已按引用纪律改成「完整路径 + 文本锚点」（门禁判其旧写法指向的目标在 origin/main 上不存在）⇒ ref-freshness 的该条漂移已消失，按「只许缩短」销账",
   "regenerate_command": "python3 scripts/drift_audit.py --regen-baseline --reason '<理由>'",
   "schema": "migao.drift-audit-baseline/1"
 }
