@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, Search, Package, User, Receipt, Settings2, Plus, Trash2, UserPlus, Phone, MapPin } from 'lucide-react'
+import { ArrowLeft, ChevronDown, ChevronRight, Ruler, Search, Package, User, Receipt, Settings2, Plus, Trash2, UserPlus, Phone, MapPin } from 'lucide-react'
 import { toast } from 'sonner'
 import { toastRequestError } from '@/lib/api-error'
 import { orderApi, productApi, customerApi, processingItemApi } from '@/lib/api'
@@ -14,11 +14,13 @@ import {
   COMPONENT_ROLE_EDGE,
   METERS_SOURCE_FOLLOW,
   METERS_SOURCE_MANUAL,
+  OPEN_COUNT_OPTIONS,
   STYLE_MIXED,
   buildCraftSpec,
   buildEdgeLineCraftSpec,
   buildMainLineGroupKeys,
   buildWindowGroupKey,
+  createDefaultCraftSpec,
   resolveWindowCraftLineIds,
   type CraftSpecInput,
 } from '@/lib/order-craft-fields'
@@ -50,9 +52,18 @@ interface OrderLineItem {
   selectedSku: OrderProductSku | null
   quantity: number
   unitPrice: number
+  /**
+   * 成品宽 / 高（米，**部位级**）—— issue #4420，用户 2026-09-19 裁定「宽高必填」。
+   *
+   * ⚠️ 归属层级：`position-instance-routing-model.md` §5.9.2 已裁定宽高是**部位级**
+   * （一樘「布 + 纱」的布帘与纱帘高度常不同，共用一行宽高必有一个部位的高度是错的）。
+   * 本页一行 = 一个部位（裁定 R-a）⇒ 行级即部位级，语义一致。
+   */
+  width: number | null
+  height: number | null
   processingItems: ProcessingItem[]
   selectedProcessing: Record<string, { selected: boolean; qty: number }>
-  /** 工艺规格录入（issue #4375 §4.2/§4.5）—— 未填的键不落库 */
+  /** 工艺规格录入（issue #4375 §4.2/§4.5）—— 未填的键不落库；三条默认档见 createDefaultCraftSpec */
   craft: CraftSpecInput
   /**
    * 樘窗名称 / 窗号（issue #4395）：同一樘窗的多条部位行（布行 + 纱行）填**同一个**窗号
@@ -63,6 +74,8 @@ interface OrderLineItem {
   edgeMeters: number | null
   /** 配布边单价；`null` = 未填 ⇒ 不生成配布边明细行（后端单价必须 > 0，不凭空造价） */
   edgeUnitPrice: number | null
+  /** 卡片是否收起（issue #4420 展示重构）—— 收起只影响渲染，不影响任何录入值 */
+  collapsed: boolean
 }
 
 const sellingMethodLabel: Record<string, string> = {
@@ -71,6 +84,11 @@ const sellingMethodLabel: Record<string, string> = {
   per_meter: '按米',
   per_piece: '按件',
 }
+
+/** 开数 → 中文标签（复用 lib 的单一映射，不另写一份） */
+const OPEN_COUNT_LABEL: Record<number, string> = Object.fromEntries(
+  OPEN_COUNT_OPTIONS.map((o) => [o.value, o.label])
+)
 
 function formatAmount(amount: number): string {
   return `¥${(amount || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -81,6 +99,13 @@ function genId(): string {
     return crypto.randomUUID()
   }
   return `li_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
+}
+
+/** 正小数输入：空串 / 非法 / 非正 ⇒ `null`（宽高必填由提交校验拦，不在这里造 0） */
+function decimalOrNull(raw: string): number | null {
+  if (raw.trim() === '') return null
+  const parsed = Number(raw)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null
 }
 
 // 加工项数量规则（issue #3005 回滚 #2986）：行业加工费按米计价、辅料含在加工费中，
@@ -100,12 +125,41 @@ function createEmptyLineItem(): OrderLineItem {
     selectedSku: null,
     quantity: 1,
     unitPrice: 0,
+    width: null,
+    height: null,
     processingItems: [],
     selectedProcessing: {},
-    craft: {},
+    // 三条默认档（issue #4420）：加工类型「定高买宽」/ 款式「单色」/ 褶距 0.125 —— 都是真值
+    craft: createDefaultCraftSpec(),
     windowLabel: '',
     edgeMeters: null,
     edgeUnitPrice: null,
+    collapsed: false,
+  }
+}
+
+/**
+ * 「新增部位」（issue #4420）：复制本行的**商品 / 颜色 / 门幅 / 宽高 / 工艺规格**，
+ * 只清空「部位」—— 一行 = 一个部位（裁定 R-a），布帘 + 纱帘 = 两行。
+ *
+ * 为什么继承 `windowLabel`：同一樘窗（一个窗户）的多条部位行要填**同一个窗号**才能绑成一樘窗
+ * （#4395，套级工序与加工费按樘窗归属）。新行默认同窗 ⇒ 商家不用再手填一遍。
+ *
+ * 为什么清空 `curtainType` 而不是留原值：留着会让商家**以为**已经选好了新部位 ——
+ * 两行同部位会让加工单长出两套同部位工序（§4.8 的重复计件同族错误）。
+ */
+function createPositionLine(source: OrderLineItem): OrderLineItem {
+  return {
+    ...createEmptyLineItem(),
+    product: source.product,
+    selectedColorId: source.selectedColorId,
+    selectedSku: source.selectedSku,
+    unitPrice: source.unitPrice,
+    width: source.width,
+    height: source.height,
+    processingItems: source.processingItems,
+    craft: { ...source.craft, curtainType: undefined },
+    windowLabel: source.windowLabel,
   }
 }
 
@@ -199,6 +253,21 @@ export default function NewOrderPage() {
 
   const addLineItem = () => {
     setLineItems((prev) => [...prev, createEmptyLineItem()])
+  }
+
+  /**
+   * 「新增部位」（issue #4420）：在**同一商品**下追加一个部位行（布帘 + 纱帘 = 两行）。
+   *
+   * 插在源行**后面**（不是列表末尾）—— 同樘窗的部位行相邻，商家一眼能看出它们是一组。
+   */
+  const addPositionLine = (sourceId: string) => {
+    setLineItems((prev) => {
+      const idx = prev.findIndex((it) => it.id === sourceId)
+      if (idx < 0) return prev
+      const next = [...prev]
+      next.splice(idx + 1, 0, createPositionLine(prev[idx]))
+      return next
+    })
   }
 
   const removeLineItem = (lineId: string) => {
@@ -434,6 +503,15 @@ export default function NewOrderPage() {
       if (skuOptions.length > 0 && !line.selectedSku) {
         e[`${prefix}_spec`] = `第 ${idx + 1} 个商品未选择规格`
       }
+      // 宽 / 高**必填**（issue #4420，用户 2026-09-19 裁定）：
+      // 它们是**不可推导的原始输入**（设计 §5.9.3）—— 丢了永远拿不回来，而用料 / 幅数 /
+      // 加工单复核全靠它。只存米数 = 把输入扔了只留输出（#4273 的根因形态）。
+      if (!(Number(line.width) > 0)) {
+        e[`${prefix}_width`] = `第 ${idx + 1} 个商品未填宽（米）`
+      }
+      if (!(Number(line.height) > 0)) {
+        e[`${prefix}_height`] = `第 ${idx + 1} 个商品未填高（米）`
+      }
       if (!line.quantity || line.quantity <= 0) {
         e[`${prefix}_quantity`] = '数量须大于 0'
       }
@@ -522,6 +600,11 @@ export default function NewOrderPage() {
             productName: line.product!.name,
             quantity: Number(line.quantity),
             unitPrice: Number(line.unitPrice),
+            // 宽 / 高（issue #4420）：`order_items.width/height` 是**部位级**原生列，
+            // 后端 DTO 已带 `@DecimalMin(0)`（#4089 A17）。此前这页一个都不写 ⇒
+            // 订单详情 / 加工单 / 任务卡的宽高渲染永远拿不到值（#4403 的根因）。
+            width: Number(line.width),
+            height: Number(line.height),
             subtotal: productSub + lineProcessingFee,
             processingInfo:
               processingDetails.length > 0 || sku || colorName || Object.keys(mainSpec).length > 0
@@ -644,6 +727,12 @@ export default function NewOrderPage() {
                     onSelectSku={(sku) => handleSelectSku(line, sku)}
                     onChangeQty={(q) => handleLineQtyChange(line, q)}
                     onChangePrice={(p) => updateLineItem(line.id, { unitPrice: p })}
+                    onChangeWidth={(w) => updateLineItem(line.id, { width: w })}
+                    onChangeHeight={(h) => updateLineItem(line.id, { height: h })}
+                    onToggleCollapsed={() =>
+                      updateLineItem(line.id, { collapsed: !line.collapsed })
+                    }
+                    onAddPosition={() => addPositionLine(line.id)}
                     onToggleProcessing={(pi, sel) => toggleProcessing(line, pi, sel)}
                     onChangeCraft={(patch) =>
                       updateLineItem(line.id, { craft: { ...line.craft, ...patch } })
@@ -730,54 +819,77 @@ export default function NewOrderPage() {
             <div className="p-6">
               <SectionTitle icon={<Receipt className="w-4 h-4" />} title="费用明细" />
 
-              {/* 行项汇总列表 */}
+              {/* 行项费用构成（issue #4420 重设计）。
+                  此前只有「商品名 ×数量 · ¥单价 +加工 ¥x」一行摘要 —— **看不出钱是怎么来的**，
+                  而商家要拿它对报价单与加工单。现在每行摊开成**可核对的算式**：
+                  商品「米数 × 单价」、加工项逐条「数量 单位 × 单价」、配布边单列。 */}
               {lineItems.some((l) => l.product) && (
-                <div className="mb-3 space-y-2 text-sm">
+                <div className="mb-4 space-y-3">
                   {lineItems
                     .filter((l) => l.product)
                     .map((line, idx) => {
-                      const sub =
-                        (Number(line.quantity) || 0) * (Number(line.unitPrice) || 0)
-                      const procFee = Object.entries(line.selectedProcessing).reduce(
-                        (s, [piId, cfg]) => {
-                          if (!cfg.selected) return s
+                      const meters = Number(line.quantity) || 0
+                      const unit = Number(line.unitPrice) || 0
+                      const sub = meters * unit
+                      const procRows = Object.entries(line.selectedProcessing)
+                        .filter(([, v]) => v.selected)
+                        .map(([piId, cfg]) => {
                           const pi = line.processingItems.find((p) => p.id === piId)
-                          if (!pi) return s
-                          const price = Number(pi.unitPrice) || 0
-                          return s + price * Math.max(1, cfg.qty || 1)
-                        },
-                        0
-                      )
-                      // 双拼配布边（§4.8）：独立面料行的金额同样计入本行小计
+                          const qty = Math.max(1, Number(cfg.qty) || 1)
+                          const price = Number(pi?.unitPrice) || 0
+                          return {
+                            name: pi?.name ?? '加工项',
+                            qty,
+                            unitLabel: pi?.unit || '项',
+                            price,
+                            amount: price * qty,
+                          }
+                        })
+                      const procFee = procRows.reduce((s, r) => s + r.amount, 0)
                       const edgePrice = edgeUnitPriceOf(line)
-                      const edgeFee = edgePrice === null ? 0 : edgeMetersOf(line) * edgePrice
+                      const edgeMeters = edgeMetersOf(line)
+                      const edgeFee = edgePrice === null ? 0 : edgeMeters * edgePrice
                       return (
                         <div
                           key={line.id}
-                          className="flex items-start justify-between gap-2 py-1.5 border-b border-dashed border-neutral-100 last:border-0"
+                          className="rounded-lg border border-neutral-200 overflow-hidden"
                         >
-                          <div className="min-w-0 flex-1">
-                            <div className="text-neutral-700 truncate">
+                          <div className="flex items-center justify-between gap-2 px-3 py-2 bg-neutral-50/70">
+                            <span className="text-xs font-medium text-neutral-700 truncate">
                               <span className="text-neutral-400 mr-1">{idx + 1}.</span>
                               {line.product?.name}
-                            </div>
-                            <div className="text-xs text-neutral-400 mt-0.5">
-                              ×{line.quantity} · {formatAmount(line.unitPrice)}
-                              {procFee > 0 && (
-                                <span className="ml-2 text-orange-600">
-                                  +加工 {formatAmount(procFee)}
+                              {line.craft.curtainType && (
+                                <span className="ml-1.5 font-normal text-neutral-500">
+                                  {line.craft.curtainType}
                                 </span>
                               )}
-                              {edgeFee > 0 && (
-                                <span className="ml-2 text-orange-600">
-                                  +配布边 {formatAmount(edgeFee)}
-                                </span>
-                              )}
-                            </div>
+                            </span>
+                            <span className="text-sm font-semibold text-neutral-900 shrink-0">
+                              {formatAmount(sub + procFee + edgeFee)}
+                            </span>
                           </div>
-                          <span className="text-neutral-800 font-medium shrink-0">
-                            {formatAmount(sub + procFee + edgeFee)}
-                          </span>
+                          <div className="px-3 py-2 space-y-1">
+                            <CostRow
+                              label="商品"
+                              expr={`${meters} 米 × ${formatAmount(unit)}/米`}
+                              amount={sub}
+                            />
+                            {procRows.map((r, i) => (
+                              <CostRow
+                                key={`${r.name}_${i}`}
+                                label={r.name}
+                                expr={`${r.qty} ${r.unitLabel} × ${formatAmount(r.price)}`}
+                                amount={r.amount}
+                              />
+                            ))}
+                            {edgeFee > 0 && edgePrice !== null && (
+                              <CostRow
+                                label="配布边"
+                                expr={`${edgeMeters} 米 × ${formatAmount(edgePrice)}/米`}
+                                amount={edgeFee}
+                              />
+                            )}
+                          </div>
                         </div>
                       )
                     })}
@@ -1021,6 +1133,13 @@ interface LineItemBlockProps {
   onSelectSku: (sku: OrderProductSku) => void
   onChangeQty: (q: number) => void
   onChangePrice: (p: number) => void
+  /** 成品宽 / 高（米，部位级；issue #4420 必填） */
+  onChangeWidth: (w: number | null) => void
+  onChangeHeight: (h: number | null) => void
+  /** 卡片收起 / 展开（issue #4420）—— 只影响渲染 */
+  onToggleCollapsed: () => void
+  /** 新增部位（issue #4420）：同一商品下追加一个部位行（布帘 + 纱帘 = 两行） */
+  onAddPosition: () => void
   onToggleProcessing: (pi: ProcessingItem, selected: boolean) => void
   onChangeCraft: (patch: Partial<CraftSpecInput>) => void
   /** 樘窗窗号（issue #4395）：同樘窗的多条部位行填同一个值 */
@@ -1041,6 +1160,10 @@ function LineItemBlock({
   onSelectSku,
   onChangeQty,
   onChangePrice,
+  onChangeWidth,
+  onChangeHeight,
+  onToggleCollapsed,
+  onAddPosition,
   onToggleProcessing,
   onChangeCraft,
   onChangeWindowLabel,
@@ -1061,22 +1184,71 @@ function LineItemBlock({
   const errSpec = errors[`line_${line.id}_spec`]
   const errQty = errors[`line_${line.id}_quantity`]
   const errPrice = errors[`line_${line.id}_unitPrice`]
+  const errWidth = errors[`line_${line.id}_width`]
+  const errHeight = errors[`line_${line.id}_height`]
+
+  const colorName = colorOptions.find((c) => c.id === line.selectedColorId)?.name
+  /** 收起时的摘要（issue #4420）：一眼看懂「这是什么、多大、多少钱」 */
+  const summarySpec = [
+    line.craft.curtainType,
+    line.craft.craft,
+    line.craft.cuttingMode,
+    line.craft.openCount ? OPEN_COUNT_LABEL[line.craft.openCount] : undefined,
+    line.craft.style,
+  ]
+    .filter(Boolean)
+    .join(' · ')
+  const summarySize =
+    line.width && line.height ? `${line.width} × ${line.height} m` : '未填宽高'
+  const summaryAmount = formatAmount(
+    (Number(line.quantity) || 0) * (Number(line.unitPrice) || 0)
+  )
 
   return (
     <div className="rounded-xl border border-neutral-200 bg-white">
-      {/* 行项头部：序号 + 删除 */}
-      <div className="flex items-center justify-between px-4 py-2.5 border-b border-neutral-100 bg-neutral-50/60 rounded-t-xl">
-        <div className="flex items-center gap-2">
-          <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-primary-600 text-white text-xs font-semibold">
+      {/* 行项头部 = **摘要行**（issue #4420）：
+          收起时也能一眼看懂「什么商品 / 什么工艺 / 多大 / 多少钱」——
+          这是「信息偏多、不能全挤一块」的第一层解法：把**结论**常显、把**录入项**收起来。 */}
+      <div className="flex items-start justify-between gap-3 px-4 py-3 border-b border-neutral-100 bg-neutral-50/60 rounded-t-xl">
+        <button
+          type="button"
+          onClick={onToggleCollapsed}
+          aria-expanded={!line.collapsed}
+          className="flex items-start gap-2.5 text-left min-w-0 flex-1"
+        >
+          <span className="inline-flex items-center justify-center w-6 h-6 shrink-0 rounded-full bg-primary-600 text-white text-xs font-semibold mt-0.5">
             {index + 1}
           </span>
-          <span className="text-sm font-medium text-neutral-700">商品 {index + 1}</span>
-        </div>
+          <span className="min-w-0 flex-1">
+            <span className="flex items-center gap-1.5">
+              {line.collapsed ? (
+                <ChevronRight className="w-3.5 h-3.5 text-neutral-400 shrink-0" />
+              ) : (
+                <ChevronDown className="w-3.5 h-3.5 text-neutral-400 shrink-0" />
+              )}
+              <span className="text-sm font-medium text-neutral-900 truncate">
+                {line.product?.name ?? `商品 ${index + 1}`}
+              </span>
+              {colorName && (
+                <span className="text-xs text-primary-600 shrink-0">{colorName}</span>
+              )}
+            </span>
+            <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-neutral-500">
+              {summarySpec && <span>{summarySpec}</span>}
+              <span className="text-neutral-300">|</span>
+              <span className={line.width && line.height ? '' : 'text-amber-600'}>
+                {summarySize}
+              </span>
+              <span className="text-neutral-300">|</span>
+              <span className="font-medium text-neutral-700">{summaryAmount}</span>
+            </span>
+          </span>
+        </button>
         {canRemove && (
           <button
             type="button"
             onClick={onRemove}
-            className="inline-flex items-center gap-1 text-xs text-neutral-500 hover:text-red-600 transition-colors"
+            className="inline-flex items-center gap-1 text-xs text-neutral-500 hover:text-red-600 transition-colors shrink-0"
           >
             <Trash2 className="w-3.5 h-3.5" />
             删除
@@ -1084,6 +1256,7 @@ function LineItemBlock({
         )}
       </div>
 
+      {!line.collapsed && (
       <div className="p-4">
         {/* 商品选择 */}
         <div className="mb-4">
@@ -1208,40 +1381,77 @@ function LineItemBlock({
               </>
             )}
 
-            {/* 数量 + 单价 */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
-              <div>
-                <Label required>数量</Label>
-                <input
-                  type="number"
-                  min={1}
-                  value={line.quantity || ''}
-                  onChange={(e) => {
-                    const raw = e.target.value
-                    // #2987：允许清空输入（空态传 0 显示为空，不再被强制弹回默认 1）；
-                    // 仅接受合法数字（含按米小数如 2.5），非法字符忽略防 NaN；
-                    // 最终由提交校验「数量须大于 0」兜底
-                    if (raw === '') {
-                      onChangeQty(0)
-                    } else if (/^\d*\.?\d*$/.test(raw)) {
-                      onChangeQty(Number(raw))
-                    }
-                  }}
-                  className="w-full h-9 px-3 rounded border border-neutral-300 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
-                />
-                {errQty && <p className="mt-1 text-sm text-red-600">{errQty}</p>}
+            {/* 尺寸与数量（issue #4420 分区①）：宽 / 高 必填 + 数量 / 单价 */}
+            <div className="pt-3 border-t border-neutral-100">
+              <div className="flex items-center gap-2 mb-1">
+                <Ruler className="w-4 h-4 text-neutral-500" />
+                <span className="text-sm font-medium text-neutral-700">尺寸与数量</span>
               </div>
-              <div>
-                <Label required>单价 (¥)</Label>
-                <input
-                  type="number"
-                  min={0}
-                  step={0.01}
-                  value={line.unitPrice}
-                  onChange={(e) => onChangePrice(Number(e.target.value) || 0)}
-                  className="w-full h-9 px-3 rounded border border-neutral-300 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
-                />
-                {errPrice && <p className="mt-1 text-sm text-red-600">{errPrice}</p>}
+              <p className="mb-3 text-xs text-neutral-400">
+                宽 / 高按**成品尺寸**填，单位米。同一樘窗的布帘与纱帘高度常不同 ⇒ 每个部位各填各的
+              </p>
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                <div>
+                  <Label required>宽 (米)</Label>
+                  <input
+                    type="number"
+                    min={0}
+                    step={0.01}
+                    placeholder="如 6.6"
+                    value={line.width ?? ''}
+                    onChange={(e) => onChangeWidth(decimalOrNull(e.target.value))}
+                    className="w-full h-9 px-3 rounded border border-neutral-300 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+                  />
+                  {errWidth && <p className="mt-1 text-sm text-red-600">{errWidth}</p>}
+                </div>
+                <div>
+                  <Label required>高 (米)</Label>
+                  <input
+                    type="number"
+                    min={0}
+                    step={0.01}
+                    placeholder="如 2.6"
+                    value={line.height ?? ''}
+                    onChange={(e) => onChangeHeight(decimalOrNull(e.target.value))}
+                    className="w-full h-9 px-3 rounded border border-neutral-300 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+                  />
+                  {errHeight && <p className="mt-1 text-sm text-red-600">{errHeight}</p>}
+                </div>
+                <div>
+                  {/* label 文案保持「数量」不变（既有判据按此定位输入框），单位进 placeholder */}
+                  <Label required>数量</Label>
+                  <input
+                    type="number"
+                    min={1}
+                    placeholder="米"
+                    value={line.quantity || ''}
+                    onChange={(e) => {
+                      const raw = e.target.value
+                      // #2987：允许清空输入（空态传 0 显示为空，不再被强制弹回默认 1）；
+                      // 仅接受合法数字（含按米小数如 2.5），非法字符忽略防 NaN；
+                      // 最终由提交校验「数量须大于 0」兜底
+                      if (raw === '') {
+                        onChangeQty(0)
+                      } else if (/^\d*\.?\d*$/.test(raw)) {
+                        onChangeQty(Number(raw))
+                      }
+                    }}
+                    className="w-full h-9 px-3 rounded border border-neutral-300 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+                  />
+                  {errQty && <p className="mt-1 text-sm text-red-600">{errQty}</p>}
+                </div>
+                <div>
+                  <Label required>单价 (¥/米)</Label>
+                  <input
+                    type="number"
+                    min={0}
+                    step={0.01}
+                    value={line.unitPrice}
+                    onChange={(e) => onChangePrice(Number(e.target.value) || 0)}
+                    className="w-full h-9 px-3 rounded border border-neutral-300 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+                  />
+                  {errPrice && <p className="mt-1 text-sm text-red-600">{errPrice}</p>}
+                </div>
               </div>
             </div>
 
@@ -1296,15 +1506,26 @@ function LineItemBlock({
               )}
             </div>
 
-            {/* 樘窗绑组（issue #4395）：同一樘窗的多条部位行（布行 + 纱行）填**同一个窗号**
-                ⇒ 提交时写同一个 craftLineId（樘窗 = 套级工序与加工费的归属层级） */}
+            {/* 樘窗与部位（issue #4420 分区④ + #4395 樘窗绑组）：
+                一行 = 一个部位（裁定 R-a）⇒ 同一商品的布帘 + 纱帘 = 两行。
+                「新增部位」把商品/颜色/门幅/宽高/工艺一次带过去，商家只改部位与差异项。 */}
             <div className="pt-3 border-t border-neutral-100">
-              <label
-                htmlFor={`window-${line.id}`}
-                className="block text-sm font-medium text-neutral-700 mb-1.5"
-              >
-                樘窗
-              </label>
+              <div className="flex items-center justify-between gap-2 mb-1.5">
+                <label
+                  htmlFor={`window-${line.id}`}
+                  className="block text-sm font-medium text-neutral-700"
+                >
+                  樘窗
+                </label>
+                <button
+                  type="button"
+                  onClick={onAddPosition}
+                  className="inline-flex items-center gap-1 text-xs font-medium text-primary-600 hover:text-primary-700 transition-colors"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  新增部位
+                </button>
+              </div>
               <input
                 id={`window-${line.id}`}
                 type="text"
@@ -1314,8 +1535,9 @@ function LineItemBlock({
                 className="w-full h-9 px-3 rounded border border-neutral-300 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
               />
               <p className="mt-1.5 text-xs text-neutral-400">
-                一樘窗 = 一个窗户。同一扇窗的布行 / 纱行填同一个窗号才会绑成一樘窗
+                一樘窗 = 一个窗户。同一扇窗的布帘 / 纱帘各占一行、填同一个窗号才会绑成一樘窗
                 （套级工序与加工费按樘窗归属）；留空 = 本行自成一樘窗。
+                「新增部位」会带出本行的商品与尺寸，只清空部位。
               </p>
             </div>
 
@@ -1332,6 +1554,7 @@ function LineItemBlock({
           </>
         )}
       </div>
+      )}
     </div>
   )
 }
@@ -1374,3 +1597,31 @@ function Row({ label, value, highlight }: { label: string; value: string; highli
     </div>
   )
 }
+
+/**
+ * 一行**可核对的算式**（issue #4420）：左 = 「数量 单位 × 单价」，右 = 金额。
+ *
+ * 为什么要把算式显式写出来：用户口径「需要额外把计算公式体现出来，比如
+ * 展示窗帘米数 × 组合加工费 = 具体费用」—— 只给金额时，商家对不上报价单与加工单，
+ * 也无从判断系统算得对不对（#4118 的「双算」正是靠这种不透明活下来的）。
+ */
+function CostRow({
+  label,
+  expr,
+  amount,
+}: {
+  label: string
+  expr: string
+  amount: number
+}) {
+  return (
+    <div className="flex items-baseline justify-between gap-2 text-xs">
+      <span className="text-neutral-500 truncate">
+        <span className="text-neutral-400">{label}</span>
+        <span className="ml-1.5 tabular-nums">{expr}</span>
+      </span>
+      <span className="text-neutral-700 tabular-nums shrink-0">{formatAmount(amount)}</span>
+    </div>
+  )
+}
+

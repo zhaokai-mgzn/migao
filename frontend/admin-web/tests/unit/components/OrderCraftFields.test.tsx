@@ -46,6 +46,10 @@ function Harness({
 const selectByName = (name: string) => screen.getByLabelText(name) as HTMLSelectElement
 const inputByName = (name: string) => screen.getByLabelText(name) as HTMLInputElement
 
+/** 展开「特殊选项」区（issue #4420：默认收起） */
+const expandSpecial = () =>
+  fireEvent.click(screen.getByRole('button', { name: /特殊选项/ }))
+
 describe('OrderCraftFields', () => {
   it('渲染 §4.2 的八个工艺控件（部位/工艺/加工类型/打开方式/是否定型/款式/褶距/是否对花）', () => {
     render(<Harness />)
@@ -63,11 +67,30 @@ describe('OrderCraftFields', () => {
     }
   })
 
-  it('渲染 19 项特殊选项（部位级多选）', () => {
+  // issue #4420 展示重构：19 项特殊选项**默认收起**（首屏密度主因），但**可选项集合一个不少**。
+  // 这两条是一对：只断言「展开后有 19 项」会漏掉「默认收起」的回归；
+  // 只断言「默认收起」会漏掉「收起时把选项删了」的回归。
+  it('#4420 特殊选项默认收起（未展开时 19 项按钮不在 DOM 里）', () => {
     render(<Harness />)
+    expect(screen.queryByRole('button', { name: SPECIAL_OPTIONS[0] })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /特殊选项/ })).toHaveAttribute(
+      'aria-expanded',
+      'false'
+    )
+    expect(screen.getByText('未选')).toBeInTheDocument()
+  })
+
+  it('展开后渲染 19 项特殊选项（部位级多选）—— 可选项集合不因收起而减少', () => {
+    render(<Harness />)
+    expandSpecial()
     for (const option of SPECIAL_OPTIONS) {
       expect(screen.getByRole('button', { name: option })).toBeInTheDocument()
     }
+  })
+
+  it('#4420 收起时仍显示「已选 N 项」摘要（收起不等于隐藏已选事实）', () => {
+    render(<Harness initial={{ specialOptions: ['加铅块', '拼2次'] }} />)
+    expect(screen.getByText('已选 2 项')).toBeInTheDocument()
   })
 
   it('部位下拉的候选逐字 = 布帘/纱帘/帘头（错值会让加工单取错工序路线）', () => {
@@ -142,6 +165,7 @@ describe('OrderCraftFields', () => {
 
   it('特殊选项多选：逐个累积，再点一次取消', () => {
     render(<Harness />)
+    expandSpecial()
     fireEvent.click(screen.getByRole('button', { name: '加铅块' }))
     fireEvent.click(screen.getByRole('button', { name: '拼2次' }))
     expect(screen.getByRole('button', { name: '加铅块' })).toHaveAttribute(
