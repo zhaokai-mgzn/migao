@@ -696,7 +696,8 @@ export interface PieceworkSummary {
 
 /** 工序库一道工序（库口径，非加工单实例） */
 export interface CatalogOperation {
-  id: number
+  /** 库主键（V54 种子为 `op-v54-01` 形态的字符串，勿假定为数字） */
+  id: string | number
   name: string
   /** 工序分组：裁剪 / 车位 / 后道 / 其他 */
   group?: string | null

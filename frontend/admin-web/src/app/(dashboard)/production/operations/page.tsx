@@ -32,7 +32,7 @@ export default function OperationsCatalogPage() {
   const [error, setError] = useState('')
 
   /** 单价行内编辑（同一时刻只编辑一行；draft 为输入框字符串） */
-  const [editingId, setEditingId] = useState<number | null>(null)
+  const [editingId, setEditingId] = useState<string | number | null>(null)
   const [draft, setDraft] = useState('')
   const [busy, setBusy] = useState(false)
 
@@ -62,7 +62,7 @@ export default function OperationsCatalogPage() {
   const total = catalog?.total ?? 0
 
   /** 写路径统一出口：成功 toast + 重新拉取（结果可见），失败可读提示且不假装成功。 */
-  const submit = async (id: number, payload: Parameters<typeof productionApi.updateOperation>[1]) => {
+  const submit = async (id: string | number, payload: Parameters<typeof productionApi.updateOperation>[1]) => {
     setBusy(true)
     try {
       await productionApi.updateOperation(id, payload)

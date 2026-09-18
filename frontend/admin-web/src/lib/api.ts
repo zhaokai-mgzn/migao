@@ -377,7 +377,7 @@ export const productionApi = {
     request.get<ApiResponse<RoutingsResponse>>('/api/admin/production/routings'),
 
   // 工序库写：改单价 / 必完开关等（权限 processing:manage）
-  updateOperation: (id: number, data: ProductionOperationUpdateParams) =>
+  updateOperation: (id: string | number, data: ProductionOperationUpdateParams) =>
     request.put<ApiResponse<CatalogOperation>>(`/api/admin/production/operations/${id}`, data),
 
   // 计件工资报表（按期间 YYYY-MM 聚合，可按工人筛选）
