@@ -1,7 +1,8 @@
 package com.migao.admin.migration;
 
-// case_ids: PG-030
+// case_ids: PG-030, PG-034
 
+import com.migao.admin.service.ProductionOperationQueryService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -171,6 +172,27 @@ class ProductionRouteSignalMigrationTest {
         }
         assertThat(service).as("派生必须读库（租户级信号映射表）")
                 .contains("productionOperationQueryService.routeSignals(tenantId)");
+    }
+
+    @Test
+    @DisplayName("判据 5：待确认工序集合与 routing.py::PENDING_CUSTOMER_CONFIRMATION_OPERATIONS **同源**（双向可红）")
+    void pendingConfirmationSetMatchesTruthSource() throws Exception {
+        String py = read("backend/ai-agent-service/app/production/routing.py");
+        // 必须匹配**赋值**形态（名字在模块注释里先出现过若干次 ⇒ 裸 indexOf 会命中注释 = 假红）
+        Matcher assign = Pattern.compile(
+                "PENDING_CUSTOMER_CONFIRMATION_OPERATIONS\\s*=\\s*frozenset\\(\\s*\\{([^}]*)\\}").matcher(py);
+        assertThat(assign.find()).as("routing.py 应有 PENDING_CUSTOMER_CONFIRMATION_OPERATIONS = frozenset({...})")
+                .isTrue();
+        java.util.Set<String> truth = new java.util.LinkedHashSet<>();
+        Matcher names = Pattern.compile("\"([^\"]+)\"").matcher(assign.group(1));
+        while (names.find()) {
+            truth.add(names.group(1));
+        }
+        assertThat(truth).as("自检：真值源必须非空（否则本判据空转 = 假绿）").isNotEmpty();
+        assertThat(ProductionOperationQueryService.PENDING_CUSTOMER_CONFIRMATION_OPERATIONS)
+                .as("缺口查询的「待确认」标记必须与 routing.py 同源：少一道（漏标）/ 多一道（错标）都红 —— "
+                        + "Java 无法 import Python，故用逐字解析 + 双向比对守；抄一份字面量而不守就是第二份口径")
+                .containsExactlyInAnyOrderElementsOf(truth);
     }
 
     @Test

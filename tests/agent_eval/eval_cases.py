@@ -3534,6 +3534,7 @@ _CASE_OR_014 = EvalCase(
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+    order_before=['interact[confirm] before order_create'],
     must_succeed=[{'tool': 'order_create'}],
     amount_verify=[{'tool': 'order_create', 'product_name': '遮光窗帘', 'checks': ['unit_price', 'subtotal', 'total']}],
     pre_clean=[{'type': 'product_dedupe', 'product_keyword': '遮光窗帘'}],
@@ -4461,6 +4462,78 @@ _CASE_PG_030 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── PG-031 [NORMAL] 路线写面：POST/PUT /routings + 五条护栏（空序列/工序不存在/重复/必完/seq 归一化）+ 版本账（源: cases/processing-order.yml）──
+_CASE_PG_031 = EvalCase(
+    id='PG-031',
+    legacy_id='',
+    title='路线写面：POST/PUT /routings + 五条护栏（空序列/工序不存在/重复/必完/seq 归一化）+ 版本账',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=[],
+    expectations=[],
+    data_checks=['success=true', '五条护栏（issue #4308 P3 冻结清单，逐条断言 + 逐条红证）：① 空序列拒；② 引用工序库中不存在的工序拒（`operations[1]` 指名是哪一道）；③ 重复工序拒（同工序两次 ⇒ 工人按两遍单价拿钱）；④ 至少一道必完工序（必完工序全绿是完工判定的唯一依据，一道都没有 ⇒ 这张单永远完不了工）；⑤ seq 归一化为 1..N（响应逐位回读 1/2/3）。**全部违规一次报全**（不是报第一条就返回）。护栏失败一律不落库。证据：ProductionRoutingCommandServiceTest 5 项 + ProductionControllerTest「updateRoutingGuardFailureReturnsDetailsEnvelope」（MockMvc 断言 422 + `error.details[0].field`）', '错误形状（冻结契约）：HTTP **422** + `error.details:[{field,message}]` **逐条**理由（复用既有信封字段，不新造；`message` 只做一句话摘要），`suggestion` 可行动。落码 = `BusinessException.validationError(msg, details, suggestion)` + `GlobalExceptionHandler` 透传 `ApiResponse.error(code, message, e.getDetails())`（纯追加，`details` 为 null 时与旧行为逐字相同）。证据：ProductionControllerTest 的 MockMvc 断言 + BusinessException/GlobalExceptionHandler 源码', '版本账：序列**真的变了**才追加 `production_routing_versions` 一行（路由 id / 帘种 / 工艺 / 变更后有序序列 / 道数）；同序列重复提交 = 幂等空操作（沿用 `production_operation_price_versions` 的「同值不记账」口径，否则账本被无意义重复行淹没）。证据：ProductionRoutingCommandServiceTest「validSequenceIsNormalizedAndVersioned」+「sameSequenceIsIdempotentNoop」', '新建路线（补遗端点 `POST /routings`）：`operations` 可缺省 = 初版空序列；响应与 `GET /routings` 单项**同构**（同一份 `routingView`）；同「部位×工艺」已存在（**含停用行**）⇒ 409（否则撞 DB 唯一索引变 500，而不是可行动错误）；跨租户/不存在的路线 ⇒ 404。证据：ProductionRoutingCommandServiceTest 3 项 + ProductionControllerTest「createRoutingReturnsRoutingView」', '**红证（注入式）**：① 去掉「空序列」分支 ⇒ 空序列用例红；② 去掉「工序不存在」分支 ⇒ `operations[1]` 断言红；③ 去掉「重复」分支 ⇒ 重复用例红；④ 去掉「必完」分支 ⇒ `must_finish` 断言红；⑤ 把 `appendVersion` 去掉 ⇒ 版本账断言红；⑥ 把「同序列不记账」的判断去掉 ⇒ 幂等用例红。', '**不做（如实登记）**：路线版本回滚 UI（版本账先落数据）；自由命名 + 拖拽编排的通用编辑器（v1 = 从工序库选 + 有序序列）。'],
+    skip_reason='[backend-contract] 后端契约用例（服务端写路径，无 LLM 环节，不进 agent-eval 冒烟）：断言由 ProductionRoutingCommandServiceTest（14 条）+ ProductionControllerTest（MockMvc 6 条）执行',
+    tags=['processing-order', 'production-routing', 'guard', 'version-ledger'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── PG-032 [NORMAL] 信号映射写面：GET/POST/PUT/DELETE /route-signals（商家可增删改，派生读它）（源: cases/processing-order.yml）──
+_CASE_PG_032 = EvalCase(
+    id='PG-032',
+    legacy_id='',
+    title='信号映射写面：GET/POST/PUT/DELETE /route-signals（商家可增删改，派生读它）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=[],
+    expectations=[],
+    data_checks=['success=true', '写面完整集 = `GET`（列表 `{total, signals:[{id,signal,curtain_type,craft,priority,status}]}`）+ `POST` + `PUT /{id}` + `DELETE /{id}`，全部方法级 `processing:manage`。证据：ProductionControllerTest「routeSignalsListShape」+「routingWriteFaceDeclaresManagePermissions」+ ProductionRoutingCommandServiceTest 4 项', '护栏：① 两维（`curtain_type`/`craft`）**至少给一个**（都不给 ⇒ 命中后什么都不改 = 死数据；DB 侧另有 CHECK 兜底）；② `priority` 缺省 = **该用途内**最大 + 1（与迁移前常量表「顺序即优先级」同口径；帘种行与工艺行各自排序）；③ 同信号**同用途**重复 ⇒ 409，**跨用途允许**（「帘头」两行是设计，见 PG-030 判据 2）；④ 同用途 `priority` 撞档 ⇒ 422（撞档时「谁先命中」由内部 id 决定，对商家**不可预测**）；⑤ 改信号把两维都清空 ⇒ 422。证据：ProductionRoutingCommandServiceTest「createSignalRequiresAtLeastOneTarget」/「createSignalAssignsNextPriorityWithinPurpose」/「createSignalRejectsSamePurposeDuplicateButAllowsCrossPurpose」/「createSignalRejectsPriorityCollisionWithinPurpose」/「updateAndDeleteSignalGuards」', '删除 = **软删**（`deleted=1`）：派生读 `deleted=0 AND status=active` ⇒ 立刻不再参与派生；而「谁在何时删掉哪条映射」是排查路线错配的唯一证据（物理删会丢掉它）。证据：ProductionRoutingCommandServiceTest「updateAndDeleteSignalGuards」', '**红证（注入式）**：① 去掉「至少一维」校验 ⇒ 该用例红；② 把 priority 缺省改成固定 0 ⇒ 取序用例红；③ 去掉同用途重复校验 ⇒ 409 断言红；④ 去掉 priority 撞档校验 ⇒ `priority` 断言红；⑤ 把软删改成 `deleted=0`（等价物理删语义）⇒ 软删断言红。'],
+    skip_reason='[backend-contract] 后端契约用例（服务端写路径，无 LLM 环节）：断言由 ProductionRoutingCommandServiceTest + ProductionControllerTest 执行',
+    tags=['processing-order', 'production-routing', 'route-signals'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── PG-033 [NORMAL] 新增工序：POST /operations + 单价版本账首行（商家建路线的前置）（源: cases/processing-order.yml）──
+_CASE_PG_033 = EvalCase(
+    id='PG-033',
+    legacy_id='',
+    title='新增工序：POST /operations + 单价版本账首行（商家建路线的前置）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=[],
+    expectations=[],
+    data_checks=['success=true', '`POST /api/admin/production/operations`（body `{name, group_name?, unit?, unit_price, position?, is_must_finish?, is_start_marker?, sort_order?}`）⇒ 落 `production_operations` 行（`status=active`/`deleted=0`，`group_name` 缺省「其他」、`unit` 缺省「米」），**同事务写 `production_operation_price_versions` 首行** —— 使「当前价 = 最新版本行」对新工序同样成立（迁移 V55 的回填正是为消灭这种不一致）。证据：ProductionOperationCommandServiceTest「createWritesOperationAndFirstPriceVersion」+ ProductionControllerTest「createOperationReturnsCatalogShape」', '护栏：同名（**含停用行**）⇒ 409 不落库（唯一索引是 `(tenant_id, name) WHERE deleted=0`，只比活跃行会让同名停用行撞 DB 索引 ⇒ 500 而不是可行动错误）；缺 name / 缺 unit_price / 负单价 ⇒ 422 不落库（**不发明默认单价** —— 猜出来的单价会直接算成工人工资）。证据：ProductionOperationCommandServiceTest「createRejectsDuplicateName」+「createRejectsMissingOrNegativePrice」', '**为什么必须有这个端点**：`production_operations` 的唯一写方曾是 V54/V56 种子 SQL（全仓对 `productionOperationMapper` 零写调用）⇒ 商家建不了自己的路线（没有工序可选），非 1 号租户连一道工序都建不出来（#4316）。证据同上 + ProductionControllerTest 的权限断言', '**红证（注入式）**：① 去掉版本账首行写入 ⇒ 版本断言红；② 把重名判据改成只比 `status=active` ⇒ 同名停用行用例红；③ 去掉负单价校验 ⇒ 422 断言红。'],
+    skip_reason='[backend-contract] 后端契约用例（服务端写路径，无 LLM 环节）：断言由 ProductionOperationCommandServiceTest + ProductionControllerTest 执行',
+    tags=['processing-order', 'production-routing', 'operations'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── PG-034 [NORMAL] 缺口可查：GET /routing-gaps 两只清单 + 待确认标记（与 routing.py 同源，引用 #4261）（源: cases/processing-order.yml）──
+_CASE_PG_034 = EvalCase(
+    id='PG-034',
+    legacy_id='',
+    title='缺口可查：GET /routing-gaps 两只清单 + 待确认标记（与 routing.py 同源，引用 #4261）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=[],
+    expectations=[],
+    data_checks=['success=true', '缺口①「有活跃工序但未进任何活跃路线」：逐条列出（`{name, group_name, unit, unit_price, pending_confirmation, note}`）+ `unrouted_operation_total`。**双向可红**：少一道（漏报）或多一道（把已进路线的工序也报进来）都红。证据：ProductionOperationQueryServiceTest「routingGapsListsUnroutedOperationsWithPendingFlag」+「routingGapsExcludesOperationsConsumedByAnyActiveRouting」', '**待确认语义（issue #4261，本单补遗）**：那 4 道（裁剪-布 / 裁剪-纱 / 质检 / 腰靠垫）**不是缺陷**，而是**有意挂起、等客户输入** —— #4261 逐项登记了理由（裁剪vs精裁是否两道 / 质检是否每单必做 / 腰靠垫归属 / 罗马帘整套工序 / 纱帘熨烫定型）。故每条带 `pending_confirmation=true` + 人话 `note`（「有意挂起、等客户输入（issue #4261 提问清单），不是系统漏了」）+ 顶层 `pending_confirmation_total`，**不要让商家/前端把它们读成「系统漏了」**。证据：ProductionOperationQueryServiceTest 的 pending 断言 + ProductionControllerTest「routingGapsShape」', '**与 routing.py 同源（机器可判）**：`ProductionOperationQueryService.PENDING_CUSTOMER_CONFIRMATION_OPERATIONS` ↔ `backend/ai-agent-service/app/production/routing.py::PENDING_CUSTOMER_CONFIRMATION_OPERATIONS` **双向逐字比对**（少一道/多一道都红）。Java 无法 import Python ⇒ 用「逐字解析 frozenset + 双向集合相等」守（同 `ProductionOptionRoutingMigrationTest` 对 SPECIAL_OPTION_ROUTINGS 的既有范式）；**抄一份字面量而不守 = 第二份口径**。证据：ProductionRouteSignalMigrationTest「pendingConfirmationSetMatchesTruthSource」', '缺口②「库里没有路线的信号组合」：逐个活跃信号行算出「只命中它时会派生的键」（缺失维取**默认** `布帘`/`韩褶`，与派生同源 —— 直接引用 `ProcessingOrderService.DEFAULT_CURTAIN_TYPE/DEFAULT_CRAFT`，不复制第二份），报出库中无该路线的那些（`{curtain_type, craft, route_key, signal}`）。例：商家自建信号「罗马帘」⇒ `罗马帘×韩褶` 无路线（#4261 ①，本单**不发明**该路线）。证据：ProductionOperationQueryServiceTest「routingGapsListsSignalKeysWithoutRoute」', '**红证（注入式）**：① 把「已进路线的工序」过滤去掉 ⇒ 双向可红用例红；② 去掉 `pending_confirmation` 字段 ⇒ pending 断言红；③ 改 `PENDING_CUSTOMER_CONFIRMATION_OPERATIONS` 少一道/多一道 ⇒ routing.py 同源用例红；④ 把缺失维的默认值改成字面量「布帘」以外的值 ⇒ 缺口②用例红。', '**已知缺口（如实登记）**：三个种子迁移（V54/V56/V58/V59/V60）只种 `tenant_id = 1` ⇒ 非 1 号租户工序库/路线库为空、建单 fail-closed（422）。#4316 接住该缺口，而**本单交付的写面正是它的补救路径**（此前非 1 号租户连工序都建不出来）。'],
+    skip_reason='[backend-contract] 后端契约用例（服务端只读查询 + 与 Python 真值源的静态收敛，无 LLM 环节）：断言由 ProductionOperationQueryServiceTest + ProductionRouteSignalMigrationTest + ProductionControllerTest 执行',
+    tags=['processing-order', 'production-routing', 'gap-visibility', 'pending-confirmation'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── PP-001 [NORMAL] 加工项选择 - 分页翻页（源: cases/processing.yml）──
 _CASE_PP_001 = EvalCase(
     id='PP-001',
@@ -4711,24 +4784,6 @@ _CASE_PP_012 = EvalCase(
     data_checks=['success=true', '数量**只**来自算料引擎（真值源 §3）：冻结样例 calc_info={fabric_meters:12.3, pleat_count:24, panels:2, set_count:1} + 工序 [精裁-布, 布三边, 韩褶-布, 外帘装袋] ⇒ {精裁-布:12.3, 布三边:12.3, 韩褶-布:24.0, 外帘装袋:1.0}，且逐值 == routing._qty_for 直调结果（防复制第二份算料逻辑的守门断言）', '缺键**一律兜底 1、绝不落 0**（应做 0 ⇒ done_qty ≥ qty 恒真 ⇒ 假完工）：calc_info={} ⇒ 各工序 qty == 1.0 且 != 0', '引擎不认识的工序/单位 ⇒ qty=1.0 + qty_source=fallback，且 HTTP **仍 200**（不得把加工单生成打成硬失败）；判别性：若实现只把 _qty_for 原样透传（未知工序按「米」读 fabric_meters）会得到 12.3 ⇒ 本条仍红', '鉴权：缺 X-Service-Token ⇒ 401（内部端点不得裸奔）', '「孔」类无 holes ⇒ 按每米 6 孔估算 12.3×6=73.8，来源 = fabric_meters_x6（**不等于** fallback）—— 让「真兜底」与「有依据的推算」可区分'],
     skip_reason='[backend-contract] ai-agent 内部端点（服务间调用，非 LLM 行为）：由 pytest 全量覆盖 backend/ai-agent-service/tests/test_production/test_operation_qty.py（含 _qty_for 直调比对与三源键漂移门禁），不进入 agent-eval 冒烟（同 PP-010 惯例）',
     tags=['processing', 'production', 'qty-engine'],
-    persona='',
-    debug_user='',
-    form_prefill=[],
-    forbidden_card_text=[],
-)
-
-# ── PP-014 [NORMAL] 工艺路线商家可配用户面 - 序列编辑护栏逐条可见 / 缺口区 / 信号映射 / 四态路线来源提示（前端单测覆盖）（源: cases/processing.yml）──
-_CASE_PP_014 = EvalCase(
-    id='PP-014',
-    legacy_id='',
-    title='工艺路线商家可配用户面 - 序列编辑护栏逐条可见 / 缺口区 / 信号映射 / 四态路线来源提示（前端单测覆盖）',
-    skill=Skill.PRODUCT,
-    difficulty=Difficulty.NORMAL,
-    user_inputs=['打开工艺路线，改一下布帘×韩褶的工序顺序，看看缺口里还有哪些工序没进路线'],
-    expectations=['direct_reply'],
-    data_checks=['路线列表渲染**真实数据**：路线数 + 「部位 × 工艺」标题 + 每道工序的分组/单位/单价；必完工序带「必完」标记，非必完不得出现该标记（注入：把库口径 is_must_finish 由 true 改 false ⇒ 断言红）', '序列编辑：从工序库选工序 → 保存 ⇒ `PUT /api/admin/production/routings/{id}` 的 body 恰为 `{operations:[...]}`，且**顺序等于屏幕顺序**（注入：把上移/下移/删除任一处的 draft 变换去掉 ⇒ 「顺序等于屏幕顺序」「被删工序不在请求体」两条红）', '保存被拒时**逐条**展示后端护栏理由，不得只弹「保存失败」：`error.response.data.error_messages` 三条 ⇒ 页面渲染三条独立条目，并分别带可读归因（工序不存在 / 工序重复 / 缺少必完工序）；`error` 单条形态兼容（注入：把 error_messages 分支退化成一句通用文案 ⇒ 三条断言红）', '空序列**本地先拦**：删除最后一道后保存 ⇒ 不发出 PUT（`not called`），并给出「序列不能为空」理由（注入：去掉本地校验 ⇒ PUT 被调用，断言红）', '缺口区两只清单可见：①「有工序但未进任何路线」逐条渲染（真值源下 4 道：裁剪-布/裁剪-纱/质检/腰靠垫，**双向可红**：少一道或多一道都红）②「库里没有路线的信号组合」（罗马帘 × 韩褶）以清单形式给出（注入：把任一清单改成只显示条数 ⇒ 该条红）', '新建路线 `POST /api/admin/production/routings` 提交 `{curtain_type, craft, operations: []}`（部位/工艺为空时本地拦）；新增工序 `POST /api/admin/production/operations` 提交 `{name, group_name?, unit?, unit_price}`（单价非数值时本地拦）', '信号映射：`GET` 列表渲染；新增走 `POST /route-signals`、编辑走 `PUT /route-signals/{id}`、删除**二次确认后**走 `DELETE /route-signals/{id}`（注入：删除改成不确认直接删 ⇒ confirm 断言红）', '接口失败不白屏：路线列表失败给错误提示 + 重试（重试后渲染出真实数据）；缺口/信号单条失败只在**该区**给可读提示，路线列表照常渲染（注入：把 allSettled 改成 Promise.all ⇒ 单条失败即整页白屏，断言红）', '加工单四态路线来源提示（`route_source`）：default ⇒ 高亮提示「未识别工艺信号…请核对工序与计件单价」+ 报出实际使用的 `route_key`；partial ⇒ 提示「只识别出一半，另一半取默认值」；missing_route ⇒ 用 `route_requested_key` 报「本单识别的是 X，但工序库里没有这条路线」+ 报实际使用键；derived / 字段缺失 ⇒ **不提示**（静默 = 未知，**不得**显示成「已派生」）（注入：去掉任一分支 ⇒ 该态断言红；把未知值当 derived 正面渲染 ⇒ 第四条红）', '侧边栏入口：生产管理组含「工艺路线」→ `/production/routings`，权限码 `processing:manage`（组内四项口径一致）（注入：只加页面不加菜单项 ⇒ 链接数与权限码数组断言红）'],
-    skip_reason='[backend-contract] 前端组件/页面契约（admin-web），由 vitest 单测全量覆盖（frontend/admin-web/tests/unit/pages/production-routings.test.tsx、tests/unit/lib/route-source.test.ts、tests/unit/pages/processing-orders-production.test.tsx、tests/unit/pages/production-board.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟（同 PP-010/PP-011 惯例）',
-    tags=['processing', 'production', 'admin_web', 'routing', 'route_signals', 'gap_visibility', 'route_source'],
     persona='',
     debug_user='',
     form_prefill=[],
@@ -6579,6 +6634,10 @@ ALL_CASES = (
     _CASE_PG_028,
     _CASE_PG_029,
     _CASE_PG_030,
+    _CASE_PG_031,
+    _CASE_PG_032,
+    _CASE_PG_033,
+    _CASE_PG_034,
     _CASE_PP_001,
     _CASE_PP_002,
     _CASE_PP_003,
@@ -6592,7 +6651,6 @@ ALL_CASES = (
     _CASE_PP_013,
     _CASE_PP_011,
     _CASE_PP_012,
-    _CASE_PP_014,
     _CASE_PR_001,
     _CASE_PR_002,
     _CASE_PR_003,

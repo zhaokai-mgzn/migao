@@ -116,14 +116,23 @@ def guard_is_ci_gated(text: str) -> bool:
     return "\n}" not in text[marker:guard_at]
 
 
+# 修复前的**不可变引用**（issue #4313 的修复提交 = #4320 / 8bf2eac0，其父提交即修复前）。
+# ⚠️ 为什么不用 `origin/main`：修复一旦合入 main，`origin/main:<path>` 就**变成修复后的文本**
+# ⇒ 本条红证恒红（实测：合并后本测试在**每个** PR 的 CI 上都红，而 main 自己不再跑
+# pr-check ⇒ 只有下一个 PR 才会发现）。判据要的是「修复**前**的文本」，那就必须锚在
+# **修复前那个提交**上，而不是一个会前进的引用（同 `migao-dev-flow` §18.3「不可变引用」）。
+PRE_FIX_REF = "8bf2eac0^"
+
+
 def pre_fix_config_text() -> str:
-    """`origin/main` 上修复前的配置文本（取不到就 skip，且**说明为什么**）。"""
+    """修复前的配置文本（取自**修复提交的父提交**；取不到就 skip，且**说明为什么**）。"""
     r = subprocess.run(
-        ["git", "show", f"origin/main:tests/{CONFIG.name}"],
+        ["git", "show", f"{PRE_FIX_REF}:tests/{CONFIG.name}"],
         cwd=str(REPO_ROOT), capture_output=True, text=True,
     )
     if r.returncode != 0 or not r.stdout.strip():
-        pytest.skip(f"取不到 origin/main 的旧配置文本（{r.stderr.strip()[:120]}）—— 红证无法在此环境复现，请人工登记")
+        pytest.skip(f"取不到 {PRE_FIX_REF} 的旧配置文本（{r.stderr.strip()[:120]}）"
+                    "—— 浅克隆（fetch-depth 1）下取不到属预期，红证无法在此环境复现，请人工登记")
     return r.stdout
 
 

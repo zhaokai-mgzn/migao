@@ -5395,8 +5395,8 @@ def _customer_case_ids() -> set:
 def is_customer_case(case) -> bool:
     """该用例是否属于 **C 端验收集**（C 端专属断言的作用域判据）。
 
-    为什么不能用"是否声明 `persona: xiaobu`"（issue #3454）：C 端集里还有 **15 条
-    persona 留空（双端）**的用例（靠 #3266 工具集过滤入选，如 OR-014/PR-002/PR-003），
+    为什么不能用"是否声明 `persona: xiaobu`"（issue #3454）：C 端集里还有一批
+    persona 留空（双端）的用例（靠 #3266 工具集过滤入选，如 CH-003/PR-002/PR-003），
     它们在 C 端跑、计入通过，却会被"声明判据"整个跳过 →
     `check_phone_provenance` / `check_write_code_provenance` 对它们**从未生效**
     （"声称查过而其实没查"家族）。

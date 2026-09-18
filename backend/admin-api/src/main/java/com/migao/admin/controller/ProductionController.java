@@ -7,9 +7,11 @@ import com.migao.admin.service.ClientRequestIdService;
 import com.migao.admin.service.ProcessingOrderService;
 import com.migao.admin.service.ProductionOperationCommandService;
 import com.migao.admin.service.ProductionOperationQueryService;
+import com.migao.admin.service.ProductionRoutingCommandService;
 import com.migao.admin.service.ProductionService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -48,6 +50,7 @@ public class ProductionController {
     private final ProductionService productionService;
     private final ProductionOperationQueryService productionOperationQueryService;
     private final ProductionOperationCommandService productionOperationCommandService;
+    private final ProductionRoutingCommandService productionRoutingCommandService;
     private final ProcessingOrderService processingOrderService;
 
     /**
@@ -202,5 +205,110 @@ public class ProductionController {
                                                             @RequestBody Map<String, Object> body) {
         return ApiResponse.success(productionOperationCommandService.update(
                 id, body, TenantContext.getTenantId()));
+    }
+
+    /**
+     * 新增工序（issue #4308 交付物 4：商家建自己的路线前必须能先建工序）
+     * POST /api/admin/production/operations
+     * body: {name, group_name?, unit?, unit_price, position?, is_must_finish?, is_start_marker?, sort_order?}
+     *
+     * <p>单价版本账**同事务写首行**（使「当前价 = 最新版本行」对新工序同样成立）。</p>
+     */
+    @PostMapping("/operations")
+    @RequirePermission("processing:manage")
+    public ApiResponse<Map<String, Object>> createOperation(@RequestBody Map<String, Object> body) {
+        return ApiResponse.success(productionOperationCommandService.create(body, TenantContext.getTenantId()));
+    }
+
+    // ══════════════════════════ 工艺路线写面（issue #4308 P1）══════════════════════════
+
+    /**
+     * 新建工艺路线（{@code operations} 可缺省 = 初版空序列）
+     * POST /api/admin/production/routings
+     * body: {curtain_type, craft, operations?, status?}
+     *
+     * <p>响应形态与 {@code GET /routings} 的单项**同构**（前端同一个 TS 类型渲染两者）。</p>
+     */
+    @PostMapping("/routings")
+    @RequirePermission("processing:manage")
+    public ApiResponse<Map<String, Object>> createRouting(@RequestBody Map<String, Object> body) {
+        return ApiResponse.success(
+                productionRoutingCommandService.createRouting(body, TenantContext.getTenantId()));
+    }
+
+    /**
+     * 改工艺路线序列（issue #4308 交付物 2；路线是计件工资与完工判定的唯一输入）
+     * PUT /api/admin/production/routings/{id}
+     * body: {operations: ["精裁-布", …], status?}
+     *
+     * <p><b>护栏（全部有红证）</b>：空序列拒 / 引用工序库中不存在的工序拒 / 重复工序拒 /
+     * 至少一道必完工序 / seq 归一化为 1..N / 每次变更落版本账（{@code production_routing_versions}）。
+     * 失败统一 **HTTP 422 + {@code error.details:[{field,message}]} 逐条理由**（一次报全）。</p>
+     */
+    @PutMapping("/routings/{id}")
+    @RequirePermission("processing:manage")
+    public ApiResponse<Map<String, Object>> updateRouting(@PathVariable String id,
+                                                          @RequestBody Map<String, Object> body) {
+        return ApiResponse.success(productionRoutingCommandService.updateRouting(
+                id, body, TenantContext.getTenantId()));
+    }
+
+    // ══════════════════════════ 信号映射写面（issue #4308 交付物 3）══════════════════════
+
+    /**
+     * 信号映射列表（派生路线键的数据源；迁移前是 Java 常量表）
+     * GET /api/admin/production/route-signals
+     */
+    @GetMapping("/route-signals")
+    public ApiResponse<Map<String, Object>> routeSignals() {
+        return ApiResponse.success(productionOperationQueryService.routeSignalList(TenantContext.getTenantId()));
+    }
+
+    /**
+     * 新增信号映射
+     * POST /api/admin/production/route-signals
+     * body: {signal, curtain_type?, craft?, priority?, status?}（两维至少给一个）
+     */
+    @PostMapping("/route-signals")
+    @RequirePermission("processing:manage")
+    public ApiResponse<Map<String, Object>> createRouteSignal(@RequestBody Map<String, Object> body) {
+        return ApiResponse.success(
+                productionRoutingCommandService.createSignal(body, TenantContext.getTenantId()));
+    }
+
+    /**
+     * 改信号映射（部分更新：只写 body 里出现的字段）
+     * PUT /api/admin/production/route-signals/{id}
+     */
+    @PutMapping("/route-signals/{id}")
+    @RequirePermission("processing:manage")
+    public ApiResponse<Map<String, Object>> updateRouteSignal(@PathVariable String id,
+                                                              @RequestBody Map<String, Object> body) {
+        return ApiResponse.success(productionRoutingCommandService.updateSignal(
+                id, body, TenantContext.getTenantId()));
+    }
+
+    /**
+     * 删信号映射（**软删**：deleted=1 —— 谁在何时删掉哪条映射是排查路线错配的唯一证据）
+     * DELETE /api/admin/production/route-signals/{id}
+     */
+    @DeleteMapping("/route-signals/{id}")
+    @RequirePermission("processing:manage")
+    public ApiResponse<Map<String, Object>> deleteRouteSignal(@PathVariable String id) {
+        return ApiResponse.success(
+                productionRoutingCommandService.deleteSignal(id, TenantContext.getTenantId()));
+    }
+
+    // ══════════════════════════ 缺口可查（issue #4308 交付物 5 / P4）══════════════════════════
+
+    /**
+     * 路线缺口：① 有活跃工序但未进任何活跃路线（真值源下 4 道，且**有意挂起等客户输入**，
+     * 见 issue #4261 ⇒ 每条带 {@code pending_confirmation}）② 库里没有路线的信号组合。
+     * GET /api/admin/production/routing-gaps
+     */
+    @GetMapping("/routing-gaps")
+    public ApiResponse<Map<String, Object>> routingGaps() {
+        return ApiResponse.success(
+                productionOperationQueryService.routingGaps(TenantContext.getTenantId()));
     }
 }

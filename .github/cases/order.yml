@@ -712,7 +712,7 @@ cases:
     # 单端标注（burn-down 销账，随 #4308 的用例面改动一并缴费）：期望工具 order_create ⊆ 小布工具集
     # ⇒ 本用例**只能跑小布腿**；缺 persona 时米宝腿必挂（实证「OR-014 mibao 腿假红」，
     # 见 tests/agent_eval/local_runner.py 的接地真值注释：本用例是 C 端下单语义）。
-    # 断言面（expectations / data_checks / pre_clean / auto_fill）**一字未动**。
+    # 断言面（expectations / data_checks / pre_clean / auto_fill）**一字未动**。 2026-09-19（随 #4308 的用例面改动）：补 `persona: xiaobu`（清 `CASE-TRUST-SINGLE-LEG-NO-PERSONA`，burn-down 整条销账）+ 随之**连锁触发**的 `order_before: [interact[confirm] before order_create]`（C 端写用例必须断言 confirm 卡先行，守卫 test_xiaobu_coverage）—— **断言只增不减**，expectations / data_checks / pre_clean / auto_fill / amount_verify 一字未动。
     persona: xiaobu
     tags:
       - order_create
@@ -818,6 +818,13 @@ cases:
     # 只能证明"模型想下单"，证明不了"订单成交"
     must_succeed:
       - tool: order_create
+    # confirm 卡先行（issue #4308 的用例面改动连锁触发，守卫 = tests/unit_ci_workflows/
+    # test_xiaobu_coverage.py::test_every_xiaobu_write_case_asserts_confirm_card_first）：
+    # 本用例是 C 端**写用例**（must_succeed[order_create]）⇒ 必须断言「顾客先看到明细卡、
+    # 之后才落库」；缺它时「只发一句『确认下单』就把单建了」这条产品要求无人守
+    # （实证 run 34760653981 的验收违规）。`order_before` 的语义 = A 必须出现过且早于 B。
+    order_before:
+      - "interact[confirm] before order_create"
     # 金额正确性断言（issue #3365）：本用例历史实证"没查商品就报 ¥95.4"（真实 ¥168/米）
     amount_verify:
       - tool: order_create

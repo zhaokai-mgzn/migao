@@ -5485,25 +5485,35 @@ class TestUnbackedStateClaimAddressModification:
 class TestCustomerCaseScopeIsSelectionBased:
     """C 端专属断言的作用域必须按「**是否选入 C 端集**」判定（issue #3454）
 
-    实证（在 origin/main 上重算）：`select_cases_for_persona(cases, "xiaobu")` 选出 44 条，
-    其中 **15 条并未声明 `persona: xiaobu`**（留空=双端，靠 #3266 工具集过滤入选）：
+    实证（重算于 2026-09-19，issue #4308 的用例面改动后）：`select_cases_for_persona(cases,
+    "xiaobu")` 选出 49 条，其中 **12 条并未声明 `persona: xiaobu`**（留空=双端，靠 #3266
+    工具集过滤入选）：
 
-        CH-003, CH-007, CH-011, CH-026, DF-002, DF-005, DF-011, DF-012, DF-013,
-        KN-007, OR-014, PR-001, PR-002, PR-003, PR-018
+        CH-003, CH-007, CH-026, DF-002, DF-005, DF-011, DF-012, DF-013,
+        KN-007, PR-001, PR-002, PR-003
+
+    ⚠️ 这份名单是**会漂移的读数**（谁补了 `persona` 谁就出列 —— OR-014 即如此：它在本单
+    补了 `persona: xiaobu`）⇒ 判据**不得**写死名单，只拿其中一条当样本；样本一旦被显式声明，
+    本条会红并提示换一条（这是设计效果，不是缺陷）。
 
     而旧判据是 `persona != "xiaobu" → return []` ⇒ `check_phone_provenance`（#3386）与
-    `check_write_code_provenance`（#3434）**对这 15 条从未生效**——它们照常跑、照常计入通过，
-    但那两项没人查（"声称查过而其实没查"）。
+    `check_write_code_provenance`（#3434）**对这些未声明用例从未生效**——它们照常跑、照常计入
+    通过，但那两项没人查（"声称查过而其实没查"）。
     """
 
     def test_selected_but_undeclared_case_is_in_scope(self, monkeypatch):
         monkeypatch.setattr(lr, "PERSONA", "xiaobu")
-        """被选入 C 端集但 persona 留空的用例（如 OR-014）必须在作用域内。"""
+        """被选入 C 端集但 persona 留空的用例（如 CH-003）必须在作用域内。
+
+        ⚠️ 样本可换、口径不可换：本测试覆盖的是「**留空**但入选」这一形态 —— 样本被显式声明
+        `persona` 后必须换一条**仍然留空且确实入选**的用例（下方断言即提示），不得改成
+        「随便一条」或把断言删掉。
+        """
         by_id = {str(c.id): c for c in lr.ALL_CASES}
-        case = by_id.get("OR-014")
-        assert case is not None, "OR-014 不在用例库里（本测试的前提失效，请同步用例库）"
+        case = by_id.get("CH-003")
+        assert case is not None, "CH-003 不在用例库里（本测试的前提失效，请同步用例库）"
         assert str(getattr(case, "persona", "") or "") != "xiaobu", (
-            "OR-014 现在显式声明了 persona —— 本测试的意义是覆盖「留空但入选」这一形态，请换一条")
+            "CH-003 现在显式声明了 persona —— 本测试的意义是覆盖「留空但入选」这一形态，请换一条")
         assert lr.is_customer_case(case) is True, (
             "被选入 C 端集的用例被判为「非 C 端」 → C 端专属断言会静默跳过它（issue #3454）")
 

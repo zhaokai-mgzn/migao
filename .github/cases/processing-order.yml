@@ -1216,3 +1216,136 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+
+  # ==========================================================================
+  # PG-031~PG-034（issue #4308，P1）：工艺路线**写面**与缺口可查。
+  # 病根：全仓此前只有 GET /routings 与 PUT /operations/{id}（#4204 只改单价）——
+  # **建路线、改路线序列、新增工序、配信号四条全缺** ⇒「企业设置工艺路线」在系统里无路可走，
+  # 只能开 issue 让研发改常量。而路线是**计件工资**与**完工判定**的唯一输入，写面必须带护栏。
+  # ==========================================================================
+  - id: PG-031
+    legacy_id: ""
+    title: "路线写面：POST/PUT /routings + 五条护栏（空序列/工序不存在/重复/必完/seq 归一化）+ 版本账"
+    domains:
+      - processing-order
+      - production
+    tier: normal
+    tags:
+      - processing-order
+      - production-routing
+      - guard
+      - version-ledger
+    truths_ref: []
+    user_inputs: []
+    expectations: []
+    data_checks:
+      - "success=true"
+      - "五条护栏（issue #4308 P3 冻结清单，逐条断言 + 逐条红证）：① 空序列拒；② 引用工序库中不存在的工序拒（`operations[1]` 指名是哪一道）；③ 重复工序拒（同工序两次 ⇒ 工人按两遍单价拿钱）；④ 至少一道必完工序（必完工序全绿是完工判定的唯一依据，一道都没有 ⇒ 这张单永远完不了工）；⑤ seq 归一化为 1..N（响应逐位回读 1/2/3）。**全部违规一次报全**（不是报第一条就返回）。护栏失败一律不落库。证据：ProductionRoutingCommandServiceTest 5 项 + ProductionControllerTest「updateRoutingGuardFailureReturnsDetailsEnvelope」（MockMvc 断言 422 + `error.details[0].field`）"
+      - "错误形状（冻结契约）：HTTP **422** + `error.details:[{field,message}]` **逐条**理由（复用既有信封字段，不新造；`message` 只做一句话摘要），`suggestion` 可行动。落码 = `BusinessException.validationError(msg, details, suggestion)` + `GlobalExceptionHandler` 透传 `ApiResponse.error(code, message, e.getDetails())`（纯追加，`details` 为 null 时与旧行为逐字相同）。证据：ProductionControllerTest 的 MockMvc 断言 + BusinessException/GlobalExceptionHandler 源码"
+      - "版本账：序列**真的变了**才追加 `production_routing_versions` 一行（路由 id / 帘种 / 工艺 / 变更后有序序列 / 道数）；同序列重复提交 = 幂等空操作（沿用 `production_operation_price_versions` 的「同值不记账」口径，否则账本被无意义重复行淹没）。证据：ProductionRoutingCommandServiceTest「validSequenceIsNormalizedAndVersioned」+「sameSequenceIsIdempotentNoop」"
+      - "新建路线（补遗端点 `POST /routings`）：`operations` 可缺省 = 初版空序列；响应与 `GET /routings` 单项**同构**（同一份 `routingView`）；同「部位×工艺」已存在（**含停用行**）⇒ 409（否则撞 DB 唯一索引变 500，而不是可行动错误）；跨租户/不存在的路线 ⇒ 404。证据：ProductionRoutingCommandServiceTest 3 项 + ProductionControllerTest「createRoutingReturnsRoutingView」"
+      - "**红证（注入式）**：① 去掉「空序列」分支 ⇒ 空序列用例红；② 去掉「工序不存在」分支 ⇒ `operations[1]` 断言红；③ 去掉「重复」分支 ⇒ 重复用例红；④ 去掉「必完」分支 ⇒ `must_finish` 断言红；⑤ 把 `appendVersion` 去掉 ⇒ 版本账断言红；⑥ 把「同序列不记账」的判断去掉 ⇒ 幂等用例红。"
+      - "**不做（如实登记）**：路线版本回滚 UI（版本账先落数据）；自由命名 + 拖拽编排的通用编辑器（v1 = 从工序库选 + 有序序列）。"
+    skip_reason: "[backend-contract] 后端契约用例（服务端写路径，无 LLM 环节，不进 agent-eval 冒烟）：断言由 ProductionRoutingCommandServiceTest（14 条）+ ProductionControllerTest（MockMvc 6 条）执行"
+    merge_log: "2026-09-19 新增（issue #4308，P1）。红证见 data_checks。实现：ProductionRoutingCommandService（护栏唯一一份，新建与改序列共用）+ ProductionController 三端点（POST/PUT routings）+ BusinessException.details 透传。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ProductionRoutingCommandServiceTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/controller/ProductionControllerTest.java"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  - id: PG-032
+    legacy_id: ""
+    title: "信号映射写面：GET/POST/PUT/DELETE /route-signals（商家可增删改，派生读它）"
+    domains:
+      - processing-order
+      - production
+    tier: normal
+    tags:
+      - processing-order
+      - production-routing
+      - route-signals
+    truths_ref: []
+    user_inputs: []
+    expectations: []
+    data_checks:
+      - "success=true"
+      - "写面完整集 = `GET`（列表 `{total, signals:[{id,signal,curtain_type,craft,priority,status}]}`）+ `POST` + `PUT /{id}` + `DELETE /{id}`，全部方法级 `processing:manage`。证据：ProductionControllerTest「routeSignalsListShape」+「routingWriteFaceDeclaresManagePermissions」+ ProductionRoutingCommandServiceTest 4 项"
+      - "护栏：① 两维（`curtain_type`/`craft`）**至少给一个**（都不给 ⇒ 命中后什么都不改 = 死数据；DB 侧另有 CHECK 兜底）；② `priority` 缺省 = **该用途内**最大 + 1（与迁移前常量表「顺序即优先级」同口径；帘种行与工艺行各自排序）；③ 同信号**同用途**重复 ⇒ 409，**跨用途允许**（「帘头」两行是设计，见 PG-030 判据 2）；④ 同用途 `priority` 撞档 ⇒ 422（撞档时「谁先命中」由内部 id 决定，对商家**不可预测**）；⑤ 改信号把两维都清空 ⇒ 422。证据：ProductionRoutingCommandServiceTest「createSignalRequiresAtLeastOneTarget」/「createSignalAssignsNextPriorityWithinPurpose」/「createSignalRejectsSamePurposeDuplicateButAllowsCrossPurpose」/「createSignalRejectsPriorityCollisionWithinPurpose」/「updateAndDeleteSignalGuards」"
+      - "删除 = **软删**（`deleted=1`）：派生读 `deleted=0 AND status=active` ⇒ 立刻不再参与派生；而「谁在何时删掉哪条映射」是排查路线错配的唯一证据（物理删会丢掉它）。证据：ProductionRoutingCommandServiceTest「updateAndDeleteSignalGuards」"
+      - "**红证（注入式）**：① 去掉「至少一维」校验 ⇒ 该用例红；② 把 priority 缺省改成固定 0 ⇒ 取序用例红；③ 去掉同用途重复校验 ⇒ 409 断言红；④ 去掉 priority 撞档校验 ⇒ `priority` 断言红；⑤ 把软删改成 `deleted=0`（等价物理删语义）⇒ 软删断言红。"
+    skip_reason: "[backend-contract] 后端契约用例（服务端写路径，无 LLM 环节）：断言由 ProductionRoutingCommandServiceTest + ProductionControllerTest 执行"
+    merge_log: "2026-09-19 新增（issue #4308，P1）。红证见 data_checks。实现：ProductionRoutingCommandService 的信号 CRUD + ProductionOperationQueryService.routeSignalList（读面）。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ProductionRoutingCommandServiceTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/controller/ProductionControllerTest.java"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  - id: PG-033
+    legacy_id: ""
+    title: "新增工序：POST /operations + 单价版本账首行（商家建路线的前置）"
+    domains:
+      - processing-order
+      - production
+    tier: normal
+    tags:
+      - processing-order
+      - production-routing
+      - operations
+    truths_ref: []
+    user_inputs: []
+    expectations: []
+    data_checks:
+      - "success=true"
+      - "`POST /api/admin/production/operations`（body `{name, group_name?, unit?, unit_price, position?, is_must_finish?, is_start_marker?, sort_order?}`）⇒ 落 `production_operations` 行（`status=active`/`deleted=0`，`group_name` 缺省「其他」、`unit` 缺省「米」），**同事务写 `production_operation_price_versions` 首行** —— 使「当前价 = 最新版本行」对新工序同样成立（迁移 V55 的回填正是为消灭这种不一致）。证据：ProductionOperationCommandServiceTest「createWritesOperationAndFirstPriceVersion」+ ProductionControllerTest「createOperationReturnsCatalogShape」"
+      - "护栏：同名（**含停用行**）⇒ 409 不落库（唯一索引是 `(tenant_id, name) WHERE deleted=0`，只比活跃行会让同名停用行撞 DB 索引 ⇒ 500 而不是可行动错误）；缺 name / 缺 unit_price / 负单价 ⇒ 422 不落库（**不发明默认单价** —— 猜出来的单价会直接算成工人工资）。证据：ProductionOperationCommandServiceTest「createRejectsDuplicateName」+「createRejectsMissingOrNegativePrice」"
+      - "**为什么必须有这个端点**：`production_operations` 的唯一写方曾是 V54/V56 种子 SQL（全仓对 `productionOperationMapper` 零写调用）⇒ 商家建不了自己的路线（没有工序可选），非 1 号租户连一道工序都建不出来（#4316）。证据同上 + ProductionControllerTest 的权限断言"
+      - "**红证（注入式）**：① 去掉版本账首行写入 ⇒ 版本断言红；② 把重名判据改成只比 `status=active` ⇒ 同名停用行用例红；③ 去掉负单价校验 ⇒ 422 断言红。"
+    skip_reason: "[backend-contract] 后端契约用例（服务端写路径，无 LLM 环节）：断言由 ProductionOperationCommandServiceTest + ProductionControllerTest 执行"
+    merge_log: "2026-09-19 新增（issue #4308，P1）。红证见 data_checks。实现：ProductionOperationCommandService.create + ProductionController POST /operations。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ProductionOperationCommandServiceTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/controller/ProductionControllerTest.java"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  - id: PG-034
+    legacy_id: ""
+    title: "缺口可查：GET /routing-gaps 两只清单 + 待确认标记（与 routing.py 同源，引用 #4261）"
+    domains:
+      - processing-order
+      - production
+    tier: normal
+    tags:
+      - processing-order
+      - production-routing
+      - gap-visibility
+      - pending-confirmation
+    truths_ref: []
+    user_inputs: []
+    expectations: []
+    data_checks:
+      - "success=true"
+      - "缺口①「有活跃工序但未进任何活跃路线」：逐条列出（`{name, group_name, unit, unit_price, pending_confirmation, note}`）+ `unrouted_operation_total`。**双向可红**：少一道（漏报）或多一道（把已进路线的工序也报进来）都红。证据：ProductionOperationQueryServiceTest「routingGapsListsUnroutedOperationsWithPendingFlag」+「routingGapsExcludesOperationsConsumedByAnyActiveRouting」"
+      - "**待确认语义（issue #4261，本单补遗）**：那 4 道（裁剪-布 / 裁剪-纱 / 质检 / 腰靠垫）**不是缺陷**，而是**有意挂起、等客户输入** —— #4261 逐项登记了理由（裁剪vs精裁是否两道 / 质检是否每单必做 / 腰靠垫归属 / 罗马帘整套工序 / 纱帘熨烫定型）。故每条带 `pending_confirmation=true` + 人话 `note`（「有意挂起、等客户输入（issue #4261 提问清单），不是系统漏了」）+ 顶层 `pending_confirmation_total`，**不要让商家/前端把它们读成「系统漏了」**。证据：ProductionOperationQueryServiceTest 的 pending 断言 + ProductionControllerTest「routingGapsShape」"
+      - "**与 routing.py 同源（机器可判）**：`ProductionOperationQueryService.PENDING_CUSTOMER_CONFIRMATION_OPERATIONS` ↔ `backend/ai-agent-service/app/production/routing.py::PENDING_CUSTOMER_CONFIRMATION_OPERATIONS` **双向逐字比对**（少一道/多一道都红）。Java 无法 import Python ⇒ 用「逐字解析 frozenset + 双向集合相等」守（同 `ProductionOptionRoutingMigrationTest` 对 SPECIAL_OPTION_ROUTINGS 的既有范式）；**抄一份字面量而不守 = 第二份口径**。证据：ProductionRouteSignalMigrationTest「pendingConfirmationSetMatchesTruthSource」"
+      - "缺口②「库里没有路线的信号组合」：逐个活跃信号行算出「只命中它时会派生的键」（缺失维取**默认** `布帘`/`韩褶`，与派生同源 —— 直接引用 `ProcessingOrderService.DEFAULT_CURTAIN_TYPE/DEFAULT_CRAFT`，不复制第二份），报出库中无该路线的那些（`{curtain_type, craft, route_key, signal}`）。例：商家自建信号「罗马帘」⇒ `罗马帘×韩褶` 无路线（#4261 ①，本单**不发明**该路线）。证据：ProductionOperationQueryServiceTest「routingGapsListsSignalKeysWithoutRoute」"
+      - "**红证（注入式）**：① 把「已进路线的工序」过滤去掉 ⇒ 双向可红用例红；② 去掉 `pending_confirmation` 字段 ⇒ pending 断言红；③ 改 `PENDING_CUSTOMER_CONFIRMATION_OPERATIONS` 少一道/多一道 ⇒ routing.py 同源用例红；④ 把缺失维的默认值改成字面量「布帘」以外的值 ⇒ 缺口②用例红。"
+      - "**已知缺口（如实登记）**：三个种子迁移（V54/V56/V58/V59/V60）只种 `tenant_id = 1` ⇒ 非 1 号租户工序库/路线库为空、建单 fail-closed（422）。#4316 接住该缺口，而**本单交付的写面正是它的补救路径**（此前非 1 号租户连工序都建不出来）。"
+    skip_reason: "[backend-contract] 后端契约用例（服务端只读查询 + 与 Python 真值源的静态收敛，无 LLM 环节）：断言由 ProductionOperationQueryServiceTest + ProductionRouteSignalMigrationTest + ProductionControllerTest 执行"
+    merge_log: "2026-09-19 新增（issue #4308，P1）。红证见 data_checks。实现：ProductionOperationQueryService.routingGaps + PENDING_CUSTOMER_CONFIRMATION_OPERATIONS 常量（与 routing.py 同源由测试守）+ ProductionController GET /routing-gaps。**不做**：不发明罗马帘/新课工序的行业数据（单价会直接变成工人工资，见 #4261）。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ProductionOperationQueryServiceTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/migration/ProductionRouteSignalMigrationTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/controller/ProductionControllerTest.java"
+      ci:
+        - pr-check.yml
+      verifies: []

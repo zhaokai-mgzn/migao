@@ -120,29 +120,69 @@ public class ProductionOperationQueryService {
      *         unit_price, is_must_finish, is_start_marker}]}]}
      */
     public Map<String, Object> routings(Long tenantId) {
-        List<ProductionRouting> rows = activeRoutings(tenantId);
-        Map<String, ProductionOperation> catalogByName = catalogByName(tenantId);
-
         List<Map<String, Object>> items = new ArrayList<>();
-        for (ProductionRouting routing : rows) {
-            List<Map<String, Object>> steps = new ArrayList<>();
-            int seq = 1;
-            for (String operationName : operationNames(routing.getOperations())) {
-                steps.add(stepView(seq++, operationName, catalogByName.get(operationName)));
-            }
-            Map<String, Object> entry = new LinkedHashMap<>();
-            entry.put("id", routing.getId());
-            entry.put("curtain_type", routing.getCurtainType());
-            entry.put("craft", routing.getCraft());
-            entry.put("operation_count", steps.size());
-            entry.put("operations", steps);
-            items.add(entry);
+        for (ProductionRouting routing : activeRoutings(tenantId)) {
+            items.add(routingView(routing));
         }
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("total", items.size());
         result.put("routings", items);
         return result;
+    }
+
+    /**
+     * 路线单项展示形态（{@code GET /routings} 的列表项 / {@code POST} 新建 / {@code PUT} 改序列
+     * 的响应**共用同一份** —— 三处各拼一份必然漂移，而前端拿同一个 TS 类型渲染三者）。
+     *
+     * <p>{@code seq} 在这里归一化为 1..N（它就是数组下标 + 1）：seq 是报工「越站」防呆
+     * （取「seq 最大的前道」）与页面排序的唯一顺序依据。</p>
+     */
+    public Map<String, Object> routingView(ProductionRouting routing) {
+        Map<String, ProductionOperation> catalogByName = catalogByName(routing.getTenantId());
+        List<Map<String, Object>> steps = new ArrayList<>();
+        int seq = 1;
+        for (String operationName : operationNames(routing.getOperations())) {
+            steps.add(stepView(seq++, operationName, catalogByName.get(operationName)));
+        }
+        Map<String, Object> entry = new LinkedHashMap<>();
+        entry.put("id", routing.getId());
+        entry.put("curtain_type", routing.getCurtainType());
+        entry.put("craft", routing.getCraft());
+        entry.put("status", routing.getStatus());
+        entry.put("operation_count", steps.size());
+        entry.put("operations", steps);
+        return entry;
+    }
+
+    /**
+     * 信号映射列表（issue #4308 交付物 3 的读面）：{@code {total, signals:[{id, signal,
+     * curtain_type, craft, priority, status}]}}。
+     *
+     * <p>写面（POST/PUT/DELETE）在 {@link ProductionRoutingCommandService} —— 与工序库
+     * 「读写分开」同口径（本类只有 SELECT）。</p>
+     */
+    public Map<String, Object> routeSignalList(Long tenantId) {
+        List<Map<String, Object>> items = new ArrayList<>();
+        for (ProductionRouteSignal signal : routeSignals(tenantId)) {
+            items.add(signalView(signal));
+        }
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("total", items.size());
+        result.put("signals", items);
+        return result;
+    }
+
+    /** 信号映射单项展示形态（列表项 / 写面响应共用同一份）。 */
+    public Map<String, Object> signalView(ProductionRouteSignal signal) {
+        Map<String, Object> view = new LinkedHashMap<>();
+        view.put("id", signal.getId());
+        view.put("signal", signal.getSignal());
+        view.put("curtain_type", signal.getCurtainType());
+        view.put("craft", signal.getCraft());
+        view.put("priority", signal.getPriority());
+        view.put("status", signal.getStatus());
+        return view;
     }
 
     /**

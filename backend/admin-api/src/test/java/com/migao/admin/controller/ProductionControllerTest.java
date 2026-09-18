@@ -1,4 +1,4 @@
-// case_ids: PG-018, PG-019, PG-020, PG-021
+// case_ids: PG-018, PG-019, PG-020, PG-021, PG-031, PG-032, PG-033, PG-034
 package com.migao.admin.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -26,6 +26,7 @@ import com.migao.admin.service.ClientRequestIdService;
 import com.migao.admin.service.OrderService;
 import com.migao.admin.service.ProcessingOrderService;
 import com.migao.admin.service.ProductionOperationCommandService;
+import com.migao.admin.service.ProductionRoutingCommandService;
 import com.migao.admin.service.ProductionOperationQueryService;
 import com.migao.admin.service.ProductionOperationQtyClient;
 import com.migao.admin.service.ProductionService;
@@ -108,6 +109,8 @@ class ProductionControllerTest {
     @Mock
     private com.migao.admin.mapper.ProductionRouteSignalMapper productionRouteSignalMapper;
     @Mock
+    private com.migao.admin.mapper.ProductionRoutingVersionMapper routingVersionMapper;
+    @Mock
     private ProductionOperationPriceVersionMapper priceVersionMapper;
     @Mock
     private OrderItemMapper orderItemMapper;
@@ -138,8 +141,13 @@ class ProductionControllerTest {
                 orderService, objectMapper, service, queryService, operationQtyClient);
         ProductionOperationCommandService commandService = new ProductionOperationCommandService(
                 productionOperationMapper, priceVersionMapper, queryService);
+        // 路线/信号写面（issue #4308）：真实对象（只 mock Mapper），响应形态 = 路线展示形态（同一份）
+        ProductionRoutingCommandService routingCommandService = new ProductionRoutingCommandService(
+                productionRoutingMapper, routingVersionMapper, productionOperationMapper,
+                productionRouteSignalMapper, queryService);
         mockMvc = MockMvcBuilders.standaloneSetup(
-                        new ProductionController(service, queryService, commandService, processingOrderService))
+                        new ProductionController(service, queryService, commandService,
+                                routingCommandService, processingOrderService))
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .build();
         // 无幂等键 ⇒ 老路径（claim 首执）；幂等接线自身的断言见「报工」段的两个专测
@@ -1020,6 +1028,118 @@ class ProductionControllerTest {
         Method print = ProductionController.class.getMethod("printOrder", String.class);
         assertThat(print.getAnnotation(RequirePermission.class))
                 .as("打印计数沿用类级 order:list（不新增方法级注解）").isNull();
+    }
+
+    // ══════════════════ 路线/信号/工序写面 + 缺口查询（issue #4308，PG-031~PG-034）══════════════════
+
+    @Test
+    @DisplayName("#4308 PUT /routings/{id} 护栏失败 ⇒ 422 + error.details 逐条理由（前端据此逐条展示）")
+    void updateRoutingGuardFailureReturnsDetailsEnvelope() throws Exception {
+        when(productionRoutingMapper.selectById("rt-1")).thenReturn(ProductionRouting.builder()
+                .id("rt-1").tenantId(TENANT).curtainType("布帘").craft("韩褶")
+                .operations(List.of("布三边")).status("active").deleted(0).build());
+        when(productionOperationMapper.selectList(any())).thenReturn(List.of(
+                operationRow("op-1", "布三边", "车位", "米", "0.40", 2)));
+
+        mockMvc.perform(put("/api/admin/production/routings/rt-1")
+                        .contentType("application/json")
+                        .content("{\"operations\":[\"布三边\",\"库里没有的工序\"]}"))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
+                .andExpect(jsonPath("$.error.details").isArray())
+                .andExpect(jsonPath("$.error.details[0].field").value("operations[1]"))
+                .andExpect(jsonPath("$.suggestion").isNotEmpty());
+
+        verify(productionRoutingMapper, never()).updateById(any(ProductionRouting.class));
+    }
+
+    @Test
+    @DisplayName("#4308 POST /routings 新建路线 ⇒ 200 且响应与 GET /routings 单项同构")
+    void createRoutingReturnsRoutingView() throws Exception {
+        when(productionRoutingMapper.selectList(any())).thenReturn(List.of());
+        when(productionOperationMapper.selectList(any())).thenReturn(List.of());
+
+        mockMvc.perform(post("/api/admin/production/routings")
+                        .contentType("application/json")
+                        .content("{\"curtain_type\":\"罗马帘\",\"craft\":\"韩褶\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.curtain_type").value("罗马帘"))
+                .andExpect(jsonPath("$.data.craft").value("韩褶"))
+                .andExpect(jsonPath("$.data.operation_count").value(0))
+                .andExpect(jsonPath("$.data.operations").isArray());
+    }
+
+    @Test
+    @DisplayName("#4308 GET /route-signals ⇒ {total, signals:[{id,signal,curtain_type,craft,priority,status}]}")
+    void routeSignalsListShape() throws Exception {
+        when(productionRouteSignalMapper.selectList(any())).thenReturn(List.of(
+                com.migao.admin.entity.ProductionRouteSignal.builder()
+                        .id("sig-v60-01").tenantId(TENANT).signal("帘头").curtainType("帘头")
+                        .priority(1).status("active").deleted(0).build()));
+
+        mockMvc.perform(get("/api/admin/production/route-signals"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.total").value(1))
+                .andExpect(jsonPath("$.data.signals[0].id").value("sig-v60-01"))
+                .andExpect(jsonPath("$.data.signals[0].signal").value("帘头"))
+                .andExpect(jsonPath("$.data.signals[0].curtain_type").value("帘头"))
+                .andExpect(jsonPath("$.data.signals[0].craft").value(org.hamcrest.Matchers.nullValue()))
+                .andExpect(jsonPath("$.data.signals[0].priority").value(1))
+                .andExpect(jsonPath("$.data.signals[0].status").value("active"));
+    }
+
+    @Test
+    @DisplayName("#4308 POST /operations ⇒ 200 + 单价版本账首行（商家建路线的前置）")
+    void createOperationReturnsCatalogShape() throws Exception {
+        when(productionOperationMapper.selectCount(any())).thenReturn(0L);
+
+        mockMvc.perform(post("/api/admin/production/operations")
+                        .contentType("application/json")
+                        .content("{\"name\":\"罗马帘-穿杆\",\"group_name\":\"车位\",\"unit\":\"米\",\"unit_price\":0.6}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.name").value("罗马帘-穿杆"))
+                .andExpect(jsonPath("$.data.group").value("车位"))
+                .andExpect(jsonPath("$.data.unit_price").value(0.6));
+
+        verify(priceVersionMapper).insert(any(ProductionOperationPriceVersion.class));
+    }
+
+    @Test
+    @DisplayName("#4308 GET /routing-gaps ⇒ 两只清单 + 待确认标记（缺口不得只活在注释里）")
+    void routingGapsShape() throws Exception {
+        when(productionRoutingMapper.selectList(any())).thenReturn(List.of());
+        when(productionOperationMapper.selectList(any())).thenReturn(List.of(
+                operationRow("op-26", "质检", "后道", "套", "1.50", 26)));
+        when(productionRouteSignalMapper.selectList(any())).thenReturn(List.of());
+
+        mockMvc.perform(get("/api/admin/production/routing-gaps"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.unrouted_operations[0].name").value("质检"))
+                .andExpect(jsonPath("$.data.unrouted_operations[0].group_name").value("后道"))
+                .andExpect(jsonPath("$.data.unrouted_operations[0].unit_price").value(1.50))
+                .andExpect(jsonPath("$.data.unrouted_operations[0].pending_confirmation")
+                        .value(true))
+                .andExpect(jsonPath("$.data.pending_confirmation_total").value(1))
+                .andExpect(jsonPath("$.data.signal_keys_without_route").isArray());
+    }
+
+    @Test
+    @DisplayName("#4308 五个写端点全部声明方法级 processing:manage（不新造权限码）")
+    void routingWriteFaceDeclaresManagePermission() throws Exception {
+        assertManagePermission("createRouting", Map.class);
+        assertManagePermission("updateRouting", String.class, Map.class);
+        assertManagePermission("createRouteSignal", Map.class);
+        assertManagePermission("updateRouteSignal", String.class, Map.class);
+        assertManagePermission("deleteRouteSignal", String.class);
+        assertManagePermission("createOperation", Map.class);
+    }
+
+    private void assertManagePermission(String method, Class<?>... params) throws Exception {
+        Method m = ProductionController.class.getMethod(method, params);
+        RequirePermission ann = m.getAnnotation(RequirePermission.class);
+        assertThat(ann).as("%s 必须声明方法级权限（类级 order:list 覆盖不了写操作）", method).isNotNull();
+        assertThat(ann.value()).as("%s 的权限码", method).isEqualTo("processing:manage");
     }
 
     private ProductionOperation operationRow(String id, String name, String group, String unit,

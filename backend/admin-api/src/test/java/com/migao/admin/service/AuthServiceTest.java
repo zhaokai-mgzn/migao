@@ -475,10 +475,11 @@ class AuthServiceTest {
         assertThat(production.getKey()).isEqualTo("production-center");
         assertThat(production.getChildren())
                 .extracting(com.migao.admin.dto.UserInfoResponse.MenuItem::getName)
-                .containsExactly("生产看板", "工序库", "计件工资");
+                .containsExactly("生产看板", "工序库", "工艺路线", "计件工资");
         assertThat(production.getChildren())
                 .extracting(com.migao.admin.dto.UserInfoResponse.MenuItem::getPath)
-                .containsExactly("/production", "/production/operations", "/production/piecework");
+                .containsExactly("/production", "/production/operations", "/production/routings",
+                        "/production/piecework");
 
         clearAuthentication();
     }
