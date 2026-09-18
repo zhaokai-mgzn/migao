@@ -58,6 +58,7 @@
     "V57__add_qty_source_to_position_operations.sql": "sha256:96f4d2669e5ab178b5e644b860ad0e0760364982324e22f5313bb9379dc4ac1d",
     "V58__seed_sheer_curtain_routings.sql": "sha256:8bf2da9b219edbfe31adcb2d097ffc036b78b8cc971df84fad8803950e85d38c",
     "V59__create_production_option_tables.sql": "sha256:9d0e78119e5d9bce831867d9f5c4549895044e570dec75ee5c6592b5fedb835c",
-    "V60__create_routing_customization_tables.sql": "sha256:5c4def3d47e78dd2d58e4a61b59f846a6a7baf34afa6299cd1a41cf7ade0bf5d"
+    "V60__create_routing_customization_tables.sql": "sha256:5c4def3d47e78dd2d58e4a61b59f846a6a7baf34afa6299cd1a41cf7ade0bf5d",
+    "V61__add_piecework_snapshot_to_work_logs.sql": "sha256:1c15afd906d1f1c181cca0b761351e78668cf2e9a7ed131f613eb740c6361f67"
   }
 }
