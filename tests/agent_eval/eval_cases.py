@@ -194,6 +194,7 @@ _CASE_AS_007 = EvalCase(
     order_before=['order_query before after_sales_manage', 'processing_ask before after_sales_manage', 'processing_ask before interact[confirm]'],
     must_succeed=[{'tool': 'after_sales_manage', 'action': 'create'}],
     pre_clean=[{'type': 'product_dedupe', 'product_keyword': '2699系列雪尼尔窗帘面料', 'price': 23.8}],
+    precondition=[{'type': 'product_count_for_keyword', 'source': '2699系列雪尼尔窗帘面料', 'expect': 1}],
 )
 
 # ── AS-008 [NORMAL] C 端售后进度查询 - 仅限本人工单 + 拒绝跨用户/快递单号式越权查询（源: cases/aftersales.yml）──
