@@ -127,22 +127,25 @@ const tableText = () => screen.getByRole('table').textContent ?? ''
 const statusSelect = () => screen.getByRole('combobox', { name: '状态筛选' })
 
 describe('生产管理菜单入口（侧边栏）', () => {
-  it('侧边栏出现「生产管理」组与四个节点，路径与权限码正确', () => {
+  it('侧边栏出现「生产管理」组与五个节点，路径与权限码正确', () => {
     render(<Sidebar collapsed={false} onToggle={() => {}} />)
 
     const group = screen.getByText('生产管理').closest('.mb-4') as HTMLElement
     expect(group).toBeTruthy()
     const links = group.querySelectorAll('a')
-    // 4 项：生产看板 / 工序库 / 工艺路线（issue #4307 新增）/ 计件工资
-    expect(links).toHaveLength(4)
+    // 5 项：生产看板 / 工序库 / 工艺路线（issue #4307）/ 加工费管理（issue #4386）/ 计件工资。
+    // ⚠️ 加工费管理插在工艺路线之后、计件工资之前 —— 既有 4 项的**位次不变**（本包只追加）。
+    expect(links).toHaveLength(5)
     expect(links[0].textContent).toContain('生产看板')
     expect(links[0]).toHaveAttribute('href', '/production')
     expect(links[1].textContent).toContain('工序库')
     expect(links[1]).toHaveAttribute('href', '/production/operations')
     expect(links[2].textContent).toContain('工艺路线')
     expect(links[2]).toHaveAttribute('href', '/production/routings')
-    expect(links[3].textContent).toContain('计件工资')
-    expect(links[3]).toHaveAttribute('href', '/production/piecework')
+    expect(links[3].textContent).toContain('加工费管理')
+    expect(links[3]).toHaveAttribute('href', '/production/processing-fees')
+    expect(links[4].textContent).toContain('计件工资')
+    expect(links[4]).toHaveAttribute('href', '/production/piecework')
   })
 
   it('「加工单」不再是独立菜单项：订单管理组只余订单列表/售后工单（issue #4357）', () => {
@@ -160,10 +163,11 @@ describe('生产管理菜单入口（侧边栏）', () => {
     expect(hrefs).not.toContain('/processing-orders')
   })
 
-  it('权限码口径一致：生产管理组四项统一 processing:manage（与既有 menu.ts 口径一致）', () => {
+  it('权限码口径一致：生产管理组五项统一 processing:manage（与既有 menu.ts 口径一致）', () => {
     const group = menuGroups.find((g) => g.key === 'production')
     expect(group).toBeTruthy()
     expect(group!.children.map((c) => c.permissionCode)).toEqual([
+      'processing:manage',
       'processing:manage',
       'processing:manage',
       'processing:manage',
