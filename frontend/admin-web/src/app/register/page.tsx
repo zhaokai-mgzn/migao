@@ -7,6 +7,7 @@ import { toast } from 'sonner'
 import { authApi } from '@/lib/api'
 import { fileApi } from '@/lib/api'
 import { cn } from '@/lib/utils'
+import { INDUSTRY_OPTIONS } from '@/lib/industry'
 import Logo from '@/components/ui/Logo'
 import type { RegistrationData, RegistrationResult } from '@/types'
 
@@ -93,7 +94,7 @@ export default function RegisterPage() {
   }
 
   // 步骤二：企业信息表单变更
-  const handleCompanyChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+  const handleCompanyChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target
     setCompanyForm(prev => ({ ...prev, [name]: value }))
     if (companyErrors[name]) setCompanyErrors(prev => ({ ...prev, [name]: '' }))
@@ -361,20 +362,28 @@ export default function RegisterPage() {
                 )}
               </div>
 
-              {/* 行业 */}
+              {/* 行业：受控下拉（issue #4363；行业是模板键，自由文本无法匹配 ⇒ 会静默不套用模板） */}
               <div>
                 <label htmlFor="industry" className="block text-sm font-medium text-neutral-700 mb-1.5">
                   行业 <span className="text-neutral-400 text-xs font-normal">（选填）</span>
                 </label>
-                <input
+                <select
                   id="industry"
                   name="industry"
-                  type="text"
                   value={companyForm.industry}
                   onChange={handleCompanyChange}
-                  placeholder="如：布艺纺织、家居建材、电子商务等"
-                  className={inputClassName(false)}
-                />
+                  className={cn(inputClassName(false), 'bg-white')}
+                >
+                  <option value="">请选择行业（选填）</option>
+                  {INDUSTRY_OPTIONS.map((o) => (
+                    <option key={o.code} value={o.code}>{o.label}</option>
+                  ))}
+                </select>
+                {companyForm.industry === 'other' && (
+                  <p className="mt-1.5 text-xs text-neutral-500" data-testid="register-industry-other-hint">
+                    其他行业暂不自动套用行业模板：开通后可到「工序库 → 一键套用行业模板」或手工维护工序与工艺路线。
+                  </p>
+                )}
               </div>
 
               {/* 企业地址 */}

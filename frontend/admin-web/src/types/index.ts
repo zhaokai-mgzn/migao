@@ -593,6 +593,32 @@ export interface ProcessingOrderItem {
   quantity?: number
   unit?: string
   processingItems?: ProcessingItemSnapshot[]
+  /**
+   * 工艺规格 + 算料输出（issue #4355 / 设计文档 §4.9 ③）。
+   *
+   * 快照由 Java `buildSnapshot` 从 `order_items.processing_info` **逐键透传**，
+   * 键名口径与订单层一致（§4.5：工艺规格 camelCase、算料输出 snake_case）。
+   * 未扩白名单的存量加工单**缺键** ⇒ 前端「缺值不渲染」（键缺席 = 未携带，不是错值）。
+   */
+  curtainType?: string
+  craft?: string
+  cuttingMode?: string
+  openCount?: number
+  isShaped?: boolean
+  style?: string
+  specialOptions?: string[]
+  pleatSpacing?: number
+  hasPattern?: boolean
+  patternRepeat?: number
+  fabric_meters?: number
+  processing_meters?: number
+  /** 加工费米数（camelCase 载体，§4.5；与 `processing_meters` 同值不同键） */
+  processingMeters?: number
+  pleat_count?: number
+  per_panel_pleats?: number
+  panels?: number
+  fullness?: number
+  fullness_actual?: number
   remark?: string
 }
 
@@ -710,6 +736,16 @@ export interface PieceworkSummary {
 
 // ── 工序库 / 工艺路线 / 计件报表（issue #4203/#4204/#4205；后端 ProductionOperationQueryService）──
 
+/**
+ * provenance（来源可信度，issue #4361 冻结三态；前端只消费，不发明取值）：
+ * - `实证`       有客户真实加工单/报价实证；
+ * - `推算`       行业推算（如按同类帘种/工艺推导），非实证值；
+ * - `占位待确认` 单价是**初始占位值**（V54 头注「【默】单价占位，商家可配」）⇒ 商家必须改价后才可当工资基数。
+ *
+ * 未知/缺省（老实例未升级）**不渲染任何徽标** —— 静默 = 未知，**不得**显示成「实证」。
+ */
+export type ProductionSource = '实证' | '推算' | '占位待确认'
+
 /** 工序库一道工序（库口径，非加工单实例） */
 export interface CatalogOperation {
   /** 库主键（V54 种子为 `op-v54-01` 形态的字符串，勿假定为数字） */
@@ -726,6 +762,8 @@ export interface CatalogOperation {
   is_must_finish: boolean
   /** 标记生产开始的首工序 */
   is_start_marker: boolean
+  /** 来源可信度（#4361；缺省 = 老实例，不渲染徽标） */
+  source?: ProductionSource | null
 }
 
 export interface CatalogGroup {
@@ -757,12 +795,33 @@ export interface Routing {
   craft: string
   operation_count: number
   operations?: RoutingStep[]
+  /** 来源可信度（#4361；缺省 = 老实例，不渲染徽标） */
+  source?: ProductionSource | null
 }
 
 /** GET /api/admin/production/routings */
 export interface RoutingsResponse {
   total?: number
   routings?: Routing[]
+}
+
+// ── 行业生产模板目录（issue #4361 冻结契约；前端只消费，写面权限码与后端一致）──
+
+/** GET /api/admin/production/seed-templates 的一项 */
+export interface ProductionSeedTemplate {
+  templateId: string
+  /** 行业 code（受控词表，见 lib/industry.ts） */
+  industry: string
+  name: string
+  version: number
+  description?: string
+}
+
+/** POST /api/admin/production/seed-templates/{templateId}/apply 的响应（套用幂等：已存在即跳过） */
+export interface ProductionSeedApplyResult {
+  created_operations: number
+  created_routings: number
+  skipped: number
 }
 
 // ── 工艺路线商家可配（issue #4307 前端半边；契约所有者 = 后端 4308）──

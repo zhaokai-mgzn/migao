@@ -340,7 +340,8 @@ cases:
     # ⚠️ 判据源 `is_single_leg_by_toolset` 认为「工具集 ⊆ XIAOBU_TOOLS ⇒ 只能跑小布」，
     # 但 order_create / validate_input / product_detail **两端都有**（OR-010 是 mibao 用例
     # 且 must_succeed[order_create] 已在 main）⇒ 该判据对"共享工具"用例是假阳性；
-    # 本条按**实际端别**标注，不按该判据反推（另见 issue 登记）。
+    # 本条按**实际端别**标注，不按该判据反推（判据已于 **#4356** 收紧为
+    # 「小布腿跑得动 ∧ 米宝腿跑不动」⇒ 本条不再命中规则 d）。
     persona: mibao
     tier: normal
     tags:

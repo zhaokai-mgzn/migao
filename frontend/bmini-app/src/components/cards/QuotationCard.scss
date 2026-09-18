@@ -57,14 +57,46 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* 工艺规格（issue #4355 / 设计文档 §4.9 ①）：缺值行不渲染，无工艺键时整块不出现 */
+.quotation-card__spec {
+  padding: 12rpx 0 4rpx;
+  border-top: 1px solid #f3f4f6;
+}
+
+.quotation-card__spec-title {
+  display: block;
+  font-size: 22rpx;
+  font-weight: 600;
+  color: #6b7280;
+  padding-bottom: 6rpx;
+}
+
+.quotation-card__spec-row {
+  display: flex;
+  align-items: baseline;
+  padding: 4rpx 0;
+}
+
+.quotation-card__spec-label {
+  width: 160rpx;
+  flex-shrink: 0;
+  font-size: 22rpx;
+  color: #9ca3af;
+}
+
+.quotation-card__spec-value {
+  flex: 1;
+  font-size: 22rpx;
+  color: #374151;
+  word-break: break-all;
+}
+
 .quotation-card__warning {
   margin-top: 12rpx;
   padding: 12rpx 16rpx;
   background: #fff7e6;
   border-radius: 8rpx;
-}
-
-.quotation-card__warning-text {
+}.quotation-card__warning-text {
   font-size: 22rpx;
   color: #d48806;
 }

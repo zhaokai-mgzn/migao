@@ -12,6 +12,7 @@ import { Button, Loading, Modal } from '@/components/ui'
 import { OrderProgressSteps, CloseOrderModal, LogisticsForm, RefundOrderModal, ProcessingOrderBlock, ShipmentDoc } from '@/components/orders'
 import type { Order, OrderItem, LogisticsFormData, ProcessingOrder } from '@/types'
 import { normalizeOrderStatus, displayOrderStatus } from '@/types'
+import { craftSpecRows } from '@/lib/craft-display'
 import { cn } from '@/lib/utils'
 
 // 格式化金额（含千分位+两位小数）
@@ -648,6 +649,29 @@ function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
   )
 }
 
+/**
+ * 工艺规格（issue #4355 / 设计文档 §4.9 ② 订单）。
+ *
+ * 渲染 `order_items.processing_info` 里**已经落库**的那一份对象（直读，不二次推导 —— §4.9
+ * 一致性硬约束：报价单展示的工艺参数必须就是下单落库的那一份）。
+ * 缺值不渲染：无任何工艺键 ⇒ 整块不出现（存量单形态）；**绝不**出现 undefined/null/NaN。
+ */
+function CraftSpecList({ source }: { source?: Record<string, unknown> }) {
+  const rows = craftSpecRows(source)
+  if (rows.length === 0) return null
+  return (
+    <div className="mt-1 space-y-0.5" data-testid="order-craft-spec">
+      <div className="text-xs font-medium text-neutral-500">工艺规格</div>
+      {rows.map((row) => (
+        <div key={row.label} className="flex flex-wrap gap-x-1.5 text-xs">
+          <span className="text-neutral-400">{row.label}</span>
+          <span className="text-neutral-700">{row.value}</span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 function ProductTable({ groups }: { groups: ProductGroup[] }) {
   if (groups.length === 0) {
     return <div className="text-center text-neutral-400 py-8 text-sm">暂无商品</div>
@@ -691,6 +715,8 @@ function ProductTable({ groups }: { groups: ProductGroup[] }) {
                     if (pi?.doorWidth) parts.push(`门幅${pi.doorWidth}`)
                     return parts.join(' / ') || '-'
                   })()}
+                  {/* 工艺规格（issue #4355 / 设计文档 §4.9 ②）：直读 processing_info，缺值行已丢弃 */}
+                  <CraftSpecList source={row.processingInfo} />
                 </Td>
                 <Td align="right" className="text-red-500 font-medium">
                   {formatAmount(row.unitPrice)}

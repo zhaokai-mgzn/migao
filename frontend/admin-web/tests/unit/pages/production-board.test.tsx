@@ -6,8 +6,13 @@
 // 反 placeholder：看板断言必须落到真实数据行，不能只断言页面存在。
 // PP-014（issue #4307 前端半边）：菜单组新增第 4 项「工艺路线」—— 页面存在但侧边栏进不去
 // 等于没交付；本文件的链接清单 + 权限码断言随之由三项改四项（红证：加项后旧断言即红）。
+// PG-019 / issue #4360（分页 + 懒加载）：看板原先对**全部**加工单一次性扇出详情
+// （1 + 2N 次 HTTP，100 单 = 201 请求）——本文件的请求数断言即该缺陷的红证锚点：
+// ① 首屏只为当前页（默认 20）发详情请求；② 切页只为新页发；③ 切回已加载页不重复发；
+// ④ 「刷新」显式清缓存并重取当前页。判据是**调用次数**，不是渲染结果（渲染不出请求扇出）。
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 
 const mockList = vi.fn()
 const mockGetOrderOperations = vi.fn()
@@ -65,6 +70,16 @@ const ORDERS = [
 ]
 
 const ok = (data: unknown) => ({ data: { success: true, data } })
+
+// 100 张加工单：请求扇出缺陷的**最小可判规模**（100 单 = 200 次详情请求）
+const MANY_ORDERS = Array.from({ length: 100 }, (_, i) => ({
+  id: `po-${i + 1}`,
+  orderId: `order-uuid-${i + 1}`,
+  orderNo: `MG20260917${String(i + 1).padStart(3, '0')}`,
+  processingOrderNo: `JG-20260917-${String(i + 1).padStart(4, '0')}`,
+  customerName: `客户${i + 1}`,
+  status: 'in_processing' as const,
+}))
 
 describe('生产管理菜单入口（侧边栏）', () => {
   it('侧边栏出现「生产管理」组与四个节点，路径与权限码正确', () => {
@@ -134,12 +149,12 @@ describe('生产看板页 /production', () => {
     expect(screen.getAllByTestId(/^production-row-po-/)).toHaveLength(2)
     expect(screen.getByTestId('production-row-po-1')).toHaveTextContent('JG-20260917-0001')
     expect(screen.getByTestId('production-row-po-1')).toHaveTextContent('MG20260917001')
-    // 每单工序进度
-    expect(screen.getByTestId('production-row-progress-po-1')).toHaveTextContent('36%')
+    // 每单工序进度（issue #4360：详情懒加载 ⇒ 行先渲染，进度/计件随后异步补齐）
+    await waitFor(() => expect(screen.getByTestId('production-row-progress-po-1')).toHaveTextContent('36%'))
     expect(screen.getByTestId('production-row-progress-po-1')).toHaveTextContent('4/11')
     expect(screen.getByTestId('production-row-progress-po-2')).toHaveTextContent('0%')
     // 每单计件合计
-    expect(screen.getByTestId('production-row-piecework-po-1')).toHaveTextContent('¥17.00')
+    await waitFor(() => expect(screen.getByTestId('production-row-piecework-po-1')).toHaveTextContent('¥17.00'))
     expect(screen.getByTestId('production-row-piecework-po-2')).toHaveTextContent('¥0.00')
   })
 
@@ -165,5 +180,129 @@ describe('生产看板页 /production', () => {
 
     await waitFor(() => expect(screen.getByTestId('production-board-error')).toBeInTheDocument())
     expect(screen.getByTestId('production-board-retry')).toBeInTheDocument()
+  })
+})
+
+// ── issue #4360：请求扇出 ⇒ 分页 + 懒加载（判据 = HTTP 调用次数）──────────────
+describe('生产看板页 /production 分页 + 懒加载（issue #4360）', () => {
+  const PAGE_SIZE = 20
+  const detailCalls = () => mockGetOrderOperations.mock.calls.length
+  const rowCount = () => screen.getAllByTestId(/^production-row-po-/).length
+  // 等「当前页详情都发完」：最后一次调用的 orderId 是页内第 N 条（默认 20）
+  const waitPageLoaded = (last: number) =>
+    waitFor(() => expect(mockGetOrderOperations).toHaveBeenCalledWith(`order-uuid-${last}`))
+
+  beforeEach(() => {
+    mockList.mockReset().mockResolvedValue(ok(MANY_ORDERS))
+    mockGetOrderOperations.mockReset().mockImplementation((orderId: string) =>
+      Promise.resolve(ok({ positions: [], progress: { total: 10, done: 3, percent: 30 } })),
+    )
+    mockGetPiecework.mockReset().mockImplementation((orderId: string) => Promise.resolve(ok({ total: 17 })))
+  })
+
+  it('100 张单首屏：只为当前页（20）发详情，不对 100 行扇出', async () => {
+    render(<ProductionBoardPage />)
+
+    await waitPageLoaded(PAGE_SIZE)
+    expect(rowCount()).toBe(PAGE_SIZE)
+    // 缺陷形态是 100 次（每单 1 次）；修复后 ≤ 页大小
+    expect(detailCalls()).toBeLessThanOrEqual(PAGE_SIZE)
+    expect(mockGetPiecework.mock.calls.length).toBeLessThanOrEqual(PAGE_SIZE)
+    expect(detailCalls()).toBe(PAGE_SIZE)
+    expect(mockGetOrderOperations).not.toHaveBeenCalledWith(`order-uuid-${PAGE_SIZE + 1}`)
+  })
+
+  it('切到第 2 页：只为第 2 页发详情（累计 = 2 × 页大小）', async () => {
+    const user = userEvent.setup()
+    render(<ProductionBoardPage />)
+    await waitPageLoaded(PAGE_SIZE)
+
+    await user.click(screen.getByRole('button', { name: '2' }))
+
+    await waitPageLoaded(PAGE_SIZE * 2)
+    expect(detailCalls()).toBe(2 * PAGE_SIZE)
+    expect(mockGetPiecework.mock.calls.length).toBe(2 * PAGE_SIZE)
+    expect(rowCount()).toBe(PAGE_SIZE)
+    expect(screen.getByTestId(`production-row-po-${PAGE_SIZE + 1}`)).toBeInTheDocument()
+  })
+
+  it('切回第 1 页：命中缓存，不重复请求', async () => {
+    const user = userEvent.setup()
+    render(<ProductionBoardPage />)
+    await waitPageLoaded(PAGE_SIZE)
+    await user.click(screen.getByRole('button', { name: '2' }))
+    await waitPageLoaded(PAGE_SIZE * 2)
+    const before = detailCalls()
+
+    await user.click(screen.getByRole('button', { name: '1' }))
+
+    await waitFor(() => expect(screen.getByTestId('production-row-po-1')).toBeInTheDocument())
+    expect(detailCalls()).toBe(before)
+    expect(mockGetPiecework.mock.calls.length).toBe(before)
+  })
+
+  it('点「刷新」：清缓存并重新请求当前页', async () => {
+    const user = userEvent.setup()
+    render(<ProductionBoardPage />)
+    await waitPageLoaded(PAGE_SIZE)
+    await user.click(screen.getByRole('button', { name: '2' }))
+    await waitPageLoaded(PAGE_SIZE * 2)
+    const before = detailCalls()
+
+    await user.click(screen.getByRole('button', { name: /刷新/ }))
+
+    await waitFor(() => expect(detailCalls()).toBe(before + PAGE_SIZE))
+    expect(mockGetPiecework.mock.calls.length).toBe(before + PAGE_SIZE)
+  })
+
+  it('页大小可见可切：20 → 50 只为新页补发详情', async () => {
+    const user = userEvent.setup()
+    render(<ProductionBoardPage />)
+    await waitPageLoaded(PAGE_SIZE)
+
+    await user.selectOptions(screen.getByRole('combobox'), '50')
+
+    await waitPageLoaded(50)
+    expect(detailCalls()).toBe(50)
+    expect(rowCount()).toBe(50)
+    expect(screen.getByRole('combobox')).toHaveValue('50')
+  })
+
+  // ── issue #4372：失败行的缓存语义（把"真实"行为钉住，防被"照注释修正"成死循环）──
+  //
+  // 为什么必须钉：`page.tsx` 里 `if (d.status === 'fulfilled')` 只是 **TS 类型收窄**，
+  // 内层 `allSettled` 让 mapper 永不 reject ⇒ **失败行同样进缓存、本会话不重试**。
+  // 若有人把它读成「失败不写缓存」并照此改实现，`pending` 会**永不收敛** ⇒
+  // 每次 `setRows(prev.map(...))` 产生新数组 ⇒ effect（依赖 `[rows,…]`）反复触发
+  // ⇒ **无限请求循环**。本条断言即该陷阱的红线：改坏即红。
+  it('详情永久失败的行：仍进缓存 ⇒ 切页来回不重发（防"失败不写缓存"改成死循环）', async () => {
+    const user = userEvent.setup()
+    // 仅 order-uuid-1 的**两个**详情接口都永久失败，其余正常
+    mockGetOrderOperations.mockImplementation((orderId: string) =>
+      orderId === 'order-uuid-1'
+        ? Promise.reject(new Error('boom'))
+        : Promise.resolve(ok({ positions: [], progress: { total: 10, done: 3, percent: 30 } })),
+    )
+    mockGetPiecework.mockImplementation((orderId: string) =>
+      orderId === 'order-uuid-1' ? Promise.reject(new Error('boom')) : Promise.resolve(ok({ total: 17 })),
+    )
+    render(<ProductionBoardPage />)
+    await waitPageLoaded(PAGE_SIZE)
+
+    // 该行保持「—」形态（计件 ¥0.00、进度 0%），且不拖垮其它行
+    expect(screen.getByTestId('production-row-piecework-po-1')).toHaveTextContent('¥0.00')
+    expect(screen.getByTestId('production-row-progress-po-1')).toHaveTextContent('0%')
+    expect(screen.getByTestId('production-row-piecework-po-2')).toHaveTextContent('¥17.00')
+    const failedCalls = () => mockGetOrderOperations.mock.calls.filter((c) => c[0] === 'order-uuid-1').length
+    expect(failedCalls()).toBe(1)
+
+    await user.click(screen.getByRole('button', { name: '2' }))
+    await waitPageLoaded(PAGE_SIZE * 2)
+    await user.click(screen.getByRole('button', { name: '1' }))
+    await waitFor(() => expect(screen.getByTestId('production-row-po-1')).toBeInTheDocument())
+
+    // 关键判据：失败行**没有**被重发（= 已进缓存）。改成"失败不写缓存" ⇒ 这里变 2 ⇒ 红。
+    expect(failedCalls()).toBe(1)
+    expect(screen.getByTestId('production-row-po-1')).toBeInTheDocument()
   })
 })
