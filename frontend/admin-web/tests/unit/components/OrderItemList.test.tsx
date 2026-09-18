@@ -1,4 +1,4 @@
-// case_ids: OR-001
+// case_ids: OR-001, UI-020
 // @vitest-environment jsdom
 import { describe, it, expect } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
@@ -204,6 +204,99 @@ describe('OrderItemList', () => {
       render(<OrderItemList items={[makeItem({ unitPrice: 1234.56, subtotal: 12345.67 })]} />)
       const matches = screen.getAllByText('¥12,345.67')
       expect(matches.length).toBeGreaterThanOrEqual(1)
+    })
+  })
+
+  // issue #4355 / 设计文档 §4.9 ② 订单：明细行展示工艺规格（渲染 order_items.processing_info）
+  describe('craft spec', () => {
+    it('渲染工艺规格行：部位/工艺/加工类型/打开方式/是否定型/款式/特殊选项', () => {
+      render(
+        <OrderItemList
+          items={[
+            makeItem({
+              processingInfo: {
+                curtainType: '布帘',
+                craft: '韩褶',
+                cuttingMode: '定高买宽',
+                openCount: 2,
+                isShaped: true,
+                style: '拼色',
+                specialOptions: ['加铅线', '双褶'],
+              },
+            }),
+          ]}
+        />
+      )
+      expect(screen.getByText('工艺规格')).toBeInTheDocument()
+      expect(screen.getByText('布帘')).toBeInTheDocument()
+      expect(screen.getByText('韩褶')).toBeInTheDocument()
+      expect(screen.getByText('定高买宽')).toBeInTheDocument()
+      expect(screen.getByText('双开')).toBeInTheDocument()
+      expect(screen.getByText('拼色')).toBeInTheDocument()
+      expect(screen.getByText('加铅线、双褶')).toBeInTheDocument()
+      // 「是否定型」= 是（按行断言，避免与其它「是」歧义）
+      expect(screen.getByText('是否定型').parentElement?.textContent).toContain('是')
+    })
+
+    it('渲染算料口径：总褶数/折数（每片）/褶距/幅数/褶倍/米数/是否对花/花距', () => {
+      render(
+        <OrderItemList
+          items={[
+            makeItem({
+              processingInfo: {
+                pleat_count: 52,
+                per_panel_pleats: 26,
+                pleatSpacing: 0.1,
+                panels: 4,
+                fullness: 2,
+                fullness_actual: 1.86,
+                fabric_meters: 13.3,
+                processingMeters: 13.3,
+                hasPattern: true,
+                patternRepeat: 0.32,
+              },
+            }),
+          ]}
+        />
+      )
+      expect(screen.getByText('52')).toBeInTheDocument()
+      expect(screen.getByText('26')).toBeInTheDocument()
+      expect(screen.getByText('0.1米')).toBeInTheDocument()
+      expect(screen.getByText('4')).toBeInTheDocument()
+      expect(screen.getByText('2 倍')).toBeInTheDocument()
+      expect(screen.getByText('1.86 倍')).toBeInTheDocument()
+      // 面料米数 / 加工费米数 = §4.9 要求的**两个字段**（§6.1 口径拆两值）⇒ 同值时出现两次
+      expect(screen.getAllByText('13.3米')).toHaveLength(2)
+      expect(screen.getByText('0.32米')).toBeInTheDocument()
+      expect(screen.getByText('是否对花')).toBeInTheDocument()
+    })
+
+    it('工艺键不再落进「加工: k: v」原始键值兜底行（同一真值不重复展示）', () => {
+      render(
+        <OrderItemList
+          items={[makeItem({ processingInfo: { craft: '韩褶', edgeType: '卷边' } })]}
+        />
+      )
+      expect(screen.getByText('韩褶')).toBeInTheDocument()
+      // 兜底行只剩非工艺键
+      expect(screen.getByText(/加工: edgeType: 卷边/)).toBeInTheDocument()
+      expect(screen.queryByText(/加工:.*craft/)).toBeNull()
+    })
+
+    it('缺值不渲染：无工艺键时无「工艺规格」块，且不出现 undefined/null/NaN', () => {
+      const { container } = render(
+        <OrderItemList
+          items={[
+            makeItem({
+              processingInfo: { colorName: '米白', craft: null, openCount: null, style: '' },
+            }),
+          ]}
+        />
+      )
+      expect(screen.queryByText('工艺规格')).toBeNull()
+      expect(screen.queryByText('工艺')).toBeNull()
+      expect(screen.queryByText('打开方式')).toBeNull()
+      expect(container.textContent).not.toMatch(/undefined|null|NaN/)
     })
   })
 })

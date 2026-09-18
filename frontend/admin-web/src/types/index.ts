@@ -593,6 +593,32 @@ export interface ProcessingOrderItem {
   quantity?: number
   unit?: string
   processingItems?: ProcessingItemSnapshot[]
+  /**
+   * 工艺规格 + 算料输出（issue #4355 / 设计文档 §4.9 ③）。
+   *
+   * 快照由 Java `buildSnapshot` 从 `order_items.processing_info` **逐键透传**，
+   * 键名口径与订单层一致（§4.5：工艺规格 camelCase、算料输出 snake_case）。
+   * 未扩白名单的存量加工单**缺键** ⇒ 前端「缺值不渲染」（键缺席 = 未携带，不是错值）。
+   */
+  curtainType?: string
+  craft?: string
+  cuttingMode?: string
+  openCount?: number
+  isShaped?: boolean
+  style?: string
+  specialOptions?: string[]
+  pleatSpacing?: number
+  hasPattern?: boolean
+  patternRepeat?: number
+  fabric_meters?: number
+  processing_meters?: number
+  /** 加工费米数（camelCase 载体，§4.5；与 `processing_meters` 同值不同键） */
+  processingMeters?: number
+  pleat_count?: number
+  per_panel_pleats?: number
+  panels?: number
+  fullness?: number
+  fullness_actual?: number
   remark?: string
 }
 
