@@ -291,6 +291,11 @@ def build_quote(
         `fullness` = **理论**倍数（档位名义值 / 款式默认值），随档位走；
         `fullness_actual` = **实际**倍数（折数法用料 ÷ 窗宽，仅折数法给出），随用料走。
         顾客自报折数时二者不等（如 48 折 → 理论 2.0 / 实际 1.86）⇒ 展示必须取实际值。
+
+    默认档告警（issue #4118 ⑤-B）：
+        `mounting=s_hook` 且未传 `craft_tier`/`pleat_count` ⇒ 仍走倍数法（**数值一字不变**），
+        但 `warning` 里**显式**说明「本次按倍数法计价、非标准档折数法」——此前这句是缺失的
+        （静默回落）。告警只治静默，不改口径。
     """
     # 褶皱倍数默认值
     N = fullness if fullness is not None else DEFAULT_FULLNESS.get(mounting, 2.0)
@@ -342,6 +347,18 @@ def build_quote(
             has_pattern=has_pattern,
             pattern_repeat=pattern_repeat,
         )
+        if mounting == "s_hook":
+            # issue #4118 ⑤-B：韩褶（s_hook）的**标准档口径是折数法**，但折数法只在显式传
+            # `craft_tier` / `pleat_count` 时触发（`pleat_mode` 判据）⇒ 两者都缺时这里**静默**
+            # 走了倍数法：实测同一单（6.6m 窗 / 2.6m 高 / 双开 / 3.2m 门幅）倍数法 13.8 米，
+            # 而标准档折数法 13.3 米（52 折），差 0.5 米却**零告警**。
+            # 治法 = **只补显式告警、不动一个数值**（把默认档接成标准档 = 改既有报价口径 = 改钱，
+            # 需客户裁定，不在本包）。
+            warning = (warning + " " if warning else "") + (
+                "未指定工艺档位（craft_tier）或折数（pleat_count），"
+                f"本次按倍数法计价（{N:g} 倍），非标准档折数法；"
+                "如需标准档请传 craft_tier 或 pleat_count。"
+            )
 
     # 面料费
     fabric_cost = meters * fabric_price
