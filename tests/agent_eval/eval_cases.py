@@ -3453,6 +3453,8 @@ _CASE_OR_010 = EvalCase(
     want_text=['订单号'],
     required_args=[{'tool': 'order_create', 'fields': ['customer_phone', 'items']}],
     must_succeed=[{'tool': 'order_create'}],
+    namespaces=['customer_phone:13812345678'],
+    precondition=[{'type': 'product_count_for_keyword', 'source': '遮光窗帘', 'expect': 1}],
 )
 
 # ── OR-011 [NORMAL] AI 下单闭环 - 算料报价→确认→SMS→订单创建（源: cases/order.yml）──
@@ -4582,7 +4584,7 @@ _CASE_PP_011 = EvalCase(
     difficulty=Difficulty.NORMAL,
     user_inputs=['打开加工单生产明细，看工序进度和计件汇总，打印任务卡给工人扫码'],
     expectations=['direct_reply'],
-    data_checks=['工序进度表按部位分组渲染，行内给出「工序名 / 分组 / 应做数量+单位 / 单价 / 状态（待做|已完成）/ 已完成数量」', '必完工序（is_must_finish）加「必完」标记；非必完工序不得出现该标记', '进度条读 progress.percent 且与「已完成 done/total 道工序」文案一致（50% ⇒ 1/2）', '计件汇总渲染 total（¥ 两位小数）+ per_operation 明细；per_worker 非空时展示分人金额', '任务卡二维码内容 = qr_token（svg title = token）；qr_token 缺失时给占位提示而不是空码', '任务卡工序清单逐行渲染工序名 / 应做数量+单位 + 每行一个手工勾选位，并说明工人扫码后在小程序报工', '无工序 / 无计件 / 接口失败均渲染空态或错误提示 + 重试，不白屏'],
+    data_checks=['工序进度表按部位分组渲染，行内给出「工序名 / 分组 / 应做数量+单位 / 单价 / 状态（待做|已完成）/ 已完成数量 / 报工人」', '必完工序（is_must_finish）加「必完」标记；非必完工序不得出现该标记', '进度条读 progress.percent 且与「已完成 done/total 道工序」文案一致（50% ⇒ 1/2）', '计件汇总渲染 total（¥ 两位小数）+ per_operation 明细；per_worker 非空时展示分人金额', '任务卡二维码内容 = qr_token（svg title = token）；qr_token 缺失时给占位提示而不是空码', '任务卡工序清单逐行渲染工序名 / 应做数量+单位 + 每行一个手工勾选位，并说明工人扫码后在小程序报工', '无工序 / 无计件 / 接口失败均渲染空态或错误提示 + 重试，不白屏'],
     skip_reason='[backend-contract] 前端渲染行为（admin-web 组件/页面），由 vitest 单测全量覆盖（tests/unit/components/{ProductionProgressTable,PieceworkTable,TaskCardPrint}.test.tsx、tests/unit/pages/processing-orders-production.test.tsx、tests/unit/lib/use-route-id.test.ts），非 LLM 行为，不进入 agent-eval 冒烟（同 PP-010 惯例）',
     tags=['processing', 'production', 'admin_web', 'print_task_card', 'qrcode'],
     persona='',

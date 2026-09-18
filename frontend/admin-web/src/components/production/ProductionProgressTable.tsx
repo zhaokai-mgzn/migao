@@ -8,7 +8,7 @@ import type { ProductionPosition } from '@/types'
 /**
  * 工序进度表（issue #4000，M4-H 按需单据渲染）
  *
- * 按**部位**分组展示加工单的工序实例：工序名 / 分组 / 应做数量+单位 / 单价 / 状态 / 已完成数量。
+ * 按**部位**分组展示加工单的工序实例：工序名 / 分组 / 应做数量+单位 / 单价 / 状态 / 已完成数量 / 报工人。
  * 必完工序（is_must_finish，「此工序必须完成才可打包」）加「必完」badge —— 商家据此看进度、
  * 工人据此知道哪道不能漏（真值源：docs/curtain-production-rules.md §2 工序库）。
  * 应做数量由算料引擎给出、报工只确认（§3），故此处只读展示、不做手工计算。
@@ -67,6 +67,7 @@ export default function ProductionProgressTable({ positions, className }: Produc
                       <th className="px-4 py-2.5 text-left font-medium whitespace-nowrap">单价</th>
                       <th className="px-4 py-2.5 text-left font-medium whitespace-nowrap">状态</th>
                       <th className="px-4 py-2.5 text-left font-medium whitespace-nowrap">已完成数量</th>
+                      <th className="px-4 py-2.5 text-left font-medium whitespace-nowrap">报工人</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -101,6 +102,10 @@ export default function ProductionProgressTable({ positions, className }: Produc
                           </td>
                           <td className="px-4 py-3 text-neutral-900 whitespace-nowrap" data-testid="op-done">
                             {formatQty(op.done_qty, op.unit)}
+                          </td>
+                          {/* 报工人（issue #4309）：后端 workers 已去重/排序/折「未署名」；无报工 ⇒ 「—」 */}
+                          <td className="px-4 py-3 text-neutral-600" data-testid="op-workers">
+                            {op.workers?.join('、') || '—'}
                           </td>
                         </tr>
                       )

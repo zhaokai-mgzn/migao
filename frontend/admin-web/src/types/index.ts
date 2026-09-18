@@ -656,6 +656,12 @@ export interface ProductionOperation {
   /** pending 待做 / done 已完成 */
   status?: string | null
   done_qty?: number
+  /**
+   * 报工人（issue #4309）：该工序实例下报过工的人（`production_work_logs.worker_name`）。
+   * 后端已去重、按首次报工时间升序、只取 `work_type='normal'`、空名折「未署名」；
+   * 无报工 = 空数组 ⇒ 表格渲染「—」。**商家侧**生产明细专用，不得进顾客面卡片。
+   */
+  workers?: string[]
 }
 
 /** 按部位（布帘/纱帘/帘头…）分组的工序实例 */

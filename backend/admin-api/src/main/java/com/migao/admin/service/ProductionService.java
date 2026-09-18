@@ -31,6 +31,7 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -72,6 +73,9 @@ public class ProductionService {
      * 有它 ⇒ 本次**没有**新落库，前端不该把它当成一次新报工（进度/完工提示会因此错位）。
      */
     public static final String REPLAYED_KEY = "replayed";
+
+    /** 报工人姓名缺省文案（issue #4309）：与工人端报工明细 `log.worker_name || '未署名'` 同文案 */
+    private static final String UNSIGNED_WORKER = "未署名";
 
     private static final Map<String, String> ORDER_STATUS_LABELS = Map.of(
             "pending", "待付款",
@@ -298,11 +302,15 @@ public class ProductionService {
         List<ProcessingPositionOperation> operations = po == null
                 ? List.of()
                 : listOperations(po.getId(), tenantId);
+        // 报工人（issue #4309）：**一次**取回报工记录再内存分组 —— 按工序逐个查是 N+1（#4304 同族）
+        Map<String, List<String>> workers = po == null
+                ? Map.of()
+                : workersByOperation(listWorkLogs(po.getId(), tenantId));
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("order_id", order.getId());
         result.put("qr_token", po == null ? null : po.getQrToken());
-        result.put("positions", buildPositions(operations));
+        result.put("positions", buildPositions(operations, workers));
         result.put("progress", progressOf(operations));
         return result;
     }
@@ -926,13 +934,15 @@ public class ProductionService {
     }
 
     /** 按部位分组的工序树（顺序 = 部位名 / seq，来自 listOperations）。 */
-    private List<Map<String, Object>> buildPositions(List<ProcessingPositionOperation> operations) {
+    private List<Map<String, Object>> buildPositions(List<ProcessingPositionOperation> operations,
+                                                     Map<String, List<String>> workersByOperation) {
         Map<String, List<Map<String, Object>>> grouped = new LinkedHashMap<>();
         Set<String> seen = new HashSet<>();
         for (ProcessingPositionOperation op : operations) {
             String positionName = op.getPositionName() == null ? "" : op.getPositionName();
             seen.add(positionName);
-            grouped.computeIfAbsent(positionName, k -> new ArrayList<>()).add(operationView(op));
+            grouped.computeIfAbsent(positionName, k -> new ArrayList<>())
+                    .add(operationView(op, workersByOperation.getOrDefault(op.getId(), List.of())));
         }
         List<Map<String, Object>> positions = new ArrayList<>();
         for (String positionName : seen) {
@@ -944,7 +954,31 @@ public class ProductionService {
         return positions;
     }
 
-    private Map<String, Object> operationView(ProcessingPositionOperation op) {
+    /**
+     * 报工人（issue #4309）：工序实例 → 报过工的人。
+     *
+     * <p>只取 {@code work_type='normal'}（与「已完成数量 / 计件」同源：返工/报废既不推进进度
+     * 也不计件，混进来会让相邻两列不同口径）；按**首次报工时间**升序去重 —— {@link #listWorkLogs}
+     * 已按 {@code created_at} 升序，故按遇到顺序去重即为首次报工序；{@code worker_name} 空/blank
+     * 统一「未署名」（与工人端报工明细同文案）。无 normal 报工 ⇒ 空数组（前端渲染「—」）。
+     */
+    private Map<String, List<String>> workersByOperation(List<ProductionWorkLog> logs) {
+        Map<String, LinkedHashSet<String>> grouped = new HashMap<>();
+        for (ProductionWorkLog log : logs) {
+            if (!"normal".equals(log.getWorkType()) || log.getOperationId() == null) {
+                continue;
+            }
+            String name = StringUtils.hasText(log.getWorkerName())
+                    ? log.getWorkerName().trim()
+                    : UNSIGNED_WORKER;
+            grouped.computeIfAbsent(log.getOperationId(), k -> new LinkedHashSet<>()).add(name);
+        }
+        Map<String, List<String>> result = new HashMap<>();
+        grouped.forEach((operationId, names) -> result.put(operationId, List.copyOf(names)));
+        return result;
+    }
+
+    private Map<String, Object> operationView(ProcessingPositionOperation op, List<String> workers) {
         Map<String, Object> view = new LinkedHashMap<>();
         view.put("id", op.getId());
         view.put("seq", op.getSeq());
@@ -959,6 +993,8 @@ public class ProductionService {
         view.put("is_start_marker", Boolean.TRUE.equals(op.getIsStartMarker()));
         view.put("status", op.getStatus() == null ? "pending" : op.getStatus());
         view.put("done_qty", nz(op.getDoneQty()));
+        // 追加键（issue #4309）：既有键名/含义/顺序一字不改
+        view.put("workers", workers);
         return view;
     }
 

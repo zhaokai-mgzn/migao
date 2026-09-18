@@ -2370,7 +2370,7 @@
 必须成功: order_create
 ```
 真值: order.states, order.create-flow
-溯源: verification 1.8 独有（smoke 简化版，与 OR-008/OR-009 的细粒度版互补）；2026-08-14 按 EXAMPLES-order.md 例2 校准为多轮（完整收货信息→选1→确认），单轮直下单与设计澄清流程不符；2026-09-02 补价格铁律；2026-09-04 修复 choice 卡片消费协议不匹配（审计 #2818 Agent Eval 失败根因）：原「选1」为自然语言序号，LLM 无法关联 interact(choice) 选项导致反复 product_detail 追问、永不进入 validate_input/order_create；改为显式售卖方式描述（与 OR-008/009 一致），且「2件」与商品按米计价（¥99/米）矛盾改为「2米」，实测全流程通过；2026-09-09 校准：R3「确认下单」改「不添加加工项，确认下单」+ 补第4轮「确认下单」——agent 把加工项询问当强制环节，用户说「确认下单」仍发加工项卡（probe 实证），需明确跳过加工项才推进（与 OR-009 校准一致）；2026-09-17 校准（issue #4014 B3）：补效果层断言 must_succeed[order_create]（简化流程此前只断言 validate_input/order_create 出现过 ⇒「调用了 ≠ 成了」；真实 run 里本用例首跑红指纹含 `no_success(order_create)`，说明失败确实发生过而断言看不见）；user_inputs / expectations / required_args / want_text 原样未动 ｜ tags: create, confirm
+溯源: verification 1.8 独有（smoke 简化版，与 OR-008/OR-009 的细粒度版互补）；2026-08-14 按 EXAMPLES-order.md 例2 校准为多轮（完整收货信息→选1→确认），单轮直下单与设计澄清流程不符；2026-09-02 补价格铁律；2026-09-04 修复 choice 卡片消费协议不匹配（审计 #2818 Agent Eval 失败根因）：原「选1」为自然语言序号，LLM 无法关联 interact(choice) 选项导致反复 product_detail 追问、永不进入 validate_input/order_create；改为显式售卖方式描述（与 OR-008/009 一致），且「2件」与商品按米计价（¥99/米）矛盾改为「2米」，实测全流程通过；2026-09-09 校准：R3「确认下单」改「不添加加工项，确认下单」+ 补第4轮「确认下单」——agent 把加工项询问当强制环节，用户说「确认下单」仍发加工项卡（probe 实证），需明确跳过加工项才推进（与 OR-009 校准一致）；2026-09-17 校准（issue #4014 B3）：补效果层断言 must_succeed[order_create]（简化流程此前只断言 validate_input/order_create 出现过 ⇒「调用了 ≠ 成了」；真实 run 里本用例首跑红指纹含 `no_success(order_create)`，说明失败确实发生过而断言看不见）；user_inputs / expectations / required_args / want_text 原样未动。2026-09-18（burn-down 缴费，随 #4309 的用例面改动）：补 `namespaces[customer_phone:13812345678]` + `precondition[product_count_for_keyword: 遮光窗帘 expect=1]` —— 一次销掉该条存量违规的 `CASE-TRUST-NO-SELF-CLEAN`（写用例未声明自清理）与 `CASE-TRUST-NO-PRECONDITION-ASSERTION`（按名字选品无可判定前置），整条销账、清单条目随之删除；形态与 OR-009 / PR-007 同一份（同关键词、同 `product_dedupe` 族、同 `expect=1`），断言面（expectations / required_args / must_succeed / data_checks / want_text）一字未动。 ｜ tags: create, confirm
 
 ### OR-011. AI 下单闭环 - 算料报价→确认→SMS→订单创建 🔵
 ```
@@ -2989,7 +2989,7 @@
 ```
 你: 打开加工单生产明细，看工序进度和计件汇总，打印任务卡给工人扫码
 期望: direct_reply
-数据: 工序进度表按部位分组渲染，行内给出「工序名 / 分组 / 应做数量+单位 / 单价 / 状态（待做|已完成）/ 已完成数量」
+数据: 工序进度表按部位分组渲染，行内给出「工序名 / 分组 / 应做数量+单位 / 单价 / 状态（待做|已完成）/ 已完成数量 / 报工人」
 数据: 必完工序（is_must_finish）加「必完」标记；非必完工序不得出现该标记
 数据: 进度条读 progress.percent 且与「已完成 done/total 道工序」文案一致（50% ⇒ 1/2）
 数据: 计件汇总渲染 total（¥ 两位小数）+ per_operation 明细；per_worker 非空时展示分人金额
@@ -2999,7 +2999,7 @@
 跳过: [backend-contract] 前端渲染行为（admin-web 组件/页面），由 vitest 单测全量覆盖（tests/unit/components/{ProductionProgressTable,PieceworkTable,TaskCardPrint}.test.tsx、tests/unit/pages/processing-orders-production.test.tsx、tests/unit/lib/use-route-id.test.ts），非 LLM 行为，不进入 agent-eval 冒烟（同 PP-010 惯例）
 ```
 真值: processing-manage.crud
-溯源: 2026-09-17 新增（issue #4000）：M4-H 按需单据渲染 —— 加工单生产明细页 + 可打印任务卡（含二维码）+ 计件汇总的前端覆盖登记；消费 main 已合并的生产端点（GET production/orders/{orderId}/operations、/piecework） ｜ tags: processing, production, admin_web, print_task_card, qrcode
+溯源: 2026-09-17 新增（issue #4000）：M4-H 按需单据渲染 —— 加工单生产明细页 + 可打印任务卡（含二维码）+ 计件汇总的前端覆盖登记；消费 main 已合并的生产端点（GET production/orders/{orderId}/operations、/piecework）。2026-09-18（issue #4309）：工序进度表表尾追加「报工人」列（后端 operations 响应追加 `workers` 键，读 production_work_logs 的 normal 报工、去重、按首次报工时间升序、空名折「未署名」、无报工 = 空数组 ⇒ 「—」）⇒ 行内字段枚举补「报工人」，否则用例与现实脱节（假真值）；expectations / 其余 data_checks 一字未动 ｜ tags: processing, production, admin_web, print_task_card, qrcode
 
 ### PP-012. 内部算料数量端点 - 应做数量=引擎输出/兜底 1/未知工序 fallback（单测覆盖） 🔵
 ```
