@@ -262,6 +262,11 @@ def build_quote(
     source: str = "formula",
     craft_tier: Optional[str] = None,
     accessories: Optional[List[Dict[str, Any]]] = None,
+    curtain_type: Optional[str] = None,
+    craft: Optional[str] = None,
+    is_shaped: Optional[bool] = None,
+    style: Optional[str] = None,
+    special_options: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     """构建完整报价单。
 
@@ -401,6 +406,11 @@ def build_quote(
 
     return {
         "fabric_meters": round(meters, 2),
+        # §6.1（issue #4346，用户已裁定）：米数**拆两个字段** ——
+        # `processing_meters` = **主布行**米数（加工费口径）；`fabric_meters` = Σ 面料行米数。
+        # 单面料行时两值恒等 ⇒ **现有单金额一字不变**（本工具当前只算主布）。
+        # 配布边的米数/计价属「待裁定」（设计文档 §六 #4），**本包不实现**。
+        "processing_meters": round(meters, 2),
         "fabric_cost": round(fabric_cost, 2),
         "processing_cost": round(processing_cost, 2),
         "accessory_cost": round(accessory_cost, 2),
@@ -411,6 +421,15 @@ def build_quote(
         "fullness": N,
         "warning": warning,
         **pleat_fields,
+        # ── 工艺规格回显（设计文档 §4.9：报价单与订单落库「同源」）──────────────────
+        # **原样透传**，不推导、不补默认值：不传 ⇒ `None`（键恒在，便于前端判空与契约测试）。
+        # 为什么不让本工具去猜：`craft` 必须与工序库枚举（韩褶/打孔/四爪钩/穿杆/平幔）**逐字一致**，
+        # 与 `mounting`（eyelet/s_hook/hook/roman）是**两层**，互相推导会静默给错工序。
+        "curtain_type": curtain_type,
+        "craft": craft,
+        "is_shaped": is_shaped,
+        "style": style,
+        "special_options": special_options,
     }
 
 
@@ -556,6 +575,46 @@ class CurtainCalcTool(BaseTool):
                     "required": ["name", "quantity", "unit_price"],
                 },
             },
+            # ── 工艺规格透传（issue #4346 / 设计文档 §4.9）──────────────────────────
+            # 这些字段**不参与算料**，只随报价单展示并被 order_create **原样落库**，
+            # 使「报价单展示的工艺参数 === 订单落库值」（一致性硬约束）。
+            # 【红线】值一律来自引导清单/顾客勾选；**不传就不传**，不要猜、不要补默认。
+            "curtain_type": {
+                "type": "string",
+                "description": (
+                    "部位/帘种（引导清单已采集）：布帘/纱帘/帘头。"
+                    "**不要猜**——顾客没说就不传；传错会让加工单取到错误工序路线"
+                ),
+                "enum": ["布帘", "纱帘", "帘头"],
+            },
+            "craft": {
+                "type": "string",
+                "description": (
+                    "安装工艺（引导清单已采集，须与工序库枚举逐字一致）：韩褶/打孔/四爪钩/穿杆/平幔。"
+                    "注意与 mounting 是**两层**（mounting 是悬挂方式英文枚举），**不要互相推导**"
+                ),
+                "enum": ["韩褶", "打孔", "四爪钩", "穿杆", "平幔"],
+            },
+            "is_shaped": {
+                "type": "boolean",
+                "description": (
+                    "是否定型（引导清单已采集：布帘/帘头默认是、纱帘默认否）。"
+                    "不传则报价单不展示该行"
+                ),
+            },
+            "style": {
+                "type": "string",
+                "description": "款式（引导清单/顾客选择）：单色/拼色",
+                "enum": ["单色", "拼色"],
+            },
+            "special_options": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": (
+                    "下单勾选的**特殊选项**（部位级，19 项枚举，如 拼1次/加铅块/加花边/抱枕/布绑带）。"
+                    "仅随报价单展示与订单落库透传，**不影响本次算料金额**（加价口径待客户裁定）"
+                ),
+            },
         },
         "required": ["window_width", "window_height"],
     }
@@ -576,6 +635,11 @@ class CurtainCalcTool(BaseTool):
         source: str = "formula",
         craft_tier: Optional[str] = None,
         accessories: Optional[List[Dict[str, Any]]] = None,
+        curtain_type: Optional[str] = None,
+        craft: Optional[str] = None,
+        is_shaped: Optional[bool] = None,
+        style: Optional[str] = None,
+        special_options: Optional[List[str]] = None,
     ) -> ToolResult:
         """执行算料报价"""
         if not self.check_permission(context):
@@ -634,6 +698,11 @@ class CurtainCalcTool(BaseTool):
                 source=source,
                 craft_tier=craft_tier,
                 accessories=accessories,
+                curtain_type=curtain_type,
+                craft=craft,
+                is_shaped=is_shaped,
+                style=style,
+                special_options=special_options,
             )
 
             logger.info(
