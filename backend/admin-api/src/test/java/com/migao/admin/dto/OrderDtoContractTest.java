@@ -167,19 +167,21 @@ class OrderDtoContractTest {
                                 + "（#3621） → Python 更严：enum[bulk_cut,full_roll] 且本地拒绝变体"
                                 + " → 依据：收敛需**放宽 Python**（降唯一生产者安检）或给服务端加一套只对"
                                 + " Python 生效的注解（= 新的第二套定义），两者都被 issue 裁定排除"),
-                new DivergenceRow("D9 pricingMethod 枚举", "服务端不消费该键（单侧安全冗余）→ 登记不收敛", null,
-                        "Java：extractProcessingItems 只取 id/name/unitPrice/quantity，pricingMethod 完全不读"
+                new DivergenceRow("D9 pricingMethod 枚举", "服务端读该键作米数判据、但不做枚举校验（单侧安全冗余）→ 登记不收敛", null,
+                        "Java：ProcessingOrderService.calcInfo **读** processingItems[].pricingMethod 作米数判据"
+                                + "（issue #4299：与字面 per_meter 等值比较），但**不做枚举校验**、不拒绝变体"
+                                + "（未知取值 ⇒ 判据不命中 ⇒ 落兜底 1 + qty_source=fallback）"
                                 + " → Python 更严：enum[per_meter,per_set,fixed,per_area] + 本地拒绝"
-                                + " → 依据：给服务端加一个**从不读**的字段的约束 = 凭空发明校验，"
-                                + "且日后有人读它时注解会与算法脱节"),
+                                + " → 依据：服务端只需「是不是 per_meter」这一个等值判断、不需要枚举成员全集"
+                                + " ⇒ 加注解=凭空发明校验；且注解会与算法脱节（判据只认 per_meter，注解却声明四个成员）"),
                 new DivergenceRow("D10 processingInfo 容器结构", "容器结构校验点在生产侧 → 登记不收敛", null,
                         "Java：Object 零结构约束（且兼容 JSON 字符串形态）"
                                 + " → Python：完整嵌套 schema → 依据：服务端只把 processingInfo 透传落库，"
                                 + "同一条内容在服务端没有算法消费其结构；把嵌套 schema 复制成 Java 注解="
                                 + "第二套定义（正是本单要消灭的形态）"),
                 new DivergenceRow("D11 processingItems[] 多出的键",
-                        "多出 unit/pricingMethod/subtotal 被忽略（无害）→ 登记不收敛", null,
-                        "Java：消费 id/name/unitPrice/quantity；Python 声明 7 键（多 unit/pricingMethod/subtotal）"
+                        "多出 unit/subtotal 被忽略（无害）→ 登记不收敛", null,
+                        "Java：消费 id/name/unitPrice/quantity + pricingMethod（#4299 起作米数判据）；Python 声明 7 键（多 unit/subtotal）"
                                 + " → 依据：多余键被服务端忽略（无害且向前兼容）；删它们=降低工具侧可读性，"
                                 + "加它们=服务端凭空约束（同 D9）"),
                 new DivergenceRow("D12 processingFee=Σ明细 自洽",
@@ -431,17 +433,19 @@ class OrderDtoContractTest {
                         + " → 依据：收敛需**放宽 Python**（降唯一生产者安检）或给服务端加一套只对"
                         + " Python 生效的注解（= 新的第二套定义），两者都被 issue 裁定排除");
         REGISTERED_DIVERGENCES.put("D9 pricingMethod 枚举",
-                "Java：extractProcessingItems 只取 id/name/unitPrice/quantity，pricingMethod 完全不读"
+                "Java：ProcessingOrderService.calcInfo **读** processingItems[].pricingMethod 作米数判据"
+                        + "（issue #4299：与字面 per_meter 等值比较），但**不做枚举校验**、不拒绝变体"
+                        + "（未知取值 ⇒ 判据不命中 ⇒ 落兜底 1 + qty_source=fallback）"
                         + " → Python 更严：enum[per_meter,per_set,fixed,per_area] + 本地拒绝"
-                        + " → 依据：给服务端加一个**从不读**的字段的约束 = 凭空发明校验，"
-                        + "且日后有人读它时注解会与算法脱节");
+                        + " → 依据：服务端只需「是不是 per_meter」这一个等值判断、不需要枚举成员全集"
+                        + " ⇒ 加注解=凭空发明校验；且注解会与算法脱节（判据只认 per_meter，注解却声明四个成员）");
         REGISTERED_DIVERGENCES.put("D10 processingInfo 容器结构",
                 "Java：Object 零结构约束（且兼容 JSON 字符串形态）"
                         + " → Python：完整嵌套 schema → 依据：服务端只把 processingInfo 透传落库，"
                         + "同一条内容在服务端没有算法消费其结构；把嵌套 schema 复制成 Java 注解="
                         + "第二套定义（正是本单要消灭的形态）");
         REGISTERED_DIVERGENCES.put("D11 processingItems[] 多出的键",
-                "Java：消费 id/name/unitPrice/quantity；Python 声明 7 键（多 unit/pricingMethod/subtotal）"
+                "Java：消费 id/name/unitPrice/quantity + pricingMethod（#4299 起作米数判据）；Python 声明 7 键（多 unit/subtotal）"
                         + " → 依据：多余键被服务端忽略（无害且向前兼容）；删它们=降低工具侧可读性，"
                         + "加它们=服务端凭空约束（同 D9）");
         REGISTERED_DIVERGENCES.put("D12 processingFee=Σ明细 自洽",
@@ -484,7 +488,8 @@ class OrderDtoContractTest {
                     .as("D8 复核：若 Python 侧开始接受变体，则『Python 更严』这条登记失效 → 本行红")
                     .isFalse();
             assertThat(pythonEnumAccepts("sellingMethod", "bulk_cut")).isTrue();
-            // D9：pricingMethod 白名单存在且 per_piece 不在其中（服务端完全不读该键）
+            // D9：pricingMethod 白名单存在且 per_piece 不在其中（服务端只做「是不是 per_meter」的
+            // 等值判断、不做枚举校验 ⇒ 更严的一侧仍在 Python；#4299 起 Java 确实读该键，见 D9 登记）
             assertThat(pythonEnumAccepts("pricingMethod", "per_piece")).isFalse();
             assertThat(pythonEnumAccepts("pricingMethod", "per_meter")).isTrue();
         }

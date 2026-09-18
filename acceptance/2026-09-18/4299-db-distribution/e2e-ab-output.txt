@@ -1,0 +1,9 @@
+### RED（未修代码 main :8080）
+── red 侧：http://localhost:8080  订单 78d207ac2d30c609d5f68cbc9128ccb6
+   generate ⇒ {"orderRef":"78d207ac2d30c609d5f68cbc9128ccb6","success":false,"message":"订单 20260918609560006 当前状态 [producing] 不允许生成加工单，须为已确认","code":"VALIDATION_ERROR"}
+   operations ⇒ 
+
+### GREEN（已修代码 branch :8090）
+── green 侧：http://localhost:8090  订单 8614224ecd54374e0cbf33c1cb564958
+   generate ⇒ {"orderRef":"8614224ecd54374e0cbf33c1cb564958","success":true,"processingOrderNo":"JG-20260918-3104"}
+   operations ⇒ 

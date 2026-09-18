@@ -128,12 +128,6 @@ public class ProcessingOrderService {
     private static final List<String> CALC_INFO_KEYS = List.of(
             "fabric_meters", "meters", "pleat_count", "holes", "panels", "set_count", "source");
 
-    /**
-     * 「订单行数量 = 面料米数」的计价方式（{@code OrderItem.quantity} javadoc：per_meter=米数）。
-     * 兼容前端展示标签「按米」（部分历史数据把标签写进了 processing_info）。
-     */
-    private static final Set<String> PER_METER_METHODS = Set.of("per_meter", "按米");
-
     /** 加工单状态机（与 OrderService.STATUS_TRANSITIONS 同模式） */    private static final Map<String, Set<String>> STATUS_TRANSITIONS = Map.of(
             "generated", Set.of("issued", "cancelled"),
             "issued", Set.of("in_processing", "cancelled"),
@@ -518,12 +512,27 @@ public class ProcessingOrderService {
     }
 
     /**
-     * 算料输入（issue #4208 Java 接线）。
+     * 算料输入（issue #4208 Java 接线；米数判据由 issue #4299 更正为**加工项** {@code pricingMethod}）。
      *
-     * <p><b>口径依据</b>：订单行 {@code quantity} 的语义由**计价方式**决定
-     * （{@code OrderItem.quantity} javadoc：「per_meter=米数、per_set=1、per_area=宽×高」；
-     * 前端 {@code deriveProcessingQty} 同口径）⇒ {@code per_meter} 时它**就是**面料米数，
-     * 映射到算料引擎的 {@code fabric_meters} 键（**键名映射，不是第二份算料逻辑**）。</p>
+     * <p><b>三层字段别混</b>（#4299 真库实测钉死，见 {@code acceptance/2026-09-18/4299-db-distribution/FINDINGS.md}）：</p>
+     * <ul>
+     *   <li>{@code sellingMethod} = <b>售卖方式</b>（真库取值：{@code bulk_cut} / {@code 散剪} /
+     *       {@code full_roll} / {@code 整卷} / {@code 散剪售卖} / {@code 散剪按米} / {@code 散剪·按米购买} /
+     *       {@code 散剪(bulk_cut)} / {@code cut} / {@code 散剪（按米裁剪）} / 无）—— <b>不是数量口径的来源</b>；
+     *       {@code per_meter} 在该字段里一次都没出现过 ⇒ 拿它当判据<b>永不命中</b>（#4299 的病根）。</li>
+     *   <li>加工项 {@code pricingMethod} = <b>加工项计价方式</b>（{@code per_meter} / {@code per_set} /
+     *       {@code fixed} / {@code per_area}…）—— <b>订单行数量口径由它决定</b>，故它是本方法的判据字段
+     *       （可达面 68 条订单行里命中 67 条）。</li>
+     *   <li>{@code products.pricing_type} = <b>商品</b>计价方式 —— 与订单行口径<b>不是同一层</b>：
+     *       实测按它会漏 18/68 条（11 条商品缺失/软删 + 6 条 {@code pricing_type=fixed} 而其加工项仍按米）。</li>
+     * </ul>
+     * <p>{@code per_meter} 与「按米」是<b>加工项计价方式</b>的词汇，历史上被误当成售卖方式词表 ——
+     * 同族混淆见前端展示表（{@code OrderDetail.tsx} / {@code OrderItemList.tsx} 把 {@code per_meter: '按米'}
+     * 放进了 {@code sellingMethod} 的映射表）。</p>
+     *
+     * <p><b>取值</b>：命中时取<b>订单行</b> {@code quantity}（{@code OrderItem.quantity} javadoc：per_meter=米数），
+     * <b>不</b>取加工项自己的 {@code quantity} —— 实测订单行 {@code 7e6f2a1c…} 订单数量 112.00
+     * 而其 {@code per_meter} 加工项 quantity=1，取后者会让 112 米的单得到「应做 1 米」⇒ 报工上限 1 ⇒ 假完工。</p>
      *
      * <p><b>已知缺口（#4118，不是本方法缺陷）</b>：订单侧**从不落库算料输出** ⇒
      * {@code pleat_count}（折数）/ {@code panels}（幅）/ {@code set_count}（套）/ {@code holes}（孔）
@@ -540,16 +549,34 @@ public class ProcessingOrderService {
                 calc.put(key, value);
             }
         }
-        // ② per_meter 计价：订单行数量即米数（键名映射；其它计价方式**不**冒充米数）
-        String sellingMethod = str(entry.get("sellingMethod"));
-        if (!calc.containsKey("fabric_meters") && sellingMethod != null
-                && PER_METER_METHODS.contains(sellingMethod)) {
+        // ② 加工项里有 per_meter ⇒ 订单行数量即米数（键名映射；其它计价方式**不**冒充米数）
+        if (!calc.containsKey("fabric_meters") && hasPerMeterPricing(entry)) {
             Object quantity = entry.get("quantity");
             if (quantity != null) {
                 calc.put("fabric_meters", quantity);
             }
         }
         return calc;
+    }
+
+    /**
+     * 订单行的加工项里是否有一项按米计价（{@code pricingMethod == "per_meter"}）。
+     *
+     * <p>只看该单**实际选的加工项**（键名驼峰 {@code pricingMethod}，两个下单入口都这么写），
+     * 不看售卖方式、也不看商品级 {@code pricing_type} —— 理由与实测数字见 {@link #calcInfo}。
+     * {@code processingItems} 缺失 / 非 List / 元素非 Map 一律视为**不命中**（老数据与脏数据形态，不猜）。</p>
+     */
+    private static boolean hasPerMeterPricing(Map<String, Object> entry) {
+        Object raw = entry.get("processingItems");
+        if (!(raw instanceof List<?> items)) {
+            return false;
+        }
+        for (Object item : items) {
+            if (item instanceof Map<?, ?> proc && "per_meter".equals(str(proc.get("pricingMethod")))) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
