@@ -1,12 +1,12 @@
 /**
- * 推荐胶囊组件测试（主页顶部，3 条 × 3 行居中）
+ * 推荐胶囊组件测试（主页顶部，3 条 × 3 行左对齐）
  *
  * 覆盖：渲染静态策划胶囊（图标+专业服务句）、点胶囊发送对应 prompt、
- *       居中竖排结构（非横滑）、且**不出现任何商品图/商品名卡片**
+ *       左对齐竖排结构（非横滑）、且**不出现任何商品图/商品名卡片**
  *       （与 UI-044「空态不铺商品」的裁定一致）
  *
  * UI-044: 空态顶部推荐胶囊（纯前端静态文案，不恢复商品接口）
- *         形态沿革：横滑 5 条 → 3 条 × 3 行居中（2026-09-18 用户裁定，issue #4236）
+ *         形态沿革：横滑 5 条 → 3 条 × 3 行居中 → **3 条 × 3 行左对齐**（2026-09-18 用户裁定，issue #4236）
  */
 // case_ids: UI-044
 import React from 'react'
@@ -35,9 +35,9 @@ describe('RecommendChips', () => {
     expect(screen.getByText('查询订单物流轨迹')).toBeTruthy()
   })
 
-  it('应为居中竖排结构（横滑实现已按 issue #4236 撤下，不得残留）', () => {
+  it('应为左对齐竖排结构（横滑实现已按 issue #4236 撤下，不得残留）', () => {
     const { container } = render(<RecommendChips onPick={mockOnPick} />)
-    // 横滑容器/行已移除：3 条各占一行、居中 —— 横滑必然左对齐 + 右端截断，与「居中」相斥
+    // 横滑容器/行已移除：3 条各占一行、左对齐 —— 横滑必然左对齐 + 右端截断，3 条只会被切掉
     expect(container.querySelectorAll('.recommend-chips__scroll').length).toBe(0)
     expect(container.querySelectorAll('.recommend-chips__row').length).toBe(0)
   })
