@@ -1,5 +1,6 @@
 package com.migao.admin.controller;
 
+import com.migao.admin.config.IndustryCodes;
 import com.migao.admin.config.TenantContext;
 import com.migao.admin.dto.ApiResponse;
 import com.migao.admin.dto.PageResponse;
@@ -119,8 +120,12 @@ public class SettingsController {
         }
         if (data.containsKey("industry")) {
             String industry = (String) data.get("industry");
-            wrapper.set("industry", industry);
-            tenant.setIndustry(industry);
+            // 归一为**受控 code**（issue #4361 交付物 1）：本写面此前接受任意字符串 ⇒
+            // 只在注册路径归一会让受控词表**可被绕过**（租户把行业改成自由文本后，
+            // 按行业套用生产模板就取不到模板，而失败是静默的）。无法识别 ⇒ other + 显式日志。
+            String code = IndustryCodes.normalize(industry);
+            wrapper.set("industry", code);
+            tenant.setIndustry(code);
         }
 
         // 品牌与通知设置：此前仅前端 state 保存（刷新即丢），现落库持久化；null/空串即清空

@@ -150,6 +150,10 @@ public class ProductionOperationQueryService {
         entry.put("curtain_type", routing.getCurtainType());
         entry.put("craft", routing.getCraft());
         entry.put("status", routing.getStatus());
+        // 路线自身的 provenance（V62，issue #4361）：**与每道工序的 source 是两个层级** ——
+        // 路线行说「这条序列怎么来的」（rt-v54-* = 占位待确认 / rt-v58-* = 推算），
+        // 工序项说「这道工序的单价怎么来的」。两者不可互推，故都返回。
+        entry.put("source", routing.getSource());
         entry.put("operation_count", steps.size());
         entry.put("operations", steps);
         return entry;
@@ -467,6 +471,9 @@ public class ProductionOperationQueryService {
         view.put("unit_price", nz(op.getUnitPrice()));
         view.put("is_must_finish", Boolean.TRUE.equals(op.getIsMustFinish()));
         view.put("is_start_marker", Boolean.TRUE.equals(op.getIsStartMarker()));
+        // provenance（V62，issue #4361）：单价是占位值/行业推算值这件事必须**在界面上可见**
+        // （用户裁定：「照铺，但 provenance 必须可见，不许静默」）。NULL = 来源未知，不冒充已知。
+        view.put("source", op.getSource());
         return view;
     }
 
@@ -490,6 +497,8 @@ public class ProductionOperationQueryService {
         view.put("unit_price", op == null ? null : nz(op.getUnitPrice()));
         view.put("is_must_finish", op != null && Boolean.TRUE.equals(op.getIsMustFinish()));
         view.put("is_start_marker", op != null && Boolean.TRUE.equals(op.getIsStartMarker()));
+        // provenance 与目录读面**同一份口径**（两处各拼一份必然漂移，而前端拿同一个 TS 类型渲染）
+        view.put("source", op == null ? null : op.getSource());
         return view;
     }
 
