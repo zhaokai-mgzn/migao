@@ -1,5 +1,5 @@
 package com.migao.admin.service;
-// case_ids: PG-001, PG-002, PG-003, PG-004, PG-005, PG-006, PG-007, PG-008, PG-011, PG-018, PG-019, PG-022, PG-023, UI-030
+// case_ids: PG-001, PG-002, PG-003, PG-004, PG-005, PG-006, PG-007, PG-008, PG-011, PG-018, PG-019, PG-022, PG-023, PG-025, UI-030
 
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
@@ -392,6 +392,8 @@ class ProcessingOrderServiceTest {
         info.put("colorName", colorName);
         info.put("sellingMethod", "散剪");
         info.put("doorWidth", "2.8米");
+        // 注意（issue #4299）：加工项**不带** pricingMethod ⇒ 米数映射判据不命中（也不得回落到
+        // sellingMethod）⇒ 本夹具的期望值不受判据更换影响；要断言命中请看 PG-025 的用例。
         List<Map<String, Object>> procs = new ArrayList<>();
         Map<String, Object> p = new LinkedHashMap<>();
         p.put("id", "p1");
@@ -466,7 +468,7 @@ class ProcessingOrderServiceTest {
         Map<String, Object> info = new LinkedHashMap<>();
         info.put("processingFee", 6.0);
         info.put("colorName", colorName);
-        info.put("sellingMethod", "散剪");
+        info.put("sellingMethod", "散剪");   // 真库取值（售卖方式，**不是**米数判据字段，见 #4299）
         info.put("doorWidth", "2.8米");
         info.put("processingItems", new ArrayList<>(procs));
         return OrderItem.builder()
@@ -526,7 +528,7 @@ class ProcessingOrderServiceTest {
     // ── PG-001 生成成功 ────────────────────────────────────────────
 
     @Test
-    @DisplayName("PG-001 已确认含加工项订单 → 生成加工单 + 订单联动 producing")
+    @DisplayName("PG-001 已确认含加工项订单 → 生成加工单（**不**联动订单，订单仍 confirmed；#4305）")
     void generateSuccess() {
         stubLibrary();
         when(orderMapper.selectById("order-001")).thenReturn(confirmedOrder);
@@ -567,8 +569,11 @@ class ProcessingOrderServiceTest {
         assertThat(procs).hasSize(1);
         assertThat(procs.get(0).get("options")).isEqualTo(List.of("四爪钩"));
 
-        // 联动：订单 confirmed → producing
-        verify(orderService).updateOrderStatus("order-001", "producing");
+        // 订单联动（issue #4305，用户裁定「发加工 = 订单进入生产中」）：**生成不再推进订单** ——
+        // 时点已挪到发加工（见 updateStatusMainChain 的 issue 分支断言）。
+        // 红证：修复前这里调用 orderService.updateOrderStatus(orderId, "producing") ⇒ 本断言必红。
+        verify(orderService, never()).updateOrderStatus(anyString(), anyString());
+        verify(orderService, never()).revertProducingToConfirmed(anyString(), anyString());
     }
 
     // ── issue #4116（P0 断链第一环）：生成加工单即实例化工序 → qr_token 非空 ──
@@ -680,9 +685,11 @@ class ProcessingOrderServiceTest {
     void generateTakesQtyFromCalcEngineNotFromOrderQuantity() {
         stubLibrary();
         OrderItem item = orderItemHanzhe("米白");
-        @SuppressWarnings("unchecked")
-        Map<String, Object> info = (Map<String, Object>) item.getProcessingInfo();
-        info.put("sellingMethod", "per_meter");   // 订单行 quantity 的计价方式口径：per_meter ⇒ 米数
+        // issue #4299：米数判据 = **加工项** pricingMethod（键名驼峰，两个下单入口都这么写）。
+        // 此前这里写 `sellingMethod = "per_meter"` —— 该值在真库 sellingMethod 的 11 个取值里
+        // **一次都没出现过**（实测分布见 acceptance/2026-09-18/4299-db-distribution/FINDINGS.md）
+        // ⇒ 单测绿而真实路径不触发，正是本单要治的假绿形态。
+        setProcessingItemPricingMethod(item, "per_meter");
         stubGenerate(List.of(item));
         when(processingItemMapper.selectById("p1"))
                 .thenReturn(ProcessingItem.builder().id("p1").name("韩褶-布").unit("折").build());
@@ -704,7 +711,7 @@ class ProcessingOrderServiceTest {
         assertThat(instances.get(0).getOperationName()).isEqualTo("精裁-布");
         assertThat(instances.get(0).getQty()).isEqualByComparingTo(CALC_FABRIC_METERS);
 
-        // 请求体里带的 calc_info 必须来自订单的计价方式口径（per_meter ⇒ quantity 即米数），
+        // 请求体里带的 calc_info 必须来自**加工项计价方式**口径（pricingMethod=per_meter ⇒ 订单行 quantity 即米数），
         // 且**不含**订单侧拿不到的待补键（panels/set_count/holes）—— 不许 Java 凭空造数
         ArgumentCaptor<List<Map<String, Object>>> reqCaptor = ArgumentCaptor.forClass(List.class);
         verify(productionOperationQtyClient).resolve(reqCaptor.capture());
@@ -713,7 +720,7 @@ class ProcessingOrderServiceTest {
         assertThat((List<?>) sent.get("operations")).hasSize(V54_BULIAN_HANZHE.length);
         @SuppressWarnings("unchecked")
         Map<String, Object> calcInfo = (Map<String, Object>) sent.get("calc_info");
-        assertThat(new BigDecimal(String.valueOf(calcInfo.get("fabric_meters"))))
+        assertThat(fabricMetersOf(calcInfo))
                 .as("per_meter 的订单数量即米数（OrderItem.quantity javadoc 的计价方式口径）")
                 .isEqualByComparingTo(ORDER_QUANTITY);
         assertThat(calcInfo).as("订单侧拿不到的待补键不许 Java 凭空造数")
@@ -724,10 +731,10 @@ class ProcessingOrderServiceTest {
     @DisplayName("#4208 calc_info 口径：非 per_meter 计价**不**把订单数量冒充成米数（不发明数字）")
     void calcInfoDoesNotInventFabricMetersForNonPerMeter() {
         stubLibrary();
-        OrderItem item = orderItemHanzhe("米白");
-        @SuppressWarnings("unchecked")
-        Map<String, Object> info = (Map<String, Object>) item.getProcessingInfo();
-        info.put("sellingMethod", "per_set");
+        OrderItem item = orderItemHanzhe("米白");   // 售卖方式 = 夹具默认的真库取值「散剪」（**不是**判据字段）
+        // 加工项计价方式 = per_set（非按米）⇒ 订单行 quantity（2）是樘数、不是米数。
+        // 此前这里写 `sellingMethod = "per_set"` —— 同样不是真库会产生的值（见 #4299 的实测分布）。
+        setProcessingItemPricingMethod(item, "per_set");
         stubGenerate(List.of(item));
         when(processingItemMapper.selectById("p1"))
                 .thenReturn(ProcessingItem.builder().id("p1").name("韩褶-布").unit("折").build());
@@ -740,6 +747,227 @@ class ProcessingOrderServiceTest {
         Map<String, Object> calcInfo = (Map<String, Object>) reqCaptor.getValue().get(0).get("calc_info");
         assertThat(calcInfo).as("per_set 的 quantity 是樘数、不是米数 ⇒ 不得映射成 fabric_meters")
                 .doesNotContainKey("fabric_meters");
+    }
+
+    // ══════════ issue #4299：米数映射判据 = **加工项 pricingMethod**（真库实测钉死）══════════
+    //
+    // 判据来源：acceptance/2026-09-18/4299-db-distribution/FINDINGS.md（云 dev 库只读实测，784 行订单行）
+    //   · 可达面（带**非空** processingItems ⇒ 能进 buildSnapshot/calcInfo 的订单行）全库 **68** 条：
+    //     加工项 `pricingMethod == "per_meter"` 命中 **67/68**；商品 `products.pricing_type == "per_meter"`
+    //     只命中 50/68（漏 11 条商品缺失/软删 + 6 条 pricing_type=fixed 而其加工项仍按米）⇒ **商品字段不是判据**。
+    //   · 真库 `sellingMethod` 的 11 个取值（bulk_cut / 散剪 / full_roll / 整卷 / 散剪售卖 / 散剪按米 /
+    //     散剪·按米购买 / 散剪(bulk_cut) / cut / 散剪（按米裁剪） / (无)）里 **`per_meter` 一次都没出现过**
+    //     ⇒ 旧判据（拿 sellingMethod 比 {per_meter, 按米}）**永不命中**，映射分支从未执行。
+    //   · 取值必须用**订单行 quantity**：实证订单行 `7e6f2a1c…` 订单数量 **112.00**、其 per_meter 加工项
+    //     quantity 被写成 **1** ⇒ 若取加工项 quantity，112 米的单会得到「应做 1 米」⇒ 报工上限 1 ⇒ **假完工**。
+    //
+    // 端点口径（ai-agent `routing.py::_qty_for` + `qty_and_source`）：米类读 METER_KEYS（`fabric_meters`），
+    // 缺键 ⇒ 兜底 1 + `qty_source=fallback`。⚠️ 文件顶部共用的 `stubQty()` 是**与 calc_info 无关**的平行真值
+    // （米类恒 12.3 / `fabric_meters`）⇒ 用它断言「米类 qty_source」**恒绿**、证不了映射是否生效；
+    // 故本节用例改用 `stubMeterQtyFromCalcInfo()`（镜像端点**米轴**；折/幅/套 仍走共用口径，不在本单范围）。
+
+    /** 把订单行**加工项**的计价方式设成实测键名（驼峰 `pricingMethod`，下单入口逐字如此）。 */
+    @SuppressWarnings("unchecked")
+    private static void setProcessingItemPricingMethod(OrderItem item, String pricingMethod) {
+        Map<String, Object> info = (Map<String, Object>) item.getProcessingInfo();
+        List<Map<String, Object>> procs = new ArrayList<>((List<Map<String, Object>>) info.get("processingItems"));
+        Map<String, Object> first = new LinkedHashMap<>(procs.get(0));
+        first.put("pricingMethod", pricingMethod);
+        procs.set(0, first);
+        info.put("processingItems", procs);
+    }
+
+    /** 删掉售卖方式键（真库 566 条无 `sellingMethod` 的形态；其中可达 calcInfo 的 2 条必须仍被命中）。 */
+    @SuppressWarnings("unchecked")
+    private static void removeSellingMethod(OrderItem item) {
+        ((Map<String, Object>) item.getProcessingInfo()).remove("sellingMethod");
+    }
+
+    /**
+     * 局部桩：镜像端点「米」这一轴的取数口径 —— calc_info 有 `fabric_meters` ⇒ 取该值 + `fabric_meters`；
+     * 缺键 ⇒ 兜底 1 + `fallback`。折/幅/套/孔 仍按共用桩的取值（#4208 的既有用例钉着它们，本单不改那一轴）。
+     */
+    private void stubMeterQtyFromCalcInfo() {
+        doAnswer(inv -> {
+            List<Map<String, Object>> request = inv.getArgument(0);
+            List<ProductionOperationQtyClient.PositionQty> resolved = new ArrayList<>();
+            for (Map<String, Object> position : request) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> calc = (Map<String, Object>) position.get("calc_info");
+                Map<String, BigDecimal> qty = new LinkedHashMap<>();
+                Map<String, String> source = new LinkedHashMap<>();
+                for (Object raw : (List<?>) position.get("operations")) {
+                    String operation = String.valueOf(raw);
+                    String unit = unitOfOperation(operation);
+                    if ("米".equals(unit)) {
+                        Object meters = calc.get("fabric_meters");
+                        if (meters == null) {
+                            qty.put(operation, BigDecimal.ONE);
+                            source.put(operation, "fallback");
+                        } else {
+                            qty.put(operation, new BigDecimal(String.valueOf(meters)));
+                            source.put(operation, "fabric_meters");
+                        }
+                    } else if ("折".equals(unit)) {
+                        qty.put(operation, new BigDecimal(CALC_PLEAT_COUNT));
+                        source.put(operation, "pleat_count");
+                    } else if ("孔".equals(unit)) {
+                        qty.put(operation, new BigDecimal(CALC_HOLES_ESTIMATE));
+                        source.put(operation, "fabric_meters_x6");
+                    } else {
+                        qty.put(operation, BigDecimal.ONE);
+                        source.put(operation, "fallback");
+                    }
+                }
+                resolved.add(new ProductionOperationQtyClient.PositionQty(
+                        (String) position.get("position_name"), qty, source));
+            }
+            return resolved;
+        }).when(productionOperationQtyClient).resolve(any());
+    }
+
+    /** 生成一张布帘×韩褶单（真链路实例化）并取回请求体里的 calc_info。 */
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> generateAndCaptureCalcInfo(OrderItem item, boolean meterAwareStub) {
+        stubLibrary();
+        if (meterAwareStub) {
+            stubMeterQtyFromCalcInfo();
+        }
+        stubGenerate(List.of(item));
+        when(processingItemMapper.selectById("p1"))
+                .thenReturn(ProcessingItem.builder().id("p1").name("韩褶-布").unit("折").build());
+
+        var results = realChainService().generate(List.of("order-001"), TENANT, "u1");
+        assertThat(results.get(0).isSuccess()).isTrue();
+
+        ArgumentCaptor<List<Map<String, Object>>> reqCaptor = ArgumentCaptor.forClass(List.class);
+        verify(productionOperationQtyClient).resolve(reqCaptor.capture());
+        return (Map<String, Object>) reqCaptor.getValue().get(0).get("calc_info");
+    }
+
+    /** 上一次生成落到库里的工序实例（米类断言用）。 */
+    private List<ProcessingPositionOperation> capturedInstances() {
+        ArgumentCaptor<ProcessingPositionOperation> captor =
+                ArgumentCaptor.forClass(ProcessingPositionOperation.class);
+        verify(positionOperationMapper, times(V54_BULIAN_HANZHE.length)).insert(captor.capture());
+        return captor.getAllValues();
+    }
+
+    /** calc_info 里的米数（判据不命中时先在此处红，报错直指「缺 fabric_meters」而不是 NumberFormat）。 */
+    private static BigDecimal fabricMetersOf(Map<String, Object> calcInfo) {
+        assertThat(calcInfo).as("calc_info 必须带 fabric_meters（判据 = 加工项 pricingMethod=per_meter）")
+                .containsKey("fabric_meters");
+        return new BigDecimal(String.valueOf(calcInfo.get("fabric_meters")));
+    }
+
+    @Test
+    @DisplayName("#4299 红证：bulk_cut 单 + per_meter 加工项 ⇒ calc_info.fabric_meters = 订单行 quantity、米类不落兜底")
+    void perMeterProcessingItemMapsOrderQuantityEvenWhenSellingMethodIsBulkCut() {
+        OrderItem item = orderItemHanzhe("米白");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> info = (Map<String, Object>) item.getProcessingInfo();
+        info.put("sellingMethod", "bulk_cut");   // 真库可达面最大类（52/68）
+        setProcessingItemPricingMethod(item, "per_meter");
+
+        Map<String, Object> calcInfo = generateAndCaptureCalcInfo(item, true);
+
+        assertThat(fabricMetersOf(calcInfo))
+                .as("判据 = 加工项 pricingMethod=per_meter；取值 = 订单行 quantity（旧判据拿 bulk_cut 比 per_meter 词表 ⇒ 此处无该键）")
+                .isEqualByComparingTo(ORDER_QUANTITY);
+        assertThat(capturedInstances()).filteredOn(instance -> "米".equals(instance.getUnit()))
+                .isNotEmpty()
+                .allSatisfy(instance -> assertThat(instance.getQtySource())
+                        .as("米类工序的应做数量必须来自 fabric_meters（旧形态恒 fallback 1）")
+                        .isEqualTo("fabric_meters"));
+    }
+
+    @Test
+    @DisplayName("#4299 无 sellingMethod 键也命中（对齐实测 (无) 那 2 条可达订单行）")
+    void perMeterProcessingItemMapsEvenWithoutSellingMethod() {
+        OrderItem item = orderItemHanzhe("米白");
+        removeSellingMethod(item);
+        setProcessingItemPricingMethod(item, "per_meter");
+
+        Map<String, Object> calcInfo = generateAndCaptureCalcInfo(item, false);
+
+        assertThat(fabricMetersOf(calcInfo))
+                .as("判据只看加工项 pricingMethod ⇒ 售卖方式缺失不影响")
+                .isEqualByComparingTo(ORDER_QUANTITY);
+    }
+
+    @Test
+    @DisplayName("#4299 整卷（full_roll）也命中：实测 4 条整卷单全部带 per_meter 加工项且订单数量是米量级")
+    void perMeterProcessingItemMapsForFullRollToo() {
+        OrderItem item = orderItemHanzhe("米白");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> info = (Map<String, Object>) item.getProcessingInfo();
+        info.put("sellingMethod", "full_roll");
+        setProcessingItemPricingMethod(item, "per_meter");
+
+        Map<String, Object> calcInfo = generateAndCaptureCalcInfo(item, false);
+
+        assertThat(fabricMetersOf(calcInfo))
+                .as("整卷单的数量不是卷数而是米量级（实测 3.00 / 112.00）⇒ 同样按订单行 quantity 映射")
+                .isEqualByComparingTo(ORDER_QUANTITY);
+    }
+
+    @Test
+    @DisplayName("#4299 防复发：取值用订单行 quantity（112），**不是**加工项 quantity（1）")
+    void fabricMetersComesFromOrderQuantityNotFromProcessingItemQuantity() {
+        OrderItem item = orderItemHanzhe("米白");
+        item.setQuantity(new BigDecimal("112.00"));   // 实测订单行 7e6f2a1c… 的订单数量
+        @SuppressWarnings("unchecked")
+        Map<String, Object> info = (Map<String, Object>) item.getProcessingInfo();
+        info.put("sellingMethod", "full_roll");
+        Map<String, Object> proc = new LinkedHashMap<>();
+        proc.put("id", "p1");
+        proc.put("name", "韩褶-布");
+        proc.put("unit", "折");
+        proc.put("pricingMethod", "per_meter");
+        proc.put("quantity", 1);   // ← 实测：该 per_meter 加工项的 quantity 被写成 1
+        info.put("processingItems", new ArrayList<>(List.of(proc)));
+
+        Map<String, Object> calcInfo = generateAndCaptureCalcInfo(item, false);
+
+        assertThat(fabricMetersOf(calcInfo))
+                .as("取加工项 quantity ⇒ 112 米的单得到「应做 1 米」⇒ 报工上限 1 ⇒ 假完工")
+                .isEqualByComparingTo("112");
+    }
+
+    @Test
+    @DisplayName("#4299 负例：加工项全非 per_meter（per_sqm 刺绣单 286229cf…）⇒ 不冒充米数、米类保持 fallback")
+    void nonPerMeterProcessingItemDoesNotMapOrderQuantity() {
+        // 实测唯一不命中的订单行：sellingMethod=散剪、单条加工项 name=刺绣工艺 / pricingMethod=per_sqm
+        OrderItem item = processedItem("item-1", "布艺遮光帘A", "米白", List.of(Map.of(
+                "id", "p1", "name", "刺绣工艺", "pricingMethod", "per_sqm",
+                "unitPrice", 3.0, "quantity", 2, "unit", "米")));
+
+        Map<String, Object> calcInfo = generateAndCaptureCalcInfo(item, true);
+
+        assertThat(calcInfo).as("订单行 quantity 不是米数（计价方式 per_sqm）⇒ 不得冒充 fabric_meters")
+                .doesNotContainKey("fabric_meters");
+        assertThat(capturedInstances()).filteredOn(instance -> "米".equals(instance.getUnit()))
+                .isNotEmpty()
+                .allSatisfy(instance -> assertThat(instance.getQtySource())
+                        .as("端点在缺 fabric_meters 时兜底 1 并显式标 fallback（不静默）")
+                        .isEqualTo("fallback"));
+    }
+
+    @Test
+    @DisplayName("#4299 负例：有 processingItems 但无 pricingMethod 键（老数据形态）⇒ 不命中")
+    void processingItemsWithoutPricingMethodKeyDoNotMap() {
+        OrderItem item = orderItemHanzhe("米白");   // 加工项无 pricingMethod 键
+        @SuppressWarnings("unchecked")
+        Map<String, Object> info = (Map<String, Object>) item.getProcessingInfo();
+        info.put("sellingMethod", "bulk_cut");      // 即便售卖方式是 bulk_cut，也不得据此判米数
+
+        Map<String, Object> calcInfo = generateAndCaptureCalcInfo(item, true);
+
+        assertThat(calcInfo).as("没有 pricingMethod 键 ⇒ 判据不命中（不得回落到 sellingMethod 第二份口径）")
+                .doesNotContainKey("fabric_meters");
+        assertThat(capturedInstances()).filteredOn(instance -> "米".equals(instance.getUnit()))
+                .isNotEmpty()
+                .allSatisfy(instance -> assertThat(instance.getQtySource()).isEqualTo("fallback"));
     }
 
     @Test
@@ -1246,7 +1474,8 @@ class ProcessingOrderServiceTest {
         var results = processingOrderService.generate(List.of("ORD-20260912-0001"), TENANT, "u1");
 
         assertThat(results.get(0).isSuccess()).isTrue();
-        verify(orderService).updateOrderStatus("order-001", "producing");
+        // #4305：生成不联动订单（时点在发加工）
+        verify(orderService, never()).updateOrderStatus(anyString(), anyString());
     }
 
     // ── PG-005/006 状态机 ──────────────────────────────────────────
@@ -1271,6 +1500,10 @@ class ProcessingOrderServiceTest {
         assertThat(captor.getValue().getExpectedDeliveryDate()).isEqualTo(LocalDate.of(2026, 9, 20));
         assertThat(captor.getValue().getIssuedAt()).isNotNull();
 
+        // 订单联动（issue #4305，用户裁定「发加工 = 订单进入生产中」）：**发加工**才推进
+        // 订单 confirmed→producing（生成加工单已不再推进，见 generateSuccess 的 never 断言）
+        verify(orderService).updateOrderStatus("order-001", "producing");
+
         // start
         when(processingOrderMapper.selectOne(any())).thenReturn(po("po-1", "issued"));
         ProcessingOrderUpdateRequest start = new ProcessingOrderUpdateRequest();
@@ -1288,6 +1521,8 @@ class ProcessingOrderServiceTest {
         verify(processingOrderMapper, times(3)).updateById(captor.capture());
         assertThat(captor.getValue().getStatus()).isEqualTo("completed");
         verify(orderService, never()).updateOrderStatus(eq("order-001"), eq("shipped"));
+        // start/complete **不**再联动订单（订单联动只发生在 issue 这一次）
+        verify(orderService, times(1)).updateOrderStatus("order-001", "producing");
     }
 
     @Test
@@ -1355,9 +1590,30 @@ class ProcessingOrderServiceTest {
     }
 
     @Test
-    @DisplayName("PG-007 取消（generated）→ 加工单 cancelled + 订单 producing→confirmed 回退")
-    void cancelGeneratedRevertsOrder() {
+    @DisplayName("PG-007 取消（generated）→ 加工单 cancelled；订单仍 confirmed ⇒ **不触发**回退（#4305 新时点）")
+    void cancelGeneratedDoesNotRevertOrder() {
         when(processingOrderMapper.selectOne(any())).thenReturn(po("po-1", "generated"));
+        when(processingOrderMapper.updateById(any(ProcessingOrder.class))).thenReturn(1);
+        // #4305 后：generated 态加工单对应的订单**从未**进入 producing（生成不推进、发加工才推进）
+        when(orderMapper.selectById("order-001")).thenReturn(confirmedOrder);
+
+        ProcessingOrderUpdateRequest cancel = new ProcessingOrderUpdateRequest();
+        cancel.setAction("cancel");
+        cancel.setReason("加工方排期冲突");
+        processingOrderService.updateStatus("po-1", cancel, TENANT, "u1");
+
+        ArgumentCaptor<ProcessingOrder> captor = ArgumentCaptor.forClass(ProcessingOrder.class);
+        verify(processingOrderMapper).updateById(captor.capture());
+        assertThat(captor.getValue().getStatus()).isEqualTo("cancelled");
+        assertThat(captor.getValue().getCancelledReason()).isEqualTo("加工方排期冲突");
+        // 订单本就 confirmed ⇒ 回退是空动作（revert 会因「非 producing」抛 409）
+        verify(orderService, never()).revertProducingToConfirmed(anyString(), anyString());
+    }
+
+    @Test
+    @DisplayName("PG-007 取消（issued，已发加工 ⇒ 订单 producing）→ 订单 producing→confirmed 回退")
+    void cancelIssuedRevertsOrder() {
+        when(processingOrderMapper.selectOne(any())).thenReturn(po("po-1", "issued"));
         when(processingOrderMapper.updateById(any(ProcessingOrder.class))).thenReturn(1);
         Order producing = Order.builder().id("order-001").tenantId(TENANT).status("producing").build();
         when(orderMapper.selectById("order-001")).thenReturn(producing);
@@ -1370,8 +1626,44 @@ class ProcessingOrderServiceTest {
         ArgumentCaptor<ProcessingOrder> captor = ArgumentCaptor.forClass(ProcessingOrder.class);
         verify(processingOrderMapper).updateById(captor.capture());
         assertThat(captor.getValue().getStatus()).isEqualTo("cancelled");
-        assertThat(captor.getValue().getCancelledReason()).isEqualTo("加工方排期冲突");
         verify(orderService).revertProducingToConfirmed(eq("order-001"), anyString());
+    }
+
+    // ── issue #4305：发加工联动的 fail-closed 负例（形态同 generate 的落库失败回退）──
+
+    @Test
+    @DisplayName("#4305 发加工落库失败 → 订单联动先行已推进 ⇒ 回退 confirmed + 异常传播（无孤儿态）")
+    void issueLinkageRollsBackOrderWhenPersistFails() {
+        when(processingOrderMapper.selectOne(any())).thenReturn(po("po-1", "generated"));
+        when(orderMapper.selectById("order-001")).thenReturn(confirmedOrder);
+        when(processingOrderMapper.updateById(any(ProcessingOrder.class)))
+                .thenThrow(new RuntimeException("db down"));
+
+        ProcessingOrderUpdateRequest issue = new ProcessingOrderUpdateRequest();
+        issue.setAction("issue");
+
+        assertThatThrownBy(() -> processingOrderService.updateStatus("po-1", issue, TENANT, "u1"))
+                .isInstanceOf(RuntimeException.class);
+        // 联动先行：订单先 confirmed→producing；加工单落库失败 ⇒ 回退订单，杜绝
+        // 「订单生产中、加工单未发出」的孤儿态（与 #3345 P2② 给 generate 的同款 fail-closed）
+        verify(orderService).updateOrderStatus("order-001", "producing");
+        verify(orderService).revertProducingToConfirmed(eq("order-001"), anyString());
+    }
+
+    @Test
+    @DisplayName("#4305 发加工：订单已是 producing（旧语义存量数据）⇒ 不重复推进、也不回退")
+    void issueSkipsLinkageWhenOrderAlreadyProducing() {
+        when(processingOrderMapper.selectOne(any())).thenReturn(po("po-1", "generated"));
+        when(processingOrderMapper.updateById(any(ProcessingOrder.class))).thenReturn(1);
+        Order producing = Order.builder().id("order-001").tenantId(TENANT).status("producing").build();
+        when(orderMapper.selectById("order-001")).thenReturn(producing);
+
+        ProcessingOrderUpdateRequest issue = new ProcessingOrderUpdateRequest();
+        issue.setAction("issue");
+        processingOrderService.updateStatus("po-1", issue, TENANT, "u1");
+
+        verify(orderService, never()).updateOrderStatus(anyString(), anyString());
+        verify(orderService, never()).revertProducingToConfirmed(anyString(), anyString());
     }
 
     @Test
@@ -1486,8 +1778,8 @@ class ProcessingOrderServiceTest {
     }
 
     @Test
-    @DisplayName("复核修复 P2①：并发重复生成（DuplicateKeyException）→ 订单状态回退 + 幂等失败结果")
-    void generateConcurrentDuplicateRollsBackOrder() {
+    @DisplayName("并发重复生成（DuplicateKeyException）→ 幂等失败结果；**不**联动订单（#4305）")
+    void generateConcurrentDuplicateRejectedIdempotently() {
         stubLibrary();
         when(orderMapper.selectById("order-001")).thenReturn(confirmedOrder);
         when(orderItemMapper.selectList(any()))
@@ -1500,14 +1792,14 @@ class ProcessingOrderServiceTest {
 
         assertThat(results.get(0).isSuccess()).isFalse();
         assertThat(results.get(0).getMessage()).contains("已生成");
-        // 联动先发生、落库失败 → 订单回退 confirmed（无孤儿态）
-        verify(orderService).updateOrderStatus("order-001", "producing");
-        verify(orderService).revertProducingToConfirmed(eq("order-001"), anyString());
+        // #4305：生成既不推进订单、也无「先推进后回退」可言（时点在发加工）⇒ 订单状态全程不动
+        verify(orderService, never()).updateOrderStatus(anyString(), anyString());
+        verify(orderService, never()).revertProducingToConfirmed(anyString(), anyString());
     }
 
     @Test
-    @DisplayName("复核修复 P2②：落库失败（非重复）→ 状态回退 + 异常传播（整批回滚）")
-    void generateInsertFailureRollsBackAndPropagates() {
+    @DisplayName("生成落库失败（非重复）→ 异常传播（整批回滚）；订单状态不动（#4305）")
+    void generateInsertFailurePropagates() {
         stubLibrary();
         when(orderMapper.selectById("order-001")).thenReturn(confirmedOrder);
         when(orderItemMapper.selectList(any()))
@@ -1518,7 +1810,8 @@ class ProcessingOrderServiceTest {
 
         assertThatThrownBy(() -> processingOrderService.generate(List.of("order-001"), TENANT, "u1"))
                 .isInstanceOf(RuntimeException.class);
-        verify(orderService).revertProducingToConfirmed(eq("order-001"), anyString());
+        verify(orderService, never()).updateOrderStatus(anyString(), anyString());
+        verify(orderService, never()).revertProducingToConfirmed(anyString(), anyString());
     }
 
     // ══════════════════ 存量单补工序的派生 + 打印计数（issue #4202）══════════════════

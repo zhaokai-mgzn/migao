@@ -1,5 +1,5 @@
 # case_ids: MC-012
-"""growth_gate 用例追溯：只认「声明行」，不认 docstring/正文里的「提及」（issue #4239）。
+"""growth_gate 用例追溯：只认「声明行」，且字符串 / 块注释里的「伪声明」不得顶掉真声明（#4239 / #4311）。
 
 ## 病根（代码级）
 
@@ -19,9 +19,15 @@
 
 - `test_declaration_only_first_hit_wins` / `test_false_positive_*` / `test_false_negative_*` /
   `test_own_file_declares_exactly_mc_012` 在**旧实现**下必红（红输出见 PR 报告）；
+- `test_pseudo_declaration_in_string_or_block_comment_never_shadows_real_one` 的四个载体
+  （Python docstring / Java 块注释 / TS 块注释 / TS 模板串内的块注释）在 **#4311 改动前**必红
+  （实得 `['FAKE-777']`）；
 - `test_declaration_syntax_forms` / `test_wide_declaration_forms_*` /
   `test_no_ids_beyond_declared_lines` 是**防收窄过头 / 防凭空多出 ID** 的守门断言：
-  其红证靠**注入缺陷**（正则退回只认 `#`）取得 —— 不会红的断言等于空断言。
+  其红证靠**注入缺陷**（正则退回只认 `#`）取得 —— 不会红的断言等于空断言；
+- `test_real_declaration_not_excluded` 与 `test_repo_wide_identical_to_legacy_first_hit`
+  （#4311 的**防过头**与**不回归**判据）在改动前后都绿 ⇒ 其红证靠**注入缺陷**
+  （把实现改成「严格排除、无兜底」：前者实得 `[]`、后者报 17 个文件与旧口径不同）取得。
 
 ## 全仓守门为什么**不用快照**（返工记录，CI run 35317165332）
 
@@ -32,10 +38,31 @@ main 每新增/修改一条 `case_ids` 声明就误报（实证：`ProcessingOrd
 这正是 `migao-dev-flow` §18「读的是快照，按可变键定位被测对象」与 §19.1「基于错误真相模型
 写出的护栏 = 永远红」。现改为**运行期自算、与文件集/ID 值增减无关**的不变式：
 逐行拿「宽口径声明形态全集」去要求新实现，反向再要求"不得多出声明行之外的 ID"。
+
+## #4311 残留：字符串字面量 / 块注释里的**伪声明**会顶掉真声明
+
+行级正则分不清「注释」与「字符串里的行」：`# case_ids:` 落在 Python 模块 docstring 内、
+或 ` * case_ids:` 落在 Java/TS 块注释内时，`CASE_IDS_RE` 照样命中 ⇒ **首个命中即停**
+⇒ 文档里贴的样例（`FAKE-777`）把后面的真声明顶掉（假红 block 合规 PR / 真声明失效）。
+
+本文件新增的判据（`test_pseudo_declaration_in_string_or_block_comment_never_shadows_real_one` 等）：
+
+1. **收窄**：字符串字面量 / 块注释内的候选不是真声明 —— Python 用 `ast` 取字符串常量行区间，
+   Java/TS 扫 `/* … */` 与引号串（含模板串）；命中判定改为「**真声明优先**」；
+2. **不过头**（关键的存量兼容，实测数据）：整仓 17 个测试文件**只有**非注释形态的候选 ——
+   13 个 Python 文件的声明行就在**模块 docstring** 内（如
+   `backend/ai-agent-service/tests/test_internal_tool_execute_guard.py` 的 docstring 里
+   那一行 `# case_ids: DF-008`）、
+   4 个 TS 文件的声明行在**文件头 JSDoc 块注释**内（如 `ProductForm.test.tsx`）。
+   严格排除会把它们判成「未声明」= 对 17 个合规文件制造假红 ⇒ 故「无真声明时按旧口径取首个候选」；
+3. **不回归**：`test_repo_wide_identical_to_legacy_first_hit` 用**运行期自算**的旧口径参考实现
+   （独立字符串切分，不复用被测正则）对全仓文件两两比对，结果必须**逐值相同**（0 处差异）。
 """
 import importlib.util
+import ast
 import re
 import subprocess
+import warnings
 from pathlib import Path
 
 import pytest
@@ -85,6 +112,77 @@ _TWO_DECLARATIONS = (
     "    x = 1\n"
 )
 
+# ── #4311 载体夹具（伪声明在前 + 真声明在后；正文拼接构造，避免本文件自身被当成声明）──
+
+_PY_PSEUDO_THEN_REAL = (
+    '"""说明（模块 docstring 内容：下面是文档里贴的声明样例）\n'
+    "\n"
+    "# case_ids: FAKE-777\n"
+    '"""\n'
+    "# case_ids: OR-016\n"
+    "def test_sample():\n"
+    "    x = 1\n"
+)
+
+_JAVA_PSEUDO_THEN_REAL = (
+    "/**\n"
+    " * 说明：文档里贴的声明样例\n"
+    " * case_ids: FAKE-777\n"
+    " */\n"
+    "// case_ids: OR-016\n"
+    "class SampleTest {}\n"
+)
+
+_TS_PSEUDO_THEN_REAL = (
+    "/**\n"
+    " * 说明：文档里贴的声明样例\n"
+    " * case_ids: FAKE-777\n"
+    " */\n"
+    "// case_ids: UI-030\n"
+    "describe('sample', () => {})\n"
+)
+
+_TS_TEMPLATE_PSEUDO_THEN_REAL = (
+    "const doc = `\n"
+    "/**\n"
+    " * case_ids: FAKE-777\n"
+    " */\n"
+    "`\n"
+    "// case_ids: UI-030\n"
+    "describe('sample', () => {})\n"
+)
+
+# ── #4311 存量兼容夹具（整仓 17 个文件的真实形态：**只有**这一处候选）──
+
+# 13 个 Python 测试文件的形态：声明行落在**模块 docstring** 内（实测第 2/3 行）。
+_PY_DOCSTRING_DECL_ONLY = (
+    '"""内部端点安全加固 — 回归测试\n'
+    "# case_ids: DF-008\n"
+    "\n"
+    "修复背景：……\n"
+    '"""\n'
+    "import pytest\n"
+)
+
+# 4 个 TS 测试文件的形态：声明行落在**文件头 JSDoc 块注释**内（实测第 3/4 行）。
+_TS_JSDOC_DECL_ONLY = (
+    "/**\n"
+    " * ProductForm 组件测试\n"
+    " * case_ids: PR-008, PR-017\n"
+    " */\n"
+    "import { render } from '@testing-library/react'\n"
+)
+
+# 真声明紧跟多行字符串之后：**不得**被连带排除。
+_PY_STRING_THEN_REAL = (
+    'MSG = """\n'
+    "文本\n"
+    '"""\n'
+    "# case_ids: OR-016\n"
+    "def test_sample():\n"
+    "    x = 1\n"
+)
+
 
 def _gate():
     """从 .github/growth_gate.py 加载被测模块（零依赖，importlib 文件加载）。"""
@@ -96,6 +194,13 @@ def _gate():
 
 def _write(tmp_path, text):
     f = tmp_path / "test_sample.py"
+    f.write_text(text, encoding="utf-8")
+    return f
+
+
+def _write_named(tmp_path, name, text):
+    """按**真实后缀**落盘（#4311 的载体判定与语言相关：`.py` 走 ast，`.java`/`.ts` 扫块注释）。"""
+    f = tmp_path / name
     f.write_text(text, encoding="utf-8")
     return f
 
@@ -274,3 +379,132 @@ def test_gate_end_to_end_declared_passes_mention_only_blocked(tmp_path, monkeypa
     blocked = {b["file"]: b["reason"] for b in blocks}
     assert str(mention_only) in blocked, f"仅提及的文件必须被判未声明：{blocks}"
     assert "未声明 case_ids" in blocked[str(mention_only)], blocked
+
+
+# ── ⑦ #4311 红证①③：字符串字面量 / 块注释里的伪声明不得顶掉真声明 ──
+
+@pytest.mark.parametrize("name,text,expected", [
+    ("test_sample.py", _PY_PSEUDO_THEN_REAL, ["OR-016"]),               # ① Python docstring
+    ("SampleTest.java", _JAVA_PSEUDO_THEN_REAL, ["OR-016"]),            # ③ Java 块注释
+    ("sample.test.ts", _TS_PSEUDO_THEN_REAL, ["UI-030"]),               # ③ TS 块注释
+    ("template.test.ts", _TS_TEMPLATE_PSEUDO_THEN_REAL, ["UI-030"]),    # ③ TS 模板串内的块注释
+])
+def test_pseudo_declaration_in_string_or_block_comment_never_shadows_real_one(tmp_path, name, text, expected):
+    """伪声明（文档样例 `FAKE-777`）在前、真声明在后 ⇒ 提取结果**恰为真声明**。
+
+    #4311 改动前：行级正则分不清「注释」与「字符串里的行」，首个命中即停 ⇒ 实得 `['FAKE-777']`。
+    """
+    ids = _gate().extract_case_ids(str(_write_named(tmp_path, name, text)))
+    assert ids == expected, f"{name}: 伪声明顶掉了真声明 → {ids}"
+
+
+# ── ⑧ #4311 红证②：收窄不得过头（真声明本身不得被排除）──
+
+@pytest.mark.parametrize("name,text,expected", [
+    ("test_docstring_only.py", _PY_DOCSTRING_DECL_ONLY, ["DF-008"]),
+    ("ProductForm.test.tsx", _TS_JSDOC_DECL_ONLY, ["PR-008", "PR-017"]),
+    ("test_string_then_real.py", _PY_STRING_THEN_REAL, ["OR-016"]),
+])
+def test_real_declaration_not_excluded(tmp_path, name, text, expected):
+    """真声明必须仍被识别 —— 含**整仓 17 个文件**的存量形态（模块 docstring / 文件头 JSDoc）。
+
+    严格排除（无兜底）会把它们判成「未声明」⇒ 对合规文件制造假红（红证靠注入该缺陷取得）。
+    """
+    ids = _gate().extract_case_ids(str(_write_named(tmp_path, name, text)))
+    assert ids == expected, f"{name}: 真声明被排除（改过头）→ {ids}"
+
+
+# ── ⑨ #4311 红证③：全仓逐值不回归（运行期自算，禁静态快照）──
+
+def _legacy_first_hit_ids(path):
+    """**旧口径**参考实现：前 50 行里首个宽口径声明行的 ID（不做任何字符串/块注释排除）。
+
+    独立实现（`_wide_line_ids` 字符串切分），**不复用被测正则**，也不按文件集/ID 值落任何基准。
+    """
+    for _no, line in _declaration_lines(path):
+        return _wide_line_ids(line)
+    return []
+
+
+def _declaration_regions(path):
+    """文件前 50 行的宽口径声明行 → [(行号, 行文本, 是否落在字符串/块注释内)]（**独立判定**）。
+
+    `.py`：`ast` 看该行是否落在**字符串常量**区间内；Java/TS：声明标记是块注释续行的 `*`。
+    这里不复用被测实现的区域判定 —— 它是「全仓今天长什么样」的第三方口径。
+    """
+    lines = _declaration_lines(path)
+    if not lines:
+        return []
+    if path.suffix != ".py":
+        return [(no, line, line.lstrip().startswith("*")) for no, line in lines]
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")  # 全仓无关文件的语法告警不污染测试输出
+            tree = ast.parse(path.read_text(encoding="utf-8", errors="replace"))
+    except (SyntaxError, ValueError):
+        return [(no, line, False) for no, line in lines]
+    spans = [(n.lineno, n.end_lineno or n.lineno) for n in ast.walk(tree)
+             if isinstance(n, ast.Constant) and isinstance(n.value, str)]
+    return [(no, line, any(a <= no <= b for a, b in spans)) for no, line in lines]
+
+
+def _weak_only_declared_files(gate):
+    """**只有**字符串/块注释内候选的测试文件（= 兜底路径服务的对象，实测今天 17 个）。"""
+    return [rel for rel in sorted(_repo_test_files(gate))
+            if (lambda r: r and all(weak for _no, _line, weak in r))(_declaration_regions(REPO_ROOT / rel))]
+
+
+def _shadowing_files(gate):
+    """「伪声明在前 + 真声明在后」的**遮蔽形态**文件（#4311 的缺陷形态；今天全仓 0 例）。"""
+    return [rel for rel in sorted(_repo_test_files(gate))
+            if (lambda r: r and r[0][2] and any(not weak for _no, _line, weak in r[1:]))(
+                _declaration_regions(REPO_ROOT / rel))]
+
+
+def test_fallback_path_is_actually_exercised():
+    """兜底路径的 **liveness 下限**（#4311）：靠兜底才被认作「已声明」的合规文件 ≥ 17，且它们提取非空。
+
+    用**下限**（`>=`）而非等值 —— 按可变键（文件集 / 每行 ID 的值）做等值基准必然腐烂，
+    这正是 #4239 首次交付被 CI 判红的机制（见本文件「全仓守门为什么不用快照」）。
+    复核命令（不写死数字）：`pytest tests/unit_ci_workflows/test_growth_gate_case_ids.py -q -s -k fallback`
+    —— 它打印两个数：依赖兜底的合规文件数（下限 17）与遮蔽形态文件数（今天 0，**不设上限**：
+    正确实现下遮蔽形态会被取真声明，数量增长不是缺陷）。
+    """
+    gate = _gate()
+    files = _repo_test_files(gate)
+    assert len(files) > 400, f"扫描集异常（{len(files)} 个测试文件）—— 判据空跑"
+
+    dependent, shadow = _weak_only_declared_files(gate), _shadowing_files(gate)
+    print(f"\n[#4311 复核] 依赖兜底的合规文件={len(dependent)}（下限 17）  "
+          f"遮蔽形态={len(shadow)}（今天 0，不设上限）")
+    assert len(dependent) >= 17, (
+        f"只有 docstring/JSDoc 声明的合规文件从 17 掉到 {len(dependent)} —— 兜底路径判据空跑：{dependent}")
+    empty = [rel for rel in dependent if not gate.extract_case_ids(str(REPO_ROOT / rel))]
+    assert empty == [], f"兜底路径失效：这些合规文件被判「未声明」（假红）→ {empty[:10]}"
+    assert len(files) > len(dependent), "扫描集与兜底集重合 —— 判据空跑"
+
+
+def test_repo_wide_identical_to_legacy_first_hit():
+    """全仓真实测试文件：新实现与旧口径**逐值相同**（0 处差异）—— 防收窄过头引入回归。
+
+    #4239 的 CI 红就是「按可变键（文件集 / 每行 ID 的值）做静态基准」造成的：
+    这里一律**运行期自算**，与文件集增减、ID 值变化无关。
+    """
+    gate = _gate()
+    files = _repo_test_files(gate)
+    assert len(files) > 400, f"扫描集异常（{len(files)} 个测试文件）—— 判据空跑"
+
+    declared = identical = 0
+    diffs = []
+    for rel in sorted(files):
+        legacy = _legacy_first_hit_ids(REPO_ROOT / rel)
+        declared += 1 if legacy else 0
+        actual = gate.extract_case_ids(str(REPO_ROOT / rel))
+        if actual == legacy:
+            identical += 1
+        else:
+            diffs.append(f"{rel}: 旧口径 {legacy} → 新实现 {actual}")
+
+    assert declared > 400, f"旧口径只找到 {declared} 个已声明文件 —— 判据空跑"
+    assert identical == len(files), (
+        f"{len(diffs)}/{len(files)} 个文件与旧口径不同（收窄过头 / 回归）：\n" + "\n".join(diffs[:10]))

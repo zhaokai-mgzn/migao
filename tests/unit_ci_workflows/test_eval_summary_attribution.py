@@ -87,6 +87,12 @@ lr = _load_runner()
 # 本 PR 新增的两个字段名（回归锚点用；改名即视为破坏"只加字段"的契约）
 NEW_CASE_KEY = "failures"
 NEW_COMPLETION_KEY = "failure_reasons"
+# #4207 追加的**两个结构化分组字段**（`completion` 内）：阻塞条目按 `score` 切成
+# 「真失败」/「通过但被 fail-closed 阻塞」两类，供下游 issue 渲染器直接分组
+# （详见 `test_eval_blocked_vs_failed.py`）。语义/红证在那边，这里只保证
+# `_strip_new` 的"只加不改"锚点**真的剥掉了**这两键（否则锚点会因新键而恒红）。
+NEW_GROUPING_COMPLETION_KEYS = {"must_fix_failures", "blocked_but_passed"}
+NEW_COMPLETION_KEYS = {NEW_COMPLETION_KEY} | NEW_GROUPING_COMPLETION_KEYS
 # #3805/#3806/#3807/#3803 追加的**用例级**新增字段（同一纪律：只加不改，且必须真的存在）。
 # 逐条理由见 `_strip_new` 的注释；`failures` 的断言（NEW_CASE_KEY）保持不变。
 NEW_CASE_KEYS = {
@@ -181,7 +187,7 @@ def _strip_new(payload):
         if k == "cases":
             out[k] = [{kk: vv for kk, vv in c.items() if kk not in NEW_CASE_KEYS} for c in v]
         elif k == "completion":
-            out[k] = {kk: vv for kk, vv in v.items() if kk != NEW_COMPLETION_KEY}
+            out[k] = {kk: vv for kk, vv in v.items() if kk not in NEW_COMPLETION_KEYS}
         elif k in NEW_TOP_KEYS:
             continue          # #3761/#3769/#3805：顶层新增键，整体剥掉
         else:
@@ -353,11 +359,21 @@ class TestCompletionCarriesReasons:
              `journey_failures` 里**分出来单列**，但**仍计入 `ok`**（结论不可用）。
              本夹具该桶为空 —— 新增的只是"多出来的失败形态不再归因错人"。
         本夹具四者皆空 —— 也就是说：**既有桶/文案一字未动**。
+
+        ⚠️ **本包（#4207）改了 `reason` 的**读法**，键集一字未增**（显式留痕）：
+        判红时 `reason` 先给两组（`必须处理的失败（score<1）` / `通过但被 fail-closed
+        阻塞（跨 run 复发，score=1）`），再给「桶分解：…」。两组由 `blocking_groups`
+        从**同一批阻塞桶**按 `score` 切出（不是第二套判据）；`ok` 表达式 / 各桶 /
+        `_COMPLETION_RELEASED_CLASSES` **一字未动**，`completion_verdict` 的键集也不变
+        （两个结构化字段在**序列化层**，见 `write_summary_json`）。本夹具两组都有内容
+        （PP-007 与关键旅程均 `score<1`）⇒ 文案随之变化，见下方期望串。
         """
         verdict = lr.completion_verdict(self._results(), (_journey_id(),))
         assert verdict == {
             "ok": False,
-            "reason": f"必须处理的失败 1 条: PP-007；关键旅程失败 1 条: {_journey_id()}",
+            "reason": (f"必须处理的失败（score<1）2 条: PP-007, {_journey_id()}；"
+                       f"桶分解：必须处理的失败 1 条: PP-007；"
+                       f"关键旅程失败 1 条: {_journey_id()}"),
             "deterministic_failures": ["PP-007"],
             "journey_failures": [_journey_id()],
             "flake_released": ["OR-014"],
@@ -372,7 +388,8 @@ class TestCompletionCarriesReasons:
             [_case("OR-014", 0.0, "unstable", [("断言原文", "")])], (_journey_id(),))
         assert unstable == {
             "ok": False,
-            "reason": "必须处理的失败 1 条: OR-014",
+            "reason": ("必须处理的失败（score<1）1 条: OR-014；"
+                       "桶分解：必须处理的失败 1 条: OR-014"),
             "deterministic_failures": ["OR-014"],
             "journey_failures": [],
             "flake_released": [],
@@ -382,6 +399,20 @@ class TestCompletionCarriesReasons:
             "case_asset_failures": [],
             "total": 1, "passed": 0,
         }
+        # ③ #4207 反向锚点：`score==1.0` 的阻塞条目（跨 run 复发）⇒ 落**第二组**，
+        #    `ok` 仍为 False（分组只是读法，**不是**放行通道）
+        passed_but_blocked = lr.completion_verdict(
+            [{"case_id": "AS-007", "score": 1.0, "classification": "llm-noise",
+              "flake_released": True,
+              "cross_run_recurrence": {"prior_count": 1, "prior_runs": ["35295494688"]}}],
+            lr.KEY_JOURNEYS_MIBAO)
+        assert passed_but_blocked["ok"] is False, passed_but_blocked
+        assert passed_but_blocked["systemic_recurrence"] == ["AS-007"], passed_but_blocked
+        assert "必须处理的失败（score<1）" not in passed_but_blocked["reason"], (
+            f"`score=1.0` 的阻塞条目被算进『必须处理的失败』—— #4207 的病复发："
+            f"{passed_but_blocked['reason']}")
+        assert ("通过但被 fail-closed 阻塞（跨 run 复发，score=1）1 条: AS-007"
+                in passed_but_blocked["reason"]), passed_but_blocked["reason"]
 
 
 # ── ④ 回归锚点：除新增字段外逐字节等价 ───────────────────────────────────────
@@ -412,6 +443,11 @@ class TestLegacyBytesUnchanged:
         # 红证前置：新增字段必须真的存在，否则下面的"等价"是**空断言**
         assert NEW_CASE_KEY in new["cases"][1], "新增字段缺失 → 本锚点什么都没证明"
         assert NEW_COMPLETION_KEY in new["completion"], "新增字段缺失 → 本锚点什么都没证明"
+        # #4207：两个分组字段必须**真的存在**，否则 `_strip_new` 剥了个不存在的东西
+        # ⇒ "只加不改"锚点在这两键上退化成空断言（改了旧字段也发现不了）
+        missing = sorted(NEW_GROUPING_COMPLETION_KEYS - set(new["completion"]))
+        assert missing == [], (
+            f"#4207 的分组字段缺失（下游渲染器读不到）→ 本锚点在这两键上是空的：{missing}")
         assert NEW_COST_KEY in new, "新增字段缺失 → 本锚点什么都没证明"
         assert NEW_RUN_KEY_KEY in new, "新增字段缺失 → 本锚点什么都没证明"
         assert NEW_EVIDENCE_KEY in new, (

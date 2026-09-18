@@ -1,42 +1,29 @@
-// case_ids: PG-024
+// case_ids: PG-024, PG-005
 //
 // PG-024（issue #4303）：加工单列表页（/processing-orders）的**列表请求时序保护** ——
-// 旧的在飞列表响应晚到，**不得**覆盖更新的列表数据（搜索/筛选/刷新/写后刷新皆然）。
-// 断言分两层（后续 P3 会把列表页写入口全部移除、唯一入口改订单详情页）：
-//   ① 核心/长期：旧请求晚 resolve ⇒ 列表不得回退到旧数据（**红证在这条**，与写入口无关，
-//      用「查询（回车）连续两次筛选」造两个并发请求，不依赖任何写操作）；
-//   ② 当前 main 有效：写操作成功后**不等**刷新即渲染新状态 —— 列表页写入口移除后（P3），
-//      本条断言随对应实现一并移除，由该单更新本测试文件。
+// 旧的在飞列表响应晚到，**不得**覆盖更新的列表数据（搜索/筛选/刷新皆然）。
+//   红证形态（issue #4303 实测：Playwright + 真后端，本地）：一个 **4174ms 才返回的旧列表 GET**
+//   落在写请求（358ms）之后，把新数据**覆盖回旧值**；Resource Timing 与 DOM 采样（+0.5s/+1.0s/
+//   +1.5s 仍是旧状态）双证。
 //
-// 缺陷形态（issue #4303 实测：Playwright + 真后端，本地）：点「发加工」→「确认发加工」，
-// 后端写成功（PATCH 200、库里 status=issued），但列表行仍显示「已生成」（DOM 在
-// +0.5s/+1.0s/+1.5s 未变，+2.0s 才变）——Resource Timing 显示一个 **4174ms 才返回的旧列表 GET**
-// 落在 PATCH（358ms）之后，把新数据**覆盖回旧值**；且写成功后只 loadList()，
-// **不用写响应即时更新该行** ⇒ 行要等下一次列表请求返回。
+// PG-005（issue #4305，用户裁定「从订单作为发加工的唯一入口」）：列表页**不再提供任何状态流转入口**
+//   —— 发加工/开始加工/加工完成/取消 四个按钮都不渲染，只留「查看（跳订单详情）/ 生产明细」。
+//   （状态机语义与订单联动改判见 ProcessingOrderServiceTest 的 PG-001/PG-005/PG-007 用例。）
 import React from 'react'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, waitFor, act } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 const mockList = vi.fn()
-const mockUpdate = vi.fn()
 
 vi.mock('@/lib/api', () => ({
   processingOrderApi: {
     list: (...args: unknown[]) => mockList(...args),
-    update: (...args: unknown[]) => mockUpdate(...args),
   },
 }))
 
-// 弹窗/按钮用轻量替身（与仓内既有页面测试同惯例），断言只看用户可见文案
+// 按钮用轻量替身（与仓内既有页面测试同惯例），断言只看用户可见文案
 vi.mock('@/components/ui', () => ({
-  Modal: ({ open, title, children, footer }: any) =>
-    open ? (
-      <div role="dialog" aria-label={title}>
-        {children}
-        <div>{footer}</div>
-      </div>
-    ) : null,
   Button: ({ children, variant, size, loading, ...props }: any) => <button {...props}>{children}</button>,
 }))
 
@@ -57,11 +44,8 @@ const PO_GENERATED: ProcessingOrder = {
   items: [{ productName: '布帘', colorName: '米白', quantity: 3, unit: '米' }],
 }
 
-const PO_ISSUED: ProcessingOrder = { ...PO_GENERATED, status: 'issued', processor: '朝阳加工厂' }
 const PO_IN_PROCESSING: ProcessingOrder = { ...PO_GENERATED, status: 'in_processing' }
 
-/** 后端列表/写响应外壳（ApiResponse<ProcessingOrder>） */
-const res = (po: ProcessingOrder) => ({ data: { data: po } })
 const listRes = (po: ProcessingOrder) => ({ data: { data: [po] } })
 
 /** 可手动控制 resolve 时机的 promise（模拟「在飞的慢请求」） */
@@ -79,7 +63,6 @@ const tableText = () => screen.getByRole('table').textContent ?? ''
 describe('ProcessingOrdersPage 列表请求时序（PG-024 / issue #4303）', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    vi.spyOn(window, 'confirm').mockReturnValue(true)
   })
 
   afterEach(() => {
@@ -118,26 +101,35 @@ describe('ProcessingOrdersPage 列表请求时序（PG-024 / issue #4303）', ()
     expect(tableText()).toContain('加工中')
     expect(tableText()).not.toContain('已生成')
   })
+})
 
-  it('② 当前 main：写成功后不等列表刷新，行状态即反映写响应（P3 移除列表写入口后随实现一并移除）', async () => {
-    const refresh = deferred() // 写后的列表刷新：保持 pending（不等它）
-    mockList.mockResolvedValueOnce(listRes(PO_GENERATED)).mockReturnValueOnce(refresh.promise)
-    mockUpdate.mockResolvedValue(res(PO_ISSUED))
+describe('ProcessingOrdersPage 入口收敛（PG-005 / issue #4305）', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockList.mockResolvedValue(listRes(PO_GENERATED))
+  })
 
-    const user = userEvent.setup()
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('② 列表页不再提供状态流转入口：四个动作按钮都不渲染', async () => {
     render(<ProcessingOrdersPage />)
     await waitFor(() => expect(tableText()).toContain('已生成'))
 
-    await user.click(screen.getByRole('button', { name: '发加工' }))
-    await user.click(screen.getByRole('button', { name: '确认发加工' }))
+    for (const label of ['发加工', '开始加工', '加工完成', '取消加工单']) {
+      expect(screen.queryByRole('button', { name: label })).toBeNull()
+    }
+    // 只留跳转类入口
+    expect(screen.getByRole('button', { name: '查看' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: '生产明细' })).toBeTruthy()
+    // 明确引导到唯一入口（订单详情页）
+    expect(tableText()).toContain('状态流转请在订单详情操作')
+  })
 
-    await waitFor(() =>
-      expect(mockUpdate).toHaveBeenCalledWith('po-1', expect.objectContaining({ action: 'issue' }))
-    )
-    // 刷新请求已发出但**未 resolve** —— 行必须已经反映写响应
-    await waitFor(() => expect(mockList).toHaveBeenCalledTimes(2))
-    await act(async () => {})
-    expect(tableText()).toContain('已发加工')
-    expect(tableText()).not.toContain('已生成')
+  it('③ 行内仍渲染状态徽标（入口收敛不得连带丢进度可见性）', async () => {
+    render(<ProcessingOrdersPage />)
+    await waitFor(() => expect(tableText()).toContain('已生成'))
+    expect(screen.getByText(PO_NO)).toBeTruthy()
   })
 })

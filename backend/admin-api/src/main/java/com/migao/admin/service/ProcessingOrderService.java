@@ -42,10 +42,13 @@ import java.util.concurrent.ThreadLocalRandom;
  * 加工单服务（issue #3340，设计文档 docs/design/processing-order-design.md）
  *
  * 核心职责：
- * 1. 生成加工单（快照固化五要素 + options，不含销售价）+ 订单 confirmed→producing 联动；
+ * 1. 生成加工单（快照固化五要素 + options，不含销售价），**不**联动订单状态；
  * 2. 加工单状态机（generated→issued→in_processing→completed | cancelled），非法迁移拒绝；
- * 3. 取消联动（generated 取消 → 订单 producing→confirmed 回退）；
- * 4. 订单侧联动（shipped 守卫 / 订单取消自动作废）由 OrderService 完成。
+ * 3. 发加工（issue）联动订单 confirmed→producing（**唯一时点**，issue #4305：用户裁定
+ *    「发加工 = 订单进入生产中」，时点从「生成加工单」挪到「发加工」）；
+ * 4. 取消联动（issued 及之后取消 → 订单 producing→confirmed 回退；generated 取消时订单
+ *    本就 confirmed ⇒ 回退自然不触发）；
+ * 5. 订单侧联动（shipped 守卫 / 订单取消自动作废）由 OrderService 完成。
  *
  * <h2>工序来源（issue #4116，用户裁定「现在就切」，2026-09-18）</h2>
  * 生成加工单时的工序实例化读**工序库**：{@code production_routings}（部位×工艺 → 基准工序序列）
@@ -144,12 +147,6 @@ public class ProcessingOrderService {
     private static final List<String> CALC_INFO_KEYS = List.of(
             "fabric_meters", "meters", "pleat_count", "holes", "panels", "set_count", "source");
 
-    /**
-     * 「订单行数量 = 面料米数」的计价方式（{@code OrderItem.quantity} javadoc：per_meter=米数）。
-     * 兼容前端展示标签「按米」（部分历史数据把标签写进了 processing_info）。
-     */
-    private static final Set<String> PER_METER_METHODS = Set.of("per_meter", "按米");
-
     /** 加工单状态机（与 OrderService.STATUS_TRANSITIONS 同模式） */    private static final Map<String, Set<String>> STATUS_TRANSITIONS = Map.of(
             "generated", Set.of("issued", "cancelled"),
             "issued", Set.of("in_processing", "cancelled"),
@@ -245,23 +242,16 @@ public class ProcessingOrderService {
                 .deleted(0)
                 .build();
 
-        // 联动先行（验收复核 #3345 P2②）：先推进订单 confirmed→producing，再落加工单。
-        // 落库失败时回退订单状态，杜绝「producing 无加工单」孤儿态；
-        // 并发重复生成由 partial unique index 兜底 → 转幂等错误（P2①）。
-        orderService.updateOrderStatus(order.getId(), "producing");
+        // 生成**不**联动订单状态（issue #4305，用户裁定「发加工 = 订单进入生产中」）：
+        // 订单 confirmed→producing 的时点已从「生成加工单」挪到「发加工」（见 updateStatus）。
+        // 故此处不再有「联动先行 + 失败回退」那段 —— 订单状态在生成路径上全程不动，
+        // 也就没有「producing 无加工单」的孤儿态可言（该孤儿态的成因随联动一并挪走）。
+        // 并发重复生成仍由 partial unique index 兜底 → 转幂等错误（P2①）。
         try {
             processingOrderMapper.insert(po);
         } catch (org.springframework.dao.DuplicateKeyException e) {
-            orderService.revertProducingToConfirmed(order.getId(), "加工单并发重复生成，订单状态回退");
             throw BusinessException.validationError(
                     "订单 " + order.getOrderNo() + " 加工单已生成（并发操作），请刷新后重试");
-        } catch (Exception e) {
-            try {
-                orderService.revertProducingToConfirmed(order.getId(), "加工单生成失败，订单状态回退");
-            } catch (Exception revertErr) {
-                log.warn("加工单生成失败且状态回退失败: orderId={}, err={}", order.getId(), revertErr.getMessage());
-            }
-            throw e;
         }
         log.info("生成加工单: no={}, orderId={}, tenantId={}, operator={}",
                 po.getProcessingOrderNo(), order.getId(), tenantId, operator);
@@ -572,12 +562,27 @@ public class ProcessingOrderService {
     }
 
     /**
-     * 算料输入（issue #4208 Java 接线）。
+     * 算料输入（issue #4208 Java 接线；米数判据由 issue #4299 更正为**加工项** {@code pricingMethod}）。
      *
-     * <p><b>口径依据</b>：订单行 {@code quantity} 的语义由**计价方式**决定
-     * （{@code OrderItem.quantity} javadoc：「per_meter=米数、per_set=1、per_area=宽×高」；
-     * 前端 {@code deriveProcessingQty} 同口径）⇒ {@code per_meter} 时它**就是**面料米数，
-     * 映射到算料引擎的 {@code fabric_meters} 键（**键名映射，不是第二份算料逻辑**）。</p>
+     * <p><b>三层字段别混</b>（#4299 真库实测钉死，见 {@code acceptance/2026-09-18/4299-db-distribution/FINDINGS.md}）：</p>
+     * <ul>
+     *   <li>{@code sellingMethod} = <b>售卖方式</b>（真库取值：{@code bulk_cut} / {@code 散剪} /
+     *       {@code full_roll} / {@code 整卷} / {@code 散剪售卖} / {@code 散剪按米} / {@code 散剪·按米购买} /
+     *       {@code 散剪(bulk_cut)} / {@code cut} / {@code 散剪（按米裁剪）} / 无）—— <b>不是数量口径的来源</b>；
+     *       {@code per_meter} 在该字段里一次都没出现过 ⇒ 拿它当判据<b>永不命中</b>（#4299 的病根）。</li>
+     *   <li>加工项 {@code pricingMethod} = <b>加工项计价方式</b>（{@code per_meter} / {@code per_set} /
+     *       {@code fixed} / {@code per_area}…）—— <b>订单行数量口径由它决定</b>，故它是本方法的判据字段
+     *       （可达面 68 条订单行里命中 67 条）。</li>
+     *   <li>{@code products.pricing_type} = <b>商品</b>计价方式 —— 与订单行口径<b>不是同一层</b>：
+     *       实测按它会漏 18/68 条（11 条商品缺失/软删 + 6 条 {@code pricing_type=fixed} 而其加工项仍按米）。</li>
+     * </ul>
+     * <p>{@code per_meter} 与「按米」是<b>加工项计价方式</b>的词汇，历史上被误当成售卖方式词表 ——
+     * 同族混淆见前端展示表（{@code OrderDetail.tsx} / {@code OrderItemList.tsx} 把 {@code per_meter: '按米'}
+     * 放进了 {@code sellingMethod} 的映射表）。</p>
+     *
+     * <p><b>取值</b>：命中时取<b>订单行</b> {@code quantity}（{@code OrderItem.quantity} javadoc：per_meter=米数），
+     * <b>不</b>取加工项自己的 {@code quantity} —— 实测订单行 {@code 7e6f2a1c…} 订单数量 112.00
+     * 而其 {@code per_meter} 加工项 quantity=1，取后者会让 112 米的单得到「应做 1 米」⇒ 报工上限 1 ⇒ 假完工。</p>
      *
      * <p><b>已知缺口（#4118，不是本方法缺陷）</b>：订单侧**从不落库算料输出** ⇒
      * {@code pleat_count}（折数）/ {@code panels}（幅）/ {@code set_count}（套）/ {@code holes}（孔）
@@ -594,16 +599,34 @@ public class ProcessingOrderService {
                 calc.put(key, value);
             }
         }
-        // ② per_meter 计价：订单行数量即米数（键名映射；其它计价方式**不**冒充米数）
-        String sellingMethod = str(entry.get("sellingMethod"));
-        if (!calc.containsKey("fabric_meters") && sellingMethod != null
-                && PER_METER_METHODS.contains(sellingMethod)) {
+        // ② 加工项里有 per_meter ⇒ 订单行数量即米数（键名映射；其它计价方式**不**冒充米数）
+        if (!calc.containsKey("fabric_meters") && hasPerMeterPricing(entry)) {
             Object quantity = entry.get("quantity");
             if (quantity != null) {
                 calc.put("fabric_meters", quantity);
             }
         }
         return calc;
+    }
+
+    /**
+     * 订单行的加工项里是否有一项按米计价（{@code pricingMethod == "per_meter"}）。
+     *
+     * <p>只看该单**实际选的加工项**（键名驼峰 {@code pricingMethod}，两个下单入口都这么写），
+     * 不看售卖方式、也不看商品级 {@code pricing_type} —— 理由与实测数字见 {@link #calcInfo}。
+     * {@code processingItems} 缺失 / 非 List / 元素非 Map 一律视为**不命中**（老数据与脏数据形态，不猜）。</p>
+     */
+    private static boolean hasPerMeterPricing(Map<String, Object> entry) {
+        Object raw = entry.get("processingItems");
+        if (!(raw instanceof List<?> items)) {
+            return false;
+        }
+        for (Object item : items) {
+            if (item instanceof Map<?, ?> proc && "per_meter".equals(str(proc.get("pricingMethod")))) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -1037,7 +1060,7 @@ public class ProcessingOrderService {
 
     /**
      * 加工单状态更新（action: issue/start/complete/cancel）。
-     * 状态机校验 + 订单联动（cancel → producing→confirmed 回退）。
+     * 状态机校验 + 订单联动（issue → 订单 confirmed→producing；cancel → 订单 producing→confirmed 回退）。
      */
     @Transactional(rollbackFor = Exception.class)
     public ProcessingOrderResponse updateStatus(String rawId, ProcessingOrderUpdateRequest req,
@@ -1093,8 +1116,32 @@ public class ProcessingOrderService {
             default:
                 break;
         }
-        processingOrderMapper.updateById(upd);
-
+        // 联动先行（issue #4305，用户裁定「发加工 = 订单进入生产中」）：**发加工是订单
+        // confirmed→producing 的唯一时点**（生成加工单不再推进订单）。先推进订单、再落加工单
+        // issued —— 落库失败时回退订单状态，杜绝「订单生产中、加工单未发出」孤儿态
+        // （形态 = #3345 P2② 给 generate 的同款 fail-closed，现随联动一并挪到这里）。
+        // 已是 producing 的订单（旧语义下「生成即推进」的存量数据）不重复推进、也不回退。
+        boolean orderLinked = false;
+        if ("issue".equals(action)) {
+            Order order = orderMapper.selectById(po.getOrderId());
+            if (order != null && "confirmed".equals(order.getStatus())) {
+                orderService.updateOrderStatus(order.getId(), "producing");
+                orderLinked = true;
+            }
+        }
+        try {
+            processingOrderMapper.updateById(upd);
+        } catch (Exception e) {
+            if (orderLinked) {
+                try {
+                    orderService.revertProducingToConfirmed(po.getOrderId(), "加工单发加工落库失败，订单状态回退");
+                } catch (Exception revertErr) {
+                    log.warn("发加工落库失败且订单状态回退失败: orderId={}, err={}",
+                            po.getOrderId(), revertErr.getMessage());
+                }
+            }
+            throw e;
+        }
         // 联动：加工单取消（未发货）→ 订单 producing→confirmed 回退（重新可生成加工单）
         if ("cancel".equals(action)) {
             Order order = orderMapper.selectById(po.getOrderId());

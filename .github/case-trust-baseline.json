@@ -20,16 +20,16 @@
     "deadline": "2026-12-31"
   },
   "anchor_sha": "44615b6c9be18d23709a92c0c7e027da259f0836",
-  "case_total": 330,
-  "violation_case_count": 89,
+  "case_total": 336,
+  "violation_case_count": 86,
   "rule_counts": {
     "CASE-TRUST-EMPTY-ASSERTION": 1,
     "CASE-TRUST-NO-EFFECT-ASSERTION": 23,
-    "CASE-TRUST-NO-SELF-CLEAN": 30,
+    "CASE-TRUST-NO-SELF-CLEAN": 29,
     "CASE-TRUST-PRECLEAN-TARGET-UNRESOLVABLE": 0,
     "CASE-TRUST-FORBIDDEN-TEXT-SOLE": 6,
     "CASE-TRUST-VOLATILE-LOCATOR": 1,
-    "CASE-TRUST-NO-PRECONDITION-ASSERTION": 80,
+    "CASE-TRUST-NO-PRECONDITION-ASSERTION": 77,
     "CASE-TRUST-SELF-TARGET-NO-MAX-GROWTH": 0,
     "CASE-TRUST-STALE-LINE-REF": 0,
     "CASE-TRUST-SINGLE-LEG-NO-PERSONA": 14
@@ -365,12 +365,6 @@
         "CASE-TRUST-NO-SELF-CLEAN"
       ]
     },
-    "OR-011": {
-      "codes": [
-        "CASE-TRUST-NO-PRECONDITION-ASSERTION",
-        "CASE-TRUST-NO-SELF-CLEAN"
-      ]
-    },
     "OR-017": {
       "codes": [
         "CASE-TRUST-NO-PRECONDITION-ASSERTION",
@@ -432,11 +426,6 @@
       ]
     },
     "PG-013": {
-      "codes": [
-        "CASE-TRUST-NO-PRECONDITION-ASSERTION"
-      ]
-    },
-    "PG-016": {
       "codes": [
         "CASE-TRUST-NO-PRECONDITION-ASSERTION"
       ]
@@ -515,11 +504,6 @@
     "PR-015": {
       "codes": [
         "CASE-TRUST-NO-EFFECT-ASSERTION",
-        "CASE-TRUST-NO-PRECONDITION-ASSERTION"
-      ]
-    },
-    "PR-019": {
-      "codes": [
         "CASE-TRUST-NO-PRECONDITION-ASSERTION"
       ]
     },

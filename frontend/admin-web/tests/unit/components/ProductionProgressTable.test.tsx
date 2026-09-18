@@ -111,4 +111,58 @@ describe('ProductionProgressTable', () => {
 
     expect(screen.getByText('暂无工序数据')).toBeInTheDocument()
   })
+
+  // ── 报工人列（issue #4309：跟进人 = 只加「报工人」，零新字段，读报工记录）──
+  // 口径：报工人 = 该工序实例下报过工的人（后端 workers，按首次报工时间升序去重、
+  // 只取 work_type='normal'、空名折「未署名」）；无报工 = 空数组 ⇒ 渲染「—」。
+
+  /** 后端 positions 段 + workers（报工人）——op-1 一人 / op-2 两人 / op-3 无报工 */
+  const positionsWithWorkers: ProductionPosition[] = [
+    {
+      position_name: '布帘',
+      operations: [
+        { ...positions[0].operations![0], workers: ['张三'] },
+        { ...positions[0].operations![1], workers: ['张三', '李四'] },
+      ],
+    },
+    {
+      position_name: '纱帘',
+      operations: [{ ...positions[1].operations![0], workers: [] }],
+    },
+  ]
+
+  it('报工人列渲染 workers（多人用「、」连接）', () => {
+    render(<ProductionProgressTable positions={positionsWithWorkers} />)
+
+    expect(within(screen.getByTestId('operation-row-op-1')).getByTestId('op-workers')).toHaveTextContent('张三')
+    expect(within(screen.getByTestId('operation-row-op-2')).getByTestId('op-workers')).toHaveTextContent('张三、李四')
+  })
+
+  it('无报工人渲染「—」（空数组与键缺省同）', () => {
+    render(
+      <ProductionProgressTable
+        positions={[
+          {
+            position_name: '布帘',
+            operations: [
+              { ...positions[0].operations![0], workers: [] },
+              { ...positions[0].operations![1], workers: undefined },
+            ],
+          },
+        ]}
+      />,
+    )
+
+    expect(within(screen.getByTestId('operation-row-op-1')).getByTestId('op-workers')).toHaveTextContent('—')
+    expect(within(screen.getByTestId('operation-row-op-2')).getByTestId('op-workers')).toHaveTextContent('—')
+  })
+
+  it('既有 6 列顺序不变，「报工人」追加在表尾', () => {
+    render(<ProductionProgressTable positions={positions} />)
+
+    const headers = within(screen.getByTestId('position-group-布帘'))
+      .getAllByRole('columnheader')
+      .map((th) => th.textContent)
+    expect(headers).toEqual(['工序', '分组', '应做数量', '单价', '状态', '已完成数量', '报工人'])
+  })
 })

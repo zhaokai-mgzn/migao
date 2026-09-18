@@ -14,6 +14,7 @@ QA Growth Gate — 数据驱动的事前测试覆盖门禁（G1 修复）
   TECH_STACK_FILE=.github/tech-stack.yml python3 growth_gate.py --json
 """
 import argparse
+import ast
 import fnmatch
 import glob as _glob
 import json
@@ -21,6 +22,7 @@ import os
 import re
 import subprocess
 import sys
+import warnings
 from pathlib import Path
 
 # ── 规则编译（数据 → 可执行规则）──
@@ -215,22 +217,105 @@ def summarize(results):
 # （假绿：QA Growth Gate 根本失效）。
 CASE_IDS_RE = re.compile(r"^\s*(?:#|//|\*)\s*case_ids\s*[:=]\s*\[?([^\]\n]*)\]?")
 
+# 需要扫 `/* … */` 与引号串（含模板串）的语言后缀（issue #4311）；其余后缀不做区域判定。
+_BLOCK_COMMENT_SUFFIXES = (".java", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".kt", ".kts")
+
+
+def _non_declaration_lines(text, head, suffix):
+    """前 50 行里落在**字符串字面量 / 块注释内**的行号（1-based）—— 它们不是「真声明」（#4311）。
+
+    行级正则分不清「注释」与「字符串里的行」：`# case_ids: FAKE-777` 落在 Python 模块 docstring 内、
+    或 ` * case_ids: FAKE-777` 落在 Java/TS 块注释内时，`CASE_IDS_RE` 照样命中 ⇒ 首个命中即停
+    ⇒ 文档里贴的样例会把后面的真声明顶掉（假红 block 合规 PR / 真声明失效）。
+
+    - `.py`：用 `ast` 取**字符串常量**的行区间（模块 docstring 即字符串常量）；解析失败
+      （夹具里的非 Python 片段、语法残缺）⇒ 空集：**无从判定就不排除**（只影响收窄力度，不影响正确性）。
+    - Java/TS/JS：扫 `/* … */`（含 `/** */`）与引号串（含模板串）。
+    - 其余后缀：空集（不做区域判定）。状态自文件头起算，只扫前 50 行（与位置约束同界）。
+    """
+    if suffix == ".py":
+        try:
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")  # 无关文件的语法告警（如非法转义）不污染门禁输出
+                tree = ast.parse(text)
+        except (SyntaxError, ValueError):
+            return set()
+        lines = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Constant) and isinstance(node.value, str):
+                lines.update(range(node.lineno, (node.end_lineno or node.lineno) + 1))
+        return lines
+    if suffix not in _BLOCK_COMMENT_SUFFIXES:
+        return set()
+
+    lines, in_block, quote = set(), False, ""
+    for no, line in enumerate(head, 1):
+        i, n = 0, len(line)
+        while i < n:
+            ch = line[i]
+            if in_block:
+                lines.add(no)
+                if ch == "*" and line.startswith("/", i + 1):
+                    in_block = False
+                    i += 2
+                    continue
+            elif quote:
+                lines.add(no)
+                if ch == "\\":
+                    i += 2
+                    continue
+                if ch == quote:
+                    quote = ""
+            elif ch == "/" and line.startswith("*", i + 1):
+                in_block = True
+                lines.add(no)
+            elif ch == "/" and line.startswith("/", i + 1):
+                break  # 行注释：其后不再是字符串
+            elif ch in "\"'`":
+                quote = ch
+                lines.add(no)
+            i += 1
+    return lines
+
 
 def extract_case_ids(test_file):
     """测试文件头部**首个声明行**的用例 ID（`# case_ids: OR-001, OR-002` / `// case_ids=[...]`）。
 
     只认注释起始的声明行 + **取首个命中即停**（issue #4239）：docstring / 正文里的提及不是声明。
+
+    `#4311` 再加一条：字符串字面量 / 块注释内的候选**不是真声明**，真声明优先于它
+    （伪声明不再把真声明顶掉）。但**无真声明时按旧口径取首个候选** —— 全仓实测有 17 个测试文件
+    只有这种非注释形态的候选（13 个 Python 文件的声明行在模块 docstring 内、4 个 TS 文件的
+    声明行在文件头 JSDoc 块注释内），严格排除会把它们判成「未声明」= 对合规文件制造假红，
+    且按 §19.1「存量基线只许缩短」这条豁免**永远缩不掉** ⇒ 取兜底。
+
+    **残留（如实登记，不粉饰）**：某文件的**唯一**声明候选若落在字符串/块注释内，**仍会被当成
+    声明** —— 它在静态上与那 17 个合规文件**不可区分**（#4311 判据 3「全仓逐值相同」正要求如此）。
+    唯一可判的坏形态 = 「伪声明在前 + 真声明在后」的**遮蔽形态**，它已被本条修掉。
+    复核（**不要写死数字**，全仓会前进）：
+
+        /opt/homebrew/bin/python3.11 -m pytest tests/unit_ci_workflows/test_growth_gate_case_ids.py -q -s -k fallback
+        # 打印「依赖兜底的合规文件=N（下限 17）  遮蔽形态=M（今天 0，不设上限）」
+
     「只扫前 50 行」的位置约束不变（#3555 的既有裁定，与本缺陷正交）。
     """
     try:
         text = Path(test_file).read_text(encoding="utf-8")
     except OSError:
         return []
-    for line in text.split("\n")[:50]:
+    head = text.split("\n")[:50]
+    non_decl = _non_declaration_lines(text, head, os.path.splitext(str(test_file))[1].lower())
+    candidate = None
+    for no, line in enumerate(head, 1):
         m = CASE_IDS_RE.match(line)
-        if m:
-            return [tok for tok in (t.strip().strip("'\"") for t in m.group(1).split(",")) if tok]
-    return []
+        if not m:
+            continue
+        ids = [tok for tok in (t.strip().strip("'\"") for t in m.group(1).split(",")) if tok]
+        if no not in non_decl:
+            return ids
+        if candidate is None:
+            candidate = ids
+    return candidate or []
 
 
 def load_case_index(cases_dir):
