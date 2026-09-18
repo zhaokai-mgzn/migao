@@ -29,6 +29,21 @@ V54 落**初始种子**（把 `app/production/routing.py` 的既有确定性常�
 | `db/migration/V58__seed_sheer_curtain_routings.sql` | 存量库的**增量**路线种子（#4246 的 3 条纱帘路线，**零新造工序** ⇒ 只种路线） |
 | `docs/sql/schema.sql` | 全新库 bootstrap 的**终态**种子（CI/本地 docker 栈**不跑迁移链**） |
 
+## 判据 1（issue #4235）：种子源**按集合聚合**，不再写死文件名
+
+上面那张表里的文件名**不再出现在「种子源集合」的定义里** —— `SEED_OPERATION_SQLS` /
+`ROUTING_SEED_SQLS` 由 `seed_sources_for(table)` **按内容发现**：凡含
+`INSERT INTO <table>` 的 `db/migration/V*.sql` 即被纳入（按版本号数值序）。
+
+⇒ 新增种子迁移（`V<下一个空闲号>__...sql`）**无需改本文件**即进入比对射程
+（此前必须改 `V54 = REPO / ".../V54__seed_production_operations.sql"` 这类写死的单源，
+而"改 V54"正是那个静默失效）。**为什么不按命名约定 `V*__seed_*.sql`**：`V28` / `V30` / `V40`
+也是 `__seed_` 但对工序库零贡献（按名取集合会把它们收进来 ⇒ 下方「每个源都必须有行」的
+自证断言恒红），域过滤最终仍得回到**内容**。自证见
+`test_seed_source_discovery_is_by_content`（临时目录夹具，不依赖仓库当下恰好有什么）。
+
+⚠️ **不是「包含即可」**：聚合后仍是**逐行逐值**比对（下方四条红线全部保留、逐个有红证）。
+
 ⇒ 收敛判据 = **`V54 ∪ V56`（按名称取键）== `OPERATION_CATALOG`（逐行逐值）**，且
 **`V54 ∪ V58`（按 部位×工艺 取键）== `ROUTINGS`（逐条有序序列）**；`schema.sql` 的工序集合与
 `V54 ∪ V56` 的**名称 → 值**映射相等、路线集合与 `V54 ∪ V58` **逐行**相等（`schema.sql` 是终态，
@@ -52,17 +67,34 @@ import pytest
 
 REPO = Path(__file__).resolve().parent.parent.parent
 MIGRATION_DIR = REPO / "backend/admin-api/src/main/resources/db/migration"
-# 工序库种子**按序**聚合（先初始、后增量）；新增工序迁移在此追加，改这里 = 显式登记新源
-SEED_OPERATION_SQLS = (
-    MIGRATION_DIR / "V54__seed_production_operations.sql",
-    MIGRATION_DIR / "V56__seed_special_option_operations.sql",
-)
-# 路线种子**按序**聚合（先 V54 的 6 条，后 V58 的 3 条）；新增路线迁移在此追加，
-# 改这里 = 显式登记新源（#4246 把路线从「V54 单源」扩为「V54 ∪ V58」）
-ROUTING_SEED_SQLS = (
-    MIGRATION_DIR / "V54__seed_production_operations.sql",
-    MIGRATION_DIR / "V58__seed_sheer_curtain_routings.sql",
-)
+MIGRATION_GLOB = "V*.sql"
+_VERSION_RE = re.compile(r"^V(\d+)__")
+
+
+def version_key(name: str):
+    """迁移文件名 → 排序键（`MigrationRunner` 同款：版本号**数值**序，不是字典序）。"""
+    base = Path(name).name
+    match = _VERSION_RE.match(base)
+    return (int(match.group(1)) if match else 1 << 30, base)
+
+
+def seed_sources_for(table: str, migration_dir: Path = MIGRATION_DIR) -> tuple:
+    """**按内容**发现某个表的种子源迁移（判据 1，issue #4235）。
+
+    判据 = 「文件里有 `INSERT INTO <table>`」⇒ 新增种子迁移**无需改本文件**即被纳入；
+    取 `(路径,)` 时按版本号**数值序**（先初始、后增量 ⇒ 聚合行序 = 序号顺序，与真值源字典序可比）。
+    空集不是合法的"恰好没有" —— 由 `seed_sqls` / `routing_sqls` 夹具 fail-closed 拦下。
+    """
+    directory = Path(migration_dir)
+    pattern = re.compile(r"INSERT\s+INTO\s+" + table + r"\b", re.I)
+    found = [p for p in sorted(directory.glob(MIGRATION_GLOB), key=lambda p: version_key(p.name))
+             if pattern.search(p.read_text(encoding="utf-8"))]
+    return tuple(found)
+
+
+# 工序库 / 路线种子源：**按集合聚合**（判据 1）——新增种子迁移无需在此追加任何东西。
+SEED_OPERATION_SQLS = seed_sources_for("production_operations")
+ROUTING_SEED_SQLS = seed_sources_for("production_routings")
 SCHEMA = REPO / "docs/sql/schema.sql"
 ROUTING_PY_DIR = REPO / "backend/ai-agent-service"
 
@@ -190,7 +222,10 @@ def python_catalog():
 
 @pytest.fixture(scope="module")
 def seed_sqls():
-    """[{路径: 文本}]——按 SEED_OPERATION_SQLS 顺序；文件缺失 **fail-closed**（不许静默少读一个源）。"""
+    """[(路径名, 文本)]——按内容发现的工序库种子源（版本号序）；空集/文件缺失 **fail-closed**。"""
+    assert SEED_OPERATION_SQLS, (
+        "未发现任何工序库种子源（`INSERT INTO production_operations` 一个都扫不到）"
+        "⇒ 本守卫会退化成空跑；判据 1 的按集合聚合失效")
     out = []
     for path in SEED_OPERATION_SQLS:
         assert path.exists(), f"工序库种子迁移缺失：{path}（多源聚合少了它 = 守卫空跑一半）"
@@ -200,7 +235,10 @@ def seed_sqls():
 
 @pytest.fixture(scope="module")
 def routing_sqls():
-    """[(路径名, 文本)]——按 ROUTING_SEED_SQLS 顺序；文件缺失 **fail-closed**（不许静默少读一个源）。"""
+    """[(路径名, 文本)]——按内容发现的路线种子源（版本号序）；空集/文件缺失 **fail-closed**。"""
+    assert ROUTING_SEED_SQLS, (
+        "未发现任何路线种子源（`INSERT INTO production_routings` 一个都扫不到）"
+        "⇒ 本守卫会退化成空跑；判据 1 的按集合聚合失效")
     out = []
     for path in ROUTING_SEED_SQLS:
         assert path.exists(), f"路线种子迁移缺失：{path}（多源聚合少了它 = 守卫空跑一半）"
@@ -397,7 +435,35 @@ def test_price_version_backfill_is_idempotent(seed_sqls):
         "V56 的版本回填没有 NOT EXISTS 守卫 ⇒ 重复执行会插出第二行（最新版本歧义）")
 
 
-# ── ④ 解析器自证（防「仓库绿只是空跑」）──
+# ── ④ 判据 1 自证：种子源发现**按内容**（新增迁移无需改本文件）──
+
+def test_seed_source_discovery_is_by_content(tmp_path):
+    """判据 1 自证：新种子文件**不改本文件**即被发现；无关 `__seed_` 文件不被误收。
+
+    反例（本测试要挡的形态）：发现退化成**文件名白名单** ⇒ 新种子迁移永远不在射程内
+    （"新增种子迁移 = 守卫红" 的老病，issue #4235 判据 1）；
+    或按 `V*__seed_*.sql` 命名约定取集合 ⇒ `V28/V30/V40` 被误收 ⇒ 「每个源都必须有行」恒红。
+    """
+    (tmp_path / "V54__seed_production_operations.sql").write_text(
+        "INSERT INTO production_operations (id) VALUES ('op-54');", encoding="utf-8")
+    # 名字里**没有** seed（内容发现 vs 命名约定的差别）
+    (tmp_path / "V60__whatever_new_ops.sql").write_text(
+        "INSERT INTO production_operations (id) VALUES ('op-60');", encoding="utf-8")
+    # 是 `__seed_` 但零贡献（按名取集合会误收）
+    (tmp_path / "V28__seed_notification_templates_and_rules.sql").write_text(
+        "INSERT INTO notification_templates (id) VALUES ('nt-28');", encoding="utf-8")
+    # 只种路线的文件不该进工序库集合
+    (tmp_path / "V58__seed_sheer_curtain_routings.sql").write_text(
+        "INSERT INTO production_routings (id) VALUES ('rt-58');", encoding="utf-8")
+
+    assert [p.name for p in seed_sources_for("production_operations", tmp_path)] == [
+        "V54__seed_production_operations.sql", "V60__whatever_new_ops.sql"], \
+        "工序库种子源发现不是「按内容 + 版本号数值序」⇒ 新增种子迁移不会被纳入比对"
+    assert [p.name for p in seed_sources_for("production_routings", tmp_path)] == [
+        "V58__seed_sheer_curtain_routings.sql"], "路线种子源发现把无贡献的文件收了进来"
+
+
+# ── ⑤ 解析器自证（防「仓库绿只是空跑」）──
 
 def test_parser_detects_injected_drift():
     """注入式夹具：解析器必须**能**照出漂移（否则上面的绿是空断言）"""
