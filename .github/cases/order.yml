@@ -1302,12 +1302,33 @@ cases:
         expect_quantities:
           夏日清风窗帘: 3
           遮光窗帘: 2
+    # ── 前置自断言 + 自清理（issue #4421 的 burn-down 缴费；metric=entries ⇒ 必须整条销账）──
+    # 本用例命中的两条存量违规是 CASE-TRUST-NO-SELF-CLEAN + CASE-TRUST-NO-PRECONDITION-ASSERTION。
+    # `precondition[product_count_for_keyword]`：多商品下单按**商品名**定位两行明细，「每个名字唯一」
+    # 是它真正依赖且**只读**的前置（同名副本会让 agent 合理地要求澄清 ⇒ order_create 永不发生，
+    # 报告上只表现为 `unmatched expectation` = 看起来像 agent 不干活，归因全错 —— PG-013 / CU-003 的形态）。
+    # 口径与 `pre_clean` 的商品定位同一份（`_list_products_matching`），先例 = OR-014 / OR-017 / CH-019。
+    # ⚠️ 有意**不**声明 `order_count_for_phone`：本用例自己就会建单 ⇒ 漂移判据（缺省 `max_growth: 0`）
+    # 必然判红，那是「硬写一条注定红的守卫」。商品维只读 ⇒ 漂移恒为 0。
+    # 断言（user_inputs / expectations / must_succeed / amount_verify / db_verify / order_before /
+    # data_checks）**原样未动、无放宽**。
+    namespaces:
+      - "product_name:夏日清风窗帘"
+      - "product_name:遮光窗帘"
+      - "customer_phone:13800138000"
+    precondition:
+      - type: product_count_for_keyword
+        source: "夏日清风窗帘"
+        expect: 1
+      - type: product_count_for_keyword
+        source: "遮光窗帘"
+        expect: 1
     data_checks:
       - "多商品下单必须一次 order_create 带多行 items（每行自己的数量/单价/加工项），不得只落一款"
       - "加工费按各自米数分别计算（3 米→24、2 米→16），总额 = Σ小计 810 + Σ加工费 40 = 850"
       - "两款商品的单价都必须来自商品库（158/168），不得凭记忆报价"
     skip_reason: ""
-    merge_log: "2026-09-13 新增（issue #3367）：C 端能力上限用例（多商品/多加工项/逐行金额）"
+    merge_log: "2026-09-13 新增（issue #3367）：C 端能力上限用例（多商品/多加工项/逐行金额）。2026-09-19（issue #4421 的 burn-down 缴费 —— 改用例文件的 PR 须净缩 ≥1 条存量违规，本用例命中的两条是 CASE-TRUST-NO-SELF-CLEAN + CASE-TRUST-NO-PRECONDITION-ASSERTION，metric=entries ⇒ 必须**整条**销账）：补 `namespaces[product_name:夏日清风窗帘, product_name:遮光窗帘, customer_phone:13800138000]` + `precondition[product_count_for_keyword × 2, expect: 1]` —— 多商品下单按商品名定位两行明细，「每个名字唯一」是它真正依赖且只读的前置（先例 = OR-014 / OR-017 / CH-019）。**有意不给 `order_count_for_phone`**：本用例自己会建单 ⇒ 漂移判据（缺省 `max_growth: 0`）必然判红。断言（user_inputs / expectations / must_succeed / amount_verify / db_verify / order_before / data_checks）原样未动、无放宽。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_acceptance_case_checks.py"
@@ -1382,11 +1403,25 @@ cases:
         expect_products: ["遮光窗帘"]
         expect_quantities:
           遮光窗帘: 4
+    # ── 前置自断言 + 自清理（issue #4421 的 burn-down 缴费；metric=entries ⇒ 必须整条销账）──
+    # 同 OR-018 口径：`precondition[product_count_for_keyword]` 是本用例真正依赖且**只读**的前置
+    # （「遮光窗帘」该名字唯一 —— 同名副本会让 agent 合理地要求澄清 ⇒ order_create 永不发生，
+    # 报告上只表现为 `unmatched expectation` = 看起来像 agent 不干活）。先例 = OR-014 / OR-017 / CH-019。
+    # ⚠️ 有意**不**声明 `order_count_for_phone`：本用例自己就会建单 ⇒ 漂移判据（缺省 `max_growth: 0`）
+    # 必然判红。断言（user_inputs / expectations / must_succeed / amount_verify / db_verify /
+    # order_before / data_checks）**原样未动、无放宽**。
+    namespaces:
+      - "product_name:遮光窗帘"
+      - "customer_phone:13800138000"
+    precondition:
+      - type: product_count_for_keyword
+        source: "遮光窗帘"
+        expect: 1
     data_checks:
       - "顾客中途改数量后，确认卡与订单明细都必须反映**最新**数量（4 米），不得沿用旧值 3 米"
       - "金额按最新数量重算：168×4 + 打孔 8×4 = 704"
     skip_reason: ""
-    merge_log: "2026-09-13 新增（issue #3367）：C 端能力上限用例（多轮纠错/状态更新）"
+    merge_log: "2026-09-13 新增（issue #3367）：C 端能力上限用例（多轮纠错/状态更新）。2026-09-19（issue #4421 的 burn-down 缴费 —— 改用例文件的 PR 须净缩 ≥1 条存量违规，本用例命中的两条是 CASE-TRUST-NO-SELF-CLEAN + CASE-TRUST-NO-PRECONDITION-ASSERTION，metric=entries ⇒ 必须**整条**销账）：补 `namespaces[product_name:遮光窗帘, customer_phone:13800138000]` + `precondition[product_count_for_keyword: 遮光窗帘, expect: 1]`（先例 = OR-014 / OR-017 / CH-019）。**有意不给 `order_count_for_phone`**：本用例自己会建单 ⇒ 漂移判据（缺省 `max_growth: 0`）必然判红。断言原样未动、无放宽。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_acceptance_case_checks.py"

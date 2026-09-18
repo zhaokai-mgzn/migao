@@ -2556,7 +2556,7 @@
 落库: order_items → source=order_create; expect_products=['夏日清风窗帘', '遮光窗帘']; expect_quantities={'夏日清风窗帘': 3, '遮光窗帘': 2}
 ```
 真值: order.create-flow
-溯源: 2026-09-13 新增（issue #3367）：C 端能力上限用例（多商品/多加工项/逐行金额） ｜ tags: order_create, multi_item, processing_item, ceiling, xiaobu
+溯源: 2026-09-13 新增（issue #3367）：C 端能力上限用例（多商品/多加工项/逐行金额）。2026-09-19（issue #4421 的 burn-down 缴费 —— 改用例文件的 PR 须净缩 ≥1 条存量违规，本用例命中的两条是 CASE-TRUST-NO-SELF-CLEAN + CASE-TRUST-NO-PRECONDITION-ASSERTION，metric=entries ⇒ 必须**整条**销账）：补 `namespaces[product_name:夏日清风窗帘, product_name:遮光窗帘, customer_phone:13800138000]` + `precondition[product_count_for_keyword × 2, expect: 1]` —— 多商品下单按商品名定位两行明细，「每个名字唯一」是它真正依赖且只读的前置（先例 = OR-014 / OR-017 / CH-019）。**有意不给 `order_count_for_phone`**：本用例自己会建单 ⇒ 漂移判据（缺省 `max_growth: 0`）必然判红。断言（user_inputs / expectations / must_succeed / amount_verify / db_verify / order_before / data_checks）原样未动、无放宽。 ｜ tags: order_create, multi_item, processing_item, ceiling, xiaobu
 
 ### OR-019. C 端下单中途改数量 - 以最新数量为准，落库数量与金额都得跟着改（能力上限） 🔵
 ```
@@ -2580,7 +2580,7 @@
 落库: order_items → source=order_create; expect_products=['遮光窗帘']; expect_quantities={'遮光窗帘': 4}
 ```
 真值: order.create-flow, ai-chat.confirm-required
-溯源: 2026-09-13 新增（issue #3367）：C 端能力上限用例（多轮纠错/状态更新） ｜ tags: order_create, correction, multi_turn, ceiling, xiaobu
+溯源: 2026-09-13 新增（issue #3367）：C 端能力上限用例（多轮纠错/状态更新）。2026-09-19（issue #4421 的 burn-down 缴费 —— 改用例文件的 PR 须净缩 ≥1 条存量违规，本用例命中的两条是 CASE-TRUST-NO-SELF-CLEAN + CASE-TRUST-NO-PRECONDITION-ASSERTION，metric=entries ⇒ 必须**整条**销账）：补 `namespaces[product_name:遮光窗帘, customer_phone:13800138000]` + `precondition[product_count_for_keyword: 遮光窗帘, expect: 1]`（先例 = OR-014 / OR-017 / CH-019）。**有意不给 `order_count_for_phone`**：本用例自己会建单 ⇒ 漂移判据（缺省 `max_growth: 0`）必然判红。断言原样未动、无放宽。 ｜ tags: order_create, correction, multi_turn, ceiling, xiaobu
 
 ### OR-020. C 端下单中途打岔后回到原流程 - 草稿不丢（数量/加工项必须延续） 🔵
 ```
