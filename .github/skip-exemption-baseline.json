@@ -3,9 +3,9 @@
   "_scope": "`skip_total` / `legacy_skip_ids` 是**锚定 SHA 上的快照**；`pending_classification` 只许是其子集且**只许缩短**（到期即红）。非 pending 的任何非空 skip_reason（含新增用例）必须完全合规 ⇒ 新增一律 fail-closed。总量只许缩（净增即红）。",
   "_when_to_update": "① 有人把某条存量改到合规 ⇒ 从 pending_classification 删掉该条（不要改 skip_total）；② 新增 skip ⇒ **不得**记进本文件（先改到合规；确属豁免的走'改判据'流程）；③ 某条 skip 被真正解掉（用例恢复可跑）⇒ 同步下调 skip_total + 追加 history 一行（只许非增）；④ 到期日到点 ⇒ 必须清零 pending，不得顺手推后。",
   "_how_to": "本文件是**数据**，人工维护；判据在 test_skip_exemption_gate.py。改了用例库后跑 `python3 -m pytest tests/unit_ci_workflows/test_skip_exemption_gate.py -q` 复核。",
-  "anchor_sha": "d5bca2416b21d331cbfb42e4af63c6a6a307c583",
+  "anchor_sha": "da935b6a0fa931b17d3b9c50fe1273e171fa28b4",
   "anchored_at": "2026-09-18",
-  "skip_total": 155,
+  "skip_total": 159,
   "legacy_skip_ids": [
     "AG-001",
     "AG-002",
@@ -106,8 +106,12 @@
     "PG-012",
     "PG-014",
     "PG-018",
+    "PG-019",
+    "PG-020",
+    "PG-021",
     "PP-010",
     "PP-011",
+    "PP-012",
     "RG-001",
     "ST-008",
     "ST-009",
@@ -222,10 +226,14 @@
       "note": "rebase 到最新 main（原锚点 51e40495）：`.github/cases/**` 与被测用例库相对原锚点**无差异**（`git diff --stat <old>..<new> -- .github/cases/` 为空）⇒ 锚点快照与 pending 判定仍然成立"
     },
     {
-      "sha": "d5bca2416b21d331cbfb42e4af63c6a6a307c583",
+      "sha": "da935b6a0fa931b17d3b9c50fe1273e171fa28b4",
       "date": "2026-09-18",
-      "skip_total": 155,
-      "note": "下调 156→155（issue #4196，**只许缩**的正当缩减）：PG-013 / PG-015 / PG-016 的 skip 被真正解掉（加工单三工具恢复接入 ⇒ 三条用例回到可跑集）。三处同步：① `skip_reason` 清空；② `pending_classification` 删掉这三条（否则陈旧豁免条目即红）；③ `skip_total` 下调并追加本行。**未放宽任何判据**：三条的 expectations / must_succeed / required_args / forbidden_text / pre_clean **逐字未改**（见 `.github/cases/processing-order.yml` 的 merge_log）。⚠️ 同时**删除**了历史里的 f74909b7(158) 一行 —— 那是 CH-008/CH-017 转人工退场的 unrunnable 登记，两条已由 #4192/#4211 解掉 ⇒ 按「本文件是**数据**不是历史档案」的既有口径（同 `assertion_taxonomy.WRITE_TOOLS`），陈旧行不得留存（留着会把 156 记成 158，与实际 skip 集不符）。附：本锚点即本分支的基线提交（origin/main 上其后另有 a9084e7e，只动 order_create/aftersale_create/human_handoff，与本单文件集不相交）。"
+      "skip_total": 159,
+      "note": "重锚定：纳入 #4192（转人工退场）对 CH-008/CH-017 的 unrunnable 登记，两条已机器钉住（test_tools_human_handoff.py + admin-api AgentSession* 单测） ｜ 重锚定（集成裁定 方案 A：末行增长 + 显式 note）：纳入本批新增的 4 条 backend-contract 登记 —— PG-019/PG-020/PG-021（#4202 存量单恢复 / #4204 工序库写面+单价版本化 / #4205 计件报表；前端包 PR #4219 的 case_ids 依赖其存在）与 PP-012（#4208 内部算料数量端点，ai-agent 半边 PR #4215 已合并）。四条均带 traces.tests 钉住测试；非空 skip_reason 的目的是**不进 agent-eval 冒烟**（runner 按 skip_reason 过滤）⇒ 不是可删的豁免。仅增这一批，未放行任何存量。 ｜ 同锚点上再下调 162→159（`_when_to_update` ③「某条 skip 被真正解掉 ⇒ 下调 skip_total + 追加一行」；为满足「history 只许非增」故与本次重锚定合并写在**末行**，不另起一行造成 162→159 的中间增长）：PG-013 / PG-015 / PG-016 的 skip 被真正解掉 —— issue #4196 反转 #3917 后加工单三工具恢复注册（registry + order skill 工具/意图 + IntentType/描述/域/工具映射 + prompts/order.md 操作指引），三条用例回到**可跑集**（去 skip 后另按 Case Trust Gate 的 fail-closed 口径补了 PG-013 的 must_succeed 与 PG-015 的 pre_clean，见 `.github/cases/processing-order.yml` 的 merge_log；断言面未放宽）。同批从 `legacy_skip_ids` 与 `pending_classification` 各删这三条（解掉后留着即陈旧豁免条目）。**未放宽任何判据**：三条的 expectations / must_succeed / required_args / forbidden_text / pre_clean 逐字未改。159 = 本分支实测非空 skip_reason 用例数（脚本复算）。",
+      "previous_anchor": {
+        "sha": "f74909b79381b66dbbdfac995ac860fa39a37d69",
+        "skip_total": 158
+      }
     }
   ]
 }

@@ -20,10 +20,10 @@
     "deadline": "2026-12-31"
   },
   "anchor_sha": "44615b6c9be18d23709a92c0c7e027da259f0836",
-  "case_total": 317,
-  "violation_case_count": 121,
+  "case_total": 321,
+  "violation_case_count": 120,
   "rule_counts": {
-    "CASE-TRUST-EMPTY-ASSERTION": 25,
+    "CASE-TRUST-EMPTY-ASSERTION": 24,
     "CASE-TRUST-NO-EFFECT-ASSERTION": 24,
     "CASE-TRUST-NO-SELF-CLEAN": 33,
     "CASE-TRUST-PRECLEAN-TARGET-UNRESOLVABLE": 0,
@@ -522,11 +522,6 @@
       ]
     },
     "PG-004": {
-      "codes": [
-        "CASE-TRUST-EMPTY-ASSERTION"
-      ]
-    },
-    "PG-005": {
       "codes": [
         "CASE-TRUST-EMPTY-ASSERTION"
       ]

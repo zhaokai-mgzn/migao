@@ -1,4 +1,4 @@
-// case_ids: PG-001, PG-005, PG-008, PG-018
+// case_ids: PG-001, PG-005, PG-008, PG-018, PG-019
 
 package com.migao.admin.mapper;
 
@@ -73,6 +73,36 @@ class ProcessingOrderMapperTest {
         assertThat(sql).contains("completed_at = COALESCE(completed_at, #{completedAt})");
         // 与 selectActiveByOrderId 同活跃集：并发取消的加工单不会被复活；已是 completed 时幂等
         assertThat(sql).contains("status IN ('generated','issued','in_processing','completed')");
+        assertThat(sql).contains("tenant_id = #{tenantId}");
+        assertThat(sql).contains("deleted = 0");
+    }
+
+    @Test
+    @DisplayName("incrementPrintCount — print_count 原子自增（SQL 内 +1，不读改写；租户/软删守卫）")
+    void incrementPrintCount_sqlShape() throws Exception {
+        Method method = ProcessingOrderMapper.class.getMethod(
+                "incrementPrintCount", String.class, Long.class, OffsetDateTime.class);
+        Update update = method.getAnnotation(Update.class);
+        assertThat(update).isNotNull();
+        String sql = String.join(" ", update.value());
+        assertThat(sql).startsWith("UPDATE processing_orders");
+        // 原子自增（并发多标签页打印不丢计数）：COALESCE 兜住历史 NULL 值
+        assertThat(sql).contains("SET print_count = COALESCE(print_count, 0) + 1");
+        assertThat(sql).doesNotContain("print_count = #{");
+        assertThat(sql).contains("tenant_id = #{tenantId}");
+        assertThat(sql).contains("deleted = 0");
+    }
+
+    @Test
+    @DisplayName("revokeQrToken — qr_token 置 NULL（旧码立即失效）+ 租户/软删守卫")
+    void revokeQrToken_sqlShape() throws Exception {
+        Method method = ProcessingOrderMapper.class.getMethod(
+                "revokeQrToken", String.class, Long.class, OffsetDateTime.class);
+        Update update = method.getAnnotation(Update.class);
+        assertThat(update).isNotNull();
+        String sql = String.join(" ", update.value());
+        assertThat(sql).startsWith("UPDATE processing_orders");
+        assertThat(sql).contains("SET qr_token = NULL");
         assertThat(sql).contains("tenant_id = #{tenantId}");
         assertThat(sql).contains("deleted = 0");
     }

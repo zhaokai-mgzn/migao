@@ -493,6 +493,24 @@ class ProductionServiceTest {
                 .hasMessageContaining("订单");
     }
 
+    @Test
+    @DisplayName("#4222 路径参数为**加工单号**（JG-...）→ 解析到订单（工人端手输兜底路径）")
+    void getOperationsResolvesByProcessingOrderNo() {
+        String processingOrderNo = "JG-20260918-6914";
+        when(orderMapper.selectById(processingOrderNo)).thenReturn(null);
+        when(orderMapper.selectOne(any())).thenReturn(null);                       // ② order_no 未命中
+        // 加工单表的两次解析：③ qr_token 未命中；④ processing_order_no 命中（本单新增的第四形态）
+        when(processingOrderMapper.selectOne(any())).thenAnswer(inv -> {
+            com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<?> wrapper = inv.getArgument(0);
+            return wrapper.getSqlSegment().contains("processing_order_no") ? processingOrder() : null;
+        });
+        when(positionOperationMapper.selectList(any())).thenReturn(List.of());
+
+        Map<String, Object> result = service.getOperations(processingOrderNo, TENANT);
+
+        assertThat(result.get("order_id")).isEqualTo(ORDER_ID);
+    }
+
     // ══════════════════════════ §5 四项防呆（issue #4116 P0-3）══════════════════════════
     //
     // 病灶（逐项一次真实误报工的形态）：
