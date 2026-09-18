@@ -10,12 +10,17 @@ import userEvent from '@testing-library/user-event'
 const mockGetOperationsCatalog = vi.fn()
 const mockGetRoutings = vi.fn()
 const mockUpdateOperation = vi.fn()
+// 行业模板（issue #4363 新增的第三条只读端点 + 套用写面）：本文件只做本页回归，返回空目录
+const mockGetSeedTemplates = vi.fn()
+const mockApplySeedTemplate = vi.fn()
 
 vi.mock('@/lib/api', () => ({
   productionApi: {
     getOperationsCatalog: (...args: unknown[]) => mockGetOperationsCatalog(...args),
     getRoutings: (...args: unknown[]) => mockGetRoutings(...args),
     updateOperation: (...args: unknown[]) => mockUpdateOperation(...args),
+    getSeedTemplates: (...args: unknown[]) => mockGetSeedTemplates(...args),
+    applySeedTemplate: (...args: unknown[]) => mockApplySeedTemplate(...args),
   },
 }))
 
@@ -80,6 +85,8 @@ describe('工序库页 /production/operations', () => {
     mockGetOperationsCatalog.mockReset().mockResolvedValue(ok(CATALOG))
     mockGetRoutings.mockReset().mockResolvedValue(ok(ROUTINGS))
     mockUpdateOperation.mockReset().mockResolvedValue(ok({ id: 201, name: '韩褶-布', unit_price: 2.5 }))
+    mockGetSeedTemplates.mockReset().mockResolvedValue(ok([]))
+    mockApplySeedTemplate.mockReset()
     vi.mocked(toast.success).mockClear()
     vi.mocked(toast.error).mockClear()
   })

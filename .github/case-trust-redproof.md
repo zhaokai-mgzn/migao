@@ -142,7 +142,7 @@ python3.11 -m pytest tests/unit_ci_workflows -q
 | `CASE-TRUST-NO-PRECONDITION-ASSERTION` | `fixture_pg_013` | 多轮写用例无 `precondition` / 机器计分型前置断言 |
 | `CASE-TRUST-SELF-TARGET-NO-MAX-GROWTH` | `TestSelfTargetMaxGrowth` 的注入夹具 | 自建名 + `expect: 0` 前置缺 `max_growth`（或 <1）⇒ 运行期 `0 → 1` 恒判漂移 |
 | `CASE-TRUST-STALE-LINE-REF` | `TestReferenceFreshness` 的 3 个注入夹具 | 行号越界 / 文件不存在 / 符号在文件里完全找不到 |
-| `CASE-TRUST-SINGLE-LEG-NO-PERSONA` | `fixture_single_leg_unmarked` | `{curtain_calc}` ⊆ 小布工具集但无 `persona` |
+| `CASE-TRUST-SINGLE-LEG-NO-PERSONA` | `fixture_single_leg_unmarked`（**正**）/ `fixture_shared_tool_unmarked`（**反**：必须**不报**） | `{curtain_calc}` ⊆ 小布且 ⊄ 米宝但无 `persona` ⇒ 报；共享工具（`product_detail`+`order_create`，两端都有）⇒ **不得**判单端（#4356） |
 
 ### 绿证 C —— 门禁对**正确形态**保持沉默（防假红）
 
@@ -229,6 +229,64 @@ python3.11 -m pytest tests/unit_ci_workflows -q
 - **单一真相源**：类型名与缺省容差直接读 `tests/agent_eval/local_runner.py` 的源码比对
   （`_PRECONDITION_TYPES` 含 `product_count_for_keyword`、`_PRECONDITION_NO_DRIFT = 0`），
   任一侧改了而另一侧没跟上即红。
+
+### 绿证 I —— 规则 d 判据**收紧**（`is_single_leg_by_toolset`，#4356）的假阳性红证与判别力守卫
+
+**病灶（旧判据的前提为假）**：旧形态 = 「`expectations` 工具集 ⊆ `XIAOBU_TOOLS` ⇒ 只可能是小布用例」，
+其 docstring 逐字写着前提「**米宝工具集与之不相交**」。实测**两端共享 7 个工具**
+（`order_create` / `product_detail` / `product_search` / `validate_input` / `interact` /
+`knowledge_search` / `production_progress_query`）⇒ 共享工具用例（`OR-008`/`OR-010` 一族，
+`persona: mibao` 且已在 main）被判成「只可能是小布」。
+
+**危害不是「不精确」**：照该判据反推 `persona: xiaobu` ⇒
+`render_cases.filter_by_persona` 跑米宝腿时跳过它 ⇒ **真实米宝用例被静默移出米宝腿**
+（全量跑不会有任何红，也不触发 runner 的「禁止静默少跑」守卫——那不是 `case_ids` 窄跑）；
+同时 `eval_case_filter.select_cases_for_persona` 对**显式** `persona: xiaobu` 无条件保留
+⇒ 该用例反而在 C 端腿跑起来（绕过 `MIBAO_SEMANTIC_PATTERNS` 语义过滤）= 假红。
+且规则 d 只查「标注**存在**」，判据与库内标注的矛盾**永远不会变红**（旧判据 @`74f8d5ff`
+与库内 `persona: mibao` 标注矛盾 **21** 条）。
+
+#### RED-PROOF-BEFORE（补/收紧之前，逐字实测输出 @`74f8d5ff`）
+
+```
+FAILED ...TestNoFalsePositivesOnCorrectShapes::test_shared_tool_case_is_not_required_to_annotate
+E  AssertionError: 共享工具用例被判成「只能跑小布」—— 前提「双端工具集不相交」为假（#4356）
+E  assert not True
+FAILED ...TestDegenerateGuardRails::test_mibao_toolset_truth_loaded
+E  AttributeError: module 'assertion_taxonomy' has no attribute 'MIBAO_TOOLSET_SOURCE'
+FAILED ...TestDegenerateGuardRails::test_predicate_never_contradicts_mibao_annotation
+E  AssertionError: 判据与库内 `persona: mibao` 标注矛盾（前提「双端工具集不相交」为假）：
+E  ['CH-001', 'CH-019', 'CH-040', 'CR-001', 'DF-003', 'DF-006', 'DF-007', 'DF-008',
+E   'DF-010', 'KN-003', 'OR-008', 'OR-009', 'OR-010', 'OR-011', 'OR-015', 'OR-016',
+E   'OR-028', 'OR-029', 'OR-030', 'OR-031', 'PR-018']
+```
+
+**中间态红证（否定式期望）**：分支提取器（`expectation_branches`）会把
+`{"tool": "curtain_calc 未被调用"}` 读成"要求 `curtain_calc`" ⇒ 只收紧、**不过滤否定式**
+的中间实现下 `test_negated_expectation_is_not_a_capability_requirement` **必红**
+（实测 `assert not True`）—— 即该形态在收紧后**会新引入**一类假阳性。故判据里显式跳过
+否定式期望（口径同 `eval_case_filter.is_positive_case`：否定式不构成能力证据）。
+
+#### GREEN-PROOF-AFTER（收紧之后）
+
+| 判据 | 读数 |
+|---|---|
+| L0 守卫（本包文件） | `148 passed`（`python3.11 -m pytest tests/unit_ci_workflows/test_case_trust_gate.py -q`） |
+| 判据命中（全库 337 条） | 70 → **16**，且 16 条**全部**已标 `persona: xiaobu` |
+| 判据 ∧ `persona: mibao` 矛盾 | 21 → **0**（`test_predicate_never_contradicts_mibao_annotation`） |
+| 规则 d 现库活命中 | **0**（变成纯回归守卫；判别力由 `curtain_calc` 夹具与下界守卫 `≥10` 锁住） |
+| 基线该码 | 13 条 → **0**（`--prune-baseline`：条目 85→**78**、违规码 148→**135**，只删不加） |
+| 门禁 | `python3 .github/case_trust_gate.py --base origin/main` ⇒ **✅ 通过** |
+
+**判别力未失的负例（R2）**：`fixture_single_leg_unmarked`（`{curtain_calc}` ⊄ 米宝）**仍报**；
+`test_dual_leg_case_is_not_required_to_annotate`（`order_query` ⊄ 小布）**仍不报**；
+库级下界守卫 `test_predicate_still_flags_real_single_leg_cases`（真·单端 ≥10 条，实测 16）
+防「为消账本把判据削成恒假」。
+
+**边界（有意不做）**：不加对称的「米宝单端」臂（实测会新命中 88 条 = 全库 persona 标注口径，
+属 `CASE-TRUST-ALL-CASES-PERSONA-ANNOTATED` / #4155 的登记范围）；语义单端
+（工具集两端都成立、行为只在 B 端可满足，如 `PR-018`）静态不可判定，仍登记在
+`CASE-TRUST-PROSE-DATA-CHECK-QUALITY`（#3483）与 #4086 的证据化分诊里。
 
 ### 绿证 D —— 退化守卫
 

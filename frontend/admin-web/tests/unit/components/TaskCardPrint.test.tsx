@@ -2,10 +2,13 @@
 // PP-011（issue #4000，M4-H 按需单据渲染）：可打印任务卡 —— 加工单号 + 二维码（内容 = qr_token，
 // 工人扫码进小程序报工）+ 工序清单（工序名/应做数量/单位 + 手工勾选位）。
 // 打印隔离走项目既有范式（ShipmentDoc：portal 到 body + 屏幕 display:none + @media print 显形）。
+//
+// issue #4355（设计文档 §4.9 ③ 加工单）：纸面同时展示工艺规格 —— 渲染 `items_snapshot`
+// （与 order_items.processing_info 同键名），缺值不渲染。
 import { describe, expect, it } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
 import TaskCardPrint from '@/components/production/TaskCardPrint'
-import type { ProductionPosition } from '@/types'
+import type { ProcessingOrderItem, ProductionPosition } from '@/types'
 
 const QR_TOKEN = 'qr-token-abc123'
 
@@ -67,5 +70,88 @@ describe('TaskCardPrint', () => {
 
     expect(screen.getByTestId('task-card-qr-placeholder')).toBeInTheDocument()
     expect(screen.queryByTestId('task-card-qr')).toBeNull()
+  })
+
+  // ── issue #4355：纸面展示工艺规格（设计文档 §4.9 ③）───────────────────
+
+  /** `items_snapshot` 口径（与 order_items.processing_info 同键名，§4.5） */
+  const craftItems: ProcessingOrderItem[] = [
+    {
+      productName: '布艺遮光帘A',
+      colorName: '米白',
+      curtainType: '布帘',
+      craft: '韩褶',
+      cuttingMode: '定高买宽',
+      openCount: 2,
+      isShaped: true,
+      style: '拼色',
+      specialOptions: ['加铅线', '双褶'],
+      pleat_count: 52,
+      per_panel_pleats: 26,
+      pleatSpacing: 0.1,
+      panels: 4,
+      fullness: 2,
+      fullness_actual: 1.86,
+      fabric_meters: 13.3,
+      processingMeters: 13.3,
+      hasPattern: true,
+      patternRepeat: 0.32,
+    },
+  ]
+
+  it('纸面展示工艺规格（车间按工艺生产，缺一字段 = 少一道活，§4.9 ③）', () => {
+    render(
+      <TaskCardPrint
+        processingOrderNo="JG-20260917-0001"
+        qrToken={QR_TOKEN}
+        positions={positions}
+        items={craftItems}
+      />
+    )
+
+    const spec = screen.getByTestId('task-card-craft-spec')
+    expect(within(spec).getByText('工艺规格')).toBeInTheDocument()
+    expect(within(spec).getByText('布帘')).toBeInTheDocument()
+    expect(within(spec).getByText('韩褶')).toBeInTheDocument()
+    expect(within(spec).getByText('定高买宽')).toBeInTheDocument()
+    expect(within(spec).getByText('双开')).toBeInTheDocument()
+    expect(within(spec).getByText('拼色')).toBeInTheDocument()
+    expect(within(spec).getByText('加铅线、双褶')).toBeInTheDocument()
+    expect(within(spec).getByText('52')).toBeInTheDocument()
+    expect(within(spec).getByText('26')).toBeInTheDocument()
+    expect(within(spec).getByText('0.1米')).toBeInTheDocument()
+    expect(within(spec).getByText('4')).toBeInTheDocument()
+    expect(within(spec).getByText('2 倍')).toBeInTheDocument()
+    expect(within(spec).getByText('1.86 倍')).toBeInTheDocument()
+    // 面料米数 / 加工费米数 = §4.9 要求的**两个字段**（§6.1 口径拆两值）⇒ 同值时出现两次
+    expect(within(spec).getAllByText('13.3米')).toHaveLength(2)
+    expect(within(spec).getByText('是否对花')).toBeInTheDocument()
+    expect(within(spec).getByText('0.32米')).toBeInTheDocument()
+    // 纸面同时标出是哪个部位的料（与工序表的「部位」列同源）
+    expect(within(spec).getByText(/布艺遮光帘A/)).toBeInTheDocument()
+  })
+
+  it('无 items / 无工艺键 ⇒ 不渲染规格块，纸面也不出现 undefined/null/NaN（§4.9 缺值不渲染）', () => {
+    const { unmount } = render(
+      <TaskCardPrint processingOrderNo="JG-20260917-0001" qrToken={QR_TOKEN} positions={positions} />
+    )
+    expect(screen.queryByTestId('task-card-craft-spec')).toBeNull()
+    expect(document.body.textContent).not.toMatch(/undefined|null|NaN/)
+    unmount()
+
+    // 存量加工单：items_snapshot 里只有销售信息、没有任何工艺键（键为 null 的 JSONB 形态）
+    const legacyItems = [
+      { productName: '布艺遮光帘A', colorName: '米白', craft: null, openCount: null, style: '' },
+    ] as unknown as ProcessingOrderItem[]
+    render(
+      <TaskCardPrint
+        processingOrderNo="JG-20260917-0001"
+        qrToken={QR_TOKEN}
+        positions={positions}
+        items={legacyItems}
+      />
+    )
+    expect(screen.queryByTestId('task-card-craft-spec')).toBeNull()
+    expect(document.body.textContent).not.toMatch(/undefined|null|NaN/)
   })
 })

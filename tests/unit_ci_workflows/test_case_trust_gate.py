@@ -197,6 +197,31 @@ def fixture_single_leg_unmarked() -> dict:
     }
 
 
+def fixture_shared_tool_unmarked() -> dict:
+    """**共享工具**用例缺 persona —— 旧判据的**假阳性**（#4356，反例方向的红证）。
+
+    载荷逐字取自 `OR-008`（`.github/cases/order.yml`，`persona: mibao`）：
+    `product_detail` 与 `order_create` **两端都有**（都在
+    `eval_case_filter.mibao_real_toolset()` 里）⇒ 本用例两条腿都跑得动。
+
+    ⇒ 判据**必须不报**：它若报，消红的省事写法就是 `persona: xiaobu`，而
+    `render_cases.filter_by_persona` 跑米宝腿时会跳过 `persona == "xiaobu"`
+    ⇒ **真实米宝用例被静默移出米宝腿**（全量跑不会有任何红）。
+    """
+    return {
+        "id": "FAKE-OR-008",
+        "title": "（注入夹具）共享工具用例未标注 persona",
+        "expectations": [
+            {"tool": "product_detail", "args": {"product_id": "遮光窗帘"}},
+            {"tool": "order_create"},
+        ],
+        "required_args": [{"tool": "order_create",
+                           "fields": ["items[].processing_info.sellingMethod"]}],
+        "data_checks": ["data.order_id.length > 0"],
+        "persona": "",
+    }
+
+
 # ── `[backend-contract]` 计分通道分流夹具（#4244）──────────────────────────────
 # 存在性口径**复用** `tests/unit_ci_workflows/test_eval_evidence_chain.py` 的 `trace_ghosts()`：
 # 路径相对仓库根 `is_file()`（不另造第二套「这个引用算不算真」的判据）。
@@ -1124,6 +1149,39 @@ class TestNoFalsePositivesOnCorrectShapes:
         v = tax.judge_case(case, catalog=_seed_catalog())
         assert "CASE-TRUST-SINGLE-LEG-NO-PERSONA" not in codes(v)
 
+    def test_shared_tool_case_is_not_required_to_annotate(self):
+        """**共享工具**用例（工具集两端都跑得动）不得被判成单端（#4356）。
+
+        红证：改前 `judge_case(fixture_shared_tool_unmarked())` 报
+        `CASE-TRUST-SINGLE-LEG-NO-PERSONA`（假阳性）⇒ 照它反推 `persona: xiaobu`
+        会把真实米宝用例静默移出米宝腿。
+        """
+        case = fixture_shared_tool_unmarked()
+        assert not tax.is_single_leg_by_toolset(case), (
+            "共享工具用例被判成「只能跑小布」—— 前提「双端工具集不相交」为假（#4356）"
+        )
+        v = tax.judge_case(case, catalog=_seed_catalog())
+        assert "CASE-TRUST-SINGLE-LEG-NO-PERSONA" not in codes(v), (
+            f"共享工具用例被要求标注 persona（假阳性）：{v}"
+        )
+
+    def test_negated_expectation_is_not_a_capability_requirement(self):
+        """否定式期望（「X 未被调用」）**不构成能力要求** ⇒ 不得据此判单端（#4356）。
+
+        红证：字典形态的 `{"tool": "curtain_calc 未被调用"}` 会被分支提取器读成
+        `curtain_calc`（能力要求）⇒ 若不过滤否定式，该形态在收紧后**新引入**假阳性。
+        口径与 `eval_case_filter.is_positive_case` 一致：否定式不构成覆盖/能力证据。
+        """
+        case = {
+            "id": "FAKE-NEG-900", "title": "（注入夹具）否定式期望",
+            "expectations": [{"tool": "curtain_calc 未被调用"}],
+            "data_checks": ["未调用算料工具"],
+            "persona": "",
+        }
+        assert not tax.is_single_leg_by_toolset(case)
+        v = tax.judge_case(case, catalog=_seed_catalog())
+        assert "CASE-TRUST-SINGLE-LEG-NO-PERSONA" not in codes(v)
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 三、退化守卫（防止判据变成恒真 / 恒假）
@@ -1134,6 +1192,55 @@ class TestDegenerateGuardRails:
         assert tax.WRITE_TOOLS, "写工具集合为空 ⇒ 所有写用例漏判（门禁空壳）"
         assert tax.WRITE_TOOL_ACTIONS, "写 action 集合为空 ⇒ 同上"
         assert len(tax.WRITE_TOOLS) >= 5, f"写工具集合疑似被削：{sorted(tax.WRITE_TOOLS)}"
+
+    def test_mibao_toolset_truth_loaded(self):
+        """米宝工具集真值必须加载成功（#4356）。
+
+        为什么：收紧后的判据 = 「小布腿跑得动 ∧ 米宝腿跑不动」—— 米宝真值缺失时
+        整个判据会退化成旧形态（假阳性回流），而这**不会有任何东西变红**。
+        故这里做上界/下界双向守卫：真值非空、规模够、且两端**确实相交**
+        （若哪天不再相交，本判据的收紧就成了空操作 ⇒ 必须有人重新评估）。
+        """
+        assert tax.MIBAO_TOOLSET_SOURCE == "eval_case_filter.mibao_real_toolset"
+        assert tax._MIBAO_TOOLS, (
+            "米宝工具集未加载 ⇒ 判据退化成旧形态（共享工具用例重新被判成单端）"
+        )
+        assert len(tax._MIBAO_TOOLS) >= 25, (
+            f"米宝工具集只解析出 {len(tax._MIBAO_TOOLS)} 个，判据疑似空转"
+        )
+        shared = set(tax._XIAOBU_TOOLS) & set(tax._MIBAO_TOOLS)
+        assert shared, (
+            "两端工具集不再相交 ⇒ 「⊆ 小布 ∧ ⊄ 米宝」与旧判据等价（收紧成空操作）"
+        )
+
+    def test_predicate_never_contradicts_mibao_annotation(self):
+        """库级前提守卫：判据声称「只可能是小布」的用例，不得已标注 `persona: mibao`（#4356）。
+
+        这是把**假前提**变成可红判据：旧判据隐含「米宝工具集与小布工具集不相交」，
+        而实测两端共享 7 个工具 ⇒ 库内一批 `persona: mibao` 的用例被同一判据判成
+        「只可能是小布」（改前 @74f8d5ff 实测 21 条，含 `OR-008`/`OR-010`）——
+        判据与**同库标注**自相矛盾，而规则 d 只查「标注存在」，矛盾永远不变红。
+        改后必须为 0（判据与库内标注一致）。
+        """
+        cases = _gate_module().load_cases_from_dir()
+        assert cases, "用例库装载为空 ⇒ 本守卫是空判据"
+        bad = sorted(c["id"] for c in cases
+                     if tax.is_single_leg_by_toolset(c) and tax.case_persona(c) == "mibao")
+        assert not bad, (
+            f"判据与库内 `persona: mibao` 标注矛盾（前提「双端工具集不相交」为假）：{bad}"
+        )
+
+    def test_predicate_still_flags_real_single_leg_cases(self):
+        """判别力未失：真·单端用例（工具集 ⊄ 米宝）**仍**被判单端（#4356）。
+
+        防「为消账本把判据削成恒假」—— 收紧后现库仍有真阳性（@74f8d5ff 实测 16 条，
+        全部已标 `persona: xiaobu`），故给下界守卫。
+        """
+        cases = _gate_module().load_cases_from_dir()
+        singles = [c for c in cases if tax.is_single_leg_by_toolset(c)]
+        assert len(singles) >= 10, (
+            f"真·单端用例只剩 {len(singles)} 条 —— 判据疑似被削成恒假（账本净缩的假象）"
+        )
 
     def test_write_tool_sets_only_name_reachable_tools(self):
         """**不变式**：写工具集合里的工具必须**真实可达**（issue #4010 / A13）。

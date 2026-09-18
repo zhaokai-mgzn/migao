@@ -246,6 +246,16 @@ CI 里调用**真实 LLM**（生产 `ai-api.migaozn.com` + `SERVICE_TOKEN`）的
    符号在文件里完全找不到 ⇒ **阻塞**；行号漂移（符号在别处）⇒ 警告。
 9. `CASE-TRUST-SINGLE-LEG-NO-PERSONA` —— 按工具集可判定为单端的用例必须标注 `persona`
    （#3822：缺标注的另一条腿必挂，`case_ids` 窄跑还会触发 runner 的「禁止静默少跑」守卫）。
+   ⚠️ **判据形态（#4356 收紧）**：单端 = 「**小布腿跑得动 ∧ 米宝腿跑不动**」——
+   米宝腿只有 persona 过滤、**没有**工具集过滤（`eval_case_filter.select_cases_for_persona`）
+   ⇒ 工具集 ⊄ 米宝的用例在米宝腿**必挂**，那才是需要标注的一类。
+   两端**共享**的工具（`order_create` / `product_detail` / `product_search` / `validate_input` /
+   `interact` / `knowledge_search` / `production_progress_query`）**不构成**单端理由：
+   旧形态「工具集 ⊆ 小布 ⇒ 只能跑小布」隐含「两端工具集不相交」这一**假前提**，
+   照它反推 `persona: xiaobu` 会把真实米宝用例**静默移出米宝腿**（全量跑不报红），
+   并在 C 端腿制造假红（显式 `xiaobu` 无条件保留 ⇒ 绕过 `MIBAO_SEMANTIC_PATTERNS` 语义过滤）。
+   **语义单端**（工具集两端都成立、行为只在 B 端可满足，如 `PR-018`）静态不可判定，
+   按证据逐条分诊（#4086），不属本判据。
 10. `CASE-TRUST-SELF-TARGET-NO-MAX-GROWTH` —— **自建目标**的 `expect: 0` 前置必须给 `max_growth`
     （#4200：`namespaces` 声明了 `product_name:<KW>` ∧ 前置对同一名字声明 `expect: 0` ∧
     `max_growth` 缺失或 <1）。为什么：runner 的漂移判据是 `after - before > max_growth`
