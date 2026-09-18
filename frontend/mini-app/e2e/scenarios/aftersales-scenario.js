@@ -42,9 +42,10 @@ async function run(mp) {
   const qa = await waitForElement(page, '.quick-actions', 15000)
   rep.step('新对话后快捷操作重现', !!qa, qa ? '快捷操作已出现' : '未出现')
 
-  // ── 3. 定位「售后咨询」卡片并点击 ──
+  // ── 3. 定位「售后咨询」行并点击 ──
   if (qa) {
-    const items = await page.$$('.quick-actions__item')
+    // UI-014（issue #4199）：入口由 .quick-actions__item（六格）改为 .quick-actions__row（两栏分组行）
+    const items = await page.$$('.quick-actions__row')
     let target = null
     let label = ''
     if (items && items.length > 0) {
