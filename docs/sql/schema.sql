@@ -863,6 +863,8 @@ CREATE TABLE IF NOT EXISTS processing_position_operations (
     tenant_id BIGINT NOT NULL REFERENCES tenants(id),
     processing_order_id VARCHAR(64) NOT NULL REFERENCES processing_orders(id),
     position_name VARCHAR(32) NOT NULL,              -- 部位：布帘/纱帘/帘头/外帘
+    order_item_id VARCHAR(36),                       -- 主定位键（V68，issue #4388）：指向 order_items.id；NULL = 存量行（无法可靠回填）⇒ 读面按 position_name 兜底分组
+    position_kind VARCHAR(16),                       -- 部位种类（V68）：布帘/纱帘/帘头（= 快照 curtainType）；NULL = 存量行
     seq INT NOT NULL DEFAULT 0,                      -- 部位内工序顺序
     operation_name VARCHAR(64) NOT NULL,
     group_name VARCHAR(16),
@@ -881,6 +883,9 @@ CREATE TABLE IF NOT EXISTS processing_position_operations (
 );
 CREATE INDEX IF NOT EXISTS idx_position_operations_po
     ON processing_position_operations (processing_order_id, position_name, seq)
+    WHERE deleted = 0;
+CREATE INDEX IF NOT EXISTS idx_position_operations_order_item
+    ON processing_position_operations (processing_order_id, order_item_id)
     WHERE deleted = 0;
 CREATE INDEX IF NOT EXISTS idx_position_operations_tenant
     ON processing_position_operations (tenant_id, status);
