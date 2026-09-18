@@ -44,8 +44,11 @@ CI 侧 `CI=true` ⇒ 本来就是 false ⇒ 不受影响。
    （否则判据是空断言：「不会红的判据」等于没有）。锚点 = `PRE_FIX_WEBSERVER_SNIPPET`
    （逐字节内联，出处 `9673df68`）+ 一条 git 溯源交叉校验（取不到该 commit 时**显式 skip**）。
    ⚠️ **不得把锚点绑 `origin/main` 这类可变引用**（§18.3「按可变键定位被测对象」）：本文件首版就是这么写的，
-   结果 PR #4320 一合并进 main，锚点文本立刻变成「修复后」⇒ 断言恒红 ⇒ `ci workflow helper unit tests`
-   对**每个** PR 变红（跟随修复见下方「沿革」）。
+   结果 PR #4320 一合并进 main，锚点文本立刻变成「修复后」⇒ 断言**恒红**。
+   **恒红面 = 本机 / 任何有完整历史的检出**；而 CI 的 pr-check 用 `fetch-depth: 1` ⇒
+   `git show origin/main:…` 取不到 ⇒ 该断言当时走的是 **skip**（`1 skipped`）⇒ **CI 看不出问题**
+   （本地红、CI 绿，比两边都红更难发现）。故本文件的**能力断言改为不依赖 git**（内联片段 ⇒ CI 也真跑），
+   git 溯源交叉校验单独成一条、只作**保真**用途（取不到历史时显式 skip 并打印人工核法）。
 ④ **运行期（真监听进程 + 真 cwd + 真子进程跑 CLI）** ——
    端口空闲 ⇒ 0（且不依赖 lsof）；**外来 checkout 的服务占用 ⇒ 1 且点名外来路径**（本单核心场景，
    旧形态下它会静默测错对象）；本检出的服务占用 ⇒ 0 但提示先停掉（身份可区分）；
@@ -67,9 +70,14 @@ CI 侧 `CI=true` ⇒ 本来就是 false ⇒ 不受影响。
 
 - #4313 首次交付（PR #4320，合并 commit `8bf2eac0`）：`reuseExistingServer: false` + 服务身份前置断言 +
   本文件。当时红证锚点绑的是 **`origin/main`**。
-- 跟随修复（本 PR）：**锚点改绑不可变引用**（内联片段 + `9673df68` 溯源校验）。原写法在合并后自红 ——
-  病根与 #4313 同族（**按可变键定位被测对象**）：`origin/main` 是移动靶，修复一进 main，锚点就变成
-  「修复后」文本。代价是 `ci workflow helper unit tests` 对每个 PR 变红（PR 触发，故 main 自身不红）。
+- 跟随修复（本 PR，issue 4331）：**锚点改绑不可变引用**（内联片段 + `9673df68` 溯源校验）。原写法在合并后自红 ——
+  病根与 #4313 同族（**按可变键定位被测对象**）：`origin/main` 是移动靶，修复一进 main，锚点就变成「修复后」文本。
+  **归因照实**：恒红面 = **本机 / 任何有完整历史的检出**（实测 `1 failed, 11 passed`）；
+  CI 的 pr-check 用 `fetch-depth: 1` ⇒ `git show origin/main:…` 取不到 ⇒ 原写法在 CI 走 **skip**
+  ⇒ **CI 绿、本地红**（不是「阻塞所有 PR」—— 父会话复核 PR #4326 的该 job：失败清单 5 条全是另一个包的
+  `test_pr_body_guard.py`，本文件命中 0 次）。本 PR 把**能力断言改成不依赖 git** ⇒ CI 也真跑；
+  只留一条 git 溯源交叉校验按需 skip（**显式**，且打印人工核法：
+  `git show 9673df68:tests/playwright.config.ts` 与内联片段对读）。
 - 顺带裁定（**不做**）：考虑过给判据加 Linux `/proc` 解析以摆脱 `lsof` 依赖。CI 实证**不需要** ——
   合并后 `ci workflow helper unit tests` 在 ubuntu runner 上 **pass**（2m4s），说明 12 条含 `lsof` 路径的
   判据在 CI 真跑过（`lsof` 在该 runner 上存在；`actions/runner-images` 的 apt 清单不含它，但清单不是全集）。
@@ -135,9 +143,12 @@ def guard_is_ci_gated(text: str) -> bool:
 
 # 修复前的原样片段（**不可变引用**）：逐字节取自 `9673df68:tests/playwright.config.ts`（#4313 的
 # 修复基线提交）。红证锚点**不得**绑 `origin/main` 这类**可变**引用 —— 那正是本仓 §18.3 的病
-# 「按可变键定位被测对象」：修复一合并进 main，锚点就变成「修复后」文本 ⇒ 断言恒红、卡住**所有** PR
-# （实证：PR #4320 合并后，本测试在 main 上自红）。
+# 「按可变键定位被测对象」：修复一合并进 main，锚点就变成「修复后」文本 ⇒ 断言恒红
+# （实测：PR #4320 合并后，本机 `1 failed, 11 passed`；CI 因 `fetch-depth: 1` 取不到 `origin/main`
+#  ⇒ 原写法在 CI 走 skip ⇒ **CI 绿、本地红**）。
 PRE_FIX_CONFIG_REF = "9673df68"
+# 修复前 `reuseExistingServer` 的右值（保真判据的**精确**锚点，不依赖 git ⇒ CI 也真跑）
+PRE_FIX_REUSE_VALUE = "!process.env.CI"
 PRE_FIX_WEBSERVER_SNIPPET = """
   // CI 也启动本地 Next.js dev server，E2E 测的是 PR 新代码而非旧部署
   webServer: {
@@ -156,11 +167,14 @@ PRE_FIX_WEBSERVER_SNIPPET = """
 
 
 def historical_config_text(ref: str = PRE_FIX_CONFIG_REF):
-    """`ref` 上的配置文本；取不到（浅克隆 / 该 commit 不在本地）⇒ None（由调用方显式 skip）。"""
-    r = subprocess.run(
-        ["git", "show", f"{ref}:tests/{CONFIG.name}"],
-        cwd=str(REPO_ROOT), capture_output=True, text=True,
-    )
+    """`ref` 上的配置文本；取不到（浅克隆 / 无 git / 该 commit 不在本地）⇒ None（调用方显式 skip）。"""
+    try:
+        r = subprocess.run(
+            ["git", "show", f"{ref}:tests/{CONFIG.name}"],
+            cwd=str(REPO_ROOT), capture_output=True, text=True,
+        )
+    except OSError:  # 环境里没有 git：与「取不到该 commit」同等对待（显式 skip，不是崩）
+        return None
     return r.stdout if r.returncode == 0 and r.stdout.strip() else None
 
 
@@ -216,8 +230,18 @@ def test_identity_guard_does_not_run_in_ci():
 # ── ③ 红证：同一条判据对「修复前」文本必须拒绝（锚点 = 不可变引用，见 PRE_FIX_WEBSERVER_SNIPPET）──
 
 def test_criterion_rejects_pre_fix_config_text():
-    """判据的**判别力**：修复前的形态必须被拒（否则是空断言）。锚点逐字节内联 ⇒ 与 main 前进无关。"""
+    """判据的**判别力**：修复前的形态必须被拒（否则是空断言）。
+
+    锚点逐字节内联 ⇒ **不依赖 git** ⇒ CI（`fetch-depth: 1`）也真跑、**永不 skip**。
+    """
     old_setting = find_reuse_setting(PRE_FIX_WEBSERVER_SNIPPET)
+    # ① 保真：内联片段必须原样保留修复前的右值（防「把片段改成好过的样子」来糊弄锚点）
+    assert old_setting == PRE_FIX_REUSE_VALUE, (
+        f"内联的修复前片段右值 = `{old_setting}`，与修复前的 `{PRE_FIX_REUSE_VALUE}` 不一致 —— "
+        f"锚点数据被改过？（出处见 PRE_FIX_CONFIG_REF，人工核法："
+        f"`git show {PRE_FIX_CONFIG_REF}:tests/playwright.config.ts`）"
+    )
+    # ② 判别力：判据对「修复前」形态必须给出「未修」的结论
     assert old_setting != "false", (
         f"对修复前的旧文本，判据居然也判「已修」（读到 `{old_setting}`）—— 说明这条判据是空断言"
         "（不会红的判据 = 没有判据）。"
@@ -228,15 +252,18 @@ def test_criterion_rejects_pre_fix_config_text():
 
 
 def test_pre_fix_snippet_matches_history_when_available():
-    """溯源守卫：内联片段确实逐字节来自 `PRE_FIX_CONFIG_REF`（防「改片段让锚点变好过」）。
+    """溯源交叉校验：内联片段确实与 `PRE_FIX_CONFIG_REF` 的历史文本一致（防锚点被悄悄改好过）。
 
-    该 commit 不在本地（浅克隆 / CI 默认 fetch-depth=1）⇒ **显式 skip**（不是静默通过）。
+    ⚠️ 本条**只作保真用途**，能力断言（上一条）不依赖它 ⇒ 它 skip 时判别力仍在。
+    该 commit 不在本地（浅克隆 / CI 默认 `fetch-depth: 1`）或环境无 git ⇒ **显式 skip**（不是静默通过），
+    并打印人工核法。
     """
     historical = historical_config_text()
     if historical is None:
         pytest.skip(
-            f"本地取不到 {PRE_FIX_CONFIG_REF}（浅克隆？）—— 溯源交叉校验跳过；"
-            "判别力仍由 test_criterion_rejects_pre_fix_config_text 的内联锚点保证"
+            f"取不到 {PRE_FIX_CONFIG_REF}:tests/{CONFIG.name}（浅克隆 / 无 git）—— 溯源交叉校验跳过；"
+            f"人工核法：`git show {PRE_FIX_CONFIG_REF}:tests/{CONFIG.name}` 与内联片段对读。"
+            "判别力不受影响：test_criterion_rejects_pre_fix_config_text 用的是内联锚点，不读 git。"
         )
     assert find_reuse_setting(historical) == find_reuse_setting(PRE_FIX_WEBSERVER_SNIPPET), (
         "内联的修复前片段与历史文本不一致（`reuseExistingServer` 右值不同）—— 锚点被改过？"
