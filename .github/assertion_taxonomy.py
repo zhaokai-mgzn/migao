@@ -1047,6 +1047,8 @@ def check_reference_freshness(refs: list[dict], read_lines) -> dict:
 # （该模块零第三方依赖，自身的一致性由 `test_xiaobu_case_set.py::TestXiaobuToolsetTruth`
 #  与后端 `CUSTOMER_*_TOOLS` 锁定）。本模块只做转发，**不复制**一份平行清单
 # （复制 = 双源漂移，正是本模块 header 反对的）。
+# B 端（米宝）工具集真值同理转发 `eval_case_filter.mibao_real_toolset()`（#4356）：
+# 收紧后的单端判据**必须**同时看两端 —— 旧形态只看小布，隐含「两端不相交」这个**假**前提。
 try:  # pragma: no cover - 导入失败时降级为「未实装」，不静默恒真
     import os as _os
     import sys as _sys
@@ -1056,11 +1058,22 @@ try:  # pragma: no cover - 导入失败时降级为「未实装」，不静默�
         "tests", "agent_eval")
     if _EVAL_DIR not in _sys.path:
         _sys.path.insert(0, _EVAL_DIR)
-    from eval_case_filter import XIAOBU_TOOLS as _XIAOBU_TOOLS  # noqa: E402
+    from eval_case_filter import (  # noqa: E402
+        XIAOBU_TOOLS as _XIAOBU_TOOLS,
+        expectation_branches as _expectation_branches,
+        is_negated_expectation as _is_negated_expectation,
+        mibao_real_toolset as _mibao_real_toolset,
+    )
     XIAOBU_TOOLSET_SOURCE = "eval_case_filter.XIAOBU_TOOLS"
+    MIBAO_TOOLSET_SOURCE = "eval_case_filter.mibao_real_toolset"
+    _MIBAO_TOOLS = frozenset(_mibao_real_toolset())
 except Exception:  # pragma: no cover
     _XIAOBU_TOOLS = None
+    _expectation_branches = None
+    _is_negated_expectation = None
+    _MIBAO_TOOLS = frozenset()
     XIAOBU_TOOLSET_SOURCE = ""
+    MIBAO_TOOLSET_SOURCE = ""
 
 PERSONA_VALUES: tuple[str, ...] = ("mibao", "xiaobu", "both")
 
@@ -1077,22 +1090,64 @@ def case_persona(case: dict) -> str:
     return str(case.get("persona") or "").strip().lower()
 
 
-def is_single_leg_by_toolset(case: dict) -> bool:
-    """**纯静态**判定：该用例是否只能跑单端（期望工具全是小布工具集）。
+def case_can_run_on(case: dict, available) -> bool:
+    """该用例在 `available` 工具集那一端**是否存在可满足路径**（#4356）。
 
-    ⚠️ 这是**下界**（保守判定）：
-      · expectations 非空 且 工具集 ⊆ XIAOBU_TOOLS ⇒ 只可能是小布用例
-        （米宝工具集与之不相交）；
-      · expectations 为空 ⇒ **无法静态判定**（返回 False，登记为未实装）；
-      · 工具集不 ⊆ XIAOBU_TOOLS ⇒ 双端或米宝端，无法静态判定（返回 False）。
+    逐条 `expectations` 取「**至少一个** OR 分支的工具可用」—— 与运行器的
+    `check_expectation` 同语义（`A or B` 命中任一即满足；先例 `AS-003`/`AS-005`：
+    `after_sales_manage or aftersale_create` 在米宝腿仍有合法路径）。
+    分支提取**复用** `eval_case_filter.expectation_branches`（单一实现，不另写一套）。
+    **否定式期望**（「X 未被调用」）跳过：断言"某工具没被调用"在任何一端都成立，
+    不构成能力要求（口径同 `eval_case_filter.is_positive_case`；不跳过则
+    `{"tool": "curtain_calc 未被调用"}` 会被读成"要求 curtain_calc" ⇒ 新假阳性）。
+    `expectations` 为空 ⇒ 无法判定（False）。
     """
-    if _XIAOBU_TOOLS is None:
+    if _expectation_branches is None:
         return False
-    tools = {t for t, _ in expectation_tools(case) if t}
-    tools = {t for t in tools if t != "direct_reply"}
-    if not tools:
+    exps = case.get("expectations") or []
+    if not exps:
         return False
-    return tools <= _XIAOBU_TOOLS
+    for exp in exps:
+        if _is_negated_expectation(exp):
+            continue
+        branches = _expectation_branches(exp)
+        if not branches or not any(t in available for t in branches):
+            return False
+    return True
+
+
+def is_single_leg_by_toolset(case: dict) -> bool:
+    """**纯静态**判定：该用例是否只能跑单端（小布腿跑得动、米宝腿跑不动）。
+
+    ⚠️ 判据形态于 **#4356** 收紧 —— 旧形态「工具集 ⊆ `XIAOBU_TOOLS` ⇒ 只可能是小布」
+    的前提「**米宝工具集与之不相交**」是**假的**：两端实测共享 7 个工具
+    （`order_create` / `product_detail` / `product_search` / `validate_input` /
+    `interact` / `knowledge_search` / `production_progress_query`）⇒ 共享工具用例
+    （如 `OR-010`，`persona: mibao` 且已在 main）被同一判据判成「只可能是小布」。
+
+    为什么这不是「判据不够精确」而已：照该判据反推 persona 写成 `xiaobu` ⇒
+      · `render_cases.filter_by_persona` 跑米宝腿时跳过 `persona == "xiaobu"`
+        ⇒ **真实米宝用例被静默移出米宝腿**（全量跑不会有任何红，也不触发 runner 的
+        「禁止静默少跑」守卫——那不是 `case_ids` 窄跑）；
+      · `eval_case_filter.select_cases_for_persona` 对**显式** `persona: xiaobu`
+        无条件保留 ⇒ 该用例反而在 C 端腿跑起来（绕过语义过滤）= 假红。
+
+    正确形态 = 「小布腿**跑得动** ∧ 米宝腿**跑不动**」：
+      · 米宝腿只有 persona 过滤、**没有**工具集过滤
+        （`eval_case_filter.select_cases_for_persona`）⇒ 工具集 ⊄ 米宝的用例在米宝腿
+        **必挂** —— 那才是需要 persona 标注的一类；
+      · 共享工具用例两条腿都跑得动 ⇒ **不该**被要求标注；
+      · `expectations` 为空、或**米宝真值缺失**（`_MIBAO_TOOLS` 未加载/低于下界）
+        ⇒ 返回 False（**无法判定**），**不得**退化成旧形态 —— 由
+        `TestDegenerateGuardRails::test_mibao_toolset_truth_loaded` 报红。
+
+    仍是**下界**：语义单端（工具集两端都成立、行为只在 B 端可满足，如 `PR-018`）
+    静态不可判定，登记在 `CASE-TRUST-PROSE-DATA-CHECK-QUALITY`（#3483）。
+    """
+    if _XIAOBU_TOOLS is None or not _MIBAO_TOOLS:
+        return False
+    return (case_can_run_on(case, _XIAOBU_TOOLS)
+            and not case_can_run_on(case, _MIBAO_TOOLS))
 
 
 def missing_persona_annotation(case: dict) -> bool:
