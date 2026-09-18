@@ -1,6 +1,6 @@
 ---
 name: migao-acceptance
-version: 1.11.0
+version: 1.12.0
 # ⚠️ YAML 纯标量陷阱 + 本仓库取舍（v1.7，2026-09-15，与 migao-dev-flow v1.21 同法）：
 # `description` 是 YAML **纯标量** ⇒ 解析在第一个「空白 + `#`」处**截断**，其余内容**静默丢失**
 # ——「文件里写了」≠「加载器读到了」（与本节「注释漂移 = 假绿来源」同族）。
@@ -58,6 +58,11 @@ description: MIGAO AI 可执行验收协议——验收/评测/「验收通过/�
 **治法（能下层不上层，migao-dev-flow §16.1）**：
 
 1. **红证**（L0，零 LLM，最优先）：每个断言核对器配一个负向夹具 → 没有红证的断言在 CI 阻塞；
+   ⚠️ **红证本身要防骗（缓存卫生，v1.12 / issue #4260）**：注入**前后都必须清缓存**，并用**内容指纹**
+   （`sha256`）自证注入/还原**真的生效** —— **禁用 mtime / size** 判新鲜度（同秒 + 同字节长度的替换会让
+   Python 复用旧 `.pyc`，⇒ 注入未生效却读成旧值：**假绿证**把有效护栏当空断言删掉，**假红证**造成错误归因）。
+   锚点 = `python3 scripts/red_proof.py clear|fingerprint|injected|restored`（三态 `0/1/3`；`--no-clear` 为诊断模式）；
+   详版 = `docs/testing/test-engineering-standards.md` §8，纪律全文见 `migao-dev-flow` §19.1；
 2. **声明层静态一致**（L0）：声明的 `action` / `fetch` / args 键必须存在于该工具 schema 或已注册 fetcher；
 3. **失败可归因**（L1）：summary 带「case × 轮次 × 断言」级判定 —— 否则 `score=0` 无从定位
    （实证：一条 reproducible 失败因缺逐断言判定而长期无法归因）；
@@ -269,6 +274,16 @@ CI（`LC_ALL=C`）把它压成 `-`。`tests/unit_ci_workflows/test_gate_uncommit
   **确定性失败 = 0 + 关键旅程（KEY_JOURNEYS_MIBAO/XIAOBU）全过 + 已知波动
   （**仅 `llm-noise`**）在 flake 台账放行**（v1.6 口径变更：`unstable` 不再放行，见下节）。完成 ≠ 全量 100% 绿
   （追 LLM 方差边际收益为负，B 端 80 轮差距分析实证）。
+- **阻塞桶是六类，不是五类**（v1.12 / issue **#4245**）：`ok` = **六类阻塞桶全空** ——
+  `deterministic` / `journey` / `systemic` / `restore` / `harness_incompatible` / **`case_asset_failures`**。
+  **`case_asset_failures` = 归因纪律的落码锚点**：该桶 = `precondition_not_applied` 族
+  （`pre_clean` 未应用 / 运行期前置漂移）⇒ **前置不成立 ⇒ 该用例本次的红/绿不可判别**
+  （runner 原文断言「**不可归因于 agent 行为**」），但**仍阻塞 `ok`**（结论不可用），
+  且**不再进** `deterministic_failures` / `systemic_recurrence` / `journey_failures`
+  —— 那三桶都在**指名 agent / 产品**（实测 `PR-016` 曾落前者、`PR-008` 落后者 ⇒ 读的人去查 agent 行为）。
+  ⚠️ **复位族**（`PRECONDITION_NOT_RESTORED`）**不在**本桶，它已有 `restore_failures`。
+  判据源 = `tests/agent_eval/local_runner.py` 的 `completion_verdict` / `precondition_not_applied_fact`；
+  逐桶判据与读法见 `migao-dev-flow` §16.7「结论的构成与读法」（**不重复展开**）。
 - 结论档引用该判定作为「是否可以下结论」的前置条件；PR 门禁（_ci_verdict 全绿）
   另行生效，两者各司其职。
 - **验收证据可以取自「合并后的一次统一验证」**（一次全量档 + 独立盲审），**不必每个改动各跑一次** ——
@@ -442,7 +457,7 @@ CI（`LC_ALL=C`）把它压成 `-`。`tests/unit_ci_workflows/test_gate_uncommit
 三项**任一答不出** ⇒ 记为**未交付**（而非「已合并」），开**跟随 issue**。
 **反模式**：只看「CI 绿 + PR 合并 + 文件存在」就宣布交付。
 
-## 版本沿革（v1.1 → v1.11）
+## 版本沿革（v1.1 → v1.12）
 
 > 本节由 **v1.7** 从 frontmatter `description` **逐字迁入**（条目文本未改，仅加列表符号）。
 > 背景：frontmatter `description` 是 YAML 纯标量，会在第一个「空白 + `#`」处**静默截断** ——
@@ -466,3 +481,16 @@ CI（`LC_ALL=C`）把它压成 `-`。`tests/unit_ci_workflows/test_gate_uncommit
   口径单点：本条**详版在 acceptance**；`migao-dev-flow` **v1.28 新增 §18「单一真相源与不可变引用」**（读源纪律 / 活锚新鲜度 / 不可变引用 / 前置自断言 / 账本新鲜度 / 环境静默 / 反模式清单） §18.7 只留一句指针 —— 与本技能**同源不重复**：本技能管「断言与证据会不会骗人」，§18 管「读的对象与指的对象是不是同一个」。
 - v1.10（2026-09-15 实证，本次）：新增「**归因纪律**」节 —— **归因强度必须匹配证据强度**（强度阶梯：存在性 → 值级 → 物理不可满足 → 机制级，逐级写明所需证据；"不可满足"级断言需要"**任何合法行为都无法满足**"的证据）。实证：据"种子目录无该标签"推断 `CU-003`「物理不可满足」，被修复包的**反例 run** 推翻（agent 把该词**拆成两个真实标签**并 `add_tag` 成功）⇒ 真因是「**前提随并行污染漂移**」（`OR-010` 建单触发 admin-api 自动 upsert 同名客户 + `customer_index: 0` 在 `created_at DESC` 下点错人）。另三条：**双向禁令**（不为脱罪归评测侧 / 不为显严格硬归产品；**证据不足就写"证据不足"并注明缺什么**）；**跨 run ≠ 同因**（`OR-014` 在 `34873715194`/`34856561459`/`34908262839` 分别是评测侧载荷窗口 / 产品侧模块自锁 / LLM 400 —— 三个 run 三种机制，**禁止**合并成一句"系统性缺口"）；**独立复核会推翻主会话初判**（本会话 2 例，被推翻必须**明说并改正记录**）。配套：铁律 3 补一句「无归因的红既不是产品缺陷、也不是可放行，是待归因项」；`migao-dev-flow` v1.29 §19 表把本条登记为「**仅纪律（未落码）**」。
 - v1.11（2026-09-17 实证固化）：新增「交付物可达性判据」——「文件在 main」只是必要条件；squash 合并使 commit 不可达（可达性不是判据）；而 `payment`/`production_progress` 卡型组件文件都在 main 却**零发射点**（#4016）证明「内容判据也不够」。能力类交付物必须给出「谁发射/哪个入口可达/有无测试钉住」三项证据，任一答不出记为未交付。
+- v1.12（2026-09-18 **同步本批「判据自身缺陷」的已落码口径**，本次；只加最小面，不改其它内容）：
+  ① **「结论档机器判定」补六桶口径**（issue **#4245**）—— 阻塞桶由**五类 → 六类**，新增
+  **`case_asset_failures`**（`precondition_not_applied` 族：前置不成立 / 运行期漂移 ⇒ 该用例本次
+  **红/绿不可判别、不可归因于 agent**，但**仍阻塞 `ok`**，且**不再进** `deterministic_failures` /
+  `systemic_recurrence` / `journey_failures`）；落码锚点 = `tests/agent_eval/local_runner.py` 的
+  `completion_verdict` / `precondition_not_applied_fact`。这是本技能「归因纪律」在**判定档**上的落码。
+  ② **「每条断言都要有红证」处加一句判据 + 指针**（issue **#4260**）—— 红证生成动作**自己会骗人**
+  （同秒 + 同字节长度替换 ⇒ Python 复用旧 `.pyc`，注入未生效却读成旧值）：注入**前后清缓存** +
+  **内容指纹**（`sha256`）自证，**禁 mtime / size**；锚点 `scripts/red_proof.py`；
+  纪律全文在 `migao-dev-flow` §19.1 元规则 ③（**不重复展开**）。
+  关联（均已 CLOSED）：**#4239 / #4245 / #4244 / #4233 / #4221 / #4260 / #4247 / #4231 / #4259 / #4226**；
+  本批另两条 **#4158 / #4249** 的同类口径已登记在 `migao-dev-flow`（§8 表 / §15.5，**均已落码**），
+  按"同一口径只放一处"不在本技能重复展开。
