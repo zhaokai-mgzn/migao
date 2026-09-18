@@ -82,7 +82,8 @@ public class ProductionOperationQueryService {
      * 工序库目录：按分组 → 排序位的稳定顺序返回全部活跃工序。
      *
      * @return {total, groups:[{group, operations:[...]}]}；工序项含
-     *         {id, name, group, position, unit, unit_price, is_must_finish, is_start_marker}
+     *         {id, name, group, position, scope, unit, unit_price, is_must_finish, is_start_marker}
+     *         （{@code scope} = 部位级 {@code position} / 套级 {@code set}，V67，issue #4384 A1）
      */
     public Map<String, Object> catalog(Long tenantId) {
         List<ProductionOperation> operations = productionOperationMapper.selectList(
@@ -197,7 +198,9 @@ public class ProductionOperationQueryService {
      * {@code missing_operations} 让调用方 fail-closed）。</p>
      *
      * @return {@code {curtain_type, craft, operation_count, missing_operations, operations:[{seq,
-     *         operation, group, unit, unit_price, is_must_finish, is_start_marker}]}}；
+     *         operation, group, unit, unit_price, is_must_finish, is_start_marker, scope}]}}；
+     *         {@code scope} = 部位级 {@code position} / 套级 {@code set}（每樘窗一次，V67 / issue #4384 A1），
+     *         **逐字取库**（库中缺该工序 ⇒ null，不猜）；
      *         **未命中该 部位×工艺 ⇒ null**（不抛：兜底到默认路线是调用方的策略，不是库的语义）
      */
     public Map<String, Object> findRouting(Long tenantId, String curtainType, String craft) {
@@ -467,6 +470,9 @@ public class ProductionOperationQueryService {
         view.put("name", op.getName());
         view.put("group", op.getGroupName());
         view.put("position", op.getPosition());
+        // 作用域（V67，issue #4384 A1）：部位级 / 套级（每樘窗一次）。**逐字取库**（与 unit/unit_price 同级）——
+        // 前端靠它渲染可改的下拉，实例化侧（A2）靠它判「每樘窗只做一次」。写死常量即第二份口径。
+        view.put("scope", op.getScope());
         view.put("unit", op.getUnit());
         view.put("unit_price", nz(op.getUnitPrice()));
         view.put("is_must_finish", Boolean.TRUE.equals(op.getIsMustFinish()));
@@ -497,6 +503,9 @@ public class ProductionOperationQueryService {
         view.put("unit_price", op == null ? null : nz(op.getUnitPrice()));
         view.put("is_must_finish", op != null && Boolean.TRUE.equals(op.getIsMustFinish()));
         view.put("is_start_marker", op != null && Boolean.TRUE.equals(op.getIsStartMarker()));
+        // 作用域（V67，issue #4384 A1）：`findRouting` 的每道工序据此带出「部位级 / 套级」。
+        // 库中缺该工序（op == null）⇒ null，**不猜默认值** —— 猜出来的 scope 会让 A2 静默去重。
+        view.put("scope", op == null ? null : op.getScope());
         // provenance 与目录读面**同一份口径**（两处各拼一份必然漂移，而前端拿同一个 TS 类型渲染）
         view.put("source", op == null ? null : op.getSource());
         return view;

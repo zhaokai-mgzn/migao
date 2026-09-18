@@ -38,6 +38,22 @@ public class ProductionOperation {
     /** 部位：布帘/纱帘/帘头/外帘（空=通用） */
     private String position;
 
+    /**
+     * 工序作用域（V67，issue #4384 A1）：{@code position} = 部位级（默认，每部位一次）/
+     * {@code set} = 套级（**每樘窗一次**）。
+     *
+     * <p>存在的理由（真值源 {@code docs/curtain-production-rules.md} §8）：**外帘**是加工单打印行
+     * 部位、**不是**路线键；但 V54/V58 种子里 {@code 外帘打卷}/{@code 外帘装袋}/{@code 外帘发货}
+     * 的 {@code position='外帘'} 却**逐条出现在每一条部位路线**里（含纱帘路线）⇒ 一樘「布 + 纱」时
+     * 这 3 道各实例化 **2 次**（{@code unit='套'}、{@code qty=1}）⇒ 打卷/装袋/发货 **各 ¥1.0 双付**。
+     * 用户裁定（2026-09-19）：**套级工序先按「每樘窗一次」实现**，打卷是否每帘一次**留成可配**。</p>
+     *
+     * <p>⚠️ 本列**只是标记**：套级去重（A2，{@code ProcessingOrderService.buildPositionPayload}）
+     * 不在 #4384 A1 包内（等包 D #4387 合入后单独做）⇒ 今天置 {@code set} 只改读面/写面/界面口径，
+     * **尚未改变实例化行为**。</p>
+     */
+    private String scope;
+
     /** 计件单位：米/折/幅/孔/套/个 */
     private String unit;
 

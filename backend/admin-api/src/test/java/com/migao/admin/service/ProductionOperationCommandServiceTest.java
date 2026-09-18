@@ -1,6 +1,6 @@
 package com.migao.admin.service;
 
-// case_ids: PG-020, PG-034
+// case_ids: PG-020, PG-034, PG-039
 
 import com.migao.admin.entity.ProductionOperation;
 import com.migao.admin.entity.ProductionOperationPriceVersion;
@@ -21,6 +21,7 @@ import org.mockito.quality.Strictness;
 import java.math.BigDecimal;
 import java.util.Arrays;
 import java.util.Map;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -245,5 +246,95 @@ class ProductionOperationCommandServiceTest {
         assertThatThrownBy(() -> service().create(Map.of("name", "罗马帘-穿杆", "unit_price", -1), TENANT))
                 .isInstanceOf(BusinessException.class);
         verify(productionOperationMapper, never()).insert(any(ProductionOperation.class));
+    }
+
+    // ══════════════════ 作用域 scope（issue #4384 A1，PG-039）══════════════════
+    //
+    // 真值源 docs/curtain-production-rules.md §8：**外帘**是加工单打印行部位、**不是**路线键。
+    // 用户裁定（2026-09-19）：「套级工序先按**每樘窗一次**实现，打卷是否每帘一次**留成可配**」
+    // ⇒ scope 必须**商家可配**（可配 = 写面能改；这正是「留成可配」的落码形态），
+    // 且取值必须闭词表校验（自创第三值会让读面/实例化侧的口径分裂）。
+
+    /** 合法取值（与迁移 V67 的列注释同口径）。 */
+    private static final Set<String> SCOPE_VOCABULARY = Set.of("position", "set");
+
+    @Test
+    @DisplayName("update 可配 scope：改成 set 落库 + 响应回显；未给 scope 时该列不被写")
+    void updateSetsScope() {
+        when(productionOperationMapper.selectById("op-v54-07")).thenReturn(operation("0.40", "active"));
+        when(productionOperationMapper.updateById(any(ProductionOperation.class))).thenReturn(1);
+
+        Map<String, Object> view = service().update("op-v54-07", Map.of("scope", "set"), TENANT);
+
+        ArgumentCaptor<ProductionOperation> updated = ArgumentCaptor.forClass(ProductionOperation.class);
+        verify(productionOperationMapper).updateById(updated.capture());
+        assertThat(updated.getValue().getScope()).isEqualTo("set");
+        assertThat(updated.getValue().getUnitPrice()).as("部分更新：未给单价 ⇒ 不写单价").isNull();
+        verify(priceVersionMapper, never()).insert(any(ProductionOperationPriceVersion.class));
+        assertThat(view.get("scope")).as("响应形态 = 目录项（前端同一份类型渲染）").isEqualTo("set");
+
+        // 改回部位级（可配 = 双向都能改，不是单向开关）
+        when(productionOperationMapper.selectById("op-v54-07")).thenReturn(operation("0.40", "active"));
+        Map<String, Object> back = service().update("op-v54-07", Map.of("scope", "position"), TENANT);
+        assertThat(back.get("scope")).isEqualTo("position");
+    }
+
+    @Test
+    @DisplayName("update 非法 scope ⇒ 422 可读理由且不落库（闭词表 position/set）")
+    void updateRejectsInvalidScope() {
+        when(productionOperationMapper.selectById("op-v54-07")).thenReturn(operation("0.40", "active"));
+
+        assertThatThrownBy(() -> service().update("op-v54-07", Map.of("scope", "position_set"), TENANT))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("scope")
+                .satisfies(e -> assertThat(((BusinessException) e).getHttpStatus()).isEqualTo(422));
+        assertThatThrownBy(() -> service().update("op-v54-07", Map.of("scope", "套级"), TENANT))
+                .as("中文别名也要拒 —— 库里存的是 position/set，混进中文会让读面/实例化侧对不上")
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("scope");
+        assertThatThrownBy(() -> service().update("op-v54-07", Map.of("scope", "  "), TENANT))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("scope");
+
+        verify(productionOperationMapper, never()).updateById(any(ProductionOperation.class));
+        verify(priceVersionMapper, never()).insert(any(ProductionOperationPriceVersion.class));
+    }
+
+    @Test
+    @DisplayName("create 可配 scope：给了就用（set），缺省 = position（部位级，不发明套级）")
+    void createDefaultsScopeToPosition() {
+        when(productionOperationMapper.selectCount(any())).thenReturn(0L);
+
+        Map<String, Object> withScope = service().create(Map.of(
+                "name", "罗马帘-穿杆", "unit_price", 0.6, "scope", "set"), TENANT);
+        assertThat(withScope.get("scope")).isEqualTo("set");
+
+        when(productionOperationMapper.selectCount(any())).thenReturn(0L);
+        Map<String, Object> without = service().create(Map.of(
+                "name", "罗马帘-打孔", "unit_price", 0.6), TENANT);
+        assertThat(without.get("scope"))
+                .as("缺省必须是 position（部位级）—— 默认 set 会把商家新建的每道工序都静默去重")
+                .isEqualTo("position");
+    }
+
+    @Test
+    @DisplayName("create 非法 scope ⇒ 422 且不落库（校验先于写入）")
+    void createRejectsInvalidScope() {
+        when(productionOperationMapper.selectCount(any())).thenReturn(0L);
+
+        assertThatThrownBy(() -> service().create(Map.of(
+                "name", "罗马帘-穿杆", "unit_price", 0.6, "scope", "SET"), TENANT))
+                .as("大小写敏感（库里存小写，'SET' 会让按 scope 过滤的读面/实例化侧查不到）")
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("scope");
+
+        verify(productionOperationMapper, never()).insert(any(ProductionOperation.class));
+        verify(priceVersionMapper, never()).insert(any(ProductionOperationPriceVersion.class));
+    }
+
+    @Test
+    @DisplayName("闭词表自证：合法取值集合恰好是 position/set（多一个/少一个都红）")
+    void scopeVocabularyIsExactlyPositionAndSet() {
+        assertThat(SCOPE_VOCABULARY).containsExactlyInAnyOrder("position", "set");
     }
 }

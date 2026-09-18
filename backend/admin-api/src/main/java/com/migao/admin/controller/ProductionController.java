@@ -192,7 +192,12 @@ public class ProductionController {
     /**
      * 更新工序（商家改单价/停用/排序的唯一入口）
      * PUT /api/admin/production/operations/{id}
-     * body: {unit_price?, is_must_finish?, is_start_marker?, status?, unit?, group_name?, sort_order?}
+     * body: {unit_price?, is_must_finish?, is_start_marker?, status?, unit?, group_name?, sort_order?,
+     *        scope?}
+     *
+     * <p>{@code scope}（V67，issue #4384 A1）= 工序作用域：{@code position} 部位级 / {@code set} 套级
+     * （**每樘窗一次**）。用户裁定「套级先按每樘窗一次实现，打卷是否每帘一次**留成可配**」
+     * ⇒ 这一档由本端点开放给商家改；取值校验在服务层（闭词表，非法值 422 + 可读理由）。</p>
      *
      * <p>改价同一事务写两处：{@code production_operations.unit_price}（新单实例化取值源）
      * + {@code production_operation_price_versions} 追加一行（当前价 = 最新版本行）。
@@ -210,7 +215,11 @@ public class ProductionController {
     /**
      * 新增工序（issue #4308 交付物 4：商家建自己的路线前必须能先建工序）
      * POST /api/admin/production/operations
-     * body: {name, group_name?, unit?, unit_price, position?, is_must_finish?, is_start_marker?, sort_order?}
+     * body: {name, group_name?, unit?, unit_price, position?, is_must_finish?, is_start_marker?, sort_order?,
+     *        scope?}
+     *
+     * <p>{@code scope} 缺省 = {@code position}（部位级，与 V67 列默认值同口径）——
+     * **不默认 set**：默认套级会把商家新建的每道工序都静默去重（issue #4384 A1）。</p>
      *
      * <p>单价版本账**同事务写首行**（使「当前价 = 最新版本行」对新工序同样成立）。</p>
      */

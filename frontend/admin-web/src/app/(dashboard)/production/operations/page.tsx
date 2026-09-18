@@ -10,6 +10,7 @@ import { cn } from '@/lib/utils'
 import type {
   CatalogOperation,
   OperationsCatalog,
+  ProductionScope,
   ProductionSeedTemplate,
   ProductionSource,
   RoutingsResponse,
@@ -22,7 +23,13 @@ import type {
  * - GET /api/admin/production/operations-catalog → 按分组（裁剪/车位/后道/其他）的工序目录
  * - GET /api/admin/production/routings → 6 条 部位×工艺 路线（布帘·韩褶 = 11 道）
  * - GET /api/admin/production/seed-templates → 行业模板目录（issue #4361 冻结契约）
- * 写路径：PUT /api/admin/production/operations/{id}（改单价 / 必完开关；权限 processing:manage）。
+ * 写路径：PUT /api/admin/production/operations/{id}（改单价 / 必完开关 / **作用域**；权限 processing:manage）。
+ *
+ * 作用域（issue #4384 A1，契约所有者 #4384 后端半边）：列表逐行展示并可改「部位级 / 套级」。
+ * 真值源 §8 明写「外帘是加工单打印行部位、不是路线键」，但 V54/V58 种子把 外帘打卷/外帘装袋/外帘发货
+ * 逐条写进每一条部位路线（含纱帘）⇒ 一樘「布 + 纱」时这 3 道各实例化 2 次 ⇒ 各 ¥1.0 双付；
+ * 用户裁定「套级先按每樘窗一次实现，打卷是否每帘一次留成可配」⇒ 本列 = 「留成可配」的落码形态。
+ * ⚠️ 套级去重本身（A2，加工单侧）不在本页范围，也不在 #4384 A1 包内。
  *
  * 真值源：docs/curtain-production-rules.md §2 工序库（属性含计件单价、必完开关）/ §3 工艺路线。
  * 口径说明：`is_must_finish`（此工序必须完成才可打包）与 `is_start_marker`（标记生产开始）
@@ -44,6 +51,29 @@ const SOURCE_META: Record<ProductionSource, { label: string; className: string }
   实证: { label: '实证', className: 'bg-emerald-50 text-emerald-700' },
   推算: { label: '推算', className: 'bg-neutral-100 text-neutral-500' },
   占位待确认: { label: '初始价·待确认', className: 'bg-amber-50 text-amber-700' },
+}
+
+/**
+ * 工序作用域两档（V67，issue #4384 A1）——**闭词表**，与后端 `ProductionOperationCommandService`
+ * 的校验、迁移 V67 的列注释同口径（前端不发明第三值）。
+ *
+ * 「套级 = 每樘窗一次」这句话必须出现在界面上：真值源 `docs/curtain-production-rules.md` §8
+ * 明写「外帘是加工单打印行部位、不是路线键」，但种子把三道外帘工序逐条写进布帘与纱帘两条路线
+ * ⇒ 一樘「布 + 纱」各做 2 次、各 ¥1.0 双付。用户裁定「套级先按每樘窗一次实现，打卷是否每帘一次
+ * 留成可配」⇒ 这一列就是「留成可配」的落码形态（商家能看见、能改）。
+ */
+const SCOPE_META: Record<ProductionScope, { label: string; title: string }> = {
+  position: { label: '部位级', title: '每部位一次（如布帘一道、纱帘一道）' },
+  set: { label: '套级', title: '每樘窗一次（一樘「布 + 纱」只做一次）' },
+}
+const SCOPE_ORDER: ProductionScope[] = ['position', 'set']
+
+/**
+ * 库口径 → 受控两档。**缺省按 `position`**（安全方向）：列是 `NOT NULL DEFAULT 'position'`，
+ * 老实例未升级时键缺失 —— 默认成 `set` 会把每道工序都静默去重，默认成 `position` 最坏只是保持今天的行为。
+ */
+function scopeOf(op: CatalogOperation): ProductionScope {
+  return op.scope === 'set' ? 'set' : 'position'
 }
 
 /** provenance 徽标；「占位待确认」是**可行动**引导：点它即进入该工序的改价入口（既有版本化写面） */
@@ -181,7 +211,7 @@ export default function OperationsCatalogPage() {
         <div>
           <h1 className="text-xl font-semibold text-neutral-900">工序库</h1>
           <p className="mt-0.5 text-sm text-neutral-500">
-            工序分组 · 计件单价 · 必完开关；调价只影响新报工（历史报工按当时价）
+            工序分组 · 作用域（部位级/套级） · 计件单价 · 必完开关；调价只影响新报工（历史报工按当时价）
           </p>
         </div>
         <Button variant="secondary" size="sm" onClick={load} disabled={loading}>
@@ -283,6 +313,7 @@ export default function OperationsCatalogPage() {
                           <tr className="border-b border-neutral-200 text-left text-xs text-neutral-500">
                             <th className="py-2 pr-4 font-medium">工序名称</th>
                             <th className="py-2 pr-4 font-medium">部位</th>
+                            <th className="py-2 pr-4 font-medium">作用域</th>
                             <th className="py-2 pr-4 font-medium">单位</th>
                             <th className="py-2 pr-4 font-medium">计件单价</th>
                             <th className="py-2 pr-4 font-medium">必完</th>
@@ -310,6 +341,25 @@ export default function OperationsCatalogPage() {
                                 />
                               </td>
                               <td className="py-2.5 pr-4 text-neutral-600">{op.position ?? '—'}</td>
+                              {/* 作用域（issue #4384 A1）：可见 + 可改。就地改档走既有写面（PUT body 带 scope），
+                                  与「单价行内编辑」同一范式（本页无编辑弹窗）。 */}
+                              <td className="py-2.5 pr-4">
+                                <select
+                                  aria-label={`${op.name} 作用域`}
+                                  data-testid={`operation-scope-${op.id}`}
+                                  value={scopeOf(op)}
+                                  disabled={busy}
+                                  title={SCOPE_META[scopeOf(op)].title}
+                                  onChange={(e) => submit(op.id, { scope: e.target.value as ProductionScope })}
+                                  className="h-8 rounded border border-neutral-300 bg-white px-1.5 text-sm text-neutral-700 focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 disabled:opacity-50"
+                                >
+                                  {SCOPE_ORDER.map((s) => (
+                                    <option key={s} value={s} title={SCOPE_META[s].title}>
+                                      {SCOPE_META[s].label}
+                                    </option>
+                                  ))}
+                                </select>
+                              </td>
                               <td className="py-2.5 pr-4 text-neutral-600">{op.unit ?? '—'}</td>
                               <td className="py-2.5 pr-4 text-neutral-900">
                                 {editingId === op.id ? (

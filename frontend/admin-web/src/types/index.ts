@@ -746,6 +746,19 @@ export interface PieceworkSummary {
  */
 export type ProductionSource = '实证' | '推算' | '占位待确认'
 
+/**
+ * 工序作用域（V67，issue #4384 A1；后端闭词表，前端只消费、不发明取值）：
+ * - `position` 部位级（默认）：每**部位**一次（今天的行为）；
+ * - `set`      套级：每**樘窗**一次 —— 真值源 `docs/curtain-production-rules.md` §8 明写
+ *   「**外帘**是加工单打印行部位，**不是**路线键」，但 V54/V58 种子把 外帘打卷/外帘装袋/外帘发货
+ *   逐条写进每一条部位路线（含纱帘）⇒ 一樘「布 + 纱」时这 3 道各实例化 2 次 ⇒ 各 ¥1.0 双付。
+ *   用户裁定（2026-09-19）：「套级先按**每樘窗一次**实现，打卷是否每帘一次**留成可配**」。
+ *
+ * ⚠️ 缺省（老实例未升级 / 键缺失）按 `position` 渲染：默认成 `set` 会让每道工序都被静默去重，
+ * 而默认成 `position` 最坏只是保持今天的行为 —— 这是**安全方向**。
+ */
+export type ProductionScope = 'position' | 'set'
+
 /** 工序库一道工序（库口径，非加工单实例） */
 export interface CatalogOperation {
   /** 库主键（V54 种子为 `op-v54-01` 形态的字符串，勿假定为数字） */
@@ -755,6 +768,8 @@ export interface CatalogOperation {
   group?: string | null
   /** 部位：布帘 / 纱帘 / 帘头 / 外帘 */
   position?: string | null
+  /** 作用域：部位级 / 套级（每樘窗一次；缺省按部位级渲染，见 `ProductionScope`） */
+  scope?: ProductionScope | null
   /** 单位：米/套/件/个/折 */
   unit?: string | null
   unit_price: number
@@ -786,6 +801,8 @@ export interface RoutingStep {
   unit_price?: number | null
   is_must_finish?: boolean
   is_start_marker?: boolean
+  /** 作用域（V67，issue #4384 A1）：部位级 / 套级（每樘窗一次）；库中缺该工序 ⇒ null */
+  scope?: ProductionScope | null
 }
 
 /** 工艺路线模板（部位 × 工艺 → 工序序列；布帘·韩褶 = 11 道） */
@@ -930,7 +947,7 @@ export interface PieceworkReport {
   per_operation: PieceworkReportOperationAmount[]
 }
 
-/** 工序可写字段（PUT /api/admin/production/operations/{id}，issue #4204） */
+/** 工序可写字段（PUT /api/admin/production/operations/{id}，issue #4204；scope 见 #4384 A1） */
 export interface ProductionOperationUpdateParams {
   unit_price?: number
   is_must_finish?: boolean
@@ -939,6 +956,8 @@ export interface ProductionOperationUpdateParams {
   unit?: string
   group_name?: string
   sort_order?: number
+  /** 作用域（V67，issue #4384 A1）：position 部位级 / set 套级（每樘窗一次） */
+  scope?: ProductionScope
 }
 
 // 物流信息

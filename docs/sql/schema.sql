@@ -834,6 +834,22 @@ COMMENT ON COLUMN production_operations.source IS
     'provenance 口径来源（V62，issue #4361）：实证 / 推算 / 占位待确认。'
     '占位待确认 = 单价是占位值（V54 的 30 道）；推算 = 单价为行业推算（V56 的 5 道）；'
     '实证 = 当前空集（客户确认 #4261/#4343 后才会有）。NULL = 来源未知（商家自建/历史行）。';
+-- 工序作用域（V67，issue #4384 A1）：position = 部位级（默认，每部位一次）/ set = 套级（**每樘窗一次**）。
+-- 真值源 docs/curtain-production-rules.md §8：**外帘**是加工单打印行部位、**不是**路线键；
+-- 但 V54/V58 种子把 外帘打卷/外帘装袋/外帘发货 逐条写进每一条部位路线（含纱帘）⇒ 一樘「布 + 纱」
+-- 时这 3 道各实例化 2 次（unit='套'、qty=1）⇒ 各 ¥1.0 双付。用户裁定 2026-09-19：
+-- 套级先按「每樘窗一次」实现，打卷是否每帘一次留成可配。
+-- 本段是 bootstrap 终态（本文件由 docker-entrypoint-initdb.d 执行，**迁移链不在该栈运行**
+-- ⇒ 只写迁移 = 新建库无该列 ⇒ 读面 500，同 #3270 形态）。
+ALTER TABLE production_operations ADD COLUMN IF NOT EXISTS scope VARCHAR(16) NOT NULL DEFAULT 'position';
+COMMENT ON COLUMN production_operations.scope IS
+    '工序作用域（V67，issue #4384 A1）：position = 部位级（默认，每部位一次）/ '
+    'set = 套级（每樘窗一次）。真值源 docs/curtain-production-rules.md §8：外帘是加工单打印行部位、'
+    '不是路线键 ⇒ 外帘打卷/外帘装袋/外帘发货 这三道是套级（一樘「布 + 纱」只做一次，'
+    '此前因逐条出现在布帘与纱帘两条路线里而各实例化 2 次、各 ¥1.0 双付）。'
+    '用户裁定 2026-09-19：套级先按「每樘窗一次」实现，打卷是否每帘一次留成可配。'
+    '⚠️ 去重消费方（A2，ProcessingOrderService.buildPositionPayload）不在 #4384 A1 包内，'
+    '本列当前只是标记 + 可配口径。';
 
 CREATE TABLE IF NOT EXISTS production_routings (
     id VARCHAR(64) PRIMARY KEY,
@@ -1746,6 +1762,14 @@ SET source = CASE
     END
 WHERE source IS NULL
   AND (id LIKE 'op-v54-%' OR id LIKE 'op-v56-%');
+
+-- 工序作用域回填（V67，issue #4384 A1）：与迁移 V67 **逐字同集合** —— 只有三道外帘工序是套级
+-- （每樘窗一次），其余全部由列默认值 'position' 兜住。幂等（重复执行写同样的值 = 语义空操作）。
+-- bootstrap 的种子 INSERT 不带 scope 列 ⇒ 必须在此显式回填，否则新建库这三道会被当成部位级
+-- （= 双付病根在全新库里原样复活）。
+UPDATE production_operations
+SET scope = 'set'
+WHERE name IN ('外帘打卷', '外帘装袋', '外帘发货');
 
 UPDATE production_routings
 SET source = CASE
