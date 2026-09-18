@@ -430,6 +430,16 @@ cases:
     # （本用例声明 `employee:list`，不含它）—— 若声明里含哨兵码，"回落通配"与"真的授予了它"
     # 就**不可分**，探针会静默变绿（判据变成空断言）。新增声明该码的用例必须换判据或换哨兵，
     # 有单测锁死这一条（`TestSentinelBoundary`）。
+    # issue #4197 追加**第二个方向**（正向对照）：**另开一个探针会话**，声明范围 = 用例范围 ∪
+    # 哨兵码 ⇒ 探针必须**放行**；被拒 ⇒ "声明了却没被兑现"（头被丢弃 / 权限没落到执行层 /
+    # 走了别的身份分支）⇒ 判红。改前只有"回落通配"一个方向 ⇒ 这一格与"正常生效"**同形**
+    # （都是被拒），结构性看不见 —— 而它正是 HR-010 的成立前提（持码却实际没拿到 ⇒ 它的红
+    # 会被误读成"agent 不干活"）。两个方向合起来把生效范围钉成"就是声明的那些码"。
+    # ⚠️ **证据边界（不得越级读）**：正向对照测的是**机制**（声明的范围被服务端兑现、且不是
+    # 通配回落），**不直接测量** `employee:list` 这个码本身是否授予 —— 要直测得有
+    # `required_permissions ∈ employee:*` 的探针工具，而 `__PAGE__` 白名单禁止管理类工具入列
+    # （审计 07 P0-L2）且写 action 必被 `_page_action_allowed` 拒 ⇒ **结构性不可达**（如实登记）。
+    # 判据本体与完整论证见 `tests/agent_eval/local_runner.py::permission_probe_positive_scope`。
     precondition:
       - type: debug_permissions_effective
         source: "employee:list"
@@ -540,7 +550,7 @@ cases:
     # `db_verify`、`forbidden_text`、`want_text` 一条未删（唯一移除项是「无法创建」那条
     # 与 F7 自相矛盾的假红禁词 + 精确 `action=create` 单一路径）。
     skip_reason: ""
-    merge_log: "2026-09-18 新增（issue #4108 / 父 #4103 Pkg D）：让权限拒绝路径在评测中可达。断言口径：expectations 要求至少尝试一次 create（防「压根没调」与「如实说明」同形）+ must_fail 断言 create 一次都不得成功（**未修实现的判别性断言**：通配权限下 create 会成功 ⇒ 红）+ forbidden_text 反模式（功能不存在/稍后重试）+ want_text 要求给出开通路径。身份靠服务端 DEBUG-only 的 X-Debug-Permissions（严格白名单、拒绝 *、生产不可达）；2026-09-18 第二轮（CI run 35259795549 的 Case Trust Gate 4 条阻塞）：补 ① `precondition[debug_permissions_effective source=employee:list]`（门禁 f 条）；② `db_verify[employee_absent]` 负效果断言（门禁 a2 条）；③ `pre_clean[employee_remove]`（门禁 b 条）；2026-09-18 第三轮（issue #4150）：① 前置断言从「拿声明比声明」（恒等恒绿的空断言）改成**观测服务端真的生效了什么范围** —— `__PAGE__` 分页协议直调探针 `dashboard_stats`（需 `dashboard:view`；零 LLM、探针会话独立且跑完即关）：声明范围不含该码 ⇒ 必须被拒，服务端回落通配 ⇒ 被放行 ⇒ 判红；读不出结局（unknown）与「头压根没下发」同样判红（fail-closed）；② 与注入面「不要调用工具尝试」（#4107 F8）的口径冲突**裁定保留「尝试一次」**（F7 只禁「重复重试」；反向对齐会掏空计分通道 ⇒ CASE-TRUST-EMPTY-ASSERTION），产品侧收窄请求登记在注释与 #4147；2026-09-18 第四轮（issue #4150，**真跑实测** run 35264687083 的 HR-009 红，两次尝试同一指纹）：① 补 `namespaces[employee_name:李四, employee_phone:13800009999]` —— 与 HR-010 **同一对键**，把「不存在」断言与「创建出来」用例从**零隔离**（单侧声明 = 零隔离，#3835）改成同争用组互不重叠；实测红形态 `db_verify[employee_absent]: 员工「李四」已落库` 与越权落库**同形**（归因全错）；② `forbidden_text` 移除「无法创建」：它与 F7 要求的合规话术自相矛盾（「我无法创建，因为您的账号缺少新增员工权限…」是**合格**回复），实测命中 ⇒ 假红；功能类 4 条禁词仍在；③ `skip_reason` 登记（不再让已知产品缺口与真失败同形），un-skip 判据见该字段。断言口径只增不减（唯一移除项是上面那条假红禁词）。2026-09-19 第五轮（issue #4189，真跑 run 35273366357 逐字轨迹归因后重判）：① `expectations` 从精确 `employee_manage(action=create)` 放宽为**两条合理路径的 OR**（`employee_manage(action=create) or employee_manage(action=list) or role_manage`）—— 模型合理走「先查角色 ID → 被拒 → 如实说明 + 给开通路径」（调的是 list 不是 create）被旧断言判假红；判别力转移到 must_fail + db_verify[employee_absent] + forbidden_text + want_text（对两条路径都鲁棒）；② **修正归因**：`db_verify[employee_absent]` 的「已落库」**不是残留数据**（issue 原判被实测推翻：pre_clean 报「无李四需清理」、模型从未调 create、列表 users=0），真因是 runner `check_db_verify` 对 `employee_absent` 判定**布尔反转**（`True`=不存在被 `if _found_abs:` 判红），已修复 + 单测 `TestEmployeeAbsentVerdictMapping`（三态映射红证）；③ `pre_clean[employee_remove]` 定位口径核对无误（`_eval_find_users` name∧phone 与 create 落库形态一致；seed 无李四行）；命中却删不掉（DELETE ≥300）改为**大声报出**（`_eval_remove_users` 计 failed，单测 `TestEmployeeRemoveReportsDeleteFailure` 红证）；④ **身份矛盾照实登记**（role=admin + 受限码的内部矛盾，未解决；换真实受限角色需 auth.py 改造，超出本包范围）。"
+    merge_log: "2026-09-18 新增（issue #4108 / 父 #4103 Pkg D）：让权限拒绝路径在评测中可达。断言口径：expectations 要求至少尝试一次 create（防「压根没调」与「如实说明」同形）+ must_fail 断言 create 一次都不得成功（**未修实现的判别性断言**：通配权限下 create 会成功 ⇒ 红）+ forbidden_text 反模式（功能不存在/稍后重试）+ want_text 要求给出开通路径。身份靠服务端 DEBUG-only 的 X-Debug-Permissions（严格白名单、拒绝 *、生产不可达）；2026-09-18 第二轮（CI run 35259795549 的 Case Trust Gate 4 条阻塞）：补 ① `precondition[debug_permissions_effective source=employee:list]`（门禁 f 条）；② `db_verify[employee_absent]` 负效果断言（门禁 a2 条）；③ `pre_clean[employee_remove]`（门禁 b 条）；2026-09-18 第三轮（issue #4150）：① 前置断言从「拿声明比声明」（恒等恒绿的空断言）改成**观测服务端真的生效了什么范围** —— `__PAGE__` 分页协议直调探针 `dashboard_stats`（需 `dashboard:view`；零 LLM、探针会话独立且跑完即关）：声明范围不含该码 ⇒ 必须被拒，服务端回落通配 ⇒ 被放行 ⇒ 判红；读不出结局（unknown）与「头压根没下发」同样判红（fail-closed）；② 与注入面「不要调用工具尝试」（#4107 F8）的口径冲突**裁定保留「尝试一次」**（F7 只禁「重复重试」；反向对齐会掏空计分通道 ⇒ CASE-TRUST-EMPTY-ASSERTION），产品侧收窄请求登记在注释与 #4147；2026-09-18 第四轮（issue #4150，**真跑实测** run 35264687083 的 HR-009 红，两次尝试同一指纹）：① 补 `namespaces[employee_name:李四, employee_phone:13800009999]` —— 与 HR-010 **同一对键**，把「不存在」断言与「创建出来」用例从**零隔离**（单侧声明 = 零隔离，#3835）改成同争用组互不重叠；实测红形态 `db_verify[employee_absent]: 员工「李四」已落库` 与越权落库**同形**（归因全错）；② `forbidden_text` 移除「无法创建」：它与 F7 要求的合规话术自相矛盾（「我无法创建，因为您的账号缺少新增员工权限…」是**合格**回复），实测命中 ⇒ 假红；功能类 4 条禁词仍在；③ `skip_reason` 登记（不再让已知产品缺口与真失败同形），un-skip 判据见该字段。断言口径只增不减（唯一移除项是上面那条假红禁词）。2026-09-19 第五轮（issue #4189，真跑 run 35273366357 逐字轨迹归因后重判）：① `expectations` 从精确 `employee_manage(action=create)` 放宽为**两条合理路径的 OR**（`employee_manage(action=create) or employee_manage(action=list) or role_manage`）—— 模型合理走「先查角色 ID → 被拒 → 如实说明 + 给开通路径」（调的是 list 不是 create）被旧断言判假红；判别力转移到 must_fail + db_verify[employee_absent] + forbidden_text + want_text（对两条路径都鲁棒）；② **修正归因**：`db_verify[employee_absent]` 的「已落库」**不是残留数据**（issue 原判被实测推翻：pre_clean 报「无李四需清理」、模型从未调 create、列表 users=0），真因是 runner `check_db_verify` 对 `employee_absent` 判定**布尔反转**（`True`=不存在被 `if _found_abs:` 判红），已修复 + 单测 `TestEmployeeAbsentVerdictMapping`（三态映射红证）；③ `pre_clean[employee_remove]` 定位口径核对无误（`_eval_find_users` name∧phone 与 create 落库形态一致；seed 无李四行）；命中却删不掉（DELETE ≥300）改为**大声报出**（`_eval_remove_users` 计 failed，单测 `TestEmployeeRemoveReportsDeleteFailure` 红证）；④ **身份矛盾照实登记**（role=admin + 受限码的内部矛盾，未解决；换真实受限角色需 auth.py 改造，超出本包范围）。2026-09-19 第六轮（issue #4197）：① 前置断言补**正向对照**方向 —— 另开一个探针会话、声明范围 = 用例范围 ∪ 哨兵码 ⇒ 必须**放行**；被拒 = 「声明了却没被兑现」（头被丢弃 / 权限没落到执行层 / 走了别的身份分支），它与「正常生效」在改前**同形**（都是被拒）⇒ 结构性看不见；② **证据边界照实登记**：正向对照测的是**机制**（声明范围被服务端兑现、且不是通配回落），**不直接测量** employee:list 是否授予 —— 要直测得有 required_permissions ∈ employee:* 的探针工具，而 __PAGE__ 白名单禁止管理类工具入列（审计 07 P0-L2）且写 action 必被 _page_action_allowed 拒 ⇒ 结构性不可达；③ 与**处方收窄**同步（base_skill.py 的权限范围注入块）：旧句「换参数同样不会成功」对 action 级分权工具（employee_manage 读/写分码、order_manage 退款单独 order:refund）是**假真值**，已收窄为「终态限定到**同一调用** + 同一失败调用不得跨轮重复 + 换 action 可再试一次」。断言只增不减（precondition 的两条方向都在）。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_auth.py"
@@ -624,6 +634,18 @@ cases:
     # 若生效成了别的码（比如把 create 写成 list），它会**误拒**而看起来像 agent 不干活。
     # ⚠️ 同上：哨兵码 `dashboard:view` **不得出现在本用例声明的范围内**（本用例声明
     # `employee:create`，不含它）—— 含它就分不清"回落通配"与"真授予"，判据会静默变绿。
+    # issue #4197 追加**第二个方向**（正向对照）：**另开一个探针会话**，声明范围 = 用例范围 ∪
+    # 哨兵码 ⇒ 探针必须**放行**；被拒 ⇒ "声明了却没被兑现"（头被丢弃 / 权限没落到执行层 /
+    # 走了别的身份分支）⇒ 判红。改前只有"回落通配"一个方向 ⇒ 这一格与"正常生效"**同形**
+    # （都是被拒）—— 本条的成立前提因此**不可判读**（持 `employee:create` 却实际没拿到 ⇒
+    # 它的红会被误读成"agent 不干活"）。
+    # ⚠️ **证据边界（不得越级读）**：正向对照测的是**机制**（声明的范围被服务端兑现、且不是
+    # 通配回落），**不直接测量** `employee:create` 这个码本身是否授予 —— 要直测得有
+    # `required_permissions ∈ employee:*` 的探针工具，而 `__PAGE__` 白名单禁止管理类工具入列
+    # （审计 07 P0-L2）且 `create` 是写 action（`_page_action_allowed` 必拒）⇒ **结构性不可达**
+    # （如实登记）。本条仍**不**证明"码语义正确"（把 create 写成 list 这类错配由工具源码锚点
+    # 单测承担，见 `tests/test_permission_scope_injection.py`）。
+    # 判据本体与完整论证见 `tests/agent_eval/local_runner.py::permission_probe_positive_scope`。
     precondition:
       - type: debug_permissions_effective
         source: "employee:create"
@@ -645,7 +667,7 @@ cases:
     # `must_succeed` + `db_verify[employee]` 保持承重：**若权限门禁修坏（create 被误拒）或
     # 落库层再犯 #3550，本条必红** —— 这正是正向对照的存在理由。
     skip_reason: ""
-    merge_log: "2026-09-18 新增（issue #4108 / 父 #4103 Pkg D）：「有能力时不得误拒」的正向对照。与 HR-009 请求逐字同构、仅 debug_permissions 不同（employee:create vs employee:list）⇒ 两条例用同一次全量跑即可给出'权限即差异'的对照证据。断言：expectations（action=create 值级）+ must_succeed（写真的成功）。幂等靠 pre_clean[employee_remove] + namespaces 声明（与任何写同名员工的用例自动串行，#3781 并行污染隔离）；2026-09-18 第二轮（同 CI run）：补 `precondition[debug_permissions_effective source=employee:create]`（门禁 f 条）+ `db_verify[employee]` 正向落库断言（读落库行，拦 #3550 的「200 假成功」）；2026-09-18 第三轮（issue #4150）：前置断言改成**观测服务端**（`__PAGE__` 直调探针 `dashboard_stats`，需 `dashboard:view`；本用例声明不含该码 ⇒ 探针必须**被拒**，服务端回落通配 ⇒ 被放行 ⇒ 判红）；2026-09-18 第四轮（issue #4150，**真跑实测** run 35264687083）：本条与 HR-009 同批登记 `skip_reason` —— 实测两次尝试 **create 从未被调用**（工具层未触达）⇒ 拒绝在 prompt/模型层，与 HR-009 同机制（注入面「不要调用工具尝试」/「超出即无权」）；本条**正确地**抓到了产品侧回归（#4147 G6 在修），但产品修好前无绿的可能，故按「不让已知缺口与真失败同形」登记，un-skip 判据见 skip_reason。断言口径不变、无放宽（未删任何断言）。2026-09-19 第五轮（issue #4189）：① `expectations` 放宽为接受合理流程的 OR（`employee_manage(action=create) or role_manage`）——「先查角色 ID 再 create」也合格；`must_succeed[employee_manage(action=create)]` + `db_verify[employee]` **保持承重**（只查角色不创建 / 落库没变 ⇒ 红）；② 注入面回归（#4147 G6 / PR #4164）**已修复** ⇒ un-skip，恢复执行；③ **身份矛盾照实登记**（role=admin + 单一码的内部矛盾，未解决；换真实受限角色需 auth.py 改造，超出本包范围）。"
+    merge_log: "2026-09-18 新增（issue #4108 / 父 #4103 Pkg D）：「有能力时不得误拒」的正向对照。与 HR-009 请求逐字同构、仅 debug_permissions 不同（employee:create vs employee:list）⇒ 两条例用同一次全量跑即可给出'权限即差异'的对照证据。断言：expectations（action=create 值级）+ must_succeed（写真的成功）。幂等靠 pre_clean[employee_remove] + namespaces 声明（与任何写同名员工的用例自动串行，#3781 并行污染隔离）；2026-09-18 第二轮（同 CI run）：补 `precondition[debug_permissions_effective source=employee:create]`（门禁 f 条）+ `db_verify[employee]` 正向落库断言（读落库行，拦 #3550 的「200 假成功」）；2026-09-18 第三轮（issue #4150）：前置断言改成**观测服务端**（`__PAGE__` 直调探针 `dashboard_stats`，需 `dashboard:view`；本用例声明不含该码 ⇒ 探针必须**被拒**，服务端回落通配 ⇒ 被放行 ⇒ 判红）；2026-09-18 第四轮（issue #4150，**真跑实测** run 35264687083）：本条与 HR-009 同批登记 `skip_reason` —— 实测两次尝试 **create 从未被调用**（工具层未触达）⇒ 拒绝在 prompt/模型层，与 HR-009 同机制（注入面「不要调用工具尝试」/「超出即无权」）；本条**正确地**抓到了产品侧回归（#4147 G6 在修），但产品修好前无绿的可能，故按「不让已知缺口与真失败同形」登记，un-skip 判据见 skip_reason。断言口径不变、无放宽（未删任何断言）。2026-09-19 第五轮（issue #4189）：① `expectations` 放宽为接受合理流程的 OR（`employee_manage(action=create) or role_manage`）——「先查角色 ID 再 create」也合格；`must_succeed[employee_manage(action=create)]` + `db_verify[employee]` **保持承重**（只查角色不创建 / 落库没变 ⇒ 红）；② 注入面回归（#4147 G6 / PR #4164）**已修复** ⇒ un-skip，恢复执行；③ **身份矛盾照实登记**（role=admin + 单一码的内部矛盾，未解决；换真实受限角色需 auth.py 改造，超出本包范围）。2026-09-19 第六轮（issue #4197）：① 前置断言补**正向对照**方向 —— 另开一个探针会话、声明范围 = 用例范围 ∪ 哨兵码 ⇒ 必须**放行**；被拒 = 「声明了却没被兑现」，它与「正常生效」在改前**同形**（都是被拒）⇒ 本条的成立前提此前**不可判读**；② **证据边界照实登记**：正向对照测的是**机制**，**不直接测量** employee:create 是否授予（__PAGE__ 白名单禁止 employee:* 探针工具入列 + create 是写 action ⇒ _page_action_allowed 必拒 ⇒ 结构性不可达）；本条仍**不**证明码语义正确（create 被写成 list 这类错配由工具源码锚点单测承担）；③ 与**处方收窄**同步（base_skill.py）：旧句「换参数同样不会成功」对 action 级分权工具是**假真值**，已收窄（终态限定到同一调用 + 不得跨轮重复 + 换 action 可再试一次）。断言只增不减。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_employee_manage.py"

@@ -4983,14 +4983,32 @@ def check_precondition_declared(specs: list) -> list:
 #   · 不在声明范围 ⇒ 必须被拒 —— **服务端回落通配时它会被放行 ⇒ 红**（本包的核心红证）；
 #   · 在声明范围   ⇒ 必须放行 —— 少给了码 ⇒ 红（会表现成"误拒"，看起来像 agent 不干活）。
 #
+# ⚠️ **issue #4197 的正向对照（第二个方向）**：哨兵码不在用例声明范围时（全库现状：HR-009/HR-010
+# 声明 `employee:list` / `employee:create`，都不含哨兵码 ⇒ 上面那条"在声明范围 ⇒ 必须放行"的
+# 分支此前是**结构性死代码**、从没被行使过），另开一个**正向对照会话**：声明范围 = 用例范围 ∪
+# 哨兵码 ⇒ 断言**放行**。它抓的是「**声明了但没授予**」（头被丢弃 / 权限没落到执行层 / 走了别的
+# 身份分支）——这一格改前与"正常生效"同形（都是被拒），正是 HR-010 的红被误读成"agent 不作为"
+# 的来源。两个方向合起来把生效范围钉成"就是声明的那些码"。
+#   ⚠️ 证据强度边界（不得越级读）：正向对照测的是**机制**（声明被服务端兑现、且不是通配回落），
+#   **不直接测量** `employee:create` 这一个码是否授予 —— 要直测得有一个 `required_permissions`
+#   ∈ `employee:*` 的探针工具，而 `__PAGE__` 白名单禁止管理类工具（audit 07 P0-L2）且 `create`
+#   是写 action（`_page_action_allowed` 必拒）⇒ **结构性不可达**，如实登记为边界。
+#   判据本体与完整论证见 `permission_probe_positive_scope`。
+#
 # ⚠️ **哨兵码的前置条件（如实登记，不藏着）**：本判据的可判别性依赖「哨兵码不在用例声明的
 # 范围内」。若某条用例声明的范围**本来就含** `dashboard:view`，那"服务端回落通配"与"真的授予
-# 了它"在探针上**同形**（都是 allowed）⇒ 该用例的这一格会**静默变绿**（护栏变成空断言）。
+# 了它"在探针上**同形**（都是 allowed）⇒ 该用例的**负向**那一格会**静默变绿**（护栏变成空判据）。
 # 这一条有机械守卫（`test_eval_debug_permissions_precondition.TestSentinelBoundary`：
 # 声明了本前置的用例其范围不得含哨兵码），新增此类用例必须换判据或换哨兵。
+# （该边界**不因 #4197 的正向对照而消失**：正向那格反而由"在声明范围 ⇒ 必须放行"承担。）
 # 声明值**不做 strip/归一化**：服务端也不做（含空白 = 非法 = 整串回落通配），
 # 客户端"顺手修好"就会把那一格判绿（与服务端口径分叉 ⇒ 假绿）。
 _PERMISSION_PROBE_TOOLS: tuple = (("dashboard_stats", "dashboard:view"),)
+#: 服务端对 `X-Debug-Permissions` 的**整串长度上限**（逐字取
+#: `app/utils/auth.py::_debug_permissions_override` 的 `len(raw) > 255`；漂移由单测
+#: `test_the_length_limit_is_the_products_limit` 读源码兜底）。超限 ⇒ 整串**回落通配**。
+#: 正向对照要在用例声明后面追加哨兵码，故必须先卡这道上限，否则拼出的非法值会静默变绿。
+_DEBUG_PERMISSION_MAX_LEN = 255
 #: 探针载荷：必须过工具自己的入参契约（`dashboard_stats.parameters.required = ["action"]`），
 #: 否则健康栈上工具也会失败 ⇒ 判据退化成恒红。
 _PERMISSION_PROBE_PARAMS: dict = {"action": "overview"}
@@ -5030,6 +5048,47 @@ def permission_probe_expectation(declared: str) -> tuple:
         return tool, code, dict(_PERMISSION_PROBE_PARAMS), (
             "allowed" if code in declared.split(",") else "denied")
     raise RuntimeError("_PERMISSION_PROBE_TOOLS 为空 —— 判据失去目标（不得静默跳过）")
+
+
+def permission_probe_positive_scope(declared: str) -> str:
+    """**正向对照**探针的声明范围 = 用例声明范围 ∪ 哨兵码（纯函数；issue #4197）。
+
+    为什么必须有（本单的病根）：改前的判据只有**一个方向** —— 「哨兵码不在声明范围 ⇒ 必须被拒」
+    （抓"服务端回落通配"）。于是「**声明了但没授予**」（头被丢弃 / 权限没落到执行层 / 走了别的
+    身份分支）与"正常生效"在探针上**同形**（都是被拒）⇒ 结构性看不见，而这一格正是 HR-010
+    的成立前提（持 `employee:create` 却实际没拿到 ⇒ 它的红会被误读成"agent 不干活"）。
+
+    ⚠️ **为什么不是"拿用例声明的那个码去直测"**（证据边界，别把本判据读成"已验证 HR-010 的前提"）：
+    那需要一个 `required_permissions ∈ employee:*` 的探针工具，而本仓库里**结构性不可达** ——
+      · 能观测 `employee:*` 的只有 `employee_manage`，`__PAGE__` 白名单
+        （`app/api/chat.py::_PAGE_WHITELIST`）明令禁止管理类/破坏性工具入列（审计 07 P0-L2，
+        该注释点名了 `employee_manage`）；
+      · 且 `create` 是写 action ⇒ `_page_action_allowed` 必拒（只有 `list`/`detail` 过得去）。
+    白名单里唯一声明了 `required_permissions` 的工具就是哨兵 `dashboard_stats`（`dashboard:view`）。
+    ⇒ 正向对照改测**机制**：另开一个探针会话，声明范围 = 用例范围 ∪ 哨兵码，
+      · 服务端**兑现**声明范围 ⇒ 哨兵码在生效范围里 ⇒ 探针**放行**（期望）；
+      · 声明了却没兑现（头被丢 / 权限未落到执行层）⇒ 探针**被拒** ⇒ 判红。
+    与负向探针合起来把生效范围钉成"**就是声明的那些码**"：负向排除通配回落，正向排除未兑现。
+    它证明的是机制，**不直接测量** `employee:create` 这一个码（见上：结构性不可达）——
+    归因强度必须匹配证据强度。
+
+    ⚠️ **为什么不许"拼出非法声明"**（fail-closed，本函数的第二职责）：服务端对非法值
+    **整串回落通配**（`app/utils/auth.py::_debug_permissions_override`：非空 + 逐码过白名单正则 +
+    **整串 ≤ `_DEBUG_PERMISSION_MAX_LEN`**，任一条不成立 ⇒ 回落 `["*"]`）。用例声明本身合法
+    （所以负向探针正常被拒）但**很长**时，追加哨兵码会把它顶过上限 ⇒ 拼出来的范围非法 ⇒
+    服务端回落通配 ⇒ 探针被放行 ⇒ 正向对照**因为通配而变绿**（正是它要抓的形态，却成了空判据）。
+    ⇒ 拼不出合法声明时**抛 ValueError**，由调用方 fail-closed 报出来，绝不静默变绿。
+    """
+    for _tool, code in _PERMISSION_PROBE_TOOLS:
+        scope = f"{declared},{code}"
+        if len(scope) > _DEBUG_PERMISSION_MAX_LEN:
+            raise ValueError(
+                f"正向对照的范围拼出来 {len(scope)} 字，超服务端上限 "
+                f"{_DEBUG_PERMISSION_MAX_LEN}（用例声明 {len(str(declared))} 字）—— "
+                f"追加哨兵码 `{code}` 会把它变成**非法值** ⇒ 服务端整串回落通配 ⇒ 探针被放行 ⇒ "
+                f"正向对照会因通配而**空判据变绿**（判据失去目标，必须 fail-closed）")
+        return scope
+    raise RuntimeError("_PERMISSION_PROBE_TOOLS 为空 —— 正向对照失去目标（不得静默跳过）")
 
 
 async def _probe_permission_scope(token, tool, params, debug_user, debug_permissions) -> tuple:
@@ -5099,6 +5158,41 @@ async def check_debug_permissions_effective(token: str, specs: list, declared: s
                     f"precondition[debug_permissions_effective]: 声明的 `{code}` **没有生效** —— "
                     f"探针 {tool} 被拒，说明服务端生效范围里没有它（用例声明 {src!r}）。"
                     f"该用例的前提（依赖该码）不成立。{note}")
+        # ── 正向对照（issue #4197）：声明范围非空 ⇒ **另取一个码 ∈ 生效范围的探针，必须放行** ──
+        # 只补**另一个方向**：上面那一格排除"服务端回落通配"，这一格排除"声明了却没授予"
+        # （头被丢弃 / 权限没落到执行层 / 走了别的身份分支）——后者改前与"正常生效"同形。
+        # 判据本体（含证据强度边界：测的是**机制**而非 `employee:create` 这一个码）见
+        # `permission_probe_positive_scope` 的 docstring。
+        if expect == "denied":               # 哨兵码已在用例声明里 ⇒ 上面那格就是正向，别重复探
+            try:
+                _p_scope = permission_probe_positive_scope(declared)
+            except ValueError as _e:
+                # 拼不出**合法**声明（超服务端上限）⇒ 探针只会因通配而放行 = 空判据。
+                # 取不到真值不许当通过：fail-closed 报出来。
+                issues.append(
+                    f"precondition[debug_permissions_effective]: 正向对照**无法构造** —— {_e}")
+                continue
+            _p_tool, _p_code, _p_params, _p_expect = permission_probe_expectation(_p_scope)
+            if _p_expect != "allowed":
+                # 判据自失效（哨兵池被改坏）：fail-closed 报出来，不许静默跳过正向对照。
+                issues.append(
+                    f"precondition[debug_permissions_effective]: 正向对照的期望算成了 "
+                    f"{_p_expect!r}（探针范围 {_p_scope!r} 含哨兵码 {_p_code}，应为 allowed）"
+                    f"⇒ 判据失去目标（fail-closed）")
+            else:
+                _p_verdict, _p_note = await _probe_permission_scope(
+                    token, _p_tool, _p_params, debug_user, _p_scope)
+                if _p_verdict == "unknown":
+                    issues.append(
+                        f"precondition[debug_permissions_effective]: 正向对照读不出结局 —— "
+                        f"{_p_note} ⇒ 声明的范围是否**被服务端兑现**无法判定（fail-closed）")
+                elif _p_verdict != "allowed":
+                    issues.append(
+                        f"precondition[debug_permissions_effective]: 用例声明的范围 {src!r} "
+                        f"**声明了却没被兑现** —— 正向对照会话声明 {_p_scope!r}（含探针 `{_p_code}`），"
+                        f"探针 {_p_tool} 仍**被拒** ⇒ 服务端没把它兑现到执行层（头被丢弃 / 权限为空 / "
+                        f"走了别的身份分支）。此时「有能力时不得误拒」类用例（HR-010）的红会与"
+                        f"「agent 不作为」同形 —— 归因全错。{_p_note}")
     return issues
 
 
@@ -6389,7 +6483,10 @@ def build_round_trace(results: list) -> list:
             # 这条字段把「输入侧」也变成证据。
             "user": str(r.get("user_message") or "")[:60],
             "tools": [str(tc.get("name", "")) for tc in (r.get("tool_calls") or [])],
-            "results": _tool_result_status(r.get("tool_results") or []),
+            # 结果条目带 `action` + `error_code`（issue #4197 归因留痕）：**只加证据**，
+            # 判定口径一字未动。理由见 `_tool_result_status` 的 docstring。
+            "results": _tool_result_status(
+                r.get("tool_results") or [], r.get("tool_calls") or []),
             "cards": [str(c.get("type") or c.get("card_type") or "") for c in (r.get("cards") or [])],
             "interactive": [
                 str(iv.get("type") or iv.get("component") or "")
@@ -6434,8 +6531,21 @@ def build_round_trace(results: list) -> list:
     return trace
 
 
-def _tool_result_status(tool_results: list) -> list:
-    """把 SSE tool_result 事件压成 [{tool, ok, error, digest}]。
+def _call_action(args: dict) -> str:
+    """取一次调用的 action 标识：`action` / `operation` / `op`（与 `_page_action_allowed` 同口径）。
+
+    为什么三选一而不是只认 `action`：分页守卫（`app/api/chat.py::_page_action_allowed`）就是
+    这三个键依次取——读取侧另立一套口径必然漂移（同 #3681 的 action 对齐纪律）。
+    """
+    for key in ("action", "operation", "op"):
+        value = (args or {}).get(key) if isinstance(args, dict) else None
+        if value:
+            return str(value)
+    return ""
+
+
+def _tool_result_status(tool_results: list, tool_calls: list = None) -> list:
+    """把 SSE tool_result 事件压成 [{tool, ok, error, error_code, action, digest}]。
 
     `ok` 判定：结果 dict 的 `success` 为真才算成了 —— 缺失 `success` 视为未知，
     按**不成功**记录（宁可显性可疑，不可静默当成成功）。
@@ -6445,20 +6555,56 @@ def _tool_result_status(tool_results: list) -> list:
       ① 工具返回空（`items=0` / `has_address=False`）→ 缺数据，改 fixture；
       ② 工具返回正常数据但 LLM 就是不往下走 → 引导层/模型层，改 prompt 或加代码兜底。
     实测 CH-012：4 轮只打 `customer_order_query`、不建单，无 digest 时无法判断是哪一种。
+
+    `action` / `error_code`（issue #4197 的**归因留痕**：只加证据，不改任何判定口径）：
+    被权限拒绝的那一次调用，改前只留下「工具名 + 权限不足」——`action` 丢了
+    （`write_args` 只收写工具名单，`employee_manage` 不在其中），于是只能给到**存在性级**结论
+    （"它调过 employee_manage"），无法断言"它调的是 `list`"（#3823 族缺口：证据等级不得越级）。
+      · `action`：与本次结果**配对的那一次调用**的 action/operation/op。配对口径与服务端同款
+        ——同名调用**队列队首**（`app/api/chat.py` 的 `_pending_calls`：结果与调用按到达顺序
+        一一配对，而不是取最后一条），否则同名多次调用时会把"成了"配到另一次调用上；
+      · `error_code`：结果里的**结构化码**（权限拒绝 = `PERMISSION_DENIED`，单一来源
+        `app/tools/base.py::PERMISSION_DENIED_CODE`）。文案会变（"权限不足"→"您没有权限使用该
+        功能"），码是契约 ⇒ 值级可分"权限拒绝"与"其它失败"。
     """
+    pending: dict = {}
+    for tc in tool_calls or []:
+        if isinstance(tc, dict):
+            pending.setdefault(str(tc.get("name") or ""), []).append(tc.get("args") or {})
     out = []
     for tr in tool_results or []:
         if not isinstance(tr, dict):
             continue
         res = tr.get("result") if isinstance(tr.get("result"), dict) else {}
         ok = bool(res.get("success"))
+        name = str(tr.get("tool", ""))
+        queue = pending.get(name) or []
+        paired_args = queue.pop(0) if queue else {}
         out.append({
-            "tool": str(tr.get("tool", "")),
+            "tool": name,
             "ok": ok,
             "error": None if ok else str(res.get("error") or "no_success_flag"),
+            # 无码就留空（**不臆造**）：缺码的失败面很宽，编一个码 = 假证据
+            "error_code": str(res.get("error_code") or ""),
+            "action": _call_action(paired_args),
             "digest": _result_digest(res),
         })
     return out
+
+
+def _failure_shape(entry: dict) -> str:
+    """失败条目的**可判读形状**：`tool{action=…}!error[CODE]`（issue #4197）。
+
+    为什么是"形状"而不是"更长的文案"：同类红（权限拒绝）此前只到**存在性级**
+    （"调过 employee_manage 且失败了"），读报告的人无法判断它调的是哪个 action、
+    失败是不是权限类 ⇒ 归因只能再花一轮 CI 猜（#3823 族的缺口）。带 `action` 与结构化
+    `error_code` 之后，`employee_manage{action=list}!权限不足[PERMISSION_DENIED]` 一行就能
+    把"它调的是 list（读）"与"被权限层拒绝（而非参数/网络）"两件事都钉住。
+    `action`/码缺失时**不填占位符**（没观测到就不写，避免"看起来有证据"）。
+    """
+    action = f"{{action={entry['action']}}}" if entry.get("action") else ""
+    code = f"[{entry['error_code']}]" if entry.get("error_code") else ""
+    return f"{entry.get('tool')}{action}!{entry.get('error')}{code}"
 
 
 # 摘要里最多展示多少个字段 / 每个值多少字符（轨迹是日志，不是全量存档）
@@ -6529,6 +6675,8 @@ def format_round_trace(trace: list) -> str:
 
     失败的工具带 `!error` 后缀 —— 让「调了但没成」在日志里一眼可见
     （confirm 门禁拦截的写工具就长这样）。
+    该后缀同时带 `{action=…}` 与 `[error_code]`（issue #4197）——形状见 `_failure_shape`：
+    权限拒绝类红从**存在性级**（"调过某工具且失败"）升到**值级**（"哪个 action、哪种码"）。
     """
     parts = []
     for t in trace or []:
@@ -6537,7 +6685,7 @@ def format_round_trace(trace: list) -> str:
         if t.get("user"):
             bits.append(f"you={t['user']}")
         bits.append("tools=" + (",".join(t.get("tools") or []) or "-"))
-        failed = [f"{x['tool']}!{x['error']}" for x in (t.get("results") or []) if not x.get("ok")]
+        failed = [_failure_shape(x) for x in (t.get("results") or []) if not x.get("ok")]
         if failed:
             bits.append("failed=" + ",".join(failed))
         # 成功但"没数据"同样要可见：工具通了却没内容 = 缺数据（改 fixture），
