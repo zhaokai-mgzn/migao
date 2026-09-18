@@ -42,6 +42,7 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -148,6 +149,18 @@ class ProcessingOrderServiceTest {
             {"外帘发货", "后道", "套", "1.0", "false", "false"}};
 
     /**
+     * **套级**工序（`scope='set'`，V67 / issue #4384 A1）—— **逐字抄自 V67 的 UPDATE 名单**：
+     * `外帘打卷` / `外帘装袋` / `外帘发货`（真值源 §8：「外帘是加工单打印行部位，**不是**路线键」）。
+     * 其余工序 = 部位级 `position`（V67 的列默认值）。
+     *
+     * <p>⚠️ 本常量只用来把**库桩**造成 V67 终态 —— 生产代码**不得**用名字判套级（那是「常量散在代码里、
+     * 商家改了库不生效」的形态）：判据必须是 `findRouting` 带出的 `scope`。判别力由
+     * {@link #setLevelDedupFollowsLibraryScopeNotOperationNames()} 的注入法保证。</p>
+     */
+    private static final Set<String> SET_SCOPE_OPERATIONS =
+            Set.of("外帘打卷", "外帘装袋", "外帘发货");
+
+    /**
      * 信号映射表桩（V60，issue #4308）：**逐行抄自 V60 迁移的种子** ——
      * 而 V60 的种子又是迁移前两张常量表（`CURTAIN_TYPE_KEYWORDS` / `CRAFT_KEYWORDS`）的逐条快照。
      *
@@ -220,6 +233,9 @@ class ProcessingOrderServiceTest {
             view.put("unit_price", new BigDecimal(step[3]));
             view.put("is_must_finish", Boolean.valueOf(step[4]));
             view.put("is_start_marker", Boolean.valueOf(step[5]));
+            // 作用域（V67 / issue #4384 A1）：库桩 = V67 终态（三道外帘 = set，其余 = position）。
+            // 实例化侧（A2）据此判「每樘窗一次」——**逐字取库**，不硬编码工序名。
+            view.put("scope", SET_SCOPE_OPERATIONS.contains(step[0]) ? "set" : "position");
             operations.add(view);
         }
         Map<String, Object> route = new LinkedHashMap<>();
@@ -1712,7 +1728,8 @@ class ProcessingOrderServiceTest {
     }
 
     @Test
-    @DisplayName("#4387 判据 2：一樘「布 + 纱」= 两条明细行、各成部位、同 craftLineId ⇒ 加工单两个部位（17 道工序）")
+    @DisplayName("#4387 判据 2：一樘「布 + 纱」= 两条明细行、各成部位、同 craftLineId ⇒ 加工单两个部位"
+            + "（工序 **14 道**：部位级 8 + 3 + 套级 3 各一次 —— issue #4384 A2 起，旧值 17 已作废）")
     void clothPlusSheerWindowProducesTwoPositions() {
         stubLibrary();
         stubGenerate(clothPlusSheerWindow());
@@ -1728,13 +1745,16 @@ class ProcessingOrderServiceTest {
                 .hasSize(2);
         assertThat(reqCaptor.getValue()).extracting(p -> p.get("position_name"))
                 .containsExactly("布艺遮光帘A 米白", "纱帘A 米白");
-        // 工序 = 布帘×韩褶 11 道 + 纱帘×打孔 6 道（两条路线各自成部位，不互相吞并）
+        // 工序 = 布帘×韩褶的**部位级 8 道** + 套级 3 道（每樘窗一次，挂主布行部位）+ 纱帘×打孔的**部位级 3 道**
+        // ⚠️ 旧断言是「11 + 6 = 17」——那是 **A2 之前**的行为：套级 3 道（外帘打卷/装袋/发货）在两条
+        // 部位路线里各出现一次 ⇒ 各算两遍、计件双付。真值源 §8 明写「外帘是加工单**打印行部位**，
+        // **不是**路线键」⇒ 套级**本就不该按部位重复**，故 17 不再是正确期望（设计文档 §5.2：修正后 14）。
         ArgumentCaptor<ProcessingPositionOperation> opCaptor =
                 ArgumentCaptor.forClass(ProcessingPositionOperation.class);
-        verify(positionOperationMapper, times(V54_BULIAN_HANZHE.length + V58_SHALU_DAKONG.length))
-                .insert(opCaptor.capture());
-        List<String> expected = new ArrayList<>(operationNames(V54_BULIAN_HANZHE));
-        expected.addAll(operationNames(V58_SHALU_DAKONG));
+        verify(positionOperationMapper, times(14)).insert(opCaptor.capture());
+        List<String> expected = new ArrayList<>(partLevelOperationNames(V54_BULIAN_HANZHE));
+        expected.addAll(setLevelOperationNames(V54_BULIAN_HANZHE));
+        expected.addAll(partLevelOperationNames(V58_SHALU_DAKONG));
         assertThat(opCaptor.getAllValues()).extracting(ProcessingPositionOperation::getOperationName)
                 .containsExactlyElementsOf(expected);
 
@@ -1749,6 +1769,198 @@ class ProcessingOrderServiceTest {
                 .containsExactly("win-1", "win-1");
         assertThat(snapshot).extracting(entry -> entry.get("curtainType"))
                 .containsExactly("布帘", "纱帘");
+    }
+
+    // ── 套级工序去重（issue #4384 **A2**）─────────────────────────────────────
+    //
+    // A1（#4397 / V67）把 `scope ∈ {position, set}` 落进工序库，`findRouting` 逐字带出；
+    // A2（本单）在实例化侧让**套级工序每樘窗（`craftGroupKey` 组）只出现一次**。
+    // 判据**必须**是库里的 `scope` —— 硬编码 `外帘打卷/装袋/发货` 即「常量散在代码里、商家改了库不生效」。
+
+    /** 本次生成落库的全部工序实例（不预设条数 —— 去重后条数本身就是判据）。 */
+    private List<ProcessingPositionOperation> allInstances() {
+        ArgumentCaptor<ProcessingPositionOperation> captor =
+                ArgumentCaptor.forClass(ProcessingPositionOperation.class);
+        verify(positionOperationMapper, atLeastOnce()).insert(captor.capture());
+        return captor.getAllValues();
+    }
+
+    /** 已实例化的工序里 `operation` 出现几次（红证/回归判据的公共读数）。 */
+    private static long instanceCountOf(List<ProcessingPositionOperation> instances, String operation) {
+        return instances.stream().filter(i -> operation.equals(i.getOperationName())).count();
+    }
+
+    /** 路线里的**部位级**工序名（剔除 `scope='set'`）—— 与 V67 的库终态同口径。 */
+    private static List<String> partLevelOperationNames(String[][] table) {
+        return operationNames(table).stream().filter(name -> !SET_SCOPE_OPERATIONS.contains(name)).toList();
+    }
+
+    /** 路线里的**套级**工序名（`scope='set'`，按路线内顺序）。 */
+    private static List<String> setLevelOperationNames(String[][] table) {
+        return operationNames(table).stream().filter(SET_SCOPE_OPERATIONS::contains).toList();
+    }
+
+    @Test
+    @DisplayName("#4384 A2 判据 1+2：一樘「布+纱」⇒ 套级「外帘装袋」**恰好 1 行**、总工序 **14 道**（A2 之前 = 2 行 / 17 道）")
+    void setLevelOperationsInstantiateOncePerWindow() {
+        stubLibrary();
+        stubGenerate(clothPlusSheerWindow());
+
+        var results = realChainService().generate(List.of("order-001"), TENANT, "u1");
+
+        assertThat(results.get(0).isSuccess()).isTrue();
+        List<ProcessingPositionOperation> instances = allInstances();
+        assertThat(instances)
+                .as("部位级 8（布帘×韩褶）+ 3（纱帘×打孔）+ 套级 3（每樘窗一次）= 14（设计文档 §5.2）")
+                .hasSize(14);
+        assertThat(instanceCountOf(instances, "外帘打卷"))
+                .as("套级工序每樘窗一次（旧行为 2 次 ⇒ 打卷/装袋/发货各双付）").isEqualTo(1);
+        assertThat(instanceCountOf(instances, "外帘装袋")).isEqualTo(1);
+        assertThat(instanceCountOf(instances, "外帘发货")).isEqualTo(1);
+        // 两个部位仍在（布行/纱行各成部位；部位级工序不合并）—— 去重**不得**退化成「合并部位」
+        assertThat(instances).extracting(ProcessingPositionOperation::getPositionName)
+                .contains("布艺遮光帘A 米白", "纱帘A 米白");
+        // 套级工序挂**樘窗代表行（主布行）**的部位名下 ⇒ 工人扫码端（按 position_name 分组）仍看得到它们
+        assertThat(instances).filteredOn(i -> SET_SCOPE_OPERATIONS.contains(i.getOperationName()))
+                .as("套级工序全部挂主布行部位（不新增「外帘」部位行）")
+                .isNotEmpty()
+                .allSatisfy(i -> assertThat(i.getPositionName()).isEqualTo("布艺遮光帘A 米白"));
+    }
+
+    @Test
+    @DisplayName("#4384 A2 判据 3（回归）：单部位订单（只有布帘）⇒ 套级工序仍**恰好 1 行**、总工序 11 道（存量行为逐字不变）")
+    void singlePositionOrderKeepsItsSetLevelOperations() {
+        stubLibrary();
+        stubGenerate(List.of(orderItemHanzhe("米白")));
+
+        realChainService().generate(List.of("order-001"), TENANT, "u1");
+
+        List<ProcessingPositionOperation> instances = allInstances();
+        assertThat(instances).as("单行樘窗：套级工序挂在它自己身上 ⇒ 条数与去重前逐字一致").hasSize(11);
+        assertThat(instanceCountOf(instances, "外帘装袋")).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("#4384 A2 判据 4（回归）：两樘**各自独立**的单行窗（无 craftLineId）⇒ 每樘各 1 行套级（共 2 行 —— 按组去重，**不是**全局去重）")
+    void separateWindowsEachKeepTheirOwnSetLevelOperations() {
+        stubLibrary();
+        OrderItem windowA = processedItemWithSpec("item-1", "布艺遮光帘A", "米白",
+                List.of(Map.of("id", "p1", "name", "韩褶-布", "unitPrice", 3.0, "quantity", 2, "unit", "折")),
+                spec("curtainType", "布帘", "craft", "韩褶"));
+        OrderItem windowB = processedItemWithSpec("item-2", "布艺遮光帘B", "米白",
+                List.of(Map.of("id", "p2", "name", "韩褶-布", "unitPrice", 3.0, "quantity", 2, "unit", "折")),
+                spec("curtainType", "布帘", "craft", "韩褶"));
+        stubGenerate(List.of(windowA, windowB));
+
+        realChainService().generate(List.of("order-001"), TENANT, "u1");
+
+        List<ProcessingPositionOperation> instances = allInstances();
+        assertThat(instances).as("两樘独立窗 = 2 × 11 道（每樘各带自己的套级 3 道）").hasSize(22);
+        assertThat(instanceCountOf(instances, "外帘装袋"))
+                .as("去重必须**按樘窗组**：两樘窗各 1 行 ⇒ 2 行（全局去重会误吞第二樘的套级工序）")
+                .isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("#4384 A2 注入法：库把「外帘装袋」的 scope 改回 position ⇒ **不去重**（判据是库里的 scope，不是硬编码工序名）")
+    void setLevelDedupFollowsLibraryScopeNotOperationNames() {
+        // 库桩 = V67 终态，但**商家把「外帘装袋」改回部位级**（工序库可配，A1 已接线）
+        when(productionOperationQueryService.findRouting(eq(TENANT), anyString(), anyString()))
+                .thenAnswer(inv -> withScopeOverridden(
+                        v54Route(inv.getArgument(1), inv.getArgument(2)), "外帘装袋", "position"));
+        lenient().when(productionOperationQueryService.routeSignals(TENANT)).thenReturn(v60Signals());
+        stubGenerate(clothPlusSheerWindow());
+
+        realChainService().generate(List.of("order-001"), TENANT, "u1");
+
+        List<ProcessingPositionOperation> instances = allInstances();
+        assertThat(instanceCountOf(instances, "外帘装袋"))
+                .as("库里说 position ⇒ 按部位各出一次（2）—— 硬编码工序名的实现会在这里假绿")
+                .isEqualTo(2);
+        assertThat(instanceCountOf(instances, "外帘打卷")).as("其余仍是 set ⇒ 仍去重").isEqualTo(1);
+    }
+
+    /** 把路线桩里某道工序的 `scope` 改成 `scope`（深拷贝，不改共享常量）。 */
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> withScopeOverridden(Map<String, Object> route, String operation,
+                                                           String scope) {
+        if (route == null) {
+            return null;
+        }
+        Map<String, Object> copy = new LinkedHashMap<>(route);
+        List<Map<String, Object>> steps = new ArrayList<>();
+        for (Map<String, Object> step : (List<Map<String, Object>>) route.get("operations")) {
+            Map<String, Object> stepCopy = new LinkedHashMap<>(step);
+            if (operation.equals(stepCopy.get("operation"))) {
+                stepCopy.put("scope", scope);
+            }
+            steps.add(stepCopy);
+        }
+        copy.put("operations", steps);
+        return copy;
+    }
+
+    /**
+     * 生成一张加工单，按**真实** {@link ProductionService#piecework} 算该单计件（逐笔 = 合格 1 × 实例单价 × 系数）。
+     *
+     * <p>与 {@link #pieceworkTotalFor} **同款装配**：聚合算法只有一份
+     * （`ProductionService.aggregate`，per-order 汇总 / 期间报表 / 工人计件共用）—— 本方法不另写计算。</p>
+     */
+    private Map<String, Object> pieceworkFor(List<OrderItem> items) {
+        stubLibrary();
+        stubGenerate(items);
+        List<ProcessingPositionOperation> stored = new ArrayList<>();
+        when(positionOperationMapper.insert(any(ProcessingPositionOperation.class))).thenAnswer(inv -> {
+            ProcessingPositionOperation row = inv.getArgument(0);
+            row.setId("op-" + (stored.size() + 1));
+            stored.add(row);
+            return 1;
+        });
+
+        var results = realChainService().generate(List.of("order-001"), TENANT, "u1");
+        assertThat(results.get(0).isSuccess()).isTrue();
+        assertThat(stored).isNotEmpty();
+
+        // 对**全部**实例各报一笔「合格 1」（worker/单价/系数都取自实例快照）
+        List<ProductionWorkLog> logs = new ArrayList<>();
+        for (ProcessingPositionOperation row : stored) {
+            logs.add(ProductionWorkLog.builder().tenantId(TENANT).processingOrderId("po-001")
+                    .operationId(row.getId()).operationName(row.getOperationName())
+                    .workerName("走查工人").qty(BigDecimal.ONE).qualifiedQty(BigDecimal.ONE)
+                    .workType("normal").deleted(0).build());
+        }
+        when(positionOperationMapper.selectList(any())).thenReturn(stored);
+        when(workLogMapper.selectList(any())).thenReturn(logs);
+
+        ProductionService real = new ProductionService(processingOrderMapper, positionOperationMapper,
+                workLogMapper, orderMapper, clientRequestIdService);
+        return real.piecework("order-001", TENANT);
+    }
+
+    /** 计件结果里**套级工序**（`scope='set'`）那几道的合计金额（逐笔四舍五入到分的既有口径）。 */
+    @SuppressWarnings("unchecked")
+    private static BigDecimal setLevelPieceworkAmount(Map<String, Object> piecework) {
+        List<Map<String, Object>> perOperation = (List<Map<String, Object>>) piecework.get("per_operation");
+        return perOperation.stream()
+                .filter(row -> SET_SCOPE_OPERATIONS.contains(String.valueOf(row.get("operation"))))
+                .map(row -> (BigDecimal) row.get("amount"))
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    @Test
+    @DisplayName("#4384 A2 判据 5（端到端计件）：一樘「布+纱」的**套级计件 = ¥3.00**，与单部位订单**相同**（旧行为 ¥6.00 ⇒ 双付）")
+    void setLevelPieceworkDoesNotDoubleForClothPlusSheer() {
+        // 同一夹具、两种形态对照：单部位（只有布帘）vs 布+纱 樘窗。
+        // 单边断言会假绿（「去重过头把套级全吞掉」也能让 布+纱 那一侧变小）⇒ 两侧必须相等。
+        BigDecimal single = setLevelPieceworkAmount(pieceworkFor(List.of(orderItemHanzhe("米白"))));
+        BigDecimal window = setLevelPieceworkAmount(pieceworkFor(clothPlusSheerWindow()));
+
+        assertThat(single).as("单部位：套级 3 道（外帘打卷/装袋/发货）各 ¥1.00 × 1 套")
+                .isEqualByComparingTo("3.00");
+        assertThat(window)
+                .as("布+纱：套级工序每樘窗一次 ⇒ ¥3.00（旧行为 = 两条部位路线各一份 ⇒ ¥6.00）")
+                .isEqualByComparingTo("3.00");
+        assertThat(window).as("两种形态的套级计件必须相同（不翻倍）").isEqualByComparingTo(single);
     }
 
     @Test
