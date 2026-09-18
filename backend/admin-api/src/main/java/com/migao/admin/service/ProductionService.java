@@ -489,6 +489,11 @@ public class ProductionService {
                 .workerName(str(body.get("worker_name")))
                 .qty(qty)
                 .qualifiedQty(qualifiedQty)
+                // 计件金额在**报工这一刻固化**（issue #4351，P0）：单价/系数从工序实例取一次
+                // 写进报工自己的快照 ⇒ 聚合永不回查实例。重新实例化（工艺变更/存量单补工序）
+                // 会软删旧实例并重插，回查实例会让工人已做的活的钱静默消失。
+                .unitPrice(op.getUnitPrice())
+                .factor(op.getFactor())
                 .workType(workType)
                 .workDate(LocalDate.now())
                 .createdAt(OffsetDateTime.now())
@@ -698,9 +703,21 @@ public class ProductionService {
     /**
      * 计件聚合（**per-order 汇总 / 期间报表 / 工人计件共用的唯一算法**）。
      *
-     * <p>口径：Σ(合格数量 × 实例快照单价 × 系数)，排除 rework/scrap；实例缺失（已软删）的报工
-     * 不计价（不可计价而不是抛错 —— 与既有 per-order 口径一致）。金额逐笔四舍五入到分再累加
-     * （与既有实现逐字相同，避免合计出现 0.005 级漂移）。</p>
+     * <p>口径：Σ(合格数量 × **报工自己的单价快照** × **报工自己的系数快照**)，排除 rework/scrap。
+     * 金额逐笔四舍五入到分再累加（与既有实现逐字相同，避免合计出现 0.005 级漂移）。</p>
+     *
+     * <p><b>金额在报工那一刻固化（issue #4351，P0）</b>：金额只读 {@code production_work_logs}
+     * 的 {@code unit_price}/{@code factor} 快照，**永不依赖工序实例是否还在**。原实现回查实例
+     * （{@code operationLookup}）算金额，而重新实例化（{@code POST /production/orders/{orderId}/
+     * instantiate}，工艺变更 / 存量单补工序）会**软删旧实例并重插** ⇒ 旧报工指向已软删实例 ⇒
+     * 被跳过 ⇒ 工人已做的活的钱从合计里消失**且不报错**。真值源 §4 要的是「逐笔可追溯」
+     * （调价只影响新报工，历史报工按当时价）——回查实例做不到这一点，快照才做得到。</p>
+     *
+     * <p>实例回查只剩两个**展示/兜底**用途：① 工序名（快照缺失时用报工自己的
+     * {@code operation_name}）；② **存量报工**（{@code unit_price} 为 {@code NULL} = V61 之前的行）
+     * 仍按实例回查计价 —— 否则本列一引入，历史工资反而全部归零。
+     * 「查不到就 {@code continue}」的兜底**保留**：既无快照、实例又真的不存在（脏数据）时
+     * 该笔不可计价，跳过而不是抛错（整张报表不得因一条脏数据中断）。</p>
      *
      * @param operationLookup 工序实例查找（per-order 用「该加工单的活跃实例」，报表用「本租户活跃实例」；
      *                        两处都必须是**活跃**实例，否则同一笔报工在两套端点下取值不同）
@@ -716,15 +733,30 @@ public class ProductionService {
             if (!"normal".equals(log.getWorkType())) {
                 continue; // 返工/报废不计件
             }
-            ProcessingPositionOperation op = operationLookup.apply(log.getOperationId());
-            if (op == null) {
-                continue; // 工序实例已不存在（软删）→ 该笔不可计价，跳过而不是抛错
+            boolean hasSnapshot = log.getUnitPrice() != null;
+            ProcessingPositionOperation op = null;
+            if (!hasSnapshot) {
+                // 存量报工（V61 之前的行，unit_price 为 NULL）⇒ 按实例回查兜底计价
+                op = operationLookup.apply(log.getOperationId());
+                if (op == null) {
+                    continue; // 既无快照、实例又真的不存在（脏数据）→ 该笔不可计价，跳过而不是抛错
+                }
             }
+            BigDecimal unitPrice = hasSnapshot ? log.getUnitPrice() : op.getUnitPrice();
+            BigDecimal factor = hasSnapshot
+                    ? (log.getFactor() == null ? BigDecimal.ONE : log.getFactor())
+                    : (op.getFactor() == null ? BigDecimal.ONE : op.getFactor());
             BigDecimal amount = money(nz(log.getQualifiedQty())
-                    .multiply(nz(op.getUnitPrice()))
-                    .multiply(op.getFactor() == null ? BigDecimal.ONE : op.getFactor()));
+                    .multiply(nz(unitPrice))
+                    .multiply(factor));
             String worker = StringUtils.hasText(log.getWorkerName()) ? log.getWorkerName() : "未分配";
-            String operation = op.getOperationName();
+            // 工序名 = 展示字段：优先报工自身的快照（报工时已落库），缺失时回查实例
+            String operation = StringUtils.hasText(log.getOperationName())
+                    ? log.getOperationName()
+                    : (op == null ? null : op.getOperationName());
+            if (!StringUtils.hasText(operation)) {
+                operation = "未命名工序";
+            }
             workerAmount.merge(worker, amount, BigDecimal::add);
             workerQty.merge(worker, nz(log.getQualifiedQty()), BigDecimal::add);
             operationAmount.merge(operation, amount, BigDecimal::add);

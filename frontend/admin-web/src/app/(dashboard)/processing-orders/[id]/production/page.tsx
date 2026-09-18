@@ -5,11 +5,13 @@ import { useRouter } from 'next/navigation'
 import { AlertCircle, ArrowLeft, Printer, RefreshCw, ShieldOff, Wrench } from 'lucide-react'
 import { Button, Modal } from '@/components/ui'
 import StatusBadge from '@/components/ui/StatusBadge'
+import { cn } from '@/lib/utils'
 import { chipToneClasses } from '@/lib/status-chip'
 import { processingOrderStatusChipFor } from '@/lib/processing-order'
 import { processingOrderApi, productionApi } from '@/lib/api'
 import { usePermission } from '@/lib/permission'
 import { useRouteId } from '@/lib/use-route-id'
+import { routeSourceNotice } from '@/lib/route-source'
 import ProductionProgressTable from '@/components/production/ProductionProgressTable'
 import PieceworkTable from '@/components/production/PieceworkTable'
 import TaskCardPrint from '@/components/production/TaskCardPrint'
@@ -155,6 +157,9 @@ export default function ProcessingOrderProductionPage() {
   // 工序还在但码没了 = 刚撤销过 ⇒ 任务卡占位文案不得再指向本页不存在的「补生成工序」
   const qrPlaceholderHint =
     positionCount > 0 && !operations?.qr_token ? '二维码已撤销（旧码已失效）' : undefined
+  // 路线来源提示（issue #4307 交付物 2 / #4308 P1「静默回落」的用户侧可观测面）：
+  // 四态 —— default 全不命中 / partial 只命中一维 / missing_route 两维命中但库里没路线。
+  const routeNotice = routeSourceNotice(po?.routeSource, po?.routeKey, po?.routeRequestedKey)
 
   return (
     <div className="p-6 space-y-4">
@@ -272,6 +277,27 @@ export default function ProcessingOrderProductionPage() {
               </div>
             </div>
           </div>
+
+          {/* 路线来源提示（issue #4307）：default 高亮警示，partial 提示 —— 不得静默 */}
+          {routeNotice && (
+            <div
+              className={cn(
+                'rounded-lg border px-4 py-3 text-sm',
+                routeNotice.tone === 'warning'
+                  ? 'border-amber-300 bg-amber-50 text-amber-800'
+                  : 'border-neutral-300 bg-neutral-50 text-neutral-700',
+              )}
+              data-testid={`production-route-${routeNotice.key}`}
+            >
+              <p className="flex items-center gap-2 font-medium">
+                <AlertCircle className="w-4 h-4" />
+                {routeNotice.title}
+              </p>
+              <p className="mt-1 text-xs opacity-90" data-testid={`production-route-${routeNotice.key}-detail`}>
+                {routeNotice.detail}
+              </p>
+            </div>
+          )}
 
           {/* 撤销成功反馈（issue #4240）：可见的「已撤销」，与占位态同时出现 */}
           {revokedNotice && (

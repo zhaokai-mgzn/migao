@@ -98,6 +98,8 @@ export const menuGroups: MenuGroup[] = [
     children: [
       { key: 'production-board', name: '生产看板', icon: 'ClipboardCheck', path: '/production', permissionCode: 'processing:manage' },
       { key: 'production-operations', name: '工序库', icon: 'ListChecks', path: '/production/operations', permissionCode: 'processing:manage' },
+      // issue #4307：路线序列编辑 / 信号映射 / 缺口可见 —— 页面存在但侧边栏进不去等于没交付
+      { key: 'production-routings', name: '工艺路线', icon: 'Route', path: '/production/routings', permissionCode: 'processing:manage' },
       { key: 'production-piecework', name: '计件工资', icon: 'Calculator', path: '/production/piecework', permissionCode: 'processing:manage' },
     ],
   },

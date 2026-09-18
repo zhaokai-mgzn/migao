@@ -46,6 +46,14 @@ import type {
   PieceworkReport,
   CatalogOperation,
   ProductionOperationUpdateParams,
+  Routing,
+  RoutingCreateParams,
+  RoutingGaps,
+  RouteOperationCreateParams,
+  RouteSignal,
+  RouteSignalsResponse,
+  RouteSignalParams,
+  RoutingSequenceParams,
   ProductStatus,
   AfterSalesTicket,
   AfterSalesListParams,
@@ -379,6 +387,34 @@ export const productionApi = {
   // 工序库写：改单价 / 必完开关等（权限 processing:manage）
   updateOperation: (id: string | number, data: ProductionOperationUpdateParams) =>
     request.put<ApiResponse<CatalogOperation>>(`/api/admin/production/operations/${id}`, data),
+
+  // ── 工艺路线商家可配（issue #4307 前端半边；契约所有者 = 后端 4308，权限 processing:manage）──
+  // 路线序列写：body {operations: ["精裁-布", ...]}
+  // （服务端护栏：空序列 / 工序不存在 / 重复 / 缺必完工序 —— 失败响应体带逐条理由，页面照单展示）
+  updateRoutingSequence: (id: number, data: RoutingSequenceParams) =>
+    request.put<ApiResponse<Routing>>(`/api/admin/production/routings/${id}`, data),
+
+  // 新建路线（部位 + 工艺；初版序列随后在编辑区排）
+  createRouting: (data: RoutingCreateParams) =>
+    request.post<ApiResponse<Routing>>('/api/admin/production/routings', data),
+
+  // 新增工序（建新路线时必须有工序可选）
+  createOperation: (data: RouteOperationCreateParams) =>
+    request.post<ApiResponse<CatalogOperation>>('/api/admin/production/operations', data),
+
+  // 信号映射（库数据：派生读库而非读硬编码常量表）
+  getRouteSignals: () =>
+    request.get<ApiResponse<RouteSignalsResponse>>('/api/admin/production/route-signals'),
+  createRouteSignal: (data: RouteSignalParams) =>
+    request.post<ApiResponse<RouteSignal>>('/api/admin/production/route-signals', data),
+  updateRouteSignal: (id: number, data: RouteSignalParams) =>
+    request.put<ApiResponse<RouteSignal>>(`/api/admin/production/route-signals/${id}`, data),
+  deleteRouteSignal: (id: number) =>
+    request.delete<ApiResponse<void>>(`/api/admin/production/route-signals/${id}`),
+
+  // 缺口：①有活跃工序但未进任何活跃路线 ②库中无路线的信号组合
+  getRoutingGaps: () =>
+    request.get<ApiResponse<RoutingGaps>>('/api/admin/production/routing-gaps'),
 
   // 计件工资报表（按期间 YYYY-MM 聚合，可按工人筛选）
   getPieceworkSummary: (params: { period: string; worker_name?: string }) =>

@@ -3404,12 +3404,14 @@ _CASE_OR_008 = EvalCase(
     data_checks=['data.order_id.length > 0'],
     skip_reason='',
     tags=['create', 'sku_select', 'full_flow'],
-    persona='',
+    persona='mibao',
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
     required_args=[{'tool': 'order_create', 'fields': ['items[].processing_info.sellingMethod', 'items[].processing_info.doorWidth']}],
+    must_succeed=[{'tool': 'order_create'}],
     namespaces=['customer_phone:13800138000'],
+    precondition=[{'type': 'product_count_for_keyword', 'source': '遮光窗帘'}],
 )
 
 # ── OR-009 [NORMAL] 下单全流程 - 选品→选SKU→确认数量→下单（源: cases/order.yml）──
@@ -4805,6 +4807,24 @@ _CASE_PP_012 = EvalCase(
     data_checks=['success=true', '数量**只**来自算料引擎（真值源 §3）：冻结样例 calc_info={fabric_meters:12.3, pleat_count:24, panels:2, set_count:1} + 工序 [精裁-布, 布三边, 韩褶-布, 外帘装袋] ⇒ {精裁-布:12.3, 布三边:12.3, 韩褶-布:24.0, 外帘装袋:1.0}，且逐值 == routing._qty_for 直调结果（防复制第二份算料逻辑的守门断言）', '缺键**一律兜底 1、绝不落 0**（应做 0 ⇒ done_qty ≥ qty 恒真 ⇒ 假完工）：calc_info={} ⇒ 各工序 qty == 1.0 且 != 0', '引擎不认识的工序/单位 ⇒ qty=1.0 + qty_source=fallback，且 HTTP **仍 200**（不得把加工单生成打成硬失败）；判别性：若实现只把 _qty_for 原样透传（未知工序按「米」读 fabric_meters）会得到 12.3 ⇒ 本条仍红', '鉴权：缺 X-Service-Token ⇒ 401（内部端点不得裸奔）', '「孔」类无 holes ⇒ 按每米 6 孔估算 12.3×6=73.8，来源 = fabric_meters_x6（**不等于** fallback）—— 让「真兜底」与「有依据的推算」可区分'],
     skip_reason='[backend-contract] ai-agent 内部端点（服务间调用，非 LLM 行为）：由 pytest 全量覆盖 backend/ai-agent-service/tests/test_production/test_operation_qty.py（含 _qty_for 直调比对与三源键漂移门禁），不进入 agent-eval 冒烟（同 PP-010 惯例）',
     tags=['processing', 'production', 'qty-engine'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── PP-014 [NORMAL] 工艺路线商家可配用户面 - 序列编辑护栏逐条可见 / 缺口区 / 信号映射 / 四态路线来源提示（前端单测覆盖）（源: cases/processing.yml）──
+_CASE_PP_014 = EvalCase(
+    id='PP-014',
+    legacy_id='',
+    title='工艺路线商家可配用户面 - 序列编辑护栏逐条可见 / 缺口区 / 信号映射 / 四态路线来源提示（前端单测覆盖）',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['打开工艺路线，改一下布帘×韩褶的工序顺序，看看缺口里还有哪些工序没进路线'],
+    expectations=['direct_reply'],
+    data_checks=['路线列表渲染**真实数据**：路线数 + 「部位 × 工艺」标题 + 每道工序的分组/单位/单价；必完工序带「必完」标记，非必完不得出现该标记（注入：把库口径 is_must_finish 由 true 改 false ⇒ 断言红）', '序列编辑：从工序库选工序 → 保存 ⇒ `PUT /api/admin/production/routings/{id}` 的 body 恰为 `{operations:[...]}`，且**顺序等于屏幕顺序**（注入：把上移/下移/删除任一处的 draft 变换去掉 ⇒ 「顺序等于屏幕顺序」「被删工序不在请求体」两条红）', '保存被拒时**逐条**展示后端护栏理由，不得只弹「保存失败」：`error.response.data.error_messages` 三条 ⇒ 页面渲染三条独立条目，并分别带可读归因（工序不存在 / 工序重复 / 缺少必完工序）；`error` 单条形态兼容（注入：把 error_messages 分支退化成一句通用文案 ⇒ 三条断言红）', '空序列**本地先拦**：删除最后一道后保存 ⇒ 不发出 PUT（`not called`），并给出「序列不能为空」理由（注入：去掉本地校验 ⇒ PUT 被调用，断言红）', '缺口区两只清单可见：①「有工序但未进任何路线」逐条渲染（真值源下 4 道：裁剪-布/裁剪-纱/质检/腰靠垫，**双向可红**：少一道或多一道都红）②「库里没有路线的信号组合」（罗马帘 × 韩褶）以清单形式给出（注入：把任一清单改成只显示条数 ⇒ 该条红）', '新建路线 `POST /api/admin/production/routings` 提交 `{curtain_type, craft, operations: []}`（部位/工艺为空时本地拦）；新增工序 `POST /api/admin/production/operations` 提交 `{name, group_name?, unit?, unit_price}`（单价非数值时本地拦）', '信号映射：`GET` 列表渲染；新增走 `POST /route-signals`、编辑走 `PUT /route-signals/{id}`、删除**二次确认后**走 `DELETE /route-signals/{id}`（注入：删除改成不确认直接删 ⇒ confirm 断言红）', '接口失败不白屏：路线列表失败给错误提示 + 重试（重试后渲染出真实数据）；缺口/信号单条失败只在**该区**给可读提示，路线列表照常渲染（注入：把 allSettled 改成 Promise.all ⇒ 单条失败即整页白屏，断言红）', '加工单四态路线来源提示（`route_source`）：default ⇒ 高亮提示「未识别工艺信号…请核对工序与计件单价」+ 报出实际使用的 `route_key`；partial ⇒ 提示「只识别出一半，另一半取默认值」；missing_route ⇒ 用 `route_requested_key` 报「本单识别的是 X，但工序库里没有这条路线」+ 报实际使用键；derived / 字段缺失 ⇒ **不提示**（静默 = 未知，**不得**显示成「已派生」）（注入：去掉任一分支 ⇒ 该态断言红；把未知值当 derived 正面渲染 ⇒ 第四条红）', '侧边栏入口：生产管理组含「工艺路线」→ `/production/routings`，权限码 `processing:manage`（组内四项口径一致）（注入：只加页面不加菜单项 ⇒ 链接数与权限码数组断言红）'],
+    skip_reason='[backend-contract] 前端组件/页面契约（admin-web），由 vitest 单测全量覆盖（frontend/admin-web/tests/unit/pages/production-routings.test.tsx、tests/unit/lib/route-source.test.ts、tests/unit/pages/processing-orders-production.test.tsx、tests/unit/pages/production-board.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟（同 PP-010/PP-011 惯例）',
+    tags=['processing', 'production', 'admin_web', 'routing', 'route_signals', 'gap_visibility', 'route_source'],
     persona='',
     debug_user='',
     form_prefill=[],
@@ -6674,6 +6694,7 @@ ALL_CASES = (
     _CASE_PP_013,
     _CASE_PP_011,
     _CASE_PP_012,
+    _CASE_PP_014,
     _CASE_PR_001,
     _CASE_PR_002,
     _CASE_PR_003,

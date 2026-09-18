@@ -358,8 +358,94 @@ class ProductionServiceTest {
         verify(workLogMapper, never()).insert(any(ProductionWorkLog.class));
     }
 
+    // ── 计件金额在报工那一刻固化（issue #4351，P0：重新实例化后历史报工的钱凭空消失）──
+    //
+    // 病根：`aggregate` 用 `operationLookup.apply(log.getOperationId())` **回查实例**算金额；
+    // 而 `ProcessingOrderService.instantiate` 在重新实例化（`POST /production/orders/{orderId}/instantiate`，
+    // #4202 给存量单补工序的入口）时会**软删旧实例并重插** ⇒ 旧报工指向已软删实例 ⇒ 被 `continue`
+    // 跳过 ⇒ **工人已做的活的钱从合计里消失，且不报错**（报表照常返回一个偏小的合计）。
+    // 真值源 §4 要的是「逐笔可追溯」⇒ 金额必须在报工那一刻固化，聚合只读报工自己的快照。
+    // 本组四条：① 红证（金额不变）② 快照真的落库 ③ 快照优先于实例现值 ④ 兜底负例（真·脏数据仍跳过）。
+
     @Test
-    @DisplayName("计件跳过工序实例已不存在的报工（软删实例不误计件）")
+    @DisplayName("#4351 红证：重新实例化软删旧实例后，同一笔报工的计件金额不变（钱不消失）")
+    void pieceworkAmountSurvivesReInstantiation() {
+        ProcessingPositionOperation live =
+                op("op-1", "精裁-布", "10.00", false, "pending", "0.00", "0.12", "1.00");
+        when(positionOperationMapper.selectById("op-1")).thenReturn(live);
+        // 报工前 / 报工中的实例快照（listOperations 走同一个 selectList 桩）
+        when(positionOperationMapper.selectList(any())).thenReturn(List.of(live));
+        ArgumentCaptor<ProductionWorkLog> inserted = ArgumentCaptor.forClass(ProductionWorkLog.class);
+
+        service.report(ORDER_ID, "op-1", reportBody("10", "10", "normal"), TENANT, null);
+        verify(workLogMapper).insert(inserted.capture());
+        ProductionWorkLog log = inserted.getValue();
+
+        // 报工时的计件合计（10 合格 × ¥0.12 × 1.00 = ¥1.20）
+        when(workLogMapper.selectList(any())).thenReturn(List.of(log));
+        BigDecimal before = (BigDecimal) service.piecework(ORDER_ID, TENANT).get("total");
+        assertThat(before).isEqualByComparingTo("1.20");
+
+        // 触发重新实例化：旧实例软删并重插新实例（新 id）⇒ 活跃实例集里再也没有 op-1
+        when(positionOperationMapper.selectList(any())).thenReturn(List.of(
+                op("op-2", "精裁-布", "10.00", false, "pending", "0.00", "0.12", "1.00")));
+
+        Map<String, Object> after = service.piecework(ORDER_ID, TENANT);
+
+        assertThat((BigDecimal) after.get("total"))
+                .as("报工那一刻的金额已固化 ⇒ 旧实例软删不得让这笔钱从合计里消失（issue #4351）")
+                .isEqualByComparingTo("1.20");
+        @SuppressWarnings("unchecked")
+        Map<String, BigDecimal> perWorker = (Map<String, BigDecimal>) after.get("per_worker");
+        assertThat(perWorker.get("蒋雪云")).isEqualByComparingTo("1.20");
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> perOperation = (List<Map<String, Object>>) after.get("per_operation");
+        assertThat(perOperation).singleElement()
+                .satisfies(row -> assertThat(row.get("operation")).isEqualTo("精裁-布"));
+    }
+
+    @Test
+    @DisplayName("#4351 报工那一刻把工序实例的单价与系数写进报工快照（unit_price / factor）")
+    void reportSnapshotsUnitPriceAndFactor() {
+        when(positionOperationMapper.selectById("op-1"))
+                .thenReturn(op("op-1", "韩褶-布", "10.00", false, "pending", "0.00", "0.40", "1.70"));
+        when(positionOperationMapper.selectList(any())).thenReturn(List.of(
+                op("op-1", "韩褶-布", "10.00", false, "pending", "0.00", "0.40", "1.70")));
+        ArgumentCaptor<ProductionWorkLog> inserted = ArgumentCaptor.forClass(ProductionWorkLog.class);
+
+        service.report(ORDER_ID, "op-1", reportBody("2", "2", "normal"), TENANT, null);
+
+        verify(workLogMapper).insert(inserted.capture());
+        assertThat(inserted.getValue().getUnitPrice())
+                .as("单价快照（报工时从工序实例写入）—— 聚合不得再回查实例")
+                .isEqualByComparingTo("0.40");
+        assertThat(inserted.getValue().getFactor())
+                .as("系数快照（报工时从工序实例写入）")
+                .isEqualByComparingTo("1.70");
+    }
+
+    @Test
+    @DisplayName("#4351 聚合读报工自己的快照：实例现值被改价也不得改写历史报工（真值源 §4 逐笔可追溯）")
+    void pieceworkReadsOwnSnapshotNotLiveInstance() {
+        ProductionWorkLog log = ProductionWorkLog.builder()
+                .tenantId(TENANT).processingOrderId(PO_ID).operationId("op-1").operationName("精裁-布")
+                .workerName("蒋雪云").qty(new BigDecimal("10")).qualifiedQty(new BigDecimal("10"))
+                .workType("normal").unitPrice(new BigDecimal("0.12")).factor(new BigDecimal("1.00"))
+                .deleted(0).build();
+        when(workLogMapper.selectList(any())).thenReturn(List.of(log));
+        // 实例还在，但**改价了**（0.12 → 9.99）：历史报工必须按当时价
+        when(positionOperationMapper.selectList(any())).thenReturn(List.of(
+                op("op-1", "精裁-布", "10.00", false, "done", "10.00", "9.99", "1.00")));
+
+        Map<String, Object> result = service.piecework(ORDER_ID, TENANT);
+
+        assertThat((BigDecimal) result.get("total"))
+                .as("金额 = 报工快照（0.12），不是实例现值（9.99）—— 调价只影响新报工")
+                .isEqualByComparingTo("1.20");
+    }
+
+    @Test
+    @DisplayName("#4351 兜底不得删：实例 id 确实不存在（脏数据）的报工跳过而不抛错")
     void pieceworkSkipsMissingOperationInstance() {
         when(positionOperationMapper.selectList(any())).thenReturn(List.of());
         when(workLogMapper.selectList(any())).thenReturn(List.of(
@@ -370,8 +456,25 @@ class ProductionServiceTest {
 
         Map<String, Object> result = service.piecework(ORDER_ID, TENANT);
 
-        assertThat((BigDecimal) result.get("total")).isEqualByComparingTo("0.00");
+        assertThat((BigDecimal) result.get("total"))
+                .as("既无快照、实例又真的不存在 ⇒ 该笔不可计价，跳过而不是抛错（整张报表不得中断）")
+                .isEqualByComparingTo("0.00");
         assertThat((Map<?, ?>) result.get("per_worker")).isEmpty();
+    }
+
+    @Test
+    @DisplayName("#4351 存量报工（迁移前、无快照）仍按实例回查计价 —— 快照引入不得让历史工资归零")
+    void legacyLogWithoutSnapshotFallsBackToInstanceLookup() {
+        when(positionOperationMapper.selectList(any())).thenReturn(List.of(
+                op("op-1", "精裁-布", "10.00", false, "done", "10.00", "0.12", "1.00")));
+        when(workLogMapper.selectList(any())).thenReturn(List.of(
+                ProductionWorkLog.builder().tenantId(TENANT).processingOrderId(PO_ID).operationId("op-1")
+                        .operationName("精裁-布").workerName("蒋雪云").qty(new BigDecimal("10"))
+                        .qualifiedQty(new BigDecimal("10")).workType("normal").deleted(0).build()));
+
+        Map<String, Object> result = service.piecework(ORDER_ID, TENANT);
+
+        assertThat((BigDecimal) result.get("total")).isEqualByComparingTo("1.20");
     }
 
     @Test

@@ -859,6 +859,11 @@ CREATE TABLE IF NOT EXISTS production_work_logs (
     worker_name VARCHAR(64),
     qty NUMERIC(12,2) NOT NULL DEFAULT 0,            -- 报工数量
     qualified_qty NUMERIC(12,2) NOT NULL DEFAULT 0,  -- 合格数量（计件按合格数量）
+    -- 计件单价/系数快照（V61，issue #4351）：报工那一刻从工序实例写入 ⇒ 聚合只读本行，
+    -- 永不回查实例（重新实例化会软删旧实例并重插 ⇒ 回查会让历史报工的钱静默消失）。
+    -- NULL = 本列引入之前的存量报工（聚合按实例回查兜底）。
+    unit_price NUMERIC(10,2),
+    factor NUMERIC(10,2),
     work_type VARCHAR(16) NOT NULL DEFAULT 'normal', -- 报工三态：normal/rework/scrap
     work_date DATE NOT NULL DEFAULT CURRENT_DATE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
@@ -874,7 +879,9 @@ CREATE INDEX IF NOT EXISTS idx_work_logs_worker_date
 COMMENT ON TABLE production_operations IS '生产工序库：分组（裁剪/车位/后道/其他）+ 按部位分设 + 计件单价（V49，issue #3995）';
 COMMENT ON TABLE production_routings IS '工艺路线模板：部位×工艺 → 基准工序序列（V49，issue #3995）';
 COMMENT ON TABLE processing_position_operations IS '工序实例：加工单×部位×工序（应做数量/单价/系数/必完标记/报工进度），扫码报工的推进单元';
-COMMENT ON TABLE production_work_logs IS '报工记录（明细不可变）：报工三态 normal/rework/scrap；计件 = Σ(合格数量×单价×系数)，排除返工/报废；单工序一人制';
+COMMENT ON TABLE production_work_logs IS '报工记录（明细不可变）：报工三态 normal/rework/scrap；计件 = Σ(合格数量×**报工自己的单价快照**×**系数快照**)，排除返工/报废；单工序一人制；快照见 V61（issue #4351）';
+COMMENT ON COLUMN production_work_logs.unit_price IS '计件单价快照（元/单位，V61，issue #4351）：报工那一刻从工序实例写入；聚合只读本列 ⇒ 重新实例化软删旧实例不影响历史报工的钱；NULL=本列引入前的存量行（按实例回查兜底）';
+COMMENT ON COLUMN production_work_logs.factor IS '计件系数快照（V61，issue #4351）：与 unit_price 同一次报工写入、同一口径；NULL=存量行';
 
 -- 工序计件单价版本（V55，issue #4204）：当前价 = 最新版本行；实例单价仍是生成时快照。
 -- 迁移链同款见 backend/admin-api/src/main/resources/db/migration/V55__create_production_operation_price_versions.sql

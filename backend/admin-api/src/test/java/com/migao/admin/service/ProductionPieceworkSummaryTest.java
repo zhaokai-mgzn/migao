@@ -46,6 +46,9 @@ import static org.mockito.Mockito.when;
  * <p>本测试守四条（每条都有独立红证）：① 按期取 work_date 落在当月的报工；② 返工/报废不计件；
  * ③ **口径一致性** —— 同一批报工下「per-order 合计 == 报表 total」（两套端点禁止两套算法）；
  * ④ 实例缺失（软删）的报工不计价 —— 与 per-order **同一判据**，否则同一笔报工在两处数值不等。</p>
+ *
+ * <p>⑤（issue #4351，P0）：**金额在报工那一刻固化** —— 带快照的报工在实例软删（重新实例化）后
+ * 金额**不变**；④ 只对「既无快照、实例又真的不存在」的真·脏数据成立。</p>
  */
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
@@ -114,6 +117,15 @@ class ProductionPieceworkSummaryTest {
                 .deleted(0).build();
     }
 
+    /** 带**单价/系数快照**的报工（issue #4351 起：金额在报工那一刻固化，聚合只读它）。 */
+    private ProductionWorkLog snapshotLog(String opId, String name, String worker, String qualifiedQty,
+                                          String unitPrice, String factor, LocalDate workDate) {
+        ProductionWorkLog log = log(opId, name, worker, qualifiedQty, "normal", workDate);
+        log.setUnitPrice(new BigDecimal(unitPrice));
+        log.setFactor(new BigDecimal(factor));
+        return log;
+    }
+
     @Test
     @DisplayName("走查实测单可复现：精裁-布 3 米 × ¥0.40 ⇒ per_worker 金额 1.20")
     void walkthroughOrderIsReproducible() {
@@ -171,7 +183,7 @@ class ProductionPieceworkSummaryTest {
     }
 
     @Test
-    @DisplayName("实例已软删（不在活跃集）的报工不计价 —— 与 per-order 同一判据，两处同值")
+    @DisplayName("实例已软删且**无快照**的报工不计价 —— 真·脏数据（issue #4351 的兜底，两处同值）")
     void softDeletedInstanceIsNotCountedInEitherEndpoint() {
         when(workLogMapper.selectList(any())).thenReturn(List.of(
                 log("op-gone", "精裁-布", "张三", "10", "normal", LocalDate.of(2026, 9, 18))));
@@ -181,6 +193,42 @@ class ProductionPieceworkSummaryTest {
         Map<String, Object> report = service.pieceworkSummary("2026-09", null, TENANT);
         assertThat((BigDecimal) report.get("total")).isEqualByComparingTo("0.00");
         assertThat((List<?>) report.get("per_worker")).isEmpty();
+    }
+
+    @Test
+    @DisplayName("#4351 红证：重新实例化（旧实例软删）后，期间报表里同一笔报工的金额不变")
+    void snapshotSurvivesReInstantiationInSummary() {
+        // 报工时固化：10 合格 × ¥0.12 × 1.00 = ¥1.20
+        when(workLogMapper.selectList(any())).thenReturn(List.of(
+                snapshotLog("op-1", "精裁-布", "张三", "10", "0.12", "1.00", LocalDate.of(2026, 9, 18))));
+        // 重新实例化：旧实例 op-1 软删并重插新实例 op-2 ⇒ 活跃实例集里没有 op-1
+        when(positionOperationMapper.selectList(any())).thenReturn(List.of(op("op-2", "精裁-布", "0.12", "1.00")));
+
+        Map<String, Object> report = service.pieceworkSummary("2026-09", null, TENANT);
+
+        assertThat((BigDecimal) report.get("total"))
+                .as("金额在报工那一刻固化 ⇒ 旧实例软删不得让这笔钱从期间报表里消失（issue #4351）")
+                .isEqualByComparingTo("1.20");
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> perOperation = (List<Map<String, Object>>) report.get("per_operation");
+        assertThat(perOperation).singleElement()
+                .satisfies(row -> assertThat(row.get("operation")).isEqualTo("精裁-布"));
+    }
+
+    @Test
+    @DisplayName("#4351 实例缺失时工序名取报工自身的快照字段（operation_name 在报工时已落库）")
+    void operationNameFallsBackToWorkLogWhenInstanceGone() {
+        when(workLogMapper.selectList(any())).thenReturn(List.of(
+                snapshotLog("op-1", "精裁-布", "张三", "10", "0.12", "1.00", LocalDate.of(2026, 9, 18))));
+        when(positionOperationMapper.selectList(any())).thenReturn(new ArrayList<>());
+
+        Map<String, Object> report = service.pieceworkSummary("2026-09", null, TENANT);
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> perOperation = (List<Map<String, Object>>) report.get("per_operation");
+        assertThat(perOperation).singleElement()
+                .satisfies(row -> assertThat(row.get("operation")).isEqualTo("精裁-布"));
+        assertThat((BigDecimal) report.get("total")).isEqualByComparingTo("1.20");
     }
 
     @Test
