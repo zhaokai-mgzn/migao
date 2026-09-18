@@ -949,3 +949,96 @@ class TestCraftSpecToolPassthrough:
             "craft 枚举必须与工序库 production_routings.craft 逐字一致"
         )
         assert props["curtain_type"]["enum"] == ["布帘", "纱帘", "帘头"]
+
+
+# ══════════════════════════════════════════════
+# 幅数输出（issue #4374 · 交付物 3 / 设计文档 §4.3）
+#
+# 病根：`panels`（幅数）在 `calculate_fabric_meters` / `build_quote` 的 `fixed_width*`
+# 分支里**只是局部变量**（只进告警文案），从不进返回值 ⇒ 报价卡「幅数」行**永不出现**
+# （包 3 已登记该缺口），加工单快照的 `panels` 也永远取不到。
+# 治法：把**已经算出来的那个数**透传出去 —— 只加键、不改任何金额/米数（本单不改钱）。
+# ⚠️ 不发明数字：只有真的算了幅数（定宽买高）才有该键；定高买宽按宽买米、幅数无定义
+# ⇒ **键缺席**（不得补 0，也不得补 1 冒充「1 幅」）。
+# ══════════════════════════════════════════════
+
+class TestPanelsOutput:
+    """`build_quote` 必须透传幅数 `panels`（定宽买高时 = 幅数）。"""
+
+    def test_fixed_width_quote_exposes_panels(self):
+        """定宽买高（成品高超门幅定高上限）⇒ 输出含 `panels`，且与幅数公式一致。"""
+        q = build_quote(
+            window_width=3.0, window_height=2.7, mounting="eyelet",
+            fabric_width=2.8, fabric_price=30.0,
+        )
+        assert q["formula_used"] == "fixed_width"
+        expected = math.ceil((3.0 + 0.3) * 2.0 / 2.8)     # ceil((W+0.3)×N/G)
+        assert q["panels"] == expected, (
+            f"定宽买高的幅数未透传（期望 {expected}，输出 {q.get('panels')}）⇒ 报价卡「幅数」行永不出现"
+        )
+
+    def test_pattern_quote_panels_matches_meters(self):
+        """对花只加**每幅长度**，不加幅数 —— `panels` 必须与米数口径自洽。"""
+        q = build_quote(
+            window_width=3.0, window_height=2.7, mounting="eyelet",
+            fabric_width=2.8, fabric_price=30.0,
+            has_pattern=True, pattern_repeat=0.5,
+        )
+        assert q["panels"] == math.ceil((3.0 + 0.3) * 2.0 / 2.8)
+        assert q["fabric_meters"] == pytest.approx(q["panels"] * (2.7 + 0.3 + 0.5))
+
+    def test_pleat_mode_fixed_width_exposes_panels(self):
+        """折数法下成品高超限 ⇒ 走 `fixed_width_pleats`，幅数同样必须透传。
+
+        期望值按同一公式独立算出：折数法用料（0.25×折数 + 余量）÷ 门幅 向上取整。
+        """
+        q = build_quote(
+            window_width=6.6, window_height=2.92, mounting="s_hook",
+            fabric_width=2.8, fabric_price=30.0, pleat_count=48, open_count=2,
+        )
+        assert q["formula_used"] == "fixed_width_pleats"
+        pleat_meters = round(0.25 * 48 + 0.3, 2)             # 折数法用料（双开余量 0.3）
+        assert q["panels"] == math.ceil(pleat_meters / 2.8)
+        assert q["fabric_meters"] == pytest.approx(q["panels"] * (2.92 + 0.3))
+
+    def test_panels_absent_when_not_computed(self):
+        """定高买宽（按宽买米）幅数**无定义** ⇒ 键缺席（不得补 0/1 发明数字）。"""
+        q = build_quote(
+            window_width=3.0, window_height=2.7, mounting="eyelet",
+            fabric_width=3.0, fabric_price=30.0,
+        )
+        assert q["formula_used"] == "fixed_height"
+        assert "panels" not in q, (
+            f"定高买宽不得造幅数（口径：不发明数字）—— 实得 panels={q.get('panels')}"
+        )
+
+    def test_panels_addition_does_not_change_amounts(self):
+        """**回归护栏**：补 `panels` 不得动任何一个金额/米数（本单不改钱）。"""
+        q = build_quote(
+            window_width=3.0, window_height=2.7, mounting="eyelet",
+            fabric_width=2.8, fabric_price=30.0,
+        )
+        assert q["fabric_meters"] == pytest.approx(9.0)      # 修前既有值（逐值不变）
+        assert q["processing_meters"] == pytest.approx(9.0)
+        assert q["total"] == pytest.approx(575.2)            # 修前既有值（逐值不变）
+
+    def test_panels_never_defaults_to_zero(self):
+        """负例护栏：任何分支都不得把 `panels` 兜底成 0（0 幅 = 无意义数字）。"""
+        for kwargs in (
+            {"window_width": 3.0, "window_height": 2.7, "fabric_width": 3.0},
+            {"window_width": 3.0, "window_height": 2.7, "fabric_width": 2.8},
+        ):
+            q = build_quote(fabric_price=30.0, **kwargs)
+            assert q.get("panels") != 0, f"幅数被兜底成 0：{kwargs}"
+
+    async def test_execute_passes_panels_through(self, sample_tool_context):
+        """Tool 层：幅数必须**穿过 execute** 落到 `data` —— 否则 LLM 拿不到、订单也落不了库。"""
+        from app.tools.curtain_calc import CurtainCalcTool
+
+        result = await CurtainCalcTool().execute(
+            context=sample_tool_context,
+            window_width=3.0, window_height=2.7,
+            fabric_width=2.8, fabric_price=30.0,
+        )
+        assert result.success is True
+        assert result.data["panels"] == math.ceil((3.0 + 0.3) * 2.0 / 2.8)

@@ -43,6 +43,7 @@
 # case_ids: OR-024, OR-016, OR-028, OR-015
 import importlib
 import inspect
+import math
 import pkgutil
 
 import pytest
@@ -241,14 +242,51 @@ def test_write_tool_enum_semantic_params_declare_enum():
     )
 
 
-def test_enum_declarations_are_non_empty_string_lists():
-    """`enum` 声明本身必须有效：非空字符串列表（防 `enum: []` / `enum: [None]` 式空转声明）"""
+def _invalid_enum_items(enum: list) -> list:
+    """枚举项里**无效**的项（空转声明/垃圾值）。
+
+    issue #4374：数值枚举（如 `openCount` 的 `[1, 2, 4]`）是 JSON Schema 的合法形态
+    （`openCount` 的合法值本就是**数字**，不是字符串），但「非空字符串」这条字面口径会把它
+    误判成坏声明。本函数按**值的有效形态**判定（非空字符串 / 有限数值），
+    语义不变：`[]`、`[None]`、`[""]`、`[True]`、`[{}]` 一律仍判无效。
+    """
+    bad = []
+    for v in enum:
+        if isinstance(v, str):
+            if not v:
+                bad.append(v)
+        elif isinstance(v, bool) or not isinstance(v, (int, float)):
+            bad.append(v)          # bool 是 int 子类但语义不是枚举值
+        elif isinstance(v, float) and not math.isfinite(v):
+            bad.append(v)
+    return bad
+
+
+def test_enum_declarations_are_valid_items():
+    """`enum` 声明本身必须有效：非空列表 + 每项为**有效枚举值**（非空字符串 / 有限数值）。
+
+    防 `enum: []` / `enum: [None]` / `enum: [""]` / `enum: [True]` 式空转声明。
+    """
     for fqn, _leaf, spec, _required in _iter_all_params():
         if "enum" not in spec:
             continue
         enum = spec["enum"]
         assert isinstance(enum, list) and enum, f"{fqn} 的 enum 必须是非空列表"
-        assert all(isinstance(v, str) and v for v in enum), f"{fqn} 的 enum 项必须是非空字符串"
+        assert _invalid_enum_items(enum) == [], (
+            f"{fqn} 的 enum 含无效项（须为非空字符串或有限数值）：{_invalid_enum_items(enum)}"
+        )
+
+
+def test_enum_item_guard_rejects_junk_and_accepts_numeric_enum():
+    """负例（红证）：垃圾枚举项必须被判无效；数值枚举（issue #4374）必须被判有效。
+
+    不会红的判据 = 空断言 —— 这里把两侧形态都钉住，防止「放宽字面口径」顺手放过真垃圾。
+    """
+    assert _invalid_enum_items([]) == []                      # 空列表由上方「非空」断言拦
+    for junk in ([None], [""], [True], [{}], [[]], [float("nan")], [float("inf")]):
+        assert _invalid_enum_items(junk) == junk, f"{junk} 未被判为无效枚举项（判据空转）"
+    assert _invalid_enum_items([1, 2, 4]) == []               # openCount 的合法值
+    assert _invalid_enum_items(["定高买宽", "定宽买高"]) == []  # cuttingMode 的合法值
 
 
 def test_scan_actually_sees_order_create_processing_and_size_params():
